@@ -24,11 +24,11 @@ func InitOneContract(prand *testhelpers.PseudoRandomDataSource) (*statetransfer.
 	numCells := int(prand.GetUint64() % 1000)
 	for i := 0; i < numCells; i++ {
 		storageAddr := prand.GetHash()
-		storageVal := prand.GetAddress().Hash() // 20 bytes so sum won't overflow
-		code = append(code, 0x7f)               // PUSH32
-		code = append(code, storageAddr[:]...)  // storageAdr
-		code = append(code, 0x54)               // SLOAD
-		code = append(code, 0x01)               // ADD
+		storageVal := common.BytesToHash(prand.GetAddress().Bytes()) // 20 bytes so sum won't overflow
+		code = append(code, 0x7f)                                    // PUSH32
+		code = append(code, storageAddr[:]...)                       // storageAdr
+		code = append(code, 0x54)                                    // SLOAD
+		code = append(code, 0x01)                                    // ADD
 		storageMap[storageAddr] = storageVal
 		sum.Add(sum, storageVal.Big())
 	}

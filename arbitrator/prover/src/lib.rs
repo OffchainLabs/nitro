@@ -19,7 +19,6 @@ use crate::machine::{argument_data_to_inbox, Machine};
 use arbutil::PreimageType;
 use eyre::Result;
 use machine::{get_empty_preimage_resolver, GlobalState, MachineStatus, PreimageResolver};
-use sha3::{Digest, Keccak256};
 use static_assertions::const_assert_eq;
 use std::{
     ffi::CStr,
@@ -303,13 +302,18 @@ pub unsafe extern "C" fn arbitrator_set_preimage_resolver(
                 return None;
             }
             let data = CBytes::from_raw_parts(res.ptr, res.len as usize);
-            let have_hash = Keccak256::digest(&data);
-            if have_hash.as_slice() != *hash {
-                panic!(
-                    "Resolved incorrect data for hash {}: got {}",
+            #[cfg(debug_assertions)]
+            match crate::utils::hash_preimage(&data, ty) {
+                Ok(have_hash) if have_hash.as_slice() == *hash => {}
+                Ok(got_hash) => panic!(
+                    "Resolved incorrect data for hash {} (rehashed to {})",
                     hash,
-                    hex::encode(data),
-                );
+                    Bytes32(got_hash),
+                ),
+                Err(err) => panic!(
+                    "Failed to hash preimage from resolver (expecting hash {}): {}",
+                    hash, err,
+                ),
             }
             Some(data)
         },

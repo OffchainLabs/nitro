@@ -28,7 +28,7 @@ var ErrSequencerInsertLockTaken = errors.New("insert lock taken")
 
 // always needed
 type ExecutionClient interface {
-	DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) error
+	DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) error
 	Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) error
 	HeadMessageNumber() (arbutil.MessageIndex, error)
 	HeadMessageNumberSync(t *testing.T) (arbutil.MessageIndex, error)
@@ -73,7 +73,7 @@ type FullExecutionClient interface {
 
 // not implemented in execution, used as input
 type BatchFetcher interface {
-	FetchBatch(batchNum uint64) ([]byte, error)
+	FetchBatch(batchNum uint64) ([]byte, common.Hash, error)
 }
 
 type TransactionStreamer interface {
