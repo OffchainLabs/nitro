@@ -51,6 +51,7 @@ pub enum Hostio {
     WavmSetGlobalStateU64,
     WavmReadKeccakPreimage,
     WavmReadSha256Preimage,
+    WavmReadEthVersionedHashPreimage,
     WavmReadInboxMessage,
     WavmReadHotShotCommitment,
     WavmReadDelayedInboxMessage,
@@ -75,6 +76,7 @@ impl FromStr for Hostio {
             ("env", "wavm_set_globalstate_u64") => WavmSetGlobalStateU64,
             ("env", "wavm_read_keccak_256_preimage") => WavmReadKeccakPreimage,
             ("env", "wavm_read_sha2_256_preimage") => WavmReadSha256Preimage,
+            ("env", "wavm_read_eth_versioned_hash_preimage") => WavmReadEthVersionedHashPreimage,
             ("env", "wavm_read_inbox_message") => WavmReadInboxMessage,
             ("env", "wavm_read_delayed_inbox_message") => WavmReadDelayedInboxMessage,
             ("env", "wavm_read_hotshot_commitment") => WavmReadHotShotCommitment,
@@ -103,20 +105,21 @@ impl Hostio {
 
         #[rustfmt::skip]
         let ty = match self {
-            WavmCallerLoad8             => InternalFunc::WavmCallerLoad8.ty(),
-            WavmCallerLoad32            => InternalFunc::WavmCallerLoad32.ty(),
-            WavmCallerStore8            => InternalFunc::WavmCallerStore8.ty(),
-            WavmCallerStore32           => InternalFunc::WavmCallerStore32.ty(),
-            WavmGetGlobalStateBytes32   => func!([I32, I32]),
-            WavmSetGlobalStateBytes32   => func!([I32, I32]),
-            WavmGetGlobalStateU64       => func!([I32], [I64]),
-            WavmSetGlobalStateU64       => func!([I32, I64]),
+            WavmCallerLoad8                  => InternalFunc::WavmCallerLoad8.ty(),
+            WavmCallerLoad32                 => InternalFunc::WavmCallerLoad32.ty(),
+            WavmCallerStore8                 => InternalFunc::WavmCallerStore8.ty(),
+            WavmCallerStore32                => InternalFunc::WavmCallerStore32.ty(),
+            WavmGetGlobalStateBytes32        => func!([I32, I32]),
+            WavmSetGlobalStateBytes32        => func!([I32, I32]),
+            WavmGetGlobalStateU64            => func!([I32], [I64]),
+            WavmSetGlobalStateU64            => func!([I32, I64]),
+            WavmReadKeccakPreimage           => func!([I32, I32], [I32]),
+            WavmReadSha256Preimage           => func!([I32, I32], [I32]),
+            WavmReadEthVersionedHashPreimage => func!([I32, I32], [I32]),
+            WavmReadInboxMessage             => func!([I64, I32, I32], [I32]),
+            WavmReadDelayedInboxMessage      => func!([I64, I32, I32], [I32]),
+            WavmHaltAndSetFinished           => func!(),
             WavmReadHotShotCommitment => func!([I32, I64]),
-            WavmReadKeccakPreimage      => func!([I32, I32], [I32]),
-            WavmReadSha256Preimage      => func!([I32, I32], [I32]),
-            WavmReadInboxMessage        => func!([I64, I32, I32], [I32]),
-            WavmReadDelayedInboxMessage => func!([I64, I32, I32], [I32]),
-            WavmHaltAndSetFinished      => func!(),
         };
         ty
     }
@@ -187,6 +190,11 @@ impl Hostio {
                 opcode!(LocalGet, 0);
                 opcode!(LocalGet, 1);
                 opcode!(ReadHotShotCommitment);
+            }
+            WavmReadEthVersionedHashPreimage => {
+                opcode!(LocalGet, 0);
+                opcode!(LocalGet, 1);
+                opcode!(ReadPreImage, PreimageType::EthVersionedHash);
             }
             WavmReadInboxMessage => {
                 opcode!(LocalGet, 0);

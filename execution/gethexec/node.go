@@ -319,8 +319,8 @@ func (n *ExecutionNode) StopAndWait() {
 	// }
 }
 
-func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) error {
-	return n.ExecEngine.DigestMessage(num, msg)
+func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) error {
+	return n.ExecEngine.DigestMessage(num, msg, msgForPrefetch)
 }
 func (n *ExecutionNode) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) error {
 	return n.ExecEngine.Reorg(count, newMessages, oldMessages)

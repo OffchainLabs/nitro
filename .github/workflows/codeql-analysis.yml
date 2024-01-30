@@ -75,6 +75,9 @@ jobs:
     - name: Install rust stable
       uses: dtolnay/rust-toolchain@stable
 
+    - name: Install Foundry
+      uses: foundry-rs/foundry-toolchain@v1
+
     - name: Cache Rust Build Products
       uses: actions/cache@v3
       with:
