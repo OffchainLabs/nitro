@@ -117,8 +117,7 @@ jobs:
           skip-pkg-cache: true
       - name: Custom Lint
         run: |
-          go run ./linter/koanf ./...
-          go run ./linter/pointercheck ./...
+          go run ./linters ./...
 
       - name: Set environment variables
         run: |
