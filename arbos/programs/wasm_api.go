@@ -188,8 +188,10 @@ func newApi(
 	})
 	addressCode := js.FuncOf(func(this js.Value, args []js.Value) any {
 		address := jsAddress(args[0])
-		gasLeft := jsU64(args[1])
-		value, cost := closures.accountCode(address, gasLeft)
+		offset := jsU32(args[1])
+		size := jsU32(args[2])
+		gasLeft := jsU64(args[3])
+		value, cost := closures.accountCode(address, offset, size, gasLeft)
 		return write(value, cost)
 	})
 	addressCodeSize := js.FuncOf(func(this js.Value, args []js.Value) any {

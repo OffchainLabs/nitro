@@ -4,6 +4,7 @@
 package arbmath
 
 import (
+	"bytes"
 	"math"
 	"math/rand"
 	"testing"
@@ -93,6 +94,29 @@ func TestMath(t *testing.T) {
 	assert(uint32(math.MaxUint16) == SaturatingUUCast[uint32, uint64](math.MaxUint16))
 	assert(uint32(math.MaxUint16) == SaturatingUUCast[uint32, uint16](math.MaxUint16))
 	assert(uint16(math.MaxUint16) == SaturatingUUCast[uint16, uint16](math.MaxUint16))
+}
+
+func TestSlices(t *testing.T) {
+	assert_eq := func(left, right []uint8) {
+		t.Helper()
+		if !bytes.Equal(left, right) {
+			Fail(t)
+		}
+	}
+
+	data := []uint8{0, 1, 2, 3}
+	assert_eq(SliceWithRunoff(data, 4, 4), data[0:0])
+	assert_eq(SliceWithRunoff(data, 1, 0), data[0:0])
+	assert_eq(SliceWithRunoff(data, 0, 0), data[0:0])
+	assert_eq(SliceWithRunoff(data, 0, 1), data[0:1])
+	assert_eq(SliceWithRunoff(data, 1, 3), data[1:3])
+	assert_eq(SliceWithRunoff(data, 0, 4), data[0:4])
+	assert_eq(SliceWithRunoff(data, 0, 5), data[0:4])
+	assert_eq(SliceWithRunoff(data, 2, math.MaxUint8), data[2:4])
+
+	assert_eq(SliceWithRunoff(data, -1, -2), []uint8{})
+	assert_eq(SliceWithRunoff(data, 5, 3), []uint8{})
+	assert_eq(SliceWithRunoff(data, 7, 8), []uint8{})
 }
 
 func Fail(t *testing.T, printables ...interface{}) {

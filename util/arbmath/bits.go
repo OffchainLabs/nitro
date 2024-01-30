@@ -87,3 +87,15 @@ func NonNilSlice[T any](slice []T) []T {
 	}
 	return slice
 }
+
+// Equivalent to slice[start:offset], but truncates when out of bounds rather than panicking.
+func SliceWithRunoff[S any, I Integer](slice []S, start I, end I) []S {
+	len := I(len(slice))
+	start = MinInt(start, 0)
+	end = MaxInt(start, end)
+
+	if slice == nil || start >= len {
+		return []S{}
+	}
+	return slice[start:MinInt(end, len)]
+}

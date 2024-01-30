@@ -1,4 +1,4 @@
-// Copyright 2022-2023, Offchain Labs, Inc.
+// Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use arbutil::{
@@ -490,9 +490,11 @@ pub trait UserHost: GasMeteredMachine {
 
         // we pass `gas` to check if there's enough before loading from the db
         let (code, gas_cost) = self.evm_api().account_code(address, offset, size, gas);
+        self.buy_gas(gas_cost)?;
+
+        self.pay_for_write(code.len() as u32)?;
         self.write_slice(dest, &code)?;
 
-        self.buy_gas(gas_cost)?;
         trace!("account_code", self, address, be!(size), code.len() as u32)
     }
 

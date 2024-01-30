@@ -1,4 +1,4 @@
-// Copyright 2023, Offchain Labs, Inc.
+// Copyright 2023-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 package programs
@@ -42,7 +42,7 @@ type create2Type func(
 type getReturnDataType func(offset uint32, size uint32) []byte
 type emitLogType func(data []byte, topics uint32) error
 type accountBalanceType func(address common.Address) (value common.Hash, cost uint64)
-type accountCodeType func(address common.Address, gas uint64) ([]byte, uint64)
+type accountCodeType func(address common.Address, offset, size uint32, gas uint64) ([]byte, uint64)
 type accountCodeSizeType func(address common.Address, gas uint64) (uint32, uint64)
 type accountCodehashType func(address common.Address) (value common.Hash, cost uint64)
 type addPagesType func(pages uint16) (cost uint64)
@@ -234,8 +234,9 @@ func newApiClosures(
 	create2 := func(code []byte, endowment, salt *big.Int, gas uint64) (common.Address, uint32, uint64, error) {
 		return create(code, endowment, salt, gas)
 	}
-	getReturnData := func(offset uint32, size uint32) []byte {
-		return am.NonNilSlice(interpreter.GetReturnData(int(offset), int(size)))
+	getReturnData := func(start uint32, size uint32) []byte {
+		end := am.SaturatingUAdd(start, size)
+		return am.SliceWithRunoff(interpreter.GetReturnData(), start, end)
 	}
 	emitLog := func(data []byte, topics uint32) error {
 		if readOnly {
@@ -256,32 +257,32 @@ func newApiClosures(
 		return nil
 	}
 	accountBalance := func(address common.Address) (common.Hash, uint64) {
-		cost := vm.WasmAccountTouchCost(evm.StateDB, address)
+		cost := vm.WasmAccountTouchCost(evm.StateDB, address, false)
 		balance := evm.StateDB.GetBalance(address)
 		return common.BigToHash(balance), cost
 	}
-	accountCode := func(address common.Address, gas uint64) ([]byte, uint64) {
+	accountCode := func(address common.Address, offset, size uint32, gas uint64) ([]byte, uint64) {
 		// In the future it'll be possible to know the size of a contract before loading it.
 		// For now, require the worst case before doing the load.
 
-		metaCost := vm.WasmAccountTouchCost(evm.StateDB, address) + params.ExtcodeCopyBaseEIP150
-		loadCost := 3 * am.WordsForBytes(params.MaxCodeSize)
-		sentry := am.SaturatingUAdd(metaCost, loadCost)
-
-		if gas < sentry {
-			return []byte{}, sentry
+		cost := vm.WasmAccountTouchCost(evm.StateDB, address, true)
+		if gas < cost {
+			return []byte{}, cost
 		}
-
-		code := am.NonNilSlice(evm.StateDB.GetCode(address))
-		loadCost = 3 * am.WordsForBytes(uint64(len(code))) // pay for actual work
-		return code, am.SaturatingUAdd(metaCost, loadCost)
+		end := am.SaturatingUAdd(offset, size)
+		code := am.SliceWithRunoff(evm.StateDB.GetCode(address), offset, end)
+		return code, cost
 	}
 	accountCodeSize := func(address common.Address, gas uint64) (uint32, uint64) {
-		code, cost := accountCode(address, gas)
-		return uint32(len(code)), cost
+		cost := vm.WasmAccountTouchCost(evm.StateDB, address, true)
+		if gas < cost {
+			return 0, cost
+		}
+		size := evm.StateDB.GetCodeSize(address)
+		return uint32(size), cost
 	}
 	accountCodehash := func(address common.Address) (common.Hash, uint64) {
-		cost := vm.WasmAccountTouchCost(evm.StateDB, address)
+		cost := vm.WasmAccountTouchCost(evm.StateDB, address, false)
 		return evm.StateDB.GetCodeHash(address), cost
 	}
 	addPages := func(pages uint16) uint64 {
