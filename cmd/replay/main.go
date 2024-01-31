@@ -124,7 +124,9 @@ func (availDAReader *PreimageAvailDAReader) Read(ctx context.Context, blobPointe
 	oracle := func(hash common.Hash) ([]byte, error) {
 		return wavmio.ResolveTypedPreimage(arbutil.Keccak256PreimageType, hash)
 	}
-	return dastree.Content(blobPointer.DasTreeRootHash, oracle)
+	data, err := dastree.Content(blobPointer.DasTreeRootHash, oracle)
+	log.Info("Data is being retrieved from oracle", len(data))
+	return data, err
 }
 
 // To generate:
@@ -194,6 +196,7 @@ func main() {
 		if backend.GetPositionWithinMessage() > 0 {
 			keysetValidationMode = arbstate.KeysetDontValidate
 		}
+		log.Info("Params passed on readMessage func", "dasEnabled", dasEnabled, "availDAEnabled", availDAEnabled)
 		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dasReader, availDAReader, keysetValidationMode)
 		ctx := context.Background()
 		message, err := inboxMultiplexer.Pop(ctx)
@@ -206,6 +209,8 @@ func main() {
 
 	var newBlock *types.Block
 	if lastBlockStateRoot != (common.Hash{}) {
+		log.Info("Running main func of replay binary", "lastBlockStateRoot", lastBlockStateRoot)
+
 		// ArbOS has already been initialized.
 		// Load the chain config and then produce a block normally.
 

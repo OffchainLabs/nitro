@@ -183,6 +183,7 @@ func RecoverPayloadFromAvailBatch(ctx context.Context, batchNum uint64, sequence
 	log.Info("Recording Sha256 preimage for Avail data")
 
 	if keccakPreimages != nil {
+		log.Info("Data is being recorded into the orcale", "length", len(payload))
 		dastree.RecordHash(recordPreimage, payload)
 	}
 	return payload, nil
