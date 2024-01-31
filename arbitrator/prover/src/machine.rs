@@ -808,6 +808,7 @@ pub struct Machine {
 
 type FrameStackHash = Bytes32;
 type ValueStackHash = Bytes32;
+type MultiStackHash = Bytes32;
 type InterStackHash = Bytes32;
 
 pub(crate) fn hash_stack<I, D>(stack: I, prefix: &str) -> Bytes32
@@ -862,6 +863,14 @@ fn hash_stack_frame_stack(frames: &[StackFrame]) -> FrameStackHash {
     hash_stack(frames.iter().map(|f| f.hash()), "Stack frame stack:")
 }
 
+fn hash_multistack<T,F>(multistack: &[&[T]], stack_hasher: F) -> MultiStackHash 
+where
+    F: Fn(&[T]) -> Bytes32,
+{
+    hash_stack(multistack.iter().map(|v| stack_hasher(v)), "cothread:")
+}
+
+
 #[must_use]
 fn prove_window<T, F, D, G>(items: &[T], stack_hasher: F, encoder: G) -> Vec<u8>
 where
@@ -904,40 +913,47 @@ where
     data
 }
 
-// prove_multistacks encodes proof for stack of stacks.
-// Layout of the proof is:
-// - Proof of first(main) stack
-// - Hash of last stack (or 0 if size is 1)
+// prove_multistacks encodes proof for multistacks:
+// - Proof of first(main) if not cothread otherwise last
+// - Hash of first if cothread, otherwise last
 // - Recursive hash of the rest
+// If length is < 1, hash of last element is assumed 0xff..f, same for hash
+// of in-between stacks ([2nd..last)).
 // Accepts prover function so that it can work both for proving stack and window.
 #[must_use]
-fn prove_multistack<T, F>(
+fn prove_multistack<T, F, MF>(
+    cothread: bool,
     items: Vec<&[T]>,
     stack_hasher: F,
+    multistack_hasher: MF,
     prover: fn(&[T])-> Vec<u8>,
 ) -> Vec<u8>
 where
     F: Fn(&[T]) -> Bytes32,
+    MF: Fn(&[&[T]],F) -> Bytes32,
 {
     let mut data = Vec::with_capacity(33);
-    // Proof of the first stack (main).
-    data.extend(prover(items.first().unwrap()));
-    // Hash of the last element or 0 if size is 1.
-    let mut last_hash = Bytes32::default();
-    if items.len() > 1 {
-        last_hash = stack_hasher(items.last().unwrap());
-    }
-    data.extend(last_hash);
-    let mut hash: Bytes32 = Bytes32::default();
 
-    for st in &items[1..items.len()-1]{
-        hash = Keccak256::new()
-            .chain("cothread: ")
-            .chain(stack_hasher(st))
-            .chain(hash)
-            .finalize()
-            .into();
+
+    let mut a = Machine::NO_STACK_HASH;
+    if cothread {
+        data.extend(prover(items.last().unwrap()));
+        data.extend(stack_hasher(items.first().unwrap()))
+    } else {
+        data.extend(prover(items.first().unwrap()));
+
+        let mut last_hash = match items.len() > 1{
+            true => {Machine::NO_STACK_HASH},
+            _ => stack_hasher(items.last().unwrap()),
+        };
+        data.extend(last_hash);
     }
+    let mut hash: Bytes32 = match items.len() > 2 {
+        true => Machine::NO_STACK_HASH,
+        _ => {
+            multistack_hasher(&items[1..items.len()-1], stack_hasher)
+        },
+    };
     data.extend(hash);
     data
 }
@@ -1011,6 +1027,7 @@ pub fn get_empty_preimage_resolver() -> PreimageResolver {
 
 impl Machine {
     pub const MAX_STEPS: u64 = 1 << 43;
+    pub const NO_STACK_HASH: Bytes32 = Bytes32::new([255_u8; 32]);
 
     pub fn from_paths(
         library_paths: &[PathBuf],
@@ -2537,32 +2554,28 @@ impl Machine {
         //      + Keccak("cothread: " + 2nd_stack+Keccak("cothread" + 3drd_stack + ...)
         // )
         macro_rules! compute_multistack {
-            ($field:expr, $stacks:expr, $prefix:expr) => {{
+            ($field:expr, $stacks:expr, $prefix:expr, $hasher: expr) => {{
                 let first_elem = *$stacks.first().unwrap();
+                let heights: Vec<_> = self.guards.iter().map($field).collect();
+                let frames = first_elem.iter().map(|v| v.hash());
+                let (first_hash, heights) = hash_stack_with_heights(frames, &heights, concat!($prefix, " stack:"));
+
                 let last_elem = *$stacks.last().unwrap();
-                let first_hash = hash_stack(first_elem.iter().map(|v|v.hash()), $prefix);
                 let last_hash = match $stacks.len() {
                     0 => panic!("Stacks size is 0"),
-                    1 => Bytes32::from([255_u8; 32]),
+                    1 => Machine::NO_STACK_HASH,
                     _ => hash_stack(last_elem.iter().map(|v|v.hash()), $prefix)
                 };
 
-                // Hash of stacks [2..last) or 0xfff...f if len <= 2.
-                let mut hash = Bytes32::from([255_u8; 32]);
-                if $stacks.len() > 2 {
-                    hash = Keccak256::new()
-                        .chain(hash_stack(
-                            $stacks
-                                .iter()
-                                .skip(1)
-                                .take($stacks.len() - 2)
-                                .map(|st| hash_stack(st.iter().map(|v| v.hash()), $prefix)), 
-                            "cothread: "
-                            )
+                // Hash of stacks [2nd..last) or 0xfff...f if len <= 2.
+                let mut hash = match $stacks.len() <= 2 {
+                    true =>  Machine::NO_STACK_HASH,
+                    _ => hash_multistack(
+                        &$stacks[1..$stacks.len()-2],  
+                        $hasher,
                         )
-                        .finalize()
-                        .into();
-                }
+                };
+                
                 hash = Keccak256::new()
                     .chain($prefix)
                     .chain("multistack: ")
@@ -2571,14 +2584,12 @@ impl Machine {
                     .chain(hash)
                     .finalize()
                     .into();
-
-                    hash
+                (hash, heights)
             }};
         }
-        let frame_stack = compute_multistack!(|x| x.frame_stack, self.get_frame_stacks(), "Stack frame");
-        let value_stack =  compute_multistack!(|x| x.value_stack, self.get_data_stacks(), "Value");
-        let (_, frames) = compute!(|x| x.frame_stack, self.get_frame_stack(), "Stack frame");
-        let (_, values) = compute!(|x| x.value_stack, self.get_data_stack(), "Value");
+        // let frame_hasher = |x| hash_value_stack(x,)
+        let (frame_stack, frames) = compute_multistack!(|x| x.frame_stack, self.get_frame_stacks(), "Stack frame", hash_stack_frame_stack);
+        let (value_stack, values) =  compute_multistack!(|x| x.value_stack, self.get_data_stacks(), "Value", hash_value_stack);
         let (inter_stack, inters) = compute!(|x| x.inter_stack, self.internal_stack, "Value");
 
         let pcs = self.guards.iter().map(|x| x.on_error);
@@ -2646,8 +2657,10 @@ impl Machine {
             }};
         }
         out!(prove_multistack(
+            self.cothread,
             self.get_data_stacks(),
             hash_value_stack,
+            hash_multistack,
             |stack| prove_stack(
                 stack, 
                 STACK_PROVING_DEPTH, 
@@ -2664,8 +2677,10 @@ impl Machine {
         ));
 
         out!(prove_multistack(
+            self.cothread,
             self.get_frame_stacks(),
             hash_stack_frame_stack,
+            hash_multistack,
             |stack| prove_window(
                 stack, 
                 hash_stack_frame_stack, 
@@ -2885,6 +2900,19 @@ impl Machine {
                 if !balanced {
                     out!(mod_merkle.prove_any(leaf + 1));
                 }
+            }
+            PopCoThread => {
+                out!(hash_value_stack(self.get_data_stacks().last().unwrap()));
+                out!(match self.get_data_stacks().len() {
+                    len if len > 1 =>  hash_multistack(&self.get_data_stacks()[..len-1], hash_value_stack),
+                   _ => Machine::NO_STACK_HASH,
+                });
+
+                out!(hash_stack_frame_stack(self.get_frame_stacks().last().unwrap()));
+                out!(match self.get_frame_stacks().len() {
+                    len if len > 1 =>  hash_multistack(&self.get_frame_stacks()[..len-1], hash_stack_frame_stack),
+                   _ => Machine::NO_STACK_HASH,
+                });
             }
             _ => {}
         }
