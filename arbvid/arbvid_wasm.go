@@ -6,6 +6,4 @@
 
 package arbvid
 
-func verifyNamespace() {
-
-}
+func verifyNamespace()
