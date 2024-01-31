@@ -6,8 +6,6 @@ use jf_primitives::{
 };
 
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbcompress_verifyNamespace(
-    sp: GoStack,
-) {
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbvid_verifyNamespace(sp: GoStack) {
     // TODO implement: https://github.com/EspressoSystems/nitro-espresso-integration/issues/65
 }
