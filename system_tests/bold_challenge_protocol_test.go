@@ -16,7 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OffchainLabs/bold/assertions"
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
 	challengemanager "github.com/OffchainLabs/bold/challenge-manager"
@@ -182,14 +181,6 @@ func TestBoldProtocol(t *testing.T) {
 	)
 	Require(t, err)
 
-	poster, err := assertions.NewManager(
-		assertionChain,
-		stateManager,
-		"good",
-		time.Hour,
-	)
-	Require(t, err)
-
 	stateManagerB, err := staker.NewStateManager(
 		statelessB,
 		"/tmp/evil",
@@ -207,14 +198,6 @@ func TestBoldProtocol(t *testing.T) {
 		assertionChain.RollupAddress(),
 		&l1authB,
 		l1client,
-	)
-	Require(t, err)
-
-	posterB, err := assertions.NewManager(
-		chainB,
-		stateManagerB,
-		"evil",
-		time.Hour,
 	)
 	Require(t, err)
 
@@ -385,7 +368,7 @@ func TestBoldProtocol(t *testing.T) {
 	rollupUserLogic, err := rollupgen.NewRollupUserLogic(assertionChain.RollupAddress(), l1client)
 	Require(t, err)
 	for {
-		expected, err := rollupUserLogic.GetAssertion(&bind.CallOpts{Context: ctx}, expectedWinnerAssertion.Id().Hash)
+		expected, err := rollupUserLogic.GetAssertion(&bind.CallOpts{Context: ctx}, expectedWinnerAssertion.Unwrap().Id().Hash)
 		if err != nil {
 			t.Logf("Error getting assertion: %v", err)
 			continue
