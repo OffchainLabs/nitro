@@ -162,6 +162,7 @@ func testBoldProtocol(t *testing.T, numberOfChallenges int, parallelChallenges b
 		l2nodeA.Execution,
 		l2nodeA.ArbDB,
 		nil,
+		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
 	)
@@ -175,6 +176,7 @@ func testBoldProtocol(t *testing.T, numberOfChallenges int, parallelChallenges b
 		l2nodeB.TxStreamer,
 		l2nodeB.Execution,
 		l2nodeB.ArbDB,
+		nil,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
@@ -595,7 +597,7 @@ func createTestNodeOnL1ForBoldProtocol(
 
 	currentNode, err = arbnode.CreateNode(
 		ctx, l2stack, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client,
-		addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan,
+		addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, big.NewInt(1337),
 	)
 	Require(t, err)
 
@@ -780,7 +782,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	execConfigFetcher := func() *gethexec.Config { return execConfig }
 	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher)
 	Require(t, err)
-	l2node, err := arbnode.CreateNode(ctx, l2stack, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan)
+	l2node, err := arbnode.CreateNode(ctx, l2stack, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, big.NewInt(1337))
 	Require(t, err)
 
 	Require(t, l2node.Start(ctx))
