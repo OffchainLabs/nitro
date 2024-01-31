@@ -7,8 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/OffchainLabs/bold/mmap"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/node"
@@ -88,6 +86,10 @@ func (s *mockSpawner) WriteToFile(input *validator.ValidationInput, expOut valid
 	return containers.NewReadyPromise[struct{}](struct{}{}, nil)
 }
 
+func (s *mockSpawner) CreateBoldExecutionRun(wasmModuleRoot common.Hash, stepSize uint64, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
+	return containers.NewReadyPromise[validator.ExecutionRun](nil, nil)
+}
+
 type mockValRun struct {
 	containers.Promise[validator.GoGlobalState]
 	root common.Hash
@@ -119,9 +121,9 @@ func (r *mockExecRun) GetStepAt(position uint64) containers.PromiseInterface[*va
 	}, nil)
 }
 
-func (r *mockExecRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[mmap.Mmap] {
+func (r *mockExecRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[[]common.Hash] {
 	// TODO: Add mock implementation for GetLeavesWithStepSize
-	return containers.NewReadyPromise[mmap.Mmap](nil, nil)
+	return containers.NewReadyPromise[[]common.Hash](nil, nil)
 }
 
 func (r *mockExecRun) GetLastStep() containers.PromiseInterface[*validator.MachineStepResult] {

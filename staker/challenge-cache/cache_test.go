@@ -12,8 +12,6 @@ import (
 	"testing"
 
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
-	"github.com/OffchainLabs/bold/mmap"
-
 	"github.com/ethereum/go-ethereum/common"
 )
 
@@ -45,19 +43,16 @@ func TestCache(t *testing.T) {
 		}
 	})
 	t.Run("Putting empty root fails", func(t *testing.T) {
-		if err := cache.Put(key, mmap.Mmap{}); !errors.Is(err, ErrNoStateRoots) {
+		if err := cache.Put(key, []common.Hash{}); !errors.Is(err, ErrNoStateRoots) {
 			t.Fatalf("Unexpected error: %v", err)
 		}
 	})
-	want, err := mmap.NewMmap(3)
-	want.Set(0, common.BytesToHash([]byte("foo")))
-	want.Set(1, common.BytesToHash([]byte("bar")))
-	want.Set(2, common.BytesToHash([]byte("baz")))
-	if err != nil {
-		t.Fatal(err)
+	want := []common.Hash{
+		common.BytesToHash([]byte("foo")),
+		common.BytesToHash([]byte("bar")),
+		common.BytesToHash([]byte("baz")),
 	}
-	defer want.Free()
-	err = cache.Put(key, want)
+	err := cache.Put(key, want)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -97,7 +92,7 @@ func TestReadWriteStateRoots(t *testing.T) {
 		if len(roots) == 0 {
 			t.Fatal("Got no roots")
 		}
-		if roots.Get(0) != want {
+		if roots[0] != want {
 			t.Fatalf("Wrong root. Expected %#x, got %#x", want, roots[0])
 		}
 	})
@@ -113,30 +108,24 @@ func TestReadWriteStateRoots(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if roots.Length() != 2 {
+		if len(roots) != 2 {
 			t.Fatalf("Expected two roots, got %d", len(roots))
 		}
-		if roots.Get(0) != foo {
+		if roots[0] != foo {
 			t.Fatalf("Wrong root. Expected %#x, got %#x", foo, roots[0])
 		}
-		if roots.Get(1) != bar {
+		if roots[1] != bar {
 			t.Fatalf("Wrong root. Expected %#x, got %#x", bar, roots[1])
 		}
 	})
 	t.Run("Fails to write enough data to writer", func(t *testing.T) {
 		m := &mockWriter{wantErr: true}
-		stateRoots, err := mmap.NewMmap(1)
-		if err != nil {
-			t.Fatal(err)
-		}
-		defer stateRoots.Free()
-		stateRoots.Set(0, common.BytesToHash([]byte("foo")))
-		err = writeStateRoots(m, stateRoots)
+		err := writeStateRoots(m, []common.Hash{common.BytesToHash([]byte("foo"))})
 		if err == nil {
 			t.Fatal("Wanted error")
 		}
 		m = &mockWriter{wantErr: false, numWritten: 16}
-		err = writeStateRoots(m, stateRoots)
+		err = writeStateRoots(m, []common.Hash{common.BytesToHash([]byte("foo"))})
 		if err == nil {
 			t.Fatal("Wanted error")
 		}
@@ -235,11 +224,11 @@ func Test_readStateRoots(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(want) != got.Length() {
+		if len(want) != len(got) {
 			t.Fatal("Wrong number of roots")
 		}
-		for i := 0; i < got.Length(); i++ {
-			if got.Get(i) != want[i] {
+		for i, rt := range got {
+			if rt != want[i] {
 				t.Fatal("Wrong root")
 			}
 		}
@@ -314,15 +303,11 @@ func BenchmarkCache_Read_32Mb(b *testing.B) {
 		StepHeights:    []l2stateprovider.Height{l2stateprovider.Height(0)},
 	}
 	numRoots := 1 << 20
-	rootsMmap, err := mmap.NewMmap(numRoots)
-	if err != nil {
-		b.Fatal(err)
+	roots := make([]common.Hash, numRoots)
+	for i := range roots {
+		roots[i] = common.BytesToHash([]byte(fmt.Sprintf("%d", i)))
 	}
-	defer rootsMmap.Free()
-	for i := 0; i < numRoots; i++ {
-		rootsMmap.Set(i, common.BytesToHash([]byte(fmt.Sprintf("%d", i))))
-	}
-	if err := cache.Put(key, rootsMmap); err != nil {
+	if err := cache.Put(key, roots); err != nil {
 		b.Fatal(err)
 	}
 	b.StartTimer()

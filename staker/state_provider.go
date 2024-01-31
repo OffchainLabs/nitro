@@ -12,6 +12,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 
 	flag "github.com/spf13/pflag"
 
@@ -19,7 +20,6 @@ import (
 	"github.com/OffchainLabs/bold/challenge-manager/types"
 	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
-	"github.com/OffchainLabs/bold/mmap"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	challengecache "github.com/offchainlabs/nitro/staker/challenge-cache"
@@ -46,6 +46,10 @@ type BoldConfig struct {
 	AssertionScanningInterval   time.Duration `koanf:"assertion-scanning-interval"`
 	AssertionConfirmingInterval time.Duration `koanf:"assertion-confirming-interval"`
 	EdgeTrackerWakeInterval     time.Duration `koanf:"edge-tracker-wake-interval"`
+	API                         bool          `koanf:"api"`
+	APIHost                     string        `koanf:"api-host"`
+	APIPort                     uint16        `koanf:"api-port"`
+	APIDBPath                   string        `koanf:"api-db-path"`
 }
 
 var DefaultBoldConfig = BoldConfig{
@@ -57,6 +61,10 @@ var DefaultBoldConfig = BoldConfig{
 	AssertionScanningInterval:   30 * time.Second,
 	AssertionConfirmingInterval: 60 * time.Second,
 	EdgeTrackerWakeInterval:     1 * time.Second,
+	API:                         false,
+	APIHost:                     "localhost",
+	APIPort:                     8080,
+	APIDBPath:                   "/tmp/api-db",
 }
 
 var BoldModes = map[string]types.Mode{
@@ -75,6 +83,10 @@ func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".assertion-scanning-interval", DefaultBoldConfig.AssertionScanningInterval, "interval for scanning assertions")
 	f.Duration(prefix+".assertion-confirming-interval", DefaultBoldConfig.AssertionConfirmingInterval, "interval for confirming assertions")
 	f.Duration(prefix+".edge-tracker-wake-interval", DefaultBoldConfig.EdgeTrackerWakeInterval, "interval for waking edge tracker")
+	f.Bool(prefix+".api", DefaultBoldConfig.API, "enable api")
+	f.String(prefix+".api-host", DefaultBoldConfig.APIHost, "api host")
+	f.Uint16(prefix+".api-port", DefaultBoldConfig.APIPort, "api port")
+	f.String(prefix+".api-db-path", DefaultBoldConfig.APIDBPath, "api db path")
 }
 
 type StateManager struct {
@@ -187,7 +199,7 @@ func (s *StateManager) StatesInBatchRange(
 	toHeight l2stateprovider.Height,
 	fromBatch,
 	toBatch l2stateprovider.Batch,
-) (mmap.Mmap, error) {
+) ([]common.Hash, error) {
 	// Check the integrity of the arguments.
 	if fromBatch >= toBatch {
 		return nil, fmt.Errorf("from batch %v cannot be greater than or equal to batch %v", fromBatch, toBatch)
@@ -196,9 +208,9 @@ func (s *StateManager) StatesInBatchRange(
 		return nil, fmt.Errorf("from height %v cannot be greater than to height %v", fromHeight, toHeight)
 	}
 	// Compute the total desired hashes from this request.
-	totalDesiredHashes := int(toHeight) + 1
+	totalDesiredHashes := (toHeight - fromHeight) + 1
 
-	// Get the fromBatch's message count.
+	// Get the from batch's message count.
 	prevBatchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(fromBatch) - 1)
 	if err != nil {
 		return nil, err
@@ -213,18 +225,12 @@ func (s *StateManager) StatesInBatchRange(
 		Batch:      uint64(fromBatch),
 		PosInBatch: 0,
 	}
-	machineHashesMmap, err := mmap.NewMmap(int(totalDesiredHashes))
-	numStateRoots := 0
-	if err != nil {
-		return nil, err
-	}
-	machineHashesMmap.Set(numStateRoots, machineHash(startState))
-	numStateRoots++
+	machineHashes := []common.Hash{machineHash(startState)}
+	states := []validator.GoGlobalState{startState}
 
 	for batch := fromBatch; batch < toBatch; batch++ {
 		batchMessageCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(batch))
 		if err != nil {
-			machineHashesMmap.Free()
 			return nil, err
 		}
 		messagesInBatch := batchMessageCount - prevBatchMsgCount
@@ -235,11 +241,10 @@ func (s *StateManager) StatesInBatchRange(
 			messageCount := msgIndex + 1
 			executionResult, err := s.validator.streamer.ResultAtCount(arbutil.MessageIndex(messageCount))
 			if err != nil {
-				machineHashesMmap.Free()
 				return nil, err
 			}
 			// If the position in batch is equal to the number of messages in the batch,
-			// we do not include this state, instead, we break and include the state
+			// we do not include this state. Instead, we break and include the state
 			// that fully consumes the batch.
 			if i+1 == uint64(messagesInBatch) {
 				break
@@ -250,17 +255,13 @@ func (s *StateManager) StatesInBatchRange(
 				Batch:      uint64(batch),
 				PosInBatch: i + 1,
 			}
-			if numStateRoots >= totalDesiredHashes {
-				break
-			}
-			machineHashesMmap.Set(numStateRoots, machineHash(state))
-			numStateRoots++
+			states = append(states, state)
+			machineHashes = append(machineHashes, machineHash(state))
 		}
 
 		// Fully consume the batch.
 		executionResult, err := s.validator.streamer.ResultAtCount(batchMessageCount)
 		if err != nil {
-			machineHashesMmap.Free()
 			return nil, err
 		}
 		state := validator.GoGlobalState{
@@ -269,18 +270,14 @@ func (s *StateManager) StatesInBatchRange(
 			Batch:      uint64(batch) + 1,
 			PosInBatch: 0,
 		}
-		if numStateRoots >= totalDesiredHashes {
-			break
-		}
-		machineHashesMmap.Set(numStateRoots, machineHash(state))
-		numStateRoots++
+		states = append(states, state)
+		machineHashes = append(machineHashes, machineHash(state))
 		prevBatchMsgCount = batchMessageCount
 	}
-	lastMachineHashes := machineHashesMmap.Get(numStateRoots - 1)
-	for i := numStateRoots; i < totalDesiredHashes; i++ {
-		machineHashesMmap.Set(i, lastMachineHashes)
+	for uint64(len(machineHashes)) < uint64(totalDesiredHashes) {
+		machineHashes = append(machineHashes, machineHashes[len(machineHashes)-1])
 	}
-	return machineHashesMmap.SubMmap(int(fromHeight), int(toHeight+1)), nil
+	return machineHashes[fromHeight : toHeight+1], nil
 }
 
 func machineHash(gs validator.GoGlobalState) common.Hash {
@@ -320,7 +317,7 @@ func (s *StateManager) L2MessageStatesUpTo(
 	toHeight option.Option[l2stateprovider.Height],
 	fromBatch,
 	toBatch l2stateprovider.Batch,
-) (mmap.Mmap, error) {
+) ([]common.Hash, error) {
 	var to l2stateprovider.Height
 	if !toHeight.IsNone() {
 		to = toHeight.Unwrap()
@@ -338,14 +335,14 @@ func (s *StateManager) L2MessageStatesUpTo(
 // CollectMachineHashes Collects a list of machine hashes at a message number based on some configuration parameters.
 func (s *StateManager) CollectMachineHashes(
 	ctx context.Context, cfg *l2stateprovider.HashCollectorConfig,
-) (mmap.Mmap, error) {
+) ([]common.Hash, error) {
 	s.Lock()
 	defer s.Unlock()
 	prevBatchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(cfg.FromBatch - 1))
 	if err != nil {
 		return nil, fmt.Errorf("could not get batch message count at %d: %w", cfg.FromBatch, err)
 	}
-	messageNum := prevBatchMsgCount + arbutil.MessageIndex(cfg.BlockChallengeHeight)
+	messageNum := (prevBatchMsgCount + arbutil.MessageIndex(cfg.BlockChallengeHeight))
 	cacheKey := &challengecache.Key{
 		WavmModuleRoot: cfg.WasmModuleRoot,
 		MessageHeight:  protocol.Height(messageNum),
@@ -368,7 +365,7 @@ func (s *StateManager) CollectMachineHashes(
 	if err != nil {
 		return nil, err
 	}
-	execRun, err := s.validator.execSpawner.CreateExecutionRun(cfg.WasmModuleRoot, input).Await(ctx)
+	execRun, err := s.validator.execSpawner.CreateBoldExecutionRun(cfg.WasmModuleRoot, uint64(cfg.StepSize), input).Await(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -377,6 +374,7 @@ func (s *StateManager) CollectMachineHashes(
 	if err != nil {
 		return nil, err
 	}
+	log.Info(fmt.Sprintf("Finished gathering machine hashes for request %+v", cfg))
 	// Do not save a history commitment of length 1 to the cache.
 	if len(result) > 1 && s.historyCache != nil {
 		if err := s.historyCache.Put(cacheKey, result); err != nil {
@@ -400,7 +398,7 @@ func (s *StateManager) CollectProof(
 	if err != nil {
 		return nil, err
 	}
-	messageNum := prevBatchMsgCount + arbutil.MessageIndex(blockChallengeHeight)
+	messageNum := (prevBatchMsgCount + arbutil.MessageIndex(blockChallengeHeight))
 	entry, err := s.validator.CreateReadyValidationEntry(ctx, messageNum)
 	if err != nil {
 		return nil, err

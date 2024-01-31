@@ -3,8 +3,6 @@ package validator
 import (
 	"context"
 
-	"github.com/OffchainLabs/bold/mmap"
-
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/util/containers"
@@ -26,13 +24,14 @@ type ValidationRun interface {
 type ExecutionSpawner interface {
 	ValidationSpawner
 	CreateExecutionRun(wasmModuleRoot common.Hash, input *ValidationInput) containers.PromiseInterface[ExecutionRun]
+	CreateBoldExecutionRun(wasmModuleRoot common.Hash, stepSize uint64, input *ValidationInput) containers.PromiseInterface[ExecutionRun]
 	LatestWasmModuleRoot() containers.PromiseInterface[common.Hash]
 	WriteToFile(input *ValidationInput, expOut GoGlobalState, moduleRoot common.Hash) containers.PromiseInterface[struct{}]
 }
 
 type ExecutionRun interface {
 	GetStepAt(uint64) containers.PromiseInterface[*MachineStepResult]
-	GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[mmap.Mmap]
+	GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[[]common.Hash]
 	GetLastStep() containers.PromiseInterface[*MachineStepResult]
 	GetProofAt(uint64) containers.PromiseInterface[[]byte]
 	PrepareRange(uint64, uint64) containers.PromiseInterface[struct{}]

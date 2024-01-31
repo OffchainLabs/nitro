@@ -13,8 +13,6 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_arb"
-
-	"github.com/OffchainLabs/bold/mmap"
 )
 
 const Namespace string = "validation"
@@ -69,6 +67,23 @@ func NewExecutionServerAPI(valSpawner validator.ValidationSpawner, execution val
 		runs:                make(map[uint64]*execRunEntry),
 		config:              config,
 	}
+}
+
+func (a *ExecServerAPI) CreateBoldExecutionRun(ctx context.Context, wasmModuleRoot common.Hash, stepSize uint64, jsonInput *ValidationInputJson) (uint64, error) {
+	input, err := ValidationInputFromJson(jsonInput)
+	if err != nil {
+		return 0, err
+	}
+	execRun, err := a.execSpawner.CreateBoldExecutionRun(wasmModuleRoot, stepSize, input).Await(ctx)
+	if err != nil {
+		return 0, err
+	}
+	a.runIdLock.Lock()
+	defer a.runIdLock.Unlock()
+	newId := a.nextId
+	a.nextId++
+	a.runs[newId] = &execRunEntry{execRun, time.Now()}
+	return newId, nil
 }
 
 func (a *ExecServerAPI) CreateExecutionRun(ctx context.Context, wasmModuleRoot common.Hash, jsonInput *ValidationInputJson) (uint64, error) {
@@ -144,7 +159,7 @@ func (a *ExecServerAPI) GetStepAt(ctx context.Context, execid uint64, position u
 	return MachineStepResultToJson(res), nil
 }
 
-func (a *ExecServerAPI) GetLeavesWithStepSize(ctx context.Context, execid, fromStep, stepSize, numDesiredLeaves uint64) (mmap.Mmap, error) {
+func (a *ExecServerAPI) GetLeavesWithStepSize(ctx context.Context, execid, fromStep, stepSize, numDesiredLeaves uint64) ([]common.Hash, error) {
 	run, err := a.getRun(execid)
 	if err != nil {
 		return nil, err

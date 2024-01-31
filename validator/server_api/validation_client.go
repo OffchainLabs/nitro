@@ -7,8 +7,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/OffchainLabs/bold/mmap"
-
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -108,6 +106,22 @@ func NewExecutionClient(config rpcclient.ClientConfigFetcher, stack *node.Node) 
 	}
 }
 
+func (c *ExecutionClient) CreateBoldExecutionRun(wasmModuleRoot common.Hash, stepSize uint64, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
+	return stopwaiter.LaunchPromiseThread[validator.ExecutionRun](c, func(ctx context.Context) (validator.ExecutionRun, error) {
+		var res uint64
+		err := c.client.CallContext(ctx, &res, Namespace+"_createBoldExecutionRun", wasmModuleRoot, stepSize, ValidationInputToJson(input))
+		if err != nil {
+			return nil, err
+		}
+		run := &ExecutionClientRun{
+			client: c,
+			id:     res,
+		}
+		run.Start(c.GetContext()) // note: not this temporary thread's context!
+		return run, nil
+	})
+}
+
 func (c *ExecutionClient) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
 	return stopwaiter.LaunchPromiseThread[validator.ExecutionRun](c, func(ctx context.Context) (validator.ExecutionRun, error) {
 		var res uint64
@@ -177,9 +191,9 @@ func (r *ExecutionClientRun) GetStepAt(pos uint64) containers.PromiseInterface[*
 	})
 }
 
-func (r *ExecutionClientRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[mmap.Mmap] {
-	return stopwaiter.LaunchPromiseThread[mmap.Mmap](r, func(ctx context.Context) (mmap.Mmap, error) {
-		var resJson mmap.Mmap
+func (r *ExecutionClientRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[[]common.Hash] {
+	return stopwaiter.LaunchPromiseThread[[]common.Hash](r, func(ctx context.Context) ([]common.Hash, error) {
+		var resJson []common.Hash
 		err := r.client.client.CallContext(ctx, &resJson, Namespace+"_getLeavesWithStepSize", r.id, machineStartIndex, stepSize, numDesiredLeaves)
 		if err != nil {
 			return nil, err

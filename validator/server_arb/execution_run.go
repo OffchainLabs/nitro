@@ -8,30 +8,35 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/OffchainLabs/bold/mmap"
-
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/server_common"
 )
 
 type executionRun struct {
 	stopwaiter.StopWaiter
-	cache *MachineCache
-	close sync.Once
+	cache                *MachineCache
+	initialMachineGetter func(context.Context, ...server_common.MachineLoaderOpt) (MachineInterface, error)
+	config               *MachineCacheConfig
+	close                sync.Once
 }
 
 // NewExecutionChallengeBackend creates a backend with the given arguments.
 // Note: machineCache may be nil, but if present, it must not have a restricted range.
 func NewExecutionRun(
 	ctxIn context.Context,
-	initialMachineGetter func(context.Context) (MachineInterface, error),
+	initialMachineGetter func(context.Context, ...server_common.MachineLoaderOpt) (MachineInterface, error),
 	config *MachineCacheConfig,
 ) (*executionRun, error) {
 	exec := &executionRun{}
 	exec.Start(ctxIn, exec)
+	exec.initialMachineGetter = initialMachineGetter
+	exec.config = config
 	exec.cache = NewMachineCache(exec.GetContext(), initialMachineGetter, config)
 	return exec, nil
 }
@@ -58,33 +63,35 @@ func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*v
 	})
 }
 
-func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[mmap.Mmap] {
-	return stopwaiter.LaunchPromiseThread[mmap.Mmap](e, func(ctx context.Context) (mmap.Mmap, error) {
+func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[[]common.Hash] {
+	return stopwaiter.LaunchPromiseThread[[]common.Hash](e, func(ctx context.Context) ([]common.Hash, error) {
+		if stepSize == 1 {
+			e.cache = NewMachineCache(e.GetContext(), e.initialMachineGetter, e.config, server_common.WithAlwaysMerkleize())
+			log.Info("Enabling Merkleization of machines for faster hashing. However, advancing to start index might take a while...")
+		}
+		log.Info(fmt.Sprintf("Starting BOLD machine computation at index %d", machineStartIndex))
 		machine, err := e.cache.GetMachineAt(ctx, machineStartIndex)
 		if err != nil {
 			return nil, err
 		}
+		log.Info(fmt.Sprintf("Advanced machine to index %d, beginning hash computation", machineStartIndex))
 		// If the machine is starting at index 0, we always want to start at the "Machine finished" global state status
 		// to align with the state roots that the inbox machine will produce.
-		stateRootsMmap, err := mmap.NewMmap(int(numDesiredLeaves))
-		numStateRoots := 0
-		if err != nil {
-			return nil, err
-		}
+		var stateRoots []common.Hash
+
 		if machineStartIndex == 0 {
 			gs := machine.GetGlobalState()
 			hash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
-			stateRootsMmap.Set(numStateRoots, hash)
-			numStateRoots++
+			stateRoots = append(stateRoots, hash)
 		} else {
 			// Otherwise, we simply append the machine hash at the specified start index.
-			stateRootsMmap.Set(numStateRoots, machine.Hash())
-			numStateRoots++
+			stateRoots = append(stateRoots, machine.Hash())
 		}
+		startHash := stateRoots[0]
 
 		// If we only want 1 state root, we can return early.
 		if numDesiredLeaves == 1 {
-			return stateRootsMmap, nil
+			return stateRoots, nil
 		}
 		for numIterations := uint64(0); numIterations < numDesiredLeaves; numIterations++ {
 			// The absolute opcode position the machine should be in after stepping.
@@ -94,14 +101,39 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 			if err := machine.Step(ctx, stepSize); err != nil {
 				return nil, fmt.Errorf("failed to step machine to position %d: %w", position, err)
 			}
+
+			progressPercent := (float64(numIterations+1) / float64(numDesiredLeaves)) * 100
+			log.Info(
+				fmt.Sprintf(
+					"Computing subchallenge machine hashes progress: %.2f%% leaves gathered (%d/%d)",
+					progressPercent,
+					numIterations+1,
+					numDesiredLeaves,
+				),
+				log.Ctx{
+					"stepSize":          stepSize,
+					"startHash":         startHash,
+					"machineStartIndex": machineStartIndex,
+					"numDesiredLeaves":  numDesiredLeaves,
+				},
+			)
+
 			// If the machine reached the finished state, we can break out of the loop and append to
 			// our state roots slice a finished machine hash.
 			machineStep := machine.GetStepCount()
 			if validator.MachineStatus(machine.Status()) == validator.MachineStatusFinished {
 				gs := machine.GetGlobalState()
 				hash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
-				stateRootsMmap.Set(numStateRoots, hash)
-				numStateRoots++
+				stateRoots = append(stateRoots, hash)
+				log.Info(
+					"Machine finished execution, gathered all the necessary hashes",
+					log.Ctx{
+						"stepSize":          stepSize,
+						"startHash":         startHash,
+						"machineStartIndex": machineStartIndex,
+						"numDesiredLeaves":  numDesiredLeaves,
+					},
+				)
 				break
 			}
 			// Otherwise, if the position and machine step mismatch and the machine is running, something went wrong.
@@ -111,18 +143,18 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 					return nil, fmt.Errorf("machine is in wrong position want: %d, got: %d", position, machineStep)
 				}
 			}
-			stateRootsMmap.Set(numStateRoots, machine.Hash())
-			numStateRoots++
+			stateRoots = append(stateRoots, machine.Hash())
+
 		}
 
 		// If the machine finished in less than the number of hashes we anticipate, we pad
 		// to the expected value by repeating the last machine hash until the state roots are the correct
 		// length.
-		lastStateRoot := stateRootsMmap.Get(numStateRoots - 1)
-		for i := numStateRoots; i < int(numDesiredLeaves); i++ {
-			stateRootsMmap.Set(numStateRoots, lastStateRoot)
+		lastStateRoot := stateRoots[len(stateRoots)-1]
+		for len(stateRoots) < int(numDesiredLeaves) {
+			stateRoots = append(stateRoots, lastStateRoot)
 		}
-		return stateRootsMmap.SubMmap(0, int(numDesiredLeaves)), nil
+		return stateRoots[:numDesiredLeaves], nil
 	})
 }
 
