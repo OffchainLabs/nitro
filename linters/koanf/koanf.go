@@ -1,4 +1,4 @@
-package main
+package koanf
 
 import (
 	"errors"
@@ -8,7 +8,6 @@ import (
 	"reflect"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/analysis/singlechecker"
 )
 
 var (
@@ -96,8 +95,4 @@ func run(dryRun bool, pass *analysis.Pass) (interface{}, error) {
 		}
 	}
 	return ret, nil
-}
-
-func main() {
-	singlechecker.Main(Analyzer)
 }
