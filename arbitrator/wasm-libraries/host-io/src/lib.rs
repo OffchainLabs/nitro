@@ -9,6 +9,7 @@ extern "C" {
     pub fn wavm_set_globalstate_u64(idx: u32, val: u64);
     pub fn wavm_read_keccak_256_preimage(ptr: *mut u8, offset: usize) -> usize;
     pub fn wavm_read_sha2_256_preimage(ptr: *mut u8, offset: usize) -> usize;
+    pub fn wavm_read_eth_versioned_hash_preimage(ptr: *mut u8, offset: usize) -> usize;
     pub fn wavm_read_inbox_message(msg_num: u64, ptr: *mut u8, offset: usize) -> usize;
     pub fn wavm_read_hotshot_commitment(ptr: *mut u8, height: u64);
     pub fn wavm_read_delayed_inbox_message(seq_num: u64, ptr: *mut u8, offset: usize) -> usize;
@@ -174,6 +175,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_wavmio_resolveTypedPr
     let preimage_reader = match preimage_type {
         PreimageType::Keccak256 => wavm_read_keccak_256_preimage,
         PreimageType::Sha2_256 => wavm_read_sha2_256_preimage,
+        PreimageType::EthVersionedHash => wavm_read_eth_versioned_hash_preimage,
     };
     let read = preimage_reader(our_ptr, offset as usize);
     assert!(read <= 32);
