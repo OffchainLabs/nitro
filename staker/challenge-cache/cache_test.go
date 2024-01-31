@@ -52,7 +52,7 @@ func TestCache(t *testing.T) {
 		common.BytesToHash([]byte("bar")),
 		common.BytesToHash([]byte("baz")),
 	}
-	err := cache.Put(key, want)
+	err = cache.Put(key, want)
 	if err != nil {
 		t.Fatal(err)
 	}

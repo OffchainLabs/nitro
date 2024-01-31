@@ -86,10 +86,6 @@ func (s *mockSpawner) WriteToFile(input *validator.ValidationInput, expOut valid
 	return containers.NewReadyPromise[struct{}](struct{}{}, nil)
 }
 
-func (s *mockSpawner) CreateBoldExecutionRun(wasmModuleRoot common.Hash, stepSize uint64, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
-	return containers.NewReadyPromise[validator.ExecutionRun](nil, nil)
-}
-
 type mockValRun struct {
 	containers.Promise[validator.GoGlobalState]
 	root common.Hash
