@@ -2,7 +2,6 @@
 // For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 
 // race detection makes things slow and miss timeouts
-//go:build challengetest && !race
 
 package arbtest
 
@@ -285,6 +284,7 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context) (*arbnode.Node, *
 		l2node.TxStreamer,
 		l2node.Execution,
 		l2node.ArbDB,
+		nil,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
