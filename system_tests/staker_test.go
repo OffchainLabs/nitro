@@ -34,6 +34,7 @@ import (
 	"github.com/OffchainLabs/bold/testing/setup"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -70,7 +71,11 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
-	httpSrv, srv := newServer(ctx, t)
+	httpSrv, srv := externalsignertest.NewServer(ctx, t)
+	cp, err := externalsignertest.CertPaths()
+	if err != nil {
+		t.Fatalf("Error getting cert paths: %v", err)
+	}
 	t.Cleanup(func() {
 		if err := httpSrv.Shutdown(ctx); err != nil {
 			t.Fatalf("Error shutting down http server: %v", err)
@@ -78,7 +83,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	})
 	go func() {
 		log.Debug("Server is listening on port 1234...")
-		if err := httpSrv.ListenAndServeTLS(signerServerCert, signerServerKey); err != nil && err != http.ErrServerClosed {
+		if err := httpSrv.ListenAndServeTLS(cp.ServerCert, cp.ServerKey); err != nil && err != http.ErrServerClosed {
 			log.Debug("ListenAndServeTLS() failed", "error", err)
 			return
 		}
@@ -96,10 +101,10 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	cleanupA := builder.Build(t)
 	defer cleanupA()
 
-	addNewBatchPoster(ctx, t, builder, srv.address)
+	addNewBatchPoster(ctx, t, builder, srv.Address)
 
 	builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
-		builder.L1Info.PrepareTxTo("Faucet", &srv.address, 30000, big.NewInt(1).Mul(big.NewInt(1e18), big.NewInt(1e18)), nil)})
+		builder.L1Info.PrepareTxTo("Faucet", &srv.Address, 30000, big.NewInt(1).Mul(big.NewInt(1e18), big.NewInt(1e18)), nil)})
 
 	l2nodeA := builder.L2.ConsensusNode
 	execNodeA := builder.L2.ExecNode
@@ -162,7 +167,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	rollupABI, err := abi.JSON(strings.NewReader(rollupgen.RollupAdminLogicABI))
 	Require(t, err, "unable to parse rollup ABI")
 
-	setValidatorCalldata, err := rollupABI.Pack("setValidator", []common.Address{valWalletAddrA, l1authB.From, srv.address}, []bool{true, true, true})
+	setValidatorCalldata, err := rollupABI.Pack("setValidator", []common.Address{valWalletAddrA, l1authB.From, srv.Address}, []bool{true, true, true})
 	Require(t, err, "unable to generate setValidator calldata")
 	tx, err := upgradeExecutor.ExecuteCall(&deployAuth, l2nodeA.DeployInfo.Rollup, setValidatorCalldata)
 	Require(t, err, "unable to set validators")
@@ -180,8 +185,18 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	Require(t, err)
 
 	valConfig := staker.TestL1ValidatorConfig
-
-	dpA, err := arbnode.StakerDataposter(ctx, rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix), l2nodeA.L1Reader, &l1authA, NewFetcherFromConfig(arbnode.ConfigDefaultL1NonSequencerTest()), nil)
+	parentChainID, err := builder.L1.Client.ChainID(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get parent chain id: %v", err)
+	}
+	dpA, err := arbnode.StakerDataposter(
+		ctx,
+		rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix),
+		l2nodeA.L1Reader,
+		&l1authA, NewFetcherFromConfig(arbnode.ConfigDefaultL1NonSequencerTest()),
+		nil,
+		parentChainID,
+	)
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
 	}
@@ -202,6 +217,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeA.TxStreamer,
 		execNodeA,
 		l2nodeA.ArbDB,
+		nil,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
@@ -230,8 +246,19 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	}
 	Require(t, err)
 	cfg := arbnode.ConfigDefaultL1NonSequencerTest()
-	cfg.Staker.DataPoster.ExternalSigner = *externalSignerTestCfg(srv.address)
-	dpB, err := arbnode.StakerDataposter(ctx, rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix), l2nodeB.L1Reader, &l1authB, NewFetcherFromConfig(cfg), nil)
+	signerCfg, err := externalSignerTestCfg(srv.Address)
+	if err != nil {
+		t.Fatalf("Error getting external signer config: %v", err)
+	}
+	cfg.Staker.DataPoster.ExternalSigner = *signerCfg
+	dpB, err := arbnode.StakerDataposter(
+		ctx,
+		rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix),
+		l2nodeB.L1Reader,
+		&l1authB, NewFetcherFromConfig(cfg),
+		nil,
+		parentChainID,
+	)
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
 	}
@@ -244,6 +271,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeB.TxStreamer,
 		execNodeB,
 		l2nodeB.ArbDB,
+		nil,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
@@ -398,14 +426,14 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 			Require(t, err, "EnsureTxSucceeded failed for staker", stakerName, "tx")
 		}
 		if faultyStaker {
-			conflictInfo, err := validatorUtils.FindStakerConflict(&bind.CallOpts{}, l2nodeA.DeployInfo.Rollup, l1authA.From, srv.address, big.NewInt(1024))
+			conflictInfo, err := validatorUtils.FindStakerConflict(&bind.CallOpts{}, l2nodeA.DeployInfo.Rollup, l1authA.From, srv.Address, big.NewInt(1024))
 			Require(t, err)
 			if staker.ConflictType(conflictInfo.Ty) == staker.CONFLICT_TYPE_FOUND {
 				cancelBackgroundTxs()
 			}
 		}
 		if faultyStaker && !sawStakerZombie {
-			sawStakerZombie, err = rollup.IsZombie(&bind.CallOpts{}, srv.address)
+			sawStakerZombie, err = rollup.IsZombie(&bind.CallOpts{}, srv.Address)
 			Require(t, err)
 		}
 		isHonestZombie, err := rollup.IsZombie(&bind.CallOpts{}, valWalletAddrA)
@@ -426,7 +454,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 			Require(t, err)
 		}
 		if !stakerBWasStaked {
-			stakerBWasStaked, err = rollup.IsStaked(&bind.CallOpts{}, srv.address)
+			stakerBWasStaked, err = rollup.IsStaked(&bind.CallOpts{}, srv.Address)
 			Require(t, err)
 		}
 		for j := 0; j < 5; j++ {

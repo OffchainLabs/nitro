@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
@@ -177,6 +178,22 @@ func TestDifficultyForArbOSTen(t *testing.T) {
 	Require(t, err)
 	if !arbmath.BigEquals(difficulty, common.Big1) {
 		Fatal(t, "Expected difficulty to be 1 but got:", difficulty)
+	}
+}
+
+func TestBlobBasefeeReverts(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	_, err := builder.L2.Client.CallContract(ctx, ethereum.CallMsg{
+		Data: []byte{byte(vm.BLOBBASEFEE)},
+	}, nil)
+	if err == nil {
+		t.Error("Expected BLOBBASEFEE to revert")
 	}
 }
 

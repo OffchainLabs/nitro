@@ -158,7 +158,7 @@ func checkAccounts(db *state.StateDB, arbState *ArbosState, accts []statetransfe
 			if !bytes.Equal(acct.ContractInfo.Code, db.GetCode(addr)) {
 				t.Fatal()
 			}
-			err := db.ForEachStorage(addr, func(key common.Hash, value common.Hash) bool {
+			err := state.ForEachStorage(db, addr, func(key common.Hash, value common.Hash) bool {
 				if key == (common.Hash{}) {
 					// Unfortunately, geth doesn't seem capable of giving us storage keys any more.
 					// Even with the triedb Preimages set to true, it doesn't record the necessary

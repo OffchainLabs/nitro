@@ -95,7 +95,7 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	_, err = builder.L2.ConsensusNode.InboxReader.GetSequencerMessageBytes(ctx, 1)
+	_, _, err = builder.L2.ConsensusNode.InboxReader.GetSequencerMessageBytes(ctx, 1)
 	Require(t, err)
 
 	l2Header, err := builder.L2.Client.HeaderByNumber(ctx, l2Receipt.BlockNumber)

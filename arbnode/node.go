@@ -26,6 +26,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcastclients"
@@ -65,10 +66,10 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 		// TODO could the ChainConfig be just []byte?
 		ChainConfig: string(serializedChainConfig),
 		SequencerInboxMaxTimeVariation: rollupgen.ISequencerInboxMaxTimeVariation{
-			DelayBlocks:   big.NewInt(60 * 60 * 24 / 15),
-			FutureBlocks:  big.NewInt(12),
-			DelaySeconds:  big.NewInt(60 * 60 * 24),
-			FutureSeconds: big.NewInt(60 * 60),
+			DelayBlocks:   60 * 60 * 24 / 15,
+			FutureBlocks:  12,
+			DelaySeconds:  60 * 60 * 24,
+			FutureSeconds: 60 * 60,
 		},
 	}
 }
@@ -85,6 +86,7 @@ type Config struct {
 	Staker              staker.L1ValidatorConfig    `koanf:"staker" reload:"hot"`
 	SeqCoordinator      SeqCoordinatorConfig        `koanf:"seq-coordinator"`
 	DataAvailability    das.DataAvailabilityConfig  `koanf:"data-availability"`
+	BlobClient          BlobClientConfig            `koanf:"blob-client"`
 	SyncMonitor         SyncMonitorConfig           `koanf:"sync-monitor"`
 	Dangerous           DangerousConfig             `koanf:"dangerous"`
 	TransactionStreamer TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
@@ -142,6 +144,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	staker.L1ValidatorConfigAddOptions(prefix+".staker", f)
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
 	das.DataAvailabilityConfigAddNodeOptions(prefix+".data-availability", f)
+	BlobClientAddOptions(prefix+".blob-client", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
@@ -300,6 +303,7 @@ func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
 func StakerDataposter(
 	ctx context.Context, db ethdb.Database, l1Reader *headerreader.HeaderReader,
 	transactOpts *bind.TransactOpts, cfgFetcher ConfigFetcher, syncMonitor *SyncMonitor,
+	parentChainID *big.Int,
 ) (*dataposter.DataPoster, error) {
 	cfg := cfgFetcher.Get()
 	if transactOpts == nil && cfg.Staker.DataPoster.ExternalSigner.URL == "" {
@@ -330,6 +334,7 @@ func StakerDataposter(
 			Config:            dpCfg,
 			MetadataRetriever: mdRetriever,
 			RedisKey:          sender + ".staker-data-poster.queue",
+			ParentChainID:     parentChainID,
 		})
 }
 
@@ -346,6 +351,7 @@ func createNodeImpl(
 	txOptsBatchPoster *bind.TransactOpts,
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
+	parentChainID *big.Int,
 ) (*Node, error) {
 	config := configFetcher.Get()
 
@@ -509,7 +515,15 @@ func createNodeImpl(
 		return nil, errors.New("a data availability service is required for this chain, but it was not configured")
 	}
 
-	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, daReader)
+	var blobReader arbstate.BlobReader
+	if config.BlobClient.BeaconChainUrl != "" {
+		blobReader, err = NewBlobClient(config.BlobClient, l1client)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, daReader, blobReader)
 	if err != nil {
 		return nil, err
 	}
@@ -528,6 +542,7 @@ func createNodeImpl(
 			exec,
 			rawdb.NewTable(arbDb, storage.BlockValidatorPrefix),
 			daReader,
+			blobReader,
 			func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
 			stack,
 		)
@@ -567,6 +582,7 @@ func createNodeImpl(
 			txOptsValidator,
 			configFetcher,
 			syncMonitor,
+			parentChainID,
 		)
 		if err != nil {
 			return nil, err
@@ -634,15 +650,16 @@ func createNodeImpl(
 			return nil, errors.New("batchposter, but no TxOpts")
 		}
 		batchPoster, err = NewBatchPoster(ctx, &BatchPosterOpts{
-			DataPosterDB: rawdb.NewTable(arbDb, storage.BatchPosterPrefix),
-			L1Reader:     l1Reader,
-			Inbox:        inboxTracker,
-			Streamer:     txStreamer,
-			SyncMonitor:  syncMonitor,
-			Config:       func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster },
-			DeployInfo:   deployInfo,
-			TransactOpts: txOptsBatchPoster,
-			DAWriter:     daWriter,
+			DataPosterDB:  rawdb.NewTable(arbDb, storage.BatchPosterPrefix),
+			L1Reader:      l1Reader,
+			Inbox:         inboxTracker,
+			Streamer:      txStreamer,
+			SyncMonitor:   syncMonitor,
+			Config:        func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster },
+			DeployInfo:    deployInfo,
+			TransactOpts:  txOptsBatchPoster,
+			DAWriter:      daWriter,
+			ParentChainID: parentChainID,
 		})
 		if err != nil {
 			return nil, err
@@ -700,8 +717,9 @@ func CreateNode(
 	txOptsBatchPoster *bind.TransactOpts,
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
+	parentChainID *big.Int,
 ) (*Node, error) {
-	currentNode, err := createNodeImpl(ctx, stack, exec, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan)
+	currentNode, err := createNodeImpl(ctx, stack, exec, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID)
 	if err != nil {
 		return nil, err
 	}

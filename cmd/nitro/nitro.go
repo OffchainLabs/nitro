@@ -536,6 +536,7 @@ func mainImpl() int {
 		l1TransactionOptsBatchPoster,
 		dataSigner,
 		fatalErrChan,
+		big.NewInt(int64(nodeConfig.ParentChain.ID)),
 	)
 	if err != nil {
 		log.Error("failed to create node", "err", err)

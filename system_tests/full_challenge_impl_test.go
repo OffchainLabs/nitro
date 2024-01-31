@@ -35,6 +35,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
+	"github.com/offchainlabs/nitro/solgen/go/yulgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -199,11 +200,15 @@ func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *Blockcha
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
 	Require(t, err)
+	reader4844, tx, _, err := yulgen.DeployReader4844(&txOpts, l1Client)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
+	Require(t, err)
 	timeBounds := mocksgen.ISequencerInboxMaxTimeVariation{
-		DelayBlocks:   big.NewInt(10000),
-		FutureBlocks:  big.NewInt(10000),
-		DelaySeconds:  big.NewInt(10000),
-		FutureSeconds: big.NewInt(10000),
+		DelayBlocks:   10000,
+		FutureBlocks:  10000,
+		DelaySeconds:  10000,
+		FutureSeconds: 10000,
 	}
 	seqInboxAddr, tx, seqInbox, err := mocksgen.DeploySequencerInboxStub(
 		&txOpts,
@@ -212,6 +217,7 @@ func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *Blockcha
 		l1Info.GetAddress("sequencer"),
 		timeBounds,
 		big.NewInt(117964),
+		reader4844,
 	)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
@@ -278,7 +284,8 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	asserterRollupAddresses.SequencerInbox = asserterSeqInboxAddr
 	asserterExec, err := gethexec.CreateExecutionNode(ctx, asserterL2Stack, asserterL2ChainDb, asserterL2Blockchain, l1Backend, gethexec.ConfigDefaultTest)
 	Require(t, err)
-	asserterL2, err := arbnode.CreateNode(ctx, asserterL2Stack, asserterExec, asserterL2ArbDb, NewFetcherFromConfig(conf), chainConfig, l1Backend, asserterRollupAddresses, nil, nil, nil, fatalErrChan)
+	parentChainID := big.NewInt(1337)
+	asserterL2, err := arbnode.CreateNode(ctx, asserterL2Stack, asserterExec, asserterL2ArbDb, NewFetcherFromConfig(conf), chainConfig, l1Backend, asserterRollupAddresses, nil, nil, nil, fatalErrChan, parentChainID)
 	Require(t, err)
 	err = asserterL2.Start(ctx)
 	Require(t, err)
@@ -289,7 +296,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	challengerRollupAddresses.SequencerInbox = challengerSeqInboxAddr
 	challengerExec, err := gethexec.CreateExecutionNode(ctx, challengerL2Stack, challengerL2ChainDb, challengerL2Blockchain, l1Backend, gethexec.ConfigDefaultTest)
 	Require(t, err)
-	challengerL2, err := arbnode.CreateNode(ctx, challengerL2Stack, challengerExec, challengerL2ArbDb, NewFetcherFromConfig(conf), chainConfig, l1Backend, &challengerRollupAddresses, nil, nil, nil, fatalErrChan)
+	challengerL2, err := arbnode.CreateNode(ctx, challengerL2Stack, challengerExec, challengerL2ArbDb, NewFetcherFromConfig(conf), chainConfig, l1Backend, &challengerRollupAddresses, nil, nil, nil, fatalErrChan, parentChainID)
 	Require(t, err)
 	err = challengerL2.Start(ctx)
 	Require(t, err)
@@ -378,7 +385,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 
 	confirmLatestBlock(ctx, t, l1Info, l1Backend)
 
-	asserterValidator, err := staker.NewStatelessBlockValidator(asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, asserterExec.Recorder, asserterL2ArbDb, nil, StaticFetcherFrom(t, &conf.BlockValidator), valStack)
+	asserterValidator, err := staker.NewStatelessBlockValidator(asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, asserterExec.Recorder, asserterL2ArbDb, nil, nil, StaticFetcherFrom(t, &conf.BlockValidator), valStack)
 	if err != nil {
 		Fatal(t, err)
 	}
@@ -395,7 +402,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	if err != nil {
 		Fatal(t, err)
 	}
-	challengerValidator, err := staker.NewStatelessBlockValidator(challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, challengerExec.Recorder, challengerL2ArbDb, nil, StaticFetcherFrom(t, &conf.BlockValidator), valStack)
+	challengerValidator, err := staker.NewStatelessBlockValidator(challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, challengerExec.Recorder, challengerL2ArbDb, nil, nil, StaticFetcherFrom(t, &conf.BlockValidator), valStack)
 	if err != nil {
 		Fatal(t, err)
 	}

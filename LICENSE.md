@@ -16,18 +16,19 @@ Additional Use Grant: You may use the Licensed Work in a production environment 
                       to provide a point of interface to permit end users or applications
                       utilizing the Covered Arbitrum Chains to interact and query the
                       state of a Covered Arbitrum Chain, including without limitation
-                      validating the correctness of the posted chain state. For purposes
-                      of this Additional Use Grant, the "Covered Arbitrum Chains" are
-                      means (a) Arbitrum One (chainid:42161), Arbitrum Nova (chainid:42170),
-                      Arbitrum Rinkeby testnet/Rinkarby (chainid:421611), and
-                      Arbitrum Nitro Goerli testnet (chainid:421613) (b) any future
-                      blockchains authorized to be designated as Covered Arbitrum Chains
-                      by the decentralized autonomous organization governing the Arbitrum
-                      network; and (c) any “Layer 3” Arbitrum-based blockchain that is built
-                      on and settles to another Covered Arbitrum Chain.
-
-
-
+                      validating the correctness of the posted chain state, or to deploy
+                      and operate (x) a blockchain that settles to a Covered Arbitrum Chain
+                      or (y) a blockchain in accordance with, and subject to, the [Arbitrum
+                      Expansion Program Term of Use](https://docs.arbitrum.foundation/assets/files/Arbitrum%20Expansion%20Program%20Jan182024-4f08b0c2cb476a55dc153380fa3e64b0.pdf). For purposes of this
+                      Additional Use Grant, the "Covered Arbitrum Chains" are 
+                      (a) Arbitrum One (chainid:42161), Arbitrum Nova (chainid:42170), 
+                      rbitrum Rinkeby testnet/Rinkarby (chainid:421611),Arbitrum Nitro
+                      Goerli testnet (chainid:421613), and Arbitrum Sepolia Testnet
+                      (chainid:421614); (b) any future blockchains authorized to be
+                      designated as Covered Arbitrum Chains by the decentralized autonomous
+                      organization governing the Arbitrum network; and (c) any “Layer 3”
+                      Arbitrum-based blockchain that is built on and settles to another
+                      Covered Arbitrum Chain.
 
 
 Change Date:          Dec 31, 2028
