@@ -2503,6 +2503,13 @@ impl Machine {
         }
     }
 
+    pub fn cothread_to_bytes(&self) -> [u8;1] {
+        if self.cothread {
+            return [1_u8;1];
+        }
+        [0_u8;1]
+    }
+
     pub fn get_modules_root(&self) -> Bytes32 {
         self.get_modules_merkle().root()
     }
@@ -2522,6 +2529,13 @@ impl Machine {
                 hash_stack_with_heights(frames, &heights, concat!($prefix, " stack:"))
             }};
         }
+        // compute_multistack returns the hash of multistacks as follows:
+        // Keccak(
+        //      "multistack: " 
+        //      + hash_stack(first_stack)
+        //      + hash_stack(last_stack)
+        //      + Keccak("cothread: " + 2nd_stack+Keccak("cothread" + 3drd_stack + ...)
+        // )
         macro_rules! compute_multistack {
             ($field:expr, $stacks:expr, $prefix:expr) => {{
                 let first_elem = *$stacks.first().unwrap();
@@ -2529,28 +2543,36 @@ impl Machine {
                 let first_hash = hash_stack(first_elem.iter().map(|v|v.hash()), $prefix);
                 let last_hash = match $stacks.len() {
                     0 => panic!("Stacks size is 0"),
-                    1 => Bytes32::default(),
+                    1 => Bytes32::from([255_u8; 32]),
                     _ => hash_stack(last_elem.iter().map(|v|v.hash()), $prefix)
                 };
 
-                let mut hash = Keccak256::new()
-                        .chain($prefix)
-                        .chain("multistack: ")
-                        .chain(first_hash)
-                        .chain(last_hash)
+                // Hash of stacks [2..last) or 0xfff...f if len <= 2.
+                let mut hash = Bytes32::from([255_u8; 32]);
+                if $stacks.len() > 2 {
+                    hash = Keccak256::new()
+                        .chain(hash_stack(
+                            $stacks
+                                .iter()
+                                .skip(1)
+                                .take($stacks.len() - 2)
+                                .map(|st| hash_stack(st.iter().map(|v| v.hash()), $prefix)), 
+                            "cothread: "
+                            )
+                        )
                         .finalize()
                         .into();
-                if $stacks.len() > 2 {
-                    for item in $stacks.iter().skip(1).take($stacks.len() - 2) {
-                        hash = Keccak256::new()
-                            .chain("cothread: ")
-                            .chain(hash_stack(item.iter().map(|v| v.hash()), $prefix))
-                            .chain(hash)
-                            .finalize()
-                            .into();
-                    }
                 }
-                hash
+                hash = Keccak256::new()
+                    .chain($prefix)
+                    .chain("multistack: ")
+                    .chain(first_hash)
+                    .chain(last_hash)
+                    .chain(hash)
+                    .finalize()
+                    .into();
+
+                    hash
             }};
         }
         let frame_stack = compute_multistack!(|x| x.frame_stack, self.get_frame_stacks(), "Stack frame");
@@ -2586,7 +2608,7 @@ impl Machine {
                 h.update(self.pc.func.to_be_bytes());
                 h.update(self.pc.inst.to_be_bytes());
                 h.update(self.get_modules_root());
-
+                h.update(self.cothread_to_bytes());
                 if !guards.is_empty() {
                     h.update(b"With guards:");
                     h.update(ErrorGuardProof::hash_guards(&guards));
@@ -2661,6 +2683,8 @@ impl Machine {
 
         let mod_merkle = self.get_modules_merkle();
         out!(mod_merkle.root());
+
+        out!(self.cothread_to_bytes());
 
         // End machine serialization, serialize module
 
