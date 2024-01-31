@@ -2,8 +2,8 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    arbcompress, gostack::GoRuntimeState, runtime, socket, syscall, syscall::JsRuntimeState,
-    wavmio, wavmio::Bytes32, Opts,
+    arbcompress, arbvid, gostack::GoRuntimeState, runtime, socket, syscall,
+    syscall::JsRuntimeState, wavmio, wavmio::Bytes32, Opts,
 };
 
 use arbutil::{Color, PreimageType};
@@ -109,6 +109,7 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
             "github.com/offchainlabs/nitro/wavmio.readInboxMessage" => func!(wavmio::read_inbox_message),
             "github.com/offchainlabs/nitro/wavmio.readHotShotCommitment" => func!(wavmio::read_hotshot_commitment),
             "github.com/offchainlabs/nitro/wavmio.readDelayedInboxMessage" => func!(wavmio::read_delayed_inbox_message),
+            "github.com/offchainlabs/nitro/arbvid.verifyNamespace" => func!(arbvid::verify_namespace),
             "github.com/offchainlabs/nitro/wavmio.resolvePreImage" => {
                 #[allow(deprecated)] // we're just keeping this around until we no longer need to validate old replay binaries
                 {
