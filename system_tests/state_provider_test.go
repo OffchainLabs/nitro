@@ -2,6 +2,7 @@
 // For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 
 // race detection makes things slow and miss timeouts
+//go:build challengetest && !race
 
 package arbtest
 
