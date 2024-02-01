@@ -172,5 +172,5 @@ func (m *Manager) addBlockChallengeLevelZeroEdge(
 		FromBatch:      fromBatch,
 		ToBatch:        toBatch,
 		WasmModuleRoot: prevCreationInfo.WasmModuleRoot,
-	}, true, nil
+	}, false, nil
 }
