@@ -15,6 +15,11 @@ import (
 
 func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheConfig *core.CacheConfig, startBlock uint64) error {
 	start := time.Now()
+	currentHeader := bc.CurrentBlock()
+	if currentHeader == nil {
+		return fmt.Errorf("current header is nil")
+	}
+	target := currentHeader.Number.Uint64()
 	current := startBlock
 	genesis := bc.Config().ArbitrumChainParams.GenesisBlockNum
 	if current < genesis+1 {
@@ -48,11 +53,7 @@ func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheCon
 			break
 		}
 		if time.Since(logged) > 1*time.Minute {
-			var target uint64
-			if h := bc.CurrentBlock(); h != nil {
-				target = h.Number.Uint64()
-			}
-			log.Info("Recreating missing states", "block", current, "target", target, "remaining", target-current, "elapsed", time.Since(start), "recreated", recreated)
+			log.Info("Recreating missing states", "block", current, "target", target, "remaining", int64(target)-int64(current), "elapsed", time.Since(start), "recreated", recreated)
 			logged = time.Now()
 		}
 		currentState, err := state.New(currentBlock.Root(), database, nil)
