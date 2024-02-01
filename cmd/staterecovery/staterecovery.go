@@ -1,7 +1,6 @@
 package staterecovery
 
 import (
-	"errors"
 	"fmt"
 	"time"
 
@@ -14,12 +13,17 @@ import (
 	"github.com/ethereum/go-ethereum/trie/triedb/hashdb"
 )
 
-func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheConfig *core.CacheConfig) error {
+func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheConfig *core.CacheConfig, startBlock uint64) error {
 	start := time.Now()
-	current := bc.Genesis().NumberU64() + 1
-	genesisBlock := bc.GetBlockByNumber(current - 1)
-	if genesisBlock == nil {
-		return errors.New("genesis block is missing")
+	current := startBlock
+	genesis := bc.Config().ArbitrumChainParams.GenesisBlockNum
+	if current < genesis+1 {
+		log.Warn("recreate-missing-states-from before genesis+1, starting from genesis+1")
+		current = genesis + 1
+	}
+	previousBlock := bc.GetBlockByNumber(current - 1)
+	if previousBlock == nil {
+		return fmt.Errorf("start block parent is missing, parent block number: %d", current-1)
 	}
 	// find last available block - we cannot rely on bc.CurrentBlock()
 	last := current
@@ -35,9 +39,9 @@ func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheCon
 	}
 	database := state.NewDatabaseWithConfig(chainDb, trieConfig)
 	defer database.TrieDB().Close()
-	previousState, err := state.New(genesisBlock.Root(), database, nil)
+	previousState, err := state.New(previousBlock.Root(), database, nil)
 	if err != nil {
-		return fmt.Errorf("genesis state is missing: %w", err)
+		return fmt.Errorf("state of start block parent is missing: %w", err)
 	}
 	// we don't need to reference states with `trie.Database.Reference` here, because:
 	// * either the state nodes will be read from disk and then cached in cleans cache
@@ -67,7 +71,7 @@ func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheCon
 				return fmt.Errorf("reached different state root after processing block %d, have %v, want %v", current, root, currentBlock.Root())
 			}
 			// commit to disk
-			err = database.TrieDB().Commit(root, false) // TODO report = true, do we want this many logs?
+			err = database.TrieDB().Commit(root, false)
 			if err != nil {
 				return fmt.Errorf("TrieDB commit failed, number %d root %v: %w", current, root, err)
 			}

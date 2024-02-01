@@ -184,8 +184,8 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				if err != nil {
 					return chainDb, l2BlockChain, err
 				}
-				if config.Init.RecreateMissingState {
-					err = staterecovery.RecreateMissingStates(chainDb, l2BlockChain, cacheConfig)
+				if config.Init.RecreateMissingStateFrom > 0 {
+					err = staterecovery.RecreateMissingStates(chainDb, l2BlockChain, cacheConfig, config.Init.RecreateMissingStateFrom)
 					if err != nil {
 						return chainDb, l2BlockChain, fmt.Errorf("failed to recreate missing states: %w", err)
 					}

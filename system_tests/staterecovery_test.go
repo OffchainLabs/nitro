@@ -17,7 +17,9 @@ func TestRectreateMissingStates(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.execConfig.Caching.Archive = true
 	builder.execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 16
+	builder.execConfig.Caching.SnapshotCache = 0 // disable snapshots
 	_ = builder.Build(t)
 	l2cleanupDone := false
 	defer func() {
@@ -53,7 +55,7 @@ func TestRectreateMissingStates(t *testing.T) {
 		cacheConfig := gethexec.DefaultCacheConfigFor(stack, &gethexec.DefaultCachingConfig)
 		bc, err := gethexec.GetBlockChain(chainDb, cacheConfig, builder.chainConfig, builder.execConfig.TxLookupLimit)
 		Require(t, err)
-		err = staterecovery.RecreateMissingStates(chainDb, bc, cacheConfig)
+		err = staterecovery.RecreateMissingStates(chainDb, bc, cacheConfig, 1)
 		Require(t, err)
 	}()
 
