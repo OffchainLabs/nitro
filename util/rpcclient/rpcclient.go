@@ -170,8 +170,9 @@ func (c *RpcClient) CallContext(ctx_in context.Context, result interface{}, meth
 			"attempt", i,
 			"args", limitedArgumentsMarshal{limit, args},
 		}
-		if da, ok := err.(rpc.DataError); ok {
-			logEntry = append(logEntry, "errorData", limitedMarshal{limit, da.ErrorData()})
+		var dataErr rpc.DataError
+		if errors.As(err, &dataErr) {
+			logEntry = append(logEntry, "errorData", limitedMarshal{limit, dataErr.ErrorData()})
 		}
 		logger("rpc response", logEntry...)
 		if err == nil {
