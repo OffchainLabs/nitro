@@ -121,7 +121,8 @@ func TestRetryableNoExist(t *testing.T) {
 	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
 	Require(t, err)
 	_, err = arbRetryableTx.GetTimeout(&bind.CallOpts{}, common.Hash{})
-	if err.Error() != "execution reverted: error NoTicketWithID()" {
+	// The first error is server side. The second error is client side ABI decoding.
+	if err.Error() != "execution reverted: error NoTicketWithID(): NoTicketWithID()" {
 		Fatal(t, "didn't get expected NoTicketWithID error")
 	}
 }
