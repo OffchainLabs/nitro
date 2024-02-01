@@ -13,14 +13,6 @@ use std::{
 #[repr(C)]
 pub struct Bytes32(pub [u8; 32]);
 
-
-impl Bytes32 {
-    pub const fn new(bytes: [u8; 32]) -> Self {
-        Bytes32(bytes)
-    }
-}
-
-
 impl Deref for Bytes32 {
     type Target = [u8; 32];
 
