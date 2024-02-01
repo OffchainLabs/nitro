@@ -2,8 +2,7 @@ name: Release CI
 run-name: Release CI triggered from @${{ github.actor }} of ${{ github.head_ref }}
 
 on:
-  release:
-    types: [created, published]
+  workflow_dispatch:
 
 jobs:
   build_and_run:
