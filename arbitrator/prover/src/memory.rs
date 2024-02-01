@@ -10,7 +10,7 @@ use digest::Digest;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
-use std::{borrow::Cow, convert::TryFrom};
+use std::{borrow::Cow, cell::RefCell, convert::TryFrom};
 
 #[derive(PartialEq, Eq, Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Memory {
@@ -18,6 +18,10 @@ pub struct Memory {
     #[serde(skip)]
     pub merkle: Option<Merkle>,
     pub max_size: u64,
+    #[serde(skip)]
+    cached_root: RefCell<Bytes32>,
+    #[serde(skip)]
+    dirty: bool,
 }
 
 fn hash_leaf(bytes: [u8; Memory::LEAF_SIZE]) -> Bytes32 {
@@ -55,11 +59,15 @@ impl Memory {
     const MEMORY_LAYERS: usize = 1 + 32 - 5;
 
     pub fn new(size: usize, max_size: u64) -> Memory {
-        Memory {
+        let mut mem = Memory {
             buffer: vec![0u8; size],
+            dirty: false,
+            cached_root: RefCell::new(Bytes32::default()),
             merkle: None,
             max_size,
-        }
+        };
+        mem.cached_root = RefCell::new(mem.hash());
+        mem
     }
 
     pub fn size(&self) -> u64 {
@@ -105,12 +113,18 @@ impl Memory {
     }
 
     pub fn hash(&self) -> Bytes32 {
+        // if self.dirty {
         let mut h = Keccak256::new();
         h.update("Memory:");
         h.update((self.buffer.len() as u64).to_be_bytes());
         h.update(self.max_size.to_be_bytes());
         h.update(self.merkelize().root());
-        h.finalize().into()
+        let new_hash = h.finalize().into();
+        // self.cached_root.replace(new_hash);
+        new_hash
+        // } else {
+        //     self.cached_root.borrow().clone()
+        // }
     }
 
     pub fn get_u8(&self, idx: u64) -> Option<u8> {
@@ -207,6 +221,7 @@ impl Memory {
             }
             self.merkle = Some(merkle);
         }
+        self.dirty = true;
 
         true
     }
@@ -233,6 +248,7 @@ impl Memory {
             // No need for second merkle
             assert!(value.len() <= Self::LEAF_SIZE);
         }
+        self.dirty = true;
 
         true
     }
@@ -267,6 +283,7 @@ impl Memory {
             .checked_add(data.len())
             .expect("Overflow in offset+data.len() in Memory::set_range");
         self.buffer[offset..end].copy_from_slice(data);
+        self.dirty = true;
     }
 
     pub fn cache_merkle_tree(&mut self) {
@@ -280,6 +297,7 @@ impl Memory {
         if had_merkle_tree {
             self.cache_merkle_tree();
         }
+        self.dirty = true;
     }
 }
 
