@@ -231,7 +231,7 @@ type LatestStakedNotifier interface {
 }
 
 type LatestConfirmedNotifier interface {
-	UpdateLatestConfirmed(count arbutil.MessageIndex, globalState validator.GoGlobalState)
+	UpdateLatestConfirmed(count arbutil.MessageIndex, globalState validator.GoGlobalState, node uint64)
 }
 
 type Staker struct {
@@ -481,7 +481,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 		stakerLatestConfirmedNodeGauge.Update(int64(confirmed))
 		if confirmedGlobalState != nil {
 			for _, notifier := range s.confirmedNotifiers {
-				notifier.UpdateLatestConfirmed(confirmedMsgCount, *confirmedGlobalState)
+				notifier.UpdateLatestConfirmed(confirmedMsgCount, *confirmedGlobalState, confirmed)
 			}
 		}
 		return s.config.StakerInterval

@@ -173,8 +173,8 @@ func GetBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, chainC
 	vmConfig := vm.Config{
 		EnablePreimageRecording: false,
 	}
-
-	return core.NewBlockChain(chainDb, cacheConfig, chainConfig, nil, nil, engine, vmConfig, shouldPreserveFalse, &txLookupLimit)
+	// TODO forceTriedbCommitHook
+	return core.NewBlockChain(chainDb, cacheConfig, chainConfig, nil, nil, engine, vmConfig, shouldPreserveFalse, &txLookupLimit, nil)
 }
 
 func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, txLookupLimit uint64, accountsPerSync uint) (*core.BlockChain, error) {
