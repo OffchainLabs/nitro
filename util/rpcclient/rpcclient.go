@@ -155,13 +155,26 @@ func (c *RpcClient) CallContext(ctx_in context.Context, result interface{}, meth
 			ctx, cancelCtx = context.WithCancel(ctx_in)
 		}
 		err = c.client.CallContext(ctx, result, method, args...)
+
 		cancelCtx()
 		logger := log.Trace
 		limit := int(c.config().ArgLogLimit)
 		if err != nil && err.Error() != "already known" {
 			logger = log.Info
 		}
-		logger("rpc response", "method", method, "logId", logId, "err", err, "result", limitedMarshal{limit, result}, "attempt", i, "args", limitedArgumentsMarshal{limit, args})
+		logEntry := []interface{}{
+			"method", method,
+			"logId", logId,
+			"err", err,
+			"result", limitedMarshal{limit, result},
+			"attempt", i,
+			"args", limitedArgumentsMarshal{limit, args},
+		}
+		var dataErr rpc.DataError
+		if errors.As(err, &dataErr) {
+			logEntry = append(logEntry, "errorData", limitedMarshal{limit, dataErr.ErrorData()})
+		}
+		logger("rpc response", logEntry...)
 		if err == nil {
 			return nil
 		}
