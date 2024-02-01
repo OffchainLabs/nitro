@@ -134,17 +134,30 @@ func (m *Manager) Start(ctx context.Context) {
 		srvlog.Error("Could not get rollup user logic filterer", log.Ctx{"err": err})
 		return
 	}
-	filterOpts := &bind.FilterOpts{
-		Start:   fromBlock,
-		End:     nil,
-		Context: ctx,
-	}
-	_, err = retry.UntilSucceeds(ctx, func() (bool, error) {
-		return true, m.checkForAssertionAdded(ctx, filterer, filterOpts)
-	})
+	latestBlock, err := m.backend.HeaderByNumber(ctx, nil)
 	if err != nil {
-		srvlog.Error("Could not check for assertion added event")
+		srvlog.Error("Could not get header by number", log.Ctx{"err": err})
 		return
+	}
+	if !latestBlock.Number.IsUint64() {
+		srvlog.Error("Latest block number was not a uint64")
+		return
+	}
+	toBlock := latestBlock.Number.Uint64()
+	if fromBlock != toBlock {
+		filterOpts := &bind.FilterOpts{
+			Start:   fromBlock,
+			End:     &toBlock,
+			Context: ctx,
+		}
+		_, err = retry.UntilSucceeds(ctx, func() (bool, error) {
+			return true, m.checkForAssertionAdded(ctx, filterer, filterOpts)
+		})
+		if err != nil {
+			srvlog.Error("Could not check for assertion added event")
+			return
+		}
+		fromBlock = toBlock
 	}
 
 	ticker := time.NewTicker(m.pollInterval)
@@ -612,9 +625,10 @@ func (m *Manager) assertionConfirmed(ctx context.Context, assertionHash protocol
 		timeToWait := m.averageTimeForBlockCreation * time.Duration(blocksLeftForConfirmation)
 		srvlog.Info(
 			fmt.Sprintf(
-				"Assertion with has %s needs at least %d blocks before being confirmable, waiting until then",
+				"Assertion with has %s needs at least %d blocks before being confirmable, waiting for %s",
 				containers.Trunc(creationInfo.AssertionHash.Bytes()),
 				blocksLeftForConfirmation,
+				timeToWait,
 			),
 		)
 		<-time.After(timeToWait)
