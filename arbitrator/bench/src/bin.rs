@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{path::PathBuf, time::Duration};
 
 use bench::prepare::*;
 use clap::Parser;
@@ -19,7 +19,7 @@ struct Args {
 
 fn main() -> eyre::Result<()> {
     let args = Args::parse();
-    let step_sizes = [1 << 24, 1 << 26];
+    let step_sizes = [1];
     for step_size in step_sizes {
         let mut machine = prepare_machine(args.preimages_path.clone(), args.machine_path.clone())?;
         let machine_hash = machine.hash();
@@ -30,25 +30,16 @@ fn main() -> eyre::Result<()> {
         );
 
         println!("Stepping...");
-        let num_iters = 10;
-        for i in 0..num_iters {
+        let mut hash_times = vec![];
+        let mut step_times = vec![];
+        let num_iters = 1000;
+        for _ in 0..num_iters {
             let start = std::time::Instant::now();
             machine.step_n(step_size)?;
             let step_end_time = start.elapsed();
+            step_times.push(step_end_time);
             match machine.get_status() {
                 MachineStatus::Errored => {
-                    let start = std::time::Instant::now();
-                    let machine_hash = machine.hash();
-                    let hash_end_time = start.elapsed();
-                    println!(
-                    "hash time {:?}, step time {:?}, step size {}, num_iters {} machine hash at position {} => {:?}",
-                    hash_end_time,
-                    step_end_time,
-                    step_size,
-                    i,
-                    machine.get_steps(),
-                    hex::encode(&machine_hash)
-                );
                     bail!("Machine errored => position {}", machine.get_steps())
                 }
                 MachineStatus::TooFar => {
@@ -58,19 +49,25 @@ fn main() -> eyre::Result<()> {
                 MachineStatus::Finished => return Ok(()),
             }
             let start = std::time::Instant::now();
-            let machine_hash = machine.hash();
+            let _ = machine.hash();
             let hash_end_time = start.elapsed();
-            println!(
-                "hash time {:?}, step time {:?}, step size {}, num_iters {} machine hash at position {} => {:?}",
-                hash_end_time,
-                step_end_time,
-                step_size,
-                i,
-                machine.get_steps(),
-                hex::encode(&machine_hash)
-            );
+            hash_times.push(hash_end_time);
         }
-        println!("=================");
+        println!(
+            "avg hash time {:?}, avg step time {:?}, step size {}, num_iters {} machine hash at position {} => {:?}",
+            average(&hash_times),
+            average(&step_times),
+            step_size,
+            num_iters,
+            machine.get_steps(),
+            hex::encode(&machine_hash)
+        );
     }
     Ok(())
+}
+
+fn average(numbers: &[Duration]) -> Duration {
+    let sum: Duration = numbers.iter().sum();
+    let sum: u64 = sum.as_nanos().try_into().unwrap();
+    Duration::from_nanos(sum / numbers.len() as u64)
 }
