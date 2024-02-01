@@ -23,8 +23,8 @@ func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheCon
 	current := startBlock
 	genesis := bc.Config().ArbitrumChainParams.GenesisBlockNum
 	if current < genesis+1 {
-		log.Warn("recreate-missing-states-from before genesis+1, starting from genesis+1")
 		current = genesis + 1
+		log.Warn("recreate-missing-states-from before genesis+1, starting from genesis+1", "configured", startBlock, "override", current)
 	}
 	previousBlock := bc.GetBlockByNumber(current - 1)
 	if previousBlock == nil {
