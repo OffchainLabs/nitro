@@ -2545,7 +2545,7 @@ impl Machine {
         //      "multistack:"
         //      + hash_stack(first_stack)
         //      + hash_stack(last_stack)
-        //      + Keccak("cothread:" + 2nd_stack+Keccak("cothread" + 3drd_stack + ...)
+        //      + Keccak("cothread:" + 2nd_stack+Keccak("cothread:" + 3drd_stack + ...)
         // )
         macro_rules! compute_multistack {
             ($field:expr, $stacks:expr, $prefix:expr, $hasher: expr) => {{
