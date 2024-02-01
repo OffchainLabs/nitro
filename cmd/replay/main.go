@@ -30,6 +30,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/arbvid"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/gethhook"
@@ -277,6 +278,9 @@ func main() {
 			if jst == nil {
 				panic("batch missing espresso justification")
 			}
+			// Mock verify namespace call
+			arbvid.VerifyNamespace()
+
 			hotshotHeader := jst.Header
 			height := hotshotHeader.Height
 			commitment := espressoTypes.Commitment(wavmio.ReadHotShotCommitment(height))
