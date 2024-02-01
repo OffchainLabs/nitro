@@ -267,10 +267,10 @@ func main() {
 			return wavmio.ReadInboxMessage(batchNum), nil
 		}
 
-		isL2Message := message.Message.Header.Kind == arbostypes.L1MessageType_L2Message
-		txs, jst, err := arbos.ParseEspressoMsg(message.Message)
-		validatingAgainstEspresso := err == nil && jst.Header.Height > 0
-		if isL2Message && validatingAgainstEspresso {
+		validatingAgainstEspresso := message.Message.Header.Kind == arbostypes.L1MessageType_L2Message &&
+			chainConfig.ArbitrumChainParams.EnableEspresso
+		if validatingAgainstEspresso {
+			txs, jst, err := arbos.ParseEspressoMsg(message.Message)
 			if err != nil {
 				panic(err)
 			}
@@ -280,8 +280,6 @@ func main() {
 			hotshotHeader := jst.Header
 			height := hotshotHeader.Height
 			commitment := espressoTypes.Commitment(wavmio.ReadHotShotCommitment(height))
-			// Update the test and remove this condition
-			// if commitment != [32]byte{} {
 			validatedHeight := wavmio.GetEspressoHeight()
 			if validatedHeight == 0 {
 				// Validators can choose their own trusted starting point to start their validation.
@@ -302,7 +300,6 @@ func main() {
 			if err != nil {
 				panic(err)
 			}
-			// }
 		}
 
 		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher)

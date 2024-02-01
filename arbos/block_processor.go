@@ -71,7 +71,7 @@ func (info *L1Info) L1BlockNumber() uint64 {
 	return info.l1BlockNumber
 }
 
-func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState, chainConfig *params.ChainConfig) *types.Header {
+func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState, chainConfig *params.ChainConfig, hotShotHeight uint64) *types.Header {
 	l2Pricing := state.L2PricingState()
 	baseFee, err := l2Pricing.BaseFeeWei()
 	state.Restrict(err)
@@ -94,6 +94,11 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 		}
 		copy(extra, prevHeader.Extra)
 		mixDigest = prevHeader.MixDigest
+
+		if chainConfig.ArbitrumChainParams.EnableEspresso {
+			// Store the hotshot height temporarily
+			binary.BigEndian.PutUint64(mixDigest[24:32], hotShotHeight)
+		}
 	}
 	header := &types.Header{
 		ParentHash:  lastBlockHash,
@@ -171,10 +176,20 @@ func ProduceBlock(
 		txes = types.Transactions{}
 	}
 
+	var height uint64
+	if message.Header.Kind == arbostypes.L1MessageType_L2Message &&
+		chainConfig.ArbitrumChainParams.EnableEspresso {
+		_, jst, err := ParseEspressoMsg(message)
+		if err != nil {
+			return nil, nil, err
+		}
+		height = jst.Header.Height
+	}
+
 	hooks := NoopSequencingHooks()
 
 	return ProduceBlockAdvanced(
-		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks,
+		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks, height,
 	)
 }
 
@@ -188,6 +203,7 @@ func ProduceBlockAdvanced(
 	chainContext core.ChainContext,
 	chainConfig *params.ChainConfig,
 	sequencingHooks *SequencingHooks,
+	height uint64,
 ) (*types.Block, types.Receipts, error) {
 
 	state, err := arbosState.OpenSystemArbosState(statedb, nil, true)
@@ -207,7 +223,7 @@ func ProduceBlockAdvanced(
 		l1Timestamp:   l1Header.Timestamp,
 	}
 
-	header := createNewHeader(lastBlockHeader, l1Info, state, chainConfig)
+	header := createNewHeader(lastBlockHeader, l1Info, state, chainConfig, height)
 	signer := types.MakeSigner(chainConfig, header.Number, header.Time)
 	// Note: blockGasLeft will diverge from the actual gas left during execution in the event of invalid txs,
 	// but it's only used as block-local representation limiting the amount of work done in a block.
@@ -521,6 +537,7 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.
 		var sendCount uint64
 		var nextL1BlockNumber uint64
 		var arbosVersion uint64
+		var hotShotHeight uint64
 
 		if header.Number.Uint64() == chainConfig.ArbitrumChainParams.GenesisBlockNum {
 			arbosVersion = chainConfig.ArbitrumChainParams.InitialArbOSVersion
@@ -536,12 +553,14 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.
 			sendCount, _ = acc.Size()
 			nextL1BlockNumber, _ = state.Blockhashes().L1BlockNumber()
 			arbosVersion = state.ArbOSVersion()
+			hotShotHeight = binary.BigEndian.Uint64(header.MixDigest[24:32])
 		}
 		arbitrumHeader := types.HeaderInfo{
 			SendRoot:           sendRoot,
 			SendCount:          sendCount,
 			L1BlockNumber:      nextL1BlockNumber,
 			ArbOSFormatVersion: arbosVersion,
+			HotShotHeight:      hotShotHeight,
 		}
 		arbitrumHeader.UpdateHeaderWithInfo(header)
 		header.Root = statedb.IntermediateRoot(true)

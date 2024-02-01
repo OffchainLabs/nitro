@@ -12,8 +12,9 @@ import (
 )
 
 type MessageResult struct {
-	BlockHash common.Hash
-	SendRoot  common.Hash
+	BlockHash     common.Hash
+	SendRoot      common.Hash
+	HotShotHeight uint64
 }
 
 type RecordResult struct {

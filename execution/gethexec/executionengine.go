@@ -341,6 +341,7 @@ func (s *ExecutionEngine) SequenceTransactionsEspresso(
 			s.bc,
 			s.bc.Config(),
 			hooks,
+			jst.Header.Height,
 		)
 		if err != nil {
 			return nil, err
@@ -403,6 +404,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		s.bc,
 		s.bc.Config(),
 		hooks,
+		0,
 	)
 	if err != nil {
 		return nil, err
@@ -585,8 +587,9 @@ func (s *ExecutionEngine) resultFromHeader(header *types.Header) (*execution.Mes
 	}
 	info := types.DeserializeHeaderExtraInformation(header)
 	return &execution.MessageResult{
-		BlockHash: header.Hash(),
-		SendRoot:  info.SendRoot,
+		BlockHash:     header.Hash(),
+		SendRoot:      info.SendRoot,
+		HotShotHeight: info.HotShotHeight,
 	}, nil
 }
 
