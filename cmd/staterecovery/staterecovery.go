@@ -25,12 +25,6 @@ func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheCon
 	if previousBlock == nil {
 		return fmt.Errorf("start block parent is missing, parent block number: %d", current-1)
 	}
-	// find last available block - we cannot rely on bc.CurrentBlock()
-	last := current
-	for bc.GetBlockByNumber(last) != nil {
-		last++
-	}
-	last--
 	hashConfig := *hashdb.Defaults
 	hashConfig.CleanCacheSize = cacheConfig.TrieCleanLimit
 	trieConfig := &trie.Config{
@@ -48,14 +42,18 @@ func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheCon
 	// * or they will be recreated, saved to disk and then also cached in cleans cache
 	logged := time.Unix(0, 0)
 	recreated := 0
-	for current <= last {
-		if time.Since(logged) > 1*time.Minute {
-			log.Info("Recreating missing states", "block", current, "target", last, "remaining", last-current, "elapsed", time.Since(start), "recreated", recreated)
-			logged = time.Now()
-		}
+	for {
 		currentBlock := bc.GetBlockByNumber(current)
 		if currentBlock == nil {
-			return fmt.Errorf("missing block %d", current)
+			break
+		}
+		if time.Since(logged) > 1*time.Minute {
+			var target uint64
+			if h := bc.CurrentBlock(); h != nil {
+				target = h.Number.Uint64()
+			}
+			log.Info("Recreating missing states", "block", current, "target", target, "remaining", target-current, "elapsed", time.Since(start), "recreated", recreated)
+			logged = time.Now()
 		}
 		currentState, err := state.New(currentBlock.Root(), database, nil)
 		if err != nil {
