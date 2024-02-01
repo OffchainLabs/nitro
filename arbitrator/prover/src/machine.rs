@@ -939,15 +939,17 @@ where
     } else {
         data.extend(prover(items.first().unwrap()));
 
-        let last_hash = match items.len() > 1 {
-            false => Machine::NO_STACK_HASH,
-            _ => stack_hasher(items.last().unwrap()),
+        let last_hash = if items.len() > 1 {
+            stack_hasher(items.last().unwrap())
+        } else {
+            Machine::NO_STACK_HASH
         };
         data.extend(last_hash);
     }
-    let hash: Bytes32 = match items.len() > 2 {
-        false => Machine::NO_STACK_HASH,
-        _ => multistack_hasher(&items[1..items.len() - 1], stack_hasher),
+    let hash: Bytes32 = if items.len() > 2 {
+        multistack_hasher(&items[1..items.len() - 1], stack_hasher)
+    } else {
+        Machine::NO_STACK_HASH
     };
     data.extend(hash);
     data
@@ -2514,13 +2516,6 @@ impl Machine {
         }
     }
 
-    pub fn cothread_to_bytes(&self) -> [u8; 1] {
-        if self.cothread {
-            return [1_u8; 1];
-        }
-        [0_u8; 1]
-    }
-
     pub fn get_modules_root(&self) -> Bytes32 {
         self.get_modules_merkle().root()
     }
@@ -2556,16 +2551,17 @@ impl Machine {
                     hash_stack_with_heights(frames, &heights, concat!($prefix, " stack:"));
 
                 let last_elem = *$stacks.last().unwrap();
-                let last_hash = match $stacks.len() {
-                    0 => panic!("Stacks size is 0"),
-                    1 => Machine::NO_STACK_HASH,
-                    _ => hash_stack(last_elem.iter().map(|v| v.hash()), $prefix),
+                let last_hash = if $stacks.len() == 0 {
+                    panic!("Stacks size is 0")
+                } else {
+                    hash_stack(last_elem.iter().map(|v| v.hash()), $prefix)
                 };
 
                 // Hash of stacks [2nd..last) or 0xfff...f if len <= 2.
-                let mut hash = match $stacks.len() <= 2 {
-                    true => Machine::NO_STACK_HASH,
-                    _ => hash_multistack(&$stacks[1..$stacks.len() - 2], $hasher),
+                let mut hash = if $stacks.len() <= 2 {
+                    Machine::NO_STACK_HASH
+                } else {
+                    hash_multistack(&$stacks[1..$stacks.len() - 2], $hasher)
                 };
 
                 hash = Keccak256::new()
@@ -2621,7 +2617,7 @@ impl Machine {
                 h.update(self.pc.func.to_be_bytes());
                 h.update(self.pc.inst.to_be_bytes());
                 h.update(self.get_modules_root());
-                h.update(self.cothread_to_bytes());
+                h.update(if self.cothread { [1_u8; 1] } else { [0_u8; 1] });
                 if !guards.is_empty() {
                     h.update(b"With guards:");
                     h.update(ErrorGuardProof::hash_guards(&guards));
@@ -2697,7 +2693,7 @@ impl Machine {
         let mod_merkle = self.get_modules_merkle();
         out!(mod_merkle.root());
 
-        out!(self.cothread_to_bytes());
+        out!(if self.cothread { [1_u8; 1] } else { [0_u8; 1] });
 
         // End machine serialization, serialize module
 
