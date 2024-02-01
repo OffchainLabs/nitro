@@ -161,10 +161,6 @@ pub enum Opcode {
     ReadPreImage,
     /// Reads the current inbox message into the pointer on the stack at an offset
     ReadInboxMessage,
-    /// Creates a new error scope within which execution errors are handled
-    PushErrorGuard,
-    /// Drops the innermost error scope
-    PopErrorGuard,
     /// Dynamically adds a module to the replay machine
     LinkModule,
     /// Dynamically removes the last module to the replay machine
@@ -290,8 +286,6 @@ impl Opcode {
             Opcode::ReadInboxMessage => 0x8021,
             Opcode::LinkModule => 0x8023,
             Opcode::UnlinkModule => 0x8024,
-            Opcode::PushErrorGuard => 0x8025,
-            Opcode::PopErrorGuard => 0x8026,
             Opcode::HaltAndSetFinished => 0x8022,
             Opcode::NewCoThread => 0x8030,
             Opcode::PopCoThread => 0x8031,
