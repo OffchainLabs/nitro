@@ -522,7 +522,7 @@ impl Module {
             )
             .root(),
         );
-        h.update(self.memory.hash());
+        // h.update(self.memory.hash());
         h.update(self.tables_merkle.root());
         h.update(self.funcs_merkle.root());
         h.update(self.internals_offset.to_be_bytes());
