@@ -2551,20 +2551,6 @@ impl Machine {
         (frame_stacks, value_stacks, inter_stack)
     }
 
-    // fn stack_hashes(&self) -> (FrameStackHash, ValueStackHash, InterStackHash) {
-    //     macro_rules! compute {
-    //         ($stack:expr, $prefix:expr) => {{
-    //             let frames = $stack.iter().map(|v| v.hash());
-    //             hash_stack(frames, concat!($prefix, " stack:"))
-    //         }};
-    //     }
-    //     let frame_stack = compute!(self.get_frame_stack(), "Stack frame");
-    //     let value_stack = compute!(self.get_data_stack(), "Value");
-    //     let inter_stack = compute!(self.internal_stack, "Value");
-
-    //     (frame_stack, value_stack, inter_stack)
-    // }
-
     pub fn hash(&self) -> Bytes32 {
         let mut h = Keccak256::new();
         match self.status {
