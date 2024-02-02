@@ -19,7 +19,7 @@ struct Args {
 
 fn main() -> eyre::Result<()> {
     let args = Args::parse();
-    let step_sizes = [1 << 20];
+    let step_sizes = [1, 1 << 10, 1 << 15, 1 << 20, 1 << 26];
     for step_size in step_sizes {
         let mut machine = prepare_machine(args.preimages_path.clone(), args.machine_path.clone())?;
         let _ = machine.hash();
