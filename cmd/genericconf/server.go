@@ -231,12 +231,19 @@ var P2PConfigDefault = P2PConfig{
 	MaxPeers:    50,
 	DiscoveryV5: false,
 	DiscoveryV4: false,
+	Bootnodes:   []string{},
+	BootnodesV5: []string{},
 }
 
 func P2PConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".listen-addr", P2PConfigDefault.ListenAddr, "P2P listen address")
 	f.Bool(prefix+".no-dial", P2PConfigDefault.NoDial, "P2P no dial")
 	f.Bool(prefix+".no-discovery", P2PConfigDefault.NoDiscovery, "P2P no discovery")
+	f.Int(prefix+".max-peers", P2PConfigDefault.MaxPeers, "P2P max peers")
+	f.Bool(prefix+".discovery-v5", P2PConfigDefault.DiscoveryV5, "P2P discovery v5")
+	f.Bool(prefix+".discovery-v4", P2PConfigDefault.DiscoveryV4, "P2P discovery v4")
+	f.StringSlice(prefix+".bootnodes", P2PConfigDefault.Bootnodes, "P2P bootnodes")
+	f.StringSlice(prefix+".bootnodes-v5", P2PConfigDefault.BootnodesV5, "P2P bootnodes v5")
 }
 
 type MetricsServerConfig struct {
