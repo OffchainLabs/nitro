@@ -99,7 +99,7 @@ fn benchmark_machines() -> eyre::Result<()> {
             let hash_end_time = start.elapsed();
             hash_times.push(hash_end_time);
             num_iters += 1;
-            if num_iters == 100 {
+            if num_iters == 16384 * 2 {
                 break;
             }
         }
