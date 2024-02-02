@@ -4,6 +4,8 @@
 package genericconf
 
 import (
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/p2p/enode"
 	"time"
 
 	flag "github.com/spf13/pflag"
@@ -183,6 +185,58 @@ func AuthRPCConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".port", AuthRPCConfigDefault.Port, "AUTH-RPC server listening port")
 	f.StringSlice(prefix+".origins", AuthRPCConfigDefault.Origins, "Origins from which to accept AUTH requests")
 	f.StringSlice(prefix+".api", AuthRPCConfigDefault.API, "APIs offered over the AUTH-RPC interface")
+}
+
+type P2PConfig struct {
+	ListenAddr  string   `koanf:"listen-addr"`
+	NoDial      bool     `koanf:"no-dial"`
+	NoDiscovery bool     `koanf:"no-discovery"`
+	MaxPeers    int      `koanf:"max-peers"`
+	DiscoveryV5 bool     `koanf:"discovery-v5"`
+	DiscoveryV4 bool     `koanf:"discovery-v4"`
+	Bootnodes   []string `koanf:"bootnodes"`
+	BootnodesV5 []string `koanf:"bootnodes-v5"`
+}
+
+func (p P2PConfig) Apply(stackConf *node.Config) {
+	stackConf.P2P.ListenAddr = p.ListenAddr
+	stackConf.P2P.NoDial = p.NoDial
+	stackConf.P2P.NoDiscovery = p.NoDiscovery
+	stackConf.P2P.MaxPeers = p.MaxPeers
+	stackConf.P2P.DiscoveryV5 = p.DiscoveryV5
+	stackConf.P2P.DiscoveryV4 = p.DiscoveryV4
+	stackConf.P2P.BootstrapNodes = parseBootnodes(p.Bootnodes)
+	stackConf.P2P.BootstrapNodesV5 = parseBootnodes(p.BootnodesV5)
+}
+
+func parseBootnodes(urls []string) []*enode.Node {
+	nodes := make([]*enode.Node, 0, len(urls))
+	for _, url := range urls {
+		if url != "" {
+			node, err := enode.Parse(enode.ValidSchemes, url)
+			if err != nil {
+				log.Crit("Bootstrap URL invalid", "enode", url, "err", err)
+				return nil
+			}
+			nodes = append(nodes, node)
+		}
+	}
+	return nodes
+}
+
+var P2PConfigDefault = P2PConfig{
+	ListenAddr:  "",
+	NoDial:      true,
+	NoDiscovery: true,
+	MaxPeers:    50,
+	DiscoveryV5: false,
+	DiscoveryV4: false,
+}
+
+func P2PConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.String(prefix+".listen-addr", P2PConfigDefault.ListenAddr, "P2P listen address")
+	f.Bool(prefix+".no-dial", P2PConfigDefault.NoDial, "P2P no dial")
+	f.Bool(prefix+".no-discovery", P2PConfigDefault.NoDiscovery, "P2P no discovery")
 }
 
 type MetricsServerConfig struct {
