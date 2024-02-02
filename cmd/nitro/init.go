@@ -34,6 +34,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/ipfshelper"
 	"github.com/offchainlabs/nitro/cmd/pruning"
+	"github.com/offchainlabs/nitro/cmd/staterecovery"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/statetransfer"
@@ -183,6 +184,13 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				if err != nil {
 					return chainDb, l2BlockChain, err
 				}
+				if config.Init.RecreateMissingStateFrom > 0 {
+					err = staterecovery.RecreateMissingStates(chainDb, l2BlockChain, cacheConfig, config.Init.RecreateMissingStateFrom)
+					if err != nil {
+						return chainDb, l2BlockChain, fmt.Errorf("failed to recreate missing states: %w", err)
+					}
+				}
+
 				return chainDb, l2BlockChain, nil
 			}
 			readOnlyDb.Close()
