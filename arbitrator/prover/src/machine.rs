@@ -5,7 +5,6 @@ use crate::{
     binary::{
         self, parse, ExportKind, ExportMap, FloatInstruction, Local, NameCustomSection, WasmBinary,
     },
-    error_guard::{ErrorGuard, ErrorGuardProof},
     host,
     memory::Memory,
     merkle::{Merkle, MerkleType},
@@ -18,11 +17,10 @@ use crate::{
         IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
     },
 };
-use arbutil::{math, Bytes32, Color};
+use arbutil::{evm::user::UserOutcomeKind, math, Bytes32, Color};
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
-use itertools::izip;
 use lazy_static::lazy_static;
 use num::{traits::PrimInt, Zero};
 use serde::{Deserialize, Serialize};
@@ -791,7 +789,6 @@ pub struct Machine {
     value_stacks: Vec<Vec<Value>>,
     internal_stack: Vec<Value>,
     frame_stacks: Vec<Vec<StackFrame>>,
-    guards: Vec<ErrorGuard>,
     modules: Vec<Module>,
     modules_merkle: Option<Merkle>,
     global_state: GlobalState,
@@ -1360,7 +1357,6 @@ impl Machine {
             first_too_far,
             preimage_resolver: PreimageResolverWrapper::new(preimage_resolver),
             stylus_modules: HashMap::default(),
-            guards: Default::default(),
             initial_hash: Bytes32::default(),
             context: 0,
             debug_info,
@@ -1416,7 +1412,6 @@ impl Machine {
             first_too_far: 0,
             preimage_resolver: PreimageResolverWrapper::new(get_empty_preimage_resolver()),
             stylus_modules: HashMap::default(),
-            guards: Default::default(),
             initial_hash: Bytes32::default(),
             context: 0,
             debug_info: false,
@@ -1711,7 +1706,7 @@ impl Machine {
         let mut module = &mut self.modules[self.pc.module()];
         let mut func = &module.funcs[self.pc.func()];
 
-        macro_rules! reset_stack_refs {
+        macro_rules! reset_refs {
             () => {
                 (value_stack, frame_stack) = match self.cothread {
                     false => (&mut self.value_stacks[0], &mut self.frame_stacks[0]),
@@ -1720,11 +1715,6 @@ impl Machine {
                         self.frame_stacks.last_mut().unwrap(),
                     ),
                 };
-            };
-        }
-        macro_rules! reset_refs {
-            () => {
-                reset_stack_refs!();
                 module = &mut self.modules[self.pc.module()];
                 func = &module.funcs[self.pc.func()];
             };
@@ -1749,25 +1739,12 @@ impl Machine {
                     machine.print_backtrace(true);
                 };
 
-                if self.cothread && !self.guards.is_empty() {
-                    let guard = self.guards.pop().unwrap();
-                    if self.debug_info {
-                        print_debug_info(self);
-                    }
-                    println!("{}", "Recovering...".pink());
+                if self.cothread  {
+                    println!("\n{}", "switching to main thread and signaling failure".grey());
                     self.cothread = false;
-                    reset_stack_refs!();
-                    // recover at the previous stack heights
-                    assert!(frame_stack.len() >= guard.frame_stack);
-                    assert!(value_stack.len() >= guard.value_stack);
-                    assert!(self.internal_stack.len() >= guard.inter_stack);
-                    frame_stack.truncate(guard.frame_stack);
-                    value_stack.truncate(guard.value_stack);
-                    self.internal_stack.truncate(guard.inter_stack);
-                    self.pc = guard.on_error;
-                    // indicate an error has occured
-                    value_stack.push(0_u32.into());
                     reset_refs!();
+                    // returns revert as status
+                    value_stack.push(Value::I32(UserOutcomeKind::Failure as u32));
                     continue;
                 } else {
                     print_debug_info(self);
@@ -2342,19 +2319,6 @@ impl Machine {
                     }
                     reset_refs!();
                 }
-                Opcode::PushErrorGuard => {
-                    self.guards.push(ErrorGuard {
-                        frame_stack: frame_stack.len(),
-                        value_stack: value_stack.len(),
-                        inter_stack: self.internal_stack.len(),
-                        on_error: self.pc,
-                    });
-                    value_stack.push(1_u32.into());
-                    reset_refs!();
-                }
-                Opcode::PopErrorGuard => {
-                    self.guards.pop();
-                }
                 Opcode::HaltAndSetFinished => {
                     self.status = MachineStatus::Finished;
                     break;
@@ -2520,19 +2484,11 @@ impl Machine {
         self.get_modules_merkle().root()
     }
 
-    fn multistack_hash(
-        &self,
-    ) -> (
-        FrameStackHash,
-        ValueStackHash,
-        InterStackHash,
-        Vec<ErrorGuardProof>,
-    ) {
+    fn stack_hashes(&self) -> (FrameStackHash, ValueStackHash, InterStackHash) {
         macro_rules! compute {
-            ($field:expr, $stack:expr, $prefix:expr) => {{
-                let heights: Vec<_> = self.guards.iter().map($field).collect();
+            ($stack:expr, $prefix:expr) => {{
                 let frames = $stack.iter().map(|v| v.hash());
-                hash_stack_with_heights(frames, &heights, concat!($prefix, " stack:"))
+                hash_stack(frames, concat!($prefix, " stack:"))
             }};
         }
         // compute_multistack returns the hash of multistacks as follows:
@@ -2545,16 +2501,19 @@ impl Machine {
         macro_rules! compute_multistack {
             ($field:expr, $stacks:expr, $prefix:expr, $hasher: expr) => {{
                 let first_elem = *$stacks.first().unwrap();
-                let heights: Vec<_> = self.guards.iter().map($field).collect();
-                let frames = first_elem.iter().map(|v| v.hash());
-                let (first_hash, heights) =
-                    hash_stack_with_heights(frames, &heights, concat!($prefix, " stack:"));
+                let first_hash = hash_stack(
+                    first_elem.iter().map(|v| v.hash()),
+                    concat!($prefix, " stack:"),
+                );
 
                 let last_elem = *$stacks.last().unwrap();
                 let last_hash = if $stacks.len() == 0 {
                     panic!("Stacks size is 0")
                 } else {
-                    hash_stack(last_elem.iter().map(|v| v.hash()), $prefix)
+                    hash_stack(
+                        last_elem.iter().map(|v| v.hash()),
+                        concat!($prefix, " stack:"),
+                    )
                 };
 
                 // Hash of stacks [2nd..last) or 0xfff...f if len <= 2.
@@ -2572,56 +2531,55 @@ impl Machine {
                     .chain(hash)
                     .finalize()
                     .into();
-                (hash, heights)
+                hash
             }};
         }
-        // let frame_hasher = |x| hash_value_stack(x,)
-        let (frame_stack, frames) = compute_multistack!(
+        let frame_stacks = compute_multistack!(
             |x| x.frame_stack,
             self.get_frame_stacks(),
             "Stack frame",
             hash_stack_frame_stack
         );
-        let (value_stack, values) = compute_multistack!(
+        let value_stacks = compute_multistack!(
             |x| x.value_stack,
             self.get_data_stacks(),
             "Value",
             hash_value_stack
         );
-        let (inter_stack, inters) = compute!(|x| x.inter_stack, self.internal_stack, "Value");
+        let inter_stack = compute!(self.internal_stack, "Value");
 
-        let pcs = self.guards.iter().map(|x| x.on_error);
-        let mut guards: Vec<ErrorGuardProof> = vec![];
-        assert_eq!(values.len(), frames.len());
-        assert_eq!(values.len(), inters.len());
-        assert_eq!(values.len(), pcs.len());
-
-        for (frames, values, inters, pc) in izip!(frames, values, inters, pcs) {
-            guards.push(ErrorGuardProof::new(frames, values, inters, pc));
-        }
-        (frame_stack, value_stack, inter_stack, guards)
+        (frame_stacks, value_stacks, inter_stack)
     }
+
+    // fn stack_hashes(&self) -> (FrameStackHash, ValueStackHash, InterStackHash) {
+    //     macro_rules! compute {
+    //         ($stack:expr, $prefix:expr) => {{
+    //             let frames = $stack.iter().map(|v| v.hash());
+    //             hash_stack(frames, concat!($prefix, " stack:"))
+    //         }};
+    //     }
+    //     let frame_stack = compute!(self.get_frame_stack(), "Stack frame");
+    //     let value_stack = compute!(self.get_data_stack(), "Value");
+    //     let inter_stack = compute!(self.internal_stack, "Value");
+
+    //     (frame_stack, value_stack, inter_stack)
+    // }
 
     pub fn hash(&self) -> Bytes32 {
         let mut h = Keccak256::new();
         match self.status {
             MachineStatus::Running => {
-                let (frame_stack, value_stack, inter_stack, guards) = self.multistack_hash();
+                let (frame_stacks, value_stacks, inter_stack) = self.stack_hashes();
 
                 h.update(b"Machine running:");
-                h.update(value_stack);
+                h.update(value_stacks);
                 h.update(inter_stack);
-                h.update(frame_stack);
+                h.update(frame_stacks);
                 h.update(self.global_state.hash());
                 h.update(self.pc.module.to_be_bytes());
                 h.update(self.pc.func.to_be_bytes());
                 h.update(self.pc.inst.to_be_bytes());
                 h.update(self.get_modules_root());
-                h.update(if self.cothread { [1_u8; 1] } else { [0_u8; 1] });
-                if !guards.is_empty() {
-                    h.update(b"With guards:");
-                    h.update(ErrorGuardProof::hash_guards(&guards));
-                }
             }
             MachineStatus::Finished => {
                 h.update("Machine finished:");
@@ -2681,8 +2639,6 @@ impl Machine {
                 StackFrame::serialize_for_proof
             ),
         ));
-
-        out!(self.prove_guards());
 
         out!(self.global_state.hash());
 
@@ -2917,22 +2873,6 @@ impl Machine {
         data
     }
 
-    fn prove_guards(&self) -> Vec<u8> {
-        let mut data = Vec::with_capacity(34); // size in the empty case
-        let guards = self.multistack_hash().3;
-        let empty = self.guards.is_empty();
-
-        data.push(empty as u8);
-        if empty {
-            data.extend(Bytes32::default());
-        } else {
-            let last_idx = guards.len() - 1;
-            data.extend(ErrorGuardProof::hash_guards(&guards[..last_idx]));
-            data.extend(guards[last_idx].serialize_for_proof());
-        }
-        data
-    }
-
     pub fn get_data_stack(&self) -> &[Value] {
         match self.cothread {
             false => &self.value_stacks[0],
@@ -2960,10 +2900,6 @@ impl Machine {
 
     pub fn get_internals_stack(&self) -> &[Value] {
         &self.internal_stack
-    }
-
-    pub fn get_guards(&self) -> &[ErrorGuard] {
-        &self.guards
     }
 
     pub fn get_global_state(&self) -> GlobalState {

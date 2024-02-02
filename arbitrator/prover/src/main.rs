@@ -340,15 +340,11 @@ fn main() -> Result<()> {
         } else {
             let values = mach.get_data_stack();
             let inters = mach.get_internals_stack();
-            let guards = mach.get_guards();
             if !values.is_empty() {
                 println!("{} {}", "Machine stack".grey(), format::commas(values));
             }
             if !inters.is_empty() {
                 println!("{} {}", "Internals    ".grey(), format::commas(inters));
-            }
-            if !guards.is_empty() {
-                println!("{} {}", "Error guards ".grey(), format::commas(guards));
             }
             print!(
                 "Generating proof {} (inst {}) for {}{}",

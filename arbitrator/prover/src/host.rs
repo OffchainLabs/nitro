@@ -11,7 +11,7 @@ use crate::{
     value::{ArbValueType, FunctionType},
     wavm::{wasm_to_wavm, Instruction, Opcode},
 };
-use arbutil::{evm::user::UserOutcomeKind, Color};
+use arbutil::Color;
 use eyre::{bail, ErrReport, Result};
 use lazy_static::lazy_static;
 use num_derive::FromPrimitive;
@@ -330,12 +330,6 @@ impl Hostio {
             }
             ProgramCallMain => {
                 // caller sees: λ(module, args_len) → status
-                opcode!(PushErrorGuard);
-                opcode!(ArbitraryJumpIf, prior + body.len() + 3);
-                opcode!(I32Const, UserOutcomeKind::Failure as u32);
-                opcode!(Return);
-
-                // jumps here in the happy case
                 opcode!(LocalGet, 1); // args_len
                 opcode!(LocalGet, 0); // module
                 opcode!(MoveFromStackToInternal);
