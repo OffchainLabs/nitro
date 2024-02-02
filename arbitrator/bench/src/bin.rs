@@ -19,17 +19,10 @@ struct Args {
 
 fn main() -> eyre::Result<()> {
     let args = Args::parse();
-    let step_sizes = [1];
+    let step_sizes = [1 << 20];
     for step_size in step_sizes {
         let mut machine = prepare_machine(args.preimages_path.clone(), args.machine_path.clone())?;
-        let machine_hash = machine.hash();
-        println!(
-            "Starting to execute machine at position {} => {:?}",
-            machine.get_steps(),
-            hex::encode(&machine_hash)
-        );
-
-        println!("Stepping...");
+        let _ = machine.hash();
         let mut hash_times = vec![];
         let mut step_times = vec![];
         let mut num_iters = 0;
@@ -55,19 +48,16 @@ fn main() -> eyre::Result<()> {
             let hash_end_time = start.elapsed();
             hash_times.push(hash_end_time);
             num_iters += 1;
-            if num_iters == 10 {
+            if num_iters == 100 {
                 break;
             }
-            println!("Num iters {}", num_iters)
         }
         println!(
-            "avg hash time {:?}, avg step time {:?}, step size {}, num_iters {} machine hash at position {} => {:?}",
+            "avg hash time {:?}, avg step time {:?}, step size {}, num_iters {}",
             average(&hash_times),
             average(&step_times),
             step_size,
             num_iters,
-            machine.get_steps(),
-            hex::encode(&machine_hash)
         );
     }
     Ok(())

@@ -522,7 +522,7 @@ impl Module {
             )
             .root(),
         );
-        // h.update(self.memory.hash());
+        h.update(self.memory.hash());
         h.update(self.tables_merkle.root());
         h.update(self.funcs_merkle.root());
         h.update(self.internals_offset.to_be_bytes());
@@ -1191,7 +1191,12 @@ impl Machine {
                 MerkleType::Function,
                 module.funcs.iter().map(Function::hash).collect(),
             ));
+            // module.memory.cache_merkle_tree();
         }
+        // let modules_merkle = Some(Merkle::new(
+        //     MerkleType::Module,
+        //     modules.iter().map(Module::hash).collect(),
+        // ));
         let mut mach = Machine {
             status: MachineStatus::Running,
             steps: 0,
