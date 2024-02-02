@@ -75,6 +75,9 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 	}
 	payload := data[40:]
 
+	// Stage 1: Extract the payload from any data availability header.
+	// It's important that multiple DAS strategies can't both be invoked in the same batch,
+	// as these headers are validated by the sequencer inbox and not other DASs.
 	if len(payload) > 0 && IsDASMessageHeaderByte(payload[0]) {
 		if dasReader == nil {
 			log.Error("No DAS Reader configured, but sequencer message found with DAS header")
@@ -88,9 +91,7 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 				return parsedMsg, nil
 			}
 		}
-	}
-
-	if len(payload) > 0 && IsBlobHashesHeaderByte(payload[0]) {
+	} else if len(payload) > 0 && IsBlobHashesHeaderByte(payload[0]) {
 		blobHashes := payload[1:]
 		if len(blobHashes)%len(common.Hash{}) != 0 {
 			return nil, fmt.Errorf("blob batch data is not a list of hashes as expected")
@@ -115,6 +116,7 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 		}
 	}
 
+	// Stage 2: If enabled, decode the zero heavy payload (saves gas based on calldata charging).
 	if len(payload) > 0 && IsZeroheavyEncodedHeaderByte(payload[0]) {
 		pl, err := io.ReadAll(io.LimitReader(zeroheavy.NewZeroheavyDecoder(bytes.NewReader(payload[1:])), int64(maxZeroheavyDecompressedLen)))
 		if err != nil {
@@ -124,6 +126,7 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 		payload = pl
 	}
 
+	// Stage 3: Decompress the brotli payload and fill the parsedMsg.segments list.
 	if len(payload) > 0 && IsBrotliMessageHeaderByte(payload[0]) {
 		decompressed, err := arbcompress.Decompress(payload[1:], MaxDecompressedLen)
 		if err == nil {

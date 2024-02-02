@@ -6,35 +6,20 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/trie"
-	"github.com/offchainlabs/nitro/cmd/conf"
-	"github.com/offchainlabs/nitro/cmd/pruning"
+	"github.com/offchainlabs/nitro/cmd/staterecovery"
 	"github.com/offchainlabs/nitro/execution/gethexec"
-	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
-func countStateEntries(db ethdb.Iteratee) int {
-	entries := 0
-	it := db.NewIterator(nil, nil)
-	for it.Next() {
-		isCode, _ := rawdb.IsCodeKey(it.Key())
-		if len(it.Key()) == common.HashLength || isCode {
-			entries++
-		}
-	}
-	it.Release()
-	return entries
-}
-
-func TestPruning(t *testing.T) {
+func TestRectreateMissingStates(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.execConfig.Caching.Archive = true
+	builder.execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 16
+	builder.execConfig.Caching.SnapshotCache = 0 // disable snapshots
 	_ = builder.Build(t)
 	l2cleanupDone := false
 	defer func() {
@@ -60,7 +45,6 @@ func TestPruning(t *testing.T) {
 	l2cleanupDone = true
 	builder.L2.cleanup()
 	t.Log("stopped l2 node")
-
 	func() {
 		stack, err := node.New(builder.l2StackConfig)
 		Require(t, err)
@@ -68,43 +52,11 @@ func TestPruning(t *testing.T) {
 		chainDb, err := stack.OpenDatabase("chaindb", 0, 0, "", false)
 		Require(t, err)
 		defer chainDb.Close()
-		chainDbEntriesBeforePruning := countStateEntries(chainDb)
-
-		prand := testhelpers.NewPseudoRandomDataSource(t, 1)
-		var testKeys [][]byte
-		for i := 0; i < 100; i++ {
-			// generate test keys with length of hash to emulate legacy state trie nodes
-			testKeys = append(testKeys, prand.GetHash().Bytes())
-		}
-		for _, key := range testKeys {
-			err = chainDb.Put(key, common.FromHex("0xdeadbeef"))
-			Require(t, err)
-		}
-		for _, key := range testKeys {
-			if has, _ := chainDb.Has(key); !has {
-				Fatal(t, "internal test error - failed to check existence of test key")
-			}
-		}
-
-		initConfig := conf.InitConfigDefault
-		initConfig.Prune = "full"
-		coreCacheConfig := gethexec.DefaultCacheConfigFor(stack, &builder.execConfig.Caching)
-		err = pruning.PruneChainDb(ctx, chainDb, stack, &initConfig, coreCacheConfig, builder.L1.Client, *builder.L2.ConsensusNode.DeployInfo, false)
+		cacheConfig := gethexec.DefaultCacheConfigFor(stack, &gethexec.DefaultCachingConfig)
+		bc, err := gethexec.GetBlockChain(chainDb, cacheConfig, builder.chainConfig, builder.execConfig.TxLookupLimit)
 		Require(t, err)
-
-		for _, key := range testKeys {
-			if has, _ := chainDb.Has(key); has {
-				Fatal(t, "test key hasn't been pruned as expected")
-			}
-		}
-
-		chainDbEntriesAfterPruning := countStateEntries(chainDb)
-		t.Log("db entries pre-pruning:", chainDbEntriesBeforePruning)
-		t.Log("db entries post-pruning:", chainDbEntriesAfterPruning)
-
-		if chainDbEntriesAfterPruning >= chainDbEntriesBeforePruning {
-			Fatal(t, "The db doesn't have less entries after pruning then before. Before:", chainDbEntriesBeforePruning, "After:", chainDbEntriesAfterPruning)
-		}
+		err = staterecovery.RecreateMissingStates(chainDb, bc, cacheConfig, 1)
+		Require(t, err)
 	}()
 
 	testClient, cleanup := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: builder.l2StackConfig})
@@ -122,13 +74,7 @@ func TestPruning(t *testing.T) {
 	Require(t, err)
 	bc := testClient.ExecNode.Backend.ArbInterface().BlockChain()
 	triedb := bc.StateCache().TrieDB()
-	var start uint64
-	if currentBlock+1 >= builder.execConfig.Caching.BlockCount {
-		start = currentBlock + 1 - builder.execConfig.Caching.BlockCount
-	} else {
-		start = 0
-	}
-	for i := start; i <= currentBlock; i++ {
+	for i := uint64(0); i <= currentBlock; i++ {
 		header := bc.GetHeaderByNumber(i)
 		_, err := bc.StateAt(header.Root)
 		Require(t, err)
