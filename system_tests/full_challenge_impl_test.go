@@ -218,6 +218,7 @@ func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *Blockcha
 		timeBounds,
 		big.NewInt(117964),
 		reader4844,
+		false,
 	)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
