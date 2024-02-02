@@ -1191,12 +1191,12 @@ impl Machine {
                 MerkleType::Function,
                 module.funcs.iter().map(Function::hash).collect(),
             ));
-            // module.memory.cache_merkle_tree();
+            module.memory.cache_merkle_tree();
         }
-        // let modules_merkle = Some(Merkle::new(
-        //     MerkleType::Module,
-        //     modules.iter().map(Module::hash).collect(),
-        // ));
+        let modules_merkle = Some(Merkle::new(
+            MerkleType::Module,
+            modules.iter().map(Module::hash).collect(),
+        ));
         let mut mach = Machine {
             status: MachineStatus::Running,
             steps: 0,
@@ -1204,7 +1204,7 @@ impl Machine {
             internal_stack: Vec::new(),
             frame_stack: Vec::new(),
             modules,
-            modules_merkle: None,
+            modules_merkle,
             global_state: Default::default(),
             pc: ProgramCounter::default(),
             stdio_output: Vec::new(),
