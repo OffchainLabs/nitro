@@ -17,3 +17,6 @@ eyre = "0.6.5"
 prover = { path = "../prover" }
 arbutil = { path = "../arbutil" }
 clap = { version = "4.4.8", features = ["derive"] }
+
+[profile.release]
+debug = true 
