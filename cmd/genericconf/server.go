@@ -4,13 +4,13 @@
 package genericconf
 
 import (
-	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/p2p/enode"
 	"time"
 
 	flag "github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/p2p/enode"
 )
 
 type HTTPConfig struct {
