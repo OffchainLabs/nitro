@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    merkle::{Merkle, MerkleType},
+    flat_merkle::{Merkle, MerkleType},
     utils::Bytes32,
     value::{ArbValueType, Value},
 };
@@ -113,18 +113,18 @@ impl Memory {
     }
 
     pub fn hash(&self) -> Bytes32 {
-        // if self.dirty {
-        let mut h = Keccak256::new();
-        h.update("Memory:");
-        h.update((self.buffer.len() as u64).to_be_bytes());
-        h.update(self.max_size.to_be_bytes());
-        h.update(self.merkelize().root());
-        let new_hash = h.finalize().into();
-        // self.cached_root.replace(new_hash);
-        new_hash
-        // } else {
-        //     self.cached_root.borrow().clone()
-        // }
+        if self.dirty {
+            let mut h = Keccak256::new();
+            h.update("Memory:");
+            h.update((self.buffer.len() as u64).to_be_bytes());
+            h.update(self.max_size.to_be_bytes());
+            h.update(self.merkelize().root());
+            let new_hash = h.finalize().into();
+            self.cached_root.replace(new_hash);
+            new_hash
+        } else {
+            self.cached_root.borrow().clone()
+        }
     }
 
     pub fn get_u8(&self, idx: u64) -> Option<u8> {

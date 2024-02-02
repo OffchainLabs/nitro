@@ -4,11 +4,12 @@
 #![allow(clippy::missing_safety_doc, clippy::too_many_arguments)]
 
 pub mod binary;
+pub mod flat_merkle;
 mod host;
 pub mod machine;
 /// cbindgen:ignore
 mod memory;
-mod merkle;
+pub mod merkle;
 mod reinterpret;
 pub mod utils;
 pub mod value;

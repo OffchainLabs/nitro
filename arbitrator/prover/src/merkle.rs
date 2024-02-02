@@ -3,7 +3,7 @@
 
 use crate::utils::Bytes32;
 use digest::Digest;
-use rayon::prelude::*;
+//use rayon::prelude::*;
 use sha3::Keccak256;
 use std::convert::TryFrom;
 
@@ -76,7 +76,7 @@ impl Merkle {
             let new_layer = layers
                 .last()
                 .unwrap()
-                .par_chunks(2)
+                .chunks(2)
                 .map(|window| {
                     hash_node(ty, window[0], window.get(1).cloned().unwrap_or(empty_layer))
                 })

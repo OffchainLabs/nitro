@@ -1,9 +1,17 @@
-use std::{path::PathBuf, time::Duration};
+use std::{
+    path::PathBuf,
+    time::{Duration, Instant},
+};
 
 use bench::prepare::*;
 use clap::Parser;
 use eyre::bail;
-use prover::machine::MachineStatus;
+use prover::{
+    flat_merkle,
+    machine::MachineStatus,
+    merkle::{Merkle, MerkleType},
+    utils::Bytes32,
+};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -18,8 +26,51 @@ struct Args {
 }
 
 fn main() -> eyre::Result<()> {
+    // benchmark_merkle()
+    benchmark_machines()
+}
+
+const MEMORY_LAYERS: usize = 28;
+
+fn benchmark_merkle() -> eyre::Result<()> {
+    let mut hashes = vec![];
+    for i in 0..10_000 {
+        hashes.push(Bytes32::from(i as u64));
+    }
+    let start = Instant::now();
+    let tr = Merkle::new_advanced(
+        MerkleType::Memory,
+        hashes,
+        Bytes32::default(),
+        MEMORY_LAYERS,
+    );
+    println!(
+        "Time with normal merkle: {:?}, root {:?}",
+        start.elapsed(),
+        hex::encode(tr.root())
+    );
+    let mut hashes = vec![];
+    for i in 0..10_000 {
+        hashes.push(Bytes32::from(i as u64));
+    }
+    let start = Instant::now();
+    let tr = flat_merkle::Merkle::new_advanced(
+        flat_merkle::MerkleType::Memory,
+        hashes,
+        Bytes32::default(),
+        MEMORY_LAYERS,
+    );
+    println!(
+        "Time with flat merkle: {:?}, got root {:?}",
+        start.elapsed(),
+        hex::encode(tr.root()),
+    );
+    Ok(())
+}
+
+fn benchmark_machines() -> eyre::Result<()> {
     let args = Args::parse();
-    let step_sizes = [1, 1 << 10, 1 << 15, 1 << 20, 1 << 26];
+    let step_sizes = [1 << 20];
     for step_size in step_sizes {
         let mut machine = prepare_machine(args.preimages_path.clone(), args.machine_path.clone())?;
         let _ = machine.hash();

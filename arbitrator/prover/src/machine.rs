@@ -2112,7 +2112,7 @@ impl Machine {
 
         let module = &self.modules[self.pc.module()];
         let mem_merkle = module.memory.merkelize();
-        data.extend(module.serialize_for_proof(&mem_merkle));
+        // data.extend(module.serialize_for_proof(&mem_merkle));
 
         // Prove module is in modules merkle tree
 
