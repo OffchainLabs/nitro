@@ -211,7 +211,10 @@ func newApiClosures(
 	}
 	accountCodehash := func(address common.Address) (common.Hash, uint64) {
 		cost := vm.WasmAccountTouchCost(evm.StateDB, address)
-		return evm.StateDB.GetCodeHash(address), cost
+		if !evm.StateDB.Empty(address) {
+			return evm.StateDB.GetCodeHash(address), cost
+		}
+		return common.Hash{}, cost
 	}
 	addPages := func(pages uint16) uint64 {
 		open, ever := db.AddStylusPages(pages)
