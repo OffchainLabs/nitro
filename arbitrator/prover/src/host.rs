@@ -11,7 +11,7 @@ use crate::{
     value::{ArbValueType, FunctionType},
     wavm::{wasm_to_wavm, Instruction, Opcode},
 };
-use arbutil::Color;
+use arbutil::{Color, evm::user::UserOutcomeKind};
 use eyre::{bail, ErrReport, Result};
 use lazy_static::lazy_static;
 use num_derive::FromPrimitive;
@@ -334,21 +334,29 @@ impl Hostio {
                 opcode!(LocalGet, 0); // module
                 opcode!(MoveFromStackToInternal);
                 opcode!(MoveFromStackToInternal);
-                opcode!(SwitchThread, 1);
+                opcode!(SwitchThread, 8);
                 opcode!(MoveFromInternalToStack);
                 opcode!(MoveFromInternalToStack);
                 opcode!(CrossModuleInternalCall, InternalFunc::CallMain); // consumes module
                 opcode!(MoveFromStackToInternal);
                 opcode!(SwitchThread, 0);
                 opcode!(MoveFromInternalToStack);
+                opcode!(Return);
+
+                // jumps here if errored while in thread 1
+                opcode!(I32Const, UserOutcomeKind::Failure as u32)
             }
             ProgramContinue => {
                 // caller sees: λ(return_data) → status (returns to caller of ProgramRequest)
                 // code returns return_data to caller of ProgramRequest
                 opcode!(LocalGet, 0); // return_data
                 opcode!(MoveFromStackToInternal);
-                opcode!(SwitchThread, 1);
+                opcode!(SwitchThread, 3);
                 opcode!(MoveFromInternalToStack);
+                opcode!(Return);
+
+                // jumps here if errored while in cothread
+                opcode!(I32Const, UserOutcomeKind::Failure as u32)
             }
             ProgramRequest => {
                 // caller sees: λ(status)->response

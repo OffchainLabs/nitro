@@ -17,7 +17,7 @@ use crate::{
         IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
     },
 };
-use arbutil::{math, evm::user::UserOutcomeKind, Bytes32, Color};
+use arbutil::{math, Bytes32, Color};
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
@@ -1688,12 +1688,15 @@ impl Machine {
                 };
 
                 if self.cothread  {
-                    println!("\n{}", "switching to main thread and signaling failure".grey());
+                    println!("\n{}", "switching to main thread".grey());
                     self.cothread = false;
-                    reset_refs!();
-                    // returns revert as status
-                    value_stack.push(Value::I32(UserOutcomeKind::Failure as u32));
-                    continue;
+                    value_stack = &mut self.value_stacks[0];
+                    if let Some(Value::InternalRef(new_pc)) = value_stack.pop() {
+                        self.pc = new_pc;
+                        reset_refs!();
+                        println!("\n{} {:?}", "next opcode: ".grey(), func.code[self.pc.inst()]);
+                        continue;
+                    }
                 } else {
                     print_debug_info(self);
                 }
@@ -2288,11 +2291,24 @@ impl Machine {
                     reset_refs!();
                 }
                 Opcode::SwitchThread => {
-                    self.cothread = match inst.argument_data {
+                    let newcothread = match inst.argument_data {
                         0 => false,
                         _ => true,
                     };
+                    if newcothread == self.cothread {
+                        error!("switchthread doesn't switch")
+                    }
+                    if !self.cothread {
+                        let mut recovery_pc = self.pc;
+                        let offset : u32 = inst.argument_data.try_into().unwrap();
+                        recovery_pc.inst += offset - 1;
+                        value_stack.push(Value::InternalRef(recovery_pc))
+                    }
+                    self.cothread = newcothread;
                     reset_refs!();
+                    if !self.cothread {
+                        value_stack.pop();
+                    }
                 }
             }
         }
