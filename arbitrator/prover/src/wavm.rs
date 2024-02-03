@@ -734,7 +734,7 @@ pub fn wasm_to_wavm(
                 opcode!(Unreachable);
                 stack = StackState::Unreachable;
             },
-            Nop => opcode!(Nop),
+            Nop => {},
             Block { blockty } => {
                 scopes.push(Scope::Simple(*blockty, vec![], height_after_block!(blockty)));
             }
