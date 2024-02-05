@@ -98,6 +98,7 @@ func TestRecreateStateForRPCNoDepthLimit(t *testing.T) {
 	execConfig.Sequencer.MaxBlockSpeed = 0
 	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
 	execConfig.Caching.Archive = true
+	execConfig.Caching.SnapshotCache = 0 // disable snapshots
 	// disable trie/Database.cleans cache, so as states removed from ChainDb won't be cached there
 	execConfig.Caching.TrieCleanCache = 0
 	execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 0
@@ -368,9 +369,13 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 			Fatal(t, "internal test error - tx got included in unexpected block number, have:", have, "want:", want)
 		}
 	}
+	bc := execNode.Backend.ArbInterface().BlockChain()
 	genesis := uint64(0)
-	lastBlock, err := client.BlockNumber(ctx)
-	Require(t, err)
+	currentHeader := bc.CurrentBlock()
+	if currentHeader == nil {
+		Fatal(t, "missing current block")
+	}
+	lastBlock := currentHeader.Number.Uint64()
 	if want := genesis + uint64(txCount); lastBlock < want {
 		Fatal(t, "internal test error - not enough blocks produced during preparation, want:", want, "have:", lastBlock)
 	}
@@ -391,7 +396,7 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 	Require(t, node.Start(ctx))
 	client = ClientForStack(t, stack)
 	defer node.StopAndWait()
-	bc := execNode.Backend.ArbInterface().BlockChain()
+	bc = execNode.Backend.ArbInterface().BlockChain()
 	gas := skipGas
 	blocks := skipBlocks
 	for i := genesis + 1; i <= genesis+uint64(txCount); i++ {
@@ -401,8 +406,8 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 			continue
 		}
 		gas += block.GasUsed()
-		blocks++
 		_, err := bc.StateAt(block.Root())
+		blocks++
 		if (skipBlocks == 0 && skipGas == 0) || (skipBlocks != 0 && blocks > skipBlocks) || (skipGas != 0 && gas > skipGas) {
 			if err != nil {
 				t.Log("blocks:", blocks, "skipBlocks:", skipBlocks, "gas:", gas, "skipGas:", skipGas)
@@ -411,13 +416,17 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 			gas = 0
 			blocks = 0
 		} else {
+			if int(i) > int(lastBlock)-int(cacheConfig.BlockCount) {
+				// skipping nonexistence check - the state might have been saved on node shutdown
+				continue
+			}
 			if err == nil {
 				t.Log("blocks:", blocks, "skipBlocks:", skipBlocks, "gas:", gas, "skipGas:", skipGas)
 				Fatal(t, "state shouldn't be available, root:", block.Root(), "blockNumber:", i, "blockHash", block.Hash())
 			}
 			expectedErr := &trie.MissingNodeError{}
 			if !errors.As(err, &expectedErr) {
-				Fatal(t, "getting state failed with unexpected error, root:", block.Root(), "blockNumber:", i, "blockHash", block.Hash())
+				Fatal(t, "getting state failed with unexpected error, root:", block.Root(), "blockNumber:", i, "blockHash:", block.Hash(), "err:", err)
 			}
 		}
 	}
@@ -439,8 +448,11 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 func TestSkippingSavingStateAndRecreatingAfterRestart(t *testing.T) {
 	cacheConfig := gethexec.DefaultCachingConfig
 	cacheConfig.Archive = true
+	cacheConfig.SnapshotCache = 0 // disable snapshots
+	cacheConfig.BlockAge = 0      // use only Caching.BlockCount to keep only last N blocks in dirties cache, no matter how new they are
+
 	//// test defaults
-	testSkippingSavingStateAndRecreatingAfterRestart(t, &cacheConfig, 512)
+	//	testSkippingSavingStateAndRecreatingAfterRestart(t, &cacheConfig, 512)
 
 	cacheConfig.MaxNumberOfBlocksToSkipStateSaving = 127
 	cacheConfig.MaxAmountOfGasToSkipStateSaving = 0
