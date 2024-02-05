@@ -266,6 +266,11 @@ func (m *Manager) Mode() types.Mode {
 	return m.mode
 }
 
+// IsChallengedAssertion checks if an assertion with a given hash has a challenge.
+func (m *Manager) IsChallengedAssertion(assertionHash protocol.AssertionHash) bool {
+	return m.challengedAssertions.Has(assertionHash)
+}
+
 // MaxDelaySeconds returns the maximum number of seconds that the challenge manager will wait open a challenge.
 func (m *Manager) MaxDelaySeconds() int {
 	return m.maxDelaySeconds

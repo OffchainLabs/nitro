@@ -5,10 +5,7 @@ go_library(
     srcs = ["cache.go"],
     importpath = "github.com/OffchainLabs/bold/containers/in-progress-cache",
     visibility = ["//visibility:public"],
-    deps = [
-        "@com_github_prometheus_client_golang//prometheus",
-        "@com_github_prometheus_client_golang//prometheus/promauto",
-    ],
+    deps = ["@com_github_ethereum_go_ethereum//metrics"],
 )
 
 go_test(

@@ -67,8 +67,10 @@ func (ht *RoyalChallengeTree) HasConfirmableAncestor(
 		return false, fmt.Errorf("expected claimId to be found on block level root edge %#x", blockRootEdge.Id())
 	}
 
+	assertionHash := protocol.AssertionHash{Hash: common.Hash(blockRootEdge.ClaimId().Unwrap())}
+
 	assertionUnrivaledNumBlocks, err := ht.metadataReader.AssertionUnrivaledBlocks(
-		ctx, protocol.AssertionHash{Hash: common.Hash(blockRootEdge.ClaimId().Unwrap())},
+		ctx, assertionHash,
 	)
 	if err != nil {
 		return false, err

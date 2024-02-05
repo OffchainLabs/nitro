@@ -389,7 +389,6 @@ func (s *Server) EdgeByIdentifier(w http.ResponseWriter, r *http.Request) {
 	}
 	assertionHash := protocol.AssertionHash{Hash: common.BytesToHash(hash)}
 	edgeId := protocol.EdgeId{Hash: common.BytesToHash(id)}
-	fmt.Println(edgeId.String())
 	opts := []db.EdgeOption{
 		db.WithLimit(1),
 		db.WithEdgeAssertionHash(assertionHash),

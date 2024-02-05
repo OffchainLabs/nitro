@@ -10,11 +10,12 @@ import (
 	"context"
 	"crypto/rand"
 	"fmt"
-	"github.com/ethereum/go-ethereum/metrics"
 	"math/big"
 	"os"
 	"strings"
 	"time"
+
+	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/OffchainLabs/bold/api"
 	"github.com/OffchainLabs/bold/api/db"
@@ -475,7 +476,7 @@ func (m *Manager) saveAssertionToDB(ctx context.Context, assertionHash protocol.
 		return err
 	}
 	beforeState := protocol.GoExecutionStateFromSolidity(creationInfo.BeforeState)
-	afterState := protocol.GoExecutionStateFromSolidity(creationInfo.BeforeState)
+	afterState := protocol.GoExecutionStateFromSolidity(creationInfo.AfterState)
 	status, err := m.chain.AssertionStatus(ctx, assertionHash)
 	if err != nil {
 		return err
@@ -574,6 +575,10 @@ func (m *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertion
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
+			// Challenged assertions should not be confirmed by time.
+			if m.challengeReader.IsChallengedAssertion(assertionHash) {
+				return
+			}
 			if m.assertionConfirmed(ctx, assertionHash) {
 				return
 			}
@@ -582,6 +587,10 @@ func (m *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertion
 }
 
 func (m *Manager) assertionConfirmed(ctx context.Context, assertionHash protocol.AssertionHash) bool {
+	// Challenged assertions should not be confirmed by time.
+	if m.challengeReader.IsChallengedAssertion(assertionHash) {
+		return false
+	}
 	status, err := m.chain.AssertionStatus(ctx, assertionHash)
 	if err != nil {
 		srvlog.Error("Could not get assertion by hash", log.Ctx{"err": err, "assertionHash": assertionHash.Hash})
@@ -633,13 +642,17 @@ func (m *Manager) assertionConfirmed(ctx context.Context, assertionHash protocol
 		)
 		<-time.After(timeToWait)
 	}
+	// Challenged assertions should not be confirmed by time.
+	if m.challengeReader.IsChallengedAssertion(assertionHash) {
+		return false
+	}
 
 	err = m.chain.ConfirmAssertionByTime(ctx, assertionHash)
 	if err != nil {
 		if strings.Contains(err.Error(), protocol.BeforeDeadlineAssertionConfirmationError) {
 			return false
 		}
-		srvlog.Error("Could not confirm assertion by time", log.Ctx{"blockNumber": latestHeader.Number.String()})
+		srvlog.Error("Could not confirm assertion by time", log.Ctx{"blockNumber": latestHeader.Number.String(), "error": err, "hash": assertionHash.Hash})
 		errorConfirmingAssertionByTimeCounter.Inc(1)
 		return false
 	}
