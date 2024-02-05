@@ -45,6 +45,7 @@ pub struct Merkle {
     empty_hash: Bytes32,
 }
 
+#[inline]
 fn hash_node(a: &[u8], b: &[u8]) -> Bytes32 {
     let mut h = Keccak256::new();
     h.update(a);
@@ -68,8 +69,18 @@ impl Merkle {
 
         let empty_layer_hash = hash_node(empty_hash.as_slice(), empty_hash.as_slice());
 
-        let mut tree = Vec::new();
-        let mut current_level_size = hashes.len();
+        let hash_count = hashes.len();
+        let mut current_level_size = hash_count;
+
+        // Calculate the total capacity needed for the tree
+        let mut total_capacity = hash_count * 32; // 32 bytes per hash
+        let mut depth = min_depth;
+        while current_level_size > 1 || depth > 0 {
+            current_level_size = (current_level_size + 1) / 2;
+            total_capacity += current_level_size * 32;
+            depth = depth.saturating_sub(1);
+        }
+        let mut tree = Vec::with_capacity(total_capacity);
 
         // Append initial hashes to the tree
         for hash in hashes.into_iter() {
