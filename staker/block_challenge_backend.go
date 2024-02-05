@@ -27,6 +27,8 @@ type BlockChallengeBackend struct {
 	endGs                  validator.GoGlobalState
 	inboxTracker           InboxTrackerInterface
 	tooFarStartsAtPosition uint64
+
+	debugEspressoIncorrectHeight uint64
 }
 
 // Assert that BlockChallengeBackend implements ChallengeBackend
@@ -69,6 +71,14 @@ func NewBlockChallengeBackend(
 		inboxTracker:           inboxTracker,
 		tooFarStartsAtPosition: uint64(endMsgCount - startMsgCount + 1),
 	}, nil
+}
+
+func (b *BlockChallengeBackend) SetDebugEspressoIncorrectHeight(h uint64) {
+	b.debugEspressoIncorrectHeight = h
+}
+
+func (b *BlockChallengeBackend) EspressoDebugging(curr uint64) bool {
+	return b.debugEspressoIncorrectHeight > 0 && curr > b.debugEspressoIncorrectHeight
 }
 
 func (b *BlockChallengeBackend) findBatchAfterMessageCount(msgCount arbutil.MessageIndex) (uint64, error) {
@@ -121,11 +131,17 @@ func (b *BlockChallengeBackend) FindGlobalStateFromMessageCount(count arbutil.Me
 	if err != nil {
 		return validator.GoGlobalState{}, err
 	}
+
+	if b.EspressoDebugging(res.HotShotHeight) {
+		res.BlockHash = mockHash(res.HotShotHeight)
+	}
+
 	return validator.GoGlobalState{
-		BlockHash:  res.BlockHash,
-		SendRoot:   res.SendRoot,
-		Batch:      batch,
-		PosInBatch: uint64(count - prevBatchMsgCount),
+		BlockHash:     res.BlockHash,
+		SendRoot:      res.SendRoot,
+		Batch:         batch,
+		PosInBatch:    uint64(count - prevBatchMsgCount),
+		HotShotHeight: res.HotShotHeight,
 	}, nil
 }
 
@@ -144,6 +160,9 @@ func (b *BlockChallengeBackend) GetInfoAtStep(step uint64) (validator.GoGlobalSt
 	globalState, err := b.FindGlobalStateFromMessageCount(msgNum)
 	if err != nil {
 		return validator.GoGlobalState{}, 0, err
+	}
+	if b.EspressoDebugging(globalState.HotShotHeight) {
+		globalState.BlockHash = mockHash(globalState.HotShotHeight)
 	}
 	return globalState, StatusFinished, nil
 }

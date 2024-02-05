@@ -47,11 +47,33 @@ type StatelessBlockValidator struct {
 	moduleMutex           sync.Mutex
 	currentWasmModuleRoot common.Hash
 	pendingWasmModuleRoot common.Hash
+
+	// This is a flag used to mock a wrong stateless block validator to
+	// test the functionalities of the staker. It is specifically used
+	// in espresso e2e test.
+	// If this is greater than 0, it means we are running this debug mode:
+	// - hotshot reader will read an all-zero commitment at this height
+	// - the end global state of a entry will change at this hotshot height
+	// In this way, a challenge will be created and the one-step proof should
+	// be the ReadHotShotCommitment
+	debugEspressoIncorrectHeight uint64
 }
 
 // This should be only used in tests
-func (s *StatelessBlockValidator) SetHotShotReader(reader HotShotReaderInterface) {
+func (s *StatelessBlockValidator) SetHotShotReader(reader HotShotReaderInterface, t *testing.T) {
 	s.hotShotReader = reader
+}
+
+func (s *StatelessBlockValidator) SetDebugEspressoIncorrectHeight(h uint64, t *testing.T) {
+	s.debugEspressoIncorrectHeight = h
+}
+
+func (s *StatelessBlockValidator) EspressoDebugging(curr uint64) bool {
+	return s.debugEspressoIncorrectHeight > 0 && curr >= s.debugEspressoIncorrectHeight
+}
+
+func (s *StatelessBlockValidator) GetDebugEspressoIncorrectHeight() uint64 {
+	return s.debugEspressoIncorrectHeight
 }
 
 type BlockValidatorRegistrer interface {
@@ -413,7 +435,7 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 		return nil, err
 	}
 	var comm espressoTypes.Commitment
-	if v.config.Espresso && msg.Message.Header.Kind == arbostypes.L1MessageType_L2Message {
+	if v.config.Espresso {
 		height := end.HotShotHeight
 		fetchedCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(height)
 		if err != nil {

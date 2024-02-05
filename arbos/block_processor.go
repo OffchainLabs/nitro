@@ -177,13 +177,18 @@ func ProduceBlock(
 	}
 
 	var height uint64
-	if message.Header.Kind == arbostypes.L1MessageType_L2Message &&
-		chainConfig.ArbitrumChainParams.EnableEspresso {
-		_, jst, err := ParseEspressoMsg(message)
-		if err != nil {
-			return nil, nil, err
+	if chainConfig.ArbitrumChainParams.EnableEspresso {
+		if message.Header.Kind == arbostypes.L1MessageType_L2Message {
+			// creating a block with espresso message
+			_, jst, err := ParseEspressoMsg(message)
+			if err != nil {
+				return nil, nil, err
+			}
+			height = jst.Header.Height
+		} else {
+			lastInfo := types.DeserializeHeaderExtraInformation(lastBlockHeader)
+			height = lastInfo.HotShotHeight
 		}
-		height = jst.Header.Height
 	}
 
 	hooks := NoopSequencingHooks()

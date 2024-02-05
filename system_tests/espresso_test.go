@@ -22,7 +22,8 @@ import (
 )
 
 var (
-	validationPort     = 54320
+	jitValidationPort  = 54320
+	arbValidationPort  = 54321
 	broadcastPort      = 9642
 	staleBlocks        = 10
 	startHotShotBlock  = staleBlocks + 1
@@ -183,27 +184,32 @@ func createValidatorAndPosterNode(ctx context.Context, t *testing.T) (*TestClien
 	builder.nodeConfig.BlockValidator.Enable = true
 	builder.nodeConfig.BlockValidator.Espresso = true
 	builder.nodeConfig.BlockValidator.HotShotAddress = "0x123"
-	builder.nodeConfig.BlockValidator.ValidationServer.URL = fmt.Sprintf("ws://127.0.0.1:%d", validationPort)
+	builder.nodeConfig.BlockValidator.ValidationServer.URL = fmt.Sprintf("ws://127.0.0.1:%d", jitValidationPort)
 
 	builder.chainConfig.ArbitrumChainParams.EnableEspresso = true
 
 	cleanup := builder.Build(t)
-	builder.L2.ConsensusNode.StatelessBlockValidator.SetHotShotReader(&hotShotReader)
+	builder.L2.ConsensusNode.StatelessBlockValidator.SetHotShotReader(&hotShotReader, t)
 	return builder.L2, cleanup
 }
 
-func createValidationNode(ctx context.Context, t *testing.T) func() {
+func createValidationNode(ctx context.Context, t *testing.T, jit bool) func() {
 	stackConf := node.DefaultConfig
 	stackConf.HTTPPort = 0
 	stackConf.DataDir = ""
 	stackConf.WSHost = "127.0.0.1"
-	stackConf.WSPort = validationPort
+	port := jitValidationPort
+	if !jit {
+		port = arbValidationPort
+	}
+	stackConf.WSPort = port
 	stackConf.WSModules = []string{server_api.Namespace}
 	stackConf.P2P.NoDiscovery = true
 	stackConf.P2P.ListenAddr = ""
 
 	valnode.EnsureValidationExposedViaAuthRPC(&stackConf)
 	config := &valnode.TestValidationConfig
+	config.UseJit = jit
 
 	stack, err := node.New(&stackConf)
 	Require(t, err)
@@ -271,7 +277,7 @@ func TestEspresso(t *testing.T) {
 	})
 	Require(t, err)
 
-	cleanValNode := createValidationNode(ctx, t)
+	cleanValNode := createValidationNode(ctx, t, true)
 	defer cleanValNode()
 
 	node, cleanup := createValidatorAndPosterNode(ctx, t)
