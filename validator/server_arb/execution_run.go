@@ -81,6 +81,7 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 
 		if machineStartIndex == 0 {
 			gs := machine.GetGlobalState()
+			log.Info(fmt.Sprintf("Start global state for machine index 0: %+v", gs))
 			hash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
 			stateRoots = append(stateRoots, hash)
 		} else {
@@ -128,10 +129,12 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 				log.Info(
 					"Machine finished execution, gathered all the necessary hashes",
 					log.Ctx{
-						"stepSize":          stepSize,
-						"startHash":         startHash,
-						"machineStartIndex": machineStartIndex,
-						"numDesiredLeaves":  numDesiredLeaves,
+						"stepSize":            stepSize,
+						"startHash":           startHash,
+						"machineStartIndex":   machineStartIndex,
+						"numDesiredLeaves":    numDesiredLeaves,
+						"finishedHash":        hash,
+						"finishedGlobalState": fmt.Sprintf("%+v", gs),
 					},
 				)
 				break
