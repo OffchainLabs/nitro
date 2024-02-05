@@ -212,11 +212,13 @@ impl<T: RequestHandler> EvmApi for EvmApiRequestor<T> {
         (res.try_into().unwrap(), cost)
     }
 
-    fn account_codehash(&mut self, address: Bytes20) -> (Bytes32, u64) {
+    fn account_code_size(&mut self, address: Bytes20, gas_left: u64) -> (u32, u64) {
+        let mut req: Vec<u8> = address.as_slice().into();
+        req.extend(gas_left.to_be_bytes());
         let (res, cost) = self
             .handler
-            .handle_request(EvmApiMethod::AccountCodeHash, address.as_slice());
-        (res.try_into().unwrap(), cost)
+            .handle_request(EvmApiMethod::AccountCodeSize, &req);
+        (u32::from_be_bytes(res.try_into().unwrap()), cost)
     }
 
     fn account_code(
@@ -226,17 +228,21 @@ impl<T: RequestHandler> EvmApi for EvmApiRequestor<T> {
         size: u32,
         gas_left: u64,
     ) -> (Vec<u8>, u64) {
+        let mut req: Vec<u8> = address.as_slice().into();
+        req.extend(gas_left.to_be_bytes());
+        req.extend(offset.to_be_bytes());
+        req.extend(size.to_be_bytes());
         let (res, cost) = self
             .handler
-            .handle_request(EvmApiMethod::AccountCode, address.as_slice());
+            .handle_request(EvmApiMethod::AccountCodeSize, &req);
         (res, cost)
     }
 
-    fn account_code_size(&mut self, address: Bytes20, gas_left: u64) -> (u32, u64) {
+    fn account_codehash(&mut self, address: Bytes20) -> (Bytes32, u64) {
         let (res, cost) = self
             .handler
-            .handle_request(EvmApiMethod::AccountCode, address.as_slice());
-        (u32::from_be_bytes(res), cost)
+            .handle_request(EvmApiMethod::AccountCodeHash, address.as_slice());
+        (res.try_into().unwrap(), cost)
     }
 
     fn add_pages(&mut self, pages: u16) -> u64 {

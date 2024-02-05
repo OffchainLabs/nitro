@@ -33,6 +33,8 @@ const (
 	Create2
 	EmitLog
 	AccountBalance
+	AccountCode
+	AccountCodeSize
 	AccountCodeHash
 	AddPages
 	CaptureHostIO
@@ -356,6 +358,30 @@ func newApiClosures(
 			balance, cost := accountBalance(address)
 
 			return balance[:], cost
+		case AccountCodeSize:
+			if len(input) != 28 {
+				log.Crit("bad API call", "request", req, "len", len(input))
+			}
+			address := common.BytesToAddress(input[0:20])
+			gas := binary.BigEndian.Uint64(input[20:28])
+
+			codeSize, cost := accountCodeSize(address, gas)
+
+			ret := make([]byte, 4)
+			binary.BigEndian.PutUint32(ret, codeSize)
+			return ret, cost
+		case AccountCode:
+			if len(input) != 36 {
+				log.Crit("bad API call", "request", req, "len", len(input))
+			}
+			address := common.BytesToAddress(input[0:20])
+			gas := binary.BigEndian.Uint64(input[20:28])
+			offset := binary.BigEndian.Uint32(input[28:32])
+			size := binary.BigEndian.Uint32(input[32:36])
+
+			code, cost := accountCode(address, offset, size, gas)
+
+			return code, cost
 		case AccountCodeHash:
 			if len(input) != 20 {
 				log.Crit("bad API call", "request", req, "len", len(input))
