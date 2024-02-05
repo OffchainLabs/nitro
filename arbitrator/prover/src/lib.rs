@@ -4,11 +4,12 @@
 #![allow(clippy::missing_safety_doc, clippy::too_many_arguments)]
 
 pub mod binary;
+pub mod flat_merkle;
 mod host;
 pub mod machine;
 /// cbindgen:ignore
 mod memory;
-mod merkle;
+pub mod merkle;
 mod reinterpret;
 pub mod utils;
 pub mod value;
@@ -89,17 +90,10 @@ unsafe fn arbitrator_load_machine_impl(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn arbitrator_load_wavm_binary(
-    binary_path: *const c_char,
-    always_merkleize: u8,
-) -> *mut Machine {
+pub unsafe extern "C" fn arbitrator_load_wavm_binary(binary_path: *const c_char) -> *mut Machine {
     let binary_path = cstr_to_string(binary_path);
     let binary_path = Path::new(&binary_path);
-    let mut merkleize = false;
-    if always_merkleize == 1 {
-        merkleize = true;
-    }
-    match Machine::new_from_wavm(binary_path, merkleize) {
+    match Machine::new_from_wavm(binary_path) {
         Ok(mach) => Box::into_raw(Box::new(mach)),
         Err(err) => {
             eprintln!("Error loading binary: {}", err);

@@ -3,7 +3,7 @@
 
 use crate::{
     binary::{parse, FloatInstruction, Local, NameCustomSection, WasmBinary},
-    host,
+    flat_merkle, host,
     memory::Memory,
     merkle::{Merkle, MerkleType},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
@@ -529,7 +529,7 @@ impl Module {
         h.finalize().into()
     }
 
-    fn serialize_for_proof(&self, mem_merkle: &Merkle) -> Vec<u8> {
+    fn serialize_for_proof(&self, mem_merkle: &flat_merkle::Merkle) -> Vec<u8> {
         let mut data = Vec::new();
 
         data.extend(
@@ -1165,7 +1165,7 @@ impl Machine {
         Ok(mach)
     }
 
-    pub fn new_from_wavm(wavm_binary: &Path, always_merkleize: bool) -> Result<Machine> {
+    pub fn new_from_wavm(wavm_binary: &Path) -> Result<Machine> {
         let f = BufReader::new(File::open(wavm_binary)?);
         let decompressor = brotli2::read::BrotliDecoder::new(f);
         let mut modules: Vec<Module> = bincode::deserialize_from(decompressor)?;
@@ -1191,17 +1191,12 @@ impl Machine {
                 MerkleType::Function,
                 module.funcs.iter().map(Function::hash).collect(),
             ));
-            if always_merkleize {
-                module.memory.cache_merkle_tree();
-            }
+            module.memory.cache_merkle_tree();
         }
-        let mut modules_merkle = None;
-        if always_merkleize {
-            modules_merkle = Some(Merkle::new(
-                MerkleType::Module,
-                modules.iter().map(Module::hash).collect(),
-            ));
-        }
+        let modules_merkle = Some(Merkle::new(
+            MerkleType::Module,
+            modules.iter().map(Module::hash).collect(),
+        ));
         let mut mach = Machine {
             status: MachineStatus::Running,
             steps: 0,
