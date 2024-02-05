@@ -96,12 +96,8 @@ func RenderSolError(solErr abi.Error, data []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	valsRange, ok := vals.([]interface{})
-	if !ok {
-		return "", errors.New("unexpected unpack result")
-	}
-	strVals := make([]string, 0, len(valsRange))
-	for _, val := range valsRange {
+	strVals := make([]string, 0, len(vals))
+	for _, val := range vals {
 		strVals = append(strVals, fmt.Sprintf("%v", val))
 	}
 	return fmt.Sprintf("error %v(%v)", solErr.Name, strings.Join(strVals, ", ")), nil
