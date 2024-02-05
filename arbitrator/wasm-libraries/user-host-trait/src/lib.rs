@@ -1,4 +1,4 @@
-// Copyright 2022-2023, Offchain Labs, Inc.
+// Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use arbutil::{
@@ -106,6 +106,7 @@ pub trait UserHost: GasMeteredMachine {
     /// [`SLOAD`]: https://www.evm.codes/#54
     fn storage_load_bytes32(&mut self, key: u32, dest: u32) -> Result<(), Self::Err> {
         self.buy_ink(HOSTIO_INK + 2 * PTR_INK + EVM_API_INK)?;
+        self.require_gas(evm::COLD_SLOAD_GAS)?;
         let key = self.read_bytes32(key)?;
 
         let (value, gas_cost) = self.evm_api().get_bytes32(key);
@@ -118,6 +119,9 @@ pub trait UserHost: GasMeteredMachine {
     /// of the EVM. This means that, under the hood, this hostio is storing a 32-byte value into
     /// the EVM state trie at offset `key`. Furthermore, refunds are tabulated exactly as in the
     /// EVM. The semantics, then, are equivalent to that of the EVM's [`SSTORE`] opcode.
+    ///
+    /// Note: we require the [`SSTORE`] sentry per EVM rules. The `gas_cost` returned by the EVM API
+    /// may exceed this amount, but that's ok because the predominant cost is due to state bloat concerns.
     ///
     /// [`SSTORE`]: https://www.evm.codes/#55
     fn storage_store_bytes32(&mut self, key: u32, value: u32) -> Result<(), Self::Err> {
@@ -397,10 +401,15 @@ pub trait UserHost: GasMeteredMachine {
     /// bounds, but rather copies the overlapping portion. The semantics are otherwise equivalent
     /// to that of the EVM's [`RETURN_DATA_COPY`] opcode.
     ///
+    /// Returns the number of bytes written.
+    ///
     /// [`RETURN_DATA_COPY`]: https://www.evm.codes/#3e
     fn read_return_data(&mut self, dest: u32, offset: u32, size: u32) -> Result<u32, Self::Err> {
         self.buy_ink(HOSTIO_INK + EVM_API_INK)?;
-        self.pay_for_write(size)?;
+
+        // pay for only as many bytes as could possibly be written
+        let max = self.evm_return_data_len().saturating_sub(offset);
+        self.pay_for_write(size.min(max))?;
 
         let data = self.evm_api().get_return_data(offset, size);
         assert!(data.len() <= size as usize);
@@ -456,12 +465,56 @@ pub trait UserHost: GasMeteredMachine {
     /// [`BALANCE`]: https://www.evm.codes/#31
     fn account_balance(&mut self, address: u32, ptr: u32) -> Result<(), Self::Err> {
         self.buy_ink(HOSTIO_INK + 2 * PTR_INK + EVM_API_INK)?;
+        self.require_gas(evm::COLD_ACCOUNT_GAS)?;
         let address = self.read_bytes20(address)?;
 
         let (balance, gas_cost) = self.evm_api().account_balance(address);
         self.buy_gas(gas_cost)?;
         self.write_bytes32(ptr, balance)?;
         trace!("account_balance", self, address, balance)
+    }
+
+    /// Gets a subset of the code from the account at the given address. The semantics are identical to that
+    /// of the EVM's [`EXT_CODE_COPY`] opcode, aside from one small detail: the write to the buffer `dest` will
+    /// stop after the last byte is written. This is unlike the EVM, which right pads with zeros in this scenario.
+    /// The return value is the number of bytes written, which allows the caller to detect if this has occured.
+    ///
+    /// [`EXT_CODE_COPY`]: https://www.evm.codes/#3C
+    fn account_code(
+        &mut self,
+        address: u32,
+        offset: u32,
+        size: u32,
+        dest: u32,
+    ) -> Result<u32, Self::Err> {
+        self.buy_ink(HOSTIO_INK + EVM_API_INK)?;
+        self.require_gas(evm::COLD_ACCOUNT_GAS)?; // not necessary since we also check in Go
+        let address = self.read_bytes20(address)?;
+        let gas = self.gas_left()?;
+
+        // we pass `gas` to check if there's enough before loading from the db
+        let (code, gas_cost) = self.evm_api().account_code(address, offset, size, gas);
+        self.buy_gas(gas_cost)?;
+
+        self.pay_for_write(code.len() as u32)?;
+        self.write_slice(dest, &code)?;
+
+        trace!("account_code", self, address, be!(size), code.len() as u32)
+    }
+
+    /// Gets the size of the code in bytes at the given address. The semantics are equivalent
+    /// to that of the EVM's [`EXT_CODESIZE`].
+    ///
+    /// [`EXT_CODESIZE`]: https://www.evm.codes/#3B
+    fn account_code_size(&mut self, address: u32) -> Result<u32, Self::Err> {
+        self.buy_ink(HOSTIO_INK + EVM_API_INK)?;
+        self.require_gas(evm::COLD_ACCOUNT_GAS)?; // not necessary since we also check in Go
+        let address = self.read_bytes20(address)?;
+        let gas = self.gas_left()?;
+
+        let (len, gas_cost) = self.evm_api().account_code_size(address, gas);
+        self.buy_gas(gas_cost)?;
+        trace!("account_code_size", self, address, &[], len)
     }
 
     /// Gets the code hash of the account at the given address. The semantics are equivalent
@@ -472,6 +525,7 @@ pub trait UserHost: GasMeteredMachine {
     /// [`EXT_CODEHASH`]: https://www.evm.codes/#3F
     fn account_codehash(&mut self, address: u32, ptr: u32) -> Result<(), Self::Err> {
         self.buy_ink(HOSTIO_INK + 2 * PTR_INK + EVM_API_INK)?;
+        self.require_gas(evm::COLD_ACCOUNT_GAS)?;
         let address = self.read_bytes20(address)?;
 
         let (hash, gas_cost) = self.evm_api().account_codehash(address);
@@ -664,7 +718,7 @@ pub trait UserHost: GasMeteredMachine {
             self.buy_ink(HOSTIO_INK)?;
             return Ok(());
         }
-        let gas_cost = self.evm_api().add_pages(pages);
+        let gas_cost = self.evm_api().add_pages(pages); // no sentry needed since the work happens after the hostio
         self.buy_gas(gas_cost)?;
         trace!("pay_for_memory_grow", self, be!(pages), &[])
     }

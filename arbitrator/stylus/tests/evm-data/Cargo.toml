@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-stylus-sdk = { path = "../../../langs/rust/stylus-sdk" }
+stylus-sdk = { path = "../../../langs/rust/stylus-sdk", features = ["debug"] }
 hex = "0.4.3"
 
 [profile.release]
