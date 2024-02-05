@@ -1,4 +1,4 @@
-package main
+package structinit
 
 import (
 	"fmt"
@@ -8,17 +8,12 @@ import (
 	"strings"
 
 	"golang.org/x/tools/go/analysis"
-	"golang.org/x/tools/go/analysis/singlechecker"
 )
 
 // Tip for linter that struct that has this comment should be included in the
 // analysis.
 // Note: comment should be directly line above the struct definition.
 const linterTip = "// lint:require-exhaustive-initialization"
-
-func New(conf any) ([]*analysis.Analyzer, error) {
-	return []*analysis.Analyzer{Analyzer}, nil
-}
 
 // Analyzer implements struct analyzer for structs that are annotated with
 // `linterTip`, it checks that every instantiation initializes all the fields.
@@ -115,8 +110,4 @@ func markedStructs(pass *analysis.Pass) map[string]int {
 type position struct {
 	fileName string
 	line     int
-}
-
-func main() {
-	singlechecker.Main(Analyzer)
 }

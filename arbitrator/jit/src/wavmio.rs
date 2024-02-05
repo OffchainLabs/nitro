@@ -193,8 +193,8 @@ pub fn resolve_preimage_impl(
     };
 
     let offset = match u32::try_from(offset) {
-        Ok(offset) => offset as usize,
-        Err(_) => error!("bad offset {offset} in {name}"),
+        Ok(offset) if offset % 32 == 0 => offset as usize,
+        _ => error!("bad offset {offset} in {name}"),
     };
 
     let len = std::cmp::min(32, preimage.len().saturating_sub(offset));

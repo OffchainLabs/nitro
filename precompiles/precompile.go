@@ -538,6 +538,11 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbGasInfo.methodsByName["GetL1FeesAvailable"].arbosVersion = 10
 	ArbGasInfo.methodsByName["GetL1RewardRate"].arbosVersion = 11
 	ArbGasInfo.methodsByName["GetL1RewardRecipient"].arbosVersion = 11
+	ArbGasInfo.methodsByName["GetL1PricingEquilibrationUnits"].arbosVersion = 20
+	ArbGasInfo.methodsByName["GetLastL1PricingUpdateTime"].arbosVersion = 20
+	ArbGasInfo.methodsByName["GetL1PricingFundsDueForRewards"].arbosVersion = 20
+	ArbGasInfo.methodsByName["GetL1PricingUnitsSinceUpdate"].arbosVersion = 20
+	ArbGasInfo.methodsByName["GetLastL1PricingSurplus"].arbosVersion = 20
 	insert(MakePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}))
 	insert(MakePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}))
 
@@ -555,6 +560,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwnerPublic.methodsByName["GetInfraFeeAccount"].arbosVersion = 5
 	ArbOwnerPublic.methodsByName["RectifyChainOwner"].arbosVersion = 11
 	ArbOwnerPublic.methodsByName["GetBrotliCompressionLevel"].arbosVersion = 20
+	ArbOwnerPublic.methodsByName["GetScheduledUpgrade"].arbosVersion = 20
 
 	ArbRetryableImpl := &ArbRetryableTx{Address: types.ArbRetryableTxAddress}
 	ArbRetryable := insert(MakePrecompile(templates.ArbRetryableTxMetaData, ArbRetryableImpl))

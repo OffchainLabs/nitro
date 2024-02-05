@@ -311,8 +311,7 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(arbitrator_pro
 # strategic rules to minimize dependency building
 
 .make/lint: $(DEP_PREDICATE) build-node-deps $(ORDER_ONLY_PREDICATE) .make
-	go run ./linter/koanf ./...
-	go run ./linter/pointercheck ./...
+	go run ./linters ./...
 	golangci-lint run --fix
 	yarn --cwd contracts solhint
 	@touch $@
@@ -335,6 +334,7 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(arbitrator_pro
 
 .make/solidity: $(DEP_PREDICATE) contracts/src/*/*.sol .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
 	yarn --cwd contracts build
+	yarn --cwd contracts build:forge:yul
 	@touch $@
 
 .make/yarndeps: $(DEP_PREDICATE) contracts/package.json contracts/yarn.lock $(ORDER_ONLY_PREDICATE) .make
