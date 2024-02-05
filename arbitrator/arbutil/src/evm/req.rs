@@ -234,7 +234,7 @@ impl<T: RequestHandler> EvmApi for EvmApiRequestor<T> {
         req.extend(size.to_be_bytes());
         let (res, cost) = self
             .handler
-            .handle_request(EvmApiMethod::AccountCodeSize, &req);
+            .handle_request(EvmApiMethod::AccountCode, &req);
         (res, cost)
     }
 
