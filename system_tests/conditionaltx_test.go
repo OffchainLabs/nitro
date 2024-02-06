@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -28,9 +29,7 @@ func getStorageRootHash(t *testing.T, execNode *gethexec.ExecutionNode, address 
 	t.Helper()
 	statedb, err := execNode.Backend.ArbInterface().BlockChain().State()
 	Require(t, err)
-	trie, err := statedb.StorageTrie(address)
-	Require(t, err)
-	return trie.Hash()
+	return statedb.GetStorageRoot(address)
 }
 
 func getStorageSlotValue(t *testing.T, execNode *gethexec.ExecutionNode, address common.Address) map[common.Hash]common.Hash {
@@ -39,7 +38,7 @@ func getStorageSlotValue(t *testing.T, execNode *gethexec.ExecutionNode, address
 	Require(t, err)
 	slotValue := make(map[common.Hash]common.Hash)
 	Require(t, err)
-	err = statedb.ForEachStorage(address, func(key, value common.Hash) bool {
+	err = state.ForEachStorage(statedb, address, func(key, value common.Hash) bool {
 		slotValue[key] = value
 		return true
 	})

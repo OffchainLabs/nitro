@@ -820,7 +820,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	return nil
 }
 
-func (s *TransactionStreamer) FetchBatch(batchNum uint64) ([]byte, error) {
+func (s *TransactionStreamer) FetchBatch(batchNum uint64) ([]byte, common.Hash, error) {
 	return s.inboxReader.GetSequencerMessageBytes(context.TODO(), batchNum)
 }
 
@@ -968,8 +968,16 @@ func (s *TransactionStreamer) executeNextMsg(ctx context.Context, exec execution
 		log.Error("feedOneMsg failed to readMessage", "err", err, "pos", pos)
 		return false
 	}
-	err = s.exec.DigestMessage(pos, msg)
-	if err != nil {
+	var msgForPrefetch *arbostypes.MessageWithMetadata
+	if pos+1 < msgCount {
+		msg, err := s.GetMessage(pos + 1)
+		if err != nil {
+			log.Error("feedOneMsg failed to readMessage", "err", err, "pos", pos+1)
+			return false
+		}
+		msgForPrefetch = msg
+	}
+	if err = s.exec.DigestMessage(pos, msg, msgForPrefetch); err != nil {
 		logger := log.Warn
 		if prevMessageCount < msgCount {
 			logger = log.Debug

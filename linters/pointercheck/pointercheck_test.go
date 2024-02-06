@@ -1,4 +1,4 @@
-package main
+package pointercheck
 
 import (
 	"os"
@@ -11,7 +11,7 @@ import (
 func TestAll(t *testing.T) {
 	wd, err := os.Getwd()
 	if err != nil {
-		t.Fatalf("Failed to get wd: %s", err)
+		t.Fatalf("Failed to get working directory: %v", err)
 	}
 	testdata := filepath.Join(filepath.Dir(wd), "testdata")
 	res := analysistest.Run(t, testdata, analyzerForTests, "pointercheck")
