@@ -59,23 +59,6 @@ type StatelessBlockValidator struct {
 	debugEspressoIncorrectHeight uint64
 }
 
-// This should be only used in tests
-func (s *StatelessBlockValidator) SetHotShotReader(reader HotShotReaderInterface, t *testing.T) {
-	s.hotShotReader = reader
-}
-
-func (s *StatelessBlockValidator) SetDebugEspressoIncorrectHeight(h uint64, t *testing.T) {
-	s.debugEspressoIncorrectHeight = h
-}
-
-func (s *StatelessBlockValidator) EspressoDebugging(curr uint64) bool {
-	return s.debugEspressoIncorrectHeight > 0 && curr >= s.debugEspressoIncorrectHeight
-}
-
-func (s *StatelessBlockValidator) GetDebugEspressoIncorrectHeight() uint64 {
-	return s.debugEspressoIncorrectHeight
-}
-
 type BlockValidatorRegistrer interface {
 	SetBlockValidator(*BlockValidator)
 }
@@ -534,4 +517,19 @@ func (v *StatelessBlockValidator) Stop() {
 	for _, spawner := range v.validationSpawners {
 		spawner.Stop()
 	}
+}
+
+// This method should be only used in tests.
+func (s *StatelessBlockValidator) DebugEspresso_SetHotShotReader(reader HotShotReaderInterface, t *testing.T) {
+	s.hotShotReader = reader
+}
+
+// This method should be only used in tests.
+func (s *StatelessBlockValidator) DebugEspresso_SetIncorrectHeight(h uint64, t *testing.T) {
+	s.debugEspressoIncorrectHeight = h
+}
+
+// This method is to create a conditional branch to help mocking a challenge.
+func (s *StatelessBlockValidator) EspressoDebugging(curr uint64) bool {
+	return s.debugEspressoIncorrectHeight > 0 && curr >= s.debugEspressoIncorrectHeight
 }

@@ -160,8 +160,8 @@ func createStaker(ctx context.Context, t *testing.T, builder *NodeBuilder, incor
 	Require(t, err)
 
 	if incorrectHeight > 0 {
-		l2Node.StatelessBlockValidator.SetDebugEspressoIncorrectHeight(incorrectHeight, t)
-		l2Node.BlockValidator.SetDebugEspressoIncorrectHeight(incorrectHeight, t)
+		l2Node.StatelessBlockValidator.DebugEspresso_SetIncorrectHeight(incorrectHeight, t)
+		l2Node.BlockValidator.DebugEspresso_SetIncorrectHeight(incorrectHeight, t)
 	}
 
 	err = wallet.Initialize(ctx)
@@ -286,13 +286,7 @@ func TestEspressoE2E(t *testing.T) {
 	if len(commitmentBytes) != 32 {
 		t.Fatal("failed to read hotshot via hostio contract, length is not 32")
 	}
-	empty := true
-	for _, i := range commitmentBytes {
-		if i != 0 {
-			empty = false
-			break
-		}
-	}
+	empty := actualCommitment.Cmp(big.NewInt(0)) == 0
 	if empty {
 		t.Fatal("failed to read hotshot via hostio contract, empty")
 	}

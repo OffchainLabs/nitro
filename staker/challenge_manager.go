@@ -133,7 +133,9 @@ func NewChallengeManager(
 	if err != nil {
 		return nil, fmt.Errorf("error creating block challenge backend for challenge %v: %w", challengeIndex, err)
 	}
-	backend.SetDebugEspressoIncorrectHeight(val.GetDebugEspressoIncorrectHeight())
+	if val.debugEspressoIncorrectHeight > 0 {
+		backend.DebugEspresso_SetIncorrectHeight(val.debugEspressoIncorrectHeight)
+	}
 	return &ChallengeManager{
 		challengeCore: &challengeCore{
 			con:                  con,

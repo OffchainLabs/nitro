@@ -73,14 +73,6 @@ func NewBlockChallengeBackend(
 	}, nil
 }
 
-func (b *BlockChallengeBackend) SetDebugEspressoIncorrectHeight(h uint64) {
-	b.debugEspressoIncorrectHeight = h
-}
-
-func (b *BlockChallengeBackend) EspressoDebugging(curr uint64) bool {
-	return b.debugEspressoIncorrectHeight > 0 && curr > b.debugEspressoIncorrectHeight
-}
-
 func (b *BlockChallengeBackend) findBatchAfterMessageCount(msgCount arbutil.MessageIndex) (uint64, error) {
 	if msgCount == 0 {
 		return 0, nil
@@ -240,4 +232,14 @@ func (b *BlockChallengeBackend) IssueExecChallenge(
 		globalStateHashes,
 		big.NewInt(int64(numsteps)),
 	)
+}
+
+// This method should be only used in tests.
+func (b *BlockChallengeBackend) DebugEspresso_SetIncorrectHeight(h uint64) {
+	b.debugEspressoIncorrectHeight = h
+}
+
+// This method is to create a conditional branch to help mocking a challenge.
+func (b *BlockChallengeBackend) EspressoDebugging(curr uint64) bool {
+	return b.debugEspressoIncorrectHeight > 0 && curr > b.debugEspressoIncorrectHeight
 }

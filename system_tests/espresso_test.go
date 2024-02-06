@@ -189,7 +189,7 @@ func createValidatorAndPosterNode(ctx context.Context, t *testing.T) (*TestClien
 	builder.chainConfig.ArbitrumChainParams.EnableEspresso = true
 
 	cleanup := builder.Build(t)
-	builder.L2.ConsensusNode.StatelessBlockValidator.SetHotShotReader(&hotShotReader, t)
+	builder.L2.ConsensusNode.StatelessBlockValidator.DebugEspresso_SetHotShotReader(&hotShotReader, t)
 	return builder.L2, cleanup
 }
 
