@@ -40,11 +40,9 @@ func (c *InboxReaderConfig) Validate() error {
 	if c.MaxBlocksToRead == 0 || c.MaxBlocksToRead < c.DefaultBlocksToRead {
 		return errors.New("inbox reader max-blocks-to-read cannot be zero or less than default-blocks-to-read")
 	}
-	if c.ReadMode != "latest" {
-		c.ReadMode = strings.ToLower(c.ReadMode)
-		if c.ReadMode != "safe" && c.ReadMode != "finalized" {
-			return fmt.Errorf("inbox reader read-mode is invalid, want: safe or finalized, got: %s", c.ReadMode)
-		}
+	c.ReadMode = strings.ToLower(c.ReadMode)
+	if c.ReadMode != "latest" && c.ReadMode != "safe" && c.ReadMode != "finalized" {
+		return fmt.Errorf("inbox reader read-mode is invalid, want: latest or safe or finalized, got: %s", c.ReadMode)
 	}
 	return nil
 }
@@ -57,7 +55,7 @@ func InboxReaderConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".default-blocks-to-read", DefaultInboxReaderConfig.DefaultBlocksToRead, "the default number of blocks to read at once (will vary based on traffic by default)")
 	f.Uint64(prefix+".target-messages-read", DefaultInboxReaderConfig.TargetMessagesRead, "if adjust-blocks-to-read is enabled, the target number of messages to read at once")
 	f.Uint64(prefix+".max-blocks-to-read", DefaultInboxReaderConfig.MaxBlocksToRead, "if adjust-blocks-to-read is enabled, the maximum number of blocks to read at once")
-	f.String(prefix+".read-mode", DefaultInboxReaderConfig.ReadMode, "mode to only read safe or finalized L1 blocks. Takes string input, valid strings- safe, finalized")
+	f.String(prefix+".read-mode", DefaultInboxReaderConfig.ReadMode, "mode to only read latest or safe or finalized L1 blocks. Enabling safe or finalized disables feed input and output. Defaults to latest. Takes string input, valid strings- latest, safe, finalized")
 }
 
 var DefaultInboxReaderConfig = InboxReaderConfig{
