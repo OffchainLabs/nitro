@@ -38,12 +38,12 @@ type Programs struct {
 }
 
 type Program struct {
-	version     uint16
-	initGas     uint24
-	asmEstimate uint24 // Unit is a kb (predicted canonically)
-	footprint   uint16
-	activatedAt uint64 // Last activation timestamp
-	secondsLeft uint64 // Not stored in state
+	version       uint16
+	initGas       uint24
+	asmEstimateKb uint24 // Predicted size of the asm
+	footprint     uint16
+	activatedAt   uint64 // Last activation timestamp
+	secondsLeft   uint64 // Not stored in state
 }
 
 type uint24 = arbmath.Uint24
@@ -251,7 +251,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 		return 0, codeHash, common.Hash{}, nil, true, err
 	}
 
-	estimateKb, err := arbmath.IntToUint24((info.asmEstimate + 1023) / 1024) // stored in kilobytes
+	estimateKb, err := arbmath.IntToUint24(arbmath.DivCeil(info.asmEstimate, 1024)) // stored in kilobytes
 	if err != nil {
 		return 0, codeHash, common.Hash{}, nil, true, err
 	}
@@ -266,11 +266,11 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 	}
 
 	programData := Program{
-		version:     stylusVersion,
-		initGas:     initGas24,
-		asmEstimate: estimateKb,
-		footprint:   info.footprint,
-		activatedAt: time,
+		version:       stylusVersion,
+		initGas:       initGas24,
+		asmEstimateKb: estimateKb,
+		footprint:     info.footprint,
+		activatedAt:   time,
 	}
 	return stylusVersion, codeHash, info.moduleHash, dataFee, false, p.setProgram(codeHash, programData)
 }
@@ -367,11 +367,11 @@ func (p Programs) getProgram(codeHash common.Hash, time uint64) (Program, error)
 		return Program{}, err
 	}
 	program := Program{
-		version:     arbmath.BytesToUint16(data[:2]),
-		initGas:     arbmath.BytesToUint24(data[2:5]),
-		asmEstimate: arbmath.BytesToUint24(data[5:8]),
-		footprint:   arbmath.BytesToUint16(data[8:10]),
-		activatedAt: arbmath.BytesToUint(data[10:18]),
+		version:       arbmath.BytesToUint16(data[:2]),
+		initGas:       arbmath.BytesToUint24(data[2:5]),
+		asmEstimateKb: arbmath.BytesToUint24(data[5:8]),
+		footprint:     arbmath.BytesToUint16(data[8:10]),
+		activatedAt:   arbmath.BytesToUint(data[10:18]),
 	}
 	if program.version == 0 {
 		return program, ProgramNotActivatedError()
@@ -404,7 +404,7 @@ func (p Programs) setProgram(codehash common.Hash, program Program) error {
 	data := common.Hash{}
 	copy(data[0:], arbmath.Uint16ToBytes(program.version))
 	copy(data[2:], arbmath.Uint24ToBytes(program.initGas))
-	copy(data[5:], arbmath.Uint24ToBytes(program.asmEstimate))
+	copy(data[5:], arbmath.Uint24ToBytes(program.asmEstimateKb))
 	copy(data[8:], arbmath.Uint16ToBytes(program.footprint))
 	copy(data[10:], arbmath.UintToBytes(program.activatedAt))
 	return p.programs.Set(codehash, data)
@@ -447,12 +447,13 @@ func (p Programs) ProgramKeepalive(codeHash common.Hash, time uint64) (*big.Int,
 		return nil, ProgramNeedsUpgradeError(program.version, stylusVersion)
 	}
 
-	cost, err := p.dataPricer.UpdateModel(program.asmEstimate.ToUint32(), time)
+	bytes := arbmath.SaturatingUMul(program.asmEstimateKb.ToUint32(), 1024)
+	dataFee, err := p.dataPricer.UpdateModel(bytes, time)
 	if err != nil {
 		return nil, err
 	}
 	program.activatedAt = time
-	return cost, p.setProgram(codeHash, program)
+	return dataFee, p.setProgram(codeHash, program)
 
 }
 

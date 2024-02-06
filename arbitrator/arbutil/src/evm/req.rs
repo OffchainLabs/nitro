@@ -212,6 +212,32 @@ impl<T: RequestHandler> EvmApi for EvmApiRequestor<T> {
         (res.try_into().unwrap(), cost)
     }
 
+    fn account_code_size(&mut self, address: Bytes20, gas_left: u64) -> (u32, u64) {
+        let mut req: Vec<u8> = address.as_slice().into();
+        req.extend(gas_left.to_be_bytes());
+        let (res, cost) = self
+            .handler
+            .handle_request(EvmApiMethod::AccountCodeSize, &req);
+        (u32::from_be_bytes(res.try_into().unwrap()), cost)
+    }
+
+    fn account_code(
+        &mut self,
+        address: Bytes20,
+        offset: u32,
+        size: u32,
+        gas_left: u64,
+    ) -> (Vec<u8>, u64) {
+        let mut req: Vec<u8> = address.as_slice().into();
+        req.extend(gas_left.to_be_bytes());
+        req.extend(offset.to_be_bytes());
+        req.extend(size.to_be_bytes());
+        let (res, cost) = self
+            .handler
+            .handle_request(EvmApiMethod::AccountCode, &req);
+        (res, cost)
+    }
+
     fn account_codehash(&mut self, address: Bytes20) -> (Bytes32, u64) {
         let (res, cost) = self
             .handler

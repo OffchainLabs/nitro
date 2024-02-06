@@ -119,6 +119,20 @@ pub unsafe extern "C" fn user_host__emit_log(data: u32, len: u32, topics: u32) {
 pub unsafe extern "C" fn user_host__account_balance(address: u32, ptr: u32) {
     hostio!(account_balance(address, ptr))
 }
+#[no_mangle]
+pub unsafe extern "C" fn user_host__account_code(
+    address: u32,
+    offset: u32,
+    size: u32,
+    dest: u32,
+) -> u32 {
+    hostio!(account_code(address, offset, size, dest))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__account_code_size(address: u32) -> u32 {
+    hostio!(account_code_size(address))
+}
 
 #[no_mangle]
 pub unsafe extern "C" fn user_host__account_codehash(address: u32, ptr: u32) {

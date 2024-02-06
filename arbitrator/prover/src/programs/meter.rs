@@ -372,7 +372,10 @@ pub fn pricing_v1(op: &Operator, tys: &HashMap<SignatureIndex, FunctionType>) ->
     #[rustfmt::skip]
     let ink = match op {
         op!(Unreachable, Return) => 1,
-        op!(Nop, Drop) | dot!(I32Const, I64Const) => 1,
+        op!(Nop) | dot!(I32Const, I64Const) => 1,
+
+        op!(Drop) => 9, // could be 1, but using a higher number helps limit the number of ops in BOLD
+
         dot!(Block, Loop) | op!(Else, End) => 1,
         dot!(Br, BrIf, If) => 765,
         dot!(Select) => 1250, // TODO: improve wasmer codegen

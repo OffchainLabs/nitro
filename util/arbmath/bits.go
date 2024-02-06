@@ -79,3 +79,23 @@ func BoolToUint32(value bool) uint32 {
 func UintToBool[T Unsigned](value T) bool {
 	return value != 0
 }
+
+// Ensures a slice is non-nil
+func NonNilSlice[T any](slice []T) []T {
+	if slice == nil {
+		return []T{}
+	}
+	return slice
+}
+
+// Equivalent to slice[start:offset], but truncates when out of bounds rather than panicking.
+func SliceWithRunoff[S any, I Integer](slice []S, start, end I) []S {
+	len := I(len(slice))
+	start = MaxInt(start, 0)
+	end = MaxInt(start, end)
+
+	if slice == nil || start >= len {
+		return []S{}
+	}
+	return slice[start:MinInt(end, len)]
+}

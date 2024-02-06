@@ -1,4 +1,4 @@
-// Copyright 2023, Offchain Labs, Inc.
+// Copyright 2023-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 package programs
@@ -16,6 +16,7 @@ import (
 	"github.com/holiman/uint256"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	am "github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type RequestHandler func(req RequestType, input []byte) ([]byte, uint64)
@@ -32,6 +33,8 @@ const (
 	Create2
 	EmitLog
 	AccountBalance
+	AccountCode
+	AccountCodeSize
 	AccountCodeHash
 	AddPages
 	CaptureHostIO
@@ -106,7 +109,7 @@ func newApiClosures(
 
 		// EVM rule: calls that pay get a stipend (opCall)
 		if value.Sign() != 0 {
-			gas = arbmath.SaturatingUAdd(gas, params.CallStipend)
+			gas = am.SaturatingUAdd(gas, params.CallStipend)
 		}
 
 		var ret []byte
@@ -151,9 +154,9 @@ func newApiClosures(
 		// pay for static and dynamic costs (gasCreate and gasCreate2)
 		baseCost := params.CreateGas
 		if opcode == vm.CREATE2 {
-			keccakWords := arbmath.WordsForBytes(uint64(len(code)))
-			keccakCost := arbmath.SaturatingUMul(params.Keccak256WordGas, keccakWords)
-			baseCost = arbmath.SaturatingUAdd(baseCost, keccakCost)
+			keccakWords := am.WordsForBytes(uint64(len(code)))
+			keccakCost := am.SaturatingUMul(params.Keccak256WordGas, keccakWords)
+			baseCost = am.SaturatingUAdd(baseCost, keccakCost)
 		}
 		if gas < baseCost {
 			return zeroAddr, nil, gas, vm.ErrOutOfGas
@@ -205,16 +208,33 @@ func newApiClosures(
 		return nil
 	}
 	accountBalance := func(address common.Address) (common.Hash, uint64) {
-		cost := vm.WasmAccountTouchCost(evm.StateDB, address)
+		cost := vm.WasmAccountTouchCost(evm.StateDB, address, false)
 		balance := evm.StateDB.GetBalance(address)
 		return common.BigToHash(balance), cost
 	}
-	accountCodehash := func(address common.Address) (common.Hash, uint64) {
-		cost := vm.WasmAccountTouchCost(evm.StateDB, address)
-		if !evm.StateDB.Empty(address) {
-			return evm.StateDB.GetCodeHash(address), cost
+	accountCode := func(address common.Address, offset, size uint32, gas uint64) ([]byte, uint64) {
+		// In the future it'll be possible to know the size of a contract before loading it.
+		// For now, require the worst case before doing the load.
+
+		cost := vm.WasmAccountTouchCost(evm.StateDB, address, true)
+		if gas < cost {
+			return []byte{}, cost
 		}
-		return common.Hash{}, cost
+		end := am.SaturatingUAdd(offset, size)
+		code := am.SliceWithRunoff(evm.StateDB.GetCode(address), offset, end)
+		return code, cost
+	}
+	accountCodeSize := func(address common.Address, gas uint64) (uint32, uint64) {
+		cost := vm.WasmAccountTouchCost(evm.StateDB, address, true)
+		if gas < cost {
+			return 0, cost
+		}
+		size := evm.StateDB.GetCodeSize(address)
+		return uint32(size), cost
+	}
+	accountCodehash := func(address common.Address) (common.Hash, uint64) {
+		cost := vm.WasmAccountTouchCost(evm.StateDB, address, false)
+		return evm.StateDB.GetCodeHash(address), cost
 	}
 	addPages := func(pages uint16) uint64 {
 		open, ever := db.AddStylusPages(pages)
@@ -338,6 +358,30 @@ func newApiClosures(
 			balance, cost := accountBalance(address)
 
 			return balance[:], cost
+		case AccountCodeSize:
+			if len(input) != 28 {
+				log.Crit("bad API call", "request", req, "len", len(input))
+			}
+			address := common.BytesToAddress(input[0:20])
+			gas := binary.BigEndian.Uint64(input[20:28])
+
+			codeSize, cost := accountCodeSize(address, gas)
+
+			ret := make([]byte, 4)
+			binary.BigEndian.PutUint32(ret, codeSize)
+			return ret, cost
+		case AccountCode:
+			if len(input) != 36 {
+				log.Crit("bad API call", "request", req, "len", len(input))
+			}
+			address := common.BytesToAddress(input[0:20])
+			gas := binary.BigEndian.Uint64(input[20:28])
+			offset := binary.BigEndian.Uint32(input[28:32])
+			size := binary.BigEndian.Uint32(input[32:36])
+
+			code, cost := accountCode(address, offset, size, gas)
+
+			return code, cost
 		case AccountCodeHash:
 			if len(input) != 20 {
 				log.Crit("bad API call", "request", req, "len", len(input))
