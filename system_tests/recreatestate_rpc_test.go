@@ -416,7 +416,7 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 			gas = 0
 			blocks = 0
 		} else {
-			if int(i) > int(lastBlock)-int(cacheConfig.BlockCount) {
+			if int(i) >= int(lastBlock)-int(cacheConfig.BlockCount) {
 				// skipping nonexistence check - the state might have been saved on node shutdown
 				continue
 			}
@@ -466,8 +466,10 @@ func TestSkippingSavingStateAndRecreatingAfterRestart(t *testing.T) {
 	cacheConfig.MaxAmountOfGasToSkipStateSaving = 15 * 1000 * 1000
 	testSkippingSavingStateAndRecreatingAfterRestart(t, &cacheConfig, 512)
 
-	// one test block ~ 925000 gas
-	testBlockGas := uint64(925000)
+	// lower number of blocks in triegc below 100 blocks, to be able to check for nonexistence in testSkippingSavingStateAndRecreatingAfterRestart (it doesn't check last BlockCount blocks as some of them may be persisted on node shutdown)
+	cacheConfig.BlockCount = 16
+
+	testBlockGas := uint64(925000) // one test block ~ 925000 gas
 	skipBlockValues := []uint64{0, 1, 2, 3, 5, 21, 51, 100, 101}
 	var skipGasValues []uint64
 	for _, i := range skipBlockValues {
