@@ -202,6 +202,16 @@ func (a *ExecServerAPI) ExecKeepAlive(ctx context.Context, execid uint64) error 
 	return nil
 }
 
+func (a *ExecServerAPI) CheckAlive(ctx context.Context, execid uint64) error {
+	a.runIdLock.Lock()
+	defer a.runIdLock.Unlock()
+	entry := a.runs[execid]
+	if entry == nil {
+		return errRunNotFound
+	}
+	return nil
+}
+
 func (a *ExecServerAPI) CloseExec(execid uint64) {
 	a.runIdLock.Lock()
 	defer a.runIdLock.Unlock()

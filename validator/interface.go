@@ -36,4 +36,5 @@ type ExecutionRun interface {
 	GetProofAt(uint64) containers.PromiseInterface[[]byte]
 	PrepareRange(uint64, uint64) containers.PromiseInterface[struct{}]
 	Close()
+	CheckAlive(ctx context.Context) error
 }

@@ -140,6 +140,10 @@ func (r *mockExecRun) PrepareRange(uint64, uint64) containers.PromiseInterface[s
 	return containers.NewReadyPromise[struct{}](struct{}{}, nil)
 }
 
+func (r *mockExecRun) CheckAlive(ctx context.Context) error {
+	return nil
+}
+
 func (r *mockExecRun) Close() {}
 
 func createMockValidationNode(t *testing.T, ctx context.Context, config *server_arb.ArbitratorSpawnerConfig) (*mockSpawner, *node.Node) {
