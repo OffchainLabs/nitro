@@ -174,17 +174,10 @@ func (s *SyncMonitor) SafeBlockNumber(ctx context.Context) (uint64, error) {
 }
 
 func (s *SyncMonitor) getLatestValidatedCount() (arbutil.MessageIndex, error) {
-	latestValidatedGS := s.txStreamer.validator.GetLastValidated()
-	var count arbutil.MessageIndex
-	var err error
-	if latestValidatedGS.Batch > 0 {
-		count, err = s.inboxReader.tracker.GetBatchMessageCount(latestValidatedGS.Batch - 1)
-		if err != nil {
-			return 0, err
-		}
+	if s.txStreamer.validator == nil {
+		return 0, errors.New("validator not set up")
 	}
-	count += arbutil.MessageIndex(latestValidatedGS.PosInBatch)
-	return count, nil
+	return s.txStreamer.validator.GetValidated(), nil
 }
 
 func (s *SyncMonitor) FinalizedBlockNumber(ctx context.Context) (uint64, error) {

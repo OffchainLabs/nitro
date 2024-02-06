@@ -1209,8 +1209,8 @@ func (v *BlockValidator) WaitForPos(t *testing.T, ctx context.Context, pos arbut
 	}
 }
 
-func (v *BlockValidator) GetLastValidated() validator.GoGlobalState {
-	v.reorgMutex.Lock()
-	defer v.reorgMutex.Unlock()
-	return v.lastValidGS
+func (v *BlockValidator) GetValidated() arbutil.MessageIndex {
+	v.reorgMutex.RLock()
+	defer v.reorgMutex.RUnlock()
+	return v.validated()
 }
