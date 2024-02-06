@@ -203,13 +203,11 @@ func (a *ExecServerAPI) ExecKeepAlive(ctx context.Context, execid uint64) error 
 }
 
 func (a *ExecServerAPI) CheckAlive(ctx context.Context, execid uint64) error {
-	a.runIdLock.Lock()
-	defer a.runIdLock.Unlock()
-	entry := a.runs[execid]
-	if entry == nil {
-		return errRunNotFound
+	run, err := a.getRun(execid)
+	if err != nil {
+		return err
 	}
-	return nil
+	return run.CheckAlive(ctx)
 }
 
 func (a *ExecServerAPI) CloseExec(execid uint64) {
