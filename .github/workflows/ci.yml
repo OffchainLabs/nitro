@@ -58,6 +58,9 @@ jobs:
         with:
           targets: 'wasm32-unknown-unknown, wasm32-wasi'
 
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
       - name: Cache Build Products
         uses: actions/cache@v3
         with:
@@ -114,8 +117,7 @@ jobs:
           skip-pkg-cache: true
       - name: Custom Lint
         run: |
-          go run ./linter/koanf ./...
-          go run ./linter/pointercheck ./...
+          go run ./linters ./...
 
       - name: Set environment variables
         run: |

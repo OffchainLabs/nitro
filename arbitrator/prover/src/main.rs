@@ -6,7 +6,7 @@ use eyre::{Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use prover::{
     machine::{GlobalState, InboxIdentifier, Machine, MachineStatus, PreimageResolver, ProofInfo},
-    utils::{Bytes32, CBytes},
+    utils::{hash_preimage, Bytes32, CBytes},
     wavm::Opcode,
 };
 use std::sync::Arc;
@@ -159,7 +159,7 @@ fn main() -> Result<()> {
             let mut buf = vec![0u8; size];
             file.read_exact(&mut buf)?;
 
-            let hash = preimage_ty.hash(&buf);
+            let hash = hash_preimage(&buf, preimage_ty)?;
             preimages
                 .entry(preimage_ty)
                 .or_default()
@@ -206,7 +206,7 @@ fn main() -> Result<()> {
 
     let mut proofs: Vec<ProofInfo> = Vec::new();
     let mut seen_states = HashSet::default();
-    let mut opcode_counts: HashMap<Opcode, usize> = HashMap::default();
+    let mut proving_backoff: HashMap<(Opcode, u64), usize> = HashMap::default();
     let mut opcode_profile: HashMap<Opcode, SimpleProfile> = HashMap::default();
     let mut func_profile: HashMap<(usize, usize), SimpleProfile> = HashMap::default();
     let mut func_stack: Vec<(usize, usize, SimpleProfile)> = Vec::default();
@@ -237,7 +237,13 @@ fn main() -> Result<()> {
         let next_opcode = next_inst.opcode;
 
         if opts.proving_backoff {
-            let count_entry = opcode_counts.entry(next_opcode).or_insert(0);
+            let mut extra_data = 0;
+            if matches!(next_opcode, Opcode::ReadInboxMessage | Opcode::ReadPreImage) {
+                extra_data = next_inst.argument_data;
+            }
+            let count_entry = proving_backoff
+                .entry((next_opcode, extra_data))
+                .or_insert(0);
             *count_entry += 1;
             let count = *count_entry;
             // Apply an exponential backoff to how often to prove an instruction;

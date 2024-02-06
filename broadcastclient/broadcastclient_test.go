@@ -232,7 +232,21 @@ func startMakeBroadcastClient(ctx context.Context, t *testing.T, clientConfig Co
 
 	go func() {
 		defer wg.Done()
-		defer broadcastClient.StopAndWait()
+		// drain messages so messages could be sent on ts.messageReceiver
+		defer func() {
+			clientDone := make(chan struct{})
+			go func() {
+				for {
+					select {
+					case <-ts.messageReceiver:
+					case <-clientDone:
+						return
+					}
+				}
+			}()
+			broadcastClient.StopAndWait()
+			close(clientDone)
+		}()
 		var timeout time.Duration
 		if expectedCount == 0 {
 			timeout = 1 * time.Second

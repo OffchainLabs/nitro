@@ -34,9 +34,11 @@ import (
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/ipfshelper"
 	"github.com/offchainlabs/nitro/cmd/pruning"
+	"github.com/offchainlabs/nitro/cmd/staterecovery"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 func downloadInit(ctx context.Context, initConfig *conf.InitConfig) (string, error) {
@@ -163,6 +165,9 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if readOnlyDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 0, 0, "", "", true); err == nil {
 			if chainConfig := gethexec.TryReadStoredChainConfig(readOnlyDb); chainConfig != nil {
 				readOnlyDb.Close()
+				if !arbmath.BigEquals(chainConfig.ChainID, chainId) {
+					return nil, nil, fmt.Errorf("database has chain ID %v but config has chain ID %v (are you sure this database is for the right chain?)", chainConfig.ChainID, chainId)
+				}
 				chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, config.Persistent.Ancient, "", false)
 				if err != nil {
 					return chainDb, nil, err
@@ -179,6 +184,13 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				if err != nil {
 					return chainDb, l2BlockChain, err
 				}
+				if config.Init.RecreateMissingStateFrom > 0 {
+					err = staterecovery.RecreateMissingStates(chainDb, l2BlockChain, cacheConfig, config.Init.RecreateMissingStateFrom)
+					if err != nil {
+						return chainDb, l2BlockChain, fmt.Errorf("failed to recreate missing states: %w", err)
+					}
+				}
+
 				return chainDb, l2BlockChain, nil
 			}
 			readOnlyDb.Close()

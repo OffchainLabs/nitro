@@ -4,6 +4,7 @@
 use crate::{
     binary::{parse, FloatInstruction, Local, NameCustomSection, WasmBinary},
     host,
+    kzg::prove_kzg_preimage,
     memory::Memory,
     merkle::{Merkle, MerkleType},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
@@ -15,6 +16,7 @@ use crate::{
     },
 };
 use arbutil::{Color, PreimageType};
+use c_kzg::BYTES_PER_BLOB;
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
@@ -1865,10 +1867,24 @@ impl Machine {
                     let offset = self.value_stack.pop().unwrap().assume_u32();
                     let ptr = self.value_stack.pop().unwrap().assume_u32();
                     let preimage_ty = PreimageType::try_from(u8::try_from(inst.argument_data)?)?;
+                    // Preimage reads must be word aligned
+                    if offset % 32 != 0 {
+                        error!();
+                    }
                     if let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) {
                         if let Some(preimage) =
                             self.preimage_resolver.get(self.context, preimage_ty, hash)
                         {
+                            if preimage_ty == PreimageType::EthVersionedHash
+                                && preimage.len() != BYTES_PER_BLOB
+                            {
+                                bail!(
+                                    "kzg hash {} preimage should be {} bytes long but is instead {}",
+                                    hash,
+                                    BYTES_PER_BLOB,
+                                    preimage.len(),
+                                );
+                            }
                             let offset = usize::try_from(offset).unwrap();
                             let len = std::cmp::min(32, preimage.len().saturating_sub(offset));
                             let read = preimage.get(offset..(offset + len)).unwrap_or_default();
@@ -2269,6 +2285,7 @@ impl Machine {
                 next_inst.opcode,
                 Opcode::ReadPreImage | Opcode::ReadInboxMessage,
             ) {
+                let offset = self.value_stack.last().unwrap().assume_u32();
                 let ptr = self
                     .value_stack
                     .get(self.value_stack.len() - 2)
@@ -2296,7 +2313,16 @@ impl Machine {
                                 None => panic!("Missing requested preimage for hash {}", hash),
                             };
                         data.push(0); // preimage proof type
-                        data.extend(preimage);
+                        match preimage_ty {
+                            PreimageType::Keccak256 | PreimageType::Sha2_256 => {
+                                // The proofs for these preimage types are just the raw preimages.
+                                data.extend(preimage);
+                            }
+                            PreimageType::EthVersionedHash => {
+                                prove_kzg_preimage(hash, &preimage, offset, &mut data)
+                                    .expect("Failed to generate KZG preimage proof");
+                            }
+                        }
                     } else if next_inst.opcode == Opcode::ReadInboxMessage {
                         let msg_idx = self
                             .value_stack

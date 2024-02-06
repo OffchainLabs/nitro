@@ -23,19 +23,24 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/consensus/misc/eip4844"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 	"github.com/go-redis/redis/v8"
+	"github.com/holiman/uint256"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/blobs"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -62,6 +67,8 @@ type DataPoster struct {
 	replacementTimes  []time.Duration
 	metadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)
 	extraBacklog      func() uint64
+	parentChainID     *big.Int
+	parentChainID256  *uint256.Int
 
 	// These fields are protected by the mutex.
 	// TODO: factor out these fields into separate structure, since now one
@@ -113,6 +120,7 @@ type DataPosterOpts struct {
 	MetadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)
 	ExtraBacklog      func() uint64
 	RedisKey          string // Redis storage key
+	ParentChainID     *big.Int
 }
 
 func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, error) {
@@ -172,6 +180,12 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 		errorCount:          make(map[uint64]int),
 		maxFeeCapExpression: expression,
 		extraBacklog:        opts.ExtraBacklog,
+		parentChainID:       opts.ParentChainID,
+	}
+	var overflow bool
+	dp.parentChainID256, overflow = uint256.FromBig(opts.ParentChainID)
+	if overflow {
+		return nil, fmt.Errorf("parent chain ID %v overflows uint256 (necessary for blob transactions)", opts.ParentChainID)
 	}
 	if dp.extraBacklog == nil {
 		dp.extraBacklog = func() uint64 { return 0 }
@@ -189,6 +203,7 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 			},
 		}
 	}
+
 	return dp, nil
 }
 
@@ -229,6 +244,35 @@ func rpcClient(ctx context.Context, opts *ExternalSignerCfg) (*rpc.Client, error
 	)
 }
 
+// txToSendTxArgs converts transaction to SendTxArgs. This is needed for
+// external signer to specify From field.
+func txToSendTxArgs(addr common.Address, tx *types.Transaction) (*apitypes.SendTxArgs, error) {
+	var to *common.MixedcaseAddress
+	if tx.To() != nil {
+		to = new(common.MixedcaseAddress)
+		*to = common.NewMixedcaseAddress(*tx.To())
+	}
+	data := (hexutil.Bytes)(tx.Data())
+	val := (*hexutil.Big)(tx.Value())
+	if val == nil {
+		val = (*hexutil.Big)(big.NewInt(0))
+	}
+	al := tx.AccessList()
+	return &apitypes.SendTxArgs{
+		From:                 common.NewMixedcaseAddress(addr),
+		To:                   to,
+		Gas:                  hexutil.Uint64(tx.Gas()),
+		GasPrice:             (*hexutil.Big)(tx.GasPrice()),
+		MaxFeePerGas:         (*hexutil.Big)(tx.GasFeeCap()),
+		MaxPriorityFeePerGas: (*hexutil.Big)(tx.GasTipCap()),
+		Value:                *val,
+		Nonce:                hexutil.Uint64(tx.Nonce()),
+		Data:                 &data,
+		AccessList:           &al,
+		ChainID:              (*hexutil.Big)(tx.ChainId()),
+	}, nil
+}
+
 // externalSigner returns signer function and ethereum address of the signer.
 // Returns an error if address isn't specified or if it can't connect to the
 // signer RPC server.
@@ -242,27 +286,27 @@ func externalSigner(ctx context.Context, opts *ExternalSignerCfg) (signerFn, com
 		return nil, common.Address{}, fmt.Errorf("error connecting external signer: %w", err)
 	}
 	sender := common.HexToAddress(opts.Address)
-
-	var hasher types.Signer
 	return func(ctx context.Context, addr common.Address, tx *types.Transaction) (*types.Transaction, error) {
 		// According to the "eth_signTransaction" API definition, this should be
 		// RLP encoded transaction object.
 		// https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_signtransaction
 		var data hexutil.Bytes
-		if err := client.CallContext(ctx, &data, opts.Method, tx); err != nil {
-			return nil, fmt.Errorf("signing transaction: %w", err)
+		args, err := txToSendTxArgs(addr, tx)
+		if err != nil {
+			return nil, fmt.Errorf("error converting transaction to sendTxArgs: %w", err)
 		}
-		var signedTx types.Transaction
-		if err := rlp.DecodeBytes(data, &signedTx); err != nil {
-			return nil, fmt.Errorf("error decoding signed transaction: %w", err)
+		if err := client.CallContext(ctx, &data, opts.Method, args); err != nil {
+			return nil, fmt.Errorf("making signing request to external signer: %w", err)
 		}
-		if hasher == nil {
-			hasher = types.LatestSignerForChainID(tx.ChainId())
+		signedTx := &types.Transaction{}
+		if err := signedTx.UnmarshalBinary(data); err != nil {
+			return nil, fmt.Errorf("unmarshaling signed transaction: %w", err)
 		}
-		if hasher.Hash(tx) != hasher.Hash(&signedTx) {
-			return nil, fmt.Errorf("transaction: %x from external signer differs from request: %x", hasher.Hash(&signedTx), hasher.Hash(tx))
+		hasher := types.LatestSignerForChainID(tx.ChainId())
+		if h := hasher.Hash(args.ToTransaction()); h != hasher.Hash(signedTx) {
+			return nil, fmt.Errorf("transaction: %x from external signer differs from request: %x", hasher.Hash(signedTx), h)
 		}
-		return &signedTx, nil
+		return signedTx, nil
 	}, sender, nil
 }
 
@@ -329,7 +373,7 @@ func (p *DataPoster) getNextNonceAndMaybeMeta(ctx context.Context) (uint64, []by
 		return 0, nil, false, fmt.Errorf("fetching last element from queue: %w", err)
 	}
 	if lastQueueItem != nil {
-		nextNonce := lastQueueItem.Data.Nonce + 1
+		nextNonce := lastQueueItem.FullTx.Nonce() + 1
 		if err := p.canPostWithNonce(ctx, nextNonce); err != nil {
 			return 0, nil, false, err
 		}
@@ -408,27 +452,38 @@ func (p *DataPoster) evalMaxFeeCapExpr(backlogOfBatches uint64, elapsed time.Dur
 var big4 = big.NewInt(4)
 
 // The dataPosterBacklog argument should *not* include extraBacklog (it's added in in this function)
-func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit uint64, lastFeeCap *big.Int, lastTipCap *big.Int, dataCreatedAt time.Time, dataPosterBacklog uint64) (*big.Int, *big.Int, error) {
+func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit uint64, numBlobs int, lastFeeCap *big.Int, lastTipCap *big.Int, dataCreatedAt time.Time, dataPosterBacklog uint64) (*big.Int, *big.Int, *big.Int, error) {
 	config := p.config()
 	dataPosterBacklog += p.extraBacklog()
 	latestHeader, err := p.headerReader.LastHeader(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if latestHeader.BaseFee == nil {
-		return nil, nil, fmt.Errorf("latest parent chain block %v missing BaseFee (either the parent chain does not have EIP-1559 or the parent chain node is not synced)", latestHeader.Number)
+		return nil, nil, nil, fmt.Errorf("latest parent chain block %v missing BaseFee (either the parent chain does not have EIP-1559 or the parent chain node is not synced)", latestHeader.Number)
+	}
+	newBlobFeeCap := big.NewInt(0)
+	if latestHeader.ExcessBlobGas != nil && latestHeader.BlobGasUsed != nil {
+		newBlobFeeCap = eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*latestHeader.ExcessBlobGas, *latestHeader.BlobGasUsed))
+		newBlobFeeCap.Mul(newBlobFeeCap, common.Big2)
+	} else if numBlobs > 0 {
+		return nil, nil, nil, fmt.Errorf(
+			"latest parent chain block %v missing ExcessBlobGas or BlobGasUsed but blobs were specified in data poster transaction "+
+				"(either the parent chain node is not synced or the EIP-4844 was improperly activated)",
+			latestHeader.Number,
+		)
 	}
 	softConfBlock := arbmath.BigSubByUint(latestHeader.Number, config.NonceRbfSoftConfs)
 	softConfNonce, err := p.client.NonceAt(ctx, p.Sender(), softConfBlock)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to get latest nonce %v blocks ago (block %v): %w", config.NonceRbfSoftConfs, softConfBlock, err)
+		return nil, nil, nil, fmt.Errorf("failed to get latest nonce %v blocks ago (block %v): %w", config.NonceRbfSoftConfs, softConfBlock, err)
 	}
-	newFeeCap := new(big.Int).Mul(latestHeader.BaseFee, big.NewInt(2))
+	newFeeCap := new(big.Int).Mul(latestHeader.BaseFee, common.Big2)
 	newFeeCap = arbmath.BigMax(newFeeCap, arbmath.FloatToBig(config.MinFeeCapGwei*params.GWei))
 
 	newTipCap, err := p.client.SuggestGasTipCap(ctx)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	newTipCap = arbmath.BigMax(newTipCap, arbmath.FloatToBig(config.MinTipCapGwei*params.GWei))
 	newTipCap = arbmath.BigMin(newTipCap, arbmath.FloatToBig(config.MaxTipCapGwei*params.GWei))
@@ -447,10 +502,13 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 		newFeeCap = arbmath.BigMax(newFeeCap, arbmath.BigMulByBips(lastFeeCap, minRbfIncrease))
 	}
 
+	// TODO: if we're significantly increasing the blob fee cap, we also need to increase the fee cap my minRbfIncrease
+	// TODO: look more into geth's blob mempool and make sure this behavior conforms (I think minRbfIncrease might be higher there)
+
 	elapsed := time.Since(dataCreatedAt)
 	maxFeeCap, err := p.evalMaxFeeCapExpr(dataPosterBacklog, elapsed)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
 	}
 	if arbmath.BigGreaterThan(newFeeCap, maxFeeCap) {
 		log.Warn(
@@ -461,6 +519,8 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 		)
 		newFeeCap = maxFeeCap
 	}
+
+	// TODO: also have an expression limiting the max blob fee cap
 
 	latestBalance := p.balance
 	balanceForTx := new(big.Int).Set(latestBalance)
@@ -491,6 +551,7 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 			balanceForTx.Div(balanceForTx, arbmath.UintToBig(config.MaxMempoolTransactions-1))
 		}
 	}
+	// TODO: take into account blob costs
 	balanceFeeCap := arbmath.BigDivByUint(balanceForTx, gasLimit)
 	if arbmath.BigGreaterThan(newFeeCap, balanceFeeCap) {
 		log.Warn(
@@ -516,10 +577,14 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 		newTipCap = new(big.Int).Set(newFeeCap)
 	}
 
-	return newFeeCap, newTipCap, nil
+	return newFeeCap, newTipCap, newBlobFeeCap, nil
 }
 
-func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, accessList types.AccessList) (*types.Transaction, error) {
+func (p *DataPoster) PostSimpleTransaction(ctx context.Context, nonce uint64, to common.Address, calldata []byte, gasLimit uint64, value *big.Int) (*types.Transaction, error) {
+	return p.PostTransaction(ctx, time.Now(), nonce, nil, to, calldata, gasLimit, value, nil, nil)
+}
+
+func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, kzgBlobs []kzg4844.Blob, accessList types.AccessList) (*types.Transaction, error) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 
@@ -536,26 +601,69 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 		return nil, fmt.Errorf("failed to update data poster balance: %w", err)
 	}
 
-	feeCap, tipCap, err := p.feeAndTipCaps(ctx, nonce, gasLimit, nil, nil, dataCreatedAt, 0)
+	feeCap, tipCap, blobFeeCap, err := p.feeAndTipCaps(ctx, nonce, gasLimit, len(kzgBlobs), nil, nil, dataCreatedAt, 0)
 	if err != nil {
 		return nil, err
 	}
-	inner := types.DynamicFeeTx{
-		Nonce:      nonce,
-		GasTipCap:  tipCap,
-		GasFeeCap:  feeCap,
-		Gas:        gasLimit,
-		To:         &to,
-		Value:      value,
-		Data:       calldata,
-		AccessList: accessList,
+
+	var deprecatedData types.DynamicFeeTx
+	var inner types.TxData
+	if len(kzgBlobs) > 0 {
+		value256, overflow := uint256.FromBig(value)
+		if overflow {
+			return nil, fmt.Errorf("blob transaction callvalue %v overflows uint256", value)
+		}
+		// Intentionally break out of date data poster redis clients,
+		// so they don't try to replace by fee a tx they don't understand
+		deprecatedData.Nonce = ^uint64(0)
+		commitments, blobHashes, err := blobs.ComputeCommitmentsAndHashes(kzgBlobs)
+		if err != nil {
+			return nil, fmt.Errorf("failed to compute KZG commitments: %w", err)
+		}
+		proofs, err := blobs.ComputeBlobProofs(kzgBlobs, commitments)
+		if err != nil {
+			return nil, fmt.Errorf("failed to compute KZG proofs: %w", err)
+		}
+		inner = &types.BlobTx{
+			Nonce: nonce,
+			Gas:   gasLimit,
+			To:    to,
+			Value: value256,
+			Data:  calldata,
+			Sidecar: &types.BlobTxSidecar{
+				Blobs:       kzgBlobs,
+				Commitments: commitments,
+				Proofs:      proofs,
+			},
+			BlobHashes: blobHashes,
+			AccessList: accessList,
+			ChainID:    p.parentChainID256,
+		}
+		// reuse the code to convert gas fee and tip caps to uint256s
+		err = updateTxDataGasCaps(inner, feeCap, tipCap, blobFeeCap)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		deprecatedData = types.DynamicFeeTx{
+			Nonce:      nonce,
+			GasFeeCap:  feeCap,
+			GasTipCap:  tipCap,
+			Gas:        gasLimit,
+			To:         &to,
+			Value:      value,
+			Data:       calldata,
+			AccessList: accessList,
+			ChainID:    p.parentChainID,
+		}
+		inner = &deprecatedData
 	}
-	fullTx, err := p.signer(ctx, p.Sender(), types.NewTx(&inner))
+	fullTx, err := p.signer(ctx, p.Sender(), types.NewTx(inner))
 	if err != nil {
 		return nil, fmt.Errorf("signing transaction: %w", err)
 	}
 	queuedTx := storage.QueuedTransaction{
-		Data:            inner,
+		DeprecatedData:  deprecatedData,
 		FullTx:          fullTx,
 		Meta:            meta,
 		Sent:            false,
@@ -568,8 +676,8 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 // the mutex must be held by the caller
 func (p *DataPoster) saveTx(ctx context.Context, prevTx, newTx *storage.QueuedTransaction) error {
 	if prevTx != nil {
-		if prevTx.Data.Nonce != newTx.Data.Nonce {
-			return fmt.Errorf("prevTx nonce %v doesn't match newTx nonce %v", prevTx.Data.Nonce, newTx.Data.Nonce)
+		if prevTx.FullTx.Nonce() != newTx.FullTx.Nonce() {
+			return fmt.Errorf("prevTx nonce %v doesn't match newTx nonce %v", prevTx.FullTx.Nonce(), newTx.FullTx.Nonce())
 		}
 
 		// Check if prevTx is the same as newTx and we don't need to do anything
@@ -586,7 +694,7 @@ func (p *DataPoster) saveTx(ctx context.Context, prevTx, newTx *storage.QueuedTr
 			return nil
 		}
 	}
-	if err := p.queue.Put(ctx, newTx.Data.Nonce, prevTx, newTx); err != nil {
+	if err := p.queue.Put(ctx, newTx.FullTx.Nonce(), prevTx, newTx); err != nil {
 		return fmt.Errorf("putting new tx in the queue: %w", err)
 	}
 	return nil
@@ -610,22 +718,58 @@ func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransacti
 	return p.saveTx(ctx, newTx, &newerTx)
 }
 
+func updateTxDataGasCaps(data types.TxData, newFeeCap, newTipCap, newBlobFeeCap *big.Int) error {
+	switch data := data.(type) {
+	case *types.DynamicFeeTx:
+		data.GasFeeCap = newFeeCap
+		data.GasTipCap = newTipCap
+		return nil
+	case *types.BlobTx:
+		var overflow bool
+		data.GasFeeCap, overflow = uint256.FromBig(newFeeCap)
+		if overflow {
+			return fmt.Errorf("blob tx fee cap %v exceeds uint256", newFeeCap)
+		}
+		data.GasTipCap, overflow = uint256.FromBig(newTipCap)
+		if overflow {
+			return fmt.Errorf("blob tx tip cap %v exceeds uint256", newTipCap)
+		}
+		data.BlobFeeCap, overflow = uint256.FromBig(newBlobFeeCap)
+		if overflow {
+			return fmt.Errorf("blob tx blob fee cap %v exceeds uint256", newBlobFeeCap)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unexpected transaction data type %T", data)
+	}
+}
+
+func updateGasCaps(tx *types.Transaction, newFeeCap, newTipCap, newBlobFeeCap *big.Int) (*types.Transaction, error) {
+	data := tx.GetInner()
+	err := updateTxDataGasCaps(data, newFeeCap, newTipCap, newBlobFeeCap)
+	if err != nil {
+		return nil, err
+	}
+	return types.NewTx(data), nil
+}
+
 // The mutex must be held by the caller.
 func (p *DataPoster) replaceTx(ctx context.Context, prevTx *storage.QueuedTransaction, backlogOfBatches uint64) error {
-	newFeeCap, newTipCap, err := p.feeAndTipCaps(ctx, prevTx.Data.Nonce, prevTx.Data.Gas, prevTx.Data.GasFeeCap, prevTx.Data.GasTipCap, prevTx.Created, backlogOfBatches)
+	newFeeCap, newTipCap, newBlobFeeCap, err := p.feeAndTipCaps(ctx, prevTx.FullTx.Nonce(), prevTx.FullTx.Gas(), len(prevTx.FullTx.BlobHashes()), prevTx.FullTx.GasFeeCap(), prevTx.FullTx.GasTipCap(), prevTx.Created, backlogOfBatches)
 	if err != nil {
 		return err
 	}
 
-	minNewFeeCap := arbmath.BigMulByBips(prevTx.Data.GasFeeCap, minRbfIncrease)
+	minNewFeeCap := arbmath.BigMulByBips(prevTx.FullTx.GasFeeCap(), minRbfIncrease)
 	newTx := *prevTx
+	// TODO: also look at the blob fee cap
 	if newFeeCap.Cmp(minNewFeeCap) < 0 {
 		log.Debug(
 			"no need to replace by fee transaction",
-			"nonce", prevTx.Data.Nonce,
-			"lastFeeCap", prevTx.Data.GasFeeCap,
+			"nonce", prevTx.FullTx.Nonce(),
+			"lastFeeCap", prevTx.FullTx.GasFeeCap(),
 			"recommendedFeeCap", newFeeCap,
-			"lastTipCap", prevTx.Data.GasTipCap,
+			"lastTipCap", prevTx.FullTx.GasTipCap(),
 			"recommendedTipCap", newTipCap,
 		)
 		newTx.NextReplacement = time.Now().Add(time.Minute)
@@ -641,9 +785,13 @@ func (p *DataPoster) replaceTx(ctx context.Context, prevTx *storage.QueuedTransa
 		break
 	}
 	newTx.Sent = false
-	newTx.Data.GasFeeCap = newFeeCap
-	newTx.Data.GasTipCap = newTipCap
-	newTx.FullTx, err = p.signer(ctx, p.Sender(), types.NewTx(&newTx.Data))
+	newTx.DeprecatedData.GasFeeCap = newFeeCap
+	newTx.DeprecatedData.GasTipCap = newTipCap
+	unsignedTx, err := updateGasCaps(newTx.FullTx, newFeeCap, newTipCap, newBlobFeeCap)
+	if err != nil {
+		return err
+	}
+	newTx.FullTx, err = p.signer(ctx, p.Sender(), unsignedTx)
 	if err != nil {
 		return err
 	}
@@ -715,7 +863,7 @@ func (p *DataPoster) updateBalance(ctx context.Context) error {
 const maxConsecutiveIntermittentErrors = 10
 
 func (p *DataPoster) maybeLogError(err error, tx *storage.QueuedTransaction, msg string) {
-	nonce := tx.Data.Nonce
+	nonce := tx.FullTx.Nonce()
 	if err == nil {
 		delete(p.errorCount, nonce)
 		return
@@ -729,7 +877,7 @@ func (p *DataPoster) maybeLogError(err error, tx *storage.QueuedTransaction, msg
 	} else {
 		delete(p.errorCount, nonce)
 	}
-	logLevel(msg, "err", err, "nonce", nonce, "feeCap", tx.Data.GasFeeCap, "tipCap", tx.Data.GasTipCap, "gas", tx.Data.Gas)
+	logLevel(msg, "err", err, "nonce", nonce, "feeCap", tx.FullTx.GasFeeCap(), "tipCap", tx.FullTx.GasTipCap(), "gas", tx.FullTx.Gas())
 }
 
 const minWait = time.Second * 10

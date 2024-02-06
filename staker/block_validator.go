@@ -46,11 +46,12 @@ type BlockValidator struct {
 	chainCaughtUp bool
 
 	// can only be accessed from creation thread or if holding reorg-write
-	nextCreateBatch         []byte
-	nextCreateBatchMsgCount arbutil.MessageIndex
-	nextCreateBatchReread   bool
-	nextCreateStartGS       validator.GoGlobalState
-	nextCreatePrevDelayed   uint64
+	nextCreateBatch          []byte
+	nextCreateBatchBlockHash common.Hash
+	nextCreateBatchMsgCount  arbutil.MessageIndex
+	nextCreateBatchReread    bool
+	nextCreateStartGS        validator.GoGlobalState
+	nextCreatePrevDelayed    uint64
 
 	// can only be accessed from from validation thread or if holding reorg-write
 	lastValidGS     validator.GoGlobalState
@@ -480,23 +481,23 @@ func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
 	)
 }
 
-func (v *BlockValidator) readBatch(ctx context.Context, batchNum uint64) (bool, []byte, arbutil.MessageIndex, error) {
+func (v *BlockValidator) readBatch(ctx context.Context, batchNum uint64) (bool, []byte, common.Hash, arbutil.MessageIndex, error) {
 	batchCount, err := v.inboxTracker.GetBatchCount()
 	if err != nil {
-		return false, nil, 0, err
+		return false, nil, common.Hash{}, 0, err
 	}
 	if batchCount <= batchNum {
-		return false, nil, 0, nil
+		return false, nil, common.Hash{}, 0, nil
 	}
 	batchMsgCount, err := v.inboxTracker.GetBatchMessageCount(batchNum)
 	if err != nil {
-		return false, nil, 0, err
+		return false, nil, common.Hash{}, 0, err
 	}
-	batch, err := v.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
+	batch, batchBlockHash, err := v.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
 	if err != nil {
-		return false, nil, 0, err
+		return false, nil, common.Hash{}, 0, err
 	}
-	return true, batch, batchMsgCount, nil
+	return true, batch, batchBlockHash, batchMsgCount, nil
 }
 
 func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, error) {
@@ -525,11 +526,12 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 	}
 	if v.nextCreateStartGS.PosInBatch == 0 || v.nextCreateBatchReread {
 		// new batch
-		found, batch, count, err := v.readBatch(ctx, v.nextCreateStartGS.Batch)
+		found, batch, batchBlockHash, count, err := v.readBatch(ctx, v.nextCreateStartGS.Batch)
 		if !found {
 			return false, err
 		}
 		v.nextCreateBatch = batch
+		v.nextCreateBatchBlockHash = batchBlockHash
 		v.nextCreateBatchMsgCount = count
 		validatorMsgCountCurrentBatch.Update(int64(count))
 		v.nextCreateBatchReread = false
@@ -547,7 +549,7 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 	} else {
 		return false, fmt.Errorf("illegal batch msg count %d pos %d batch %d", v.nextCreateBatchMsgCount, pos, endGS.Batch)
 	}
-	entry, err := newValidationEntry(pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, v.nextCreatePrevDelayed)
+	entry, err := newValidationEntry(pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, v.nextCreateBatchBlockHash, v.nextCreatePrevDelayed)
 	if err != nil {
 		return false, err
 	}
