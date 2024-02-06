@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	flag "github.com/spf13/pflag"
 
@@ -299,7 +300,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 			}
 			if checkingDelayedCount > 0 {
 				checkingDelayedSeqNum := checkingDelayedCount - 1
-				l1DelayedAcc, err := r.delayedBridge.GetAccumulator(ctx, checkingDelayedSeqNum, currentHeight)
+				l1DelayedAcc, err := r.delayedBridge.GetAccumulator(ctx, checkingDelayedSeqNum, currentHeight, common.Hash{})
 				if err != nil {
 					return err
 				}
@@ -401,7 +402,8 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 					}
 					log.Warn("missing mentioned batch in L1 message lookup", "batch", batchNum)
 				}
-				return r.GetSequencerMessageBytes(ctx, batchNum)
+				data, _, err := r.GetSequencerMessageBytes(ctx, batchNum)
+				return data, err
 			})
 			if err != nil {
 				return err
@@ -570,24 +572,25 @@ func (r *InboxReader) getNextBlockToRead() (*big.Int, error) {
 	return msgBlock, nil
 }
 
-func (r *InboxReader) GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, error) {
+func (r *InboxReader) GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, common.Hash, error) {
 	metadata, err := r.tracker.GetBatchMetadata(seqNum)
 	if err != nil {
-		return nil, err
+		return nil, common.Hash{}, err
 	}
 	blockNum := arbmath.UintToBig(metadata.ParentChainBlock)
 	seqBatches, err := r.sequencerInbox.LookupBatchesInRange(ctx, blockNum, blockNum)
 	if err != nil {
-		return nil, err
+		return nil, common.Hash{}, err
 	}
 	var seenBatches []uint64
 	for _, batch := range seqBatches {
 		if batch.SequenceNumber == seqNum {
-			return batch.Serialize(ctx, r.client)
+			data, err := batch.Serialize(ctx, r.client)
+			return data, batch.BlockHash, err
 		}
 		seenBatches = append(seenBatches, batch.SequenceNumber)
 	}
-	return nil, fmt.Errorf("sequencer batch %v not found in L1 block %v (found batches %v)", seqNum, metadata.ParentChainBlock, seenBatches)
+	return nil, common.Hash{}, fmt.Errorf("sequencer batch %v not found in L1 block %v (found batches %v)", seqNum, metadata.ParentChainBlock, seenBatches)
 }
 
 func (r *InboxReader) GetLastReadBlockAndBatchCount() (uint64, uint64) {

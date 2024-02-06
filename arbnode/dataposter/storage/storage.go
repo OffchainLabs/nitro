@@ -27,7 +27,7 @@ var (
 
 type QueuedTransaction struct {
 	FullTx          *types.Transaction
-	Data            types.DynamicFeeTx
+	DeprecatedData  types.DynamicFeeTx // FullTx should be used instead
 	Meta            []byte
 	Sent            bool
 	Created         time.Time // may be earlier than the tx was given to the tx poster
@@ -46,7 +46,7 @@ type queuedTransactionForEncoding struct {
 func (qt *QueuedTransaction) EncodeRLP(w io.Writer) error {
 	return rlp.Encode(w, queuedTransactionForEncoding{
 		FullTx:          qt.FullTx,
-		Data:            qt.Data,
+		Data:            qt.DeprecatedData,
 		Meta:            qt.Meta,
 		Sent:            qt.Sent,
 		Created:         (RlpTime)(qt.Created),
@@ -60,7 +60,7 @@ func (qt *QueuedTransaction) DecodeRLP(s *rlp.Stream) error {
 		return err
 	}
 	qt.FullTx = qtEnc.FullTx
-	qt.Data = qtEnc.Data
+	qt.DeprecatedData = qtEnc.Data
 	qt.Meta = qtEnc.Meta
 	qt.Sent = qtEnc.Sent
 	qt.Created = time.Time(qtEnc.Created)
@@ -107,7 +107,7 @@ func LegacyToQueuedTransaction(legacyQT *LegacyQueuedTransaction) (*QueuedTransa
 	}
 	return &QueuedTransaction{
 		FullTx:          legacyQT.FullTx,
-		Data:            legacyQT.Data,
+		DeprecatedData:  legacyQT.Data,
 		Meta:            meta,
 		Sent:            legacyQT.Sent,
 		Created:         legacyQT.Created,
@@ -127,7 +127,7 @@ func QueuedTransactionToLegacy(qt *QueuedTransaction) (*LegacyQueuedTransaction,
 	}
 	return &LegacyQueuedTransaction{
 		FullTx:          qt.FullTx,
-		Data:            qt.Data,
+		Data:            qt.DeprecatedData,
 		Meta:            meta,
 		Sent:            qt.Sent,
 		Created:         qt.Created,
