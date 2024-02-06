@@ -413,6 +413,20 @@ func (s *Server) EdgeByIdentifier(w http.ResponseWriter, r *http.Request) {
 	writeJSONResponse(w, edges[0])
 }
 
+// RoyalTrackedChallengeEdges dumps the locally-tracked, royal edges kept in-memory by the BOLD software.
+//
+// method:
+// - GET
+// - /api/v1/tracked/royal-edges
+func (s *Server) RoyalTrackedChallengeEdges(w http.ResponseWriter, r *http.Request) {
+	resp, err := s.backend.GetTrackedRoyalEdges(r.Context())
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Could not get tracked royal edges: %v", err), http.StatusInternalServerError)
+		return
+	}
+	writeJSONResponse(w, resp)
+}
+
 // EdgeByHistoryCommitment fetches an edge by its specific history commitment in a challenge.
 //
 // method:

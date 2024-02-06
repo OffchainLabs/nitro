@@ -98,7 +98,7 @@ func (ht *RoyalChallengeTree) ComputeHonestPathTimer(
 	if !ok {
 		return 0, errNotFound(edgeId)
 	}
-	edgeLocalTimer, err := ht.localTimer(edge, blockNumber)
+	edgeLocalTimer, err := ht.LocalTimer(edge, blockNumber)
 	if err != nil {
 		return 0, err
 	}
@@ -186,7 +186,7 @@ func (ht *RoyalChallengeTree) ComputeAncestorsWithTimers(
 		if err != nil {
 			return nil, err
 		}
-		claimEdgeLocalTimer, err := ht.localTimer(nextLevelClaimedEdge, blockNumber)
+		claimEdgeLocalTimer, err := ht.LocalTimer(nextLevelClaimedEdge, blockNumber)
 		if err != nil {
 			return nil, err
 		}
@@ -238,7 +238,7 @@ func (ht *RoyalChallengeTree) findHonestAncestorsWithinChallengeLevel(
 		}
 		// We expand the ancestry and timers' slices using the cursor edge.
 		ancestry = append(ancestry, cursor.Id())
-		timer, err := ht.localTimer(cursor, blockNumber)
+		timer, err := ht.LocalTimer(cursor, blockNumber)
 		if err != nil {
 			return nil, nil, err
 		}

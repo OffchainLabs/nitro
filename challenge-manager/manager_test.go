@@ -233,6 +233,9 @@ func Test_getEdgeTrackers(t *testing.T) {
 	assertionHash := protocol.AssertionHash{Hash: common.BytesToHash([]byte("bar"))}
 	edge.On("ClaimId").Return(option.Some(protocol.ClaimId(assertionHash.Hash)))
 	edge.On("AssertionHash", ctx).Return(assertionHash, nil)
+	edge.On("StartCommitment").Return(protocol.Height(0), common.Hash{})
+	edge.On("EndCommitment").Return(protocol.Height(0), common.Hash{})
+	edge.On("GetChallengeLevel").Return(protocol.ChallengeLevel(0))
 	m.On("ReadAssertionCreationInfo", ctx, assertionHash).Return(&protocol.AssertionCreatedInfo{
 		BeforeState: rollupgen.ExecutionState{
 			GlobalState: rollupgen.GlobalState{

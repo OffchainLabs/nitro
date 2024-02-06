@@ -21,6 +21,7 @@ import (
 type BusinessLogicProvider interface {
 	GetAssertions(ctx context.Context, opts ...db.AssertionOption) ([]*api.JsonAssertion, error)
 	GetEdges(ctx context.Context, opts ...db.EdgeOption) ([]*api.JsonEdge, error)
+	GetTrackedRoyalEdges(ctx context.Context) ([]*api.JsonEdgesByChallengedAssertion, error)
 	GetMiniStakes(ctx context.Context, assertionHash protocol.AssertionHash, opts ...db.EdgeOption) (*api.JsonMiniStakes, error)
 	LatestConfirmedAssertion(ctx context.Context) (*api.JsonAssertion, error)
 }
@@ -230,6 +231,21 @@ func (b *Backend) GetMiniStakes(ctx context.Context, assertionHash protocol.Asse
 		stakeInfo.StakesByLvlAndOrigin[lvl] = append(stakeInfo.StakesByLvlAndOrigin[lvl], info)
 	}
 	return stakeInfo, nil
+}
+
+func (b *Backend) GetTrackedRoyalEdges(ctx context.Context) ([]*api.JsonEdgesByChallengedAssertion, error) {
+	resp, err := b.chainWatcher.GetRoyalEdges(ctx)
+	if err != nil {
+		return nil, err
+	}
+	edgesByAssertion := make([]*api.JsonEdgesByChallengedAssertion, 0)
+	for assertionHash, e := range resp {
+		edgesByAssertion = append(edgesByAssertion, &api.JsonEdgesByChallengedAssertion{
+			AssertionHash: assertionHash.Hash,
+			RoyalEdges:    e,
+		})
+	}
+	return edgesByAssertion, nil
 }
 
 func (b *Backend) LatestConfirmedAssertion(ctx context.Context) (*api.JsonAssertion, error) {

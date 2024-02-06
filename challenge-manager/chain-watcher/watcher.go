@@ -478,6 +478,82 @@ func (w *Watcher) getEdgeFromEvent(
 	return edgeOpt.Unwrap(), nil
 }
 
+// GetRoyalEdges returns all royal, tracked edges in the watcher by assertion hash.
+func (w *Watcher) GetRoyalEdges(ctx context.Context) (map[protocol.AssertionHash][]*api.JsonTrackedRoyalEdge, error) {
+	header, err := w.chain.Backend().HeaderByNumber(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	if !header.Number.IsUint64() {
+		return nil, errors.New("block header is not a uint64")
+	}
+	blockNum := header.Number.Uint64()
+	response := make(map[protocol.AssertionHash][]*api.JsonTrackedRoyalEdge)
+	if err = w.challenges.ForEach(func(assertionHash protocol.AssertionHash, t *trackedChallenge) error {
+		return t.honestEdgeTree.GetEdges().ForEach(func(edgeId protocol.EdgeId, edge protocol.SpecEdge) error {
+			start, startRoot := edge.StartCommitment()
+			end, endRoot := edge.EndCommitment()
+			createdAt, err2 := edge.CreatedAtBlock()
+			if err2 != nil {
+				return err2
+			}
+			unrivaled, err2 := t.honestEdgeTree.IsUnrivaledAtBlockNum(edge, blockNum)
+			if err2 != nil {
+				return err2
+			}
+			hasRival := !unrivaled
+			timeUnrivaled, err2 := t.honestEdgeTree.TimeUnrivaled(edge, blockNum)
+			if err2 != nil {
+				return err2
+			}
+			ancestorDetails, err2 := t.honestEdgeTree.ComputeAncestorsWithTimers(ctx, edgeId, blockNum)
+			if err2 != nil {
+				return err2
+			}
+			pathTimer, err2 := t.honestEdgeTree.ComputeHonestPathTimer(ctx, edgeId, ancestorDetails.AncestorLocalTimers, blockNum)
+			if err2 != nil {
+				return err2
+			}
+			ancestors := make([]common.Hash, len(ancestorDetails.AncestorEdgeIds))
+			for i := range ancestorDetails.AncestorEdgeIds {
+				ancestors[i] = ancestorDetails.AncestorEdgeIds[i].Hash
+			}
+			var miniStaker common.Address
+			if edge.MiniStaker().IsSome() {
+				miniStaker = edge.MiniStaker().Unwrap()
+			}
+			var claimId common.Hash
+			if edge.ClaimId().IsSome() {
+				claimId = common.Hash(edge.ClaimId().Unwrap())
+			}
+			response[assertionHash] = append(
+				response[assertionHash],
+				&api.JsonTrackedRoyalEdge{
+					Id:                  edgeId.Hash,
+					ChallengeLevel:      uint8(edge.GetChallengeLevel()),
+					StartHistoryRoot:    startRoot,
+					StartHeight:         uint64(start),
+					EndHeight:           uint64(end),
+					EndHistoryRoot:      endRoot,
+					CreatedAtBlock:      createdAt,
+					MutualId:            common.Hash(edge.MutualId()),
+					OriginId:            common.Hash(edge.OriginId()),
+					ClaimId:             claimId,
+					HasRival:            hasRival,
+					CumulativePathTimer: uint64(pathTimer),
+					TimeUnrivaled:       timeUnrivaled,
+					Ancestors:           ancestors,
+					MiniStaker:          miniStaker,
+				},
+			)
+			return nil
+		})
+	}); err != nil {
+		return nil, err
+	}
+	return response, nil
+}
+
 // GetHonestEdges returns all edges in the watcher.
 func (w *Watcher) GetHonestEdges() []protocol.SpecEdge {
 	syncEdges := make([]protocol.SpecEdge, 0)
@@ -633,7 +709,20 @@ func (w *Watcher) AddVerifiedHonestEdge(ctx context.Context, edge protocol.Verif
 	}
 	// Add the edge to a local challenge tree of honest edges and, if needed,
 	// we also spawn a tracker for the edge.
+	start, startRoot := edge.StartCommitment()
+	end, endRoot := edge.EndCommitment()
+	fields := log.Ctx{
+		"edgeId":         edge.Id().Hash,
+		"challengeLevel": edge.GetChallengeLevel(),
+		"assertionHash":  assertionHash.Hash,
+		"startHeight":    start,
+		"endHeight":      end,
+		"startRoot":      startRoot,
+		"endRoot":        endRoot,
+	}
+	log.Info("Adding verified honest edge to honest edge tree", fields)
 	if err := chal.honestEdgeTree.AddRoyalEdge(edge); err != nil {
+		log.Error("Could not add verified royal edge to local tree", log.Ctx{"error": err})
 		return errors.Wrap(err, "could not add honest edge to challenge tree")
 	}
 	return w.saveEdgeToDB(ctx, edge, true /* is royal */)
@@ -688,6 +777,8 @@ func (w *Watcher) AddEdge(ctx context.Context, edge protocol.SpecEdge) error {
 			challengeParentAssertionHash.Hash,
 		)
 	}
+	start, startRoot := edge.StartCommitment()
+	end, endRoot := edge.EndCommitment()
 	if challengeComplete {
 		return nil
 	}
@@ -719,6 +810,17 @@ func (w *Watcher) AddEdge(ctx context.Context, edge protocol.SpecEdge) error {
 	if isRoyalEdge {
 		return w.edgeManager.TrackEdge(ctx, edge)
 	}
+	fields := log.Ctx{
+		"edgeId":         edge.Id().Hash,
+		"challengeLevel": edge.GetChallengeLevel(),
+		"assertionHash":  challengeParentAssertionHash.Hash,
+		"startHeight":    start,
+		"endHeight":      end,
+		"startRoot":      startRoot,
+		"endRoot":        endRoot,
+		"isRoyal":        isRoyalEdge,
+	}
+	log.Info("Observed edge from onchain event", fields)
 	return w.saveEdgeToDB(ctx, edge, isRoyalEdge)
 }
 

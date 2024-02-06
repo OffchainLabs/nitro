@@ -65,6 +65,30 @@ type JsonEdge struct {
 	RefersTo            string        `json:"refersTo" db:"RefersTo"`
 }
 
+type JsonTrackedRoyalEdge struct {
+	Id                  common.Hash    `json:"id"`
+	ChallengeLevel      uint8          `json:"challengeLevel"`
+	StartHistoryRoot    common.Hash    `json:"startHistoryRoot"`
+	StartHeight         uint64         `json:"startHeight"`
+	EndHistoryRoot      common.Hash    `json:"endHistoryRoot"`
+	EndHeight           uint64         `json:"endHeight"`
+	CreatedAtBlock      uint64         `json:"createdAtBlock"`
+	MutualId            common.Hash    `json:"mutualId"`
+	OriginId            common.Hash    `json:"originId"`
+	ClaimId             common.Hash    `json:"claimId"`
+	MiniStaker          common.Address `json:"miniStaker" db:"MiniStaker"`
+	AssertionHash       common.Hash    `json:"assertionHash" db:"AssertionHash"`
+	TimeUnrivaled       uint64         `json:"timeUnrivaled" db:"TimeUnrivaled"`
+	HasRival            bool           `json:"hasRival" db:"HasRival"`
+	Ancestors           []common.Hash  `json:"ancestors"`
+	CumulativePathTimer uint64         `json:"cumulativePathTimer" db:"CumulativePathTimer"`
+}
+
+type JsonEdgesByChallengedAssertion struct {
+	AssertionHash common.Hash             `json:"challengedAssertionHash"`
+	RoyalEdges    []*JsonTrackedRoyalEdge `json:"royalEdges"`
+}
+
 type JsonMiniStakes struct {
 	ChallengedAssertionHash common.Hash                                      `json:"challengedAssertionHash"`
 	StakesByLvlAndOrigin    map[protocol.ChallengeLevel][]*JsonMiniStakeInfo `json:"stakesByLvlAndOrigin"`
