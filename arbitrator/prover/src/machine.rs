@@ -2540,7 +2540,6 @@ impl Machine {
                 };
 
                 hash = Keccak256::new()
-                    .chain($prefix)
                     .chain("multistack:")
                     .chain(first_hash)
                     .chain(last_hash)
