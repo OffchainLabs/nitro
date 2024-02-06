@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"math/big"
 	"sort"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -28,6 +30,7 @@ var messageDeliveredID common.Hash
 var inboxMessageDeliveredID common.Hash
 var inboxMessageFromOriginID common.Hash
 var l2MessageFromOriginCallABI abi.Method
+var delayedInboxAccsCallABI abi.Method
 
 func init() {
 	parsedIBridgeABI, err := bridgegen.IBridgeMetaData.GetAbi()
@@ -35,6 +38,7 @@ func init() {
 		panic(err)
 	}
 	messageDeliveredID = parsedIBridgeABI.Events["MessageDelivered"].ID
+	delayedInboxAccsCallABI = parsedIBridgeABI.Methods["delayedInboxAccs"]
 
 	parsedIMessageProviderABI, err := bridgegen.IDelayedMessageProviderMetaData.GetAbi()
 	if err != nil {
@@ -95,12 +99,39 @@ func (b *DelayedBridge) GetMessageCount(ctx context.Context, blockNumber *big.In
 	return bigRes.Uint64(), nil
 }
 
-func (b *DelayedBridge) GetAccumulator(ctx context.Context, sequenceNumber uint64, blockNumber *big.Int) (common.Hash, error) {
-	opts := &bind.CallOpts{
-		Context:     ctx,
-		BlockNumber: blockNumber,
+// Uses blockHash if nonzero, otherwise uses blockNumber
+func (b *DelayedBridge) GetAccumulator(ctx context.Context, sequenceNumber uint64, blockNumber *big.Int, blockHash common.Hash) (common.Hash, error) {
+	calldata := append([]byte{}, delayedInboxAccsCallABI.ID...)
+	inputs, err := delayedInboxAccsCallABI.Inputs.Pack(arbmath.UintToBig(sequenceNumber))
+	if err != nil {
+		return common.Hash{}, err
 	}
-	return b.con.DelayedInboxAccs(opts, new(big.Int).SetUint64(sequenceNumber))
+	calldata = append(calldata, inputs...)
+	msg := ethereum.CallMsg{
+		To:   &b.address,
+		Data: calldata,
+	}
+	var result hexutil.Bytes
+	if blockHash != (common.Hash{}) {
+		result, err = b.client.CallContractAtHash(ctx, msg, blockHash)
+	} else {
+		result, err = b.client.CallContract(ctx, msg, blockNumber)
+	}
+	if err != nil {
+		return common.Hash{}, err
+	}
+	values, err := delayedInboxAccsCallABI.Outputs.Unpack(result)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	if len(values) != 1 {
+		return common.Hash{}, fmt.Errorf("expected 1 return value from %v, got %v", delayedInboxAccsCallABI.Name, len(values))
+	}
+	hash, ok := values[0].([32]byte)
+	if !ok {
+		return common.Hash{}, fmt.Errorf("expected [32]uint8 return value from %v, got %T", delayedInboxAccsCallABI.Name, values[0])
+	}
+	return hash, nil
 }
 
 type DelayedInboxMessage struct {
