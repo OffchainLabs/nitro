@@ -32,11 +32,11 @@ func createArbMachine(ctx context.Context, locator *server_common.MachineLocator
 	defer C.free(unsafe.Pointer(cBinPath))
 
 	log.Info("creating nitro machine", "binpath", binPath, "alwaysMerkleize", loaderCfg.ShouldAlwaysMerkleize())
-	// shouldMerkleize := C.uint8_t(0)
+	shouldMerkleize := C.uint8_t(1)
 	// if loaderCfg.ShouldAlwaysMerkleize() {
 	// 	shouldMerkleize = C.uint8_t(1)
 	// }
-	baseMachine := C.arbitrator_load_wavm_binary(cBinPath)
+	baseMachine := C.arbitrator_load_wavm_binary(cBinPath, shouldMerkleize)
 	if baseMachine == nil {
 		return nil, errors.New("failed to load base machine")
 	}
