@@ -11,7 +11,7 @@ use crate::{
     value::{ArbValueType, FunctionType},
     wavm::{wasm_to_wavm, Instruction, Opcode},
 };
-use arbutil::{Color, evm::user::UserOutcomeKind};
+use arbutil::{evm::user::UserOutcomeKind, Color};
 use eyre::{bail, ErrReport, Result};
 use lazy_static::lazy_static;
 use num_derive::FromPrimitive;

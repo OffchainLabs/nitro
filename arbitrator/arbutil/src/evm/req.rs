@@ -232,9 +232,7 @@ impl<T: RequestHandler> EvmApi for EvmApiRequestor<T> {
         req.extend(gas_left.to_be_bytes());
         req.extend(offset.to_be_bytes());
         req.extend(size.to_be_bytes());
-        let (res, cost) = self
-            .handler
-            .handle_request(EvmApiMethod::AccountCode, &req);
+        let (res, cost) = self.handler.handle_request(EvmApiMethod::AccountCode, &req);
         (res, cost)
     }
 
