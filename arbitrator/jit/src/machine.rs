@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    arbcompress, goenv::GoRuntimeState, program, socket, stylus_backend::CothreadHandler,
+    arbcompress, callerenv::GoRuntimeState, program, socket, stylus_backend::CothreadHandler,
     wasip1_stub, wavmio, Opts,
 };
 // runtime, socket, syscall, user

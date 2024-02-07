@@ -1,7 +1,7 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::goenv::GoEnv;
+use crate::callerenv::CallerEnv;
 use crate::machine::{Escape, WasmEnvMut};
 use rand::RngCore;
 
@@ -22,10 +22,10 @@ pub fn environ_sizes_get(
     length_ptr: Uptr,
     data_size_ptr: Uptr,
 ) -> Result<Errno, Escape> {
-    let mut genv = GoEnv::new(&mut env);
+    let mut caller_env = CallerEnv::new(&mut env);
 
-    genv.caller_write_u32(length_ptr, 0);
-    genv.caller_write_u32(data_size_ptr, 0);
+    caller_env.caller_write_u32(length_ptr, 0);
+    caller_env.caller_write_u32(data_size_ptr, 0);
     Ok(ERRNO_SUCCESS)
 }
 
@@ -36,7 +36,7 @@ pub fn fd_write(
     iovecs_len: u32,
     ret_ptr: Uptr,
 ) -> Result<Errno, Escape> {
-    let mut genv = GoEnv::new(&mut env);
+    let mut caller_env = CallerEnv::new(&mut env);
 
     if fd != 1 && fd != 2 {
         return Ok(ERRNO_BADF);
@@ -44,13 +44,13 @@ pub fn fd_write(
     let mut size = 0;
     for i in 0..iovecs_len {
         let ptr = iovecs_ptr + i * 8;
-        let iovec = genv.caller_read_u32(ptr);
-        let len = genv.caller_read_u32(ptr + 4);
-        let data = genv.caller_read_string(iovec, len);
+        let iovec = caller_env.caller_read_u32(ptr);
+        let len = caller_env.caller_read_u32(ptr + 4);
+        let data = caller_env.caller_read_string(iovec, len);
         eprintln!("JIT: WASM says [{fd}]: {data}");
         size += len;
     }
-    genv.caller_write_u32(ret_ptr, size);
+    caller_env.caller_write_u32(ret_ptr, size);
     Ok(ERRNO_SUCCESS)
 }
 
@@ -223,26 +223,26 @@ pub fn clock_time_get(
     _precision: u64,
     time: Uptr,
 ) -> Result<Errno, Escape> {
-    let mut genv = GoEnv::new(&mut env);
-    genv.wenv.go_state.time += genv.wenv.go_state.time_interval;
-    genv.caller_write_u32(time, genv.wenv.go_state.time as u32);
-    genv.caller_write_u32(time + 4, (genv.wenv.go_state.time >> 32) as u32);
+    let mut caller_env = CallerEnv::new(&mut env);
+    caller_env.wenv.go_state.time += caller_env.wenv.go_state.time_interval;
+    caller_env.caller_write_u32(time, caller_env.wenv.go_state.time as u32);
+    caller_env.caller_write_u32(time + 4, (caller_env.wenv.go_state.time >> 32) as u32);
     Ok(ERRNO_SUCCESS)
 }
 
 pub fn random_get(mut env: WasmEnvMut, mut buf: u32, mut len: u32) -> Result<Errno, Escape> {
-    let mut genv = GoEnv::new(&mut env);
+    let mut caller_env = CallerEnv::new(&mut env);
 
     while len >= 4 {
-        let next_rand = genv.wenv.go_state.rng.next_u32();
-        genv.caller_write_u32(buf, next_rand);
+        let next_rand = caller_env.wenv.go_state.rng.next_u32();
+        caller_env.caller_write_u32(buf, next_rand);
         buf += 4;
         len -= 4;
     }
     if len > 0 {
-        let mut rem = genv.wenv.go_state.rng.next_u32();
+        let mut rem = caller_env.wenv.go_state.rng.next_u32();
         for _ in 0..len {
-            genv.caller_write_u8(buf, rem as u8);
+            caller_env.caller_write_u8(buf, rem as u8);
             buf += 1;
             rem >>= 8;
         }
@@ -255,17 +255,17 @@ pub fn args_sizes_get(
     length_ptr: Uptr,
     data_size_ptr: Uptr,
 ) -> Result<Errno, Escape> {
-    let mut genv = GoEnv::new(&mut env);
-    genv.caller_write_u32(length_ptr, 1);
-    genv.caller_write_u32(data_size_ptr, 4);
+    let mut caller_env = CallerEnv::new(&mut env);
+    caller_env.caller_write_u32(length_ptr, 1);
+    caller_env.caller_write_u32(data_size_ptr, 4);
     Ok(ERRNO_SUCCESS)
 }
 
 pub fn args_get(mut env: WasmEnvMut, argv_buf: Uptr, data_buf: Uptr) -> Result<Errno, Escape> {
-    let mut genv = GoEnv::new(&mut env);
+    let mut caller_env = CallerEnv::new(&mut env);
 
-    genv.caller_write_u32(argv_buf, data_buf as u32);
-    genv.caller_write_u32(data_buf, 0x6E6962); // "bin\0"
+    caller_env.caller_write_u32(argv_buf, data_buf as u32);
+    caller_env.caller_write_u32(data_buf, 0x6E6962); // "bin\0"
     Ok(ERRNO_SUCCESS)
 }
 
@@ -277,20 +277,20 @@ pub fn poll_oneoff(
     nsubscriptions: u32,
     nevents_ptr: Uptr,
 ) -> Result<Errno, Escape> {
-    let mut genv = GoEnv::new(&mut env);
+    let mut caller_env = CallerEnv::new(&mut env);
 
     const SUBSCRIPTION_SIZE: u32 = 48;
     for i in 0..nsubscriptions {
         let subs_base = in_subs + (SUBSCRIPTION_SIZE * (i as u32));
-        let subs_type = genv.caller_read_u32(subs_base + 8);
+        let subs_type = caller_env.caller_read_u32(subs_base + 8);
         if subs_type != 0 {
             // not a clock subscription type
             continue;
         }
-        let user_data = genv.caller_read_u32(subs_base);
-        genv.caller_write_u32(out_evt, user_data);
-        genv.caller_write_u32(out_evt + 8, 0);
-        genv.caller_write_u32(nevents_ptr, 1);
+        let user_data = caller_env.caller_read_u32(subs_base);
+        caller_env.caller_write_u32(out_evt, user_data);
+        caller_env.caller_write_u32(out_evt + 8, 0);
+        caller_env.caller_write_u32(nevents_ptr, 1);
         return Ok(ERRNO_SUCCESS);
     }
     Ok(ERRNO_INTVAL)

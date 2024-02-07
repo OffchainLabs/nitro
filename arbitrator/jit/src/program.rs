@@ -1,7 +1,7 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::goenv::GoEnv;
+use crate::callerenv::CallerEnv;
 use crate::machine::{Escape, MaybeEscape, WasmEnvMut};
 use crate::stylus_backend::exec_wasm;
 use arbutil::Bytes32;
@@ -30,28 +30,28 @@ pub fn activate(
     err_buf: Uptr,
     err_buf_len: u32,
 ) -> Result<u32, Escape> {
-    let mut genv = GoEnv::new(&mut env);
-    let wasm = genv.caller_read_slice(wasm_ptr, wasm_size);
+    let mut caller_env = CallerEnv::new(&mut env);
+    let wasm = caller_env.caller_read_slice(wasm_ptr, wasm_size);
     let debug = debug != 0;
 
-    let page_limit = genv.caller_read_u16(pages_ptr);
-    let gas_left = &mut genv.caller_read_u64(gas_ptr);
+    let page_limit = caller_env.caller_read_u16(pages_ptr);
+    let gas_left = &mut caller_env.caller_read_u64(gas_ptr);
     match Module::activate(&wasm, version, page_limit, debug, gas_left) {
         Ok((module, data)) => {
-            genv.caller_write_u64(gas_ptr, *gas_left);
-            genv.caller_write_u16(pages_ptr, data.footprint);
-            genv.caller_write_u32(asm_estimate_ptr, data.asm_estimate);
-            genv.caller_write_u32(init_gas_ptr, data.init_gas);
-            genv.caller_write_bytes32(module_hash_ptr, module.hash());
+            caller_env.caller_write_u64(gas_ptr, *gas_left);
+            caller_env.caller_write_u16(pages_ptr, data.footprint);
+            caller_env.caller_write_u32(asm_estimate_ptr, data.asm_estimate);
+            caller_env.caller_write_u32(init_gas_ptr, data.init_gas);
+            caller_env.caller_write_bytes32(module_hash_ptr, module.hash());
             Ok(0)
         }
         Err(error) => {
             let mut err_bytes = error.wrap_err("failed to activate").debug_bytes();
             err_bytes.truncate(err_buf_len as usize);
-            genv.caller_write_slice(err_buf, &err_bytes);
-            genv.caller_write_u64(gas_ptr, 0);
-            genv.caller_write_u16(pages_ptr, 0);
-            genv.caller_write_bytes32(module_hash_ptr, Bytes32::default());
+            caller_env.caller_write_slice(err_buf, &err_bytes);
+            caller_env.caller_write_u64(gas_ptr, 0);
+            caller_env.caller_write_u16(pages_ptr, 0);
+            caller_env.caller_write_bytes32(module_hash_ptr, Bytes32::default());
             Ok(err_bytes.len() as u32)
         }
     }
@@ -69,9 +69,9 @@ pub fn new_program(
     evm_data_handler: u64,
     gas: u64,
 ) -> Result<u32, Escape> {
-    let mut genv = GoEnv::new(&mut env);
-    let compiled_hash = genv.caller_read_bytes32(compiled_hash_ptr);
-    let calldata = genv.caller_read_slice(calldata_ptr, calldata_size);
+    let mut caller_env = CallerEnv::new(&mut env);
+    let compiled_hash = caller_env.caller_read_bytes32(compiled_hash_ptr);
+    let calldata = caller_env.caller_read_slice(calldata_ptr, calldata_size);
     let evm_data: EvmData = unsafe { *Box::from_raw(evm_data_handler as *mut EvmData) };
     let config: JitConfig = unsafe { *Box::from_raw(stylus_config_handler as *mut JitConfig) };
 
@@ -79,11 +79,11 @@ pub fn new_program(
     let pricing = config.stylus.pricing;
     let ink = pricing.gas_to_ink(gas);
 
-    let Some(module) = genv.wenv.module_asms.get(&compiled_hash).cloned() else {
+    let Some(module) = caller_env.wenv.module_asms.get(&compiled_hash).cloned() else {
         return Err(Escape::Failure(format!(
             "module hash {:?} not found in {:?}",
             compiled_hash,
-            genv.wenv.module_asms.keys()
+            caller_env.wenv.module_asms.keys()
         )));
     };
 
@@ -97,24 +97,24 @@ pub fn new_program(
     )
     .unwrap();
 
-    genv.wenv.threads.push(cothread);
+    caller_env.wenv.threads.push(cothread);
 
-    Ok(genv.wenv.threads.len() as u32)
+    Ok(caller_env.wenv.threads.len() as u32)
 }
 
 /// starts the program (in jit waits for first request)
 /// module MUST match last module number returned from new_program
 /// returns request_id for the first request from the program
 pub fn start_program(mut env: WasmEnvMut, module: u32) -> Result<u32, Escape> {
-    let genv = GoEnv::new(&mut env);
+    let caller_env = CallerEnv::new(&mut env);
 
-    if genv.wenv.threads.len() as u32 != module || module == 0 {
+    if caller_env.wenv.threads.len() as u32 != module || module == 0 {
         return Escape::hostio(format!(
             "got request for thread {module} but len is {}",
-            genv.wenv.threads.len()
+            caller_env.wenv.threads.len()
         ));
     }
-    let thread = genv.wenv.threads.last_mut().unwrap();
+    let thread = caller_env.wenv.threads.last_mut().unwrap();
     thread.wait_next_message()?;
     let msg = thread.last_message()?;
     Ok(msg.1)
@@ -123,13 +123,13 @@ pub fn start_program(mut env: WasmEnvMut, module: u32) -> Result<u32, Escape> {
 // gets information about request according to id
 // request_id MUST be last request id returned from start_program or send_response
 pub fn get_request(mut env: WasmEnvMut, id: u32, len_ptr: u32) -> Result<u32, Escape> {
-    let mut genv = GoEnv::new(&mut env);
-    let thread = genv.wenv.threads.last_mut().unwrap();
+    let mut caller_env = CallerEnv::new(&mut env);
+    let thread = caller_env.wenv.threads.last_mut().unwrap();
     let msg = thread.last_message()?;
     if msg.1 != id {
         return Escape::hostio("get_request id doesn't match");
     };
-    genv.caller_write_u32(len_ptr, msg.0.req_data.len() as u32);
+    caller_env.caller_write_u32(len_ptr, msg.0.req_data.len() as u32);
     Ok(msg.0.req_type)
 }
 
@@ -137,13 +137,13 @@ pub fn get_request(mut env: WasmEnvMut, id: u32, len_ptr: u32) -> Result<u32, Es
 // request_id MUST be last request receieved
 // data_ptr MUST point to a buffer of at least the length returned by get_request
 pub fn get_request_data(mut env: WasmEnvMut, id: u32, data_ptr: u32) -> MaybeEscape {
-    let genv = GoEnv::new(&mut env);
-    let thread = genv.wenv.threads.last_mut().unwrap();
+    let caller_env = CallerEnv::new(&mut env);
+    let thread = caller_env.wenv.threads.last_mut().unwrap();
     let msg = thread.last_message()?;
     if msg.1 != id {
         return Escape::hostio("get_request id doesn't match");
     };
-    genv.caller_write_slice(data_ptr, &msg.0.req_data);
+    caller_env.caller_write_slice(data_ptr, &msg.0.req_data);
     Ok(())
 }
 
@@ -156,10 +156,10 @@ pub fn set_response(
     reponse_ptr: Uptr,
     response_len: u32,
 ) -> MaybeEscape {
-    let genv = GoEnv::new(&mut env);
-    let data = genv.caller_read_slice(reponse_ptr, response_len);
+    let caller_env = CallerEnv::new(&mut env);
+    let data = caller_env.caller_read_slice(reponse_ptr, response_len);
 
-    let thread = genv.wenv.threads.last_mut().unwrap();
+    let thread = caller_env.wenv.threads.last_mut().unwrap();
     thread.set_response(id, &data, gas)
 }
 
@@ -167,8 +167,8 @@ pub fn set_response(
 // MUST be called right after set_response to the same id
 // returns request_id for the next request
 pub fn send_response(mut env: WasmEnvMut, req_id: u32) -> Result<u32, Escape> {
-    let genv = GoEnv::new(&mut env);
-    let thread = genv.wenv.threads.last_mut().unwrap();
+    let caller_env = CallerEnv::new(&mut env);
+    let thread = caller_env.wenv.threads.last_mut().unwrap();
     let msg = thread.last_message()?;
     if msg.1 != req_id {
         return Escape::hostio("get_request id doesn't match");
@@ -180,9 +180,9 @@ pub fn send_response(mut env: WasmEnvMut, req_id: u32) -> Result<u32, Escape> {
 
 // removes the last created program
 pub fn pop(mut env: WasmEnvMut) -> MaybeEscape {
-    let genv = GoEnv::new(&mut env);
+    let caller_env = CallerEnv::new(&mut env);
 
-    match genv.wenv.threads.pop() {
+    match caller_env.wenv.threads.pop() {
         None => Err(Escape::Child(eyre!("no child"))),
         Some(mut thread) => thread.wait_done(),
     }
@@ -228,20 +228,20 @@ pub fn create_evm_data(
     tx_origin_ptr: Uptr,
     reentrant: u32,
 ) -> Result<u64, Escape> {
-    let mut genv = GoEnv::new(&mut env);
+    let mut caller_env = CallerEnv::new(&mut env);
 
     let evm_data = EvmData {
-        block_basefee: genv.caller_read_bytes32(block_basefee_ptr),
+        block_basefee: caller_env.caller_read_bytes32(block_basefee_ptr),
         chainid,
-        block_coinbase: genv.caller_read_bytes20(block_coinbase_ptr),
+        block_coinbase: caller_env.caller_read_bytes20(block_coinbase_ptr),
         block_gas_limit,
         block_number,
         block_timestamp,
-        contract_address: genv.caller_read_bytes20(contract_address_ptr),
-        msg_sender: genv.caller_read_bytes20(msg_sender_ptr),
-        msg_value: genv.caller_read_bytes32(msg_value_ptr),
-        tx_gas_price: genv.caller_read_bytes32(tx_gas_price_ptr),
-        tx_origin: genv.caller_read_bytes20(tx_origin_ptr),
+        contract_address: caller_env.caller_read_bytes20(contract_address_ptr),
+        msg_sender: caller_env.caller_read_bytes20(msg_sender_ptr),
+        msg_value: caller_env.caller_read_bytes32(msg_value_ptr),
+        tx_gas_price: caller_env.caller_read_bytes32(tx_gas_price_ptr),
+        tx_origin: caller_env.caller_read_bytes20(tx_origin_ptr),
         reentrant,
         return_data_len: 0,
         tracing: false,

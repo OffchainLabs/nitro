@@ -10,7 +10,7 @@ use structopt::StructOpt;
 use std::path::PathBuf;
 
 mod arbcompress;
-mod goenv;
+mod callerenv;
 mod machine;
 mod program;
 mod socket;

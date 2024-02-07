@@ -5,7 +5,7 @@ use arbutil::{
     evm::{req::EvmApiRequestor, req::RequestHandler, EvmData, api::EvmApiMethod},
     wavm, Bytes20, Bytes32, Color,
 };
-use eyre::{eyre, Result};
+use eyre::{bail, eyre, Result};
 use prover::programs::prelude::*;
 use std::fmt::Display;
 use user_host_trait::UserHost;
@@ -249,6 +249,6 @@ impl UserHost for Program {
     }
 
     fn start_ink(&self) -> Result<u64,Self::Err> {
-        return Err(eyre!("recording start ink while proving").into())
+        bail!("recording start ink while proving")
     }
 }

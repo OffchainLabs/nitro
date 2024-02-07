@@ -36,10 +36,10 @@ impl<T: RequestHandler> EvmApiRequestor<T> {
         value: Bytes32,
     ) -> (u32, u64, UserOutcomeKind) {
         let mut request = vec![];
-        request.extend_from_slice(contract.as_slice());
-        request.extend_from_slice(value.as_slice());
-        request.extend_from_slice(&gas.to_be_bytes());
-        request.extend_from_slice(input);
+        request.extend(contract.as_slice());
+        request.extend(value.as_slice());
+        request.extend(&gas.to_be_bytes());
+        request.extend(input);
         let (mut res, cost) = self.handler.handle_request(call_type, &request);
         let status: UserOutcomeKind = res[0].try_into().unwrap();
         self.last_call_result = res.drain(1..).collect();
@@ -63,23 +63,20 @@ impl<T: RequestHandler> EvmApiRequestor<T> {
         gas: u64,
     ) -> (Result<Bytes20>, u32, u64) {
         let mut request = vec![];
-        request.extend_from_slice(&gas.to_be_bytes());
-        request.extend_from_slice(endowment.as_slice());
+        request.extend(&gas.to_be_bytes());
+        request.extend(endowment.as_slice());
         if let Some(salt) = salt {
-            request.extend_from_slice(salt.as_slice());
+            request.extend(salt.as_slice());
         }
-        request.extend_from_slice(&code);
+        request.extend(&code);
 
         let (mut res, cost) = self.handler.handle_request(create_type, &request);
         if res.len() < 21 || res[0] == 0 {
-            let mut err_string = String::from("create_response_malformed");
-            if res.len() > 1 {
-                let res = res.drain(1..).collect();
-                match String::from_utf8(res) {
-                    Ok(str) => err_string = str,
-                    Err(_) => {}
-                }
-            };
+            if res.len() > 0 {
+                res.drain(0..=0);
+            }
+            let err_string =
+                String::from_utf8(res).unwrap_or(String::from("create_response_malformed"));
             self.last_call_result = err_string.as_bytes().to_vec();
             return (
                 Err(eyre!(err_string)),
@@ -87,13 +84,10 @@ impl<T: RequestHandler> EvmApiRequestor<T> {
                 cost,
             );
         }
-        let address = res.get(1..21).unwrap().try_into().unwrap();
-        self.last_call_result = if res.len() > 21 {
-            res.drain(21..).collect()
-        } else {
-            vec![]
-        };
-        return (Ok(address), self.last_call_result.len() as u32, cost);
+        res.drain(0..=0);
+        let address = res.drain(0..20).collect::<Vec<u8>>().try_into().unwrap();
+        self.last_call_result = res;
+        (Ok(address), self.last_call_result.len() as u32, cost)
     }
 }
 
@@ -107,16 +101,18 @@ impl<T: RequestHandler> EvmApi for EvmApiRequestor<T> {
 
     fn set_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Result<u64> {
         let mut request = vec![];
-        request.extend_from_slice(key.as_slice());
-        request.extend_from_slice(value.as_slice());
+        request.extend(key.as_slice());
+        request.extend(value.as_slice());
         let (res, cost) = self
             .handler
             .handle_request(EvmApiMethod::SetBytes32, &request);
-        if res.len() == 1 && res[0] == 1 {
-            Ok(cost)
-        } else {
-            bail!("set_bytes32 failed")
+        if res.len() != 1 {
+            bail!("bad response from set_bytes32")
         }
+        if res[0] != 1 {
+            bail!("write protected")
+        }
+        Ok(cost)
     }
 
     fn contract_call(
@@ -196,13 +192,10 @@ impl<T: RequestHandler> EvmApi for EvmApiRequestor<T> {
         let mut request = topics.to_be_bytes().to_vec();
         request.extend(data.iter());
         let (res, _) = self.handler.handle_request(EvmApiMethod::EmitLog, &request);
-        if res.is_empty() {
-            Ok(())
-        } else {
-            Err(eyre!(
-                String::from_utf8(res).unwrap_or(String::from("malformed emit-log response"))
-            ))
+        if !res.is_empty() {
+            bail!(String::from_utf8(res).unwrap_or(String::from("malformed emit-log response")))
         }
+        Ok(())
     }
 
     fn account_balance(&mut self, address: Bytes20) -> (Bytes32, u64) {
@@ -260,14 +253,14 @@ impl<T: RequestHandler> EvmApi for EvmApiRequestor<T> {
     ) {
         let mut request = vec![];
 
-        request.extend_from_slice(&start_ink.to_be_bytes());
-        request.extend_from_slice(&end_ink.to_be_bytes());
-        request.extend_from_slice(&(name.len() as u16).to_be_bytes());
-        request.extend_from_slice(&(args.len() as u16).to_be_bytes());
-        request.extend_from_slice(&(outs.len() as u16).to_be_bytes());
-        request.extend_from_slice(name.as_bytes());
-        request.extend_from_slice(args);
-        request.extend_from_slice(outs);
+        request.extend(&start_ink.to_be_bytes());
+        request.extend(&end_ink.to_be_bytes());
+        request.extend(&(name.len() as u16).to_be_bytes());
+        request.extend(&(args.len() as u16).to_be_bytes());
+        request.extend(&(outs.len() as u16).to_be_bytes());
+        request.extend(name.as_bytes());
+        request.extend(args);
+        request.extend(outs);
         self.handler
             .handle_request(EvmApiMethod::CaptureHostIO, &request);
     }

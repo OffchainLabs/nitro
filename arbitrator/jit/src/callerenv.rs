@@ -12,14 +12,14 @@ use std::{
 };
 use wasmer::{Memory, MemoryView, StoreMut, WasmPtr};
 
-pub struct GoEnv<'s> {
+pub struct CallerEnv<'s> {
     pub memory: Memory,
     pub store: StoreMut<'s>,
     pub wenv: &'s mut WasmEnv,
 }
 
 #[allow(dead_code)]
-impl<'s> GoEnv<'s> {
+impl<'s> CallerEnv<'s> {
     pub fn new(env: &'s mut WasmEnvMut) -> Self {
         let memory = env.data().memory.clone().unwrap();
         let (data, store) = env.data_and_store_mut();

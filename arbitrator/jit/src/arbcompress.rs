@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::machine::Escape;
-use crate::{goenv::GoEnv, machine::WasmEnvMut};
+use crate::{callerenv::CallerEnv, machine::WasmEnvMut};
 
 extern "C" {
     pub fn BrotliDecoderDecompress(
@@ -46,9 +46,9 @@ pub fn brotli_decompress(
     out_buf_ptr: Uptr,
     out_len_ptr: Uptr,
 ) -> Result<u32, Escape> {
-    let mut genv = GoEnv::new(&mut env);
-    let in_slice = genv.caller_read_slice(in_buf_ptr, in_buf_len);
-    let orig_output_len = genv.caller_read_u32(out_len_ptr) as usize;
+    let mut caller_env = CallerEnv::new(&mut env);
+    let in_slice = caller_env.caller_read_slice(in_buf_ptr, in_buf_len);
+    let orig_output_len = caller_env.caller_read_u32(out_len_ptr) as usize;
     let mut output = vec![0u8; orig_output_len as usize];
     let mut output_len = orig_output_len;
     unsafe {
@@ -62,8 +62,8 @@ pub fn brotli_decompress(
             return Ok(0);
         }
     }
-    genv.caller_write_slice(out_buf_ptr, &output[..output_len]);
-    genv.caller_write_u32(out_len_ptr, output_len as u32);
+    caller_env.caller_write_slice(out_buf_ptr, &output[..output_len]);
+    caller_env.caller_write_u32(out_len_ptr, output_len as u32);
     Ok(1)
 }
 
@@ -79,9 +79,9 @@ pub fn brotli_compress(
     level: u32,
     window_size: u32,
 ) -> Result<u32, Escape> {
-    let mut genv = GoEnv::new(&mut env);
-    let in_slice = genv.caller_read_slice(in_buf_ptr, in_buf_len);
-    let orig_output_len = genv.caller_read_u32(out_len_ptr) as usize;
+    let mut caller_env = CallerEnv::new(&mut env);
+    let in_slice = caller_env.caller_read_slice(in_buf_ptr, in_buf_len);
+    let orig_output_len = caller_env.caller_read_u32(out_len_ptr) as usize;
     let mut output = vec![0u8; orig_output_len];
     let mut output_len = orig_output_len;
 
@@ -99,7 +99,7 @@ pub fn brotli_compress(
             return Ok(0);
         }
     }
-    genv.caller_write_slice(out_buf_ptr, &output[..output_len]);
-    genv.caller_write_u32(out_len_ptr, output_len as u32);
+    caller_env.caller_write_slice(out_buf_ptr, &output[..output_len]);
+    caller_env.caller_write_u32(out_len_ptr, output_len as u32);
     Ok(1)
 }
