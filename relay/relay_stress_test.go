@@ -156,16 +156,16 @@ func largeBacklogRelayTestImpl(t *testing.T, numClients, backlogSize, l2MsgSize 
 }
 
 func TestRelayLargeBacklog16MB(t *testing.T) {
-	// t.Skip("This test is for manual inspection and would be unreliable in CI even if automated")
+	t.Skip("This test is for manual inspection and would be unreliable in CI even if automated")
 	largeBacklogRelayTestImpl(t, 150, 100000, 0, 40*time.Second, "9642", "9643")
 }
 
 func TestRelayLargeBacklog50MB(t *testing.T) {
-	// t.Skip("This test is for manual inspection and would be unreliable in CI even if automated")
+	t.Skip("This test is for manual inspection and would be unreliable in CI even if automated")
 	largeBacklogRelayTestImpl(t, 150, 100000, 340, 40*time.Second, "9644", "9645")
 }
 
 func TestRelayLargeBacklog100MB(t *testing.T) {
-	// t.Skip("This test is for manual inspection and would be unreliable in CI even if automated")
+	t.Skip("This test is for manual inspection and would be unreliable in CI even if automated")
 	largeBacklogRelayTestImpl(t, 150, 100000, 840, 40*time.Second, "9646", "9647")
 }
