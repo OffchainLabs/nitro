@@ -44,9 +44,9 @@ jobs:
         uses: actions/checkout@v2
 
       - name: Set up Go 1.x
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v3
         with:
-          go-version: 1.20.x
+          go-version: 1.19
           id: go
 
       - name: Golangci-lint
@@ -76,9 +76,9 @@ jobs:
         run: yarn --cwd contracts build
 
       - name: Set up Go 1.x
-        uses: actions/setup-go@v4
+        uses: actions/setup-go@v3
         with:
-          go-version: 1.20.x
+          go-version: 1.19
         id: go
 
       # Foundry is required for end to end tests
