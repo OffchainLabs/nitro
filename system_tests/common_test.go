@@ -929,7 +929,7 @@ func Create2ndNodeWithConfig(
 	currentExec, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, configFetcher)
 	Require(t, err)
 
-	currentNode, err := arbnode.CreateNode(ctx, l2stack, currentExec, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, first.DeployInfo, &txOpts, &txOpts, dataSigner, feedErrChan, big.NewInt(13))
+	currentNode, err := arbnode.CreateNode(ctx, l2stack, currentExec, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, first.DeployInfo, &txOpts, &txOpts, dataSigner, feedErrChan, big.NewInt(1337))
 	Require(t, err)
 
 	err = currentNode.Start(ctx)
