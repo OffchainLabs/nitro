@@ -101,6 +101,13 @@ func (c *Config) Validate() error {
 	if c.DelayedSequencer.Enable && !c.Sequencer {
 		return errors.New("cannot enable delayed sequencer without enabling sequencer")
 	}
+	if c.InboxReader.ReadMode != "latest" {
+		if c.Sequencer {
+			return errors.New("cannot enable inboxreader in safe or finalized mode along with sequencer")
+		}
+		c.Feed.Output.Enable = false
+		c.Feed.Input.URL = []string{}
+	}
 	if err := c.BlockValidator.Validate(); err != nil {
 		return err
 	}
