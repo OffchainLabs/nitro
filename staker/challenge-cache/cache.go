@@ -234,6 +234,8 @@ func determineFilePath(baseDir string, lookup *Key) (string, error) {
 	return filepath.Join(baseDir, filepath.Join(key...)), nil
 }
 
+// Move function that is robust against cross-device link errors. Credits to:
+// https://gist.github.com/var23rav/23ae5d0d4d830aff886c3c970b8f6c6b
 func Move(source, destination string) error {
 	err := os.Rename(source, destination)
 	if err != nil && strings.Contains(err.Error(), "cross-device link") {
