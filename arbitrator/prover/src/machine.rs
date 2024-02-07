@@ -35,6 +35,7 @@ use std::{
     hash::Hash,
     io::{BufReader, BufWriter, Write},
     num::Wrapping,
+    ops::Add,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -720,7 +721,7 @@ pub struct ModuleState<'a> {
 #[derive(Serialize, Deserialize)]
 pub struct MachineState<'a> {
     steps: u64, // Not part of machine hash
-    cothread: bool,
+    main_thread_recovery: Option<ProgramCounter>,
     status: MachineStatus,
     value_stacks: Cow<'a, Vec<Vec<Value>>>,
     internal_stack: Cow<'a, Vec<Value>>,
@@ -784,7 +785,11 @@ impl PreimageResolverWrapper {
 #[derive(Clone, Debug)]
 pub struct Machine {
     steps: u64, // Not part of machine hash
-    cothread: bool,
+    // This has double use:
+    // If None - we are not in a cothread.
+    // Otherwise - it holds the recovery PC which we'll jump to
+    // in case the cothread reaches a machine error
+    main_thread_recovery: Option<ProgramCounter>,
     status: MachineStatus,
     value_stacks: Vec<Vec<Value>>,
     internal_stack: Vec<Value>,
@@ -1343,7 +1348,7 @@ impl Machine {
 
         let mut mach = Machine {
             status: MachineStatus::Running,
-            cothread: false,
+            main_thread_recovery: None,
             steps: 0,
             value_stacks: vec![vec![Value::RefNull, Value::I32(0), Value::I32(0)]],
             internal_stack: Vec::new(),
@@ -1398,7 +1403,7 @@ impl Machine {
         }
         let mut mach = Machine {
             status: MachineStatus::Running,
-            cothread: false,
+            main_thread_recovery: None,
             steps: 0,
             value_stacks: vec![vec![Value::RefNull, Value::I32(0), Value::I32(0)]],
             internal_stack: Vec::new(),
@@ -1448,7 +1453,7 @@ impl Machine {
             .collect();
         let state = MachineState {
             steps: self.steps,
-            cothread: self.cothread,
+            main_thread_recovery: self.main_thread_recovery,
             status: self.status,
             value_stacks: Cow::Borrowed(&self.value_stacks),
             internal_stack: Cow::Borrowed(&self.internal_stack),
@@ -1584,7 +1589,7 @@ impl Machine {
     }
 
     pub fn get_final_result(&self) -> Result<Vec<Value>> {
-        if self.cothread {
+        if self.main_thread_recovery.is_some() {
             bail!("machine in cothread when expecting final result")
         }
         if !self.frame_stacks[0].is_empty() {
@@ -1696,9 +1701,9 @@ impl Machine {
         if self.is_halted() {
             return Ok(());
         }
-        let (mut value_stack, mut frame_stack) = match self.cothread {
-            false => (&mut self.value_stacks[0], &mut self.frame_stacks[0]),
-            true => (
+        let (mut value_stack, mut frame_stack) = match self.main_thread_recovery {
+            None => (&mut self.value_stacks[0], &mut self.frame_stacks[0]),
+            Some(_) => (
                 self.value_stacks.last_mut().unwrap(),
                 self.frame_stacks.last_mut().unwrap(),
             ),
@@ -1708,9 +1713,9 @@ impl Machine {
 
         macro_rules! reset_refs {
             () => {
-                (value_stack, frame_stack) = match self.cothread {
-                    false => (&mut self.value_stacks[0], &mut self.frame_stacks[0]),
-                    true => (
+                (value_stack, frame_stack) = match self.main_thread_recovery {
+                    None => (&mut self.value_stacks[0], &mut self.frame_stacks[0]),
+                    Some(_) => (
                         self.value_stacks.last_mut().unwrap(),
                         self.frame_stacks.last_mut().unwrap(),
                     ),
@@ -1739,16 +1744,12 @@ impl Machine {
                     machine.print_backtrace(true);
                 };
 
-                if self.cothread  {
+                if  let Some(recovery_pc) = self.main_thread_recovery.take() {
                     println!("\n{}", "switching to main thread".grey());
-                    self.cothread = false;
-                    value_stack = &mut self.value_stacks[0];
-                    if let Some(Value::InternalRef(new_pc)) = value_stack.pop() {
-                        self.pc = new_pc;
-                        reset_refs!();
-                        println!("\n{} {:?}", "next opcode: ".grey(), func.code[self.pc.inst()]);
-                        continue;
-                    }
+                    self.pc = recovery_pc;
+                    reset_refs!();
+                    println!("\n{} {:?}", "next opcode: ".grey(), func.code[self.pc.inst()]);
+                    continue;
                 } else {
                     print_debug_info(self);
                 }
@@ -2327,7 +2328,7 @@ impl Machine {
                     break;
                 }
                 Opcode::NewCoThread => {
-                    if self.cothread {
+                    if self.main_thread_recovery.is_some() {
                         error!("called NewCoThread from cothread")
                     }
                     self.value_stacks.push(Vec::new());
@@ -2335,7 +2336,7 @@ impl Machine {
                     reset_refs!();
                 }
                 Opcode::PopCoThread => {
-                    if self.cothread {
+                    if self.main_thread_recovery.is_some() {
                         error!("called PopCoThread from cothread")
                     }
                     self.value_stacks.pop();
@@ -2343,24 +2344,18 @@ impl Machine {
                     reset_refs!();
                 }
                 Opcode::SwitchThread => {
-                    let newcothread = match inst.argument_data {
-                        0 => false,
-                        _ => true,
+                    let next_recovery = match inst.argument_data {
+                        0 => None,
+                        offset => {
+                            let offset: u32 = (offset - 1).try_into().unwrap();
+                            Some(self.pc.add(offset))
+                        }
                     };
-                    if newcothread == self.cothread {
+                    if next_recovery.xor(self.main_thread_recovery).is_none() {
                         error!("switchthread doesn't switch")
                     }
-                    if !self.cothread {
-                        let mut recovery_pc = self.pc;
-                        let offset : u32 = inst.argument_data.try_into().unwrap();
-                        recovery_pc.inst += offset - 1;
-                        value_stack.push(Value::InternalRef(recovery_pc))
-                    }
-                    self.cothread = newcothread;
+                    self.main_thread_recovery = next_recovery;
                     reset_refs!();
-                    if !self.cothread {
-                        value_stack.pop();
-                    }
                 }
             }
         }
@@ -2522,10 +2517,10 @@ impl Machine {
                     concat!($prefix, " stack:"),
                 );
 
-                let last_elem = *$stacks.last().unwrap();
-                let last_hash = if $stacks.len() == 0 {
-                    panic!("Stacks size is 0")
+                let last_hash = if $stacks.len() <= 1 {
+                    Machine::NO_STACK_HASH
                 } else {
+                    let last_elem = *$stacks.last().unwrap();
                     hash_stack(
                         last_elem.iter().map(|v| v.hash()),
                         concat!($prefix, " stack:"),
@@ -2566,6 +2561,13 @@ impl Machine {
         (frame_stacks, value_stacks, inter_stack)
     }
 
+    pub fn main_thread_recovery_serialized(&self) -> Bytes32 {
+        match self.main_thread_recovery {
+            Some(recovery_pc) => recovery_pc.serialize(),
+            None => Bytes32([255; 32]),
+        }
+    }
+
     pub fn hash(&self) -> Bytes32 {
         let mut h = Keccak256::new();
         match self.status {
@@ -2580,6 +2582,7 @@ impl Machine {
                 h.update(self.pc.module.to_be_bytes());
                 h.update(self.pc.func.to_be_bytes());
                 h.update(self.pc.inst.to_be_bytes());
+                h.update(self.main_thread_recovery_serialized());
                 h.update(self.get_modules_root());
             }
             MachineStatus::Finished => {
@@ -2614,7 +2617,7 @@ impl Machine {
             }};
         }
         out!(prove_multistack(
-            self.cothread,
+            self.main_thread_recovery.is_some(),
             self.get_data_stacks(),
             hash_value_stack,
             hash_multistack,
@@ -2630,7 +2633,7 @@ impl Machine {
         ));
 
         out!(prove_multistack(
-            self.cothread,
+            self.main_thread_recovery.is_some(),
             self.get_frame_stacks(),
             hash_stack_frame_stack,
             hash_multistack,
@@ -2647,10 +2650,10 @@ impl Machine {
         out!(self.pc.func.to_be_bytes());
         out!(self.pc.inst.to_be_bytes());
 
+        out!(self.main_thread_recovery_serialized());
+
         let mod_merkle = self.get_modules_merkle();
         out!(mod_merkle.root());
-
-        out!(if self.cothread { [1_u8; 1] } else { [0_u8; 1] });
 
         // End machine serialization, serialize module
 
@@ -2853,21 +2856,23 @@ impl Machine {
                 }
             }
             PopCoThread => {
-                out!(hash_value_stack(self.get_data_stacks().last().unwrap()));
-                out!(match self.get_data_stacks().len() {
-                    len if len > 1 =>
-                        hash_multistack(&self.get_data_stacks()[..len - 1], hash_value_stack),
-                    _ => Machine::NO_STACK_HASH,
-                });
-
-                out!(hash_stack_frame_stack(
-                    self.get_frame_stacks().last().unwrap()
-                ));
-                out!(match self.get_frame_stacks().len() {
-                    len if len > 1 =>
-                        hash_multistack(&self.get_frame_stacks()[..len - 1], hash_stack_frame_stack),
-                    _ => Machine::NO_STACK_HASH,
-                });
+                macro_rules! prove_pop {
+                    ($multistack:expr, $hasher:expr) => {
+                        let len = $multistack.len();
+                        if (len > 2) {
+                            out!($hasher($multistack[len - 2]));
+                        } else {
+                            out!(Machine::NO_STACK_HASH);
+                        }
+                        if (len > 3) {
+                            out!(hash_multistack(&$multistack[1..len - 2], $hasher));
+                        } else {
+                            out!(Machine::NO_STACK_HASH);
+                        }
+                    };
+                }
+                prove_pop!(self.get_data_stacks(), hash_value_stack);
+                prove_pop!(self.get_frame_stacks(), hash_stack_frame_stack);
             }
             _ => {}
         }
@@ -2875,9 +2880,9 @@ impl Machine {
     }
 
     pub fn get_data_stack(&self) -> &[Value] {
-        match self.cothread {
-            false => &self.value_stacks[0],
-            true => self.value_stacks.last().unwrap(),
+        match self.main_thread_recovery {
+            None => &self.value_stacks[0],
+            Some(_) => self.value_stacks.last().unwrap(),
         }
     }
 
@@ -2886,9 +2891,9 @@ impl Machine {
     }
 
     fn get_frame_stack(&self) -> &[StackFrame] {
-        match self.cothread {
-            false => &self.frame_stacks[0],
-            true => self.frame_stacks.last().unwrap(),
+        match self.main_thread_recovery {
+            None => &self.frame_stacks[0],
+            Some(_) => self.frame_stacks.last().unwrap(),
         }
     }
 
