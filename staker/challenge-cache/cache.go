@@ -36,6 +36,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
@@ -151,7 +152,7 @@ func (c *Cache) Put(lookup *Key, stateRoots []common.Hash) error {
 	// into our cache directory. This is an atomic operation.
 	// For more information on this atomic write pattern, see:
 	// https://stackoverflow.com/questions/2333872/how-to-make-file-creation-an-atomic-operation
-	return os.Rename(tmpFName /* old */, fName /* new */)
+	return Move(tmpFName /* old */, fName /* new */)
 }
 
 // Reads 32 bytes at a time from a reader up to a specified height. If none, then read all.
@@ -231,4 +232,42 @@ func determineFilePath(baseDir string, lookup *Key) (string, error) {
 	}
 	key = append(key, stateRootsFileName)
 	return filepath.Join(baseDir, filepath.Join(key...)), nil
+}
+
+func Move(source, destination string) error {
+	err := os.Rename(source, destination)
+	if err != nil && strings.Contains(err.Error(), "cross-device link") {
+		return moveCrossDevice(source, destination)
+	}
+	return err
+}
+
+func moveCrossDevice(source, destination string) error {
+	src, err := os.Open(source)
+	if err != nil {
+		return err
+	}
+	dst, err := os.Create(destination)
+	if err != nil {
+		src.Close()
+		return err
+	}
+	_, err = io.Copy(dst, src)
+	src.Close()
+	dst.Close()
+	if err != nil {
+		return err
+	}
+	fi, err := os.Stat(source)
+	if err != nil {
+		os.Remove(destination)
+		return err
+	}
+	err = os.Chmod(destination, fi.Mode())
+	if err != nil {
+		os.Remove(destination)
+		return err
+	}
+	os.Remove(source)
+	return nil
 }
