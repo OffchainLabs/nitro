@@ -5,13 +5,11 @@ package solimpl
 
 import (
 	"context"
-	"math/big"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/containers/option"
 	"github.com/OffchainLabs/bold/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
-	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
@@ -32,25 +30,11 @@ func (a *Assertion) Id() protocol.AssertionHash {
 }
 
 func (a *Assertion) PrevId(ctx context.Context) (protocol.AssertionHash, error) {
-	createdAtBlock := a.createdAt
-	var query = ethereum.FilterQuery{
-		FromBlock: new(big.Int).SetUint64(createdAtBlock),
-		ToBlock:   nil, // Latest block.
-		Addresses: []common.Address{a.chain.rollupAddr},
-		Topics:    [][]common.Hash{{assertionCreatedId}},
-	}
-	logs, err := a.chain.backend.FilterLogs(ctx, query)
+	creationInfo, err := a.chain.ReadAssertionCreationInfo(ctx, a.id)
 	if err != nil {
 		return protocol.AssertionHash{}, err
 	}
-	if len(logs) == 0 {
-		return protocol.AssertionHash{}, errors.New("no assertion creation events found")
-	}
-	creationEvent, err := a.chain.rollup.ParseAssertionCreated(logs[len(logs)-1])
-	if err != nil {
-		return protocol.AssertionHash{}, err
-	}
-	return protocol.AssertionHash{Hash: creationEvent.ParentAssertionHash}, nil
+	return protocol.AssertionHash{Hash: creationInfo.ParentAssertionHash}, nil
 }
 
 func (a *Assertion) HasSecondChild() (bool, error) {
