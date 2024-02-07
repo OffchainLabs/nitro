@@ -637,7 +637,7 @@ func getInitMessage(ctx context.Context, t *testing.T, l1client client, addresse
 }
 
 func DeployOnTestL1(
-	t *testing.T, ctx context.Context, l1info info, l1client client, chainConfig *params.ChainConfig,
+	t *testing.T, ctx context.Context, l1info info, l1client client, chainConfig *params.ChainConfig, hotshotAddr common.Address,
 ) (*chaininfo.RollupAddresses, *arbostypes.ParsedInitMessage) {
 	l1info.GenerateAccount("RollupOwner")
 	l1info.GenerateAccount("Sequencer")
@@ -671,7 +671,7 @@ func DeployOnTestL1(
 		arbnode.GenerateRollupConfig(false, locator.LatestWasmModuleRoot(), l1info.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
 		nativeToken,
 		maxDataSize,
-		common.Address{},
+		hotshotAddr,
 	)
 	Require(t, err)
 	l1info.SetContract("Bridge", addresses.Bridge)
@@ -765,7 +765,11 @@ func createTestNodeOnL1WithConfigImpl(
 	if l2info == nil {
 		l2info = NewArbTestInfo(t, chainConfig.ChainID)
 	}
-	addresses, initMessage := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig)
+	var hotShotAddr common.Address
+	if nodeConfig.BlockValidator.HotShotAddress != "" {
+		hotShotAddr = common.HexToAddress(nodeConfig.BlockValidator.HotShotAddress)
+	}
+	addresses, initMessage := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig, hotShotAddr)
 	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, initMessage, l2StackConfig, &execConfig.Caching)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
@@ -930,7 +934,7 @@ func Create2ndNodeWithConfig(
 	currentExec, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, configFetcher)
 	Require(t, err)
 
-	currentNode, err := arbnode.CreateNode(ctx, l2stack, currentExec, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, first.DeployInfo, &txOpts, &txOpts, dataSigner, feedErrChan, big.NewInt(13))
+	currentNode, err := arbnode.CreateNode(ctx, l2stack, currentExec, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, first.DeployInfo, &txOpts, &txOpts, dataSigner, feedErrChan, big.NewInt(1337))
 	Require(t, err)
 
 	err = currentNode.Start(ctx)

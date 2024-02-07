@@ -264,6 +264,10 @@ func (v *L1Validator) generateNodeAction(
 	}
 
 	caughtUp, startCount, err := GlobalStateToMsgCount(v.inboxTracker, v.txStreamer, startState.GlobalState)
+	if v.blockValidator != nil && v.blockValidator.EspressoDebugging(startState.GlobalState.HotShotHeight) {
+		caughtUp = true
+		err = nil
+	}
 	if err != nil {
 		return nil, false, fmt.Errorf("start state not in chain: %w", err)
 	}
@@ -418,6 +422,10 @@ func (v *L1Validator) generateNodeAction(
 			log.Error("Found incorrect assertion: Machine status not finished", "node", nd.NodeNum, "machineStatus", nd.Assertion.AfterState.MachineStatus)
 			continue
 		}
+		if v.blockValidator != nil && v.blockValidator.EspressoDebugging(afterGS.HotShotHeight) {
+			log.Error("Mocking wrong global state")
+			afterGS.BlockHash = mockHash(afterGS.HotShotHeight)
+		}
 		caughtUp, nodeMsgCount, err := GlobalStateToMsgCount(v.inboxTracker, v.txStreamer, afterGS)
 		if errors.Is(err, ErrGlobalStateNotInChain) {
 			wrongNodesExist = true
@@ -440,6 +448,10 @@ func (v *L1Validator) generateNodeAction(
 			number: nd.NodeNum,
 			hash:   nd.NodeHash,
 		}
+	}
+
+	if v.blockValidator != nil && v.blockValidator.EspressoDebugging(validatedGlobalState.HotShotHeight) {
+		validatedGlobalState.BlockHash = mockHash(validatedGlobalState.HotShotHeight)
 	}
 
 	if correctNode != nil || strategy == WatchtowerStrategy {

@@ -5,6 +5,7 @@ package staker
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"runtime"
@@ -22,7 +23,6 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -395,7 +395,7 @@ func GlobalStateToMsgCount(tracker InboxTrackerInterface, streamer TransactionSt
 		return false, 0, err
 	}
 	if res.BlockHash != gs.BlockHash || res.SendRoot != gs.SendRoot {
-		return false, 0, fmt.Errorf("%w: count %d hash %v expected %v, sendroot %v expected %v", ErrGlobalStateNotInChain, count, gs.BlockHash, res.BlockHash, gs.SendRoot, res.SendRoot)
+		return false, count, fmt.Errorf("%w: count %d hash %v expected %v, sendroot %v expected %v", ErrGlobalStateNotInChain, count, gs.BlockHash, res.BlockHash, gs.SendRoot, res.SendRoot)
 	}
 	return true, count, nil
 }
@@ -534,7 +534,7 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		return false, fmt.Errorf("illegal batch msg count %d pos %d batch %d", v.nextCreateBatchMsgCount, pos, endGS.Batch)
 	}
 	var comm espressoTypes.Commitment
-	if v.config().Espresso && msg.Message.Header.Kind == arbostypes.L1MessageType_L2Message {
+	if v.config().Espresso {
 		height := endGS.HotShotHeight
 		fetchedCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(height)
 		if err != nil {
@@ -723,9 +723,6 @@ validationsLoop:
 			return &pos, nil
 		}
 		if currentStatus == ValidationSent && pos == v.validated() {
-			if validationStatus.Entry.Start.HotShotHeight != 0 && v.lastValidGS.HotShotHeight == 0 {
-				v.lastValidGS.HotShotHeight = validationStatus.Entry.Start.HotShotHeight
-			}
 			if validationStatus.Entry.Start != v.lastValidGS {
 				log.Warn("Validation entry has wrong start state", "pos", pos, "start", validationStatus.Entry.Start, "expected", v.lastValidGS)
 				validationStatus.Cancel()
@@ -1093,10 +1090,11 @@ func (v *BlockValidator) checkLegacyValid() error {
 		return fmt.Errorf("legacy validated blockHash does not fit chain")
 	}
 	validGS := validator.GoGlobalState{
-		BlockHash:  result.BlockHash,
-		SendRoot:   result.SendRoot,
-		Batch:      v.legacyValidInfo.AfterPosition.BatchNumber,
-		PosInBatch: v.legacyValidInfo.AfterPosition.PosInBatch,
+		BlockHash:     result.BlockHash,
+		SendRoot:      result.SendRoot,
+		Batch:         v.legacyValidInfo.AfterPosition.BatchNumber,
+		PosInBatch:    v.legacyValidInfo.AfterPosition.PosInBatch,
+		HotShotHeight: result.HotShotHeight,
 	}
 	err = v.writeLastValidated(validGS, nil)
 	if err == nil {
@@ -1231,4 +1229,10 @@ func (v *BlockValidator) WaitForPos(t *testing.T, ctx context.Context, pos arbut
 			lastLoop = true
 		}
 	}
+}
+
+func mockHash(h uint64) common.Hash {
+	result := common.Hash{}
+	binary.BigEndian.PutUint64(result[24:32], h)
+	return result
 }
