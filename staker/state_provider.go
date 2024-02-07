@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -350,8 +351,10 @@ func (s *StateManager) CollectMachineHashes(
 	if err != nil {
 		return nil, err
 	}
+	ctxCheckAlive, cancelCheckAlive := ctxWithCheckAlive(ctx, execRun)
+	defer cancelCheckAlive()
 	stepLeaves := execRun.GetLeavesWithStepSize(uint64(cfg.MachineStartIndex), uint64(cfg.StepSize), cfg.NumDesiredHashes)
-	result, err := stepLeaves.Await(ctx)
+	result, err := stepLeaves.Await(ctxCheckAlive)
 	if err != nil {
 		return nil, err
 	}
@@ -365,6 +368,40 @@ func (s *StateManager) CollectMachineHashes(
 		}
 	}
 	return result, nil
+}
+
+// CtxWithCheckAlive Creates a context with a check alive routine
+// that will cancel the context if the check alive routine fails.
+func ctxWithCheckAlive(ctxIn context.Context, execRun validator.ExecutionRun) (context.Context, context.CancelFunc) {
+	// Create a context that will cancel if the check alive routine fails.
+	// This is to ensure that we do not have the validator froze indefinitely if the execution run
+	// is no longer alive.
+	ctx, cancel := context.WithCancel(ctxIn)
+	// Create a context with cancel, so that we can cancel the check alive routine
+	// once the calling function returns.
+	ctxCheckAlive, cancelCheckAlive := context.WithCancel(ctxIn)
+	go func() {
+		// Call cancel so that the calling function is canceled if the check alive routine fails/returns.
+		defer cancel()
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctxCheckAlive.Done():
+				return
+			case <-ticker.C:
+				// Create a context with a timeout, so that the check alive routine does not run indefinitely.
+				ctxCheckAliveWithTimeout, cancelCheckAliveWithTimeout := context.WithTimeout(ctxCheckAlive, 5*time.Second)
+				err := execRun.CheckAlive(ctxCheckAliveWithTimeout)
+				if err != nil {
+					cancelCheckAliveWithTimeout()
+					return
+				}
+				cancelCheckAliveWithTimeout()
+			}
+		}
+	}()
+	return ctx, cancelCheckAlive
 }
 
 // CollectProof Collects osp of at a message number and OpcodeIndex .

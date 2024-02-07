@@ -171,6 +171,10 @@ func (r *ExecutionClientRun) SendKeepAlive(ctx context.Context) time.Duration {
 	return time.Minute // TODO: configurable
 }
 
+func (r *ExecutionClientRun) CheckAlive(ctx context.Context) error {
+	return r.client.client.CallContext(ctx, nil, Namespace+"_checkAlive", r.id)
+}
+
 func (r *ExecutionClientRun) Start(ctx_in context.Context) {
 	r.StopWaiter.Start(ctx_in, r)
 	r.CallIteratively(r.SendKeepAlive)

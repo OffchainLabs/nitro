@@ -203,3 +203,7 @@ func (e *executionRun) GetProofAt(position uint64) containers.PromiseInterface[[
 func (e *executionRun) GetLastStep() containers.PromiseInterface[*validator.MachineStepResult] {
 	return e.GetStepAt(^uint64(0))
 }
+
+func (e *executionRun) CheckAlive(ctx context.Context) error {
+	return nil
+}
