@@ -96,7 +96,7 @@ func (ts *dummyTxStreamer) AddBroadcastMessages(feedMessages []*message.Broadcas
 	return nil
 }
 
-func largeBacklogRelayTestImpl(t *testing.T, numClients, backlogSize, l2MsgSize int, clientsRegDeadline time.Duration, upStreamPort, relayPort string) {
+func largeBacklogRelayTestImpl(t *testing.T, numClients, backlogSize, l2MsgSize int, connectDeadline time.Duration, upStreamPort, relayPort string) {
 	// total size of the backlog = backlogSize * (l2MsgSize + 160)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -110,6 +110,7 @@ func largeBacklogRelayTestImpl(t *testing.T, numClients, backlogSize, l2MsgSize 
 	if err != nil {
 		t.Fatalf("error starting relay's broadcast client %v", err)
 	}
+	defer upStream.StopOnly()
 	upStream.PopulateFeedBacklogByNumber(ctx, backlogSize, l2MsgSize)
 
 	relayConfig := &ConfigDefault
@@ -125,24 +126,34 @@ func largeBacklogRelayTestImpl(t *testing.T, numClients, backlogSize, l2MsgSize 
 	if err != nil {
 		t.Fatalf("error starting relay %v", err)
 	}
+	defer relay.StopOnly()
 	waitForBacklog(relay.broadcaster, 0, backlogSize)
 
 	relayURL := "ws://" + relay.GetListenerAddr().String()
 	clientConfig := broadcastclient.DefaultTestConfig
 	clientConfig.Timeout = 5 * time.Minute
+	fatalErrChan := make(chan error, 10)
 	var streamers []*dummyTxStreamer
 	for i := 0; i < numClients; i++ {
 		ts := &dummyTxStreamer{id: i}
 		streamers = append(streamers, ts)
-		client, err := broadcastclient.NewBroadcastClient(func() *broadcastclient.Config { return &clientConfig }, relayURL, relayConfig.Chain.ID, 0, ts, nil, nil, nil, func(_ int32) {})
+		client, err := broadcastclient.NewBroadcastClient(func() *broadcastclient.Config { return &clientConfig }, relayURL, relayConfig.Chain.ID, 0, ts, nil, fatalErrChan, nil, func(_ int32) {})
 		if err != nil {
 			t.FailNow()
 		}
 		client.Start(ctx)
+		defer client.StopOnly()
 	}
 
 	// wait for all clients to atleast connect once
-	time.Sleep(clientsRegDeadline)
+	connectDeadlineTimer := time.NewTicker(connectDeadline)
+	defer connectDeadlineTimer.Stop()
+	select {
+	case err := <-fatalErrChan:
+		t.Fatalf("a client received a fatal error %v", err)
+	case <-connectDeadlineTimer.C:
+	}
+
 	connected := 0
 	for _, ts := range streamers {
 		if ts.logConnection {
