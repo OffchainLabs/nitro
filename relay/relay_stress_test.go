@@ -16,21 +16,21 @@ import (
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
-type RelayBroadcastClient struct {
+type DummyUpStream struct {
 	stopwaiter.StopWaiter
 	broadcaster *broadcaster.Broadcaster
 }
 
-func NewRelayBroadcastClient(config *Config, feedErrChan chan error) *RelayBroadcastClient {
+func NewDummyUpStream(config *Config, feedErrChan chan error) *DummyUpStream {
 	dataSignerErr := func([]byte) ([]byte, error) {
 		return nil, errors.New("relay attempted to sign feed message")
 	}
-	return &RelayBroadcastClient{
+	return &DummyUpStream{
 		broadcaster: broadcaster.NewBroadcaster(func() *wsbroadcastserver.BroadcasterConfig { return &config.Node.Feed.Output }, config.Chain.ID, feedErrChan, dataSignerErr),
 	}
 }
 
-func (r *RelayBroadcastClient) Start(ctx context.Context) error {
+func (r *DummyUpStream) Start(ctx context.Context) error {
 	r.StopWaiter.Start(ctx, r)
 	err := r.broadcaster.Initialize()
 	if err != nil {
@@ -43,7 +43,7 @@ func (r *RelayBroadcastClient) Start(ctx context.Context) error {
 	return nil
 }
 
-func (r *RelayBroadcastClient) PopulateFeedBacklogByNumber(ctx context.Context, backlogSize, l2MsgSize int) {
+func (r *DummyUpStream) PopulateFeedBacklogByNumber(ctx context.Context, backlogSize, l2MsgSize int) {
 	was := r.broadcaster.GetCachedMessageCount()
 	var seqNums []arbutil.MessageIndex
 	for i := was; i < was+backlogSize; i++ {
@@ -96,24 +96,24 @@ func (ts *dummyTxStreamer) AddBroadcastMessages(feedMessages []*message.Broadcas
 	return nil
 }
 
-func largeBacklogRelayTestImpl(t *testing.T, numClients, backlogSize, l2MsgSize int, clientsRegDeadline time.Duration, relayBCPort, relayPort string) {
+func largeBacklogRelayTestImpl(t *testing.T, numClients, backlogSize, l2MsgSize int, clientsRegDeadline time.Duration, upStreamPort, relayPort string) {
 	// total size of the backlog = backlogSize * (l2MsgSize + 160)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	relayBroadcastClientConfig := &ConfigDefault
-	relayBroadcastClientConfig.Node.Feed.Output.Addr = "127.0.0.1"
-	relayBroadcastClientConfig.Node.Feed.Output.Port = relayBCPort
-	relayBroadcastClientConfig.Node.Feed.Output.ClientTimeout = 5 * time.Minute
-	relayBroadcastClient := NewRelayBroadcastClient(relayBroadcastClientConfig, nil)
-	err := relayBroadcastClient.Start(ctx)
+	upStreamConfig := &ConfigDefault
+	upStreamConfig.Node.Feed.Output.Addr = "127.0.0.1"
+	upStreamConfig.Node.Feed.Output.Port = upStreamPort
+	upStreamConfig.Node.Feed.Output.ClientTimeout = 5 * time.Minute
+	upStream := NewDummyUpStream(upStreamConfig, nil)
+	err := upStream.Start(ctx)
 	if err != nil {
 		t.Fatalf("error starting relay's broadcast client %v", err)
 	}
-	relayBroadcastClient.PopulateFeedBacklogByNumber(ctx, backlogSize, l2MsgSize)
+	upStream.PopulateFeedBacklogByNumber(ctx, backlogSize, l2MsgSize)
 
 	relayConfig := &ConfigDefault
-	relayConfig.Node.Feed.Input.URL = []string{"ws://127.0.0.1:" + relayBCPort}
+	relayConfig.Node.Feed.Input.URL = []string{"ws://127.0.0.1:" + upStreamPort}
 	relayConfig.Node.Feed.Output.Addr = "127.0.0.1"
 	relayConfig.Node.Feed.Output.Port = relayPort
 	relayConfig.Node.Feed.Output.ClientTimeout = 5 * time.Minute
