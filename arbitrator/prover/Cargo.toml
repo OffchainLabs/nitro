@@ -26,6 +26,7 @@ wasmparser = "0.84.0"
 wat = "1.0.56"
 serde_with = "1.12.1"
 lazy_static = "1.4.0"
+pkg-config = "0.3.29"
 smallvec = { version = "1.10.0", features = ["serde"] }
 arbutil = { path = "../arbutil/" }
 

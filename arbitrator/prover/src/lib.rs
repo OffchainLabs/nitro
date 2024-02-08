@@ -5,6 +5,8 @@
 
 pub mod binary;
 pub mod flat_merkle;
+pub mod hashtree;
+pub mod hashtree_merkleize;
 mod host;
 pub mod machine;
 /// cbindgen:ignore

@@ -71,18 +71,19 @@ impl Merkle {
 
         let hash_count = hashes.len();
         let mut current_level_size = hash_count;
+        println!("Curr level size: {}", current_level_size);
 
-        // Calculate the total capacity needed for the tree
-        let mut total_capacity = hash_count * 32; // 32 bytes per hash
+        let mut total_capacity = hash_count * 32;
         let mut depth = min_depth;
         while current_level_size > 1 || depth > 0 {
             current_level_size = (current_level_size + 1) / 2;
             total_capacity += current_level_size * 32;
             depth = depth.saturating_sub(1);
         }
+        println!("Curr level size: {}", current_level_size);
+        println!("Total capacity: {}", total_capacity);
         let mut tree = Vec::with_capacity(total_capacity);
 
-        // Append initial hashes to the tree
         for hash in hashes.into_iter() {
             tree.extend_from_slice(hash.as_slice());
         }
@@ -102,11 +103,13 @@ impl Merkle {
 
                 let parent_hash = hash_node(left, right);
                 tree.extend(parent_hash.as_slice());
+                println!("Extending");
 
                 i += 64;
             }
 
             current_level_size = (current_level_size + 1) / 2;
+            println!("Curr level size: {}", current_level_size);
             next_level_offset = tree.len();
             depth = depth.saturating_sub(1);
         }
@@ -161,7 +164,6 @@ impl Merkle {
         Some(proof)
     }
 
-    // Helper function to get a node from the tree
     #[inline(always)]
     fn get_node(&self, layer_start: usize, index: usize) -> Bytes32 {
         let start = layer_start + index * 32;
@@ -171,55 +173,43 @@ impl Merkle {
     }
 
     pub fn set(&mut self, mut idx: usize, hash: Bytes32) {
-        // Calculate the offset in the flat tree for the given index
         let mut offset = idx * 32;
 
-        // Check if the hash at the calculated position is the same as the input hash
         if &self.tree[offset..offset + 32] == hash.as_slice() {
             return;
         }
-
-        // Copy the new hash into the tree at the calculated position
         self.tree[offset..offset + 32].copy_from_slice(hash.as_slice());
 
-        // Calculate the total number of nodes in the tree
         let total_nodes = self.tree.len() / 32;
-
-        // Update parent hashes up the tree
         let mut next_hash = hash;
         while idx > 0 {
-            idx = (idx - 1) / 2; // Move to the parent index
+            idx = (idx - 1) / 2;
             offset = idx * 32;
 
-            // Calculate the position of the sibling in the flat tree
             let sibling_idx = if idx % 2 == 0 { idx + 1 } else { idx - 1 };
             let sibling_offset = sibling_idx * 32;
 
-            // Handle the case where the sibling index is out of bounds
             let sibling_hash = if sibling_offset < total_nodes * 32 {
                 &self.tree[sibling_offset..sibling_offset + 32]
             } else {
                 self.empty_hash.as_slice()
             };
 
-            // Calculate the parent hash
             next_hash = if idx % 2 == 0 {
                 hash_node(next_hash.as_slice(), sibling_hash)
             } else {
                 hash_node(sibling_hash, next_hash.as_slice())
             };
 
-            // Update the parent node in the flat tree
             self.tree[offset..offset + 32].copy_from_slice(next_hash.as_slice());
         }
     }
 
-    // Helper function to calculate the size of a given layer
     #[inline(always)]
     fn calculate_layer_size(&self, depth: usize) -> usize {
-        let mut size = self.tree.len() / 32; // Total number of nodes
+        let mut size = self.tree.len() / 32;
         for _ in 0..depth {
-            size = (size + 1) / 2; // Size of the current layer
+            size = (size + 1) / 2;
         }
         size
     }

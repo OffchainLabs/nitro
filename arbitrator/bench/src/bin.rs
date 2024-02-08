@@ -27,7 +27,45 @@ struct Args {
 
 fn main() -> eyre::Result<()> {
     // benchmark_merkle()
-    benchmark_machines()
+    // Initialize the library
+    let cpu_detected = prover::hashtree::init();
+    if cpu_detected == 0 {
+        println!("hashtree initialization failed");
+        return Ok(());
+    }
+
+    // 32768 hashes or 1 << 15
+    let chunks = [0u8; 1 << 20];
+    println!("Num hashes: {}", chunks.len() / 32);
+    let start = std::time::Instant::now();
+    let hash_tree = prover::hashtree_merkleize::sparse_hashtree(&chunks[..], 0);
+
+    println!(
+        "Hashed data: {:?}, elapsed: {:?}",
+        &hash_tree[hash_tree.len() - 32..],
+        start.elapsed()
+    );
+    println!(
+        "Zero hash: {:?}",
+        &prover::hashtree_merkleize::ZERO_HASH_ARRAY[15][..]
+    );
+
+    let mut hashes = vec![];
+    for _ in 0..1 << 15 {
+        hashes.push(Bytes32::default());
+    }
+    println!("Num hashes: {}", hashes.len());
+    let depth = 15;
+    let start = std::time::Instant::now();
+    let _ = flat_merkle::Merkle::new_advanced(
+        flat_merkle::MerkleType::Memory,
+        hashes,
+        Bytes32::default(),
+        depth,
+    );
+    println!("time to craft tree: {:?}", start.elapsed());
+    Ok(())
+    // benchmark_machines()
 }
 
 const MEMORY_LAYERS: usize = 28;
