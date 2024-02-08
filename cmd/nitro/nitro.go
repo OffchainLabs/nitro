@@ -178,9 +178,7 @@ func mainImpl() int {
 	if nodeConfig.WS.ExposeAll {
 		stackConf.WSModules = append(stackConf.WSModules, "personal")
 	}
-	stackConf.P2P.ListenAddr = ""
-	stackConf.P2P.NoDial = true
-	stackConf.P2P.NoDiscovery = true
+	nodeConfig.P2P.Apply(&stackConf)
 	vcsRevision, strippedRevision, vcsTime := confighelpers.GetVersion()
 	stackConf.Version = strippedRevision
 
@@ -674,6 +672,7 @@ type NodeConfig struct {
 	IPC           genericconf.IPCConfig           `koanf:"ipc"`
 	Auth          genericconf.AuthRPCConfig       `koanf:"auth"`
 	GraphQL       genericconf.GraphQLConfig       `koanf:"graphql"`
+	P2P           genericconf.P2PConfig           `koanf:"p2p"`
 	Metrics       bool                            `koanf:"metrics"`
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
 	PProf         bool                            `koanf:"pprof"`
@@ -698,6 +697,7 @@ var NodeConfigDefault = NodeConfig{
 	IPC:           genericconf.IPCConfigDefault,
 	Auth:          genericconf.AuthRPCConfigDefault,
 	GraphQL:       genericconf.GraphQLConfigDefault,
+	P2P:           genericconf.P2PConfigDefault,
 	Metrics:       false,
 	MetricsServer: genericconf.MetricsServerConfigDefault,
 	Init:          conf.InitConfigDefault,
@@ -721,6 +721,7 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	genericconf.WSConfigAddOptions("ws", f)
 	genericconf.IPCConfigAddOptions("ipc", f)
 	genericconf.AuthRPCConfigAddOptions("auth", f)
+	genericconf.P2PConfigAddOptions("p2p", f)
 	genericconf.GraphQLConfigAddOptions("graphql", f)
 	f.Bool("metrics", NodeConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
