@@ -146,7 +146,7 @@ jobs:
         if: matrix.test-mode == 'defaults'
         run: |
           packages=`go list ./...`
-          gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 -- -timeout 20m -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -skip TestEspressoE2E
+          gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 -- -timeout 25m -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -skip TestEspressoE2E
 
       - name: run tests with race detection
         if: matrix.test-mode == 'race'

@@ -19,6 +19,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_common"
 )
 
@@ -75,4 +77,57 @@ func createArbMachine(ctx context.Context, locator *server_common.MachineLocator
 	result.hostIo = machine
 	result.hostIo.Freeze()
 	return result, nil
+}
+
+func CreateTestArbMachine(ctx context.Context, locator *server_common.MachineLocator, entry *validator.ValidationInput) (*ArbitratorMachine, error) {
+	binPath := filepath.Join(locator.GetMachinePath(common.Hash{}), DefaultArbitratorMachineConfig.WavmBinaryPath)
+	cBinPath := C.CString(binPath)
+	defer C.free(unsafe.Pointer(cBinPath))
+	log.Info("creating nitro machine", "binpath", binPath)
+	baseMachine := C.arbitrator_load_wavm_binary(cBinPath)
+	if baseMachine == nil {
+		return nil, errors.New("failed to load base machine")
+	}
+	mach := machineFromPointer(baseMachine)
+	resolver := func(ty arbutil.PreimageType, hash common.Hash) ([]byte, error) {
+		// Check if it's a known preimage
+		if preimage, ok := entry.Preimages[ty][hash]; ok {
+			return preimage, nil
+		}
+		return nil, errors.New("preimage not found")
+	}
+	if err := mach.SetPreimageResolver(resolver); err != nil {
+		return nil, err
+	}
+	err := mach.SetGlobalState(entry.StartState)
+	if err != nil {
+		log.Error("error while setting global state for proving", "err", err, "gsStart", entry.StartState)
+		return nil, fmt.Errorf("error while setting global state for proving: %w", err)
+	}
+	for _, batch := range entry.BatchInfo {
+		err = mach.AddSequencerInboxMessage(batch.Number, batch.Data)
+		if err != nil {
+			log.Error(
+				"error while trying to add sequencer msg for proving",
+				"err", err, "seq", entry.StartState.Batch, "blockNr", entry.Id,
+			)
+			return nil, fmt.Errorf("error while trying to add sequencer msg for proving: %w", err)
+		}
+	}
+	if entry.HasDelayedMsg {
+		err = mach.AddDelayedInboxMessage(entry.DelayedMsgNr, entry.DelayedMsg)
+		if err != nil {
+			log.Error(
+				"error while trying to add delayed msg for proving",
+				"err", err, "seq", entry.DelayedMsgNr, "blockNr", entry.Id,
+			)
+			return nil, fmt.Errorf("error while trying to add delayed msg for proving: %w", err)
+		}
+	}
+	err = mach.AddHotShotCommitment(entry.HotShotHeight, entry.HotShotCommitment[:])
+	if err != nil {
+		log.Error("error while setting hotshot commitment: %w", err)
+		return nil, fmt.Errorf("error while setting hotshot commitment: %w", err)
+	}
+	return mach, nil
 }
