@@ -11,6 +11,7 @@ import (
 	inprogresscache "github.com/OffchainLabs/bold/containers/in-progress-cache"
 	prefixproofs "github.com/OffchainLabs/bold/state-commitments/prefix-proofs"
 	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/OffchainLabs/bold/api"
 	"github.com/OffchainLabs/bold/api/db"
@@ -244,6 +245,12 @@ func (p *HistoryCommitmentProvider) historyCommitmentImpl(
 				}
 			}()
 		}
+		startTime := time.Now()
+		defer func() {
+			// TODO: Replace NewUniformSample(100) with NewBoundedHistogramSample(), once offchainlabs geth is merged in bold.
+			// Eg https://github.com/OffchainLabs/nitro/blob/ab6790a9e33884c3b4e81de2a97dae5bf904266e/das/restful_server.go#L30
+			metrics.GetOrRegisterHistogram("arb/state_provider/collect_machine_hashes/step_size_"+strconv.Itoa(int(stepSize))+"/duration", nil, metrics.NewUniformSample(100)).Update(time.Since(startTime).Nanoseconds())
+		}()
 		return p.machineHashCollector.CollectMachineHashes(ctx, cfg)
 	})
 }

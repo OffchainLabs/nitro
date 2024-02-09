@@ -18,6 +18,7 @@ go_library(
         "//state-commitments/prefix-proofs",
         "@com_github_ethereum_go_ethereum//accounts/abi",
         "@com_github_ethereum_go_ethereum//common",
+        "@com_github_ethereum_go_ethereum//metrics",
     ],
 )
 
