@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::utils::Bytes32;
-use digest::Digest;
+use sha2::{Digest, Sha256};
 // use rayon::prelude::*;
 use sha3::Keccak256;
 
@@ -47,7 +47,7 @@ pub struct Merkle {
 
 #[inline]
 fn hash_node(a: &[u8], b: &[u8]) -> Bytes32 {
-    let mut h = Keccak256::new();
+    let mut h = Sha256::new();
     h.update(a);
     h.update(b);
     h.finalize().into()

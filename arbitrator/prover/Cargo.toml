@@ -29,6 +29,7 @@ lazy_static = "1.4.0"
 pkg-config = "0.3.29"
 smallvec = { version = "1.10.0", features = ["serde"] }
 arbutil = { path = "../arbutil/" }
+sha2 = "0.10.8"
 
 [lib]
 name = "prover"

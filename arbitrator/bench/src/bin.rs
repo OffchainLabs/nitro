@@ -42,7 +42,7 @@ fn main() -> eyre::Result<()> {
 
     println!(
         "Hashed data: {:?}, elapsed: {:?}",
-        &hash_tree[hash_tree.len() - 32..],
+        hex::encode(&hash_tree[hash_tree.len() - 32..]),
         start.elapsed()
     );
     println!(
@@ -57,12 +57,13 @@ fn main() -> eyre::Result<()> {
     println!("Num hashes: {}", hashes.len());
     let depth = 15;
     let start = std::time::Instant::now();
-    let _ = flat_merkle::Merkle::new_advanced(
+    let tr = flat_merkle::Merkle::new_advanced(
         flat_merkle::MerkleType::Memory,
         hashes,
         Bytes32::default(),
         depth,
     );
+    println!("Root: {}", hex::encode(tr.root()));
     println!("time to craft tree: {:?}", start.elapsed());
     Ok(())
     // benchmark_machines()
