@@ -66,7 +66,6 @@ type SequencerConfig struct {
 	MaxTxDataSize               int             `koanf:"max-tx-data-size" reload:"hot"`
 	NonceFailureCacheSize       int             `koanf:"nonce-failure-cache-size" reload:"hot"`
 	NonceFailureCacheExpiry     time.Duration   `koanf:"nonce-failure-cache-expiry" reload:"hot"`
-	EnablePrefetchBlock         bool            `koanf:"enable-prefetch-block"`
 }
 
 func (c *SequencerConfig) Validate() error {
