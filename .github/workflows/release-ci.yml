@@ -27,4 +27,4 @@ jobs:
         restore-keys: ${{ runner.os }}-buildx-
 
     - name:  Startup Nitro testnode
-      run: .scripts/startup-testnode.bash
+      run: ./scripts/startup-testnode.bash
