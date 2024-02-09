@@ -587,6 +587,7 @@ func createNodeImpl(
 			stateManager,
 			providerHeights,
 			stateManager,
+			nil,
 		)
 		postingInterval := time.Second * time.Duration(config.Bold.AssertionPostingIntervalSeconds)
 		scanningInteval := time.Second * time.Duration(config.Bold.AssertionScanningIntervalSeconds)
@@ -615,6 +616,7 @@ func createNodeImpl(
 		if err != nil {
 			return nil, fmt.Errorf("could not create challenge manager: %w", err)
 		}
+		provider.UpdateAPIDatabase(manager.Database())
 		go manager.Start(ctx)
 	}
 
