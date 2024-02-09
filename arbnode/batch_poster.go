@@ -71,24 +71,29 @@ type batchPosterPosition struct {
 	NextSeqNum          uint64
 }
 
+type ArbOSVersionGetter interface {
+	ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error)
+}
+
 type BatchPoster struct {
 	stopwaiter.StopWaiter
-	l1Reader         *headerreader.HeaderReader
-	inbox            *InboxTracker
-	streamer         *TransactionStreamer
-	config           BatchPosterConfigFetcher
-	seqInbox         *bridgegen.SequencerInbox
-	bridge           *bridgegen.Bridge
-	syncMonitor      *SyncMonitor
-	seqInboxABI      *abi.ABI
-	seqInboxAddr     common.Address
-	bridgeAddr       common.Address
-	gasRefunderAddr  common.Address
-	building         *buildingBatch
-	daWriter         das.DataAvailabilityServiceWriter
-	dataPoster       *dataposter.DataPoster
-	redisLock        *redislock.Simple
-	messagesPerBatch *arbmath.MovingAverage[uint64]
+	l1Reader           *headerreader.HeaderReader
+	inbox              *InboxTracker
+	streamer           *TransactionStreamer
+	arbOSVersionGetter ArbOSVersionGetter
+	config             BatchPosterConfigFetcher
+	seqInbox           *bridgegen.SequencerInbox
+	bridge             *bridgegen.Bridge
+	syncMonitor        *SyncMonitor
+	seqInboxABI        *abi.ABI
+	seqInboxAddr       common.Address
+	bridgeAddr         common.Address
+	gasRefunderAddr    common.Address
+	building           *buildingBatch
+	daWriter           das.DataAvailabilityServiceWriter
+	dataPoster         *dataposter.DataPoster
+	redisLock          *redislock.Simple
+	messagesPerBatch   *arbmath.MovingAverage[uint64]
 	// This is an atomic variable that should only be accessed atomically.
 	// An estimate of the number of batches we want to post but haven't yet.
 	// This doesn't include batches which we don't want to post yet due to the L1 bounds.
@@ -174,7 +179,7 @@ type BatchPosterConfigFetcher func() *BatchPosterConfig
 
 func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBatchPosterConfig.Enable, "enable posting batches to l1")
-	f.Bool(prefix+".disable-das-fallback-store-data-on-chain", DefaultBatchPosterConfig.DisableDasFallbackStoreDataOnChain, "If unable to batch to DAS, disable fallback storing data on chain")
+	f.Bool(prefix+".disable-das-fallback-store-data-on-chain", DefaultBatchPosterConfig.DisableDasFallbackStoreDataOnChain, "If unable to batch to AS, disable fallback storing data on chain")
 	f.Int(prefix+".max-size", DefaultBatchPosterConfig.MaxSize, "maximum batch size")
 	f.Int(prefix+".max-4844-batch-size", DefaultBatchPosterConfig.Max4844BatchSize, "maximum 4844 blob enabled batch size")
 	f.Duration(prefix+".max-delay", DefaultBatchPosterConfig.MaxDelay, "maximum batch posting delay")
@@ -255,6 +260,7 @@ type BatchPosterOpts struct {
 	L1Reader      *headerreader.HeaderReader
 	Inbox         *InboxTracker
 	Streamer      *TransactionStreamer
+	VersionGetter ArbOSVersionGetter
 	SyncMonitor   *SyncMonitor
 	Config        BatchPosterConfigFetcher
 	DeployInfo    *chaininfo.RollupAddresses
@@ -293,19 +299,20 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		return nil, err
 	}
 	b := &BatchPoster{
-		l1Reader:        opts.L1Reader,
-		inbox:           opts.Inbox,
-		streamer:        opts.Streamer,
-		syncMonitor:     opts.SyncMonitor,
-		config:          opts.Config,
-		bridge:          bridge,
-		seqInbox:        seqInbox,
-		seqInboxABI:     seqInboxABI,
-		seqInboxAddr:    opts.DeployInfo.SequencerInbox,
-		gasRefunderAddr: opts.Config().gasRefunder,
-		bridgeAddr:      opts.DeployInfo.Bridge,
-		daWriter:        opts.DAWriter,
-		redisLock:       redisLock,
+		l1Reader:           opts.L1Reader,
+		inbox:              opts.Inbox,
+		streamer:           opts.Streamer,
+		arbOSVersionGetter: opts.VersionGetter,
+		syncMonitor:        opts.SyncMonitor,
+		config:             opts.Config,
+		bridge:             bridge,
+		seqInbox:           seqInbox,
+		seqInboxABI:        seqInboxABI,
+		seqInboxAddr:       opts.DeployInfo.SequencerInbox,
+		gasRefunderAddr:    opts.Config().gasRefunder,
+		bridgeAddr:         opts.DeployInfo.Bridge,
+		daWriter:           opts.DAWriter,
+		redisLock:          redisLock,
 	}
 	b.messagesPerBatch, err = arbmath.NewMovingAverage[uint64](20)
 	if err != nil {
@@ -956,17 +963,24 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		var use4844 bool
 		config := b.config()
 		if config.Post4844Blobs && latestHeader.ExcessBlobGas != nil && latestHeader.BlobGasUsed != nil {
-			if config.ForcePost4844Blobs {
-				use4844 = true
-			} else {
-				blobFeePerByte := eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*latestHeader.ExcessBlobGas, *latestHeader.BlobGasUsed))
-				blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
-				blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
+			arbOSVersion, err := b.arbOSVersionGetter.ArbOSVersionForMessageNumber(batchPosition.MessageCount)
+			if err != nil {
+				return false, err
+			}
+			if arbOSVersion >= 20 {
+				if config.ForcePost4844Blobs {
+					use4844 = true
+				} else {
+					blobFeePerByte := eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*latestHeader.ExcessBlobGas, *latestHeader.BlobGasUsed))
+					blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
+					blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
 
-				calldataFeePerByte := arbmath.BigMulByUint(latestHeader.BaseFee, 16)
-				use4844 = arbmath.BigLessThan(blobFeePerByte, calldataFeePerByte)
+					calldataFeePerByte := arbmath.BigMulByUint(latestHeader.BaseFee, 16)
+					use4844 = arbmath.BigLessThan(blobFeePerByte, calldataFeePerByte)
+				}
 			}
 		}
+
 		b.building = &buildingBatch{
 			segments:      newBatchSegments(batchPosition.DelayedMessageCount, b.config(), b.GetBacklogEstimate(), use4844),
 			msgCount:      batchPosition.MessageCount,
