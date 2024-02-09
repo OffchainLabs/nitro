@@ -66,6 +66,7 @@ func (s *Server) registerMethods() error {
 	r.HandleFunc("/challenge/{assertion-hash}/edges/history/{history-commitment}", s.EdgeByHistoryCommitment).Methods("GET")
 	r.HandleFunc("/challenge/{assertion-hash}/ministakes", s.MiniStakes).Methods("GET")
 	r.HandleFunc("/tracked/royal-edges", s.RoyalTrackedChallengeEdges).Methods("GET")
+	r.HandleFunc("/state-provider/requests/collect-machine-hashes", s.CollectMachineHashes).Methods("GET")
 	s.registered = true
 	return nil
 }

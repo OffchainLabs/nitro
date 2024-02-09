@@ -27,16 +27,19 @@ type Database interface {
 	InsertEdge(edge *api.JsonEdge) error
 	InsertAssertions(assertions []*api.JsonAssertion) error
 	InsertAssertion(assertion *api.JsonAssertion) error
+	InsertCollectMachineHash(collectMachineHashes *api.JsonCollectMachineHashes) error
 }
 
 type ReadUpdateDatabase interface {
 	ReadOnlyDatabase
 	UpdateAssertions(assertion []*api.JsonAssertion) error
 	UpdateEdges(edge []*api.JsonEdge) error
+	UpdateCollectMachineHash(collectMachineHashes *api.JsonCollectMachineHashes) error
 }
 
 type ReadOnlyDatabase interface {
 	GetAssertions(opts ...AssertionOption) ([]*api.JsonAssertion, error)
+	GetCollectMachineHashes(opts ...CollectMachineHashesOption) ([]*api.JsonCollectMachineHashes, error)
 	GetChallengedAssertions(opts ...AssertionOption) ([]*api.JsonAssertion, error)
 	GetEdges(opts ...EdgeOption) ([]*api.JsonEdge, error)
 }
@@ -282,6 +285,19 @@ func (d *SqliteDatabase) GetAssertions(opts ...AssertionOption) ([]*api.JsonAsse
 	return assertions, nil
 }
 
+func (d *SqliteDatabase) GetCollectMachineHashes(opts ...CollectMachineHashesOption) ([]*api.JsonCollectMachineHashes, error) {
+	query := NewCollectMachineHashes(opts...)
+	sql, args := query.ToSQL()
+	collectMachineHashes := make([]*api.JsonCollectMachineHashes, 0)
+	d.lock.Lock()
+	defer d.lock.Unlock()
+	err := d.sqlDB.Select(&collectMachineHashes, sql, args...)
+	if err != nil {
+		return nil, err
+	}
+	return collectMachineHashes, nil
+}
+
 func (d *SqliteDatabase) GetChallengedAssertions(opts ...AssertionOption) ([]*api.JsonAssertion, error) {
 	newOpts := []AssertionOption{
 		WithChallenge(),
@@ -517,6 +533,68 @@ func (q *EdgeQuery) ToSQL() (string, []interface{}) {
 	return baseQuery, q.args
 }
 
+type CollectMachineHashesQuery struct {
+	args    []interface{}
+	limit   int
+	offset  int
+	orderBy string
+	ongoing bool
+}
+
+func NewCollectMachineHashes(opts ...CollectMachineHashesOption) *CollectMachineHashesQuery {
+	query := &CollectMachineHashesQuery{}
+	for _, opt := range opts {
+		opt(query)
+	}
+	return query
+}
+
+type CollectMachineHashesOption func(*CollectMachineHashesQuery)
+
+func WithCollectMachineHashesOngoing() CollectMachineHashesOption {
+	return func(q *CollectMachineHashesQuery) {
+		q.ongoing = true
+	}
+}
+
+func WithCollectMachineHashesOffset(offset int) CollectMachineHashesOption {
+	return func(q *CollectMachineHashesQuery) {
+		q.offset = offset
+	}
+
+}
+
+func WithCollectMachineHashesLimit(limit int) CollectMachineHashesOption {
+	return func(q *CollectMachineHashesQuery) {
+		q.limit = limit
+	}
+}
+
+func WithCollectMachineHashesOrderBy(orderBy string) CollectMachineHashesOption {
+	return func(q *CollectMachineHashesQuery) {
+		q.orderBy = orderBy
+	}
+}
+
+func (q *CollectMachineHashesQuery) ToSQL() (string, []interface{}) {
+	baseQuery := "SELECT * FROM CollectMachineHashes"
+	if q.ongoing {
+		baseQuery += " WHERE FinishTime IS NULL"
+	}
+	if q.orderBy != "" {
+		baseQuery += " ORDER BY " + q.orderBy
+	}
+	if q.limit > 0 {
+		baseQuery += " LIMIT ?"
+		q.args = append(q.args, q.limit)
+	}
+	if q.offset > 0 {
+		baseQuery += " OFFSET ?"
+		q.args = append(q.args, q.offset)
+	}
+	return baseQuery, q.args
+}
+
 func (d *SqliteDatabase) GetEdges(opts ...EdgeOption) ([]*api.JsonEdge, error) {
 	query := NewEdgeQuery(opts...)
 	sql, args := query.ToSQL()
@@ -725,6 +803,41 @@ func (d *SqliteDatabase) UpdateEdges(edges []*api.JsonEdge) error {
 		}
 	}
 	return tx.Commit()
+}
+
+func (d *SqliteDatabase) InsertCollectMachineHash(h *api.JsonCollectMachineHashes) error {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+	query := `INSERT INTO CollectMachineHashes (
+        WasmModuleRoot, FromBatch, BlockChallengeHeight, RawStepHeights, NumDesiredHashes, MachineStartIndex, StepSize, StartTime
+    ) VALUES (
+        :WasmModuleRoot, :FromBatch, :BlockChallengeHeight, :RawStepHeights, :NumDesiredHashes, :MachineStartIndex, :StepSize, :StartTime
+    )`
+	_, err := d.sqlDB.NamedExec(query, h)
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func (d *SqliteDatabase) UpdateCollectMachineHash(h *api.JsonCollectMachineHashes) error {
+	d.lock.Lock()
+	defer d.lock.Unlock()
+	query := `UPDATE CollectMachineHashes SET
+				FinishTime = :FinishTime
+				 WHERE WasmModuleRoot = :WasmModuleRoot
+				   AND FromBatch = :FromBatch
+				   AND BlockChallengeHeight = :BlockChallengeHeight
+				   AND RawStepHeights = :RawStepHeights
+				   AND NumDesiredHashes = :NumDesiredHashes
+				   AND MachineStartIndex = :MachineStartIndex
+				   AND StepSize = :StepSize
+				   AND StartTime = :StartTime`
+	_, err := d.sqlDB.NamedExec(query, h)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (d *SqliteDatabase) UpdateAssertions(assertions []*api.JsonAssertion) error {

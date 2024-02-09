@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/OffchainLabs/bold/api/db"
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
@@ -66,7 +67,7 @@ func NewWithMockedStateRoots(stateRoots []common.Hash, opts ...Opt) (*L2StateBac
 	for _, o := range opts {
 		o(s)
 	}
-	commitmentProvider := l2stateprovider.NewHistoryCommitmentProvider(s, s, s, s.challengeLeafHeights, s)
+	commitmentProvider := l2stateprovider.NewHistoryCommitmentProvider(s, s, s, s.challengeLeafHeights, s, nil)
 	s.HistoryCommitmentProvider = *commitmentProvider
 	return s, nil
 }
@@ -149,7 +150,7 @@ func NewForSimpleMachine(
 	for _, o := range opts {
 		o(s)
 	}
-	commitmentProvider := l2stateprovider.NewHistoryCommitmentProvider(s, s, s, s.challengeLeafHeights, s)
+	commitmentProvider := l2stateprovider.NewHistoryCommitmentProvider(s, s, s, s.challengeLeafHeights, s, nil)
 	s.HistoryCommitmentProvider = *commitmentProvider
 	totalWavmOpcodes := uint64(1)
 	for _, h := range s.challengeLeafHeights[1:] {
@@ -203,6 +204,11 @@ func NewForSimpleMachine(
 		return NewSimpleMachine(s.executionStates[block], maxBatchesRead), nil
 	}
 	return s, nil
+}
+
+func (s *L2StateBackend) UpdateAPIDatabase(database db.Database) {
+	commitmentProvider := l2stateprovider.NewHistoryCommitmentProvider(s, s, s, s.challengeLeafHeights, s, database)
+	s.HistoryCommitmentProvider = *commitmentProvider
 }
 
 // ExecutionStateAfterBatchCount produces the l2 state to assert at the message number specified.

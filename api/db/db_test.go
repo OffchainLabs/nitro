@@ -14,6 +14,50 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestSqliteDatabase_CollectMachineHashes(t *testing.T) {
+	sqlDB, err := sqlx.Connect("sqlite3", ":memory:")
+	require.NoError(t, err)
+	defer sqlDB.Close()
+
+	_, err = sqlDB.Exec(schema)
+	require.NoError(t, err)
+
+	db := &SqliteDatabase{sqlDB: sqlDB}
+	machineHashes := &api.JsonCollectMachineHashes{
+		WasmModuleRoot:       common.BytesToHash([]byte("foo")),
+		FromBatch:            1,
+		BlockChallengeHeight: 2,
+		RawStepHeights:       "3, 4, 5, 6",
+		NumDesiredHashes:     4,
+		MachineStartIndex:    5,
+		StepSize:             6,
+		StartTime:            time.Now().UTC(),
+	}
+	require.NoError(t, db.InsertCollectMachineHash(machineHashes))
+
+	machineHashesFromDb, err := db.GetCollectMachineHashes()
+	require.NoError(t, err)
+	require.Equal(t, len(machineHashesFromDb), 1)
+	require.Equal(t, machineHashes, machineHashesFromDb[0])
+
+	ongoingMachineHashesFromDb, err := db.GetCollectMachineHashes(WithCollectMachineHashesOngoing())
+	require.NoError(t, err)
+	require.Equal(t, len(ongoingMachineHashesFromDb), 1)
+
+	finishTime := time.Now().UTC()
+	machineHashes.FinishTime = &finishTime
+	require.NoError(t, db.UpdateCollectMachineHash(machineHashes))
+
+	machineHashesFromDb, err = db.GetCollectMachineHashes()
+	require.NoError(t, err)
+	require.Equal(t, len(machineHashesFromDb), 1)
+	require.Equal(t, machineHashes, machineHashesFromDb[0])
+
+	ongoingMachineHashesFromDb, err = db.GetCollectMachineHashes(WithCollectMachineHashesOngoing())
+	require.NoError(t, err)
+	require.Equal(t, len(ongoingMachineHashesFromDb), 0)
+}
+
 func TestSqliteDatabase_Updates(t *testing.T) {
 	sqlDB, err := sqlx.Connect("sqlite3", ":memory:")
 	require.NoError(t, err)

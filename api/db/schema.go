@@ -7,6 +7,18 @@ CREATE TABLE Challenges (
     UNIQUE(Hash)
 );
 
+CREATE TABLE CollectMachineHashes (
+    WasmModuleRoot TEXT NOT NULL,
+    FromBatch INTEGER NOT NULL,
+    BlockChallengeHeight INTEGER NOT NULL,
+    RawStepHeights TEXT NOT NULL,
+    NumDesiredHashes INTEGER NOT NULL,
+    MachineStartIndex INTEGER NOT NULL,
+    StepSize INTEGER NOT NULL,
+    StartTime DATETIME NOT NULL,
+    FinishTime DATETIME
+);
+
 CREATE TABLE EdgeClaims (
     ClaimId TEXT NOT NULL PRIMARY KEY,
     RefersTo TEXT NOT NULL, -- 'edge' or 'assertion'

@@ -88,6 +88,44 @@ func (s *Server) ListAssertions(w http.ResponseWriter, r *http.Request) {
 	writeJSONResponse(w, assertions)
 }
 
+// CollectMachineHashes fetches all the collectMachineHashes calls that have been made
+// along with their start and end times.
+//
+// method:
+// - GET
+// - /api/v1/state-provider/requests/collect-machine-hashes
+//
+// request query params:
+//   - limit: the max number of items in the response
+//   - offset: the offset index in the DB
+//   - ongoing: fetch only collectMachineHashes calls that are ongoing or did not finish
+//
+// response:
+// - []*JsonCollectMachineHashes
+func (s *Server) CollectMachineHashes(w http.ResponseWriter, r *http.Request) {
+	opts := make([]db.CollectMachineHashesOption, 0)
+	query := r.URL.Query()
+	if val, ok := query["limit"]; ok && len(val) > 0 {
+		if v, err := strconv.Atoi(val[0]); err == nil {
+			opts = append(opts, db.WithCollectMachineHashesLimit(v))
+		}
+	}
+	if val, ok := query["offset"]; ok && len(val) > 0 {
+		if v, err := strconv.Atoi(val[0]); err == nil {
+			opts = append(opts, db.WithCollectMachineHashesOffset(v))
+		}
+	}
+	if _, ok := query["ongoing"]; ok {
+		opts = append(opts, db.WithCollectMachineHashesOngoing())
+	}
+	assertions, err := s.backend.GetCollectMachineHashes(r.Context(), opts...)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("Could not get CollectMachineHashes from backend: %v", err), http.StatusInternalServerError)
+		return
+	}
+	writeJSONResponse(w, assertions)
+}
+
 // AssertionByIdentifier since the latest confirmed assertion.
 //
 // method:

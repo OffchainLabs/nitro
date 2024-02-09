@@ -6,6 +6,7 @@ package backend
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -20,6 +21,7 @@ import (
 
 type BusinessLogicProvider interface {
 	GetAssertions(ctx context.Context, opts ...db.AssertionOption) ([]*api.JsonAssertion, error)
+	GetCollectMachineHashes(ctx context.Context, opts ...db.CollectMachineHashesOption) ([]*api.JsonCollectMachineHashes, error)
 	GetEdges(ctx context.Context, opts ...db.EdgeOption) ([]*api.JsonEdge, error)
 	GetTrackedRoyalEdges(ctx context.Context) ([]*api.JsonEdgesByChallengedAssertion, error)
 	GetMiniStakes(ctx context.Context, assertionHash protocol.AssertionHash, opts ...db.EdgeOption) (*api.JsonMiniStakes, error)
@@ -85,6 +87,36 @@ func (b *Backend) GetAssertions(ctx context.Context, opts ...db.AssertionOption)
 		}
 	}
 	return assertions, nil
+}
+
+func (b *Backend) GetCollectMachineHashes(ctx context.Context, opts ...db.CollectMachineHashesOption) ([]*api.JsonCollectMachineHashes, error) {
+	query := &db.CollectMachineHashesQuery{}
+	for _, o := range opts {
+		o(query)
+	}
+	collectMachineHashes, err := b.db.GetCollectMachineHashes(opts...)
+	for _, cmh := range collectMachineHashes {
+		if cmh.RawStepHeights != "" {
+			stepHeightsStr := strings.Split(cmh.RawStepHeights, ",")
+			stepHeights := make([]uint64, len(stepHeightsStr))
+			for i, stepHeightStr := range stepHeightsStr {
+				stepHeight := 0
+				if stepHeightStr == "" {
+					continue
+				}
+				stepHeight, err = strconv.Atoi(stepHeightStr)
+				if err != nil {
+					return nil, fmt.Errorf("could not parse step height %s: %w", stepHeightStr, err)
+				}
+				stepHeights[i] = uint64(stepHeight)
+			}
+			cmh.StepHeights = stepHeights
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	return collectMachineHashes, nil
 }
 
 func (b *Backend) GetEdges(ctx context.Context, opts ...db.EdgeOption) ([]*api.JsonEdge, error) {

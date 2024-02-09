@@ -11,6 +11,7 @@ go_library(
     importpath = "github.com/OffchainLabs/bold/testing/mocks/state-provider",
     visibility = ["//visibility:public"],
     deps = [
+        "//api/db",
         "//chain-abstraction:protocol",
         "//containers/option",
         "//layer2-state-provider",

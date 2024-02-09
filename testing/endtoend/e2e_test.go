@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/OffchainLabs/bold/api"
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	challengemanager "github.com/OffchainLabs/bold/challenge-manager"
 	"github.com/OffchainLabs/bold/challenge-manager/types"
@@ -271,6 +272,9 @@ func runEndToEndTest(t *testing.T, cfg *e2eConfig) {
 	honestManager := setupChallengeManager(
 		t, ctx, bk.Client(), rollupAddr, honestStateManager, txOpts, name, honestOpts...,
 	)
+	if !api.IsNil(honestManager.Database()) {
+		honestStateManager.UpdateAPIDatabase(honestManager.Database())
+	}
 
 	// Diverge exactly at the last opcode within the block.
 	totalOpcodes := totalWasmOpcodes(&cfg.protocol.layerZeroHeights, cfg.protocol.numBigStepLevels)

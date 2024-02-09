@@ -40,6 +40,7 @@ func TestHistoryCommitment(t *testing.T) {
 		stateBackend,
 		challengeLeafHeights,
 		stateBackend,
+		nil,
 	)
 	t.Run("produces a block challenge commitment with height equal to leaf height const", func(t *testing.T) {
 		got, err := provider.HistoryCommitment(

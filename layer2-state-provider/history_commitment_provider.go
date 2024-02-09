@@ -4,12 +4,16 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"strconv"
+	"time"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	inprogresscache "github.com/OffchainLabs/bold/containers/in-progress-cache"
 	prefixproofs "github.com/OffchainLabs/bold/state-commitments/prefix-proofs"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 
+	"github.com/OffchainLabs/bold/api"
+	"github.com/OffchainLabs/bold/api/db"
 	"github.com/OffchainLabs/bold/containers/option"
 	commitments "github.com/OffchainLabs/bold/state-commitments/history"
 	"github.com/ethereum/go-ethereum/common"
@@ -99,6 +103,7 @@ type HistoryCommitmentProvider struct {
 	proofCollector          ProofCollector
 	challengeLeafHeights    []Height
 	inFlightRequestCache    *inprogresscache.Cache[string, []common.Hash]
+	apiDB                   db.Database
 	ExecutionProvider
 }
 
@@ -110,6 +115,7 @@ func NewHistoryCommitmentProvider(
 	proofCollector ProofCollector,
 	challengeLeafHeights []Height,
 	executionProvider ExecutionProvider,
+	apiDB db.Database,
 ) *HistoryCommitmentProvider {
 	return &HistoryCommitmentProvider{
 		l2MessageStateCollector: l2MessageStateCollector,
@@ -118,6 +124,7 @@ func NewHistoryCommitmentProvider(
 		challengeLeafHeights:    challengeLeafHeights,
 		ExecutionProvider:       executionProvider,
 		inFlightRequestCache:    inprogresscache.New[string, []common.Hash](),
+		apiDB:                   apiDB,
 	}
 }
 
@@ -206,6 +213,37 @@ func (p *HistoryCommitmentProvider) historyCommitmentImpl(
 	// request cache to make sure the same request is not spawned twice, but rather
 	// the second request would wait for the in-flight request to complete and use its result.
 	return p.inFlightRequestCache.Compute(cfg.String(), func() ([]common.Hash, error) {
+		if !api.IsNil(p.apiDB) {
+			var rawStepHeights string
+			for i, stepHeight := range cfg.StepHeights {
+				rawStepHeights += strconv.Itoa(int(stepHeight))
+				if i != len(rawStepHeights)-1 {
+					rawStepHeights += ","
+				}
+			}
+			collectMachineHashes := api.JsonCollectMachineHashes{
+				WasmModuleRoot:       cfg.WasmModuleRoot,
+				FromBatch:            uint64(cfg.FromBatch),
+				BlockChallengeHeight: uint64(cfg.BlockChallengeHeight),
+				RawStepHeights:       rawStepHeights,
+				NumDesiredHashes:     cfg.NumDesiredHashes,
+				MachineStartIndex:    uint64(cfg.MachineStartIndex),
+				StepSize:             uint64(cfg.StepSize),
+				StartTime:            time.Now().UTC(),
+			}
+			err := p.apiDB.InsertCollectMachineHash(&collectMachineHashes)
+			if err != nil {
+				return nil, err
+			}
+			defer func() {
+				finishTime := time.Now().UTC()
+				collectMachineHashes.FinishTime = &finishTime
+				err := p.apiDB.UpdateCollectMachineHash(&collectMachineHashes)
+				if err != nil {
+					return
+				}
+			}()
+		}
 		return p.machineHashCollector.CollectMachineHashes(ctx, cfg)
 	})
 }
