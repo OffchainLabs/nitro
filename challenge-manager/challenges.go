@@ -25,11 +25,7 @@ func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionH
 	if err != nil {
 		return errors.Wrapf(err, "could not get assertion to challenge with id %#x", id)
 	}
-	parentAssertionHash, err := assertion.PrevId(ctx)
-	if err != nil {
-		return errors.Wrapf(err, "could not get parent assertion hash for assertion with id %#x", id)
-	}
-	if m.challengedAssertions.Has(parentAssertionHash) {
+	if m.claimedAssertionsInChallenge.Has(id) {
 		srvlog.Info(fmt.Sprintf("Already challenged assertion with id %#x, skipping", id.Hash))
 		return nil
 	}
@@ -41,7 +37,6 @@ func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionH
 		srvlog.Info("Skipping challenge submission on already confirmed assertion", log.Ctx{"assertionHash": id.Hash})
 		return nil
 	}
-
 	// We then add a level zero edge to initiate a challenge.
 	levelZeroEdge, edgeTrackerAssertionInfo, alreadyExists, err := m.addBlockChallengeLevelZeroEdge(ctx, assertion)
 	if err != nil {
@@ -49,6 +44,7 @@ func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionH
 	}
 	if alreadyExists {
 		srvlog.Info("Root level edge for challenged assertion already exists, skipping move", log.Ctx{"assertionHash": id.Hash})
+		m.claimedAssertionsInChallenge.Insert(id)
 		return nil
 	}
 	if verifiedErr := m.watcher.AddVerifiedHonestEdge(ctx, levelZeroEdge); verifiedErr != nil {
@@ -82,7 +78,6 @@ func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionH
 		"fromBatch":     edgeTrackerAssertionInfo.FromBatch,
 		"toBatch":       edgeTrackerAssertionInfo.ToBatch,
 	})
-	m.challengedAssertions.Insert(parentAssertionHash)
 	return nil
 }
 

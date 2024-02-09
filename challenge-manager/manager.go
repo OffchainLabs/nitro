@@ -72,7 +72,7 @@ type Manager struct {
 	mode                        types.Mode
 	maxDelaySeconds             int
 
-	challengedAssertions *threadsafe.Set[protocol.AssertionHash]
+	claimedAssertionsInChallenge *threadsafe.Set[protocol.AssertionHash]
 	// API
 	apiAddr   string
 	apiDBPath string
@@ -152,20 +152,20 @@ func New(
 ) (*Manager, error) {
 
 	m := &Manager{
-		backend:                     backend,
-		chain:                       chain,
-		stateManager:                stateManager,
-		address:                     common.Address{},
-		timeRef:                     utilTime.NewRealTimeReference(),
-		rollupAddr:                  rollupAddr,
-		chainWatcherInterval:        time.Millisecond * 500,
-		trackedEdgeIds:              threadsafe.NewMap[protocol.EdgeId, *edgetracker.Tracker](threadsafe.MapWithMetric[protocol.EdgeId, *edgetracker.Tracker]("trackedEdgeIds")),
-		batchIndexForAssertionCache: threadsafe.NewMap[protocol.AssertionHash, edgetracker.AssociatedAssertionMetadata](threadsafe.MapWithMetric[protocol.AssertionHash, edgetracker.AssociatedAssertionMetadata]("batchIndexForAssertionCache")),
-		assertionPostingInterval:    time.Hour,
-		assertionScanningInterval:   time.Minute,
-		assertionConfirmingInterval: time.Second * 10,
-		averageTimeForBlockCreation: time.Second * 12,
-		challengedAssertions:        threadsafe.NewSet[protocol.AssertionHash](threadsafe.SetWithMetric[protocol.AssertionHash]("challengedAssertions")),
+		backend:                      backend,
+		chain:                        chain,
+		stateManager:                 stateManager,
+		address:                      common.Address{},
+		timeRef:                      utilTime.NewRealTimeReference(),
+		rollupAddr:                   rollupAddr,
+		chainWatcherInterval:         time.Millisecond * 500,
+		trackedEdgeIds:               threadsafe.NewMap[protocol.EdgeId, *edgetracker.Tracker](threadsafe.MapWithMetric[protocol.EdgeId, *edgetracker.Tracker]("trackedEdgeIds")),
+		batchIndexForAssertionCache:  threadsafe.NewMap[protocol.AssertionHash, edgetracker.AssociatedAssertionMetadata](threadsafe.MapWithMetric[protocol.AssertionHash, edgetracker.AssociatedAssertionMetadata]("batchIndexForAssertionCache")),
+		assertionPostingInterval:     time.Hour,
+		assertionScanningInterval:    time.Minute,
+		assertionConfirmingInterval:  time.Second * 10,
+		averageTimeForBlockCreation:  time.Second * 12,
+		claimedAssertionsInChallenge: threadsafe.NewSet[protocol.AssertionHash](threadsafe.SetWithMetric[protocol.AssertionHash]("claimedAssertionsInChallenge")),
 	}
 	for _, o := range opts {
 		o(m)
@@ -279,8 +279,8 @@ func (m *Manager) Mode() types.Mode {
 }
 
 // IsChallengedAssertion checks if an assertion with a given hash has a challenge.
-func (m *Manager) IsChallengedAssertion(assertionHash protocol.AssertionHash) bool {
-	return m.challengedAssertions.Has(assertionHash)
+func (m *Manager) IsClaimedByChallenge(assertionHash protocol.AssertionHash) bool {
+	return m.claimedAssertionsInChallenge.Has(assertionHash)
 }
 
 // MaxDelaySeconds returns the maximum number of seconds that the challenge manager will wait open a challenge.
