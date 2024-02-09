@@ -63,6 +63,8 @@ type JsonEdge struct {
 	IsRoyal             bool          `json:"isRoyal" db:"IsRoyal"`
 	CumulativePathTimer uint64        `json:"cumulativePathTimer" db:"CumulativePathTimer"`
 	RefersTo            string        `json:"refersTo" db:"RefersTo"`
+	FSMState            string        `json:"fsmState"`
+	FSMError            string        `json:"fsmError"`
 }
 
 type JsonTrackedRoyalEdge struct {

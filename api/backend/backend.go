@@ -14,6 +14,8 @@ import (
 	"github.com/OffchainLabs/bold/api/db"
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	watcher "github.com/OffchainLabs/bold/challenge-manager/chain-watcher"
+	edgetracker "github.com/OffchainLabs/bold/challenge-manager/edge-tracker"
+	"github.com/OffchainLabs/bold/containers/option"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/pkg/errors"
@@ -28,21 +30,28 @@ type BusinessLogicProvider interface {
 	LatestConfirmedAssertion(ctx context.Context) (*api.JsonAssertion, error)
 }
 
+type EdgeTrackerFetcher interface {
+	GetEdgeTracker(edgeId protocol.EdgeId) option.Option[*edgetracker.Tracker]
+}
+
 type Backend struct {
 	db               db.ReadUpdateDatabase
 	chainDataFetcher protocol.AssertionChain
 	chainWatcher     *watcher.Watcher
+	trackerFetcher   EdgeTrackerFetcher
 }
 
 func NewBackend(
 	db db.ReadUpdateDatabase,
 	chainDataFetcher protocol.AssertionChain,
 	chainWatcher *watcher.Watcher,
+	trackerFetcher EdgeTrackerFetcher,
 ) *Backend {
 	return &Backend{
 		db:               db,
 		chainDataFetcher: chainDataFetcher,
 		chainWatcher:     chainWatcher,
+		trackerFetcher:   trackerFetcher,
 	}
 }
 
@@ -204,6 +213,14 @@ func (b *Backend) GetEdges(ctx context.Context, opts ...db.EdgeOption) ([]*api.J
 				e.CumulativePathTimer = uint64(pathTimer)
 			}
 			e.IsRoyal = isRoyal
+			trackerOpt := b.trackerFetcher.GetEdgeTracker(edge.Id())
+			if trackerOpt.IsSome() {
+				fsmState := trackerOpt.Unwrap().FSMSummary()
+				e.FSMState = fsmState.CurrentState
+				if fsmState.Error != nil {
+					e.FSMError = fsmState.Error.Error()
+				}
+			}
 		}
 		if err := b.db.UpdateEdges(edges); err != nil {
 			return nil, err

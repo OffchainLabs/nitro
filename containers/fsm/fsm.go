@@ -31,6 +31,7 @@ type Event[E, T fmt.Stringer] struct {
 type CurrentState[E, T fmt.Stringer] struct {
 	SourceEvent E
 	State       T
+	Error       error
 }
 
 // Fsm defines a generic, finite state machine which can transition from a series
@@ -136,10 +137,16 @@ func (f *Fsm[E, T]) Do(event E) error {
 		}
 		return errors.Wrapf(ErrFsmEventNotFound, "event: %s", event)
 	}
-	f.curr = &CurrentState[E, T]{
+	// If we are transition from one state to a different state, clear the FSM error.
+	if src.String() != to.String() {
+		f.curr.Error = nil
+	}
+	newState := &CurrentState[E, T]{
 		State:       to,
 		SourceEvent: event,
+		Error:       f.curr.Error,
 	}
+	f.curr = newState
 	if f.trackingTransitions {
 		f.transitionsExecuted = append(
 			f.transitionsExecuted,
@@ -155,6 +162,14 @@ func (f *Fsm[E, T]) Current() *CurrentState[E, T] {
 	f.lock.RLock()
 	defer f.lock.RUnlock()
 	return f.curr
+}
+
+// Current returns the current state of the FSM, containing the state value
+// and source event it used to get there, if any.
+func (f *Fsm[E, T]) MarkError(e error) {
+	f.lock.Lock()
+	defer f.lock.Unlock()
+	f.curr.Error = e
 }
 
 // An internal key the fsm uses to store data in maps.

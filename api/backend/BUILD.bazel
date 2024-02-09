@@ -10,6 +10,8 @@ go_library(
         "//api/db",
         "//chain-abstraction:protocol",
         "//challenge-manager/chain-watcher",
+        "//challenge-manager/edge-tracker",
+        "//containers/option",
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_ethereum_go_ethereum//common/hexutil",
         "@com_github_pkg_errors//:errors",
