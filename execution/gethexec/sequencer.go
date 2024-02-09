@@ -98,7 +98,6 @@ var DefaultSequencerConfig = SequencerConfig{
 	MaxTxDataSize:           95000,
 	NonceFailureCacheSize:   1024,
 	NonceFailureCacheExpiry: time.Second,
-	EnablePrefetchBlock:     false,
 }
 
 var TestSequencerConfig = SequencerConfig{
@@ -114,7 +113,6 @@ var TestSequencerConfig = SequencerConfig{
 	MaxTxDataSize:               95000,
 	NonceFailureCacheSize:       1024,
 	NonceFailureCacheExpiry:     time.Second,
-	EnablePrefetchBlock:         false,
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -130,7 +128,6 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".max-tx-data-size", DefaultSequencerConfig.MaxTxDataSize, "maximum transaction size the sequencer will accept")
 	f.Int(prefix+".nonce-failure-cache-size", DefaultSequencerConfig.NonceFailureCacheSize, "number of transactions with too high of a nonce to keep in memory while waiting for their predecessor")
 	f.Duration(prefix+".nonce-failure-cache-expiry", DefaultSequencerConfig.NonceFailureCacheExpiry, "maximum amount of time to wait for a predecessor before rejecting a tx with nonce too high")
-	f.Bool(prefix+".enable-prefetch-block", DefaultSequencerConfig.EnablePrefetchBlock, "enable prefetching of blocks")
 }
 
 type txQueueItem struct {
@@ -328,9 +325,6 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 	}
 	s.Pause()
 	execEngine.EnableReorgSequencing()
-	if config.EnablePrefetchBlock {
-		execEngine.EnablePrefetchBlock()
-	}
 	return s, nil
 }
 
