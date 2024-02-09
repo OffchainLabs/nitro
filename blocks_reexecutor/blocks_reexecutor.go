@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"math/rand"
 	"runtime"
+	"strings"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/core"
@@ -27,6 +28,7 @@ type Config struct {
 }
 
 func (c *Config) Validate() error {
+	c.Mode = strings.ToLower(c.Mode)
 	if c.Enable && c.Mode != "random" && c.Mode != "full" {
 		return errors.New("invalid mode for blocks re-execution")
 	}

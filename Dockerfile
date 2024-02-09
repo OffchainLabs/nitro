@@ -26,13 +26,14 @@ COPY --from=brotli-library-builder /workspace/install/ /
 
 FROM node:16-bookworm-slim as contracts-builder
 RUN apt-get update && \
-    apt-get install -y git python3 make g++
+    apt-get install -y git python3 make g++ curl
+RUN curl -L https://foundry.paradigm.xyz | bash && . ~/.bashrc && ~/.foundry/bin/foundryup
 WORKDIR /workspace
 COPY contracts/package.json contracts/yarn.lock contracts/
 RUN cd contracts && yarn install
 COPY contracts contracts/
 COPY Makefile .
-RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-solidity
+RUN . ~/.bashrc && NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-solidity
 
 FROM debian:bookworm-20231218 as wasm-base
 WORKDIR /workspace
@@ -181,6 +182,7 @@ COPY fastcache/go.mod fastcache/go.sum fastcache/
 RUN go mod download
 COPY . ./
 COPY --from=contracts-builder workspace/contracts/build/ contracts/build/
+COPY --from=contracts-builder workspace/contracts/out/ contracts/out/
 COPY --from=contracts-builder workspace/contracts/node_modules/@offchainlabs/upgrade-executor/build/contracts/src/UpgradeExecutor.sol/UpgradeExecutor.json contracts/node_modules/@offchainlabs/upgrade-executor/build/contracts/src/UpgradeExecutor.sol/
 COPY --from=contracts-builder workspace/.make/ .make/
 COPY --from=prover-header-export / target/
@@ -198,7 +200,7 @@ FROM debian:bookworm-slim as nitro-fuzzer
 COPY --from=fuzz-builder /workspace/fuzzers/*.fuzz /usr/local/bin/
 COPY ./scripts/fuzz.bash /usr/local/bin
 RUN mkdir /fuzzcache
-ENTRYPOINT [ "/usr/local/bin/fuzz.bash", "--binary-path", "/usr/local/bin/", "--fuzzcache-path", "/fuzzcache" ]
+ENTRYPOINT [ "/usr/local/bin/fuzz.bash", "FuzzStateTransition", "--binary-path", "/usr/local/bin/", "--fuzzcache-path", "/fuzzcache" ]
 
 FROM debian:bookworm-slim as nitro-node-slim
 WORKDIR /home/user

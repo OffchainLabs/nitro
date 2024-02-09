@@ -26,6 +26,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcastclients"
@@ -65,10 +66,10 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 		// TODO could the ChainConfig be just []byte?
 		ChainConfig: string(serializedChainConfig),
 		SequencerInboxMaxTimeVariation: rollupgen.ISequencerInboxMaxTimeVariation{
-			DelayBlocks:   big.NewInt(60 * 60 * 24 / 15),
-			FutureBlocks:  big.NewInt(12),
-			DelaySeconds:  big.NewInt(60 * 60 * 24),
-			FutureSeconds: big.NewInt(60 * 60),
+			DelayBlocks:   60 * 60 * 24 / 15,
+			FutureBlocks:  12,
+			DelaySeconds:  60 * 60 * 24,
+			FutureSeconds: 60 * 60,
 		},
 	}
 }
@@ -85,6 +86,7 @@ type Config struct {
 	Staker              staker.L1ValidatorConfig    `koanf:"staker" reload:"hot"`
 	SeqCoordinator      SeqCoordinatorConfig        `koanf:"seq-coordinator"`
 	DataAvailability    das.DataAvailabilityConfig  `koanf:"data-availability"`
+	BlobClient          BlobClientConfig            `koanf:"blob-client"`
 	SyncMonitor         SyncMonitorConfig           `koanf:"sync-monitor"`
 	Dangerous           DangerousConfig             `koanf:"dangerous"`
 	TransactionStreamer TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
@@ -98,6 +100,13 @@ func (c *Config) Validate() error {
 	}
 	if c.DelayedSequencer.Enable && !c.Sequencer {
 		return errors.New("cannot enable delayed sequencer without enabling sequencer")
+	}
+	if c.InboxReader.ReadMode != "latest" {
+		if c.Sequencer {
+			return errors.New("cannot enable inboxreader in safe or finalized mode along with sequencer")
+		}
+		c.Feed.Output.Enable = false
+		c.Feed.Input.URL = []string{}
 	}
 	if err := c.BlockValidator.Validate(); err != nil {
 		return err
@@ -142,6 +151,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	staker.L1ValidatorConfigAddOptions(prefix+".staker", f)
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
 	das.DataAvailabilityConfigAddNodeOptions(prefix+".data-availability", f)
+	BlobClientAddOptions(prefix+".blob-client", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
@@ -512,7 +522,15 @@ func createNodeImpl(
 		return nil, errors.New("a data availability service is required for this chain, but it was not configured")
 	}
 
-	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, daReader)
+	var blobReader arbstate.BlobReader
+	if config.BlobClient.BeaconChainUrl != "" {
+		blobReader, err = NewBlobClient(config.BlobClient, l1client)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, daReader, blobReader)
 	if err != nil {
 		return nil, err
 	}
@@ -531,6 +549,7 @@ func createNodeImpl(
 			exec,
 			rawdb.NewTable(arbDb, storage.BlockValidatorPrefix),
 			daReader,
+			blobReader,
 			func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
 			stack,
 		)

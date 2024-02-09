@@ -179,9 +179,7 @@ func mainImpl() int {
 	if nodeConfig.WS.ExposeAll {
 		stackConf.WSModules = append(stackConf.WSModules, "personal")
 	}
-	stackConf.P2P.ListenAddr = ""
-	stackConf.P2P.NoDial = true
-	stackConf.P2P.NoDiscovery = true
+	nodeConfig.P2P.Apply(&stackConf)
 	vcsRevision, strippedRevision, vcsTime := confighelpers.GetVersion()
 	stackConf.Version = strippedRevision
 
@@ -680,6 +678,7 @@ type NodeConfig struct {
 	IPC              genericconf.IPCConfig           `koanf:"ipc"`
 	Auth             genericconf.AuthRPCConfig       `koanf:"auth"`
 	GraphQL          genericconf.GraphQLConfig       `koanf:"graphql"`
+	P2P              genericconf.P2PConfig           `koanf:"p2p"`
 	Metrics          bool                            `koanf:"metrics"`
 	MetricsServer    genericconf.MetricsServerConfig `koanf:"metrics-server"`
 	PProf            bool                            `koanf:"pprof"`
@@ -690,28 +689,28 @@ type NodeConfig struct {
 }
 
 var NodeConfigDefault = NodeConfig{
-	Conf:             genericconf.ConfConfigDefault,
-	Node:             arbnode.ConfigDefault,
-	Execution:        gethexec.ConfigDefault,
-	Validation:       valnode.DefaultValidationConfig,
-	ParentChain:      conf.L1ConfigDefault,
-	Chain:            conf.L2ConfigDefault,
-	LogLevel:         int(log.LvlInfo),
-	LogType:          "plaintext",
-	FileLogging:      genericconf.DefaultFileLoggingConfig,
-	Persistent:       conf.PersistentConfigDefault,
-	HTTP:             genericconf.HTTPConfigDefault,
-	WS:               genericconf.WSConfigDefault,
-	IPC:              genericconf.IPCConfigDefault,
-	Auth:             genericconf.AuthRPCConfigDefault,
-	GraphQL:          genericconf.GraphQLConfigDefault,
-	Metrics:          false,
-	MetricsServer:    genericconf.MetricsServerConfigDefault,
-	Init:             conf.InitConfigDefault,
-	Rpc:              genericconf.DefaultRpcConfig,
-	PProf:            false,
-	PprofCfg:         genericconf.PProfDefault,
-	BlocksReExecutor: blocksreexecutor.DefaultConfig,
+	Conf:          genericconf.ConfConfigDefault,
+	Node:          arbnode.ConfigDefault,
+	Execution:     gethexec.ConfigDefault,
+	Validation:    valnode.DefaultValidationConfig,
+	ParentChain:   conf.L1ConfigDefault,
+	Chain:         conf.L2ConfigDefault,
+	LogLevel:      int(log.LvlInfo),
+	LogType:       "plaintext",
+	FileLogging:   genericconf.DefaultFileLoggingConfig,
+	Persistent:    conf.PersistentConfigDefault,
+	HTTP:          genericconf.HTTPConfigDefault,
+	WS:            genericconf.WSConfigDefault,
+	IPC:           genericconf.IPCConfigDefault,
+	Auth:          genericconf.AuthRPCConfigDefault,
+	GraphQL:       genericconf.GraphQLConfigDefault,
+	P2P:           genericconf.P2PConfigDefault,
+	Metrics:       false,
+	MetricsServer: genericconf.MetricsServerConfigDefault,
+	Init:          conf.InitConfigDefault,
+	Rpc:           genericconf.DefaultRpcConfig,
+	PProf:         false,
+	PprofCfg:      genericconf.PProfDefault,
 }
 
 func NodeConfigAddOptions(f *flag.FlagSet) {
@@ -729,6 +728,7 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	genericconf.WSConfigAddOptions("ws", f)
 	genericconf.IPCConfigAddOptions("ipc", f)
 	genericconf.AuthRPCConfigAddOptions("auth", f)
+	genericconf.P2PConfigAddOptions("p2p", f)
 	genericconf.GraphQLConfigAddOptions("graphql", f)
 	f.Bool("metrics", NodeConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
@@ -790,6 +790,12 @@ func (c *NodeConfig) CanReload(new *NodeConfig) error {
 }
 
 func (c *NodeConfig) Validate() error {
+	if c.Init.RecreateMissingStateFrom > 0 && !c.Execution.Caching.Archive {
+		return errors.New("recreate-missing-state-from enabled for a non-archive node")
+	}
+	if err := c.Init.Validate(); err != nil {
+		return err
+	}
 	if err := c.ParentChain.Validate(); err != nil {
 		return err
 	}
