@@ -88,6 +88,7 @@ func NewManager(
 		stateManager,
 		challengeLeafHeights,
 		stateManager,
+		nil,
 	)
 	manager, err := challengemanager.New(
 		ctx,
@@ -106,5 +107,6 @@ func NewManager(
 	if err != nil {
 		return nil, err
 	}
+	provider.UpdateAPIDatabase(manager.Database())
 	return manager, nil
 }
