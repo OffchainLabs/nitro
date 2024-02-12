@@ -40,6 +40,7 @@ var (
 	challengeSubmittedCounter             = metrics.NewRegisteredCounter("arb/validator/scanner/challenge_submitted", nil)
 	assertionConfirmedCounter             = metrics.NewRegisteredCounter("arb/validator/scanner/assertion_confirmed", nil)
 	errorConfirmingAssertionByTimeCounter = metrics.NewRegisteredCounter("arb/validator/scanner/error_confirming_assertion_by_time", nil)
+	latestConfirmedAssertionGauge         = metrics.NewRegisteredGauge("arb/validator/scanner/latest_confirmed_assertion_block_number", nil)
 )
 
 func init() {
@@ -119,6 +120,7 @@ func NewManager(
 // 2. Concurrently, it also starts a routine that is responsible for posting new assertions to the assertion chain.
 func (m *Manager) Start(ctx context.Context) {
 	go m.postAssertionRoutine(ctx)
+	go m.updateLatestConfirmedMetrics(ctx)
 
 	latestConfirmed, err := m.chain.LatestConfirmed(ctx)
 	if err != nil {
@@ -577,16 +579,6 @@ func (m *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertion
 		log.Error("Could not get prev assertion creation info", log.Ctx{"error": err})
 		return
 	}
-	latestHeader, err := m.chain.Backend().HeaderByNumber(ctx, nil)
-	if err != nil {
-		srvlog.Error("Could not get latest header", log.Ctx{"err": err})
-		return
-	}
-	if !latestHeader.Number.IsUint64() {
-		srvlog.Error("Latest block number is not a uint64", log.Ctx{"number": latestHeader.Number.String()})
-		return
-	}
-	blockNumber := latestHeader.Number.Uint64()
 	for {
 		ticker := time.NewTicker(m.confirmationAttemptInterval)
 		defer ticker.Stop()
@@ -599,7 +591,7 @@ func (m *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertion
 			if m.challengeReader.IsClaimedByChallenge(assertionHash) {
 				return
 			}
-			confirmed, err := m.confirmAssertion(ctx, creationInfo, prevCreationInfo, blockNumber)
+			confirmed, err := m.confirmAssertion(ctx, creationInfo, prevCreationInfo)
 			if err != nil {
 				srvlog.Error("Could not confirm assertion", log.Ctx{"err": err, "assertionHash": assertionHash.Hash})
 				errorConfirmingAssertionByTimeCounter.Inc(1)
@@ -618,7 +610,6 @@ func (m *Manager) confirmAssertion(
 	ctx context.Context,
 	creationInfo *protocol.AssertionCreatedInfo,
 	prevCreationInfo *protocol.AssertionCreatedInfo,
-	blockNumber uint64,
 ) (bool, error) {
 	status, err := m.chain.AssertionStatus(ctx, protocol.AssertionHash{Hash: creationInfo.AssertionHash})
 	if err != nil {
@@ -638,8 +629,16 @@ func (m *Manager) confirmAssertion(
 	if creationInfo.ParentAssertionHash != latestConfirmed.Id().Hash {
 		return false, nil
 	}
+	latestHeader, err := m.chain.Backend().HeaderByNumber(ctx, nil)
+	if err != nil {
+		return false, err
+	}
+	if !latestHeader.Number.IsUint64() {
+		return false, errors.New("latest block number is not a uint64")
+	}
+	blockNumber := latestHeader.Number.Uint64()
 	creationBlock := creationInfo.CreationBlock
-	confirmPeriodBlocks := creationInfo.ConfirmPeriodBlocks
+	confirmPeriodBlocks := prevCreationInfo.ConfirmPeriodBlocks
 	confirmableByTime := blockNumber >= creationBlock+confirmPeriodBlocks
 
 	// If the assertion is not yet confirmable, we can simply wait.
@@ -674,6 +673,24 @@ func (m *Manager) canPostRivalAssertion() bool {
 
 func (m *Manager) canPostChallenge() bool {
 	return m.challengeReader.Mode() >= types.DefensiveMode
+}
+
+func (m *Manager) updateLatestConfirmedMetrics(ctx context.Context) {
+	ticker := time.NewTicker(m.confirmationAttemptInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			latestConfirmed, err := m.chain.LatestConfirmed(ctx)
+			if err != nil {
+				srvlog.Debug("Could not fetch latest confirmed assertion", log.Ctx{"error": err})
+				continue
+			}
+			latestConfirmedAssertionGauge.Update(int64(latestConfirmed.CreatedAtBlock()))
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 func randUint64(max uint64) (uint64, error) {

@@ -133,6 +133,10 @@ func NewHistoryCommitmentProvider(
 // and to be less than the total number of challenge levels in the protocol.
 type validatedStartHeights []Height
 
+func (p *HistoryCommitmentProvider) UpdateAPIDatabase(apiDB db.Database) {
+	p.apiDB = apiDB
+}
+
 // HistoryCommitment computes a Merklelized commitment over a set of hashes
 // at specified challenge levels. For block challenges, for example, this is a set
 // of machine hashes corresponding each message in a range N to M.
