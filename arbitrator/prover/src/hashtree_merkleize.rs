@@ -1,5 +1,6 @@
 use crate::hashtree::hash;
 use lazy_static::lazy_static;
+use rayon::prelude::*;
 
 const BYTES_PER_CHUNK: usize = 32;
 

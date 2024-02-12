@@ -4,6 +4,7 @@
 #![allow(clippy::missing_safety_doc, clippy::too_many_arguments)]
 
 pub mod binary;
+pub mod existing_approach;
 pub mod flat_merkle;
 pub mod hashtree;
 pub mod hashtree_merkleize;

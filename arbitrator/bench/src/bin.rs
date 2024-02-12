@@ -47,7 +47,7 @@ fn main() -> eyre::Result<()> {
     );
     println!(
         "Zero hash: {:?}",
-        &prover::hashtree_merkleize::ZERO_HASH_ARRAY[15][..]
+        hex::encode(&prover::hashtree_merkleize::ZERO_HASH_ARRAY[15][..])
     );
 
     let mut hashes = vec![];
@@ -57,12 +57,7 @@ fn main() -> eyre::Result<()> {
     println!("Num hashes: {}", hashes.len());
     let depth = 15;
     let start = std::time::Instant::now();
-    let tr = flat_merkle::Merkle::new_advanced(
-        flat_merkle::MerkleType::Memory,
-        hashes,
-        Bytes32::default(),
-        depth,
-    );
+    let tr = prover::existing_approach::Merkle::new_advanced(hashes, Bytes32::default(), depth);
     println!("Root: {}", hex::encode(tr.root()));
     println!("time to craft tree: {:?}", start.elapsed());
     Ok(())
