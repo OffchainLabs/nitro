@@ -102,7 +102,7 @@ func newProgram(
 func popProgram()
 
 //go:wasmimport programs set_response
-func setResponse(id uint32, gas uint64, response unsafe.Pointer, response_len uint32)
+func setResponse(id uint32, gas uint64, response unsafe.Pointer, response_len uint32, response2 unsafe.Pointer, response2_len uint32)
 
 //go:wasmimport programs get_request
 func getRequest(id uint32, reqLen unsafe.Pointer) uint32
@@ -162,8 +162,8 @@ func callProgram(
 			return data, err
 		}
 		reqType := RequestType(reqTypeId - reqTypeOffset)
-		response, cost := reqHandler(reqType, reqData)
-		setResponse(reqId, cost, arbutil.SliceToUnsafePointer(response), uint32(len(response)))
+		response, res2, cost := reqHandler(reqType, reqData)
+		setResponse(reqId, cost, arbutil.SliceToUnsafePointer(response), uint32(len(response)), arbutil.SliceToUnsafePointer(res2), uint32(len(res2)))
 		reqId = sendResponse(reqId)
 	}
 }

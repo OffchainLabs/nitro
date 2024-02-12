@@ -147,9 +147,11 @@ pub unsafe extern "C" fn programs__set_response(
     gas: u64,
     reponse_ptr: Uptr,
     response_len: usize,
+    reponse_2_ptr: Uptr,
+    response_2_len: usize,
 ) {
     let program = Program::current();
-    program.evm_api.request_handler().set_response(id, wavm::read_slice_usize(reponse_ptr, response_len), gas);
+    program.evm_api.request_handler().set_response(id, wavm::read_slice_usize(reponse_ptr, response_len), wavm::read_slice_usize(reponse_2_ptr, response_2_len), gas);
 }
 
 // removes the last created program

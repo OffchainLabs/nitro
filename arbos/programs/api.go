@@ -19,7 +19,7 @@ import (
 	am "github.com/offchainlabs/nitro/util/arbmath"
 )
 
-type RequestHandler func(req RequestType, input []byte) ([]byte, uint64)
+type RequestHandler func(req RequestType, input []byte) ([]byte, []byte, uint64)
 
 type RequestType int
 
@@ -34,7 +34,6 @@ const (
 	EmitLog
 	AccountBalance
 	AccountCode
-	AccountCodeSize
 	AccountCodeHash
 	AddPages
 	CaptureHostIO
@@ -212,7 +211,7 @@ func newApiClosures(
 		balance := evm.StateDB.GetBalance(address)
 		return common.BigToHash(balance), cost
 	}
-	accountCode := func(address common.Address, offset, size uint32, gas uint64) ([]byte, uint64) {
+	accountCode := func(address common.Address, gas uint64) ([]byte, uint64) {
 		// In the future it'll be possible to know the size of a contract before loading it.
 		// For now, require the worst case before doing the load.
 
@@ -220,17 +219,7 @@ func newApiClosures(
 		if gas < cost {
 			return []byte{}, cost
 		}
-		end := am.SaturatingUAdd(offset, size)
-		code := am.SliceWithRunoff(evm.StateDB.GetCode(address), offset, end)
-		return code, cost
-	}
-	accountCodeSize := func(address common.Address, gas uint64) (uint32, uint64) {
-		cost := vm.WasmAccountTouchCost(evm.StateDB, address, true)
-		if gas < cost {
-			return 0, cost
-		}
-		size := evm.StateDB.GetCodeSize(address)
-		return uint32(size), cost
+		return evm.StateDB.GetCode(address), cost
 	}
 	accountCodehash := func(address common.Address) (common.Hash, uint64) {
 		cost := vm.WasmAccountTouchCost(evm.StateDB, address, false)
@@ -244,7 +233,7 @@ func newApiClosures(
 		tracingInfo.Tracer.CaptureStylusHostio(name, args, outs, startInk, endInk)
 	}
 
-	return func(req RequestType, input []byte) ([]byte, uint64) {
+	return func(req RequestType, input []byte) ([]byte, []byte, uint64) {
 		switch req {
 		case GetBytes32:
 			if len(input) != 32 {
@@ -254,7 +243,7 @@ func newApiClosures(
 
 			out, cost := getBytes32(key)
 
-			return out[:], cost
+			return out[:], nil, cost
 		case SetBytes32:
 			if len(input) != 64 {
 				log.Crit("bad API call", "request", req, "len", len(input))
@@ -265,9 +254,9 @@ func newApiClosures(
 			cost, err := setBytes32(key, value)
 
 			if err != nil {
-				return []byte{0}, 0
+				return []byte{0}, nil, 0
 			}
-			return []byte{1}, cost
+			return []byte{1}, nil, cost
 		case ContractCall, DelegateCall, StaticCall:
 			if len(input) < 60 {
 				log.Crit("bad API call", "request", req, "len", len(input))
@@ -294,8 +283,7 @@ func newApiClosures(
 			if err != nil {
 				statusByte = 2 //TODO: err value
 			}
-			ret = append([]byte{statusByte}, ret...)
-			return ret, cost
+			return []byte{statusByte}, ret, cost
 		case Create1, Create2:
 			if len(input) < 40 {
 				log.Crit("bad API call", "request", req, "len", len(input))
@@ -324,11 +312,10 @@ func newApiClosures(
 
 			if err != nil {
 				res := append([]byte{0}, []byte(err.Error())...)
-				return res, gas
+				return res, nil, gas
 			}
 			res := append([]byte{1}, address.Bytes()...)
-			res = append(res, retVal...)
-			return res, cost
+			return res, retVal, cost
 		case EmitLog:
 			if len(input) < 4 {
 				log.Crit("bad API call", "request", req, "len", len(input))
@@ -346,9 +333,9 @@ func newApiClosures(
 			err := emitLog(hashes, input[topics*32:])
 
 			if err != nil {
-				return []byte(err.Error()), 0
+				return []byte(err.Error()), nil, 0
 			}
-			return []byte{}, 0
+			return []byte{}, nil, 0
 		case AccountBalance:
 			if len(input) != 20 {
 				log.Crit("bad API call", "request", req, "len", len(input))
@@ -357,31 +344,17 @@ func newApiClosures(
 
 			balance, cost := accountBalance(address)
 
-			return balance[:], cost
-		case AccountCodeSize:
+			return balance[:], nil, cost
+		case AccountCode:
 			if len(input) != 28 {
 				log.Crit("bad API call", "request", req, "len", len(input))
 			}
 			address := common.BytesToAddress(input[0:20])
 			gas := binary.BigEndian.Uint64(input[20:28])
 
-			codeSize, cost := accountCodeSize(address, gas)
+			code, cost := accountCode(address, gas)
 
-			ret := make([]byte, 4)
-			binary.BigEndian.PutUint32(ret, codeSize)
-			return ret, cost
-		case AccountCode:
-			if len(input) != 36 {
-				log.Crit("bad API call", "request", req, "len", len(input))
-			}
-			address := common.BytesToAddress(input[0:20])
-			gas := binary.BigEndian.Uint64(input[20:28])
-			offset := binary.BigEndian.Uint32(input[28:32])
-			size := binary.BigEndian.Uint32(input[32:36])
-
-			code, cost := accountCode(address, offset, size, gas)
-
-			return code, cost
+			return nil, code, cost
 		case AccountCodeHash:
 			if len(input) != 20 {
 				log.Crit("bad API call", "request", req, "len", len(input))
@@ -390,7 +363,7 @@ func newApiClosures(
 
 			codeHash, cost := accountCodehash(address)
 
-			return codeHash[:], cost
+			return codeHash[:], nil, cost
 		case AddPages:
 			if len(input) != 2 {
 				log.Crit("bad API call", "request", req, "len", len(input))
@@ -399,13 +372,13 @@ func newApiClosures(
 
 			cost := addPages(pages)
 
-			return []byte{}, cost
+			return []byte{}, nil, cost
 		case CaptureHostIO:
 			if len(input) < 22 {
 				log.Crit("bad API call", "request", req, "len", len(input))
 			}
 			if tracingInfo == nil {
-				return []byte{}, 0
+				return []byte{}, nil, 0
 			}
 			startInk := binary.BigEndian.Uint64(input[:8])
 			endInk := binary.BigEndian.Uint64(input[8:16])
@@ -421,10 +394,10 @@ func newApiClosures(
 
 			captureHostio(name, args, outs, startInk, endInk)
 
-			return []byte{}, 0
+			return []byte{}, nil, 0
 		default:
 			log.Crit("unsupported call type", "req", req)
-			return []byte{}, 0
+			return []byte{}, nil, 0
 		}
 	}
 }

@@ -4,6 +4,7 @@
 #![allow(clippy::too_many_arguments)]
 
 use crate::machine::{Escape, MaybeEscape};
+use arbutil::evm::api::VecReader;
 use arbutil::evm::{
     api::EvmApiMethod, req::EvmApiRequestor, req::RequestHandler, user::UserOutcome, EvmData,
 };
@@ -22,6 +23,7 @@ use stylus::{native::NativeInstance, run::RunProgram};
 
 struct MessageToCothread {
     response: Vec<u8>,
+    response_2: Vec<u8>,
     cost: u64,
 }
 
@@ -36,8 +38,12 @@ struct CothreadRequestor {
     rx: Receiver<MessageToCothread>,
 }
 
-impl RequestHandler for CothreadRequestor {
-    fn handle_request(&mut self, req_type: EvmApiMethod, req_data: &[u8]) -> (Vec<u8>, u64) {
+impl RequestHandler<VecReader> for CothreadRequestor {
+    fn handle_request(
+        &mut self,
+        req_type: EvmApiMethod,
+        req_data: &[u8],
+    ) -> (Vec<u8>, VecReader, u64) {
         if self
             .tx
             .send(MessageFromCothread {
@@ -49,7 +55,11 @@ impl RequestHandler for CothreadRequestor {
             panic!("failed sending request from cothread");
         }
         match self.rx.recv_timeout(Duration::from_secs(5)) {
-            Ok(response) => (response.response, response.cost),
+            Ok(response) => (
+                response.response,
+                VecReader::new(response.response_2),
+                response.cost,
+            ),
             Err(_) => panic!("no response from main thread"),
         }
     }
@@ -90,7 +100,7 @@ impl CothreadHandler {
             .ok_or(Escape::HostIO("no message waiting".to_string()))
     }
 
-    pub fn set_response(&mut self, id: u32, data: &[u8], cost: u64) -> MaybeEscape {
+    pub fn set_response(&mut self, id: u32, data: &[u8], data_b: &[u8], cost: u64) -> MaybeEscape {
         let Some(msg) = self.last_request.clone() else {
             return Escape::hostio("trying to set response but no message pending");
         };
@@ -101,6 +111,7 @@ impl CothreadHandler {
             .tx
             .send(MessageToCothread {
                 response: data.to_vec(),
+                response_2: data_b.to_vec(),
                 cost,
             })
             .is_err()

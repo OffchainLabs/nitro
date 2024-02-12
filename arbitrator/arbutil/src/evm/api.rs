@@ -3,6 +3,7 @@
 
 use crate::{evm::user::UserOutcomeKind, Bytes20, Bytes32};
 use eyre::Result;
+use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
@@ -42,13 +43,32 @@ pub enum EvmApiMethod {
     EmitLog,
     AccountBalance,
     AccountCode,
-    AccountCodeSize,
     AccountCodeHash,
     AddPages,
     CaptureHostIO,
 }
 
-pub trait EvmApi: Send + 'static {
+pub trait DataReader: Clone + Send + 'static {
+    fn get(&self) -> &[u8];
+}
+
+// simple implementation for DataReader, in case data comes from a Vec
+#[derive(Clone)]
+pub struct VecReader(Arc<Vec<u8>>);
+
+impl VecReader {
+    pub fn new(data: Vec<u8>) -> Self {
+        Self(Arc::new(data))
+    }
+}
+
+impl DataReader for VecReader {
+    fn get(&self) -> &[u8] {
+        self.0.as_slice()
+    }
+}
+
+pub trait EvmApi<D: DataReader>: Send + 'static {
     /// Reads the 32-byte value in the EVM state trie at offset `key`.
     /// Returns the value and the access cost in gas.
     /// Analogous to `vm.SLOAD`.
@@ -115,7 +135,7 @@ pub trait EvmApi: Send + 'static {
 
     /// Returns the EVM return data.
     /// Analogous to `vm.RETURNDATASIZE`.
-    fn get_return_data(&mut self, offset: u32, size: u32) -> Vec<u8>;
+    fn get_return_data(&self) -> D;
 
     /// Emits an EVM log with the given number of topics and data, the first bytes of which should be the topic data.
     /// Returns an error message on failure.
@@ -129,17 +149,7 @@ pub trait EvmApi: Send + 'static {
 
     /// Returns the code and the access cost in gas.
     /// Analogous to `vm.EXTCODECOPY`.
-    fn account_code(
-        &mut self,
-        address: Bytes20,
-        offset: u32,
-        size: u32,
-        gas_left: u64,
-    ) -> (Vec<u8>, u64);
-
-    /// Returns the code size and the access cost in gas.
-    /// Analogous to `vm.EXTCODESIZE`.
-    fn account_code_size(&mut self, address: Bytes20, gas_left: u64) -> (u32, u64);
+    fn account_code(&mut self, address: Bytes20, gas_left: u64) -> (D, u64);
 
     /// Gets the hash of the given address's code.
     /// Returns the hash and the access cost in gas.

@@ -155,12 +155,15 @@ pub fn set_response(
     gas: u64,
     reponse_ptr: Uptr,
     response_len: u32,
+    reponse2_ptr: Uptr,
+    response2_len: u32,
 ) -> MaybeEscape {
     let caller_env = CallerEnv::new(&mut env);
     let data = caller_env.caller_read_slice(reponse_ptr, response_len);
+    let data2 = caller_env.caller_read_slice(reponse2_ptr, response2_len);
 
     let thread = caller_env.wenv.threads.last_mut().unwrap();
-    thread.set_response(id, &data, gas)
+    thread.set_response(id, &data, &data2, gas)
 }
 
 // sends previos response

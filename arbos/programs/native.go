@@ -22,6 +22,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"runtime"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -120,7 +121,7 @@ func callProgram(
 		goSlice(asm),
 		goSlice(calldata),
 		stylusParams.encode(),
-		evmApi,
+		evmApi.cNative,
 		evmData.encode(),
 		u32(stylusParams.debugMode),
 		output,
@@ -141,14 +142,26 @@ type apiStatus = C.EvmApiStatus
 const apiSuccess C.EvmApiStatus = C.EvmApiStatus_Success
 const apiFailure C.EvmApiStatus = C.EvmApiStatus_Failure
 
+func pinAndRef(pinner *runtime.Pinner, data []byte, goSlice *C.GoSliceData) {
+	if len(data) > 0 {
+		dataPointer := arbutil.SliceToPointer(data)
+		pinner.Pin(dataPointer)
+		goSlice.ptr = (*u8)(dataPointer)
+	} else {
+		goSlice.ptr = (*u8)(nil)
+	}
+	goSlice.len = usize(len(data))
+}
+
 //export handleReqImpl
-func handleReqImpl(api usize, req_type u32, data *rustBytes, costPtr *u64, output *rustBytes) apiStatus {
-	closure := getApi(api)
+func handleReqImpl(apiId usize, req_type u32, data *rustBytes, costPtr *u64, output *C.GoSliceData, out2 *C.GoSliceData) apiStatus {
+	api := getApi(apiId)
 	reqData := data.read()
 	reqType := RequestType(req_type - 0x10000000)
-	res, cost := closure(reqType, reqData)
+	res1, res2, cost := api.handler(reqType, reqData)
 	*costPtr = u64(cost)
-	output.setBytes(res)
+	pinAndRef(&api.pinner, res1, output)
+	pinAndRef(&api.pinner, res2, out2)
 	return apiSuccess
 }
 

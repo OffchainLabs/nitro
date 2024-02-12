@@ -4,7 +4,7 @@
 #![allow(clippy::redundant_closure_call)]
 
 use crate::{env::Escape, native::NativeInstance};
-use arbutil::evm::api::EvmApi;
+use arbutil::evm::api::{DataReader, EvmApi};
 use arbutil::evm::user::UserOutcome;
 use eyre::{eyre, Result};
 use prover::machine::Machine;
@@ -64,7 +64,7 @@ impl RunProgram for Machine {
     }
 }
 
-impl<E: EvmApi> RunProgram for NativeInstance<E> {
+impl<D: DataReader, E: EvmApi<D>> RunProgram for NativeInstance<D, E> {
     fn run_main(&mut self, args: &[u8], config: StylusConfig, ink: u64) -> Result<UserOutcome> {
         use UserOutcome::*;
 
