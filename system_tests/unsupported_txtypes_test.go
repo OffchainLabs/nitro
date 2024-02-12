@@ -48,6 +48,7 @@ func TestBlobAndInternalTxsReject(t *testing.T) {
 	}
 }
 func TestBlobAndInternalTxsAsDelayedMsgReject(t *testing.T) {
+	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
