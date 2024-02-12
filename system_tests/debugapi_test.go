@@ -2,6 +2,7 @@ package arbtest
 
 import (
 	"context"
+	"github.com/ethereum/go-ethereum/eth/tracers"
 	"testing"
 
 	"encoding/json"
@@ -51,6 +52,7 @@ func TestDebugAPI(t *testing.T) {
 	}
 
 	var result json.RawMessage
-	err = l2rpc.CallContext(ctx, &result, "debug_traceTransaction", tx.Hash(), "{\"tracer\": \"flatCallTracer\"}")
+	flatCallTracer := "flatCallTracer"
+	err = l2rpc.CallContext(ctx, &result, "debug_traceTransaction", tx.Hash(), &tracers.TraceConfig{Tracer: &flatCallTracer})
 	Require(t, err)
 }
