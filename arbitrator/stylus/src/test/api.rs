@@ -3,7 +3,11 @@
 
 use crate::{native, run::RunProgram};
 use arbutil::{
-    evm::{api::EvmApi, user::UserOutcomeKind, EvmData},
+    evm::{
+        api::{EvmApi, VecReader},
+        user::UserOutcomeKind,
+        EvmData,
+    },
     Bytes20, Bytes32,
 };
 use eyre::Result;
@@ -62,7 +66,7 @@ impl TestEvmApi {
     }
 }
 
-impl EvmApi for TestEvmApi {
+impl EvmApi<VecReader> for TestEvmApi {
     fn get_bytes32(&mut self, key: Bytes32) -> (Bytes32, u64) {
         let storage = &mut self.storage.lock();
         let storage = storage.get_mut(&self.program).unwrap();
@@ -145,13 +149,8 @@ impl EvmApi for TestEvmApi {
         unimplemented!("create2 not supported")
     }
 
-    fn get_return_data(&mut self, offset: u32, size: u32) -> Vec<u8> {
-        arbutil::slice_with_runoff(
-            &self.write_result.lock().as_slice(),
-            offset as usize,
-            offset.saturating_add(size) as usize,
-        )
-        .to_vec()
+    fn get_return_data(&self) -> VecReader {
+        VecReader::new(self.write_result.lock().clone())
     }
 
     fn emit_log(&mut self, _data: Vec<u8>, _topics: u32) -> Result<()> {
@@ -162,17 +161,7 @@ impl EvmApi for TestEvmApi {
         unimplemented!()
     }
 
-    fn account_code(
-        &mut self,
-        _address: Bytes20,
-        _offset: u32,
-        _size: u32,
-        _gas_left: u64,
-    ) -> (Vec<u8>, u64) {
-        unimplemented!()
-    }
-
-    fn account_code_size(&mut self, _address: Bytes20, _gas_left: u64) -> (u32, u64) {
+    fn account_code(&mut self, _address: Bytes20, _gas_left: u64) -> (VecReader, u64) {
         unimplemented!()
     }
 

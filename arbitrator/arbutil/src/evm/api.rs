@@ -53,7 +53,7 @@ pub trait DataReader: Clone + Send + 'static {
 }
 
 // simple implementation for DataReader, in case data comes from a Vec
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct VecReader(Arc<Vec<u8>>);
 
 impl VecReader {
