@@ -16,6 +16,7 @@ import (
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
 	"github.com/OffchainLabs/bold/testing/setup"
+	"github.com/OffchainLabs/bold/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -245,7 +246,7 @@ func (a *AnvilLocal) DeployRollup(ctx context.Context, opts ...challenge_testing
 	if err != nil {
 		return common.Address{}, err
 	}
-	chalManagerAddr, err := rollupCaller.ChallengeManager(&bind.CallOpts{})
+	chalManagerAddr, err := rollupCaller.ChallengeManager(util.GetFinalizedCallOpts(&bind.CallOpts{}))
 	if err != nil {
 		return common.Address{}, err
 	}

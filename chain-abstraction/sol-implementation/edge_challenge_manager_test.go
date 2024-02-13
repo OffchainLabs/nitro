@@ -8,15 +8,15 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/OffchainLabs/bold/containers/option"
-
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	commitments "github.com/OffchainLabs/bold/state-commitments/history"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
 	stateprovider "github.com/OffchainLabs/bold/testing/mocks/state-provider"
 	"github.com/OffchainLabs/bold/testing/setup"
+	"github.com/OffchainLabs/bold/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -641,7 +641,7 @@ func TestUpgradingConfigMidChallenge(t *testing.T) {
 
 	// We check the config snapshot used for the one step proof is different than what
 	// is now onchain, as these values changed mid-challenge.
-	gotWasmModuleRoot, err := adminLogic.WasmModuleRoot(&bind.CallOpts{})
+	gotWasmModuleRoot, err := adminLogic.WasmModuleRoot(util.GetFinalizedCallOpts(&bind.CallOpts{}))
 	require.NoError(t, err)
 	require.Equal(t, newWasmModuleRoot[:], gotWasmModuleRoot[:])
 	require.NotEqual(t, parentAssertionCreationInfo.WasmModuleRoot[:], gotWasmModuleRoot)

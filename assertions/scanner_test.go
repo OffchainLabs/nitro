@@ -20,6 +20,7 @@ import (
 	"github.com/OffchainLabs/bold/testing/mocks"
 	statemanager "github.com/OffchainLabs/bold/testing/mocks/state-provider"
 	"github.com/OffchainLabs/bold/testing/setup"
+	"github.com/OffchainLabs/bold/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
@@ -54,7 +55,7 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 	require.NoError(t, err)
 	setup.Backend.Commit()
 
-	msgCount, err := bridgeBindings.SequencerMessageCount(&bind.CallOpts{})
+	msgCount, err := bridgeBindings.SequencerMessageCount(util.GetFinalizedCallOpts(&bind.CallOpts{}))
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), msgCount.Uint64())
 

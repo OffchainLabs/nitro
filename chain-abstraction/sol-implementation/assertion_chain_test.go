@@ -8,15 +8,15 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/OffchainLabs/bold/containers/option"
-
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
+	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
 	"github.com/OffchainLabs/bold/testing/setup"
+	"github.com/OffchainLabs/bold/util"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
@@ -676,10 +676,10 @@ func submitBatch(
 	bridgeStub, err := mocksgen.NewBridgeStub(bridgeStubAddr, backend)
 	require.NoError(t, err)
 
-	delayedCount, err := bridgeStub.DelayedMessageCount(&bind.CallOpts{})
+	delayedCount, err := bridgeStub.DelayedMessageCount(util.GetFinalizedCallOpts(&bind.CallOpts{}))
 	require.NoError(t, err)
 
-	seqMessageCount, err := bridgeStub.SequencerMessageCount(&bind.CallOpts{})
+	seqMessageCount, err := bridgeStub.SequencerMessageCount(util.GetFinalizedCallOpts(&bind.CallOpts{}))
 	require.NoError(t, err)
 
 	totalNew := new(big.Int).SetUint64(totalNewMessages)
@@ -697,7 +697,7 @@ func submitBatch(
 	require.Equal(t, true, ok)
 	commiter.Commit()
 
-	gotMessageCount, err := bridgeStub.SequencerMessageCount(&bind.CallOpts{})
+	gotMessageCount, err := bridgeStub.SequencerMessageCount(util.GetFinalizedCallOpts(&bind.CallOpts{}))
 	require.NoError(t, err)
 	require.Equal(
 		t,

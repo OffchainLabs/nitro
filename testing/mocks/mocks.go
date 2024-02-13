@@ -10,6 +10,7 @@ import (
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	commitments "github.com/OffchainLabs/bold/state-commitments/history"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/mock"
@@ -297,6 +298,12 @@ func (m *MockSpecEdge) Status(ctx context.Context) (protocol.EdgeStatus, error) 
 	args := m.Called(ctx)
 	return args.Get(0).(protocol.EdgeStatus), args.Error(1)
 }
+
+func (m *MockSpecEdge) ConfirmedAtBlock(ctx context.Context) (uint64, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(uint64), args.Error(1)
+}
+
 func (m *MockSpecEdge) CreatedAtBlock() (uint64, error) {
 	args := m.Called()
 	return args.Get(0).(uint64), args.Error(1)
@@ -371,6 +378,11 @@ type MockProtocol struct {
 func (m *MockProtocol) Backend() protocol.ChainBackend {
 	args := m.Called()
 	return args.Get(0).(protocol.ChainBackend)
+}
+
+func (m *MockProtocol) RollupUserLogic() *rollupgen.RollupUserLogic {
+	args := m.Called()
+	return args.Get(0).(*rollupgen.RollupUserLogic)
 }
 func (m *MockProtocol) IsChallengeComplete(ctx context.Context, challengeParentAssertionHash protocol.AssertionHash) (bool, error) {
 	args := m.Called(ctx, challengeParentAssertionHash)

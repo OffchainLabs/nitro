@@ -9,6 +9,7 @@ import (
 	retry "github.com/OffchainLabs/bold/runtime"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	"github.com/OffchainLabs/bold/testing/setup"
+	"github.com/OffchainLabs/bold/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/stretchr/testify/require"
 )
@@ -36,7 +37,7 @@ func expectAssertionConfirmedByChallengeWin(
 			require.NoError(t, err)
 			for i.Next() {
 				assertionNode, err := retry.UntilSucceeds(ctx, func() (rollupgen.AssertionNode, error) {
-					return rc.GetAssertion(&bind.CallOpts{Context: ctx}, i.Event.AssertionHash)
+					return rc.GetAssertion(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}), i.Event.AssertionHash)
 				})
 				require.NoError(t, err)
 				if assertionNode.Status != uint8(protocol.AssertionConfirmed) {

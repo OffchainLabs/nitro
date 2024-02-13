@@ -70,6 +70,7 @@ func (a AssertionStatus) String() string {
 }
 
 const BeforeDeadlineAssertionConfirmationError = "BEFORE_DEADLINE"
+const ChallengeGracePeriodNotPassedAssertionConfirmationError = "CHALLENGE_GRACE_PERIOD_NOT_PASSED"
 
 // Assertion represents a top-level claim in the protocol about the
 // chain state created by a validator that stakes on their claim.
@@ -112,6 +113,7 @@ func (i AssertionCreatedInfo) ExecutionHash() common.Hash {
 type AssertionChain interface {
 	// Read-only methods.
 	IsStaked(ctx context.Context) (bool, error)
+	RollupUserLogic() *rollupgen.RollupUserLogic
 	GetAssertion(ctx context.Context, id AssertionHash) (Assertion, error)
 	IsChallengeComplete(ctx context.Context, challengeParentAssertionHash AssertionHash) (bool, error)
 	Backend() ChainBackend
@@ -351,6 +353,8 @@ type ReadOnlyEdge interface {
 	HasRival(ctx context.Context) (bool, error)
 	// The status of an edge.
 	Status(ctx context.Context) (EdgeStatus, error)
+	// The block at which the edge was confirmed.
+	ConfirmedAtBlock(ctx context.Context) (uint64, error)
 	// Checks if an edge has a length one rival.
 	HasLengthOneRival(ctx context.Context) (bool, error)
 	// The history commitment for the top-level edge the current edge's challenge is made upon.

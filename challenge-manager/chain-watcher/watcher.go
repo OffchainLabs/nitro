@@ -18,13 +18,15 @@ import (
 	"github.com/OffchainLabs/bold/api"
 	"github.com/OffchainLabs/bold/api/db"
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
 	challengetree "github.com/OffchainLabs/bold/challenge-manager/challenge-tree"
 	edgetracker "github.com/OffchainLabs/bold/challenge-manager/edge-tracker"
-	"github.com/OffchainLabs/bold/containers"
+	"github.com/OffchainLabs/bold/containers/option"
 	"github.com/OffchainLabs/bold/containers/threadsafe"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	retry "github.com/OffchainLabs/bold/runtime"
 	"github.com/OffchainLabs/bold/solgen/go/challengeV2gen"
+	"github.com/OffchainLabs/bold/util"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -34,12 +36,14 @@ import (
 )
 
 var (
-	srvlog                         = log.New("service", "chain-watcher")
-	edgeAddedCounter               = metrics.NewRegisteredCounter("arb/validator/watcher/edge_added", nil)
-	edgeConfirmedByChildrenCounter = metrics.NewRegisteredCounter("arb/validator/watcher/confirmed_by_children", nil)
-	edgeConfirmedByTimeCounter     = metrics.NewRegisteredCounter("arb/validator/watcher/confirmed_by_time", nil)
-	edgeConfirmedByOSPCounter      = metrics.NewRegisteredCounter("arb/validator/watcher/confirmed_by_osp", nil)
-	edgeConfirmedByClaimCounter    = metrics.NewRegisteredCounter("arb/validator/watcher/confirmed_by_claim", nil)
+	srvlog                                  = log.New("service", "chain-watcher")
+	edgeAddedCounter                        = metrics.NewRegisteredCounter("arb/validator/watcher/edge_added", nil)
+	edgeConfirmedByChildrenCounter          = metrics.NewRegisteredCounter("arb/validator/watcher/confirmed_by_children", nil)
+	edgeConfirmedByTimeCounter              = metrics.NewRegisteredCounter("arb/validator/watcher/confirmed_by_time", nil)
+	edgeConfirmedByOSPCounter               = metrics.NewRegisteredCounter("arb/validator/watcher/confirmed_by_osp", nil)
+	edgeConfirmedByClaimCounter             = metrics.NewRegisteredCounter("arb/validator/watcher/confirmed_by_claim", nil)
+	errorConfirmingAssertionByWinnerCounter = metrics.NewRegisteredCounter("arb/validator/watcher/error_confirming_assertion_by_winner", nil)
+	assertionConfirmedCounter               = metrics.GetOrRegisterCounter("arb/validator/scanner/assertion_confirmed", nil)
 )
 
 const (
@@ -99,16 +103,18 @@ type trackedChallenge struct {
 // (b) the ability to check if an edge with a certain claim id has been confirmed. Both
 // are used during the confirmation process in edge tracker goroutines.
 type Watcher struct {
-	histChecker          l2stateprovider.HistoryChecker
-	chain                protocol.AssertionChain
-	edgeManager          EdgeManager
-	pollEventsInterval   time.Duration
-	challenges           *threadsafe.Map[protocol.AssertionHash, *trackedChallenge]
-	backend              bind.ContractBackend
-	validatorName        string
-	numBigStepLevels     uint8
-	initialSyncCompleted atomic.Bool
-	apiDB                db.Database
+	histChecker                 l2stateprovider.HistoryChecker
+	chain                       protocol.AssertionChain
+	edgeManager                 EdgeManager
+	pollEventsInterval          time.Duration
+	challenges                  *threadsafe.Map[protocol.AssertionHash, *trackedChallenge]
+	backend                     bind.ContractBackend
+	validatorName               string
+	numBigStepLevels            uint8
+	initialSyncCompleted        atomic.Bool
+	apiDB                       db.Database
+	assertionConfirmingInterval time.Duration
+	averageTimeForBlockCreation time.Duration
 }
 
 // New initializes a watcher service for frequently scanning the chain
@@ -122,20 +128,24 @@ func New(
 	numBigStepLevels uint8,
 	validatorName string,
 	apiDB db.Database,
+	assertionConfirmingInterval time.Duration,
+	averageTimeForBlockCreation time.Duration,
 ) (*Watcher, error) {
 	if interval == 0 {
 		return nil, errors.New("chain watcher polling interval must be greater than 0")
 	}
 	return &Watcher{
-		chain:              chain,
-		edgeManager:        edgeManager,
-		pollEventsInterval: interval,
-		challenges:         threadsafe.NewMap[protocol.AssertionHash, *trackedChallenge](threadsafe.MapWithMetric[protocol.AssertionHash, *trackedChallenge]("challenges")),
-		backend:            backend,
-		histChecker:        histChecker,
-		numBigStepLevels:   numBigStepLevels,
-		validatorName:      validatorName,
-		apiDB:              apiDB,
+		chain:                       chain,
+		edgeManager:                 edgeManager,
+		pollEventsInterval:          interval,
+		challenges:                  threadsafe.NewMap[protocol.AssertionHash, *trackedChallenge](threadsafe.MapWithMetric[protocol.AssertionHash, *trackedChallenge]("challenges")),
+		backend:                     backend,
+		histChecker:                 histChecker,
+		numBigStepLevels:            numBigStepLevels,
+		validatorName:               validatorName,
+		apiDB:                       apiDB,
+		assertionConfirmingInterval: assertionConfirmingInterval,
+		averageTimeForBlockCreation: averageTimeForBlockCreation,
 	}, nil
 }
 
@@ -174,7 +184,7 @@ func (w *Watcher) ComputeHonestPathTimer(
 	topLevelAssertionHash protocol.AssertionHash,
 	edgeId protocol.EdgeId,
 ) (challengetree.PathTimer, challengetree.HonestAncestors, []challengetree.EdgeLocalTimer, error) {
-	header, err := w.backend.HeaderByNumber(ctx, nil)
+	header, err := w.backend.HeaderByNumber(ctx, util.GetFinalizedBlockNumber())
 	if err != nil {
 		return 0, nil, nil, err
 	}
@@ -316,7 +326,7 @@ func (w *Watcher) Start(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			latestBlock, err := w.backend.HeaderByNumber(ctx, nil)
+			latestBlock, err := w.backend.HeaderByNumber(ctx, util.GetFinalizedBlockNumber())
 			if err != nil {
 				srvlog.Error("Could not get latest header", log.Ctx{"err": err})
 				continue
@@ -480,7 +490,7 @@ func (w *Watcher) getEdgeFromEvent(
 
 // GetRoyalEdges returns all royal, tracked edges in the watcher by assertion hash.
 func (w *Watcher) GetRoyalEdges(ctx context.Context) (map[protocol.AssertionHash][]*api.JsonTrackedRoyalEdge, error) {
-	header, err := w.chain.Backend().HeaderByNumber(ctx, nil)
+	header, err := w.chain.Backend().HeaderByNumber(ctx, util.GetFinalizedBlockNumber())
 	if err != nil {
 		return nil, err
 	}
@@ -1051,17 +1061,49 @@ func (w *Watcher) processEdgeConfirmation(
 	// Check if we should confirm the assertion by challenge winner.
 	challengeLevel := edge.GetChallengeLevel()
 	if challengeLevel == protocol.NewBlockChallengeLevel() {
-		if confirmAssertionErr := w.chain.ConfirmAssertionByChallengeWinner(ctx, protocol.AssertionHash{Hash: common.Hash(claimId)}, edgeId); confirmAssertionErr != nil {
-			return confirmAssertionErr
-		}
-		srvlog.Info("Assertion confirmed by challenge win", log.Ctx{
-			"challengeParentAssertionHash": containers.Trunc(challengeParentAssertionHash.Bytes()),
-		})
+		go w.confirmAssertionByChallengeWinner(ctx, edge, claimId, challengeParentAssertionHash)
 	}
 
 	chal.confirmedLevelZeroEdgeClaimIds.Put(claimId, edge.Id())
 	w.challenges.Put(challengeParentAssertionHash, chal)
 	return nil
+}
+
+func (w *Watcher) confirmAssertionByChallengeWinner(ctx context.Context, edge protocol.SpecEdge, claimId protocol.ClaimId, challengeParentAssertionHash protocol.AssertionHash) {
+	edgeConfirmedAtBlock, err := retry.UntilSucceeds(ctx, func() (uint64, error) {
+		return edge.ConfirmedAtBlock(ctx)
+	})
+	if err != nil {
+		log.Error("Could not get edge confirmed at block", log.Ctx{"err": err})
+		return
+	}
+	challengeGracePeriodBlocks, err := retry.UntilSucceeds(ctx, func() (uint64, error) {
+		return w.chain.RollupUserLogic().RollupUserLogicCaller.ChallengeGracePeriodBlocks(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}))
+	})
+	if err != nil {
+		log.Error("Could not get challenge grace period blocks", log.Ctx{"err": err})
+		return
+	}
+	ticker := time.NewTicker(w.assertionConfirmingInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			confirmed, err := solimpl.TryConfirmingAssertion(ctx, common.Hash(claimId), edgeConfirmedAtBlock+challengeGracePeriodBlocks, w.chain, w.averageTimeForBlockCreation, option.Some(edge.Id()))
+			if err != nil {
+				srvlog.Error("Could not confirm assertion", log.Ctx{"err": err, "assertionHash": common.Hash(claimId)})
+				errorConfirmingAssertionByWinnerCounter.Inc(1)
+				continue
+			}
+			if confirmed {
+				assertionConfirmedCounter.Inc(1)
+				srvlog.Info("Confirmed assertion by challenge win", log.Ctx{"assertionHash": common.Hash(claimId)})
+				return
+			}
+		}
+	}
 }
 
 type filterRange struct {
@@ -1078,7 +1120,7 @@ func (w *Watcher) getStartEndBlockNum(ctx context.Context) (filterRange, error) 
 	}
 	firstBlock := latestConfirmed.CreatedAtBlock()
 	startBlock := firstBlock
-	header, err := w.backend.HeaderByNumber(ctx, nil)
+	header, err := w.backend.HeaderByNumber(ctx, util.GetFinalizedBlockNumber())
 	if err != nil {
 		return filterRange{}, err
 	}

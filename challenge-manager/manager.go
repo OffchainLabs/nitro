@@ -216,7 +216,7 @@ func New(
 		m.apiDB = apiDB
 	}
 
-	watcher, err := watcher.New(m.chain, m, m.stateManager, backend, m.chainWatcherInterval, numBigStepLevels, m.name, m.apiDB)
+	watcher, err := watcher.New(m.chain, m, m.stateManager, backend, m.chainWatcherInterval, numBigStepLevels, m.name, m.apiDB, m.assertionConfirmingInterval, m.averageTimeForBlockCreation)
 	if err != nil {
 		return nil, err
 	}

@@ -16,6 +16,7 @@ import (
 	"github.com/OffchainLabs/bold/solgen/go/ospgen"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	commitments "github.com/OffchainLabs/bold/state-commitments/history"
+	"github.com/OffchainLabs/bold/util"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -56,7 +57,7 @@ func (e *specEdge) EndCommitment() (protocol.Height, common.Hash) {
 }
 
 func (e *specEdge) AssertionHash(ctx context.Context) (protocol.AssertionHash, error) {
-	h, err := e.manager.caller.GetPrevAssertionHash(&bind.CallOpts{Context: ctx}, e.id)
+	h, err := e.manager.caller.GetPrevAssertionHash(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}), e.id)
 	if err != nil {
 		return protocol.AssertionHash{}, err
 	}
@@ -64,7 +65,7 @@ func (e *specEdge) AssertionHash(ctx context.Context) (protocol.AssertionHash, e
 }
 
 func (e *specEdge) TimeUnrivaled(ctx context.Context) (uint64, error) {
-	timer, err := e.manager.caller.TimeUnrivaled(&bind.CallOpts{Context: ctx}, e.id)
+	timer, err := e.manager.caller.TimeUnrivaled(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}), e.id)
 	if err != nil {
 		return 0, err
 	}
@@ -73,7 +74,7 @@ func (e *specEdge) TimeUnrivaled(ctx context.Context) (uint64, error) {
 
 func (e *specEdge) HasConfirmedRival(ctx context.Context) (bool, error) {
 	mutualId, err := e.manager.caller.CalculateMutualId(
-		&bind.CallOpts{Context: ctx},
+		util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}),
 		e.inner.Level,
 		e.inner.OriginId,
 		e.inner.StartHeight,
@@ -83,7 +84,7 @@ func (e *specEdge) HasConfirmedRival(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	confirmedRival, err := e.manager.caller.ConfirmedRival(&bind.CallOpts{Context: ctx}, mutualId)
+	confirmedRival, err := e.manager.caller.ConfirmedRival(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}), mutualId)
 	if err != nil {
 		return false, err
 	}
@@ -91,15 +92,23 @@ func (e *specEdge) HasConfirmedRival(ctx context.Context) (bool, error) {
 }
 
 func (e *specEdge) HasRival(ctx context.Context) (bool, error) {
-	return e.manager.caller.HasRival(&bind.CallOpts{Context: ctx}, e.id)
+	return e.manager.caller.HasRival(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}), e.id)
 }
 
 func (e *specEdge) Status(ctx context.Context) (protocol.EdgeStatus, error) {
-	edge, err := e.manager.caller.GetEdge(&bind.CallOpts{Context: ctx}, e.id)
+	edge, err := e.manager.caller.GetEdge(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}), e.id)
 	if err != nil {
 		return 0, err
 	}
 	return protocol.EdgeStatus(edge.Status), nil
+}
+
+func (e *specEdge) ConfirmedAtBlock(ctx context.Context) (uint64, error) {
+	edge, err := e.manager.caller.GetEdge(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}), e.id)
+	if err != nil {
+		return 0, err
+	}
+	return edge.ConfirmedAtBlock, nil
 }
 
 // CreatedAtBlock the  block number the edge was created at.
@@ -109,7 +118,7 @@ func (e *specEdge) CreatedAtBlock() (uint64, error) {
 
 // HasChildren checks if the edge has children.
 func (e *specEdge) HasChildren(ctx context.Context) (bool, error) {
-	edge, err := e.manager.caller.GetEdge(&bind.CallOpts{Context: ctx}, e.id)
+	edge, err := e.manager.caller.GetEdge(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}), e.id)
 	if err != nil {
 		return false, err
 	}
@@ -118,7 +127,7 @@ func (e *specEdge) HasChildren(ctx context.Context) (bool, error) {
 
 // LowerChild of the edge, if any.
 func (e *specEdge) LowerChild(ctx context.Context) (option.Option[protocol.EdgeId], error) {
-	edge, err := e.manager.caller.GetEdge(&bind.CallOpts{Context: ctx}, e.id)
+	edge, err := e.manager.caller.GetEdge(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}), e.id)
 	if err != nil {
 		return option.None[protocol.EdgeId](), err
 	}
@@ -132,7 +141,7 @@ func (e *specEdge) LowerChild(ctx context.Context) (option.Option[protocol.EdgeI
 
 // UpperChild of the edge, if any.
 func (e *specEdge) UpperChild(ctx context.Context) (option.Option[protocol.EdgeId], error) {
-	edge, err := e.manager.caller.GetEdge(&bind.CallOpts{Context: ctx}, e.id)
+	edge, err := e.manager.caller.GetEdge(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}), e.id)
 	if err != nil {
 		return option.None[protocol.EdgeId](), err
 	}
@@ -163,7 +172,7 @@ func (e *specEdge) ClaimId() option.Option[protocol.ClaimId] {
 
 // HasLengthOneRival returns true if there's a length one rival.
 func (e *specEdge) HasLengthOneRival(ctx context.Context) (bool, error) {
-	ok, err := e.manager.caller.HasLengthOneRival(&bind.CallOpts{Context: ctx}, e.id)
+	ok, err := e.manager.caller.HasLengthOneRival(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}), e.id)
 	if err != nil {
 		errS := err.Error()
 		switch {
@@ -362,7 +371,7 @@ func (e *specEdge) TopLevelClaimHeight(ctx context.Context) (protocol.OriginHeig
 		if ctx.Err() != nil {
 			return protocol.OriginHeights{}, ctx.Err()
 		}
-		rivalId, err := e.manager.caller.FirstRival(&bind.CallOpts{Context: ctx}, originId)
+		rivalId, err := e.manager.caller.FirstRival(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}), originId)
 		if err != nil {
 			return protocol.OriginHeights{}, err
 		}
@@ -429,21 +438,21 @@ func (cm *specChallengeManager) Address() common.Address {
 }
 
 func (cm *specChallengeManager) LayerZeroHeights(ctx context.Context) (*protocol.LayerZeroHeights, error) {
-	h, err := cm.caller.LAYERZEROBLOCKEDGEHEIGHT(&bind.CallOpts{Context: ctx})
+	h, err := cm.caller.LAYERZEROBLOCKEDGEHEIGHT(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}))
 	if err != nil {
 		return nil, err
 	}
 	if !h.IsUint64() {
 		return nil, errors.New("layer zero block edge height was not a uint64")
 	}
-	bs, err := cm.caller.LAYERZEROBIGSTEPEDGEHEIGHT(&bind.CallOpts{Context: ctx})
+	bs, err := cm.caller.LAYERZEROBIGSTEPEDGEHEIGHT(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}))
 	if err != nil {
 		return nil, err
 	}
 	if !bs.IsUint64() {
 		return nil, errors.New("layer zero big step edge height was not a uint64")
 	}
-	ss, err := cm.caller.LAYERZEROSMALLSTEPEDGEHEIGHT(&bind.CallOpts{Context: ctx})
+	ss, err := cm.caller.LAYERZEROSMALLSTEPEDGEHEIGHT(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}))
 	if err != nil {
 		return nil, err
 	}
@@ -458,7 +467,7 @@ func (cm *specChallengeManager) LayerZeroHeights(ctx context.Context) (*protocol
 }
 
 func (cm *specChallengeManager) NumBigSteps(ctx context.Context) (uint8, error) {
-	n, err := cm.caller.NUMBIGSTEPLEVEL(&bind.CallOpts{Context: ctx})
+	n, err := cm.caller.NUMBIGSTEPLEVEL(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}))
 	if err != nil {
 		return 0, err
 	}
@@ -466,7 +475,7 @@ func (cm *specChallengeManager) NumBigSteps(ctx context.Context) (uint8, error) 
 }
 
 func (cm *specChallengeManager) LevelZeroBlockEdgeHeight(ctx context.Context) (uint64, error) {
-	h, err := cm.caller.LAYERZEROBLOCKEDGEHEIGHT(&bind.CallOpts{Context: ctx})
+	h, err := cm.caller.LAYERZEROBLOCKEDGEHEIGHT(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}))
 	if err != nil {
 		return 0, err
 	}
@@ -480,7 +489,7 @@ func (cm *specChallengeManager) LevelZeroBlockEdgeHeight(ctx context.Context) (u
 func (cm *specChallengeManager) ChallengePeriodBlocks(
 	ctx context.Context,
 ) (uint64, error) {
-	res, err := cm.caller.ChallengePeriodBlocks(&bind.CallOpts{Context: ctx})
+	res, err := cm.caller.ChallengePeriodBlocks(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}))
 	if err != nil {
 		return 0, err
 	}
@@ -492,7 +501,7 @@ func (cm *specChallengeManager) GetEdge(
 	ctx context.Context,
 	edgeId protocol.EdgeId,
 ) (option.Option[protocol.SpecEdge], error) {
-	edge, err := cm.caller.GetEdge(&bind.CallOpts{Context: ctx}, edgeId.Hash)
+	edge, err := cm.caller.GetEdge(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}), edgeId.Hash)
 	if err != nil {
 		return option.None[protocol.SpecEdge](), err
 	}
@@ -501,7 +510,7 @@ func (cm *specChallengeManager) GetEdge(
 		miniStaker = option.Some(edge.Staker)
 	}
 	mutual, err := cm.caller.CalculateMutualId(
-		&bind.CallOpts{Context: ctx},
+		util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}),
 		edge.Level,
 		edge.OriginId,
 		edge.StartHeight,
@@ -517,7 +526,7 @@ func (cm *specChallengeManager) GetEdge(
 	if !edge.EndHeight.IsUint64() {
 		return option.None[protocol.SpecEdge](), errors.New("end height not a uint64")
 	}
-	numbigsteplevel, err := cm.caller.NUMBIGSTEPLEVEL(&bind.CallOpts{Context: ctx})
+	numbigsteplevel, err := cm.caller.NUMBIGSTEPLEVEL(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}))
 	if err != nil {
 		return option.Option[protocol.SpecEdge]{}, err
 	}
@@ -544,7 +553,7 @@ func (cm *specChallengeManager) CalculateEdgeId(
 	endHistoryRoot common.Hash,
 ) (protocol.EdgeId, error) {
 	id, err := cm.caller.CalculateEdgeId(
-		&bind.CallOpts{Context: ctx},
+		util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}),
 		challengeLevel.Uint8(),
 		originId,
 		big.NewInt(int64(startHeight)),
@@ -600,7 +609,7 @@ func (cm *specChallengeManager) ConfirmEdgeByOneStepProof(
 	}
 
 	machineStep, _ := edge.Unwrap().StartCommitment()
-	ospEntryAddr, err := cm.caller.OneStepProofEntry(&bind.CallOpts{Context: ctx})
+	ospEntryAddr, err := cm.caller.OneStepProofEntry(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}))
 	if err != nil {
 		return err
 	}
@@ -608,7 +617,7 @@ func (cm *specChallengeManager) ConfirmEdgeByOneStepProof(
 	if err != nil {
 		return err
 	}
-	bridgeAddr, err := cm.assertionChain.rollup.Bridge(&bind.CallOpts{Context: ctx})
+	bridgeAddr, err := cm.assertionChain.rollup.Bridge(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}))
 	if err != nil {
 		return err
 	}
@@ -618,7 +627,7 @@ func (cm *specChallengeManager) ConfirmEdgeByOneStepProof(
 		InitialWasmModuleRoot: creationInfo.WasmModuleRoot,
 	}
 	result, err := ospBindings.ProveOneStep(
-		&bind.CallOpts{Context: ctx},
+		util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}),
 		execCtx,
 		big.NewInt(int64(machineStep)),
 		oneStepData.BeforeHash,
@@ -764,7 +773,7 @@ func (cm *specChallengeManager) AddBlockChallengeLevelZeroEdge(
 	if err != nil {
 		return nil, errors.Wrapf(err, "could not read parent assertion %#x creation info", prevId)
 	}
-	levelZeroBlockHeight, err := cm.caller.LAYERZEROBLOCKEDGEHEIGHT(&bind.CallOpts{Context: ctx})
+	levelZeroBlockHeight, err := cm.caller.LAYERZEROBLOCKEDGEHEIGHT(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}))
 	if err != nil {
 		return nil, errors.Wrap(err, "could not get level zero block edge height")
 	}

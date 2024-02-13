@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"math/big"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/ethereum/go-ethereum/metrics"
@@ -20,13 +19,14 @@ import (
 	"github.com/OffchainLabs/bold/api"
 	"github.com/OffchainLabs/bold/api/db"
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
 	"github.com/OffchainLabs/bold/challenge-manager/types"
-	"github.com/OffchainLabs/bold/containers"
 	"github.com/OffchainLabs/bold/containers/option"
 	"github.com/OffchainLabs/bold/containers/threadsafe"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	retry "github.com/OffchainLabs/bold/runtime"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
+	"github.com/OffchainLabs/bold/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -38,7 +38,7 @@ var (
 	srvlog                                = log.New("service", "assertions")
 	evilAssertionCounter                  = metrics.NewRegisteredCounter("arb/validator/scanner/evil_assertion", nil)
 	challengeSubmittedCounter             = metrics.NewRegisteredCounter("arb/validator/scanner/challenge_submitted", nil)
-	assertionConfirmedCounter             = metrics.NewRegisteredCounter("arb/validator/scanner/assertion_confirmed", nil)
+	assertionConfirmedCounter             = metrics.GetOrRegisterCounter("arb/validator/scanner/assertion_confirmed", nil)
 	errorConfirmingAssertionByTimeCounter = metrics.NewRegisteredCounter("arb/validator/scanner/error_confirming_assertion_by_time", nil)
 	latestConfirmedAssertionGauge         = metrics.NewRegisteredGauge("arb/validator/scanner/latest_confirmed_assertion_block_number", nil)
 )
@@ -136,7 +136,7 @@ func (m *Manager) Start(ctx context.Context) {
 		srvlog.Error("Could not get rollup user logic filterer", log.Ctx{"err": err})
 		return
 	}
-	latestBlock, err := m.backend.HeaderByNumber(ctx, nil)
+	latestBlock, err := m.backend.HeaderByNumber(ctx, util.GetFinalizedBlockNumber())
 	if err != nil {
 		srvlog.Error("Could not get header by number", log.Ctx{"err": err})
 		return
@@ -167,7 +167,7 @@ func (m *Manager) Start(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			latestBlock, err := m.backend.HeaderByNumber(ctx, nil)
+			latestBlock, err := m.backend.HeaderByNumber(ctx, util.GetFinalizedBlockNumber())
 			if err != nil {
 				srvlog.Error("Could not get header by number", log.Ctx{"err": err})
 				continue
@@ -572,19 +572,23 @@ func (m *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertion
 	if m.challengeReader.Mode() < types.ResolveMode {
 		return
 	}
-	creationInfo, err := m.chain.ReadAssertionCreationInfo(ctx, assertionHash)
+	creationInfo, err := retry.UntilSucceeds(ctx, func() (*protocol.AssertionCreatedInfo, error) {
+		return m.chain.ReadAssertionCreationInfo(ctx, assertionHash)
+	})
 	if err != nil {
 		log.Error("Could not get assertion creation info", log.Ctx{"error": err})
 		return
 	}
-	prevCreationInfo, err := m.chain.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: creationInfo.ParentAssertionHash})
+	prevCreationInfo, err := retry.UntilSucceeds(ctx, func() (*protocol.AssertionCreatedInfo, error) {
+		return m.chain.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: creationInfo.ParentAssertionHash})
+	})
 	if err != nil {
 		log.Error("Could not get prev assertion creation info", log.Ctx{"error": err})
 		return
 	}
+	ticker := time.NewTicker(m.confirmationAttemptInterval)
+	defer ticker.Stop()
 	for {
-		ticker := time.NewTicker(m.confirmationAttemptInterval)
-		defer ticker.Stop()
 		select {
 		case <-ctx.Done():
 			return
@@ -594,7 +598,7 @@ func (m *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertion
 			if m.challengeReader.IsClaimedByChallenge(assertionHash) {
 				return
 			}
-			confirmed, err := m.confirmAssertion(ctx, creationInfo, prevCreationInfo)
+			confirmed, err := solimpl.TryConfirmingAssertion(ctx, creationInfo.AssertionHash, prevCreationInfo.ConfirmPeriodBlocks+creationInfo.CreationBlock, m.chain, m.averageTimeForBlockCreation, option.None[protocol.EdgeId]())
 			if err != nil {
 				srvlog.Error("Could not confirm assertion", log.Ctx{"err": err, "assertionHash": assertionHash.Hash})
 				errorConfirmingAssertionByTimeCounter.Inc(1)
@@ -602,71 +606,11 @@ func (m *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertion
 			}
 			if confirmed {
 				assertionConfirmedCounter.Inc(1)
-				srvlog.Info("Confirmed assertion", log.Ctx{"assertionHash": creationInfo.AssertionHash})
+				srvlog.Info("Confirmed assertion by time", log.Ctx{"assertionHash": creationInfo.AssertionHash})
 				return
 			}
 		}
 	}
-}
-
-func (m *Manager) confirmAssertion(
-	ctx context.Context,
-	creationInfo *protocol.AssertionCreatedInfo,
-	prevCreationInfo *protocol.AssertionCreatedInfo,
-) (bool, error) {
-	status, err := m.chain.AssertionStatus(ctx, protocol.AssertionHash{Hash: creationInfo.AssertionHash})
-	if err != nil {
-		return false, fmt.Errorf("could not get assertion by hash: %#x: %w", creationInfo.AssertionHash, err)
-	}
-	if status == protocol.NoAssertion {
-		return false, fmt.Errorf("no assertion found by hash: %#x", creationInfo.AssertionHash)
-	}
-	if status == protocol.AssertionConfirmed {
-		return true, nil
-	}
-	latestConfirmed, err := m.chain.LatestConfirmed(ctx)
-	if err != nil {
-		return false, fmt.Errorf("could not get latest confirmed assertion: %v", err)
-	}
-	// The parent assertion must be the latest confirmed.
-	if creationInfo.ParentAssertionHash != latestConfirmed.Id().Hash {
-		return false, nil
-	}
-	latestHeader, err := m.chain.Backend().HeaderByNumber(ctx, nil)
-	if err != nil {
-		return false, err
-	}
-	if !latestHeader.Number.IsUint64() {
-		return false, errors.New("latest block number is not a uint64")
-	}
-	blockNumber := latestHeader.Number.Uint64()
-	creationBlock := creationInfo.CreationBlock
-	confirmPeriodBlocks := prevCreationInfo.ConfirmPeriodBlocks
-	confirmableByTime := blockNumber >= creationBlock+confirmPeriodBlocks
-
-	// If the assertion is not yet confirmable, we can simply wait.
-	if !confirmableByTime {
-		blocksLeftForConfirmation := (creationBlock + confirmPeriodBlocks) - blockNumber
-		timeToWait := m.averageTimeForBlockCreation * time.Duration(blocksLeftForConfirmation)
-		srvlog.Info(
-			fmt.Sprintf(
-				"Assertion with has %s needs at least %d blocks before being confirmable, waiting for %s",
-				containers.Trunc(creationInfo.AssertionHash.Bytes()),
-				blocksLeftForConfirmation,
-				timeToWait,
-			),
-		)
-		<-time.After(timeToWait)
-	}
-
-	err = m.chain.ConfirmAssertionByTime(ctx, protocol.AssertionHash{Hash: creationInfo.AssertionHash})
-	if err != nil {
-		if strings.Contains(err.Error(), protocol.BeforeDeadlineAssertionConfirmationError) {
-			return false, nil
-		}
-		return false, err
-	}
-	return true, nil
 }
 
 // Returns true if the manager can respond to an assertion with a challenge.

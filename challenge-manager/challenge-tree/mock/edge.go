@@ -168,3 +168,7 @@ func (*Edge) ConfirmByClaim(_ context.Context, _ protocol.ClaimId) error {
 func (*Edge) ConfirmByChildren(_ context.Context) error {
 	return errors.New("unimplemented")
 }
+
+func (*Edge) ConfirmedAtBlock(ctx context.Context) (uint64, error) {
+	return 0, nil
+}

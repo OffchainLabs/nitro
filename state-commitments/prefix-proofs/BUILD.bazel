@@ -28,6 +28,7 @@ go_test(
         "//layer2-state-provider",
         "//solgen/go/mocksgen",
         "//testing/mocks/state-provider",
+        "//util",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind/backends",
         "@com_github_ethereum_go_ethereum//common",
