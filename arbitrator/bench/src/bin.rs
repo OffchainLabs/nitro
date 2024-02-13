@@ -34,32 +34,31 @@ fn main() -> eyre::Result<()> {
         return Ok(());
     }
 
-    // 32768 hashes or 1 << 15
-    let chunks = [0u8; 1 << 20];
+    let chunks = [0u8; 1 << 32];
     println!("Num hashes: {}", chunks.len() / 32);
     let start = std::time::Instant::now();
-    let hash_tree = prover::hashtree_merkleize::hash_tree_root(&chunks[..], 0, 0);
+    let hash_tree = prover::hashtree_merkleize::hash_tree_root(&chunks[..], 1 << 28, 0);
 
     println!(
         "Hashed data: {:?}, elapsed: {:?}",
         hex::encode(&hash_tree[hash_tree.len() - 32..]),
         start.elapsed()
     );
-    println!(
-        "Zero hash: {:?}",
-        hex::encode(&prover::hashtree_merkleize::ZERO_HASH_ARRAY[15][..])
-    );
+    // println!(
+    //     "Zero hash: {:?}",
+    //     hex::encode(&prover::hashtree_merkleize::ZERO_HASH_ARRAY[15][..])
+    // );
 
-    let mut hashes = vec![];
-    for _ in 0..1 << 15 {
-        hashes.push(Bytes32::default());
-    }
-    println!("Num hashes: {}", hashes.len());
-    let depth = 15;
-    let start = std::time::Instant::now();
-    let tr = prover::existing_approach::Merkle::new_advanced(hashes, Bytes32::default(), depth);
-    println!("Root: {}", hex::encode(tr.root()));
-    println!("time to craft tree: {:?}", start.elapsed());
+    // let mut hashes = vec![];
+    // for _ in 0..1 << 15 {
+    //     hashes.push(Bytes32::default());
+    // }
+    // println!("Num hashes: {}", hashes.len());
+    // let depth = 15;
+    // let start = std::time::Instant::now();
+    // let tr = prover::existing_approach::Merkle::new_advanced(hashes, Bytes32::default(), depth);
+    // println!("Root: {}", hex::encode(tr.root()));
+    // println!("time to craft tree: {:?}", start.elapsed());
     Ok(())
     // benchmark_machines()
 }
