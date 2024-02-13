@@ -94,7 +94,7 @@ fn sparse_hashtree(chunks: &[u8], limit: usize) -> Vec<u8> {
 // hash_tree_root returns the htr of the merkleization of the hashtree.
 pub fn hash_tree_root(chunks: &[u8], limit: usize, mut thread_count: usize) -> Vec<u8> {
     if thread_count == 0 {
-        thread_count = 12;
+        thread_count = 12 * 64;
     }
     let chunks_len = chunks.len();
     if thread_count < 2 || chunks_len < 4 * BYTES_PER_CHUNK {
