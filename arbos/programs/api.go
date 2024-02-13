@@ -304,20 +304,17 @@ func newApiClosures(
 			endowment := common.BytesToHash(input[8:40]).Big()
 			var code []byte
 			var salt *big.Int
-			var opcode vm.OpCode
 			switch req {
 			case Create1:
-				opcode = vm.CREATE
 				code = input[40:]
 			case Create2:
-				opcode = vm.CREATE2
 				if len(input) < 72 {
 					log.Crit("bad API call", "request", req, "len", len(input))
 				}
 				salt = common.BytesToHash(input[40:72]).Big()
 				code = input[72:]
 			default:
-				log.Crit("unsupported create opcode", "opcode", opcode)
+				log.Crit("unsupported create opcode", "request", req)
 			}
 
 			address, retVal, cost, err := create(code, endowment, salt, gas)
