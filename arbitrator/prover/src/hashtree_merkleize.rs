@@ -1,6 +1,7 @@
+extern crate rayon;
+
 use crate::hashtree::hash;
 use lazy_static::lazy_static;
-use rayon::prelude::*;
 
 const BYTES_PER_CHUNK: usize = 32;
 
@@ -74,7 +75,7 @@ fn sparse_hashtree_in_place(hash_tree: &mut [u8], chunks: &[u8], byte_length: us
 // sparse_hashtree takes a byte slice and merkleizes it as a list of arrays of 32 bytes, with the
 // passed limit. It returns a vector of the full hashtree (except the leaves that are constantly
 // kept in the passed argument).
-pub fn sparse_hashtree(chunks: &[u8], limit: usize) -> Vec<u8> {
+fn sparse_hashtree(chunks: &[u8], limit: usize) -> Vec<u8> {
     let chunk_count = (chunks.len() + BYTES_PER_CHUNK - 1) / BYTES_PER_CHUNK;
     let depth = if limit == 0 {
         helpers::log2ceil(chunk_count)
@@ -90,6 +91,27 @@ pub fn sparse_hashtree(chunks: &[u8], limit: usize) -> Vec<u8> {
     ret
 }
 
+// hash_tree_root returns the htr of the merkleization of the hashtree.
+pub fn hash_tree_root(chunks: &[u8], limit: usize, mut thread_count: usize) -> Vec<u8> {
+    if thread_count == 0 {
+        thread_count = 12;
+    }
+    let chunks_len = chunks.len();
+    if thread_count < 2 || chunks_len < 4 * BYTES_PER_CHUNK {
+        let mut hash_tree = sparse_hashtree(chunks, limit);
+        hash_tree.drain(0..hash_tree.len() - BYTES_PER_CHUNK);
+        return hash_tree;
+    }
+    let half_size = chunks_len.next_power_of_two() / 2;
+    let (beginning, ending) = chunks.split_at(half_size);
+    let (first, second) = rayon::join(
+        || hash_tree_root(beginning, 0, thread_count / 2),
+        || hash_tree_root(ending, 0, thread_count / 2),
+    );
+    let mut array = vec![0u8; 32];
+    hash_2_chunks(array.as_mut_slice(), &first, &second);
+    array
+}
 mod helpers {
     pub fn log2ceil(n: usize) -> usize {
         if n == 0 {
