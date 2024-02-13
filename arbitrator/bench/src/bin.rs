@@ -34,7 +34,7 @@ fn main() -> eyre::Result<()> {
         return Ok(());
     }
 
-    let chunks = [0u8; 1 << 32];
+    let chunks = vec![0u8; 1 << 32];
     println!("Num hashes: {}", chunks.len() / 32);
     let start = std::time::Instant::now();
     let hash_tree = prover::hashtree_merkleize::hash_tree_root(&chunks[..], 1 << 28, 0);
