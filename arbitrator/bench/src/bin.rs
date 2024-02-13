@@ -38,7 +38,7 @@ fn main() -> eyre::Result<()> {
     let chunks = [0u8; 1 << 20];
     println!("Num hashes: {}", chunks.len() / 32);
     let start = std::time::Instant::now();
-    let hash_tree = prover::hashtree_merkleize::sparse_hashtree(&chunks[..], 0);
+    let hash_tree = prover::hashtree_merkleize::hash_tree_root(&chunks[..], 0, 0);
 
     println!(
         "Hashed data: {:?}, elapsed: {:?}",
