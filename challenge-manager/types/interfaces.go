@@ -17,7 +17,7 @@ type ChallengeManager interface {
 // ChallengeCreator defines a struct which can initiate a challenge on an assertion hash
 // by creating a level zero, block challenge edge onchain.
 type ChallengeCreator interface {
-	ChallengeAssertion(ctx context.Context, id protocol.AssertionHash) error
+	ChallengeAssertion(ctx context.Context, id protocol.AssertionHash) (bool, error)
 }
 
 // ChallengeReader defines a struct which can read the challenge of a challenge manager.

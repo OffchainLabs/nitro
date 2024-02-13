@@ -20,32 +20,32 @@ import (
 // ChallengeAssertion initiates a challenge on an assertion added to the protocol by finding its parent assertion
 // and starting a challenge transaction. If the challenge creation is successful, we add a leaf
 // with an associated history commitment to it and spawn a challenge tracker in the background.
-func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionHash) error {
+func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionHash) (bool, error) {
 	assertion, err := m.chain.GetAssertion(ctx, id)
 	if err != nil {
-		return errors.Wrapf(err, "could not get assertion to challenge with id %#x", id)
+		return false, errors.Wrapf(err, "could not get assertion to challenge with id %#x", id)
 	}
 	if m.claimedAssertionsInChallenge.Has(id) {
 		srvlog.Info(fmt.Sprintf("Already challenged assertion with id %#x, skipping", id.Hash))
-		return nil
+		return false, nil
 	}
 	assertionStatus, err := m.chain.AssertionStatus(ctx, assertion.Id())
 	if err != nil {
-		return errors.Wrapf(err, "could not get assertion status with id %#x", id)
+		return false, errors.Wrapf(err, "could not get assertion status with id %#x", id)
 	}
 	if assertionStatus == protocol.AssertionConfirmed {
 		srvlog.Info("Skipping challenge submission on already confirmed assertion", log.Ctx{"assertionHash": id.Hash})
-		return nil
+		return false, nil
 	}
 	// We then add a level zero edge to initiate a challenge.
 	levelZeroEdge, edgeTrackerAssertionInfo, alreadyExists, err := m.addBlockChallengeLevelZeroEdge(ctx, assertion)
 	if err != nil {
-		return fmt.Errorf("could not add block challenge level zero edge %v: %w", m.name, err)
+		return false, fmt.Errorf("could not add block challenge level zero edge %v: %w", m.name, err)
 	}
 	if alreadyExists {
 		srvlog.Info("Root level edge for challenged assertion already exists, skipping move", log.Ctx{"assertionHash": id.Hash})
 		m.claimedAssertionsInChallenge.Insert(id)
-		return nil
+		return false, nil
 	}
 	if verifiedErr := m.watcher.AddVerifiedHonestEdge(ctx, levelZeroEdge); verifiedErr != nil {
 		fields := log.Ctx{
@@ -68,7 +68,7 @@ func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionH
 		edgetracker.WithValidatorName(m.name),
 	)
 	if err != nil {
-		return err
+		return false, err
 	}
 	go tracker.Spawn(ctx)
 
@@ -78,7 +78,7 @@ func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionH
 		"fromBatch":     edgeTrackerAssertionInfo.FromBatch,
 		"toBatch":       edgeTrackerAssertionInfo.ToBatch,
 	})
-	return nil
+	return true, nil
 }
 
 func (m *Manager) addBlockChallengeLevelZeroEdge(

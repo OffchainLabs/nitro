@@ -189,7 +189,7 @@ func TestWatcher_processEdgeAddedEvent(t *testing.T) {
 		edgeManager:      mockManager,
 		numBigStepLevels: 1,
 	}
-	err := watcher.processEdgeAddedEvent(ctx, &challengeV2gen.EdgeChallengeManagerEdgeAdded{
+	_, err := watcher.processEdgeAddedEvent(ctx, &challengeV2gen.EdgeChallengeManagerEdgeAdded{
 		EdgeId:   edgeId.Hash,
 		OriginId: assertionHash.Hash,
 	})

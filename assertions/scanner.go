@@ -386,16 +386,19 @@ func (m *Manager) postRivalAssertionAndChallenge(
 	srvlog.Info("Waiting before submitting challenge on assertion", log.Ctx{"delay": randSecs})
 	time.Sleep(time.Duration(randSecs) * time.Second)
 	correctClaimedAssertionHash := correctRivalAssertion.Unwrap().Id()
-	if err := m.challengeCreator.ChallengeAssertion(ctx, correctClaimedAssertionHash); err != nil {
+	challengeSubmitted, err := m.challengeCreator.ChallengeAssertion(ctx, correctClaimedAssertionHash)
+	if err != nil {
 		return err
 	}
-	challengeSubmittedCounter.Inc(1)
+	if challengeSubmitted {
+		challengeSubmittedCounter.Inc(1)
+		m.challengesSubmittedCount++
+	}
 
 	if err := m.logChallengeConfigs(ctx); err != nil {
 		srvlog.Error("Could not log challenge configs", log.Ctx{"err": err})
 	}
 
-	m.challengesSubmittedCount++
 	return nil
 
 }

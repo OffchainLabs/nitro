@@ -356,9 +356,11 @@ func setupEdgeTrackersForBisection(
 	require.NoError(t, err)
 
 	require.NoError(t, honestWatcher.AddVerifiedHonestEdge(ctx, honestEdge))
-	require.NoError(t, honestWatcher.AddEdge(ctx, evilEdge))
+	_, err = honestWatcher.AddEdge(ctx, evilEdge)
+	require.NoError(t, err)
 	require.NoError(t, evilWatcher.AddVerifiedHonestEdge(ctx, evilEdge))
-	require.NoError(t, evilWatcher.AddEdge(ctx, honestEdge))
+	_, err = evilWatcher.AddEdge(ctx, honestEdge)
+	require.NoError(t, err)
 
 	return tracker1, tracker2
 }
