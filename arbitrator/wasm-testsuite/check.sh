@@ -1,7 +1,7 @@
 #!/usr/bin/bash
 
 # Copyright 2022, Offchain Labs, Inc.
-# For license information, see https://github.com/nitro/blob/master/LICENSE
+# For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 rm -rf tests ../../contracts/test/prover/spec-proofs
 mkdir -p tests/
