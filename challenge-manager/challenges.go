@@ -164,8 +164,9 @@ func (m *Manager) addBlockChallengeLevelZeroEdge(
 		return nil, nil, false, errors.Wrap(err, "could not post block challenge root edge")
 	}
 	return edge, &edgetracker.AssociatedAssertionMetadata{
-		FromBatch:      fromBatch,
-		ToBatch:        toBatch,
-		WasmModuleRoot: prevCreationInfo.WasmModuleRoot,
+		FromBatch:            fromBatch,
+		ToBatch:              toBatch,
+		WasmModuleRoot:       prevCreationInfo.WasmModuleRoot,
+		ClaimedAssertionHash: creationInfo.AssertionHash,
 	}, false, nil
 }

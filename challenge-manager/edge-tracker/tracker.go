@@ -73,9 +73,10 @@ type ChallengeTracker interface {
 
 // AssociatedAssertionMetadata for the tracked edge.
 type AssociatedAssertionMetadata struct {
-	FromBatch      l2stateprovider.Batch
-	ToBatch        l2stateprovider.Batch
-	WasmModuleRoot common.Hash
+	FromBatch            l2stateprovider.Batch
+	ToBatch              l2stateprovider.Batch
+	WasmModuleRoot       common.Hash
+	ClaimedAssertionHash common.Hash
 }
 
 type Opt func(et *Tracker)
@@ -440,15 +441,18 @@ func (et *Tracker) uniqueTrackerLogFields() log.Ctx {
 	endHeight, endCommit := et.edge.EndCommitment()
 	chalLevel := et.edge.GetChallengeLevel()
 	return log.Ctx{
-		"id":            containers.Trunc(et.edge.Id().Bytes()),
-		"fromBatch":     et.associatedAssertionMetadata.FromBatch,
-		"toBatch":       et.associatedAssertionMetadata.ToBatch,
-		"startHeight":   startHeight,
-		"startCommit":   containers.Trunc(startCommit.Bytes()),
-		"endHeight":     endHeight,
-		"endCommit":     containers.Trunc(endCommit.Bytes()),
-		"validatorName": et.validatorName,
-		"challengeType": chalLevel.String(),
+		"id":                   et.edge.Id().Hash,
+		"fromBatch":            et.associatedAssertionMetadata.FromBatch,
+		"toBatch":              et.associatedAssertionMetadata.ToBatch,
+		"claimedAssertionHash": et.associatedAssertionMetadata.ClaimedAssertionHash,
+		"startHeight":          startHeight,
+		"startCommit":          startCommit,
+		"endHeight":            endHeight,
+		"endCommit":            endCommit,
+		"validatorName":        et.validatorName,
+		"challengeType":        chalLevel.String(),
+		"originId":             common.Hash(et.edge.OriginId()),
+		"mutualId":             common.Hash(et.edge.MutualId()),
 	}
 }
 
@@ -704,12 +708,7 @@ func (et *Tracker) openSubchallengeLeaf(ctx context.Context) error {
 	startHeight, _ := et.edge.StartCommitment()
 	endHeight, _ := et.edge.EndCommitment()
 
-	fields := log.Ctx{
-		"name":                     et.validatorName,
-		"edgeStartHeight":          startHeight,
-		"edgeEndHeight":            endHeight,
-		"fromBlockChallengeHeight": fromBlockChallengeHeight,
-	}
+	fields := et.uniqueTrackerLogFields()
 
 	var startHistory commitments.History
 	var endHistory commitments.History

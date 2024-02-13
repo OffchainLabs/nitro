@@ -343,9 +343,10 @@ func (m *Manager) getTrackerForEdge(ctx context.Context, edge protocol.SpecEdge)
 		fromBatch := protocol.GoGlobalStateFromSolidity(assertionCreationInfo.BeforeState.GlobalState).Batch
 		toBatch := protocol.GoGlobalStateFromSolidity(assertionCreationInfo.AfterState.GlobalState).Batch
 		edgeTrackerAssertionInfo = edgetracker.AssociatedAssertionMetadata{
-			FromBatch:      l2stateprovider.Batch(fromBatch),
-			ToBatch:        l2stateprovider.Batch(toBatch),
-			WasmModuleRoot: prevCreationInfo.WasmModuleRoot,
+			FromBatch:            l2stateprovider.Batch(fromBatch),
+			ToBatch:              l2stateprovider.Batch(toBatch),
+			WasmModuleRoot:       prevCreationInfo.WasmModuleRoot,
+			ClaimedAssertionHash: common.Hash(claimedAssertionId),
 		}
 		m.batchIndexForAssertionCache.Put(protocol.AssertionHash{Hash: common.Hash(claimedAssertionId)}, edgeTrackerAssertionInfo)
 	} else {
