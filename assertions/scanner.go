@@ -276,6 +276,10 @@ func (m *Manager) ProcessAssertionCreationEvent(
 	ctx context.Context,
 	assertionHash protocol.AssertionHash,
 ) error {
+	// Save the assertion creation event to the DB if possible.
+	if err := m.saveAssertionToDB(ctx, assertionHash); err != nil {
+		return err
+	}
 	// Ignore assertions we have submitted ourselves.
 	if m.submittedAssertions.Has(assertionHash.Hash) {
 		return nil
@@ -286,10 +290,6 @@ func (m *Manager) ProcessAssertionCreationEvent(
 	creationInfo, err := m.chain.ReadAssertionCreationInfo(ctx, assertionHash)
 	if err != nil {
 		return errors.Wrapf(err, "could not read assertion creation info for %#x", assertionHash.Hash)
-	}
-	// Save the assertion creation event to the DB if possible.
-	if err2 := m.saveAssertionToDB(ctx, assertionHash); err2 != nil {
-		return err2
 	}
 	if creationInfo.ParentAssertionHash == (common.Hash{}) {
 		return nil // Skip processing genesis, as it has a parent assertion hash of 0x0.

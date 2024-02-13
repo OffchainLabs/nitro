@@ -14,11 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/pkg/errors"
-)
-
-var (
-	ErrNoAssertionForEdge = errors.New("no matching assertion found for edge")
 )
 
 type Database interface {
@@ -677,7 +672,6 @@ func (d *SqliteDatabase) InsertEdge(edge *api.JsonEdge) error {
 		}
 		return nil
 	}
-	// Check if the assertion exists
 	var assertionExists int
 	err = tx.Get(&assertionExists, "SELECT COUNT(*) FROM Assertions WHERE Hash = ?", edge.AssertionHash)
 	if err != nil {
@@ -686,30 +680,27 @@ func (d *SqliteDatabase) InsertEdge(edge *api.JsonEdge) error {
 		}
 		return err
 	}
-	if assertionExists == 0 {
-		if err2 := tx.Rollback(); err2 != nil {
-			return err2
-		}
-		return errors.Wrapf(ErrNoAssertionForEdge, "edge_id=%#x, assertion_hash=%#x", edge.Id, edge.AssertionHash)
-	}
-	// Check if a challenge exists for the assertion
-	var challengeExists int
-	err = tx.Get(&challengeExists, "SELECT COUNT(*) FROM Challenges WHERE Hash = ?", edge.AssertionHash)
-	if err != nil {
-		if err2 := tx.Rollback(); err2 != nil {
-			return err2
-		}
-		return err
-	}
-	// If the assertion exists but not the challenge, create the challenge
-	if challengeExists == 0 {
-		insertChallengeQuery := `INSERT INTO Challenges (Hash) VALUES (?)`
-		_, err = tx.Exec(insertChallengeQuery, edge.AssertionHash)
+	// Check if an associated assertion for the edge exists.
+	if assertionExists != 0 {
+		// Check if a challenge exists for the assertion.
+		var challengeExists int
+		err = tx.Get(&challengeExists, "SELECT COUNT(*) FROM Challenges WHERE Hash = ?", edge.AssertionHash)
 		if err != nil {
 			if err2 := tx.Rollback(); err2 != nil {
 				return err2
 			}
 			return err
+		}
+		// If the assertion exists but not the challenge, create the challenge
+		if challengeExists == 0 {
+			insertChallengeQuery := `INSERT INTO Challenges (Hash) VALUES (?)`
+			_, err = tx.Exec(insertChallengeQuery, edge.AssertionHash)
+			if err != nil {
+				if err2 := tx.Rollback(); err2 != nil {
+					return err2
+				}
+				return err
+			}
 		}
 	}
 	insertEdgeQuery := `INSERT INTO Edges (

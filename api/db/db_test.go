@@ -129,8 +129,6 @@ func TestSqliteDatabase_Assertions(t *testing.T) {
 
 	// Inserting edges that don't have an associated assertion should fail.
 	db := &SqliteDatabase{sqlDB: sqlDB}
-	err = db.InsertEdges([]*api.JsonEdge{baseEdge()})
-	require.ErrorIs(t, err, ErrNoAssertionForEdge)
 
 	numAssertions := 10
 	assertionsToCreate := make([]*api.JsonAssertion, numAssertions)
@@ -297,8 +295,6 @@ func TestSqliteDatabase_Edges(t *testing.T) {
 
 	// Inserting edges that don't have an associated assertion should fail.
 	db := &SqliteDatabase{sqlDB: sqlDB}
-	err = db.InsertEdges([]*api.JsonEdge{baseEdge()})
-	require.ErrorIs(t, err, ErrNoAssertionForEdge)
 
 	numAssertions := 10
 	assertionsToCreate := make([]*api.JsonAssertion, numAssertions)
