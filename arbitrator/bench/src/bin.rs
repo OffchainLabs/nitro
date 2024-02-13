@@ -49,16 +49,16 @@ fn main() -> eyre::Result<()> {
     //     hex::encode(&prover::hashtree_merkleize::ZERO_HASH_ARRAY[15][..])
     // );
 
-    // let mut hashes = vec![];
-    // for _ in 0..1 << 15 {
-    //     hashes.push(Bytes32::default());
-    // }
-    // println!("Num hashes: {}", hashes.len());
-    // let depth = 15;
-    // let start = std::time::Instant::now();
-    // let tr = prover::existing_approach::Merkle::new_advanced(hashes, Bytes32::default(), depth);
-    // println!("Root: {}", hex::encode(tr.root()));
-    // println!("time to craft tree: {:?}", start.elapsed());
+    let mut hashes = vec![];
+    for _ in 0..(chunks.len() / 32) {
+        hashes.push(Bytes32::default());
+    }
+    println!("Num hashes: {}", hashes.len());
+    let depth = 28;
+    let start = std::time::Instant::now();
+    let tr = prover::existing_approach::Merkle::new_advanced(hashes, Bytes32::default(), depth);
+    println!("Root: {}", hex::encode(tr.root()));
+    println!("time to craft tree: {:?}", start.elapsed());
     Ok(())
     // benchmark_machines()
 }
