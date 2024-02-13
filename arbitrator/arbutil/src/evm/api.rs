@@ -48,6 +48,11 @@ pub enum EvmApiMethod {
     CaptureHostIO,
 }
 
+// This offset is added to EvmApiMethod when sending a request
+// in WASM - program done is also indicated by a "request", with the
+// id below that offset, indicating program status
+pub const EVM_API_METHOD_REQ_OFFSET: u32 = 0x10000000;
+
 pub trait EvmApi: Send + 'static {
     /// Reads the 32-byte value in the EVM state trie at offset `key`.
     /// Returns the value and the access cost in gas.

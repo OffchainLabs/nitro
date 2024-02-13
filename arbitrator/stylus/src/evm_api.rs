@@ -2,7 +2,10 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{RustBytes, RustSlice};
-use arbutil::evm::{api::EvmApiMethod, api::EvmApiStatus, req::RequestHandler};
+use arbutil::evm::{
+    api::{EvmApiMethod, EvmApiStatus, EVM_API_METHOD_REQ_OFFSET},
+    req::RequestHandler,
+};
 
 #[repr(C)]
 pub struct NativeRequestHandler {
@@ -34,7 +37,7 @@ impl RequestHandler for NativeRequestHandler {
         call!(
             self,
             handle_request,
-            req_type as u32 + 0x10000000,
+            req_type as u32 + EVM_API_METHOD_REQ_OFFSET,
             ptr!(RustSlice::new(req_data)),
             ptr!(cost),
             ptr!(output)

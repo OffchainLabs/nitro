@@ -5,7 +5,11 @@
 
 use crate::machine::{Escape, MaybeEscape};
 use arbutil::evm::{
-    api::EvmApiMethod, req::EvmApiRequestor, req::RequestHandler, user::UserOutcome, EvmData,
+    api::{EvmApiMethod, EVM_API_METHOD_REQ_OFFSET},
+    req::EvmApiRequestor,
+    req::RequestHandler,
+    user::UserOutcome,
+    EvmData,
 };
 use eyre::{eyre, Result};
 use prover::programs::prelude::*;
@@ -41,7 +45,7 @@ impl RequestHandler for CothreadRequestor {
         if self
             .tx
             .send(MessageFromCothread {
-                req_type: req_type as u32 + 0x10000000,
+                req_type: req_type as u32 + EVM_API_METHOD_REQ_OFFSET,
                 req_data: req_data.to_vec(),
             })
             .is_err()

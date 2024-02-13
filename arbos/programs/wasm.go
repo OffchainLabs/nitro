@@ -116,8 +116,6 @@ func startProgram(module uint32) uint32
 //go:wasmimport programs send_response
 func sendResponse(req_id uint32) uint32
 
-const reqTypeOffset = 0x10000000
-
 func callProgram(
 	address common.Address,
 	moduleHash common.Hash,
@@ -150,7 +148,7 @@ func callProgram(
 		reqTypeId := getRequest(reqId, unsafe.Pointer(&reqLen))
 		reqData := make([]byte, reqLen)
 		getRequestData(reqId, arbutil.SliceToUnsafePointer(reqData))
-		if reqTypeId < reqTypeOffset {
+		if reqTypeId < EvmApiMethodReqOffset {
 			popProgram()
 			status := userStatus(reqTypeId)
 			gasLeft := binary.BigEndian.Uint64(reqData[:8])
@@ -161,7 +159,7 @@ func callProgram(
 			}
 			return data, err
 		}
-		reqType := RequestType(reqTypeId - reqTypeOffset)
+		reqType := RequestType(reqTypeId - EvmApiMethodReqOffset)
 		response, cost := reqHandler(reqType, reqData)
 		setResponse(reqId, cost, arbutil.SliceToUnsafePointer(response), uint32(len(response)))
 		reqId = sendResponse(reqId)

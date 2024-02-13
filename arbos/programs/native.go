@@ -145,7 +145,7 @@ const apiFailure C.EvmApiStatus = C.EvmApiStatus_Failure
 func handleReqImpl(api usize, req_type u32, data *rustBytes, costPtr *u64, output *rustBytes) apiStatus {
 	closure := getApi(api)
 	reqData := data.read()
-	reqType := RequestType(req_type - 0x10000000)
+	reqType := RequestType(req_type - EvmApiMethodReqOffset)
 	res, cost := closure(reqType, reqData)
 	*costPtr = u64(cost)
 	output.setBytes(res)

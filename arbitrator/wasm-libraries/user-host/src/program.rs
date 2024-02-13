@@ -2,7 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 use core::sync::atomic::{compiler_fence, Ordering};
 use arbutil::{
-    evm::{req::EvmApiRequestor, req::RequestHandler, EvmData, api::EvmApiMethod},
+    evm::{req::EvmApiRequestor, req::RequestHandler, EvmData, api::{EvmApiMethod, EVM_API_METHOD_REQ_OFFSET}},
     wavm, Bytes20, Bytes32, Color,
 };
 use eyre::{bail, eyre, Result};
@@ -123,7 +123,7 @@ impl UserHostRequester {
 impl RequestHandler for UserHostRequester {
     fn handle_request(&mut self, req_type: EvmApiMethod, req_data: &[u8]) -> (Vec<u8>, u64) {
         unsafe {
-            self.send_request(req_type as u32 + 0x10000000, req_data.to_vec())
+            self.send_request(req_type as u32 + EVM_API_METHOD_REQ_OFFSET, req_data.to_vec())
         }
     }
 }

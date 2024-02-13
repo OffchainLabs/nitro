@@ -40,6 +40,8 @@ const (
 	CaptureHostIO
 )
 
+const EvmApiMethodReqOffset = 0x10000000
+
 func newApiClosures(
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,
