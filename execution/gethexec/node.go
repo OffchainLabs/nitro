@@ -332,6 +332,9 @@ func (n *ExecutionNode) SequenceDelayedMessage(message *arbostypes.L1IncomingMes
 func (n *ExecutionNode) ResultAtPos(pos arbutil.MessageIndex) (*execution.MessageResult, error) {
 	return n.ExecEngine.ResultAtPos(pos)
 }
+func (n *ExecutionNode) ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error) {
+	return n.ExecEngine.ArbOSVersionForMessageNumber(messageNum)
+}
 
 func (n *ExecutionNode) RecordBlockCreation(
 	ctx context.Context,

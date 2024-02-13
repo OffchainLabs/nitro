@@ -41,6 +41,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -71,16 +72,12 @@ type batchPosterPosition struct {
 	NextSeqNum          uint64
 }
 
-type ArbOSVersionGetter interface {
-	ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error)
-}
-
 type BatchPoster struct {
 	stopwaiter.StopWaiter
 	l1Reader           *headerreader.HeaderReader
 	inbox              *InboxTracker
 	streamer           *TransactionStreamer
-	arbOSVersionGetter ArbOSVersionGetter
+	arbOSVersionGetter execution.FullExecutionClient
 	config             BatchPosterConfigFetcher
 	seqInbox           *bridgegen.SequencerInbox
 	bridge             *bridgegen.Bridge
@@ -260,7 +257,7 @@ type BatchPosterOpts struct {
 	L1Reader      *headerreader.HeaderReader
 	Inbox         *InboxTracker
 	Streamer      *TransactionStreamer
-	VersionGetter ArbOSVersionGetter
+	VersionGetter execution.FullExecutionClient
 	SyncMonitor   *SyncMonitor
 	Config        BatchPosterConfigFetcher
 	DeployInfo    *chaininfo.RollupAddresses

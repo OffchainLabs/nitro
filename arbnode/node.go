@@ -348,7 +348,7 @@ func StakerDataposter(
 func createNodeImpl(
 	ctx context.Context,
 	stack *node.Node,
-	exec *gethexec.ExecutionNode,
+	exec execution.FullExecutionClient,
 	arbDb ethdb.Database,
 	configFetcher ConfigFetcher,
 	l2Config *params.ChainConfig,
@@ -661,7 +661,7 @@ func createNodeImpl(
 			L1Reader:      l1Reader,
 			Inbox:         inboxTracker,
 			Streamer:      txStreamer,
-			VersionGetter: exec.ExecEngine,
+			VersionGetter: exec,
 			SyncMonitor:   syncMonitor,
 			Config:        func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster },
 			DeployInfo:    deployInfo,
@@ -715,7 +715,7 @@ func (n *Node) OnConfigReload(_ *Config, _ *Config) error {
 func CreateNode(
 	ctx context.Context,
 	stack *node.Node,
-	exec *gethexec.ExecutionNode,
+	exec execution.FullExecutionClient,
 	arbDb ethdb.Database,
 	configFetcher ConfigFetcher,
 	l2Config *params.ChainConfig,
