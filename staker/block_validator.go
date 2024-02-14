@@ -1238,3 +1238,9 @@ func (v *BlockValidator) WaitForPos(t *testing.T, ctx context.Context, pos arbut
 		}
 	}
 }
+
+func (v *BlockValidator) GetValidated() arbutil.MessageIndex {
+	v.reorgMutex.RLock()
+	defer v.reorgMutex.RUnlock()
+	return v.validated()
+}
