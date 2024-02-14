@@ -662,6 +662,7 @@ func createNodeImpl(
 			L1Reader:      l1Reader,
 			Inbox:         inboxTracker,
 			Streamer:      txStreamer,
+			VersionGetter: exec,
 			SyncMonitor:   syncMonitor,
 			Config:        func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster },
 			DeployInfo:    deployInfo,
