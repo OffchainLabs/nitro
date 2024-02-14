@@ -53,8 +53,8 @@ func newApi(
 	api := NativeApi{
 		handler: handler,
 		cNative: C.NativeRequestHandler{
-			handle_request: (*[0]byte)(C.handleReqWrap),
-			id:             id,
+			handle_request_fptr: (*[0]byte)(C.handleReqWrap),
+			id:                  id,
 		},
 		// TODO: doesn't seem like pinner needs to be initialized?
 	}

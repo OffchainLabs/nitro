@@ -951,7 +951,7 @@ where
     let hash: Bytes32 = if items.len() > 2 {
         multistack_hasher(&items[1..items.len() - 1], stack_hasher)
     } else {
-        Machine::NO_STACK_HASH
+        Bytes32::default()
     };
     data.extend(hash);
     data
@@ -2529,9 +2529,9 @@ impl Machine {
 
                 // Hash of stacks [2nd..last) or 0xfff...f if len <= 2.
                 let mut hash = if $stacks.len() <= 2 {
-                    Machine::NO_STACK_HASH
+                    Bytes32::default()
                 } else {
-                    hash_multistack(&$stacks[1..$stacks.len() - 2], $hasher)
+                    hash_multistack(&$stacks[1..$stacks.len() - 1], $hasher)
                 };
 
                 hash = Keccak256::new()
@@ -2867,7 +2867,7 @@ impl Machine {
                         if (len > 3) {
                             out!(hash_multistack(&$multistack[1..len - 2], $hasher));
                         } else {
-                            out!(Machine::NO_STACK_HASH);
+                            out!(Bytes32::default());
                         }
                     };
                 }

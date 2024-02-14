@@ -57,7 +57,7 @@ COPY --from=wasm-libs-builder /workspace/ /
 
 FROM wasm-base as wasm-bin-builder
     # pinned go version
-RUN curl -L https://golang.org/dl/go1.20.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
+RUN curl -L https://golang.org/dl/go1.21.7.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
 COPY ./Makefile ./go.mod ./go.sum ./
 COPY ./arbcompress ./arbcompress
 COPY ./arbos ./arbos
@@ -117,17 +117,15 @@ COPY arbitrator/prover/Cargo.toml arbitrator/prover/
 COPY arbitrator/jit/Cargo.toml arbitrator/jit/
 COPY arbitrator/stylus/Cargo.toml arbitrator/stylus/
 COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
-COPY arbitrator/wasm-libraries/go-js/Cargo.toml arbitrator/wasm-libraries/go-js/Cargo.toml
 COPY arbitrator/wasm-libraries/user-host-trait/Cargo.toml arbitrator/wasm-libraries/user-host-trait/Cargo.toml
-RUN bash -c 'mkdir arbitrator/{prover,jit,stylus}/src arbitrator/wasm-libraries/{go-js,user-host-trait}/src'
+RUN bash -c 'mkdir arbitrator/{prover,jit,stylus}/src arbitrator/wasm-libraries/user-host-trait/src'
 RUN echo "fn test() {}" > arbitrator/jit/src/lib.rs && \
     echo "fn test() {}" > arbitrator/prover/src/lib.rs && \
     echo "fn test() {}" > arbitrator/stylus/src/lib.rs && \
-    echo "fn test() {}" > arbitrator/wasm-libraries/go-js/src/lib.rs && \
     echo "fn test() {}" > arbitrator/wasm-libraries/user-host-trait/src/lib.rs && \
     cargo build --manifest-path arbitrator/Cargo.toml --release --lib && \
     rm arbitrator/prover/src/lib.rs arbitrator/jit/src/lib.rs arbitrator/stylus/src/lib.rs && \
-    rm arbitrator/wasm-libraries/go-js/src/lib.rs arbitrator/wasm-libraries/user-host-trait/src/lib.rs
+    rm arbitrator/wasm-libraries/user-host-trait/src/lib.rs
 COPY ./Makefile ./
 COPY arbitrator/prover arbitrator/prover
 COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
@@ -189,7 +187,7 @@ RUN mkdir 0x965a35130f4e34b7b2339eac03b2eacc659e2dafe850d213ea6a7cdf9edfa99f && 
     wget https://stylus-wasm-17f27dd494229dfd10d4e756f7e2fb953e83bd3d1be8278b33a.s3.us-west-2.amazonaws.com/0x965a35130f4e34b7b2339eac03b2eacc659e2dafe850d213ea6a7cdf9edfa99f/replay.wasm && \
     wget https://stylus-wasm-17f27dd494229dfd10d4e756f7e2fb953e83bd3d1be8278b33a.s3.us-west-2.amazonaws.com/0x965a35130f4e34b7b2339eac03b2eacc659e2dafe850d213ea6a7cdf9edfa99f/machine.wavm.br
 
-FROM golang:1.20-bullseye as node-builder
+FROM golang:1.21-bullseye as node-builder
 WORKDIR /workspace
 ARG version=""
 ARG datetime=""
