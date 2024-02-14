@@ -951,7 +951,7 @@ where
     let hash: Bytes32 = if items.len() > 2 {
         multistack_hasher(&items[1..items.len() - 1], stack_hasher)
     } else {
-       Bytes32::default()
+        Bytes32::default()
     };
     data.extend(hash);
     data
