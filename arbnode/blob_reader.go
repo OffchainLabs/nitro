@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"path"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -31,18 +32,24 @@ type BlobClient struct {
 	// The genesis time time and seconds per slot won't change so only request them once.
 	cachedGenesisTime    uint64
 	cachedSecondsPerSlot uint64
+
+	// Directory to save the fetcehd blobs
+	blobDirectory string
 }
 
 type BlobClientConfig struct {
 	BeaconChainUrl string `koanf:"beacon-chain-url"`
+	BlobDirectory  string `koanf:"blob-directory"`
 }
 
 var DefaultBlobClientConfig = BlobClientConfig{
 	BeaconChainUrl: "",
+	BlobDirectory:  "",
 }
 
 func BlobClientAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".beacon-chain-url", DefaultBlobClientConfig.BeaconChainUrl, "Beacon Chain url to use for fetching blobs")
+	f.String(prefix+".blob-directory", DefaultBlobClientConfig.BlobDirectory, "Full path of the directory to save fetched blobs")
 }
 
 func NewBlobClient(config BlobClientConfig, ec arbutil.L1Interface) (*BlobClient, error) {
@@ -50,10 +57,20 @@ func NewBlobClient(config BlobClientConfig, ec arbutil.L1Interface) (*BlobClient
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse beacon chain URL: %w", err)
 	}
+	if _, err = os.Stat(config.BlobDirectory); err != nil {
+		if os.IsNotExist(err) {
+			if err = os.MkdirAll(config.BlobDirectory, os.ModePerm); err != nil {
+				return nil, fmt.Errorf("error creating blob directory: %v", err)
+			}
+		} else {
+			return nil, fmt.Errorf("invalid blob directory path: %v", err)
+		}
+	}
 	return &BlobClient{
-		ec:         ec,
-		beaconUrl:  beaconUrl,
-		httpClient: &http.Client{},
+		ec:            ec,
+		beaconUrl:     beaconUrl,
+		httpClient:    &http.Client{},
+		blobDirectory: config.BlobDirectory,
 	}, nil
 }
 
@@ -178,7 +195,31 @@ func (b *BlobClient) blobSidecars(ctx context.Context, slot uint64, versionedHas
 		}
 	}
 
+	if b.blobDirectory != "" {
+		if err := saveBlobDataToDisk(response, slot, b.blobDirectory); err != nil {
+			return nil, err
+		}
+	}
+
 	return output, nil
+}
+
+func saveBlobDataToDisk(response []blobResponseItem, slot uint64, blobDirectory string) error {
+	filePath := path.Join(blobDirectory, fmt.Sprint(slot))
+	file, err := os.Create(filePath)
+	if err != nil {
+		return fmt.Errorf("could not create file to store fetched blobs")
+	}
+	full := fullResult[[]blobResponseItem]{Data: response}
+	fullbytes, err := json.Marshal(full)
+	if err != nil {
+		return fmt.Errorf("unable to marshal data into bytes while attempting to store fetched blobs")
+	}
+	if _, err := file.Write(fullbytes); err != nil {
+		return fmt.Errorf("failed to write blob data to disk")
+	}
+	file.Close()
+	return nil
 }
 
 type genesisResponse struct {
