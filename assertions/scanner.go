@@ -14,6 +14,7 @@ import (
 	"os"
 	"time"
 
+	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/OffchainLabs/bold/api"
@@ -67,9 +68,11 @@ type Manager struct {
 	forksDetectedCount          uint64
 	challengesSubmittedCount    uint64
 	assertionsProcessedCount    uint64
+	submittedRivalsCount        uint64
 	stateManager                l2stateprovider.ExecutionProvider
 	postInterval                time.Duration
 	submittedAssertions         *threadsafe.Set[common.Hash]
+	assertionsWithHonestChild   *threadsafe.Set[protocol.AssertionHash]
 	apiDB                       db.Database
 }
 
@@ -111,6 +114,7 @@ func NewManager(
 		stateManager:                stateManager,
 		postInterval:                postInterval,
 		submittedAssertions:         threadsafe.NewSet[common.Hash](threadsafe.SetWithMetric[common.Hash]("submittedAssertions")),
+		assertionsWithHonestChild:   threadsafe.NewSet[protocol.AssertionHash](threadsafe.SetWithMetric[protocol.AssertionHash]("assertionsWithHonestChild")),
 		averageTimeForBlockCreation: averageTimeForBlockCreation,
 	}, nil
 }
@@ -122,7 +126,9 @@ func (m *Manager) Start(ctx context.Context) {
 	go m.postAssertionRoutine(ctx)
 	go m.updateLatestConfirmedMetrics(ctx)
 
-	latestConfirmed, err := m.chain.LatestConfirmed(ctx)
+	latestConfirmed, err := retry.UntilSucceeds(ctx, func() (protocol.Assertion, error) {
+		return m.chain.LatestConfirmed(ctx)
+	})
 	if err != nil {
 		srvlog.Error("Could not get latest confirmed assertion", log.Ctx{"err": err})
 		return
@@ -136,7 +142,9 @@ func (m *Manager) Start(ctx context.Context) {
 		srvlog.Error("Could not get rollup user logic filterer", log.Ctx{"err": err})
 		return
 	}
-	latestBlock, err := m.backend.HeaderByNumber(ctx, util.GetFinalizedBlockNumber())
+	latestBlock, err := retry.UntilSucceeds(ctx, func() (*gethtypes.Header, error) {
+		return m.backend.HeaderByNumber(ctx, util.GetFinalizedBlockNumber())
+	})
 	if err != nil {
 		srvlog.Error("Could not get header by number", log.Ctx{"err": err})
 		return
@@ -209,6 +217,14 @@ func (m *Manager) ChallengesSubmitted() uint64 {
 
 func (m *Manager) AssertionsProcessed() uint64 {
 	return m.assertionsProcessedCount
+}
+
+func (m *Manager) SubmittedRivals() uint64 {
+	return m.submittedRivalsCount
+}
+
+func (m *Manager) AssertionHasHonestChild(hash protocol.AssertionHash) bool {
+	return m.assertionsWithHonestChild.Has(hash)
 }
 
 func (m *Manager) AssertionsSubmittedInProcess() []common.Hash {
@@ -304,8 +320,6 @@ func (m *Manager) ProcessAssertionCreationEvent(
 		if postRivalErr := m.postRivalAssertionAndChallenge(ctx, creationInfo); postRivalErr != nil {
 			return postRivalErr
 		}
-		evilAssertionCounter.Inc(1)
-		m.assertionsProcessedCount++
 		return nil
 	case errors.Is(err, l2stateprovider.ErrChainCatchingUp):
 		// Otherwise, we return the error that we are still catching up to the
@@ -339,6 +353,7 @@ func (m *Manager) postRivalAssertionAndChallenge(
 	ctx context.Context,
 	creationInfo *protocol.AssertionCreatedInfo,
 ) error {
+	m.assertionsProcessedCount++
 	if !creationInfo.InboxMaxCount.IsUint64() {
 		return errors.New("inbox max count not a uint64")
 	}
@@ -353,13 +368,24 @@ func (m *Manager) postRivalAssertionAndChallenge(
 	}
 	if !m.canPostRivalAssertion() {
 		srvlog.Warn("Detected invalid assertion, but not configured to post a rival stake", logFields)
+		evilAssertionCounter.Inc(1)
+		return nil
+	}
+
+	latestAgreedWithAncestor, err := m.findLastAgreedWithAncestor(ctx, creationInfo)
+	if err != nil {
+		return err
+	}
+	// If the latest agreed with ancestor already has an honest child, we can exit early here.
+	if m.assertionsWithHonestChild.Has(protocol.AssertionHash{Hash: latestAgreedWithAncestor.AssertionHash}) {
 		return nil
 	}
 
 	srvlog.Info("Disagreed with execution state from observed assertion", logFields)
+	evilAssertionCounter.Inc(1)
 
 	// Post what we believe is the correct rival assertion that follows the ancestor we agree with.
-	correctRivalAssertion, err := m.maybePostRivalAssertion(ctx, creationInfo)
+	correctRivalAssertion, err := m.maybePostRivalAssertion(ctx, creationInfo, latestAgreedWithAncestor)
 	if err != nil {
 		return err
 	}
@@ -400,7 +426,6 @@ func (m *Manager) postRivalAssertionAndChallenge(
 	}
 
 	return nil
-
 }
 
 func (m *Manager) logChallengeConfigs(ctx context.Context) error {
@@ -435,12 +460,10 @@ func (m *Manager) logChallengeConfigs(ctx context.Context) error {
 // If this parent assertion already has a rival we agree with that arleady exists
 // then this function will return that assertion.
 func (m *Manager) maybePostRivalAssertion(
-	ctx context.Context, creationInfo *protocol.AssertionCreatedInfo,
+	ctx context.Context,
+	creationInfo,
+	latestAgreedWithAncestor *protocol.AssertionCreatedInfo,
 ) (option.Option[protocol.Assertion], error) {
-	latestAgreedWithAncestor, err := m.findLastAgreedWithAncestor(ctx, creationInfo)
-	if err != nil {
-		return option.None[protocol.Assertion](), err
-	}
 	// Post what we believe is the correct assertion that follows the ancestor we agree with.
 	staked, err := m.chain.IsStaked(ctx)
 	if err != nil {
@@ -464,6 +487,8 @@ func (m *Manager) maybePostRivalAssertion(
 	}
 	if assertionOpt.IsSome() {
 		m.submittedAssertions.Insert(assertionOpt.Unwrap().Id().Hash)
+		m.assertionsWithHonestChild.Insert(protocol.AssertionHash{Hash: latestAgreedWithAncestor.AssertionHash})
+		m.submittedRivalsCount++
 		if err2 := m.saveAssertionToDB(ctx, assertionOpt.Unwrap().Id()); err2 != nil {
 			return option.None[protocol.Assertion](), err2
 		}

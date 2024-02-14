@@ -16,7 +16,6 @@ go_library(
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_jmoiron_sqlx//:sqlx",
         "@com_github_mattn_go_sqlite3//:go-sqlite3",
-        "@com_github_pkg_errors//:errors",
     ],
 )
 

@@ -26,6 +26,137 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestSkipsProcessingAssertionFromEvilFork(t *testing.T) {
+	setup, err := setup.ChainsWithEdgeChallengeManager(
+		setup.WithMockBridge(),
+		setup.WithMockOneStepProver(),
+		setup.WithChallengeTestingOpts(
+			challenge_testing.WithLayerZeroHeights(&protocol.LayerZeroHeights{
+				BlockChallengeHeight:     64,
+				BigStepChallengeHeight:   32,
+				SmallStepChallengeHeight: 32,
+			}),
+		),
+	)
+	require.NoError(t, err)
+
+	bridgeBindings, err := mocksgen.NewBridgeStub(setup.Addrs.Bridge, setup.Backend)
+	require.NoError(t, err)
+
+	rollupAdminBindings, err := rollupgen.NewRollupAdminLogic(setup.Addrs.Rollup, setup.Backend)
+	require.NoError(t, err)
+	_, err = rollupAdminBindings.SetMinimumAssertionPeriod(setup.Accounts[0].TxOpts, big.NewInt(1))
+	require.NoError(t, err)
+	setup.Backend.Commit()
+
+	msgCount, err := bridgeBindings.SequencerMessageCount(util.GetFinalizedCallOpts(&bind.CallOpts{}))
+	require.NoError(t, err)
+	require.Equal(t, uint64(1), msgCount.Uint64())
+
+	aliceChain := setup.Chains[0]
+	bobChain := setup.Chains[1]
+
+	ctx := context.Background()
+	genesisHash, err := setup.Chains[1].GenesisAssertionHash(ctx)
+	require.NoError(t, err)
+	genesisCreationInfo, err := setup.Chains[1].ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: genesisHash})
+	require.NoError(t, err)
+
+	stateManagerOpts := setup.StateManagerOpts
+	stateManagerOpts = append(
+		stateManagerOpts,
+		statemanager.WithNumBatchesRead(5),
+	)
+	aliceStateManager, err := statemanager.NewForSimpleMachine(stateManagerOpts...)
+	require.NoError(t, err)
+
+	// Bob diverges from Alice at batch 1.
+	stateManagerOpts = setup.StateManagerOpts
+	stateManagerOpts = append(
+		stateManagerOpts,
+		statemanager.WithNumBatchesRead(5),
+		statemanager.WithBlockDivergenceHeight(1),
+		statemanager.WithMachineDivergenceStep(1),
+	)
+	bobStateManager, err := statemanager.NewForSimpleMachine(stateManagerOpts...)
+	require.NoError(t, err)
+
+	// We have bob post an assertion at batch 1.
+	bobPostState, err := bobStateManager.ExecutionStateAfterBatchCount(ctx, 1)
+	require.NoError(t, err)
+	bobAssertion, err := bobChain.NewStakeOnNewAssertion(
+		ctx,
+		genesisCreationInfo,
+		bobPostState,
+	)
+	require.NoError(t, err)
+
+	// We have Alice process the assertion and post a rival, honest assertion to the one
+	// at batch 1.
+	aliceChalManager, err := challengemanager.New(
+		ctx,
+		aliceChain,
+		setup.Backend,
+		aliceStateManager,
+		setup.Addrs.Rollup,
+		challengemanager.WithMode(types.DefensiveMode),
+		challengemanager.WithEdgeTrackerWakeInterval(time.Hour),
+	)
+	require.NoError(t, err)
+
+	// Setup an assertion manager for Charlie, and have it process Alice's
+	// assertion creation event at batch 4.
+	aliceAssertionManager, err := assertions.NewManager(
+		aliceChain,
+		aliceStateManager,
+		setup.Backend,
+		aliceChalManager,
+		aliceChain.RollupAddress(),
+		"alice",
+		time.Hour, // poll interval
+		time.Hour, // confirmation attempt interval
+		aliceStateManager,
+		time.Hour, // poll interval
+		time.Second*1,
+		nil,
+	)
+	require.NoError(t, err)
+	require.NoError(t, aliceAssertionManager.ProcessAssertionCreationEvent(ctx, bobAssertion.Id()))
+
+	// Get the parent assertion of what bob posted.
+	creationInfo, err := bobChain.ReadAssertionCreationInfo(ctx, bobAssertion.Id())
+	require.NoError(t, err)
+
+	// Check that it has an honest children now as a result of Alice processing Bob's assertion
+	// and posting her own rival, and we check she did indeed submit this rival.
+	require.True(t, aliceAssertionManager.AssertionHasHonestChild(protocol.AssertionHash{Hash: creationInfo.ParentAssertionHash}))
+	require.Equal(t, uint64(1), aliceAssertionManager.SubmittedRivals())
+
+	// We have bob post an assertion at batch 2.
+	dataHash := [32]byte{1}
+	_, err = bridgeBindings.EnqueueSequencerMessage(setup.Accounts[0].TxOpts, dataHash, big.NewInt(1), big.NewInt(1), big.NewInt(2))
+	require.NoError(t, err)
+	setup.Backend.Commit()
+
+	bobPostState, err = bobStateManager.ExecutionStateAfterBatchCount(ctx, uint64(2))
+	require.NoError(t, err)
+	bobAssertion, err = bobChain.StakeOnNewAssertion(
+		ctx,
+		creationInfo,
+		bobPostState,
+	)
+	require.NoError(t, err)
+
+	// Once Alice sees this, she should do nothing
+	// as it is from a bad fork and she already posted the correct child to their earliest
+	// valid ancestor here.
+	for i := 0; i < 10; i++ {
+		require.NoError(t, aliceAssertionManager.ProcessAssertionCreationEvent(ctx, bobAssertion.Id()))
+	}
+	// We should only have attempted to submit 1 honest rival.
+	require.Equal(t, uint64(1), aliceAssertionManager.SubmittedRivals())
+}
+
 func TestComplexAssertionForkScenario(t *testing.T) {
 	// Chain state looks like this:
 	// 1 ->2->3->4
