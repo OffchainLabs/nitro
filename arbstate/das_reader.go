@@ -78,9 +78,9 @@ func IsBrotliMessageHeaderByte(b uint8) bool {
 	return b == BrotliMessageHeaderByte
 }
 
-// IsKnownHeaderByte returns true if the supplied header byte has any unknown bits
+// IsKnownHeaderByte returns true if the supplied header byte has only known bits
 func IsKnownHeaderByte(b uint8) bool {
-	return b&^KnownHeaderBits != 0
+	return b&^KnownHeaderBits == 0
 }
 
 type DataAvailabilityCertificate struct {
