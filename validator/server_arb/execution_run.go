@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -63,7 +64,7 @@ func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*v
 	})
 }
 
-func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[[]common.Hash] {
+func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves uint64, claimId common.Hash) containers.PromiseInterface[[]common.Hash] {
 	return stopwaiter.LaunchPromiseThread[[]common.Hash](e, func(ctx context.Context) ([]common.Hash, error) {
 		if stepSize == 1 {
 			e.cache = NewMachineCache(e.GetContext(), e.initialMachineGetter, e.config, server_common.WithAlwaysMerkleize())
@@ -81,7 +82,9 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 
 		if machineStartIndex == 0 {
 			gs := machine.GetGlobalState()
-			log.Info(fmt.Sprintf("Start global state for machine index 0: %+v", gs))
+			log.Info(fmt.Sprintf("Start global state for machine index 0: %+v", gs), log.Ctx{
+				"claimId": claimId,
+			})
 			hash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
 			stateRoots = append(stateRoots, hash)
 		} else {
@@ -94,6 +97,13 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 		if numDesiredLeaves == 1 {
 			return stateRoots, nil
 		}
+
+		logInterval := numDesiredLeaves / 20 // Log every 5% progress
+		if logInterval == 0 {
+			logInterval = 1
+		}
+
+		start := time.Now()
 		for numIterations := uint64(0); numIterations < numDesiredLeaves; numIterations++ {
 			// The absolute opcode position the machine should be in after stepping.
 			position := machineStartIndex + stepSize*(numIterations+1)
@@ -102,22 +112,25 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 			if err := machine.Step(ctx, stepSize); err != nil {
 				return nil, fmt.Errorf("failed to step machine to position %d: %w", position, err)
 			}
-
-			progressPercent := (float64(numIterations+1) / float64(numDesiredLeaves)) * 100
-			log.Info(
-				fmt.Sprintf(
-					"Computing subchallenge machine hashes progress: %.2f%% leaves gathered (%d/%d)",
-					progressPercent,
-					numIterations+1,
-					numDesiredLeaves,
-				),
-				log.Ctx{
-					"stepSize":          stepSize,
-					"startHash":         startHash,
-					"machineStartIndex": machineStartIndex,
-					"numDesiredLeaves":  numDesiredLeaves,
-				},
-			)
+			if numIterations%logInterval == 0 || numIterations == numDesiredLeaves-1 {
+				progressPercent := (float64(numIterations+1) / float64(numDesiredLeaves)) * 100
+				log.Info(
+					fmt.Sprintf(
+						"Subchallenge machine hash progress: %.2f%% - %d of %d leaves computed",
+						progressPercent,
+						numIterations+1,
+						numDesiredLeaves,
+					),
+					log.Ctx{
+						"machinePosition":   numIterations*stepSize + machineStartIndex,
+						"timeSinceStart":    time.Since(start),
+						"stepSize":          stepSize,
+						"startHash":         startHash,
+						"machineStartIndex": machineStartIndex,
+						"numDesiredLeaves":  numDesiredLeaves,
+					},
+				)
+			}
 
 			// If the machine reached the finished state, we can break out of the loop and append to
 			// our state roots slice a finished machine hash.
@@ -126,17 +139,6 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 				gs := machine.GetGlobalState()
 				hash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
 				stateRoots = append(stateRoots, hash)
-				log.Info(
-					"Machine finished execution, gathered all the necessary hashes",
-					log.Ctx{
-						"stepSize":            stepSize,
-						"startHash":           startHash,
-						"machineStartIndex":   machineStartIndex,
-						"numDesiredLeaves":    numDesiredLeaves,
-						"finishedHash":        hash,
-						"finishedGlobalState": fmt.Sprintf("%+v", gs),
-					},
-				)
 				break
 			}
 			// Otherwise, if the position and machine step mismatch and the machine is running, something went wrong.
@@ -149,6 +151,17 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 			stateRoots = append(stateRoots, machine.Hash())
 
 		}
+		log.Info(
+			"Machine finished execution, gathered all the necessary hashes",
+			log.Ctx{
+				"stepSize":            stepSize,
+				"startHash":           startHash,
+				"machineStartIndex":   machineStartIndex,
+				"numDesiredLeaves":    numDesiredLeaves,
+				"finishedHash":        stateRoots[len(stateRoots)-1],
+				"finishedGlobalState": fmt.Sprintf("%+v", machine.GetGlobalState()),
+			},
+		)
 
 		// If the machine finished in less than the number of hashes we anticipate, we pad
 		// to the expected value by repeating the last machine hash until the state roots are the correct
