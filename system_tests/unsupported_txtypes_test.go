@@ -97,7 +97,12 @@ func TestBlobAndInternalTxsAsDelayedMsgReject(t *testing.T) {
 		Require(t, err)
 	}
 
-	confirmLatestBlock(ctx, t, builder.L1Info, builder.L1.Client)
+	// Confirm latest l1 block
+	for i := 0; i < 32; i++ {
+		builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
+			builder.L1Info.PrepareTx("Faucet", "Faucet", 30000, big.NewInt(1e12), nil),
+		})
+	}
 	for _, tx := range l1Txs {
 		_, err = builder.L1.EnsureTxSucceeded(tx)
 		Require(t, err)
