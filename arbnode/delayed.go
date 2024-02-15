@@ -221,10 +221,10 @@ func (b *DelayedBridge) logsToDeliveredMessages(ctx context.Context, logs []type
 		msgKey := common.BigToHash(parsedLog.MessageIndex)
 		data, ok := messageData[msgKey]
 		if !ok {
-			return nil, errors.New("message not found")
+			return nil, fmt.Errorf("message %v data not found", parsedLog.MessageIndex)
 		}
 		if crypto.Keccak256Hash(data) != parsedLog.MessageDataHash {
-			return nil, errors.New("found message data with mismatched hash")
+			return nil, fmt.Errorf("found message %v data with mismatched hash", parsedLog.MessageIndex)
 		}
 
 		requestId := common.BigToHash(parsedLog.MessageIndex)

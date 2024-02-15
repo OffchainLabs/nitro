@@ -25,3 +25,6 @@ jobs:
         path: /tmp/.buildx-cache
         key: ${{ runner.os }}-buildx-${{ hashFiles('Dockerfile') }}
         restore-keys: ${{ runner.os }}-buildx-
+
+    - name:  Startup Nitro testnode
+      run: ./scripts/startup-testnode.bash
