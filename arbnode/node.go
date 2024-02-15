@@ -87,7 +87,6 @@ type Config struct {
 	Staker              staker.L1ValidatorConfig    `koanf:"staker" reload:"hot"`
 	SeqCoordinator      SeqCoordinatorConfig        `koanf:"seq-coordinator"`
 	DataAvailability    das.DataAvailabilityConfig  `koanf:"data-availability"`
-	BlobClient          BlobClientConfig            `koanf:"blob-client"`
 	SyncMonitor         SyncMonitorConfig           `koanf:"sync-monitor"`
 	Dangerous           DangerousConfig             `koanf:"dangerous"`
 	TransactionStreamer TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
@@ -152,7 +151,6 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	staker.L1ValidatorConfigAddOptions(prefix+".staker", f)
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
 	das.DataAvailabilityConfigAddNodeOptions(prefix+".data-availability", f)
-	BlobClientAddOptions(prefix+".blob-client", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
@@ -372,6 +370,7 @@ func createNodeImpl(
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
 	parentChainID *big.Int,
+	blobReader arbstate.BlobReader,
 ) (*Node, error) {
 	config := configFetcher.Get()
 
@@ -475,7 +474,7 @@ func createNodeImpl(
 			L1Reader:                nil,
 			TxStreamer:              txStreamer,
 			DeployInfo:              nil,
-			BlobReader:              nil,
+			BlobReader:              blobReader,
 			InboxReader:             nil,
 			InboxTracker:            nil,
 			DelayedSequencer:        nil,
@@ -534,17 +533,6 @@ func createNodeImpl(
 		}
 	} else if l2Config.ArbitrumChainParams.DataAvailabilityCommittee {
 		return nil, errors.New("a data availability service is required for this chain, but it was not configured")
-	}
-
-	var blobReader arbstate.BlobReader
-	if !l1Reader.IsParentChainArbitrum() && !config.Dangerous.DisableBlobReader {
-		if config.BlobClient.BeaconChainUrl == "" {
-			return nil, errors.New("a beacon chain RPC URL is required to read batches, but it was not configured (CLI argument: --node.blob-client.beacon-chain-url [URL])")
-		}
-		blobReader, err = NewBlobClient(config.BlobClient, l1client)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, daReader, blobReader)
@@ -744,8 +732,9 @@ func CreateNode(
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
 	parentChainID *big.Int,
+	blobReader arbstate.BlobReader,
 ) (*Node, error) {
-	currentNode, err := createNodeImpl(ctx, stack, exec, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID)
+	currentNode, err := createNodeImpl(ctx, stack, exec, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader)
 	if err != nil {
 		return nil, err
 	}

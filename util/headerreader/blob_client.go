@@ -1,7 +1,7 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package arbnode
+package headerreader
 
 import (
 	"context"
@@ -35,19 +35,19 @@ type BlobClient struct {
 }
 
 type BlobClientConfig struct {
-	BeaconChainUrl string `koanf:"beacon-chain-url"`
+	BeaconUrl string `koanf:"beacon-url"`
 }
 
 var DefaultBlobClientConfig = BlobClientConfig{
-	BeaconChainUrl: "",
+	BeaconUrl: "",
 }
 
 func BlobClientAddOptions(prefix string, f *pflag.FlagSet) {
-	f.String(prefix+".beacon-chain-url", DefaultBlobClientConfig.BeaconChainUrl, "Beacon Chain url to use for fetching blobs (normally on port 3500)")
+	f.String(prefix+".beacon-url", DefaultBlobClientConfig.BeaconUrl, "Beacon Chain RPC URL to use for fetching blobs (normally on port 3500)")
 }
 
 func NewBlobClient(config BlobClientConfig, ec arbutil.L1Interface) (*BlobClient, error) {
-	beaconUrl, err := url.Parse(config.BeaconChainUrl)
+	beaconUrl, err := url.Parse(config.BeaconUrl)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse beacon chain URL: %w", err)
 	}
@@ -189,16 +189,16 @@ type getSpecResponse struct {
 func (b *BlobClient) Initialize(ctx context.Context) error {
 	genesis, err := beaconRequest[genesisResponse](b, ctx, "/eth/v1/beacon/genesis")
 	if err != nil {
-		return fmt.Errorf("error calling beacon client in genesisTime: %w", err)
+		return fmt.Errorf("error calling beacon client to get genesisTime: %w", err)
 	}
 	b.genesisTime = uint64(genesis.GenesisTime)
 
 	spec, err := beaconRequest[getSpecResponse](b, ctx, "/eth/v1/config/spec")
 	if err != nil {
-		return fmt.Errorf("error calling beacon client in secondsPerSlot: %w", err)
+		return fmt.Errorf("error calling beacon client to get secondsPerSlot: %w", err)
 	}
 	if spec.SecondsPerSlot == 0 {
-		return errors.New("Got SECONDS_PER_SLOT of zero from beacon client")
+		return errors.New("got SECONDS_PER_SLOT of zero from beacon client")
 	}
 	b.secondsPerSlot = uint64(spec.SecondsPerSlot)
 
