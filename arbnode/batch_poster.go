@@ -138,7 +138,7 @@ type BatchPosterConfig struct {
 	RedisLock          redislock.SimpleCfg         `koanf:"redis-lock" reload:"hot"`
 	ExtraBatchGas      uint64                      `koanf:"extra-batch-gas" reload:"hot"`
 	Post4844Blobs      bool                        `koanf:"post-4844-blobs" reload:"hot"`
-	ForcePost4844Blobs bool                        `koanf:"force-post-4844-blobs" reload:"hot"`
+	IgnoreBlobPrice    bool                        `koanf:"ignore-blob-price" reload:"hot"`
 	ParentChainWallet  genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
 	L1BlockBound       string                      `koanf:"l1-block-bound" reload:"hot"`
 	L1BlockBoundBypass time.Duration               `koanf:"l1-block-bound-bypass" reload:"hot"`
@@ -188,7 +188,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".gas-refunder-address", DefaultBatchPosterConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
 	f.Uint64(prefix+".extra-batch-gas", DefaultBatchPosterConfig.ExtraBatchGas, "use this much more gas than estimation says is necessary to post batches")
 	f.Bool(prefix+".post-4844-blobs", DefaultBatchPosterConfig.Post4844Blobs, "if the parent chain supports 4844 blobs and they're well priced, post EIP-4844 blobs")
-	f.Bool(prefix+".force-post-4844-blobs", DefaultBatchPosterConfig.ForcePost4844Blobs, "if the parent chain supports 4844 blobs and post-4844-blobs is true, post 4844 blobs even if it's not price efficient")
+	f.Bool(prefix+".ignore-blob-price", DefaultBatchPosterConfig.IgnoreBlobPrice, "if the parent chain supports 4844 blobs and ignore-blob-price is true, post 4844 blobs even if it's not price efficient")
 	f.String(prefix+".redis-url", DefaultBatchPosterConfig.RedisUrl, "if non-empty, the Redis URL to store queued transactions in")
 	f.String(prefix+".l1-block-bound", DefaultBatchPosterConfig.L1BlockBound, "only post messages to batches when they're within the max future block/timestamp as of this L1 block tag (\"safe\", \"finalized\", \"latest\", or \"ignore\" to ignore this check)")
 	f.Duration(prefix+".l1-block-bound-bypass", DefaultBatchPosterConfig.L1BlockBoundBypass, "post batches even if not within the layer 1 future bounds if we're within this margin of the max delay")
@@ -214,7 +214,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	GasRefunderAddress: "",
 	ExtraBatchGas:      50_000,
 	Post4844Blobs:      false,
-	ForcePost4844Blobs: false,
+	IgnoreBlobPrice:    false,
 	DataPoster:         dataposter.DefaultDataPosterConfig,
 	ParentChainWallet:  DefaultBatchPosterL1WalletConfig,
 	L1BlockBound:       "",
@@ -244,7 +244,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	GasRefunderAddress: "",
 	ExtraBatchGas:      10_000,
 	Post4844Blobs:      true,
-	ForcePost4844Blobs: false,
+	IgnoreBlobPrice:    false,
 	DataPoster:         dataposter.TestDataPosterConfig,
 	ParentChainWallet:  DefaultBatchPosterL1WalletConfig,
 	L1BlockBound:       "",
@@ -964,7 +964,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 				return false, err
 			}
 			if arbOSVersion >= 20 {
-				if config.ForcePost4844Blobs {
+				if config.IgnoreBlobPrice {
 					use4844 = true
 				} else {
 					blobFeePerByte := eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*latestHeader.ExcessBlobGas, *latestHeader.BlobGasUsed))
