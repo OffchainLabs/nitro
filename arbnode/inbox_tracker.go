@@ -102,6 +102,72 @@ func (t *InboxTracker) Initialize() error {
 		return err
 	}
 
+	var dbBatchParsingVersion uint64
+	hasKey, err = t.db.Has(batchParsingVersion)
+	if err != nil {
+		return err
+	}
+	if hasKey {
+		value, err := t.db.Get(batchParsingVersion)
+		if err != nil {
+			return err
+		}
+		err = rlp.DecodeBytes(value, &dbBatchParsingVersion)
+		if err != nil {
+			return err
+		}
+	}
+	if dbBatchParsingVersion < currentBatchParsingVersion {
+		log.Info("Upgrading database batch parsing version", "oldBatchParsingVesrion", dbBatchParsingVersion, "newBatchParsingVersion", currentBatchParsingVersion)
+		err = t.clearUnprocessedBatches()
+		if err != nil {
+			return fmt.Errorf("failed to clear unprocessed batches: %w", err)
+		}
+		value, err := rlp.EncodeToBytes(currentBatchParsingVersion)
+		if err != nil {
+			return err
+		}
+		err = t.db.Put(batchParsingVersion, value)
+		if err != nil {
+			return err
+		}
+	} else if dbBatchParsingVersion > currentBatchParsingVersion {
+		return fmt.Errorf("database has unsupported batch parsing version %v (this node version only supports version %v)", dbBatchParsingVersion, currentBatchParsingVersion)
+	}
+
+	return nil
+}
+
+// clearUnprocessedBatches reorgs to the batch of the latest block
+func (t *InboxTracker) clearUnprocessedBatches() error {
+	batchCount, err := t.GetBatchCount()
+	if err != nil {
+		return fmt.Errorf("failed to get batch count: %w", err)
+	}
+	if batchCount == 0 {
+		return nil
+	}
+	messageCount, err := t.txStreamer.GetProcessedMessageCount()
+	if err != nil {
+		return fmt.Errorf("failed to get processed message number: %w", err)
+	}
+	if messageCount == 0 {
+		return nil
+	}
+	latestMessage := messageCount - 1
+	processedBatch, err := staker.FindBatchContainingMessageIndex(t, latestMessage, batchCount)
+	if err != nil {
+		return fmt.Errorf("failed to get batch containing processed message %v: %w", latestMessage, err)
+	}
+	if processedBatch+1 >= batchCount {
+		return nil
+	}
+	log.Info("Clearing unprocessed batches in preparation for new batch parsing version", "processedBatch", processedBatch, "batchCount", batchCount)
+	err = t.ReorgBatchesTo(processedBatch + 1)
+	if err != nil {
+		return fmt.Errorf("failed to reorg to batch count %v: %w", processedBatch+1, err)
+	}
+
 	return nil
 }
 

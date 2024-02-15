@@ -288,6 +288,11 @@ func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
 			// No database updates are necessary for database format version 0->1.
 			// This version adds a new format for delayed messages in the inbox tracker,
 			// but it can still read the old format for old messages.
+		case 1:
+			// Database format version 1->2 adds a batch parsing version field.
+			// That code already gracefully handles the field not existing in the db,
+			// so there's no need to insert the field here.
+			// The new version is present to prevent downgrading batch parsing versions.
 		default:
 			return fmt.Errorf("unsupported database format version %v", version)
 		}

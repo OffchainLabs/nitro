@@ -15,6 +15,8 @@ var (
 	delayedMessageCountKey []byte = []byte("_delayedMessageCount") // contains the current delayed message count
 	sequencerBatchCountKey []byte = []byte("_sequencerBatchCount") // contains the current sequencer message count
 	dbSchemaVersion        []byte = []byte("_schemaVersion")       // contains a uint64 representing the database schema version
+	batchParsingVersion    []byte = []byte("_batchParsingVersion") // contains the batch parsing version
 )
 
-const currentDbSchemaVersion uint64 = 1
+const currentDbSchemaVersion uint64 = 2
+const currentBatchParsingVersion uint64 = 1
