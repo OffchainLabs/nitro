@@ -9,7 +9,6 @@ package solimpl
 import (
 	"context"
 	"fmt"
-
 	"math/big"
 	"sort"
 	"strings"
@@ -607,7 +606,7 @@ func (a *AssertionChain) LatestCreatedAssertion(ctx context.Context) (protocol.A
 	createdAtBlock := latestConfirmed.CreatedAtBlock()
 	var query = ethereum.FilterQuery{
 		FromBlock: new(big.Int).SetUint64(createdAtBlock),
-		ToBlock:   nil, // Latest block.
+		ToBlock:   util.GetFinalizedBlockNumber(),
 		Addresses: []common.Address{a.rollupAddr},
 		Topics:    [][]common.Hash{{assertionCreatedId}},
 	}
@@ -656,7 +655,7 @@ func (a *AssertionChain) LatestCreatedAssertionHashes(ctx context.Context) ([]pr
 	createdAtBlock := latestConfirmed.CreatedAtBlock()
 	var query = ethereum.FilterQuery{
 		FromBlock: new(big.Int).SetUint64(createdAtBlock),
-		ToBlock:   nil, // Latest block.
+		ToBlock:   util.GetFinalizedBlockNumber(),
 		Addresses: []common.Address{a.rollupAddr},
 		Topics:    [][]common.Hash{{assertionCreatedId}},
 	}
