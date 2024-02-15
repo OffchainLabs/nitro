@@ -138,7 +138,12 @@ func (t *InboxTracker) Initialize() error {
 	return nil
 }
 
-// clearUnprocessedBatches reorgs to the batch of the latest block
+// clearUnprocessedBatches reorgs to the batch of the latest block.
+// This will reorg out any batches which have not been executed and processed into a block.
+// The purpose of this is to clear out any batches which may have been parsed on an out of date node version.
+// That out of date node version may have incorrectly parsed old batches and produced incorrect messages.
+// The out of date node version also wouldn't be able to upgrade to the new ArbOS version,
+// which is why we use the latest block as a reference point for what to clear.
 func (t *InboxTracker) clearUnprocessedBatches() error {
 	batchCount, err := t.GetBatchCount()
 	if err != nil {
