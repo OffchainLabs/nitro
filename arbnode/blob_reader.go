@@ -6,6 +6,7 @@ package arbnode
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -28,9 +29,9 @@ type BlobClient struct {
 	beaconUrl  *url.URL
 	httpClient *http.Client
 
-	// The genesis time time and seconds per slot won't change so only request them once.
-	cachedGenesisTime    uint64
-	cachedSecondsPerSlot uint64
+	// Filled in in Initialize()
+	genesisTime    uint64
+	secondsPerSlot uint64
 }
 
 type BlobClientConfig struct {
@@ -42,7 +43,7 @@ var DefaultBlobClientConfig = BlobClientConfig{
 }
 
 func BlobClientAddOptions(prefix string, f *pflag.FlagSet) {
-	f.String(prefix+".beacon-chain-url", DefaultBlobClientConfig.BeaconChainUrl, "Beacon Chain url to use for fetching blobs")
+	f.String(prefix+".beacon-chain-url", DefaultBlobClientConfig.BeaconChainUrl, "Beacon Chain url to use for fetching blobs (normally on port 3500)")
 }
 
 func NewBlobClient(config BlobClientConfig, ec arbutil.L1Interface) (*BlobClient, error) {
@@ -100,15 +101,10 @@ func (b *BlobClient) GetBlobs(ctx context.Context, blockHash common.Hash, versio
 	if err != nil {
 		return nil, err
 	}
-	genesisTime, err := b.genesisTime(ctx)
-	if err != nil {
-		return nil, err
+	if b.secondsPerSlot == 0 {
+		return nil, errors.New("BlobClient hasn't been initialized")
 	}
-	secondsPerSlot, err := b.secondsPerSlot(ctx)
-	if err != nil {
-		return nil, err
-	}
-	slot := (header.Time - genesisTime) / secondsPerSlot
+	slot := (header.Time - b.genesisTime) / b.secondsPerSlot
 	return b.blobSidecars(ctx, slot, versionedHashes)
 }
 
@@ -186,31 +182,25 @@ type genesisResponse struct {
 	// don't currently care about other fields, add if needed
 }
 
-func (b *BlobClient) genesisTime(ctx context.Context) (uint64, error) {
-	if b.cachedGenesisTime > 0 {
-		return b.cachedGenesisTime, nil
-	}
-	gr, err := beaconRequest[genesisResponse](b, ctx, "/eth/v1/beacon/genesis")
-	if err != nil {
-		return 0, fmt.Errorf("error calling beacon client in genesisTime: %w", err)
-	}
-	b.cachedGenesisTime = uint64(gr.GenesisTime)
-	return b.cachedGenesisTime, nil
-}
-
 type getSpecResponse struct {
 	SecondsPerSlot jsonapi.Uint64String `json:"SECONDS_PER_SLOT"`
 }
 
-func (b *BlobClient) secondsPerSlot(ctx context.Context) (uint64, error) {
-	if b.cachedSecondsPerSlot > 0 {
-		return b.cachedSecondsPerSlot, nil
-	}
-	gr, err := beaconRequest[getSpecResponse](b, ctx, "/eth/v1/config/spec")
+func (b *BlobClient) Initialize(ctx context.Context) error {
+	genesis, err := beaconRequest[genesisResponse](b, ctx, "/eth/v1/beacon/genesis")
 	if err != nil {
-		return 0, fmt.Errorf("error calling beacon client in secondsPerSlot: %w", err)
+		return fmt.Errorf("error calling beacon client in genesisTime: %w", err)
 	}
-	b.cachedSecondsPerSlot = uint64(gr.SecondsPerSlot)
-	return b.cachedSecondsPerSlot, nil
+	b.genesisTime = uint64(genesis.GenesisTime)
 
+	spec, err := beaconRequest[getSpecResponse](b, ctx, "/eth/v1/config/spec")
+	if err != nil {
+		return fmt.Errorf("error calling beacon client in secondsPerSlot: %w", err)
+	}
+	if spec.SecondsPerSlot == 0 {
+		return errors.New("Got SECONDS_PER_SLOT of zero from beacon client")
+	}
+	b.secondsPerSlot = uint64(spec.SecondsPerSlot)
+
+	return nil
 }

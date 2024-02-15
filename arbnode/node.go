@@ -191,6 +191,7 @@ func ConfigDefaultL1Test() *Config {
 
 func ConfigDefaultL1NonSequencerTest() *Config {
 	config := ConfigDefault
+	config.Dangerous = TestDangerousConfig
 	config.ParentChainReader = headerreader.TestConfig
 	config.InboxReader = TestInboxReaderConfig
 	config.DelayedSequencer.Enable = false
@@ -206,6 +207,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 
 func ConfigDefaultL2Test() *Config {
 	config := ConfigDefault
+	config.Dangerous = TestDangerousConfig
 	config.ParentChainReader.Enable = false
 	config.SeqCoordinator = TestSeqCoordinatorConfig
 	config.Feed.Input.Verify.Dangerous.AcceptMissing = true
@@ -223,16 +225,25 @@ func ConfigDefaultL2Test() *Config {
 type DangerousConfig struct {
 	NoL1Listener           bool `koanf:"no-l1-listener"`
 	NoSequencerCoordinator bool `koanf:"no-sequencer-coordinator"`
+	DisableBlobReader      bool `koanf:"disable-blob-reader"`
 }
 
 var DefaultDangerousConfig = DangerousConfig{
 	NoL1Listener:           false,
 	NoSequencerCoordinator: false,
+	DisableBlobReader:      false,
+}
+
+var TestDangerousConfig = DangerousConfig{
+	NoL1Listener:           false,
+	NoSequencerCoordinator: false,
+	DisableBlobReader:      true,
 }
 
 func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".no-l1-listener", DefaultDangerousConfig.NoL1Listener, "DANGEROUS! disables listening to L1. To be used in test nodes only")
 	f.Bool(prefix+".no-sequencer-coordinator", DefaultDangerousConfig.NoSequencerCoordinator, "DANGEROUS! allows sequencing without sequencer-coordinator")
+	f.Bool(prefix+".disable-blob-reader", DefaultDangerousConfig.DisableBlobReader, "DANGEROUS! disables the EIP-4844 blob reader, which is necessary to read batches")
 }
 
 type Node struct {
@@ -242,6 +253,7 @@ type Node struct {
 	L1Reader                *headerreader.HeaderReader
 	TxStreamer              *TransactionStreamer
 	DeployInfo              *chaininfo.RollupAddresses
+	BlobReader              arbstate.BlobReader
 	InboxReader             *InboxReader
 	InboxTracker            *InboxTracker
 	DelayedSequencer        *DelayedSequencer
@@ -463,6 +475,7 @@ func createNodeImpl(
 			L1Reader:                nil,
 			TxStreamer:              txStreamer,
 			DeployInfo:              nil,
+			BlobReader:              nil,
 			InboxReader:             nil,
 			InboxTracker:            nil,
 			DelayedSequencer:        nil,
@@ -524,7 +537,10 @@ func createNodeImpl(
 	}
 
 	var blobReader arbstate.BlobReader
-	if config.BlobClient.BeaconChainUrl != "" {
+	if !l1Reader.IsParentChainArbitrum() && !config.Dangerous.DisableBlobReader {
+		if config.BlobClient.BeaconChainUrl == "" {
+			return nil, errors.New("a beacon chain RPC URL is required to read batches, but it was not configured (CLI argument: --node.blob-client.beacon-chain-url [URL])")
+		}
 		blobReader, err = NewBlobClient(config.BlobClient, l1client)
 		if err != nil {
 			return nil, err
@@ -688,6 +704,7 @@ func createNodeImpl(
 		L1Reader:                l1Reader,
 		TxStreamer:              txStreamer,
 		DeployInfo:              deployInfo,
+		BlobReader:              blobReader,
 		InboxReader:             inboxReader,
 		InboxTracker:            inboxTracker,
 		DelayedSequencer:        delayedSequencer,
@@ -776,6 +793,12 @@ func (n *Node) Start(ctx context.Context) error {
 	err = n.Execution.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("error starting exec client: %w", err)
+	}
+	if n.BlobReader != nil {
+		err = n.BlobReader.Initialize(ctx)
+		if err != nil {
+			return fmt.Errorf("error initializing blob reader: %w", err)
+		}
 	}
 	if n.InboxTracker != nil {
 		err = n.InboxTracker.Initialize()
