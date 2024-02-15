@@ -159,12 +159,12 @@ func (a *ExecServerAPI) GetStepAt(ctx context.Context, execid uint64, position u
 	return MachineStepResultToJson(res), nil
 }
 
-func (a *ExecServerAPI) GetLeavesWithStepSize(ctx context.Context, execid, fromStep, stepSize, numDesiredLeaves uint64) ([]common.Hash, error) {
+func (a *ExecServerAPI) GetLeavesWithStepSize(ctx context.Context, execid, fromStep, stepSize, numDesiredLeaves uint64, claimId common.Hash) ([]common.Hash, error) {
 	run, err := a.getRun(execid)
 	if err != nil {
 		return nil, err
 	}
-	leavesInRange := run.GetLeavesWithStepSize(fromStep, stepSize, numDesiredLeaves)
+	leavesInRange := run.GetLeavesWithStepSize(fromStep, stepSize, numDesiredLeaves, claimId)
 	res, err := leavesInRange.Await(ctx)
 	if err != nil {
 		return nil, err
