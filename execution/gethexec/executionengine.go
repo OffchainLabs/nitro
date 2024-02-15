@@ -101,7 +101,7 @@ func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbost
 	resequencing := false
 	defer func() {
 		// if we are resequencing old messages - don't release the lock
-		// lock will be relesed by thread listening to resequenceChan
+		// lock will be released by thread listening to resequenceChan
 		if !resequencing {
 			s.createBlocksMutex.Unlock()
 		}
@@ -599,6 +599,15 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 	default:
 	}
 	return nil
+}
+
+func (s *ExecutionEngine) ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error) {
+	block := s.bc.GetBlockByNumber(s.MessageIndexToBlockNumber(messageNum))
+	if block == nil {
+		return 0, fmt.Errorf("couldn't find block for message number %d", messageNum)
+	}
+	extra := types.DeserializeHeaderExtraInformation(block.Header())
+	return extra.ArbOSFormatVersion, nil
 }
 
 func (s *ExecutionEngine) Start(ctx_in context.Context) {

@@ -69,6 +69,8 @@ type FullExecutionClient interface {
 
 	// TODO: only used to get safe/finalized block numbers
 	MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) uint64
+
+	ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error)
 }
 
 // not implemented in execution, used as input
