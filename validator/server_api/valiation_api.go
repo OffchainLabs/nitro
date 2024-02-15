@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	state_hashes "github.com/OffchainLabs/bold/state-commitments/state-hashes"
+
 	"github.com/ethereum/go-ethereum/common"
 
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -159,7 +161,7 @@ func (a *ExecServerAPI) GetStepAt(ctx context.Context, execid uint64, position u
 	return MachineStepResultToJson(res), nil
 }
 
-func (a *ExecServerAPI) GetLeavesWithStepSize(ctx context.Context, execid, fromStep, stepSize, numDesiredLeaves uint64) ([]common.Hash, error) {
+func (a *ExecServerAPI) GetLeavesWithStepSize(ctx context.Context, execid, fromStep, stepSize, numDesiredLeaves uint64) (*state_hashes.StateHashes, error) {
 	run, err := a.getRun(execid)
 	if err != nil {
 		return nil, err

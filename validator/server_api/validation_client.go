@@ -16,6 +16,8 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
+
+	state_hashes "github.com/OffchainLabs/bold/state-commitments/state-hashes"
 )
 
 type ValidationClient struct {
@@ -195,9 +197,9 @@ func (r *ExecutionClientRun) GetStepAt(pos uint64) containers.PromiseInterface[*
 	})
 }
 
-func (r *ExecutionClientRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[[]common.Hash] {
-	return stopwaiter.LaunchPromiseThread[[]common.Hash](r, func(ctx context.Context) ([]common.Hash, error) {
-		var resJson []common.Hash
+func (r *ExecutionClientRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[*state_hashes.StateHashes] {
+	return stopwaiter.LaunchPromiseThread[*state_hashes.StateHashes](r, func(ctx context.Context) (*state_hashes.StateHashes, error) {
+		var resJson *state_hashes.StateHashes
 		err := r.client.client.CallContext(ctx, &resJson, Namespace+"_getLeavesWithStepSize", r.id, machineStartIndex, stepSize, numDesiredLeaves)
 		if err != nil {
 			return nil, err

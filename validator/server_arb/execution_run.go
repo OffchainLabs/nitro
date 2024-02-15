@@ -10,8 +10,10 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
-
 	"github.com/ethereum/go-ethereum/log"
+
+	state_hashes "github.com/OffchainLabs/bold/state-commitments/state-hashes"
+
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -63,8 +65,8 @@ func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*v
 	})
 }
 
-func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[[]common.Hash] {
-	return stopwaiter.LaunchPromiseThread[[]common.Hash](e, func(ctx context.Context) ([]common.Hash, error) {
+func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[*state_hashes.StateHashes] {
+	return stopwaiter.LaunchPromiseThread[*state_hashes.StateHashes](e, func(ctx context.Context) (*state_hashes.StateHashes, error) {
 		if stepSize == 1 {
 			e.cache = NewMachineCache(e.GetContext(), e.initialMachineGetter, e.config, server_common.WithAlwaysMerkleize())
 			log.Info("Enabling Merkleization of machines for faster hashing. However, advancing to start index might take a while...")
@@ -92,7 +94,7 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 
 		// If we only want 1 state root, we can return early.
 		if numDesiredLeaves == 1 {
-			return stateRoots, nil
+			return state_hashes.NewStateHashes(stateRoots, uint64(len(stateRoots))), nil
 		}
 		for numIterations := uint64(0); numIterations < numDesiredLeaves; numIterations++ {
 			// The absolute opcode position the machine should be in after stepping.
@@ -153,11 +155,7 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 		// If the machine finished in less than the number of hashes we anticipate, we pad
 		// to the expected value by repeating the last machine hash until the state roots are the correct
 		// length.
-		lastStateRoot := stateRoots[len(stateRoots)-1]
-		for len(stateRoots) < int(numDesiredLeaves) {
-			stateRoots = append(stateRoots, lastStateRoot)
-		}
-		return stateRoots[:numDesiredLeaves], nil
+		return state_hashes.NewStateHashes(stateRoots, numDesiredLeaves), nil
 	})
 }
 

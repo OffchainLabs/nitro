@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+	state_hashes "github.com/OffchainLabs/bold/state-commitments/state-hashes"
 	"github.com/ethereum/go-ethereum/common"
 )
 
@@ -40,15 +41,16 @@ func TestCache(t *testing.T) {
 		}
 	})
 	t.Run("Putting empty root fails", func(t *testing.T) {
-		if err := cache.Put(key, []common.Hash{}); !errors.Is(err, ErrNoStateRoots) {
+		if err := cache.Put(key, state_hashes.NewStateHashes([]common.Hash{}, 0)); !errors.Is(err, ErrNoStateRoots) {
 			t.Fatalf("Unexpected error: %v", err)
 		}
 	})
-	want := []common.Hash{
+	wantHashes := []common.Hash{
 		common.BytesToHash([]byte("foo")),
 		common.BytesToHash([]byte("bar")),
 		common.BytesToHash([]byte("baz")),
 	}
+	want := state_hashes.NewStateHashes(wantHashes, uint64(len(wantHashes)))
 	err := cache.Put(key, want)
 	if err != nil {
 		t.Fatal(err)
@@ -57,12 +59,12 @@ func TestCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != len(want) {
-		t.Fatalf("Wrong number of roots. Expected %d, got %d", len(want), len(got))
+	if got.Length() != want.Length() {
+		t.Fatalf("Wrong number of roots. Expected %d, got %d", want.Length(), got.Length())
 	}
-	for i, rt := range got {
-		if rt != want[i] {
-			t.Fatalf("Wrong root. Expected %#x, got %#x", want[i], rt)
+	for i := uint64(0); i < got.Length(); i++ {
+		if got.At(i) != want.At(i) {
+			t.Fatalf("Wrong root. Expected %#x, got %#x", want.At(i), got.At(i))
 		}
 	}
 }
@@ -86,11 +88,11 @@ func TestReadWriteStateRoots(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(roots) == 0 {
+		if roots.Length() == 0 {
 			t.Fatal("Got no roots")
 		}
-		if roots[0] != want {
-			t.Fatalf("Wrong root. Expected %#x, got %#x", want, roots[0])
+		if roots.At(0) != want {
+			t.Fatalf("Wrong root. Expected %#x, got %#x", want, roots.At(0))
 		}
 	})
 	t.Run("Three roots exist, want to read only two", func(t *testing.T) {
@@ -105,24 +107,24 @@ func TestReadWriteStateRoots(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(roots) != 2 {
-			t.Fatalf("Expected two roots, got %d", len(roots))
+		if roots.Length() != 2 {
+			t.Fatalf("Expected two roots, got %d", roots.Length())
 		}
-		if roots[0] != foo {
-			t.Fatalf("Wrong root. Expected %#x, got %#x", foo, roots[0])
+		if roots.At(0) != foo {
+			t.Fatalf("Wrong root. Expected %#x, got %#x", foo, roots.At(0))
 		}
-		if roots[1] != bar {
-			t.Fatalf("Wrong root. Expected %#x, got %#x", bar, roots[1])
+		if roots.At(1) != bar {
+			t.Fatalf("Wrong root. Expected %#x, got %#x", bar, roots.At(1))
 		}
 	})
 	t.Run("Fails to write enough data to writer", func(t *testing.T) {
 		m := &mockWriter{wantErr: true}
-		err := writeStateRoots(m, []common.Hash{common.BytesToHash([]byte("foo"))})
+		err := writeStateRoots(m, state_hashes.NewStateHashes([]common.Hash{common.BytesToHash([]byte("foo"))}, 1))
 		if err == nil {
 			t.Fatal("Wanted error")
 		}
 		m = &mockWriter{wantErr: false, numWritten: 16}
-		err = writeStateRoots(m, []common.Hash{common.BytesToHash([]byte("foo"))})
+		err = writeStateRoots(m, state_hashes.NewStateHashes([]common.Hash{common.BytesToHash([]byte("foo"))}, 1))
 		if err == nil {
 			t.Fatal("Wanted error")
 		}
@@ -221,11 +223,11 @@ func Test_readStateRoots(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(want) != len(got) {
+		if uint64(len(want)) != got.Length() {
 			t.Fatal("Wrong number of roots")
 		}
-		for i, rt := range got {
-			if rt != want[i] {
+		for i := uint64(0); i < got.Length(); i++ {
+			if got.At(i) != want[i] {
 				t.Fatal("Wrong root")
 			}
 		}
@@ -297,10 +299,11 @@ func BenchmarkCache_Read_32Mb(b *testing.B) {
 		StepHeights:    []l2stateprovider.Height{l2stateprovider.Height(0)},
 	}
 	numRoots := 1 << 20
-	roots := make([]common.Hash, numRoots)
-	for i := range roots {
-		roots[i] = common.BytesToHash([]byte(fmt.Sprintf("%d", i)))
+	rootsHashes := make([]common.Hash, numRoots)
+	for i := range rootsHashes {
+		rootsHashes[i] = common.BytesToHash([]byte(fmt.Sprintf("%d", i)))
 	}
+	roots := state_hashes.NewStateHashes(rootsHashes, uint64(len(rootsHashes)))
 	if err := cache.Put(key, roots); err != nil {
 		b.Fatal(err)
 	}
@@ -311,8 +314,8 @@ func BenchmarkCache_Read_32Mb(b *testing.B) {
 		if err != nil {
 			b.Fatal(err)
 		}
-		if len(roots) != numRoots {
-			b.Fatalf("Wrong number of roots. Expected %d, got %d", numRoots, len(roots))
+		if roots.Length() != uint64(numRoots) {
+			b.Fatalf("Wrong number of roots. Expected %d, got %d", numRoots, roots.Length())
 		}
 	}
 }
