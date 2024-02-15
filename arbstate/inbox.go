@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbcompress"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -75,6 +76,14 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 	}
 	payload := data[40:]
 
+	// Stage 0: Check if our node is out of date and we don't understand this batch type
+	// If the parent chain sequencer inbox smart contract authenticated this batch,
+	// an unknown header byte must mean that this node is out of date,
+	// because the smart contract understands the header byte and this node doesn't.
+	if len(payload) > 0 && IsL1AuthenticatedMessageHeaderByte(payload[0]) && !IsKnownHeaderByte(payload[0]) {
+		return nil, fmt.Errorf("%w: batch has unsupported authenticated header byte 0x%02x", arbosState.ErrFatalNodeOutOfDate, payload[0])
+	}
+
 	// Stage 1: Extract the payload from any data availability header.
 	// It's important that multiple DAS strategies can't both be invoked in the same batch,
 	// as these headers are validated by the sequencer inbox and not other DASs.
@@ -115,6 +124,9 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 			return parsedMsg, nil
 		}
 	}
+
+	// At this point, `payload` has not been validated by the sequencer inbox at all.
+	// It's not safe to trust any part of the payload from this point onwards.
 
 	// Stage 2: If enabled, decode the zero heavy payload (saves gas based on calldata charging).
 	if len(payload) > 0 && IsZeroheavyEncodedHeaderByte(payload[0]) {
