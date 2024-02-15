@@ -71,8 +71,8 @@ type Manager struct {
 	submittedRivalsCount        uint64
 	stateManager                l2stateprovider.ExecutionProvider
 	postInterval                time.Duration
-	submittedAssertions         *threadsafe.Set[common.Hash]
-	assertionsWithHonestChild   *threadsafe.Set[protocol.AssertionHash]
+	submittedAssertions         *threadsafe.LruSet[common.Hash]
+	assertionsWithHonestChild   *threadsafe.LruSet[protocol.AssertionHash]
 	apiDB                       db.Database
 }
 
@@ -113,8 +113,8 @@ func NewManager(
 		assertionsProcessedCount:    0,
 		stateManager:                stateManager,
 		postInterval:                postInterval,
-		submittedAssertions:         threadsafe.NewSet[common.Hash](threadsafe.SetWithMetric[common.Hash]("submittedAssertions")),
-		assertionsWithHonestChild:   threadsafe.NewSet[protocol.AssertionHash](threadsafe.SetWithMetric[protocol.AssertionHash]("assertionsWithHonestChild")),
+		submittedAssertions:         threadsafe.NewLruSet[common.Hash](1000, threadsafe.LruSetWithMetric[common.Hash]("submittedAssertions")),
+		assertionsWithHonestChild:   threadsafe.NewLruSet[protocol.AssertionHash](1000, threadsafe.LruSetWithMetric[protocol.AssertionHash]("assertionsWithHonestChild")),
 		averageTimeForBlockCreation: averageTimeForBlockCreation,
 	}, nil
 }
@@ -215,6 +215,9 @@ func (m *Manager) ChallengesSubmitted() uint64 {
 	return m.challengesSubmittedCount
 }
 
+func (m *Manager) SubmittedAssertions() *threadsafe.LruSet[common.Hash] {
+	return m.submittedAssertions
+}
 func (m *Manager) AssertionsProcessed() uint64 {
 	return m.assertionsProcessedCount
 }

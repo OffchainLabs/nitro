@@ -3,6 +3,8 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library", "go_test")
 go_library(
     name = "threadsafe",
     srcs = [
+        "lru_map.go",
+        "lru_set.go",
         "map.go",
         "set.go",
         "slice.go",
@@ -11,6 +13,7 @@ go_library(
     visibility = ["//visibility:public"],
     deps = [
         "//containers/option",
+        "@com_github_ethereum_go_ethereum//common/lru",
         "@com_github_ethereum_go_ethereum//metrics",
     ],
 )

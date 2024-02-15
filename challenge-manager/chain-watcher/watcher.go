@@ -1099,6 +1099,7 @@ func (w *Watcher) confirmAssertionByChallengeWinner(ctx context.Context, edge pr
 			}
 			if confirmed {
 				assertionConfirmedCounter.Inc(1)
+				w.challenges.Delete(challengeParentAssertionHash)
 				srvlog.Info("Confirmed assertion by challenge win", log.Ctx{"assertionHash": common.Hash(claimId)})
 				return
 			}

@@ -63,7 +63,7 @@ type Manager struct {
 	chainWatcherInterval        time.Duration
 	watcher                     *watcher.Watcher
 	trackedEdgeIds              *threadsafe.Map[protocol.EdgeId, *edgetracker.Tracker]
-	batchIndexForAssertionCache *threadsafe.Map[protocol.AssertionHash, edgetracker.AssociatedAssertionMetadata]
+	batchIndexForAssertionCache *threadsafe.LruMap[protocol.AssertionHash, edgetracker.AssociatedAssertionMetadata]
 	assertionManager            *assertions.Manager
 	assertionPostingInterval    time.Duration
 	assertionScanningInterval   time.Duration
@@ -72,7 +72,7 @@ type Manager struct {
 	mode                        types.Mode
 	maxDelaySeconds             int
 
-	claimedAssertionsInChallenge *threadsafe.Set[protocol.AssertionHash]
+	claimedAssertionsInChallenge *threadsafe.LruSet[protocol.AssertionHash]
 	// API
 	apiAddr   string
 	apiDBPath string
@@ -160,12 +160,12 @@ func New(
 		rollupAddr:                   rollupAddr,
 		chainWatcherInterval:         time.Millisecond * 500,
 		trackedEdgeIds:               threadsafe.NewMap[protocol.EdgeId, *edgetracker.Tracker](threadsafe.MapWithMetric[protocol.EdgeId, *edgetracker.Tracker]("trackedEdgeIds")),
-		batchIndexForAssertionCache:  threadsafe.NewMap[protocol.AssertionHash, edgetracker.AssociatedAssertionMetadata](threadsafe.MapWithMetric[protocol.AssertionHash, edgetracker.AssociatedAssertionMetadata]("batchIndexForAssertionCache")),
+		batchIndexForAssertionCache:  threadsafe.NewLruMap[protocol.AssertionHash, edgetracker.AssociatedAssertionMetadata](1000, threadsafe.LruMapWithMetric[protocol.AssertionHash, edgetracker.AssociatedAssertionMetadata]("batchIndexForAssertionCache")),
 		assertionPostingInterval:     time.Hour,
 		assertionScanningInterval:    time.Minute,
 		assertionConfirmingInterval:  time.Second * 10,
 		averageTimeForBlockCreation:  time.Second * 12,
-		claimedAssertionsInChallenge: threadsafe.NewSet[protocol.AssertionHash](threadsafe.SetWithMetric[protocol.AssertionHash]("claimedAssertionsInChallenge")),
+		claimedAssertionsInChallenge: threadsafe.NewLruSet[protocol.AssertionHash](1000, threadsafe.LruSetWithMetric[protocol.AssertionHash]("claimedAssertionsInChallenge")),
 	}
 	for _, o := range opts {
 		o(m)
@@ -271,6 +271,10 @@ func (m *Manager) Database() db.Database {
 // MarkTrackedEdge marks an edge id as being tracked by our challenge manager.
 func (m *Manager) MarkTrackedEdge(edgeId protocol.EdgeId, tracker *edgetracker.Tracker) {
 	m.trackedEdgeIds.Put(edgeId, tracker)
+}
+
+func (m *Manager) RemovedTrackedEdge(edgeId protocol.EdgeId) {
+	m.trackedEdgeIds.Delete(edgeId)
 }
 
 // Mode returns the mode of the challenge manager.

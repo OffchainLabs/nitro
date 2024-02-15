@@ -69,7 +69,7 @@ type AssertionChain struct {
 	userLogic                                *rollupgen.RollupUserLogic
 	txOpts                                   *bind.TransactOpts
 	rollupAddr                               common.Address
-	confirmedChallengesByParentAssertionHash *threadsafe.Set[protocol.AssertionHash] // TODO: Use an LRU cache instead.
+	confirmedChallengesByParentAssertionHash *threadsafe.LruSet[protocol.AssertionHash]
 }
 
 type Opt func(*AssertionChain)
@@ -96,7 +96,7 @@ func NewAssertionChain(
 		backend:                                  backend,
 		txOpts:                                   copiedOpts,
 		rollupAddr:                               rollupAddr,
-		confirmedChallengesByParentAssertionHash: threadsafe.NewSet[protocol.AssertionHash](threadsafe.SetWithMetric[protocol.AssertionHash]("confirmedChallengesByParentAssertionHash")),
+		confirmedChallengesByParentAssertionHash: threadsafe.NewLruSet[protocol.AssertionHash](1000, threadsafe.LruSetWithMetric[protocol.AssertionHash]("confirmedChallengesByParentAssertionHash")),
 	}
 	for _, opt := range opts {
 		opt(chain)

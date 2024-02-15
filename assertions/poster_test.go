@@ -281,7 +281,7 @@ func setupPoster(t *testing.T) (*Manager, *mocks.MockProtocol, *mocks.MockStateM
 	p := &Manager{
 		chain:               chain,
 		stateManager:        stateProvider,
-		submittedAssertions: threadsafe.NewSet[common.Hash](),
+		submittedAssertions: threadsafe.NewLruSet[common.Hash](1000),
 	}
 	return p, chain, stateProvider
 }

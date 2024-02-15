@@ -69,6 +69,7 @@ type ConfirmationMetadataChecker interface {
 type ChallengeTracker interface {
 	IsTrackingEdge(protocol.EdgeId) bool
 	MarkTrackedEdge(protocol.EdgeId, *Tracker)
+	RemovedTrackedEdge(protocol.EdgeId)
 }
 
 // AssociatedAssertionMetadata for the tracked edge.
@@ -210,6 +211,7 @@ func (et *Tracker) Spawn(ctx context.Context) {
 			if et.ShouldDespawn(ctx) {
 				srvlog.Info("Tracked edge received notice it should exit - now despawning", fields)
 				spawnedCounter.Dec(1)
+				et.challengeManager.RemovedTrackedEdge(et.edge.Id())
 				return
 			}
 			if err := et.Act(ctx); err != nil {
