@@ -57,13 +57,15 @@ func NewBlobClient(config BlobClientConfig, ec arbutil.L1Interface) (*BlobClient
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse beacon chain URL: %w", err)
 	}
-	if _, err = os.Stat(config.BlobDirectory); err != nil {
-		if os.IsNotExist(err) {
-			if err = os.MkdirAll(config.BlobDirectory, os.ModePerm); err != nil {
-				return nil, fmt.Errorf("error creating blob directory: %w", err)
+	if config.BlobDirectory != "" {
+		if _, err = os.Stat(config.BlobDirectory); err != nil {
+			if os.IsNotExist(err) {
+				if err = os.MkdirAll(config.BlobDirectory, os.ModePerm); err != nil {
+					return nil, fmt.Errorf("error creating blob directory: %w", err)
+				}
+			} else {
+				return nil, fmt.Errorf("invalid blob directory path: %w", err)
 			}
-		} else {
-			return nil, fmt.Errorf("invalid blob directory path: %w", err)
 		}
 	}
 	return &BlobClient{
