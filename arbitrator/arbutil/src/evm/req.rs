@@ -193,7 +193,7 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
 
     fn account_code(&mut self, address: Bytes20, gas_left: u64) -> (D, u64) {
         if let Some((stored_address, data)) = self.last_code.as_ref() {
-            if stored_address.clone() == address {
+            if address == *stored_address {
                 return (data.clone(), 0);
             }
         }
