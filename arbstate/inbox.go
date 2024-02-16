@@ -46,6 +46,7 @@ type BlobReader interface {
 		batchBlockHash common.Hash,
 		versionedHashes []common.Hash,
 	) ([]kzg4844.Blob, error)
+	Initialize(ctx context.Context) error
 }
 
 type sequencerMessage struct {
