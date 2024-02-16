@@ -125,10 +125,10 @@ jobs:
       - name: Build
         run: make build build-replay-env -j
 
-      - name: Install Compose
-        uses: ndeloof/install-compose-action@v0.0.1
+      - name: Install docker-compose
+        uses: KengoTODA/actions-setup-docker-compose@v1.2.1
         with:
-          legacy: true # will also install in PATH as `docker-compose`
+          version: '2.14.2'
 
       - name: Run test
         run: |

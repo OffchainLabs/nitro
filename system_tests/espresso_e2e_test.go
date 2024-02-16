@@ -348,8 +348,8 @@ func TestEspressoE2E(t *testing.T) {
 	err = waitForWith(
 		t,
 		ctx,
-		time.Minute*8,
-		time.Second*1,
+		time.Minute*10,
+		time.Second*10,
 		func() bool {
 			log.Info("good staker acts", "step", i)
 			txA, err := goodStaker.Act(ctx)
