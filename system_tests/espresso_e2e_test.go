@@ -338,7 +338,44 @@ func TestEspressoE2E(t *testing.T) {
 		i += 1
 		conflict, err := validatorUtils.FindStakerConflict(&bind.CallOpts{}, builder.L2.ConsensusNode.DeployInfo.Rollup, goodOpts.From, badOpts.From, big.NewInt(1024))
 		Require(t, err)
-		return staker.ConflictType(conflict.Ty) == staker.CONFLICT_TYPE_FOUND
+		condition := staker.ConflictType(conflict.Ty) == staker.CONFLICT_TYPE_FOUND
+		if !condition {
+			log.Info("waiting for the conflict")
+		}
+		return condition
 	})
+	Require(t, err)
+	err = waitForWith(
+		t,
+		ctx,
+		time.Minute*8,
+		time.Second*1,
+		func() bool {
+			log.Info("good staker acts", "step", i)
+			txA, err := goodStaker.Act(ctx)
+			Require(t, err)
+			if txA != nil {
+				_, err = builder.L1.EnsureTxSucceeded(txA)
+				Require(t, err)
+			}
+
+			log.Info("bad staker acts", "step", i)
+			txB, err := badStaker.Act(ctx)
+			if txB != nil {
+				_, err = builder.L1.EnsureTxSucceeded(txB)
+				Require(t, err)
+			}
+			if err != nil {
+				ok := strings.Contains(err.Error(), "ERROR_HOTSHOT_COMMITMENT")
+				if ok {
+					return true
+				} else {
+					t.Fatal("unexpected err")
+				}
+			}
+			i += 1
+			return false
+
+		})
 	Require(t, err)
 }
