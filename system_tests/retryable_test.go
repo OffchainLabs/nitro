@@ -157,7 +157,10 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	)
 	Require(t, err, "failed to estimate retryable submission")
 	estimate := tx.Gas()
-	colors.PrintBlue("estimate: ", estimate)
+	expectedEstimate := params.TxGas + params.TxDataNonZeroGasEIP2028*4
+	if estimate != expectedEstimate {
+		t.Errorf("estimated retryable ticket at %v gas but expected %v", estimate, expectedEstimate)
+	}
 
 	// submit & auto redeem the retryable using the gas estimate
 	usertxoptsL1 := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
@@ -335,6 +338,12 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	Require(t, err)
 	receipt, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
+
+	redemptionL2Gas := receipt.GasUsed - receipt.GasUsedForL1
+	var maxRedemptionL2Gas uint64 = 1_000_000
+	if redemptionL2Gas > maxRedemptionL2Gas {
+		t.Errorf("manual retryable redemption used %v gas, more than expected max %v gas", redemptionL2Gas, maxRedemptionL2Gas)
+	}
 
 	retryTxId := receipt.Logs[0].Topics[2]
 
