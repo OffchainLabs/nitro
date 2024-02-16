@@ -48,6 +48,15 @@ func TestEspressoOsp(t *testing.T) {
 		Fatal(t, "latest machine not found")
 	}
 
+	// To generate a valid validation_input, copy these code to
+	// the appropriate place in staker/block_validator.go: function advanceValidations
+	// and run the espresso_e2e_test.
+	/// ```
+	// input, _ := validationStatus.Entry.ToInput()
+	// file, _ := os.Create("espresso-e2e/validation_input.json")
+	// s, _ := json.Marshal(input)
+	// file.Write(s)
+	// ````
 	data, err := os.ReadFile("espresso-e2e/validation_input.json")
 	Require(t, err)
 	var input validator.ValidationInput
