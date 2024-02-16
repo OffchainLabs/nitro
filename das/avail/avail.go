@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"errors"
 	"fmt"
 
 	"time"
@@ -27,33 +26,21 @@ func IsAvailMessageHeaderByte(header byte) bool {
 }
 
 type AvailDA struct {
-	cfg DAConfig
-	api *gsrpc.SubstrateAPI
+	enable      bool
+	timeout     time.Duration
+	appID       int
+	api         *gsrpc.SubstrateAPI
+	meta        *gsrpc_types.Metadata
+	genesisHash gsrpc_types.Hash
+	rv          *gsrpc_types.RuntimeVersion
+	keyringPair signature.KeyringPair
+	key         gsrpc_types.StorageKey
 }
 
 func NewAvailDA(cfg DAConfig) (*AvailDA, error) {
-	//Creating new substrate api
-	api, err := gsrpc.NewSubstrateAPI(cfg.ApiURL)
-	if err != nil {
-		return nil, err
-	}
 
-	return &AvailDA{
-		cfg: cfg,
-		api: api,
-	}, nil
-}
-
-func (a *AvailDA) Store(ctx context.Context, message []byte) ([]byte, error) {
-
-	Seed := a.cfg.Seed
-	AppID := a.cfg.AppID
-
-	meta, err := a.api.RPC.State.GetMetadataLatest()
-	if err != nil {
-		log.Warn("cannot get metadata: error:%v", err)
-		return nil, err
-	}
+	Seed := cfg.Seed
+	AppID := cfg.AppID
 
 	appID := 0
 	// if app id is greater than 0 then it must be created before submitting data
@@ -61,22 +48,25 @@ func (a *AvailDA) Store(ctx context.Context, message []byte) ([]byte, error) {
 		appID = AppID
 	}
 
-	c, err := gsrpc_types.NewCall(meta, "DataAvailability.submit_data", gsrpc_types.NewBytes(message))
+	//Creating new substrate api
+	api, err := gsrpc.NewSubstrateAPI(cfg.ApiURL)
 	if err != nil {
-		log.Warn("cannot create new call: error:%v", err)
 		return nil, err
 	}
 
-	// Create the extrinsic
-	ext := gsrpc_types.NewExtrinsic(c)
+	meta, err := api.RPC.State.GetMetadataLatest()
+	if err != nil {
+		log.Warn("cannot get metadata: error:%v", err)
+		return nil, err
+	}
 
-	genesisHash, err := a.api.RPC.Chain.GetBlockHash(0)
+	genesisHash, err := api.RPC.Chain.GetBlockHash(0)
 	if err != nil {
 		log.Warn("cannot get block hash: error:%v", err)
 		return nil, err
 	}
 
-	rv, err := a.api.RPC.State.GetRuntimeVersionLatest()
+	rv, err := api.RPC.State.GetRuntimeVersionLatest()
 	if err != nil {
 		log.Warn("cannot get runtime version: error:%v", err)
 		return nil, err
@@ -94,8 +84,32 @@ func (a *AvailDA) Store(ctx context.Context, message []byte) ([]byte, error) {
 		return nil, err
 	}
 
+	return &AvailDA{
+		enable:      cfg.Enable,
+		timeout:     cfg.Timeout,
+		appID:       appID,
+		api:         api,
+		meta:        meta,
+		genesisHash: genesisHash,
+		rv:          rv,
+		keyringPair: keyringPair,
+		key:         key,
+	}, nil
+}
+
+func (a *AvailDA) Store(ctx context.Context, message []byte) ([]byte, error) {
+
+	c, err := gsrpc_types.NewCall(a.meta, "DataAvailability.submit_data", gsrpc_types.NewBytes(message))
+	if err != nil {
+		log.Warn("cannot create new call: error:%v", err)
+		return nil, err
+	}
+
+	// Create the extrinsic
+	ext := gsrpc_types.NewExtrinsic(c)
+
 	var accountInfo gsrpc_types.AccountInfo
-	ok, err := a.api.RPC.State.GetStorageLatest(key, &accountInfo)
+	ok, err := a.api.RPC.State.GetStorageLatest(a.key, &accountInfo)
 	if err != nil || !ok {
 		log.Warn("cannot get latest storage: error:%v", err)
 		return nil, err
@@ -104,18 +118,18 @@ func (a *AvailDA) Store(ctx context.Context, message []byte) ([]byte, error) {
 	nonce := GetAccountNonce(uint32(accountInfo.Nonce))
 	//fmt.Println("Nonce from localDatabase:", nonce, "    ::::::::   from acountInfo:", accountInfo.Nonce)
 	o := gsrpc_types.SignatureOptions{
-		BlockHash:          genesisHash,
+		BlockHash:          a.genesisHash,
 		Era:                gsrpc_types.ExtrinsicEra{IsMortalEra: false},
-		GenesisHash:        genesisHash,
+		GenesisHash:        a.genesisHash,
 		Nonce:              gsrpc_types.NewUCompactFromUInt(uint64(nonce)),
-		SpecVersion:        rv.SpecVersion,
+		SpecVersion:        a.rv.SpecVersion,
 		Tip:                gsrpc_types.NewUCompactFromUInt(0),
-		AppID:              gsrpc_types.NewUCompactFromUInt(uint64(appID)),
-		TransactionVersion: rv.TransactionVersion,
+		AppID:              gsrpc_types.NewUCompactFromUInt(uint64(a.appID)),
+		TransactionVersion: a.rv.TransactionVersion,
 	}
 
 	// Sign the transaction using Alice's default account
-	err = ext.Sign(keyringPair, o)
+	err = ext.Sign(a.keyringPair, o)
 	if err != nil {
 		log.Warn("cannot sign: error:%v", err)
 		return nil, err
@@ -128,46 +142,62 @@ func (a *AvailDA) Store(ctx context.Context, message []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	log.Info("Tx batch is submitted to Avail", "length", len(message), "address", keyringPair.Address, "appID", appID)
+	log.Info("✅ Tx batch is submitted to Avail", "length", len(message), "address", a.keyringPair.Address, "appID", a.appID)
 
 	defer sub.Unsubscribe()
-	timeout := time.After(100 * time.Second)
-	var blobPointer BlobPointer
+	timeout := time.After(time.Duration(a.timeout) * time.Second)
+	var finalizedblockHash gsrpc_types.Hash
+
+outer:
 	for {
 		select {
 		case status := <-sub.Chan():
+			if status.IsInBlock {
+				log.Info("📥 Submit data extrinsic included in block %v", status.AsInBlock.Hex())
+			}
 			if status.IsFinalized {
-				blobPointer = BlobPointer{BlockHash: string(status.AsFinalized.Hex()), Sender: keyringPair.Address, Nonce: o.Nonce.Int64(), DasTreeRootHash: dastree.Hash(message)}
-				log.Info("Sucesfully included in block data to Avail", "BlobPointer:", blobPointer)
-				blobPointerData, err := blobPointer.MarshalToBinary()
-				if err != nil {
-					log.Warn("BlobPointer MashalBinary error", "err", err)
-					return nil, err
-				}
-
-				buf := new(bytes.Buffer)
-				err = binary.Write(buf, binary.BigEndian, AvailMessageHeaderFlag)
-				if err != nil {
-					log.Warn("batch type byte serialization failed", "err", err)
-					return nil, err
-				}
-
-				err = binary.Write(buf, binary.BigEndian, blobPointerData)
-				if err != nil {
-					log.Warn("blob pointer data serialization failed", "err", err)
-					return nil, err
-				}
-
-				serializedBlobPointerData := buf.Bytes()
-
-				return serializedBlobPointerData, nil
+				finalizedblockHash = status.AsFinalized
+				break outer
+			} else if status.IsDropped {
+				return nil, fmt.Errorf("❌ Extrinsic dropped")
+			} else if status.IsUsurped {
+				return nil, fmt.Errorf("❌ Extrinsic usurped")
+			} else if status.IsRetracted {
+				return nil, fmt.Errorf("❌ Extrinsic retracted")
+			} else if status.IsInvalid {
+				return nil, fmt.Errorf("❌ Extrinsic invalid")
 			}
 		case <-timeout:
-			return nil, errors.New("Timitout before getting finalized status")
+			return nil, fmt.Errorf("⌛️ Timeout of %d seconds reached without getting finalized status for extrinsic", a.timeout)
 		}
 	}
 
-	//log.Info("Sucesfully included in block data to Avail", "BlobPointer:", blobPointer)
+	blobPointer := BlobPointer{BlockHash: finalizedblockHash.Hex(), Sender: a.keyringPair.Address, Nonce: o.Nonce.Int64(), DasTreeRootHash: dastree.Hash(message)}
+
+	log.Info("✅ Sucesfully included in block data to Avail", "BlobPointer:", blobPointer)
+
+	blobPointerData, err := blobPointer.MarshalToBinary()
+	if err != nil {
+		log.Warn("BlobPointer MashalBinary error", "err", err)
+		return nil, err
+	}
+
+	buf := new(bytes.Buffer)
+	err = binary.Write(buf, binary.BigEndian, AvailMessageHeaderFlag)
+	if err != nil {
+		log.Warn("batch type byte serialization failed", "err", err)
+		return nil, err
+	}
+
+	err = binary.Write(buf, binary.BigEndian, blobPointerData)
+	if err != nil {
+		log.Warn("blob pointer data serialization failed", "err", err)
+		return nil, err
+	}
+
+	serializedBlobPointerData := buf.Bytes()
+
+	return serializedBlobPointerData, nil
 
 }
 
