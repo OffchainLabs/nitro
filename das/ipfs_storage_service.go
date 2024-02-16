@@ -1,5 +1,5 @@
 // Copyright 2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE.md
 
 // IPFS DAS backend.
 // It takes advantage of IPFS' content addressing scheme to be able to directly retrieve
