@@ -153,17 +153,17 @@ pub fn set_response(
     mut env: WasmEnvMut,
     id: u32,
     gas: u64,
-    reponse_ptr: Uptr,
-    response_len: u32,
-    reponse2_ptr: Uptr,
-    response2_len: u32,
+    result_ptr: Uptr,
+    result_len: u32,
+    raw_data_ptr: Uptr,
+    raw_data_len: u32,
 ) -> MaybeEscape {
     let caller_env = CallerEnv::new(&mut env);
-    let data = caller_env.caller_read_slice(reponse_ptr, response_len);
-    let data2 = caller_env.caller_read_slice(reponse2_ptr, response2_len);
+    let result = caller_env.caller_read_slice(result_ptr, result_len);
+    let raw_data = caller_env.caller_read_slice(raw_data_ptr, raw_data_len);
 
     let thread = caller_env.wenv.threads.last_mut().unwrap();
-    thread.set_response(id, &data, &data2, gas)
+    thread.set_response(id, result, raw_data, gas)
 }
 
 // sends previos response

@@ -122,9 +122,9 @@ pub unsafe extern "C" fn programs__new_program(
 // request_id MUST be last request id returned from start_program or send_response
 #[no_mangle]
 pub unsafe extern "C" fn programs__get_request(id: u32, len_ptr: usize) -> u32 {
-    let (req_type, data) = Program::current().evm_api.request_handler().get_request(id);
+    let (req_type, len) = Program::current().evm_api.request_handler().get_request_meta(id);
     if len_ptr != 0 {
-        wavm::caller_store32(len_ptr, data.len() as u32);
+        wavm::caller_store32(len_ptr, len as u32);
     }
     req_type
 }
@@ -134,7 +134,7 @@ pub unsafe extern "C" fn programs__get_request(id: u32, len_ptr: usize) -> u32 {
 // data_ptr MUST point to a buffer of at least the length returned by get_request
 #[no_mangle]
 pub unsafe extern "C" fn programs__get_request_data(id: u32, data_ptr: usize) {
-    let (_, data) = Program::current().evm_api.request_handler().get_request(id);
+    let (_, data) = Program::current().evm_api.request_handler().take_request(id);
     wavm::write_slice_usize(&data, data_ptr);
 }
 
@@ -145,13 +145,13 @@ pub unsafe extern "C" fn programs__get_request_data(id: u32, data_ptr: usize) {
 pub unsafe extern "C" fn programs__set_response(
     id: u32,
     gas: u64,
-    reponse_ptr: Uptr,
-    response_len: usize,
-    reponse_2_ptr: Uptr,
-    response_2_len: usize,
+    result_ptr: Uptr,
+    result_len: usize,
+    raw_data_ptr: Uptr,
+    raw_data_len: usize,
 ) {
     let program = Program::current();
-    program.evm_api.request_handler().set_response(id, wavm::read_slice_usize(reponse_ptr, response_len), wavm::read_slice_usize(reponse_2_ptr, response_2_len), gas);
+    program.evm_api.request_handler().set_response(id, wavm::read_slice_usize(result_ptr, result_len), wavm::read_slice_usize(raw_data_ptr, raw_data_len), gas);
 }
 
 // removes the last created program

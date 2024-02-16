@@ -16,9 +16,9 @@ typedef uint32_t u32;
 typedef uint64_t u64;
 typedef size_t usize;
 
-EvmApiStatus handleReqImpl(usize api, u32 req_type, RustBytes *data, u64 * cost, GoSliceData *out1, GoSliceData *out2);
-EvmApiStatus handleReqWrap(usize api, u32 req_type, RustBytes *data, u64 * cost, GoSliceData *out1, GoSliceData *out2) {
-    return handleReqImpl(api, req_type, data, cost, out1, out2);
+EvmApiStatus handleReqImpl(usize api, u32 req_type, RustBytes *data, u64 *out_cost, GoSliceData *out_result, GoSliceData *out_raw_data);
+EvmApiStatus handleReqWrap(usize api, u32 req_type, RustBytes *data, u64 *out_cost, GoSliceData *out_result, GoSliceData *out_raw_data) {
+    return handleReqImpl(api, req_type, data, out_cost, out_result, out_raw_data);
 }
 */
 import "C"

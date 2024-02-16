@@ -25,8 +25,8 @@ pub struct NativeRequestHandler {
         req_type: u32,
         data: *mut RustSlice,
         gas_cost: *mut u64,
-        output: *mut GoPinnedData,
-        out2: *mut GoPinnedData,
+        result: *mut GoPinnedData,
+        raw_data: *mut GoPinnedData,
     ) -> EvmApiStatus, // value
     pub id: usize,
 }
@@ -52,8 +52,8 @@ impl RequestHandler<GoPinnedData> for NativeRequestHandler {
         req_type: EvmApiMethod,
         req_data: &[u8],
     ) -> (Vec<u8>, GoPinnedData, u64) {
-        let mut out_slice_1 = GoPinnedData::default();
-        let mut out_slice_2 = GoPinnedData::default();
+        let mut result = GoPinnedData::default();
+        let mut raw_data = GoPinnedData::default();
         let mut cost = 0;
         let status = unsafe {
             (self.handle_request_fptr)(
@@ -61,11 +61,11 @@ impl RequestHandler<GoPinnedData> for NativeRequestHandler {
                 req_type as u32 + EVM_API_METHOD_REQ_OFFSET,
                 ptr!(RustSlice::new(req_data)),
                 ptr!(cost),
-                ptr!(out_slice_1),
-                ptr!(out_slice_2),
+                ptr!(result),
+                ptr!(raw_data),
             )
         };
         assert_eq!(status, EvmApiStatus::Success);
-        (out_slice_1.get().to_vec(), out_slice_2, cost)
+        (result.get().to_vec(), raw_data, cost)
     }
 }

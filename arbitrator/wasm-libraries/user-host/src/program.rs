@@ -80,8 +80,8 @@ extern "C" {
 
 impl UserHostRequester {
     #[no_mangle]
-    pub unsafe fn set_response(&mut self, req_id: u32, data: Vec<u8>, data_b:Vec<u8>, gas: u64) {
-        self.answer = Some((data, VecReader::new(data_b), gas));
+    pub unsafe fn set_response(&mut self, req_id: u32, result: Vec<u8>, raw_data:Vec<u8>, gas: u64) {
+        self.answer = Some((result, VecReader::new(raw_data), gas));
         if req_id != self.id {
             panic!("bad req id returning from send_request")
         }
@@ -97,11 +97,18 @@ impl UserHostRequester {
         self.id
     }
 
-    pub unsafe fn get_request(&self, id: u32) -> (u32, Vec<u8>) {
+    pub unsafe fn get_request_meta(&self, id: u32) -> (u32, usize) {
         if self.id != id {
             panic!("get_request got wrong id");
         }
-        (self.req_type, self.data.as_ref().unwrap().clone())
+        (self.req_type, self.data.as_ref().expect("no request on get_request_meta").len())
+    }
+
+    pub unsafe fn take_request(&mut self, id: u32) -> (u32, Vec<u8>) {
+        if self.id != id {
+            panic!("get_request got wrong id");
+        }
+        (self.req_type, self.data.take().expect("no request on take_request"))
     }
 
     #[no_mangle]

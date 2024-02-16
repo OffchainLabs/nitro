@@ -26,8 +26,8 @@ use std::{
 use stylus::{native::NativeInstance, run::RunProgram};
 
 struct MessageToCothread {
-    response: Vec<u8>,
-    response_2: Vec<u8>,
+    result: Vec<u8>,
+    raw_data: Vec<u8>,
     cost: u64,
 }
 
@@ -60,8 +60,8 @@ impl RequestHandler<VecReader> for CothreadRequestor {
         }
         match self.rx.recv_timeout(Duration::from_secs(5)) {
             Ok(response) => (
-                response.response,
-                VecReader::new(response.response_2),
+                response.result,
+                VecReader::new(response.raw_data),
                 response.cost,
             ),
             Err(_) => panic!("no response from main thread"),
@@ -104,7 +104,13 @@ impl CothreadHandler {
             .ok_or(Escape::HostIO("no message waiting".to_string()))
     }
 
-    pub fn set_response(&mut self, id: u32, data: &[u8], data_b: &[u8], cost: u64) -> MaybeEscape {
+    pub fn set_response(
+        &mut self,
+        id: u32,
+        result: Vec<u8>,
+        raw_data: Vec<u8>,
+        cost: u64,
+    ) -> MaybeEscape {
         let Some(msg) = self.last_request.clone() else {
             return Escape::hostio("trying to set response but no message pending");
         };
@@ -114,8 +120,8 @@ impl CothreadHandler {
         if self
             .tx
             .send(MessageToCothread {
-                response: data.to_vec(),
-                response_2: data_b.to_vec(),
+                result,
+                raw_data,
                 cost,
             })
             .is_err()
