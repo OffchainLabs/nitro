@@ -154,14 +154,14 @@ func pinAndRef(pinner *runtime.Pinner, data []byte, goSlice *C.GoSliceData) {
 }
 
 //export handleReqImpl
-func handleReqImpl(apiId usize, req_type u32, data *rustBytes, costPtr *u64, output *C.GoSliceData, out2 *C.GoSliceData) apiStatus {
+func handleReqImpl(apiId usize, req_type u32, data *rustBytes, costPtr *u64, out_response *C.GoSliceData, out_raw_data *C.GoSliceData) apiStatus {
 	api := getApi(apiId)
 	reqData := data.read()
 	reqType := RequestType(req_type - EvmApiMethodReqOffset)
-	res1, res2, cost := api.handler(reqType, reqData)
+	response, raw_data, cost := api.handler(reqType, reqData)
 	*costPtr = u64(cost)
-	pinAndRef(&api.pinner, res1, output)
-	pinAndRef(&api.pinner, res2, out2)
+	pinAndRef(&api.pinner, response, out_response)
+	pinAndRef(&api.pinner, raw_data, out_raw_data)
 	return apiSuccess
 }
 
