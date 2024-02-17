@@ -48,7 +48,7 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApiRequestor<D, H> {
         request.extend(input);
         let (res, data, cost) = self.handle_request(call_type, &request);
         let status: UserOutcomeKind = res[0].try_into().unwrap();
-        let data_len = data.get().len() as u32;
+        let data_len = data.slice().len() as u32;
         self.last_return_data = Some(data);
         (data_len, cost, status)
     }
@@ -84,7 +84,7 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApiRequestor<D, H> {
         }
         res.drain(0..=0);
         let address = res.try_into().unwrap();
-        let data_len = data.get().len() as u32;
+        let data_len = data.slice().len() as u32;
         self.last_return_data = Some(data);
         (Ok(address), data_len, cost)
     }

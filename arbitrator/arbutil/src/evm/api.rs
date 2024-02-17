@@ -55,7 +55,7 @@ pub const EVM_API_METHOD_REQ_OFFSET: u32 = 0x10000000;
 
 // note: clone should not clone actual data, just the reader
 pub trait DataReader: Clone + Send + 'static {
-    fn get(&self) -> &[u8];
+    fn slice(&self) -> &[u8];
 }
 
 // simple implementation for DataReader, in case data comes from a Vec
@@ -69,7 +69,7 @@ impl VecReader {
 }
 
 impl DataReader for VecReader {
-    fn get(&self) -> &[u8] {
+    fn slice(&self) -> &[u8] {
         self.0.as_slice()
     }
 }

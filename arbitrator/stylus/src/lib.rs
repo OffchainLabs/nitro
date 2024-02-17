@@ -2,6 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 use arbutil::{
     evm::{
+        api::DataReader,
         req::EvmApiRequestor,
         user::{UserOutcome, UserOutcomeKind},
         EvmData,
@@ -30,15 +31,19 @@ mod test;
 #[cfg(all(test, feature = "benchmark"))]
 mod benchmarks;
 
+#[derive(Clone, Copy, Default)]
 #[repr(C)]
 pub struct GoSliceData {
-    ptr: *const u8,
+    ptr: usize, // not stored as pointer because rust won't let that be Send
     len: usize,
 }
 
-impl GoSliceData {
-    unsafe fn slice(&self) -> &[u8] {
-        std::slice::from_raw_parts(self.ptr, self.len)
+impl DataReader for GoSliceData {
+    fn slice(&self) -> &[u8] {
+        if self.len == 0 {
+            return &[];
+        }
+        unsafe { std::slice::from_raw_parts(self.ptr as *mut u8, self.len) }
     }
 }
 

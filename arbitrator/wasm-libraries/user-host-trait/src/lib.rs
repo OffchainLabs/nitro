@@ -434,7 +434,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         self.pay_for_write(size.min(max))?;
 
         let ret_data = self.evm_api().get_return_data();
-        let out_slice = Self::sub_slice(ret_data.get(), offset, size);
+        let out_slice = Self::sub_slice(ret_data.slice(), offset, size);
         let out_len = out_slice.len() as u32;
         if out_len > 0 {
             self.write_slice(dest, out_slice)?;
@@ -516,7 +516,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
 
         // we pass `gas` to check if there's enough before loading from the db
         let (code, gas_cost) = self.evm_api().account_code(address, gas);
-        let code = code.get();
+        let code = code.slice();
         self.buy_gas(gas_cost)?;
         self.pay_for_write(size as u32)?;
 
@@ -547,7 +547,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         // we pass `gas` to check if there's enough before loading from the db
         let (code, gas_cost) = self.evm_api().account_code(address, gas);
         self.buy_gas(gas_cost)?;
-        let code = code.get();
+        let code = code.slice();
 
         trace!("account_code_size", self, address, &[], code.len() as u32)
     }
