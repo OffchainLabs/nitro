@@ -32,7 +32,7 @@ type AvailDA struct {
 }
 
 func NewAvailDA(cfg DAConfig) (*AvailDA, error) {
-	//Creating new substrate api
+	// Creating new substrate api
 	api, err := gsrpc.NewSubstrateAPI(cfg.ApiURL)
 	if err != nil {
 		return nil, err
@@ -102,7 +102,7 @@ func (a *AvailDA) Store(ctx context.Context, message []byte) ([]byte, error) {
 	}
 
 	nonce := GetAccountNonce(uint32(accountInfo.Nonce))
-	//fmt.Println("Nonce from localDatabase:", nonce, "    ::::::::   from acountInfo:", accountInfo.Nonce)
+	// fmt.Println("Nonce from localDatabase:", nonce, "    ::::::::   from acountInfo:", accountInfo.Nonce)
 	o := gsrpc_types.SignatureOptions{
 		BlockHash:          genesisHash,
 		Era:                gsrpc_types.ExtrinsicEra{IsMortalEra: false},
@@ -167,14 +167,14 @@ func (a *AvailDA) Store(ctx context.Context, message []byte) ([]byte, error) {
 		}
 	}
 
-	//log.Info("Sucesfully included in block data to Avail", "BlobPointer:", blobPointer)
+	// log.Info("Sucesfully included in block data to Avail", "BlobPointer:", blobPointer)
 
 }
 
 func (a *AvailDA) Read(ctx context.Context, blobPointer BlobPointer) ([]byte, error) {
 	log.Info("Requesting data from Avail", "BlobPointer", blobPointer)
 
-	//Intitializing variables
+	// Intitializing variables
 	Hash := blobPointer.BlockHash
 	Address := blobPointer.Sender
 	Nonce := blobPointer.Nonce
@@ -182,18 +182,18 @@ func (a *AvailDA) Read(ctx context.Context, blobPointer BlobPointer) ([]byte, er
 	// Converting this string type into gsrpc_types.hash type
 	blk_hash, err := gsrpc_types.NewHashFromHexString(Hash)
 	if err != nil {
-		return nil, fmt.Errorf("unable to convert string hash into types.hash, error:%v", err)
+		return nil, fmt.Errorf("unable to convert string hash into types.hash, error:%w", err)
 	}
 
 	// Fetching block based on block hash
 	avail_blk, err := a.api.RPC.Chain.GetBlock(blk_hash)
 	if err != nil {
-		return []byte{}, fmt.Errorf("cannot get block for hash:%v and getting error:%v", Hash, err)
+		return []byte{}, fmt.Errorf("cannot get block for hash:%v and getting error:%w", Hash, err)
 	}
 
-	//Extracting the required extrinsic according to the reference
+	// Extracting the required extrinsic according to the reference
 	for _, ext := range avail_blk.Block.Extrinsics {
-		//Extracting sender address for extrinsic
+		// Extracting sender address for extrinsic
 		ext_Addr, err := subkey.SS58Address(ext.Signature.Signer.AsID.ToBytes(), 42)
 		if err != nil {
 			log.Error("unable to get sender address from extrinsic", "err", err)

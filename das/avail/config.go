@@ -2,9 +2,9 @@ package avail
 
 type DAConfig struct {
 	Enable bool   `koanf:"enable"`
-	ApiURL string `koanf:"api_url"`
+	ApiURL string `koanf:"api-url"`
 	Seed   string `koanf:"seed"`
-	AppID  int    `koanf:"app_id"`
+	AppID  int    `koanf:"app-id"`
 }
 
 func NewDAConfig(api_url string, seed string, app_id int) (*DAConfig, error) {

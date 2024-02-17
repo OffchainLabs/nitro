@@ -165,7 +165,7 @@ func RecoverPayloadFromAvailBatch(ctx context.Context, batchNum uint64, sequence
 	}
 
 	blobPointer := avail.BlobPointer{}
-	blobPointer.UnmarshalFromBinary(buf.Bytes())
+	err = blobPointer.UnmarshalFromBinary(buf.Bytes())
 	if err != nil {
 		log.Error("Couldn't unmarshal Avail blob pointer", "err", err)
 		return nil, err

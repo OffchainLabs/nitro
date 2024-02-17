@@ -19,7 +19,7 @@ type BlobPointer struct {
 func (b *BlobPointer) MarshalToBinary() ([]byte, error) {
 	blobPointerData, err := json.Marshal(b)
 	if err != nil {
-		return []byte{}, fmt.Errorf("unable to covert the avail block referece into array of bytes and getting error:%v", err)
+		return []byte{}, fmt.Errorf("unable to covert the avail block referece into array of bytes and getting error:%w", err)
 	}
 	return blobPointerData, nil
 }
@@ -28,7 +28,7 @@ func (b *BlobPointer) MarshalToBinary() ([]byte, error) {
 func (b *BlobPointer) UnmarshalFromBinary(blobPointerData []byte) error {
 	err := json.Unmarshal(blobPointerData, b)
 	if err != nil {
-		return fmt.Errorf("unable to convert avail_Blk_Ref bytes to AvailBlockRef Struct and getting error:%v", err)
+		return fmt.Errorf("unable to convert avail_Blk_Ref bytes to AvailBlockRef Struct and getting error:%w", err)
 	}
 	return nil
 }

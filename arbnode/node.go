@@ -299,7 +299,7 @@ type Config struct {
 	Staker              staker.L1ValidatorConfig         `koanf:"staker" reload:"hot"`
 	SeqCoordinator      SeqCoordinatorConfig             `koanf:"seq-coordinator"`
 	DataAvailability    das.DataAvailabilityConfig       `koanf:"data-availability"`
-	Avail               avail.DAConfig                   `koanf:"avail-cfg"`
+	Avail               avail.DAConfig                   `koanf:"avail"`
 	SyncMonitor         SyncMonitorConfig                `koanf:"sync-monitor"`
 	Dangerous           DangerousConfig                  `koanf:"dangerous"`
 	Caching             execution.CachingConfig          `koanf:"caching"`
