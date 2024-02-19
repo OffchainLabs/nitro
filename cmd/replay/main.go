@@ -270,7 +270,7 @@ func main() {
 		validatingAgainstEspresso := message.Message.Header.Kind == arbostypes.L1MessageType_L2Message &&
 			chainConfig.ArbitrumChainParams.EnableEspresso
 		if validatingAgainstEspresso {
-			txs, jst, err := arbos.ParseEspressoMsg(message.Message)
+			_, jst, err := arbos.ParseEspressoMsg(message.Message)
 			if err != nil {
 				panic(err)
 			}
@@ -296,13 +296,10 @@ func main() {
 			if !commitment.Equals(hotshotHeader.Commit()) {
 				panic(fmt.Sprintf("invalid hotshot header jst header at %v expected: %v, provided %v.", height, hotshotHeader.Commit(), commitment))
 			}
-			var roots = []*espressoTypes.NmtRoot{&hotshotHeader.TransactionsRoot}
-			var proofs = []*espressoTypes.NmtProof{&jst.Proof}
-
-			err = espressoNmt.ValidateBatchTransactions(chainConfig.ChainID.Uint64(), roots, proofs, txs)
 			if err != nil {
 				panic(err)
 			}
+			// TODO VID-based namespace validation: https://github.com/EspressoSystems/nitro-espresso-integration/issues/65
 		}
 
 		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher)

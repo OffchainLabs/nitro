@@ -1,6 +1,7 @@
 package arbos
 
 import (
+	"encoding/json"
 	"reflect"
 	"testing"
 
@@ -18,22 +19,26 @@ func TestEspressoParsing(t *testing.T) {
 		Kind:        arbostypes.L1MessageType_L2Message,
 		BlockNumber: 1,
 	}
+	var mockProof = json.RawMessage(`{"NonExistence":{"ns_id":0}}`)
+	var nsTable = espressoTypes.NsTable{
+		RawPayload: []byte{0, 0, 0, 0},
+	}
 	payloadCommitment, err := tagged_base64.New("payloadCommitment", []byte{1, 2, 3})
 	Require(t, err)
 	root, err := tagged_base64.New("root", []byte{4, 5, 6})
 	Require(t, err)
 	expectJst := &arbostypes.EspressoBlockJustification{
 		Header: espressoTypes.Header{
-			TransactionsRoot:    espressoTypes.NmtRoot{Root: []byte{7, 8, 9}},
 			L1Head:              1,
 			Timestamp:           2,
 			Height:              3,
+			NsTable:             &nsTable,
 			L1Finalized:         &espressoTypes.L1BlockInfo{},
 			PayloadCommitment:   payloadCommitment,
 			BlockMerkleTreeRoot: root,
 			FeeMerkleTreeRoot:   root,
 		},
-		Proof: []byte{9},
+		Proof: &mockProof,
 	}
 	msg, err := MessageFromEspresso(expectHeader, expectTxes, expectJst)
 	Require(t, err)
