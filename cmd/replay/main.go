@@ -22,7 +22,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 
-	espressoNmt "github.com/EspressoSystems/espresso-sequencer-go/nmt"
 	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"

@@ -105,7 +105,6 @@ func createMockHotShot(ctx context.Context, t *testing.T, l2Info *BlockchainTest
 				// Since we don't realize the validation of espresso yet,
 				// mock a simple nmt root here
 				Height:              block,
-				TransactionsRoot:    espressoTypes.NmtRoot{Root: []byte{}},
 				L1Head:              0, // Currently not used
 				Timestamp:           timestamp,
 				PayloadCommitment:   pc,
