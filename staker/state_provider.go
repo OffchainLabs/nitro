@@ -429,6 +429,8 @@ func (s *StateManager) CollectProof(
 	if err != nil {
 		return nil, err
 	}
+	ctxCheckAlive, cancelCheckAlive := ctxWithCheckAlive(ctx, execRun)
+	defer cancelCheckAlive()
 	oneStepProofPromise := execRun.GetProofAt(uint64(machineIndex))
-	return oneStepProofPromise.Await(ctx)
+	return oneStepProofPromise.Await(ctxCheckAlive)
 }
