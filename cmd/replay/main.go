@@ -210,7 +210,11 @@ func main() {
 		if backend.GetPositionWithinMessage() > 0 {
 			keysetValidationMode = arbstate.KeysetDontValidate
 		}
-		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dasReader, &BlobPreimageReader{}, keysetValidationMode)
+		daProviders := []arbstate.DataAvailabilityProvider{
+			arbstate.DAProviderWrapperDAS(dasReader),
+			arbstate.DAProviderWrapperBlobReader(&BlobPreimageReader{}),
+		}
+		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, daProviders, keysetValidationMode)
 		ctx := context.Background()
 		message, err := inboxMultiplexer.Pop(ctx)
 		if err != nil {
