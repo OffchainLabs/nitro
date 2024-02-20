@@ -296,9 +296,6 @@ func main() {
 			if !commitment.Equals(hotshotHeader.Commit()) {
 				panic(fmt.Sprintf("invalid hotshot header jst header at %v expected: %v, provided %v.", height, hotshotHeader.Commit(), commitment))
 			}
-			if err != nil {
-				panic(err)
-			}
 			// TODO VID-based namespace validation: https://github.com/EspressoSystems/nitro-espresso-integration/issues/65
 		}
 
