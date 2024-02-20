@@ -21,14 +21,14 @@ import (
 )
 
 type ClientConfig struct {
-	URL            string        `koanf:"url"`
-	JWTSecret      string        `koanf:"jwtsecret"`
-	Timeout        time.Duration `koanf:"timeout" reload:"hot"`
-	Retries        uint          `koanf:"retries" reload:"hot"`
-	ConnectionWait time.Duration `koanf:"connection-wait"`
-	ArgLogLimit    uint          `koanf:"arg-log-limit" reload:"hot"`
-	RetryErrors    string        `koanf:"retry-errors" reload:"hot"`
-	RetryDelay     time.Duration `koanf:"retry-delay"`
+	URL            string        `json:"url,omitempty" koanf:"url"`
+	JWTSecret      string        `json:"jwtsecret,omitempty" koanf:"jwtsecret"`
+	Timeout        time.Duration `json:"timeout,omitempty" koanf:"timeout" reload:"hot"`
+	Retries        uint          `json:"retries,omitempty" koanf:"retries" reload:"hot"`
+	ConnectionWait time.Duration `json:"connection-wait,omitempty" koanf:"connection-wait"`
+	ArgLogLimit    uint          `json:"arg-log-limit,omitempty" koanf:"arg-log-limit" reload:"hot"`
+	RetryErrors    string        `json:"retry-errors,omitempty" koanf:"retry-errors" reload:"hot"`
+	RetryDelay     time.Duration `json:"retry-delay,omitempty" koanf:"retry-delay"`
 
 	retryErrors *regexp.Regexp
 }
@@ -155,13 +155,26 @@ func (c *RpcClient) CallContext(ctx_in context.Context, result interface{}, meth
 			ctx, cancelCtx = context.WithCancel(ctx_in)
 		}
 		err = c.client.CallContext(ctx, result, method, args...)
+
 		cancelCtx()
 		logger := log.Trace
 		limit := int(c.config().ArgLogLimit)
 		if err != nil && err.Error() != "already known" {
 			logger = log.Info
 		}
-		logger("rpc response", "method", method, "logId", logId, "err", err, "result", limitedMarshal{limit, result}, "attempt", i, "args", limitedArgumentsMarshal{limit, args})
+		logEntry := []interface{}{
+			"method", method,
+			"logId", logId,
+			"err", err,
+			"result", limitedMarshal{limit, result},
+			"attempt", i,
+			"args", limitedArgumentsMarshal{limit, args},
+		}
+		var dataErr rpc.DataError
+		if errors.As(err, &dataErr) {
+			logEntry = append(logEntry, "errorData", limitedMarshal{limit, dataErr.ErrorData()})
+		}
+		logger("rpc response", logEntry...)
 		if err == nil {
 			return nil
 		}
