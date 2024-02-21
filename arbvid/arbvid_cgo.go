@@ -3,8 +3,5 @@
 
 package arbvid
 
-// This is where we would use cgo to call Rust code to verify a namespace using the C FFI
-// TODO stretch goal: https://github.com/EspressoSystems/nitro-espresso-integration/issues/71
-func verifyNamespace() {
-
+func verifyNamespace(namespace uint64, proof []byte, block_comm []byte, ns_table []byte, tx_comm []byte) {
 }

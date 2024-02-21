@@ -78,7 +78,7 @@ fn verify_namespace_helper(namespace: u64, proof_bytes: &[u8], commit_bytes: &[u
 
 fn hash_txns(namespace: u64, txns: &[Transaction]) -> String {
     let mut hasher = Sha256::new();
-    //hasher.update(namespace);
+    hasher.update(namespace.to_le_bytes());
     for txn in txns {
         hasher.update(&txn.payload());
     }
