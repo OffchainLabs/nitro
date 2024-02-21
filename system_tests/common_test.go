@@ -541,15 +541,15 @@ func StaticFetcherFrom[T any](t *testing.T, config *T) func() *T {
 }
 
 func configByValidationNode(t *testing.T, clientConfig *arbnode.Config, valStack *node.Node) {
-	clientConfig.BlockValidator.ValidationServer.URL = valStack.WSEndpoint()
-	clientConfig.BlockValidator.ValidationServer.JWTSecret = ""
+	clientConfig.BlockValidator.ValidationServerConfigs[0].URL = valStack.WSEndpoint()
+	clientConfig.BlockValidator.ValidationServerConfigs[0].JWTSecret = ""
 }
 
 func AddDefaultValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool) {
 	if !nodeConfig.ValidatorRequired() {
 		return
 	}
-	if nodeConfig.BlockValidator.ValidationServer.URL != "" {
+	if nodeConfig.BlockValidator.ValidationServerConfigs[0].URL != "" {
 		return
 	}
 	conf := valnode.TestValidationConfig
@@ -791,7 +791,7 @@ func createTestNodeWithL1(
 	Require(t, err)
 	currentNode, err = arbnode.CreateNode(
 		ctx, l2stack, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client,
-		addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, big.NewInt(1337),
+		addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, big.NewInt(1337), nil,
 	)
 	Require(t, err)
 
@@ -827,7 +827,7 @@ func createTestNode(
 	execNode, err := gethexec.CreateExecutionNode(ctx, stack, chainDb, blockchain, nil, execConfigFetcher)
 	Require(t, err)
 
-	currentNode, err := arbnode.CreateNode(ctx, stack, execNode, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), nil, nil, nil, nil, nil, feedErrChan, big.NewInt(1337))
+	currentNode, err := arbnode.CreateNode(ctx, stack, execNode, arbDb, NewFetcherFromConfig(nodeConfig), blockchain.Config(), nil, nil, nil, nil, nil, feedErrChan, big.NewInt(1337), nil)
 	Require(t, err)
 
 	// Give the node an init message
@@ -927,11 +927,12 @@ func Create2ndNodeWithConfig(
 	AddDefaultValNode(t, ctx, nodeConfig, true)
 
 	Require(t, execConfig.Validate())
+	Require(t, nodeConfig.Validate())
 	configFetcher := func() *gethexec.Config { return execConfig }
 	currentExec, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, configFetcher)
 	Require(t, err)
 
-	currentNode, err := arbnode.CreateNode(ctx, l2stack, currentExec, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, first.DeployInfo, &txOpts, &txOpts, dataSigner, feedErrChan, big.NewInt(13))
+	currentNode, err := arbnode.CreateNode(ctx, l2stack, currentExec, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, first.DeployInfo, &txOpts, &txOpts, dataSigner, feedErrChan, big.NewInt(1337), nil)
 	Require(t, err)
 
 	err = currentNode.Start(ctx)

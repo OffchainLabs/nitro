@@ -112,10 +112,13 @@ func main() {
 		batchPostersArr := strings.Split(*batchPostersString, ",")
 		for _, address := range batchPostersArr {
 			if !common.IsHexAddress(address) {
-				log.Warn("invalid address in batch posters array", "address", address)
+				log.Error("invalid address in batch posters array", "address", address)
 				continue
 			}
 			batchPosters = append(batchPosters, common.HexToAddress(address))
+		}
+		if len(batchPosters) != len(batchPostersArr) {
+			panic("found at least one invalid address in batch posters array")
 		}
 	}
 	if len(batchPosters) == 0 {
@@ -127,7 +130,10 @@ func main() {
 	if common.IsHexAddress(*batchPosterManagerAddressString) {
 		batchPosterManagerAddress = common.HexToAddress(*batchPosterManagerAddressString)
 	} else {
-		log.Info("batch poster manager address was empty or invalid, defaulting to owner address")
+		if len(*batchPosterManagerAddressString) > 0 {
+			panic("please specify a valid batch poster manager address")
+		}
+		log.Info("batch poster manager address was empty, defaulting to owner address")
 		batchPosterManagerAddress = ownerAddress
 	}
 
