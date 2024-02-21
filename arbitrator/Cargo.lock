@@ -4826,6 +4826,7 @@ dependencies = [
  "structopt",
  "tagged-base64",
  "thiserror",
+ "vid-helper",
  "wasmer",
  "wasmer-compiler-cranelift",
  "wasmer-compiler-llvm",
@@ -9893,6 +9894,24 @@ name = "version_check"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
+
+[[package]]
+name = "vid-helper"
+version = "0.1.0"
+dependencies = [
+ "ark-bls12-381",
+ "ark-serialize 0.4.2",
+ "derivative",
+ "derive_more",
+ "jf-primitives",
+ "lazy_static",
+ "num-traits",
+ "serde",
+ "serde_json",
+ "sha2 0.10.8",
+ "tagged-base64",
+ "trait-set",
+]
 
 [[package]]
 name = "void"

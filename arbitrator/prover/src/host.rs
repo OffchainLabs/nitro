@@ -56,6 +56,7 @@ pub enum Hostio {
     WavmReadHotShotCommitment,
     WavmReadDelayedInboxMessage,
     WavmHaltAndSetFinished,
+    MockSchedYield,
 }
 
 impl FromStr for Hostio {
@@ -81,6 +82,7 @@ impl FromStr for Hostio {
             ("env", "wavm_read_delayed_inbox_message") => WavmReadDelayedInboxMessage,
             ("env", "wavm_read_hotshot_commitment") => WavmReadHotShotCommitment,
             ("env", "wavm_halt_and_set_finished") => WavmHaltAndSetFinished,
+            ("wasi_snapshot_preview1", "sched_yield") => MockSchedYield,
             _ => bail!("no such hostio {} in {}", name.red(), module.red()),
         })
     }
@@ -120,6 +122,7 @@ impl Hostio {
             WavmReadDelayedInboxMessage      => func!([I64, I32, I32], [I32]),
             WavmHaltAndSetFinished           => func!(),
             WavmReadHotShotCommitment => func!([I32, I64]),
+            MockSchedYield => func!([], [I32])
         };
         ty
     }
@@ -211,6 +214,7 @@ impl Hostio {
             WavmHaltAndSetFinished => {
                 opcode!(HaltAndSetFinished);
             }
+            MockSchedYield => {}
         }
         body
     }

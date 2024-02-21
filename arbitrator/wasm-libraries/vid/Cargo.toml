@@ -5,13 +5,7 @@ edition = "2021"
 
 [dependencies]
 go-abi = { path = "../go-abi" }
-jf-primitives = { git = "https://github.com/EspressoSystems/jellyfish", features = [
-    "test-srs",
-] }
-jf-utils = { git = "https://github.com/EspressoSystems/jellyfish", features = [
-] }
-ark-bls12-381 = "0.4.0"
-sha2 = { version = "0.10.1", default-features = false }
+vid-helper = {path = "../../vid-helper"}
 
 [lib]
 crate-type = ["cdylib", "rlib"]

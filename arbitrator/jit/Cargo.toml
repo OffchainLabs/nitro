@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 arbutil = { path = "../arbutil/" }
+vid-helper = { path = "../vid-helper/" }
 ark-bls12-381 = "0.4.0"
 ark-serialize = { version = "0.4", features = ["derive"] }
 wasmer = "3.1.0"
