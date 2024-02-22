@@ -15,7 +15,7 @@ use eyre::ErrReport;
 use native::NativeInstance;
 use prover::programs::{prelude::*, StylusData};
 use run::RunProgram;
-use std::{marker::PhantomData, mem};
+use std::{marker::PhantomData, mem, ptr::null};
 
 pub use prover;
 
@@ -31,19 +31,57 @@ mod test;
 #[cfg(all(test, feature = "benchmark"))]
 mod benchmarks;
 
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct GoSliceData {
-    ptr: usize, // not stored as pointer because rust won't let that be Send
+    ptr: *const u8, // stored as pointer for GO
     len: usize,
 }
 
-impl DataReader for GoSliceData {
+impl Default for GoSliceData {
+    fn default() -> Self {
+        GoSliceData {
+            ptr: null(),
+            len: 0,
+        }
+    }
+}
+
+impl GoSliceData {
     fn slice(&self) -> &[u8] {
         if self.len == 0 {
             return &[];
         }
-        unsafe { std::slice::from_raw_parts(self.ptr as *mut u8, self.len) }
+        unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
+    }
+}
+
+// same as above, with Send semantics using dirty trickery
+// GO will always use GoSliceData so these types must have
+// exact same representation, see assert_go_slices_match
+#[derive(Clone, Copy, Default)]
+#[repr(C)]
+pub struct SendGoSliceData {
+    ptr: usize, // not stored as pointer because rust won't let that be Send
+    len: usize,
+}
+
+#[allow(dead_code)]
+const fn assert_go_slices_match() -> () {
+    // TODO: this will be stabilized on rust 1.77
+    // assert_eq!(mem::offset_of!(GoSliceData, ptr), mem::offset_of!(SendGoSliceData, ptr));
+    // assert_eq!(mem::offset_of!(GoSliceData, len), mem::offset_of!(SendGoSliceData, len));
+    assert!(mem::size_of::<GoSliceData>() == mem::size_of::<SendGoSliceData>());
+}
+
+const _: () = assert_go_slices_match();
+
+impl DataReader for SendGoSliceData {
+    fn slice(&self) -> &[u8] {
+        if self.len == 0 {
+            return &[];
+        }
+        unsafe { std::slice::from_raw_parts(self.ptr as *const u8, self.len) }
     }
 }
 

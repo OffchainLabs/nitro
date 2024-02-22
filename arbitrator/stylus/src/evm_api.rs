@@ -1,11 +1,9 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::{GoSliceData, RustSlice};
+use crate::{GoSliceData, RustSlice, SendGoSliceData};
 use arbutil::evm::{
-    api::{
-        EvmApiMethod, EVM_API_METHOD_REQ_OFFSET, {DataReader, EvmApiStatus},
-    },
+    api::{EvmApiMethod, EvmApiStatus, EVM_API_METHOD_REQ_OFFSET},
     req::RequestHandler,
 };
 
@@ -17,7 +15,7 @@ pub struct NativeRequestHandler {
         data: *mut RustSlice,
         gas_cost: *mut u64,
         result: *mut GoSliceData,
-        raw_data: *mut GoSliceData,
+        raw_data: *mut SendGoSliceData,
     ) -> EvmApiStatus, // value
     pub id: usize,
 }
@@ -28,14 +26,14 @@ macro_rules! ptr {
     };
 }
 
-impl RequestHandler<GoSliceData> for NativeRequestHandler {
+impl RequestHandler<SendGoSliceData> for NativeRequestHandler {
     fn handle_request(
         &mut self,
         req_type: EvmApiMethod,
         req_data: &[u8],
-    ) -> (Vec<u8>, GoSliceData, u64) {
+    ) -> (Vec<u8>, SendGoSliceData, u64) {
         let mut result = GoSliceData::default();
-        let mut raw_data = GoSliceData::default();
+        let mut raw_data = SendGoSliceData::default();
         let mut cost = 0;
         let status = unsafe {
             (self.handle_request_fptr)(
