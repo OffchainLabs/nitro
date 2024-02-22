@@ -288,9 +288,12 @@ type DataAvailabilityProvider interface {
 	) ([]byte, error)
 }
 
-// DAProviderWrapperDAS is generally meant to be only used by nitro.
+// NewDAProviderDAS is generally meant to be only used by nitro.
 // DA Providers should implement methods in the DataAvailabilityProvider interface independently
-func DAProviderWrapperDAS(das DataAvailabilityReader) *dAProviderForDAS {
+func NewDAProviderDAS(das DataAvailabilityReader) *dAProviderForDAS {
+	if das == nil {
+		return nil
+	}
 	return &dAProviderForDAS{
 		das: das,
 	}
@@ -315,9 +318,12 @@ func (d *dAProviderForDAS) RecoverPayloadFromBatch(
 	return RecoverPayloadFromDasBatch(ctx, batchNum, sequencerMsg, d.das, preimages, keysetValidationMode)
 }
 
-// DAProviderWrapperBlobReader is generally meant to be only used by nitro.
+// NewDAProviderBlobReader is generally meant to be only used by nitro.
 // DA Providers should implement methods in the DataAvailabilityProvider interface independently
-func DAProviderWrapperBlobReader(blobReader BlobReader) *dAProviderForBlobReader {
+func NewDAProviderBlobReader(blobReader BlobReader) *dAProviderForBlobReader {
+	if blobReader == nil {
+		return nil
+	}
 	return &dAProviderForBlobReader{
 		blobReader: blobReader,
 	}

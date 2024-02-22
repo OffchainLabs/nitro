@@ -211,8 +211,8 @@ func main() {
 			keysetValidationMode = arbstate.KeysetDontValidate
 		}
 		daProviders := []arbstate.DataAvailabilityProvider{
-			arbstate.DAProviderWrapperDAS(dasReader),
-			arbstate.DAProviderWrapperBlobReader(&BlobPreimageReader{}),
+			arbstate.NewDAProviderDAS(dasReader),
+			arbstate.NewDAProviderBlobReader(&BlobPreimageReader{}),
 		}
 		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, daProviders, keysetValidationMode)
 		ctx := context.Background()
