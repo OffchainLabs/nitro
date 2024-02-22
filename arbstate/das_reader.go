@@ -46,8 +46,16 @@ const BlobHashesHeaderFlag byte = L1AuthenticatedMessageHeaderFlag | 0x10 // 0x5
 // BrotliMessageHeaderByte indicates that the message is brotli-compressed.
 const BrotliMessageHeaderByte byte = 0
 
+// KnownHeaderBits is all header bits with known meaning to this nitro version
+const KnownHeaderBits byte = DASMessageHeaderFlag | TreeDASMessageHeaderFlag | L1AuthenticatedMessageHeaderFlag | ZeroheavyMessageHeaderFlag | BlobHashesHeaderFlag | BrotliMessageHeaderByte
+
+// hasBits returns true if `checking` has all `bits`
 func hasBits(checking byte, bits byte) bool {
 	return (checking & bits) == bits
+}
+
+func IsL1AuthenticatedMessageHeaderByte(header byte) bool {
+	return hasBits(header, L1AuthenticatedMessageHeaderFlag)
 }
 
 func IsDASMessageHeaderByte(header byte) bool {
@@ -68,6 +76,11 @@ func IsBlobHashesHeaderByte(header byte) bool {
 
 func IsBrotliMessageHeaderByte(b uint8) bool {
 	return b == BrotliMessageHeaderByte
+}
+
+// IsKnownHeaderByte returns true if the supplied header byte has only known bits
+func IsKnownHeaderByte(b uint8) bool {
+	return b&^KnownHeaderBits == 0
 }
 
 type DataAvailabilityCertificate struct {

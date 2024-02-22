@@ -4,10 +4,13 @@
 package precompiles
 
 import (
+	"fmt"
 	"math/big"
+	"os"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -176,22 +179,35 @@ func TestEventCosts(t *testing.T) {
 	}
 }
 
-type FatalBurner struct {
-	t       *testing.T
-	count   uint64
-	gasLeft uint64
-}
+func TestPrecompilesPerArbosVersion(t *testing.T) {
+	// Set up a logger in case log.Crit is called by Precompiles()
+	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+	glogger.Verbosity(log.LvlWarn)
+	log.Root().SetHandler(glogger)
 
-func NewFatalBurner(t *testing.T, limit uint64) FatalBurner {
-	return FatalBurner{t, 0, limit}
-}
-
-func (burner FatalBurner) Burn(amount uint64) error {
-	burner.t.Helper()
-	burner.count += 1
-	if burner.gasLeft < amount {
-		Fail(burner.t, "out of gas after", burner.count, "burns")
+	expectedNewMethodsPerArbosVersion := map[uint64]int{
+		0:  89,
+		5:  3,
+		10: 2,
+		11: 4,
+		20: 8,
 	}
-	burner.gasLeft -= amount
-	return nil
+
+	precompiles := Precompiles()
+	newMethodsPerArbosVersion := make(map[uint64]int)
+	for _, precompile := range precompiles {
+		for _, method := range precompile.Precompile().methods {
+			newMethodsPerArbosVersion[method.arbosVersion]++
+		}
+	}
+
+	if len(expectedNewMethodsPerArbosVersion) != len(newMethodsPerArbosVersion) {
+		t.Errorf("expected %v ArbOS versions with new precompile methods but got %v", len(expectedNewMethodsPerArbosVersion), len(newMethodsPerArbosVersion))
+	}
+	for version, count := range newMethodsPerArbosVersion {
+		fmt.Printf("got %v version count %v\n", version, count)
+		if expectedNewMethodsPerArbosVersion[version] != count {
+			t.Errorf("expected %v new precompile methods for ArbOS version %v but got %v", expectedNewMethodsPerArbosVersion[version], version, count)
+		}
+	}
 }
