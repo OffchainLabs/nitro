@@ -118,6 +118,7 @@ func newListHttpServerForTest(t *testing.T, handler http.Handler) (int, *http.Se
 	listener, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
 	go func() {
+		// #nosec G114
 		_ = server.Serve(listener)
 	}()
 	tcpAddr, _ := listener.Addr().(*net.TCPAddr)

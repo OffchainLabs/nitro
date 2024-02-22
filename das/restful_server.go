@@ -63,6 +63,7 @@ func NewRestfulDasServerOnListener(listener net.Listener, restServerTimeouts gen
 	}
 
 	go func() {
+		// #nosec G114
 		err := ret.server.Serve(listener)
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
 			ret.httpServerError = err
