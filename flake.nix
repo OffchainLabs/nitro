@@ -16,8 +16,9 @@
         (final: prev: {
           go = prev."go_1_${toString goVersion}";
           # Overlaying nodejs here to ensure nodePackages use the desired
-          # version of nodejs.
-          nodejs = prev.nodejs-16_x;
+          # version of nodejs. Arbitrum use nodejs v16 but that's EOL and has
+          # been removed from nixpkgs, v18 also works.
+          nodejs = prev.nodejs-18_x;
           pnpm = prev.nodePackages.pnpm;
           yarn = prev.nodePackages.yarn;
         })
@@ -49,6 +50,8 @@
           ln -sf lib target/lib64
 
           export LIBCLANG_PATH="${pkgs.llvmPackages_17.libclang.lib}/lib"
+          export CC="${pkgs.clang-tools_17.clang}/bin/clang"
+          export AR="${pkgs.llvm_17}/bin/llvm-ar"
         ''
         + pkgs.lib.optionalString pkgs.stdenv.isDarwin ''
           # Fix docker-buildx command on OSX. Can we do this in a cleaner way?
