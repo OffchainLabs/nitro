@@ -46,6 +46,8 @@ RUN apt-get install -y clang=1:14.0-55.7~deb12u1 lld=1:14.0-55.7~deb12u1
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.70.0 --target x86_64-unknown-linux-gnu wasm32-unknown-unknown wasm32-wasi
 COPY ./Makefile ./
 COPY arbitrator/arbutil arbitrator/arbutil
+COPY arbitrator/vid-helper arbitrator/vid-helper
+COPY config/vid_srs.json config/vid_srs.json
 COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
 COPY --from=brotli-wasm-export / target/
 RUN . ~/.cargo/env && NITRO_BUILD_IGNORE_TIMESTAMPS=1 RUSTFLAGS='-C symbol-mangling-version=v0' make build-wasm-libs
@@ -94,6 +96,8 @@ COPY ./Makefile ./
 COPY arbitrator/arbutil arbitrator/arbutil
 COPY arbitrator/prover arbitrator/prover
 COPY arbitrator/jit arbitrator/jit
+COPY arbitrator/vid-helper arbitrator/vid-helper
+COPY config/vid_srs.json config/vid_srs.json
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header
 
 FROM scratch as prover-header-export
@@ -109,6 +113,8 @@ COPY arbitrator/Cargo.* arbitrator/
 COPY arbitrator/arbutil arbitrator/arbutil
 COPY arbitrator/prover/Cargo.toml arbitrator/prover/
 COPY arbitrator/jit/Cargo.toml arbitrator/jit/
+COPY arbitrator/vid-helper arbitrator/vid-helper
+COPY config/vid_srs.json config/vid_srs.json
 RUN mkdir arbitrator/prover/src arbitrator/jit/src && \
     echo "fn test() {}" > arbitrator/jit/src/lib.rs && \
     echo "fn test() {}" > arbitrator/prover/src/lib.rs && \

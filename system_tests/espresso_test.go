@@ -110,6 +110,7 @@ func createMockHotShot(ctx context.Context, t *testing.T, l2Info *BlockchainTest
 				PayloadCommitment:   pc,
 				BlockMerkleTreeRoot: pc,
 				FeeMerkleTreeRoot:   pc,
+				NsTable:             &espressoTypes.NsTable{RawPayload: []byte{1, 2, 3}},
 			}
 			hotShotReader.AddHotShotCommitment(block, header.Commit())
 			return httpmock.NewJsonResponse(200, header)
