@@ -291,9 +291,6 @@ type DataAvailabilityProvider interface {
 // NewDAProviderDAS is generally meant to be only used by nitro.
 // DA Providers should implement methods in the DataAvailabilityProvider interface independently
 func NewDAProviderDAS(das DataAvailabilityReader) *dAProviderForDAS {
-	if das == nil {
-		return nil
-	}
 	return &dAProviderForDAS{
 		das: das,
 	}
@@ -321,9 +318,6 @@ func (d *dAProviderForDAS) RecoverPayloadFromBatch(
 // NewDAProviderBlobReader is generally meant to be only used by nitro.
 // DA Providers should implement methods in the DataAvailabilityProvider interface independently
 func NewDAProviderBlobReader(blobReader BlobReader) *dAProviderForBlobReader {
-	if blobReader == nil {
-		return nil
-	}
 	return &dAProviderForBlobReader{
 		blobReader: blobReader,
 	}
