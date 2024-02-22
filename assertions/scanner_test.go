@@ -112,6 +112,7 @@ func TestSkipsProcessingAssertionFromEvilFork(t *testing.T) {
 		setup.Backend,
 		aliceChalManager,
 		aliceChain.RollupAddress(),
+		aliceChalManager.ChallengeManagerAddress(),
 		"alice",
 		time.Hour, // poll interval
 		time.Hour, // confirmation attempt interval
@@ -293,6 +294,7 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 		setup.Backend,
 		chalManager,
 		charlieChain.RollupAddress(),
+		chalManager.ChallengeManagerAddress(),
 		"charlie",
 		time.Hour, // poll interval
 		time.Hour, // confirmation attempt interval
@@ -351,7 +353,7 @@ func TestScanner_ProcessAssertionCreation(t *testing.T) {
 		p.On("GetAssertion", ctx, mockId(2)).Return(ev, nil)
 		p.On("GetAssertion", ctx, mockId(1)).Return(prev, nil)
 		mockStateProvider.On("AgreesWithExecutionState", ctx, &protocol.ExecutionState{}).Return(nil)
-		scanner, err := assertions.NewManager(p, mockStateProvider, cfg.Backend, manager, cfg.Addrs.Rollup, "", time.Second, time.Second, &mocks.MockStateManager{}, time.Second, time.Second, nil)
+		scanner, err := assertions.NewManager(p, mockStateProvider, cfg.Backend, manager, cfg.Addrs.Rollup, manager.ChallengeManagerAddress(), "", time.Second, time.Second, &mocks.MockStateManager{}, time.Second, time.Second, nil)
 		require.NoError(t, err)
 
 		err = scanner.ProcessAssertionCreationEvent(ctx, ev.Id())
@@ -378,7 +380,7 @@ func TestScanner_ProcessAssertionCreation(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		scanner, err := assertions.NewManager(createdData.Chains[1], createdData.HonestStateManager, createdData.Backend, manager, createdData.Addrs.Rollup, "", time.Second, time.Second, createdData.HonestStateManager, time.Second, time.Second, nil)
+		scanner, err := assertions.NewManager(createdData.Chains[1], createdData.HonestStateManager, createdData.Backend, manager, createdData.Addrs.Rollup, manager.ChallengeManagerAddress(), "", time.Second, time.Second, createdData.HonestStateManager, time.Second, time.Second, nil)
 		require.NoError(t, err)
 
 		err = scanner.ProcessAssertionCreationEvent(ctx, createdData.Leaf2.Id())
@@ -395,7 +397,7 @@ func TestScanner_ProcessAssertionCreation(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		otherScanner, err := assertions.NewManager(createdData.Chains[0], createdData.EvilStateManager, createdData.Backend, otherManager, createdData.Addrs.Rollup, "", time.Second, time.Second, createdData.EvilStateManager, time.Second, time.Second, nil)
+		otherScanner, err := assertions.NewManager(createdData.Chains[0], createdData.EvilStateManager, createdData.Backend, otherManager, createdData.Addrs.Rollup, otherManager.ChallengeManagerAddress(), "", time.Second, time.Second, createdData.EvilStateManager, time.Second, time.Second, nil)
 		require.NoError(t, err)
 
 		err = otherScanner.ProcessAssertionCreationEvent(ctx, createdData.Leaf1.Id())
@@ -423,7 +425,7 @@ func TestScanner_ProcessAssertionCreation(t *testing.T) {
 			challengemanager.WithEdgeTrackerWakeInterval(100*time.Millisecond),
 		)
 		require.NoError(t, err)
-		scanner, err := assertions.NewManager(createdData.Chains[1], createdData.HonestStateManager, createdData.Backend, manager, createdData.Addrs.Rollup, "", time.Second, time.Second, createdData.HonestStateManager, time.Second, time.Second, nil)
+		scanner, err := assertions.NewManager(createdData.Chains[1], createdData.HonestStateManager, createdData.Backend, manager, createdData.Addrs.Rollup, manager.ChallengeManagerAddress(), "", time.Second, time.Second, createdData.HonestStateManager, time.Second, time.Second, nil)
 		require.NoError(t, err)
 
 		err = scanner.ProcessAssertionCreationEvent(ctx, createdData.Leaf2.Id())
@@ -440,7 +442,7 @@ func TestScanner_ProcessAssertionCreation(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		otherScanner, err := assertions.NewManager(createdData.Chains[0], createdData.EvilStateManager, createdData.Backend, otherManager, createdData.Addrs.Rollup, "", time.Second, time.Second, createdData.EvilStateManager, time.Second, time.Second, nil)
+		otherScanner, err := assertions.NewManager(createdData.Chains[0], createdData.EvilStateManager, createdData.Backend, otherManager, createdData.Addrs.Rollup, otherManager.ChallengeManagerAddress(), "", time.Second, time.Second, createdData.EvilStateManager, time.Second, time.Second, nil)
 		require.NoError(t, err)
 
 		err = otherScanner.ProcessAssertionCreationEvent(ctx, createdData.Leaf1.Id())

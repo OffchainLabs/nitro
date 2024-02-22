@@ -69,6 +69,7 @@ type AssertionChain struct {
 	userLogic                                *rollupgen.RollupUserLogic
 	txOpts                                   *bind.TransactOpts
 	rollupAddr                               common.Address
+	chalManagerAddr                          common.Address
 	confirmedChallengesByParentAssertionHash *threadsafe.LruSet[protocol.AssertionHash]
 }
 
@@ -85,6 +86,7 @@ func WithTrackedContractBackend() Opt {
 func NewAssertionChain(
 	_ context.Context,
 	rollupAddr common.Address,
+	chalManagerAddr common.Address,
 	txOpts *bind.TransactOpts,
 	backend protocol.ChainBackend,
 	opts ...Opt,
@@ -96,6 +98,7 @@ func NewAssertionChain(
 		backend:                                  backend,
 		txOpts:                                   copiedOpts,
 		rollupAddr:                               rollupAddr,
+		chalManagerAddr:                          chalManagerAddr,
 		confirmedChallengesByParentAssertionHash: threadsafe.NewLruSet[protocol.AssertionHash](1000, threadsafe.LruSetWithMetric[protocol.AssertionHash]("confirmedChallengesByParentAssertionHash")),
 	}
 	for _, opt := range opts {
@@ -472,15 +475,9 @@ func (a *AssertionChain) ConfirmAssertionByChallengeWinner(
 
 // SpecChallengeManager creates a new spec challenge manager
 func (a *AssertionChain) SpecChallengeManager(ctx context.Context) (protocol.SpecChallengeManager, error) {
-	challengeManagerAddr, err := a.userLogic.RollupUserLogicCaller.ChallengeManager(
-		util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}),
-	)
-	if err != nil {
-		return nil, err
-	}
 	return NewSpecChallengeManager(
 		ctx,
-		challengeManagerAddr,
+		a.chalManagerAddr,
 		a,
 		a.backend,
 		a.txOpts,

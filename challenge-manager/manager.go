@@ -237,6 +237,7 @@ func New(
 		m.backend,
 		m,
 		m.rollupAddr,
+		m.chalManagerAddr,
 		m.name,
 		m.assertionScanningInterval,
 		m.assertionConfirmingInterval,
@@ -266,6 +267,10 @@ func (m *Manager) IsTrackingEdge(edgeId protocol.EdgeId) bool {
 
 func (m *Manager) Database() db.Database {
 	return m.apiDB
+}
+
+func (m *Manager) ChallengeManagerAddress() common.Address {
+	return m.chalManagerAddr
 }
 
 // MarkTrackedEdge marks an edge id as being tracked by our challenge manager.

@@ -11,6 +11,8 @@ import (
 	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
 	challengemanager "github.com/OffchainLabs/bold/challenge-manager"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
+	"github.com/OffchainLabs/bold/util"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -29,9 +31,18 @@ func setupChallengeManager(
 	name string,
 	opts ...challengemanager.Opt,
 ) *challengemanager.Manager {
+	assertionChainBinding, err := rollupgen.NewRollupUserLogic(
+		rollup, backend,
+	)
+	require.NoError(t, err)
+	challengeManagerAddr, err := assertionChainBinding.RollupUserLogicCaller.ChallengeManager(
+		util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}),
+	)
+	require.NoError(t, err)
 	chain, err := solimpl.NewAssertionChain(
 		ctx,
 		rollup,
+		challengeManagerAddr,
 		txOpts,
 		backend,
 	)

@@ -64,6 +64,7 @@ type Manager struct {
 	confirmationAttemptInterval time.Duration
 	averageTimeForBlockCreation time.Duration
 	rollupAddr                  common.Address
+	challengeManagerAddr        common.Address
 	validatorName               string
 	forksDetectedCount          uint64
 	challengesSubmittedCount    uint64
@@ -83,6 +84,7 @@ func NewManager(
 	backend bind.ContractBackend,
 	challengeManager types.ChallengeManager,
 	rollupAddr common.Address,
+	challengeManagerAddr common.Address,
 	validatorName string,
 	pollInterval,
 	assertionConfirmationAttemptInterval time.Duration,
@@ -105,6 +107,7 @@ func NewManager(
 		challengeCreator:            challengeManager,
 		challengeReader:             challengeManager,
 		rollupAddr:                  rollupAddr,
+		challengeManagerAddr:        challengeManagerAddr,
 		validatorName:               validatorName,
 		pollInterval:                pollInterval,
 		confirmationAttemptInterval: assertionConfirmationAttemptInterval,
@@ -398,6 +401,23 @@ func (m *Manager) postRivalAssertionAndChallenge(
 	}
 	if !m.canPostChallenge() {
 		srvlog.Warn("Attempted to post rival assertion and stake, but not configured to initiate a challenge", logFields)
+		return nil
+	}
+
+	if creationInfo.ChallengeManager != m.challengeManagerAddr {
+		var correctRivalAssertionCreatedInfo *protocol.AssertionCreatedInfo
+		correctRivalAssertionCreatedInfo, err = m.chain.ReadAssertionCreationInfo(ctx, correctRivalAssertion.Unwrap().Id())
+		if err != nil {
+			return errors.Wrapf(err, "could not read assertion creation info for %#x", correctRivalAssertion.Unwrap().Id())
+		}
+		srvlog.Warn("Posted rival assertion, but could not challenge as challenge manager address did not match, "+
+			"start a new server with the right challenge manager address", log.Ctx{
+			"correctAssertion":                 correctRivalAssertionCreatedInfo.AssertionHash,
+			"correctAssertionChallengeManager": correctRivalAssertionCreatedInfo.ChallengeManager,
+			"evilAssertion":                    creationInfo.AssertionHash,
+			"evilAssertionChallengeManager":    creationInfo.ChallengeManager,
+			"expectedChallengeManager":         m.challengeManagerAddr,
+		})
 		return nil
 	}
 
