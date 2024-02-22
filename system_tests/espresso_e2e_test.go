@@ -2,6 +2,7 @@ package arbtest
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"os/exec"
@@ -30,7 +31,7 @@ var hostIoAddress = "0xF34C2fac45527E55ED122f80a969e79A40547e6D"
 
 func runEspresso(t *testing.T, ctx context.Context) func() {
 	shutdown := func() {
-		p := exec.Command("docker-compose", "down")
+		p := exec.Command("docker", "compose", "down")
 		p.Dir = workingDir
 		err := p.Run()
 		if err != nil {
@@ -39,7 +40,7 @@ func runEspresso(t *testing.T, ctx context.Context) func() {
 	}
 
 	shutdown()
-	invocation := []string{"up", "-d"}
+	invocation := []string{"compose", "up", "-d"}
 	nodes := []string{
 		"orchestrator",
 		"da-server",
@@ -49,7 +50,7 @@ func runEspresso(t *testing.T, ctx context.Context) func() {
 		"commitment-task",
 	}
 	invocation = append(invocation, nodes...)
-	procees := exec.Command("docker-compose", invocation...)
+	procees := exec.Command("docker", invocation...)
 	procees.Dir = workingDir
 
 	go func() {
@@ -241,6 +242,21 @@ func TestEspressoE2E(t *testing.T) {
 
 		validatedCnt := node.ConsensusNode.BlockValidator.Validated(t)
 		return msgCnt >= expected && validatedCnt >= expected
+	})
+	Require(t, err)
+
+	// wait for the latest hotshot block
+	err = waitFor(t, ctx, func() bool {
+		out, err := exec.Command("curl", "http://127.0.0.1:50000/status/block-height").Output()
+		if err != nil {
+			return false
+		}
+		h := 0
+		err = json.Unmarshal(out, &h)
+		if err != nil {
+			return false
+		}
+		return h > 0
 	})
 	Require(t, err)
 
