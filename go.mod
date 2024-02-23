@@ -1,13 +1,15 @@
 module github.com/offchainlabs/nitro
 
-go 1.20
+go 1.21
+
+toolchain go1.21.3
 
 replace github.com/VictoriaMetrics/fastcache => ./fastcache
 
 replace github.com/ethereum/go-ethereum => ./go-ethereum
 
 require (
-	github.com/EspressoSystems/espresso-sequencer-go v0.0.7
+	github.com/EspressoSystems/espresso-sequencer-go v0.0.8-0.20240223102020-14d6344d941c
 	github.com/Knetic/govaluate v3.0.1-0.20171022003610-9aa49832a739+incompatible
 	github.com/Shopify/toxiproxy v2.1.4+incompatible
 	github.com/alicebob/miniredis/v2 v2.21.0
