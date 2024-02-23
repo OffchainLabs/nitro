@@ -20,6 +20,9 @@ lazy_static! {
         let json_content = include_str!("../../../config/vid_srs.json");
         serde_json::from_str(json_content).expect("Failed to deserialize")
     };
+    static ref INCLUSION_PROOF: &'static str = {
+        include_str!("../../../config/inclusion_proof.json")
+    };
 }
 
 // Helper function to verify a VID namespace proof that takes the byte representations of the proof,
@@ -70,4 +73,13 @@ fn test_verify_namespace_helper() {
     let txn_comm_bytes = txn_comm_str.as_bytes();
     let ns_table_bytes = &[0,0,0,0]; 
     verify_namespace_helper(0, proof_bytes, commit_bytes, ns_table_bytes, txn_comm_bytes);
+}
+
+#[test]
+fn test_verify_namespace_helper_inclusion() {
+    let commit_bytes = b"HASH~b8JRGdpE6VnLj_HdvmLOa-Hc3xIP8UtVEaswYpOnltxk";
+    let txn_comm_str = hash_txns(0, &[]);
+    let txn_comm_bytes = txn_comm_str.as_bytes();
+    let ns_table_bytes = &[1,0,0,0,186,74,6,0,112,2,0,0]; 
+    verify_namespace_helper(0, INCLUSION_PROOF.as_bytes(), commit_bytes, ns_table_bytes, txn_comm_bytes);
 }

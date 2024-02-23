@@ -25,5 +25,5 @@ func hashTxns(namespace uint64, txns []espressoTypes.Bytes) string {
 
 func VerifyNamespace(namespace uint64, proof espressoTypes.NamespaceProof, block_comm espressoTypes.TaggedBase64, ns_table espressoTypes.NsTable, txs []espressoTypes.Bytes) {
 	var txnComm = hashTxns(namespace, txs)
-	verifyNamespace(namespace, proof, block_comm.Value(), ns_table.RawPayload, []byte(txnComm))
+	verifyNamespace(namespace, proof, []byte(block_comm.String()), ns_table.Bytes, []byte(txnComm))
 }

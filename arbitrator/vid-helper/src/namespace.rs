@@ -244,7 +244,7 @@ impl NamespaceProof {
                 ns_proof,
                 vid_common,
             } => {
-                let ns_index = ns_table.lookup(*ns_id)?;
+                let ns_index = ns_table.lookup(*ns_id).unwrap();
 
                 // TODO rework NameSpaceTable struct
                 // TODO merge get_ns_payload_range with get_ns_table_entry ?
@@ -263,8 +263,7 @@ impl NamespaceProof {
                     },
                     ns_proof,
                 )
-                .ok()?
-                .ok()?;
+                .unwrap().unwrap();
 
                 // verification succeeded, return some data
                 // we know ns_id is correct because the corresponding ns_payload_range passed verification

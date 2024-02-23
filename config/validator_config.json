@@ -18,9 +18,13 @@
     "execution": {
         "sequencer": {
             "enable": false
-        }
+        },
+        "forwarding-target": "null"
     },
     "node": {
+        "parent-chain-reader": {
+            "enable": true
+        },
         "staker": {
             "dangerous": {
                 "without-block-validator": false
@@ -59,7 +63,7 @@
         },
         "block-validator": {
             "validation-server": {
-                "url": "ws://localhost:8949",
+                "url": "ws://localhost:8549",
                 "jwtsecret": "./config/val_jwt.hex"
             },
             "hotshot-address": "0x217788c286797d56cd59af5e493f3699c39cbbe8",
