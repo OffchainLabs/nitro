@@ -18,7 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -123,7 +123,7 @@ func NewSignAfterStoreDASWriterWithSeqInboxCaller(
 		return nil, err
 	}
 
-	keyset := &arbstate.DataAvailabilityKeyset{
+	keyset := &daprovider.DataAvailabilityKeyset{
 		AssumedHonest: 1,
 		PubKeys:       []blsSignatures.PublicKey{publicKey},
 	}
@@ -180,7 +180,7 @@ func NewSignAfterStoreDASWriterWithSeqInboxCaller(
 
 func (d *SignAfterStoreDASWriter) Store(
 	ctx context.Context, message []byte, timeout uint64, sig []byte,
-) (c *arbstate.DataAvailabilityCertificate, err error) {
+) (c *daprovider.DataAvailabilityCertificate, err error) {
 	log.Trace("das.SignAfterStoreDASWriter.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig), "this", d)
 	var verified bool
 	if d.extraBpVerifier != nil {
@@ -201,7 +201,7 @@ func (d *SignAfterStoreDASWriter) Store(
 		}
 	}
 
-	c = &arbstate.DataAvailabilityCertificate{
+	c = &daprovider.DataAvailabilityCertificate{
 		Timeout:     timeout,
 		DataHash:    dastree.Hash(message),
 		Version:     1,

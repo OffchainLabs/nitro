@@ -5,7 +5,6 @@ package das
 
 import (
 	"context"
-	"encoding/binary"
 	"errors"
 	"fmt"
 	"math"
@@ -16,18 +15,17 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	flag "github.com/spf13/pflag"
 
-	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 )
 
 type DataAvailabilityServiceWriter interface {
 	// Store requests that the message be stored until timeout (UTC time in unix epoch seconds).
-	Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error)
+	Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*daprovider.DataAvailabilityCertificate, error)
 	fmt.Stringer
 }
 
 type DataAvailabilityServiceReader interface {
-	arbstate.DataAvailabilityReader
+	daprovider.DASReader
 	fmt.Stringer
 }
 
@@ -136,25 +134,6 @@ func dataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet, r role) {
 	f.String(prefix+".parent-chain-node-url", DefaultDataAvailabilityConfig.ParentChainNodeURL, "URL for parent chain node, only used in standalone daserver; when running as part of a node that node's L1 configuration is used")
 	f.Int(prefix+".parent-chain-connection-attempts", DefaultDataAvailabilityConfig.ParentChainConnectionAttempts, "parent chain RPC connection attempts (spaced out at least 1 second per attempt, 0 to retry infinitely), only used in standalone daserver; when running as part of a node that node's parent chain configuration is used")
 	f.String(prefix+".sequencer-inbox-address", DefaultDataAvailabilityConfig.SequencerInboxAddress, "parent chain address of SequencerInbox contract")
-}
-
-func Serialize(c *arbstate.DataAvailabilityCertificate) []byte {
-
-	flags := arbstate.DASMessageHeaderFlag
-	if c.Version != 0 {
-		flags |= arbstate.TreeDASMessageHeaderFlag
-	}
-
-	buf := make([]byte, 0)
-	buf = append(buf, flags)
-	buf = append(buf, c.KeysetHash[:]...)
-	buf = append(buf, c.SerializeSignableFields()...)
-
-	var intData [8]byte
-	binary.BigEndian.PutUint64(intData[:], c.SignersMask)
-	buf = append(buf, intData[:]...)
-
-	return append(buf, blsSignatures.SignatureToBytes(c.Sig)...)
 }
 
 func GetL1Client(ctx context.Context, maxConnectionAttempts int, l1URL string) (*ethclient.Client, error) {

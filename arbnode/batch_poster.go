@@ -37,10 +37,10 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/redislock"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util"
@@ -87,7 +87,7 @@ type BatchPoster struct {
 	bridgeAddr         common.Address
 	gasRefunderAddr    common.Address
 	building           *buildingBatch
-	daWriter           das.DataAvailabilityServiceWriter
+	dapWriter          daprovider.Writer
 	dataPoster         *dataposter.DataPoster
 	redisLock          *redislock.Simple
 	messagesPerBatch   *arbmath.MovingAverage[uint64]
@@ -117,7 +117,7 @@ const (
 
 type BatchPosterConfig struct {
 	Enable                             bool `koanf:"enable"`
-	DisableDasFallbackStoreDataOnChain bool `koanf:"disable-das-fallback-store-data-on-chain" reload:"hot"`
+	DisableDapFallbackStoreDataOnChain bool `koanf:"disable-dap-fallback-store-data-on-chain" reload:"hot"`
 	// Max batch size.
 	MaxSize int `koanf:"max-size" reload:"hot"`
 	// Maximum 4844 blob enabled batch size.
@@ -176,7 +176,7 @@ type BatchPosterConfigFetcher func() *BatchPosterConfig
 
 func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBatchPosterConfig.Enable, "enable posting batches to l1")
-	f.Bool(prefix+".disable-das-fallback-store-data-on-chain", DefaultBatchPosterConfig.DisableDasFallbackStoreDataOnChain, "If unable to batch to DAS, disable fallback storing data on chain")
+	f.Bool(prefix+".disable-dap-fallback-store-data-on-chain", DefaultBatchPosterConfig.DisableDapFallbackStoreDataOnChain, "If unable to batch to DA provider, disable fallback storing data on chain")
 	f.Int(prefix+".max-size", DefaultBatchPosterConfig.MaxSize, "maximum batch size")
 	f.Int(prefix+".max-4844-batch-size", DefaultBatchPosterConfig.Max4844BatchSize, "maximum 4844 blob enabled batch size")
 	f.Duration(prefix+".max-delay", DefaultBatchPosterConfig.MaxDelay, "maximum batch posting delay")
@@ -200,7 +200,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 
 var DefaultBatchPosterConfig = BatchPosterConfig{
 	Enable:                             false,
-	DisableDasFallbackStoreDataOnChain: false,
+	DisableDapFallbackStoreDataOnChain: false,
 	// This default is overridden for L3 chains in applyChainParameters in cmd/nitro/nitro.go
 	MaxSize: 100000,
 	// TODO: is 1000 bytes an appropriate margin for error vs blob space efficiency?
@@ -262,7 +262,7 @@ type BatchPosterOpts struct {
 	Config        BatchPosterConfigFetcher
 	DeployInfo    *chaininfo.RollupAddresses
 	TransactOpts  *bind.TransactOpts
-	DAWriter      das.DataAvailabilityServiceWriter
+	DAPWriter     daprovider.Writer
 	ParentChainID *big.Int
 }
 
@@ -308,7 +308,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		seqInboxAddr:       opts.DeployInfo.SequencerInbox,
 		gasRefunderAddr:    opts.Config().gasRefunder,
 		bridgeAddr:         opts.DeployInfo.Bridge,
-		daWriter:           opts.DAWriter,
+		dapWriter:          opts.DAPWriter,
 		redisLock:          redisLock,
 	}
 	b.messagesPerBatch, err = arbmath.NewMovingAverage[uint64](20)
@@ -787,7 +787,7 @@ func (s *batchSegments) CloseAndGetBytes() ([]byte, error) {
 	}
 	compressedBytes := s.compressedBuffer.Bytes()
 	fullMsg := make([]byte, 1, len(compressedBytes)+1)
-	fullMsg[0] = arbstate.BrotliMessageHeaderByte
+	fullMsg[0] = daprovider.BrotliMessageHeaderByte
 	fullMsg = append(fullMsg, compressedBytes...)
 	return fullMsg, nil
 }
@@ -1131,7 +1131,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		return false, nil
 	}
 
-	if b.daWriter != nil {
+	if b.dapWriter != nil {
 		if !b.redisLock.AttemptLock(ctx) {
 			return false, errAttemptLockFailed
 		}
@@ -1143,17 +1143,9 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		if nonce != gotNonce || !bytes.Equal(batchPositionBytes, gotMeta) {
 			return false, fmt.Errorf("%w: nonce changed from %d to %d while creating batch", storage.ErrStorageRace, nonce, gotNonce)
 		}
-
-		cert, err := b.daWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{}) // b.daWriter will append signature if enabled
-		if errors.Is(err, das.BatchToDasFailed) {
-			if config.DisableDasFallbackStoreDataOnChain {
-				return false, errors.New("unable to batch to DAS and fallback storing data on chain is disabled")
-			}
-			log.Warn("Falling back to storing data on chain", "err", err)
-		} else if err != nil {
+		sequencerMsg, err = b.dapWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{}, config.DisableDapFallbackStoreDataOnChain)
+		if err != nil {
 			return false, err
-		} else {
-			sequencerMsg = das.Serialize(cert)
 		}
 	}
 

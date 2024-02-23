@@ -20,6 +20,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
 	m "github.com/offchainlabs/nitro/broadcaster/message"
@@ -37,14 +38,14 @@ type InboxTracker struct {
 	txStreamer *TransactionStreamer
 	mutex      sync.Mutex
 	validator  *staker.BlockValidator
-	das        arbstate.DataAvailabilityReader
-	blobReader arbstate.BlobReader
+	das        daprovider.DASReader
+	blobReader daprovider.BlobReader
 
 	batchMetaMutex sync.Mutex
 	batchMeta      *containers.LruCache[uint64, BatchMetadata]
 }
 
-func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, das arbstate.DataAvailabilityReader, blobReader arbstate.BlobReader) (*InboxTracker, error) {
+func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, das daprovider.DASReader, blobReader daprovider.BlobReader) (*InboxTracker, error) {
 	// We support a nil txStreamer for the pruning code
 	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee && das == nil {
 		return nil, errors.New("data availability service required but unconfigured")
@@ -606,14 +607,14 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		ctx:    ctx,
 		client: client,
 	}
-	var daProviders []arbstate.DataAvailabilityProvider
+	var daProviders []daprovider.Reader
 	if t.das != nil {
-		daProviders = append(daProviders, arbstate.NewDAProviderDAS(t.das))
+		daProviders = append(daProviders, daprovider.NewReaderForDAS(t.das))
 	}
 	if t.blobReader != nil {
-		daProviders = append(daProviders, arbstate.NewDAProviderBlobReader(t.blobReader))
+		daProviders = append(daProviders, daprovider.NewReaderForBlobReader(t.blobReader))
 	}
-	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, daProviders, arbstate.KeysetValidate)
+	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, daProviders, daprovider.KeysetValidate)
 	batchMessageCounts := make(map[uint64]arbutil.MessageIndex)
 	currentpos := prevbatchmeta.MessageCount + 1
 	for {

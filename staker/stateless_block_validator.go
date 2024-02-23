@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator/server_api"
@@ -23,7 +24,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbstate"
 )
 
 type StatelessBlockValidator struct {
@@ -38,8 +38,8 @@ type StatelessBlockValidator struct {
 	inboxTracker InboxTrackerInterface
 	streamer     TransactionStreamerInterface
 	db           ethdb.Database
-	daService    arbstate.DataAvailabilityReader
-	blobReader   arbstate.BlobReader
+	daService    daprovider.DASReader
+	blobReader   daprovider.BlobReader
 
 	moduleMutex           sync.Mutex
 	currentWasmModuleRoot common.Hash
@@ -221,8 +221,8 @@ func NewStatelessBlockValidator(
 	streamer TransactionStreamerInterface,
 	recorder execution.ExecutionRecorder,
 	arbdb ethdb.Database,
-	das arbstate.DataAvailabilityReader,
-	blobReader arbstate.BlobReader,
+	das daprovider.DASReader,
+	blobReader daprovider.BlobReader,
 	config func() *BlockValidatorConfig,
 	stack *node.Node,
 ) (*StatelessBlockValidator, error) {
@@ -293,7 +293,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		if len(batch.Data) <= 40 {
 			continue
 		}
-		if arbstate.IsBlobHashesHeaderByte(batch.Data[40]) {
+		if daprovider.IsBlobHashesHeaderByte(batch.Data[40]) {
 			payload := batch.Data[41:]
 			if len(payload)%len(common.Hash{}) != 0 {
 				return fmt.Errorf("blob batch data is not a list of hashes as expected")
@@ -313,12 +313,12 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 				e.Preimages[arbutil.EthVersionedHashPreimageType][versionedHashes[i]] = blob[:]
 			}
 		}
-		if arbstate.IsDASMessageHeaderByte(batch.Data[40]) {
+		if daprovider.IsDASMessageHeaderByte(batch.Data[40]) {
 			if v.daService == nil {
 				log.Warn("No DAS configured, but sequencer message found with DAS header")
 			} else {
-				_, err := arbstate.RecoverPayloadFromDasBatch(
-					ctx, batch.Number, batch.Data, v.daService, e.Preimages, arbstate.KeysetValidate,
+				_, err := daprovider.RecoverPayloadFromDasBatch(
+					ctx, batch.Number, batch.Data, v.daService, e.Preimages, daprovider.KeysetValidate,
 				)
 				if err != nil {
 					return err

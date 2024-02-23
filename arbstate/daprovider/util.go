@@ -1,7 +1,7 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package arbstate
+package daprovider
 
 import (
 	"bufio"
@@ -13,18 +13,35 @@ import (
 	"io"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/crypto/kzg4844"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/das/dastree"
 )
 
-type DataAvailabilityReader interface {
+type DASReader interface {
 	GetByHash(ctx context.Context, hash common.Hash) ([]byte, error)
 	ExpirationPolicy(ctx context.Context) (ExpirationPolicy, error)
 }
 
-var ErrHashMismatch = errors.New("result does not match expected hash")
+type DASWriter interface {
+	// Store requests that the message be stored until timeout (UTC time in unix epoch seconds).
+	Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*DataAvailabilityCertificate, error)
+	fmt.Stringer
+}
+
+type BlobReader interface {
+	GetBlobs(
+		ctx context.Context,
+		batchBlockHash common.Hash,
+		versionedHashes []common.Hash,
+	) ([]kzg4844.Blob, error)
+	Initialize(ctx context.Context) error
+}
 
 // DASMessageHeaderFlag indicates that this data is a certificate for the data availability service,
 // which will retrieve the full batch data.
@@ -81,6 +98,124 @@ func IsBrotliMessageHeaderByte(b uint8) bool {
 // IsKnownHeaderByte returns true if the supplied header byte has only known bits
 func IsKnownHeaderByte(b uint8) bool {
 	return b&^KnownHeaderBits == 0
+}
+
+const MinLifetimeSecondsForDataAvailabilityCert = 7 * 24 * 60 * 60 // one week
+var ErrHashMismatch = errors.New("result does not match expected hash")
+var ErrBatchToDasFailed = errors.New("unable to batch to DAS")
+
+type KeysetValidationMode uint8
+
+const KeysetValidate KeysetValidationMode = 0
+const KeysetPanicIfInvalid KeysetValidationMode = 1
+const KeysetDontValidate KeysetValidationMode = 2
+
+func RecoverPayloadFromDasBatch(
+	ctx context.Context,
+	batchNum uint64,
+	sequencerMsg []byte,
+	dasReader DASReader,
+	preimages map[arbutil.PreimageType]map[common.Hash][]byte,
+	keysetValidationMode KeysetValidationMode,
+) ([]byte, error) {
+	var keccakPreimages map[common.Hash][]byte
+	if preimages != nil {
+		if preimages[arbutil.Keccak256PreimageType] == nil {
+			preimages[arbutil.Keccak256PreimageType] = make(map[common.Hash][]byte)
+		}
+		keccakPreimages = preimages[arbutil.Keccak256PreimageType]
+	}
+	cert, err := DeserializeDASCertFrom(bytes.NewReader(sequencerMsg[40:]))
+	if err != nil {
+		log.Error("Failed to deserialize DAS message", "err", err)
+		return nil, nil
+	}
+	version := cert.Version
+	recordPreimage := func(key common.Hash, value []byte) {
+		keccakPreimages[key] = value
+	}
+
+	if version >= 2 {
+		log.Error("Your node software is probably out of date", "certificateVersion", version)
+		return nil, nil
+	}
+
+	getByHash := func(ctx context.Context, hash common.Hash) ([]byte, error) {
+		newHash := hash
+		if version == 0 {
+			newHash = dastree.FlatHashToTreeHash(hash)
+		}
+
+		preimage, err := dasReader.GetByHash(ctx, newHash)
+		if err != nil && hash != newHash {
+			log.Debug("error fetching new style hash, trying old", "new", newHash, "old", hash, "err", err)
+			preimage, err = dasReader.GetByHash(ctx, hash)
+		}
+		if err != nil {
+			return nil, err
+		}
+
+		switch {
+		case version == 0 && crypto.Keccak256Hash(preimage) != hash:
+			fallthrough
+		case version == 1 && dastree.Hash(preimage) != hash:
+			log.Error(
+				"preimage mismatch for hash",
+				"hash", hash, "err", ErrHashMismatch, "version", version,
+			)
+			return nil, ErrHashMismatch
+		}
+		return preimage, nil
+	}
+
+	keysetPreimage, err := getByHash(ctx, cert.KeysetHash)
+	if err != nil {
+		log.Error("Couldn't get keyset", "err", err)
+		return nil, err
+	}
+	if keccakPreimages != nil {
+		dastree.RecordHash(recordPreimage, keysetPreimage)
+	}
+
+	keyset, err := DeserializeKeyset(bytes.NewReader(keysetPreimage), keysetValidationMode == KeysetDontValidate)
+	if err != nil {
+		logLevel := log.Error
+		if keysetValidationMode == KeysetPanicIfInvalid {
+			logLevel = log.Crit
+		}
+		logLevel("Couldn't deserialize keyset", "err", err, "keysetHash", cert.KeysetHash, "batchNum", batchNum)
+		return nil, nil
+	}
+	err = keyset.VerifySignature(cert.SignersMask, cert.SerializeSignableFields(), cert.Sig)
+	if err != nil {
+		log.Error("Bad signature on DAS batch", "err", err)
+		return nil, nil
+	}
+
+	maxTimestamp := binary.BigEndian.Uint64(sequencerMsg[8:16])
+	if cert.Timeout < maxTimestamp+MinLifetimeSecondsForDataAvailabilityCert {
+		log.Error("Data availability cert expires too soon", "err", "")
+		return nil, nil
+	}
+
+	dataHash := cert.DataHash
+	payload, err := getByHash(ctx, dataHash)
+	if err != nil {
+		log.Error("Couldn't fetch DAS batch contents", "err", err)
+		return nil, err
+	}
+
+	if keccakPreimages != nil {
+		if version == 0 {
+			treeLeaf := dastree.FlatHashToTreeLeaf(dataHash)
+			keccakPreimages[dataHash] = payload
+			keccakPreimages[crypto.Keccak256Hash(treeLeaf)] = treeLeaf
+		} else {
+			dastree.RecordHash(recordPreimage, payload)
+		}
+	}
+
+	return payload, nil
 }
 
 type DataAvailabilityCertificate struct {
@@ -167,7 +302,7 @@ func (c *DataAvailabilityCertificate) SerializeSignableFields() []byte {
 
 func (c *DataAvailabilityCertificate) RecoverKeyset(
 	ctx context.Context,
-	da DataAvailabilityReader,
+	da DASReader,
 	assumeKeysetValid bool,
 ) (*DataAvailabilityKeyset, error) {
 	keysetBytes, err := da.GetByHash(ctx, c.KeysetHash)
@@ -315,4 +450,23 @@ func StringToExpirationPolicy(s string) (ExpirationPolicy, error) {
 	default:
 		return -1, fmt.Errorf("invalid Expiration Policy: %s", s)
 	}
+}
+
+func Serialize(c *DataAvailabilityCertificate) []byte {
+
+	flags := DASMessageHeaderFlag
+	if c.Version != 0 {
+		flags |= TreeDASMessageHeaderFlag
+	}
+
+	buf := make([]byte, 0)
+	buf = append(buf, flags)
+	buf = append(buf, c.KeysetHash[:]...)
+	buf = append(buf, c.SerializeSignableFields()...)
+
+	var intData [8]byte
+	binary.BigEndian.PutUint64(intData[:], c.SignersMask)
+	buf = append(buf, intData[:]...)
+
+	return append(buf, blsSignatures.SignatureToBytes(c.Sig)...)
 }

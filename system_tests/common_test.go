@@ -18,7 +18,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -964,7 +964,7 @@ func authorizeDASKeyset(
 	if dasSignerKey == nil {
 		return
 	}
-	keyset := &arbstate.DataAvailabilityKeyset{
+	keyset := &daprovider.DataAvailabilityKeyset{
 		AssumedHonest: 1,
 		PubKeys:       []blsSignatures.PublicKey{*dasSignerKey},
 	}
