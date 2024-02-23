@@ -42,7 +42,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
-func DeployOneStepProofEntry(t *testing.T, ctx context.Context, auth *bind.TransactOpts, client *ethclient.Client) common.Address {
+func DeployOneStepProofEntry(t *testing.T, ctx context.Context, auth *bind.TransactOpts, client *ethclient.Client, hotshot common.Address) common.Address {
 	osp0, tx, _, err := ospgen.DeployOneStepProver0(auth, client)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, client, tx)
@@ -58,7 +58,7 @@ func DeployOneStepProofEntry(t *testing.T, ctx context.Context, auth *bind.Trans
 	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 
-	ospHostIo, tx, _, err := ospgen.DeployOneStepProverHostIo(auth, client, common.Address{})
+	ospHostIo, tx, _, err := ospgen.DeployOneStepProverHostIo(auth, client, hotshot)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
@@ -328,7 +328,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 		trueDelayedBridge = asserterBridgeAddr
 		expectedWinner = l1Info.GetAddress("asserter")
 	}
-	ospEntry := DeployOneStepProofEntry(t, ctx, &deployerTxOpts, l1Backend)
+	ospEntry := DeployOneStepProofEntry(t, ctx, &deployerTxOpts, l1Backend, common.Address{})
 
 	locator, err := server_common.NewMachineLocator("")
 	if err != nil {

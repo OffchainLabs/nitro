@@ -39,7 +39,6 @@ const ArbosVersion_FixRedeemGas = uint64(11)
 
 type EspressoBlockJustification struct {
 	Header espressoTypes.Header
-	Proof  espressoTypes.NmtProof
 }
 
 type L1IncomingMessageHeader struct {

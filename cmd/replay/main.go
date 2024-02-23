@@ -22,7 +22,6 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 
-	espressoNmt "github.com/EspressoSystems/espresso-sequencer-go/nmt"
 	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -271,7 +270,7 @@ func main() {
 		validatingAgainstEspresso := message.Message.Header.Kind == arbostypes.L1MessageType_L2Message &&
 			chainConfig.ArbitrumChainParams.EnableEspresso
 		if validatingAgainstEspresso {
-			txs, jst, err := arbos.ParseEspressoMsg(message.Message)
+			_, jst, err := arbos.ParseEspressoMsg(message.Message)
 			if err != nil {
 				panic(err)
 			}
@@ -296,13 +295,6 @@ func main() {
 			}
 			if !commitment.Equals(hotshotHeader.Commit()) {
 				panic(fmt.Sprintf("invalid hotshot header jst header at %v expected: %v, provided %v.", height, hotshotHeader.Commit(), commitment))
-			}
-			var roots = []*espressoTypes.NmtRoot{&hotshotHeader.TransactionsRoot}
-			var proofs = []*espressoTypes.NmtProof{&jst.Proof}
-
-			err = espressoNmt.ValidateBatchTransactions(chainConfig.ChainID.Uint64(), roots, proofs, txs)
-			if err != nil {
-				panic(err)
 			}
 		}
 

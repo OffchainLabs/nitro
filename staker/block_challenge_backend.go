@@ -241,5 +241,5 @@ func (b *BlockChallengeBackend) DebugEspresso_SetIncorrectHeight(h uint64) {
 
 // This method is to create a conditional branch to help mocking a challenge.
 func (b *BlockChallengeBackend) EspressoDebugging(curr uint64) bool {
-	return b.debugEspressoIncorrectHeight > 0 && curr > b.debugEspressoIncorrectHeight
+	return b.debugEspressoIncorrectHeight > 0 && curr >= b.debugEspressoIncorrectHeight
 }

@@ -2,6 +2,7 @@ package arbtest
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"math/big"
 	"os/exec"
@@ -30,7 +31,7 @@ var hostIoAddress = "0xF34C2fac45527E55ED122f80a969e79A40547e6D"
 
 func runEspresso(t *testing.T, ctx context.Context) func() {
 	shutdown := func() {
-		p := exec.Command("docker-compose", "down")
+		p := exec.Command("docker", "compose", "down")
 		p.Dir = workingDir
 		err := p.Run()
 		if err != nil {
@@ -39,7 +40,7 @@ func runEspresso(t *testing.T, ctx context.Context) func() {
 	}
 
 	shutdown()
-	invocation := []string{"up", "-d"}
+	invocation := []string{"compose", "up", "-d"}
 	nodes := []string{
 		"orchestrator",
 		"da-server",
@@ -47,9 +48,10 @@ func runEspresso(t *testing.T, ctx context.Context) func() {
 		"espresso-sequencer0",
 		"espresso-sequencer1",
 		"commitment-task",
+		"state-relay-server",
 	}
 	invocation = append(invocation, nodes...)
-	procees := exec.Command("docker-compose", invocation...)
+	procees := exec.Command("docker", invocation...)
 	procees.Dir = workingDir
 
 	go func() {
@@ -244,6 +246,21 @@ func TestEspressoE2E(t *testing.T) {
 	})
 	Require(t, err)
 
+	// wait for the latest hotshot block
+	err = waitFor(t, ctx, func() bool {
+		out, err := exec.Command("curl", "http://127.0.0.1:50000/status/block-height").Output()
+		if err != nil {
+			return false
+		}
+		h := 0
+		err = json.Unmarshal(out, &h)
+		if err != nil {
+			return false
+		}
+		return h > 0
+	})
+	Require(t, err)
+
 	// Make sure it is a totally new account
 	newAccount := "User10"
 	l2Info.GenerateAccount(newAccount)
@@ -338,7 +355,44 @@ func TestEspressoE2E(t *testing.T) {
 		i += 1
 		conflict, err := validatorUtils.FindStakerConflict(&bind.CallOpts{}, builder.L2.ConsensusNode.DeployInfo.Rollup, goodOpts.From, badOpts.From, big.NewInt(1024))
 		Require(t, err)
-		return staker.ConflictType(conflict.Ty) == staker.CONFLICT_TYPE_FOUND
+		condition := staker.ConflictType(conflict.Ty) == staker.CONFLICT_TYPE_FOUND
+		if !condition {
+			log.Info("waiting for the conflict")
+		}
+		return condition
 	})
+	Require(t, err)
+	err = waitForWith(
+		t,
+		ctx,
+		time.Minute*10,
+		time.Second*10,
+		func() bool {
+			log.Info("good staker acts", "step", i)
+			txA, err := goodStaker.Act(ctx)
+			Require(t, err)
+			if txA != nil {
+				_, err = builder.L1.EnsureTxSucceeded(txA)
+				Require(t, err)
+			}
+
+			log.Info("bad staker acts", "step", i)
+			txB, err := badStaker.Act(ctx)
+			if txB != nil {
+				_, err = builder.L1.EnsureTxSucceeded(txB)
+				Require(t, err)
+			}
+			if err != nil {
+				ok := strings.Contains(err.Error(), "ERROR_HOTSHOT_COMMITMENT")
+				if ok {
+					return true
+				} else {
+					t.Fatal("unexpected err")
+				}
+			}
+			i += 1
+			return false
+
+		})
 	Require(t, err)
 }

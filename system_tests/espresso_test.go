@@ -105,12 +105,13 @@ func createMockHotShot(ctx context.Context, t *testing.T, l2Info *BlockchainTest
 				// Since we don't realize the validation of espresso yet,
 				// mock a simple nmt root here
 				Height:              block,
-				TransactionsRoot:    espressoTypes.NmtRoot{Root: []byte{}},
+				NsTable:             &espressoTypes.NsTable{Bytes: []byte{1}},
 				L1Head:              0, // Currently not used
 				Timestamp:           timestamp,
 				PayloadCommitment:   pc,
 				BlockMerkleTreeRoot: pc,
 				FeeMerkleTreeRoot:   pc,
+				FeeInfo:             &espressoTypes.FeeInfo{},
 			}
 			hotShotReader.AddHotShotCommitment(block, header.Commit())
 			return httpmock.NewJsonResponse(200, header)
@@ -236,8 +237,22 @@ func createValidationNode(ctx context.Context, t *testing.T, jit bool) func() {
 
 }
 
-func waitFor(t *testing.T, ctxinput context.Context, condition func() bool) error {
-	ctx, cancel := context.WithTimeout(ctxinput, 30*time.Second)
+func waitFor(
+	t *testing.T,
+	ctxinput context.Context,
+	condition func() bool,
+) error {
+	return waitForWith(t, ctxinput, 30*time.Second, time.Second, condition)
+}
+
+func waitForWith(
+	t *testing.T,
+	ctxinput context.Context,
+	timeout time.Duration,
+	interval time.Duration,
+	condition func() bool,
+) error {
+	ctx, cancel := context.WithTimeout(ctxinput, timeout)
 	defer cancel()
 
 	for {
@@ -245,7 +260,7 @@ func waitFor(t *testing.T, ctxinput context.Context, condition func() bool) erro
 			return nil
 		}
 		select {
-		case <-time.After(time.Second):
+		case <-time.After(interval):
 		case <-ctx.Done():
 			return ctx.Err()
 		}
