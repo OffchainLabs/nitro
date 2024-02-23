@@ -64,7 +64,7 @@ func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*v
 	})
 }
 
-func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves uint64, claimId common.Hash) containers.PromiseInterface[[]common.Hash] {
+func (e *executionRun) GetLeavesWithStepSize(fromBatch, machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[[]common.Hash] {
 	return stopwaiter.LaunchPromiseThread[[]common.Hash](e, func(ctx context.Context) ([]common.Hash, error) {
 		if stepSize == 1 {
 			e.cache = NewMachineCache(e.GetContext(), e.initialMachineGetter, e.config, server_common.WithAlwaysMerkleize())
@@ -83,7 +83,7 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 		if machineStartIndex == 0 {
 			gs := machine.GetGlobalState()
 			log.Info(fmt.Sprintf("Start global state for machine index 0: %+v", gs), log.Ctx{
-				"claimId": claimId,
+				"fromBatch": fromBatch,
 			})
 			hash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
 			stateRoots = append(stateRoots, hash)
@@ -122,6 +122,7 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 						numDesiredLeaves,
 					),
 					log.Ctx{
+						"fromBatch":         fromBatch,
 						"machinePosition":   numIterations*stepSize + machineStartIndex,
 						"timeSinceStart":    time.Since(start),
 						"stepSize":          stepSize,
@@ -154,6 +155,7 @@ func (e *executionRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDes
 		log.Info(
 			"Machine finished execution, gathered all the necessary hashes",
 			log.Ctx{
+				"fromBatch":           fromBatch,
 				"stepSize":            stepSize,
 				"startHash":           startHash,
 				"machineStartIndex":   machineStartIndex,
