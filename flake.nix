@@ -125,6 +125,8 @@
                 nodejs
                 yarn
 
+                python3
+
                 # wasm
                 rust-cbindgen
                 wabt
