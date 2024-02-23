@@ -55,6 +55,7 @@ pub fn verify_namespace_helper(namespace: u64, proof_bytes: &[u8], commit_bytes:
     assert!(txns_comm == txn_comm_str);
 }
 
+// TODO: Use Commit trait: https://github.com/EspressoSystems/nitro-espresso-integration/issues/88
 fn hash_txns(namespace: u64, txns: &[Transaction]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(namespace.to_le_bytes());

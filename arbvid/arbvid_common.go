@@ -11,6 +11,7 @@ import (
 	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 )
 
+// TODO move to espresso-go-sequencer: https://github.com/EspressoSystems/nitro-espresso-integration/issues/88
 func hashTxns(namespace uint64, txns []espressoTypes.Bytes) string {
 	hasher := sha256.New()
 	ns_buf := make([]byte, 8)

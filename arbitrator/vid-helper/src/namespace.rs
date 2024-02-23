@@ -1,3 +1,4 @@
+// TODO import from sequencer: https://github.com/EspressoSystems/nitro-espresso-integration/issues/87
 use core::fmt;
 use serde::{Deserialize, Serialize};
 use std::mem::size_of;
