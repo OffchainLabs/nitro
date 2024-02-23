@@ -556,7 +556,15 @@ func createNodeImpl(
 	}
 
 	if config.Bold.Enable {
-		assertionChain, err := solimpl.NewAssertionChain(ctx, deployInfo.Rollup, txOptsValidator, l1client)
+		rollupBindings, err := rollupgen.NewRollupUserLogic(deployInfo.Rollup, l1client)
+		if err != nil {
+			return nil, fmt.Errorf("could not create rollup bindings: %w", err)
+		}
+		chalManager, err := rollupBindings.ChallengeManager(&bind.CallOpts{})
+		if err != nil {
+			return nil, fmt.Errorf("could not get challenge manager: %w", err)
+		}
+		assertionChain, err := solimpl.NewAssertionChain(ctx, deployInfo.Rollup, chalManager, txOptsValidator, l1client)
 		if err != nil {
 			return nil, fmt.Errorf("could not create assertion chain: %w", err)
 		}
