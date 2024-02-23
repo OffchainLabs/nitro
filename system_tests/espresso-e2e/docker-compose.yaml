@@ -53,6 +53,7 @@ services:
       - ESPRESSO_SEQUENCER_STORAGE_PATH
       - ESPRESSO_SEQUENCER_L1_WS_PROVIDER
       - ESPRESSO_SEQUENCER_L1_USE_LATEST_BLOCK_TAG
+      - ESPRESSO_STATE_RELAY_SERVER_URL
       - ESPRESSO_SEQUENCER_PRIVATE_STAKING_KEY=$ESPRESSO_DEMO_SEQUENCER_STAKING_PRIVATE_KEY_0
       - ESPRESSO_SEQUENCER_ETH_MNEMONIC
       - ESPRESSO_SEQUENCER_ETH_ACCOUNT_INDEX
@@ -65,6 +66,8 @@ services:
       consensus-server:
         condition: service_healthy
       da-server:
+        condition: service_healthy
+      state-relay-server:
         condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -87,6 +90,7 @@ services:
       - ESPRESSO_SEQUENCER_ETH_MNEMONIC
       - ESPRESSO_SEQUENCER_ETH_ACCOUNT_INDEX
       - ESPRESSO_SEQUENCER_PREFUNDED_BUILDER_ACCOUNTS
+      - ESPRESSO_STATE_RELAY_SERVER_URL
       - RUST_LOG
       - RUST_LOG_FORMAT
     depends_on:
@@ -95,6 +99,8 @@ services:
       consensus-server:
         condition: service_healthy
       da-server:
+        condition: service_healthy
+      state-relay-server:
         condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -105,7 +111,7 @@ services:
       - "$ESPRESSO_COMMITMENT_TASK_PORT:$ESPRESSO_COMMITMENT_TASK_PORT"
     command: commitment-task --deploy
     environment:
-      - ESPRESSO_SEQUENCER_ETH_MNEMONIC
+      - ESPRESSO_SEQUENCER_ETH_MNEMONIC=$ESPRESSO_COMMITMENT_ETH_MNEMONIC
       - ESPRESSO_SEQUENCER_HOTSHOT_ACCOUNT_INDEX
       - ESPRESSO_COMMITMENT_TASK_PORT
       - ESPRESSO_SEQUENCER_URL
@@ -122,3 +128,13 @@ services:
         condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+  state-relay-server:
+    image: ghcr.io/espressosystems/espresso-sequencer/state-relay-server:main
+    ports:
+      - "$ESPRESSO_STATE_RELAY_SERVER_PORT:$ESPRESSO_STATE_RELAY_SERVER_PORT"
+    environment:
+      - ESPRESSO_STATE_RELAY_SERVER_PORT
+      - ESPRESSO_STATE_SIGNATURE_WEIGHT_THRESHOLD
+      - RUST_LOG
+      - RUST_LOG_FORMAT

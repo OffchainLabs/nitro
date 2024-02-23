@@ -24,16 +24,16 @@ func TestEspressoParsing(t *testing.T) {
 	Require(t, err)
 	expectJst := &arbostypes.EspressoBlockJustification{
 		Header: espressoTypes.Header{
-			TransactionsRoot:    espressoTypes.NmtRoot{Root: []byte{7, 8, 9}},
 			L1Head:              1,
 			Timestamp:           2,
 			Height:              3,
+			NsTable:             &espressoTypes.NsTable{RawPayload: []byte{1}},
 			L1Finalized:         &espressoTypes.L1BlockInfo{},
 			PayloadCommitment:   payloadCommitment,
 			BlockMerkleTreeRoot: root,
 			FeeMerkleTreeRoot:   root,
+			FeeInfo:             &espressoTypes.FeeInfo{},
 		},
-		Proof: []byte{9},
 	}
 	msg, err := MessageFromEspresso(expectHeader, expectTxes, expectJst)
 	Require(t, err)
@@ -45,9 +45,6 @@ func TestEspressoParsing(t *testing.T) {
 		Fail(t)
 	}
 
-	if !reflect.DeepEqual(actualJst.Proof, expectJst.Proof) {
-		Fail(t)
-	}
 	if !reflect.DeepEqual(actualJst.Header, expectJst.Header) {
 		Fail(t)
 	}

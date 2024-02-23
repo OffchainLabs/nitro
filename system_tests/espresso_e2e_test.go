@@ -48,6 +48,7 @@ func runEspresso(t *testing.T, ctx context.Context) func() {
 		"espresso-sequencer0",
 		"espresso-sequencer1",
 		"commitment-task",
+		"state-relay-server",
 	}
 	invocation = append(invocation, nodes...)
 	procees := exec.Command("docker", invocation...)

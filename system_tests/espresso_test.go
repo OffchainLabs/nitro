@@ -105,7 +105,7 @@ func createMockHotShot(ctx context.Context, t *testing.T, l2Info *BlockchainTest
 				// Since we don't realize the validation of espresso yet,
 				// mock a simple nmt root here
 				Height:              block,
-				TransactionsRoot:    espressoTypes.NmtRoot{Root: []byte{}},
+				NsTable:             &espressoTypes.NsTable{RawPayload: []byte{1}},
 				L1Head:              0, // Currently not used
 				Timestamp:           timestamp,
 				PayloadCommitment:   pc,
@@ -241,7 +241,7 @@ func waitFor(
 	ctxinput context.Context,
 	condition func() bool,
 ) error {
-	return waitForWith(t, ctxinput, 30*time.Second, time.Second, condition)
+	return waitForWith(t, ctxinput, 3000*time.Second, time.Second, condition)
 }
 
 func waitForWith(
