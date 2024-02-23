@@ -27,7 +27,7 @@ func TestEspressoParsing(t *testing.T) {
 			L1Head:              1,
 			Timestamp:           2,
 			Height:              3,
-			NsTable:             &espressoTypes.NsTable{RawPayload: []byte{1}},
+			NsTable:             &espressoTypes.NsTable{Bytes: []byte{1}},
 			L1Finalized:         &espressoTypes.L1BlockInfo{},
 			PayloadCommitment:   payloadCommitment,
 			BlockMerkleTreeRoot: root,

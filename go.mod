@@ -2,7 +2,6 @@ module github.com/offchainlabs/nitro
 
 go 1.21
 
-toolchain go1.21.3
 
 replace github.com/VictoriaMetrics/fastcache => ./fastcache
 
