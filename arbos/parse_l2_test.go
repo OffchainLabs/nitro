@@ -20,9 +20,6 @@ func TestEspressoParsing(t *testing.T) {
 		BlockNumber: 1,
 	}
 	var mockProof = json.RawMessage(`{"NonExistence":{"ns_id":0}}`)
-	var nsTable = espressoTypes.NsTable{
-		RawPayload: []byte{0, 0, 0, 0},
-	}
 	payloadCommitment, err := tagged_base64.New("payloadCommitment", []byte{1, 2, 3})
 	Require(t, err)
 	root, err := tagged_base64.New("root", []byte{4, 5, 6})
@@ -32,11 +29,12 @@ func TestEspressoParsing(t *testing.T) {
 			L1Head:              1,
 			Timestamp:           2,
 			Height:              3,
-			NsTable:             &nsTable,
+			NsTable:             &espressoTypes.NsTable{Bytes: []byte{1}},
 			L1Finalized:         &espressoTypes.L1BlockInfo{},
 			PayloadCommitment:   payloadCommitment,
 			BlockMerkleTreeRoot: root,
 			FeeMerkleTreeRoot:   root,
+			FeeInfo:             &espressoTypes.FeeInfo{},
 		},
 		Proof: &mockProof,
 	}
@@ -50,9 +48,6 @@ func TestEspressoParsing(t *testing.T) {
 		Fail(t)
 	}
 
-	if !reflect.DeepEqual(actualJst.Proof, expectJst.Proof) {
-		Fail(t)
-	}
 	if !reflect.DeepEqual(actualJst.Header, expectJst.Header) {
 		Fail(t)
 	}

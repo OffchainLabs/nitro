@@ -1358,6 +1358,12 @@ impl Machine {
             .unwrap_or(true)
     }
 
+    pub fn next_instruction_is_read_hotshot(&self) -> bool {
+        self.get_next_instruction()
+            .map(|i| i.opcode == Opcode::ReadHotShotCommitment)
+            .unwrap_or(true)
+    }
+
     pub fn get_pc(&self) -> Option<ProgramCounter> {
         if self.is_halted() {
             return None;
