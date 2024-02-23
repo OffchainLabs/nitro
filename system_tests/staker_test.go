@@ -596,13 +596,18 @@ func deployBoldContracts(
 	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)
 
+	miniStakeValues := []*big.Int{
+		big.NewInt(1),
+		big.NewInt(2),
+		big.NewInt(3),
+	}
 	cfg := challenge_testing.GenerateRollupConfig(
 		false,
 		locator.LatestWasmModuleRoot(),
 		l1TransactionOpts.From,
 		chainId,
 		common.Address{},
-		big.NewInt(1),
+		miniStakeValues,
 		stakeToken,
 		rollupgen_bold.ExecutionState{
 			GlobalState:   rollupgen_bold.GlobalState{},
