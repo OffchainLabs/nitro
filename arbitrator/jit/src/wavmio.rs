@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    callerenv::CallerEnv,
+    callerenv::JitCallerEnv,
     machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
     socket,
 };
@@ -19,7 +19,7 @@ type Uptr = u32;
 
 /// Reads 32-bytes of global state
 pub fn get_global_state_bytes32(mut env: WasmEnvMut, idx: u32, out_ptr: Uptr) -> MaybeEscape {
-    let caller_env = CallerEnv::new(&mut env);
+    let caller_env = JitCallerEnv::new(&mut env);
     ready_hostio(caller_env.wenv)?;
 
     let global = match caller_env.wenv.large_globals.get(idx as usize) {
@@ -32,7 +32,7 @@ pub fn get_global_state_bytes32(mut env: WasmEnvMut, idx: u32, out_ptr: Uptr) ->
 
 /// Writes 32-bytes of global state
 pub fn set_global_state_bytes32(mut env: WasmEnvMut, idx: u32, src_ptr: Uptr) -> MaybeEscape {
-    let caller_env = CallerEnv::new(&mut env);
+    let caller_env = JitCallerEnv::new(&mut env);
     ready_hostio(caller_env.wenv)?;
 
     let slice = caller_env.caller_read_slice(src_ptr, 32);
@@ -48,7 +48,7 @@ pub fn set_global_state_bytes32(mut env: WasmEnvMut, idx: u32, src_ptr: Uptr) ->
 
 /// Reads 8-bytes of global state
 pub fn get_global_state_u64(mut env: WasmEnvMut, idx: u32) -> Result<u64, Escape> {
-    let caller_env = CallerEnv::new(&mut env);
+    let caller_env = JitCallerEnv::new(&mut env);
     ready_hostio(caller_env.wenv)?;
 
     match caller_env.wenv.small_globals.get(idx as usize) {
@@ -59,7 +59,7 @@ pub fn get_global_state_u64(mut env: WasmEnvMut, idx: u32) -> Result<u64, Escape
 
 /// Writes 8-bytes of global state
 pub fn set_global_state_u64(mut env: WasmEnvMut, idx: u32, val: u64) -> MaybeEscape {
-    let caller_env = CallerEnv::new(&mut env);
+    let caller_env = JitCallerEnv::new(&mut env);
     ready_hostio(caller_env.wenv)?;
 
     match caller_env.wenv.small_globals.get_mut(idx as usize) {
@@ -78,7 +78,7 @@ pub fn read_inbox_message(
     offset: u32,
     out_ptr: Uptr,
 ) -> Result<u32, Escape> {
-    let caller_env = CallerEnv::new(&mut env);
+    let caller_env = JitCallerEnv::new(&mut env);
     ready_hostio(caller_env.wenv)?;
 
     let message = match caller_env.wenv.sequencer_messages.get(&msg_num) {
@@ -99,7 +99,7 @@ pub fn read_delayed_inbox_message(
     offset: u32,
     out_ptr: Uptr,
 ) -> Result<u32, Escape> {
-    let caller_env = CallerEnv::new(&mut env);
+    let caller_env = JitCallerEnv::new(&mut env);
     ready_hostio(caller_env.wenv)?;
 
     let message = match caller_env.wenv.delayed_messages.get(&msg_num) {
@@ -120,7 +120,7 @@ pub fn resolve_preimage(
     offset: u32,
     out_ptr: Uptr,
 ) -> Result<u32, Escape> {
-    let mut caller_env = CallerEnv::new(&mut env);
+    let mut caller_env = JitCallerEnv::new(&mut env);
 
     let name = "wavmio.resolvePreImage";
 

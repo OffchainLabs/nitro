@@ -4,15 +4,13 @@
 #![no_std]
 
 use rand::RngCore;
+use paste::paste;
+use callerenv::{
+    self,
+    wasip1_stub::{Errno, Uptr, ERRNO_SUCCESS, ERRNO_BADF, ERRNO_INTVAL},
+    CallerEnv,
+};
 use rand_pcg::Pcg32;
-
-type Errno = u16;
-
-type Uptr = usize;
-
-const ERRNO_SUCCESS: Errno = 0;
-const ERRNO_BADF: Errno = 8;
-const ERRNO_INTVAL: Errno = 28;
 
 #[allow(dead_code)]
 extern "C" {
@@ -37,327 +35,231 @@ pub unsafe extern "C" fn wasi_snapshot_preview1__proc_exit(code: u32) -> ! {
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__environ_sizes_get(
-    length_ptr: Uptr,
-    data_size_ptr: Uptr,
-) -> Errno {
-    wavm_caller_store32(length_ptr, 0);
-    wavm_caller_store32(data_size_ptr, 0);
-    ERRNO_SUCCESS
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__fd_write(
-    fd: usize,
-    iovecs_ptr: Uptr,
-    iovecs_len: usize,
-    ret_ptr: Uptr,
-) -> Errno {
-    if fd != 1 && fd != 2 {
-        return ERRNO_BADF;
-    }
-    let mut size = 0;
-    for i in 0..iovecs_len {
-        let ptr = iovecs_ptr + i * 8;
-        size += wavm_caller_load32(ptr + 4);
-    }
-    wavm_caller_store32(ret_ptr, size);
-    ERRNO_SUCCESS
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__environ_get(_: usize, _: usize) -> Errno {
-    ERRNO_INTVAL
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__fd_close(_: usize) -> Errno {
-    ERRNO_BADF
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__fd_read(
-    _: usize,
-    _: usize,
-    _: usize,
-    _: usize,
-) -> Errno {
-    ERRNO_BADF
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__fd_readdir(
-    _fd: usize,
-    _: u32,
-    _: u32,
-    _: u64,
-    _: u32,
-) -> Errno {
-    ERRNO_BADF
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__fd_sync(
-    _: u32,
-) -> Errno {
-    ERRNO_SUCCESS
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__fd_seek(
-    _fd: usize,
-    _offset: u64,
-    _whence: u8,
-    _filesize: usize,
-) -> Errno {
-    ERRNO_BADF
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__fd_datasync(_fd: usize) -> Errno {
-    ERRNO_BADF
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__path_open(
-    _: usize,
-    _: usize,
-    _: usize,
-    _: usize,
-    _: usize,
-    _: u64,
-    _: u64,
-    _: usize,
-    _: usize,
-) -> Errno {
-    ERRNO_BADF
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__path_create_directory(
-    _: usize,
-    _: usize,
-    _: usize,
-) -> Errno {
-    ERRNO_BADF
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__path_remove_directory(
-    _: usize,
-    _: usize,
-    _: usize,
-) -> Errno {
-    ERRNO_BADF
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__path_readlink(
-    _: usize,
-    _: usize,
-    _: usize,
-    _: usize,
-    _: usize,
-    _: usize,
-) -> Errno {
-    ERRNO_BADF
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__path_rename(
-    _: usize,
-    _: usize,
-    _: usize,
-    _: usize,
-    _: usize,
-    _: usize,
-) -> Errno {
-    ERRNO_BADF
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__path_filestat_get(
-    _: usize,
-    _: usize,
-    _: usize,
-    _: usize,
-    _: usize,
-) -> Errno {
-    ERRNO_BADF
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__path_unlink_file(
-    _: usize,
-    _: usize,
-    _: usize,
-) -> Errno {
-    ERRNO_BADF
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__fd_prestat_get(_: usize, _: usize) -> Errno {
-    ERRNO_BADF
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__fd_prestat_dir_name(
-    _: usize,
-    _: usize,
-    _: usize,
-) -> Errno {
-    ERRNO_BADF
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__fd_filestat_get(
-    _fd: usize,
-    _filestat: usize,
-) -> Errno {
-    ERRNO_BADF
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__fd_filestat_set_size(
-    _fd: usize,
-    _: u64,
-) -> Errno {
-    ERRNO_BADF
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__fd_pread(
-    _fd: usize,
-    _: u32,
-    _: u32,
-    _: u64,
-    _: u32,
-) -> Errno {
-    ERRNO_BADF
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__fd_pwrite(
-    _fd: usize,
-    _: u32,
-    _: u32,
-    _: u64,
-    _: u32,
-) -> Errno {
-    ERRNO_BADF
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__sock_accept(
-    _fd: usize,
-    _: u32,
-    _: u32,
-) -> Errno {
-    ERRNO_BADF
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__sock_shutdown(
-    _: usize,
-    _: u32,
-) -> Errno {
-    ERRNO_BADF
-}
-
-#[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__sched_yield() -> Errno {
-    ERRNO_SUCCESS
-}
-
-// An increasing clock, measured in nanoseconds.
 static mut TIME: u64 = 0;
-// The amount of TIME advanced each check. Currently 10 milliseconds.
-static TIME_INTERVAL: u64 = 10_000_000;
-
-#[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__clock_time_get(
-    _clock_id: usize,
-    _precision: u64,
-    time: Uptr,
-) -> Errno {
-    TIME += TIME_INTERVAL;
-    wavm_caller_store32(time, TIME as u32);
-    wavm_caller_store32(time + 4, (TIME >> 32) as u32);
-    ERRNO_SUCCESS
-}
-
 static mut RNG: Option<Pcg32> = None;
 
-unsafe fn get_rng<'a>() -> &'a mut Pcg32 {
-    RNG.get_or_insert_with(|| Pcg32::new(0xcafef00dd15ea5e5, 0xa02bdbf7bb3c0a7))
-}
+#[derive(Default)]
+struct StaticCallerEnv{}
 
-#[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__random_get(mut buf: usize, mut len: usize) -> Errno {
-    let rng = get_rng();
-    while len >= 4 {
-        wavm_caller_store32(buf, rng.next_u32());
-        buf += 4;
-        len -= 4;
-    }
-    if len > 0 {
-        let mut rem = rng.next_u32();
-        for _ in 0..len {
-            wavm_caller_store8(buf, rem as u8);
-            buf += 1;
-            rem >>= 8;
+impl CallerEnv<'static> for StaticCallerEnv {
+    fn caller_read_u8(&self, ptr: u32) -> u8 {
+        unsafe {
+            wavm_caller_load8(ptr)
         }
     }
-    ERRNO_SUCCESS
+
+    fn caller_read_u16(&self, ptr: u32) -> u16 {
+        let lsb = self.caller_read_u8(ptr);
+        let msb = self.caller_read_u8(ptr+1);
+        (msb as u16) << 8 | (lsb as u16)
+    }
+
+    fn caller_read_u32(&self, ptr: u32) -> u32 {
+        let lsb = self.caller_read_u16(ptr);
+        let msb = self.caller_read_u16(ptr+2);
+        (msb as u32) << 16 | (lsb as u32)
+    }
+
+    fn caller_read_u64(&self, ptr: u32) -> u64 {
+        let lsb = self.caller_read_u32(ptr);
+        let msb = self.caller_read_u32(ptr+4);
+        (msb as u64) << 32 | (lsb as u64)
+    }
+
+    fn caller_write_u8(&mut self, ptr: u32, x: u8) -> &mut Self {
+        unsafe {
+            wavm_caller_store8(ptr, x);
+        }
+        self
+    }
+
+    fn caller_write_u16(&mut self, ptr: u32, x: u16) -> &mut Self {
+        self.caller_write_u8(ptr, (x & 0xff) as u8);
+        self.caller_write_u8(ptr + 1, ((x >> 8) & 0xff) as u8);
+        self
+    }
+
+    fn caller_write_u32(&mut self, ptr: u32, x: u32) -> &mut Self {
+        self.caller_write_u16(ptr, (x & 0xffff) as u16);
+        self.caller_write_u16(ptr + 2, ((x >> 16) & 0xffff) as u16);
+        self
+    }
+
+    fn caller_write_u64(&mut self, ptr: u32, x: u64) -> &mut Self {
+        self.caller_write_u32(ptr, (x & 0xffffffff) as u32);
+        self.caller_write_u32(ptr + 4, ((x >> 16) & 0xffffffff) as u32);
+        self
+    }
+
+    fn caller_print_string(&mut self, _ptr: u32, _len: u32) {} // TODO?
+
+    fn caller_get_time(&self) -> u64 {
+        unsafe {
+            TIME
+        }
+    }
+
+    fn caller_advance_time(&mut self, delta: u64) {
+        unsafe {
+            TIME += delta
+        }
+    }
+
+    fn next_rand_u32(&mut self) -> u32 {
+        unsafe {
+            RNG.get_or_insert_with(|| Pcg32::new(callerenv::PCG_INIT_STATE, callerenv::PCG_INIT_STREAM))
+        }
+        .next_u32()
+    }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__args_sizes_get(
+
+macro_rules! wrap {
+    ($func_name:ident ($($arg_name:ident : $arg_type:ty),* ) -> $return_type:ty) => {
+        paste! {
+            #[no_mangle]
+            pub unsafe extern "C" fn [<wasi_snapshot_preview1__ $func_name>]($($arg_name : $arg_type),*) -> $return_type {
+                let caller_env = StaticCallerEnv::default();
+
+                callerenv::wasip1_stub::$func_name(caller_env, $($arg_name),*)
+            }
+        }
+    };
+}
+
+wrap!(clock_time_get(
+    clock_id: u32,
+    precision: u64,
+    time_ptr: Uptr
+) -> Errno);
+
+wrap!(random_get(buf: Uptr, len: u32) -> Errno);
+
+wrap!(environ_sizes_get(length_ptr: Uptr, data_size_ptr: Uptr) -> Errno);
+wrap!(fd_write(
+    fd: u32,
+    iovecs_ptr: Uptr,
+    iovecs_len: u32,
+    ret_ptr: Uptr
+) -> Errno);
+wrap!(environ_get(a: u32, b: u32) -> Errno);
+wrap!(fd_close(fd: u32) -> Errno);
+wrap!(fd_read(a: u32, b: u32, c: u32, d: u32) -> Errno);
+wrap!(fd_readdir(
+    fd: u32,
+    a: u32,
+    b: u32,
+    c: u64,
+    d: u32
+) -> Errno);
+
+wrap!(fd_sync(a: u32) -> Errno);
+
+wrap!(fd_seek(
+    _fd: u32,
+    _offset: u64,
+    _whence: u8,
+    _filesize: u32
+) -> Errno);
+
+wrap!(fd_datasync(_fd: u32) -> Errno);
+
+wrap!(path_open(
+    a: u32,
+    b: u32,
+    c: u32,
+    d: u32,
+    e: u32,
+    f: u64,
+    g: u64,
+    h: u32,
+    i: u32
+) -> Errno);
+
+wrap!(path_create_directory(
+    a: u32,
+    b: u32,
+    c: u32
+) -> Errno);
+
+wrap!(path_remove_directory(
+    a: u32,
+    b: u32,
+    c: u32
+) -> Errno);
+
+wrap!(path_readlink(
+    a: u32,
+    b: u32,
+    c: u32,
+    d: u32,
+    e: u32,
+    f: u32
+) -> Errno);
+
+wrap!(path_rename(
+    a: u32,
+    b: u32,
+    c: u32,
+    d: u32,
+    e: u32,
+    f: u32
+) -> Errno);
+
+wrap!(path_filestat_get(
+    a: u32,
+    b: u32,
+    c: u32,
+    d: u32,
+    e: u32
+) -> Errno);
+
+wrap!(path_unlink_file(a: u32, b: u32, c: u32) -> Errno);
+
+wrap!(fd_prestat_get(a: u32, b: u32) -> Errno);
+
+wrap!(fd_prestat_dir_name(a: u32, b: u32, c: u32) -> Errno);
+
+wrap!(fd_filestat_get(_fd: u32, _filestat: u32) -> Errno);
+
+wrap!(fd_filestat_set_size(_fd: u32, size: u64) -> Errno);
+
+wrap!(fd_pread(
+    _fd: u32,
+    _a: u32,
+    _b: u32,
+    _c: u64,
+    _d: u32
+) -> Errno);
+
+wrap!(fd_pwrite(
+    _fd: u32,
+    _a: u32,
+    _b: u32,
+    _c: u64,
+    _d: u32
+) -> Errno);
+
+wrap!(sock_accept(_fd: u32, a: u32, b: u32) -> Errno);
+
+wrap!(sock_shutdown(a: u32, b: u32) -> Errno);
+
+wrap!(sched_yield() -> Errno);
+
+wrap!(args_sizes_get(
     length_ptr: Uptr,
-    data_size_ptr: Uptr,
-) -> Errno {
-    wavm_caller_store32(length_ptr, 1);
-    wavm_caller_store32(data_size_ptr, 4);
-    ERRNO_SUCCESS
-}
+    data_size_ptr: Uptr
+) -> Errno);
 
-#[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__args_get(
-    argv_buf: Uptr, 
-    data_buf: Uptr
-) -> Errno {
-    wavm_caller_store32(argv_buf, data_buf as u32);
-    wavm_caller_store32(data_buf, 0x6E6962); // "bin\0"
-    ERRNO_SUCCESS
-}
+wrap!(args_get(argv_buf: Uptr, data_buf: Uptr) -> Errno);
 
-#[no_mangle]
-// we always simulate a timeout
-pub unsafe extern "C" fn wasi_snapshot_preview1__poll_oneoff(in_subs: Uptr, out_evt: Uptr, nsubscriptions: usize, nevents_ptr: Uptr) -> Errno {
-    const SUBSCRIPTION_SIZE: usize = 48;
-    for i in 0..nsubscriptions {
-        let subs_base = in_subs + (SUBSCRIPTION_SIZE * i);
-        let subs_type = wavm_caller_load32(subs_base + 8);
-        if subs_type != 0 {
-            // not a clock subscription type
-            continue
-        }
-        let user_data = wavm_caller_load32(subs_base);
-        wavm_caller_store32(out_evt, user_data);
-        wavm_caller_store32(out_evt + 8, 0);
-        wavm_caller_store32(nevents_ptr, 1);
-        return ERRNO_SUCCESS;
-    }
-    ERRNO_INTVAL
-}
+wrap!(poll_oneoff(
+    in_subs: Uptr,
+    out_evt: Uptr,
+    nsubscriptions: u32,
+    nevents_ptr: Uptr
+) -> Errno);
 
-#[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__fd_fdstat_get(_: usize, _: usize) -> Errno {
-    ERRNO_INTVAL
-}
+wrap!(fd_fdstat_get(a: u32, b: u32) -> Errno);
 
-#[no_mangle]
-pub unsafe extern "C" fn wasi_snapshot_preview1__fd_fdstat_set_flags(_: usize, _: usize) -> Errno {
-    ERRNO_INTVAL
-}
+wrap!(fd_fdstat_set_flags(a: u32, b: u32) -> Errno);

@@ -1,9 +1,10 @@
 // Copyright 2022-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::callerenv::CallerEnv;
+use crate::callerenv::JitCallerEnv;
 use crate::machine::{Escape, MaybeEscape, WasmEnvMut};
 use crate::stylus_backend::exec_wasm;
+use callerenv::CallerEnv;
 use arbutil::Bytes32;
 use arbutil::{evm::EvmData, format::DebugBytes, heapify};
 use eyre::eyre;
@@ -30,7 +31,7 @@ pub fn activate(
     err_buf: Uptr,
     err_buf_len: u32,
 ) -> Result<u32, Escape> {
-    let mut caller_env = CallerEnv::new(&mut env);
+    let mut caller_env = JitCallerEnv::new(&mut env);
     let wasm = caller_env.caller_read_slice(wasm_ptr, wasm_size);
     let debug = debug != 0;
 
@@ -69,7 +70,7 @@ pub fn new_program(
     evm_data_handler: u64,
     gas: u64,
 ) -> Result<u32, Escape> {
-    let mut caller_env = CallerEnv::new(&mut env);
+    let mut caller_env = JitCallerEnv::new(&mut env);
     let compiled_hash = caller_env.caller_read_bytes32(compiled_hash_ptr);
     let calldata = caller_env.caller_read_slice(calldata_ptr, calldata_size);
     let evm_data: EvmData = unsafe { *Box::from_raw(evm_data_handler as *mut EvmData) };
@@ -106,7 +107,7 @@ pub fn new_program(
 /// module MUST match last module number returned from new_program
 /// returns request_id for the first request from the program
 pub fn start_program(mut env: WasmEnvMut, module: u32) -> Result<u32, Escape> {
-    let caller_env = CallerEnv::new(&mut env);
+    let caller_env = JitCallerEnv::new(&mut env);
 
     if caller_env.wenv.threads.len() as u32 != module || module == 0 {
         return Escape::hostio(format!(
@@ -123,7 +124,7 @@ pub fn start_program(mut env: WasmEnvMut, module: u32) -> Result<u32, Escape> {
 // gets information about request according to id
 // request_id MUST be last request id returned from start_program or send_response
 pub fn get_request(mut env: WasmEnvMut, id: u32, len_ptr: u32) -> Result<u32, Escape> {
-    let mut caller_env = CallerEnv::new(&mut env);
+    let mut caller_env = JitCallerEnv::new(&mut env);
     let thread = caller_env.wenv.threads.last_mut().unwrap();
     let msg = thread.last_message()?;
     if msg.1 != id {
@@ -137,7 +138,7 @@ pub fn get_request(mut env: WasmEnvMut, id: u32, len_ptr: u32) -> Result<u32, Es
 // request_id MUST be last request receieved
 // data_ptr MUST point to a buffer of at least the length returned by get_request
 pub fn get_request_data(mut env: WasmEnvMut, id: u32, data_ptr: u32) -> MaybeEscape {
-    let caller_env = CallerEnv::new(&mut env);
+    let caller_env = JitCallerEnv::new(&mut env);
     let thread = caller_env.wenv.threads.last_mut().unwrap();
     let msg = thread.last_message()?;
     if msg.1 != id {
@@ -158,7 +159,7 @@ pub fn set_response(
     raw_data_ptr: Uptr,
     raw_data_len: u32,
 ) -> MaybeEscape {
-    let caller_env = CallerEnv::new(&mut env);
+    let caller_env = JitCallerEnv::new(&mut env);
     let result = caller_env.caller_read_slice(result_ptr, result_len);
     let raw_data = caller_env.caller_read_slice(raw_data_ptr, raw_data_len);
 
@@ -170,7 +171,7 @@ pub fn set_response(
 // MUST be called right after set_response to the same id
 // returns request_id for the next request
 pub fn send_response(mut env: WasmEnvMut, req_id: u32) -> Result<u32, Escape> {
-    let caller_env = CallerEnv::new(&mut env);
+    let caller_env = JitCallerEnv::new(&mut env);
     let thread = caller_env.wenv.threads.last_mut().unwrap();
     let msg = thread.last_message()?;
     if msg.1 != req_id {
@@ -183,7 +184,7 @@ pub fn send_response(mut env: WasmEnvMut, req_id: u32) -> Result<u32, Escape> {
 
 // removes the last created program
 pub fn pop(mut env: WasmEnvMut) -> MaybeEscape {
-    let caller_env = CallerEnv::new(&mut env);
+    let caller_env = JitCallerEnv::new(&mut env);
 
     match caller_env.wenv.threads.pop() {
         None => Err(Escape::Child(eyre!("no child"))),
@@ -231,7 +232,7 @@ pub fn create_evm_data(
     tx_origin_ptr: Uptr,
     reentrant: u32,
 ) -> Result<u64, Escape> {
-    let mut caller_env = CallerEnv::new(&mut env);
+    let mut caller_env = JitCallerEnv::new(&mut env);
 
     let evm_data = EvmData {
         block_basefee: caller_env.caller_read_bytes32(block_basefee_ptr),

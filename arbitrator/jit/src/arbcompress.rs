@@ -1,8 +1,10 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+use crate::callerenv::JitCallerEnv;
 use crate::machine::Escape;
-use crate::{callerenv::CallerEnv, machine::WasmEnvMut};
+use crate::machine::WasmEnvMut;
+use callerenv::CallerEnv;
 
 extern "C" {
     pub fn BrotliDecoderDecompress(
@@ -46,7 +48,7 @@ pub fn brotli_decompress(
     out_buf_ptr: Uptr,
     out_len_ptr: Uptr,
 ) -> Result<u32, Escape> {
-    let mut caller_env = CallerEnv::new(&mut env);
+    let mut caller_env = JitCallerEnv::new(&mut env);
     let in_slice = caller_env.caller_read_slice(in_buf_ptr, in_buf_len);
     let orig_output_len = caller_env.caller_read_u32(out_len_ptr) as usize;
     let mut output = vec![0u8; orig_output_len as usize];
@@ -79,7 +81,7 @@ pub fn brotli_compress(
     level: u32,
     window_size: u32,
 ) -> Result<u32, Escape> {
-    let mut caller_env = CallerEnv::new(&mut env);
+    let mut caller_env = JitCallerEnv::new(&mut env);
     let in_slice = caller_env.caller_read_slice(in_buf_ptr, in_buf_len);
     let orig_output_len = caller_env.caller_read_u32(out_len_ptr) as usize;
     let mut output = vec![0u8; orig_output_len];

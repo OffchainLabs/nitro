@@ -203,6 +203,10 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2bd12c1caf447e69cd4528f47f94d203fd2582878ecb9e9465484c4148a8223"
 
 [[package]]
+name = "callerenv"
+version = "0.1.0"
+
+[[package]]
 name = "cc"
 version = "1.0.73"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -779,6 +783,7 @@ name = "jit"
 version = "0.1.0"
 dependencies = [
  "arbutil",
+ "callerenv",
  "eyre",
  "hex",
  "libc",
