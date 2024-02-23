@@ -35,15 +35,6 @@ func NewManager(
 	statelessBlockValidator *StatelessBlockValidator,
 	config *BoldConfig,
 ) (*challengemanager.Manager, error) {
-	chain, err := solimpl.NewAssertionChain(
-		ctx,
-		rollupAddress,
-		txOpts,
-		client,
-	)
-	if err != nil {
-		return nil, err
-	}
 	userLogic, err := rollupgen.NewRollupUserLogic(
 		rollupAddress, client,
 	)
@@ -52,6 +43,16 @@ func NewManager(
 	}
 	challengeManagerAddr, err := userLogic.RollupUserLogicCaller.ChallengeManager(
 		&bind.CallOpts{Context: ctx},
+	)
+	if err != nil {
+		return nil, err
+	}
+	chain, err := solimpl.NewAssertionChain(
+		ctx,
+		rollupAddress,
+		challengeManagerAddr,
+		txOpts,
+		client,
 	)
 	if err != nil {
 		return nil, err
