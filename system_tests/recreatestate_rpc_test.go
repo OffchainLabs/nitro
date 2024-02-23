@@ -451,8 +451,8 @@ func TestSkippingSavingStateAndRecreatingAfterRestart(t *testing.T) {
 	cacheConfig.SnapshotCache = 0 // disable snapshots
 	cacheConfig.BlockAge = 0      // use only Caching.BlockCount to keep only last N blocks in dirties cache, no matter how new they are
 
-	//// test defaults
-	//	testSkippingSavingStateAndRecreatingAfterRestart(t, &cacheConfig, 512)
+	// test defaults
+	testSkippingSavingStateAndRecreatingAfterRestart(t, &cacheConfig, 512)
 
 	cacheConfig.MaxNumberOfBlocksToSkipStateSaving = 127
 	cacheConfig.MaxAmountOfGasToSkipStateSaving = 0
