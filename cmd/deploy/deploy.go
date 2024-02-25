@@ -122,7 +122,7 @@ func main() {
 		}
 	}
 	if len(batchPosters) == 0 {
-		log.Info("batch posters array was empty or invalid, defaulting to sequencer address")
+		log.Info("batch posters array was empty, defaulting to sequencer address")
 		batchPosters = append(batchPosters, sequencerAddress)
 	}
 
