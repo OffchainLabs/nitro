@@ -356,28 +356,33 @@ func TryConfirmingAssertion(
 	if status == protocol.AssertionConfirmed {
 		return true, nil
 	}
-	latestHeader, err := chain.Backend().HeaderByNumber(ctx, util.GetFinalizedBlockNumber())
-	if err != nil {
-		return false, err
-	}
-	if !latestHeader.Number.IsUint64() {
-		return false, errors.New("latest block number is not a uint64")
-	}
-	confirmable := latestHeader.Number.Uint64() >= confirmableAfterBlock
+	for {
+		var latestHeader *types.Header
+		latestHeader, err = chain.Backend().HeaderByNumber(ctx, util.GetFinalizedBlockNumber())
+		if err != nil {
+			return false, err
+		}
+		if !latestHeader.Number.IsUint64() {
+			return false, errors.New("latest block number is not a uint64")
+		}
+		confirmable := latestHeader.Number.Uint64() >= confirmableAfterBlock
 
-	// If the assertion is not yet confirmable, we can simply wait.
-	if !confirmable {
-		blocksLeftForConfirmation := confirmableAfterBlock - latestHeader.Number.Uint64()
-		timeToWait := averageTimeForBlockCreation * time.Duration(blocksLeftForConfirmation)
-		log.Info(
-			fmt.Sprintf(
-				"Assertion with has %s needs at least %d blocks before being confirmable, waiting for %s",
-				containers.Trunc(assertionHash.Bytes()),
-				blocksLeftForConfirmation,
-				timeToWait,
-			),
-		)
-		<-time.After(timeToWait)
+		// If the assertion is not yet confirmable, we can simply wait.
+		if !confirmable {
+			blocksLeftForConfirmation := confirmableAfterBlock - latestHeader.Number.Uint64()
+			timeToWait := averageTimeForBlockCreation * time.Duration(blocksLeftForConfirmation)
+			log.Info(
+				fmt.Sprintf(
+					"Assertion with has %s needs at least %d blocks before being confirmable, waiting for %s",
+					containers.Trunc(assertionHash.Bytes()),
+					blocksLeftForConfirmation,
+					timeToWait,
+				),
+			)
+			<-time.After(timeToWait)
+		} else {
+			break
+		}
 	}
 
 	if winningEdgeId.IsSome() {
