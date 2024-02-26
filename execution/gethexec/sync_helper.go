@@ -36,7 +36,6 @@ var NitroSyncHelperConfigDefault = NitroSyncHelperConfig{
 
 // implements arbitrum.SyncHelper
 // implements staker.LatestConfirmedNotifier
-// provides forceTriedbCommitHook // TODO maybe the hook should also be an interface
 type NitroSyncHelper struct {
 	stopwaiter.StopWaiter
 	config          NitroSyncHelperConfigFetcher
@@ -225,8 +224,25 @@ func (c *CheckpointCache) Add(header *types.Header) {
 		dropped, c.checkpoints = c.checkpoints[0], c.checkpoints[1:]
 		delete(c.checkpointsMap, dropped.Number.Uint64())
 	}
+	number := header.Number.Uint64()
+	if previous, has := c.checkpointsMap[number]; has {
+		// TODO do we expect this to happen in normal operations?
+		log.Warn("CheckpointCache: duplicate checkpoint header added, replacing previous", "number", number)
+		var i int
+		for i := 0; i < len(c.checkpoints); i++ {
+			if c.checkpoints[i] == previous {
+				break
+			}
+		}
+		if i == len(c.checkpoints) {
+			// shouldn't ever happen
+			log.Error("CheckpointCache: duplicate not found in checkpoints slice", "number", number)
+		} else {
+			c.checkpoints = append(c.checkpoints[:i], c.checkpoints[i+1:]...)
+		}
+	}
 	c.checkpoints = append(c.checkpoints, header)
-	c.checkpointsMap[header.Number.Uint64()] = header
+	c.checkpointsMap[number] = header
 }
 
 func (c *CheckpointCache) Has(header *types.Header) bool {
