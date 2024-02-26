@@ -49,6 +49,7 @@ type Config struct {
 	Caching                   CachingConfig                    `koanf:"caching"`
 	RPC                       arbitrum.Config                  `koanf:"rpc"`
 	TxLookupLimit             uint64                           `koanf:"tx-lookup-limit"`
+	SyncHelper                NitroSyncHelperConfig            `koanf:"sync-helper"`
 	Dangerous                 DangerousConfig                  `koanf:"dangerous"`
 
 	forwardingTarget string
@@ -136,6 +137,7 @@ type ExecutionNode struct {
 	TxPublisher       TransactionPublisher
 	ConfigFetcher     ConfigFetcher
 	ParentChainReader *headerreader.HeaderReader
+	SyncHelper        *NitroSyncHelper
 	started           atomic.Bool
 }
 
@@ -232,6 +234,11 @@ func CreateExecutionNode(
 
 	stack.RegisterAPIs(apis)
 
+	var syncHelper *NitroSyncHelper
+	if config.SyncHelper.Enabled {
+		syncHelperConfigFetcher := func() *NitroSyncHelperConfig { return &configFetcher().SyncHelper }
+		syncHelper = NewNitroSyncHelper(syncHelperConfigFetcher, l2BlockChain)
+	}
 	return &ExecutionNode{
 		ChainDB:           chainDB,
 		Backend:           backend,
@@ -243,6 +250,7 @@ func CreateExecutionNode(
 		TxPublisher:       txPublisher,
 		ConfigFetcher:     configFetcher,
 		ParentChainReader: parentChainReader,
+		SyncHelper:        syncHelper,
 	}, nil
 
 }

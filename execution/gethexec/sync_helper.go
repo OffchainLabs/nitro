@@ -14,13 +14,24 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
+	flag "github.com/spf13/pflag"
 )
 
-// TODO AddNitroSyncHelperConfigOptions
 type NitroSyncHelperConfig struct {
-	//	Enabled          bool   `koanf:"enabled"`
+	Enabled          bool   `koanf:"enabled"`
 	CheckpointPeriod uint64 `koanf:"checkpoint-period"`
 	CheckpointCache  uint   `koanf:"checkpoint-cache"`
+}
+
+func NitroSyncHelperConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Uint64(prefix+".checkpoint-period", NitroSyncHelperConfigDefault.CheckpointPeriod, "number of blocks between sync checkpoints")
+	f.Uint(prefix+".checkpoint-cache", NitroSyncHelperConfigDefault.CheckpointCache, "number of recently confirmed checkpoints to keep in cache")
+}
+
+var NitroSyncHelperConfigDefault = NitroSyncHelperConfig{
+	Enabled:          true, // TODO
+	CheckpointPeriod: 10 * 1000,
+	CheckpointCache:  16,
 }
 
 // implements arbitrum.SyncHelper
@@ -28,7 +39,7 @@ type NitroSyncHelperConfig struct {
 // provides forceTriedbCommitHook // TODO maybe the hook should also be an interface
 type NitroSyncHelper struct {
 	stopwaiter.StopWaiter
-	config          *NitroSyncHelperConfig
+	config          NitroSyncHelperConfigFetcher
 	bc              *core.BlockChain
 	checkpointCache *CheckpointCache
 	newConfirmed    chan Confirmed
@@ -37,11 +48,13 @@ type NitroSyncHelper struct {
 	lastConfirmed     *Confirmed
 }
 
-func NewNitroSyncHelper(config *NitroSyncHelperConfig, bc *core.BlockChain) *NitroSyncHelper {
+type NitroSyncHelperConfigFetcher func() *NitroSyncHelperConfig
+
+func NewNitroSyncHelper(config NitroSyncHelperConfigFetcher, bc *core.BlockChain) *NitroSyncHelper {
 	return &NitroSyncHelper{
 		config:          config,
 		bc:              bc,
-		checkpointCache: NewCheckpointCache(int(config.CheckpointCache)),
+		checkpointCache: NewCheckpointCache(int(config().CheckpointCache)),
 	}
 }
 
@@ -94,7 +107,7 @@ func (h *NitroSyncHelper) updateLastConfirmed(newConfirmed *Confirmed) (bool, *C
 
 // scan for new confirmed and available checkpoints and add them to cache
 func (h *NitroSyncHelper) scanNewConfirmedCheckpoints(ctx context.Context, newConfirmed *Confirmed, previousConfirmed *Confirmed) {
-	period := int64(h.config.CheckpointPeriod)
+	period := int64(h.config().CheckpointPeriod)
 	var nextCheckpoint int64
 	if previousConfirmed == nil {
 		genesis := int64(h.bc.Config().ArbitrumChainParams.GenesisBlockNum)
@@ -117,15 +130,18 @@ func (h *NitroSyncHelper) scanNewConfirmedCheckpoints(ctx context.Context, newCo
 	}
 }
 
-// TODO make the hook an interface instead of func(...)bool?
-func (h *NitroSyncHelper) forceTriedbCommitHook(block *types.Block, processing time.Duration) bool {
-	if block.NumberU64() == 0 {
-		return false
+func GetForceTriedbCommitHookForConfig(config NitroSyncHelperConfigFetcher) core.ForceTriedbCommitHook {
+	return func(block *types.Block, processing time.Duration, gas uint64) bool {
+		if block.NumberU64() == 0 {
+			return false
+		}
+		commit := block.NumberU64()%config().CheckpointPeriod == 0
+		// TODO add condition for minimal processing since last checkpoint
+		// TODO add condition for minimal gas used since last checkpoint
+		_ = processing
+		_ = gas
+		return commit
 	}
-	commit := block.NumberU64()%h.config.CheckpointPeriod == 0
-	// TODO add condition for minimal processing since last checkpoint
-	_ = processing
-	return commit
 }
 
 // implements staker.LatestConfirmedNotifier
@@ -171,12 +187,6 @@ func (h *NitroSyncHelper) ValidateConfirmed(header *types.Header, node uint64) (
 	// call to consensus node, block hash + uint64 (node number)
 	_ = hash
 	return false, nil
-}
-
-func (h *NitroSyncHelper) PrepopulateCheckpoints() error {
-	// TODO do we need to?
-	// do it on first UpdateLatestConfirmed
-	return nil
 }
 
 type Confirmed struct {

@@ -165,7 +165,7 @@ func WriteOrTestChainConfig(chainDb ethdb.Database, config *params.ChainConfig) 
 	return nil
 }
 
-func GetBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, chainConfig *params.ChainConfig, txLookupLimit uint64) (*core.BlockChain, error) {
+func GetBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, chainConfig *params.ChainConfig, txLookupLimit uint64, forceTriedbCommitHook core.ForceTriedbCommitHook) (*core.BlockChain, error) {
 	engine := arbos.Engine{
 		IsSequencer: true,
 	}
@@ -173,11 +173,10 @@ func GetBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, chainC
 	vmConfig := vm.Config{
 		EnablePreimageRecording: false,
 	}
-	// TODO forceTriedbCommitHook
-	return core.NewBlockChain(chainDb, cacheConfig, chainConfig, nil, nil, engine, vmConfig, shouldPreserveFalse, &txLookupLimit, nil)
+	return core.NewArbBlockChain(chainDb, cacheConfig, chainConfig, nil, nil, engine, vmConfig, shouldPreserveFalse, &txLookupLimit, forceTriedbCommitHook)
 }
 
-func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, txLookupLimit uint64, accountsPerSync uint) (*core.BlockChain, error) {
+func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, txLookupLimit uint64, accountsPerSync uint, forceTriedbCommitHook core.ForceTriedbCommitHook) (*core.BlockChain, error) {
 	err := WriteOrTestGenblock(chainDb, initData, chainConfig, initMessage, accountsPerSync)
 	if err != nil {
 		return nil, err
@@ -186,7 +185,7 @@ func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig
 	if err != nil {
 		return nil, err
 	}
-	return GetBlockChain(chainDb, cacheConfig, chainConfig, txLookupLimit)
+	return GetBlockChain(chainDb, cacheConfig, chainConfig, txLookupLimit, forceTriedbCommitHook)
 }
 
 // Don't preserve reorg'd out blocks

@@ -716,7 +716,7 @@ func createL2BlockChainWithStackConfig(
 	if cacheConfig != nil {
 		coreCacheConfig = gethexec.DefaultCacheConfigFor(stack, cacheConfig)
 	}
-	blockchain, err := gethexec.WriteOrTestBlockChain(chainDb, coreCacheConfig, initReader, chainConfig, initMessage, gethexec.ConfigDefaultTest().TxLookupLimit, 0)
+	blockchain, err := gethexec.WriteOrTestBlockChain(chainDb, coreCacheConfig, initReader, chainConfig, initMessage, gethexec.ConfigDefaultTest().TxLookupLimit, 0, nil)
 	Require(t, err)
 
 	return l2info, stack, chainDb, arbDb, blockchain
@@ -914,7 +914,7 @@ func Create2ndNodeWithConfig(
 	initMessage := getInitMessage(ctx, t, l1client, first.DeployInfo)
 
 	coreCacheConfig := gethexec.DefaultCacheConfigFor(l2stack, &execConfig.Caching)
-	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, coreCacheConfig, initReader, chainConfig, initMessage, gethexec.ConfigDefaultTest().TxLookupLimit, 0)
+	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, coreCacheConfig, initReader, chainConfig, initMessage, gethexec.ConfigDefaultTest().TxLookupLimit, 0, nil)
 	Require(t, err)
 
 	AddDefaultValNode(t, ctx, nodeConfig, true)
