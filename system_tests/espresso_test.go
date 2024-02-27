@@ -121,7 +121,7 @@ func createMockHotShot(ctx context.Context, t *testing.T, l2Info *BlockchainTest
 
 	httpmock.RegisterResponder(
 		"GET",
-		`=~http://127.0.0.1:50000/availability/block/(\d+)/namespace/100`,
+		`=~http://127.0.0.1:50000/availability/block/(\d+)/namespace/412346`,
 		func(req *http.Request) (*http.Response, error) {
 			txes := []espressoTypes.Transaction{}
 			block := int(httpmock.MustGetSubmatchAsInt(req, 1))
@@ -143,7 +143,7 @@ func createMockHotShot(ctx context.Context, t *testing.T, l2Info *BlockchainTest
 			}
 			for _, rawTx := range data {
 				tx := espressoTypes.Transaction{
-					Vm:      100,
+					Vm:      412346,
 					Payload: rawTx,
 				}
 				txes = append(txes, tx)
