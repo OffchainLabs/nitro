@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"reflect"
 	"strings"
 	"time"
 
@@ -246,6 +247,7 @@ type Node struct {
 	DASLifecycleManager     *das.LifecycleManager
 	ClassicOutboxRetriever  *ClassicOutboxRetriever
 	SyncMonitor             *SyncMonitor
+	ConfirmedNodeHelper     *staker.ConfirmedNodeHelper
 	configFetcher           ConfigFetcher
 	ctx                     context.Context
 }
@@ -467,6 +469,7 @@ func createNodeImpl(
 			DASLifecycleManager:     nil,
 			ClassicOutboxRetriever:  classicOutbox,
 			SyncMonitor:             syncMonitor,
+			ConfirmedNodeHelper:     nil,
 			configFetcher:           configFetcher,
 			ctx:                     ctx,
 		}, nil
@@ -559,6 +562,12 @@ func createNodeImpl(
 		}
 	}
 
+	var confirmedNodeHelper *staker.ConfirmedNodeHelper
+	if l1client != nil && !reflect.ValueOf(l1client).IsNil() {
+		confirmedNodeHelper = staker.NewConfirmedNodeHelper(deployInfo.Rollup, l1client)
+		exec.SetConfirmedNodeHelper(confirmedNodeHelper)
+	}
+
 	var stakerObj *staker.Staker
 	var messagePruner *MessagePruner
 
@@ -609,6 +618,9 @@ func createNodeImpl(
 		if config.MessagePruner.Enable {
 			messagePruner = NewMessagePruner(txStreamer, inboxTracker, func() *MessagePrunerConfig { return &configFetcher.Get().MessagePruner })
 			confirmedNotifiers = append(confirmedNotifiers, messagePruner)
+		}
+		if confirmedNodeHelper != nil {
+			confirmedNotifiers = append(confirmedNotifiers, confirmedNodeHelper)
 		}
 
 		stakerObj, err = staker.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Staker, blockValidator, statelessBlockValidator, nil, confirmedNotifiers, deployInfo.ValidatorUtils, fatalErrChan)
@@ -682,6 +694,7 @@ func createNodeImpl(
 		DASLifecycleManager:     dasLifecycleManager,
 		ClassicOutboxRetriever:  classicOutbox,
 		SyncMonitor:             syncMonitor,
+		ConfirmedNodeHelper:     confirmedNodeHelper,
 		configFetcher:           configFetcher,
 		ctx:                     ctx,
 	}, nil
@@ -751,6 +764,9 @@ func (n *Node) Start(ctx context.Context) error {
 	err := n.Stack.Start()
 	if err != nil {
 		return fmt.Errorf("error starting geth stack: %w", err)
+	}
+	if n.ConfirmedNodeHelper != nil {
+		n.ConfirmedNodeHelper.Start(ctx)
 	}
 	err = n.Execution.Start(ctx)
 	if err != nil {
@@ -922,6 +938,9 @@ func (n *Node) StopAndWait() {
 	}
 	if n.Execution != nil {
 		n.Execution.StopAndWait()
+	}
+	if n.ConfirmedNodeHelper != nil {
+		n.ConfirmedNodeHelper.StopAndWait()
 	}
 	if err := n.Stack.Close(); err != nil {
 		log.Error("error on stack close", "err", err)

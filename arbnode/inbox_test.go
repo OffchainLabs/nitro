@@ -14,6 +14,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/statetransfer"
 
@@ -37,6 +38,9 @@ type execClientWrapper struct {
 func (w *execClientWrapper) Pause()                     { w.t.Error("not supported") }
 func (w *execClientWrapper) Activate()                  { w.t.Error("not supported") }
 func (w *execClientWrapper) ForwardTo(url string) error { w.t.Error("not supported"); return nil }
+func (w *execClientWrapper) SetConfirmedNodeHelper(confirmedNodeHelper execution.ConfirmedNodeHelper) {
+	w.t.Error("not supported")
+}
 
 func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*gethexec.ExecutionEngine, *TransactionStreamer, ethdb.Database, *core.BlockChain) {
 	chainConfig := params.ArbitrumDevTestChainConfig()

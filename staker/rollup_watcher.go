@@ -24,6 +24,7 @@ import (
 
 var rollupInitializedID common.Hash
 var nodeCreatedID common.Hash
+var nodeConfirmedID common.Hash // used by ConfirmedNodeHelper
 var challengeCreatedID common.Hash
 
 func init() {
@@ -33,6 +34,7 @@ func init() {
 	}
 	rollupInitializedID = parsedRollup.Events["RollupInitialized"].ID
 	nodeCreatedID = parsedRollup.Events["NodeCreated"].ID
+	nodeConfirmedID = parsedRollup.Events["NodeConfirmed"].ID
 	challengeCreatedID = parsedRollup.Events["RollupChallengeStarted"].ID
 }
 

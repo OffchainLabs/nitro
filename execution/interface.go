@@ -33,6 +33,7 @@ type ExecutionClient interface {
 	HeadMessageNumber() (arbutil.MessageIndex, error)
 	HeadMessageNumberSync(t *testing.T) (arbutil.MessageIndex, error)
 	ResultAtPos(pos arbutil.MessageIndex) (*MessageResult, error)
+	SetConfirmedNodeHelper(confirmedValidator ConfirmedNodeHelper)
 }
 
 // needed for validators / stakers
@@ -80,4 +81,14 @@ type TransactionStreamer interface {
 	BatchFetcher
 	WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) error
 	ExpectChosenSequencer() error
+}
+
+type ConfirmedNodeHelper interface {
+	Validate(node uint64, blockHash common.Hash) error
+	SubscribeLatest(subscriber LatestConfirmedNotifier) error
+}
+
+// TODO rename?
+type LatestConfirmedNotifier interface {
+	UpdateLatestConfirmed(count arbutil.MessageIndex, globalState validator.GoGlobalState, node uint64)
 }

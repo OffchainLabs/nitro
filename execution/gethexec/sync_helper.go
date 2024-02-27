@@ -3,6 +3,7 @@ package gethexec
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sync"
 	"time"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 	flag "github.com/spf13/pflag"
@@ -45,6 +47,8 @@ type NitroSyncHelper struct {
 
 	lastConfirmedLock sync.RWMutex
 	lastConfirmed     *Confirmed
+
+	confirmedNodeHelper execution.ConfirmedNodeHelper
 }
 
 type NitroSyncHelperConfigFetcher func() *NitroSyncHelperConfig
@@ -57,11 +61,30 @@ func NewNitroSyncHelper(config NitroSyncHelperConfigFetcher, bc *core.BlockChain
 	}
 }
 
-func (h *NitroSyncHelper) Start(ctx context.Context) {
-	h.StopWaiter.Start(ctx, h)
-	h.StopWaiter.LaunchThread(func(ctx context.Context) {
+func (h *NitroSyncHelper) SetConfirmedNodeHelper(confirmedHelper execution.ConfirmedNodeHelper) {
+	if h.Started() {
+		panic("trying to set confirmed node validator after nitro sync helper start")
+	}
+	if h.confirmedNodeHelper != nil {
+		panic("trying to set confirmed node validator when already set")
+	}
+	h.confirmedNodeHelper = confirmedHelper
+}
+
+func (h *NitroSyncHelper) Start(ctx context.Context) error {
+	if err := h.StopWaiter.StopWaiterSafe.Start(ctx, h); err != nil {
+		return err
+	}
+	if h.confirmedNodeHelper != nil {
+		err := h.confirmedNodeHelper.SubscribeLatest(h)
+		if err != nil {
+			return fmt.Errorf("Failed to subscribe for latest confirmed notifications: %w", err)
+		}
+	}
+	return h.StopWaiterSafe.LaunchThreadSafe(func(ctx context.Context) {
 		for {
 			select {
+			// TODO refactor the newConfirmed channel (might not be needed as confirmedNodeHelper should handle non blocking update propagation)
 			case c := <-h.newConfirmed:
 				if updated, previous := h.updateLastConfirmed(&c); updated {
 					h.scanNewConfirmedCheckpoints(ctx, &c, previous)
@@ -110,7 +133,7 @@ func (h *NitroSyncHelper) scanNewConfirmedCheckpoints(ctx context.Context, newCo
 	var nextCheckpoint int64
 	if previousConfirmed == nil {
 		genesis := int64(h.bc.Config().ArbitrumChainParams.GenesisBlockNum)
-		nextCheckpoint = (genesis/period + 1) * period
+		nextCheckpoint = (genesis/period + 1) * period // TODO add option to start the scan from n blocks before nextCheckpoint.BlockNumber
 	} else {
 		nextCheckpoint = (previousConfirmed.BlockNumber/period + 1) * period
 	}
@@ -130,6 +153,10 @@ func (h *NitroSyncHelper) scanNewConfirmedCheckpoints(ctx context.Context, newCo
 }
 
 func GetForceTriedbCommitHookForConfig(config NitroSyncHelperConfigFetcher) core.ForceTriedbCommitHook {
+	if !config().Enabled {
+		// TODO do we want to support hot-reloading of Enabled?
+		return nil
+	}
 	return func(block *types.Block, processing time.Duration, gas uint64) bool {
 		if block.NumberU64() == 0 {
 			return false
@@ -149,8 +176,9 @@ func (h *NitroSyncHelper) UpdateLatestConfirmed(count arbutil.MessageIndex, glob
 	h.newConfirmed <- Confirmed{
 		BlockNumber: arbutil.MessageCountToBlockNumber(count, genesis),
 		BlockHash:   globalState.BlockHash,
-		Node:        node,
-		Header:      nil,
+		// TODO do we want to also use SendRoot?
+		Node:   node,
+		Header: nil,
 	}
 }
 
@@ -178,14 +206,20 @@ func (h *NitroSyncHelper) LastConfirmed() (*types.Header, uint64, error) {
 }
 
 func (h *NitroSyncHelper) ValidateConfirmed(header *types.Header, node uint64) (bool, error) {
+	if !h.Started() {
+		return false, errors.New("not started")
+	}
 	if header == nil {
 		return false, errors.New("header is nil")
 	}
+	if h.confirmedNodeHelper == nil {
+		return false, errors.New("confirmed node validator unavailable")
+	}
 	hash := header.Hash()
-	// TODO
-	// call to consensus node, block hash + uint64 (node number)
-	_ = hash
-	return false, nil
+	if err := h.confirmedNodeHelper.Validate(node, hash); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 type Confirmed struct {

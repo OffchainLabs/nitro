@@ -201,6 +201,12 @@ func CreateExecutionNode(
 		return nil, err
 	}
 
+	var syncHelper *NitroSyncHelper
+	if config.SyncHelper.Enabled {
+		syncHelperConfigFetcher := func() *NitroSyncHelperConfig { return &configFetcher().SyncHelper }
+		syncHelper = NewNitroSyncHelper(syncHelperConfigFetcher, l2BlockChain)
+	}
+
 	apis := []rpc.API{{
 		Namespace: "arb",
 		Version:   "1.0",
@@ -234,11 +240,6 @@ func CreateExecutionNode(
 
 	stack.RegisterAPIs(apis)
 
-	var syncHelper *NitroSyncHelper
-	if config.SyncHelper.Enabled {
-		syncHelperConfigFetcher := func() *NitroSyncHelperConfig { return &configFetcher().SyncHelper }
-		syncHelper = NewNitroSyncHelper(syncHelperConfigFetcher, l2BlockChain)
-	}
 	return &ExecutionNode{
 		ChainDB:           chainDB,
 		Backend:           backend,
@@ -290,12 +291,21 @@ func (n *ExecutionNode) Start(ctx context.Context) error {
 	if n.ParentChainReader != nil {
 		n.ParentChainReader.Start(ctx)
 	}
+	if n.SyncHelper != nil {
+		err := n.SyncHelper.Start(ctx)
+		if err != nil {
+			return fmt.Errorf("Failed to start sync helper: %w", err)
+		}
+	}
 	return nil
 }
 
 func (n *ExecutionNode) StopAndWait() {
 	if !n.started.Load() {
 		return
+	}
+	if n.SyncHelper != nil {
+		n.SyncHelper.StopAndWait()
 	}
 	// TODO after separation
 	// n.Stack.StopRPC() // does nothing if not running
@@ -339,6 +349,11 @@ func (n *ExecutionNode) SequenceDelayedMessage(message *arbostypes.L1IncomingMes
 }
 func (n *ExecutionNode) ResultAtPos(pos arbutil.MessageIndex) (*execution.MessageResult, error) {
 	return n.ExecEngine.ResultAtPos(pos)
+}
+func (n *ExecutionNode) SetConfirmedNodeHelper(confirmedNodeHelper execution.ConfirmedNodeHelper) {
+	if n.SyncHelper != nil {
+		n.SyncHelper.SetConfirmedNodeHelper(confirmedNodeHelper)
+	}
 }
 
 func (n *ExecutionNode) RecordBlockCreation(
