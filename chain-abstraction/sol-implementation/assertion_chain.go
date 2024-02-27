@@ -71,6 +71,7 @@ type AssertionChain struct {
 	rollupAddr                               common.Address
 	chalManagerAddr                          common.Address
 	confirmedChallengesByParentAssertionHash *threadsafe.LruSet[protocol.AssertionHash]
+	specChallengeManager                     protocol.SpecChallengeManager
 }
 
 type Opt func(*AssertionChain)
@@ -84,7 +85,7 @@ func WithTrackedContractBackend() Opt {
 // NewAssertionChain instantiates an assertion chain
 // instance from a chain backend and provided options.
 func NewAssertionChain(
-	_ context.Context,
+	ctx context.Context,
 	rollupAddr common.Address,
 	chalManagerAddr common.Address,
 	txOpts *bind.TransactOpts,
@@ -118,6 +119,17 @@ func NewAssertionChain(
 	}
 	chain.rollup = coreBinding
 	chain.userLogic = assertionChainBinding
+	specChallengeManager, err := NewSpecChallengeManager(
+		ctx,
+		chain.chalManagerAddr,
+		chain,
+		chain.backend,
+		chain.txOpts,
+	)
+	if err != nil {
+		return nil, err
+	}
+	chain.specChallengeManager = specChallengeManager
 	return chain, nil
 }
 
@@ -480,13 +492,7 @@ func (a *AssertionChain) ConfirmAssertionByChallengeWinner(
 
 // SpecChallengeManager creates a new spec challenge manager
 func (a *AssertionChain) SpecChallengeManager(ctx context.Context) (protocol.SpecChallengeManager, error) {
-	return NewSpecChallengeManager(
-		ctx,
-		a.chalManagerAddr,
-		a,
-		a.backend,
-		a.txOpts,
-	)
+	return a.specChallengeManager, nil
 }
 
 // AssertionUnrivaledBlocks gets the number of blocks an assertion was unrivaled. That is, it looks up the

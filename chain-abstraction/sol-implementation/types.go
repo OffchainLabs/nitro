@@ -109,4 +109,5 @@ type specEdge struct {
 	startHeight          uint64
 	endHeight            uint64
 	totalChallengeLevels uint8
+	assertionHash        protocol.AssertionHash
 }
