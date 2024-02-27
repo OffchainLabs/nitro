@@ -166,7 +166,7 @@ func createL2Node(ctx context.Context, t *testing.T, hotshot_url string) (*TestC
 	builder.nodeConfig.Espresso = true
 	builder.execConfig.Sequencer.Enable = true
 	builder.execConfig.Sequencer.Espresso = true
-	builder.execConfig.Sequencer.EspressoNamespace = 100
+	builder.execConfig.Sequencer.EspressoNamespace = builder.chainConfig.ChainID.Uint64()
 	builder.execConfig.Sequencer.HotShotUrl = hotshot_url
 
 	builder.chainConfig.ArbitrumChainParams.EnableEspresso = true
