@@ -61,6 +61,11 @@ const maxZeroheavyDecompressedLen = 101*MaxDecompressedLen/100 + 64
 const MaxSegmentsPerSequencerMessage = 100 * 1024
 const MinLifetimeSecondsForDataAvailabilityCert = 7 * 24 * 60 * 60 // one week
 
+var (
+	ErrNoBlobreader          = errors.New("blob batch payload was encountered but no BlobReader was configured")
+	ErrInvalidBlobDataFormat = errors.New("blob batch data is not a list of hashes as expected")
+)
+
 func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash common.Hash, data []byte, dasReader DataAvailabilityReader, blobReader BlobReader, keysetValidationMode KeysetValidationMode) (*sequencerMessage, error) {
 	if len(data) < 40 {
 		return nil, errors.New("sequencer message missing L1 header")
@@ -94,7 +99,7 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 	} else if len(payload) > 0 && IsBlobHashesHeaderByte(payload[0]) {
 		blobHashes := payload[1:]
 		if len(blobHashes)%len(common.Hash{}) != 0 {
-			return nil, fmt.Errorf("blob batch data is not a list of hashes as expected")
+			return nil, ErrInvalidBlobDataFormat
 		}
 		versionedHashes := make([]common.Hash, len(blobHashes)/len(common.Hash{}))
 		for i := 0; i*32 < len(blobHashes); i += 1 {
@@ -102,7 +107,7 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 		}
 
 		if blobReader == nil {
-			return nil, errors.New("blob batch payload was encountered but no BlobReader was configured")
+			return nil, ErrNoBlobreader
 		}
 
 		kzgBlobs, err := blobReader.GetBlobs(ctx, batchBlockHash, versionedHashes)

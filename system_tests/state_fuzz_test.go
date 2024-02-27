@@ -119,6 +119,20 @@ func (c noopChainContext) GetHeader(common.Hash, uint64) *types.Header {
 	return nil
 }
 
+var ignoreErrors = []error{
+	arbstate.ErrNoBlobreader,
+	arbstate.ErrInvalidBlobDataFormat,
+}
+
+func shouldIgnore(err error) bool {
+	for _, e := range ignoreErrors {
+		if errors.Is(err, e) {
+			return true
+		}
+	}
+	return false
+}
+
 func FuzzStateTransition(f *testing.F) {
 	f.Fuzz(func(t *testing.T, compressSeqMsg bool, seqMsg []byte, delayedMsg []byte) {
 		chainDb := rawdb.NewMemoryDatabase()
@@ -189,7 +203,7 @@ func FuzzStateTransition(f *testing.F) {
 			delayedMessages:       delayedMessages,
 		}
 		_, err = BuildBlock(statedb, genesis, noopChainContext{}, params.ArbitrumOneChainConfig(), inbox, seqBatch)
-		if err != nil {
+		if err != nil && !shouldIgnore(err) {
 			// With the fixed header it shouldn't be possible to read a delayed message,
 			// and no other type of error should be possible.
 			panic(err)
