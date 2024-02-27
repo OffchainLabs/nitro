@@ -26,7 +26,7 @@ func TestBlocksReExecutorModes(t *testing.T) {
 
 	parentChainID := big.NewInt(1234)
 	feedErrChan := make(chan error, 10)
-	node, err := arbnode.CreateNode(ctx, stack, execNode, arbDb, NewFetcherFromConfig(arbnode.ConfigDefaultL2Test()), blockchain.Config(), nil, nil, nil, nil, nil, feedErrChan, parentChainID)
+	node, err := arbnode.CreateNode(ctx, stack, execNode, arbDb, NewFetcherFromConfig(arbnode.ConfigDefaultL2Test()), blockchain.Config(), nil, nil, nil, nil, nil, feedErrChan, parentChainID, nil)
 	Require(t, err)
 	err = node.TxStreamer.AddFakeInitMessage()
 	Require(t, err)
