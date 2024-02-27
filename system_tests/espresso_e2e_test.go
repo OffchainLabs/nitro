@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/node"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -23,11 +24,19 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
+	"github.com/offchainlabs/nitro/validator/server_api"
+	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
 var workingDir = "./espresso-e2e"
 var hotShotAddress = "0x217788c286797d56cd59af5e493f3699c39cbbe8"
 var hostIoAddress = "0xF34C2fac45527E55ED122f80a969e79A40547e6D"
+
+var (
+	jitValidationPort = 54320
+	arbValidationPort = 54321
+	broadcastPort     = 9642
+)
 
 func runEspresso(t *testing.T, ctx context.Context) func() {
 	shutdown := func() {
@@ -61,6 +70,69 @@ func runEspresso(t *testing.T, ctx context.Context) func() {
 		}
 	}()
 	return shutdown
+}
+
+func createL2Node(ctx context.Context, t *testing.T, hotshot_url string) (*TestClient, info, func()) {
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.takeOwnership = false
+	builder.nodeConfig.DelayedSequencer.Enable = true
+	builder.nodeConfig.Sequencer = true
+	builder.nodeConfig.Espresso = true
+	builder.execConfig.Sequencer.Enable = true
+	builder.execConfig.Sequencer.Espresso = true
+	builder.execConfig.Sequencer.EspressoNamespace = 412346
+	builder.execConfig.Sequencer.HotShotUrl = hotshot_url
+
+	builder.chainConfig.ArbitrumChainParams.EnableEspresso = true
+
+	builder.nodeConfig.Feed.Output.Enable = true
+	builder.nodeConfig.Feed.Output.Port = fmt.Sprintf("%d", broadcastPort)
+
+	cleanup := builder.Build(t)
+	return builder.L2, builder.L2Info, cleanup
+}
+
+func createValidationNode(ctx context.Context, t *testing.T, jit bool) func() {
+	stackConf := node.DefaultConfig
+	stackConf.HTTPPort = 0
+	stackConf.DataDir = ""
+	stackConf.WSHost = "127.0.0.1"
+	port := jitValidationPort
+	if !jit {
+		port = arbValidationPort
+	}
+	stackConf.WSPort = port
+	stackConf.WSModules = []string{server_api.Namespace}
+	stackConf.P2P.NoDiscovery = true
+	stackConf.P2P.ListenAddr = ""
+
+	valnode.EnsureValidationExposedViaAuthRPC(&stackConf)
+	config := &valnode.TestValidationConfig
+	config.UseJit = jit
+
+	stack, err := node.New(&stackConf)
+	Require(t, err)
+
+	configFetcher := func() *valnode.Config { return config }
+	valnode, err := valnode.CreateValidationNode(configFetcher, stack, nil)
+	Require(t, err)
+
+	err = stack.Start()
+	Require(t, err)
+
+	err = valnode.Start(ctx)
+	Require(t, err)
+
+	go func() {
+		<-ctx.Done()
+		stack.Close()
+	}()
+
+	return func() {
+		valnode.GetExec().Stop()
+		stack.Close()
+	}
+
 }
 
 func createL1ValidatorPosterNode(ctx context.Context, t *testing.T) (*NodeBuilder, func()) {
@@ -187,6 +259,36 @@ func createStaker(ctx context.Context, t *testing.T, builder *NodeBuilder, incor
 	err = staker.Initialize(ctx)
 	Require(t, err)
 	return staker, l2Node.BlockValidator, cleanup
+}
+
+func waitFor(
+	t *testing.T,
+	ctxinput context.Context,
+	condition func() bool,
+) error {
+	return waitForWith(t, ctxinput, 30*time.Second, time.Second, condition)
+}
+
+func waitForWith(
+	t *testing.T,
+	ctxinput context.Context,
+	timeout time.Duration,
+	interval time.Duration,
+	condition func() bool,
+) error {
+	ctx, cancel := context.WithTimeout(ctxinput, timeout)
+	defer cancel()
+
+	for {
+		if condition() {
+			return nil
+		}
+		select {
+		case <-time.After(interval):
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 }
 
 func TestEspressoE2E(t *testing.T) {
