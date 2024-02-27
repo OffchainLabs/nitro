@@ -67,10 +67,10 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 		// TODO could the ChainConfig be just []byte?
 		ChainConfig: string(serializedChainConfig),
 		SequencerInboxMaxTimeVariation: rollupgen.ISequencerInboxMaxTimeVariation{
-			DelayBlocks:   60 * 60 * 24 / 15,
-			FutureBlocks:  12,
-			DelaySeconds:  60 * 60 * 24,
-			FutureSeconds: 60 * 60,
+			DelayBlocks:   big.NewInt(60 * 60 * 24 / 15),
+			FutureBlocks:  big.NewInt(12),
+			DelaySeconds:  big.NewInt(60 * 60 * 24),
+			FutureSeconds: big.NewInt(60 * 60),
 		},
 	}
 }
@@ -87,7 +87,6 @@ type Config struct {
 	Staker              staker.L1ValidatorConfig    `koanf:"staker" reload:"hot"`
 	SeqCoordinator      SeqCoordinatorConfig        `koanf:"seq-coordinator"`
 	DataAvailability    das.DataAvailabilityConfig  `koanf:"data-availability"`
-	BlobClient          BlobClientConfig            `koanf:"blob-client"`
 	SyncMonitor         SyncMonitorConfig           `koanf:"sync-monitor"`
 	Dangerous           DangerousConfig             `koanf:"dangerous"`
 	TransactionStreamer TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
@@ -152,7 +151,6 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	staker.L1ValidatorConfigAddOptions(prefix+".staker", f)
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
 	das.DataAvailabilityConfigAddNodeOptions(prefix+".data-availability", f)
-	BlobClientAddOptions(prefix+".blob-client", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
@@ -191,6 +189,7 @@ func ConfigDefaultL1Test() *Config {
 
 func ConfigDefaultL1NonSequencerTest() *Config {
 	config := ConfigDefault
+	config.Dangerous = TestDangerousConfig
 	config.ParentChainReader = headerreader.TestConfig
 	config.InboxReader = TestInboxReaderConfig
 	config.DelayedSequencer.Enable = false
@@ -206,6 +205,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 
 func ConfigDefaultL2Test() *Config {
 	config := ConfigDefault
+	config.Dangerous = TestDangerousConfig
 	config.ParentChainReader.Enable = false
 	config.SeqCoordinator = TestSeqCoordinatorConfig
 	config.Feed.Input.Verify.Dangerous.AcceptMissing = true
@@ -223,16 +223,25 @@ func ConfigDefaultL2Test() *Config {
 type DangerousConfig struct {
 	NoL1Listener           bool `koanf:"no-l1-listener"`
 	NoSequencerCoordinator bool `koanf:"no-sequencer-coordinator"`
+	DisableBlobReader      bool `koanf:"disable-blob-reader"`
 }
 
 var DefaultDangerousConfig = DangerousConfig{
 	NoL1Listener:           false,
 	NoSequencerCoordinator: false,
+	DisableBlobReader:      false,
+}
+
+var TestDangerousConfig = DangerousConfig{
+	NoL1Listener:           false,
+	NoSequencerCoordinator: false,
+	DisableBlobReader:      true,
 }
 
 func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".no-l1-listener", DefaultDangerousConfig.NoL1Listener, "DANGEROUS! disables listening to L1. To be used in test nodes only")
 	f.Bool(prefix+".no-sequencer-coordinator", DefaultDangerousConfig.NoSequencerCoordinator, "DANGEROUS! allows sequencing without sequencer-coordinator")
+	f.Bool(prefix+".disable-blob-reader", DefaultDangerousConfig.DisableBlobReader, "DANGEROUS! disables the EIP-4844 blob reader, which is necessary to read batches")
 }
 
 type Node struct {
@@ -242,6 +251,7 @@ type Node struct {
 	L1Reader                *headerreader.HeaderReader
 	TxStreamer              *TransactionStreamer
 	DeployInfo              *chaininfo.RollupAddresses
+	BlobReader              arbstate.BlobReader
 	InboxReader             *InboxReader
 	InboxTracker            *InboxTracker
 	DelayedSequencer        *DelayedSequencer
@@ -360,6 +370,7 @@ func createNodeImpl(
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
 	parentChainID *big.Int,
+	blobReader arbstate.BlobReader,
 ) (*Node, error) {
 	config := configFetcher.Get()
 
@@ -463,6 +474,7 @@ func createNodeImpl(
 			L1Reader:                nil,
 			TxStreamer:              txStreamer,
 			DeployInfo:              nil,
+			BlobReader:              blobReader,
 			InboxReader:             nil,
 			InboxTracker:            nil,
 			DelayedSequencer:        nil,
@@ -521,14 +533,6 @@ func createNodeImpl(
 		}
 	} else if l2Config.ArbitrumChainParams.DataAvailabilityCommittee {
 		return nil, errors.New("a data availability service is required for this chain, but it was not configured")
-	}
-
-	var blobReader arbstate.BlobReader
-	if config.BlobClient.BeaconChainUrl != "" {
-		blobReader, err = NewBlobClient(config.BlobClient, l1client)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, daReader, blobReader)
@@ -688,6 +692,7 @@ func createNodeImpl(
 		L1Reader:                l1Reader,
 		TxStreamer:              txStreamer,
 		DeployInfo:              deployInfo,
+		BlobReader:              blobReader,
 		InboxReader:             inboxReader,
 		InboxTracker:            inboxTracker,
 		DelayedSequencer:        delayedSequencer,
@@ -727,8 +732,9 @@ func CreateNode(
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
 	parentChainID *big.Int,
+	blobReader arbstate.BlobReader,
 ) (*Node, error) {
-	currentNode, err := createNodeImpl(ctx, stack, exec, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID)
+	currentNode, err := createNodeImpl(ctx, stack, exec, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader)
 	if err != nil {
 		return nil, err
 	}
@@ -776,6 +782,12 @@ func (n *Node) Start(ctx context.Context) error {
 	err = n.Execution.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("error starting exec client: %w", err)
+	}
+	if n.BlobReader != nil {
+		err = n.BlobReader.Initialize(ctx)
+		if err != nil {
+			return fmt.Errorf("error initializing blob reader: %w", err)
+		}
 	}
 	if n.InboxTracker != nil {
 		err = n.InboxTracker.Initialize()

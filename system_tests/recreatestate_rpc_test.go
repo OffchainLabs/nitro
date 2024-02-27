@@ -335,7 +335,7 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 	Require(t, err)
 
 	parentChainID := big.NewInt(1337)
-	node, err := arbnode.CreateNode(ctx1, stack, execNode, arbDb, NewFetcherFromConfig(arbnode.ConfigDefaultL2Test()), blockchain.Config(), nil, nil, nil, nil, nil, feedErrChan, parentChainID)
+	node, err := arbnode.CreateNode(ctx1, stack, execNode, arbDb, NewFetcherFromConfig(arbnode.ConfigDefaultL2Test()), blockchain.Config(), nil, nil, nil, nil, nil, feedErrChan, parentChainID, nil)
 	Require(t, err)
 	err = node.TxStreamer.AddFakeInitMessage()
 	Require(t, err)
@@ -376,7 +376,7 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 	execNode, err = gethexec.CreateExecutionNode(ctx1, stack, chainDb, blockchain, nil, execConfigFetcher)
 	Require(t, err)
 
-	node, err = arbnode.CreateNode(ctx, stack, execNode, arbDb, NewFetcherFromConfig(arbnode.ConfigDefaultL2Test()), blockchain.Config(), nil, node.DeployInfo, nil, nil, nil, feedErrChan, parentChainID)
+	node, err = arbnode.CreateNode(ctx, stack, execNode, arbDb, NewFetcherFromConfig(arbnode.ConfigDefaultL2Test()), blockchain.Config(), nil, node.DeployInfo, nil, nil, nil, feedErrChan, parentChainID, nil)
 	Require(t, err)
 	Require(t, node.Start(ctx))
 	client = ClientForStack(t, stack)
