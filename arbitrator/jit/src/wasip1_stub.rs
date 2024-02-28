@@ -15,9 +15,9 @@ pub fn proc_exit(mut _env: WasmEnvMut, code: u32) -> Result<(), Escape> {
 macro_rules! wrap {
     ($func_name:ident ($($arg_name:ident : $arg_type:ty),* ) -> $return_type:ty) => {
         pub fn $func_name(mut src: WasmEnvMut, $($arg_name : $arg_type),*) -> Result<$return_type, Escape> {
-            let caller_env = JitCallerEnv::new(&mut src);
+            let mut caller_env = JitCallerEnv::new(&mut src);
 
-            Ok(callerenv::wasip1_stub::$func_name(caller_env, $($arg_name),*))
+            Ok(callerenv::wasip1_stub::$func_name(&mut caller_env, $($arg_name),*))
         }
     };
 }

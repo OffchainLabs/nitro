@@ -2,6 +2,9 @@
 #![no_std]
 use rand_pcg::Pcg32;
 
+#[cfg(feature = "static_caller")]
+pub mod static_caller;
+
 pub mod wasip1_stub;
 
 const PCG_INIT_STATE: u64 = 0xcafef00dd15ea5e5;
@@ -20,13 +23,13 @@ pub trait CallerEnv<'a> {
 
     fn read_u64(&self, ptr: u32) -> u64;
 
-    fn write_u8(&mut self, ptr: u32, x: u8) -> &mut Self;
+    fn write_u8(&mut self, ptr: u32, x: u8);
 
-    fn write_u16(&mut self, ptr: u32, x: u16) -> &mut Self;
+    fn write_u16(&mut self, ptr: u32, x: u16);
 
-    fn write_u32(&mut self, ptr: u32, x: u32) -> &mut Self;
+    fn write_u32(&mut self, ptr: u32, x: u32);
 
-    fn write_u64(&mut self, ptr: u32, x: u64) -> &mut Self;
+    fn write_u64(&mut self, ptr: u32, x: u64);
 
     fn print_string(&mut self, ptr: u32, len: u32);
 

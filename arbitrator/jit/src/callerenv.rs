@@ -110,28 +110,24 @@ impl CallerEnv<'_> for JitCallerEnv<'_> {
         ptr.deref(&self.view()).read().unwrap()
     }
 
-    fn write_u8(&mut self, ptr: u32, x: u8) -> &mut Self {
+    fn write_u8(&mut self, ptr: u32, x: u8) {
         let ptr: WasmPtr<u8> = WasmPtr::new(ptr);
         ptr.deref(&self.view()).write(x).unwrap();
-        self
     }
 
-    fn write_u16(&mut self, ptr: u32, x: u16) -> &mut Self {
+    fn write_u16(&mut self, ptr: u32, x: u16) {
         let ptr: WasmPtr<u16> = WasmPtr::new(ptr);
         ptr.deref(&self.view()).write(x).unwrap();
-        self
     }
 
-    fn write_u32(&mut self, ptr: u32, x: u32) -> &mut Self {
+    fn write_u32(&mut self, ptr: u32, x: u32) {
         let ptr: WasmPtr<u32> = WasmPtr::new(ptr);
         ptr.deref(&self.view()).write(x).unwrap();
-        self
     }
 
-    fn write_u64(&mut self, ptr: u32, x: u64) -> &mut Self {
+    fn write_u64(&mut self, ptr: u32, x: u64) {
         let ptr: WasmPtr<u64> = WasmPtr::new(ptr);
         ptr.deref(&self.view()).write(x).unwrap();
-        self
     }
 
     fn print_string(&mut self, ptr: u32, len: u32) {

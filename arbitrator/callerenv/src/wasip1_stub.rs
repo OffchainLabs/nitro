@@ -9,7 +9,7 @@ pub const ERRNO_BADF: Errno = 8;
 pub const ERRNO_INTVAL: Errno = 28;
 
 pub fn environ_sizes_get<'a, E: CallerEnv<'a>>(
-    mut caller_env: E,
+    caller_env: &mut E,
     length_ptr: Uptr,
     data_size_ptr: Uptr,
 ) -> Errno {
@@ -19,7 +19,7 @@ pub fn environ_sizes_get<'a, E: CallerEnv<'a>>(
 }
 
 pub fn fd_write<'a, E: CallerEnv<'a>>(
-    mut caller_env: E,
+    caller_env: &mut E,
     fd: u32,
     iovecs_ptr: Uptr,
     iovecs_len: u32,
@@ -40,20 +40,20 @@ pub fn fd_write<'a, E: CallerEnv<'a>>(
     ERRNO_SUCCESS
 }
 
-pub fn environ_get<'a, E: CallerEnv<'a>>(mut _caller_env: E, _: u32, _: u32) -> Errno {
+pub fn environ_get<'a, E: CallerEnv<'a>>(_caller_env: &mut E, _: u32, _: u32) -> Errno {
     ERRNO_INTVAL
 }
 
-pub fn fd_close<'a, E: CallerEnv<'a>>(mut _caller_env: E, _: u32) -> Errno {
+pub fn fd_close<'a, E: CallerEnv<'a>>(_caller_env: &mut E, _: u32) -> Errno {
     ERRNO_BADF
 }
 
-pub fn fd_read<'a, E: CallerEnv<'a>>(mut _caller_env: E, _: u32, _: u32, _: u32, _: u32) -> Errno {
+pub fn fd_read<'a, E: CallerEnv<'a>>(_caller_env: &mut E, _: u32, _: u32, _: u32, _: u32) -> Errno {
     ERRNO_BADF
 }
 
 pub fn fd_readdir<'a, E: CallerEnv<'a>>(
-    mut _caller_env: E,
+    _caller_env: &mut E,
     _fd: u32,
     _: u32,
     _: u32,
@@ -63,12 +63,12 @@ pub fn fd_readdir<'a, E: CallerEnv<'a>>(
     ERRNO_BADF
 }
 
-pub fn fd_sync<'a, E: CallerEnv<'a>>(mut _caller_env: E, _: u32) -> Errno {
+pub fn fd_sync<'a, E: CallerEnv<'a>>(_caller_env: &mut E, _: u32) -> Errno {
     ERRNO_SUCCESS
 }
 
 pub fn fd_seek<'a, E: CallerEnv<'a>>(
-    mut _caller_env: E,
+    _caller_env: &mut E,
     _fd: u32,
     _offset: u64,
     _whence: u8,
@@ -77,12 +77,12 @@ pub fn fd_seek<'a, E: CallerEnv<'a>>(
     ERRNO_BADF
 }
 
-pub fn fd_datasync<'a, E: CallerEnv<'a>>(mut _caller_env: E, _fd: u32) -> Errno {
+pub fn fd_datasync<'a, E: CallerEnv<'a>>(_caller_env: &mut E, _fd: u32) -> Errno {
     ERRNO_BADF
 }
 
 pub fn path_open<'a, E: CallerEnv<'a>>(
-    mut _caller_env: E,
+    _caller_env: &mut E,
     _: u32,
     _: u32,
     _: u32,
@@ -97,7 +97,7 @@ pub fn path_open<'a, E: CallerEnv<'a>>(
 }
 
 pub fn path_create_directory<'a, E: CallerEnv<'a>>(
-    mut _caller_env: E,
+    _caller_env: &mut E,
     _: u32,
     _: u32,
     _: u32,
@@ -106,7 +106,7 @@ pub fn path_create_directory<'a, E: CallerEnv<'a>>(
 }
 
 pub fn path_remove_directory<'a, E: CallerEnv<'a>>(
-    mut _caller_env: E,
+    _caller_env: &mut E,
     _: u32,
     _: u32,
     _: u32,
@@ -115,7 +115,7 @@ pub fn path_remove_directory<'a, E: CallerEnv<'a>>(
 }
 
 pub fn path_readlink<'a, E: CallerEnv<'a>>(
-    mut _caller_env: E,
+    _caller_env: &mut E,
     _: u32,
     _: u32,
     _: u32,
@@ -127,7 +127,7 @@ pub fn path_readlink<'a, E: CallerEnv<'a>>(
 }
 
 pub fn path_rename<'a, E: CallerEnv<'a>>(
-    mut _caller_env: E,
+    _caller_env: &mut E,
     _: u32,
     _: u32,
     _: u32,
@@ -139,7 +139,7 @@ pub fn path_rename<'a, E: CallerEnv<'a>>(
 }
 
 pub fn path_filestat_get<'a, E: CallerEnv<'a>>(
-    mut _caller_env: E,
+    _caller_env: &mut E,
     _: u32,
     _: u32,
     _: u32,
@@ -149,16 +149,16 @@ pub fn path_filestat_get<'a, E: CallerEnv<'a>>(
     ERRNO_BADF
 }
 
-pub fn path_unlink_file<'a, E: CallerEnv<'a>>(mut _caller_env: E, _: u32, _: u32, _: u32) -> Errno {
+pub fn path_unlink_file<'a, E: CallerEnv<'a>>(_caller_env: &mut E, _: u32, _: u32, _: u32) -> Errno {
     ERRNO_BADF
 }
 
-pub fn fd_prestat_get<'a, E: CallerEnv<'a>>(mut _caller_env: E, _: u32, _: u32) -> Errno {
+pub fn fd_prestat_get<'a, E: CallerEnv<'a>>(_caller_env: &mut E, _: u32, _: u32) -> Errno {
     ERRNO_BADF
 }
 
 pub fn fd_prestat_dir_name<'a, E: CallerEnv<'a>>(
-    mut _caller_env: E,
+    _caller_env: &mut E,
     _: u32,
     _: u32,
     _: u32,
@@ -167,19 +167,19 @@ pub fn fd_prestat_dir_name<'a, E: CallerEnv<'a>>(
 }
 
 pub fn fd_filestat_get<'a, E: CallerEnv<'a>>(
-    mut _caller_env: E,
+    _caller_env: &mut E,
     _fd: u32,
     _filestat: u32,
 ) -> Errno {
     ERRNO_BADF
 }
 
-pub fn fd_filestat_set_size<'a, E: CallerEnv<'a>>(mut _caller_env: E, _fd: u32, _: u64) -> Errno {
+pub fn fd_filestat_set_size<'a, E: CallerEnv<'a>>(_caller_env: &mut E, _fd: u32, _: u64) -> Errno {
     ERRNO_BADF
 }
 
 pub fn fd_pread<'a, E: CallerEnv<'a>>(
-    mut _caller_env: E,
+    _caller_env: &mut E,
     _fd: u32,
     _: u32,
     _: u32,
@@ -190,7 +190,7 @@ pub fn fd_pread<'a, E: CallerEnv<'a>>(
 }
 
 pub fn fd_pwrite<'a, E: CallerEnv<'a>>(
-    mut _caller_env: E,
+    _caller_env: &mut E,
     _fd: u32,
     _: u32,
     _: u32,
@@ -200,22 +200,22 @@ pub fn fd_pwrite<'a, E: CallerEnv<'a>>(
     ERRNO_BADF
 }
 
-pub fn sock_accept<'a, E: CallerEnv<'a>>(mut _caller_env: E, _fd: u32, _: u32, _: u32) -> Errno {
+pub fn sock_accept<'a, E: CallerEnv<'a>>(_caller_env: &mut E, _fd: u32, _: u32, _: u32) -> Errno {
     ERRNO_BADF
 }
 
-pub fn sock_shutdown<'a, E: CallerEnv<'a>>(mut _caller_env: E, _: u32, _: u32) -> Errno {
+pub fn sock_shutdown<'a, E: CallerEnv<'a>>(_caller_env: &mut E, _: u32, _: u32) -> Errno {
     ERRNO_BADF
 }
 
-pub fn sched_yield<'a, E: CallerEnv<'a>>(mut _caller_env: E) -> Errno {
+pub fn sched_yield<'a, E: CallerEnv<'a>>(_caller_env: &mut E) -> Errno {
     ERRNO_SUCCESS
 }
 
 static TIME_INTERVAL: u64 = 10_000_000;
 
 pub fn clock_time_get<'a, E: CallerEnv<'a>>(
-    mut caller_env: E,
+    caller_env: &mut E,
     _clock_id: u32,
     _precision: u64,
     time_ptr: Uptr,
@@ -225,7 +225,7 @@ pub fn clock_time_get<'a, E: CallerEnv<'a>>(
     ERRNO_SUCCESS
 }
 
-pub fn random_get<'a, E: CallerEnv<'a>>(mut caller_env: E, mut buf: u32, mut len: u32) -> Errno {
+pub fn random_get<'a, E: CallerEnv<'a>>(caller_env: &mut E, mut buf: u32, mut len: u32) -> Errno {
     while len >= 4 {
         let next_rand = caller_env.next_rand_u32();
         caller_env.write_u32(buf, next_rand);
@@ -244,7 +244,7 @@ pub fn random_get<'a, E: CallerEnv<'a>>(mut caller_env: E, mut buf: u32, mut len
 }
 
 pub fn args_sizes_get<'a, E: CallerEnv<'a>>(
-    mut caller_env: E,
+    caller_env: &mut E,
     length_ptr: Uptr,
     data_size_ptr: Uptr,
 ) -> Errno {
@@ -253,7 +253,7 @@ pub fn args_sizes_get<'a, E: CallerEnv<'a>>(
     ERRNO_SUCCESS
 }
 
-pub fn args_get<'a, E: CallerEnv<'a>>(mut caller_env: E, argv_buf: Uptr, data_buf: Uptr) -> Errno {
+pub fn args_get<'a, E: CallerEnv<'a>>(caller_env: &mut E, argv_buf: Uptr, data_buf: Uptr) -> Errno {
     caller_env.write_u32(argv_buf, data_buf as u32);
     caller_env.write_u32(data_buf, 0x6E6962); // "bin\0"
     ERRNO_SUCCESS
@@ -261,7 +261,7 @@ pub fn args_get<'a, E: CallerEnv<'a>>(mut caller_env: E, argv_buf: Uptr, data_bu
 
 // we always simulate a timeout
 pub fn poll_oneoff<'a, E: CallerEnv<'a>>(
-    mut caller_env: E,
+    caller_env: &mut E,
     in_subs: Uptr,
     out_evt: Uptr,
     nsubscriptions: u32,
@@ -284,10 +284,10 @@ pub fn poll_oneoff<'a, E: CallerEnv<'a>>(
     ERRNO_INTVAL
 }
 
-pub fn fd_fdstat_get<'a, E: CallerEnv<'a>>(mut _caller_env: E, _: u32, _: u32) -> Errno {
+pub fn fd_fdstat_get<'a, E: CallerEnv<'a>>(_caller_env: &mut E, _: u32, _: u32) -> Errno {
     ERRNO_INTVAL
 }
 
-pub fn fd_fdstat_set_flags<'a, E: CallerEnv<'a>>(mut _caller_env: E, _: u32, _: u32) -> Errno {
+pub fn fd_fdstat_set_flags<'a, E: CallerEnv<'a>>(_caller_env: &mut E, _: u32, _: u32) -> Errno {
     ERRNO_INTVAL
 }
