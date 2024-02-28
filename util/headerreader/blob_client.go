@@ -26,9 +26,10 @@ import (
 )
 
 type BlobClient struct {
-	ec         arbutil.L1Interface
-	beaconUrl  *url.URL
-	httpClient *http.Client
+	ec            arbutil.L1Interface
+	beaconUrl     *url.URL
+	httpClient    *http.Client
+	authorization string
 
 	// Filled in in Initialize()
 	genesisTime    uint64
@@ -41,16 +42,19 @@ type BlobClient struct {
 type BlobClientConfig struct {
 	BeaconUrl     string `koanf:"beacon-url"`
 	BlobDirectory string `koanf:"blob-directory"`
+	Authorization string `koanf:"authorization"`
 }
 
 var DefaultBlobClientConfig = BlobClientConfig{
 	BeaconUrl:     "",
 	BlobDirectory: "",
+	Authorization: "",
 }
 
 func BlobClientAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".beacon-url", DefaultBlobClientConfig.BeaconUrl, "Beacon Chain RPC URL to use for fetching blobs (normally on port 3500)")
 	f.String(prefix+".blob-directory", DefaultBlobClientConfig.BlobDirectory, "Full path of the directory to save fetched blobs")
+	f.String(prefix+".authorization", DefaultBlobClientConfig.Authorization, "Value to send with the HTTP Authorization: header for Beacon REST requests, must include both scheme and scheme parameters")
 }
 
 func NewBlobClient(config BlobClientConfig, ec arbutil.L1Interface) (*BlobClient, error) {
@@ -72,6 +76,7 @@ func NewBlobClient(config BlobClientConfig, ec arbutil.L1Interface) (*BlobClient
 	return &BlobClient{
 		ec:            ec,
 		beaconUrl:     beaconUrl,
+		authorization: config.Authorization,
 		httpClient:    &http.Client{},
 		blobDirectory: config.BlobDirectory,
 	}, nil
@@ -93,6 +98,10 @@ func beaconRequest[T interface{}](b *BlobClient, ctx context.Context, beaconPath
 	req, err := http.NewRequestWithContext(ctx, "GET", url.String(), http.NoBody)
 	if err != nil {
 		return empty, err
+	}
+
+	if b.authorization != "" {
+		req.Header.Set("Authorization", b.authorization)
 	}
 
 	resp, err := b.httpClient.Do(req)
