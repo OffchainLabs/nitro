@@ -91,7 +91,7 @@ type BatchPoster struct {
 	dataPoster         *dataposter.DataPoster
 	redisLock          *redislock.Simple
 	messagesPerBatch   *arbmath.MovingAverage[uint64]
-	batch4844History   *BoolRing
+	non4844BatchCount  int // Count of consecutive non-4844 batches posted
 	// This is an atomic variable that should only be accessed atomically.
 	// An estimate of the number of batches we want to post but haven't yet.
 	// This doesn't include batches which we don't want to post yet due to the L1 bounds.
@@ -311,7 +311,6 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		bridgeAddr:         opts.DeployInfo.Bridge,
 		daWriter:           opts.DAWriter,
 		redisLock:          redisLock,
-		batch4844History:   NewBoolRing(16),
 	}
 	b.messagesPerBatch, err = arbmath.NewMovingAverage[uint64](20)
 	if err != nil {
@@ -976,9 +975,8 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 					// "address already reserved". This logic makes sure that, if there is a backlog,
 					// that enough non-4844 batches have been posted to fill a block before switching.
 					if backlog == 0 ||
-						b.batch4844History.Empty() ||
-						b.batch4844History.Peek() ||
-						b.batch4844History.All(false) {
+						b.non4844BatchCount == 0 ||
+						b.non4844BatchCount > 16 {
 						blobFeePerByte := eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*latestHeader.ExcessBlobGas, *latestHeader.BlobGasUsed))
 						blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
 						blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
@@ -1225,7 +1223,11 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	recentlyHitL1Bounds := time.Since(b.lastHitL1Bounds) < config.PollInterval*3
 	postedMessages := b.building.msgCount - batchPosition.MessageCount
 	b.messagesPerBatch.Update(uint64(postedMessages))
-	b.batch4844History.Update(b.building.use4844)
+	if b.building.use4844 {
+		b.non4844BatchCount = 0
+	} else {
+		b.non4844BatchCount++
+	}
 	unpostedMessages := msgCount - b.building.msgCount
 	messagesPerBatch := b.messagesPerBatch.Average()
 	if messagesPerBatch == 0 {
