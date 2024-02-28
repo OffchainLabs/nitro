@@ -322,14 +322,15 @@ func (p *DataPoster) MaxMempoolTransactions() uint64 {
 	if p.usingNoOpStorage {
 		return 1
 	}
-	return p.config().MaxMempoolTransactions
+	config := p.config()
+	return arbmath.MinInt(config.MaxMempoolTransactions, config.MaxMempoolWeight)
 }
 
 var ErrExceedsMaxMempoolSize = errors.New("posting this transaction will exceed max mempool size")
 
 // Does basic check whether posting transaction with specified nonce would
 // result in exceeding maximum queue length or maximum transactions in mempool.
-func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64) error {
+func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64, thisWeight uint64) error {
 	cfg := p.config()
 	// If the queue has reached configured max size, don't post a transaction.
 	if cfg.MaxQueuedTransactions > 0 {
@@ -352,6 +353,43 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64) err
 			return fmt.Errorf("%w: transaction nonce: %d, unconfirmed nonce: %d, max mempool size: %d", ErrExceedsMaxMempoolSize, nextNonce, unconfirmedNonce, cfg.MaxMempoolTransactions)
 		}
 	}
+	// Check that posting a new transaction won't exceed maximum pending
+	// weight in mempool.
+	if cfg.MaxMempoolWeight > 0 {
+		unconfirmedNonce, err := p.client.NonceAt(ctx, p.Sender(), nil)
+		if err != nil {
+			return fmt.Errorf("getting nonce of a dataposter sender: %w", err)
+		}
+		if unconfirmedNonce > nextNonce {
+			return fmt.Errorf("latest on-chain nonce %v is greater than to next nonce %v", unconfirmedNonce, nextNonce)
+		}
+
+		var confirmedWeight uint64
+		if unconfirmedNonce > 0 {
+			confirmedMeta, err := p.queue.Get(ctx, unconfirmedNonce-1)
+			if err != nil {
+				return err
+			}
+			if confirmedMeta != nil {
+				confirmedWeight = confirmedMeta.CumulativeWeight
+			}
+		}
+		previousTxMeta, err := p.queue.FetchLast(ctx)
+		if err != nil {
+			return err
+		}
+		var previousTxCumulativeWeight uint64
+		if previousTxMeta != nil {
+			previousTxCumulativeWeight = previousTxMeta.CumulativeWeight
+		}
+		previousTxCumulativeWeight = arbmath.MaxInt(previousTxCumulativeWeight, confirmedWeight)
+		newCumulativeWeight := previousTxCumulativeWeight + thisWeight
+
+		weightDiff := arbmath.MinInt(newCumulativeWeight-confirmedWeight, (nextNonce-unconfirmedNonce)*params.MaxBlobGasPerBlock/params.BlobTxBlobGasPerBlob)
+		if weightDiff > cfg.MaxMempoolWeight {
+			return fmt.Errorf("%w: transaction nonce: %d, transaction cumulative weight: %d, unconfirmed nonce: %d, confirmed weight: %d, new mempool weight: %d, max mempool weight: %d", ErrExceedsMaxMempoolSize, nextNonce, newCumulativeWeight, unconfirmedNonce, confirmedWeight, weightDiff, cfg.MaxMempoolTransactions)
+		}
+	}
 	return nil
 }
 
@@ -360,41 +398,41 @@ func (p *DataPoster) waitForL1Finality() bool {
 }
 
 // Requires the caller hold the mutex.
-// Returns the next nonce, its metadata if stored, a bool indicating if the metadata is present, and an error.
+// Returns the next nonce, its metadata if stored, a bool indicating if the metadata is present, the cumulative weight, and an error if present.
 // Unlike GetNextNonceAndMeta, this does not call the metadataRetriever if the metadata is not stored in the queue.
-func (p *DataPoster) getNextNonceAndMaybeMeta(ctx context.Context) (uint64, []byte, bool, error) {
+func (p *DataPoster) getNextNonceAndMaybeMeta(ctx context.Context, thisWeight uint64) (uint64, []byte, bool, uint64, error) {
 	// Ensure latest finalized block state is available.
 	blockNum, err := p.client.BlockNumber(ctx)
 	if err != nil {
-		return 0, nil, false, err
+		return 0, nil, false, 0, err
 	}
 	lastQueueItem, err := p.queue.FetchLast(ctx)
 	if err != nil {
-		return 0, nil, false, fmt.Errorf("fetching last element from queue: %w", err)
+		return 0, nil, false, 0, fmt.Errorf("fetching last element from queue: %w", err)
 	}
 	if lastQueueItem != nil {
 		nextNonce := lastQueueItem.FullTx.Nonce() + 1
-		if err := p.canPostWithNonce(ctx, nextNonce); err != nil {
-			return 0, nil, false, err
+		if err := p.canPostWithNonce(ctx, nextNonce, thisWeight); err != nil {
+			return 0, nil, false, 0, err
 		}
-		return nextNonce, lastQueueItem.Meta, true, nil
+		return nextNonce, lastQueueItem.Meta, true, lastQueueItem.CumulativeWeight, nil
 	}
 
 	if err := p.updateNonce(ctx); err != nil {
 		if !p.queue.IsPersistent() && p.waitForL1Finality() {
-			return 0, nil, false, fmt.Errorf("error getting latest finalized nonce (and queue is not persistent): %w", err)
+			return 0, nil, false, 0, fmt.Errorf("error getting latest finalized nonce (and queue is not persistent): %w", err)
 		}
 		// Fall back to using a recent block to get the nonce. This is safe because there's nothing in the queue.
 		nonceQueryBlock := arbmath.UintToBig(arbmath.SaturatingUSub(blockNum, 1))
 		log.Warn("failed to update nonce with queue empty; falling back to using a recent block", "recentBlock", nonceQueryBlock, "err", err)
 		nonce, err := p.client.NonceAt(ctx, p.Sender(), nonceQueryBlock)
 		if err != nil {
-			return 0, nil, false, fmt.Errorf("failed to get nonce at block %v: %w", nonceQueryBlock, err)
+			return 0, nil, false, 0, fmt.Errorf("failed to get nonce at block %v: %w", nonceQueryBlock, err)
 		}
 		p.lastBlock = nonceQueryBlock
 		p.nonce = nonce
 	}
-	return p.nonce, nil, false, nil
+	return p.nonce, nil, false, p.nonce, nil
 }
 
 // GetNextNonceAndMeta retrieves generates next nonce, validates that a
@@ -403,7 +441,7 @@ func (p *DataPoster) getNextNonceAndMaybeMeta(ctx context.Context) (uint64, []by
 func (p *DataPoster) GetNextNonceAndMeta(ctx context.Context) (uint64, []byte, error) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-	nonce, meta, hasMeta, err := p.getNextNonceAndMaybeMeta(ctx)
+	nonce, meta, hasMeta, _, err := p.getNextNonceAndMaybeMeta(ctx, 1)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -413,7 +451,8 @@ func (p *DataPoster) GetNextNonceAndMeta(ctx context.Context) (uint64, []byte, e
 	return nonce, meta, err
 }
 
-const minRbfIncrease = arbmath.OneInBips * 11 / 10
+const minNonBlobRbfIncrease = arbmath.OneInBips * 11 / 10
+const minBlobRbfIncrease = arbmath.OneInBips * 2
 
 // evalMaxFeeCapExpr uses MaxFeeCapFormula from config to calculate the expression's result by plugging in appropriate parameter values
 // backlogOfBatches should already include extraBacklog
@@ -452,7 +491,7 @@ func (p *DataPoster) evalMaxFeeCapExpr(backlogOfBatches uint64, elapsed time.Dur
 var big4 = big.NewInt(4)
 
 // The dataPosterBacklog argument should *not* include extraBacklog (it's added in in this function)
-func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit uint64, numBlobs int, lastFeeCap *big.Int, lastTipCap *big.Int, dataCreatedAt time.Time, dataPosterBacklog uint64) (*big.Int, *big.Int, *big.Int, error) {
+func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit uint64, numBlobs int, lastTx *types.Transaction, dataCreatedAt time.Time, dataPosterBacklog uint64) (*big.Int, *big.Int, *big.Int, error) {
 	config := p.config()
 	dataPosterBacklog += p.extraBacklog()
 	latestHeader, err := p.headerReader.LastHeader(ctx)
@@ -464,6 +503,8 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	}
 	newBlobFeeCap := big.NewInt(0)
 	if latestHeader.ExcessBlobGas != nil && latestHeader.BlobGasUsed != nil {
+		// TODO: we should initially bid solely based on the maxFeeCap formula, not on-chain conditions.
+		// On-chain conditions will be necessary for replacing by fee.
 		newBlobFeeCap = eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*latestHeader.ExcessBlobGas, *latestHeader.BlobGasUsed))
 		newBlobFeeCap.Mul(newBlobFeeCap, common.Big2)
 	} else if numBlobs > 0 {
@@ -485,25 +526,27 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	newTipCap = arbmath.BigMax(newTipCap, arbmath.FloatToBig(config.MinTipCapGwei*params.GWei))
-	newTipCap = arbmath.BigMin(newTipCap, arbmath.FloatToBig(config.MaxTipCapGwei*params.GWei))
+	minTipCapGwei, maxTipCapGwei, minRbfIncrease := config.MinTipCapGwei, config.MaxTipCapGwei, minNonBlobRbfIncrease
+	if numBlobs > 0 {
+		minTipCapGwei, maxTipCapGwei, minRbfIncrease = config.MinBlobTipCapGwei, config.MaxBlobTipCapGwei, minBlobRbfIncrease
+	}
+	newTipCap = arbmath.BigMax(newTipCap, arbmath.FloatToBig(minTipCapGwei*params.GWei))
+	newTipCap = arbmath.BigMin(newTipCap, arbmath.FloatToBig(maxTipCapGwei*params.GWei))
 
 	hugeTipIncrease := false
-	if lastTipCap != nil {
+	if lastTx != nil {
+		lastTipCap := lastTx.GasTipCap()
 		newTipCap = arbmath.BigMax(newTipCap, arbmath.BigMulByBips(lastTipCap, minRbfIncrease))
 		// hugeTipIncrease is true if the new tip cap is at least 10x the last tip cap
 		hugeTipIncrease = lastTipCap.Sign() == 0 || arbmath.BigDiv(newTipCap, lastTipCap).Cmp(big.NewInt(10)) >= 0
 	}
 
 	newFeeCap.Add(newFeeCap, newTipCap)
-	if lastFeeCap != nil && hugeTipIncrease {
-		log.Warn("data poster recommending huge tip increase", "lastTipCap", lastTipCap, "newTipCap", newTipCap)
+	if lastTx != nil && hugeTipIncrease {
+		log.Warn("data poster recommending huge tip increase", "lastTipCap", lastTx.GasTipCap(), "newTipCap", newTipCap)
 		// If we're trying to drastically increase the tip, make sure we increase the fee cap by minRbfIncrease.
-		newFeeCap = arbmath.BigMax(newFeeCap, arbmath.BigMulByBips(lastFeeCap, minRbfIncrease))
+		newFeeCap = arbmath.BigMax(newFeeCap, arbmath.BigMulByBips(lastTx.GasFeeCap(), minRbfIncrease))
 	}
-
-	// TODO: if we're significantly increasing the blob fee cap, we also need to increase the fee cap my minRbfIncrease
-	// TODO: look more into geth's blob mempool and make sure this behavior conforms (I think minRbfIncrease might be higher there)
 
 	elapsed := time.Since(dataCreatedAt)
 	maxFeeCap, err := p.evalMaxFeeCapExpr(dataPosterBacklog, elapsed)
@@ -520,35 +563,51 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 		newFeeCap = maxFeeCap
 	}
 
+	if lastTx != nil && (arbmath.BigDivToBips(newFeeCap, lastTx.GasFeeCap()) >= minRbfIncrease || (lastTx.BlobGasFeeCap() != nil && newBlobFeeCap != nil && arbmath.BigDivToBips(newBlobFeeCap, lastTx.BlobGasFeeCap()) >= minRbfIncrease)) {
+		// EIP-4844 replace by fee rules require that both fee cap and blob fee cap are increased
+		newFeeCap = arbmath.BigMax(newFeeCap, arbmath.BigMulByBips(lastTx.GasFeeCap(), minRbfIncrease))
+		newBlobFeeCap = arbmath.BigMax(newBlobFeeCap, arbmath.BigMulByBips(lastTx.BlobGasFeeCap(), minRbfIncrease))
+	}
+
 	// TODO: also have an expression limiting the max blob fee cap
+
+	maxMempoolWeight := arbmath.MinInt(config.MaxMempoolWeight, config.MaxMempoolTransactions)
 
 	latestBalance := p.balance
 	balanceForTx := new(big.Int).Set(latestBalance)
+	weight := arbmath.MaxInt(1, uint64(numBlobs))
+	weightRemaining := weight
 	if config.AllocateMempoolBalance && !p.usingNoOpStorage {
-		// We split the transactions into three groups:
-		// - The first transaction gets 1/2 of the balance.
-		// - The first half of transactions get 1/3 of the balance split among them.
-		// - The remaining transactions get the remaining 1/6 of the balance split among them.
+		// We split the transaction weight into three groups:
+		// - The first weight point gets 1/2 of the balance.
+		// - The first half of the weight gets 1/3 of the balance split among them.
+		// - The remaining weight get the remaining 1/6 of the balance split among them.
 		// This helps ensure batch posting is reliable under a variety of fee conditions.
 		// With noop storage, we don't try to replace-by-fee, so we don't need to worry about this.
-		balanceForTx.Div(balanceForTx, common.Big2)
-		if nonce != softConfNonce && config.MaxMempoolTransactions > 1 {
+		balancePerWeight := new(big.Int).Div(balanceForTx, common.Big2)
+		balanceForTx = big.NewInt(0)
+		if nonce == softConfNonce || maxMempoolWeight == 1 {
+			balanceForTx.Add(balanceForTx, balancePerWeight)
+			weightRemaining -= 1
+		}
+		if weightRemaining > 0 {
 			// Compared to dividing the remaining transactions by balance equally,
 			// the first half of transactions should get a 4/3 weight,
 			// and the remaining half should get a 2/3 weight.
 			// This makes sure the average weight is 1, and the first half of transactions
 			// have twice the weight of the second half of transactions.
 			// The +1 and -1 here are to account for the first transaction being handled separately.
-			if nonce > softConfNonce && nonce < softConfNonce+1+(config.MaxMempoolTransactions-1)/2 {
-				balanceForTx.Mul(balanceForTx, big4)
+			if nonce > softConfNonce && nonce < softConfNonce+1+(maxMempoolWeight-1)/2 {
+				balancePerWeight.Mul(balancePerWeight, big4)
 			} else {
-				balanceForTx.Mul(balanceForTx, common.Big2)
+				balancePerWeight.Mul(balancePerWeight, common.Big2)
 			}
-			balanceForTx.Div(balanceForTx, common.Big3)
+			balancePerWeight.Div(balancePerWeight, common.Big3)
 			// After weighting, split the balance between each of the transactions
 			// other than the first tx which already got half.
 			// balanceForTx /= config.MaxMempoolTransactions-1
-			balanceForTx.Div(balanceForTx, arbmath.UintToBig(config.MaxMempoolTransactions-1))
+			balanceForTx.Div(balancePerWeight, arbmath.UintToBig(maxMempoolWeight-1))
+			balanceForTx.Add(balanceForTx, arbmath.BigMulByUint(balancePerWeight, weight))
 		}
 	}
 	// TODO: take into account blob costs
@@ -557,7 +616,7 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 		log.Warn(
 			"lack of L1 balance prevents posting transaction with desired fee cap",
 			"balance", latestBalance,
-			"maxTransactions", config.MaxMempoolTransactions,
+			"maxMempoolWeight", maxMempoolWeight,
 			"balanceForTransaction", balanceForTx,
 			"gasLimit", gasLimit,
 			"desiredFeeCap", newFeeCap,
@@ -588,7 +647,11 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 
-	expectedNonce, _, _, err := p.getNextNonceAndMaybeMeta(ctx)
+	var weight uint64 = 1
+	if len(kzgBlobs) > 0 {
+		weight = uint64(len(kzgBlobs))
+	}
+	expectedNonce, _, _, lastCumulativeWeight, err := p.getNextNonceAndMaybeMeta(ctx, weight)
 	if err != nil {
 		return nil, err
 	}
@@ -601,7 +664,7 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 		return nil, fmt.Errorf("failed to update data poster balance: %w", err)
 	}
 
-	feeCap, tipCap, blobFeeCap, err := p.feeAndTipCaps(ctx, nonce, gasLimit, len(kzgBlobs), nil, nil, dataCreatedAt, 0)
+	feeCap, tipCap, blobFeeCap, err := p.feeAndTipCaps(ctx, nonce, gasLimit, len(kzgBlobs), nil, dataCreatedAt, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -663,12 +726,13 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 		return nil, fmt.Errorf("signing transaction: %w", err)
 	}
 	queuedTx := storage.QueuedTransaction{
-		DeprecatedData:  deprecatedData,
-		FullTx:          fullTx,
-		Meta:            meta,
-		Sent:            false,
-		Created:         dataCreatedAt,
-		NextReplacement: time.Now().Add(p.replacementTimes[0]),
+		DeprecatedData:   deprecatedData,
+		FullTx:           fullTx,
+		Meta:             meta,
+		Sent:             false,
+		Created:          dataCreatedAt,
+		NextReplacement:  time.Now().Add(p.replacementTimes[0]),
+		CumulativeWeight: lastCumulativeWeight + weight,
 	}
 	return fullTx, p.sendTx(ctx, nil, &queuedTx)
 }
@@ -706,12 +770,12 @@ func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransacti
 	}
 	if err := p.client.SendTransaction(ctx, newTx.FullTx); err != nil {
 		if !strings.Contains(err.Error(), "already known") && !strings.Contains(err.Error(), "nonce too low") {
-			log.Warn("DataPoster failed to send transaction", "err", err, "nonce", newTx.FullTx.Nonce(), "feeCap", newTx.FullTx.GasFeeCap(), "tipCap", newTx.FullTx.GasTipCap(), "gas", newTx.FullTx.Gas())
+			log.Warn("DataPoster failed to send transaction", "err", err, "nonce", newTx.FullTx.Nonce(), "feeCap", newTx.FullTx.GasFeeCap(), "tipCap", newTx.FullTx.GasTipCap(), "blobFeeCap", newTx.FullTx.BlobGasFeeCap(), "gas", newTx.FullTx.Gas())
 			return err
 		}
 		log.Info("DataPoster transaction already known", "err", err, "nonce", newTx.FullTx.Nonce(), "hash", newTx.FullTx.Hash())
 	} else {
-		log.Info("DataPoster sent transaction", "nonce", newTx.FullTx.Nonce(), "hash", newTx.FullTx.Hash(), "feeCap", newTx.FullTx.GasFeeCap(), "tipCap", newTx.FullTx.GasTipCap(), "gas", newTx.FullTx.Gas())
+		log.Info("DataPoster sent transaction", "nonce", newTx.FullTx.Nonce(), "hash", newTx.FullTx.Hash(), "feeCap", newTx.FullTx.GasFeeCap(), "tipCap", newTx.FullTx.GasTipCap(), "blobFeeCap", newTx.FullTx.BlobGasFeeCap(), "gas", newTx.FullTx.Gas())
 	}
 	newerTx := *newTx
 	newerTx.Sent = true
@@ -754,16 +818,20 @@ func updateGasCaps(tx *types.Transaction, newFeeCap, newTipCap, newBlobFeeCap *b
 }
 
 // The mutex must be held by the caller.
-func (p *DataPoster) replaceTx(ctx context.Context, prevTx *storage.QueuedTransaction, backlogOfBatches uint64) error {
-	newFeeCap, newTipCap, newBlobFeeCap, err := p.feeAndTipCaps(ctx, prevTx.FullTx.Nonce(), prevTx.FullTx.Gas(), len(prevTx.FullTx.BlobHashes()), prevTx.FullTx.GasFeeCap(), prevTx.FullTx.GasTipCap(), prevTx.Created, backlogOfBatches)
+func (p *DataPoster) replaceTx(ctx context.Context, prevTx *storage.QueuedTransaction, backlogWeight uint64) error {
+	newFeeCap, newTipCap, newBlobFeeCap, err := p.feeAndTipCaps(ctx, prevTx.FullTx.Nonce(), prevTx.FullTx.Gas(), len(prevTx.FullTx.BlobHashes()), prevTx.FullTx, prevTx.Created, backlogWeight)
 	if err != nil {
 		return err
 	}
 
-	minNewFeeCap := arbmath.BigMulByBips(prevTx.FullTx.GasFeeCap(), minRbfIncrease)
+	minRbfIncrease := minNonBlobRbfIncrease
+	if len(prevTx.FullTx.BlobHashes()) > 0 {
+		minRbfIncrease = minBlobRbfIncrease
+	}
+
 	newTx := *prevTx
-	// TODO: also look at the blob fee cap
-	if newFeeCap.Cmp(minNewFeeCap) < 0 {
+	// Because of the logic in feeAndTipCaps, this is synonymous to a check against the other caps
+	if arbmath.BigDivToBips(newFeeCap, prevTx.FullTx.GasFeeCap()) < minRbfIncrease {
 		log.Debug(
 			"no need to replace by fee transaction",
 			"nonce", prevTx.FullTx.Nonce(),
@@ -771,6 +839,8 @@ func (p *DataPoster) replaceTx(ctx context.Context, prevTx *storage.QueuedTransa
 			"recommendedFeeCap", newFeeCap,
 			"lastTipCap", prevTx.FullTx.GasTipCap(),
 			"recommendedTipCap", newTipCap,
+			"lastBlobFeeCap", prevTx.FullTx.BlobGasFeeCap(),
+			"recommendedBlobFeeCap", newBlobFeeCap,
 		)
 		newTx.NextReplacement = time.Now().Add(time.Minute)
 		return p.sendTx(ctx, prevTx, &newTx)
@@ -877,7 +947,7 @@ func (p *DataPoster) maybeLogError(err error, tx *storage.QueuedTransaction, msg
 	} else {
 		delete(p.errorCount, nonce)
 	}
-	logLevel(msg, "err", err, "nonce", nonce, "feeCap", tx.FullTx.GasFeeCap(), "tipCap", tx.FullTx.GasTipCap(), "gas", tx.FullTx.Gas())
+	logLevel(msg, "err", err, "nonce", nonce, "feeCap", tx.FullTx.GasFeeCap(), "tipCap", tx.FullTx.GasTipCap(), "blobFeeCap", tx.FullTx.BlobGasFeeCap(), "gas", tx.FullTx.Gas())
 }
 
 const minWait = time.Second * 10
@@ -917,12 +987,23 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 			log.Error("Failed to fetch tx queue contents", "err", err)
 			return minWait
 		}
-		for index, tx := range queueContents {
-			backlogOfBatches := len(queueContents) - index - 1
+		latestQueued, err := p.queue.FetchLast(ctx)
+		if err != nil {
+			log.Error("Failed to fetch lastest queued tx", "err", err)
+			return minWait
+		}
+		var latestCumulativeWeight, latestNonce uint64
+		if latestQueued != nil {
+			latestCumulativeWeight = latestQueued.CumulativeWeight
+			latestNonce = latestQueued.FullTx.Nonce()
+		}
+		for _, tx := range queueContents {
 			replacing := false
 			if now.After(tx.NextReplacement) {
 				replacing = true
-				err := p.replaceTx(ctx, tx, uint64(backlogOfBatches))
+				nonceBacklog := arbmath.SaturatingUSub(latestNonce, tx.FullTx.Nonce())
+				weightBacklog := arbmath.SaturatingUSub(latestCumulativeWeight, tx.CumulativeWeight)
+				err := p.replaceTx(ctx, tx, arbmath.MaxInt(nonceBacklog, weightBacklog))
 				p.maybeLogError(err, tx, "failed to replace-by-fee transaction")
 			}
 			if nextCheck.After(tx.NextReplacement) {
@@ -957,7 +1038,9 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 type QueueStorage interface {
 	// Returns at most maxResults items starting from specified index.
 	FetchContents(ctx context.Context, startingIndex uint64, maxResults uint64) ([]*storage.QueuedTransaction, error)
-	// Returns item with the biggest index.
+	// Returns the item at index, or nil if not found.
+	Get(ctx context.Context, index uint64) (*storage.QueuedTransaction, error)
+	// Returns item with the biggest index, or nil if the queue is empty.
 	FetchLast(ctx context.Context) (*storage.QueuedTransaction, error)
 	// Prunes items up to (excluding) specified index.
 	Prune(ctx context.Context, until uint64) error
@@ -976,12 +1059,15 @@ type DataPosterConfig struct {
 	// so you should probably use DataPoster's waitForL1Finality method instead of reading this field directly.
 	WaitForL1Finality      bool              `koanf:"wait-for-l1-finality" reload:"hot"`
 	MaxMempoolTransactions uint64            `koanf:"max-mempool-transactions" reload:"hot"`
+	MaxMempoolWeight       uint64            `koanf:"max-mempool-weight" reload:"hot"`
 	MaxQueuedTransactions  int               `koanf:"max-queued-transactions" reload:"hot"`
 	TargetPriceGwei        float64           `koanf:"target-price-gwei" reload:"hot"`
 	UrgencyGwei            float64           `koanf:"urgency-gwei" reload:"hot"`
 	MinFeeCapGwei          float64           `koanf:"min-fee-cap-gwei" reload:"hot"`
 	MinTipCapGwei          float64           `koanf:"min-tip-cap-gwei" reload:"hot"`
+	MinBlobTipCapGwei      float64           `koanf:"min-blob-tip-cap-gwei" reload:"hot"`
 	MaxTipCapGwei          float64           `koanf:"max-tip-cap-gwei" reload:"hot"`
+	MaxBlobTipCapGwei      float64           `koanf:"max-blob-tip-cap-gwei" reload:"hot"`
 	NonceRbfSoftConfs      uint64            `koanf:"nonce-rbf-soft-confs" reload:"hot"`
 	AllocateMempoolBalance bool              `koanf:"allocate-mempool-balance" reload:"hot"`
 	UseDBStorage           bool              `koanf:"use-db-storage"`
@@ -1027,12 +1113,15 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPost
 	f.String(prefix+".replacement-times", defaultDataPosterConfig.ReplacementTimes, "comma-separated list of durations since first posting to attempt a replace-by-fee")
 	f.Bool(prefix+".wait-for-l1-finality", defaultDataPosterConfig.WaitForL1Finality, "only treat a transaction as confirmed after L1 finality has been achieved (recommended)")
 	f.Uint64(prefix+".max-mempool-transactions", defaultDataPosterConfig.MaxMempoolTransactions, "the maximum number of transactions to have queued in the mempool at once (0 = unlimited)")
+	f.Uint64(prefix+".max-mempool-weight", defaultDataPosterConfig.MaxMempoolWeight, "the maximum number of weight (weight = min(1, tx.blobs)) to have queued in the mempool at once (0 = unlimited)")
 	f.Int(prefix+".max-queued-transactions", defaultDataPosterConfig.MaxQueuedTransactions, "the maximum number of unconfirmed transactions to track at once (0 = unlimited)")
 	f.Float64(prefix+".target-price-gwei", defaultDataPosterConfig.TargetPriceGwei, "the target price to use for maximum fee cap calculation")
 	f.Float64(prefix+".urgency-gwei", defaultDataPosterConfig.UrgencyGwei, "the urgency to use for maximum fee cap calculation")
 	f.Float64(prefix+".min-fee-cap-gwei", defaultDataPosterConfig.MinFeeCapGwei, "the minimum fee cap to post transactions at")
 	f.Float64(prefix+".min-tip-cap-gwei", defaultDataPosterConfig.MinTipCapGwei, "the minimum tip cap to post transactions at")
+	f.Float64(prefix+".min-blob-tip-cap-gwei", defaultDataPosterConfig.MinBlobTipCapGwei, "the minimum tip cap to post EIP-844 blob carrying transactions at")
 	f.Float64(prefix+".max-tip-cap-gwei", defaultDataPosterConfig.MaxTipCapGwei, "the maximum tip cap to post transactions at")
+	f.Float64(prefix+".max-blob-tip-cap-gwei", defaultDataPosterConfig.MaxBlobTipCapGwei, "the maximum tip cap to post EIP-4844 blob carrying transactions at")
 	f.Uint64(prefix+".nonce-rbf-soft-confs", defaultDataPosterConfig.NonceRbfSoftConfs, "the maximum probable reorg depth, used to determine when a transaction will no longer likely need replaced-by-fee")
 	f.Bool(prefix+".allocate-mempool-balance", defaultDataPosterConfig.AllocateMempoolBalance, "if true, don't put transactions in the mempool that spend a total greater than the batch poster's balance")
 	f.Bool(prefix+".use-db-storage", defaultDataPosterConfig.UseDBStorage, "uses database storage when enabled")
@@ -1067,9 +1156,12 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	WaitForL1Finality:      true,
 	TargetPriceGwei:        60.,
 	UrgencyGwei:            2.,
-	MaxMempoolTransactions: 20,
+	MaxMempoolTransactions: 18,
+	MaxMempoolWeight:       18,
 	MinTipCapGwei:          0.05,
+	MinBlobTipCapGwei:      1, // default geth minimum, and relays aren't likely to accept lower values given propagation time
 	MaxTipCapGwei:          5,
+	MaxBlobTipCapGwei:      1, // lower than normal because 4844 rbf is a minimum of a 2x
 	NonceRbfSoftConfs:      1,
 	AllocateMempoolBalance: true,
 	UseDBStorage:           true,
@@ -1084,7 +1176,9 @@ var DefaultDataPosterConfig = DataPosterConfig{
 
 var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
 	config := DefaultDataPosterConfig
-	config.MaxMempoolTransactions = 1 // the validator cannot queue transactions
+	// the validator cannot queue transactions
+	config.MaxMempoolTransactions = 1
+	config.MaxMempoolWeight = 1
 	return config
 }()
 
@@ -1094,9 +1188,12 @@ var TestDataPosterConfig = DataPosterConfig{
 	WaitForL1Finality:      false,
 	TargetPriceGwei:        60.,
 	UrgencyGwei:            2.,
-	MaxMempoolTransactions: 20,
+	MaxMempoolTransactions: 18,
+	MaxMempoolWeight:       18,
 	MinTipCapGwei:          0.05,
+	MinBlobTipCapGwei:      1,
 	MaxTipCapGwei:          5,
+	MaxBlobTipCapGwei:      1,
 	NonceRbfSoftConfs:      1,
 	AllocateMempoolBalance: true,
 	UseDBStorage:           false,
@@ -1110,6 +1207,8 @@ var TestDataPosterConfig = DataPosterConfig{
 
 var TestDataPosterConfigForValidator = func() DataPosterConfig {
 	config := TestDataPosterConfig
-	config.MaxMempoolTransactions = 1 // the validator cannot queue transactions
+	// the validator cannot queue transactions
+	config.MaxMempoolTransactions = 1
+	config.MaxMempoolWeight = 1
 	return config
 }()
