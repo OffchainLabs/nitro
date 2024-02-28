@@ -12,6 +12,7 @@ import (
 	"math/big"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
@@ -64,6 +65,7 @@ type ReceiptFetcher interface {
 // AssertionChain is a wrapper around solgen bindings
 // that implements the protocol interface.
 type AssertionChain struct {
+	transactionLock                          sync.Mutex
 	backend                                  protocol.ChainBackend
 	rollup                                   *rollupgen.RollupCore
 	userLogic                                *rollupgen.RollupUserLogic
