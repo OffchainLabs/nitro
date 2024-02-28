@@ -67,6 +67,7 @@ var DefaultCachingConfig = CachingConfig{
 	MaxAmountOfGasToSkipStateSaving:    0,
 }
 
+// TODO remove stack from parameters as it is no longer needed here
 func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core.CacheConfig {
 	baseConf := ethconfig.Defaults
 	if cachingConfig.Archive {

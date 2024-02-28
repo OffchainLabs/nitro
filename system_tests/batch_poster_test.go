@@ -166,6 +166,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 				L1Reader:      builder.L2.ConsensusNode.L1Reader,
 				Inbox:         builder.L2.ConsensusNode.InboxTracker,
 				Streamer:      builder.L2.ConsensusNode.TxStreamer,
+				VersionGetter: builder.L2.ExecNode,
 				SyncMonitor:   builder.L2.ConsensusNode.SyncMonitor,
 				Config:        func() *arbnode.BatchPosterConfig { return &batchPosterConfig },
 				DeployInfo:    builder.L2.ConsensusNode.DeployInfo,
@@ -180,7 +181,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	}
 
 	lastTxHash := txs[len(txs)-1].Hash()
-	for i := 90; i > 0; i-- {
+	for i := 90; i >= 0; i-- {
 		builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
 			builder.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
 		})
