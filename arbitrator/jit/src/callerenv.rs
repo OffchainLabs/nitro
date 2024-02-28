@@ -42,24 +42,24 @@ impl<'s> JitCallerEnv<'s> {
         self.memory.view(&self.store)
     }
 
-    pub fn caller_write_bytes20(&mut self, ptr: u32, val: Bytes20) {
-        self.caller_write_slice(ptr, val.as_slice())
+    pub fn write_bytes20(&mut self, ptr: u32, val: Bytes20) {
+        self.write_slice(ptr, val.as_slice())
     }
 
-    pub fn caller_write_bytes32(&mut self, ptr: u32, val: Bytes32) {
-        self.caller_write_slice(ptr, val.as_slice())
+    pub fn write_bytes32(&mut self, ptr: u32, val: Bytes32) {
+        self.write_slice(ptr, val.as_slice())
     }
 
-    pub fn caller_read_bytes20(&mut self, ptr: u32) -> Bytes20 {
-        self.caller_read_slice(ptr, 20).try_into().unwrap()
+    pub fn read_bytes20(&mut self, ptr: u32) -> Bytes20 {
+        self.read_slice(ptr, 20).try_into().unwrap()
     }
 
-    pub fn caller_read_bytes32(&mut self, ptr: u32) -> Bytes32 {
-        self.caller_read_slice(ptr, 32).try_into().unwrap()
+    pub fn read_bytes32(&mut self, ptr: u32) -> Bytes32 {
+        self.read_slice(ptr, 32).try_into().unwrap()
     }
 
-    pub fn caller_read_string(&mut self, ptr: u32, len: u32) -> String {
-        let bytes = self.caller_read_slice(ptr, len);
+    pub fn read_string(&mut self, ptr: u32, len: u32) -> String {
+        let bytes = self.read_slice(ptr, len);
         match String::from_utf8(bytes) {
             Ok(s) => s,
             Err(e) => {
@@ -70,7 +70,7 @@ impl<'s> JitCallerEnv<'s> {
         }
     }
 
-    pub fn caller_read_slice(&self, ptr: u32, len: u32) -> Vec<u8> {
+    pub fn read_slice(&self, ptr: u32, len: u32) -> Vec<u8> {
         u32::try_from(ptr).expect("Go pointer not a u32"); // kept for consistency
         let len = u32::try_from(len).expect("length isn't a u32") as usize;
         let mut data = vec![0; len];
@@ -80,7 +80,7 @@ impl<'s> JitCallerEnv<'s> {
         data
     }
 
-    pub fn caller_write_slice<T: TryInto<u32>>(&self, ptr: T, src: &[u8])
+    pub fn write_slice<T: TryInto<u32>>(&self, ptr: T, src: &[u8])
     where
         T::Error: Debug,
     {
@@ -90,60 +90,60 @@ impl<'s> JitCallerEnv<'s> {
 }
 
 impl CallerEnv<'_> for JitCallerEnv<'_> {
-    fn caller_read_u8(&self, ptr: u32) -> u8 {
+    fn read_u8(&self, ptr: u32) -> u8 {
         let ptr: WasmPtr<u8> = WasmPtr::new(ptr);
         ptr.deref(&self.view()).read().unwrap()
     }
 
-    fn caller_read_u16(&self, ptr: u32) -> u16 {
+    fn read_u16(&self, ptr: u32) -> u16 {
         let ptr: WasmPtr<u16> = WasmPtr::new(ptr);
         ptr.deref(&self.view()).read().unwrap()
     }
 
-    fn caller_read_u32(&self, ptr: u32) -> u32 {
+    fn read_u32(&self, ptr: u32) -> u32 {
         let ptr: WasmPtr<u32> = WasmPtr::new(ptr);
         ptr.deref(&self.view()).read().unwrap()
     }
 
-    fn caller_read_u64(&self, ptr: u32) -> u64 {
+    fn read_u64(&self, ptr: u32) -> u64 {
         let ptr: WasmPtr<u64> = WasmPtr::new(ptr);
         ptr.deref(&self.view()).read().unwrap()
     }
 
-    fn caller_write_u8(&mut self, ptr: u32, x: u8) -> &mut Self {
+    fn write_u8(&mut self, ptr: u32, x: u8) -> &mut Self {
         let ptr: WasmPtr<u8> = WasmPtr::new(ptr);
         ptr.deref(&self.view()).write(x).unwrap();
         self
     }
 
-    fn caller_write_u16(&mut self, ptr: u32, x: u16) -> &mut Self {
+    fn write_u16(&mut self, ptr: u32, x: u16) -> &mut Self {
         let ptr: WasmPtr<u16> = WasmPtr::new(ptr);
         ptr.deref(&self.view()).write(x).unwrap();
         self
     }
 
-    fn caller_write_u32(&mut self, ptr: u32, x: u32) -> &mut Self {
+    fn write_u32(&mut self, ptr: u32, x: u32) -> &mut Self {
         let ptr: WasmPtr<u32> = WasmPtr::new(ptr);
         ptr.deref(&self.view()).write(x).unwrap();
         self
     }
 
-    fn caller_write_u64(&mut self, ptr: u32, x: u64) -> &mut Self {
+    fn write_u64(&mut self, ptr: u32, x: u64) -> &mut Self {
         let ptr: WasmPtr<u64> = WasmPtr::new(ptr);
         ptr.deref(&self.view()).write(x).unwrap();
         self
     }
 
-    fn caller_print_string(&mut self, ptr: u32, len: u32) {
-        let data = self.caller_read_string(ptr, len);
+    fn print_string(&mut self, ptr: u32, len: u32) {
+        let data = self.read_string(ptr, len);
         eprintln!("JIT: WASM says: {data}");
     }
 
-    fn caller_get_time(&self) -> u64 {
+    fn get_time(&self) -> u64 {
         self.wenv.go_state.time
     }
 
-    fn caller_advance_time(&mut self, delta: u64) {
+    fn advance_time(&mut self, delta: u64) {
         self.wenv.go_state.time += delta
     }
 
@@ -155,8 +155,6 @@ impl CallerEnv<'_> for JitCallerEnv<'_> {
 pub struct GoRuntimeState {
     /// An increasing clock used when Go asks for time, measured in nanoseconds
     pub time: u64,
-    /// The amount of time advanced each check. Currently 10 milliseconds
-    pub time_interval: u64,
     /// Deterministic source of random data
     pub rng: Pcg32,
 }
@@ -165,8 +163,7 @@ impl Default for GoRuntimeState {
     fn default() -> Self {
         Self {
             time: 0,
-            time_interval: 10_000_000,
-            rng: Pcg32::new(callerenv::PCG_INIT_STATE, callerenv::PCG_INIT_STREAM),
+            rng: callerenv::create_pcg(),
         }
     }
 }

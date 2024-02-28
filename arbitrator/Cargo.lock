@@ -205,6 +205,9 @@ checksum = "a2bd12c1caf447e69cd4528f47f94d203fd2582878ecb9e9465484c4148a8223"
 [[package]]
 name = "callerenv"
 version = "0.1.0"
+dependencies = [
+ "rand_pcg",
+]
 
 [[package]]
 name = "cc"

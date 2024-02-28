@@ -26,7 +26,7 @@ pub fn get_global_state_bytes32(mut env: WasmEnvMut, idx: u32, out_ptr: Uptr) ->
         Some(global) => global,
         None => return Escape::hostio("global read out of bounds in wavmio.getGlobalStateBytes32"),
     };
-    caller_env.caller_write_slice(out_ptr, &global[..32]);
+    caller_env.write_slice(out_ptr, &global[..32]);
     Ok(())
 }
 
@@ -35,7 +35,7 @@ pub fn set_global_state_bytes32(mut env: WasmEnvMut, idx: u32, src_ptr: Uptr) ->
     let caller_env = JitCallerEnv::new(&mut env);
     ready_hostio(caller_env.wenv)?;
 
-    let slice = caller_env.caller_read_slice(src_ptr, 32);
+    let slice = caller_env.read_slice(src_ptr, 32);
     let slice = &slice.try_into().unwrap();
     match caller_env.wenv.large_globals.get_mut(idx as usize) {
         Some(global) => *global = *slice,
@@ -88,7 +88,7 @@ pub fn read_inbox_message(
     let offset = offset as usize;
     let len = std::cmp::min(32, message.len().saturating_sub(offset));
     let read = message.get(offset..(offset + len)).unwrap_or_default();
-    caller_env.caller_write_slice(out_ptr, read);
+    caller_env.write_slice(out_ptr, read);
     Ok(read.len() as u32)
 }
 
@@ -109,7 +109,7 @@ pub fn read_delayed_inbox_message(
     let offset = offset as usize;
     let len = std::cmp::min(32, message.len().saturating_sub(offset));
     let read = message.get(offset..(offset + len)).unwrap_or_default();
-    caller_env.caller_write_slice(out_ptr, read);
+    caller_env.write_slice(out_ptr, read);
     Ok(read.len() as u32)
 }
 
@@ -131,7 +131,7 @@ pub fn resolve_preimage(
         }};
     }
 
-    let hash = caller_env.caller_read_bytes32(hash_ptr);
+    let hash = caller_env.read_bytes32(hash_ptr);
     let hash_hex = hex::encode(hash);
 
     let mut preimage = None;
@@ -159,7 +159,7 @@ pub fn resolve_preimage(
 
     let len = std::cmp::min(32, preimage.len().saturating_sub(offset));
     let read = preimage.get(offset..(offset + len)).unwrap_or_default();
-    caller_env.caller_write_slice(out_ptr, read);
+    caller_env.write_slice(out_ptr, read);
     Ok(read.len() as u32)
 }
 

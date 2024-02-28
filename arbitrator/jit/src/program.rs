@@ -32,27 +32,27 @@ pub fn activate(
     err_buf_len: u32,
 ) -> Result<u32, Escape> {
     let mut caller_env = JitCallerEnv::new(&mut env);
-    let wasm = caller_env.caller_read_slice(wasm_ptr, wasm_size);
+    let wasm = caller_env.read_slice(wasm_ptr, wasm_size);
     let debug = debug != 0;
 
-    let page_limit = caller_env.caller_read_u16(pages_ptr);
-    let gas_left = &mut caller_env.caller_read_u64(gas_ptr);
+    let page_limit = caller_env.read_u16(pages_ptr);
+    let gas_left = &mut caller_env.read_u64(gas_ptr);
     match Module::activate(&wasm, version, page_limit, debug, gas_left) {
         Ok((module, data)) => {
-            caller_env.caller_write_u64(gas_ptr, *gas_left);
-            caller_env.caller_write_u16(pages_ptr, data.footprint);
-            caller_env.caller_write_u32(asm_estimate_ptr, data.asm_estimate);
-            caller_env.caller_write_u32(init_gas_ptr, data.init_gas);
-            caller_env.caller_write_bytes32(module_hash_ptr, module.hash());
+            caller_env.write_u64(gas_ptr, *gas_left);
+            caller_env.write_u16(pages_ptr, data.footprint);
+            caller_env.write_u32(asm_estimate_ptr, data.asm_estimate);
+            caller_env.write_u32(init_gas_ptr, data.init_gas);
+            caller_env.write_bytes32(module_hash_ptr, module.hash());
             Ok(0)
         }
         Err(error) => {
             let mut err_bytes = error.wrap_err("failed to activate").debug_bytes();
             err_bytes.truncate(err_buf_len as usize);
-            caller_env.caller_write_slice(err_buf, &err_bytes);
-            caller_env.caller_write_u64(gas_ptr, 0);
-            caller_env.caller_write_u16(pages_ptr, 0);
-            caller_env.caller_write_bytes32(module_hash_ptr, Bytes32::default());
+            caller_env.write_slice(err_buf, &err_bytes);
+            caller_env.write_u64(gas_ptr, 0);
+            caller_env.write_u16(pages_ptr, 0);
+            caller_env.write_bytes32(module_hash_ptr, Bytes32::default());
             Ok(err_bytes.len() as u32)
         }
     }
@@ -71,8 +71,8 @@ pub fn new_program(
     gas: u64,
 ) -> Result<u32, Escape> {
     let mut caller_env = JitCallerEnv::new(&mut env);
-    let compiled_hash = caller_env.caller_read_bytes32(compiled_hash_ptr);
-    let calldata = caller_env.caller_read_slice(calldata_ptr, calldata_size);
+    let compiled_hash = caller_env.read_bytes32(compiled_hash_ptr);
+    let calldata = caller_env.read_slice(calldata_ptr, calldata_size);
     let evm_data: EvmData = unsafe { *Box::from_raw(evm_data_handler as *mut EvmData) };
     let config: JitConfig = unsafe { *Box::from_raw(stylus_config_handler as *mut JitConfig) };
 
@@ -130,7 +130,7 @@ pub fn get_request(mut env: WasmEnvMut, id: u32, len_ptr: u32) -> Result<u32, Es
     if msg.1 != id {
         return Escape::hostio("get_request id doesn't match");
     };
-    caller_env.caller_write_u32(len_ptr, msg.0.req_data.len() as u32);
+    caller_env.write_u32(len_ptr, msg.0.req_data.len() as u32);
     Ok(msg.0.req_type)
 }
 
@@ -144,7 +144,7 @@ pub fn get_request_data(mut env: WasmEnvMut, id: u32, data_ptr: u32) -> MaybeEsc
     if msg.1 != id {
         return Escape::hostio("get_request id doesn't match");
     };
-    caller_env.caller_write_slice(data_ptr, &msg.0.req_data);
+    caller_env.write_slice(data_ptr, &msg.0.req_data);
     Ok(())
 }
 
@@ -160,8 +160,8 @@ pub fn set_response(
     raw_data_len: u32,
 ) -> MaybeEscape {
     let caller_env = JitCallerEnv::new(&mut env);
-    let result = caller_env.caller_read_slice(result_ptr, result_len);
-    let raw_data = caller_env.caller_read_slice(raw_data_ptr, raw_data_len);
+    let result = caller_env.read_slice(result_ptr, result_len);
+    let raw_data = caller_env.read_slice(raw_data_ptr, raw_data_len);
 
     let thread = caller_env.wenv.threads.last_mut().unwrap();
     thread.set_response(id, result, raw_data, gas)
@@ -235,17 +235,17 @@ pub fn create_evm_data(
     let mut caller_env = JitCallerEnv::new(&mut env);
 
     let evm_data = EvmData {
-        block_basefee: caller_env.caller_read_bytes32(block_basefee_ptr),
+        block_basefee: caller_env.read_bytes32(block_basefee_ptr),
         chainid,
-        block_coinbase: caller_env.caller_read_bytes20(block_coinbase_ptr),
+        block_coinbase: caller_env.read_bytes20(block_coinbase_ptr),
         block_gas_limit,
         block_number,
         block_timestamp,
-        contract_address: caller_env.caller_read_bytes20(contract_address_ptr),
-        msg_sender: caller_env.caller_read_bytes20(msg_sender_ptr),
-        msg_value: caller_env.caller_read_bytes32(msg_value_ptr),
-        tx_gas_price: caller_env.caller_read_bytes32(tx_gas_price_ptr),
-        tx_origin: caller_env.caller_read_bytes20(tx_origin_ptr),
+        contract_address: caller_env.read_bytes20(contract_address_ptr),
+        msg_sender: caller_env.read_bytes20(msg_sender_ptr),
+        msg_value: caller_env.read_bytes32(msg_value_ptr),
+        tx_gas_price: caller_env.read_bytes32(tx_gas_price_ptr),
+        tx_origin: caller_env.read_bytes20(tx_origin_ptr),
         reentrant,
         return_data_len: 0,
         tracing: false,

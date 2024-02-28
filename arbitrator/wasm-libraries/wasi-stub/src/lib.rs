@@ -7,7 +7,7 @@ use rand::RngCore;
 use paste::paste;
 use callerenv::{
     self,
-    wasip1_stub::{Errno, Uptr, ERRNO_SUCCESS, ERRNO_BADF, ERRNO_INTVAL},
+    wasip1_stub::{Errno, Uptr},
     CallerEnv,
 };
 use rand_pcg::Pcg32;
@@ -42,64 +42,64 @@ static mut RNG: Option<Pcg32> = None;
 struct StaticCallerEnv{}
 
 impl CallerEnv<'static> for StaticCallerEnv {
-    fn caller_read_u8(&self, ptr: u32) -> u8 {
+    fn read_u8(&self, ptr: u32) -> u8 {
         unsafe {
             wavm_caller_load8(ptr)
         }
     }
 
-    fn caller_read_u16(&self, ptr: u32) -> u16 {
-        let lsb = self.caller_read_u8(ptr);
-        let msb = self.caller_read_u8(ptr+1);
+    fn read_u16(&self, ptr: u32) -> u16 {
+        let lsb = self.read_u8(ptr);
+        let msb = self.read_u8(ptr+1);
         (msb as u16) << 8 | (lsb as u16)
     }
 
-    fn caller_read_u32(&self, ptr: u32) -> u32 {
-        let lsb = self.caller_read_u16(ptr);
-        let msb = self.caller_read_u16(ptr+2);
+    fn read_u32(&self, ptr: u32) -> u32 {
+        let lsb = self.read_u16(ptr);
+        let msb = self.read_u16(ptr+2);
         (msb as u32) << 16 | (lsb as u32)
     }
 
-    fn caller_read_u64(&self, ptr: u32) -> u64 {
-        let lsb = self.caller_read_u32(ptr);
-        let msb = self.caller_read_u32(ptr+4);
+    fn read_u64(&self, ptr: u32) -> u64 {
+        let lsb = self.read_u32(ptr);
+        let msb = self.read_u32(ptr+4);
         (msb as u64) << 32 | (lsb as u64)
     }
 
-    fn caller_write_u8(&mut self, ptr: u32, x: u8) -> &mut Self {
+    fn write_u8(&mut self, ptr: u32, x: u8) -> &mut Self {
         unsafe {
             wavm_caller_store8(ptr, x);
         }
         self
     }
 
-    fn caller_write_u16(&mut self, ptr: u32, x: u16) -> &mut Self {
-        self.caller_write_u8(ptr, (x & 0xff) as u8);
-        self.caller_write_u8(ptr + 1, ((x >> 8) & 0xff) as u8);
+    fn write_u16(&mut self, ptr: u32, x: u16) -> &mut Self {
+        self.write_u8(ptr, (x & 0xff) as u8);
+        self.write_u8(ptr + 1, ((x >> 8) & 0xff) as u8);
         self
     }
 
-    fn caller_write_u32(&mut self, ptr: u32, x: u32) -> &mut Self {
-        self.caller_write_u16(ptr, (x & 0xffff) as u16);
-        self.caller_write_u16(ptr + 2, ((x >> 16) & 0xffff) as u16);
+    fn write_u32(&mut self, ptr: u32, x: u32) -> &mut Self {
+        self.write_u16(ptr, (x & 0xffff) as u16);
+        self.write_u16(ptr + 2, ((x >> 16) & 0xffff) as u16);
         self
     }
 
-    fn caller_write_u64(&mut self, ptr: u32, x: u64) -> &mut Self {
-        self.caller_write_u32(ptr, (x & 0xffffffff) as u32);
-        self.caller_write_u32(ptr + 4, ((x >> 16) & 0xffffffff) as u32);
+    fn write_u64(&mut self, ptr: u32, x: u64) -> &mut Self {
+        self.write_u32(ptr, (x & 0xffffffff) as u32);
+        self.write_u32(ptr + 4, ((x >> 16) & 0xffffffff) as u32);
         self
     }
 
-    fn caller_print_string(&mut self, _ptr: u32, _len: u32) {} // TODO?
+    fn print_string(&mut self, _ptr: u32, _len: u32) {} // TODO?
 
-    fn caller_get_time(&self) -> u64 {
+    fn get_time(&self) -> u64 {
         unsafe {
             TIME
         }
     }
 
-    fn caller_advance_time(&mut self, delta: u64) {
+    fn advance_time(&mut self, delta: u64) {
         unsafe {
             TIME += delta
         }
@@ -107,7 +107,7 @@ impl CallerEnv<'static> for StaticCallerEnv {
 
     fn next_rand_u32(&mut self) -> u32 {
         unsafe {
-            RNG.get_or_insert_with(|| Pcg32::new(callerenv::PCG_INIT_STATE, callerenv::PCG_INIT_STREAM))
+            RNG.get_or_insert_with(|| callerenv::create_pcg())
         }
         .next_u32()
     }

@@ -1,4 +1,4 @@
-use crate::CallerEnv;
+use crate::callerenv::CallerEnv;
 
 pub type Errno = u16;
 
@@ -212,36 +212,35 @@ pub fn sched_yield<'a, E: CallerEnv<'a>>(mut _caller_env: E) -> Errno {
     ERRNO_SUCCESS
 }
 
-static TIME_INTERVAL: u64 = 10_000_000;
+// pub fn clock_time_get<'a, E: CallerEnv<'a>>(
+//     mut caller_env: E,
+//     _clock_id: u32,
+//     _precision: u64,
+//     time: Uptr,
+// ) -> Errno {
+//     caller_env.wenv.go_state.time += caller_env.wenv.go_state.time_interval;
+//     caller_env.write_u32(time, caller_env.wenv.go_state.time as u32);
+//     caller_env.write_u32(time + 4, (caller_env.wenv.go_state.time >> 32) as u32);
+//     ERRNO_SUCCESS
+// }
 
-pub fn clock_time_get<'a, E: CallerEnv<'a>>(
-    mut caller_env: E,
-    _clock_id: u32,
-    _precision: u64,
-    time_ptr: Uptr,
-) -> Errno {
-    caller_env.advance_time(TIME_INTERVAL);
-    caller_env.write_u64(time_ptr, caller_env.get_time());
-    ERRNO_SUCCESS
-}
-
-pub fn random_get<'a, E: CallerEnv<'a>>(mut caller_env: E, mut buf: u32, mut len: u32) -> Errno {
-    while len >= 4 {
-        let next_rand = caller_env.next_rand_u32();
-        caller_env.write_u32(buf, next_rand);
-        buf += 4;
-        len -= 4;
-    }
-    if len > 0 {
-        let mut rem = caller_env.next_rand_u32();
-        for _ in 0..len {
-            caller_env.write_u8(buf, rem as u8);
-            buf += 1;
-            rem >>= 8;
-        }
-    }
-    ERRNO_SUCCESS
-}
+// pub fn random_get<'a, E: CallerEnv<'a>>(mut caller_env: E, mut buf: u32, mut len: u32) -> Errno {
+//     while len >= 4 {
+//         let next_rand = caller_env.wenv.go_state.rng.next_u32();
+//         caller_env.write_u32(buf, next_rand);
+//         buf += 4;
+//         len -= 4;
+//     }
+//     if len > 0 {
+//         let mut rem = caller_env.wenv.go_state.rng.next_u32();
+//         for _ in 0..len {
+//             caller_env.write_u8(buf, rem as u8);
+//             buf += 1;
+//             rem >>= 8;
+//         }
+//     }
+//     ERRNO_SUCCESS
+// }
 
 pub fn args_sizes_get<'a, E: CallerEnv<'a>>(
     mut caller_env: E,
