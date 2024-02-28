@@ -8,9 +8,9 @@ use prover::machine::MachineStatus;
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
 struct Args {
-    // /// Path to a preimages text file
-    // #[arg(short, long)]
-    // preimages_path: PathBuf,
+    /// Path to a preimages text file
+    #[arg(short, long)]
+    data_path: PathBuf,
     /// Path to a machine.wavm.br
     #[arg(short, long)]
     machine_path: PathBuf,
@@ -18,11 +18,27 @@ struct Args {
 
 fn main() -> eyre::Result<()> {
     let args = Args::parse();
-    let file = File::open(&args.machine_path)?;
-    let reader = BufReader::new(file);
-
-    let data = FileData::from_reader(reader)?;
-    dbg!(data);
+    println!("Setting up machine, this might take some time...");
+    let mut machine = prepare_machine(args.data_path.clone(), args.machine_path.clone())?;
+    println!("Machine setup complete, now stepping...");
+    let start = std::time::Instant::now();
+    machine.step_n(1 << 43)?;
+    let step_end_time = start.elapsed();
+    match machine.get_status() {
+        MachineStatus::Errored => {
+            bail!("Machine errored => position {}", machine.get_steps())
+        }
+        MachineStatus::TooFar => {
+            bail!("Machine too far => position {}", machine.get_steps())
+        }
+        MachineStatus::Running => {}
+        MachineStatus::Finished => return Ok(()),
+    }
+    println!(
+        "took {:?} to execute fully, and reached took total number of machine steps = {}",
+        step_end_time,
+        machine.get_steps()
+    );
     // let step_sizes = [1, 1 << 10, 1 << 15, 1 << 20, 1 << 26];
     // for step_size in step_sizes {
     //     let mut machine = prepare_machine(args.preimages_path.clone(), args.machine_path.clone())?;
