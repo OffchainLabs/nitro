@@ -31,7 +31,7 @@ func andTxSucceeded(ctx context.Context, l1Reader *headerreader.HeaderReader, tx
 	return nil
 }
 
-func deployBridgeCreator(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts, maxDataSize *big.Int) (common.Address, error) {
+func deployBridgeCreator(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts, maxDataSize *big.Int, isUsingFeeToken bool) (common.Address, error) {
 	client := l1Reader.Client()
 
 	/// deploy eth based templates
@@ -46,7 +46,7 @@ func deployBridgeCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 	if err != nil {
 		return common.Address{}, fmt.Errorf("blob basefee reader deploy error: %w", err)
 	}
-	seqInboxTemplate, tx, _, err := bridgegen.DeploySequencerInbox(auth, client, maxDataSize, reader4844)
+	seqInboxTemplate, tx, _, err := bridgegen.DeploySequencerInbox(auth, client, maxDataSize, reader4844, isUsingFeeToken)
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("sequencer inbox deploy error: %w", err)
@@ -161,8 +161,8 @@ func deployChallengeFactory(ctx context.Context, l1Reader *headerreader.HeaderRe
 	return ospEntryAddr, challengeManagerAddr, nil
 }
 
-func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts, maxDataSize *big.Int) (*rollupgen.RollupCreator, common.Address, common.Address, common.Address, error) {
-	bridgeCreator, err := deployBridgeCreator(ctx, l1Reader, auth, maxDataSize)
+func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReader, auth *bind.TransactOpts, maxDataSize *big.Int, isUsingFeeToken bool) (*rollupgen.RollupCreator, common.Address, common.Address, common.Address, error) {
+	bridgeCreator, err := deployBridgeCreator(ctx, l1Reader, auth, maxDataSize, isUsingFeeToken)
 	if err != nil {
 		return nil, common.Address{}, common.Address{}, common.Address{}, fmt.Errorf("bridge creator deploy error: %w", err)
 	}
@@ -234,12 +234,12 @@ func deployRollupCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 	return rollupCreator, rollupCreatorAddress, validatorUtils, validatorWalletCreator, nil
 }
 
-func DeployOnL1(ctx context.Context, parentChainReader *headerreader.HeaderReader, deployAuth *bind.TransactOpts, batchPoster common.Address, authorizeValidators uint64, config rollupgen.Config, nativeToken common.Address, maxDataSize *big.Int) (*chaininfo.RollupAddresses, error) {
+func DeployOnL1(ctx context.Context, parentChainReader *headerreader.HeaderReader, deployAuth *bind.TransactOpts, batchPosters []common.Address, batchPosterManager common.Address, authorizeValidators uint64, config rollupgen.Config, nativeToken common.Address, maxDataSize *big.Int, isUsingFeeToken bool) (*chaininfo.RollupAddresses, error) {
 	if config.WasmModuleRoot == (common.Hash{}) {
 		return nil, errors.New("no machine specified")
 	}
 
-	rollupCreator, _, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, parentChainReader, deployAuth, maxDataSize)
+	rollupCreator, _, validatorUtils, validatorWalletCreator, err := deployRollupCreator(ctx, parentChainReader, deployAuth, maxDataSize, isUsingFeeToken)
 	if err != nil {
 		return nil, fmt.Errorf("error deploying rollup creator: %w", err)
 	}
@@ -251,12 +251,13 @@ func DeployOnL1(ctx context.Context, parentChainReader *headerreader.HeaderReade
 
 	deployParams := rollupgen.RollupCreatorRollupDeploymentParams{
 		Config:                    config,
-		BatchPoster:               batchPoster,
 		Validators:                validatorAddrs,
 		MaxDataSize:               maxDataSize,
 		NativeToken:               nativeToken,
 		DeployFactoriesToL2:       false,
 		MaxFeePerGasForRetryables: big.NewInt(0), // needed when utility factories are deployed
+		BatchPosters:              batchPosters,
+		BatchPosterManager:        batchPosterManager,
 	}
 
 	tx, err := rollupCreator.CreateRollup(
