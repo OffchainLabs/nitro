@@ -204,7 +204,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	// This default is overridden for L3 chains in applyChainParameters in cmd/nitro/nitro.go
 	MaxSize: 100000,
 	// TODO: is 1000 bytes an appropriate margin for error vs blob space efficiency?
-	Max4844BatchSize:   (254 * params.BlobTxFieldElementsPerBlob / 8 * (params.MaxBlobGasPerBlock / params.BlobTxBlobGasPerBlob)) - 1000,
+	Max4844BatchSize:   blobs.BlobEncodableData*(params.MaxBlobGasPerBlock/params.BlobTxBlobGasPerBlob) - 1000,
 	PollInterval:       time.Second * 10,
 	ErrorDelay:         time.Second * 10,
 	MaxDelay:           time.Hour,

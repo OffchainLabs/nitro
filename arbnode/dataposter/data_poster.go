@@ -501,12 +501,11 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	if latestHeader.BaseFee == nil {
 		return nil, nil, nil, fmt.Errorf("latest parent chain block %v missing BaseFee (either the parent chain does not have EIP-1559 or the parent chain node is not synced)", latestHeader.Number)
 	}
-	newBlobFeeCap := big.NewInt(0)
+	currentBlobFee := big.NewInt(0)
 	if latestHeader.ExcessBlobGas != nil && latestHeader.BlobGasUsed != nil {
 		// TODO: we should initially bid solely based on the maxFeeCap formula, not on-chain conditions.
 		// On-chain conditions will be necessary for replacing by fee.
-		newBlobFeeCap = eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*latestHeader.ExcessBlobGas, *latestHeader.BlobGasUsed))
-		newBlobFeeCap.Mul(newBlobFeeCap, common.Big2)
+		currentBlobFee = eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*latestHeader.ExcessBlobGas, *latestHeader.BlobGasUsed))
 	} else if numBlobs > 0 {
 		return nil, nil, nil, fmt.Errorf(
 			"latest parent chain block %v missing ExcessBlobGas or BlobGasUsed but blobs were specified in data poster transaction "+
@@ -519,10 +518,8 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to get latest nonce %v blocks ago (block %v): %w", config.NonceRbfSoftConfs, softConfBlock, err)
 	}
-	newFeeCap := new(big.Int).Mul(latestHeader.BaseFee, common.Big2)
-	newFeeCap = arbmath.BigMax(newFeeCap, arbmath.FloatToBig(config.MinFeeCapGwei*params.GWei))
 
-	newTipCap, err := p.client.SuggestGasTipCap(ctx)
+	suggestedTip, err := p.client.SuggestGasTipCap(ctx)
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -530,46 +527,19 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	if numBlobs > 0 {
 		minTipCapGwei, maxTipCapGwei, minRbfIncrease = config.MinBlobTipCapGwei, config.MaxBlobTipCapGwei, minBlobRbfIncrease
 	}
+	newTipCap := suggestedTip
 	newTipCap = arbmath.BigMax(newTipCap, arbmath.FloatToBig(minTipCapGwei*params.GWei))
 	newTipCap = arbmath.BigMin(newTipCap, arbmath.FloatToBig(maxTipCapGwei*params.GWei))
 
-	hugeTipIncrease := false
-	if lastTx != nil {
-		lastTipCap := lastTx.GasTipCap()
-		newTipCap = arbmath.BigMax(newTipCap, arbmath.BigMulByBips(lastTipCap, minRbfIncrease))
-		// hugeTipIncrease is true if the new tip cap is at least 10x the last tip cap
-		hugeTipIncrease = lastTipCap.Sign() == 0 || arbmath.BigDiv(newTipCap, lastTipCap).Cmp(big.NewInt(10)) >= 0
-	}
-
-	newFeeCap.Add(newFeeCap, newTipCap)
-	if lastTx != nil && hugeTipIncrease {
-		log.Warn("data poster recommending huge tip increase", "lastTipCap", lastTx.GasTipCap(), "newTipCap", newTipCap)
-		// If we're trying to drastically increase the tip, make sure we increase the fee cap by minRbfIncrease.
-		newFeeCap = arbmath.BigMax(newFeeCap, arbmath.BigMulByBips(lastTx.GasFeeCap(), minRbfIncrease))
-	}
-
+	// Compute the max fee with normalized gas so that blob txs aren't priced differently.
+	// Later, split the total cost bid into blob and non-blob fee caps.
 	elapsed := time.Since(dataCreatedAt)
-	maxFeeCap, err := p.evalMaxFeeCapExpr(dataPosterBacklog, elapsed)
+	maxNormalizedFeeCap, err := p.evalMaxFeeCapExpr(dataPosterBacklog, elapsed)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	if arbmath.BigGreaterThan(newFeeCap, maxFeeCap) {
-		log.Warn(
-			"reducing proposed fee cap to current maximum",
-			"proposedFeeCap", newFeeCap,
-			"maxFeeCap", maxFeeCap,
-			"elapsed", elapsed,
-		)
-		newFeeCap = maxFeeCap
-	}
-
-	if lastTx != nil && (arbmath.BigDivToBips(newFeeCap, lastTx.GasFeeCap()) >= minRbfIncrease || (lastTx.BlobGasFeeCap() != nil && newBlobFeeCap != nil && arbmath.BigDivToBips(newBlobFeeCap, lastTx.BlobGasFeeCap()) >= minRbfIncrease)) {
-		// EIP-4844 replace by fee rules require that both fee cap and blob fee cap are increased
-		newFeeCap = arbmath.BigMax(newFeeCap, arbmath.BigMulByBips(lastTx.GasFeeCap(), minRbfIncrease))
-		newBlobFeeCap = arbmath.BigMax(newBlobFeeCap, arbmath.BigMulByBips(lastTx.BlobGasFeeCap(), minRbfIncrease))
-	}
-
-	// TODO: also have an expression limiting the max blob fee cap
+	normalizedGas := gasLimit + uint64(numBlobs)*blobs.BlobEncodableData*params.TxDataNonZeroGasEIP2028
+	targetMaxCost := arbmath.BigMulByUint(maxNormalizedFeeCap, normalizedGas)
 
 	maxMempoolWeight := arbmath.MinInt(config.MaxMempoolWeight, config.MaxMempoolTransactions)
 
@@ -577,6 +547,7 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	balanceForTx := new(big.Int).Set(latestBalance)
 	weight := arbmath.MaxInt(1, uint64(numBlobs))
 	weightRemaining := weight
+
 	if config.AllocateMempoolBalance && !p.usingNoOpStorage {
 		// We split the transaction weight into three groups:
 		// - The first weight point gets 1/2 of the balance.
@@ -606,37 +577,86 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 			// After weighting, split the balance between each of the transactions
 			// other than the first tx which already got half.
 			// balanceForTx /= config.MaxMempoolTransactions-1
-			balanceForTx.Div(balancePerWeight, arbmath.UintToBig(maxMempoolWeight-1))
+			balancePerWeight.Div(balancePerWeight, arbmath.UintToBig(maxMempoolWeight-1))
 			balanceForTx.Add(balanceForTx, arbmath.BigMulByUint(balancePerWeight, weight))
 		}
 	}
-	// TODO: take into account blob costs
-	balanceFeeCap := arbmath.BigDivByUint(balanceForTx, gasLimit)
-	if arbmath.BigGreaterThan(newFeeCap, balanceFeeCap) {
+
+	if arbmath.BigGreaterThan(targetMaxCost, balanceForTx) {
 		log.Warn(
 			"lack of L1 balance prevents posting transaction with desired fee cap",
 			"balance", latestBalance,
+			"weight", weight,
 			"maxMempoolWeight", maxMempoolWeight,
 			"balanceForTransaction", balanceForTx,
 			"gasLimit", gasLimit,
-			"desiredFeeCap", newFeeCap,
-			"balanceFeeCap", balanceFeeCap,
+			"targetMaxCost", targetMaxCost,
 			"nonce", nonce,
 			"softConfNonce", softConfNonce,
 		)
-		newFeeCap = balanceFeeCap
+		targetMaxCost = balanceForTx
 	}
 
-	if arbmath.BigGreaterThan(newTipCap, newFeeCap) {
-		log.Warn(
-			"reducing new tip cap to new fee cap",
+	// Divide the targetMaxCost into blob and non-blob costs.
+	currentNonBlobFee := arbmath.BigAdd(latestHeader.BaseFee, newTipCap)
+	blobGasUsed := params.BlobTxBlobGasPerBlob * uint64(numBlobs)
+	currentBlobCost := arbmath.BigMulByUint(currentBlobFee, blobGasUsed)
+	currentNonBlobCost := arbmath.BigMulByUint(currentNonBlobFee, gasLimit)
+	newBlobFeeCap := arbmath.BigMul(targetMaxCost, currentBlobFee)
+	newBlobFeeCap.Div(newBlobFeeCap, arbmath.BigAdd(currentBlobCost, currentNonBlobCost))
+	if lastTx != nil && lastTx.BlobGasFeeCap() != nil {
+		newBlobFeeCap = arbmath.BigMax(newBlobFeeCap, arbmath.BigMulByBips(lastTx.BlobGasFeeCap(), minBlobRbfIncrease))
+	}
+	targetBlobCost := arbmath.BigMulByUint(newBlobFeeCap, blobGasUsed)
+	targetNonBlobCost := arbmath.BigSub(targetMaxCost, targetBlobCost)
+	newBaseFeeCap := arbmath.BigDivByUint(targetNonBlobCost, gasLimit)
+	if lastTx != nil && numBlobs > 0 && arbmath.BigDivToBips(newBaseFeeCap, lastTx.GasFeeCap()) < minRbfIncrease {
+		// Reduce the blobfee cap to ensure that the basefee meats the minimum rbf increase
+		newBaseFeeCap = arbmath.BigMulByBips(lastTx.GasFeeCap(), minRbfIncrease)
+		newNonBlobCost := arbmath.BigMulByUint(newBaseFeeCap, gasLimit)
+		baseFeeCostIncrease := arbmath.BigSub(targetBlobCost, newNonBlobCost)
+		newBlobCost := arbmath.BigSub(targetBlobCost, baseFeeCostIncrease)
+		newBlobFeeCap = arbmath.BigDivByUint(newBlobCost, blobGasUsed)
+	}
+
+	if lastTx != nil {
+		// Replace by fee rules require that the tip cap is increased
+		newTipCap = arbmath.BigMax(newTipCap, arbmath.BigMulByBips(lastTx.GasFeeCap(), minRbfIncrease))
+	}
+
+	if arbmath.BigGreaterThan(newTipCap, newBaseFeeCap) {
+		log.Info(
+			"reducing new tip cap to new basefee cap",
 			"proposedTipCap", newTipCap,
-			"newFeeCap", newFeeCap,
+			"newBasefeeCap", newBaseFeeCap,
 		)
-		newTipCap = new(big.Int).Set(newFeeCap)
+		newTipCap = new(big.Int).Set(newBaseFeeCap)
 	}
 
-	return newFeeCap, newTipCap, newBlobFeeCap, nil
+	if newBaseFeeCap.Sign() < 0 || newTipCap.Sign() < 0 || newBlobFeeCap.Sign() < 0 {
+		msg := "can't meet fee cap obligations with current target max cost"
+		log.Info(
+			msg,
+			"targetMaxCost", targetMaxCost,
+			"elapsed", elapsed,
+			"dataPosterBacklog", dataPosterBacklog,
+			"balanceForTx", balanceForTx,
+			"currentBaseFee", latestHeader.BaseFee,
+			"newBasefeeCap", newBaseFeeCap,
+			"suggestedTip", suggestedTip,
+			"newTipCap", newTipCap,
+			"currentBlobFee", currentBlobFee,
+			"newBlobFeeCap", newBlobFeeCap,
+		)
+		if lastTx != nil {
+			// wait until we have a higher target max cost to replace by fee
+			return lastTx.GasFeeCap(), lastTx.GasTipCap(), lastTx.BlobGasFeeCap(), nil
+		} else {
+			return nil, nil, nil, errors.New(msg)
+		}
+	}
+
+	return newBaseFeeCap, newTipCap, newBlobFeeCap, nil
 }
 
 func (p *DataPoster) PostSimpleTransaction(ctx context.Context, nonce uint64, to common.Address, calldata []byte, gasLimit uint64, value *big.Int) (*types.Transaction, error) {
@@ -765,6 +785,33 @@ func (p *DataPoster) saveTx(ctx context.Context, prevTx, newTx *storage.QueuedTr
 }
 
 func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransaction, newTx *storage.QueuedTransaction) error {
+	latestHeader, err := p.client.HeaderByNumber(ctx, nil)
+	if err != nil {
+		return err
+	}
+	var currentBlobFee *big.Int
+	if latestHeader.ExcessBlobGas != nil && latestHeader.BlobGasUsed != nil {
+		currentBlobFee = eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*latestHeader.ExcessBlobGas, *latestHeader.BlobGasUsed))
+	}
+
+	if arbmath.BigLessThan(newTx.FullTx.GasFeeCap(), latestHeader.BaseFee) {
+		log.Info(
+			"submitting transaction with GasFeeCap less than latest basefee",
+			"txBasefeeCap", newTx.FullTx.GasFeeCap(),
+			"latestBasefee", latestHeader.BaseFee,
+			"elapsed", time.Since(newTx.Created),
+		)
+	}
+
+	if newTx.FullTx.BlobGasFeeCap() != nil && currentBlobFee != nil && arbmath.BigLessThan(newTx.FullTx.BlobGasFeeCap(), currentBlobFee) {
+		log.Info(
+			"submitting transaction with BlobGasFeeCap less than latest blobfee",
+			"txBlobGasFeeCap", newTx.FullTx.BlobGasFeeCap(),
+			"latestBlobFee", currentBlobFee,
+			"elapsed", time.Since(newTx.Created),
+		)
+	}
+
 	if err := p.saveTx(ctx, prevTx, newTx); err != nil {
 		return err
 	}
@@ -830,8 +877,8 @@ func (p *DataPoster) replaceTx(ctx context.Context, prevTx *storage.QueuedTransa
 	}
 
 	newTx := *prevTx
-	// Because of the logic in feeAndTipCaps, this is synonymous to a check against the other caps
-	if arbmath.BigDivToBips(newFeeCap, prevTx.FullTx.GasFeeCap()) < minRbfIncrease {
+	if arbmath.BigDivToBips(newFeeCap, prevTx.FullTx.GasFeeCap()) < minRbfIncrease ||
+		(prevTx.FullTx.BlobGasFeeCap() != nil && arbmath.BigDivToBips(newBlobFeeCap, prevTx.FullTx.BlobGasFeeCap()) < minRbfIncrease) {
 		log.Debug(
 			"no need to replace by fee transaction",
 			"nonce", prevTx.FullTx.Nonce(),
@@ -1063,7 +1110,6 @@ type DataPosterConfig struct {
 	MaxQueuedTransactions  int               `koanf:"max-queued-transactions" reload:"hot"`
 	TargetPriceGwei        float64           `koanf:"target-price-gwei" reload:"hot"`
 	UrgencyGwei            float64           `koanf:"urgency-gwei" reload:"hot"`
-	MinFeeCapGwei          float64           `koanf:"min-fee-cap-gwei" reload:"hot"`
 	MinTipCapGwei          float64           `koanf:"min-tip-cap-gwei" reload:"hot"`
 	MinBlobTipCapGwei      float64           `koanf:"min-blob-tip-cap-gwei" reload:"hot"`
 	MaxTipCapGwei          float64           `koanf:"max-tip-cap-gwei" reload:"hot"`
@@ -1117,7 +1163,6 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPost
 	f.Int(prefix+".max-queued-transactions", defaultDataPosterConfig.MaxQueuedTransactions, "the maximum number of unconfirmed transactions to track at once (0 = unlimited)")
 	f.Float64(prefix+".target-price-gwei", defaultDataPosterConfig.TargetPriceGwei, "the target price to use for maximum fee cap calculation")
 	f.Float64(prefix+".urgency-gwei", defaultDataPosterConfig.UrgencyGwei, "the urgency to use for maximum fee cap calculation")
-	f.Float64(prefix+".min-fee-cap-gwei", defaultDataPosterConfig.MinFeeCapGwei, "the minimum fee cap to post transactions at")
 	f.Float64(prefix+".min-tip-cap-gwei", defaultDataPosterConfig.MinTipCapGwei, "the minimum tip cap to post transactions at")
 	f.Float64(prefix+".min-blob-tip-cap-gwei", defaultDataPosterConfig.MinBlobTipCapGwei, "the minimum tip cap to post EIP-844 blob carrying transactions at")
 	f.Float64(prefix+".max-tip-cap-gwei", defaultDataPosterConfig.MaxTipCapGwei, "the maximum tip cap to post transactions at")
