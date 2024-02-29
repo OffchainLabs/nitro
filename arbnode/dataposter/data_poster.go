@@ -371,7 +371,7 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64, thi
 				return err
 			}
 			if confirmedMeta != nil {
-				confirmedWeight = confirmedMeta.CumulativeWeight
+				confirmedWeight = confirmedMeta.CumulativeWeight()
 			}
 		}
 		previousTxMeta, err := p.queue.FetchLast(ctx)
@@ -380,7 +380,7 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64, thi
 		}
 		var previousTxCumulativeWeight uint64
 		if previousTxMeta != nil {
-			previousTxCumulativeWeight = previousTxMeta.CumulativeWeight
+			previousTxCumulativeWeight = previousTxMeta.CumulativeWeight()
 		}
 		previousTxCumulativeWeight = arbmath.MaxInt(previousTxCumulativeWeight, confirmedWeight)
 		newCumulativeWeight := previousTxCumulativeWeight + thisWeight
@@ -415,7 +415,7 @@ func (p *DataPoster) getNextNonceAndMaybeMeta(ctx context.Context, thisWeight ui
 		if err := p.canPostWithNonce(ctx, nextNonce, thisWeight); err != nil {
 			return 0, nil, false, 0, err
 		}
-		return nextNonce, lastQueueItem.Meta, true, lastQueueItem.CumulativeWeight, nil
+		return nextNonce, lastQueueItem.Meta, true, lastQueueItem.CumulativeWeight(), nil
 	}
 
 	if err := p.updateNonce(ctx); err != nil {
@@ -756,14 +756,15 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 	if err != nil {
 		return nil, fmt.Errorf("signing transaction: %w", err)
 	}
+	cumulativeWeight := lastCumulativeWeight + weight
 	queuedTx := storage.QueuedTransaction{
-		DeprecatedData:   deprecatedData,
-		FullTx:           fullTx,
-		Meta:             meta,
-		Sent:             false,
-		Created:          dataCreatedAt,
-		NextReplacement:  time.Now().Add(p.replacementTimes[0]),
-		CumulativeWeight: lastCumulativeWeight + weight,
+		DeprecatedData:         deprecatedData,
+		FullTx:                 fullTx,
+		Meta:                   meta,
+		Sent:                   false,
+		Created:                dataCreatedAt,
+		NextReplacement:        time.Now().Add(p.replacementTimes[0]),
+		StoredCumulativeWeight: &cumulativeWeight,
 	}
 	return fullTx, p.sendTx(ctx, nil, &queuedTx)
 }
@@ -1052,7 +1053,7 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 		}
 		var latestCumulativeWeight, latestNonce uint64
 		if latestQueued != nil {
-			latestCumulativeWeight = latestQueued.CumulativeWeight
+			latestCumulativeWeight = latestQueued.CumulativeWeight()
 			latestNonce = latestQueued.FullTx.Nonce()
 		}
 		for _, tx := range queueContents {
@@ -1060,7 +1061,7 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 			if now.After(tx.NextReplacement) {
 				replacing = true
 				nonceBacklog := arbmath.SaturatingUSub(latestNonce, tx.FullTx.Nonce())
-				weightBacklog := arbmath.SaturatingUSub(latestCumulativeWeight, tx.CumulativeWeight)
+				weightBacklog := arbmath.SaturatingUSub(latestCumulativeWeight, tx.CumulativeWeight())
 				err := p.replaceTx(ctx, tx, arbmath.MaxInt(nonceBacklog, weightBacklog))
 				p.maybeLogError(err, tx, "failed to replace-by-fee transaction")
 			}
