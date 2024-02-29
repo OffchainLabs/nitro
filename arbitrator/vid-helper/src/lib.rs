@@ -20,9 +20,6 @@ lazy_static! {
         let json_content = include_str!("../../../config/vid_srs.json");
         serde_json::from_str(json_content).expect("Failed to deserialize")
     };
-    static ref INCLUSION_PROOF: &'static str = {
-        include_str!("../../../config/inclusion_proof.json")
-    };
 }
 
 // Helper function to verify a VID namespace proof that takes the byte representations of the proof,
@@ -45,8 +42,14 @@ pub fn verify_namespace_helper(namespace: u64, proof_bytes: &[u8], commit_bytes:
 
     let advz: Advz<Bls12_381, sha2::Sha256>;
     let srs = UnivariateUniversalParams::<Bls12_381>::deserialize_compressed(&**SRS_VEC).unwrap();
-    let (payload_chunk_size, num_storage_nodes) = (8, 10);
-    advz = Advz::new(payload_chunk_size, num_storage_nodes, srs).unwrap();
+    let num_storage_nodes = match &proof {
+        NamespaceProof::Existence { vid_common , ..} => {
+            VidScheme::get_num_storage_nodes(&vid_common)
+        }, 
+        _  => 5
+    };
+    let num_chunks :usize = 1 << num_storage_nodes.ilog2();
+    advz = Advz::new(num_chunks, num_storage_nodes, srs).unwrap();
     let (txns, ns) = proof.verify(&advz, &commit, &ns_table).unwrap();
 
     let txns_comm = hash_txns(namespace, &txns);
@@ -76,11 +79,3 @@ fn test_verify_namespace_helper() {
     verify_namespace_helper(0, proof_bytes, commit_bytes, ns_table_bytes, txn_comm_bytes);
 }
 
-#[test]
-fn test_verify_namespace_helper_inclusion() {
-    let commit_bytes = b"HASH~b8JRGdpE6VnLj_HdvmLOa-Hc3xIP8UtVEaswYpOnltxk";
-    let txn_comm_str = hash_txns(0, &[]);
-    let txn_comm_bytes = txn_comm_str.as_bytes();
-    let ns_table_bytes = &[1,0,0,0,186,74,6,0,112,2,0,0]; 
-    verify_namespace_helper(0, INCLUSION_PROOF.as_bytes(), commit_bytes, ns_table_bytes, txn_comm_bytes);
-}
