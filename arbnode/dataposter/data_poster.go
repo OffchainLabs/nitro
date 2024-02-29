@@ -503,8 +503,6 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	}
 	currentBlobFee := big.NewInt(0)
 	if latestHeader.ExcessBlobGas != nil && latestHeader.BlobGasUsed != nil {
-		// TODO: we should initially bid solely based on the maxFeeCap formula, not on-chain conditions.
-		// On-chain conditions will be necessary for replacing by fee.
 		currentBlobFee = eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*latestHeader.ExcessBlobGas, *latestHeader.BlobGasUsed))
 	} else if numBlobs > 0 {
 		return nil, nil, nil, fmt.Errorf(
