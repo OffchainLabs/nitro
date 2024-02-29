@@ -491,7 +491,7 @@ func (p *DataPoster) evalMaxFeeCapExpr(backlogOfBatches uint64, elapsed time.Dur
 var big4 = big.NewInt(4)
 
 // The dataPosterBacklog argument should *not* include extraBacklog (it's added in in this function)
-func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit uint64, numBlobs int, lastTx *types.Transaction, dataCreatedAt time.Time, dataPosterBacklog uint64) (*big.Int, *big.Int, *big.Int, error) {
+func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit uint64, numBlobs uint64, lastTx *types.Transaction, dataCreatedAt time.Time, dataPosterBacklog uint64) (*big.Int, *big.Int, *big.Int, error) {
 	config := p.config()
 	dataPosterBacklog += p.extraBacklog()
 	latestHeader, err := p.headerReader.LastHeader(ctx)
@@ -538,14 +538,14 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	normalizedGas := gasLimit + uint64(numBlobs)*blobs.BlobEncodableData*params.TxDataNonZeroGasEIP2028
+	normalizedGas := gasLimit + numBlobs*blobs.BlobEncodableData*params.TxDataNonZeroGasEIP2028
 	targetMaxCost := arbmath.BigMulByUint(maxNormalizedFeeCap, normalizedGas)
 
 	maxMempoolWeight := arbmath.MinInt(config.MaxMempoolWeight, config.MaxMempoolTransactions)
 
 	latestBalance := p.balance
 	balanceForTx := new(big.Int).Set(latestBalance)
-	weight := arbmath.MaxInt(1, uint64(numBlobs))
+	weight := arbmath.MaxInt(1, numBlobs)
 	weightRemaining := weight
 
 	if config.AllocateMempoolBalance && !p.usingNoOpStorage {
@@ -599,7 +599,7 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 
 	// Divide the targetMaxCost into blob and non-blob costs.
 	currentNonBlobFee := arbmath.BigAdd(latestHeader.BaseFee, newTipCap)
-	blobGasUsed := params.BlobTxBlobGasPerBlob * uint64(numBlobs)
+	blobGasUsed := params.BlobTxBlobGasPerBlob * numBlobs
 	currentBlobCost := arbmath.BigMulByUint(currentBlobFee, blobGasUsed)
 	currentNonBlobCost := arbmath.BigMulByUint(currentNonBlobFee, gasLimit)
 	newBlobFeeCap := arbmath.BigMul(targetMaxCost, currentBlobFee)
@@ -633,27 +633,40 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 		newTipCap = new(big.Int).Set(newBaseFeeCap)
 	}
 
+	logFields := []any{
+		"targetMaxCost", targetMaxCost,
+		"elapsed", elapsed,
+		"dataPosterBacklog", dataPosterBacklog,
+		"balanceForTx", balanceForTx,
+		"currentBaseFee", latestHeader.BaseFee,
+		"newBasefeeCap", newBaseFeeCap,
+		"suggestedTip", suggestedTip,
+		"newTipCap", newTipCap,
+		"currentBlobFee", currentBlobFee,
+		"newBlobFeeCap", newBlobFeeCap,
+	}
+
 	if newBaseFeeCap.Sign() < 0 || newTipCap.Sign() < 0 || newBlobFeeCap.Sign() < 0 {
-		msg := "can't meet fee cap obligations with current target max cost"
-		log.Info(
-			msg,
-			"targetMaxCost", targetMaxCost,
-			"elapsed", elapsed,
-			"dataPosterBacklog", dataPosterBacklog,
-			"balanceForTx", balanceForTx,
-			"currentBaseFee", latestHeader.BaseFee,
-			"newBasefeeCap", newBaseFeeCap,
-			"suggestedTip", suggestedTip,
-			"newTipCap", newTipCap,
-			"currentBlobFee", currentBlobFee,
-			"newBlobFeeCap", newBlobFeeCap,
-		)
+		msg := "can't meet data poster fee cap obligations with current target max cost"
+		log.Info(msg, logFields...)
 		if lastTx != nil {
 			// wait until we have a higher target max cost to replace by fee
 			return lastTx.GasFeeCap(), lastTx.GasTipCap(), lastTx.BlobGasFeeCap(), nil
 		} else {
 			return nil, nil, nil, errors.New(msg)
 		}
+	}
+
+	if lastTx != nil && (arbmath.BigLessThan(newBaseFeeCap, currentNonBlobFee) || (numBlobs > 0 && arbmath.BigLessThan(newBlobFeeCap, currentBlobFee))) {
+		// Make sure our replace by fee can meet the current parent chain fee demands.
+		// Without this check, we'd blindly increase each fee component by the min rbf amount each time,
+		// without looking at which component(s) actually need increased.
+		// E.g. instead of 2x basefee and 2x blobfee, we might actually want to 4x basefee and 2x blobfee.
+		// This check lets us hold off on the rbf until we are actually meet the current fee requirements,
+		// which lets us move in a particular direction (biasing towards either basefee or blobfee).
+		log.Info("can't meet current parent chain fees with current target max cost", logFields...)
+		// wait until we have a higher target max cost to replace by fee
+		return lastTx.GasFeeCap(), lastTx.GasTipCap(), lastTx.BlobGasFeeCap(), nil
 	}
 
 	return newBaseFeeCap, newTipCap, newBlobFeeCap, nil
@@ -684,7 +697,7 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 		return nil, fmt.Errorf("failed to update data poster balance: %w", err)
 	}
 
-	feeCap, tipCap, blobFeeCap, err := p.feeAndTipCaps(ctx, nonce, gasLimit, len(kzgBlobs), nil, dataCreatedAt, 0)
+	feeCap, tipCap, blobFeeCap, err := p.feeAndTipCaps(ctx, nonce, gasLimit, uint64(len(kzgBlobs)), nil, dataCreatedAt, 0)
 	if err != nil {
 		return nil, err
 	}
@@ -866,7 +879,7 @@ func updateGasCaps(tx *types.Transaction, newFeeCap, newTipCap, newBlobFeeCap *b
 
 // The mutex must be held by the caller.
 func (p *DataPoster) replaceTx(ctx context.Context, prevTx *storage.QueuedTransaction, backlogWeight uint64) error {
-	newFeeCap, newTipCap, newBlobFeeCap, err := p.feeAndTipCaps(ctx, prevTx.FullTx.Nonce(), prevTx.FullTx.Gas(), len(prevTx.FullTx.BlobHashes()), prevTx.FullTx, prevTx.Created, backlogWeight)
+	newFeeCap, newTipCap, newBlobFeeCap, err := p.feeAndTipCaps(ctx, prevTx.FullTx.Nonce(), prevTx.FullTx.Gas(), uint64(len(prevTx.FullTx.BlobHashes())), prevTx.FullTx, prevTx.Created, backlogWeight)
 	if err != nil {
 		return err
 	}
