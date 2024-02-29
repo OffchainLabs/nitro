@@ -131,15 +131,12 @@ func TestEndToEnd_SmokeTest(t *testing.T) {
 
 func TestEndToEnd_MaxWavmOpcodes(t *testing.T) {
 	protocolCfg := defaultProtocolParams()
-	protocolCfg.numBigStepLevels = 3
-	// A block can take a max of 2^43 wavm opcodes to validate.
-	// With three big step levels of 2^10 each, and one small step level of
-	// 2^13 (adding the exponents), we can have full coverage of a block dispute
-	// in a challenge game.
+	protocolCfg.numBigStepLevels = 2
+	// A block can take a max of 2^42 wavm opcodes to validate.
 	protocolCfg.layerZeroHeights = protocol.LayerZeroHeights{
 		BlockChallengeHeight:     1 << 6,
-		BigStepChallengeHeight:   1 << 10,
-		SmallStepChallengeHeight: 1 << 13,
+		BigStepChallengeHeight:   1 << 14,
+		SmallStepChallengeHeight: 1 << 14,
 	}
 	runEndToEndTest(t, &e2eConfig{
 		backend:  simulated,

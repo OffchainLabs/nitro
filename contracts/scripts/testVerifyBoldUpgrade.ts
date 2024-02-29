@@ -46,10 +46,14 @@ async function main() {
     throw new Error('Stake token address does not match')
   }
 
-  if (
-    !(await edgeChallengeManager.stakeAmount()).eq(config.settings.miniStakeAmt)
-  ) {
-    throw new Error('Mini stake amount does not match')
+  for (let i = 0; i < config.settings.miniStakeAmounts.length; i++) {
+    if (
+      !(await edgeChallengeManager.stakeAmounts(i)).eq(
+        config.settings.miniStakeAmounts[i]
+      )
+    ) {
+      throw new Error('Mini stake amount does not match')
+    }
   }
 
   if (

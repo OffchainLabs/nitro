@@ -275,7 +275,7 @@ func TestEdgeChallengeManager_AddSubchallengeLeaf(t *testing.T) {
 		BigStepChallengeHeight:   1 << 5,
 		SmallStepChallengeHeight: 1 << 5,
 	}
-	numBigSteps := uint8(3)
+	numBigSteps := uint8(1)
 	bisectionScenario := setupBisectionScenario(
 		t,
 		setup.WithChallengeTestingOpts(

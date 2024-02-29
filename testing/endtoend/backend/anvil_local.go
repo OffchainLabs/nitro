@@ -175,7 +175,6 @@ func (a *AnvilLocal) DeployRollup(ctx context.Context, opts ...challenge_testing
 		MachineStatus: 1,
 	}
 	genesisInboxCount := big.NewInt(0)
-	miniStake := big.NewInt(1)
 
 	stakeToken, tx, tokenBindings, err := mocksgen.DeployTestWETH9(
 		a.accounts[0],
@@ -197,6 +196,11 @@ func (a *AnvilLocal) DeployRollup(ctx context.Context, opts ...challenge_testing
 		return common.Address{}, errors.New("receipt not successful")
 	}
 
+	miniStakeValues := []*big.Int{
+		big.NewInt(1),
+		big.NewInt(2),
+		big.NewInt(3),
+	}
 	result, err := setup.DeployFullRollupStack(
 		ctx,
 		a.client,
@@ -208,7 +212,7 @@ func (a *AnvilLocal) DeployRollup(ctx context.Context, opts ...challenge_testing
 			rollupOwner,
 			anvilLocalChainID,
 			loserStakeEscrow,
-			miniStake,
+			miniStakeValues,
 			stakeToken,
 			genesisExecutionState,
 			genesisInboxCount,

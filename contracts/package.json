@@ -30,7 +30,6 @@
     "test:compatibility": "yarn run build:0.6 && yarn run build:0.7",
     "test:storage": "./test/storage/test.bash",
     "postinstall": "patch-package",
-    "script:bold-local-prepare": "hardhat run ./scripts/testLocalPrepareTestNode.ts",
     "script:bold-prepare": "hardhat run ./scripts/prepareBoldUpgrade.ts",
     "script:bold-populate-lookup": "hardhat run ./scripts/populateLookup.ts",
     "script:bold-local-execute": "hardhat run ./scripts/testLocalExecuteBoldUpgrade.ts",

@@ -57,13 +57,21 @@ contract EdgeChallengeManagerTest is Test {
     bytes32 h1 = rand.hash();
     bytes32 h2 = rand.hash();
     uint256 height1 = 32;
-
-    uint256 miniStakeVal = 1 ether;
+    
     address excessStakeReceiver = address(77);
     address nobody = address(78);
 
     uint64 challengePeriodBlock = 1000;
     ExecutionStateData empty;
+
+    function miniStakeAmounts() internal view returns (uint256[] memory) {
+        uint256 numLevels = NUM_BIGSTEP_LEVEL + 2;
+        uint256[] memory amounts = new uint256[](numLevels);
+        for (uint256 i = 0; i < numLevels; i++) {
+            amounts[i] = (numLevels - i) * 1 ether;
+        }
+        return amounts;
+    }
 
     function appendRandomStates(bytes32[] memory currentStates, uint256 numStates)
         internal
@@ -101,9 +109,9 @@ contract EdgeChallengeManagerTest is Test {
                 address(this),
                 1000000 ether
             ),
-            miniStakeVal,
             excessStakeReceiver,
-            NUM_BIGSTEP_LEVEL
+            NUM_BIGSTEP_LEVEL,
+            miniStakeAmounts()
         );
 
         challengeManager.stakeToken().approve(address(challengeManager), type(uint256).max);
@@ -133,6 +141,20 @@ contract EdgeChallengeManagerTest is Test {
                 1000000 ether
             );
 
+        vm.expectRevert(abi.encodeWithSelector(StakeAmountsMismatch.selector, NUM_BIGSTEP_LEVEL, NUM_BIGSTEP_LEVEL + 2));
+        ecm.initialize(
+            assertionChain,
+            challengePeriodBlock,
+            osp,
+            2 ** 5,
+            2 ** 5,
+            2 ** 5,
+            erc20,
+            excessStakeReceiver,
+            NUM_BIGSTEP_LEVEL,
+            new uint256[](NUM_BIGSTEP_LEVEL)
+        );
+
         vm.expectRevert(abi.encodeWithSelector(EmptyAssertionChain.selector));
         ecm.initialize(
             IAssertionChain(address(0)),
@@ -142,9 +164,9 @@ contract EdgeChallengeManagerTest is Test {
             2 ** 5,
             2 ** 5,
             erc20,
-            miniStakeVal,
             excessStakeReceiver,
-            NUM_BIGSTEP_LEVEL
+            NUM_BIGSTEP_LEVEL,
+            miniStakeAmounts()
         );
 
         vm.expectRevert(abi.encodeWithSelector(EmptyOneStepProofEntry.selector));
@@ -156,14 +178,14 @@ contract EdgeChallengeManagerTest is Test {
             2 ** 5,
             2 ** 5,
             erc20,
-            miniStakeVal,
             excessStakeReceiver,
-            NUM_BIGSTEP_LEVEL
+            NUM_BIGSTEP_LEVEL,
+            miniStakeAmounts()
         );
 
         vm.expectRevert(abi.encodeWithSelector(EmptyChallengePeriod.selector));
         ecm.initialize(
-            assertionChain, 0, osp, 2 ** 5, 2 ** 5, 2 ** 5, erc20, miniStakeVal, excessStakeReceiver, NUM_BIGSTEP_LEVEL
+            assertionChain, 0, osp, 2 ** 5, 2 ** 5, 2 ** 5, erc20, excessStakeReceiver, NUM_BIGSTEP_LEVEL, miniStakeAmounts()
         );
 
         vm.expectRevert(abi.encodeWithSelector(EmptyStakeReceiver.selector));
@@ -175,9 +197,9 @@ contract EdgeChallengeManagerTest is Test {
             2 ** 5,
             2 ** 5,
             erc20,
-            miniStakeVal,
             address(0),
-            NUM_BIGSTEP_LEVEL
+            NUM_BIGSTEP_LEVEL,
+            miniStakeAmounts()
         );
 
         vm.expectRevert(abi.encodeWithSelector(NotPowerOfTwo.selector, (2 ** 5) + 1));
@@ -189,9 +211,9 @@ contract EdgeChallengeManagerTest is Test {
             2 ** 5,
             2 ** 5,
             erc20,
-            miniStakeVal,
             excessStakeReceiver,
-            NUM_BIGSTEP_LEVEL
+            NUM_BIGSTEP_LEVEL,
+            miniStakeAmounts()
         );
 
         vm.expectRevert(abi.encodeWithSelector(NotPowerOfTwo.selector, (2 ** 5) + 1));
@@ -203,9 +225,9 @@ contract EdgeChallengeManagerTest is Test {
             (2 ** 5) + 1,
             2 ** 5,
             erc20,
-            miniStakeVal,
             excessStakeReceiver,
-            NUM_BIGSTEP_LEVEL
+            NUM_BIGSTEP_LEVEL,
+            miniStakeAmounts()
         );
 
         vm.expectRevert(abi.encodeWithSelector(NotPowerOfTwo.selector, (2 ** 5) + 1));
@@ -217,9 +239,9 @@ contract EdgeChallengeManagerTest is Test {
             2 ** 5,
             (2 ** 5) + 1,
             erc20,
-            miniStakeVal,
             excessStakeReceiver,
-            NUM_BIGSTEP_LEVEL
+            NUM_BIGSTEP_LEVEL,
+            miniStakeAmounts()
         );
 
         vm.expectRevert(abi.encodeWithSelector(ZeroBigStepLevels.selector));
@@ -231,9 +253,9 @@ contract EdgeChallengeManagerTest is Test {
             2 ** 5,
             2 ** 5,
             erc20,
-            miniStakeVal,
             excessStakeReceiver,
-            0
+            0,
+            miniStakeAmounts()
         );
 
         vm.expectRevert(abi.encodeWithSelector(BigStepLevelsTooMany.selector, 254));
@@ -245,9 +267,9 @@ contract EdgeChallengeManagerTest is Test {
             2 ** 5,
             2 ** 5,
             erc20,
-            miniStakeVal,
             excessStakeReceiver,
-            254
+            254,
+            miniStakeAmounts()
         );
     }
 
@@ -477,7 +499,7 @@ contract EdgeChallengeManagerTest is Test {
             })
         );
         uint256 afterBalance = stakeToken.balanceOf(address(this));
-        assertEq(beforeBalance - afterBalance, ei.challengeManager.stakeAmount(), "Staked");
+        assertEq(beforeBalance - afterBalance, ei.challengeManager.stakeAmounts(0), "Staked");
 
         // test the getters
         assertEq(ei.challengeManager.edgeExists(edgeId), true, "Edge exists");
@@ -1661,9 +1683,13 @@ contract EdgeChallengeManagerTest is Test {
     function testExcessStakeReceived() external {
         (EdgeInitData memory ei,) = testCanConfirmByOneStep();
         IERC20 stakeToken = ei.challengeManager.stakeToken();
+        uint256 totalAmount;
+        for (uint256 i = 0; i < NUM_BIGSTEP_LEVEL + 2; i++) {
+            totalAmount += ei.challengeManager.stakeAmounts(i);
+        }
         assertEq(
             stakeToken.balanceOf(excessStakeReceiver),
-            ei.challengeManager.stakeAmount() * (NUM_BIGSTEP_LEVEL + 2),
+            totalAmount,
             "Excess stake received"
         );
     }
@@ -1674,9 +1700,12 @@ contract EdgeChallengeManagerTest is Test {
         IERC20 stakeToken = ei.challengeManager.stakeToken();
         uint256 beforeBalance = stakeToken.balanceOf(address(this));
         vm.prank(nobody); // call refund as nobody
-        ei.challengeManager.refundStake(allWinners[allWinners.length - 1].lowerChildId);
+        bytes32 edgeId = allWinners[allWinners.length - 1].lowerChildId;
+        ei.challengeManager.refundStake(edgeId);
+        uint256 level = ei.challengeManager.getEdge(edgeId).level;
         uint256 afterBalance = stakeToken.balanceOf(address(this));
-        assertEq(afterBalance - beforeBalance, ei.challengeManager.stakeAmount(), "Stake refunded");
+        // block level
+        assertEq(afterBalance - beforeBalance, ei.challengeManager.stakeAmounts(level), "Stake refunded");
     }
 
     function testRevertRefundStakeTwice() external {
@@ -1702,9 +1731,11 @@ contract EdgeChallengeManagerTest is Test {
         IERC20 stakeToken = ei.challengeManager.stakeToken();
         uint256 beforeBalance = stakeToken.balanceOf(address(this));
         vm.prank(nobody); // call refund as nobody
-        ei.challengeManager.refundStake(allWinners[11].lowerChildId);
+        bytes32 edgeId = allWinners[11].lowerChildId;
+        ei.challengeManager.refundStake(edgeId);
         uint256 afterBalance = stakeToken.balanceOf(address(this));
-        assertEq(afterBalance - beforeBalance, ei.challengeManager.stakeAmount(), "Stake refunded");
+        uint256 level = ei.challengeManager.getEdge(edgeId).level;
+        assertEq(afterBalance - beforeBalance, ei.challengeManager.stakeAmounts(level), "Stake refunded");
     }
 
     function testRefundStakeSmallStep() external {
@@ -1713,9 +1744,11 @@ contract EdgeChallengeManagerTest is Test {
         IERC20 stakeToken = ei.challengeManager.stakeToken();
         uint256 beforeBalance = stakeToken.balanceOf(address(this));
         vm.prank(nobody); // call refund as nobody
-        ei.challengeManager.refundStake(allWinners[5].lowerChildId);
+        bytes32 edgeId = allWinners[5].lowerChildId;
+        ei.challengeManager.refundStake(edgeId);
         uint256 afterBalance = stakeToken.balanceOf(address(this));
-        assertEq(afterBalance - beforeBalance, ei.challengeManager.stakeAmount(), "Stake refunded");
+        uint256 level = ei.challengeManager.getEdge(edgeId).level;
+        assertEq(afterBalance - beforeBalance, ei.challengeManager.stakeAmounts(level), "Stake refunded");
     }
 
     function testRevertRefundStakeNotConfirmed() external {

@@ -28,9 +28,9 @@ interface IEdgeChallengeManager {
     /// @param layerZeroBigStepEdgeHeight   The end height of layer zero edges of type BigStep
     /// @param layerZeroSmallStepEdgeHeight The end height of layer zero edges of type SmallStep
     /// @param _stakeToken                  The token that stake will be provided in when creating zero layer block edges
-    /// @param _stakeAmount                 The amount of stake (in units of stake token) required to create a block edge
     /// @param _excessStakeReceiver         The address that excess stake will be sent to when 2nd+ block edge is created
     /// @param _numBigStepLevel             The number of bigstep levels
+    /// @param _stakeAmounts                The stake amount for each level. (first element is for block level)
     function initialize(
         IAssertionChain _assertionChain,
         uint64 _challengePeriodBlocks,
@@ -39,9 +39,9 @@ interface IEdgeChallengeManager {
         uint256 layerZeroBigStepEdgeHeight,
         uint256 layerZeroSmallStepEdgeHeight,
         IERC20 _stakeToken,
-        uint256 _stakeAmount,
         address _excessStakeReceiver,
-        uint8 _numBigStepLevel
+        uint8 _numBigStepLevel,
+        uint256[] calldata _stakeAmounts
     ) external;
 
     function challengePeriodBlocks() external view returns (uint64);
@@ -273,8 +273,8 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
     /// @notice The token to supply stake in
     IERC20 public stakeToken;
 
-    /// @notice The amount of stake token to be supplied when creating a zero layer block edge
-    uint256 public stakeAmount;
+    /// @notice The amount of stake token to be supplied when creating a zero layer block edge at a given level
+    uint256[] public stakeAmounts;
 
     /// @notice The number of blocks accumulated on an edge before it can be confirmed by time
     uint64 public challengePeriodBlocks;
@@ -308,9 +308,9 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         uint256 layerZeroBigStepEdgeHeight,
         uint256 layerZeroSmallStepEdgeHeight,
         IERC20 _stakeToken,
-        uint256 _stakeAmount,
         address _excessStakeReceiver,
-        uint8 _numBigStepLevel
+        uint8 _numBigStepLevel,
+        uint256[] calldata _stakeAmounts
     ) public initializer {
         if (address(_assertionChain) == address(0)) {
             revert EmptyAssertionChain();
@@ -326,7 +326,6 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         challengePeriodBlocks = _challengePeriodBlocks;
 
         stakeToken = _stakeToken;
-        stakeAmount = _stakeAmount;
         if (_excessStakeReceiver == address(0)) {
             revert EmptyStakeReceiver();
         }
@@ -355,6 +354,11 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
             revert BigStepLevelsTooMany(_numBigStepLevel);
         }
         NUM_BIGSTEP_LEVEL = _numBigStepLevel;
+
+        if (_numBigStepLevel + 2 != _stakeAmounts.length) {
+            revert StakeAmountsMismatch(_stakeAmounts.length, _numBigStepLevel + 2);
+        }
+        stakeAmounts = _stakeAmounts;
     }
 
     /////////////////////////////
@@ -402,7 +406,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         }
 
         IERC20 st = stakeToken;
-        uint256 sa = stakeAmount;
+        uint256 sa = stakeAmounts[args.level];
         // when a zero layer edge is created it must include stake amount. Each time a zero layer
         // edge is created it forces the honest participants to do some work, so we want to disincentive
         // their creation. The amount should also be enough to pay for the gas costs incurred by the honest
@@ -568,7 +572,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         edge.setRefunded();
 
         IERC20 st = stakeToken;
-        uint256 sa = stakeAmount;
+        uint256 sa = stakeAmounts[edge.level];
         // no need to refund with the token or amount where zero'd out
         if (address(st) != address(0) && sa != 0) {
             st.safeTransfer(edge.staker, sa);

@@ -34,7 +34,6 @@ contract AssertinPoolTest is Test {
 
     bytes32 constant WASM_MODULE_ROOT = keccak256("WASM_MODULE_ROOT");
     uint256 constant BASE_STAKE = 10 ether;
-    uint256 constant MINI_STAKE_VALUE = 2;
     uint64 constant CONFIRM_PERIOD_BLOCKS = 100;
     uint256 constant MAX_DATA_SIZE = 117964;
     uint64 constant CHALLENGE_GRACE_PERIOD_BLOCKS = 10;
@@ -111,6 +110,11 @@ contract AssertinPoolTest is Test {
         token = new TestWETH9("Test", "TEST");
         IWETH9(address(token)).deposit{value: 21 ether}();
 
+        uint256[] memory miniStakeValues = new uint256[](4);
+        miniStakeValues[0] = 1 ether;
+        miniStakeValues[1] = 2 ether;
+        miniStakeValues[2] = 3 ether;
+        miniStakeValues[3] = 4 ether;
         Config memory config = Config({
             baseStake: BASE_STAKE,
             chainId: 0,
@@ -128,7 +132,7 @@ contract AssertinPoolTest is Test {
             loserStakeEscrow: address(200001),
             genesisExecutionState: emptyState,
             genesisInboxCount: 0,
-            miniStakeValue: MINI_STAKE_VALUE,
+            miniStakeValues: miniStakeValues,
             layerZeroBlockEdgeHeight: 2 ** 5,
             layerZeroBigStepEdgeHeight: 2 ** 5,
             layerZeroSmallStepEdgeHeight: 2 ** 5,

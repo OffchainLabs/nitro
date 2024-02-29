@@ -69,7 +69,7 @@ contract RollupCreator is Ownable {
             layerZeroBigStepEdgeHeight: config.layerZeroBigStepEdgeHeight,
             layerZeroSmallStepEdgeHeight: config.layerZeroSmallStepEdgeHeight,
             _stakeToken: IERC20(config.stakeToken),
-            _stakeAmount: config.miniStakeValue,
+            _stakeAmounts: config.miniStakeValues,
             _excessStakeReceiver: config.owner,
             _numBigStepLevel: config.numBigStepLevel
         });

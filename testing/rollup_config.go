@@ -64,7 +64,7 @@ func GenerateRollupConfig(
 	rollupOwner common.Address,
 	chainId *big.Int,
 	loserStakeEscrow common.Address,
-	miniStakeValue *big.Int,
+	miniStakeValues []*big.Int,
 	stakeToken common.Address,
 	genesisExecutionState rollupgen.ExecutionState,
 	genesisInboxCount *big.Int,
@@ -86,7 +86,7 @@ func GenerateRollupConfig(
 	}
 
 	cfg := rollupgen.Config{
-		MiniStakeValue:      miniStakeValue,
+		MiniStakeValues:     miniStakeValues,
 		ConfirmPeriodBlocks: confirmPeriod,
 		StakeToken:          stakeToken,
 		BaseStake:           big.NewInt(1),

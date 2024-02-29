@@ -214,6 +214,8 @@ jobs:
         with:
           submodules: recursive
       - uses: OffchainLabs/actions/run-nitro-test-node@main
+        with:
+          no-simple: false
 
       - name: Setup node/yarn
         uses: actions/setup-node@v3
@@ -231,9 +233,6 @@ jobs:
       - name: Copy .env
         run: |
           cp ./.env-sample ./.env
-
-      - name: Prepare local node
-        run: yarn script:bold-local-prepare
 
       - name: Deploy bold dependencies
         run: yarn script:bold-prepare

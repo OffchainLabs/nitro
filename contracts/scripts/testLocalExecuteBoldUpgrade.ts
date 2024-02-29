@@ -1,10 +1,11 @@
 import { Contract, ContractReceipt, Wallet, ethers } from 'ethers'
 import { DeployedContracts, getConfig, getJsonFile } from './common'
 import fs from 'fs'
-import { BOLDUpgradeAction__factory } from '../build/types'
+import { BOLDUpgradeAction__factory, RollupAdminLogic__factory } from '../build/types'
 import { abi as UpgradeExecutorAbi } from './files/UpgradeExecutor.json'
 import dotenv from 'dotenv'
 import { RollupMigratedEvent } from '../build/types/src/rollup/BOLDUpgradeAction.sol/BOLDUpgradeAction'
+import { AbiCoder } from 'ethers/lib/utils'
 
 dotenv.config()
 
@@ -37,12 +38,9 @@ async function main() {
   if (!deployedContracts.boldAction) {
     throw new Error('No boldAction contract deployed')
   }
-  if (!deployedContracts.upgradeExecutor) {
-    throw new Error('No upgradeExecutor contract deployed')
-  }
 
   const upExec = new Contract(
-    deployedContracts.upgradeExecutor,
+    config.contracts.upgradeExecutor,
     UpgradeExecutorAbi,
     wallet
   )
@@ -50,6 +48,14 @@ async function main() {
     deployedContracts.boldAction,
     wallet
   )
+
+  // set config.validators in old rollup
+  const setValidatorCalldata = RollupAdminLogic__factory.createInterface().encodeFunctionData('setValidator', [config.validators, Array(config.validators.length).fill(true)])
+  const executeCallCalldata = ethers.utils.concat(['0xbca8c7b5', new AbiCoder().encode(['address', 'bytes'], [config.contracts.rollup, setValidatorCalldata])])
+  await (await wallet.sendTransaction({
+    to: upExec.address,
+    data: executeCallCalldata,
+  })).wait()
 
   // what validators did we have in the old rollup?
   const boldActionPerformData = boldAction.interface.encodeFunctionData(

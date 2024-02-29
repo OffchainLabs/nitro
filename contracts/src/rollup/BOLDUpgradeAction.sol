@@ -155,6 +155,19 @@ contract RollupReader is IOldRollup {
     }
 }
 
+/// @notice Stores an array specified during construction.
+///         Since the BOLDUpgradeAction is not allowed to have storage, 
+///         we use this contract so it can keep an immutable pointer to an array.
+contract ConstantArrayStorage {
+    uint256[] _array;
+    constructor(uint256[] memory __array) {
+        _array = __array;
+    }
+    function array() public view returns (uint256[] memory) {
+        return _array;
+    }
+}
+
 /// @title  Upgrades an Arbitrum rollup to the new challenge protocol
 /// @notice Requires implementation contracts to be pre-deployed and provided in the constructor
 ///         Also requires a lookup contract to be provided that contains the pre-image of the state hash
@@ -177,11 +190,11 @@ contract BOLDUpgradeAction {
     uint64 public immutable CHALLENGE_PERIOD_BLOCKS;
     address public immutable STAKE_TOKEN;
     uint256 public immutable STAKE_AMOUNT;
-    uint256 public immutable MINI_STAKE_AMOUNT;
     uint256 public immutable CHAIN_ID;
     address public immutable ANY_TRUST_FAST_CONFIRMER;
     bool public immutable DISABLE_VALIDATOR_WHITELIST;
     uint64 public immutable CHALLENGE_GRACE_PERIOD_BLOCKS;
+    address public immutable MINI_STAKE_AMOUNTS_STORAGE;
 
     IOneStepProofEntry public immutable OSP;
     // proxy admins of the contracts to be upgraded
@@ -210,7 +223,7 @@ contract BOLDUpgradeAction {
         uint64 challengePeriodBlocks;
         address stakeToken;
         uint256 stakeAmt;
-        uint256 miniStakeAmt;
+        uint256[] miniStakeAmounts;
         uint256 chainId;
         address anyTrustFastConfirmer;
         bool disableValidatorWhitelist;
@@ -287,7 +300,7 @@ contract BOLDUpgradeAction {
         CHALLENGE_PERIOD_BLOCKS = settings.challengePeriodBlocks;
         STAKE_TOKEN = settings.stakeToken;
         STAKE_AMOUNT = settings.stakeAmt;
-        MINI_STAKE_AMOUNT = settings.miniStakeAmt;
+        MINI_STAKE_AMOUNTS_STORAGE = address(new ConstantArrayStorage(settings.miniStakeAmounts));
         ANY_TRUST_FAST_CONFIRMER = settings.anyTrustFastConfirmer;
         DISABLE_VALIDATOR_WHITELIST = settings.disableValidatorWhitelist;
         BLOCK_LEAF_SIZE = settings.blockLeafSize;
@@ -347,7 +360,7 @@ contract BOLDUpgradeAction {
             loserStakeEscrow: L1_TIMELOCK, // additional funds get sent to the l1 timelock
             chainId: CHAIN_ID,
             chainConfig: "", // we can use an empty chain config it wont be used in the rollup initialization because we check if the rei is already connected there
-            miniStakeValue: MINI_STAKE_AMOUNT,
+            miniStakeValues: ConstantArrayStorage(MINI_STAKE_AMOUNTS_STORAGE).array(),
             sequencerInboxMaxTimeVariation: maxTimeVariation,
             layerZeroBlockEdgeHeight: BLOCK_LEAF_SIZE,
             layerZeroBigStepEdgeHeight: BIGSTEP_LEAF_SIZE,
@@ -440,7 +453,7 @@ contract BOLDUpgradeAction {
             layerZeroBigStepEdgeHeight: config.layerZeroBigStepEdgeHeight,
             layerZeroSmallStepEdgeHeight: config.layerZeroSmallStepEdgeHeight,
             _stakeToken: IERC20(config.stakeToken),
-            _stakeAmount: config.miniStakeValue,
+            _stakeAmounts: config.miniStakeValues,
             _excessStakeReceiver: L1_TIMELOCK,
             _numBigStepLevel: config.numBigStepLevel
         });
