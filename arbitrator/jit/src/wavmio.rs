@@ -2,12 +2,12 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    callerenv::JitCallerEnv,
+    callerenv::jit_env,
     machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
     socket,
 };
-
 use arbutil::Color;
+use callerenv::MemAccess;
 use std::{
     io,
     io::{BufReader, BufWriter, ErrorKind},
@@ -19,25 +19,25 @@ type Uptr = u32;
 
 /// Reads 32-bytes of global state
 pub fn get_global_state_bytes32(mut env: WasmEnvMut, idx: u32, out_ptr: Uptr) -> MaybeEscape {
-    let caller_env = JitCallerEnv::new(&mut env);
-    ready_hostio(caller_env.wenv)?;
+    let (mut mem, exec) = jit_env(&mut env);
+    ready_hostio(exec.wenv)?;
 
-    let global = match caller_env.wenv.large_globals.get(idx as usize) {
-        Some(global) => global,
+    let global = match exec.wenv.large_globals.get(idx as usize) {
+        Some(global) => global.clone(),
         None => return Escape::hostio("global read out of bounds in wavmio.getGlobalStateBytes32"),
     };
-    caller_env.write_slice(out_ptr, &global[..32]);
+    mem.write_slice(out_ptr, &global[..32]);
     Ok(())
 }
 
 /// Writes 32-bytes of global state
 pub fn set_global_state_bytes32(mut env: WasmEnvMut, idx: u32, src_ptr: Uptr) -> MaybeEscape {
-    let caller_env = JitCallerEnv::new(&mut env);
-    ready_hostio(caller_env.wenv)?;
+    let (mem, exec) = jit_env(&mut env);
+    ready_hostio(exec.wenv)?;
 
-    let slice = caller_env.read_slice(src_ptr, 32);
+    let slice = mem.read_slice(src_ptr, 32);
     let slice = &slice.try_into().unwrap();
-    match caller_env.wenv.large_globals.get_mut(idx as usize) {
+    match exec.wenv.large_globals.get_mut(idx as usize) {
         Some(global) => *global = *slice,
         None => {
             return Escape::hostio("global write out of bounds in wavmio.setGlobalStateBytes32")
@@ -48,10 +48,10 @@ pub fn set_global_state_bytes32(mut env: WasmEnvMut, idx: u32, src_ptr: Uptr) ->
 
 /// Reads 8-bytes of global state
 pub fn get_global_state_u64(mut env: WasmEnvMut, idx: u32) -> Result<u64, Escape> {
-    let caller_env = JitCallerEnv::new(&mut env);
-    ready_hostio(caller_env.wenv)?;
+    let (_, exec) = jit_env(&mut env);
+    ready_hostio(exec.wenv)?;
 
-    match caller_env.wenv.small_globals.get(idx as usize) {
+    match exec.wenv.small_globals.get(idx as usize) {
         Some(global) => Ok(*global),
         None => Escape::hostio("global read out of bounds in wavmio.getGlobalStateU64"),
     }
@@ -59,10 +59,10 @@ pub fn get_global_state_u64(mut env: WasmEnvMut, idx: u32) -> Result<u64, Escape
 
 /// Writes 8-bytes of global state
 pub fn set_global_state_u64(mut env: WasmEnvMut, idx: u32, val: u64) -> MaybeEscape {
-    let caller_env = JitCallerEnv::new(&mut env);
-    ready_hostio(caller_env.wenv)?;
+    let (_, exec) = jit_env(&mut env);
+    ready_hostio(exec.wenv)?;
 
-    match caller_env.wenv.small_globals.get_mut(idx as usize) {
+    match exec.wenv.small_globals.get_mut(idx as usize) {
         Some(global) => {
             *global = val;
             Ok(())
@@ -78,17 +78,17 @@ pub fn read_inbox_message(
     offset: u32,
     out_ptr: Uptr,
 ) -> Result<u32, Escape> {
-    let caller_env = JitCallerEnv::new(&mut env);
-    ready_hostio(caller_env.wenv)?;
+    let (mut mem, exec) = jit_env(&mut env);
+    ready_hostio(exec.wenv)?;
 
-    let message = match caller_env.wenv.sequencer_messages.get(&msg_num) {
+    let message = match exec.wenv.sequencer_messages.get(&msg_num) {
         Some(message) => message,
         None => return Escape::hostio(format!("missing sequencer inbox message {msg_num}")),
     };
     let offset = offset as usize;
     let len = std::cmp::min(32, message.len().saturating_sub(offset));
     let read = message.get(offset..(offset + len)).unwrap_or_default();
-    caller_env.write_slice(out_ptr, read);
+    mem.write_slice(out_ptr, read);
     Ok(read.len() as u32)
 }
 
@@ -99,17 +99,20 @@ pub fn read_delayed_inbox_message(
     offset: u32,
     out_ptr: Uptr,
 ) -> Result<u32, Escape> {
-    let caller_env = JitCallerEnv::new(&mut env);
-    ready_hostio(caller_env.wenv)?;
+    let (mut mem, exec) = jit_env(&mut env);
+    ready_hostio(exec.wenv)?;
 
-    let message = match caller_env.wenv.delayed_messages.get(&msg_num) {
+    let message = match exec.wenv.delayed_messages.get(&msg_num) {
         Some(message) => message,
         None => return Escape::hostio(format!("missing delayed inbox message {msg_num}")),
     };
     let offset = offset as usize;
     let len = std::cmp::min(32, message.len().saturating_sub(offset));
-    let read = message.get(offset..(offset + len)).unwrap_or_default();
-    caller_env.write_slice(out_ptr, read);
+    let read = message
+        .get(offset..(offset + len))
+        .unwrap_or_default()
+        .to_vec();
+    mem.write_slice(out_ptr, &read);
     Ok(read.len() as u32)
 }
 
@@ -120,7 +123,7 @@ pub fn resolve_preimage(
     offset: u32,
     out_ptr: Uptr,
 ) -> Result<u32, Escape> {
-    let mut caller_env = JitCallerEnv::new(&mut env);
+    let (mut mem, exec) = jit_env(&mut env);
 
     let name = "wavmio.resolvePreImage";
 
@@ -131,13 +134,13 @@ pub fn resolve_preimage(
         }};
     }
 
-    let hash = caller_env.read_bytes32(hash_ptr);
+    let hash = mem.read_bytes32(hash_ptr);
     let hash_hex = hex::encode(hash);
 
     let mut preimage = None;
 
     // see if we've cached the preimage
-    if let Some((key, cached)) = &caller_env.wenv.process.last_preimage {
+    if let Some((key, cached)) = &exec.wenv.process.last_preimage {
         if *key == hash {
             preimage = Some(cached);
         }
@@ -145,7 +148,7 @@ pub fn resolve_preimage(
 
     // see if this is a known preimage
     if preimage.is_none() {
-        preimage = caller_env.wenv.preimages.get(&hash);
+        preimage = exec.wenv.preimages.get(&hash);
     }
 
     let preimage = match preimage {
@@ -159,7 +162,7 @@ pub fn resolve_preimage(
 
     let len = std::cmp::min(32, preimage.len().saturating_sub(offset));
     let read = preimage.get(offset..(offset + len)).unwrap_or_default();
-    caller_env.write_slice(out_ptr, read);
+    mem.write_slice(out_ptr, read);
     Ok(read.len() as u32)
 }
 

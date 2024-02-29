@@ -10,5 +10,5 @@ crate-type = ["cdylib"]
 [dependencies]
 paste = {versoion="1.0.14"}
 callerenv = { path = "../../callerenv/", features = ["static_caller"] }
-rand = { version = "0.8.4", default-features = false }
-rand_pcg = { version = "0.3.1", default-features = false }
+wee_alloc = "0.4.5"
+

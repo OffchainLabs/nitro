@@ -68,8 +68,8 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
     }
     let imports = imports! {
         "arbcompress" => {
-            "brotliCompress" => func!(arbcompress::brotli_compress),
-            "brotliDecompress" => func!(arbcompress::brotli_decompress),
+            "brotli_compress" => func!(arbcompress::brotli_compress),
+            "brotli_decompress" => func!(arbcompress::brotli_decompress),
         },
         "wavmio" => {
             "getGlobalStateBytes32" => func!(wavmio::get_global_state_bytes32),

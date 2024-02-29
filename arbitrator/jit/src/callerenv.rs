@@ -4,38 +4,37 @@
 #![allow(clippy::useless_transmute)]
 
 use crate::machine::{WasmEnv, WasmEnvMut};
-use callerenv::CallerEnv;
 use arbutil::{Bytes20, Bytes32};
-use rand_pcg::Pcg32;
+use callerenv::{ExecEnv, MemAccess};
 use rand::RngCore;
+use rand_pcg::Pcg32;
 use std::{
     collections::{BTreeSet, BinaryHeap},
     fmt::Debug,
 };
 use wasmer::{Memory, MemoryView, StoreMut, WasmPtr};
 
-pub struct JitCallerEnv<'s> {
+pub struct JitMemAccess<'s> {
     pub memory: Memory,
     pub store: StoreMut<'s>,
+}
+
+pub struct JitExecEnv<'s> {
     pub wenv: &'s mut WasmEnv,
 }
 
+pub fn jit_env<'s>(env: &'s mut WasmEnvMut) -> (JitMemAccess<'s>, JitExecEnv<'s>) {
+    let memory = env.data().memory.clone().unwrap();
+    let (wenv, store) = env.data_and_store_mut();
+    (JitMemAccess { memory, store }, JitExecEnv { wenv })
+}
+
 #[allow(dead_code)]
-impl<'s> JitCallerEnv<'s> {
+impl<'s> JitMemAccess<'s> {
     /// Returns the memory size, in bytes.
     /// note: wasmer measures memory in 65536-byte pages.
     fn memory_size(&self) -> u64 {
         self.view().size().0 as u64 * 65536
-    }
-
-    pub fn new(env: &'s mut WasmEnvMut) -> Self {
-        let memory = env.data().memory.clone().unwrap();
-        let (data, store) = env.data_and_store_mut();
-        Self {
-            memory,
-            store,
-            wenv: data,
-        }
     }
 
     fn view(&self) -> MemoryView {
@@ -59,7 +58,7 @@ impl<'s> JitCallerEnv<'s> {
     }
 
     pub fn read_string(&mut self, ptr: u32, len: u32) -> String {
-        let bytes = self.read_slice(ptr, len);
+        let bytes = self.read_slice(ptr, len as usize);
         match String::from_utf8(bytes) {
             Ok(s) => s,
             Err(e) => {
@@ -69,27 +68,9 @@ impl<'s> JitCallerEnv<'s> {
             }
         }
     }
-
-    pub fn read_slice(&self, ptr: u32, len: u32) -> Vec<u8> {
-        u32::try_from(ptr).expect("Go pointer not a u32"); // kept for consistency
-        let len = u32::try_from(len).expect("length isn't a u32") as usize;
-        let mut data = vec![0; len];
-        self.view()
-            .read(ptr.into(), &mut data)
-            .expect("failed to read");
-        data
-    }
-
-    pub fn write_slice<T: TryInto<u32>>(&self, ptr: T, src: &[u8])
-    where
-        T::Error: Debug,
-    {
-        let ptr: u32 = ptr.try_into().expect("Go pointer not a u32");
-        self.view().write(ptr.into(), src).unwrap();
-    }
 }
 
-impl CallerEnv<'_> for JitCallerEnv<'_> {
+impl MemAccess for JitMemAccess<'_> {
     fn read_u8(&self, ptr: u32) -> u8 {
         let ptr: WasmPtr<u8> = WasmPtr::new(ptr);
         ptr.deref(&self.view()).read().unwrap()
@@ -130,9 +111,30 @@ impl CallerEnv<'_> for JitCallerEnv<'_> {
         ptr.deref(&self.view()).write(x).unwrap();
     }
 
-    fn print_string(&mut self, ptr: u32, len: u32) {
-        let data = self.read_string(ptr, len);
-        eprintln!("JIT: WASM says: {data}");
+    fn read_slice(&self, ptr: u32, len: usize) -> Vec<u8> {
+        u32::try_from(ptr).expect("Go pointer not a u32"); // kept for consistency
+        let len = u32::try_from(len).expect("length isn't a u32") as usize;
+        let mut data = vec![0; len];
+        self.view()
+            .read(ptr.into(), &mut data)
+            .expect("failed to read");
+        data
+    }
+
+    fn write_slice(&mut self, ptr: u32, src: &[u8]) {
+        self.view().write(ptr.into(), src).unwrap();
+    }
+}
+
+impl ExecEnv for JitExecEnv<'_> {
+    fn print_string(&mut self, bytes: &[u8]) {
+        match String::from_utf8(bytes.to_vec()) {
+            Ok(s) => eprintln!("JIT: WASM says: {s}"),
+            Err(e) => {
+                let bytes = e.as_bytes();
+                eprintln!("Go string {} is not valid utf8: {e:?}", hex::encode(bytes));
+            }
+        }
     }
 
     fn get_time(&self) -> u64 {

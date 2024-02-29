@@ -8,4 +8,5 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-arbutil = { path = "../../arbutil", features = ["wavm"] }
+paste = {versoion="1.0.14"}
+callerenv = { path = "../../callerenv/", features = ["static_caller"] }

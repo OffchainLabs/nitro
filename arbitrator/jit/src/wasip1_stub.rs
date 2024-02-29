@@ -1,7 +1,7 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::callerenv::JitCallerEnv;
+use crate::callerenv::jit_env;
 use crate::machine::{Escape, WasmEnvMut};
 use callerenv::{
     self,
@@ -15,9 +15,9 @@ pub fn proc_exit(mut _env: WasmEnvMut, code: u32) -> Result<(), Escape> {
 macro_rules! wrap {
     ($func_name:ident ($($arg_name:ident : $arg_type:ty),* ) -> $return_type:ty) => {
         pub fn $func_name(mut src: WasmEnvMut, $($arg_name : $arg_type),*) -> Result<$return_type, Escape> {
-            let mut caller_env = JitCallerEnv::new(&mut src);
+            let (mut mem, mut env) = jit_env(&mut src);
 
-            Ok(callerenv::wasip1_stub::$func_name(&mut caller_env, $($arg_name),*))
+            Ok(callerenv::wasip1_stub::$func_name(&mut mem, &mut env, $($arg_name),*))
         }
     };
 }

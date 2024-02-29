@@ -1,15 +1,19 @@
-use crate::{CallerEnv, create_pcg, wasip1_stub::Uptr};
-use rand_pcg::Pcg32;
+use crate::{create_pcg, wasip1_stub::Uptr, ExecEnv, MemAccess};
 use rand::RngCore;
+use rand_pcg::Pcg32;
+
+extern crate alloc;
+
+use alloc::vec::Vec;
 
 static mut TIME: u64 = 0;
 static mut RNG: Option<Pcg32> = None;
 
-#[derive(Default)]
-pub struct StaticCallerEnv{}
+pub struct StaticMem {}
+pub struct StaticExecEnv {}
 
-pub static mut STATIC_CALLER: StaticCallerEnv = StaticCallerEnv{};
-
+pub static mut STATIC_MEM: StaticMem = StaticMem {};
+pub static mut STATIC_ENV: StaticExecEnv = StaticExecEnv {};
 
 #[allow(dead_code)]
 extern "C" {
@@ -20,32 +24,30 @@ extern "C" {
     fn wavm_halt_and_set_finished() -> !;
 }
 
-impl CallerEnv<'static> for StaticCallerEnv {
+impl MemAccess for StaticMem {
     fn read_u8(&self, ptr: u32) -> u8 {
-        unsafe {
-            wavm_caller_load8(ptr)
-        }
+        unsafe { wavm_caller_load8(ptr) }
     }
 
     fn read_u16(&self, ptr: u32) -> u16 {
         let lsb = self.read_u8(ptr);
-        let msb = self.read_u8(ptr+1);
+        let msb = self.read_u8(ptr + 1);
         (msb as u16) << 8 | (lsb as u16)
     }
 
     fn read_u32(&self, ptr: u32) -> u32 {
         let lsb = self.read_u16(ptr);
-        let msb = self.read_u16(ptr+2);
+        let msb = self.read_u16(ptr + 2);
         (msb as u32) << 16 | (lsb as u32)
     }
 
     fn read_u64(&self, ptr: u32) -> u64 {
         let lsb = self.read_u32(ptr);
-        let msb = self.read_u32(ptr+4);
+        let msb = self.read_u32(ptr + 4);
         (msb as u64) << 32 | (lsb as u64)
     }
 
-    fn write_u8(&mut self, ptr: u32, x: u8 ){
+    fn write_u8(&mut self, ptr: u32, x: u8) {
         unsafe {
             wavm_caller_store8(ptr, x);
         }
@@ -66,24 +68,50 @@ impl CallerEnv<'static> for StaticCallerEnv {
         self.write_u32(ptr + 4, ((x >> 16) & 0xffffffff) as u32);
     }
 
-    fn print_string(&mut self, _ptr: u32, _len: u32) {} // TODO?
+    fn read_slice(&self, mut ptr: u32, mut len: usize) -> Vec<u8> {
+        let mut data = Vec::with_capacity(len);
+        if len == 0 {
+            return data;
+        }
+        while len >= 4 {
+            data.extend(self.read_u32(ptr).to_le_bytes());
+            ptr += 4;
+            len -= 4;
+        }
+        for _ in 0..len {
+            data.push(self.read_u8(ptr));
+            ptr += 1;
+        }
+        data
+    }
+
+    fn write_slice(&mut self, mut ptr: u32, mut src: &[u8]) {
+        while src.len() >= 4 {
+            let mut arr = [0u8; 4];
+            arr.copy_from_slice(&src[..4]);
+            self.write_u32(ptr, u32::from_le_bytes(arr));
+            ptr += 4;
+            src = &src[4..];
+        }
+        for &byte in src {
+            self.write_u8(ptr, byte);
+            ptr += 1;
+        }
+    }
+}
+
+impl ExecEnv for StaticExecEnv {
+    fn print_string(&mut self, data: &[u8]) {} // TODO?
 
     fn get_time(&self) -> u64 {
-        unsafe {
-            TIME
-        }
+        unsafe { TIME }
     }
 
     fn advance_time(&mut self, delta: u64) {
-        unsafe {
-            TIME += delta
-        }
+        unsafe { TIME += delta }
     }
 
     fn next_rand_u32(&mut self) -> u32 {
-        unsafe {
-            RNG.get_or_insert_with(|| create_pcg())
-        }
-        .next_u32()
+        unsafe { RNG.get_or_insert_with(|| create_pcg()) }.next_u32()
     }
 }

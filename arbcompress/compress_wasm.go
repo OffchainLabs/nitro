@@ -13,10 +13,10 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
-//go:wasmimport arbcompress brotliCompress
+//go:wasmimport arbcompress brotli_compress
 func brotliCompress(inBuf unsafe.Pointer, inBufLen uint32, outBuf unsafe.Pointer, outBufLen unsafe.Pointer, level, windowSize uint32) BrotliStatus
 
-//go:wasmimport arbcompress brotliDecompress
+//go:wasmimport arbcompress brotli_decompress
 func brotliDecompress(inBuf unsafe.Pointer, inBufLen uint32, outBuf unsafe.Pointer, outBufLen unsafe.Pointer) BrotliStatus
 
 func Decompress(input []byte, maxSize int) ([]byte, error) {

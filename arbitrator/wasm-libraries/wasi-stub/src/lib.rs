@@ -3,13 +3,14 @@
 
 #![no_std]
 
-use rand::RngCore;
 use paste::paste;
 use callerenv::{
     self,
     wasip1_stub::{Errno, Uptr},
-    CallerEnv,
+    MemAccess,
+    ExecEnv,
 };
+
 #[allow(dead_code)]
 extern "C" {
     fn wavm_halt_and_set_finished() -> !;
@@ -19,6 +20,9 @@ extern "C" {
 unsafe fn panic(_: &core::panic::PanicInfo) -> ! {
     core::arch::wasm32::unreachable()
 }
+
+#[global_allocator]
+static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
 
 #[no_mangle]
 pub unsafe extern "C" fn wasi_snapshot_preview1__proc_exit(code: u32) -> ! {
@@ -34,7 +38,10 @@ macro_rules! wrap {
         paste! {
             #[no_mangle]
             pub unsafe extern "C" fn [<wasi_snapshot_preview1__ $func_name>]($($arg_name : $arg_type),*) -> $return_type {
-                callerenv::wasip1_stub::$func_name(&mut callerenv::static_caller::STATIC_CALLER, $($arg_name),*)
+                callerenv::wasip1_stub::$func_name(
+                    &mut callerenv::static_caller::STATIC_MEM,
+                    &mut callerenv::static_caller::STATIC_ENV,
+                    $($arg_name),*)
             }
         }
     };
