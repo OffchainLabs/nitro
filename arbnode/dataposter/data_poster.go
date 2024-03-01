@@ -601,6 +601,11 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 		targetMaxCost = balanceForTx
 	}
 
+	if lastTx != nil {
+		// Replace by fee rules require that the tip cap is increased
+		newTipCap = arbmath.BigMax(newTipCap, arbmath.BigMulByBips(lastTx.GasTipCap(), minRbfIncrease))
+	}
+
 	// Divide the targetMaxCost into blob and non-blob costs.
 	currentNonBlobFee := arbmath.BigAdd(latestHeader.BaseFee, newTipCap)
 	blobGasUsed := params.BlobTxBlobGasPerBlob * numBlobs
@@ -621,11 +626,6 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 		baseFeeCostIncrease := arbmath.BigSub(targetNonBlobCost, newNonBlobCost)
 		newBlobCost := arbmath.BigSub(targetBlobCost, baseFeeCostIncrease)
 		newBlobFeeCap = arbmath.BigDivByUint(newBlobCost, blobGasUsed)
-	}
-
-	if lastTx != nil {
-		// Replace by fee rules require that the tip cap is increased
-		newTipCap = arbmath.BigMax(newTipCap, arbmath.BigMulByBips(lastTx.GasTipCap(), minRbfIncrease))
 	}
 
 	if arbmath.BigGreaterThan(newTipCap, newBaseFeeCap) {
