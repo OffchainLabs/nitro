@@ -145,7 +145,7 @@ func (h *NitroSyncHelper) scanNewConfirmedCheckpoints(ctx context.Context, newCo
 			return
 		}
 		// TODO can we just use h.bc.StateAt?
-		if _, err := state.New(header.Root, h.bc.StateCache(), nil); err != nil {
+		if _, err := state.New(header.Root, h.bc.StateCache(), nil); err == nil {
 			h.checkpointCache.Add(header)
 		}
 		nextCheckpoint += period
