@@ -35,7 +35,6 @@ import (
 	"github.com/offchainlabs/nitro/cmd/ipfshelper"
 	"github.com/offchainlabs/nitro/cmd/pruning"
 	"github.com/offchainlabs/nitro/cmd/staterecovery"
-	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -283,15 +282,9 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		genesisBlockNr, err := initDataReader.GetNextBlockNumber()
 		if err != nil {
 			return chainDb, nil, err
+
 		}
-		combinedL2ChainInfoFiles := config.Chain.InfoFiles
-		if config.Chain.InfoIpfsUrl != "" {
-			l2ChainInfoIpfsFile, err := util.GetL2ChainInfoIpfsFile(ctx, config.Chain.InfoIpfsUrl, config.Chain.InfoIpfsDownloadPath)
-			if err != nil {
-				log.Error("error getting l2 chain info file from ipfs", "err", err)
-			}
-			combinedL2ChainInfoFiles = append(combinedL2ChainInfoFiles, l2ChainInfoIpfsFile)
-		}
+		combinedL2ChainInfoFiles := aggregateL2ChainInfoFiles(ctx, config.Chain.InfoFiles, config.Chain.InfoIpfsUrl, config.Chain.InfoIpfsDownloadPath)
 		chainConfig, err = chaininfo.GetChainConfig(new(big.Int).SetUint64(config.Chain.ID), config.Chain.Name, genesisBlockNr, combinedL2ChainInfoFiles, config.Chain.InfoJson)
 		if err != nil {
 			return chainDb, nil, err
