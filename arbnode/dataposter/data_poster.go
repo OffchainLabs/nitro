@@ -58,17 +58,18 @@ import (
 // DataPoster must be RLP serializable and deserializable
 type DataPoster struct {
 	stopwaiter.StopWaiter
-	headerReader      *headerreader.HeaderReader
-	client            arbutil.L1Interface
-	auth              *bind.TransactOpts
-	signer            signerFn
-	config            ConfigFetcher
-	usingNoOpStorage  bool
-	replacementTimes  []time.Duration
-	metadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)
-	extraBacklog      func() uint64
-	parentChainID     *big.Int
-	parentChainID256  *uint256.Int
+	headerReader           *headerreader.HeaderReader
+	client                 arbutil.L1Interface
+	auth                   *bind.TransactOpts
+	signer                 signerFn
+	config                 ConfigFetcher
+	usingNoOpStorage       bool
+	replacementTimes       []time.Duration
+	blobTxReplacementTimes []time.Duration
+	metadataRetriever      func(ctx context.Context, blockNum *big.Int) ([]byte, error)
+	extraBacklog           func() uint64
+	parentChainID          *big.Int
+	parentChainID256       *uint256.Int
 
 	// These fields are protected by the mutex.
 	// TODO: factor out these fields into separate structure, since now one
@@ -129,6 +130,10 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 	if err != nil {
 		return nil, err
 	}
+	blobTxReplacementTimes, err := parseReplacementTimes(cfg.BlobTxReplacementTimes)
+	if err != nil {
+		return nil, err
+	}
 	useNoOpStorage := cfg.UseNoOpStorage
 	if opts.HeaderReader.IsParentChainArbitrum() && !cfg.UseNoOpStorage {
 		useNoOpStorage = true
@@ -172,15 +177,16 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 		signer: func(_ context.Context, addr common.Address, tx *types.Transaction) (*types.Transaction, error) {
 			return opts.Auth.Signer(addr, tx)
 		},
-		config:              opts.Config,
-		usingNoOpStorage:    useNoOpStorage,
-		replacementTimes:    replacementTimes,
-		metadataRetriever:   opts.MetadataRetriever,
-		queue:               queue,
-		errorCount:          make(map[uint64]int),
-		maxFeeCapExpression: expression,
-		extraBacklog:        opts.ExtraBacklog,
-		parentChainID:       opts.ParentChainID,
+		config:                 opts.Config,
+		usingNoOpStorage:       useNoOpStorage,
+		replacementTimes:       replacementTimes,
+		blobTxReplacementTimes: blobTxReplacementTimes,
+		metadataRetriever:      opts.MetadataRetriever,
+		queue:                  queue,
+		errorCount:             make(map[uint64]int),
+		maxFeeCapExpression:    expression,
+		extraBacklog:           opts.ExtraBacklog,
+		parentChainID:          opts.ParentChainID,
 	}
 	var overflow bool
 	dp.parentChainID256, overflow = uint256.FromBig(opts.ParentChainID)
@@ -523,7 +529,7 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	}
 	minTipCapGwei, maxTipCapGwei, minRbfIncrease := config.MinTipCapGwei, config.MaxTipCapGwei, minNonBlobRbfIncrease
 	if numBlobs > 0 {
-		minTipCapGwei, maxTipCapGwei, minRbfIncrease = config.MinBlobTipCapGwei, config.MaxBlobTipCapGwei, minBlobRbfIncrease
+		minTipCapGwei, maxTipCapGwei, minRbfIncrease = config.MinBlobTxTipCapGwei, config.MaxBlobTxTipCapGwei, minBlobRbfIncrease
 	}
 	newTipCap := suggestedTip
 	newTipCap = arbmath.BigMax(newTipCap, arbmath.FloatToBig(minTipCapGwei*params.GWei))
@@ -702,7 +708,9 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 
 	var deprecatedData types.DynamicFeeTx
 	var inner types.TxData
+	replacementTimes := p.replacementTimes
 	if len(kzgBlobs) > 0 {
+		replacementTimes = p.blobTxReplacementTimes
 		value256, overflow := uint256.FromBig(value)
 		if overflow {
 			return nil, fmt.Errorf("blob transaction callvalue %v overflows uint256", value)
@@ -763,7 +771,7 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 		Meta:                   meta,
 		Sent:                   false,
 		Created:                dataCreatedAt,
-		NextReplacement:        time.Now().Add(p.replacementTimes[0]),
+		NextReplacement:        time.Now().Add(replacementTimes[0]),
 		StoredCumulativeWeight: &cumulativeWeight,
 	}
 	return fullTx, p.sendTx(ctx, nil, &queuedTx)
@@ -905,8 +913,13 @@ func (p *DataPoster) replaceTx(ctx context.Context, prevTx *storage.QueuedTransa
 		return p.sendTx(ctx, prevTx, &newTx)
 	}
 
+	replacementTimes := p.replacementTimes
+	if len(prevTx.FullTx.BlobHashes()) > 0 {
+		replacementTimes = p.blobTxReplacementTimes
+	}
+
 	elapsed := time.Since(prevTx.Created)
-	for _, replacement := range p.replacementTimes {
+	for _, replacement := range replacementTimes {
 		if elapsed >= replacement {
 			continue
 		}
@@ -1028,7 +1041,7 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 			log.Warn("failed to update tx poster nonce", "err", err)
 		}
 		now := time.Now()
-		nextCheck := now.Add(p.replacementTimes[0])
+		nextCheck := now.Add(arbmath.MinInt(p.replacementTimes[0], p.blobTxReplacementTimes[0]))
 		maxTxsToRbf := p.config().MaxMempoolTransactions
 		if maxTxsToRbf == 0 {
 			maxTxsToRbf = 512
@@ -1112,8 +1125,9 @@ type QueueStorage interface {
 }
 
 type DataPosterConfig struct {
-	RedisSigner      signature.SimpleHmacConfig `koanf:"redis-signer"`
-	ReplacementTimes string                     `koanf:"replacement-times"`
+	RedisSigner            signature.SimpleHmacConfig `koanf:"redis-signer"`
+	ReplacementTimes       string                     `koanf:"replacement-times"`
+	BlobTxReplacementTimes string                     `koanf:"blob-tx-replacement-times"`
 	// This is forcibly disabled if the parent chain is an Arbitrum chain,
 	// so you should probably use DataPoster's waitForL1Finality method instead of reading this field directly.
 	WaitForL1Finality      bool              `koanf:"wait-for-l1-finality" reload:"hot"`
@@ -1123,9 +1137,9 @@ type DataPosterConfig struct {
 	TargetPriceGwei        float64           `koanf:"target-price-gwei" reload:"hot"`
 	UrgencyGwei            float64           `koanf:"urgency-gwei" reload:"hot"`
 	MinTipCapGwei          float64           `koanf:"min-tip-cap-gwei" reload:"hot"`
-	MinBlobTipCapGwei      float64           `koanf:"min-blob-tip-cap-gwei" reload:"hot"`
+	MinBlobTxTipCapGwei    float64           `koanf:"min-blob-tx-tip-cap-gwei" reload:"hot"`
 	MaxTipCapGwei          float64           `koanf:"max-tip-cap-gwei" reload:"hot"`
-	MaxBlobTipCapGwei      float64           `koanf:"max-blob-tip-cap-gwei" reload:"hot"`
+	MaxBlobTxTipCapGwei    float64           `koanf:"max-blob-tx-tip-cap-gwei" reload:"hot"`
 	NonceRbfSoftConfs      uint64            `koanf:"nonce-rbf-soft-confs" reload:"hot"`
 	AllocateMempoolBalance bool              `koanf:"allocate-mempool-balance" reload:"hot"`
 	UseDBStorage           bool              `koanf:"use-db-storage"`
@@ -1169,6 +1183,7 @@ type ConfigFetcher func() *DataPosterConfig
 
 func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPosterConfig DataPosterConfig) {
 	f.String(prefix+".replacement-times", defaultDataPosterConfig.ReplacementTimes, "comma-separated list of durations since first posting to attempt a replace-by-fee")
+	f.String(prefix+".blob-tx-replacement-times", defaultDataPosterConfig.BlobTxReplacementTimes, "comma-separated list of durations since first posting a blob transaction to attempt a replace-by-fee")
 	f.Bool(prefix+".wait-for-l1-finality", defaultDataPosterConfig.WaitForL1Finality, "only treat a transaction as confirmed after L1 finality has been achieved (recommended)")
 	f.Uint64(prefix+".max-mempool-transactions", defaultDataPosterConfig.MaxMempoolTransactions, "the maximum number of transactions to have queued in the mempool at once (0 = unlimited)")
 	f.Uint64(prefix+".max-mempool-weight", defaultDataPosterConfig.MaxMempoolWeight, "the maximum number of weight (weight = min(1, tx.blobs)) to have queued in the mempool at once (0 = unlimited)")
@@ -1176,9 +1191,9 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPost
 	f.Float64(prefix+".target-price-gwei", defaultDataPosterConfig.TargetPriceGwei, "the target price to use for maximum fee cap calculation")
 	f.Float64(prefix+".urgency-gwei", defaultDataPosterConfig.UrgencyGwei, "the urgency to use for maximum fee cap calculation")
 	f.Float64(prefix+".min-tip-cap-gwei", defaultDataPosterConfig.MinTipCapGwei, "the minimum tip cap to post transactions at")
-	f.Float64(prefix+".min-blob-tip-cap-gwei", defaultDataPosterConfig.MinBlobTipCapGwei, "the minimum tip cap to post EIP-844 blob carrying transactions at")
+	f.Float64(prefix+".min-blob-tx-tip-cap-gwei", defaultDataPosterConfig.MinBlobTxTipCapGwei, "the minimum tip cap to post EIP-4844 blob carrying transactions at")
 	f.Float64(prefix+".max-tip-cap-gwei", defaultDataPosterConfig.MaxTipCapGwei, "the maximum tip cap to post transactions at")
-	f.Float64(prefix+".max-blob-tip-cap-gwei", defaultDataPosterConfig.MaxBlobTipCapGwei, "the maximum tip cap to post EIP-4844 blob carrying transactions at")
+	f.Float64(prefix+".max-blob-tx-tip-cap-gwei", defaultDataPosterConfig.MaxBlobTxTipCapGwei, "the maximum tip cap to post EIP-4844 blob carrying transactions at")
 	f.Uint64(prefix+".nonce-rbf-soft-confs", defaultDataPosterConfig.NonceRbfSoftConfs, "the maximum probable reorg depth, used to determine when a transaction will no longer likely need replaced-by-fee")
 	f.Bool(prefix+".allocate-mempool-balance", defaultDataPosterConfig.AllocateMempoolBalance, "if true, don't put transactions in the mempool that spend a total greater than the batch poster's balance")
 	f.Bool(prefix+".use-db-storage", defaultDataPosterConfig.UseDBStorage, "uses database storage when enabled")
@@ -1210,15 +1225,16 @@ func addExternalSignerOptions(prefix string, f *pflag.FlagSet) {
 
 var DefaultDataPosterConfig = DataPosterConfig{
 	ReplacementTimes:       "5m,10m,20m,30m,1h,2h,4h,6h,8h,12h,16h,18h,20h,22h",
+	BlobTxReplacementTimes: "5m,10m,30m,1h,4h,8h,16h,22h",
 	WaitForL1Finality:      true,
 	TargetPriceGwei:        60.,
 	UrgencyGwei:            2.,
 	MaxMempoolTransactions: 18,
 	MaxMempoolWeight:       18,
 	MinTipCapGwei:          0.05,
-	MinBlobTipCapGwei:      1, // default geth minimum, and relays aren't likely to accept lower values given propagation time
+	MinBlobTxTipCapGwei:    1, // default geth minimum, and relays aren't likely to accept lower values given propagation time
 	MaxTipCapGwei:          5,
-	MaxBlobTipCapGwei:      1, // lower than normal because 4844 rbf is a minimum of a 2x
+	MaxBlobTxTipCapGwei:    1, // lower than normal because 4844 rbf is a minimum of a 2x
 	NonceRbfSoftConfs:      1,
 	AllocateMempoolBalance: true,
 	UseDBStorage:           true,
@@ -1241,6 +1257,7 @@ var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
 
 var TestDataPosterConfig = DataPosterConfig{
 	ReplacementTimes:       "1s,2s,5s,10s,20s,30s,1m,5m",
+	BlobTxReplacementTimes: "1s,10s,30s,5m",
 	RedisSigner:            signature.TestSimpleHmacConfig,
 	WaitForL1Finality:      false,
 	TargetPriceGwei:        60.,
@@ -1248,9 +1265,9 @@ var TestDataPosterConfig = DataPosterConfig{
 	MaxMempoolTransactions: 18,
 	MaxMempoolWeight:       18,
 	MinTipCapGwei:          0.05,
-	MinBlobTipCapGwei:      1,
+	MinBlobTxTipCapGwei:    1,
 	MaxTipCapGwei:          5,
-	MaxBlobTipCapGwei:      1,
+	MaxBlobTxTipCapGwei:    1,
 	NonceRbfSoftConfs:      1,
 	AllocateMempoolBalance: true,
 	UseDBStorage:           false,
