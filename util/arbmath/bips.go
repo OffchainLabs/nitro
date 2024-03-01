@@ -36,3 +36,10 @@ func UintMulByBips(value uint64, bips Bips) uint64 {
 func SaturatingCastToBips(value uint64) Bips {
 	return Bips(SaturatingCast(value))
 }
+
+// BigDivToBips returns dividend/divisor as bips, saturating if out of bounds
+func BigDivToBips(dividend, divisor *big.Int) Bips {
+	value := BigMulByInt(dividend, int64(OneInBips))
+	value.Div(value, divisor)
+	return Bips(BigToUintSaturating(value))
+}
