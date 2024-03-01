@@ -26,31 +26,42 @@ var (
 )
 
 type QueuedTransaction struct {
-	FullTx          *types.Transaction
-	DeprecatedData  types.DynamicFeeTx // FullTx should be used instead
-	Meta            []byte
-	Sent            bool
-	Created         time.Time // may be earlier than the tx was given to the tx poster
-	NextReplacement time.Time
+	FullTx                 *types.Transaction
+	DeprecatedData         types.DynamicFeeTx // FullTx should be used instead
+	Meta                   []byte
+	Sent                   bool
+	Created                time.Time // may be earlier than the tx was given to the tx poster
+	NextReplacement        time.Time
+	StoredCumulativeWeight *uint64
+}
+
+// CumulativeWeight returns a rough estimate of the total number of batches submitted at this point, not guaranteed to be exact
+func (t *QueuedTransaction) CumulativeWeight() uint64 {
+	if t.StoredCumulativeWeight != nil {
+		return *t.StoredCumulativeWeight
+	}
+	return t.FullTx.Nonce()
 }
 
 type queuedTransactionForEncoding struct {
-	FullTx          *types.Transaction
-	Data            types.DynamicFeeTx
-	Meta            []byte
-	Sent            bool
-	Created         RlpTime
-	NextReplacement RlpTime
+	FullTx                 *types.Transaction
+	Data                   types.DynamicFeeTx
+	Meta                   []byte
+	Sent                   bool
+	Created                RlpTime
+	NextReplacement        RlpTime
+	StoredCumulativeWeight *uint64 `rlp:"optional"`
 }
 
 func (qt *QueuedTransaction) EncodeRLP(w io.Writer) error {
 	return rlp.Encode(w, queuedTransactionForEncoding{
-		FullTx:          qt.FullTx,
-		Data:            qt.DeprecatedData,
-		Meta:            qt.Meta,
-		Sent:            qt.Sent,
-		Created:         (RlpTime)(qt.Created),
-		NextReplacement: (RlpTime)(qt.NextReplacement),
+		FullTx:                 qt.FullTx,
+		Data:                   qt.DeprecatedData,
+		Meta:                   qt.Meta,
+		Sent:                   qt.Sent,
+		Created:                (RlpTime)(qt.Created),
+		NextReplacement:        (RlpTime)(qt.NextReplacement),
+		StoredCumulativeWeight: qt.StoredCumulativeWeight,
 	})
 }
 
@@ -65,6 +76,7 @@ func (qt *QueuedTransaction) DecodeRLP(s *rlp.Stream) error {
 	qt.Sent = qtEnc.Sent
 	qt.Created = time.Time(qtEnc.Created)
 	qt.NextReplacement = time.Time(qtEnc.NextReplacement)
+	qt.StoredCumulativeWeight = qtEnc.StoredCumulativeWeight
 	return nil
 }
 
