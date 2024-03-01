@@ -620,10 +620,11 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	targetNonBlobCost := arbmath.BigSub(targetMaxCost, targetBlobCost)
 	newBaseFeeCap := arbmath.BigDivByUint(targetNonBlobCost, gasLimit)
 	if lastTx != nil && numBlobs > 0 && arbmath.BigDivToBips(newBaseFeeCap, lastTx.GasFeeCap()) < minRbfIncrease {
-		// Reduce the blobfee cap to ensure that the basefee meats the minimum rbf increase
+		// Increase the non-blob fee cap to the minimum rbf increase
 		newBaseFeeCap = arbmath.BigMulByBips(lastTx.GasFeeCap(), minRbfIncrease)
 		newNonBlobCost := arbmath.BigMulByUint(newBaseFeeCap, gasLimit)
-		baseFeeCostIncrease := arbmath.BigSub(targetNonBlobCost, newNonBlobCost)
+		// Increasing the non-blob fee cap requires lowering the blob fee cap to compensate
+		baseFeeCostIncrease := arbmath.BigSub(newNonBlobCost, targetNonBlobCost)
 		newBlobCost := arbmath.BigSub(targetBlobCost, baseFeeCostIncrease)
 		newBlobFeeCap = arbmath.BigDivByUint(newBlobCost, blobGasUsed)
 	}
