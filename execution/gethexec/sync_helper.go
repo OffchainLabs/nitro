@@ -31,9 +31,9 @@ func NitroSyncHelperConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 var NitroSyncHelperConfigDefault = NitroSyncHelperConfig{
-	Enabled:          true, // TODO
-	CheckpointPeriod: 10 * 1000,
-	CheckpointCache:  16,
+	Enabled:          true,      // TODO
+	CheckpointPeriod: 10 * 1000, // TODO
+	CheckpointCache:  16,        // TODO
 }
 
 // implements arbitrum.SyncHelper
@@ -226,7 +226,7 @@ type Confirmed struct {
 	BlockNumber int64
 	BlockHash   common.Hash
 	Node        uint64
-	Header      *types.Header // filled out later in scanNewConfirmedCheckpoints
+	Header      *types.Header // filled out later in updateLastConfirmed
 }
 
 type CheckpointCache struct {
