@@ -11,25 +11,20 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
-	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
-	"github.com/offchainlabs/nitro/staker"
-	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
 var workingDir = "./espresso-e2e"
 var hotShotAddress = "0x217788c286797d56cd59af5e493f3699c39cbbe8"
-var hostIoAddress = "0xF34C2fac45527E55ED122f80a969e79A40547e6D"
+
+// var hostIoAddress = "0xF34C2fac45527E55ED122f80a969e79A40547e6D"
 
 var (
 	jitValidationPort = 54320
@@ -196,69 +191,69 @@ func createL1ValidatorPosterNode(ctx context.Context, t *testing.T) (*NodeBuilde
 	return builder, cleanup
 }
 
-func createStaker(ctx context.Context, t *testing.T, builder *NodeBuilder, incorrectHeight uint64) (*staker.Staker, *staker.BlockValidator, func()) {
-	config := arbnode.ConfigDefaultL1Test()
-	config.Sequencer = false
-	config.DelayedSequencer.Enable = false
-	config.BatchPoster.Enable = false
-	config.Staker.Enable = false
-	config.BlockValidator.Enable = true
-	config.BlockValidator.HotShotAddress = hotShotAddress
-	config.BlockValidator.Espresso = true
-	config.BlockValidator.ValidationServer.URL = fmt.Sprintf("ws://127.0.0.1:%d", arbValidationPort)
-	testClient, cleanup := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: config})
-	l2Node := testClient.ConsensusNode
+// func createStaker(ctx context.Context, t *testing.T, builder *NodeBuilder, incorrectHeight uint64) (*staker.Staker, *staker.BlockValidator, func()) {
+// 	config := arbnode.ConfigDefaultL1Test()
+// 	config.Sequencer = false
+// 	config.DelayedSequencer.Enable = false
+// 	config.BatchPoster.Enable = false
+// 	config.Staker.Enable = false
+// 	config.BlockValidator.Enable = true
+// 	config.BlockValidator.HotShotAddress = hotShotAddress
+// 	config.BlockValidator.Espresso = true
+// 	config.BlockValidator.ValidationServer.URL = fmt.Sprintf("ws://127.0.0.1:%d", arbValidationPort)
+// 	testClient, cleanup := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: config})
+// 	l2Node := testClient.ConsensusNode
 
-	var auth bind.TransactOpts
-	if incorrectHeight > 0 {
-		auth = builder.L1Info.GetDefaultTransactOpts("Staker2", ctx)
-	} else {
-		auth = builder.L1Info.GetDefaultTransactOpts("Staker1", ctx)
-	}
+// 	var auth bind.TransactOpts
+// 	if incorrectHeight > 0 {
+// 		auth = builder.L1Info.GetDefaultTransactOpts("Staker2", ctx)
+// 	} else {
+// 		auth = builder.L1Info.GetDefaultTransactOpts("Staker1", ctx)
+// 	}
 
-	cfg := arbnode.ConfigDefaultL1NonSequencerTest()
-	parentChainID, err := builder.L1.Client.ChainID(ctx)
-	Require(t, err)
-	dp, err := arbnode.StakerDataposter(
-		ctx,
-		rawdb.NewTable(l2Node.ArbDB, storage.StakerPrefix),
-		l2Node.L1Reader,
-		&auth,
-		NewFetcherFromConfig(cfg),
-		nil,
-		parentChainID,
-	)
-	Require(t, err)
-	wallet, err := validatorwallet.NewEOA(dp, l2Node.DeployInfo.Rollup, l2Node.L1Reader.Client(), func() uint64 { return 50000 })
-	Require(t, err)
+// 	cfg := arbnode.ConfigDefaultL1NonSequencerTest()
+// 	parentChainID, err := builder.L1.Client.ChainID(ctx)
+// 	Require(t, err)
+// 	dp, err := arbnode.StakerDataposter(
+// 		ctx,
+// 		rawdb.NewTable(l2Node.ArbDB, storage.StakerPrefix),
+// 		l2Node.L1Reader,
+// 		&auth,
+// 		NewFetcherFromConfig(cfg),
+// 		nil,
+// 		parentChainID,
+// 	)
+// 	Require(t, err)
+// 	wallet, err := validatorwallet.NewEOA(dp, l2Node.DeployInfo.Rollup, l2Node.L1Reader.Client(), func() uint64 { return 50000 })
+// 	Require(t, err)
 
-	if incorrectHeight > 0 {
-		l2Node.StatelessBlockValidator.DebugEspresso_SetIncorrectHeight(incorrectHeight, t)
-		l2Node.BlockValidator.DebugEspresso_SetIncorrectHeight(incorrectHeight, t)
-	}
+// 	if incorrectHeight > 0 {
+// 		l2Node.StatelessBlockValidator.DebugEspresso_SetIncorrectHeight(incorrectHeight, t)
+// 		l2Node.BlockValidator.DebugEspresso_SetIncorrectHeight(incorrectHeight, t)
+// 	}
 
-	err = wallet.Initialize(ctx)
-	Require(t, err)
-	valConfig := staker.TestL1ValidatorConfig
-	valConfig.Strategy = "MakeNodes"
-	valConfig.StartValidationFromStaked = false
-	staker, err := staker.NewStaker(
-		l2Node.L1Reader,
-		wallet,
-		bind.CallOpts{},
-		valConfig,
-		l2Node.BlockValidator,
-		l2Node.StatelessBlockValidator,
-		nil,
-		nil,
-		l2Node.DeployInfo.ValidatorUtils,
-		nil,
-	)
-	Require(t, err)
-	err = staker.Initialize(ctx)
-	Require(t, err)
-	return staker, l2Node.BlockValidator, cleanup
-}
+// 	err = wallet.Initialize(ctx)
+// 	Require(t, err)
+// 	valConfig := staker.TestL1ValidatorConfig
+// 	valConfig.Strategy = "MakeNodes"
+// 	valConfig.StartValidationFromStaked = false
+// 	staker, err := staker.NewStaker(
+// 		l2Node.L1Reader,
+// 		wallet,
+// 		bind.CallOpts{},
+// 		valConfig,
+// 		l2Node.BlockValidator,
+// 		l2Node.StatelessBlockValidator,
+// 		nil,
+// 		nil,
+// 		l2Node.DeployInfo.ValidatorUtils,
+// 		nil,
+// 	)
+// 	Require(t, err)
+// 	err = staker.Initialize(ctx)
+// 	Require(t, err)
+// 	return staker, l2Node.BlockValidator, cleanup
+// }
 
 func waitFor(
 	t *testing.T,
