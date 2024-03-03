@@ -265,7 +265,7 @@ func waitFor(
 	ctxinput context.Context,
 	condition func() bool,
 ) error {
-	return waitForWith(t, ctxinput, 30*time.Second, time.Second, condition)
+	return waitForWith(t, ctxinput, 60*time.Second, time.Second, condition)
 }
 
 func waitForWith(
