@@ -6,10 +6,8 @@ package staker
 import (
 	"context"
 	"encoding/binary"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -739,7 +737,6 @@ validationsLoop:
 				wasmRoots = append(wasmRoots, run.WasmModuleRoot())
 				runEnd, err := run.Current()
 				if err == nil && runEnd != validationStatus.Entry.End {
-					log.Info("??????????????")
 					err = fmt.Errorf("validation failed: expected %v got %v", validationStatus.Entry.End, runEnd)
 					writeErr := v.writeToFile(validationStatus.Entry, run.WasmModuleRoot())
 					if writeErr != nil {
@@ -747,12 +744,6 @@ validationsLoop:
 					}
 				}
 				if err != nil {
-					log.Info("validating error")
-					input, _ := validationStatus.Entry.ToInput()
-					file, _ := os.Create("espresso-e2e/validation_input2.json")
-					s, _ := json.Marshal(input)
-					file.Write(s)
-					fmt.Println(err.Error())
 					validatorFailedValidationsCounter.Inc(1)
 					v.possiblyFatal(err)
 					return &pos, nil // if not fatal - retry

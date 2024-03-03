@@ -21,6 +21,7 @@ lazy_static! {
     };
 }
 
+
 // Helper function to verify a VID namespace proof that takes the byte representations of the proof,
 // namespace table, and commitment string.
 //
@@ -35,7 +36,6 @@ pub fn verify_namespace_helper(
     ns_table_bytes: &[u8],
     tx_comm_bytes: &[u8],
 ) {
-    // Create proof and commit strings
     let proof_str = std::str::from_utf8(proof_bytes).unwrap();
     let commit_str = std::str::from_utf8(commit_bytes).unwrap();
     let txn_comm_str = std::str::from_utf8(tx_comm_bytes).unwrap();
@@ -46,7 +46,8 @@ pub fn verify_namespace_helper(
     let commit: <VidScheme as VidSchemeTrait>::Commit = tagged.try_into().unwrap();
 
     let advz: Advz<Bls12_381, sha2::Sha256>;
-    let srs = UnivariateUniversalParams::<Bls12_381>::deserialize_compressed(&**SRS_VEC).unwrap();
+    let srs =
+        UnivariateUniversalParams::<Bls12_381>::deserialize_uncompressed_unchecked(SRS_VEC.as_slice()).unwrap();
     let num_storage_nodes = match &proof {
         NamespaceProof::Existence { vid_common, .. } => {
             VidScheme::get_num_storage_nodes(&vid_common)

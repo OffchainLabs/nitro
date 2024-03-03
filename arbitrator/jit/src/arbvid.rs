@@ -22,7 +22,11 @@ pub fn verify_namespace(mut env: WasmEnvMut, sp: u32) {
     let ns_table_bytes = sp.read_slice(ns_table_bytes_ptr, ns_table_bytes_len);
     let txs_comm_bytes = sp.read_slice(txs_comm_ptr, txs_comm_len);
 
-    verify_namespace_helper(namespace, &proof_bytes, &payload_comm_bytes, &ns_table_bytes, &txs_comm_bytes)
-
+    verify_namespace_helper(
+        namespace,
+        &proof_bytes,
+        &payload_comm_bytes,
+        &ns_table_bytes,
+        &txs_comm_bytes,
+    )
 }
-
