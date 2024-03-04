@@ -13,6 +13,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/google/go-cmp/cmp"
+	"github.com/holiman/uint256"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsigner"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 )
 
@@ -66,31 +68,26 @@ func signerTestCfg(addr common.Address) (*ExternalSignerCfg, error) {
 	}, nil
 }
 
-func TestExternalSigner(t *testing.T) {
-	ctx := context.Background()
-	httpSrv, srv := externalsignertest.NewServer(ctx, t)
-	t.Cleanup(func() {
-		if err := httpSrv.Shutdown(ctx); err != nil {
-			t.Fatalf("Error shutting down http server: %v", err)
-		}
-	})
-	cert, key := "./testdata/localhost.crt", "./testdata/localhost.key"
-	go func() {
-		fmt.Println("Server is listening on port 1234...")
-		if err := httpSrv.ListenAndServeTLS(cert, key); err != nil && err != http.ErrServerClosed {
-			t.Errorf("ListenAndServeTLS() unexpected error:  %v", err)
-			return
-		}
-	}()
-	signerCfg, err := signerTestCfg(srv.Address)
-	if err != nil {
-		t.Fatalf("Error getting signer test config: %v", err)
-	}
-	signer, addr, err := externalSigner(ctx, signerCfg)
-	if err != nil {
-		t.Fatalf("Error getting external signer: %v", err)
-	}
-	tx := types.NewTx(
+var (
+	blobTx = types.NewTx(
+		&types.BlobTx{
+			ChainID:   uint256.NewInt(1337),
+			Nonce:     13,
+			GasTipCap: uint256.NewInt(1),
+			GasFeeCap: uint256.NewInt(1),
+			Gas:       3,
+			To:        common.Address{},
+			Value:     uint256.NewInt(1),
+			Data:      []byte{0x01, 0x02, 0x03},
+			BlobHashes: []common.Hash{
+				common.BigToHash(big.NewInt(1)),
+				common.BigToHash(big.NewInt(2)),
+				common.BigToHash(big.NewInt(3)),
+			},
+			Sidecar: &types.BlobTxSidecar{},
+		},
+	)
+	dynamicFeeTx = types.NewTx(
 		&types.DynamicFeeTx{
 			Nonce:     13,
 			GasTipCap: big.NewInt(1),
@@ -101,20 +98,63 @@ func TestExternalSigner(t *testing.T) {
 			Data:      []byte{0x01, 0x02, 0x03},
 		},
 	)
-	got, err := signer(ctx, addr, tx)
+)
+
+func TestExternalSigner(t *testing.T) {
+	httpSrv, srv := externalsignertest.NewServer(t)
+	cert, key := "./testdata/localhost.crt", "./testdata/localhost.key"
+	go func() {
+		if err := httpSrv.ListenAndServeTLS(cert, key); err != nil && err != http.ErrServerClosed {
+			t.Errorf("ListenAndServeTLS() unexpected error:  %v", err)
+			return
+		}
+	}()
+	signerCfg, err := signerTestCfg(srv.Address)
 	if err != nil {
-		t.Fatalf("Error signing transaction with external signer: %v", err)
+		t.Fatalf("Error getting signer test config: %v", err)
 	}
-	args, err := txToSendTxArgs(addr, tx)
+	ctx := context.Background()
+	signer, addr, err := externalSigner(ctx, signerCfg)
 	if err != nil {
-		t.Fatalf("Error converting transaction to sendTxArgs: %v", err)
+		t.Fatalf("Error getting external signer: %v", err)
 	}
-	want, err := srv.SignerFn(addr, args.ToTransaction())
-	if err != nil {
-		t.Fatalf("Error signing transaction: %v", err)
-	}
-	if diff := cmp.Diff(want.Hash(), got.Hash()); diff != "" {
-		t.Errorf("Signing transaction: unexpected diff: %v\n", diff)
+
+	for _, tc := range []struct {
+		desc string
+		tx   *types.Transaction
+	}{
+		{
+			desc: "blob transaction",
+			tx:   blobTx,
+		},
+		{
+			desc: "dynamic fee transaction",
+			tx:   dynamicFeeTx,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			{
+				got, err := signer(ctx, addr, tc.tx)
+				if err != nil {
+					t.Fatalf("Error signing transaction with external signer: %v", err)
+				}
+				args, err := externalsigner.TxToSignTxArgs(addr, tc.tx)
+				if err != nil {
+					t.Fatalf("Error converting transaction to sendTxArgs: %v", err)
+				}
+				want, err := srv.SignerFn(addr, args.ToTransaction())
+				if err != nil {
+					t.Fatalf("Error signing transaction: %v", err)
+				}
+				if diff := cmp.Diff(want.Hash(), got.Hash()); diff != "" {
+					t.Errorf("Signing transaction: unexpected diff: %v\n", diff)
+				}
+				hasher := types.LatestSignerForChainID(tc.tx.ChainId())
+				if h, g := hasher.Hash(tc.tx), hasher.Hash(got); h != g {
+					t.Errorf("Signed transaction hash: %v differs from initial transaction hash: %v", g, h)
+				}
+			}
+		})
 	}
 }
 
