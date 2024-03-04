@@ -1,4 +1,4 @@
-use crate::{create_pcg, wasip1_stub::Uptr, ExecEnv, MemAccess};
+use crate::{create_pcg, ExecEnv, MemAccess, Uptr};
 use rand::RngCore;
 use rand_pcg::Pcg32;
 
@@ -65,7 +65,7 @@ impl MemAccess for StaticMem {
 
     fn write_u64(&mut self, ptr: u32, x: u64) {
         self.write_u32(ptr, (x & 0xffffffff) as u32);
-        self.write_u32(ptr + 4, ((x >> 16) & 0xffffffff) as u32);
+        self.write_u32(ptr + 4, ((x >> 32) & 0xffffffff) as u32);
     }
 
     fn read_slice(&self, mut ptr: u32, mut len: usize) -> Vec<u8> {
@@ -101,7 +101,7 @@ impl MemAccess for StaticMem {
 }
 
 impl ExecEnv for StaticExecEnv {
-    fn print_string(&mut self, data: &[u8]) {} // TODO?
+    fn print_string(&mut self, _data: &[u8]) {} // TODO?
 
     fn get_time(&self) -> u64 {
         unsafe { TIME }

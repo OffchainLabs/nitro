@@ -6,9 +6,8 @@
 use paste::paste;
 use callerenv::{
     self,
-    wasip1_stub::{Errno, Uptr},
-    MemAccess,
-    ExecEnv,
+    Uptr,
+    wasip1_stub::{Errno},
 };
 
 #[allow(dead_code)]

@@ -2,7 +2,7 @@ use crate::{ExecEnv, MemAccess};
 
 pub type Errno = u16;
 
-pub use crate::Uptr;
+use crate::Uptr;
 
 pub const ERRNO_SUCCESS: Errno = 0;
 pub const ERRNO_BADF: Errno = 8;
@@ -268,7 +268,7 @@ pub fn clock_time_get<M: MemAccess, E: ExecEnv>(
 pub fn random_get<M: MemAccess, E: ExecEnv>(
     mem: &mut M,
     env: &mut E,
-    mut buf: u32,
+    mut buf: Uptr,
     mut len: u32,
 ) -> Errno {
     while len >= 4 {

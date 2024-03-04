@@ -3,10 +3,7 @@
 
 use crate::callerenv::jit_env;
 use crate::machine::{Escape, WasmEnvMut};
-use callerenv::{
-    self,
-    wasip1_stub::{Errno, Uptr},
-};
+use callerenv::{self, wasip1_stub::Errno, Uptr};
 
 pub fn proc_exit(mut _env: WasmEnvMut, code: u32) -> Result<(), Escape> {
     Err(Escape::Exit(code))
