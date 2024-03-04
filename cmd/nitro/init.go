@@ -282,7 +282,6 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		genesisBlockNr, err := initDataReader.GetNextBlockNumber()
 		if err != nil {
 			return chainDb, nil, err
-
 		}
 		combinedL2ChainInfoFiles := aggregateL2ChainInfoFiles(ctx, config.Chain.InfoFiles, config.Chain.InfoIpfsUrl, config.Chain.InfoIpfsDownloadPath)
 		chainConfig, err = chaininfo.GetChainConfig(new(big.Int).SetUint64(config.Chain.ID), config.Chain.Name, genesisBlockNr, combinedL2ChainInfoFiles, config.Chain.InfoJson)
