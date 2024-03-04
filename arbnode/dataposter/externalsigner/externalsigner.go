@@ -6,6 +6,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 	"github.com/holiman/uint256"
 )
@@ -13,15 +14,20 @@ import (
 type SignTxArgs struct {
 	*apitypes.SendTxArgs
 
-	BlobFeeCap        *uint256.Int         `json:"blobFeeCap,omitempty"`
-	BlobVersionHashes []common.Hash        `json:"blobVersionedHashes,omitempty"`
-	Sidecar           *types.BlobTxSidecar `json:"sidecar,omitempty" rlp:"-"`
+	// Feilds for BlobTx type transactions.
+	BlobFeeCap *hexutil.Big  `json:"maxFeePerBlobGas"`
+	BlobHashes []common.Hash `json:"blobVersionedHashes,omitempty"`
+
+	// Blob sidecar fields for BlobTx type transactions.
+	// These are optional if BlobHashes are already present, since these
+	// are not included in the hash/signature.
+	Blobs       []kzg4844.Blob       `json:"blobs"`
+	Commitments []kzg4844.Commitment `json:"commitments"`
+	Proofs      []kzg4844.Proof      `json:"proofs"`
 }
 
 func (a *SignTxArgs) ToTransaction() *types.Transaction {
-	// Sidecar field must be set when BlobTx is used to create a transction
-	// for signing.
-	if a.Sidecar == nil {
+	if !a.isEIP4844() {
 		return a.SendTxArgs.ToTransaction()
 	}
 	to := common.Address{}
@@ -47,10 +53,18 @@ func (a *SignTxArgs) ToTransaction() *types.Transaction {
 		Value:      uint256.NewInt(a.Value.ToInt().Uint64()),
 		Data:       input,
 		AccessList: al,
-		BlobFeeCap: a.BlobFeeCap,
-		BlobHashes: a.BlobVersionHashes,
-		Sidecar:    a.Sidecar,
+		BlobFeeCap: uint256.NewInt(a.BlobFeeCap.ToInt().Uint64()),
+		BlobHashes: a.BlobHashes,
+		Sidecar: &types.BlobTxSidecar{
+			Blobs:       a.Blobs,
+			Commitments: a.Commitments,
+			Proofs:      a.Proofs,
+		},
 	})
+}
+
+func (a *SignTxArgs) isEIP4844() bool {
+	return a.BlobHashes != nil || a.BlobFeeCap != nil
 }
 
 // TxToSignTxArgs converts transaction to SendTxArgs. This is needed for
@@ -67,9 +81,15 @@ func TxToSignTxArgs(addr common.Address, tx *types.Transaction) (*SignTxArgs, er
 		val = (*hexutil.Big)(big.NewInt(0))
 	}
 	al := tx.AccessList()
-	var blobFeeCap *uint256.Int
-	if tx.BlobGasFeeCap() != nil {
-		blobFeeCap = uint256.NewInt(tx.BlobGasFeeCap().Uint64())
+	var (
+		blobs       []kzg4844.Blob
+		commitments []kzg4844.Commitment
+		proofs      []kzg4844.Proof
+	)
+	if tx.BlobTxSidecar() != nil {
+		blobs = tx.BlobTxSidecar().Blobs
+		commitments = tx.BlobTxSidecar().Commitments
+		proofs = tx.BlobTxSidecar().Proofs
 	}
 	return &SignTxArgs{
 		SendTxArgs: &apitypes.SendTxArgs{
@@ -85,8 +105,10 @@ func TxToSignTxArgs(addr common.Address, tx *types.Transaction) (*SignTxArgs, er
 			AccessList:           &al,
 			ChainID:              (*hexutil.Big)(tx.ChainId()),
 		},
-		BlobFeeCap:        blobFeeCap,
-		BlobVersionHashes: tx.BlobHashes(),
-		Sidecar:           tx.BlobTxSidecar(),
+		BlobFeeCap:  (*hexutil.Big)(tx.BlobGasFeeCap()),
+		BlobHashes:  tx.BlobHashes(),
+		Blobs:       blobs,
+		Commitments: commitments,
+		Proofs:      proofs,
 	}, nil
 }
