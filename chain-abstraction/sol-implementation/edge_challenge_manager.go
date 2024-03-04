@@ -62,14 +62,23 @@ func (e *specEdge) AssertionHash(_ context.Context) (protocol.AssertionHash, err
 }
 
 func (e *specEdge) TimeUnrivaled(ctx context.Context) (uint64, error) {
+	if e.hasRival && e.timeUnrivaled.IsSome() {
+		return e.timeUnrivaled.Unwrap(), nil
+	}
 	timer, err := e.manager.caller.TimeUnrivaled(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}), e.id)
 	if err != nil {
 		return 0, err
+	}
+	if e.hasRival {
+		e.timeUnrivaled = option.Some(timer)
 	}
 	return timer, nil
 }
 
 func (e *specEdge) HasConfirmedRival(ctx context.Context) (bool, error) {
+	if e.hasConfirmedRival {
+		return e.hasConfirmedRival, nil
+	}
 	mutualId, err := calculateMutualId(
 		e.inner.Level,
 		e.inner.OriginId,
@@ -84,15 +93,31 @@ func (e *specEdge) HasConfirmedRival(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
+	if confirmedRival != ([32]byte{}) {
+		e.hasConfirmedRival = true
+	}
 	return confirmedRival != ([32]byte{}), nil
 }
 
 func (e *specEdge) HasRival(ctx context.Context) (bool, error) {
-	return e.manager.caller.HasRival(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}), e.id)
+	if e.hasRival {
+		return e.hasRival, nil
+	}
+	hasRival, err := e.manager.caller.HasRival(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}), e.id)
+	if err != nil {
+		return false, err
+	}
+	if hasRival {
+		e.hasRival = true
+	}
+	return hasRival, nil
 }
 
 func (e *specEdge) Status(ctx context.Context) (protocol.EdgeStatus, error) {
-	edge, err := e.manager.caller.GetEdge(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}), e.id)
+	if e.isConfirmed {
+		return protocol.EdgeConfirmed, nil
+	}
+	edge, err := e.fetchEdge(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -100,7 +125,10 @@ func (e *specEdge) Status(ctx context.Context) (protocol.EdgeStatus, error) {
 }
 
 func (e *specEdge) ConfirmedAtBlock(ctx context.Context) (uint64, error) {
-	edge, err := e.manager.caller.GetEdge(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}), e.id)
+	if e.confirmedAtBlock.IsSome() {
+		return e.confirmedAtBlock.Unwrap(), nil
+	}
+	edge, err := e.fetchEdge(ctx)
 	if err != nil {
 		return 0, err
 	}
@@ -114,7 +142,10 @@ func (e *specEdge) CreatedAtBlock() (uint64, error) {
 
 // HasChildren checks if the edge has children.
 func (e *specEdge) HasChildren(ctx context.Context) (bool, error) {
-	edge, err := e.manager.caller.GetEdge(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}), e.id)
+	if e.lowerChild.IsSome() && e.upperChild.IsSome() {
+		return true, nil
+	}
+	edge, err := e.fetchEdge(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -123,7 +154,10 @@ func (e *specEdge) HasChildren(ctx context.Context) (bool, error) {
 
 // LowerChild of the edge, if any.
 func (e *specEdge) LowerChild(ctx context.Context) (option.Option[protocol.EdgeId], error) {
-	edge, err := e.manager.caller.GetEdge(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}), e.id)
+	if e.lowerChild.IsSome() {
+		return e.lowerChild, nil
+	}
+	edge, err := e.fetchEdge(ctx)
 	if err != nil {
 		return option.None[protocol.EdgeId](), err
 	}
@@ -137,7 +171,10 @@ func (e *specEdge) LowerChild(ctx context.Context) (option.Option[protocol.EdgeI
 
 // UpperChild of the edge, if any.
 func (e *specEdge) UpperChild(ctx context.Context) (option.Option[protocol.EdgeId], error) {
-	edge, err := e.manager.caller.GetEdge(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}), e.id)
+	if e.upperChild.IsSome() {
+		return e.upperChild, nil
+	}
+	edge, err := e.fetchEdge(ctx)
 	if err != nil {
 		return option.None[protocol.EdgeId](), err
 	}
@@ -168,6 +205,9 @@ func (e *specEdge) ClaimId() option.Option[protocol.ClaimId] {
 
 // HasLengthOneRival returns true if there's a length one rival.
 func (e *specEdge) HasLengthOneRival(ctx context.Context) (bool, error) {
+	if e.hasLengthOneRival {
+		return e.hasLengthOneRival, nil
+	}
 	ok, err := e.manager.caller.HasLengthOneRival(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}), e.id)
 	if err != nil {
 		errS := err.Error()
@@ -179,6 +219,9 @@ func (e *specEdge) HasLengthOneRival(ctx context.Context) (bool, error) {
 		default:
 			return false, err
 		}
+	}
+	if ok {
+		e.hasLengthOneRival = true
 	}
 	return ok, nil
 }
@@ -569,6 +612,30 @@ func (cm *specChallengeManager) GetEdge(
 		totalChallengeLevels: numbigsteplevel + 2,
 		assertionHash:        protocol.AssertionHash{Hash: common.Hash(assertionHash)},
 	})), nil
+}
+
+func (e *specEdge) fetchEdge(
+	ctx context.Context,
+) (challengeV2gen.ChallengeEdge, error) {
+	edge, err := e.manager.caller.GetEdge(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}), e.id)
+	if err != nil {
+		return challengeV2gen.ChallengeEdge{}, err
+	}
+
+	// Update the edge with the latest data, if they are in now in constant state.
+	if protocol.EdgeStatus(edge.Status) == protocol.EdgeConfirmed {
+		e.isConfirmed = true
+	}
+	if edge.ConfirmedAtBlock != 0 {
+		e.confirmedAtBlock = option.Some(edge.ConfirmedAtBlock)
+	}
+	if edge.LowerChildId != ([32]byte{}) {
+		e.lowerChild = option.Some(protocol.EdgeId{Hash: edge.LowerChildId})
+	}
+	if edge.UpperChildId != ([32]byte{}) {
+		e.upperChild = option.Some(protocol.EdgeId{Hash: edge.UpperChildId})
+	}
+	return edge, nil
 }
 
 // CalculateEdgeId calculates an edge hash given its challenge id, start history, and end history.
