@@ -226,14 +226,18 @@ func NewStatelessBlockValidator(
 	config func() *BlockValidatorConfig,
 	stack *node.Node,
 ) (*StatelessBlockValidator, error) {
-	valConfFetcher := func() *rpcclient.ClientConfig { return &config().ValidationServer }
-	valClient := server_api.NewValidationClient(valConfFetcher, stack)
+	validationSpawners := make([]validator.ValidationSpawner, len(config().ValidationServerConfigs))
+	for i, serverConfig := range config().ValidationServerConfigs {
+		valConfFetcher := func() *rpcclient.ClientConfig { return &serverConfig }
+		validationSpawners[i] = server_api.NewValidationClient(valConfFetcher, stack)
+	}
+	valConfFetcher := func() *rpcclient.ClientConfig { return &config().ValidationServerConfigs[0] }
 	execClient := server_api.NewExecutionClient(valConfFetcher, stack)
 	validator := &StatelessBlockValidator{
 		config:             config(),
 		execSpawner:        execClient,
 		recorder:           recorder,
-		validationSpawners: []validator.ValidationSpawner{valClient},
+		validationSpawners: validationSpawners,
 		inboxReader:        inboxReader,
 		inboxTracker:       inbox,
 		streamer:           streamer,
@@ -306,7 +310,10 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 				e.Preimages[arbutil.EthVersionedHashPreimageType] = make(map[common.Hash][]byte)
 			}
 			for i, blob := range blobs {
-				e.Preimages[arbutil.EthVersionedHashPreimageType][versionedHashes[i]] = blob[:]
+				// Prevent aliasing `blob` when slicing it, as for range loops overwrite the same variable
+				// Won't be necessary after Go 1.22 with https://go.dev/blog/loopvar-preview
+				b := blob
+				e.Preimages[arbutil.EthVersionedHashPreimageType][versionedHashes[i]] = b[:]
 			}
 		}
 		if arbstate.IsDASMessageHeaderByte(batch.Data[40]) {
