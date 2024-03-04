@@ -67,12 +67,19 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     fn evm_data(&self) -> &EvmData;
     fn evm_return_data_len(&mut self) -> &mut u32;
 
-    fn read_bytes20(&self, ptr: u32) -> Result<Bytes20, Self::MemoryErr>;
-    fn read_bytes32(&self, ptr: u32) -> Result<Bytes32, Self::MemoryErr>;
     fn read_slice(&self, ptr: u32, len: u32) -> Result<Vec<u8>, Self::MemoryErr>;
+    fn read_fixed<const N: usize>(&self, ptr: u32) -> Result<[u8; N], Self::MemoryErr>;
 
     fn write_u32(&mut self, ptr: u32, x: u32) -> Result<(), Self::MemoryErr>;
     fn write_slice(&self, ptr: u32, src: &[u8]) -> Result<(), Self::MemoryErr>;
+
+    fn read_bytes20(&self, ptr: u32) -> Result<Bytes20, Self::MemoryErr> {
+        self.read_fixed(ptr).and_then(|x| Ok(x.into()))
+    }
+
+    fn read_bytes32(&self, ptr: u32) -> Result<Bytes32, Self::MemoryErr> {
+        self.read_fixed(ptr).and_then(|x| Ok(x.into()))
+    }
 
     // ink when call stated, only used for tracing, Err if unavailable.
     fn start_ink(&self) -> Result<u64, Self::Err>;

@@ -88,11 +88,11 @@ pub unsafe extern "C" fn programs__activate(
 }
 
 unsafe fn read_bytes32(ptr: Uptr) -> Bytes32 {
-    STATIC_MEM.read_slice(ptr, 32).try_into().unwrap()
+    STATIC_MEM.read_fixed(ptr).into()
 }
 
 unsafe fn read_bytes20(ptr: Uptr) -> Bytes20 {
-    STATIC_MEM.read_slice(ptr, 20).try_into().unwrap()
+    STATIC_MEM.read_fixed(ptr).into()
 }
 
 /// Links and creates user program

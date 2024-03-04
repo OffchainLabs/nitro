@@ -85,6 +85,10 @@ impl MemAccess for StaticMem {
         data
     }
 
+    fn read_fixed<const N: usize>(&self, ptr: u32) -> [u8; N] {
+        self.read_slice(ptr, N).try_into().unwrap()
+    }
+
     fn write_slice(&mut self, mut ptr: u32, mut src: &[u8]) {
         while src.len() >= 4 {
             let mut arr = [0u8; 4];

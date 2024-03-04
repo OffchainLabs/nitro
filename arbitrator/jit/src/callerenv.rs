@@ -50,11 +50,11 @@ impl<'s> JitMemAccess<'s> {
     }
 
     pub fn read_bytes20(&mut self, ptr: u32) -> Bytes20 {
-        self.read_slice(ptr, 20).try_into().unwrap()
+        self.read_fixed(ptr).into()
     }
 
     pub fn read_bytes32(&mut self, ptr: u32) -> Bytes32 {
-        self.read_slice(ptr, 32).try_into().unwrap()
+        self.read_fixed(ptr).into()
     }
 
     pub fn read_string(&mut self, ptr: u32, len: u32) -> String {
@@ -119,6 +119,10 @@ impl MemAccess for JitMemAccess<'_> {
             .read(ptr.into(), &mut data)
             .expect("failed to read");
         data
+    }
+
+    fn read_fixed<const N: usize>(&self, ptr: u32) -> [u8; N] {
+        self.read_slice(ptr, N).try_into().unwrap()
     }
 
     fn write_slice(&mut self, ptr: u32, src: &[u8]) {

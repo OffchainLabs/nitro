@@ -16,7 +16,7 @@ use prover::programs::{
 use callerenv::{Uptr, MemAccess, static_caller::STATIC_MEM};
 
 unsafe fn read_bytes32(ptr: Uptr) -> Bytes32 {
-    STATIC_MEM.read_slice(ptr, 32).try_into().unwrap()
+    STATIC_MEM.read_fixed(ptr).into()
 }
 
 #[no_mangle]

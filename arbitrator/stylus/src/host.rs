@@ -11,7 +11,7 @@ use arbutil::{
         api::{DataReader, EvmApi},
         EvmData,
     },
-    Bytes20, Bytes32, Color,
+    Color,
 };
 use eyre::{eyre, Result};
 use prover::value::Value;
@@ -43,14 +43,11 @@ impl<'a, DR: DataReader, A: EvmApi<DR>> UserHost<DR> for HostioInfo<'a, DR, A> {
         &mut self.evm_data.return_data_len
     }
 
-    fn read_bytes20(&self, ptr: u32) -> Result<Bytes20, Self::MemoryErr> {
-        let data = self.read_fixed(ptr)?;
-        Ok(data.into())
-    }
-
-    fn read_bytes32(&self, ptr: u32) -> Result<Bytes32, Self::MemoryErr> {
-        let data = self.read_fixed(ptr)?;
-        Ok(data.into())
+    fn read_fixed<const N: usize>(
+        &self,
+        ptr: u32,
+    ) -> std::result::Result<[u8; N], <Self as UserHost<DR>>::MemoryErr> {
+        HostioInfo::read_fixed(&self, ptr)
     }
 
     fn read_slice(&self, ptr: u32, len: u32) -> Result<Vec<u8>, Self::MemoryErr> {

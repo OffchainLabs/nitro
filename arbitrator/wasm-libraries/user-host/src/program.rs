@@ -209,17 +209,13 @@ impl UserHost<VecReader> for Program {
         &mut self.evm_data.return_data_len
     }
 
-    fn read_bytes20(&self, ptr: u32) -> Result<Bytes20, MemoryBoundsError> {
-        self.read_slice(ptr, 20).and_then(|x| Ok(x.try_into().unwrap()))
-    }
-
-    fn read_bytes32(&self, ptr: u32) -> Result<Bytes32, MemoryBoundsError> {
-        self.read_slice(ptr, 32).and_then(|x| Ok(x.try_into().unwrap()))
-    }
-
     fn read_slice(&self, ptr: u32, len: u32) -> Result<Vec<u8>, MemoryBoundsError> {
         self.check_memory_access(ptr, len)?;
         unsafe { Ok(STATIC_MEM.read_slice(ptr, len as usize)) }
+    }
+
+    fn read_fixed<const N:usize>(&self, ptr: u32) -> Result<[u8; N], MemoryBoundsError> {
+        self.read_slice(ptr, N as u32).and_then(|x| Ok(x.try_into().unwrap()))
     }
 
     fn write_u32(&mut self, ptr: u32, x: u32) -> Result<(), MemoryBoundsError> {
