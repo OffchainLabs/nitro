@@ -445,6 +445,14 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	return newFeeCap, newTipCap, nil
 }
 
+func (p *DataPoster) PostSimpleTransactionAutoNonce(ctx context.Context, to common.Address, calldata []byte, gasLimit uint64, value *big.Int) (*types.Transaction, error) {
+	nonce, _, err := p.GetNextNonceAndMeta(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return p.PostTransaction(ctx, time.Now(), nonce, nil, to, calldata, gasLimit, value, nil)
+}
+
 func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, accessList types.AccessList) (*types.Transaction, error) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()

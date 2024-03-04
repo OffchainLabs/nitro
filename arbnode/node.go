@@ -555,7 +555,19 @@ func createNodeImpl(
 		statelessBlockValidator = nil
 	}
 
+	var dp *dataposter.DataPoster
 	if config.Bold.Enable {
+		dp, err = StakerDataposter(
+			ctx,
+			rawdb.NewTable(arbDb, storage.StakerPrefix),
+			l1Reader,
+			txOptsValidator,
+			configFetcher,
+			syncMonitor,
+		)
+		if err != nil {
+			return nil, err
+		}
 		rollupBindings, err := rollupgen.NewRollupUserLogic(deployInfo.Rollup, l1client)
 		if err != nil {
 			return nil, fmt.Errorf("could not create rollup bindings: %w", err)
@@ -564,7 +576,7 @@ func createNodeImpl(
 		if err != nil {
 			return nil, fmt.Errorf("could not get challenge manager: %w", err)
 		}
-		assertionChain, err := solimpl.NewAssertionChain(ctx, deployInfo.Rollup, chalManager, txOptsValidator, l1client, solimpl.NewChainBackendTransactor(l1client))
+		assertionChain, err := solimpl.NewAssertionChain(ctx, deployInfo.Rollup, chalManager, txOptsValidator, l1client, solimpl.NewDataPosterTransactor(dp))
 		if err != nil {
 			return nil, fmt.Errorf("could not create assertion chain: %w", err)
 		}
@@ -646,16 +658,18 @@ func createNodeImpl(
 	var messagePruner *MessagePruner
 
 	if config.Staker.Enable {
-		dp, err := StakerDataposter(
-			ctx,
-			rawdb.NewTable(arbDb, storage.StakerPrefix),
-			l1Reader,
-			txOptsValidator,
-			configFetcher,
-			syncMonitor,
-		)
-		if err != nil {
-			return nil, err
+		if dp == nil {
+			dp, err = StakerDataposter(
+				ctx,
+				rawdb.NewTable(arbDb, storage.StakerPrefix),
+				l1Reader,
+				txOptsValidator,
+				configFetcher,
+				syncMonitor,
+			)
+			if err != nil {
+				return nil, err
+			}
 		}
 		getExtraGas := func() uint64 { return configFetcher.Get().Staker.ExtraGas }
 		// TODO: factor this out into separate helper, and split rest of node
