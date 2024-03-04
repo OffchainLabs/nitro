@@ -1,4 +1,6 @@
 // TODO import from sequencer: https://github.com/EspressoSystems/nitro-espresso-integration/issues/87
+// This module is essentially copy and pasted VID logic from the sequencer repo. It is an unfortunate workaround
+// until the VID portion of the sequencer repo is WASM-compatible.
 use core::fmt;
 use serde::{Deserialize, Serialize};
 use std::mem::size_of;

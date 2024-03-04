@@ -52,6 +52,7 @@ pub fn verify_namespace_helper(
         NamespaceProof::Existence { vid_common, .. } => {
             VidScheme::get_num_storage_nodes(&vid_common)
         }
+        // Non-existence proofs do not actually make use of the SRS, so pick some random value to appease the compiler.
         _ => 5,
     };
     let num_chunks: usize = 1 << num_storage_nodes.ilog2();

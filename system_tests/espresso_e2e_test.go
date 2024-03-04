@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+	"os"
 	"os/exec"
 	"strings"
 	"testing"
@@ -467,40 +468,43 @@ func TestEspressoE2E(t *testing.T) {
 
 	// The following tests are very time-consuming and, given that the related code
 	// does not change often, it's not necessary to run them every time.
-	// Note: If you are modifying the smart contracts, staker-related code or doing overhaul,
-	// please manually uncomment the following and ensure the tests pass locally.
+	// Note: If you are modifying the smart contracts, staker-related code or doing overhaul.
+	// Set the E2E_CHECK_STAKER env variable to any non-empty string to run the check.
 
-	// err = waitForWith(
-	// 	t,
-	// 	ctx,
-	// 	time.Minute*15,
-	// 	time.Second*8,
-	// 	func() bool {
-	// 		log.Info("good staker acts", "step", i)
-	// 		txA, err := goodStaker.Act(ctx)
-	// 		Require(t, err)
-	// 		if txA != nil {
-	// 			_, err = builder.L1.EnsureTxSucceeded(txA)
-	// 			Require(t, err)
-	// 		}
+	checkStaker := os.Getenv("E2E_CHECK_STAKER")
+	if checkStaker != "" {
+		err = waitForWith(
+			t,
+			ctx,
+			time.Minute*15,
+			time.Second*8,
+			func() bool {
+				log.Info("good staker acts", "step", i)
+				txA, err := goodStaker.Act(ctx)
+				Require(t, err)
+				if txA != nil {
+					_, err = builder.L1.EnsureTxSucceeded(txA)
+					Require(t, err)
+				}
 
-	// 		log.Info("bad staker acts", "step", i)
-	// 		txB, err := badStaker.Act(ctx)
-	// 		if txB != nil {
-	// 			_, err = builder.L1.EnsureTxSucceeded(txB)
-	// 			Require(t, err)
-	// 		}
-	// 		if err != nil {
-	// 			ok := strings.Contains(err.Error(), "ERROR_HOTSHOT_COMMITMENT")
-	// 			if ok {
-	// 				return true
-	// 			} else {
-	// 				t.Fatal("unexpected err")
-	// 			}
-	// 		}
-	// 		i += 1
-	// 		return false
+				log.Info("bad staker acts", "step", i)
+				txB, err := badStaker.Act(ctx)
+				if txB != nil {
+					_, err = builder.L1.EnsureTxSucceeded(txB)
+					Require(t, err)
+				}
+				if err != nil {
+					ok := strings.Contains(err.Error(), "ERROR_HOTSHOT_COMMITMENT")
+					if ok {
+						return true
+					} else {
+						t.Fatal("unexpected err")
+					}
+				}
+				i += 1
+				return false
 
-	// 	})
-	// Require(t, err)
+			})
+		Require(t, err)
+	}
 }
