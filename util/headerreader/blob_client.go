@@ -148,9 +148,13 @@ type blobResponseItem struct {
 }
 
 func (b *BlobClient) blobSidecars(ctx context.Context, slot uint64, versionedHashes []common.Hash) ([]kzg4844.Blob, error) {
-	response, err := beaconRequest[[]blobResponseItem](b, ctx, fmt.Sprintf("/eth/v1/beacon/blob_sidecars/%d", slot))
+	rawData, err := beaconRequest[json.RawMessage](b, ctx, fmt.Sprintf("/eth/v1/beacon/blob_sidecars/%d", slot))
 	if err != nil {
 		return nil, fmt.Errorf("error calling beacon client in blobSidecars: %w", err)
+	}
+	var response []blobResponseItem
+	if err := json.Unmarshal(rawData, &response); err != nil {
+		return nil, fmt.Errorf("error unmarshalling raw data into array of blobResponseItem in blobSidecars: %w", err)
 	}
 
 	if len(response) < len(versionedHashes) {
@@ -203,7 +207,7 @@ func (b *BlobClient) blobSidecars(ctx context.Context, slot uint64, versionedHas
 	}
 
 	if b.blobDirectory != "" {
-		if err := saveBlobDataToDisk(response, slot, b.blobDirectory); err != nil {
+		if err := saveBlobDataToDisk(rawData, slot, b.blobDirectory); err != nil {
 			return nil, err
 		}
 	}
@@ -211,13 +215,13 @@ func (b *BlobClient) blobSidecars(ctx context.Context, slot uint64, versionedHas
 	return output, nil
 }
 
-func saveBlobDataToDisk(response []blobResponseItem, slot uint64, blobDirectory string) error {
+func saveBlobDataToDisk(rawData json.RawMessage, slot uint64, blobDirectory string) error {
 	filePath := path.Join(blobDirectory, fmt.Sprint(slot))
 	file, err := os.Create(filePath)
 	if err != nil {
 		return fmt.Errorf("could not create file to store fetched blobs")
 	}
-	full := fullResult[[]blobResponseItem]{Data: response}
+	full := fullResult[json.RawMessage]{Data: rawData}
 	fullbytes, err := json.Marshal(full)
 	if err != nil {
 		return fmt.Errorf("unable to marshal data into bytes while attempting to store fetched blobs")
