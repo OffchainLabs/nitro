@@ -2,8 +2,9 @@ package gethexec
 
 import (
 	"context"
+	"errors"
 	"math/big"
-	"os"
+	"math/rand"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/consensus/ethash"
@@ -11,12 +12,13 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/trie"
 )
 
-func createTestBlockchain(t *testing.T, blocksNum int) *core.BlockChain {
+func createTestBlockchain(t *testing.T, blocksNum int) (*core.BlockChain, ethdb.Database) {
 	stackConfig := node.DefaultConfig
 	stackConfig.DataDir = t.TempDir()
 	stackConfig.P2P.DiscoveryV4 = false
@@ -26,7 +28,7 @@ func createTestBlockchain(t *testing.T, blocksNum int) *core.BlockChain {
 	if err != nil {
 		t.Fatal(err)
 	}
-	chaindb, err := stack.OpenDatabaseWithFreezer("l2chaindata", 2048, 512, "", "", false)
+	db, err := stack.OpenDatabaseWithFreezer("l2chaindata", 2048, 512, "", "", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -46,8 +48,11 @@ func createTestBlockchain(t *testing.T, blocksNum int) *core.BlockChain {
 	}
 	cachingConfig := DefaultCachingConfig
 	cachingConfig.Archive = true
+	cachingConfig.SnapshotCache = 0  // disable snapshot to simplify removing states
+	cachingConfig.TrieCleanCache = 0 // disable trie/Database.cleans cache, so as states removed from ChainDb won't be cached there
+
 	coreCacheConfig := DefaultCacheConfigFor(stack, &cachingConfig)
-	bc, _ := core.NewArbBlockChain(chaindb, coreCacheConfig, nil, gspec, nil, ethash.NewFaker(), vm.Config{}, nil, nil, nil)
+	bc, _ := core.NewArbBlockChain(db, coreCacheConfig, nil, gspec, nil, ethash.NewFaker(), vm.Config{}, nil, nil, nil)
 	signer := types.MakeSigner(bc.Config(), big.NewInt(1), 0)
 
 	_, blocks, allReceipts := core.GenerateChainWithGenesis(gspec, ethash.NewFaker(), blocksNum, func(i int, gen *core.BlockGen) {
@@ -76,39 +81,72 @@ func createTestBlockchain(t *testing.T, blocksNum int) *core.BlockChain {
 	if _, err := bc.InsertChain(blocks); err != nil {
 		t.Fatal(err)
 	}
-	return bc
+	return bc, db
 }
 
-func TestSyncHelperScanNewConfirmedCheckpointsAllAvailable(t *testing.T) {
-	period := 7
-	blocksNum := 100
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
-	glogger.Verbosity(log.LvlInfo)
-	log.Root().SetHandler(glogger)
+type syncHelperScanTestOptions struct {
+	blocksNum              int
+	period                 int
+	commitedCheckpointsNum int // 0 = all
+}
+
+func testSyncHelperScanNewConfirmedCheckpoints(t *testing.T, opts syncHelperScanTestOptions) {
+	// glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+	//glogger.Verbosity(log.LvlInfo)
+	//log.Root().SetHandler(glogger)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	bc := createTestBlockchain(t, blocksNum)
+	bc, db := createTestBlockchain(t, opts.blocksNum)
 	config := NitroSyncHelperConfig{
 		Enabled:          true,
-		CheckpointPeriod: uint64(period),
-		CheckpointCache:  uint(blocksNum * 2), // big enough to detect bugs
+		CheckpointPeriod: uint64(opts.period),
+		CheckpointCache:  uint(opts.blocksNum * 2), // big enough to detect bugs
 	}
 	sh := NewNitroSyncHelper(func() *NitroSyncHelperConfig { return &config }, bc)
 
-	for number := 0; number < blocksNum; number++ {
+	for number := 0; number < opts.blocksNum; number++ {
 		header := bc.GetHeaderByNumber(uint64(number))
 		if header == nil {
-			t.Fatal("internal test error - can't get header, number:", number)
+			t.Fatal("internal test error - can't get header, number:", number, "opts:", opts)
 		}
 		if sh.checkpointCache.Has(header) {
-			t.Fatal("unexpected error - checkpoint cache should be empty, but has header, number:", number)
+			t.Fatal("unexpected error - checkpoint cache should be empty, but has header, number:", number, "opts:", opts)
+		}
+	}
+	statesKept := make(map[int]struct{})
+	if opts.commitedCheckpointsNum > 0 {
+		toKeepCheckpoints := rand.Perm(opts.blocksNum / opts.period)[:opts.commitedCheckpointsNum]
+		for _, checkpoint := range toKeepCheckpoints {
+			block := (checkpoint + 1) * opts.period
+			statesKept[block] = struct{}{}
+		}
+		for number := 1; number < opts.blocksNum; number++ {
+			if _, keep := statesKept[number]; keep {
+				continue
+			}
+			header := bc.GetHeaderByNumber(uint64(number))
+			if header == nil {
+				t.Fatal("internal test error - can't get header, number:", number, "opts:", opts)
+			}
+			err := db.Delete(header.Root.Bytes())
+			if err != nil {
+				t.Fatal("internal test error - failed to delete key from db, err:", err, "opts:", opts)
+			}
+			_, err = bc.StateAt(header.Root)
+			if err == nil {
+				t.Fatal("internal test error - failed to remove state from db", "number", number, "opts:", opts)
+			}
+			expectedErr := &trie.MissingNodeError{}
+			if !errors.As(err, &expectedErr) {
+				t.Fatal("internal test error - failed to remove state from db, err: ", err, "opts:", opts)
+			}
 		}
 	}
 	var previousConfirmed *Confirmed
-	for number := 1; number < blocksNum; number++ {
+	for number := 1; number < opts.blocksNum; number++ {
 		block := bc.GetBlockByNumber(uint64(number))
 		if block == nil {
-			t.Fatal("internal test error - can't get block, number:", number)
+			t.Fatal("internal test error - can't get block, number:", number, "opts:", opts)
 		}
 		newConfirmed := Confirmed{
 			BlockNumber: int64(number),
@@ -119,18 +157,39 @@ func TestSyncHelperScanNewConfirmedCheckpointsAllAvailable(t *testing.T) {
 		sh.scanNewConfirmedCheckpoints(ctx, &newConfirmed, previousConfirmed)
 		previousConfirmed = &newConfirmed
 	}
-	for number := 0; number < blocksNum; number++ {
+	for number := 0; number < opts.blocksNum; number++ {
 		header := bc.GetHeaderByNumber(uint64(number))
 		if header == nil {
-			t.Fatal("internal test error - can't get header, number:", number)
+			t.Fatal("internal test error - can't get header, number:", number, "opts:", opts)
 		}
-		if number != 0 && number%period == 0 {
+		_, kept := statesKept[number]
+		if number != 0 && number%opts.period == 0 && (opts.commitedCheckpointsNum == 0 || kept) {
 			if !sh.checkpointCache.Has(header) {
-				t.Fatal("checkpoint cache doesn't have expected header, number:", number)
+				t.Fatal("checkpoint cache doesn't have expected header, number:", number, "opts:", opts)
 			}
 		} else if sh.checkpointCache.Has(header) {
-			t.Fatal("checkpoint cache should not have the header, number:", number)
+			t.Fatal("checkpoint cache should not have the header, number:", number, "opts:", opts)
 		}
 	}
+}
 
+func TestSyncHelperScanNewConfirmedCheckpoints(t *testing.T) {
+	options := []syncHelperScanTestOptions{}
+	for i := 1; i < 7; i++ {
+		options = append(options, syncHelperScanTestOptions{
+			blocksNum:              51,
+			period:                 i,
+			commitedCheckpointsNum: 0,
+		})
+	}
+	for i := 1; i < 7; i++ {
+		options = append(options, syncHelperScanTestOptions{
+			blocksNum:              51,
+			period:                 4,
+			commitedCheckpointsNum: rand.Intn(51/4) + 1,
+		})
+	}
+	for _, o := range options {
+		testSyncHelperScanNewConfirmedCheckpoints(t, o)
+	}
 }
