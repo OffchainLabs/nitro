@@ -13,6 +13,3 @@ tiny-keccak = { version = "2.0.2", features = ["keccak"] }
 wasmparser.workspace = true
 serde = { version = "1.0.130", features = ["derive", "rc"] }
 num_enum = "0.7.1"
-
-[features]
-wavm = []

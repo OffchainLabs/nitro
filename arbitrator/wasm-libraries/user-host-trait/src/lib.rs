@@ -72,14 +72,20 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     fn read_slice(&self, ptr: u32, len: u32) -> Result<Vec<u8>, Self::MemoryErr>;
 
     fn write_u32(&mut self, ptr: u32, x: u32) -> Result<(), Self::MemoryErr>;
-    fn write_bytes20(&self, ptr: u32, src: Bytes20) -> Result<(), Self::MemoryErr>;
-    fn write_bytes32(&self, ptr: u32, src: Bytes32) -> Result<(), Self::MemoryErr>;
     fn write_slice(&self, ptr: u32, src: &[u8]) -> Result<(), Self::MemoryErr>;
 
     // ink when call stated, only used for tracing, Err if unavailable.
     fn start_ink(&self) -> Result<u64, Self::Err>;
     fn say<D: Display>(&self, text: D);
     fn trace(&mut self, name: &str, args: &[u8], outs: &[u8], start_ink: u64, end_ink: u64);
+
+    fn write_bytes20(&self, ptr: u32, src: Bytes20) -> Result<(), Self::MemoryErr> {
+        self.write_slice(ptr, &src.0)
+    }
+
+    fn write_bytes32(&self, ptr: u32, src: Bytes32) -> Result<(), Self::MemoryErr> {
+        self.write_slice(ptr, &src.0)
+    }
 
     /// Reads the program calldata. The semantics are equivalent to that of the EVM's
     /// [`CALLDATA_COPY`] opcode when requesting the entirety of the current call's calldata.

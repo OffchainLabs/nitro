@@ -3,8 +3,10 @@
 use core::sync::atomic::{compiler_fence, Ordering};
 use arbutil::{
     evm::{req::{EvmApiRequestor, RequestHandler}, EvmData, api::{{VecReader, EvmApiMethod, EVM_API_METHOD_REQ_OFFSET}}},
-    wavm, Bytes20, Bytes32, Color,
+    Bytes20, Bytes32, Color,
 };
+use callerenv::{Uptr, MemAccess, static_caller::STATIC_MEM};
+use wasmer_types::WASM_PAGE_SIZE;
 use eyre::{bail, eyre, Result};
 use prover::programs::prelude::*;
 use std::fmt::Display;
@@ -172,8 +174,8 @@ impl Program {
     }
 
     /// Ensures an access is within bounds
-    fn check_memory_access(&self, ptr: u32, bytes: u32) -> Result<(), MemoryBoundsError> {
-        let last_page = ptr.saturating_add(bytes) / wavm::PAGE_SIZE;
+    fn check_memory_access(&self, ptr: Uptr, bytes: u32) -> Result<(), MemoryBoundsError> {
+        let last_page = ptr.saturating_add(bytes) / (WASM_PAGE_SIZE as Uptr);
         if last_page > self.memory_size() {
             return Err(MemoryBoundsError);
         }
@@ -208,38 +210,26 @@ impl UserHost<VecReader> for Program {
     }
 
     fn read_bytes20(&self, ptr: u32) -> Result<Bytes20, MemoryBoundsError> {
-        self.check_memory_access(ptr, 20)?;
-        unsafe { Ok(wavm::read_bytes20(ptr)) }
+        self.read_slice(ptr, 20).and_then(|x| Ok(x.try_into().unwrap()))
     }
 
     fn read_bytes32(&self, ptr: u32) -> Result<Bytes32, MemoryBoundsError> {
-        self.check_memory_access(ptr, 32)?;
-        unsafe { Ok(wavm::read_bytes32(ptr)) }
+        self.read_slice(ptr, 32).and_then(|x| Ok(x.try_into().unwrap()))
     }
 
     fn read_slice(&self, ptr: u32, len: u32) -> Result<Vec<u8>, MemoryBoundsError> {
         self.check_memory_access(ptr, len)?;
-        unsafe { Ok(wavm::read_slice_u32(ptr, len)) }
+        unsafe { Ok(STATIC_MEM.read_slice(ptr, len as usize)) }
     }
 
     fn write_u32(&mut self, ptr: u32, x: u32) -> Result<(), MemoryBoundsError> {
         self.check_memory_access(ptr, 4)?;
-        unsafe { Ok(wavm::caller_store32(ptr as usize, x)) }
-    }
-
-    fn write_bytes20(&self, ptr: u32, src: Bytes20) -> Result<(), MemoryBoundsError> {
-        self.check_memory_access(ptr, 20)?;
-        unsafe { Ok(wavm::write_bytes20(ptr, src)) }
-    }
-
-    fn write_bytes32(&self, ptr: u32, src: Bytes32) -> Result<(), MemoryBoundsError> {
-        self.check_memory_access(ptr, 32)?;
-        unsafe { Ok(wavm::write_bytes32(ptr, src)) }
+        unsafe { Ok(STATIC_MEM.write_u32(ptr, x)) }
     }
 
     fn write_slice(&self, ptr: u32, src: &[u8]) -> Result<(), MemoryBoundsError> {
         self.check_memory_access(ptr, src.len() as u32)?;
-        unsafe { Ok(wavm::write_slice_u32(src, ptr)) }
+        unsafe { Ok(STATIC_MEM.write_slice(ptr, src)) }
     }
 
     fn say<D: Display>(&self, text: D) {

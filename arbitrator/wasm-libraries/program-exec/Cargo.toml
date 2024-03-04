@@ -7,7 +7,7 @@ edition = "2021"
 crate-type = ["cdylib"]
 
 [dependencies]
-arbutil = { path = "../../arbutil/", features = ["wavm"] }
+arbutil = { path = "../../arbutil/" }
 prover = { path = "../../prover/", default-features = false }
 eyre = "0.6.5"
 fnv = "1.0.7"

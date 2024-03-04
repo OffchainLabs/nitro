@@ -7,51 +7,56 @@ use crate::{Program, ARGS, EVER_PAGES, KEYS, LOGS, OPEN_PAGES, OUTS};
 use arbutil::{
     crypto, evm,
     pricing::{EVM_API_INK, HOSTIO_INK, PTR_INK},
-    wavm,
+    Bytes20, Bytes32
 };
 use prover::programs::{
     memory::MemoryModel,
     prelude::{GasMeteredMachine, MeteredMachine},
 };
+use callerenv::{Uptr, MemAccess, static_caller::STATIC_MEM};
 
-#[no_mangle]
-pub unsafe extern "C" fn vm_hooks__read_args(ptr: u32) {
-    let mut program = Program::start(0);
-    program.pay_for_write(ARGS.len() as u32).unwrap();
-    wavm::write_slice_u32(&ARGS, ptr);
+unsafe fn read_bytes32(ptr: Uptr) -> Bytes32 {
+    STATIC_MEM.read_slice(ptr, 32).try_into().unwrap()
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn vm_hooks__write_result(ptr: u32, len: u32) {
+pub unsafe extern "C" fn vm_hooks__read_args(ptr: Uptr) {
+    let mut program = Program::start(0);
+    program.pay_for_write(ARGS.len() as u32).unwrap();
+    STATIC_MEM.write_slice(ptr, &ARGS);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vm_hooks__write_result(ptr: Uptr, len: u32) {
     let mut program = Program::start(0);
     program.pay_for_read(len).unwrap();
     program.pay_for_geth_bytes(len).unwrap();
-    OUTS = wavm::read_slice_u32(ptr, len);
+    OUTS = STATIC_MEM.read_slice(ptr, len as usize);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn vm_hooks__storage_load_bytes32(key: u32, dest: u32) {
+pub unsafe extern "C" fn vm_hooks__storage_load_bytes32(key: Uptr, dest: Uptr) {
     let mut program = Program::start(2 * PTR_INK + EVM_API_INK);
-    let key = wavm::read_bytes32(key);
+    let key = read_bytes32(key);
 
     let value = KEYS.lock().get(&key).cloned().unwrap_or_default();
     program.buy_gas(2100).unwrap(); // pretend it was cold
-    wavm::write_bytes32(dest, value);
+    STATIC_MEM.write_slice(dest, &value.0);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn vm_hooks__storage_store_bytes32(key: u32, value: u32) {
+pub unsafe extern "C" fn vm_hooks__storage_store_bytes32(key: Uptr, value: Uptr) {
     let mut program = Program::start(2 * PTR_INK + EVM_API_INK);
     program.require_gas(evm::SSTORE_SENTRY_GAS).unwrap();
     program.buy_gas(22100).unwrap(); // pretend the worst case
 
-    let key = wavm::read_bytes32(key);
-    let value = wavm::read_bytes32(value);
+    let key = read_bytes32(key);
+    let value = read_bytes32(value);
     KEYS.lock().insert(key, value);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn vm_hooks__emit_log(data: u32, len: u32, topics: u32) {
+pub unsafe extern "C" fn vm_hooks__emit_log(data: Uptr, len: u32, topics: u32) {
     let mut program = Program::start(EVM_API_INK);
     if topics > 4 || len < topics * 32 {
         panic!("bad topic data");
@@ -59,7 +64,7 @@ pub unsafe extern "C" fn vm_hooks__emit_log(data: u32, len: u32, topics: u32) {
     program.pay_for_read(len.into()).unwrap();
     program.pay_for_evm_log(topics, len - topics * 32).unwrap();
 
-    let data = wavm::read_slice_u32(data, len);
+    let data = STATIC_MEM.read_slice(data, len as usize);
     LOGS.push(data)
 }
 
@@ -82,9 +87,9 @@ pub unsafe extern "C" fn vm_hooks__native_keccak256(bytes: u32, len: u32, output
     let mut program = Program::start(0);
     program.pay_for_keccak(len).unwrap();
 
-    let preimage = wavm::read_slice_u32(bytes, len);
+    let preimage = STATIC_MEM.read_slice(bytes, len as usize);
     let digest = crypto::keccak(preimage);
-    wavm::write_slice_u32(&digest, output);
+    STATIC_MEM.write_slice(output, &digest);
 }
 
 #[no_mangle]

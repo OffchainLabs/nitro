@@ -65,16 +65,6 @@ impl<'a, DR: DataReader, A: EvmApi<DR>> UserHost<DR> for HostioInfo<'a, DR, A> {
         Ok(())
     }
 
-    fn write_bytes20(&self, ptr: u32, src: Bytes20) -> Result<(), Self::MemoryErr> {
-        self.write_slice(ptr, &src.0)?;
-        Ok(())
-    }
-
-    fn write_bytes32(&self, ptr: u32, src: Bytes32) -> Result<(), Self::MemoryErr> {
-        self.write_slice(ptr, &src.0)?;
-        Ok(())
-    }
-
     fn write_slice(&self, ptr: u32, src: &[u8]) -> Result<(), Self::MemoryErr> {
         self.view().write(ptr.into(), src)
     }
