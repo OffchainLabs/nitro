@@ -564,7 +564,7 @@ func createNodeImpl(
 		if err != nil {
 			return nil, fmt.Errorf("could not get challenge manager: %w", err)
 		}
-		assertionChain, err := solimpl.NewAssertionChain(ctx, deployInfo.Rollup, chalManager, txOptsValidator, l1client)
+		assertionChain, err := solimpl.NewAssertionChain(ctx, deployInfo.Rollup, chalManager, txOptsValidator, l1client, solimpl.NewChainBackendTransactor(l1client))
 		if err != nil {
 			return nil, fmt.Errorf("could not create assertion chain: %w", err)
 		}
