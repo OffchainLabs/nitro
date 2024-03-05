@@ -94,6 +94,7 @@ func (s *EspressoSequencer) createBlock(ctx context.Context) (returnValue bool) 
 
 	jst := &arbostypes.EspressoBlockJustification{
 		Header: header,
+		Proof:  &arbTxns.Proof,
 	}
 
 	_, err = s.execEngine.SequenceTransactionsEspresso(arbHeader, arbTxns.Transactions, jst)

@@ -270,15 +270,13 @@ func main() {
 		validatingAgainstEspresso := message.Message.Header.Kind == arbostypes.L1MessageType_L2Message &&
 			chainConfig.ArbitrumChainParams.EnableEspresso
 		if validatingAgainstEspresso {
-			_, jst, err := arbos.ParseEspressoMsg(message.Message)
+			txs, jst, err := arbos.ParseEspressoMsg(message.Message)
 			if err != nil {
 				panic(err)
 			}
 			if jst == nil {
 				panic("batch missing espresso justification")
 			}
-			// Mock verify namespace call
-			arbvid.VerifyNamespace()
 
 			hotshotHeader := jst.Header
 			height := hotshotHeader.Height
@@ -296,6 +294,7 @@ func main() {
 			if !commitment.Equals(hotshotHeader.Commit()) {
 				panic(fmt.Sprintf("invalid hotshot header jst header at %v expected: %v, provided %v.", height, hotshotHeader.Commit(), commitment))
 			}
+			arbvid.VerifyNamespace(chainConfig.ChainID.Uint64(), *jst.Proof, *jst.Header.PayloadCommitment, *jst.Header.NsTable, txs)
 		}
 
 		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher)

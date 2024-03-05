@@ -48,10 +48,6 @@
           # create the symlink making some build outputs inaccessible.
           mkdir -p target/lib
           ln -sf lib target/lib64
-
-          export LIBCLANG_PATH="${pkgs.llvmPackages_17.libclang.lib}/lib"
-          export CC="${pkgs.clang-tools_17.clang}/bin/clang"
-          export AR="${pkgs.llvm_17}/bin/llvm-ar"
         ''
         + pkgs.lib.optionalString pkgs.stdenv.isDarwin ''
           # Fix docker-buildx command on OSX. Can we do this in a cleaner way?
@@ -78,12 +74,12 @@
             wasm = pkgs.mkShell {
               # By default clang-unwrapped does not find its resource dir. See
               # https://discourse.nixos.org/t/why-is-the-clang-resource-dir-split-in-a-separate-package/34114
-              CPATH = "${pkgs.llvmPackages_17.libclang.lib}/lib/clang/16/include";
+              CPATH = "${pkgs.llvmPackages_16.libclang.lib}/lib/clang/16/include";
               packages = with pkgs; [
                 stableToolchain
 
-                llvmPackages_17.clang-unwrapped # provides clang without wrapper
-                llvmPackages_17.bintools # provides wasm-ld
+                llvmPackages_16.clang-unwrapped # provides clang without wrapper
+                llvmPackages_16.bintools # provides wasm-ld
 
                 # Docker
                 docker-compose # provides the `docker-compose` command
@@ -93,12 +89,12 @@
 
               # Ensure the unwrapped clang is used by default.
               shellHook = shellHook + ''
-                export PATH="${pkgs.llvmPackages_17.clang-unwrapped}/bin:$PATH"
+                export PATH="${pkgs.llvmPackages_16.clang-unwrapped}/bin:$PATH"
               '';
             };
 
             # mkShell brings in a `cc` that points to gcc, stdenv.mkDerivation from llvm avoids this.
-            default = let llvmPkgs = pkgs.llvmPackages_17; in llvmPkgs.stdenv.mkDerivation {
+            default = let llvmPkgs = pkgs.llvmPackages_16; in llvmPkgs.stdenv.mkDerivation {
               # By default stack protection is enabled by the clang wrapper but I
               # think it's not supported for wasm compilation. It causes this
               # error:
@@ -147,7 +143,11 @@
               ] ++ lib.optionals (! stdenv.isDarwin) [
                 glibc_multi.dev # provides gnu/stubs-32.h
               ];
-              inherit shellHook;
+              shellHook = shellHook + ''
+                export LIBCLANG_PATH="${pkgs.llvmPackages_16.libclang.lib}/lib"
+                export CC="${pkgs.clang-tools_16.clang}/bin/clang"
+                export AR="${pkgs.llvm_16}/bin/llvm-ar"
+              '';
             };
           };
       });

@@ -112,3 +112,8 @@ pub unsafe extern "C" fn wasi_snapshot_preview1__fd_prestat_dir_name(
 ) -> u16 {
     ERRNO_BADF
 }
+
+#[no_mangle]
+pub unsafe extern "C" fn wasi_snapshot_preview1__sched_yield() -> u16 {
+    ERRNO_BADF
+}

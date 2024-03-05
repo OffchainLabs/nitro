@@ -3,6 +3,7 @@ members = [
         "arbutil",
         "prover",
         "jit",
+        "vid-helper"
 ]
 
 [profile.release]
