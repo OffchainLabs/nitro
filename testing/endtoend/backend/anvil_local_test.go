@@ -46,7 +46,7 @@ func TestLocalAnvilStarts(t *testing.T) {
 	require.NoError(t, err)
 
 	// There should be at least 100 blocks
-	bn, err2 := a.Client().HeaderByNumber(ctx, util.GetFinalizedBlockNumber())
+	bn, err2 := a.Client().HeaderByNumber(ctx, util.GetSafeBlockNumber())
 	if err2 != nil {
 		t.Fatal(err2)
 	}

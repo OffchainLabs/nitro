@@ -250,7 +250,7 @@ func (a *AnvilLocal) DeployRollup(ctx context.Context, opts ...challenge_testing
 	if err != nil {
 		return common.Address{}, err
 	}
-	chalManagerAddr, err := rollupCaller.ChallengeManager(util.GetFinalizedCallOpts(&bind.CallOpts{}))
+	chalManagerAddr, err := rollupCaller.ChallengeManager(util.GetSafeCallOpts(&bind.CallOpts{}))
 	if err != nil {
 		return common.Address{}, err
 	}

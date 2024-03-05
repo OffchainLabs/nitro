@@ -8,7 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
-func GetFinalizedCallOpts(opts *bind.CallOpts) *bind.CallOpts {
+func GetSafeCallOpts(opts *bind.CallOpts) *bind.CallOpts {
 	if opts == nil {
 		opts = &bind.CallOpts{}
 	}
@@ -17,15 +17,15 @@ func GetFinalizedCallOpts(opts *bind.CallOpts) *bind.CallOpts {
 	if flag.Lookup("test.v") != nil {
 		return opts
 	}
-	opts.BlockNumber = big.NewInt(int64(rpc.FinalizedBlockNumber))
+	opts.BlockNumber = big.NewInt(int64(rpc.SafeBlockNumber))
 	return opts
 }
 
-func GetFinalizedBlockNumber() *big.Int {
+func GetSafeBlockNumber() *big.Int {
 	// If we are running tests, we want to use the latest block number since
 	// simulated backends only support the latest block number.
 	if flag.Lookup("test.v") != nil {
 		return nil
 	}
-	return big.NewInt(int64(rpc.FinalizedBlockNumber))
+	return big.NewInt(int64(rpc.SafeBlockNumber))
 }

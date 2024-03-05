@@ -146,7 +146,7 @@ func (m *Manager) Start(ctx context.Context) {
 		return
 	}
 	latestBlock, err := retry.UntilSucceeds(ctx, func() (*gethtypes.Header, error) {
-		return m.backend.HeaderByNumber(ctx, util.GetFinalizedBlockNumber())
+		return m.backend.HeaderByNumber(ctx, util.GetSafeBlockNumber())
 	})
 	if err != nil {
 		srvlog.Error("Could not get header by number", log.Ctx{"err": err})
@@ -178,7 +178,7 @@ func (m *Manager) Start(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			latestBlock, err := m.backend.HeaderByNumber(ctx, util.GetFinalizedBlockNumber())
+			latestBlock, err := m.backend.HeaderByNumber(ctx, util.GetSafeBlockNumber())
 			if err != nil {
 				srvlog.Error("Could not get header by number", log.Ctx{"err": err})
 				continue

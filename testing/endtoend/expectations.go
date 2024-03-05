@@ -37,7 +37,7 @@ func expectAssertionConfirmedByChallengeWin(
 			require.NoError(t, err)
 			for i.Next() {
 				assertionNode, err := retry.UntilSucceeds(ctx, func() (rollupgen.AssertionNode, error) {
-					return rc.GetAssertion(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}), i.Event.AssertionHash)
+					return rc.GetAssertion(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}), i.Event.AssertionHash)
 				})
 				require.NoError(t, err)
 				if assertionNode.Status != uint8(protocol.AssertionConfirmed) {

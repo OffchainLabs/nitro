@@ -65,7 +65,7 @@ func (a *Assertion) HasSecondChild() (bool, error) {
 func (a *Assertion) inner() (*rollupgen.AssertionNode, error) {
 	var b [32]byte
 	copy(b[:], a.id.Bytes())
-	assertionNode, err := a.chain.userLogic.GetAssertion(util.GetFinalizedCallOpts(&bind.CallOpts{}), b)
+	assertionNode, err := a.chain.userLogic.GetAssertion(util.GetSafeCallOpts(&bind.CallOpts{}), b)
 	if err != nil {
 		return nil, err
 	}

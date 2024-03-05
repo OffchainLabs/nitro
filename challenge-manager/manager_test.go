@@ -315,7 +315,7 @@ func setupEdgeTrackersForBisection(
 	require.NoError(t, err)
 	managerBindings, err := challengeV2gen.NewEdgeChallengeManagerCaller(chalManager.Address(), createdData.Backend)
 	require.NoError(t, err)
-	numBigStepLevelsRaw, err := managerBindings.NUMBIGSTEPLEVEL(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}))
+	numBigStepLevelsRaw, err := managerBindings.NUMBIGSTEPLEVEL(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}))
 	require.NoError(t, err)
 	numBigStepLevels := numBigStepLevelsRaw
 

@@ -676,10 +676,10 @@ func submitBatch(
 	bridgeStub, err := mocksgen.NewBridgeStub(bridgeStubAddr, backend)
 	require.NoError(t, err)
 
-	delayedCount, err := bridgeStub.DelayedMessageCount(util.GetFinalizedCallOpts(&bind.CallOpts{}))
+	delayedCount, err := bridgeStub.DelayedMessageCount(util.GetSafeCallOpts(&bind.CallOpts{}))
 	require.NoError(t, err)
 
-	seqMessageCount, err := bridgeStub.SequencerMessageCount(util.GetFinalizedCallOpts(&bind.CallOpts{}))
+	seqMessageCount, err := bridgeStub.SequencerMessageCount(util.GetSafeCallOpts(&bind.CallOpts{}))
 	require.NoError(t, err)
 
 	totalNew := new(big.Int).SetUint64(totalNewMessages)
@@ -697,7 +697,7 @@ func submitBatch(
 	require.Equal(t, true, ok)
 	commiter.Commit()
 
-	gotMessageCount, err := bridgeStub.SequencerMessageCount(util.GetFinalizedCallOpts(&bind.CallOpts{}))
+	gotMessageCount, err := bridgeStub.SequencerMessageCount(util.GetSafeCallOpts(&bind.CallOpts{}))
 	require.NoError(t, err)
 	require.Equal(
 		t,

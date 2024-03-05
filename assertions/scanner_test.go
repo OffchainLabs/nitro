@@ -49,7 +49,7 @@ func TestSkipsProcessingAssertionFromEvilFork(t *testing.T) {
 	require.NoError(t, err)
 	setup.Backend.Commit()
 
-	msgCount, err := bridgeBindings.SequencerMessageCount(util.GetFinalizedCallOpts(&bind.CallOpts{}))
+	msgCount, err := bridgeBindings.SequencerMessageCount(util.GetSafeCallOpts(&bind.CallOpts{}))
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), msgCount.Uint64())
 
@@ -187,7 +187,7 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 	require.NoError(t, err)
 	setup.Backend.Commit()
 
-	msgCount, err := bridgeBindings.SequencerMessageCount(util.GetFinalizedCallOpts(&bind.CallOpts{}))
+	msgCount, err := bridgeBindings.SequencerMessageCount(util.GetSafeCallOpts(&bind.CallOpts{}))
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), msgCount.Uint64())
 

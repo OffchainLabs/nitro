@@ -184,7 +184,7 @@ func (w *Watcher) ComputeHonestPathTimer(
 	topLevelAssertionHash protocol.AssertionHash,
 	edgeId protocol.EdgeId,
 ) (challengetree.PathTimer, challengetree.HonestAncestors, []challengetree.EdgeLocalTimer, error) {
-	header, err := w.backend.HeaderByNumber(ctx, util.GetFinalizedBlockNumber())
+	header, err := w.backend.HeaderByNumber(ctx, util.GetSafeBlockNumber())
 	if err != nil {
 		return 0, nil, nil, err
 	}
@@ -326,7 +326,7 @@ func (w *Watcher) Start(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			latestBlock, err := w.backend.HeaderByNumber(ctx, util.GetFinalizedBlockNumber())
+			latestBlock, err := w.backend.HeaderByNumber(ctx, util.GetSafeBlockNumber())
 			if err != nil {
 				srvlog.Error("Could not get latest header", log.Ctx{"err": err})
 				continue
@@ -490,7 +490,7 @@ func (w *Watcher) getEdgeFromEvent(
 
 // GetRoyalEdges returns all royal, tracked edges in the watcher by assertion hash.
 func (w *Watcher) GetRoyalEdges(ctx context.Context) (map[protocol.AssertionHash][]*api.JsonTrackedRoyalEdge, error) {
-	header, err := w.chain.Backend().HeaderByNumber(ctx, util.GetFinalizedBlockNumber())
+	header, err := w.chain.Backend().HeaderByNumber(ctx, util.GetSafeBlockNumber())
 	if err != nil {
 		return nil, err
 	}
@@ -1078,7 +1078,7 @@ func (w *Watcher) confirmAssertionByChallengeWinner(ctx context.Context, edge pr
 		return
 	}
 	challengeGracePeriodBlocks, err := retry.UntilSucceeds(ctx, func() (uint64, error) {
-		return w.chain.RollupUserLogic().RollupUserLogicCaller.ChallengeGracePeriodBlocks(util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}))
+		return w.chain.RollupUserLogic().RollupUserLogicCaller.ChallengeGracePeriodBlocks(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}))
 	})
 	if err != nil {
 		log.Error("Could not get challenge grace period blocks", log.Ctx{"err": err})
@@ -1121,7 +1121,7 @@ func (w *Watcher) getStartEndBlockNum(ctx context.Context) (filterRange, error) 
 	}
 	firstBlock := latestConfirmed.CreatedAtBlock()
 	startBlock := firstBlock
-	header, err := w.backend.HeaderByNumber(ctx, util.GetFinalizedBlockNumber())
+	header, err := w.backend.HeaderByNumber(ctx, util.GetSafeBlockNumber())
 	if err != nil {
 		return filterRange{}, err
 	}

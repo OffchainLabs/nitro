@@ -641,7 +641,7 @@ func TestUpgradingConfigMidChallenge(t *testing.T) {
 
 	// We check the config snapshot used for the one step proof is different than what
 	// is now onchain, as these values changed mid-challenge.
-	gotWasmModuleRoot, err := adminLogic.WasmModuleRoot(util.GetFinalizedCallOpts(&bind.CallOpts{}))
+	gotWasmModuleRoot, err := adminLogic.WasmModuleRoot(util.GetSafeCallOpts(&bind.CallOpts{}))
 	require.NoError(t, err)
 	require.Equal(t, newWasmModuleRoot[:], gotWasmModuleRoot[:])
 	require.NotEqual(t, parentAssertionCreationInfo.WasmModuleRoot[:], gotWasmModuleRoot)

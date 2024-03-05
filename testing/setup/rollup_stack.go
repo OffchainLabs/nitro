@@ -310,7 +310,7 @@ func ChainsWithEdgeChallengeManager(opts ...Opt) (*ChainSetup, error) {
 		}
 		var challengeManagerAddr common.Address
 		challengeManagerAddr, err = assertionChainBinding.RollupUserLogicCaller.ChallengeManager(
-			util.GetFinalizedCallOpts(&bind.CallOpts{Context: ctx}),
+			util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}),
 		)
 		if err != nil {
 			return nil, err
