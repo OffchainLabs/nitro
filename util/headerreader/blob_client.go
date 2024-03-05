@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/blobs"
 	"github.com/offchainlabs/nitro/util/jsonapi"
@@ -26,10 +27,11 @@ import (
 )
 
 type BlobClient struct {
-	ec            arbutil.L1Interface
-	beaconUrl     *url.URL
-	httpClient    *http.Client
-	authorization string
+	ec                 arbutil.L1Interface
+	beaconUrl          *url.URL
+	secondaryBeaconUrl *url.URL
+	httpClient         *http.Client
+	authorization      string
 
 	// Filled in in Initialize()
 	genesisTime    uint64
@@ -40,19 +42,22 @@ type BlobClient struct {
 }
 
 type BlobClientConfig struct {
-	BeaconUrl     string `koanf:"beacon-url"`
-	BlobDirectory string `koanf:"blob-directory"`
-	Authorization string `koanf:"authorization"`
+	BeaconUrl          string `koanf:"beacon-url"`
+	SecondaryBeaconUrl string `koanf:"secondary-beacon-url"`
+	BlobDirectory      string `koanf:"blob-directory"`
+	Authorization      string `koanf:"authorization"`
 }
 
 var DefaultBlobClientConfig = BlobClientConfig{
-	BeaconUrl:     "",
-	BlobDirectory: "",
-	Authorization: "",
+	BeaconUrl:          "",
+	SecondaryBeaconUrl: "",
+	BlobDirectory:      "",
+	Authorization:      "",
 }
 
 func BlobClientAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".beacon-url", DefaultBlobClientConfig.BeaconUrl, "Beacon Chain RPC URL to use for fetching blobs (normally on port 3500)")
+	f.String(prefix+".secondary-beacon-url", DefaultBlobClientConfig.SecondaryBeaconUrl, "Backup beacon Chain RPC URL to use for fetching blobs (normally on port 3500) when unable to fetch from primary")
 	f.String(prefix+".blob-directory", DefaultBlobClientConfig.BlobDirectory, "Full path of the directory to save fetched blobs")
 	f.String(prefix+".authorization", DefaultBlobClientConfig.Authorization, "Value to send with the HTTP Authorization: header for Beacon REST requests, must include both scheme and scheme parameters")
 }
@@ -61,6 +66,12 @@ func NewBlobClient(config BlobClientConfig, ec arbutil.L1Interface) (*BlobClient
 	beaconUrl, err := url.Parse(config.BeaconUrl)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse beacon chain URL: %w", err)
+	}
+	var secondaryBeaconUrl *url.URL
+	if config.SecondaryBeaconUrl != "" {
+		if secondaryBeaconUrl, err = url.Parse(config.BeaconUrl); err != nil {
+			return nil, fmt.Errorf("failed to parse secondary beacon chain URL: %w", err)
+		}
 	}
 	if config.BlobDirectory != "" {
 		if _, err = os.Stat(config.BlobDirectory); err != nil {
@@ -74,11 +85,12 @@ func NewBlobClient(config BlobClientConfig, ec arbutil.L1Interface) (*BlobClient
 		}
 	}
 	return &BlobClient{
-		ec:            ec,
-		beaconUrl:     beaconUrl,
-		authorization: config.Authorization,
-		httpClient:    &http.Client{},
-		blobDirectory: config.BlobDirectory,
+		ec:                 ec,
+		beaconUrl:          beaconUrl,
+		secondaryBeaconUrl: secondaryBeaconUrl,
+		authorization:      config.Authorization,
+		httpClient:         &http.Client{},
+		blobDirectory:      config.BlobDirectory,
 	}, nil
 }
 
@@ -91,22 +103,36 @@ func beaconRequest[T interface{}](b *BlobClient, ctx context.Context, beaconPath
 
 	var empty T
 
-	// not really a deep copy, but copies the Path part we care about
-	url := *b.beaconUrl
-	url.Path = path.Join(url.Path, beaconPath)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url.String(), http.NoBody)
-	if err != nil {
-		return empty, err
+	fetchData := func(url url.URL) (*http.Response, error) {
+		url.Path = path.Join(url.Path, beaconPath)
+		req, err := http.NewRequestWithContext(ctx, "GET", url.String(), http.NoBody)
+		if err != nil {
+			return nil, err
+		}
+		if b.authorization != "" {
+			req.Header.Set("Authorization", b.authorization)
+		}
+		resp, err := b.httpClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode != http.StatusOK {
+			return nil, fmt.Errorf("response returned with status code %d, want 200 (OK)", resp.StatusCode)
+		}
+		return resp, nil
 	}
 
-	if b.authorization != "" {
-		req.Header.Set("Authorization", b.authorization)
-	}
-
-	resp, err := b.httpClient.Do(req)
-	if err != nil {
-		return empty, err
+	var resp *http.Response
+	var err error
+	if resp, err = fetchData(*b.beaconUrl); err != nil {
+		if b.secondaryBeaconUrl != nil {
+			log.Info("error fetching blob data from primary beacon URL, switching to secondary beacon URL", "err", err)
+			if resp, err = fetchData(*b.secondaryBeaconUrl); err != nil {
+				return empty, fmt.Errorf("error fetching blob data from secondary beacon URL: %w", err)
+			}
+		} else {
+			return empty, err
+		}
 	}
 	defer resp.Body.Close()
 
