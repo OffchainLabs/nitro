@@ -31,10 +31,10 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 	"github.com/go-redis/redis/v8"
 	"github.com/holiman/uint256"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsigner"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
@@ -250,35 +250,6 @@ func rpcClient(ctx context.Context, opts *ExternalSignerCfg) (*rpc.Client, error
 	)
 }
 
-// txToSendTxArgs converts transaction to SendTxArgs. This is needed for
-// external signer to specify From field.
-func txToSendTxArgs(addr common.Address, tx *types.Transaction) (*apitypes.SendTxArgs, error) {
-	var to *common.MixedcaseAddress
-	if tx.To() != nil {
-		to = new(common.MixedcaseAddress)
-		*to = common.NewMixedcaseAddress(*tx.To())
-	}
-	data := (hexutil.Bytes)(tx.Data())
-	val := (*hexutil.Big)(tx.Value())
-	if val == nil {
-		val = (*hexutil.Big)(big.NewInt(0))
-	}
-	al := tx.AccessList()
-	return &apitypes.SendTxArgs{
-		From:                 common.NewMixedcaseAddress(addr),
-		To:                   to,
-		Gas:                  hexutil.Uint64(tx.Gas()),
-		GasPrice:             (*hexutil.Big)(tx.GasPrice()),
-		MaxFeePerGas:         (*hexutil.Big)(tx.GasFeeCap()),
-		MaxPriorityFeePerGas: (*hexutil.Big)(tx.GasTipCap()),
-		Value:                *val,
-		Nonce:                hexutil.Uint64(tx.Nonce()),
-		Data:                 &data,
-		AccessList:           &al,
-		ChainID:              (*hexutil.Big)(tx.ChainId()),
-	}, nil
-}
-
 // externalSigner returns signer function and ethereum address of the signer.
 // Returns an error if address isn't specified or if it can't connect to the
 // signer RPC server.
@@ -297,7 +268,7 @@ func externalSigner(ctx context.Context, opts *ExternalSignerCfg) (signerFn, com
 		// RLP encoded transaction object.
 		// https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_signtransaction
 		var data hexutil.Bytes
-		args, err := txToSendTxArgs(addr, tx)
+		args, err := externalsigner.TxToSignTxArgs(addr, tx)
 		if err != nil {
 			return nil, fmt.Errorf("error converting transaction to sendTxArgs: %w", err)
 		}
