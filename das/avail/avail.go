@@ -1,10 +1,12 @@
 package avail
 
 import (
-	"bytes"
 	"context"
-	"encoding/binary"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 
 	"time"
 
@@ -26,20 +28,18 @@ func IsAvailMessageHeaderByte(header byte) bool {
 	return (AvailMessageHeaderFlag & header) > 0
 }
 
-type ProofResponse struct {
-	DataProof DataProof `koanf:"dataProof"`
-	message   []byte    `koanf:"message"`
-}
-
-// HeaderF struct represents response from queryDataProof
-type DataProof struct {
-	DataRoot       gsrpc_types.Hash   `koanf:"dataRoot"`
-	BlobRoot       gsrpc_types.Hash   `koanf:"blobRoot"`
-	BridgeRoot     gsrpc_types.Hash   `koanf:"bridgeRoot"`
-	Proof          []gsrpc_types.Hash `koanf:"proof"`
-	NumberOfLeaves int                `koanf:"numberOfLeaves"`
-	LeafIndex      int                `koanf:"leafIndex"`
-	Leaf           gsrpc_types.Hash   `koanf:"leaf"`
+type BridgdeApiResponse struct {
+	BlobRoot           gsrpc_types.Hash   `json:"blobRoot"`
+	BlockHash          gsrpc_types.Hash   `json:"blockHash"`
+	BridgeRoot         gsrpc_types.Hash   `json:"bridgeRoot"`
+	DataRoot           gsrpc_types.Hash   `json:"dataRoot"`
+	DataRootCommitment gsrpc_types.Hash   `json:"dataRootCommitment"`
+	DataRootIndex      uint64             `json:"dataRootIndex"`
+	DataRootProof      []gsrpc_types.Hash `json:"dataRootProof"`
+	Leaf               gsrpc_types.Hash   `json:"leaf"`
+	LeafIndex          uint64             `json:"leafIndex"`
+	LeafProof          []gsrpc_types.Hash `json:"leafProof"`
+	RangeHash          gsrpc_types.Hash   `json:"rangeHash"`
 }
 
 type AvailDA struct {
@@ -73,31 +73,31 @@ func NewAvailDA(cfg DAConfig) (*AvailDA, error) {
 
 	meta, err := api.RPC.State.GetMetadataLatest()
 	if err != nil {
-		log.Warn("cannot get metadata: error:%v", err)
+		log.Warn("⚠️ cannot get metadata: error:%v", err)
 		return nil, err
 	}
 
 	genesisHash, err := api.RPC.Chain.GetBlockHash(0)
 	if err != nil {
-		log.Warn("cannot get block hash: error:%v", err)
+		log.Warn("⚠️ cannot get block hash: error:%v", err)
 		return nil, err
 	}
 
 	rv, err := api.RPC.State.GetRuntimeVersionLatest()
 	if err != nil {
-		log.Warn("cannot get runtime version: error:%v", err)
+		log.Warn("⚠️ cannot get runtime version: error:%v", err)
 		return nil, err
 	}
 
 	keyringPair, err := signature.KeyringPairFromSecret(Seed, 42)
 	if err != nil {
-		log.Warn("cannot create LeyPair: error:%v", err)
+		log.Warn("⚠️ cannot create LeyPair: error:%v", err)
 		return nil, err
 	}
 
 	key, err := gsrpc_types.CreateStorageKey(meta, "System", "Account", keyringPair.PublicKey)
 	if err != nil {
-		log.Warn("cannot create storage key: error:%v", err)
+		log.Warn("⚠️ cannot create storage key: error:%v", err)
 		return nil, err
 	}
 
@@ -118,7 +118,7 @@ func (a *AvailDA) Store(ctx context.Context, message []byte) ([]byte, error) {
 
 	c, err := gsrpc_types.NewCall(a.meta, "DataAvailability.submit_data", gsrpc_types.NewBytes(message))
 	if err != nil {
-		log.Warn("cannot create new call: error:%v", err)
+		log.Warn("⚠️ cannot create new call: error:%v", err)
 		return nil, err
 	}
 
@@ -128,7 +128,7 @@ func (a *AvailDA) Store(ctx context.Context, message []byte) ([]byte, error) {
 	var accountInfo gsrpc_types.AccountInfo
 	ok, err := a.api.RPC.State.GetStorageLatest(a.key, &accountInfo)
 	if err != nil || !ok {
-		log.Warn("cannot get latest storage: error:%v", err)
+		log.Warn("⚠️ cannot get latest storage: error:%v", err)
 		return nil, err
 	}
 
@@ -148,14 +148,14 @@ func (a *AvailDA) Store(ctx context.Context, message []byte) ([]byte, error) {
 	// Sign the transaction using Alice's default account
 	err = ext.Sign(a.keyringPair, o)
 	if err != nil {
-		log.Warn("cannot sign: error:%v", err)
+		log.Warn("⚠️ cannot sign: error:%v", err)
 		return nil, err
 	}
 
 	// Send the extrinsic
 	sub, err := a.api.RPC.Author.SubmitAndWatchExtrinsic(ext)
 	if err != nil {
-		log.Warn("cannot submit extrinsic: error:%v", err)
+		log.Warn("⚠️ cannot submit extrinsic: error:%v", err)
 		return nil, err
 	}
 
@@ -170,7 +170,7 @@ outer:
 		select {
 		case status := <-sub.Chan():
 			if status.IsInBlock {
-				log.Info("📥	Submit data extrinsic included in block", "blockHash", status.AsInBlock.Hex())
+				log.Info("📥  Submit data extrinsic included in block", "blockHash", status.AsInBlock.Hex())
 			}
 			if status.IsFinalized {
 				finalizedblockHash = status.AsFinalized
@@ -189,95 +189,78 @@ outer:
 		}
 	}
 
+	// Calculated batch hash for batch commitment
 	var batchHash [32]byte
-
 	h := sha3.NewLegacyKeccak256()
 	h.Write(message)
 	h.Sum(batchHash[:0])
 
-	block, err := a.api.RPC.Chain.GetBlock(finalizedblockHash)
+	extrinsicIndex := 1
+	// Quering for merkle proof from Bridge Api
+	bridgeApiBaseURL := "https://bridge-api.sandbox.avail.tools"
+	blockHashPath := "/eth/proof/" + "0xf53613fa06b6b7f9dc5e4cf5f2849affc94e19d8a9e8999207ece01175c988ed" //+ finalizedblockHash.Hex()
+	params := url.Values{}
+	params.Add("index", fmt.Sprint(extrinsicIndex))
+
+	u, _ := url.ParseRequestURI(bridgeApiBaseURL)
+	u.Path = blockHashPath
+	u.RawQuery = params.Encode()
+	urlStr := fmt.Sprintf("%v", u)
+
+	// TODO: Add time difference between batch submission and querying merkle proof
+	resp, err := http.Get(urlStr)
 	if err != nil {
-		log.Warn("cannot get block: error:%v", err)
+		return nil, fmt.Errorf("bridge Api request not successfull, err=%v", err)
+	}
+	defer resp.Body.Close()
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
 		return nil, err
 	}
+	var bridgdeApiResponse BridgdeApiResponse
+	json.Unmarshal(body, &bridgdeApiResponse)
+	var merkleProofInput MerklePoofInput = MerklePoofInput{bridgdeApiResponse.DataRootProof, bridgdeApiResponse.LeafProof, bridgdeApiResponse.RangeHash, bridgdeApiResponse.DataRootIndex, bridgdeApiResponse.BlobRoot, bridgdeApiResponse.BridgeRoot, bridgdeApiResponse.Leaf, bridgdeApiResponse.LeafIndex}
 
-	var dataProof DataProof
-	for i := 1; i <= len(block.Block.Extrinsics); i++ {
-		// query proof
-		var data ProofResponse
-		err = a.api.Client.Call(&data, "kate_queryDataProofV2", i, finalizedblockHash)
-		if err != nil {
-			log.Warn("unable to query data proof:%v", err)
-			return nil, err
-		}
-
-		if data.DataProof.Leaf.Hex() == fmt.Sprintf("%#x", batchHash) {
-			dataProof = data.DataProof
-			break
-		}
-	}
-
-	fmt.Printf("Root:%v\n", dataProof.DataRoot.Hex())
-	fmt.Printf("Bridge Root:%v\n", dataProof.BridgeRoot.Hex())
-	fmt.Printf("Blob Root:%v\n", dataProof.BlobRoot.Hex())
-
-	// print array of proof
-	fmt.Printf("Proof:\n")
-	for _, p := range dataProof.Proof {
-		fmt.Printf("%v\n", p.Hex())
-	}
-
-	fmt.Printf("Number of leaves: %v\n", dataProof.NumberOfLeaves)
-	fmt.Printf("Leaf index: %v\n", dataProof.LeafIndex)
-	fmt.Printf("Leaf: %v\n", dataProof.Leaf.Hex())
-
-	blobPointer := BlobPointer{BlockHash: finalizedblockHash.Hex(), Sender: a.keyringPair.Address, Nonce: o.Nonce.Int64(), DasTreeRootHash: dastree.Hash(message)}
-
+	//Creating BlobPointer to submit over settlement layer
+	blobPointer := BlobPointer{BlockHash: finalizedblockHash, Sender: a.keyringPair.Address, Nonce: nonce, DasTreeRootHash: dastree.Hash(message), MerklePoofInput: merkleProofInput}
 	log.Info("✅	Sucesfully included in block data to Avail", "BlobPointer:", blobPointer)
-
 	blobPointerData, err := blobPointer.MarshalToBinary()
 	if err != nil {
-		log.Warn("BlobPointer MashalBinary error", "err", err)
+		log.Warn("⚠️ BlobPointer MashalBinary error", "err", err)
 		return nil, err
 	}
 
-	buf := new(bytes.Buffer)
-	err = binary.Write(buf, binary.BigEndian, AvailMessageHeaderFlag)
-	if err != nil {
-		log.Warn("batch type byte serialization failed", "err", err)
-		return nil, err
-	}
+	// buf := new(bytes.Buffer)
+	// err = binary.Write(buf, binary.BigEndian, AvailMessageHeaderFlag)
+	// if err != nil {
+	// 	log.Warn("⚠️ batch type byte serialization failed", "err", err)
+	// 	return nil, err
+	// }
 
-	err = binary.Write(buf, binary.BigEndian, blobPointerData)
-	if err != nil {
-		log.Warn("blob pointer data serialization failed", "err", err)
-		return nil, err
-	}
+	// err = binary.Write(buf, binary.BigEndian, blobPointerData)
+	// if err != nil {
+	// 	log.Warn("⚠️ blob pointer data serialization failed", "err", err)
+	// 	return nil, err
+	// }
 
-	serializedBlobPointerData := buf.Bytes()
+	// serializedBlobPointerData := buf.Bytes()
 
-	return serializedBlobPointerData, nil
+	return blobPointerData, nil
 
 }
 
 func (a *AvailDA) Read(ctx context.Context, blobPointer BlobPointer) ([]byte, error) {
-	log.Info("Requesting data from Avail", "BlobPointer", blobPointer)
+	log.Info("ℹ️ Requesting data from Avail", "BlobPointer", blobPointer)
 
 	//Intitializing variables
-	Hash := blobPointer.BlockHash
+	BlockHash := blobPointer.BlockHash
 	Address := blobPointer.Sender
-	Nonce := blobPointer.Nonce
-
-	// Converting this string type into gsrpc_types.hash type
-	blk_hash, err := gsrpc_types.NewHashFromHexString(Hash)
-	if err != nil {
-		return nil, fmt.Errorf("unable to convert string hash into types.hash, error:%v", err)
-	}
+	Nonce := gsrpc_types.NewUCompactFromUInt(uint64(blobPointer.Nonce))
 
 	// Fetching block based on block hash
-	avail_blk, err := a.api.RPC.Chain.GetBlock(blk_hash)
+	avail_blk, err := a.api.RPC.Chain.GetBlock(BlockHash)
 	if err != nil {
-		return []byte{}, fmt.Errorf("cannot get block for hash:%v and getting error:%v", Hash, err)
+		return []byte{}, fmt.Errorf("❌ cannot get block for hash:%v and getting error:%v", BlockHash.Hex(), err)
 	}
 
 	//Extracting the required extrinsic according to the reference
@@ -285,19 +268,20 @@ func (a *AvailDA) Read(ctx context.Context, blobPointer BlobPointer) ([]byte, er
 		//Extracting sender address for extrinsic
 		ext_Addr, err := subkey.SS58Address(ext.Signature.Signer.AsID.ToBytes(), 42)
 		if err != nil {
-			log.Error("unable to get sender address from extrinsic", "err", err)
+			log.Error("❌ unable to get sender address from extrinsic", "err", err)
 		}
-		if ext_Addr == Address && ext.Signature.Nonce.Int64() == Nonce {
+
+		if ext_Addr == Address && ext.Signature.Nonce.Int64() == Nonce.Int64() {
 			args := ext.Method.Args
 			var data []byte
 			err = codec.Decode(args, &data)
 			if err != nil {
-				return []byte{}, fmt.Errorf("unable to decode the extrinsic data by address: %v with nonce: %v", Address, Nonce)
+				return []byte{}, fmt.Errorf("❌ unable to decode the extrinsic data by address: %v with nonce: %v", Address, Nonce)
 			}
 			return data, nil
 		}
 	}
 
-	log.Info("Succesfully fetched data from Avail")
-	return nil, fmt.Errorf("unable to find any extrinsic for this blobPointer:%+v", blobPointer)
+	log.Info("✅	Succesfully fetched data from Avail")
+	return nil, fmt.Errorf("❌ unable to find any extrinsic for this blobPointer:%+v", blobPointer)
 }
