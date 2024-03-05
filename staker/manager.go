@@ -53,6 +53,7 @@ func NewManager(
 		challengeManagerAddr,
 		txOpts,
 		client,
+		solimpl.NewChainBackendTransactor(client),
 	)
 	if err != nil {
 		return nil, err
