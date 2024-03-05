@@ -45,6 +45,7 @@ func setupChallengeManager(
 		challengeManagerAddr,
 		txOpts,
 		backend,
+		solimpl.NewChainBackendTransactor(backend),
 	)
 	require.NoError(t, err)
 

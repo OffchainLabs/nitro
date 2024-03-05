@@ -321,6 +321,7 @@ func ChainsWithEdgeChallengeManager(opts ...Opt) (*ChainSetup, error) {
 			challengeManagerAddr,
 			acc.TxOpts,
 			backend,
+			solimpl.NewChainBackendTransactor(backend),
 		)
 		if chainErr != nil {
 			return nil, chainErr

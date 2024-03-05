@@ -62,6 +62,48 @@ type ReceiptFetcher interface {
 	TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error)
 }
 
+// Transactor defines the ability to send transactions to the chain.
+type Transactor interface {
+	SendTransaction(ctx context.Context, tx *types.Transaction, gas uint64) (*types.Transaction, error)
+}
+
+// ChainBackendTransactor is a wrapper around a ChainBackend that implements the Transactor interface.
+// It is useful for testing purposes in bold repository.
+type ChainBackendTransactor struct {
+	ChainBackend
+}
+
+func NewChainBackendTransactor(backend protocol.ChainBackend) *ChainBackendTransactor {
+	return &ChainBackendTransactor{
+		ChainBackend: backend,
+	}
+}
+
+func (d *ChainBackendTransactor) SendTransaction(ctx context.Context, tx *types.Transaction, gas uint64) (*types.Transaction, error) {
+	return tx, d.ChainBackend.SendTransaction(ctx, tx)
+}
+
+// DataPoster is an interface that allows posting simple transactions without providing a nonce.
+// This is implemented in nitro repository.
+type DataPoster interface {
+	PostSimpleTransactionAutoNonce(ctx context.Context, to common.Address, calldata []byte, gasLimit uint64, value *big.Int) (*types.Transaction, error)
+}
+
+// DataPosterTransactor is a wrapper around a DataPoster that implements the Transactor interface.
+type DataPosterTransactor struct {
+	DataPoster
+}
+
+func NewDataPosterTransactor(dataPoster DataPoster) *DataPosterTransactor {
+	return &DataPosterTransactor{
+		DataPoster: dataPoster,
+	}
+}
+
+func (d *DataPosterTransactor) SendTransaction(ctx context.Context, tx *types.Transaction, gas uint64) (*types.Transaction, error) {
+	return d.PostSimpleTransactionAutoNonce(ctx, *tx.To(), tx.Data(), gas, tx.Value())
+}
+
 // AssertionChain is a wrapper around solgen bindings
 // that implements the protocol interface.
 type AssertionChain struct {
@@ -74,6 +116,7 @@ type AssertionChain struct {
 	chalManagerAddr                          common.Address
 	confirmedChallengesByParentAssertionHash *threadsafe.LruSet[protocol.AssertionHash]
 	specChallengeManager                     protocol.SpecChallengeManager
+	transactor                               Transactor
 }
 
 type Opt func(*AssertionChain)
@@ -92,6 +135,7 @@ func NewAssertionChain(
 	chalManagerAddr common.Address,
 	txOpts *bind.TransactOpts,
 	backend protocol.ChainBackend,
+	transactor Transactor,
 	opts ...Opt,
 ) (*AssertionChain, error) {
 	// We disable sending txs by default, as we will first estimate their gas before
@@ -103,6 +147,7 @@ func NewAssertionChain(
 		rollupAddr:                               rollupAddr,
 		chalManagerAddr:                          chalManagerAddr,
 		confirmedChallengesByParentAssertionHash: threadsafe.NewLruSet[protocol.AssertionHash](1000, threadsafe.LruSetWithMetric[protocol.AssertionHash]("confirmedChallengesByParentAssertionHash")),
+		transactor:                               transactor,
 	}
 	for _, opt := range opts {
 		opt(chain)
