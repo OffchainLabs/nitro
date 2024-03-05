@@ -15,7 +15,7 @@ use arbutil::{
 };
 use eyre::{eyre, Result};
 use prover::value::Value;
-use user_host_trait::UserHost;
+use user_host_trait::{Uptr, UserHost};
 use wasmer::{MemoryAccessError, WasmPtr};
 
 impl<'a, DR: DataReader, A: EvmApi<DR>> UserHost<DR> for HostioInfo<'a, DR, A> {
@@ -45,24 +45,24 @@ impl<'a, DR: DataReader, A: EvmApi<DR>> UserHost<DR> for HostioInfo<'a, DR, A> {
 
     fn read_fixed<const N: usize>(
         &self,
-        ptr: u32,
+        ptr: Uptr,
     ) -> std::result::Result<[u8; N], <Self as UserHost<DR>>::MemoryErr> {
         HostioInfo::read_fixed(&self, ptr)
     }
 
-    fn read_slice(&self, ptr: u32, len: u32) -> Result<Vec<u8>, Self::MemoryErr> {
+    fn read_slice(&self, ptr: Uptr, len: u32) -> Result<Vec<u8>, Self::MemoryErr> {
         let mut data = vec![0; len as usize];
         self.view().read(ptr.into(), &mut data)?;
         Ok(data)
     }
 
-    fn write_u32(&mut self, ptr: u32, x: u32) -> Result<(), Self::MemoryErr> {
+    fn write_u32(&mut self, ptr: Uptr, x: u32) -> Result<(), Self::MemoryErr> {
         let ptr: WasmPtr<u32> = WasmPtr::new(ptr);
         ptr.deref(&self.view()).write(x)?;
         Ok(())
     }
 
-    fn write_slice(&self, ptr: u32, src: &[u8]) -> Result<(), Self::MemoryErr> {
+    fn write_slice(&self, ptr: Uptr, src: &[u8]) -> Result<(), Self::MemoryErr> {
         self.view().write(ptr.into(), src)
     }
 
@@ -91,14 +91,14 @@ macro_rules! hostio {
 
 pub(crate) fn read_args<D: DataReader, E: EvmApi<D>>(
     mut env: WasmEnvMut<D, E>,
-    ptr: u32,
+    ptr: Uptr,
 ) -> MaybeEscape {
     hostio!(env, read_args(ptr))
 }
 
 pub(crate) fn write_result<D: DataReader, E: EvmApi<D>>(
     mut env: WasmEnvMut<D, E>,
-    ptr: u32,
+    ptr: Uptr,
     len: u32,
 ) -> MaybeEscape {
     hostio!(env, write_result(ptr, len))
@@ -151,8 +151,8 @@ pub(crate) fn delegate_call_contract<D: DataReader, E: EvmApi<D>>(
 
 pub(crate) fn static_call_contract<D: DataReader, E: EvmApi<D>>(
     mut env: WasmEnvMut<D, E>,
-    contract: u32,
-    data: u32,
+    contract: Uptr,
+    data: Uptr,
     data_len: u32,
     gas: u64,
     ret_len: u32,
@@ -218,16 +218,16 @@ pub(crate) fn emit_log<D: DataReader, E: EvmApi<D>>(
 
 pub(crate) fn account_balance<D: DataReader, E: EvmApi<D>>(
     mut env: WasmEnvMut<D, E>,
-    address: u32,
-    ptr: u32,
+    address: Uptr,
+    ptr: Uptr,
 ) -> MaybeEscape {
     hostio!(env, account_balance(address, ptr))
 }
 
 pub(crate) fn account_code<D: DataReader, E: EvmApi<D>>(
     mut env: WasmEnvMut<D, E>,
-    address: u32,
-    offset: u32,
+    address: Uptr,
+    offset: Uptr,
     size: u32,
     code: u32,
 ) -> Result<u32, Escape> {
@@ -244,21 +244,21 @@ pub(crate) fn account_code_size<D: DataReader, E: EvmApi<D>>(
 pub(crate) fn account_codehash<D: DataReader, E: EvmApi<D>>(
     mut env: WasmEnvMut<D, E>,
     address: u32,
-    ptr: u32,
+    ptr: Uptr,
 ) -> MaybeEscape {
     hostio!(env, account_codehash(address, ptr))
 }
 
 pub(crate) fn block_basefee<D: DataReader, E: EvmApi<D>>(
     mut env: WasmEnvMut<D, E>,
-    ptr: u32,
+    ptr: Uptr,
 ) -> MaybeEscape {
     hostio!(env, block_basefee(ptr))
 }
 
 pub(crate) fn block_coinbase<D: DataReader, E: EvmApi<D>>(
     mut env: WasmEnvMut<D, E>,
-    ptr: u32,
+    ptr: Uptr,
 ) -> MaybeEscape {
     hostio!(env, block_coinbase(ptr))
 }
@@ -289,7 +289,7 @@ pub(crate) fn chainid<D: DataReader, E: EvmApi<D>>(
 
 pub(crate) fn contract_address<D: DataReader, E: EvmApi<D>>(
     mut env: WasmEnvMut<D, E>,
-    ptr: u32,
+    ptr: Uptr,
 ) -> MaybeEscape {
     hostio!(env, contract_address(ptr))
 }
@@ -314,30 +314,30 @@ pub(crate) fn msg_reentrant<D: DataReader, E: EvmApi<D>>(
 
 pub(crate) fn msg_sender<D: DataReader, E: EvmApi<D>>(
     mut env: WasmEnvMut<D, E>,
-    ptr: u32,
+    ptr: Uptr,
 ) -> MaybeEscape {
     hostio!(env, msg_sender(ptr))
 }
 
 pub(crate) fn msg_value<D: DataReader, E: EvmApi<D>>(
     mut env: WasmEnvMut<D, E>,
-    ptr: u32,
+    ptr: Uptr,
 ) -> MaybeEscape {
     hostio!(env, msg_value(ptr))
 }
 
 pub(crate) fn native_keccak256<D: DataReader, E: EvmApi<D>>(
     mut env: WasmEnvMut<D, E>,
-    input: u32,
+    input: Uptr,
     len: u32,
-    output: u32,
+    output: Uptr,
 ) -> MaybeEscape {
     hostio!(env, native_keccak256(input, len, output))
 }
 
 pub(crate) fn tx_gas_price<D: DataReader, E: EvmApi<D>>(
     mut env: WasmEnvMut<D, E>,
-    ptr: u32,
+    ptr: Uptr,
 ) -> MaybeEscape {
     hostio!(env, tx_gas_price(ptr))
 }
@@ -350,7 +350,7 @@ pub(crate) fn tx_ink_price<D: DataReader, E: EvmApi<D>>(
 
 pub(crate) fn tx_origin<D: DataReader, E: EvmApi<D>>(
     mut env: WasmEnvMut<D, E>,
-    ptr: u32,
+    ptr: Uptr,
 ) -> MaybeEscape {
     hostio!(env, tx_origin(ptr))
 }
@@ -364,7 +364,7 @@ pub(crate) fn pay_for_memory_grow<D: DataReader, E: EvmApi<D>>(
 
 pub(crate) fn console_log_text<D: DataReader, E: EvmApi<D>>(
     mut env: WasmEnvMut<D, E>,
-    ptr: u32,
+    ptr: Uptr,
     len: u32,
 ) -> MaybeEscape {
     hostio!(env, console_log_text(ptr, len))

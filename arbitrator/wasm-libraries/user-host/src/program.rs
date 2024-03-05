@@ -3,7 +3,7 @@
 use core::sync::atomic::{compiler_fence, Ordering};
 use arbutil::{
     evm::{req::{EvmApiRequestor, RequestHandler}, EvmData, api::{{VecReader, EvmApiMethod, EVM_API_METHOD_REQ_OFFSET}}},
-    Bytes20, Bytes32, Color,
+    Color,
 };
 use callerenv::{Uptr, MemAccess, static_caller::STATIC_MEM};
 use wasmer_types::WASM_PAGE_SIZE;
@@ -209,21 +209,21 @@ impl UserHost<VecReader> for Program {
         &mut self.evm_data.return_data_len
     }
 
-    fn read_slice(&self, ptr: u32, len: u32) -> Result<Vec<u8>, MemoryBoundsError> {
+    fn read_slice(&self, ptr: Uptr, len: u32) -> Result<Vec<u8>, MemoryBoundsError> {
         self.check_memory_access(ptr, len)?;
         unsafe { Ok(STATIC_MEM.read_slice(ptr, len as usize)) }
     }
 
-    fn read_fixed<const N:usize>(&self, ptr: u32) -> Result<[u8; N], MemoryBoundsError> {
+    fn read_fixed<const N:usize>(&self, ptr: Uptr) -> Result<[u8; N], MemoryBoundsError> {
         self.read_slice(ptr, N as u32).and_then(|x| Ok(x.try_into().unwrap()))
     }
 
-    fn write_u32(&mut self, ptr: u32, x: u32) -> Result<(), MemoryBoundsError> {
+    fn write_u32(&mut self, ptr: Uptr, x: u32) -> Result<(), MemoryBoundsError> {
         self.check_memory_access(ptr, 4)?;
         unsafe { Ok(STATIC_MEM.write_u32(ptr, x)) }
     }
 
-    fn write_slice(&self, ptr: u32, src: &[u8]) -> Result<(), MemoryBoundsError> {
+    fn write_slice(&self, ptr: Uptr, src: &[u8]) -> Result<(), MemoryBoundsError> {
         self.check_memory_access(ptr, src.len() as u32)?;
         unsafe { Ok(STATIC_MEM.write_slice(ptr, src)) }
     }
