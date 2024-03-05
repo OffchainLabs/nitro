@@ -7,15 +7,13 @@ use crate::{
     socket,
 };
 use arbutil::Color;
-use callerenv::MemAccess;
+use callerenv::{MemAccess, Uptr};
 use std::{
     io,
     io::{BufReader, BufWriter, ErrorKind},
     net::TcpStream,
     time::Instant,
 };
-
-type Uptr = u32;
 
 /// Reads 32-bytes of global state
 pub fn get_global_state_bytes32(mut env: WasmEnvMut, idx: u32, out_ptr: Uptr) -> MaybeEscape {

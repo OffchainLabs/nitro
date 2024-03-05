@@ -1,6 +1,6 @@
 // Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
-use crate::{ExecEnv, MemAccess};
+use crate::{ExecEnv, MemAccess, Uptr};
 use alloc::vec;
 
 #[derive(PartialEq)]
@@ -28,8 +28,6 @@ extern "C" {
         encoded_buffer: *mut u8,
     ) -> BrotliStatus;
 }
-
-type Uptr = u32;
 
 const BROTLI_MODE_GENERIC: u32 = 0;
 

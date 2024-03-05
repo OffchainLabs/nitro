@@ -6,15 +6,13 @@ use crate::machine::{Escape, MaybeEscape, WasmEnvMut};
 use crate::stylus_backend::exec_wasm;
 use arbutil::Bytes32;
 use arbutil::{evm::EvmData, format::DebugBytes, heapify};
-use callerenv::MemAccess;
+use callerenv::{MemAccess, Uptr};
 use eyre::eyre;
 use prover::programs::prelude::StylusConfig;
 use prover::{
     machine::Module,
     programs::{config::PricingParams, prelude::*},
 };
-
-type Uptr = u32;
 
 /// activates a user program
 pub fn activate(
@@ -123,7 +121,7 @@ pub fn start_program(mut env: WasmEnvMut, module: u32) -> Result<u32, Escape> {
 
 // gets information about request according to id
 // request_id MUST be last request id returned from start_program or send_response
-pub fn get_request(mut env: WasmEnvMut, id: u32, len_ptr: u32) -> Result<u32, Escape> {
+pub fn get_request(mut env: WasmEnvMut, id: u32, len_ptr: Uptr) -> Result<u32, Escape> {
     let (mut mem, exec) = jit_env(&mut env);
     let thread = exec.wenv.threads.last_mut().unwrap();
     let msg = thread.last_message()?;
@@ -137,7 +135,7 @@ pub fn get_request(mut env: WasmEnvMut, id: u32, len_ptr: u32) -> Result<u32, Es
 // gets data associated with last request.
 // request_id MUST be last request receieved
 // data_ptr MUST point to a buffer of at least the length returned by get_request
-pub fn get_request_data(mut env: WasmEnvMut, id: u32, data_ptr: u32) -> MaybeEscape {
+pub fn get_request_data(mut env: WasmEnvMut, id: u32, data_ptr: Uptr) -> MaybeEscape {
     let (mut mem, exec) = jit_env(&mut env);
     let thread = exec.wenv.threads.last_mut().unwrap();
     let msg = thread.last_message()?;

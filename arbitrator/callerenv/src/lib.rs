@@ -38,7 +38,7 @@ pub trait MemAccess {
 
     fn read_slice(&self, ptr: Uptr, len: usize) -> Vec<u8>;
 
-    fn read_fixed<const N: usize>(&self, ptr: u32) -> [u8; N];
+    fn read_fixed<const N: usize>(&self, ptr: Uptr) -> [u8; N];
 
     fn write_slice(&mut self, ptr: Uptr, data: &[u8]);
 }

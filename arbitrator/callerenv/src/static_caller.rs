@@ -25,50 +25,50 @@ extern "C" {
 }
 
 impl MemAccess for StaticMem {
-    fn read_u8(&self, ptr: u32) -> u8 {
+    fn read_u8(&self, ptr: Uptr) -> u8 {
         unsafe { wavm_caller_load8(ptr) }
     }
 
-    fn read_u16(&self, ptr: u32) -> u16 {
+    fn read_u16(&self, ptr: Uptr) -> u16 {
         let lsb = self.read_u8(ptr);
         let msb = self.read_u8(ptr + 1);
         (msb as u16) << 8 | (lsb as u16)
     }
 
-    fn read_u32(&self, ptr: u32) -> u32 {
+    fn read_u32(&self, ptr: Uptr) -> u32 {
         let lsb = self.read_u16(ptr);
         let msb = self.read_u16(ptr + 2);
         (msb as u32) << 16 | (lsb as u32)
     }
 
-    fn read_u64(&self, ptr: u32) -> u64 {
+    fn read_u64(&self, ptr: Uptr) -> u64 {
         let lsb = self.read_u32(ptr);
         let msb = self.read_u32(ptr + 4);
         (msb as u64) << 32 | (lsb as u64)
     }
 
-    fn write_u8(&mut self, ptr: u32, x: u8) {
+    fn write_u8(&mut self, ptr: Uptr, x: u8) {
         unsafe {
             wavm_caller_store8(ptr, x);
         }
     }
 
-    fn write_u16(&mut self, ptr: u32, x: u16) {
+    fn write_u16(&mut self, ptr: Uptr, x: u16) {
         self.write_u8(ptr, (x & 0xff) as u8);
         self.write_u8(ptr + 1, ((x >> 8) & 0xff) as u8);
     }
 
-    fn write_u32(&mut self, ptr: u32, x: u32) {
+    fn write_u32(&mut self, ptr: Uptr, x: u32) {
         self.write_u16(ptr, (x & 0xffff) as u16);
         self.write_u16(ptr + 2, ((x >> 16) & 0xffff) as u16);
     }
 
-    fn write_u64(&mut self, ptr: u32, x: u64) {
+    fn write_u64(&mut self, ptr: Uptr, x: u64) {
         self.write_u32(ptr, (x & 0xffffffff) as u32);
         self.write_u32(ptr + 4, ((x >> 32) & 0xffffffff) as u32);
     }
 
-    fn read_slice(&self, mut ptr: u32, mut len: usize) -> Vec<u8> {
+    fn read_slice(&self, mut ptr: Uptr, mut len: usize) -> Vec<u8> {
         let mut data = Vec::with_capacity(len);
         if len == 0 {
             return data;
@@ -85,11 +85,11 @@ impl MemAccess for StaticMem {
         data
     }
 
-    fn read_fixed<const N: usize>(&self, ptr: u32) -> [u8; N] {
+    fn read_fixed<const N: usize>(&self, ptr: Uptr) -> [u8; N] {
         self.read_slice(ptr, N).try_into().unwrap()
     }
 
-    fn write_slice(&mut self, mut ptr: u32, mut src: &[u8]) {
+    fn write_slice(&mut self, mut ptr: Uptr, mut src: &[u8]) {
         while src.len() >= 4 {
             let mut arr = [0u8; 4];
             arr.copy_from_slice(&src[..4]);
