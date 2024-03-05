@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/offchainlabs/nitro/arbnode"
@@ -73,12 +74,12 @@ func runEspresso(t *testing.T, ctx context.Context) func() {
 	return shutdown
 }
 
-func createL2Node(ctx context.Context, t *testing.T, hotshot_url string) (*TestClient, info, func()) {
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+func createL2Node(ctx context.Context, t *testing.T, hotshot_url string, builder *NodeBuilder) (*TestClient, info, func()) {
+	nodeConfig := arbnode.ConfigDefaultL1Test()
 	builder.takeOwnership = false
-	builder.nodeConfig.DelayedSequencer.Enable = true
-	builder.nodeConfig.Sequencer = true
-	builder.nodeConfig.Espresso = true
+	nodeConfig.DelayedSequencer.Enable = true
+	nodeConfig.Sequencer = true
+	nodeConfig.Espresso = true
 	builder.execConfig.Sequencer.Enable = true
 	builder.execConfig.Sequencer.Espresso = true
 	builder.execConfig.Sequencer.EspressoNamespace = 412346
@@ -89,8 +90,8 @@ func createL2Node(ctx context.Context, t *testing.T, hotshot_url string) (*TestC
 	builder.nodeConfig.Feed.Output.Enable = true
 	builder.nodeConfig.Feed.Output.Port = fmt.Sprintf("%d", broadcastPort)
 
-	cleanup := builder.Build(t)
-	return builder.L2, builder.L2Info, cleanup
+	client, cleanup := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfig})
+	return client, builder.L2Info, cleanup
 }
 
 func createValidationNode(ctx context.Context, t *testing.T, jit bool) func() {
@@ -156,6 +157,7 @@ func createL1ValidatorPosterNode(ctx context.Context, t *testing.T) (*NodeBuilde
 	builder.nodeConfig.BlockValidator.ValidationServer.URL = fmt.Sprintf("ws://127.0.0.1:%d", arbValidationPort)
 	builder.nodeConfig.BlockValidator.HotShotAddress = hotShotAddress
 	builder.nodeConfig.BlockValidator.Espresso = true
+	builder.nodeConfig.DelayedSequencer.Enable = false
 
 	cleanup := builder.Build(t)
 
@@ -320,7 +322,7 @@ func TestEspressoE2E(t *testing.T) {
 	})
 	Require(t, err)
 
-	l2Node, l2Info, cleanL2Node := createL2Node(ctx, t, "http://127.0.0.1:50000")
+	l2Node, l2Info, cleanL2Node := createL2Node(ctx, t, "http://127.0.0.1:50000", builder)
 	defer cleanL2Node()
 
 	cleanEspresso := runEspresso(t, ctx)
@@ -374,15 +376,15 @@ func TestEspressoE2E(t *testing.T) {
 	}
 
 	// Check if the tx is executed correctly
-	transfer_amount := big.NewInt(1e16)
-	tx := l2Info.PrepareTx("Faucet", newAccount, 3e7, transfer_amount, nil)
+	transferAmount := big.NewInt(1e16)
+	tx := l2Info.PrepareTx("Faucet", newAccount, 3e7, transfetAmount, nil)
 	err = l2Node.Client.SendTransaction(ctx, tx)
 	Require(t, err)
 
 	err = waitFor(t, ctx, func() bool {
 		balance := l2Node.GetBalance(t, addr)
 		log.Info("waiting for balance", "addr", addr, "balance", balance)
-		return balance.Cmp(transfer_amount) >= 0
+		return balance.Cmp(transfetAmount) >= 0
 	})
 	Require(t, err)
 
@@ -395,6 +397,26 @@ func TestEspressoE2E(t *testing.T) {
 		validatedCnt := node.ConsensusNode.BlockValidator.Validated(t)
 		log.Info("waiting for validation", "validatedCnt", validatedCnt, "msgCnt", msgCnt)
 		return validatedCnt >= msgCnt
+	})
+	Require(t, err)
+
+	// Make sure it is a totally new account
+	newAccount2 := "User11"
+	l2Info.GenerateAccount(newAccount2)
+	addr2 := l2Info.GetAddress(newAccount2)
+	balance2 := l2Node.GetBalance(t, addr2)
+	if balance2.Cmp(big.NewInt(0)) > 0 {
+		Fatal(t, "empty account")
+	}
+
+	// Transfer via the delayed inbox
+	delayedTx := l2Info.PrepareTx("Owner", newAccount2, 3e7, transferAmount, nil)
+	builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
+		WrapL2ForDelayed(t, delayedTx, builder.L1Info, "Faucet", 100000),
+	})
+	err = waitFor(t, ctx, func() bool {
+		balance2 := l2Node.GetBalance(t, addr2)
+		return balance2.Cmp(transferAmount) >= 0
 	})
 	Require(t, err)
 
@@ -412,11 +434,7 @@ func TestEspressoE2E(t *testing.T) {
 	}
 	log.Info("Read hotshot commitment via hostio contract successfully", "height", 1, "commitment", commitmentBytes)
 
-	lastValidatedInfo, err := node.ConsensusNode.BlockValidator.ReadLastValidatedInfo()
-	Require(t, err)
-	incorrectHeight := lastValidatedInfo.GlobalState.HotShotHeight
-	log.Info("setting incorrect hotshot height!", "height", incorrectHeight)
-	validated := node.ConsensusNode.BlockValidator.Validated(t)
+	incorrectHeight := uint64(10)
 
 	goodStaker, blockValidatorA, cleanA := createStaker(ctx, t, builder, 0)
 	defer cleanA()
@@ -426,7 +444,7 @@ func TestEspressoE2E(t *testing.T) {
 	err = waitFor(t, ctx, func() bool {
 		validatedA := blockValidatorA.Validated(t)
 		validatedB := blockValidatorB.Validated(t)
-		shouldValidated := validated
+		shouldValidated := arbutil.MessageIndex(incorrectHeight - 1)
 		condition := validatedA >= shouldValidated && validatedB >= shouldValidated
 		if !condition {
 			log.Info("waiting for stakers to catch up the incorrect hotshot height", "stakerA", validatedA, "stakerB", validatedB, "target", shouldValidated)

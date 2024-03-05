@@ -268,7 +268,8 @@ func main() {
 		}
 
 		validatingAgainstEspresso := message.Message.Header.Kind == arbostypes.L1MessageType_L2Message &&
-			chainConfig.ArbitrumChainParams.EnableEspresso
+			chainConfig.ArbitrumChainParams.EnableEspresso &&
+			message.Message.L2msg[0] == arbos.L2MessageKind_EspressoTx
 		if validatingAgainstEspresso {
 			txs, jst, err := arbos.ParseEspressoMsg(message.Message)
 			if err != nil {
