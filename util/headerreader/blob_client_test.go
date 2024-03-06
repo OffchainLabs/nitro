@@ -36,7 +36,9 @@ func TestSaveBlobsToDisk(t *testing.T) {
 		KzgProof:        []byte{2},
 	}}
 	testDir := t.TempDir()
-	err := saveBlobDataToDisk(response, 5, testDir)
+	rawData, err := json.Marshal(response)
+	Require(t, err)
+	err = saveBlobDataToDisk(rawData, 5, testDir)
 	Require(t, err)
 
 	filePath := path.Join(testDir, "5")

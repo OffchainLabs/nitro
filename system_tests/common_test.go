@@ -681,11 +681,13 @@ func DeployOnTestL1(
 		ctx,
 		l1Reader,
 		&l1TransactionOpts,
-		l1info.GetAddress("Sequencer"),
+		[]common.Address{l1info.GetAddress("Sequencer")},
+		l1info.GetAddress("RollupOwner"),
 		0,
 		arbnode.GenerateRollupConfig(false, locator.LatestWasmModuleRoot(), l1info.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
 		nativeToken,
 		maxDataSize,
+		false,
 	)
 	Require(t, err)
 	l1info.SetContract("Bridge", addresses.Bridge)

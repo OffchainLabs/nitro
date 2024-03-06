@@ -45,6 +45,13 @@ func (s *Storage) FetchContents(_ context.Context, startingIndex uint64, maxResu
 	return res, nil
 }
 
+func (s *Storage) Get(_ context.Context, index uint64) (*storage.QueuedTransaction, error) {
+	if index >= s.firstNonce+uint64(len(s.queue)) || index < s.firstNonce {
+		return nil, nil
+	}
+	return s.encDec().Decode(s.queue[index-s.firstNonce])
+}
+
 func (s *Storage) FetchLast(context.Context) (*storage.QueuedTransaction, error) {
 	if len(s.queue) == 0 {
 		return nil, nil

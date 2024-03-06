@@ -16,6 +16,10 @@ func (s *Storage) FetchContents(_ context.Context, _, _ uint64) ([]*storage.Queu
 	return nil, nil
 }
 
+func (s *Storage) Get(_ context.Context, _ uint64) (*storage.QueuedTransaction, error) {
+	return nil, nil
+}
+
 func (s *Storage) FetchLast(ctx context.Context) (*storage.QueuedTransaction, error) {
 	return nil, nil
 }

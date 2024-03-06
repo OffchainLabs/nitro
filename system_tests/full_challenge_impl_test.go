@@ -184,6 +184,7 @@ func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, b
 }
 
 func confirmLatestBlock(ctx context.Context, t *testing.T, l1Info *BlockchainTestInfo, backend arbutil.L1Interface) {
+	t.Helper()
 	// With SimulatedBeacon running in on-demand block production mode, the
 	// finalized block is considered to be be the nearest multiple of 32 less
 	// than or equal to the block number.
@@ -205,10 +206,10 @@ func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *Blockcha
 	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
 	Require(t, err)
 	timeBounds := mocksgen.ISequencerInboxMaxTimeVariation{
-		DelayBlocks:   10000,
-		FutureBlocks:  10000,
-		DelaySeconds:  10000,
-		FutureSeconds: 10000,
+		DelayBlocks:   big.NewInt(10000),
+		FutureBlocks:  big.NewInt(10000),
+		DelaySeconds:  big.NewInt(10000),
+		FutureSeconds: big.NewInt(10000),
 	}
 	seqInboxAddr, tx, seqInbox, err := mocksgen.DeploySequencerInboxStub(
 		&txOpts,
@@ -218,6 +219,7 @@ func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *Blockcha
 		timeBounds,
 		big.NewInt(117964),
 		reader4844,
+		false,
 	)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
