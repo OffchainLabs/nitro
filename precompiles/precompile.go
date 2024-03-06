@@ -4,10 +4,12 @@
 package precompiles
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"math/big"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -783,6 +785,9 @@ func (p *Precompile) Get4ByteMethodSignatures() [][4]byte {
 	for sig := range p.methods {
 		ret = append(ret, sig)
 	}
+	sort.Slice(ret, func(i, j int) bool {
+		return bytes.Compare(ret[i][:], ret[j][:]) < 0
+	})
 	return ret
 }
 
