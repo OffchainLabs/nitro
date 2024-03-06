@@ -52,8 +52,13 @@ import (
 )
 
 var (
-	batchPosterWalletBalance      = metrics.NewRegisteredGaugeFloat64("arb/batchposter/wallet/balanceether", nil)
-	batchPosterGasRefunderBalance = metrics.NewRegisteredGaugeFloat64("arb/batchposter/gasrefunder/balanceether", nil)
+	batchPosterWalletBalance          = metrics.NewRegisteredGaugeFloat64("arb/batchposter/wallet/balanceether", nil)
+	batchPosterGasRefunderBalance     = metrics.NewRegisteredGaugeFloat64("arb/batchposter/gasrefunder/balanceether", nil)
+	baseFeeGauge                      = metrics.NewRegisteredGauge("arb/batchposter/basefee", nil)
+	blobFeeGauge                      = metrics.NewRegisteredGauge("arb/batchposter/blobfee", nil)
+	blockGasUsedPerBlockGasLimitGauge = metrics.NewRegisteredGaugeFloat64("arb/batchposter/blockgasusedperblockgaslimit", nil)
+	blobGasUsedPerBlobGasLimitGauge   = metrics.NewRegisteredGaugeFloat64("arb/batchposter/blobgasusedperblobgaslimit", nil)
+	suggestedTipCapGauge              = metrics.NewRegisteredGauge("arb/batchposter/suggestedtipcap", nil)
 
 	usableBytesInBlob    = big.NewInt(int64(len(kzg4844.Blob{}) * 31 / 32))
 	blobTxBlobGasPerBlob = big.NewInt(params.BlobTxBlobGasPerBlob)
@@ -465,6 +470,40 @@ func (b *BatchPoster) checkReverts(ctx context.Context, to int64) (bool, error) 
 		}
 	}
 	return false, nil
+}
+
+func (b *BatchPoster) pollForL1PriceData(ctx context.Context) {
+	headerCh, unsubscribe := b.l1Reader.Subscribe(false)
+	defer unsubscribe()
+
+	for {
+		select {
+		case h, ok := <-headerCh:
+			if !ok {
+				log.Info("L1 headers channel checking for l1 price data has been closed")
+				return
+			}
+			baseFeeGauge.Update(h.BaseFee.Int64())
+			if h.BlobGasUsed != nil {
+				if h.ExcessBlobGas != nil {
+					blobFee := eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*h.ExcessBlobGas, *h.BlobGasUsed))
+					blobFeeGauge.Update(blobFee.Int64())
+				}
+				blobGasUsedPerBlobGasLimitGauge.Update(float64(*h.BlobGasUsed) / params.MaxBlobGasPerBlock)
+			}
+			blockGasUsedPerBlockGasLimitGauge.Update(float64(h.GasUsed) / float64(h.GasLimit))
+			suggestedTipCap, err := b.l1Reader.Client().SuggestGasTipCap(ctx)
+			if err != nil {
+				log.Error("unable to fetch suggestedTipCap from l1 client to update arb/batchposter/suggestedtipcap metric", "err", err)
+			} else {
+				suggestedTipCapGauge.Update(suggestedTipCap.Int64())
+			}
+			// We poll for new headers every five seconds to get accurate reporting of these metrics
+			time.Sleep(5 * time.Second)
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 // pollForReverts runs a gouroutine that listens to l1 block headers, checks
@@ -1289,6 +1328,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 	b.redisLock.Start(ctxIn)
 	b.StopWaiter.Start(ctxIn, b)
 	b.LaunchThread(b.pollForReverts)
+	b.LaunchThread(b.pollForL1PriceData)
 	commonEphemeralErrorHandler := util.NewEphemeralErrorHandler(time.Minute, "", 0)
 	exceedMaxMempoolSizeEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, dataposter.ErrExceedsMaxMempoolSize.Error(), time.Minute)
 	storageRaceEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, storage.ErrStorageRace.Error(), time.Minute)
