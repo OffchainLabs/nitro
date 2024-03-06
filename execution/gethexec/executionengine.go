@@ -341,7 +341,7 @@ func (s *ExecutionEngine) SequenceTransactionsEspresso(
 			s.bc,
 			s.bc.Config(),
 			hooks,
-			jst.Header.Height,
+			&jst.Header,
 		)
 		if err != nil {
 			return nil, err
@@ -404,7 +404,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		s.bc,
 		s.bc.Config(),
 		hooks,
-		0,
+		nil,
 	)
 	if err != nil {
 		return nil, err
