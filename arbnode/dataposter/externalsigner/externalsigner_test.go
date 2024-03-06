@@ -30,6 +30,7 @@ var (
 	)
 	dynamicFeeTx = types.NewTx(
 		&types.DynamicFeeTx{
+			ChainID:   big.NewInt(1337),
 			Nonce:     13,
 			GasTipCap: big.NewInt(1),
 			GasFeeCap: big.NewInt(1),
@@ -63,7 +64,7 @@ func TestToTranssaction(t *testing.T) {
 				t.Fatalf("TxToSignTxArgs() unexpected error: %v", err)
 			}
 			got := signTxArgs.ToTransaction()
-			hasher := types.LatestSignerForChainID(tc.tx.ChainId())
+			hasher := types.LatestSignerForChainID(nil)
 			if h, g := hasher.Hash(tc.tx), hasher.Hash(got); h != g {
 				t.Errorf("ToTransaction() got hash: %v want: %v", g, h)
 			}
