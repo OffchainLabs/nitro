@@ -159,7 +159,7 @@ func (a *AvailDA) Store(ctx context.Context, message []byte) ([]byte, error) {
 		return nil, err
 	}
 
-	log.Info("✅	Tx batch is submitted to Avail", "length", len(message), "address", a.keyringPair.Address, "appID", a.appID)
+	log.Info("✅  Tx batch is submitted to Avail", "length", len(message), "address", a.keyringPair.Address, "appID", a.appID)
 
 	defer sub.Unsubscribe()
 	timeout := time.After(time.Duration(a.timeout) * time.Second)
@@ -223,7 +223,7 @@ outer:
 
 	//Creating BlobPointer to submit over settlement layer
 	blobPointer := BlobPointer{BlockHash: finalizedblockHash, Sender: a.keyringPair.Address, Nonce: nonce, DasTreeRootHash: dastree.Hash(message), MerklePoofInput: merkleProofInput}
-	log.Info("✅	Sucesfully included in block data to Avail", "BlobPointer:", blobPointer)
+	log.Info("✅  Sucesfully included in block data to Avail", "BlobPointer:", blobPointer)
 	blobPointerData, err := blobPointer.MarshalToBinary()
 	if err != nil {
 		log.Warn("⚠️ BlobPointer MashalBinary error", "err", err)
@@ -282,6 +282,6 @@ func (a *AvailDA) Read(ctx context.Context, blobPointer BlobPointer) ([]byte, er
 		}
 	}
 
-	log.Info("✅	Succesfully fetched data from Avail")
+	log.Info("✅  Succesfully fetched data from Avail")
 	return nil, fmt.Errorf("❌ unable to find any extrinsic for this blobPointer:%+v", blobPointer)
 }
