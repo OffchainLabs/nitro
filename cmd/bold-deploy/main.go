@@ -62,10 +62,10 @@ func main() {
 	prod := flag.Bool("prod", false, "Whether to configure the rollup for production or testing")
 
 	// Bold specific flags.
-	numBigSteps := flag.Uint("numBigSteps", 4, "Number of big steps in the rollup")
+	numBigSteps := flag.Uint("numBigSteps", 2, "Number of big steps in the rollup")
 	blockChallengeLeafHeight := flag.Uint64("blockChallengeLeafHeight", 1<<5, "block challenge edge leaf height")
-	bigStepLeafHeight := flag.Uint64("bigStepLeafHeight", 1<<8, "big step edge leaf height")
-	smallSteapLeafHeight := flag.Uint64("smallStepLeafHeight", 1<<11, "small step edge leaf height")
+	bigStepLeafHeight := flag.Uint64("bigStepLeafHeight", 1<<14, "big step edge leaf height")
+	smallSteapLeafHeight := flag.Uint64("smallStepLeafHeight", 1<<14, "small step edge leaf height")
 	minimumAssertionPeriodBlocks := flag.Uint64("minimumAssertionPeriodBlocks", 1, "minimum number of blocks between assertions")
 	// Half a day of blocks as 12 seconds per block.
 	confirmPeriodBlocks := flag.Uint64("confirmPeriodBlocks", 3600, "challenge period")
