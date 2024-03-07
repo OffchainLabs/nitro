@@ -491,6 +491,18 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 	return fullTx, p.sendTx(ctx, nil, &queuedTx)
 }
 
+func (p *DataPoster) PostSimpleTransactionAutoNonce(ctx context.Context, to common.Address, calldata []byte, gasLimit uint64, value *big.Int) (*types.Transaction, error) {
+	nonce, _, err := p.GetNextNonceAndMeta(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return p.PostSimpleTransaction(ctx, nonce, to, calldata, gasLimit, value)
+}
+
+func (p *DataPoster) PostSimpleTransaction(ctx context.Context, nonce uint64, to common.Address, calldata []byte, gasLimit uint64, value *big.Int) (*types.Transaction, error) {
+	return p.PostTransaction(ctx, time.Now(), nonce, nil, to, calldata, gasLimit, value, nil)
+}
+
 // the mutex must be held by the caller
 func (p *DataPoster) saveTx(ctx context.Context, prevTx, newTx *storage.QueuedTransaction) error {
 	if prevTx != nil && prevTx.Data.Nonce != newTx.Data.Nonce {
