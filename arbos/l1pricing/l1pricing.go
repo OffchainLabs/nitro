@@ -146,10 +146,6 @@ func (ps *L1PricingState) SetPayRewardsTo(addr common.Address) error {
 	return ps.payRewardsTo.Set(addr)
 }
 
-func (ps *L1PricingState) GetRewardsRecepient() (common.Address, error) {
-	return ps.payRewardsTo.Get()
-}
-
 func (ps *L1PricingState) EquilibrationUnits() (*big.Int, error) {
 	return ps.equilibrationUnits.Get()
 }
@@ -172,10 +168,6 @@ func (ps *L1PricingState) PerUnitReward() (uint64, error) {
 
 func (ps *L1PricingState) SetPerUnitReward(weiPerUnit uint64) error {
 	return ps.perUnitReward.Set(weiPerUnit)
-}
-
-func (ps *L1PricingState) GetRewardsRate() (uint64, error) {
-	return ps.perUnitReward.Get()
 }
 
 func (ps *L1PricingState) LastUpdateTime() (uint64, error) {

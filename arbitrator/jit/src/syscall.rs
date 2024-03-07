@@ -337,7 +337,7 @@ pub fn js_value_call(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
 
     let value = match (object, method_name.as_slice()) {
         (Ref(GO_ID), b"_makeFuncWrapper") => {
-            let arg = match args.get(0) {
+            let arg = match args.first() {
                 Some(arg) => arg,
                 None => fail!(
                     "Go trying to call Go._makeFuncWrapper with bad args {:?}",
@@ -415,7 +415,7 @@ pub fn js_value_call(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
         (Ref(CRYPTO_ID), b"getRandomValues") => {
             let name = "crypto.getRandomValues";
 
-            let id = match args.get(0) {
+            let id = match args.first() {
                 Some(Ref(x)) => x,
                 _ => fail!("Go trying to call {name} with bad args {:?}", args),
             };
@@ -456,7 +456,7 @@ pub fn js_value_new(mut env: WasmEnvMut, sp: u32) {
     let args_len = sp.read_u64(2);
     let args = sp.read_value_slice(args_ptr, args_len);
     match class {
-        UINT8_ARRAY_ID => match args.get(0) {
+        UINT8_ARRAY_ID => match args.first() {
             Some(JsValue::Number(size)) => {
                 let id = pool.insert(DynamicObject::Uint8Array(vec![0; *size as usize]));
                 sp.write_u64(4, GoValue::Object(id).encode());

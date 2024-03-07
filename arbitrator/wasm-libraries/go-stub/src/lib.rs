@@ -218,7 +218,7 @@ pub unsafe extern "C" fn go__syscall_js_valueNew(sp: GoStack) {
     let args_len = sp.read_u64(2);
     let args = read_value_slice(args_ptr, args_len);
     if class == UINT8_ARRAY_ID {
-        if let Some(InterpValue::Number(size)) = args.get(0) {
+        if let Some(InterpValue::Number(size)) = args.first() {
             let id = DynamicObjectPool::singleton()
                 .insert(DynamicObject::Uint8Array(vec![0; *size as usize]));
             sp.write_u64(4, GoValue::Object(id).encode());
@@ -321,7 +321,7 @@ unsafe fn value_call_impl(sp: &mut GoStack) -> Result<GoValue, String> {
     let args_len = sp.read_u64(4);
     let args = read_value_slice(args_ptr, args_len);
     if object == InterpValue::Ref(GO_ID) && &method_name == b"_makeFuncWrapper" {
-        let id = args.get(0).ok_or_else(|| {
+        let id = args.first().ok_or_else(|| {
             format!(
                 "Go attempting to call Go._makeFuncWrapper with bad args {:?}",
                 args,
@@ -405,7 +405,7 @@ unsafe fn value_call_impl(sp: &mut GoStack) -> Result<GoValue, String> {
             ))
         }
     } else if object == InterpValue::Ref(CRYPTO_ID) && &method_name == b"getRandomValues" {
-        let id = match args.get(0) {
+        let id = match args.first() {
             Some(InterpValue::Ref(x)) => *x,
             _ => {
                 return Err(format!(

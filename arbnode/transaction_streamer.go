@@ -32,6 +32,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
+	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -78,7 +79,7 @@ type TransactionStreamerConfig struct {
 type TransactionStreamerConfigFetcher func() *TransactionStreamerConfig
 
 var DefaultTransactionStreamerConfig = TransactionStreamerConfig{
-	MaxBroadcasterQueueSize: 1024,
+	MaxBroadcasterQueueSize: 50_000,
 	MaxReorgResequenceDepth: 1024,
 	ExecuteMessageLoopDelay: time.Millisecond * 100,
 }
@@ -426,7 +427,7 @@ func (s *TransactionStreamer) AddMessages(pos arbutil.MessageIndex, messagesAreC
 	return s.AddMessagesAndEndBatch(pos, messagesAreConfirmed, messages, nil)
 }
 
-func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.BroadcastFeedMessage) error {
+func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFeedMessage) error {
 	if len(feedMessages) == 0 {
 		return nil
 	}
@@ -819,7 +820,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	return nil
 }
 
-func (s *TransactionStreamer) FetchBatch(batchNum uint64) ([]byte, error) {
+func (s *TransactionStreamer) FetchBatch(batchNum uint64) ([]byte, common.Hash, error) {
 	return s.inboxReader.GetSequencerMessageBytes(context.TODO(), batchNum)
 }
 
@@ -859,12 +860,6 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(pos arbutil.MessageIndex
 
 	if err := s.writeMessages(pos, []arbostypes.MessageWithMetadata{msgWithMeta}, nil); err != nil {
 		return err
-	}
-
-	if s.broadcastServer != nil {
-		if err := s.broadcastServer.BroadcastSingle(msgWithMeta, pos); err != nil {
-			log.Error("failed broadcasting message", "pos", pos, "err", err)
-		}
 	}
 
 	return nil
@@ -926,6 +921,12 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 	default:
 	}
 
+	if s.broadcastServer != nil {
+		if err := s.broadcastServer.BroadcastMessages(messages, pos); err != nil {
+			log.Error("failed broadcasting message", "pos", pos, "err", err)
+		}
+	}
+
 	return nil
 }
 
@@ -967,8 +968,16 @@ func (s *TransactionStreamer) executeNextMsg(ctx context.Context, exec execution
 		log.Error("feedOneMsg failed to readMessage", "err", err, "pos", pos)
 		return false
 	}
-	err = s.exec.DigestMessage(pos, msg)
-	if err != nil {
+	var msgForPrefetch *arbostypes.MessageWithMetadata
+	if pos+1 < msgCount {
+		msg, err := s.GetMessage(pos + 1)
+		if err != nil {
+			log.Error("feedOneMsg failed to readMessage", "err", err, "pos", pos+1)
+			return false
+		}
+		msgForPrefetch = msg
+	}
+	if err = s.exec.DigestMessage(pos, msg, msgForPrefetch); err != nil {
 		logger := log.Warn
 		if prevMessageCount < msgCount {
 			logger = log.Debug

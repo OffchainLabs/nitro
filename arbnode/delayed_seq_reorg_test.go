@@ -19,7 +19,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 	defer cancel()
 
 	exec, streamer, db, _ := NewTransactionStreamerForTest(t, common.Address{})
-	tracker, err := NewInboxTracker(db, streamer, nil)
+	tracker, err := NewInboxTracker(db, streamer, nil, nil)
 	Require(t, err)
 
 	err = streamer.Start(ctx)
@@ -61,7 +61,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 		AfterInboxAcc:          [32]byte{1},
 		AfterDelayedAcc:        initMsgDelayed.AfterInboxAcc(),
 		AfterDelayedCount:      1,
-		TimeBounds:             bridgegen.ISequencerInboxTimeBounds{},
+		TimeBounds:             bridgegen.IBridgeTimeBounds{},
 		rawLog:                 types.Log{},
 		dataLocation:           0,
 		bridgeAddress:          [20]byte{},
@@ -77,7 +77,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 		AfterInboxAcc:          [32]byte{2},
 		AfterDelayedAcc:        userDelayed.AfterInboxAcc(),
 		AfterDelayedCount:      2,
-		TimeBounds:             bridgegen.ISequencerInboxTimeBounds{},
+		TimeBounds:             bridgegen.IBridgeTimeBounds{},
 		rawLog:                 types.Log{},
 		dataLocation:           0,
 		bridgeAddress:          [20]byte{},
@@ -91,7 +91,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 		AfterInboxAcc:          [32]byte{3},
 		AfterDelayedAcc:        userDelayed.AfterInboxAcc(),
 		AfterDelayedCount:      2,
-		TimeBounds:             bridgegen.ISequencerInboxTimeBounds{},
+		TimeBounds:             bridgegen.IBridgeTimeBounds{},
 		rawLog:                 types.Log{},
 		dataLocation:           0,
 		bridgeAddress:          [20]byte{},
@@ -130,7 +130,7 @@ func TestSequencerReorgFromDelayed(t *testing.T) {
 		AfterInboxAcc:          [32]byte{2},
 		AfterDelayedAcc:        initMsgDelayed.AfterInboxAcc(),
 		AfterDelayedCount:      1,
-		TimeBounds:             bridgegen.ISequencerInboxTimeBounds{},
+		TimeBounds:             bridgegen.IBridgeTimeBounds{},
 		rawLog:                 types.Log{},
 		dataLocation:           0,
 		bridgeAddress:          [20]byte{},

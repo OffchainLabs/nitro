@@ -57,8 +57,22 @@ fn main() {
 
     let (instance, env, mut store) = machine::create(&opts, env);
 
+    let memory = instance.exports.get_memory("mem").unwrap();
+    let memory = memory.view(&store);
+
+    // To pass in the program name argument, we need to put it in memory.
+    // The Go linker guarantees a section of memory starting at byte 4096 is available for this purpose.
+    // https://github.com/golang/go/blob/252324e879e32f948d885f787decf8af06f82be9/misc/wasm/wasm_exec.js#L520
+    let free_memory_base: i32 = 4096;
+    let name = free_memory_base;
+    let argv = name + 8;
+
+    memory.write(name as u64, b"js\0").unwrap(); // write "js\0" to the name ptr
+    memory.write(argv as u64, &name.to_le_bytes()).unwrap(); // write the name ptr to the argv ptr
+    let run_args = &[Value::I32(1), Value::I32(argv)]; // pass argv with our single name arg
+
     let main = instance.exports.get_function("run").unwrap();
-    let outcome = main.call(&mut store, &[Value::I32(0), Value::I32(0)]);
+    let outcome = main.call(&mut store, run_args);
     let escape = match outcome {
         Ok(outcome) => {
             println!("Go returned values {:?}", outcome);
@@ -100,8 +114,9 @@ fn main() {
         true => None,
         false => Some(message),
     };
+    let memory_used = memory.size().0 as u64 * 65_536;
 
-    env.send_results(error);
+    env.send_results(error, memory_used);
 }
 
 // require a usize be at least 32 bits wide
