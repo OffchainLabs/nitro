@@ -20,24 +20,26 @@ import (
 
 type BigCacheConfig struct {
 	// TODO add other config information like HardMaxCacheSize
-	Enable             bool          `koanf:"enable"`
-	Expiration         time.Duration `koanf:"expiration"`
-	MaxEntriesInWindow int
+	Enable     bool          `koanf:"enable"`
+	Expiration time.Duration `koanf:"expiration"`
+	MaxSizeMB  int           `koanf:"max-size-mb"`
 }
 
 var DefaultBigCacheConfig = BigCacheConfig{
 	Expiration: time.Hour,
+	MaxSizeMB:  1024,
 }
 
 var TestBigCacheConfig = BigCacheConfig{
-	Enable:             true,
-	Expiration:         time.Hour,
-	MaxEntriesInWindow: 1000,
+	Enable:     true,
+	Expiration: time.Hour,
+	MaxSizeMB:  128,
 }
 
 func BigCacheConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBigCacheConfig.Enable, "Enable local in-memory caching of sequencer batch data")
 	f.Duration(prefix+".expiration", DefaultBigCacheConfig.Expiration, "Expiration time for in-memory cached sequencer batches")
+	f.Int(prefix+".max-size-mb", DefaultBigCacheConfig.MaxSizeMB, "Maximum size of the cache, in MB")
 }
 
 type BigCacheStorageService struct {
@@ -48,9 +50,7 @@ type BigCacheStorageService struct {
 
 func NewBigCacheStorageService(bigCacheConfig BigCacheConfig, baseStorageService StorageService) (StorageService, error) {
 	conf := bigcache.DefaultConfig(bigCacheConfig.Expiration)
-	if bigCacheConfig.MaxEntriesInWindow > 0 {
-		conf.MaxEntriesInWindow = bigCacheConfig.MaxEntriesInWindow
-	}
+	conf.HardMaxCacheSize = bigCacheConfig.MaxSizeMB
 	bigCache, err := bigcache.NewBigCache(conf)
 	if err != nil {
 		return nil, err
