@@ -60,6 +60,7 @@ func (a *SignTxArgs) ToTransaction() *types.Transaction {
 			Commitments: a.Commitments,
 			Proofs:      a.Proofs,
 		},
+		ChainID: uint256.NewInt(a.ChainID.ToInt().Uint64()),
 	})
 }
 
