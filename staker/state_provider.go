@@ -17,6 +17,7 @@ import (
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+	state_hashes "github.com/OffchainLabs/bold/state-commitments/state-hashes"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	challengecache "github.com/offchainlabs/nitro/staker/challenge-cache"
@@ -181,7 +182,7 @@ func (s *StateManager) StatesInBatchRange(
 	toHeight l2stateprovider.Height,
 	fromBatch,
 	toBatch l2stateprovider.Batch,
-) ([]common.Hash, error) {
+) (*state_hashes.StateHashes, error) {
 	// Check the integrity of the arguments.
 	if fromBatch >= toBatch {
 		return nil, fmt.Errorf("from batch %v cannot be greater than or equal to batch %v", fromBatch, toBatch)
@@ -256,10 +257,9 @@ func (s *StateManager) StatesInBatchRange(
 		machineHashes = append(machineHashes, machineHash(state))
 		prevBatchMsgCount = batchMessageCount
 	}
-	for uint64(len(machineHashes)) < uint64(totalDesiredHashes) {
-		machineHashes = append(machineHashes, machineHashes[len(machineHashes)-1])
-	}
-	return machineHashes[fromHeight : toHeight+1], nil
+	return state_hashes.NewStateHashes(
+		machineHashes, uint64(totalDesiredHashes),
+	).SubSlice(uint64(fromHeight), uint64(toHeight+1)), nil
 }
 
 func machineHash(gs validator.GoGlobalState) common.Hash {
@@ -299,7 +299,7 @@ func (s *StateManager) L2MessageStatesUpTo(
 	toHeight option.Option[l2stateprovider.Height],
 	fromBatch,
 	toBatch l2stateprovider.Batch,
-) ([]common.Hash, error) {
+) (*state_hashes.StateHashes, error) {
 	var to l2stateprovider.Height
 	if !toHeight.IsNone() {
 		to = toHeight.Unwrap()
@@ -317,7 +317,7 @@ func (s *StateManager) L2MessageStatesUpTo(
 // CollectMachineHashes Collects a list of machine hashes at a message number based on some configuration parameters.
 func (s *StateManager) CollectMachineHashes(
 	ctx context.Context, cfg *l2stateprovider.HashCollectorConfig,
-) ([]common.Hash, error) {
+) (*state_hashes.StateHashes, error) {
 	s.Lock()
 	defer s.Unlock()
 	prevBatchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(cfg.FromBatch - 1))
@@ -360,7 +360,7 @@ func (s *StateManager) CollectMachineHashes(
 	}
 	log.Info(fmt.Sprintf("Finished gathering machine hashes for request %+v", cfg))
 	// Do not save a history commitment of length 1 to the cache.
-	if len(result) > 1 && s.historyCache != nil {
+	if result.Length() > 1 && s.historyCache != nil {
 		if err := s.historyCache.Put(cacheKey, result); err != nil {
 			if !errors.Is(err, challengecache.ErrFileAlreadyExists) {
 				return nil, err
