@@ -374,11 +374,11 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 		}
 
 		if seqNum != pos {
-			return errors.New("unexpected delayed sequence number")
+			return fmt.Errorf("unexpected delayed sequence number %v, expected %v", seqNum, pos)
 		}
 
 		if nextAcc != message.BeforeInboxAcc {
-			return errors.New("previous delayed accumulator mismatch")
+			return fmt.Errorf("previous delayed accumulator mismatch for message %v", seqNum)
 		}
 		nextAcc = message.AfterInboxAcc()
 
@@ -606,8 +606,14 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		ctx:    ctx,
 		client: client,
 	}
-
-	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, t.das, t.blobReader, arbstate.KeysetValidate)
+	var daProviders []arbstate.DataAvailabilityProvider
+	if t.das != nil {
+		daProviders = append(daProviders, arbstate.NewDAProviderDAS(t.das))
+	}
+	if t.blobReader != nil {
+		daProviders = append(daProviders, arbstate.NewDAProviderBlobReader(t.blobReader))
+	}
+	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, daProviders, arbstate.KeysetValidate)
 	batchMessageCounts := make(map[uint64]arbutil.MessageIndex)
 	currentpos := prevbatchmeta.MessageCount + 1
 	for {

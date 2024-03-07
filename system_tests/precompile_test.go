@@ -5,6 +5,7 @@ package arbtest
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 	"testing"
 
@@ -67,7 +68,9 @@ func TestCustomSolidityErrors(t *testing.T) {
 		Fatal(t, "customRevert call should have errored")
 	}
 	observedMessage := customError.Error()
-	expectedMessage := "execution reverted: error Custom(1024, This spider family wards off bugs: /\\oo/\\ //\\(oo)/\\ /\\oo/\\, true)"
+	expectedError := "Custom(1024, This spider family wards off bugs: /\\oo/\\ //\\(oo)/\\ /\\oo/\\, true)"
+	// The first error is server side. The second error is client side ABI decoding.
+	expectedMessage := fmt.Sprintf("execution reverted: error %v: %v", expectedError, expectedError)
 	if observedMessage != expectedMessage {
 		Fatal(t, observedMessage)
 	}
@@ -79,7 +82,8 @@ func TestCustomSolidityErrors(t *testing.T) {
 		Fatal(t, "out of range ArbBlockHash call should have errored")
 	}
 	observedMessage = customError.Error()
-	expectedMessage = "execution reverted: error InvalidBlockNumber(1000000000, 1)"
+	expectedError = "InvalidBlockNumber(1000000000, 1)"
+	expectedMessage = fmt.Sprintf("execution reverted: error %v: %v", expectedError, expectedError)
 	if observedMessage != expectedMessage {
 		Fatal(t, observedMessage)
 	}

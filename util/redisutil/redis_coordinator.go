@@ -79,10 +79,10 @@ func (c *RedisCoordinator) CurrentChosenSequencer(ctx context.Context) (string, 
 // GetPriorities returns the priority list of sequencers
 func (rc *RedisCoordinator) GetPriorities(ctx context.Context) ([]string, error) {
 	prioritiesString, err := rc.Client.Get(ctx, PRIORITIES_KEY).Result()
+	if errors.Is(err, redis.Nil) {
+		return []string{}, nil
+	}
 	if err != nil {
-		if errors.Is(err, redis.Nil) {
-			err = errors.New("sequencer priorities unset")
-		}
 		return []string{}, err
 	}
 	prioritiesList := strings.Split(prioritiesString, ",")

@@ -71,7 +71,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
-	httpSrv, srv := externalsignertest.NewServer(ctx, t)
+	httpSrv, srv := externalsignertest.NewServer(t)
 	cp, err := externalsignertest.CertPaths()
 	if err != nil {
 		t.Fatalf("Error getting cert paths: %v", err)
