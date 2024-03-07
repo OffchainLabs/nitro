@@ -353,7 +353,7 @@ func (s *StateManager) CollectMachineHashes(
 	}
 	ctxCheckAlive, cancelCheckAlive := ctxWithCheckAlive(ctx, execRun)
 	defer cancelCheckAlive()
-	stepLeaves := execRun.GetLeavesWithStepSize(uint64(cfg.MachineStartIndex), uint64(cfg.StepSize), cfg.NumDesiredHashes)
+	stepLeaves := execRun.GetLeavesWithStepSize(uint64(cfg.FromBatch), uint64(cfg.MachineStartIndex), uint64(cfg.StepSize), cfg.NumDesiredHashes)
 	result, err := stepLeaves.Await(ctxCheckAlive)
 	if err != nil {
 		return nil, err
@@ -429,6 +429,8 @@ func (s *StateManager) CollectProof(
 	if err != nil {
 		return nil, err
 	}
+	ctxCheckAlive, cancelCheckAlive := ctxWithCheckAlive(ctx, execRun)
+	defer cancelCheckAlive()
 	oneStepProofPromise := execRun.GetProofAt(uint64(machineIndex))
-	return oneStepProofPromise.Await(ctx)
+	return oneStepProofPromise.Await(ctxCheckAlive)
 }

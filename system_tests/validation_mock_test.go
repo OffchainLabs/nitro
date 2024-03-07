@@ -123,7 +123,7 @@ func (r *mockExecRun) GetStepAt(position uint64) containers.PromiseInterface[*va
 	}, nil)
 }
 
-func (r *mockExecRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[*state_hashes.StateHashes] {
+func (r *mockExecRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves uint64, claimId common.Hash) containers.PromiseInterface[*state_hashes.StateHashes] {
 	// TODO: Add mock implementation for GetLeavesWithStepSize
 	return containers.NewReadyPromise[*state_hashes.StateHashes](nil, nil)
 }

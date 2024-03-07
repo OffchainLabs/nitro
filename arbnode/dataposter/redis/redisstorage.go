@@ -78,6 +78,20 @@ func (s *Storage) FetchContents(ctx context.Context, startingIndex uint64, maxRe
 	return items, nil
 }
 
+func (s *Storage) Get(ctx context.Context, index uint64) (*storage.QueuedTransaction, error) {
+	contents, err := s.FetchContents(ctx, index, 1)
+	if err != nil {
+		return nil, err
+	}
+	if len(contents) == 0 {
+		return nil, nil
+	} else if len(contents) == 1 {
+		return contents[0], nil
+	} else {
+		return nil, fmt.Errorf("expected only one return value for Get but got %v", len(contents))
+	}
+}
+
 func (s *Storage) FetchLast(ctx context.Context) (*storage.QueuedTransaction, error) {
 	query := redis.ZRangeArgs{
 		Key:   s.key,

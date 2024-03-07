@@ -1,3 +1,6 @@
+// Copyright 2021-2023, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
 package dataposter
 
 import (
@@ -41,7 +44,7 @@ func newLevelDBStorage(t *testing.T, encF storage.EncoderDecoderF) *dbstorage.St
 
 func newPebbleDBStorage(t *testing.T, encF storage.EncoderDecoderF) *dbstorage.Storage {
 	t.Helper()
-	db, err := rawdb.NewPebbleDBDatabase(path.Join(t.TempDir(), "pebble.db"), 0, 0, "default", false)
+	db, err := rawdb.NewPebbleDBDatabase(path.Join(t.TempDir(), "pebble.db"), 0, 0, "default", false, true)
 	if err != nil {
 		t.Fatalf("NewPebbleDBDatabase() unexpected error: %v", err)
 	}
@@ -81,7 +84,7 @@ func valueOf(t *testing.T, i int) *storage.QueuedTransaction {
 			big.NewInt(int64(i)),
 			[]byte{byte(i)}),
 		Meta: meta,
-		Data: types.DynamicFeeTx{
+		DeprecatedData: types.DynamicFeeTx{
 			ChainID:    big.NewInt(int64(i)),
 			Nonce:      uint64(i),
 			GasTipCap:  big.NewInt(int64(i)),

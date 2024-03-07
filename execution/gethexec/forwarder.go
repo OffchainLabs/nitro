@@ -151,7 +151,7 @@ func (f *TxForwarder) PublishTransaction(inctx context.Context, tx *types.Transa
 		if err == nil || !f.tryNewForwarderErrors.MatchString(err.Error()) {
 			return err
 		}
-		log.Info("error forwarding transaction to a backup target", "target", f.targets[pos], "err", err)
+		log.Warn("error forwarding transaction to a backup target", "target", f.targets[pos], "err", err)
 	}
 	return errors.New("failed to publish transaction to any of the forwarding targets")
 }
@@ -161,7 +161,9 @@ const maxHealthTimeout = 10 * time.Second
 
 // CheckHealth returns health of the highest priority forwarding target
 func (f *TxForwarder) CheckHealth(inctx context.Context) error {
-	if !f.enabled.Load() {
+	// If f.enabled is true, len(f.rpcClients) should always be greater than zero,
+	// but better safe than sorry.
+	if !f.enabled.Load() || len(f.rpcClients) == 0 {
 		return ErrNoSequencer
 	}
 	f.healthMutex.Lock()
@@ -228,6 +230,14 @@ func (f *TxForwarder) StopAndWait() {
 
 func (f *TxForwarder) Started() bool {
 	return true
+}
+
+// Returns the URL of the first forwarding target, or an empty string if none are set.
+func (f *TxForwarder) PrimaryTarget() string {
+	if len(f.targets) == 0 {
+		return ""
+	}
+	return f.targets[0]
 }
 
 type TxDropper struct{}

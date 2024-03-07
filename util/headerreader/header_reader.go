@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"regexp"
 	"sync"
 	"time"
 
@@ -21,6 +22,9 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	flag "github.com/spf13/pflag"
 )
+
+// A regexp matching "execution reverted" errors returned from the parent chain RPC.
+var ExecutionRevertedRegexp = regexp.MustCompile(`(?i)execution reverted|VM execution error\.?`)
 
 type ArbSysInterface interface {
 	ArbBlockNumber(*bind.CallOpts) (*big.Int, error)
@@ -49,6 +53,7 @@ type HeaderReader struct {
 
 type cachedHeader struct {
 	mutex          sync.Mutex
+	blockTag       string // "safe" or "finalized"
 	rpcBlockNum    *big.Int
 	headWhenCached *types.Header
 	header         *types.Header
@@ -131,8 +136,8 @@ func New(ctx context.Context, client arbutil.L1Interface, config ConfigFetcher, 
 		arbSys:                arbSys,
 		outChannels:           make(map[chan<- *types.Header]struct{}),
 		outChannelsBehind:     make(map[chan<- *types.Header]struct{}),
-		safe:                  cachedHeader{rpcBlockNum: big.NewInt(rpc.SafeBlockNumber.Int64())},
-		finalized:             cachedHeader{rpcBlockNum: big.NewInt(rpc.FinalizedBlockNumber.Int64())},
+		safe:                  cachedHeader{blockTag: "safe", rpcBlockNum: big.NewInt(rpc.SafeBlockNumber.Int64())},
+		finalized:             cachedHeader{blockTag: "finalized", rpcBlockNum: big.NewInt(rpc.FinalizedBlockNumber.Int64())},
 	}, nil
 }
 
@@ -431,7 +436,7 @@ func (s *HeaderReader) LastPendingCallBlockNr() uint64 {
 
 var ErrBlockNumberNotSupported = errors.New("block number not supported")
 
-func headerIndicatesFinalitySupport(header *types.Header) bool {
+func HeaderIndicatesFinalitySupport(header *types.Header) bool {
 	if header.Difficulty.Sign() == 0 {
 		// This is an Ethereum PoS chain
 		return true
@@ -461,11 +466,16 @@ func (s *HeaderReader) getCached(ctx context.Context, c *cachedHeader) (*types.H
 	if HeadersEqual(currentHead, c.headWhenCached) {
 		return c.header, nil
 	}
-	if !s.config().UseFinalityData || !headerIndicatesFinalitySupport(currentHead) {
+	if !s.config().UseFinalityData || !HeaderIndicatesFinalitySupport(currentHead) {
 		return nil, ErrBlockNumberNotSupported
 	}
 	header, err := s.client.HeaderByNumber(ctx, c.rpcBlockNum)
 	if err != nil {
+		if !errors.Is(err, context.Canceled) {
+			log.Warn("Failed to get latest confirmed block", "blockTag", c.blockTag, "err", err)
+			// Hide error to caller to avoid exposing potentially sensitive L1 information.
+			err = fmt.Errorf("failed to get latest %v block", c.blockTag)
+		}
 		return nil, err
 	}
 	c.header = header

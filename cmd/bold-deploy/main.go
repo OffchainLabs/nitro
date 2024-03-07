@@ -70,7 +70,6 @@ func main() {
 	// Half a day of blocks as 12 seconds per block.
 	confirmPeriodBlocks := flag.Uint64("confirmPeriodBlocks", 3600, "challenge period")
 	challengeGracePeriodBlocks := flag.Uint64("challengeGracePeriodBlocks", 3, "challenge grace period in which security council can take action")
-	miniStake := flag.Uint64("miniStake", 1, "mini-stake size")
 	baseStake := flag.Uint64("baseStake", 1, "base-stake size")
 
 	flag.Parse()
@@ -189,13 +188,18 @@ func main() {
 	}
 	genesisInboxCount := big.NewInt(0)
 	anyTrustFastConfirmer := common.Address{}
+	totalLevels := *numBigSteps + 2
+	miniStakeValues := make([]*big.Int, totalLevels)
+	for i := 1; i <= int(totalLevels); i++ {
+		miniStakeValues[i] = big.NewInt(int64(i))
+	}
 	rollupConfig := challenge_testing.GenerateRollupConfig(
 		*prod,
 		moduleRoot,
 		l1TransactionOpts.From,
 		chainConfig.ChainID,
 		loserEscrowAddress,
-		new(big.Int).SetUint64(*miniStake),
+		miniStakeValues,
 		stakeToken,
 		genesisExecutionState,
 		genesisInboxCount,

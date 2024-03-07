@@ -13,6 +13,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -33,6 +34,7 @@ import (
 	"github.com/OffchainLabs/bold/testing/setup"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -69,6 +71,23 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
+	httpSrv, srv := externalsignertest.NewServer(t)
+	cp, err := externalsignertest.CertPaths()
+	if err != nil {
+		t.Fatalf("Error getting cert paths: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := httpSrv.Shutdown(ctx); err != nil {
+			t.Fatalf("Error shutting down http server: %v", err)
+		}
+	})
+	go func() {
+		log.Debug("Server is listening on port 1234...")
+		if err := httpSrv.ListenAndServeTLS(cp.ServerCert, cp.ServerKey); err != nil && err != http.ErrServerClosed {
+			log.Debug("ListenAndServeTLS() failed", "error", err)
+			return
+		}
+	}()
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
@@ -81,6 +100,11 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	builder.nodeConfig.BatchPoster.MaxDelay = -1000 * time.Hour
 	cleanupA := builder.Build(t)
 	defer cleanupA()
+
+	addNewBatchPoster(ctx, t, builder, srv.Address)
+
+	builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
+		builder.L1Info.PrepareTxTo("Faucet", &srv.Address, 30000, big.NewInt(1).Mul(big.NewInt(1e18), big.NewInt(1e18)), nil)})
 
 	l2nodeA := builder.L2.ConsensusNode
 	execNodeA := builder.L2.ExecNode
@@ -143,7 +167,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	rollupABI, err := abi.JSON(strings.NewReader(rollupgen.RollupAdminLogicABI))
 	Require(t, err, "unable to parse rollup ABI")
 
-	setValidatorCalldata, err := rollupABI.Pack("setValidator", []common.Address{valWalletAddrA, l1authB.From}, []bool{true, true})
+	setValidatorCalldata, err := rollupABI.Pack("setValidator", []common.Address{valWalletAddrA, l1authB.From, srv.Address}, []bool{true, true, true})
 	Require(t, err, "unable to generate setValidator calldata")
 	tx, err := upgradeExecutor.ExecuteCall(&deployAuth, l2nodeA.DeployInfo.Rollup, setValidatorCalldata)
 	Require(t, err, "unable to set validators")
@@ -161,8 +185,18 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	Require(t, err)
 
 	valConfig := staker.TestL1ValidatorConfig
-
-	dpA, err := arbnode.StakerDataposter(ctx, rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix), l2nodeA.L1Reader, &l1authA, NewFetcherFromConfig(arbnode.ConfigDefaultL1NonSequencerTest()), nil)
+	parentChainID, err := builder.L1.Client.ChainID(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get parent chain id: %v", err)
+	}
+	dpA, err := arbnode.StakerDataposter(
+		ctx,
+		rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix),
+		l2nodeA.L1Reader,
+		&l1authA, NewFetcherFromConfig(arbnode.ConfigDefaultL1NonSequencerTest()),
+		nil,
+		parentChainID,
+	)
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
 	}
@@ -183,6 +217,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeA.TxStreamer,
 		execNodeA,
 		l2nodeA.ArbDB,
+		nil,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
@@ -210,12 +245,24 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		Require(t, err)
 	}
 	Require(t, err)
-
-	dpB, err := arbnode.StakerDataposter(ctx, rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix), l2nodeB.L1Reader, &l1authB, NewFetcherFromConfig(arbnode.ConfigDefaultL1NonSequencerTest()), nil)
+	cfg := arbnode.ConfigDefaultL1NonSequencerTest()
+	signerCfg, err := externalSignerTestCfg(srv.Address)
+	if err != nil {
+		t.Fatalf("Error getting external signer config: %v", err)
+	}
+	cfg.Staker.DataPoster.ExternalSigner = *signerCfg
+	dpB, err := arbnode.StakerDataposter(
+		ctx,
+		rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix),
+		l2nodeB.L1Reader,
+		&l1authB, NewFetcherFromConfig(cfg),
+		nil,
+		parentChainID,
+	)
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
 	}
-	valWalletB, err := validatorwallet.NewEOA(dpB, l2nodeB.DeployInfo.Rollup, l2nodeB.L1Reader.Client(), &l1authB, func() uint64 { return 0 })
+	valWalletB, err := validatorwallet.NewEOA(dpB, l2nodeB.DeployInfo.Rollup, l2nodeB.L1Reader.Client(), func() uint64 { return 0 })
 	Require(t, err)
 	valConfig.Strategy = "MakeNodes"
 	statelessB, err := staker.NewStatelessBlockValidator(
@@ -224,6 +271,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeB.TxStreamer,
 		execNodeB,
 		l2nodeB.ArbDB,
+		nil,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
@@ -378,14 +426,14 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 			Require(t, err, "EnsureTxSucceeded failed for staker", stakerName, "tx")
 		}
 		if faultyStaker {
-			conflictInfo, err := validatorUtils.FindStakerConflict(&bind.CallOpts{}, l2nodeA.DeployInfo.Rollup, l1authA.From, l1authB.From, big.NewInt(1024))
+			conflictInfo, err := validatorUtils.FindStakerConflict(&bind.CallOpts{}, l2nodeA.DeployInfo.Rollup, l1authA.From, srv.Address, big.NewInt(1024))
 			Require(t, err)
 			if staker.ConflictType(conflictInfo.Ty) == staker.CONFLICT_TYPE_FOUND {
 				cancelBackgroundTxs()
 			}
 		}
 		if faultyStaker && !sawStakerZombie {
-			sawStakerZombie, err = rollup.IsZombie(&bind.CallOpts{}, l1authB.From)
+			sawStakerZombie, err = rollup.IsZombie(&bind.CallOpts{}, srv.Address)
 			Require(t, err)
 		}
 		isHonestZombie, err := rollup.IsZombie(&bind.CallOpts{}, valWalletAddrA)
@@ -406,7 +454,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 			Require(t, err)
 		}
 		if !stakerBWasStaked {
-			stakerBWasStaked, err = rollup.IsStaked(&bind.CallOpts{}, l1authB.From)
+			stakerBWasStaked, err = rollup.IsStaked(&bind.CallOpts{}, srv.Address)
 			Require(t, err)
 		}
 		for j := 0; j < 5; j++ {
@@ -596,13 +644,18 @@ func deployBoldContracts(
 	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)
 
+	miniStakeValues := []*big.Int{
+		big.NewInt(1),
+		big.NewInt(2),
+		big.NewInt(3),
+	}
 	cfg := challenge_testing.GenerateRollupConfig(
 		false,
 		locator.LatestWasmModuleRoot(),
 		l1TransactionOpts.From,
 		chainId,
 		common.Address{},
-		big.NewInt(1),
+		miniStakeValues,
 		stakeToken,
 		rollupgen_bold.ExecutionState{
 			GlobalState:   rollupgen_bold.GlobalState{},

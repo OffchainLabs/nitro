@@ -197,10 +197,10 @@ func (r *ExecutionClientRun) GetStepAt(pos uint64) containers.PromiseInterface[*
 	})
 }
 
-func (r *ExecutionClientRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[*state_hashes.StateHashes] {
+func (r *ExecutionClientRun) GetLeavesWithStepSize(fromBatch, machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[*state_hashes.StateHashes] {
 	return stopwaiter.LaunchPromiseThread[*state_hashes.StateHashes](r, func(ctx context.Context) (*state_hashes.StateHashes, error) {
 		var resJson *state_hashes.StateHashes
-		err := r.client.client.CallContext(ctx, &resJson, Namespace+"_getLeavesWithStepSize", r.id, machineStartIndex, stepSize, numDesiredLeaves)
+		err := r.client.client.CallContext(ctx, &resJson, Namespace+"_getLeavesWithStepSize", r.id, fromBatch, machineStartIndex, stepSize, numDesiredLeaves)
 		if err != nil {
 			return nil, err
 		}
