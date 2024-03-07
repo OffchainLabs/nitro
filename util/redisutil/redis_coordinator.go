@@ -79,21 +79,29 @@ func (c *RedisCoordinator) CurrentChosenSequencer(ctx context.Context) (string, 
 // GetPriorities returns the priority list of sequencers
 func (rc *RedisCoordinator) GetPriorities(ctx context.Context) ([]string, error) {
 	prioritiesString, err := rc.Client.Get(ctx, PRIORITIES_KEY).Result()
+	if errors.Is(err, redis.Nil) {
+		return []string{}, nil
+	}
 	if err != nil {
-		if errors.Is(err, redis.Nil) {
-			err = errors.New("sequencer priorities unset")
-		}
 		return []string{}, err
 	}
 	prioritiesList := strings.Split(prioritiesString, ",")
 	return prioritiesList, nil
 }
 
-// GetLiveliness returns a map whose keys are sequencers that have their liveliness set to OK
+// GetLiveliness returns a list of sequencers that have their liveliness set to OK
 func (rc *RedisCoordinator) GetLiveliness(ctx context.Context) ([]string, error) {
-	livelinessList, _, err := rc.Client.Scan(ctx, 0, WANTS_LOCKOUT_KEY_PREFIX+"*", 0).Result()
-	if err != nil {
-		return []string{}, err
+	var livelinessList []string
+	cursor := uint64(0)
+	for {
+		keySlice, cursor, err := rc.Client.Scan(ctx, cursor, WANTS_LOCKOUT_KEY_PREFIX+"*", 0).Result()
+		if err != nil {
+			return []string{}, err
+		}
+		livelinessList = append(livelinessList, keySlice...)
+		if cursor == 0 {
+			break
+		}
 	}
 	for i, elem := range livelinessList {
 		url := strings.TrimPrefix(elem, WANTS_LOCKOUT_KEY_PREFIX)

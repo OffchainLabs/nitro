@@ -6,6 +6,7 @@ package slice
 import (
 	"bytes"
 	"context"
+	"encoding/hex"
 	"errors"
 	"fmt"
 
@@ -42,6 +43,13 @@ func (s *Storage) FetchContents(_ context.Context, startingIndex uint64, maxResu
 		res = append(res, item)
 	}
 	return res, nil
+}
+
+func (s *Storage) Get(_ context.Context, index uint64) (*storage.QueuedTransaction, error) {
+	if index >= s.firstNonce+uint64(len(s.queue)) || index < s.firstNonce {
+		return nil, nil
+	}
+	return s.encDec().Decode(s.queue[index-s.firstNonce])
 }
 
 func (s *Storage) FetchLast(context.Context) (*storage.QueuedTransaction, error) {
@@ -90,7 +98,7 @@ func (s *Storage) Put(_ context.Context, index uint64, prev, new *storage.Queued
 			return fmt.Errorf("encoding previous item: %w", err)
 		}
 		if !bytes.Equal(prevEnc, s.queue[queueIdx]) {
-			return fmt.Errorf("replacing different item than expected at index: %v, stored: %v, prevEnc: %v", index, s.queue[queueIdx], prevEnc)
+			return fmt.Errorf("replacing different item than expected at index: %v, stored: %v, prevEnc: %v", index, hex.EncodeToString(s.queue[queueIdx]), hex.EncodeToString(prevEnc))
 		}
 		s.queue[queueIdx] = newEnc
 	} else {

@@ -144,12 +144,13 @@ func TestTransactionStreamer(t *testing.T) {
 				} else {
 					dest = state.accounts[rand.Int()%len(state.accounts)]
 				}
+				destHash := common.BytesToHash(dest.Bytes())
 				var gas uint64 = 100000
 				var l2Message []byte
 				l2Message = append(l2Message, arbos.L2MessageKind_ContractTx)
 				l2Message = append(l2Message, arbmath.Uint64ToU256Bytes(gas)...)
 				l2Message = append(l2Message, arbmath.Uint64ToU256Bytes(l2pricing.InitialBaseFeeWei)...)
-				l2Message = append(l2Message, dest.Hash().Bytes()...)
+				l2Message = append(l2Message, destHash.Bytes()...)
 				l2Message = append(l2Message, arbmath.U256Bytes(value)...)
 				var requestId common.Hash
 				binary.BigEndian.PutUint64(requestId.Bytes()[:8], uint64(i))

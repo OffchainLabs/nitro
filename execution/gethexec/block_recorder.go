@@ -123,13 +123,14 @@ func (r *BlockRecorder) RecordBlockCreation(
 	var readBatchInfo []validator.BatchInfo
 	if msg != nil {
 		batchFetcher := func(batchNum uint64) ([]byte, error) {
-			data, err := r.execEngine.streamer.FetchBatch(batchNum)
+			data, blockHash, err := r.execEngine.streamer.FetchBatch(batchNum)
 			if err != nil {
 				return nil, err
 			}
 			readBatchInfo = append(readBatchInfo, validator.BatchInfo{
-				Number: batchNum,
-				Data:   data,
+				Number:    batchNum,
+				BlockHash: blockHash,
+				Data:      data,
 			})
 			return data, nil
 		}

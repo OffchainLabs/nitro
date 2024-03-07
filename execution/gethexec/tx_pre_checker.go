@@ -116,6 +116,11 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 	if tx.Gas() < params.TxGas {
 		return core.ErrIntrinsicGas
 	}
+	if tx.Type() >= types.ArbitrumDepositTxType || tx.Type() == types.BlobTxType {
+		// Should be unreachable for Arbitrum types due to UnmarshalBinary not accepting Arbitrum internal txs
+		// and we want to disallow BlobTxType since Arbitrum doesn't support EIP-4844 txs yet.
+		return types.ErrTxTypeNotSupported
+	}
 	sender, err := types.Sender(types.MakeSigner(chainConfig, header.Number, header.Time), tx)
 	if err != nil {
 		return err
