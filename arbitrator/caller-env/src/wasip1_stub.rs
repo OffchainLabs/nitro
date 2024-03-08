@@ -73,7 +73,7 @@ pub fn environ_get<M: MemAccess, E: ExecEnv>(
 /// in jit it's in fd_write_wrapper
 pub fn fd_write<M: MemAccess, E: ExecEnv>(
     mem: &mut M,
-    env: &mut E,
+    _env: &mut E,
     fd: u32,
     iovecs_ptr: GuestPtr,
     iovecs_len: u32,

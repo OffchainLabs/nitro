@@ -27,7 +27,6 @@ pub fn fd_write_wrapper(
         return ERRNO_BADF;
     }
     let (mut mem, mut env) = jit_env(&mut src);
-    let mut size = 0;
     for i in 0..iovecs_len {
         let ptr = iovecs_ptr + i * 8;
         let len = mem.read_u32(ptr + 4);
