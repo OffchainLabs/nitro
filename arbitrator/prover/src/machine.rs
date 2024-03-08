@@ -2377,17 +2377,14 @@ impl Machine {
                     reset_refs!();
                 }
                 Opcode::SwitchThread => {
-                    let next_recovery = (inst.argument_data != 0)
-                        .then(|| inst.argument_data - 1)
-                        .map(|x| self.pc.add(x.try_into().unwrap()));
-
-                    if next_recovery.is_some() == self.thread_state.is_cothread() {
+                    let next_recovery = match inst.argument_data {
+                        0 => ThreadState::Main,
+                        x => ThreadState::CoThread(self.pc.add((x - 1).try_into().unwrap())),
+                    };
+                    if next_recovery.is_cothread() == self.thread_state.is_cothread() {
                         error!("SwitchThread doesn't switch")
                     }
-                    self.thread_state = match next_recovery {
-                        Some(pc) => ThreadState::CoThread(pc),
-                        None => ThreadState::Main,
-                    };
+                    self.thread_state = next_recovery;
                     reset_refs!();
                 }
             }

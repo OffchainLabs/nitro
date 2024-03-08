@@ -260,7 +260,7 @@ func newApiClosures(
 		takeHash := func() common.Hash {
 			return common.BytesToHash(takeInput(32, "expected hash"))
 		}
-		takeBig := func() *big.Int {
+		takeU256 := func() *big.Int {
 			return common.BytesToHash(takeInput(32, "expected big")).Big()
 		}
 		takeU64 := func() uint64 {
@@ -307,7 +307,7 @@ func newApiClosures(
 				log.Crit("unsupported call type", "opcode", opcode)
 			}
 			contract := takeAddress()
-			value := takeBig()
+			value := takeU256()
 			gas := takeU64()
 			calldata := takeRest()
 
@@ -319,10 +319,10 @@ func newApiClosures(
 			return []byte{statusByte}, ret, cost
 		case Create1, Create2:
 			gas := takeU64()
-			endowment := takeBig()
+			endowment := takeU256()
 			var salt *big.Int
 			if req == Create2 {
-				salt = takeBig()
+				salt = takeU256()
 			}
 			code := takeRest()
 

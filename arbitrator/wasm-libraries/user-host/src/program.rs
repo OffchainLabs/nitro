@@ -96,7 +96,7 @@ impl UserHostRequester {
     ) {
         self.answer = Some((result, VecReader::new(raw_data), gas));
         if req_id != self.id {
-            panic!("bad eq id returning from send_request")
+            panic!("bad req id returning from send_request")
         }
         compiler_fence(Ordering::SeqCst);
     }
