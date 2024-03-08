@@ -6,7 +6,10 @@ use crate::{
     host,
 };
 use arbutil::{
-    evm::{api::EvmApi, EvmData},
+    evm::{
+        api::{DataReader, EvmApi},
+        EvmData,
+    },
     operator::OperatorCode,
     Color,
 };
@@ -35,14 +38,14 @@ use wasmer::{
 use wasmer_vm::VMExtern;
 
 #[derive(Debug)]
-pub struct NativeInstance<E: EvmApi> {
+pub struct NativeInstance<D: DataReader, E: EvmApi<D>> {
     pub instance: Instance,
     pub store: Store,
-    pub env: FunctionEnv<WasmEnv<E>>,
+    pub env: FunctionEnv<WasmEnv<D, E>>,
 }
 
-impl<E: EvmApi> NativeInstance<E> {
-    pub fn new(instance: Instance, store: Store, env: FunctionEnv<WasmEnv<E>>) -> Self {
+impl<D: DataReader, E: EvmApi<D>> NativeInstance<D, E> {
+    pub fn new(instance: Instance, store: Store, env: FunctionEnv<WasmEnv<D, E>>) -> Self {
         let mut native = Self {
             instance,
             store,
@@ -54,11 +57,11 @@ impl<E: EvmApi> NativeInstance<E> {
         native
     }
 
-    pub fn env(&self) -> &WasmEnv<E> {
+    pub fn env(&self) -> &WasmEnv<D, E> {
         self.env.as_ref(&self.store)
     }
 
-    pub fn env_mut(&mut self) -> &mut WasmEnv<E> {
+    pub fn env_mut(&mut self) -> &mut WasmEnv<D, E> {
         self.env.as_mut(&mut self.store)
     }
 
@@ -113,7 +116,7 @@ impl<E: EvmApi> NativeInstance<E> {
         Self::from_module(module, store, env)
     }
 
-    fn from_module(module: Module, mut store: Store, env: WasmEnv<E>) -> Result<Self> {
+    fn from_module(module: Module, mut store: Store, env: WasmEnv<D, E>) -> Result<Self> {
         let debug_funcs = env.compile.debug.debug_funcs;
         let func_env = FunctionEnv::new(&mut store, env);
         macro_rules! func {
@@ -160,14 +163,14 @@ impl<E: EvmApi> NativeInstance<E> {
         };
         if debug_funcs {
             imports.define("console", "log_txt", func!(host::console_log_text));
-            imports.define("console", "log_i32", func!(host::console_log::<E, u32>));
-            imports.define("console", "log_i64", func!(host::console_log::<E, u64>));
-            imports.define("console", "log_f32", func!(host::console_log::<E, f32>));
-            imports.define("console", "log_f64", func!(host::console_log::<E, f64>));
-            imports.define("console", "tee_i32", func!(host::console_tee::<E, u32>));
-            imports.define("console", "tee_i64", func!(host::console_tee::<E, u64>));
-            imports.define("console", "tee_f32", func!(host::console_tee::<E, f32>));
-            imports.define("console", "tee_f64", func!(host::console_tee::<E, f64>));
+            imports.define("console", "log_i32", func!(host::console_log::<D, E, u32>));
+            imports.define("console", "log_i64", func!(host::console_log::<D, E, u64>));
+            imports.define("console", "log_f32", func!(host::console_log::<D, E, f32>));
+            imports.define("console", "log_f64", func!(host::console_log::<D, E, f64>));
+            imports.define("console", "tee_i32", func!(host::console_tee::<D, E, u32>));
+            imports.define("console", "tee_i64", func!(host::console_tee::<D, E, u64>));
+            imports.define("console", "tee_f32", func!(host::console_tee::<D, E, f32>));
+            imports.define("console", "tee_f64", func!(host::console_tee::<D, E, f64>));
             imports.define("debug", "null_host", func!(host::null_host));
         }
         let instance = Instance::new(&mut store, &module, &imports)?;
@@ -236,7 +239,7 @@ impl<E: EvmApi> NativeInstance<E> {
     }
 }
 
-impl<E: EvmApi> Deref for NativeInstance<E> {
+impl<D: DataReader, E: EvmApi<D>> Deref for NativeInstance<D, E> {
     type Target = Instance;
 
     fn deref(&self) -> &Self::Target {
@@ -244,13 +247,13 @@ impl<E: EvmApi> Deref for NativeInstance<E> {
     }
 }
 
-impl<E: EvmApi> DerefMut for NativeInstance<E> {
+impl<D: DataReader, E: EvmApi<D>> DerefMut for NativeInstance<D, E> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         &mut self.instance
     }
 }
 
-impl<E: EvmApi> MeteredMachine for NativeInstance<E> {
+impl<D: DataReader, E: EvmApi<D>> MeteredMachine for NativeInstance<D, E> {
     fn ink_left(&self) -> MachineMeter {
         let vm = self.env().meter();
         match vm.status() {
@@ -266,13 +269,13 @@ impl<E: EvmApi> MeteredMachine for NativeInstance<E> {
     }
 }
 
-impl<E: EvmApi> GasMeteredMachine for NativeInstance<E> {
+impl<D: DataReader, E: EvmApi<D>> GasMeteredMachine for NativeInstance<D, E> {
     fn pricing(&self) -> PricingParams {
         self.env().config.unwrap().pricing
     }
 }
 
-impl<E: EvmApi> CountingMachine for NativeInstance<E> {
+impl<D: DataReader, E: EvmApi<D>> CountingMachine for NativeInstance<D, E> {
     fn operator_counts(&mut self) -> Result<BTreeMap<OperatorCode, u64>> {
         let mut counts = BTreeMap::new();
 
@@ -286,7 +289,7 @@ impl<E: EvmApi> CountingMachine for NativeInstance<E> {
     }
 }
 
-impl<E: EvmApi> DepthCheckedMachine for NativeInstance<E> {
+impl<D: DataReader, E: EvmApi<D>> DepthCheckedMachine for NativeInstance<D, E> {
     fn stack_left(&mut self) -> u32 {
         self.get_global(STYLUS_STACK_LEFT).unwrap()
     }
@@ -296,7 +299,7 @@ impl<E: EvmApi> DepthCheckedMachine for NativeInstance<E> {
     }
 }
 
-impl<E: EvmApi> StartlessMachine for NativeInstance<E> {
+impl<D: DataReader, E: EvmApi<D>> StartlessMachine for NativeInstance<D, E> {
     fn get_start(&self) -> Result<TypedFunction<(), ()>> {
         let store = &self.store;
         let exports = &self.instance.exports;

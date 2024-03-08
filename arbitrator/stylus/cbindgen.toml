@@ -8,3 +8,6 @@ extra_bindings = ["arbutil", "prover"]
 
 [enum]
 prefix_with_name = true
+
+[export]
+include = ["EvmApiMethod", "EvmApiMethodOffset"]

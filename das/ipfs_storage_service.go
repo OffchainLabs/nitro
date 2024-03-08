@@ -5,6 +5,9 @@
 // It takes advantage of IPFS' content addressing scheme to be able to directly retrieve
 // the batches from IPFS using their root hash from the L1 sequencer inbox contract.
 
+//go:build ipfs
+// +build ipfs
+
 package das
 
 import (

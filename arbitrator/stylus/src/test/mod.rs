@@ -2,7 +2,10 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{env::WasmEnv, native::NativeInstance, run::RunProgram, test::api::TestEvmApi};
-use arbutil::{evm::user::UserOutcome, Bytes20, Bytes32, Color};
+use arbutil::{
+    evm::{api::VecReader, user::UserOutcome},
+    Bytes20, Bytes32, Color,
+};
 use eyre::{bail, Result};
 use prover::{
     machine::GlobalState,
@@ -26,7 +29,7 @@ mod wavm;
 #[cfg(feature = "timings")]
 mod timings;
 
-type TestInstance = NativeInstance<TestEvmApi>;
+type TestInstance = NativeInstance<VecReader, TestEvmApi>;
 
 impl TestInstance {
     fn new_test(path: &str, compile: CompileConfig) -> Result<Self> {

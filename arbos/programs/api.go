@@ -4,6 +4,7 @@
 package programs
 
 import (
+	"encoding/binary"
 	"errors"
 	"math/big"
 
@@ -14,64 +15,38 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/holiman/uint256"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	am "github.com/offchainlabs/nitro/util/arbmath"
 )
 
-type getBytes32Type func(key common.Hash) (value common.Hash, cost uint64)
-type setBytes32Type func(key, value common.Hash) (cost uint64, err error)
-type contractCallType func(
-	contract common.Address, calldata []byte, gas uint64, value *big.Int) (
-	retdata_len uint32, cost uint64, err error,
-)
-type delegateCallType func(
-	contract common.Address, calldata []byte, gas uint64) (
-	retdata_len uint32, cost uint64, err error,
-)
-type staticCallType func(
-	contract common.Address, calldata []byte, gas uint64) (
-	retdata_len uint32, cost uint64, err error,
-)
-type create1Type func(
-	code []byte, endowment *big.Int, gas uint64) (
-	addr common.Address, retdata_len uint32, cost uint64, err error,
-)
-type create2Type func(
-	code []byte, salt, endowment *big.Int, gas uint64) (
-	addr common.Address, retdata_len uint32, cost uint64, err error,
-)
-type getReturnDataType func(offset uint32, size uint32) []byte
-type emitLogType func(data []byte, topics uint32) error
-type accountBalanceType func(address common.Address) (value common.Hash, cost uint64)
-type accountCodeType func(address common.Address, offset, size uint32, gas uint64) ([]byte, uint64)
-type accountCodeSizeType func(address common.Address, gas uint64) (uint32, uint64)
-type accountCodehashType func(address common.Address) (value common.Hash, cost uint64)
-type addPagesType func(pages uint16) (cost uint64)
-type captureHostioType func(name string, args, outs []byte, startInk, endInk uint64)
+type RequestHandler func(req RequestType, input []byte) ([]byte, []byte, uint64)
 
-type goClosures struct {
-	getBytes32      getBytes32Type
-	setBytes32      setBytes32Type
-	contractCall    contractCallType
-	delegateCall    delegateCallType
-	staticCall      staticCallType
-	create1         create1Type
-	create2         create2Type
-	getReturnData   getReturnDataType
-	emitLog         emitLogType
-	accountBalance  accountBalanceType
-	accountCode     accountCodeType
-	accountCodeSize accountCodeSizeType
-	accountCodeHash accountCodehashType
-	addPages        addPagesType
-	captureHostio   captureHostioType
-}
+type RequestType int
+
+const (
+	GetBytes32 RequestType = iota
+	SetBytes32
+	ContractCall
+	DelegateCall
+	StaticCall
+	Create1
+	Create2
+	EmitLog
+	AccountBalance
+	AccountCode
+	AccountCodeHash
+	AddPages
+	CaptureHostIO
+)
+
+const EvmApiMethodReqOffset = 0x10000000
 
 func newApiClosures(
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,
 	scope *vm.ScopeContext,
 	memoryModel *MemoryModel,
-) *goClosures {
+) RequestHandler {
 	contract := scope.Contract
 	actingAddress := contract.Address() // not necessarily WASM
 	readOnly := interpreter.ReadOnly()
@@ -99,7 +74,7 @@ func newApiClosures(
 	}
 	doCall := func(
 		contract common.Address, opcode vm.OpCode, input []byte, gas uint64, value *big.Int,
-	) (uint32, uint64, error) {
+	) ([]byte, uint64, error) {
 		// This closure can perform each kind of contract call based on the opcode passed in.
 		// The implementation for each should match that of the EVM.
 		//
@@ -112,7 +87,7 @@ func newApiClosures(
 
 		// read-only calls are not payable (opCall)
 		if readOnly && value.Sign() != 0 {
-			return 0, 0, vm.ErrWriteProtection
+			return nil, 0, vm.ErrWriteProtection
 		}
 
 		startGas := gas
@@ -120,7 +95,7 @@ func newApiClosures(
 		// computes makeCallVariantGasCallEIP2929 and gasCall/gasDelegateCall/gasStaticCall
 		baseCost, err := vm.WasmCallCost(db, contract, value, startGas)
 		if err != nil {
-			return 0, gas, err
+			return nil, gas, err
 		}
 		gas -= baseCost
 
@@ -153,19 +128,10 @@ func newApiClosures(
 		}
 
 		interpreter.SetReturnData(ret)
-		cost := am.SaturatingUSub(startGas, returnGas+one64th) // user gets 1/64th back
-		return uint32(len(ret)), cost, err
+		cost := arbmath.SaturatingUSub(startGas, returnGas+one64th) // user gets 1/64th back
+		return ret, cost, err
 	}
-	contractCall := func(contract common.Address, input []byte, gas uint64, value *big.Int) (uint32, uint64, error) {
-		return doCall(contract, vm.CALL, input, gas, value)
-	}
-	delegateCall := func(contract common.Address, input []byte, gas uint64) (uint32, uint64, error) {
-		return doCall(contract, vm.DELEGATECALL, input, gas, common.Big0)
-	}
-	staticCall := func(contract common.Address, input []byte, gas uint64) (uint32, uint64, error) {
-		return doCall(contract, vm.STATICCALL, input, gas, common.Big0)
-	}
-	create := func(code []byte, endowment, salt *big.Int, gas uint64) (common.Address, uint32, uint64, error) {
+	create := func(code []byte, endowment, salt *big.Int, gas uint64) (common.Address, []byte, uint64, error) {
 		// This closure can perform both kinds of contract creation based on the salt passed in.
 		// The implementation for each should match that of the EVM.
 		//
@@ -183,7 +149,7 @@ func newApiClosures(
 		startGas := gas
 
 		if readOnly {
-			return zeroAddr, 0, 0, vm.ErrWriteProtection
+			return zeroAddr, nil, 0, vm.ErrWriteProtection
 		}
 
 		// pay for static and dynamic costs (gasCreate and gasCreate2)
@@ -194,7 +160,7 @@ func newApiClosures(
 			baseCost = am.SaturatingUAdd(baseCost, keccakCost)
 		}
 		if gas < baseCost {
-			return zeroAddr, 0, gas, vm.ErrOutOfGas
+			return zeroAddr, nil, gas, vm.ErrOutOfGas
 		}
 		gas -= baseCost
 
@@ -225,31 +191,17 @@ func newApiClosures(
 			res = nil // returnData is only provided in the revert case (opCreate)
 		}
 		interpreter.SetReturnData(res)
-		cost := am.SaturatingUSub(startGas, returnGas+one64th) // user gets 1/64th back
-		return addr, uint32(len(res)), cost, nil
+		cost := arbmath.SaturatingUSub(startGas, returnGas+one64th) // user gets 1/64th back
+		return addr, res, cost, nil
 	}
-	create1 := func(code []byte, endowment *big.Int, gas uint64) (common.Address, uint32, uint64, error) {
-		return create(code, endowment, nil, gas)
-	}
-	create2 := func(code []byte, endowment, salt *big.Int, gas uint64) (common.Address, uint32, uint64, error) {
-		return create(code, endowment, salt, gas)
-	}
-	getReturnData := func(start uint32, size uint32) []byte {
-		end := am.SaturatingUAdd(start, size)
-		return am.SliceWithRunoff(interpreter.GetReturnData(), start, end)
-	}
-	emitLog := func(data []byte, topics uint32) error {
+	emitLog := func(topics []common.Hash, data []byte) error {
 		if readOnly {
 			return vm.ErrWriteProtection
 		}
-		hashes := make([]common.Hash, topics)
-		for i := uint32(0); i < topics; i++ {
-			hashes[i] = common.BytesToHash(data[:(i+1)*32])
-		}
 		event := &types.Log{
 			Address:     actingAddress,
-			Topics:      hashes,
-			Data:        data[32*topics:],
+			Topics:      topics,
+			Data:        data,
 			BlockNumber: evm.Context.BlockNumber.Uint64(),
 			// Geth will set other fields
 		}
@@ -261,7 +213,7 @@ func newApiClosures(
 		balance := evm.StateDB.GetBalance(address)
 		return common.BigToHash(balance), cost
 	}
-	accountCode := func(address common.Address, offset, size uint32, gas uint64) ([]byte, uint64) {
+	accountCode := func(address common.Address, gas uint64) ([]byte, uint64) {
 		// In the future it'll be possible to know the size of a contract before loading it.
 		// For now, require the worst case before doing the load.
 
@@ -269,17 +221,7 @@ func newApiClosures(
 		if gas < cost {
 			return []byte{}, cost
 		}
-		end := am.SaturatingUAdd(offset, size)
-		code := am.SliceWithRunoff(evm.StateDB.GetCode(address), offset, end)
-		return code, cost
-	}
-	accountCodeSize := func(address common.Address, gas uint64) (uint32, uint64) {
-		cost := vm.WasmAccountTouchCost(evm.StateDB, address, true)
-		if gas < cost {
-			return 0, cost
-		}
-		size := evm.StateDB.GetCodeSize(address)
-		return uint32(size), cost
+		return evm.StateDB.GetCode(address), cost
 	}
 	accountCodehash := func(address common.Address) (common.Hash, uint64) {
 		cost := vm.WasmAccountTouchCost(evm.StateDB, address, false)
@@ -293,21 +235,168 @@ func newApiClosures(
 		tracingInfo.Tracer.CaptureStylusHostio(name, args, outs, startInk, endInk)
 	}
 
-	return &goClosures{
-		getBytes32:      getBytes32,
-		setBytes32:      setBytes32,
-		contractCall:    contractCall,
-		delegateCall:    delegateCall,
-		staticCall:      staticCall,
-		create1:         create1,
-		create2:         create2,
-		getReturnData:   getReturnData,
-		emitLog:         emitLog,
-		accountBalance:  accountBalance,
-		accountCode:     accountCode,
-		accountCodeSize: accountCodeSize,
-		accountCodeHash: accountCodehash,
-		addPages:        addPages,
-		captureHostio:   captureHostio,
+	return func(req RequestType, input []byte) ([]byte, []byte, uint64) {
+		switch req {
+		case GetBytes32:
+			if len(input) != 32 {
+				log.Crit("bad API call", "request", req, "len", len(input))
+			}
+			key := common.BytesToHash(input)
+
+			out, cost := getBytes32(key)
+
+			return out[:], nil, cost
+		case SetBytes32:
+			if len(input) != 64 {
+				log.Crit("bad API call", "request", req, "len", len(input))
+			}
+			key := common.BytesToHash(input[:32])
+			value := common.BytesToHash(input[32:])
+
+			cost, err := setBytes32(key, value)
+
+			if err != nil {
+				return []byte{0}, nil, 0
+			}
+			return []byte{1}, nil, cost
+		case ContractCall, DelegateCall, StaticCall:
+			if len(input) < 60 {
+				log.Crit("bad API call", "request", req, "len", len(input))
+			}
+			var opcode vm.OpCode
+			switch req {
+			case ContractCall:
+				opcode = vm.CALL
+			case DelegateCall:
+				opcode = vm.DELEGATECALL
+			case StaticCall:
+				opcode = vm.STATICCALL
+			default:
+				log.Crit("unsupported call type", "opcode", opcode)
+			}
+			contract := common.BytesToAddress(input[:20])
+			value := common.BytesToHash(input[20:52]).Big()
+			gas := binary.BigEndian.Uint64(input[52:60])
+			input = input[60:]
+
+			ret, cost, err := doCall(contract, opcode, input, gas, value)
+
+			statusByte := byte(0)
+			if err != nil {
+				statusByte = 2 //TODO: err value
+			}
+			return []byte{statusByte}, ret, cost
+		case Create1, Create2:
+			if len(input) < 40 {
+				log.Crit("bad API call", "request", req, "len", len(input))
+			}
+			gas := binary.BigEndian.Uint64(input[0:8])
+			endowment := common.BytesToHash(input[8:40]).Big()
+			var code []byte
+			var salt *big.Int
+			switch req {
+			case Create1:
+				code = input[40:]
+			case Create2:
+				if len(input) < 72 {
+					log.Crit("bad API call", "request", req, "len", len(input))
+				}
+				salt = common.BytesToHash(input[40:72]).Big()
+				code = input[72:]
+			default:
+				log.Crit("unsupported create opcode", "request", req)
+			}
+
+			address, retVal, cost, err := create(code, endowment, salt, gas)
+
+			if err != nil {
+				res := append([]byte{0}, []byte(err.Error())...)
+				return res, nil, gas
+			}
+			res := append([]byte{1}, address.Bytes()...)
+			return res, retVal, cost
+		case EmitLog:
+			if len(input) < 4 {
+				log.Crit("bad API call", "request", req, "len", len(input))
+			}
+			topics := binary.BigEndian.Uint32(input[0:4])
+			input = input[4:]
+			hashes := make([]common.Hash, topics)
+			if len(input) < int(topics*32) {
+				log.Crit("bad API call", "request", req, "len", len(input))
+			}
+			for i := uint32(0); i < topics; i++ {
+				hashes[i] = common.BytesToHash(input[i*32 : (i+1)*32])
+			}
+
+			err := emitLog(hashes, input[topics*32:])
+
+			if err != nil {
+				return []byte(err.Error()), nil, 0
+			}
+			return []byte{}, nil, 0
+		case AccountBalance:
+			if len(input) != 20 {
+				log.Crit("bad API call", "request", req, "len", len(input))
+			}
+			address := common.BytesToAddress(input)
+
+			balance, cost := accountBalance(address)
+
+			return balance[:], nil, cost
+		case AccountCode:
+			if len(input) != 28 {
+				log.Crit("bad API call", "request", req, "len", len(input))
+			}
+			address := common.BytesToAddress(input[0:20])
+			gas := binary.BigEndian.Uint64(input[20:28])
+
+			code, cost := accountCode(address, gas)
+
+			return nil, code, cost
+		case AccountCodeHash:
+			if len(input) != 20 {
+				log.Crit("bad API call", "request", req, "len", len(input))
+			}
+			address := common.BytesToAddress(input)
+
+			codeHash, cost := accountCodehash(address)
+
+			return codeHash[:], nil, cost
+		case AddPages:
+			if len(input) != 2 {
+				log.Crit("bad API call", "request", req, "len", len(input))
+			}
+			pages := binary.BigEndian.Uint16(input)
+
+			cost := addPages(pages)
+
+			return []byte{}, nil, cost
+		case CaptureHostIO:
+			if len(input) < 22 {
+				log.Crit("bad API call", "request", req, "len", len(input))
+			}
+			if tracingInfo == nil {
+				return []byte{}, nil, 0
+			}
+			startInk := binary.BigEndian.Uint64(input[:8])
+			endInk := binary.BigEndian.Uint64(input[8:16])
+			nameLen := binary.BigEndian.Uint16(input[16:18])
+			argsLen := binary.BigEndian.Uint16(input[18:20])
+			outsLen := binary.BigEndian.Uint16(input[20:22])
+			if len(input) != 22+int(nameLen+argsLen+outsLen) {
+				log.Error("bad API call", "request", req, "len", len(input), "expected", nameLen+argsLen+outsLen)
+			}
+			name := string(input[22 : 22+nameLen])
+			args := input[22+nameLen : 22+nameLen+argsLen]
+			outs := input[22+nameLen+argsLen:]
+
+			captureHostio(name, args, outs, startInk, endInk)
+
+			return []byte{}, nil, 0
+		default:
+			log.Crit("unsupported call type", "req", req)
+			return []byte{}, nil, 0
+		}
 	}
 }

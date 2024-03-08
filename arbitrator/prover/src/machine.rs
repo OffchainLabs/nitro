@@ -5,7 +5,6 @@ use crate::{
     binary::{
         self, parse, ExportKind, ExportMap, FloatInstruction, Local, NameCustomSection, WasmBinary,
     },
-    error_guard::{ErrorGuard, ErrorGuardProof, ErrorGuardStack},
     host,
     memory::Memory,
     merkle::{Merkle, MerkleType},
@@ -22,7 +21,6 @@ use arbutil::{math, Bytes32, Color};
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
-use itertools::izip;
 use lazy_static::lazy_static;
 use num::{traits::PrimInt, Zero};
 use serde::{Deserialize, Serialize};
@@ -37,6 +35,7 @@ use std::{
     hash::Hash,
     io::{BufReader, BufWriter, Write},
     num::Wrapping,
+    ops::Add,
     path::{Path, PathBuf},
     sync::Arc,
 };
@@ -722,10 +721,11 @@ pub struct ModuleState<'a> {
 #[derive(Serialize, Deserialize)]
 pub struct MachineState<'a> {
     steps: u64, // Not part of machine hash
+    main_thread_recovery: Option<ProgramCounter>,
     status: MachineStatus,
-    value_stack: Cow<'a, Vec<Value>>,
+    value_stacks: Cow<'a, Vec<Vec<Value>>>,
     internal_stack: Cow<'a, Vec<Value>>,
-    frame_stack: Cow<'a, Vec<StackFrame>>,
+    frame_stacks: Cow<'a, Vec<Vec<StackFrame>>>,
     modules: Vec<ModuleState<'a>>,
     global_state: GlobalState,
     pc: ProgramCounter,
@@ -785,11 +785,15 @@ impl PreimageResolverWrapper {
 #[derive(Clone, Debug)]
 pub struct Machine {
     steps: u64, // Not part of machine hash
+    // This has double use:
+    // If None - we are not in a cothread.
+    // Otherwise - it holds the recovery PC which we'll jump to
+    // in case the cothread reaches a machine error
+    main_thread_recovery: Option<ProgramCounter>,
     status: MachineStatus,
-    value_stack: Vec<Value>,
+    value_stacks: Vec<Vec<Value>>,
     internal_stack: Vec<Value>,
-    frame_stack: Vec<StackFrame>,
-    guards: ErrorGuardStack,
+    frame_stacks: Vec<Vec<StackFrame>>,
     modules: Vec<Module>,
     modules_merkle: Option<Merkle>,
     global_state: GlobalState,
@@ -806,6 +810,7 @@ pub struct Machine {
 
 type FrameStackHash = Bytes32;
 type ValueStackHash = Bytes32;
+type MultiStackHash = Bytes32;
 type InterStackHash = Bytes32;
 
 pub(crate) fn hash_stack<I, D>(stack: I, prefix: &str) -> Bytes32
@@ -860,6 +865,13 @@ fn hash_stack_frame_stack(frames: &[StackFrame]) -> FrameStackHash {
     hash_stack(frames.iter().map(|f| f.hash()), "Stack frame stack:")
 }
 
+fn hash_multistack<T, F>(multistack: &[&[T]], stack_hasher: F) -> MultiStackHash
+where
+    F: Fn(&[T]) -> Bytes32,
+{
+    hash_stack(multistack.iter().map(|v| stack_hasher(v)), "cothread:")
+}
+
 #[must_use]
 fn prove_window<T, F, D, G>(items: &[T], stack_hasher: F, encoder: G) -> Vec<u8>
 where
@@ -899,6 +911,49 @@ where
     for val in &items[unproven_stack_depth..] {
         data.extend(encoder(val).as_ref());
     }
+    data
+}
+
+// prove_multistacks encodes proof for multistacks:
+// - Proof of first(main) if not cothread otherwise last
+// - Hash of first if cothread, otherwise last
+// - Recursive hash of the rest
+// If length is < 1, hash of last element is assumed 0xff..f, same for hash
+// of in-between stacks ([2nd..last)).
+// Accepts prover function so that it can work both for proving stack and window.
+#[must_use]
+fn prove_multistack<T, F, MF>(
+    cothread: bool,
+    items: Vec<&[T]>,
+    stack_hasher: F,
+    multistack_hasher: MF,
+    prover: fn(&[T]) -> Vec<u8>,
+) -> Vec<u8>
+where
+    F: Fn(&[T]) -> Bytes32,
+    MF: Fn(&[&[T]], F) -> Bytes32,
+{
+    let mut data = Vec::with_capacity(33);
+
+    if cothread {
+        data.extend(prover(items.last().unwrap()));
+        data.extend(stack_hasher(items.first().unwrap()))
+    } else {
+        data.extend(prover(items.first().unwrap()));
+
+        let last_hash = if items.len() > 1 {
+            stack_hasher(items.last().unwrap())
+        } else {
+            Machine::NO_STACK_HASH
+        };
+        data.extend(last_hash);
+    }
+    let hash: Bytes32 = if items.len() > 2 {
+        multistack_hasher(&items[1..items.len() - 1], stack_hasher)
+    } else {
+        Bytes32::default()
+    };
+    data.extend(hash);
     data
 }
 
@@ -970,6 +1025,7 @@ pub fn get_empty_preimage_resolver() -> PreimageResolver {
 
 impl Machine {
     pub const MAX_STEPS: u64 = 1 << 43;
+    pub const NO_STACK_HASH: Bytes32 = Bytes32([255_u8; 32]);
 
     pub fn from_paths(
         library_paths: &[PathBuf],
@@ -1204,59 +1260,15 @@ impl Machine {
             entry!(HaltAndSetFinished);
         }
 
-        // Go support
-        if let Some(&f) = main_exports.get("run").filter(|_| runtime_support) {
-            let mut expected_type = FunctionType::default();
-            expected_type.inputs.push(I32); // argc
-            expected_type.inputs.push(I32); // argv
+        // Go/wasi support
+        if let Some(&f) = main_exports.get("_start").filter(|_| runtime_support) {
+            let expected_type = FunctionType::new([], []);
             ensure!(
                 main_module.func_types[f as usize] == expected_type,
-                "Run function doesn't match expected signature of [argc, argv]",
+                "Main function doesn't match expected signature of [] -> []",
             );
-            // Go's flags library panics if the argument list is empty.
-            // To pass in the program name argument, we need to put it in memory.
-            // The Go linker guarantees a section of memory starting at byte 4096 is available for this purpose.
-            // https://github.com/golang/go/blob/252324e879e32f948d885f787decf8af06f82be9/misc/wasm/wasm_exec.js#L520
-            // These memory stores also assume that the Go module's memory is large enough to begin with.
-            // That's also handled by the Go compiler. Go 1.17.5 in the compilation of the arbitrator go test case
-            // initializes its memory to 272 pages long (about 18MB), much larger than the required space.
-            let free_memory_base = 4096;
-            let name_str_ptr = free_memory_base;
-            let argv_ptr = name_str_ptr + 8;
-            ensure!(
-                main_module.internals_offset != 0,
-                "Main module doesn't have internals"
-            );
-            let main_module_idx = u32::try_from(main_module_idx).unwrap();
-            let main_module_store32 = main_module.internals_offset + 3;
-
-            // Write "js\0" to name_str_ptr, to match what the actual JS environment does
-            entry!(I32Const, name_str_ptr);
-            entry!(I32Const, 0x736a); // b"js\0"
-            entry!(@cross, main_module_idx, main_module_store32);
-            entry!(I32Const, name_str_ptr + 4);
-            entry!(I32Const, 0);
-            entry!(@cross, main_module_idx, main_module_store32);
-
-            // Write name_str_ptr to argv_ptr
-            entry!(I32Const, argv_ptr);
-            entry!(I32Const, name_str_ptr);
-            entry!(@cross, main_module_idx, main_module_store32);
-            entry!(I32Const, argv_ptr + 4);
-            entry!(I32Const, 0);
-            entry!(@cross, main_module_idx, main_module_store32);
-
-            // Launch main with an argument count of 1 and argv_ptr
-            entry!(I32Const, 1);
-            entry!(I32Const, argv_ptr);
-            entry!(@cross, main_module_idx, f);
-            if let Some(i) = available_imports.get("wavm__go_after_run") {
-                ensure!(
-                    i.ty == FunctionType::default(),
-                    "Resume function has non-empty function signature",
-                );
-                entry!(@cross, i.module, i.func);
-            }
+            entry!(@cross, u32::try_from(main_module_idx).unwrap(), f);
+            entry!(HaltAndSetFinished);
         }
 
         let entrypoint_types = vec![FunctionType::default()];
@@ -1336,10 +1348,11 @@ impl Machine {
 
         let mut mach = Machine {
             status: MachineStatus::Running,
+            main_thread_recovery: None,
             steps: 0,
-            value_stack: vec![Value::RefNull, Value::I32(0), Value::I32(0)],
+            value_stacks: vec![vec![Value::RefNull, Value::I32(0), Value::I32(0)]],
             internal_stack: Vec::new(),
-            frame_stack: Vec::new(),
+            frame_stacks: vec![Vec::new()],
             modules,
             modules_merkle,
             global_state,
@@ -1349,7 +1362,6 @@ impl Machine {
             first_too_far,
             preimage_resolver: PreimageResolverWrapper::new(preimage_resolver),
             stylus_modules: HashMap::default(),
-            guards: Default::default(),
             initial_hash: Bytes32::default(),
             context: 0,
             debug_info,
@@ -1391,10 +1403,11 @@ impl Machine {
         }
         let mut mach = Machine {
             status: MachineStatus::Running,
+            main_thread_recovery: None,
             steps: 0,
-            value_stack: vec![Value::RefNull, Value::I32(0), Value::I32(0)],
+            value_stacks: vec![vec![Value::RefNull, Value::I32(0), Value::I32(0)]],
             internal_stack: Vec::new(),
-            frame_stack: Vec::new(),
+            frame_stacks: vec![Vec::new()],
             modules,
             modules_merkle: None,
             global_state: Default::default(),
@@ -1404,7 +1417,6 @@ impl Machine {
             first_too_far: 0,
             preimage_resolver: PreimageResolverWrapper::new(get_empty_preimage_resolver()),
             stylus_modules: HashMap::default(),
-            guards: Default::default(),
             initial_hash: Bytes32::default(),
             context: 0,
             debug_info: false,
@@ -1441,10 +1453,11 @@ impl Machine {
             .collect();
         let state = MachineState {
             steps: self.steps,
+            main_thread_recovery: self.main_thread_recovery,
             status: self.status,
-            value_stack: Cow::Borrowed(&self.value_stack),
+            value_stacks: Cow::Borrowed(&self.value_stacks),
             internal_stack: Cow::Borrowed(&self.internal_stack),
-            frame_stack: Cow::Borrowed(&self.frame_stack),
+            frame_stacks: Cow::Borrowed(&self.frame_stacks),
             modules,
             global_state: self.global_state.clone(),
             pc: self.pc,
@@ -1478,9 +1491,9 @@ impl Machine {
         }
         self.steps = new_state.steps;
         self.status = new_state.status;
-        self.value_stack = new_state.value_stack.into_owned();
+        self.value_stacks = new_state.value_stacks.into_owned();
         self.internal_stack = new_state.internal_stack.into_owned();
-        self.frame_stack = new_state.frame_stack.into_owned();
+        self.frame_stacks = new_state.frame_stacks.into_owned();
         self.global_state = new_state.global_state;
         self.pc = new_state.pc;
         self.stdio_output = new_state.stdio_output.into_owned();
@@ -1560,9 +1573,9 @@ impl Machine {
 
         let frame_args = [Value::RefNull, Value::I32(0), Value::I32(0)];
         args.extend(frame_args);
-        self.value_stack = args;
+        self.value_stacks[0] = args;
 
-        self.frame_stack.clear();
+        self.frame_stacks[0].clear();
         self.internal_stack.clear();
 
         self.pc = ProgramCounter {
@@ -1576,13 +1589,16 @@ impl Machine {
     }
 
     pub fn get_final_result(&self) -> Result<Vec<Value>> {
-        if !self.frame_stack.is_empty() {
+        if self.main_thread_recovery.is_some() {
+            bail!("machine in cothread when expecting final result")
+        }
+        if !self.frame_stacks[0].is_empty() {
             bail!(
                 "machine has not successfully computed a final result {}",
                 self.status.red()
             )
         }
-        Ok(self.value_stack.clone())
+        Ok(self.value_stacks[0].clone())
     }
 
     pub fn call_function(
@@ -1685,11 +1701,25 @@ impl Machine {
         if self.is_halted() {
             return Ok(());
         }
+        let (mut value_stack, mut frame_stack) = match self.main_thread_recovery {
+            None => (&mut self.value_stacks[0], &mut self.frame_stacks[0]),
+            Some(_) => (
+                self.value_stacks.last_mut().unwrap(),
+                self.frame_stacks.last_mut().unwrap(),
+            ),
+        };
         let mut module = &mut self.modules[self.pc.module()];
         let mut func = &module.funcs[self.pc.func()];
 
         macro_rules! reset_refs {
             () => {
+                (value_stack, frame_stack) = match self.main_thread_recovery {
+                    None => (&mut self.value_stacks[0], &mut self.frame_stacks[0]),
+                    Some(_) => (
+                        self.value_stacks.last_mut().unwrap(),
+                        self.frame_stacks.last_mut().unwrap(),
+                    ),
+                };
                 module = &mut self.modules[self.pc.module()];
                 func = &module.funcs[self.pc.func()];
             };
@@ -1714,25 +1744,11 @@ impl Machine {
                     machine.print_backtrace(true);
                 };
 
-                if self.guards.enabled && !self.guards.is_empty() {
-                    let guard = self.guards.pop().unwrap();
-                    if self.debug_info {
-                        print_debug_info(self);
-                    }
-                    println!("{}", "Recovering...".pink());
-
-                    // recover at the previous stack heights
-                    assert!(self.frame_stack.len() >= guard.frame_stack);
-                    assert!(self.value_stack.len() >= guard.value_stack);
-                    assert!(self.internal_stack.len() >= guard.inter_stack);
-                    self.frame_stack.truncate(guard.frame_stack);
-                    self.value_stack.truncate(guard.value_stack);
-                    self.internal_stack.truncate(guard.inter_stack);
-                    self.pc = guard.on_error;
-
-                    // indicate an error has occured
-                    self.value_stack.push(0_u32.into());
+                if  let Some(recovery_pc) = self.main_thread_recovery.take() {
+                    println!("\n{}", "switching to main thread".grey());
+                    self.pc = recovery_pc;
                     reset_refs!();
+                    println!("\n{} {:?}", "next opcode: ".grey(), func.code[self.pc.inst()]);
                     continue;
                 } else {
                     print_debug_info(self);
@@ -1751,13 +1767,13 @@ impl Machine {
             let inst = func.code[self.pc.inst()];
             self.pc.inst += 1;
             match inst.opcode {
-                Opcode::Unreachable => error!(),
+                Opcode::Unreachable => error!("unreachable"),
                 Opcode::Nop => {}
                 Opcode::InitFrame => {
-                    let caller_module_internals = self.value_stack.pop().unwrap().assume_u32();
-                    let caller_module = self.value_stack.pop().unwrap().assume_u32();
-                    let return_ref = self.value_stack.pop().unwrap();
-                    self.frame_stack.push(StackFrame {
+                    let caller_module_internals = value_stack.pop().unwrap().assume_u32();
+                    let caller_module = value_stack.pop().unwrap().assume_u32();
+                    let return_ref = value_stack.pop().unwrap();
+                    frame_stack.push(StackFrame {
                         return_ref,
                         locals: func
                             .local_types
@@ -1774,7 +1790,7 @@ impl Machine {
                         .and_then(|h| h.as_ref())
                     {
                         if let Err(err) = Self::host_call_hook(
-                            &self.value_stack,
+                            &value_stack,
                             module,
                             &mut self.stdio_output,
                             &hook.0,
@@ -1792,14 +1808,14 @@ impl Machine {
                     Machine::test_next_instruction(func, &self.pc);
                 }
                 Opcode::ArbitraryJumpIf => {
-                    let x = self.value_stack.pop().unwrap();
+                    let x = value_stack.pop().unwrap();
                     if !x.is_i32_zero() {
                         self.pc.inst = inst.argument_data as u32;
                         Machine::test_next_instruction(func, &self.pc);
                     }
                 }
                 Opcode::Return => {
-                    let frame = self.frame_stack.pop().unwrap();
+                    let frame = frame_stack.pop().unwrap();
                     match frame.return_ref {
                         Value::RefNull => error!(),
                         Value::InternalRef(pc) => {
@@ -1817,19 +1833,19 @@ impl Machine {
                     }
                 }
                 Opcode::Call => {
-                    let frame = self.frame_stack.last().unwrap();
-                    self.value_stack.push(Value::InternalRef(self.pc));
-                    self.value_stack.push(frame.caller_module.into());
-                    self.value_stack.push(frame.caller_module_internals.into());
+                    let frame = frame_stack.last().unwrap();
+                    value_stack.push(Value::InternalRef(self.pc));
+                    value_stack.push(frame.caller_module.into());
+                    value_stack.push(frame.caller_module_internals.into());
                     self.pc.func = inst.argument_data as u32;
                     self.pc.inst = 0;
                     func = &module.funcs[self.pc.func()];
                 }
                 Opcode::CrossModuleCall => {
                     flush_module!();
-                    self.value_stack.push(Value::InternalRef(self.pc));
-                    self.value_stack.push(self.pc.module.into());
-                    self.value_stack.push(module.internals_offset.into());
+                    value_stack.push(Value::InternalRef(self.pc));
+                    value_stack.push(self.pc.module.into());
+                    value_stack.push(module.internals_offset.into());
                     let (call_module, call_func) = unpack_cross_module_call(inst.argument_data);
                     self.pc.module = call_module;
                     self.pc.func = call_func;
@@ -1838,10 +1854,10 @@ impl Machine {
                 }
                 Opcode::CrossModuleForward => {
                     flush_module!();
-                    let frame = self.frame_stack.last().unwrap();
-                    self.value_stack.push(Value::InternalRef(self.pc));
-                    self.value_stack.push(frame.caller_module.into());
-                    self.value_stack.push(frame.caller_module_internals.into());
+                    let frame = frame_stack.last().unwrap();
+                    value_stack.push(Value::InternalRef(self.pc));
+                    value_stack.push(frame.caller_module.into());
+                    value_stack.push(frame.caller_module_internals.into());
                     let (call_module, call_func) = unpack_cross_module_call(inst.argument_data);
                     self.pc.module = call_module;
                     self.pc.func = call_func;
@@ -1851,10 +1867,10 @@ impl Machine {
                 Opcode::CrossModuleInternalCall => {
                     flush_module!();
                     let call_internal = inst.argument_data as u32;
-                    let call_module = self.value_stack.pop().unwrap().assume_u32();
-                    self.value_stack.push(Value::InternalRef(self.pc));
-                    self.value_stack.push(self.pc.module.into());
-                    self.value_stack.push(module.internals_offset.into());
+                    let call_module = value_stack.pop().unwrap().assume_u32();
+                    value_stack.push(Value::InternalRef(self.pc));
+                    value_stack.push(self.pc.module.into());
+                    value_stack.push(module.internals_offset.into());
                     module = &mut self.modules[call_module as usize];
                     self.pc.module = call_module;
                     self.pc.func = module.internals_offset + call_internal;
@@ -1862,11 +1878,11 @@ impl Machine {
                     reset_refs!();
                 }
                 Opcode::CallerModuleInternalCall => {
-                    self.value_stack.push(Value::InternalRef(self.pc));
-                    self.value_stack.push(self.pc.module.into());
-                    self.value_stack.push(module.internals_offset.into());
+                    value_stack.push(Value::InternalRef(self.pc));
+                    value_stack.push(self.pc.module.into());
+                    value_stack.push(module.internals_offset.into());
 
-                    let current_frame = self.frame_stack.last().unwrap();
+                    let current_frame = frame_stack.last().unwrap();
                     if current_frame.caller_module_internals > 0 {
                         let func_idx = u32::try_from(inst.argument_data)
                             .ok()
@@ -1884,7 +1900,7 @@ impl Machine {
                 }
                 Opcode::CallIndirect => {
                     let (table, ty) = crate::wavm::unpack_call_indirect(inst.argument_data);
-                    let idx = match self.value_stack.pop() {
+                    let idx = match value_stack.pop() {
                         Some(Value::I32(i)) => usize::try_from(i).unwrap(),
                         x => bail!(
                             "WASM validation failed: top of stack before call_indirect is {:?}",
@@ -1898,10 +1914,10 @@ impl Machine {
                     };
                     match elem.val {
                         Value::FuncRef(call_func) => {
-                            let frame = self.frame_stack.last().unwrap();
-                            self.value_stack.push(Value::InternalRef(self.pc));
-                            self.value_stack.push(frame.caller_module.into());
-                            self.value_stack.push(frame.caller_module_internals.into());
+                            let frame = frame_stack.last().unwrap();
+                            value_stack.push(Value::InternalRef(self.pc));
+                            value_stack.push(frame.caller_module.into());
+                            value_stack.push(frame.caller_module_internals.into());
                             self.pc.func = call_func;
                             self.pc.inst = 0;
                             func = &module.funcs[self.pc.func()];
@@ -1911,23 +1927,26 @@ impl Machine {
                     }
                 }
                 Opcode::LocalGet => {
-                    let val = self.frame_stack.last().unwrap().locals[inst.argument_data as usize];
-                    self.value_stack.push(val);
+                    let val = frame_stack.last().unwrap().locals[inst.argument_data as usize];
+                    value_stack.push(val);
                 }
                 Opcode::LocalSet => {
-                    let val = self.value_stack.pop().unwrap();
-                    self.frame_stack.last_mut().unwrap().locals[inst.argument_data as usize] = val;
+                    let val = value_stack.pop().unwrap();
+                    let locals = &mut frame_stack.last_mut().unwrap().locals;
+                    if locals.len() <= inst.argument_data as usize {
+                        error!("not enough locals")
+                    }
+                    locals[inst.argument_data as usize] = val;
                 }
                 Opcode::GlobalGet => {
-                    self.value_stack
-                        .push(module.globals[inst.argument_data as usize]);
+                    value_stack.push(module.globals[inst.argument_data as usize]);
                 }
                 Opcode::GlobalSet => {
-                    let val = self.value_stack.pop().unwrap();
+                    let val = value_stack.pop().unwrap();
                     module.globals[inst.argument_data as usize] = val;
                 }
                 Opcode::MemoryLoad { ty, bytes, signed } => {
-                    let base = match self.value_stack.pop() {
+                    let base = match value_stack.pop() {
                         Some(Value::I32(x)) => x,
                         x => bail!(
                             "WASM validation failed: top of stack before memory load is {:?}",
@@ -1940,10 +1959,10 @@ impl Machine {
                     let Some(value) = module.memory.get_value(index, ty, bytes, signed) else {
                         error!("failed to read offset {}", index)
                     };
-                    self.value_stack.push(value);
+                    value_stack.push(value);
                 }
                 Opcode::MemoryStore { ty: _, bytes } => {
-                    let val = match self.value_stack.pop() {
+                    let val = match value_stack.pop() {
                         Some(Value::I32(x)) => x.into(),
                         Some(Value::I64(x)) => x,
                         Some(Value::F32(x)) => x.to_bits().into(),
@@ -1953,7 +1972,7 @@ impl Machine {
                             x,
                         ),
                     };
-                    let base = match self.value_stack.pop() {
+                    let base = match value_stack.pop() {
                         Some(Value::I32(x)) => x,
                         x => bail!(
                             "WASM validation failed: attempted to memory store with index type {:?}",
@@ -1968,37 +1987,35 @@ impl Machine {
                     }
                 }
                 Opcode::I32Const => {
-                    self.value_stack.push(Value::I32(inst.argument_data as u32));
+                    value_stack.push(Value::I32(inst.argument_data as u32));
                 }
                 Opcode::I64Const => {
-                    self.value_stack.push(Value::I64(inst.argument_data));
+                    value_stack.push(Value::I64(inst.argument_data));
                 }
                 Opcode::F32Const => {
-                    self.value_stack
-                        .push(f32::from_bits(inst.argument_data as u32).into());
+                    value_stack.push(f32::from_bits(inst.argument_data as u32).into());
                 }
                 Opcode::F64Const => {
-                    self.value_stack
-                        .push(f64::from_bits(inst.argument_data).into());
+                    value_stack.push(f64::from_bits(inst.argument_data).into());
                 }
                 Opcode::I32Eqz => {
-                    let val = self.value_stack.pop().unwrap();
-                    self.value_stack.push(Value::I32(val.is_i32_zero() as u32));
+                    let val = value_stack.pop().unwrap();
+                    value_stack.push(Value::I32(val.is_i32_zero() as u32));
                 }
                 Opcode::I64Eqz => {
-                    let val = self.value_stack.pop().unwrap();
-                    self.value_stack.push(Value::I32(val.is_i64_zero() as u32));
+                    let val = value_stack.pop().unwrap();
+                    value_stack.push(Value::I32(val.is_i64_zero() as u32));
                 }
                 Opcode::IRelOp(t, op, signed) => {
-                    let vb = self.value_stack.pop();
-                    let va = self.value_stack.pop();
+                    let vb = value_stack.pop();
+                    let va = value_stack.pop();
                     match t {
                         IntegerValType::I32 => {
                             if let (Some(Value::I32(a)), Some(Value::I32(b))) = (va, vb) {
                                 if signed {
-                                    self.value_stack.push(exec_irel_op(a as i32, b as i32, op));
+                                    value_stack.push(exec_irel_op(a as i32, b as i32, op));
                                 } else {
-                                    self.value_stack.push(exec_irel_op(a, b, op));
+                                    value_stack.push(exec_irel_op(a, b, op));
                                 }
                             } else {
                                 bail!("WASM validation failed: wrong types for i32relop");
@@ -2007,9 +2024,9 @@ impl Machine {
                         IntegerValType::I64 => {
                             if let (Some(Value::I64(a)), Some(Value::I64(b))) = (va, vb) {
                                 if signed {
-                                    self.value_stack.push(exec_irel_op(a as i64, b as i64, op));
+                                    value_stack.push(exec_irel_op(a as i64, b as i64, op));
                                 } else {
-                                    self.value_stack.push(exec_irel_op(a, b, op));
+                                    value_stack.push(exec_irel_op(a, b, op));
                                 }
                             } else {
                                 bail!("WASM validation failed: wrong types for i64relop");
@@ -2018,26 +2035,26 @@ impl Machine {
                     }
                 }
                 Opcode::Drop => {
-                    self.value_stack.pop().unwrap();
+                    value_stack.pop().unwrap();
                 }
                 Opcode::Select => {
-                    let selector_zero = self.value_stack.pop().unwrap().is_i32_zero();
-                    let val2 = self.value_stack.pop().unwrap();
-                    let val1 = self.value_stack.pop().unwrap();
+                    let selector_zero = value_stack.pop().unwrap().is_i32_zero();
+                    let val2 = value_stack.pop().unwrap();
+                    let val1 = value_stack.pop().unwrap();
                     if selector_zero {
-                        self.value_stack.push(val2);
+                        value_stack.push(val2);
                     } else {
-                        self.value_stack.push(val1);
+                        value_stack.push(val1);
                     }
                 }
                 Opcode::MemorySize => {
                     let pages = u32::try_from(module.memory.size() / Memory::PAGE_SIZE)
                         .expect("Memory pages grew past a u32");
-                    self.value_stack.push(pages.into());
+                    value_stack.push(pages.into());
                 }
                 Opcode::MemoryGrow => {
                     let old_size = module.memory.size();
-                    let adding_pages = match self.value_stack.pop() {
+                    let adding_pages = match value_stack.pop() {
                         Some(Value::I32(x)) => x,
                         v => bail!("WASM validation failed: bad value for memory.grow {:?}", v),
                     };
@@ -2057,33 +2074,32 @@ impl Machine {
                         module.memory.resize(usize::try_from(new_size).unwrap());
                         // Push the old number of pages
                         let old_pages = u32::try_from(old_size / page_size).unwrap();
-                        self.value_stack.push(old_pages.into());
+                        value_stack.push(old_pages.into());
                     } else {
                         // Push -1
-                        self.value_stack.push(u32::MAX.into());
+                        value_stack.push(u32::MAX.into());
                     }
                 }
                 Opcode::IUnOp(w, op) => {
-                    let va = self.value_stack.pop();
+                    let va = value_stack.pop();
                     match w {
                         IntegerValType::I32 => {
                             let Some(Value::I32(value)) = va else {
                                 bail!("WASM validation failed: wrong types for i32unop");
                             };
-                            self.value_stack.push(exec_iun_op(value, op).into());
+                            value_stack.push(exec_iun_op(value, op).into());
                         }
                         IntegerValType::I64 => {
                             let Some(Value::I64(value)) = va else {
                                 bail!("WASM validation failed: wrong types for i64unop");
                             };
-                            self.value_stack
-                                .push(Value::I64(exec_iun_op(value, op) as u64));
+                            value_stack.push(Value::I64(exec_iun_op(value, op) as u64));
                         }
                     }
                 }
                 Opcode::IBinOp(w, op) => {
-                    let vb = self.value_stack.pop();
-                    let va = self.value_stack.pop();
+                    let vb = value_stack.pop();
+                    let va = value_stack.pop();
                     match w {
                         IntegerValType::I32 => {
                             let (Some(Value::I32(a)), Some(Value::I32(b))) = (va, vb) else {
@@ -2096,7 +2112,7 @@ impl Machine {
                             let Some(value) = exec_ibin_op(a, b, op) else {
                                 error!()
                             };
-                            self.value_stack.push(value.into());
+                            value_stack.push(value.into());
                         }
                         IntegerValType::I64 => {
                             let (Some(Value::I64(a)), Some(Value::I64(b))) = (va, vb) else {
@@ -2109,30 +2125,30 @@ impl Machine {
                             let Some(value) = exec_ibin_op(a, b, op) else {
                                 error!()
                             };
-                            self.value_stack.push(value.into());
+                            value_stack.push(value.into());
                         }
                     }
                 }
                 Opcode::I32WrapI64 => {
-                    let x = match self.value_stack.pop() {
+                    let x = match value_stack.pop() {
                         Some(Value::I64(x)) => x,
                         v => bail!(
                             "WASM validation failed: wrong type for i32.wrapi64: {:?}",
                             v,
                         ),
                     };
-                    self.value_stack.push(Value::I32(x as u32));
+                    value_stack.push(Value::I32(x as u32));
                 }
                 Opcode::I64ExtendI32(signed) => {
-                    let x: u32 = self.value_stack.pop().unwrap().assume_u32();
+                    let x: u32 = value_stack.pop().unwrap().assume_u32();
                     let x64 = match signed {
                         true => x as i32 as i64 as u64,
                         false => x as u64,
                     };
-                    self.value_stack.push(x64.into());
+                    value_stack.push(x64.into());
                 }
                 Opcode::Reinterpret(dest, source) => {
-                    let val = match self.value_stack.pop() {
+                    let val = match value_stack.pop() {
                         Some(Value::I32(x)) if source == ArbValueType::I32 => {
                             assert_eq!(dest, ArbValueType::F32, "Unsupported reinterpret");
                             f32::from_bits(x).into()
@@ -2151,39 +2167,39 @@ impl Machine {
                         }
                         v => bail!("bad reinterpret: val {:?} source {:?}", v, source),
                     };
-                    self.value_stack.push(val);
+                    value_stack.push(val);
                 }
                 Opcode::I32ExtendS(b) => {
-                    let mut x = self.value_stack.pop().unwrap().assume_u32();
+                    let mut x = value_stack.pop().unwrap().assume_u32();
                     let mask = (1u32 << b) - 1;
                     x &= mask;
                     if x & (1 << (b - 1)) != 0 {
                         x |= !mask;
                     }
-                    self.value_stack.push(x.into());
+                    value_stack.push(x.into());
                 }
                 Opcode::I64ExtendS(b) => {
-                    let mut x = self.value_stack.pop().unwrap().assume_u64();
+                    let mut x = value_stack.pop().unwrap().assume_u64();
                     let mask = (1u64 << b) - 1;
                     x &= mask;
                     if x & (1 << (b - 1)) != 0 {
                         x |= !mask;
                     }
-                    self.value_stack.push(x.into());
+                    value_stack.push(x.into());
                 }
                 Opcode::MoveFromStackToInternal => {
-                    self.internal_stack.push(self.value_stack.pop().unwrap());
+                    self.internal_stack.push(value_stack.pop().unwrap());
                 }
                 Opcode::MoveFromInternalToStack => {
-                    self.value_stack.push(self.internal_stack.pop().unwrap());
+                    value_stack.push(self.internal_stack.pop().unwrap());
                 }
                 Opcode::Dup => {
-                    let val = self.value_stack.last().cloned().unwrap();
-                    self.value_stack.push(val);
+                    let val = value_stack.last().cloned().unwrap();
+                    value_stack.push(val);
                 }
                 Opcode::GetGlobalStateBytes32 => {
-                    let ptr = self.value_stack.pop().unwrap().assume_u32();
-                    let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
+                    let ptr = value_stack.pop().unwrap().assume_u32();
+                    let idx = value_stack.pop().unwrap().assume_u32() as usize;
                     if idx >= self.global_state.bytes32_vals.len()
                         || !module
                             .memory
@@ -2193,8 +2209,8 @@ impl Machine {
                     }
                 }
                 Opcode::SetGlobalStateBytes32 => {
-                    let ptr = self.value_stack.pop().unwrap().assume_u32();
-                    let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
+                    let ptr = value_stack.pop().unwrap().assume_u32();
+                    let idx = value_stack.pop().unwrap().assume_u32() as usize;
                     if idx >= self.global_state.bytes32_vals.len() {
                         error!();
                     } else if let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) {
@@ -2204,17 +2220,16 @@ impl Machine {
                     }
                 }
                 Opcode::GetGlobalStateU64 => {
-                    let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
+                    let idx = value_stack.pop().unwrap().assume_u32() as usize;
                     if idx >= self.global_state.u64_vals.len() {
                         error!();
                     } else {
-                        self.value_stack
-                            .push(self.global_state.u64_vals[idx].into());
+                        value_stack.push(self.global_state.u64_vals[idx].into());
                     }
                 }
                 Opcode::SetGlobalStateU64 => {
-                    let val = self.value_stack.pop().unwrap().assume_u64();
-                    let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
+                    let val = value_stack.pop().unwrap().assume_u64();
+                    let idx = value_stack.pop().unwrap().assume_u32() as usize;
                     if idx >= self.global_state.u64_vals.len() {
                         error!();
                     } else {
@@ -2222,8 +2237,8 @@ impl Machine {
                     }
                 }
                 Opcode::ReadPreImage => {
-                    let offset = self.value_stack.pop().unwrap().assume_u32();
-                    let ptr = self.value_stack.pop().unwrap().assume_u32();
+                    let offset = value_stack.pop().unwrap().assume_u32();
+                    let ptr = value_stack.pop().unwrap().assume_u32();
 
                     let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) else {
                         error!()
@@ -2243,12 +2258,12 @@ impl Machine {
                     let read = preimage.get(offset..(offset + len)).unwrap_or_default();
                     let success = module.memory.store_slice_aligned(ptr.into(), read);
                     assert!(success, "Failed to write to previously read memory");
-                    self.value_stack.push(Value::I32(len as u32));
+                    value_stack.push(Value::I32(len as u32));
                 }
                 Opcode::ReadInboxMessage => {
-                    let offset = self.value_stack.pop().unwrap().assume_u32();
-                    let ptr = self.value_stack.pop().unwrap().assume_u32();
-                    let msg_num = self.value_stack.pop().unwrap().assume_u64();
+                    let offset = value_stack.pop().unwrap().assume_u32();
+                    let ptr = value_stack.pop().unwrap().assume_u32();
+                    let msg_num = value_stack.pop().unwrap().assume_u64();
                     let inbox_identifier =
                         argument_data_to_inbox(inst.argument_data).expect("Bad inbox indentifier");
                     if let Some(message) = self.inbox_contents.get(&(inbox_identifier, msg_num)) {
@@ -2259,7 +2274,7 @@ impl Machine {
                             let len = std::cmp::min(32, message.len().saturating_sub(offset));
                             let read = message.get(offset..(offset + len)).unwrap_or_default();
                             if module.memory.store_slice_aligned(ptr.into(), read) {
-                                self.value_stack.push(Value::I32(len as u32));
+                                value_stack.push(Value::I32(len as u32));
                             } else {
                                 error!();
                             }
@@ -2279,7 +2294,7 @@ impl Machine {
                     }
                 }
                 Opcode::LinkModule => {
-                    let ptr = self.value_stack.pop().unwrap().assume_u32();
+                    let ptr = value_stack.pop().unwrap().assume_u32();
                     let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) else {
                         error!("no hash for {}", ptr)
                     };
@@ -2293,7 +2308,7 @@ impl Machine {
                     };
                     flush_module!();
                     let index = self.modules.len() as u32;
-                    self.value_stack.push(index.into());
+                    value_stack.push(index.into());
                     self.modules.push(module.clone());
                     if let Some(cached) = &mut self.modules_merkle {
                         cached.push_leaf(hash);
@@ -2308,26 +2323,39 @@ impl Machine {
                     }
                     reset_refs!();
                 }
-                Opcode::PushErrorGuard => {
-                    self.guards.push(ErrorGuard {
-                        frame_stack: self.frame_stack.len(),
-                        value_stack: self.value_stack.len(),
-                        inter_stack: self.internal_stack.len(),
-                        on_error: self.pc,
-                    });
-                    self.value_stack.push(1_u32.into());
-                    reset_refs!();
-                }
-                Opcode::PopErrorGuard => {
-                    self.guards.pop();
-                }
-                Opcode::SetErrorPolicy => {
-                    let status = self.value_stack.pop().unwrap().assume_u32();
-                    self.guards.enabled = status != 0;
-                }
                 Opcode::HaltAndSetFinished => {
                     self.status = MachineStatus::Finished;
                     break;
+                }
+                Opcode::NewCoThread => {
+                    if self.main_thread_recovery.is_some() {
+                        error!("called NewCoThread from cothread")
+                    }
+                    self.value_stacks.push(Vec::new());
+                    self.frame_stacks.push(Vec::new());
+                    reset_refs!();
+                }
+                Opcode::PopCoThread => {
+                    if self.main_thread_recovery.is_some() {
+                        error!("called PopCoThread from cothread")
+                    }
+                    self.value_stacks.pop();
+                    self.frame_stacks.pop();
+                    reset_refs!();
+                }
+                Opcode::SwitchThread => {
+                    let next_recovery = match inst.argument_data {
+                        0 => None,
+                        offset => {
+                            let offset: u32 = (offset - 1).try_into().unwrap();
+                            Some(self.pc.add(offset))
+                        }
+                    };
+                    if next_recovery.xor(self.main_thread_recovery).is_none() {
+                        error!("switchthread doesn't switch")
+                    }
+                    self.main_thread_recovery = next_recovery;
+                    reset_refs!();
                 }
             }
         }
@@ -2467,58 +2495,95 @@ impl Machine {
         self.get_modules_merkle().root()
     }
 
-    fn stack_hashes(
-        &self,
-    ) -> (
-        FrameStackHash,
-        ValueStackHash,
-        InterStackHash,
-        Vec<ErrorGuardProof>,
-    ) {
+    fn stack_hashes(&self) -> (FrameStackHash, ValueStackHash, InterStackHash) {
         macro_rules! compute {
-            ($field:expr, $stack:expr, $prefix:expr) => {{
-                let heights: Vec<_> = self.guards.iter().map($field).collect();
+            ($stack:expr, $prefix:expr) => {{
                 let frames = $stack.iter().map(|v| v.hash());
-                hash_stack_with_heights(frames, &heights, concat!($prefix, " stack:"))
+                hash_stack(frames, concat!($prefix, " stack:"))
             }};
         }
-        let (frame_stack, frames) = compute!(|x| x.frame_stack, self.frame_stack, "Stack frame");
-        let (value_stack, values) = compute!(|x| x.value_stack, self.value_stack, "Value");
-        let (inter_stack, inters) = compute!(|x| x.inter_stack, self.internal_stack, "Value");
+        // compute_multistack returns the hash of multistacks as follows:
+        // Keccak(
+        //      "multistack:"
+        //      + hash_stack(first_stack)
+        //      + hash_stack(last_stack)
+        //      + Keccak("cothread:" + 2nd_stack+Keccak("cothread:" + 3drd_stack + ...)
+        // )
+        macro_rules! compute_multistack {
+            ($field:expr, $stacks:expr, $prefix:expr, $hasher: expr) => {{
+                let first_elem = *$stacks.first().unwrap();
+                let first_hash = hash_stack(
+                    first_elem.iter().map(|v| v.hash()),
+                    concat!($prefix, " stack:"),
+                );
 
-        let pcs = self.guards.iter().map(|x| x.on_error);
-        let mut guards: Vec<ErrorGuardProof> = vec![];
-        assert_eq!(values.len(), frames.len());
-        assert_eq!(values.len(), inters.len());
-        assert_eq!(values.len(), pcs.len());
+                let last_hash = if $stacks.len() <= 1 {
+                    Machine::NO_STACK_HASH
+                } else {
+                    let last_elem = *$stacks.last().unwrap();
+                    hash_stack(
+                        last_elem.iter().map(|v| v.hash()),
+                        concat!($prefix, " stack:"),
+                    )
+                };
 
-        for (frames, values, inters, pc) in izip!(frames, values, inters, pcs) {
-            guards.push(ErrorGuardProof::new(frames, values, inters, pc));
+                // Hash of stacks [2nd..last) or 0xfff...f if len <= 2.
+                let mut hash = if $stacks.len() <= 2 {
+                    Bytes32::default()
+                } else {
+                    hash_multistack(&$stacks[1..$stacks.len() - 1], $hasher)
+                };
+
+                hash = Keccak256::new()
+                    .chain("multistack:")
+                    .chain(first_hash)
+                    .chain(last_hash)
+                    .chain(hash)
+                    .finalize()
+                    .into();
+                hash
+            }};
         }
-        (frame_stack, value_stack, inter_stack, guards)
+        let frame_stacks = compute_multistack!(
+            |x| x.frame_stack,
+            self.get_frame_stacks(),
+            "Stack frame",
+            hash_stack_frame_stack
+        );
+        let value_stacks = compute_multistack!(
+            |x| x.value_stack,
+            self.get_data_stacks(),
+            "Value",
+            hash_value_stack
+        );
+        let inter_stack = compute!(self.internal_stack, "Value");
+
+        (frame_stacks, value_stacks, inter_stack)
+    }
+
+    pub fn main_thread_recovery_serialized(&self) -> Bytes32 {
+        match self.main_thread_recovery {
+            Some(recovery_pc) => recovery_pc.serialize(),
+            None => Bytes32([255; 32]),
+        }
     }
 
     pub fn hash(&self) -> Bytes32 {
         let mut h = Keccak256::new();
         match self.status {
             MachineStatus::Running => {
-                let (frame_stack, value_stack, inter_stack, guards) = self.stack_hashes();
+                let (frame_stacks, value_stacks, inter_stack) = self.stack_hashes();
 
                 h.update(b"Machine running:");
-                h.update(value_stack);
+                h.update(value_stacks);
                 h.update(inter_stack);
-                h.update(frame_stack);
+                h.update(frame_stacks);
                 h.update(self.global_state.hash());
                 h.update(self.pc.module.to_be_bytes());
                 h.update(self.pc.func.to_be_bytes());
                 h.update(self.pc.inst.to_be_bytes());
+                h.update(self.main_thread_recovery_serialized());
                 h.update(self.get_modules_root());
-
-                if !guards.is_empty() || self.guards.enabled {
-                    h.update(b"With guards:");
-                    h.update([self.guards.enabled as u8]);
-                    h.update(ErrorGuardProof::hash_guards(&guards));
-                }
             }
             MachineStatus::Finished => {
                 h.update("Machine finished:");
@@ -2551,12 +2616,13 @@ impl Machine {
                 panic!("WASM validation failed: {text}");
             }};
         }
-
-        out!(prove_stack(
-            &self.value_stack,
-            STACK_PROVING_DEPTH,
+        out!(prove_multistack(
+            self.main_thread_recovery.is_some(),
+            self.get_data_stacks(),
             hash_value_stack,
-            |v| v.serialize_for_proof(),
+            hash_multistack,
+            |stack| prove_stack(stack, STACK_PROVING_DEPTH, hash_value_stack, |v| v
+                .serialize_for_proof()),
         ));
 
         out!(prove_stack(
@@ -2566,19 +2632,25 @@ impl Machine {
             |v| v.serialize_for_proof(),
         ));
 
-        out!(prove_window(
-            &self.frame_stack,
+        out!(prove_multistack(
+            self.main_thread_recovery.is_some(),
+            self.get_frame_stacks(),
             hash_stack_frame_stack,
-            StackFrame::serialize_for_proof,
+            hash_multistack,
+            |stack| prove_window(
+                stack,
+                hash_stack_frame_stack,
+                StackFrame::serialize_for_proof
+            ),
         ));
-
-        out!(self.prove_guards());
 
         out!(self.global_state.hash());
 
         out!(self.pc.module.to_be_bytes());
         out!(self.pc.func.to_be_bytes());
         out!(self.pc.inst.to_be_bytes());
+
+        out!(self.main_thread_recovery_serialized());
 
         let mod_merkle = self.get_modules_merkle();
         out!(mod_merkle.root());
@@ -2620,6 +2692,8 @@ impl Machine {
 
         let op = next_inst.opcode;
         let arg = next_inst.argument_data;
+        let value_stack = self.get_data_stack();
+        let frame_stack = self.get_frame_stack();
 
         use Opcode::*;
         match op {
@@ -2627,7 +2701,7 @@ impl Machine {
                 out!(self.global_state.serialize());
             }
             LocalGet | LocalSet => {
-                let locals = &self.frame_stack.last().unwrap().locals;
+                let locals = &frame_stack.last().unwrap().locals;
                 let idx = arg as usize;
                 out!(locals[idx].serialize_for_proof());
                 let merkle =
@@ -2651,10 +2725,7 @@ impl Machine {
                 } else {
                     0
                 };
-                let base = match self
-                    .value_stack
-                    .get(self.value_stack.len() - 1 - stack_idx_offset)
-                {
+                let base = match value_stack.get(value_stack.len() - 1 - stack_idx_offset) {
                     Some(Value::I32(x)) => *x,
                     x => fail!("memory index type is {x:?}"),
                 };
@@ -2687,7 +2758,7 @@ impl Machine {
             }
             CallIndirect => {
                 let (table, ty) = crate::wavm::unpack_call_indirect(arg);
-                let idx = match self.value_stack.last() {
+                let idx = match value_stack.last() {
                     Some(Value::I32(i)) => *i,
                     x => fail!("top of stack before call_indirect is {x:?}"),
                 };
@@ -2714,7 +2785,7 @@ impl Machine {
                 }
             }
             CrossModuleInternalCall => {
-                let module_idx = self.value_stack.last().unwrap().assume_u32() as usize;
+                let module_idx = value_stack.last().unwrap().assume_u32() as usize;
                 let called_module = &self.modules[module_idx];
                 out!(called_module.serialize_for_proof(&called_module.memory.merkelize()));
                 out!(mod_merkle
@@ -2723,7 +2794,7 @@ impl Machine {
             }
             GetGlobalStateBytes32 | SetGlobalStateBytes32 => {
                 out!(self.global_state.serialize());
-                let ptr = self.value_stack.last().unwrap().assume_u32();
+                let ptr = value_stack.last().unwrap().assume_u32();
                 if let Some(mut idx) = usize::try_from(ptr).ok().filter(|x| x % 32 == 0) {
                     // Prove the leaf this index is in
                     idx /= Memory::LEAF_SIZE;
@@ -2732,11 +2803,7 @@ impl Machine {
                 }
             }
             ReadPreImage | ReadInboxMessage => {
-                let ptr = self
-                    .value_stack
-                    .get(self.value_stack.len() - 2)
-                    .unwrap()
-                    .assume_u32();
+                let ptr = value_stack.get(value_stack.len() - 2).unwrap().assume_u32();
                 if let Some(mut idx) = usize::try_from(ptr).ok().filter(|x| x % 32 == 0) {
                     // Prove the leaf this index is in
                     idx /= Memory::LEAF_SIZE;
@@ -2752,11 +2819,7 @@ impl Machine {
                         data.push(0); // preimage proof type
                         out!(preimage);
                     } else if op == Opcode::ReadInboxMessage {
-                        let msg_idx = self
-                            .value_stack
-                            .get(self.value_stack.len() - 3)
-                            .unwrap()
-                            .assume_u64();
+                        let msg_idx = value_stack.get(value_stack.len() - 3).unwrap().assume_u64();
                         let inbox_id = argument_data_to_inbox(arg).expect("Bad inbox indentifier");
                         if let Some(msg_data) = self.inbox_contents.get(&(inbox_id, msg_idx)) {
                             data.push(0); // inbox proof type
@@ -2769,7 +2832,7 @@ impl Machine {
             }
             LinkModule | UnlinkModule => {
                 if op == LinkModule {
-                    let leaf_index = match self.value_stack.last() {
+                    let leaf_index = match value_stack.last() {
                         Some(Value::I32(x)) => *x as usize / Memory::LEAF_SIZE,
                         x => fail!("module pointer has invalid type {x:?}"),
                     };
@@ -2792,39 +2855,57 @@ impl Machine {
                     out!(mod_merkle.prove_any(leaf + 1));
                 }
             }
+            PopCoThread => {
+                macro_rules! prove_pop {
+                    ($multistack:expr, $hasher:expr) => {
+                        let len = $multistack.len();
+                        if (len > 2) {
+                            out!($hasher($multistack[len - 2]));
+                        } else {
+                            out!(Machine::NO_STACK_HASH);
+                        }
+                        if (len > 3) {
+                            out!(hash_multistack(&$multistack[1..len - 2], $hasher));
+                        } else {
+                            out!(Bytes32::default());
+                        }
+                    };
+                }
+                prove_pop!(self.get_data_stacks(), hash_value_stack);
+                prove_pop!(self.get_frame_stacks(), hash_stack_frame_stack);
+            }
             _ => {}
         }
         data
     }
 
-    fn prove_guards(&self) -> Vec<u8> {
-        let mut data = Vec::with_capacity(34); // size in the empty case
-        let guards = self.stack_hashes().3;
-        let enabled = self.guards.enabled;
-        let empty = self.guards.is_empty();
-
-        data.push(enabled as u8);
-        data.push(empty as u8);
-        if empty {
-            data.extend(Bytes32::default());
-        } else {
-            let last_idx = guards.len() - 1;
-            data.extend(ErrorGuardProof::hash_guards(&guards[..last_idx]));
-            data.extend(guards[last_idx].serialize_for_proof());
+    pub fn get_data_stack(&self) -> &[Value] {
+        match self.main_thread_recovery {
+            None => &self.value_stacks[0],
+            Some(_) => self.value_stacks.last().unwrap(),
         }
-        data
     }
 
-    pub fn get_data_stack(&self) -> &[Value] {
-        &self.value_stack
+    pub fn get_data_stacks(&self) -> Vec<&[Value]> {
+        self.value_stacks.iter().map(|v| v.as_slice()).collect()
+    }
+
+    fn get_frame_stack(&self) -> &[StackFrame] {
+        match self.main_thread_recovery {
+            None => &self.frame_stacks[0],
+            Some(_) => self.frame_stacks.last().unwrap(),
+        }
+    }
+
+    fn get_frame_stacks(&self) -> Vec<&[StackFrame]> {
+        self.frame_stacks
+            .iter()
+            .map(|v: &Vec<StackFrame>| v.as_slice())
+            .collect()
     }
 
     pub fn get_internals_stack(&self) -> &[Value] {
         &self.internal_stack
-    }
-
-    pub fn get_guards(&self) -> &[ErrorGuard] {
-        &self.guards
     }
 
     pub fn get_global_state(&self) -> GlobalState {
@@ -2883,13 +2964,14 @@ impl Machine {
         };
 
         print_pc(self.pc);
-        for frame in self.frame_stack.iter().rev().take(25) {
+        let frame_stack = self.get_frame_stack();
+        for frame in frame_stack.iter().rev().take(25) {
             if let Value::InternalRef(pc) = frame.return_ref {
                 print_pc(pc);
             }
         }
-        if self.frame_stack.len() > 25 {
-            print(format!("  ... and {} more", self.frame_stack.len() - 25).grey());
+        if frame_stack.len() > 25 {
+            print(format!("  ... and {} more", frame_stack.len() - 25).grey());
         }
     }
 }

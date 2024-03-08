@@ -1,5 +1,5 @@
 [package]
-name = "user-host"
+name = "program-exec"
 version = "0.1.0"
 edition = "2021"
 
@@ -9,7 +9,6 @@ crate-type = ["cdylib"]
 [dependencies]
 arbutil = { path = "../../arbutil/", features = ["wavm"] }
 prover = { path = "../../prover/", default-features = false }
-user-host-trait = { path = "../user-host-trait" }
 eyre = "0.6.5"
 fnv = "1.0.7"
 hex = "0.4.3"

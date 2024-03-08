@@ -2,21 +2,19 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{
-    evm_api::ApiCaller,
-    guard::{self, ErrorPolicy},
     program::Program,
 };
 use arbutil::{
-    evm::{js::JsEvmApi, user::UserOutcomeKind, EvmData},
+    evm::{user::UserOutcomeKind, EvmData},
     format::DebugBytes,
     heapify, wavm, Bytes32,
 };
-use go_abi::GoStack;
 use prover::{
     machine::Module,
     programs::config::{PricingParams, StylusConfig},
 };
-use std::mem;
+
+type Uptr = usize;
 
 // these hostio methods allow the replay machine to modify itself
 #[link(wasm_import_module = "hostio")]
@@ -33,91 +31,81 @@ extern "C" {
     fn program_ink_left(module: u32) -> u64;
     fn program_ink_status(module: u32) -> u32;
     fn program_stack_left(module: u32) -> u32;
-    fn program_call_main(module: u32, args_len: usize) -> u32;
 }
 
 #[repr(C, align(256))]
 struct MemoryLeaf([u8; 32]);
 
-/// Instruments and "activates" a user wasm, producing a unique module hash.
-///
-/// Note that this operation costs gas and is limited by the amount supplied via the `gas` pointer.
-/// The amount left is written back at the end of the call.
-///
-/// # Safety
-///
-/// The `modHash` and `gas` pointers must not be null.
-///
-/// The Go compiler expects the call to take the form
-///     λ(wasm []byte, pageLimit, version u16, debug u32, modHash *hash, gas *u64) (footprint u16, err *Vec<u8>)
-///
-/// These values are placed on the stack as follows
-///     || wasm... || pageLimit | version | debug || modhash ptr || gas ptr || initGas | asmSize ||
-///     || footprint | 6 pad || err ptr ||
-///
+// Instruments and "activates" a user wasm, producing a unique module hash.
+//
+// Note that this operation costs gas and is limited by the amount supplied via the `gas` pointer.
+// The amount left is written back at the end of the call.
+//
+// pages_ptr: starts pointing to max allowed pages, returns number of pages used
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_activateProgramRustImpl(
-    sp: usize,
-) {
-    let mut sp = GoStack::new(sp);
-    let wasm = sp.read_go_slice_owned();
-    let page_limit = sp.read_u16();
-    let version = sp.read_u16();
-    let debug = sp.read_bool32();
-    let module_hash = sp.read_go_ptr();
-    let gas = sp.read_go_ptr() as usize;
+pub unsafe extern "C" fn programs__activate(
+    wasm_ptr: Uptr,
+    wasm_size: usize,
+    pages_ptr: Uptr,
+    asm_estimate_ptr: Uptr,
+    init_gas_ptr: Uptr,
+    version: u16,
+    debug: u32,
+    module_hash_ptr: Uptr,
+    gas_ptr: Uptr,
+    err_buf: Uptr,
+    err_buf_len: usize,
+) -> usize {
+    let wasm = wavm::read_slice_usize(wasm_ptr, wasm_size);
+    let debug = debug != 0;
 
-    macro_rules! error {
-        ($msg:expr, $error:expr) => {{
-            let error = $error.wrap_err($msg).debug_bytes();
-            wavm::caller_store64(gas, 0);
-            wavm::write_bytes32(module_hash, Bytes32::default());
-            sp.skip_space();
-            sp.skip_space();
-            sp.write_ptr(heapify(error));
-            return;
-        }};
+    let page_limit = wavm::caller_load16(pages_ptr);
+    let gas_left = &mut wavm::caller_load64(gas_ptr);
+    match Module::activate(&wasm, version, page_limit, debug, gas_left) {
+        Ok((module, data)) => {
+            wavm::caller_store64(gas_ptr, *gas_left);
+            wavm::caller_store16(pages_ptr, data.footprint);
+            wavm::caller_store32(asm_estimate_ptr, data.asm_estimate);
+            wavm::caller_store32(init_gas_ptr, data.init_gas);
+            wavm::write_bytes32_usize(module_hash_ptr, module.hash());
+            0
+        },
+        Err(error) => {
+            let mut err_bytes = error.wrap_err("failed to activate").debug_bytes();
+            err_bytes.truncate(err_buf_len);
+            wavm::write_slice_usize(&err_bytes, err_buf);
+            wavm::caller_store64(gas_ptr, 0);
+            wavm::caller_store16(pages_ptr, 0);
+            wavm::caller_store32(asm_estimate_ptr, 0);
+            wavm::caller_store32(init_gas_ptr, 0);
+            wavm::write_bytes32_usize(module_hash_ptr, Bytes32::default());
+            err_bytes.len()
+        },
     }
-
-    let gas_left = &mut wavm::caller_load64(gas);
-    let (module, info) = match Module::activate(&wasm, version, page_limit, debug, gas_left) {
-        Ok(data) => data,
-        Err(error) => error!("failed to activate", error),
-    };
-    wavm::caller_store64(gas, *gas_left);
-    wavm::write_bytes32(module_hash, module.hash());
-    sp.write_u32(info.init_gas).write_u32(info.asm_estimate);
-    sp.write_u16(info.footprint).skip_space();
-    sp.write_nullptr();
 }
 
-/// Links and executes a user wasm.
-///
-/// # Safety
-///
-/// The Go compiler expects the call to take the form
-///     λ(moduleHash *[32]byte, calldata []byte, params *Configs, evmApi u32, evmData: *EvmData, gas *u64) (
-///         status byte, out *Vec<u8>,
-///     )
-///
-/// These values are placed on the stack as follows
-///     || modHash || calldata... || params || evmApi | 4 pad || evmData || gas || status | 7 pad | out ptr ||
-///
+
+/// Links and creates user program
+/// consumes both evm_data_handler and config_handler
+/// returns module number
+/// see program-exec for starting the user program
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callProgramRustImpl(
-    sp: usize,
-) {
-    let mut sp = GoStack::new(sp);
-    let compiled_hash = wavm::read_bytes32(sp.read_go_ptr());
-    let calldata = sp.read_go_slice_owned();
-    let config: StylusConfig = sp.unbox();
-    let evm_api = JsEvmApi::new(ApiCaller::new(sp.read_u32()));
-    let evm_data: EvmData = sp.skip_space().unbox();
-    let gas = sp.read_go_ptr() as usize;
+pub unsafe extern "C" fn programs__new_program(
+    compiled_hash_ptr: Uptr,
+    calldata_ptr: Uptr,
+    calldata_size: usize,
+    config_box: u64,
+    evm_data_box: u64,
+    gas: u64,
+) -> u32 {
+    let compiled_hash = wavm::read_bytes32_usize(compiled_hash_ptr);
+    let calldata = wavm::read_slice_usize(calldata_ptr, calldata_size);
+    let config: StylusConfig = *Box::from_raw(config_box as *mut StylusConfig);
+    let evm_data: EvmData = *Box::from_raw(evm_data_box as *mut EvmData);
 
     // buy ink
     let pricing = config.pricing;
-    let ink = pricing.gas_to_ink(wavm::caller_load64(gas));
+    let ink = pricing.gas_to_ink(gas);
 
     // link the program and ready its instrumentation
     let module = wavm_link_module(&MemoryLeaf(*compiled_hash));
@@ -125,150 +113,145 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_callPr
     program_set_stack(module, config.max_depth);
 
     // provide arguments
-    let args_len = calldata.len();
-    Program::push_new(calldata, evm_api, evm_data, module, config);
+    Program::push_new(calldata, evm_data, module, config);
 
-    // call the program
-    guard::set_error_policy(ErrorPolicy::Recover);
-    let status = program_call_main(module, args_len);
+    module
+}
 
-    // collect results
-    guard::set_error_policy(ErrorPolicy::ChainHalt);
-    let outs = Program::pop();
-    sp.restore_stack(); // restore the stack pointer (corrupts during EVM API calls)
-
-    /// cleans up and writes the output
-    macro_rules! finish {
-        ($status:expr, $ink_left:expr) => {
-            finish!($status, std::ptr::null::<u8>(), $ink_left);
-        };
-        ($status:expr, $outs:expr, $ink_left:expr) => {{
-            sp.write_u8($status as u8).skip_space();
-            sp.write_ptr($outs);
-            wavm::caller_store64(gas, pricing.ink_to_gas($ink_left));
-            wavm_unlink_module();
-            return;
-        }};
+// gets information about request according to id
+// request_id MUST be last request id returned from start_program or send_response
+#[no_mangle]
+pub unsafe extern "C" fn programs__get_request(id: u32, len_ptr: usize) -> u32 {
+    let (req_type, len) = Program::current().evm_api.request_handler().get_request_meta(id);
+    if len_ptr != 0 {
+        wavm::caller_store32(len_ptr, len as u32);
     }
+    req_type
+}
 
+// gets data associated with last request.
+// request_id MUST be last request receieved
+// data_ptr MUST point to a buffer of at least the length returned by get_request
+#[no_mangle]
+pub unsafe extern "C" fn programs__get_request_data(id: u32, data_ptr: usize) {
+    let (_, data) = Program::current().evm_api.request_handler().take_request(id);
+    wavm::write_slice_usize(&data, data_ptr);
+}
+
+// sets response for the next request made
+// id MUST be the id of last request made
+// see program-exec send_response for sending this response to the program
+#[no_mangle]
+pub unsafe extern "C" fn programs__set_response(
+    id: u32,
+    gas: u64,
+    result_ptr: Uptr,
+    result_len: usize,
+    raw_data_ptr: Uptr,
+    raw_data_len: usize,
+) {
+    let program = Program::current();
+    program.evm_api.request_handler().set_response(id, wavm::read_slice_usize(result_ptr, result_len), wavm::read_slice_usize(raw_data_ptr, raw_data_len), gas);
+}
+
+// removes the last created program
+#[no_mangle]
+pub unsafe extern "C" fn programs__pop() {
+    Program::pop();
+    wavm_unlink_module();
+}
+
+// used by program-exec
+// returns arguments_len
+// module MUST be the last one returned from new_program
+#[no_mangle]
+pub unsafe extern "C" fn program_internal__args_len(module: u32) -> usize {
+    let program = Program::current();
+    if program.module != module {
+        panic!("args_len requested for wrong module");
+    }
+    program.args_len()
+}
+
+// used by program-exec
+// sets status of the last program and sends a program_done request
+#[no_mangle]
+pub unsafe extern "C" fn program_internal__set_done(mut status: u8) -> u32 {
+    let program = Program::current();
+    let module = program.module;
+    let mut outs = &program.outs;
+
+    let mut ink_left = program_ink_left(module);
+
+    let empty_vec = vec![];
     // check if instrumentation stopped the program
     use UserOutcomeKind::*;
     if program_ink_status(module) != 0 {
-        finish!(OutOfInk, 0);
+        status = OutOfInk.into();
+        outs = &empty_vec;
+        ink_left = 0;
     }
     if program_stack_left(module) == 0 {
-        finish!(OutOfStack, 0);
+        status = OutOfStack.into();
+        outs = &empty_vec;
+        ink_left = 0;
     }
-
-    // the program computed a final result
-    let ink_left = program_ink_left(module);
-    finish!(status, heapify(outs), ink_left)
-}
-
-/// Reads the length of a rust `Vec`
-///
-/// # Safety
-///
-/// The Go compiler expects the call to take the form
-///     λ(vec *Vec<u8>) (len u32)
-///
-/// These values are placed on the stack as follows
-///     || vec ptr || len u32 | pad 4 ||
-///
-#[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_readRustVecLenImpl(
-    sp: usize,
-) {
-    let mut sp = GoStack::new(sp);
-    let vec: &Vec<u8> = &*sp.read_ptr();
-    sp.write_u32(vec.len() as u32);
-}
-
-/// Copies the contents of a rust `Vec` into a go slice, dropping it in the process
-///
-/// # Safety
-///
-/// The Go compiler expects the call to take the form
-///     λ(vec *Vec<u8>, dest []byte)
-///
-/// These values are placed on the stack as follows
-///     || vec ptr || dest... ||
-///
-#[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustVecIntoSliceImpl(
-    sp: usize,
-) {
-    let mut sp = GoStack::new(sp);
-    let vec: Vec<u8> = sp.unbox();
-    let ptr: *mut u8 = sp.read_ptr_mut();
-    wavm::write_slice(&vec, ptr as u64);
-    mem::drop(vec)
+    let gas_left = program.config.pricing.ink_to_gas(ink_left);
+    let mut output = gas_left.to_be_bytes().to_vec();
+    output.extend(outs.iter());
+    program.evm_api.request_handler().set_request(status as u32, &output)
 }
 
 /// Creates a `StylusConfig` from its component parts.
-///
-/// # Safety
-///
-/// The Go compiler expects the call to take the form
-///     λ(version u16, maxDepth, inkPrice u32, debugMode u32) *StylusConfig
-///
-/// The values are placed on the stack as follows
-///     || version | 2 garbage bytes | max_depth || ink_price | debugMode || result ptr ||
-///
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustConfigImpl(
-    sp: usize,
-) {
-    let mut sp = GoStack::new(sp);
-
+pub unsafe extern "C" fn programs__create_stylus_config(
+    version: u16,
+    max_depth: u32,
+    ink_price: u32,
+    _debug: u32,
+) -> u64 {
     let config = StylusConfig {
-        version: sp.read_u16(),
-        max_depth: sp.skip_u16().read_u32(),
+        version,
+        max_depth,
         pricing: PricingParams {
-            ink_price: sp.read_u32(),
+            ink_price,
         },
     };
-    sp.skip_u32(); // skip debugMode
-    sp.write_ptr(heapify(config));
+    heapify(config) as u64
 }
 
-/// Creates an `EvmData` from its component parts.
-///
-/// # Safety
-///
-/// The Go compiler expects the call to take the form
-///     λ(
-///         blockBasefee *[32]byte, chainid u64, blockCoinbase *[20]byte, blockGasLimit,
-///         blockNumber, blockTimestamp u64, contractAddress, msgSender *[20]byte,
-///         msgValue, txGasPrice *[32]byte, txOrigin *[20]byte, reentrant u32,
-///     ) -> *EvmData
-///
-/// These values are placed on the stack as follows
-///     || baseFee || chainid || coinbase || gas limit || block number || timestamp || address ||
-///     || sender || value || gas price || origin || reentrant | 4 pad || data ptr ||
+/// Creates an `EvmData` handler from its component parts.
 ///
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbos_programs_rustEvmDataImpl(
-    sp: usize,
-) {
-    use wavm::{read_bytes20, read_bytes32};
-    let mut sp = GoStack::new(sp);
+pub unsafe extern "C" fn programs__create_evm_data(
+    block_basefee_ptr: Uptr,
+    chainid: u64,
+    block_coinbase_ptr: Uptr,
+    block_gas_limit: u64,
+    block_number: u64,
+    block_timestamp: u64,
+    contract_address_ptr: Uptr,
+    msg_sender_ptr: Uptr,
+    msg_value_ptr: Uptr,
+    tx_gas_price_ptr: Uptr,
+    tx_origin_ptr: Uptr,
+    reentrant: u32,
+) -> u64 {
     let evm_data = EvmData {
-        block_basefee: read_bytes32(sp.read_go_ptr()),
-        chainid: sp.read_u64(),
-        block_coinbase: read_bytes20(sp.read_go_ptr()),
-        block_gas_limit: sp.read_u64(),
-        block_number: sp.read_u64(),
-        block_timestamp: sp.read_u64(),
-        contract_address: read_bytes20(sp.read_go_ptr()),
-        msg_sender: read_bytes20(sp.read_go_ptr()),
-        msg_value: read_bytes32(sp.read_go_ptr()),
-        tx_gas_price: read_bytes32(sp.read_go_ptr()),
-        tx_origin: read_bytes20(sp.read_go_ptr()),
-        reentrant: sp.read_u32(),
+        block_basefee: wavm::read_bytes32_usize(block_basefee_ptr),
+        chainid,
+        block_coinbase: wavm::read_bytes20_usize(block_coinbase_ptr),
+        block_gas_limit,
+        block_number,
+        block_timestamp,
+        contract_address: wavm::read_bytes20_usize(contract_address_ptr),
+        msg_sender: wavm::read_bytes20_usize(msg_sender_ptr),
+        msg_value: wavm::read_bytes32_usize(msg_value_ptr),
+        tx_gas_price:  wavm::read_bytes32_usize(tx_gas_price_ptr),
+        tx_origin: wavm::read_bytes20_usize(tx_origin_ptr),
+        reentrant,
         return_data_len: 0,
         tracing: false,
     };
-    sp.skip_space();
-    sp.write_ptr(heapify(evm_data));
+    heapify(evm_data) as u64
 }

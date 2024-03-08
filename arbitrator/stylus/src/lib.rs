@@ -1,20 +1,21 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
-
-use crate::evm_api::GoEvmApi;
 use arbutil::{
     evm::{
+        api::DataReader,
+        req::EvmApiRequestor,
         user::{UserOutcome, UserOutcomeKind},
         EvmData,
     },
     format::DebugBytes,
     Bytes32,
 };
+use evm_api::NativeRequestHandler;
 use eyre::ErrReport;
 use native::NativeInstance;
 use prover::programs::{prelude::*, StylusData};
 use run::RunProgram;
-use std::{marker::PhantomData, mem};
+use std::{marker::PhantomData, mem, ptr::null};
 
 pub use prover;
 
@@ -30,15 +31,57 @@ mod test;
 #[cfg(all(test, feature = "benchmark"))]
 mod benchmarks;
 
+#[derive(Clone, Copy)]
 #[repr(C)]
 pub struct GoSliceData {
-    ptr: *const u8,
+    ptr: *const u8, // stored as pointer for GO
     len: usize,
 }
 
+impl Default for GoSliceData {
+    fn default() -> Self {
+        GoSliceData {
+            ptr: null(),
+            len: 0,
+        }
+    }
+}
+
 impl GoSliceData {
-    unsafe fn slice(&self) -> &[u8] {
-        std::slice::from_raw_parts(self.ptr, self.len)
+    fn slice(&self) -> &[u8] {
+        if self.len == 0 {
+            return &[];
+        }
+        unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
+    }
+}
+
+// same as above, with Send semantics using dirty trickery
+// GO will always use GoSliceData so these types must have
+// exact same representation, see assert_go_slices_match
+#[derive(Clone, Copy, Default)]
+#[repr(C)]
+pub struct SendGoSliceData {
+    ptr: usize, // not stored as pointer because rust won't let that be Send
+    len: usize,
+}
+
+#[allow(dead_code)]
+const fn assert_go_slices_match() -> () {
+    // TODO: this will be stabilized on rust 1.77
+    // assert_eq!(mem::offset_of!(GoSliceData, ptr), mem::offset_of!(SendGoSliceData, ptr));
+    // assert_eq!(mem::offset_of!(GoSliceData, len), mem::offset_of!(SendGoSliceData, len));
+    assert!(mem::size_of::<GoSliceData>() == mem::size_of::<SendGoSliceData>());
+}
+
+const _: () = assert_go_slices_match();
+
+impl DataReader for SendGoSliceData {
+    fn slice(&self) -> &[u8] {
+        if self.len == 0 {
+            return &[];
+        }
+        unsafe { std::slice::from_raw_parts(self.ptr as *const u8, self.len) }
     }
 }
 
@@ -153,7 +196,7 @@ pub unsafe extern "C" fn stylus_call(
     module: GoSliceData,
     calldata: GoSliceData,
     config: StylusConfig,
-    go_api: GoEvmApi,
+    req_handler: NativeRequestHandler,
     evm_data: EvmData,
     debug_chain: u32,
     output: *mut RustBytes,
@@ -167,7 +210,9 @@ pub unsafe extern "C" fn stylus_call(
     let ink = pricing.gas_to_ink(*gas);
 
     // Safety: module came from compile_user_wasm and we've paid for memory expansion
-    let instance = unsafe { NativeInstance::deserialize(module, compile, go_api, evm_data) };
+    let instance = unsafe {
+        NativeInstance::deserialize(module, compile, EvmApiRequestor::new(req_handler), evm_data)
+    };
     let mut instance = match instance {
         Ok(instance) => instance,
         Err(error) => panic!("failed to instantiate program: {error:?}"),

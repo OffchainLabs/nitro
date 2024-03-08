@@ -1,3 +1,6 @@
+//go:build ipfs
+// +build ipfs
+
 package ipfshelper
 
 import (

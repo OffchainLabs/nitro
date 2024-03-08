@@ -4,7 +4,7 @@
 use crate::{Bytes20, Bytes32};
 
 pub mod api;
-pub mod js;
+pub mod req;
 pub mod user;
 
 // params.SstoreSentryGasEIP2200

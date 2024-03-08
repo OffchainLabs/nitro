@@ -51,7 +51,7 @@ jobs:
       - name: Install go
         uses: actions/setup-go@v4
         with:
-          go-version: 1.20.x
+          go-version: 1.21.x
 
       - name: Setup nodejs
         uses: actions/setup-node@v3
@@ -174,9 +174,6 @@ jobs:
         with:
           command: fmt
           args: --all --manifest-path arbitrator/langs/rust/Cargo.toml -- --check
-
-      - name: Rust Js Runtime Tests
-        run: make test-js-runtime
 
       - name: Make proofs from test cases
         run: make -j8 test-gen-proofs

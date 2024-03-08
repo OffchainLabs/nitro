@@ -7,15 +7,18 @@ use std::fmt::Display;
 
 use crate::env::{Escape, HostioInfo, MaybeEscape, WasmEnv, WasmEnvMut};
 use arbutil::{
-    evm::{api::EvmApi, EvmData},
+    evm::{
+        api::{DataReader, EvmApi},
+        EvmData,
+    },
     Bytes20, Bytes32, Color,
 };
-use eyre::Result;
+use eyre::{eyre, Result};
 use prover::value::Value;
 use user_host_trait::UserHost;
 use wasmer::{MemoryAccessError, WasmPtr};
 
-impl<'a, A: EvmApi> UserHost for HostioInfo<'a, A> {
+impl<'a, DR: DataReader, A: EvmApi<DR>> UserHost<DR> for HostioInfo<'a, DR, A> {
     type Err = Escape;
     type MemoryErr = MemoryAccessError;
     type A = A;
@@ -80,10 +83,16 @@ impl<'a, A: EvmApi> UserHost for HostioInfo<'a, A> {
         println!("{} {text}", "Stylus says:".yellow());
     }
 
-    fn trace(&self, name: &str, args: &[u8], outs: &[u8], end_ink: u64) {
-        let start_ink = self.start_ink;
+    fn trace(&mut self, name: &str, args: &[u8], outs: &[u8], start_ink: u64, end_ink: u64) {
         self.evm_api
             .capture_hostio(name, args, outs, start_ink, end_ink);
+    }
+
+    fn start_ink(&self) -> Result<u64, Self::Err> {
+        if !self.env.evm_data.tracing {
+            return Err(eyre!("recording start ink when not captured").into());
+        }
+        Ok(self.start_ink)
     }
 }
 
@@ -93,32 +102,39 @@ macro_rules! hostio {
     };
 }
 
-pub(crate) fn read_args<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
+pub(crate) fn read_args<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+    ptr: u32,
+) -> MaybeEscape {
     hostio!(env, read_args(ptr))
 }
 
-pub(crate) fn write_result<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32, len: u32) -> MaybeEscape {
+pub(crate) fn write_result<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+    ptr: u32,
+    len: u32,
+) -> MaybeEscape {
     hostio!(env, write_result(ptr, len))
 }
 
-pub(crate) fn storage_load_bytes32<E: EvmApi>(
-    mut env: WasmEnvMut<E>,
+pub(crate) fn storage_load_bytes32<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
     key: u32,
     dest: u32,
 ) -> MaybeEscape {
     hostio!(env, storage_load_bytes32(key, dest))
 }
 
-pub(crate) fn storage_store_bytes32<E: EvmApi>(
-    mut env: WasmEnvMut<E>,
+pub(crate) fn storage_store_bytes32<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
     key: u32,
     value: u32,
 ) -> MaybeEscape {
     hostio!(env, storage_store_bytes32(key, value))
 }
 
-pub(crate) fn call_contract<E: EvmApi>(
-    mut env: WasmEnvMut<E>,
+pub(crate) fn call_contract<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
     contract: u32,
     data: u32,
     data_len: u32,
@@ -132,8 +148,8 @@ pub(crate) fn call_contract<E: EvmApi>(
     )
 }
 
-pub(crate) fn delegate_call_contract<E: EvmApi>(
-    mut env: WasmEnvMut<E>,
+pub(crate) fn delegate_call_contract<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
     contract: u32,
     data: u32,
     data_len: u32,
@@ -146,8 +162,8 @@ pub(crate) fn delegate_call_contract<E: EvmApi>(
     )
 }
 
-pub(crate) fn static_call_contract<E: EvmApi>(
-    mut env: WasmEnvMut<E>,
+pub(crate) fn static_call_contract<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
     contract: u32,
     data: u32,
     data_len: u32,
@@ -160,8 +176,8 @@ pub(crate) fn static_call_contract<E: EvmApi>(
     )
 }
 
-pub(crate) fn create1<E: EvmApi>(
-    mut env: WasmEnvMut<E>,
+pub(crate) fn create1<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
     code: u32,
     code_len: u32,
     endowment: u32,
@@ -174,8 +190,8 @@ pub(crate) fn create1<E: EvmApi>(
     )
 }
 
-pub(crate) fn create2<E: EvmApi>(
-    mut env: WasmEnvMut<E>,
+pub(crate) fn create2<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
     code: u32,
     code_len: u32,
     endowment: u32,
@@ -189,8 +205,8 @@ pub(crate) fn create2<E: EvmApi>(
     )
 }
 
-pub(crate) fn read_return_data<E: EvmApi>(
-    mut env: WasmEnvMut<E>,
+pub(crate) fn read_return_data<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
     dest: u32,
     offset: u32,
     size: u32,
@@ -198,12 +214,14 @@ pub(crate) fn read_return_data<E: EvmApi>(
     hostio!(env, read_return_data(dest, offset, size))
 }
 
-pub(crate) fn return_data_size<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u32, Escape> {
+pub(crate) fn return_data_size<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+) -> Result<u32, Escape> {
     hostio!(env, return_data_size())
 }
 
-pub(crate) fn emit_log<E: EvmApi>(
-    mut env: WasmEnvMut<E>,
+pub(crate) fn emit_log<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
     data: u32,
     len: u32,
     topics: u32,
@@ -211,16 +229,16 @@ pub(crate) fn emit_log<E: EvmApi>(
     hostio!(env, emit_log(data, len, topics))
 }
 
-pub(crate) fn account_balance<E: EvmApi>(
-    mut env: WasmEnvMut<E>,
+pub(crate) fn account_balance<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
     address: u32,
     ptr: u32,
 ) -> MaybeEscape {
     hostio!(env, account_balance(address, ptr))
 }
 
-pub(crate) fn account_code<E: EvmApi>(
-    mut env: WasmEnvMut<E>,
+pub(crate) fn account_code<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
     address: u32,
     offset: u32,
     size: u32,
@@ -229,71 +247,100 @@ pub(crate) fn account_code<E: EvmApi>(
     hostio!(env, account_code(address, offset, size, code))
 }
 
-pub(crate) fn account_code_size<E: EvmApi>(
-    mut env: WasmEnvMut<E>,
+pub(crate) fn account_code_size<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
     address: u32,
 ) -> Result<u32, Escape> {
     hostio!(env, account_code_size(address))
 }
 
-pub(crate) fn account_codehash<E: EvmApi>(
-    mut env: WasmEnvMut<E>,
+pub(crate) fn account_codehash<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
     address: u32,
     ptr: u32,
 ) -> MaybeEscape {
     hostio!(env, account_codehash(address, ptr))
 }
 
-pub(crate) fn block_basefee<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
+pub(crate) fn block_basefee<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+    ptr: u32,
+) -> MaybeEscape {
     hostio!(env, block_basefee(ptr))
 }
 
-pub(crate) fn block_coinbase<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
+pub(crate) fn block_coinbase<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+    ptr: u32,
+) -> MaybeEscape {
     hostio!(env, block_coinbase(ptr))
 }
 
-pub(crate) fn block_gas_limit<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u64, Escape> {
+pub(crate) fn block_gas_limit<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+) -> Result<u64, Escape> {
     hostio!(env, block_gas_limit())
 }
 
-pub(crate) fn block_number<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u64, Escape> {
+pub(crate) fn block_number<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+) -> Result<u64, Escape> {
     hostio!(env, block_number())
 }
 
-pub(crate) fn block_timestamp<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u64, Escape> {
+pub(crate) fn block_timestamp<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+) -> Result<u64, Escape> {
     hostio!(env, block_timestamp())
 }
 
-pub(crate) fn chainid<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u64, Escape> {
+pub(crate) fn chainid<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+) -> Result<u64, Escape> {
     hostio!(env, chainid())
 }
 
-pub(crate) fn contract_address<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
+pub(crate) fn contract_address<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+    ptr: u32,
+) -> MaybeEscape {
     hostio!(env, contract_address(ptr))
 }
 
-pub(crate) fn evm_gas_left<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u64, Escape> {
+pub(crate) fn evm_gas_left<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+) -> Result<u64, Escape> {
     hostio!(env, evm_gas_left())
 }
 
-pub(crate) fn evm_ink_left<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u64, Escape> {
+pub(crate) fn evm_ink_left<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+) -> Result<u64, Escape> {
     hostio!(env, evm_ink_left())
 }
 
-pub(crate) fn msg_reentrant<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u32, Escape> {
+pub(crate) fn msg_reentrant<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+) -> Result<u32, Escape> {
     hostio!(env, msg_reentrant())
 }
 
-pub(crate) fn msg_sender<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
+pub(crate) fn msg_sender<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+    ptr: u32,
+) -> MaybeEscape {
     hostio!(env, msg_sender(ptr))
 }
 
-pub(crate) fn msg_value<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
+pub(crate) fn msg_value<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+    ptr: u32,
+) -> MaybeEscape {
     hostio!(env, msg_value(ptr))
 }
 
-pub(crate) fn native_keccak256<E: EvmApi>(
-    mut env: WasmEnvMut<E>,
+pub(crate) fn native_keccak256<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
     input: u32,
     len: u32,
     output: u32,
@@ -301,42 +348,53 @@ pub(crate) fn native_keccak256<E: EvmApi>(
     hostio!(env, native_keccak256(input, len, output))
 }
 
-pub(crate) fn tx_gas_price<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
+pub(crate) fn tx_gas_price<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+    ptr: u32,
+) -> MaybeEscape {
     hostio!(env, tx_gas_price(ptr))
 }
 
-pub(crate) fn tx_ink_price<E: EvmApi>(mut env: WasmEnvMut<E>) -> Result<u32, Escape> {
+pub(crate) fn tx_ink_price<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+) -> Result<u32, Escape> {
     hostio!(env, tx_ink_price())
 }
 
-pub(crate) fn tx_origin<E: EvmApi>(mut env: WasmEnvMut<E>, ptr: u32) -> MaybeEscape {
+pub(crate) fn tx_origin<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+    ptr: u32,
+) -> MaybeEscape {
     hostio!(env, tx_origin(ptr))
 }
 
-pub(crate) fn pay_for_memory_grow<E: EvmApi>(mut env: WasmEnvMut<E>, pages: u16) -> MaybeEscape {
+pub(crate) fn pay_for_memory_grow<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+    pages: u16,
+) -> MaybeEscape {
     hostio!(env, pay_for_memory_grow(pages))
 }
 
-pub(crate) fn console_log_text<E: EvmApi>(
-    mut env: WasmEnvMut<E>,
+pub(crate) fn console_log_text<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
     ptr: u32,
     len: u32,
 ) -> MaybeEscape {
     hostio!(env, console_log_text(ptr, len))
 }
 
-pub(crate) fn console_log<E: EvmApi, T: Into<Value>>(
-    mut env: WasmEnvMut<E>,
+pub(crate) fn console_log<D: DataReader, E: EvmApi<D>, T: Into<Value>>(
+    mut env: WasmEnvMut<D, E>,
     value: T,
 ) -> MaybeEscape {
     hostio!(env, console_log(value))
 }
 
-pub(crate) fn console_tee<E: EvmApi, T: Into<Value> + Copy>(
-    mut env: WasmEnvMut<E>,
+pub(crate) fn console_tee<D: DataReader, E: EvmApi<D>, T: Into<Value> + Copy>(
+    mut env: WasmEnvMut<D, E>,
     value: T,
 ) -> Result<T, Escape> {
     hostio!(env, console_tee(value))
 }
 
-pub(crate) fn null_host<E: EvmApi>(_: WasmEnvMut<E>) {}
+pub(crate) fn null_host<D: DataReader, E: EvmApi<D>>(_: WasmEnvMut<D, E>) {}

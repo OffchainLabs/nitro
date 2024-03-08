@@ -2,7 +2,6 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use arbutil::wavm;
-use go_abi::*;
 
 extern "C" {
     pub fn BrotliDecoderDecompress(
@@ -25,6 +24,8 @@ extern "C" {
 
 const BROTLI_MODE_GENERIC: u32 = 0;
 
+type Uptr = usize;
+
 #[derive(PartialEq)]
 #[repr(u32)]
 pub enum BrotliStatus {
@@ -36,33 +37,25 @@ pub enum BrotliStatus {
 ///
 /// # Safety
 ///
-/// The go side has the following signature, which must be respected.
-///     λ(inBuf []byte, outBuf []byte) (outLen uint64, status BrotliStatus)
-///
 /// The output buffer must be sufficiently large enough.
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbcompress_brotliDecompress(sp: usize) {
-    let mut sp = GoStack::new(sp);
-    let (in_buf_ptr, in_buf_len) = sp.read_go_slice();
-    let (out_buf_ptr, out_buf_len) = sp.read_go_slice();
-
-    let in_slice = wavm::read_slice(in_buf_ptr, in_buf_len);
-    let mut output = vec![0u8; out_buf_len as usize];
-    let mut output_len = out_buf_len as usize;
+pub unsafe extern "C" fn arbcompress__brotliDecompress(in_buf_ptr: Uptr, in_buf_len: usize, out_buf_ptr: Uptr, out_len_ptr: Uptr) -> BrotliStatus {
+    let in_slice = wavm::read_slice_usize(in_buf_ptr, in_buf_len);
+    let orig_output_len = wavm::caller_load32(out_len_ptr) as usize;
+    let mut output = vec![0u8; orig_output_len as usize];
+    let mut output_len = orig_output_len;
     let res = BrotliDecoderDecompress(
         in_buf_len as usize,
         in_slice.as_ptr(),
         &mut output_len,
         output.as_mut_ptr(),
     );
-    if (res != BrotliStatus::Success) || (output_len as u64 > out_buf_len) {
-        sp.skip_u64();
-        sp.write_u32(BrotliStatus::Failure as _);
-        return;
+    if (res != BrotliStatus::Success) || (output_len > orig_output_len) {
+        return BrotliStatus::Failure;
     }
-    wavm::write_slice(&output[..output_len], out_buf_ptr);
-    sp.write_u64(output_len as u64);
-    sp.write_u32(BrotliStatus::Success as _);
+    wavm::write_slice_usize(&output[..output_len], out_buf_ptr);
+    wavm::caller_store32(out_len_ptr, output_len as u32);
+    BrotliStatus::Success
 }
 
 /// Brotli compresses a go slice
@@ -74,31 +67,25 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbcompress_brotliDec
 ///
 /// The output buffer must be sufficiently large enough.
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_arbcompress_brotliCompress(sp: usize) {
-    let mut sp = GoStack::new(sp);
-    let (in_buf_ptr, in_buf_len) = sp.read_go_slice();
-    let (out_buf_ptr, out_buf_len) = sp.read_go_slice();
-    let level = sp.read_u32();
-    let windowsize = sp.read_u32();
+pub unsafe extern "C" fn arbcompress__brotliCompress(in_buf_ptr: Uptr, in_buf_len: usize, out_buf_ptr: Uptr, out_len_ptr: Uptr, level: u32, window_size: u32) -> BrotliStatus {
+    let in_slice = wavm::read_slice_usize(in_buf_ptr, in_buf_len);
+    let orig_output_len = wavm::caller_load32(out_len_ptr) as usize;
+    let mut output = vec![0u8; orig_output_len];
+    let mut output_len = orig_output_len;
 
-    let in_slice = wavm::read_slice(in_buf_ptr, in_buf_len);
-    let mut output = vec![0u8; out_buf_len as usize];
-    let mut output_len = out_buf_len as usize;
     let res = BrotliEncoderCompress(
         level,
-        windowsize,
+        window_size,
         BROTLI_MODE_GENERIC,
         in_buf_len as usize,
         in_slice.as_ptr(),
         &mut output_len,
         output.as_mut_ptr(),
     );
-    if (res != BrotliStatus::Success) || (output_len as u64 > out_buf_len) {
-        sp.skip_u64();
-        sp.write_u32(BrotliStatus::Failure as _);
-        return;
+    if (res != BrotliStatus::Success) || (output_len > orig_output_len) {
+        return BrotliStatus::Failure;
     }
-    wavm::write_slice(&output[..output_len], out_buf_ptr);
-    sp.write_u64(output_len as u64);
-    sp.write_u32(BrotliStatus::Success as _);
+    wavm::write_slice_usize(&output[..output_len], out_buf_ptr);
+    wavm::caller_store32(out_len_ptr, output_len as u32);
+    BrotliStatus::Success
 }

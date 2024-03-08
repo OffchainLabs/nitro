@@ -2,7 +2,10 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use arbutil::{
-    evm::{api::EvmApi, EvmData},
+    evm::{
+        api::{DataReader, EvmApi},
+        EvmData,
+    },
     pricing,
 };
 use derivative::Derivative;
@@ -11,6 +14,7 @@ use prover::programs::{config::PricingParams, meter::OutOfInkError, prelude::*};
 use std::{
     fmt::Debug,
     io,
+    marker::PhantomData,
     mem::MaybeUninit,
     ops::{Deref, DerefMut},
     ptr::NonNull,
@@ -20,11 +24,11 @@ use wasmer::{FunctionEnvMut, Memory, MemoryAccessError, MemoryView, Pages, Store
 use wasmer_types::RawValue;
 use wasmer_vm::VMGlobalDefinition;
 
-pub type WasmEnvMut<'a, E> = FunctionEnvMut<'a, WasmEnv<E>>;
+pub type WasmEnvMut<'a, D, E> = FunctionEnvMut<'a, WasmEnv<D, E>>;
 
 #[derive(Derivative)]
 #[derivative(Debug)]
-pub struct WasmEnv<E: EvmApi> {
+pub struct WasmEnv<D: DataReader, E: EvmApi<D>> {
     /// The instance's arguments
     #[derivative(Debug(format_with = "arbutil::format::hex_fmt"))]
     pub args: Vec<u8>,
@@ -43,9 +47,11 @@ pub struct WasmEnv<E: EvmApi> {
     pub compile: CompileConfig,
     /// The runtime config
     pub config: Option<StylusConfig>,
+    // Using the unused generic parameter D in a PhantomData field
+    _data_reader_marker: PhantomData<D>,
 }
 
-impl<E: EvmApi> WasmEnv<E> {
+impl<D: DataReader, E: EvmApi<D>> WasmEnv<D, E> {
     pub fn new(
         compile: CompileConfig,
         config: Option<StylusConfig>,
@@ -61,19 +67,20 @@ impl<E: EvmApi> WasmEnv<E> {
             outs: vec![],
             memory: None,
             meter: None,
+            _data_reader_marker: PhantomData,
         }
     }
 
     pub fn start<'a>(
-        env: &'a mut WasmEnvMut<'_, E>,
+        env: &'a mut WasmEnvMut<'_, D, E>,
         ink: u64,
-    ) -> Result<HostioInfo<'a, E>, Escape> {
+    ) -> Result<HostioInfo<'a, D, E>, Escape> {
         let mut info = Self::program(env)?;
         info.buy_ink(pricing::HOSTIO_INK + ink)?;
         Ok(info)
     }
 
-    pub fn program<'a>(env: &'a mut WasmEnvMut<'_, E>) -> Result<HostioInfo<'a, E>, Escape> {
+    pub fn program<'a>(env: &'a mut WasmEnvMut<'_, D, E>) -> Result<HostioInfo<'a, D, E>, Escape> {
         let (env, store) = env.data_and_store_mut();
         let memory = env.memory.clone().unwrap();
         let mut info = HostioInfo {
@@ -128,14 +135,14 @@ impl MeterData {
 /// Stylus is also single-threaded.
 unsafe impl Send for MeterData {}
 
-pub struct HostioInfo<'a, E: EvmApi> {
-    pub env: &'a mut WasmEnv<E>,
+pub struct HostioInfo<'a, D: DataReader, E: EvmApi<D>> {
+    pub env: &'a mut WasmEnv<D, E>,
     pub memory: Memory,
     pub store: StoreMut<'a>,
     pub start_ink: u64,
 }
 
-impl<'a, E: EvmApi> HostioInfo<'a, E> {
+impl<'a, D: DataReader, E: EvmApi<D>> HostioInfo<'a, D, E> {
     pub fn config(&self) -> StylusConfig {
         self.config.expect("no config")
     }
@@ -160,7 +167,7 @@ impl<'a, E: EvmApi> HostioInfo<'a, E> {
     }
 }
 
-impl<'a, E: EvmApi> MeteredMachine for HostioInfo<'a, E> {
+impl<'a, D: DataReader, E: EvmApi<D>> MeteredMachine for HostioInfo<'a, D, E> {
     fn ink_left(&self) -> MachineMeter {
         let vm = self.env.meter();
         match vm.status() {
@@ -176,21 +183,21 @@ impl<'a, E: EvmApi> MeteredMachine for HostioInfo<'a, E> {
     }
 }
 
-impl<'a, E: EvmApi> GasMeteredMachine for HostioInfo<'a, E> {
+impl<'a, D: DataReader, E: EvmApi<D>> GasMeteredMachine for HostioInfo<'a, D, E> {
     fn pricing(&self) -> PricingParams {
         self.config().pricing
     }
 }
 
-impl<'a, E: EvmApi> Deref for HostioInfo<'a, E> {
-    type Target = WasmEnv<E>;
+impl<'a, D: DataReader, E: EvmApi<D>> Deref for HostioInfo<'a, D, E> {
+    type Target = WasmEnv<D, E>;
 
     fn deref(&self) -> &Self::Target {
         self.env
     }
 }
 
-impl<'a, E: EvmApi> DerefMut for HostioInfo<'a, E> {
+impl<'a, D: DataReader, E: EvmApi<D>> DerefMut for HostioInfo<'a, D, E> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         self.env
     }

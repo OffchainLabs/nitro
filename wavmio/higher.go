@@ -1,12 +1,16 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-//go:build js
-// +build js
+//go:build wasm
+// +build wasm
 
 package wavmio
 
-import "github.com/ethereum/go-ethereum/common"
+import (
+	"unsafe"
+
+	"github.com/ethereum/go-ethereum/common"
+)
 
 const INITIAL_CAPACITY = 128
 const QUERY_SIZE = 32
@@ -19,14 +23,14 @@ const IDX_SEND_ROOT = 1
 const IDX_INBOX_POSITION = 0
 const IDX_POSITION_WITHIN_MESSAGE = 1
 
-func readBuffer(f func(uint32, []byte) uint32) []byte {
+func readBuffer(f func(uint32, unsafe.Pointer) uint32) []byte {
 	buf := make([]byte, 0, INITIAL_CAPACITY)
 	offset := 0
 	for {
 		if len(buf) < offset+QUERY_SIZE {
 			buf = append(buf, make([]byte, offset+QUERY_SIZE-len(buf))...)
 		}
-		read := f(uint32(offset), buf[offset:(offset+QUERY_SIZE)])
+		read := f(uint32(offset), unsafe.Pointer(&buf[offset]))
 		offset += int(read)
 		if read < QUERY_SIZE {
 			buf = buf[:offset]
@@ -40,18 +44,19 @@ func StubInit() {}
 func StubFinal() {}
 
 func GetLastBlockHash() (hash common.Hash) {
-	getGlobalStateBytes32(IDX_LAST_BLOCKHASH, hash[:])
+	hashUnsafe := unsafe.Pointer(&hash[0])
+	getGlobalStateBytes32(IDX_LAST_BLOCKHASH, hashUnsafe)
 	return
 }
 
 func ReadInboxMessage(msgNum uint64) []byte {
-	return readBuffer(func(offset uint32, buf []byte) uint32 {
+	return readBuffer(func(offset uint32, buf unsafe.Pointer) uint32 {
 		return readInboxMessage(msgNum, offset, buf)
 	})
 }
 
 func ReadDelayedInboxMessage(seqNum uint64) []byte {
-	return readBuffer(func(offset uint32, buf []byte) uint32 {
+	return readBuffer(func(offset uint32, buf unsafe.Pointer) uint32 {
 		return readDelayedInboxMessage(seqNum, offset, buf)
 	})
 }
@@ -62,18 +67,21 @@ func AdvanceInboxMessage() {
 }
 
 func ResolvePreImage(hash common.Hash) ([]byte, error) {
-	return readBuffer(func(offset uint32, buf []byte) uint32 {
-		return resolvePreImage(hash[:], offset, buf)
+	return readBuffer(func(offset uint32, buf unsafe.Pointer) uint32 {
+		hashUnsafe := unsafe.Pointer(&hash[0])
+		return resolvePreImage(hashUnsafe, offset, buf)
 	}), nil
 }
 
 func SetLastBlockHash(hash [32]byte) {
-	setGlobalStateBytes32(IDX_LAST_BLOCKHASH, hash[:])
+	hashUnsafe := unsafe.Pointer(&hash[0])
+	setGlobalStateBytes32(IDX_LAST_BLOCKHASH, hashUnsafe)
 }
 
 // Note: if a GetSendRoot is ever modified, the validator will need to fill in the previous send root, which it currently does not.
 func SetSendRoot(hash [32]byte) {
-	setGlobalStateBytes32(IDX_SEND_ROOT, hash[:])
+	hashUnsafe := unsafe.Pointer(&hash[0])
+	setGlobalStateBytes32(IDX_SEND_ROOT, hashUnsafe)
 }
 
 func GetPositionWithinMessage() uint64 {

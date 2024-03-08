@@ -2,62 +2,42 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    gostack::GoStack,
-    machine::{Escape, Inbox, MaybeEscape, WasmEnv, WasmEnvMut},
+    callerenv::CallerEnv,
+    machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
     socket,
 };
 
 use arbutil::Color;
 use std::{
     io,
-    io::{BufReader, BufWriter, ErrorKind, Write},
+    io::{BufReader, BufWriter, ErrorKind},
     net::TcpStream,
     time::Instant,
 };
 
-pub type Bytes20 = [u8; 20];
-pub type Bytes32 = [u8; 32];
+type Uptr = u32;
 
 /// Reads 32-bytes of global state
-/// go side: λ(idx uint64, output []byte)
-pub fn get_global_state_bytes32(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
-    let (mut sp, env) = GoStack::new(sp, &mut env);
-    ready_hostio(env)?;
+pub fn get_global_state_bytes32(mut env: WasmEnvMut, idx: u32, out_ptr: Uptr) -> MaybeEscape {
+    let caller_env = CallerEnv::new(&mut env);
+    ready_hostio(caller_env.wenv)?;
 
-    let global = sp.read_u64() as usize;
-    let (out_ptr, mut out_len) = sp.read_go_slice();
-
-    if out_len < 32 {
-        eprintln!("Go trying to read block hash into {out_len} bytes long buffer");
-    } else {
-        out_len = 32;
-    }
-
-    let global = match env.large_globals.get(global) {
+    let global = match caller_env.wenv.large_globals.get(idx as usize) {
         Some(global) => global,
         None => return Escape::hostio("global read out of bounds in wavmio.getGlobalStateBytes32"),
     };
-    sp.write_slice(out_ptr, &global[..(out_len as usize)]);
+    caller_env.caller_write_slice(out_ptr, &global[..32]);
     Ok(())
 }
 
 /// Writes 32-bytes of global state
-/// go side: λ(idx uint64, val []byte)
-pub fn set_global_state_bytes32(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
-    let (mut sp, env) = GoStack::new(sp, &mut env);
-    ready_hostio(env)?;
+pub fn set_global_state_bytes32(mut env: WasmEnvMut, idx: u32, src_ptr: Uptr) -> MaybeEscape {
+    let caller_env = CallerEnv::new(&mut env);
+    ready_hostio(caller_env.wenv)?;
 
-    let global = sp.read_u64() as usize;
-    let (src_ptr, src_len) = sp.read_go_slice();
-
-    if src_len != 32 {
-        eprintln!("Go trying to set 32-byte global with a {src_len} bytes long buffer");
-        return Ok(());
-    }
-
-    let slice = sp.read_slice(src_ptr, src_len);
+    let slice = caller_env.caller_read_slice(src_ptr, 32);
     let slice = &slice.try_into().unwrap();
-    match env.large_globals.get_mut(global) {
+    match caller_env.wenv.large_globals.get_mut(idx as usize) {
         Some(global) => *global = *slice,
         None => {
             return Escape::hostio("global write out of bounds in wavmio.setGlobalStateBytes32")
@@ -67,106 +47,82 @@ pub fn set_global_state_bytes32(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
 }
 
 /// Reads 8-bytes of global state
-/// go side: λ(idx uint64) uint64
-pub fn get_global_state_u64(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
-    let (mut sp, env) = GoStack::new(sp, &mut env);
-    ready_hostio(env)?;
+pub fn get_global_state_u64(mut env: WasmEnvMut, idx: u32) -> Result<u64, Escape> {
+    let caller_env = CallerEnv::new(&mut env);
+    ready_hostio(caller_env.wenv)?;
 
-    let global = sp.read_u64() as usize;
-    match env.small_globals.get(global) {
-        Some(global) => sp.write_u64(*global),
-        None => return Escape::hostio("global read out of bounds in wavmio.getGlobalStateU64"),
-    };
-    Ok(())
+    match caller_env.wenv.small_globals.get(idx as usize) {
+        Some(global) => Ok(*global),
+        None => Escape::hostio("global read out of bounds in wavmio.getGlobalStateU64"),
+    }
 }
 
 /// Writes 8-bytes of global state
-/// go side: λ(idx uint64, val uint64)
-pub fn set_global_state_u64(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
-    let (mut sp, env) = GoStack::new(sp, &mut env);
-    ready_hostio(env)?;
+pub fn set_global_state_u64(mut env: WasmEnvMut, idx: u32, val: u64) -> MaybeEscape {
+    let caller_env = CallerEnv::new(&mut env);
+    ready_hostio(caller_env.wenv)?;
 
-    let global = sp.read_u64() as usize;
-    match env.small_globals.get_mut(global) {
-        Some(global) => *global = sp.read_u64(),
-        None => return Escape::hostio("global write out of bounds in wavmio.setGlobalStateU64"),
+    match caller_env.wenv.small_globals.get_mut(idx as usize) {
+        Some(global) => {
+            *global = val;
+            Ok(())
+        }
+        None => Escape::hostio("global write out of bounds in wavmio.setGlobalStateU64"),
     }
-    Ok(())
 }
 
 /// Reads an inbox message
-/// go side: λ(msgNum uint64, offset uint32, output []byte) uint32
-pub fn read_inbox_message(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
-    let (mut sp, env) = GoStack::new(sp, &mut env);
-    ready_hostio(env)?;
+pub fn read_inbox_message(
+    mut env: WasmEnvMut,
+    msg_num: u64,
+    offset: u32,
+    out_ptr: Uptr,
+) -> Result<u32, Escape> {
+    let caller_env = CallerEnv::new(&mut env);
+    ready_hostio(caller_env.wenv)?;
 
-    let inbox = &env.sequencer_messages;
-    inbox_message_impl(&mut sp, inbox, "wavmio.readInboxMessage")
+    let message = match caller_env.wenv.sequencer_messages.get(&msg_num) {
+        Some(message) => message,
+        None => return Escape::hostio(format!("missing sequencer inbox message {msg_num}")),
+    };
+    let offset = offset as usize;
+    let len = std::cmp::min(32, message.len().saturating_sub(offset));
+    let read = message.get(offset..(offset + len)).unwrap_or_default();
+    caller_env.caller_write_slice(out_ptr, read);
+    Ok(read.len() as u32)
 }
 
 /// Reads a delayed inbox message
-/// go-side: λ(seqNum uint64, offset uint32, output []byte) uint32
-pub fn read_delayed_inbox_message(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
-    let (mut sp, env) = GoStack::new(sp, &mut env);
-    ready_hostio(env)?;
+pub fn read_delayed_inbox_message(
+    mut env: WasmEnvMut,
+    msg_num: u64,
+    offset: u32,
+    out_ptr: Uptr,
+) -> Result<u32, Escape> {
+    let caller_env = CallerEnv::new(&mut env);
+    ready_hostio(caller_env.wenv)?;
 
-    let inbox = &env.delayed_messages;
-    inbox_message_impl(&mut sp, inbox, "wavmio.readDelayedInboxMessage")
-}
-
-/// Reads an inbox message
-/// go side: λ(msgNum uint64, offset uint32, output []byte) uint32
-/// note: the order of the checks is very important.
-fn inbox_message_impl(sp: &mut GoStack, inbox: &Inbox, name: &str) -> MaybeEscape {
-    let msg_num = sp.read_u64();
-    let offset = sp.read_u64();
-    let (out_ptr, out_len) = sp.read_go_slice();
-
-    if out_len != 32 {
-        eprintln!("Go trying to read inbox message with out len {out_len} in {name}");
-        sp.write_u64(0);
-        return Ok(());
-    }
-
-    macro_rules! error {
-        ($text:expr $(,$args:expr)*) => {{
-            let text = format!($text $(,$args)*);
-            return Escape::hostio(&text)
-        }};
-    }
-
-    let message = match inbox.get(&msg_num) {
+    let message = match caller_env.wenv.delayed_messages.get(&msg_num) {
         Some(message) => message,
-        None => error!("missing inbox message {msg_num} in {name}"),
+        None => return Escape::hostio(format!("missing delayed inbox message {msg_num}")),
     };
-
-    let offset = match u32::try_from(offset) {
-        Ok(offset) => offset as usize,
-        Err(_) => error!("bad offset {offset} in {name}"),
-    };
-
+    let offset = offset as usize;
     let len = std::cmp::min(32, message.len().saturating_sub(offset));
     let read = message.get(offset..(offset + len)).unwrap_or_default();
-    sp.write_slice(out_ptr, read);
-    sp.write_u64(read.len() as u64);
-    Ok(())
+    caller_env.caller_write_slice(out_ptr, read);
+    Ok(read.len() as u32)
 }
 
 /// Retrieves the preimage of the given hash.
-/// go side: λ(hash []byte, offset uint32, output []byte) uint32
-pub fn resolve_preimage(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
-    let (mut sp, env) = GoStack::new(sp, &mut env);
+pub fn resolve_preimage(
+    mut env: WasmEnvMut,
+    hash_ptr: Uptr,
+    offset: u32,
+    out_ptr: Uptr,
+) -> Result<u32, Escape> {
+    let mut caller_env = CallerEnv::new(&mut env);
 
     let name = "wavmio.resolvePreImage";
-    let (hash_ptr, hash_len) = sp.read_go_slice();
-    let offset = sp.read_u64();
-    let (out_ptr, out_len) = sp.read_go_slice();
-
-    if hash_len != 32 || out_len != 32 {
-        eprintln!("Go trying to resolve pre image with hash len {hash_len} and out len {out_len}");
-        sp.write_u64(0);
-        return Ok(());
-    }
 
     macro_rules! error {
         ($text:expr $(,$args:expr)*) => {{
@@ -175,38 +131,21 @@ pub fn resolve_preimage(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
         }};
     }
 
-    let hash = sp.read_slice(hash_ptr, hash_len);
-    let hash: &[u8; 32] = &hash.try_into().unwrap();
+    let hash = caller_env.caller_read_bytes32(hash_ptr);
     let hash_hex = hex::encode(hash);
 
     let mut preimage = None;
-    let temporary; // makes the borrow checker happy
 
     // see if we've cached the preimage
-    if let Some((key, cached)) = &env.process.last_preimage {
-        if key == hash {
+    if let Some((key, cached)) = &caller_env.wenv.process.last_preimage {
+        if *key == hash {
             preimage = Some(cached);
         }
     }
 
     // see if this is a known preimage
     if preimage.is_none() {
-        preimage = env.preimages.get(hash);
-    }
-
-    // see if Go has the preimage
-    if preimage.is_none() {
-        if let Some((writer, reader)) = &mut env.process.socket {
-            socket::write_u8(writer, socket::PREIMAGE)?;
-            socket::write_bytes32(writer, hash)?;
-            writer.flush()?;
-
-            if socket::read_u8(reader)? == socket::SUCCESS {
-                temporary = socket::read_bytes(reader)?;
-                env.process.last_preimage = Some((*hash, temporary.clone()));
-                preimage = Some(&temporary);
-            }
-        }
+        preimage = caller_env.wenv.preimages.get(&hash);
     }
 
     let preimage = match preimage {
@@ -220,9 +159,8 @@ pub fn resolve_preimage(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
 
     let len = std::cmp::min(32, preimage.len().saturating_sub(offset));
     let read = preimage.get(offset..(offset + len)).unwrap_or_default();
-    sp.write_slice(out_ptr, read);
-    sp.write_u64(read.len() as u64);
-    Ok(())
+    caller_env.caller_write_slice(out_ptr, read);
+    Ok(read.len() as u32)
 }
 
 fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {

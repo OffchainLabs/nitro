@@ -3,7 +3,12 @@
 
 use arbutil::{
     crypto,
-    evm::{self, api::EvmApi, user::UserOutcomeKind, EvmData},
+    evm::{
+        self,
+        api::{DataReader, EvmApi},
+        user::UserOutcomeKind,
+        EvmData,
+    },
     pricing::{EVM_API_INK, HOSTIO_INK, PTR_INK},
     Bytes20, Bytes32,
 };
@@ -24,11 +29,12 @@ macro_rules! trace {
     ($name:expr, $env:expr, [$($args:expr),+], [$($outs:expr),+], $ret:expr) => {{
         if $env.evm_data().tracing {
             let end_ink = $env.ink_ready()?;
+            let start_ink = $env.start_ink()?;
             let mut args = vec![];
             $(args.extend($args);)*
             let mut outs = vec![];
             $(outs.extend($outs);)*
-            $env.trace($name, &args, &outs, end_ink);
+            $env.trace($name, &args, &outs, start_ink, end_ink);
         }
         Ok($ret)
     }};
@@ -49,10 +55,10 @@ type Address = Bytes20;
 type Wei = Bytes32;
 
 #[allow(clippy::too_many_arguments)]
-pub trait UserHost: GasMeteredMachine {
+pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     type Err: From<OutOfInkError> + From<Self::MemoryErr> + From<eyre::ErrReport>;
     type MemoryErr;
-    type A: EvmApi;
+    type A: EvmApi<DR>;
 
     fn args(&self) -> &[u8];
     fn outs(&mut self) -> &mut Vec<u8>;
@@ -70,8 +76,10 @@ pub trait UserHost: GasMeteredMachine {
     fn write_bytes32(&self, ptr: u32, src: Bytes32) -> Result<(), Self::MemoryErr>;
     fn write_slice(&self, ptr: u32, src: &[u8]) -> Result<(), Self::MemoryErr>;
 
+    // ink when call stated, only used for tracing, Err if unavailable.
+    fn start_ink(&self) -> Result<u64, Self::Err>;
     fn say<D: Display>(&self, text: D);
-    fn trace(&self, name: &str, args: &[u8], outs: &[u8], end_ink: u64);
+    fn trace(&mut self, name: &str, args: &[u8], outs: &[u8], start_ink: u64, end_ink: u64);
 
     /// Reads the program calldata. The semantics are equivalent to that of the EVM's
     /// [`CALLDATA_COPY`] opcode when requesting the entirety of the current call's calldata.
@@ -394,6 +402,23 @@ pub trait UserHost: GasMeteredMachine {
         )
     }
 
+    fn sub_slice(mut slice: &[u8], offset: u32, size: u32) -> &[u8] {
+        let slice_len = slice.len() as u32;
+        let out_size = if offset > slice_len {
+            0
+        } else if offset + size > slice_len {
+            slice_len - offset
+        } else {
+            size
+        };
+        if out_size > 0 {
+            slice = &slice[offset as usize..(offset + out_size) as usize];
+        } else {
+            slice = &[];
+        }
+        slice
+    }
+
     /// Copies the bytes of the last EVM call or deployment return result. Does not revert if out of
     /// bounds, but rather copies the overlapping portion. The semantics are otherwise equivalent
     /// to that of the EVM's [`RETURN_DATA_COPY`] opcode.
@@ -408,17 +433,18 @@ pub trait UserHost: GasMeteredMachine {
         let max = self.evm_return_data_len().saturating_sub(offset);
         self.pay_for_write(size.min(max))?;
 
-        let data = self.evm_api().get_return_data(offset, size);
-        assert!(data.len() <= size as usize);
-        self.write_slice(dest, &data)?;
-
-        let len = data.len() as u32;
+        let ret_data = self.evm_api().get_return_data();
+        let out_slice = Self::sub_slice(ret_data.slice(), offset, size);
+        let out_len = out_slice.len() as u32;
+        if out_len > 0 {
+            self.write_slice(dest, out_slice)?;
+        }
         trace!(
             "read_return_data",
             self,
             [be!(offset), be!(size)],
-            data,
-            len
+            out_slice.to_vec(),
+            out_len
         )
     }
 
@@ -485,18 +511,28 @@ pub trait UserHost: GasMeteredMachine {
         dest: u32,
     ) -> Result<u32, Self::Err> {
         self.buy_ink(HOSTIO_INK + EVM_API_INK)?;
-        self.require_gas(evm::COLD_ACCOUNT_GAS)?; // not necessary since we also check in Go
         let address = self.read_bytes20(address)?;
         let gas = self.gas_left()?;
 
         // we pass `gas` to check if there's enough before loading from the db
-        let (code, gas_cost) = self.evm_api().account_code(address, offset, size, gas);
+        let (code, gas_cost) = self.evm_api().account_code(address, gas);
+        let code = code.slice();
         self.buy_gas(gas_cost)?;
+        self.pay_for_write(size as u32)?;
 
-        self.pay_for_write(code.len() as u32)?;
-        self.write_slice(dest, &code)?;
+        let out_slice = Self::sub_slice(code, offset, size);
+        let out_len = out_slice.len() as u32;
+        if out_len > 0 {
+            self.write_slice(dest, out_slice)?;
+        }
 
-        trace!("account_code", self, address, be!(size), code.len() as u32)
+        trace!(
+            "account_code",
+            self,
+            [address, be!(offset), be!(size)],
+            out_slice.to_vec(),
+            out_len
+        )
     }
 
     /// Gets the size of the code in bytes at the given address. The semantics are equivalent
@@ -505,13 +541,15 @@ pub trait UserHost: GasMeteredMachine {
     /// [`EXT_CODESIZE`]: https://www.evm.codes/#3B
     fn account_code_size(&mut self, address: u32) -> Result<u32, Self::Err> {
         self.buy_ink(HOSTIO_INK + EVM_API_INK)?;
-        self.require_gas(evm::COLD_ACCOUNT_GAS)?; // not necessary since we also check in Go
         let address = self.read_bytes20(address)?;
         let gas = self.gas_left()?;
 
-        let (len, gas_cost) = self.evm_api().account_code_size(address, gas);
+        // we pass `gas` to check if there's enough before loading from the db
+        let (code, gas_cost) = self.evm_api().account_code(address, gas);
         self.buy_gas(gas_cost)?;
-        trace!("account_code_size", self, address, &[], len)
+        let code = code.slice();
+
+        trace!("account_code_size", self, address, &[], code.len() as u32)
     }
 
     /// Gets the code hash of the account at the given address. The semantics are equivalent
