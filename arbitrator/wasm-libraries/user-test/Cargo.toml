@@ -8,7 +8,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 arbutil = { path = "../../arbutil/" }
-callerenv = { path = "../../callerenv/", features = ["static_caller"] }
+caller-env = { path = "../../caller-env/", features = ["static_caller"] }
 prover = { path = "../../prover/", default-features = false }
 eyre = "0.6.5"
 fnv = "1.0.7"

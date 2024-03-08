@@ -203,11 +203,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "a2bd12c1caf447e69cd4528f47f94d203fd2582878ecb9e9465484c4148a8223"
 
 [[package]]
-name = "callerenv"
+name = "caller-env"
 version = "0.1.0"
 dependencies = [
+ "num_enum",
  "rand",
  "rand_pcg",
+ "wasmer",
 ]
 
 [[package]]
@@ -787,7 +789,7 @@ name = "jit"
 version = "0.1.0"
 dependencies = [
  "arbutil",
- "callerenv",
+ "caller-env",
  "eyre",
  "hex",
  "libc",
@@ -1065,18 +1067,18 @@ dependencies = [
 
 [[package]]
 name = "num_enum"
-version = "0.7.1"
+version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "683751d591e6d81200c39fb0d1032608b77724f34114db54f571ff1317b337c0"
+checksum = "02339744ee7253741199f897151b38e72257d13802d4ee837285cc2990a90845"
 dependencies = [
  "num_enum_derive",
 ]
 
 [[package]]
 name = "num_enum_derive"
-version = "0.7.1"
+version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c11e44798ad209ccdd91fc192f0526a369a01234f7373e1b141c96d7cee4f0e"
+checksum = "681030a937600a36906c185595136d26abfebb4aa9c65701cefcaf8578bb982b"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -1641,6 +1643,7 @@ version = "0.1.0"
 dependencies = [
  "arbutil",
  "bincode",
+ "caller-env",
  "derivative",
  "eyre",
  "fnv",
@@ -1851,7 +1854,7 @@ name = "user-host-trait"
 version = "0.1.0"
 dependencies = [
  "arbutil",
- "callerenv",
+ "caller-env",
  "eyre",
  "prover",
 ]

@@ -1,12 +1,14 @@
-// Copyright 2022-2023, Offchain Labs, Inc.
+// Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::callerenv::jit_env;
+#![allow(clippy::too_many_arguments)]
+
+use crate::caller_env::JitEnv;
 use crate::machine::{Escape, MaybeEscape, WasmEnvMut};
 use crate::stylus_backend::exec_wasm;
 use arbutil::Bytes32;
 use arbutil::{evm::EvmData, format::DebugBytes, heapify};
-use callerenv::{MemAccess, Uptr};
+use caller_env::{GuestPtr, MemAccess};
 use eyre::eyre;
 use prover::programs::prelude::StylusConfig;
 use prover::{
@@ -17,19 +19,19 @@ use prover::{
 /// activates a user program
 pub fn activate(
     mut env: WasmEnvMut,
-    wasm_ptr: Uptr,
+    wasm_ptr: GuestPtr,
     wasm_size: u32,
-    pages_ptr: Uptr,
-    asm_estimate_ptr: Uptr,
-    init_gas_ptr: Uptr,
+    pages_ptr: GuestPtr,
+    asm_estimate_ptr: GuestPtr,
+    init_gas_ptr: GuestPtr,
     version: u16,
     debug: u32,
-    module_hash_ptr: Uptr,
-    gas_ptr: Uptr,
-    err_buf: Uptr,
+    module_hash_ptr: GuestPtr,
+    gas_ptr: GuestPtr,
+    err_buf: GuestPtr,
     err_buf_len: u32,
 ) -> Result<u32, Escape> {
-    let (mut mem, _) = jit_env(&mut env);
+    let (mut mem, _) = env.jit_env();
     let wasm = mem.read_slice(wasm_ptr, wasm_size as usize);
     let debug = debug != 0;
 
@@ -61,14 +63,14 @@ pub fn activate(
 /// returns module number
 pub fn new_program(
     mut env: WasmEnvMut,
-    compiled_hash_ptr: Uptr,
-    calldata_ptr: Uptr,
+    compiled_hash_ptr: GuestPtr,
+    calldata_ptr: GuestPtr,
     calldata_size: u32,
     stylus_config_handler: u64,
     evm_data_handler: u64,
     gas: u64,
 ) -> Result<u32, Escape> {
-    let (mut mem, exec) = jit_env(&mut env);
+    let (mut mem, exec) = env.jit_env();
     let compiled_hash = mem.read_bytes32(compiled_hash_ptr);
     let calldata = mem.read_slice(calldata_ptr, calldata_size as usize);
     let evm_data: EvmData = unsafe { *Box::from_raw(evm_data_handler as *mut EvmData) };
@@ -78,11 +80,11 @@ pub fn new_program(
     let pricing = config.stylus.pricing;
     let ink = pricing.gas_to_ink(gas);
 
-    let Some(module) = exec.wenv.module_asms.get(&compiled_hash).cloned() else {
+    let Some(module) = exec.module_asms.get(&compiled_hash).cloned() else {
         return Err(Escape::Failure(format!(
             "module hash {:?} not found in {:?}",
             compiled_hash,
-            exec.wenv.module_asms.keys()
+            exec.module_asms.keys()
         )));
     };
 
@@ -96,34 +98,34 @@ pub fn new_program(
     )
     .unwrap();
 
-    exec.wenv.threads.push(cothread);
+    exec.threads.push(cothread);
 
-    Ok(exec.wenv.threads.len() as u32)
+    Ok(exec.threads.len() as u32)
 }
 
 /// starts the program (in jit waits for first request)
 /// module MUST match last module number returned from new_program
 /// returns request_id for the first request from the program
 pub fn start_program(mut env: WasmEnvMut, module: u32) -> Result<u32, Escape> {
-    let (_, exec) = jit_env(&mut env);
+    let (_, exec) = env.jit_env();
 
-    if exec.wenv.threads.len() as u32 != module || module == 0 {
+    if exec.threads.len() as u32 != module || module == 0 {
         return Escape::hostio(format!(
             "got request for thread {module} but len is {}",
-            exec.wenv.threads.len()
+            exec.threads.len()
         ));
     }
-    let thread = exec.wenv.threads.last_mut().unwrap();
+    let thread = exec.threads.last_mut().unwrap();
     thread.wait_next_message()?;
     let msg = thread.last_message()?;
     Ok(msg.1)
 }
 
-// gets information about request according to id
-// request_id MUST be last request id returned from start_program or send_response
-pub fn get_request(mut env: WasmEnvMut, id: u32, len_ptr: Uptr) -> Result<u32, Escape> {
-    let (mut mem, exec) = jit_env(&mut env);
-    let thread = exec.wenv.threads.last_mut().unwrap();
+/// gets information about request according to id
+/// request_id MUST be last request id returned from start_program or send_response
+pub fn get_request(mut env: WasmEnvMut, id: u32, len_ptr: GuestPtr) -> Result<u32, Escape> {
+    let (mut mem, exec) = env.jit_env();
+    let thread = exec.threads.last_mut().unwrap();
     let msg = thread.last_message()?;
     if msg.1 != id {
         return Escape::hostio("get_request id doesn't match");
@@ -135,9 +137,9 @@ pub fn get_request(mut env: WasmEnvMut, id: u32, len_ptr: Uptr) -> Result<u32, E
 // gets data associated with last request.
 // request_id MUST be last request receieved
 // data_ptr MUST point to a buffer of at least the length returned by get_request
-pub fn get_request_data(mut env: WasmEnvMut, id: u32, data_ptr: Uptr) -> MaybeEscape {
-    let (mut mem, exec) = jit_env(&mut env);
-    let thread = exec.wenv.threads.last_mut().unwrap();
+pub fn get_request_data(mut env: WasmEnvMut, id: u32, data_ptr: GuestPtr) -> MaybeEscape {
+    let (mut mem, exec) = env.jit_env();
+    let thread = exec.threads.last_mut().unwrap();
     let msg = thread.last_message()?;
     if msg.1 != id {
         return Escape::hostio("get_request id doesn't match");
@@ -146,31 +148,31 @@ pub fn get_request_data(mut env: WasmEnvMut, id: u32, data_ptr: Uptr) -> MaybeEs
     Ok(())
 }
 
-// sets response for the next request made
-// id MUST be the id of last request made
+/// sets response for the next request made
+/// id MUST be the id of last request made
 pub fn set_response(
     mut env: WasmEnvMut,
     id: u32,
     gas: u64,
-    result_ptr: Uptr,
+    result_ptr: GuestPtr,
     result_len: u32,
-    raw_data_ptr: Uptr,
+    raw_data_ptr: GuestPtr,
     raw_data_len: u32,
 ) -> MaybeEscape {
-    let (mem, exec) = jit_env(&mut env);
+    let (mem, exec) = env.jit_env();
     let result = mem.read_slice(result_ptr, result_len as usize);
     let raw_data = mem.read_slice(raw_data_ptr, raw_data_len as usize);
 
-    let thread = exec.wenv.threads.last_mut().unwrap();
+    let thread = exec.threads.last_mut().unwrap();
     thread.set_response(id, result, raw_data, gas)
 }
 
-// sends previos response
-// MUST be called right after set_response to the same id
-// returns request_id for the next request
+/// sends previos response
+/// MUST be called right after set_response to the same id
+/// returns request_id for the next request
 pub fn send_response(mut env: WasmEnvMut, req_id: u32) -> Result<u32, Escape> {
-    let (_, exec) = jit_env(&mut env);
-    let thread = exec.wenv.threads.last_mut().unwrap();
+    let (_, exec) = env.jit_env();
+    let thread = exec.threads.last_mut().unwrap();
     let msg = thread.last_message()?;
     if msg.1 != req_id {
         return Escape::hostio("get_request id doesn't match");
@@ -180,11 +182,11 @@ pub fn send_response(mut env: WasmEnvMut, req_id: u32) -> Result<u32, Escape> {
     Ok(msg.1)
 }
 
-// removes the last created program
+/// removes the last created program
 pub fn pop(mut env: WasmEnvMut) -> MaybeEscape {
-    let (_, exec) = jit_env(&mut env);
+    let (_, exec) = env.jit_env();
 
-    match exec.wenv.threads.pop() {
+    match exec.threads.pop() {
         None => Err(Escape::Child(eyre!("no child"))),
         Some(mut thread) => thread.wait_done(),
     }
@@ -214,23 +216,22 @@ pub fn create_stylus_config(
 }
 
 /// Creates an `EvmData` handler from its component parts.
-///
 pub fn create_evm_data(
     mut env: WasmEnvMut,
-    block_basefee_ptr: Uptr,
+    block_basefee_ptr: GuestPtr,
     chainid: u64,
-    block_coinbase_ptr: Uptr,
+    block_coinbase_ptr: GuestPtr,
     block_gas_limit: u64,
     block_number: u64,
     block_timestamp: u64,
-    contract_address_ptr: Uptr,
-    msg_sender_ptr: Uptr,
-    msg_value_ptr: Uptr,
-    tx_gas_price_ptr: Uptr,
-    tx_origin_ptr: Uptr,
+    contract_address_ptr: GuestPtr,
+    msg_sender_ptr: GuestPtr,
+    msg_value_ptr: GuestPtr,
+    tx_gas_price_ptr: GuestPtr,
+    tx_origin_ptr: GuestPtr,
     reentrant: u32,
 ) -> Result<u64, Escape> {
-    let (mut mem, _) = jit_env(&mut env);
+    let (mut mem, _) = env.jit_env();
 
     let evm_data = EvmData {
         block_basefee: mem.read_bytes32(block_basefee_ptr),

@@ -1,5 +1,6 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+
 use arbutil::{
     evm::{
         api::DataReader,
@@ -15,7 +16,7 @@ use eyre::ErrReport;
 use native::NativeInstance;
 use prover::programs::{prelude::*, StylusData};
 use run::RunProgram;
-use std::{marker::PhantomData, mem, ptr::null};
+use std::{marker::PhantomData, mem, ptr};
 
 pub use prover;
 
@@ -34,20 +35,23 @@ mod benchmarks;
 #[derive(Clone, Copy)]
 #[repr(C)]
 pub struct GoSliceData {
-    ptr: *const u8, // stored as pointer for GO
+    /// Points to data owned by Go.
+    ptr: *const u8,
+    /// The length in bytes.
     len: usize,
 }
 
-impl Default for GoSliceData {
-    fn default() -> Self {
-        GoSliceData {
-            ptr: null(),
+/// The data we're pointing to is owned by Go and has a lifetime no shorter than the current program.
+unsafe impl Send for GoSliceData {}
+
+impl GoSliceData {
+    pub fn null() -> Self {
+        Self {
+            ptr: ptr::null(),
             len: 0,
         }
     }
-}
 
-impl GoSliceData {
     fn slice(&self) -> &[u8] {
         if self.len == 0 {
             return &[];
@@ -56,32 +60,12 @@ impl GoSliceData {
     }
 }
 
-// same as above, with Send semantics using dirty trickery
-// GO will always use GoSliceData so these types must have
-// exact same representation, see assert_go_slices_match
-#[derive(Clone, Copy, Default)]
-#[repr(C)]
-pub struct SendGoSliceData {
-    ptr: usize, // not stored as pointer because rust won't let that be Send
-    len: usize,
-}
-
-#[allow(dead_code)]
-const fn assert_go_slices_match() -> () {
-    // TODO: this will be stabilized on rust 1.77
-    // assert_eq!(mem::offset_of!(GoSliceData, ptr), mem::offset_of!(SendGoSliceData, ptr));
-    // assert_eq!(mem::offset_of!(GoSliceData, len), mem::offset_of!(SendGoSliceData, len));
-    assert!(mem::size_of::<GoSliceData>() == mem::size_of::<SendGoSliceData>());
-}
-
-const _: () = assert_go_slices_match();
-
-impl DataReader for SendGoSliceData {
+impl DataReader for GoSliceData {
     fn slice(&self) -> &[u8] {
         if self.len == 0 {
             return &[];
         }
-        unsafe { std::slice::from_raw_parts(self.ptr as *const u8, self.len) }
+        unsafe { std::slice::from_raw_parts(self.ptr, self.len) }
     }
 }
 
@@ -110,16 +94,6 @@ pub struct RustBytes {
 }
 
 impl RustBytes {
-    fn new(vec: Vec<u8>) -> Self {
-        let mut rust_vec = Self {
-            ptr: std::ptr::null_mut(),
-            len: 0,
-            cap: 0,
-        };
-        unsafe { rust_vec.write(vec) };
-        rust_vec
-    }
-
     unsafe fn into_vec(self) -> Vec<u8> {
         Vec::from_raw_parts(self.ptr, self.len, self.cap)
     }
@@ -205,14 +179,13 @@ pub unsafe extern "C" fn stylus_call(
     let module = module.slice();
     let calldata = calldata.slice().to_vec();
     let compile = CompileConfig::version(config.version, debug_chain != 0);
+    let evm_api = EvmApiRequestor::new(req_handler);
     let pricing = config.pricing;
     let output = &mut *output;
     let ink = pricing.gas_to_ink(*gas);
 
     // Safety: module came from compile_user_wasm and we've paid for memory expansion
-    let instance = unsafe {
-        NativeInstance::deserialize(module, compile, EvmApiRequestor::new(req_handler), evm_data)
-    };
+    let instance = unsafe { NativeInstance::deserialize(module, compile, evm_api, evm_data) };
     let mut instance = match instance {
         Ok(instance) => instance,
         Err(error) => panic!("failed to instantiate program: {error:?}"),
@@ -240,18 +213,4 @@ pub unsafe extern "C" fn stylus_drop_vec(vec: RustBytes) {
     if !vec.ptr.is_null() {
         mem::drop(vec.into_vec())
     }
-}
-
-/// Overwrites the bytes of the vector.
-///
-/// # Safety
-///
-/// `rust` must not be null.
-#[no_mangle]
-pub unsafe extern "C" fn stylus_vec_set_bytes(rust: *mut RustBytes, data: GoSliceData) {
-    let rust = &mut *rust;
-    let mut vec = Vec::from_raw_parts(rust.ptr, rust.len, rust.cap);
-    vec.clear();
-    vec.extend(data.slice());
-    rust.write(vec);
 }

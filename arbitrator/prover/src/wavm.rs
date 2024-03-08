@@ -171,7 +171,7 @@ pub enum Opcode {
     NewCoThread,
     /// pop cothread (cannot be called from cothread)
     PopCoThread,
-    /// switch to/from create cothread
+    /// switch between main and a cothread
     SwitchThread,
 }
 

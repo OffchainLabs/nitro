@@ -16,8 +16,8 @@ typedef uint32_t u32;
 typedef uint64_t u64;
 typedef size_t usize;
 
-EvmApiStatus handleReqImpl(usize api, u32 req_type, RustBytes *data, u64 *out_cost, GoSliceData *out_result, GoSliceData *out_raw_data);
-EvmApiStatus handleReqWrap(usize api, u32 req_type, RustBytes *data, u64 *out_cost, GoSliceData *out_result, GoSliceData *out_raw_data) {
+EvmApiStatus handleReqImpl(usize api, u32 req_type, RustSlice *data, u64 *out_cost, GoSliceData *out_result, GoSliceData *out_raw_data);
+EvmApiStatus handleReqWrap(usize api, u32 req_type, RustSlice *data, u64 *out_cost, GoSliceData *out_result, GoSliceData *out_raw_data) {
     return handleReqImpl(api, req_type, data, out_cost, out_result, out_raw_data);
 }
 */
@@ -30,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/arbutil"
 )
 
 var apiObjects sync.Map
@@ -46,7 +47,7 @@ func newApi(
 	tracingInfo *util.TracingInfo,
 	scope *vm.ScopeContext,
 	memoryModel *MemoryModel,
-) (NativeApi, usize) {
+) NativeApi {
 	handler := newApiClosures(interpreter, tracingInfo, scope, memoryModel)
 	apiId := atomic.AddUintptr(&apiIds, 1)
 	id := usize(apiId)
@@ -56,11 +57,11 @@ func newApi(
 			handle_request_fptr: (*[0]byte)(C.handleReqWrap),
 			id:                  id,
 		},
-		// TODO: doesn't seem like pinner needs to be initialized?
+		pinner: runtime.Pinner{},
 	}
 	api.pinner.Pin(&api)
 	apiObjects.Store(apiId, api)
-	return api, id
+	return api
 }
 
 func getApi(id usize) NativeApi {
@@ -75,9 +76,20 @@ func getApi(id usize) NativeApi {
 	return api
 }
 
-func dropApi(id usize) {
-	uid := uintptr(id)
-	api := getApi(id)
+// Free the API object, and any saved request payloads.
+func (api *NativeApi) drop() {
 	api.pinner.Unpin()
-	apiObjects.Delete(uid)
+	apiObjects.Delete(uintptr(api.cNative.id))
+}
+
+// Pins a slice until program exit during the call to `drop`.
+func (api *NativeApi) pinAndRef(data []byte, goSlice *C.GoSliceData) {
+	if len(data) > 0 {
+		dataPointer := arbutil.SliceToPointer(data)
+		api.pinner.Pin(dataPointer)
+		goSlice.ptr = (*u8)(dataPointer)
+	} else {
+		goSlice.ptr = (*u8)(nil)
+	}
+	goSlice.len = usize(len(data))
 }

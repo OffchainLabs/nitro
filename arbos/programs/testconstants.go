@@ -1,4 +1,9 @@
+// Copyright 2024, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+
 package programs
+
+// This file exists because cgo isn't allowed in tests
 
 /*
 #cgo CFLAGS: -g -Wall -I../../target/include/
@@ -7,14 +12,16 @@ package programs
 import "C"
 import "fmt"
 
-func errIfNotEq(index int, a RequestType, b uint32) error {
-	if uint32(a) != b {
-		return fmt.Errorf("constant test %d failed! %d != %d", index, a, b)
-	}
-	return nil
-}
-
 func testConstants() error {
+
+	// this closure exists to avoid polluting the package namespace
+	errIfNotEq := func(index int, a RequestType, b uint32) error {
+		if uint32(a) != b {
+			return fmt.Errorf("constant test %d failed! %d != %d", index, a, b)
+		}
+		return nil
+	}
+
 	if err := errIfNotEq(1, GetBytes32, C.EvmApiMethod_GetBytes32); err != nil {
 		return err
 	}
