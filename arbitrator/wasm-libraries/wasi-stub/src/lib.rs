@@ -5,20 +5,20 @@
 #![no_std]
 
 use caller_env::{self, wasip1_stub::Errno, GuestPtr};
-use mini_alloc::MiniAlloc;
 use paste::paste;
+use wee_alloc::WeeAlloc;
 
 extern "C" {
     fn wavm_halt_and_set_finished() -> !;
 }
 
+#[global_allocator]
+static ALLOC: WeeAlloc = WeeAlloc::INIT;
+
 #[panic_handler]
 unsafe fn panic(_: &core::panic::PanicInfo) -> ! {
     core::arch::wasm32::unreachable()
 }
-
-#[global_allocator]
-static ALLOC: MiniAlloc = MiniAlloc::INIT;
 
 #[no_mangle]
 pub unsafe extern "C" fn wasi_snapshot_preview1__proc_exit(code: u32) -> ! {
