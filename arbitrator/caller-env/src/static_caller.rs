@@ -100,6 +100,11 @@ impl MemAccess for StaticMem {
 }
 
 impl ExecEnv for StaticExecEnv {
+    fn print_string(&mut self, _data: &[u8]) {
+        // printing is done by arbitrator machine host_call_hook
+        // capturing the fd_write call directly
+    }
+
     fn get_time(&self) -> u64 {
         unsafe { TIME }
     }

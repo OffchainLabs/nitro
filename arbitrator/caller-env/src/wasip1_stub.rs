@@ -68,12 +68,9 @@ pub fn environ_get<M: MemAccess, E: ExecEnv>(
 
 /// Writes to the given file descriptor.
 /// Note that we only support stdout and stderr.
-/// Writing to output doesn't happen here.
-/// in arbitrator that's in host_call_hook,
-/// in jit it's in fd_write_wrapper
 pub fn fd_write<M: MemAccess, E: ExecEnv>(
     mem: &mut M,
-    _env: &mut E,
+    env: &mut E,
     fd: u32,
     iovecs_ptr: GuestPtr,
     iovecs_len: u32,
@@ -86,6 +83,8 @@ pub fn fd_write<M: MemAccess, E: ExecEnv>(
     for i in 0..iovecs_len {
         let ptr = iovecs_ptr + i * 8;
         let len = mem.read_u32(ptr + 4);
+        let data = mem.read_slice(ptr, len as usize);
+        env.print_string(&data);
         size += len;
     }
     mem.write_u32(ret_ptr, size);

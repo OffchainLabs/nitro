@@ -81,7 +81,7 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
         "wasi_snapshot_preview1" => {
             "proc_exit" => func!(wasip1_stub::proc_exit),
             "environ_sizes_get" => func!(wasip1_stub::environ_sizes_get),
-            "fd_write" => func!(wasip1_stub::fd_write_wrapper),
+            "fd_write" => func!(wasip1_stub::fd_write),
             "environ_get" => func!(wasip1_stub::environ_get),
             "fd_close" => func!(wasip1_stub::fd_close),
             "fd_read" => func!(wasip1_stub::fd_read),
