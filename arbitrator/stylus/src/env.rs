@@ -8,6 +8,7 @@ use arbutil::{
     },
     pricing,
 };
+use caller_env::GuestPtr;
 use derivative::Derivative;
 use eyre::{eyre, ErrReport};
 use prover::programs::{config::PricingParams, meter::OutOfInkError, prelude::*};
@@ -160,7 +161,7 @@ impl<'a, D: DataReader, E: EvmApi<D>> HostioInfo<'a, D, E> {
     }
 
     // TODO: use the unstable array_assum_init
-    pub fn read_fixed<const N: usize>(&self, ptr: u32) -> Result<[u8; N], MemoryAccessError> {
+    pub fn read_fixed<const N: usize>(&self, ptr: GuestPtr) -> Result<[u8; N], MemoryAccessError> {
         let mut data = [MaybeUninit::uninit(); N];
         self.view().read_uninit(ptr.into(), &mut data)?;
         Ok(data.map(|x| unsafe { x.assume_init() }))

@@ -74,7 +74,7 @@ WASI_SYSROOT?=/opt/wasi-sdk/wasi-sysroot
 
 arbitrator_wasm_lib_flags=$(patsubst %, -l %, $(arbitrator_wasm_libs))
 
-rust_arbutil_files = $(wildcard arbitrator/arbutil/src/*.* arbitrator/arbutil/src/*/*.* arbitrator/arbutil/*.toml)
+rust_arbutil_files = $(wildcard arbitrator/arbutil/src/*.* arbitrator/arbutil/src/*/*.* arbitrator/arbutil/*.toml arbitrator/caller-env/src/*.* arbitrator/caller-env/src/*/*.* arbitrator/caller-env/*.toml)
 
 prover_direct_includes = $(patsubst %,$(output_latest)/%.wasm, forward forward_stub)
 prover_src = arbitrator/prover/src
@@ -341,7 +341,7 @@ $(output_latest)/user_host.wasm: $(DEP_PREDICATE) $(wasm_lib_user_host) $(rust_p
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package user-host
 	install arbitrator/wasm-libraries/$(wasm32_wasi)/user_host.wasm $@
 
-$(output_latest)/program_exec.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,user-host) $(rust_prover_files) .make/machines
+$(output_latest)/program_exec.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,program-exec) $(rust_prover_files) .make/machines
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package program-exec
 	install arbitrator/wasm-libraries/$(wasm32_wasi)/program_exec.wasm $@
 

@@ -10,4 +10,4 @@ extra_bindings = ["arbutil", "prover"]
 prefix_with_name = true
 
 [export]
-include = ["EvmApiMethod", "EvmApiMethodOffset"]
+include = ["EvmApiMethod"]

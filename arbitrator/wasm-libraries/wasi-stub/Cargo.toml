@@ -8,5 +8,6 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-rand = { version = "0.8.4", default-features = false }
-rand_pcg = { version = "0.3.1", default-features = false }
+paste = { version = "1.0.14" }
+caller-env = { path = "../../caller-env/", features = ["static_caller"] }
+wee_alloc = "0.4.2"

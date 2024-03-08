@@ -107,7 +107,8 @@ checksum = "8d696c370c750c948ada61c69a0ee2cbbb9c50b1019ddb86d9317157a99c2cae"
 name = "brotli"
 version = "0.1.0"
 dependencies = [
- "arbutil",
+ "caller-env",
+ "paste",
 ]
 
 [[package]]
@@ -131,6 +132,21 @@ dependencies = [
  "quote",
  "syn 1.0.107",
 ]
+
+[[package]]
+name = "caller-env"
+version = "0.1.0"
+dependencies = [
+ "num_enum",
+ "rand",
+ "rand_pcg",
+]
+
+[[package]]
+name = "cfg-if"
+version = "0.1.10"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4785bdd1c96b2a846b2bd7cc02e86b6b3dbf14e7e53446c4f54c92a361040822"
 
 [[package]]
 name = "cfg-if"
@@ -365,7 +381,7 @@ version = "0.2.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c05aeb6a22b8f62540c194aac980f2115af067bfe15a0734d7277a768d396b31"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.0",
  "libc",
  "wasi",
 ]
@@ -413,7 +429,7 @@ checksum = "7f24254aa9a54b5c858eaee2f5bccdb46aaf0e486a595ed5fd8f86ba55232a70"
 name = "host-io"
 version = "0.1.0"
 dependencies = [
- "arbutil",
+ "caller-env",
 ]
 
 [[package]]
@@ -515,6 +531,12 @@ name = "memchr"
 version = "2.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2dffe52ecf27772e601905b7522cb4ef790d2cc203488bbd0e2fe85fcb74566d"
+
+[[package]]
+name = "memory_units"
+version = "0.4.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8452105ba047068f40ff7093dd1d9da90898e63dd61736462e9cdda6a90ad3c3"
 
 [[package]]
 name = "minimal-lexical"
@@ -638,18 +660,18 @@ dependencies = [
 
 [[package]]
 name = "num_enum"
-version = "0.7.1"
+version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "683751d591e6d81200c39fb0d1032608b77724f34114db54f571ff1317b337c0"
+checksum = "02339744ee7253741199f897151b38e72257d13802d4ee837285cc2990a90845"
 dependencies = [
  "num_enum_derive",
 ]
 
 [[package]]
 name = "num_enum_derive"
-version = "0.7.1"
+version = "0.7.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6c11e44798ad209ccdd91fc192f0526a369a01234f7373e1b141c96d7cee4f0e"
+checksum = "681030a937600a36906c185595136d26abfebb4aa9c65701cefcaf8578bb982b"
 dependencies = [
  "proc-macro-crate",
  "proc-macro2",
@@ -685,12 +707,18 @@ version = "0.9.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ba1ef8814b5c993410bb3adfad7a5ed269563e4a2f90c41f5d85be7fb47133bf"
 dependencies = [
- "cfg-if",
+ "cfg-if 1.0.0",
  "libc",
  "redox_syscall",
  "smallvec",
  "windows-sys",
 ]
+
+[[package]]
+name = "paste"
+version = "1.0.14"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "de3145af08024dea9fa9914f381a17b8fc6034dfb00f3a84013f7ff43f29ed4c"
 
 [[package]]
 name = "percent-encoding"
@@ -744,13 +772,6 @@ dependencies = [
 [[package]]
 name = "program-exec"
 version = "0.1.0"
-dependencies = [
- "arbutil",
- "eyre",
- "fnv",
- "hex",
- "prover",
-]
 
 [[package]]
 name = "prover"
@@ -1202,11 +1223,13 @@ name = "user-host"
 version = "0.1.0"
 dependencies = [
  "arbutil",
+ "caller-env",
  "eyre",
  "fnv",
  "hex",
  "prover",
  "user-host-trait",
+ "wasmer-types",
 ]
 
 [[package]]
@@ -1214,6 +1237,7 @@ name = "user-host-trait"
 version = "0.1.0"
 dependencies = [
  "arbutil",
+ "caller-env",
  "eyre",
  "prover",
 ]
@@ -1223,6 +1247,7 @@ name = "user-test"
 version = "0.1.0"
 dependencies = [
  "arbutil",
+ "caller-env",
  "eyre",
  "fnv",
  "hex",
@@ -1259,8 +1284,9 @@ checksum = "9c8d87e72b64a3b4db28d11ce29237c246188f4f51057d65a7eab63b7987e423"
 name = "wasi-stub"
 version = "0.1.0"
 dependencies = [
- "rand",
- "rand_pcg",
+ "caller-env",
+ "paste",
+ "wee_alloc",
 ]
 
 [[package]]
@@ -1315,6 +1341,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "af2b53f4da14db05d32e70e9c617abdf6620c575bd5dd972b7400037b4df2091"
 dependencies = [
  "wast",
+]
+
+[[package]]
+name = "wee_alloc"
+version = "0.4.5"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "dbb3b5a6b2bb17cb6ad44a2e68a43e8d2722c997da10e928665c72ec6c0a0b8e"
+dependencies = [
+ "cfg-if 0.1.10",
+ "libc",
+ "memory_units",
+ "winapi",
 ]
 
 [[package]]

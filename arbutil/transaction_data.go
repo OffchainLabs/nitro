@@ -1,9 +1,6 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-//go:build !wasm
-// +build !wasm
-
 package arbutil
 
 import (

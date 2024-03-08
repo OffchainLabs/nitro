@@ -1,4 +1,4 @@
-// Copyright 2023, Offchain Labs, Inc.
+// Copyright 2023-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 //go:build wasm
@@ -52,5 +52,6 @@ func (data *evmData) createHandler() evmDataHandler {
 		arbutil.SliceToUnsafePointer(data.msgValue[:]),
 		arbutil.SliceToUnsafePointer(data.txGasPrice[:]),
 		arbutil.SliceToUnsafePointer(data.txOrigin[:]),
-		data.reentrant)
+		data.reentrant,
+	)
 }

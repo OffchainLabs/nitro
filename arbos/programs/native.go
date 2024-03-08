@@ -21,8 +21,6 @@ import "C"
 import (
 	"errors"
 	"fmt"
-	"math/big"
-	"runtime"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -113,8 +111,8 @@ func callProgram(
 	}
 	asm := db.GetActivatedAsm(moduleHash)
 
-	evmApi, id := newApi(interpreter, tracingInfo, scope, memoryModel)
-	defer dropApi(id)
+	evmApi := newApi(interpreter, tracingInfo, scope, memoryModel)
+	defer evmApi.drop()
 
 	output := &rustBytes{}
 	status := userStatus(C.stylus_call(
@@ -142,35 +140,16 @@ type apiStatus = C.EvmApiStatus
 const apiSuccess C.EvmApiStatus = C.EvmApiStatus_Success
 const apiFailure C.EvmApiStatus = C.EvmApiStatus_Failure
 
-func pinAndRef(pinner *runtime.Pinner, data []byte, goSlice *C.GoSliceData) {
-	if len(data) > 0 {
-		dataPointer := arbutil.SliceToPointer(data)
-		pinner.Pin(dataPointer)
-		goSlice.ptr = (*u8)(dataPointer)
-	} else {
-		goSlice.ptr = (*u8)(nil)
-	}
-	goSlice.len = usize(len(data))
-}
-
 //export handleReqImpl
-func handleReqImpl(apiId usize, req_type u32, data *rustBytes, costPtr *u64, out_response *C.GoSliceData, out_raw_data *C.GoSliceData) apiStatus {
+func handleReqImpl(apiId usize, req_type u32, data *rustSlice, costPtr *u64, out_response *C.GoSliceData, out_raw_data *C.GoSliceData) apiStatus {
 	api := getApi(apiId)
 	reqData := data.read()
 	reqType := RequestType(req_type - EvmApiMethodReqOffset)
 	response, raw_data, cost := api.handler(reqType, reqData)
 	*costPtr = u64(cost)
-	pinAndRef(&api.pinner, response, out_response)
-	pinAndRef(&api.pinner, raw_data, out_raw_data)
+	api.pinAndRef(response, out_response)
+	api.pinAndRef(raw_data, out_raw_data)
 	return apiSuccess
-}
-
-func (value bytes20) toAddress() common.Address {
-	addr := common.Address{}
-	for index, b := range value.bytes {
-		addr[index] = byte(b)
-	}
-	return addr
 }
 
 func (value bytes32) toHash() common.Hash {
@@ -179,10 +158,6 @@ func (value bytes32) toHash() common.Hash {
 		hash[index] = byte(b)
 	}
 	return hash
-}
-
-func (value bytes32) toBig() *big.Int {
-	return value.toHash().Big()
 }
 
 func hashToBytes32(hash common.Hash) bytes32 {
@@ -217,14 +192,6 @@ func (vec *rustBytes) intoBytes() []byte {
 
 func (vec *rustBytes) drop() {
 	C.stylus_drop_vec(*vec)
-}
-
-func (vec *rustBytes) setString(data string) {
-	vec.setBytes([]byte(data))
-}
-
-func (vec *rustBytes) setBytes(data []byte) {
-	C.stylus_vec_set_bytes(vec, goSlice(data))
 }
 
 func goSlice(slice []byte) C.GoSliceData {

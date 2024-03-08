@@ -4,9 +4,9 @@ members = [
 	"wasi-stub",
 	"host-io",
 	"user-host",
-    "user-host-trait",
+        "user-host-trait",
 	"user-test",
 	"program-exec",
-    "forward",
+        "forward",
 ]
 resolver = "2"

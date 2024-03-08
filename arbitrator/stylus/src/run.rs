@@ -107,13 +107,13 @@ impl<D: DataReader, E: EvmApi<D>> RunProgram for NativeInstance<D, E> {
             }
         };
 
-        let env = self.env.as_mut(store);
+        let env = self.env_mut();
         if env.evm_data.tracing {
             env.evm_api
                 .capture_hostio("user_returned", &[], &status.to_be_bytes(), ink, ink);
         }
 
-        let outs = self.env().outs.clone();
+        let outs = env.outs.clone();
         Ok(match status {
             0 => UserOutcome::Success(outs),
             _ => UserOutcome::Revert(outs),

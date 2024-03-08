@@ -4,7 +4,6 @@
 package programs
 
 import (
-	"encoding/binary"
 	"errors"
 	"math/big"
 
@@ -236,33 +235,66 @@ func newApiClosures(
 	}
 
 	return func(req RequestType, input []byte) ([]byte, []byte, uint64) {
+		original := input
+
+		crash := func(reason string) {
+			log.Crit("bad API call", "reason", reason, "request", req, "len", len(original), "remaining", len(input))
+		}
+		takeInput := func(needed int, reason string) []byte {
+			if len(input) < needed {
+				crash(reason)
+			}
+			data := input[:needed]
+			input = input[needed:]
+			return data
+		}
+		defer func() {
+			if len(input) > 0 {
+				crash("extra input")
+			}
+		}()
+
+		takeAddress := func() common.Address {
+			return common.BytesToAddress(takeInput(20, "expected address"))
+		}
+		takeHash := func() common.Hash {
+			return common.BytesToHash(takeInput(32, "expected hash"))
+		}
+		takeU256 := func() *big.Int {
+			return common.BytesToHash(takeInput(32, "expected big")).Big()
+		}
+		takeU64 := func() uint64 {
+			return am.BytesToUint(takeInput(8, "expected u64"))
+		}
+		takeU32 := func() uint32 {
+			return am.BytesToUint32(takeInput(4, "expected u32"))
+		}
+		takeU16 := func() uint16 {
+			return am.BytesToUint16(takeInput(2, "expected u16"))
+		}
+		takeFixed := func(needed int) []byte {
+			return takeInput(needed, "expected value with known length")
+		}
+		takeRest := func() []byte {
+			data := input
+			input = []byte{}
+			return data
+		}
+
 		switch req {
 		case GetBytes32:
-			if len(input) != 32 {
-				log.Crit("bad API call", "request", req, "len", len(input))
-			}
-			key := common.BytesToHash(input)
-
+			key := takeHash()
 			out, cost := getBytes32(key)
-
 			return out[:], nil, cost
 		case SetBytes32:
-			if len(input) != 64 {
-				log.Crit("bad API call", "request", req, "len", len(input))
-			}
-			key := common.BytesToHash(input[:32])
-			value := common.BytesToHash(input[32:])
-
+			key := takeHash()
+			value := takeHash()
 			cost, err := setBytes32(key, value)
-
 			if err != nil {
 				return []byte{0}, nil, 0
 			}
 			return []byte{1}, nil, cost
 		case ContractCall, DelegateCall, StaticCall:
-			if len(input) < 60 {
-				log.Crit("bad API call", "request", req, "len", len(input))
-			}
 			var opcode vm.OpCode
 			switch req {
 			case ContractCall:
@@ -274,41 +306,27 @@ func newApiClosures(
 			default:
 				log.Crit("unsupported call type", "opcode", opcode)
 			}
-			contract := common.BytesToAddress(input[:20])
-			value := common.BytesToHash(input[20:52]).Big()
-			gas := binary.BigEndian.Uint64(input[52:60])
-			input = input[60:]
+			contract := takeAddress()
+			value := takeU256()
+			gas := takeU64()
+			calldata := takeRest()
 
-			ret, cost, err := doCall(contract, opcode, input, gas, value)
-
+			ret, cost, err := doCall(contract, opcode, calldata, gas, value)
 			statusByte := byte(0)
 			if err != nil {
-				statusByte = 2 //TODO: err value
+				statusByte = 2 // TODO: err value
 			}
 			return []byte{statusByte}, ret, cost
 		case Create1, Create2:
-			if len(input) < 40 {
-				log.Crit("bad API call", "request", req, "len", len(input))
-			}
-			gas := binary.BigEndian.Uint64(input[0:8])
-			endowment := common.BytesToHash(input[8:40]).Big()
-			var code []byte
+			gas := takeU64()
+			endowment := takeU256()
 			var salt *big.Int
-			switch req {
-			case Create1:
-				code = input[40:]
-			case Create2:
-				if len(input) < 72 {
-					log.Crit("bad API call", "request", req, "len", len(input))
-				}
-				salt = common.BytesToHash(input[40:72]).Big()
-				code = input[72:]
-			default:
-				log.Crit("unsupported create opcode", "request", req)
+			if req == Create2 {
+				salt = takeU256()
 			}
+			code := takeRest()
 
 			address, retVal, cost, err := create(code, endowment, salt, gas)
-
 			if err != nil {
 				res := append([]byte{0}, []byte(err.Error())...)
 				return res, nil, gas
@@ -316,83 +334,49 @@ func newApiClosures(
 			res := append([]byte{1}, address.Bytes()...)
 			return res, retVal, cost
 		case EmitLog:
-			if len(input) < 4 {
-				log.Crit("bad API call", "request", req, "len", len(input))
-			}
-			topics := binary.BigEndian.Uint32(input[0:4])
-			input = input[4:]
+			topics := takeU32()
 			hashes := make([]common.Hash, topics)
-			if len(input) < int(topics*32) {
-				log.Crit("bad API call", "request", req, "len", len(input))
-			}
 			for i := uint32(0); i < topics; i++ {
-				hashes[i] = common.BytesToHash(input[i*32 : (i+1)*32])
+				hashes[i] = takeHash()
 			}
 
-			err := emitLog(hashes, input[topics*32:])
-
+			err := emitLog(hashes, takeRest())
 			if err != nil {
 				return []byte(err.Error()), nil, 0
 			}
 			return []byte{}, nil, 0
 		case AccountBalance:
-			if len(input) != 20 {
-				log.Crit("bad API call", "request", req, "len", len(input))
-			}
-			address := common.BytesToAddress(input)
-
+			address := takeAddress()
 			balance, cost := accountBalance(address)
-
 			return balance[:], nil, cost
 		case AccountCode:
-			if len(input) != 28 {
-				log.Crit("bad API call", "request", req, "len", len(input))
-			}
-			address := common.BytesToAddress(input[0:20])
-			gas := binary.BigEndian.Uint64(input[20:28])
-
+			address := takeAddress()
+			gas := takeU64()
 			code, cost := accountCode(address, gas)
-
 			return nil, code, cost
 		case AccountCodeHash:
-			if len(input) != 20 {
-				log.Crit("bad API call", "request", req, "len", len(input))
-			}
-			address := common.BytesToAddress(input)
-
+			address := takeAddress()
 			codeHash, cost := accountCodehash(address)
-
 			return codeHash[:], nil, cost
 		case AddPages:
-			if len(input) != 2 {
-				log.Crit("bad API call", "request", req, "len", len(input))
-			}
-			pages := binary.BigEndian.Uint16(input)
-
+			pages := takeU16()
 			cost := addPages(pages)
-
 			return []byte{}, nil, cost
 		case CaptureHostIO:
-			if len(input) < 22 {
-				log.Crit("bad API call", "request", req, "len", len(input))
-			}
 			if tracingInfo == nil {
+				takeRest() // drop any input
 				return []byte{}, nil, 0
 			}
-			startInk := binary.BigEndian.Uint64(input[:8])
-			endInk := binary.BigEndian.Uint64(input[8:16])
-			nameLen := binary.BigEndian.Uint16(input[16:18])
-			argsLen := binary.BigEndian.Uint16(input[18:20])
-			outsLen := binary.BigEndian.Uint16(input[20:22])
-			if len(input) != 22+int(nameLen+argsLen+outsLen) {
-				log.Error("bad API call", "request", req, "len", len(input), "expected", nameLen+argsLen+outsLen)
-			}
-			name := string(input[22 : 22+nameLen])
-			args := input[22+nameLen : 22+nameLen+argsLen]
-			outs := input[22+nameLen+argsLen:]
+			startInk := takeU64()
+			endInk := takeU64()
+			nameLen := takeU16()
+			argsLen := takeU16()
+			outsLen := takeU16()
+			name := string(takeFixed(int(nameLen)))
+			args := takeFixed(int(argsLen))
+			outs := takeFixed(int(outsLen))
 
 			captureHostio(name, args, outs, startInk, endInk)
-
 			return []byte{}, nil, 0
 		default:
 			log.Crit("unsupported call type", "req", req)

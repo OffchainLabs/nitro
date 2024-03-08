@@ -207,7 +207,7 @@ impl Hostio {
         ty
     }
 
-    pub fn body(&self, prior: usize) -> Vec<Instruction> {
+    pub fn body(&self, _prior: usize) -> Vec<Instruction> {
         let mut body = vec![];
 
         macro_rules! opcode {
@@ -359,7 +359,7 @@ impl Hostio {
                 opcode!(I32Const, UserOutcomeKind::Failure as u32)
             }
             ProgramRequest => {
-                // caller sees: λ(status)->response
+                // caller sees: λ(status) → response
                 // code returns status of either ProgramContinue or ProgramCallMain
                 opcode!(LocalGet, 0); // return_data
                 opcode!(MoveFromStackToInternal);

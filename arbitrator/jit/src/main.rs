@@ -1,16 +1,14 @@
-// Copyright 2022, Offchain Labs, Inc.
+// Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::machine::{Escape, WasmEnv};
-
 use arbutil::{color, Color};
 use eyre::Result;
+use std::path::PathBuf;
 use structopt::StructOpt;
 
-use std::path::PathBuf;
-
 mod arbcompress;
-mod callerenv;
+mod caller_env;
 mod machine;
 mod program;
 mod socket;
@@ -52,19 +50,18 @@ pub struct Opts {
 
 fn main() -> Result<()> {
     let opts = Opts::from_args();
-
     let env = match WasmEnv::cli(&opts) {
         Ok(env) => env,
-        Err(err) => panic!("{}", err),
+        Err(err) => panic!("{err}"),
     };
 
     let (instance, env, mut store) = machine::create(&opts, env);
 
     let main = instance.exports.get_function("_start").unwrap();
-    let outcome = main.call(&mut store, &vec![]);
+    let outcome = main.call(&mut store, &[]);
     let escape = match outcome {
         Ok(outcome) => {
-            println!("Go returned values {:?}", outcome);
+            println!("Go returned values {outcome:?}");
             None
         }
         Err(outcome) => {

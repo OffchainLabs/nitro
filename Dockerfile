@@ -46,6 +46,7 @@ RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --de
 COPY ./Makefile ./
 COPY arbitrator/Cargo.* arbitrator/
 COPY arbitrator/arbutil arbitrator/arbutil
+COPY arbitrator/caller-env arbitrator/caller-env
 COPY arbitrator/prover arbitrator/prover
 COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
 COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
@@ -92,6 +93,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
 COPY arbitrator/Cargo.* arbitrator/
 COPY ./Makefile ./
 COPY arbitrator/arbutil arbitrator/arbutil
+COPY arbitrator/caller-env arbitrator/caller-env
 COPY arbitrator/prover arbitrator/prover
 COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
 COPY arbitrator/jit arbitrator/jit
@@ -113,6 +115,7 @@ RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
     apt-get install -y llvm-15-dev libclang-common-15-dev libpolly-15-dev
 COPY arbitrator/Cargo.* arbitrator/
 COPY arbitrator/arbutil arbitrator/arbutil
+COPY arbitrator/caller-env arbitrator/caller-env
 COPY arbitrator/prover/Cargo.toml arbitrator/prover/
 COPY arbitrator/jit/Cargo.toml arbitrator/jit/
 COPY arbitrator/stylus/Cargo.toml arbitrator/stylus/
@@ -153,6 +156,7 @@ COPY --from=wasm-libs-builder /workspace/arbitrator/prover/ arbitrator/prover/
 COPY --from=wasm-libs-builder /workspace/arbitrator/tools/wasmer/ arbitrator/tools/wasmer/
 COPY --from=wasm-libs-builder /workspace/arbitrator/wasm-libraries/ arbitrator/wasm-libraries/
 COPY --from=wasm-libs-builder /workspace/arbitrator/arbutil arbitrator/arbutil
+COPY --from=wasm-libs-builder /workspace/arbitrator/caller-env arbitrator/caller-env
 COPY --from=wasm-libs-builder /workspace/.make/ .make/
 COPY ./Makefile ./
 COPY ./arbitrator ./arbitrator

@@ -7,7 +7,6 @@
 package programs
 
 import (
-	"encoding/binary"
 	"errors"
 	"unsafe"
 
@@ -128,9 +127,8 @@ func callProgram(
 	params *goParams,
 	memoryModel *MemoryModel,
 ) ([]byte, error) {
-	// debug := arbmath.UintToBool(params.debugMode)
+	debug := arbmath.UintToBool(params.debugMode)
 	reqHandler := newApiClosures(interpreter, tracingInfo, scope, memoryModel)
-
 	configHandler := params.createHandler()
 	dataHandler := evmData.createHandler()
 
@@ -151,17 +149,23 @@ func callProgram(
 		if reqTypeId < EvmApiMethodReqOffset {
 			popProgram()
 			status := userStatus(reqTypeId)
-			gasLeft := binary.BigEndian.Uint64(reqData[:8])
+			gasLeft := arbmath.BytesToUint(reqData[:8])
 			scope.Contract.Gas = gasLeft
-			data, msg, err := status.toResult(reqData[8:], params.debugMode != 0)
-			if status == userFailure && params.debugMode != 0 {
+			data, msg, err := status.toResult(reqData[8:], debug)
+			if status == userFailure && debug {
 				log.Warn("program failure", "err", err, "msg", msg, "program", address)
 			}
 			return data, err
 		}
+
 		reqType := RequestType(reqTypeId - EvmApiMethodReqOffset)
 		result, rawData, cost := reqHandler(reqType, reqData)
-		setResponse(reqId, cost, arbutil.SliceToUnsafePointer(result), uint32(len(result)), arbutil.SliceToUnsafePointer(rawData), uint32(len(rawData)))
+		setResponse(
+			reqId,
+			cost,
+			arbutil.SliceToUnsafePointer(result), uint32(len(result)),
+			arbutil.SliceToUnsafePointer(rawData), uint32(len(rawData)),
+		)
 		reqId = sendResponse(reqId)
 	}
 }
