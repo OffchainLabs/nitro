@@ -35,12 +35,6 @@ impl<'a> JitEnv<'a> for WasmEnvMut<'a> {
     }
 }
 
-pub fn jit_env<'s>(env: &'s mut WasmEnvMut) -> (JitMemAccess<'s>, JitExecEnv<'s>) {
-    let memory = env.data().memory.clone().unwrap();
-    let (wenv, store) = env.data_and_store_mut();
-    (JitMemAccess { memory, store }, JitExecEnv { wenv })
-}
-
 impl<'s> JitMemAccess<'s> {
     fn view(&self) -> MemoryView {
         self.memory.view(&self.store)

@@ -1,7 +1,7 @@
 // Copyright 2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use core::ops::{Add, AddAssign, Deref, DerefMut};
+use core::ops::{Add, AddAssign, Deref};
 
 /// Represents a pointer to a Guest WASM's memory.
 #[derive(Clone, Copy, Eq, PartialEq)]
@@ -39,11 +39,5 @@ impl Deref for GuestPtr {
 
     fn deref(&self) -> &Self::Target {
         &self.0
-    }
-}
-
-impl DerefMut for GuestPtr {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
     }
 }
