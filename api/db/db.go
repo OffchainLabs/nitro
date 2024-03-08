@@ -3,6 +3,7 @@
 package db
 
 import (
+	"fmt"
 	"os"
 	"strings"
 	"sync"
@@ -57,13 +58,77 @@ func NewDatabase(path string) (*SqliteDatabase, error) {
 	if err != nil {
 		return nil, err
 	}
-	//nolint:errcheck
-	//#nosec G104
-	db.Exec(schema)
+	err = dbInit(db, schemaList)
+	if err != nil {
+		return nil, err
+	}
 	return &SqliteDatabase{
 		sqlDB:               db,
 		currentTableVersion: -1,
 	}, nil
+}
+
+func dbInit(db *sqlx.DB, schemaList []string) error {
+	version, err := fetchVersion(db)
+	if err != nil {
+		return err
+	}
+	for index, schema := range schemaList {
+		// If the current version is less than the version of the schema, update the database
+		if index+1 > version {
+			err = executeSchema(db, schema, index+1)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func fetchVersion(db *sqlx.DB) (int, error) {
+	flagValue := make([]int, 0)
+	// Fetch the current version of the database
+	err := db.Select(&flagValue, "SELECT FlagValue FROM Flags WHERE FlagName = 'CurrentVersion'")
+	if err != nil {
+		if !strings.Contains(err.Error(), "no such table") {
+			return 0, err
+		}
+		// If the table doesn't exist, create it
+		_, err = db.Exec(flagSetup)
+		if err != nil {
+			return 0, err
+		}
+		// Fetch the current version of the database
+		err = db.Select(&flagValue, "SELECT FlagValue FROM Flags WHERE FlagName = 'CurrentVersion'")
+		if err != nil {
+			return 0, err
+		}
+	}
+	if len(flagValue) > 0 {
+		return flagValue[0], nil
+	} else {
+		return 0, fmt.Errorf("no version found")
+	}
+}
+
+func executeSchema(db *sqlx.DB, schema string, version int) error {
+	// Begin a transaction, so that we update the version and execute the schema atomically
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
+	}
+
+	// Execute the schema
+	_, err = tx.Exec(schema)
+	if err != nil {
+		return err
+	}
+	// Update the version of the database
+	_, err = tx.Exec(fmt.Sprintf("UPDATE Flags SET FlagValue = %d WHERE FlagName = 'CurrentVersion'", version))
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 type AssertionQuery struct {

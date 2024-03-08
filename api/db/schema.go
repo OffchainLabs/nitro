@@ -1,7 +1,19 @@
 package db
 
 var (
-	schema = `
+	// flagSetup is the initial setup for the flags table.
+	// It creates the table if it doesn't exist and sets the CurrentVersion to 0.
+	flagSetup = `
+CREATE TABLE IF NOT EXISTS Flags (
+    FlagName TEXT NOT NULL PRIMARY KEY,
+    FlagValue INTEGER NOT NULL
+);
+INSERT INTO Flags (FlagName, FlagValue) VALUES ('CurrentVersion', 0);
+`
+	// schemaList is a list of schema versions.
+	// The first element is the initial schema,
+	// and each subsequent element is a migration from the previous version to the new version.
+	version1 = `
 CREATE TABLE Challenges (
     Hash TEXT NOT NULL PRIMARY KEY,
     UNIQUE(Hash)
@@ -105,4 +117,9 @@ BEGIN
    UPDATE Assertions SET LastUpdatedAt = CURRENT_TIMESTAMP WHERE Hash = NEW.Hash;
 END;
 `
+	version2 = `
+ALTER TABLE Edges ADD COLUMN InheritedTimer INTEGER NOT NULL DEFAULT 0;
+`
+	// schemaList is a list of schema versions.
+	schemaList = []string{version1, version2}
 )
