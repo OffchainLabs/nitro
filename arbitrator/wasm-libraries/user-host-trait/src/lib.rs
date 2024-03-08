@@ -519,15 +519,14 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
 
         // we pass `gas` to check if there's enough before loading from the db
         let (code, gas_cost) = self.evm_api().account_code(address, gas);
-        let code = code.slice();
         self.buy_gas(gas_cost)?;
-        self.pay_for_write(size)?;
+
+        let code = code.slice();
+        self.pay_for_write(code.len() as u32)?;
 
         let out_slice = arbutil::slice_with_runoff(&code, offset, offset.saturating_add(size));
         let out_len = out_slice.len() as u32;
-        if out_len > 0 {
-            self.write_slice(dest, out_slice)?;
-        }
+        self.write_slice(dest, out_slice)?;
 
         trace!(
             "account_code",
@@ -551,8 +550,8 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         // we pass `gas` to check if there's enough before loading from the db
         let (code, gas_cost) = self.evm_api().account_code(address, gas);
         self.buy_gas(gas_cost)?;
-        let code = code.slice();
 
+        let code = code.slice();
         trace!("account_code_size", self, address, &[], code.len() as u32)
     }
 

@@ -48,15 +48,13 @@ impl RequestHandler<VecReader> for CothreadRequestor {
         req_type: EvmApiMethod,
         req_data: &[u8],
     ) -> (Vec<u8>, VecReader, u64) {
-        if self
-            .tx
-            .send(MessageFromCothread {
-                req_type: req_type as u32 + EVM_API_METHOD_REQ_OFFSET,
-                req_data: req_data.to_vec(),
-            })
-            .is_err()
-        {
-            panic!("failed sending request from cothread");
+        let msg = MessageFromCothread {
+            req_type: req_type as u32 + EVM_API_METHOD_REQ_OFFSET,
+            req_data: req_data.to_vec(),
+        };
+
+        if let Err(error) = self.tx.send(msg) {
+            panic!("failed sending request from cothread: {error}");
         }
         match self.rx.recv_timeout(Duration::from_secs(5)) {
             Ok(response) => (
@@ -80,28 +78,25 @@ impl CothreadHandler {
     pub fn wait_next_message(&mut self) -> MaybeEscape {
         let msg = self.rx.recv_timeout(Duration::from_secs(10));
         let Ok(msg) = msg else {
-            return Err(Escape::HostIO("did not receive message".to_string()));
+            return Escape::hostio("did not receive message");
         };
         self.last_request = Some((msg, 0x33333333)); // TODO: Ids
         Ok(())
     }
 
     pub fn wait_done(&mut self) -> MaybeEscape {
-        let status = self
-            .thread
-            .take()
-            .ok_or(Escape::Child(eyre!("no child")))?
-            .join();
+        let error = || Escape::Child(eyre!("no child"));
+        let status = self.thread.take().ok_or_else(error)?.join();
         match status {
             Ok(res) => res,
-            Err(_) => Err(Escape::HostIO("failed joining child process".to_string())),
+            Err(_) => Escape::hostio("failed joining child process"),
         }
     }
 
     pub fn last_message(&self) -> Result<(MessageFromCothread, u32), Escape> {
         self.last_request
             .clone()
-            .ok_or(Escape::HostIO("no message waiting".to_string()))
+            .ok_or_else(|| Escape::HostIO("no message waiting".to_string()))
     }
 
     pub fn set_response(
@@ -117,16 +112,13 @@ impl CothreadHandler {
         if msg.1 != id {
             return Escape::hostio("trying to set response for wrong message id");
         };
-        if self
-            .tx
-            .send(MessageToCothread {
-                result,
-                raw_data,
-                cost,
-            })
-            .is_err()
-        {
-            return Escape::hostio("failed sending response to stylus thread");
+        let msg = MessageToCothread {
+            result,
+            raw_data,
+            cost,
+        };
+        if let Err(err) = self.tx.send(msg) {
+            return Escape::hostio(format!("failed to send response to stylus thread: {err:?}"));
         };
         Ok(())
     }
@@ -168,21 +160,23 @@ pub fn exec_wasm(
         };
 
         let (out_kind, data) = outcome.into_data();
-
         let gas_left = config.pricing.ink_to_gas(ink_left);
 
-        let mut output = gas_left.to_be_bytes().to_vec();
-        output.extend(data.iter());
+        let mut output = Vec::with_capacity(8 + data.len());
+        output.extend(gas_left.to_be_bytes());
+        output.extend(data);
+
+        let msg = MessageFromCothread {
+            req_data: output,
+            req_type: out_kind as u32,
+        };
         instance
             .env_mut()
             .evm_api
             .request_handler()
             .tx
-            .send(MessageFromCothread {
-                req_data: output,
-                req_type: out_kind as u32,
-            })
-            .or(Escape::hostio("failed sending messaage to thread"))
+            .send(msg)
+            .or_else(|_| Escape::hostio("failed sending messaage to thread"))
     });
 
     Ok(CothreadHandler {

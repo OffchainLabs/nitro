@@ -96,7 +96,7 @@ impl UserHostRequester {
     ) {
         self.answer = Some((result, VecReader::new(raw_data), gas));
         if req_id != self.id {
-            panic!("bad req id returning from send_request")
+            panic!("bad eq id returning from send_request")
         }
         compiler_fence(Ordering::SeqCst);
     }
@@ -114,31 +114,26 @@ impl UserHostRequester {
         if self.id != id {
             panic!("get_request got wrong id");
         }
-        (
-            self.req_type,
-            self.data
-                .as_ref()
-                .expect("no request on get_request_meta")
-                .len(),
-        )
+        let size = self.data.as_ref().expect("no data get_request_meta").len();
+        (self.req_type, size)
     }
 
     pub unsafe fn take_request(&mut self, id: u32) -> (u32, Vec<u8>) {
         if self.id != id {
             panic!("get_request got wrong id");
         }
-        (
-            self.req_type,
-            self.data.take().expect("no request on take_request"),
-        )
+        let data = self.data.take().expect("no request on take_request");
+        (self.req_type, data)
     }
 
     #[no_mangle]
     unsafe fn send_request(&mut self, req_type: u32, data: Vec<u8>) -> (Vec<u8>, VecReader, u64) {
         let req_id = self.set_request(req_type, &data);
         compiler_fence(Ordering::SeqCst);
+
         let got_id = program_request(req_id);
         compiler_fence(Ordering::SeqCst);
+
         if got_id != req_id {
             panic!("bad req id returning from send_request")
         }
@@ -204,6 +199,10 @@ impl Program {
             return Err(MemoryBoundsError);
         }
         Ok(())
+    }
+
+    pub fn request_handler(&mut self) -> &mut UserHostRequester {
+        self.evm_api.request_handler()
     }
 }
 
