@@ -270,7 +270,6 @@ func setupEdgeTrackersForBisection(
 	honestValidator, err := New(
 		ctx,
 		createdData.Chains[0],
-		createdData.Backend,
 		createdData.HonestStateManager,
 		createdData.Addrs.Rollup,
 		WithName("alice"),
@@ -282,7 +281,6 @@ func setupEdgeTrackersForBisection(
 	evilValidator, err := New(
 		ctx,
 		createdData.Chains[1],
-		createdData.Backend,
 		createdData.EvilStateManager,
 		createdData.Addrs.Rollup,
 		WithName("bob"),
@@ -377,7 +375,8 @@ func setupValidator(t *testing.T) (*Manager, *mocks.MockProtocol, *mocks.MockSta
 	s := &mocks.MockStateManager{}
 	cfg, err := setup.ChainsWithEdgeChallengeManager(setup.WithMockOneStepProver())
 	require.NoError(t, err)
-	v, err := New(context.Background(), p, cfg.Backend, s, cfg.Addrs.Rollup, WithMode(types.MakeMode), WithEdgeTrackerWakeInterval(100*time.Millisecond))
+	p.On("Backend").Return(cfg.Backend, nil)
+	v, err := New(context.Background(), p, s, cfg.Addrs.Rollup, WithMode(types.MakeMode), WithEdgeTrackerWakeInterval(100*time.Millisecond))
 	require.NoError(t, err)
 	return v, p, s
 }
@@ -392,7 +391,8 @@ func TestNewRandomWakeupInterval(t *testing.T) {
 	cm.On("NumBigSteps", ctx).Return(uint8(1), nil)
 	cfg, err := setup.ChainsWithEdgeChallengeManager()
 	require.NoError(t, err)
-	v, err := New(context.Background(), p, cfg.Backend, &mocks.MockStateManager{}, cfg.Addrs.Rollup, WithMode(types.MakeMode))
+	p.On("Backend").Return(cfg.Backend, nil)
+	v, err := New(context.Background(), p, &mocks.MockStateManager{}, cfg.Addrs.Rollup, WithMode(types.MakeMode))
 	require.NoError(t, err)
 	require.NotEqual(t, 0, v.edgeTrackerWakeInterval.Milliseconds())
 }

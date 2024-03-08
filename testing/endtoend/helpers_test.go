@@ -52,7 +52,6 @@ func setupChallengeManager(
 	manager, err := challengemanager.New(
 		ctx,
 		chain,
-		backend,
 		sm,
 		rollup,
 		opts...,

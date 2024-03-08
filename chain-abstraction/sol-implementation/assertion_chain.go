@@ -128,6 +128,12 @@ func WithTrackedContractBackend() Opt {
 	}
 }
 
+func WithMetricsContractBackend() Opt {
+	return func(a *AssertionChain) {
+		a.backend = NewMetricsContractBackend(a.backend)
+	}
+}
+
 // NewAssertionChain instantiates an assertion chain
 // instance from a chain backend and provided options.
 func NewAssertionChain(

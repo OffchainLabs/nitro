@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "assertion_chain.go",
         "edge_challenge_manager.go",
+        "metrics_contract_backend.go",
         "tracked_contract_backend.go",
         "transact.go",
         "types.go",
@@ -29,6 +30,7 @@ go_library(
         "@com_github_ethereum_go_ethereum//core/types",
         "@com_github_ethereum_go_ethereum//crypto",
         "@com_github_ethereum_go_ethereum//log",
+        "@com_github_ethereum_go_ethereum//metrics",
         "@com_github_pkg_errors//:errors",
     ],
 )

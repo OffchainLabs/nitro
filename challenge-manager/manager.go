@@ -145,14 +145,13 @@ func WithRPCClient(client *rpc.Client) Opt {
 func New(
 	ctx context.Context,
 	chain protocol.Protocol,
-	backend bind.ContractBackend,
 	stateManager l2stateprovider.Provider,
 	rollupAddr common.Address,
 	opts ...Opt,
 ) (*Manager, error) {
 
 	m := &Manager{
-		backend:                      backend,
+		backend:                      chain.Backend(),
 		chain:                        chain,
 		stateManager:                 stateManager,
 		address:                      common.Address{},
@@ -187,15 +186,15 @@ func New(
 	}
 	chalManagerAddr := chalManager.Address()
 
-	rollup, err := rollupgen.NewRollupCore(rollupAddr, backend)
+	rollup, err := rollupgen.NewRollupCore(rollupAddr, m.backend)
 	if err != nil {
 		return nil, err
 	}
-	rollupFilterer, err := rollupgen.NewRollupCoreFilterer(rollupAddr, backend)
+	rollupFilterer, err := rollupgen.NewRollupCoreFilterer(rollupAddr, m.backend)
 	if err != nil {
 		return nil, err
 	}
-	chalManagerFilterer, err := challengeV2gen.NewEdgeChallengeManagerFilterer(chalManagerAddr, backend)
+	chalManagerFilterer, err := challengeV2gen.NewEdgeChallengeManagerFilterer(chalManagerAddr, m.backend)
 	if err != nil {
 		return nil, err
 	}
@@ -216,7 +215,7 @@ func New(
 		m.apiDB = apiDB
 	}
 
-	watcher, err := watcher.New(m.chain, m, m.stateManager, backend, m.chainWatcherInterval, numBigStepLevels, m.name, m.apiDB, m.assertionConfirmingInterval, m.averageTimeForBlockCreation)
+	watcher, err := watcher.New(m.chain, m, m.stateManager, m.backend, m.chainWatcherInterval, numBigStepLevels, m.name, m.apiDB, m.assertionConfirmingInterval, m.averageTimeForBlockCreation)
 	if err != nil {
 		return nil, err
 	}

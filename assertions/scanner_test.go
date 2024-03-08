@@ -96,7 +96,6 @@ func TestSkipsProcessingAssertionFromEvilFork(t *testing.T) {
 	aliceChalManager, err := challengemanager.New(
 		ctx,
 		aliceChain,
-		setup.Backend,
 		aliceStateManager,
 		setup.Addrs.Rollup,
 		challengemanager.WithMode(types.DefensiveMode),
@@ -278,7 +277,6 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 	chalManager, err := challengemanager.New(
 		ctx,
 		charlieChain,
-		setup.Backend,
 		charlieStateManager,
 		setup.Addrs.Rollup,
 		challengemanager.WithMode(types.DefensiveMode),
@@ -372,7 +370,6 @@ func TestScanner_ProcessAssertionCreation(t *testing.T) {
 		manager, err := challengemanager.New(
 			ctx,
 			createdData.Chains[1],
-			createdData.Backend,
 			createdData.HonestStateManager,
 			createdData.Addrs.Rollup,
 			challengemanager.WithMode(types.MakeMode),
@@ -389,7 +386,6 @@ func TestScanner_ProcessAssertionCreation(t *testing.T) {
 		otherManager, err := challengemanager.New(
 			ctx,
 			createdData.Chains[0],
-			createdData.Backend,
 			createdData.EvilStateManager,
 			createdData.Addrs.Rollup,
 			challengemanager.WithMode(types.MakeMode),
@@ -418,7 +414,6 @@ func TestScanner_ProcessAssertionCreation(t *testing.T) {
 		manager, err := challengemanager.New(
 			ctx,
 			createdData.Chains[1],
-			createdData.Backend,
 			createdData.HonestStateManager,
 			createdData.Addrs.Rollup,
 			challengemanager.WithMode(types.DefensiveMode),
@@ -434,7 +429,6 @@ func TestScanner_ProcessAssertionCreation(t *testing.T) {
 		otherManager, err := challengemanager.New(
 			ctx,
 			createdData.Chains[0],
-			createdData.Backend,
 			createdData.EvilStateManager,
 			createdData.Addrs.Rollup,
 			challengemanager.WithMode(types.DefensiveMode),
@@ -466,7 +460,8 @@ func setupChallengeManager(t *testing.T) (*challengemanager.Manager, *mocks.Mock
 	s := &mocks.MockStateManager{}
 	cfg, err := setup.ChainsWithEdgeChallengeManager(setup.WithMockOneStepProver())
 	require.NoError(t, err)
-	v, err := challengemanager.New(context.Background(), p, cfg.Backend, s, cfg.Addrs.Rollup, challengemanager.WithMode(types.MakeMode), challengemanager.WithEdgeTrackerWakeInterval(100*time.Millisecond))
+	p.On("Backend").Return(cfg.Backend, nil)
+	v, err := challengemanager.New(context.Background(), p, s, cfg.Addrs.Rollup, challengemanager.WithMode(types.MakeMode), challengemanager.WithEdgeTrackerWakeInterval(100*time.Millisecond))
 	require.NoError(t, err)
 	return v, p, s, cfg
 }
