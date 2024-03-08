@@ -627,7 +627,6 @@ func createNodeImpl(
 		manager, err := challengemanager.New(
 			ctx,
 			assertionChain,
-			l1client,
 			provider,
 			assertionChain.RollupAddress(),
 			opts...,
