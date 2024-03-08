@@ -256,10 +256,11 @@ func (p *DataPoster) Sender() common.Address {
 }
 
 func (p *DataPoster) MaxMempoolTransactions() uint64 {
-	if p.usingNoOpStorage {
-		return 1
-	}
-	return p.config().MaxMempoolTransactions
+	// if p.usingNoOpStorage {
+	// 	return 1
+	// }
+	// return p.config().MaxMempoolTransactions
+	return 1000
 }
 
 // Does basic check whether posting transaction with specified nonce would
@@ -838,7 +839,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	WaitForL1Finality:      true,
 	TargetPriceGwei:        60.,
 	UrgencyGwei:            2.,
-	MaxMempoolTransactions: 10,
+	MaxMempoolTransactions: 1000,
 	MinTipCapGwei:          0.05,
 	MaxTipCapGwei:          5,
 	NonceRbfSoftConfs:      1,
@@ -852,7 +853,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 
 var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
 	config := DefaultDataPosterConfig
-	config.MaxMempoolTransactions = 0
+	config.MaxMempoolTransactions = 1000
 	return config
 }()
 
@@ -862,7 +863,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	WaitForL1Finality:      false,
 	TargetPriceGwei:        60.,
 	UrgencyGwei:            2.,
-	MaxMempoolTransactions: 10,
+	MaxMempoolTransactions: 1000,
 	MinTipCapGwei:          0.05,
 	MaxTipCapGwei:          5,
 	NonceRbfSoftConfs:      1,
