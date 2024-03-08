@@ -48,7 +48,7 @@ pub unsafe extern "C" fn programs__start_program(module: u32) -> u32 {
     check_program_done(program_call_main(module, args_len))
 }
 
-// sends previos response and transfers control to program
+// sends previous response and transfers control to program
 // MUST be called right after set_response to the same id
 // returns request_id for the next request
 #[no_mangle]

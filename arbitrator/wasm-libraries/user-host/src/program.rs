@@ -11,7 +11,7 @@ use arbutil::{
 };
 use caller_env::{static_caller::STATIC_MEM, GuestPtr, MemAccess};
 use core::sync::atomic::{compiler_fence, Ordering};
-use eyre::{bail, eyre, Result};
+use eyre::{eyre, Result};
 use prover::programs::prelude::*;
 use std::fmt::Display;
 use user_host_trait::UserHost;
@@ -192,7 +192,7 @@ impl Program {
         unsafe { program_memory_size(self.module) }
     }
 
-    /// Reads the program's memory size in pages
+    /// Provides the length of the program's calldata in bytes.
     pub fn args_len(&self) -> usize {
         self.args.len()
     }
@@ -257,13 +257,9 @@ impl UserHost<VecReader> for Program {
         println!("{} {text}", "Stylus says:".yellow());
     }
 
-    fn trace(&mut self, name: &str, args: &[u8], outs: &[u8], _start_ink: u64, _end_ink: u64) {
+    fn trace(&mut self, name: &str, args: &[u8], outs: &[u8], _end_ink: u64) {
         let args = hex::encode(args);
         let outs = hex::encode(outs);
         println!("Error: unexpected hostio tracing info for {name} while proving: {args}, {outs}");
-    }
-
-    fn start_ink(&self) -> Result<u64, Self::Err> {
-        bail!("recording start ink while proving")
     }
 }

@@ -11,7 +11,7 @@ use crate::{
 use eyre::{bail, eyre, Result};
 
 pub trait RequestHandler<D: DataReader>: Send + 'static {
-    fn handle_request(&mut self, _req_type: EvmApiMethod, _req_data: &[u8]) -> (Vec<u8>, D, u64);
+    fn handle_request(&mut self, req_type: EvmApiMethod, req_data: &[u8]) -> (Vec<u8>, D, u64);
 }
 
 pub struct EvmApiRequestor<D: DataReader, H: RequestHandler<D>> {

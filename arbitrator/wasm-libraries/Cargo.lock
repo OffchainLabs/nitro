@@ -539,6 +539,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8452105ba047068f40ff7093dd1d9da90898e63dd61736462e9cdda6a90ad3c3"
 
 [[package]]
+name = "mini-alloc"
+version = "0.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bd9993556d3850cdbd0da06a3dc81297edcfa050048952d84d75e8b944e8f5af"
+dependencies = [
+ "cfg-if 1.0.0",
+ "wee_alloc",
+]
+
+[[package]]
 name = "minimal-lexical"
 version = "0.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -772,13 +782,6 @@ dependencies = [
 [[package]]
 name = "program-exec"
 version = "0.1.0"
-dependencies = [
- "arbutil",
- "eyre",
- "fnv",
- "hex",
- "prover",
-]
 
 [[package]]
 name = "prover"
@@ -1292,8 +1295,8 @@ name = "wasi-stub"
 version = "0.1.0"
 dependencies = [
  "caller-env",
+ "mini-alloc",
  "paste",
- "wee_alloc",
 ]
 
 [[package]]

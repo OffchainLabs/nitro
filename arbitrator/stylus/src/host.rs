@@ -12,7 +12,7 @@ use arbutil::{
     Color,
 };
 use caller_env::GuestPtr;
-use eyre::{eyre, Result};
+use eyre::Result;
 use prover::value::Value;
 use std::fmt::Display;
 use user_host_trait::UserHost;
@@ -70,16 +70,10 @@ impl<'a, DR: DataReader, A: EvmApi<DR>> UserHost<DR> for HostioInfo<'a, DR, A> {
         println!("{} {text}", "Stylus says:".yellow());
     }
 
-    fn trace(&mut self, name: &str, args: &[u8], outs: &[u8], start_ink: u64, end_ink: u64) {
+    fn trace(&mut self, name: &str, args: &[u8], outs: &[u8], end_ink: u64) {
+        let start_ink = self.start_ink;
         self.evm_api
             .capture_hostio(name, args, outs, start_ink, end_ink);
-    }
-
-    fn start_ink(&self) -> Result<u64, Self::Err> {
-        if !self.env.evm_data.tracing {
-            return Err(eyre!("recording start ink when not captured").into());
-        }
-        Ok(self.start_ink)
     }
 }
 

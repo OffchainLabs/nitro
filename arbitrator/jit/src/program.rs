@@ -121,8 +121,8 @@ pub fn start_program(mut env: WasmEnvMut, module: u32) -> Result<u32, Escape> {
     Ok(msg.1)
 }
 
-// gets information about request according to id
-// request_id MUST be last request id returned from start_program or send_response
+/// gets information about request according to id
+/// request_id MUST be last request id returned from start_program or send_response
 pub fn get_request(mut env: WasmEnvMut, id: u32, len_ptr: GuestPtr) -> Result<u32, Escape> {
     let (mut mem, exec) = jit_env(&mut env);
     let thread = exec.wenv.threads.last_mut().unwrap();
@@ -148,8 +148,8 @@ pub fn get_request_data(mut env: WasmEnvMut, id: u32, data_ptr: GuestPtr) -> May
     Ok(())
 }
 
-// sets response for the next request made
-// id MUST be the id of last request made
+/// sets response for the next request made
+/// id MUST be the id of last request made
 pub fn set_response(
     mut env: WasmEnvMut,
     id: u32,
@@ -167,9 +167,9 @@ pub fn set_response(
     thread.set_response(id, result, raw_data, gas)
 }
 
-// sends previos response
-// MUST be called right after set_response to the same id
-// returns request_id for the next request
+/// sends previos response
+/// MUST be called right after set_response to the same id
+/// returns request_id for the next request
 pub fn send_response(mut env: WasmEnvMut, req_id: u32) -> Result<u32, Escape> {
     let (_, exec) = jit_env(&mut env);
     let thread = exec.wenv.threads.last_mut().unwrap();
@@ -182,7 +182,7 @@ pub fn send_response(mut env: WasmEnvMut, req_id: u32) -> Result<u32, Escape> {
     Ok(msg.1)
 }
 
-// removes the last created program
+/// removes the last created program
 pub fn pop(mut env: WasmEnvMut) -> MaybeEscape {
     let (_, exec) = jit_env(&mut env);
 
@@ -216,7 +216,6 @@ pub fn create_stylus_config(
 }
 
 /// Creates an `EvmData` handler from its component parts.
-///
 pub fn create_evm_data(
     mut env: WasmEnvMut,
     block_basefee_ptr: GuestPtr,

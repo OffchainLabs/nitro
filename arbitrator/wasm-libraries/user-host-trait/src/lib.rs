@@ -30,12 +30,11 @@ macro_rules! trace {
     ($name:expr, $env:expr, [$($args:expr),+], [$($outs:expr),+], $ret:expr) => {{
         if $env.evm_data().tracing {
             let end_ink = $env.ink_ready()?;
-            let start_ink = $env.start_ink()?;
             let mut args = vec![];
             $(args.extend($args);)*
             let mut outs = vec![];
             $(outs.extend($outs);)*
-            $env.trace($name, &args, &outs, start_ink, end_ink);
+            $env.trace($name, &args, &outs, end_ink);
         }
         Ok($ret)
     }};
@@ -82,10 +81,8 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         self.read_fixed(ptr).map(|x| x.into())
     }
 
-    // ink when call stated, only used for tracing, Err if unavailable.
-    fn start_ink(&self) -> Result<u64, Self::Err>;
     fn say<D: Display>(&self, text: D);
-    fn trace(&mut self, name: &str, args: &[u8], outs: &[u8], start_ink: u64, end_ink: u64);
+    fn trace(&mut self, name: &str, args: &[u8], outs: &[u8], end_ink: u64);
 
     fn write_bytes20(&self, ptr: GuestPtr, src: Bytes20) -> Result<(), Self::MemoryErr> {
         self.write_slice(ptr, &src.0)
@@ -416,23 +413,6 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         )
     }
 
-    fn sub_slice(mut slice: &[u8], offset: u32, size: u32) -> &[u8] {
-        let slice_len = slice.len() as u32;
-        let out_size = if offset > slice_len {
-            0
-        } else if offset + size > slice_len {
-            slice_len - offset
-        } else {
-            size
-        };
-        if out_size > 0 {
-            slice = &slice[offset as usize..(offset + out_size) as usize];
-        } else {
-            slice = &[];
-        }
-        slice
-    }
-
     /// Copies the bytes of the last EVM call or deployment return result. Does not revert if out of
     /// bounds, but rather copies the overlapping portion. The semantics are otherwise equivalent
     /// to that of the EVM's [`RETURN_DATA_COPY`] opcode.
@@ -453,7 +433,9 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         self.pay_for_write(size.min(max))?;
 
         let ret_data = self.evm_api().get_return_data();
-        let out_slice = Self::sub_slice(ret_data.slice(), offset, size);
+        let ret_data = ret_data.slice();
+        let out_slice = arbutil::slice_with_runoff(&ret_data, offset, offset.saturating_add(size));
+
         let out_len = out_slice.len() as u32;
         if out_len > 0 {
             self.write_slice(dest, out_slice)?;
@@ -530,6 +512,8 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         dest: GuestPtr,
     ) -> Result<u32, Self::Err> {
         self.buy_ink(HOSTIO_INK + EVM_API_INK)?;
+        self.require_gas(evm::COLD_ACCOUNT_GAS)?; // not necessary since we also check in Go
+
         let address = self.read_bytes20(address)?;
         let gas = self.gas_left()?;
 
@@ -539,7 +523,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         self.buy_gas(gas_cost)?;
         self.pay_for_write(size)?;
 
-        let out_slice = Self::sub_slice(code, offset, size);
+        let out_slice = arbutil::slice_with_runoff(&code, offset, offset.saturating_add(size));
         let out_len = out_slice.len() as u32;
         if out_len > 0 {
             self.write_slice(dest, out_slice)?;
@@ -560,6 +544,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     /// [`EXT_CODESIZE`]: https://www.evm.codes/#3B
     fn account_code_size(&mut self, address: GuestPtr) -> Result<u32, Self::Err> {
         self.buy_ink(HOSTIO_INK + EVM_API_INK)?;
+        self.require_gas(evm::COLD_ACCOUNT_GAS)?; // not necessary since we also check in Go
         let address = self.read_bytes20(address)?;
         let gas = self.gas_left()?;
 
