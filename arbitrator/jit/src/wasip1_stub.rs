@@ -5,10 +5,43 @@
 
 use crate::caller_env::jit_env;
 use crate::machine::{Escape, WasmEnvMut};
-use caller_env::{self, wasip1_stub::Errno, GuestPtr};
+use caller_env::{
+    self,
+    wasip1_stub::{Errno, ERRNO_BADF, ERRNO_SUCCESS},
+    GuestPtr, MemAccess,
+};
 
 pub fn proc_exit(mut _env: WasmEnvMut, code: u32) -> Result<(), Escape> {
     Err(Escape::Exit(code))
+}
+
+// implements arbitrator machine's host-call hook around fd_write
+pub fn fd_write_wrapper(
+    mut src: WasmEnvMut,
+    fd: u32,
+    iovecs_ptr: GuestPtr,
+    iovecs_len: u32,
+    ret_ptr: GuestPtr,
+) -> Errno {
+    if fd != 1 && fd != 2 {
+        return ERRNO_BADF;
+    }
+    let (mut mem, mut env) = jit_env(&mut src);
+    let mut size = 0;
+    for i in 0..iovecs_len {
+        let ptr = iovecs_ptr + i * 8;
+        let len = mem.read_u32(ptr + 4);
+        let data = mem.read_slice(ptr, len as usize);
+        match String::from_utf8(data) {
+            Ok(s) => eprintln!("JIT: WASM says: {s}"),
+            Err(e) => {
+                let bytes = e.as_bytes();
+                eprintln!("Go string {} is not valid utf8: {e:?}", hex::encode(bytes));
+            }
+        }
+        size += len;
+    }
+    caller_env::wasip1_stub::fd_write(&mut mem, &mut env, fd, iovecs_ptr, iovecs_len, ret_ptr)
 }
 
 macro_rules! wrap {
@@ -37,12 +70,6 @@ wrap! {
 
     fn fd_read(a: u32, b: u32, c: u32, d: u32) -> Errno;
     fn fd_close(fd: u32) -> Errno;
-    fn fd_write(
-        fd: u32,
-        iovecs_ptr: GuestPtr,
-        iovecs_len: u32,
-        ret_ptr: GuestPtr
-    ) -> Errno;
 
     fn fd_readdir(
         fd: u32,

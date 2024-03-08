@@ -61,6 +61,4 @@ pub trait ExecEnv {
     fn get_time(&self) -> u64;
 
     fn next_rand_u32(&mut self) -> u32;
-
-    fn print_string(&mut self, message: &[u8]);
 }

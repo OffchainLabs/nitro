@@ -100,10 +100,6 @@ impl MemAccess for StaticMem {
 }
 
 impl ExecEnv for StaticExecEnv {
-    fn print_string(&mut self, _data: &[u8]) {
-        // To print, call the debug-only `console::log_txt` Host I/O
-    }
-
     fn get_time(&self) -> u64 {
         unsafe { TIME }
     }

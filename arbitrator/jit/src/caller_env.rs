@@ -133,16 +133,6 @@ impl ExecEnv for JitExecEnv<'_> {
     fn next_rand_u32(&mut self) -> u32 {
         self.wenv.go_state.rng.next_u32()
     }
-
-    fn print_string(&mut self, bytes: &[u8]) {
-        match String::from_utf8(bytes.to_vec()) {
-            Ok(s) => eprintln!("JIT: WASM says: {s}"),
-            Err(e) => {
-                let bytes = e.as_bytes();
-                eprintln!("Go string {} is not valid utf8: {e:?}", hex::encode(bytes));
-            }
-        }
-    }
 }
 
 pub struct GoRuntimeState {
