@@ -74,11 +74,11 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     fn write_slice(&self, ptr: GuestPtr, src: &[u8]) -> Result<(), Self::MemoryErr>;
 
     fn read_bytes20(&self, ptr: GuestPtr) -> Result<Bytes20, Self::MemoryErr> {
-        self.read_fixed(ptr).map(|x| x.into())
+        self.read_fixed(ptr).map(Into::into)
     }
 
     fn read_bytes32(&self, ptr: GuestPtr) -> Result<Bytes32, Self::MemoryErr> {
-        self.read_fixed(ptr).map(|x| x.into())
+        self.read_fixed(ptr).map(Into::into)
     }
 
     fn say<D: Display>(&self, text: D);

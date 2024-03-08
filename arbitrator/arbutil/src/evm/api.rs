@@ -1,4 +1,4 @@
-// Copyright 2023, Offchain Labs, Inc.
+// Copyright 2023-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{evm::user::UserOutcomeKind, Bytes20, Bytes32};
@@ -53,12 +53,13 @@ pub enum EvmApiMethod {
 /// id below that offset, indicating program status
 pub const EVM_API_METHOD_REQ_OFFSET: u32 = 0x10000000;
 
-/// note: clone should not clone actual data, just the reader
+/// Copies data from Go into Rust.
+/// Note: clone should not clone actual data, just the reader.
 pub trait DataReader: Clone + Send + 'static {
     fn slice(&self) -> &[u8];
 }
 
-/// simple implementation for DataReader, in case data comes from a Vec
+/// Simple implementation for `DataReader`, in case data comes from a `Vec`.
 #[derive(Clone, Debug)]
 pub struct VecReader(Arc<Vec<u8>>);
 

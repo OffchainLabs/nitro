@@ -5,17 +5,9 @@ use crate::{
     arbcompress, caller_env::GoRuntimeState, program, socket, stylus_backend::CothreadHandler,
     wasip1_stub, wavmio, Opts,
 };
-// runtime, socket, syscall, user
 use arbutil::{Bytes32, Color};
 use eyre::{bail, ErrReport, Result, WrapErr};
 use sha3::{Digest, Keccak256};
-use thiserror::Error;
-use wasmer::{
-    imports, CompilerConfig, Function, FunctionEnv, FunctionEnvMut, Instance, Memory, Module,
-    RuntimeError, Store,
-};
-use wasmer_compiler_cranelift::Cranelift;
-
 use std::{
     collections::{BTreeMap, HashMap},
     fs::File,
@@ -25,6 +17,12 @@ use std::{
     sync::Arc,
     time::{Duration, Instant},
 };
+use thiserror::Error;
+use wasmer::{
+    imports, CompilerConfig, Function, FunctionEnv, FunctionEnvMut, Instance, Memory, Module,
+    RuntimeError, Store,
+};
+use wasmer_compiler_cranelift::Cranelift;
 
 pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Store) {
     let file = &opts.binary;
@@ -166,10 +164,6 @@ impl Escape {
 
     pub fn hostio<T, S: std::convert::AsRef<str>>(message: S) -> Result<T, Escape> {
         Err(Self::HostIO(message.as_ref().to_string()))
-    }
-
-    pub fn failure<T, S: std::convert::AsRef<str>>(message: S) -> Result<T, Escape> {
-        Err(Self::Failure(message.as_ref().to_string()))
     }
 }
 

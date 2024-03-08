@@ -179,14 +179,13 @@ pub unsafe extern "C" fn stylus_call(
     let module = module.slice();
     let calldata = calldata.slice().to_vec();
     let compile = CompileConfig::version(config.version, debug_chain != 0);
+    let evm_api = EvmApiRequestor::new(req_handler);
     let pricing = config.pricing;
     let output = &mut *output;
     let ink = pricing.gas_to_ink(*gas);
 
     // Safety: module came from compile_user_wasm and we've paid for memory expansion
-    let instance = unsafe {
-        NativeInstance::deserialize(module, compile, EvmApiRequestor::new(req_handler), evm_data)
-    };
+    let instance = unsafe { NativeInstance::deserialize(module, compile, evm_api, evm_data) };
     let mut instance = match instance {
         Ok(instance) => instance,
         Err(error) => panic!("failed to instantiate program: {error:?}"),

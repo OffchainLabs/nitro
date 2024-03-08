@@ -1,4 +1,4 @@
-// Copyright 2023, Offchain Labs, Inc.
+// Copyright 2023-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{
@@ -33,6 +33,7 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApiRequestor<D, H> {
         self.handler.handle_request(req_type, req_data)
     }
 
+    /// Call out to a contract.
     fn call_request(
         &mut self,
         call_type: EvmApiMethod,
@@ -41,13 +42,14 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApiRequestor<D, H> {
         gas: u64,
         value: Bytes32,
     ) -> (u32, u64, UserOutcomeKind) {
-        let mut request = vec![];
-        request.extend(contract.as_slice());
-        request.extend(value.as_slice());
-        request.extend(&gas.to_be_bytes());
+        let mut request = Vec::with_capacity(20 + 32 + 8 + input.len());
+        request.extend(contract);
+        request.extend(value);
+        request.extend(gas.to_be_bytes());
         request.extend(input);
+
         let (res, data, cost) = self.handle_request(call_type, &request);
-        let status: UserOutcomeKind = res[0].try_into().unwrap();
+        let status: UserOutcomeKind = res[0].try_into().expect("unknown outcome");
         let data_len = data.slice().len() as u32;
         self.last_return_data = Some(data);
         (data_len, cost, status)
@@ -65,24 +67,23 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApiRequestor<D, H> {
         salt: Option<Bytes32>,
         gas: u64,
     ) -> (Result<Bytes20>, u32, u64) {
-        let mut request = vec![];
-        request.extend(&gas.to_be_bytes());
-        request.extend(endowment.as_slice());
+        let mut request = Vec::with_capacity(8 + 2 * 32 + code.len());
+        request.extend(gas.to_be_bytes());
+        request.extend(endowment);
         if let Some(salt) = salt {
-            request.extend(salt.as_slice());
+            request.extend(salt);
         }
-        request.extend(&code);
+        request.extend(code);
 
         let (mut res, data, cost) = self.handle_request(create_type, &request);
         if res.len() != 21 || res[0] == 0 {
             if !res.is_empty() {
-                res.drain(0..=0);
+                res.remove(0);
             }
-            let err_string =
-                String::from_utf8(res).unwrap_or(String::from("create_response_malformed"));
+            let err_string = String::from_utf8(res).unwrap_or("create_response_malformed".into());
             return (Err(eyre!(err_string)), 0, cost);
         }
-        res.drain(0..=0);
+        res.remove(0);
         let address = res.try_into().unwrap();
         let data_len = data.slice().len() as u32;
         self.last_return_data = Some(data);
@@ -97,9 +98,9 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
     }
 
     fn set_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Result<u64> {
-        let mut request = vec![];
-        request.extend(key.as_slice());
-        request.extend(value.as_slice());
+        let mut request = Vec::with_capacity(64);
+        request.extend(key);
+        request.extend(value);
         let (res, _, cost) = self.handle_request(EvmApiMethod::SetBytes32, &request);
         if res.len() != 1 {
             bail!("bad response from set_bytes32")
@@ -170,18 +171,17 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
     }
 
     fn get_return_data(&self) -> D {
-        self.last_return_data
-            .as_ref()
-            .expect("get return data when no data")
-            .clone()
+        self.last_return_data.clone().expect("missing return data")
     }
 
     fn emit_log(&mut self, data: Vec<u8>, topics: u32) -> Result<()> {
-        let mut request = topics.to_be_bytes().to_vec();
-        request.extend(data.iter());
+        let mut request = Vec::with_capacity(4 + data.len());
+        request.extend(topics.to_be_bytes());
+        request.extend(data);
+
         let (res, _, _) = self.handle_request(EvmApiMethod::EmitLog, &request);
         if !res.is_empty() {
-            bail!(String::from_utf8(res).unwrap_or(String::from("malformed emit-log response")))
+            bail!(String::from_utf8(res).unwrap_or("malformed emit-log response".into()))
         }
         Ok(())
     }
@@ -197,10 +197,11 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
                 return (data.clone(), 0);
             }
         }
-        let mut req: Vec<u8> = address.as_slice().into();
+        let mut req = Vec::with_capacity(20 + 8);
+        req.extend(address);
         req.extend(gas_left.to_be_bytes());
-        let (_, data, cost) = self.handle_request(EvmApiMethod::AccountCode, &req);
 
+        let (_, data, cost) = self.handle_request(EvmApiMethod::AccountCode, &req);
         self.last_code = Some((address, data.clone()));
         (data, cost)
     }
@@ -211,8 +212,8 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
     }
 
     fn add_pages(&mut self, pages: u16) -> u64 {
-        let (_, _, cost) = self.handle_request(EvmApiMethod::AddPages, &pages.to_be_bytes());
-        cost
+        self.handle_request(EvmApiMethod::AddPages, &pages.to_be_bytes())
+            .2
     }
 
     fn capture_hostio(
@@ -223,13 +224,12 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         start_ink: u64,
         end_ink: u64,
     ) {
-        let mut request = vec![];
-
-        request.extend(&start_ink.to_be_bytes());
-        request.extend(&end_ink.to_be_bytes());
-        request.extend(&(name.len() as u16).to_be_bytes());
-        request.extend(&(args.len() as u16).to_be_bytes());
-        request.extend(&(outs.len() as u16).to_be_bytes());
+        let mut request = Vec::with_capacity(2 * 8 + 3 * 2 + name.len() + args.len() + outs.len());
+        request.extend(start_ink.to_be_bytes());
+        request.extend(end_ink.to_be_bytes());
+        request.extend((name.len() as u16).to_be_bytes());
+        request.extend((args.len() as u16).to_be_bytes());
+        request.extend((outs.len() as u16).to_be_bytes());
         request.extend(name.as_bytes());
         request.extend(args);
         request.extend(outs);

@@ -7,8 +7,10 @@ use caller_env::{ExecEnv, GuestPtr, MemAccess};
 use rand::RngCore;
 use rand_pcg::Pcg32;
 use std::{
+    cmp::Ordering,
     collections::{BTreeSet, BinaryHeap},
     fmt::Debug,
+    mem::{self, MaybeUninit},
 };
 use wasmer::{Memory, MemoryView, StoreMut, WasmPtr};
 
@@ -21,26 +23,27 @@ pub struct JitExecEnv<'s> {
     pub wenv: &'s mut WasmEnv,
 }
 
+pub(crate) trait JitEnv<'a> {
+    fn jit_env(&mut self) -> (JitMemAccess<'_>, &mut WasmEnv);
+}
+
+impl<'a> JitEnv<'a> for WasmEnvMut<'a> {
+    fn jit_env(&mut self) -> (JitMemAccess<'_>, &mut WasmEnv) {
+        let memory = self.data().memory.clone().unwrap();
+        let (wenv, store) = self.data_and_store_mut();
+        (JitMemAccess { memory, store }, wenv)
+    }
+}
+
 pub fn jit_env<'s>(env: &'s mut WasmEnvMut) -> (JitMemAccess<'s>, JitExecEnv<'s>) {
     let memory = env.data().memory.clone().unwrap();
     let (wenv, store) = env.data_and_store_mut();
     (JitMemAccess { memory, store }, JitExecEnv { wenv })
 }
 
-#[allow(dead_code)]
 impl<'s> JitMemAccess<'s> {
-    /// Returns the memory size, in bytes.
-    /// note: wasmer measures memory in 65536-byte pages.
-    fn memory_size(&self) -> u64 {
-        self.view().size().0 as u64 * 65536
-    }
-
     fn view(&self) -> MemoryView {
         self.memory.view(&self.store)
-    }
-
-    pub fn write_bytes20(&mut self, ptr: GuestPtr, val: Bytes20) {
-        self.write_slice(ptr, val.as_slice())
     }
 
     pub fn write_bytes32(&mut self, ptr: GuestPtr, val: Bytes32) {
@@ -53,18 +56,6 @@ impl<'s> JitMemAccess<'s> {
 
     pub fn read_bytes32(&mut self, ptr: GuestPtr) -> Bytes32 {
         self.read_fixed(ptr).into()
-    }
-
-    pub fn read_string(&mut self, ptr: GuestPtr, len: u32) -> String {
-        let bytes = self.read_slice(ptr, len as usize);
-        match String::from_utf8(bytes) {
-            Ok(s) => s,
-            Err(e) => {
-                let bytes = e.as_bytes();
-                eprintln!("Go string {} is not valid utf8: {e:?}", hex::encode(bytes));
-                String::from_utf8_lossy(bytes).into_owned()
-            }
-        }
     }
 }
 
@@ -110,12 +101,15 @@ impl MemAccess for JitMemAccess<'_> {
     }
 
     fn read_slice(&self, ptr: GuestPtr, len: usize) -> Vec<u8> {
-        let mut data = Vec::with_capacity(len);
+        let mut data: Vec<MaybeUninit<u8>> = Vec::with_capacity(len);
+        // SAFETY: read_uninit fills all available space
         unsafe {
             data.set_len(len);
-            self.view().read(ptr.into(), &mut data).expect("bad read");
+            self.view()
+                .read_uninit(ptr.into(), &mut data)
+                .expect("bad read");
+            mem::transmute(data)
         }
-        data
     }
 
     fn read_fixed<const N: usize>(&self, ptr: GuestPtr) -> [u8; N] {
@@ -128,6 +122,18 @@ impl MemAccess for JitMemAccess<'_> {
 }
 
 impl ExecEnv for JitExecEnv<'_> {
+    fn advance_time(&mut self, ns: u64) {
+        self.wenv.go_state.time += ns;
+    }
+
+    fn get_time(&self) -> u64 {
+        self.wenv.go_state.time
+    }
+
+    fn next_rand_u32(&mut self) -> u32 {
+        self.wenv.go_state.rng.next_u32()
+    }
+
     fn print_string(&mut self, bytes: &[u8]) {
         match String::from_utf8(bytes.to_vec()) {
             Ok(s) => eprintln!("JIT: WASM says: {s}"),
@@ -137,24 +143,12 @@ impl ExecEnv for JitExecEnv<'_> {
             }
         }
     }
-
-    fn get_time(&self) -> u64 {
-        self.wenv.go_state.time
-    }
-
-    fn advance_time(&mut self, delta: u64) {
-        self.wenv.go_state.time += delta
-    }
-
-    fn next_rand_u32(&mut self) -> u32 {
-        self.wenv.go_state.rng.next_u32()
-    }
 }
 
 pub struct GoRuntimeState {
-    /// An increasing clock used when Go asks for time, measured in nanoseconds
+    /// An increasing clock used when Go asks for time, measured in nanoseconds.
     pub time: u64,
-    /// Deterministic source of random data
+    /// Deterministic source of random data.
     pub rng: Pcg32,
 }
 
@@ -174,7 +168,7 @@ pub struct TimeoutInfo {
 }
 
 impl Ord for TimeoutInfo {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
+    fn cmp(&self, other: &Self) -> Ordering {
         other
             .time
             .cmp(&self.time)
@@ -183,7 +177,7 @@ impl Ord for TimeoutInfo {
 }
 
 impl PartialOrd for TimeoutInfo {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
+    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
     }
 }

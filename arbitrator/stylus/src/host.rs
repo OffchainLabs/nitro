@@ -14,11 +14,18 @@ use arbutil::{
 use caller_env::GuestPtr;
 use eyre::Result;
 use prover::value::Value;
-use std::fmt::Display;
+use std::{
+    fmt::Display,
+    mem::{self, MaybeUninit},
+};
 use user_host_trait::UserHost;
 use wasmer::{MemoryAccessError, WasmPtr};
 
-impl<'a, DR: DataReader, A: EvmApi<DR>> UserHost<DR> for HostioInfo<'a, DR, A> {
+impl<'a, DR, A> UserHost<DR> for HostioInfo<'a, DR, A>
+where
+    DR: DataReader,
+    A: EvmApi<DR>,
+{
     type Err = Escape;
     type MemoryErr = MemoryAccessError;
     type A = A;
@@ -46,14 +53,19 @@ impl<'a, DR: DataReader, A: EvmApi<DR>> UserHost<DR> for HostioInfo<'a, DR, A> {
     fn read_fixed<const N: usize>(
         &self,
         ptr: GuestPtr,
-    ) -> std::result::Result<[u8; N], <Self as UserHost<DR>>::MemoryErr> {
+    ) -> std::result::Result<[u8; N], Self::MemoryErr> {
         HostioInfo::read_fixed(self, ptr)
     }
 
     fn read_slice(&self, ptr: GuestPtr, len: u32) -> Result<Vec<u8>, Self::MemoryErr> {
-        let mut data = vec![0; len as usize];
-        self.view().read(ptr.into(), &mut data)?;
-        Ok(data)
+        let len = len as usize;
+        let mut data: Vec<MaybeUninit<u8>> = Vec::with_capacity(len);
+        // SAFETY: read_uninit fills all available space
+        unsafe {
+            data.set_len(len);
+            self.view().read_uninit(ptr.into(), &mut data)?;
+            Ok(mem::transmute(data))
+        }
     }
 
     fn write_u32(&mut self, ptr: GuestPtr, x: u32) -> Result<(), Self::MemoryErr> {
