@@ -38,7 +38,6 @@ pub fn fd_write_wrapper(
                 eprintln!("Go string {} is not valid utf8: {e:?}", hex::encode(bytes));
             }
         }
-        size += len;
     }
     caller_env::wasip1_stub::fd_write(&mut mem, &mut env, fd, iovecs_ptr, iovecs_len, ret_ptr)
 }

@@ -1772,16 +1772,14 @@ impl Machine {
                 }
 
                 if let ThreadState::CoThread(recovery_pc) = self.thread_state {
-                    if self.steps < Self::MAX_STEPS {
-                        self.thread_state = ThreadState::Main;
-                        self.pc = recovery_pc;
-                        reset_refs!();
-                        if self.debug_info {
-                            println!("\n{}", "switching to main thread".grey());
-                            println!("\n{} {:?}", "next opcode: ".grey(), func.code[self.pc.inst()]);
-                        }
-                        continue;
+                    self.thread_state = ThreadState::Main;
+                    self.pc = recovery_pc;
+                    reset_refs!();
+                    if self.debug_info {
+                        println!("\n{}", "switching to main thread".grey());
+                        println!("\n{} {:?}", "next opcode: ".grey(), func.code[self.pc.inst()]);
                     }
+                    continue;
                 }
                 self.status = MachineStatus::Errored;
                 module = &mut self.modules[self.pc.module()];
@@ -1792,8 +1790,13 @@ impl Machine {
         for _ in 0..n {
             self.steps += 1;
             if self.steps == Self::MAX_STEPS {
-                error!();
+                println!("\n{}", "Machine out of steps".red());
+                self.status = MachineStatus::Errored;
+                self.print_backtrace(true);
+                module = &mut self.modules[self.pc.module()];
+                break;
             }
+
             let inst = func.code[self.pc.inst()];
             self.pc.inst += 1;
             match inst.opcode {
