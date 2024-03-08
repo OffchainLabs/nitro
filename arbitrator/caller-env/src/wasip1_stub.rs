@@ -380,12 +380,15 @@ pub fn random_get<M: MemAccess, E: ExecEnv>(
 /// Note that we always simulate a timeout and skip all others.
 pub fn poll_oneoff<M: MemAccess, E: ExecEnv>(
     mem: &mut M,
-    _: &mut E,
+    env: &mut E,
     in_subs: GuestPtr,
     out_evt: GuestPtr,
     num_subscriptions: u32,
     num_events_ptr: GuestPtr,
 ) -> Errno {
+    // simulate the passage of time each poll request
+    env.advance_time(TIME_INTERVAL);
+
     const SUBSCRIPTION_SIZE: u32 = 48; // user data + 40-byte union
     for index in 0..num_subscriptions {
         let subs_base = in_subs + (SUBSCRIPTION_SIZE * index);
