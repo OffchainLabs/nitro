@@ -1,16 +1,21 @@
-// Copyright 2022-2023, Offchain Labs, Inc.
+// Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
-use core::sync::atomic::{compiler_fence, Ordering};
+
 use arbutil::{
-    evm::{req::{EvmApiRequestor, RequestHandler}, EvmData, api::{{VecReader, EvmApiMethod, EVM_API_METHOD_REQ_OFFSET}}},
+    evm::{
+        api::{EvmApiMethod, VecReader, EVM_API_METHOD_REQ_OFFSET},
+        req::{EvmApiRequestor, RequestHandler},
+        EvmData,
+    },
     Color,
 };
-use callerenv::{Uptr, MemAccess, static_caller::STATIC_MEM};
-use wasmer_types::WASM_PAGE_SIZE;
+use caller_env::{static_caller::STATIC_MEM, GuestPtr, MemAccess};
+use core::sync::atomic::{compiler_fence, Ordering};
 use eyre::{bail, eyre, Result};
 use prover::programs::prelude::*;
 use std::fmt::Display;
 use user_host_trait::UserHost;
+use wasmer_types::WASM_PAGE_SIZE;
 
 // allows introspection into user modules
 #[link(wasm_import_module = "hostio")]
@@ -41,7 +46,7 @@ static mut PROGRAMS: Vec<Box<Program>> = vec![];
 static mut LAST_REQUEST_ID: u32 = 0x10000;
 
 #[derive(Clone)]
-pub (crate) struct UserHostRequester {
+pub(crate) struct UserHostRequester {
     data: Option<Vec<u8>>,
     answer: Option<(Vec<u8>, VecReader, u64)>,
     req_type: u32,
@@ -82,7 +87,13 @@ extern "C" {
 
 impl UserHostRequester {
     #[no_mangle]
-    pub unsafe fn set_response(&mut self, req_id: u32, result: Vec<u8>, raw_data:Vec<u8>, gas: u64) {
+    pub unsafe fn set_response(
+        &mut self,
+        req_id: u32,
+        result: Vec<u8>,
+        raw_data: Vec<u8>,
+        gas: u64,
+    ) {
         self.answer = Some((result, VecReader::new(raw_data), gas));
         if req_id != self.id {
             panic!("bad req id returning from send_request")
@@ -103,14 +114,23 @@ impl UserHostRequester {
         if self.id != id {
             panic!("get_request got wrong id");
         }
-        (self.req_type, self.data.as_ref().expect("no request on get_request_meta").len())
+        (
+            self.req_type,
+            self.data
+                .as_ref()
+                .expect("no request on get_request_meta")
+                .len(),
+        )
     }
 
     pub unsafe fn take_request(&mut self, id: u32) -> (u32, Vec<u8>) {
         if self.id != id {
             panic!("get_request got wrong id");
         }
-        (self.req_type, self.data.take().expect("no request on take_request"))
+        (
+            self.req_type,
+            self.data.take().expect("no request on take_request"),
+        )
     }
 
     #[no_mangle]
@@ -127,21 +147,23 @@ impl UserHostRequester {
 }
 
 impl RequestHandler<VecReader> for UserHostRequester {
-    fn handle_request(&mut self, req_type: EvmApiMethod, req_data: &[u8]) -> (Vec<u8>, VecReader, u64) {
+    fn handle_request(
+        &mut self,
+        req_type: EvmApiMethod,
+        req_data: &[u8],
+    ) -> (Vec<u8>, VecReader, u64) {
         unsafe {
-            self.send_request(req_type as u32 + EVM_API_METHOD_REQ_OFFSET, req_data.to_vec())
+            self.send_request(
+                req_type as u32 + EVM_API_METHOD_REQ_OFFSET,
+                req_data.to_vec(),
+            )
         }
     }
 }
 
 impl Program {
     /// Adds a new program, making it current.
-    pub fn push_new(
-        args: Vec<u8>,
-        evm_data: EvmData,
-        module: u32,
-        config: StylusConfig,
-    ) {
+    pub fn push_new(args: Vec<u8>, evm_data: EvmData, module: u32, config: StylusConfig) {
         let program = Self {
             args,
             outs: vec![],
@@ -155,7 +177,9 @@ impl Program {
 
     /// Removes the current program
     pub fn pop() {
-        unsafe { PROGRAMS.pop().expect("no program"); }
+        unsafe {
+            PROGRAMS.pop().expect("no program");
+        }
     }
 
     /// Provides a reference to the current program.
@@ -170,12 +194,12 @@ impl Program {
 
     /// Reads the program's memory size in pages
     pub fn args_len(&self) -> usize {
-        return self.args.len()
+        self.args.len()
     }
 
     /// Ensures an access is within bounds
-    fn check_memory_access(&self, ptr: Uptr, bytes: u32) -> Result<(), MemoryBoundsError> {
-        let last_page = ptr.saturating_add(bytes) / (WASM_PAGE_SIZE as Uptr);
+    fn check_memory_access(&self, ptr: GuestPtr, bytes: u32) -> Result<(), MemoryBoundsError> {
+        let last_page = ptr.saturating_add(bytes) / (WASM_PAGE_SIZE as u32);
         if last_page > self.memory_size() {
             return Err(MemoryBoundsError);
         }
@@ -209,21 +233,22 @@ impl UserHost<VecReader> for Program {
         &mut self.evm_data.return_data_len
     }
 
-    fn read_slice(&self, ptr: Uptr, len: u32) -> Result<Vec<u8>, MemoryBoundsError> {
+    fn read_slice(&self, ptr: GuestPtr, len: u32) -> Result<Vec<u8>, MemoryBoundsError> {
         self.check_memory_access(ptr, len)?;
         unsafe { Ok(STATIC_MEM.read_slice(ptr, len as usize)) }
     }
 
-    fn read_fixed<const N:usize>(&self, ptr: Uptr) -> Result<[u8; N], MemoryBoundsError> {
-        self.read_slice(ptr, N as u32).and_then(|x| Ok(x.try_into().unwrap()))
+    fn read_fixed<const N: usize>(&self, ptr: GuestPtr) -> Result<[u8; N], MemoryBoundsError> {
+        self.read_slice(ptr, N as u32)
+            .map(|x| x.try_into().unwrap())
     }
 
-    fn write_u32(&mut self, ptr: Uptr, x: u32) -> Result<(), MemoryBoundsError> {
+    fn write_u32(&mut self, ptr: GuestPtr, x: u32) -> Result<(), MemoryBoundsError> {
         self.check_memory_access(ptr, 4)?;
         unsafe { Ok(STATIC_MEM.write_u32(ptr, x)) }
     }
 
-    fn write_slice(&self, ptr: Uptr, src: &[u8]) -> Result<(), MemoryBoundsError> {
+    fn write_slice(&self, ptr: GuestPtr, src: &[u8]) -> Result<(), MemoryBoundsError> {
         self.check_memory_access(ptr, src.len() as u32)?;
         unsafe { Ok(STATIC_MEM.write_slice(ptr, src)) }
     }
@@ -238,7 +263,7 @@ impl UserHost<VecReader> for Program {
         println!("Error: unexpected hostio tracing info for {name} while proving: {args}, {outs}");
     }
 
-    fn start_ink(&self) -> Result<u64,Self::Err> {
+    fn start_ink(&self) -> Result<u64, Self::Err> {
         bail!("recording start ink while proving")
     }
 }

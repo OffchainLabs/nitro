@@ -75,7 +75,7 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApiRequestor<D, H> {
 
         let (mut res, data, cost) = self.handle_request(create_type, &request);
         if res.len() != 21 || res[0] == 0 {
-            if res.len() > 0 {
+            if !res.is_empty() {
                 res.drain(0..=0);
             }
             let err_string =

@@ -74,7 +74,7 @@ WASI_SYSROOT?=/opt/wasi-sdk/wasi-sysroot
 
 arbitrator_wasm_lib_flags=$(patsubst %, -l %, $(arbitrator_wasm_libs))
 
-rust_arbutil_files = $(wildcard arbitrator/arbutil/src/*.* arbitrator/arbutil/src/*/*.* arbitrator/arbutil/*.toml arbitrator/callerenv/src/*.* arbitrator/callerenv/src/*/*.* arbitrator/callerenv/*.toml)
+rust_arbutil_files = $(wildcard arbitrator/arbutil/src/*.* arbitrator/arbutil/src/*/*.* arbitrator/arbutil/*.toml arbitrator/caller-env/src/*.* arbitrator/caller-env/src/*/*.* arbitrator/caller-env/*.toml)
 
 prover_direct_includes = $(patsubst %,$(output_latest)/%.wasm, forward forward_stub)
 prover_src = arbitrator/prover/src

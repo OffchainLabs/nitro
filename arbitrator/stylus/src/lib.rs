@@ -67,7 +67,7 @@ pub struct SendGoSliceData {
 }
 
 #[allow(dead_code)]
-const fn assert_go_slices_match() -> () {
+const fn assert_go_slices_match() {
     // TODO: this will be stabilized on rust 1.77
     // assert_eq!(mem::offset_of!(GoSliceData, ptr), mem::offset_of!(SendGoSliceData, ptr));
     // assert_eq!(mem::offset_of!(GoSliceData, len), mem::offset_of!(SendGoSliceData, len));

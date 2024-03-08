@@ -8,5 +8,5 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-paste = {version="1.0.14"}
-callerenv = { path = "../../callerenv/", features = ["static_caller"] }
+paste = { version = "1.0.14" }
+caller-env = { path = "../../caller-env/", features = ["static_caller"] }

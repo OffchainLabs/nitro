@@ -1,9 +1,13 @@
-// Copyright 2021-2023, Offchain Labs, Inc.
+// Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
-use crate::{ExecEnv, MemAccess, Uptr};
-use alloc::vec;
 
-#[derive(PartialEq)]
+#![allow(clippy::too_many_arguments)]
+
+use crate::{ExecEnv, GuestPtr, MemAccess};
+use alloc::vec;
+use num_enum::{IntoPrimitive, TryFromPrimitive};
+
+#[derive(PartialEq, IntoPrimitive, TryFromPrimitive)]
 #[repr(u32)]
 pub enum BrotliStatus {
     Failure,
@@ -31,7 +35,7 @@ extern "C" {
 
 const BROTLI_MODE_GENERIC: u32 = 0;
 
-/// Brotli decompresses a go slice1
+/// Brotli decompresses a go slice.
 ///
 /// # Safety
 ///
@@ -39,14 +43,14 @@ const BROTLI_MODE_GENERIC: u32 = 0;
 pub fn brotli_decompress<M: MemAccess, E: ExecEnv>(
     mem: &mut M,
     _env: &mut E,
-    in_buf_ptr: Uptr,
+    in_buf_ptr: GuestPtr,
     in_buf_len: u32,
-    out_buf_ptr: Uptr,
-    out_len_ptr: Uptr,
-) -> u32 {
+    out_buf_ptr: GuestPtr,
+    out_len_ptr: GuestPtr,
+) -> BrotliStatus {
     let in_slice = mem.read_slice(in_buf_ptr, in_buf_len as usize);
     let orig_output_len = mem.read_u32(out_len_ptr) as usize;
-    let mut output = vec![0u8; orig_output_len as usize];
+    let mut output = vec![0; orig_output_len];
     let mut output_len = orig_output_len;
     unsafe {
         let res = BrotliDecoderDecompress(
@@ -56,30 +60,30 @@ pub fn brotli_decompress<M: MemAccess, E: ExecEnv>(
             output.as_mut_ptr(),
         );
         if (res != BrotliStatus::Success) || (output_len > orig_output_len) {
-            return 0;
+            return BrotliStatus::Failure;
         }
     }
     mem.write_slice(out_buf_ptr, &output[..output_len]);
     mem.write_u32(out_len_ptr, output_len as u32);
-    1
+    BrotliStatus::Success
 }
 
 /// Brotli compresses a go slice
 ///
-/// The output buffer must be sufficiently large enough.
+/// The output buffer must be large enough.
 pub fn brotli_compress<M: MemAccess, E: ExecEnv>(
     mem: &mut M,
     _env: &mut E,
-    in_buf_ptr: Uptr,
+    in_buf_ptr: GuestPtr,
     in_buf_len: u32,
-    out_buf_ptr: Uptr,
-    out_len_ptr: Uptr,
+    out_buf_ptr: GuestPtr,
+    out_len_ptr: GuestPtr,
     level: u32,
     window_size: u32,
-) -> u32 {
+) -> BrotliStatus {
     let in_slice = mem.read_slice(in_buf_ptr, in_buf_len as usize);
     let orig_output_len = mem.read_u32(out_len_ptr) as usize;
-    let mut output = vec![0u8; orig_output_len];
+    let mut output = vec![0; orig_output_len];
     let mut output_len = orig_output_len;
 
     unsafe {
@@ -93,10 +97,10 @@ pub fn brotli_compress<M: MemAccess, E: ExecEnv>(
             output.as_mut_ptr(),
         );
         if (res != BrotliStatus::Success) || (output_len > orig_output_len) {
-            return 0;
+            return BrotliStatus::Failure;
         }
     }
     mem.write_slice(out_buf_ptr, &output[..output_len]);
     mem.write_u32(out_len_ptr, output_len as u32);
-    1
+    BrotliStatus::Success
 }

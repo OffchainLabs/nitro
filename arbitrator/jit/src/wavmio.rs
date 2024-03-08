@@ -1,13 +1,13 @@
-// Copyright 2022-2023, Offchain Labs, Inc.
+// Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    callerenv::jit_env,
+    caller_env::jit_env,
     machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
     socket,
 };
 use arbutil::Color;
-use callerenv::{MemAccess, Uptr};
+use caller_env::{GuestPtr, MemAccess};
 use std::{
     io,
     io::{BufReader, BufWriter, ErrorKind},
@@ -16,20 +16,19 @@ use std::{
 };
 
 /// Reads 32-bytes of global state
-pub fn get_global_state_bytes32(mut env: WasmEnvMut, idx: u32, out_ptr: Uptr) -> MaybeEscape {
+pub fn get_global_state_bytes32(mut env: WasmEnvMut, idx: u32, out_ptr: GuestPtr) -> MaybeEscape {
     let (mut mem, exec) = jit_env(&mut env);
     ready_hostio(exec.wenv)?;
 
-    let global = match exec.wenv.large_globals.get(idx as usize) {
-        Some(global) => global.clone(),
-        None => return Escape::hostio("global read out of bounds in wavmio.getGlobalStateBytes32"),
+    let Some(global) = exec.wenv.large_globals.get(idx as usize) else {
+        return Escape::hostio("global read out of bounds in wavmio.getGlobalStateBytes32");
     };
     mem.write_slice(out_ptr, &global[..32]);
     Ok(())
 }
 
 /// Writes 32-bytes of global state
-pub fn set_global_state_bytes32(mut env: WasmEnvMut, idx: u32, src_ptr: Uptr) -> MaybeEscape {
+pub fn set_global_state_bytes32(mut env: WasmEnvMut, idx: u32, src_ptr: GuestPtr) -> MaybeEscape {
     let (mem, exec) = jit_env(&mut env);
     ready_hostio(exec.wenv)?;
 
@@ -74,7 +73,7 @@ pub fn read_inbox_message(
     mut env: WasmEnvMut,
     msg_num: u64,
     offset: u32,
-    out_ptr: Uptr,
+    out_ptr: GuestPtr,
 ) -> Result<u32, Escape> {
     let (mut mem, exec) = jit_env(&mut env);
     ready_hostio(exec.wenv)?;
@@ -95,7 +94,7 @@ pub fn read_delayed_inbox_message(
     mut env: WasmEnvMut,
     msg_num: u64,
     offset: u32,
-    out_ptr: Uptr,
+    out_ptr: GuestPtr,
 ) -> Result<u32, Escape> {
     let (mut mem, exec) = jit_env(&mut env);
     ready_hostio(exec.wenv)?;
@@ -117,9 +116,9 @@ pub fn read_delayed_inbox_message(
 /// Retrieves the preimage of the given hash.
 pub fn resolve_preimage(
     mut env: WasmEnvMut,
-    hash_ptr: Uptr,
+    hash_ptr: GuestPtr,
     offset: u32,
-    out_ptr: Uptr,
+    out_ptr: GuestPtr,
 ) -> Result<u32, Escape> {
     let (mut mem, exec) = jit_env(&mut env);
 
@@ -149,13 +148,11 @@ pub fn resolve_preimage(
         preimage = exec.wenv.preimages.get(&hash);
     }
 
-    let preimage = match preimage {
-        Some(preimage) => preimage,
-        None => error!("Missing requested preimage for hash {hash_hex} in {name}"),
+    let Some(preimage) = preimage else {
+        error!("Missing requested preimage for hash {hash_hex} in {name}")
     };
-    let offset = match u32::try_from(offset) {
-        Ok(offset) => offset as usize,
-        Err(_) => error!("bad offset {offset} in {name}"),
+    let Ok(offset) = usize::try_from(offset) else {
+        error!("bad offset {offset} in {name}")
     };
 
     let len = std::cmp::min(32, preimage.len().saturating_sub(offset));

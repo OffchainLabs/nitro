@@ -1,12 +1,14 @@
-// Copyright 2022-2023, Offchain Labs, Inc.
+// Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::callerenv::jit_env;
+#![allow(clippy::too_many_arguments)]
+
+use crate::caller_env::jit_env;
 use crate::machine::{Escape, MaybeEscape, WasmEnvMut};
 use crate::stylus_backend::exec_wasm;
 use arbutil::Bytes32;
 use arbutil::{evm::EvmData, format::DebugBytes, heapify};
-use callerenv::{MemAccess, Uptr};
+use caller_env::{GuestPtr, MemAccess};
 use eyre::eyre;
 use prover::programs::prelude::StylusConfig;
 use prover::{
@@ -17,16 +19,16 @@ use prover::{
 /// activates a user program
 pub fn activate(
     mut env: WasmEnvMut,
-    wasm_ptr: Uptr,
+    wasm_ptr: GuestPtr,
     wasm_size: u32,
-    pages_ptr: Uptr,
-    asm_estimate_ptr: Uptr,
-    init_gas_ptr: Uptr,
+    pages_ptr: GuestPtr,
+    asm_estimate_ptr: GuestPtr,
+    init_gas_ptr: GuestPtr,
     version: u16,
     debug: u32,
-    module_hash_ptr: Uptr,
-    gas_ptr: Uptr,
-    err_buf: Uptr,
+    module_hash_ptr: GuestPtr,
+    gas_ptr: GuestPtr,
+    err_buf: GuestPtr,
     err_buf_len: u32,
 ) -> Result<u32, Escape> {
     let (mut mem, _) = jit_env(&mut env);
@@ -61,8 +63,8 @@ pub fn activate(
 /// returns module number
 pub fn new_program(
     mut env: WasmEnvMut,
-    compiled_hash_ptr: Uptr,
-    calldata_ptr: Uptr,
+    compiled_hash_ptr: GuestPtr,
+    calldata_ptr: GuestPtr,
     calldata_size: u32,
     stylus_config_handler: u64,
     evm_data_handler: u64,
@@ -121,7 +123,7 @@ pub fn start_program(mut env: WasmEnvMut, module: u32) -> Result<u32, Escape> {
 
 // gets information about request according to id
 // request_id MUST be last request id returned from start_program or send_response
-pub fn get_request(mut env: WasmEnvMut, id: u32, len_ptr: Uptr) -> Result<u32, Escape> {
+pub fn get_request(mut env: WasmEnvMut, id: u32, len_ptr: GuestPtr) -> Result<u32, Escape> {
     let (mut mem, exec) = jit_env(&mut env);
     let thread = exec.wenv.threads.last_mut().unwrap();
     let msg = thread.last_message()?;
@@ -135,7 +137,7 @@ pub fn get_request(mut env: WasmEnvMut, id: u32, len_ptr: Uptr) -> Result<u32, E
 // gets data associated with last request.
 // request_id MUST be last request receieved
 // data_ptr MUST point to a buffer of at least the length returned by get_request
-pub fn get_request_data(mut env: WasmEnvMut, id: u32, data_ptr: Uptr) -> MaybeEscape {
+pub fn get_request_data(mut env: WasmEnvMut, id: u32, data_ptr: GuestPtr) -> MaybeEscape {
     let (mut mem, exec) = jit_env(&mut env);
     let thread = exec.wenv.threads.last_mut().unwrap();
     let msg = thread.last_message()?;
@@ -152,9 +154,9 @@ pub fn set_response(
     mut env: WasmEnvMut,
     id: u32,
     gas: u64,
-    result_ptr: Uptr,
+    result_ptr: GuestPtr,
     result_len: u32,
-    raw_data_ptr: Uptr,
+    raw_data_ptr: GuestPtr,
     raw_data_len: u32,
 ) -> MaybeEscape {
     let (mem, exec) = jit_env(&mut env);
@@ -217,17 +219,17 @@ pub fn create_stylus_config(
 ///
 pub fn create_evm_data(
     mut env: WasmEnvMut,
-    block_basefee_ptr: Uptr,
+    block_basefee_ptr: GuestPtr,
     chainid: u64,
-    block_coinbase_ptr: Uptr,
+    block_coinbase_ptr: GuestPtr,
     block_gas_limit: u64,
     block_number: u64,
     block_timestamp: u64,
-    contract_address_ptr: Uptr,
-    msg_sender_ptr: Uptr,
-    msg_value_ptr: Uptr,
-    tx_gas_price_ptr: Uptr,
-    tx_origin_ptr: Uptr,
+    contract_address_ptr: GuestPtr,
+    msg_sender_ptr: GuestPtr,
+    msg_value_ptr: GuestPtr,
+    tx_gas_price_ptr: GuestPtr,
+    tx_origin_ptr: GuestPtr,
     reentrant: u32,
 ) -> Result<u64, Escape> {
     let (mut mem, _) = jit_env(&mut env);

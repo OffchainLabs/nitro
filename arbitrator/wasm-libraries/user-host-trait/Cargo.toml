@@ -5,6 +5,6 @@ edition = "2021"
 
 [dependencies]
 arbutil = { path = "../../arbutil/" }
-callerenv = { path = "../../callerenv/" }
+caller-env = { path = "../../caller-env/" }
 prover = { path = "../../prover/", default-features = false }
 eyre = "0.6.5"

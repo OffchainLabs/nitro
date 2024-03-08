@@ -7,27 +7,27 @@ use crate::{Program, ARGS, EVER_PAGES, KEYS, LOGS, OPEN_PAGES, OUTS};
 use arbutil::{
     crypto, evm,
     pricing::{EVM_API_INK, HOSTIO_INK, PTR_INK},
-    Bytes20, Bytes32
+    Bytes32,
 };
+use caller_env::{static_caller::STATIC_MEM, MemAccess, GuestPtr};
 use prover::programs::{
     memory::MemoryModel,
     prelude::{GasMeteredMachine, MeteredMachine},
 };
-use callerenv::{Uptr, MemAccess, static_caller::STATIC_MEM};
 
-unsafe fn read_bytes32(ptr: Uptr) -> Bytes32 {
+unsafe fn read_bytes32(ptr: GuestPtr) -> Bytes32 {
     STATIC_MEM.read_fixed(ptr).into()
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn vm_hooks__read_args(ptr: Uptr) {
+pub unsafe extern "C" fn vm_hooks__read_args(ptr: GuestPtr) {
     let mut program = Program::start(0);
     program.pay_for_write(ARGS.len() as u32).unwrap();
     STATIC_MEM.write_slice(ptr, &ARGS);
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn vm_hooks__write_result(ptr: Uptr, len: u32) {
+pub unsafe extern "C" fn vm_hooks__write_result(ptr: GuestPtr, len: u32) {
     let mut program = Program::start(0);
     program.pay_for_read(len).unwrap();
     program.pay_for_geth_bytes(len).unwrap();
@@ -35,7 +35,7 @@ pub unsafe extern "C" fn vm_hooks__write_result(ptr: Uptr, len: u32) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn vm_hooks__storage_load_bytes32(key: Uptr, dest: Uptr) {
+pub unsafe extern "C" fn vm_hooks__storage_load_bytes32(key: GuestPtr, dest: GuestPtr) {
     let mut program = Program::start(2 * PTR_INK + EVM_API_INK);
     let key = read_bytes32(key);
 
@@ -45,7 +45,7 @@ pub unsafe extern "C" fn vm_hooks__storage_load_bytes32(key: Uptr, dest: Uptr) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn vm_hooks__storage_store_bytes32(key: Uptr, value: Uptr) {
+pub unsafe extern "C" fn vm_hooks__storage_store_bytes32(key: GuestPtr, value: GuestPtr) {
     let mut program = Program::start(2 * PTR_INK + EVM_API_INK);
     program.require_gas(evm::SSTORE_SENTRY_GAS).unwrap();
     program.buy_gas(22100).unwrap(); // pretend the worst case
@@ -56,12 +56,12 @@ pub unsafe extern "C" fn vm_hooks__storage_store_bytes32(key: Uptr, value: Uptr)
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn vm_hooks__emit_log(data: Uptr, len: u32, topics: u32) {
+pub unsafe extern "C" fn vm_hooks__emit_log(data: GuestPtr, len: u32, topics: u32) {
     let mut program = Program::start(EVM_API_INK);
     if topics > 4 || len < topics * 32 {
         panic!("bad topic data");
     }
-    program.pay_for_read(len.into()).unwrap();
+    program.pay_for_read(len).unwrap();
     program.pay_for_evm_log(topics, len - topics * 32).unwrap();
 
     let data = STATIC_MEM.read_slice(data, len as usize);
@@ -83,7 +83,7 @@ pub unsafe extern "C" fn vm_hooks__pay_for_memory_grow(pages: u16) {
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn vm_hooks__native_keccak256(bytes: u32, len: u32, output: u32) {
+pub unsafe extern "C" fn vm_hooks__native_keccak256(bytes: GuestPtr, len: u32, output: GuestPtr) {
     let mut program = Program::start(0);
     program.pay_for_keccak(len).unwrap();
 

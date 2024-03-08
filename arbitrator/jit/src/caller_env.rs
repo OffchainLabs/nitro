@@ -1,11 +1,9 @@
-// Copyright 2022, Offchain Labs, Inc.
+// Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
-
-#![allow(clippy::useless_transmute)]
 
 use crate::machine::{WasmEnv, WasmEnvMut};
 use arbutil::{Bytes20, Bytes32};
-use callerenv::{ExecEnv, MemAccess, Uptr};
+use caller_env::{ExecEnv, GuestPtr, MemAccess};
 use rand::RngCore;
 use rand_pcg::Pcg32;
 use std::{
@@ -41,23 +39,23 @@ impl<'s> JitMemAccess<'s> {
         self.memory.view(&self.store)
     }
 
-    pub fn write_bytes20(&mut self, ptr: Uptr, val: Bytes20) {
+    pub fn write_bytes20(&mut self, ptr: GuestPtr, val: Bytes20) {
         self.write_slice(ptr, val.as_slice())
     }
 
-    pub fn write_bytes32(&mut self, ptr: Uptr, val: Bytes32) {
+    pub fn write_bytes32(&mut self, ptr: GuestPtr, val: Bytes32) {
         self.write_slice(ptr, val.as_slice())
     }
 
-    pub fn read_bytes20(&mut self, ptr: Uptr) -> Bytes20 {
+    pub fn read_bytes20(&mut self, ptr: GuestPtr) -> Bytes20 {
         self.read_fixed(ptr).into()
     }
 
-    pub fn read_bytes32(&mut self, ptr: Uptr) -> Bytes32 {
+    pub fn read_bytes32(&mut self, ptr: GuestPtr) -> Bytes32 {
         self.read_fixed(ptr).into()
     }
 
-    pub fn read_string(&mut self, ptr: Uptr, len: u32) -> String {
+    pub fn read_string(&mut self, ptr: GuestPtr, len: u32) -> String {
         let bytes = self.read_slice(ptr, len as usize);
         match String::from_utf8(bytes) {
             Ok(s) => s,
@@ -71,61 +69,60 @@ impl<'s> JitMemAccess<'s> {
 }
 
 impl MemAccess for JitMemAccess<'_> {
-    fn read_u8(&self, ptr: Uptr) -> u8 {
-        let ptr: WasmPtr<u8> = WasmPtr::new(ptr);
+    fn read_u8(&self, ptr: GuestPtr) -> u8 {
+        let ptr: WasmPtr<u8> = ptr.into();
         ptr.deref(&self.view()).read().unwrap()
     }
 
-    fn read_u16(&self, ptr: Uptr) -> u16 {
-        let ptr: WasmPtr<u16> = WasmPtr::new(ptr);
+    fn read_u16(&self, ptr: GuestPtr) -> u16 {
+        let ptr: WasmPtr<u16> = ptr.into();
         ptr.deref(&self.view()).read().unwrap()
     }
 
-    fn read_u32(&self, ptr: Uptr) -> u32 {
-        let ptr: WasmPtr<u32> = WasmPtr::new(ptr);
+    fn read_u32(&self, ptr: GuestPtr) -> u32 {
+        let ptr: WasmPtr<u32> = ptr.into();
         ptr.deref(&self.view()).read().unwrap()
     }
 
-    fn read_u64(&self, ptr: Uptr) -> u64 {
-        let ptr: WasmPtr<u64> = WasmPtr::new(ptr);
+    fn read_u64(&self, ptr: GuestPtr) -> u64 {
+        let ptr: WasmPtr<u64> = ptr.into();
         ptr.deref(&self.view()).read().unwrap()
     }
 
-    fn write_u8(&mut self, ptr: Uptr, x: u8) {
-        let ptr: WasmPtr<u8> = WasmPtr::new(ptr);
+    fn write_u8(&mut self, ptr: GuestPtr, x: u8) {
+        let ptr: WasmPtr<u8> = ptr.into();
         ptr.deref(&self.view()).write(x).unwrap();
     }
 
-    fn write_u16(&mut self, ptr: Uptr, x: u16) {
-        let ptr: WasmPtr<u16> = WasmPtr::new(ptr);
+    fn write_u16(&mut self, ptr: GuestPtr, x: u16) {
+        let ptr: WasmPtr<u16> = ptr.into();
         ptr.deref(&self.view()).write(x).unwrap();
     }
 
-    fn write_u32(&mut self, ptr: Uptr, x: u32) {
-        let ptr: WasmPtr<u32> = WasmPtr::new(ptr);
+    fn write_u32(&mut self, ptr: GuestPtr, x: u32) {
+        let ptr: WasmPtr<u32> = ptr.into();
         ptr.deref(&self.view()).write(x).unwrap();
     }
 
-    fn write_u64(&mut self, ptr: Uptr, x: u64) {
-        let ptr: WasmPtr<u64> = WasmPtr::new(ptr);
+    fn write_u64(&mut self, ptr: GuestPtr, x: u64) {
+        let ptr: WasmPtr<u64> = ptr.into();
         ptr.deref(&self.view()).write(x).unwrap();
     }
 
-    fn read_slice(&self, ptr: Uptr, len: usize) -> Vec<u8> {
-        u32::try_from(ptr).expect("Go pointer not a u32"); // kept for consistency
-        let len = u32::try_from(len).expect("length isn't a u32") as usize;
-        let mut data = vec![0; len];
-        self.view()
-            .read(ptr.into(), &mut data)
-            .expect("failed to read");
+    fn read_slice(&self, ptr: GuestPtr, len: usize) -> Vec<u8> {
+        let mut data = Vec::with_capacity(len);
+        unsafe {
+            self.view().read(ptr.into(), &mut data).expect("bad read");
+            data.set_len(len);
+        }
         data
     }
 
-    fn read_fixed<const N: usize>(&self, ptr: Uptr) -> [u8; N] {
+    fn read_fixed<const N: usize>(&self, ptr: GuestPtr) -> [u8; N] {
         self.read_slice(ptr, N).try_into().unwrap()
     }
 
-    fn write_slice(&mut self, ptr: Uptr, src: &[u8]) {
+    fn write_slice(&mut self, ptr: GuestPtr, src: &[u8]) {
         self.view().write(ptr.into(), src).unwrap();
     }
 }
@@ -165,7 +162,7 @@ impl Default for GoRuntimeState {
     fn default() -> Self {
         Self {
             time: 0,
-            rng: callerenv::create_pcg(),
+            rng: caller_env::create_pcg(),
         }
     }
 }

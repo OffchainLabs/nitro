@@ -207,7 +207,7 @@ impl Hostio {
         ty
     }
 
-    pub fn body(&self, prior: usize) -> Vec<Instruction> {
+    pub fn body(&self, _prior: usize) -> Vec<Instruction> {
         let mut body = vec![];
 
         macro_rules! opcode {
