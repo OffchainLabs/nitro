@@ -112,7 +112,7 @@ pub unsafe extern "C" fn arbitrator_load_wavm_binary(binary_path: *const c_char)
     match Machine::new_from_wavm(binary_path) {
         Ok(mach) => Box::into_raw(Box::new(mach)),
         Err(err) => {
-            eprintln!("Error loading binary: {}", err);
+            eprintln!("Error loading binary: {err}");
             ptr::null_mut()
         }
     }

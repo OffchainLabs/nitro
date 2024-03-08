@@ -1129,6 +1129,11 @@ impl Machine {
         let config = CompileConfig::version(version, debug_funcs);
         let stylus_data = bin.instrument(&config)?;
 
+        // enable debug mode if debug funcs are available
+        if debug_funcs {
+            self.debug_info = true;
+        }
+
         let module = Module::from_user_binary(&bin, debug_funcs, Some(stylus_data))?;
         let hash = module.hash();
         self.add_stylus_module(module, hash);
@@ -1767,13 +1772,13 @@ impl Machine {
                 }
 
                 if let ThreadState::CoThread(recovery_pc) = self.thread_state {
+                    self.thread_state = ThreadState::Main;
                     self.pc = recovery_pc;
                     reset_refs!();
                     if self.debug_info {
                         println!("\n{}", "switching to main thread".grey());
                         println!("\n{} {:?}", "next opcode: ".grey(), func.code[self.pc.inst()]);
                     }
-                    self.thread_state = ThreadState::Main;
                     continue;
                 }
                 self.status = MachineStatus::Errored;
@@ -1785,7 +1790,7 @@ impl Machine {
         for _ in 0..n {
             self.steps += 1;
             if self.steps == Self::MAX_STEPS {
-                error!();
+                error!(); // TODO: make this irrecoverable
             }
             let inst = func.code[self.pc.inst()];
             self.pc.inst += 1;
