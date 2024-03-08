@@ -112,8 +112,8 @@ impl MemAccess for JitMemAccess<'_> {
     fn read_slice(&self, ptr: GuestPtr, len: usize) -> Vec<u8> {
         let mut data = Vec::with_capacity(len);
         unsafe {
-            self.view().read(ptr.into(), &mut data).expect("bad read");
             data.set_len(len);
+            self.view().read(ptr.into(), &mut data).expect("bad read");
         }
         data
     }

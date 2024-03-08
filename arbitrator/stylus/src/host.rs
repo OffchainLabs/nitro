@@ -14,42 +14,9 @@ use arbutil::{
 use caller_env::GuestPtr;
 use eyre::{eyre, Result};
 use prover::value::Value;
-use std::{
-    fmt::Display,
-    ops::{Deref, DerefMut},
-};
+use std::fmt::Display;
 use user_host_trait::UserHost;
-use wasmer::{FromToNativeWasmType, MemoryAccessError, WasmPtr};
-
-#[derive(Clone, Copy)]
-#[repr(transparent)]
-pub(crate) struct ClientPtr(pub GuestPtr);
-
-unsafe impl FromToNativeWasmType for ClientPtr {
-    type Native = i32;
-
-    fn from_native(native: i32) -> Self {
-        Self(GuestPtr(u32::from_native(native)))
-    }
-
-    fn to_native(self) -> Self::Native {
-        self.0 .0.to_native()
-    }
-}
-
-impl Deref for ClientPtr {
-    type Target = GuestPtr;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl DerefMut for ClientPtr {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.0
-    }
-}
+use wasmer::{MemoryAccessError, WasmPtr};
 
 impl<'a, DR: DataReader, A: EvmApi<DR>> UserHost<DR> for HostioInfo<'a, DR, A> {
     type Err = Escape;
