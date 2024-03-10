@@ -21,13 +21,14 @@ import (
 )
 
 type ClientConfig struct {
-	URL            string        `koanf:"url"`
-	JWTSecret      string        `koanf:"jwtsecret"`
-	Timeout        time.Duration `koanf:"timeout" reload:"hot"`
-	Retries        uint          `koanf:"retries" reload:"hot"`
-	ConnectionWait time.Duration `koanf:"connection-wait"`
-	ArgLogLimit    uint          `koanf:"arg-log-limit" reload:"hot"`
-	RetryErrors    string        `koanf:"retry-errors" reload:"hot"`
+	URL            string        `json:"url,omitempty" koanf:"url"`
+	JWTSecret      string        `json:"jwtsecret,omitempty" koanf:"jwtsecret"`
+	Timeout        time.Duration `json:"timeout,omitempty" koanf:"timeout" reload:"hot"`
+	Retries        uint          `json:"retries,omitempty" koanf:"retries" reload:"hot"`
+	ConnectionWait time.Duration `json:"connection-wait,omitempty" koanf:"connection-wait"`
+	ArgLogLimit    uint          `json:"arg-log-limit,omitempty" koanf:"arg-log-limit" reload:"hot"`
+	RetryErrors    string        `json:"retry-errors,omitempty" koanf:"retry-errors" reload:"hot"`
+	RetryDelay     time.Duration `json:"retry-delay,omitempty" koanf:"retry-delay"`
 
 	retryErrors *regexp.Regexp
 }
@@ -52,6 +53,8 @@ var TestClientConfig = ClientConfig{
 var DefaultClientConfig = ClientConfig{
 	URL:         "self-auth",
 	JWTSecret:   "",
+	Retries:     3,
+	RetryErrors: "websocket: close.*|dial tcp .*|.*i/o timeout|.*connection reset by peer|.*connection refused",
 	ArgLogLimit: 2048,
 }
 
@@ -63,6 +66,7 @@ func RPCClientAddOptions(prefix string, f *flag.FlagSet, defaultConfig *ClientCo
 	f.Uint(prefix+".arg-log-limit", defaultConfig.ArgLogLimit, "limit size of arguments in log entries")
 	f.Uint(prefix+".retries", defaultConfig.Retries, "number of retries in case of failure(0 mean one attempt)")
 	f.String(prefix+".retry-errors", defaultConfig.RetryErrors, "Errors matching this regular expression are automatically retried")
+	f.Duration(prefix+".retry-delay", defaultConfig.RetryDelay, "delay between retries")
 }
 
 type RpcClient struct {
@@ -131,6 +135,14 @@ func (c *RpcClient) CallContext(ctx_in context.Context, result interface{}, meth
 	log.Trace("sending RPC request", "method", method, "logId", logId, "args", limitedArgumentsMarshal{int(c.config().ArgLogLimit), args})
 	var err error
 	for i := 0; i < int(c.config().Retries)+1; i++ {
+		retryDelay := c.config().RetryDelay
+		if i > 0 && retryDelay > 0 {
+			select {
+			case <-ctx_in.Done():
+				return ctx_in.Err()
+			case <-time.After(retryDelay):
+			}
+		}
 		if ctx_in.Err() != nil {
 			return ctx_in.Err()
 		}
@@ -143,13 +155,26 @@ func (c *RpcClient) CallContext(ctx_in context.Context, result interface{}, meth
 			ctx, cancelCtx = context.WithCancel(ctx_in)
 		}
 		err = c.client.CallContext(ctx, result, method, args...)
+
 		cancelCtx()
 		logger := log.Trace
 		limit := int(c.config().ArgLogLimit)
 		if err != nil && err.Error() != "already known" {
 			logger = log.Info
 		}
-		logger("rpc response", "method", method, "logId", logId, "err", err, "result", limitedMarshal{limit, result}, "attempt", i, "args", limitedArgumentsMarshal{limit, args})
+		logEntry := []interface{}{
+			"method", method,
+			"logId", logId,
+			"err", err,
+			"result", limitedMarshal{limit, result},
+			"attempt", i,
+			"args", limitedArgumentsMarshal{limit, args},
+		}
+		var dataErr rpc.DataError
+		if errors.As(err, &dataErr) {
+			logEntry = append(logEntry, "errorData", limitedMarshal{limit, dataErr.ErrorData()})
+		}
+		logger("rpc response", logEntry...)
 		if err == nil {
 			return nil
 		}

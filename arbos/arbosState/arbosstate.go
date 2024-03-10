@@ -73,13 +73,13 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		backingStorage.OpenStorageBackedUint64(uint64(upgradeVersionOffset)),
 		backingStorage.OpenStorageBackedUint64(uint64(upgradeTimestampOffset)),
 		backingStorage.OpenStorageBackedAddress(uint64(networkFeeAccountOffset)),
-		l1pricing.OpenL1PricingState(backingStorage.OpenSubStorage(l1PricingSubspace)),
-		l2pricing.OpenL2PricingState(backingStorage.OpenSubStorage(l2PricingSubspace)),
-		retryables.OpenRetryableState(backingStorage.OpenSubStorage(retryablesSubspace), stateDB),
-		addressTable.Open(backingStorage.OpenSubStorage(addressTableSubspace)),
-		addressSet.OpenAddressSet(backingStorage.OpenSubStorage(chainOwnerSubspace)),
-		merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenSubStorage(sendMerkleSubspace)),
-		blockhash.OpenBlockhashes(backingStorage.OpenSubStorage(blockhashesSubspace)),
+		l1pricing.OpenL1PricingState(backingStorage.OpenCachedSubStorage(l1PricingSubspace)),
+		l2pricing.OpenL2PricingState(backingStorage.OpenCachedSubStorage(l2PricingSubspace)),
+		retryables.OpenRetryableState(backingStorage.OpenCachedSubStorage(retryablesSubspace), stateDB),
+		addressTable.Open(backingStorage.OpenCachedSubStorage(addressTableSubspace)),
+		addressSet.OpenAddressSet(backingStorage.OpenCachedSubStorage(chainOwnerSubspace)),
+		merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenCachedSubStorage(sendMerkleSubspace)),
+		blockhash.OpenBlockhashes(backingStorage.OpenCachedSubStorage(blockhashesSubspace)),
 		backingStorage.OpenStorageBackedBigInt(uint64(chainIdOffset)),
 		backingStorage.OpenStorageBackedBytes(chainConfigSubspace),
 		backingStorage.OpenStorageBackedUint64(uint64(genesisBlockNumOffset)),
@@ -225,14 +225,14 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 	if desiredArbosVersion >= 2 {
 		initialRewardsRecipient = initialChainOwner
 	}
-	_ = l1pricing.InitializeL1PricingState(sto.OpenSubStorage(l1PricingSubspace), initialRewardsRecipient, initMessage.InitialL1BaseFee)
-	_ = l2pricing.InitializeL2PricingState(sto.OpenSubStorage(l2PricingSubspace))
-	_ = retryables.InitializeRetryableState(sto.OpenSubStorage(retryablesSubspace))
-	addressTable.Initialize(sto.OpenSubStorage(addressTableSubspace))
-	merkleAccumulator.InitializeMerkleAccumulator(sto.OpenSubStorage(sendMerkleSubspace))
-	blockhash.InitializeBlockhashes(sto.OpenSubStorage(blockhashesSubspace))
+	_ = l1pricing.InitializeL1PricingState(sto.OpenCachedSubStorage(l1PricingSubspace), initialRewardsRecipient, initMessage.InitialL1BaseFee)
+	_ = l2pricing.InitializeL2PricingState(sto.OpenCachedSubStorage(l2PricingSubspace))
+	_ = retryables.InitializeRetryableState(sto.OpenCachedSubStorage(retryablesSubspace))
+	addressTable.Initialize(sto.OpenCachedSubStorage(addressTableSubspace))
+	merkleAccumulator.InitializeMerkleAccumulator(sto.OpenCachedSubStorage(sendMerkleSubspace))
+	blockhash.InitializeBlockhashes(sto.OpenCachedSubStorage(blockhashesSubspace))
 
-	ownersStorage := sto.OpenSubStorage(chainOwnerSubspace)
+	ownersStorage := sto.OpenCachedSubStorage(chainOwnerSubspace)
 	_ = addressSet.Initialize(ownersStorage)
 	_ = addressSet.OpenAddressSet(ownersStorage).Add(initialChainOwner)
 
@@ -277,14 +277,13 @@ func (state *ArbosState) UpgradeArbosVersion(
 			}
 		}
 
-		switch state.arbosVersion {
-		case 1:
-			ensure(state.l1PricingState.SetLastSurplus(common.Big0, 1))
+		nextArbosVersion := state.arbosVersion + 1
+		switch nextArbosVersion {
 		case 2:
+			ensure(state.l1PricingState.SetLastSurplus(common.Big0, 1))
+		case 3:
 			ensure(state.l1PricingState.SetPerBatchGasCost(0))
 			ensure(state.l1PricingState.SetAmortizedCostCapBips(math.MaxUint64))
-		case 3:
-			// no state changes needed
 		case 4:
 			// no state changes needed
 		case 5:
@@ -296,18 +295,12 @@ func (state *ArbosState) UpgradeArbosVersion(
 		case 8:
 			// no state changes needed
 		case 9:
+			// no state changes needed
+		case 10:
 			ensure(state.l1PricingState.SetL1FeesAvailable(stateDB.GetBalance(
 				l1pricing.L1PricerFundsPoolAddress,
 			)))
-		case 10:
-			if !chainConfig.DebugMode() {
-				// This upgrade isn't finalized so we only want to support it for testing
-				return fmt.Errorf(
-					"the chain is upgrading to unsupported ArbOS version %v, %w",
-					state.arbosVersion+1,
-					ErrFatalNodeOutOfDate,
-				)
-			}
+		case 11:
 			// Update the PerBatchGasCost to a more accurate value compared to the old v6 default.
 			ensure(state.l1PricingState.SetPerBatchGasCost(l1pricing.InitialPerBatchGasCostV12))
 
@@ -323,25 +316,30 @@ func (state *ArbosState) UpgradeArbosVersion(
 			if !firstTime {
 				ensure(state.chainOwners.ClearList())
 			}
-		case 11:
+		// ArbOS versions 12 through 19 are left to Orbit chains for custom upgrades.
+		case 20:
 			if !chainConfig.DebugMode() {
 				// This upgrade isn't finalized so we only want to support it for testing
 				return fmt.Errorf(
 					"the chain is upgrading to unsupported ArbOS version %v, %w",
-					state.arbosVersion+1,
+					nextArbosVersion,
 					ErrFatalNodeOutOfDate,
 				)
 			}
 			// Update Brotli compression level for fast compression from 0 to 1
 			ensure(state.SetBrotliCompressionLevel(1))
 		default:
-			return fmt.Errorf(
-				"the chain is upgrading to unsupported ArbOS version %v, %w",
-				state.arbosVersion+1,
-				ErrFatalNodeOutOfDate,
-			)
+			if nextArbosVersion >= 12 && state.arbosVersion < 20 {
+				// ArbOS versions 12 through 19 are left to Orbit chains for custom upgrades.
+			} else {
+				return fmt.Errorf(
+					"the chain is upgrading to unsupported ArbOS version %v, %w",
+					nextArbosVersion,
+					ErrFatalNodeOutOfDate,
+				)
+			}
 		}
-		state.arbosVersion++
+		state.arbosVersion = nextArbosVersion
 	}
 
 	if firstTime && upgradeTo >= 6 {
@@ -428,7 +426,7 @@ func (state *ArbosState) ChainOwners() *addressSet.AddressSet {
 
 func (state *ArbosState) SendMerkleAccumulator() *merkleAccumulator.MerkleAccumulator {
 	if state.sendMerkle == nil {
-		state.sendMerkle = merkleAccumulator.OpenMerkleAccumulator(state.backingStorage.OpenSubStorage(sendMerkleSubspace))
+		state.sendMerkle = merkleAccumulator.OpenMerkleAccumulator(state.backingStorage.OpenCachedSubStorage(sendMerkleSubspace))
 	}
 	return state.sendMerkle
 }

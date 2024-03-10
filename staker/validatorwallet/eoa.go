@@ -6,7 +6,6 @@ package validatorwallet
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -28,9 +27,9 @@ type EOA struct {
 	getExtraGas             func() uint64
 }
 
-func NewEOA(dataPoster *dataposter.DataPoster, rollupAddress common.Address, l1Client arbutil.L1Interface, auth *bind.TransactOpts, getExtraGas func() uint64) (*EOA, error) {
+func NewEOA(dataPoster *dataposter.DataPoster, rollupAddress common.Address, l1Client arbutil.L1Interface, getExtraGas func() uint64) (*EOA, error) {
 	return &EOA{
-		auth:          auth,
+		auth:          dataPoster.Auth(),
 		client:        l1Client,
 		rollupAddress: rollupAddress,
 		dataPoster:    dataPoster,
@@ -95,7 +94,7 @@ func (w *EOA) postTransaction(ctx context.Context, baseTx *types.Transaction) (*
 		return nil, err
 	}
 	gas := baseTx.Gas() + w.getExtraGas()
-	newTx, err := w.dataPoster.PostTransaction(ctx, time.Now(), nonce, nil, *baseTx.To(), baseTx.Data(), gas, baseTx.Value())
+	newTx, err := w.dataPoster.PostSimpleTransaction(ctx, nonce, *baseTx.To(), baseTx.Data(), gas, baseTx.Value())
 	if err != nil {
 		return nil, fmt.Errorf("post transaction: %w", err)
 	}

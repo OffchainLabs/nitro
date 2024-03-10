@@ -12,11 +12,9 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -26,19 +24,20 @@ func TestContractTxDeploy(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	nodeconfig := arbnode.ConfigDefaultL2Test()
-	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, nodeconfig, false)
-	defer node.StopAndWait()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.takeOwnership = false
+	cleanup := builder.Build(t)
+	defer cleanup()
 
 	from := common.HexToAddress("0x123412341234")
-	TransferBalanceTo(t, "Faucet", from, big.NewInt(1e18), l2info, client, ctx)
+	builder.L2.TransferBalanceTo(t, "Faucet", from, big.NewInt(1e18), builder.L2Info)
 
 	for stateNonce := uint64(0); stateNonce < 2; stateNonce++ {
-		pos, err := node.TxStreamer.GetMessageCount()
+		pos, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
 		Require(t, err)
 		var delayedMessagesRead uint64
 		if pos > 0 {
-			lastMessage, err := node.TxStreamer.GetMessage(pos - 1)
+			lastMessage, err := builder.L2.ConsensusNode.TxStreamer.GetMessage(pos - 1)
 			Require(t, err)
 			delayedMessagesRead = lastMessage.DelayedMessagesRead
 		}
@@ -64,13 +63,13 @@ func TestContractTxDeploy(t *testing.T) {
 			Data:      deployCode,
 		}
 		l2Msg := []byte{arbos.L2MessageKind_ContractTx}
-		l2Msg = append(l2Msg, math.U256Bytes(arbmath.UintToBig(contractTx.Gas))...)
-		l2Msg = append(l2Msg, math.U256Bytes(contractTx.GasFeeCap)...)
+		l2Msg = append(l2Msg, arbmath.Uint64ToU256Bytes(contractTx.Gas)...)
+		l2Msg = append(l2Msg, arbmath.U256Bytes(contractTx.GasFeeCap)...)
 		l2Msg = append(l2Msg, common.Hash{}.Bytes()...) // to is zero, translated into nil
-		l2Msg = append(l2Msg, math.U256Bytes(contractTx.Value)...)
+		l2Msg = append(l2Msg, arbmath.U256Bytes(contractTx.Value)...)
 		l2Msg = append(l2Msg, contractTx.Data...)
 
-		err = node.TxStreamer.AddMessages(pos, true, []arbostypes.MessageWithMetadata{
+		err = builder.L2.ConsensusNode.TxStreamer.AddMessages(pos, true, []arbostypes.MessageWithMetadata{
 			{
 				Message: &arbostypes.L1IncomingMessage{
 					Header: &arbostypes.L1IncomingMessageHeader{
@@ -91,7 +90,7 @@ func TestContractTxDeploy(t *testing.T) {
 
 		txHash := types.NewTx(contractTx).Hash()
 		t.Log("made contract tx", contractTx, "with hash", txHash)
-		receipt, err := WaitForTx(ctx, client, txHash, time.Second*10)
+		receipt, err := WaitForTx(ctx, builder.L2.Client, txHash, time.Second*10)
 		Require(t, err)
 		if receipt.Status != types.ReceiptStatusSuccessful {
 			Fatal(t, "Receipt has non-successful status", receipt.Status)
@@ -104,7 +103,7 @@ func TestContractTxDeploy(t *testing.T) {
 		t.Log("deployed contract", receipt.ContractAddress, "from address", from, "with nonce", stateNonce)
 		stateNonce++
 
-		code, err := client.CodeAt(ctx, receipt.ContractAddress, nil)
+		code, err := builder.L2.Client.CodeAt(ctx, receipt.ContractAddress, nil)
 		Require(t, err)
 		if !bytes.Equal(code, []byte{0xFE}) {
 			Fatal(t, "expected contract", receipt.ContractAddress, "code of 0xFE but got", hex.EncodeToString(code))

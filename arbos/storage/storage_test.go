@@ -1,11 +1,16 @@
 package storage
 
 import (
+	"bytes"
+	"fmt"
 	"math/big"
+	"math/rand"
+	"sync"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -48,7 +53,7 @@ func TestStorageBackedBigInt(t *testing.T) {
 			t.Fatal(err)
 		}
 		// Verify that our encoding matches geth's signed complement impl
-		expectedRawVal := common.BigToHash(math.U256(new(big.Int).Set(in)))
+		expectedRawVal := common.BigToHash(arbmath.U256(in))
 		if rawVal != expectedRawVal {
 			t.Fatal("for input", in, "expected raw value", expectedRawVal, "but got", rawVal)
 		}
@@ -89,5 +94,75 @@ func TestStorageBackedBigInt(t *testing.T) {
 		requirePanic(t, in, func() {
 			_ = sbbi.SetChecked(in)
 		})
+	}
+}
+
+func TestOpenCachedSubStorage(t *testing.T) {
+	s := NewMemoryBacked(burn.NewSystemBurner(nil, false))
+	var subSpaceIDs [][]byte
+	for i := 0; i < 20; i++ {
+		subSpaceIDs = append(subSpaceIDs, []byte{byte(rand.Intn(0xff))})
+	}
+	var expectedKeys [][]byte
+	for _, subSpaceID := range subSpaceIDs {
+		expectedKeys = append(expectedKeys, crypto.Keccak256(s.storageKey, subSpaceID))
+	}
+	n := len(subSpaceIDs) * 50
+	start := make(chan struct{})
+	errs := make(chan error, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		j := i % len(subSpaceIDs)
+		subSpaceID, expectedKey := subSpaceIDs[j], expectedKeys[j]
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			ss := s.OpenCachedSubStorage(subSpaceID)
+			if !bytes.Equal(ss.storageKey, expectedKey) {
+				errs <- fmt.Errorf("unexpected storage key, want: %v, have: %v", expectedKey, ss.storageKey)
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	select {
+	case err := <-errs:
+		t.Fatal(err)
+	default:
+	}
+}
+
+func TestMapAddressCache(t *testing.T) {
+	s := NewMemoryBacked(burn.NewSystemBurner(nil, false))
+	var keys []common.Hash
+	for i := 0; i < 20; i++ {
+		keys = append(keys, common.BytesToHash([]byte{byte(rand.Intn(0xff))}))
+	}
+	var expectedMapped []common.Hash
+	for _, key := range keys {
+		expectedMapped = append(expectedMapped, s.mapAddress(key))
+	}
+	n := len(keys) * 50
+	start := make(chan struct{})
+	errs := make(chan error, n)
+	var wg sync.WaitGroup
+	for i := 0; i < n; i++ {
+		j := i % len(keys)
+		key, expected := keys[j], expectedMapped[j]
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			<-start
+			mapped := s.mapAddress(key)
+			if !bytes.Equal(mapped.Bytes(), expected.Bytes()) {
+				errs <- fmt.Errorf("unexpected storage key, want: %v, have: %v", expected, mapped)
+			}
+		}()
+	}
+	close(start)
+	wg.Wait()
+	if len(errs) > 0 {
+		t.Fatal(<-errs)
 	}
 }

@@ -52,7 +52,7 @@ func makeCgroupsTestDir(cgroupDir string) cgroupsMemoryFiles {
 func TestCgroupsFailIfCantOpen(t *testing.T) {
 	testFiles := makeCgroupsTestDir(t.TempDir())
 	c := newCgroupsMemoryLimitChecker(testFiles, 1024*1024*512)
-	if _, err := c.isLimitExceeded(); err == nil {
+	if _, err := c.IsLimitExceeded(); err == nil {
 		t.Fatal("Should fail open if can't read files")
 	}
 }
@@ -124,7 +124,7 @@ func TestCgroupsMemoryLimit(t *testing.T) {
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
 			testFiles := makeCgroupsTestDir(t.TempDir())
-			memLimit, err := parseMemLimit(tc.memLimit)
+			memLimit, err := ParseMemLimit(tc.memLimit)
 			if err != nil {
 				t.Fatalf("Parsing memory limit failed: %v", err)
 			}
@@ -132,12 +132,12 @@ func TestCgroupsMemoryLimit(t *testing.T) {
 			if err := updateFakeCgroupFiles(c, tc.sysLimit, tc.usage, tc.inactive, tc.active); err != nil {
 				t.Fatalf("Updating cgroup files: %v", err)
 			}
-			exceeded, err := c.isLimitExceeded()
+			exceeded, err := c.IsLimitExceeded()
 			if err != nil {
 				t.Fatalf("Checking if limit exceeded: %v", err)
 			}
 			if exceeded != tc.want {
-				t.Errorf("isLimitExceeded() = %t, want %t", exceeded, tc.want)
+				t.Errorf("IsLimitExceeded() = %t, want %t", exceeded, tc.want)
 			}
 		},
 		)

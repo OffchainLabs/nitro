@@ -75,7 +75,7 @@ const (
 	InitialInertia            = 10
 	InitialPerUnitReward      = 10
 	InitialPerBatchGasCostV6  = 100_000
-	InitialPerBatchGasCostV12 = 210_000 // overriden as part of the upgrade
+	InitialPerBatchGasCostV12 = 210_000 // overridden as part of the upgrade
 )
 
 // one minute at 100000 bytes / sec
@@ -83,7 +83,7 @@ var InitialEquilibrationUnitsV0 = arbmath.UintToBig(60 * params.TxDataNonZeroGas
 var InitialEquilibrationUnitsV6 = arbmath.UintToBig(params.TxDataNonZeroGasEIP2028 * 10000000)
 
 func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient common.Address, initialL1BaseFee *big.Int) error {
-	bptStorage := sto.OpenSubStorage(BatchPosterTableKey)
+	bptStorage := sto.OpenCachedSubStorage(BatchPosterTableKey)
 	if err := InitializeBatchPostersTable(bptStorage); err != nil {
 		return err
 	}
@@ -118,7 +118,7 @@ func InitializeL1PricingState(sto *storage.Storage, initialRewardsRecipient comm
 func OpenL1PricingState(sto *storage.Storage) *L1PricingState {
 	return &L1PricingState{
 		sto,
-		OpenBatchPostersTable(sto.OpenSubStorage(BatchPosterTableKey)),
+		OpenBatchPostersTable(sto.OpenCachedSubStorage(BatchPosterTableKey)),
 		sto.OpenStorageBackedAddress(payRewardsToOffset),
 		sto.OpenStorageBackedBigUint(equilibrationUnitsOffset),
 		sto.OpenStorageBackedUint64(inertiaOffset),
@@ -146,10 +146,6 @@ func (ps *L1PricingState) SetPayRewardsTo(addr common.Address) error {
 	return ps.payRewardsTo.Set(addr)
 }
 
-func (ps *L1PricingState) GetRewardsRecepient() (common.Address, error) {
-	return ps.payRewardsTo.Get()
-}
-
 func (ps *L1PricingState) EquilibrationUnits() (*big.Int, error) {
 	return ps.equilibrationUnits.Get()
 }
@@ -172,10 +168,6 @@ func (ps *L1PricingState) PerUnitReward() (uint64, error) {
 
 func (ps *L1PricingState) SetPerUnitReward(weiPerUnit uint64) error {
 	return ps.perUnitReward.Set(weiPerUnit)
-}
-
-func (ps *L1PricingState) GetRewardsRate() (uint64, error) {
-	return ps.perUnitReward.Get()
 }
 
 func (ps *L1PricingState) LastUpdateTime() (uint64, error) {

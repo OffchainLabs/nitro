@@ -8,14 +8,22 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math/big"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/andybalholm/brotli"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/dataposter"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/util/redisutil"
 )
 
@@ -27,10 +35,68 @@ func TestRedisBatchPosterParallel(t *testing.T) {
 	testBatchPosterParallel(t, true)
 }
 
+func addNewBatchPoster(ctx context.Context, t *testing.T, builder *NodeBuilder, address common.Address) {
+	t.Helper()
+	upgradeExecutor, err := upgrade_executorgen.NewUpgradeExecutor(builder.L2.ConsensusNode.DeployInfo.UpgradeExecutor, builder.L1.Client)
+	if err != nil {
+		t.Fatal("Failed to get new upgrade executor", err)
+	}
+	sequencerInboxABI, err := abi.JSON(strings.NewReader(bridgegen.SequencerInboxABI))
+	if err != nil {
+		t.Fatal("Failed to parse sequencer inbox abi", err)
+	}
+	setIsBatchPoster, err := sequencerInboxABI.Pack("setIsBatchPoster", address, true)
+	if err != nil {
+		t.Fatal("Failed to pack setIsBatchPoster", err)
+	}
+	ownerOpts := builder.L1Info.GetDefaultTransactOpts("RollupOwner", ctx)
+	tx, err := upgradeExecutor.ExecuteCall(
+		&ownerOpts,
+		builder.L1Info.GetAddress("SequencerInbox"),
+		setIsBatchPoster)
+	if err != nil {
+		t.Fatalf("Error creating transaction to set batch poster: %v", err)
+	}
+	if _, err := builder.L1.EnsureTxSucceeded(tx); err != nil {
+		t.Fatalf("Error setting batch poster: %v", err)
+	}
+}
+
+func externalSignerTestCfg(addr common.Address) (*dataposter.ExternalSignerCfg, error) {
+	cp, err := externalsignertest.CertPaths()
+	if err != nil {
+		return nil, fmt.Errorf("getting certificates path: %w", err)
+	}
+	return &dataposter.ExternalSignerCfg{
+		Address:          common.Bytes2Hex(addr.Bytes()),
+		URL:              externalsignertest.SignerURL,
+		Method:           externalsignertest.SignerMethod,
+		RootCA:           cp.ServerCert,
+		ClientCert:       cp.ClientCert,
+		ClientPrivateKey: cp.ClientKey,
+	}, nil
+}
+
 func testBatchPosterParallel(t *testing.T, useRedis bool) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	httpSrv, srv := externalsignertest.NewServer(ctx, t)
+	cp, err := externalsignertest.CertPaths()
+	if err != nil {
+		t.Fatalf("Error getting cert paths: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := httpSrv.Shutdown(ctx); err != nil {
+			t.Fatalf("Error shutting down http server: %v", err)
+		}
+	})
+	go func() {
+		log.Debug("Server is listening on port 1234...")
+		if err := httpSrv.ListenAndServeTLS(cp.ServerCert, cp.ServerKey); err != nil && err != http.ErrServerClosed {
+			log.Debug("ListenAndServeTLS() failed", "error", err)
+			return
+		}
+	}()
 
 	var redisUrl string
 	if useRedis {
@@ -45,56 +111,83 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 		parallelBatchPosters = 4
 	}
 
-	conf := arbnode.ConfigDefaultL1Test()
-	conf.BatchPoster.Enable = false
-	conf.BatchPoster.RedisUrl = redisUrl
-	l2info, nodeA, l2clientA, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, nil, nil)
-	defer requireClose(t, l1stack)
-	defer nodeA.StopAndWait()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.nodeConfig.BatchPoster.Enable = false
+	builder.nodeConfig.BatchPoster.RedisUrl = redisUrl
+	signerCfg, err := externalSignerTestCfg(srv.Address)
+	if err != nil {
+		t.Fatalf("Error getting external signer config: %v", err)
+	}
+	builder.nodeConfig.BatchPoster.DataPoster.ExternalSigner = *signerCfg
 
-	l2clientB, nodeB := Create2ndNode(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, nil)
-	defer nodeB.StopAndWait()
+	cleanup := builder.Build(t)
+	defer cleanup()
+	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
+	defer cleanupB()
+	builder.L2Info.GenerateAccount("User2")
 
-	l2info.GenerateAccount("User2")
+	addNewBatchPoster(ctx, t, builder, srv.Address)
+
+	builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
+		builder.L1Info.PrepareTxTo("Faucet", &srv.Address, 30000, big.NewInt(1e18), nil)})
 
 	var txs []*types.Transaction
 
 	for i := 0; i < 100; i++ {
-		tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, common.Big1, nil)
+		tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, common.Big1, nil)
 		txs = append(txs, tx)
 
-		err := l2clientA.SendTransaction(ctx, tx)
+		err := builder.L2.Client.SendTransaction(ctx, tx)
 		Require(t, err)
 	}
 
 	for _, tx := range txs {
-		_, err := EnsureTxSucceeded(ctx, l2clientA, tx)
+		_, err := builder.L2.EnsureTxSucceeded(tx)
 		Require(t, err)
 	}
 
 	firstTxData, err := txs[0].MarshalBinary()
 	Require(t, err)
-	seqTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
-	conf.BatchPoster.Enable = true
-	conf.BatchPoster.MaxSize = len(firstTxData) * 2
-	startL1Block, err := l1client.BlockNumber(ctx)
+	seqTxOpts := builder.L1Info.GetDefaultTransactOpts("Sequencer", ctx)
+	builder.nodeConfig.BatchPoster.Enable = true
+	builder.nodeConfig.BatchPoster.MaxSize = len(firstTxData) * 2
+	startL1Block, err := builder.L1.Client.BlockNumber(ctx)
 	Require(t, err)
+	parentChainID, err := builder.L1.Client.ChainID(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get parent chain id: %v", err)
+	}
 	for i := 0; i < parallelBatchPosters; i++ {
 		// Make a copy of the batch poster config so NewBatchPoster calling Validate() on it doesn't race
-		batchPosterConfig := conf.BatchPoster
-		batchPoster, err := arbnode.NewBatchPoster(ctx, nil, nodeA.L1Reader, nodeA.InboxTracker, nodeA.TxStreamer, nodeA.SyncMonitor, func() *arbnode.BatchPosterConfig { return &batchPosterConfig }, nodeA.DeployInfo, &seqTxOpts, nil, nil)
+		batchPosterConfig := builder.nodeConfig.BatchPoster
+		batchPoster, err := arbnode.NewBatchPoster(ctx,
+			&arbnode.BatchPosterOpts{
+				DataPosterDB:  nil,
+				L1Reader:      builder.L2.ConsensusNode.L1Reader,
+				Inbox:         builder.L2.ConsensusNode.InboxTracker,
+				Streamer:      builder.L2.ConsensusNode.TxStreamer,
+				VersionGetter: builder.L2.ExecNode,
+				SyncMonitor:   builder.L2.ConsensusNode.SyncMonitor,
+				Config:        func() *arbnode.BatchPosterConfig { return &batchPosterConfig },
+				DeployInfo:    builder.L2.ConsensusNode.DeployInfo,
+				TransactOpts:  &seqTxOpts,
+				DAWriter:      nil,
+				AvailDAWriter: nil,
+				ParentChainID: parentChainID,
+			},
+		)
 		Require(t, err)
 		batchPoster.Start(ctx)
 		defer batchPoster.StopAndWait()
 	}
 
 	lastTxHash := txs[len(txs)-1].Hash()
-	for i := 90; i > 0; i-- {
-		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
-			l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
+	for i := 90; i >= 0; i-- {
+		builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
+			builder.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
 		})
 		time.Sleep(500 * time.Millisecond)
-		_, err := l2clientB.TransactionReceipt(ctx, lastTxHash)
+		_, err := testClientB.Client.TransactionReceipt(ctx, lastTxHash)
 		if err == nil {
 			break
 		}
@@ -103,13 +196,15 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 		}
 	}
 
+	// TODO: factor this out in separate test case and skip it or delete this
+	// code entirely.
 	// I've locally confirmed that this passes when the clique period is set to 1.
 	// However, setting the clique period to 1 slows everything else (including the L1 deployment for this test) down to a crawl.
 	if false {
 		// Make sure the batch poster is able to post multiple batches in one block
-		endL1Block, err := l1client.BlockNumber(ctx)
+		endL1Block, err := builder.L1.Client.BlockNumber(ctx)
 		Require(t, err)
-		seqInbox, err := arbnode.NewSequencerInbox(l1client, nodeA.DeployInfo.SequencerInbox, 0)
+		seqInbox, err := arbnode.NewSequencerInbox(builder.L1.Client, builder.L2.ConsensusNode.DeployInfo.SequencerInbox, 0)
 		Require(t, err)
 		batches, err := seqInbox.LookupBatchesInRange(ctx, new(big.Int).SetUint64(startL1Block), new(big.Int).SetUint64(endL1Block))
 		Require(t, err)
@@ -129,7 +224,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 		}
 	}
 
-	l2balance, err := l2clientB.BalanceAt(ctx, l2info.GetAddress("User2"), nil)
+	l2balance, err := testClientB.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
 	Require(t, err)
 
 	if l2balance.Sign() == 0 {
@@ -142,26 +237,25 @@ func TestBatchPosterLargeTx(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	conf := arbnode.ConfigDefaultL1Test()
-	conf.Sequencer.MaxTxDataSize = 110000
-	l2info, nodeA, l2clientA, l1info, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, nil, nil)
-	defer requireClose(t, l1stack)
-	defer nodeA.StopAndWait()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.execConfig.Sequencer.MaxTxDataSize = 110000
+	cleanup := builder.Build(t)
+	defer cleanup()
 
-	l2clientB, nodeB := Create2ndNode(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, nil)
-	defer nodeB.StopAndWait()
+	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
+	defer cleanupB()
 
 	data := make([]byte, 100000)
 	_, err := rand.Read(data)
 	Require(t, err)
-	faucetAddr := l2info.GetAddress("Faucet")
-	gas := l2info.TransferGas + 20000*uint64(len(data))
-	tx := l2info.PrepareTxTo("Faucet", &faucetAddr, gas, common.Big0, data)
-	err = l2clientA.SendTransaction(ctx, tx)
+	faucetAddr := builder.L2Info.GetAddress("Faucet")
+	gas := builder.L2Info.TransferGas + 20000*uint64(len(data))
+	tx := builder.L2Info.PrepareTxTo("Faucet", &faucetAddr, gas, common.Big0, data)
+	err = builder.L2.Client.SendTransaction(ctx, tx)
 	Require(t, err)
-	receiptA, err := EnsureTxSucceeded(ctx, l2clientA, tx)
+	receiptA, err := builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
-	receiptB, err := EnsureTxSucceededWithTimeout(ctx, l2clientB, tx, time.Second*30)
+	receiptB, err := testClientB.EnsureTxSucceededWithTimeout(tx, time.Second*30)
 	Require(t, err)
 	if receiptA.BlockHash != receiptB.BlockHash {
 		Fatal(t, "receipt A block hash", receiptA.BlockHash, "does not equal receipt B block hash", receiptB.BlockHash)
@@ -173,25 +267,25 @@ func TestBatchPosterKeepsUp(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	conf := arbnode.ConfigDefaultL1Test()
-	conf.BatchPoster.CompressionLevel = brotli.BestCompression
-	conf.BatchPoster.MaxDelay = time.Hour
-	conf.RPC.RPCTxFeeCap = 1000.
-	l2info, nodeA, l2clientA, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, conf, nil, nil)
-	defer requireClose(t, l1stack)
-	defer nodeA.StopAndWait()
-	l2info.GasPrice = big.NewInt(100e9)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.nodeConfig.BatchPoster.CompressionLevel = brotli.BestCompression
+	builder.nodeConfig.BatchPoster.MaxDelay = time.Hour
+	builder.execConfig.RPC.RPCTxFeeCap = 1000.
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	builder.L2Info.GasPrice = big.NewInt(100e9)
 
 	go func() {
 		data := make([]byte, 90000)
 		_, err := rand.Read(data)
 		Require(t, err)
 		for {
-			gas := l2info.TransferGas + 20000*uint64(len(data))
-			tx := l2info.PrepareTx("Faucet", "Faucet", gas, common.Big0, data)
-			err = l2clientA.SendTransaction(ctx, tx)
+			gas := builder.L2Info.TransferGas + 20000*uint64(len(data))
+			tx := builder.L2Info.PrepareTx("Faucet", "Faucet", gas, common.Big0, data)
+			err = builder.L2.Client.SendTransaction(ctx, tx)
 			Require(t, err)
-			_, err := EnsureTxSucceeded(ctx, l2clientA, tx)
+			_, err := builder.L2.EnsureTxSucceeded(tx)
 			Require(t, err)
 		}
 	}()
@@ -199,11 +293,11 @@ func TestBatchPosterKeepsUp(t *testing.T) {
 	start := time.Now()
 	for {
 		time.Sleep(time.Second)
-		batches, err := nodeA.InboxTracker.GetBatchCount()
+		batches, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
 		Require(t, err)
-		postedMessages, err := nodeA.InboxTracker.GetBatchMessageCount(batches - 1)
+		postedMessages, err := builder.L2.ConsensusNode.InboxTracker.GetBatchMessageCount(batches - 1)
 		Require(t, err)
-		haveMessages, err := nodeA.TxStreamer.GetMessageCount()
+		haveMessages, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
 		Require(t, err)
 		duration := time.Since(start)
 		fmt.Printf("batches posted: %v over %v (%.2f batches/second)\n", batches, duration, float64(batches)/(float64(duration)/float64(time.Second)))

@@ -20,9 +20,9 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
-	"github.com/offchainlabs/nitro/arbnode/execution"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/redisutil"
@@ -41,7 +41,7 @@ type SeqCoordinator struct {
 
 	sync             *SyncMonitor
 	streamer         *TransactionStreamer
-	sequencer        *execution.Sequencer
+	sequencer        execution.ExecutionSequencer
 	delayedSequencer *DelayedSequencer
 	signer           *signature.SignVerify
 	config           SeqCoordinatorConfig // warning: static, don't use for hot reloadable fields
@@ -132,7 +132,14 @@ var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
 	Signer:            signature.DefaultSignVerifyConfig,
 }
 
-func NewSeqCoordinator(dataSigner signature.DataSignerFunc, bpvalidator *contracts.AddressVerifier, streamer *TransactionStreamer, sequencer *execution.Sequencer, sync *SyncMonitor, config SeqCoordinatorConfig) (*SeqCoordinator, error) {
+func NewSeqCoordinator(
+	dataSigner signature.DataSignerFunc,
+	bpvalidator *contracts.AddressVerifier,
+	streamer *TransactionStreamer,
+	sequencer execution.ExecutionSequencer,
+	sync *SyncMonitor,
+	config SeqCoordinatorConfig,
+) (*SeqCoordinator, error) {
 	redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl)
 	if err != nil {
 		return nil, err
@@ -148,9 +155,6 @@ func NewSeqCoordinator(dataSigner signature.DataSignerFunc, bpvalidator *contrac
 		sequencer:        sequencer,
 		config:           config,
 		signer:           signer,
-	}
-	if sequencer != nil {
-		sequencer.Pause()
 	}
 	streamer.SetSeqCoordinator(coordinator)
 	return coordinator, nil
@@ -646,6 +650,8 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 					log.Warn("failed sequencing delayed messages after catching lock", "err", err)
 				}
 			}
+			// This should be redundant now that even non-primary sequencers broadcast over the feed,
+			// but the backlog efficiently deduplicates messages, so better safe than sorry.
 			err = c.streamer.PopulateFeedBacklog()
 			if err != nil {
 				log.Warn("failed to populate the feed backlog on lockout acquisition", "err", err)

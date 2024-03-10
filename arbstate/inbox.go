@@ -8,25 +8,29 @@ import (
 	"context"
 	"encoding/binary"
 	"errors"
+	"fmt"
 	"io"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
 
 	"github.com/offchainlabs/nitro/arbcompress"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/das/avail"
 	"github.com/offchainlabs/nitro/das/dastree"
+	"github.com/offchainlabs/nitro/util/blobs"
 	"github.com/offchainlabs/nitro/zeroheavy"
 )
 
 type InboxBackend interface {
-	PeekSequencerInbox() ([]byte, error)
+	PeekSequencerInbox() ([]byte, common.Hash, error)
 
 	GetSequencerInboxPosition() uint64
 	AdvanceSequencerInbox()
@@ -35,6 +39,14 @@ type InboxBackend interface {
 	SetPositionWithinMessage(pos uint64)
 
 	ReadDelayedInbox(seqNum uint64) (*arbostypes.L1IncomingMessage, error)
+}
+
+type BlobReader interface {
+	GetBlobs(
+		ctx context.Context,
+		batchBlockHash common.Hash,
+		versionedHashes []common.Hash,
+	) ([]kzg4844.Blob, error)
 }
 
 type sequencerMessage struct {
@@ -51,7 +63,7 @@ const maxZeroheavyDecompressedLen = 101*MaxDecompressedLen/100 + 64
 const MaxSegmentsPerSequencerMessage = 100 * 1024
 const MinLifetimeSecondsForDataAvailabilityCert = 7 * 24 * 60 * 60 // one week
 
-func parseSequencerMessage(ctx context.Context, batchNum uint64, data []byte, dasReader DataAvailabilityReader, availDAReader avail.DataAvailabilityReader, keysetValidationMode KeysetValidationMode) (*sequencerMessage, error) {
+func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash common.Hash, data []byte, dasReader DataAvailabilityReader, availDAReader avail.DataAvailabilityReader, blobReader BlobReader, keysetValidationMode KeysetValidationMode) (*sequencerMessage, error) {
 	if len(data) < 40 {
 		return nil, errors.New("sequencer message missing L1 header")
 	}
@@ -65,6 +77,17 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, data []byte, da
 	}
 	payload := data[40:]
 
+	// Stage 0: Check if our node is out of date and we don't understand this batch type
+	// If the parent chain sequencer inbox smart contract authenticated this batch,
+	// an unknown header byte must mean that this node is out of date,
+	// because the smart contract understands the header byte and this node doesn't.
+	if len(payload) > 0 && IsL1AuthenticatedMessageHeaderByte(payload[0]) && !IsKnownHeaderByte(payload[0]) {
+		return nil, fmt.Errorf("%w: batch has unsupported authenticated header byte 0x%02x", arbosState.ErrFatalNodeOutOfDate, payload[0])
+	}
+
+	// Stage 1: Extract the payload from any data availability header.
+	// It's important that multiple DAS strategies can't both be invoked in the same batch,
+	// as these headers are validated by the sequencer inbox and not other DASs.
 	if len(payload) > 0 && IsDASMessageHeaderByte(payload[0]) {
 		if dasReader == nil {
 			log.Error("No DAS Reader configured, but sequencer message found with DAS header")
@@ -77,6 +100,29 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, data []byte, da
 			if payload == nil {
 				return parsedMsg, nil
 			}
+		}
+	} else if len(payload) > 0 && IsBlobHashesHeaderByte(payload[0]) {
+		blobHashes := payload[1:]
+		if len(blobHashes)%len(common.Hash{}) != 0 {
+			return nil, fmt.Errorf("blob batch data is not a list of hashes as expected")
+		}
+		versionedHashes := make([]common.Hash, len(blobHashes)/len(common.Hash{}))
+		for i := 0; i*32 < len(blobHashes); i += 1 {
+			copy(versionedHashes[i][:], blobHashes[i*32:(i+1)*32])
+		}
+
+		if blobReader == nil {
+			return nil, errors.New("blob batch payload was encountered but no BlobReader was configured")
+		}
+
+		kzgBlobs, err := blobReader.GetBlobs(ctx, batchBlockHash, versionedHashes)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get blobs: %w", err)
+		}
+		payload, err = blobs.DecodeBlobs(kzgBlobs)
+		if err != nil {
+			log.Warn("Failed to decode blobs", "batchBlockHash", batchBlockHash, "versionedHashes", versionedHashes, "err", err)
+			return parsedMsg, nil
 		}
 	}
 
@@ -95,6 +141,10 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, data []byte, da
 		}
 	}
 
+	// At this point, `payload` has not been validated by the sequencer inbox at all.
+	// It's not safe to trust any part of the payload from this point onwards.
+
+	// Stage 2: If enabled, decode the zero heavy payload (saves gas based on calldata charging).
 	if len(payload) > 0 && IsZeroheavyEncodedHeaderByte(payload[0]) {
 		pl, err := io.ReadAll(io.LimitReader(zeroheavy.NewZeroheavyDecoder(bytes.NewReader(payload[1:])), int64(maxZeroheavyDecompressedLen)))
 		if err != nil {
@@ -104,6 +154,7 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, data []byte, da
 		payload = pl
 	}
 
+	// Stage 3: Decompress the brotli payload and fill the parsedMsg.segments list.
 	if len(payload) > 0 && IsBrotliMessageHeaderByte(payload[0]) {
 		decompressed, err := arbcompress.Decompress(payload[1:], MaxDecompressedLen)
 		if err == nil {
@@ -308,6 +359,7 @@ type inboxMultiplexer struct {
 	delayedMessagesRead       uint64
 	dasReader                 DataAvailabilityReader
 	availDAReader             avail.DataAvailabilityReader
+	blobReader                BlobReader
 	cachedSequencerMessage    *sequencerMessage
 	cachedSequencerMessageNum uint64
 	cachedSegmentNum          uint64
@@ -317,12 +369,13 @@ type inboxMultiplexer struct {
 	keysetValidationMode      KeysetValidationMode
 }
 
-func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dasReader DataAvailabilityReader, availDAReader avail.DataAvailabilityReader, keysetValidationMode KeysetValidationMode) arbostypes.InboxMultiplexer {
+func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dasReader DataAvailabilityReader, availDAReader avail.DataAvailabilityReader, blobReader BlobReader, keysetValidationMode KeysetValidationMode) arbostypes.InboxMultiplexer {
 	return &inboxMultiplexer{
 		backend:              backend,
 		delayedMessagesRead:  delayedMessagesRead,
 		dasReader:            dasReader,
 		availDAReader:        availDAReader,
+		blobReader:           blobReader,
 		keysetValidationMode: keysetValidationMode,
 	}
 }
@@ -337,13 +390,14 @@ const BatchSegmentKindAdvanceL1BlockNumber uint8 = 4
 // Note: this does *not* return parse errors, those are transformed into invalid messages
 func (r *inboxMultiplexer) Pop(ctx context.Context) (*arbostypes.MessageWithMetadata, error) {
 	if r.cachedSequencerMessage == nil {
-		bytes, realErr := r.backend.PeekSequencerInbox()
+		// Note: batchBlockHash will be zero in the replay binary, but that's fine
+		bytes, batchBlockHash, realErr := r.backend.PeekSequencerInbox()
 		if realErr != nil {
 			return nil, realErr
 		}
 		r.cachedSequencerMessageNum = r.backend.GetSequencerInboxPosition()
 		var err error
-		r.cachedSequencerMessage, err = parseSequencerMessage(ctx, r.cachedSequencerMessageNum, bytes, r.dasReader, r.availDAReader, r.keysetValidationMode)
+		r.cachedSequencerMessage, err = parseSequencerMessage(ctx, r.cachedSequencerMessageNum, batchBlockHash, bytes, r.dasReader, r.availDAReader, r.blobReader, r.keysetValidationMode)
 		if err != nil {
 			return nil, err
 		}
