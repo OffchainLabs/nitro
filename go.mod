@@ -20,7 +20,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.11.10
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.26.9
 	github.com/cavaliergopher/grab/v3 v3.0.1
-	github.com/centrifuge/go-substrate-rpc-client/v4 v4.1.0
+	github.com/centrifuge/go-substrate-rpc-client/v4 v4.2.1
 	github.com/cockroachdb/pebble v0.0.0-20230928194634-aa077af62593
 	github.com/codeclysm/extract/v3 v3.0.2
 	github.com/dgraph-io/badger/v3 v3.2103.2
@@ -226,6 +226,7 @@ require (
 	github.com/miekg/dns v1.1.53 // indirect
 	github.com/mikioh/tcpinfo v0.0.0-20190314235526-30a79bb1804b // indirect
 	github.com/mikioh/tcpopt v0.0.0-20190314235656-172688c1accc // indirect
+	github.com/mimoo/StrobeGo v0.0.0-20210601165009-122bf33a46e0 // indirect
 	github.com/minio/sha256-simd v1.0.1 // indirect
 	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/go-homedir v1.1.0 // indirect
