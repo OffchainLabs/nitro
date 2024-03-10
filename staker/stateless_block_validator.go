@@ -11,6 +11,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/offchainlabs/nitro/das/avail"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator/server_api"
@@ -34,12 +35,13 @@ type StatelessBlockValidator struct {
 
 	recorder execution.ExecutionRecorder
 
-	inboxReader  InboxReaderInterface
-	inboxTracker InboxTrackerInterface
-	streamer     TransactionStreamerInterface
-	db           ethdb.Database
-	daService    arbstate.DataAvailabilityReader
-	blobReader   arbstate.BlobReader
+	inboxReader   InboxReaderInterface
+	inboxTracker  InboxTrackerInterface
+	streamer      TransactionStreamerInterface
+	db            ethdb.Database
+	daService     arbstate.DataAvailabilityReader
+	availDAReader avail.DataAvailabilityReader
+	blobReader    arbstate.BlobReader
 
 	moduleMutex           sync.Mutex
 	currentWasmModuleRoot common.Hash
@@ -222,6 +224,7 @@ func NewStatelessBlockValidator(
 	recorder execution.ExecutionRecorder,
 	arbdb ethdb.Database,
 	das arbstate.DataAvailabilityReader,
+	availDAReader avail.DataAvailabilityReader,
 	blobReader arbstate.BlobReader,
 	config func() *BlockValidatorConfig,
 	stack *node.Node,
@@ -243,6 +246,7 @@ func NewStatelessBlockValidator(
 		streamer:           streamer,
 		db:                 arbdb,
 		daService:          das,
+		availDAReader:      availDAReader,
 		blobReader:         blobReader,
 	}
 	return validator, nil
@@ -293,6 +297,30 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		if len(batch.Data) <= 40 {
 			continue
 		}
+		if arbstate.IsDASMessageHeaderByte(batch.Data[40]) {
+			if v.daService == nil {
+				log.Warn("No DAS configured, but sequencer message found with DAS header")
+			} else {
+				_, err := arbstate.RecoverPayloadFromDasBatch(
+					ctx, batch.Number, batch.Data, v.daService, e.Preimages, arbstate.KeysetValidate,
+				)
+				if err != nil {
+					return err
+				}
+			}
+		}
+
+		if avail.IsAvailMessageHeaderByte(batch.Data[40]) {
+			if v.availDAReader == nil {
+				log.Warn("No avail DA configured, but sequencer message found with availDA header")
+			} else {
+				_, err := arbstate.RecoverPayloadFromAvailBatch(ctx, batch.Number, batch.Data, v.availDAReader, e.Preimages)
+				if err != nil {
+					return err
+				}
+			}
+		}
+
 		if arbstate.IsBlobHashesHeaderByte(batch.Data[40]) {
 			payload := batch.Data[41:]
 			if len(payload)%len(common.Hash{}) != 0 {
@@ -311,18 +339,6 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 			}
 			for i, blob := range blobs {
 				e.Preimages[arbutil.EthVersionedHashPreimageType][versionedHashes[i]] = blob[:]
-			}
-		}
-		if arbstate.IsDASMessageHeaderByte(batch.Data[40]) {
-			if v.daService == nil {
-				log.Warn("No DAS configured, but sequencer message found with DAS header")
-			} else {
-				_, err := arbstate.RecoverPayloadFromDasBatch(
-					ctx, batch.Number, batch.Data, v.daService, e.Preimages, arbstate.KeysetValidate,
-				)
-				if err != nil {
-					return err
-				}
 			}
 		}
 	}

@@ -23,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/das/avail"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/blobs"
 	"github.com/offchainlabs/nitro/zeroheavy"
@@ -62,7 +63,7 @@ const maxZeroheavyDecompressedLen = 101*MaxDecompressedLen/100 + 64
 const MaxSegmentsPerSequencerMessage = 100 * 1024
 const MinLifetimeSecondsForDataAvailabilityCert = 7 * 24 * 60 * 60 // one week
 
-func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash common.Hash, data []byte, dasReader DataAvailabilityReader, blobReader BlobReader, keysetValidationMode KeysetValidationMode) (*sequencerMessage, error) {
+func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash common.Hash, data []byte, dasReader DataAvailabilityReader, availDAReader avail.DataAvailabilityReader, blobReader BlobReader, keysetValidationMode KeysetValidationMode) (*sequencerMessage, error) {
 	if len(data) < 40 {
 		return nil, errors.New("sequencer message missing L1 header")
 	}
@@ -125,6 +126,21 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 		}
 	}
 
+	if len(payload) > 0 && avail.IsAvailMessageHeaderByte(payload[0]) {
+		if availDAReader == nil {
+			log.Error("No Avail Reader configured, but sequencer message found with Avail header")
+		} else {
+			var err error
+			payload, err = RecoverPayloadFromAvailBatch(ctx, batchNum, data, availDAReader, nil)
+			if err != nil {
+				return nil, err
+			}
+			if payload == nil {
+				return parsedMsg, nil
+			}
+		}
+	}
+
 	// At this point, `payload` has not been validated by the sequencer inbox at all.
 	// It's not safe to trust any part of the payload from this point onwards.
 
@@ -173,6 +189,55 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 	}
 
 	return parsedMsg, nil
+}
+
+func RecoverPayloadFromAvailBatch(ctx context.Context, batchNum uint64, sequencerMsg []byte, availDAReader avail.DataAvailabilityReader, preimages map[arbutil.PreimageType]map[common.Hash][]byte) ([]byte, error) {
+	var keccakPreimages map[common.Hash][]byte
+	if preimages != nil {
+		if preimages[arbutil.Keccak256PreimageType] == nil {
+			preimages[arbutil.Keccak256PreimageType] = make(map[common.Hash][]byte)
+		}
+		keccakPreimages = preimages[arbutil.Keccak256PreimageType]
+	}
+
+	buf := bytes.NewBuffer(sequencerMsg[40:])
+
+	header, err := buf.ReadByte()
+	if err != nil {
+		log.Error("Couldn't deserialize Avail header byte", "err", err)
+		return nil, err
+	}
+	if !avail.IsAvailMessageHeaderByte(header) {
+		return nil, errors.New("tried to deserialize a message that doesn't have the Avail header")
+	}
+
+	recordPreimage := func(key common.Hash, value []byte) {
+		keccakPreimages[key] = value
+	}
+
+	blobPointer := avail.BlobPointer{}
+	err = blobPointer.UnmarshalFromBinary(buf.Bytes())
+	if err != nil {
+		log.Error("Couldn't unmarshal Avail blob pointer", "err", err)
+		return nil, err
+	}
+
+	log.Info("Attempting to fetch data for", "batchNum", batchNum, "availBlockHash", blobPointer.BlockHash)
+	payload, err := availDAReader.Read(ctx, blobPointer)
+	if err != nil {
+		log.Error("Failed to resolve blob pointer from avail", "err", err)
+		return nil, err
+	}
+
+	log.Info("Succesfully fetched payload from Avail", "batchNum", batchNum, "availBlockHash", blobPointer.BlockHash)
+
+	log.Info("Recording Sha256 preimage for Avail data")
+
+	if keccakPreimages != nil {
+		log.Info("Data is being recorded into the orcale", "length", len(payload))
+		dastree.RecordHash(recordPreimage, payload)
+	}
+	return payload, nil
 }
 
 func RecoverPayloadFromDasBatch(
@@ -293,6 +358,7 @@ type inboxMultiplexer struct {
 	backend                   InboxBackend
 	delayedMessagesRead       uint64
 	dasReader                 DataAvailabilityReader
+	availDAReader             avail.DataAvailabilityReader
 	blobReader                BlobReader
 	cachedSequencerMessage    *sequencerMessage
 	cachedSequencerMessageNum uint64
@@ -303,11 +369,12 @@ type inboxMultiplexer struct {
 	keysetValidationMode      KeysetValidationMode
 }
 
-func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dasReader DataAvailabilityReader, blobReader BlobReader, keysetValidationMode KeysetValidationMode) arbostypes.InboxMultiplexer {
+func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dasReader DataAvailabilityReader, availDAReader avail.DataAvailabilityReader, blobReader BlobReader, keysetValidationMode KeysetValidationMode) arbostypes.InboxMultiplexer {
 	return &inboxMultiplexer{
 		backend:              backend,
 		delayedMessagesRead:  delayedMessagesRead,
 		dasReader:            dasReader,
+		availDAReader:        availDAReader,
 		blobReader:           blobReader,
 		keysetValidationMode: keysetValidationMode,
 	}
@@ -330,7 +397,7 @@ func (r *inboxMultiplexer) Pop(ctx context.Context) (*arbostypes.MessageWithMeta
 		}
 		r.cachedSequencerMessageNum = r.backend.GetSequencerInboxPosition()
 		var err error
-		r.cachedSequencerMessage, err = parseSequencerMessage(ctx, r.cachedSequencerMessageNum, batchBlockHash, bytes, r.dasReader, r.blobReader, r.keysetValidationMode)
+		r.cachedSequencerMessage, err = parseSequencerMessage(ctx, r.cachedSequencerMessageNum, batchBlockHash, bytes, r.dasReader, r.availDAReader, r.blobReader, r.keysetValidationMode)
 		if err != nil {
 			return nil, err
 		}

@@ -23,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
 	m "github.com/offchainlabs/nitro/broadcaster/message"
+	"github.com/offchainlabs/nitro/das/avail"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/containers"
 )
@@ -33,28 +34,30 @@ var (
 )
 
 type InboxTracker struct {
-	db         ethdb.Database
-	txStreamer *TransactionStreamer
-	mutex      sync.Mutex
-	validator  *staker.BlockValidator
-	das        arbstate.DataAvailabilityReader
-	blobReader arbstate.BlobReader
+	db            ethdb.Database
+	txStreamer    *TransactionStreamer
+	mutex         sync.Mutex
+	validator     *staker.BlockValidator
+	das           arbstate.DataAvailabilityReader
+	availDAReader avail.DataAvailabilityReader
+	blobReader    arbstate.BlobReader
 
 	batchMetaMutex sync.Mutex
 	batchMeta      *containers.LruCache[uint64, BatchMetadata]
 }
 
-func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, das arbstate.DataAvailabilityReader, blobReader arbstate.BlobReader) (*InboxTracker, error) {
+func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, das arbstate.DataAvailabilityReader, availDAReader avail.DataAvailabilityReader, blobReader arbstate.BlobReader) (*InboxTracker, error) {
 	// We support a nil txStreamer for the pruning code
 	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee && das == nil {
 		return nil, errors.New("data availability service required but unconfigured")
 	}
 	tracker := &InboxTracker{
-		db:         db,
-		txStreamer: txStreamer,
-		das:        das,
-		blobReader: blobReader,
-		batchMeta:  containers.NewLruCache[uint64, BatchMetadata](1000),
+		db:            db,
+		txStreamer:    txStreamer,
+		das:           das,
+		availDAReader: availDAReader,
+		blobReader:    blobReader,
+		batchMeta:     containers.NewLruCache[uint64, BatchMetadata](1000),
 	}
 	return tracker, nil
 }
@@ -607,7 +610,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		client: client,
 	}
 
-	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, t.das, t.blobReader, arbstate.KeysetValidate)
+	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, t.das, t.availDAReader, t.blobReader, arbstate.KeysetValidate)
 	batchMessageCounts := make(map[uint64]arbutil.MessageIndex)
 	currentpos := prevbatchmeta.MessageCount + 1
 	for {

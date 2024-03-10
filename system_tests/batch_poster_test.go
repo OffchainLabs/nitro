@@ -172,6 +172,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 				DeployInfo:    builder.L2.ConsensusNode.DeployInfo,
 				TransactOpts:  &seqTxOpts,
 				DAWriter:      nil,
+				AvailDAWriter: nil,
 				ParentChainID: parentChainID,
 			},
 		)

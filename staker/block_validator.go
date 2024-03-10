@@ -752,6 +752,7 @@ validationsLoop:
 				}
 				validatorValidValidationsCounter.Inc(1)
 			}
+			log.Info("Latest Validated Info:", "Start", validationStatus.Entry.Start, "End", validationStatus.Entry.End)
 			err := v.writeLastValidated(validationStatus.Entry.End, wasmRoots)
 			if err != nil {
 				log.Error("failed writing new validated to database", "pos", pos, "err", err)
