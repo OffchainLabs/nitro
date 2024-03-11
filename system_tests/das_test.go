@@ -256,7 +256,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	serverConfig := das.DataAvailabilityConfig{
 		Enable: true,
 
-		LocalCache: das.TestBigCacheConfig,
+		LocalCache: das.TestCacheConfig,
 
 		LocalFileStorage: das.LocalFileStorageConfig{
 			Enable:  true,
