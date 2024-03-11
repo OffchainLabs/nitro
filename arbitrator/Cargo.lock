@@ -174,7 +174,6 @@ dependencies = [
  "hashbrown 0.13.2",
  "itertools 0.10.3",
  "num-traits",
- "rayon",
  "zeroize",
 ]
 
@@ -230,7 +229,6 @@ dependencies = [
  "num-bigint",
  "num-traits",
  "paste",
- "rayon",
  "rustc_version",
  "zeroize",
 ]
@@ -280,7 +278,6 @@ dependencies = [
  "ark-std",
  "derivative",
  "hashbrown 0.13.2",
- "rayon",
 ]
 
 [[package]]
@@ -292,6 +289,7 @@ dependencies = [
  "ark-ff",
  "ark-std",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -337,7 +335,6 @@ checksum = "94893f1e0c6eeab764ade8dc4c0db24caf4fe7cbbaafc0eba0a9030f447b5185"
 dependencies = [
  "num-traits",
  "rand",
- "rayon",
 ]
 
 [[package]]
@@ -1286,7 +1283,6 @@ dependencies = [
  "num-bigint",
  "num-traits",
  "rand_chacha",
- "rayon",
  "serde",
  "sha2 0.10.8",
  "sha3 0.10.8",
@@ -1318,7 +1314,6 @@ dependencies = [
  "jf-utils",
  "num-bigint",
  "rand_chacha",
- "rayon",
 ]
 
 [[package]]
@@ -1331,7 +1326,6 @@ dependencies = [
  "ark-serialize",
  "ark-std",
  "digest 0.10.7",
- "rayon",
  "serde",
  "sha2 0.10.8",
  "tagged-base64",
@@ -2509,6 +2503,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c06d3da6113f116aaee68e4d601191614c9053067f9ab7f6edbcb161237daa54"
 dependencies = [
  "once_cell",
+ "valuable",
+]
+
+[[package]]
+name = "tracing-subscriber"
+version = "0.2.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e0d2eaa99c3c2e41547cfa109e910a68ea03823cccad4a0525dcbc9b01e8c71"
+dependencies = [
+ "tracing-core",
 ]
 
 [[package]]
@@ -2561,6 +2565,12 @@ dependencies = [
  "crypto-common",
  "subtle",
 ]
+
+[[package]]
+name = "valuable"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "830b7e5d4d90034032940e4ace0d9a9a057e7a45cd94e6c007832e39edb82f6d"
 
 [[package]]
 name = "vec_map"
