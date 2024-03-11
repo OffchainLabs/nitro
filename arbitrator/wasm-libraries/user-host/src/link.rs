@@ -193,7 +193,6 @@ pub unsafe extern "C" fn program_internal__set_done(mut status: UserOutcomeKind)
     let program = Program::current();
     let module = program.module;
     let mut outs = program.outs.as_slice();
-
     let mut ink_left = program_ink_left(module);
 
     // apply any early exit codes

@@ -4,7 +4,6 @@
 #![no_main]
 
 extern crate alloc;
-use alloc::vec::Vec;
 
 use stylus_sdk::{
     alloy_primitives::{Address, B256, U256},
