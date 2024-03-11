@@ -1055,6 +1055,38 @@ func TestProgramActivationLogs(t *testing.T) {
 	}
 }
 
+func TestProgramEarlyExit(t *testing.T) {
+	t.Parallel()
+	testEarlyExit(t, true)
+}
+
+func testEarlyExit(t *testing.T, jit bool) {
+	ctx, node, _, l2client, auth, cleanup := setupProgramTest(t, jit)
+	defer cleanup()
+
+	earlyAddress := deployWasm(t, ctx, auth, l2client, "../arbitrator/stylus/tests/exit-early/exit-early.wat")
+	panicAddress := deployWasm(t, ctx, auth, l2client, "../arbitrator/stylus/tests/exit-early/panic-after-write.wat")
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
+	ensure(tx, err)
+
+	// revert with the following data
+	data := append([]byte{0x01}, []byte("private key: https://www.youtube.com/watch?v=dQw4w9WgXcQ")...)
+
+	ensure(mock.CheckRevertData(&auth, earlyAddress, data, data))
+	ensure(mock.CheckRevertData(&auth, panicAddress, data, []byte{}))
+
+	validateBlocks(t, 8, jit, ctx, node, l2client)
+}
+
 func setupProgramTest(t *testing.T, jit bool) (
 	context.Context, *arbnode.Node, *BlockchainTestInfo, *ethclient.Client, bind.TransactOpts, func(),
 ) {

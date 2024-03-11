@@ -114,6 +114,19 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         trace!("write_result", self, &*self.outs(), &[])
     }
 
+    /// Exists program execution early with the given status code.
+    /// If `0`, the program returns successfully with any data supplied by `write_result`.
+    /// Otherwise, the program reverts and treats any `write_result` data as revert data.
+    ///
+    /// The semantics are equivalent to that of the EVM's [`Return`] and [`Revert`] opcodes.
+    /// Note: this function just traces, it's up to the caller to actually perform the exit.
+    ///
+    /// [`Return`]: https://www.evm.codes/#f3
+    /// [`Revert`]: https://www.evm.codes/#fd
+    fn exit_early(&mut self, status: u32) -> Result<(), Self::Err> {
+        trace!("exit_early", self, be!(status), &[])
+    }
+
     /// Reads a 32-byte value from permanent storage. Stylus's storage format is identical to
     /// that of the EVM. This means that, under the hood, this hostio is accessing the 32-byte
     /// value stored in the EVM state trie at offset `key`, which will be `0` when not previously
