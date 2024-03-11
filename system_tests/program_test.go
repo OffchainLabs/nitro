@@ -1067,12 +1067,11 @@ func testEarlyExit(t *testing.T, jit bool) {
 	earlyAddress := deployWasm(t, ctx, auth, l2client, "../arbitrator/stylus/tests/exit-early/exit-early.wat")
 	panicAddress := deployWasm(t, ctx, auth, l2client, "../arbitrator/stylus/tests/exit-early/panic-after-write.wat")
 
-	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+	ensure := func(tx *types.Transaction, err error) {
 		t.Helper()
 		Require(t, err)
-		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		_, err = EnsureTxSucceeded(ctx, l2client, tx)
 		Require(t, err)
-		return receipt
 	}
 
 	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
