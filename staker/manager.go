@@ -95,7 +95,6 @@ func NewManager(
 	manager, err := challengemanager.New(
 		ctx,
 		chain,
-		client,
 		provider,
 		rollupAddress,
 		challengemanager.WithName(config.ValidatorName),
