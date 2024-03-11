@@ -116,22 +116,23 @@ func createValidationNode(ctx context.Context, t *testing.T, jit bool) func() {
 	Require(t, err)
 
 	configFetcher := func() *valnode.Config { return config }
-	valnode, err := valnode.CreateValidationNode(configFetcher, stack, nil)
+	node, err := valnode.CreateValidationNode(configFetcher, stack, nil)
 	Require(t, err)
 
 	err = stack.Start()
 	Require(t, err)
 
-	err = valnode.Start(ctx)
+	err = node.Start(ctx)
 	Require(t, err)
 
 	go func() {
 		<-ctx.Done()
+		node.GetExec().Stop()
 		stack.Close()
 	}()
 
 	return func() {
-		valnode.GetExec().Stop()
+		node.GetExec().Stop()
 		stack.Close()
 	}
 
@@ -152,6 +153,7 @@ func createL1ValidatorPosterNode(ctx context.Context, t *testing.T) (*NodeBuilde
 	builder.nodeConfig.Feed.Input.URL = []string{fmt.Sprintf("ws://127.0.0.1:%d", broadcastPort)}
 	builder.nodeConfig.BatchPoster.Enable = true
 	builder.nodeConfig.BatchPoster.MaxSize = 41
+	builder.nodeConfig.BatchPoster.PollInterval = 10 * time.Second
 	builder.nodeConfig.BatchPoster.MaxDelay = -1000 * time.Hour
 	builder.nodeConfig.BlockValidator.Enable = true
 	builder.nodeConfig.BlockValidator.ValidationServer.URL = fmt.Sprintf("ws://127.0.0.1:%d", arbValidationPort)
@@ -269,7 +271,7 @@ func waitFor(
 	ctxinput context.Context,
 	condition func() bool,
 ) error {
-	return waitForWith(t, ctxinput, 200*time.Second, time.Second, condition)
+	return waitForWith(t, ctxinput, 30*time.Second, time.Second, condition)
 }
 
 func waitForWith(
@@ -332,6 +334,7 @@ func TestEspressoE2E(t *testing.T) {
 	err = waitFor(t, ctx, func() bool {
 		out, err := exec.Command("curl", "http://127.0.0.1:60000/api/hotshot_contract").Output()
 		if err != nil {
+			log.Warn("retry to check the commitment task", "err", err)
 			return false
 		}
 		return len(out) > 0
@@ -414,8 +417,9 @@ func TestEspressoE2E(t *testing.T) {
 	builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
 		WrapL2ForDelayed(t, delayedTx, builder.L1Info, "Faucet", 100000),
 	})
-	err = waitFor(t, ctx, func() bool {
+	err = waitForWith(t, ctx, 180*time.Second, 2*time.Second, func() bool {
 		balance2 := l2Node.GetBalance(t, addr2)
+		log.Info("waiting for balance", "addr", addr2, "balance", balance2)
 		return balance2.Cmp(transferAmount) >= 0
 	})
 	Require(t, err)
@@ -494,8 +498,8 @@ func TestEspressoE2E(t *testing.T) {
 		err = waitForWith(
 			t,
 			ctx,
-			time.Minute*15,
-			time.Second*8,
+			time.Minute*20,
+			time.Second*5,
 			func() bool {
 				log.Info("good staker acts", "step", i)
 				txA, err := goodStaker.Act(ctx)
