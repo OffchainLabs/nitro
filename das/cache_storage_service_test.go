@@ -12,28 +12,28 @@ import (
 	"github.com/offchainlabs/nitro/das/dastree"
 )
 
-func TestBigCacheStorageService(t *testing.T) {
+func TestCacheStorageService(t *testing.T) {
 	ctx := context.Background()
 	baseStorageService := NewMemoryBackedStorageService(ctx)
-	bigCacheService := NewBigCacheStorageService(TestBigCacheConfig, baseStorageService)
+	cacheService := NewCacheStorageService(TestCacheConfig, baseStorageService)
 
 	val1 := []byte("The first value")
 	val1CorrectKey := dastree.Hash(val1)
 	val1IncorrectKey := dastree.Hash(append(val1, 0))
 
-	_, err := bigCacheService.GetByHash(ctx, val1CorrectKey)
+	_, err := cacheService.GetByHash(ctx, val1CorrectKey)
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatal(err)
 	}
 
-	err = bigCacheService.Put(ctx, val1, 1)
+	err = cacheService.Put(ctx, val1, 1)
 	Require(t, err)
 
-	_, err = bigCacheService.GetByHash(ctx, val1IncorrectKey)
+	_, err = cacheService.GetByHash(ctx, val1IncorrectKey)
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatal(err)
 	}
-	val, err := bigCacheService.GetByHash(ctx, val1CorrectKey)
+	val, err := cacheService.GetByHash(ctx, val1CorrectKey)
 	Require(t, err)
 	if !bytes.Equal(val, val1) {
 		t.Fatal(val, val1)
@@ -47,11 +47,11 @@ func TestBigCacheStorageService(t *testing.T) {
 	err = baseStorageService.Put(ctx, val2, 1)
 	Require(t, err)
 
-	_, err = bigCacheService.GetByHash(ctx, val2IncorrectKey)
+	_, err = cacheService.GetByHash(ctx, val2IncorrectKey)
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatal(err)
 	}
-	val, err = bigCacheService.GetByHash(ctx, val2CorrectKey)
+	val, err = cacheService.GetByHash(ctx, val2CorrectKey)
 	Require(t, err)
 	if !bytes.Equal(val, val2) {
 		t.Fatal(val, val2)
@@ -59,18 +59,18 @@ func TestBigCacheStorageService(t *testing.T) {
 
 	// For Case where the value is present in the cache storage but not present in the base.
 	emptyBaseStorageService := NewMemoryBackedStorageService(ctx)
-	bigCacheServiceWithEmptyBaseStorage := &BigCacheStorageService{
+	cacheServiceWithEmptyBaseStorage := &CacheStorageService{
 		baseStorageService: emptyBaseStorageService,
-		cache:              bigCacheService.cache,
+		cache:              cacheService.cache,
 	}
-	val, err = bigCacheServiceWithEmptyBaseStorage.GetByHash(ctx, val1CorrectKey)
+	val, err = cacheServiceWithEmptyBaseStorage.GetByHash(ctx, val1CorrectKey)
 	Require(t, err)
 	if !bytes.Equal(val, val1) {
 		t.Fatal(val, val1)
 	}
 
 	// Closes the base storage properly.
-	err = bigCacheService.Close(ctx)
+	err = cacheService.Close(ctx)
 	Require(t, err)
 	_, err = baseStorageService.GetByHash(ctx, val1CorrectKey)
 	if !errors.Is(err, ErrClosed) {

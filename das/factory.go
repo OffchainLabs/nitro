@@ -112,7 +112,7 @@ func WrapStorageWithCache(
 		return nil, nil
 	}
 
-	// Enable caches, Redis and (local) BigCache. Local is the outermost, so it will be tried first.
+	// Enable caches, Redis and (local) Cache. Local is the outermost, so it will be tried first.
 	var err error
 	if config.RedisCache.Enable {
 		storageService, err = NewRedisStorageService(config.RedisCache, storageService)
@@ -130,7 +130,7 @@ func WrapStorageWithCache(
 		}
 	}
 	if config.LocalCache.Enable {
-		storageService = NewBigCacheStorageService(config.LocalCache, storageService)
+		storageService = NewCacheStorageService(config.LocalCache, storageService)
 		lifecycleManager.Register(storageService)
 	}
 	return storageService, nil
