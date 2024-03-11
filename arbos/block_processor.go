@@ -425,11 +425,11 @@ func ProduceBlockAdvanced(
 		hooks.TxErrors = append(hooks.TxErrors, err)
 
 		if err != nil {
-			logLevel := log.Debug
-			if chainConfig.DebugMode() {
-				logLevel = log.Warn
-			}
-			logLevel("error applying transaction", "tx", printTxAsJson{tx}, "err", err)
+			// logLevel := log.Debug
+			// if chainConfig.DebugMode() {
+			// 	logLevel = log.Warn
+			// }
+			// logLevel("error applying transaction", "tx", printTxAsJson{tx}, "err", err)
 			if !hooks.DiscardInvalidTxsEarly {
 				// we'll still deduct a TxGas's worth from the block-local rate limiter even if the tx was invalid
 				blockGasLeft = arbmath.SaturatingUSub(blockGasLeft, params.TxGas)
