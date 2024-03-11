@@ -253,6 +253,10 @@ func CreateExecutionNode(
 
 }
 
+func (n *ExecutionNode) GetL1GasPriceEstimate() (uint64, error) {
+	return n.ExecEngine.GetL1GasPriceEstimate()
+}
+
 func (n *ExecutionNode) Initialize(ctx context.Context, arbnode interface{}, sync arbitrum.SyncProgressBackend) error {
 	n.ArbInterface.Initialize(arbnode)
 	err := n.Backend.Start()

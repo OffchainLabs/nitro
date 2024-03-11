@@ -56,6 +56,9 @@ var (
 	batchPosterGasRefunderBalance     = metrics.NewRegisteredGaugeFloat64("arb/batchposter/gasrefunder/balanceether", nil)
 	baseFeeGauge                      = metrics.NewRegisteredGauge("arb/batchposter/basefee", nil)
 	blobFeeGauge                      = metrics.NewRegisteredGauge("arb/batchposter/blobfee", nil)
+	l1GasPriceGauge                   = metrics.NewRegisteredGauge("arb/batchposter/l1gasprice", nil)
+	l1GasPriceEstimateGauge           = metrics.NewRegisteredGauge("arb/batchposter/l1gaspriceestimate", nil)
+	latestBatchSurplusGauge           = metrics.NewRegisteredGauge("arb/batchposter/latestbatchsurplus", nil)
 	blockGasUsedPerBlockGasLimitGauge = metrics.NewRegisteredGaugeFloat64("arb/batchposter/blockgasusedperblockgaslimit", nil)
 	blobGasUsedPerBlobGasLimitGauge   = metrics.NewRegisteredGaugeFloat64("arb/batchposter/blobgasusedperblobgaslimit", nil)
 	suggestedTipCapGauge              = metrics.NewRegisteredGauge("arb/batchposter/suggestedtipcap", nil)
@@ -107,6 +110,13 @@ type BatchPoster struct {
 	nextRevertCheckBlock int64       // the last parent block scanned for reverting batches
 
 	accessList func(SequencerInboxAccs, AfterDelayedMessagesRead int) types.AccessList
+
+	pricingMetrics l1PricingMetrics
+}
+
+type l1PricingMetrics struct {
+	l1GasPrice         uint64
+	l1GasPriceEstimate uint64
 }
 
 type l1BlockBound int
@@ -484,10 +494,16 @@ func (b *BatchPoster) pollForL1PriceData(ctx context.Context) {
 				return
 			}
 			baseFeeGauge.Update(h.BaseFee.Int64())
+			l1GasPrice := h.BaseFee.Uint64()
 			if h.BlobGasUsed != nil {
 				if h.ExcessBlobGas != nil {
-					blobFee := eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*h.ExcessBlobGas, *h.BlobGasUsed))
-					blobFeeGauge.Update(blobFee.Int64())
+					blobFeePerByte := eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*h.ExcessBlobGas, *h.BlobGasUsed))
+					blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
+					blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
+					blobFeeGauge.Update(blobFeePerByte.Int64())
+					if l1GasPrice > blobFeePerByte.Uint64()/16 {
+						l1GasPrice = blobFeePerByte.Uint64() / 16
+					}
 				}
 				blobGasUsedPerBlobGasLimitGauge.Update(float64(*h.BlobGasUsed) / params.MaxBlobGasPerBlock)
 			}
@@ -498,6 +514,11 @@ func (b *BatchPoster) pollForL1PriceData(ctx context.Context) {
 			} else {
 				suggestedTipCapGauge.Update(suggestedTipCap.Int64())
 			}
+			l1GasPriceEstimate := b.streamer.CurrentEstimateOfL1GasPrice()
+			b.pricingMetrics.l1GasPrice = l1GasPrice
+			b.pricingMetrics.l1GasPriceEstimate = l1GasPriceEstimate
+			l1GasPriceGauge.Update(int64(l1GasPrice))
+			l1GasPriceEstimateGauge.Update(int64(l1GasPriceEstimate))
 			// We poll for new headers every five seconds to get accurate reporting of these metrics
 			time.Sleep(5 * time.Second)
 		case <-ctx.Done():
@@ -1258,6 +1279,9 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		"totalSegments", len(b.building.segments.rawSegments),
 		"numBlobs", len(kzgBlobs),
 	)
+
+	surplus := arbmath.SaturatingSub(int64(b.pricingMetrics.l1GasPrice), int64(b.pricingMetrics.l1GasPriceEstimate)) * int64(len(sequencerMsg)*16)
+	latestBatchSurplusGauge.Update(surplus)
 
 	recentlyHitL1Bounds := time.Since(b.lastHitL1Bounds) < config.PollInterval*3
 	postedMessages := b.building.msgCount - batchPosition.MessageCount
