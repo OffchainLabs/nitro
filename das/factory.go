@@ -130,11 +130,8 @@ func WrapStorageWithCache(
 		}
 	}
 	if config.LocalCache.Enable {
-		storageService, err = NewBigCacheStorageService(config.LocalCache, storageService)
+		storageService = NewBigCacheStorageService(config.LocalCache, storageService)
 		lifecycleManager.Register(storageService)
-		if err != nil {
-			return nil, err
-		}
 	}
 	return storageService, nil
 }
