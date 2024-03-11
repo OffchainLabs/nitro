@@ -466,18 +466,18 @@ fn test_exit_early() -> Result<()> {
     // in panic-after-write.wat
     //     the program writes a result but then panics
 
+    let file = |f: &str| format!("tests/exit-early/{f}.wat");
     let (compile, config, ink) = test_configs();
-    std::env::set_current_dir("tests/exit-early")?;
     let args = &[0x01; 32];
 
-    let mut native = TestInstance::new_linked("exit-early.wat", &compile, config)?;
+    let mut native = TestInstance::new_linked(file("exit-early"), &compile, config)?;
     let output = match native.run_main(args, config, ink)? {
         UserOutcome::Revert(output) => output,
         err => bail!("expected revert: {}", err.red()),
     };
     assert_eq!(hex::encode(output), hex::encode(args));
 
-    let mut native = TestInstance::new_linked("panic-after-write.wat", &compile, config)?;
+    let mut native = TestInstance::new_linked(file("panic-after-write"), &compile, config)?;
     match native.run_main(args, config, ink)? {
         UserOutcome::Failure(error) => println!("{error:?}"),
         err => bail!("expected hard error: {}", err.red()),
