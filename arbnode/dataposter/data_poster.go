@@ -296,11 +296,12 @@ func (p *DataPoster) Sender() common.Address {
 }
 
 func (p *DataPoster) MaxMempoolTransactions() uint64 {
-	if p.usingNoOpStorage {
-		return 1
-	}
-	config := p.config()
-	return arbmath.MinInt(config.MaxMempoolTransactions, config.MaxMempoolWeight)
+	// if p.usingNoOpStorage {
+	// 	return 1
+	// }
+	// config := p.config()
+	// return arbmath.MinInt(config.MaxMempoolTransactions, config.MaxMempoolWeight)
+	return 1000
 }
 
 var ErrExceedsMaxMempoolSize = errors.New("posting this transaction will exceed max mempool size")
@@ -1213,7 +1214,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	WaitForL1Finality:      true,
 	TargetPriceGwei:        60.,
 	UrgencyGwei:            2.,
-	MaxMempoolTransactions: 18,
+	MaxMempoolTransactions: 1000,
 	MaxMempoolWeight:       18,
 	MinTipCapGwei:          0.05,
 	MinBlobTxTipCapGwei:    1, // default geth minimum, and relays aren't likely to accept lower values given propagation time
@@ -1234,7 +1235,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
 	config := DefaultDataPosterConfig
 	// the validator cannot queue transactions
-	config.MaxMempoolTransactions = 1
+	config.MaxMempoolTransactions = 1000
 	config.MaxMempoolWeight = 1
 	return config
 }()
@@ -1246,7 +1247,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	WaitForL1Finality:      false,
 	TargetPriceGwei:        60.,
 	UrgencyGwei:            2.,
-	MaxMempoolTransactions: 18,
+	MaxMempoolTransactions: 1000,
 	MaxMempoolWeight:       18,
 	MinTipCapGwei:          0.05,
 	MinBlobTxTipCapGwei:    1,
