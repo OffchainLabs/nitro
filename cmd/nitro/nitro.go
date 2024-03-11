@@ -372,17 +372,17 @@ func mainImpl() int {
 		if err != nil {
 			log.Crit("failed to get L1 headerreader", "err", err)
 		}
-		// if !l1Reader.IsParentChainArbitrum() && !nodeConfig.Node.Dangerous.DisableBlobReader {
-		// 	if nodeConfig.ParentChain.BlobClient.BeaconUrl == "" {
-		// 		flag.Usage()
-		// 		log.Crit("a beacon chain RPC URL is required to read batches, but it was not configured (CLI argument: --parent-chain.blob-client.beacon-url [URL])")
-		// 	}
-		// 	blobClient, err := headerreader.NewBlobClient(nodeConfig.ParentChain.BlobClient, l1Client)
-		// 	if err != nil {
-		// 		log.Crit("failed to initialize blob client", "err", err)
-		// 	}
-		// 	blobReader = blobClient
-		// }
+		if !l1Reader.IsParentChainArbitrum() && !nodeConfig.Node.Dangerous.DisableBlobReader {
+			if nodeConfig.ParentChain.BlobClient.BeaconUrl == "" {
+				flag.Usage()
+				log.Crit("a beacon chain RPC URL is required to read batches, but it was not configured (CLI argument: --parent-chain.blob-client.beacon-url [URL])")
+			}
+			blobClient, err := headerreader.NewBlobClient(nodeConfig.ParentChain.BlobClient, l1Client)
+			if err != nil {
+				log.Crit("failed to initialize blob client", "err", err)
+			}
+			blobReader = blobClient
+		}
 	}
 
 	if nodeConfig.Node.Staker.OnlyCreateWalletContract {
