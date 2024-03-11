@@ -31,7 +31,7 @@ pub unsafe extern "C" fn user_host__read_args(ptr: GuestPtr) {
 #[no_mangle]
 pub unsafe extern "C" fn user_host__exit_early(status: u32) {
     hostio!(exit_early(status));
-    Program::current().exited_early = Some(match status {
+    Program::current().early_exit = Some(match status {
         0 => UserOutcomeKind::Success,
         _ => UserOutcomeKind::Revert,
     });

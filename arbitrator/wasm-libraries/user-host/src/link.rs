@@ -196,7 +196,7 @@ pub unsafe extern "C" fn program_internal__set_done(mut status: UserOutcomeKind)
     let mut ink_left = program_ink_left(module);
 
     // apply any early exit codes
-    if let Some(early) = program.exited_early {
+    if let Some(early) = program.early_exit {
         status = early;
     }
 

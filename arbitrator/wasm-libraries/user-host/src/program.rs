@@ -79,8 +79,8 @@ pub(crate) struct Program {
     pub module: u32,
     /// Call configuration.
     pub config: StylusConfig,
-    /// Whether the program exited early
-    pub exited_early: Option<UserOutcomeKind>,
+    /// Whether the program exited early.
+    pub early_exit: Option<UserOutcomeKind>,
 }
 
 #[link(wasm_import_module = "hostio")]
@@ -169,7 +169,7 @@ impl Program {
             evm_data,
             module,
             config,
-            exited_early: None,
+            early_exit: None,
         };
         unsafe { PROGRAMS.push(Box::new(program)) }
     }
