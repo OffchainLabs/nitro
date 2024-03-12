@@ -23,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
+	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -178,20 +179,20 @@ func TestInvalidSignature(t *testing.T) {
 }
 
 type dummyTransactionStreamer struct {
-	messageReceiver chan broadcaster.BroadcastFeedMessage
+	messageReceiver chan m.BroadcastFeedMessage
 	chainId         uint64
 	sequencerAddr   *common.Address
 }
 
 func NewDummyTransactionStreamer(chainId uint64, sequencerAddr *common.Address) *dummyTransactionStreamer {
 	return &dummyTransactionStreamer{
-		messageReceiver: make(chan broadcaster.BroadcastFeedMessage),
+		messageReceiver: make(chan m.BroadcastFeedMessage),
 		chainId:         chainId,
 		sequencerAddr:   sequencerAddr,
 	}
 }
 
-func (ts *dummyTransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.BroadcastFeedMessage) error {
+func (ts *dummyTransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFeedMessage) error {
 	for _, feedMessage := range feedMessages {
 		ts.messageReceiver <- *feedMessage
 	}
@@ -200,14 +201,14 @@ func (ts *dummyTransactionStreamer) AddBroadcastMessages(feedMessages []*broadca
 
 func newTestBroadcastClient(config Config, listenerAddress net.Addr, chainId uint64, currentMessageCount arbutil.MessageIndex, txStreamer TransactionStreamerInterface, confirmedSequenceNumberListener chan arbutil.MessageIndex, feedErrChan chan error, validAddr *common.Address) (*BroadcastClient, error) {
 	port := listenerAddress.(*net.TCPAddr).Port
-	var bpv contracts.BatchPosterVerifierInterface
+	var av contracts.AddressVerifierInterface
 	if validAddr != nil {
 		config.Verify.AcceptSequencer = true
-		bpv = contracts.NewMockBatchPosterVerifier(*validAddr)
+		av = contracts.NewMockAddressVerifier(*validAddr)
 	} else {
 		config.Verify.AcceptSequencer = false
 	}
-	return NewBroadcastClient(func() *Config { return &config }, fmt.Sprintf("ws://127.0.0.1:%d/", port), chainId, currentMessageCount, txStreamer, confirmedSequenceNumberListener, feedErrChan, bpv, func(_ int32) {})
+	return NewBroadcastClient(func() *Config { return &config }, fmt.Sprintf("ws://127.0.0.1:%d/", port), chainId, currentMessageCount, txStreamer, confirmedSequenceNumberListener, feedErrChan, av, func(_ int32) {})
 }
 
 func startMakeBroadcastClient(ctx context.Context, t *testing.T, clientConfig Config, addr net.Addr, index int, expectedCount int, chainId uint64, wg *sync.WaitGroup, sequencerAddr *common.Address) {
@@ -231,7 +232,21 @@ func startMakeBroadcastClient(ctx context.Context, t *testing.T, clientConfig Co
 
 	go func() {
 		defer wg.Done()
-		defer broadcastClient.StopAndWait()
+		// drain messages so messages could be sent on ts.messageReceiver
+		defer func() {
+			clientDone := make(chan struct{})
+			go func() {
+				for {
+					select {
+					case <-ts.messageReceiver:
+					case <-clientDone:
+						return
+					}
+				}
+			}()
+			broadcastClient.StopAndWait()
+			close(clientDone)
+		}()
 		var timeout time.Duration
 		if expectedCount == 0 {
 			timeout = 1 * time.Second

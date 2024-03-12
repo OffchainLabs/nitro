@@ -17,6 +17,7 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/metrics/exp"
@@ -24,6 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
@@ -42,6 +44,7 @@ type DAServerConfig struct {
 
 	Conf     genericconf.ConfConfig `koanf:"conf"`
 	LogLevel int                    `koanf:"log-level"`
+	LogType  string                 `koanf:"log-type"`
 
 	Metrics       bool                            `koanf:"metrics"`
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
@@ -60,11 +63,12 @@ var DefaultDAServerConfig = DAServerConfig{
 	RESTServerTimeouts: genericconf.HTTPServerTimeoutConfigDefault,
 	DataAvailability:   das.DefaultDataAvailabilityConfig,
 	Conf:               genericconf.ConfConfigDefault,
+	LogLevel:           int(log.LvlInfo),
+	LogType:            "plaintext",
 	Metrics:            false,
 	MetricsServer:      genericconf.MetricsServerConfigDefault,
 	PProf:              false,
 	PprofCfg:           genericconf.PProfDefault,
-	LogLevel:           3,
 }
 
 func main() {
@@ -97,6 +101,8 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 	genericconf.PProfAddOptions("pprof-cfg", f)
 
 	f.Int("log-level", int(log.LvlInfo), "log level; 1: ERROR, 2: WARN, 3: INFO, 4: DEBUG, 5: TRACE")
+	f.String("log-type", DefaultDAServerConfig.LogType, "log type (plaintext or json)")
+
 	das.DataAvailabilityConfigAddDaserverOptions("data-availability", f)
 	genericconf.ConfConfigAddOptions("conf", f)
 
@@ -176,7 +182,12 @@ func startup() error {
 		confighelpers.PrintErrorAndExit(errors.New("please specify at least one of --enable-rest or --enable-rpc"), printSampleUsage)
 	}
 
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+	logFormat, err := genericconf.ParseLogType(serverConfig.LogType)
+	if err != nil {
+		flag.Usage()
+		panic(fmt.Sprintf("Error parsing log type: %v", err))
+	}
+	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, logFormat))
 	glogger.Verbosity(log.Lvl(serverConfig.LogLevel))
 	log.Root().SetHandler(glogger)
 
@@ -196,7 +207,8 @@ func startup() error {
 		if err != nil {
 			return err
 		}
-		l1Reader, err = headerreader.New(ctx, l1Client, func() *headerreader.Config { return &headerreader.DefaultConfig }) // TODO: config
+		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1Client)
+		l1Reader, err = headerreader.New(ctx, l1Client, func() *headerreader.Config { return &headerreader.DefaultConfig }, arbSys) // TODO: config
 		if err != nil {
 			return err
 		}
@@ -227,7 +239,7 @@ func startup() error {
 		dasLifecycleManager.Register(&L1ReaderCloser{l1Reader})
 	}
 
-	vcsRevision, vcsTime := confighelpers.GetVersion()
+	vcsRevision, _, vcsTime := confighelpers.GetVersion()
 	var rpcServer *http.Server
 	if serverConfig.EnableRPC {
 		log.Info("Starting HTTP-RPC server", "addr", serverConfig.RPCAddr, "port", serverConfig.RPCPort, "revision", vcsRevision, "vcs.time", vcsTime)

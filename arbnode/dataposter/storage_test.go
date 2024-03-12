@@ -1,3 +1,6 @@
+// Copyright 2021-2023, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
 package dataposter
 
 import (
@@ -6,11 +9,13 @@ import (
 	"path"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/leveldb"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/redis"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
@@ -21,43 +26,65 @@ import (
 
 var ignoreData = cmp.Options{
 	cmpopts.IgnoreUnexported(
+		types.Transaction{},
 		types.DynamicFeeTx{},
 		big.Int{},
 	),
 	cmpopts.IgnoreFields(types.Transaction{}, "hash", "size", "from"),
 }
 
-func newLevelDBStorage(t *testing.T) *leveldb.Storage {
+func newLevelDBStorage(t *testing.T, encF storage.EncoderDecoderF) *dbstorage.Storage {
 	t.Helper()
 	db, err := rawdb.NewLevelDBDatabase(path.Join(t.TempDir(), "level.db"), 0, 0, "default", false)
 	if err != nil {
 		t.Fatalf("NewLevelDBDatabase() unexpected error: %v", err)
 	}
-	return leveldb.New(db)
+	return dbstorage.New(db, encF)
 }
 
-func newSliceStorage() *slice.Storage {
-	return slice.NewStorage()
+func newPebbleDBStorage(t *testing.T, encF storage.EncoderDecoderF) *dbstorage.Storage {
+	t.Helper()
+	db, err := rawdb.NewPebbleDBDatabase(path.Join(t.TempDir(), "pebble.db"), 0, 0, "default", false, true)
+	if err != nil {
+		t.Fatalf("NewPebbleDBDatabase() unexpected error: %v", err)
+	}
+	return dbstorage.New(db, encF)
 }
 
-func newRedisStorage(ctx context.Context, t *testing.T) *redis.Storage {
+func newSliceStorage(encF storage.EncoderDecoderF) *slice.Storage {
+	return slice.NewStorage(encF)
+}
+
+func newRedisStorage(ctx context.Context, t *testing.T, encF storage.EncoderDecoderF) *redis.Storage {
 	t.Helper()
 	redisUrl := redisutil.CreateTestRedis(ctx, t)
 	client, err := redisutil.RedisClientFromURL(redisUrl)
 	if err != nil {
 		t.Fatalf("RedisClientFromURL(%q) unexpected error: %v", redisUrl, err)
 	}
-	s, err := redis.NewStorage(client, "", &signature.TestSimpleHmacConfig)
+	s, err := redis.NewStorage(client, "", &signature.TestSimpleHmacConfig, encF)
 	if err != nil {
 		t.Fatalf("redis.NewStorage() unexpected error: %v", err)
 	}
 	return s
 }
 
-func valueOf(i int) *storage.QueuedTransaction {
+func valueOf(t *testing.T, i int) *storage.QueuedTransaction {
+	t.Helper()
+	meta, err := rlp.EncodeToBytes(storage.BatchPosterPosition{DelayedMessageCount: uint64(i)})
+	if err != nil {
+		t.Fatalf("Encoding batch poster position, error: %v", err)
+	}
 	return &storage.QueuedTransaction{
-		Meta: []byte{byte(i)},
-		Data: types.DynamicFeeTx{
+		FullTx: types.NewTransaction(
+			uint64(i),
+			common.Address{},
+			big.NewInt(int64(i)),
+			uint64(i),
+			big.NewInt(int64(i)),
+			[]byte{byte(i)}),
+		Meta: meta,
+		DeprecatedData: types.DynamicFeeTx{
 			ChainID:    big.NewInt(int64(i)),
 			Nonce:      uint64(i),
 			GasTipCap:  big.NewInt(int64(i)),
@@ -73,10 +100,10 @@ func valueOf(i int) *storage.QueuedTransaction {
 	}
 }
 
-func values(from, to int) []*storage.QueuedTransaction {
+func values(t *testing.T, from, to int) []*storage.QueuedTransaction {
 	var res []*storage.QueuedTransaction
 	for i := from; i <= to; i++ {
-		res = append(res, valueOf(i))
+		res = append(res, valueOf(t, i))
 	}
 	return res
 }
@@ -85,7 +112,7 @@ func values(from, to int) []*storage.QueuedTransaction {
 func initStorage(ctx context.Context, t *testing.T, s QueueStorage) QueueStorage {
 	t.Helper()
 	for i := 0; i < 20; i++ {
-		if err := s.Put(ctx, uint64(i), nil, valueOf(i)); err != nil {
+		if err := s.Put(ctx, uint64(i), nil, valueOf(t, i)); err != nil {
 			t.Fatalf("Error putting a key/value: %v", err)
 		}
 	}
@@ -95,10 +122,19 @@ func initStorage(ctx context.Context, t *testing.T, s QueueStorage) QueueStorage
 // Returns a map of all empty storages.
 func storages(t *testing.T) map[string]QueueStorage {
 	t.Helper()
+	f := func(enc storage.EncoderDecoderInterface) storage.EncoderDecoderF {
+		return func() storage.EncoderDecoderInterface {
+			return enc
+		}
+	}
 	return map[string]QueueStorage{
-		"levelDB": newLevelDBStorage(t),
-		"slice":   newSliceStorage(),
-		"redis":   newRedisStorage(context.Background(), t),
+		"levelDBLegacy": newLevelDBStorage(t, f(&storage.LegacyEncoderDecoder{})),
+		"sliceLegacy":   newSliceStorage(f(&storage.LegacyEncoderDecoder{})),
+		"redisLegacy":   newRedisStorage(context.Background(), t, f(&storage.LegacyEncoderDecoder{})),
+		"levelDB":       newLevelDBStorage(t, f(&storage.EncoderDecoder{})),
+		"pebbleDB":      newPebbleDBStorage(t, f(&storage.EncoderDecoder{})),
+		"slice":         newSliceStorage(f(&storage.EncoderDecoder{})),
+		"redis":         newRedisStorage(context.Background(), t, f(&storage.EncoderDecoder{})),
 	}
 }
 
@@ -110,6 +146,33 @@ func initStorages(ctx context.Context, t *testing.T) map[string]QueueStorage {
 		m[k] = initStorage(ctx, t, v)
 	}
 	return m
+}
+
+func TestPruneAll(t *testing.T) {
+	s := newLevelDBStorage(t, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
+	ctx := context.Background()
+	for i := 0; i < 20; i++ {
+		if err := s.Put(ctx, uint64(i), nil, valueOf(t, i)); err != nil {
+			t.Fatalf("Error putting a key/value: %v", err)
+		}
+	}
+	size, err := s.Length(ctx)
+	if err != nil {
+		t.Fatalf("Length() unexpected error %v", err)
+	}
+	if size != 20 {
+		t.Errorf("Length()=%v want 20", size)
+	}
+	if err := s.PruneAll(ctx); err != nil {
+		t.Fatalf("PruneAll() unexpected error: %v", err)
+	}
+	size, err = s.Length(ctx)
+	if err != nil {
+		t.Fatalf("Length() unexpected error %v", err)
+	}
+	if size != 0 {
+		t.Errorf("Length()=%v want 0", size)
+	}
 }
 
 func TestFetchContents(t *testing.T) {
@@ -125,13 +188,13 @@ func TestFetchContents(t *testing.T) {
 				desc:       "sequence with single digits",
 				startIdx:   5,
 				maxResults: 3,
-				want:       values(5, 7),
+				want:       values(t, 5, 7),
 			},
 			{
 				desc:       "corner case of single element",
 				startIdx:   0,
 				maxResults: 1,
-				want:       values(0, 0),
+				want:       values(t, 0, 0),
 			},
 			{
 				desc:       "no elements",
@@ -143,13 +206,13 @@ func TestFetchContents(t *testing.T) {
 				desc:       "sequence with variable number of digits",
 				startIdx:   9,
 				maxResults: 3,
-				want:       values(9, 11),
+				want:       values(t, 9, 11),
 			},
 			{
 				desc:       "max results goes over the last element",
 				startIdx:   13,
 				maxResults: 10,
-				want:       values(13, 19),
+				want:       values(t, 13, 19),
 			},
 		} {
 			t.Run(name+"_"+tc.desc, func(t *testing.T) {
@@ -171,7 +234,7 @@ func TestLast(t *testing.T) {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
 			for i := 0; i < cnt; i++ {
-				val := valueOf(i)
+				val := valueOf(t, i)
 				if err := s.Put(ctx, uint64(i), nil, val); err != nil {
 					t.Fatalf("Error putting a key/value: %v", err)
 				}
@@ -185,12 +248,12 @@ func TestLast(t *testing.T) {
 
 			}
 		})
-		last := valueOf(cnt - 1)
+		last := valueOf(t, cnt-1)
 		t.Run(name+"_update_entries", func(t *testing.T) {
 			ctx := context.Background()
 			for i := 0; i < cnt-1; i++ {
-				prev := valueOf(i)
-				newVal := valueOf(cnt + i)
+				prev := valueOf(t, i)
+				newVal := valueOf(t, cnt+i)
 				if err := s.Put(ctx, uint64(i), prev, newVal); err != nil {
 					t.Fatalf("Error putting a key/value: %v, prev: %v, new: %v", err, prev, newVal)
 				}
@@ -227,17 +290,17 @@ func TestPrune(t *testing.T) {
 		{
 			desc:      "prune all but one",
 			pruneFrom: 19,
-			want:      values(19, 19),
+			want:      values(t, 19, 19),
 		},
 		{
 			desc:      "pruning first element",
 			pruneFrom: 1,
-			want:      values(1, 19),
+			want:      values(t, 1, 19),
 		},
 		{
 			desc:      "pruning first 11 elements",
 			pruneFrom: 11,
-			want:      values(11, 19),
+			want:      values(t, 11, 19),
 		},
 		{
 			desc:      "pruning from higher than biggest index",

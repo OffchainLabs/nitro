@@ -5,6 +5,7 @@
 
 pub mod binary;
 mod host;
+mod kzg;
 pub mod machine;
 /// cbindgen:ignore
 mod memory;
@@ -21,13 +22,12 @@ mod test;
 
 pub use machine::Machine;
 
-use arbutil::Bytes32;
+use arbutil::{Bytes32, PreimageType};
 use eyre::{Report, Result};
 use machine::{
     argument_data_to_inbox, get_empty_preimage_resolver, GlobalState, MachineStatus, Module,
     PreimageResolver,
 };
-use sha3::{Digest, Keccak256};
 use static_assertions::const_assert_eq;
 use std::{
     ffi::CStr,
@@ -328,26 +328,31 @@ pub struct ResolvedPreimage {
 #[no_mangle]
 pub unsafe extern "C" fn arbitrator_set_preimage_resolver(
     mach: *mut Machine,
-    resolver: unsafe extern "C" fn(u64, *const u8) -> ResolvedPreimage,
+    resolver: unsafe extern "C" fn(u64, u8, *const u8) -> ResolvedPreimage,
 ) {
-    (*mach).set_preimage_resolver(
-        Arc::new(move |context: u64, hash: Bytes32| -> Option<CBytes> {
-            let res = resolver(context, hash.as_ptr());
+    (*mach).set_preimage_resolver(Arc::new(
+        move |context: u64, ty: PreimageType, hash: Bytes32| -> Option<CBytes> {
+            let res = resolver(context, ty.into(), hash.as_ptr());
             if res.len < 0 {
                 return None;
             }
             let data = CBytes::from_raw_parts(res.ptr, res.len as usize);
-            let have_hash = Keccak256::digest(&data);
-            if have_hash.as_slice() != *hash {
-                panic!(
-                    "Resolved incorrect data for hash {}: got {}",
+            #[cfg(debug_assertions)]
+            match crate::utils::hash_preimage(&data, ty) {
+                Ok(have_hash) if have_hash.as_slice() == *hash => {}
+                Ok(got_hash) => panic!(
+                    "Resolved incorrect data for hash {} (rehashed to {})",
                     hash,
-                    hex::encode(data),
-                );
+                    Bytes32(got_hash),
+                ),
+                Err(err) => panic!(
+                    "Failed to hash preimage from resolver (expecting hash {}): {}",
+                    hash, err,
+                ),
             }
             Some(data)
-        }) as PreimageResolver,
-    );
+        },
+    ) as PreimageResolver);
 }
 
 #[no_mangle]

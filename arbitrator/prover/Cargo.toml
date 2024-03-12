@@ -36,6 +36,8 @@ wasmer-compiler-singlepass = { path = "../tools/wasmer/lib/compiler-singlepass",
 wasmparser.workspace = true
 num-derive = "0.4.1"
 num-traits = "0.2.17"
+c-kzg = "0.4.0" # TODO: look into switching to rust-kzg (no crates.io release or hosted rustdoc yet)
+sha2 = "0.9.9"
 
 [lib]
 name = "prover"

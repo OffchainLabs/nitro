@@ -12,10 +12,12 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net/http"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -25,27 +27,29 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/staker"
+	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
-func makeBackgroundTxs(ctx context.Context, l2info *BlockchainTestInfo, l2clientA arbutil.L1Interface) error {
+func makeBackgroundTxs(ctx context.Context, builder *NodeBuilder) error {
 	for i := uint64(0); ctx.Err() == nil; i++ {
-		l2info.Accounts["BackgroundUser"].Nonce = i
-		tx := l2info.PrepareTx("BackgroundUser", "BackgroundUser", l2info.TransferGas, common.Big0, nil)
-		err := l2clientA.SendTransaction(ctx, tx)
+		builder.L2Info.Accounts["BackgroundUser"].Nonce = i
+		tx := builder.L2Info.PrepareTx("BackgroundUser", "BackgroundUser", builder.L2Info.TransferGas, common.Big0, nil)
+		err := builder.L2.Client.SendTransaction(ctx, tx)
 		if err != nil {
 			return err
 		}
-		_, err = EnsureTxSucceeded(ctx, l2clientA, tx)
+		_, err = builder.L2.EnsureTxSucceeded(tx)
 		if err != nil {
 			return err
 		}
@@ -57,29 +61,61 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
+	httpSrv, srv := externalsignertest.NewServer(ctx, t)
+	cp, err := externalsignertest.CertPaths()
+	if err != nil {
+		t.Fatalf("Error getting cert paths: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := httpSrv.Shutdown(ctx); err != nil {
+			t.Fatalf("Error shutting down http server: %v", err)
+		}
+	})
+	go func() {
+		log.Debug("Server is listening on port 1234...")
+		if err := httpSrv.ListenAndServeTLS(cp.ServerCert, cp.ServerKey); err != nil && err != http.ErrServerClosed {
+			log.Debug("ListenAndServeTLS() failed", "error", err)
+			return
+		}
+	}()
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
-	l2chainConfig := params.ArbitrumDevTestChainConfig()
-	l2info := NewBlockChainTestInfo(
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.L2Info = NewBlockChainTestInfo(
 		t,
-		types.NewArbitrumSigner(types.NewLondonSigner(l2chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
+		types.NewArbitrumSigner(types.NewLondonSigner(builder.chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
 		transferGas,
 	)
-	_, l2nodeA, l2clientA, _, l1info, _, l1client, l1stack := createTestNodeOnL1WithConfigImpl(t, ctx, true, nil, l2chainConfig, nil, nil, l2info)
-	defer requireClose(t, l1stack)
-	defer l2nodeA.StopAndWait()
+
+	builder.nodeConfig.BatchPoster.MaxDelay = -1000 * time.Hour
+	cleanupA := builder.Build(t)
+	defer cleanupA()
+
+	addNewBatchPoster(ctx, t, builder, srv.Address)
+
+	builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
+		builder.L1Info.PrepareTxTo("Faucet", &srv.Address, 30000, big.NewInt(1).Mul(big.NewInt(1e18), big.NewInt(1e18)), nil)})
+
+	l2nodeA := builder.L2.ConsensusNode
+	execNodeA := builder.L2.ExecNode
 
 	if faultyStaker {
-		l2info.GenerateGenesisAccount("FaultyAddr", common.Big1)
+		builder.L2Info.GenerateGenesisAccount("FaultyAddr", common.Big1)
 	}
+
 	config := arbnode.ConfigDefaultL1Test()
-	config.Sequencer.Enable = false
+	config.Sequencer = false
 	config.DelayedSequencer.Enable = false
 	config.BatchPoster.Enable = false
-	_, l2nodeB := Create2ndNodeWithConfig(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, config, nil)
-	defer l2nodeB.StopAndWait()
+	builder.execConfig.Sequencer.Enable = false
+	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: config})
+	defer cleanupB()
 
-	nodeAGenesis := l2nodeA.Execution.Backend.APIBackend().CurrentHeader().Hash()
-	nodeBGenesis := l2nodeB.Execution.Backend.APIBackend().CurrentHeader().Hash()
+	l2nodeB := testClientB.ConsensusNode
+	execNodeB := testClientB.ExecNode
+
+	nodeAGenesis := execNodeA.Backend.APIBackend().CurrentHeader().Hash()
+	nodeBGenesis := execNodeB.Backend.APIBackend().CurrentHeader().Hash()
 	if faultyStaker {
 		if nodeAGenesis == nodeBGenesis {
 			Fatal(t, "node A L2 genesis hash", nodeAGenesis, "== node B L2 genesis hash", nodeBGenesis)
@@ -90,51 +126,71 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		}
 	}
 
-	BridgeBalance(t, "Faucet", big.NewInt(1).Mul(big.NewInt(params.Ether), big.NewInt(10000)), l1info, l2info, l1client, l2clientA, ctx)
+	builder.BridgeBalance(t, "Faucet", big.NewInt(1).Mul(big.NewInt(params.Ether), big.NewInt(10000)))
 
-	deployAuth := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
+	deployAuth := builder.L1Info.GetDefaultTransactOpts("RollupOwner", ctx)
 
 	balance := big.NewInt(params.Ether)
 	balance.Mul(balance, big.NewInt(100))
-	l1info.GenerateAccount("ValidatorA")
-	TransferBalance(t, "Faucet", "ValidatorA", balance, l1info, l1client, ctx)
-	l1authA := l1info.GetDefaultTransactOpts("ValidatorA", ctx)
+	builder.L1Info.GenerateAccount("ValidatorA")
+	builder.L1.TransferBalance(t, "Faucet", "ValidatorA", balance, builder.L1Info)
+	l1authA := builder.L1Info.GetDefaultTransactOpts("ValidatorA", ctx)
 
-	l1info.GenerateAccount("ValidatorB")
-	TransferBalance(t, "Faucet", "ValidatorB", balance, l1info, l1client, ctx)
-	l1authB := l1info.GetDefaultTransactOpts("ValidatorB", ctx)
+	builder.L1Info.GenerateAccount("ValidatorB")
+	builder.L1.TransferBalance(t, "Faucet", "ValidatorB", balance, builder.L1Info)
+	l1authB := builder.L1Info.GetDefaultTransactOpts("ValidatorB", ctx)
 
-	valWalletAddrAPtr, err := staker.GetValidatorWalletContract(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authA, l2nodeA.L1Reader, true)
+	valWalletAddrAPtr, err := validatorwallet.GetValidatorWalletContract(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authA, l2nodeA.L1Reader, true)
 	Require(t, err)
 	valWalletAddrA := *valWalletAddrAPtr
-	valWalletAddrCheck, err := staker.GetValidatorWalletContract(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authA, l2nodeA.L1Reader, true)
+	valWalletAddrCheck, err := validatorwallet.GetValidatorWalletContract(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authA, l2nodeA.L1Reader, true)
 	Require(t, err)
 	if valWalletAddrA == *valWalletAddrCheck {
 		Require(t, err, "didn't cache validator wallet address", valWalletAddrA.String(), "vs", valWalletAddrCheck.String())
 	}
 
-	rollup, err := rollupgen.NewRollupAdminLogic(l2nodeA.DeployInfo.Rollup, l1client)
-	Require(t, err)
-	tx, err := rollup.SetValidator(&deployAuth, []common.Address{valWalletAddrA, l1authB.From}, []bool{true, true})
-	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l1client, tx)
+	rollup, err := rollupgen.NewRollupAdminLogic(l2nodeA.DeployInfo.Rollup, builder.L1.Client)
 	Require(t, err)
 
-	tx, err = rollup.SetMinimumAssertionPeriod(&deployAuth, big.NewInt(1))
-	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l1client, tx)
+	upgradeExecutor, err := upgrade_executorgen.NewUpgradeExecutor(l2nodeA.DeployInfo.UpgradeExecutor, builder.L1.Client)
+	Require(t, err, "unable to bind upgrade executor")
+	rollupABI, err := abi.JSON(strings.NewReader(rollupgen.RollupAdminLogicABI))
+	Require(t, err, "unable to parse rollup ABI")
+
+	setValidatorCalldata, err := rollupABI.Pack("setValidator", []common.Address{valWalletAddrA, l1authB.From, srv.Address}, []bool{true, true, true})
+	Require(t, err, "unable to generate setValidator calldata")
+	tx, err := upgradeExecutor.ExecuteCall(&deployAuth, l2nodeA.DeployInfo.Rollup, setValidatorCalldata)
+	Require(t, err, "unable to set validators")
+	_, err = builder.L1.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	validatorUtils, err := rollupgen.NewValidatorUtils(l2nodeA.DeployInfo.ValidatorUtils, l1client)
+	setMinAssertPeriodCalldata, err := rollupABI.Pack("setMinimumAssertionPeriod", big.NewInt(1))
+	Require(t, err, "unable to generate setMinimumAssertionPeriod calldata")
+	tx, err = upgradeExecutor.ExecuteCall(&deployAuth, l2nodeA.DeployInfo.Rollup, setMinAssertPeriodCalldata)
+	Require(t, err, "unable to set minimum assertion period")
+	_, err = builder.L1.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	validatorUtils, err := rollupgen.NewValidatorUtils(l2nodeA.DeployInfo.ValidatorUtils, builder.L1.Client)
 	Require(t, err)
 
 	valConfig := staker.TestL1ValidatorConfig
-
-	dpA, err := arbnode.ValidatorDataposter(rawdb.NewTable(l2nodeB.ArbDB, storage.BlockValidatorPrefix), l2nodeA.L1Reader, &l1authA, NewFetcherFromConfig(arbnode.ConfigDefaultL1NonSequencerTest()), nil)
+	parentChainID, err := builder.L1.Client.ChainID(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get parent chain id: %v", err)
+	}
+	dpA, err := arbnode.StakerDataposter(
+		ctx,
+		rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix),
+		l2nodeA.L1Reader,
+		&l1authA, NewFetcherFromConfig(arbnode.ConfigDefaultL1NonSequencerTest()),
+		nil,
+		parentChainID,
+	)
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
 	}
-	valWalletA, err := staker.NewContractValidatorWallet(dpA, nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, &l1authA, 0, func(common.Address) {}, func() uint64 { return valConfig.ExtraGas })
+	valWalletA, err := validatorwallet.NewContract(dpA, nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, &l1authA, 0, func(common.Address) {}, func() uint64 { return valConfig.ExtraGas })
 	Require(t, err)
 	if honestStakerInactive {
 		valConfig.Strategy = "Defensive"
@@ -149,8 +205,9 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeA.InboxReader,
 		l2nodeA.InboxTracker,
 		l2nodeA.TxStreamer,
-		l2nodeA.Execution.Recorder,
+		execNodeA,
 		l2nodeA.ArbDB,
+		nil,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
@@ -177,20 +234,33 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		Require(t, err)
 	}
 	Require(t, err)
-
-	dpB, err := arbnode.ValidatorDataposter(rawdb.NewTable(l2nodeB.ArbDB, storage.BlockValidatorPrefix), l2nodeB.L1Reader, &l1authB, NewFetcherFromConfig(arbnode.ConfigDefaultL1NonSequencerTest()), nil)
+	cfg := arbnode.ConfigDefaultL1NonSequencerTest()
+	signerCfg, err := externalSignerTestCfg(srv.Address)
+	if err != nil {
+		t.Fatalf("Error getting external signer config: %v", err)
+	}
+	cfg.Staker.DataPoster.ExternalSigner = *signerCfg
+	dpB, err := arbnode.StakerDataposter(
+		ctx,
+		rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix),
+		l2nodeB.L1Reader,
+		&l1authB, NewFetcherFromConfig(cfg),
+		nil,
+		parentChainID,
+	)
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
 	}
-	valWalletB, err := staker.NewEoaValidatorWallet(dpB, l2nodeB.DeployInfo.Rollup, l2nodeB.L1Reader.Client(), &l1authB, func() uint64 { return 0 })
+	valWalletB, err := validatorwallet.NewEOA(dpB, l2nodeB.DeployInfo.Rollup, l2nodeB.L1Reader.Client(), func() uint64 { return 0 })
 	Require(t, err)
 	valConfig.Strategy = "MakeNodes"
 	statelessB, err := staker.NewStatelessBlockValidator(
 		l2nodeB.InboxReader,
 		l2nodeB.InboxTracker,
 		l2nodeB.TxStreamer,
-		l2nodeB.Execution.Recorder,
+		execNodeB,
 		l2nodeB.ArbDB,
+		nil,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
@@ -217,12 +287,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		err = valWalletB.Initialize(ctx)
 		Require(t, err)
 	}
-	dpC, err := arbnode.ValidatorDataposter(rawdb.NewTable(l2nodeB.ArbDB, storage.BlockValidatorPrefix), l2nodeA.L1Reader, &l1authA, NewFetcherFromConfig(arbnode.ConfigDefaultL1NonSequencerTest()), nil)
-	if err != nil {
-		t.Fatalf("Error creating validator dataposter: %v", err)
-	}
-	valWalletC, err := staker.NewContractValidatorWallet(dpC, nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, nil, 0, func(common.Address) {}, func() uint64 { return 10000 })
-	Require(t, err)
+	valWalletC := validatorwallet.NewNoOp(builder.L1.Client, l2nodeA.DeployInfo.Rollup)
 	valConfig.Strategy = "Watchtower"
 	stakerC, err := staker.NewStaker(
 		l2nodeA.L1Reader,
@@ -244,11 +309,11 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	err = stakerC.Initialize(ctx)
 	Require(t, err)
 
-	l2info.GenerateAccount("BackgroundUser")
-	tx = l2info.PrepareTx("Faucet", "BackgroundUser", l2info.TransferGas, balance, nil)
-	err = l2clientA.SendTransaction(ctx, tx)
+	builder.L2Info.GenerateAccount("BackgroundUser")
+	tx = builder.L2Info.PrepareTx("Faucet", "BackgroundUser", builder.L2Info.TransferGas, balance, nil)
+	err = builder.L2.Client.SendTransaction(ctx, tx)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l2clientA, tx)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
 	// Continually make L2 transactions in a background thread
@@ -260,7 +325,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	})()
 	go (func() {
 		defer close(backgroundTxsShutdownChan)
-		err := makeBackgroundTxs(backgroundTxsCtx, l2info, l2clientA)
+		err := makeBackgroundTxs(backgroundTxsCtx, builder)
 		if !errors.Is(err, context.Canceled) {
 			log.Warn("error making background txs", "err", err)
 		}
@@ -303,26 +368,28 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 				if !challengeMangerTimedOut {
 					// Upgrade the ChallengeManager contract to an implementation which says challenges are always timed out
 
-					mockImpl, tx, _, err := mocksgen.DeployTimedOutChallengeManager(&deployAuth, l1client)
+					mockImpl, tx, _, err := mocksgen.DeployTimedOutChallengeManager(&deployAuth, builder.L1.Client)
 					Require(t, err)
-					_, err = EnsureTxSucceeded(ctx, l1client, tx)
+					_, err = builder.L1.EnsureTxSucceeded(tx)
 					Require(t, err)
 
 					managerAddr := valWalletA.ChallengeManagerAddress()
 					// 0xb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d6103
 					proxyAdminSlot := common.BigToHash(arbmath.BigSub(crypto.Keccak256Hash([]byte("eip1967.proxy.admin")).Big(), common.Big1))
-					proxyAdminBytes, err := l1client.StorageAt(ctx, managerAddr, proxyAdminSlot, nil)
+					proxyAdminBytes, err := builder.L1.Client.StorageAt(ctx, managerAddr, proxyAdminSlot, nil)
 					Require(t, err)
 					proxyAdminAddr := common.BytesToAddress(proxyAdminBytes)
 					if proxyAdminAddr == (common.Address{}) {
 						Fatal(t, "failed to get challenge manager proxy admin")
 					}
 
-					proxyAdmin, err := mocksgen.NewProxyAdminForBinding(proxyAdminAddr, l1client)
+					proxyAdminABI, err := abi.JSON(strings.NewReader(mocksgen.ProxyAdminForBindingABI))
 					Require(t, err)
-					tx, err = proxyAdmin.Upgrade(&deployAuth, managerAddr, mockImpl)
+					upgradeCalldata, err := proxyAdminABI.Pack("upgrade", managerAddr, mockImpl)
 					Require(t, err)
-					_, err = EnsureTxSucceeded(ctx, l1client, tx)
+					tx, err = upgradeExecutor.ExecuteCall(&deployAuth, proxyAdminAddr, upgradeCalldata)
+					Require(t, err)
+					_, err = builder.L1.EnsureTxSucceeded(tx)
 					Require(t, err)
 
 					challengeMangerTimedOut = true
@@ -342,18 +409,18 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		}
 		Require(t, err, "Staker", stakerName, "failed to act")
 		if tx != nil {
-			_, err = EnsureTxSucceeded(ctx, l1client, tx)
+			_, err = builder.L1.EnsureTxSucceeded(tx)
 			Require(t, err, "EnsureTxSucceeded failed for staker", stakerName, "tx")
 		}
 		if faultyStaker {
-			conflictInfo, err := validatorUtils.FindStakerConflict(&bind.CallOpts{}, l2nodeA.DeployInfo.Rollup, l1authA.From, l1authB.From, big.NewInt(1024))
+			conflictInfo, err := validatorUtils.FindStakerConflict(&bind.CallOpts{}, l2nodeA.DeployInfo.Rollup, l1authA.From, srv.Address, big.NewInt(1024))
 			Require(t, err)
 			if staker.ConflictType(conflictInfo.Ty) == staker.CONFLICT_TYPE_FOUND {
 				cancelBackgroundTxs()
 			}
 		}
 		if faultyStaker && !sawStakerZombie {
-			sawStakerZombie, err = rollup.IsZombie(&bind.CallOpts{}, l1authB.From)
+			sawStakerZombie, err = rollup.IsZombie(&bind.CallOpts{}, srv.Address)
 			Require(t, err)
 		}
 		isHonestZombie, err := rollup.IsZombie(&bind.CallOpts{}, valWalletAddrA)
@@ -374,11 +441,11 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 			Require(t, err)
 		}
 		if !stakerBWasStaked {
-			stakerBWasStaked, err = rollup.IsStaked(&bind.CallOpts{}, l1authB.From)
+			stakerBWasStaked, err = rollup.IsStaked(&bind.CallOpts{}, srv.Address)
 			Require(t, err)
 		}
 		for j := 0; j < 5; j++ {
-			TransferBalance(t, "Faucet", "Faucet", common.Big0, l1info, l1client, ctx)
+			builder.L1.TransferBalance(t, "Faucet", "Faucet", common.Big0, builder.L1Info)
 		}
 	}
 

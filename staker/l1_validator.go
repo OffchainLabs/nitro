@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/staker/txbuilder"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/validator"
 
@@ -45,7 +46,7 @@ type L1Validator struct {
 	rollupAddress  common.Address
 	validatorUtils *rollupgen.ValidatorUtils
 	client         arbutil.L1Interface
-	builder        *ValidatorTxBuilder
+	builder        *txbuilder.Builder
 	wallet         ValidatorWalletInterface
 	callOpts       bind.CallOpts
 
@@ -66,7 +67,7 @@ func NewL1Validator(
 	txStreamer TransactionStreamerInterface,
 	blockValidator *BlockValidator,
 ) (*L1Validator, error) {
-	builder, err := NewValidatorTxBuilder(wallet)
+	builder, err := txbuilder.NewBuilder(wallet)
 	if err != nil {
 		return nil, err
 	}
@@ -314,6 +315,9 @@ func (v *L1Validator) generateNodeAction(
 		}
 		if !wasmRootValid {
 			if !stakerConfig.Dangerous.IgnoreRollupWasmModuleRoot {
+				if len(valInfo.WasmRoots) == 0 {
+					return nil, false, fmt.Errorf("block validation is still pending")
+				}
 				return nil, false, fmt.Errorf(
 					"wasmroot doesn't match rollup : %v, valid: %v",
 					v.lastWasmModuleRoot, valInfo.WasmRoots,

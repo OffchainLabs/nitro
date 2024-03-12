@@ -10,6 +10,7 @@ import (
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/offchainlabs/nitro/arbutil"
 )
 
 const INITIAL_CAPACITY = 128
@@ -66,10 +67,10 @@ func AdvanceInboxMessage() {
 	setGlobalStateU64(IDX_INBOX_POSITION, pos+1)
 }
 
-func ResolvePreImage(hash common.Hash) ([]byte, error) {
+func ResolveTypedPreimage(ty arbutil.PreimageType, hash common.Hash) ([]byte, error) {
 	return readBuffer(func(offset uint32, buf unsafe.Pointer) uint32 {
 		hashUnsafe := unsafe.Pointer(&hash[0])
-		return resolvePreImage(hashUnsafe, offset, buf)
+		return resolveTypedPreimage(uint8(ty), hashUnsafe, offset, buf)
 	}), nil
 }
 

@@ -13,6 +13,9 @@ solgen/go
 **/node_modules
 
 target/**/*
+!target/machines
+!target/machines/*
+!target/machines/**/*
 brotli/buildfiles/**/*
 
 # these are used by environment outside the docker:
