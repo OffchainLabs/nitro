@@ -1,10 +1,12 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+#[cfg(feature = "native")]
 use crate::kzg::ETHEREUM_KZG_SETTINGS;
 use sha2::Sha256;
 use sha3::Keccak256;
 use arbutil::PreimageType;
+#[cfg(feature = "native")]
 use c_kzg::{Blob, KzgCommitment};
 use digest::Digest;
 use eyre::{eyre, Result};
@@ -170,6 +172,7 @@ pub fn split_import(qualified: &str) -> Result<(&str, &str)> {
     Ok((module, name))
 }
 
+#[cfg(feature = "native")]
 pub fn hash_preimage(preimage: &[u8], ty: PreimageType) -> Result<[u8; 32]> {
     match ty {
         PreimageType::Keccak256 => Ok(Keccak256::digest(preimage).into()),

@@ -5,6 +5,7 @@
 
 pub mod binary;
 mod host;
+#[cfg(feature = "native")]
 mod kzg;
 pub mod machine;
 /// cbindgen:ignore
@@ -159,6 +160,7 @@ pub unsafe extern "C" fn atomic_u8_store(ptr: *mut u8, contents: u8) {
 /// Runs the machine while the condition variable is zero. May return early if num_steps is hit.
 /// Returns a c string error (freeable with libc's free) on error, or nullptr on success.
 #[no_mangle]
+#[cfg(feature = "native")]
 pub unsafe extern "C" fn arbitrator_step(
     mach: *mut Machine,
     num_steps: u64,
@@ -216,6 +218,7 @@ pub unsafe extern "C" fn arbitrator_add_user_wasm(
 /// Like arbitrator_step, but stops early if it hits a host io operation.
 /// Returns a c string error (freeable with libc's free) on error, or nullptr on success.
 #[no_mangle]
+#[cfg(feature = "native")]
 pub unsafe extern "C" fn arbitrator_step_until_host_io(
     mach: *mut Machine,
     condition: *const u8,
@@ -371,6 +374,7 @@ pub unsafe extern "C" fn arbitrator_module_root(mach: *mut Machine) -> Bytes32 {
 }
 
 #[no_mangle]
+#[cfg(feature = "native")]
 pub unsafe extern "C" fn arbitrator_gen_proof(mach: *mut Machine) -> RustByteArray {
     let mut proof = (*mach).serialize_proof();
     let ret = RustByteArray {

@@ -6,7 +6,6 @@ use crate::{
         self, parse, ExportKind, ExportMap, FloatInstruction, Local, NameCustomSection, WasmBinary,
     },
     host,
-    kzg::prove_kzg_preimage,
     memory::Memory,
     merkle::{Merkle, MerkleType},
     programs::{config::CompileConfig, meter::MeteredMachine, ModuleMod, StylusData},
@@ -19,6 +18,9 @@ use crate::{
     },
 };
 use arbutil::{math, Bytes32, Color, PreimageType};
+#[cfg(feature = "native")]
+use crate::kzg::prove_kzg_preimage;
+#[cfg(feature = "native")]
 use c_kzg::BYTES_PER_BLOB;
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
@@ -784,6 +786,7 @@ impl PreimageResolverWrapper {
         }
     }
 
+    #[cfg(feature = "native")]
     pub fn get(&mut self, context: u64, ty: PreimageType, hash: Bytes32) -> Option<&[u8]> {
         // TODO: this is unnecessarily complicated by the rust borrow checker.
         // This will probably be simplifiable when Polonius is shipped.
@@ -799,6 +802,7 @@ impl PreimageResolverWrapper {
         }
     }
 
+    #[cfg(feature = "native")]
     pub fn get_const(&self, context: u64, ty: PreimageType, hash: Bytes32) -> Option<CBytes> {
         if let Some(resolved) = &self.last_resolved {
             if resolved.0 == hash {
@@ -896,6 +900,7 @@ where
 }
 
 #[must_use]
+#[cfg(feature = "native")]
 fn prove_window<T, F, D, G>(items: &[T], stack_hasher: F, encoder: G) -> Vec<u8>
 where
     F: Fn(&[T]) -> Bytes32,
@@ -916,6 +921,7 @@ where
 }
 
 #[must_use]
+#[cfg(feature = "native")]
 fn prove_stack<T, F, D, G>(
     items: &[T],
     proving_depth: usize,
@@ -945,6 +951,7 @@ where
 // of in-between stacks ([2nd..last)).
 // Accepts prover function so that it can work both for proving stack and window.
 #[must_use]
+#[cfg(feature = "native")]
 fn prove_multistack<T, F, MF>(
     cothread: bool,
     items: Vec<&[T]>,
@@ -981,6 +988,7 @@ where
 }
 
 #[must_use]
+#[cfg(feature = "native")]
 fn exec_ibin_op<T>(a: T, b: T, op: IBinOpType) -> Option<T>
 where
     Wrapping<T>: ReinterpretAsSigned,
@@ -1016,6 +1024,7 @@ where
 }
 
 #[must_use]
+#[cfg(feature = "native")]
 fn exec_iun_op<T>(a: T, op: IUnOpType) -> u32
 where
     T: PrimInt,
@@ -1027,6 +1036,7 @@ where
     }
 }
 
+#[cfg(feature = "native")]
 fn exec_irel_op<T>(a: T, b: T, op: IRelOpType) -> Value
 where
     T: Ord,
@@ -1629,6 +1639,7 @@ impl Machine {
         Ok(self.value_stacks[0].clone())
     }
 
+    #[cfg(feature = "native")]
     pub fn call_function(
         &mut self,
         module: &str,
@@ -1641,6 +1652,7 @@ impl Machine {
         self.get_final_result()
     }
 
+    #[cfg(feature = "native")]
     pub fn call_user_func(&mut self, func: &str, args: Vec<Value>, ink: u64) -> Result<Vec<Value>> {
         self.set_ink(ink);
         self.call_function("user", func, args)
@@ -1716,6 +1728,7 @@ impl Machine {
         Some(self.pc)
     }
 
+    #[cfg(feature = "native")]
     fn test_next_instruction(func: &Function, pc: &ProgramCounter) {
         let inst: usize = pc.inst.try_into().unwrap();
         debug_assert!(func.code.len() > inst);
@@ -1725,6 +1738,7 @@ impl Machine {
         self.steps
     }
 
+    #[cfg(feature = "native")]
     pub fn step_n(&mut self, n: u64) -> Result<()> {
         if self.is_halted() {
             return Ok(());
@@ -2415,6 +2429,7 @@ impl Machine {
         Ok(())
     }
 
+    #[cfg(feature = "native")]
     fn host_call_hook(
         value_stack: &[Value],
         module: &Module,
@@ -2639,6 +2654,7 @@ impl Machine {
         h.finalize().into()
     }
 
+    #[cfg(feature = "native")]
     pub fn serialize_proof(&self) -> Vec<u8> {
         // Could be variable, but not worth it yet
         const STACK_PROVING_DEPTH: usize = 3;

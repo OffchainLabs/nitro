@@ -118,6 +118,7 @@ struct SimpleProfile {
 const INBOX_HEADER_LEN: usize = 40; // also in test-case's host-io.rs & contracts's OneStepProverHostIo.sol
 const DELAYED_HEADER_LEN: usize = 112; // also in test-case's host-io.rs & contracts's OneStepProverHostIo.sol
 
+#[cfg(feature = "native")]
 fn main() -> Result<()> {
     let opts = Opts::from_args();
 
