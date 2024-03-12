@@ -614,11 +614,11 @@ func TestStateAndHeaderForRecentBlock(t *testing.T) {
 	db := builder.L2.ExecNode.Backend.ChainDb()
 	i := 1
 	var mtx sync.RWMutex
-	var wgTrace sync.WaitGroup
+	var wgCallers sync.WaitGroup
 	for j := 0; j < threads && ctx.Err() == nil; j++ {
-		wgTrace.Add(1)
+		wgCallers.Add(1)
 		go func() {
-			defer wgTrace.Done()
+			defer wgCallers.Done()
 			mtx.RLock()
 			blockNumber := i
 			mtx.RUnlock()
@@ -652,8 +652,8 @@ func TestStateAndHeaderForRecentBlock(t *testing.T) {
 							errors <- err
 							return
 						}
-						if time.Since(start) > 15*time.Second {
-							errors <- fmt.Errorf("timeout - failed to trace call for more then 5 seconds, block: %d, err: %w", blockNumber, err)
+						if time.Since(start) > 5*time.Second {
+							errors <- fmt.Errorf("timeout - failed to get state for more then 5 seconds, block: %d, err: %w", blockNumber, err)
 							return
 						}
 					}
@@ -665,14 +665,14 @@ func TestStateAndHeaderForRecentBlock(t *testing.T) {
 			}
 		}()
 	}
-	traceDone := make(chan struct{})
+	callersDone := make(chan struct{})
 	go func() {
-		wgTrace.Wait()
-		close(traceDone)
+		wgCallers.Wait()
+		close(callersDone)
 	}()
 
 	select {
-	case <-traceDone:
+	case <-callersDone:
 		cancel()
 	case <-senderDone:
 		cancel()
@@ -680,7 +680,7 @@ func TestStateAndHeaderForRecentBlock(t *testing.T) {
 		t.Error(err)
 		cancel()
 	}
-	<-traceDone
+	<-callersDone
 	<-senderDone
 	close(errors)
 	for err := range errors {
