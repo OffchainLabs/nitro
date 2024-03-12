@@ -498,8 +498,6 @@ func (b *BatchPoster) pollForL1PriceData(ctx context.Context) {
 			} else {
 				suggestedTipCapGauge.Update(suggestedTipCap.Int64())
 			}
-			// We poll for new headers every five seconds to get accurate reporting of these metrics
-			time.Sleep(5 * time.Second)
 		case <-ctx.Done():
 			return
 		}
