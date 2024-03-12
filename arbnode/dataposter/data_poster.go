@@ -45,8 +45,6 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/spf13/pflag"
-
-	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
 )
 
 // Dataposter implements functionality to post transactions on the chain. It
@@ -139,22 +137,22 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 		useNoOpStorage = true
 		log.Info("Disabling data poster storage, as parent chain appears to be an Arbitrum chain without a mempool")
 	}
-	encF := func() storage.EncoderDecoderInterface {
-		if opts.Config().LegacyStorageEncoding {
-			return &storage.LegacyEncoderDecoder{}
-		}
-		return &storage.EncoderDecoder{}
-	}
+	// encF := func() storage.EncoderDecoderInterface {
+	// 	if opts.Config().LegacyStorageEncoding {
+	// 		return &storage.LegacyEncoderDecoder{}
+	// 	}
+	// 	return &storage.EncoderDecoder{}
+	// }
 	var queue QueueStorage
 	switch {
 	case useNoOpStorage:
 		queue = &noop.Storage{}
-	case opts.RedisClient != nil:
-		var err error
-		queue, err = redisstorage.NewStorage(opts.RedisClient, opts.RedisKey, &cfg.RedisSigner, encF)
-		if err != nil {
-			return nil, err
-		}
+	// case opts.RedisClient != nil:
+	// 	var err error
+	// 	queue, err = redisstorage.NewStorage(opts.RedisClient, opts.RedisKey, &cfg.RedisSigner, encF)
+	// 	if err != nil {
+	// 		return nil, err
+	// 	}
 	case cfg.UseDBStorage:
 		storage := dbstorage.New(opts.Database, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
 		if cfg.Dangerous.ClearDBStorage {
