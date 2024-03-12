@@ -78,10 +78,8 @@ func TestEdgeTracker_Act_ChallengedEdgeCannotConfirmByTime(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, false, someEdge.IsNone())
 	edge := someEdge.Unwrap()
-	assertionHash, err := edge.AssertionHash(ctx)
-	require.NoError(t, err)
 
-	pathTimerBefore, _, _, err := tkr.Watcher().ComputeHonestPathTimer(ctx, assertionHash, edge.Id())
+	timerBefore, err := tkr.Watcher().InheritedTimer(ctx, edge.Id())
 	require.NoError(t, err)
 
 	// Advance our backend way beyond the challenge period.
@@ -89,9 +87,9 @@ func TestEdgeTracker_Act_ChallengedEdgeCannotConfirmByTime(t *testing.T) {
 		createdData.Backend.Commit()
 	}
 
-	pathTimerAfter, _, _, err := tkr.Watcher().ComputeHonestPathTimer(ctx, assertionHash, edge.Id())
+	timerAfter, err := tkr.Watcher().InheritedTimer(ctx, edge.Id())
 	require.NoError(t, err)
-	require.Equal(t, pathTimerBefore, pathTimerAfter)
+	require.Equal(t, timerBefore, timerAfter)
 
 	// Despite a lot of time having passed since the edge was created, its timer stopped halfway
 	// through the challenge period as it gained a rival. That is, no matter how much time passes,
@@ -118,101 +116,16 @@ func TestEdgeTracker_Act_ConfirmedByTime(t *testing.T) {
 	honestEdgeOpt, err := chalManager.GetEdge(ctx, honestTracker.EdgeId())
 	require.NoError(t, err)
 	require.Equal(t, false, honestEdgeOpt.IsNone())
-	honestEdge := honestEdgeOpt.Unwrap()
 
 	evilEdgeOpt, err := chalManager.GetEdge(ctx, evilTracker.EdgeId())
 	require.NoError(t, err)
 	require.Equal(t, false, evilEdgeOpt.IsNone())
-	evilEdge := evilEdgeOpt.Unwrap()
-
-	// Expect that neither of the edges have a confirmed rival.
-	hasConfirmedRival, err := honestEdge.HasConfirmedRival(ctx)
-	require.NoError(t, err)
-	require.Equal(t, false, hasConfirmedRival)
-	hasConfirmedRival, err = evilEdge.HasConfirmedRival(ctx)
-	require.NoError(t, err)
-	require.Equal(t, false, hasConfirmedRival)
 
 	// Expect our edge to be confirmed right away.
 	err = honestTracker.Act(ctx)
 	require.NoError(t, err)
 	require.Equal(t, edgetracker.EdgeConfirmed, honestTracker.CurrentState())
 	require.Equal(t, true, honestTracker.ShouldDespawn(ctx))
-
-	// Expect that the evil edge now has a confirmed rival.
-	hasConfirmedRival, err = evilEdge.HasConfirmedRival(ctx)
-	require.NoError(t, err)
-	require.Equal(t, true, hasConfirmedRival)
-
-	// Expect the evil tracker should despawn because it has a confirmed rival.
-	require.Equal(t, true, evilTracker.ShouldDespawn(ctx))
-}
-
-func TestEdgeTracker_Act_ShouldDespawn_HasConfirmableAncestor(t *testing.T) {
-	ctx := context.Background()
-	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{}, setup.WithMockOneStepProver())
-	require.NoError(t, err)
-
-	chalManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
-	require.NoError(t, err)
-	chalPeriodBlocks, err := chalManager.ChallengePeriodBlocks(ctx)
-	require.NoError(t, err)
-
-	// Delay the evil root edge creation by a challenge period.
-	delayEvilRootEdgeCreation := option.Some(chalPeriodBlocks)
-	honestParent, _ := setupEdgeTrackersForBisection(t, ctx, createdData, delayEvilRootEdgeCreation)
-
-	// We manually bisect the honest, root level edge and initialize
-	// edge trackers for its children.
-	history, proof, err := honestParent.DetermineBisectionHistoryWithProof(ctx)
-	require.NoError(t, err)
-	edge, err := chalManager.GetEdge(ctx, honestParent.EdgeId())
-	require.NoError(t, err)
-	require.Equal(t, false, edge.IsNone())
-
-	child1, child2, err := edge.Unwrap().Bisect(ctx, history.Merkle, proof)
-	require.NoError(t, err)
-	require.NoError(t, honestParent.Watcher().AddVerifiedHonestEdge(ctx, child1))
-	require.NoError(t, honestParent.Watcher().AddVerifiedHonestEdge(ctx, child2))
-
-	assertionInfo := &edgetracker.AssociatedAssertionMetadata{
-		FromBatch:      0,
-		ToBatch:        1,
-		WasmModuleRoot: common.Hash{},
-	}
-	childTracker1, err := edgetracker.New(
-		ctx,
-		child1,
-		createdData.Chains[1],
-		createdData.HonestStateManager,
-		honestParent.Watcher(),
-		honestParent.ChallengeManager(),
-		assertionInfo,
-		edgetracker.WithTimeReference(customTime.NewArtificialTimeReference()),
-	)
-	require.NoError(t, err)
-	childTracker2, err := edgetracker.New(
-		ctx,
-		child2,
-		createdData.Chains[1],
-		createdData.HonestStateManager,
-		honestParent.Watcher(),
-		honestParent.ChallengeManager(),
-		assertionInfo,
-		edgetracker.WithTimeReference(customTime.NewArtificialTimeReference()),
-	)
-	require.NoError(t, err)
-
-	// However, the ancestor of both child edges is confirmable by time, so both of them
-	// should not be allowed to act and should despawn.
-	require.Equal(t, true, childTracker1.ShouldDespawn(ctx))
-	require.Equal(t, true, childTracker2.ShouldDespawn(ctx))
-
-	// We check we can also confirm the ancestor edge.
-	err = honestParent.Act(ctx)
-	require.NoError(t, err)
-	require.Equal(t, edgetracker.EdgeConfirmed, honestParent.CurrentState())
-	require.Equal(t, true, honestParent.ShouldDespawn(ctx))
 }
 
 type verifiedHonestMock struct {

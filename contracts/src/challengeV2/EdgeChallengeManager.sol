@@ -79,15 +79,20 @@ interface IEdgeChallengeManager {
     /// @param edgeId                   The id of the edge to confirm
     function confirmEdgeByTime(bytes32 edgeId, ExecutionStateData calldata claimStateData) external;
 
+
+    /// @notice Update multiple edges' timer cache by their children. Equivalent to calling updateTimerCacheByChildren for each edge.
+    /// @param edgeIds The ids of the edges to update
+    function multiUpdateTimeCacheByChildren(bytes32[] calldata edgeIds) external;
+
+    /// @notice If a confirmed edge exists whose claim id is equal to this edge, then this edge can be confirmed
+    /// @dev    When zero layer edges are created they reference an edge, or assertion, in the level below. If a zero layer
+    ///         edge is confirmed, it becomes possible to also confirm the edge that it claims
+    /// @param edgeId           The id of the edge to confirm
     /// @notice Update an edge's timer cache by its children.
     ///         Sets the edge's timer cache to its timeUnrivaled + (minimum timer cache of its children).
     ///         This function should not be used for edges without children.
     /// @param edgeId The id of the edge to update
     function updateTimerCacheByChildren(bytes32 edgeId) external;
-
-    /// @notice Update multiple edges' timer cache by their children. Equivalent to calling updateTimerCacheByChildren for each edge.
-    /// @param edgeIds The ids of the edges to update
-    function multiUpdateTimeCacheByChildren(bytes32[] calldata edgeIds) external;
 
     /// @notice Given a one step fork edge and an edge with matching claim id,
     ///         set the one step fork edge's timer cache to its timeUnrivaled + claiming edge's timer cache.
@@ -568,7 +573,6 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
     ///////////////////////
     // VIEW ONLY SECTION //
     ///////////////////////
-
     /// @inheritdoc IEdgeChallengeManager
     function getLayerZeroEndHeight(EdgeType eType) public view returns (uint256) {
         if (eType == EdgeType.Block) {

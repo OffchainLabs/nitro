@@ -4,7 +4,7 @@ go_library(
     name = "challenge-tree",
     srcs = [
         "add_edge.go",
-        "generalized_path_timer.go",
+        "ancestors.go",
         "local_timer.go",
         "tree.go",
     ],
@@ -18,6 +18,7 @@ go_library(
         "//layer2-state-provider",
         "//math",
         "@com_github_ethereum_go_ethereum//common",
+        "@com_github_ethereum_go_ethereum//log",
         "@com_github_pkg_errors//:errors",
     ],
 )
@@ -26,7 +27,7 @@ go_test(
     name = "challenge-tree_test",
     srcs = [
         "ancestors_test.go",
-        "generalized_path_timer_test.go",
+        "compute_ancestors_test.go",
         "local_timer_test.go",
         "tree_test.go",
     ],

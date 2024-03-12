@@ -166,7 +166,7 @@ func TestEndToEnd_TwoEvilValidators(t *testing.T) {
 		actors: actorParams{
 			numEvilValidators: 2,
 		},
-		timings: defaultTimeParams(),
+		timings: timeCfg,
 		expectations: []expect{
 			// Expect one assertion is confirmed by challenge win.
 			expectAssertionConfirmedByChallengeWin,

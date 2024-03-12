@@ -21,6 +21,7 @@ type OriginId string
 type Edge struct {
 	ID                   EdgeId
 	EdgeType             protocol.ChallengeLevel
+	InnerStatus          protocol.EdgeStatus
 	StartHeight          uint64
 	StartCommit          Commit
 	EndHeight            uint64
@@ -88,10 +89,6 @@ func (e *Edge) ClaimId() option.Option[protocol.ClaimId] {
 	return option.Some(protocol.ClaimId(common.BytesToHash([]byte(e.ClaimID))))
 }
 
-func (*Edge) HasConfirmedRival(_ context.Context) (bool, error) {
-	return false, nil
-}
-
 // LowerChild of the edge, if any.
 func (e *Edge) LowerChild(_ context.Context) (option.Option[protocol.EdgeId], error) {
 	if e.LowerChildID == "" {
@@ -129,8 +126,8 @@ func (*Edge) TimeUnrivaled(_ context.Context) (uint64, error) {
 }
 
 // Status of an edge.
-func (*Edge) Status(_ context.Context) (protocol.EdgeStatus, error) {
-	return 0, nil
+func (e *Edge) Status(_ context.Context) (protocol.EdgeStatus, error) {
+	return e.InnerStatus, nil
 }
 
 // HasRival if an edge has rivals.
@@ -157,15 +154,7 @@ func (*Edge) Bisect(
 	return nil, nil, errors.New("unimplemented")
 }
 
-func (*Edge) ConfirmByTimer(_ context.Context, _ []protocol.EdgeId) error {
-	return errors.New("unimplemented")
-}
-
-func (*Edge) ConfirmByClaim(_ context.Context, _ protocol.ClaimId) error {
-	return errors.New("unimplemented")
-}
-
-func (*Edge) ConfirmByChildren(_ context.Context) error {
+func (*Edge) ConfirmByTimer(_ context.Context) error {
 	return errors.New("unimplemented")
 }
 

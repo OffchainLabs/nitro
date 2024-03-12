@@ -11,7 +11,6 @@ go_library(
         "//chain-abstraction:protocol",
         "//chain-abstraction/sol-implementation",
         "//challenge-manager/challenge-tree",
-        "//challenge-manager/edge-tracker",
         "//containers/option",
         "//containers/threadsafe",
         "//layer2-state-provider",
@@ -30,15 +29,4 @@ go_test(
     name = "chain-watcher_test",
     srcs = ["watcher_test.go"],
     embed = [":chain-watcher"],
-    deps = [
-        "//chain-abstraction:protocol",
-        "//challenge-manager/challenge-tree",
-        "//containers/option",
-        "//containers/threadsafe",
-        "//layer2-state-provider",
-        "//solgen/go/challengeV2gen",
-        "//testing/mocks",
-        "@com_github_ethereum_go_ethereum//common",
-        "@com_github_stretchr_testify//require",
-    ],
 )

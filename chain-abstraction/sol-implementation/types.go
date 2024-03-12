@@ -158,7 +158,6 @@ type specEdge struct {
 	// to the final value and never changed again (this saves us the on-chain call)
 	timeUnrivaled     option.Option[uint64]          // Once edge has a rival, this is set
 	hasRival          bool                           // Once edge has a rival, this is set
-	hasConfirmedRival bool                           // Once edge has a confirmed rival, this is set
 	isConfirmed       bool                           // Once the edge is confirmed, this is set
 	confirmedAtBlock  option.Option[uint64]          // Once the edge is confirmed, this is set
 	lowerChild        option.Option[protocol.EdgeId] // Once the edge has a lower child, this is set

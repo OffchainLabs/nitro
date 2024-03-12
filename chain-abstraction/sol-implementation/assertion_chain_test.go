@@ -325,7 +325,7 @@ func TestConfirmAssertionByChallengeWinner(t *testing.T) {
 		require.ErrorContains(t, err, "EDGE_NOT_CONFIRMED")
 	})
 	t.Run("level zero block edge confirmed allows assertion confirmation", func(t *testing.T) {
-		err = honestEdge.ConfirmByTimer(ctx, make([]protocol.EdgeId, 0))
+		err = honestEdge.ConfirmByTimer(ctx)
 		require.NoError(t, err)
 
 		// Adjust beyond the grace period.
@@ -447,7 +447,7 @@ func TestIsChallengeComplete(t *testing.T) {
 		createdData.Backend.Commit()
 	}
 
-	err = honestEdge.ConfirmByTimer(ctx, make([]protocol.EdgeId, 0))
+	err = honestEdge.ConfirmByTimer(ctx)
 	require.NoError(t, err)
 
 	// Adjust beyond the grace period.

@@ -69,22 +69,21 @@ type JsonEdge struct {
 }
 
 type JsonTrackedRoyalEdge struct {
-	Id                  common.Hash    `json:"id"`
-	ChallengeLevel      uint8          `json:"challengeLevel"`
-	StartHistoryRoot    common.Hash    `json:"startHistoryRoot"`
-	StartHeight         uint64         `json:"startHeight"`
-	EndHistoryRoot      common.Hash    `json:"endHistoryRoot"`
-	EndHeight           uint64         `json:"endHeight"`
-	CreatedAtBlock      uint64         `json:"createdAtBlock"`
-	MutualId            common.Hash    `json:"mutualId"`
-	OriginId            common.Hash    `json:"originId"`
-	ClaimId             common.Hash    `json:"claimId"`
-	MiniStaker          common.Address `json:"miniStaker" db:"MiniStaker"`
-	AssertionHash       common.Hash    `json:"assertionHash" db:"AssertionHash"`
-	TimeUnrivaled       uint64         `json:"timeUnrivaled" db:"TimeUnrivaled"`
-	HasRival            bool           `json:"hasRival" db:"HasRival"`
-	Ancestors           []common.Hash  `json:"ancestors"`
-	CumulativePathTimer uint64         `json:"cumulativePathTimer" db:"CumulativePathTimer"`
+	Id               common.Hash    `json:"id"`
+	ChallengeLevel   uint8          `json:"challengeLevel"`
+	StartHistoryRoot common.Hash    `json:"startHistoryRoot"`
+	StartHeight      uint64         `json:"startHeight"`
+	EndHistoryRoot   common.Hash    `json:"endHistoryRoot"`
+	EndHeight        uint64         `json:"endHeight"`
+	CreatedAtBlock   uint64         `json:"createdAtBlock"`
+	MutualId         common.Hash    `json:"mutualId"`
+	OriginId         common.Hash    `json:"originId"`
+	ClaimId          common.Hash    `json:"claimId"`
+	MiniStaker       common.Address `json:"miniStaker" db:"MiniStaker"`
+	AssertionHash    common.Hash    `json:"assertionHash" db:"AssertionHash"`
+	TimeUnrivaled    uint64         `json:"timeUnrivaled" db:"TimeUnrivaled"`
+	HasRival         bool           `json:"hasRival" db:"HasRival"`
+	Ancestors        []common.Hash  `json:"ancestors"`
 }
 
 type JsonEdgesByChallengedAssertion struct {

@@ -65,9 +65,7 @@ func (a *AssertionChain) transact(
 	// Now, we send the tx with the estimated gas.
 	opts.GasLimit = gas
 	opts.NoSend = false
-	a.transactionLock.Lock()
 	tx, err = a.transactor.SendTransaction(ctx, tx, gas)
-	a.transactionLock.Unlock()
 	if err != nil {
 		return nil, err
 	}

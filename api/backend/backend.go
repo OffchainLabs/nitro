@@ -17,8 +17,6 @@ import (
 	edgetracker "github.com/OffchainLabs/bold/challenge-manager/edge-tracker"
 	"github.com/OffchainLabs/bold/containers/option"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/pkg/errors"
 )
 
 type BusinessLogicProvider interface {
@@ -198,19 +196,11 @@ func (b *Backend) GetEdges(ctx context.Context, opts ...db.EdgeOption) ([]*api.J
 			e.TimeUnrivaled = timeUnrivaled
 			isRoyal := b.chainWatcher.IsRoyal(assertionHash, edge.Id())
 			if isRoyal {
-				pathTimer, ancestors, _, err := b.chainWatcher.ComputeHonestPathTimer(ctx, assertionHash, edge.Id())
+				inheritedTimer, err := b.chainWatcher.InheritedTimer(ctx, edge.Id())
 				if err != nil {
 					return nil, err
 				}
-				rawAncestors := ""
-				for i, an := range ancestors {
-					rawAncestors += an.Hex()
-					if i != len(ancestors)-1 {
-						rawAncestors += ","
-					}
-				}
-				e.RawAncestors = rawAncestors
-				e.CumulativePathTimer = uint64(pathTimer)
+				e.InheritedTimer = inheritedTimer
 			}
 			e.IsRoyal = isRoyal
 			trackerOpt := b.trackerFetcher.GetEdgeTracker(edge.Id())
@@ -224,20 +214,6 @@ func (b *Backend) GetEdges(ctx context.Context, opts ...db.EdgeOption) ([]*api.J
 		}
 		if err := b.db.UpdateEdges(edges); err != nil {
 			return nil, err
-		}
-	}
-	for _, e := range edges {
-		if e.RawAncestors != "" {
-			ancestorsStr := strings.Split(e.RawAncestors, ",")
-			ancestors := make([]common.Hash, len(ancestorsStr))
-			for i, an := range ancestorsStr {
-				edgeId, err := hexutil.Decode(an)
-				if err != nil {
-					return nil, errors.Wrap(err, "fails here")
-				}
-				ancestors[i] = common.BytesToHash(edgeId)
-			}
-			e.Ancestors = ancestors
 		}
 	}
 	return edges, nil

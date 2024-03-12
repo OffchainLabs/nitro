@@ -1,6 +1,3 @@
-// Copyright 2023, Offchain Labs, Inc.
-// For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
-
 package challengetree
 
 import (
@@ -11,7 +8,6 @@ import (
 	"github.com/OffchainLabs/bold/containers"
 	"github.com/OffchainLabs/bold/containers/threadsafe"
 	bisection "github.com/OffchainLabs/bold/math"
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
 )
 
@@ -35,104 +31,14 @@ type HonestAncestors []protocol.EdgeId
 // EdgeLocalTimer is the local, unrivaled timer of a specific edge.
 type EdgeLocalTimer uint64
 
-// AncestorsQueryResponse contains a list of ancestor edge ids and
-// their respective local timers. Both slices have the same length and correspond
-// to each other.
-type AncestorsQueryResponse struct {
-	AncestorLocalTimers []EdgeLocalTimer
-	AncestorEdgeIds     HonestAncestors
-}
-
-// HasConfirmableAncestor checks if any of an edge's honest ancestors have a cumulative path timer
-// that is greater than or equal to a challenge period worth of blocks. It takes in a list of
-// local timers for an edge's ancestors and a block number to compute each entry's cumulative
-// timer from this list.
-//
-// IMPORTANT: The list of ancestors must be ordered from child to root edge, where the root edge timer is
-// the last element in the list of local timers.
-func (ht *RoyalChallengeTree) HasConfirmableAncestor(
-	ctx context.Context,
-	honestAncestorLocalTimers []EdgeLocalTimer,
-	challengePeriodBlocks uint64,
-) (bool, error) {
-	if len(honestAncestorLocalTimers) == 0 {
-		return false, nil
-	}
-
-	blockRootEdge, err := ht.RoyalBlockChallengeRootEdge()
-	if err != nil {
-		return false, err
-	}
-	if blockRootEdge.ClaimId().IsNone() {
-		return false, fmt.Errorf("expected claimId to be found on block level root edge %#x", blockRootEdge.Id())
-	}
-
-	assertionHash := protocol.AssertionHash{Hash: common.Hash(blockRootEdge.ClaimId().Unwrap())}
-
-	assertionUnrivaledNumBlocks, err := ht.metadataReader.AssertionUnrivaledBlocks(
-		ctx, assertionHash,
-	)
-	if err != nil {
-		return false, err
-	}
-	total := assertionUnrivaledNumBlocks
-	for _, timer := range honestAncestorLocalTimers {
-		total += uint64(timer)
-		if total >= challengePeriodBlocks {
-			return true, nil
-		}
-	}
-	return false, nil
-}
-
-// ComputeHonestPathTimer for an honest edge at a block number given its ancestors'
-// local timers. It adds up all their values including the assertion
-// unrivaled timer and the edge's local timer.
-func (ht *RoyalChallengeTree) ComputeHonestPathTimer(
-	ctx context.Context,
-	edgeId protocol.EdgeId,
-	ancestorLocalTimers []EdgeLocalTimer,
-	blockNumber uint64,
-) (PathTimer, error) {
-	edge, ok := ht.edges.TryGet(edgeId)
-	if !ok {
-		return 0, errNotFound(edgeId)
-	}
-	edgeLocalTimer, err := ht.LocalTimer(edge, blockNumber)
-	if err != nil {
-		return 0, err
-	}
-	total := PathTimer(edgeLocalTimer)
-
-	blockRootEdge, err := ht.RoyalBlockChallengeRootEdge()
-	if err != nil {
-		return 0, err
-	}
-	if blockRootEdge.ClaimId().IsNone() {
-		return 0, fmt.Errorf("expected claimId to be found on block level root edge when computing honest path timer %#x", blockRootEdge.Id())
-	}
-
-	assertionUnrivaledTimer, err := ht.metadataReader.AssertionUnrivaledBlocks(
-		ctx, protocol.AssertionHash{Hash: common.Hash(blockRootEdge.ClaimId().Unwrap())},
-	)
-	if err != nil {
-		return 0, err
-	}
-	total += PathTimer(assertionUnrivaledTimer)
-	for _, timer := range ancestorLocalTimers {
-		total += PathTimer(timer)
-	}
-	return total, nil
-}
-
-// ComputeAncestorsWithTimers computes the ancestors of the given edge and their respective path timers, even
-// across challenge levels. Ancestor lists are linked through challenge levels via claimed edges. It is generalized
+// ComputeAncestors gathers all royal ancestors of a given edge across challenge levels.
+// Ancestor lists are linked through challenge levels via claimed edges. It is generalized
 // to any number of challenge levels in the protocol.
-func (ht *RoyalChallengeTree) ComputeAncestorsWithTimers(
+func (ht *RoyalChallengeTree) ComputeAncestors(
 	ctx context.Context,
 	edgeId protocol.EdgeId,
 	blockNumber uint64,
-) (*AncestorsQueryResponse, error) {
+) (HonestAncestors, error) {
 	// Checks if the edge exists before performing any computation.
 	startEdge, ok := ht.edges.TryGet(edgeId)
 	if !ok {
@@ -145,7 +51,6 @@ func (ht *RoyalChallengeTree) ComputeAncestorsWithTimers(
 	currentEdge := startEdge
 
 	ancestry := make([]protocol.EdgeId, 0)
-	localTimers := make([]EdgeLocalTimer, 0)
 
 	// Challenge levels go from lowest to highest, where lowest is the smallest challenge level
 	// (where challenges are over individual, WASM opcodes). If we have 3 challenge levels,
@@ -171,7 +76,6 @@ func (ht *RoyalChallengeTree) ComputeAncestorsWithTimers(
 		containers.Reverse(ancestorLocalTimers)
 		containers.Reverse(ancestorsAtLevel)
 		ancestry = append(ancestry, ancestorsAtLevel...)
-		localTimers = append(localTimers, ancestorLocalTimers...)
 
 		// Advance the challenge level.
 		currentChallengeLevel += 1
@@ -186,31 +90,13 @@ func (ht *RoyalChallengeTree) ComputeAncestorsWithTimers(
 		if err != nil {
 			return nil, err
 		}
-		claimEdgeLocalTimer, err := ht.LocalTimer(nextLevelClaimedEdge, blockNumber)
-		if err != nil {
-			return nil, err
-		}
-
 		// Update the cursor to be the claimed edge at the next challenge level.
 		currentEdge = nextLevelClaimedEdge
 
 		// Include the next level claimed edge in the ancestry list.
 		ancestry = append(ancestry, nextLevelClaimedEdge.Id())
-		localTimers = append(localTimers, EdgeLocalTimer(claimEdgeLocalTimer))
 	}
-
-	// If the ancestry is empty, we just return an empty response.
-	if len(ancestry) == 0 {
-		return &AncestorsQueryResponse{
-			AncestorLocalTimers: make([]EdgeLocalTimer, 0),
-			AncestorEdgeIds:     ancestry,
-		}, nil
-	}
-
-	return &AncestorsQueryResponse{
-		AncestorLocalTimers: localTimers,
-		AncestorEdgeIds:     ancestry,
-	}, nil
+	return ancestry, nil
 }
 
 // Computes the list of ancestors in a challenge level from a root edge down
@@ -287,7 +173,7 @@ func (ht *RoyalChallengeTree) hasHonestAncestry(ctx context.Context, eg protocol
 	if chalLevel == protocol.NewBlockChallengeLevel() && claimId.IsSome() {
 		return true, nil
 	}
-	ancestry, err := ht.ComputeAncestorsWithTimers(
+	ancestry, err := ht.ComputeAncestors(
 		ctx,
 		eg.Id(),
 		0, /* block num (unimportant here) */
@@ -300,12 +186,7 @@ func (ht *RoyalChallengeTree) hasHonestAncestry(ctx context.Context, eg protocol
 		// Otherwise, we received a real error in the computation.
 		return false, err
 	}
-	// No ancestors found, we return false.
-	if len(ancestry.AncestorEdgeIds) == 0 {
-		return false, nil
-	}
-	// The edge has an honest ancestry.
-	return true, nil
+	return len(ancestry) > 0, nil
 }
 
 // Computes the root edge for a given child edge at a challenge level.

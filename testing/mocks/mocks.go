@@ -171,6 +171,23 @@ func (m *MockSpecChallengeManager) ChallengePeriodBlocks(ctx context.Context) (u
 	return args.Get(0).(uint64), args.Error(1)
 }
 
+func (m *MockSpecChallengeManager) InheritedTimer(ctx context.Context, edgeId protocol.EdgeId) (uint64, error) {
+	args := m.Called(ctx, edgeId)
+	return args.Get(0).(uint64), args.Error(1)
+}
+func (m *MockSpecChallengeManager) UpdateInheritedTimerByChildren(ctx context.Context, edgeId protocol.EdgeId) error {
+	args := m.Called(ctx, edgeId)
+	return args.Error(0)
+}
+func (m *MockSpecChallengeManager) UpdateInheritedTimerByClaim(
+	ctx context.Context,
+	claimingEdgeId protocol.EdgeId,
+	claimId protocol.ClaimId,
+) error {
+	args := m.Called(ctx, claimingEdgeId, claimId)
+	return args.Error(0)
+}
+
 func (m *MockSpecChallengeManager) GetEdge(
 	ctx context.Context,
 	edgeId protocol.EdgeId,
@@ -286,10 +303,6 @@ func (m *MockSpecEdge) TimeUnrivaled(ctx context.Context) (uint64, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(uint64), args.Error(1)
 }
-func (m *MockSpecEdge) HasConfirmedRival(ctx context.Context) (bool, error) {
-	args := m.Called(ctx)
-	return args.Get(0).(bool), args.Error(1)
-}
 func (m *MockSpecEdge) HasRival(ctx context.Context) (bool, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(bool), args.Error(1)
@@ -340,8 +353,8 @@ func (m *MockSpecEdge) Bisect(
 	args := m.Called(ctx, prefixHistoryRoot, prefixProof)
 	return args.Get(0).(protocol.VerifiedRoyalEdge), args.Get(1).(protocol.VerifiedRoyalEdge), args.Error(2)
 }
-func (m *MockSpecEdge) ConfirmByTimer(ctx context.Context, ancestorIds []protocol.EdgeId) error {
-	args := m.Called(ctx, ancestorIds)
+func (m *MockSpecEdge) ConfirmByTimer(ctx context.Context) error {
+	args := m.Called(ctx)
 	return args.Error(0)
 }
 func (m *MockSpecEdge) ConfirmByClaim(ctx context.Context, claimId protocol.ClaimId) error {

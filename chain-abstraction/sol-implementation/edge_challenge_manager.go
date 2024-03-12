@@ -70,36 +70,9 @@ func (e *specEdge) TimeUnrivaled(ctx context.Context) (uint64, error) {
 		return 0, err
 	}
 	if !timer.IsUint64() {
-		return 0, errors.New("unrivaled timer for edge was a not a uint64")
-	}
-	if e.hasRival {
-		e.timeUnrivaled = option.Some(timer.Uint64())
+		return 0, fmt.Errorf("received time unrivaled > max uint64 for edge %#x", e.id)
 	}
 	return timer.Uint64(), nil
-}
-
-func (e *specEdge) HasConfirmedRival(ctx context.Context) (bool, error) {
-	if e.hasConfirmedRival {
-		return e.hasConfirmedRival, nil
-	}
-	mutualId, err := calculateMutualId(
-		e.inner.Level,
-		e.inner.OriginId,
-		e.inner.StartHeight,
-		e.inner.StartHistoryRoot,
-		e.inner.EndHeight,
-	)
-	if err != nil {
-		return false, err
-	}
-	confirmedRival, err := e.manager.caller.ConfirmedRival(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}), mutualId)
-	if err != nil {
-		return false, err
-	}
-	if confirmedRival != ([32]byte{}) {
-		e.hasConfirmedRival = true
-	}
-	return confirmedRival != ([32]byte{}), nil
 }
 
 func (e *specEdge) HasRival(ctx context.Context) (bool, error) {
@@ -303,7 +276,7 @@ func (e *specEdge) Bisect(
 	return lower, upper, nil
 }
 
-func (e *specEdge) ConfirmByTimer(ctx context.Context, ancestorIds []protocol.EdgeId) error {
+func (e *specEdge) ConfirmByTimer(ctx context.Context) error {
 	s, err := e.Status(ctx)
 	if err != nil {
 		return err
@@ -311,33 +284,21 @@ func (e *specEdge) ConfirmByTimer(ctx context.Context, ancestorIds []protocol.Ed
 	if s == protocol.EdgeConfirmed {
 		return nil
 	}
-	var assertionHash protocol.AssertionHash
-	if len(ancestorIds) != 0 {
-		topLevelAncestorId := ancestorIds[len(ancestorIds)-1]
-		topLevelAncestor, topLevelErr := e.manager.GetEdge(ctx, topLevelAncestorId)
-		if topLevelErr != nil {
-			return topLevelErr
-		}
-		if topLevelAncestor.IsNone() {
-			return fmt.Errorf("did not find edge with id %#x for specified top level ancestor", topLevelAncestorId)
-		}
-		topEdge := topLevelAncestor.Unwrap()
-		challengeLevel := topEdge.GetChallengeLevel()
-		if !challengeLevel.IsBlockChallengeLevel() {
-			return errors.New("top level ancestor must be a block challenge edge")
-		}
-		assertionHash = protocol.AssertionHash{
-			Hash: common.Hash(topEdge.ClaimId().Unwrap()),
-		}
-	} else {
-		assertionHash = protocol.AssertionHash{
-			Hash: e.inner.ClaimId,
-		}
+	if e.GetChallengeLevel() != protocol.NewBlockChallengeLevel() {
+		return errors.New("only block challenge edges can be confirmed by time")
+	}
+	if e.ClaimId().IsNone() {
+		return errors.New("only root edges can be confirmed by time")
+	}
+	assertionHash := protocol.AssertionHash{
+		Hash: e.inner.ClaimId,
 	}
 	assertionCreation, err := e.manager.assertionChain.ReadAssertionCreationInfo(ctx, assertionHash)
 	if err != nil {
 		return err
 	}
+	// The confirm by timer used to require a list of ancestors, but it has since
+	// been refactored to use them. However, the function signature still needs this empty list.
 	_, err = e.manager.assertionChain.transact(ctx, e.manager.backend, func(opts *bind.TransactOpts) (*types.Transaction, error) {
 		return e.manager.writer.ConfirmEdgeByTime(opts, e.id, challengeV2gen.ExecutionStateData{
 			ExecutionState: challengeV2gen.ExecutionState{
@@ -348,16 +309,10 @@ func (e *specEdge) ConfirmByTimer(ctx context.Context, ancestorIds []protocol.Ed
 			InboxAcc:          assertionCreation.AfterInboxBatchAcc,
 		})
 	})
-	ancestorStrings := make([]string, len(ancestorIds))
-	for i, r := range ancestorIds {
-		ancestorStrings[i] = containers.Trunc(r.Hash[:])
-	}
 	return errors.Wrapf(
 		err,
-		"could not confirm edge %s with tx and %d ancestors %v",
+		"could not confirm edge %s by time with tx",
 		containers.Trunc(e.id[:]),
-		len(ancestorIds),
-		strings.Join(ancestorStrings, ", "),
 	)
 }
 
@@ -583,6 +538,14 @@ func (cm *specChallengeManager) GetEdge(
 	})), nil
 }
 
+func (cm *specChallengeManager) InheritedTimer(ctx context.Context, edgeId protocol.EdgeId) (uint64, error) {
+	edge, err := cm.caller.GetEdge(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}), edgeId.Hash)
+	if err != nil {
+		return 0, err
+	}
+	return edge.TotalTimeUnrivaledCache, nil
+}
+
 func (e *specEdge) fetchEdge(
 	ctx context.Context,
 ) (challengeV2gen.ChallengeEdge, error) {
@@ -627,6 +590,53 @@ func (cm *specChallengeManager) CalculateEdgeId(
 		endHistoryRoot,
 	)
 	return protocol.EdgeId{Hash: id}, err
+}
+
+func (cm *specChallengeManager) UpdateInheritedTimerByChildren(
+	ctx context.Context,
+	edgeId protocol.EdgeId,
+) error {
+	if _, err := cm.assertionChain.transact(
+		ctx,
+		cm.assertionChain.backend,
+		func(opts *bind.TransactOpts) (*types.Transaction, error) {
+			return cm.writer.UpdateTimerCacheByChildren(
+				opts,
+				edgeId.Hash,
+			)
+		}); err != nil {
+		return errors.Wrapf(
+			err,
+			"could not update inherited timer for edge by children %#x",
+			edgeId,
+		)
+	}
+	return nil
+}
+
+func (cm *specChallengeManager) UpdateInheritedTimerByClaim(
+	ctx context.Context,
+	claimingEdgeId protocol.EdgeId,
+	claimId protocol.ClaimId,
+) error {
+	if _, err := cm.assertionChain.transact(
+		ctx,
+		cm.assertionChain.backend,
+		func(opts *bind.TransactOpts) (*types.Transaction, error) {
+			return cm.writer.UpdateTimerCacheByClaim(
+				opts,
+				common.Hash(claimId),
+				claimingEdgeId.Hash,
+			)
+		}); err != nil {
+		return errors.Wrapf(
+			err,
+			"could not update inherited timer for edge by claim: claim id %#x, claiming edge id %#x",
+			common.Hash(claimId),
+			claimingEdgeId.Hash,
+		)
+	}
+	return nil
 }
 
 // ConfirmEdgeByOneStepProof checks a one step proof for a tentative winner edge id

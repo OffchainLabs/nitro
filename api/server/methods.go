@@ -208,7 +208,7 @@ func (s *Server) AssertionByIdentifier(w http.ResponseWriter, r *http.Request) {
 // - only_subchallenged_edges: boolean true or false to get only edges that have a subchallenge claiming them
 // - from_block_number: items that were created since a specific block number.
 // - to_block_number: caps the response to edges up to a block number
-// - path_timer_geq: edges with a path timer greater than some N number of blocks
+// - inherited_timer_geq: edges with an inherited timer greater than some N number of blocks
 // - to_block_number: caps the response to edges up to a block number
 // - origin_id: edges that have a 0x-prefixed origin id
 // - mutual_id: edges that have a 0x-prefixed mutual id
@@ -300,9 +300,9 @@ func (s *Server) AllChallengeEdges(w http.ResponseWriter, r *http.Request) {
 			opts = append(opts, db.WithEndHeight(v))
 		}
 	}
-	if val, ok := query["path_timer_geq"]; ok && len(val) > 0 {
+	if val, ok := query["inherited_timer_geq"]; ok && len(val) > 0 {
 		if v, err2 := strconv.ParseUint(val[0], 10, 64); err2 == nil {
-			opts = append(opts, db.WithPathTimerGreaterOrEq(v))
+			opts = append(opts, db.WithInheritedTimerGreaterOrEq(v))
 		}
 	}
 	if val, ok := query["origin_id"]; ok && len(val) > 0 {
