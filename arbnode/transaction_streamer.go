@@ -69,7 +69,8 @@ type TransactionStreamer struct {
 	inboxReader     *InboxReader
 	delayedBridge   *DelayedBridge
 
-	cachedL1PriceData *L1PriceData
+	cachedL1PriceDataMutex sync.RWMutex
+	cachedL1PriceData      *L1PriceData
 }
 
 type TransactionStreamerConfig struct {
@@ -141,6 +142,9 @@ type L1PriceData struct {
 }
 
 func (s *TransactionStreamer) CurrentEstimateOfL1GasPrice() uint64 {
+	s.cachedL1PriceDataMutex.Lock()
+	defer s.cachedL1PriceDataMutex.Unlock()
+
 	currentEstimate, err := s.exec.GetL1GasPriceEstimate()
 	if err != nil {
 		log.Error("error fetching current L2 estimate of L1 gas price hence reusing cached estimate", "err", err)
@@ -151,6 +155,9 @@ func (s *TransactionStreamer) CurrentEstimateOfL1GasPrice() uint64 {
 }
 
 func (s *TransactionStreamer) BacklogCallDataUnits() uint64 {
+	s.cachedL1PriceDataMutex.RLock()
+	defer s.cachedL1PriceDataMutex.RUnlock()
+
 	size := len(s.cachedL1PriceData.msgToL1PriceData)
 	if size == 0 {
 		return 0
@@ -161,6 +168,9 @@ func (s *TransactionStreamer) BacklogCallDataUnits() uint64 {
 }
 
 func (s *TransactionStreamer) BacklogL1GasCharged() uint64 {
+	s.cachedL1PriceDataMutex.RLock()
+	defer s.cachedL1PriceDataMutex.RUnlock()
+
 	size := len(s.cachedL1PriceData.msgToL1PriceData)
 	if size == 0 {
 		return 0
@@ -171,6 +181,9 @@ func (s *TransactionStreamer) BacklogL1GasCharged() uint64 {
 }
 
 func (s *TransactionStreamer) TrimCache(to arbutil.MessageIndex) {
+	s.cachedL1PriceDataMutex.Lock()
+	defer s.cachedL1PriceDataMutex.Unlock()
+
 	if to < s.cachedL1PriceData.startOfL1PriceDataCache {
 		log.Info("trying to trim older cache which doesnt exist anymore")
 	} else if to >= s.cachedL1PriceData.endOfL1PriceDataCache {
@@ -185,6 +198,9 @@ func (s *TransactionStreamer) TrimCache(to arbutil.MessageIndex) {
 }
 
 func (s *TransactionStreamer) CacheL1PriceDataOfMsg(seqNum arbutil.MessageIndex, callDataUnits uint64, l1GasCharged uint64) {
+	s.cachedL1PriceDataMutex.Lock()
+	defer s.cachedL1PriceDataMutex.Unlock()
+
 	resetCache := func() {
 		s.cachedL1PriceData.startOfL1PriceDataCache = seqNum
 		s.cachedL1PriceData.endOfL1PriceDataCache = seqNum
