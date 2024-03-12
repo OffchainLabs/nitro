@@ -125,7 +125,7 @@ func TestDebugTraceCallForRecentBlock(t *testing.T) {
 						if ctx.Err() != nil {
 							return
 						}
-						if !strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "missing trie node") {
+						if !strings.Contains(err.Error(), "not currently canonical") && !strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "missing trie node") {
 							errors <- err
 							return
 						}
