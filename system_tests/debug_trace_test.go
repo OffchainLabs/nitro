@@ -68,7 +68,6 @@ func TestDebugTraceCallForRecentBlock(t *testing.T) {
 		ChainID              *hexutil.Big      `json:"chainId,omitempty"`
 	}
 	rpcClient := builder.L2.ConsensusNode.Stack.Attach()
-	var res json.RawMessage
 	sometx := builder.L2Info.PrepareTx("User2", "User3", builder.L2Info.TransferGas, common.Big1, nil)
 	from := builder.L2Info.GetAddress("User2")
 	to := sometx.To()
@@ -113,6 +112,7 @@ func TestDebugTraceCallForRecentBlock(t *testing.T) {
 					blockHash := common.BytesToHash(key[len(prefix):])
 					start := time.Now()
 					for ctx.Err() == nil {
+						var res json.RawMessage
 						err = rpcClient.CallContext(ctx, &res, "debug_traceCall", txargs, blockHash, nil)
 						if err == nil {
 							mtx.Lock()
