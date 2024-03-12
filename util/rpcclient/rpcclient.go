@@ -138,7 +138,7 @@ func IsAlreadyKnownError(err error) bool {
 	}
 	// go-ethereum returns "replacement transaction underpriced" instead of "already known" for blob txs.
 	// This is fixed in https://github.com/ethereum/go-ethereum/pull/29210
-	// Once a new geth release is out with this fix, we can remove this check.
+	// TODO: Once a new geth release is out with this fix, we can remove this check.
 	matches := blobTxUnderpricedRegexp.FindSubmatch([]byte(s))
 	if len(matches) == 3 {
 		return string(matches[1]) == string(matches[2])
