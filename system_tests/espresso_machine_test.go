@@ -62,7 +62,6 @@ func TestEspressoJitMachine(t *testing.T) {
 	Require(t, err)
 
 	config := &server_jit.DefaultJitSpawnerConfig
-	config.WasmMemoryUsageLimit = 5 * config.WasmMemoryUsageLimit
 	fetcher := func() *server_jit.JitSpawnerConfig { return config }
 	spawner, err := server_jit.NewJitSpawner(locator, fetcher, nil)
 	Require(t, err)

@@ -291,9 +291,9 @@ pub struct Transaction {
 }
 
 impl Transaction {
-    pub fn new(vm: NamespaceId, payload: Vec<u8>) -> Self {
+    pub fn new(namespace: NamespaceId, payload: Vec<u8>) -> Self {
         Self {
-            _namespace: vm,
+            _namespace: namespace,
             payload,
         }
     }
