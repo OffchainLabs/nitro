@@ -69,10 +69,13 @@ func (e *specEdge) TimeUnrivaled(ctx context.Context) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
-	if e.hasRival {
-		e.timeUnrivaled = option.Some(timer)
+	if !timer.IsUint64() {
+		return 0, errors.New("unrivaled timer for edge was a not a uint64")
 	}
-	return timer, nil
+	if e.hasRival {
+		e.timeUnrivaled = option.Some(timer.Uint64())
+	}
+	return timer.Uint64(), nil
 }
 
 func (e *specEdge) HasConfirmedRival(ctx context.Context) (bool, error) {
@@ -335,12 +338,8 @@ func (e *specEdge) ConfirmByTimer(ctx context.Context, ancestorIds []protocol.Ed
 	if err != nil {
 		return err
 	}
-	ancestors := make([][32]byte, len(ancestorIds))
-	for i, r := range ancestorIds {
-		ancestors[i] = r.Hash
-	}
 	_, err = e.manager.assertionChain.transact(ctx, e.manager.backend, func(opts *bind.TransactOpts) (*types.Transaction, error) {
-		return e.manager.writer.ConfirmEdgeByTime(opts, e.id, ancestors, challengeV2gen.ExecutionStateData{
+		return e.manager.writer.ConfirmEdgeByTime(opts, e.id, challengeV2gen.ExecutionStateData{
 			ExecutionState: challengeV2gen.ExecutionState{
 				GlobalState:   challengeV2gen.GlobalState(assertionCreation.AfterState.GlobalState),
 				MachineStatus: assertionCreation.AfterState.MachineStatus,
@@ -360,36 +359,6 @@ func (e *specEdge) ConfirmByTimer(ctx context.Context, ancestorIds []protocol.Ed
 		len(ancestorIds),
 		strings.Join(ancestorStrings, ", "),
 	)
-}
-
-func (e *specEdge) ConfirmByChildren(ctx context.Context) error {
-	s, err := e.Status(ctx)
-	if err != nil {
-		return err
-	}
-	if s == protocol.EdgeConfirmed {
-		return nil
-	}
-
-	_, err = e.manager.assertionChain.transact(ctx, e.manager.backend, func(opts *bind.TransactOpts) (*types.Transaction, error) {
-		return e.manager.writer.ConfirmEdgeByChildren(opts, e.id)
-	})
-	return err
-}
-
-func (e *specEdge) ConfirmByClaim(ctx context.Context, claimId protocol.ClaimId) error {
-	s, err := e.Status(ctx)
-	if err != nil {
-		return err
-	}
-	if s == protocol.EdgeConfirmed {
-		return nil
-	}
-
-	_, err = e.manager.assertionChain.transact(ctx, e.manager.backend, func(opts *bind.TransactOpts) (*types.Transaction, error) {
-		return e.manager.writer.ConfirmEdgeByClaim(opts, e.id, claimId)
-	})
-	return err
 }
 
 // TopLevelClaimHeight gets the height at the BlockChallenge level that originated a subchallenge.

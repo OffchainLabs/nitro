@@ -60,6 +60,8 @@ struct ChallengeEdge {
     /// @notice Set to true when the staker has been refunded. Can only be set to true if the status is Confirmed
     ///         and the staker is non zero.
     bool refunded;
+    /// @notice TODO
+    uint64 totalTimeUnrivaledCache;
 }
 
 library ChallengeEdgeLib {
@@ -121,7 +123,8 @@ library ChallengeEdgeLib {
             status: EdgeStatus.Pending,
             level: level,
             refunded: false,
-            confirmedAtBlock: 0
+            confirmedAtBlock: 0,
+            totalTimeUnrivaledCache: 0
         });
     }
 
@@ -151,7 +154,8 @@ library ChallengeEdgeLib {
             status: EdgeStatus.Pending,
             level: level,
             refunded: false,
-            confirmedAtBlock: 0
+            confirmedAtBlock: 0,
+            totalTimeUnrivaledCache: 0
         });
     }
 

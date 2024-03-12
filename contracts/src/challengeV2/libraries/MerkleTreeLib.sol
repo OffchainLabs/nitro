@@ -177,7 +177,7 @@ library MerkleTreeLib {
         // we'll need more space in the expansion to describe the tree, so we enlarge by one
         bytes32[] memory next = UintUtilsLib.mostSignificantBit(postSize) > UintUtilsLib.mostSignificantBit(meSize)
             ? new bytes32[](me.length + 1)
-            : new bytes32[](me.length );
+            : new bytes32[](me.length);
 
         // ensure we're never creating an expansion that's too big
         require(next.length <= MAX_LEVEL, "Append creates oversize tree");

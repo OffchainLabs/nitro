@@ -523,34 +523,6 @@ func (et *Tracker) tryToConfirm(ctx context.Context) (bool, error) {
 		return false, errors.Wrap(err, "could not get challenge manager")
 	}
 
-	// Check if we can confirm by children.
-	childrenConfirmed, err := ChildrenAreConfirmed(ctx, et.edge, manager)
-	if err != nil {
-		return false, errors.Wrap(err, "could not check if children are confirmed")
-	}
-	if childrenConfirmed {
-		if confirmErr := et.edge.ConfirmByChildren(ctx); confirmErr != nil {
-			return false, errors.Wrap(confirmErr, "could not confirm by children")
-		}
-		srvlog.Info("Confirmed by children", et.uniqueTrackerLogFields())
-		confirmedCounter.Inc(1)
-		return true, nil
-	}
-
-	// Check if we can confirm by claim.
-	claimingEdge, ok := et.chainWatcher.ConfirmedEdgeWithClaimExists(
-		assertionHash,
-		protocol.ClaimId(et.edge.Id().Hash),
-	)
-	if ok {
-		if confirmClaimErr := et.edge.ConfirmByClaim(ctx, protocol.ClaimId(claimingEdge.Hash)); confirmClaimErr != nil {
-			return false, errors.Wrap(confirmClaimErr, "could not confirm by claim")
-		}
-		srvlog.Info("Confirmed by claim", et.uniqueTrackerLogFields())
-		confirmedCounter.Inc(1)
-		return true, nil
-	}
-
 	// Check if we can confirm by time.
 	timer, ancestors, _, err := et.chainWatcher.ComputeHonestPathTimer(ctx, assertionHash, et.edge.Id())
 	if err != nil {

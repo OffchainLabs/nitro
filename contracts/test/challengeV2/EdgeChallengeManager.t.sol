@@ -39,6 +39,9 @@ contract EdgeChallengeManagerTest is Test {
     ExecutionStateData genesisStateData = ExecutionStateData(genesisState, bytes32(0), bytes32(0));
 
     uint8 public NUM_BIGSTEP_LEVEL = 3;
+    uint256 public START_BLOCK = block.number;
+    uint256 public NUM_BLOCK_UNRIVALED = 2;
+    uint256 public NUM_BLOCK_WAIT = 3;
 
     bytes32 genesisAssertionHash;
 
@@ -57,7 +60,7 @@ contract EdgeChallengeManagerTest is Test {
     bytes32 h1 = rand.hash();
     bytes32 h2 = rand.hash();
     uint256 height1 = 32;
-    
+
     address excessStakeReceiver = address(77);
     address nobody = address(78);
 
@@ -88,13 +91,7 @@ contract EdgeChallengeManagerTest is Test {
         MockAssertionChain assertionChain = new MockAssertionChain();
         EdgeChallengeManager challengeManagerTemplate = new EdgeChallengeManager();
         EdgeChallengeManager challengeManager = EdgeChallengeManager(
-            address(
-                new TransparentUpgradeableProxy(
-                    address(challengeManagerTemplate),
-                    address(new ProxyAdmin()),
-                    ""
-                )
-            )
+            address(new TransparentUpgradeableProxy(address(challengeManagerTemplate), address(new ProxyAdmin()), ""))
         );
         challengeManager.initialize(
             assertionChain,
@@ -103,12 +100,7 @@ contract EdgeChallengeManagerTest is Test {
             2 ** 5,
             2 ** 5,
             2 ** 5,
-            new ERC20Mock(
-                "StakeToken",
-                "ST",
-                address(this),
-                1000000 ether
-            ),
+            new ERC20Mock("StakeToken", "ST", address(this), 1000000 ether),
             excessStakeReceiver,
             NUM_BIGSTEP_LEVEL,
             miniStakeAmounts()
@@ -124,22 +116,10 @@ contract EdgeChallengeManagerTest is Test {
     function testDeployInit() public {
         MockAssertionChain assertionChain = new MockAssertionChain();
         EdgeChallengeManager emt = new EdgeChallengeManager();
-        EdgeChallengeManager ecm = EdgeChallengeManager(
-            address(
-                new TransparentUpgradeableProxy(
-                    address(emt),
-                    address(new ProxyAdmin()),
-                    ""
-                )
-            )
-        );
+        EdgeChallengeManager ecm =
+            EdgeChallengeManager(address(new TransparentUpgradeableProxy(address(emt), address(new ProxyAdmin()), "")));
         MockOneStepProofEntry osp = new MockOneStepProofEntry();
-        ERC20Mock erc20 = new ERC20Mock(
-                "StakeToken",
-                "ST",
-                address(this),
-                1000000 ether
-            );
+        ERC20Mock erc20 = new ERC20Mock("StakeToken", "ST", address(this), 1000000 ether);
 
         vm.expectRevert(abi.encodeWithSelector(StakeAmountsMismatch.selector, NUM_BIGSTEP_LEVEL, NUM_BIGSTEP_LEVEL + 2));
         ecm.initialize(
@@ -185,7 +165,16 @@ contract EdgeChallengeManagerTest is Test {
 
         vm.expectRevert(abi.encodeWithSelector(EmptyChallengePeriod.selector));
         ecm.initialize(
-            assertionChain, 0, osp, 2 ** 5, 2 ** 5, 2 ** 5, erc20, excessStakeReceiver, NUM_BIGSTEP_LEVEL, miniStakeAmounts()
+            assertionChain,
+            0,
+            osp,
+            2 ** 5,
+            2 ** 5,
+            2 ** 5,
+            erc20,
+            excessStakeReceiver,
+            NUM_BIGSTEP_LEVEL,
+            miniStakeAmounts()
         );
 
         vm.expectRevert(abi.encodeWithSelector(EmptyStakeReceiver.selector));
@@ -530,69 +519,35 @@ contract EdgeChallengeManagerTest is Test {
     function testCanConfirmByTime() public {
         (EdgeInitData memory ei,,, bytes32 edgeId) = testCanCreateEdgeWithStake();
 
-        vm.roll(challengePeriodBlock + 2);
+        _safeVmRoll(START_BLOCK + challengePeriodBlock);
 
-        bytes32[] memory ancestorEdges = new bytes32[](0);
-        ei.challengeManager.confirmEdgeByTime(edgeId, ancestorEdges, ei.a1Data);
+        ei.challengeManager.confirmEdgeByTime(edgeId, ei.a1Data);
 
         assertTrue(ei.challengeManager.getEdge(edgeId).status == EdgeStatus.Confirmed, "Edge confirmed");
     }
 
-    function testCanConfirmByTimeNotBlock() public {
-        EdgeInitData memory ei = deployAndInit();
-        (
-            bytes32[] memory blockStates1,
-            bytes32[] memory blockStates2,
-            BisectionChildren[6] memory blockEdges1,
-            BisectionChildren[6] memory blockEdges2
-        ) = createBlockEdgesAndBisectToFork(
-            CreateBlockEdgesBisectArgs(ei.challengeManager, ei.a1, ei.a2, ei.a1State, ei.a2State, false)
-        );
-
-        BisectionData memory bsbd = createMachineEdgesAndBisectToFork(
-            CreateMachineEdgesBisectArgs(
-                ei.challengeManager,
-                1,
-                blockEdges1[0].lowerChildId,
-                blockEdges2[0].lowerChildId,
-                blockStates1[1],
-                blockStates2[1],
-                false,
-                ArrayUtilsLib.slice(blockStates1, 0, 2),
-                ArrayUtilsLib.slice(blockStates2, 0, 2)
-            )
-        );
-
-        vm.roll(challengePeriodBlock + 2);
-
-        bytes32[] memory ancestorEdges = new bytes32[](0);
-        vm.expectRevert(abi.encodeWithSelector(EdgeTypeNotBlock.selector, 1));
-        ei.challengeManager.confirmEdgeByTime(bsbd.edges1[5].lowerChildId, ancestorEdges, ei.a1Data);
-    }
-
-    function testCanConfirmByTimeLayerZero() public {
+    function testCanConfirmByTimeNotLayerZero() public {
         EdgeInitData memory ei = deployAndInit();
         (,, BisectionChildren[6] memory blockEdges1,) = createBlockEdgesAndBisectToFork(
             CreateBlockEdgesBisectArgs(ei.challengeManager, ei.a1, ei.a2, ei.a1State, ei.a2State, false)
         );
 
-        vm.roll(challengePeriodBlock + 2);
+        _safeVmRoll(START_BLOCK + challengePeriodBlock);
 
-        bytes32[] memory ancestorEdges = new bytes32[](0);
         ChallengeEdge memory ce = ei.challengeManager.getEdge(blockEdges1[0].lowerChildId);
 
         vm.expectRevert(
             abi.encodeWithSelector(EdgeNotLayerZero.selector, blockEdges1[0].lowerChildId, ce.staker, ce.claimId)
         );
-        ei.challengeManager.confirmEdgeByTime(blockEdges1[0].lowerChildId, ancestorEdges, ei.a1Data);
+        ei.challengeManager.confirmEdgeByTime(blockEdges1[0].lowerChildId, ei.a1Data);
     }
 
     function testCanConfirmByChildren() public returns (EdgeInitData memory, bytes32) {
         (EdgeInitData memory ei, bytes32[] memory states1,, bytes32 edge1Id) = testCanCreateEdgeWithStake();
 
-        vm.roll(block.number + 1);
+        _safeVmRoll(block.number + NUM_BLOCK_UNRIVALED);
 
-        assertEq(ei.challengeManager.timeUnrivaled(edge1Id), 1, "Edge1 timer");
+        assertEq(ei.challengeManager.timeUnrivaled(edge1Id), NUM_BLOCK_UNRIVALED, "Edge1 timer");
         {
             (bytes32[] memory states2, bytes32[] memory exp2) =
                 appendRandomStatesBetween(genesisStates(), StateToolsLib.mockMachineHash(ei.a2State), height1);
@@ -614,20 +569,18 @@ contract EdgeChallengeManagerTest is Test {
                 })
             );
 
-            vm.roll(block.number + 2);
-            assertEq(ei.challengeManager.timeUnrivaled(edge1Id), 1, "Edge1 timer");
+            _safeVmRoll(block.number + NUM_BLOCK_WAIT);
+            assertEq(ei.challengeManager.timeUnrivaled(edge1Id), NUM_BLOCK_UNRIVALED, "Edge1 timer");
             assertEq(ei.challengeManager.timeUnrivaled(edge2Id), 0, "Edge2 timer");
         }
 
         BisectionChildren memory children = bisect(ei.challengeManager, edge1Id, states1, 16, states1.length - 1);
 
-        vm.roll(challengePeriodBlock + 5);
+        _safeVmRoll(block.number + challengePeriodBlock);
 
-        bytes32[] memory ancestors = new bytes32[](1);
-        ancestors[0] = edge1Id;
-        ei.challengeManager.confirmEdgeByTime(children.lowerChildId, ancestors, ei.a1Data);
-        ei.challengeManager.confirmEdgeByTime(children.upperChildId, ancestors, ei.a1Data);
-        ei.challengeManager.confirmEdgeByChildren(edge1Id);
+        ei.challengeManager.updateTimerCacheByChildren(children.lowerChildId);
+        ei.challengeManager.updateTimerCacheByChildren(children.upperChildId);
+        ei.challengeManager.confirmEdgeByTime(edge1Id, ei.a1Data);
 
         assertTrue(ei.challengeManager.getEdge(edge1Id).status == EdgeStatus.Confirmed, "Edge confirmed");
 
@@ -659,19 +612,16 @@ contract EdgeChallengeManagerTest is Test {
 
         BisectionChildren memory children = bisect(ei.challengeManager, edge2Id, states2, 16, states2.length - 1);
         BisectionChildren memory children2 = bisect(ei.challengeManager, children.lowerChildId, states2, 8, 16);
-        vm.roll(block.number + challengePeriodBlock + 5);
-        bytes32[] memory ancestors = new bytes32[](2);
-        ancestors[0] = children.lowerChildId;
-        ancestors[1] = edge2Id;
-        ei.challengeManager.confirmEdgeByTime(children2.lowerChildId, ancestors, ei.a2Data);
-        ei.challengeManager.confirmEdgeByTime(children2.upperChildId, ancestors, ei.a2Data);
-        vm.expectRevert(); // should not be able to confirm when a rival is already confirmed
-        ei.challengeManager.confirmEdgeByChildren(children.lowerChildId);
-        ancestors = new bytes32[](1);
-        ancestors[0] = edge2Id;
-        ei.challengeManager.confirmEdgeByTime(children.upperChildId, ancestors, ei.a2Data);
-        vm.expectRevert(); // should not be able to confirm when a rival is already confirmed
-        ei.challengeManager.confirmEdgeByChildren(edge2Id);
+        _safeVmRoll(block.number + challengePeriodBlock + 5);
+        ei.challengeManager.updateTimerCacheByChildren(children2.lowerChildId);
+        ei.challengeManager.updateTimerCacheByChildren(children2.upperChildId);
+        ei.challengeManager.updateTimerCacheByChildren(children.lowerChildId);
+        ei.challengeManager.updateTimerCacheByChildren(children.upperChildId);
+        ei.challengeManager.updateTimerCacheByChildren(edge2Id);
+
+        vm.expectRevert(abi.encodeWithSelector(RivalEdgeConfirmed.selector, edge2Id, edge1Id));
+        ei.challengeManager.confirmEdgeByTime(edge2Id, ei.a2Data);
+
         assertFalse(ei.challengeManager.getEdge(edge1Id).status == ei.challengeManager.getEdge(edge2Id).status);
         assertTrue(edge1Id != edge2Id, "Same edge");
         assertEq(
@@ -783,18 +733,6 @@ contract EdgeChallengeManagerTest is Test {
             full[arr1.length + i] = arr2[i];
         }
         return full;
-    }
-
-    function getAncestorsAbove(BisectionChildren[] memory layers, uint256 layer)
-        internal
-        pure
-        returns (bytes32[] memory)
-    {
-        bytes32[] memory ancestors = new bytes32[](layers.length - 1 - layer);
-        for (uint256 i = 0; i < layers.length - layer - 1; i++) {
-            ancestors[i] = layers[i + layer + 1].lowerChildId;
-        }
-        return ancestors;
     }
 
     function generateEdgeProof(bytes32[] memory states1, bytes32[] memory bigStepStates)
@@ -1264,37 +1202,28 @@ contract EdgeChallengeManagerTest is Test {
             })
         );
 
-        vm.roll(challengePeriodBlock + 5);
-        bytes32[] memory ancestors = new bytes32[](edges1.length);
-        for (uint256 i = 0; i < edges1.length; i++) {
-            ancestors[i] = edges1[i].lowerChildId;
-        }
+        _safeVmRoll(block.number + challengePeriodBlock);
 
-        ei.challengeManager.confirmEdgeByTime(edge1BigStepId, ancestors, ei.a1Data);
+        ei.challengeManager.updateTimerCacheByChildren(edge1BigStepId);
 
-        ei.challengeManager.confirmEdgeByClaim(edges1[0].lowerChildId, edge1BigStepId);
-        ei.challengeManager.confirmEdgeByTime(
-            edges1[0].upperChildId, getAncestorsAbove(toDynamic(edges1), 0), ei.a1Data
-        );
+        ei.challengeManager.updateTimerCacheByClaim(edges1[0].lowerChildId, edge1BigStepId);
+        ei.challengeManager.updateTimerCacheByChildren(edges1[0].upperChildId);
 
-        ei.challengeManager.confirmEdgeByChildren(edges1[1].lowerChildId);
-        ei.challengeManager.confirmEdgeByTime(
-            edges1[1].upperChildId, getAncestorsAbove(toDynamic(edges1), 1), ei.a1Data
-        );
+        ei.challengeManager.updateTimerCacheByChildren(edges1[1].lowerChildId);
+        ei.challengeManager.updateTimerCacheByChildren(edges1[1].upperChildId);
 
-        ei.challengeManager.confirmEdgeByChildren(edges1[2].lowerChildId);
-        ei.challengeManager.confirmEdgeByTime(
-            edges1[2].upperChildId, getAncestorsAbove(toDynamic(edges1), 2), ei.a1Data
-        );
+        ei.challengeManager.updateTimerCacheByChildren(edges1[2].lowerChildId);
+        ei.challengeManager.updateTimerCacheByChildren(edges1[2].upperChildId);
 
-        ei.challengeManager.confirmEdgeByChildren(edges1[3].lowerChildId);
-        ei.challengeManager.confirmEdgeByTime(
-            edges1[3].upperChildId, getAncestorsAbove(toDynamic(edges1), 3), ei.a1Data
-        );
+        ei.challengeManager.updateTimerCacheByChildren(edges1[3].lowerChildId);
+        ei.challengeManager.updateTimerCacheByChildren(edges1[3].upperChildId);
 
-        ei.challengeManager.confirmEdgeByChildren(edges1[4].lowerChildId);
+        ei.challengeManager.updateTimerCacheByChildren(edges1[4].lowerChildId);
+        ei.challengeManager.updateTimerCacheByChildren(edges1[4].upperChildId);
 
-        assertTrue(ei.challengeManager.getEdge(edges1[4].lowerChildId).status == EdgeStatus.Confirmed, "Edge confirmed");
+        ei.challengeManager.confirmEdgeByTime(edges1[5].lowerChildId, ei.a1Data);
+
+        assertTrue(ei.challengeManager.getEdge(edges1[5].lowerChildId).status == EdgeStatus.Confirmed, "Edge confirmed");
     }
 
     struct CreateBlockEdgesBisectArgs {
@@ -1354,15 +1283,14 @@ contract EdgeChallengeManagerTest is Test {
             appendRandomStatesBetween(genesisStates(), StateToolsLib.mockMachineHash(args.endState1), height1);
         bytes32 edge1Id = createLayerZeroEdge(args.challengeManager, args.claim1Id, args.endState1, states1, exp1);
 
-        vm.roll(block.number + 1);
-
-        assertEq(args.challengeManager.timeUnrivaled(edge1Id), 1, "Edge1 timer");
+        _safeVmRoll(block.number + NUM_BLOCK_UNRIVALED);
+        assertEq(args.challengeManager.timeUnrivaled(edge1Id), NUM_BLOCK_UNRIVALED, "Edge1 timer");
 
         (bytes32[] memory states2, bytes32[] memory exp2) =
             appendRandomStatesBetween(genesisStates(), StateToolsLib.mockMachineHash(args.endState2), height1);
         bytes32 edge2Id = createLayerZeroEdge(args.challengeManager, args.claim2Id, args.endState2, states2, exp2);
 
-        vm.roll(block.number + 2);
+        _safeVmRoll(block.number + NUM_BLOCK_WAIT);
 
         (BisectionChildren[6] memory edges1, BisectionChildren[6] memory edges2) = bisectToForkOnly(
             BisectToForkOnlyArgs(args.challengeManager, edge1Id, edge2Id, states1, states2, args.skipLast)
@@ -1411,9 +1339,8 @@ contract EdgeChallengeManagerTest is Test {
             );
         }
 
-        vm.roll(block.number + 1);
-
-        assertEq(args.challengeManager.timeUnrivaled(edge1Id), 1, "Edge1 timer");
+        _safeVmRoll(block.number + NUM_BLOCK_UNRIVALED);
+        assertEq(args.challengeManager.timeUnrivaled(edge1Id), NUM_BLOCK_UNRIVALED, "Edge1 timer");
 
         (bytes32[] memory states2, bytes32[] memory exp2) =
             appendRandomStatesBetween(genesisStates(), args.endState2, height1);
@@ -1451,7 +1378,7 @@ contract EdgeChallengeManagerTest is Test {
             );
         }
 
-        vm.roll(block.number + 2);
+        _safeVmRoll(block.number + NUM_BLOCK_WAIT);
 
         (BisectionChildren[6] memory edges1, BisectionChildren[6] memory edges2) = bisectToForkOnly(
             BisectToForkOnlyArgs(args.challengeManager, edge1Id, edge2Id, states1, states2, args.skipLast)
@@ -1499,64 +1426,64 @@ contract EdgeChallengeManagerTest is Test {
             )
         );
 
-        vm.roll(challengePeriodBlock + 11);
+        _safeVmRoll(block.number + challengePeriodBlock);
 
         BisectionChildren[] memory allWinners =
             concat(concat(toDynamic(ssbd.edges1), toDynamic(bsbd.edges1)), toDynamic(blockEdges1));
 
-        ei.challengeManager.confirmEdgeByTime(allWinners[0].lowerChildId, getAncestorsAbove(allWinners, 0), ei.a1Data);
-        ei.challengeManager.confirmEdgeByTime(allWinners[0].upperChildId, getAncestorsAbove(allWinners, 0), ei.a1Data);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[0].lowerChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[0].upperChildId);
 
-        ei.challengeManager.confirmEdgeByChildren(allWinners[1].lowerChildId);
-        ei.challengeManager.confirmEdgeByTime(allWinners[1].upperChildId, getAncestorsAbove(allWinners, 1), ei.a1Data);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[1].lowerChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[1].upperChildId);
 
-        ei.challengeManager.confirmEdgeByChildren(allWinners[2].lowerChildId);
-        ei.challengeManager.confirmEdgeByTime(allWinners[2].upperChildId, getAncestorsAbove(allWinners, 2), ei.a1Data);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[2].lowerChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[2].upperChildId);
 
-        ei.challengeManager.confirmEdgeByChildren(allWinners[3].lowerChildId);
-        ei.challengeManager.confirmEdgeByTime(allWinners[3].upperChildId, getAncestorsAbove(allWinners, 3), ei.a1Data);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[3].lowerChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[3].upperChildId);
 
-        ei.challengeManager.confirmEdgeByChildren(allWinners[4].lowerChildId);
-        ei.challengeManager.confirmEdgeByTime(allWinners[4].upperChildId, getAncestorsAbove(allWinners, 4), ei.a1Data);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[4].lowerChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[4].upperChildId);
 
-        ei.challengeManager.confirmEdgeByChildren(allWinners[5].lowerChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[5].lowerChildId);
 
-        ei.challengeManager.confirmEdgeByClaim(allWinners[6].lowerChildId, allWinners[5].lowerChildId);
-        ei.challengeManager.confirmEdgeByTime(allWinners[6].upperChildId, getAncestorsAbove(allWinners, 6), ei.a1Data);
+        ei.challengeManager.updateTimerCacheByClaim(allWinners[6].lowerChildId, allWinners[5].lowerChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[6].upperChildId);
 
-        ei.challengeManager.confirmEdgeByChildren(allWinners[7].lowerChildId);
-        ei.challengeManager.confirmEdgeByTime(allWinners[7].upperChildId, getAncestorsAbove(allWinners, 7), ei.a1Data);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[7].lowerChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[7].upperChildId);
 
-        ei.challengeManager.confirmEdgeByChildren(allWinners[8].lowerChildId);
-        ei.challengeManager.confirmEdgeByTime(allWinners[8].upperChildId, getAncestorsAbove(allWinners, 8), ei.a1Data);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[8].lowerChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[8].upperChildId);
 
-        ei.challengeManager.confirmEdgeByChildren(allWinners[9].lowerChildId);
-        ei.challengeManager.confirmEdgeByTime(allWinners[9].upperChildId, getAncestorsAbove(allWinners, 9), ei.a1Data);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[9].lowerChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[9].upperChildId);
 
-        ei.challengeManager.confirmEdgeByChildren(allWinners[10].lowerChildId);
-        ei.challengeManager.confirmEdgeByTime(allWinners[10].upperChildId, getAncestorsAbove(allWinners, 10), ei.a1Data);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[10].lowerChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[10].upperChildId);
 
-        ei.challengeManager.confirmEdgeByChildren(allWinners[11].lowerChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[11].lowerChildId);
 
-        ei.challengeManager.confirmEdgeByClaim(allWinners[12].lowerChildId, allWinners[11].lowerChildId);
-        ei.challengeManager.confirmEdgeByTime(allWinners[12].upperChildId, getAncestorsAbove(allWinners, 12), ei.a1Data);
+        ei.challengeManager.updateTimerCacheByClaim(allWinners[12].lowerChildId, allWinners[11].lowerChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[12].upperChildId);
 
-        ei.challengeManager.confirmEdgeByChildren(allWinners[13].lowerChildId);
-        ei.challengeManager.confirmEdgeByTime(allWinners[13].upperChildId, getAncestorsAbove(allWinners, 13), ei.a1Data);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[13].lowerChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[13].upperChildId);
 
-        ei.challengeManager.confirmEdgeByChildren(allWinners[14].lowerChildId);
-        ei.challengeManager.confirmEdgeByTime(allWinners[14].upperChildId, getAncestorsAbove(allWinners, 14), ei.a1Data);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[14].lowerChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[14].upperChildId);
 
-        ei.challengeManager.confirmEdgeByChildren(allWinners[15].lowerChildId);
-        ei.challengeManager.confirmEdgeByTime(allWinners[15].upperChildId, getAncestorsAbove(allWinners, 15), ei.a1Data);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[15].lowerChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[15].upperChildId);
 
-        ei.challengeManager.confirmEdgeByChildren(allWinners[16].lowerChildId);
-        ei.challengeManager.confirmEdgeByTime(allWinners[16].upperChildId, getAncestorsAbove(allWinners, 16), ei.a1Data);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[16].lowerChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[16].upperChildId);
 
-        ei.challengeManager.confirmEdgeByChildren(allWinners[17].lowerChildId);
+        ei.challengeManager.confirmEdgeByTime(allWinners[17].lowerChildId, ei.a1Data);
 
         assertTrue(
-            ei.challengeManager.getEdge(allWinners[14].lowerChildId).status == EdgeStatus.Confirmed, "Edge confirmed"
+            ei.challengeManager.getEdge(allWinners[17].lowerChildId).status == EdgeStatus.Confirmed, "Edge confirmed"
         );
     }
 
@@ -1628,8 +1555,7 @@ contract EdgeChallengeManagerTest is Test {
             )
         );
 
-        uint256 delta = 5 + NUM_BIGSTEP_LEVEL * 2; // compensate for time before each layerzero edge is created
-        vm.roll(challengePeriodBlock + delta);
+        _safeVmRoll(START_BLOCK + (NUM_BIGSTEP_LEVEL + 2) * (NUM_BLOCK_WAIT) + challengePeriodBlock);
 
         BisectionChildren[] memory allWinners = toDynamic(local.smallStepBisection.edges1);
         for (uint256 i = 0; i < NUM_BIGSTEP_LEVEL; ++i) {
@@ -1654,30 +1580,33 @@ contract EdgeChallengeManagerTest is Test {
             ProofUtils.generateInclusionProof(ProofUtils.rehashed(genesisStates()), 0),
             ProofUtils.generateInclusionProof(ProofUtils.rehashed(firstStates), 1)
         );
-        bytes32[] memory above = getAncestorsAbove(allWinners, 0);
-        ei.challengeManager.confirmEdgeByTime(allWinners[0].upperChildId, above, ei.a1Data);
 
+        _updateTimers(ei, allWinners);
+
+        bytes32 topEdgeId = allWinners[allWinners.length - 1].lowerChildId;
+        ei.challengeManager.confirmEdgeByTime(topEdgeId, ei.a1Data);
+
+        assertTrue(ei.challengeManager.getEdge(topEdgeId).status == EdgeStatus.Confirmed, "Edge confirmed");
+
+        return (ei, allWinners);
+    }
+
+    function _updateTimers(EdgeInitData memory ei, BisectionChildren[] memory allWinners) internal {
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[0].upperChildId);
         for (uint256 i = 1; i < allWinners.length; i++) {
             if ((i + 1) % 6 != 0) {
                 if (i % 6 != 0) {
-                    ei.challengeManager.confirmEdgeByChildren(allWinners[i].lowerChildId);
+                    ei.challengeManager.updateTimerCacheByChildren(allWinners[i].lowerChildId);
                 } else {
-                    ei.challengeManager.confirmEdgeByClaim(allWinners[i].lowerChildId, allWinners[i - 1].lowerChildId);
+                    ei.challengeManager.updateTimerCacheByClaim(
+                        allWinners[i].lowerChildId, allWinners[i - 1].lowerChildId
+                    );
                 }
-                ei.challengeManager.confirmEdgeByTime(
-                    allWinners[i].upperChildId, getAncestorsAbove(allWinners, i), ei.a1Data
-                );
+                ei.challengeManager.updateTimerCacheByChildren(allWinners[i].upperChildId);
             } else {
-                ei.challengeManager.confirmEdgeByChildren(allWinners[i].lowerChildId);
+                ei.challengeManager.updateTimerCacheByChildren(allWinners[i].lowerChildId);
             }
         }
-
-        assertTrue(
-            ei.challengeManager.getEdge(allWinners[allWinners.length - 1].lowerChildId).status == EdgeStatus.Confirmed,
-            "Edge confirmed"
-        );
-
-        return (ei, allWinners);
     }
 
     function testExcessStakeReceived() external {
@@ -1687,11 +1616,7 @@ contract EdgeChallengeManagerTest is Test {
         for (uint256 i = 0; i < NUM_BIGSTEP_LEVEL + 2; i++) {
             totalAmount += ei.challengeManager.stakeAmounts(i);
         }
-        assertEq(
-            stakeToken.balanceOf(excessStakeReceiver),
-            totalAmount,
-            "Excess stake received"
-        );
+        assertEq(stakeToken.balanceOf(excessStakeReceiver), totalAmount, "Excess stake received");
     }
 
     function testCanRefundStake() external {
@@ -1720,7 +1645,9 @@ contract EdgeChallengeManagerTest is Test {
     function testRevertRefundStakeNotLayerZero() external {
         (EdgeInitData memory ei, BisectionChildren[] memory allWinners) = testCanConfirmByOneStep();
         vm.expectRevert(
-            abi.encodeWithSelector(EdgeNotLayerZero.selector, allWinners[allWinners.length - 2].lowerChildId, 0, 0)
+            abi.encodeWithSelector(
+                EdgeNotConfirmed.selector, allWinners[allWinners.length - 2].lowerChildId, EdgeStatus.Pending
+            )
         );
         ei.challengeManager.refundStake(allWinners[allWinners.length - 2].lowerChildId);
     }
@@ -1728,10 +1655,15 @@ contract EdgeChallengeManagerTest is Test {
     function testRefundStakeBigStep() external {
         (EdgeInitData memory ei, BisectionChildren[] memory allWinners) = testCanConfirmByOneStep();
 
+        // advance just enough to allow confirmEdgeByTime
+        _safeVmRoll(block.number + (NUM_BIGSTEP_LEVEL) * NUM_BLOCK_UNRIVALED);
+        _updateTimers(ei, allWinners);
+
         IERC20 stakeToken = ei.challengeManager.stakeToken();
         uint256 beforeBalance = stakeToken.balanceOf(address(this));
         vm.prank(nobody); // call refund as nobody
         bytes32 edgeId = allWinners[11].lowerChildId;
+        ei.challengeManager.confirmEdgeByTime(edgeId, ei.a1Data);
         ei.challengeManager.refundStake(edgeId);
         uint256 afterBalance = stakeToken.balanceOf(address(this));
         uint256 level = ei.challengeManager.getEdge(edgeId).level;
@@ -1741,10 +1673,15 @@ contract EdgeChallengeManagerTest is Test {
     function testRefundStakeSmallStep() external {
         (EdgeInitData memory ei, BisectionChildren[] memory allWinners) = testCanConfirmByOneStep();
 
+        // advance just enough to allow confirmEdgeByTime
+        _safeVmRoll(block.number + (NUM_BIGSTEP_LEVEL + 1) * NUM_BLOCK_UNRIVALED);
+        _updateTimers(ei, allWinners);
+
         IERC20 stakeToken = ei.challengeManager.stakeToken();
         uint256 beforeBalance = stakeToken.balanceOf(address(this));
         vm.prank(nobody); // call refund as nobody
         bytes32 edgeId = allWinners[5].lowerChildId;
+        ei.challengeManager.confirmEdgeByTime(edgeId, ei.a1Data);
         ei.challengeManager.refundStake(edgeId);
         uint256 afterBalance = stakeToken.balanceOf(address(this));
         uint256 level = ei.challengeManager.getEdge(edgeId).level;
@@ -1827,6 +1764,11 @@ contract EdgeChallengeManagerTest is Test {
             bytes32 childId = blockEdges2[i].lowerChildId;
             assertEq(ei.challengeManager.getPrevAssertionHash(childId), ei.genesis);
         }
+    }
+
+    function _safeVmRoll(uint256 target) internal {
+        require(target >= block.number, "BACKWARD_VMROLL");
+        vm.roll(target);
     }
 }
 

@@ -383,7 +383,4 @@ type SpecEdge interface {
 	) (VerifiedRoyalEdge, VerifiedRoyalEdge, error)
 	// Confirms an edge for having a presumptive timer >= one challenge period.
 	ConfirmByTimer(ctx context.Context, ancestorIds []EdgeId) error
-	// Confirms an edge with the specified claim id.
-	ConfirmByClaim(ctx context.Context, claimId ClaimId) error
-	ConfirmByChildren(ctx context.Context) error
 }

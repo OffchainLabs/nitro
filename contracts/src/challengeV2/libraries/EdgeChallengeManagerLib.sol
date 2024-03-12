@@ -469,11 +469,49 @@ library EdgeChallengeManagerLib {
         return (hasRival(store, edgeId) && store.edges[edgeId].length() == 1);
     }
 
+    function timeUnrivaledTotal(EdgeStore storage store, bytes32 edgeId) internal view returns (uint256) {
+        uint256 totalTimeUnrivaled = timeUnrivaled(store, edgeId);
+        if (store.edges[edgeId].lowerChildId != bytes32(0)) {
+            uint256 lowerTimer = store.edges[store.edges[edgeId].lowerChildId].totalTimeUnrivaledCache;
+            uint256 upperTimer = store.edges[store.edges[edgeId].upperChildId].totalTimeUnrivaledCache;
+            totalTimeUnrivaled += lowerTimer < upperTimer ? lowerTimer : upperTimer;
+        }
+        return totalTimeUnrivaled;
+    }
+
+    function updateTimerCache(EdgeStore storage store, bytes32 edgeId, uint256 newValue) internal returns (bool) {
+        uint256 currentAccuTimer = store.edges[edgeId].totalTimeUnrivaledCache;
+        newValue = newValue > type(uint64).max ? type(uint64).max : newValue;
+        // only update when increased
+        if (newValue > currentAccuTimer) {
+            store.edges[edgeId].totalTimeUnrivaledCache = uint64(newValue);
+            return true;
+        }
+        return false;
+    }
+
+    function updateTimerCacheByChildren(EdgeStore storage store, bytes32 edgeId) internal {
+        updateTimerCache(store, edgeId, timeUnrivaledTotal(store, edgeId));
+    }
+
+    function updateTimerCacheByClaim(
+        EdgeStore storage store,
+        bytes32 edgeId,
+        bytes32 claimingEdgeId,
+        uint8 numBigStepLevel
+    ) internal {
+        // calculate the time unrivaled without inheritance
+        uint256 totalTimeUnrivaled = timeUnrivaled(store, edgeId);
+        checkClaimIdLink(store, edgeId, claimingEdgeId, numBigStepLevel);
+        totalTimeUnrivaled += store.edges[claimingEdgeId].totalTimeUnrivaledCache;
+        updateTimerCache(store, edgeId, totalTimeUnrivaled);
+    }
+
     /// @notice The amount of time (in blocks) this edge has spent without rivals
     ///         This value is increasing whilst an edge is unrivaled, once a rival is created
     ///         it is fixed. If an edge has rivals from the moment it is created then it will have
     ///         a zero time unrivaled
-    function timeUnrivaled(EdgeStore storage store, bytes32 edgeId) internal view returns (uint64) {
+    function timeUnrivaled(EdgeStore storage store, bytes32 edgeId) internal view returns (uint256) {
         if (!store.edges[edgeId].exists()) {
             revert EdgeNotExists(edgeId);
         }
@@ -488,7 +526,7 @@ library EdgeChallengeManagerLib {
         // this edge has no rivals, the time is still going up
         // we give the current amount of time unrivaled
         if (firstRival == UNRIVALED) {
-            return uint64(block.number) - store.edges[edgeId].createdAtBlock;
+            return block.number - store.edges[edgeId].createdAtBlock;
         } else {
             // Sanity check: it's not possible an edge does not exist for a first rival record
             if (!store.edges[firstRival].exists()) {
@@ -496,8 +534,8 @@ library EdgeChallengeManagerLib {
             }
 
             // rivals exist for this edge
-            uint64 firstRivalCreatedAtBlock = store.edges[firstRival].createdAtBlock;
-            uint64 edgeCreatedAtBlock = store.edges[edgeId].createdAtBlock;
+            uint256 firstRivalCreatedAtBlock = store.edges[firstRival].createdAtBlock;
+            uint256 edgeCreatedAtBlock = store.edges[edgeId].createdAtBlock;
             if (firstRivalCreatedAtBlock > edgeCreatedAtBlock) {
                 // if this edge was created before the first rival then we return the difference
                 // in createdAtBlock number
@@ -607,37 +645,6 @@ library EdgeChallengeManagerLib {
         store.confirmedRivals[mutualId] = edgeId;
     }
 
-    /// @notice Confirm an edge if both its children are already confirmed
-    function confirmEdgeByChildren(EdgeStore storage store, bytes32 edgeId) internal {
-        if (!store.edges[edgeId].exists()) {
-            revert EdgeNotExists(edgeId);
-        }
-
-        bytes32 lowerChildId = store.edges[edgeId].lowerChildId;
-        // Sanity check: it bisect should already enforce that this child exists
-        if (!store.edges[lowerChildId].exists()) {
-            revert EdgeNotExists(lowerChildId);
-        }
-        if (store.edges[lowerChildId].status != EdgeStatus.Confirmed) {
-            revert EdgeNotConfirmed(lowerChildId, store.edges[lowerChildId].status);
-        }
-
-        bytes32 upperChildId = store.edges[edgeId].upperChildId;
-        // Sanity check: it bisect should already enforce that this child exists
-        if (!store.edges[upperChildId].exists()) {
-            revert EdgeNotExists(upperChildId);
-        }
-        if (store.edges[upperChildId].status != EdgeStatus.Confirmed) {
-            revert EdgeNotConfirmed(upperChildId, store.edges[upperChildId].status);
-        }
-
-        // also checks that no other rival has been confirmed
-        setConfirmedRival(store, edgeId);
-
-        // we also check the edge is pending in setConfirmed()
-        store.edges[edgeId].setConfirmed();
-    }
-
     /// @notice Returns the sub edge level of the provided edge level
     /// @param level            The edge level to fetch the next of
     /// @param numBigStepLevel  The number of big step levels in this challenge
@@ -679,40 +686,6 @@ library EdgeChallengeManagerLib {
         }
     }
 
-    /// @notice If a confirmed edge exists whose claim id is equal to this edge, then this edge can be confirmed
-    /// @dev    When zero layer edges are created they reference an edge, or assertion, in the level below. If a zero layer
-    ///         edge is confirmed, it becomes possible to also confirm the edge that it claims
-    /// @param store            The store containing all edges and rivals data
-    /// @param edgeId           The id of the edge to confirm
-    /// @param claimingEdgeId   The id of the edge which has a claimId equal to edgeId
-    /// @param numBigStepLevel  The number of big step levels in this challenge
-    function confirmEdgeByClaim(EdgeStore storage store, bytes32 edgeId, bytes32 claimingEdgeId, uint8 numBigStepLevel)
-        internal
-    {
-        if (!store.edges[edgeId].exists()) {
-            revert EdgeNotExists(edgeId);
-        }
-
-        // the claiming edge is confirmed
-        if (!store.edges[claimingEdgeId].exists()) {
-            revert EdgeNotExists(edgeId);
-        }
-        if (store.edges[claimingEdgeId].status != EdgeStatus.Confirmed) {
-            revert EdgeNotConfirmed(claimingEdgeId, store.edges[claimingEdgeId].status);
-        }
-
-        checkClaimIdLink(store, edgeId, claimingEdgeId, numBigStepLevel);
-        if (edgeId != store.edges[claimingEdgeId].claimId) {
-            revert EdgeClaimMismatch(edgeId, store.edges[claimingEdgeId].claimId);
-        }
-
-        // also checks that no other rival has been confirmed
-        setConfirmedRival(store, edgeId);
-
-        // we also check the edge is pending in setConfirmed()
-        store.edges[edgeId].setConfirmed();
-    }
-
     /// @notice An edge can be confirmed if the total amount of time (in blocks) it and a single chain of its direct ancestors
     ///         has spent unrivaled is greater than the challenge period.
     /// @dev    Edges inherit time from their parents, so the sum of unrivaled timer is compared against the threshold.
@@ -721,49 +694,20 @@ library EdgeChallengeManagerLib {
     ///         of the same level, and claimId-edgeId links for zero layer edges that claim an edge in the level below.
     /// @param store                            The edge store containing all edges and rival data
     /// @param edgeId                           The id of the edge to confirm
-    /// @param ancestorEdgeIds                  The ids of the direct ancestors of an edge. These are ordered from the parent first, then going to grand-parent,
-    ///                                         great-grandparent etc. The chain can extend only as far as the zero layer edge of type Block.
     /// @param claimedAssertionUnrivaledBlocks  The number of blocks that the assertion ultimately being claimed by this edge spent unrivaled
     /// @param confirmationThresholdBlock       The number of blocks that the total unrivaled time of an ancestor chain needs to exceed in
     ///                                         order to be confirmed
-    /// @param numBigStepLevel                  The number of big step levels in this challenge
     function confirmEdgeByTime(
         EdgeStore storage store,
         bytes32 edgeId,
-        bytes32[] memory ancestorEdgeIds,
         uint64 claimedAssertionUnrivaledBlocks,
-        uint64 confirmationThresholdBlock,
-        uint8 numBigStepLevel
-    ) internal returns (uint64) {
+        uint64 confirmationThresholdBlock
+    ) internal returns (uint256) {
         if (!store.edges[edgeId].exists()) {
             revert EdgeNotExists(edgeId);
         }
 
-        bytes32 currentEdgeId = edgeId;
-        uint64 totalTimeUnrivaled = timeUnrivaled(store, edgeId);
-
-        // ancestors start from parent, then extend upwards
-        for (uint256 i = 0; i < ancestorEdgeIds.length; i++) {
-            ChallengeEdge storage e = get(store, ancestorEdgeIds[i]);
-            // the ancestor must either have a parent-child link
-            // or have a claim id-edge link when the ancestor is of a different edge level to its child
-            if (e.lowerChildId == currentEdgeId || e.upperChildId == currentEdgeId) {
-                totalTimeUnrivaled += timeUnrivaled(store, e.id());
-                currentEdgeId = ancestorEdgeIds[i];
-            } else if (ancestorEdgeIds[i] == store.edges[currentEdgeId].claimId) {
-                checkClaimIdLink(store, ancestorEdgeIds[i], currentEdgeId, numBigStepLevel);
-                totalTimeUnrivaled += timeUnrivaled(store, e.id());
-                currentEdgeId = ancestorEdgeIds[i];
-            } else {
-                revert EdgeNotAncestor(
-                    currentEdgeId,
-                    e.lowerChildId,
-                    e.upperChildId,
-                    ancestorEdgeIds[i],
-                    store.edges[currentEdgeId].claimId
-                );
-            }
-        }
+        uint256 totalTimeUnrivaled = timeUnrivaledTotal(store, edgeId);
 
         // since sibling assertions have the same predecessor, they can be viewed as
         // rival edges. Adding the assertion unrivaled time allows us to start the confirmation
@@ -788,14 +732,14 @@ library EdgeChallengeManagerLib {
     /// @dev    One step proofs can only be executed against edges that have length one and of type SmallStep
     /// @param store                        The edge store containing all edges and rival data
     /// @param edgeId                       The id of the edge to confirm
-    /// @param oneStepProofEntry            The one step proof contract 
-    /// @param oneStepData                  Input data to the one step proof 
-    /// @param execCtx                      The execution context to be supplied to the one step proof entry 
-    /// @param beforeHistoryInclusionProof  Proof that the state which is the start of the edge is committed to by the startHistoryRoot 
-    /// @param afterHistoryInclusionProof   Proof that the state which is the end of the edge is committed to by the endHistoryRoot 
-    /// @param numBigStepLevel              The number of big step levels in this challenge 
-    /// @param bigStepHeight                The height of the zero layer levels of big step type 
-    /// @param smallStepHeight              The height of the zero layer levels of big step type 
+    /// @param oneStepProofEntry            The one step proof contract
+    /// @param oneStepData                  Input data to the one step proof
+    /// @param execCtx                      The execution context to be supplied to the one step proof entry
+    /// @param beforeHistoryInclusionProof  Proof that the state which is the start of the edge is committed to by the startHistoryRoot
+    /// @param afterHistoryInclusionProof   Proof that the state which is the end of the edge is committed to by the endHistoryRoot
+    /// @param numBigStepLevel              The number of big step levels in this challenge
+    /// @param bigStepHeight                The height of the zero layer levels of big step type
+    /// @param smallStepHeight              The height of the zero layer levels of big step type
     function confirmEdgeByOneStepProof(
         EdgeStore storage store,
         bytes32 edgeId,
@@ -816,21 +760,21 @@ library EdgeChallengeManagerLib {
         if (ChallengeEdgeLib.levelToType(store.edges[edgeId].level, numBigStepLevel) != EdgeType.SmallStep) {
             revert EdgeTypeNotSmallStep(store.edges[edgeId].level);
         }
-  
+
         // edge must be length one to execute one step proofs against
         if (store.edges[edgeId].length() != 1) {
             revert EdgeNotLengthOne(store.edges[edgeId].length());
         }
 
         // Get the machine step that corresponds to the start height of this edge
-        // To do this we sum the machine steps of the edges in each of the preceeding levels. 
+        // To do this we sum the machine steps of the edges in each of the preceeding levels.
         // We do not include the block height, since each step at the block level is a new block
         // and new blocks reset the machine step to 0.
         uint256 machineStep = store.edges[edgeId].startHeight;
         {
             bytes32 cursor = edgeId;
             uint256 stepSize = smallStepHeight;
-            while(store.edges[cursor].level > 1) {
+            while (store.edges[cursor].level > 1) {
                 bytes32 nextEdgeId = store.edges[cursor].originId;
                 // We can traverse to previous levels using the origin id
                 cursor = store.firstRivals[nextEdgeId];
@@ -860,5 +804,6 @@ library EdgeChallengeManagerLib {
 
         // we also check the edge is pending in setConfirmed()
         store.edges[edgeId].setConfirmed();
+        store.edges[edgeId].totalTimeUnrivaledCache = type(uint64).max;
     }
 }

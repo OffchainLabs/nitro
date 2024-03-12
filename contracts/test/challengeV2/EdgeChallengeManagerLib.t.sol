@@ -23,7 +23,7 @@ contract MockOneStepProofEntry is IOneStepProofEntry {
         view
         returns (bytes32 afterHash)
     {
-        if(testMachineStep != 0) require(testMachineStep == machineStep, "Invalid machine step");
+        if (testMachineStep != 0) require(testMachineStep == machineStep, "Invalid machine step");
         return bytes32(proof);
     }
 
@@ -85,8 +85,16 @@ contract EdgeChallengeManagerLibAccess {
         return store.hasLengthOneRival(edgeId);
     }
 
-    function timeUnrivaled(bytes32 edgeId) public view returns (uint64) {
+    function timeUnrivaled(bytes32 edgeId) public view returns (uint256) {
         return store.timeUnrivaled(edgeId);
+    }
+
+    function timeUnrivaledTotal(bytes32 edgeId) public view returns (uint256) {
+        return store.timeUnrivaledTotal(edgeId);
+    }
+
+    function updateTimerCacheByChildren(bytes32 edgeId) public {
+        store.updateTimerCacheByChildren(edgeId);
     }
 
     function mandatoryBisectionHeight(uint256 start, uint256 end) public pure returns (uint256) {
@@ -120,10 +128,6 @@ contract EdgeChallengeManagerLibAccess {
         store.get(edgeId).level = level;
     }
 
-    function confirmEdgeByChildren(bytes32 edgeId) public {
-        return store.confirmEdgeByChildren(edgeId);
-    }
-
     function nextEdgeLevel(uint8 level, uint8 numBigStepLevel) public pure returns (uint8) {
         return EdgeChallengeManagerLib.nextEdgeLevel(level, numBigStepLevel);
     }
@@ -140,20 +144,12 @@ contract EdgeChallengeManagerLibAccess {
         return store.confirmedRivals[mutualId];
     }
 
-    function confirmEdgeByClaim(bytes32 edgeId, bytes32 claimingEdgeId, uint8 numBigStepLevel) public {
-        return store.confirmEdgeByClaim(edgeId, claimingEdgeId, numBigStepLevel);
-    }
-
     function confirmEdgeByTime(
         bytes32 edgeId,
-        bytes32[] memory ancestorEdgeIds,
         uint64 claimedAssertionUnrivaledBlocks,
-        uint64 confirmationThresholdBlock,
-        uint8 numBigStepLevel
-    ) public returns (uint64) {
-        return store.confirmEdgeByTime(
-            edgeId, ancestorEdgeIds, claimedAssertionUnrivaledBlocks, confirmationThresholdBlock, numBigStepLevel
-        );
+        uint64 confirmationThresholdBlock
+    ) public returns (uint256) {
+        return store.confirmEdgeByTime(edgeId, claimedAssertionUnrivaledBlocks, confirmationThresholdBlock);
     }
 
     function confirmEdgeByOneStepProof(
@@ -1003,291 +999,11 @@ contract EdgeChallengeManagerLibTest is Test {
         return (edge1.idMem(), lowerChildId, upperChildAdded.edgeId);
     }
 
-    function testConfirmEdgeByChildren() public {
-        (bytes32 parentEdgeId, bytes32 lowerChildId, bytes32 upperChildId) = addParentAndChildren(3, 5, 11);
-
-        store.setConfirmed(lowerChildId);
-        store.setConfirmed(upperChildId);
-
-        store.confirmEdgeByChildren(parentEdgeId);
-        assertTrue(store.get(parentEdgeId).status == EdgeStatus.Confirmed);
-        assertEq(
-            store.confirmedRivals(ChallengeEdgeLib.mutualIdMem(store.get(parentEdgeId))),
-            parentEdgeId,
-            "Confirmed rival"
-        );
-    }
-
-    function testConfirmEdgeByChildrenRivalConfirmed() public {
-        BArgs memory pc = addParentsAndChildren(3, 5, 11);
-
-        store.setConfirmed(pc.lowerChildId1);
-        store.setConfirmed(pc.upperChildId1);
-        store.setConfirmed(pc.lowerChildId2);
-        store.setConfirmed(pc.upperChildId2);
-
-        store.confirmEdgeByChildren(pc.edge1Id);
-        vm.expectRevert(abi.encodeWithSelector(RivalEdgeConfirmed.selector, pc.edge2Id, pc.edge1Id));
-        store.confirmEdgeByChildren(pc.edge2Id);
-    }
-
-    function testConfirmEdgeByChildrenAlreadyConfirmed() public {
-        (bytes32 parentEdgeId, bytes32 lowerChildId, bytes32 upperChildId) = addParentAndChildren(3, 5, 11);
-
-        store.setConfirmed(lowerChildId);
-        store.setConfirmed(upperChildId);
-
-        store.confirmEdgeByChildren(parentEdgeId);
-        vm.expectRevert(abi.encodeWithSelector(RivalEdgeConfirmed.selector, parentEdgeId, parentEdgeId));
-        store.confirmEdgeByChildren(parentEdgeId);
-    }
-
-    function testConfirmEdgeByChildrenNotExist() public {
-        bytes32 randId = rand.hash();
-
-        vm.expectRevert(abi.encodeWithSelector(EdgeNotExists.selector, randId));
-        store.confirmEdgeByChildren(randId);
-    }
-
-    function testConfirmEdgeByChildrenLowerChildNotExist() public {
-        (bytes32 parentEdgeId, bytes32 lowerChildId, bytes32 upperChildId) = addParentAndChildren(3, 5, 11);
-
-        store.setConfirmed(lowerChildId);
-        store.setConfirmed(upperChildId);
-
-        store.remove(lowerChildId);
-        vm.expectRevert(abi.encodeWithSelector(EdgeNotExists.selector, lowerChildId));
-        store.confirmEdgeByChildren(parentEdgeId);
-    }
-
-    function testConfirmEdgeByChildrenUpperChildNotExist() public {
-        (bytes32 parentEdgeId, bytes32 lowerChildId, bytes32 upperChildId) = addParentAndChildren(3, 5, 11);
-
-        store.setConfirmed(lowerChildId);
-        store.setConfirmed(upperChildId);
-
-        store.remove(upperChildId);
-        vm.expectRevert(abi.encodeWithSelector(EdgeNotExists.selector, upperChildId));
-        store.confirmEdgeByChildren(parentEdgeId);
-    }
-
-    function testConfirmEdgeByChildrenLowerChildPending() public {
-        (bytes32 parentEdgeId, bytes32 lowerChildId, bytes32 upperChildId) = addParentAndChildren(3, 5, 11);
-
-        store.setConfirmed(upperChildId);
-
-        vm.expectRevert(abi.encodeWithSelector(EdgeNotConfirmed.selector, lowerChildId, EdgeStatus.Pending));
-        store.confirmEdgeByChildren(parentEdgeId);
-    }
-
-    function testConfirmEdgeByChildrenUpperChildPending() public {
-        (bytes32 parentEdgeId, bytes32 lowerChildId, bytes32 upperChildId) = addParentAndChildren(3, 5, 11);
-
-        store.setConfirmed(lowerChildId);
-
-        vm.expectRevert(abi.encodeWithSelector(EdgeNotConfirmed.selector, upperChildId, EdgeStatus.Pending));
-        store.confirmEdgeByChildren(parentEdgeId);
-    }
-
     function testNextlevel() public {
         assertTrue(store.nextEdgeLevel(0, NUM_BIGSTEP_LEVEL) == 1);
         assertTrue(store.nextEdgeLevel(NUM_BIGSTEP_LEVEL, NUM_BIGSTEP_LEVEL) == NUM_BIGSTEP_LEVEL + 1);
         vm.expectRevert(abi.encodeWithSelector(LevelTooHigh.selector, NUM_BIGSTEP_LEVEL + 2, NUM_BIGSTEP_LEVEL));
         store.nextEdgeLevel(NUM_BIGSTEP_LEVEL + 1, NUM_BIGSTEP_LEVEL);
-    }
-
-    function testConfirmClaim() public {
-        BArgs memory bargs = addParentsAndChildren(2, 3, 4);
-
-        ChallengeEdge memory ce = ChallengeEdgeLib.newLayerZeroEdge(
-            store.get(bargs.upperChildId1).mutualIdMem(),
-            rand.hash(),
-            3,
-            rand.hash(),
-            4,
-            bargs.upperChildId1,
-            rand.addr(),
-            1
-        );
-
-        store.add(ce);
-        bytes32 eid = ce.idMem();
-        store.setConfirmed(eid);
-
-        store.confirmEdgeByClaim(bargs.upperChildId1, eid, NUM_BIGSTEP_LEVEL);
-
-        assertTrue(store.get(bargs.upperChildId1).status == EdgeStatus.Confirmed, "Edge confirmed");
-        assertEq(
-            store.confirmedRivals(store.get(bargs.upperChildId1).mutualIdMem()), bargs.upperChildId1, "Confirmed rival"
-        );
-    }
-
-    function testConfirmClaimByRival() public {
-        BArgs memory bargs = addParentsAndChildren(2, 3, 4);
-
-        ChallengeEdge memory ce = ChallengeEdgeLib.newLayerZeroEdge(
-            store.get(bargs.upperChildId1).mutualIdMem(),
-            rand.hash(),
-            3,
-            rand.hash(),
-            4,
-            bargs.upperChildId1,
-            rand.addr(),
-            1
-        );
-
-        store.add(ce);
-        bytes32 eid = ce.idMem();
-        store.setConfirmed(eid);
-
-        // confirm a rival
-        store.setConfirmed(bargs.upperChildId2);
-        store.setConfirmedRival(bargs.upperChildId2);
-
-        vm.expectRevert(abi.encodeWithSelector(RivalEdgeConfirmed.selector, bargs.upperChildId1, bargs.upperChildId2));
-        store.confirmEdgeByClaim(bargs.upperChildId1, eid, NUM_BIGSTEP_LEVEL);
-    }
-
-    function testCheckClaimIdLinkOrigin() public {
-        BArgs memory bargs = addParentsAndChildren(2, 3, 4);
-
-        ChallengeEdge memory ce = ChallengeEdgeLib.newLayerZeroEdge(
-            rand.hash(), rand.hash(), 3, rand.hash(), 4, bargs.upperChildId1, rand.addr(), NUM_BIGSTEP_LEVEL
-        );
-
-        store.add(ce);
-        bytes32 eid = ce.idMem();
-        store.setConfirmed(eid);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                OriginIdMutualIdMismatch.selector, store.get(bargs.upperChildId1).mutualIdMem(), store.get(eid).originId
-            )
-        );
-        store.confirmEdgeByClaim(bargs.upperChildId1, eid, NUM_BIGSTEP_LEVEL);
-    }
-
-    function testCheckClaimIdLinklevel() public {
-        BArgs memory bargs = addParentsAndChildren(2, 3, 4);
-
-        ChallengeEdge memory ce = ChallengeEdgeLib.newLayerZeroEdge(
-            store.get(bargs.upperChildId1).mutualIdMem(),
-            rand.hash(),
-            3,
-            rand.hash(),
-            4,
-            bargs.upperChildId1,
-            rand.addr(),
-            0
-        );
-
-        store.add(ce);
-        bytes32 eid = ce.idMem();
-        store.setConfirmed(eid);
-        vm.expectRevert(
-            abi.encodeWithSelector(
-                EdgeLevelInvalid.selector,
-                bargs.upperChildId1,
-                eid,
-                store.nextEdgeLevel(store.get(bargs.upperChildId1).level, NUM_BIGSTEP_LEVEL),
-                store.get(eid).level
-            )
-        );
-        store.confirmEdgeByClaim(bargs.upperChildId1, eid, NUM_BIGSTEP_LEVEL);
-    }
-
-    function testConfirmClaimWrongClaimId() public {
-        BArgs memory bargs = addParentsAndChildren(2, 3, 4);
-
-        ChallengeEdge memory ce = ChallengeEdgeLib.newLayerZeroEdge(
-            store.get(bargs.upperChildId1).mutualIdMem(), rand.hash(), 3, rand.hash(), 4, rand.hash(), rand.addr(), 1
-        );
-
-        store.add(ce);
-        bytes32 eid = ce.idMem();
-        store.setConfirmed(eid);
-        vm.expectRevert(abi.encodeWithSelector(EdgeClaimMismatch.selector, bargs.upperChildId1, store.get(eid).claimId));
-        store.confirmEdgeByClaim(bargs.upperChildId1, eid, NUM_BIGSTEP_LEVEL);
-    }
-
-    function testConfirmClaimNotExist() public {
-        BArgs memory bargs = addParentsAndChildren(2, 3, 4);
-
-        ChallengeEdge memory ce = ChallengeEdgeLib.newLayerZeroEdge(
-            store.get(bargs.upperChildId1).mutualIdMem(),
-            rand.hash(),
-            3,
-            rand.hash(),
-            4,
-            bargs.upperChildId1,
-            rand.addr(),
-            NUM_BIGSTEP_LEVEL
-        );
-
-        bytes32 eid = ce.idMem();
-        bytes32 randId = rand.hash();
-        vm.expectRevert(abi.encodeWithSelector(EdgeNotExists.selector, randId));
-        store.confirmEdgeByClaim(randId, eid, NUM_BIGSTEP_LEVEL);
-    }
-
-    function testConfirmClaimNotPending() public {
-        BArgs memory bargs = addParentsAndChildren(2, 3, 4);
-
-        ChallengeEdge memory ce = ChallengeEdgeLib.newLayerZeroEdge(
-            store.get(bargs.upperChildId1).mutualIdMem(),
-            rand.hash(),
-            3,
-            rand.hash(),
-            4,
-            bargs.upperChildId1,
-            rand.addr(),
-            1
-        );
-
-        store.add(ce);
-        bytes32 eid = ce.idMem();
-        store.setConfirmed(eid);
-        store.setConfirmed(bargs.upperChildId1);
-        vm.expectRevert(abi.encodeWithSelector(EdgeNotPending.selector, bargs.upperChildId1, EdgeStatus.Confirmed));
-        store.confirmEdgeByClaim(bargs.upperChildId1, eid, NUM_BIGSTEP_LEVEL);
-    }
-
-    function testConfirmClaimClaimerNotExist() public {
-        BArgs memory bargs = addParentsAndChildren(2, 3, 4);
-
-        ChallengeEdge memory ce = ChallengeEdgeLib.newLayerZeroEdge(
-            store.get(bargs.upperChildId1).mutualIdMem(),
-            rand.hash(),
-            3,
-            rand.hash(),
-            4,
-            bargs.upperChildId1,
-            rand.addr(),
-            NUM_BIGSTEP_LEVEL
-        );
-
-        bytes32 eid = ce.idMem();
-        vm.expectRevert(abi.encodeWithSelector(EdgeNotExists.selector, bargs.upperChildId1));
-        store.confirmEdgeByClaim(bargs.upperChildId1, eid, NUM_BIGSTEP_LEVEL);
-    }
-
-    function testConfirmClaimClaimerNotConfirmed() public {
-        BArgs memory bargs = addParentsAndChildren(2, 3, 4);
-
-        ChallengeEdge memory ce = ChallengeEdgeLib.newLayerZeroEdge(
-            store.get(bargs.upperChildId1).mutualIdMem(),
-            rand.hash(),
-            3,
-            rand.hash(),
-            4,
-            bargs.upperChildId1,
-            rand.addr(),
-            NUM_BIGSTEP_LEVEL
-        );
-
-        store.add(ce);
-        bytes32 eid = ce.idMem();
-        vm.expectRevert(abi.encodeWithSelector(EdgeNotConfirmed.selector, eid, EdgeStatus.Pending));
-        store.confirmEdgeByClaim(bargs.upperChildId1, eid, NUM_BIGSTEP_LEVEL);
     }
 
     function bisect(ChallengeEdge memory edge, bytes32[] memory states, uint256 start, uint256 end)
@@ -1326,186 +1042,80 @@ contract EdgeChallengeManagerLibTest is Test {
         );
     }
 
-    function claimWithMixedAncestors(
-        uint64 challengePeriodBlock,
-        uint256 timeAfterParent1,
-        uint256 timeAfterParent2,
-        uint256 timeAfterZeroLayer,
-        uint64 claimedAssertionBlocks
-    ) internal {
-        bytes32[] memory ancestorIds = new bytes32[](3);
-        BArgs memory pc = addParentsAndChildren(2, 5, 8);
-        bytes memory revertArg;
-        {
-            (, bytes32 bisectionRoot, bytes memory bisectionProof) = bisectArgs(pc.states1, 4, 8);
-            (bytes32 lowerChildId148,,) = store.bisectEdge(pc.upperChildId1, bisectionRoot, bisectionProof);
-            ancestorIds[1] = lowerChildId148;
-        }
-        vm.roll(block.number + timeAfterParent1);
+    // todo:
+    // updateTimerCacheByClaim
 
-        bytes32 upperChildId146;
-        {
-            bytes32 lowerChildId248;
-            {
-                (, bytes32 bisectionRoot2, bytes memory bisectionProof2) = bisectArgs(pc.states2, 4, 8);
-                (bytes32 lowerChildId248X,,) = store.bisectEdge(pc.upperChildId2, bisectionRoot2, bisectionProof2);
-                lowerChildId248 = lowerChildId248X;
-            }
+    function testTimeUnrivaledTotalAndUpdateTimerCacheByChildren() public {
+        (ChallengeEdge memory edge1, ChallengeEdge memory edge2, bytes32[] memory states1, bytes32[] memory states2) =
+            twoRivalsFromLeaves(2, 5, 8);
 
-            (, bytes32 bisectionRoot3, bytes memory bisectionProof3) = bisectArgs(pc.states1, 4, 6);
-            (,, EdgeAddedData memory upperChildId146Data) =
-                store.bisectEdge(ancestorIds[1], bisectionRoot3, bisectionProof3);
-            upperChildId146 = upperChildId146Data.edgeId;
-            vm.roll(block.number + timeAfterParent2);
+        // create 2 two parent edges
+        store.add(edge1);
+        vm.roll(block.number + 2);
+        edge2.createdAtBlock = uint64(block.number);
+        store.add(edge2);
 
-            (, bytes32 bisectionRoot4, bytes memory bisectionProof4) = bisectArgs(pc.states2, 4, 6);
-            store.bisectEdge(lowerChildId248, bisectionRoot4, bisectionProof4);
-        }
+        // bisect first parent
+        (, bytes32 bisectionRoot1, bytes memory bisectionProof1) = bisectArgs(states1, 2, 8);
+        (bytes32 lowerChildId1,, EdgeAddedData memory upperChildAdded1) =
+            store.bisectEdge(edge1.idMem(), bisectionRoot1, bisectionProof1);
 
-        bytes32 bsId;
-        {
-            ChallengeEdge memory bigStepZero = ChallengeEdgeLib.newLayerZeroEdge(
-                store.get(upperChildId146).mutualIdMem(),
-                store.get(upperChildId146).startHistoryRoot,
-                store.get(upperChildId146).startHeight,
-                rand.hash(),
-                100,
-                upperChildId146,
-                rand.addr(),
-                1
-            );
-            if (timeAfterParent1 != 139) {
-                store.add(bigStepZero);
-            } else {
-                revertArg = abi.encodeWithSelector(EdgeNotExists.selector, bigStepZero.idMem());
-            }
-            bsId = bigStepZero.idMem();
-        }
+        // roll forward a bit
+        vm.roll(block.number + 20);
 
-        vm.roll(block.number + timeAfterZeroLayer);
+        // bisect second parent
+        (, bytes32 bisectionRoot2, bytes memory bisectionProof2) = bisectArgs(states2, 2, 8);
+        (bytes32 lowerChildId2,, EdgeAddedData memory upperChildAdded2) =
+            store.bisectEdge(edge2.idMem(), bisectionRoot2, bisectionProof2);
 
-        ancestorIds[0] = upperChildId146;
-        ancestorIds[2] = pc.upperChildId1;
+        // roll forward a bit
+        vm.roll(block.number + 200);
 
-        if (timeAfterParent1 == 137) {
-            ChallengeEdge memory childE1 =
-                ChallengeEdgeLib.newChildEdge(rand.hash(), rand.hash(), 10, rand.hash(), 100, 0);
+        // make sure we have expected time unrivaled
+        assertEq(store.timeUnrivaled(edge1.idMem()), 2);
+        assertEq(store.timeUnrivaled(edge2.idMem()), 0);
+        assertEq(store.timeUnrivaled(lowerChildId1), 220);
+        assertEq(store.timeUnrivaled(upperChildAdded1.edgeId), 20);
+        assertEq(store.timeUnrivaled(lowerChildId2), 220);
+        assertEq(store.timeUnrivaled(upperChildAdded2.edgeId), 0);
 
-            store.add(childE1);
+        // make sure caches are 0
+        assertEq(store.get(edge1.idMem()).totalTimeUnrivaledCache, 0);
+        assertEq(store.get(edge2.idMem()).totalTimeUnrivaledCache, 0);
+        assertEq(store.get(lowerChildId1).totalTimeUnrivaledCache, 0);
+        assertEq(store.get(upperChildAdded1.edgeId).totalTimeUnrivaledCache, 0);
+        assertEq(store.get(lowerChildId2).totalTimeUnrivaledCache, 0);
+        assertEq(store.get(upperChildAdded2.edgeId).totalTimeUnrivaledCache, 0);
 
-            ancestorIds[1] = childE1.idMem();
+        // make sure leaves just return their time unrivaled for total time unrivaled
+        assertEq(store.timeUnrivaledTotal(lowerChildId1), 220);
+        assertEq(store.timeUnrivaledTotal(upperChildAdded1.edgeId), 20);
+        assertEq(store.timeUnrivaledTotal(lowerChildId2), 220);
+        assertEq(store.timeUnrivaledTotal(upperChildAdded2.edgeId), 0);
 
-            revertArg = abi.encodeWithSelector(
-                EdgeNotAncestor.selector,
-                ancestorIds[0],
-                store.get(bsId).lowerChildId,
-                store.get(bsId).upperChildId,
-                ancestorIds[1],
-                store.get(ancestorIds[0]).claimId
-            );
-        }
+        // make sure parents return their time unrivaled for total time unrivaled (since we haven't updated caches yet)
+        assertEq(store.timeUnrivaledTotal(edge1.idMem()), 2);
+        assertEq(store.timeUnrivaledTotal(edge2.idMem()), 0);
 
-        if (timeAfterParent1 == 138) {
-            store.setClaimId(bsId, rand.hash());
-            revertArg = abi.encodeWithSelector(
-                EdgeNotAncestor.selector,
-                bsId,
-                store.get(bsId).lowerChildId,
-                store.get(bsId).upperChildId,
-                ancestorIds[0],
-                store.get(bsId).claimId
-            );
-        }
+        // update the child caches, since they are leaves, this should just set the cache to the time unrivaled
+        store.updateTimerCacheByChildren(lowerChildId1);
+        store.updateTimerCacheByChildren(upperChildAdded1.edgeId);
+        store.updateTimerCacheByChildren(lowerChildId2);
+        store.updateTimerCacheByChildren(upperChildAdded2.edgeId);
+        assertEq(store.get(lowerChildId1).totalTimeUnrivaledCache, 220);
+        assertEq(store.get(upperChildAdded1.edgeId).totalTimeUnrivaledCache, 20);
+        assertEq(store.get(lowerChildId2).totalTimeUnrivaledCache, 220);
+        assertEq(store.get(upperChildAdded2.edgeId).totalTimeUnrivaledCache, 0);
 
-        if (timeAfterParent1 == 140) {
-            store.setConfirmed(bsId);
-            revertArg = abi.encodeWithSelector(EdgeNotPending.selector, bsId, EdgeStatus.Confirmed);
-        }
+        // time unrivaled total should now return the parent's time unrivaled plus the lower child's time unrivaled cache
+        assertEq(store.timeUnrivaledTotal(edge1.idMem()), 22);
+        assertEq(store.timeUnrivaledTotal(edge2.idMem()), 0);
 
-        if (timeAfterParent1 == 141) {
-            ChallengeEdge memory bigStepZero2 = ChallengeEdgeLib.newLayerZeroEdge(
-                store.get(upperChildId146).mutualIdMem(),
-                store.get(upperChildId146).startHistoryRoot,
-                store.get(upperChildId146).startHeight,
-                rand.hash(),
-                100,
-                upperChildId146,
-                rand.addr(),
-                1
-            );
-            store.add(bigStepZero2);
-            store.setConfirmed(bigStepZero2.idMem());
-            store.setConfirmedRival(bigStepZero2.idMem());
-            revertArg = abi.encodeWithSelector(RivalEdgeConfirmed.selector, bsId, bigStepZero2.idMem());
-        }
-
-        if (timeAfterParent1 + timeAfterParent2 + timeAfterZeroLayer + claimedAssertionBlocks == 4) {
-            revertArg = abi.encodeWithSelector(InsufficientConfirmationBlocks.selector, 4, challengePeriodBlock);
-        }
-
-        if (revertArg.length != 0) {
-            vm.expectRevert(revertArg);
-        }
-        uint256 totalTime =
-            store.confirmEdgeByTime(bsId, ancestorIds, claimedAssertionBlocks, challengePeriodBlock, NUM_BIGSTEP_LEVEL);
-
-        if (revertArg.length == 0) {
-            assertTrue(store.get(bsId).status == EdgeStatus.Confirmed, "Edge confirmed");
-            assertEq(store.confirmedRivals(store.get(bsId).mutualIdMem()), bsId, "Confirmed rival");
-            assertEq(
-                totalTime,
-                timeAfterParent1 + timeAfterParent2 + timeAfterZeroLayer + claimedAssertionBlocks,
-                "Invalid total time"
-            );
-        }
-    }
-
-    function testConfirmByTimeGrandParent() public {
-        claimWithMixedAncestors(10, 11, 0, 0, 0);
-    }
-
-    function testConfirmByTimeParent() public {
-        claimWithMixedAncestors(10, 0, 11, 0, 0);
-    }
-
-    function testConfirmByTimeSelf() public {
-        claimWithMixedAncestors(10, 0, 0, 11, 0);
-    }
-
-    function testConfirmByTimeAssertion() public {
-        claimWithMixedAncestors(10, 0, 0, 0, 11);
-    }
-
-    function testConfirmByTimeCombined() public {
-        claimWithMixedAncestors(10, 5, 6, 0, 0);
-    }
-
-    function testConfirmByTimeCombinedClaimAll() public {
-        claimWithMixedAncestors(10, 3, 3, 3, 3);
-    }
-
-    function testConfirmByTimeNoTime() public {
-        claimWithMixedAncestors(10, 1, 1, 1, 1);
-    }
-
-    function testConfirmByTimeBrokenAncestor() public {
-        claimWithMixedAncestors(10, 137, 1, 1, 1);
-    }
-
-    function testConfirmByTimeBrokenClaim() public {
-        claimWithMixedAncestors(10, 138, 1, 1, 1);
-    }
-
-    function testConfirmByTimeEdgeNotExist() public {
-        claimWithMixedAncestors(10, 139, 1, 1, 1);
-    }
-
-    function testConfirmByTimeEdgeNotPending() public {
-        claimWithMixedAncestors(10, 140, 1, 1, 1);
-    }
-
-    function testConfirmByTimeRivalConfirmed() public {
-        claimWithMixedAncestors(10, 141, 1, 1, 1);
+        // updating the cache should set the cache to the time unrivaled total
+        store.updateTimerCacheByChildren(edge1.idMem());
+        store.updateTimerCacheByChildren(edge2.idMem());
+        assertEq(store.get(edge1.idMem()).totalTimeUnrivaledCache, 22);
+        assertEq(store.get(edge2.idMem()).totalTimeUnrivaledCache, 0);
     }
 
     struct ConfirmByOneStepData {
@@ -1519,28 +1129,18 @@ contract EdgeChallengeManagerLibTest is Test {
     uint256 BIGSTEPHEIGHT = 1 << 4;
     uint256 SMALLSTEPHEIGHT = 1 << 6;
 
-    function addUpLastLevel() internal returns(bytes32 originId, uint256[] memory startHeights) {
+    function addUpLastLevel() internal returns (bytes32 originId, uint256[] memory startHeights) {
         originId = rand.hash();
 
         startHeights = new uint256[](NUM_BIGSTEP_LEVEL + 1);
-        for (uint i = 0; i < NUM_BIGSTEP_LEVEL + 1; i++) {
+        for (uint256 i = 0; i < NUM_BIGSTEP_LEVEL + 1; i++) {
             uint256 startHeight = rand.unsignedInt(BIGSTEPHEIGHT);
             ChallengeEdge memory e1 = ChallengeEdgeLib.newChildEdge(
-                originId,
-                rand.hash(),
-                startHeight,
-                rand.hash(),
-                startHeight + 1,
-                uint8(i)
+                originId, rand.hash(), startHeight, rand.hash(), startHeight + 1, uint8(i)
             );
             store.add(e1);
             ChallengeEdge memory e2 = ChallengeEdgeLib.newChildEdge(
-                originId,
-                e1.startHistoryRoot,
-                startHeight,
-                rand.hash(),
-                startHeight + 1,
-                uint8(i)
+                originId, e1.startHistoryRoot, startHeight, rand.hash(), startHeight + 1, uint8(i)
             );
             store.add(e2);
 
@@ -1552,15 +1152,13 @@ contract EdgeChallengeManagerLibTest is Test {
     function getLayerZeroStepSize(
         uint256 numBigStepLevel,
         uint256 bigStepHeight,
-        uint256 smallStepHeight, 
-        uint256 level)
-        internal
-        returns (uint256)
-    {
-        uint stepSize = 1;
-        uint maxLevelIndex = numBigStepLevel + 1;
-        for(uint256 i = level; i < maxLevelIndex; i++) {
-            if(i == maxLevelIndex - 1) {
+        uint256 smallStepHeight,
+        uint256 level
+    ) internal returns (uint256) {
+        uint256 stepSize = 1;
+        uint256 maxLevelIndex = numBigStepLevel + 1;
+        for (uint256 i = level; i < maxLevelIndex; i++) {
+            if (i == maxLevelIndex - 1) {
                 stepSize *= smallStepHeight;
             } else {
                 stepSize *= bigStepHeight;
@@ -1568,7 +1166,6 @@ contract EdgeChallengeManagerLibTest is Test {
         }
         return stepSize;
     }
-
 
     function confirmByOneStep(uint256 flag) internal {
         uint256 startHeight = rand.unsignedInt(SMALLSTEPHEIGHT);
@@ -1584,7 +1181,7 @@ contract EdgeChallengeManagerLibTest is Test {
             startHeight + 1,
             NUM_BIGSTEP_LEVEL + 1
         );
-        
+
         data.e2 = ChallengeEdgeLib.newChildEdge(
             originId,
             MerkleTreeLib.root(ProofUtils.expansionFromLeaves(states2, 0, startHeight + 1)),
@@ -1609,13 +1206,9 @@ contract EdgeChallengeManagerLibTest is Test {
 
         uint256 expectedStartMachineStep = startHeight;
         {
-            for (uint i = 1; i < startHeights.length; i++) {
-                expectedStartMachineStep += getLayerZeroStepSize(
-                    NUM_BIGSTEP_LEVEL,
-                    BIGSTEPHEIGHT,
-                    SMALLSTEPHEIGHT, 
-                    i
-                ) * startHeights[i];
+            for (uint256 i = 1; i < startHeights.length; i++) {
+                expectedStartMachineStep +=
+                    getLayerZeroStepSize(NUM_BIGSTEP_LEVEL, BIGSTEPHEIGHT, SMALLSTEPHEIGHT, i) * startHeights[i];
             }
         }
         MockOneStepProofEntry entry = new MockOneStepProofEntry(expectedStartMachineStep);
@@ -1657,7 +1250,9 @@ contract EdgeChallengeManagerLibTest is Test {
         if (data.revertArg.length != 0) {
             vm.expectRevert(data.revertArg);
         }
-        store.confirmEdgeByOneStepProof(eid, entry, d, e, data.beforeProof, data.afterProof, NUM_BIGSTEP_LEVEL, 1 << 4, 1 << 6);
+        store.confirmEdgeByOneStepProof(
+            eid, entry, d, e, data.beforeProof, data.afterProof, NUM_BIGSTEP_LEVEL, 1 << 4, 1 << 6
+        );
 
         if (bytes(data.revertArg).length != 0) {
             // for flag one the edge does not exist
