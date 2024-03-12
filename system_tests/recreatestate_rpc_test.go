@@ -2,11 +2,14 @@ package arbtest
 
 import (
 	"context"
+	"encoding/binary"
 	"errors"
 	"fmt"
 	"math/big"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
@@ -568,5 +571,121 @@ func TestGettingStateForRPCHybridArchiveNode(t *testing.T) {
 	Require(t, err)
 	if !exists {
 		Fatal(t, "User2 address does not exist in the state")
+	}
+}
+
+func TestStateAndHeaderForRecentBlock(t *testing.T) {
+	threads := 32
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.execConfig.Caching.Archive = true
+	builder.execConfig.RPC.MaxRecreateStateDepth = 0
+	cleanup := builder.Build(t)
+	defer cleanup()
+	builder.L2Info.GenerateAccount("User2")
+
+	errors := make(chan error, threads+1)
+	senderDone := make(chan struct{})
+	go func() {
+		defer close(senderDone)
+		for ctx.Err() == nil {
+			tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, new(big.Int).Lsh(big.NewInt(1), 128), nil)
+			err := builder.L2.Client.SendTransaction(ctx, tx)
+			if ctx.Err() != nil {
+				return
+			}
+			if err != nil {
+				errors <- err
+				return
+			}
+			_, err = builder.L2.EnsureTxSucceeded(tx)
+			if ctx.Err() != nil {
+				return
+			}
+			if err != nil {
+				errors <- err
+				return
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}()
+	api := builder.L2.ExecNode.Backend.APIBackend()
+	db := builder.L2.ExecNode.Backend.ChainDb()
+	i := 1
+	var mtx sync.RWMutex
+	var wgTrace sync.WaitGroup
+	for j := 0; j < threads && ctx.Err() == nil; j++ {
+		wgTrace.Add(1)
+		go func() {
+			defer wgTrace.Done()
+			mtx.RLock()
+			blockNumber := i
+			mtx.RUnlock()
+			for blockNumber < 300 && ctx.Err() == nil {
+				prefix := make([]byte, 8)
+				binary.BigEndian.PutUint64(prefix, uint64(blockNumber))
+				prefix = append([]byte("b"), prefix...)
+				it := db.NewIterator(prefix, nil)
+				defer it.Release()
+				if it.Next() {
+					key := it.Key()
+					if len(key) != len(prefix)+common.HashLength {
+						Fatal(t, "Wrong key length, have:", len(key), "want:", len(prefix)+common.HashLength)
+					}
+					blockHash := common.BytesToHash(key[len(prefix):])
+					start := time.Now()
+					for ctx.Err() == nil {
+						_, _, err := api.StateAndHeaderByNumberOrHash(ctx, rpc.BlockNumberOrHash{BlockHash: &blockHash})
+						if err == nil {
+							mtx.Lock()
+							if blockNumber == i {
+								i++
+							}
+							mtx.Unlock()
+							break
+						}
+						if ctx.Err() != nil {
+							return
+						}
+						if !strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "missing trie node") {
+							errors <- err
+							return
+						}
+						if time.Since(start) > 15*time.Second {
+							errors <- fmt.Errorf("timeout - failed to trace call for more then 5 seconds, block: %d, err: %w", blockNumber, err)
+							return
+						}
+					}
+				}
+				it.Release()
+				mtx.RLock()
+				blockNumber = i
+				mtx.RUnlock()
+			}
+		}()
+	}
+	traceDone := make(chan struct{})
+	go func() {
+		wgTrace.Wait()
+		close(traceDone)
+	}()
+
+	select {
+	case <-traceDone:
+		cancel()
+	case <-senderDone:
+		cancel()
+	case err := <-errors:
+		t.Error(err)
+		cancel()
+	}
+	<-traceDone
+	<-senderDone
+	close(errors)
+	for err := range errors {
+		if err != nil {
+			t.Error(err)
+		}
 	}
 }
