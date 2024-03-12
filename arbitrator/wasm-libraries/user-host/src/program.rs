@@ -5,6 +5,7 @@ use arbutil::{
     evm::{
         api::{EvmApiMethod, VecReader, EVM_API_METHOD_REQ_OFFSET},
         req::{EvmApiRequestor, RequestHandler},
+        user::UserOutcomeKind,
         EvmData,
     },
     Color,
@@ -78,6 +79,8 @@ pub(crate) struct Program {
     pub module: u32,
     /// Call configuration.
     pub config: StylusConfig,
+    /// Whether the program exited early.
+    pub early_exit: Option<UserOutcomeKind>,
 }
 
 #[link(wasm_import_module = "hostio")]
@@ -166,6 +169,7 @@ impl Program {
             evm_data,
             module,
             config,
+            early_exit: None,
         };
         unsafe { PROGRAMS.push(Box::new(program)) }
     }

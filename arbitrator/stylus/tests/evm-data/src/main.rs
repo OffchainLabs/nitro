@@ -1,10 +1,9 @@
-// Copyright 2023, Offchain Labs, Inc.
+// Copyright 2023-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 #![no_main]
 
 extern crate alloc;
-use alloc::vec::Vec;
 
 use stylus_sdk::{
     alloy_primitives::{Address, B256, U256},

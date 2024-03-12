@@ -187,26 +187,31 @@ pub unsafe extern "C" fn program_internal__args_len(module: u32) -> usize {
 /// used by program-exec
 /// sets status of the last program and sends a program_done request
 #[no_mangle]
-pub unsafe extern "C" fn program_internal__set_done(mut status: u8) -> u32 {
+pub unsafe extern "C" fn program_internal__set_done(mut status: UserOutcomeKind) -> u32 {
+    use UserOutcomeKind::*;
+
     let program = Program::current();
     let module = program.module;
-    let mut outs = &program.outs;
-
+    let mut outs = program.outs.as_slice();
     let mut ink_left = program_ink_left(module);
 
-    let empty_vec = vec![];
+    // apply any early exit codes
+    if let Some(early) = program.early_exit {
+        status = early;
+    }
+
     // check if instrumentation stopped the program
-    use UserOutcomeKind::*;
     if program_ink_status(module) != 0 {
-        status = OutOfInk.into();
-        outs = &empty_vec;
+        status = OutOfInk;
+        outs = &[];
         ink_left = 0;
     }
     if program_stack_left(module) == 0 {
-        status = OutOfStack.into();
-        outs = &empty_vec;
+        status = OutOfStack;
+        outs = &[];
         ink_left = 0;
     }
+
     let gas_left = program.config.pricing.ink_to_gas(ink_left);
 
     let mut output = Vec::with_capacity(8 + outs.len());
