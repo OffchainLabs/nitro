@@ -110,13 +110,6 @@ type BatchPoster struct {
 	nextRevertCheckBlock int64       // the last parent block scanned for reverting batches
 
 	accessList func(SequencerInboxAccs, AfterDelayedMessagesRead int) types.AccessList
-
-	pricingMetrics l1PricingMetrics
-}
-
-type l1PricingMetrics struct {
-	l1GasPrice         uint64
-	l1GasPriceEstimate uint64
 }
 
 type l1BlockBound int
@@ -515,8 +508,6 @@ func (b *BatchPoster) pollForL1PriceData(ctx context.Context) {
 				suggestedTipCapGauge.Update(suggestedTipCap.Int64())
 			}
 			l1GasPriceEstimate := b.streamer.CurrentEstimateOfL1GasPrice()
-			b.pricingMetrics.l1GasPrice = l1GasPrice
-			b.pricingMetrics.l1GasPriceEstimate = l1GasPriceEstimate
 			l1GasPriceGauge.Update(int64(l1GasPrice))
 			l1GasPriceEstimateGauge.Update(int64(l1GasPriceEstimate))
 		case <-ctx.Done():
@@ -1278,7 +1269,12 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		"numBlobs", len(kzgBlobs),
 	)
 
-	surplus := arbmath.SaturatingSub(int64(b.pricingMetrics.l1GasPrice), int64(b.pricingMetrics.l1GasPriceEstimate)) * int64(len(sequencerMsg)*16)
+	surplus := arbmath.SaturatingMul(
+		arbmath.SaturatingSub(
+			l1GasPriceGauge.Snapshot().Value(),
+			l1GasPriceEstimateGauge.Snapshot().Value()),
+		int64(len(sequencerMsg)*16),
+	)
 	latestBatchSurplusGauge.Update(surplus)
 
 	recentlyHitL1Bounds := time.Since(b.lastHitL1Bounds) < config.PollInterval*3

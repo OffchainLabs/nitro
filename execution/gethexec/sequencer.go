@@ -324,8 +324,9 @@ type Sequencer struct {
 	pauseChan   chan struct{}
 	forwarder   *TxForwarder
 
-	expectedSurplus          int64
-	expectedSurplusHardCheck bool
+	expectedSurplusMutex   sync.RWMutex
+	expectedSurplus        int64
+	expectedSurplusUpdated bool
 }
 
 func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher) (*Sequencer, error) {
@@ -399,8 +400,14 @@ func ctxWithTimeout(ctx context.Context, timeout time.Duration) (context.Context
 }
 
 func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
-	if s.expectedSurplusHardCheck && s.expectedSurplus < int64(s.config().expectedSurplusHardThreshold) {
-		return errors.New("currently not accepting transactions due to expected surplus being below threshold")
+	// Only try to acquire Rlock and check for hard threshold if l1reader is not nil
+	// And hard threshold was enabled, this prevents spamming of read locks when not needed
+	if s.l1Reader != nil && s.config().ExpectedSurplusHardThreshold != "default" {
+		s.expectedSurplusMutex.RLock()
+		if s.expectedSurplusUpdated && s.expectedSurplus < int64(s.config().expectedSurplusHardThreshold) {
+			return errors.New("currently not accepting transactions due to expected surplus being below threshold")
+		}
+		s.expectedSurplusMutex.RUnlock()
 	}
 
 	sequencerBacklogGauge.Inc(1)
@@ -988,10 +995,10 @@ var (
 	blobTxBlobGasPerBlob = big.NewInt(params.BlobTxBlobGasPerBlob)
 )
 
-func (s *Sequencer) updateExpectedSurplus(ctx context.Context) error {
+func (s *Sequencer) updateExpectedSurplus(ctx context.Context) (int64, error) {
 	header, err := s.l1Reader.LastHeader(ctx)
 	if err != nil {
-		return fmt.Errorf("error encountered getting latest header from l1reader while updating expectedSurplus: %w", err)
+		return 0, fmt.Errorf("error encountered getting latest header from l1reader while updating expectedSurplus: %w", err)
 	}
 	l1GasPrice := header.BaseFee.Uint64()
 	if header.BlobGasUsed != nil {
@@ -1006,21 +1013,21 @@ func (s *Sequencer) updateExpectedSurplus(ctx context.Context) error {
 	}
 	surplus, err := s.execEngine.getL1PricingSurplus()
 	if err != nil {
-		return fmt.Errorf("error encountered getting l1 pricing surplus while updating expectedSurplus: %w", err)
+		return 0, fmt.Errorf("error encountered getting l1 pricing surplus while updating expectedSurplus: %w", err)
 	}
 	backlogL1GasCharged := int64(s.execEngine.streamer.BacklogL1GasCharged())
 	backlogCallDataUnits := int64(s.execEngine.streamer.BacklogCallDataUnits())
-	s.expectedSurplus = int64(surplus) + backlogL1GasCharged - backlogCallDataUnits*int64(l1GasPrice)
+	expectedSurplus := int64(surplus) + backlogL1GasCharged - backlogCallDataUnits*int64(l1GasPrice)
 	// update metrics
 	l1GasPriceGauge.Update(int64(l1GasPrice))
 	callDataUnitsBacklogGauge.Update(backlogCallDataUnits)
 	unusedL1GasChargeGauge.Update(backlogL1GasCharged)
 	currentSurplusGauge.Update(surplus)
-	expectedSurplusGauge.Update(s.expectedSurplus)
-	if s.config().ExpectedSurplusSoftThreshold != "default" && s.expectedSurplus < int64(s.config().expectedSurplusSoftThreshold) {
-		log.Warn("expected surplus is below soft threshold", "value", s.expectedSurplus, "threshold", s.config().expectedSurplusSoftThreshold)
+	expectedSurplusGauge.Update(expectedSurplus)
+	if s.config().ExpectedSurplusSoftThreshold != "default" && expectedSurplus < int64(s.config().expectedSurplusSoftThreshold) {
+		log.Warn("expected surplus is below soft threshold", "value", expectedSurplus, "threshold", s.config().expectedSurplusSoftThreshold)
 	}
-	return nil
+	return expectedSurplus, nil
 }
 
 func (s *Sequencer) Start(ctxIn context.Context) error {
@@ -1029,8 +1036,6 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 	if (s.config().ExpectedSurplusHardThreshold != "default" || s.config().ExpectedSurplusSoftThreshold != "default") && s.l1Reader == nil {
 		return errors.New("expected surplus soft/hard thresholds are enabled but l1Reader is nil")
 	}
-	initialExpectedSurplusHardCheck := s.l1Reader != nil && s.config().ExpectedSurplusHardThreshold != "default"
-	s.expectedSurplusHardCheck = initialExpectedSurplusHardCheck
 
 	if s.l1Reader != nil {
 		initialBlockNr := atomic.LoadUint64(&s.l1BlockNumber)
@@ -1038,23 +1043,27 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 			return errors.New("sequencer not initialized")
 		}
 
-		if err := s.updateExpectedSurplus(ctxIn); err != nil {
+		expectedSurplus, err := s.updateExpectedSurplus(ctxIn)
+		if err != nil {
 			if s.config().ExpectedSurplusHardThreshold != "default" {
 				return fmt.Errorf("expected-surplus-hard-threshold is enabled but error fetching initial expected surplus value: %w", err)
 			}
-			log.Error("error fetching initial expected surplus value", "err", err)
+			log.Error("expected-surplus-soft-threshold is enabled but error fetching initial expected surplus value", "err", err)
+		} else {
+			s.expectedSurplus = expectedSurplus
+			s.expectedSurplusUpdated = true
 		}
 		s.CallIteratively(func(ctx context.Context) time.Duration {
-			if err := s.updateExpectedSurplus(ctx); err != nil {
-				if initialExpectedSurplusHardCheck {
-					log.Error("expected-surplus-hard-threshold is enabled but unable to fetch latest expected surplus. Disabling expected-surplus-hard-threshold check and retrying immediately", "err", err)
-					s.expectedSurplusHardCheck = false
-				} else {
-					log.Error("expected-surplus-soft-threshold is enabled but unable to fetch latest expected surplus, retrying", "err", err)
-				}
+			expectedSurplus, err := s.updateExpectedSurplus(ctxIn)
+			s.expectedSurplusMutex.Lock()
+			defer s.expectedSurplusMutex.Unlock()
+			if err != nil {
+				s.expectedSurplusUpdated = false
+				log.Error("expected surplus soft/hard thresholds are enabled but unable to fetch latest expected surplus, retrying", "err", err)
 				return 0
 			}
-			s.expectedSurplusHardCheck = initialExpectedSurplusHardCheck
+			s.expectedSurplusUpdated = true
+			s.expectedSurplus = expectedSurplus
 			return 5 * time.Second
 		})
 
