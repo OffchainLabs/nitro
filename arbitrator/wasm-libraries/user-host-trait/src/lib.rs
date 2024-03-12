@@ -114,7 +114,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         trace!("write_result", self, &*self.outs(), &[])
     }
 
-    /// Exists program execution early with the given status code.
+    /// Exits program execution early with the given status code.
     /// If `0`, the program returns successfully with any data supplied by `write_result`.
     /// Otherwise, the program reverts and treats any `write_result` data as revert data.
     ///
