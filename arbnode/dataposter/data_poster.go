@@ -1234,7 +1234,7 @@ var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
 	config := DefaultDataPosterConfig
 	// the validator cannot queue transactions
 	config.MaxMempoolTransactions = 1000
-	config.MaxMempoolWeight = 1
+	config.MaxMempoolWeight = 1000
 	return config
 }()
 
@@ -1246,7 +1246,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	TargetPriceGwei:        60.,
 	UrgencyGwei:            2.,
 	MaxMempoolTransactions: 1000,
-	MaxMempoolWeight:       18,
+	MaxMempoolWeight:       1000,
 	MinTipCapGwei:          0.05,
 	MinBlobTxTipCapGwei:    1,
 	MaxTipCapGwei:          5,
@@ -1265,7 +1265,7 @@ var TestDataPosterConfig = DataPosterConfig{
 var TestDataPosterConfigForValidator = func() DataPosterConfig {
 	config := TestDataPosterConfig
 	// the validator cannot queue transactions
-	config.MaxMempoolTransactions = 1
-	config.MaxMempoolWeight = 1
+	config.MaxMempoolTransactions = 1000
+	config.MaxMempoolWeight = 1000
 	return config
 }()
