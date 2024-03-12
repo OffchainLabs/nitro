@@ -1234,7 +1234,7 @@ var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
 	config := DefaultDataPosterConfig
 	// the validator cannot queue transactions
 	config.MaxMempoolTransactions = 1000
-	config.MaxMempoolWeight = 1
+	config.MaxMempoolWeight = 18
 	return config
 }()
 
