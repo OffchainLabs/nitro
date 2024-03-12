@@ -648,7 +648,7 @@ func TestStateAndHeaderForRecentBlock(t *testing.T) {
 						if ctx.Err() != nil {
 							return
 						}
-						if !strings.Contains(err.Error(), "not found") || strings.Contains(err.Error(), "missing trie node") {
+						if !strings.Contains(err.Error(), "ahead of current block") {
 							errors <- err
 							return
 						}
