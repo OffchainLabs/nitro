@@ -519,8 +519,6 @@ func (b *BatchPoster) pollForL1PriceData(ctx context.Context) {
 			b.pricingMetrics.l1GasPriceEstimate = l1GasPriceEstimate
 			l1GasPriceGauge.Update(int64(l1GasPrice))
 			l1GasPriceEstimateGauge.Update(int64(l1GasPriceEstimate))
-			// We poll for new headers every five seconds to get accurate reporting of these metrics
-			time.Sleep(5 * time.Second)
 		case <-ctx.Done():
 			return
 		}
