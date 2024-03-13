@@ -3,12 +3,16 @@
 
 use crate::{
     evm::{
-        api::{DataReader, EvmApi, EvmApiMethod},
+        api::{DataReader, EvmApi, EvmApiMethod, EvmApiStatus},
+        storage::{StorageCache, StorageWord},
         user::UserOutcomeKind,
     },
+    format::Utf8OrHex,
+    pricing::EVM_API_INK,
     Bytes20, Bytes32,
 };
 use eyre::{bail, eyre, Result};
+use std::collections::hash_map::Entry;
 
 pub trait RequestHandler<D: DataReader>: Send + 'static {
     fn handle_request(&mut self, req_type: EvmApiMethod, req_data: &[u8]) -> (Vec<u8>, D, u64);
@@ -18,6 +22,7 @@ pub struct EvmApiRequestor<D: DataReader, H: RequestHandler<D>> {
     handler: H,
     last_code: Option<(Bytes20, D)>,
     last_return_data: Option<D>,
+    storage_cache: StorageCache,
 }
 
 impl<D: DataReader, H: RequestHandler<D>> EvmApiRequestor<D, H> {
@@ -26,6 +31,7 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApiRequestor<D, H> {
             handler,
             last_code: None,
             last_return_data: None,
+            storage_cache: StorageCache::default(),
         }
     }
 
@@ -93,20 +99,45 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApiRequestor<D, H> {
 
 impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
     fn get_bytes32(&mut self, key: Bytes32) -> (Bytes32, u64) {
-        let (res, _, cost) = self.handle_request(EvmApiMethod::GetBytes32, key.as_slice());
-        (res.try_into().unwrap(), cost)
+        let cache = &mut self.storage_cache;
+        let mut cost = cache.read_gas();
+
+        let value = cache.entry(key).or_insert_with(|| {
+            let (res, _, gas) = self
+                .handler
+                .handle_request(EvmApiMethod::GetBytes32, key.as_slice());
+            cost = cost.saturating_add(gas).saturating_add(EVM_API_INK);
+            StorageWord::known(res.try_into().unwrap())
+        });
+        (value.value, cost)
     }
 
-    fn set_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Result<u64> {
-        let mut request = Vec::with_capacity(64);
-        request.extend(key);
-        request.extend(value);
-        let (res, _, cost) = self.handle_request(EvmApiMethod::SetBytes32, &request);
-        if res.len() != 1 {
-            bail!("bad response from set_bytes32")
+    fn cache_bytes32(&mut self, key: Bytes32, value: Bytes32) -> u64 {
+        match self.storage_cache.entry(key) {
+            Entry::Occupied(mut key) => key.get_mut().value = value,
+            Entry::Vacant(slot) => drop(slot.insert(StorageWord::unknown(value))),
+        };
+        self.storage_cache.write_gas()
+    }
+
+    fn flush_storage_cache(&mut self, clear: bool, gas_left: u64) -> Result<u64> {
+        let mut data = Vec::with_capacity(64 * self.storage_cache.len() + 8);
+        data.extend(gas_left.to_be_bytes());
+
+        for (key, value) in &mut self.storage_cache.slots {
+            if value.dirty() {
+                data.extend(*key);
+                data.extend(*value.value);
+                value.known = Some(value.value);
+            }
         }
-        if res[0] != 1 {
-            bail!("write protected")
+        if clear {
+            self.storage_cache.clear();
+        }
+
+        let (res, _, cost) = self.handle_request(EvmApiMethod::SetTrieSlots, &data);
+        if res[0] != EvmApiStatus::Success.into() {
+            bail!("{}", String::from_utf8_or_hex(res));
         }
         Ok(cost)
     }
@@ -175,6 +206,7 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
     }
 
     fn emit_log(&mut self, data: Vec<u8>, topics: u32) -> Result<()> {
+        // TODO: remove copy
         let mut request = Vec::with_capacity(4 + data.len());
         request.extend(topics.to_be_bytes());
         request.extend(data);

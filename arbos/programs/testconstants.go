@@ -25,7 +25,7 @@ func testConstants() error {
 	if err := errIfNotEq(1, GetBytes32, C.EvmApiMethod_GetBytes32); err != nil {
 		return err
 	}
-	if err := errIfNotEq(2, SetBytes32, C.EvmApiMethod_SetBytes32); err != nil {
+	if err := errIfNotEq(2, SetTrieSlots, C.EvmApiMethod_SetTrieSlots); err != nil {
 		return err
 	}
 	if err := errIfNotEq(3, ContractCall, C.EvmApiMethod_ContractCall); err != nil {
@@ -61,5 +61,29 @@ func testConstants() error {
 	if err := errIfNotEq(14, CaptureHostIO, C.EvmApiMethod_CaptureHostIO); err != nil {
 		return err
 	}
-	return errIfNotEq(15, EvmApiMethodReqOffset, C.EVM_API_METHOD_REQ_OFFSET)
+	if err := errIfNotEq(15, EvmApiMethodReqOffset, C.EVM_API_METHOD_REQ_OFFSET); err != nil {
+		return err
+	}
+
+	assertEq := func(index int, a apiStatus, b uint32) error {
+		if uint32(a) != b {
+			return fmt.Errorf("constant test %d failed! %d != %d", index, a, b)
+		}
+		return nil
+	}
+
+	if err := assertEq(0, Success, C.EvmApiStatus_Success); err != nil {
+		return err
+	}
+	if err := assertEq(1, Failure, C.EvmApiStatus_Failure); err != nil {
+		return err
+	}
+	if err := assertEq(2, OutOfGas, C.EvmApiStatus_OutOfGas); err != nil {
+		return err
+	}
+	if err := assertEq(3, WriteProtection, C.EvmApiStatus_WriteProtection); err != nil {
+		return err
+	}
+
+	return nil
 }

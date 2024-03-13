@@ -135,13 +135,8 @@ func callProgram(
 	return data, err
 }
 
-type apiStatus = C.EvmApiStatus
-
-const apiSuccess C.EvmApiStatus = C.EvmApiStatus_Success
-const apiFailure C.EvmApiStatus = C.EvmApiStatus_Failure
-
 //export handleReqImpl
-func handleReqImpl(apiId usize, req_type u32, data *rustSlice, costPtr *u64, out_response *C.GoSliceData, out_raw_data *C.GoSliceData) apiStatus {
+func handleReqImpl(apiId usize, req_type u32, data *rustSlice, costPtr *u64, out_response *C.GoSliceData, out_raw_data *C.GoSliceData) {
 	api := getApi(apiId)
 	reqData := data.read()
 	reqType := RequestType(req_type - EvmApiMethodReqOffset)
@@ -149,7 +144,6 @@ func handleReqImpl(apiId usize, req_type u32, data *rustSlice, costPtr *u64, out
 	*costPtr = u64(cost)
 	api.pinAndRef(response, out_response)
 	api.pinAndRef(raw_data, out_raw_data)
-	return apiSuccess
 }
 
 func (value bytes32) toHash() common.Hash {

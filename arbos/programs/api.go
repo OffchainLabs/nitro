@@ -24,7 +24,7 @@ type RequestType int
 
 const (
 	GetBytes32 RequestType = iota
-	SetBytes32
+	SetTrieSlots
 	ContractCall
 	DelegateCall
 	StaticCall
@@ -37,6 +37,19 @@ const (
 	AddPages
 	CaptureHostIO
 )
+
+type apiStatus uint8
+
+const (
+	Success apiStatus = iota
+	Failure
+	OutOfGas
+	WriteProtection
+)
+
+func (s apiStatus) to_slice() []byte {
+	return []byte{uint8(s)}
+}
 
 const EvmApiMethodReqOffset = 0x10000000
 
@@ -60,16 +73,28 @@ func newApiClosures(
 		cost := vm.WasmStateLoadCost(db, actingAddress, key)
 		return db.GetState(actingAddress, key), cost
 	}
-	setBytes32 := func(key, value common.Hash) (uint64, error) {
-		if tracingInfo != nil {
-			tracingInfo.RecordStorageSet(key, value)
+	setTrieSlots := func(data []byte, gasLeft *uint64) apiStatus {
+		for len(data) > 0 {
+			key := common.BytesToHash(data[:32])
+			value := common.BytesToHash(data[32:64])
+			data = data[64:]
+
+			if tracingInfo != nil {
+				tracingInfo.RecordStorageSet(key, value)
+			}
+			if readOnly {
+				return WriteProtection
+			}
+
+			cost := vm.WasmStateStoreCost(db, actingAddress, key, value)
+			if cost > *gasLeft {
+				*gasLeft = 0
+				return OutOfGas
+			}
+			*gasLeft -= cost
+			db.SetState(actingAddress, key, value)
 		}
-		if readOnly {
-			return 0, vm.ErrWriteProtection
-		}
-		cost := vm.WasmStateStoreCost(db, actingAddress, key, value)
-		db.SetState(actingAddress, key, value)
-		return cost, nil
+		return Success
 	}
 	doCall := func(
 		contract common.Address, opcode vm.OpCode, input []byte, gas uint64, value *big.Int,
@@ -286,14 +311,11 @@ func newApiClosures(
 			key := takeHash()
 			out, cost := getBytes32(key)
 			return out[:], nil, cost
-		case SetBytes32:
-			key := takeHash()
-			value := takeHash()
-			cost, err := setBytes32(key, value)
-			if err != nil {
-				return []byte{0}, nil, 0
-			}
-			return []byte{1}, nil, cost
+		case SetTrieSlots:
+			gasLeft := takeU64()
+			gas := gasLeft
+			status := setTrieSlots(takeRest(), &gas)
+			return status.to_slice(), nil, gasLeft - gas
 		case ContractCall, DelegateCall, StaticCall:
 			var opcode vm.OpCode
 			switch req {

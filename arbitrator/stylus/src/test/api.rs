@@ -74,11 +74,17 @@ impl EvmApi<VecReader> for TestEvmApi {
         (value, 2100) // pretend worst case
     }
 
-    fn set_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Result<u64> {
+    fn cache_bytes32(&mut self, key: Bytes32, value: Bytes32) -> u64 {
         let storage = &mut self.storage.lock();
         let storage = storage.get_mut(&self.program).unwrap();
         storage.insert(key, value);
-        Ok(22100) // pretend worst case
+        0
+    }
+
+    fn flush_storage_cache(&mut self, _clear: bool, _gas_left: u64) -> Result<u64> {
+        let storage = &mut self.storage.lock();
+        let storage = storage.get_mut(&self.program).unwrap();
+        Ok(22100 * storage.len() as u64) // pretend worst case
     }
 
     /// Simulates a contract call.

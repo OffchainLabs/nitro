@@ -1,10 +1,11 @@
-// Copyright 2023, Offchain Labs, Inc.
+// Copyright 2023-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{Bytes20, Bytes32};
 
 pub mod api;
 pub mod req;
+pub mod storage;
 pub mod user;
 
 // params.SstoreSentryGasEIP2200
@@ -13,8 +14,11 @@ pub const SSTORE_SENTRY_GAS: u64 = 2300;
 // params.ColdAccountAccessCostEIP2929
 pub const COLD_ACCOUNT_GAS: u64 = 2600;
 
-// params.ColdSloadCostEIP2929
+// params.WarmStorageReadCostEIP2929
 pub const COLD_SLOAD_GAS: u64 = 2100;
+
+// params.WarmSloadCostEIP2929;
+pub const WARM_SLOAD_GAS: u64 = 100;
 
 // params.LogGas and params.LogDataGas
 pub const LOG_TOPIC_GAS: u64 = 375;

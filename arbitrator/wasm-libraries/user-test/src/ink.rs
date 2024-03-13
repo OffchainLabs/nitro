@@ -1,13 +1,11 @@
-// Copyright 2022-2023, Offchain Labs, Inc.
+// Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use arbutil::pricing;
+use crate::{program::Program, CONFIG};
 use prover::programs::{
     config::PricingParams,
     prelude::{GasMeteredMachine, MachineMeter, MeteredMachine},
 };
-
-use crate::{Program, CONFIG};
 
 #[link(wasm_import_module = "hostio")]
 extern "C" {
@@ -36,17 +34,5 @@ impl MeteredMachine for Program {
 impl GasMeteredMachine for Program {
     fn pricing(&self) -> PricingParams {
         unsafe { CONFIG.unwrap().pricing }
-    }
-}
-
-impl Program {
-    pub fn start(cost: u64) -> Self {
-        let mut program = Self::start_free();
-        program.buy_ink(pricing::HOSTIO_INK + cost).unwrap();
-        program
-    }
-
-    pub fn start_free() -> Self {
-        Self
     }
 }
