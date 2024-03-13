@@ -50,6 +50,7 @@ type Config struct {
 	RPC                       arbitrum.Config                  `koanf:"rpc"`
 	TxLookupLimit             uint64                           `koanf:"tx-lookup-limit"`
 	Dangerous                 DangerousConfig                  `koanf:"dangerous"`
+	EnablePrefetchBlock       bool                             `koanf:"enable-prefetch-block"`
 
 	forwardingTarget string
 }
@@ -84,6 +85,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	CachingConfigAddOptions(prefix+".caching", f)
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
 	DangerousConfigAddOptions(prefix+".dangerous", f)
+	f.Bool(prefix+".enable-prefetch-block", ConfigDefault.EnablePrefetchBlock, "enable prefetching of blocks")
 }
 
 var ConfigDefault = Config{
@@ -98,6 +100,7 @@ var ConfigDefault = Config{
 	Caching:                   DefaultCachingConfig,
 	Dangerous:                 DefaultDangerousConfig,
 	Forwarder:                 DefaultNodeForwarderConfig,
+	EnablePrefetchBlock:       true,
 }
 
 func ConfigDefaultNonSequencerTest() *Config {
@@ -149,6 +152,9 @@ func CreateExecutionNode(
 ) (*ExecutionNode, error) {
 	config := configFetcher()
 	execEngine, err := NewExecutionEngine(l2BlockChain)
+	if config.EnablePrefetchBlock {
+		execEngine.EnablePrefetchBlock()
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -339,6 +345,9 @@ func (n *ExecutionNode) SequenceDelayedMessage(message *arbostypes.L1IncomingMes
 }
 func (n *ExecutionNode) ResultAtPos(pos arbutil.MessageIndex) (*execution.MessageResult, error) {
 	return n.ExecEngine.ResultAtPos(pos)
+}
+func (n *ExecutionNode) ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error) {
+	return n.ExecEngine.ArbOSVersionForMessageNumber(messageNum)
 }
 
 func (n *ExecutionNode) RecordBlockCreation(

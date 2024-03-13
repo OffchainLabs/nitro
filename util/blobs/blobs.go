@@ -29,6 +29,9 @@ func fillBlobBytes(blob []byte, data []byte) []byte {
 // The number of bits in a BLS scalar that aren't part of a whole byte.
 const spareBlobBits = 6 // = math.floor(math.log2(BLS_MODULUS)) % 8
 
+// The number of bytes encodable in a blob with the current encoding scheme.
+const BlobEncodableData = 254 * params.BlobTxFieldElementsPerBlob / 8
+
 func fillBlobBits(blob []byte, data []byte) ([]byte, error) {
 	var acc uint16
 	accBits := 0

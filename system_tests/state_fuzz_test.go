@@ -41,7 +41,7 @@ func BuildBlock(
 	if lastBlockHeader != nil {
 		delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 	}
-	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead, nil, nil, arbstate.KeysetValidate)
+	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead, nil, arbstate.KeysetValidate)
 
 	ctx := context.Background()
 	message, err := inboxMultiplexer.Pop(ctx)
@@ -121,6 +121,9 @@ func (c noopChainContext) GetHeader(common.Hash, uint64) *types.Header {
 
 func FuzzStateTransition(f *testing.F) {
 	f.Fuzz(func(t *testing.T, compressSeqMsg bool, seqMsg []byte, delayedMsg []byte) {
+		if len(seqMsg) > 0 && arbstate.IsL1AuthenticatedMessageHeaderByte(seqMsg[0]) {
+			return
+		}
 		chainDb := rawdb.NewMemoryDatabase()
 		chainConfig := params.ArbitrumRollupGoerliTestnetChainConfig()
 		serializedChainConfig, err := json.Marshal(chainConfig)

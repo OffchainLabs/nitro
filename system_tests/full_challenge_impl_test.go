@@ -184,6 +184,7 @@ func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, b
 }
 
 func confirmLatestBlock(ctx context.Context, t *testing.T, l1Info *BlockchainTestInfo, backend arbutil.L1Interface) {
+	t.Helper()
 	// With SimulatedBeacon running in on-demand block production mode, the
 	// finalized block is considered to be be the nearest multiple of 32 less
 	// than or equal to the block number.
@@ -205,10 +206,10 @@ func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *Blockcha
 	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
 	Require(t, err)
 	timeBounds := mocksgen.ISequencerInboxMaxTimeVariation{
-		DelayBlocks:   10000,
-		FutureBlocks:  10000,
-		DelaySeconds:  10000,
-		FutureSeconds: 10000,
+		DelayBlocks:   big.NewInt(10000),
+		FutureBlocks:  big.NewInt(10000),
+		DelaySeconds:  big.NewInt(10000),
+		FutureSeconds: big.NewInt(10000),
 	}
 	seqInboxAddr, tx, seqInbox, err := mocksgen.DeploySequencerInboxStub(
 		&txOpts,
@@ -218,6 +219,7 @@ func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *Blockcha
 		timeBounds,
 		big.NewInt(117964),
 		reader4844,
+		false,
 	)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
@@ -285,7 +287,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	asserterExec, err := gethexec.CreateExecutionNode(ctx, asserterL2Stack, asserterL2ChainDb, asserterL2Blockchain, l1Backend, gethexec.ConfigDefaultTest)
 	Require(t, err)
 	parentChainID := big.NewInt(1337)
-	asserterL2, err := arbnode.CreateNode(ctx, asserterL2Stack, asserterExec, asserterL2ArbDb, NewFetcherFromConfig(conf), chainConfig, l1Backend, asserterRollupAddresses, nil, nil, nil, fatalErrChan, parentChainID)
+	asserterL2, err := arbnode.CreateNode(ctx, asserterL2Stack, asserterExec, asserterL2ArbDb, NewFetcherFromConfig(conf), chainConfig, l1Backend, asserterRollupAddresses, nil, nil, nil, fatalErrChan, parentChainID, nil)
 	Require(t, err)
 	err = asserterL2.Start(ctx)
 	Require(t, err)
@@ -296,7 +298,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	challengerRollupAddresses.SequencerInbox = challengerSeqInboxAddr
 	challengerExec, err := gethexec.CreateExecutionNode(ctx, challengerL2Stack, challengerL2ChainDb, challengerL2Blockchain, l1Backend, gethexec.ConfigDefaultTest)
 	Require(t, err)
-	challengerL2, err := arbnode.CreateNode(ctx, challengerL2Stack, challengerExec, challengerL2ArbDb, NewFetcherFromConfig(conf), chainConfig, l1Backend, &challengerRollupAddresses, nil, nil, nil, fatalErrChan, parentChainID)
+	challengerL2, err := arbnode.CreateNode(ctx, challengerL2Stack, challengerExec, challengerL2ArbDb, NewFetcherFromConfig(conf), chainConfig, l1Backend, &challengerRollupAddresses, nil, nil, nil, fatalErrChan, parentChainID, nil)
 	Require(t, err)
 	err = challengerL2.Start(ctx)
 	Require(t, err)
