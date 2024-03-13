@@ -93,6 +93,7 @@ type BatchPoster struct {
 	dataPoster         *dataposter.DataPoster
 	redisLock          *redislock.Simple
 	messagesPerBatch   *arbmath.MovingAverage[uint64]
+	non4844BatchCount  int // Count of consecutive non-4844 batches posted
 	// This is an atomic variable that should only be accessed atomically.
 	// An estimate of the number of batches we want to post but haven't yet.
 	// This doesn't include batches which we don't want to post yet due to the L1 bounds.
@@ -206,7 +207,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	// This default is overridden for L3 chains in applyChainParameters in cmd/nitro/nitro.go
 	MaxSize: 100000,
 	// TODO: is 1000 bytes an appropriate margin for error vs blob space efficiency?
-	Max4844BatchSize:   (254 * params.BlobTxFieldElementsPerBlob / 8 * (params.MaxBlobGasPerBlock / params.BlobTxBlobGasPerBlob)) - 1000,
+	Max4844BatchSize:   blobs.BlobEncodableData*(params.MaxBlobGasPerBlock/params.BlobTxBlobGasPerBlob) - 1000,
 	PollInterval:       time.Second * 10,
 	ErrorDelay:         time.Second * 10,
 	MaxDelay:           time.Hour,
@@ -971,12 +972,22 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 				if config.IgnoreBlobPrice {
 					use4844 = true
 				} else {
-					blobFeePerByte := eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*latestHeader.ExcessBlobGas, *latestHeader.BlobGasUsed))
-					blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
-					blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
+					backlog := atomic.LoadUint64(&b.backlog)
+					// Logic to prevent switching from non-4844 batches to 4844 batches too often,
+					// so that blocks can be filled efficiently. The geth txpool rejects txs for
+					// accounts that already have the other type of txs in the pool with
+					// "address already reserved". This logic makes sure that, if there is a backlog,
+					// that enough non-4844 batches have been posted to fill a block before switching.
+					if backlog == 0 ||
+						b.non4844BatchCount == 0 ||
+						b.non4844BatchCount > 16 {
+						blobFeePerByte := eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*latestHeader.ExcessBlobGas, *latestHeader.BlobGasUsed))
+						blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
+						blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
 
-					calldataFeePerByte := arbmath.BigMulByUint(latestHeader.BaseFee, 16)
-					use4844 = arbmath.BigLessThan(blobFeePerByte, calldataFeePerByte)
+						calldataFeePerByte := arbmath.BigMulByUint(latestHeader.BaseFee, 16)
+						use4844 = arbmath.BigLessThan(blobFeePerByte, calldataFeePerByte)
+					}
 				}
 			}
 		}
@@ -1222,9 +1233,15 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		"totalSegments", len(b.building.segments.rawSegments),
 		"numBlobs", len(kzgBlobs),
 	)
+
 	recentlyHitL1Bounds := time.Since(b.lastHitL1Bounds) < config.PollInterval*3
 	postedMessages := b.building.msgCount - batchPosition.MessageCount
 	b.messagesPerBatch.Update(uint64(postedMessages))
+	if b.building.use4844 {
+		b.non4844BatchCount = 0
+	} else {
+		b.non4844BatchCount++
+	}
 	unpostedMessages := msgCount - b.building.msgCount
 	messagesPerBatch := b.messagesPerBatch.Average()
 	if messagesPerBatch == 0 {
@@ -1363,4 +1380,57 @@ func (b *BatchPoster) StopAndWait() {
 	b.StopWaiter.StopAndWait()
 	b.dataPoster.StopAndWait()
 	b.redisLock.StopAndWait()
+}
+
+type BoolRing struct {
+	buffer         []bool
+	bufferPosition int
+}
+
+func NewBoolRing(size int) *BoolRing {
+	return &BoolRing{
+		buffer: make([]bool, 0, size),
+	}
+}
+
+func (b *BoolRing) Update(value bool) {
+	period := cap(b.buffer)
+	if period == 0 {
+		return
+	}
+	if len(b.buffer) < period {
+		b.buffer = append(b.buffer, value)
+	} else {
+		b.buffer[b.bufferPosition] = value
+	}
+	b.bufferPosition = (b.bufferPosition + 1) % period
+}
+
+func (b *BoolRing) Empty() bool {
+	return len(b.buffer) == 0
+}
+
+// Peek returns the most recently inserted value.
+// Assumes not empty, check Empty() first
+func (b *BoolRing) Peek() bool {
+	lastPosition := b.bufferPosition - 1
+	if lastPosition < 0 {
+		// This is the case where we have wrapped around, since Peek() shouldn't
+		// be called without checking Empty(), so we can just use capactity.
+		lastPosition = cap(b.buffer) - 1
+	}
+	return b.buffer[lastPosition]
+}
+
+// All returns true if the BoolRing is full and all values equal value.
+func (b *BoolRing) All(value bool) bool {
+	if len(b.buffer) < cap(b.buffer) {
+		return false
+	}
+	for _, v := range b.buffer {
+		if v != value {
+			return false
+		}
+	}
+	return true
 }

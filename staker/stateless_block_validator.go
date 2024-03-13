@@ -338,7 +338,10 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 				e.Preimages[arbutil.EthVersionedHashPreimageType] = make(map[common.Hash][]byte)
 			}
 			for i, blob := range blobs {
-				e.Preimages[arbutil.EthVersionedHashPreimageType][versionedHashes[i]] = blob[:]
+				// Prevent aliasing `blob` when slicing it, as for range loops overwrite the same variable
+				// Won't be necessary after Go 1.22 with https://go.dev/blog/loopvar-preview
+				b := blob
+				e.Preimages[arbutil.EthVersionedHashPreimageType][versionedHashes[i]] = b[:]
 			}
 		}
 	}

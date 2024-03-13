@@ -42,6 +42,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	blocksreexecutor "github.com/offchainlabs/nitro/blocks_reexecutor"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -329,6 +330,8 @@ func mainImpl() int {
 
 	var rollupAddrs chaininfo.RollupAddresses
 	var l1Client *ethclient.Client
+	var l1Reader *headerreader.HeaderReader
+	var blobReader arbstate.BlobReader
 	if nodeConfig.Node.ParentChainReader.Enable {
 		confFetcher := func() *rpcclient.ClientConfig { return &liveNodeConfig.Get().ParentChain.Connection }
 		rpcClient := rpcclient.NewRpcClient(confFetcher, nil)
@@ -351,6 +354,22 @@ func mainImpl() int {
 		if err != nil {
 			log.Crit("error getting rollup addresses", "err", err)
 		}
+		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1Client)
+		l1Reader, err = headerreader.New(ctx, l1Client, func() *headerreader.Config { return &liveNodeConfig.Get().Node.ParentChainReader }, arbSys)
+		if err != nil {
+			log.Crit("failed to get L1 headerreader", "err", err)
+		}
+		if !l1Reader.IsParentChainArbitrum() && !nodeConfig.Node.Dangerous.DisableBlobReader {
+			if nodeConfig.ParentChain.BlobClient.BeaconUrl == "" {
+				flag.Usage()
+				log.Crit("a beacon chain RPC URL is required to read batches, but it was not configured (CLI argument: --parent-chain.blob-client.beacon-url [URL])")
+			}
+			blobClient, err := headerreader.NewBlobClient(nodeConfig.ParentChain.BlobClient, l1Client)
+			if err != nil {
+				log.Crit("failed to initialize blob client", "err", err)
+			}
+			blobReader = blobClient
+		}
 	}
 
 	if nodeConfig.Node.Staker.OnlyCreateWalletContract {
@@ -358,12 +377,10 @@ func mainImpl() int {
 			flag.Usage()
 			log.Crit("--node.validator.only-create-wallet-contract requires --node.validator.use-smart-contract-wallet")
 		}
-		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1Client)
-		l1Reader, err := headerreader.New(ctx, l1Client, func() *headerreader.Config { return &liveNodeConfig.Get().Node.ParentChainReader }, arbSys)
-		if err != nil {
-			log.Crit("failed to get L1 headerreader", "error", err)
+		if l1Reader == nil {
+			flag.Usage()
+			log.Crit("--node.validator.only-create-wallet-contract conflicts with --node.dangerous.no-l1-listener")
 		}
-
 		// Just create validator smart wallet if needed then exit
 		deployInfo, err := chaininfo.GetRollupAddressesConfig(nodeConfig.Chain.ID, nodeConfig.Chain.Name, combinedL2ChainInfoFile, nodeConfig.Chain.InfoJson)
 		if err != nil {
@@ -536,6 +553,7 @@ func mainImpl() int {
 		dataSigner,
 		fatalErrChan,
 		big.NewInt(int64(nodeConfig.ParentChain.ID)),
+		blobReader,
 	)
 	if err != nil {
 		log.Error("failed to create node", "err", err)
@@ -667,7 +685,7 @@ type NodeConfig struct {
 	Node             arbnode.Config                  `koanf:"node" reload:"hot"`
 	Execution        gethexec.Config                 `koanf:"execution" reload:"hot"`
 	Validation       valnode.Config                  `koanf:"validation" reload:"hot"`
-	ParentChain      conf.L1Config                   `koanf:"parent-chain" reload:"hot"`
+	ParentChain      conf.ParentChainConfig          `koanf:"parent-chain" reload:"hot"`
 	Chain            conf.L2Config                   `koanf:"chain"`
 	LogLevel         int                             `koanf:"log-level" reload:"hot"`
 	LogType          string                          `koanf:"log-type" reload:"hot"`

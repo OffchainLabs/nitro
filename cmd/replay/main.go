@@ -155,6 +155,10 @@ func (r *BlobPreimageReader) GetBlobs(
 	return blobs, nil
 }
 
+func (r *BlobPreimageReader) Initialize(ctx context.Context) error {
+	return nil
+}
+
 // To generate:
 // key, _ := crypto.HexToECDSA("0000000000000000000000000000000000000000000000000000000000000001")
 // sig, _ := crypto.Sign(make([]byte, 32), key)
@@ -222,8 +226,12 @@ func main() {
 		if backend.GetPositionWithinMessage() > 0 {
 			keysetValidationMode = arbstate.KeysetDontValidate
 		}
-		log.Info("Params passed on readMessage func", "dasEnabled", dasEnabled, "availDAEnabled", availDAEnabled)
-		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dasReader, availDAReader, &BlobPreimageReader{}, keysetValidationMode)
+		var daProviders []arbstate.DataAvailabilityProvider
+		if dasReader != nil {
+			daProviders = append(daProviders, arbstate.NewDAProviderDAS(dasReader))
+		}
+		daProviders = append(daProviders, arbstate.NewDAProviderBlobReader(&BlobPreimageReader{}))
+		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, daProviders, availDAReader, keysetValidationMode)
 		ctx := context.Background()
 		message, err := inboxMultiplexer.Pop(ctx)
 		if err != nil {
