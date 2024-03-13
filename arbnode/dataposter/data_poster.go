@@ -34,7 +34,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/holiman/uint256"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsigner"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -144,7 +144,7 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 	var queue QueueStorage
 	// switch {
 	// case useNoOpStorage:
-	queue = &noop.Storage{}
+	// queue = &noop.Storage{}
 	// case opts.RedisClient != nil:
 	// 	var err error
 	// 	queue, err = redisstorage.NewStorage(opts.RedisClient, opts.RedisKey, &cfg.RedisSigner, encF)
@@ -160,7 +160,7 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 	// 	}
 	// 	queue = storage
 	// default:
-	// 	queue = slice.NewStorage(func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
+	queue = slice.NewStorage(func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
 	// }
 	expression, err := govaluate.NewEvaluableExpression(cfg.MaxFeeCapFormula)
 	if err != nil {
@@ -297,7 +297,7 @@ func (p *DataPoster) MaxMempoolTransactions() uint64 {
 	// }
 	// config := p.config()
 	// return arbmath.MinInt(config.MaxMempoolTransactions, config.MaxMempoolWeight)
-	return 1000
+	return 18
 }
 
 var ErrExceedsMaxMempoolSize = errors.New("posting this transaction will exceed max mempool size")
@@ -1216,7 +1216,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	WaitForL1Finality:      true,
 	TargetPriceGwei:        60.,
 	UrgencyGwei:            2.,
-	MaxMempoolTransactions: 1000,
+	MaxMempoolTransactions: 18,
 	MaxMempoolWeight:       18,
 	MinTipCapGwei:          0.05,
 	MinBlobTxTipCapGwei:    1, // default geth minimum, and relays aren't likely to accept lower values given propagation time
@@ -1237,8 +1237,8 @@ var DefaultDataPosterConfig = DataPosterConfig{
 var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
 	config := DefaultDataPosterConfig
 	// the validator cannot queue transactions
-	config.MaxMempoolTransactions = 1000
-	config.MaxMempoolWeight = 1000
+	config.MaxMempoolTransactions = 18
+	config.MaxMempoolWeight = 18
 	return config
 }()
 
@@ -1249,8 +1249,8 @@ var TestDataPosterConfig = DataPosterConfig{
 	WaitForL1Finality:      false,
 	TargetPriceGwei:        60.,
 	UrgencyGwei:            2.,
-	MaxMempoolTransactions: 1000,
-	MaxMempoolWeight:       1000,
+	MaxMempoolTransactions: 18,
+	MaxMempoolWeight:       18,
 	MinTipCapGwei:          0.05,
 	MinBlobTxTipCapGwei:    1,
 	MaxTipCapGwei:          5,
@@ -1269,7 +1269,7 @@ var TestDataPosterConfig = DataPosterConfig{
 var TestDataPosterConfigForValidator = func() DataPosterConfig {
 	config := TestDataPosterConfig
 	// the validator cannot queue transactions
-	config.MaxMempoolTransactions = 1000
-	config.MaxMempoolWeight = 1000
+	config.MaxMempoolTransactions = 18
+	config.MaxMempoolWeight = 18
 	return config
 }()
