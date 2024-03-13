@@ -652,11 +652,13 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 }
 
 func (p *DataPoster) PostSimpleTransactionAutoNonce(ctx context.Context, to common.Address, calldata []byte, gasLimit uint64, value *big.Int) (*types.Transaction, error) {
-	nonce, _, err := p.GetNextNonceAndMeta(ctx)
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+	nonce, _, _, _, err := p.getNextNonceAndMaybeMeta(ctx, 1)
 	if err != nil {
 		return nil, err
 	}
-	return p.PostSimpleTransaction(ctx, nonce, to, calldata, gasLimit, value)
+	return p.postTransaction(ctx, time.Now(), nonce, nil, to, calldata, gasLimit, value, nil, nil)
 }
 
 func (p *DataPoster) PostSimpleTransaction(ctx context.Context, nonce uint64, to common.Address, calldata []byte, gasLimit uint64, value *big.Int) (*types.Transaction, error) {
@@ -664,6 +666,12 @@ func (p *DataPoster) PostSimpleTransaction(ctx context.Context, nonce uint64, to
 }
 
 func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, kzgBlobs []kzg4844.Blob, accessList types.AccessList) (*types.Transaction, error) {
+	p.mutex.Lock()
+	defer p.mutex.Unlock()
+	return p.postTransaction(ctx, dataCreatedAt, nonce, meta, to, calldata, gasLimit, value, kzgBlobs, accessList)
+}
+
+func (p *DataPoster) postTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, kzgBlobs []kzg4844.Blob, accessList types.AccessList) (*types.Transaction, error) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 
