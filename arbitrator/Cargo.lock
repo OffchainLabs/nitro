@@ -174,7 +174,6 @@ dependencies = [
  "hashbrown 0.13.2",
  "itertools 0.10.3",
  "num-traits",
- "rayon",
  "zeroize",
 ]
 
@@ -230,7 +229,6 @@ dependencies = [
  "num-bigint",
  "num-traits",
  "paste",
- "rayon",
  "rustc_version",
  "zeroize",
 ]
@@ -280,7 +278,6 @@ dependencies = [
  "ark-std",
  "derivative",
  "hashbrown 0.13.2",
- "rayon",
 ]
 
 [[package]]
@@ -292,6 +289,7 @@ dependencies = [
  "ark-ff",
  "ark-std",
  "tracing",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -337,7 +335,6 @@ checksum = "94893f1e0c6eeab764ade8dc4c0db24caf4fe7cbbaafc0eba0a9030f447b5185"
 dependencies = [
  "num-traits",
  "rand",
- "rayon",
 ]
 
 [[package]]
@@ -389,6 +386,12 @@ name = "base64"
 version = "0.21.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
+
+[[package]]
+name = "base64"
+version = "0.22.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9475866fec1451be56a3c2400fd081ff546538961565ccb5b7142cbd22bc7a51"
 
 [[package]]
 name = "bincode"
@@ -1253,7 +1256,7 @@ checksum = "b1a46d1a171d865aa5f83f92695765caa047a9b4cbae2cbf37dbd613a793fd4c"
 [[package]]
 name = "jf-primitives"
 version = "0.4.0-pre.0"
-source = "git+https://github.com/EspressoSystems/jellyfish#bc8894f1c5187c28182d90904ec302a23d92d056"
+source = "git+https://github.com/EspressoSystems/jellyfish#5412d893d9469290cd7ba505d0a9538fa31c7534"
 dependencies = [
  "anyhow",
  "ark-bls12-377",
@@ -1286,7 +1289,6 @@ dependencies = [
  "num-bigint",
  "num-traits",
  "rand_chacha",
- "rayon",
  "serde",
  "sha2 0.10.8",
  "sha3 0.10.8",
@@ -1298,7 +1300,7 @@ dependencies = [
 [[package]]
 name = "jf-relation"
 version = "0.4.0-pre.0"
-source = "git+https://github.com/EspressoSystems/jellyfish#bc8894f1c5187c28182d90904ec302a23d92d056"
+source = "git+https://github.com/EspressoSystems/jellyfish#5412d893d9469290cd7ba505d0a9538fa31c7534"
 dependencies = [
  "ark-bls12-377",
  "ark-bls12-381",
@@ -1318,20 +1320,18 @@ dependencies = [
  "jf-utils",
  "num-bigint",
  "rand_chacha",
- "rayon",
 ]
 
 [[package]]
 name = "jf-utils"
 version = "0.4.0-pre.0"
-source = "git+https://github.com/EspressoSystems/jellyfish#bc8894f1c5187c28182d90904ec302a23d92d056"
+source = "git+https://github.com/EspressoSystems/jellyfish#5412d893d9469290cd7ba505d0a9538fa31c7534"
 dependencies = [
  "ark-ec",
  "ark-ff",
  "ark-serialize",
  "ark-std",
  "digest 0.10.7",
- "rayon",
  "serde",
  "sha2 0.10.8",
  "tagged-base64",
@@ -2402,7 +2402,7 @@ source = "git+https://github.com/EspressoSystems/tagged-base64?tag=0.3.4#93be6f0
 dependencies = [
  "ark-serialize",
  "ark-std",
- "base64",
+ "base64 0.21.7",
  "crc-any",
  "serde",
  "snafu",
@@ -2509,6 +2509,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c06d3da6113f116aaee68e4d601191614c9053067f9ab7f6edbcb161237daa54"
 dependencies = [
  "once_cell",
+ "valuable",
+]
+
+[[package]]
+name = "tracing-subscriber"
+version = "0.2.25"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0e0d2eaa99c3c2e41547cfa109e910a68ea03823cccad4a0525dcbc9b01e8c71"
+dependencies = [
+ "tracing-core",
 ]
 
 [[package]]
@@ -2563,6 +2573,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "valuable"
+version = "0.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "830b7e5d4d90034032940e4ace0d9a9a057e7a45cd94e6c007832e39edb82f6d"
+
+[[package]]
 name = "vec_map"
 version = "0.8.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2580,6 +2596,7 @@ version = "0.1.0"
 dependencies = [
  "ark-bls12-381",
  "ark-serialize",
+ "base64 0.22.0",
  "derivative",
  "derive_more",
  "jf-primitives",

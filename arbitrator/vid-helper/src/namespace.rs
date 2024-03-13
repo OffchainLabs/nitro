@@ -1,14 +1,11 @@
 // TODO import from sequencer: https://github.com/EspressoSystems/nitro-espresso-integration/issues/87
 // This module is essentially copy and pasted VID logic from the sequencer repo. It is an unfortunate workaround
 // until the VID portion of the sequencer repo is WASM-compatible.
-use core::fmt;
-use serde::{Deserialize, Serialize};
-use std::mem::size_of;
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
-use trait_set::trait_set;
 use ark_bls12_381::Bls12_381;
-use derive_more::{Display, From, Into};
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use core::fmt;
 use derivative::Derivative;
+use derive_more::{Display, From, Into};
 use jf_primitives::vid::{
     payload_prover::{PayloadProver, Statement},
     VidScheme as VidSchemeTrait,
@@ -18,8 +15,13 @@ use jf_primitives::{
     vid::advz::payload_prover::LargeRangeProof,
 };
 use num_traits::PrimInt;
+use serde::{Deserialize, Serialize};
 use std::default::Default;
+use std::mem::size_of;
 use std::{marker::PhantomData, ops::Range};
+use trait_set::trait_set;
+
+use crate::bytes::Bytes;
 
 trait_set! {
     pub trait TableWordTraits = CanonicalSerialize
@@ -60,7 +62,7 @@ trait_set! {
     PartialOrd,
     Ord,
 )]
-pub struct VmId(pub(crate) u64);
+pub struct NamespaceId(pub(crate) u64);
 
 // Use newtype pattern so that tx table entires cannot be confused with other types.
 #[derive(Clone, Debug, Deserialize, Eq, Hash, PartialEq, Serialize, Default)]
@@ -181,14 +183,14 @@ impl TryFrom<TxTableEntry> for usize {
     }
 }
 
-impl TryFrom<VmId> for TxTableEntry {
+impl TryFrom<NamespaceId> for TxTableEntry {
     type Error = <TxTableEntryWord as TryFrom<u64>>::Error;
 
-    fn try_from(value: VmId) -> Result<Self, Self::Error> {
+    fn try_from(value: NamespaceId) -> Result<Self, Self::Error> {
         TxTableEntryWord::try_from(value.0).map(Self)
     }
 }
-impl TryFrom<TxTableEntry> for VmId {
+impl TryFrom<TxTableEntry> for NamespaceId {
     type Error = <u64 as TryFrom<TxTableEntryWord>>::Error;
 
     fn try_from(value: TxTableEntry) -> Result<Self, Self::Error> {
@@ -219,13 +221,13 @@ pub type JellyfishNamespaceProof =
 #[serde(bound = "")] // for V
 pub enum NamespaceProof {
     Existence {
-        ns_payload_flat: Vec<u8>,
-        ns_id: VmId,
+        ns_payload_flat: Bytes,
+        ns_id: NamespaceId,
         ns_proof: JellyfishNamespaceProof,
         vid_common: <VidScheme as VidSchemeTrait>::Common,
     },
     NonExistence {
-        ns_id: VmId,
+        ns_id: NamespaceId,
     },
 }
 
@@ -239,7 +241,7 @@ impl NamespaceProof {
         vid: &VidScheme,
         commit: &<VidScheme as VidSchemeTrait>::Commit,
         ns_table: &NameSpaceTable<TxTableEntryWord>,
-    ) -> Option<(Vec<Transaction>, VmId)> {
+    ) -> Option<(Vec<Transaction>, NamespaceId)> {
         match self {
             NamespaceProof::Existence {
                 ns_payload_flat,
@@ -266,7 +268,8 @@ impl NamespaceProof {
                     },
                     ns_proof,
                 )
-                .unwrap().unwrap();
+                .unwrap()
+                .unwrap();
 
                 // verification succeeded, return some data
                 // we know ns_id is correct because the corresponding ns_payload_range passed verification
@@ -283,18 +286,21 @@ impl NamespaceProof {
 }
 
 pub struct Transaction {
-    _vm: VmId,
+    _namespace: NamespaceId,
     pub payload: Vec<u8>,
 }
 
 impl Transaction {
-    pub fn new(vm: VmId, payload: Vec<u8>) -> Self {
-        Self { _vm: vm, payload }
+    pub fn new(namespace: NamespaceId, payload: Vec<u8>) -> Self {
+        Self {
+            _namespace: namespace,
+            payload,
+        }
     }
 }
 
 // TODO find a home for this function
-pub fn parse_ns_payload(ns_payload_flat: &[u8], ns_id: VmId) -> Vec<Transaction> {
+pub fn parse_ns_payload(ns_payload_flat: &[u8], ns_id: NamespaceId) -> Vec<Transaction> {
     let num_txs = TxTable::get_tx_table_len(ns_payload_flat);
     let tx_bodies_offset = num_txs
         .saturating_add(1)
@@ -323,14 +329,14 @@ pub fn parse_ns_payload(ns_payload_flat: &[u8], ns_id: VmId) -> Vec<Transaction>
 #[derive(Clone, Debug, Derivative, Deserialize, Eq, Serialize, Default)]
 #[derivative(Hash, PartialEq)]
 pub struct NameSpaceTable<TableWord: TableWordTraits> {
-    pub bytes: Vec<u8>,
+    pub bytes: Bytes,
     pub phantom: PhantomData<TableWord>,
 }
 
 impl<TableWord: TableWordTraits> NameSpaceTable<TableWord> {
-    pub fn from_vec(v: Vec<u8>) -> Self {
+    pub fn from_bytes(bytes: impl Into<Bytes>) -> Self {
         Self {
-            bytes: v,
+            bytes: bytes.into(),
             phantom: Default::default(),
         }
     }
@@ -338,7 +344,7 @@ impl<TableWord: TableWordTraits> NameSpaceTable<TableWord> {
     /// Find `ns_id` and return its index into this namespace table.
     ///
     /// TODO return Result or Option? Want to avoid catch-all Error type :(
-    pub fn lookup(&self, ns_id: VmId) -> Option<usize> {
+    pub fn lookup(&self, ns_id: NamespaceId) -> Option<usize> {
         // TODO don't use TxTable, need a new method
         let ns_table_len = TxTable::get_tx_table_len(&self.bytes);
 
@@ -347,7 +353,7 @@ impl<TableWord: TableWordTraits> NameSpaceTable<TableWord> {
 
     // returns (ns_id, ns_offset)
     // ns_offset is not checked, could be anything
-    pub fn get_table_entry(&self, ns_index: usize) -> (VmId, usize) {
+    pub fn get_table_entry(&self, ns_index: usize) -> (NamespaceId, usize) {
         // get the range for ns_id bytes in ns table
         // ensure `range` is within range for ns_table_bytes
         let start = std::cmp::min(
@@ -367,9 +373,10 @@ impl<TableWord: TableWordTraits> NameSpaceTable<TableWord> {
         // any failure -> VmId(0)
         let mut ns_id_bytes = [0u8; TxTableEntry::byte_len()];
         ns_id_bytes[..ns_id_range.len()].copy_from_slice(&self.bytes[ns_id_range]);
-        let ns_id =
-            VmId::try_from(TxTableEntry::from_bytes(&ns_id_bytes).unwrap_or(TxTableEntry::zero()))
-                .unwrap_or(VmId(0));
+        let ns_id = NamespaceId::try_from(
+            TxTableEntry::from_bytes(&ns_id_bytes).unwrap_or(TxTableEntry::zero()),
+        )
+        .unwrap_or(NamespaceId(0));
 
         // get the range for ns_offset bytes in ns table
         // ensure `range` is within range for ns_table_bytes
@@ -420,8 +427,6 @@ pub trait Table<TableWord: TableWordTraits> {
     // Returns raw bytes, no checking for large values
     fn get_table_len(&self, offset: usize) -> TxTableEntry;
 
-    fn get_payload(&self) -> Vec<u8>;
-
     fn byte_len() -> usize {
         size_of::<TableWord>()
     }
@@ -439,9 +444,5 @@ impl<TableWord: TableWordTraits> Table<TableWord> for NameSpaceTable<TableWord> 
         let mut entry_bytes = [0u8; TxTableEntry::byte_len()];
         entry_bytes[..tx_table_len_range.len()].copy_from_slice(&self.bytes[tx_table_len_range]);
         TxTableEntry::from_bytes_array(entry_bytes)
-    }
-
-    fn get_payload(&self) -> Vec<u8> {
-        self.bytes.clone()
     }
 }

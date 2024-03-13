@@ -2376,6 +2376,7 @@ impl Machine {
                     let h = self.value_stack.get(1).unwrap().assume_u64();
                     if let Some(commitment) = self.hotshot_commitments.get(&h) {
                         data.extend(commitment);
+                        println!("read hotshot commitment proof generated. height: {:?}, commitment: {:?}", h, commitment);
                     }
                 } else {
                     panic!("Should never ever get here")

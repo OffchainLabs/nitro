@@ -79,6 +79,19 @@ func (v *JitSpawner) execute(
 	return state, err
 }
 
+// Export this function for test
+func (v *JitSpawner) TestExecute(
+	ctx context.Context, entry *validator.ValidationInput, moduleRoot common.Hash,
+) (validator.GoGlobalState, error) {
+	machine, err := v.machineLoader.GetMachine(ctx, moduleRoot)
+	if err != nil {
+		return validator.GoGlobalState{}, fmt.Errorf("unabled to get WASM machine: %w", err)
+	}
+
+	state, err := machine.prove(ctx, entry)
+	return state, err
+}
+
 func (s *JitSpawner) Name() string {
 	if s.config().Cranelift {
 		return "jit-cranelift"

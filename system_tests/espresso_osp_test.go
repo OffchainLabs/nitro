@@ -67,6 +67,9 @@ func TestEspressoOsp(t *testing.T) {
 	Require(t, err)
 	err = machine.StepUntilReadHotShot(ctx)
 	Require(t, err)
+	if !machine.IsRunning() {
+		t.Fatal("should be still running")
+	}
 	comm, _ := big.NewInt(0).SetString(common.Hash(input.HotShotCommitment).String(), 0)
 	tx, err = hotShotConn.SetCommitment(
 		&deployerTxOpts,

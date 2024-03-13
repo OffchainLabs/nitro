@@ -1,3 +1,4 @@
+mod bytes;
 mod namespace;
 
 use ark_bls12_381::Bls12_381;
@@ -11,6 +12,8 @@ use namespace::{NameSpaceTable, NamespaceProof, Transaction, TxTableEntryWord};
 use sha2::{Digest, Sha256};
 use tagged_base64::TaggedBase64;
 
+use crate::bytes::Bytes;
+
 pub type VidScheme = Advz<Bls12_381, sha2::Sha256>;
 
 lazy_static! {
@@ -20,7 +23,6 @@ lazy_static! {
         serde_json::from_str(json_content).expect("Failed to deserialize")
     };
 }
-
 
 // Helper function to verify a VID namespace proof that takes the byte representations of the proof,
 // namespace table, and commitment string.
@@ -41,13 +43,16 @@ pub fn verify_namespace_helper(
     let txn_comm_str = std::str::from_utf8(tx_comm_bytes).unwrap();
 
     let proof: NamespaceProof = serde_json::from_str(proof_str).unwrap();
-    let ns_table = NameSpaceTable::<TxTableEntryWord>::from_vec(ns_table_bytes.to_vec());
+    let ns_table = NameSpaceTable::<TxTableEntryWord>::from_bytes(<&[u8] as Into<Bytes>>::into(
+        ns_table_bytes,
+    ));
     let tagged = TaggedBase64::parse(&commit_str).unwrap();
     let commit: <VidScheme as VidSchemeTrait>::Commit = tagged.try_into().unwrap();
 
-    let advz: Advz<Bls12_381, sha2::Sha256>;
-    let srs =
-        UnivariateUniversalParams::<Bls12_381>::deserialize_uncompressed_unchecked(SRS_VEC.as_slice()).unwrap();
+    let srs = UnivariateUniversalParams::<Bls12_381>::deserialize_uncompressed_unchecked(
+        SRS_VEC.as_slice(),
+    )
+    .unwrap();
     let num_storage_nodes = match &proof {
         NamespaceProof::Existence { vid_common, .. } => {
             VidScheme::get_num_storage_nodes(&vid_common)
@@ -56,7 +61,7 @@ pub fn verify_namespace_helper(
         _ => 5,
     };
     let num_chunks: usize = 1 << num_storage_nodes.ilog2();
-    advz = Advz::new(num_chunks, num_storage_nodes, srs).unwrap();
+    let advz = Advz::new(num_chunks, num_storage_nodes, 1, srs).unwrap();
     let (txns, ns) = proof.verify(&advz, &commit, &ns_table).unwrap();
 
     let txns_comm = hash_txns(namespace, &txns);

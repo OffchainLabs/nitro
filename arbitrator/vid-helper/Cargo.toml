@@ -7,6 +7,7 @@ edition = "2021"
 [dependencies]
 ark-bls12-381 = "0.4.0"
 ark-serialize = { version = "0.4", features = ["derive"] }
+base64 = "0.22"
 derive_more = "0.99.17"
 serde_json = "1.0"
 tagged-base64 = { git = "https://github.com/EspressoSystems/tagged-base64", tag = "0.3.4" }
@@ -14,8 +15,8 @@ lazy_static = "1.4"
 serde = { version = "1.0", features = ["derive"] }
 sha2 = { version = "0.10.1" }
 jf-primitives = { git = "https://github.com/EspressoSystems/jellyfish", features = [
-    "test-srs",
-] }
+    "test-srs", "std"
+], default-features = false}
 trait-set = "0.3.0"
 num-traits = "0.2.17"
 derivative = "2.2"
