@@ -37,19 +37,10 @@ import (
 var (
 	srvlog                                  = log.New("service", "chain-watcher")
 	edgeAddedCounter                        = metrics.NewRegisteredCounter("arb/validator/watcher/edge_added", nil)
-	edgeConfirmedByChildrenCounter          = metrics.NewRegisteredCounter("arb/validator/watcher/confirmed_by_children", nil)
 	edgeConfirmedByTimeCounter              = metrics.NewRegisteredCounter("arb/validator/watcher/confirmed_by_time", nil)
 	edgeConfirmedByOSPCounter               = metrics.NewRegisteredCounter("arb/validator/watcher/confirmed_by_osp", nil)
-	edgeConfirmedByClaimCounter             = metrics.NewRegisteredCounter("arb/validator/watcher/confirmed_by_claim", nil)
 	errorConfirmingAssertionByWinnerCounter = metrics.NewRegisteredCounter("arb/validator/watcher/error_confirming_assertion_by_winner", nil)
 	assertionConfirmedCounter               = metrics.GetOrRegisterCounter("arb/validator/scanner/assertion_confirmed", nil)
-)
-
-const (
-	ConfirmableByChildren = "confirmable_by_children"
-	ConfirmableByClaim    = "confirmable_by_claim"
-	ConfirmableByTimer    = "confirmable_by_timer"
-	ConfirmableByOSP      = "confirmable_by_osp"
 )
 
 func init() {

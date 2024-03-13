@@ -12,7 +12,6 @@ import (
 	"math/big"
 	"sort"
 	"strings"
-	"sync"
 	"time"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
@@ -71,15 +70,22 @@ type Transactor interface {
 // It is useful for testing purposes in bold repository.
 type ChainBackendTransactor struct {
 	ChainBackend
+	fifo *FIFO
 }
 
 func NewChainBackendTransactor(backend protocol.ChainBackend) *ChainBackendTransactor {
 	return &ChainBackendTransactor{
 		ChainBackend: backend,
+		fifo:         NewFIFO(1000),
 	}
 }
 
 func (d *ChainBackendTransactor) SendTransaction(ctx context.Context, tx *types.Transaction, gas uint64) (*types.Transaction, error) {
+	// Try to acquire lock and if it fails, wait for a bit and try again.
+	for !d.fifo.Lock() {
+		<-time.After(100 * time.Millisecond)
+	}
+	defer d.fifo.Unlock()
 	return tx, d.ChainBackend.SendTransaction(ctx, tx)
 }
 
@@ -91,23 +97,29 @@ type DataPoster interface {
 
 // DataPosterTransactor is a wrapper around a DataPoster that implements the Transactor interface.
 type DataPosterTransactor struct {
+	fifo *FIFO
 	DataPoster
 }
 
 func NewDataPosterTransactor(dataPoster DataPoster) *DataPosterTransactor {
 	return &DataPosterTransactor{
+		fifo:       NewFIFO(1000),
 		DataPoster: dataPoster,
 	}
 }
 
 func (d *DataPosterTransactor) SendTransaction(ctx context.Context, tx *types.Transaction, gas uint64) (*types.Transaction, error) {
+	// Try to acquire lock and if it fails, wait for a bit and try again.
+	for !d.fifo.Lock() {
+		<-time.After(100 * time.Millisecond)
+	}
+	defer d.fifo.Unlock()
 	return d.PostSimpleTransactionAutoNonce(ctx, *tx.To(), tx.Data(), gas, tx.Value())
 }
 
 // AssertionChain is a wrapper around solgen bindings
 // that implements the protocol interface.
 type AssertionChain struct {
-	transactionLock                          sync.Mutex
 	backend                                  protocol.ChainBackend
 	rollup                                   *rollupgen.RollupCore
 	userLogic                                *rollupgen.RollupUserLogic
