@@ -114,7 +114,7 @@ pub unsafe extern "C" fn wavmio__readDelayedInboxMessage(
 
 /// Retrieves the preimage of the given hash.
 #[no_mangle]
-pub unsafe extern "C" fn wavmio__resolveTypedPreImage(
+pub unsafe extern "C" fn wavmio__resolveTypedPreimage(
     preimage_type: u8,
     hash_ptr: GuestPtr,
     offset: usize,

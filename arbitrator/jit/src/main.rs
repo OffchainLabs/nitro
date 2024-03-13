@@ -79,7 +79,7 @@ fn main() -> Result<()> {
         }
     };
 
-    let memory_used = instance.exports.get_memory("mem").unwrap().view(&mut store).size().0 as u64 * 65_536;
+    let memory_used = instance.exports.get_memory("memory").unwrap().view(&mut store).size().0 as u64 * 65_536;
 
     let env = env.as_mut(&mut store);
     let user = env.process.socket.is_none();

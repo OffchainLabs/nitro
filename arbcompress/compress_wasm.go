@@ -31,14 +31,14 @@ func Decompress(input []byte, maxSize int) ([]byte, error) {
 	return outBuf[:outLen], nil
 }
 
-func compressLevel(input []byte, level uint32) ([]byte, error) {
+func compressLevel(input []byte, level int) ([]byte, error) {
 	maxOutSize := compressedBufferSizeFor(len(input))
 	outBuf := make([]byte, maxOutSize)
 	outLen := uint32(len(outBuf))
 	status := brotliCompress(
 		arbutil.SliceToUnsafePointer(input), uint32(len(input)),
 		arbutil.SliceToUnsafePointer(outBuf), unsafe.Pointer(&outLen),
-		level,
+		uint32(level),
 		WINDOW_SIZE,
 	)
 	if status != BrotliSuccess {
