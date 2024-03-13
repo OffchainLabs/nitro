@@ -27,10 +27,10 @@ macro_rules! ptr {
 }
 
 impl RequestHandler<GoSliceData> for NativeRequestHandler {
-    fn handle_request(
+    fn request(
         &mut self,
         req_type: EvmApiMethod,
-        req_data: &[u8],
+        req_data: impl AsRef<[u8]>,
     ) -> (Vec<u8>, GoSliceData, u64) {
         let mut result = GoSliceData::null();
         let mut raw_data = GoSliceData::null();
@@ -39,7 +39,7 @@ impl RequestHandler<GoSliceData> for NativeRequestHandler {
             (self.handle_request_fptr)(
                 self.id,
                 req_type as u32 + EVM_API_METHOD_REQ_OFFSET,
-                ptr!(RustSlice::new(req_data)),
+                ptr!(RustSlice::new(req_data.as_ref())),
                 ptr!(cost),
                 ptr!(result),
                 ptr!(raw_data),

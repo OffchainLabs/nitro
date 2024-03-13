@@ -84,6 +84,5 @@ func testConstants() error {
 	if err := assertEq(3, WriteProtection, C.EvmApiStatus_WriteProtection); err != nil {
 		return err
 	}
-
 	return nil
 }

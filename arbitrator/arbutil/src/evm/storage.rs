@@ -8,6 +8,7 @@ use std::{
 };
 
 /// Represents the EVM word at a given key.
+#[derive(Debug)]
 pub struct StorageWord {
     /// The current value of the slot.
     pub value: Bytes32,
