@@ -59,6 +59,7 @@ services:
       - ESPRESSO_SEQUENCER_ETH_MNEMONIC
       - ESPRESSO_SEQUENCER_ETH_ACCOUNT_INDEX
       - ESPRESSO_SEQUENCER_PREFUNDED_BUILDER_ACCOUNTS
+      - ESPRESSO_SEQUENCER_STATE_PEERS=http://espresso-sequencer1:$ESPRESSO_SEQUENCER_API_PORT
       - RUST_LOG
       - RUST_LOG_FORMAT
     depends_on:
@@ -95,6 +96,7 @@ services:
       - ESPRESSO_STATE_RELAY_SERVER_URL
       - RUST_LOG
       - RUST_LOG_FORMAT
+      - ESPRESSO_SEQUENCER_STATE_PEERS=http://espresso-sequencer0:$ESPRESSO_SEQUENCER_API_PORT
     depends_on:
       orchestrator:
         condition: service_healthy

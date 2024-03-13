@@ -561,14 +561,6 @@ func createNodeImpl(
 				return nil, err
 			}
 		}
-		var hotShotReader *HotShotReader
-		if config.BlockValidator.Espresso {
-			addr := common.HexToAddress(config.BlockValidator.HotShotAddress)
-			hotShotReader, err = NewHotShotReader(addr, l1client)
-			if err != nil {
-				return nil, err
-			}
-		}
 		statelessBlockValidator, err = staker.NewStatelessBlockValidator(
 			inboxReader,
 			inboxTracker,
