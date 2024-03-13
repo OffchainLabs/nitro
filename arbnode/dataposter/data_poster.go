@@ -670,8 +670,6 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 }
 
 func (p *DataPoster) postTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, kzgBlobs []kzg4844.Blob, accessList types.AccessList) (*types.Transaction, error) {
-	p.mutex.Lock()
-	defer p.mutex.Unlock()
 
 	var weight uint64 = 1
 	if len(kzgBlobs) > 0 {
