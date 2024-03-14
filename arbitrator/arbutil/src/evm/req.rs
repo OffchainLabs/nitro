@@ -111,11 +111,12 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
     }
 
     fn cache_bytes32(&mut self, key: Bytes32, value: Bytes32) -> u64 {
+        let cost = self.storage_cache.write_gas();
         match self.storage_cache.entry(key) {
             Entry::Occupied(mut key) => key.get_mut().value = value,
             Entry::Vacant(slot) => drop(slot.insert(StorageWord::unknown(value))),
         };
-        self.storage_cache.write_gas()
+        cost
     }
 
     fn flush_storage_cache(&mut self, clear: bool, gas_left: u64) -> Result<u64> {

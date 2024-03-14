@@ -312,7 +312,6 @@ func newApiClosures(
 			out, cost := getBytes32(key)
 			return out[:], nil, cost
 		case SetTrieSlots:
-			println("setting trie slots", len(input))
 			gasLeft := takeU64()
 			gas := gasLeft
 			status := setTrieSlots(takeRest(), &gas)

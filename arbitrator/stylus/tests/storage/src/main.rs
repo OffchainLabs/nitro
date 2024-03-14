@@ -1,4 +1,4 @@
-// Copyright 2023, Offchain Labs, Inc.
+// Copyright 2023-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 #![no_main]
@@ -6,7 +6,7 @@
 use stylus_sdk::{
     alloy_primitives::B256,
     console,
-    storage::{load_bytes32, store_bytes32},
+    storage::{StorageCache, GlobalStorage},
     stylus_proc::entrypoint,
 };
 
@@ -17,13 +17,13 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
 
     Ok(if read {
         console!("read {slot}");
-        let data = unsafe { load_bytes32(slot.into()) };
+        let data = StorageCache::get_word(slot.into());
         console!("value {data}");
         data.0.into()
     } else {
         console!("write {slot}");
         let data = B256::try_from(&input[33..]).unwrap();
-        unsafe { store_bytes32(slot.into(), data) };
+        unsafe { StorageCache::set_word(slot.into(), data) };
         console!(("value {data}"));
         vec![]
     })

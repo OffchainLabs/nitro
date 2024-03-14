@@ -2,10 +2,8 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::Bytes32;
-use std::{
-    collections::HashMap,
-    ops::{Deref, DerefMut},
-};
+use fnv::FnvHashMap as HashMap;
+use std::ops::{Deref, DerefMut};
 
 /// Represents the EVM word at a given key.
 #[derive(Debug)]
@@ -34,19 +32,29 @@ impl StorageWord {
 #[derive(Default)]
 pub struct StorageCache {
     pub(crate) slots: HashMap<Bytes32, StorageWord>,
+    reads: usize,
+    writes: usize,
 }
 
 impl StorageCache {
-    pub const REQUIRED_ACCESS_GAS: u64 = crate::evm::COLD_SLOAD_GAS;
+    pub const REQUIRED_ACCESS_GAS: u64 = 10;
 
-    pub fn read_gas(&self) -> u64 {
-        //self.slots.len().ilog2() as u64
-        self.slots.len() as u64
+    pub fn read_gas(&mut self) -> u64 {
+        self.reads += 1;
+        match self.reads {
+            0..=32 => 0,
+            33..=128 => 2,
+            _ => 10,
+        }
     }
 
-    pub fn write_gas(&self) -> u64 {
-        //self.slots.len().ilog2() as u64
-        self.slots.len() as u64
+    pub fn write_gas(&mut self) -> u64 {
+        self.writes += 1;
+        match self.writes {
+            0..=8 => 0,
+            9..=64 => 7,
+            _ => 10,
+        }
     }
 }
 
