@@ -864,7 +864,7 @@ type estimateGasParams struct {
 
 func estimateGas(client rpc.ClientInterface, ctx context.Context, params estimateGasParams) (uint64, error) {
 	var gas hexutil.Uint64
-	err := client.CallContext(ctx, &gas, "eth_estimateGas", params, "latest")
+	err := client.CallContext(ctx, &gas, "eth_estimateGas", params)
 	return uint64(gas), err
 }
 
