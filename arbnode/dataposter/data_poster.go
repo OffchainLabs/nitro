@@ -621,7 +621,7 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 		"newBlobFeeCap", newBlobFeeCap,
 	}
 
-	log.Info("calculated data poster fee and tip caps", logFields...)
+	log.Debug("calculated data poster fee and tip caps", logFields...)
 
 	if newBaseFeeCap.Sign() < 0 || newTipCap.Sign() < 0 || newBlobFeeCap.Sign() < 0 {
 		msg := "can't meet data poster fee cap obligations with current target max cost"
