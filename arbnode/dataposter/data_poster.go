@@ -292,12 +292,11 @@ func (p *DataPoster) Sender() common.Address {
 }
 
 func (p *DataPoster) MaxMempoolTransactions() uint64 {
-	// if p.usingNoOpStorage {
-	// 	return 1
-	// }
-	// config := p.config()
-	// return arbmath.MinInt(config.MaxMempoolTransactions, config.MaxMempoolWeight)
-	return 18
+	if p.usingNoOpStorage {
+		return 1
+	}
+	config := p.config()
+	return arbmath.MinInt(config.MaxMempoolTransactions, config.MaxMempoolWeight)
 }
 
 var ErrExceedsMaxMempoolSize = errors.New("posting this transaction will exceed max mempool size")
