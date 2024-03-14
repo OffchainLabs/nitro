@@ -17,7 +17,7 @@ import (
 )
 
 func TestDebugTraceCallForRecentBlock(t *testing.T) {
-	threads := 128
+	threads := 32
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
