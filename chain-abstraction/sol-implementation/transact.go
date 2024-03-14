@@ -72,7 +72,9 @@ func (a *AssertionChain) transact(
 	if commiter, ok := backend.(ChainCommitter); ok {
 		commiter.Commit()
 	}
-	receipt, err := bind.WaitMined(ctx, backend, tx)
+	ctxWaitMined, cancelWaitMined := context.WithTimeout(ctx, time.Minute)
+	defer cancelWaitMined()
+	receipt, err := bind.WaitMined(ctxWaitMined, backend, tx)
 	if err != nil {
 		return nil, err
 	}
