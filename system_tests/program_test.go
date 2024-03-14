@@ -1094,7 +1094,9 @@ func TestProgramEarlyExit(t *testing.T) {
 }
 
 func testEarlyExit(t *testing.T, jit bool) {
-	ctx, node, _, l2client, auth, cleanup := setupProgramTest(t, jit)
+	builder, auth, cleanup := setupProgramTest(t, jit)
+	ctx := builder.ctx
+	l2client := builder.L2.Client
 	defer cleanup()
 
 	earlyAddress := deployWasm(t, ctx, auth, l2client, "../arbitrator/stylus/tests/exit-early/exit-early.wat")
@@ -1116,7 +1118,7 @@ func testEarlyExit(t *testing.T, jit bool) {
 	ensure(mock.CheckRevertData(&auth, earlyAddress, data, data))
 	ensure(mock.CheckRevertData(&auth, panicAddress, data, []byte{}))
 
-	validateBlocks(t, 8, jit, ctx, node, l2client)
+	validateBlocks(t, 8, jit, builder)
 }
 
 func setupProgramTest(t *testing.T, jit bool) (
