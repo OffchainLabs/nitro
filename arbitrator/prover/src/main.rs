@@ -8,7 +8,7 @@ use eyre::{eyre, Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use prover::{
     machine::{GlobalState, InboxIdentifier, Machine, MachineStatus, PreimageResolver, ProofInfo},
-    utils::{hash_preimage, file_bytes, CBytes},
+    utils::{file_bytes, hash_preimage, CBytes},
     wavm::Opcode,
 };
 use std::sync::Arc;

@@ -57,7 +57,6 @@ fn main() -> Result<()> {
 
     let (instance, env, mut store) = machine::create(&opts, env);
 
-
     let main = instance.exports.get_function("_start").unwrap();
     let outcome = main.call(&mut store, &[]);
     let escape = match outcome {
@@ -79,7 +78,14 @@ fn main() -> Result<()> {
         }
     };
 
-    let memory_used = instance.exports.get_memory("memory").unwrap().view(&mut store).size().0 as u64 * 65_536;
+    let memory_used = instance
+        .exports
+        .get_memory("memory")
+        .unwrap()
+        .view(&mut store)
+        .size()
+        .0 as u64
+        * 65_536;
 
     let env = env.as_mut(&mut store);
     let user = env.process.socket.is_none();

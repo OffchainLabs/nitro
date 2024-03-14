@@ -3,14 +3,14 @@
 
 #[cfg(feature = "native")]
 use crate::kzg::ETHEREUM_KZG_SETTINGS;
-use sha2::Sha256;
-use sha3::Keccak256;
 use arbutil::PreimageType;
 #[cfg(feature = "native")]
 use c_kzg::{Blob, KzgCommitment};
 use digest::Digest;
 use eyre::{eyre, Result};
 use serde::{Deserialize, Serialize};
+use sha2::Sha256;
+use sha3::Keccak256;
 use std::{borrow::Borrow, convert::TryInto, fmt, fs::File, io::Read, ops::Deref, path::Path};
 use wasmparser::{TableType, ValType};
 

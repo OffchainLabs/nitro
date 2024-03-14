@@ -5,7 +5,7 @@ use crate::{
     arbcompress, caller_env::GoRuntimeState, program, socket, stylus_backend::CothreadHandler,
     wasip1_stub, wavmio, Opts,
 };
-use arbutil::{Bytes32, {Color}, PreimageType};
+use arbutil::{Bytes32, Color, PreimageType};
 use eyre::{bail, ErrReport, Result, WrapErr};
 use sha3::{Digest, Keccak256};
 use std::{

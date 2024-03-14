@@ -1,13 +1,13 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
+use num_enum::{IntoPrimitive, TryFromPrimitive};
 use serde::{Deserialize, Serialize};
 use std::{
     borrow::Borrow,
     fmt,
     ops::{Deref, DerefMut},
 };
-use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 // These values must be kept in sync with `arbutil/preimage_type.go`,
 // and the if statement in `contracts/src/osp/OneStepProverHostIo.sol` (search for "UNKNOWN_PREIMAGE_TYPE").
@@ -234,4 +234,3 @@ impl From<GenericBytes20> for Bytes20 {
         <[u8; 20]>::from(x).into()
     }
 }
-

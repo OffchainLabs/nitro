@@ -1,6 +1,8 @@
 // Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
+#[cfg(feature = "native")]
+use crate::kzg::prove_kzg_preimage;
 use crate::{
     binary::{
         self, parse, ExportKind, ExportMap, FloatInstruction, Local, NameCustomSection, WasmBinary,
@@ -18,8 +20,6 @@ use crate::{
     },
 };
 use arbutil::{math, Bytes32, Color, PreimageType};
-#[cfg(feature = "native")]
-use crate::kzg::prove_kzg_preimage;
 #[cfg(feature = "native")]
 use c_kzg::BYTES_PER_BLOB;
 use digest::Digest;
@@ -2293,19 +2293,20 @@ impl Machine {
                     if offset % 32 != 0 {
                         error!();
                     }
-       
+
                     let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) else {
                         error!();
                     };
                     let Some(preimage) =
-                        self.preimage_resolver.get(self.context, preimage_ty, hash) else {
-                            eprintln!(
-                                "{} for hash {}",
-                                "Missing requested preimage".red(),
-                                hash.red(),
-                            );
-                            self.print_backtrace(true);
-                            bail!("missing requested preimage for hash {}", hash);
+                        self.preimage_resolver.get(self.context, preimage_ty, hash)
+                    else {
+                        eprintln!(
+                            "{} for hash {}",
+                            "Missing requested preimage".red(),
+                            hash.red(),
+                        );
+                        self.print_backtrace(true);
+                        bail!("missing requested preimage for hash {}", hash);
                     };
                     if preimage_ty == PreimageType::EthVersionedHash
                         && preimage.len() != BYTES_PER_BLOB
@@ -2875,12 +2876,11 @@ impl Machine {
                         )
                         .expect("Invalid preimage type in ReadPreImage argument data");
                         let Some(preimage) =
-                            self
-                                .preimage_resolver
+                            self.preimage_resolver
                                 .get_const(self.context, preimage_ty, hash)
-                             else {
-                                panic!("Missing requested preimage for hash {}", hash)
-                            };
+                        else {
+                            panic!("Missing requested preimage for hash {}", hash)
+                        };
                         data.push(0); // preimage proof type
                         match preimage_ty {
                             PreimageType::Keccak256 | PreimageType::Sha2_256 => {
@@ -2893,11 +2893,9 @@ impl Machine {
                             }
                         }
                     } else if next_inst.opcode == Opcode::ReadInboxMessage {
-                        let msg_idx = value_stack
-                            .get(value_stack.len() - 3)
-                            .unwrap()
-                            .assume_u64();
-                        let inbox_identifier = argument_data_to_inbox(arg).expect("Bad inbox indentifier");
+                        let msg_idx = value_stack.get(value_stack.len() - 3).unwrap().assume_u64();
+                        let inbox_identifier =
+                            argument_data_to_inbox(arg).expect("Bad inbox indentifier");
                         if let Some(msg_data) =
                             self.inbox_contents.get(&(inbox_identifier, msg_idx))
                         {

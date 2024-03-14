@@ -124,7 +124,14 @@ pub fn resolve_typed_preimage(
     offset: u32,
     out_ptr: GuestPtr,
 ) -> Result<u32, Escape> {
-    resolve_preimage_impl(env, preimage_type, hash_ptr, offset, out_ptr, "wavmio.ResolveTypedPreimage")
+    resolve_preimage_impl(
+        env,
+        preimage_type,
+        hash_ptr,
+        offset,
+        out_ptr,
+        "wavmio.ResolveTypedPreimage",
+    )
 }
 
 pub fn resolve_preimage_impl(
@@ -152,7 +159,11 @@ pub fn resolve_preimage_impl(
 
     let hash = mem.read_bytes32(hash_ptr);
 
-    let Some(preimage) = exec.preimages.get(&preimage_type).and_then(|m| m.get(&hash)) else {
+    let Some(preimage) = exec
+        .preimages
+        .get(&preimage_type)
+        .and_then(|m| m.get(&hash))
+    else {
         let hash_hex = hex::encode(hash);
         error!("Missing requested preimage for hash {hash_hex} in {name}")
     };
