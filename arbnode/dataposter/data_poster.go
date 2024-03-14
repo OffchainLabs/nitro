@@ -367,7 +367,8 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64, thi
 }
 
 func (p *DataPoster) waitForL1Finality() bool {
-	return p.config().WaitForL1Finality && !p.headerReader.IsParentChainArbitrum()
+	// return p.config().WaitForL1Finality && !p.headerReader.IsParentChainArbitrum()
+	return false
 }
 
 // Requires the caller hold the mutex.
@@ -620,7 +621,7 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 		"newBlobFeeCap", newBlobFeeCap,
 	}
 
-	log.Debug("calculated data poster fee and tip caps", logFields...)
+	log.Info("calculated data poster fee and tip caps", logFields...)
 
 	if newBaseFeeCap.Sign() < 0 || newTipCap.Sign() < 0 || newBlobFeeCap.Sign() < 0 {
 		msg := "can't meet data poster fee cap obligations with current target max cost"
@@ -691,7 +692,6 @@ func (p *DataPoster) postTransaction(ctx context.Context, dataCreatedAt time.Tim
 	if err != nil {
 		return nil, err
 	}
-
 	var deprecatedData types.DynamicFeeTx
 	var inner types.TxData
 	replacementTimes := p.replacementTimes
@@ -751,6 +751,8 @@ func (p *DataPoster) postTransaction(ctx context.Context, dataCreatedAt time.Tim
 		return nil, fmt.Errorf("signing transaction: %w", err)
 	}
 	cumulativeWeight := lastCumulativeWeight + weight
+	fmt.Printf("Fee cap of %d, tip cap of %d, hash %#x\n", feeCap.Uint64(), tipCap.Uint64(), fullTx.Hash())
+
 	queuedTx := storage.QueuedTransaction{
 		DeprecatedData:         deprecatedData,
 		FullTx:                 fullTx,
