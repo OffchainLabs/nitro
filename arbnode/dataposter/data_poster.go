@@ -583,8 +583,13 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	blobGasUsed := params.BlobTxBlobGasPerBlob * numBlobs
 	currentBlobCost := arbmath.BigMulByUint(currentBlobFee, blobGasUsed)
 	currentNonBlobCost := arbmath.BigMulByUint(currentNonBlobFee, gasLimit)
+	currentTotalCost := arbmath.BigAdd(currentBlobCost, currentNonBlobCost)
+	if config.MaxFeeBidMultipleBips > 0 {
+		targetMaxCost = arbmath.BigMin(targetMaxCost, arbmath.BigMulByBips(currentTotalCost, config.MaxFeeBidMultipleBips))
+	}
+
 	newBlobFeeCap := arbmath.BigMul(targetMaxCost, currentBlobFee)
-	newBlobFeeCap.Div(newBlobFeeCap, arbmath.BigAdd(currentBlobCost, currentNonBlobCost))
+	newBlobFeeCap.Div(newBlobFeeCap, currentTotalCost)
 	if lastTx != nil && lastTx.BlobGasFeeCap() != nil {
 		newBlobFeeCap = arbmath.BigMax(newBlobFeeCap, arbmath.BigMulByBips(lastTx.BlobGasFeeCap(), minRbfIncrease))
 	}
@@ -1117,6 +1122,7 @@ type DataPosterConfig struct {
 	MinBlobTxTipCapGwei    float64           `koanf:"min-blob-tx-tip-cap-gwei" reload:"hot"`
 	MaxTipCapGwei          float64           `koanf:"max-tip-cap-gwei" reload:"hot"`
 	MaxBlobTxTipCapGwei    float64           `koanf:"max-blob-tx-tip-cap-gwei" reload:"hot"`
+	MaxFeeBidMultipleBips  arbmath.Bips      `koanf:"max-fee-bid-multiple-bips" reload:"hot"`
 	NonceRbfSoftConfs      uint64            `koanf:"nonce-rbf-soft-confs" reload:"hot"`
 	AllocateMempoolBalance bool              `koanf:"allocate-mempool-balance" reload:"hot"`
 	UseDBStorage           bool              `koanf:"use-db-storage"`
@@ -1171,6 +1177,7 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPost
 	f.Float64(prefix+".min-blob-tx-tip-cap-gwei", defaultDataPosterConfig.MinBlobTxTipCapGwei, "the minimum tip cap to post EIP-4844 blob carrying transactions at")
 	f.Float64(prefix+".max-tip-cap-gwei", defaultDataPosterConfig.MaxTipCapGwei, "the maximum tip cap to post transactions at")
 	f.Float64(prefix+".max-blob-tx-tip-cap-gwei", defaultDataPosterConfig.MaxBlobTxTipCapGwei, "the maximum tip cap to post EIP-4844 blob carrying transactions at")
+	f.Uint64(prefix+".max-fee-bid-multiple-bips", uint64(defaultDataPosterConfig.MaxFeeBidMultipleBips), "the maximum multiple of the current price to bid for a transaction's fees (may be exceeded due to min rbf increase, 0 = unlimited)")
 	f.Uint64(prefix+".nonce-rbf-soft-confs", defaultDataPosterConfig.NonceRbfSoftConfs, "the maximum probable reorg depth, used to determine when a transaction will no longer likely need replaced-by-fee")
 	f.Bool(prefix+".allocate-mempool-balance", defaultDataPosterConfig.AllocateMempoolBalance, "if true, don't put transactions in the mempool that spend a total greater than the batch poster's balance")
 	f.Bool(prefix+".use-db-storage", defaultDataPosterConfig.UseDBStorage, "uses database storage when enabled")
@@ -1212,6 +1219,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	MinBlobTxTipCapGwei:    1, // default geth minimum, and relays aren't likely to accept lower values given propagation time
 	MaxTipCapGwei:          5,
 	MaxBlobTxTipCapGwei:    1, // lower than normal because 4844 rbf is a minimum of a 2x
+	MaxFeeBidMultipleBips:  arbmath.OneInBips * 10,
 	NonceRbfSoftConfs:      1,
 	AllocateMempoolBalance: true,
 	UseDBStorage:           true,
@@ -1245,6 +1253,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	MinBlobTxTipCapGwei:    1,
 	MaxTipCapGwei:          5,
 	MaxBlobTxTipCapGwei:    1,
+	MaxFeeBidMultipleBips:  arbmath.OneInBips * 10,
 	NonceRbfSoftConfs:      1,
 	AllocateMempoolBalance: true,
 	UseDBStorage:           false,
