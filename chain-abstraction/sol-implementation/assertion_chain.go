@@ -63,7 +63,7 @@ type ReceiptFetcher interface {
 
 // Transactor defines the ability to send transactions to the chain.
 type Transactor interface {
-	SendTransaction(ctx context.Context, tx *types.Transaction, gas uint64) (*types.Transaction, error)
+	SendTransaction(ctx context.Context, fn func(opts *bind.TransactOpts) (*types.Transaction, error), opts *bind.TransactOpts, gas uint64) (*types.Transaction, error)
 }
 
 // ChainBackendTransactor is a wrapper around a ChainBackend that implements the Transactor interface.
@@ -80,12 +80,16 @@ func NewChainBackendTransactor(backend protocol.ChainBackend) *ChainBackendTrans
 	}
 }
 
-func (d *ChainBackendTransactor) SendTransaction(ctx context.Context, tx *types.Transaction, gas uint64) (*types.Transaction, error) {
+func (d *ChainBackendTransactor) SendTransaction(ctx context.Context, fn func(opts *bind.TransactOpts) (*types.Transaction, error), opts *bind.TransactOpts, gas uint64) (*types.Transaction, error) {
 	// Try to acquire lock and if it fails, wait for a bit and try again.
 	for !d.fifo.Lock() {
 		<-time.After(100 * time.Millisecond)
 	}
 	defer d.fifo.Unlock()
+	tx, err := fn(opts)
+	if err != nil {
+		return nil, err
+	}
 	return tx, d.ChainBackend.SendTransaction(ctx, tx)
 }
 
@@ -108,12 +112,16 @@ func NewDataPosterTransactor(dataPoster DataPoster) *DataPosterTransactor {
 	}
 }
 
-func (d *DataPosterTransactor) SendTransaction(ctx context.Context, tx *types.Transaction, gas uint64) (*types.Transaction, error) {
+func (d *DataPosterTransactor) SendTransaction(ctx context.Context, fn func(opts *bind.TransactOpts) (*types.Transaction, error), opts *bind.TransactOpts, gas uint64) (*types.Transaction, error) {
 	// Try to acquire lock and if it fails, wait for a bit and try again.
 	for !d.fifo.Lock() {
 		<-time.After(100 * time.Millisecond)
 	}
 	defer d.fifo.Unlock()
+	tx, err := fn(opts)
+	if err != nil {
+		return nil, err
+	}
 	return d.PostSimpleTransactionAutoNonce(ctx, *tx.To(), tx.Data(), gas, tx.Value())
 }
 
