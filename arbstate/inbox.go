@@ -118,6 +118,8 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 				log.Error("No DAS Reader configured, but sequencer message found with DAS header")
 			} else if IsBlobHashesHeaderByte(payload[0]) {
 				return nil, ErrNoBlobReader
+			} else if IsCelestiaMessageHeaderByte(payload[0]) {
+				log.Error("No Celestia Reader configured, but sequencer message found with Celestia header")
 			}
 		}
 	}

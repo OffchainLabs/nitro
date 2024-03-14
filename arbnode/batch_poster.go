@@ -1223,10 +1223,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		} else {
 			sequencerMsg = das.Serialize(cert)
 		}
-	}
-
-	// ideally we make this part of the above statment by having everything under a single unified interface (soon TM)
-	if b.daWriter == nil && b.celestiaWriter != nil {
+	} else if b.celestiaWriter != nil {
 		celestiaMsg, err := b.celestiaWriter.Store(ctx, sequencerMsg)
 		if err != nil {
 			if config.DisableCelestiaFallbackStoreDataOnChain {
