@@ -83,7 +83,7 @@ func IsBlobHashesHeaderByte(header byte) bool {
 	return hasBits(header, BlobHashesHeaderFlag)
 }
 
-func IsCelestiaMessageHeaderByte(b uint8) bool {
+func IsCelestiaMessageHeaderByte(header byte) bool {
 	return hasBits(header, CelestiaMessageHeaderFlag)
 }
 

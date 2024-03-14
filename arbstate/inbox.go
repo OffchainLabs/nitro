@@ -366,27 +366,37 @@ func (b *dAProviderForBlobReader) RecoverPayloadFromBatch(
 	return payload, nil
 }
 
-func NewDAProviderCelestia(celestia DataAvailabilityReader) *dAProviderForCelestia {
+func NewDAProviderCelestia(celestia celestia.DataAvailabilityReader) *dAProviderForCelestia {
 	return &dAProviderForCelestia{
 		celestia: celestia,
 	}
 }
 
 type dAProviderForCelestia struct {
-	celestia DataAvailabilityReader
+	celestia celestia.DataAvailabilityReader
 }
 
-func (d *dAProviderForCelestia) IsValidHeaderByte(headerByte byte) bool {
+func (c *dAProviderForCelestia) IsValidHeaderByte(headerByte byte) bool {
 	return IsCelestiaMessageHeaderByte(headerByte)
 }
 
-func (b *dAProviderForCelestia) RecoverPayloadFromBatch(
+func (c *dAProviderForCelestia) RecoverPayloadFromBatch(
 	ctx context.Context,
 	batchNum uint64,
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
 	preimages map[arbutil.PreimageType]map[common.Hash][]byte,
 	keysetValidationMode KeysetValidationMode,
+) ([]byte, error) {
+	return RecoverPayloadFromCelestiaBatch(ctx, batchNum, sequencerMsg, c.celestia, preimages)
+}
+
+func RecoverPayloadFromCelestiaBatch(
+	ctx context.Context,
+	batchNum uint64,
+	sequencerMsg []byte,
+	celestiaReader celestia.DataAvailabilityReader,
+	preimages map[arbutil.PreimageType]map[common.Hash][]byte,
 ) ([]byte, error) {
 	var sha256Preimages map[common.Hash][]byte
 	if preimages != nil {
@@ -465,6 +475,7 @@ func (b *dAProviderForCelestia) RecoverPayloadFromBatch(
 			return nil, nil
 		}
 	}
+
 	return payload, nil
 }
 

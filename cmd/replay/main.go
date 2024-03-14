@@ -401,7 +401,7 @@ func main() {
 	} else {
 		// Initialize ArbOS with this init message and create the genesis block.
 
-		message := readMessage(false)
+		message := readMessage(false, true)
 
 		initMessage, err := message.Message.ParseInitMessage()
 		if err != nil {
