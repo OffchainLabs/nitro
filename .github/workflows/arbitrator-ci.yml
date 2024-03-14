@@ -80,6 +80,7 @@ jobs:
         with:
           toolchain: "nightly"
           targets: 'wasm32-wasi, wasm32-unknown-unknown'
+          components: rust-src
 
       - name: Cache Rust intermediate build products
         uses: actions/cache@v3
