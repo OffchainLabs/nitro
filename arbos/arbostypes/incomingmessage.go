@@ -35,6 +35,7 @@ const (
 const MaxL2MessageSize = 256 * 1024
 
 const ArbosVersion_FixRedeemGas = uint64(11)
+const ArbosVersion_Stylus = uint64(20)
 
 type L1IncomingMessageHeader struct {
 	Kind        uint8          `json:"kind"`

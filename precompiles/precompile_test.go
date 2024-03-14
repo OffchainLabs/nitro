@@ -190,7 +190,7 @@ func TestPrecompilesPerArbosVersion(t *testing.T) {
 		5:  3,
 		10: 2,
 		11: 4,
-		20: 8,
+		20: 8 + 27, // 27 for stylus
 	}
 
 	precompiles := Precompiles()
