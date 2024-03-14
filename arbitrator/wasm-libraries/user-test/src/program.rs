@@ -171,7 +171,7 @@ impl EvmApi<VecReader> for MockEvmApi {
 
     fn emit_log(&mut self, data: Vec<u8>, _topics: u32) -> Result<()> {
         unsafe { LOGS.push(data) };
-        Ok(()) // pretend a log was emitted
+        Ok(())
     }
 
     fn account_balance(&mut self, _address: Bytes20) -> (Bytes32, u64) {

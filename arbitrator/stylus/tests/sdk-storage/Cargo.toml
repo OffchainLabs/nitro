@@ -4,8 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-stylus-sdk = { path = "../../../langs/rust/stylus-sdk", default-features = false, features = [] }
-#stylus-sdk = { path = "../../../langs/rust/stylus-sdk", default-features = false, features = ["storage-cache"] }
+stylus-sdk.path = "../../../langs/rust/stylus-sdk"
 mini-alloc.path = "../../../langs/rust/mini-alloc"
 hex = "0.4.3"
 wee_alloc = "0.4.5"
@@ -15,9 +14,6 @@ codegen-units = 1
 strip = true
 lto = true
 panic = "abort"
-
-# uncomment to optimize for size
-#   opt-level = "z"
 opt-level = "s"
 
 [workspace]

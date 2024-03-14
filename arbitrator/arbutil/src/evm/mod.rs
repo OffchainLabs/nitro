@@ -14,7 +14,7 @@ pub const SSTORE_SENTRY_GAS: u64 = 2300;
 // params.ColdAccountAccessCostEIP2929
 pub const COLD_ACCOUNT_GAS: u64 = 2600;
 
-// params.ColdSloadCostEIP2929;
+// params.ColdSloadCostEIP2929
 pub const COLD_SLOAD_GAS: u64 = 2100;
 
 // params.WarmStorageReadCostEIP2929
