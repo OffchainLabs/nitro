@@ -33,8 +33,8 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/go-redis/redis/v8"
 	"github.com/holiman/uint256"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsigner"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -152,15 +152,15 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 	// 		return nil, err
 	// 	}
 	// case cfg.UseDBStorage:
-	// 	storage := dbstorage.New(opts.Database, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
-	// 	if cfg.Dangerous.ClearDBStorage {
-	// 		if err := storage.PruneAll(ctx); err != nil {
-	// 			return nil, err
-	// 		}
-	// 	}
-	// 	queue = storage
+	storage := dbstorage.New(opts.Database, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
+	// if cfg.Dangerous.ClearDBStorage {
+	if err := storage.PruneAll(ctx); err != nil {
+		return nil, err
+	}
+	// }
+	queue = storage
 	// default:
-	queue = slice.NewStorage(func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
+	// queue = slice.NewStorage(func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
 	// }
 	expression, err := govaluate.NewEvaluableExpression(cfg.MaxFeeCapFormula)
 	if err != nil {
