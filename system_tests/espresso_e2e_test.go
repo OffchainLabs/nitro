@@ -77,16 +77,20 @@ func runEspresso(t *testing.T, ctx context.Context) func() {
 func createL2Node(ctx context.Context, t *testing.T, hotshot_url string, builder *NodeBuilder) (*TestClient, info, func()) {
 	nodeConfig := arbnode.ConfigDefaultL1Test()
 	builder.takeOwnership = false
+	nodeConfig.BatchPoster.Enable = false
+	nodeConfig.BlockValidator.Enable = false
 	nodeConfig.DelayedSequencer.Enable = true
 	nodeConfig.Sequencer = true
 	nodeConfig.Espresso = true
 	builder.execConfig.Sequencer.Enable = true
 	builder.execConfig.Sequencer.Espresso = true
-	builder.execConfig.Sequencer.EspressoNamespace = 412346
+	builder.execConfig.Sequencer.EspressoNamespace = builder.chainConfig.ChainID.Uint64()
 	builder.execConfig.Sequencer.HotShotUrl = hotshot_url
 
 	builder.chainConfig.ArbitrumChainParams.EnableEspresso = true
 
+	nodeConfig.Feed.Output.Enable = true
+	nodeConfig.Feed.Output.Addr = "0.0.0.0"
 	builder.nodeConfig.Feed.Output.Enable = true
 	builder.nodeConfig.Feed.Output.Port = fmt.Sprintf("%d", broadcastPort)
 
@@ -156,6 +160,7 @@ func createL1ValidatorPosterNode(ctx context.Context, t *testing.T) (*NodeBuilde
 	builder.nodeConfig.BatchPoster.PollInterval = 10 * time.Second
 	builder.nodeConfig.BatchPoster.MaxDelay = -1000 * time.Hour
 	builder.nodeConfig.BlockValidator.Enable = true
+	builder.nodeConfig.BlockValidator.ValidationPoll = 2 * time.Second
 	builder.nodeConfig.BlockValidator.ValidationServer.URL = fmt.Sprintf("ws://127.0.0.1:%d", arbValidationPort)
 	builder.nodeConfig.BlockValidator.HotShotAddress = hotShotAddress
 	builder.nodeConfig.BlockValidator.Espresso = true
@@ -209,6 +214,7 @@ func createStaker(ctx context.Context, t *testing.T, builder *NodeBuilder, incor
 	config.BatchPoster.Enable = false
 	config.Staker.Enable = false
 	config.BlockValidator.Enable = true
+	config.BlockValidator.ValidationPoll = 2 * time.Second
 	config.BlockValidator.HotShotAddress = hotShotAddress
 	config.BlockValidator.Espresso = true
 	config.BlockValidator.ValidationServer.URL = fmt.Sprintf("ws://127.0.0.1:%d", arbValidationPort)
@@ -392,7 +398,14 @@ func TestEspressoE2E(t *testing.T) {
 	Require(t, err)
 
 	// Remember the number of messages
-	msgCnt, err := node.ConsensusNode.TxStreamer.GetMessageCount()
+	var msgCnt arbutil.MessageIndex
+	err = waitFor(t, ctx, func() bool {
+		cnt, err := node.ConsensusNode.TxStreamer.GetMessageCount()
+		Require(t, err)
+		msgCnt = cnt
+		log.Info("waiting for message count", "cnt", msgCnt)
+		return msgCnt > 1
+	})
 	Require(t, err)
 
 	// Wait for the number of validated messages to catch up
@@ -445,7 +458,7 @@ func TestEspressoE2E(t *testing.T) {
 	badStaker, blockValidatorB, cleanB := createStaker(ctx, t, builder, incorrectHeight)
 	defer cleanB()
 
-	err = waitFor(t, ctx, func() bool {
+	err = waitForWith(t, ctx, 60*time.Second, 1*time.Second, func() bool {
 		validatedA := blockValidatorA.Validated(t)
 		validatedB := blockValidatorB.Validated(t)
 		shouldValidated := arbutil.MessageIndex(incorrectHeight - 1)

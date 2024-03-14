@@ -4,10 +4,12 @@
 package precompiles
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"math/big"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -96,12 +98,8 @@ func RenderSolError(solErr abi.Error, data []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	valsRange, ok := vals.([]interface{})
-	if !ok {
-		return "", errors.New("unexpected unpack result")
-	}
-	strVals := make([]string, 0, len(valsRange))
-	for _, val := range valsRange {
+	strVals := make([]string, 0, len(vals))
+	for _, val := range vals {
 		strVals = append(strVals, fmt.Sprintf("%v", val))
 	}
 	return fmt.Sprintf("error %v(%v)", solErr.Name, strings.Join(strVals, ", ")), nil
@@ -560,6 +558,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwnerPublic.methodsByName["GetInfraFeeAccount"].arbosVersion = 5
 	ArbOwnerPublic.methodsByName["RectifyChainOwner"].arbosVersion = 11
 	ArbOwnerPublic.methodsByName["GetBrotliCompressionLevel"].arbosVersion = 20
+	ArbOwnerPublic.methodsByName["GetScheduledUpgrade"].arbosVersion = 20
 
 	ArbRetryableImpl := &ArbRetryableTx{Address: types.ArbRetryableTxAddress}
 	ArbRetryable := insert(MakePrecompile(templates.ArbRetryableTxMetaData, ArbRetryableImpl))
@@ -786,6 +785,9 @@ func (p *Precompile) Get4ByteMethodSignatures() [][4]byte {
 	for sig := range p.methods {
 		ret = append(ret, sig)
 	}
+	sort.Slice(ret, func(i, j int) bool {
+		return bytes.Compare(ret[i][:], ret[j][:]) < 0
+	})
 	return ret
 }
 

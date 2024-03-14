@@ -42,7 +42,9 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
+	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
+	blocksreexecutor "github.com/offchainlabs/nitro/blocks_reexecutor"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -178,9 +180,7 @@ func mainImpl() int {
 	if nodeConfig.WS.ExposeAll {
 		stackConf.WSModules = append(stackConf.WSModules, "personal")
 	}
-	stackConf.P2P.ListenAddr = ""
-	stackConf.P2P.NoDial = true
-	stackConf.P2P.NoDiscovery = true
+	nodeConfig.P2P.Apply(&stackConf)
 	vcsRevision, strippedRevision, vcsTime := confighelpers.GetVersion()
 	stackConf.Version = strippedRevision
 
@@ -330,6 +330,8 @@ func mainImpl() int {
 
 	var rollupAddrs chaininfo.RollupAddresses
 	var l1Client *ethclient.Client
+	var l1Reader *headerreader.HeaderReader
+	var blobReader arbstate.BlobReader
 	if nodeConfig.Node.ParentChainReader.Enable {
 		confFetcher := func() *rpcclient.ClientConfig { return &liveNodeConfig.Get().ParentChain.Connection }
 		rpcClient := rpcclient.NewRpcClient(confFetcher, nil)
@@ -352,6 +354,22 @@ func mainImpl() int {
 		if err != nil {
 			log.Crit("error getting rollup addresses", "err", err)
 		}
+		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1Client)
+		l1Reader, err = headerreader.New(ctx, l1Client, func() *headerreader.Config { return &liveNodeConfig.Get().Node.ParentChainReader }, arbSys)
+		if err != nil {
+			log.Crit("failed to get L1 headerreader", "err", err)
+		}
+		if !l1Reader.IsParentChainArbitrum() && !nodeConfig.Node.Dangerous.DisableBlobReader {
+			if nodeConfig.ParentChain.BlobClient.BeaconUrl == "" {
+				flag.Usage()
+				log.Crit("a beacon chain RPC URL is required to read batches, but it was not configured (CLI argument: --parent-chain.blob-client.beacon-url [URL])")
+			}
+			blobClient, err := headerreader.NewBlobClient(nodeConfig.ParentChain.BlobClient, l1Client)
+			if err != nil {
+				log.Crit("failed to initialize blob client", "err", err)
+			}
+			blobReader = blobClient
+		}
 	}
 
 	if nodeConfig.Node.Staker.OnlyCreateWalletContract {
@@ -359,12 +377,10 @@ func mainImpl() int {
 			flag.Usage()
 			log.Crit("--node.validator.only-create-wallet-contract requires --node.validator.use-smart-contract-wallet")
 		}
-		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1Client)
-		l1Reader, err := headerreader.New(ctx, l1Client, func() *headerreader.Config { return &liveNodeConfig.Get().Node.ParentChainReader }, arbSys)
-		if err != nil {
-			log.Crit("failed to get L1 headerreader", "error", err)
+		if l1Reader == nil {
+			flag.Usage()
+			log.Crit("--node.validator.only-create-wallet-contract conflicts with --node.dangerous.no-l1-listener")
 		}
-
 		// Just create validator smart wallet if needed then exit
 		deployInfo, err := chaininfo.GetRollupAddressesConfig(nodeConfig.Chain.ID, nodeConfig.Chain.Name, combinedL2ChainInfoFile, nodeConfig.Chain.InfoJson)
 		if err != nil {
@@ -389,7 +405,7 @@ func mainImpl() int {
 	}
 
 	var sameProcessValidationNodeEnabled bool
-	if nodeConfig.Node.BlockValidator.Enable && (nodeConfig.Node.BlockValidator.ValidationServer.URL == "self" || nodeConfig.Node.BlockValidator.ValidationServer.URL == "self-auth") {
+	if nodeConfig.Node.BlockValidator.Enable && (nodeConfig.Node.BlockValidator.ValidationServerConfigs[0].URL == "self" || nodeConfig.Node.BlockValidator.ValidationServerConfigs[0].URL == "self-auth") {
 		sameProcessValidationNodeEnabled = true
 		valnode.EnsureValidationExposedViaAuthRPC(&stackConf)
 	}
@@ -537,6 +553,7 @@ func mainImpl() int {
 		dataSigner,
 		fatalErrChan,
 		big.NewInt(int64(nodeConfig.ParentChain.ID)),
+		blobReader,
 	)
 	if err != nil {
 		log.Error("failed to create node", "err", err)
@@ -624,6 +641,11 @@ func mainImpl() int {
 		// remove previous deferFuncs, StopAndWait closes database and blockchain.
 		deferFuncs = []func(){func() { currentNode.StopAndWait() }}
 	}
+	if nodeConfig.BlocksReExecutor.Enable && l2BlockChain != nil {
+		blocksReExecutor := blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, fatalErrChan)
+		blocksReExecutor.Start(ctx)
+		deferFuncs = append(deferFuncs, func() { blocksReExecutor.StopAndWait() })
+	}
 
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
@@ -659,51 +681,55 @@ func mainImpl() int {
 }
 
 type NodeConfig struct {
-	Conf          genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
-	Node          arbnode.Config                  `koanf:"node" reload:"hot"`
-	Execution     gethexec.Config                 `koanf:"execution" reload:"hot"`
-	Validation    valnode.Config                  `koanf:"validation" reload:"hot"`
-	ParentChain   conf.L1Config                   `koanf:"parent-chain" reload:"hot"`
-	Chain         conf.L2Config                   `koanf:"chain"`
-	LogLevel      int                             `koanf:"log-level" reload:"hot"`
-	LogType       string                          `koanf:"log-type" reload:"hot"`
-	FileLogging   genericconf.FileLoggingConfig   `koanf:"file-logging" reload:"hot"`
-	Persistent    conf.PersistentConfig           `koanf:"persistent"`
-	HTTP          genericconf.HTTPConfig          `koanf:"http"`
-	WS            genericconf.WSConfig            `koanf:"ws"`
-	IPC           genericconf.IPCConfig           `koanf:"ipc"`
-	Auth          genericconf.AuthRPCConfig       `koanf:"auth"`
-	GraphQL       genericconf.GraphQLConfig       `koanf:"graphql"`
-	Metrics       bool                            `koanf:"metrics"`
-	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
-	PProf         bool                            `koanf:"pprof"`
-	PprofCfg      genericconf.PProf               `koanf:"pprof-cfg"`
-	Init          conf.InitConfig                 `koanf:"init"`
-	Rpc           genericconf.RpcConfig           `koanf:"rpc"`
+	Conf             genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
+	Node             arbnode.Config                  `koanf:"node" reload:"hot"`
+	Execution        gethexec.Config                 `koanf:"execution" reload:"hot"`
+	Validation       valnode.Config                  `koanf:"validation" reload:"hot"`
+	ParentChain      conf.ParentChainConfig          `koanf:"parent-chain" reload:"hot"`
+	Chain            conf.L2Config                   `koanf:"chain"`
+	LogLevel         int                             `koanf:"log-level" reload:"hot"`
+	LogType          string                          `koanf:"log-type" reload:"hot"`
+	FileLogging      genericconf.FileLoggingConfig   `koanf:"file-logging" reload:"hot"`
+	Persistent       conf.PersistentConfig           `koanf:"persistent"`
+	HTTP             genericconf.HTTPConfig          `koanf:"http"`
+	WS               genericconf.WSConfig            `koanf:"ws"`
+	IPC              genericconf.IPCConfig           `koanf:"ipc"`
+	Auth             genericconf.AuthRPCConfig       `koanf:"auth"`
+	GraphQL          genericconf.GraphQLConfig       `koanf:"graphql"`
+	P2P              genericconf.P2PConfig           `koanf:"p2p"`
+	Metrics          bool                            `koanf:"metrics"`
+	MetricsServer    genericconf.MetricsServerConfig `koanf:"metrics-server"`
+	PProf            bool                            `koanf:"pprof"`
+	PprofCfg         genericconf.PProf               `koanf:"pprof-cfg"`
+	Init             conf.InitConfig                 `koanf:"init"`
+	Rpc              genericconf.RpcConfig           `koanf:"rpc"`
+	BlocksReExecutor blocksreexecutor.Config         `koanf:"blocks-reexecutor"`
 }
 
 var NodeConfigDefault = NodeConfig{
-	Conf:          genericconf.ConfConfigDefault,
-	Node:          arbnode.ConfigDefault,
-	Execution:     gethexec.ConfigDefault,
-	Validation:    valnode.DefaultValidationConfig,
-	ParentChain:   conf.L1ConfigDefault,
-	Chain:         conf.L2ConfigDefault,
-	LogLevel:      int(log.LvlInfo),
-	LogType:       "plaintext",
-	FileLogging:   genericconf.DefaultFileLoggingConfig,
-	Persistent:    conf.PersistentConfigDefault,
-	HTTP:          genericconf.HTTPConfigDefault,
-	WS:            genericconf.WSConfigDefault,
-	IPC:           genericconf.IPCConfigDefault,
-	Auth:          genericconf.AuthRPCConfigDefault,
-	GraphQL:       genericconf.GraphQLConfigDefault,
-	Metrics:       false,
-	MetricsServer: genericconf.MetricsServerConfigDefault,
-	Init:          conf.InitConfigDefault,
-	Rpc:           genericconf.DefaultRpcConfig,
-	PProf:         false,
-	PprofCfg:      genericconf.PProfDefault,
+	Conf:             genericconf.ConfConfigDefault,
+	Node:             arbnode.ConfigDefault,
+	Execution:        gethexec.ConfigDefault,
+	Validation:       valnode.DefaultValidationConfig,
+	ParentChain:      conf.L1ConfigDefault,
+	Chain:            conf.L2ConfigDefault,
+	LogLevel:         int(log.LvlInfo),
+	LogType:          "plaintext",
+	FileLogging:      genericconf.DefaultFileLoggingConfig,
+	Persistent:       conf.PersistentConfigDefault,
+	HTTP:             genericconf.HTTPConfigDefault,
+	WS:               genericconf.WSConfigDefault,
+	IPC:              genericconf.IPCConfigDefault,
+	Auth:             genericconf.AuthRPCConfigDefault,
+	GraphQL:          genericconf.GraphQLConfigDefault,
+	P2P:              genericconf.P2PConfigDefault,
+	Metrics:          false,
+	MetricsServer:    genericconf.MetricsServerConfigDefault,
+	Init:             conf.InitConfigDefault,
+	Rpc:              genericconf.DefaultRpcConfig,
+	PProf:            false,
+	PprofCfg:         genericconf.PProfDefault,
+	BlocksReExecutor: blocksreexecutor.DefaultConfig,
 }
 
 func NodeConfigAddOptions(f *flag.FlagSet) {
@@ -721,6 +747,7 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	genericconf.WSConfigAddOptions("ws", f)
 	genericconf.IPCConfigAddOptions("ipc", f)
 	genericconf.AuthRPCConfigAddOptions("auth", f)
+	genericconf.P2PConfigAddOptions("p2p", f)
 	genericconf.GraphQLConfigAddOptions("graphql", f)
 	f.Bool("metrics", NodeConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
@@ -729,6 +756,7 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 
 	conf.InitConfigAddOptions("init", f)
 	genericconf.RpcConfigAddOptions("rpc", f)
+	blocksreexecutor.ConfigAddOptions("blocks-reexecutor", f)
 }
 
 func (c *NodeConfig) ResolveDirectoryNames() error {
@@ -781,6 +809,12 @@ func (c *NodeConfig) CanReload(new *NodeConfig) error {
 }
 
 func (c *NodeConfig) Validate() error {
+	if c.Init.RecreateMissingStateFrom > 0 && !c.Execution.Caching.Archive {
+		return errors.New("recreate-missing-state-from enabled for a non-archive node")
+	}
+	if err := c.Init.Validate(); err != nil {
+		return err
+	}
 	if err := c.ParentChain.Validate(); err != nil {
 		return err
 	}
@@ -788,6 +822,9 @@ func (c *NodeConfig) Validate() error {
 		return err
 	}
 	if err := c.Execution.Validate(); err != nil {
+		return err
+	}
+	if err := c.BlocksReExecutor.Validate(); err != nil {
 		return err
 	}
 	return c.Persistent.Validate()
