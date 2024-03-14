@@ -33,7 +33,7 @@ func TestFIFOSequentialLocking(t *testing.T) {
 func TestFIFOUnlockPanic(t *testing.T) {
 	defer func() {
 		if r := recover(); r == nil {
-			t.Error("Expected panic for unlocking an already unlocked FIFO")
+			t.Error("Unlock did not panic")
 		}
 	}()
 
@@ -62,7 +62,7 @@ func TestFIFOOnlyOneLockAllowed(t *testing.T) {
 	case <-doneCh:
 		t.Error("Second lock acquisition didn't fail within the expected time")
 	case <-time.After(time.Millisecond * 100):
-		t.Log("Second lock acquisition failed as expected")
+		t.Log("As expected, was not able to acquire the second lock")
 	}
 
 	// Release the lock
