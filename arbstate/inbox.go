@@ -48,6 +48,7 @@ type sequencerMessage struct {
 const MaxDecompressedLen int = 1024 * 1024 * 16 // 16 MiB
 const maxZeroheavyDecompressedLen = 101*MaxDecompressedLen/100 + 64
 const MaxSegmentsPerSequencerMessage = 100 * 1024
+const MinLifetimeSecondsForDataAvailabilityCert = 7 * 24 * 60 * 60 // one week
 
 func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash common.Hash, data []byte, daProviders []daprovider.Reader, keysetValidationMode daprovider.KeysetValidationMode) (*sequencerMessage, error) {
 	if len(data) < 40 {
@@ -96,7 +97,7 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 			if daprovider.IsDASMessageHeaderByte(payload[0]) {
 				log.Error("No DAS Reader configured, but sequencer message found with DAS header")
 			} else if daprovider.IsBlobHashesHeaderByte(payload[0]) {
-				return nil, errors.New("blob batch payload was encountered but no BlobReader was configured")
+				return nil, daprovider.ErrNoBlobReader
 			}
 		}
 	}

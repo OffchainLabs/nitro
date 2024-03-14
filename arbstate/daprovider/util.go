@@ -101,8 +101,12 @@ func IsKnownHeaderByte(b uint8) bool {
 }
 
 const MinLifetimeSecondsForDataAvailabilityCert = 7 * 24 * 60 * 60 // one week
-var ErrHashMismatch = errors.New("result does not match expected hash")
-var ErrBatchToDasFailed = errors.New("unable to batch to DAS")
+var (
+	ErrHashMismatch          = errors.New("result does not match expected hash")
+	ErrBatchToDasFailed      = errors.New("unable to batch to DAS")
+	ErrNoBlobReader          = errors.New("blob batch payload was encountered but no BlobReader was configured")
+	ErrInvalidBlobDataFormat = errors.New("blob batch data is not a list of hashes as expected")
+)
 
 type KeysetValidationMode uint8
 

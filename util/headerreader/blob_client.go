@@ -26,9 +26,10 @@ import (
 )
 
 type BlobClient struct {
-	ec         arbutil.L1Interface
-	beaconUrl  *url.URL
-	httpClient *http.Client
+	ec            arbutil.L1Interface
+	beaconUrl     *url.URL
+	httpClient    *http.Client
+	authorization string
 
 	// Filled in in Initialize()
 	genesisTime    uint64
@@ -41,16 +42,19 @@ type BlobClient struct {
 type BlobClientConfig struct {
 	BeaconUrl     string `koanf:"beacon-url"`
 	BlobDirectory string `koanf:"blob-directory"`
+	Authorization string `koanf:"authorization"`
 }
 
 var DefaultBlobClientConfig = BlobClientConfig{
 	BeaconUrl:     "",
 	BlobDirectory: "",
+	Authorization: "",
 }
 
 func BlobClientAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".beacon-url", DefaultBlobClientConfig.BeaconUrl, "Beacon Chain RPC URL to use for fetching blobs (normally on port 3500)")
 	f.String(prefix+".blob-directory", DefaultBlobClientConfig.BlobDirectory, "Full path of the directory to save fetched blobs")
+	f.String(prefix+".authorization", DefaultBlobClientConfig.Authorization, "Value to send with the HTTP Authorization: header for Beacon REST requests, must include both scheme and scheme parameters")
 }
 
 func NewBlobClient(config BlobClientConfig, ec arbutil.L1Interface) (*BlobClient, error) {
@@ -72,6 +76,7 @@ func NewBlobClient(config BlobClientConfig, ec arbutil.L1Interface) (*BlobClient
 	return &BlobClient{
 		ec:            ec,
 		beaconUrl:     beaconUrl,
+		authorization: config.Authorization,
 		httpClient:    &http.Client{},
 		blobDirectory: config.BlobDirectory,
 	}, nil
@@ -93,6 +98,10 @@ func beaconRequest[T interface{}](b *BlobClient, ctx context.Context, beaconPath
 	req, err := http.NewRequestWithContext(ctx, "GET", url.String(), http.NoBody)
 	if err != nil {
 		return empty, err
+	}
+
+	if b.authorization != "" {
+		req.Header.Set("Authorization", b.authorization)
 	}
 
 	resp, err := b.httpClient.Do(req)
@@ -139,9 +148,13 @@ type blobResponseItem struct {
 }
 
 func (b *BlobClient) blobSidecars(ctx context.Context, slot uint64, versionedHashes []common.Hash) ([]kzg4844.Blob, error) {
-	response, err := beaconRequest[[]blobResponseItem](b, ctx, fmt.Sprintf("/eth/v1/beacon/blob_sidecars/%d", slot))
+	rawData, err := beaconRequest[json.RawMessage](b, ctx, fmt.Sprintf("/eth/v1/beacon/blob_sidecars/%d", slot))
 	if err != nil {
 		return nil, fmt.Errorf("error calling beacon client in blobSidecars: %w", err)
+	}
+	var response []blobResponseItem
+	if err := json.Unmarshal(rawData, &response); err != nil {
+		return nil, fmt.Errorf("error unmarshalling raw data into array of blobResponseItem in blobSidecars: %w", err)
 	}
 
 	if len(response) < len(versionedHashes) {
@@ -194,7 +207,7 @@ func (b *BlobClient) blobSidecars(ctx context.Context, slot uint64, versionedHas
 	}
 
 	if b.blobDirectory != "" {
-		if err := saveBlobDataToDisk(response, slot, b.blobDirectory); err != nil {
+		if err := saveBlobDataToDisk(rawData, slot, b.blobDirectory); err != nil {
 			return nil, err
 		}
 	}
@@ -202,13 +215,13 @@ func (b *BlobClient) blobSidecars(ctx context.Context, slot uint64, versionedHas
 	return output, nil
 }
 
-func saveBlobDataToDisk(response []blobResponseItem, slot uint64, blobDirectory string) error {
+func saveBlobDataToDisk(rawData json.RawMessage, slot uint64, blobDirectory string) error {
 	filePath := path.Join(blobDirectory, fmt.Sprint(slot))
 	file, err := os.Create(filePath)
 	if err != nil {
 		return fmt.Errorf("could not create file to store fetched blobs")
 	}
-	full := fullResult[[]blobResponseItem]{Data: response}
+	full := fullResult[json.RawMessage]{Data: rawData}
 	fullbytes, err := json.Marshal(full)
 	if err != nil {
 		return fmt.Errorf("unable to marshal data into bytes while attempting to store fetched blobs")

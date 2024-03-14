@@ -122,6 +122,9 @@ func (c noopChainContext) GetHeader(common.Hash, uint64) *types.Header {
 
 func FuzzStateTransition(f *testing.F) {
 	f.Fuzz(func(t *testing.T, compressSeqMsg bool, seqMsg []byte, delayedMsg []byte) {
+		if len(seqMsg) > 0 && daprovider.IsL1AuthenticatedMessageHeaderByte(seqMsg[0]) {
+			return
+		}
 		chainDb := rawdb.NewMemoryDatabase()
 		chainConfig := params.ArbitrumRollupGoerliTestnetChainConfig()
 		serializedChainConfig, err := json.Marshal(chainConfig)

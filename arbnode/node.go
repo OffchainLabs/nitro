@@ -67,10 +67,10 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 		// TODO could the ChainConfig be just []byte?
 		ChainConfig: string(serializedChainConfig),
 		SequencerInboxMaxTimeVariation: rollupgen.ISequencerInboxMaxTimeVariation{
-			DelayBlocks:   60 * 60 * 24 / 15,
-			FutureBlocks:  12,
-			DelaySeconds:  60 * 60 * 24,
-			FutureSeconds: 60 * 60,
+			DelayBlocks:   big.NewInt(60 * 60 * 24 / 15),
+			FutureBlocks:  big.NewInt(12),
+			DelaySeconds:  big.NewInt(60 * 60 * 24),
+			FutureSeconds: big.NewInt(60 * 60),
 		},
 	}
 }
@@ -833,12 +833,6 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.SeqCoordinator != nil {
 		n.SeqCoordinator.Start(ctx)
 	} else {
-		if n.DelayedSequencer != nil {
-			err := n.DelayedSequencer.ForceSequenceDelayed(ctx)
-			if err != nil {
-				return fmt.Errorf("error initially sequencing delayed instructions: %w", err)
-			}
-		}
 		n.Execution.Activate()
 	}
 	if n.MaintenanceRunner != nil {

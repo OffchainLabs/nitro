@@ -38,8 +38,8 @@ type DataAvailabilityConfig struct {
 
 	RequestTimeout time.Duration `koanf:"request-timeout"`
 
-	LocalCache BigCacheConfig `koanf:"local-cache"`
-	RedisCache RedisConfig    `koanf:"redis-cache"`
+	LocalCache CacheConfig `koanf:"local-cache"`
+	RedisCache RedisConfig `koanf:"redis-cache"`
 
 	LocalDBStorage     LocalDBStorageConfig     `koanf:"local-db-storage"`
 	LocalFileStorage   LocalFileStorageConfig   `koanf:"local-file-storage"`
@@ -107,7 +107,7 @@ func dataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet, r role) {
 		f.Bool(prefix+".disable-signature-checking", DefaultDataAvailabilityConfig.DisableSignatureChecking, "disables signature checking on Data Availability Store requests (DANGEROUS, FOR TESTING ONLY)")
 
 		// Cache options
-		BigCacheConfigAddOptions(prefix+".local-cache", f)
+		CacheConfigAddOptions(prefix+".local-cache", f)
 		RedisConfigAddOptions(prefix+".redis-cache", f)
 
 		// Storage options

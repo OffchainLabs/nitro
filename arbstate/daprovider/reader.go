@@ -77,7 +77,7 @@ func (b *readerForBlobReader) RecoverPayloadFromBatch(
 ) ([]byte, error) {
 	blobHashes := sequencerMsg[41:]
 	if len(blobHashes)%len(common.Hash{}) != 0 {
-		return nil, fmt.Errorf("blob batch data is not a list of hashes as expected")
+		return nil, ErrInvalidBlobDataFormat
 	}
 	versionedHashes := make([]common.Hash, len(blobHashes)/len(common.Hash{}))
 	for i := 0; i*32 < len(blobHashes); i += 1 {
