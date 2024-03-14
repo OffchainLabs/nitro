@@ -99,11 +99,12 @@ impl<D: DataReader, E: EvmApi<D>> RunProgram for NativeInstance<D, E> {
                     Ok(escape) => escape,
                     Err(error) => return Ok(Failure(eyre!(error).wrap_err("hard user error"))),
                 };
-                return Ok(match escape {
-                    Escape::OutOfInk => OutOfInk,
-                    Escape::Memory(error) => UserOutcome::Failure(error.into()),
-                    Escape::Internal(error) | Escape::Logical(error) => UserOutcome::Failure(error),
-                });
+                match escape {
+                    Escape::OutOfInk => return Ok(OutOfInk),
+                    Escape::Memory(error) => return Ok(Failure(error.into())),
+                    Escape::Internal(error) | Escape::Logical(error) => return Ok(Failure(error)),
+                    Escape::Exit(status) => status,
+                }
             }
         };
 

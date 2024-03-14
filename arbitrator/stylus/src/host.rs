@@ -110,6 +110,14 @@ pub(crate) fn write_result<D: DataReader, E: EvmApi<D>>(
     hostio!(env, write_result(ptr, len))
 }
 
+pub(crate) fn exit_early<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+    status: u32,
+) -> MaybeEscape {
+    hostio!(env, exit_early(status))?;
+    Err(Escape::Exit(status))
+}
+
 pub(crate) fn storage_load_bytes32<D: DataReader, E: EvmApi<D>>(
     mut env: WasmEnvMut<D, E>,
     key: GuestPtr,

@@ -55,3 +55,7 @@ func TestProgramArbitratorActivateFails(t *testing.T) {
 	t.Parallel()
 	testActivateFails(t, false)
 }
+
+func TestProgramArbitratorEarlyExit(t *testing.T) {
+	testEarlyExit(t, false)
+}

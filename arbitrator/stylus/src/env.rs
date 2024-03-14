@@ -212,10 +212,12 @@ pub enum Escape {
     Memory(MemoryAccessError),
     #[error("internal error: `{0}`")]
     Internal(ErrReport),
-    #[error("Logic error: `{0}`")]
+    #[error("logic error: `{0}`")]
     Logical(ErrReport),
     #[error("out of ink")]
     OutOfInk,
+    #[error("exit early: `{0}`")]
+    Exit(u32),
 }
 
 impl Escape {

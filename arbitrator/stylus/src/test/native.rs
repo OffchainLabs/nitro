@@ -456,3 +456,31 @@ fn test_calls() -> Result<()> {
     }
     Ok(())
 }
+
+#[test]
+fn test_exit_early() -> Result<()> {
+    // in exit-early.wat
+    //     the input is returned as the output
+    //     the status code is the first byte
+    //
+    // in panic-after-write.wat
+    //     the program writes a result but then panics
+
+    let file = |f: &str| format!("tests/exit-early/{f}.wat");
+    let (compile, config, ink) = test_configs();
+    let args = &[0x01; 32];
+
+    let mut native = TestInstance::new_linked(file("exit-early"), &compile, config)?;
+    let output = match native.run_main(args, config, ink)? {
+        UserOutcome::Revert(output) => output,
+        err => bail!("expected revert: {}", err.red()),
+    };
+    assert_eq!(hex::encode(output), hex::encode(args));
+
+    let mut native = TestInstance::new_linked(file("panic-after-write"), &compile, config)?;
+    match native.run_main(args, config, ink)? {
+        UserOutcome::Failure(error) => println!("{error:?}"),
+        err => bail!("expected hard error: {}", err.red()),
+    }
+    Ok(())
+}

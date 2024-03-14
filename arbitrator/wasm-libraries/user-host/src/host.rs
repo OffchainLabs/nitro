@@ -2,6 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::program::Program;
+use arbutil::evm::user::UserOutcomeKind;
 use caller_env::GuestPtr;
 use user_host_trait::UserHost;
 
@@ -25,6 +26,16 @@ macro_rules! hostio {
 #[no_mangle]
 pub unsafe extern "C" fn user_host__read_args(ptr: GuestPtr) {
     hostio!(read_args(ptr))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__exit_early(status: u32) {
+    hostio!(exit_early(status));
+    Program::current().early_exit = Some(match status {
+        0 => UserOutcomeKind::Success,
+        _ => UserOutcomeKind::Revert,
+    });
+    set_trap();
 }
 
 #[no_mangle]
