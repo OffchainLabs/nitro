@@ -33,8 +33,8 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/go-redis/redis/v8"
 	"github.com/holiman/uint256"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsigner"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -152,15 +152,15 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 	// 		return nil, err
 	// 	}
 	// case cfg.UseDBStorage:
-	storage := dbstorage.New(opts.Database, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
-	// if cfg.Dangerous.ClearDBStorage {
-	if err := storage.PruneAll(ctx); err != nil {
-		return nil, err
-	}
+	// storage := dbstorage.New(opts.Database, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
+	// // if cfg.Dangerous.ClearDBStorage {
+	// if err := storage.PruneAll(ctx); err != nil {
+	// 	return nil, err
 	// }
-	queue = storage
+	// // }
+	// queue = storage
 	// default:
-	// queue = slice.NewStorage(func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
+	queue = slice.NewStorage(func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
 	// }
 	expression, err := govaluate.NewEvaluableExpression(cfg.MaxFeeCapFormula)
 	if err != nil {
@@ -1215,11 +1215,11 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	ReplacementTimes:       "5m,10m,20m,30m,1h,2h,4h,6h,8h,12h,16h,18h,20h,22h",
 	BlobTxReplacementTimes: "5m,10m,30m,1h,4h,8h,16h,22h",
 	WaitForL1Finality:      true,
-	TargetPriceGwei:        60.,
-	UrgencyGwei:            2.,
+	TargetPriceGwei:        120.,
+	UrgencyGwei:            10.,
 	MaxMempoolTransactions: 18,
 	MaxMempoolWeight:       18,
-	MinTipCapGwei:          0.05,
+	MinTipCapGwei:          2,
 	MinBlobTxTipCapGwei:    1, // default geth minimum, and relays aren't likely to accept lower values given propagation time
 	MaxTipCapGwei:          5,
 	MaxBlobTxTipCapGwei:    1, // lower than normal because 4844 rbf is a minimum of a 2x
@@ -1248,7 +1248,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	BlobTxReplacementTimes: "1s,10s,30s,5m",
 	RedisSigner:            signature.TestSimpleHmacConfig,
 	WaitForL1Finality:      false,
-	TargetPriceGwei:        60.,
+	TargetPriceGwei:        120.,
 	UrgencyGwei:            2.,
 	MaxMempoolTransactions: 18,
 	MaxMempoolWeight:       18,
