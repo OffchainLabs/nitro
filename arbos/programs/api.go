@@ -52,6 +52,7 @@ func newApiClosures(
 	evm := interpreter.Evm()
 	depth := evm.Depth()
 	db := evm.StateDB
+	chainConfig := evm.ChainConfig()
 
 	getBytes32 := func(key common.Hash) (common.Hash, uint64) {
 		if tracingInfo != nil {
@@ -208,7 +209,7 @@ func newApiClosures(
 		return nil
 	}
 	accountBalance := func(address common.Address) (common.Hash, uint64) {
-		cost := vm.WasmAccountTouchCost(evm.StateDB, address, false)
+		cost := vm.WasmAccountTouchCost(chainConfig, evm.StateDB, address, false)
 		balance := evm.StateDB.GetBalance(address)
 		return common.BigToHash(balance), cost
 	}
@@ -216,14 +217,14 @@ func newApiClosures(
 		// In the future it'll be possible to know the size of a contract before loading it.
 		// For now, require the worst case before doing the load.
 
-		cost := vm.WasmAccountTouchCost(evm.StateDB, address, true)
+		cost := vm.WasmAccountTouchCost(chainConfig, evm.StateDB, address, true)
 		if gas < cost {
 			return []byte{}, cost
 		}
 		return evm.StateDB.GetCode(address), cost
 	}
 	accountCodehash := func(address common.Address) (common.Hash, uint64) {
-		cost := vm.WasmAccountTouchCost(evm.StateDB, address, false)
+		cost := vm.WasmAccountTouchCost(chainConfig, evm.StateDB, address, false)
 		return evm.StateDB.GetCodeHash(address), cost
 	}
 	addPages := func(pages uint16) uint64 {
