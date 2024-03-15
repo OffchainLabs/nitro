@@ -73,7 +73,7 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           toolchain: "1.75"
-          components: 'llvm-tools-preview, rustfmt'
+          components: 'llvm-tools-preview, rustfmt, clippy'
 
       - name: Install rust nightly
         uses: dtolnay/rust-toolchain@nightly
@@ -81,7 +81,7 @@ jobs:
         with:
           toolchain: "nightly-2024-02-04"
           targets: 'wasm32-wasi, wasm32-unknown-unknown'
-          components: rust-src
+          components: 'rust-src, rustfmt, clippy'
 
       - name: Cache Rust intermediate build products
         uses: actions/cache@v3
