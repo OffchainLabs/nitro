@@ -82,7 +82,7 @@ fn main() -> Result<()> {
         .exports
         .get_memory("memory")
         .unwrap()
-        .view(&mut store)
+        .view(&store)
         .size()
         .0 as u64
         * 65_536;
