@@ -107,7 +107,9 @@ stylus_lang_rust = $(wildcard $(rust_sdk)/*/src/*.rs $(rust_sdk)/*/src/*/*.rs $(
 stylus_lang_c    = $(wildcard $(c_sdk)/*/*.c $(c_sdk)/*/*.h)
 stylus_lang_bf   = $(wildcard arbitrator/langs/bf/src/*.* arbitrator/langs/bf/src/*.toml)
 
-cargo_nightly = cargo +nightly build -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort
+STYLUS_NIGHTLY_VER ?= "+nightly"
+
+cargo_nightly = cargo $(STYLUS_NIGHTLY_VER) build -Z build-std=std,panic_abort -Z build-std-features=panic_immediate_abort
 
 get_stylus_test_wasm = $(stylus_test_dir)/$(1)/$(wasm32_unknown)/$(1).wasm
 get_stylus_test_rust = $(wildcard $(stylus_test_dir)/$(1)/*.toml $(stylus_test_dir)/$(1)/src/*.rs) $(stylus_cargo) $(stylus_lang_rust)

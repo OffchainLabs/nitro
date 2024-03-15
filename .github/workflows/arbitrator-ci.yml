@@ -157,7 +157,7 @@ jobs:
         run: echo "$HOME/wabt-prefix/bin" >> "$GITHUB_PATH"
 
       - name: Make arbitrator libraries
-        run: make -j wasm-ci-build
+        run: make -j wasm-ci-build STYLUS_NIGHTLY_VER="+nightly-2024-02-04"
 
       - name: Clippy check
         run: cargo clippy --all --manifest-path arbitrator/Cargo.toml -- -D warnings
