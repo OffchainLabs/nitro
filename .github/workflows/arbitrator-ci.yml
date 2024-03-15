@@ -79,7 +79,7 @@ jobs:
         uses: dtolnay/rust-toolchain@nightly
         id: install-rust-nightly
         with:
-          toolchain: "nightly"
+          toolchain: "nightly-2024-02-04"
           targets: 'wasm32-wasi, wasm32-unknown-unknown'
           components: rust-src
 
