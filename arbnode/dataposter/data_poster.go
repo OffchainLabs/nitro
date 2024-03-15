@@ -15,6 +15,7 @@ import (
 	"math/big"
 	"net/http"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"time"
@@ -150,7 +151,7 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 	switch {
 	case useNoOpStorage:
 		queue = &noop.Storage{}
-	case opts.RedisClient != nil:
+	case !reflect.ValueOf(opts.RedisClient).IsNil():
 		var err error
 		queue, err = redisstorage.NewStorage(opts.RedisClient, opts.RedisKey, &cfg.RedisSigner, encF)
 		if err != nil {

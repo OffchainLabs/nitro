@@ -6,6 +6,7 @@ import (
 	"errors"
 	"math"
 	"math/big"
+	"reflect"
 	"strconv"
 	"sync"
 	"sync/atomic"
@@ -72,7 +73,7 @@ var DefaultCfg = SimpleCfg{
 func (l *Simple) attemptLock(ctx context.Context) (bool, error) {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
-	if l.stopping || l.client == nil {
+	if l.stopping || reflect.ValueOf(l.client).IsNil() {
 		return false, nil
 	}
 	if !l.readyToLock() {
@@ -140,7 +141,7 @@ func (l *Simple) AttemptLock(ctx context.Context) bool {
 }
 
 func (l *Simple) Locked() bool {
-	if l.client == nil || !l.config().Enable {
+	if reflect.ValueOf(l.client).IsNil() || !l.config().Enable {
 		return true
 	}
 	return time.Now().Before(atomicTimeRead(&l.lockedUntil))
@@ -171,7 +172,7 @@ func (l *Simple) Release(ctx context.Context) {
 	l.mutex.Lock()
 	defer l.mutex.Unlock()
 
-	if l.client == nil {
+	if reflect.ValueOf(l.client).IsNil() {
 		return
 	}
 
