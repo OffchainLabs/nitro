@@ -156,7 +156,7 @@ fn new_test_machine(path: &str, compile: &CompileConfig) -> Result<Machine> {
         true,
         GlobalState::default(),
         HashMap::default(),
-        Arc::new(|_, _| panic!("tried to read preimage")),
+        Arc::new(|_, _, _| panic!("tried to read preimage")),
         Some(stylus_data),
     )?;
     mach.set_ink(u64::MAX);
