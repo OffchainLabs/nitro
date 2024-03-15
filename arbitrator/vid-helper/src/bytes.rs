@@ -86,7 +86,7 @@ impl<const N: usize> From<[u8; N]> for Bytes {
 
 impl<const N: usize> From<&[u8; N]> for Bytes {
     fn from(bytes: &[u8; N]) -> Self {
-        Self(bytes.into())
+        Self((*bytes).into())
     }
 }
 

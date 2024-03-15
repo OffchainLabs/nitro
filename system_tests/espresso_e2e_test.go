@@ -91,8 +91,8 @@ func createL2Node(ctx context.Context, t *testing.T, hotshot_url string, builder
 
 	nodeConfig.Feed.Output.Enable = true
 	nodeConfig.Feed.Output.Addr = "0.0.0.0"
-	builder.nodeConfig.Feed.Output.Enable = true
-	builder.nodeConfig.Feed.Output.Port = fmt.Sprintf("%d", broadcastPort)
+	nodeConfig.Feed.Output.Enable = true
+	nodeConfig.Feed.Output.Port = fmt.Sprintf("%d", broadcastPort)
 
 	client, cleanup := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfig})
 	return client, builder.L2Info, cleanup
