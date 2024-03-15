@@ -156,8 +156,11 @@ func (b *BlobClient) blobSidecars(ctx context.Context, slot uint64, versionedHas
 	var response []blobResponseItem
 	if err := json.Unmarshal(rawData, &response); err != nil {
 		rawDataStr := string(rawData)
-		log.Trace("response from beacon URL cannot be unmarshalled into array of blobResponseItem in blobSidecars", "slot", slot, "response", rawDataStr)
-		return nil, fmt.Errorf("error unmarshalling response from beacon URL into array of blobResponseItem in blobSidecars: %w. Trailing 20 characters of the response: %s", err, rawDataStr[len(rawDataStr)-20:])
+		log.Debug("response from beacon URL cannot be unmarshalled into array of blobResponseItem in blobSidecars", "slot", slot, "responseLength", len(rawDataStr), "response", rawDataStr)
+		if len(rawDataStr) > 100 {
+			rawDataStr = rawDataStr[len(rawDataStr)-25:]
+		}
+		return nil, fmt.Errorf("error unmarshalling response from beacon URL into array of blobResponseItem in blobSidecars: %w. Trailing 20 characters of the response: %s", err, rawDataStr)
 	}
 
 	if len(response) < len(versionedHashes) {
