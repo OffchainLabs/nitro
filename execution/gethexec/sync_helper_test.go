@@ -18,7 +18,16 @@ import (
 	"github.com/ethereum/go-ethereum/trie"
 )
 
-func createTestBlockchain(t *testing.T, blocksNum int) (*core.BlockChain, ethdb.Database) {
+type testBlockchainOptions struct {
+	cachingConfig         *CachingConfig
+	blocksNum             int
+	forceTriedbCommitHook core.ForceTriedbCommitHook
+}
+
+func createTestBlockchain(t *testing.T, opts testBlockchainOptions) (*core.BlockChain, ethdb.Database) {
+	if opts.cachingConfig == nil {
+		opts.cachingConfig = &DefaultCachingConfig
+	}
 	stackConfig := node.DefaultConfig
 	stackConfig.DataDir = t.TempDir()
 	stackConfig.P2P.DiscoveryV4 = false
@@ -46,16 +55,12 @@ func createTestBlockchain(t *testing.T, blocksNum int) (*core.BlockChain, ethdb.
 			testUserAddress: {Balance: new(big.Int).Lsh(big.NewInt(1), 250)},
 		},
 	}
-	cachingConfig := DefaultCachingConfig
-	cachingConfig.Archive = true
-	cachingConfig.SnapshotCache = 0  // disable snapshot to simplify removing states
-	cachingConfig.TrieCleanCache = 0 // disable trie/Database.cleans cache, so as states removed from ChainDb won't be cached there
 
-	coreCacheConfig := DefaultCacheConfigFor(stack, &cachingConfig)
-	bc, _ := core.NewArbBlockChain(db, coreCacheConfig, nil, gspec, nil, ethash.NewFaker(), vm.Config{}, nil, nil, nil)
+	coreCacheConfig := DefaultCacheConfigFor(stack, opts.cachingConfig)
+	bc, _ := core.NewArbBlockChain(db, coreCacheConfig, nil, gspec, nil, ethash.NewFaker(), vm.Config{}, nil, nil, opts.forceTriedbCommitHook)
 	signer := types.MakeSigner(bc.Config(), big.NewInt(1), 0)
 
-	_, blocks, allReceipts := core.GenerateChainWithGenesis(gspec, ethash.NewFaker(), blocksNum, func(i int, gen *core.BlockGen) {
+	_, blocks, allReceipts := core.GenerateChainWithGenesis(gspec, ethash.NewFaker(), opts.blocksNum, func(i int, gen *core.BlockGen) {
 		nonce := gen.TxNonce(testUserAddress)
 		tx, err := types.SignNewTx(testUser, signer, &types.LegacyTx{
 			Nonce:    nonce,
@@ -91,12 +96,16 @@ type syncHelperScanTestOptions struct {
 }
 
 func testSyncHelperScanNewConfirmedCheckpoints(t *testing.T, opts syncHelperScanTestOptions) {
-	// glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
-	//glogger.Verbosity(log.LvlInfo)
-	//log.Root().SetHandler(glogger)
+	cachingConfig := DefaultCachingConfig
+	cachingConfig.Archive = true
+	cachingConfig.SnapshotCache = 0  // disable snapshot to simplify removing states
+	cachingConfig.TrieCleanCache = 0 // disable trie/Database.cleans cache, so as states removed from ChainDb won't be cached there
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	bc, db := createTestBlockchain(t, opts.blocksNum)
+	bc, db := createTestBlockchain(t, testBlockchainOptions{
+		cachingConfig: &cachingConfig,
+		blocksNum:     opts.blocksNum,
+	})
 	config := NitroSyncHelperConfig{
 		Enabled:          true,
 		CheckpointPeriod: uint64(opts.period),
@@ -107,7 +116,7 @@ func testSyncHelperScanNewConfirmedCheckpoints(t *testing.T, opts syncHelperScan
 	for number := 0; number < opts.blocksNum; number++ {
 		header := bc.GetHeaderByNumber(uint64(number))
 		if header == nil {
-			t.Fatal("internal test error - can't get header, number:", number, "opts:", opts)
+			t.Fatal("can't get header, number:", number, "opts:", opts)
 		}
 		if sh.checkpointCache.Has(header) {
 			t.Fatal("unexpected error - checkpoint cache should be empty, but has header, number:", number, "opts:", opts)
@@ -126,11 +135,11 @@ func testSyncHelperScanNewConfirmedCheckpoints(t *testing.T, opts syncHelperScan
 			}
 			header := bc.GetHeaderByNumber(uint64(number))
 			if header == nil {
-				t.Fatal("internal test error - can't get header, number:", number, "opts:", opts)
+				t.Fatal("can't get header, number:", number, "opts:", opts)
 			}
 			err := db.Delete(header.Root.Bytes())
 			if err != nil {
-				t.Fatal("internal test error - failed to delete key from db, err:", err, "opts:", opts)
+				t.Fatal("failed to delete key from db, err:", err, "opts:", opts)
 			}
 			_, err = bc.StateAt(header.Root)
 			if err == nil {
@@ -146,7 +155,7 @@ func testSyncHelperScanNewConfirmedCheckpoints(t *testing.T, opts syncHelperScan
 	for number := 1; number < opts.blocksNum; number++ {
 		block := bc.GetBlockByNumber(uint64(number))
 		if block == nil {
-			t.Fatal("internal test error - can't get block, number:", number, "opts:", opts)
+			t.Fatal("can't get block, number:", number, "opts:", opts)
 		}
 		newConfirmed := Confirmed{
 			BlockNumber: int64(number),
@@ -160,7 +169,7 @@ func testSyncHelperScanNewConfirmedCheckpoints(t *testing.T, opts syncHelperScan
 	for number := 0; number < opts.blocksNum; number++ {
 		header := bc.GetHeaderByNumber(uint64(number))
 		if header == nil {
-			t.Fatal("internal test error - can't get header, number:", number, "opts:", opts)
+			t.Fatal("can't get header, number:", number, "opts:", opts)
 		}
 		_, kept := statesKept[number]
 		if number != 0 && number%opts.period == 0 && (opts.commitedCheckpointsNum == 0 || kept) {
@@ -191,5 +200,43 @@ func TestSyncHelperScanNewConfirmedCheckpoints(t *testing.T) {
 	}
 	for _, o := range options {
 		testSyncHelperScanNewConfirmedCheckpoints(t, o)
+	}
+}
+
+func TestForceTriedbCommitHook(t *testing.T) {
+	hook := GetForceTriedbCommitHookForConfig(func() *NitroSyncHelperConfig {
+		return &NitroSyncHelperConfig{
+			Enabled:          false,
+			CheckpointPeriod: 100,
+			CheckpointCache:  0,
+		}
+	})
+	if hook != nil {
+		t.Fatal("Got non nil hook, but NitroSyncHelper was disabled in the config")
+	}
+	hook = GetForceTriedbCommitHookForConfig(func() *NitroSyncHelperConfig {
+		return &NitroSyncHelperConfig{
+			Enabled:          true,
+			CheckpointPeriod: 100,
+			CheckpointCache:  0,
+		}
+	})
+	for _, i := range []int64{1, 10, 99, 101} {
+		header := &types.Header{
+			Number: big.NewInt(i),
+		}
+		block := types.NewBlock(header, nil, nil, nil, nil)
+		if hook(block, 0, 0) {
+			t.Errorf("the hook returned true for block #%d", i)
+		}
+	}
+	for _, i := range []int64{100, 200, 300} {
+		header := &types.Header{
+			Number: big.NewInt(i),
+		}
+		block := types.NewBlock(header, nil, nil, nil, nil)
+		if !hook(block, 0, 0) {
+			t.Errorf("the hook returned false for block #%d", i)
+		}
 	}
 }
