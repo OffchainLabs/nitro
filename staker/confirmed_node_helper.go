@@ -14,8 +14,6 @@ import (
 	"github.com/offchainlabs/nitro/validator"
 )
 
-var ErrInvalidConfirmedNode error = errors.New("confirmed node invalid")
-
 // TODO rename to ConfirmedNodeHelper?
 type ConfirmedNodeHelper struct {
 	stopwaiter.StopWaiter
@@ -55,10 +53,10 @@ func (h *ConfirmedNodeHelper) SubscribeLatest(subscriber execution.LatestConfirm
 	return nil
 }
 
-func (h *ConfirmedNodeHelper) Validate(node uint64, blockHash common.Hash) error {
+func (h *ConfirmedNodeHelper) Validate(node uint64, blockHash common.Hash) (bool, error) {
 	ctx, err := h.GetContextSafe()
 	if err != nil {
-		return err
+		return false, err
 	}
 	// TODO do a binary search for block containing NodeConfirmed for validated node
 	var query = ethereum.FilterQuery{
@@ -69,16 +67,16 @@ func (h *ConfirmedNodeHelper) Validate(node uint64, blockHash common.Hash) error
 	}
 	logs, err := h.client.FilterLogs(ctx, query)
 	if err != nil {
-		return err
+		return false, err
 	}
 	if len(logs) == 0 {
-		return ErrInvalidConfirmedNode
+		return false, nil
 	}
 	if len(logs) > 1 {
 		// TODO verify if it can happen, and if we should handle it better
 		log.Error("Found more then one log when validating confirmed node", "node", node, "blockHash", blockHash, "logs", logs)
-		return errors.New("unexpected number of logs for node confirmation")
+		return false, errors.New("unexpected number of logs for node confirmation")
 	}
-
-	return nil
+	// TODO validate the log?
+	return true, nil
 }

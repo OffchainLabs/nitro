@@ -58,6 +58,7 @@ func NewNitroSyncHelper(config NitroSyncHelperConfigFetcher, bc *core.BlockChain
 		config:          config,
 		bc:              bc,
 		checkpointCache: NewCheckpointCache(int(config().CheckpointCache)),
+		newConfirmed:    make(chan Confirmed), // TODO
 	}
 }
 
@@ -86,8 +87,8 @@ func (h *NitroSyncHelper) Start(ctx context.Context) error {
 			select {
 			// TODO refactor the newConfirmed channel (might not be needed as confirmedNodeHelper should handle non blocking update propagation)
 			case c := <-h.newConfirmed:
-				if updated, previous := h.updateLastConfirmed(&c); updated {
-					h.scanNewConfirmedCheckpoints(ctx, &c, previous)
+				if err := h.updateLastConfirmed(ctx, &c); err != nil {
+					log.Error("Sync helper failed to update last confirmed", "err", err)
 				}
 			case <-ctx.Done():
 				return
@@ -98,37 +99,35 @@ func (h *NitroSyncHelper) Start(ctx context.Context) error {
 
 // returns true and previous value if last confirmed was updated
 // otherwise returns false and nil
-func (h *NitroSyncHelper) updateLastConfirmed(newConfirmed *Confirmed) (bool, *Confirmed) {
+func (h *NitroSyncHelper) updateLastConfirmed(ctx context.Context, newConfirmed *Confirmed) error {
 	// validate block hash
 	header := h.bc.GetHeaderByNumber(uint64(newConfirmed.BlockNumber))
 	newConfirmed.Header = header
 	if hash := header.Hash(); hash.Cmp(newConfirmed.BlockHash) != 0 {
-		log.Error("Confirmed BlockHash doesn't match header hash from blockchain", "blockNumber", newConfirmed.BlockNumber, "headerHash", hash, "confirmedBlockHash", newConfirmed.BlockHash)
-		return false, nil
+		return fmt.Errorf("confirmed BlockHash doesn't match header hash from blockchain, block #%d %s, confirmed %s", newConfirmed.BlockNumber, hash, newConfirmed.BlockHash)
 	}
 
 	h.lastConfirmedLock.Lock()
 	defer h.lastConfirmedLock.Unlock()
 	previousConfirmed := h.lastConfirmed
 	if previousConfirmed != nil {
-		if previousConfirmed.BlockNumber == newConfirmed.BlockNumber {
-			if previousConfirmed.BlockHash != newConfirmed.BlockHash || previousConfirmed.Node != newConfirmed.Node {
-				log.Error("New confirmed block number same as previous confirmed, but block hash and/or node number doesn't match", "blockNumber", newConfirmed.BlockNumber, "newConfirmedBlockHash", newConfirmed.BlockHash, "previousConfirmedBlockHash", previousConfirmed.BlockHash, "newConfirmedNode", newConfirmed.Node, "previousConfirmedNode", previousConfirmed.Node)
+		if newConfirmed.BlockNumber == previousConfirmed.BlockNumber {
+			if newConfirmed.BlockHash != previousConfirmed.BlockHash || newConfirmed.Node != previousConfirmed.Node {
+				return fmt.Errorf("New confirmed block number same as previous confirmed, but block hash and/or node number doesn't match, block #%d, previous %s node %d, new %s node %d", previousConfirmed.BlockNumber, previousConfirmed.BlockHash, previousConfirmed.Node, newConfirmed.BlockHash, newConfirmed.Node)
 			}
-			return false, nil
+			return nil
 		}
-		if previousConfirmed.BlockNumber > newConfirmed.BlockNumber {
-			log.Warn("New confirmed block number lower then previous confirmed block ", "newBlockNumber", newConfirmed.BlockNumber, "previousBlockNumber", previousConfirmed.BlockNumber, "newBlockHash", newConfirmed.BlockHash, "previousBlockHash", previousConfirmed.BlockHash, "newNode", newConfirmed.Node, "previousNode", previousConfirmed.Node)
+		if newConfirmed.BlockNumber < previousConfirmed.BlockNumber {
 			// TODO do we want to continue either way?
-			return false, nil
+			return fmt.Errorf("New confirmed block number lower then previous confirmed, previous block #%d %s node %d, new block #%d %s node %d", previousConfirmed.BlockNumber, previousConfirmed.BlockHash, previousConfirmed.Node, newConfirmed.BlockNumber, newConfirmed.BlockHash, newConfirmed.Node)
 		}
 	}
 	h.lastConfirmed = newConfirmed
-	return true, previousConfirmed
+	return h.scanNewConfirmedCheckpoints(ctx, newConfirmed, previousConfirmed)
 }
 
 // scan for new confirmed and available checkpoints and add them to cache
-func (h *NitroSyncHelper) scanNewConfirmedCheckpoints(ctx context.Context, newConfirmed *Confirmed, previousConfirmed *Confirmed) {
+func (h *NitroSyncHelper) scanNewConfirmedCheckpoints(ctx context.Context, newConfirmed *Confirmed, previousConfirmed *Confirmed) error {
 	period := int64(h.config().CheckpointPeriod)
 	var nextCheckpoint int64
 	if previousConfirmed == nil {
@@ -140,9 +139,8 @@ func (h *NitroSyncHelper) scanNewConfirmedCheckpoints(ctx context.Context, newCo
 	for nextCheckpoint <= newConfirmed.BlockNumber && ctx.Err() == nil {
 		header := h.bc.GetHeaderByNumber(uint64(nextCheckpoint))
 		if header == nil {
-			log.Error("missing block header", "blockNumber", nextCheckpoint)
 			// TODO should we continue and just skip this checkpoint?
-			return
+			return fmt.Errorf("missing header for block #%d", nextCheckpoint)
 		}
 		// TODO can we just use h.bc.StateAt?
 		if _, err := state.New(header.Root, h.bc.StateCache(), nil); err == nil {
@@ -150,6 +148,7 @@ func (h *NitroSyncHelper) scanNewConfirmedCheckpoints(ctx context.Context, newCo
 		}
 		nextCheckpoint += period
 	}
+	return nil
 }
 
 func GetForceTriedbCommitHookForConfig(config NitroSyncHelperConfigFetcher) core.ForceTriedbCommitHook {
@@ -216,10 +215,7 @@ func (h *NitroSyncHelper) ValidateConfirmed(header *types.Header, node uint64) (
 		return false, errors.New("confirmed node validator unavailable")
 	}
 	hash := header.Hash()
-	if err := h.confirmedNodeHelper.Validate(node, hash); err != nil {
-		return false, err
-	}
-	return true, nil
+	return h.confirmedNodeHelper.Validate(node, hash)
 }
 
 type Confirmed struct {

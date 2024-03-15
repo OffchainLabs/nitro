@@ -84,7 +84,7 @@ type TransactionStreamer interface {
 }
 
 type ConfirmedNodeHelper interface {
-	Validate(node uint64, blockHash common.Hash) error
+	Validate(node uint64, blockHash common.Hash) (bool, error)
 	SubscribeLatest(subscriber LatestConfirmedNotifier) error
 }
 
