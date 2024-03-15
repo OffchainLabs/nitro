@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/blobs"
 	"github.com/offchainlabs/nitro/util/jsonapi"
@@ -154,7 +155,9 @@ func (b *BlobClient) blobSidecars(ctx context.Context, slot uint64, versionedHas
 	}
 	var response []blobResponseItem
 	if err := json.Unmarshal(rawData, &response); err != nil {
-		return nil, fmt.Errorf("error unmarshalling raw data into array of blobResponseItem in blobSidecars: %w", err)
+		rawDataStr := string(rawData)
+		log.Trace("response from beacon URL cannot be unmarshalled into array of blobResponseItem in blobSidecars", "slot", slot, "response", rawDataStr)
+		return nil, fmt.Errorf("error unmarshalling response from beacon URL into array of blobResponseItem in blobSidecars: %w. Trailing 20 characters of the response: %s", err, rawDataStr[len(rawDataStr)-20:])
 	}
 
 	if len(response) < len(versionedHashes) {
