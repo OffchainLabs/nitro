@@ -3,7 +3,11 @@
 
 #![allow(clippy::missing_safety_doc)] // TODO: add safety docs
 
-use caller_env::{self, brotli::BrotliStatus, GuestPtr};
+use caller_env::{
+    self,
+    brotli::{BrotliStatus, Dictionary},
+    GuestPtr,
+};
 use paste::paste;
 
 macro_rules! wrap {
@@ -24,7 +28,20 @@ macro_rules! wrap {
 }
 
 wrap! {
-    fn brotli_decompress(in_buf_ptr: GuestPtr, in_buf_len: u32, out_buf_ptr: GuestPtr, out_len_ptr: GuestPtr) -> BrotliStatus;
+    fn brotli_decompress(
+        in_buf_ptr: GuestPtr,
+        in_buf_len: u32,
+        out_buf_ptr: GuestPtr,
+        out_len_ptr: GuestPtr,
+        dictionary: Dictionary
+    ) -> BrotliStatus;
 
-    fn brotli_compress(in_buf_ptr: GuestPtr, in_buf_len: u32, out_buf_ptr: GuestPtr, out_len_ptr: GuestPtr, level: u32, window_size: u32) -> BrotliStatus
+    fn brotli_compress(
+        in_buf_ptr: GuestPtr,
+        in_buf_len: u32,
+        out_buf_ptr: GuestPtr,
+        out_len_ptr: GuestPtr,
+        level: u32,
+        window_size: u32
+    ) -> BrotliStatus
 }

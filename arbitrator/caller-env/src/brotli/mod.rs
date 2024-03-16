@@ -17,13 +17,6 @@ type HeapItem = c_void;
 
 // one-shot brotli API
 extern "C" {
-    fn BrotliDecoderDecompress(
-        encoded_size: usize,
-        encoded_buffer: *const u8,
-        decoded_size: *mut usize,
-        decoded_buffer: *mut u8,
-    ) -> BrotliStatus;
-
     fn BrotliEncoderCompress(
         quality: u32,
         lgwin: u32,
@@ -59,8 +52,6 @@ extern "C" {
         out_len: *mut usize,
     ) -> BrotliStatus;
 
-    fn BrotliDecoderIsFinished(state: *const DecoderState) -> BrotliBool;
-
     fn BrotliDecoderDestroyInstance(state: *mut DecoderState);
 }
 
@@ -72,7 +63,7 @@ const BROTLI_MODE_GENERIC: u32 = 0;
 ///
 /// The output buffer must be sufficiently large.
 /// The pointers must not be null.
-pub fn brotli_decompress_with_dictionary<M: MemAccess, E: ExecEnv>(
+pub fn brotli_decompress<M: MemAccess, E: ExecEnv>(
     mem: &mut M,
     _env: &mut E,
     in_buf_ptr: GuestPtr,
@@ -98,7 +89,7 @@ pub fn brotli_decompress_with_dictionary<M: MemAccess, E: ExecEnv>(
             };
         }
 
-        if dictionary != Dictionary::None {
+        if dictionary != Dictionary::Empty {
             let attatched = BrotliDecoderAttachDictionary(
                 state,
                 BrotliSharedDictionaryType::Raw,
@@ -122,48 +113,12 @@ pub fn brotli_decompress_with_dictionary<M: MemAccess, E: ExecEnv>(
             &mut out_len as _,
         );
         require!(status == BrotliStatus::Success && out_len <= prior_out_len);
-        require!(BrotliDecoderIsFinished(state) == BrotliBool::True);
 
         BrotliDecoderDestroyInstance(state);
         output.set_len(out_len);
     }
     mem.write_slice(out_buf_ptr, &output[..out_len]);
     mem.write_u32(out_len_ptr, out_len as u32);
-    BrotliStatus::Success
-}
-
-/// Brotli decompresses a go slice.
-///
-/// # Safety
-///
-/// The output buffer must be sufficiently large.
-/// The pointers must not be null.
-pub fn brotli_decompress<M: MemAccess, E: ExecEnv>(
-    mem: &mut M,
-    _env: &mut E,
-    in_buf_ptr: GuestPtr,
-    in_buf_len: u32,
-    out_buf_ptr: GuestPtr,
-    out_len_ptr: GuestPtr,
-) -> BrotliStatus {
-    let in_slice = mem.read_slice(in_buf_ptr, in_buf_len as usize);
-    let orig_output_len = mem.read_u32(out_len_ptr) as usize;
-    let mut output = Vec::with_capacity(orig_output_len);
-    let mut output_len = orig_output_len;
-    unsafe {
-        let res = BrotliDecoderDecompress(
-            in_buf_len as usize,
-            in_slice.as_ptr(),
-            &mut output_len,
-            output.as_mut_ptr(),
-        );
-        if (res != BrotliStatus::Success) || (output_len > orig_output_len) {
-            return BrotliStatus::Failure;
-        }
-        output.set_len(output_len);
-    }
-    mem.write_slice(out_buf_ptr, &output[..output_len]);
-    mem.write_u32(out_len_ptr, output_len as u32);
     BrotliStatus::Success
 }
 

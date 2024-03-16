@@ -3,7 +3,6 @@
 
 #![allow(dead_code, clippy::len_without_is_empty)]
 
-use core::ptr;
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
 #[derive(PartialEq, IntoPrimitive, TryFromPrimitive)]
@@ -28,24 +27,24 @@ pub(super) enum BrotliSharedDictionaryType {
     Serialized,
 }
 
-#[derive(PartialEq)]
+#[derive(PartialEq, IntoPrimitive, TryFromPrimitive)]
 #[repr(u32)]
 pub enum Dictionary {
-    None,
+    Empty,
     StylusProgram,
 }
 
 impl Dictionary {
     pub fn len(&self) -> usize {
         match self {
-            Self::None => 0,
+            Self::Empty => 0,
             Self::StylusProgram => todo!(),
         }
     }
 
     pub fn data(&self) -> *const u8 {
         match self {
-            Self::None => ptr::null(),
+            Self::Empty => [].as_ptr(),
             Self::StylusProgram => todo!(),
         }
     }

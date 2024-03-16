@@ -1,7 +1,7 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::{ARGS, EVER_PAGES, KEYS, LOGS, OPEN_PAGES, OUTS, EVM_DATA};
+use crate::{ARGS, EVER_PAGES, EVM_DATA, KEYS, LOGS, OPEN_PAGES, OUTS};
 use arbutil::{
     evm::{
         api::{EvmApi, VecReader},

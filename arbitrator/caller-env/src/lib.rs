@@ -1,7 +1,7 @@
 // Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-#![no_std]
+#![cfg_attr(target_arch = "wasm32", no_std)]
 
 extern crate alloc;
 
