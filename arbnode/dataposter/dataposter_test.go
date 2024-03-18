@@ -9,9 +9,13 @@ import (
 	"time"
 
 	"github.com/Knetic/govaluate"
+	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/google/go-cmp/cmp"
 	"github.com/holiman/uint256"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsigner"
@@ -186,4 +190,95 @@ func TestMaxFeeCapFormulaCalculation(t *testing.T) {
 	if result.Cmp(big.NewInt(params.GWei)) <= 0 {
 		t.Fatalf("Unexpected result. Got: %d, want: >0", result)
 	}
+}
+
+type stubL1Client struct {
+	nonce     uint64
+	gasTipCap *big.Int
+
+	// Define most of the required methods that aren't used by feeAndTipCaps
+	backends.SimulatedBackend
+}
+
+func (c *stubL1Client) NonceAt(ctx context.Context, account common.Address, blockNumber *big.Int) (uint64, error) {
+	return c.nonce, nil
+}
+
+func (c *stubL1Client) SuggestGasTipCap(ctx context.Context) (*big.Int, error) {
+	return c.gasTipCap, nil
+}
+
+// Not used but we need to define
+func (c *stubL1Client) BlockNumber(ctx context.Context) (uint64, error) {
+	return 0, nil
+}
+
+func (c *stubL1Client) CallContractAtHash(ctx context.Context, msg ethereum.CallMsg, blockHash common.Hash) ([]byte, error) {
+	return []byte{}, nil
+}
+
+func (c *stubL1Client) ChainID(ctx context.Context) (*big.Int, error) {
+	return nil, nil
+}
+
+func (c *stubL1Client) Client() rpc.ClientInterface {
+	return nil
+}
+
+func (c *stubL1Client) TransactionSender(ctx context.Context, tx *types.Transaction, block common.Hash, index uint) (common.Address, error) {
+	return common.Address{}, nil
+}
+
+func TestFeeAndTipCaps(t *testing.T) {
+	conf := func() *DataPosterConfig {
+		return &DataPosterConfig{
+			MaxMempoolTransactions: 0,
+			MaxMempoolWeight:       0,
+			MinTipCapGwei:          0,
+			MinBlobTxTipCapGwei:    0,
+			MaxTipCapGwei:          0,
+			MaxBlobTxTipCapGwei:    0,
+			MaxFeeBidMultipleBips:  0,
+			AllocateMempoolBalance: false,
+		}
+	}
+	expression, err := govaluate.NewEvaluableExpression(DefaultDataPosterConfig.MaxFeeCapFormula)
+	if err != nil {
+		t.Fatalf("error creating govaluate evaluable expression: %v", err)
+	}
+
+	p := DataPoster{
+		config:           conf,
+		extraBacklog:     func() uint64 { return 0 },
+		balance:          big.NewInt(1_000_000_000_000_000_000),
+		usingNoOpStorage: false,
+		client: &stubL1Client{
+			nonce:     1,
+			gasTipCap: big.NewInt(2_000_000_000),
+		},
+		auth: &bind.TransactOpts{
+			From: common.Address{},
+		},
+		maxFeeCapExpression: expression,
+	}
+
+	ctx := context.Background()
+	var nonce uint64 = 1
+	var gasLimit uint64 = 30_000_000
+	var numBlobs uint64 = 0
+	var lastTx *types.Transaction
+	dataCreatedAt := time.Now()
+	var dataPosterBacklog uint64 = 0
+	var blobGasUsed uint64 = 100
+	var excessBlobGas uint64 = 100
+	latestHeader := types.Header{
+		Number:        big.NewInt(1),
+		BaseFee:       big.NewInt(1_000_000_000),
+		BlobGasUsed:   &blobGasUsed,
+		ExcessBlobGas: &excessBlobGas,
+	}
+
+	newGasFeeCap, newTipCap, newBlobFeeCap, err := p.feeAndTipCaps(ctx, nonce, gasLimit, numBlobs, lastTx, dataCreatedAt, dataPosterBacklog, &latestHeader)
+	_, _, _, _ = newGasFeeCap, newTipCap, newBlobFeeCap, err
+
 }
