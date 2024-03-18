@@ -1,6 +1,6 @@
 [workspace]
 members = [
-	"brotli",
+	"arbcompress",
 	"wasi-stub",
 	"host-io",
 	"user-host",

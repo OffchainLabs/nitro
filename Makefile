@@ -52,7 +52,7 @@ replay_deps=arbos wavmio arbstate arbcompress solgen/go/node-interfacegen blsSig
 replay_wasm=$(output_latest)/replay.wasm
 
 arbitrator_generated_header=$(output_root)/include/arbitrator.h
-arbitrator_wasm_libs=$(patsubst %, $(output_root)/machines/latest/%.wasm, forward wasi_stub host_io soft-float brotli user_host program_exec)
+arbitrator_wasm_libs=$(patsubst %, $(output_root)/machines/latest/%.wasm, forward wasi_stub host_io soft-float arbcompress user_host program_exec)
 arbitrator_stylus_lib=$(output_root)/lib/libstylus.a
 prover_bin=$(output_root)/bin/prover
 arbitrator_jit=$(output_root)/bin/jit
@@ -74,11 +74,11 @@ WASI_SYSROOT?=/opt/wasi-sdk/wasi-sysroot
 
 arbitrator_wasm_lib_flags=$(patsubst %, -l %, $(arbitrator_wasm_libs))
 
-rust_arbutil_files = $(wildcard arbitrator/arbutil/src/*.* arbitrator/arbutil/src/*/*.* arbitrator/arbutil/*.toml arbitrator/caller-env/src/*.* arbitrator/caller-env/src/*/*.* arbitrator/caller-env/*.toml)
+rust_arbutil_files = $(wildcard arbitrator/arbutil/src/*.* arbitrator/arbutil/src/*/*.* arbitrator/arbutil/*.toml arbitrator/caller-env/src/*.* arbitrator/caller-env/src/*/*.* arbitrator/caller-env/*.toml) .make/cbrotli-lib
 
 prover_direct_includes = $(patsubst %,$(output_latest)/%.wasm, forward forward_stub)
-prover_src = arbitrator/prover/src
-rust_prover_files = $(wildcard $(prover_src)/*.* $(prover_src)/*/*.* arbitrator/prover/*.toml) $(rust_arbutil_files) $(prover_direct_includes)
+prover_dir = arbitrator/prover/
+rust_prover_files = $(wildcard $(prover_dir)/src/*.* $(prover_dir)/src/*/*.* $(prover_dir)/*.toml $(prover_dir)/*.rs) $(rust_arbutil_files) $(prover_direct_includes)
 
 wasm_lib = arbitrator/wasm-libraries
 wasm_lib_deps = $(wildcard $(wasm_lib)/$(1)/*.toml $(wasm_lib)/$(1)/src/*.rs $(wasm_lib)/$(1)/*.rs) $(rust_arbutil_files) .make/machines
@@ -274,7 +274,7 @@ $(arbitrator_stylus_lib): $(DEP_PREDICATE) $(stylus_files)
 	cargo build --manifest-path arbitrator/Cargo.toml --release --lib -p stylus ${CARGOFLAGS}
 	install arbitrator/target/release/libstylus.a $@
 
-$(arbitrator_jit): $(DEP_PREDICATE) .make/cbrotli-lib $(jit_files)
+$(arbitrator_jit): $(DEP_PREDICATE) $(jit_files)
 	mkdir -p `dirname $(arbitrator_jit)`
 	cargo build --manifest-path arbitrator/Cargo.toml --release -p jit ${CARGOFLAGS}
 	install arbitrator/target/release/jit $@
@@ -349,9 +349,9 @@ $(output_latest)/user_test.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,user-test
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package user-test
 	install arbitrator/wasm-libraries/$(wasm32_wasi)/user_test.wasm $@
 
-$(output_latest)/brotli.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,brotli) $(wasm_lib_go_abi) .make/cbrotli-wasm
-	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package brotli
-	install arbitrator/wasm-libraries/$(wasm32_wasi)/brotli.wasm $@
+$(output_latest)/arbcompress.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,brotli) $(wasm_lib_go_abi) .make/cbrotli-wasm
+	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package arbcompress
+	install arbitrator/wasm-libraries/$(wasm32_wasi)/arbcompress.wasm $@
 
 $(output_latest)/forward.wasm: $(DEP_PREDICATE) $(wasm_lib_forward) .make/machines
 	cargo run --manifest-path $(forward_dir)/Cargo.toml -- --path $(forward_dir)/forward.wat
@@ -363,7 +363,7 @@ $(output_latest)/forward_stub.wasm: $(DEP_PREDICATE) $(wasm_lib_forward) .make/m
 
 $(output_latest)/machine.wavm.br: $(DEP_PREDICATE) $(prover_bin) $(arbitrator_wasm_libs) $(replay_wasm)
 	$(prover_bin) $(replay_wasm) --generate-binaries $(output_latest) \
-	$(patsubst %,-l $(output_latest)/%.wasm, forward soft-float wasi_stub host_io user_host brotli program_exec)
+	$(patsubst %,-l $(output_latest)/%.wasm, forward soft-float wasi_stub host_io user_host arbcompress program_exec)
 
 $(arbitrator_cases)/%.wasm: $(arbitrator_cases)/%.wat
 	wat2wasm $< -o $@

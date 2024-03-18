@@ -27,9 +27,9 @@ lazy_static = "1.4.0"
 itertools = "0.10.5"
 wat = "1.0.56"
 smallvec = { version = "1.10.0", features = ["serde"] }
-brotli2 = { version = "0.3.2", optional = true }
 rayon = { version = "1.5.1", optional = true }
 arbutil = { path = "../arbutil/" }
+brotli = { path = "../brotli/" }
 wasmer = { path = "../tools/wasmer/lib/api", optional = true }
 wasmer-types = { path = "../tools/wasmer/lib/types" }
 wasmer-compiler-singlepass = { path = "../tools/wasmer/lib/compiler-singlepass", optional = true, default-features = false, features = ["std", "unwind", "avx"] }
@@ -43,6 +43,6 @@ crate-type = ["staticlib", "lib"]
 
 [features]
 default = ["native", "rayon", "singlepass_rayon"]
-native = ["dep:wasmer", "dep:wasmer-compiler-singlepass", "dep:brotli2"]
+native = ["dep:wasmer", "dep:wasmer-compiler-singlepass", "brotli/wasmer_traits"]
 singlepass_rayon = ["wasmer-compiler-singlepass?/rayon"]
 rayon = ["dep:rayon"]

@@ -8,7 +8,6 @@ extern crate alloc;
 use alloc::vec::Vec;
 use rand_pcg::Pcg32;
 
-pub use brotli::BrotliStatus;
 pub use guest_ptr::GuestPtr;
 pub use wasip1_stub::Errno;
 

@@ -13,7 +13,7 @@ pub fn time(span: Duration) -> String {
 
     let mut span = span.as_nanos() as f64;
     let mut unit = 0;
-    let units = vec![
+    let units = [
         "ns", "μs", "ms", "s", "min", "h", "d", "w", "mo", "yr", "dec", "cent", "mill", "eon",
     ];
     let scale = [

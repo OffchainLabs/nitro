@@ -1396,11 +1396,17 @@ impl Machine {
         Ok(mach)
     }
 
-    #[cfg(feature = "native")]
     pub fn new_from_wavm(wavm_binary: &Path) -> Result<Machine> {
-        let f = BufReader::new(File::open(wavm_binary)?);
-        let decompressor = brotli2::read::BrotliDecoder::new(f);
-        let mut modules: Vec<Module> = bincode::deserialize_from(decompressor)?;
+        let mut modules: Vec<Module> = {
+            use brotli::Dictionary;
+            let compressed = std::fs::read(wavm_binary)?;
+            let mut modules = vec![];
+            if !brotli::decompress(&compressed, &mut modules, Dictionary::Empty, true).is_ok() {
+                bail!("failed to decompress wavm binary");
+            }
+            bincode::deserialize(&modules)?
+        };
+
         for module in modules.iter_mut() {
             for table in module.tables.iter_mut() {
                 table.elems_merkle = Merkle::new(
@@ -1451,18 +1457,20 @@ impl Machine {
         Ok(mach)
     }
 
-    #[cfg(feature = "native")]
     pub fn serialize_binary<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         ensure!(
             self.hash() == self.initial_hash,
             "serialize_binary can only be called on initial machine",
         );
-        let mut f = File::create(path)?;
-        let mut compressor = brotli2::write::BrotliEncoder::new(BufWriter::new(&mut f), 9);
-        bincode::serialize_into(&mut compressor, &self.modules)?;
-        compressor.flush()?;
-        drop(compressor);
-        f.sync_data()?;
+        let modules = bincode::serialize(&self.modules)?;
+        let window = brotli::DEFAULT_WINDOW_SIZE;
+        let mut output = Vec::with_capacity(2 * modules.len());
+        if !brotli::compress(&modules, &mut output, 9, window).is_ok() {
+            bail!("failed to compress binary");
+        }
+
+        let mut file = File::create(path)?;
+        file.write_all(&output)?;
         Ok(())
     }
 

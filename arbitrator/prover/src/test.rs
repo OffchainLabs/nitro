@@ -4,6 +4,8 @@
 #![cfg(test)]
 
 use crate::binary;
+use brotli::Dictionary;
+use eyre::Result;
 use std::path::Path;
 
 fn as_wasm(wat: &str) -> Vec<u8> {
@@ -51,4 +53,24 @@ pub fn reject_ambiguous_imports() {
         )"#,
     );
     let _ = binary::parse(&wasm, Path::new("")).unwrap_err();
+}
+
+#[test]
+pub fn test_compress() -> Result<()> {
+    let data = std::fs::read("test-cases/block.wat")?;
+    let dict = Dictionary::Empty;
+
+    let deflate = &mut Vec::with_capacity(data.len());
+    assert!(brotli::compress(&data, deflate, 0, 22).is_ok());
+    assert!(!deflate.is_empty());
+
+    let inflate = &mut Vec::with_capacity(data.len());
+    assert!(brotli::decompress(deflate, inflate, dict, false).is_ok());
+    assert_eq!(hex::encode(inflate), hex::encode(&data));
+
+    let inflate = &mut vec![];
+    assert!(brotli::decompress(deflate, inflate, dict, false).is_err());
+    assert!(brotli::decompress(deflate, inflate, dict, true).is_ok());
+    assert_eq!(hex::encode(inflate), hex::encode(&data));
+    Ok(())
 }

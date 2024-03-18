@@ -1,14 +1,15 @@
 [package]
 name = "caller-env"
 version = "0.1.0"
-edition = "2021"
+edition.workspace = true
 
 [dependencies]
-num_enum = { version = "0.7.2", default-features = false }
+brotli.path = "../brotli/"
+num_enum.workspace = true
 rand_pcg = { version = "0.3.1", default-features = false }
 rand = { version = "0.8.4", default-features = false }
 wasmer = { path = "../tools/wasmer/lib/api", optional = true }
 
 [features]
 static_caller = []
-wasmer_traits = ["dep:wasmer"]
+wasmer_traits = ["dep:wasmer", "brotli/wasmer_traits"]

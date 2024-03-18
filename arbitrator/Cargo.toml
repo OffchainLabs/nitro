@@ -1,6 +1,7 @@
 [workspace]
 members = [
         "arbutil",
+        "brotli",
         "caller-env",
         "prover",
         "stylus",
@@ -21,6 +22,7 @@ repository = "https://github.com/OffchainLabs/nitro.git"
 rust-version = "1.67"
 
 [workspace.dependencies]
+num_enum = { version = "0.7.2", default-features = false }
 wasmparser = "0.95"
 
 [profile.release]

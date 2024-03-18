@@ -3,11 +3,8 @@
 
 #![allow(clippy::missing_safety_doc)] // TODO: add safety docs
 
-use caller_env::{
-    self,
-    brotli::{BrotliStatus, Dictionary},
-    GuestPtr,
-};
+use brotli::{BrotliStatus, Dictionary};
+use caller_env::{self, GuestPtr};
 use paste::paste;
 
 macro_rules! wrap {

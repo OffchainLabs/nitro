@@ -5,11 +5,26 @@
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
 
+pub const BROTLI_MODE_GENERIC: u32 = 0;
+pub const DEFAULT_WINDOW_SIZE: u32 = 22;
+
 #[derive(PartialEq, IntoPrimitive, TryFromPrimitive)]
 #[repr(u32)]
 pub enum BrotliStatus {
     Failure,
     Success,
+    NeedsMoreInput,
+    NeedsMoreOutput,
+}
+
+impl BrotliStatus {
+    pub fn is_ok(&self) -> bool {
+        self == &Self::Success
+    }
+
+    pub fn is_err(&self) -> bool {
+        !self.is_ok()
+    }
 }
 
 #[derive(PartialEq)]
@@ -27,7 +42,7 @@ pub(super) enum BrotliSharedDictionaryType {
     Serialized,
 }
 
-#[derive(PartialEq, IntoPrimitive, TryFromPrimitive)]
+#[derive(Clone, Copy, PartialEq, IntoPrimitive, TryFromPrimitive)]
 #[repr(u32)]
 pub enum Dictionary {
     Empty,

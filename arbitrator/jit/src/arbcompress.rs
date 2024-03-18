@@ -4,7 +4,7 @@
 use crate::caller_env::{JitEnv, JitExecEnv};
 use crate::machine::Escape;
 use crate::machine::WasmEnvMut;
-use caller_env::brotli::{BrotliStatus, Dictionary};
+use brotli::{BrotliStatus, Dictionary};
 use caller_env::{self, GuestPtr};
 
 macro_rules! wrap {

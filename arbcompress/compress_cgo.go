@@ -17,36 +17,82 @@ import (
 	"fmt"
 )
 
+type u8 = C.uint8_t
+type usize = C.size_t
+
+type brotliBool = uint32
+
+const (
+	brotliFalse brotliBool = iota
+	brotliTrue
+)
+
+const (
+	rawSharedDictionary        C.BrotliSharedDictionaryType = iota // LZ77 prefix dictionary
+	serializedSharedDictionary                                     // Serialized dictionary
+)
+
+func (d Dictionary) data() []byte {
+	return []byte{}
+}
+
 func Decompress(input []byte, maxSize int) ([]byte, error) {
-	outbuf := make([]byte, maxSize)
-	outsize := C.size_t(maxSize)
-	var ptr *C.uint8_t
-	if len(input) > 0 {
-		ptr = (*C.uint8_t)(&input[0])
+	return DecompressWithDictionary(input, maxSize, EmptyDictionary)
+}
+
+func DecompressWithDictionary(input []byte, maxSize int, dictionary Dictionary) ([]byte, error) {
+	state := C.BrotliDecoderCreateInstance(nil, nil, nil)
+	defer C.BrotliDecoderDestroyInstance(state)
+
+	if dictionary != EmptyDictionary {
+		data := dictionary.data()
+		attached := C.BrotliDecoderAttachDictionary(
+			state,
+			rawSharedDictionary,
+			usize(len(data)),
+			sliceToPointer(data),
+		)
+		if uint32(attached) != brotliTrue {
+			return nil, fmt.Errorf("failed decompression: failed to attach dictionary")
+		}
 	}
-	res := C.BrotliDecoderDecompress(C.size_t(len(input)), ptr, &outsize, (*C.uint8_t)(&outbuf[0]))
-	if uint32(res) != BrotliSuccess {
-		return nil, fmt.Errorf("failed decompression: %d", res)
+
+	inLen := usize(len(input))
+	inPtr := sliceToPointer(input)
+	output := make([]byte, maxSize)
+	outLen := usize(maxSize)
+	outLeft := usize(len(output))
+	outPtr := sliceToPointer(output)
+
+	status := C.BrotliDecoderDecompressStream(
+		state,
+		&inLen,
+		&inPtr,
+		&outLeft,
+		&outPtr,
+		&outLen, //nolint:gocritic
+	)
+	if uint32(status) != brotliSuccess {
+		return nil, fmt.Errorf("failed decompression: failed streaming: %d", status)
 	}
-	if int(outsize) > maxSize {
-		return nil, fmt.Errorf("result too large: %d", outsize)
+	if int(outLen) > maxSize {
+		return nil, fmt.Errorf("failed decompression: result too large: %d", outLen)
 	}
-	return outbuf[:outsize], nil
+	return output[:outLen], nil
 }
 
 func compressLevel(input []byte, level int) ([]byte, error) {
 	maxOutSize := compressedBufferSizeFor(len(input))
 	outbuf := make([]byte, maxOutSize)
 	outSize := C.size_t(maxOutSize)
-	var inputPtr *C.uint8_t
-	if len(input) > 0 {
-		inputPtr = (*C.uint8_t)(&input[0])
-	}
+	inputPtr := sliceToPointer(input)
+	outPtr := sliceToPointer(outbuf)
+
 	res := C.BrotliEncoderCompress(
 		C.int(level), C.BROTLI_DEFAULT_WINDOW, C.BROTLI_MODE_GENERIC,
-		C.size_t(len(input)), inputPtr, &outSize, (*C.uint8_t)(&outbuf[0]),
+		C.size_t(len(input)), inputPtr, &outSize, outPtr,
 	)
-	if uint32(res) != BrotliSuccess {
+	if uint32(res) != brotliSuccess {
 		return nil, fmt.Errorf("failed compression: %d", res)
 	}
 	return outbuf[:outSize], nil
@@ -54,4 +100,11 @@ func compressLevel(input []byte, level int) ([]byte, error) {
 
 func CompressWell(input []byte) ([]byte, error) {
 	return compressLevel(input, LEVEL_WELL)
+}
+
+func sliceToPointer(slice []byte) *u8 {
+	if len(slice) == 0 {
+		slice = []byte{0x00} // ensures pointer is not null (shouldn't be necessary, but brotli docs are picky about NULL)
+	}
+	return (*u8)(&slice[0])
 }

@@ -23,6 +23,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "arbcompress"
+version = "0.1.0"
+dependencies = [
+ "brotli",
+ "caller-env",
+ "paste",
+]
+
+[[package]]
 name = "arbutil"
 version = "0.1.0"
 dependencies = [
@@ -108,8 +117,7 @@ checksum = "8d696c370c750c948ada61c69a0ee2cbbb9c50b1019ddb86d9317157a99c2cae"
 name = "brotli"
 version = "0.1.0"
 dependencies = [
- "caller-env",
- "paste",
+ "num_enum",
 ]
 
 [[package]]
@@ -138,6 +146,7 @@ dependencies = [
 name = "caller-env"
 version = "0.1.0"
 dependencies = [
+ "brotli",
  "num_enum",
  "rand",
  "rand_pcg",
@@ -780,6 +789,7 @@ version = "0.1.0"
 dependencies = [
  "arbutil",
  "bincode",
+ "brotli",
  "derivative",
  "digest",
  "eyre",
