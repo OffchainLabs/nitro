@@ -50,5 +50,4 @@ func TestPendingBlockArbBlockHashReturnsLatest(t *testing.T) {
 
 	_, err = pendingBlk.CheckArbBlockHashReturnsLatest(&auth, header.Hash())
 	Require(t, err)
-
 }
