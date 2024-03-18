@@ -134,7 +134,11 @@ func (b *BlobClient) GetBlobs(ctx context.Context, blockHash common.Hash, versio
 		return nil, errors.New("BlobClient hasn't been initialized")
 	}
 	slot := (header.Time - b.genesisTime) / b.secondsPerSlot
-	return b.blobSidecars(ctx, slot, versionedHashes)
+	blobs, err := b.blobSidecars(ctx, slot, versionedHashes)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching blobs in %d l1 block: %w", header.Number, err)
+	}
+	return blobs, nil
 }
 
 type blobResponseItem struct {
