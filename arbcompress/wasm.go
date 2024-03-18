@@ -46,7 +46,7 @@ func DecompressWithDictionary(input []byte, maxSize int, dictionary Dictionary) 
 	return outBuf[:outLen], nil
 }
 
-func compressLevel(input []byte, level uint32) ([]byte, error) {
+func compressLevel(input []byte, level uint32, dictionary Dictionary) ([]byte, error) {
 	maxOutSize := compressedBufferSizeFor(len(input))
 	outBuf := make([]byte, maxOutSize)
 	outLen := uint32(len(outBuf))

@@ -20,17 +20,21 @@ pub fn brotli_compress<M: MemAccess, E: ExecEnv>(
     out_len_ptr: GuestPtr,
     level: u32,
     window_size: u32,
+    dictionary: Dictionary,
 ) -> BrotliStatus {
     let input = mem.read_slice(in_buf_ptr, in_buf_len as usize);
     let mut output = Vec::with_capacity(mem.read_u32(out_len_ptr) as usize);
 
-    let status = brotli::compress(&input, &mut output, level, window_size);
-    if status.is_ok() {
-        let out_len = output.len();
-        mem.write_slice(out_buf_ptr, &output[..out_len]);
-        mem.write_u32(out_len_ptr, out_len as u32);
+    let status = brotli::compress_fixed(&input, &mut output, level, window_size, dictionary);
+    match status {
+        Ok(written) => unsafe {
+            output.set_len(written);
+            mem.write_slice(out_buf_ptr, &output[..written]);
+            mem.write_u32(out_len_ptr, written as u32);
+            BrotliStatus::Success
+        },
+        Err(status) => status,
     }
-    status
 }
 
 /// Brotli decompresses a go slice using a custom dictionary.
@@ -51,11 +55,14 @@ pub fn brotli_decompress<M: MemAccess, E: ExecEnv>(
     let input = mem.read_slice(in_buf_ptr, in_buf_len as usize);
     let mut output = Vec::with_capacity(mem.read_u32(out_len_ptr) as usize);
 
-    let status = brotli::decompress(&input, &mut output, dictionary, false);
-    if status.is_ok() {
-        let out_len = output.len();
-        mem.write_slice(out_buf_ptr, &output[..out_len]);
-        mem.write_u32(out_len_ptr, out_len as u32);
+    let status = brotli::decompress_fixed(&input, &mut output, dictionary);
+    match status {
+        Ok(written) => unsafe {
+            output.set_len(written);
+            mem.write_slice(out_buf_ptr, &output[..written]);
+            mem.write_u32(out_len_ptr, written as u32);
+            BrotliStatus::Success
+        },
+        Err(status) => status,
     }
-    status
 }

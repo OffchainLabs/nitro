@@ -8,7 +8,7 @@ package arbcompress
 
 /*
 #cgo CFLAGS: -g -Wall -I${SRCDIR}/../target/include/
-#cgo LDFLAGS: ${SRCDIR}/../target/lib/libbrotli.a -lm
+#cgo LDFLAGS: ${SRCDIR}/../target/lib/libstylus.a -lm
 #include "arb_brotli.h"
 */
 import "C"
@@ -47,10 +47,10 @@ func DecompressWithDictionary(input []byte, maxSize int, dictionary Dictionary) 
 }
 
 func CompressWell(input []byte) ([]byte, error) {
-	return compressLevel(input, EmptyDictionary, LEVEL_WELL)
+	return compressLevel(input, LEVEL_WELL, EmptyDictionary)
 }
 
-func compressLevel(input []byte, dictionary Dictionary, level int) ([]byte, error) {
+func compressLevel(input []byte, level int, dictionary Dictionary) ([]byte, error) {
 	maxSize := compressedBufferSizeFor(len(input))
 	output := make([]byte, maxSize)
 	outbuf := sliceToBuffer(output)

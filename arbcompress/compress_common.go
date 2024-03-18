@@ -19,5 +19,5 @@ func compressedBufferSizeFor(length int) int {
 }
 
 func CompressFast(input []byte) ([]byte, error) {
-	return compressLevel(input, EmptyDictionary, LEVEL_FAST)
+	return compressLevel(input, LEVEL_FAST, EmptyDictionary)
 }

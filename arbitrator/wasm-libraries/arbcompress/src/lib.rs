@@ -39,6 +39,7 @@ wrap! {
         out_buf_ptr: GuestPtr,
         out_len_ptr: GuestPtr,
         level: u32,
-        window_size: u32
+        window_size: u32,
+        dictionary: Dictionary
     ) -> BrotliStatus
 }

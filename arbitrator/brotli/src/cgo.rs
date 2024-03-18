@@ -2,13 +2,14 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{BrotliStatus, Dictionary, DEFAULT_WINDOW_SIZE};
+use core::slice;
 
 #[derive(Clone, Copy)]
 #[repr(C)]
 pub struct BrotliBuffer {
     /// Points to data owned by Go.
     ptr: *mut u8,
-    /// The length in bytes. 
+    /// The length in bytes.
     len: *mut usize,
 }
 
@@ -18,7 +19,7 @@ impl BrotliBuffer {
         if len == 0 {
             return &[];
         }
-        unsafe { std::slice::from_raw_parts(self.ptr, len) }
+        unsafe { slice::from_raw_parts(self.ptr, len) }
     }
 
     fn as_mut_slice(&mut self) -> &mut [u8] {
@@ -26,7 +27,7 @@ impl BrotliBuffer {
         if len == 0 {
             return &mut [];
         }
-        unsafe { std::slice::from_raw_parts_mut(self.ptr, len) }
+        unsafe { slice::from_raw_parts_mut(self.ptr, len) }
     }
 }
 

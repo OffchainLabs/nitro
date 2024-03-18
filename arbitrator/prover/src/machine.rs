@@ -322,6 +322,7 @@ impl Module {
         let mut memory = Memory::default();
         let mut tables = Vec::new();
         let mut host_call_hooks = Vec::new();
+        let bin_name = &bin.names.module;
         for import in &bin.imports {
             let module = import.module;
             let have_ty = &bin.types[import.offset as usize];
@@ -357,15 +358,16 @@ impl Module {
                 hostio
             } else {
                 bail!(
-                    "No such import {} in {}",
+                    "No such import {} in {} for {}",
                     import_name.red(),
-                    import.module.red()
+                    import.module.red(),
+                    bin_name.red()
                 )
             };
             ensure!(
                 &func.ty == have_ty,
                 "Import {} for {} has different function signature than export.\nexpected {}\nbut have {}",
-                import_name.red(), bin.names.module.red(), func.ty.red(), have_ty.red(),
+                import_name.red(), bin_name.red(), func.ty.red(), have_ty.red(),
             );
 
             func_type_idxs.push(import.offset);
@@ -1401,7 +1403,7 @@ impl Machine {
             use brotli::Dictionary;
             let compressed = std::fs::read(wavm_binary)?;
             let mut modules = vec![];
-            if !brotli::decompress(&compressed, &mut modules, Dictionary::Empty, true).is_ok() {
+            if brotli::decompress(&compressed, &mut modules, Dictionary::Empty).is_err() {
                 bail!("failed to decompress wavm binary");
             }
             bincode::deserialize(&modules)?
@@ -1465,7 +1467,7 @@ impl Machine {
         let modules = bincode::serialize(&self.modules)?;
         let window = brotli::DEFAULT_WINDOW_SIZE;
         let mut output = Vec::with_capacity(2 * modules.len());
-        if !brotli::compress(&modules, &mut output, 9, window).is_ok() {
+        if brotli::compress(&modules, &mut output, 9, window).is_err() {
             bail!("failed to compress binary");
         }
 
