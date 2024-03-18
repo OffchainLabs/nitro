@@ -30,6 +30,10 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 		Fail(t, "unknown storage type")
 	}
 
+	dbConfig := DefaultLocalDBStorageConfig
+	dbConfig.Enable = enableDbStorage
+	dbConfig.DataDir = dbPath
+
 	config := DataAvailabilityConfig{
 		Enable: true,
 		Key: KeyConfig{
@@ -39,10 +43,7 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 			Enable:  enableFileStorage,
 			DataDir: dbPath,
 		},
-		LocalDBStorage: LocalDBStorageConfig{
-			Enable:  enableDbStorage,
-			DataDir: dbPath,
-		},
+		LocalDBStorage:     dbConfig,
 		ParentChainNodeURL: "none",
 	}
 
@@ -122,6 +123,10 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 		Fail(t, "unknown storage type")
 	}
 
+	dbConfig := DefaultLocalDBStorageConfig
+	dbConfig.Enable = enableDbStorage
+	dbConfig.DataDir = dbPath
+
 	config := DataAvailabilityConfig{
 		Enable: true,
 		Key: KeyConfig{
@@ -131,10 +136,7 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 			Enable:  enableFileStorage,
 			DataDir: dbPath,
 		},
-		LocalDBStorage: LocalDBStorageConfig{
-			Enable:  enableDbStorage,
-			DataDir: dbPath,
-		},
+		LocalDBStorage:     dbConfig,
 		ParentChainNodeURL: "none",
 	}
 
