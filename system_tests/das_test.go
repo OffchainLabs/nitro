@@ -253,6 +253,10 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	pubkey, _, err := das.GenerateAndStoreKeys(keyDir)
 	Require(t, err)
 
+	dbConfig := das.DefaultLocalDBStorageConfig
+	dbConfig.Enable = true
+	dbConfig.DataDir = dbDataDir
+
 	serverConfig := das.DataAvailabilityConfig{
 		Enable: true,
 
@@ -262,10 +266,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 			Enable:  true,
 			DataDir: fileDataDir,
 		},
-		LocalDBStorage: das.LocalDBStorageConfig{
-			Enable:  true,
-			DataDir: dbDataDir,
-		},
+		LocalDBStorage: dbConfig,
 
 		Key: das.KeyConfig{
 			KeyDir: keyDir,
