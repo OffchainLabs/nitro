@@ -3,13 +3,6 @@
 
 package arbcompress
 
-type brotliStatus = uint32
-
-const (
-	brotliFailure brotliStatus = iota
-	brotliSuccess
-)
-
 type Dictionary uint32
 
 const (
@@ -26,5 +19,5 @@ func compressedBufferSizeFor(length int) int {
 }
 
 func CompressFast(input []byte) ([]byte, error) {
-	return compressLevel(input, LEVEL_FAST)
+	return compressLevel(input, EmptyDictionary, LEVEL_FAST)
 }

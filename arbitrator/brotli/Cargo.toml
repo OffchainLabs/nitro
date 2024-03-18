@@ -12,5 +12,8 @@ rust-version.workspace = true
 num_enum.workspace = true
 wasmer = { path = "../tools/wasmer/lib/api", optional = true }
 
+[lib]
+crate-type = ["lib", "staticlib"]
+
 [features]
 wasmer_traits = ["dep:wasmer"]

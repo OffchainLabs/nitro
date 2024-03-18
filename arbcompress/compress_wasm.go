@@ -13,6 +13,13 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
+type brotliStatus = uint32
+
+const (
+	brotliFailure brotliStatus = iota
+	brotliSuccess
+)
+
 //go:wasmimport arbcompress brotli_compress
 func brotliCompress(inBuf unsafe.Pointer, inBufLen uint32, outBuf unsafe.Pointer, outBufLen unsafe.Pointer, level, windowSize uint32) brotliStatus
 

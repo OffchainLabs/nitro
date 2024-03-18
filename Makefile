@@ -51,6 +51,10 @@ replay_deps=arbos wavmio arbstate arbcompress solgen/go/node-interfacegen blsSig
 
 replay_wasm=$(output_latest)/replay.wasm
 
+arb_brotli_lib = $(output_root)/lib/libbrotli.a
+brotli_cgo_header = $(output_root)/include/arb_brotli.h
+arb_brotli_files = $(wildcard arbitrator/brotli/src/*.* arbitrator/brotli/src/*/*.* arbitrator/brotli/*.toml arbitrator/brotli/*.rs) .make/cbrotli-lib
+
 arbitrator_generated_header=$(output_root)/include/arbitrator.h
 arbitrator_wasm_libs=$(patsubst %, $(output_root)/machines/latest/%.wasm, forward wasi_stub host_io soft-float arbcompress user_host program_exec)
 arbitrator_stylus_lib=$(output_root)/lib/libstylus.a
@@ -157,12 +161,13 @@ build-node-deps: $(go_source) build-prover-header build-prover-lib build-jit .ma
 test-go-deps: \
 	build-replay-env \
 	$(stylus_test_wasms) \
+	$(arb_brotli_lib) \
 	$(arbitrator_stylus_lib) \
 	$(patsubst %,$(arbitrator_cases)/%.wasm, global-state read-inboxmsg-10 global-state-wrapper const)
 
-build-prover-header: $(arbitrator_generated_header)
+build-prover-header: $(arbitrator_generated_header) $(brotli_cgo_header)
 
-build-prover-lib: $(arbitrator_stylus_lib)
+build-prover-lib: $(arbitrator_stylus_lib) $(arb_brotli_lib)
 
 build-prover-bin: $(prover_bin)
 
@@ -269,6 +274,11 @@ $(prover_bin): $(DEP_PREDICATE) $(rust_prover_files)
 	cargo build --manifest-path arbitrator/Cargo.toml --release --bin prover ${CARGOFLAGS}
 	install arbitrator/target/release/prover $@
 
+$(arb_brotli_lib): $(DEP_PREDICATE) $(arb_brotli_files)
+	mkdir -p `dirname $(arb_brotli_lib)`
+	cargo build --manifest-path arbitrator/Cargo.toml --release --lib -p brotli ${CARGOFLAGS}
+	install arbitrator/target/release/libbrotli.a $@
+
 $(arbitrator_stylus_lib): $(DEP_PREDICATE) $(stylus_files)
 	mkdir -p `dirname $(arbitrator_stylus_lib)`
 	cargo build --manifest-path arbitrator/Cargo.toml --release --lib -p stylus ${CARGOFLAGS}
@@ -289,6 +299,12 @@ $(arbitrator_generated_header): $(DEP_PREDICATE) $(stylus_files)
 	@echo creating ${PWD}/$(arbitrator_generated_header)
 	mkdir -p `dirname $(arbitrator_generated_header)`
 	cd arbitrator/stylus && cbindgen --config cbindgen.toml --crate stylus --output ../../$(arbitrator_generated_header)
+	@touch -c $@ # cargo might decide to not rebuild the header
+
+$(brotli_cgo_header): $(DEP_PREDICATE) $(arb_brotli_files)
+	@echo creating ${PWD}/$(brotli_cgo_header)
+	mkdir -p `dirname $(brotli_cgo_header)`
+	cd arbitrator/brotli && cbindgen --config cbindgen.toml --crate brotli --output ../../$(brotli_cgo_header)
 	@touch -c $@ # cargo might decide to not rebuild the header
 
 $(output_latest)/wasi_stub.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,wasi-stub)
