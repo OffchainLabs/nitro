@@ -52,13 +52,15 @@ import (
 )
 
 var (
-	batchPosterWalletBalance          = metrics.NewRegisteredGaugeFloat64("arb/batchposter/wallet/balanceether", nil)
-	batchPosterGasRefunderBalance     = metrics.NewRegisteredGaugeFloat64("arb/batchposter/gasrefunder/balanceether", nil)
-	baseFeeGauge                      = metrics.NewRegisteredGauge("arb/batchposter/basefee", nil)
-	blobFeeGauge                      = metrics.NewRegisteredGauge("arb/batchposter/blobfee", nil)
-	blockGasUsedPerBlockGasLimitGauge = metrics.NewRegisteredGaugeFloat64("arb/batchposter/blockgasusedperblockgaslimit", nil)
-	blobGasUsedPerBlobGasLimitGauge   = metrics.NewRegisteredGaugeFloat64("arb/batchposter/blobgasusedperblobgaslimit", nil)
-	suggestedTipCapGauge              = metrics.NewRegisteredGauge("arb/batchposter/suggestedtipcap", nil)
+	batchPosterWalletBalance      = metrics.NewRegisteredGaugeFloat64("arb/batchposter/wallet/eth", nil)
+	batchPosterGasRefunderBalance = metrics.NewRegisteredGaugeFloat64("arb/batchposter/gasrefunder/eth", nil)
+	baseFeeGauge                  = metrics.NewRegisteredGauge("arb/batchposter/basefee", nil)
+	blobFeeGauge                  = metrics.NewRegisteredHistogram("arb/batchposter/blobfee", nil, metrics.NewBoundedHistogramSample())
+	blockGasUsedGauge             = metrics.NewRegisteredGauge("arb/batchposter/blockgas/used", nil)
+	blockGasLimitGauge            = metrics.NewRegisteredGauge("arb/batchposter/blockgas/limit", nil)
+	blobGasUsedGauge              = metrics.NewRegisteredGauge("arb/batchposter/blobgas/used", nil)
+	blobGasLimitGauge             = metrics.NewRegisteredGauge("arb/batchposter/blobgas/limit", nil)
+	suggestedTipCapGauge          = metrics.NewRegisteredGauge("arb/batchposter/suggestedtipcap", nil)
 
 	usableBytesInBlob    = big.NewInt(int64(len(kzg4844.Blob{}) * 31 / 32))
 	blobTxBlobGasPerBlob = big.NewInt(params.BlobTxBlobGasPerBlob)
@@ -480,6 +482,7 @@ func (b *BatchPoster) pollForL1PriceData(ctx context.Context) {
 	headerCh, unsubscribe := b.l1Reader.Subscribe(false)
 	defer unsubscribe()
 
+	blobGasLimitGauge.Update(params.MaxBlobGasPerBlock)
 	for {
 		select {
 		case h, ok := <-headerCh:
@@ -493,9 +496,10 @@ func (b *BatchPoster) pollForL1PriceData(ctx context.Context) {
 					blobFee := eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*h.ExcessBlobGas, *h.BlobGasUsed))
 					blobFeeGauge.Update(blobFee.Int64())
 				}
-				blobGasUsedPerBlobGasLimitGauge.Update(float64(*h.BlobGasUsed) / params.MaxBlobGasPerBlock)
+				blobGasUsedGauge.Update(int64(*h.BlobGasUsed))
 			}
-			blockGasUsedPerBlockGasLimitGauge.Update(float64(h.GasUsed) / float64(h.GasLimit))
+			blockGasUsedGauge.Update(int64(h.GasUsed))
+			blockGasLimitGauge.Update(int64(h.GasLimit))
 			suggestedTipCap, err := b.l1Reader.Client().SuggestGasTipCap(ctx)
 			if err != nil {
 				log.Error("unable to fetch suggestedTipCap from l1 client to update arb/batchposter/suggestedtipcap metric", "err", err)
