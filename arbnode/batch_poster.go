@@ -493,8 +493,10 @@ func (b *BatchPoster) pollForL1PriceData(ctx context.Context) {
 			baseFeeGauge.Update(h.BaseFee.Int64())
 			if h.BlobGasUsed != nil {
 				if h.ExcessBlobGas != nil {
-					blobFee := eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*h.ExcessBlobGas, *h.BlobGasUsed))
-					blobFeeGauge.Update(blobFee.Int64())
+					blobFeePerByte := eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*h.ExcessBlobGas, *h.BlobGasUsed))
+					blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
+					blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
+					blobFeeGauge.Update(blobFeePerByte.Int64())
 				}
 				blobGasUsedGauge.Update(int64(*h.BlobGasUsed))
 			}
