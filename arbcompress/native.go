@@ -9,7 +9,7 @@ package arbcompress
 /*
 #cgo CFLAGS: -g -Wall -I${SRCDIR}/../target/include/
 #cgo LDFLAGS: ${SRCDIR}/../target/lib/libstylus.a -lm
-#include "arb_brotli.h"
+#include "arbitrator.h"
 */
 import "C"
 import "fmt"

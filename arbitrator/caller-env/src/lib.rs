@@ -17,7 +17,9 @@ pub mod static_caller;
 #[cfg(feature = "wasmer_traits")]
 pub mod wasmer_traits;
 
+#[cfg(feature = "brotli")]
 pub mod brotli;
+
 mod guest_ptr;
 pub mod wasip1_stub;
 

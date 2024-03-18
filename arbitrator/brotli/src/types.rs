@@ -8,7 +8,7 @@ use num_enum::{IntoPrimitive, TryFromPrimitive};
 pub const BROTLI_MODE_GENERIC: u32 = 0;
 pub const DEFAULT_WINDOW_SIZE: u32 = 22;
 
-#[derive(PartialEq, IntoPrimitive, TryFromPrimitive)]
+#[derive(Debug, PartialEq, IntoPrimitive, TryFromPrimitive)]
 #[repr(u32)]
 pub enum BrotliStatus {
     Failure,

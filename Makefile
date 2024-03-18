@@ -37,7 +37,7 @@ precompiles = $(patsubst %,./solgen/generated/%.go, $(precompile_names))
 output_root=target
 output_latest=$(output_root)/machines/latest
 
-repo_dirs = arbos arbnode arbutil arbstate cmd das precompiles solgen system_tests util validator wavmio
+repo_dirs = arbos arbcompress arbnode arbutil arbstate cmd das precompiles solgen system_tests util validator wavmio
 go_source.go = $(wildcard $(patsubst %,%/*.go, $(repo_dirs)) $(patsubst %,%/*/*.go, $(repo_dirs)))
 go_source.s  = $(wildcard $(patsubst %,%/*.s, $(repo_dirs)) $(patsubst %,%/*/*.s, $(repo_dirs)))
 go_source = $(go_source.go) $(go_source.s)
@@ -47,11 +47,9 @@ color_reset = "\e[0;0m"
 
 done = "%bdone!%b\n" $(color_pink) $(color_reset)
 
-replay_deps=arbos wavmio arbstate arbcompress solgen/go/node-interfacegen blsSignatures cmd/replay
-
 replay_wasm=$(output_latest)/replay.wasm
 
-arb_brotli_files = $(wildcard arbitrator/brotli/src/*.* arbitrator/brotli/src/*/*.* arbitrator/brotli/*.toml arbitrator/brotli/*.rs) .make/cbrotli-lib
+arb_brotli_files = $(wildcard arbitrator/brotli/src/*.* arbitrator/brotli/src/*/*.* arbitrator/brotli/*.toml arbitrator/brotli/*.rs) .make/cbrotli-lib .make/cbrotli-wasm
 
 arbitrator_generated_header=$(output_root)/include/arbitrator.h
 arbitrator_wasm_libs=$(patsubst %, $(output_root)/machines/latest/%.wasm, forward wasi_stub host_io soft-float arbcompress user_host program_exec)
@@ -351,7 +349,7 @@ $(output_latest)/user_test.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,user-test
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package user-test
 	install arbitrator/wasm-libraries/$(wasm32_wasi)/user_test.wasm $@
 
-$(output_latest)/arbcompress.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,brotli) $(wasm_lib_go_abi) .make/cbrotli-wasm
+$(output_latest)/arbcompress.wasm: $(DEP_PREDICATE) $(call wasm_lib_deps,brotli) $(wasm_lib_go_abi)
 	cargo build --manifest-path arbitrator/wasm-libraries/Cargo.toml --release --target wasm32-wasi --package arbcompress
 	install arbitrator/wasm-libraries/$(wasm32_wasi)/arbcompress.wasm $@
 

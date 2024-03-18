@@ -6,7 +6,11 @@
 extern crate alloc;
 
 use alloc::vec::Vec;
-use core::{ffi::c_void, ptr};
+use core::{
+    ffi::c_void,
+    mem::{self, MaybeUninit},
+    ptr,
+};
 
 pub mod cgo;
 mod types;
@@ -87,14 +91,14 @@ pub fn compress(input: &[u8], output: &mut Vec<u8>, level: u32, window_size: u32
 
 /// Brotli compresses a slice.
 /// The output buffer must be sufficiently large.
-pub fn compress_fixed(
-    input: &[u8],
-    output: &mut [u8],
+pub fn compress_fixed<'a>(
+    input: &'a [u8],
+    output: &'a mut [MaybeUninit<u8>],
     level: u32,
     window_size: u32,
     dictionary: Dictionary,
-) -> Result<usize, BrotliStatus> {
-    let mut output_len = output.len();
+) -> Result<&'a [u8], BrotliStatus> {
+    let mut out_len = output.len();
     unsafe {
         let res = BrotliEncoderCompress(
             level,
@@ -102,14 +106,17 @@ pub fn compress_fixed(
             BROTLI_MODE_GENERIC,
             input.len(),
             input.as_ptr(),
-            &mut output_len,
-            output.as_mut_ptr(),
+            &mut out_len,
+            output.as_mut_ptr() as *mut u8,
         );
         if res != BrotliStatus::Success {
             return Err(BrotliStatus::Failure);
         }
-        Ok(output_len)
     }
+
+    // SAFETY: brotli initialized this span of bytes
+    let output = unsafe { mem::transmute(&output[..out_len]) };
+    Ok(output)
 }
 
 /// Brotli decompresses a slice into a vec, growing as needed.
@@ -170,11 +177,11 @@ pub fn decompress(input: &[u8], output: &mut Vec<u8>, dictionary: Dictionary) ->
 }
 
 /// Brotli decompresses a slice, returning the number of bytes written.
-pub fn decompress_fixed(
-    input: &[u8],
-    output: &mut [u8],
+pub fn decompress_fixed<'a>(
+    input: &'a [u8],
+    output: &'a mut [MaybeUninit<u8>],
     dictionary: Dictionary,
-) -> Result<usize, BrotliStatus> {
+) -> Result<&'a [u8], BrotliStatus> {
     unsafe {
         let state = BrotliDecoderCreateInstance(None, None, ptr::null_mut());
 
@@ -200,7 +207,7 @@ pub fn decompress_fixed(
         let mut in_len = input.len();
         let mut in_ptr = input.as_ptr();
         let mut out_left = output.len();
-        let mut out_ptr = output.as_mut_ptr();
+        let mut out_ptr = output.as_mut_ptr() as *mut u8;
         let mut out_len = out_left;
 
         let status = BrotliDecoderDecompressStream(
@@ -214,6 +221,9 @@ pub fn decompress_fixed(
         require!(status == BrotliStatus::Success);
         require!(BrotliDecoderIsFinished(state) == BrotliBool::True);
         BrotliDecoderDestroyInstance(state);
-        Ok(out_len)
+
+        // SAFETY: brotli initialized this span of bytes
+        let output = mem::transmute(&output[..out_len]);
+        Ok(output)
     }
 }

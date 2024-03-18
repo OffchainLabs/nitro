@@ -2,7 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{BrotliStatus, Dictionary, DEFAULT_WINDOW_SIZE};
-use core::slice;
+use core::{mem::MaybeUninit, slice};
 
 #[derive(Clone, Copy)]
 #[repr(C)]
@@ -22,12 +22,12 @@ impl BrotliBuffer {
         unsafe { slice::from_raw_parts(self.ptr, len) }
     }
 
-    fn as_mut_slice(&mut self) -> &mut [u8] {
+    fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
         let len = unsafe { *self.len };
         if len == 0 {
             return &mut [];
         }
-        unsafe { slice::from_raw_parts_mut(self.ptr, len) }
+        unsafe { slice::from_raw_parts_mut(self.ptr as _, len) }
     }
 }
 
@@ -39,9 +39,9 @@ pub extern "C" fn brotli_compress(
     level: u32,
 ) -> BrotliStatus {
     let window = DEFAULT_WINDOW_SIZE;
-    let buffer = output.as_mut_slice();
+    let buffer = output.as_uninit();
     match crate::compress_fixed(input.as_slice(), buffer, level, window, dictionary) {
-        Ok(written) => unsafe { *output.len = written },
+        Ok(slice) => unsafe { *output.len = slice.len() },
         Err(status) => return status,
     }
     BrotliStatus::Success
@@ -53,8 +53,8 @@ pub extern "C" fn brotli_decompress(
     mut output: BrotliBuffer,
     dictionary: Dictionary,
 ) -> BrotliStatus {
-    match crate::decompress_fixed(input.as_slice(), output.as_mut_slice(), dictionary) {
-        Ok(written) => unsafe { *output.len = written },
+    match crate::decompress_fixed(input.as_slice(), output.as_uninit(), dictionary) {
+        Ok(slice) => unsafe { *output.len = slice.len() },
         Err(status) => return status,
     }
     BrotliStatus::Success

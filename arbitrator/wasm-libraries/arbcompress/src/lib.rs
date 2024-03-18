@@ -25,14 +25,6 @@ macro_rules! wrap {
 }
 
 wrap! {
-    fn brotli_decompress(
-        in_buf_ptr: GuestPtr,
-        in_buf_len: u32,
-        out_buf_ptr: GuestPtr,
-        out_len_ptr: GuestPtr,
-        dictionary: Dictionary
-    ) -> BrotliStatus;
-
     fn brotli_compress(
         in_buf_ptr: GuestPtr,
         in_buf_len: u32,
@@ -40,6 +32,14 @@ wrap! {
         out_len_ptr: GuestPtr,
         level: u32,
         window_size: u32,
+        dictionary: Dictionary
+    ) -> BrotliStatus;
+
+    fn brotli_decompress(
+        in_buf_ptr: GuestPtr,
+        in_buf_len: u32,
+        out_buf_ptr: GuestPtr,
+        out_len_ptr: GuestPtr,
         dictionary: Dictionary
     ) -> BrotliStatus
 }

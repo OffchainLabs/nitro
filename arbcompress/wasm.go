@@ -21,10 +21,10 @@ const (
 )
 
 //go:wasmimport arbcompress brotli_compress
-func brotliCompress(inBuf unsafe.Pointer, inBufLen uint32, outBuf unsafe.Pointer, outBufLen unsafe.Pointer, level, windowSize uint32) brotliStatus
+func brotliCompress(inBuf unsafe.Pointer, inLen uint32, outBuf unsafe.Pointer, outLen unsafe.Pointer, level, windowSize uint32, dictionary Dictionary) brotliStatus
 
 //go:wasmimport arbcompress brotli_decompress
-func brotliDecompress(inBuf unsafe.Pointer, inBufLen uint32, outBuf unsafe.Pointer, outBufLen unsafe.Pointer, dictionary Dictionary) brotliStatus
+func brotliDecompress(inBuf unsafe.Pointer, inLen uint32, outBuf unsafe.Pointer, outLen unsafe.Pointer, dictionary Dictionary) brotliStatus
 
 func Decompress(input []byte, maxSize int) ([]byte, error) {
 	return DecompressWithDictionary(input, maxSize, EmptyDictionary)
@@ -55,6 +55,7 @@ func compressLevel(input []byte, level uint32, dictionary Dictionary) ([]byte, e
 		arbutil.SliceToUnsafePointer(outBuf), unsafe.Pointer(&outLen),
 		level,
 		WINDOW_SIZE,
+		dictionary,
 	)
 	if status != brotliSuccess {
 		return nil, fmt.Errorf("failed compression")

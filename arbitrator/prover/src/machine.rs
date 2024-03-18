@@ -366,8 +366,8 @@ impl Module {
             };
             ensure!(
                 &func.ty == have_ty,
-                "Import {} for {} has different function signature than export.\nexpected {}\nbut have {}",
-                import_name.red(), bin_name.red(), func.ty.red(), have_ty.red(),
+                "Import {} for {} has different function signature than export.\nexpected {} in {}\nbut have {}",
+                import_name.red(), bin_name.red(), func.ty.red(), module.red(), have_ty.red(),
             );
 
             func_type_idxs.push(import.offset);
