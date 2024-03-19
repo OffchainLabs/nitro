@@ -46,9 +46,7 @@ func newProducerConsumers(ctx context.Context, t *testing.T) (*Producer, []*test
 	if err != nil {
 		t.Fatalf("Error creating new producer: %v", err)
 	}
-	var (
-		consumers []*testConsumer
-	)
+	var consumers []*testConsumer
 	for i := 0; i < consumersCount; i++ {
 		consumerCtx, cancel := context.WithCancel(ctx)
 		c, err := NewConsumer(consumerCtx, fmt.Sprintf("consumer-%d", i), streamName, redisURL)
@@ -72,6 +70,17 @@ func messagesMap(n int) []map[string]any {
 	return ret
 }
 
+func wantMessages(n int) []any {
+	var ret []any
+	for i := 0; i < n; i++ {
+		ret = append(ret, fmt.Sprintf("msg: %d", i))
+	}
+	sort.Slice(ret, func(i, j int) bool {
+		return fmt.Sprintf("%v", ret[i]) < fmt.Sprintf("%v", ret[j])
+	})
+	return ret
+}
+
 func TestProduce(t *testing.T) {
 	log.Root().SetHandler(log.LvlFilterHandler(log.LvlTrace, log.StreamHandler(os.Stderr, log.TerminalFormat(true))))
 	ctx, cancel := context.WithCancel(context.Background())
@@ -91,6 +100,9 @@ func TestProduce(t *testing.T) {
 					}
 					return
 				}
+				if res == nil {
+					continue
+				}
 				gotMessages[idx][res.ID] = res.Value
 				if err := c.ACK(consumerCtx, res.ID); err != nil {
 					t.Errorf("Error ACKing message: %v, error: %v", res.ID, err)
@@ -99,10 +111,8 @@ func TestProduce(t *testing.T) {
 		}()
 	}
 
-	var want []any
 	for i := 0; i < messagesCount; i++ {
 		value := fmt.Sprintf("msg: %d", i)
-		want = append(want, value)
 		if err := producer.Produce(ctx, value); err != nil {
 			t.Errorf("Produce() unexpected error: %v", err)
 		}
@@ -113,6 +123,7 @@ func TestProduce(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mergeMaps() unexpected error: %v", err)
 	}
+	want := wantMessages(messagesCount)
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("Unexpected diff (-want +got):\n%s\n", diff)
 	}
@@ -166,17 +177,12 @@ func TestClaimingOwnership(t *testing.T) {
 		}()
 	}
 
-	var want []any
 	for i := 0; i < messagesCount; i++ {
 		value := fmt.Sprintf("msg: %d", i)
-		want = append(want, value)
 		if err := producer.Produce(ctx, value); err != nil {
 			t.Errorf("Produce() unexpected error: %v", err)
 		}
 	}
-	sort.Slice(want, func(i, j int) bool {
-		return fmt.Sprintf("%v", want[i]) < fmt.Sprintf("%v", want[j])
-	})
 
 	for {
 		if total.Load() < uint64(messagesCount) {
@@ -190,6 +196,7 @@ func TestClaimingOwnership(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mergeMaps() unexpected error: %v", err)
 	}
+	want := wantMessages(messagesCount)
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("Unexpected diff (-want +got):\n%s\n", diff)
 	}
