@@ -32,9 +32,12 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 
+	espressoClient "github.com/EspressoSystems/espresso-sequencer-go/client"
+
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/redislock"
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -72,6 +75,10 @@ type batchPosterPosition struct {
 	NextSeqNum          uint64
 }
 
+type LightClientReaderInterface interface {
+	ValidatedHeight() (validatedHeight uint64, l1Height uint64, err error)
+}
+
 type BatchPoster struct {
 	stopwaiter.StopWaiter
 	l1Reader           *headerreader.HeaderReader
@@ -102,6 +109,10 @@ type BatchPoster struct {
 	nextRevertCheckBlock int64       // the last parent block scanned for reverting batches
 
 	accessList func(SequencerInboxAccs, AfterDelayedMessagesRead int) types.AccessList
+
+	// Espresso readers
+	lightClientReader LightClientReaderInterface
+	espressoClient    *espressoClient.Client
 }
 
 type l1BlockBound int
@@ -147,6 +158,10 @@ type BatchPosterConfig struct {
 
 	gasRefunder  common.Address
 	l1BlockBound l1BlockBound
+
+	// Espresso specific flags
+	LightClientAddress string `koanf:"light-client-address"`
+	HotShotUrl         string `koanf:"hotshot-url"`
 }
 
 func (c *BatchPosterConfig) Validate() error {
@@ -194,6 +209,8 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".l1-block-bound", DefaultBatchPosterConfig.L1BlockBound, "only post messages to batches when they're within the max future block/timestamp as of this L1 block tag (\"safe\", \"finalized\", \"latest\", or \"ignore\" to ignore this check)")
 	f.Duration(prefix+".l1-block-bound-bypass", DefaultBatchPosterConfig.L1BlockBoundBypass, "post batches even if not within the layer 1 future bounds if we're within this margin of the max delay")
 	f.Bool(prefix+".use-access-lists", DefaultBatchPosterConfig.UseAccessLists, "post batches with access lists to reduce gas usage (disabled for L3s)")
+	f.String(prefix+"hotshot-url", DefaultBatchPosterConfig.HotShotUrl, "specifies the hotshot url if we are batching in espresso mode")
+	f.String(prefix+"light-client-address", DefaultBatchPosterConfig.HotShotUrl, "specifies the hotshot light client address if we are batching in espresso mode")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfig)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.ParentChainWallet.Pathname)
@@ -296,6 +313,23 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 	if err != nil {
 		return nil, err
 	}
+	var hotShotClient *espressoClient.Client
+	var lightClientReader LightClientReaderInterface
+
+	hotShotUrl := opts.Config().HotShotUrl
+	lightClientAddr := opts.Config().LightClientAddress
+
+	if hotShotUrl != "" {
+		hotShotClient = espressoClient.NewClient(log.New(), hotShotUrl)
+	}
+
+	if lightClientAddr != "" {
+		lightClientReader, err = NewMockLightClientReader(common.HexToAddress(lightClientAddr), opts.L1Reader.Client())
+		if err != nil {
+			return nil, err
+		}
+	}
+
 	b := &BatchPoster{
 		l1Reader:           opts.L1Reader,
 		inbox:              opts.Inbox,
@@ -311,6 +345,8 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		bridgeAddr:         opts.DeployInfo.Bridge,
 		daWriter:           opts.DAWriter,
 		redisLock:          redisLock,
+		espressoClient:     hotShotClient,
+		lightClientReader:  lightClientReader,
 	}
 	b.messagesPerBatch, err = arbmath.NewMovingAverage[uint64](20)
 	if err != nil {
@@ -425,6 +461,41 @@ func AccessList(opts *AccessListOpts) types.AccessList {
 		})
 	}
 	return l
+}
+
+// Adds a block merkle proof to an Espresso justification, providing a proof that the set a set of transactions that corresponding
+// block commitment hash to some light client state root
+func (b *BatchPoster) addEspressoBlockMerkleProof(
+	msg *arbostypes.MessageWithMetadata,
+) (*arbostypes.MessageWithMetadata, error) {
+	if msg.Message.Header.Kind == arbostypes.L1MessageType_L2Message &&
+		msg.Message.L2msg[0] == arbos.L2MessageKind_EspressoTx {
+		txs, jst, err := arbos.ParseEspressoMsg(msg.Message)
+		if err != nil {
+			return nil, err
+		}
+		validatedHotShotHeight, validatedL1Height, err := b.lightClientReader.ValidatedHeight()
+		if err != nil {
+			return nil, err
+
+		}
+		if validatedHotShotHeight < jst.Header.Height {
+			return nil, fmt.Errorf("could not construct batch justification, light client is at height %v but the justification is for height %v", validatedHotShotHeight, jst.Header.Height)
+		}
+
+		proof, err := b.espressoClient.FetchBlockMerkleProof(validatedL1Height, jst.Header.Height)
+		if err != nil {
+			return nil, err
+		}
+		jst.BlockMerkleProof = &proof
+		newMsg, err := arbos.MessageFromEspresso(msg.Message.Header, txs, jst)
+		if err != nil {
+			return nil, err
+
+		}
+		msg.Message = &newMsg
+	}
+	return msg, nil
 }
 
 // checkRevert checks blocks with number in range [from, to] whether they
@@ -1106,6 +1177,10 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 				"l1BoundMaxTimestamp", l1BoundMaxTimestamp,
 			)
 			break
+		}
+		msg, err = b.addEspressoBlockMerkleProof(msg)
+		if err != nil {
+			return false, fmt.Errorf("error adding hotshot block merkle proof to justification: %w", err)
 		}
 		success, err := b.building.segments.AddMessage(msg)
 		if err != nil {
