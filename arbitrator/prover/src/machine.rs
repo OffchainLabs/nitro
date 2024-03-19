@@ -18,6 +18,7 @@ use crate::{
     },
 };
 use arbutil::{math, Bytes32, Color};
+use brotli::Dictionary;
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
@@ -1400,12 +1401,10 @@ impl Machine {
 
     pub fn new_from_wavm(wavm_binary: &Path) -> Result<Machine> {
         let mut modules: Vec<Module> = {
-            use brotli::Dictionary;
             let compressed = std::fs::read(wavm_binary)?;
-            let mut modules = vec![];
-            if brotli::decompress(&compressed, &mut modules, Dictionary::Empty).is_err() {
+            let Ok(modules) = brotli::decompress(&compressed, Dictionary::Empty) else {
                 bail!("failed to decompress wavm binary");
-            }
+            };
             bincode::deserialize(&modules)?
         };
 
@@ -1466,10 +1465,9 @@ impl Machine {
         );
         let modules = bincode::serialize(&self.modules)?;
         let window = brotli::DEFAULT_WINDOW_SIZE;
-        let mut output = Vec::with_capacity(2 * modules.len());
-        if brotli::compress(&modules, &mut output, 9, window).is_err() {
+        let Ok(output) = brotli::compress(&modules, 9, window, Dictionary::Empty) else {
             bail!("failed to compress binary");
-        }
+        };
 
         let mut file = File::create(path)?;
         file.write_all(&output)?;

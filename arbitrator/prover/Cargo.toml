@@ -23,7 +23,7 @@ static_assertions = "1.1.0"
 structopt = "0.3.23"
 serde_with = "1.12.1"
 parking_lot = "0.12.1"
-lazy_static = "1.4.0"
+lazy_static.workspace = true
 itertools = "0.10.5"
 wat = "1.0.56"
 smallvec = { version = "1.10.0", features = ["serde"] }

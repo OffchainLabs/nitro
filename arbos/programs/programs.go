@@ -358,7 +358,7 @@ func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return arbcompress.Decompress(wasm, MaxWasmSize)
+	return arbcompress.DecompressWithDictionary(wasm, MaxWasmSize, arbcompress.StylusProgramDictionary)
 }
 
 func (p Programs) getProgram(codeHash common.Hash, time uint64) (Program, error) {

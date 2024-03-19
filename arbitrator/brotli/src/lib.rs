@@ -13,32 +13,60 @@ use core::{
 };
 
 pub mod cgo;
+mod dicts;
 mod types;
 
 #[cfg(feature = "wasmer_traits")]
 mod wasmer_traits;
 
+pub use dicts::Dictionary;
 use types::*;
-pub use types::{BrotliStatus, Dictionary, DEFAULT_WINDOW_SIZE};
+pub use types::{BrotliStatus, DEFAULT_WINDOW_SIZE};
 
 type DecoderState = c_void;
+type EncoderState = c_void;
+type EncoderPreparedDictionary = c_void;
 type CustomAllocator = c_void;
 type HeapItem = c_void;
 
-// one-shot brotli API
+// compression API
 extern "C" {
-    fn BrotliEncoderCompress(
-        quality: u32,
-        lgwin: u32,
-        mode: u32,
-        input_size: usize,
-        input_buffer: *const u8,
-        encoded_size: *mut usize,
-        encoded_buffer: *mut u8,
-    ) -> BrotliStatus;
+    fn BrotliEncoderCreateInstance(
+        alloc: Option<extern "C" fn(opaque: *const CustomAllocator, size: usize) -> *mut HeapItem>,
+        free: Option<extern "C" fn(opaque: *const CustomAllocator, address: *mut HeapItem)>,
+        opaque: *mut CustomAllocator,
+    ) -> *mut EncoderState;
+
+    /// Quality must be at least 2 for this bound to be correct.
+    fn BrotliEncoderMaxCompressedSize(input_size: usize) -> usize;
+
+    fn BrotliEncoderSetParameter(
+        state: *mut EncoderState,
+        param: BrotliEncoderParameter,
+        value: u32,
+    ) -> BrotliBool;
+
+    fn BrotliEncoderAttachPreparedDictionary(
+        state: *mut EncoderState,
+        dictionary: *const EncoderPreparedDictionary,
+    ) -> BrotliBool;
+
+    fn BrotliEncoderCompressStream(
+        state: *mut EncoderState,
+        op: BrotliEncoderOperation,
+        input_len: *mut usize,
+        input_ptr: *mut *const u8,
+        out_left: *mut usize,
+        out_ptr: *mut *mut u8,
+        out_len: *mut usize,
+    ) -> BrotliBool;
+
+    fn BrotliEncoderIsFinished(state: *mut EncoderState) -> BrotliBool;
+
+    fn BrotliEncoderDestroyInstance(state: *mut EncoderState);
 }
 
-// custom dictionary API
+// decompression API
 extern "C" {
     fn BrotliDecoderCreateInstance(
         alloc: Option<extern "C" fn(opaque: *const CustomAllocator, size: usize) -> *mut HeapItem>,
@@ -48,8 +76,8 @@ extern "C" {
 
     fn BrotliDecoderAttachDictionary(
         state: *mut DecoderState,
-        dict_type: BrotliSharedDictionaryType,
-        dict_len: usize,
+        kind: BrotliSharedDictionaryType,
+        len: usize,
         dictionary: *const u8,
     ) -> BrotliBool;
 
@@ -67,30 +95,77 @@ extern "C" {
     fn BrotliDecoderDestroyInstance(state: *mut DecoderState);
 }
 
-/// Brotli compresses a slice into a vec, growing as needed.
-/// The output buffer must be sufficiently large.
-pub fn compress(input: &[u8], output: &mut Vec<u8>, level: u32, window_size: u32) -> BrotliStatus {
-    let mut output_len = output.capacity();
-    unsafe {
-        let res = BrotliEncoderCompress(
-            level,
-            window_size,
-            BROTLI_MODE_GENERIC,
-            input.len(),
-            input.as_ptr(),
-            &mut output_len,
-            output.as_mut_ptr(),
-        );
-        if res != BrotliStatus::Success {
-            return BrotliStatus::Failure;
-        }
-        output.set_len(output_len);
+/// Determines the maximum size a brotli compression could be.
+/// Note: assumes the user never calls "flush" except during "finish" at the end.
+pub fn compression_bound(len: usize, level: u32) -> usize {
+    let mut bound = unsafe { BrotliEncoderMaxCompressedSize(len) };
+    if level <= 2 {
+        bound = bound.max(len + (len >> 10) * 8 + 64);
     }
-    BrotliStatus::Success
+    bound
 }
 
-/// Brotli compresses a slice.
-/// The output buffer must be sufficiently large.
+/// Brotli compresses a slice into a vec.
+pub fn compress(
+    input: &[u8],
+    level: u32,
+    window_size: u32,
+    dictionary: Dictionary,
+) -> Result<Vec<u8>, BrotliStatus> {
+    let max_size = compression_bound(input.len(), level);
+    let mut output = Vec::with_capacity(max_size);
+    unsafe {
+        let state = BrotliEncoderCreateInstance(None, None, ptr::null_mut());
+
+        macro_rules! check {
+            ($ret:expr) => {
+                if $ret.is_err() {
+                    BrotliEncoderDestroyInstance(state);
+                    return Err(BrotliStatus::Failure);
+                }
+            };
+        }
+
+        check!(BrotliEncoderSetParameter(
+            state,
+            BrotliEncoderParameter::Quality,
+            level
+        ));
+        check!(BrotliEncoderSetParameter(
+            state,
+            BrotliEncoderParameter::WindowSize,
+            window_size
+        ));
+
+        if let Some(dict) = dictionary.ptr(level) {
+            check!(BrotliEncoderAttachPreparedDictionary(state, dict));
+        }
+
+        let mut in_len = input.len();
+        let mut in_ptr = input.as_ptr();
+        let mut out_left = output.capacity();
+        let mut out_ptr = output.as_mut_ptr();
+        let mut out_len = out_left;
+
+        let status = BrotliEncoderCompressStream(
+            state,
+            BrotliEncoderOperation::Finish,
+            &mut in_len as _,
+            &mut in_ptr as _,
+            &mut out_left as _,
+            &mut out_ptr as _,
+            &mut out_len as _,
+        );
+        check!(status);
+        check!(BrotliEncoderIsFinished(state));
+        BrotliEncoderDestroyInstance(state);
+
+        output.set_len(out_len);
+        Ok(output)
+    }
+}
+
+/// Brotli compresses a slice into a buffer of limited capacity.
 pub fn compress_fixed<'a>(
     input: &'a [u8],
     output: &'a mut [MaybeUninit<u8>],
@@ -98,49 +173,83 @@ pub fn compress_fixed<'a>(
     window_size: u32,
     dictionary: Dictionary,
 ) -> Result<&'a [u8], BrotliStatus> {
-    let mut out_len = output.len();
     unsafe {
-        let res = BrotliEncoderCompress(
-            level,
-            window_size,
-            BROTLI_MODE_GENERIC,
-            input.len(),
-            input.as_ptr(),
-            &mut out_len,
-            output.as_mut_ptr() as *mut u8,
-        );
-        if res != BrotliStatus::Success {
-            return Err(BrotliStatus::Failure);
-        }
-    }
+        let state = BrotliEncoderCreateInstance(None, None, ptr::null_mut());
 
-    // SAFETY: brotli initialized this span of bytes
-    let output = unsafe { mem::transmute(&output[..out_len]) };
-    Ok(output)
-}
-
-/// Brotli decompresses a slice into a vec, growing as needed.
-pub fn decompress(input: &[u8], output: &mut Vec<u8>, dictionary: Dictionary) -> BrotliStatus {
-    unsafe {
-        let state = BrotliDecoderCreateInstance(None, None, ptr::null_mut());
-
-        macro_rules! require {
-            ($cond:expr) => {
-                if !$cond {
-                    BrotliDecoderDestroyInstance(state);
-                    return BrotliStatus::Failure;
+        macro_rules! check {
+            ($ret:expr) => {
+                if $ret.is_err() {
+                    BrotliEncoderDestroyInstance(state);
+                    return Err(BrotliStatus::Failure);
                 }
             };
         }
 
-        if dictionary != Dictionary::Empty {
+        check!(BrotliEncoderSetParameter(
+            state,
+            BrotliEncoderParameter::Quality,
+            level
+        ));
+        check!(BrotliEncoderSetParameter(
+            state,
+            BrotliEncoderParameter::WindowSize,
+            window_size
+        ));
+
+        if let Some(dict) = dictionary.ptr(level) {
+            check!(BrotliEncoderAttachPreparedDictionary(state, dict));
+        }
+
+        let mut in_len = input.len();
+        let mut in_ptr = input.as_ptr();
+        let mut out_left = output.len();
+        let mut out_ptr = output.as_mut_ptr() as *mut u8;
+        let mut out_len = out_left;
+
+        let status = BrotliEncoderCompressStream(
+            state,
+            BrotliEncoderOperation::Finish,
+            &mut in_len as _,
+            &mut in_ptr as _,
+            &mut out_left as _,
+            &mut out_ptr as _,
+            &mut out_len as _,
+        );
+        check!(status);
+        check!(BrotliEncoderIsFinished(state));
+        BrotliEncoderDestroyInstance(state);
+
+        // SAFETY: brotli initialized this span of bytes
+        let output = mem::transmute(&output[..out_len]);
+        Ok(output)
+    }
+}
+
+/// Brotli compresses a slice into a buffer of limited capacity.
+pub fn decompress(input: &[u8], dictionary: Dictionary) -> Result<Vec<u8>, BrotliStatus> {
+    unsafe {
+        let state = BrotliDecoderCreateInstance(None, None, ptr::null_mut());
+        let mut output: Vec<u8> = Vec::with_capacity(4 * input.len());
+
+        macro_rules! check {
+            ($ret:expr) => {
+                if $ret.is_err() {
+                    BrotliDecoderDestroyInstance(state);
+                    return Err(BrotliStatus::Failure);
+                }
+            };
+        }
+
+        // TODO: consider window and quality check?
+        // TODO: fuzz
+        if let Some(dict) = dictionary.slice() {
             let attatched = BrotliDecoderAttachDictionary(
                 state,
                 BrotliSharedDictionaryType::Raw,
-                dictionary.len(),
-                dictionary.data(),
+                dict.len(),
+                dict.as_ptr(),
             );
-            require!(attatched == BrotliBool::True);
+            check!(attatched);
         }
 
         let mut in_len = input.len();
@@ -166,17 +275,17 @@ pub fn decompress(input: &[u8], output: &mut Vec<u8>, dictionary: Dictionary) ->
                 out_left = output.capacity() - out_len;
                 continue;
             }
-            require!(status == BrotliStatus::Success);
-            require!(BrotliDecoderIsFinished(state) == BrotliBool::True);
+            check!(status);
+            check!(BrotliDecoderIsFinished(state));
             break;
         }
 
         BrotliDecoderDestroyInstance(state);
+        Ok(output)
     }
-    BrotliStatus::Success
 }
 
-/// Brotli decompresses a slice, returning the number of bytes written.
+/// Brotli decompresses a slice into
 pub fn decompress_fixed<'a>(
     input: &'a [u8],
     output: &'a mut [MaybeUninit<u8>],
@@ -185,7 +294,7 @@ pub fn decompress_fixed<'a>(
     unsafe {
         let state = BrotliDecoderCreateInstance(None, None, ptr::null_mut());
 
-        macro_rules! require {
+        macro_rules! check {
             ($cond:expr) => {
                 if !$cond {
                     BrotliDecoderDestroyInstance(state);
@@ -194,14 +303,14 @@ pub fn decompress_fixed<'a>(
             };
         }
 
-        if dictionary != Dictionary::Empty {
+        if let Some(dict) = dictionary.slice() {
             let attatched = BrotliDecoderAttachDictionary(
                 state,
                 BrotliSharedDictionaryType::Raw,
-                dictionary.len(),
-                dictionary.data(),
+                dict.len(),
+                dict.as_ptr(),
             );
-            require!(attatched == BrotliBool::True);
+            check!(attatched == BrotliBool::True);
         }
 
         let mut in_len = input.len();
@@ -218,8 +327,8 @@ pub fn decompress_fixed<'a>(
             &mut out_ptr as _,
             &mut out_len as _,
         );
-        require!(status == BrotliStatus::Success);
-        require!(BrotliDecoderIsFinished(state) == BrotliBool::True);
+        check!(status == BrotliStatus::Success);
+        check!(BrotliDecoderIsFinished(state) == BrotliBool::True);
         BrotliDecoderDestroyInstance(state);
 
         // SAFETY: brotli initialized this span of bytes

@@ -1,4 +1,4 @@
-// Copyright 2022, Offchain Labs, Inc.
+// Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 #![cfg(test)]
@@ -57,20 +57,15 @@ pub fn reject_ambiguous_imports() {
 
 #[test]
 pub fn test_compress() -> Result<()> {
-    let data = std::fs::read("test-cases/block.wat")?;
-    let dict = Dictionary::Empty;
+    let data = include_bytes!("../../../target/machines/latest/forward_stub.wasm");
+    let mut last = vec![];
 
-    let deflate = &mut Vec::with_capacity(data.len());
-    assert!(brotli::compress(&data, deflate, 0, 22).is_ok());
-    assert!(!deflate.is_empty());
-
-    let inflate = &mut Vec::with_capacity(data.len());
-    assert!(brotli::decompress(deflate, inflate, dict, false).is_ok());
-    assert_eq!(hex::encode(inflate), hex::encode(&data));
-
-    let inflate = &mut vec![];
-    assert!(brotli::decompress(deflate, inflate, dict, false).is_err());
-    assert!(brotli::decompress(deflate, inflate, dict, true).is_ok());
-    assert_eq!(hex::encode(inflate), hex::encode(&data));
+    for dict in [Dictionary::Empty, Dictionary::StylusProgram] {
+        let deflate = brotli::compress(data, 11, 22, dict).unwrap();
+        let inflate = brotli::decompress(&deflate, dict).unwrap();
+        assert_eq!(hex::encode(inflate), hex::encode(data));
+        assert!(&deflate != &last);
+        last = deflate;
+    }
     Ok(())
 }

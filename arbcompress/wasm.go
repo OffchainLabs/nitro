@@ -26,6 +26,23 @@ func brotliCompress(inBuf unsafe.Pointer, inLen uint32, outBuf unsafe.Pointer, o
 //go:wasmimport arbcompress brotli_decompress
 func brotliDecompress(inBuf unsafe.Pointer, inLen uint32, outBuf unsafe.Pointer, outLen unsafe.Pointer, dictionary Dictionary) brotliStatus
 
+func Compress(input []byte, level uint32, dictionary Dictionary) ([]byte, error) {
+	maxOutSize := compressedBufferSizeFor(len(input))
+	outBuf := make([]byte, maxOutSize)
+	outLen := uint32(len(outBuf))
+	status := brotliCompress(
+		arbutil.SliceToUnsafePointer(input), uint32(len(input)),
+		arbutil.SliceToUnsafePointer(outBuf), unsafe.Pointer(&outLen),
+		level,
+		WINDOW_SIZE,
+		dictionary,
+	)
+	if status != brotliSuccess {
+		return nil, fmt.Errorf("failed compression")
+	}
+	return outBuf[:outLen], nil
+}
+
 func Decompress(input []byte, maxSize int) ([]byte, error) {
 	return DecompressWithDictionary(input, maxSize, EmptyDictionary)
 }
@@ -42,23 +59,6 @@ func DecompressWithDictionary(input []byte, maxSize int, dictionary Dictionary) 
 	)
 	if status != brotliSuccess {
 		return nil, fmt.Errorf("failed decompression")
-	}
-	return outBuf[:outLen], nil
-}
-
-func compressLevel(input []byte, level uint32, dictionary Dictionary) ([]byte, error) {
-	maxOutSize := compressedBufferSizeFor(len(input))
-	outBuf := make([]byte, maxOutSize)
-	outLen := uint32(len(outBuf))
-	status := brotliCompress(
-		arbutil.SliceToUnsafePointer(input), uint32(len(input)),
-		arbutil.SliceToUnsafePointer(outBuf), unsafe.Pointer(&outLen),
-		level,
-		WINDOW_SIZE,
-		dictionary,
-	)
-	if status != brotliSuccess {
-		return nil, fmt.Errorf("failed compression")
 	}
 	return outBuf[:outLen], nil
 }

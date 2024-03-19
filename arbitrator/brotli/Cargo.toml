@@ -9,6 +9,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+lazy_static.workspace = true
 num_enum.workspace = true
 wasmer = { path = "../tools/wasmer/lib/api", optional = true }
 wee_alloc.workspace = true

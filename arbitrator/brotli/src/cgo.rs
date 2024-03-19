@@ -4,6 +4,7 @@
 use crate::{BrotliStatus, Dictionary, DEFAULT_WINDOW_SIZE};
 use core::{mem::MaybeUninit, slice};
 
+/// Mechanism for passing data between Go and Rust where Rust can specify the initialized length.
 #[derive(Clone, Copy)]
 #[repr(C)]
 pub struct BrotliBuffer {
@@ -14,6 +15,7 @@ pub struct BrotliBuffer {
 }
 
 impl BrotliBuffer {
+    /// Interprets the underlying Go data as a Rust slice.
     fn as_slice(&self) -> &[u8] {
         let len = unsafe { *self.len };
         if len == 0 {
@@ -22,6 +24,7 @@ impl BrotliBuffer {
         unsafe { slice::from_raw_parts(self.ptr, len) }
     }
 
+    /// Interprets the underlying Go data as a Rust slice of uninitialized data.
     fn as_uninit(&mut self) -> &mut [MaybeUninit<u8>] {
         let len = unsafe { *self.len };
         if len == 0 {
@@ -31,6 +34,7 @@ impl BrotliBuffer {
     }
 }
 
+/// Brotli compresses the given Go data into a buffer of limited capacity.
 #[no_mangle]
 pub extern "C" fn brotli_compress(
     input: BrotliBuffer,
@@ -47,6 +51,7 @@ pub extern "C" fn brotli_compress(
     BrotliStatus::Success
 }
 
+/// Brotli decompresses the given Go data into a buffer of limited capacity.
 #[no_mangle]
 pub extern "C" fn brotli_decompress(
     input: BrotliBuffer,

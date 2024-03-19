@@ -26,6 +26,24 @@ const (
 	brotliTrue
 )
 
+func CompressWell(input []byte) ([]byte, error) {
+	return Compress(input, LEVEL_WELL, EmptyDictionary)
+}
+
+func Compress(input []byte, level int, dictionary Dictionary) ([]byte, error) {
+	maxSize := compressedBufferSizeFor(len(input))
+	output := make([]byte, maxSize)
+	outbuf := sliceToBuffer(output)
+	inbuf := sliceToBuffer(input)
+
+	status := C.brotli_compress(inbuf, outbuf, C.Dictionary(dictionary), u32(level))
+	if status != C.BrotliStatus_Success {
+		return nil, fmt.Errorf("failed decompression: %d", status)
+	}
+	output = output[:*outbuf.len]
+	return output, nil
+}
+
 func Decompress(input []byte, maxSize int) ([]byte, error) {
 	return DecompressWithDictionary(input, maxSize, EmptyDictionary)
 }
@@ -41,24 +59,6 @@ func DecompressWithDictionary(input []byte, maxSize int, dictionary Dictionary) 
 	}
 	if *outbuf.len > usize(maxSize) {
 		return nil, fmt.Errorf("failed decompression: result too large: %d", *outbuf.len)
-	}
-	output = output[:*outbuf.len]
-	return output, nil
-}
-
-func CompressWell(input []byte) ([]byte, error) {
-	return compressLevel(input, LEVEL_WELL, EmptyDictionary)
-}
-
-func compressLevel(input []byte, level int, dictionary Dictionary) ([]byte, error) {
-	maxSize := compressedBufferSizeFor(len(input))
-	output := make([]byte, maxSize)
-	outbuf := sliceToBuffer(output)
-	inbuf := sliceToBuffer(input)
-
-	status := C.brotli_compress(inbuf, outbuf, C.Dictionary(dictionary), u32(level))
-	if status != C.BrotliStatus_Success {
-		return nil, fmt.Errorf("failed decompression: %d", status)
 	}
 	output = output[:*outbuf.len]
 	return output, nil

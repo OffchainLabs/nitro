@@ -1145,7 +1145,7 @@ func readWasmFile(t *testing.T, file string) ([]byte, []byte) {
 
 	wasmSource, err := wasmer.Wat2Wasm(string(source))
 	Require(t, err)
-	wasm, err := arbcompress.CompressWell(wasmSource)
+	wasm, err := arbcompress.Compress(wasmSource, arbcompress.LEVEL_WELL, arbcompress.StylusProgramDictionary)
 	Require(t, err)
 
 	toKb := func(data []byte) float64 { return float64(len(data)) / 1024.0 }

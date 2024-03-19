@@ -1,7 +1,7 @@
 // Copyright 2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::types::{BrotliStatus, Dictionary};
+use crate::{dicts::Dictionary, types::BrotliStatus};
 use wasmer::FromToNativeWasmType;
 
 unsafe impl FromToNativeWasmType for BrotliStatus {
