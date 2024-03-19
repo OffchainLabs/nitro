@@ -1,0 +1,9 @@
+
+Fuzzing for brotli. You'll need `cargo-fuzz`. Install it with `cargo install
+cargo-fuzz`. You'll also need to use the Rust nightly compiler - `rustup
+default nightly`.
+
+Then you can fuzz with
+`cargo fuzz compress -- -max_len 65536`
+or
+`cargo fuzz decompress -- -max_len 65536`.
