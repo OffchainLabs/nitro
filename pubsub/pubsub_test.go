@@ -92,7 +92,9 @@ func TestProduce(t *testing.T) {
 					return
 				}
 				gotMessages[idx][res.ID] = res.Value
-				c.ACK(consumerCtx, res.ID)
+				if err := c.ACK(consumerCtx, res.ID); err != nil {
+					t.Errorf("Error ACKing message: %v, error: %v", res.ID, err)
+				}
 			}
 		}()
 	}
@@ -127,8 +129,13 @@ func TestClaimingOwnership(t *testing.T) {
 	// Consumer messages in every third consumer but don't ack them to check
 	// that other consumers will claim ownership on those messages.
 	for i := 0; i < len(consumers); i += 3 {
+		i := i
 		consumers[i].cancel()
-		go consumers[i].consumer.Consume(context.Background())
+		go func() {
+			if _, err := consumers[i].consumer.Consume(context.Background()); err != nil {
+				t.Errorf("Error consuming message: %v", err)
+			}
+		}()
 	}
 	var total atomic.Uint64
 
@@ -151,7 +158,9 @@ func TestClaimingOwnership(t *testing.T) {
 					continue
 				}
 				gotMessages[idx][res.ID] = res.Value
-				c.ACK(consumerCtx, res.ID)
+				if err := c.ACK(consumerCtx, res.ID); err != nil {
+					t.Errorf("Error ACKing message: %v, error: %v", res.ID, err)
+				}
 				total.Add(1)
 			}
 		}()
