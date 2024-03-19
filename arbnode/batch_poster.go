@@ -210,7 +210,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".l1-block-bound-bypass", DefaultBatchPosterConfig.L1BlockBoundBypass, "post batches even if not within the layer 1 future bounds if we're within this margin of the max delay")
 	f.Bool(prefix+".use-access-lists", DefaultBatchPosterConfig.UseAccessLists, "post batches with access lists to reduce gas usage (disabled for L3s)")
 	f.String(prefix+".hotshot-url", DefaultBatchPosterConfig.HotShotUrl, "specifies the hotshot url if we are batching in espresso mode")
-	f.String(prefix+".light-client-address", DefaultBatchPosterConfig.HotShotUrl, "specifies the hotshot light client address if we are batching in espresso mode")
+	f.String(prefix+".light-client-address", DefaultBatchPosterConfig.LightClientAddress, "specifies the hotshot light client address if we are batching in espresso mode")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfig)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.ParentChainWallet.Pathname)
