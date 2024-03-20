@@ -2,6 +2,7 @@
 members = [
         "arbutil",
         "brotli",
+        "brotli/fuzz",
         "caller-env",
         "prover",
         "stylus",
