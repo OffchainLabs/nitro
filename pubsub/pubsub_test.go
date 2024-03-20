@@ -38,8 +38,13 @@ func createGroup(ctx context.Context, t *testing.T, client *redis.Client) {
 func newProducerConsumers(ctx context.Context, t *testing.T) (*Producer, []*testConsumer) {
 	t.Helper()
 	tmpI, tmpT := KeepAliveInterval, KeepAliveTimeout
+	tmpPI, tmpPT := resultPollInterval, resultPollTimeout
 	KeepAliveInterval, KeepAliveTimeout = 5*time.Millisecond, 30*time.Millisecond
-	t.Cleanup(func() { KeepAliveInterval, KeepAliveTimeout = tmpI, tmpT })
+	resultPollInterval, resultPollTimeout = time.Second, 5*time.Second
+	t.Cleanup(func() {
+		KeepAliveInterval, KeepAliveTimeout = tmpI, tmpT
+		resultPollInterval, resultPollTimeout = tmpPI, tmpPT
+	})
 
 	redisURL := redisutil.CreateTestRedis(ctx, t)
 	producer, err := NewProducer(streamName, redisURL)
@@ -88,7 +93,7 @@ func TestProduce(t *testing.T) {
 	producer, consumers := newProducerConsumers(ctx, t)
 	consumerCtx, cancelConsumers := context.WithTimeout(ctx, time.Second)
 	gotMessages := messagesMap(consumersCount)
-
+	wantResponses := make(map[int][]string)
 	for idx, c := range consumers {
 		idx, c := idx, c.consumer
 		go func() {
@@ -104,6 +109,10 @@ func TestProduce(t *testing.T) {
 					continue
 				}
 				gotMessages[idx][res.ID] = res.Value
+				if err := c.SetResult(consumerCtx, res.ID, fmt.Sprintf("result for: %v", res.ID)); err != nil {
+					t.Errorf("Error setting a result: %v", err)
+				}
+				wantResponses[idx] = append(wantResponses[idx], fmt.Sprintf("result for: %v", res.ID))
 				if err := c.ACK(consumerCtx, res.ID); err != nil {
 					t.Errorf("Error ACKing message: %v, error: %v", res.ID, err)
 				}
@@ -111,11 +120,14 @@ func TestProduce(t *testing.T) {
 		}()
 	}
 
+	var gotResponses []string
 	for i := 0; i < messagesCount; i++ {
 		value := fmt.Sprintf("msg: %d", i)
-		if err := producer.Produce(ctx, value); err != nil {
+		res, err := producer.ProduceAndWait(ctx, value)
+		if err != nil {
 			t.Errorf("Produce() unexpected error: %v", err)
 		}
+		gotResponses = append(gotResponses, res)
 	}
 	time.Sleep(time.Second)
 	cancelConsumers()
@@ -125,8 +137,24 @@ func TestProduce(t *testing.T) {
 	}
 	want := wantMessages(messagesCount)
 	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("Unexpected diff (-want +got):\n%s\n", diff)
+		t.Errorf("Unexpected diff in messages (-want +got):\n%s\n", diff)
 	}
+	wantRes := flatten(wantResponses)
+	if diff := cmp.Diff(wantRes, gotResponses); diff != "" {
+		t.Errorf("Unexpected diff in responses (-want +got):\n%s\n", diff)
+	}
+
+}
+
+func flatten(responses map[int][]string) []string {
+	var ret []string
+	for _, v := range responses {
+		ret = append(ret, v...)
+	}
+	sort.Slice(ret, func(i, j int) bool {
+		return ret[i] < ret[j]
+	})
+	return ret
 }
 
 func TestClaimingOwnership(t *testing.T) {
@@ -179,7 +207,7 @@ func TestClaimingOwnership(t *testing.T) {
 
 	for i := 0; i < messagesCount; i++ {
 		value := fmt.Sprintf("msg: %d", i)
-		if err := producer.Produce(ctx, value); err != nil {
+		if _, err := producer.produce(ctx, value); err != nil {
 			t.Errorf("Produce() unexpected error: %v", err)
 		}
 	}

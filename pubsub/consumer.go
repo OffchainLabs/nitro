@@ -17,10 +17,14 @@ var (
 	// Duration after which consumer is considered to be dead if heartbeat
 	// is not updated.
 	KeepAliveTimeout = 5 * time.Minute
+	// Timeout for how long will results be stored in the redis.
+	ResultTimeout = time.Hour
 	// Key for locking pending messages.
 	pendingMessagesKey = "lock:pending"
 )
 
+// Consumer implements a consumer for redis stream provides heartbeat to
+// indicate it is alive.
 type Consumer struct {
 	id         string
 	streamName string
@@ -33,6 +37,9 @@ type Message struct {
 	Value any
 }
 
+// NewConsumer creates a new consumer and starts heartbeat update polling in a
+// separate goroutine, that will be cancelled only when context times out or
+// is cancelled.
 func NewConsumer(ctx context.Context, id, streamName, url string) (*Consumer, error) {
 	c, err := clientFromURL(url)
 	if err != nil {
@@ -116,6 +123,14 @@ func (c *Consumer) ACK(ctx context.Context, messageID string) error {
 	log.Info("ACKing message", "consumer-id", c.id, "message-sid", messageID)
 	_, err := c.client.XAck(ctx, c.streamName, c.groupName, messageID).Result()
 	return err
+}
+
+func (c *Consumer) SetResult(ctx context.Context, messageID string, result string) error {
+	acquired, err := c.client.SetNX(ctx, messageID, result, KeepAliveInterval).Result()
+	if err != nil || !acquired {
+		return fmt.Errorf("setting result for  message: %v, error: %w", messageID, err)
+	}
+	return nil
 }
 
 // Check if a consumer is with specified ID is alive.
