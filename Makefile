@@ -28,7 +28,7 @@ ifneq ($(origin NITRO_MODIFIED),undefined)
 endif
 
 ifneq ($(origin GOLANG_LDFLAGS),undefined)
- GOLANG_PARAMS = -ldflags="$(GOLANG_LDFLAGS)"
+ GOLANG_PARAMS = -ldflags="-extldflags '-ldl' $(GOLANG_LDFLAGS)"
 endif
 
 precompile_names = AddressTable Aggregator BLS Debug FunctionTable GasInfo Info osTest Owner RetryableTx Statistics Sys
