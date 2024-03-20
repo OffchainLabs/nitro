@@ -4,6 +4,10 @@ cargo-fuzz`. You'll also need to use the Rust nightly compiler - `rustup
 default nightly`.
 
 Then you can fuzz with
-`cargo fuzz compress -- -max_len 65536`
+```bash
+cargo +nightly fuzz run compress -- -max_len=262144
+```
 or
-`cargo fuzz decompress -- -max_len 65536`.
+```bash
+cargo +nightly fuzz run decompress -- -max_len=262144
+```
