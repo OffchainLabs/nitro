@@ -5,7 +5,9 @@
 
 extern crate alloc;
 
+#[cfg(target_arch = "wasm32")]
 use alloc::vec::Vec;
+
 use core::{
     ffi::c_void,
     mem::{self, MaybeUninit},

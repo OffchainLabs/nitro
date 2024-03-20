@@ -11,7 +11,7 @@ fuzz_target!(|data: &[u8]| {
     let dict = Dictionary::StylusProgram;
 
     let mut space = 0_u32;
-    if data.len() >= 8 {
+    if data.len() >= 4 {
         space = u32::from_le_bytes(data[..4].try_into().unwrap());
         data = &data[4..];
     }
