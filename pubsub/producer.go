@@ -72,7 +72,7 @@ func (p *Producer) waitFor(ctx context.Context, id string) (string, error) {
 	for {
 		select {
 		case <-ctx.Done():
-			return "", fmt.Errorf("waiting for the consumer response %v", ctx.Err())
+			return "", fmt.Errorf("waiting for the consumer response %w", ctx.Err())
 		case <-time.After(KeepAliveInterval):
 			res, err := p.client.Get(ctx, id).Result()
 			if err != nil {
