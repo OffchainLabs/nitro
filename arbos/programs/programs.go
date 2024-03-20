@@ -354,11 +354,21 @@ func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
 	if prefixedWasm == nil {
 		return nil, fmt.Errorf("missing wasm at address %v", program)
 	}
-	wasm, err := state.StripStylusPrefix(prefixedWasm)
+	wasm, dictByte, err := state.StripStylusPrefix(prefixedWasm)
 	if err != nil {
 		return nil, err
 	}
-	return arbcompress.DecompressWithDictionary(wasm, MaxWasmSize, arbcompress.StylusProgramDictionary)
+
+	var dict arbcompress.Dictionary
+	switch dictByte {
+	case 0:
+		dict = arbcompress.EmptyDictionary
+	case 1:
+		dict = arbcompress.StylusProgramDictionary
+	default:
+		return nil, fmt.Errorf("unsupported dictionary %v", dictByte)
+	}
+	return arbcompress.DecompressWithDictionary(wasm, MaxWasmSize, dict)
 }
 
 func (p Programs) getProgram(codeHash common.Hash, time uint64) (Program, error) {

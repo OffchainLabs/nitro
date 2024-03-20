@@ -1143,15 +1143,18 @@ func readWasmFile(t *testing.T, file string) ([]byte, []byte) {
 	source, err := os.ReadFile(file)
 	Require(t, err)
 
+	// chose a random dictionary for testing, but keep the same files consistent
+	randDict := arbcompress.Dictionary((len(file) + len(t.Name())) % 2)
+
 	wasmSource, err := wasmer.Wat2Wasm(string(source))
 	Require(t, err)
-	wasm, err := arbcompress.Compress(wasmSource, arbcompress.LEVEL_WELL, arbcompress.StylusProgramDictionary)
+	wasm, err := arbcompress.Compress(wasmSource, arbcompress.LEVEL_WELL, randDict)
 	Require(t, err)
 
 	toKb := func(data []byte) float64 { return float64(len(data)) / 1024.0 }
 	colors.PrintGrey(fmt.Sprintf("%v: len %.2fK vs %.2fK", name, toKb(wasm), toKb(wasmSource)))
 
-	wasm = append(state.StylusPrefix, wasm...)
+	wasm = append(state.NewStylusPrefix(byte(randDict)), wasm...)
 	return wasm, wasmSource
 }
 
