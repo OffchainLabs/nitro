@@ -535,7 +535,18 @@ func createNodeImpl(
 		return nil, errors.New("a data availability service is required for this chain, but it was not configured")
 	}
 
-	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, daReader, blobReader)
+	// We support a nil txStreamer for the pruning code
+	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee && daReader == nil {
+		return nil, errors.New("data availability service required but unconfigured")
+	}
+	var dapReaders []daprovider.Reader
+	if daReader != nil {
+		dapReaders = append(dapReaders, daprovider.NewReaderForDAS(daReader))
+	}
+	if blobReader != nil {
+		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(blobReader))
+	}
+	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, dapReaders)
 	if err != nil {
 		return nil, err
 	}

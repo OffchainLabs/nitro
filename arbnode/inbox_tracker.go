@@ -38,23 +38,17 @@ type InboxTracker struct {
 	txStreamer *TransactionStreamer
 	mutex      sync.Mutex
 	validator  *staker.BlockValidator
-	das        daprovider.DASReader
-	blobReader daprovider.BlobReader
+	dapReaders []daprovider.Reader
 
 	batchMetaMutex sync.Mutex
 	batchMeta      *containers.LruCache[uint64, BatchMetadata]
 }
 
-func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, das daprovider.DASReader, blobReader daprovider.BlobReader) (*InboxTracker, error) {
-	// We support a nil txStreamer for the pruning code
-	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee && das == nil {
-		return nil, errors.New("data availability service required but unconfigured")
-	}
+func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapReaders []daprovider.Reader) (*InboxTracker, error) {
 	tracker := &InboxTracker{
 		db:         db,
 		txStreamer: txStreamer,
-		das:        das,
-		blobReader: blobReader,
+		dapReaders: dapReaders,
 		batchMeta:  containers.NewLruCache[uint64, BatchMetadata](1000),
 	}
 	return tracker, nil
@@ -607,14 +601,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		ctx:    ctx,
 		client: client,
 	}
-	var daProviders []daprovider.Reader
-	if t.das != nil {
-		daProviders = append(daProviders, daprovider.NewReaderForDAS(t.das))
-	}
-	if t.blobReader != nil {
-		daProviders = append(daProviders, daprovider.NewReaderForBlobReader(t.blobReader))
-	}
-	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, daProviders, daprovider.KeysetValidate)
+	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, t.dapReaders, daprovider.KeysetValidate)
 	batchMessageCounts := make(map[uint64]arbutil.MessageIndex)
 	currentpos := prevbatchmeta.MessageCount + 1
 	for {
