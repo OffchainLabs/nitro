@@ -84,6 +84,7 @@ type ConsensusInfo interface {
 	// TODO: switch from pulling to pushing safe/finalized
 	GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex, error)
 	GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error)
+	ValidatedMessageCount() (arbutil.MessageIndex, error)
 }
 
 type ConsensusSequencer interface {

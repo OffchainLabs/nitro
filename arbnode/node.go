@@ -953,7 +953,7 @@ func (n *Node) StopAndWait() {
 	}
 }
 
-func (n *Node) FetchBatch(ctx context.Context, batchNum uint64) ([]byte, error) {
+func (n *Node) FetchBatch(ctx context.Context, batchNum uint64) ([]byte, common.Hash, error) {
 	return n.InboxReader.GetSequencerMessageBytes(ctx, batchNum)
 }
 
@@ -988,4 +988,11 @@ func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta a
 
 func (n *Node) ExpectChosenSequencer() error {
 	return n.TxStreamer.ExpectChosenSequencer()
+}
+
+func (n *Node) ValidatedMessageCount() (arbutil.MessageIndex, error) {
+	if n.BlockValidator == nil {
+		return 0, errors.New("validator not set up")
+	}
+	return n.BlockValidator.GetValidated(), nil
 }

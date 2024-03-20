@@ -5,16 +5,34 @@ import (
 
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/pkg/errors"
+	flag "github.com/spf13/pflag"
 )
 
+type SyncMonitorConfig struct {
+	SafeBlockWaitForBlockValidator      bool `koanf:"safe-block-wait-for-block-validator"`
+	FinalizedBlockWaitForBlockValidator bool `koanf:"finalized-block-wait-for-block-validator"`
+}
+
+var DefaultSyncMonitorConfig = SyncMonitorConfig{
+	SafeBlockWaitForBlockValidator:      false,
+	FinalizedBlockWaitForBlockValidator: false,
+}
+
+func SyncMonitorConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".safe-block-wait-for-block-validator", DefaultSyncMonitorConfig.SafeBlockWaitForBlockValidator, "wait for block validator to complete before returning safe block number")
+	f.Bool(prefix+".finalized-block-wait-for-block-validator", DefaultSyncMonitorConfig.FinalizedBlockWaitForBlockValidator, "wait for block validator to complete before returning finalized block number")
+}
+
 type SyncMonitor struct {
+	config    *SyncMonitorConfig
 	consensus execution.ConsensusInfo
 	exec      *ExecutionEngine
 }
 
-func NewSyncMonitor(exec *ExecutionEngine) *SyncMonitor {
+func NewSyncMonitor(config *SyncMonitorConfig, exec *ExecutionEngine) *SyncMonitor {
 	return &SyncMonitor{
-		exec: exec,
+		config: config,
+		exec:   exec,
 	}
 }
 
@@ -45,6 +63,15 @@ func (s *SyncMonitor) SafeBlockNumber(ctx context.Context) (uint64, error) {
 	if err != nil {
 		return 0, err
 	}
+	if s.config.SafeBlockWaitForBlockValidator {
+		latestValidatedCount, err := s.consensus.ValidatedMessageCount()
+		if err != nil {
+			return 0, err
+		}
+		if msg > latestValidatedCount {
+			msg = latestValidatedCount
+		}
+	}
 	block := s.exec.MessageIndexToBlockNumber(msg - 1)
 	return block, nil
 }
@@ -56,6 +83,15 @@ func (s *SyncMonitor) FinalizedBlockNumber(ctx context.Context) (uint64, error) 
 	msg, err := s.consensus.GetFinalizedMsgCount(ctx)
 	if err != nil {
 		return 0, err
+	}
+	if s.config.FinalizedBlockWaitForBlockValidator {
+		latestValidatedCount, err := s.consensus.ValidatedMessageCount()
+		if err != nil {
+			return 0, err
+		}
+		if msg > latestValidatedCount {
+			msg = latestValidatedCount
+		}
 	}
 	block := s.exec.MessageIndexToBlockNumber(msg - 1)
 	return block, nil

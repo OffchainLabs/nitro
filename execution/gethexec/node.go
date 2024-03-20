@@ -51,6 +51,7 @@ type Config struct {
 	TxLookupLimit             uint64                           `koanf:"tx-lookup-limit"`
 	Dangerous                 DangerousConfig                  `koanf:"dangerous"`
 	EnablePrefetchBlock       bool                             `koanf:"enable-prefetch-block"`
+	SyncMonitor               SyncMonitorConfig                `koanf:"sync-monitor"`
 
 	forwardingTarget string
 }
@@ -83,6 +84,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
 	TxPreCheckerConfigAddOptions(prefix+".tx-pre-checker", f)
 	CachingConfigAddOptions(prefix+".caching", f)
+	SyncMonitorConfigAddOptions(prefix+"sync-monitor", f)
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	f.Bool(prefix+".enable-prefetch-block", ConfigDefault.EnablePrefetchBlock, "enable prefetching of blocks")
@@ -210,7 +212,7 @@ func CreateExecutionNode(
 		return nil, err
 	}
 
-	syncMon := NewSyncMonitor(execEngine)
+	syncMon := NewSyncMonitor(&config.SyncMonitor, execEngine)
 
 	var classicOutbox *ClassicOutboxRetriever
 
