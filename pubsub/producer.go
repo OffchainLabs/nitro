@@ -91,7 +91,7 @@ func (p *Producer) waitFor(ctx context.Context, id string) (string, error) {
 func (p *Producer) ProduceAndWait(ctx context.Context, value any) (string, error) {
 	id, err := p.produce(ctx, value)
 	if err != nil {
-		return "", fmt.Errorf("produceAndWait() producing value: %v", err)
+		return "", fmt.Errorf("produceAndWait() producing value: %w", err)
 	}
 	return p.waitFor(ctx, id)
 }
