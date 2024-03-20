@@ -56,7 +56,7 @@ func (n NodeInterface) NitroGenesisBlock(c ctx) (huge, error) {
 	return arbmath.UintToBig(block), nil
 }
 
-// returns 0 if blockNumbver is behind genesis
+// bool will be false but no error if behind genesis
 func (n NodeInterface) blockNumToMessageIndex(blockNum uint64) (arbutil.MessageIndex, bool, error) {
 	node, err := gethExecFromNodeInterfaceBackend(n.backend)
 	if err != nil {
@@ -118,10 +118,12 @@ func (n NodeInterface) GetL1Confirmations(c ctx, evm mech, blockHash bytes32) (u
 	}
 	blockNum := header.Number.Uint64()
 
+	// blocks behind genesis are treated as belonging to batch 0
 	msgNum, _, err := n.blockNumToMessageIndex(blockNum)
 	if err != nil {
 		return 0, err
 	}
+	// batches not yet posted have 0 confirmations but no error
 	batchNum, found, err := n.msgNumToInboxBatch(msgNum)
 	if err != nil || !found {
 		return 0, err
