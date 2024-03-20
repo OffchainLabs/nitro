@@ -84,7 +84,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
 	TxPreCheckerConfigAddOptions(prefix+".tx-pre-checker", f)
 	CachingConfigAddOptions(prefix+".caching", f)
-	SyncMonitorConfigAddOptions(prefix+"sync-monitor", f)
+	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	f.Bool(prefix+".enable-prefetch-block", ConfigDefault.EnablePrefetchBlock, "enable prefetching of blocks")

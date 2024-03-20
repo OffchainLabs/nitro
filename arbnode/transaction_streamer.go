@@ -441,21 +441,6 @@ func (s *TransactionStreamer) FeedPendingMessageCount() arbutil.MessageIndex {
 	return arbutil.MessageIndex(pos + uint64(len(s.broadcasterQueuedMessages)))
 }
 
-func (s *TransactionStreamer) FeedPendingMessageCount() arbutil.MessageIndex {
-	pos := atomic.LoadUint64(&s.broadcasterQueuedMessagesPos)
-	if pos == 0 {
-		return 0
-	}
-
-	s.insertionMutex.Lock()
-	defer s.insertionMutex.Unlock()
-	pos = atomic.LoadUint64(&s.broadcasterQueuedMessagesPos)
-	if pos == 0 {
-		return 0
-	}
-	return arbutil.MessageIndex(pos + uint64(len(s.broadcasterQueuedMessages)))
-}
-
 func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFeedMessage) error {
 	if len(feedMessages) == 0 {
 		return nil
