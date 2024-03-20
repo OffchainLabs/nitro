@@ -193,3 +193,39 @@ func TestL2BlockRangeForL1(t *testing.T) {
 		t.Fatalf("GetL2BlockRangeForL1 didn't fail for an invalid input")
 	}
 }
+
+func TestGetL1Confirmations(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, builder.L2.Client)
+	Require(t, err)
+
+	genesisBlock, err := builder.L2.Client.BlockByNumber(ctx, big.NewInt(0))
+	Require(t, err)
+	l1Confs, err := nodeInterface.GetL1Confirmations(&bind.CallOpts{}, genesisBlock.Hash())
+	Require(t, err)
+
+	numTransactions := 200
+
+	if l1Confs >= uint64(numTransactions) {
+		t.Fatalf("L1Confirmations for latest block %v is already %v (over %v)", genesisBlock.Number(), l1Confs, numTransactions)
+	}
+
+	for i := 0; i < numTransactions; i++ {
+		builder.L1.TransferBalance(t, "User", "User", common.Big0, builder.L1Info)
+	}
+
+	l1Confs, err = nodeInterface.GetL1Confirmations(&bind.CallOpts{}, genesisBlock.Hash())
+	Require(t, err)
+
+	// Allow a gap of 10 for asynchronicity, just in case
+	if l1Confs+10 < uint64(numTransactions) {
+		t.Fatalf("L1Confirmations for latest block %v is only %v (did not hit expected %v)", genesisBlock.Number(), l1Confs, numTransactions)
+	}
+}

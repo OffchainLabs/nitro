@@ -39,10 +39,9 @@ fn get_contract_deployed_bytecode(contract: &str) -> Vec<u8> {
 lazy_static::lazy_static! {
     static ref OSP_PREFIX: Vec<u8> = {
         let mut data = Vec::new();
-        data.extend(hex::decode("2fae8811").unwrap()); // function selector
+        data.extend(hex::decode("5d3adcfb").unwrap()); // function selector
         data.extend([0; 32]); // maxInboxMessagesRead
-        data.extend([0; 32]); // sequencerInbox
-        data.extend([0; 32]); // delayedInbox
+        data.extend([0; 32]); // bridge
         data
     };
     static ref EVM_VICINITY: evm::backend::MemoryVicinity = {

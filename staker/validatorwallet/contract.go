@@ -10,7 +10,6 @@ import (
 	"math/big"
 	"strings"
 	"sync/atomic"
-	"time"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -177,7 +176,7 @@ func (v *Contract) executeTransaction(ctx context.Context, tx *types.Transaction
 	if err != nil {
 		return nil, fmt.Errorf("getting gas for tx data: %w", err)
 	}
-	return v.dataPoster.PostTransaction(ctx, time.Now(), auth.Nonce.Uint64(), nil, *v.Address(), data, gas, auth.Value, nil)
+	return v.dataPoster.PostSimpleTransaction(ctx, auth.Nonce.Uint64(), *v.Address(), data, gas, auth.Value)
 }
 
 func (v *Contract) populateWallet(ctx context.Context, createIfMissing bool) error {
@@ -288,7 +287,7 @@ func (v *Contract) ExecuteTransactions(ctx context.Context, builder *txbuilder.B
 	if err != nil {
 		return nil, fmt.Errorf("getting gas for tx data: %w", err)
 	}
-	arbTx, err := v.dataPoster.PostTransaction(ctx, time.Now(), auth.Nonce.Uint64(), nil, *v.Address(), txData, gas, auth.Value, nil)
+	arbTx, err := v.dataPoster.PostSimpleTransaction(ctx, auth.Nonce.Uint64(), *v.Address(), txData, gas, auth.Value)
 	if err != nil {
 		return nil, err
 	}
@@ -338,7 +337,7 @@ func (v *Contract) TimeoutChallenges(ctx context.Context, challenges []uint64) (
 	if err != nil {
 		return nil, fmt.Errorf("getting gas for tx data: %w", err)
 	}
-	return v.dataPoster.PostTransaction(ctx, time.Now(), auth.Nonce.Uint64(), nil, *v.Address(), data, gas, auth.Value, nil)
+	return v.dataPoster.PostSimpleTransaction(ctx, auth.Nonce.Uint64(), *v.Address(), data, gas, auth.Value)
 }
 
 // gasForTxData returns auth.GasLimit if it's nonzero, otherwise returns estimate.
@@ -400,19 +399,12 @@ func (b *Contract) DataPoster() *dataposter.DataPoster {
 	return b.dataPoster
 }
 
-type L1ReaderInterface interface {
-	Client() arbutil.L1Interface
-	Subscribe(bool) (<-chan *types.Header, func())
-	WaitForTxApproval(ctx context.Context, tx *types.Transaction) (*types.Receipt, error)
-	UseFinalityData() bool
-}
-
 func GetValidatorWalletContract(
 	ctx context.Context,
 	validatorWalletFactoryAddr common.Address,
 	fromBlock int64,
 	transactAuth *bind.TransactOpts,
-	l1Reader L1ReaderInterface,
+	l1Reader *headerreader.HeaderReader,
 	createIfMissing bool,
 ) (*common.Address, error) {
 	client := l1Reader.Client()
@@ -427,7 +419,7 @@ func GetValidatorWalletContract(
 		FromBlock: big.NewInt(fromBlock),
 		ToBlock:   nil,
 		Addresses: []common.Address{validatorWalletFactoryAddr},
-		Topics:    [][]common.Hash{{walletCreatedID}, nil, {transactAuth.From.Hash()}},
+		Topics:    [][]common.Hash{{walletCreatedID}, nil, {common.BytesToHash(transactAuth.From.Bytes())}},
 	}
 	logs, err := client.FilterLogs(ctx, query)
 	if err != nil {

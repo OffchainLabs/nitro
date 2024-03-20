@@ -98,8 +98,9 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 			}
 			l1Txs = append(l1Txs, l1tx)
 		}
-		// adding multiple messages in the same AddLocal to get them in the same L1 block
-		errs := builder.L1.L1Backend.TxPool().AddLocals(l1Txs)
+
+		// adding multiple messages in the same Add with local=true to get them in the same L1 block
+		errs := builder.L1.L1Backend.TxPool().Add(l1Txs, true, false)
 		for _, err := range errs {
 			if err != nil {
 				Fatal(t, err)
@@ -155,7 +156,8 @@ func testTwoNodesLong(t *testing.T, dasModeStr string) {
 
 	_, err = builder.L2.EnsureTxSucceededWithTimeout(delayedTxs[len(delayedTxs)-1], time.Second*10)
 	Require(t, err, "Failed waiting for Tx on main node")
-	_, err = testClientB.EnsureTxSucceededWithTimeout(delayedTxs[len(delayedTxs)-1], time.Second*10)
+
+	_, err = testClientB.EnsureTxSucceededWithTimeout(delayedTxs[len(delayedTxs)-1], time.Second*30)
 	Require(t, err, "Failed waiting for Tx on secondary node")
 	delayedBalance, err := testClientB.Client.BalanceAt(ctx, builder.L2Info.GetAddress("DelayedReceiver"), nil)
 	Require(t, err)

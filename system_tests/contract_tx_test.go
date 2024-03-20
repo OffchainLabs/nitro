@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
@@ -64,10 +63,10 @@ func TestContractTxDeploy(t *testing.T) {
 			Data:      deployCode,
 		}
 		l2Msg := []byte{arbos.L2MessageKind_ContractTx}
-		l2Msg = append(l2Msg, math.U256Bytes(arbmath.UintToBig(contractTx.Gas))...)
-		l2Msg = append(l2Msg, math.U256Bytes(contractTx.GasFeeCap)...)
+		l2Msg = append(l2Msg, arbmath.Uint64ToU256Bytes(contractTx.Gas)...)
+		l2Msg = append(l2Msg, arbmath.U256Bytes(contractTx.GasFeeCap)...)
 		l2Msg = append(l2Msg, common.Hash{}.Bytes()...) // to is zero, translated into nil
-		l2Msg = append(l2Msg, math.U256Bytes(contractTx.Value)...)
+		l2Msg = append(l2Msg, arbmath.U256Bytes(contractTx.Value)...)
 		l2Msg = append(l2Msg, contractTx.Data...)
 
 		err = builder.L2.ConsensusNode.TxStreamer.AddMessages(pos, true, []arbostypes.MessageWithMetadata{

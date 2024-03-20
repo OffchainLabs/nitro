@@ -322,6 +322,7 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		containers.NewLruCacheWithOnEvict(config.NonceCacheSize, s.onNonceFailureEvict),
 		func() time.Duration { return configFetcher().NonceFailureCacheExpiry },
 	}
+	s.Pause()
 	execEngine.EnableReorgSequencing()
 	return s, nil
 }
@@ -385,8 +386,9 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 			return errors.New("transaction sender is not on the whitelist")
 		}
 	}
-	if tx.Type() >= types.ArbitrumDepositTxType {
-		// Should be unreachable due to UnmarshalBinary not accepting Arbitrum internal txs
+	if tx.Type() >= types.ArbitrumDepositTxType || tx.Type() == types.BlobTxType {
+		// Should be unreachable for Arbitrum types due to UnmarshalBinary not accepting Arbitrum internal txs
+		// and we want to disallow BlobTxType since Arbitrum doesn't support EIP-4844 txs yet.
 		return types.ErrTxTypeNotSupported
 	}
 
@@ -488,20 +490,20 @@ func (s *Sequencer) ForwardTarget() string {
 	if s.forwarder == nil {
 		return ""
 	}
-	return s.forwarder.target
+	return s.forwarder.PrimaryTarget()
 }
 
 func (s *Sequencer) ForwardTo(url string) error {
 	s.activeMutex.Lock()
 	defer s.activeMutex.Unlock()
 	if s.forwarder != nil {
-		if s.forwarder.target == url {
+		if s.forwarder.PrimaryTarget() == url {
 			log.Warn("attempted to update sequencer forward target with existing target", "url", url)
 			return nil
 		}
 		s.forwarder.Disable()
 	}
-	s.forwarder = NewForwarder(url, &s.config().Forwarder)
+	s.forwarder = NewForwarder([]string{url}, &s.config().Forwarder)
 	err := s.forwarder.Initialize(s.GetContext())
 	if err != nil {
 		log.Error("failed to set forward agent", "err", err)

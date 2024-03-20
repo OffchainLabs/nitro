@@ -24,7 +24,6 @@ import (
 	"github.com/syndtr/goleveldb/leveldb"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
@@ -33,8 +32,10 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
+	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -78,7 +79,7 @@ type TransactionStreamerConfig struct {
 type TransactionStreamerConfigFetcher func() *TransactionStreamerConfig
 
 var DefaultTransactionStreamerConfig = TransactionStreamerConfig{
-	MaxBroadcasterQueueSize: 1024,
+	MaxBroadcasterQueueSize: 50_000,
 	MaxReorgResequenceDepth: 1024,
 	ExecuteMessageLoopDelay: time.Millisecond * 100,
 }
@@ -440,7 +441,22 @@ func (s *TransactionStreamer) FeedPendingMessageCount() arbutil.MessageIndex {
 	return arbutil.MessageIndex(pos + uint64(len(s.broadcasterQueuedMessages)))
 }
 
-func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*broadcaster.BroadcastFeedMessage) error {
+func (s *TransactionStreamer) FeedPendingMessageCount() arbutil.MessageIndex {
+	pos := atomic.LoadUint64(&s.broadcasterQueuedMessagesPos)
+	if pos == 0 {
+		return 0
+	}
+
+	s.insertionMutex.Lock()
+	defer s.insertionMutex.Unlock()
+	pos = atomic.LoadUint64(&s.broadcasterQueuedMessagesPos)
+	if pos == 0 {
+		return 0
+	}
+	return arbutil.MessageIndex(pos + uint64(len(s.broadcasterQueuedMessages)))
+}
+
+func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFeedMessage) error {
 	if len(feedMessages) == 0 {
 		return nil
 	}
@@ -545,7 +561,8 @@ func (s *TransactionStreamer) AddFakeInitMessage() error {
 	if err != nil {
 		return fmt.Errorf("failed to serialize chain config: %w", err)
 	}
-	msg := append(append(math.U256Bytes(s.chainConfig.ChainID), 0), chainConfigJson...)
+	chainIdBytes := arbmath.U256Bytes(s.chainConfig.ChainID)
+	msg := append(append(chainIdBytes, 0), chainConfigJson...)
 	return s.AddMessages(0, false, []arbostypes.MessageWithMetadata{{
 		Message: &arbostypes.L1IncomingMessage{
 			Header: &arbostypes.L1IncomingMessageHeader{
@@ -870,12 +887,6 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(pos arbutil.MessageIndex
 		return err
 	}
 
-	if s.broadcastServer != nil {
-		if err := s.broadcastServer.BroadcastSingle(msgWithMeta, pos); err != nil {
-			log.Error("failed broadcasting message", "pos", pos, "err", err)
-		}
-	}
-
 	return nil
 }
 
@@ -931,6 +942,12 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 	default:
 	}
 
+	if s.broadcastServer != nil {
+		if err := s.broadcastServer.BroadcastMessages(messages, pos); err != nil {
+			log.Error("failed broadcasting message", "pos", pos, "err", err)
+		}
+	}
+
 	return nil
 }
 
@@ -972,8 +989,16 @@ func (s *TransactionStreamer) executeNextMsg(ctx context.Context, exec execution
 		log.Error("feedOneMsg failed to readMessage", "err", err, "pos", pos)
 		return false
 	}
-	err = s.exec.DigestMessage(pos, msg)
-	if err != nil {
+	var msgForPrefetch *arbostypes.MessageWithMetadata
+	if pos+1 < msgCount {
+		msg, err := s.GetMessage(pos + 1)
+		if err != nil {
+			log.Error("feedOneMsg failed to readMessage", "err", err, "pos", pos+1)
+			return false
+		}
+		msgForPrefetch = msg
+	}
+	if err = s.exec.DigestMessage(pos, msg, msgForPrefetch); err != nil {
 		logger := log.Warn
 		if prevMessageCount < msgCount {
 			logger = log.Debug

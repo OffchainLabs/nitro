@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"sort"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -17,11 +18,13 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/merkletree"
 )
@@ -82,18 +85,49 @@ func (n NodeInterface) GetL1Confirmations(c ctx, evm mech, blockHash bytes32) (u
 	if header == nil {
 		return 0, errors.New("unknown block hash")
 	}
+
 	l2BlockNum := header.Number.Uint64()
-	canonicalHash := blockchain.GetCanonicalHash(l2BlockNum)
-	if canonicalHash != header.Hash() {
-		return 0, errors.New("block hash is non-canonical")
-	}
 	batchNum, err := n.FindBatchContainingBlock(c, evm, l2BlockNum)
 	if err != nil {
 		return 0, err
 	}
-	blockNum, err := node.ExecEngine.GetBatchFetcher().GetBatchParentChainBlock(batchNum)
+	// TODO
+	// if err != nil {
+	// 	if errors.Is(err, blockInGenesis) {
+	// 		batch = 0
+	// 	} else if errors.Is(err, blockAfterLatestBatch) {
+	// 		return 0, nil
+	// 	} else {
+	// 		return 0, err
+	// 	}
+	// }
+	parentChainBlockNum, err := node.ExecEngine.GetBatchFetcher().GetBatchParentChainBlock(batchNum)
 	if err != nil {
 		return 0, err
+	}
+
+	if node.ParentChainReader.IsParentChainArbitrum() {
+		parentChainClient := node.ParentChainReader.Client()
+		parentNodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, parentChainClient)
+		if err != nil {
+			return 0, err
+		}
+		parentChainBlock, err := parentChainClient.BlockByNumber(n.context, new(big.Int).SetUint64(parentChainBlockNum))
+		if err != nil {
+			// Hide the parent chain RPC error from the client in case it contains sensitive information.
+			// Likely though, this error is just "not found" because the block got reorg'd.
+			return 0, fmt.Errorf("failed to get parent chain block %v containing batch", parentChainBlockNum)
+		}
+		confs, err := parentNodeInterface.GetL1Confirmations(&bind.CallOpts{Context: n.context}, parentChainBlock.Hash())
+		if err != nil {
+			log.Warn(
+				"Failed to get L1 confirmations from parent chain",
+				"blockNumber", parentChainBlockNum,
+				"blockHash", parentChainBlock.Hash(), "err", err,
+			)
+			return 0, fmt.Errorf("failed to get L1 confirmations from parent chain for block %v", parentChainBlock.Hash())
+		}
+		return confs, nil
 	}
 	if node.ParentChainReader == nil {
 		return 0, nil
@@ -106,10 +140,10 @@ func (n NodeInterface) GetL1Confirmations(c ctx, evm mech, blockHash bytes32) (u
 		return 0, errors.New("no headers read from l1")
 	}
 	latestBlockNum := latestHeader.Number.Uint64()
-	if latestBlockNum < blockNum {
+	if latestBlockNum < parentChainBlockNum {
 		return 0, nil
 	}
-	return (latestBlockNum - blockNum), nil
+	return (latestBlockNum - parentChainBlockNum), nil
 }
 
 func (n NodeInterface) EstimateRetryableTicket(
@@ -498,7 +532,7 @@ func (n NodeInterface) GasEstimateComponents(
 	block := rpc.BlockNumberOrHashWithHash(n.header.Hash(), false)
 	args := n.messageArgs(evm, value, to, contractCreation, data)
 
-	totalRaw, err := arbitrum.EstimateGas(context, backend, args, block, gasCap)
+	totalRaw, err := arbitrum.EstimateGas(context, backend, args, block, nil, gasCap)
 	if err != nil {
 		return 0, 0, nil, nil, err
 	}

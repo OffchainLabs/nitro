@@ -28,7 +28,7 @@ var ErrSequencerInsertLockTaken = errors.New("insert lock taken")
 
 // always needed
 type ExecutionClient interface {
-	DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) error
+	DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) error
 	Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) error
 	HeadMessageNumber() (arbutil.MessageIndex, error)
 	HeadMessageNumberSync(t *testing.T) (arbutil.MessageIndex, error)
@@ -65,12 +65,14 @@ type FullExecutionClient interface {
 	StopAndWait()
 
 	Maintenance() error
+
+	ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error)
 }
 
 // not implemented in execution, used as input
 // BatchFetcher is required for any execution node
 type BatchFetcher interface {
-	FetchBatch(ctx context.Context, batchNum uint64) ([]byte, error)
+	FetchBatch(ctx context.Context, batchNum uint64) ([]byte, common.Hash, error)
 	FindInboxBatchContainingMessage(message arbutil.MessageIndex) (uint64, error)
 	GetBatchParentChainBlock(seqNum uint64) (uint64, error)
 }

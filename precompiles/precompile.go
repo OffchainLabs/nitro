@@ -4,10 +4,12 @@
 package precompiles
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"math/big"
 	"reflect"
+	"sort"
 	"strconv"
 	"strings"
 	"unicode"
@@ -96,12 +98,8 @@ func RenderSolError(solErr abi.Error, data []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	valsRange, ok := vals.([]interface{})
-	if !ok {
-		return "", errors.New("unexpected unpack result")
-	}
-	strVals := make([]string, 0, len(valsRange))
-	for _, val := range valsRange {
+	strVals := make([]string, 0, len(vals))
+	for _, val := range vals {
 		strVals = append(strVals, fmt.Sprintf("%v", val))
 	}
 	return fmt.Sprintf("error %v(%v)", solErr.Name, strings.Join(strVals, ", ")), nil
@@ -538,6 +536,11 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbGasInfo.methodsByName["GetL1FeesAvailable"].arbosVersion = 10
 	ArbGasInfo.methodsByName["GetL1RewardRate"].arbosVersion = 11
 	ArbGasInfo.methodsByName["GetL1RewardRecipient"].arbosVersion = 11
+	ArbGasInfo.methodsByName["GetL1PricingEquilibrationUnits"].arbosVersion = 20
+	ArbGasInfo.methodsByName["GetLastL1PricingUpdateTime"].arbosVersion = 20
+	ArbGasInfo.methodsByName["GetL1PricingFundsDueForRewards"].arbosVersion = 20
+	ArbGasInfo.methodsByName["GetL1PricingUnitsSinceUpdate"].arbosVersion = 20
+	ArbGasInfo.methodsByName["GetLastL1PricingSurplus"].arbosVersion = 20
 	insert(MakePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}))
 	insert(MakePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}))
 
@@ -554,7 +557,8 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwnerPublic := insert(MakePrecompile(templates.ArbOwnerPublicMetaData, &ArbOwnerPublic{Address: hex("6b")}))
 	ArbOwnerPublic.methodsByName["GetInfraFeeAccount"].arbosVersion = 5
 	ArbOwnerPublic.methodsByName["RectifyChainOwner"].arbosVersion = 11
-	ArbOwnerPublic.methodsByName["GetBrotliCompressionLevel"].arbosVersion = 12
+	ArbOwnerPublic.methodsByName["GetBrotliCompressionLevel"].arbosVersion = 20
+	ArbOwnerPublic.methodsByName["GetScheduledUpgrade"].arbosVersion = 20
 
 	ArbRetryableImpl := &ArbRetryableTx{Address: types.ArbRetryableTxAddress}
 	ArbRetryable := insert(MakePrecompile(templates.ArbRetryableTxMetaData, ArbRetryableImpl))
@@ -590,7 +594,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwner.methodsByName["SetInfraFeeAccount"].arbosVersion = 5
 	ArbOwner.methodsByName["ReleaseL1PricerSurplusFunds"].arbosVersion = 10
 	ArbOwner.methodsByName["SetChainConfig"].arbosVersion = 11
-	ArbOwner.methodsByName["SetBrotliCompressionLevel"].arbosVersion = 12
+	ArbOwner.methodsByName["SetBrotliCompressionLevel"].arbosVersion = 20
 
 	insert(ownerOnly(ArbOwnerImpl.Address, ArbOwner, emitOwnerActs))
 	insert(debugOnly(MakePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")})))
@@ -781,6 +785,9 @@ func (p *Precompile) Get4ByteMethodSignatures() [][4]byte {
 	for sig := range p.methods {
 		ret = append(ret, sig)
 	}
+	sort.Slice(ret, func(i, j int) bool {
+		return bytes.Compare(ret[i][:], ret[j][:]) < 0
+	})
 	return ret
 }
 

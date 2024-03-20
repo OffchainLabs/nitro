@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -25,6 +26,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/util"
+	deploycode "github.com/offchainlabs/nitro/deploy"
 )
 
 func main() {
@@ -40,6 +42,8 @@ func main() {
 	deployAccount := flag.String("l1DeployAccount", "", "l1 seq account to use (default is first account in keystore)")
 	ownerAddressString := flag.String("ownerAddress", "", "the rollup owner's address")
 	sequencerAddressString := flag.String("sequencerAddress", "", "the sequencer's address")
+	batchPostersString := flag.String("batchPosters", "", "the comma separated array of addresses of batch posters. Defaults to sequencer address")
+	batchPosterManagerAddressString := flag.String("batchPosterManger", "", "the batch poster manger's address. Defaults to owner address")
 	nativeTokenAddressString := flag.String("nativeTokenAddress", "0x0000000000000000000000000000000000000000", "address of the ERC20 token which is used as native L2 currency")
 	maxDataSizeUint := flag.Uint64("maxDataSize", 117964, "maximum data size of a batch or a cross-chain message (default = 90% of Geth's 128KB tx size limit)")
 	loserEscrowAddressString := flag.String("loserEscrowAddress", "", "the address which half of challenge loser's funds accumulate at")
@@ -55,6 +59,7 @@ func main() {
 	authorizevalidators := flag.Uint64("authorizevalidators", 0, "Number of validators to preemptively authorize")
 	txTimeout := flag.Duration("txtimeout", 10*time.Minute, "Timeout when waiting for a transaction to be included in a block")
 	prod := flag.Bool("prod", false, "Whether to configure the rollup for production or testing")
+	isUsingFeeToken := flag.Bool("isUsingFeeToken", false, "true if the chain uses custom fee token")
 	flag.Parse()
 	l1ChainId := new(big.Int).SetUint64(*l1ChainIdUint)
 	maxDataSize := new(big.Int).SetUint64(*maxDataSizeUint)
@@ -91,15 +96,47 @@ func main() {
 	if !common.IsHexAddress(*sequencerAddressString) && len(*sequencerAddressString) > 0 {
 		panic("specified sequencer address is invalid")
 	}
+	sequencerAddress := common.HexToAddress(*sequencerAddressString)
+
 	if !common.IsHexAddress(*ownerAddressString) {
 		panic("please specify a valid rollup owner address")
 	}
+	ownerAddress := common.HexToAddress(*ownerAddressString)
+
 	if *prod && !common.IsHexAddress(*loserEscrowAddressString) {
 		panic("please specify a valid loser escrow address")
 	}
 
-	sequencerAddress := common.HexToAddress(*sequencerAddressString)
-	ownerAddress := common.HexToAddress(*ownerAddressString)
+	var batchPosters []common.Address
+	if len(*batchPostersString) > 0 {
+		batchPostersArr := strings.Split(*batchPostersString, ",")
+		for _, address := range batchPostersArr {
+			if !common.IsHexAddress(address) {
+				log.Error("invalid address in batch posters array", "address", address)
+				continue
+			}
+			batchPosters = append(batchPosters, common.HexToAddress(address))
+		}
+		if len(batchPosters) != len(batchPostersArr) {
+			panic("found at least one invalid address in batch posters array")
+		}
+	}
+	if len(batchPosters) == 0 {
+		log.Info("batch posters array was empty, defaulting to sequencer address")
+		batchPosters = append(batchPosters, sequencerAddress)
+	}
+
+	var batchPosterManagerAddress common.Address
+	if common.IsHexAddress(*batchPosterManagerAddressString) {
+		batchPosterManagerAddress = common.HexToAddress(*batchPosterManagerAddressString)
+	} else {
+		if len(*batchPosterManagerAddressString) > 0 {
+			panic("please specify a valid batch poster manager address")
+		}
+		log.Info("batch poster manager address was empty, defaulting to owner address")
+		batchPosterManagerAddress = ownerAddress
+	}
+
 	loserEscrowAddress := common.HexToAddress(*loserEscrowAddressString)
 	if sequencerAddress != (common.Address{}) && ownerAddress != l1TransactionOpts.From {
 		panic("cannot specify sequencer address if owner is not deployer")
@@ -141,15 +178,17 @@ func main() {
 	defer l1Reader.StopAndWait()
 
 	nativeToken := common.HexToAddress(*nativeTokenAddressString)
-	deployedAddresses, err := arbnode.DeployOnL1(
+	deployedAddresses, err := deploycode.DeployOnL1(
 		ctx,
 		l1Reader,
 		l1TransactionOpts,
-		sequencerAddress,
+		batchPosters,
+		batchPosterManagerAddress,
 		*authorizevalidators,
 		arbnode.GenerateRollupConfig(*prod, moduleRoot, ownerAddress, &chainConfig, chainConfigJson, loserEscrowAddress),
 		nativeToken,
 		maxDataSize,
+		*isUsingFeeToken,
 	)
 	if err != nil {
 		flag.Usage()

@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
@@ -40,8 +39,8 @@ func ParseL2Transactions(msg *arbostypes.L1IncomingMessage, chainId *big.Int, ba
 			return nil, errors.New("cannot issue L2 funded by L1 tx without L1 request id")
 		}
 		kind := msg.L2msg[0]
-		depositRequestId := crypto.Keccak256Hash(msg.Header.RequestId[:], math.U256Bytes(common.Big0))
-		unsignedRequestId := crypto.Keccak256Hash(msg.Header.RequestId[:], math.U256Bytes(common.Big1))
+		depositRequestId := crypto.Keccak256Hash(msg.Header.RequestId[:], arbmath.U256Bytes(common.Big0))
+		unsignedRequestId := crypto.Keccak256Hash(msg.Header.RequestId[:], arbmath.U256Bytes(common.Big1))
 		tx, err := parseUnsignedTx(bytes.NewReader(msg.L2msg[1:]), msg.Header.Poster, &unsignedRequestId, chainId, kind)
 		if err != nil {
 			return nil, err
@@ -146,7 +145,7 @@ func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, reque
 
 			var nextRequestId *common.Hash
 			if requestId != nil {
-				subRequestId := crypto.Keccak256Hash(requestId[:], math.U256Bytes(index))
+				subRequestId := crypto.Keccak256Hash(requestId[:], arbmath.U256Bytes(index))
 				nextRequestId = &subRequestId
 			}
 			nestedSegments, err := parseL2Message(bytes.NewReader(nextMsg), poster, timestamp, nextRequestId, chainId, depth+1)
@@ -166,8 +165,9 @@ func parseL2Message(rd io.Reader, poster common.Address, timestamp uint64, reque
 		if err := newTx.UnmarshalBinary(readBytes); err != nil {
 			return nil, err
 		}
-		if newTx.Type() >= types.ArbitrumDepositTxType {
-			// Should be unreachable due to UnmarshalBinary not accepting Arbitrum internal txs
+		if newTx.Type() >= types.ArbitrumDepositTxType || newTx.Type() == types.BlobTxType {
+			// Should be unreachable for Arbitrum types due to UnmarshalBinary not accepting Arbitrum internal txs
+			// and we want to disallow BlobTxType since Arbitrum doesn't support EIP-4844 txs yet.
 			return nil, types.ErrTxTypeNotSupported
 		}
 		return types.Transactions{newTx}, nil

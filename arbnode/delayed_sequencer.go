@@ -60,7 +60,7 @@ var TestDelayedSequencerConfig = DelayedSequencerConfig{
 	Enable:              true,
 	FinalizeDistance:    20,
 	RequireFullFinality: false,
-	UseMergeFinality:    true,
+	UseMergeFinality:    false,
 }
 
 func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReader, exec execution.ExecutionSequencer, coordinator *SeqCoordinator, config DelayedSequencerConfigFetcher) (*DelayedSequencer, error) {
@@ -100,16 +100,20 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 	}
 
 	var finalized uint64
-	if config.UseMergeFinality && lastBlockHeader.Difficulty.Sign() == 0 {
+	var finalizedHash common.Hash
+	if config.UseMergeFinality && headerreader.HeaderIndicatesFinalitySupport(lastBlockHeader) {
+		var header *types.Header
 		var err error
 		if config.RequireFullFinality {
-			finalized, err = d.l1Reader.LatestFinalizedBlockNr(ctx)
+			header, err = d.l1Reader.LatestFinalizedBlockHeader(ctx)
 		} else {
-			finalized, err = d.l1Reader.LatestSafeBlockNr(ctx)
+			header, err = d.l1Reader.LatestSafeBlockHeader(ctx)
 		}
 		if err != nil {
 			return err
 		}
+		finalized = header.Number.Uint64()
+		finalizedHash = header.Hash()
 	} else {
 		currentNum := lastBlockHeader.Number.Int64()
 		if currentNum < config.FinalizeDistance {
@@ -167,7 +171,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 
 	// Sequence the delayed messages, if any
 	if len(messages) > 0 {
-		delayedBridgeAcc, err := d.bridge.GetAccumulator(ctx, pos-1, new(big.Int).SetUint64(finalized))
+		delayedBridgeAcc, err := d.bridge.GetAccumulator(ctx, pos-1, new(big.Int).SetUint64(finalized), finalizedHash)
 		if err != nil {
 			return err
 		}
