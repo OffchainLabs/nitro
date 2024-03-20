@@ -957,7 +957,7 @@ func (n *Node) FetchBatch(ctx context.Context, batchNum uint64) ([]byte, common.
 	return n.InboxReader.GetSequencerMessageBytes(ctx, batchNum)
 }
 
-func (n *Node) FindInboxBatchContainingMessage(message arbutil.MessageIndex) (uint64, error) {
+func (n *Node) FindInboxBatchContainingMessage(message arbutil.MessageIndex) (uint64, bool, error) {
 	return n.InboxTracker.FindInboxBatchContainingMessage(message)
 }
 

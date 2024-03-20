@@ -56,7 +56,7 @@ type InboxTrackerInterface interface {
 	GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error)
 	GetBatchAcc(seqNum uint64) (common.Hash, error)
 	GetBatchCount() (uint64, error)
-	FindInboxBatchContainingMessage(pos arbutil.MessageIndex) (uint64, error)
+	FindInboxBatchContainingMessage(pos arbutil.MessageIndex) (uint64, bool, error)
 }
 
 type TransactionStreamerInterface interface {
@@ -320,9 +320,12 @@ func (v *StatelessBlockValidator) GlobalStatePositionsAtCount(count arbutil.Mess
 	if count == 1 {
 		return GlobalStatePosition{}, GlobalStatePosition{1, 0}, nil
 	}
-	batch, err := v.inboxTracker.FindInboxBatchContainingMessage(count - 1)
+	batch, found, err := v.inboxTracker.FindInboxBatchContainingMessage(count - 1)
 	if err != nil {
 		return GlobalStatePosition{}, GlobalStatePosition{}, err
+	}
+	if !found {
+		return GlobalStatePosition{}, GlobalStatePosition{}, errors.New("batch not found on L1 yet")
 	}
 	return GlobalStatePositionsAtCount(v.inboxTracker, count, batch)
 }

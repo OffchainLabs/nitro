@@ -228,13 +228,20 @@ func (t *InboxTracker) GetBatchCount() (uint64, error) {
 	return count, nil
 }
 
-func (t *InboxTracker) FindInboxBatchContainingMessage(pos arbutil.MessageIndex) (uint64, error) {
+func (t *InboxTracker) FindInboxBatchContainingMessage(pos arbutil.MessageIndex) (uint64, bool, error) {
 	batchCount, err := t.GetBatchCount()
 	if err != nil {
-		return 0, err
+		return 0, false, err
 	}
 	low := uint64(0)
 	high := batchCount - 1
+	lastBatchMessageCount, err := t.GetBatchMessageCount(high)
+	if err != nil {
+		return 0, false, err
+	}
+	if lastBatchMessageCount <= pos {
+		return 0, false, nil
+	}
 	// Iteration preconditions:
 	// - high >= low
 	// - msgCount(low - 1) <= pos implies low <= target
@@ -245,23 +252,24 @@ func (t *InboxTracker) FindInboxBatchContainingMessage(pos arbutil.MessageIndex)
 		mid := (low + high) / 2
 		count, err := t.GetBatchMessageCount(mid)
 		if err != nil {
-			return 0, err
+			return 0, false, err
 		}
 		if count < pos {
 			// Must narrow as mid >= low, therefore mid + 1 > low, therefore newLow > oldLow
 			// Keeps low precondition as msgCount(mid) < pos
 			low = mid + 1
 		} else if count == pos {
-			return mid + 1, err
+			return mid + 1, true, nil
 		} else if count == pos+1 || mid == low { // implied: count > pos
-			return mid, nil
-		} else { // implied: count > pos + 1
-			// Must narrow as mid < high, therefore newHigh < lowHigh
+			return mid, true, nil
+		} else {
+			// implied: count > pos + 1
+			// Must narrow as mid < high, therefore newHigh < oldHigh
 			// Keeps high precondition as msgCount(mid) > pos
 			high = mid
 		}
 		if high == low {
-			return high, err
+			return high, true, nil
 		}
 	}
 }

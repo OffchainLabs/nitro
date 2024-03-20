@@ -24,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/merkletree"
@@ -55,21 +56,51 @@ func (n NodeInterface) NitroGenesisBlock(c ctx) (huge, error) {
 	return arbmath.UintToBig(block), nil
 }
 
-func (n NodeInterface) FindBatchContainingBlock(c ctx, evm mech, blockNum uint64) (uint64, error) {
+// returns 0 if blockNumbver is behind genesis
+func (n NodeInterface) blockNumToMessageIndex(blockNum uint64) (arbutil.MessageIndex, bool, error) {
 	node, err := gethExecFromNodeInterfaceBackend(n.backend)
 	if err != nil {
-		return 0, err
+		return 0, false, err
+	}
+	blockchain, err := blockchainFromNodeInterfaceBackend(n.backend)
+	if err != nil {
+		return 0, false, err
+	}
+	if blockNum < blockchain.Config().ArbitrumChainParams.GenesisBlockNum {
+		return 0, true, nil
 	}
 	msgIndex, err := node.ExecEngine.BlockNumberToMessageIndex(blockNum)
 	if err != nil {
-		return 0, err
+		return 0, false, err
+	}
+	return msgIndex, true, nil
+}
+
+func (n NodeInterface) msgNumToInboxBatch(msgIndex arbutil.MessageIndex) (uint64, bool, error) {
+	node, err := gethExecFromNodeInterfaceBackend(n.backend)
+	if err != nil {
+		return 0, false, err
 	}
 	fetcher := node.ExecEngine.GetBatchFetcher()
 	if fetcher == nil {
-		return 0, errors.New("batch fetcher not set")
+		return 0, false, errors.New("batch fetcher not set")
 	}
-	batch, err := fetcher.FindInboxBatchContainingMessage(msgIndex)
-	return batch, err
+	return fetcher.FindInboxBatchContainingMessage(msgIndex)
+}
+
+func (n NodeInterface) FindBatchContainingBlock(c ctx, evm mech, blockNum uint64) (uint64, error) {
+	msgIndex, found, err := n.blockNumToMessageIndex(blockNum)
+	if err != nil {
+		return 0, err
+	}
+	if !found {
+		return 0, fmt.Errorf("block %v is part of genesis", blockNum)
+	}
+	res, found, err := n.msgNumToInboxBatch(msgIndex)
+	if err == nil && !found {
+		return 0, errors.New("block not yet found on any block")
+	}
+	return res, err
 }
 
 func (n NodeInterface) GetL1Confirmations(c ctx, evm mech, blockHash bytes32) (uint64, error) {
@@ -85,22 +116,16 @@ func (n NodeInterface) GetL1Confirmations(c ctx, evm mech, blockHash bytes32) (u
 	if header == nil {
 		return 0, errors.New("unknown block hash")
 	}
+	blockNum := header.Number.Uint64()
 
-	l2BlockNum := header.Number.Uint64()
-	batchNum, err := n.FindBatchContainingBlock(c, evm, l2BlockNum)
+	msgNum, _, err := n.blockNumToMessageIndex(blockNum)
 	if err != nil {
 		return 0, err
 	}
-	// TODO
-	// if err != nil {
-	// 	if errors.Is(err, blockInGenesis) {
-	// 		batch = 0
-	// 	} else if errors.Is(err, blockAfterLatestBatch) {
-	// 		return 0, nil
-	// 	} else {
-	// 		return 0, err
-	// 	}
-	// }
+	batchNum, found, err := n.msgNumToInboxBatch(msgNum)
+	if err != nil || !found {
+		return 0, err
+	}
 	parentChainBlockNum, err := node.ExecEngine.GetBatchFetcher().GetBatchParentChainBlock(batchNum)
 	if err != nil {
 		return 0, err
