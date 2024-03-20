@@ -8,4 +8,4 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-caller-env = { path = "../../caller-env/", features = ["static_caller"] }
+caller-env = { path = "../../caller-env/", default-features = false, features = ["static_caller"] }

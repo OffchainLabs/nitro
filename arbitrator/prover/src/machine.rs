@@ -411,6 +411,7 @@ impl Module {
                         &types,
                         func_type_idxs[idx],
                         internals_offset,
+                        bin_name,
                     )
                 },
                 func_ty.clone(),

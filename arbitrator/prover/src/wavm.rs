@@ -6,7 +6,7 @@ use crate::{
     host::InternalFunc,
     value::{ArbValueType, FunctionType, IntegerValType},
 };
-use arbutil::Bytes32;
+use arbutil::{Bytes32, Color, DebugColor};
 use digest::Digest;
 use eyre::{bail, ensure, Result};
 use fnv::FnvHashMap as HashMap;
@@ -469,6 +469,7 @@ pub fn wasm_to_wavm(
     all_types: &[FunctionType],
     all_types_func_idx: u32,
     internals_offset: u32,
+    name: &str,
 ) -> Result<()> {
     use Operator::*;
 
@@ -598,7 +599,7 @@ pub fn wasm_to_wavm(
             let func = $func;
             let sig = func.signature();
             let Some((module, func)) = fp_impls.get(&func) else {
-                bail!("No implementation for floating point operation {:?}", &func)
+                bail!("No implementation for floating point operation {} in {}", func.debug_red(), name.red());
             };
 
             // Reinterpret float args into ints
