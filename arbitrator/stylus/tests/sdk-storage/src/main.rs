@@ -1,4 +1,4 @@
-// Copyright 2023, Offchain Labs, Inc.
+// Copyright 2023-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 #![no_main]
@@ -7,9 +7,10 @@ use stylus_sdk::{
     alloy_primitives::{Address, Signed, Uint, B256, I32, U16, U256, U64, U8},
     prelude::*,
 };
+use mini_alloc::MiniAlloc;
 
 #[global_allocator]
-static ALLOC: wee_alloc::WeeAlloc = wee_alloc::WeeAlloc::INIT;
+static ALLOC: MiniAlloc = MiniAlloc::INIT;
 
 sol_storage! {
     pub struct Contract {

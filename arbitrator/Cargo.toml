@@ -1,6 +1,7 @@
 [workspace]
 members = [
         "arbutil",
+        "caller-env",
         "prover",
         "stylus",
         "jit",

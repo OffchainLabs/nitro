@@ -4,7 +4,8 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-stylus-sdk = { path = "../../../langs/rust/stylus-sdk" }
+stylus-sdk.path = "../../../langs/rust/stylus-sdk"
+mini-alloc.path = "../../../langs/rust/mini-alloc"
 hex = "0.4.3"
 wee_alloc = "0.4.5"
 
@@ -13,13 +14,6 @@ codegen-units = 1
 strip = true
 lto = true
 panic = "abort"
-
-# uncomment to optimize for size
-#   opt-level = "z"
-
-# TODO: move to .cargo/ and add nightly to build process and CI
-[unstable]
-build-std = ["std", "panic_abort"]
-build-std-features = ["panic_immediate_abort"]
+opt-level = "s"
 
 [workspace]

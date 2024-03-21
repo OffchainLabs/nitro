@@ -669,7 +669,6 @@ dependencies = [
  "alloy-sol-types",
  "cfg-if 1.0.0",
  "derivative",
- "fnv",
  "hex",
  "keccak-const",
  "lazy_static",

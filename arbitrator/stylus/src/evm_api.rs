@@ -3,7 +3,7 @@
 
 use crate::{GoSliceData, RustSlice};
 use arbutil::evm::{
-    api::{EvmApiMethod, EvmApiStatus, EVM_API_METHOD_REQ_OFFSET},
+    api::{EvmApiMethod, EVM_API_METHOD_REQ_OFFSET},
     req::RequestHandler,
 };
 
@@ -16,7 +16,7 @@ pub struct NativeRequestHandler {
         gas_cost: *mut u64,
         result: *mut GoSliceData,
         raw_data: *mut GoSliceData,
-    ) -> EvmApiStatus,
+    ),
     pub id: usize,
 }
 
@@ -27,25 +27,24 @@ macro_rules! ptr {
 }
 
 impl RequestHandler<GoSliceData> for NativeRequestHandler {
-    fn handle_request(
+    fn request(
         &mut self,
         req_type: EvmApiMethod,
-        req_data: &[u8],
+        req_data: impl AsRef<[u8]>,
     ) -> (Vec<u8>, GoSliceData, u64) {
         let mut result = GoSliceData::null();
         let mut raw_data = GoSliceData::null();
         let mut cost = 0;
-        let status = unsafe {
+        unsafe {
             (self.handle_request_fptr)(
                 self.id,
                 req_type as u32 + EVM_API_METHOD_REQ_OFFSET,
-                ptr!(RustSlice::new(req_data)),
+                ptr!(RustSlice::new(req_data.as_ref())),
                 ptr!(cost),
                 ptr!(result),
                 ptr!(raw_data),
             )
         };
-        assert_eq!(status, EvmApiStatus::Success);
         (result.slice().to_vec(), raw_data, cost)
     }
 }

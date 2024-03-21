@@ -28,6 +28,7 @@ version = "0.1.0"
 dependencies = [
  "digest",
  "eyre",
+ "fnv",
  "hex",
  "num-traits",
  "num_enum",
@@ -1254,6 +1255,7 @@ dependencies = [
  "lazy_static",
  "parking_lot",
  "prover",
+ "user-host-trait",
 ]
 
 [[package]]

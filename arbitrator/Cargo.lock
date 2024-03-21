@@ -52,6 +52,7 @@ version = "0.1.0"
 dependencies = [
  "digest",
  "eyre",
+ "fnv",
  "hex",
  "num-traits",
  "num_enum",

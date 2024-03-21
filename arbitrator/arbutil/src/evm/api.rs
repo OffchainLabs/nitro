@@ -3,28 +3,24 @@
 
 use crate::{evm::user::UserOutcomeKind, Bytes20, Bytes32};
 use eyre::Result;
+use num_enum::IntoPrimitive;
 use std::sync::Arc;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, IntoPrimitive)]
 #[repr(u8)]
 pub enum EvmApiStatus {
     Success,
     Failure,
-}
-
-impl From<EvmApiStatus> for UserOutcomeKind {
-    fn from(value: EvmApiStatus) -> Self {
-        match value {
-            EvmApiStatus::Success => UserOutcomeKind::Success,
-            EvmApiStatus::Failure => UserOutcomeKind::Revert,
-        }
-    }
+    OutOfGas,
+    WriteProtection,
 }
 
 impl From<u8> for EvmApiStatus {
     fn from(value: u8) -> Self {
         match value {
             0 => Self::Success,
+            2 => Self::OutOfGas,
+            3 => Self::WriteProtection,
             _ => Self::Failure,
         }
     }
@@ -34,7 +30,7 @@ impl From<u8> for EvmApiStatus {
 #[repr(u32)]
 pub enum EvmApiMethod {
     GetBytes32,
-    SetBytes32,
+    SetTrieSlots,
     ContractCall,
     DelegateCall,
     StaticCall,
@@ -81,10 +77,13 @@ pub trait EvmApi<D: DataReader>: Send + 'static {
     /// Analogous to `vm.SLOAD`.
     fn get_bytes32(&mut self, key: Bytes32) -> (Bytes32, u64);
 
-    /// Stores the given value at the given key in the EVM state trie.
-    /// Returns the access cost on success.
-    /// Analogous to `vm.SSTORE`.
-    fn set_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Result<u64>;
+    /// Stores the given value at the given key in Stylus VM's cache of the EVM state trie.
+    /// Note that the actual values only get written after calls to `set_trie_slots`.
+    fn cache_bytes32(&mut self, key: Bytes32, value: Bytes32) -> u64;
+
+    /// Persists any dirty values in the storage cache to the EVM state trie, dropping the cache entirely if requested.
+    /// Analogous to repeated invocations of `vm.SSTORE`.
+    fn flush_storage_cache(&mut self, clear: bool, gas_left: u64) -> Result<u64>;
 
     /// Calls the contract at the given address.
     /// Returns the EVM return data's length, the gas cost, and whether the call succeeded.
@@ -141,7 +140,7 @@ pub trait EvmApi<D: DataReader>: Send + 'static {
     ) -> (eyre::Result<Bytes20>, u32, u64);
 
     /// Returns the EVM return data.
-    /// Analogous to `vm.RETURNDATASIZE`.
+    /// Analogous to `vm.RETURNDATA`.
     fn get_return_data(&self) -> D;
 
     /// Emits an EVM log with the given number of topics and data, the first bytes of which should be the topic data.
