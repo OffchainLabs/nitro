@@ -20,6 +20,7 @@ import (
 	"github.com/holiman/uint256"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsigner"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 func TestParseReplacementTimes(t *testing.T) {
@@ -193,19 +194,19 @@ func TestMaxFeeCapFormulaCalculation(t *testing.T) {
 }
 
 type stubL1Client struct {
-	nonce     uint64
-	gasTipCap *big.Int
+	senderNonce        uint64
+	suggestedGasTipCap *big.Int
 
 	// Define most of the required methods that aren't used by feeAndTipCaps
 	backends.SimulatedBackend
 }
 
 func (c *stubL1Client) NonceAt(ctx context.Context, account common.Address, blockNumber *big.Int) (uint64, error) {
-	return c.nonce, nil
+	return c.senderNonce, nil
 }
 
 func (c *stubL1Client) SuggestGasTipCap(ctx context.Context) (*big.Int, error) {
-	return c.gasTipCap, nil
+	return c.suggestedGasTipCap, nil
 }
 
 // Not used but we need to define
@@ -231,15 +232,22 @@ func (c *stubL1Client) TransactionSender(ctx context.Context, tx *types.Transact
 
 func TestFeeAndTipCaps(t *testing.T) {
 	conf := func() *DataPosterConfig {
+		// Set only the fields that are used by feeAndTipCaps
+		// Start with defaults, maybe change for test.
 		return &DataPosterConfig{
-			MaxMempoolTransactions: 0,
-			MaxMempoolWeight:       0,
-			MinTipCapGwei:          0,
-			MinBlobTxTipCapGwei:    0,
-			MaxTipCapGwei:          0,
-			MaxBlobTxTipCapGwei:    0,
-			MaxFeeBidMultipleBips:  0,
-			AllocateMempoolBalance: false,
+			MaxMempoolTransactions: 18,
+			MaxMempoolWeight:       18,
+			MinTipCapGwei:          0.05,
+			MinBlobTxTipCapGwei:    1,
+			MaxTipCapGwei:          5,
+			MaxBlobTxTipCapGwei:    10,
+			MaxFeeBidMultipleBips:  arbmath.OneInBips * 10,
+			AllocateMempoolBalance: true,
+
+			UrgencyGwei:           2.,
+			ElapsedTimeBase:       10 * time.Minute,
+			ElapsedTimeImportance: 10,
+			TargetPriceGwei:       60.,
 		}
 	}
 	expression, err := govaluate.NewEvaluableExpression(DefaultDataPosterConfig.MaxFeeCapFormula)
@@ -250,11 +258,11 @@ func TestFeeAndTipCaps(t *testing.T) {
 	p := DataPoster{
 		config:           conf,
 		extraBacklog:     func() uint64 { return 0 },
-		balance:          big.NewInt(1_000_000_000_000_000_000),
+		balance:          big.NewInt(0).Mul(big.NewInt(1_000_000_000_000_000_000), big.NewInt(10)),
 		usingNoOpStorage: false,
 		client: &stubL1Client{
-			nonce:     1,
-			gasTipCap: big.NewInt(2_000_000_000),
+			senderNonce:        1,
+			suggestedGasTipCap: big.NewInt(2_000_000_000),
 		},
 		auth: &bind.TransactOpts{
 			From: common.Address{},
@@ -264,13 +272,13 @@ func TestFeeAndTipCaps(t *testing.T) {
 
 	ctx := context.Background()
 	var nonce uint64 = 1
-	var gasLimit uint64 = 30_000_000
-	var numBlobs uint64 = 0
-	var lastTx *types.Transaction
+	var gasLimit uint64 = 300_000 // reasonable upper bound for mainnet batches
+	var numBlobs uint64 = 6
+	var lastTx *types.Transaction // PostTransaction leaves this nil, used when replacing
 	dataCreatedAt := time.Now()
-	var dataPosterBacklog uint64 = 0
-	var blobGasUsed uint64 = 100
-	var excessBlobGas uint64 = 100
+	var dataPosterBacklog uint64 = 0 // Zero backlog for PostTransaction
+	var blobGasUsed uint64 = 0xc0000 // 6 blobs of gas
+	var excessBlobGas uint64 = 0     // typical current mainnet conditions
 	latestHeader := types.Header{
 		Number:        big.NewInt(1),
 		BaseFee:       big.NewInt(1_000_000_000),
@@ -279,6 +287,37 @@ func TestFeeAndTipCaps(t *testing.T) {
 	}
 
 	newGasFeeCap, newTipCap, newBlobFeeCap, err := p.feeAndTipCaps(ctx, nonce, gasLimit, numBlobs, lastTx, dataCreatedAt, dataPosterBacklog, &latestHeader)
-	_, _, _, _ = newGasFeeCap, newTipCap, newBlobFeeCap, err
+	t.Log("newGasFeeCap", newGasFeeCap, "newTipCap", newTipCap, "newBlobFeeCap", newBlobFeeCap, "err", err)
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
+
+	// There is no backlog and almost no time elapses since the batch data was
+	// created to when it was posted so the maxNormalizedFeeCap is ~60.01 gwei.
+	// This is multiplied with the normalizedGas to get targetMaxCost.
+	// This is greatly in excess of currentTotalCost * MaxFeeBidMultipleBips,
+	// so targetMaxCost is reduced to the current base fee + suggested tip cap +
+	// current blob fee multipled by MaxFeeBidMultipleBips (factor of 10).
+	// The blob and non blob factors are then proportionally split out and so
+	// the newGasFeeCap is set to (current base fee + suggested tip cap) * 10
+	// and newBlobFeeCap is set to current blob gas base fee (1 wei
+	// since there is no excess blob gas) * 10.
+	expectedGasFeeCap := big.NewInt(30 * params.GWei)
+	expectedBlobFeeCap := big.NewInt(10)
+	if !arbmath.BigEquals(expectedGasFeeCap, newGasFeeCap) {
+		t.Fatalf("feeAndTipCaps didn't return expected gas fee cap. Was: %d, expected: %d", expectedGasFeeCap, newGasFeeCap)
+	}
+	if !arbmath.BigEquals(expectedBlobFeeCap, newBlobFeeCap) {
+		t.Fatalf("feeAndTipCaps didn't return expected blob gas fee cap. Was: %d, expected: %d", expectedBlobFeeCap, newBlobFeeCap)
+	}
+
+	// 2 gwei is the amount suggested by the L1 client, so that is the value
+	// returned because it doesn't exceed the configured bounds, there is no
+	// lastTx to scale against with rbf, and it is not bigger than the computed
+	// gasFeeCap.
+	expectedTipCap := big.NewInt(2 * params.GWei)
+	if !arbmath.BigEquals(expectedTipCap, newTipCap) {
+		t.Fatalf("feeAndTipCaps didn't return expected tip cap. Was: %d, expected: %d", expectedTipCap, newTipCap)
+	}
 
 }
