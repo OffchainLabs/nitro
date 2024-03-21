@@ -230,7 +230,7 @@ func (c *stubL1Client) TransactionSender(ctx context.Context, tx *types.Transact
 	return common.Address{}, nil
 }
 
-func TestFeeAndTipCaps(t *testing.T) {
+func TestFeeAndTipCaps_EnoughBalance_NoBacklog_NoUncofirmed_BlobTx(t *testing.T) {
 	conf := func() *DataPosterConfig {
 		// Set only the fields that are used by feeAndTipCaps
 		// Start with defaults, maybe change for test.
@@ -258,11 +258,11 @@ func TestFeeAndTipCaps(t *testing.T) {
 	p := DataPoster{
 		config:           conf,
 		extraBacklog:     func() uint64 { return 0 },
-		balance:          big.NewInt(0).Mul(big.NewInt(1_000_000_000_000_000_000), big.NewInt(10)),
+		balance:          big.NewInt(0).Mul(big.NewInt(params.Ether), big.NewInt(10)),
 		usingNoOpStorage: false,
 		client: &stubL1Client{
 			senderNonce:        1,
-			suggestedGasTipCap: big.NewInt(2_000_000_000),
+			suggestedGasTipCap: big.NewInt(2 * params.GWei),
 		},
 		auth: &bind.TransactOpts{
 			From: common.Address{},
@@ -272,7 +272,7 @@ func TestFeeAndTipCaps(t *testing.T) {
 
 	ctx := context.Background()
 	var nonce uint64 = 1
-	var gasLimit uint64 = 300_000 // reasonable upper bound for mainnet batches
+	var gasLimit uint64 = 300_000 // reasonable upper bound for mainnet blob batches
 	var numBlobs uint64 = 6
 	var lastTx *types.Transaction // PostTransaction leaves this nil, used when replacing
 	dataCreatedAt := time.Now()
@@ -287,7 +287,6 @@ func TestFeeAndTipCaps(t *testing.T) {
 	}
 
 	newGasFeeCap, newTipCap, newBlobFeeCap, err := p.feeAndTipCaps(ctx, nonce, gasLimit, numBlobs, lastTx, dataCreatedAt, dataPosterBacklog, &latestHeader)
-	t.Log("newGasFeeCap", newGasFeeCap, "newTipCap", newTipCap, "newBlobFeeCap", newBlobFeeCap, "err", err)
 	if err != nil {
 		t.Fatalf("%s", err)
 	}
@@ -316,6 +315,34 @@ func TestFeeAndTipCaps(t *testing.T) {
 	// lastTx to scale against with rbf, and it is not bigger than the computed
 	// gasFeeCap.
 	expectedTipCap := big.NewInt(2 * params.GWei)
+	if !arbmath.BigEquals(expectedTipCap, newTipCap) {
+		t.Fatalf("feeAndTipCaps didn't return expected tip cap. Was: %d, expected: %d", expectedTipCap, newTipCap)
+	}
+
+	lastBlobTx := &types.BlobTx{}
+	updateTxDataGasCaps(lastBlobTx, newGasFeeCap, newTipCap, newBlobFeeCap)
+	lastTx = types.NewTx(lastBlobTx)
+	// Make creation time go backwards so elapsed time increases
+	retconnedCreationTime := dataCreatedAt.Add(-time.Minute)
+
+	newGasFeeCap, newTipCap, newBlobFeeCap, err = p.feeAndTipCaps(ctx, nonce, gasLimit, numBlobs, lastTx, retconnedCreationTime, dataPosterBacklog, &latestHeader)
+
+	// I think we expect an increase by *2 due to rbf rules for blob txs,
+	// currently appears to be broken since the increase exceeds the
+	// current cost (based on current basefees and tip) * config.MaxFeeBidMultipleBips
+	// since the previous attempt to send the tx was already using the current cost scaled by
+	// the multiple (* 10 bips).
+	expectedGasFeeCap = expectedGasFeeCap.Mul(expectedGasFeeCap, big.NewInt(2))
+	expectedBlobFeeCap = expectedBlobFeeCap.Mul(expectedBlobFeeCap, big.NewInt(2))
+	expectedTipCap = expectedTipCap.Mul(expectedTipCap, big.NewInt(2))
+
+	t.Log("newGasFeeCap", newGasFeeCap, "newTipCap", newTipCap, "newBlobFeeCap", newBlobFeeCap, "err", err)
+	if !arbmath.BigEquals(expectedGasFeeCap, newGasFeeCap) {
+		t.Fatalf("feeAndTipCaps didn't return expected gas fee cap. Was: %d, expected: %d", expectedGasFeeCap, newGasFeeCap)
+	}
+	if !arbmath.BigEquals(expectedBlobFeeCap, newBlobFeeCap) {
+		t.Fatalf("feeAndTipCaps didn't return expected blob gas fee cap. Was: %d, expected: %d", expectedBlobFeeCap, newBlobFeeCap)
+	}
 	if !arbmath.BigEquals(expectedTipCap, newTipCap) {
 		t.Fatalf("feeAndTipCaps didn't return expected tip cap. Was: %d, expected: %d", expectedTipCap, newTipCap)
 	}
