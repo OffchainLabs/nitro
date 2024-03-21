@@ -10,7 +10,7 @@ use core::{mem::MaybeUninit, slice};
 pub struct BrotliBuffer {
     /// Points to data owned by Go.
     ptr: *mut u8,
-    /// The length in bytes.
+    /// The length in bytes. Rust may mutate this value to indicate the number of bytes initialized.
     len: *mut usize,
 }
 
