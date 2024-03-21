@@ -83,7 +83,8 @@ pub fn fd_write<M: MemAccess, E: ExecEnv>(
     for i in 0..iovecs_len {
         let ptr = iovecs_ptr + i * 8;
         let len = mem.read_u32(ptr + 4);
-        let data = mem.read_slice(ptr, len as usize);
+        let ptr = mem.read_u32(ptr); // TODO: string might be split across utf-8 character boundary
+        let data = mem.read_slice(GuestPtr(ptr), len as usize);
         env.print_string(&data);
         size += len;
     }

@@ -1,14 +1,13 @@
 // Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-#![no_std]
+#![cfg_attr(target_arch = "wasm32", no_std)]
 
 extern crate alloc;
 
 use alloc::vec::Vec;
 use rand_pcg::Pcg32;
 
-pub use brotli::BrotliStatus;
 pub use guest_ptr::GuestPtr;
 pub use wasip1_stub::Errno;
 
@@ -18,7 +17,9 @@ pub mod static_caller;
 #[cfg(feature = "wasmer_traits")]
 pub mod wasmer_traits;
 
+#[cfg(feature = "brotli")]
 pub mod brotli;
+
 mod guest_ptr;
 pub mod wasip1_stub;
 

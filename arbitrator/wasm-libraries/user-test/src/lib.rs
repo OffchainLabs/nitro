@@ -3,7 +3,7 @@
 
 #![allow(clippy::missing_safety_doc)]
 
-use arbutil::{Bytes32, evm::EvmData};
+use arbutil::{evm::EvmData, Bytes32};
 use fnv::FnvHashMap as HashMap;
 use lazy_static::lazy_static;
 use parking_lot::Mutex;

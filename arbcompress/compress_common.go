@@ -1,13 +1,13 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbcompress
 
-type BrotliStatus = uint32
+type Dictionary uint32
 
 const (
-	BrotliFailure uint32 = iota
-	BrotliSuccess
+	EmptyDictionary Dictionary = iota
+	StylusProgramDictionary
 )
 
 const LEVEL_FAST = 0
@@ -19,5 +19,5 @@ func compressedBufferSizeFor(length int) int {
 }
 
 func CompressFast(input []byte) ([]byte, error) {
-	return compressLevel(input, LEVEL_FAST)
+	return Compress(input, LEVEL_FAST, EmptyDictionary)
 }

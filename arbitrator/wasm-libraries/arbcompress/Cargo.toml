@@ -1,5 +1,5 @@
 [package]
-name = "brotli"
+name = "arbcompress"
 version = "0.1.0"
 edition = "2021"
 publish = false
@@ -8,5 +8,6 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-paste = { version = "1.0.14" }
+brotli.path = "../../brotli"
 caller-env = { path = "../../caller-env/", features = ["static_caller"] }
+paste = "1.0.14"

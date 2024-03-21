@@ -104,11 +104,7 @@ pub unsafe extern "C" fn vm_hooks__create2(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn vm_hooks__read_return_data(
-    dest: GuestPtr,
-    offset: u32,
-    size: u32,
-) -> u32 {
+pub unsafe extern "C" fn vm_hooks__read_return_data(dest: GuestPtr, offset: u32, size: u32) -> u32 {
     hostio!(read_return_data(dest, offset, size))
 }
 

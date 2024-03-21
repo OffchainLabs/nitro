@@ -5,6 +5,7 @@ edition = "2021"
 
 [dependencies]
 arbutil = { path = "../arbutil/" }
+brotli = { path = "../brotli" }
 caller-env = { path = "../caller-env", features = ["wasmer_traits"] }
 prover = { path = "../prover/", default-features = false, features = ["native"] }
 wasmer = { path = "../tools/wasmer/lib/api" }

@@ -4,7 +4,7 @@
 use crate::caller_env::{JitEnv, JitExecEnv};
 use crate::machine::Escape;
 use crate::machine::WasmEnvMut;
-use caller_env::brotli::BrotliStatus;
+use brotli::{BrotliStatus, Dictionary};
 use caller_env::{self, GuestPtr};
 
 macro_rules! wrap {
@@ -20,19 +20,21 @@ macro_rules! wrap {
 }
 
 wrap! {
-    fn brotli_decompress(
-        in_buf_ptr: GuestPtr,
-        in_buf_len: u32,
-        out_buf_ptr: GuestPtr,
-        out_len_ptr: GuestPtr
-    ) -> BrotliStatus;
-
     fn brotli_compress(
         in_buf_ptr: GuestPtr,
         in_buf_len: u32,
         out_buf_ptr: GuestPtr,
         out_len_ptr: GuestPtr,
         level: u32,
-        window_size: u32
+        window_size: u32,
+        dictionary: Dictionary
+    ) -> BrotliStatus;
+
+    fn brotli_decompress(
+        in_buf_ptr: GuestPtr,
+        in_buf_len: u32,
+        out_buf_ptr: GuestPtr,
+        out_len_ptr: GuestPtr,
+        dictionary: Dictionary
     ) -> BrotliStatus
 }

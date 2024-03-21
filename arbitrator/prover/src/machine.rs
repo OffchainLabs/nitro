@@ -18,6 +18,7 @@ use crate::{
     },
 };
 use arbutil::{math, Bytes32, Color};
+use brotli::Dictionary;
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
@@ -322,6 +323,7 @@ impl Module {
         let mut memory = Memory::default();
         let mut tables = Vec::new();
         let mut host_call_hooks = Vec::new();
+        let bin_name = &bin.names.module;
         for import in &bin.imports {
             let module = import.module;
             let have_ty = &bin.types[import.offset as usize];
@@ -357,15 +359,16 @@ impl Module {
                 hostio
             } else {
                 bail!(
-                    "No such import {} in {}",
+                    "No such import {} in {} for {}",
                     import_name.red(),
-                    import.module.red()
+                    import.module.red(),
+                    bin_name.red()
                 )
             };
             ensure!(
                 &func.ty == have_ty,
-                "Import {} has different function signature than host function. Expected {} but got {}",
-                import_name.red(), func.ty.red(), have_ty.red(),
+                "Import {} for {} has different function signature than export.\nexpected {} in {}\nbut have {}",
+                import_name.red(), bin_name.red(), func.ty.red(), module.red(), have_ty.red(),
             );
 
             func_type_idxs.push(import.offset);
@@ -408,6 +411,7 @@ impl Module {
                         &types,
                         func_type_idxs[idx],
                         internals_offset,
+                        bin_name,
                     )
                 },
                 func_ty.clone(),
@@ -619,18 +623,31 @@ impl Module {
 
         data.extend(self.tables_merkle.root());
         data.extend(self.funcs_merkle.root());
-
         data.extend(self.internals_offset.to_be_bytes());
-
         data
     }
 
-    pub fn into_bytes(&self) -> Box<[u8]> {
-        bincode::serialize(self).unwrap().into_boxed_slice()
+    /// Serializes the `Module` into bytes that can be stored in the db.
+    /// The format employed is forward-compatible with future brotli dictionary and caching policies.
+    pub fn into_bytes(&self) -> Vec<u8> {
+        let data = bincode::serialize(self).unwrap();
+        let header = vec![1 + Into::<u8>::into(Dictionary::Empty)];
+        brotli::compress_into(&data, header, 0, 22, Dictionary::Empty).expect("failed to compress")
     }
 
-    pub unsafe fn from_bytes(bytes: &[u8]) -> Self {
-        bincode::deserialize(bytes).unwrap()
+    /// Deserializes a `Module` from db bytes.
+    ///
+    /// # Safety
+    ///
+    /// The bytes must have been produced by `into_bytes` and represent a valid `Module`.
+    pub unsafe fn from_bytes(data: &[u8]) -> Self {
+        if data[0] > 0 {
+            let dict = Dictionary::try_from(data[0] - 1).expect("unknown dictionary");
+            let data = brotli::decompress(&data[1..], dict).expect("failed to inflate");
+            bincode::deserialize(&data).unwrap()
+        } else {
+            bincode::deserialize(&data[1..]).unwrap()
+        }
     }
 }
 
@@ -1396,11 +1413,15 @@ impl Machine {
         Ok(mach)
     }
 
-    #[cfg(feature = "native")]
     pub fn new_from_wavm(wavm_binary: &Path) -> Result<Machine> {
-        let f = BufReader::new(File::open(wavm_binary)?);
-        let decompressor = brotli2::read::BrotliDecoder::new(f);
-        let mut modules: Vec<Module> = bincode::deserialize_from(decompressor)?;
+        let mut modules: Vec<Module> = {
+            let compressed = std::fs::read(wavm_binary)?;
+            let Ok(modules) = brotli::decompress(&compressed, Dictionary::Empty) else {
+                bail!("failed to decompress wavm binary");
+            };
+            bincode::deserialize(&modules)?
+        };
+
         for module in modules.iter_mut() {
             for table in module.tables.iter_mut() {
                 table.elems_merkle = Merkle::new(
@@ -1451,18 +1472,19 @@ impl Machine {
         Ok(mach)
     }
 
-    #[cfg(feature = "native")]
     pub fn serialize_binary<P: AsRef<Path>>(&self, path: P) -> Result<()> {
         ensure!(
             self.hash() == self.initial_hash,
             "serialize_binary can only be called on initial machine",
         );
-        let mut f = File::create(path)?;
-        let mut compressor = brotli2::write::BrotliEncoder::new(BufWriter::new(&mut f), 9);
-        bincode::serialize_into(&mut compressor, &self.modules)?;
-        compressor.flush()?;
-        drop(compressor);
-        f.sync_data()?;
+        let modules = bincode::serialize(&self.modules)?;
+        let window = brotli::DEFAULT_WINDOW_SIZE;
+        let Ok(output) = brotli::compress(&modules, 9, window, Dictionary::Empty) else {
+            bail!("failed to compress binary");
+        };
+
+        let mut file = File::create(path)?;
+        file.write_all(&output)?;
         Ok(())
     }
 

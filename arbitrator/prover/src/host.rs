@@ -496,6 +496,7 @@ lazy_static! {
                     &[ty.clone()],      // only type needed is the func itself
                     0,                  // -----------------------------------
                     0,                  // impls don't use other internals
+                    &bin.names.module,
                 ),
                 ty.clone(),
                 &[] // impls don't make calls

@@ -3,8 +3,8 @@ include_guard = "arbitrator_bindings"
 
 [parse]
 parse_deps = true
-include = ["arbutil", "prover"]
-extra_bindings = ["arbutil", "prover"]
+include = ["arbutil", "prover", "brotli"]
+extra_bindings = ["arbutil", "prover", "brotli"]
 
 [enum]
 prefix_with_name = true
