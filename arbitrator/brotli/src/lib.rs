@@ -127,56 +127,12 @@ pub fn compress_into(
 ) -> Result<Vec<u8>, BrotliStatus> {
     let max_size = compression_bound(input.len(), level);
     let needed = max_size.saturating_sub(output.spare_capacity_mut().len());
-    output.reserve(needed);
-    unsafe {
-        let state = BrotliEncoderCreateInstance(None, None, ptr::null_mut());
+    output.reserve_exact(needed);
 
-        macro_rules! check {
-            ($ret:expr) => {
-                if $ret.is_err() {
-                    BrotliEncoderDestroyInstance(state);
-                    return Err(BrotliStatus::Failure);
-                }
-            };
-        }
-
-        check!(BrotliEncoderSetParameter(
-            state,
-            BrotliEncoderParameter::Quality,
-            level
-        ));
-        check!(BrotliEncoderSetParameter(
-            state,
-            BrotliEncoderParameter::WindowSize,
-            window_size
-        ));
-
-        if let Some(dict) = dictionary.ptr(level) {
-            check!(BrotliEncoderAttachPreparedDictionary(state, dict));
-        }
-
-        let mut in_len = input.len();
-        let mut in_ptr = input.as_ptr();
-        let mut out_left = output.capacity();
-        let mut out_ptr = output.as_mut_ptr();
-        let mut out_len = out_left;
-
-        let status = BrotliEncoderCompressStream(
-            state,
-            BrotliEncoderOperation::Finish,
-            &mut in_len as _,
-            &mut in_ptr as _,
-            &mut out_left as _,
-            &mut out_ptr as _,
-            &mut out_len as _,
-        );
-        check!(status);
-        check!(BrotliEncoderIsFinished(state));
-        BrotliEncoderDestroyInstance(state);
-
-        output.set_len(out_len);
-        Ok(output)
-    }
+    let space = output.spare_capacity_mut();
+    let count = compress_fixed(input, space, level, window_size, dictionary)?.len();
+    unsafe { output.set_len(output.len() + count) }
+    Ok(output)
 }
 
 /// Brotli compresses a slice into a buffer of limited capacity.
