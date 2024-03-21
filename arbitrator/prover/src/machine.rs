@@ -627,16 +627,27 @@ impl Module {
         data
     }
 
+    /// Serializes the `Module` into bytes that can be stored in the db.
+    /// The format employed is forward-compatible with future brotli dictionary and caching policies.
     pub fn into_bytes(&self) -> Vec<u8> {
         let data = bincode::serialize(self).unwrap();
-        let header = vec![Dictionary::Empty.into()];
+        let header = vec![1 + Into::<u8>::into(Dictionary::Empty)];
         brotli::compress_into(&data, header, 0, 22, Dictionary::Empty).expect("failed to compress")
     }
 
-    pub unsafe fn from_bytes(bytes: &[u8]) -> Self {
-        let dict = Dictionary::try_from(bytes[0]).expect("unknown dictionary");
-        let data = brotli::decompress(&bytes[1..], dict).expect("failed to decompress");
-        bincode::deserialize(&data).unwrap()
+    /// Deserializes a `Module` from db bytes.
+    ///
+    /// # Safety
+    ///
+    /// The bytes must have been produced by `into_bytes` and represent a valid `Module`.
+    pub unsafe fn from_bytes(data: &[u8]) -> Self {
+        if data[0] > 0 {
+            let dict = Dictionary::try_from(data[0] - 1).expect("unknown dictionary");
+            let data = brotli::decompress(&data[1..], dict).expect("failed to inflate");
+            bincode::deserialize(&data).unwrap()
+        } else {
+            bincode::deserialize(&data[1..]).unwrap()
+        }
     }
 }
 
