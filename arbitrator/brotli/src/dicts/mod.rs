@@ -75,3 +75,17 @@ impl Dictionary {
         }
     }
 }
+
+impl From<Dictionary> for u8 {
+    fn from(value: Dictionary) -> Self {
+        value as u32 as u8
+    }
+}
+
+impl TryFrom<u8> for Dictionary {
+    type Error = <Dictionary as TryFrom<u32>>::Error;
+
+    fn try_from(value: u8) -> Result<Self, Self::Error> {
+        (value as u32).try_into()
+    }
+}

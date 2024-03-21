@@ -623,18 +623,20 @@ impl Module {
 
         data.extend(self.tables_merkle.root());
         data.extend(self.funcs_merkle.root());
-
         data.extend(self.internals_offset.to_be_bytes());
-
         data
     }
 
-    pub fn into_bytes(&self) -> Box<[u8]> {
-        bincode::serialize(self).unwrap().into_boxed_slice()
+    pub fn into_bytes(&self) -> Vec<u8> {
+        let data = bincode::serialize(self).unwrap();
+        let header = vec![Dictionary::Empty.into()];
+        brotli::compress_into(&data, header, 0, 22, Dictionary::Empty).expect("failed to compress")
     }
 
     pub unsafe fn from_bytes(bytes: &[u8]) -> Self {
-        bincode::deserialize(bytes).unwrap()
+        let dict = Dictionary::try_from(bytes[0]).expect("unknown dictionary");
+        let data = brotli::decompress(&bytes[1..], dict).expect("failed to decompress");
+        bincode::deserialize(&data).unwrap()
     }
 }
 

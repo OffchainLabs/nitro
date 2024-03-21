@@ -114,8 +114,20 @@ pub fn compress(
     window_size: u32,
     dictionary: Dictionary,
 ) -> Result<Vec<u8>, BrotliStatus> {
+    compress_into(input, Vec::new(), level, window_size, dictionary)
+}
+
+/// Brotli compresses a slice, extending the `output` specified.
+pub fn compress_into(
+    input: &[u8],
+    mut output: Vec<u8>,
+    level: u32,
+    window_size: u32,
+    dictionary: Dictionary,
+) -> Result<Vec<u8>, BrotliStatus> {
     let max_size = compression_bound(input.len(), level);
-    let mut output = Vec::with_capacity(max_size);
+    let needed = max_size.saturating_sub(output.spare_capacity_mut().len());
+    output.reserve(needed);
     unsafe {
         let state = BrotliEncoderCreateInstance(None, None, ptr::null_mut());
 
