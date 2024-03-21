@@ -65,11 +65,15 @@ func (c *Consumer) keepAlive(ctx context.Context) {
 	log.Info("Consumer polling for heartbeat updates", "id", c.id)
 	for {
 		if err := c.client.Set(ctx, c.keepAliveKey(), time.Now().UnixMilli(), KeepAliveTimeout).Err(); err != nil {
-			log.Error("Updating heardbeat", "consumer", c.id, "error", err)
+			l := log.Error
+			if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+				l = log.Info
+			}
+			l("Updating heardbeat", "consumer", c.id, "error", err)
 		}
 		select {
 		case <-ctx.Done():
-			log.Error("Error keeping alive", "error", ctx.Err())
+			log.Info("Error keeping alive", "error", ctx.Err())
 			return
 		case <-time.After(KeepAliveInterval):
 		}
@@ -167,32 +171,38 @@ func (c *Consumer) checkPending(ctx context.Context) (*Message, error) {
 	if len(pendingMessages) == 0 {
 		return nil, nil
 	}
+	inactive := make(map[string]bool)
 	for _, msg := range pendingMessages {
-		if !c.isConsumerAlive(ctx, msg.Consumer) {
-			log.Debug("Consumer is not alive", "id", msg.Consumer)
-			msgs, err := c.client.XClaim(ctx, &redis.XClaimArgs{
-				Stream:   c.streamName,
-				Group:    c.groupName,
-				Consumer: c.id,
-				MinIdle:  KeepAliveTimeout,
-				Messages: []string{msg.ID},
-			}).Result()
-			if err != nil {
-				log.Error("Error claiming ownership on message", "id", msg.ID, "consumer", c.id, "error", err)
+		if inactive[msg.Consumer] {
+			continue
+		}
+		if c.isConsumerAlive(ctx, msg.Consumer) {
+			continue
+		}
+		inactive[msg.Consumer] = true
+		log.Info("Consumer is not alive", "id", msg.Consumer)
+		msgs, err := c.client.XClaim(ctx, &redis.XClaimArgs{
+			Stream:   c.streamName,
+			Group:    c.groupName,
+			Consumer: c.id,
+			MinIdle:  KeepAliveTimeout,
+			Messages: []string{msg.ID},
+		}).Result()
+		if err != nil {
+			log.Error("Error claiming ownership on message", "id", msg.ID, "consumer", c.id, "error", err)
+			continue
+		}
+		if len(msgs) != 1 {
+			log.Error("Attempted to claim ownership on single messsage", "id", msg.ID, "number of received messages", len(msgs))
+			if len(msgs) == 0 {
 				continue
 			}
-			if len(msgs) != 1 {
-				log.Error("Attempted to claim ownership on single messsage", "id", msg.ID, "number of received messages", len(msgs))
-				if len(msgs) == 0 {
-					continue
-				}
-			}
-			log.Info(fmt.Sprintf("Consumer: %s claimed ownership on message: %s", c.id, msgs[0].ID))
-			return &Message{
-				ID:    msgs[0].ID,
-				Value: msgs[0].Values[msgKey],
-			}, nil
 		}
+		log.Info(fmt.Sprintf("Consumer: %s claimed ownership on message: %s", c.id, msgs[0].ID))
+		return &Message{
+			ID:    msgs[0].ID,
+			Value: msgs[0].Values[msgKey],
+		}, nil
 	}
 	return nil, nil
 }
