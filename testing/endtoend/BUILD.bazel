@@ -28,6 +28,7 @@ go_test(
         "//challenge-manager",
         "//challenge-manager/types",
         "//layer2-state-provider",
+        "//solgen/go/mocksgen",
         "//solgen/go/rollupgen",
         "//testing",
         "//testing/endtoend/backend",

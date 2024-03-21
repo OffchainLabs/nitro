@@ -11,11 +11,13 @@ import (
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	challengemanager "github.com/OffchainLabs/bold/challenge-manager"
 	"github.com/OffchainLabs/bold/challenge-manager/types"
+	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
 	"github.com/OffchainLabs/bold/testing/endtoend/backend"
 	statemanager "github.com/OffchainLabs/bold/testing/mocks/state-provider"
 	"github.com/OffchainLabs/bold/testing/setup"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 )
@@ -74,7 +76,7 @@ func defaultTimeParams() timeParams {
 		challengeMoveInterval:                time.Second,
 		assertionPostingInterval:             time.Hour,
 		assertionScanningInterval:            time.Second,
-		assertionConfirmationAttemptInterval: time.Hour,
+		assertionConfirmationAttemptInterval: time.Second,
 	}
 }
 
@@ -240,6 +242,15 @@ func runEndToEndTest(t *testing.T, cfg *e2eConfig) {
 	_, err = rollupAdminBindings.SetMinimumAssertionPeriod(accounts[0], big.NewInt(1))
 	require.NoError(t, err)
 
+	bk.Commit()
+
+	bridgeAddr, err := rollupAdminBindings.Bridge(&bind.CallOpts{})
+	require.NoError(t, err)
+	bridgeBindings, err := mocksgen.NewBridgeStub(bridgeAddr, bk.Client())
+	require.NoError(t, err)
+	dataHash := [32]byte{1}
+	_, err = bridgeBindings.EnqueueSequencerMessage(accounts[0], dataHash, big.NewInt(1), big.NewInt(1), big.NewInt(2))
+	require.NoError(t, err)
 	bk.Commit()
 
 	baseStateManagerOpts := []statemanager.Opt{

@@ -11,7 +11,6 @@ import (
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
 	"github.com/OffchainLabs/bold/challenge-manager/types"
-	"github.com/OffchainLabs/bold/containers"
 	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/ethereum/go-ethereum/log"
@@ -53,25 +52,42 @@ func (m *Manager) postAssertionRoutine(ctx context.Context) {
 	}
 }
 
+func (m *Manager) awaitPostingSignal(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-m.startPostingSignal:
+			m.isReadyToPost = true
+			return
+		}
+	}
+}
+
 // PostAssertion differs depending on whether or not the validator is currently staked.
-func (m *Manager) PostAssertion(ctx context.Context) (option.Option[protocol.Assertion], error) {
+func (m *Manager) PostAssertion(ctx context.Context) (option.Option[*protocol.AssertionCreatedInfo], error) {
+	if !m.isReadyToPost {
+		m.awaitPostingSignal(ctx)
+	}
 	// Ensure that we only build on a valid parent from this validator's perspective.
 	// the validator should also have ready access to historical commitments to make sure it can select
 	// the valid parent based on its commitment state root.
-	parentAssertionSeq, err := m.findLatestValidAssertion(ctx)
-	if err != nil {
-		return option.None[protocol.Assertion](), errors.Wrap(err, "could not find latest valid assertion")
-	}
-	parentAssertionCreationInfo, err := m.chain.ReadAssertionCreationInfo(ctx, parentAssertionSeq)
-	if err != nil {
-		return option.None[protocol.Assertion](), err
+	m.assertionChainData.Lock()
+	parentAssertionCreationInfo, ok := m.assertionChainData.canonicalAssertions[m.assertionChainData.latestAgreedAssertion]
+	m.assertionChainData.Unlock()
+	none := option.None[*protocol.AssertionCreatedInfo]()
+	if !ok {
+		return none, fmt.Errorf(
+			"latest agreed assertion %#x not part of canonical mapping, something is wrong",
+			m.assertionChainData.latestAgreedAssertion.Hash,
+		)
 	}
 	staked, err := m.chain.IsStaked(ctx)
 	if err != nil {
-		return option.None[protocol.Assertion](), err
+		return none, err
 	}
 	// If the validator is already staked, we post an assertion and move existing stake to it.
-	var assertionOpt option.Option[protocol.Assertion]
+	var assertionOpt option.Option[*protocol.AssertionCreatedInfo]
 	var postErr error
 	if staked {
 		assertionOpt, postErr = m.PostAssertionBasedOnParent(
@@ -84,10 +100,10 @@ func (m *Manager) PostAssertion(ctx context.Context) (option.Option[protocol.Ass
 		)
 	}
 	if postErr != nil {
-		return option.None[protocol.Assertion](), postErr
+		return none, postErr
 	}
 	if assertionOpt.IsSome() {
-		m.submittedAssertions.Insert(assertionOpt.Unwrap().Id().Hash)
+		m.submittedAssertions.Insert(assertionOpt.Unwrap().AssertionHash)
 	}
 	return assertionOpt, nil
 }
@@ -97,13 +113,14 @@ func (m *Manager) PostAssertionBasedOnParent(
 	ctx context.Context,
 	parentCreationInfo *protocol.AssertionCreatedInfo,
 	submitFn func(
-	ctx context.Context,
-	parentCreationInfo *protocol.AssertionCreatedInfo,
-	newState *protocol.ExecutionState,
-) (protocol.Assertion, error),
-) (option.Option[protocol.Assertion], error) {
+		ctx context.Context,
+		parentCreationInfo *protocol.AssertionCreatedInfo,
+		newState *protocol.ExecutionState,
+	) (protocol.Assertion, error),
+) (option.Option[*protocol.AssertionCreatedInfo], error) {
+	none := option.None[*protocol.AssertionCreatedInfo]()
 	if !parentCreationInfo.InboxMaxCount.IsUint64() {
-		return option.None[protocol.Assertion](), errors.New("inbox max count not a uint64")
+		return none, errors.New("inbox max count not a uint64")
 	}
 	// The parent assertion tells us what the next posted assertion's batch should be.
 	// We read this value and use it to compute the required execution state we must post.
@@ -117,14 +134,14 @@ func (m *Manager) PostAssertionBasedOnParent(
 					"batchCount": batchCount,
 				},
 			)
-			return option.None[protocol.Assertion](), nil
+			return none, nil
 		}
-		return option.None[protocol.Assertion](), errors.Wrapf(err, "could not get execution state at batch count %d", batchCount)
+		return none, errors.Wrapf(err, "could not get execution state at batch count %d", batchCount)
 	}
 	srvlog.Info(
 		"Posting assertion with retrieved state", log.Ctx{
-			"batchCount": batchCount,
-			"newState":   fmt.Sprintf("%+v", newState),
+			"batchCount":    batchCount,
+			"validatorName": m.validatorName,
 		},
 	)
 	assertion, err := submitFn(
@@ -132,46 +149,19 @@ func (m *Manager) PostAssertionBasedOnParent(
 		parentCreationInfo,
 		newState,
 	)
-	switch {
-	case errors.Is(err, solimpl.ErrAlreadyExists):
-		return option.None[protocol.Assertion](), errors.Wrap(err, "assertion already exists, was unable to post")
-	case err != nil:
-		return option.None[protocol.Assertion](), err
+	if err != nil {
+		return none, err
 	}
 	srvlog.Info("Submitted latest L2 state claim as an assertion to L1", log.Ctx{
 		"validatorName":         m.validatorName,
-		"layer2BlockHash":       containers.Trunc(newState.GlobalState.BlockHash[:]),
 		"requiredInboxMaxCount": batchCount,
 		"postedExecutionState":  fmt.Sprintf("%+v", newState),
 	})
 	assertionPostedCounter.Inc(1)
-
-	return option.Some(assertion), nil
-}
-
-// Finds the latest valid assertion sequence num a validator should build their new leaves upon.
-// It retrieves the latest assertion hashes posted to the rollup contract since the last confirmed assertion block.
-// This walks down the list of assertions in the protocol down until it finds
-// the latest assertion that we have a state commitment for.
-func (m *Manager) findLatestValidAssertion(ctx context.Context) (protocol.AssertionHash, error) {
-	latestCreatedAssertionHashes, err := m.chain.LatestCreatedAssertionHashes(ctx)
+	creationInfo, err := m.chain.ReadAssertionCreationInfo(ctx, assertion.Id())
 	if err != nil {
-		return protocol.AssertionHash{}, err
+		return none, err
 	}
-	// Loop over latestCreatedAssertionHashes in reverse order to find the latest valid assertion.
-	for i := len(latestCreatedAssertionHashes) - 1; i >= 0; i-- {
-		var info *protocol.AssertionCreatedInfo
-		info, err = m.chain.ReadAssertionCreationInfo(ctx, latestCreatedAssertionHashes[i])
-		if err != nil {
-			return protocol.AssertionHash{}, err
-		}
-		if err = m.stateManager.AgreesWithExecutionState(ctx, protocol.GoExecutionStateFromSolidity(info.AfterState)); err == nil {
-			return latestCreatedAssertionHashes[i], nil
-		}
-	}
-	latestConfirmed, err := m.chain.LatestConfirmed(ctx)
-	if err != nil {
-		return protocol.AssertionHash{}, err
-	}
-	return latestConfirmed.Id(), nil
+	m.observedCanonicalAssertions <- assertion.Id()
+	return option.Some(creationInfo), nil
 }

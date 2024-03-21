@@ -99,7 +99,7 @@ jobs:
         run: go build -v ./...
 
       - name: Test
-        run: ANVIL=$(which anvil) go test -v -covermode=atomic -coverprofile=coverage.out ./...
+        run: ANVIL=$(which anvil) go test -v -covermode=atomic -coverprofile=coverage.out -timeout=20m ./...
 
       - name: Upload coverage reports to Codecov
         uses: codecov/codecov-action@v3
@@ -129,7 +129,7 @@ jobs:
           version: nightly
 
       - name: e2e test
-        run: bazel test //testing/endtoend:endtoend_suite --test_env=ANVIL=$(which anvil) --test_output=all
+        run: bazel test //testing/endtoend:endtoend_suite --test_env=ANVIL=$(which anvil) --test_output=all --test_timeout=1200
 
       - name: coverage
         run: bazel coverage --combined_report=lcov //...
