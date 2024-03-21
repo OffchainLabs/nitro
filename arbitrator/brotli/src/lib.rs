@@ -166,8 +166,11 @@ pub fn compress_fixed<'a>(
             window_size
         ));
 
-        if let Some(dict) = dictionary.ptr(level) {
-            check!(BrotliEncoderAttachPreparedDictionary(state, dict));
+        // attach a custom dictionary if requested
+        match dictionary.ptr(level) {
+            Ok(Some(dict)) => check!(BrotliEncoderAttachPreparedDictionary(state, dict)),
+            Err(status) => check!(status),
+            _ => {}
         }
 
         let mut in_len = input.len();

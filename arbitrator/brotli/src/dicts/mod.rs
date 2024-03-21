@@ -2,7 +2,8 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{
-    types::BrotliSharedDictionaryType, CustomAllocator, EncoderPreparedDictionary, HeapItem,
+    types::BrotliSharedDictionaryType, BrotliStatus, CustomAllocator, EncoderPreparedDictionary,
+    HeapItem,
 };
 use core::{ffi::c_int, ptr};
 use lazy_static::lazy_static;
@@ -68,11 +69,16 @@ impl Dictionary {
     }
 
     /// Returns a pointer to a compression-ready instance of the given dictionary.
-    pub fn ptr(&self, level: u32) -> Option<*const EncoderPreparedDictionary> {
-        match self {
+    /// Note: this function fails when the specified level doesn't match.
+    pub fn ptr(
+        &self,
+        level: u32,
+    ) -> Result<Option<*const EncoderPreparedDictionary>, BrotliStatus> {
+        Ok(match self {
             Self::StylusProgram if level == 11 => Some(STYLUS_PROGRAM_DICT.0),
+            Self::StylusProgram => return Err(BrotliStatus::Failure),
             _ => None,
-        }
+        })
     }
 }
 
