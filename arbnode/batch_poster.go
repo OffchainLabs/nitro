@@ -442,22 +442,14 @@ type txData struct {
 func (b *BatchPoster) getTxsDataByBlock(ctx context.Context, number int64) ([]txData, error) {
 	blockNrStr := rpc.BlockNumber(number).String()
 	rawRpcClient := b.l1Reader.Client().Client()
-
-	var numTxs hexutil.Uint
-	err := rawRpcClient.CallContext(ctx, &numTxs, "eth_getBlockTransactionCountByNumber", blockNrStr)
+	var blk struct {
+		Transactions []txData `json:"transactions"`
+	}
+	err := rawRpcClient.CallContext(ctx, &blk, "eth_getBlockByNumber", blockNrStr, true)
 	if err != nil {
-		return nil, fmt.Errorf("error fetching number of transactions in the block %d : %w", number, err)
+		return nil, fmt.Errorf("error fetching block %d : %w", number, err)
 	}
-
-	var result []txData
-	for i := hexutil.Uint64(0); i < hexutil.Uint64(numTxs); i++ {
-		var meta txData
-		if err = rawRpcClient.CallContext(ctx, &meta, "eth_getTransactionByBlockNumberAndIndex", blockNrStr, i); err != nil {
-			return nil, fmt.Errorf("error fetching transaction of index %d from block %d: %w", i, number, err)
-		}
-		result = append(result, meta)
-	}
-	return result, nil
+	return blk.Transactions, nil
 }
 
 // checkRevert checks blocks with number in range [from, to] whether they
