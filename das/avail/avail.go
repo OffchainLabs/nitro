@@ -222,10 +222,10 @@ outer:
 	if err != nil {
 		return nil, err
 	}
-	var merkleProofInput MerklePoofInput = MerklePoofInput{bridgdeApiResponse.DataRootProof, bridgdeApiResponse.LeafProof, bridgdeApiResponse.RangeHash, bridgdeApiResponse.DataRootIndex, bridgdeApiResponse.BlobRoot, bridgdeApiResponse.BridgeRoot, bridgdeApiResponse.Leaf, bridgdeApiResponse.LeafIndex}
+	var merkleProofInput MerkleProofInput = MerkleProofInput{bridgdeApiResponse.DataRootProof, bridgdeApiResponse.LeafProof, bridgdeApiResponse.RangeHash, bridgdeApiResponse.DataRootIndex, bridgdeApiResponse.BlobRoot, bridgdeApiResponse.BridgeRoot, bridgdeApiResponse.Leaf, bridgdeApiResponse.LeafIndex}
 
 	// Creating BlobPointer to submit over settlement layer
-	blobPointer := BlobPointer{BlockHash: finalizedblockHash, Sender: a.keyringPair.Address, Nonce: nonce, DasTreeRootHash: dastree.Hash(message), MerklePoofInput: merkleProofInput}
+	blobPointer := BlobPointer{BlockHash: finalizedblockHash, Sender: a.keyringPair.Address, Nonce: nonce, DasTreeRootHash: dastree.Hash(message), MerkleProofInput: merkleProofInput}
 	log.Info("✅  Sucesfully included in block data to Avail", "BlobPointer:", blobPointer)
 	blobPointerData, err := blobPointer.MarshalToBinary()
 	if err != nil {

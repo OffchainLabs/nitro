@@ -8,7 +8,7 @@ import (
 	gsrpc_types "github.com/centrifuge/go-substrate-rpc-client/v4/types"
 )
 
-type MerklePoofInput struct {
+type MerkleProofInput struct {
 
 	// proof of inclusion for the data root
 	DataRootProof []gsrpc_types.Hash
@@ -38,7 +38,7 @@ type MerklePoofInput struct {
 //		<-------- len(DataRootProof) -------->|<------- DataRootProof ------->|<------- len(LeafProof) -------->|<------- LeafProof ------->|<---- RangeHash ---->|<------- DataRootIndex ------->|<---- BlobRoot ---->|<---- BridgeRoot ---->|<---- Leaf ---->|<------- LeafIndex ------->|
 //
 //		------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-func (i *MerklePoofInput) MarshalToBinary() ([]byte, error) {
+func (i *MerkleProofInput) MarshalToBinary() ([]byte, error) {
 	buf := new(bytes.Buffer)
 	err := binary.Write(buf, binary.BigEndian, uint8(len(i.DataRootProof)))
 	if err != nil {
@@ -102,7 +102,7 @@ func (i *MerklePoofInput) MarshalToBinary() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func (m *MerklePoofInput) UnmarshalFromBinary(buf *bytes.Reader) error {
+func (m *MerkleProofInput) UnmarshalFromBinary(buf *bytes.Reader) error {
 	var len uint8
 	if err := binary.Read(buf, binary.BigEndian, &len); err != nil {
 		return err

@@ -40,7 +40,7 @@ func TestMarshallingAndUnmarshalingBlobPointer(t *testing.T) {
 		t.Fatalf("unable to unmarshal bridge api response, err=%v", err)
 	}
 	t.Logf("%+v", bridgdeApiResponse)
-	var merkleProofInput MerklePoofInput = MerklePoofInput{bridgdeApiResponse.DataRootProof, bridgdeApiResponse.LeafProof, bridgdeApiResponse.RangeHash, bridgdeApiResponse.DataRootIndex, bridgdeApiResponse.BlobRoot, bridgdeApiResponse.BridgeRoot, bridgdeApiResponse.Leaf, bridgdeApiResponse.LeafIndex}
+	var merkleProofInput MerkleProofInput = MerkleProofInput{bridgdeApiResponse.DataRootProof, bridgdeApiResponse.LeafProof, bridgdeApiResponse.RangeHash, bridgdeApiResponse.DataRootIndex, bridgdeApiResponse.BlobRoot, bridgdeApiResponse.BridgeRoot, bridgdeApiResponse.Leaf, bridgdeApiResponse.LeafIndex}
 	t.Logf("%+v", merkleProofInput)
 
 	var blobPointer BlobPointer = BlobPointer{gsrpc_types.NewHash([]byte{245, 54, 19, 250, 6, 182, 183, 249, 220, 94, 76, 245, 242, 132, 154, 255, 201, 78, 25, 216, 169, 232, 153, 146, 7, 236, 224, 17, 117, 201, 136, 237}),
@@ -54,7 +54,7 @@ func TestMarshallingAndUnmarshalingBlobPointer(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unable to marshal blobPointer to binary, err=%v", err)
 	}
-	// t.Logf("%+v", data)
+	t.Logf("%x", data)
 
 	var newBlobPointer = BlobPointer{}
 	if err := newBlobPointer.UnmarshalFromBinary(data[1:]); err != nil {

@@ -11,11 +11,11 @@ import (
 
 // BlobPointer contains the reference to the data blob on Avail
 type BlobPointer struct {
-	BlockHash       gsrpc_types.Hash // Hash for block on avail chain
-	Sender          string           // sender address to filter extrinsic out sepecifically for this address
-	Nonce           uint32           // nonce to filter specific extrinsic
-	DasTreeRootHash common.Hash      // Das tree root hash created when preimage is stored on das tree
-	MerklePoofInput MerklePoofInput  // Merkle proof of the blob submission
+	BlockHash        gsrpc_types.Hash // Hash for block on avail chain
+	Sender           string           // sender address to filter extrinsic out sepecifically for this address
+	Nonce            uint32           // nonce to filter specific extrinsic
+	DasTreeRootHash  common.Hash      // Das tree root hash created when preimage is stored on das tree
+	MerkleProofInput MerkleProofInput // Merkle proof of the blob submission
 }
 
 // MarshalBinary encodes the BlobPointer to binary
@@ -42,7 +42,7 @@ func (b *BlobPointer) MarshalToBinary() ([]byte, error) {
 	}
 
 	// Marshaling in between: The Merkle proof input, which will be required for DA verification
-	merkleProofInput, err := b.MerklePoofInput.MarshalToBinary()
+	merkleProofInput, err := b.MerkleProofInput.MarshalToBinary()
 	if err != nil {
 		return []byte{}, fmt.Errorf("unable to covert the avail block referece into array of bytes and getting error:%w", err)
 	}
@@ -77,7 +77,7 @@ func (b *BlobPointer) MarshalToBinary() ([]byte, error) {
 func (b *BlobPointer) UnmarshalFromBinary(blobPointerData []byte) error {
 	buf := bytes.NewReader(blobPointerData)
 
-	if err := b.MerklePoofInput.UnmarshalFromBinary(buf); err != nil {
+	if err := b.MerkleProofInput.UnmarshalFromBinary(buf); err != nil {
 		return err
 	}
 
