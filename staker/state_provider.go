@@ -98,66 +98,39 @@ func NewStateManager(
 	return sm, nil
 }
 
-// AgreesWithExecutionState If the state manager locally has this validated execution state.
-// Returns ErrNoExecutionState if not found, or ErrChainCatchingUp if not yet
-// validated / syncing.
-func (s *StateManager) AgreesWithExecutionState(ctx context.Context, state *protocol.ExecutionState) error {
-	if state.GlobalState.PosInBatch != 0 {
-		return fmt.Errorf("position in batch must be zero, but got %d: %+v", state.GlobalState.PosInBatch, state)
+// Produces the L2 execution state to assert to after the previous assertion state.
+// Returns either the state at the batch count maxInboxCount or the state maxNumberOfBlocks after previousBlockHash,
+// whichever is an earlier state. If previousBlockHash is zero, this function simply returns the state at maxInboxCount.
+func (s *StateManager) ExecutionStateAfterPreviousState(
+	ctx context.Context,
+	maxInboxCount uint64,
+	previousGlobalState *protocol.GoGlobalState,
+	maxNumberOfBlocks uint64,
+) (*protocol.ExecutionState, error) {
+	if maxInboxCount == 0 {
+		return nil, errors.New("max inbox count cannot be zero")
 	}
-	// We always agree with the genesis batch.
-	batchIndex := state.GlobalState.Batch
-	if batchIndex == 0 && state.GlobalState.PosInBatch == 0 {
-		return nil
-	}
-	// We always agree with the init message.
-	if batchIndex == 1 && state.GlobalState.PosInBatch == 0 {
-		return nil
-	}
-
-	// Because an execution state from the assertion chain fully consumes the preceding batch,
-	// we actually want to check if we agree with the last state of the preceding batch, so
-	// we decrement the batch index by 1.
-	batchIndex -= 1
-
-	totalBatches, err := s.validator.inboxTracker.GetBatchCount()
-	if err != nil {
-		return err
-	}
-
-	// If the batch index is >= the total number of batches we have in our inbox tracker,
-	// we are still catching up to the chain.
-	if batchIndex >= totalBatches {
-		return ErrChainCatchingUp
-	}
-	messageCount, err := s.validator.inboxTracker.GetBatchMessageCount(batchIndex)
-	if err != nil {
-		return err
-	}
-	validatedGlobalState, err := s.findGlobalStateFromMessageCountAndBatch(messageCount, l2stateprovider.Batch(batchIndex))
-	if err != nil {
-		return err
-	}
-	// We check if the block hash and send root match at our expected result.
-	if state.GlobalState.BlockHash != validatedGlobalState.BlockHash || state.GlobalState.SendRoot != validatedGlobalState.SendRoot {
-		return l2stateprovider.ErrNoExecutionState
-	}
-	return nil
-}
-
-// ExecutionStateAfterBatchCount Produces the l2 state to assert at the message number specified.
-// Makes sure that PosInBatch is always 0
-func (s *StateManager) ExecutionStateAfterBatchCount(ctx context.Context, batchCount uint64) (*protocol.ExecutionState, error) {
-	if batchCount == 0 {
-		return nil, errors.New("batch count cannot be zero")
-	}
-	batchIndex := batchCount - 1
+	batchIndex := maxInboxCount - 1
 	messageCount, err := s.validator.inboxTracker.GetBatchMessageCount(batchIndex)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
-			return nil, fmt.Errorf("%w: batch count %d", l2stateprovider.ErrChainCatchingUp, batchCount)
+			return nil, fmt.Errorf("%w: batch count %d", l2stateprovider.ErrChainCatchingUp, maxInboxCount)
 		}
 		return nil, err
+	}
+	if previousGlobalState != nil {
+		previousMessageCount, err := s.messageCountFromGlobalState(ctx, *previousGlobalState)
+		if err != nil {
+			return nil, err
+		}
+		maxMessageCount := previousMessageCount + arbutil.MessageIndex(maxNumberOfBlocks)
+		if messageCount > maxMessageCount {
+			messageCount = maxMessageCount
+			batchIndex, err = FindBatchContainingMessageIndex(s.validator.inboxTracker, messageCount, maxInboxCount)
+			if err != nil {
+				return nil, err
+			}
+		}
 	}
 	globalState, err := s.findGlobalStateFromMessageCountAndBatch(messageCount, l2stateprovider.Batch(batchIndex))
 	if err != nil {
@@ -174,6 +147,21 @@ func (s *StateManager) ExecutionStateAfterBatchCount(ctx context.Context, batchC
 		executionState.GlobalState.PosInBatch = 0
 	}
 	return executionState, nil
+}
+
+// messageCountFromGlobalState returns the corresponding message count of a global state, assuming that gs is a valid global state.
+func (s *StateManager) messageCountFromGlobalState(ctx context.Context, gs protocol.GoGlobalState) (arbutil.MessageIndex, error) {
+	// Start by getting the message count at the start of the batch
+	var batchMessageCount arbutil.MessageIndex
+	if batchMessageCount != 0 {
+		var err error
+		batchMessageCount, err = s.validator.inboxTracker.GetBatchMessageCount(gs.Batch - 1)
+		if err != nil {
+			return 0, err
+		}
+	}
+	// Add on the PosInBatch
+	return batchMessageCount + arbutil.MessageIndex(gs.PosInBatch), nil
 }
 
 func (s *StateManager) StatesInBatchRange(
