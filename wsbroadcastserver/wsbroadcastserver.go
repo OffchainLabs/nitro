@@ -118,7 +118,7 @@ var DefaultBroadcasterConfig = BroadcasterConfig{
 	ClientTimeout:      15 * time.Second,
 	Queue:              100,
 	Workers:            100,
-	MaxSendQueue:       4096,
+	MaxSendQueue:       4 * 60,
 	RequireVersion:     false,
 	DisableSigning:     true,
 	LogConnect:         false,

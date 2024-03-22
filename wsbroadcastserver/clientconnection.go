@@ -263,6 +263,8 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 					cc.Remove()
 					return
 				}
+
+				time.Sleep(time.Millisecond * 350)
 			}
 		}
 	})
