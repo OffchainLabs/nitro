@@ -324,6 +324,13 @@ func TestFeeAndTipCaps_EnoughBalance_NoBacklog_NoUncofirmed_BlobTx(t *testing.T)
 	lastTx = types.NewTx(lastBlobTx)
 	// Make creation time go backwards so elapsed time increases
 	retconnedCreationTime := dataCreatedAt.Add(-time.Minute)
+	// Base fee needs to have increased to simulate conditions to not include prev tx
+	latestHeader = types.Header{
+		Number:        big.NewInt(2),
+		BaseFee:       big.NewInt(32_000_000_000),
+		BlobGasUsed:   &blobGasUsed,
+		ExcessBlobGas: &excessBlobGas,
+	}
 
 	newGasFeeCap, newTipCap, newBlobFeeCap, err = p.feeAndTipCaps(ctx, nonce, gasLimit, numBlobs, lastTx, retconnedCreationTime, dataPosterBacklog, &latestHeader)
 
@@ -345,6 +352,125 @@ func TestFeeAndTipCaps_EnoughBalance_NoBacklog_NoUncofirmed_BlobTx(t *testing.T)
 	}
 	if !arbmath.BigEquals(expectedTipCap, newTipCap) {
 		t.Fatalf("feeAndTipCaps didn't return expected tip cap. Was: %d, expected: %d", expectedTipCap, newTipCap)
+	}
+
+}
+
+func TestFeeAndTipCaps_RBF_RisingBlobFee_FallingBaseFee(t *testing.T) {
+	conf := func() *DataPosterConfig {
+		// Set only the fields that are used by feeAndTipCaps
+		// Start with defaults, maybe change for test.
+		return &DataPosterConfig{
+			MaxMempoolTransactions: 18,
+			MaxMempoolWeight:       18,
+			MinTipCapGwei:          0.05,
+			MinBlobTxTipCapGwei:    1,
+			MaxTipCapGwei:          5,
+			MaxBlobTxTipCapGwei:    10,
+			MaxFeeBidMultipleBips:  arbmath.OneInBips * 10,
+			AllocateMempoolBalance: true,
+
+			UrgencyGwei:           2.,
+			ElapsedTimeBase:       10 * time.Minute,
+			ElapsedTimeImportance: 10,
+			TargetPriceGwei:       60.,
+		}
+	}
+	expression, err := govaluate.NewEvaluableExpression(DefaultDataPosterConfig.MaxFeeCapFormula)
+	if err != nil {
+		t.Fatalf("error creating govaluate evaluable expression: %v", err)
+	}
+
+	p := DataPoster{
+		config:           conf,
+		extraBacklog:     func() uint64 { return 0 },
+		balance:          big.NewInt(0).Mul(big.NewInt(params.Ether), big.NewInt(10)),
+		usingNoOpStorage: false,
+		client: &stubL1Client{
+			senderNonce:        1,
+			suggestedGasTipCap: big.NewInt(2 * params.GWei),
+		},
+		auth: &bind.TransactOpts{
+			From: common.Address{},
+		},
+		maxFeeCapExpression: expression,
+	}
+
+	ctx := context.Background()
+	var nonce uint64 = 1
+	var gasLimit uint64 = 300_000 // reasonable upper bound for mainnet blob batches
+	var numBlobs uint64 = 6
+	var lastTx *types.Transaction // PostTransaction leaves this nil, used when replacing
+	dataCreatedAt := time.Now()
+	var dataPosterBacklog uint64 = 0 // Zero backlog for PostTransaction
+	var blobGasUsed uint64 = 0xc0000 // 6 blobs of gas
+	var excessBlobGas uint64 = 0     // typical current mainnet conditions
+	latestHeader := types.Header{
+		Number:        big.NewInt(1),
+		BaseFee:       big.NewInt(1_000_000_000),
+		BlobGasUsed:   &blobGasUsed,
+		ExcessBlobGas: &excessBlobGas,
+	}
+
+	newGasFeeCap, newTipCap, newBlobFeeCap, err := p.feeAndTipCaps(ctx, nonce, gasLimit, numBlobs, lastTx, dataCreatedAt, dataPosterBacklog, &latestHeader)
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
+
+	// There is no backlog and almost no time elapses since the batch data was
+	// created to when it was posted so the maxNormalizedFeeCap is ~60.01 gwei.
+	// This is multiplied with the normalizedGas to get targetMaxCost.
+	// This is greatly in excess of currentTotalCost * MaxFeeBidMultipleBips,
+	// so targetMaxCost is reduced to the current base fee + suggested tip cap +
+	// current blob fee multipled by MaxFeeBidMultipleBips (factor of 10).
+	// The blob and non blob factors are then proportionally split out and so
+	// the newGasFeeCap is set to (current base fee + suggested tip cap) * 10
+	// and newBlobFeeCap is set to current blob gas base fee (1 wei
+	// since there is no excess blob gas) * 10.
+	expectedGasFeeCap := big.NewInt(30 * params.GWei)
+	expectedBlobFeeCap := big.NewInt(10)
+	if !arbmath.BigEquals(expectedGasFeeCap, newGasFeeCap) {
+		t.Fatalf("feeAndTipCaps didn't return expected gas fee cap. Was: %d, expected: %d", expectedGasFeeCap, newGasFeeCap)
+	}
+	if !arbmath.BigEquals(expectedBlobFeeCap, newBlobFeeCap) {
+		t.Fatalf("feeAndTipCaps didn't return expected blob gas fee cap. Was: %d, expected: %d", expectedBlobFeeCap, newBlobFeeCap)
+	}
+
+	// 2 gwei is the amount suggested by the L1 client, so that is the value
+	// returned because it doesn't exceed the configured bounds, there is no
+	// lastTx to scale against with rbf, and it is not bigger than the computed
+	// gasFeeCap.
+	expectedTipCap := big.NewInt(2 * params.GWei)
+	if !arbmath.BigEquals(expectedTipCap, newTipCap) {
+		t.Fatalf("feeAndTipCaps didn't return expected tip cap. Was: %d, expected: %d", expectedTipCap, newTipCap)
+	}
+
+	lastBlobTx := &types.BlobTx{}
+	updateTxDataGasCaps(lastBlobTx, newGasFeeCap, newTipCap, newBlobFeeCap)
+	lastTx = types.NewTx(lastBlobTx)
+	// Make creation time go backwards so elapsed time increases
+	retconnedCreationTime := dataCreatedAt.Add(-time.Minute)
+	// Base fee has decreased but blob fee has increased
+	blobGasUsed = 0xc0000   // 6 blobs of gas
+	excessBlobGas = 8295804 // this should set blob fee to 12 wei
+	latestHeader = types.Header{
+		Number:        big.NewInt(2),
+		BaseFee:       big.NewInt(100_000_000),
+		BlobGasUsed:   &blobGasUsed,
+		ExcessBlobGas: &excessBlobGas,
+	}
+
+	newGasFeeCap, newTipCap, newBlobFeeCap, err = p.feeAndTipCaps(ctx, nonce, gasLimit, numBlobs, lastTx, retconnedCreationTime, dataPosterBacklog, &latestHeader)
+
+	t.Log("newGasFeeCap", newGasFeeCap, "newTipCap", newTipCap, "newBlobFeeCap", newBlobFeeCap, "err", err)
+	if arbmath.BigEquals(expectedGasFeeCap, newGasFeeCap) {
+		t.Fatalf("feeAndTipCaps didn't return expected gas fee cap. Was: %d, expected NOT: %d", expectedGasFeeCap, newGasFeeCap)
+	}
+	if arbmath.BigEquals(expectedBlobFeeCap, newBlobFeeCap) {
+		t.Fatalf("feeAndTipCaps didn't return expected blob gas fee cap. Was: %d, expected NOT: %d", expectedBlobFeeCap, newBlobFeeCap)
+	}
+	if arbmath.BigEquals(expectedTipCap, newTipCap) {
+		t.Fatalf("feeAndTipCaps didn't return expected tip cap. Was: %d, expected NOT: %d", expectedTipCap, newTipCap)
 	}
 
 }
