@@ -601,17 +601,19 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 		newBlobFeeCap = arbmath.BigDivByUint(newBlobCost, blobGasUsed)
 	}
 
-	// Limit the fee caps to be no greater than max(MaxFeeBidMultipleBips, minRbf)
-	maxNonBlobFee := arbmath.BigMulByBips(currentNonBlobFee, config.MaxFeeBidMultipleBips)
-	if lastTx != nil {
-		maxNonBlobFee = arbmath.BigMax(maxNonBlobFee, arbmath.BigMulByBips(lastTx.GasFeeCap(), minRbfIncrease))
+	if config.MaxFeeBidMultipleBips > 0 {
+		// Limit the fee caps to be no greater than max(MaxFeeBidMultipleBips, minRbf)
+		maxNonBlobFee := arbmath.BigMulByBips(currentNonBlobFee, config.MaxFeeBidMultipleBips)
+		if lastTx != nil {
+			maxNonBlobFee = arbmath.BigMax(maxNonBlobFee, arbmath.BigMulByBips(lastTx.GasFeeCap(), minRbfIncrease))
+		}
+		maxBlobFee := arbmath.BigMulByBips(currentBlobFee, config.MaxFeeBidMultipleBips)
+		if lastTx != nil && lastTx.BlobGasFeeCap() != nil {
+			maxBlobFee = arbmath.BigMax(maxBlobFee, arbmath.BigMulByBips(lastTx.BlobGasFeeCap(), minRbfIncrease))
+		}
+		newBaseFeeCap = arbmath.BigMin(newBaseFeeCap, maxNonBlobFee)
+		newBlobFeeCap = arbmath.BigMin(newBlobFeeCap, maxBlobFee)
 	}
-	maxBlobFee := arbmath.BigMulByBips(currentBlobFee, config.MaxFeeBidMultipleBips)
-	if lastTx != nil && lastTx.BlobGasFeeCap() != nil {
-		maxBlobFee = arbmath.BigMax(maxBlobFee, arbmath.BigMulByBips(lastTx.BlobGasFeeCap(), minRbfIncrease))
-	}
-	newBaseFeeCap = arbmath.BigMin(newBaseFeeCap, maxNonBlobFee)
-	newBlobFeeCap = arbmath.BigMin(newBlobFeeCap, maxBlobFee)
 
 	if arbmath.BigGreaterThan(newTipCap, newBaseFeeCap) {
 		log.Info(
