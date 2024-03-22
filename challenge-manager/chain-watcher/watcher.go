@@ -26,6 +26,7 @@ import (
 	retry "github.com/OffchainLabs/bold/runtime"
 	"github.com/OffchainLabs/bold/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/bold/util"
+	"github.com/OffchainLabs/bold/util/stopwaiter"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -93,6 +94,7 @@ type trackedChallenge struct {
 // (b) the ability to check if an edge with a certain claim id has been confirmed. Both
 // are used during the confirmation process in edge tracker goroutines.
 type Watcher struct {
+	stopwaiter.StopWaiter
 	histChecker                 l2stateprovider.HistoryChecker
 	chain                       protocol.AssertionChain
 	edgeManager                 EdgeManager
@@ -214,6 +216,7 @@ func (w *Watcher) IsSynced() bool {
 // Start watching the chain via a polling mechanism for all edge added and confirmation events
 // in order to process some of this data into internal representations for confirmation purposes.
 func (w *Watcher) Start(ctx context.Context) {
+	w.StopWaiter.Start(ctx, w)
 	scanRange, err := retry.UntilSucceeds(ctx, func() (filterRange, error) {
 		return w.getStartEndBlockNum(ctx)
 	})
@@ -683,7 +686,7 @@ func (w *Watcher) processEdgeConfirmation(
 	// Check if we should confirm the assertion by challenge winner.
 	challengeLevel := edge.GetChallengeLevel()
 	if challengeLevel == protocol.NewBlockChallengeLevel() {
-		go w.confirmAssertionByChallengeWinner(ctx, edge, claimId, challengeParentAssertionHash)
+		w.LaunchThread(func(ctx context.Context) { w.confirmAssertionByChallengeWinner(ctx, edge, claimId, challengeParentAssertionHash) })
 	}
 
 	chal.confirmedLevelZeroEdgeClaimIds.Put(claimId, edge.Id())

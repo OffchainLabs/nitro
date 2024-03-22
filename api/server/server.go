@@ -9,12 +9,14 @@ import (
 	"time"
 
 	"github.com/OffchainLabs/bold/api/backend"
+	"github.com/OffchainLabs/bold/util/stopwaiter"
 	"github.com/gorilla/mux"
 )
 
 var apiVersion = "/api/v1"
 
 type Server struct {
+	stopwaiter.StopWaiter
 	srv        *http.Server
 	router     *mux.Router
 	registered bool
@@ -45,6 +47,7 @@ func New(addr string, backend backend.BusinessLogicProvider) (*Server, error) {
 }
 
 func (s *Server) Start(ctx context.Context) error {
+	s.StopWaiter.Start(ctx, s)
 	return s.srv.ListenAndServe()
 }
 

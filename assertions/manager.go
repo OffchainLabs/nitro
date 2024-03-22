@@ -14,6 +14,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/OffchainLabs/bold/util/stopwaiter"
 	"github.com/ethereum/go-ethereum/metrics"
 
 	"github.com/OffchainLabs/bold/api/db"
@@ -47,6 +48,7 @@ func init() {
 // 4. The Manager frequently posts new assertions to the assertion chain at specific intervals.
 // 5. When posting assertions, it relies on the most recent execution state available in its local state manager.
 type Manager struct {
+	stopwaiter.StopWaiter
 	chain                       protocol.AssertionChain
 	backend                     bind.ContractBackend
 	challengeCreator            types.ChallengeCreator
@@ -150,12 +152,13 @@ func NewManager(
 }
 
 func (m *Manager) Start(ctx context.Context) {
+	m.StopWaiter.Start(ctx, m)
 	if !m.disablePosting {
-		go m.postAssertionRoutine(ctx)
+		m.LaunchThread(m.postAssertionRoutine)
 	}
-	go m.updateLatestConfirmedMetrics(ctx)
-	go m.syncAssertions(ctx)
-	go m.queueCanonicalAssertionsForConfirmation(ctx)
+	m.LaunchThread(m.updateLatestConfirmedMetrics)
+	m.LaunchThread(m.syncAssertions)
+	m.LaunchThread(m.queueCanonicalAssertionsForConfirmation)
 }
 
 func (m *Manager) ForksDetected() uint64 {

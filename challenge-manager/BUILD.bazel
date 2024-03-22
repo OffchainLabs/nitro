@@ -25,6 +25,7 @@ go_library(
         "//solgen/go/challengeV2gen",
         "//solgen/go/rollupgen",
         "//time",
+        "//util/stopwaiter",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_ethereum_go_ethereum//log",

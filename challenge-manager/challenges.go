@@ -70,7 +70,7 @@ func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionH
 	if err != nil {
 		return false, err
 	}
-	go tracker.Spawn(ctx)
+	m.LaunchThread(tracker.Spawn)
 
 	srvlog.Info("Successfully created level zero edge for block challenge", log.Ctx{
 		"name":          m.name,

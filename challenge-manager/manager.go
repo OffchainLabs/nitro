@@ -28,6 +28,7 @@ import (
 	"github.com/OffchainLabs/bold/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	utilTime "github.com/OffchainLabs/bold/time"
+	"github.com/OffchainLabs/bold/util/stopwaiter"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
@@ -47,6 +48,7 @@ type Opt = func(val *Manager)
 // Manager defines an offchain, challenge manager, which will be
 // an active participant in interacting with the on-chain contracts.
 type Manager struct {
+	stopwaiter.StopWaiter
 	chain                       protocol.Protocol
 	chalManagerAddr             common.Address
 	rollupAddr                  common.Address
@@ -305,7 +307,7 @@ func (m *Manager) TrackEdge(ctx context.Context, edge protocol.SpecEdge) error {
 	if err != nil {
 		return err
 	}
-	go trk.Spawn(ctx)
+	m.LaunchThread(trk.Spawn)
 	return nil
 }
 
@@ -384,12 +386,13 @@ func (m *Manager) ChallengeManager() *challengeV2gen.EdgeChallengeManagerFiltere
 }
 
 func (m *Manager) Start(ctx context.Context) {
+	m.StopWaiter.Start(ctx, m)
 	srvlog.Info("Started challenge manager", log.Ctx{
 		"validatorAddress": m.address.Hex(),
 	})
 
 	// Start the assertion manager.
-	go m.assertionManager.Start(ctx)
+	m.LaunchThread(m.assertionManager.Start)
 
 	// Watcher tower and resolve modes don't monitor challenges.
 	if m.mode == types.WatchTowerMode || m.mode == types.ResolveMode {
@@ -397,16 +400,23 @@ func (m *Manager) Start(ctx context.Context) {
 	}
 
 	// Start watching for ongoing chain events in the background.
-	go m.watcher.Start(ctx)
+	m.LaunchThread(m.watcher.Start)
 
 	if m.api != nil {
-		go func() {
+		m.LaunchThread(func(ctx context.Context) {
 			if err := m.api.Start(ctx); err != nil {
 				srvlog.Error("Could not start API server", log.Ctx{
 					"address": m.apiAddr,
 					"err":     err,
 				})
 			}
-		}()
+		})
 	}
+}
+
+func (m *Manager) StopAndWait() {
+	m.StopWaiter.StopAndWait()
+	m.assertionManager.StopAndWait()
+	m.watcher.StopAndWait()
+	m.api.StopAndWait()
 }

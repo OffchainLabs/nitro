@@ -71,6 +71,7 @@ func TestPostAssertion(t *testing.T) {
 		challengemanager.WithEdgeTrackerWakeInterval(time.Hour),
 	)
 	require.NoError(t, err)
+	chalManager.Start(ctx)
 
 	postState, err := stateManager.ExecutionStateAfterBatchCount(ctx, 1)
 	require.NoError(t, err)

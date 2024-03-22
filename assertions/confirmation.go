@@ -16,7 +16,7 @@ func (m *Manager) queueCanonicalAssertionsForConfirmation(ctx context.Context) {
 	for {
 		select {
 		case canonical := <-m.observedCanonicalAssertions:
-			go m.keepTryingAssertionConfirmation(ctx, canonical)
+			m.LaunchThread(func(ctx context.Context) { m.keepTryingAssertionConfirmation(ctx, canonical) })
 		case <-ctx.Done():
 			return
 		}

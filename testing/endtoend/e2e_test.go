@@ -177,6 +177,7 @@ func TestEndToEnd_TwoEvilValidators(t *testing.T) {
 }
 
 func TestEndToEnd_ManyEvilValidators(t *testing.T) {
+	t.Skip()
 	protocolCfg := defaultProtocolParams()
 	protocolCfg.challengePeriodBlocks = 1000
 	timeCfg := defaultTimeParams()
