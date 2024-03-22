@@ -9,23 +9,38 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
+	"github.com/spf13/pflag"
 )
 
-var (
+const pendingMessagesKey = "lock:pending"
+
+type ConsumerConfig struct {
 	// Intervals in which consumer will update heartbeat.
-	KeepAliveInterval = 30 * time.Second
+	KeepAliveInterval time.Duration `koanf:"keepalive-interval"`
 	// Duration after which consumer is considered to be dead if heartbeat
 	// is not updated.
-	KeepAliveTimeout = 5 * time.Minute
-	// Key for locking pending messages.
-	pendingMessagesKey = "lock:pending"
-)
+	KeepAliveTimeout time.Duration `koanf:"keepalive-timeout"`
+	// Redis url for Redis streams and locks.
+	RedisURL string `koanf:"redis-url"`
+	// Redis stream name.
+	RedisStream string `koanf:"redis-stream"`
+}
+
+func ConsumerConfigAddOptions(prefix string, f *pflag.FlagSet, cfg *ConsumerConfig) {
+	f.Duration(prefix+".keepalive-interval", 30*time.Second, "interval in which consumer will perform heartbeat")
+	f.Duration(prefix+".keepalive-timeout", 5*time.Minute, "timeout after which consumer is considered inactive if heartbeat wasn't performed")
+	f.String(prefix+".redis-url", "", "redis url for redis stream")
+	f.String(prefix+".redis-stream", "default", "redis stream name to read from")
+	f.String(prefix+".redis-group", "default", "redis stream consumer group name")
+}
 
 type Consumer struct {
-	id         string
-	streamName string
-	groupName  string
-	client     *redis.Client
+	id                string
+	streamName        string
+	groupName         string
+	client            *redis.Client
+	keepAliveInterval time.Duration
+	keepAliveTimeout  time.Duration
 }
 
 type Message struct {
@@ -33,24 +48,43 @@ type Message struct {
 	Value any
 }
 
-func NewConsumer(ctx context.Context, id, streamName, url string) (*Consumer, error) {
-	c, err := clientFromURL(url)
+func NewConsumer(ctx context.Context, cfg *ConsumerConfig) (*Consumer, error) {
+	c, err := clientFromURL(cfg.RedisURL)
 	if err != nil {
 		return nil, err
 	}
-	if id == "" {
-		id = uuid.NewString()
-	}
+	id := uuid.NewString()
 
 	consumer := &Consumer{
-		id:         id,
-		streamName: streamName,
-		groupName:  "default",
-		client:     c,
+		id:                id,
+		streamName:        cfg.RedisStream,
+		groupName:         "default",
+		client:            c,
+		keepAliveInterval: cfg.KeepAliveInterval,
+		keepAliveTimeout:  cfg.KeepAliveTimeout,
 	}
 	go consumer.keepAlive(ctx)
 	return consumer, nil
 }
+
+// func NewConsumer(ctx context.Context, id, streamName, url string) (*Consumer, error) {
+// 	c, err := clientFromURL(url)
+// 	if err != nil {
+// 		return nil, err
+// 	}
+// 	if id == "" {
+// 		id = uuid.NewString()
+// 	}
+
+// 	consumer := &Consumer{
+// 		id:         id,
+// 		streamName: streamName,
+// 		groupName:  "default",
+// 		client:     c,
+// 	}
+// 	go consumer.keepAlive(ctx)
+// 	return consumer, nil
+// }
 
 func keepAliveKey(id string) string {
 	return fmt.Sprintf("consumer:%s:heartbeat", id)
@@ -64,7 +98,7 @@ func (c *Consumer) keepAliveKey() string {
 func (c *Consumer) keepAlive(ctx context.Context) {
 	log.Info("Consumer polling for heartbeat updates", "id", c.id)
 	for {
-		if err := c.client.Set(ctx, c.keepAliveKey(), time.Now().UnixMilli(), KeepAliveTimeout).Err(); err != nil {
+		if err := c.client.Set(ctx, c.keepAliveKey(), time.Now().UnixMilli(), c.keepAliveTimeout).Err(); err != nil {
 			l := log.Error
 			if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
 				l = log.Info
@@ -75,7 +109,7 @@ func (c *Consumer) keepAlive(ctx context.Context) {
 		case <-ctx.Done():
 			log.Info("Error keeping alive", "error", ctx.Err())
 			return
-		case <-time.After(KeepAliveInterval):
+		case <-time.After(c.keepAliveTimeout):
 		}
 	}
 }
@@ -128,11 +162,11 @@ func (c *Consumer) isConsumerAlive(ctx context.Context, consumerID string) bool 
 	if err != nil {
 		return false
 	}
-	return time.Now().UnixMilli()-val < 2*int64(KeepAliveTimeout.Milliseconds())
+	return time.Now().UnixMilli()-val < 2*int64(c.keepAliveTimeout.Milliseconds())
 }
 
 func (c *Consumer) lockPending(ctx context.Context, consumerID string) bool {
-	acquired, err := c.client.SetNX(ctx, pendingMessagesKey, consumerID, KeepAliveInterval).Result()
+	acquired, err := c.client.SetNX(ctx, pendingMessagesKey, consumerID, c.keepAliveInterval).Result()
 	if err != nil || !acquired {
 		return false
 	}
@@ -185,7 +219,7 @@ func (c *Consumer) checkPending(ctx context.Context) (*Message, error) {
 			Stream:   c.streamName,
 			Group:    c.groupName,
 			Consumer: c.id,
-			MinIdle:  KeepAliveTimeout,
+			MinIdle:  c.keepAliveTimeout,
 			Messages: []string{msg.ID},
 		}).Result()
 		if err != nil {

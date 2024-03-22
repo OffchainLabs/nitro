@@ -30,13 +30,19 @@ type Producer struct {
 	client     *redis.Client
 }
 
-func NewProducer(streamName string, url string) (*Producer, error) {
-	c, err := clientFromURL(url)
+type ProducerConfig struct {
+	RedisURL string `koanf:"redis-url"`
+	// Redis stream name.
+	RedisStream string `koanf:"redis-stream"`
+}
+
+func NewProducer(cfg *ProducerConfig) (*Producer, error) {
+	c, err := clientFromURL(cfg.RedisURL)
 	if err != nil {
 		return nil, err
 	}
 	return &Producer{
-		streamName: streamName,
+		streamName: cfg.RedisStream,
 		client:     c,
 	}, nil
 }

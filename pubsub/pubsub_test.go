@@ -37,19 +37,26 @@ func createGroup(ctx context.Context, t *testing.T, client *redis.Client) {
 
 func newProducerConsumers(ctx context.Context, t *testing.T) (*Producer, []*testConsumer) {
 	t.Helper()
-	tmpI, tmpT := KeepAliveInterval, KeepAliveTimeout
-	KeepAliveInterval, KeepAliveTimeout = 5*time.Millisecond, 30*time.Millisecond
-	t.Cleanup(func() { KeepAliveInterval, KeepAliveTimeout = tmpI, tmpT })
+	// tmpI, tmpT := KeepAliveInterval, KeepAliveTimeout
+	// KeepAliveInterval, KeepAliveTimeout = 5*time.Millisecond, 30*time.Millisecond
+	// t.Cleanup(func() { KeepAliveInterval, KeepAliveTimeout = tmpI, tmpT })
 
 	redisURL := redisutil.CreateTestRedis(ctx, t)
-	producer, err := NewProducer(streamName, redisURL)
+	producer, err := NewProducer(&ProducerConfig{RedisURL: redisURL, RedisStream: streamName})
 	if err != nil {
 		t.Fatalf("Error creating new producer: %v", err)
 	}
 	var consumers []*testConsumer
 	for i := 0; i < consumersCount; i++ {
 		consumerCtx, cancel := context.WithCancel(ctx)
-		c, err := NewConsumer(consumerCtx, fmt.Sprintf("consumer-%d", i), streamName, redisURL)
+		c, err := NewConsumer(consumerCtx,
+			&ConsumerConfig{
+				RedisURL:          redisURL,
+				RedisStream:       streamName,
+				KeepAliveInterval: 5 * time.Millisecond,
+				KeepAliveTimeout:  30 * time.Millisecond,
+			},
+		)
 		if err != nil {
 			t.Fatalf("Error creating new consumer: %v", err)
 		}
