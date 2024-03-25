@@ -95,10 +95,11 @@ func TestProduce(t *testing.T) {
 	producer, consumers := newProducerConsumers(ctx, t)
 	consumerCtx, cancelConsumers := context.WithTimeout(ctx, time.Second)
 	gotMessages := messagesMap(consumersCount)
-
 	for idx, c := range consumers {
 		idx, c := idx, c.consumer
 		go func() {
+			// Give some time to the consumers to do their heartbeat.
+			time.Sleep(2 * c.keepAliveInterval)
 			for {
 				res, err := c.Consume(consumerCtx)
 				if err != nil {

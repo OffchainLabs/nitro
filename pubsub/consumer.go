@@ -67,25 +67,6 @@ func NewConsumer(ctx context.Context, cfg *ConsumerConfig) (*Consumer, error) {
 	return consumer, nil
 }
 
-// func NewConsumer(ctx context.Context, id, streamName, url string) (*Consumer, error) {
-// 	c, err := clientFromURL(url)
-// 	if err != nil {
-// 		return nil, err
-// 	}
-// 	if id == "" {
-// 		id = uuid.NewString()
-// 	}
-
-// 	consumer := &Consumer{
-// 		id:         id,
-// 		streamName: streamName,
-// 		groupName:  "default",
-// 		client:     c,
-// 	}
-// 	go consumer.keepAlive(ctx)
-// 	return consumer, nil
-// }
-
 func keepAliveKey(id string) string {
 	return fmt.Sprintf("consumer:%s:heartbeat", id)
 }
@@ -109,7 +90,7 @@ func (c *Consumer) keepAlive(ctx context.Context) {
 		case <-ctx.Done():
 			log.Info("Error keeping alive", "error", ctx.Err())
 			return
-		case <-time.After(c.keepAliveTimeout):
+		case <-time.After(c.keepAliveInterval):
 		}
 	}
 }
