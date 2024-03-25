@@ -117,7 +117,14 @@ func beaconRequest[T interface{}](b *BlobClient, ctx context.Context, beaconPath
 			return nil, err
 		}
 		if resp.StatusCode != http.StatusOK {
-			return nil, fmt.Errorf("response returned with status code %d, want 200 (OK)", resp.StatusCode)
+			body, _ := io.ReadAll(resp.Body)
+			bodyStr := string(body)
+			log.Debug("beacon request returned response with non 200 OK status", "status", resp.Status, "body", bodyStr)
+			if len(bodyStr) > 100 {
+				return nil, fmt.Errorf("response returned with status %s, want 200 OK. body: %s ", resp.Status, bodyStr[len(bodyStr)-trailingCharsOfResponse:])
+			} else {
+				return nil, fmt.Errorf("response returned with status %s, want 200 OK. body: %s", resp.Status, bodyStr)
+			}
 		}
 		return resp, nil
 	}
