@@ -18,6 +18,7 @@ import (
 	"github.com/andybalholm/brotli"
 	"github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -485,7 +486,17 @@ func (b *BatchPoster) checkReverts(ctx context.Context, to int64) (bool, error) 
 					if shouldHalt {
 						logLevel = log.Error
 					}
-					txErr := arbutil.DetailTxErrorForTxInfo(ctx, b.l1Reader.Client(), tx.Hash, r, tx.From, tx.To, tx.GasPrice.ToInt(), tx.GasFeeCap.ToInt(), tx.GasTipCap.ToInt(), tx.Value.ToInt(), tx.Input, *tx.Accesses, uint64(tx.Gas))
+					txErr := arbutil.DetailTxErrorUsingCallMsg(ctx, b.l1Reader.Client(), tx.Hash, r, ethereum.CallMsg{
+						From:       tx.From,
+						To:         tx.To,
+						Gas:        uint64(tx.Gas),
+						GasPrice:   tx.GasPrice.ToInt(),
+						GasFeeCap:  tx.GasFeeCap.ToInt(),
+						GasTipCap:  tx.GasTipCap.ToInt(),
+						Value:      tx.Value.ToInt(),
+						Data:       tx.Input,
+						AccessList: *tx.Accesses,
+					})
 					logLevel("Transaction from batch poster reverted", "nonce", tx.Nonce, "txHash", tx.Hash, "blockNumber", r.BlockNumber, "blockHash", r.BlockHash, "txErr", txErr)
 					return shouldHalt, nil
 				}
