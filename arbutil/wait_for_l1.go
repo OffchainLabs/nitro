@@ -13,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/rpc"
 )
 
@@ -30,23 +29,20 @@ type L1Interface interface {
 	Client() rpc.ClientInterface
 }
 
-func SendTxAsCall(ctx context.Context, client L1Interface, tx *types.Transaction, from common.Address, blockNum *big.Int, unlimitedGas bool) ([]byte, error) {
-	var gas uint64
+func SendTxAsCall(ctx context.Context, client L1Interface, from common.Address, to *common.Address, gasPrice, gasFeeCap, gasTipCap, value, blockNum *big.Int, data []byte, accessList types.AccessList, gas uint64, unlimitedGas bool) ([]byte, error) {
 	if unlimitedGas {
 		gas = 0
-	} else {
-		gas = tx.Gas()
 	}
 	callMsg := ethereum.CallMsg{
 		From:       from,
-		To:         tx.To(),
+		To:         to,
 		Gas:        gas,
-		GasPrice:   tx.GasPrice(),
-		GasFeeCap:  tx.GasFeeCap(),
-		GasTipCap:  tx.GasTipCap(),
-		Value:      tx.Value(),
-		Data:       tx.Data(),
-		AccessList: tx.AccessList(),
+		GasPrice:   gasPrice,
+		GasFeeCap:  gasFeeCap,
+		GasTipCap:  gasTipCap,
+		Value:      value,
+		Data:       data,
+		AccessList: accessList,
 	}
 	return client.CallContract(ctx, callMsg, blockNum)
 }
@@ -73,6 +69,15 @@ func GetPendingCallBlockNumber(ctx context.Context, client L1Interface) (*big.In
 
 func DetailTxError(ctx context.Context, client L1Interface, tx *types.Transaction, txRes *types.Receipt) error {
 	// Re-execute the transaction as a call to get a better error
+	from, err := client.TransactionSender(ctx, tx, txRes.BlockHash, txRes.TransactionIndex)
+	if err != nil {
+		return fmt.Errorf("TransactionSender got: %w for tx %v", err, tx.Hash())
+	}
+	return DetailTxErrorForTxInfo(ctx, client, tx.Hash(), txRes, from, tx.To(), tx.GasPrice(), tx.GasFeeCap(), tx.GasTipCap(), tx.Value(), tx.Data(), tx.AccessList(), tx.Gas())
+}
+
+func DetailTxErrorForTxInfo(ctx context.Context, client L1Interface, txHash common.Hash, txRes *types.Receipt, from common.Address, to *common.Address, gasPrice, gasFeeCap, gasTipCap, value *big.Int, data []byte, accessList types.AccessList, gas uint64) error {
+	// Re-execute the transaction as a call to get a better error
 	if ctx.Err() != nil {
 		return ctx.Err()
 	}
@@ -82,17 +87,12 @@ func DetailTxError(ctx context.Context, client L1Interface, tx *types.Transactio
 	if txRes.Status == types.ReceiptStatusSuccessful {
 		return nil
 	}
-	from, err := client.TransactionSender(ctx, tx, txRes.BlockHash, txRes.TransactionIndex)
-	if err != nil {
-		return fmt.Errorf("TransactionSender got: %w for tx %v", err, tx.Hash())
+	var err error
+	if _, err = SendTxAsCall(ctx, client, from, to, gasPrice, gasFeeCap, gasTipCap, value, txRes.BlockNumber, data, accessList, gas, false); err == nil {
+		return fmt.Errorf("tx failed but call succeeded for tx hash %v", txHash)
 	}
-	_, err = SendTxAsCall(ctx, client, tx, from, txRes.BlockNumber, false)
-	if err == nil {
-		return fmt.Errorf("tx failed but call succeeded for tx hash %v", tx.Hash())
+	if _, err = SendTxAsCall(ctx, client, from, to, gasPrice, gasFeeCap, gasTipCap, value, txRes.BlockNumber, data, accessList, gas, true); err == nil {
+		return fmt.Errorf("tx failed but call succeeded for tx hash %v", txHash)
 	}
-	_, err = SendTxAsCall(ctx, client, tx, from, txRes.BlockNumber, true)
-	if err == nil {
-		return fmt.Errorf("%w for tx hash %v", vm.ErrOutOfGas, tx.Hash())
-	}
-	return fmt.Errorf("SendTxAsCall got: %w for tx hash %v", err, tx.Hash())
+	return fmt.Errorf("SendTxAsCall got: %w for tx hash %v", err, txHash)
 }

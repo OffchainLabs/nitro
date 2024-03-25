@@ -431,19 +431,27 @@ func AccessList(opts *AccessListOpts) types.AccessList {
 	return l
 }
 
-type txData struct {
-	Hash  common.Hash    `json:"hash"`
-	Nonce hexutil.Uint64 `json:"nonce"`
-	From  common.Address `json:"from"`
+type txInfo struct {
+	Hash      common.Hash       `json:"hash"`
+	Nonce     hexutil.Uint64    `json:"nonce"`
+	From      common.Address    `json:"from"`
+	To        *common.Address   `json:"to"`
+	Gas       hexutil.Uint64    `json:"gas"`
+	GasPrice  *hexutil.Big      `json:"gasPrice"`
+	GasFeeCap *hexutil.Big      `json:"maxFeePerGas,omitempty"`
+	GasTipCap *hexutil.Big      `json:"maxPriorityFeePerGas,omitempty"`
+	Input     hexutil.Bytes     `json:"input"`
+	Value     *hexutil.Big      `json:"value"`
+	Accesses  *types.AccessList `json:"accessList,omitempty"`
 }
 
-// getTxsDataByBlock fetches all the transactions inside block of id 'number' using json rpc
-// and returns an array of txData which has fields that are necessary in checking for batch reverts
-func (b *BatchPoster) getTxsDataByBlock(ctx context.Context, number int64) ([]txData, error) {
+// getTxsInfoByBlock fetches all the transactions inside block of id 'number' using json rpc
+// and returns an array of txInfo which has fields that are necessary in checking for batch reverts
+func (b *BatchPoster) getTxsInfoByBlock(ctx context.Context, number int64) ([]txInfo, error) {
 	blockNrStr := rpc.BlockNumber(number).String()
 	rawRpcClient := b.l1Reader.Client().Client()
 	var blk struct {
-		Transactions []txData `json:"transactions"`
+		Transactions []txInfo `json:"transactions"`
 	}
 	err := rawRpcClient.CallContext(ctx, &blk, "eth_getBlockByNumber", blockNrStr, true)
 	if err != nil {
@@ -461,7 +469,7 @@ func (b *BatchPoster) checkReverts(ctx context.Context, to int64) (bool, error) 
 		return false, fmt.Errorf("wrong range, from: %d > to: %d", b.nextRevertCheckBlock, to)
 	}
 	for ; b.nextRevertCheckBlock <= to; b.nextRevertCheckBlock++ {
-		txs, err := b.getTxsDataByBlock(ctx, b.nextRevertCheckBlock)
+		txs, err := b.getTxsInfoByBlock(ctx, b.nextRevertCheckBlock)
 		if err != nil {
 			return false, fmt.Errorf("error getting transactions data of block %d: %w", b.nextRevertCheckBlock, err)
 		}
@@ -477,7 +485,8 @@ func (b *BatchPoster) checkReverts(ctx context.Context, to int64) (bool, error) 
 					if shouldHalt {
 						logLevel = log.Error
 					}
-					logLevel("Transaction from batch poster reverted", "nonce", tx.Nonce, "txHash", tx.Hash, "blockNumber", r.BlockNumber, "blockHash", r.BlockHash)
+					txErr := arbutil.DetailTxErrorForTxInfo(ctx, b.l1Reader.Client(), tx.Hash, r, tx.From, tx.To, tx.GasPrice.ToInt(), tx.GasFeeCap.ToInt(), tx.GasTipCap.ToInt(), tx.Value.ToInt(), tx.Input, *tx.Accesses, uint64(tx.Gas))
+					logLevel("Transaction from batch poster reverted", "nonce", tx.Nonce, "txHash", tx.Hash, "blockNumber", r.BlockNumber, "blockHash", r.BlockHash, "txErr", txErr)
 					return shouldHalt, nil
 				}
 			}
