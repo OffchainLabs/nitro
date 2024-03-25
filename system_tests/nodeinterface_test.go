@@ -12,65 +12,14 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/ethereum/go-ethereum"
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 )
-
-func callFindBatchContainig(t *testing.T, ctx context.Context, client *ethclient.Client, nodeAbi *abi.ABI, blockNum uint64) uint64 {
-	findBatch := nodeAbi.Methods["findBatchContainingBlock"]
-	callData := append([]byte{}, findBatch.ID...)
-	packed, err := findBatch.Inputs.Pack(blockNum)
-	Require(t, err)
-	callData = append(callData, packed...)
-	msg := ethereum.CallMsg{
-		To:   &types.NodeInterfaceAddress,
-		Data: callData,
-	}
-	returnData, err := client.CallContract(ctx, msg, nil)
-	Require(t, err)
-	outputs, err := findBatch.Outputs.Unpack(returnData)
-	Require(t, err)
-	if len(outputs) != 1 {
-		Fatal(t, "expected 1 output from findBatchContainingBlock, got", len(outputs))
-	}
-	gotBatchNum, ok := outputs[0].(uint64)
-	if !ok {
-		Fatal(t, "bad output from findBatchContainingBlock")
-	}
-	return gotBatchNum
-}
-
-func callGetL1Confirmations(t *testing.T, ctx context.Context, client *ethclient.Client, nodeAbi *abi.ABI, blockHash common.Hash) uint64 {
-	getConfirmations := nodeAbi.Methods["getL1Confirmations"]
-	callData := append([]byte{}, getConfirmations.ID...)
-	packed, err := getConfirmations.Inputs.Pack(blockHash)
-	Require(t, err)
-	callData = append(callData, packed...)
-	msg := ethereum.CallMsg{
-		To:   &types.NodeInterfaceAddress,
-		Data: callData,
-	}
-	returnData, err := client.CallContract(ctx, msg, nil)
-	Require(t, err)
-	outputs, err := getConfirmations.Outputs.Unpack(returnData)
-	Require(t, err)
-	if len(outputs) != 1 {
-		Fatal(t, "expected 1 output from findBatchContainingBlock, got", len(outputs))
-	}
-	confirmations, ok := outputs[0].(uint64)
-	if !ok {
-		Fatal(t, "bad output from findBatchContainingBlock")
-	}
-	return confirmations
-}
 
 func TestFindBatch(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
@@ -94,6 +43,8 @@ func TestFindBatch(t *testing.T) {
 
 	bridgeAddr, seqInbox, seqInboxAddr := setupSequencerInboxStub(ctx, t, l1Info, l1Backend, chainConfig)
 
+	callOpts := bind.CallOpts{Context: ctx}
+
 	rollupAddresses.Bridge = bridgeAddr
 	rollupAddresses.SequencerInbox = seqInboxAddr
 	l2Info := NewArbTestInfo(t, chainConfig.ChainID)
@@ -102,7 +53,7 @@ func TestFindBatch(t *testing.T) {
 	Require(t, err)
 
 	l2Client := ClientForStack(t, consensus.Stack)
-	nodeAbi, err := node_interfacegen.NodeInterfaceMetaData.GetAbi()
+	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, l2Client)
 	Require(t, err)
 	sequencerTxOpts := l1Info.GetDefaultTransactOpts("sequencer", ctx)
 
@@ -112,7 +63,8 @@ func TestFindBatch(t *testing.T) {
 	makeBatch(t, consensus, l2Info, l1Backend, &sequencerTxOpts, seqInbox, seqInboxAddr, -1)
 
 	for blockNum := uint64(0); blockNum < uint64(makeBatch_MsgsPerBatch)*3; blockNum++ {
-		gotBatchNum := callFindBatchContainig(t, ctx, l2Client, nodeAbi, blockNum)
+		gotBatchNum, err := nodeInterface.FindBatchContainingBlock(&callOpts, blockNum)
+		Require(t, err)
 		expBatchNum := uint64(0)
 		if blockNum > 0 {
 			expBatchNum = 1 + (blockNum-1)/uint64(makeBatch_MsgsPerBatch)
@@ -128,7 +80,8 @@ func TestFindBatch(t *testing.T) {
 
 		minCurrentL1Block, err := l1Backend.BlockNumber(ctx)
 		Require(t, err)
-		gotConfirmations := callGetL1Confirmations(t, ctx, l2Client, nodeAbi, blockHash)
+		gotConfirmations, err := nodeInterface.GetL1Confirmations(&callOpts, blockHash)
+		Require(t, err)
 		maxCurrentL1Block, err := l1Backend.BlockNumber(ctx)
 		Require(t, err)
 
