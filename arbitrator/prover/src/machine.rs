@@ -20,9 +20,9 @@ use crate::{
     },
 };
 use arbutil::{math, Bytes32, Color, PreimageType};
+use brotli::Dictionary;
 #[cfg(feature = "native")]
 use c_kzg::BYTES_PER_BLOB;
-use brotli::Dictionary;
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
