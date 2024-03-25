@@ -36,8 +36,8 @@ func NewSyncMonitor(config *SyncMonitorConfig, exec *ExecutionEngine) *SyncMonit
 	}
 }
 
-func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
-	res := s.consensus.SyncProgressMap()
+func (s *SyncMonitor) FullSyncProgressMap() map[string]interface{} {
+	res := s.consensus.FullSyncProgressMap()
 	consensusSyncTarget := s.consensus.SyncTargetMessageCount()
 
 	built, err := s.exec.HeadMessageNumber()
@@ -45,14 +45,21 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 		res["headMsgNumberError"] = err
 	}
 
-	if built+1 >= consensusSyncTarget && len(res) == 0 {
-		return res
-	}
-
 	res["builtBlock"] = built
 	res["consensusSyncTarget"] = consensusSyncTarget
 
 	return res
+}
+
+func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
+	if s.consensus.Synced() {
+		built, err := s.exec.HeadMessageNumber()
+		consensusSyncTarget := s.consensus.SyncTargetMessageCount()
+		if err != nil && built+1 >= consensusSyncTarget {
+			return make(map[string]interface{})
+		}
+	}
+	return s.FullSyncProgressMap()
 }
 
 func (s *SyncMonitor) SafeBlockNumber(ctx context.Context) (uint64, error) {

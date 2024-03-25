@@ -78,7 +78,8 @@ type BatchFetcher interface {
 }
 
 type ConsensusInfo interface {
-	SyncProgressMap() map[string]interface{}
+	Synced() bool
+	FullSyncProgressMap() map[string]interface{}
 	SyncTargetMessageCount() arbutil.MessageIndex
 
 	// TODO: switch from pulling to pushing safe/finalized

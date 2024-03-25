@@ -965,8 +965,12 @@ func (n *Node) GetBatchParentChainBlock(seqNum uint64) (uint64, error) {
 	return n.InboxTracker.GetBatchParentChainBlock(seqNum)
 }
 
-func (n *Node) SyncProgressMap() map[string]interface{} {
-	return n.SyncMonitor.SyncProgressMap()
+func (n *Node) FullSyncProgressMap() map[string]interface{} {
+	return n.SyncMonitor.FullSyncProgressMap()
+}
+
+func (n *Node) Synced() bool {
+	return n.SyncMonitor.Synced()
 }
 
 func (n *Node) SyncTargetMessageCount() arbutil.MessageIndex {
