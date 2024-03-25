@@ -68,7 +68,7 @@ type BlocksReExecutor struct {
 	stopwaiter.StopWaiter
 	config       *Config
 	blockchain   *core.BlockChain
-	stateFor     func(header *types.Header) (*state.StateDB, error)
+	stateFor     arbitrum.StateForHeaderFunction
 	done         chan struct{}
 	fatalErrChan chan error
 	startBlock   uint64
@@ -110,7 +110,10 @@ func New(c *Config, blockchain *core.BlockChain, fatalErrChan chan error) *Block
 		startBlock:   start,
 		done:         make(chan struct{}, c.Room),
 		fatalErrChan: fatalErrChan,
-		stateFor:     func(header *types.Header) (*state.StateDB, error) { return blockchain.StateAt(header.Root) },
+		stateFor: func(header *types.Header) (*state.StateDB, arbitrum.StateReleaseFunc, error) {
+			state, err := blockchain.StateAt(header.Root)
+			return state, arbitrum.NoopStateRelease, err
+		},
 	}
 }
 
@@ -120,7 +123,9 @@ func (s *BlocksReExecutor) LaunchBlocksReExecution(ctx context.Context, currentB
 	if start < s.startBlock {
 		start = s.startBlock
 	}
-	startState, startHeader, err := arbitrum.FindLastAvailableState(ctx, s.blockchain, s.stateFor, s.blockchain.GetHeaderByNumber(start), nil, -1)
+	// we don't use state release pattern here
+	// TODO do we want to use release pattern here?
+	startState, startHeader, _, err := arbitrum.FindLastAvailableState(ctx, s.blockchain, s.stateFor, s.blockchain.GetHeaderByNumber(start), nil, -1)
 	if err != nil {
 		s.fatalErrChan <- fmt.Errorf("blocksReExecutor failed to get last available state while searching for state at %d, err: %w", start, err)
 		return s.startBlock
