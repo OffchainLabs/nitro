@@ -30,7 +30,7 @@ func CompressWell(input []byte) ([]byte, error) {
 	return Compress(input, LEVEL_WELL, EmptyDictionary)
 }
 
-func Compress(input []byte, level int, dictionary Dictionary) ([]byte, error) {
+func Compress(input []byte, level uint32, dictionary Dictionary) ([]byte, error) {
 	maxSize := compressedBufferSizeFor(len(input))
 	output := make([]byte, maxSize)
 	outbuf := sliceToBuffer(output)

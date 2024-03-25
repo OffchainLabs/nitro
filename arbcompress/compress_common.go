@@ -18,5 +18,5 @@ func compressedBufferSizeFor(length int) int {
 }
 
 func CompressLevel(input []byte, level int) ([]byte, error) {
-	return Compress(input, level, EmptyDictionary)
+	return Compress(input, uint32(level), EmptyDictionary)
 }
