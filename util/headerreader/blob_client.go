@@ -159,7 +159,11 @@ func (b *BlobClient) GetBlobs(ctx context.Context, blockHash common.Hash, versio
 		return nil, errors.New("BlobClient hasn't been initialized")
 	}
 	slot := (header.Time - b.genesisTime) / b.secondsPerSlot
-	return b.blobSidecars(ctx, slot, versionedHashes)
+	blobs, err := b.blobSidecars(ctx, slot, versionedHashes)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching blobs in %d l1 block: %w", header.Number, err)
+	}
+	return blobs, nil
 }
 
 type blobResponseItem struct {
@@ -173,6 +177,8 @@ type blobResponseItem struct {
 	KzgProof        hexutil.Bytes        `json:"kzg_proof"`
 }
 
+const trailingCharsOfResponse = 25
+
 func (b *BlobClient) blobSidecars(ctx context.Context, slot uint64, versionedHashes []common.Hash) ([]kzg4844.Blob, error) {
 	rawData, err := beaconRequest[json.RawMessage](b, ctx, fmt.Sprintf("/eth/v1/beacon/blob_sidecars/%d", slot))
 	if err != nil {
@@ -180,7 +186,13 @@ func (b *BlobClient) blobSidecars(ctx context.Context, slot uint64, versionedHas
 	}
 	var response []blobResponseItem
 	if err := json.Unmarshal(rawData, &response); err != nil {
-		return nil, fmt.Errorf("error unmarshalling raw data into array of blobResponseItem in blobSidecars: %w", err)
+		rawDataStr := string(rawData)
+		log.Debug("response from beacon URL cannot be unmarshalled into array of blobResponseItem in blobSidecars", "slot", slot, "responseLength", len(rawDataStr), "response", rawDataStr)
+		if len(rawDataStr) > 100 {
+			return nil, fmt.Errorf("error unmarshalling response from beacon URL into array of blobResponseItem in blobSidecars: %w. Trailing %d characters of the response: %s", err, trailingCharsOfResponse, rawDataStr[len(rawDataStr)-trailingCharsOfResponse:])
+		} else {
+			return nil, fmt.Errorf("error unmarshalling response from beacon URL into array of blobResponseItem in blobSidecars: %w. Response: %s", err, rawDataStr)
+		}
 	}
 
 	if len(response) < len(versionedHashes) {

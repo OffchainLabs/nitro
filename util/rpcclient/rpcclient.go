@@ -127,6 +127,25 @@ func (m limitedArgumentsMarshal) String() string {
 	return res
 }
 
+var blobTxUnderpricedRegexp = regexp.MustCompile(`replacement transaction underpriced: new tx gas fee cap (\d*) <= (\d*) queued`)
+
+// IsAlreadyKnownError returns true if the error appears to be an "already known" error.
+// This check is based on the error's string form and is not precise.
+func IsAlreadyKnownError(err error) bool {
+	s := err.Error()
+	if strings.Contains(s, "already known") {
+		return true
+	}
+	// go-ethereum returns "replacement transaction underpriced" instead of "already known" for blob txs.
+	// This is fixed in https://github.com/ethereum/go-ethereum/pull/29210
+	// TODO: Once a new geth release is out with this fix, we can remove this check.
+	matches := blobTxUnderpricedRegexp.FindSubmatch([]byte(s))
+	if len(matches) == 3 {
+		return string(matches[1]) == string(matches[2])
+	}
+	return false
+}
+
 func (c *RpcClient) CallContext(ctx_in context.Context, result interface{}, method string, args ...interface{}) error {
 	if c.client == nil {
 		return errors.New("not connected")
@@ -159,7 +178,7 @@ func (c *RpcClient) CallContext(ctx_in context.Context, result interface{}, meth
 		cancelCtx()
 		logger := log.Trace
 		limit := int(c.config().ArgLogLimit)
-		if err != nil && err.Error() != "already known" {
+		if err != nil && !IsAlreadyKnownError(err) {
 			logger = log.Info
 		}
 		logEntry := []interface{}{
