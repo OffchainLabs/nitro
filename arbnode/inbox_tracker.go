@@ -228,6 +228,8 @@ func (t *InboxTracker) GetBatchCount() (uint64, error) {
 	return count, nil
 }
 
+// err will return unexpected/internal errors
+// bool will be false if batch not found (meaning, block not yet posted on a batch)
 func (t *InboxTracker) FindInboxBatchContainingMessage(pos arbutil.MessageIndex) (uint64, bool, error) {
 	batchCount, err := t.GetBatchCount()
 	if err != nil {
