@@ -98,7 +98,7 @@ func (n NodeInterface) FindBatchContainingBlock(c ctx, evm mech, blockNum uint64
 	}
 	res, found, err := n.msgNumToInboxBatch(msgIndex)
 	if err == nil && !found {
-		return 0, errors.New("block not yet found on any block")
+		return 0, errors.New("block not yet found on any batch")
 	}
 	return res, err
 }
@@ -125,8 +125,11 @@ func (n NodeInterface) GetL1Confirmations(c ctx, evm mech, blockHash bytes32) (u
 	}
 	// batches not yet posted have 0 confirmations but no error
 	batchNum, found, err := n.msgNumToInboxBatch(msgNum)
-	if err != nil || !found {
+	if err != nil {
 		return 0, err
+	}
+	if !found {
+		return 0, nil
 	}
 	parentChainBlockNum, err := node.ExecEngine.GetBatchFetcher().GetBatchParentChainBlock(batchNum)
 	if err != nil {
