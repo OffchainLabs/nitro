@@ -230,7 +230,7 @@ func (c *stubL1Client) TransactionSender(ctx context.Context, tx *types.Transact
 	return common.Address{}, nil
 }
 
-func TestFeeAndTipCaps_EnoughBalance_NoBacklog_NoUncofirmed_BlobTx(t *testing.T) {
+func TestFeeAndTipCaps_EnoughBalance_NoBacklog_NoUnconfirmed_BlobTx(t *testing.T) {
 	conf := func() *DataPosterConfig {
 		// Set only the fields that are used by feeAndTipCaps
 		// Start with defaults, maybe change for test.
