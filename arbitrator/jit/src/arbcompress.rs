@@ -10,6 +10,7 @@ use caller_env::{self, GuestPtr};
 macro_rules! wrap {
     ($(fn $func_name:ident ($($arg_name:ident : $arg_type:ty),* ) -> $return_type:ty);*) => {
         $(
+            #[allow(clippy::too_many_arguments)]
             pub fn $func_name(mut src: WasmEnvMut, $($arg_name : $arg_type),*) -> Result<$return_type, Escape> {
                 let (mut mem, wenv) = src.jit_env();
 
