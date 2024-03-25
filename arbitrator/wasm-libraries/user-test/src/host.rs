@@ -1,94 +1,228 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
-// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+// For license information, see https://github.com/nitro/blob/master/LICENSE
 
-#![allow(clippy::missing_safety_doc)]
-
-use crate::{caller_env::UserMem, Program, ARGS, EVER_PAGES, KEYS, LOGS, OPEN_PAGES, OUTS};
-use arbutil::{
-    crypto, evm,
-    pricing::{EVM_API_INK, HOSTIO_INK, PTR_INK},
-};
+use crate::program::Program;
 use caller_env::GuestPtr;
-use prover::programs::{
-    memory::MemoryModel,
-    prelude::{GasMeteredMachine, MeteredMachine},
-};
+use user_host_trait::UserHost;
+
+macro_rules! hostio {
+    ($($func:tt)*) => {
+        match Program::current().$($func)* {
+            Ok(value) => value,
+            Err(error) => panic!("{error}"),
+        }
+    };
+}
 
 #[no_mangle]
 pub unsafe extern "C" fn vm_hooks__read_args(ptr: GuestPtr) {
-    let mut program = Program::start(0);
-    program.pay_for_write(ARGS.len() as u32).unwrap();
-    UserMem::write_slice(ptr, &ARGS);
+    hostio!(read_args(ptr))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vm_hooks__exit_early(status: u32) {
+    hostio!(exit_early(status));
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn vm_hooks__write_result(ptr: GuestPtr, len: u32) {
-    let mut program = Program::start(0);
-    program.pay_for_read(len).unwrap();
-    program.pay_for_geth_bytes(len).unwrap();
-    OUTS = UserMem::read_slice(ptr, len);
+    hostio!(write_result(ptr, len))
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn vm_hooks__storage_load_bytes32(key: GuestPtr, dest: GuestPtr) {
-    let mut program = Program::start(2 * PTR_INK + EVM_API_INK);
-    let key = UserMem::read_bytes32(key);
-
-    let value = KEYS.lock().get(&key).cloned().unwrap_or_default();
-    program.buy_gas(2100).unwrap(); // pretend it was cold
-    UserMem::write_slice(dest, &value.0);
+    hostio!(storage_load_bytes32(key, dest))
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn vm_hooks__storage_store_bytes32(key: GuestPtr, value: GuestPtr) {
-    let mut program = Program::start(2 * PTR_INK + EVM_API_INK);
-    program.require_gas(evm::SSTORE_SENTRY_GAS).unwrap();
-    program.buy_gas(22100).unwrap(); // pretend the worst case
+pub unsafe extern "C" fn vm_hooks__storage_cache_bytes32(key: GuestPtr, value: GuestPtr) {
+    hostio!(storage_cache_bytes32(key, value))
+}
 
-    let key = UserMem::read_bytes32(key);
-    let value = UserMem::read_bytes32(value);
-    KEYS.lock().insert(key, value);
+#[no_mangle]
+pub unsafe extern "C" fn vm_hooks__storage_flush_cache(clear: u32) {
+    hostio!(storage_flush_cache(clear != 0))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vm_hooks__call_contract(
+    contract: GuestPtr,
+    data: GuestPtr,
+    data_len: u32,
+    value: GuestPtr,
+    gas: u64,
+    ret_len: GuestPtr,
+) -> u8 {
+    hostio!(call_contract(contract, data, data_len, value, gas, ret_len))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vm_hooks__delegate_call_contract(
+    contract: GuestPtr,
+    data: GuestPtr,
+    data_len: u32,
+    gas: u64,
+    ret_len: GuestPtr,
+) -> u8 {
+    hostio!(delegate_call_contract(
+        contract, data, data_len, gas, ret_len
+    ))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vm_hooks__static_call_contract(
+    contract: GuestPtr,
+    data: GuestPtr,
+    data_len: u32,
+    gas: u64,
+    ret_len: GuestPtr,
+) -> u8 {
+    hostio!(static_call_contract(contract, data, data_len, gas, ret_len))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vm_hooks__create1(
+    code: GuestPtr,
+    code_len: u32,
+    value: GuestPtr,
+    contract: GuestPtr,
+    revert_len: GuestPtr,
+) {
+    hostio!(create1(code, code_len, value, contract, revert_len))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vm_hooks__create2(
+    code: GuestPtr,
+    code_len: u32,
+    value: GuestPtr,
+    salt: GuestPtr,
+    contract: GuestPtr,
+    revert_len: GuestPtr,
+) {
+    hostio!(create2(code, code_len, value, salt, contract, revert_len))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vm_hooks__read_return_data(dest: GuestPtr, offset: u32, size: u32) -> u32 {
+    hostio!(read_return_data(dest, offset, size))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vm_hooks__return_data_size() -> u32 {
+    hostio!(return_data_size())
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn vm_hooks__emit_log(data: GuestPtr, len: u32, topics: u32) {
-    let mut program = Program::start(EVM_API_INK);
-    if topics > 4 || len < topics * 32 {
-        panic!("bad topic data");
-    }
-    program.pay_for_read(len).unwrap();
-    program.pay_for_evm_log(topics, len - topics * 32).unwrap();
-
-    let data = UserMem::read_slice(data, len);
-    LOGS.push(data)
+    hostio!(emit_log(data, len, topics))
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn vm_hooks__pay_for_memory_grow(pages: u16) {
-    let mut program = Program::start_free();
-    if pages == 0 {
-        return program.buy_ink(HOSTIO_INK).unwrap();
-    }
-    let model = MemoryModel::new(2, 1000);
-
-    let (open, ever) = (OPEN_PAGES, EVER_PAGES);
-    OPEN_PAGES = OPEN_PAGES.saturating_add(pages);
-    EVER_PAGES = EVER_PAGES.max(OPEN_PAGES);
-    program.buy_gas(model.gas_cost(pages, open, ever)).unwrap();
+pub unsafe extern "C" fn vm_hooks__account_balance(address: GuestPtr, ptr: GuestPtr) {
+    hostio!(account_balance(address, ptr))
+}
+#[no_mangle]
+pub unsafe extern "C" fn vm_hooks__account_code(
+    address: GuestPtr,
+    offset: u32,
+    size: u32,
+    dest: GuestPtr,
+) -> u32 {
+    hostio!(account_code(address, offset, size, dest))
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn vm_hooks__native_keccak256(bytes: GuestPtr, len: u32, output: GuestPtr) {
-    let mut program = Program::start(0);
-    program.pay_for_keccak(len).unwrap();
+pub unsafe extern "C" fn vm_hooks__account_code_size(address: GuestPtr) -> u32 {
+    hostio!(account_code_size(address))
+}
 
-    let preimage = UserMem::read_slice(bytes, len);
-    let digest = crypto::keccak(preimage);
-    UserMem::write_slice(output, &digest);
+#[no_mangle]
+pub unsafe extern "C" fn vm_hooks__account_codehash(address: GuestPtr, ptr: GuestPtr) {
+    hostio!(account_codehash(address, ptr))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vm_hooks__block_basefee(ptr: GuestPtr) {
+    hostio!(block_basefee(ptr))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vm_hooks__block_coinbase(ptr: GuestPtr) {
+    hostio!(block_coinbase(ptr))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vm_hooks__block_gas_limit() -> u64 {
+    hostio!(block_gas_limit())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vm_hooks__block_number() -> u64 {
+    hostio!(block_number())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vm_hooks__block_timestamp() -> u64 {
+    hostio!(block_timestamp())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vm_hooks__chainid() -> u64 {
+    hostio!(chainid())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vm_hooks__contract_address(ptr: GuestPtr) {
+    hostio!(contract_address(ptr))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vm_hooks__evm_gas_left() -> u64 {
+    hostio!(evm_gas_left())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vm_hooks__evm_ink_left() -> u64 {
+    hostio!(evm_ink_left())
 }
 
 #[no_mangle]
 pub unsafe extern "C" fn vm_hooks__msg_reentrant() -> u32 {
-    let _ = Program::start(0);
-    0
+    hostio!(msg_reentrant())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vm_hooks__msg_sender(ptr: GuestPtr) {
+    hostio!(msg_sender(ptr))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vm_hooks__msg_value(ptr: GuestPtr) {
+    hostio!(msg_value(ptr))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vm_hooks__native_keccak256(input: GuestPtr, len: u32, output: GuestPtr) {
+    hostio!(native_keccak256(input, len, output))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vm_hooks__tx_gas_price(ptr: GuestPtr) {
+    hostio!(tx_gas_price(ptr))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vm_hooks__tx_ink_price() -> u32 {
+    hostio!(tx_ink_price())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vm_hooks__tx_origin(ptr: GuestPtr) {
+    hostio!(tx_origin(ptr))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn vm_hooks__pay_for_memory_grow(pages: u16) {
+    hostio!(pay_for_memory_grow(pages))
 }

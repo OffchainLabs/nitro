@@ -49,8 +49,13 @@ pub unsafe extern "C" fn user_host__storage_load_bytes32(key: GuestPtr, dest: Gu
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__storage_store_bytes32(key: GuestPtr, value: GuestPtr) {
-    hostio!(storage_store_bytes32(key, value))
+pub unsafe extern "C" fn user_host__storage_cache_bytes32(key: GuestPtr, value: GuestPtr) {
+    hostio!(storage_cache_bytes32(key, value))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__storage_flush_cache(clear: u32) {
+    hostio!(storage_flush_cache(clear != 0))
 }
 
 #[no_mangle]

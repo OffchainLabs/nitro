@@ -145,15 +145,15 @@ impl UserHostRequester {
 }
 
 impl RequestHandler<VecReader> for UserHostRequester {
-    fn handle_request(
+    fn request(
         &mut self,
         req_type: EvmApiMethod,
-        req_data: &[u8],
+        req_data: impl AsRef<[u8]>,
     ) -> (Vec<u8>, VecReader, u64) {
         unsafe {
             self.send_request(
                 req_type as u32 + EVM_API_METHOD_REQ_OFFSET,
-                req_data.to_vec(),
+                req_data.as_ref().to_vec(),
             )
         }
     }

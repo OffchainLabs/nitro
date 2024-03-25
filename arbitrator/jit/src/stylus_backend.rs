@@ -43,14 +43,14 @@ struct CothreadRequestor {
 }
 
 impl RequestHandler<VecReader> for CothreadRequestor {
-    fn handle_request(
+    fn request(
         &mut self,
         req_type: EvmApiMethod,
-        req_data: &[u8],
+        req_data: impl AsRef<[u8]>,
     ) -> (Vec<u8>, VecReader, u64) {
         let msg = MessageFromCothread {
             req_type: req_type as u32 + EVM_API_METHOD_REQ_OFFSET,
-            req_data: req_data.to_vec(),
+            req_data: req_data.as_ref().to_vec(),
         };
 
         if let Err(error) = self.tx.send(msg) {

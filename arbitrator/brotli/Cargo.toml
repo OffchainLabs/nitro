@@ -1,0 +1,21 @@
+[package]
+name = "brotli"
+version = "0.1.0"
+authors.workspace = true
+edition.workspace = true
+homepage.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+lazy_static.workspace = true
+num_enum.workspace = true
+wasmer = { path = "../tools/wasmer/lib/api", optional = true }
+wee_alloc.workspace = true
+
+[lib]
+crate-type = ["lib"]
+
+[features]
+wasmer_traits = ["dep:wasmer"]

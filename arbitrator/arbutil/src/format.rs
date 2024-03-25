@@ -13,7 +13,7 @@ pub fn time(span: Duration) -> String {
 
     let mut span = span.as_nanos() as f64;
     let mut unit = 0;
-    let units = vec![
+    let units = [
         "ns", "μs", "ms", "s", "min", "h", "d", "w", "mo", "yr", "dec", "cent", "mill", "eon",
     ];
     let scale = [
@@ -48,5 +48,18 @@ pub trait DebugBytes {
 impl<T: Debug> DebugBytes for T {
     fn debug_bytes(self) -> Vec<u8> {
         format!("{:?}", self).as_bytes().to_vec()
+    }
+}
+
+pub trait Utf8OrHex {
+    fn from_utf8_or_hex(data: impl Into<Vec<u8>>) -> String;
+}
+
+impl Utf8OrHex for String {
+    fn from_utf8_or_hex(data: impl Into<Vec<u8>>) -> String {
+        match String::from_utf8(data.into()) {
+            Ok(string) => string,
+            Err(error) => hex::encode(error.as_bytes()),
+        }
     }
 }

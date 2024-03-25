@@ -191,12 +191,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "56ce8c6da7551ec6c462cbaf3bfbc75131ebbfa1c944aeaa9dab51ca1c5f0c3b"
 
 [[package]]
-name = "fnv"
-version = "1.0.7"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3f9eec918d3f24069decb9af1554cad7c880e2da24a9afd88aca000531ab82c1"
-
-[[package]]
 name = "generic-array"
 version = "0.14.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -274,6 +268,14 @@ name = "memory_units"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8452105ba047068f40ff7093dd1d9da90898e63dd61736462e9cdda6a90ad3c3"
+
+[[package]]
+name = "mini-alloc"
+version = "0.4.2"
+dependencies = [
+ "cfg-if 1.0.0",
+ "wee_alloc",
+]
 
 [[package]]
 name = "num-traits"
@@ -421,6 +423,7 @@ name = "sdk-storage"
 version = "0.1.0"
 dependencies = [
  "hex",
+ "mini-alloc",
  "stylus-sdk",
  "wee_alloc",
 ]
@@ -472,7 +475,6 @@ dependencies = [
  "alloy-sol-types",
  "cfg-if 1.0.0",
  "derivative",
- "fnv",
  "hex",
  "keccak-const",
  "lazy_static",

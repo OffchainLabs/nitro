@@ -130,7 +130,7 @@ impl ExecEnv for JitExecEnv<'_> {
 
     fn print_string(&mut self, bytes: &[u8]) {
         match String::from_utf8(bytes.to_vec()) {
-            Ok(s) => eprintln!("JIT: WASM says: {s}"),
+            Ok(s) => eprintln!("JIT: WASM says: {s}"), // TODO: this adds too many newlines since go calls this in chunks
             Err(e) => {
                 let bytes = e.as_bytes();
                 eprintln!("Go string {} is not valid utf8: {e:?}", hex::encode(bytes));

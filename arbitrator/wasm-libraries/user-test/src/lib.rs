@@ -3,15 +3,15 @@
 
 #![allow(clippy::missing_safety_doc)]
 
-use arbutil::Bytes32;
+use arbutil::{evm::EvmData, Bytes32};
 use fnv::FnvHashMap as HashMap;
 use lazy_static::lazy_static;
 use parking_lot::Mutex;
 use prover::programs::prelude::StylusConfig;
 
-mod caller_env;
 pub mod host;
 mod ink;
+mod program;
 
 pub(crate) static mut ARGS: Vec<u8> = vec![];
 pub(crate) static mut OUTS: Vec<u8> = vec![];
@@ -22,10 +22,8 @@ pub(crate) static mut EVER_PAGES: u16 = 0;
 
 lazy_static! {
     static ref KEYS: Mutex<HashMap<Bytes32, Bytes32>> = Mutex::new(HashMap::default());
+    static ref EVM_DATA: EvmData = EvmData::default();
 }
-
-/// Mock type representing a `user_host::Program`
-pub struct Program;
 
 #[no_mangle]
 pub unsafe extern "C" fn user_test__prepare(

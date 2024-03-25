@@ -1,6 +1,9 @@
 [workspace]
 members = [
         "arbutil",
+        "brotli",
+        "brotli/fuzz",
+        "caller-env",
         "prover",
         "stylus",
         "jit",
@@ -20,7 +23,11 @@ repository = "https://github.com/OffchainLabs/nitro.git"
 rust-version = "1.67"
 
 [workspace.dependencies]
+cfg-if = "1.0.0"
+lazy_static = "1.4.0"
+num_enum = { version = "0.7.2", default-features = false }
 wasmparser = "0.95"
+wee_alloc = "0.4.2"
 
 [profile.release]
 debug = true

@@ -9,5 +9,5 @@ crate-type = ["cdylib"]
 
 [dependencies]
 paste = { version = "1.0.14" }
-caller-env = { path = "../../caller-env/", features = ["static_caller"] }
+caller-env = { path = "../../caller-env/", default-features = false, features = ["static_caller"] }
 wee_alloc = "0.4.2"

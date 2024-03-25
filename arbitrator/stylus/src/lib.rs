@@ -18,6 +18,7 @@ use prover::programs::{prelude::*, StylusData};
 use run::RunProgram;
 use std::{marker::PhantomData, mem, ptr};
 
+pub use brotli;
 pub use prover;
 
 pub mod env;

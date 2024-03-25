@@ -1,9 +1,11 @@
-// Copyright 2022, Offchain Labs, Inc.
+// Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 #![cfg(test)]
 
 use crate::binary;
+use brotli::Dictionary;
+use eyre::Result;
 use std::path::Path;
 
 fn as_wasm(wat: &str) -> Vec<u8> {
@@ -51,4 +53,19 @@ pub fn reject_ambiguous_imports() {
         )"#,
     );
     let _ = binary::parse(&wasm, Path::new("")).unwrap_err();
+}
+
+#[test]
+pub fn test_compress() -> Result<()> {
+    let data = include_bytes!("../../../target/machines/latest/forward_stub.wasm");
+    let mut last = vec![];
+
+    for dict in [Dictionary::Empty, Dictionary::StylusProgram] {
+        let deflate = brotli::compress(data, 11, 22, dict).unwrap();
+        let inflate = brotli::decompress(&deflate, dict).unwrap();
+        assert_eq!(hex::encode(inflate), hex::encode(data));
+        assert!(&deflate != &last);
+        last = deflate;
+    }
+    Ok(())
 }

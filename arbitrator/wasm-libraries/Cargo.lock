@@ -23,11 +23,21 @@ dependencies = [
 ]
 
 [[package]]
+name = "arbcompress"
+version = "0.1.0"
+dependencies = [
+ "brotli",
+ "caller-env",
+ "paste",
+]
+
+[[package]]
 name = "arbutil"
 version = "0.1.0"
 dependencies = [
  "digest 0.10.7",
  "eyre",
+ "fnv",
  "hex",
  "num-traits",
  "num_enum",
@@ -118,8 +128,9 @@ checksum = "8d696c370c750c948ada61c69a0ee2cbbb9c50b1019ddb86d9317157a99c2cae"
 name = "brotli"
 version = "0.1.0"
 dependencies = [
- "caller-env",
- "paste",
+ "lazy_static",
+ "num_enum",
+ "wee_alloc",
 ]
 
 [[package]]
@@ -160,6 +171,7 @@ checksum = "a2bd12c1caf447e69cd4528f47f94d203fd2582878ecb9e9465484c4148a8223"
 name = "caller-env"
 version = "0.1.0"
 dependencies = [
+ "brotli",
  "num_enum",
  "rand",
  "rand_pcg",
@@ -821,6 +833,7 @@ version = "0.1.0"
 dependencies = [
  "arbutil",
  "bincode",
+ "brotli",
  "derivative",
  "digest 0.9.0",
  "eyre",
@@ -1332,6 +1345,7 @@ dependencies = [
  "lazy_static",
  "parking_lot",
  "prover",
+ "user-host-trait",
 ]
 
 [[package]]
