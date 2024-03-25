@@ -320,7 +320,10 @@ func TestFeeAndTipCaps_EnoughBalance_NoBacklog_NoUncofirmed_BlobTx(t *testing.T)
 	}
 
 	lastBlobTx := &types.BlobTx{}
-	updateTxDataGasCaps(lastBlobTx, newGasFeeCap, newTipCap, newBlobFeeCap)
+	err = updateTxDataGasCaps(lastBlobTx, newGasFeeCap, newTipCap, newBlobFeeCap)
+	if err != nil {
+		t.Fatal(err)
+	}
 	lastTx = types.NewTx(lastBlobTx)
 	// Make creation time go backwards so elapsed time increases
 	retconnedCreationTime := dataCreatedAt.Add(-time.Minute)
@@ -333,7 +336,7 @@ func TestFeeAndTipCaps_EnoughBalance_NoBacklog_NoUncofirmed_BlobTx(t *testing.T)
 	}
 
 	newGasFeeCap, newTipCap, newBlobFeeCap, err = p.feeAndTipCaps(ctx, nonce, gasLimit, numBlobs, lastTx, retconnedCreationTime, dataPosterBacklog, &latestHeader)
-
+	_, _, _, _ = newGasFeeCap, newTipCap, newBlobFeeCap, err
 	/*
 		// I think we expect an increase by *2 due to rbf rules for blob txs,
 		// currently appears to be broken since the increase exceeds the
@@ -448,7 +451,10 @@ func TestFeeAndTipCaps_RBF_RisingBlobFee_FallingBaseFee(t *testing.T) {
 	}
 
 	lastBlobTx := &types.BlobTx{}
-	updateTxDataGasCaps(lastBlobTx, newGasFeeCap, newTipCap, newBlobFeeCap)
+	err = updateTxDataGasCaps(lastBlobTx, newGasFeeCap, newTipCap, newBlobFeeCap)
+	if err != nil {
+		t.Fatal(err)
+	}
 	lastTx = types.NewTx(lastBlobTx)
 	// Make creation time go backwards so elapsed time increases
 	retconnedCreationTime := dataCreatedAt.Add(-time.Minute)
