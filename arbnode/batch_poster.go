@@ -56,6 +56,9 @@ var (
 	batchPosterGasRefunderBalance = metrics.NewRegisteredGaugeFloat64("arb/batchposter/gasrefunder/eth", nil)
 	baseFeeGauge                  = metrics.NewRegisteredGauge("arb/batchposter/basefee", nil)
 	blobFeeGauge                  = metrics.NewRegisteredHistogram("arb/batchposter/blobfee", nil, metrics.NewBoundedHistogramSample())
+	l1GasPriceGauge               = metrics.NewRegisteredGauge("arb/batchposter/l1gasprice", nil)
+	l1GasPriceEstimateGauge       = metrics.NewRegisteredGauge("arb/batchposter/l1gasprice/estimate", nil)
+	latestBatchSurplusGauge       = metrics.NewRegisteredGauge("arb/batchposter/latestbatchsurplus", nil)
 	blockGasUsedGauge             = metrics.NewRegisteredGauge("arb/batchposter/blockgas/used", nil)
 	blockGasLimitGauge            = metrics.NewRegisteredGauge("arb/batchposter/blockgas/limit", nil)
 	blobGasUsedGauge              = metrics.NewRegisteredGauge("arb/batchposter/blobgas/used", nil)
@@ -491,12 +494,16 @@ func (b *BatchPoster) pollForL1PriceData(ctx context.Context) {
 				return
 			}
 			baseFeeGauge.Update(h.BaseFee.Int64())
+			l1GasPrice := h.BaseFee.Uint64()
 			if h.BlobGasUsed != nil {
 				if h.ExcessBlobGas != nil {
 					blobFeePerByte := eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*h.ExcessBlobGas, *h.BlobGasUsed))
 					blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
 					blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
 					blobFeeGauge.Update(blobFeePerByte.Int64())
+					if l1GasPrice > blobFeePerByte.Uint64()/16 {
+						l1GasPrice = blobFeePerByte.Uint64() / 16
+					}
 				}
 				blobGasUsedGauge.Update(int64(*h.BlobGasUsed))
 			}
@@ -508,6 +515,9 @@ func (b *BatchPoster) pollForL1PriceData(ctx context.Context) {
 			} else {
 				suggestedTipCapGauge.Update(suggestedTipCap.Int64())
 			}
+			l1GasPriceEstimate := b.streamer.CurrentEstimateOfL1GasPrice()
+			l1GasPriceGauge.Update(int64(l1GasPrice))
+			l1GasPriceEstimateGauge.Update(int64(l1GasPriceEstimate))
 		case <-ctx.Done():
 			return
 		}
@@ -1275,6 +1285,14 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		"totalSegments", len(b.building.segments.rawSegments),
 		"numBlobs", len(kzgBlobs),
 	)
+
+	surplus := arbmath.SaturatingMul(
+		arbmath.SaturatingSub(
+			l1GasPriceGauge.Snapshot().Value(),
+			l1GasPriceEstimateGauge.Snapshot().Value()),
+		int64(len(sequencerMsg)*16),
+	)
+	latestBatchSurplusGauge.Update(surplus)
 
 	recentlyHitL1Bounds := time.Since(b.lastHitL1Bounds) < config.PollInterval*3
 	postedMessages := b.building.msgCount - batchPosition.MessageCount
