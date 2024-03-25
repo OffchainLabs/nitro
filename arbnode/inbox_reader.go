@@ -33,6 +33,7 @@ type InboxReaderConfig struct {
 	TargetMessagesRead  uint64        `koanf:"target-messages-read" reload:"hot"`
 	MaxBlocksToRead     uint64        `koanf:"max-blocks-to-read" reload:"hot"`
 	ReadMode            string        `koanf:"read-mode" reload:"hot"`
+	FirstBatch          uint64        `koanf:"first-batch" reload:"hot"`
 }
 
 type InboxReaderConfigFetcher func() *InboxReaderConfig
@@ -57,6 +58,7 @@ func InboxReaderConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".target-messages-read", DefaultInboxReaderConfig.TargetMessagesRead, "if adjust-blocks-to-read is enabled, the target number of messages to read at once")
 	f.Uint64(prefix+".max-blocks-to-read", DefaultInboxReaderConfig.MaxBlocksToRead, "if adjust-blocks-to-read is enabled, the maximum number of blocks to read at once")
 	f.String(prefix+".read-mode", DefaultInboxReaderConfig.ReadMode, "mode to only read latest or safe or finalized L1 blocks. Enabling safe or finalized disables feed input and output. Defaults to latest. Takes string input, valid strings- latest, safe, finalized")
+	f.Uint64(prefix+".first-batch", DefaultInboxReaderConfig.FirstBatch, "the first batch to save")
 }
 
 var DefaultInboxReaderConfig = InboxReaderConfig{
@@ -68,6 +70,7 @@ var DefaultInboxReaderConfig = InboxReaderConfig{
 	TargetMessagesRead:  500,
 	MaxBlocksToRead:     2000,
 	ReadMode:            "latest",
+	FirstBatch:          0,
 }
 
 var TestInboxReaderConfig = InboxReaderConfig{
@@ -79,6 +82,7 @@ var TestInboxReaderConfig = InboxReaderConfig{
 	TargetMessagesRead:  500,
 	MaxBlocksToRead:     2000,
 	ReadMode:            "latest",
+	FirstBatch:          0,
 }
 
 type InboxReader struct {
@@ -458,7 +462,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 				missingSequencer = false
 				reorgingSequencer = false
 				firstBatch := sequencerBatches[0]
-				if firstBatch.SequenceNumber > 0 {
+				if firstBatch.SequenceNumber > r.config().FirstBatch {
 					haveAcc, err := r.tracker.GetBatchAcc(firstBatch.SequenceNumber - 1)
 					if errors.Is(err, AccumulatorNotFoundErr) {
 						reorgingSequencer = true
@@ -472,6 +476,10 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 					// Skip any batches we already have in the database
 					for len(sequencerBatches) > 0 {
 						batch := sequencerBatches[0]
+						if batch.SequenceNumber < r.config().FirstBatch {
+							sequencerBatches = sequencerBatches[1:]
+							continue
+						}
 						haveAcc, err := r.tracker.GetBatchAcc(batch.SequenceNumber)
 						if errors.Is(err, AccumulatorNotFoundErr) {
 							// This batch is new
@@ -504,7 +512,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 				if err != nil {
 					return err
 				}
-				if beforeCount > 0 {
+				if beforeCount > r.config().FirstBatch {
 					haveAcc, err := r.tracker.GetDelayedAcc(beforeCount - 1)
 					if errors.Is(err, AccumulatorNotFoundErr) {
 						reorgingDelayed = true
@@ -512,6 +520,18 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 						return err
 					} else if haveAcc != beforeAcc {
 						reorgingDelayed = true
+					}
+				}
+				for len(delayedMessages) > 0 {
+					message := delayedMessages[0]
+					beforeCount, err := message.Message.Header.SeqNum()
+					if err != nil {
+						return err
+					}
+					if beforeCount < r.config().FirstBatch {
+						delayedMessages = delayedMessages[1:]
+					} else {
+						break
 					}
 				}
 			} else if missingDelayed && to.Cmp(currentHeight) >= 0 {

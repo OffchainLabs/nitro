@@ -39,12 +39,13 @@ type InboxTracker struct {
 	validator  *staker.BlockValidator
 	das        arbstate.DataAvailabilityReader
 	blobReader arbstate.BlobReader
+	firstBatch uint64
 
 	batchMetaMutex sync.Mutex
 	batchMeta      *containers.LruCache[uint64, BatchMetadata]
 }
 
-func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, das arbstate.DataAvailabilityReader, blobReader arbstate.BlobReader) (*InboxTracker, error) {
+func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, das arbstate.DataAvailabilityReader, blobReader arbstate.BlobReader, firstBatch uint64) (*InboxTracker, error) {
 	// We support a nil txStreamer for the pruning code
 	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee && das == nil {
 		return nil, errors.New("data availability service required but unconfigured")
@@ -54,6 +55,7 @@ func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, das arb
 		txStreamer: txStreamer,
 		das:        das,
 		blobReader: blobReader,
+		firstBatch: firstBatch,
 		batchMeta:  containers.NewLruCache[uint64, BatchMetadata](1000),
 	}
 	return tracker, nil
@@ -355,7 +357,7 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 	}
 
 	var nextAcc common.Hash
-	if pos > 0 {
+	if pos > t.firstBatch {
 		var err error
 		nextAcc, err = t.GetDelayedAcc(pos - 1)
 		if err != nil {
@@ -377,7 +379,7 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 			return fmt.Errorf("unexpected delayed sequence number %v, expected %v", seqNum, pos)
 		}
 
-		if nextAcc != message.BeforeInboxAcc {
+		if seqNum > t.firstBatch && nextAcc != message.BeforeInboxAcc {
 			return fmt.Errorf("previous delayed accumulator mismatch for message %v", seqNum)
 		}
 		nextAcc = message.AfterInboxAcc()
@@ -553,7 +555,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 	startPos := pos
 	var nextAcc common.Hash
 	var prevbatchmeta BatchMetadata
-	if pos > 0 {
+	if pos > t.firstBatch {
 		var err error
 		prevbatchmeta, err = t.GetBatchMetadata(pos - 1)
 		nextAcc = prevbatchmeta.Accumulator
@@ -574,11 +576,11 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		if batch.SequenceNumber != pos {
 			return errors.New("unexpected batch sequence number")
 		}
-		if nextAcc != batch.BeforeInboxAcc {
+		if pos > t.firstBatch && nextAcc != batch.BeforeInboxAcc {
 			return errors.New("previous batch accumulator mismatch")
 		}
 
-		if batch.AfterDelayedCount > 0 {
+		if batch.AfterDelayedCount > t.firstBatch {
 			haveDelayedAcc, err := t.GetDelayedAcc(batch.AfterDelayedCount - 1)
 			if errors.Is(err, AccumulatorNotFoundErr) {
 				// We somehow missed a referenced delayed message; go back and look for it

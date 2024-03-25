@@ -535,7 +535,7 @@ func createNodeImpl(
 		return nil, errors.New("a data availability service is required for this chain, but it was not configured")
 	}
 
-	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, daReader, blobReader)
+	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, daReader, blobReader, configFetcher.Get().InboxReader.FirstBatch)
 	if err != nil {
 		return nil, err
 	}
