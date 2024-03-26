@@ -481,7 +481,7 @@ func (s *Sequencer) CheckHealth(ctx context.Context) error {
 	if pauseChan != nil {
 		return nil
 	}
-	return s.execEngine.streamer.ExpectChosenSequencer()
+	return s.execEngine.consensus.ExpectChosenSequencer()
 }
 
 func (s *Sequencer) ForwardTarget() string {
