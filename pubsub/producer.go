@@ -127,7 +127,7 @@ func (p *Producer) isConsumerAlive(ctx context.Context, consumerID string) bool 
 	if err != nil {
 		return false
 	}
-	return time.Now().UnixMilli()-val < 2*int64(p.keepAliveTimeout.Milliseconds())
+	return time.Now().UnixMilli()-val < int64(p.keepAliveTimeout.Milliseconds())
 }
 
 func (p *Producer) checkPending(ctx context.Context) ([]*Message, error) {

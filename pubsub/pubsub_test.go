@@ -4,13 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"sort"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/go-redis/redis/v8"
 	"github.com/google/go-cmp/cmp"
 	"github.com/offchainlabs/nitro/util/redisutil"
@@ -85,7 +83,6 @@ func wantMessages(n int) []any {
 }
 
 func TestProduce(t *testing.T) {
-	// log.Root().SetHandler(log.LvlFilterHandler(log.LvlTrace, log.StreamHandler(os.Stderr, log.TerminalFormat(true))))
 	ctx := context.Background()
 	producer, consumers := newProducerConsumers(ctx, t)
 	gotMessages := messagesMap(consumersCount)
@@ -136,7 +133,6 @@ func TestProduce(t *testing.T) {
 }
 
 func TestClaimingOwnership(t *testing.T) {
-	log.Root().SetHandler(log.LvlFilterHandler(log.LvlTrace, log.StreamHandler(os.Stderr, log.TerminalFormat(true))))
 	ctx := context.Background()
 	producer, consumers := newProducerConsumers(ctx, t)
 	producer.Start(ctx)
