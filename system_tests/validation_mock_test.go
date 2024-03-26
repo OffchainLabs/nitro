@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -114,6 +115,11 @@ func (r *mockExecRun) GetStepAt(position uint64) containers.PromiseInterface[*va
 		Status:      status,
 		GlobalState: resState,
 	}, nil)
+}
+
+func (r *mockExecRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[[]common.Hash] {
+	// TODO: Add mock implementation for GetLeavesWithStepSize
+	return containers.NewReadyPromise[[]common.Hash](nil, nil)
 }
 
 func (r *mockExecRun) GetLastStep() containers.PromiseInterface[*validator.MachineStepResult] {

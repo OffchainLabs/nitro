@@ -142,6 +142,19 @@ func (a *ExecServerAPI) GetStepAt(ctx context.Context, execid uint64, position u
 	return MachineStepResultToJson(res), nil
 }
 
+func (a *ExecServerAPI) GetLeavesWithStepSize(ctx context.Context, execid, fromStep, stepSize, numDesiredLeaves uint64) ([]common.Hash, error) {
+	run, err := a.getRun(execid)
+	if err != nil {
+		return nil, err
+	}
+	leavesInRange := run.GetLeavesWithStepSize(fromStep, stepSize, numDesiredLeaves)
+	res, err := leavesInRange.Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
 func (a *ExecServerAPI) GetProofAt(ctx context.Context, execid uint64, position uint64) (string, error) {
 	run, err := a.getRun(execid)
 	if err != nil {
