@@ -52,6 +52,11 @@ func Uint16ToBytes(value uint16) []byte {
 	return result
 }
 
+// casts a uint8 to its big-endian representation
+func Uint8ToBytes(value uint8) []byte {
+	return []byte{value}
+}
+
 // BytesToUint creates a uint64 from its big-endian representation
 func BytesToUint(value []byte) uint64 {
 	return binary.BigEndian.Uint64(value)
@@ -65,6 +70,11 @@ func BytesToUint32(value []byte) uint32 {
 // BytesToUint16 creates a uint16 from its big-endian representation
 func BytesToUint16(value []byte) uint16 {
 	return binary.BigEndian.Uint16(value)
+}
+
+// creates a uint8 from its big-endian representation
+func BytesToUint8(value []byte) uint8 {
+	return value[0]
 }
 
 // BoolToUint32 assigns a nonzero value when true
