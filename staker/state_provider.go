@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/containers/option"
@@ -29,6 +30,8 @@ var (
 	_ l2stateprovider.MachineHashCollector    = (*StateManager)(nil)
 	_ l2stateprovider.ExecutionProvider       = (*StateManager)(nil)
 )
+
+var executionNodeOfflineGauge = metrics.NewRegisteredGauge("arb/state_provider/execution_node_offline", nil)
 
 var (
 	ErrChainCatchingUp = errors.New("chain catching up")
@@ -382,6 +385,7 @@ func ctxWithCheckAlive(ctxIn context.Context, execRun validator.ExecutionRun) (c
 				ctxCheckAliveWithTimeout, cancelCheckAliveWithTimeout := context.WithTimeout(ctxCheckAlive, 5*time.Second)
 				err := execRun.CheckAlive(ctxCheckAliveWithTimeout)
 				if err != nil {
+					executionNodeOfflineGauge.Inc(1)
 					cancelCheckAliveWithTimeout()
 					return
 				}
