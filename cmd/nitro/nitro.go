@@ -42,7 +42,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 	blocksreexecutor "github.com/offchainlabs/nitro/blocks_reexecutor"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -324,7 +324,7 @@ func mainImpl() int {
 	var rollupAddrs chaininfo.RollupAddresses
 	var l1Client *ethclient.Client
 	var l1Reader *headerreader.HeaderReader
-	var blobReader arbstate.BlobReader
+	var blobReader daprovider.BlobReader
 	if nodeConfig.Node.ParentChainReader.Enable {
 		confFetcher := func() *rpcclient.ClientConfig { return &liveNodeConfig.Get().ParentChain.Connection }
 		rpcClient := rpcclient.NewRpcClient(confFetcher, nil)

@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 )
 
 // These classes are wrappers implementing das.StorageService and das.DataAvailabilityService.
@@ -16,12 +16,12 @@ import (
 // it is a programming error in the code setting up the node or daserver if a non-writeable object
 // is used in a writeable context.
 
-func NewReadLimitedStorageService(reader arbstate.DataAvailabilityReader) *readLimitedStorageService {
+func NewReadLimitedStorageService(reader daprovider.DASReader) *readLimitedStorageService {
 	return &readLimitedStorageService{reader}
 }
 
 type readLimitedStorageService struct {
-	arbstate.DataAvailabilityReader
+	daprovider.DASReader
 }
 
 func (s *readLimitedStorageService) Put(ctx context.Context, data []byte, expiration uint64) error {
@@ -37,22 +37,22 @@ func (s *readLimitedStorageService) Close(ctx context.Context) error {
 }
 
 func (s *readLimitedStorageService) String() string {
-	return fmt.Sprintf("readLimitedStorageService(%v)", s.DataAvailabilityReader)
+	return fmt.Sprintf("readLimitedStorageService(%v)", s.DASReader)
 
 }
 
 type readLimitedDataAvailabilityService struct {
-	arbstate.DataAvailabilityReader
+	daprovider.DASReader
 }
 
-func NewReadLimitedDataAvailabilityService(da arbstate.DataAvailabilityReader) *readLimitedDataAvailabilityService {
+func NewReadLimitedDataAvailabilityService(da daprovider.DASReader) *readLimitedDataAvailabilityService {
 	return &readLimitedDataAvailabilityService{da}
 }
 
-func (*readLimitedDataAvailabilityService) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
+func (*readLimitedDataAvailabilityService) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*daprovider.DataAvailabilityCertificate, error) {
 	panic("Logic error: readLimitedDataAvailabilityService.Store shouldn't be called.")
 }
 
 func (s *readLimitedDataAvailabilityService) String() string {
-	return fmt.Sprintf("ReadLimitedDataAvailabilityService(%v)", s.DataAvailabilityReader)
+	return fmt.Sprintf("ReadLimitedDataAvailabilityService(%v)", s.DASReader)
 }

@@ -7,7 +7,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
 	flag "github.com/spf13/pflag"
@@ -82,7 +82,7 @@ func (c *CacheStorageService) Close(ctx context.Context) error {
 	return c.baseStorageService.Close(ctx)
 }
 
-func (c *CacheStorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+func (c *CacheStorageService) ExpirationPolicy(ctx context.Context) (daprovider.ExpirationPolicy, error) {
 	return c.baseStorageService.ExpirationPolicy(ctx)
 }
 

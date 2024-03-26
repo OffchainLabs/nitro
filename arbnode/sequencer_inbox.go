@@ -15,7 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -159,7 +159,7 @@ func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client arbut
 		if len(tx.BlobHashes()) == 0 {
 			return nil, fmt.Errorf("blob batch transaction %v has no blobs", tx.Hash())
 		}
-		data := []byte{arbstate.BlobHashesHeaderFlag}
+		data := []byte{daprovider.BlobHashesHeaderFlag}
 		for _, h := range tx.BlobHashes() {
 			data = append(data, h[:]...)
 		}

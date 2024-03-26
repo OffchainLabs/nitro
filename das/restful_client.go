@@ -14,11 +14,11 @@ import (
 	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/das/dastree"
 )
 
-// RestfulDasClient implements DataAvailabilityReader
+// RestfulDasClient implements daprovider.DASReader
 type RestfulDasClient struct {
 	url string
 }
@@ -65,7 +65,7 @@ func (c *RestfulDasClient) GetByHash(ctx context.Context, hash common.Hash) ([]b
 		return nil, err
 	}
 	if !dastree.ValidHash(hash, decodedBytes) {
-		return nil, arbstate.ErrHashMismatch
+		return nil, daprovider.ErrHashMismatch
 	}
 
 	return decodedBytes, nil
@@ -82,7 +82,7 @@ func (c *RestfulDasClient) HealthCheck(ctx context.Context) error {
 	return nil
 }
 
-func (c *RestfulDasClient) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+func (c *RestfulDasClient) ExpirationPolicy(ctx context.Context) (daprovider.ExpirationPolicy, error) {
 	res, err := http.Get(c.url + expirationPolicyRequestPath)
 	if err != nil {
 		return -1, err
@@ -101,5 +101,5 @@ func (c *RestfulDasClient) ExpirationPolicy(ctx context.Context) (arbstate.Expir
 		return -1, err
 	}
 
-	return arbstate.StringToExpirationPolicy(response.ExpirationPolicy)
+	return daprovider.StringToExpirationPolicy(response.ExpirationPolicy)
 }

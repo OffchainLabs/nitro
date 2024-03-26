@@ -11,6 +11,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 )
 
 type multiplexerBackend struct {
@@ -67,7 +68,7 @@ func FuzzInboxMultiplexer(f *testing.F) {
 			delayedMessage:        delayedMsg,
 			positionWithinMessage: 0,
 		}
-		multiplexer := NewInboxMultiplexer(backend, 0, nil, KeysetValidate)
+		multiplexer := NewInboxMultiplexer(backend, 0, nil, daprovider.KeysetValidate)
 		_, err := multiplexer.Pop(context.TODO())
 		if err != nil {
 			panic(err)

@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 )
 
 type dummyReader struct {
@@ -26,13 +26,13 @@ func (*dummyReader) HealthCheck(context.Context) error {
 	return errors.New("not implemented")
 }
 
-func (*dummyReader) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+func (*dummyReader) ExpirationPolicy(ctx context.Context) (daprovider.ExpirationPolicy, error) {
 	return -1, errors.New("not implemented")
 }
 
 func TestDAS_SimpleExploreExploit(t *testing.T) {
-	readers := []arbstate.DataAvailabilityReader{&dummyReader{0}, &dummyReader{1}, &dummyReader{2}, &dummyReader{3}, &dummyReader{4}, &dummyReader{5}}
-	stats := make(map[arbstate.DataAvailabilityReader]readerStats)
+	readers := []daprovider.DASReader{&dummyReader{0}, &dummyReader{1}, &dummyReader{2}, &dummyReader{3}, &dummyReader{4}, &dummyReader{5}}
+	stats := make(map[daprovider.DASReader]readerStats)
 	stats[readers[0]] = []readerStat{ // weighted avg 10s
 		{10 * time.Second, true},
 	}
@@ -57,7 +57,7 @@ func TestDAS_SimpleExploreExploit(t *testing.T) {
 		{8 * time.Second, true},
 	}
 
-	expectedOrdering := []arbstate.DataAvailabilityReader{readers[1], readers[2], readers[5], readers[4], readers[0], readers[3]}
+	expectedOrdering := []daprovider.DASReader{readers[1], readers[2], readers[5], readers[4], readers[0], readers[3]}
 
 	expectedExploreIterations, expectedExploitIterations := uint32(5), uint32(5)
 	strategy := simpleExploreExploitStrategy{
@@ -66,7 +66,7 @@ func TestDAS_SimpleExploreExploit(t *testing.T) {
 	}
 	strategy.update(readers, stats)
 
-	checkMatch := func(expected, was []arbstate.DataAvailabilityReader, doMatch bool) {
+	checkMatch := func(expected, was []daprovider.DASReader, doMatch bool) {
 		if len(expected) != len(was) {
 			Fail(t, fmt.Sprintf("Incorrect number of nextReaders %d, expected %d", len(was), len(expected)))
 		}

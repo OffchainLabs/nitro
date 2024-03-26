@@ -10,7 +10,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/das/dastree"
 )
 
@@ -79,8 +79,8 @@ func (m *MemoryBackedStorageService) Close(ctx context.Context) error {
 	return nil
 }
 
-func (m *MemoryBackedStorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
-	return arbstate.KeepForever, nil
+func (m *MemoryBackedStorageService) ExpirationPolicy(ctx context.Context) (daprovider.ExpirationPolicy, error) {
+	return daprovider.KeepForever, nil
 }
 
 func (m *MemoryBackedStorageService) String() string {
