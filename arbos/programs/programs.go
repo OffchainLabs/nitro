@@ -9,7 +9,6 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
@@ -25,16 +24,6 @@ type Programs struct {
 	programs       *storage.Storage
 	moduleHashes   *storage.Storage
 	dataPricer     *DataPricer
-	inkPrice       storage.StorageBackedUint24
-	maxStackDepth  storage.StorageBackedUint32
-	freePages      storage.StorageBackedUint16
-	pageGas        storage.StorageBackedUint16
-	pageRamp       storage.StorageBackedUint64
-	pageLimit      storage.StorageBackedUint16
-	minInitGas     storage.StorageBackedUint16
-	expiryDays     storage.StorageBackedUint16
-	keepaliveDays  storage.StorageBackedUint16
-	version        storage.StorageBackedUint16 // Must only be changed during ArbOS upgrades
 }
 
 type Program struct {
@@ -48,22 +37,10 @@ type Program struct {
 
 type uint24 = arbmath.Uint24
 
-var programDataKey = []byte{0}
-var moduleHashesKey = []byte{1}
-var dataPricerKey = []byte{2}
-
-const (
-	versionOffset uint64 = iota
-	inkPriceOffset
-	maxStackDepthOffset
-	freePagesOffset
-	pageGasOffset
-	pageRampOffset
-	pageLimitOffset
-	minInitGasOffset
-	expiryDaysOffset
-	keepaliveDaysOffset
-)
+var paramsKey = []byte{0}
+var programDataKey = []byte{1}
+var moduleHashesKey = []byte{2}
+var dataPricerKey = []byte{3}
 
 var ErrProgramActivation = errors.New("program activation failed")
 
@@ -73,38 +50,8 @@ var ProgramExpiredError func(age uint64) error
 var ProgramUpToDateError func() error
 var ProgramKeepaliveTooSoon func(age uint64) error
 
-const MaxWasmSize = 128 * 1024
-const initialFreePages = 2
-const initialPageGas = 1000
-const initialPageRamp = 620674314 // targets 8MB costing 32 million gas, minus the linear term.
-const initialPageLimit = 128      // reject wasms with memories larger than 8MB.
-const initialInkPrice = 10000     // 1 evm gas buys 10k ink.
-const initialMinCallGas = 0       // assume pricer is correct
-const initialExpiryDays = 365     // deactivate after 1 year.
-const initialKeepaliveDays = 31   // wait a month before allowing reactivation
-
 func Initialize(sto *storage.Storage) {
-	inkPrice := sto.OpenStorageBackedUint24(inkPriceOffset)
-	maxStackDepth := sto.OpenStorageBackedUint32(maxStackDepthOffset)
-	freePages := sto.OpenStorageBackedUint16(freePagesOffset)
-	pageGas := sto.OpenStorageBackedUint16(pageGasOffset)
-	pageRamp := sto.OpenStorageBackedUint64(pageRampOffset)
-	pageLimit := sto.OpenStorageBackedUint16(pageLimitOffset)
-	minInitGas := sto.OpenStorageBackedUint16(minInitGasOffset)
-	expiryDays := sto.OpenStorageBackedUint16(expiryDaysOffset)
-	keepaliveDays := sto.OpenStorageBackedUint16(keepaliveDaysOffset)
-	version := sto.OpenStorageBackedUint16(versionOffset)
-	_ = inkPrice.Set(initialInkPrice)
-	_ = maxStackDepth.Set(math.MaxUint32)
-	_ = freePages.Set(initialFreePages)
-	_ = pageGas.Set(initialPageGas)
-	_ = pageRamp.Set(initialPageRamp)
-	_ = pageLimit.Set(initialPageLimit)
-	_ = minInitGas.Set(initialMinCallGas)
-	_ = expiryDays.Set(initialExpiryDays)
-	_ = keepaliveDays.Set(initialKeepaliveDays)
-	_ = version.Set(1)
-
+	initStylusParams(sto.OpenSubStorage(paramsKey))
 	initDataPricer(sto.OpenSubStorage(dataPricerKey))
 }
 
@@ -114,97 +61,7 @@ func Open(sto *storage.Storage) *Programs {
 		programs:       sto.OpenSubStorage(programDataKey),
 		moduleHashes:   sto.OpenSubStorage(moduleHashesKey),
 		dataPricer:     openDataPricer(sto.OpenSubStorage(dataPricerKey)),
-		inkPrice:       sto.OpenStorageBackedUint24(inkPriceOffset),
-		maxStackDepth:  sto.OpenStorageBackedUint32(maxStackDepthOffset),
-		freePages:      sto.OpenStorageBackedUint16(freePagesOffset),
-		pageGas:        sto.OpenStorageBackedUint16(pageGasOffset),
-		pageRamp:       sto.OpenStorageBackedUint64(pageRampOffset),
-		pageLimit:      sto.OpenStorageBackedUint16(pageLimitOffset),
-		minInitGas:     sto.OpenStorageBackedUint16(minInitGasOffset),
-		expiryDays:     sto.OpenStorageBackedUint16(expiryDaysOffset),
-		keepaliveDays:  sto.OpenStorageBackedUint16(keepaliveDaysOffset),
-		version:        sto.OpenStorageBackedUint16(versionOffset),
 	}
-}
-
-func (p Programs) StylusVersion() (uint16, error) {
-	return p.version.Get()
-}
-
-func (p Programs) InkPrice() (uint24, error) {
-	return p.inkPrice.Get()
-}
-
-func (p Programs) SetInkPrice(value uint32) error {
-	ink, err := arbmath.IntToUint24(value)
-	if err != nil || ink == 0 {
-		return errors.New("ink price must be a positive uint24")
-	}
-	return p.inkPrice.Set(ink)
-}
-
-func (p Programs) MaxStackDepth() (uint32, error) {
-	return p.maxStackDepth.Get()
-}
-
-func (p Programs) SetMaxStackDepth(depth uint32) error {
-	return p.maxStackDepth.Set(depth)
-}
-
-func (p Programs) FreePages() (uint16, error) {
-	return p.freePages.Get()
-}
-
-func (p Programs) SetFreePages(pages uint16) error {
-	return p.freePages.Set(pages)
-}
-
-func (p Programs) PageGas() (uint16, error) {
-	return p.pageGas.Get()
-}
-
-func (p Programs) SetPageGas(gas uint16) error {
-	return p.pageGas.Set(gas)
-}
-
-func (p Programs) PageRamp() (uint64, error) {
-	return p.pageRamp.Get()
-}
-
-func (p Programs) SetPageRamp(ramp uint64) error {
-	return p.pageRamp.Set(ramp)
-}
-
-func (p Programs) PageLimit() (uint16, error) {
-	return p.pageLimit.Get()
-}
-
-func (p Programs) SetPageLimit(limit uint16) error {
-	return p.pageLimit.Set(limit)
-}
-
-func (p Programs) MinInitGas() (uint16, error) {
-	return p.minInitGas.Get()
-}
-
-func (p Programs) SetMinInitGas(gas uint16) error {
-	return p.minInitGas.Set(gas)
-}
-
-func (p Programs) ExpiryDays() (uint16, error) {
-	return p.expiryDays.Get()
-}
-
-func (p Programs) SetExpiryDays(days uint16) error {
-	return p.expiryDays.Set(days)
-}
-
-func (p Programs) KeepaliveDays() (uint16, error) {
-	return p.keepaliveDays.Get()
-}
-
-func (p Programs) SetKeepaliveDays(days uint16) error {
-	return p.keepaliveDays.Set(days)
 }
 
 func (p Programs) DataPricer() *DataPricer {
@@ -219,11 +76,13 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 	burner := p.programs.Burner()
 	time := evm.Context.Time
 
-	stylusVersion, err := p.StylusVersion()
+	params, err := p.Params()
 	if err != nil {
 		return 0, codeHash, common.Hash{}, nil, false, err
 	}
-	currentVersion, expired, err := p.programExists(codeHash, time)
+
+	stylusVersion := params.Version
+	currentVersion, expired, err := p.programExists(codeHash, time, params)
 	if err != nil {
 		return 0, codeHash, common.Hash{}, nil, false, err
 	}
@@ -237,11 +96,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 	}
 
 	// require the program's footprint not exceed the remaining memory budget
-	pageLimit, err := p.PageLimit()
-	if err != nil {
-		return 0, codeHash, common.Hash{}, nil, false, err
-	}
-	pageLimit = arbmath.SaturatingUSub(pageLimit, statedb.GetStylusPagesOpen())
+	pageLimit := arbmath.SaturatingUSub(params.PageLimit, statedb.GetStylusPagesOpen())
 
 	info, err := activateProgram(statedb, address, wasm, pageLimit, stylusVersion, debugMode, burner)
 	if err != nil {
@@ -287,7 +142,12 @@ func (p Programs) CallProgram(
 	contract := scope.Contract
 	debugMode := evm.ChainConfig().DebugMode()
 
-	program, err := p.getProgram(contract.CodeHash, evm.Context.Time)
+	params, err := p.Params()
+	if err != nil {
+		return nil, err
+	}
+
+	program, err := p.getProgram(contract.CodeHash, evm.Context.Time, params)
 	if err != nil {
 		return nil, err
 	}
@@ -295,10 +155,7 @@ func (p Programs) CallProgram(
 	if err != nil {
 		return nil, err
 	}
-	params, err := p.goParams(program.version, debugMode)
-	if err != nil {
-		return nil, err
-	}
+	goParams := p.goParams(program.version, debugMode, params)
 	l1BlockNumber, err := evm.ProcessingHook.L1BlockNumber(evm.Context)
 	if err != nil {
 		return nil, err
@@ -306,16 +163,9 @@ func (p Programs) CallProgram(
 
 	// pay for program init
 	open, ever := statedb.GetStylusPages()
-	model, err := p.memoryModel()
-	if err != nil {
-		return nil, err
-	}
+	model := NewMemoryModel(params.FreePages, params.FreePages)
 	memoryCost := model.GasCost(program.footprint, open, ever)
-	minInitGas, err := p.MinInitGas()
-	if err != nil {
-		return nil, err
-	}
-	callCost := uint64(program.initGas) + uint64(minInitGas)
+	callCost := uint64(program.initGas) + uint64(params.MinInitGas)
 	cost := common.SaturatingUAdd(memoryCost, callCost)
 	if err := contract.BurnGas(cost); err != nil {
 		return nil, err
@@ -345,7 +195,7 @@ func (p Programs) CallProgram(
 	}
 	return callProgram(
 		address, moduleHash, scope, statedb, interpreter,
-		tracingInfo, calldata, evmData, params, model,
+		tracingInfo, calldata, evmData, goParams, model,
 	)
 }
 
@@ -371,7 +221,7 @@ func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
 	return arbcompress.DecompressWithDictionary(wasm, MaxWasmSize, dict)
 }
 
-func (p Programs) getProgram(codeHash common.Hash, time uint64) (Program, error) {
+func (p Programs) getProgram(codeHash common.Hash, time uint64, params *StylusParams) (Program, error) {
 	data, err := p.programs.Get(codeHash)
 	if err != nil {
 		return Program{}, err
@@ -388,19 +238,13 @@ func (p Programs) getProgram(codeHash common.Hash, time uint64) (Program, error)
 	}
 
 	// check that the program is up to date
-	stylusVersion, err := p.StylusVersion()
-	if err != nil {
-		return program, err
-	}
+	stylusVersion := params.Version
 	if program.version != stylusVersion {
 		return program, ProgramNeedsUpgradeError(program.version, stylusVersion)
 	}
 
 	// ensure the program hasn't expired
-	expiryDays, err := p.ExpiryDays()
-	if err != nil {
-		return program, err
-	}
+	expiryDays := params.ExpiryDays
 	age := time - program.activatedAt
 	expirySeconds := arbmath.DaysToSeconds(expiryDays)
 	if age > expirySeconds {
@@ -420,39 +264,29 @@ func (p Programs) setProgram(codehash common.Hash, program Program) error {
 	return p.programs.Set(codehash, data)
 }
 
-func (p Programs) programExists(codeHash common.Hash, time uint64) (uint16, bool, error) {
+func (p Programs) programExists(codeHash common.Hash, time uint64, params *StylusParams) (uint16, bool, error) {
 	data, err := p.programs.Get(codeHash)
-	if err != nil {
-		return 0, false, err
-	}
-	expiryDays, err := p.ExpiryDays()
 	if err != nil {
 		return 0, false, err
 	}
 
 	version := arbmath.BytesToUint16(data[:2])
 	activatedAt := arbmath.BytesToUint(data[10:18])
-	expired := time-activatedAt > arbmath.DaysToSeconds(expiryDays)
+	expired := time-activatedAt > arbmath.DaysToSeconds(params.ExpiryDays)
 	return version, expired, err
 }
 
-func (p Programs) ProgramKeepalive(codeHash common.Hash, time uint64) (*big.Int, error) {
-	program, err := p.getProgram(codeHash, time)
+func (p Programs) ProgramKeepalive(codeHash common.Hash, time uint64, params *StylusParams) (*big.Int, error) {
+	program, err := p.getProgram(codeHash, time, params)
 	if err != nil {
 		return nil, err
 	}
-	keepaliveDays, err := p.KeepaliveDays()
-	if err != nil {
-		return nil, err
-	}
+	keepaliveDays := params.KeepaliveDays
 	if program.secondsLeft < arbmath.DaysToSeconds(keepaliveDays) {
 		return nil, ProgramKeepaliveTooSoon(time - program.activatedAt)
 	}
 
-	stylusVersion, err := p.StylusVersion()
-	if err != nil {
-		return nil, err
-	}
+	stylusVersion := params.Version
 	if program.version != stylusVersion {
 		return nil, ProgramNeedsUpgradeError(program.version, stylusVersion)
 	}
@@ -467,29 +301,29 @@ func (p Programs) ProgramKeepalive(codeHash common.Hash, time uint64) (*big.Int,
 
 }
 
-func (p Programs) CodehashVersion(codeHash common.Hash, time uint64) (uint16, error) {
-	program, err := p.getProgram(codeHash, time)
+func (p Programs) CodehashVersion(codeHash common.Hash, time uint64, params *StylusParams) (uint16, error) {
+	program, err := p.getProgram(codeHash, time, params)
 	if err != nil {
 		return 0, err
 	}
 	return program.version, nil
 }
 
-func (p Programs) ProgramTimeLeft(codeHash common.Hash, time uint64) (uint64, error) {
-	program, err := p.getProgram(codeHash, time)
+func (p Programs) ProgramTimeLeft(codeHash common.Hash, time uint64, params *StylusParams) (uint64, error) {
+	program, err := p.getProgram(codeHash, time, params)
 	if err != nil {
 		return 0, err
 	}
 	return program.secondsLeft, nil
 }
 
-func (p Programs) ProgramInitGas(codeHash common.Hash, time uint64) (uint32, error) {
-	program, err := p.getProgram(codeHash, time)
+func (p Programs) ProgramInitGas(codeHash common.Hash, time uint64, params *StylusParams) (uint32, error) {
+	program, err := p.getProgram(codeHash, time, params)
 	return uint32(program.initGas), err
 }
 
-func (p Programs) ProgramMemoryFootprint(codeHash common.Hash, time uint64) (uint16, error) {
-	program, err := p.getProgram(codeHash, time)
+func (p Programs) ProgramMemoryFootprint(codeHash common.Hash, time uint64, params *StylusParams) (uint16, error) {
+	program, err := p.getProgram(codeHash, time, params)
 	return program.footprint, err
 }
 
@@ -500,25 +334,16 @@ type goParams struct {
 	debugMode uint32
 }
 
-func (p Programs) goParams(version uint16, debug bool) (*goParams, error) {
-	maxDepth, err := p.MaxStackDepth()
-	if err != nil {
-		return nil, err
-	}
-	inkPrice, err := p.InkPrice()
-	if err != nil {
-		return nil, err
-	}
-
+func (p Programs) goParams(version uint16, debug bool, params *StylusParams) *goParams {
 	config := &goParams{
 		version:  version,
-		maxDepth: maxDepth,
-		inkPrice: inkPrice,
+		maxDepth: params.MaxStackDepth,
+		inkPrice: params.InkPrice,
 	}
 	if debug {
 		config.debugMode = 1
 	}
-	return config, nil
+	return config
 }
 
 type evmData struct {

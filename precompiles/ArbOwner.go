@@ -11,6 +11,7 @@ import (
 	"math/big"
 
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
@@ -163,48 +164,97 @@ func (con ArbOwner) ReleaseL1PricerSurplusFunds(c ctx, evm mech, maxWeiToRelease
 }
 
 // Sets the amount of ink 1 gas buys
-func (con ArbOwner) SetInkPrice(c ctx, evm mech, ink uint32) error {
-	return c.State.Programs().SetInkPrice(ink)
+func (con ArbOwner) SetInkPrice(c ctx, evm mech, inkPrice uint32) error {
+	params, err := c.State.Programs().Params()
+	if err != nil {
+		return err
+	}
+	ink, err := arbmath.IntToUint24(inkPrice)
+	if err != nil || ink == 0 {
+		return errors.New("ink price must be a positive uint24")
+	}
+	params.InkPrice = ink
+	return params.Save()
 }
 
 // Sets the maximum depth (in wasm words) a wasm stack may grow
 func (con ArbOwner) SetWasmMaxStackDepth(c ctx, evm mech, depth uint32) error {
-	return c.State.Programs().SetMaxStackDepth(depth)
+	params, err := c.State.Programs().Params()
+	if err != nil {
+		return err
+	}
+	params.MaxStackDepth = depth
+	return params.Save()
 }
 
 // Gets the number of free wasm pages a tx gets
 func (con ArbOwner) SetWasmFreePages(c ctx, evm mech, pages uint16) error {
-	return c.State.Programs().SetFreePages(pages)
+	params, err := c.State.Programs().Params()
+	if err != nil {
+		return err
+	}
+	params.FreePages = pages
+	return params.Save()
 }
 
 // Sets the base cost of each additional wasm page
 func (con ArbOwner) SetWasmPageGas(c ctx, evm mech, gas uint16) error {
-	return c.State.Programs().SetPageGas(gas)
+	params, err := c.State.Programs().Params()
+	if err != nil {
+		return err
+	}
+	params.PageGas = gas
+	return params.Save()
 }
 
 // Sets the ramp that drives exponential wasm memory costs
 func (con ArbOwner) SetWasmPageRamp(c ctx, evm mech, ramp uint64) error {
-	return c.State.Programs().SetPageRamp(ramp)
+	params, err := c.State.Programs().Params()
+	if err != nil {
+		return err
+	}
+	params.PageRamp = ramp
+	return params.Save()
 }
 
 // Sets the initial number of pages a wasm may allocate
 func (con ArbOwner) SetWasmPageLimit(c ctx, evm mech, limit uint16) error {
-	return c.State.Programs().SetPageLimit(limit)
+	params, err := c.State.Programs().Params()
+	if err != nil {
+		return err
+	}
+	params.PageLimit = limit
+	return params.Save()
 }
 
 // Sets the minimum cost to invoke a program
 func (con ArbOwner) SetWasmMinInitGas(c ctx, _ mech, gas uint16) error {
-	return c.State.Programs().SetMinInitGas(gas)
+	params, err := c.State.Programs().Params()
+	if err != nil {
+		return err
+	}
+	params.MinInitGas = gas
+	return params.Save()
 }
 
 // Sets the number of days after which programs deactivate
 func (con ArbOwner) SetWasmExpiryDays(c ctx, _ mech, days uint16) error {
-	return c.State.Programs().SetExpiryDays(days)
+	params, err := c.State.Programs().Params()
+	if err != nil {
+		return err
+	}
+	params.ExpiryDays = days
+	return params.Save()
 }
 
 // Sets the age a program must be to perform a keepalive
 func (con ArbOwner) SetWasmKeepaliveDays(c ctx, _ mech, days uint16) error {
-	return c.State.Programs().SetKeepaliveDays(days)
+	params, err := c.State.Programs().Params()
+	if err != nil {
+		return err
+	}
+	params.KeepaliveDays = days
+	return params.Save()
 }
 
 func (con ArbOwner) SetChainConfig(c ctx, evm mech, serializedChainConfig []byte) error {

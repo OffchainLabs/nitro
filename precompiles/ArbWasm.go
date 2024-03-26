@@ -4,6 +4,8 @@
 package precompiles
 
 import (
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -47,7 +49,11 @@ func (con ArbWasm) ActivateProgram(c ctx, evm mech, value huge, program addr) (u
 
 // Extends a program's expiration date (reverts if too soon)
 func (con ArbWasm) CodehashKeepalive(c ctx, evm mech, value huge, codehash bytes32) error {
-	dataFee, err := c.State.Programs().ProgramKeepalive(codehash, evm.Context.Time)
+	params, err := c.State.Programs().Params()
+	if err != nil {
+		return err
+	}
+	dataFee, err := c.State.Programs().ProgramKeepalive(codehash, evm.Context.Time, params)
 	if err != nil {
 		return err
 	}
@@ -79,43 +85,71 @@ func (con ArbWasm) payActivationDataFee(c ctx, evm mech, value, dataFee huge) er
 
 // Gets the latest stylus version
 func (con ArbWasm) StylusVersion(c ctx, evm mech) (uint16, error) {
-	return c.State.Programs().StylusVersion()
+	params, err := c.State.Programs().Params()
+	return params.Version, err
 }
 
 // Gets the amount of ink 1 gas buys
 func (con ArbWasm) InkPrice(c ctx, _ mech) (uint32, error) {
-	ink, err := c.State.Programs().InkPrice()
-	return ink.ToUint32(), err
+	params, err := c.State.Programs().Params()
+	return params.InkPrice.ToUint32(), err
 }
 
 // Gets the wasm stack size limit
 func (con ArbWasm) MaxStackDepth(c ctx, _ mech) (uint32, error) {
-	return c.State.Programs().MaxStackDepth()
+	params, err := c.State.Programs().Params()
+	return params.MaxStackDepth, err
 }
 
 // Gets the number of free wasm pages a tx gets
 func (con ArbWasm) FreePages(c ctx, _ mech) (uint16, error) {
-	return c.State.Programs().FreePages()
+	params, err := c.State.Programs().Params()
+	return params.FreePages, err
 }
 
 // Gets the base cost of each additional wasm page
 func (con ArbWasm) PageGas(c ctx, _ mech) (uint16, error) {
-	return c.State.Programs().PageGas()
+	params, err := c.State.Programs().Params()
+	return params.PageGas, err
 }
 
 // Gets the ramp that drives exponential memory costs
 func (con ArbWasm) PageRamp(c ctx, _ mech) (uint64, error) {
-	return c.State.Programs().PageRamp()
+	params, err := c.State.Programs().Params()
+	return params.PageRamp, err
 }
 
 // Gets the maximum initial number of pages a wasm may allocate
 func (con ArbWasm) PageLimit(c ctx, _ mech) (uint16, error) {
-	return c.State.Programs().PageLimit()
+	params, err := c.State.Programs().Params()
+	return params.PageLimit, err
+}
+
+// Gets the minimum cost to invoke a program
+func (con ArbWasm) MinInitGas(c ctx, _ mech) (uint16, error) {
+	params, err := c.State.Programs().Params()
+	return params.MinInitGas, err
+}
+
+// Gets the number of days after which programs deactivate
+func (con ArbWasm) ExpiryDays(c ctx, _ mech) (uint16, error) {
+	params, err := c.State.Programs().Params()
+	return params.ExpiryDays, err
+}
+
+// Gets the age a program must be to perform a keepalive
+func (con ArbWasm) KeepaliveDays(c ctx, _ mech) (uint16, error) {
+	params, err := c.State.Programs().Params()
+	return params.KeepaliveDays, err
 }
 
 // Gets the stylus version that program with codehash was most recently compiled with
 func (con ArbWasm) CodehashVersion(c ctx, evm mech, codehash bytes32) (uint16, error) {
-	return c.State.Programs().CodehashVersion(codehash, evm.Context.Time)
+	params, err := c.State.Programs().Params()
+	if err != nil {
+		return 0, err
+	}
+	return c.State.Programs().CodehashVersion(codehash, evm.Context.Time, params)
 }
 
 // Gets the stylus version that program at addr was most recently compiled with
@@ -129,42 +163,36 @@ func (con ArbWasm) ProgramVersion(c ctx, evm mech, program addr) (uint16, error)
 
 // Gets the cost to invoke the program (not including MinInitGas)
 func (con ArbWasm) ProgramInitGas(c ctx, evm mech, program addr) (uint32, error) {
-	codehash, err := c.GetCodeHash(program)
+	codehash, params, err := con.getCodeHash(c, program)
 	if err != nil {
 		return 0, err
 	}
-	return c.State.Programs().ProgramInitGas(codehash, evm.Context.Time)
+	return c.State.Programs().ProgramInitGas(codehash, evm.Context.Time, params)
 }
 
 // Gets the footprint of program at addr
 func (con ArbWasm) ProgramMemoryFootprint(c ctx, evm mech, program addr) (uint16, error) {
-	codehash, err := c.GetCodeHash(program)
+	codehash, params, err := con.getCodeHash(c, program)
 	if err != nil {
 		return 0, err
 	}
-	return c.State.Programs().ProgramMemoryFootprint(codehash, evm.Context.Time)
+	return c.State.Programs().ProgramMemoryFootprint(codehash, evm.Context.Time, params)
 }
 
 // Gets returns the amount of time remaining until the program expires
 func (con ArbWasm) ProgramTimeLeft(c ctx, evm mech, program addr) (uint64, error) {
-	codehash, err := c.GetCodeHash(program)
+	codehash, params, err := con.getCodeHash(c, program)
 	if err != nil {
 		return 0, err
 	}
-	return c.State.Programs().ProgramTimeLeft(codehash, evm.Context.Time)
+	return c.State.Programs().ProgramTimeLeft(codehash, evm.Context.Time, params)
 }
 
-// Gets the minimum cost to invoke a program
-func (con ArbWasm) MinInitGas(c ctx, _ mech) (uint16, error) {
-	return c.State.Programs().MinInitGas()
-}
-
-// Gets the number of days after which programs deactivate
-func (con ArbWasm) ExpiryDays(c ctx, _ mech) (uint16, error) {
-	return c.State.Programs().ExpiryDays()
-}
-
-// Gets the age a program must be to perform a keepalive
-func (con ArbWasm) KeepaliveDays(c ctx, _ mech) (uint16, error) {
-	return c.State.Programs().KeepaliveDays()
+func (con ArbWasm) getCodeHash(c ctx, program addr) (hash, *programs.StylusParams, error) {
+	params, err := c.State.Programs().Params()
+	if err != nil {
+		return common.Hash{}, params, err
+	}
+	codehash, err := c.GetCodeHash(program)
+	return codehash, params, err
 }
