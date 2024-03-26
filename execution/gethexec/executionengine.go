@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -20,8 +21,16 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+)
+
+var (
+	baseFeeGauge          = metrics.NewRegisteredGauge("arb/block/basefee", nil)
+	blockGasUsedHistogram = metrics.NewRegisteredHistogram("arb/block/gasused", nil, metrics.NewBoundedHistogramSample())
+	txCountHistogram      = metrics.NewRegisteredHistogram("arb/block/transactions/count", nil, metrics.NewBoundedHistogramSample())
+	txGasUsedHistogram    = metrics.NewRegisteredHistogram("arb/block/transactions/gasused", nil, metrics.NewBoundedHistogramSample())
 )
 
 type ExecutionEngine struct {
@@ -493,6 +502,15 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 	if status == core.SideStatTy {
 		return errors.New("geth rejected block as non-canonical")
 	}
+	baseFeeGauge.Update(block.BaseFee().Int64())
+	txCountHistogram.Update(int64(len(block.Transactions()) - 1))
+	var blockGasused uint64
+	for i := 1; i < len(receipts); i++ {
+		val := arbmath.SaturatingUSub(receipts[i].GasUsed, receipts[i].GasUsedForL1)
+		txGasUsedHistogram.Update(int64(val))
+		blockGasused += val
+	}
+	blockGasUsedHistogram.Update(int64(blockGasused))
 	return nil
 }
 
