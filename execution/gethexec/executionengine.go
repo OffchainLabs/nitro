@@ -27,10 +27,10 @@ import (
 )
 
 var (
-	baseFeeGauge      = metrics.NewRegisteredGauge("arb/block/basefee", nil)
-	blockGasUsedGauge = metrics.NewRegisteredHistogram("arb/block/gasused", nil, metrics.NewBoundedHistogramSample())
-	txCountGauge      = metrics.NewRegisteredHistogram("arb/block/transactions/count", nil, metrics.NewBoundedHistogramSample())
-	txGasUsedGauge    = metrics.NewRegisteredHistogram("arb/transaction/gasused", nil, metrics.NewBoundedHistogramSample())
+	baseFeeGauge          = metrics.NewRegisteredGauge("arb/block/basefee", nil)
+	blockGasUsedHistogram = metrics.NewRegisteredHistogram("arb/block/gasused", nil, metrics.NewBoundedHistogramSample())
+	txCountHistogram      = metrics.NewRegisteredHistogram("arb/block/transactions/count", nil, metrics.NewBoundedHistogramSample())
+	txGasUsedHistogram    = metrics.NewRegisteredHistogram("arb/block/transactions/gasused", nil, metrics.NewBoundedHistogramSample())
 )
 
 type ExecutionEngine struct {
@@ -497,14 +497,14 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 		return errors.New("geth rejected block as non-canonical")
 	}
 	baseFeeGauge.Update(block.BaseFee().Int64())
-	txCountGauge.Update(int64(len(block.Transactions()) - 1))
+	txCountHistogram.Update(int64(len(block.Transactions()) - 1))
 	var blockGasused uint64
 	for i := 1; i < len(receipts); i++ {
 		val := arbmath.SaturatingUSub(receipts[i].GasUsed, receipts[i].GasUsedForL1)
-		txGasUsedGauge.Update(int64(val))
+		txGasUsedHistogram.Update(int64(val))
 		blockGasused += val
 	}
-	blockGasUsedGauge.Update(int64(blockGasused))
+	blockGasUsedHistogram.Update(int64(blockGasused))
 	return nil
 }
 
