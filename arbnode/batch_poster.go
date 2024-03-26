@@ -32,7 +32,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
 
-	espressoClient "github.com/EspressoSystems/espresso-sequencer-go/client"
+	hotshotClient "github.com/EspressoSystems/espresso-sequencer-go/client"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
@@ -112,7 +112,7 @@ type BatchPoster struct {
 
 	// Espresso readers
 	lightClientReader LightClientReaderInterface
-	espressoClient    *espressoClient.Client
+	hotshotClient     *hotshotClient.Client
 }
 
 type l1BlockBound int
@@ -313,14 +313,14 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 	if err != nil {
 		return nil, err
 	}
-	var hotShotClient *espressoClient.Client
+	var hotShotClient *hotshotClient.Client
 	var lightClientReader LightClientReaderInterface
 
 	hotShotUrl := opts.Config().HotShotUrl
 	lightClientAddr := opts.Config().LightClientAddress
 
 	if hotShotUrl != "" {
-		hotShotClient = espressoClient.NewClient(log.New(), hotShotUrl)
+		hotShotClient = hotshotClient.NewClient(log.New(), hotShotUrl)
 	}
 
 	if lightClientAddr != "" {
@@ -345,7 +345,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		bridgeAddr:         opts.DeployInfo.Bridge,
 		daWriter:           opts.DAWriter,
 		redisLock:          redisLock,
-		espressoClient:     hotShotClient,
+		hotshotClient:      hotShotClient,
 		lightClientReader:  lightClientReader,
 	}
 	b.messagesPerBatch, err = arbmath.NewMovingAverage[uint64](20)
@@ -467,33 +467,32 @@ func AccessList(opts *AccessListOpts) types.AccessList {
 // hashes to some light client state root
 func (b *BatchPoster) addEspressoBlockMerkleProof(
 	msg *arbostypes.MessageWithMetadata,
-) (*arbostypes.MessageWithMetadata, error) {
-	if msg.Message.Header.Kind == arbostypes.L1MessageType_L2Message &&
-		msg.Message.L2msg[0] == arbos.L2MessageKind_EspressoTx {
+) error {
+	if arbos.IsEspressoMsg(msg.Message) {
 		txs, jst, err := arbos.ParseEspressoMsg(msg.Message)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		validatedHotShotHeight, validatedL1Height, err := b.lightClientReader.ValidatedHeight()
 		if err != nil {
-			return nil, err
+			return err
 
 		}
 		if validatedHotShotHeight < jst.Header.Height {
-			return nil, fmt.Errorf("could not construct batch justification, light client is at height %v but the justification is for height %v", validatedHotShotHeight, jst.Header.Height)
+			return fmt.Errorf("could not construct batch justification, light client is at height %v but the justification is for height %v", validatedHotShotHeight, jst.Header.Height)
 		}
-		proof, err := b.espressoClient.FetchBlockMerkleProof(validatedL1Height, jst.Header.Height)
+		proof, err := b.hotshotClient.FetchBlockMerkleProof(validatedL1Height, jst.Header.Height)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		jst.BlockMerkleProof = &proof
 		newMsg, err := arbos.MessageFromEspresso(msg.Message.Header, txs, jst)
 		if err != nil {
-			return nil, err
+			return err
 		}
 		msg.Message = &newMsg
 	}
-	return msg, nil
+	return nil
 }
 
 // checkRevert checks blocks with number in range [from, to] whether they
@@ -1176,7 +1175,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			)
 			break
 		}
-		msg, err = b.addEspressoBlockMerkleProof(msg)
+		err = b.addEspressoBlockMerkleProof(msg)
 		if err != nil {
 			return false, fmt.Errorf("error adding hotshot block merkle proof to justification: %w", err)
 		}

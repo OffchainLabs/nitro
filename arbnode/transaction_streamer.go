@@ -706,8 +706,8 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 		// To get around this, we simply wipe the block merkle proof before adding a batch to the transaction streamer.
 		// The justification is only relevant for validation purposes so it shouldn't matter that we don't store the proof
 		// in the node's execution database.
-		if messages[i].Message.Header.Kind == arbostypes.L1MessageType_L2Message &&
-			messages[i].Message.L2msg[0] == arbos.L2MessageKind_EspressoTx {
+		// TODO: investigate whether modifying the RLP encoding would be the better approach
+		if arbos.IsEspressoMsg(messages[i].Message) {
 			txs, jst, err := arbos.ParseEspressoMsg(messages[i].Message)
 			if err != nil {
 				return err
