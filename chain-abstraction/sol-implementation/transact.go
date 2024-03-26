@@ -79,7 +79,9 @@ func (a *AssertionChain) transact(
 		return nil, err
 	}
 
-	receipt, err = a.waitForTxToBeSafe(ctx, backend, tx, receipt)
+	ctxWaitSafe, cancelWaitSafe := context.WithTimeout(ctx, time.Minute*20)
+	defer cancelWaitSafe()
+	receipt, err = a.waitForTxToBeSafe(ctxWaitSafe, backend, tx, receipt)
 	if err != nil {
 		return nil, err
 	}
@@ -109,6 +111,9 @@ func (a *AssertionChain) waitForTxToBeSafe(
 	receipt *types.Receipt,
 ) (*types.Receipt, error) {
 	for {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
 		latestSafeHeader, err := backend.HeaderByNumber(ctx, util.GetSafeBlockNumber())
 		if err != nil {
 			return nil, err
