@@ -164,7 +164,7 @@ func (p *Producer) checkPending(ctx context.Context) ([]*Message, error) {
 		Messages: ids,
 	}).Result()
 	if err != nil {
-		return nil, fmt.Errorf("claiming ownership on messages: %v, error: %v", ids, err)
+		return nil, fmt.Errorf("claiming ownership on messages: %v, error: %w", ids, err)
 	}
 	var res []*Message
 	for _, msg := range claimedMsgs {
