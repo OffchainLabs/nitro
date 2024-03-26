@@ -751,7 +751,6 @@ func (p *DataPoster) postTransaction(ctx context.Context, dataCreatedAt time.Tim
 		return nil, fmt.Errorf("signing transaction: %w", err)
 	}
 	cumulativeWeight := lastCumulativeWeight + weight
-	fmt.Printf("Fee cap of %d, tip cap of %d, hash %#x\n", feeCap.Uint64(), tipCap.Uint64(), fullTx.Hash())
 
 	queuedTx := storage.QueuedTransaction{
 		DeprecatedData:         deprecatedData,

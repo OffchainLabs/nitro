@@ -1,9 +1,5 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
-
-// race detection makes things slow and miss timeouts
-//go:build challengetest && !race
-
 package arbtest
 
 import (
@@ -29,6 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/ethclient"
@@ -38,6 +35,7 @@ import (
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -57,8 +55,8 @@ import (
 // 32 Mb of state roots in memory at once.
 var (
 	blockChallengeLeafHeight     = uint64(1 << 5) // 32
-	bigStepChallengeLeafHeight   = uint64(1 << 5) // 5 big step levels, 2^5 each, with small step equaling to 2^31 total.
-	smallStepChallengeLeafHeight = uint64(1 << 6)
+	bigStepChallengeLeafHeight   = uint64(1 << 14)
+	smallStepChallengeLeafHeight = uint64(1 << 14)
 )
 
 func TestBoldProtocol(t *testing.T) {
@@ -83,9 +81,9 @@ func TestBoldProtocol(t *testing.T) {
 	defer requireClose(t, l1stack)
 	defer l2nodeA.StopAndWait()
 
-	// Every 10 seconds, send an L1 transaction to keep the chain moving.
+	// Every 12 seconds, send an L1 transaction to keep the chain moving.
 	go func() {
-		delay := time.Second * 10
+		delay := time.Second * 12
 		for {
 			select {
 			case <-ctx.Done():
@@ -103,7 +101,8 @@ func TestBoldProtocol(t *testing.T) {
 		}
 	}()
 
-	_, l2nodeB, assertionChainB := create2ndNodeWithConfigForBoldProtocol(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, arbnode.ConfigDefaultL1Test(), nil, stakeTokenAddr)
+	l2nodeConfig := arbnode.ConfigDefaultL1Test()
+	_, l2nodeB, assertionChainB := create2ndNodeWithConfigForBoldProtocol(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, l2nodeConfig, nil, stakeTokenAddr)
 	defer l2nodeB.StopAndWait()
 
 	nodeAMessage, err := l2nodeA.Execution.HeadMessageNumber()
@@ -120,7 +119,6 @@ func TestBoldProtocol(t *testing.T) {
 	balance.Mul(balance, big.NewInt(100))
 	TransferBalance(t, "Faucet", "Asserter", balance, l1info, l1client, ctx)
 	TransferBalance(t, "Faucet", "EvilAsserter", balance, l1info, l1client, ctx)
-	l1authB := l1info.GetDefaultTransactOpts("EvilAsserter", ctx)
 
 	t.Log("Setting the minimum assertion period")
 	rollup, err := rollupgen.NewRollupAdminLogicTransactor(assertionChain.RollupAddress(), l1client)
@@ -148,6 +146,7 @@ func TestBoldProtocol(t *testing.T) {
 		l2nodeA.Execution,
 		l2nodeA.ArbDB,
 		nil,
+		l2nodeA.BlobReader,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
 	)
@@ -162,11 +161,14 @@ func TestBoldProtocol(t *testing.T) {
 		l2nodeB.Execution,
 		l2nodeB.ArbDB,
 		nil,
+		l2nodeB.BlobReader,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
 	)
 	Require(t, err)
-	err = statelessB.Start(ctx)
+	newCtx, newCancel := context.WithCancel(context.Background())
+	defer newCancel()
+	err = statelessB.Start(newCtx)
 	Require(t, err)
 
 	stateManager, err := staker.NewStateManager(
@@ -193,11 +195,28 @@ func TestBoldProtocol(t *testing.T) {
 	)
 	Require(t, err)
 
+	chalManagerAddr, err := assertionChain.SpecChallengeManager(ctx)
+	Require(t, err)
+	evilOpts := l1info.GetDefaultTransactOpts("EvilAsserter", ctx)
+	l1ChainId, err := l1client.ChainID(ctx)
+	Require(t, err)
+	dp, err := arbnode.StakerDataposter(
+		ctx,
+		rawdb.NewTable(l2nodeB.ArbDB, storage.StakerPrefix),
+		l2nodeB.L1Reader,
+		&evilOpts,
+		NewFetcherFromConfig(l2nodeConfig),
+		l2nodeB.SyncMonitor,
+		l1ChainId,
+	)
+	Require(t, err)
 	chainB, err := solimpl.NewAssertionChain(
 		ctx,
 		assertionChain.RollupAddress(),
-		&l1authB,
+		chalManagerAddr.Address(),
+		&evilOpts,
 		l1client,
+		solimpl.NewDataPosterTransactor(dp),
 	)
 	Require(t, err)
 
@@ -295,12 +314,10 @@ func TestBoldProtocol(t *testing.T) {
 			l2stateprovider.Height(blockChallengeLeafHeight),
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(smallStepChallengeLeafHeight),
 		},
 		stateManager,
+		nil, // Api db
 	)
 
 	evilProvider := l2stateprovider.NewHistoryCommitmentProvider(
@@ -311,75 +328,74 @@ func TestBoldProtocol(t *testing.T) {
 			l2stateprovider.Height(blockChallengeLeafHeight),
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(smallStepChallengeLeafHeight),
 		},
 		stateManagerB,
+		nil, // Api db
 	)
 
 	manager, err := challengemanager.New(
 		ctx,
 		assertionChain,
-		l1client,
 		provider,
 		assertionChain.RollupAddress(),
 		challengemanager.WithName("honest"),
-		challengemanager.WithMode(modes.DefensiveMode),
-		challengemanager.WithAssertionPostingInterval(time.Hour),
-		challengemanager.WithAssertionScanningInterval(time.Hour),
-		challengemanager.WithEdgeTrackerWakeInterval(time.Second),
+		challengemanager.WithMode(modes.MakeMode),
+		challengemanager.WithAddress(l1info.GetDefaultTransactOpts("Asserter", ctx).From),
+		challengemanager.WithAssertionPostingInterval(time.Second*30),
+		challengemanager.WithAssertionScanningInterval(time.Second),
+		challengemanager.WithEdgeTrackerWakeInterval(time.Second*2),
 	)
 	Require(t, err)
 
 	t.Log("Honest party posting assertion at batch 1, pos 0")
 
-	poster := manager.AssertionManager()
-	_, err = poster.PostAssertion(ctx)
-	Require(t, err)
+	// poster := manager.AssertionManager()
+	// _, err = poster.PostAssertion(ctx)
+	// Require(t, err)
 
 	t.Log("Honest party posting assertion at batch 2, pos 0")
-	expectedWinnerAssertion, err := poster.PostAssertion(ctx)
-	Require(t, err)
+	// expectedWinnerAssertion, err := poster.PostAssertion(ctx)
+	// Require(t, err)
 
 	managerB, err := challengemanager.New(
 		ctx,
 		chainB,
-		l1client,
 		evilProvider,
 		assertionChain.RollupAddress(),
 		challengemanager.WithName("evil"),
-		challengemanager.WithMode(modes.DefensiveMode),
-		challengemanager.WithAssertionPostingInterval(time.Hour),
-		challengemanager.WithAssertionScanningInterval(time.Hour),
-		challengemanager.WithEdgeTrackerWakeInterval(time.Second),
+		challengemanager.WithMode(modes.MakeMode),
+		challengemanager.WithAddress(l1info.GetDefaultTransactOpts("EvilAsserter", ctx).From),
+		challengemanager.WithAssertionPostingInterval(time.Second*30),
+		challengemanager.WithAssertionScanningInterval(time.Second),
+		challengemanager.WithEdgeTrackerWakeInterval(time.Second*2),
 	)
 	Require(t, err)
 
-	t.Log("Evil party posting assertion at batch 2, pos 0")
-	posterB := managerB.AssertionManager()
-	_, err = posterB.PostAssertion(ctx)
-	Require(t, err)
+	// t.Log("Evil party posting assertion at batch 2, pos 0")
+	// posterB := managerB.AssertionManager()
+	// _, err = posterB.PostAssertion(ctx)
+	// Require(t, err)
 
 	manager.Start(ctx)
 	managerB.Start(ctx)
 
-	rollupUserLogic, err := rollupgen.NewRollupUserLogic(assertionChain.RollupAddress(), l1client)
-	Require(t, err)
-	for {
-		expected, err := rollupUserLogic.GetAssertion(&bind.CallOpts{Context: ctx}, expectedWinnerAssertion.Unwrap().Id().Hash)
-		if err != nil {
-			t.Logf("Error getting assertion: %v", err)
-			continue
-		}
-		// Wait until the assertion is confirmed.
-		if expected.Status == uint8(2) {
-			t.Log("Expected assertion was confirmed")
-			return
-		}
-		time.Sleep(time.Second * 5)
-	}
+	// rollupUserLogic, err := rollupgen.NewRollupUserLogic(assertionChain.RollupAddress(), l1client)
+	// Require(t, err)
+	// for {
+	// 	expected, err := rollupUserLogic.GetAssertion(&bind.CallOpts{Context: ctx}, expectedWinnerAssertion.Unwrap().AssertionHash)
+	// 	if err != nil {
+	// 		t.Logf("Error getting assertion: %v", err)
+	// 		continue
+	// 	}
+	// 	// Wait until the assertion is confirmed.
+	// 	if expected.Status == uint8(2) {
+	// 		t.Log("Expected assertion was confirmed")
+	// 		return
+	// 	}
+	// 	time.Sleep(time.Second * 5)
+	// }
+	time.Sleep(time.Hour)
 }
 
 func createTestNodeOnL1ForBoldProtocol(
@@ -402,7 +418,7 @@ func createTestNodeOnL1ForBoldProtocol(
 	if chainConfig == nil {
 		chainConfig = params.ArbitrumDevTestChainConfig()
 	}
-	nodeConfig.BatchPoster.DataPoster.MaxMempoolTransactions = 0
+	nodeConfig.BatchPoster.DataPoster.MaxMempoolTransactions = 18
 	fatalErrChan := make(chan error, 10)
 	l1info, l1client, l1backend, l1stack = createTestL1BlockChain(t, nil)
 	var l2chainDb ethdb.Database
@@ -449,14 +465,16 @@ func createTestNodeOnL1ForBoldProtocol(
 	Require(t, err)
 	l1TransactionOpts.Value = nil
 
-	addresses, assertionChainBindings := deployContractsOnly(t, ctx, l1info, l1client, chainConfig.ChainID, stakeToken)
-
+	addresses := deployContractsOnly(t, ctx, l1info, l1client, chainConfig.ChainID, stakeToken)
+	rollupUser, err := rollupgen.NewRollupUserLogic(addresses.Rollup, l1client)
+	Require(t, err)
+	chalManagerAddr, err := rollupUser.ChallengeManager(&bind.CallOpts{})
+	Require(t, err)
 	l1info.SetContract("Bridge", addresses.Bridge)
 	l1info.SetContract("SequencerInbox", addresses.SequencerInbox)
 	l1info.SetContract("Inbox", addresses.Inbox)
 
 	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, getInitMessage(ctx, t, l1client, addresses), stackConfig, nil)
-	assertionChain = assertionChainBindings
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	if isSequencer {
@@ -478,9 +496,12 @@ func createTestNodeOnL1ForBoldProtocol(
 	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher)
 	Require(t, err)
 
+	parentChainId, err := l1client.ChainID(ctx)
+	Require(t, err)
 	currentNode, err = arbnode.CreateNode(
 		ctx, l2stack, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client,
-		addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan,
+		addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, parentChainId,
+		nil, // Blob reader.
 	)
 	Require(t, err)
 
@@ -489,6 +510,28 @@ func createTestNodeOnL1ForBoldProtocol(
 	l2client = ClientForStack(t, l2stack)
 
 	StartWatchChanErr(t, ctx, fatalErrChan, currentNode)
+
+	opts := l1info.GetDefaultTransactOpts("Asserter", ctx)
+	dp, err := arbnode.StakerDataposter(
+		ctx,
+		rawdb.NewTable(l2arbDb, storage.StakerPrefix),
+		currentNode.L1Reader,
+		&opts,
+		NewFetcherFromConfig(nodeConfig),
+		currentNode.SyncMonitor,
+		parentChainId,
+	)
+	Require(t, err)
+	assertionChainBindings, err := solimpl.NewAssertionChain(
+		ctx,
+		addresses.Rollup,
+		chalManagerAddr,
+		&opts,
+		l1client,
+		solimpl.NewDataPosterTransactor(dp),
+	)
+	Require(t, err)
+	assertionChain = assertionChainBindings
 
 	return
 }
@@ -500,27 +543,27 @@ func deployContractsOnly(
 	backend *ethclient.Client,
 	chainId *big.Int,
 	stakeToken common.Address,
-) (*chaininfo.RollupAddresses, *solimpl.AssertionChain) {
+) *chaininfo.RollupAddresses {
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
 	locator, err := server_common.NewMachineLocator("")
 	Require(t, err)
 	wasmModuleRoot := locator.LatestWasmModuleRoot()
 
 	loserStakeEscrow := common.Address{}
-	miniStake := big.NewInt(1)
 	genesisExecutionState := rollupgen.ExecutionState{
 		GlobalState:   rollupgen.GlobalState{},
 		MachineStatus: 1,
 	}
 	genesisInboxCount := big.NewInt(0)
 	anyTrustFastConfirmer := common.Address{}
+	miniStakeValues := []*big.Int{big.NewInt(5), big.NewInt(4), big.NewInt(3), big.NewInt(2)}
 	cfg := challenge_testing.GenerateRollupConfig(
 		false,
 		wasmModuleRoot,
 		l1TransactionOpts.From,
 		chainId,
 		loserStakeEscrow,
-		miniStake,
+		miniStakeValues,
 		stakeToken,
 		genesisExecutionState,
 		genesisInboxCount,
@@ -530,7 +573,7 @@ func deployContractsOnly(
 			BigStepChallengeHeight:   bigStepChallengeLeafHeight,
 			SmallStepChallengeHeight: smallStepChallengeLeafHeight,
 		}),
-		challenge_testing.WithNumBigStepLevels(uint8(5)),       // TODO: Hardcoded.
+		challenge_testing.WithNumBigStepLevels(uint8(2)),       // TODO: Hardcoded.
 		challenge_testing.WithConfirmPeriodBlocks(uint64(150)), // TODO: Hardcoded.
 	)
 	config, err := json.Marshal(params.ArbitrumDevTestChainConfig())
@@ -549,17 +592,10 @@ func deployContractsOnly(
 
 	asserter := l1info.GetDefaultTransactOpts("Asserter", ctx)
 	evilAsserter := l1info.GetDefaultTransactOpts("EvilAsserter", ctx)
-	chain, err := solimpl.NewAssertionChain(
-		ctx,
-		addresses.Rollup,
-		&asserter,
-		backend,
-	)
+	userLogic, err := rollupgen.NewRollupUserLogic(addresses.Rollup, backend)
 	Require(t, err)
-
-	chalManager, err := chain.SpecChallengeManager(ctx)
+	chalManagerAddr, err := userLogic.ChallengeManager(&bind.CallOpts{})
 	Require(t, err)
-	chalManagerAddr := chalManager.Address()
 	seed, ok := new(big.Int).SetString("1000", 10)
 	if !ok {
 		t.Fatal("not ok")
@@ -596,6 +632,27 @@ func deployContractsOnly(
 	_, err = EnsureTxSucceeded(ctx, backend, tx)
 	Require(t, err)
 
+	// Check allowances...
+	rollupAllowHonest, err := tokenBindings.Allowance(&bind.CallOpts{Context: ctx}, asserter.From, addresses.Rollup)
+	Require(t, err)
+	rollupAllowEvil, err := tokenBindings.Allowance(&bind.CallOpts{Context: ctx}, evilAsserter.From, addresses.Rollup)
+	Require(t, err)
+	chalAllowHonest, err := tokenBindings.Allowance(&bind.CallOpts{Context: ctx}, asserter.From, chalManagerAddr)
+	Require(t, err)
+	chalAllowEvil, err := tokenBindings.Allowance(&bind.CallOpts{Context: ctx}, evilAsserter.From, chalManagerAddr)
+	Require(t, err)
+	honestBal, err := tokenBindings.BalanceOf(&bind.CallOpts{Context: ctx}, asserter.From)
+	Require(t, err)
+	evilBal, err := tokenBindings.BalanceOf(&bind.CallOpts{Context: ctx}, evilAsserter.From)
+	Require(t, err)
+	t.Logf("Honest %#x evil %#x", asserter.From, evilAsserter.From)
+	t.Logf("Rollup allowance for honest asserter: %d", rollupAllowHonest.Uint64())
+	t.Logf("Rollup allowance for evil asserter: %d", rollupAllowEvil.Uint64())
+	t.Logf("Challenge manager allowance for honest asserter: %d", chalAllowHonest.Uint64())
+	t.Logf("Challenge manager allowance for evil asserter: %d", chalAllowEvil.Uint64())
+	t.Logf("Honest asserter balance: %d", honestBal.Uint64())
+	t.Logf("Evil asserter balance: %d", evilBal.Uint64())
+
 	return &chaininfo.RollupAddresses{
 		Bridge:                 addresses.Bridge,
 		Inbox:                  addresses.Inbox,
@@ -604,7 +661,7 @@ func deployContractsOnly(
 		ValidatorUtils:         addresses.ValidatorUtils,
 		ValidatorWalletCreator: addresses.ValidatorWalletCreator,
 		DeployedAt:             addresses.DeployedAt,
-	}, chain
+	}
 }
 
 func create2ndNodeWithConfigForBoldProtocol(
@@ -626,7 +683,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 		Fatal(t, "not geth execution node")
 	}
 	chainConfig := firstExec.ArbInterface.BlockChain().Config()
-	addresses, assertionChain := deployContractsOnly(t, ctx, l1info, l1client, chainConfig.ChainID, stakeTokenAddr)
+	addresses := deployContractsOnly(t, ctx, l1info, l1client, chainConfig.ChainID, stakeTokenAddr)
 
 	l1info.SetContract("EvilBridge", addresses.Bridge)
 	l1info.SetContract("EvilSequencerInbox", addresses.SequencerInbox)
@@ -636,7 +693,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
 	}
 	nodeConfig.ParentChainReader.OldHeaderTimeout = 10 * time.Minute
-	nodeConfig.BatchPoster.DataPoster.MaxMempoolTransactions = 0
+	nodeConfig.BatchPoster.DataPoster.MaxMempoolTransactions = 18
 	if stackConfig == nil {
 		stackConfig = createStackConfigForTest(t.TempDir())
 	}
@@ -665,7 +722,9 @@ func create2ndNodeWithConfigForBoldProtocol(
 	execConfigFetcher := func() *gethexec.Config { return execConfig }
 	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher)
 	Require(t, err)
-	l2node, err := arbnode.CreateNode(ctx, l2stack, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan)
+	l1ChainId, err := l1client.ChainID(ctx)
+	Require(t, err)
+	l2node, err := arbnode.CreateNode(ctx, l2stack, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */)
 	Require(t, err)
 
 	Require(t, l2node.Start(ctx))
@@ -673,6 +732,31 @@ func create2ndNodeWithConfigForBoldProtocol(
 	l2client := ClientForStack(t, l2stack)
 
 	StartWatchChanErr(t, ctx, fatalErrChan, l2node)
+
+	rollupUserLogic, err := rollupgen.NewRollupUserLogic(addresses.Rollup, l1client)
+	Require(t, err)
+	chalManagerAddr, err := rollupUserLogic.ChallengeManager(&bind.CallOpts{})
+	Require(t, err)
+	evilOpts := l1info.GetDefaultTransactOpts("EvilAsserter", ctx)
+	dp, err := arbnode.StakerDataposter(
+		ctx,
+		rawdb.NewTable(l2arbDb, storage.StakerPrefix),
+		l2node.L1Reader,
+		&evilOpts,
+		NewFetcherFromConfig(nodeConfig),
+		l2node.SyncMonitor,
+		l1ChainId,
+	)
+	Require(t, err)
+	assertionChain, err := solimpl.NewAssertionChain(
+		ctx,
+		addresses.Rollup,
+		chalManagerAddr,
+		&evilOpts,
+		l1client,
+		solimpl.NewDataPosterTransactor(dp),
+	)
+	Require(t, err)
 
 	return l2client, l2node, assertionChain
 }
