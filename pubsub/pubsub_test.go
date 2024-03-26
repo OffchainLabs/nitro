@@ -22,37 +22,36 @@ var (
 	messagesCount  = 100
 )
 
-type testConsumer struct {
-	consumer *Consumer
-	cancel   context.CancelFunc
-}
-
 func createGroup(ctx context.Context, t *testing.T, client *redis.Client) {
 	t.Helper()
-	_, err := client.XGroupCreateMkStream(ctx, streamName, "default", "$").Result()
+	_, err := client.XGroupCreateMkStream(ctx, streamName, defaultGroup, "$").Result()
 	if err != nil {
 		t.Fatalf("Error creating stream group: %v", err)
 	}
 }
 
-func newProducerConsumers(ctx context.Context, t *testing.T) (*Producer, []*testConsumer) {
+func newProducerConsumers(ctx context.Context, t *testing.T) (*Producer, []*Consumer) {
 	t.Helper()
-	// tmpI, tmpT := KeepAliveInterval, KeepAliveTimeout
-	// KeepAliveInterval, KeepAliveTimeout = 5*time.Millisecond, 30*time.Millisecond
-	// t.Cleanup(func() { KeepAliveInterval, KeepAliveTimeout = tmpI, tmpT })
-
 	redisURL := redisutil.CreateTestRedis(ctx, t)
-	producer, err := NewProducer(&ProducerConfig{RedisURL: redisURL, RedisStream: streamName})
+	producer, err := NewProducer(
+		&ProducerConfig{
+			RedisURL:             redisURL,
+			RedisStream:          streamName,
+			RedisGroup:           defaultGroup,
+			CheckPendingInterval: 10 * time.Millisecond,
+			KeepAliveInterval:    5 * time.Millisecond,
+			KeepAliveTimeout:     20 * time.Millisecond,
+		})
 	if err != nil {
 		t.Fatalf("Error creating new producer: %v", err)
 	}
-	var consumers []*testConsumer
+	var consumers []*Consumer
 	for i := 0; i < consumersCount; i++ {
-		consumerCtx, cancel := context.WithCancel(ctx)
-		c, err := NewConsumer(consumerCtx,
+		c, err := NewConsumer(ctx,
 			&ConsumerConfig{
 				RedisURL:          redisURL,
 				RedisStream:       streamName,
+				RedisGroup:        defaultGroup,
 				KeepAliveInterval: 5 * time.Millisecond,
 				KeepAliveTimeout:  30 * time.Millisecond,
 			},
@@ -60,10 +59,7 @@ func newProducerConsumers(ctx context.Context, t *testing.T) (*Producer, []*test
 		if err != nil {
 			t.Fatalf("Error creating new consumer: %v", err)
 		}
-		consumers = append(consumers, &testConsumer{
-			consumer: c,
-			cancel:   cancel,
-		})
+		consumers = append(consumers, c)
 	}
 	createGroup(ctx, t, producer.client)
 	return producer, consumers
@@ -89,34 +85,32 @@ func wantMessages(n int) []any {
 }
 
 func TestProduce(t *testing.T) {
-	log.Root().SetHandler(log.LvlFilterHandler(log.LvlTrace, log.StreamHandler(os.Stderr, log.TerminalFormat(true))))
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	// log.Root().SetHandler(log.LvlFilterHandler(log.LvlTrace, log.StreamHandler(os.Stderr, log.TerminalFormat(true))))
+	ctx := context.Background()
 	producer, consumers := newProducerConsumers(ctx, t)
-	consumerCtx, cancelConsumers := context.WithTimeout(ctx, time.Second)
 	gotMessages := messagesMap(consumersCount)
 	for idx, c := range consumers {
-		idx, c := idx, c.consumer
-		go func() {
-			// Give some time to the consumers to do their heartbeat.
-			time.Sleep(2 * c.keepAliveInterval)
-			for {
-				res, err := c.Consume(consumerCtx)
-				if err != nil {
-					if !errors.Is(err, context.DeadlineExceeded) {
-						t.Errorf("Consume() unexpected error: %v", err)
+		idx, c := idx, c
+		c.Start(ctx)
+		c.StopWaiter.LaunchThread(
+			func(ctx context.Context) {
+				for {
+					res, err := c.Consume(ctx)
+					if err != nil {
+						if !errors.Is(err, context.Canceled) {
+							t.Errorf("Consume() unexpected error: %v", err)
+						}
+						return
 					}
-					return
+					if res == nil {
+						continue
+					}
+					gotMessages[idx][res.ID] = res.Value
+					if err := c.ACK(ctx, res.ID); err != nil {
+						t.Errorf("Error ACKing message: %v, error: %v", res.ID, err)
+					}
 				}
-				if res == nil {
-					continue
-				}
-				gotMessages[idx][res.ID] = res.Value
-				if err := c.ACK(consumerCtx, res.ID); err != nil {
-					t.Errorf("Error ACKing message: %v, error: %v", res.ID, err)
-				}
-			}
-		}()
+			})
 	}
 
 	for i := 0; i < messagesCount; i++ {
@@ -125,8 +119,12 @@ func TestProduce(t *testing.T) {
 			t.Errorf("Produce() unexpected error: %v", err)
 		}
 	}
-	time.Sleep(time.Second)
-	cancelConsumers()
+	producer.StopWaiter.StopAndWait()
+	time.Sleep(50 * time.Millisecond)
+	for _, c := range consumers {
+		c.StopAndWait()
+	}
+
 	got, err := mergeValues(gotMessages)
 	if err != nil {
 		t.Fatalf("mergeMaps() unexpected error: %v", err)
@@ -139,50 +137,51 @@ func TestProduce(t *testing.T) {
 
 func TestClaimingOwnership(t *testing.T) {
 	log.Root().SetHandler(log.LvlFilterHandler(log.LvlTrace, log.StreamHandler(os.Stderr, log.TerminalFormat(true))))
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	ctx := context.Background()
 	producer, consumers := newProducerConsumers(ctx, t)
-	consumerCtx, cancelConsumers := context.WithCancel(ctx)
+	producer.Start(ctx)
 	gotMessages := messagesMap(consumersCount)
 
 	// Consumer messages in every third consumer but don't ack them to check
 	// that other consumers will claim ownership on those messages.
 	for i := 0; i < len(consumers); i += 3 {
 		i := i
-		consumers[i].cancel()
-		go func() {
-			if _, err := consumers[i].consumer.Consume(context.Background()); err != nil {
-				t.Errorf("Error consuming message: %v", err)
-			}
-		}()
+		if _, err := consumers[i].Consume(ctx); err != nil {
+			t.Errorf("Error consuming message: %v", err)
+		}
+		consumers[i].StopAndWait()
 	}
 	var total atomic.Uint64
 
 	for idx, c := range consumers {
-		idx, c := idx, c.consumer
-		go func() {
-			for {
-				if idx%3 == 0 {
-					continue
-				}
-				res, err := c.Consume(consumerCtx)
-				if err != nil {
-					if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
-						t.Errorf("Consume() unexpected error: %v", err)
+		idx, c := idx, c
+		if !c.StopWaiter.Started() {
+			c.Start(ctx)
+		}
+		c.StopWaiter.LaunchThread(
+			func(ctx context.Context) {
+				for {
+					if idx%3 == 0 {
 						continue
 					}
-					return
+					res, err := c.Consume(ctx)
+					if err != nil {
+						if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
+							t.Errorf("Consume() unexpected error: %v", err)
+							continue
+						}
+						return
+					}
+					if res == nil {
+						continue
+					}
+					gotMessages[idx][res.ID] = res.Value
+					if err := c.ACK(ctx, res.ID); err != nil {
+						t.Errorf("Error ACKing message: %v, error: %v", res.ID, err)
+					}
+					total.Add(1)
 				}
-				if res == nil {
-					continue
-				}
-				gotMessages[idx][res.ID] = res.Value
-				if err := c.ACK(consumerCtx, res.ID); err != nil {
-					t.Errorf("Error ACKing message: %v, error: %v", res.ID, err)
-				}
-				total.Add(1)
-			}
-		}()
+			})
 	}
 
 	for i := 0; i < messagesCount; i++ {
@@ -199,7 +198,9 @@ func TestClaimingOwnership(t *testing.T) {
 		}
 		break
 	}
-	cancelConsumers()
+	for _, c := range consumers {
+		c.StopWaiter.StopAndWait()
+	}
 	got, err := mergeValues(gotMessages)
 	if err != nil {
 		t.Fatalf("mergeMaps() unexpected error: %v", err)
