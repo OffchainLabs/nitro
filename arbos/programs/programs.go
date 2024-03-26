@@ -163,7 +163,7 @@ func (p Programs) CallProgram(
 
 	// pay for program init
 	open, ever := statedb.GetStylusPages()
-	model := NewMemoryModel(params.FreePages, params.FreePages)
+	model := NewMemoryModel(params.FreePages, params.PageGas)
 	memoryCost := model.GasCost(program.footprint, open, ever)
 	callCost := uint64(program.initGas) + uint64(params.MinInitGas)
 	cost := common.SaturatingUAdd(memoryCost, callCost)
