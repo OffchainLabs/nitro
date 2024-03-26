@@ -8,7 +8,6 @@ import (
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/containers/threadsafe"
-	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
@@ -68,7 +67,9 @@ func Test_extractAssertionFromEvent(t *testing.T) {
 	aliceStateManager, err := statemanager.NewForSimpleMachine(stateManagerOpts...)
 	require.NoError(t, err)
 
-	postState, err := aliceStateManager.ExecutionStateAfterBatchCount(ctx, 1)
+	preState, err := aliceStateManager.ExecutionStateAfterPreviousState(ctx, 0, nil, 1<<26)
+	require.NoError(t, err)
+	postState, err := aliceStateManager.ExecutionStateAfterPreviousState(ctx, 1, &preState.GlobalState, 1<<26)
 	require.NoError(t, err)
 	assertion, err := aliceChain.NewStakeOnNewAssertion(
 		ctx,
@@ -99,13 +100,22 @@ func Test_extractAssertionFromEvent(t *testing.T) {
 func Test_findCanonicalAssertionBranch(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	agreesWithIds := map[uint64]bool{
-		2: true,
-		3: false,
-		4: true,
-		5: false,
-		6: true,
-		7: false,
+	agreesWithIds := map[uint64]*protocol.AssertionCreatedInfo{
+		2: {
+			ParentAssertionHash: numToHash(1),
+			AssertionHash:       numToHash(2),
+			AfterState:          numToState(2),
+		},
+		4: {
+			ParentAssertionHash: numToHash(2),
+			AssertionHash:       numToHash(4),
+			AfterState:          numToState(4),
+		},
+		6: {
+			ParentAssertionHash: numToHash(4),
+			AssertionHash:       numToHash(6),
+			AfterState:          numToState(6),
+		},
 	}
 	provider := &mockStateProvider{
 		agreesWith: agreesWithIds,
@@ -116,6 +126,11 @@ func Test_findCanonicalAssertionBranch(t *testing.T) {
 		assertionChainData: &assertionChainData{
 			latestAgreedAssertion: numToAssertionHash(1),
 			canonicalAssertions:   make(map[protocol.AssertionHash]*protocol.AssertionCreatedInfo),
+		},
+		layerZeroHeightsCache: &protocol.LayerZeroHeights{
+			BlockChallengeHeight:     32,
+			BigStepChallengeHeight:   32,
+			SmallStepChallengeHeight: 32,
 		},
 	}
 	go func() {
@@ -129,36 +144,66 @@ func Test_findCanonicalAssertionBranch(t *testing.T) {
 	}()
 	require.NoError(t, manager.findCanonicalAssertionBranch(
 		ctx,
-		[]*protocol.AssertionCreatedInfo{
+		[]assertionAndParentCreationInfo{
 			{
-				ParentAssertionHash: numToHash(1),
-				AssertionHash:       numToHash(2),
-				AfterState:          numToState(2),
+				parent: &protocol.AssertionCreatedInfo{
+					InboxMaxCount: big.NewInt(2),
+				},
+				assertion: &protocol.AssertionCreatedInfo{
+					ParentAssertionHash: numToHash(1),
+					AssertionHash:       numToHash(2),
+					AfterState:          numToState(2),
+				},
 			},
 			{
-				ParentAssertionHash: numToHash(1),
-				AssertionHash:       numToHash(3),
-				AfterState:          numToState(3),
+				parent: &protocol.AssertionCreatedInfo{
+					InboxMaxCount: big.NewInt(3),
+				},
+				assertion: &protocol.AssertionCreatedInfo{
+					ParentAssertionHash: numToHash(1),
+					AssertionHash:       numToHash(3),
+					AfterState:          numToState(3),
+				},
 			},
 			{
-				ParentAssertionHash: numToHash(2),
-				AssertionHash:       numToHash(4),
-				AfterState:          numToState(4),
+				parent: &protocol.AssertionCreatedInfo{
+					InboxMaxCount: big.NewInt(4),
+				},
+				assertion: &protocol.AssertionCreatedInfo{
+					ParentAssertionHash: numToHash(2),
+					AssertionHash:       numToHash(4),
+					AfterState:          numToState(4),
+				},
 			},
 			{
-				ParentAssertionHash: numToHash(2),
-				AssertionHash:       numToHash(5),
-				AfterState:          numToState(5),
+				parent: &protocol.AssertionCreatedInfo{
+					InboxMaxCount: big.NewInt(5),
+				},
+				assertion: &protocol.AssertionCreatedInfo{
+					ParentAssertionHash: numToHash(2),
+					AssertionHash:       numToHash(5),
+					AfterState:          numToState(5),
+				},
 			},
 			{
-				ParentAssertionHash: numToHash(4),
-				AssertionHash:       numToHash(6),
-				AfterState:          numToState(6),
+				parent: &protocol.AssertionCreatedInfo{
+					InboxMaxCount: big.NewInt(6),
+				},
+				assertion: &protocol.AssertionCreatedInfo{
+					ParentAssertionHash: numToHash(4),
+					AssertionHash:       numToHash(6),
+					AfterState:          numToState(6),
+				},
 			},
 			{
-				ParentAssertionHash: numToHash(4),
-				AssertionHash:       numToHash(7),
-				AfterState:          numToState(7),
+				parent: &protocol.AssertionCreatedInfo{
+					InboxMaxCount: big.NewInt(7),
+				},
+				assertion: &protocol.AssertionCreatedInfo{
+					ParentAssertionHash: numToHash(4),
+					AssertionHash:       numToHash(7),
+					AfterState:          numToState(7),
+				},
 			},
 		},
 	))
@@ -189,18 +234,24 @@ func numToState(i int) rollupgen.ExecutionState {
 }
 
 type mockStateProvider struct {
-	agreesWith map[uint64]bool
+	agreesWith map[uint64]*protocol.AssertionCreatedInfo
 }
 
-func (m *mockStateProvider) AgreesWithExecutionState(
+func (m *mockStateProvider) ExecutionStateAfterPreviousState(
 	ctx context.Context,
-	executionState *protocol.ExecutionState,
-) error {
-	_, ok := m.agreesWith[executionState.GlobalState.Batch]
+	maxInboxCount uint64,
+	previousGlobalState *protocol.GoGlobalState,
+	maxNumberOfBlocks uint64,
+) (*protocol.ExecutionState, error) {
+	agreement, ok := m.agreesWith[maxInboxCount]
 	if !ok {
-		return l2stateprovider.ErrNoExecutionState
+		return &protocol.ExecutionState{
+			GlobalState: protocol.GoGlobalState{
+				BlockHash: common.BytesToHash([]byte("wrong")),
+			},
+		}, nil
 	}
-	return nil
+	return protocol.GoExecutionStateFromSolidity(agreement.AfterState), nil
 }
 
 func Test_respondToAnyInvalidAssertions(t *testing.T) {
@@ -212,6 +263,11 @@ func Test_respondToAnyInvalidAssertions(t *testing.T) {
 		assertionChainData: &assertionChainData{
 			latestAgreedAssertion: numToAssertionHash(1),
 			canonicalAssertions:   make(map[protocol.AssertionHash]*protocol.AssertionCreatedInfo),
+		},
+		layerZeroHeightsCache: &protocol.LayerZeroHeights{
+			BlockChallengeHeight:     32,
+			BigStepChallengeHeight:   32,
+			SmallStepChallengeHeight: 32,
 		},
 	}
 	go func() {
@@ -239,16 +295,22 @@ func Test_respondToAnyInvalidAssertions(t *testing.T) {
 		poster := &mockRivalPoster{}
 		require.NoError(t, manager.respondToAnyInvalidAssertions(
 			ctx,
-			[]*protocol.AssertionCreatedInfo{
+			[]assertionAndParentCreationInfo{
 				{
-					ParentAssertionHash: numToHash(2),
-					AssertionHash:       numToHash(4),
-					AfterState:          numToState(4),
+					parent: &protocol.AssertionCreatedInfo{},
+					assertion: &protocol.AssertionCreatedInfo{
+						ParentAssertionHash: numToHash(2),
+						AssertionHash:       numToHash(4),
+						AfterState:          numToState(4),
+					},
 				},
 				{
-					ParentAssertionHash: numToHash(4),
-					AssertionHash:       numToHash(6),
-					AfterState:          numToState(6),
+					parent: &protocol.AssertionCreatedInfo{},
+					assertion: &protocol.AssertionCreatedInfo{
+						ParentAssertionHash: numToHash(4),
+						AssertionHash:       numToHash(6),
+						AfterState:          numToState(6),
+					},
 				},
 			},
 			poster,
@@ -259,16 +321,22 @@ func Test_respondToAnyInvalidAssertions(t *testing.T) {
 		poster := &mockRivalPoster{}
 		require.NoError(t, manager.respondToAnyInvalidAssertions(
 			ctx,
-			[]*protocol.AssertionCreatedInfo{
+			[]assertionAndParentCreationInfo{
 				{
-					ParentAssertionHash: numToHash(200),
-					AssertionHash:       numToHash(400),
-					AfterState:          numToState(400),
+					parent: &protocol.AssertionCreatedInfo{},
+					assertion: &protocol.AssertionCreatedInfo{
+						ParentAssertionHash: numToHash(200),
+						AssertionHash:       numToHash(400),
+						AfterState:          numToState(400),
+					},
 				},
 				{
-					ParentAssertionHash: numToHash(400),
-					AssertionHash:       numToHash(600),
-					AfterState:          numToState(600),
+					parent: &protocol.AssertionCreatedInfo{},
+					assertion: &protocol.AssertionCreatedInfo{
+						ParentAssertionHash: numToHash(400),
+						AssertionHash:       numToHash(600),
+						AfterState:          numToState(600),
+					},
 				},
 			},
 			poster,
@@ -279,17 +347,23 @@ func Test_respondToAnyInvalidAssertions(t *testing.T) {
 		poster := &mockRivalPoster{}
 		require.NoError(t, manager.respondToAnyInvalidAssertions(
 			ctx,
-			[]*protocol.AssertionCreatedInfo{
+			[]assertionAndParentCreationInfo{
 				// Some evil hashes which must be acted upon.
 				{
-					ParentAssertionHash: numToHash(2),
-					AssertionHash:       numToHash(3),
-					AfterState:          numToState(3),
+					parent: &protocol.AssertionCreatedInfo{},
+					assertion: &protocol.AssertionCreatedInfo{
+						ParentAssertionHash: numToHash(2),
+						AssertionHash:       numToHash(3),
+						AfterState:          numToState(3),
+					},
 				},
 				{
-					ParentAssertionHash: numToHash(4),
-					AssertionHash:       numToHash(5),
-					AfterState:          numToState(5),
+					parent: &protocol.AssertionCreatedInfo{},
+					assertion: &protocol.AssertionCreatedInfo{
+						ParentAssertionHash: numToHash(4),
+						AssertionHash:       numToHash(5),
+						AfterState:          numToState(5),
+					},
 				},
 			},
 			poster,

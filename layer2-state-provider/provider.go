@@ -17,10 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
-var (
-	ErrNoExecutionState = errors.New("chain does not have execution state")
-	ErrChainCatchingUp  = errors.New("chain is catching up to the execution state")
-)
+var ErrChainCatchingUp = errors.New("chain is catching up to the execution state")
 
 // Batch index for an Arbitrum L2 state.
 type Batch uint64
@@ -55,16 +52,10 @@ type Provider interface {
 }
 
 type ExecutionProvider interface {
-	// Produces the L2 execution state to assert to after the processing the given batch count.
-	ExecutionStateAfterBatchCount(ctx context.Context, batchCount uint64) (*protocol.ExecutionState, error)
-	ExecutionStateAgreementChecker
-}
-
-type ExecutionStateAgreementChecker interface {
-	// If the state manager locally has this execution state, returns its message count and no error.
-	// Returns ErrChainCatchingUp if catching up to chain.
-	// Returns ErrNoExecutionState if the state manager does not have this execution state.
-	AgreesWithExecutionState(ctx context.Context, state *protocol.ExecutionState) error
+	// Produces the L2 execution state to assert to after the previous assertion state.
+	// Returns either the state at the batch count maxInboxCount or the state maxNumberOfBlocks after previousGlobalState,
+	// whichever is an earlier state. If previousGlobalState is nil, this function simply returns the state at maxInboxCount batches.
+	ExecutionStateAfterPreviousState(ctx context.Context, maxInboxCount uint64, previousGlobalState *protocol.GoGlobalState, maxNumberOfBlocks uint64) (*protocol.ExecutionState, error)
 }
 
 type HistoryCommitmentRequest struct {

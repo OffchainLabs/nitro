@@ -212,29 +212,29 @@ func (s *L2StateBackend) UpdateAPIDatabase(database db.Database) {
 }
 
 // ExecutionStateAfterBatchCount produces the l2 state to assert at the message number specified.
-func (s *L2StateBackend) ExecutionStateAfterBatchCount(ctx context.Context, batchCount uint64) (*protocol.ExecutionState, error) {
+func (s *L2StateBackend) ExecutionStateAfterPreviousState(ctx context.Context, maxInboxCount uint64, previousGlobalState *protocol.GoGlobalState, maxNumberOfBlocks uint64) (*protocol.ExecutionState, error) {
 	if len(s.executionStates) == 0 {
 		return nil, errors.New("no execution states")
 	}
-	if batchCount >= uint64(len(s.executionStates)) {
-		return nil, fmt.Errorf("message number %v is greater than number of execution states %v", batchCount, len(s.executionStates))
+	if maxInboxCount >= uint64(len(s.executionStates)) {
+		return nil, fmt.Errorf("message number %v is greater than number of execution states %v", maxInboxCount, len(s.executionStates))
 	}
+	blocksSincePrevious := -1
 	for _, st := range s.executionStates {
-		if st.GlobalState.Batch == batchCount {
+		if previousGlobalState != nil && st.GlobalState.Equals(*previousGlobalState) {
+			blocksSincePrevious = 0
+		}
+		if st.GlobalState.Batch == maxInboxCount || (blocksSincePrevious >= 0 && uint64(blocksSincePrevious) >= maxNumberOfBlocks) {
+			if blocksSincePrevious < 0 && previousGlobalState != nil {
+				return nil, fmt.Errorf("missing previous global state %+v", previousGlobalState)
+			}
 			return st, nil
 		}
-	}
-	return nil, fmt.Errorf("no execution state at message number %d found", batchCount)
-}
-
-// AgreesWithExecutionState returns whether or not we agree with a state.
-func (s *L2StateBackend) AgreesWithExecutionState(ctx context.Context, state *protocol.ExecutionState) error {
-	for _, r := range s.executionStates {
-		if r.Equals(state) {
-			return nil
+		if blocksSincePrevious >= 0 {
+			blocksSincePrevious++
 		}
 	}
-	return l2stateprovider.ErrNoExecutionState
+	return nil, fmt.Errorf("no execution state at message number %d found", maxInboxCount)
 }
 
 func (s *L2StateBackend) statesUpTo(blockStart, blockEnd, fromBatch, toBatch uint64) ([]common.Hash, error) {

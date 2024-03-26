@@ -11,6 +11,7 @@ import (
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
 	"github.com/OffchainLabs/bold/challenge-manager/types"
+	"github.com/OffchainLabs/bold/containers"
 	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/ethereum/go-ethereum/log"
@@ -29,6 +30,7 @@ func (m *Manager) postAssertionRoutine(ctx context.Context) {
 		srvlog.Warn("Staker strategy not configured to stake on latest assertions")
 		return
 	}
+	srvlog.Info("Ready to post")
 	if _, err := m.PostAssertion(ctx); err != nil {
 		if !errors.Is(err, solimpl.ErrAlreadyExists) {
 			srvlog.Error("Could not submit latest assertion to L1", log.Ctx{"err": err})
@@ -133,18 +135,21 @@ func (m *Manager) PostAssertionBasedOnParent(
 	// The parent assertion tells us what the next posted assertion's batch should be.
 	// We read this value and use it to compute the required execution state we must post.
 	batchCount := parentCreationInfo.InboxMaxCount.Uint64()
-	newState, err := m.stateManager.ExecutionStateAfterBatchCount(ctx, batchCount)
+	parentBlockHash := protocol.GoGlobalStateFromSolidity(parentCreationInfo.AfterState.GlobalState).BlockHash
+	newState, err := m.ExecutionStateAfterParent(ctx, parentCreationInfo)
 	if err != nil {
 		if errors.Is(err, l2stateprovider.ErrChainCatchingUp) {
 			chainCatchingUpCounter.Inc(1)
 			srvlog.Info(
 				"No available batch to post as assertion, waiting for more batches", log.Ctx{
-					"batchCount": batchCount,
+					"batchCount":      batchCount,
+					"parentBlockHash": containers.Trunc(parentBlockHash[:]),
 				},
 			)
 			return none, nil
 		}
-		return none, errors.Wrapf(err, "could not get execution state at batch count %d", batchCount)
+		return none, errors.Wrapf(err, "could not get execution state at batch count %d with parent block hash %v", batchCount, parentBlockHash)
+
 	}
 	srvlog.Info(
 		"Posting assertion with retrieved state", log.Ctx{

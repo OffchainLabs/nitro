@@ -364,7 +364,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         AssertionInputs calldata assertion,
         bytes32 prevAssertionHash,
         bytes32 expectedAssertionHash
-    ) internal returns (bytes32) {
+    ) internal returns (bytes32 newAssertionHash, bool overflowAssertion) {
         // Validate the config hash
         RollupLib.validateConfigHash(
             assertion.beforeStateData.configData, getAssertionStorage(prevAssertionHash).configHash
@@ -402,51 +402,37 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         bytes32 sequencerBatchAcc;
         {
             // This new assertion consumes the messages from prevInboxPosition to afterInboxPosition
-            uint64 afterInboxPosition = assertion.afterState.globalState.getInboxPosition();
-            uint64 prevInboxPosition = assertion.beforeState.globalState.getInboxPosition();
+            GlobalState calldata afterGS = assertion.afterState.globalState;
+            GlobalState calldata beforeGS = assertion.beforeState.globalState;
 
-            // there are 2 kinds of assertions that can be made.
-            // ERRORED: this is an unexpected state and an upgrade is required to continue from this state
-            // FINISHED: A normal assertion is made when all messages up to the prev.nextInboxPosition have been processed
-            //           This assertion MUST process all of those messages, therefore we expect it to have inbox position equal
-            //           to the prev.nextInboxPosition, and positionInMessage == 0.
+            // there are 3 kinds of assertions that can be made. Assertions must be made when they fill the maximum number
+            // of blocks, or when they process all messages up to prev.nextInboxPosition. When they fill the max
+            // blocks, but dont manage to process all messages, we call this an "overflow" assertion.
+            // 1. ERRORED assertion
+            //    The machine finished in an ERRORED state. This can happen with processing any
+            //    messages, or moving the position in the message.
+            // 2. FINISHED assertion that did not overflow
+            //    The machine finished as normal, and fully processed all the messages up to prev.nextInboxPosition.
+            //    In this case the inbox position must equal prev.nextInboxPosition and position in message must be 0
+            // 3. FINISHED assertion that did overflow
+            //    The machine finished as normal, but didn't process all messages in the inbox.
+            //    The inbox can be anywhere between the previous assertion's position and the nextInboxPosition, exclusive.
 
             //    All types of assertion must have inbox position in the range prev.inboxPosition <= x <= prev.nextInboxPosition
-            require(afterInboxPosition >= prevInboxPosition, "INBOX_BACKWARDS");
-            require(afterInboxPosition <= assertion.beforeStateData.configData.nextInboxPosition, "INBOX_TOO_FAR");
+            require(afterGS.comparePositions(beforeGS) >= 0, "INBOX_BACKWARDS");
+            int256 afterStateCmpMaxInbox = afterGS.comparePositionsAgainstStartOfBatch(assertion.beforeStateData.configData.nextInboxPosition);
+            require(afterStateCmpMaxInbox <= 0, "INBOX_TOO_FAR");
 
-            // SANITY CHECK: the next inbox position did indeed move forward
-            // this is enforced by code in a later section that artificially increases the nextInboxPosition
-            // even if there hadn't been any new messages since the last assertion;
-            // this ensures that assertions will continue to advance.
-            // It also means that below, where we check that afterInboxPosition equals prev.nextInboxPosition
-            // in the FINISHED state, we can be sure that it processed at least one message
-            require(assertion.beforeStateData.configData.nextInboxPosition > prevInboxPosition, "NEXT_INBOX_BACKWARDS");
-
-            // if the position in the message is > 0, then the afterInboxPosition cannot be the nextInboxPosition
-            // as this would be outside the range - this can only occur for ERRORED states
-            if (assertion.afterState.machineStatus == MachineStatus.ERRORED) {
-                if (assertion.afterState.globalState.getPositionInMessage() > 0) {
-                    require(
-                        afterInboxPosition != assertion.beforeStateData.configData.nextInboxPosition, "POSITION_TOO_FAR"
-                    );
-                }
-            } else if (assertion.afterState.machineStatus == MachineStatus.FINISHED) {
-                // if the machine is FINISHED, then it should consume all messages in the inbox as seen at the time of prev (minimum 1; see below)
-                require(
-                    afterInboxPosition == assertion.beforeStateData.configData.nextInboxPosition,
-                    "INVALID_FINISHED_INBOX"
-                );
-                // and it should have position in message == 0, ready to start reading the next message
-                require(assertion.afterState.globalState.getPositionInMessage() == 0, "NON_ZERO_FINISHED_POS_IN_MSG");
-            } else {
-                // we checked this above, but include a safety check here in case of refactoring
-                revert("INVALID_STATUS");
+            if (assertion.afterState.machineStatus != MachineStatus.ERRORED && afterStateCmpMaxInbox < 0) {
+                // If we didn't reach the target next inbox position, this is an overflow assertion.
+                overflowAssertion = true;
+                // This shouldn't be necessary, but might as well constrain the assertion to be non-empty
+                require(afterGS.comparePositions(beforeGS) > 0, "OVERFLOW_STANDSTILL");
             }
             // Inbox position at the time of this assertion being created
             uint256 currentInboxPosition = bridge.sequencerMessageCount();
             // Cannot read more messages than currently exist in the inbox
-            require(afterInboxPosition <= currentInboxPosition, "INBOX_PAST_END");
+            require(afterGS.comparePositionsAgainstStartOfBatch(currentInboxPosition) <= 0, "INBOX_PAST_END");
 
             // under normal circumstances prev.nextInboxPosition is guaranteed to exist
             // because we populate it from bridge.sequencerMessageCount(). However, when
@@ -458,6 +444,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
             );
 
             // The next assertion must consume all the messages that are currently found in the inbox
+            uint256 afterInboxPosition = afterGS.getInboxPosition();
             if (afterInboxPosition == currentInboxPosition) {
                 // No new messages have been added to the inbox since the last assertion
                 // In this case if we set the next inbox position to the current one we would be insisting that
@@ -481,7 +468,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
             sequencerBatchAcc = bridge.sequencerInboxAccs(afterInboxPosition - 1);
         }
 
-        bytes32 newAssertionHash = RollupLib.assertionHash(prevAssertionHash, assertion.afterState, sequencerBatchAcc);
+        newAssertionHash = RollupLib.assertionHash(prevAssertionHash, assertion.afterState, sequencerBatchAcc);
 
         // allow an assertion creator to ensure that they're creating their assertion against the expected state
         require(
@@ -525,8 +512,6 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
         if (_hostChainIsArbitrum) {
             _assertionCreatedAtArbSysBlock[newAssertionHash] = ArbSys(address(100)).arbBlockNumber();
         }
-
-        return newAssertionHash;
     }
 
     function genesisAssertionHash() external pure returns (bytes32) {

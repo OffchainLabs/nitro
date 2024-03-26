@@ -128,6 +128,11 @@ func (m *Manager) syncAssertions(ctx context.Context) {
 	}
 }
 
+type assertionAndParentCreationInfo struct {
+	assertion *protocol.AssertionCreatedInfo
+	parent    *protocol.AssertionCreatedInfo
+}
+
 // This function will scan for all assertion creation events to determine which
 // ones are canonical and which ones must be challenged.
 func (m *Manager) processAllAssertionsInRange(
@@ -146,7 +151,8 @@ func (m *Manager) processAllAssertionsInRange(
 	}()
 
 	// Extract all assertion creation events from the log filter iterator.
-	assertions := make([]*protocol.AssertionCreatedInfo, 0)
+	assertions := make([]assertionAndParentCreationInfo, 0)
+	assertionsByHash := make(map[common.Hash]*protocol.AssertionCreatedInfo)
 	for it.Next() {
 		if it.Error() != nil {
 			return errors.Wrapf(
@@ -168,14 +174,30 @@ func (m *Manager) processAllAssertionsInRange(
 			return err
 		}
 		if assertionOpt.IsSome() {
-			assertions = append(assertions, assertionOpt.Unwrap())
+			creationInfo := assertionOpt.Unwrap()
+			assertionsByHash[creationInfo.AssertionHash] = creationInfo
+			fullInfo := assertionAndParentCreationInfo{
+				assertion: creationInfo,
+				parent:    assertionsByHash[creationInfo.ParentAssertionHash],
+			}
+			if fullInfo.parent == nil {
+				parentInfo, err := retry.UntilSucceeds(ctx, func() (*protocol.AssertionCreatedInfo, error) {
+					return m.chain.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: creationInfo.ParentAssertionHash})
+				})
+				if err != nil {
+					return errors.Wrapf(err, "could not read assertion creation info for %#x (parent of %#x)", creationInfo.ParentAssertionHash, creationInfo.AssertionHash)
+				}
+				assertionsByHash[creationInfo.ParentAssertionHash] = parentInfo
+				fullInfo.parent = parentInfo
+			}
+			assertions = append(assertions, fullInfo)
 		}
 	}
 
 	// Save all observed assertions to the database.
-	for _, assertion := range assertions {
+	for _, fullInfo := range assertions {
 		if _, err := retry.UntilSucceeds(ctx, func() (bool, error) {
-			if err := m.saveAssertionToDB(ctx, assertion); err != nil {
+			if err := m.saveAssertionToDB(ctx, fullInfo.assertion); err != nil {
 				srvlog.Error("Could not save assertion to DB", log.Ctx{"err": err})
 				return false, err
 			}
@@ -244,19 +266,17 @@ func (m *Manager) extractAssertionFromEvent(
 // This function must hold the lock on m.assertionChainData.
 func (m *Manager) findCanonicalAssertionBranch(
 	ctx context.Context,
-	assertions []*protocol.AssertionCreatedInfo,
+	assertions []assertionAndParentCreationInfo,
 ) error {
 	latestAgreedWithAssertion := m.assertionChainData.latestAgreedAssertion
 	cursor := latestAgreedWithAssertion
 
-	for _, assertion := range assertions {
+	for _, fullInfo := range assertions {
+		assertion := fullInfo.assertion
 		if assertion.ParentAssertionHash == cursor.Hash {
 			agreedWithAssertion, err := retry.UntilSucceeds(ctx, func() (bool, error) {
-				state := protocol.GoExecutionStateFromSolidity(assertion.AfterState)
-				err := m.stateProvider.AgreesWithExecutionState(ctx, state)
+				expectedState, err := m.ExecutionStateAfterParent(ctx, fullInfo.parent)
 				switch {
-				case errors.Is(err, l2stateprovider.ErrNoExecutionState):
-					return false, nil
 				case errors.Is(err, l2stateprovider.ErrChainCatchingUp):
 					// Otherwise, we return the error that we are still catching up to the
 					// execution state claimed by the assertion, and this function will be retried
@@ -268,7 +288,7 @@ func (m *Manager) findCanonicalAssertionBranch(
 				case err != nil:
 					return false, err
 				}
-				return true, nil
+				return expectedState.Equals(protocol.GoExecutionStateFromSolidity(assertion.AfterState)), nil
 			})
 			if err != nil {
 				return errors.New("could not check for assertion agreements")
@@ -303,10 +323,11 @@ type rivalPoster interface {
 // This function must hold the lock on m.assertionChainData.
 func (m *Manager) respondToAnyInvalidAssertions(
 	ctx context.Context,
-	assertions []*protocol.AssertionCreatedInfo,
+	assertions []assertionAndParentCreationInfo,
 	rivalPoster rivalPoster,
 ) error {
-	for _, assertion := range assertions {
+	for _, fullInfo := range assertions {
+		assertion := fullInfo.assertion
 		canonicalParent, hasCanonicalParent := m.assertionChainData.canonicalAssertions[protocol.AssertionHash{
 			Hash: assertion.ParentAssertionHash,
 		}]

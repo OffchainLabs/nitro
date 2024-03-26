@@ -79,8 +79,10 @@ func TestSkipsProcessingAssertionFromEvilFork(t *testing.T) {
 	require.NoError(t, err)
 
 	// We have bob post an assertion at batch 1.
-	bobPostState, err := bobStateManager.ExecutionStateAfterBatchCount(ctx, 1)
+	genesisGlobalState := protocol.GoGlobalStateFromSolidity(genesisCreationInfo.AfterState.GlobalState)
+	bobPostState, err := bobStateManager.ExecutionStateAfterPreviousState(ctx, 1, &genesisGlobalState, 1<<26)
 	require.NoError(t, err)
+	t.Logf("%+v", bobPostState)
 	bobAssertion, err := bobChain.NewStakeOnNewAssertion(
 		ctx,
 		genesisCreationInfo,
@@ -135,7 +137,11 @@ func TestSkipsProcessingAssertionFromEvilFork(t *testing.T) {
 	require.NoError(t, err)
 	setup.Backend.Commit()
 
-	bobPostState, err = bobStateManager.ExecutionStateAfterBatchCount(ctx, uint64(2))
+	genesisState, err := bobStateManager.ExecutionStateAfterPreviousState(ctx, 0, nil, 1<<26)
+	require.NoError(t, err)
+	preState, err := bobStateManager.ExecutionStateAfterPreviousState(ctx, 1, &genesisState.GlobalState, 1<<26)
+	require.NoError(t, err)
+	bobPostState, err = bobStateManager.ExecutionStateAfterPreviousState(ctx, 2, &preState.GlobalState, 1<<26)
 	require.NoError(t, err)
 	_, err = bobChain.StakeOnNewAssertion(
 		ctx,
@@ -212,7 +218,9 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 	bobStateManager, err := statemanager.NewForSimpleMachine(stateManagerOpts...)
 	require.NoError(t, err)
 
-	alicePostState, err := aliceStateManager.ExecutionStateAfterBatchCount(ctx, 1)
+	genesisState, err := aliceStateManager.ExecutionStateAfterPreviousState(ctx, 0, nil, 1<<26)
+	require.NoError(t, err)
+	alicePostState, err := aliceStateManager.ExecutionStateAfterPreviousState(ctx, 1, &genesisState.GlobalState, 1<<26)
 	require.NoError(t, err)
 
 	t.Logf("New stake from alice at post state %+v\n", alicePostState)
@@ -223,7 +231,7 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	bobPostState, err := bobStateManager.ExecutionStateAfterBatchCount(ctx, 1)
+	bobPostState, err := bobStateManager.ExecutionStateAfterPreviousState(ctx, 1, &genesisState.GlobalState, 1<<26)
 	require.NoError(t, err)
 	_, err = bobChain.NewStakeOnNewAssertion(
 		ctx,
@@ -245,8 +253,12 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 
 		prevInfo, err2 := aliceChain.ReadAssertionCreationInfo(ctx, aliceAssertion.Id())
 		require.NoError(t, err2)
-		alicePostState, err = aliceStateManager.ExecutionStateAfterBatchCount(ctx, uint64(batch))
-		require.NoError(t, err)
+		prevGlobalState := protocol.GoGlobalStateFromSolidity(prevInfo.AfterState.GlobalState)
+		preState, err2 := aliceStateManager.ExecutionStateAfterPreviousState(ctx, uint64(batch-1), &prevGlobalState, 1<<26)
+		require.NoError(t, err2)
+		require.NoError(t, err2)
+		alicePostState, err2 = aliceStateManager.ExecutionStateAfterPreviousState(ctx, uint64(batch), &preState.GlobalState, 1<<26)
+		require.NoError(t, err2)
 		t.Logf("Moving stake from alice at post state %+v\n", alicePostState)
 		aliceAssertion, err = aliceChain.StakeOnNewAssertion(
 			ctx,

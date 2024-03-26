@@ -53,7 +53,7 @@ type Manager struct {
 	backend                     bind.ContractBackend
 	challengeCreator            types.ChallengeCreator
 	challengeReader             types.ChallengeReader
-	stateProvider               l2stateprovider.ExecutionStateAgreementChecker
+	stateProvider               l2stateprovider.ExecutionProvider
 	pollInterval                time.Duration
 	confirmationAttemptInterval time.Duration
 	averageTimeForBlockCreation time.Duration
@@ -64,7 +64,6 @@ type Manager struct {
 	challengesSubmittedCount    uint64
 	assertionsProcessedCount    uint64
 	submittedRivalsCount        uint64
-	stateManager                l2stateprovider.ExecutionProvider
 	postInterval                time.Duration
 	submittedAssertions         *threadsafe.LruSet[common.Hash]
 	apiDB                       db.Database
@@ -73,6 +72,8 @@ type Manager struct {
 	isReadyToPost               bool
 	disablePosting              bool
 	startPostingSignal          chan struct{}
+	layerZeroHeightsCache       *protocol.LayerZeroHeights
+	layerZeroHeightsCacheLock   sync.RWMutex
 }
 
 type assertionChainData struct {
@@ -133,7 +134,6 @@ func NewManager(
 		forksDetectedCount:          0,
 		challengesSubmittedCount:    0,
 		assertionsProcessedCount:    0,
-		stateManager:                stateManager,
 		postInterval:                postInterval,
 		submittedAssertions:         threadsafe.NewLruSet[common.Hash](1000, threadsafe.LruSetWithMetric[common.Hash]("submittedAssertions")),
 		averageTimeForBlockCreation: averageTimeForBlockCreation,
@@ -159,6 +159,40 @@ func (m *Manager) Start(ctx context.Context) {
 	m.LaunchThread(m.updateLatestConfirmedMetrics)
 	m.LaunchThread(m.syncAssertions)
 	m.LaunchThread(m.queueCanonicalAssertionsForConfirmation)
+}
+
+func (m *Manager) LayerZeroHeights(ctx context.Context) (*protocol.LayerZeroHeights, error) {
+	m.layerZeroHeightsCacheLock.RLock()
+	cachedValue := m.layerZeroHeightsCache
+	m.layerZeroHeightsCacheLock.RUnlock()
+	if cachedValue != nil {
+		return cachedValue, nil
+	}
+
+	m.layerZeroHeightsCacheLock.Lock()
+	defer m.layerZeroHeightsCacheLock.Unlock()
+	cm, err := m.chain.SpecChallengeManager(ctx)
+	if err != nil {
+		return nil, err
+	}
+	layerZeroHeights, err := cm.LayerZeroHeights(ctx)
+	if err != nil {
+		return nil, err
+	}
+	m.layerZeroHeightsCache = layerZeroHeights
+	return layerZeroHeights, nil
+}
+
+func (m *Manager) ExecutionStateAfterParent(ctx context.Context, parentInfo *protocol.AssertionCreatedInfo) (*protocol.ExecutionState, error) {
+	layerZeroHeights, err := m.LayerZeroHeights(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if layerZeroHeights.BlockChallengeHeight == 0 {
+		return nil, errors.New("block challenge height is zero")
+	}
+	goGlobalState := protocol.GoGlobalStateFromSolidity(parentInfo.AfterState.GlobalState)
+	return m.stateProvider.ExecutionStateAfterPreviousState(ctx, parentInfo.InboxMaxCount.Uint64(), &goGlobalState, layerZeroHeights.BlockChallengeHeight-1)
 }
 
 func (m *Manager) ForksDetected() uint64 {
@@ -198,7 +232,7 @@ func (m *Manager) logChallengeConfigs(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	layerZeroHeights, err := cm.LayerZeroHeights(ctx)
+	layerZeroHeights, err := m.LayerZeroHeights(ctx)
 	if err != nil {
 		return err
 	}

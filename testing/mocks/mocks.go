@@ -94,11 +94,6 @@ func (m *MockStateManager) PrefixProof(
 	return args.Get(0).([]byte), args.Error(1)
 }
 
-func (m *MockStateManager) ExecutionStateAfterBatchCount(ctx context.Context, batchCount uint64) (*protocol.ExecutionState, error) {
-	args := m.Called(ctx, batchCount)
-	return args.Get(0).(*protocol.ExecutionState), args.Error(1)
-}
-
 func (m *MockStateManager) AgreesWithHistoryCommitment(
 	ctx context.Context,
 	challengeLevel protocol.ChallengeLevel,
@@ -109,9 +104,9 @@ func (m *MockStateManager) AgreesWithHistoryCommitment(
 	return args.Get(0).(bool), args.Error(1)
 }
 
-func (m *MockStateManager) AgreesWithExecutionState(ctx context.Context, state *protocol.ExecutionState) error {
-	args := m.Called(ctx, state)
-	return args.Error(0)
+func (m *MockStateManager) ExecutionStateAfterPreviousState(ctx context.Context, maxInboxCount uint64, previousGlobalState *protocol.GoGlobalState, maxNumberOfBlocks uint64) (*protocol.ExecutionState, error) {
+	args := m.Called(ctx, maxInboxCount, previousGlobalState, maxNumberOfBlocks)
+	return args.Get(0).(*protocol.ExecutionState), args.Error(1)
 }
 
 func (m *MockStateManager) OneStepProofData(
