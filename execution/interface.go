@@ -55,6 +55,7 @@ type ExecutionSequencer interface {
 	SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error
 	NextDelayedMessageNumber() (uint64, error)
 	SetTransactionStreamer(streamer TransactionStreamer)
+	GetL1GasPriceEstimate() (uint64, error)
 }
 
 type FullExecutionClient interface {
@@ -82,4 +83,7 @@ type TransactionStreamer interface {
 	BatchFetcher
 	WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) error
 	ExpectChosenSequencer() error
+	CacheL1PriceDataOfMsg(pos arbutil.MessageIndex, callDataUnits uint64, l1GasCharged uint64)
+	BacklogL1GasCharged() uint64
+	BacklogCallDataUnits() uint64
 }
