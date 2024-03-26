@@ -121,7 +121,12 @@ func (s *Storage) Get(key common.Hash) (common.Hash, error) {
 	if info := s.burner.TracingInfo(); info != nil {
 		info.RecordStorageGet(key)
 	}
-	return s.db.GetState(s.account, s.mapAddress(key)), nil
+	return s.GetFree(key), nil
+}
+
+// Gets a storage slot for free. Dangerous due to DoS potential.
+func (s *Storage) GetFree(key common.Hash) common.Hash {
+	return s.db.GetState(s.account, s.mapAddress(key))
 }
 
 func (s *Storage) GetStorageSlot(key common.Hash) common.Hash {

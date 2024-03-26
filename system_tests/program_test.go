@@ -766,7 +766,7 @@ func testMemory(t *testing.T, jit bool) {
 		EnsureTxFailed(t, ctx, l2client, tx)
 	}
 
-	model := programs.NewMemoryModel(2, 1000)
+	model := programs.NewMemoryModel(programs.InitialFreePages, programs.InitialPageGas)
 
 	// expand to 128 pages, retract, then expand again to 128.
 	//   - multicall takes 1 page to init, and then 1 more at runtime.
@@ -778,9 +778,9 @@ func testMemory(t *testing.T, jit bool) {
 	receipt := ensure(tx, l2client.SendTransaction(ctx, tx))
 	gasCost := receipt.GasUsedForL2()
 	memCost := model.GasCost(128, 0, 0) + model.GasCost(126, 2, 128)
-	logical := uint64(32000000 + 126*1000)
+	logical := uint64(32000000 + 126*programs.InitialPageGas)
 	if !arbmath.WithinRange(gasCost, memCost, memCost+2e5) || !arbmath.WithinRange(gasCost, logical, logical+2e5) {
-		Fatal(t, "unexpected cost", gasCost, memCost)
+		Fatal(t, "unexpected cost", gasCost, memCost, logical)
 	}
 
 	// check that we'd normally run out of gas

@@ -21,16 +21,6 @@ func NewMemoryModel(freePages uint16, pageGas uint16) *MemoryModel {
 	}
 }
 
-func (p Programs) memoryModel() (*MemoryModel, error) {
-	freePages, err := p.FreePages()
-	if err != nil {
-		return nil, err
-	}
-	pageGas, err := p.PageGas()
-
-	return NewMemoryModel(freePages, pageGas), err
-}
-
 // Determines the gas cost of allocating `new` pages given `open` are active and `ever` have ever been.
 func (model *MemoryModel) GasCost(new, open, ever uint16) uint64 {
 	newOpen := arbmath.SaturatingUAdd(open, new)
