@@ -486,6 +486,10 @@ func (b *BatchPoster) checkReverts(ctx context.Context, to int64) (bool, error) 
 					if shouldHalt {
 						logLevel = log.Error
 					}
+					al := types.AccessList{}
+					if tx.Accesses != nil {
+						al = *tx.Accesses
+					}
 					txErr := arbutil.DetailTxErrorUsingCallMsg(ctx, b.l1Reader.Client(), tx.Hash, r, ethereum.CallMsg{
 						From:       tx.From,
 						To:         tx.To,
@@ -495,7 +499,7 @@ func (b *BatchPoster) checkReverts(ctx context.Context, to int64) (bool, error) 
 						GasTipCap:  tx.GasTipCap.ToInt(),
 						Value:      tx.Value.ToInt(),
 						Data:       tx.Input,
-						AccessList: *tx.Accesses,
+						AccessList: al,
 					})
 					logLevel("Transaction from batch poster reverted", "nonce", tx.Nonce, "txHash", tx.Hash, "blockNumber", r.BlockNumber, "blockHash", r.BlockHash, "txErr", txErr)
 					return shouldHalt, nil
