@@ -29,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
@@ -699,6 +700,26 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	var lastDelayedRead uint64
 	var hasNewConfirmedMessages bool
 	var cacheClearLen int
+
+	for i := 0; i < len(messages); i++ {
+		// In Espresso mode, we can get strange reorg behavior because the batcher manipulates the justification after sequencing.
+		// To get around this, we simply wipe the block merkle proof before adding a batch to the transaction streamer.
+		// The justification is only relevant for validation purposes so it shouldn't matter that we don't store the proof
+		// in the node's execution database.
+		// TODO: investigate whether modifying the RLP encoding would be the better approach
+		if arbos.IsEspressoMsg(messages[i].Message) {
+			txs, jst, err := arbos.ParseEspressoMsg(messages[i].Message)
+			if err != nil {
+				return err
+			}
+			jst.BlockMerkleProof = nil
+			newMsg, err := arbos.MessageFromEspresso(messages[i].Message.Header, txs, jst)
+			if err != nil {
+				return err
+			}
+			messages[i].Message = &newMsg
+		}
+	}
 
 	messagesAfterPos := messageStartPos + arbutil.MessageIndex(len(messages))
 	broadcastStartPos := arbutil.MessageIndex(atomic.LoadUint64(&s.broadcasterQueuedMessagesPos))

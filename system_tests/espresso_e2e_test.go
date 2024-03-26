@@ -32,7 +32,9 @@ import (
 
 var workingDir = "./espresso-e2e"
 var hotShotAddress = "0x217788c286797d56cd59af5e493f3699c39cbbe8"
+var lightClientAddress = "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"
 var hostIoAddress = "0xF34C2fac45527E55ED122f80a969e79A40547e6D"
+var hotShotUrl = "http://127.0.0.1:50000"
 
 var (
 	jitValidationPort = 54320
@@ -142,7 +144,7 @@ func createValidationNode(ctx context.Context, t *testing.T, jit bool) func() {
 
 }
 
-func createL1ValidatorPosterNode(ctx context.Context, t *testing.T) (*NodeBuilder, func()) {
+func createL1ValidatorPosterNode(ctx context.Context, t *testing.T, hotshotUrl string) (*NodeBuilder, func()) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.l1StackConfig.HTTPPort = 8545
 	builder.l1StackConfig.WSPort = 8546
@@ -159,6 +161,8 @@ func createL1ValidatorPosterNode(ctx context.Context, t *testing.T) (*NodeBuilde
 	builder.nodeConfig.BatchPoster.MaxSize = 41
 	builder.nodeConfig.BatchPoster.PollInterval = 10 * time.Second
 	builder.nodeConfig.BatchPoster.MaxDelay = -1000 * time.Hour
+	builder.nodeConfig.BatchPoster.LightClientAddress = lightClientAddress
+	builder.nodeConfig.BatchPoster.HotShotUrl = hotshotUrl
 	builder.nodeConfig.BlockValidator.Enable = true
 	builder.nodeConfig.BlockValidator.ValidationPoll = 2 * time.Second
 	builder.nodeConfig.BlockValidator.ValidationServer.URL = fmt.Sprintf("ws://127.0.0.1:%d", arbValidationPort)
@@ -309,7 +313,7 @@ func TestEspressoE2E(t *testing.T) {
 	cleanValNode := createValidationNode(ctx, t, false)
 	defer cleanValNode()
 
-	builder, cleanup := createL1ValidatorPosterNode(ctx, t)
+	builder, cleanup := createL1ValidatorPosterNode(ctx, t, hotShotUrl)
 	defer cleanup()
 	node := builder.L2
 
@@ -330,7 +334,7 @@ func TestEspressoE2E(t *testing.T) {
 	})
 	Require(t, err)
 
-	l2Node, l2Info, cleanL2Node := createL2Node(ctx, t, "http://127.0.0.1:50000", builder)
+	l2Node, l2Info, cleanL2Node := createL2Node(ctx, t, hotShotUrl, builder)
 	defer cleanL2Node()
 
 	cleanEspresso := runEspresso(t, ctx)

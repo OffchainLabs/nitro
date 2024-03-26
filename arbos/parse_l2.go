@@ -497,3 +497,8 @@ func MessageFromEspresso(header *arbostypes.L1IncomingMessageHeader, txes []espr
 		L2msg:  l2Message,
 	}, nil
 }
+
+func IsEspressoMsg(msg *arbostypes.L1IncomingMessage) bool {
+	return msg.Header.Kind == arbostypes.L1MessageType_L2Message &&
+		msg.L2msg[0] == L2MessageKind_EspressoTx
+}

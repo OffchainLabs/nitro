@@ -184,8 +184,7 @@ func ProduceBlock(
 
 	var espressoHeader *espressoTypes.Header
 	if chainConfig.ArbitrumChainParams.EnableEspresso {
-		if message.Header.Kind == arbostypes.L1MessageType_L2Message &&
-			message.L2msg[0] == L2MessageKind_EspressoTx {
+		if IsEspressoMsg(message) {
 			// creating a block with espresso message
 			_, jst, err := ParseEspressoMsg(message)
 			if err != nil {

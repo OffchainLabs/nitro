@@ -276,9 +276,7 @@ func main() {
 			return wavmio.ReadInboxMessage(batchNum), nil
 		}
 
-		validatingAgainstEspresso := message.Message.Header.Kind == arbostypes.L1MessageType_L2Message &&
-			chainConfig.ArbitrumChainParams.EnableEspresso &&
-			message.Message.L2msg[0] == arbos.L2MessageKind_EspressoTx
+		validatingAgainstEspresso := arbos.IsEspressoMsg(message.Message) && chainConfig.ArbitrumChainParams.EnableEspresso
 		if validatingAgainstEspresso {
 			txs, jst, err := arbos.ParseEspressoMsg(message.Message)
 			if err != nil {
