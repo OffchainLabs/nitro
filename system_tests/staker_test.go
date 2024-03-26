@@ -567,7 +567,7 @@ func setupNonBoldStaker(t *testing.T, ctx context.Context) (*staker.Staker, *Nod
 	valConfig.Bold.Enable = true
 	valConfig.StakerInterval = 100 * time.Millisecond
 
-	dp, err := arbnode.StakerDataposter(ctx, rawdb.NewTable(l2node.ArbDB, storage.StakerPrefix), l2node.L1Reader, &l1auth, NewFetcherFromConfig(arbnode.ConfigDefaultL1NonSequencerTest()), nil)
+	dp, err := arbnode.StakerDataposter(ctx, rawdb.NewTable(l2node.ArbDB, storage.StakerPrefix), l2node.L1Reader, &l1auth, NewFetcherFromConfig(arbnode.ConfigDefaultL1NonSequencerTest()), nil, nil)
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
 	}
@@ -582,6 +582,7 @@ func setupNonBoldStaker(t *testing.T, ctx context.Context) (*staker.Staker, *Nod
 		l2node.TxStreamer,
 		l2node.Execution,
 		l2node.ArbDB,
+		nil,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
