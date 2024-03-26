@@ -14,7 +14,7 @@ import (
 )
 
 func Test_findOriginEdge(t *testing.T) {
-	edges := threadsafe.NewSlice[protocol.ReadOnlyEdge]()
+	edges := threadsafe.NewSlice[protocol.SpecEdge]()
 	origin := protocol.OriginId(common.BytesToHash([]byte("foo")))
 	_, ok := findOriginEdge(origin, edges)
 	require.Equal(t, false, ok)

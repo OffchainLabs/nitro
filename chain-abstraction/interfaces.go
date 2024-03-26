@@ -157,6 +157,9 @@ type AssertionChain interface {
 	SpecChallengeManager(ctx context.Context) (SpecChallengeManager, error)
 }
 
+// InheritedTimer for an edge from its children or claiming edges.
+type InheritedTimer uint64
+
 // ChallengeLevel corresponds to the different challenge levels in the protocol.
 // 0 is for block challenges and the last level is for small step challenges.
 // Everything else is a big step challenge of level i where 0 < i < last.
@@ -244,17 +247,9 @@ type SpecChallengeManager interface {
 	ChallengePeriodBlocks(ctx context.Context) (uint64, error)
 	// Gets an edge by its id.
 	GetEdge(ctx context.Context, edgeId EdgeId) (option.Option[SpecEdge], error)
-	// The inherited timer from the edge's children. Needs to be refreshed
-	// onchain over time.
-	InheritedTimer(ctx context.Context, edgeId EdgeId) (uint64, error)
-	UpdateInheritedTimerByClaim(
+	MultiUpdateInheritedTimers(
 		ctx context.Context,
-		claimingEdgeId EdgeId,
-		claimId ClaimId,
-	) error
-	UpdateInheritedTimerByChildren(
-		ctx context.Context,
-		edgeId EdgeId,
+		challengeBranch []ReadOnlyEdge,
 	) error
 	// Calculates an edge id for an edge.
 	CalculateEdgeId(
@@ -359,6 +354,9 @@ type ReadOnlyEdge interface {
 	AssertionHash(ctx context.Context) (AssertionHash, error)
 	// The time in seconds an edge has been unrivaled.
 	TimeUnrivaled(ctx context.Context) (uint64, error)
+	// The inherited timer from the edge's children or claiming edges. Needs to be refreshed
+	// onchain over time.
+	InheritedTimer(ctx context.Context) (InheritedTimer, error)
 	// Whether or not an edge has rivals.
 	HasRival(ctx context.Context) (bool, error)
 	// The status of an edge.

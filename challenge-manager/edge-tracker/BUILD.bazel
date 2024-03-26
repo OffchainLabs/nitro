@@ -3,6 +3,7 @@ load("@io_bazel_rules_go//go:def.bzl", "go_library")
 go_library(
     name = "edge-tracker",
     srcs = [
+        "challenge_confirmation.go",
         "fsm_states.go",
         "tracker.go",
         "transition_table.go",
@@ -16,6 +17,7 @@ go_library(
         "//containers/option",
         "//layer2-state-provider",
         "//math",
+        "//runtime",
         "//state-commitments/history",
         "//time",
         "@com_github_ethereum_go_ethereum//common",

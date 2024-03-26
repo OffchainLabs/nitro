@@ -105,6 +105,7 @@ func (m *Manager) addBlockChallengeLevelZeroEdge(
 			UpperChallengeOriginHeights: []l2stateprovider.Height{},
 			FromHeight:                  0,
 			UpToHeight:                  option.Some(l2stateprovider.Height(0)),
+			ClaimId:                     creationInfo.AssertionHash,
 		},
 	)
 	if err != nil {
@@ -125,6 +126,7 @@ func (m *Manager) addBlockChallengeLevelZeroEdge(
 		UpperChallengeOriginHeights: []l2stateprovider.Height{},
 		FromHeight:                  0,
 		UpToHeight:                  option.Some(l2stateprovider.Height(layerZeroHeights.BlockChallengeHeight)),
+		ClaimId:                     creationInfo.AssertionHash,
 	}
 	endCommit, err := m.stateManager.HistoryCommitment(
 		ctx,

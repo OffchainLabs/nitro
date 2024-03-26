@@ -40,11 +40,19 @@ func (m *Manager) postAssertionRoutine(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			if _, err := m.PostAssertion(ctx); err != nil {
+			start := time.Now()
+			srvlog.Info("Attempting to post assertion")
+			opt, err := m.PostAssertion(ctx)
+			if err != nil {
 				if !errors.Is(err, solimpl.ErrAlreadyExists) {
 					srvlog.Error("Could not submit latest assertion to L1", log.Ctx{"err": err})
 					errorPostingAssertionCounter.Inc(1)
 				}
+			}
+			if opt.IsSome() {
+				srvlog.Info("Posted assertion with hash", log.Ctx{"hash": opt.Unwrap().AssertionHash, "elapsed": time.Since(start)})
+			} else {
+				srvlog.Info("Did not post assertion")
 			}
 		case <-ctx.Done():
 			return

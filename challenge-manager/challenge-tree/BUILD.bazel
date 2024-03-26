@@ -5,6 +5,7 @@ go_library(
     srcs = [
         "add_edge.go",
         "ancestors.go",
+        "inherited_timer.go",
         "local_timer.go",
         "tree.go",
     ],
@@ -18,7 +19,6 @@ go_library(
         "//layer2-state-provider",
         "//math",
         "@com_github_ethereum_go_ethereum//common",
-        "@com_github_ethereum_go_ethereum//log",
         "@com_github_pkg_errors//:errors",
     ],
 )
@@ -28,6 +28,7 @@ go_test(
     srcs = [
         "ancestors_test.go",
         "compute_ancestors_test.go",
+        "inherited_timer_test.go",
         "local_timer_test.go",
         "tree_test.go",
     ],

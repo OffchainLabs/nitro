@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	challengetree "github.com/OffchainLabs/bold/challenge-manager/challenge-tree"
+	edgetracker "github.com/OffchainLabs/bold/challenge-manager/edge-tracker"
 	"github.com/OffchainLabs/bold/containers"
 	"github.com/OffchainLabs/bold/containers/option"
 	"github.com/OffchainLabs/bold/solgen/go/challengeV2gen"
@@ -391,7 +393,7 @@ func NewSpecChallengeManager(
 	if err != nil {
 		return nil, err
 	}
-	challengePeriodBlocks, err := managerBinding.EdgeChallengeManagerCaller.ChallengePeriodBlocks(&bind.CallOpts{Context: ctx})
+	challengePeriodBlocks, err := managerBinding.EdgeChallengeManagerCaller.ChallengePeriodBlocks(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}))
 	if err != nil {
 		return nil, err
 	}
@@ -538,12 +540,19 @@ func (cm *specChallengeManager) GetEdge(
 	})), nil
 }
 
-func (cm *specChallengeManager) InheritedTimer(ctx context.Context, edgeId protocol.EdgeId) (uint64, error) {
-	edge, err := cm.caller.GetEdge(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}), edgeId.Hash)
+func (e *specEdge) InheritedTimer(ctx context.Context) (protocol.InheritedTimer, error) {
+	edge, err := e.manager.caller.GetEdge(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}), e.id)
 	if err != nil {
 		return 0, err
 	}
-	return edge.TotalTimeUnrivaledCache, nil
+	if edgetracker.IsRootBlockChallengeEdge(e) {
+		assertionUnrivaledBlocks, err := e.manager.assertionChain.AssertionUnrivaledBlocks(ctx, protocol.AssertionHash{Hash: common.Hash(e.ClaimId().Unwrap())})
+		if err != nil {
+			return 0, err
+		}
+		return protocol.InheritedTimer(edge.TotalTimeUnrivaledCache + assertionUnrivaledBlocks), nil
+	}
+	return protocol.InheritedTimer(edge.TotalTimeUnrivaledCache), nil
 }
 
 func (e *specEdge) fetchEdge(
@@ -592,49 +601,62 @@ func (cm *specChallengeManager) CalculateEdgeId(
 	return protocol.EdgeId{Hash: id}, err
 }
 
-func (cm *specChallengeManager) UpdateInheritedTimerByChildren(
+func (cm *specChallengeManager) MultiUpdateInheritedTimers(
 	ctx context.Context,
-	edgeId protocol.EdgeId,
+	challengeBranch []protocol.ReadOnlyEdge,
 ) error {
-	if _, err := cm.assertionChain.transact(
-		ctx,
-		cm.assertionChain.backend,
-		func(opts *bind.TransactOpts) (*types.Transaction, error) {
-			return cm.writer.UpdateTimerCacheByChildren(
-				opts,
-				edgeId.Hash,
-			)
-		}); err != nil {
-		return errors.Wrapf(
-			err,
-			"could not update inherited timer for edge by children %#x",
-			edgeId,
-		)
+	edgeIds := make([][32]byte, 0)
+	for index, edgeId := range challengeBranch {
+		_ = index
+		edgeIds = append(edgeIds, edgeId.Id().Hash)
+		if challengetree.IsClaimingAnEdge(edgeId) {
+			if _, err := cm.assertionChain.transact(
+				ctx,
+				cm.assertionChain.backend,
+				func(opts *bind.TransactOpts) (*types.Transaction, error) {
+					return cm.writer.MultiUpdateTimeCacheByChildren(
+						opts,
+						edgeIds,
+					)
+				}); err != nil {
+				return errors.Wrap(
+					err,
+					"could not update inherited timer for multiple edge ids",
+				)
+			}
+			if _, err := cm.assertionChain.transact(
+				ctx,
+				cm.assertionChain.backend,
+				func(opts *bind.TransactOpts) (*types.Transaction, error) {
+					return cm.writer.UpdateTimerCacheByClaim(
+						opts,
+						edgeId.ClaimId().Unwrap(),
+						edgeId.Id().Hash,
+					)
+				}); err != nil {
+				return errors.Wrap(
+					err,
+					"could not update inherited timer for multiple edge ids",
+				)
+			}
+			edgeIds = make([][32]byte, 0)
+		}
 	}
-	return nil
-}
-
-func (cm *specChallengeManager) UpdateInheritedTimerByClaim(
-	ctx context.Context,
-	claimingEdgeId protocol.EdgeId,
-	claimId protocol.ClaimId,
-) error {
-	if _, err := cm.assertionChain.transact(
-		ctx,
-		cm.assertionChain.backend,
-		func(opts *bind.TransactOpts) (*types.Transaction, error) {
-			return cm.writer.UpdateTimerCacheByClaim(
-				opts,
-				common.Hash(claimId),
-				claimingEdgeId.Hash,
+	if len(edgeIds) > 0 {
+		if _, err := cm.assertionChain.transact(
+			ctx,
+			cm.assertionChain.backend,
+			func(opts *bind.TransactOpts) (*types.Transaction, error) {
+				return cm.writer.MultiUpdateTimeCacheByChildren(
+					opts,
+					edgeIds,
+				)
+			}); err != nil {
+			return errors.Wrap(
+				err,
+				"could not update inherited timer for multiple edge ids",
 			)
-		}); err != nil {
-		return errors.Wrapf(
-			err,
-			"could not update inherited timer for edge by claim: claim id %#x, claiming edge id %#x",
-			common.Hash(claimId),
-			claimingEdgeId.Hash,
-		)
+		}
 	}
 	return nil
 }

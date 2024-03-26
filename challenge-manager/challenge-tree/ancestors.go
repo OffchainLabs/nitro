@@ -26,7 +26,7 @@ type PathTimer uint64
 
 // HonestAncestors of an edge id all the way up to and including the
 // block challenge level zero edge.
-type HonestAncestors []protocol.EdgeId
+type HonestAncestors []protocol.ReadOnlyEdge
 
 // EdgeLocalTimer is the local, unrivaled timer of a specific edge.
 type EdgeLocalTimer uint64
@@ -50,7 +50,7 @@ func (ht *RoyalChallengeTree) ComputeAncestors(
 	// as we advance in this function.
 	currentEdge := startEdge
 
-	ancestry := make([]protocol.EdgeId, 0)
+	ancestry := make([]protocol.ReadOnlyEdge, 0)
 
 	// Challenge levels go from lowest to highest, where lowest is the smallest challenge level
 	// (where challenges are over individual, WASM opcodes). If we have 3 challenge levels,
@@ -94,7 +94,7 @@ func (ht *RoyalChallengeTree) ComputeAncestors(
 		currentEdge = nextLevelClaimedEdge
 
 		// Include the next level claimed edge in the ancestry list.
-		ancestry = append(ancestry, nextLevelClaimedEdge.Id())
+		ancestry = append(ancestry, nextLevelClaimedEdge)
 	}
 	return ancestry, nil
 }
@@ -107,10 +107,10 @@ func (ht *RoyalChallengeTree) findHonestAncestorsWithinChallengeLevel(
 	rootEdge protocol.ReadOnlyEdge,
 	queryingFor protocol.ReadOnlyEdge,
 	blockNumber uint64,
-) ([]EdgeLocalTimer, []protocol.EdgeId, error) {
+) ([]EdgeLocalTimer, []protocol.ReadOnlyEdge, error) {
 	found := false
 	cursor := rootEdge
-	ancestry := make([]protocol.EdgeId, 0)
+	ancestry := make([]protocol.ReadOnlyEdge, 0)
 	localTimers := make([]EdgeLocalTimer, 0)
 	wantedEdgeStart, _ := queryingFor.StartCommitment()
 
@@ -123,7 +123,7 @@ func (ht *RoyalChallengeTree) findHonestAncestorsWithinChallengeLevel(
 			break
 		}
 		// We expand the ancestry and timers' slices using the cursor edge.
-		ancestry = append(ancestry, cursor.Id())
+		ancestry = append(ancestry, cursor)
 		timer, err := ht.LocalTimer(cursor, blockNumber)
 		if err != nil {
 			return nil, nil, err
@@ -229,9 +229,9 @@ func (ht *RoyalChallengeTree) getClaimedEdge(edge protocol.ReadOnlyEdge) (protoc
 }
 
 // Finds an edge in a list with a specified origin id.
-func findOriginEdge(originId protocol.OriginId, edges *threadsafe.Slice[protocol.ReadOnlyEdge]) (protocol.ReadOnlyEdge, bool) {
-	var originEdge protocol.ReadOnlyEdge
-	found := edges.Find(func(_ int, e protocol.ReadOnlyEdge) bool {
+func findOriginEdge(originId protocol.OriginId, edges *threadsafe.Slice[protocol.SpecEdge]) (protocol.SpecEdge, bool) {
+	var originEdge protocol.SpecEdge
+	found := edges.Find(func(_ int, e protocol.SpecEdge) bool {
 		if e.OriginId() == originId {
 			originEdge = e
 			return true

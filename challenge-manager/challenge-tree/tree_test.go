@@ -6,7 +6,6 @@ package challengetree
 import (
 	"context"
 	"errors"
-	"math"
 	"math/big"
 	"strconv"
 	"strings"
@@ -26,7 +25,7 @@ func TestAddEdge(t *testing.T) {
 	ht := &RoyalChallengeTree{
 		edges:                 threadsafe.NewMap[protocol.EdgeId, protocol.SpecEdge](),
 		edgeCreationTimes:     threadsafe.NewMap[OriginPlusMutualId, *threadsafe.Map[protocol.EdgeId, creationTime]](),
-		royalRootEdgesByLevel: threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Slice[protocol.ReadOnlyEdge]](),
+		royalRootEdgesByLevel: threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Slice[protocol.SpecEdge]](),
 		totalChallengeLevels:  3,
 	}
 	ht.topLevelAssertionHash = protocol.AssertionHash{Hash: common.BytesToHash([]byte("foo"))}
@@ -54,7 +53,7 @@ func TestAddEdge(t *testing.T) {
 			assertionHash:   ht.topLevelAssertionHash,
 			claimHeightsErr: errors.New("bad request"),
 		}
-		ht.royalRootEdgesByLevel.Put(protocol.ChallengeLevel(2), threadsafe.NewSlice[protocol.ReadOnlyEdge]())
+		ht.royalRootEdgesByLevel.Put(protocol.ChallengeLevel(2), threadsafe.NewSlice[protocol.SpecEdge]())
 		honestBlockEdges := ht.royalRootEdgesByLevel.Get(protocol.ChallengeLevel(2))
 		honestBlockEdges.Push(edge)
 		_, err := ht.AddEdge(ctx, edge)
@@ -149,7 +148,7 @@ func TestAddEdge(t *testing.T) {
 			assertionHash: ht.topLevelAssertionHash,
 		}
 		rootEdge := newEdge(&newCfg{t: t, edgeId: "blk-0.a-32.a", createdAt: 1, claimId: "foo"})
-		ht.royalRootEdgesByLevel.Put(protocol.ChallengeLevel(2), threadsafe.NewSlice[protocol.ReadOnlyEdge]())
+		ht.royalRootEdgesByLevel.Put(protocol.ChallengeLevel(2), threadsafe.NewSlice[protocol.SpecEdge]())
 		honestBlockEdges := ht.royalRootEdgesByLevel.Get(protocol.ChallengeLevel(2))
 		honestBlockEdges.Push(rootEdge)
 
@@ -206,7 +205,7 @@ func TestAddEdge(t *testing.T) {
 
 		// However, we should not have a level zero edge being tracked yet.
 		blockChallengeEdges := ht.royalRootEdgesByLevel.Get(protocol.ChallengeLevel(2))
-		found := blockChallengeEdges.Find(func(_ int, e protocol.ReadOnlyEdge) bool {
+		found := blockChallengeEdges.Find(func(_ int, e protocol.SpecEdge) bool {
 			return e.Id() == edge.Id()
 		})
 		require.Equal(t, false, found)
@@ -267,7 +266,7 @@ func TestAddHonestEdge(t *testing.T) {
 	ht := &RoyalChallengeTree{
 		edges:                 threadsafe.NewMap[protocol.EdgeId, protocol.SpecEdge](),
 		edgeCreationTimes:     threadsafe.NewMap[OriginPlusMutualId, *threadsafe.Map[protocol.EdgeId, creationTime]](),
-		royalRootEdgesByLevel: threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Slice[protocol.ReadOnlyEdge]](),
+		royalRootEdgesByLevel: threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Slice[protocol.SpecEdge]](),
 	}
 	ht.topLevelAssertionHash = protocol.AssertionHash{Hash: common.BytesToHash([]byte("foo"))}
 	honest := &mockHonestEdge{edge}
@@ -293,123 +292,6 @@ func TestAddHonestEdge(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, 1, ht.royalRootEdgesByLevel.Get(protocol.ChallengeLevel(1)).Len())
-}
-
-func TestUpdateInheritedTimer(t *testing.T) {
-	ctx := context.Background()
-	edge := newEdge(&newCfg{t: t, edgeId: "smol-0.a-1.a", createdAt: 0})
-	edge.TotalChallengeLevels = 3
-	edge.InnerStatus = protocol.EdgeConfirmed
-	ht := &RoyalChallengeTree{
-		edges:                 threadsafe.NewMap[protocol.EdgeId, protocol.SpecEdge](),
-		edgeCreationTimes:     threadsafe.NewMap[OriginPlusMutualId, *threadsafe.Map[protocol.EdgeId, creationTime]](),
-		royalRootEdgesByLevel: threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Slice[protocol.ReadOnlyEdge]](),
-		totalChallengeLevels:  3,
-		metadataReader: &mockMetadataReader{
-			assertionErr:  nil,
-			assertionHash: protocol.AssertionHash{},
-		},
-	}
-	ht.edges.Put(edge.Id(), edge)
-
-	t.Run("one step proven edge returns max uint64", func(t *testing.T) {
-		timer, err := ht.UpdateInheritedTimer(ctx, edge.Id(), 1)
-		require.NoError(t, err)
-		require.Equal(t, uint64(math.MaxUint64), timer)
-	})
-	t.Run("edge without children and not subchallenged returns time unrivaled", func(t *testing.T) {
-		edge := newEdge(&newCfg{t: t, edgeId: "big-0.a-16.a", createdAt: 1})
-		m := &mockMetadataReader{
-			assertionErr:  nil,
-			assertionHash: protocol.AssertionHash{},
-			mockManager:   &mocks.MockSpecChallengeManager{},
-		}
-		m.mockManager.On("UpdateInheritedTimerByChildren", ctx, edge.Id()).Return(nil)
-		m.mockManager.On("InheritedTimer", ctx, edge.Id()).Return(uint64(0), nil)
-		ht.metadataReader = m
-		ht.edges.Put(edge.Id(), edge)
-		timer, err := ht.UpdateInheritedTimer(ctx, edge.Id(), 10)
-		require.NoError(t, err)
-		require.Equal(t, uint64(9), timer)
-	})
-	t.Run("edge with children inherits min of the children", func(t *testing.T) {
-		edge := newEdge(&newCfg{t: t, edgeId: "big-0.a-16.a", createdAt: 1})
-		lowerChild := newEdge(&newCfg{t: t, edgeId: "big-0.a-8.a", createdAt: 5})
-		upperChild := newEdge(&newCfg{t: t, edgeId: "big-8.a-16.a", createdAt: 2})
-		edge.LowerChildID = lowerChild.ID
-		edge.UpperChildID = upperChild.ID
-		m := &mockMetadataReader{
-			assertionErr:  nil,
-			assertionHash: protocol.AssertionHash{},
-			mockManager:   &mocks.MockSpecChallengeManager{},
-		}
-		ht.edges.Put(edge.Id(), edge)
-		ht.edges.Put(lowerChild.Id(), lowerChild)
-		ht.edges.Put(upperChild.Id(), upperChild)
-		m.mockManager.On("InheritedTimer", ctx, edge.Id()).Return(uint64(0), nil)
-		m.mockManager.On("InheritedTimer", ctx, lowerChild.Id()).Return(uint64(5), nil)
-		m.mockManager.On("InheritedTimer", ctx, upperChild.Id()).Return(uint64(2), nil)
-		m.mockManager.On("UpdateInheritedTimerByChildren", ctx, edge.Id()).Return(nil)
-		ht.metadataReader = m
-		timer, err := ht.UpdateInheritedTimer(ctx, edge.Id(), 10)
-		require.NoError(t, err)
-		require.Equal(t, uint64(11), timer)
-	})
-	t.Run("edge with both children having maxuint64 timers inherits maxuint64", func(t *testing.T) {
-		edge := newEdge(&newCfg{t: t, edgeId: "blk-0.a-16.a", createdAt: 1})
-		lowerChild := newEdge(&newCfg{t: t, edgeId: "blk-0.a-8.a", createdAt: 5})
-		upperChild := newEdge(&newCfg{t: t, edgeId: "blk-8.a-16.a", createdAt: 2})
-		edge.LowerChildID = lowerChild.ID
-		edge.UpperChildID = upperChild.ID
-		m := &mockMetadataReader{
-			assertionErr:  nil,
-			assertionHash: protocol.AssertionHash{},
-			mockManager:   &mocks.MockSpecChallengeManager{},
-		}
-		ht.edges.Put(edge.Id(), edge)
-		ht.edges.Put(lowerChild.Id(), lowerChild)
-		ht.edges.Put(upperChild.Id(), upperChild)
-		m.mockManager.On("InheritedTimer", ctx, edge.Id()).Return(uint64(0), nil)
-		m.mockManager.On("InheritedTimer", ctx, lowerChild.Id()).Return(uint64(math.MaxUint64), nil)
-		m.mockManager.On("InheritedTimer", ctx, upperChild.Id()).Return(uint64(math.MaxUint64), nil)
-		m.mockManager.On("UpdateInheritedTimerByChildren", ctx, edge.Id()).Return(nil)
-		ht.metadataReader = m
-		timer, err := ht.UpdateInheritedTimer(ctx, edge.Id(), 10)
-		require.NoError(t, err)
-		require.Equal(t, uint64(math.MaxUint64), timer)
-	})
-	t.Run("edge that claims another edge updates that claimed edge's inherited timer", func(t *testing.T) {
-		edge := newEdge(&newCfg{t: t, edgeId: "big-0.a-32.a", createdAt: 2})
-		claimedEdge := newEdge(&newCfg{t: t, edgeId: "blk-0.a-1.a", createdAt: 1})
-		edge.ClaimID = string(claimedEdge.ID)
-		m := &mockMetadataReader{
-			assertionErr:  nil,
-			assertionHash: protocol.AssertionHash{},
-			mockManager:   &mocks.MockSpecChallengeManager{},
-		}
-		ht.edges.Put(edge.Id(), edge)
-		ht.edges.Put(claimedEdge.Id(), claimedEdge)
-		// Expect this function is called.
-		m.mockManager.On("InheritedTimer", ctx, edge.Id()).Return(uint64(0), nil)
-		m.mockManager.On("UpdateInheritedTimerByClaim", ctx, edge.Id(), edge.ClaimId().Unwrap()).Return(nil)
-		m.mockManager.On("UpdateInheritedTimerByChildren", ctx, edge.Id()).Return(nil)
-		ht.metadataReader = m
-		timer, err := ht.UpdateInheritedTimer(ctx, edge.Id(), 10)
-		require.NoError(t, err)
-		require.Equal(t, uint64(8), timer)
-	})
-}
-
-func TestIsOneStepProven(t *testing.T) {
-	ctx := context.Background()
-	edge := newEdge(&newCfg{t: t, edgeId: "big-0.a-32.a", createdAt: 0})
-	require.Equal(t, false, isOneStepProven(ctx, edge, protocol.EdgePending))
-	require.Equal(t, false, isOneStepProven(ctx, edge, protocol.EdgeConfirmed))
-	edge = newEdge(&newCfg{t: t, edgeId: "big-0.a-1.a", createdAt: 0})
-	require.Equal(t, false, isOneStepProven(ctx, edge, protocol.EdgeConfirmed))
-	edge = newEdge(&newCfg{t: t, edgeId: "smol-0.a-1.a", createdAt: 0})
-	edge.TotalChallengeLevels = 3
-	require.Equal(t, true, isOneStepProven(ctx, edge, protocol.EdgeConfirmed))
 }
 
 type mockMetadataReader struct {

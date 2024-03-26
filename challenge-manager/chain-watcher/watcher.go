@@ -53,29 +53,6 @@ type EdgeManager interface {
 	TrackEdge(ctx context.Context, edge protocol.SpecEdge) error
 }
 
-// ConfirmationMetadataChecker defines a struct which can retrieve information about
-// an edge to determine if it can be confirmed via different means. For example,
-// checking if a confirmed edge exists that claims a specified edge id as its claim id,
-// or retrieving the cumulative, honest path timer for an edge and its honest ancestors.
-// This information is used in order to confirm edges onchain.
-type ConfirmationMetadataChecker interface {
-	ConfirmedEdgeWithClaimExists(
-		topLevelAssertionHash protocol.AssertionHash,
-		claimId protocol.ClaimId,
-	) (protocol.EdgeId, bool)
-	ComputeHonestPathTimer(
-		ctx context.Context,
-		topLevelAssertionHash protocol.AssertionHash,
-		edgeId protocol.EdgeId,
-	) (challengetree.PathTimer, challengetree.HonestAncestors, []challengetree.EdgeLocalTimer, error)
-	HasConfirmableAncestor(
-		ctx context.Context,
-		topLevelAssertionHash protocol.AssertionHash,
-		ancestorLocalTimers []challengetree.EdgeLocalTimer,
-		challengePeriodBlocks uint64,
-	) (bool, error)
-}
-
 // Represents a set of honest edges being tracked in a top-level challenge and all the
 // associated subchallenge honest edges along with some more metadata used for
 // computing information needed for confirmations. Each time an edge is created onchain,
@@ -179,34 +156,20 @@ func (w *Watcher) IsRoyal(assertionHash protocol.AssertionHash, edgeId protocol.
 func (w *Watcher) InheritedTimer(
 	ctx context.Context,
 	edgeId protocol.EdgeId,
-) (uint64, error) {
+) (protocol.InheritedTimer, error) {
 	chalManager, err := w.chain.SpecChallengeManager(ctx)
 	if err != nil {
 		return 0, err
 	}
-	return chalManager.InheritedTimer(ctx, edgeId)
-}
-
-func (w *Watcher) UpdateInheritedTimer(
-	ctx context.Context,
-	topLevelAssertionHash protocol.AssertionHash,
-	edgeId protocol.EdgeId,
-) (uint64, error) {
-	chal, ok := w.challenges.TryGet(topLevelAssertionHash)
-	if !ok {
-		return 0, fmt.Errorf(
-			"could not get challenge for top level assertion %#x",
-			topLevelAssertionHash,
-		)
-	}
-	blockHeader, err := w.chain.Backend().HeaderByNumber(ctx, nil)
+	edgeOpt, err := chalManager.GetEdge(ctx, edgeId)
 	if err != nil {
 		return 0, err
 	}
-	if !blockHeader.Number.IsUint64() {
-		return 0, errors.New("block number is not uint64")
+	if edgeOpt.IsNone() {
+		return 0, fmt.Errorf("no edge found with id %#x", edgeId.Hash)
+
 	}
-	return chal.honestEdgeTree.UpdateInheritedTimer(ctx, edgeId, blockHeader.Number.Uint64())
+	return edgeOpt.Unwrap().InheritedTimer(ctx)
 }
 
 func (w *Watcher) IsSynced() bool {
@@ -391,6 +354,77 @@ func (w *Watcher) GetRoyalEdges(ctx context.Context) (map[protocol.AssertionHash
 		return nil, err
 	}
 	return response, nil
+}
+
+func (w *Watcher) BlockChallengeRootEdge(
+	ctx context.Context,
+	challengedAssertionHash protocol.AssertionHash,
+) (protocol.SpecEdge, error) {
+	chal, ok := w.challenges.TryGet(challengedAssertionHash)
+	if !ok {
+		return nil, fmt.Errorf(
+			"could not get challenge for top level assertion %#x",
+			challengedAssertionHash,
+		)
+	}
+	return chal.honestEdgeTree.BlockChallengeRootEdge(ctx)
+}
+
+func (w *Watcher) LowerMostRoyalEdges(
+	ctx context.Context,
+	challengedAssertionHash protocol.AssertionHash,
+) ([]protocol.SpecEdge, error) {
+	chal, ok := w.challenges.TryGet(challengedAssertionHash)
+	if !ok {
+		return nil, fmt.Errorf(
+			"could not get challenge for top level assertion %#x",
+			challengedAssertionHash,
+		)
+	}
+	return chal.honestEdgeTree.GetAllRoyalLeaves(ctx)
+}
+
+func (w *Watcher) ComputeAncestors(
+	ctx context.Context,
+	challengedAssertionHash protocol.AssertionHash,
+	edgeId protocol.EdgeId,
+) ([]protocol.ReadOnlyEdge, error) {
+	chal, ok := w.challenges.TryGet(challengedAssertionHash)
+	if !ok {
+		return nil, fmt.Errorf(
+			"could not get challenge for top level assertion %#x",
+			challengedAssertionHash,
+		)
+	}
+	blockHeader, err := w.chain.Backend().HeaderByNumber(ctx, util.GetSafeBlockNumber())
+	if err != nil {
+		return nil, err
+	}
+	if !blockHeader.Number.IsUint64() {
+		return nil, errors.New("block number is not uint64")
+	}
+	return chal.honestEdgeTree.ComputeAncestors(ctx, edgeId, blockHeader.Number.Uint64())
+}
+
+func (w *Watcher) ComputeRootInheritedTimer(
+	ctx context.Context,
+	challengedAssertionHash protocol.AssertionHash,
+) (protocol.InheritedTimer, error) {
+	chal, ok := w.challenges.TryGet(challengedAssertionHash)
+	if !ok {
+		return 0, fmt.Errorf(
+			"could not get challenge for top level assertion %#x",
+			challengedAssertionHash,
+		)
+	}
+	blockHeader, err := w.chain.Backend().HeaderByNumber(ctx, util.GetSafeBlockNumber())
+	if err != nil {
+		return 0, err
+	}
+	if !blockHeader.Number.IsUint64() {
+		return 0, errors.New("block number is not uint64")
+	}
+	return chal.honestEdgeTree.ComputeRootInheritedTimer(ctx, challengedAssertionHash, blockHeader.Number.Uint64())
 }
 
 // AddVerifiedHonestEdge adds an edge known to be honest to the chain watcher's internally
@@ -686,7 +720,9 @@ func (w *Watcher) processEdgeConfirmation(
 	// Check if we should confirm the assertion by challenge winner.
 	challengeLevel := edge.GetChallengeLevel()
 	if challengeLevel == protocol.NewBlockChallengeLevel() {
-		w.LaunchThread(func(ctx context.Context) { w.confirmAssertionByChallengeWinner(ctx, edge, claimId, challengeParentAssertionHash) })
+		w.LaunchThread(func(ctx context.Context) {
+			w.confirmAssertionByChallengeWinner(ctx, edge, claimId, challengeParentAssertionHash)
+		})
 	}
 
 	chal.confirmedLevelZeroEdgeClaimIds.Put(claimId, edge.Id())
@@ -841,7 +877,7 @@ func (w *Watcher) saveEdgeToDB(
 		UpperChildId:      upperChildId,
 		HasChildren:       hasChildren,
 		IsRoyal:           isRoyal,
-		InheritedTimer:    inheritedTimer,
+		InheritedTimer:    uint64(inheritedTimer),
 		TimeUnrivaled:     timeUnrivaled,
 		HasRival:          hasRival,
 		HasLengthOneRival: hasLengthOneRival,

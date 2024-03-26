@@ -184,7 +184,7 @@ func (ht *RoyalChallengeTree) keepTrackOfHonestEdge(eg protocol.SpecEdge) {
 	reversedChallengeLevel := eg.GetReversedChallengeLevel()
 	rootEdgesAtLevel, ok := ht.royalRootEdgesByLevel.TryGet(reversedChallengeLevel)
 	if !ok || rootEdgesAtLevel == nil {
-		honestRootEdges := threadsafe.NewSlice[protocol.ReadOnlyEdge]()
+		honestRootEdges := threadsafe.NewSlice[protocol.SpecEdge]()
 		honestRootEdges.Push(eg)
 		ht.royalRootEdgesByLevel.Put(reversedChallengeLevel, honestRootEdges)
 	} else {

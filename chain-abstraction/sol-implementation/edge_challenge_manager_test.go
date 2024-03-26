@@ -497,9 +497,9 @@ func TestEdgeChallengeManager_ConfirmByTime(t *testing.T) {
 
 	chalManager, err := bisectionScenario.topLevelFork.Chains[0].SpecChallengeManager(ctx)
 	require.NoError(t, err)
-	require.NoError(t, chalManager.UpdateInheritedTimerByChildren(ctx, honestChildren1.Id()))
-	require.NoError(t, chalManager.UpdateInheritedTimerByChildren(ctx, honestChildren2.Id()))
-	require.NoError(t, chalManager.UpdateInheritedTimerByChildren(ctx, honestEdge.Id()))
+	require.NoError(t, chalManager.MultiUpdateInheritedTimers(ctx, []protocol.ReadOnlyEdge{honestChildren1}))
+	require.NoError(t, chalManager.MultiUpdateInheritedTimers(ctx, []protocol.ReadOnlyEdge{honestChildren2}))
+	require.NoError(t, chalManager.MultiUpdateInheritedTimers(ctx, []protocol.ReadOnlyEdge{honestEdge}))
 
 	require.NoError(t, honestEdge.ConfirmByTimer(ctx))
 	s0, err := honestEdge.Status(ctx)
@@ -562,7 +562,7 @@ func TestEdgeChallengeManager_ConfirmByTime_MoreComplexScenario(t *testing.T) {
 	t.Run("confirmed by timer", func(t *testing.T) {
 		chalManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
 		require.NoError(t, err)
-		require.NoError(t, chalManager.UpdateInheritedTimerByChildren(ctx, honestEdge.Id()))
+		require.NoError(t, chalManager.MultiUpdateInheritedTimers(ctx, []protocol.ReadOnlyEdge{honestEdge}))
 
 		require.NoError(t, honestEdge.ConfirmByTimer(ctx))
 		status, err := honestEdge.Status(ctx)

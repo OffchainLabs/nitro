@@ -61,6 +61,8 @@ type HashCollectorConfig struct {
 	MachineStartIndex OpcodeIndex
 	// The step size for stepping through the machine in order to collect its hashes.
 	StepSize StepSize
+	// ClaimId for the subchallenge
+	ClaimId common.Hash
 }
 
 func (h *HashCollectorConfig) String() string {
@@ -213,6 +215,7 @@ func (p *HistoryCommitmentProvider) historyCommitmentImpl(
 		NumDesiredHashes:  numHashes,
 		MachineStartIndex: machineStartIndex,
 		StepSize:          stepSize,
+		ClaimId:           req.ClaimId,
 	}
 	// Requests collecting machine hashes for the specified config, and uses an in-flight
 	// request cache to make sure the same request is not spawned twice, but rather

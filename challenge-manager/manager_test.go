@@ -39,64 +39,11 @@ func TestEdgeTracker_Act(t *testing.T) {
 
 	err = tkr.Act(ctx)
 	require.NoError(t, err)
-	require.Equal(t, edgetracker.EdgeConfirming, tkr.CurrentState())
+	require.Equal(t, edgetracker.EdgeAwaitingChallengeCompletion, tkr.CurrentState())
 
 	err = tkr.Act(ctx)
 	require.NoError(t, err)
-	require.Equal(t, edgetracker.EdgeConfirming, tkr.CurrentState())
-}
-
-func TestEdgeTracker_Act_ChallengedEdgeCannotConfirmByTime(t *testing.T) {
-	ctx := context.Background()
-	createdData, err := setup.CreateTwoValidatorFork(ctx, &setup.CreateForkConfig{}, setup.WithMockOneStepProver())
-	require.NoError(t, err)
-
-	chalManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
-	require.NoError(t, err)
-	chalPeriodBlocks, err := chalManager.ChallengePeriodBlocks(ctx)
-	require.NoError(t, err)
-
-	// Delay the evil root edge creation by half a challenge period.
-	delayEvilRootEdgeCreation := option.Some(chalPeriodBlocks / 2)
-
-	tkr, _ := setupEdgeTrackersForBisection(t, ctx, createdData, delayEvilRootEdgeCreation)
-	err = tkr.Act(ctx)
-	require.NoError(t, err)
-	require.Equal(t, edgetracker.EdgeBisecting, tkr.CurrentState())
-
-	// After bisecting, our edge should be in the confirming state.
-	err = tkr.Act(ctx)
-	require.NoError(t, err)
-	require.Equal(t, edgetracker.EdgeConfirming, tkr.CurrentState())
-
-	// However, it should not be confirmable yet as we are halfway through the challenge period.
-	err = tkr.Act(ctx)
-	require.NoError(t, err)
-	require.Equal(t, edgetracker.EdgeConfirming, tkr.CurrentState())
-
-	someEdge, err := chalManager.GetEdge(ctx, tkr.EdgeId())
-	require.NoError(t, err)
-	require.Equal(t, false, someEdge.IsNone())
-	edge := someEdge.Unwrap()
-
-	timerBefore, err := tkr.Watcher().InheritedTimer(ctx, edge.Id())
-	require.NoError(t, err)
-
-	// Advance our backend way beyond the challenge period.
-	for i := uint64(0); i < chalPeriodBlocks; i++ {
-		createdData.Backend.Commit()
-	}
-
-	timerAfter, err := tkr.Watcher().InheritedTimer(ctx, edge.Id())
-	require.NoError(t, err)
-	require.Equal(t, timerBefore, timerAfter)
-
-	// Despite a lot of time having passed since the edge was created, its timer stopped halfway
-	// through the challenge period as it gained a rival. That is, no matter how much time passes,
-	// our edge will still not be confirmed by time.
-	err = tkr.Act(ctx)
-	require.NoError(t, err)
-	require.Equal(t, edgetracker.EdgeConfirming, tkr.CurrentState())
+	require.Equal(t, edgetracker.EdgeAwaitingChallengeCompletion, tkr.CurrentState())
 }
 
 func TestEdgeTracker_Act_ConfirmedByTime(t *testing.T) {
@@ -124,7 +71,7 @@ func TestEdgeTracker_Act_ConfirmedByTime(t *testing.T) {
 	// Expect our edge to be confirmed right away.
 	err = honestTracker.Act(ctx)
 	require.NoError(t, err)
-	require.Equal(t, edgetracker.EdgeConfirmed, honestTracker.CurrentState())
+	require.Equal(t, edgetracker.EdgeAwaitingChallengeCompletion, honestTracker.CurrentState())
 	require.Equal(t, true, honestTracker.ShouldDespawn(ctx))
 }
 

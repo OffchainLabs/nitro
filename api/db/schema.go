@@ -14,31 +14,19 @@ INSERT INTO Flags (FlagName, FlagValue) VALUES ('CurrentVersion', 0);
 	// The first element is the initial schema,
 	// and each subsequent element is a migration from the previous version to the new version.
 	version1 = `
-CREATE TABLE Challenges (
+CREATE TABLE IF NOT EXISTS Challenges (
     Hash TEXT NOT NULL PRIMARY KEY,
     UNIQUE(Hash)
 );
 
-CREATE TABLE CollectMachineHashes (
-    WasmModuleRoot TEXT NOT NULL,
-    FromBatch INTEGER NOT NULL,
-    BlockChallengeHeight INTEGER NOT NULL,
-    RawStepHeights TEXT NOT NULL,
-    NumDesiredHashes INTEGER NOT NULL,
-    MachineStartIndex INTEGER NOT NULL,
-    StepSize INTEGER NOT NULL,
-    StartTime DATETIME NOT NULL,
-    FinishTime DATETIME
-);
-
-CREATE TABLE EdgeClaims (
+CREATE TABLE IF NOT EXISTS EdgeClaims (
     ClaimId TEXT NOT NULL PRIMARY KEY,
     RefersTo TEXT NOT NULL, -- 'edge' or 'assertion'
     FOREIGN KEY(ClaimId) REFERENCES Edges(Id),
     FOREIGN KEY(ClaimId) REFERENCES Assertions(Hash)
 );
 
-CREATE TABLE Edges (
+CREATE TABLE IF NOT EXISTS Edges (
     Id TEXT NOT NULL PRIMARY KEY,
     ChallengeLevel INTEGER NOT NULL,
     OriginId TEXT NOT NULL,
@@ -66,7 +54,7 @@ CREATE TABLE Edges (
     FOREIGN KEY(AssertionHash) REFERENCES Challenges(Hash)
 );
 
-CREATE TABLE Assertions (
+CREATE TABLE IF NOT EXISTS Assertions (
     Hash TEXT NOT NULL PRIMARY KEY,
     ConfirmPeriodBlocks INTEGER NOT NULL,
     RequiredStake TEXT NOT NULL,
@@ -96,20 +84,20 @@ CREATE TABLE Assertions (
     FOREIGN KEY(ParentAssertionHash) REFERENCES Assertions(Hash)
 );
 
-CREATE INDEX idx_edge_assertion ON Edges(AssertionHash);
-CREATE INDEX idx_assertions_assertion ON Assertions(Hash);
-CREATE INDEX idx_edge_claim_id ON Edges(ClaimId);
-CREATE INDEX idx_edge_end_height ON Edges(EndHeight);
-CREATE INDEX idx_edge_end_history_root ON Edges(EndHistoryRoot);
+CREATE INDEX IF NOT EXISTS idx_edge_assertion ON Edges(AssertionHash);
+CREATE INDEX IF NOT EXISTS idx_assertions_assertion ON Assertions(Hash);
+CREATE INDEX IF NOT EXISTS idx_edge_claim_id ON Edges(ClaimId);
+CREATE INDEX IF NOT EXISTS idx_edge_end_height ON Edges(EndHeight);
+CREATE INDEX IF NOT EXISTS idx_edge_end_history_root ON Edges(EndHistoryRoot);
 
-CREATE TRIGGER UpdateEdgeTimestamp
+CREATE TRIGGER IF NOT EXISTS UpdateEdgeTimestamp
 AFTER UPDATE ON Edges
 FOR EACH ROW
 BEGIN
    UPDATE Edges SET LastUpdatedAt = CURRENT_TIMESTAMP WHERE Id = NEW.Id;
 END;
 
-CREATE TRIGGER UpdateAssertionTimestamp
+CREATE TRIGGER IF NOT EXISTS UpdateAssertionTimestamp
 AFTER UPDATE ON Assertions
 FOR EACH ROW
 BEGIN
@@ -118,7 +106,22 @@ END;
 `
 	version2 = `
 ALTER TABLE Edges ADD COLUMN InheritedTimer INTEGER NOT NULL DEFAULT 0;
+
+CREATE TABLE IF NOT EXISTS CollectMachineHashes (
+    WasmModuleRoot TEXT NOT NULL,
+    FromBatch INTEGER NOT NULL,
+    BlockChallengeHeight INTEGER NOT NULL,
+    RawStepHeights TEXT NOT NULL,
+    NumDesiredHashes INTEGER NOT NULL,
+    MachineStartIndex INTEGER NOT NULL,
+    StepSize INTEGER NOT NULL,
+    StartTime DATETIME NOT NULL,
+    FinishTime DATETIME
+);
+`
+	version3 = `
+	ALTER TABLE Edges ADD COLUMN CumulativePathTimer INTEGER NOT NULL DEFAULT 0;
 `
 	// schemaList is a list of schema versions.
-	schemaList = []string{version1, version2}
+	schemaList = []string{version1, version2, version3}
 )

@@ -22,6 +22,7 @@ type Edge struct {
 	ID                   EdgeId
 	EdgeType             protocol.ChallengeLevel
 	InnerStatus          protocol.EdgeStatus
+	InnerInheritedTimer  protocol.InheritedTimer
 	StartHeight          uint64
 	StartCommit          Commit
 	EndHeight            uint64
@@ -123,6 +124,11 @@ func (*Edge) AssertionHash(_ context.Context) (protocol.AssertionHash, error) {
 // TimeUnrivaled in seconds an edge has been unrivaled.
 func (*Edge) TimeUnrivaled(_ context.Context) (uint64, error) {
 	return 0, nil
+}
+
+// TimeUnrivaled in seconds an edge has been unrivaled.
+func (e *Edge) InheritedTimer(_ context.Context) (protocol.InheritedTimer, error) {
+	return e.InnerInheritedTimer, nil
 }
 
 // Status of an edge.

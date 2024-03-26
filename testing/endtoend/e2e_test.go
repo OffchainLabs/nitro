@@ -103,7 +103,7 @@ type protocolParams struct {
 func defaultProtocolParams() protocolParams {
 	return protocolParams{
 		numBigStepLevels:      1,
-		challengePeriodBlocks: 150,
+		challengePeriodBlocks: 60,
 		layerZeroHeights: protocol.LayerZeroHeights{
 			BlockChallengeHeight:     1 << 5,
 			BigStepChallengeHeight:   1 << 5,
@@ -134,6 +134,7 @@ func TestEndToEnd_SmokeTest(t *testing.T) {
 func TestEndToEnd_MaxWavmOpcodes(t *testing.T) {
 	protocolCfg := defaultProtocolParams()
 	protocolCfg.numBigStepLevels = 2
+	protocolCfg.challengePeriodBlocks = 50
 	// A block can take a max of 2^42 wavm opcodes to validate.
 	protocolCfg.layerZeroHeights = protocol.LayerZeroHeights{
 		BlockChallengeHeight:     1 << 6,
@@ -157,6 +158,7 @@ func TestEndToEnd_MaxWavmOpcodes(t *testing.T) {
 
 func TestEndToEnd_TwoEvilValidators(t *testing.T) {
 	protocolCfg := defaultProtocolParams()
+	protocolCfg.challengePeriodBlocks = 50
 	timeCfg := defaultTimeParams()
 	timeCfg.blockTime = time.Millisecond * 500
 	timeCfg.challengeMoveInterval = time.Millisecond * 500
@@ -177,9 +179,8 @@ func TestEndToEnd_TwoEvilValidators(t *testing.T) {
 }
 
 func TestEndToEnd_ManyEvilValidators(t *testing.T) {
-	t.Skip()
 	protocolCfg := defaultProtocolParams()
-	protocolCfg.challengePeriodBlocks = 1000
+	protocolCfg.challengePeriodBlocks = 100
 	timeCfg := defaultTimeParams()
 	timeCfg.blockTime = time.Millisecond * 500
 	timeCfg.challengeMoveInterval = time.Millisecond * 500

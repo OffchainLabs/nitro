@@ -87,6 +87,8 @@ type HistoryCommitmentRequest struct {
 	// An optional height at which to end the history commitment. If none, the request
 	// will commit to all the leaves at the specified challenge level.
 	UpToHeight option.Option[Height]
+	// ClaimId for the request.
+	ClaimId common.Hash
 }
 
 type GeneralHistoryCommitter interface {

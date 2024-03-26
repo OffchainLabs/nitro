@@ -772,12 +772,12 @@ func (d *SqliteDatabase) InsertEdge(edge *api.JsonEdge) error {
 	   Id, ChallengeLevel, OriginId, StartHistoryRoot, StartHeight,
 	   EndHistoryRoot, EndHeight, CreatedAtBlock, MutualId, ClaimId,
 	   HasChildren, LowerChildId, UpperChildId, MiniStaker, AssertionHash,
-	   HasRival, Status, HasLengthOneRival, RawAncestors, IsRoyal, InheritedTimer
+	   HasRival, Status, HasLengthOneRival, RawAncestors, IsRoyal, InheritedTimer, CumulativePathTimer
    ) VALUES (
 	   :Id, :ChallengeLevel, :OriginId, :StartHistoryRoot, :StartHeight,
 	   :EndHistoryRoot, :EndHeight, :CreatedAtBlock, :MutualId, :ClaimId,
 	   :HasChildren, :LowerChildId, :UpperChildId, :MiniStaker, :AssertionHash,
-	   :HasRival, :Status, :HasLengthOneRival, :RawAncestors, :IsRoyal, :InheritedTimer
+	   :HasRival, :Status, :HasLengthOneRival, :RawAncestors, :IsRoyal, :InheritedTimer, :CumulativePathTimer
    )`
 
 	if _, err = tx.NamedExec(insertEdgeQuery, edge); err != nil {
@@ -839,8 +839,9 @@ func (d *SqliteDatabase) UpdateEdges(edges []*api.JsonEdge) error {
 	 Status = :Status,
 	 HasLengthOneRival = :HasLengthOneRival,
 	 IsRoyal = :IsRoyal,
-	 RawAncestors = :RawAncestors,
-	 InheritedTimer = :InheritedTimer
+	 InheritedTimer = :InheritedTimer,
+	 CumulativePathTimer = :CumulativePathTimer,
+	 RawAncestors = :RawAncestors
 	 WHERE Id = :Id`
 	tx, err := d.sqlDB.Beginx()
 	if err != nil {

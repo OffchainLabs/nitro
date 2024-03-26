@@ -200,7 +200,7 @@ func (b *Backend) GetEdges(ctx context.Context, opts ...db.EdgeOption) ([]*api.J
 				if err != nil {
 					return nil, err
 				}
-				e.InheritedTimer = inheritedTimer
+				e.InheritedTimer = uint64(inheritedTimer)
 			}
 			e.IsRoyal = isRoyal
 			trackerOpt := b.trackerFetcher.GetEdgeTracker(edge.Id())

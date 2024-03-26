@@ -170,24 +170,10 @@ func (m *MockSpecChallengeManager) ChallengePeriodBlocks(ctx context.Context) (u
 	args := m.Called(ctx)
 	return args.Get(0).(uint64), args.Error(1)
 }
-
-func (m *MockSpecChallengeManager) InheritedTimer(ctx context.Context, edgeId protocol.EdgeId) (uint64, error) {
-	args := m.Called(ctx, edgeId)
-	return args.Get(0).(uint64), args.Error(1)
-}
-func (m *MockSpecChallengeManager) UpdateInheritedTimerByChildren(ctx context.Context, edgeId protocol.EdgeId) error {
-	args := m.Called(ctx, edgeId)
+func (m *MockSpecChallengeManager) MultiUpdateInheritedTimers(ctx context.Context, branch []protocol.ReadOnlyEdge) error {
+	args := m.Called(ctx, branch)
 	return args.Error(0)
 }
-func (m *MockSpecChallengeManager) UpdateInheritedTimerByClaim(
-	ctx context.Context,
-	claimingEdgeId protocol.EdgeId,
-	claimId protocol.ClaimId,
-) error {
-	args := m.Called(ctx, claimingEdgeId, claimId)
-	return args.Error(0)
-}
-
 func (m *MockSpecChallengeManager) GetEdge(
 	ctx context.Context,
 	edgeId protocol.EdgeId,
@@ -302,6 +288,10 @@ func (m *MockSpecEdge) AssertionHash(ctx context.Context) (protocol.AssertionHas
 func (m *MockSpecEdge) TimeUnrivaled(ctx context.Context) (uint64, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(uint64), args.Error(1)
+}
+func (m *MockSpecEdge) InheritedTimer(ctx context.Context) (protocol.InheritedTimer, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(protocol.InheritedTimer), args.Error(1)
 }
 func (m *MockSpecEdge) HasRival(ctx context.Context) (bool, error) {
 	args := m.Called(ctx)
