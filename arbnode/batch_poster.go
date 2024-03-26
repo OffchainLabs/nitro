@@ -56,7 +56,7 @@ var (
 	batchPosterWalletBalance      = metrics.NewRegisteredGaugeFloat64("arb/batchposter/wallet/eth", nil)
 	batchPosterGasRefunderBalance = metrics.NewRegisteredGaugeFloat64("arb/batchposter/gasrefunder/eth", nil)
 	baseFeeGauge                  = metrics.NewRegisteredGauge("arb/batchposter/basefee", nil)
-	blobFeeGauge                  = metrics.NewRegisteredHistogram("arb/batchposter/blobfee", nil, metrics.NewBoundedHistogramSample())
+	blobFeeHistogram              = metrics.NewRegisteredHistogram("arb/batchposter/blobfee", nil, metrics.NewBoundedHistogramSample())
 	l1GasPriceGauge               = metrics.NewRegisteredGauge("arb/batchposter/l1gasprice", nil)
 	l1GasPriceEstimateGauge       = metrics.NewRegisteredGauge("arb/batchposter/l1gasprice/estimate", nil)
 	latestBatchSurplusGauge       = metrics.NewRegisteredGauge("arb/batchposter/latestbatchsurplus", nil)
@@ -539,7 +539,7 @@ func (b *BatchPoster) pollForL1PriceData(ctx context.Context) {
 					blobFeePerByte := eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*h.ExcessBlobGas, *h.BlobGasUsed))
 					blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
 					blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
-					blobFeeGauge.Update(blobFeePerByte.Int64())
+					blobFeeHistogram.Update(blobFeePerByte.Int64())
 					if l1GasPrice > blobFeePerByte.Uint64()/16 {
 						l1GasPrice = blobFeePerByte.Uint64() / 16
 					}
