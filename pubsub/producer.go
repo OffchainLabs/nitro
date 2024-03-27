@@ -198,7 +198,7 @@ func (p *Producer[T]) checkPending(ctx context.Context) ([]*Message[T], error) {
 		var tmp T
 		val, err := tmp.Unmarshal(msg.Values[messageKey])
 		if err != nil {
-			return nil, fmt.Errorf("marshaling value: %v, error: %v", msg.Values[messageKey], err)
+			return nil, fmt.Errorf("marshaling value: %v, error: %w", msg.Values[messageKey], err)
 		}
 		res = append(res, &Message[T]{
 			ID:    msg.ID,

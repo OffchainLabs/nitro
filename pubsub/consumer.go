@@ -128,7 +128,7 @@ func (c *Consumer[T]) Consume(ctx context.Context) (*Message[T], error) {
 	)
 	val, err := tmp.Unmarshal(value)
 	if err != nil {
-		return nil, fmt.Errorf("unmarshaling value: %v, error: %v", value, err)
+		return nil, fmt.Errorf("unmarshaling value: %v, error: %w", value, err)
 	}
 
 	return &Message[T]{
