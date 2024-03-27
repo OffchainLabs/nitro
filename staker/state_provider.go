@@ -194,6 +194,7 @@ func (s *StateManager) ExecutionStateAfterPreviousState(
 	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("History commit from %d to %d, and from batch %d to %d: %#x\n", 0, maxNumberOfBlocks, fromBatch, toBatch, historyCommit.Merkle)
 	executionState.EndHistoryRoot = historyCommit.Merkle
 	return executionState, nil
 }
