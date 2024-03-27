@@ -98,12 +98,12 @@ func Test_getEdgeTrackers(t *testing.T) {
 	edge.On("EndCommitment").Return(protocol.Height(0), common.Hash{})
 	edge.On("GetChallengeLevel").Return(protocol.ChallengeLevel(0))
 	m.On("ReadAssertionCreationInfo", ctx, assertionHash).Return(&protocol.AssertionCreatedInfo{
-		BeforeState: rollupgen.ExecutionState{
+		BeforeState: rollupgen.AssertionState{
 			GlobalState: rollupgen.GlobalState{
 				U64Vals: [2]uint64{1, 0},
 			},
 		},
-		AfterState: rollupgen.ExecutionState{
+		AfterState: rollupgen.AssertionState{
 			GlobalState: rollupgen.GlobalState{
 				U64Vals: [2]uint64{100, 0},
 			},

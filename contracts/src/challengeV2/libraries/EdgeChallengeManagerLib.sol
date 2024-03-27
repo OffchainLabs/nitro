@@ -8,13 +8,14 @@ import "./UintUtilsLib.sol";
 import "./MerkleTreeLib.sol";
 import "./ChallengeEdgeLib.sol";
 import "../../osp/IOneStepProofEntry.sol";
+import "../../rollup/AssertionState.sol";
 import "../../libraries/Constants.sol";
 import "./ChallengeErrors.sol";
 
 /// @notice An execution state and proof to show that it's valid
-struct ExecutionStateData {
+struct AssertionStateData {
     /// @notice An execution state
-    ExecutionState executionState;
+    AssertionState assertionState;
     /// @notice assertion Hash of the prev assertion
     bytes32 prevAssertionHash;
     /// @notice Inbox accumulator of the assertion
@@ -46,8 +47,8 @@ struct CreateEdgeArgs {
     /// @notice Edge type specific data
     ///         For Block type edges this is the abi encoding of:
     ///         bytes32[]: Inclusion proof - proof to show that the end state is the last state in the end history root
-    ///         ExecutionStateData: the before state of the edge
-    ///         ExecutionStateData: the after state of the edge
+    ///         AssertionStateData: the before state of the edge
+    ///         AssertionStateData: the after state of the edge
     ///         bytes32 predecessorId: id of the prev assertion
     ///         bytes32 inboxAcc:  the inbox accumulator of the assertion
     ///         For BigStep and SmallStep edges this is the abi encoding of:
@@ -115,9 +116,9 @@ struct AssertionReferenceData {
     /// @notice Does the assertion have a sibling
     bool hasSibling;
     /// @notice The execution state of the predecessor assertion
-    ExecutionState startState;
+    AssertionState startState;
     /// @notice The execution state of the assertion being claimed
-    ExecutionState endState;
+    AssertionState endState;
 }
 
 /// @title  Core functionality for the Edge Challenge Manager
@@ -126,6 +127,7 @@ struct AssertionReferenceData {
 library EdgeChallengeManagerLib {
     using ChallengeEdgeLib for ChallengeEdge;
     using GlobalStateLib for GlobalState;
+    using AssertionStateLib for AssertionState;
 
     /// @dev Magic string hash to represent that a edges with a given mutual id have no rivals
     bytes32 public constant UNRIVALED = keccak256(abi.encodePacked("UNRIVALED"));
@@ -245,7 +247,7 @@ library EdgeChallengeManagerLib {
                 revert EmptyEdgeSpecificProof();
             }
             (bytes32[] memory inclusionProof,,) =
-                abi.decode(args.proof, (bytes32[], ExecutionStateData, ExecutionStateData));
+                abi.decode(args.proof, (bytes32[], AssertionStateData, AssertionStateData));
 
             // check the start and end execution states exist, the block hash entry should be non zero
             if (ard.startState.machineStatus == MachineStatus.RUNNING) {
@@ -256,8 +258,8 @@ library EdgeChallengeManagerLib {
             }
 
             // Create machine hashes out of the proven state
-            bytes32 startStateHash = oneStepProofEntry.getMachineHash(ard.startState);
-            bytes32 endStateHash = oneStepProofEntry.getMachineHash(ard.endState);
+            bytes32 startStateHash = oneStepProofEntry.getMachineHash(ard.startState.toExecutionState());
+            bytes32 endStateHash = oneStepProofEntry.getMachineHash(ard.endState.toExecutionState());
 
             return (ProofData(startStateHash, endStateHash, inclusionProof), originId);
         } else {

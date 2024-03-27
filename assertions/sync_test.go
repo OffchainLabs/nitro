@@ -225,8 +225,8 @@ func numToHash(i int) common.Hash {
 	return common.BytesToHash([]byte(fmt.Sprintf("%d", i)))
 }
 
-func numToState(i int) rollupgen.ExecutionState {
-	return rollupgen.ExecutionState{
+func numToState(i int) rollupgen.AssertionState {
+	return rollupgen.AssertionState{
 		GlobalState: rollupgen.GlobalState{
 			U64Vals: [2]uint64{uint64(i), uint64(0)},
 		},

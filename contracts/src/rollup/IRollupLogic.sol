@@ -21,7 +21,7 @@ interface IRollupUser is IRollupCore, IOwnable {
     function confirmAssertion(
         bytes32 assertionHash,
         bytes32 prevAssertionHash,
-        ExecutionState calldata confirmState,
+        AssertionState calldata confirmState,
         bytes32 winningEdgeId,
         ConfigData calldata prevConfig,
         bytes32 inboxAcc

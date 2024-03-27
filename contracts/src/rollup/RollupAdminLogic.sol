@@ -13,6 +13,8 @@ import "../libraries/DoubleLogicUUPSUpgradeable.sol";
 import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
 contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeable {
+    using AssertionStateLib for AssertionState;
+
     function initialize(Config calldata config, ContractDependencies calldata connectedContracts)
         external
         override
@@ -60,12 +62,11 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
         stakeToken = config.stakeToken;
         anyTrustFastConfirmer = config.anyTrustFastConfirmer;
 
-        bytes32 genesisExecutionHash = RollupLib.executionStateHash(config.genesisExecutionState);
         bytes32 parentAssertionHash = bytes32(0);
         bytes32 inboxAcc = bytes32(0);
         bytes32 genesisHash = RollupLib.assertionHash({
             parentAssertionHash: parentAssertionHash,
-            afterStateHash: genesisExecutionHash,
+            afterStateHash: config.genesisAssertionState.hash(),
             inboxAcc: inboxAcc
         });
 
@@ -87,7 +88,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
         initializeCore(initialAssertion, genesisHash);
 
         AssertionInputs memory assertionInputs;
-        assertionInputs.afterState = config.genesisExecutionState;
+        assertionInputs.afterState = config.genesisAssertionState;
         emit AssertionCreated(
             genesisHash,
             parentAssertionHash,
@@ -259,7 +260,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
     function forceConfirmAssertion(
         bytes32 assertionHash,
         bytes32 parentAssertionHash,
-        ExecutionState calldata confirmState,
+        AssertionState calldata confirmState,
         bytes32 inboxAcc
     ) external override whenPaused {
         // this skip deadline, prev, challenge validations

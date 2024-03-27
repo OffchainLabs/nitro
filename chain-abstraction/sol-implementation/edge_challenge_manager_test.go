@@ -5,7 +5,6 @@ package solimpl_test
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
@@ -20,7 +19,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
 )
 
@@ -205,11 +203,6 @@ func TestEdgeChallengeManager_BlockChallengeAddLevelZeroEdge(t *testing.T) {
 	chain1 := createdData.Chains[0]
 	challengeManager, err := chain1.SpecChallengeManager(ctx)
 	require.NoError(t, err)
-
-	leaves := make([]common.Hash, 4)
-	for i := range leaves {
-		leaves[i] = crypto.Keccak256Hash([]byte(fmt.Sprintf("%d", i)))
-	}
 
 	req := &l2stateprovider.HistoryCommitmentRequest{
 		WasmModuleRoot:              common.Hash{},

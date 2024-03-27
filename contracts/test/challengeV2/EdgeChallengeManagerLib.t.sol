@@ -179,6 +179,7 @@ contract EdgeChallengeManagerLibAccess {
 
 contract EdgeChallengeManagerLibTest is Test {
     using ChallengeEdgeLib for ChallengeEdge;
+    using AssertionStateLib for AssertionState;
 
     MockOneStepProofEntry mockOsp = new MockOneStepProofEntry(0);
 
@@ -1363,18 +1364,19 @@ contract EdgeChallengeManagerLibTest is Test {
     }
 
     struct ExecStateVars {
-        ExecutionState execState;
+        AssertionState assertionState;
         bytes32 machineHash;
     }
 
-    function randomExecutionState(IOneStepProofEntry os) private returns (ExecStateVars memory) {
-        ExecutionState memory execState = ExecutionState(
+    function randomAssertionState(IOneStepProofEntry os) private returns (ExecStateVars memory) {
+        AssertionState memory assertionState = AssertionState(
             GlobalState([rand.hash(), rand.hash()], [uint64(uint256(rand.hash())), uint64(uint256(rand.hash()))]),
-            MachineStatus.FINISHED
+            MachineStatus.FINISHED,
+            bytes32(0)
         );
 
-        bytes32 machineHash = os.getMachineHash(execState);
-        return ExecStateVars(execState, machineHash);
+        bytes32 machineHash = os.getMachineHash(assertionState.toExecutionState());
+        return ExecStateVars(assertionState, machineHash);
     }
 
     function createZeroBlockEdge(uint256 mode) internal {
@@ -1386,8 +1388,8 @@ contract EdgeChallengeManagerLibTest is Test {
             revertArg = abi.encodeWithSelector(NotPowerOfTwo.selector, expectedEndHeight);
         }
 
-        ExecStateVars memory startExec = randomExecutionState(entry);
-        ExecStateVars memory endExec = randomExecutionState(entry);
+        ExecStateVars memory startExec = randomAssertionState(entry);
+        ExecStateVars memory endExec = randomAssertionState(entry);
         ExpsAndProofs memory roots = newRootsAndProofs(0, expectedEndHeight, startExec.machineHash, endExec.machineHash);
         bytes32 claimId = rand.hash();
         bytes32 endRoot;
@@ -1404,8 +1406,8 @@ contract EdgeChallengeManagerLibTest is Test {
                 predecessorId: rand.hash(),
                 isPending: true,
                 hasSibling: true,
-                startState: startExec.execState,
-                endState: endExec.execState
+                startState: startExec.assertionState,
+                endState: endExec.assertionState
             });
             if (mode == 141) {
                 ard.assertionHash = rand.hash();
@@ -1424,34 +1426,36 @@ contract EdgeChallengeManagerLibTest is Test {
         }
 
         if (mode == 145) {
-            ExecutionState memory s;
+            AssertionState memory s;
             ard.startState = s;
             revertArg = abi.encodeWithSelector(EmptyStartMachineStatus.selector);
         }
         if (mode == 146) {
-            ExecutionState memory e;
+            AssertionState memory e;
             ard.endState = e;
             revertArg = abi.encodeWithSelector(EmptyEndMachineStatus.selector);
         }
+        CreateEdgeArgs memory args;
+        {
+            bytes memory proof = abi.encode(
+                ProofUtils.generateInclusionProof(ProofUtils.rehashed(roots.states), expectedEndHeight),
+                AssertionStateData(ard.startState, bytes32(0), bytes32(0)),
+                AssertionStateData(ard.endState, bytes32(0), bytes32(0))
+            );
+            if (mode == 147) {
+                proof = "";
+                revertArg = abi.encodeWithSelector(EmptyEdgeSpecificProof.selector);
+            }
 
-        bytes memory proof = abi.encode(
-            ProofUtils.generateInclusionProof(ProofUtils.rehashed(roots.states), expectedEndHeight),
-            ExecutionStateData(ard.startState, bytes32(0), bytes32(0)),
-            ExecutionStateData(ard.endState, bytes32(0), bytes32(0))
-        );
-        if (mode == 147) {
-            proof = "";
-            revertArg = abi.encodeWithSelector(EmptyEdgeSpecificProof.selector);
+            args = CreateEdgeArgs({
+                level: 0,
+                endHistoryRoot: endRoot,
+                endHeight: expectedEndHeight,
+                claimId: claimId,
+                prefixProof: abi.encode(roots.startExp, roots.prefixProof),
+                proof: proof
+            });
         }
-
-        CreateEdgeArgs memory args = CreateEdgeArgs({
-            level: 0,
-            endHistoryRoot: endRoot,
-            endHeight: expectedEndHeight,
-            claimId: claimId,
-            prefixProof: abi.encode(roots.startExp, roots.prefixProof),
-            proof: proof
-        });
         if (mode == 138) {
             args.endHeight = 2 ** 4;
             revertArg = abi.encodeWithSelector(InvalidEndHeight.selector, 2 ** 4, expectedEndHeight);
@@ -1470,7 +1474,9 @@ contract EdgeChallengeManagerLibTest is Test {
             assertEq(
                 store.get(addedEdge.edgeId).startHistoryRoot,
                 MerkleTreeLib.root(
-                    MerkleTreeLib.appendLeaf(new bytes32[](0), mockOsp.getMachineHash(startExec.execState))
+                    MerkleTreeLib.appendLeaf(
+                        new bytes32[](0), mockOsp.getMachineHash(startExec.assertionState.toExecutionState())
+                    )
                 ),
                 "Start history root"
             );
@@ -1680,15 +1686,15 @@ contract EdgeChallengeManagerLibTest is Test {
     struct CreateBlockEdgesBisectArgs {
         bytes32 claim1Id;
         bytes32 claim2Id;
-        ExecutionState endState1;
-        ExecutionState endState2;
+        AssertionState endState1;
+        AssertionState endState2;
         bool skipLast;
     }
 
     bytes32 genesisBlockHash = rand.hash();
-    ExecutionState genesisState = StateToolsLib.randomState(rand, 4, genesisBlockHash, MachineStatus.FINISHED);
+    AssertionState genesisState = StateToolsLib.randomState(rand, 4, genesisBlockHash, MachineStatus.FINISHED);
     bytes32 genesisStateHash = StateToolsLib.mockMachineHash(genesisState);
-    ExecutionStateData genesisStateData = ExecutionStateData(genesisState, bytes32(0), bytes32(0));
+    AssertionStateData genesisStateData = AssertionStateData(genesisState, bytes32(0), bytes32(0));
     bytes32 genesisAssertionHash = rand.hash();
     uint256 height1 = 32;
 
@@ -1700,7 +1706,7 @@ contract EdgeChallengeManagerLibTest is Test {
 
     function createLayerZeroEdge(
         bytes32 claimId,
-        ExecutionState memory endState,
+        AssertionState memory endState,
         bytes32[] memory states,
         bytes32[] memory exp,
         AssertionReferenceData memory ard,
@@ -1710,7 +1716,7 @@ contract EdgeChallengeManagerLibTest is Test {
         bytes memory typeSpecificProof1 = abi.encode(
             ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), states.length - 1),
             genesisStateData,
-            ExecutionStateData(endState, genesisAssertionHash, bytes32(0))
+            AssertionStateData(endState, genesisAssertionHash, bytes32(0))
         );
         bytes memory prefixProof = abi.encode(
             ProofUtils.expansionFromLeaves(states, 0, 1),
@@ -1965,10 +1971,10 @@ contract EdgeChallengeManagerLibTest is Test {
         bytes32 a2 = rand.hash();
         bytes32 h1 = rand.hash();
         bytes32 h2 = rand.hash();
-        ExecutionState memory a1State = StateToolsLib.randomState(
+        AssertionState memory a1State = StateToolsLib.randomState(
             rand, GlobalStateLib.getInboxPosition(genesisState.globalState), h1, MachineStatus.FINISHED
         );
-        ExecutionState memory a2State = StateToolsLib.randomState(
+        AssertionState memory a2State = StateToolsLib.randomState(
             rand, GlobalStateLib.getInboxPosition(genesisState.globalState), h2, MachineStatus.FINISHED
         );
 

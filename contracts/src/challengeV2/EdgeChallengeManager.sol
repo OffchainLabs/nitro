@@ -77,8 +77,7 @@ interface IEdgeChallengeManager {
     ///         of the same level, and claimId-edgeId links for zero layer edges that claim an edge in the level below.
     ///         This method also includes the amount of time the assertion being claimed spent without a sibling
     /// @param edgeId                   The id of the edge to confirm
-    function confirmEdgeByTime(bytes32 edgeId, ExecutionStateData calldata claimStateData) external;
-
+    function confirmEdgeByTime(bytes32 edgeId, AssertionStateData calldata claimStateData) external;
 
     /// @notice Update multiple edges' timer cache by their children. Equivalent to calling updateTimerCacheByChildren for each edge.
     /// @param edgeIds The ids of the edges to update
@@ -382,27 +381,31 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
             if (args.proof.length == 0) {
                 revert EmptyEdgeSpecificProof();
             }
-            (, ExecutionStateData memory predecessorStateData, ExecutionStateData memory claimStateData) =
-                abi.decode(args.proof, (bytes32[], ExecutionStateData, ExecutionStateData));
+            (, AssertionStateData memory predecessorStateData, AssertionStateData memory claimStateData) =
+                abi.decode(args.proof, (bytes32[], AssertionStateData, AssertionStateData));
 
             assertionChain.validateAssertionHash(
-                args.claimId, claimStateData.executionState, claimStateData.prevAssertionHash, claimStateData.inboxAcc
+                args.claimId, claimStateData.assertionState, claimStateData.prevAssertionHash, claimStateData.inboxAcc
             );
 
             assertionChain.validateAssertionHash(
                 claimStateData.prevAssertionHash,
-                predecessorStateData.executionState,
+                predecessorStateData.assertionState,
                 predecessorStateData.prevAssertionHash,
                 predecessorStateData.inboxAcc
             );
+
+            if (args.endHistoryRoot != claimStateData.assertionState.endHistoryRoot) {
+                revert EndHistoryRootMismatch(args.endHistoryRoot, claimStateData.assertionState.endHistoryRoot);
+            }
 
             ard = AssertionReferenceData(
                 args.claimId,
                 claimStateData.prevAssertionHash,
                 assertionChain.isPending(args.claimId),
                 assertionChain.getSecondChildCreationBlock(claimStateData.prevAssertionHash) > 0,
-                predecessorStateData.executionState,
-                claimStateData.executionState
+                predecessorStateData.assertionState,
+                claimStateData.assertionState
             );
         }
         edgeAdded = store.createLayerZeroEdge(args, ard, oneStepProofEntry, expectedEndHeight, NUM_BIGSTEP_LEVEL);
@@ -494,7 +497,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
     }
 
     /// @inheritdoc IEdgeChallengeManager
-    function confirmEdgeByTime(bytes32 edgeId, ExecutionStateData calldata claimStateData) public {
+    function confirmEdgeByTime(bytes32 edgeId, AssertionStateData calldata claimStateData) public {
         ChallengeEdge storage topEdge = store.get(edgeId);
         if (!topEdge.isLayerZero()) {
             revert EdgeNotLayerZero(topEdge.id(), topEdge.staker, topEdge.claimId);
@@ -508,7 +511,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         if (isBlockLevel && assertionChain.isFirstChild(topEdge.claimId)) {
             assertionChain.validateAssertionHash(
                 topEdge.claimId,
-                claimStateData.executionState,
+                claimStateData.assertionState,
                 claimStateData.prevAssertionHash,
                 claimStateData.inboxAcc
             );

@@ -251,7 +251,7 @@ func (m *Manager) canPostRivalAssertion() bool {
 }
 
 func (m *Manager) canPostChallenge() bool {
-	return m.challengeReader.Mode() >= types.DefensiveMode
+	return m.challengeReader.Mode() > types.DefensiveMode
 }
 func randUint64(max uint64) (uint64, error) {
 	n, err := rand.Int(rand.Reader, new(big.Int).SetUint64(max))

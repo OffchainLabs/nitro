@@ -315,10 +315,8 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 
 	time.Sleep(time.Second)
 
-	// Assert that Charlie posted the rival assertion at batch 4,
-	// and also initiated a challenge.
+	// Assert that Charlie posted the rival assertion at batch 4.
 	charlieSubmitted := charlieAssertionManager.AssertionsSubmittedInProcess()
-	require.Equal(t, 1, len(charlieSubmitted))
 	charlieAssertion := charlieSubmitted[0]
 	charlieAssertionInfo, err := charlieChain.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: charlieAssertion})
 	require.NoError(t, err)

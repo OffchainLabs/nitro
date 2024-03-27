@@ -70,26 +70,29 @@ const (
 )
 
 type ExecutionState struct {
-	GlobalState   GoGlobalState
-	MachineStatus MachineStatus
+	GlobalState    GoGlobalState
+	MachineStatus  MachineStatus
+	EndHistoryRoot common.Hash
 }
 
-func GoExecutionStateFromSolidity(executionState rollupgen.ExecutionState) *ExecutionState {
+func GoExecutionStateFromSolidity(executionState rollupgen.AssertionState) *ExecutionState {
 	return &ExecutionState{
-		GlobalState:   GoGlobalStateFromSolidity(executionState.GlobalState),
-		MachineStatus: MachineStatus(executionState.MachineStatus),
+		GlobalState:    GoGlobalStateFromSolidity(executionState.GlobalState),
+		MachineStatus:  MachineStatus(executionState.MachineStatus),
+		EndHistoryRoot: executionState.EndHistoryRoot,
 	}
 }
 
-func (s *ExecutionState) AsSolidityStruct() rollupgen.ExecutionState {
-	return rollupgen.ExecutionState{
-		GlobalState:   rollupgen.GlobalState(s.GlobalState.AsSolidityStruct()),
-		MachineStatus: uint8(s.MachineStatus),
+func (s *ExecutionState) AsSolidityStruct() rollupgen.AssertionState {
+	return rollupgen.AssertionState{
+		GlobalState:    rollupgen.GlobalState(s.GlobalState.AsSolidityStruct()),
+		MachineStatus:  uint8(s.MachineStatus),
+		EndHistoryRoot: s.EndHistoryRoot,
 	}
 }
 
 func (s *ExecutionState) Equals(other *ExecutionState) bool {
-	return s.MachineStatus == other.MachineStatus && s.GlobalState.Equals(other.GlobalState)
+	return s.MachineStatus == other.MachineStatus && s.GlobalState.Equals(other.GlobalState) && s.EndHistoryRoot == other.EndHistoryRoot
 }
 
 // RequiredBatches determines the batch count required to reach the execution state.

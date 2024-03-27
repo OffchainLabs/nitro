@@ -4,9 +4,7 @@
 
 pragma solidity ^0.8.0;
 
-import "../state/GlobalState.sol";
-import "../state/Machine.sol";
-import "../osp/IOneStepProofEntry.sol";
+import "./AssertionState.sol";
 
 enum AssertionStatus {
     // No assertion at this index
@@ -50,8 +48,8 @@ struct BeforeStateData {
 struct AssertionInputs {
     // Additional data used to validate the before state
     BeforeStateData beforeStateData;
-    ExecutionState beforeState;
-    ExecutionState afterState;
+    AssertionState beforeState;
+    AssertionState afterState;
 }
 
 struct ConfigData {

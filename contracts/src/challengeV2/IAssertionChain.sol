@@ -14,7 +14,7 @@ interface IAssertionChain {
     function bridge() external view returns (IBridge);
     function validateAssertionHash(
         bytes32 assertionHash,
-        ExecutionState calldata state,
+        AssertionState calldata state,
         bytes32 prevAssertionHash,
         bytes32 inboxAcc
     ) external view;

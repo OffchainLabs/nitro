@@ -15,20 +15,20 @@ library StateToolsLib {
 
     function randomState(Random rand, uint256 inboxMsgCountProcessed, bytes32 blockHash, MachineStatus ms)
         internal
-        returns (ExecutionState memory)
+        returns (AssertionState memory)
     {
         bytes32[2] memory bytes32Vals = [blockHash, rand.hash()];
         uint64[2] memory u64Vals = [uint64(inboxMsgCountProcessed), uint64(uint256(rand.hash()))];
 
         GlobalState memory gs = GlobalState({bytes32Vals: bytes32Vals, u64Vals: u64Vals});
-        return ExecutionState({globalState: gs, machineStatus: ms});
+        return AssertionState({globalState: gs, machineStatus: ms, endHistoryRoot: bytes32(0)});
     }
 
-    function hash(ExecutionState memory s) internal pure returns (bytes32) {
+    function hash(AssertionState memory s) internal pure returns (bytes32) {
         return s.globalState.hash();
     }
 
-    function mockMachineHash(ExecutionState memory s) internal pure returns (bytes32) {
+    function mockMachineHash(AssertionState memory s) internal pure returns (bytes32) {
         return s.globalState.hash();
     }
 }

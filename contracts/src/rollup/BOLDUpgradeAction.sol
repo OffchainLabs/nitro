@@ -90,22 +90,23 @@ interface IOldRollupAdmin {
 contract StateHashPreImageLookup {
     using GlobalStateLib for GlobalState;
 
-    event HashSet(bytes32 h, ExecutionState execState, uint256 inboxMaxCount);
+    event HashSet(bytes32 h, ExecutionState executionState, uint256 inboxMaxCount);
 
     mapping(bytes32 => bytes) internal preImages;
 
-    function stateHash(ExecutionState calldata execState, uint256 inboxMaxCount) public pure returns (bytes32) {
-        return keccak256(abi.encodePacked(execState.globalState.hash(), inboxMaxCount, execState.machineStatus));
+    function stateHash(ExecutionState calldata executionState, uint256 inboxMaxCount) public pure returns (bytes32) {
+        return
+            keccak256(abi.encodePacked(executionState.globalState.hash(), inboxMaxCount, executionState.machineStatus));
     }
 
-    function set(bytes32 h, ExecutionState calldata execState, uint256 inboxMaxCount) public {
-        require(h == stateHash(execState, inboxMaxCount), "Invalid hash");
-        preImages[h] = abi.encode(execState, inboxMaxCount);
-        emit HashSet(h, execState, inboxMaxCount);
+    function set(bytes32 h, ExecutionState calldata executionState, uint256 inboxMaxCount) public {
+        require(h == stateHash(executionState, inboxMaxCount), "Invalid hash");
+        preImages[h] = abi.encode(executionState, inboxMaxCount);
+        emit HashSet(h, executionState, inboxMaxCount);
     }
 
-    function get(bytes32 h) public view returns (ExecutionState memory execState, uint256 inboxMaxCount) {
-        (execState, inboxMaxCount) = abi.decode(preImages[h], (ExecutionState, uint256));
+    function get(bytes32 h) public view returns (ExecutionState memory executionState, uint256 inboxMaxCount) {
+        (executionState, inboxMaxCount) = abi.decode(preImages[h], (ExecutionState, uint256));
         require(inboxMaxCount != 0, "Hash not yet set");
     }
 }
@@ -156,13 +157,15 @@ contract RollupReader is IOldRollup {
 }
 
 /// @notice Stores an array specified during construction.
-///         Since the BOLDUpgradeAction is not allowed to have storage, 
+///         Since the BOLDUpgradeAction is not allowed to have storage,
 ///         we use this contract so it can keep an immutable pointer to an array.
 contract ConstantArrayStorage {
     uint256[] _array;
+
     constructor(uint256[] memory __array) {
         _array = __array;
     }
+
     function array() public view returns (uint256[] memory) {
         return _array;
     }
@@ -173,6 +176,8 @@ contract ConstantArrayStorage {
 ///         Also requires a lookup contract to be provided that contains the pre-image of the state hash
 ///         that is in the latest confirmed assertion in the current rollup.
 contract BOLDUpgradeAction {
+    using AssertionStateLib for AssertionState;
+
     uint256 public immutable BLOCK_LEAF_SIZE;
     uint256 public immutable BIGSTEP_LEAF_SIZE;
     uint256 public immutable SMALLSTEP_LEAF_SIZE;
@@ -342,9 +347,16 @@ contract BOLDUpgradeAction {
         // fetch the assertion associated with the latest confirmed state
         bytes32 latestConfirmedStateHash = ROLLUP_READER.getNode(ROLLUP_READER.latestConfirmed()).stateHash;
         (ExecutionState memory genesisExecState, uint256 inboxMaxCount) = PREIMAGE_LOOKUP.get(latestConfirmedStateHash);
+
+        // Convert ExecutionState into AssertionState with endHistoryRoot 0
+        AssertionState memory genesisAssertionState;
+        genesisAssertionState.globalState = genesisExecState.globalState;
+        genesisAssertionState.machineStatus = genesisExecState.machineStatus;
+
         // double check the hash
         require(
-            PREIMAGE_LOOKUP.stateHash(genesisExecState, inboxMaxCount) == latestConfirmedStateHash,
+            PREIMAGE_LOOKUP.stateHash(genesisAssertionState.toExecutionState(), inboxMaxCount)
+                == latestConfirmedStateHash,
             "Invalid latest execution hash"
         );
 
@@ -365,7 +377,7 @@ contract BOLDUpgradeAction {
             layerZeroBlockEdgeHeight: BLOCK_LEAF_SIZE,
             layerZeroBigStepEdgeHeight: BIGSTEP_LEAF_SIZE,
             layerZeroSmallStepEdgeHeight: SMALLSTEP_LEAF_SIZE,
-            genesisExecutionState: genesisExecState,
+            genesisAssertionState: genesisAssertionState,
             genesisInboxCount: inboxMaxCount,
             anyTrustFastConfirmer: ANY_TRUST_FAST_CONFIRMER,
             numBigStepLevel: NUM_BIGSTEP_LEVEL,
@@ -458,7 +470,7 @@ contract BOLDUpgradeAction {
             _numBigStepLevel: config.numBigStepLevel
         });
 
-        RollupProxy rollup = new RollupProxy{ salt: rollupSalt}();
+        RollupProxy rollup = new RollupProxy{salt: rollupSalt}();
         require(address(rollup) == expectedRollupAddress, "UNEXPCTED_ROLLUP_ADDR");
 
         // initialize the rollup with this contract as owner to set batch poster and validators

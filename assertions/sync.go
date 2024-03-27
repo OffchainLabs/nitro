@@ -403,14 +403,14 @@ func (m *Manager) maybePostRivalAssertionAndChallenge(
 		srvlog.Warn(fmt.Sprintf("Expected to post a rival assertion to %#x, but did not post anything", args.invalidAssertion.AssertionHash))
 		return nil, nil
 	}
-	if !m.canPostChallenge() {
-		srvlog.Warn("Attempted to post rival assertion and stake, but not configured to initiate a challenge", logFields)
-		return nil, nil
-	}
 	assertionHash := protocol.AssertionHash{Hash: correctRivalAssertion.Unwrap().AssertionHash}
 	postedRival, err := m.chain.ReadAssertionCreationInfo(ctx, assertionHash)
 	if err != nil {
 		return nil, errors.Wrapf(err, "could not read assertion creation info for %#x", assertionHash.Hash)
+	}
+	if !m.canPostChallenge() {
+		srvlog.Warn("Posted rival assertion and stake, but not configured to initiate a challenge", logFields)
+		return postedRival, nil
 	}
 
 	if args.canonicalParent.ChallengeManager != m.challengeManagerAddr {

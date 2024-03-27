@@ -91,8 +91,8 @@ type AssertionCreatedInfo struct {
 	ConfirmPeriodBlocks uint64
 	RequiredStake       *big.Int
 	ParentAssertionHash common.Hash
-	BeforeState         rollupgen.ExecutionState
-	AfterState          rollupgen.ExecutionState
+	BeforeState         rollupgen.AssertionState
+	AfterState          rollupgen.AssertionState
 	InboxMaxCount       *big.Int
 	AfterInboxBatchAcc  common.Hash
 	AssertionHash       common.Hash

@@ -11,7 +11,7 @@ import "./challengeV2/StateTools.sol";
 struct MockAssertion {
     bytes32 predecessorId;
     uint256 height;
-    ExecutionState state;
+    AssertionState state;
     bytes32 successionChallenge;
     uint64 firstChildCreationBlock;
     uint64 secondChildCreationBlock;
@@ -38,7 +38,7 @@ contract MockAssertionChain is IAssertionChain {
 
     function validateAssertionHash(
         bytes32 assertionHash,
-        ExecutionState calldata state,
+        AssertionState calldata state,
         bytes32 prevAssertionHash,
         bytes32 inboxAcc
     ) external view {
@@ -85,10 +85,10 @@ contract MockAssertionChain is IAssertionChain {
 
     function calculateAssertionHash(
         bytes32 predecessorId,
-        ExecutionState memory afterState
+        AssertionState memory afterState
     )
         public
-        view
+        pure
         returns (bytes32)
     {
         return RollupLib.assertionHash({
@@ -110,7 +110,7 @@ contract MockAssertionChain is IAssertionChain {
         bytes32 predecessorId,
         uint256 height,
         uint64 nextInboxPosition,
-        ExecutionState memory afterState,
+        AssertionState memory afterState,
         bytes32 successionChallenge
     ) public returns (bytes32) {
         bytes32 assertionHash = calculateAssertionHash(predecessorId, afterState);
@@ -139,8 +139,8 @@ contract MockAssertionChain is IAssertionChain {
         bytes32 predecessorId,
         uint256 height,
         uint64 nextInboxPosition,
-        ExecutionState memory beforeState,
-        ExecutionState memory afterState,
+        AssertionState memory beforeState,
+        AssertionState memory afterState,
         bytes32 successionChallenge
     ) public returns (bytes32) {
         bytes32 beforeStateHash = StateToolsLib.hash(beforeState);

@@ -82,7 +82,7 @@ contract RollupUserLogic is RollupCore, UUPSNotUpgradeable, IRollupUser {
     function confirmAssertion(
         bytes32 assertionHash,
         bytes32 prevAssertionHash,
-        ExecutionState calldata confirmState,
+        AssertionState calldata confirmState,
         bytes32 winningEdgeId,
         ConfigData calldata prevConfig,
         bytes32 inboxAcc
@@ -147,7 +147,7 @@ contract RollupUserLogic is RollupCore, UUPSNotUpgradeable, IRollupUser {
      * @param prevAssertionHash The hash of the assertion's parent
      * @param inboxAcc The inbox batch accumulator
      */
-    function computeAssertionHash(bytes32 prevAssertionHash, ExecutionState calldata state, bytes32 inboxAcc)
+    function computeAssertionHash(bytes32 prevAssertionHash, AssertionState calldata state, bytes32 inboxAcc)
         external
         pure
         returns (bytes32)
@@ -197,7 +197,8 @@ contract RollupUserLogic is RollupCore, UUPSNotUpgradeable, IRollupUser {
             "STAKED_ON_ANOTHER_BRANCH"
         );
 
-        (bytes32 newAssertionHash, bool overflowAssertion) = createNewAssertion(assertion, prevAssertion, expectedAssertionHash);
+        (bytes32 newAssertionHash, bool overflowAssertion) =
+            createNewAssertion(assertion, prevAssertion, expectedAssertionHash);
         _stakerMap[msg.sender].latestStakedAssertion = newAssertionHash;
 
         if (!overflowAssertion) {
@@ -251,7 +252,7 @@ contract RollupUserLogic is RollupCore, UUPSNotUpgradeable, IRollupUser {
     function fastConfirmAssertion(
         bytes32 assertionHash,
         bytes32 parentAssertionHash,
-        ExecutionState calldata confirmState,
+        AssertionState calldata confirmState,
         bytes32 inboxAcc
     ) public whenNotPaused {
         require(msg.sender == anyTrustFastConfirmer, "NOT_FAST_CONFIRMER");

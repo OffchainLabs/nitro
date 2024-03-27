@@ -60,6 +60,7 @@ type CreateForkConfig struct {
 	DivergeBlockHeight    uint64
 	BlockHeightDifference int64
 	DivergeMachineHeight  uint64
+	BlockChallengeHeight  uint64
 }
 
 func CreateTwoValidatorFork(
@@ -99,6 +100,9 @@ func CreateTwoValidatorFork(
 	if cfg.DivergeMachineHeight == 0 {
 		cfg.DivergeMachineHeight = 1
 	}
+	if cfg.BlockChallengeHeight == 0 {
+		cfg.BlockChallengeHeight = 1 << 5
+	}
 
 	stateManagerOpts := setup.StateManagerOpts
 	stateManagerOpts = append(
@@ -111,11 +115,11 @@ func CreateTwoValidatorFork(
 	if err != nil {
 		return nil, err
 	}
-	genesis, err := honestStateManager.ExecutionStateAfterPreviousState(ctx, 1, nil, 1<<26)
+	genesis, err := honestStateManager.ExecutionStateAfterPreviousState(ctx, 0, nil, cfg.BlockChallengeHeight)
 	if err != nil {
 		return nil, err
 	}
-	honestPostState, err := honestStateManager.ExecutionStateAfterPreviousState(ctx, 1, &genesis.GlobalState, 1<<26)
+	honestPostState, err := honestStateManager.ExecutionStateAfterPreviousState(ctx, 1, &genesis.GlobalState, cfg.BlockChallengeHeight)
 	if err != nil {
 		return nil, err
 	}
@@ -128,11 +132,11 @@ func CreateTwoValidatorFork(
 		return nil, err
 	}
 
-	genesis, err = evilStateManager.ExecutionStateAfterPreviousState(ctx, 1, nil, 1<<26)
+	genesis, err = evilStateManager.ExecutionStateAfterPreviousState(ctx, 0, nil, cfg.BlockChallengeHeight)
 	if err != nil {
 		return nil, err
 	}
-	evilPostState, err := evilStateManager.ExecutionStateAfterPreviousState(ctx, 1, &genesis.GlobalState, 1<<26)
+	evilPostState, err := evilStateManager.ExecutionStateAfterPreviousState(ctx, 1, &genesis.GlobalState, cfg.BlockChallengeHeight)
 	if err != nil {
 		return nil, err
 	}
@@ -275,7 +279,7 @@ func ChainsWithEdgeChallengeManager(opts ...Opt) (*ChainSetup, error) {
 	for i := 1; i <= int(numLevels); i++ {
 		miniStakeValues[i-1] = big.NewInt(int64(i))
 	}
-	genesisExecutionState := rollupgen.ExecutionState{
+	genesisExecutionState := rollupgen.AssertionState{
 		GlobalState:   rollupgen.GlobalState{},
 		MachineStatus: 1,
 	}

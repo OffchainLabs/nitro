@@ -302,10 +302,11 @@ func (e *specEdge) ConfirmByTimer(ctx context.Context) error {
 	// The confirm by timer used to require a list of ancestors, but it has since
 	// been refactored to use them. However, the function signature still needs this empty list.
 	_, err = e.manager.assertionChain.transact(ctx, e.manager.backend, func(opts *bind.TransactOpts) (*types.Transaction, error) {
-		return e.manager.writer.ConfirmEdgeByTime(opts, e.id, challengeV2gen.ExecutionStateData{
-			ExecutionState: challengeV2gen.ExecutionState{
-				GlobalState:   challengeV2gen.GlobalState(assertionCreation.AfterState.GlobalState),
-				MachineStatus: assertionCreation.AfterState.MachineStatus,
+		return e.manager.writer.ConfirmEdgeByTime(opts, e.id, challengeV2gen.AssertionStateData{
+			AssertionState: challengeV2gen.AssertionState{
+				GlobalState:    challengeV2gen.GlobalState(assertionCreation.AfterState.GlobalState),
+				MachineStatus:  assertionCreation.AfterState.MachineStatus,
+				EndHistoryRoot: assertionCreation.AfterState.EndHistoryRoot,
 			},
 			PrevAssertionHash: assertionCreation.ParentAssertionHash,
 			InboxAcc:          assertionCreation.AfterInboxBatchAcc,
@@ -786,11 +787,11 @@ func newStaticType(t string, internalType string, components []abi.ArgumentMarsh
 
 var bytes32Type = newStaticType("bytes32", "", nil)
 var bytes32ArrayType = newStaticType("bytes32[]", "", []abi.ArgumentMarshaling{{Type: "bytes32"}})
-var executionStateData = newStaticType("tuple", "ExecutionStateData", []abi.ArgumentMarshaling{
+var assertionStateData = newStaticType("tuple", "AssertionStateData", []abi.ArgumentMarshaling{
 	{
 		Type:         "tuple",
-		InternalType: "ExecutionState",
-		Name:         "executionState",
+		InternalType: "AssertionState",
+		Name:         "assertionState",
 		Components: []abi.ArgumentMarshaling{
 			{
 				Type:         "tuple",
@@ -818,6 +819,10 @@ var executionStateData = newStaticType("tuple", "ExecutionStateData", []abi.Argu
 				InternalType: "MachineStatus",
 				Name:         "machineStatus",
 			},
+			{
+				Type: "bytes32",
+				Name: "endHistoryRoot",
+			},
 		},
 	},
 	{
@@ -837,16 +842,16 @@ var blockEdgeCreateProofAbi = abi.Arguments{
 	},
 	{
 		Name: "startState",
-		Type: executionStateData,
+		Type: assertionStateData,
 	},
 	{
 		Name: "endState",
-		Type: executionStateData,
+		Type: assertionStateData,
 	},
 }
 
-type ExecutionStateData struct {
-	ExecutionState    rollupgen.ExecutionState
+type AssertionStateData struct {
+	AssertionState    rollupgen.AssertionState
 	PrevAssertionHash [32]byte
 	InboxAcc          [32]byte
 }
@@ -886,13 +891,13 @@ func (cm *specChallengeManager) AddBlockChallengeLevelZeroEdge(
 	}
 	blockEdgeProof, err := blockEdgeCreateProofAbi.Pack(
 		endCommit.LastLeafProof,
-		ExecutionStateData{
-			ExecutionState:    parentAssertionCreation.AfterState,
+		AssertionStateData{
+			AssertionState:    parentAssertionCreation.AfterState,
 			PrevAssertionHash: parentAssertionCreation.ParentAssertionHash,
 			InboxAcc:          parentAssertionCreation.AfterInboxBatchAcc,
 		},
-		ExecutionStateData{
-			ExecutionState:    assertionCreation.AfterState,
+		AssertionStateData{
+			AssertionState:    assertionCreation.AfterState,
 			PrevAssertionHash: assertionCreation.ParentAssertionHash,
 			InboxAcc:          assertionCreation.AfterInboxBatchAcc,
 		},

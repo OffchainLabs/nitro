@@ -102,3 +102,5 @@ error BigStepLevelsTooMany(uint8 levels);
 error LevelTooHigh(uint8 level, uint8 numBigStepLevels);
 /// @dev Thrown for unrecognised edge types
 error InvalidEdgeType(EdgeType edgeType);
+/// @dev Thrown when endHistoryRoot not matching the assertion
+error EndHistoryRootMismatch(bytes32 endHistoryRoot, bytes32 assertionEndRoot);

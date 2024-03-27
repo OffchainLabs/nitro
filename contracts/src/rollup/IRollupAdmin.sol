@@ -88,7 +88,7 @@ interface IRollupAdmin {
     function forceConfirmAssertion(
         bytes32 assertionHash,
         bytes32 parentAssertionHash,
-        ExecutionState calldata confirmState,
+        AssertionState calldata confirmState,
         bytes32 inboxAcc
     ) external;
 

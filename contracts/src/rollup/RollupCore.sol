@@ -236,7 +236,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     function confirmAssertionInternal(
         bytes32 assertionHash,
         bytes32 parentAssertionHash,
-        ExecutionState calldata confirmState,
+        AssertionState calldata confirmState,
         bytes32 inboxAcc
     ) internal {
         AssertionNode storage assertion = getAssertionStorage(assertionHash);
@@ -420,7 +420,8 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
 
             //    All types of assertion must have inbox position in the range prev.inboxPosition <= x <= prev.nextInboxPosition
             require(afterGS.comparePositions(beforeGS) >= 0, "INBOX_BACKWARDS");
-            int256 afterStateCmpMaxInbox = afterGS.comparePositionsAgainstStartOfBatch(assertion.beforeStateData.configData.nextInboxPosition);
+            int256 afterStateCmpMaxInbox =
+                afterGS.comparePositionsAgainstStartOfBatch(assertion.beforeStateData.configData.nextInboxPosition);
             require(afterStateCmpMaxInbox <= 0, "INBOX_TOO_FAR");
 
             if (assertion.afterState.machineStatus != MachineStatus.ERRORED && afterStateCmpMaxInbox < 0) {
@@ -516,12 +517,12 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
 
     function genesisAssertionHash() external pure returns (bytes32) {
         GlobalState memory emptyGlobalState;
-        ExecutionState memory emptyExecutionState = ExecutionState(emptyGlobalState, MachineStatus.FINISHED);
+        AssertionState memory emptyAssertionState = AssertionState(emptyGlobalState, MachineStatus.FINISHED, bytes32(0));
         bytes32 parentAssertionHash = bytes32(0);
         bytes32 inboxAcc = bytes32(0);
         return RollupLib.assertionHash({
             parentAssertionHash: parentAssertionHash,
-            afterState: emptyExecutionState,
+            afterState: emptyAssertionState,
             inboxAcc: inboxAcc
         });
     }
@@ -536,7 +537,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
 
     function validateAssertionHash(
         bytes32 assertionHash,
-        ExecutionState calldata state,
+        AssertionState calldata state,
         bytes32 prevAssertionHash,
         bytes32 inboxAcc
     ) external pure {

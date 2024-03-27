@@ -14,6 +14,7 @@ import (
 	"github.com/OffchainLabs/bold/api/db"
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+	"github.com/OffchainLabs/bold/state-commitments/history"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
@@ -228,6 +229,20 @@ func (s *L2StateBackend) ExecutionStateAfterPreviousState(ctx context.Context, m
 			if blocksSincePrevious < 0 && previousGlobalState != nil {
 				return nil, fmt.Errorf("missing previous global state %+v", previousGlobalState)
 			}
+			// Compute the history commitment for the assertion state.
+			fromBatch := uint64(0)
+			if previousGlobalState != nil {
+				fromBatch = previousGlobalState.Batch
+			}
+			historyCommit, err := s.statesUpTo(0, uint64(s.challengeLeafHeights[0]), fromBatch, st.GlobalState.Batch)
+			if err != nil {
+				return nil, err
+			}
+			commit, err := history.New(historyCommit)
+			if err != nil {
+				return nil, err
+			}
+			st.EndHistoryRoot = commit.Merkle
 			return st, nil
 		}
 		if blocksSincePrevious >= 0 {
