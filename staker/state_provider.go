@@ -75,6 +75,7 @@ var DefaultBoldConfig = BoldConfig{
 	API:                                false,
 	APIHost:                            "127.0.0.1",
 	APIPort:                            9393,
+	APIDBPath:                          "/tmp/bold-api-db",
 }
 
 func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
