@@ -72,6 +72,9 @@ var DefaultBoldConfig = BoldConfig{
 	AssertionScanningIntervalSeconds:   30,
 	AssertionConfirmingIntervalSeconds: 60,
 	EdgeTrackerWakeIntervalSeconds:     1,
+	API:                                false,
+	APIHost:                            "127.0.0.1",
+	APIPort:                            9393,
 }
 
 func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -88,6 +91,9 @@ func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".assertion-scanning-interval-seconds", DefaultBoldConfig.AssertionScanningIntervalSeconds, "scan assertion interval")
 	f.Uint64(prefix+".assertion-confirming-interval-seconds", DefaultBoldConfig.AssertionConfirmingIntervalSeconds, "confirm assertion interval")
 	f.Uint64(prefix+".edge-tracker-wake-interval-seconds", DefaultBoldConfig.EdgeTrackerWakeIntervalSeconds, "edge act interval")
+	f.Bool(prefix+".api", DefaultBoldConfig.API, "enable api")
+	f.String(prefix+".api-host", DefaultBoldConfig.APIHost, "bold api host")
+	f.Uint64(prefix+".api-port", uint64(DefaultBoldConfig.APIPort), "bold api port")
 }
 
 func (c *BoldConfig) Validate() error {
