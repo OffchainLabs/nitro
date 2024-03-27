@@ -3,6 +3,7 @@ package edgetracker
 import (
 	"context"
 	"fmt"
+	"sort"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	retry "github.com/OffchainLabs/bold/runtime"
@@ -139,6 +140,12 @@ func (cc *challengeConfirmer) beginConfirmationJob(
 		"numBranches":                 len(royalBranches),
 	})
 
+	// Sort branches from longest to shortest, as longest branches will have the greatest
+	// weight in updating onchain timers.
+	sort.Slice(royalBranches, func(i, j int) bool {
+		return len(royalBranches[i]) > len(royalBranches[j]) // Sort in descending order by length
+	})
+
 	// For each branch, update the inherited timers onchain in a transaction.
 	for i, branch := range royalBranches {
 		if len(branch) == 0 {
@@ -193,7 +200,7 @@ func (cc *challengeConfirmer) beginConfirmationJob(
 				"branchIndex":                 fmt.Sprintf("%d/%d", i, len(royalBranches)-1),
 				"onchainTimer":                rootTimer,
 			})
-			_, err2 = retry.UntilSucceeds(ctx, func() (bool, error) {
+			if _, err2 = retry.UntilSucceeds(ctx, func() (bool, error) {
 				if innerErr := royalRootEdge.ConfirmByTimer(ctx); innerErr != nil {
 					srvlog.Error("Could not confirm edge by timer", log.Ctx{
 						"validatorName":               cc.validatorName,
@@ -204,8 +211,15 @@ func (cc *challengeConfirmer) beginConfirmationJob(
 					return false, innerErr
 				}
 				return false, nil
+			}); err2 != nil {
+				return err2
+			}
+			srvlog.Info("Challenge root edge confirmed, assertion can now be confirmed to finish challenge", log.Ctx{
+				"validatorName":               cc.validatorName,
+				"challengedAssertion":         fmt.Sprintf("%#x", challengedAssertionHash.Hash[:4]),
+				"royalRootBlockChallengeEdge": fmt.Sprintf("%#x", royalRootEdge.Id().Hash.Bytes()[:4]),
 			})
-			return err2
+			return nil
 		}
 	}
 	onchainInheritedTimer, err := retry.UntilSucceeds(ctx, func() (protocol.InheritedTimer, error) {

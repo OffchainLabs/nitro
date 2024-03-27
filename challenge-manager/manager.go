@@ -122,6 +122,12 @@ func WithAssertionConfirmingInterval(d time.Duration) Opt {
 	}
 }
 
+func WithAvgBlockCreationTime(d time.Duration) Opt {
+	return func(val *Manager) {
+		val.averageTimeForBlockCreation = d
+	}
+}
+
 // WithMode specifies the mode of the challenge manager.
 func WithMode(m types.Mode) Opt {
 	return func(val *Manager) {

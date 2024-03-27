@@ -282,7 +282,7 @@ func (m *Manager) findCanonicalAssertionBranch(
 					// execution state claimed by the assertion, and this function will be retried
 					// by the caller if wrapped in a retryable call.
 					chainCatchingUpCounter.Inc(1)
-					srvlog.Info("Chain still catching up to processed execution state "+
+					srvlog.Info("Chain still syncing "+
 						"will reattempt processing when caught up", log.Ctx{"err": err})
 					return false, l2stateprovider.ErrChainCatchingUp
 				case err != nil:

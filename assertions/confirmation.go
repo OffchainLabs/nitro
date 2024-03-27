@@ -2,6 +2,7 @@ package assertions
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
@@ -65,8 +66,10 @@ func (m *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertion
 			}
 			confirmed, err := solimpl.TryConfirmingAssertion(ctx, creationInfo.AssertionHash, prevCreationInfo.ConfirmPeriodBlocks+creationInfo.CreationBlock, m.chain, m.averageTimeForBlockCreation, option.None[protocol.EdgeId]())
 			if err != nil {
-				srvlog.Error("Could not confirm assertion", log.Ctx{"err": err, "assertionHash": assertionHash.Hash})
-				errorConfirmingAssertionByTimeCounter.Inc(1)
+				if !strings.Contains(err.Error(), "PREV_NOT_LATEST_CONFIRMED") {
+					srvlog.Error("Could not confirm assertion", log.Ctx{"err": err, "assertionHash": assertionHash.Hash})
+					errorConfirmingAssertionByTimeCounter.Inc(1)
+				}
 				continue
 			}
 			if confirmed {

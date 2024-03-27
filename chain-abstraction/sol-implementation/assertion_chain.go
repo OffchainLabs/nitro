@@ -31,6 +31,7 @@ import (
 
 var (
 	ErrNotFound         = errors.New("item not found on-chain")
+	ErrBatchNotYetFound = errors.New("batch not yet found")
 	ErrAlreadyExists    = errors.New("item already exists on-chain")
 	ErrPrevDoesNotExist = errors.New("assertion predecessor does not exist")
 	ErrTooLate          = errors.New("too late to create assertion sibling")
@@ -356,7 +357,7 @@ func (a *AssertionChain) createAndStakeOnAssertion(
 		new(big.Int).SetUint64(postState.GlobalState.Batch-1),
 	)
 	if err != nil {
-		return nil, errors.Wrapf(err, "could not get sequencer inbox accummulator at batch %d", postState.GlobalState.Batch-1)
+		return nil, ErrBatchNotYetFound
 	}
 	computedHash, err := a.userLogic.RollupUserLogicCaller.ComputeAssertionHash(
 		util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}),

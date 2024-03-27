@@ -46,8 +46,12 @@ func (m *Manager) postAssertionRoutine(ctx context.Context) {
 			srvlog.Info("Attempting to post assertion")
 			opt, err := m.PostAssertion(ctx)
 			if err != nil {
-				if !errors.Is(err, solimpl.ErrAlreadyExists) {
-					srvlog.Error("Could not submit latest assertion to L1", log.Ctx{"err": err})
+				switch {
+				case errors.Is(err, solimpl.ErrAlreadyExists):
+				case errors.Is(err, solimpl.ErrBatchNotYetFound):
+					srvlog.Info("Did not post assertion, waiting for more batches")
+				default:
+					srvlog.Error("Could not submit latest assertion to L1", log.Ctx{"err": err, "validatorName": m.validatorName})
 					errorPostingAssertionCounter.Inc(1)
 				}
 			}

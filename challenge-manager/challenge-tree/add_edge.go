@@ -2,6 +2,7 @@ package challengetree
 
 import (
 	"context"
+	"strings"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/containers/option"
@@ -68,6 +69,9 @@ func (ht *RoyalChallengeTree) AddEdge(ctx context.Context, eg protocol.SpecEdge)
 		},
 	)
 	if err != nil {
+		if strings.Contains(err.Error(), "accumulator not found") {
+			return false, errors.New("validator is still syncing the chain, will retry later")
+		}
 		return false, errors.Wrapf(err, "could not check history commitment agreement for edge: %#x", edgeId)
 	}
 	// Edges are royal if they have an honest ancestry and are also honest from our perspective.
