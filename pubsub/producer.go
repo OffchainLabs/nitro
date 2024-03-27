@@ -38,10 +38,6 @@ type Producer struct {
 	id     string
 	client *redis.Client
 	cfg    *ProducerConfig
-	// streamName           string
-	// groupName            string
-	// checkPendingInterval time.Duration
-	// keepAliveTimeout     time.Duration
 }
 
 type ProducerConfig struct {
@@ -67,10 +63,6 @@ func NewProducer(cfg *ProducerConfig) (*Producer, error) {
 		id:     uuid.NewString(),
 		client: c,
 		cfg:    cfg,
-		// streamName:           cfg.RedisStream,
-		// groupName:            cfg.RedisGroup,
-		// checkPendingInterval: cfg.CheckPendingInterval,
-		// keepAliveTimeout:     cfg.KeepAliveTimeout,
 	}, nil
 }
 

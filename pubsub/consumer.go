@@ -40,10 +40,6 @@ type Consumer struct {
 	id     string
 	client *redis.Client
 	cfg    *ConsumerConfig
-	// streamName        string
-	// groupName         string
-	// keepAliveInterval time.Duration
-	// keepAliveTimeout  time.Duration
 }
 
 type Message struct {
@@ -60,10 +56,6 @@ func NewConsumer(ctx context.Context, cfg *ConsumerConfig) (*Consumer, error) {
 		id:     uuid.NewString(),
 		client: c,
 		cfg:    cfg,
-		// streamName:        cfg.RedisStream,
-		// groupName:         cfg.RedisGroup,
-		// keepAliveInterval: cfg.KeepAliveInterval,
-		// keepAliveTimeout:  cfg.KeepAliveTimeout,
 	}
 	return consumer, nil
 }
