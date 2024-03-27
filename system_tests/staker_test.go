@@ -658,9 +658,10 @@ func deployBoldContracts(
 		common.Address{},
 		miniStakeValues,
 		stakeToken,
-		rollupgen_bold.ExecutionState{
-			GlobalState:   rollupgen_bold.GlobalState{},
-			MachineStatus: 1,
+		rollupgen_bold.AssertionState{
+			GlobalState:    rollupgen_bold.GlobalState{},
+			MachineStatus:  1,
+			EndHistoryRoot: [32]byte{},
 		},
 		big.NewInt(0),
 		common.Address{},

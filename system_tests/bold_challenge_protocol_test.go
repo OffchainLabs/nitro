@@ -1,7 +1,7 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-//go:build challengetest && !race
+//asdasdgo:build challengetest && !race
 
 package arbtest
 
@@ -570,9 +570,10 @@ func deployContractsOnly(
 	wasmModuleRoot := locator.LatestWasmModuleRoot()
 
 	loserStakeEscrow := common.Address{}
-	genesisExecutionState := rollupgen.ExecutionState{
-		GlobalState:   rollupgen.GlobalState{},
-		MachineStatus: 1,
+	genesisExecutionState := rollupgen.AssertionState{
+		GlobalState:    rollupgen.GlobalState{},
+		MachineStatus:  1,
+		EndHistoryRoot: [32]byte{},
 	}
 	genesisInboxCount := big.NewInt(0)
 	anyTrustFastConfirmer := common.Address{}

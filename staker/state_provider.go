@@ -187,6 +187,9 @@ func (s *StateManager) ExecutionStateAfterPreviousState(
 		l2stateprovider.Batch(fromBatch),
 		l2stateprovider.Batch(toBatch),
 	)
+	if err != nil {
+		return nil, err
+	}
 	historyCommit, err := history.New(historyCommitStates)
 	if err != nil {
 		return nil, err
@@ -226,8 +229,13 @@ func (s *StateManager) StatesInBatchRange(
 	// Compute the total desired hashes from this request.
 	totalDesiredHashes := (toHeight - fromHeight) + 1
 
-	// Get the from batch's message count.
-	prevBatchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(fromBatch) - 1)
+	var prevBatchMsgCount arbutil.MessageIndex
+	var err error
+	if fromBatch == 0 {
+		prevBatchMsgCount, err = s.validator.inboxTracker.GetBatchMessageCount(0)
+	} else {
+		prevBatchMsgCount, err = s.validator.inboxTracker.GetBatchMessageCount(uint64(fromBatch) - 1)
+	}
 	if err != nil {
 		return nil, nil, err
 	}
