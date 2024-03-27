@@ -20,7 +20,7 @@ var (
 	messagesCount  = 100
 )
 
-func createGroup(ctx context.Context, t *testing.T, client *redis.Client) {
+func createGroup(ctx context.Context, t *testing.T, client redis.UniversalClient) {
 	t.Helper()
 	_, err := client.XGroupCreateMkStream(ctx, streamName, defaultGroup, "$").Result()
 	if err != nil {

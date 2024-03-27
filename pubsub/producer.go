@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
+	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -17,26 +18,10 @@ const (
 	defaultGroup = "default_consumer_group"
 )
 
-// clientFromURL returns a redis client from url.
-func clientFromURL(url string) (*redis.Client, error) {
-	if url == "" {
-		return nil, fmt.Errorf("empty redis url")
-	}
-	opts, err := redis.ParseURL(url)
-	if err != nil {
-		return nil, err
-	}
-	c := redis.NewClient(opts)
-	if c == nil {
-		return nil, fmt.Errorf("redis returned nil client")
-	}
-	return c, nil
-}
-
 type Producer struct {
 	stopwaiter.StopWaiter
 	id     string
-	client *redis.Client
+	client redis.UniversalClient
 	cfg    *ProducerConfig
 }
 
@@ -55,7 +40,10 @@ type ProducerConfig struct {
 }
 
 func NewProducer(cfg *ProducerConfig) (*Producer, error) {
-	c, err := clientFromURL(cfg.RedisURL)
+	if cfg.RedisURL == "" {
+		return nil, fmt.Errorf("empty redis url")
+	}
+	c, err := redisutil.RedisClientFromURL(cfg.RedisURL)
 	if err != nil {
 		return nil, err
 	}

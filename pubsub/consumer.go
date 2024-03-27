@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
+	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/spf13/pflag"
 )
@@ -38,7 +39,7 @@ func ConsumerConfigAddOptions(prefix string, f *pflag.FlagSet, cfg *ConsumerConf
 type Consumer struct {
 	stopwaiter.StopWaiter
 	id     string
-	client *redis.Client
+	client redis.UniversalClient
 	cfg    *ConsumerConfig
 }
 
@@ -48,7 +49,10 @@ type Message struct {
 }
 
 func NewConsumer(ctx context.Context, cfg *ConsumerConfig) (*Consumer, error) {
-	c, err := clientFromURL(cfg.RedisURL)
+	if cfg.RedisURL == "" {
+		return nil, fmt.Errorf("redis url cannot be empty")
+	}
+	c, err := redisutil.RedisClientFromURL(cfg.RedisURL)
 	if err != nil {
 		return nil, err
 	}
