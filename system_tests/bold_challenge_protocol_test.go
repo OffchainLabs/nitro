@@ -411,6 +411,7 @@ func TestBoldProtocol(t *testing.T) {
 					return
 				}
 			}
+			fromBlock = toBlock
 		case <-ctx.Done():
 			return
 		}

@@ -1,14 +1,15 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 
-// race detection makes things slow and miss timeouts
-// asdashdgo:build challengetest && !race
+//go:build challengetest && !race
 
 package arbtest
 
 import (
 	"context"
+	"errors"
 	"math/big"
+	"strings"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -24,6 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/validator/valnode"
 
+	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/OffchainLabs/bold/solgen/go/bridgegen"
@@ -149,6 +151,8 @@ func TestStateProvider_BOLD(t *testing.T) {
 		}
 	}
 
+	maxBlocks := uint64(1 << 26)
+
 	t.Run("StatesInBatchRange", func(t *testing.T) {
 		fromBatch := l2stateprovider.Batch(1)
 		toBatch := l2stateprovider.Batch(3)
@@ -169,102 +173,120 @@ func TestStateProvider_BOLD(t *testing.T) {
 			Fatal(t, "wrong last state")
 		}
 	})
-	// t.Run("AgreesWithExecutionState", func(t *testing.T) {
-	// 	// Non-zero position in batch shoould fail.
-	// 	err = stateManager.ExecutionStateAfterPreviousState(ctx, &protocol.ExecutionState{
-	// 		GlobalState: protocol.GoGlobalState{
-	// 			Batch:      0,
-	// 			PosInBatch: 1,
-	// 		},
-	// 		MachineStatus: protocol.MachineStatusFinished,
-	// 	})
-	// 	if err == nil {
-	// 		Fatal(t, "should not agree with execution state")
-	// 	}
-	// 	if !strings.Contains(err.Error(), "position in batch must be zero") {
-	// 		Fatal(t, "wrong error message")
-	// 	}
+	t.Run("AgreesWithExecutionState", func(t *testing.T) {
+		// Non-zero position in batch should fail.
+		_, err = stateManager.ExecutionStateAfterPreviousState(
+			ctx,
+			0,
+			&protocol.GoGlobalState{
+				Batch:      0,
+				PosInBatch: 1,
+			},
+			maxBlocks,
+		)
+		if err == nil {
+			Fatal(t, "should not agree with execution state")
+		}
+		if !strings.Contains(err.Error(), "max inbox count cannot be zero") {
+			Fatal(t, "wrong error message")
+		}
 
-	// 	// Always agrees with genesis.
-	// 	err = stateManager.AgreesWithExecutionState(ctx, &protocol.ExecutionState{
-	// 		GlobalState: protocol.GoGlobalState{
-	// 			Batch:      0,
-	// 			PosInBatch: 0,
-	// 		},
-	// 		MachineStatus: protocol.MachineStatusFinished,
-	// 	})
-	// 	Require(t, err)
+		// Always agrees with genesis.
+		genesis, err := stateManager.ExecutionStateAfterPreviousState(
+			ctx,
+			1,
+			&protocol.GoGlobalState{
+				Batch:      0,
+				PosInBatch: 0,
+			},
+			maxBlocks,
+		)
+		Require(t, err)
+		if genesis == nil {
+			Fatal(t, "genesis should not be nil")
+		}
 
-	// 	// Always agrees with the init message.
-	// 	err = stateManager.AgreesWithExecutionState(ctx, &protocol.ExecutionState{
-	// 		GlobalState: protocol.GoGlobalState{
-	// 			Batch:      1,
-	// 			PosInBatch: 0,
-	// 		},
-	// 		MachineStatus: protocol.MachineStatusFinished,
-	// 	})
-	// 	Require(t, err)
+		// Always agrees with the init message.
+		first, err := stateManager.ExecutionStateAfterPreviousState(
+			ctx,
+			2,
+			&genesis.GlobalState,
+			maxBlocks,
+		)
+		Require(t, err)
+		if first == nil {
+			Fatal(t, "genesis should not be nil")
+		}
 
-	// 	// Chain catching up if it has not seen batch 10.
-	// 	err = stateManager.AgreesWithExecutionState(ctx, &protocol.ExecutionState{
-	// 		GlobalState: protocol.GoGlobalState{
-	// 			Batch:      10,
-	// 			PosInBatch: 0,
-	// 		},
-	// 		MachineStatus: protocol.MachineStatusFinished,
-	// 	})
-	// 	if err == nil {
-	// 		Fatal(t, "should not agree with execution state")
-	// 	}
-	// 	if !errors.Is(err, staker.ErrChainCatchingUp) {
-	// 		Fatal(t, "wrong error")
-	// 	}
+		// Chain catching up if it has not seen batch 10.
+		_, err = stateManager.ExecutionStateAfterPreviousState(
+			ctx,
+			10,
+			&first.GlobalState,
+			maxBlocks,
+		)
+		if err == nil {
+			Fatal(t, "should not agree with execution state")
+		}
+		if !errors.Is(err, l2stateprovider.ErrChainCatchingUp) {
+			Fatal(t, "wrong error")
+		}
 
-	// 	// Check if we agree with the last posted batch to the inbox.
-	// 	result, err := l2node.TxStreamer.ResultAtCount(totalMessageCount)
-	// 	Require(t, err)
+		// Check if we agree with the last posted batch to the inbox.
+		result, err := l2node.TxStreamer.ResultAtCount(totalMessageCount)
+		Require(t, err)
+		_ = result
 
-	// 	state := &protocol.ExecutionState{
-	// 		GlobalState: protocol.GoGlobalState{
-	// 			BlockHash:  result.BlockHash,
-	// 			SendRoot:   result.SendRoot,
-	// 			Batch:      3,
-	// 			PosInBatch: 0,
-	// 		},
-	// 		MachineStatus: protocol.MachineStatusFinished,
-	// 	}
-	// 	err = stateManager.AgreesWithExecutionState(ctx, state)
-	// 	Require(t, err)
+		state := protocol.GoGlobalState{
+			BlockHash:  result.BlockHash,
+			SendRoot:   result.SendRoot,
+			Batch:      3,
+			PosInBatch: 0,
+		}
+		got, err := stateManager.ExecutionStateAfterPreviousState(ctx, 3, &first.GlobalState, maxBlocks)
+		Require(t, err)
+		if state.Batch != got.GlobalState.Batch {
+			Fatal(t, "wrong batch")
+		}
+		if state.SendRoot != got.GlobalState.SendRoot {
+			Fatal(t, "wrong send root")
+		}
+		if state.BlockHash != got.GlobalState.BlockHash {
+			Fatal(t, "wrong batch")
+		}
 
-	// 	// See if we agree with one batch immediately after that and see that we fail with
-	// 	// "ErrChainCatchingUp".
-	// 	state.GlobalState.Batch += 1
+		// See if we agree with one batch immediately after that and see that we fail with
+		// "ErrChainCatchingUp".
+		_, err = stateManager.ExecutionStateAfterPreviousState(
+			ctx,
+			state.Batch+1,
+			&got.GlobalState,
+			maxBlocks,
+		)
+		if err == nil {
+			Fatal(t, "should not agree with execution state")
+		}
+		if !errors.Is(err, l2stateprovider.ErrChainCatchingUp) {
+			Fatal(t, "wrong error")
+		}
+	})
+	t.Run("ExecutionStateAfterBatchCount", func(t *testing.T) {
+		_, err = stateManager.ExecutionStateAfterPreviousState(ctx, 0, &protocol.GoGlobalState{}, maxBlocks)
+		if err == nil {
+			Fatal(t, "should have failed")
+		}
+		if !strings.Contains(err.Error(), "max inbox count cannot be zero") {
+			Fatal(t, "wrong error message", err)
+		}
 
-	// 	err = stateManager.AgreesWithExecutionState(ctx, state)
-	// 	if err == nil {
-	// 		Fatal(t, "should not agree with execution state")
-	// 	}
-	// 	if !errors.Is(err, staker.ErrChainCatchingUp) {
-	// 		Fatal(t, "wrong error")
-	// 	}
-	// })
-	// t.Run("ExecutionStateAfterBatchCount", func(t *testing.T) {
-	// 	_, err = stateManager.ExecutionStateAfterBatchCount(ctx, 0)
-	// 	if err == nil {
-	// 		Fatal(t, "should have failed")
-	// 	}
-	// 	if !strings.Contains(err.Error(), "batch count cannot be zero") {
-	// 		Fatal(t, "wrong error message")
-	// 	}
-
-	// 	execState, err := stateManager.ExecutionStateAfterBatchCount(ctx, totalBatches)
-	// 	Require(t, err)
-
-	// 	// We should agree with the last posted batch to the inbox based on our
-	// 	// retrieved execution state.
-	// 	err = stateManager.AgreesWithExecutionState(ctx, execState)
-	// 	Require(t, err)
-	// })
+		genesis, err := stateManager.ExecutionStateAfterPreviousState(ctx, 1, &protocol.GoGlobalState{}, maxBlocks)
+		Require(t, err)
+		execState, err := stateManager.ExecutionStateAfterPreviousState(ctx, totalBatches, &genesis.GlobalState, maxBlocks)
+		Require(t, err)
+		if execState == nil {
+			Fatal(t, "should not be nil")
+		}
+	})
 }
 
 func setupBoldStateProvider(t *testing.T, ctx context.Context) (*arbnode.Node, *BlockchainTestInfo, *BlockchainTestInfo, *node.Node, *ethclient.Client, *staker.StateManager) {
