@@ -62,7 +62,7 @@ var (
 	smallStepChallengeLeafHeight = uint64(1 << 6)
 )
 
-func TestBoldProtocol(t *testing.T) {
+func TestChallengeProtocolBOLD(t *testing.T) {
 	t.Cleanup(func() {
 		Require(t, os.RemoveAll("/tmp/good"))
 		Require(t, os.RemoveAll("/tmp/evil"))
