@@ -85,16 +85,16 @@ func newProducerConsumers(ctx context.Context, t *testing.T) (*Producer[*testRes
 	return producer, consumers
 }
 
-func messagesMap(n int) []map[string]any {
-	ret := make([]map[string]any, n)
+func messagesMaps(n int) []map[string]string {
+	ret := make([]map[string]string, n)
 	for i := 0; i < n; i++ {
-		ret[i] = make(map[string]any)
+		ret[i] = make(map[string]string)
 	}
 	return ret
 }
 
-func wantMessages(n int) []any {
-	var ret []any
+func wantMessages(n int) []string {
+	var ret []string
 	for i := 0; i < n; i++ {
 		ret = append(ret, fmt.Sprintf("msg: %d", i))
 	}
@@ -108,7 +108,7 @@ func TestProduce(t *testing.T) {
 	ctx := context.Background()
 	producer, consumers := newProducerConsumers(ctx, t)
 	producer.Start(ctx)
-	gotMessages := messagesMap(consumersCount)
+	gotMessages := messagesMaps(consumersCount)
 	wantResponses := make([][]string, len(consumers))
 	for idx, c := range consumers {
 		idx, c := idx, c
@@ -191,7 +191,7 @@ func TestClaimingOwnership(t *testing.T) {
 	ctx := context.Background()
 	producer, consumers := newProducerConsumers(ctx, t)
 	producer.Start(ctx)
-	gotMessages := messagesMap(consumersCount)
+	gotMessages := messagesMaps(consumersCount)
 
 	// Consumer messages in every third consumer but don't ack them to check
 	// that other consumers will claim ownership on those messages.
@@ -287,9 +287,9 @@ func TestClaimingOwnership(t *testing.T) {
 
 // mergeValues merges maps from the slice and returns their values.
 // Returns and error if there exists duplicate key.
-func mergeValues(messages []map[string]any) ([]any, error) {
+func mergeValues(messages []map[string]string) ([]string, error) {
 	res := make(map[string]any)
-	var ret []any
+	var ret []string
 	for _, m := range messages {
 		for k, v := range m {
 			if _, found := res[k]; found {
@@ -300,7 +300,7 @@ func mergeValues(messages []map[string]any) ([]any, error) {
 		}
 	}
 	sort.Slice(ret, func(i, j int) bool {
-		return fmt.Sprintf("%v", ret[i]) < fmt.Sprintf("%v", ret[j])
+		return ret[i] < ret[j]
 	})
 	return ret, nil
 }
