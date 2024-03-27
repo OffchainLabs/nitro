@@ -63,6 +63,7 @@ var (
 )
 
 func TestChallengeProtocolBOLD(t *testing.T) {
+	t.Parallel()
 	t.Cleanup(func() {
 		Require(t, os.RemoveAll("/tmp/good"))
 		Require(t, os.RemoveAll("/tmp/evil"))
