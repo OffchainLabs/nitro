@@ -113,7 +113,6 @@ func NewTransactionStreamer(
 		fatalErrChan:       fatalErrChan,
 		config:             config,
 	}
-	streamer.exec.SetTransactionStreamer(streamer)
 	err := streamer.cleanupInconsistentState()
 	if err != nil {
 		return nil, err
@@ -425,6 +424,21 @@ func (s *TransactionStreamer) GetProcessedMessageCount() (arbutil.MessageIndex, 
 
 func (s *TransactionStreamer) AddMessages(pos arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbostypes.MessageWithMetadata) error {
 	return s.AddMessagesAndEndBatch(pos, messagesAreConfirmed, messages, nil)
+}
+
+func (s *TransactionStreamer) FeedPendingMessageCount() arbutil.MessageIndex {
+	pos := atomic.LoadUint64(&s.broadcasterQueuedMessagesPos)
+	if pos == 0 {
+		return 0
+	}
+
+	s.insertionMutex.Lock()
+	defer s.insertionMutex.Unlock()
+	pos = atomic.LoadUint64(&s.broadcasterQueuedMessagesPos)
+	if pos == 0 {
+		return 0
+	}
+	return arbutil.MessageIndex(pos + uint64(len(s.broadcasterQueuedMessages)))
 }
 
 func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFeedMessage) error {
@@ -820,10 +834,6 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	return nil
 }
 
-func (s *TransactionStreamer) FetchBatch(batchNum uint64) ([]byte, common.Hash, error) {
-	return s.inboxReader.GetSequencerMessageBytes(context.TODO(), batchNum)
-}
-
 // The caller must hold the insertionMutex
 func (s *TransactionStreamer) ExpectChosenSequencer() error {
 	if s.coordinator != nil {
@@ -863,10 +873,6 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(pos arbutil.MessageIndex
 	}
 
 	return nil
-}
-
-func (s *TransactionStreamer) GenesisBlockNumber() uint64 {
-	return s.chainConfig.ArbitrumChainParams.GenesisBlockNum
 }
 
 // PauseReorgs until a matching call to ResumeReorgs (may be called concurrently)

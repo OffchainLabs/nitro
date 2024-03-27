@@ -119,8 +119,6 @@ func TestSequencerFeePaid(t *testing.T) {
 }
 
 func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
-	t.Parallel()
-
 	_ = os.Mkdir("test-data", 0766)
 	path := filepath.Join("test-data", fmt.Sprintf("testSequencerPriceAdjustsFrom%v.csv", initialEstimate))
 
