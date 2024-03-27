@@ -86,6 +86,10 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	defer requireClose(t, l1stack)
 	defer l2nodeA.StopAndWait()
 
+	// Make sure we shut down test functionality before the rest of the node
+	ctx, cancelCtx = context.WithCancel(ctx)
+	defer cancelCtx()
+
 	// Every 12 seconds, send an L1 transaction to keep the chain moving.
 	go func() {
 		delay := time.Second * 12
@@ -98,6 +102,10 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 				balance := big.NewInt(params.GWei)
 				TransferBalance(t, "Faucet", "Asserter", balance, l1info, l1client, ctx)
 				latestBlock, err := l1client.BlockNumber(ctx)
+				if ctx.Err() != nil {
+					// don't require the error be nil if we're done
+					break
+				}
 				Require(t, err)
 				if latestBlock > 150 {
 					delay = time.Second
