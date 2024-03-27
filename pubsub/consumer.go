@@ -38,19 +38,19 @@ func ConsumerConfigAddOptions(prefix string, f *pflag.FlagSet, cfg *ConsumerConf
 
 // Consumer implements a consumer for redis stream provides heartbeat to
 // indicate it is alive.
-type Consumer struct {
+type Consumer[T Marshallable[T]] struct {
 	stopwaiter.StopWaiter
 	id     string
 	client redis.UniversalClient
 	cfg    *ConsumerConfig
 }
 
-type Message struct {
+type Message[T Marshallable[T]] struct {
 	ID    string
-	Value any
+	Value T
 }
 
-func NewConsumer(ctx context.Context, cfg *ConsumerConfig) (*Consumer, error) {
+func NewConsumer[T Marshallable[T]](ctx context.Context, cfg *ConsumerConfig) (*Consumer[T], error) {
 	if cfg.RedisURL == "" {
 		return nil, fmt.Errorf("redis url cannot be empty")
 	}
@@ -58,7 +58,7 @@ func NewConsumer(ctx context.Context, cfg *ConsumerConfig) (*Consumer, error) {
 	if err != nil {
 		return nil, err
 	}
-	consumer := &Consumer{
+	consumer := &Consumer[T]{
 		id:     uuid.NewString(),
 		client: c,
 		cfg:    cfg,
@@ -67,7 +67,7 @@ func NewConsumer(ctx context.Context, cfg *ConsumerConfig) (*Consumer, error) {
 }
 
 // Start starts the consumer to iteratively perform heartbeat in configured intervals.
-func (c *Consumer) Start(ctx context.Context) {
+func (c *Consumer[T]) Start(ctx context.Context) {
 	c.StopWaiter.Start(ctx, c)
 	c.StopWaiter.CallIteratively(
 		func(ctx context.Context) time.Duration {
@@ -77,7 +77,7 @@ func (c *Consumer) Start(ctx context.Context) {
 	)
 }
 
-func (c *Consumer) StopAndWait() {
+func (c *Consumer[T]) StopAndWait() {
 	c.StopWaiter.StopAndWait()
 }
 
@@ -85,12 +85,12 @@ func heartBeatKey(id string) string {
 	return fmt.Sprintf("consumer:%s:heartbeat", id)
 }
 
-func (c *Consumer) heartBeatKey() string {
+func (c *Consumer[T]) heartBeatKey() string {
 	return heartBeatKey(c.id)
 }
 
 // heartBeat updates the heartBeat key indicating aliveness.
-func (c *Consumer) heartBeat(ctx context.Context) {
+func (c *Consumer[T]) heartBeat(ctx context.Context) {
 	if err := c.client.Set(ctx, c.heartBeatKey(), time.Now().UnixMilli(), 2*c.cfg.KeepAliveTimeout).Err(); err != nil {
 		l := log.Info
 		if ctx.Err() != nil {
@@ -102,7 +102,7 @@ func (c *Consumer) heartBeat(ctx context.Context) {
 
 // Consumer first checks it there exists pending message that is claimed by
 // unresponsive consumer, if not then reads from the stream.
-func (c *Consumer) Consume(ctx context.Context) (*Message, error) {
+func (c *Consumer[T]) Consume(ctx context.Context) (*Message[T], error) {
 	res, err := c.client.XReadGroup(ctx, &redis.XReadGroupArgs{
 		Group:    c.cfg.RedisGroup,
 		Consumer: c.id,
@@ -122,19 +122,28 @@ func (c *Consumer) Consume(ctx context.Context) (*Message, error) {
 		return nil, fmt.Errorf("redis returned entries: %+v, for querying single message", res)
 	}
 	log.Debug(fmt.Sprintf("Consumer: %s consuming message: %s", c.id, res[0].Messages[0].ID))
-	return &Message{
+	var (
+		value = res[0].Messages[0].Values[messageKey]
+		tmp   T
+	)
+	val, err := tmp.Unmarshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("unmarshaling value: %v, error: %v", value, err)
+	}
+
+	return &Message[T]{
 		ID:    res[0].Messages[0].ID,
-		Value: res[0].Messages[0].Values[messageKey],
+		Value: val,
 	}, nil
 }
 
-func (c *Consumer) ACK(ctx context.Context, messageID string) error {
+func (c *Consumer[T]) ACK(ctx context.Context, messageID string) error {
 	log.Info("ACKing message", "consumer-id", c.id, "message-sid", messageID)
 	_, err := c.client.XAck(ctx, c.cfg.RedisStream, c.cfg.RedisGroup, messageID).Result()
 	return err
 }
 
-func (c *Consumer) SetResult(ctx context.Context, messageID string, result string) error {
+func (c *Consumer[T]) SetResult(ctx context.Context, messageID string, result string) error {
 	acquired, err := c.client.SetNX(ctx, messageID, result, c.cfg.KeepAliveTimeout).Result()
 	if err != nil || !acquired {
 		return fmt.Errorf("setting result for  message: %v, error: %w", messageID, err)

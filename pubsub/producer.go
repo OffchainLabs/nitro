@@ -20,14 +20,19 @@ const (
 	defaultGroup = "default_consumer_group"
 )
 
-type Producer struct {
+type Marshallable[T any] interface {
+	Marshal() any
+	Unmarshal(val any) (T, error)
+}
+
+type Producer[T Marshallable[T]] struct {
 	stopwaiter.StopWaiter
 	id     string
 	client redis.UniversalClient
 	cfg    *ProducerConfig
 
 	promisesLock sync.RWMutex
-	promises     map[string]*containers.Promise[any]
+	promises     map[string]*containers.Promise[T]
 }
 
 type ProducerConfig struct {
@@ -46,7 +51,7 @@ type ProducerConfig struct {
 	RedisGroup string `koanf:"redis-group"`
 }
 
-func NewProducer(cfg *ProducerConfig) (*Producer, error) {
+func NewProducer[T Marshallable[T]](cfg *ProducerConfig) (*Producer[T], error) {
 	if cfg.RedisURL == "" {
 		return nil, fmt.Errorf("redis url cannot be empty")
 	}
@@ -54,15 +59,15 @@ func NewProducer(cfg *ProducerConfig) (*Producer, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Producer{
+	return &Producer[T]{
 		id:       uuid.NewString(),
 		client:   c,
 		cfg:      cfg,
-		promises: make(map[string]*containers.Promise[any]),
+		promises: make(map[string]*containers.Promise[T]),
 	}, nil
 }
 
-func (p *Producer) Start(ctx context.Context) {
+func (p *Producer[T]) Start(ctx context.Context) {
 	p.StopWaiter.Start(ctx, p)
 	p.StopWaiter.CallIteratively(
 		func(ctx context.Context) time.Duration {
@@ -74,7 +79,7 @@ func (p *Producer) Start(ctx context.Context) {
 			if len(msgs) == 0 {
 				return p.cfg.CheckPendingInterval
 			}
-			acked := make(map[string]any)
+			acked := make(map[string]T)
 			for _, msg := range msgs {
 				if _, err := p.client.XAck(ctx, p.cfg.RedisStream, p.cfg.RedisGroup, msg.ID).Result(); err != nil {
 					log.Error("ACKing message", "error", err)
@@ -104,7 +109,13 @@ func (p *Producer) Start(ctx context.Context) {
 				}
 				log.Error("Error reading value in redis", "key", id, "error", err)
 			}
-			promise.Produce(res)
+			var tmp T
+			val, err := tmp.Unmarshal(res)
+			if err != nil {
+				log.Error("Error unmarshaling", "value", res, "error", err)
+				continue
+			}
+			promise.Produce(val)
 			delete(p.promises, id)
 		}
 		return p.cfg.CheckResultInterval
@@ -114,10 +125,10 @@ func (p *Producer) Start(ctx context.Context) {
 // reproduce is used when Producer claims ownership on the pending
 // message that was sent to inactive consumer and reinserts it into the stream,
 // so that seamlessly return the answer in the same promise.
-func (p *Producer) reproduce(ctx context.Context, value any, oldKey string) (*containers.Promise[any], error) {
+func (p *Producer[T]) reproduce(ctx context.Context, value T, oldKey string) (*containers.Promise[T], error) {
 	id, err := p.client.XAdd(ctx, &redis.XAddArgs{
 		Stream: p.cfg.RedisStream,
-		Values: map[string]any{messageKey: value},
+		Values: map[string]any{messageKey: value.Marshal()},
 	}).Result()
 	if err != nil {
 		return nil, fmt.Errorf("adding values to redis: %w", err)
@@ -126,19 +137,19 @@ func (p *Producer) reproduce(ctx context.Context, value any, oldKey string) (*co
 	defer p.promisesLock.Unlock()
 	promise := p.promises[oldKey]
 	if oldKey == "" || promise == nil {
-		p := containers.NewPromise[any](nil)
+		p := containers.NewPromise[T](nil)
 		promise = &p
 	}
 	p.promises[id] = promise
 	return promise, nil
 }
 
-func (p *Producer) Produce(ctx context.Context, value any) (*containers.Promise[any], error) {
+func (p *Producer[T]) Produce(ctx context.Context, value T) (*containers.Promise[T], error) {
 	return p.reproduce(ctx, value, "")
 }
 
 // Check if a consumer is with specified ID is alive.
-func (p *Producer) isConsumerAlive(ctx context.Context, consumerID string) bool {
+func (p *Producer[T]) isConsumerAlive(ctx context.Context, consumerID string) bool {
 	val, err := p.client.Get(ctx, heartBeatKey(consumerID)).Int64()
 	if err != nil {
 		return false
@@ -146,7 +157,7 @@ func (p *Producer) isConsumerAlive(ctx context.Context, consumerID string) bool 
 	return time.Now().UnixMilli()-val < int64(p.cfg.KeepAliveTimeout.Milliseconds())
 }
 
-func (p *Producer) checkPending(ctx context.Context) ([]*Message, error) {
+func (p *Producer[T]) checkPending(ctx context.Context) ([]*Message[T], error) {
 	pendingMessages, err := p.client.XPendingExt(ctx, &redis.XPendingExtArgs{
 		Stream: p.cfg.RedisStream,
 		Group:  p.cfg.RedisGroup,
@@ -182,11 +193,16 @@ func (p *Producer) checkPending(ctx context.Context) ([]*Message, error) {
 	if err != nil {
 		return nil, fmt.Errorf("claiming ownership on messages: %v, error: %w", ids, err)
 	}
-	var res []*Message
+	var res []*Message[T]
 	for _, msg := range claimedMsgs {
-		res = append(res, &Message{
+		var tmp T
+		val, err := tmp.Unmarshal(msg.Values[messageKey])
+		if err != nil {
+			return nil, fmt.Errorf("marshaling value: %v, error: %v", msg.Values[messageKey], err)
+		}
+		res = append(res, &Message[T]{
 			ID:    msg.ID,
-			Value: msg.Values[messageKey],
+			Value: val,
 		})
 	}
 	return res, nil
