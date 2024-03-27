@@ -35,13 +35,6 @@ func (r *testResult) Unmarshal(val any) (*testResult, error) {
 	}, nil
 }
 
-func TestMarshal(t *testing.T) {
-	tr := &testResult{val: "myvalue"}
-	val, err := tr.Unmarshal(tr.Marshal())
-	t.Errorf("val: %+v, err: %v", val, err)
-
-}
-
 func createGroup(ctx context.Context, t *testing.T, client redis.UniversalClient) {
 	t.Helper()
 	_, err := client.XGroupCreateMkStream(ctx, streamName, defaultGroup, "$").Result()
