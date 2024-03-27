@@ -93,7 +93,8 @@ func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".edge-tracker-wake-interval-seconds", DefaultBoldConfig.EdgeTrackerWakeIntervalSeconds, "edge act interval")
 	f.Bool(prefix+".api", DefaultBoldConfig.API, "enable api")
 	f.String(prefix+".api-host", DefaultBoldConfig.APIHost, "bold api host")
-	f.Uint64(prefix+".api-port", uint64(DefaultBoldConfig.APIPort), "bold api port")
+	f.Uint16(prefix+".api-port", DefaultBoldConfig.APIPort, "bold api port")
+	f.String(prefix+".api-db-path", DefaultBoldConfig.APIDBPath, "bold api db path")
 }
 
 func (c *BoldConfig) Validate() error {
