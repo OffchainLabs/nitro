@@ -354,16 +354,6 @@ func TestBoldProtocol(t *testing.T) {
 	)
 	Require(t, err)
 
-	t.Log("Honest party posting assertion at batch 1, pos 0")
-
-	// poster := manager.AssertionManager()
-	// _, err = poster.PostAssertion(ctx)
-	// Require(t, err)
-
-	t.Log("Honest party posting assertion at batch 2, pos 0")
-	// expectedWinnerAssertion, err := poster.PostAssertion(ctx)
-	// Require(t, err)
-
 	managerB, err := challengemanager.New(
 		ctx,
 		chainB,
@@ -378,30 +368,50 @@ func TestBoldProtocol(t *testing.T) {
 	)
 	Require(t, err)
 
-	// t.Log("Evil party posting assertion at batch 2, pos 0")
-	// posterB := managerB.AssertionManager()
-	// _, err = posterB.PostAssertion(ctx)
-	// Require(t, err)
-
 	manager.Start(ctx)
 	managerB.Start(ctx)
 
-	// rollupUserLogic, err := rollupgen.NewRollupUserLogic(assertionChain.RollupAddress(), l1client)
-	// Require(t, err)
-	// for {
-	// 	expected, err := rollupUserLogic.GetAssertion(&bind.CallOpts{Context: ctx}, expectedWinnerAssertion.Unwrap().AssertionHash)
-	// 	if err != nil {
-	// 		t.Logf("Error getting assertion: %v", err)
-	// 		continue
-	// 	}
-	// 	// Wait until the assertion is confirmed.
-	// 	if expected.Status == uint8(2) {
-	// 		t.Log("Expected assertion was confirmed")
-	// 		return
-	// 	}
-	// 	time.Sleep(time.Second * 5)
-	// }
-	time.Sleep(time.Hour)
+	filterer, err := rollupgen.NewRollupUserLogicFilterer(assertionChain.RollupAddress(), l1client)
+	Require(t, err)
+	userLogic, err := rollupgen.NewRollupUserLogic(assertionChain.RollupAddress(), l1client)
+	Require(t, err)
+
+	fromBlock := uint64(0)
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			latestBlock, err := l1client.HeaderByNumber(ctx, nil)
+			Require(t, err)
+			toBlock := latestBlock.Number.Uint64()
+			if fromBlock == toBlock {
+				continue
+			}
+			filterOpts := &bind.FilterOpts{
+				Start:   fromBlock,
+				End:     &toBlock,
+				Context: ctx,
+			}
+			it, err := filterer.FilterAssertionConfirmed(filterOpts, nil)
+			Require(t, err)
+			for it.Next() {
+				if it.Error() != nil {
+					t.Fatalf("Error in filter iterator: %v", it.Error())
+				}
+				assertion, err := userLogic.GetAssertion(&bind.CallOpts{}, it.Event.AssertionHash)
+				Require(t, err)
+				isChallenged := assertion.FirstChildBlock != 0 && assertion.SecondChildBlock != 0
+				if isChallenged {
+					t.Logf("Assertion confirmed %#x", it.Event.AssertionHash)
+					Require(t, it.Close())
+					return
+				}
+			}
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 func createTestNodeOnL1ForBoldProtocol(
@@ -580,7 +590,7 @@ func deployContractsOnly(
 			SmallStepChallengeHeight: smallStepChallengeLeafHeight,
 		}),
 		challenge_testing.WithNumBigStepLevels(uint8(5)),       // TODO: Hardcoded.
-		challenge_testing.WithConfirmPeriodBlocks(uint64(150)), // TODO: Hardcoded.
+		challenge_testing.WithConfirmPeriodBlocks(uint64(120)), // TODO: Hardcoded.
 	)
 	config, err := json.Marshal(params.ArbitrumDevTestChainConfig())
 	Require(t, err)
@@ -637,27 +647,6 @@ func deployContractsOnly(
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, backend, tx)
 	Require(t, err)
-
-	// Check allowances...
-	rollupAllowHonest, err := tokenBindings.Allowance(&bind.CallOpts{Context: ctx}, asserter.From, addresses.Rollup)
-	Require(t, err)
-	rollupAllowEvil, err := tokenBindings.Allowance(&bind.CallOpts{Context: ctx}, evilAsserter.From, addresses.Rollup)
-	Require(t, err)
-	chalAllowHonest, err := tokenBindings.Allowance(&bind.CallOpts{Context: ctx}, asserter.From, chalManagerAddr)
-	Require(t, err)
-	chalAllowEvil, err := tokenBindings.Allowance(&bind.CallOpts{Context: ctx}, evilAsserter.From, chalManagerAddr)
-	Require(t, err)
-	honestBal, err := tokenBindings.BalanceOf(&bind.CallOpts{Context: ctx}, asserter.From)
-	Require(t, err)
-	evilBal, err := tokenBindings.BalanceOf(&bind.CallOpts{Context: ctx}, evilAsserter.From)
-	Require(t, err)
-	t.Logf("Honest %#x evil %#x", asserter.From, evilAsserter.From)
-	t.Logf("Rollup allowance for honest asserter: %d", rollupAllowHonest.Uint64())
-	t.Logf("Rollup allowance for evil asserter: %d", rollupAllowEvil.Uint64())
-	t.Logf("Challenge manager allowance for honest asserter: %d", chalAllowHonest.Uint64())
-	t.Logf("Challenge manager allowance for evil asserter: %d", chalAllowEvil.Uint64())
-	t.Logf("Honest asserter balance: %d", honestBal.Uint64())
-	t.Logf("Evil asserter balance: %d", evilBal.Uint64())
 
 	return &chaininfo.RollupAddresses{
 		Bridge:                 addresses.Bridge,
