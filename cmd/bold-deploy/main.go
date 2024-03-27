@@ -62,15 +62,15 @@ func main() {
 	prod := flag.Bool("prod", false, "Whether to configure the rollup for production or testing")
 
 	// Bold specific flags.
-	numBigSteps := flag.Uint("numBigSteps", 4, "Number of big steps in the rollup")
-	blockChallengeLeafHeight := flag.Uint64("blockChallengeLeafHeight", 1<<5, "block challenge edge leaf height")
-	bigStepLeafHeight := flag.Uint64("bigStepLeafHeight", 1<<8, "big step edge leaf height")
-	smallSteapLeafHeight := flag.Uint64("smallStepLeafHeight", 1<<11, "small step edge leaf height")
-	minimumAssertionPeriodBlocks := flag.Uint64("minimumAssertionPeriodBlocks", 1, "minimum number of blocks between assertions")
+	numBigSteps := flag.Uint("numBigSteps", 2, "Number of big steps in the rollup")
+	blockChallengeLeafHeight := flag.Uint64("blockChallengeLeafHeight", 1<<20, "block challenge edge leaf height")
+	bigStepLeafHeight := flag.Uint64("bigStepLeafHeight", 1<<14, "big step edge leaf height")
+	smallSteapLeafHeight := flag.Uint64("smallStepLeafHeight", 1<<14, "small step edge leaf height")
+	minimumAssertionPeriodBlocks := flag.Uint64("minimumAssertionPeriodBlocks", 300, "minimum number of blocks between assertions")
 	// Half a day of blocks as 12 seconds per block.
-	confirmPeriodBlocks := flag.Uint64("confirmPeriodBlocks", 3600, "challenge period")
-	challengeGracePeriodBlocks := flag.Uint64("challengeGracePeriodBlocks", 3, "challenge grace period in which security council can take action")
-	baseStake := flag.Uint64("baseStake", 1, "base-stake size")
+	confirmPeriodBlocks := flag.Uint64("confirmPeriodBlocks", 50400, "challenge period")
+	challengeGracePeriodBlocks := flag.Uint64("challengeGracePeriodBlocks", 1800, "challenge grace period in which security council can take action")
+	baseStake := flag.Uint64("baseStake", 100, "base-stake size")
 
 	flag.Parse()
 	l1ChainId := new(big.Int).SetUint64(*l1ChainIdUint)
@@ -189,10 +189,11 @@ func main() {
 	}
 	genesisInboxCount := big.NewInt(0)
 	anyTrustFastConfirmer := common.Address{}
-	totalLevels := *numBigSteps + 2
-	miniStakeValues := make([]*big.Int, totalLevels)
-	for i := 1; i <= int(totalLevels); i++ {
-		miniStakeValues[i] = big.NewInt(int64(i))
+	miniStakeValues := []*big.Int{
+		big.NewInt(26),
+		big.NewInt(16),
+		big.NewInt(6),
+		big.NewInt(2),
 	}
 	rollupConfig := challenge_testing.GenerateRollupConfig(
 		*prod,
