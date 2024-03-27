@@ -37,7 +37,6 @@ func newProducerConsumers(ctx context.Context, t *testing.T) (*Producer, []*Cons
 			RedisStream:          streamName,
 			RedisGroup:           defaultGroup,
 			CheckPendingInterval: 10 * time.Millisecond,
-			KeepAliveInterval:    5 * time.Millisecond,
 			KeepAliveTimeout:     20 * time.Millisecond,
 		})
 	if err != nil {

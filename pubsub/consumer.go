@@ -37,12 +37,13 @@ func ConsumerConfigAddOptions(prefix string, f *pflag.FlagSet, cfg *ConsumerConf
 
 type Consumer struct {
 	stopwaiter.StopWaiter
-	id                string
-	streamName        string
-	groupName         string
-	client            *redis.Client
-	keepAliveInterval time.Duration
-	keepAliveTimeout  time.Duration
+	id     string
+	client *redis.Client
+	cfg    *ConsumerConfig
+	// streamName        string
+	// groupName         string
+	// keepAliveInterval time.Duration
+	// keepAliveTimeout  time.Duration
 }
 
 type Message struct {
@@ -56,12 +57,13 @@ func NewConsumer(ctx context.Context, cfg *ConsumerConfig) (*Consumer, error) {
 		return nil, err
 	}
 	consumer := &Consumer{
-		id:                uuid.NewString(),
-		streamName:        cfg.RedisStream,
-		groupName:         cfg.RedisGroup,
-		client:            c,
-		keepAliveInterval: cfg.KeepAliveInterval,
-		keepAliveTimeout:  cfg.KeepAliveTimeout,
+		id:     uuid.NewString(),
+		client: c,
+		cfg:    cfg,
+		// streamName:        cfg.RedisStream,
+		// groupName:         cfg.RedisGroup,
+		// keepAliveInterval: cfg.KeepAliveInterval,
+		// keepAliveTimeout:  cfg.KeepAliveTimeout,
 	}
 	return consumer, nil
 }
@@ -71,7 +73,7 @@ func (c *Consumer) Start(ctx context.Context) {
 	c.StopWaiter.CallIteratively(
 		func(ctx context.Context) time.Duration {
 			c.heartBeat(ctx)
-			return c.keepAliveInterval
+			return c.cfg.KeepAliveInterval
 		},
 	)
 }
@@ -90,10 +92,10 @@ func (c *Consumer) heartBeatKey() string {
 
 // heartBeat updates the heartBeat key indicating aliveness.
 func (c *Consumer) heartBeat(ctx context.Context) {
-	if err := c.client.Set(ctx, c.heartBeatKey(), time.Now().UnixMilli(), c.keepAliveTimeout).Err(); err != nil {
-		l := log.Error
-		if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
-			l = log.Info
+	if err := c.client.Set(ctx, c.heartBeatKey(), time.Now().UnixMilli(), 2*c.cfg.KeepAliveTimeout).Err(); err != nil {
+		l := log.Info
+		if ctx.Err() != nil {
+			l = log.Error
 		}
 		l("Updating heardbeat", "consumer", c.id, "error", err)
 	}
@@ -103,11 +105,11 @@ func (c *Consumer) heartBeat(ctx context.Context) {
 // unresponsive consumer, if not then reads from the stream.
 func (c *Consumer) Consume(ctx context.Context) (*Message, error) {
 	res, err := c.client.XReadGroup(ctx, &redis.XReadGroupArgs{
-		Group:    c.groupName,
+		Group:    c.cfg.RedisGroup,
 		Consumer: c.id,
 		// Receive only messages that were never delivered to any other consumer,
 		// that is, only new messages.
-		Streams: []string{c.streamName, ">"},
+		Streams: []string{c.cfg.RedisStream, ">"},
 		Count:   1,
 		Block:   time.Millisecond, // 0 seems to block the read instead of immediately returning
 	}).Result()
@@ -129,6 +131,6 @@ func (c *Consumer) Consume(ctx context.Context) (*Message, error) {
 
 func (c *Consumer) ACK(ctx context.Context, messageID string) error {
 	log.Info("ACKing message", "consumer-id", c.id, "message-sid", messageID)
-	_, err := c.client.XAck(ctx, c.streamName, c.groupName, messageID).Result()
+	_, err := c.client.XAck(ctx, c.cfg.RedisStream, c.cfg.RedisGroup, messageID).Result()
 	return err
 }

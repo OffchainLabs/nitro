@@ -35,13 +35,13 @@ func clientFromURL(url string) (*redis.Client, error) {
 
 type Producer struct {
 	stopwaiter.StopWaiter
-	id                   string
-	streamName           string
-	client               *redis.Client
-	groupName            string
-	checkPendingInterval time.Duration
-	keepAliveInterval    time.Duration
-	keepAliveTimeout     time.Duration
+	id     string
+	client *redis.Client
+	cfg    *ProducerConfig
+	// streamName           string
+	// groupName            string
+	// checkPendingInterval time.Duration
+	// keepAliveTimeout     time.Duration
 }
 
 type ProducerConfig struct {
@@ -51,8 +51,6 @@ type ProducerConfig struct {
 	// Interval duration in which producer checks for pending messages delivered
 	// to the consumers that are currently inactive.
 	CheckPendingInterval time.Duration `koanf:"check-pending-interval"`
-	// Intervals in which consumer will update heartbeat.
-	KeepAliveInterval time.Duration `koanf:"keepalive-interval"`
 	// Duration after which consumer is considered to be dead if heartbeat
 	// is not updated.
 	KeepAliveTimeout time.Duration `koanf:"keepalive-timeout"`
@@ -66,13 +64,13 @@ func NewProducer(cfg *ProducerConfig) (*Producer, error) {
 		return nil, err
 	}
 	return &Producer{
-		id:                   uuid.NewString(),
-		streamName:           cfg.RedisStream,
-		client:               c,
-		groupName:            cfg.RedisGroup,
-		checkPendingInterval: cfg.CheckPendingInterval,
-		keepAliveInterval:    cfg.KeepAliveInterval,
-		keepAliveTimeout:     cfg.KeepAliveTimeout,
+		id:     uuid.NewString(),
+		client: c,
+		cfg:    cfg,
+		// streamName:           cfg.RedisStream,
+		// groupName:            cfg.RedisGroup,
+		// checkPendingInterval: cfg.CheckPendingInterval,
+		// keepAliveTimeout:     cfg.KeepAliveTimeout,
 	}, nil
 }
 
@@ -83,14 +81,14 @@ func (p *Producer) Start(ctx context.Context) {
 			msgs, err := p.checkPending(ctx)
 			if err != nil {
 				log.Error("Checking pending messages", "error", err)
-				return p.checkPendingInterval
+				return p.cfg.CheckPendingInterval
 			}
 			if len(msgs) == 0 {
-				return p.checkPendingInterval
+				return p.cfg.CheckPendingInterval
 			}
 			var acked []any
 			for _, msg := range msgs {
-				if _, err := p.client.XAck(ctx, p.streamName, p.groupName, msg.ID).Result(); err != nil {
+				if _, err := p.client.XAck(ctx, p.cfg.RedisStream, p.cfg.RedisGroup, msg.ID).Result(); err != nil {
 					log.Error("ACKing message", "error", err)
 					continue
 				}
@@ -100,7 +98,7 @@ func (p *Producer) Start(ctx context.Context) {
 			if err := p.Produce(ctx, acked); err != nil {
 				log.Error("Re-inserting pending messages with inactive consumers", "error", err)
 			}
-			return p.checkPendingInterval
+			return p.cfg.CheckPendingInterval
 		},
 	)
 }
@@ -110,9 +108,8 @@ func (p *Producer) Produce(ctx context.Context, values ...any) error {
 		return nil
 	}
 	for _, value := range values {
-		log.Info("anodar producing", "value", value)
 		if _, err := p.client.XAdd(ctx, &redis.XAddArgs{
-			Stream: p.streamName,
+			Stream: p.cfg.RedisStream,
 			Values: map[string]any{messageKey: value},
 		}).Result(); err != nil {
 			return fmt.Errorf("adding values to redis: %w", err)
@@ -127,13 +124,13 @@ func (p *Producer) isConsumerAlive(ctx context.Context, consumerID string) bool 
 	if err != nil {
 		return false
 	}
-	return time.Now().UnixMilli()-val < int64(p.keepAliveTimeout.Milliseconds())
+	return time.Now().UnixMilli()-val < int64(p.cfg.KeepAliveTimeout.Milliseconds())
 }
 
 func (p *Producer) checkPending(ctx context.Context) ([]*Message, error) {
 	pendingMessages, err := p.client.XPendingExt(ctx, &redis.XPendingExtArgs{
-		Stream: p.streamName,
-		Group:  p.groupName,
+		Stream: p.cfg.RedisStream,
+		Group:  p.cfg.RedisGroup,
 		Start:  "-",
 		End:    "+",
 		Count:  100,
@@ -157,10 +154,10 @@ func (p *Producer) checkPending(ctx context.Context) ([]*Message, error) {
 	}
 	log.Info("Attempting to claim", "messages", ids)
 	claimedMsgs, err := p.client.XClaim(ctx, &redis.XClaimArgs{
-		Stream:   p.streamName,
-		Group:    p.groupName,
+		Stream:   p.cfg.RedisStream,
+		Group:    p.cfg.RedisGroup,
 		Consumer: p.id,
-		MinIdle:  p.keepAliveTimeout,
+		MinIdle:  p.cfg.KeepAliveTimeout,
 		Messages: ids,
 	}).Result()
 	if err != nil {
