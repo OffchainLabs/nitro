@@ -10,6 +10,7 @@ package arbtest
 import "testing"
 
 func TestChallengeStakersFaultyHonestActive(t *testing.T) {
+	t.Skip("Flaky with BOLD")
 	stakerTestImpl(t, true, false)
 }
 

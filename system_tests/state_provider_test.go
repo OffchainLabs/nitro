@@ -33,7 +33,7 @@ import (
 	mockmanager "github.com/OffchainLabs/bold/testing/mocks/state-provider"
 )
 
-func TestStateProvider_BOLD_Bisections(t *testing.T) {
+func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
@@ -116,7 +116,7 @@ func TestStateProvider_BOLD_Bisections(t *testing.T) {
 	}
 }
 
-func TestStateProvider_BOLD(t *testing.T) {
+func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
