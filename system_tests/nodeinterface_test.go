@@ -1,6 +1,10 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+// race detection makes things slow and miss timeouts
+//go:build !race
+// +build !race
+
 package arbtest
 
 import (
@@ -11,9 +15,81 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 )
+
+func TestFindBatch(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	l1Info := NewL1TestInfo(t)
+	initialBalance := new(big.Int).Lsh(big.NewInt(1), 200)
+	l1Info.GenerateGenesisAccount("deployer", initialBalance)
+	l1Info.GenerateGenesisAccount("asserter", initialBalance)
+	l1Info.GenerateGenesisAccount("challenger", initialBalance)
+	l1Info.GenerateGenesisAccount("sequencer", initialBalance)
+
+	l1Info, l1Backend, _, _ := createTestL1BlockChain(t, l1Info)
+	conf := arbnode.ConfigDefaultL1Test()
+	conf.BlockValidator.Enable = false
+	conf.BatchPoster.Enable = false
+
+	chainConfig := params.ArbitrumDevTestChainConfig()
+	fatalErrChan := make(chan error, 10)
+	rollupAddresses, initMsg := DeployOnTestL1(t, ctx, l1Info, l1Backend, chainConfig)
+
+	bridgeAddr, seqInbox, seqInboxAddr := setupSequencerInboxStub(ctx, t, l1Info, l1Backend, chainConfig)
+
+	callOpts := bind.CallOpts{Context: ctx}
+
+	rollupAddresses.Bridge = bridgeAddr
+	rollupAddresses.SequencerInbox = seqInboxAddr
+	l2Info := NewArbTestInfo(t, chainConfig.ChainID)
+	consensus, _ := createL2Nodes(t, ctx, conf, chainConfig, l1Backend, l2Info, rollupAddresses, initMsg, nil, nil, fatalErrChan)
+	err := consensus.Start(ctx)
+	Require(t, err)
+
+	l2Client := ClientForStack(t, consensus.Stack)
+	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, l2Client)
+	Require(t, err)
+	sequencerTxOpts := l1Info.GetDefaultTransactOpts("sequencer", ctx)
+
+	l2Info.GenerateAccount("Destination")
+	makeBatch(t, consensus, l2Info, l1Backend, &sequencerTxOpts, seqInbox, seqInboxAddr, -1)
+	makeBatch(t, consensus, l2Info, l1Backend, &sequencerTxOpts, seqInbox, seqInboxAddr, -1)
+	makeBatch(t, consensus, l2Info, l1Backend, &sequencerTxOpts, seqInbox, seqInboxAddr, -1)
+
+	for blockNum := uint64(0); blockNum < uint64(makeBatch_MsgsPerBatch)*3; blockNum++ {
+		gotBatchNum, err := nodeInterface.FindBatchContainingBlock(&callOpts, blockNum)
+		Require(t, err)
+		expBatchNum := uint64(0)
+		if blockNum > 0 {
+			expBatchNum = 1 + (blockNum-1)/uint64(makeBatch_MsgsPerBatch)
+		}
+		if expBatchNum != gotBatchNum {
+			Fatal(t, "wrong result from findBatchContainingBlock. blocknum ", blockNum, " expected ", expBatchNum, " got ", gotBatchNum)
+		}
+		batchL1Block, err := consensus.InboxTracker.GetBatchParentChainBlock(gotBatchNum)
+		Require(t, err)
+		blockHeader, err := l2Client.HeaderByNumber(ctx, new(big.Int).SetUint64(blockNum))
+		Require(t, err)
+		blockHash := blockHeader.Hash()
+
+		minCurrentL1Block, err := l1Backend.BlockNumber(ctx)
+		Require(t, err)
+		gotConfirmations, err := nodeInterface.GetL1Confirmations(&callOpts, blockHash)
+		Require(t, err)
+		maxCurrentL1Block, err := l1Backend.BlockNumber(ctx)
+		Require(t, err)
+
+		if gotConfirmations > (maxCurrentL1Block-batchL1Block) || gotConfirmations < (minCurrentL1Block-batchL1Block) {
+			Fatal(t, "wrong number of confirmations. got ", gotConfirmations)
+		}
+	}
+}
 
 func TestL2BlockRangeForL1(t *testing.T) {
 	t.Parallel()
