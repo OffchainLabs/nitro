@@ -2,7 +2,7 @@
 // For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 
 // race detection makes things slow and miss timeouts
-//go:build challengetest && !race
+// asdashdgo:build challengetest && !race
 
 package arbtest
 
@@ -79,6 +79,7 @@ func TestStateProvider_BOLD_Bisections(t *testing.T) {
 			1 << 5,
 		},
 		stateManager,
+		nil, // api db
 	)
 	bisectionHeight := l2stateprovider.Height(16)
 	request := &l2stateprovider.HistoryCommitmentRequest{
@@ -159,7 +160,7 @@ func TestStateProvider_BOLD(t *testing.T) {
 		stateRoots, err := stateManager.StatesInBatchRange(fromHeight, toHeight, fromBatch, toBatch)
 		Require(t, err)
 
-		if stateRoots.Length() != 15 {
+		if len(stateRoots) != 15 {
 			Fatal(t, "wrong number of state roots")
 		}
 		firstState := states[0]
@@ -294,6 +295,7 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context) (*arbnode.Node, *
 		l2node.Execution,
 		l2node.ArbDB,
 		nil,
+		l2node.BlobReader,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
 	)
