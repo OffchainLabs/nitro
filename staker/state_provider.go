@@ -19,6 +19,7 @@ import (
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+	"github.com/OffchainLabs/bold/state-commitments/history"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	challengecache "github.com/offchainlabs/nitro/staker/challenge-cache"
@@ -174,6 +175,23 @@ func (s *StateManager) ExecutionStateAfterPreviousState(
 		executionState.GlobalState.Batch += 1
 		executionState.GlobalState.PosInBatch = 0
 	}
+
+	fromBatch := uint64(0)
+	if previousGlobalState != nil {
+		fromBatch = previousGlobalState.Batch
+	}
+	toBatch := executionState.GlobalState.Batch
+	historyCommitStates, _, err := s.StatesInBatchRange(
+		0,
+		l2stateprovider.Height(maxNumberOfBlocks),
+		l2stateprovider.Batch(fromBatch),
+		l2stateprovider.Batch(toBatch),
+	)
+	historyCommit, err := history.New(historyCommitStates)
+	if err != nil {
+		return nil, err
+	}
+	executionState.EndHistoryRoot = historyCommit.Merkle
 	return executionState, nil
 }
 
