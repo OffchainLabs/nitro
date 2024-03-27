@@ -42,21 +42,6 @@ var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, 
 var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
 var gasUsedSinceStartupCounter = metrics.NewRegisteredCounter("arb/gas_used", nil)
 
-// A helper struct that implements String() by marshalling to JSON.
-// This is useful for logging because it's lazy, so if the log level is too high to print the transaction,
-// it doesn't waste compute marshalling the transaction when the result wouldn't be used.
-type printTxAsJson struct {
-	tx *types.Transaction
-}
-
-func (p printTxAsJson) String() string {
-	json, err := p.tx.MarshalJSON()
-	if err != nil {
-		return fmt.Sprintf("[error marshalling tx: %v]", err)
-	}
-	return string(json)
-}
-
 type L1Info struct {
 	poster        common.Address
 	l1BlockNumber uint64
