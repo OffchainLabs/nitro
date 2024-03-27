@@ -36,9 +36,9 @@ var (
 type ExecutionEngine struct {
 	stopwaiter.StopWaiter
 
-	bc       *core.BlockChain
-	streamer execution.TransactionStreamer
-	recorder *BlockRecorder
+	bc        *core.BlockChain
+	consensus execution.FullConsensusClient
+	recorder  *BlockRecorder
 
 	resequenceChan    chan []*arbostypes.MessageWithMetadata
 	createBlocksMutex sync.Mutex
@@ -92,14 +92,18 @@ func (s *ExecutionEngine) EnablePrefetchBlock() {
 	s.prefetchBlock = true
 }
 
-func (s *ExecutionEngine) SetTransactionStreamer(streamer execution.TransactionStreamer) {
+func (s *ExecutionEngine) SetConsensus(consensus execution.FullConsensusClient) {
 	if s.Started() {
-		panic("trying to set transaction streamer after start")
+		panic("trying to set transaction consensus after start")
 	}
-	if s.streamer != nil {
-		panic("trying to set transaction streamer when already set")
+	if s.consensus != nil {
+		panic("trying to set transaction consensus when already set")
 	}
-	s.streamer = streamer
+	s.consensus = consensus
+}
+
+func (s *ExecutionEngine) GetBatchFetcher() execution.BatchFetcher {
+	return s.consensus
 }
 
 func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) error {
@@ -275,7 +279,7 @@ func (s *ExecutionEngine) sequencerWrapper(sequencerFunc func() (*types.Block, e
 		}
 		// We got SequencerInsertLockTaken
 		// option 1: there was a race, we are no longer main sequencer
-		chosenErr := s.streamer.ExpectChosenSequencer()
+		chosenErr := s.consensus.ExpectChosenSequencer()
 		if chosenErr != nil {
 			return nil, chosenErr
 		}
@@ -362,7 +366,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, err
 	}
 
-	err = s.streamer.WriteMessageFromSequencer(pos, msgWithMeta)
+	err = s.consensus.WriteMessageFromSequencer(pos, msgWithMeta)
 	if err != nil {
 		return nil, err
 	}
@@ -406,7 +410,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		DelayedMessagesRead: delayedSeqNum + 1,
 	}
 
-	err = s.streamer.WriteMessageFromSequencer(lastMsg+1, messageWithMeta)
+	err = s.consensus.WriteMessageFromSequencer(lastMsg+1, messageWithMeta)
 	if err != nil {
 		return nil, err
 	}
@@ -467,6 +471,11 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	statedb.StartPrefetcher("TransactionStreamer")
 	defer statedb.StopPrefetcher()
 
+	batchFetcher := func(num uint64) ([]byte, error) {
+		data, _, err := s.consensus.FetchBatch(s.GetContext(), num)
+		return data, err
+	}
+
 	block, receipts, err := arbos.ProduceBlock(
 		msg.Message,
 		msg.DelayedMessagesRead,
@@ -474,10 +483,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		statedb,
 		s.bc,
 		s.bc.Config(),
-		func(batchNum uint64) ([]byte, error) {
-			data, _, err := s.streamer.FetchBatch(batchNum)
-			return data, err
-		},
+		batchFetcher,
 	)
 
 	return block, statedb, receipts, err
