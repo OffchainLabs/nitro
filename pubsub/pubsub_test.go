@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/google/go-cmp/cmp"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/redisutil"
 )
 
@@ -38,6 +39,7 @@ func newProducerConsumers(ctx context.Context, t *testing.T) (*Producer, []*Cons
 			RedisGroup:           defaultGroup,
 			CheckPendingInterval: 10 * time.Millisecond,
 			KeepAliveTimeout:     20 * time.Millisecond,
+			CheckResultInterval:  5 * time.Millisecond,
 		})
 	if err != nil {
 		t.Fatalf("Error creating new producer: %v", err)
@@ -84,7 +86,9 @@ func wantMessages(n int) []any {
 func TestProduce(t *testing.T) {
 	ctx := context.Background()
 	producer, consumers := newProducerConsumers(ctx, t)
+	producer.Start(ctx)
 	gotMessages := messagesMap(consumersCount)
+	wantResponses := make([][]string, len(consumers))
 	for idx, c := range consumers {
 		idx, c := idx, c
 		c.Start(ctx)
@@ -105,18 +109,30 @@ func TestProduce(t *testing.T) {
 					if err := c.ACK(ctx, res.ID); err != nil {
 						t.Errorf("Error ACKing message: %v, error: %v", res.ID, err)
 					}
+					if err := c.SetResult(ctx, res.ID, fmt.Sprintf("result for: %v", res.ID)); err != nil {
+						t.Errorf("Error setting a result: %v", err)
+					}
+					wantResponses[idx] = append(wantResponses[idx], fmt.Sprintf("result for: %v", res.ID))
 				}
 			})
 	}
 
+	var gotResponses []string
+
 	for i := 0; i < messagesCount; i++ {
 		value := fmt.Sprintf("msg: %d", i)
-		if err := producer.Produce(ctx, value); err != nil {
+		p, err := producer.Produce(ctx, value)
+		if err != nil {
 			t.Errorf("Produce() unexpected error: %v", err)
 		}
+		res, err := p.Await(ctx)
+		if err != nil {
+			t.Errorf("Await() unexpected error: %v", err)
+		}
+		gotResponses = append(gotResponses, fmt.Sprintf("%v", res))
 	}
+
 	producer.StopWaiter.StopAndWait()
-	time.Sleep(50 * time.Millisecond)
 	for _, c := range consumers {
 		c.StopAndWait()
 	}
@@ -129,6 +145,25 @@ func TestProduce(t *testing.T) {
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("Unexpected diff (-want +got):\n%s\n", diff)
 	}
+
+	wantResp := flatten(wantResponses)
+	sort.Slice(gotResponses, func(i, j int) bool {
+		return gotResponses[i] < gotResponses[j]
+	})
+	if diff := cmp.Diff(wantResp, gotResponses); diff != "" {
+		t.Errorf("Unexpected diff in responses:\n%s\n", diff)
+	}
+}
+
+func flatten(responses [][]string) []string {
+	var ret []string
+	for _, v := range responses {
+		ret = append(ret, v...)
+	}
+	sort.Slice(ret, func(i, j int) bool {
+		return ret[i] < ret[j]
+	})
+	return ret
 }
 
 func TestClaimingOwnership(t *testing.T) {
@@ -148,17 +183,17 @@ func TestClaimingOwnership(t *testing.T) {
 	}
 	var total atomic.Uint64
 
-	for idx, c := range consumers {
-		idx, c := idx, c
-		if !c.StopWaiter.Started() {
-			c.Start(ctx)
+	wantResponses := make([][]string, len(consumers))
+	for idx := 0; idx < len(consumers); idx++ {
+		if idx%3 == 0 {
+			continue
 		}
+		idx, c := idx, consumers[idx]
+		c.Start(ctx)
 		c.StopWaiter.LaunchThread(
 			func(ctx context.Context) {
 				for {
-					if idx%3 == 0 {
-						continue
-					}
+
 					res, err := c.Consume(ctx)
 					if err != nil {
 						if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
@@ -174,16 +209,32 @@ func TestClaimingOwnership(t *testing.T) {
 					if err := c.ACK(ctx, res.ID); err != nil {
 						t.Errorf("Error ACKing message: %v, error: %v", res.ID, err)
 					}
+					if err := c.SetResult(ctx, res.ID, fmt.Sprintf("result for: %v", res.ID)); err != nil {
+						t.Errorf("Error setting a result: %v", err)
+					}
+					wantResponses[idx] = append(wantResponses[idx], fmt.Sprintf("result for: %v", res.ID))
 					total.Add(1)
 				}
 			})
 	}
 
+	var promises []*containers.Promise[any]
 	for i := 0; i < messagesCount; i++ {
 		value := fmt.Sprintf("msg: %d", i)
-		if err := producer.Produce(ctx, value); err != nil {
+		promise, err := producer.Produce(ctx, value)
+		if err != nil {
 			t.Errorf("Produce() unexpected error: %v", err)
 		}
+		promises = append(promises, promise)
+	}
+	var gotResponses []string
+	for _, p := range promises {
+		res, err := p.Await(ctx)
+		if err != nil {
+			t.Errorf("Await() unexpected error: %v", err)
+			continue
+		}
+		gotResponses = append(gotResponses, fmt.Sprintf("%v", res))
 	}
 
 	for {
@@ -203,6 +254,13 @@ func TestClaimingOwnership(t *testing.T) {
 	want := wantMessages(messagesCount)
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("Unexpected diff (-want +got):\n%s\n", diff)
+	}
+	WantResp := flatten(wantResponses)
+	sort.Slice(gotResponses, func(i, j int) bool {
+		return gotResponses[i] < gotResponses[j]
+	})
+	if diff := cmp.Diff(WantResp, gotResponses); diff != "" {
+		t.Errorf("Unexpected diff in responses:\n%s\n", diff)
 	}
 }
 

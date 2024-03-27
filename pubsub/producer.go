@@ -4,11 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -23,6 +25,9 @@ type Producer struct {
 	id     string
 	client redis.UniversalClient
 	cfg    *ProducerConfig
+
+	promisesLock sync.RWMutex
+	promises     map[string]*containers.Promise[any]
 }
 
 type ProducerConfig struct {
@@ -35,22 +40,25 @@ type ProducerConfig struct {
 	// Duration after which consumer is considered to be dead if heartbeat
 	// is not updated.
 	KeepAliveTimeout time.Duration `koanf:"keepalive-timeout"`
+	// Interval duration for checking the result set by consumers.
+	CheckResultInterval time.Duration `koanf:"check-result-interval"`
 	// Redis consumer group name.
 	RedisGroup string `koanf:"redis-group"`
 }
 
 func NewProducer(cfg *ProducerConfig) (*Producer, error) {
 	if cfg.RedisURL == "" {
-		return nil, fmt.Errorf("empty redis url")
+		return nil, fmt.Errorf("redis url cannot be empty")
 	}
 	c, err := redisutil.RedisClientFromURL(cfg.RedisURL)
 	if err != nil {
 		return nil, err
 	}
 	return &Producer{
-		id:     uuid.NewString(),
-		client: c,
-		cfg:    cfg,
+		id:       uuid.NewString(),
+		client:   c,
+		cfg:      cfg,
+		promises: make(map[string]*containers.Promise[any]),
 	}, nil
 }
 
@@ -66,36 +74,67 @@ func (p *Producer) Start(ctx context.Context) {
 			if len(msgs) == 0 {
 				return p.cfg.CheckPendingInterval
 			}
-			var acked []any
+			acked := make(map[string]any)
 			for _, msg := range msgs {
 				if _, err := p.client.XAck(ctx, p.cfg.RedisStream, p.cfg.RedisGroup, msg.ID).Result(); err != nil {
 					log.Error("ACKing message", "error", err)
 					continue
 				}
-				acked = append(acked, msg.Value)
+				acked[msg.ID] = msg.Value
 			}
-			// Only re-insert messages that were removed the the pending list first.
-			if err := p.Produce(ctx, acked); err != nil {
-				log.Error("Re-inserting pending messages with inactive consumers", "error", err)
+			for k, v := range acked {
+				// Only re-insert messages that were removed the the pending list first.
+				_, err := p.reproduce(ctx, v, k)
+				if err != nil {
+					log.Error("Re-inserting pending messages with inactive consumers", "error", err)
+				}
 			}
 			return p.cfg.CheckPendingInterval
 		},
 	)
+	// Iteratively check whether result were returned for some queries.
+	p.StopWaiter.CallIteratively(func(ctx context.Context) time.Duration {
+		p.promisesLock.Lock()
+		defer p.promisesLock.Unlock()
+		for id, promise := range p.promises {
+			res, err := p.client.Get(ctx, id).Result()
+			if err != nil {
+				if errors.Is(err, redis.Nil) {
+					continue
+				}
+				log.Error("Error reading value in redis", "key", id, "error", err)
+			}
+			promise.Produce(res)
+			delete(p.promises, id)
+		}
+		return p.cfg.CheckResultInterval
+	})
 }
 
-func (p *Producer) Produce(ctx context.Context, values ...any) error {
-	if len(values) == 0 {
-		return nil
+// reproduce is used when Producer claims ownership on the pending
+// message that was sent to inactive consumer and reinserts it into the stream,
+// so that seamlessly return the answer in the same promise.
+func (p *Producer) reproduce(ctx context.Context, value any, oldKey string) (*containers.Promise[any], error) {
+	id, err := p.client.XAdd(ctx, &redis.XAddArgs{
+		Stream: p.cfg.RedisStream,
+		Values: map[string]any{messageKey: value},
+	}).Result()
+	if err != nil {
+		return nil, fmt.Errorf("adding values to redis: %w", err)
 	}
-	for _, value := range values {
-		if _, err := p.client.XAdd(ctx, &redis.XAddArgs{
-			Stream: p.cfg.RedisStream,
-			Values: map[string]any{messageKey: value},
-		}).Result(); err != nil {
-			return fmt.Errorf("adding values to redis: %w", err)
-		}
+	p.promisesLock.Lock()
+	defer p.promisesLock.Unlock()
+	promise := p.promises[oldKey]
+	if oldKey == "" || promise == nil {
+		p := containers.NewPromise[any](nil)
+		promise = &p
 	}
-	return nil
+	p.promises[id] = promise
+	return promise, nil
+}
+
+func (p *Producer) Produce(ctx context.Context, value any) (*containers.Promise[any], error) {
+	return p.reproduce(ctx, value, "")
 }
 
 // Check if a consumer is with specified ID is alive.
@@ -126,7 +165,7 @@ func (p *Producer) checkPending(ctx context.Context) ([]*Message, error) {
 	var ids []string
 	inactive := make(map[string]bool)
 	for _, msg := range pendingMessages {
-		if inactive[msg.Consumer] || p.isConsumerAlive(ctx, msg.Consumer) {
+		if !inactive[msg.Consumer] || p.isConsumerAlive(ctx, msg.Consumer) {
 			continue
 		}
 		inactive[msg.Consumer] = true

@@ -36,6 +36,8 @@ func ConsumerConfigAddOptions(prefix string, f *pflag.FlagSet, cfg *ConsumerConf
 	f.String(prefix+".redis-group", defaultGroup, "redis stream consumer group name")
 }
 
+// Consumer implements a consumer for redis stream provides heartbeat to
+// indicate it is alive.
 type Consumer struct {
 	stopwaiter.StopWaiter
 	id     string
@@ -64,6 +66,7 @@ func NewConsumer(ctx context.Context, cfg *ConsumerConfig) (*Consumer, error) {
 	return consumer, nil
 }
 
+// Start starts the consumer to iteratively perform heartbeat in configured intervals.
 func (c *Consumer) Start(ctx context.Context) {
 	c.StopWaiter.Start(ctx, c)
 	c.StopWaiter.CallIteratively(
@@ -129,4 +132,12 @@ func (c *Consumer) ACK(ctx context.Context, messageID string) error {
 	log.Info("ACKing message", "consumer-id", c.id, "message-sid", messageID)
 	_, err := c.client.XAck(ctx, c.cfg.RedisStream, c.cfg.RedisGroup, messageID).Result()
 	return err
+}
+
+func (c *Consumer) SetResult(ctx context.Context, messageID string, result string) error {
+	acquired, err := c.client.SetNX(ctx, messageID, result, c.cfg.KeepAliveTimeout).Result()
+	if err != nil || !acquired {
+		return fmt.Errorf("setting result for  message: %v, error: %w", messageID, err)
+	}
+	return nil
 }
