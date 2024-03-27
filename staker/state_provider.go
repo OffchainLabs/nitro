@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
+	flag "github.com/spf13/pflag"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/containers/option"
@@ -71,6 +72,22 @@ var DefaultBoldConfig = BoldConfig{
 	AssertionScanningIntervalSeconds:   30,
 	AssertionConfirmingIntervalSeconds: 60,
 	EdgeTrackerWakeIntervalSeconds:     1,
+}
+
+func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultBoldConfig.Enable, "enable bold challenge protocol")
+	f.Bool(prefix+".evil", DefaultBoldConfig.Evil, "enable evil bold validator")
+	f.String(prefix+".mode", DefaultBoldConfig.Mode, "define the bold validator staker strategy")
+	f.Uint64(prefix+".block-challenge-leaf-height", DefaultBoldConfig.BlockChallengeLeafHeight, "block challenge leaf height")
+	f.Uint64(prefix+".big-step-leaf-height", DefaultBoldConfig.BigStepLeafHeight, "big challenge leaf height")
+	f.Uint64(prefix+".small-step-leaf-height", DefaultBoldConfig.SmallStepLeafHeight, "small challenge leaf height")
+	f.Uint64(prefix+".num-big-steps", DefaultBoldConfig.NumBigSteps, "num big steps")
+	f.String(prefix+".validator-name", DefaultBoldConfig.ValidatorName, "name identifier for cosmetic purposes")
+	f.String(prefix+".machine-leaves-cache-path", DefaultBoldConfig.MachineLeavesCachePath, "path to machine cache")
+	f.Uint64(prefix+".assertion-posting-interval-seconds", DefaultBoldConfig.AssertionPostingIntervalSeconds, "assertion posting interval")
+	f.Uint64(prefix+".assertion-scanning-interval-seconds", DefaultBoldConfig.AssertionScanningIntervalSeconds, "scan assertion interval")
+	f.Uint64(prefix+".assertion-confirming-interval-seconds", DefaultBoldConfig.AssertionConfirmingIntervalSeconds, "confirm assertion interval")
+	f.Uint64(prefix+".edge-tracker-wake-interval-seconds", DefaultBoldConfig.EdgeTrackerWakeIntervalSeconds, "edge act interval")
 }
 
 func (c *BoldConfig) Validate() error {

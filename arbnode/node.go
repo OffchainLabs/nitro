@@ -157,6 +157,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	staker.BlockValidatorConfigAddOptions(prefix+".block-validator", f)
 	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, feedInputEnable, feedOutputEnable)
 	staker.L1ValidatorConfigAddOptions(prefix+".staker", f)
+	staker.BoldConfigAddOptions(prefix+".bold", f)
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
 	das.DataAvailabilityConfigAddNodeOptions(prefix+".data-availability", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)

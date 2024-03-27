@@ -196,6 +196,7 @@ func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".staker-interval", DefaultL1ValidatorConfig.StakerInterval, "how often the L1 validator should check the status of the L1 rollup and maybe take action with its stake")
 	f.Duration(prefix+".make-assertion-interval", DefaultL1ValidatorConfig.MakeAssertionInterval, "if configured with the makeNodes strategy, how often to create new assertions (bypassed in case of a dispute)")
 	L1PostingStrategyAddOptions(prefix+".posting-strategy", f)
+	BoldConfigAddOptions(prefix+".bold", f)
 	f.Bool(prefix+".disable-challenge", DefaultL1ValidatorConfig.DisableChallenge, "disable validator challenge")
 	f.Int64(prefix+".confirmation-blocks", DefaultL1ValidatorConfig.ConfirmationBlocks, "confirmation blocks")
 	f.Bool(prefix+".use-smart-contract-wallet", DefaultL1ValidatorConfig.UseSmartContractWallet, "use a smart contract wallet instead of an EOA address")

@@ -82,6 +82,8 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	SequencerConfigAddOptions(prefix+".sequencer", f)
 	headerreader.AddOptions(prefix+".parent-chain-reader", f)
 	arbitrum.RecordingDatabaseConfigAddOptions(prefix+".recording-database", f)
+	f.Bool(prefix+".evil", ConfigDefault.Evil, "enable evil bold validation")
+	f.Uint64(prefix+".evil-intercept-deposit-gwei", ConfigDefault.EvilInterceptDepositGwei, "bold evil intercept deposit gwei")
 	f.String(prefix+".forwarding-target", ConfigDefault.ForwardingTarget, "transaction forwarding target URL, or \"null\" to disable forwarding (iff not sequencer)")
 	f.StringSlice(prefix+".secondary-forwarding-target", ConfigDefault.SecondaryForwardingTarget, "secondary transaction forwarding target URL")
 	AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
