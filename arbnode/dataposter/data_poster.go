@@ -141,7 +141,6 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 	// 	}
 	// 	return &storage.EncoderDecoder{}
 	// }
-	var queue QueueStorage
 	// switch {
 	// case useNoOpStorage:
 	// queue = &noop.Storage{}
@@ -160,7 +159,7 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 	// // }
 	// queue = storage
 	// default:
-	queue = slice.NewStorage(func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
+	queue := slice.NewStorage(func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
 	// }
 	expression, err := govaluate.NewEvaluableExpression(cfg.MaxFeeCapFormula)
 	if err != nil {
