@@ -1,7 +1,7 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-//go:build challengetest && !race
+//asdgo:build challengetest && !race
 
 package arbtest
 
@@ -355,6 +355,7 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 		challengemanager.WithAssertionPostingInterval(time.Second*30),
 		challengemanager.WithAssertionScanningInterval(time.Second),
 		challengemanager.WithEdgeTrackerWakeInterval(time.Second*2),
+		challengemanager.WithAvgBlockCreationTime(time.Second),
 	)
 	Require(t, err)
 
@@ -369,6 +370,7 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 		challengemanager.WithAssertionPostingInterval(time.Second*30),
 		challengemanager.WithAssertionScanningInterval(time.Second),
 		challengemanager.WithEdgeTrackerWakeInterval(time.Second*2),
+		challengemanager.WithAvgBlockCreationTime(time.Second),
 	)
 	Require(t, err)
 
@@ -405,9 +407,18 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 				}
 				assertion, err := userLogic.GetAssertion(&bind.CallOpts{}, it.Event.AssertionHash)
 				Require(t, err)
-				isChallenged := assertion.FirstChildBlock != 0 && assertion.SecondChildBlock != 0
-				if isChallenged {
-					t.Logf("Assertion confirmed %#x", it.Event.AssertionHash)
+				if assertion.SecondChildBlock != 0 {
+					continue
+				}
+				creationInfo, err := assertionChain.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: it.Event.AssertionHash})
+				Require(t, err)
+				tx, _, err := l1client.TransactionByHash(ctx, creationInfo.TransactionHash)
+				Require(t, err)
+				signer := types.NewCancunSigner(tx.ChainId())
+				address, err := signer.Sender(tx)
+				Require(t, err)
+				if address == l1info.GetDefaultTransactOpts("Asserter", ctx).From {
+					t.Logf("Assertion from honest party confirmed by challenge win %#x", it.Event.AssertionHash)
 					Require(t, it.Close())
 					return
 				}
