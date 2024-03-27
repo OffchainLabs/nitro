@@ -385,42 +385,6 @@ func (et *Tracker) ShouldDespawn(ctx context.Context) bool {
 		srvlog.Info("Claimed assertion by edge confirmed, can now despawn edge", fields)
 		return true
 	}
-	challengedAssertion, err := et.edge.AssertionHash(ctx)
-	if err != nil {
-		fields["err"] = err
-		srvlog.Error("Could not get assertion hash", fields)
-		return false
-	}
-	if !IsRootBlockChallengeEdge(et.edge) {
-		return false
-	}
-	manager, err := et.chain.SpecChallengeManager(ctx)
-	if err != nil {
-		fields["err"] = err
-		srvlog.Error("Could not get assertion hash", fields)
-		return false
-	}
-	chalPeriod, err := manager.ChallengePeriodBlocks(ctx)
-	if err != nil {
-		fields["err"] = err
-		srvlog.Error("Could not get challenge period", fields)
-		return false
-	}
-	blockChallengeRootEdge, err := et.Watcher().BlockChallengeRootEdge(ctx, challengedAssertion)
-	if err != nil {
-		fields["err"] = err
-		srvlog.Error("Could not get block challenge root edge", fields)
-		return false
-	}
-	blockChallengeRootEdgeTimer, err := blockChallengeRootEdge.InheritedTimer(ctx)
-	if err != nil {
-		fields["err"] = err
-		srvlog.Error("Could not get inherited timer", fields)
-		return false
-	}
-	if uint64(blockChallengeRootEdgeTimer) >= chalPeriod {
-		return true
-	}
 	return false
 }
 
