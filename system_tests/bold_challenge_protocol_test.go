@@ -1,5 +1,8 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
+
+//go:build challengetest && !race
+
 package arbtest
 
 import (
@@ -55,11 +58,13 @@ import (
 // 32 Mb of state roots in memory at once.
 var (
 	blockChallengeLeafHeight     = uint64(1 << 5) // 32
-	bigStepChallengeLeafHeight   = uint64(1 << 14)
-	smallStepChallengeLeafHeight = uint64(1 << 14)
+	bigStepChallengeLeafHeight   = uint64(1 << 6)
+	smallStepChallengeLeafHeight = uint64(1 << 6)
 )
 
-func TestBoldProtocol(t *testing.T) {
+func TestChallengeProtocolBOLD(t *testing.T) {
+	Require(t, os.RemoveAll("/tmp/good"))
+	Require(t, os.RemoveAll("/tmp/evil"))
 	t.Cleanup(func() {
 		Require(t, os.RemoveAll("/tmp/good"))
 		Require(t, os.RemoveAll("/tmp/evil"))
@@ -81,6 +86,10 @@ func TestBoldProtocol(t *testing.T) {
 	defer requireClose(t, l1stack)
 	defer l2nodeA.StopAndWait()
 
+	// Make sure we shut down test functionality before the rest of the node
+	ctx, cancelCtx = context.WithCancel(ctx)
+	defer cancelCtx()
+
 	// Every 12 seconds, send an L1 transaction to keep the chain moving.
 	go func() {
 		delay := time.Second * 12
@@ -91,8 +100,14 @@ func TestBoldProtocol(t *testing.T) {
 			default:
 				time.Sleep(delay)
 				balance := big.NewInt(params.GWei)
+				if ctx.Err() != nil {
+					break
+				}
 				TransferBalance(t, "Faucet", "Asserter", balance, l1info, l1client, ctx)
 				latestBlock, err := l1client.BlockNumber(ctx)
+				if ctx.Err() != nil {
+					break
+				}
 				Require(t, err)
 				if latestBlock > 150 {
 					delay = time.Second
@@ -314,6 +329,9 @@ func TestBoldProtocol(t *testing.T) {
 			l2stateprovider.Height(blockChallengeLeafHeight),
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
+			l2stateprovider.Height(bigStepChallengeLeafHeight),
+			l2stateprovider.Height(bigStepChallengeLeafHeight),
+			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(smallStepChallengeLeafHeight),
 		},
 		stateManager,
@@ -326,6 +344,9 @@ func TestBoldProtocol(t *testing.T) {
 		stateManagerB,
 		[]l2stateprovider.Height{
 			l2stateprovider.Height(blockChallengeLeafHeight),
+			l2stateprovider.Height(bigStepChallengeLeafHeight),
+			l2stateprovider.Height(bigStepChallengeLeafHeight),
+			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(smallStepChallengeLeafHeight),
@@ -345,18 +366,9 @@ func TestBoldProtocol(t *testing.T) {
 		challengemanager.WithAssertionPostingInterval(time.Second*30),
 		challengemanager.WithAssertionScanningInterval(time.Second),
 		challengemanager.WithEdgeTrackerWakeInterval(time.Second*2),
+		challengemanager.WithAvgBlockCreationTime(time.Second),
 	)
 	Require(t, err)
-
-	t.Log("Honest party posting assertion at batch 1, pos 0")
-
-	// poster := manager.AssertionManager()
-	// _, err = poster.PostAssertion(ctx)
-	// Require(t, err)
-
-	t.Log("Honest party posting assertion at batch 2, pos 0")
-	// expectedWinnerAssertion, err := poster.PostAssertion(ctx)
-	// Require(t, err)
 
 	managerB, err := challengemanager.New(
 		ctx,
@@ -369,33 +381,64 @@ func TestBoldProtocol(t *testing.T) {
 		challengemanager.WithAssertionPostingInterval(time.Second*30),
 		challengemanager.WithAssertionScanningInterval(time.Second),
 		challengemanager.WithEdgeTrackerWakeInterval(time.Second*2),
+		challengemanager.WithAvgBlockCreationTime(time.Second),
 	)
 	Require(t, err)
-
-	// t.Log("Evil party posting assertion at batch 2, pos 0")
-	// posterB := managerB.AssertionManager()
-	// _, err = posterB.PostAssertion(ctx)
-	// Require(t, err)
 
 	manager.Start(ctx)
 	managerB.Start(ctx)
 
-	// rollupUserLogic, err := rollupgen.NewRollupUserLogic(assertionChain.RollupAddress(), l1client)
-	// Require(t, err)
-	// for {
-	// 	expected, err := rollupUserLogic.GetAssertion(&bind.CallOpts{Context: ctx}, expectedWinnerAssertion.Unwrap().AssertionHash)
-	// 	if err != nil {
-	// 		t.Logf("Error getting assertion: %v", err)
-	// 		continue
-	// 	}
-	// 	// Wait until the assertion is confirmed.
-	// 	if expected.Status == uint8(2) {
-	// 		t.Log("Expected assertion was confirmed")
-	// 		return
-	// 	}
-	// 	time.Sleep(time.Second * 5)
-	// }
-	time.Sleep(time.Hour)
+	filterer, err := rollupgen.NewRollupUserLogicFilterer(assertionChain.RollupAddress(), l1client)
+	Require(t, err)
+	userLogic, err := rollupgen.NewRollupUserLogic(assertionChain.RollupAddress(), l1client)
+	Require(t, err)
+
+	fromBlock := uint64(0)
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ticker.C:
+			latestBlock, err := l1client.HeaderByNumber(ctx, nil)
+			Require(t, err)
+			toBlock := latestBlock.Number.Uint64()
+			if fromBlock == toBlock {
+				continue
+			}
+			filterOpts := &bind.FilterOpts{
+				Start:   fromBlock,
+				End:     &toBlock,
+				Context: ctx,
+			}
+			it, err := filterer.FilterAssertionConfirmed(filterOpts, nil)
+			Require(t, err)
+			for it.Next() {
+				if it.Error() != nil {
+					t.Fatalf("Error in filter iterator: %v", it.Error())
+				}
+				assertion, err := userLogic.GetAssertion(&bind.CallOpts{}, it.Event.AssertionHash)
+				Require(t, err)
+				if assertion.SecondChildBlock != 0 {
+					continue
+				}
+				creationInfo, err := assertionChain.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: it.Event.AssertionHash})
+				Require(t, err)
+				tx, _, err := l1client.TransactionByHash(ctx, creationInfo.TransactionHash)
+				Require(t, err)
+				signer := types.NewCancunSigner(tx.ChainId())
+				address, err := signer.Sender(tx)
+				Require(t, err)
+				if address == l1info.GetDefaultTransactOpts("Asserter", ctx).From {
+					t.Logf("Assertion from honest party confirmed by challenge win %#x", it.Event.AssertionHash)
+					Require(t, it.Close())
+					return
+				}
+			}
+			fromBlock = toBlock
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 func createTestNodeOnL1ForBoldProtocol(
@@ -550,13 +593,14 @@ func deployContractsOnly(
 	wasmModuleRoot := locator.LatestWasmModuleRoot()
 
 	loserStakeEscrow := common.Address{}
-	genesisExecutionState := rollupgen.ExecutionState{
-		GlobalState:   rollupgen.GlobalState{},
-		MachineStatus: 1,
+	genesisExecutionState := rollupgen.AssertionState{
+		GlobalState:    rollupgen.GlobalState{},
+		MachineStatus:  1,
+		EndHistoryRoot: [32]byte{},
 	}
 	genesisInboxCount := big.NewInt(0)
 	anyTrustFastConfirmer := common.Address{}
-	miniStakeValues := []*big.Int{big.NewInt(5), big.NewInt(4), big.NewInt(3), big.NewInt(2)}
+	miniStakeValues := []*big.Int{big.NewInt(5), big.NewInt(4), big.NewInt(3), big.NewInt(2), big.NewInt(1), big.NewInt(1), big.NewInt(1)}
 	cfg := challenge_testing.GenerateRollupConfig(
 		false,
 		wasmModuleRoot,
@@ -573,8 +617,8 @@ func deployContractsOnly(
 			BigStepChallengeHeight:   bigStepChallengeLeafHeight,
 			SmallStepChallengeHeight: smallStepChallengeLeafHeight,
 		}),
-		challenge_testing.WithNumBigStepLevels(uint8(2)),       // TODO: Hardcoded.
-		challenge_testing.WithConfirmPeriodBlocks(uint64(150)), // TODO: Hardcoded.
+		challenge_testing.WithNumBigStepLevels(uint8(5)),       // TODO: Hardcoded.
+		challenge_testing.WithConfirmPeriodBlocks(uint64(120)), // TODO: Hardcoded.
 	)
 	config, err := json.Marshal(params.ArbitrumDevTestChainConfig())
 	Require(t, err)
@@ -631,27 +675,6 @@ func deployContractsOnly(
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, backend, tx)
 	Require(t, err)
-
-	// Check allowances...
-	rollupAllowHonest, err := tokenBindings.Allowance(&bind.CallOpts{Context: ctx}, asserter.From, addresses.Rollup)
-	Require(t, err)
-	rollupAllowEvil, err := tokenBindings.Allowance(&bind.CallOpts{Context: ctx}, evilAsserter.From, addresses.Rollup)
-	Require(t, err)
-	chalAllowHonest, err := tokenBindings.Allowance(&bind.CallOpts{Context: ctx}, asserter.From, chalManagerAddr)
-	Require(t, err)
-	chalAllowEvil, err := tokenBindings.Allowance(&bind.CallOpts{Context: ctx}, evilAsserter.From, chalManagerAddr)
-	Require(t, err)
-	honestBal, err := tokenBindings.BalanceOf(&bind.CallOpts{Context: ctx}, asserter.From)
-	Require(t, err)
-	evilBal, err := tokenBindings.BalanceOf(&bind.CallOpts{Context: ctx}, evilAsserter.From)
-	Require(t, err)
-	t.Logf("Honest %#x evil %#x", asserter.From, evilAsserter.From)
-	t.Logf("Rollup allowance for honest asserter: %d", rollupAllowHonest.Uint64())
-	t.Logf("Rollup allowance for evil asserter: %d", rollupAllowEvil.Uint64())
-	t.Logf("Challenge manager allowance for honest asserter: %d", chalAllowHonest.Uint64())
-	t.Logf("Challenge manager allowance for evil asserter: %d", chalAllowEvil.Uint64())
-	t.Logf("Honest asserter balance: %d", honestBal.Uint64())
-	t.Logf("Evil asserter balance: %d", evilBal.Uint64())
 
 	return &chaininfo.RollupAddresses{
 		Bridge:                 addresses.Bridge,

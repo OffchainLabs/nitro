@@ -182,9 +182,10 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	genesisExecutionState := rollupgen.ExecutionState{
-		GlobalState:   rollupgen.GlobalState{},
-		MachineStatus: 1,
+	genesisExecutionState := rollupgen.AssertionState{
+		GlobalState:    rollupgen.GlobalState{},
+		MachineStatus:  1,
+		EndHistoryRoot: [32]byte{},
 	}
 	genesisInboxCount := big.NewInt(0)
 	anyTrustFastConfirmer := common.Address{}

@@ -336,7 +336,7 @@ func BridgeBalance(
 				break
 			}
 			TransferBalance(t, "Faucet", "User", big.NewInt(1), l1info, l1client, ctx)
-			if i > 20 {
+			if i > 25 {
 				Fatal(t, "bridging failed")
 			}
 			<-time.After(time.Millisecond * 100)

@@ -146,7 +146,7 @@ jobs:
         if: matrix.test-mode == 'challenge'
         run:  |
           packages=`go list ./...`
-          gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -tags=challengetest -run=TestChallenge
+          gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -tags=challengetest -timeout=30m -run=TestChallenge
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v2
