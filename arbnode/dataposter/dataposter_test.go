@@ -2,25 +2,25 @@ package dataposter
 
 import (
 	"context"
-	"crypto/tls"
-	"crypto/x509"
-	"encoding/json"
 	"fmt"
-	"io"
 	"math/big"
 	"net/http"
-	"os"
 	"testing"
 	"time"
 
+	"github.com/Knetic/govaluate"
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/accounts/keystore"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/rlp"
-	"github.com/ethereum/go-ethereum/signer/core/apitypes"
+	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/google/go-cmp/cmp"
+	"github.com/holiman/uint256"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsigner"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 func TestParseReplacementTimes(t *testing.T) {
@@ -58,187 +58,427 @@ func TestParseReplacementTimes(t *testing.T) {
 	}
 }
 
+func signerTestCfg(addr common.Address) (*ExternalSignerCfg, error) {
+	cp, err := externalsignertest.CertPaths()
+	if err != nil {
+		return nil, fmt.Errorf("getting certificates path: %w", err)
+	}
+	return &ExternalSignerCfg{
+		Address:          common.Bytes2Hex(addr.Bytes()),
+		URL:              externalsignertest.SignerURL,
+		Method:           externalsignertest.SignerMethod,
+		RootCA:           cp.ServerCert,
+		ClientCert:       cp.ClientCert,
+		ClientPrivateKey: cp.ClientKey,
+	}, nil
+}
+
+var (
+	blobTx = types.NewTx(
+		&types.BlobTx{
+			ChainID:   uint256.NewInt(1337),
+			Nonce:     13,
+			GasTipCap: uint256.NewInt(1),
+			GasFeeCap: uint256.NewInt(1),
+			Gas:       3,
+			To:        common.Address{},
+			Value:     uint256.NewInt(1),
+			Data:      []byte{0x01, 0x02, 0x03},
+			BlobHashes: []common.Hash{
+				common.BigToHash(big.NewInt(1)),
+				common.BigToHash(big.NewInt(2)),
+				common.BigToHash(big.NewInt(3)),
+			},
+			Sidecar: &types.BlobTxSidecar{},
+		},
+	)
+	dynamicFeeTx = types.NewTx(
+		&types.DynamicFeeTx{
+			Nonce:     13,
+			GasTipCap: big.NewInt(1),
+			GasFeeCap: big.NewInt(1),
+			Gas:       3,
+			To:        nil,
+			Value:     big.NewInt(1),
+			Data:      []byte{0x01, 0x02, 0x03},
+		},
+	)
+)
+
 func TestExternalSigner(t *testing.T) {
-	ctx := context.Background()
-	httpSrv, srv := newServer(ctx, t)
-	t.Cleanup(func() {
-		if err := httpSrv.Shutdown(ctx); err != nil {
-			t.Fatalf("Error shutting down http server: %v", err)
-		}
-	})
+	httpSrv, srv := externalsignertest.NewServer(t)
 	cert, key := "./testdata/localhost.crt", "./testdata/localhost.key"
 	go func() {
-		fmt.Println("Server is listening on port 1234...")
 		if err := httpSrv.ListenAndServeTLS(cert, key); err != nil && err != http.ErrServerClosed {
 			t.Errorf("ListenAndServeTLS() unexpected error:  %v", err)
 			return
 		}
 	}()
-	signer, addr, err := externalSigner(ctx,
-		&ExternalSignerCfg{
-			Address:          srv.address.Hex(),
-			URL:              "https://localhost:1234",
-			Method:           "test_signTransaction",
-			RootCA:           cert,
-			ClientCert:       "./testdata/client.crt",
-			ClientPrivateKey: "./testdata/client.key",
-		})
+	signerCfg, err := signerTestCfg(srv.Address)
+	if err != nil {
+		t.Fatalf("Error getting signer test config: %v", err)
+	}
+	ctx := context.Background()
+	signer, addr, err := externalSigner(ctx, signerCfg)
 	if err != nil {
 		t.Fatalf("Error getting external signer: %v", err)
 	}
-	tx := types.NewTransaction(13, common.HexToAddress("0x01"), big.NewInt(1), 2, big.NewInt(3), []byte{0x01, 0x02, 0x03})
-	got, err := signer(ctx, addr, tx)
-	if err != nil {
-		t.Fatalf("Error signing transaction with external signer: %v", err)
-	}
-	want, err := srv.signerFn(addr, tx)
-	if err != nil {
-		t.Fatalf("Error signing transaction: %v", err)
-	}
-	if diff := cmp.Diff(want.Hash(), got.Hash()); diff != "" {
-		t.Errorf("Signing transaction: unexpected diff: %v\n", diff)
-	}
-}
 
-type server struct {
-	handlers map[string]func(*json.RawMessage) (string, error)
-	signerFn bind.SignerFn
-	address  common.Address
-}
-
-type request struct {
-	ID     *json.RawMessage `json:"id"`
-	Method string           `json:"method"`
-	Params *json.RawMessage `json:"params"`
-}
-
-type response struct {
-	ID     *json.RawMessage `json:"id"`
-	Result string           `json:"result,omitempty"`
-}
-
-// newServer returns http server and server struct that implements RPC methods.
-// It sets up an account in temporary directory and cleans up after test is
-// done.
-func newServer(ctx context.Context, t *testing.T) (*http.Server, *server) {
-	t.Helper()
-	signer, address, err := setupAccount("/tmp/keystore")
-	if err != nil {
-		t.Fatalf("Error setting up account: %v", err)
-	}
-	t.Cleanup(func() { os.RemoveAll("/tmp/keystore") })
-
-	s := &server{signerFn: signer, address: address}
-	s.handlers = map[string]func(*json.RawMessage) (string, error){
-		"test_signTransaction": s.signTransaction,
-	}
-	m := http.NewServeMux()
-
-	clientCert, err := os.ReadFile("./testdata/client.crt")
-	if err != nil {
-		t.Fatalf("Error reading client certificate: %v", err)
-	}
-	pool := x509.NewCertPool()
-	pool.AppendCertsFromPEM(clientCert)
-
-	httpSrv := &http.Server{
-		Addr:        ":1234",
-		Handler:     m,
-		ReadTimeout: 5 * time.Second,
-		TLSConfig: &tls.Config{
-			MinVersion: tls.VersionTLS12,
-			ClientAuth: tls.RequireAndVerifyClientCert,
-			ClientCAs:  pool,
+	for _, tc := range []struct {
+		desc string
+		tx   *types.Transaction
+	}{
+		{
+			desc: "blob transaction",
+			tx:   blobTx,
 		},
+		{
+			desc: "dynamic fee transaction",
+			tx:   dynamicFeeTx,
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			{
+				got, err := signer(ctx, addr, tc.tx)
+				if err != nil {
+					t.Fatalf("Error signing transaction with external signer: %v", err)
+				}
+				args, err := externalsigner.TxToSignTxArgs(addr, tc.tx)
+				if err != nil {
+					t.Fatalf("Error converting transaction to sendTxArgs: %v", err)
+				}
+				want, err := srv.SignerFn(addr, args.ToTransaction())
+				if err != nil {
+					t.Fatalf("Error signing transaction: %v", err)
+				}
+				if diff := cmp.Diff(want.Hash(), got.Hash()); diff != "" {
+					t.Errorf("Signing transaction: unexpected diff: %v\n", diff)
+				}
+				hasher := types.LatestSignerForChainID(tc.tx.ChainId())
+				if h, g := hasher.Hash(tc.tx), hasher.Hash(got); h != g {
+					t.Errorf("Signed transaction hash: %v differs from initial transaction hash: %v", g, h)
+				}
+			}
+		})
 	}
-	m.HandleFunc("/", s.mux)
-	return httpSrv, s
 }
 
-// setupAccount creates a new account in a given directory, unlocks it, creates
-// signer with that account and returns it along with account address.
-func setupAccount(dir string) (bind.SignerFn, common.Address, error) {
-	ks := keystore.NewKeyStore(
-		dir,
-		keystore.StandardScryptN,
-		keystore.StandardScryptP,
-	)
-	a, err := ks.NewAccount("password")
+func TestMaxFeeCapFormulaCalculation(t *testing.T) {
+	// This test alerts, by failing, if the max fee cap formula were to be changed in the DefaultDataPosterConfig to
+	// use new variables other than the ones that are keys of 'parameters' map below
+	expression, err := govaluate.NewEvaluableExpression(DefaultDataPosterConfig.MaxFeeCapFormula)
 	if err != nil {
-		return nil, common.Address{}, fmt.Errorf("creating account account: %w", err)
+		t.Fatalf("Error creating govaluate evaluable expression for calculating default maxFeeCap formula: %v", err)
 	}
-	if err := ks.Unlock(a, "password"); err != nil {
-		return nil, common.Address{}, fmt.Errorf("unlocking account: %w", err)
+	config := DefaultDataPosterConfig
+	config.TargetPriceGwei = 0
+	p := &DataPoster{
+		config:              func() *DataPosterConfig { return &config },
+		maxFeeCapExpression: expression,
 	}
-	txOpts, err := bind.NewKeyStoreTransactorWithChainID(ks, a, big.NewInt(1))
+	result, err := p.evalMaxFeeCapExpr(0, 0)
 	if err != nil {
-		return nil, common.Address{}, fmt.Errorf("creating transactor: %w", err)
+		t.Fatalf("Error evaluating MaxFeeCap expression: %v", err)
 	}
-	return txOpts.Signer, a.Address, nil
+	if result.Cmp(common.Big0) != 0 {
+		t.Fatalf("Unexpected result. Got: %d, want: 0", result)
+	}
+
+	result, err = p.evalMaxFeeCapExpr(0, time.Since(time.Time{}))
+	if err != nil {
+		t.Fatalf("Error evaluating MaxFeeCap expression: %v", err)
+	}
+	if result.Cmp(big.NewInt(params.GWei)) <= 0 {
+		t.Fatalf("Unexpected result. Got: %d, want: >0", result)
+	}
 }
 
-// UnmarshallFirst unmarshalls slice of params and returns the first one.
-// Parameters in Go ethereum RPC calls are marashalled as slices. E.g.
-// eth_sendRawTransaction or eth_signTransaction, marshall transaction as a
-// slice of transactions in a message:
-// https://github.com/ethereum/go-ethereum/blob/0004c6b229b787281760b14fb9460ffd9c2496f1/rpc/client.go#L548
-func unmarshallFirst(params []byte) (*types.Transaction, error) {
-	var arr []apitypes.SendTxArgs
-	if err := json.Unmarshal(params, &arr); err != nil {
-		return nil, fmt.Errorf("unmarshaling first param: %w", err)
-	}
-	if len(arr) != 1 {
-		return nil, fmt.Errorf("argument should be a single transaction, but got: %d", len(arr))
-	}
-	return arr[0].ToTransaction(), nil
+type stubL1Client struct {
+	senderNonce        uint64
+	suggestedGasTipCap *big.Int
+
+	// Define most of the required methods that aren't used by feeAndTipCaps
+	backends.SimulatedBackend
 }
 
-func (s *server) signTransaction(params *json.RawMessage) (string, error) {
-	tx, err := unmarshallFirst(*params)
-	if err != nil {
-		return "", err
-	}
-	signedTx, err := s.signerFn(s.address, tx)
-	if err != nil {
-		return "", fmt.Errorf("signing transaction: %w", err)
-	}
-	data, err := rlp.EncodeToBytes(signedTx)
-	if err != nil {
-		return "", fmt.Errorf("rlp encoding transaction: %w", err)
-	}
-	return hexutil.Encode(data), nil
+func (c *stubL1Client) NonceAt(ctx context.Context, account common.Address, blockNumber *big.Int) (uint64, error) {
+	return c.senderNonce, nil
 }
 
-func (s *server) mux(w http.ResponseWriter, r *http.Request) {
-	body, err := io.ReadAll(r.Body)
+func (c *stubL1Client) SuggestGasTipCap(ctx context.Context) (*big.Int, error) {
+	return c.suggestedGasTipCap, nil
+}
+
+// Not used but we need to define
+func (c *stubL1Client) BlockNumber(ctx context.Context) (uint64, error) {
+	return 0, nil
+}
+
+func (c *stubL1Client) CallContractAtHash(ctx context.Context, msg ethereum.CallMsg, blockHash common.Hash) ([]byte, error) {
+	return []byte{}, nil
+}
+
+func (c *stubL1Client) ChainID(ctx context.Context) (*big.Int, error) {
+	return nil, nil
+}
+
+func (c *stubL1Client) Client() rpc.ClientInterface {
+	return nil
+}
+
+func (c *stubL1Client) TransactionSender(ctx context.Context, tx *types.Transaction, block common.Hash, index uint) (common.Address, error) {
+	return common.Address{}, nil
+}
+
+func TestFeeAndTipCaps_EnoughBalance_NoBacklog_NoUnconfirmed_BlobTx(t *testing.T) {
+	conf := func() *DataPosterConfig {
+		// Set only the fields that are used by feeAndTipCaps
+		// Start with defaults, maybe change for test.
+		return &DataPosterConfig{
+			MaxMempoolTransactions: 18,
+			MaxMempoolWeight:       18,
+			MinTipCapGwei:          0.05,
+			MinBlobTxTipCapGwei:    1,
+			MaxTipCapGwei:          5,
+			MaxBlobTxTipCapGwei:    10,
+			MaxFeeBidMultipleBips:  arbmath.OneInBips * 10,
+			AllocateMempoolBalance: true,
+
+			UrgencyGwei:           2.,
+			ElapsedTimeBase:       10 * time.Minute,
+			ElapsedTimeImportance: 10,
+			TargetPriceGwei:       60.,
+		}
+	}
+	expression, err := govaluate.NewEvaluableExpression(DefaultDataPosterConfig.MaxFeeCapFormula)
 	if err != nil {
-		http.Error(w, "can't read body", http.StatusBadRequest)
-		return
+		t.Fatalf("error creating govaluate evaluable expression: %v", err)
 	}
-	var req request
-	if err := json.Unmarshal(body, &req); err != nil {
-		http.Error(w, "can't unmarshal JSON request", http.StatusBadRequest)
-		return
+
+	p := DataPoster{
+		config:           conf,
+		extraBacklog:     func() uint64 { return 0 },
+		balance:          big.NewInt(0).Mul(big.NewInt(params.Ether), big.NewInt(10)),
+		usingNoOpStorage: false,
+		client: &stubL1Client{
+			senderNonce:        1,
+			suggestedGasTipCap: big.NewInt(2 * params.GWei),
+		},
+		auth: &bind.TransactOpts{
+			From: common.Address{},
+		},
+		maxFeeCapExpression: expression,
 	}
-	method, ok := s.handlers[req.Method]
-	if !ok {
-		http.Error(w, "method not found", http.StatusNotFound)
-		return
+
+	ctx := context.Background()
+	var nonce uint64 = 1
+	var gasLimit uint64 = 300_000 // reasonable upper bound for mainnet blob batches
+	var numBlobs uint64 = 6
+	var lastTx *types.Transaction // PostTransaction leaves this nil, used when replacing
+	dataCreatedAt := time.Now()
+	var dataPosterBacklog uint64 = 0 // Zero backlog for PostTransaction
+	var blobGasUsed uint64 = 0xc0000 // 6 blobs of gas
+	var excessBlobGas uint64 = 0     // typical current mainnet conditions
+	latestHeader := types.Header{
+		Number:        big.NewInt(1),
+		BaseFee:       big.NewInt(1_000_000_000),
+		BlobGasUsed:   &blobGasUsed,
+		ExcessBlobGas: &excessBlobGas,
 	}
-	result, err := method(req.Params)
+
+	newGasFeeCap, newTipCap, newBlobFeeCap, err := p.feeAndTipCaps(ctx, nonce, gasLimit, numBlobs, lastTx, dataCreatedAt, dataPosterBacklog, &latestHeader)
 	if err != nil {
-		fmt.Printf("error calling method: %v\n", err)
-		http.Error(w, "error calling method", http.StatusInternalServerError)
-		return
+		t.Fatalf("%s", err)
 	}
-	resp := response{ID: req.ID, Result: result}
-	respBytes, err := json.Marshal(resp)
+
+	// There is no backlog and almost no time elapses since the batch data was
+	// created to when it was posted so the maxNormalizedFeeCap is ~60.01 gwei.
+	// This is multiplied with the normalizedGas to get targetMaxCost.
+	// This is greatly in excess of currentTotalCost * MaxFeeBidMultipleBips,
+	// so targetMaxCost is reduced to the current base fee + suggested tip cap +
+	// current blob fee multipled by MaxFeeBidMultipleBips (factor of 10).
+	// The blob and non blob factors are then proportionally split out and so
+	// the newGasFeeCap is set to (current base fee + suggested tip cap) * 10
+	// and newBlobFeeCap is set to current blob gas base fee (1 wei
+	// since there is no excess blob gas) * 10.
+	expectedGasFeeCap := big.NewInt(30 * params.GWei)
+	expectedBlobFeeCap := big.NewInt(10)
+	if !arbmath.BigEquals(expectedGasFeeCap, newGasFeeCap) {
+		t.Fatalf("feeAndTipCaps didn't return expected gas fee cap. Was: %d, expected: %d", expectedGasFeeCap, newGasFeeCap)
+	}
+	if !arbmath.BigEquals(expectedBlobFeeCap, newBlobFeeCap) {
+		t.Fatalf("feeAndTipCaps didn't return expected blob gas fee cap. Was: %d, expected: %d", expectedBlobFeeCap, newBlobFeeCap)
+	}
+
+	// 2 gwei is the amount suggested by the L1 client, so that is the value
+	// returned because it doesn't exceed the configured bounds, there is no
+	// lastTx to scale against with rbf, and it is not bigger than the computed
+	// gasFeeCap.
+	expectedTipCap := big.NewInt(2 * params.GWei)
+	if !arbmath.BigEquals(expectedTipCap, newTipCap) {
+		t.Fatalf("feeAndTipCaps didn't return expected tip cap. Was: %d, expected: %d", expectedTipCap, newTipCap)
+	}
+
+	lastBlobTx := &types.BlobTx{}
+	err = updateTxDataGasCaps(lastBlobTx, newGasFeeCap, newTipCap, newBlobFeeCap)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("error encoding response: %v", err), http.StatusInternalServerError)
-		return
+		t.Fatal(err)
 	}
-	w.Header().Set("Content-Type", "application/json")
-	if _, err := w.Write(respBytes); err != nil {
-		fmt.Printf("error writing response: %v\n", err)
+	lastTx = types.NewTx(lastBlobTx)
+	// Make creation time go backwards so elapsed time increases
+	retconnedCreationTime := dataCreatedAt.Add(-time.Minute)
+	// Base fee needs to have increased to simulate conditions to not include prev tx
+	latestHeader = types.Header{
+		Number:        big.NewInt(2),
+		BaseFee:       big.NewInt(32_000_000_000),
+		BlobGasUsed:   &blobGasUsed,
+		ExcessBlobGas: &excessBlobGas,
 	}
+
+	newGasFeeCap, newTipCap, newBlobFeeCap, err = p.feeAndTipCaps(ctx, nonce, gasLimit, numBlobs, lastTx, retconnedCreationTime, dataPosterBacklog, &latestHeader)
+	_, _, _, _ = newGasFeeCap, newTipCap, newBlobFeeCap, err
+	/*
+		// I think we expect an increase by *2 due to rbf rules for blob txs,
+		// currently appears to be broken since the increase exceeds the
+		// current cost (based on current basefees and tip) * config.MaxFeeBidMultipleBips
+		// since the previous attempt to send the tx was already using the current cost scaled by
+		// the multiple (* 10 bips).
+		expectedGasFeeCap = expectedGasFeeCap.Mul(expectedGasFeeCap, big.NewInt(2))
+		expectedBlobFeeCap = expectedBlobFeeCap.Mul(expectedBlobFeeCap, big.NewInt(2))
+		expectedTipCap = expectedTipCap.Mul(expectedTipCap, big.NewInt(2))
+
+		t.Log("newGasFeeCap", newGasFeeCap, "newTipCap", newTipCap, "newBlobFeeCap", newBlobFeeCap, "err", err)
+		if !arbmath.BigEquals(expectedGasFeeCap, newGasFeeCap) {
+			t.Fatalf("feeAndTipCaps didn't return expected gas fee cap. Was: %d, expected: %d", expectedGasFeeCap, newGasFeeCap)
+		}
+		if !arbmath.BigEquals(expectedBlobFeeCap, newBlobFeeCap) {
+			t.Fatalf("feeAndTipCaps didn't return expected blob gas fee cap. Was: %d, expected: %d", expectedBlobFeeCap, newBlobFeeCap)
+		}
+		if !arbmath.BigEquals(expectedTipCap, newTipCap) {
+			t.Fatalf("feeAndTipCaps didn't return expected tip cap. Was: %d, expected: %d", expectedTipCap, newTipCap)
+		}
+	*/
+
+}
+
+func TestFeeAndTipCaps_RBF_RisingBlobFee_FallingBaseFee(t *testing.T) {
+	conf := func() *DataPosterConfig {
+		// Set only the fields that are used by feeAndTipCaps
+		// Start with defaults, maybe change for test.
+		return &DataPosterConfig{
+			MaxMempoolTransactions: 18,
+			MaxMempoolWeight:       18,
+			MinTipCapGwei:          0.05,
+			MinBlobTxTipCapGwei:    1,
+			MaxTipCapGwei:          5,
+			MaxBlobTxTipCapGwei:    10,
+			MaxFeeBidMultipleBips:  arbmath.OneInBips * 10,
+			AllocateMempoolBalance: true,
+
+			UrgencyGwei:           2.,
+			ElapsedTimeBase:       10 * time.Minute,
+			ElapsedTimeImportance: 10,
+			TargetPriceGwei:       60.,
+		}
+	}
+	expression, err := govaluate.NewEvaluableExpression(DefaultDataPosterConfig.MaxFeeCapFormula)
+	if err != nil {
+		t.Fatalf("error creating govaluate evaluable expression: %v", err)
+	}
+
+	p := DataPoster{
+		config:           conf,
+		extraBacklog:     func() uint64 { return 0 },
+		balance:          big.NewInt(0).Mul(big.NewInt(params.Ether), big.NewInt(10)),
+		usingNoOpStorage: false,
+		client: &stubL1Client{
+			senderNonce:        1,
+			suggestedGasTipCap: big.NewInt(2 * params.GWei),
+		},
+		auth: &bind.TransactOpts{
+			From: common.Address{},
+		},
+		maxFeeCapExpression: expression,
+	}
+
+	ctx := context.Background()
+	var nonce uint64 = 1
+	var gasLimit uint64 = 300_000 // reasonable upper bound for mainnet blob batches
+	var numBlobs uint64 = 6
+	var lastTx *types.Transaction // PostTransaction leaves this nil, used when replacing
+	dataCreatedAt := time.Now()
+	var dataPosterBacklog uint64 = 0 // Zero backlog for PostTransaction
+	var blobGasUsed uint64 = 0xc0000 // 6 blobs of gas
+	var excessBlobGas uint64 = 0     // typical current mainnet conditions
+	latestHeader := types.Header{
+		Number:        big.NewInt(1),
+		BaseFee:       big.NewInt(1_000_000_000),
+		BlobGasUsed:   &blobGasUsed,
+		ExcessBlobGas: &excessBlobGas,
+	}
+
+	newGasFeeCap, newTipCap, newBlobFeeCap, err := p.feeAndTipCaps(ctx, nonce, gasLimit, numBlobs, lastTx, dataCreatedAt, dataPosterBacklog, &latestHeader)
+	if err != nil {
+		t.Fatalf("%s", err)
+	}
+
+	// There is no backlog and almost no time elapses since the batch data was
+	// created to when it was posted so the maxNormalizedFeeCap is ~60.01 gwei.
+	// This is multiplied with the normalizedGas to get targetMaxCost.
+	// This is greatly in excess of currentTotalCost * MaxFeeBidMultipleBips,
+	// so targetMaxCost is reduced to the current base fee + suggested tip cap +
+	// current blob fee multipled by MaxFeeBidMultipleBips (factor of 10).
+	// The blob and non blob factors are then proportionally split out and so
+	// the newGasFeeCap is set to (current base fee + suggested tip cap) * 10
+	// and newBlobFeeCap is set to current blob gas base fee (1 wei
+	// since there is no excess blob gas) * 10.
+	expectedGasFeeCap := big.NewInt(30 * params.GWei)
+	expectedBlobFeeCap := big.NewInt(10)
+	if !arbmath.BigEquals(expectedGasFeeCap, newGasFeeCap) {
+		t.Fatalf("feeAndTipCaps didn't return expected gas fee cap. Was: %d, expected: %d", expectedGasFeeCap, newGasFeeCap)
+	}
+	if !arbmath.BigEquals(expectedBlobFeeCap, newBlobFeeCap) {
+		t.Fatalf("feeAndTipCaps didn't return expected blob gas fee cap. Was: %d, expected: %d", expectedBlobFeeCap, newBlobFeeCap)
+	}
+
+	// 2 gwei is the amount suggested by the L1 client, so that is the value
+	// returned because it doesn't exceed the configured bounds, there is no
+	// lastTx to scale against with rbf, and it is not bigger than the computed
+	// gasFeeCap.
+	expectedTipCap := big.NewInt(2 * params.GWei)
+	if !arbmath.BigEquals(expectedTipCap, newTipCap) {
+		t.Fatalf("feeAndTipCaps didn't return expected tip cap. Was: %d, expected: %d", expectedTipCap, newTipCap)
+	}
+
+	lastBlobTx := &types.BlobTx{}
+	err = updateTxDataGasCaps(lastBlobTx, newGasFeeCap, newTipCap, newBlobFeeCap)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lastTx = types.NewTx(lastBlobTx)
+	// Make creation time go backwards so elapsed time increases
+	retconnedCreationTime := dataCreatedAt.Add(-time.Minute)
+	// Base fee has decreased but blob fee has increased
+	blobGasUsed = 0xc0000   // 6 blobs of gas
+	excessBlobGas = 8295804 // this should set blob fee to 12 wei
+	latestHeader = types.Header{
+		Number:        big.NewInt(2),
+		BaseFee:       big.NewInt(100_000_000),
+		BlobGasUsed:   &blobGasUsed,
+		ExcessBlobGas: &excessBlobGas,
+	}
+
+	newGasFeeCap, newTipCap, newBlobFeeCap, err = p.feeAndTipCaps(ctx, nonce, gasLimit, numBlobs, lastTx, retconnedCreationTime, dataPosterBacklog, &latestHeader)
+
+	t.Log("newGasFeeCap", newGasFeeCap, "newTipCap", newTipCap, "newBlobFeeCap", newBlobFeeCap, "err", err)
+	if arbmath.BigEquals(expectedGasFeeCap, newGasFeeCap) {
+		t.Fatalf("feeAndTipCaps didn't return expected gas fee cap. Was: %d, expected NOT: %d", expectedGasFeeCap, newGasFeeCap)
+	}
+	if arbmath.BigEquals(expectedBlobFeeCap, newBlobFeeCap) {
+		t.Fatalf("feeAndTipCaps didn't return expected blob gas fee cap. Was: %d, expected NOT: %d", expectedBlobFeeCap, newBlobFeeCap)
+	}
+	if arbmath.BigEquals(expectedTipCap, newTipCap) {
+		t.Fatalf("feeAndTipCaps didn't return expected tip cap. Was: %d, expected NOT: %d", expectedTipCap, newTipCap)
+	}
+
 }

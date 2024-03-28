@@ -8,6 +8,7 @@ import (
 	"math/big"
 	"math/bits"
 
+	eth_math "github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/params"
 )
 
@@ -46,14 +47,14 @@ type Float interface {
 	~float32 | ~float64
 }
 
-// Ordered is anything that implements comparison operators such as `<` and `>`.
+// Number is anything that implements operators such as `<`, `+` and `/`.
 // Unfortunately, that doesn't include big ints.
-type Ordered interface {
+type Number interface {
 	Integer | Float
 }
 
 // MinInt the minimum of two ints
-func MinInt[T Ordered](value, ceiling T) T {
+func MinInt[T Number](value, ceiling T) T {
 	if value > ceiling {
 		return ceiling
 	}
@@ -61,7 +62,7 @@ func MinInt[T Ordered](value, ceiling T) T {
 }
 
 // MaxInt the maximum of two ints
-func MaxInt[T Ordered](value, floor T) T {
+func MaxInt[T Number](value, floor T) T {
 	if value < floor {
 		return floor
 	}
@@ -74,8 +75,13 @@ func UintToBig(value uint64) *big.Int {
 }
 
 // FloatToBig casts a float to a huge
+// Returns nil when passed NaN or Infinity
 func FloatToBig(value float64) *big.Int {
-	return new(big.Int).SetInt64(int64(value))
+	if math.IsNaN(value) {
+		return nil
+	}
+	result, _ := new(big.Float).SetFloat64(value).Int(nil)
+	return result
 }
 
 // UintToBigFloat casts a uint to a big float
@@ -375,4 +381,21 @@ func SquareFloat(value float64) float64 {
 func BalancePerEther(balance *big.Int) float64 {
 	balancePerEther, _ := new(big.Float).Quo(new(big.Float).SetInt(balance), new(big.Float).SetFloat64(params.Ether)).Float64()
 	return balancePerEther
+}
+
+// U256Bytes converts big Int to 256bit EVM number.
+// This operation makes a copy of big Int.
+func U256Bytes(n *big.Int) []byte {
+	return eth_math.U256Bytes(new(big.Int).Set(n))
+}
+
+// U256 encodes as a 256 bit two's complement number.
+// This operation makes a copy of big Int.
+func U256(x *big.Int) *big.Int {
+	return eth_math.U256(new(big.Int).Set(x))
+}
+
+// Uint64ToU256Bytes converts uint64 to 256bit EVM number.
+func Uint64ToU256Bytes(n uint64) []byte {
+	return eth_math.U256Bytes(UintToBig(n))
 }

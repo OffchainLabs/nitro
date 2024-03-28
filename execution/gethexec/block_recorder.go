@@ -122,15 +122,16 @@ func (r *BlockRecorder) RecordBlockCreation(pos arbutil.MessageIndex, msg *arbos
 		var readBatchInfo []validator.BatchInfo
 		if msg != nil {
 			batchFetcher := func(batchNum uint64) ([]byte, error) {
-				data, err := r.execEngine.consensus.FetchBatch(batchNum).Await(ctx)
+				batch, err := r.execEngine.consensus.FetchBatch(batchNum).Await(ctx)
 				if err != nil {
 					return nil, err
 				}
 				readBatchInfo = append(readBatchInfo, validator.BatchInfo{
-					Number: batchNum,
-					Data:   data,
+					Number:    batchNum,
+					BlockHash: batch.ParentBlockHash,
+					Data:      batch.Data,
 				})
-				return data, nil
+				return batch.Data, nil
 			}
 			// Re-fetch the batch instead of using our cached cost,
 			// as the replay binary won't have the cache populated.

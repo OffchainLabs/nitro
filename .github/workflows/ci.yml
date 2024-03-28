@@ -58,6 +58,9 @@ jobs:
         with:
           targets: 'wasm32-unknown-unknown, wasm32-wasi'
 
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
       - name: Cache Build Products
         uses: actions/cache@v3
         with:
@@ -114,8 +117,7 @@ jobs:
           skip-pkg-cache: true
       - name: Custom Lint
         run: |
-          go run ./linter/koanf ./...
-          go run ./linter/pointercheck ./...
+          go run ./linters ./...
 
       - name: Set environment variables
         run: |
@@ -128,13 +130,13 @@ jobs:
         if: matrix.test-mode == 'defaults'
         run: |
           packages=`go list ./...`
-          gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 -- -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/...
+          gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 -- -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -timeout 20m
 
       - name: run tests with race detection
         if: matrix.test-mode == 'race'
         run:  |
           packages=`go list ./...`
-          gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 -- -race
+          gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 -- -race -timeout 30m
 
       - name: run redis tests
         if: matrix.test-mode == 'defaults'

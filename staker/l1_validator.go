@@ -315,6 +315,9 @@ func (v *L1Validator) generateNodeAction(
 		}
 		if !wasmRootValid {
 			if !stakerConfig.Dangerous.IgnoreRollupWasmModuleRoot {
+				if len(valInfo.WasmRoots) == 0 {
+					return nil, false, fmt.Errorf("block validation is still pending")
+				}
 				return nil, false, fmt.Errorf(
 					"wasmroot doesn't match rollup : %v, valid: %v",
 					v.lastWasmModuleRoot, valInfo.WasmRoots,
@@ -336,9 +339,13 @@ func (v *L1Validator) generateNodeAction(
 			batchNum = localBatchCount - 1
 			validatedCount = messageCount
 		} else {
-			batchNum, err = v.inboxTracker.FindInboxBatchContainingMessage(validatedCount - 1)
+			var found bool
+			batchNum, found, err = v.inboxTracker.FindInboxBatchContainingMessage(validatedCount - 1)
 			if err != nil {
 				return nil, false, err
+			}
+			if !found {
+				return nil, false, errors.New("batch not found on L1")
 			}
 		}
 		execResult, err := v.txStreamer.ResultAtCount(validatedCount)

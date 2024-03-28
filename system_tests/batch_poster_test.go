@@ -8,14 +8,22 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math/big"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/andybalholm/brotli"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/dataposter"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
+	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
+	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/util/redisutil"
 )
 
@@ -27,10 +35,68 @@ func TestRedisBatchPosterParallel(t *testing.T) {
 	testBatchPosterParallel(t, true)
 }
 
+func addNewBatchPoster(ctx context.Context, t *testing.T, builder *NodeBuilder, address common.Address) {
+	t.Helper()
+	upgradeExecutor, err := upgrade_executorgen.NewUpgradeExecutor(builder.L2.ConsensusNode.DeployInfo.UpgradeExecutor, builder.L1.Client)
+	if err != nil {
+		t.Fatal("Failed to get new upgrade executor", err)
+	}
+	sequencerInboxABI, err := abi.JSON(strings.NewReader(bridgegen.SequencerInboxABI))
+	if err != nil {
+		t.Fatal("Failed to parse sequencer inbox abi", err)
+	}
+	setIsBatchPoster, err := sequencerInboxABI.Pack("setIsBatchPoster", address, true)
+	if err != nil {
+		t.Fatal("Failed to pack setIsBatchPoster", err)
+	}
+	ownerOpts := builder.L1Info.GetDefaultTransactOpts("RollupOwner", ctx)
+	tx, err := upgradeExecutor.ExecuteCall(
+		&ownerOpts,
+		builder.L1Info.GetAddress("SequencerInbox"),
+		setIsBatchPoster)
+	if err != nil {
+		t.Fatalf("Error creating transaction to set batch poster: %v", err)
+	}
+	if _, err := builder.L1.EnsureTxSucceeded(tx); err != nil {
+		t.Fatalf("Error setting batch poster: %v", err)
+	}
+}
+
+func externalSignerTestCfg(addr common.Address) (*dataposter.ExternalSignerCfg, error) {
+	cp, err := externalsignertest.CertPaths()
+	if err != nil {
+		return nil, fmt.Errorf("getting certificates path: %w", err)
+	}
+	return &dataposter.ExternalSignerCfg{
+		Address:          common.Bytes2Hex(addr.Bytes()),
+		URL:              externalsignertest.SignerURL,
+		Method:           externalsignertest.SignerMethod,
+		RootCA:           cp.ServerCert,
+		ClientCert:       cp.ClientCert,
+		ClientPrivateKey: cp.ClientKey,
+	}, nil
+}
+
 func testBatchPosterParallel(t *testing.T, useRedis bool) {
-	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	httpSrv, srv := externalsignertest.NewServer(t)
+	cp, err := externalsignertest.CertPaths()
+	if err != nil {
+		t.Fatalf("Error getting cert paths: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := httpSrv.Shutdown(ctx); err != nil {
+			t.Fatalf("Error shutting down http server: %v", err)
+		}
+	})
+	go func() {
+		log.Debug("Server is listening on port 1234...")
+		if err := httpSrv.ListenAndServeTLS(cp.ServerCert, cp.ServerKey); err != nil && err != http.ErrServerClosed {
+			log.Debug("ListenAndServeTLS() failed", "error", err)
+			return
+		}
+	}()
 
 	var redisUrl string
 	if useRedis {
@@ -48,13 +114,22 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.nodeConfig.BatchPoster.Enable = false
 	builder.nodeConfig.BatchPoster.RedisUrl = redisUrl
+	signerCfg, err := externalSignerTestCfg(srv.Address)
+	if err != nil {
+		t.Fatalf("Error getting external signer config: %v", err)
+	}
+	builder.nodeConfig.BatchPoster.DataPoster.ExternalSigner = *signerCfg
+
 	cleanup := builder.Build(t)
 	defer cleanup()
-
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
 	defer cleanupB()
-
 	builder.L2Info.GenerateAccount("User2")
+
+	addNewBatchPoster(ctx, t, builder, srv.Address)
+
+	builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
+		builder.L1Info.PrepareTxTo("Faucet", &srv.Address, 30000, big.NewInt(1e18), nil)})
 
 	var txs []*types.Transaction
 
@@ -78,20 +153,26 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	builder.nodeConfig.BatchPoster.MaxSize = len(firstTxData) * 2
 	startL1Block, err := builder.L1.Client.BlockNumber(ctx)
 	Require(t, err)
+	parentChainID, err := builder.L1.Client.ChainID(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get parent chain id: %v", err)
+	}
 	for i := 0; i < parallelBatchPosters; i++ {
 		// Make a copy of the batch poster config so NewBatchPoster calling Validate() on it doesn't race
 		batchPosterConfig := builder.nodeConfig.BatchPoster
 		batchPoster, err := arbnode.NewBatchPoster(ctx,
 			&arbnode.BatchPosterOpts{
-				DataPosterDB: nil,
-				L1Reader:     builder.L2.ConsensusNode.L1Reader,
-				Inbox:        builder.L2.ConsensusNode.InboxTracker,
-				Streamer:     builder.L2.ConsensusNode.TxStreamer,
-				SyncMonitor:  builder.L2.ConsensusNode.SyncMonitor,
-				Config:       func() *arbnode.BatchPosterConfig { return &batchPosterConfig },
-				DeployInfo:   builder.L2.ConsensusNode.DeployInfo,
-				TransactOpts: &seqTxOpts,
-				DAWriter:     nil,
+				DataPosterDB:  nil,
+				L1Reader:      builder.L2.ConsensusNode.L1Reader,
+				Inbox:         builder.L2.ConsensusNode.InboxTracker,
+				Streamer:      builder.L2.ConsensusNode.TxStreamer,
+				VersionGetter: builder.L2.ExecNode,
+				SyncMonitor:   builder.L2.ConsensusNode.SyncMonitor,
+				Config:        func() *arbnode.BatchPosterConfig { return &batchPosterConfig },
+				DeployInfo:    builder.L2.ConsensusNode.DeployInfo,
+				TransactOpts:  &seqTxOpts,
+				DAWriter:      nil,
+				ParentChainID: parentChainID,
 			},
 		)
 		Require(t, err)
@@ -100,7 +181,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	}
 
 	lastTxHash := txs[len(txs)-1].Hash()
-	for i := 90; i > 0; i-- {
+	for i := 90; i >= 0; i-- {
 		builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
 			builder.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
 		})

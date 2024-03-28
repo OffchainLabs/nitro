@@ -151,10 +151,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 
 	l1BlockChain := builder.L1.L1Backend.BlockChain()
 
-	rpcC, err := builder.L1.Stack.Attach()
-	if err != nil {
-		t.Fatalf("Error connecting to l1 node: %v", err)
-	}
+	rpcC := builder.L1.Stack.Attach()
 	gethClient := gethclient.New(rpcC)
 
 	seqInbox, err := bridgegen.NewSequencerInbox(builder.L1Info.GetAddress("SequencerInbox"), builder.L1.Client)
@@ -358,7 +355,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 			if i%5 == 0 {
 				tx, err = seqInbox.AddSequencerL2Batch(&seqOpts, big.NewInt(int64(len(blockStates))), batchData, big.NewInt(1), gasRefunderAddr, big.NewInt(0), big.NewInt(0))
 			} else {
-				tx, err = seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(int64(len(blockStates))), batchData, big.NewInt(1), gasRefunderAddr)
+				tx, err = seqInbox.AddSequencerL2BatchFromOrigin8f111f3c(&seqOpts, big.NewInt(int64(len(blockStates))), batchData, big.NewInt(1), gasRefunderAddr, common.Big0, common.Big0)
 			}
 			Require(t, err)
 			txRes, err := builder.L1.EnsureTxSucceeded(tx)

@@ -121,7 +121,8 @@ func TestRetryableNoExist(t *testing.T) {
 	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
 	Require(t, err)
 	_, err = arbRetryableTx.GetTimeout(&bind.CallOpts{}, common.Hash{})
-	if err.Error() != "execution reverted: error NoTicketWithID()" {
+	// The first error is server side. The second error is client side ABI decoding.
+	if err.Error() != "execution reverted: error NoTicketWithID(): NoTicketWithID()" {
 		Fatal(t, "didn't get expected NoTicketWithID error")
 	}
 }
@@ -136,6 +137,79 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 
 	deposit := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
 	callValue := big.NewInt(1e6)
+
+	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, builder.L2.Client)
+	Require(t, err, "failed to deploy NodeInterface")
+
+	// estimate the gas needed to auto redeem the retryable
+	usertxoptsL2 := builder.L2Info.GetDefaultTransactOpts("Faucet", ctx)
+	usertxoptsL2.NoSend = true
+	usertxoptsL2.GasMargin = 0
+	tx, err := nodeInterface.EstimateRetryableTicket(
+		&usertxoptsL2,
+		usertxoptsL2.From,
+		deposit,
+		user2Address,
+		callValue,
+		beneficiaryAddress,
+		beneficiaryAddress,
+		[]byte{0x32, 0x42, 0x32, 0x88}, // increase the cost to beyond that of params.TxGas
+	)
+	Require(t, err, "failed to estimate retryable submission")
+	estimate := tx.Gas()
+	expectedEstimate := params.TxGas + params.TxDataNonZeroGasEIP2028*4
+	if estimate != expectedEstimate {
+		t.Errorf("estimated retryable ticket at %v gas but expected %v", estimate, expectedEstimate)
+	}
+
+	// submit & auto redeem the retryable using the gas estimate
+	usertxoptsL1 := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
+	usertxoptsL1.Value = deposit
+	l1tx, err := delayedInbox.CreateRetryableTicket(
+		&usertxoptsL1,
+		user2Address,
+		callValue,
+		big.NewInt(1e16),
+		beneficiaryAddress,
+		beneficiaryAddress,
+		arbmath.UintToBig(estimate),
+		big.NewInt(l2pricing.InitialBaseFeeWei*2),
+		[]byte{0x32, 0x42, 0x32, 0x88},
+	)
+	Require(t, err)
+
+	l1Receipt, err := builder.L1.EnsureTxSucceeded(l1tx)
+	Require(t, err)
+	if l1Receipt.Status != types.ReceiptStatusSuccessful {
+		Fatal(t, "l1Receipt indicated failure")
+	}
+
+	waitForL1DelayBlocks(t, ctx, builder)
+
+	receipt, err := builder.L2.EnsureTxSucceeded(lookupL2Tx(l1Receipt))
+	Require(t, err)
+	if receipt.Status != types.ReceiptStatusSuccessful {
+		Fatal(t)
+	}
+
+	l2balance, err := builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
+	Require(t, err)
+
+	if !arbmath.BigEquals(l2balance, callValue) {
+		Fatal(t, "Unexpected balance:", l2balance)
+	}
+}
+
+func TestSubmitRetryableEmptyEscrow(t *testing.T) {
+	t.Parallel()
+	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
+	defer teardown()
+
+	user2Address := builder.L2Info.GetAddress("User2")
+	beneficiaryAddress := builder.L2Info.GetAddress("Beneficiary")
+
+	deposit := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
+	callValue := common.Big0
 
 	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, builder.L2.Client)
 	Require(t, err, "failed to deploy NodeInterface")
@@ -182,7 +256,8 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 
 	waitForL1DelayBlocks(t, ctx, builder)
 
-	receipt, err := builder.L2.EnsureTxSucceeded(lookupL2Tx(l1Receipt))
+	l2Tx := lookupL2Tx(l1Receipt)
+	receipt, err := builder.L2.EnsureTxSucceeded(l2Tx)
 	Require(t, err)
 	if receipt.Status != types.ReceiptStatusSuccessful {
 		Fatal(t)
@@ -191,8 +266,18 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	l2balance, err := builder.L2.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
 	Require(t, err)
 
-	if !arbmath.BigEquals(l2balance, big.NewInt(1e6)) {
+	if !arbmath.BigEquals(l2balance, callValue) {
 		Fatal(t, "Unexpected balance:", l2balance)
+	}
+
+	escrowAccount := retryables.RetryableEscrowAddress(l2Tx.Hash())
+	state, err := builder.L2.ExecNode.ArbInterface.BlockChain().State()
+	Require(t, err)
+	escrowCodeHash := state.GetCodeHash(escrowAccount)
+	if escrowCodeHash == (common.Hash{}) {
+		Fatal(t, "Escrow account deleted (or not created)")
+	} else if escrowCodeHash != types.EmptyCodeHash {
+		Fatal(t, "Escrow account has unexpected code hash", escrowCodeHash)
 	}
 }
 
@@ -253,6 +338,12 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	Require(t, err)
 	receipt, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
+
+	redemptionL2Gas := receipt.GasUsed - receipt.GasUsedForL1
+	var maxRedemptionL2Gas uint64 = 1_000_000
+	if redemptionL2Gas > maxRedemptionL2Gas {
+		t.Errorf("manual retryable redemption used %v gas, more than expected max %v gas", redemptionL2Gas, maxRedemptionL2Gas)
+	}
 
 	retryTxId := receipt.Logs[0].Topics[2]
 
@@ -472,7 +563,7 @@ func TestDepositETH(t *testing.T) {
 	txOpts := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
 	txOpts.Value = big.NewInt(13)
 
-	l1tx, err := delayedInbox.DepositEth0(&txOpts)
+	l1tx, err := delayedInbox.DepositEth439370b1(&txOpts)
 	if err != nil {
 		t.Fatalf("DepositEth0() unexected error: %v", err)
 	}

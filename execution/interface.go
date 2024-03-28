@@ -29,7 +29,7 @@ var ErrSequencerInsertLockTaken = errors.New("insert lock taken")
 
 // always needed
 type ExecutionClient interface {
-	DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) containers.PromiseInterface[*MessageResult]
+	DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[*MessageResult]
 	Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[struct{}]
 	HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex]
 	HeadMessageNumberSync(t *testing.T) containers.PromiseInterface[arbutil.MessageIndex]
@@ -62,23 +62,32 @@ type FullExecutionClient interface {
 	StopAndWait()
 
 	Maintenance() containers.PromiseInterface[struct{}]
+
+	ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) containers.PromiseInterface[uint64]
+}
+
+type FetchBatchResult struct {
+	Data            []byte
+	ParentBlockHash common.Hash
 }
 
 // not implemented in execution, used as input
 // BatchFetcher is required for any execution node
 type BatchFetcher interface {
-	FetchBatch(batchNum uint64) containers.PromiseInterface[[]byte]
-	FindInboxBatchContainingMessage(message arbutil.MessageIndex) containers.PromiseInterface[uint64]
+	FetchBatch(batchNum uint64) containers.PromiseInterface[FetchBatchResult]
+	FindInboxBatchContainingMessage(message arbutil.MessageIndex) containers.PromiseInterface[*uint64]
 	GetBatchParentChainBlock(seqNum uint64) containers.PromiseInterface[uint64]
 }
 
 type ConsensusInfo interface {
-	SyncProgressMap() containers.PromiseInterface[map[string]interface{}]
+	Synced() containers.PromiseInterface[bool]
+	FullSyncProgressMap() containers.PromiseInterface[map[string]interface{}]
 	SyncTargetMessageCount() containers.PromiseInterface[arbutil.MessageIndex]
 
 	// TODO: switch from pulling to pushing safe/finalized
 	GetSafeMsgCount() containers.PromiseInterface[arbutil.MessageIndex]
 	GetFinalizedMsgCount() containers.PromiseInterface[arbutil.MessageIndex]
+	ValidatedMessageCount() containers.PromiseInterface[arbutil.MessageIndex]
 }
 
 type ConsensusSequencer interface {

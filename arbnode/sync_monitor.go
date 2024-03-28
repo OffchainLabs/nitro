@@ -115,16 +115,8 @@ func (s *SyncMonitor) maxMessageCount() (arbutil.MessageIndex, error) {
 	return msgCount, nil
 }
 
-func (s *SyncMonitor) SyncProgressMap() containers.PromiseInterface[map[string]interface{}] {
-	return containers.NewReadyPromise[map[string]interface{}](s.syncProgressMap(), nil)
-}
-
-func (s *SyncMonitor) syncProgressMap() map[string]interface{} {
+func (s *SyncMonitor) FullSyncProgressMap() map[string]interface{} {
 	res := make(map[string]interface{})
-
-	if s.Synced() {
-		return res
-	}
 
 	if !s.initialized {
 		res["err"] = "uninitialized"
@@ -180,6 +172,14 @@ func (s *SyncMonitor) syncProgressMap() map[string]interface{} {
 	}
 
 	return res
+}
+
+func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
+	if s.Synced() {
+		return make(map[string]interface{})
+	}
+
+	return s.FullSyncProgressMap()
 }
 
 func (s *SyncMonitor) Start(ctx_in context.Context) {

@@ -277,14 +277,13 @@ func (state *ArbosState) UpgradeArbosVersion(
 			}
 		}
 
-		switch state.arbosVersion {
-		case 1:
-			ensure(state.l1PricingState.SetLastSurplus(common.Big0, 1))
+		nextArbosVersion := state.arbosVersion + 1
+		switch nextArbosVersion {
 		case 2:
+			ensure(state.l1PricingState.SetLastSurplus(common.Big0, 1))
+		case 3:
 			ensure(state.l1PricingState.SetPerBatchGasCost(0))
 			ensure(state.l1PricingState.SetAmortizedCostCapBips(math.MaxUint64))
-		case 3:
-			// no state changes needed
 		case 4:
 			// no state changes needed
 		case 5:
@@ -296,18 +295,12 @@ func (state *ArbosState) UpgradeArbosVersion(
 		case 8:
 			// no state changes needed
 		case 9:
+			// no state changes needed
+		case 10:
 			ensure(state.l1PricingState.SetL1FeesAvailable(stateDB.GetBalance(
 				l1pricing.L1PricerFundsPoolAddress,
 			)))
-		case 10:
-			if !chainConfig.DebugMode() {
-				// This upgrade isn't finalized so we only want to support it for testing
-				return fmt.Errorf(
-					"the chain is upgrading to unsupported ArbOS version %v, %w",
-					state.arbosVersion+1,
-					ErrFatalNodeOutOfDate,
-				)
-			}
+		case 11:
 			// Update the PerBatchGasCost to a more accurate value compared to the old v6 default.
 			ensure(state.l1PricingState.SetPerBatchGasCost(l1pricing.InitialPerBatchGasCostV12))
 
@@ -323,25 +316,22 @@ func (state *ArbosState) UpgradeArbosVersion(
 			if !firstTime {
 				ensure(state.chainOwners.ClearList())
 			}
-		case 11:
-			if !chainConfig.DebugMode() {
-				// This upgrade isn't finalized so we only want to support it for testing
-				return fmt.Errorf(
-					"the chain is upgrading to unsupported ArbOS version %v, %w",
-					state.arbosVersion+1,
-					ErrFatalNodeOutOfDate,
-				)
-			}
+		// ArbOS versions 12 through 19 are left to Orbit chains for custom upgrades.
+		case 20:
 			// Update Brotli compression level for fast compression from 0 to 1
 			ensure(state.SetBrotliCompressionLevel(1))
 		default:
-			return fmt.Errorf(
-				"the chain is upgrading to unsupported ArbOS version %v, %w",
-				state.arbosVersion+1,
-				ErrFatalNodeOutOfDate,
-			)
+			if nextArbosVersion >= 12 && nextArbosVersion <= 19 {
+				// ArbOS versions 12 through 19 are left to Orbit chains for custom upgrades.
+			} else {
+				return fmt.Errorf(
+					"the chain is upgrading to unsupported ArbOS version %v, %w",
+					nextArbosVersion,
+					ErrFatalNodeOutOfDate,
+				)
+			}
 		}
-		state.arbosVersion++
+		state.arbosVersion = nextArbosVersion
 	}
 
 	if firstTime && upgradeTo >= 6 {

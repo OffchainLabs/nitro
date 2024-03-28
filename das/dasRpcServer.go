@@ -5,6 +5,7 @@ package das
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -44,6 +45,9 @@ func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, rpcServ
 }
 
 func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, daReader DataAvailabilityServiceReader, daWriter DataAvailabilityServiceWriter, daHealthChecker DataAvailabilityServiceHealthChecker) (*http.Server, error) {
+	if daWriter == nil {
+		return nil, errors.New("No writer backend was configured for DAS RPC server. Has the BLS signing key been set up (--data-availability.key.key-dir or --data-availability.key.priv-key options)?")
+	}
 	rpcServer := rpc.NewServer()
 	err := rpcServer.RegisterName("das", &DASRPCServer{
 		daReader:        daReader,

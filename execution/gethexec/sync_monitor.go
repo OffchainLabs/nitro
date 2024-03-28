@@ -4,6 +4,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/pkg/errors"
@@ -11,41 +12,43 @@ import (
 )
 
 type SyncMonitorConfig struct {
-	ConsensusTimeout time.Duration `koanf:"consensus-timeout" reload:"hot"`
+	SyncMapTimout                       time.Duration `koanf:"syncmap-timeout"`
+	SafeBlockWaitForBlockValidator      bool          `koanf:"safe-block-wait-for-block-validator"`
+	FinalizedBlockWaitForBlockValidator bool          `koanf:"finalized-block-wait-for-block-validator"`
 }
 
 var DefaultSyncMonitorConfig = SyncMonitorConfig{
-	ConsensusTimeout: time.Second * 5,
-}
-
-type SyncMonitorConfigFetcher func() *SyncMonitorConfig
-
-type SyncMonitor struct {
-	stopwaiter.StopWaiter
-	consensus execution.ConsensusInfo
-	exec      *ExecutionEngine
-	config    SyncMonitorConfigFetcher
-}
-
-func NewSyncMonitor(exec *ExecutionEngine, config SyncMonitorConfigFetcher) *SyncMonitor {
-	return &SyncMonitor{
-		exec:   exec,
-		config: config,
-	}
+	SyncMapTimout:                       time.Second * 5,
+	SafeBlockWaitForBlockValidator:      false,
+	FinalizedBlockWaitForBlockValidator: false,
 }
 
 func SyncMonitorConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Duration(prefix+".consensus-timeout", DefaultSyncMonitorConfig.ConsensusTimeout, "timeout for requests to consensus client")
+	f.Duration(prefix+".syncmap-timeout", DefaultSyncMonitorConfig.SyncMapTimout, "timeout for requests to get sync map")
+	f.Bool(prefix+".safe-block-wait-for-block-validator", DefaultSyncMonitorConfig.SafeBlockWaitForBlockValidator, "wait for block validator to complete before returning safe block number")
+	f.Bool(prefix+".finalized-block-wait-for-block-validator", DefaultSyncMonitorConfig.FinalizedBlockWaitForBlockValidator, "wait for block validator to complete before returning finalized block number")
+}
+
+type SyncMonitor struct {
+	stopwaiter.StopWaiter
+	config    *SyncMonitorConfig
+	consensus execution.ConsensusInfo
+	exec      *ExecutionEngine
+}
+
+func NewSyncMonitor(config *SyncMonitorConfig, exec *ExecutionEngine) *SyncMonitor {
+	return &SyncMonitor{
+		config: config,
+		exec:   exec,
+	}
 }
 
 func (s *SyncMonitor) Start(ctx_in context.Context) {
 	s.StopWaiter.Start(ctx_in, s)
 }
 
-func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
-	ctx, cancel := context.WithTimeout(s.GetContext(), s.config().ConsensusTimeout)
-	defer cancel()
-	res, err := s.consensus.SyncProgressMap().Await(ctx)
+func (s *SyncMonitor) FullSyncProgressMap(ctx context.Context) map[string]interface{} {
+	res, err := s.consensus.FullSyncProgressMap().Await(ctx)
 	if err != nil {
 		res = make(map[string]interface{})
 		res["consensusSyncErr"] = err
@@ -57,19 +60,32 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 		return res
 	}
 
-	built, err := s.exec.HeadMessageNumber().Await(s.GetContext())
+	built, err := s.exec.HeadMessageNumber().Await(ctx)
 	if err != nil {
 		res["headMsgNumberError"] = err
-	}
-
-	if built+1 >= consensusSyncTarget && len(res) == 0 {
-		return res
 	}
 
 	res["builtBlock"] = built
 	res["consensusSyncTarget"] = consensusSyncTarget
 
 	return res
+}
+
+func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
+	ctx, cancel := context.WithTimeout(s.GetContext(), s.config.SyncMapTimout)
+	defer cancel()
+	consensusSynced, err := s.consensus.Synced().Await(ctx)
+	if err == nil && consensusSynced {
+		built, err := s.exec.HeadMessageNumber().Await(ctx)
+		var consensusSyncTarget arbutil.MessageIndex
+		if err != nil {
+			consensusSyncTarget, err = s.consensus.SyncTargetMessageCount().Await(ctx)
+		}
+		if err != nil && built+1 >= consensusSyncTarget {
+			return make(map[string]interface{})
+		}
+	}
+	return s.FullSyncProgressMap(ctx)
 }
 
 func (s *SyncMonitor) SafeBlockNumber(ctx context.Context) (uint64, error) {
@@ -79,6 +95,15 @@ func (s *SyncMonitor) SafeBlockNumber(ctx context.Context) (uint64, error) {
 	msg, err := s.consensus.GetSafeMsgCount().Await(ctx)
 	if err != nil {
 		return 0, err
+	}
+	if s.config.SafeBlockWaitForBlockValidator {
+		latestValidatedCount, err := s.consensus.ValidatedMessageCount().Await(ctx)
+		if err != nil {
+			return 0, err
+		}
+		if msg > latestValidatedCount {
+			msg = latestValidatedCount
+		}
 	}
 	block := s.exec.MessageIndexToBlockNumber(msg - 1)
 	return block, nil
@@ -92,12 +117,17 @@ func (s *SyncMonitor) FinalizedBlockNumber(ctx context.Context) (uint64, error) 
 	if err != nil {
 		return 0, err
 	}
+	if s.config.FinalizedBlockWaitForBlockValidator {
+		latestValidatedCount, err := s.consensus.ValidatedMessageCount().Await(ctx)
+		if err != nil {
+			return 0, err
+		}
+		if msg > latestValidatedCount {
+			msg = latestValidatedCount
+		}
+	}
 	block := s.exec.MessageIndexToBlockNumber(msg - 1)
 	return block, nil
-}
-
-func (s *SyncMonitor) Synced() bool {
-	return len(s.SyncProgressMap()) == 0
 }
 
 func (s *SyncMonitor) SetConsensusInfo(consensus execution.ConsensusInfo) {

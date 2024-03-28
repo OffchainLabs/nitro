@@ -40,17 +40,19 @@ func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type Config struct {
-	ParentChainReader headerreader.Config              `koanf:"parent-chain-reader" reload:"hot"`
-	Sequencer         SequencerConfig                  `koanf:"sequencer" reload:"hot"`
-	RecordingDatabase arbitrum.RecordingDatabaseConfig `koanf:"recording-database"`
-	TxPreChecker      TxPreCheckerConfig               `koanf:"tx-pre-checker" reload:"hot"`
-	Forwarder         ForwarderConfig                  `koanf:"forwarder"`
-	ForwardingTarget  string                           `koanf:"forwarding-target"`
-	Caching           CachingConfig                    `koanf:"caching"`
-	SyncMonitor       SyncMonitorConfig                `koanf:"sync-monitor" reload:"hot"`
-	RPC               arbitrum.Config                  `koanf:"rpc"`
-	TxLookupLimit     uint64                           `koanf:"tx-lookup-limit"`
-	Dangerous         DangerousConfig                  `koanf:"dangerous"`
+	ParentChainReader         headerreader.Config              `koanf:"parent-chain-reader" reload:"hot"`
+	Sequencer                 SequencerConfig                  `koanf:"sequencer" reload:"hot"`
+	RecordingDatabase         arbitrum.RecordingDatabaseConfig `koanf:"recording-database"`
+	TxPreChecker              TxPreCheckerConfig               `koanf:"tx-pre-checker" reload:"hot"`
+	Forwarder                 ForwarderConfig                  `koanf:"forwarder"`
+	ForwardingTarget          string                           `koanf:"forwarding-target"`
+	SecondaryForwardingTarget []string                         `koanf:"secondary-forwarding-target"`
+	Caching                   CachingConfig                    `koanf:"caching"`
+	RPC                       arbitrum.Config                  `koanf:"rpc"`
+	TxLookupLimit             uint64                           `koanf:"tx-lookup-limit"`
+	Dangerous                 DangerousConfig                  `koanf:"dangerous"`
+	EnablePrefetchBlock       bool                             `koanf:"enable-prefetch-block"`
+	SyncMonitor               SyncMonitorConfig                `koanf:"sync-monitor"`
 
 	forwardingTarget string
 }
@@ -79,31 +81,36 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	headerreader.AddOptions(prefix+".parent-chain-reader", f)
 	arbitrum.RecordingDatabaseConfigAddOptions(prefix+".recording-database", f)
 	f.String(prefix+".forwarding-target", ConfigDefault.ForwardingTarget, "transaction forwarding target URL, or \"null\" to disable forwarding (iff not sequencer)")
+	f.StringSlice(prefix+".secondary-forwarding-target", ConfigDefault.SecondaryForwardingTarget, "secondary transaction forwarding target URL")
 	AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
 	TxPreCheckerConfigAddOptions(prefix+".tx-pre-checker", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	CachingConfigAddOptions(prefix+".caching", f)
+	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
 	DangerousConfigAddOptions(prefix+".dangerous", f)
+	f.Bool(prefix+".enable-prefetch-block", ConfigDefault.EnablePrefetchBlock, "enable prefetching of blocks")
 }
 
 var ConfigDefault = Config{
-	RPC:               arbitrum.DefaultConfig,
-	Sequencer:         DefaultSequencerConfig,
-	ParentChainReader: headerreader.DefaultConfig,
-	RecordingDatabase: arbitrum.DefaultRecordingDatabaseConfig,
-	ForwardingTarget:  "",
-	TxPreChecker:      DefaultTxPreCheckerConfig,
-	TxLookupLimit:     126_230_400, // 1 year at 4 blocks per second
-	Caching:           DefaultCachingConfig,
-	SyncMonitor:       DefaultSyncMonitorConfig,
-	Dangerous:         DefaultDangerousConfig,
-	Forwarder:         DefaultNodeForwarderConfig,
+	RPC:                       arbitrum.DefaultConfig,
+	Sequencer:                 DefaultSequencerConfig,
+	ParentChainReader:         headerreader.DefaultConfig,
+	RecordingDatabase:         arbitrum.DefaultRecordingDatabaseConfig,
+	ForwardingTarget:          "",
+	SecondaryForwardingTarget: []string{},
+	TxPreChecker:              DefaultTxPreCheckerConfig,
+	TxLookupLimit:             126_230_400, // 1 year at 4 blocks per second
+	Caching:                   DefaultCachingConfig,
+	SyncMonitor:               DefaultSyncMonitorConfig,
+	Dangerous:                 DefaultDangerousConfig,
+	Forwarder:                 DefaultNodeForwarderConfig,
+	EnablePrefetchBlock:       true,
 }
 
 func ConfigDefaultNonSequencerTest() *Config {
 	config := ConfigDefault
-	config.ParentChainReader = headerreader.Config{}
+	config.ParentChainReader = headerreader.TestConfig
 	config.Sequencer.Enable = false
 	config.Forwarder = DefaultTestForwarderConfig
 	config.ForwardingTarget = "null"
@@ -115,11 +122,9 @@ func ConfigDefaultNonSequencerTest() *Config {
 
 func ConfigDefaultTest() *Config {
 	config := ConfigDefault
-	config.ParentChainReader = headerreader.Config{}
 	config.Sequencer = TestSequencerConfig
 	config.ParentChainReader = headerreader.TestConfig
 	config.ForwardingTarget = "null"
-	config.ParentChainReader = headerreader.TestConfig
 
 	_ = config.Validate()
 
@@ -154,6 +159,9 @@ func CreateExecutionNode(
 ) (*ExecutionNode, error) {
 	config := configFetcher()
 	execEngine, err := NewExecutionEngine(l2BlockChain)
+	if config.EnablePrefetchBlock {
+		execEngine.EnablePrefetchBlock()
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -185,7 +193,8 @@ func CreateExecutionNode(
 		} else if config.forwardingTarget == "" {
 			txPublisher = NewTxDropper()
 		} else {
-			txPublisher = NewForwarder(config.forwardingTarget, &config.Forwarder)
+			targets := append([]string{config.forwardingTarget}, config.SecondaryForwardingTarget...)
+			txPublisher = NewForwarder(targets, &config.Forwarder)
 		}
 	}
 
@@ -205,8 +214,7 @@ func CreateExecutionNode(
 		return nil, err
 	}
 
-	syncMonFetcher := func() *SyncMonitorConfig { return &configFetcher().SyncMonitor }
-	syncMon := NewSyncMonitor(execEngine, syncMonFetcher)
+	syncMon := NewSyncMonitor(&config.SyncMonitor, execEngine)
 
 	var classicOutbox *ClassicOutboxRetriever
 
@@ -336,7 +344,7 @@ func (n *ExecutionNode) StopAndWait() {
 	// }
 }
 
-func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.MessageResult] {
+func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) error {
 	return n.ExecEngine.DigestMessage(num, msg)
 }
 func (n *ExecutionNode) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[struct{}] {
@@ -356,6 +364,9 @@ func (n *ExecutionNode) SequenceDelayedMessage(message *arbostypes.L1IncomingMes
 }
 func (n *ExecutionNode) ResultAtPos(pos arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
 	return n.ExecEngine.ResultAtPos(pos)
+}
+func (n *ExecutionNode) ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error) {
+	return n.ExecEngine.ArbOSVersionForMessageNumber(messageNum)
 }
 
 func (n *ExecutionNode) RecordBlockCreation(pos arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.RecordResult] {

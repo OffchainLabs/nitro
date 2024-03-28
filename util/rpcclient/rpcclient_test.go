@@ -88,6 +88,11 @@ func (t *testAPI) FailAtFirst(ctx context.Context) error {
 	return errors.New("error")
 }
 
+func (t *testAPI) Delay(ctx context.Context, msec int64) error {
+	<-time.After(time.Millisecond * time.Duration(msec))
+	return nil
+}
+
 func TestRpcClientRetry(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithTimeout(context.Background(), time.Minute*2)
@@ -174,6 +179,25 @@ func TestRpcClientRetry(t *testing.T) {
 	err = clientNoMatch.CallContext(ctx, nil, "test_failAtFirst")
 	if err == nil {
 		Fail(t, "no error for failAtFirst")
+	}
+}
+
+func TestIsAlreadyKnownError(t *testing.T) {
+	for _, testCase := range []struct {
+		input    string
+		expected bool
+	}{
+		{"already known", true},
+		{"insufficient balance", false},
+		{"foo already known\nbar", true},
+		{"replacement transaction underpriced: new tx gas fee cap 3824396284 \u003c= 3824396284 queued", true},
+		{"replacement transaction underpriced: new tx gas fee cap 1234 \u003c= 5678 queued", false},
+		{"foo replacement transaction underpriced: new tx gas fee cap 3824396284 \u003c= 3824396284 queued bar", true},
+	} {
+		got := IsAlreadyKnownError(errors.New(testCase.input))
+		if got != testCase.expected {
+			t.Errorf("IsAlreadyKnownError(%q) = %v expected %v", testCase.input, got, testCase.expected)
+		}
 	}
 }
 

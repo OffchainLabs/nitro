@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/rpc"
 )
 
 type L1Interface interface {
@@ -23,7 +24,10 @@ type L1Interface interface {
 	ethereum.TransactionReader
 	TransactionSender(ctx context.Context, tx *types.Transaction, block common.Hash, index uint) (common.Address, error)
 	BlockNumber(ctx context.Context) (uint64, error)
+	CallContractAtHash(ctx context.Context, msg ethereum.CallMsg, blockHash common.Hash) ([]byte, error)
 	PendingCallContract(ctx context.Context, msg ethereum.CallMsg) ([]byte, error)
+	ChainID(ctx context.Context) (*big.Int, error)
+	Client() rpc.ClientInterface
 }
 
 func SendTxAsCall(ctx context.Context, client L1Interface, tx *types.Transaction, from common.Address, blockNum *big.Int, unlimitedGas bool) ([]byte, error) {
@@ -91,4 +95,26 @@ func DetailTxError(ctx context.Context, client L1Interface, tx *types.Transactio
 		return fmt.Errorf("%w for tx hash %v", vm.ErrOutOfGas, tx.Hash())
 	}
 	return fmt.Errorf("SendTxAsCall got: %w for tx hash %v", err, tx.Hash())
+}
+
+func DetailTxErrorUsingCallMsg(ctx context.Context, client L1Interface, txHash common.Hash, txRes *types.Receipt, callMsg ethereum.CallMsg) error {
+	// Re-execute the transaction as a call to get a better error
+	if ctx.Err() != nil {
+		return ctx.Err()
+	}
+	if txRes == nil {
+		return errors.New("expected receipt")
+	}
+	if txRes.Status == types.ReceiptStatusSuccessful {
+		return nil
+	}
+	var err error
+	if _, err = client.CallContract(ctx, callMsg, txRes.BlockNumber); err == nil {
+		return fmt.Errorf("tx failed but call succeeded for tx hash %v", txHash)
+	}
+	callMsg.Gas = 0
+	if _, err = client.CallContract(ctx, callMsg, txRes.BlockNumber); err == nil {
+		return fmt.Errorf("%w for tx hash %v", vm.ErrOutOfGas, txHash)
+	}
+	return fmt.Errorf("SendTxAsCall got: %w for tx hash %v", err, txHash)
 }
