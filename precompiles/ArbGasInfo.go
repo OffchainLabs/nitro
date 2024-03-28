@@ -202,20 +202,7 @@ func (con ArbGasInfo) GetL1PricingSurplus(c ctx, evm mech) (*big.Int, error) {
 		return con._preversion10_GetL1PricingSurplus(c, evm)
 	}
 	ps := c.State.L1PricingState()
-	fundsDueForRefunds, err := ps.BatchPosterTable().TotalFundsDue()
-	if err != nil {
-		return nil, err
-	}
-	fundsDueForRewards, err := ps.FundsDueForRewards()
-	if err != nil {
-		return nil, err
-	}
-	haveFunds, err := ps.L1FeesAvailable()
-	if err != nil {
-		return nil, err
-	}
-	needFunds := arbmath.BigAdd(fundsDueForRefunds, fundsDueForRewards)
-	return arbmath.BigSub(haveFunds, needFunds), nil
+	return ps.GetL1PricingSurplus()
 }
 
 func (con ArbGasInfo) _preversion10_GetL1PricingSurplus(c ctx, evm mech) (*big.Int, error) {
