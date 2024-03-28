@@ -18,6 +18,7 @@ import (
 	"github.com/andybalholm/brotli"
 	"github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -130,20 +131,21 @@ type BatchPosterConfig struct {
 	// Batch post polling interval.
 	PollInterval time.Duration `koanf:"poll-interval" reload:"hot"`
 	// Batch posting error delay.
-	ErrorDelay         time.Duration               `koanf:"error-delay" reload:"hot"`
-	CompressionLevel   int                         `koanf:"compression-level" reload:"hot"`
-	DASRetentionPeriod time.Duration               `koanf:"das-retention-period" reload:"hot"`
-	GasRefunderAddress string                      `koanf:"gas-refunder-address" reload:"hot"`
-	DataPoster         dataposter.DataPosterConfig `koanf:"data-poster" reload:"hot"`
-	RedisUrl           string                      `koanf:"redis-url"`
-	RedisLock          redislock.SimpleCfg         `koanf:"redis-lock" reload:"hot"`
-	ExtraBatchGas      uint64                      `koanf:"extra-batch-gas" reload:"hot"`
-	Post4844Blobs      bool                        `koanf:"post-4844-blobs" reload:"hot"`
-	IgnoreBlobPrice    bool                        `koanf:"ignore-blob-price" reload:"hot"`
-	ParentChainWallet  genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
-	L1BlockBound       string                      `koanf:"l1-block-bound" reload:"hot"`
-	L1BlockBoundBypass time.Duration               `koanf:"l1-block-bound-bypass" reload:"hot"`
-	UseAccessLists     bool                        `koanf:"use-access-lists" reload:"hot"`
+	ErrorDelay                     time.Duration               `koanf:"error-delay" reload:"hot"`
+	CompressionLevel               int                         `koanf:"compression-level" reload:"hot"`
+	DASRetentionPeriod             time.Duration               `koanf:"das-retention-period" reload:"hot"`
+	GasRefunderAddress             string                      `koanf:"gas-refunder-address" reload:"hot"`
+	DataPoster                     dataposter.DataPosterConfig `koanf:"data-poster" reload:"hot"`
+	RedisUrl                       string                      `koanf:"redis-url"`
+	RedisLock                      redislock.SimpleCfg         `koanf:"redis-lock" reload:"hot"`
+	ExtraBatchGas                  uint64                      `koanf:"extra-batch-gas" reload:"hot"`
+	Post4844Blobs                  bool                        `koanf:"post-4844-blobs" reload:"hot"`
+	IgnoreBlobPrice                bool                        `koanf:"ignore-blob-price" reload:"hot"`
+	ParentChainWallet              genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
+	L1BlockBound                   string                      `koanf:"l1-block-bound" reload:"hot"`
+	L1BlockBoundBypass             time.Duration               `koanf:"l1-block-bound-bypass" reload:"hot"`
+	UseAccessLists                 bool                        `koanf:"use-access-lists" reload:"hot"`
+	GasEstimateBaseFeeMultipleBips arbmath.Bips                `koanf:"gas-estimate-base-fee-multiple-bips"`
 
 	gasRefunder  common.Address
 	l1BlockBound l1BlockBound
@@ -194,6 +196,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".l1-block-bound", DefaultBatchPosterConfig.L1BlockBound, "only post messages to batches when they're within the max future block/timestamp as of this L1 block tag (\"safe\", \"finalized\", \"latest\", or \"ignore\" to ignore this check)")
 	f.Duration(prefix+".l1-block-bound-bypass", DefaultBatchPosterConfig.L1BlockBoundBypass, "post batches even if not within the layer 1 future bounds if we're within this margin of the max delay")
 	f.Bool(prefix+".use-access-lists", DefaultBatchPosterConfig.UseAccessLists, "post batches with access lists to reduce gas usage (disabled for L3s)")
+	f.Uint64(prefix+".gas-estimate-base-fee-multiple-bips", uint64(DefaultBatchPosterConfig.GasEstimateBaseFeeMultipleBips), "for gas estimation, use this multiple of the basefee (measured in basis points) as the max fee per gas")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfig)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.ParentChainWallet.Pathname)
@@ -205,23 +208,24 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	// This default is overridden for L3 chains in applyChainParameters in cmd/nitro/nitro.go
 	MaxSize: 100000,
 	// TODO: is 1000 bytes an appropriate margin for error vs blob space efficiency?
-	Max4844BatchSize:   blobs.BlobEncodableData*(params.MaxBlobGasPerBlock/params.BlobTxBlobGasPerBlob) - 1000,
-	PollInterval:       time.Second * 10,
-	ErrorDelay:         time.Second * 10,
-	MaxDelay:           time.Hour,
-	WaitForMaxDelay:    false,
-	CompressionLevel:   brotli.BestCompression,
-	DASRetentionPeriod: time.Hour * 24 * 15,
-	GasRefunderAddress: "",
-	ExtraBatchGas:      50_000,
-	Post4844Blobs:      false,
-	IgnoreBlobPrice:    false,
-	DataPoster:         dataposter.DefaultDataPosterConfig,
-	ParentChainWallet:  DefaultBatchPosterL1WalletConfig,
-	L1BlockBound:       "",
-	L1BlockBoundBypass: time.Hour,
-	UseAccessLists:     true,
-	RedisLock:          redislock.DefaultCfg,
+	Max4844BatchSize:               blobs.BlobEncodableData*(params.MaxBlobGasPerBlock/params.BlobTxBlobGasPerBlob) - 1000,
+	PollInterval:                   time.Second * 10,
+	ErrorDelay:                     time.Second * 10,
+	MaxDelay:                       time.Hour,
+	WaitForMaxDelay:                false,
+	CompressionLevel:               brotli.BestCompression,
+	DASRetentionPeriod:             time.Hour * 24 * 15,
+	GasRefunderAddress:             "",
+	ExtraBatchGas:                  50_000,
+	Post4844Blobs:                  false,
+	IgnoreBlobPrice:                false,
+	DataPoster:                     dataposter.DefaultDataPosterConfig,
+	ParentChainWallet:              DefaultBatchPosterL1WalletConfig,
+	L1BlockBound:                   "",
+	L1BlockBoundBypass:             time.Hour,
+	UseAccessLists:                 true,
+	RedisLock:                      redislock.DefaultCfg,
+	GasEstimateBaseFeeMultipleBips: arbmath.OneInBips * 3 / 2,
 }
 
 var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
@@ -233,24 +237,25 @@ var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
 }
 
 var TestBatchPosterConfig = BatchPosterConfig{
-	Enable:             true,
-	MaxSize:            100000,
-	Max4844BatchSize:   DefaultBatchPosterConfig.Max4844BatchSize,
-	PollInterval:       time.Millisecond * 10,
-	ErrorDelay:         time.Millisecond * 10,
-	MaxDelay:           0,
-	WaitForMaxDelay:    false,
-	CompressionLevel:   2,
-	DASRetentionPeriod: time.Hour * 24 * 15,
-	GasRefunderAddress: "",
-	ExtraBatchGas:      10_000,
-	Post4844Blobs:      true,
-	IgnoreBlobPrice:    false,
-	DataPoster:         dataposter.TestDataPosterConfig,
-	ParentChainWallet:  DefaultBatchPosterL1WalletConfig,
-	L1BlockBound:       "",
-	L1BlockBoundBypass: time.Hour,
-	UseAccessLists:     true,
+	Enable:                         true,
+	MaxSize:                        100000,
+	Max4844BatchSize:               DefaultBatchPosterConfig.Max4844BatchSize,
+	PollInterval:                   time.Millisecond * 10,
+	ErrorDelay:                     time.Millisecond * 10,
+	MaxDelay:                       0,
+	WaitForMaxDelay:                false,
+	CompressionLevel:               2,
+	DASRetentionPeriod:             time.Hour * 24 * 15,
+	GasRefunderAddress:             "",
+	ExtraBatchGas:                  10_000,
+	Post4844Blobs:                  true,
+	IgnoreBlobPrice:                false,
+	DataPoster:                     dataposter.TestDataPosterConfig,
+	ParentChainWallet:              DefaultBatchPosterL1WalletConfig,
+	L1BlockBound:                   "",
+	L1BlockBoundBypass:             time.Hour,
+	UseAccessLists:                 true,
+	GasEstimateBaseFeeMultipleBips: arbmath.OneInBips * 3 / 2,
 }
 
 type BatchPosterOpts struct {
@@ -427,6 +432,35 @@ func AccessList(opts *AccessListOpts) types.AccessList {
 	return l
 }
 
+type txInfo struct {
+	Hash      common.Hash       `json:"hash"`
+	Nonce     hexutil.Uint64    `json:"nonce"`
+	From      common.Address    `json:"from"`
+	To        *common.Address   `json:"to"`
+	Gas       hexutil.Uint64    `json:"gas"`
+	GasPrice  *hexutil.Big      `json:"gasPrice"`
+	GasFeeCap *hexutil.Big      `json:"maxFeePerGas,omitempty"`
+	GasTipCap *hexutil.Big      `json:"maxPriorityFeePerGas,omitempty"`
+	Input     hexutil.Bytes     `json:"input"`
+	Value     *hexutil.Big      `json:"value"`
+	Accesses  *types.AccessList `json:"accessList,omitempty"`
+}
+
+// getTxsInfoByBlock fetches all the transactions inside block of id 'number' using json rpc
+// and returns an array of txInfo which has fields that are necessary in checking for batch reverts
+func (b *BatchPoster) getTxsInfoByBlock(ctx context.Context, number int64) ([]txInfo, error) {
+	blockNrStr := rpc.BlockNumber(number).String()
+	rawRpcClient := b.l1Reader.Client().Client()
+	var blk struct {
+		Transactions []txInfo `json:"transactions"`
+	}
+	err := rawRpcClient.CallContext(ctx, &blk, "eth_getBlockByNumber", blockNrStr, true)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching block %d : %w", number, err)
+	}
+	return blk.Transactions, nil
+}
+
 // checkRevert checks blocks with number in range [from, to] whether they
 // contain reverted batch_poster transaction.
 // It returns true if it finds batch posting needs to halt, which is true if a batch reverts
@@ -436,20 +470,15 @@ func (b *BatchPoster) checkReverts(ctx context.Context, to int64) (bool, error) 
 		return false, fmt.Errorf("wrong range, from: %d > to: %d", b.nextRevertCheckBlock, to)
 	}
 	for ; b.nextRevertCheckBlock <= to; b.nextRevertCheckBlock++ {
-		number := big.NewInt(b.nextRevertCheckBlock)
-		block, err := b.l1Reader.Client().BlockByNumber(ctx, number)
+		txs, err := b.getTxsInfoByBlock(ctx, b.nextRevertCheckBlock)
 		if err != nil {
-			return false, fmt.Errorf("getting block: %v by number: %w", number, err)
+			return false, fmt.Errorf("error getting transactions data of block %d: %w", b.nextRevertCheckBlock, err)
 		}
-		for idx, tx := range block.Transactions() {
-			from, err := b.l1Reader.Client().TransactionSender(ctx, tx, block.Hash(), uint(idx))
-			if err != nil {
-				return false, fmt.Errorf("getting sender of transaction tx: %v, %w", tx.Hash(), err)
-			}
-			if from == b.dataPoster.Sender() {
-				r, err := b.l1Reader.Client().TransactionReceipt(ctx, tx.Hash())
+		for _, tx := range txs {
+			if tx.From == b.dataPoster.Sender() {
+				r, err := b.l1Reader.Client().TransactionReceipt(ctx, tx.Hash)
 				if err != nil {
-					return false, fmt.Errorf("getting a receipt for transaction: %v, %w", tx.Hash(), err)
+					return false, fmt.Errorf("getting a receipt for transaction: %v, %w", tx.Hash, err)
 				}
 				if r.Status == types.ReceiptStatusFailed {
 					shouldHalt := !b.config().DataPoster.UseNoOpStorage
@@ -457,8 +486,22 @@ func (b *BatchPoster) checkReverts(ctx context.Context, to int64) (bool, error) 
 					if shouldHalt {
 						logLevel = log.Error
 					}
-					txErr := arbutil.DetailTxError(ctx, b.l1Reader.Client(), tx, r)
-					logLevel("Transaction from batch poster reverted", "nonce", tx.Nonce(), "txHash", tx.Hash(), "blockNumber", r.BlockNumber, "blockHash", r.BlockHash, "txErr", txErr)
+					al := types.AccessList{}
+					if tx.Accesses != nil {
+						al = *tx.Accesses
+					}
+					txErr := arbutil.DetailTxErrorUsingCallMsg(ctx, b.l1Reader.Client(), tx.Hash, r, ethereum.CallMsg{
+						From:       tx.From,
+						To:         tx.To,
+						Gas:        uint64(tx.Gas),
+						GasPrice:   tx.GasPrice.ToInt(),
+						GasFeeCap:  tx.GasFeeCap.ToInt(),
+						GasTipCap:  tx.GasTipCap.ToInt(),
+						Value:      tx.Value.ToInt(),
+						Data:       tx.Input,
+						AccessList: al,
+					})
+					logLevel("Transaction from batch poster reverted", "nonce", tx.Nonce, "txHash", tx.Hash, "blockNumber", r.BlockNumber, "blockHash", r.BlockHash, "txErr", txErr)
 					return shouldHalt, nil
 				}
 			}
@@ -846,11 +889,12 @@ func (b *BatchPoster) encodeAddBatch(
 var ErrNormalGasEstimationFailed = errors.New("normal gas estimation failed")
 
 type estimateGasParams struct {
-	From       common.Address   `json:"from"`
-	To         *common.Address  `json:"to"`
-	Data       hexutil.Bytes    `json:"data"`
-	AccessList types.AccessList `json:"accessList"`
-	BlobHashes []common.Hash    `json:"blobVersionedHashes,omitempty"`
+	From         common.Address   `json:"from"`
+	To           *common.Address  `json:"to"`
+	Data         hexutil.Bytes    `json:"data"`
+	MaxFeePerGas *hexutil.Big     `json:"maxFeePerGas"`
+	AccessList   types.AccessList `json:"accessList"`
+	BlobHashes   []common.Hash    `json:"blobVersionedHashes,omitempty"`
 }
 
 func estimateGas(client rpc.ClientInterface, ctx context.Context, params estimateGasParams) (uint64, error) {
@@ -861,16 +905,22 @@ func estimateGas(client rpc.ClientInterface, ctx context.Context, params estimat
 
 func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, delayedMessages uint64, realData []byte, realBlobs []kzg4844.Blob, realNonce uint64, realAccessList types.AccessList) (uint64, error) {
 	config := b.config()
+	rpcClient := b.l1Reader.Client()
+	rawRpcClient := rpcClient.Client()
 	useNormalEstimation := b.dataPoster.MaxMempoolTransactions() == 1
 	if !useNormalEstimation {
 		// Check if we can use normal estimation anyways because we're at the latest nonce
-		latestNonce, err := b.l1Reader.Client().NonceAt(ctx, b.dataPoster.Sender(), nil)
+		latestNonce, err := rpcClient.NonceAt(ctx, b.dataPoster.Sender(), nil)
 		if err != nil {
 			return 0, err
 		}
 		useNormalEstimation = latestNonce == realNonce
 	}
-	rawRpcClient := b.l1Reader.Client().Client()
+	latestHeader, err := rpcClient.HeaderByNumber(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	maxFeePerGas := arbmath.BigMulByBips(latestHeader.BaseFee, config.GasEstimateBaseFeeMultipleBips)
 	if useNormalEstimation {
 		_, realBlobHashes, err := blobs.ComputeCommitmentsAndHashes(realBlobs)
 		if err != nil {
@@ -878,11 +928,12 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 		}
 		// If we're at the latest nonce, we can skip the special future tx estimate stuff
 		gas, err := estimateGas(rawRpcClient, ctx, estimateGasParams{
-			From:       b.dataPoster.Sender(),
-			To:         &b.seqInboxAddr,
-			Data:       realData,
-			BlobHashes: realBlobHashes,
-			AccessList: realAccessList,
+			From:         b.dataPoster.Sender(),
+			To:           &b.seqInboxAddr,
+			Data:         realData,
+			MaxFeePerGas: (*hexutil.Big)(maxFeePerGas),
+			BlobHashes:   realBlobHashes,
+			AccessList:   realAccessList,
 		})
 		if err != nil {
 			return 0, fmt.Errorf("%w: %w", ErrNormalGasEstimationFailed, err)
@@ -903,10 +954,11 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 		return 0, fmt.Errorf("failed to compute blob commitments: %w", err)
 	}
 	gas, err := estimateGas(rawRpcClient, ctx, estimateGasParams{
-		From:       b.dataPoster.Sender(),
-		To:         &b.seqInboxAddr,
-		Data:       data,
-		BlobHashes: blobHashes,
+		From:         b.dataPoster.Sender(),
+		To:           &b.seqInboxAddr,
+		Data:         data,
+		MaxFeePerGas: (*hexutil.Big)(maxFeePerGas),
+		BlobHashes:   blobHashes,
 		// This isn't perfect because we're probably estimating the batch at a different sequence number,
 		// but it should overestimate rather than underestimate which is fine.
 		AccessList: realAccessList,
@@ -959,7 +1011,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		}
 		var use4844 bool
 		config := b.config()
-		if config.Post4844Blobs && latestHeader.ExcessBlobGas != nil && latestHeader.BlobGasUsed != nil {
+		if config.Post4844Blobs && b.daWriter == nil && latestHeader.ExcessBlobGas != nil && latestHeader.BlobGasUsed != nil {
 			arbOSVersion, err := b.arbOSVersionGetter.ArbOSVersionForMessageNumber(arbutil.MessageIndex(arbmath.SaturatingUSub(uint64(batchPosition.MessageCount), 1)))
 			if err != nil {
 				return false, err
