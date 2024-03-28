@@ -1,7 +1,7 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-//go:build challengetest && !race
+//asdasdgo:build challengetest && !race
 
 package arbtest
 
@@ -389,7 +389,10 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	manager.Start(ctx)
 	managerB.Start(ctx)
 
-	filterer, err := challengeV2gen.NewEdgeChallengeManagerFilterer(assertionChain.RollupAddress(), l1client)
+	chalManager, err := assertionChain.SpecChallengeManager(ctx)
+	Require(t, err)
+
+	filterer, err := challengeV2gen.NewEdgeChallengeManagerFilterer(chalManager.Address(), l1client)
 	Require(t, err)
 
 	fromBlock := uint64(0)
