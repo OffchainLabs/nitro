@@ -76,6 +76,10 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 	burner := p.programs.Burner()
 	time := evm.Context.Time
 
+	if statedb.HasSelfDestructed(address) {
+		return 0, codeHash, common.Hash{}, nil, false, errors.New("self destructed")
+	}
+
 	params, err := p.Params()
 	if err != nil {
 		return 0, codeHash, common.Hash{}, nil, false, err
