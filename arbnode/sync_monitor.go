@@ -7,7 +7,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	flag "github.com/spf13/pflag"
 )
@@ -67,11 +66,7 @@ func (s *SyncMonitor) updateSyncTarget(ctx context.Context) time.Duration {
 	return s.config().MsgLag
 }
 
-func (s *SyncMonitor) SyncTargetMessageCount() containers.PromiseInterface[arbutil.MessageIndex] {
-	return containers.NewReadyPromise[arbutil.MessageIndex](s.syncTargetMessageCount(), nil)
-}
-
-func (s *SyncMonitor) syncTargetMessageCount() arbutil.MessageIndex {
+func (s *SyncMonitor) SyncTargetMessageCount() arbutil.MessageIndex {
 	s.syncTargetLock.Lock()
 	defer s.syncTargetLock.Unlock()
 	return s.syncTarget
@@ -194,7 +189,7 @@ func (s *SyncMonitor) Synced() bool {
 	if !s.Started() {
 		return false
 	}
-	syncTarget := s.syncTargetMessageCount()
+	syncTarget := s.SyncTargetMessageCount()
 
 	msgCount, err := s.txStreamer.GetMessageCount()
 	if err != nil {

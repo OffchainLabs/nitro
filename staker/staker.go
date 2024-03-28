@@ -427,7 +427,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 		}
 		arbTx, err := s.Act(ctx)
 		if err == nil && arbTx != nil {
-			_, err = s.l1Reader.WaitForTxApproval(arbTx).Await(ctx)
+			_, err = s.l1Reader.WaitForTxApproval(ctx, arbTx)
 			if err == nil {
 				log.Info("successfully executed staker transaction", "hash", arbTx.Hash())
 			} else {

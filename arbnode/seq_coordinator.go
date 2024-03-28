@@ -607,7 +607,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		return c.noRedisError()
 	}
 
-	syncProgress := c.sync.syncProgressMap()
+	syncProgress := c.sync.SyncProgressMap()
 	synced := len(syncProgress) == 0
 	if !synced {
 		var detailsList []interface{}

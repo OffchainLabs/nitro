@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"reflect"
 	"sync/atomic"
-	"testing"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
@@ -24,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	flag "github.com/spf13/pflag"
 )
 
@@ -84,7 +84,6 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.StringSlice(prefix+".secondary-forwarding-target", ConfigDefault.SecondaryForwardingTarget, "secondary transaction forwarding target URL")
 	AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
 	TxPreCheckerConfigAddOptions(prefix+".tx-pre-checker", f)
-	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	CachingConfigAddOptions(prefix+".caching", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
@@ -344,33 +343,44 @@ func (n *ExecutionNode) StopAndWait() {
 	// }
 }
 
-func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) error {
-	return n.ExecEngine.DigestMessage(num, msg)
+func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[struct{}] {
+	return containers.NewReadyPromise(struct{}{}, n.ExecEngine.DigestMessage(num, msg, msgForPrefetch))
 }
+
 func (n *ExecutionNode) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[struct{}] {
-	return n.ExecEngine.Reorg(count, newMessages, oldMessages)
+	return stopwaiter.LaunchPromiseThread(n.ExecEngine, func(ctx context.Context) (struct{}, error) {
+		return struct{}{}, n.ExecEngine.Reorg(count, newMessages, oldMessages)
+	})
 }
+
 func (n *ExecutionNode) HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex] {
-	return n.ExecEngine.HeadMessageNumber()
+	return containers.NewReadyPromise(n.ExecEngine.HeadMessageNumber())
 }
-func (n *ExecutionNode) HeadMessageNumberSync(t *testing.T) containers.PromiseInterface[arbutil.MessageIndex] {
-	return n.ExecEngine.HeadMessageNumberSync(t)
-}
+
 func (n *ExecutionNode) NextDelayedMessageNumber() containers.PromiseInterface[uint64] {
-	return n.ExecEngine.NextDelayedMessageNumber()
+	return containers.NewReadyPromise(n.ExecEngine.NextDelayedMessageNumber())
 }
+
 func (n *ExecutionNode) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) containers.PromiseInterface[struct{}] {
-	return n.ExecEngine.SequenceDelayedMessage(message, delayedSeqNum)
+	return stopwaiter.LaunchPromiseThread(n.ExecEngine, func(ctx context.Context) (struct{}, error) {
+		return struct{}{}, n.ExecEngine.SequenceDelayedMessage(ctx, message, delayedSeqNum)
+	})
 }
+
 func (n *ExecutionNode) ResultAtPos(pos arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
-	return n.ExecEngine.ResultAtPos(pos)
+	return containers.NewReadyPromise(n.ExecEngine.ResultAtPos(pos))
 }
-func (n *ExecutionNode) ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error) {
-	return n.ExecEngine.ArbOSVersionForMessageNumber(messageNum)
+
+func (n *ExecutionNode) ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) containers.PromiseInterface[uint64] {
+	return stopwaiter.LaunchPromiseThread(n.ExecEngine, func(ctx context.Context) (uint64, error) {
+		return n.ExecEngine.ArbOSVersionForMessageNumber(messageNum)
+	})
 }
 
 func (n *ExecutionNode) RecordBlockCreation(pos arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) containers.PromiseInterface[*execution.RecordResult] {
-	return n.Recorder.RecordBlockCreation(pos, msg)
+	return stopwaiter.LaunchPromiseThread(n.ExecEngine, func(ctx context.Context) (*execution.RecordResult, error) {
+		return n.Recorder.RecordBlockCreation(ctx, pos, msg)
+	})
 }
 
 func (n *ExecutionNode) MarkValid(pos arbutil.MessageIndex, resultHash common.Hash) {
@@ -383,24 +393,26 @@ func (n *ExecutionNode) PrepareForRecord(start, end arbutil.MessageIndex) contai
 
 func (n *ExecutionNode) Pause() containers.PromiseInterface[struct{}] {
 	if n.Sequencer != nil {
-		return n.Sequencer.Pause()
+		n.Sequencer.Pause()
 	}
 	return containers.NewReadyPromise[struct{}](struct{}{}, nil)
 }
 
 func (n *ExecutionNode) Activate() containers.PromiseInterface[struct{}] {
 	if n.Sequencer != nil {
-		return n.Sequencer.Activate()
+		n.Sequencer.Activate()
 	}
 	return containers.NewReadyPromise[struct{}](struct{}{}, nil)
 }
 
 func (n *ExecutionNode) ForwardTo(url string) containers.PromiseInterface[struct{}] {
+	var err error
 	if n.Sequencer != nil {
-		return n.Sequencer.ForwardTo(url)
+		err = n.Sequencer.ForwardTo(url)
 	} else {
-		return containers.NewReadyPromise[struct{}](struct{}{}, errors.New("forwardTo not supported - sequencer not active"))
+		err = errors.New("forwardTo not supported - sequencer not active")
 	}
+	return containers.NewReadyPromise(struct{}{}, err)
 }
 
 func (n *ExecutionNode) SetConsensusClient(consensus execution.FullConsensusClient) {
@@ -408,11 +420,9 @@ func (n *ExecutionNode) SetConsensusClient(consensus execution.FullConsensusClie
 	n.SyncMonitor.SetConsensusInfo(consensus)
 }
 
-func (n *ExecutionNode) MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) uint64 {
-	return n.ExecEngine.MessageIndexToBlockNumber(messageNum)
-}
-
 func (n *ExecutionNode) Maintenance() containers.PromiseInterface[struct{}] {
-	err := n.ChainDB.Compact(nil, nil)
-	return containers.NewReadyPromise[struct{}](struct{}{}, err)
+	return stopwaiter.LaunchPromiseThread(n.ExecEngine, func(ctx context.Context) (struct{}, error) {
+		return struct{}{}, n.ChainDB.Compact(nil, nil)
+
+	})
 }

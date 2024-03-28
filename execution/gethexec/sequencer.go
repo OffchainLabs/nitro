@@ -494,13 +494,13 @@ func (s *Sequencer) ForwardTarget() string {
 	return s.forwarder.PrimaryTarget()
 }
 
-func (s *Sequencer) ForwardTo(url string) containers.PromiseInterface[struct{}] {
+func (s *Sequencer) ForwardTo(url string) error {
 	s.activeMutex.Lock()
 	defer s.activeMutex.Unlock()
 	if s.forwarder != nil {
 		if s.forwarder.PrimaryTarget() == url {
 			log.Warn("attempted to update sequencer forward target with existing target", "url", url)
-			return containers.NewReadyPromise[struct{}](struct{}{}, nil)
+			return nil
 		}
 		s.forwarder.Disable()
 	}
@@ -521,10 +521,10 @@ func (s *Sequencer) ForwardTo(url string) containers.PromiseInterface[struct{}] 
 		default:
 		}
 	}
-	return containers.NewReadyPromise[struct{}](struct{}{}, err)
+	return err
 }
 
-func (s *Sequencer) Activate() containers.PromiseInterface[struct{}] {
+func (s *Sequencer) Activate() {
 	s.activeMutex.Lock()
 	defer s.activeMutex.Unlock()
 	if s.forwarder != nil {
@@ -535,10 +535,9 @@ func (s *Sequencer) Activate() containers.PromiseInterface[struct{}] {
 		close(s.pauseChan)
 		s.pauseChan = nil
 	}
-	return containers.NewReadyPromise[struct{}](struct{}{}, nil)
 }
 
-func (s *Sequencer) Pause() containers.PromiseInterface[struct{}] {
+func (s *Sequencer) Pause() {
 	s.activeMutex.Lock()
 	defer s.activeMutex.Unlock()
 	if s.forwarder != nil {
@@ -548,7 +547,6 @@ func (s *Sequencer) Pause() containers.PromiseInterface[struct{}] {
 	if s.pauseChan == nil {
 		s.pauseChan = make(chan struct{})
 	}
-	return containers.NewReadyPromise[struct{}](struct{}{}, nil)
 }
 
 var ErrNoSequencer = errors.New("sequencer temporarily not available")

@@ -14,12 +14,14 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/pkg/errors"
 
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -32,8 +34,8 @@ import (
 )
 
 type execClientWrapper struct {
-	*gethexec.ExecutionEngine
-	t *testing.T
+	ExecEngine *gethexec.ExecutionEngine
+	t          *testing.T
 }
 
 func (w *execClientWrapper) Pause() containers.PromiseInterface[struct{}] {
@@ -49,6 +51,40 @@ func (w *execClientWrapper) Activate() containers.PromiseInterface[struct{}] {
 func (w *execClientWrapper) ForwardTo(url string) containers.PromiseInterface[struct{}] {
 	w.t.Error("not supported")
 	return containers.NewReadyPromise[struct{}](struct{}{}, errors.New("ForwardTo not supported"))
+}
+
+func (w *execClientWrapper) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) containers.PromiseInterface[struct{}] {
+	return containers.NewReadyPromise(struct{}{}, w.ExecEngine.DigestMessage(num, msg, msgForPrefetch))
+}
+
+func (w *execClientWrapper) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[struct{}] {
+	return stopwaiter.LaunchPromiseThread(w.ExecEngine, func(ctx context.Context) (struct{}, error) {
+		return struct{}{}, w.ExecEngine.Reorg(count, newMessages, oldMessages)
+	})
+}
+
+func (w *execClientWrapper) HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex] {
+	return containers.NewReadyPromise(w.ExecEngine.HeadMessageNumber())
+}
+
+func (w *execClientWrapper) NextDelayedMessageNumber() containers.PromiseInterface[uint64] {
+	return containers.NewReadyPromise(w.ExecEngine.NextDelayedMessageNumber())
+}
+
+func (w *execClientWrapper) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) containers.PromiseInterface[struct{}] {
+	return stopwaiter.LaunchPromiseThread(w.ExecEngine, func(ctx context.Context) (struct{}, error) {
+		return struct{}{}, w.ExecEngine.SequenceDelayedMessage(ctx, message, delayedSeqNum)
+	})
+}
+
+func (w *execClientWrapper) ResultAtPos(pos arbutil.MessageIndex) containers.PromiseInterface[*execution.MessageResult] {
+	return containers.NewReadyPromise(w.ExecEngine.ResultAtPos(pos))
+}
+
+func (w *execClientWrapper) ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) containers.PromiseInterface[uint64] {
+	return stopwaiter.LaunchPromiseThread(w.ExecEngine, func(ctx context.Context) (uint64, error) {
+		return w.ExecEngine.ArbOSVersionForMessageNumber(messageNum)
+	})
 }
 
 func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*gethexec.ExecutionEngine, *TransactionStreamer, ethdb.Database, *core.BlockChain) {

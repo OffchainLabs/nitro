@@ -955,9 +955,9 @@ func (n *Node) StopAndWait() {
 	}
 }
 
-func (n *Node) FetchBatch(ctx context.Context, batchNum uint64) containers.PromiseInterface[execution.FetchBatchResult] {
-	stopwaiter.LaunchPromiseThread(&n.InboxReader.StopWaiterSafe,
-		func(ctx contex.Context) (execution.FetchBatchResult, err) {
+func (n *Node) FetchBatch(batchNum uint64) containers.PromiseInterface[execution.FetchBatchResult] {
+	return stopwaiter.LaunchPromiseThread(&n.InboxReader.StopWaiterSafe,
+		func(ctx context.Context) (execution.FetchBatchResult, error) {
 			data, hash, err := n.InboxReader.GetSequencerMessageBytes(ctx, batchNum)
 			if err != nil {
 				return execution.FetchBatchResult{}, err
@@ -979,41 +979,41 @@ func (n *Node) FindInboxBatchContainingMessage(message arbutil.MessageIndex) con
 }
 
 func (n *Node) GetBatchParentChainBlock(seqNum uint64) containers.PromiseInterface[uint64] {
-	return n.InboxTracker.GetBatchParentChainBlock(seqNum)
+	return containers.NewReadyPromise(n.InboxTracker.GetBatchParentChainBlock(seqNum))
 }
 
 func (n *Node) FullSyncProgressMap() containers.PromiseInterface[map[string]interface{}] {
-	return n.SyncMonitor.FullSyncProgressMap()
+	return containers.NewReadyPromise(n.SyncMonitor.FullSyncProgressMap(), nil)
 }
 
 func (n *Node) Synced() containers.PromiseInterface[bool] {
-	return n.SyncMonitor.Synced()
+	return containers.NewReadyPromise(n.SyncMonitor.Synced(), nil)
 }
 
 func (n *Node) SyncTargetMessageCount() containers.PromiseInterface[arbutil.MessageIndex] {
-	return n.SyncMonitor.SyncTargetMessageCount()
+	return containers.NewReadyPromise(n.SyncMonitor.SyncTargetMessageCount(), nil)
 }
 
 // TODO: switch from pulling to pushing safe/finalized
 func (n *Node) GetSafeMsgCount() containers.PromiseInterface[arbutil.MessageIndex] {
-	return n.InboxReader.GetSafeMsgCount()
+	return stopwaiter.LaunchPromiseThread(n.InboxReader, n.InboxReader.GetSafeMsgCount)
 }
 
 func (n *Node) GetFinalizedMsgCount() containers.PromiseInterface[arbutil.MessageIndex] {
-	return n.InboxReader.GetFinalizedMsgCount()
+	return stopwaiter.LaunchPromiseThread(n.InboxReader, n.InboxReader.GetFinalizedMsgCount)
 }
 
 func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) containers.PromiseInterface[struct{}] {
-	return n.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta)
+	return containers.NewReadyPromise(struct{}{}, n.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta))
 }
 
 func (n *Node) ExpectChosenSequencer() containers.PromiseInterface[struct{}] {
-	return n.TxStreamer.ExpectChosenSequencer()
+	return containers.NewReadyPromise(struct{}{}, n.TxStreamer.ExpectChosenSequencer())
 }
 
-func (n *Node) ValidatedMessageCount() (arbutil.MessageIndex, error) {
+func (n *Node) ValidatedMessageCount() containers.PromiseInterface[arbutil.MessageIndex] {
 	if n.BlockValidator == nil {
-		return 0, errors.New("validator not set up")
+		return containers.NewReadyPromise(arbutil.MessageIndex(0), errors.New("validator not set up"))
 	}
-	return n.BlockValidator.GetValidated(), nil
+	return containers.NewReadyPromise(n.BlockValidator.GetValidated(), nil)
 }

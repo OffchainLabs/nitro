@@ -12,19 +12,19 @@ import (
 )
 
 type SyncMonitorConfig struct {
-	SyncMapTimout                       time.Duration `koanf:"syncmap-timeout"`
+	SyncMapTimeout                      time.Duration `koanf:"sync-map-timeout"`
 	SafeBlockWaitForBlockValidator      bool          `koanf:"safe-block-wait-for-block-validator"`
 	FinalizedBlockWaitForBlockValidator bool          `koanf:"finalized-block-wait-for-block-validator"`
 }
 
 var DefaultSyncMonitorConfig = SyncMonitorConfig{
-	SyncMapTimout:                       time.Second * 5,
+	SyncMapTimeout:                      time.Second * 5,
 	SafeBlockWaitForBlockValidator:      false,
 	FinalizedBlockWaitForBlockValidator: false,
 }
 
 func SyncMonitorConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Duration(prefix+".syncmap-timeout", DefaultSyncMonitorConfig.SyncMapTimout, "timeout for requests to get sync map")
+	f.Duration(prefix+".sync-map-timeout", DefaultSyncMonitorConfig.SyncMapTimeout, "timeout for requests to get sync map")
 	f.Bool(prefix+".safe-block-wait-for-block-validator", DefaultSyncMonitorConfig.SafeBlockWaitForBlockValidator, "wait for block validator to complete before returning safe block number")
 	f.Bool(prefix+".finalized-block-wait-for-block-validator", DefaultSyncMonitorConfig.FinalizedBlockWaitForBlockValidator, "wait for block validator to complete before returning finalized block number")
 }
@@ -60,7 +60,7 @@ func (s *SyncMonitor) FullSyncProgressMap(ctx context.Context) map[string]interf
 		return res
 	}
 
-	built, err := s.exec.HeadMessageNumber().Await(ctx)
+	built, err := s.exec.HeadMessageNumber()
 	if err != nil {
 		res["headMsgNumberError"] = err
 	}
@@ -72,11 +72,11 @@ func (s *SyncMonitor) FullSyncProgressMap(ctx context.Context) map[string]interf
 }
 
 func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
-	ctx, cancel := context.WithTimeout(s.GetContext(), s.config.SyncMapTimout)
+	ctx, cancel := context.WithTimeout(s.GetContext(), s.config.SyncMapTimeout)
 	defer cancel()
 	consensusSynced, err := s.consensus.Synced().Await(ctx)
 	if err == nil && consensusSynced {
-		built, err := s.exec.HeadMessageNumber().Await(ctx)
+		built, err := s.exec.HeadMessageNumber()
 		var consensusSyncTarget arbutil.MessageIndex
 		if err != nil {
 			consensusSyncTarget, err = s.consensus.SyncTargetMessageCount().Await(ctx)

@@ -36,7 +36,6 @@ import (
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -836,11 +835,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 }
 
 // The caller must hold the insertionMutex
-func (s *TransactionStreamer) ExpectChosenSequencer() containers.PromiseInterface[struct{}] {
-	return containers.NewReadyPromise[struct{}](struct{}{}, s.expectChosenSequencer())
-}
-
-func (s *TransactionStreamer) expectChosenSequencer() error {
+func (s *TransactionStreamer) ExpectChosenSequencer() error {
 	if s.coordinator != nil {
 		if !s.coordinator.CurrentlyChosen() {
 			return fmt.Errorf("%w: not main sequencer", execution.ErrRetrySequencer)
@@ -849,12 +844,8 @@ func (s *TransactionStreamer) expectChosenSequencer() error {
 	return nil
 }
 
-func (s *TransactionStreamer) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) containers.PromiseInterface[struct{}] {
-	return containers.NewReadyPromise[struct{}](struct{}{}, s.writeMessageFromSequencer(pos, msgWithMeta))
-}
-
-func (s *TransactionStreamer) writeMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) error {
-	if err := s.expectChosenSequencer(); err != nil {
+func (s *TransactionStreamer) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) error {
+	if err := s.ExpectChosenSequencer(); err != nil {
 		return err
 	}
 	if !s.insertionMutex.TryLock() {
