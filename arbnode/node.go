@@ -48,6 +48,7 @@ import (
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
@@ -955,16 +956,17 @@ func (n *Node) StopAndWait() {
 	}
 }
 
-func (n *Node) FetchBatch(batchNum uint64) containers.PromiseInterface[execution.FetchBatchResult] {
+func (n *Node) FetchBatch(batchNum uint64) containers.PromiseInterface[validator.BatchInfo] {
 	return stopwaiter.LaunchPromiseThread(&n.InboxReader.StopWaiterSafe,
-		func(ctx context.Context) (execution.FetchBatchResult, error) {
+		func(ctx context.Context) (validator.BatchInfo, error) {
 			data, hash, err := n.InboxReader.GetSequencerMessageBytes(ctx, batchNum)
 			if err != nil {
-				return execution.FetchBatchResult{}, err
+				return validator.BatchInfo{}, err
 			}
-			return execution.FetchBatchResult{
-				Data:            data,
-				ParentBlockHash: hash,
+			return validator.BatchInfo{
+				Number:    batchNum,
+				Data:      data,
+				BlockHash: hash,
 			}, nil
 		})
 }

@@ -64,15 +64,10 @@ type FullExecutionClient interface {
 	ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) containers.PromiseInterface[uint64]
 }
 
-type FetchBatchResult struct {
-	Data            []byte
-	ParentBlockHash common.Hash
-}
-
 // not implemented in execution, used as input
 // BatchFetcher is required for any execution node
 type BatchFetcher interface {
-	FetchBatch(batchNum uint64) containers.PromiseInterface[FetchBatchResult]
+	FetchBatch(batchNum uint64) containers.PromiseInterface[validator.BatchInfo]
 	FindInboxBatchContainingMessage(message arbutil.MessageIndex) containers.PromiseInterface[*uint64]
 	GetBatchParentChainBlock(seqNum uint64) containers.PromiseInterface[uint64]
 }
