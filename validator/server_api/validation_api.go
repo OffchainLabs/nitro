@@ -69,6 +69,23 @@ func NewExecutionServerAPI(valSpawner validator.ValidationSpawner, execution val
 	}
 }
 
+func (a *ExecServerAPI) CreateBoldExecutionRun(ctx context.Context, wasmModuleRoot common.Hash, stepSize uint64, jsonInput *ValidationInputJson) (uint64, error) {
+	input, err := ValidationInputFromJson(jsonInput)
+	if err != nil {
+		return 0, err
+	}
+	execRun, err := a.execSpawner.CreateBoldExecutionRun(wasmModuleRoot, stepSize, input).Await(ctx)
+	if err != nil {
+		return 0, err
+	}
+	a.runIdLock.Lock()
+	defer a.runIdLock.Unlock()
+	newId := a.nextId
+	a.nextId++
+	a.runs[newId] = &execRunEntry{execRun, time.Now()}
+	return newId, nil
+}
+
 func (a *ExecServerAPI) CreateExecutionRun(ctx context.Context, wasmModuleRoot common.Hash, jsonInput *ValidationInputJson) (uint64, error) {
 	input, err := ValidationInputFromJson(jsonInput)
 	if err != nil {
@@ -142,6 +159,19 @@ func (a *ExecServerAPI) GetStepAt(ctx context.Context, execid uint64, position u
 	return MachineStepResultToJson(res), nil
 }
 
+func (a *ExecServerAPI) GetLeavesWithStepSize(ctx context.Context, execid, fromBatch, fromStep, stepSize, numDesiredLeaves uint64) ([]common.Hash, error) {
+	run, err := a.getRun(execid)
+	if err != nil {
+		return nil, err
+	}
+	leavesInRange := run.GetLeavesWithStepSize(fromBatch, fromStep, stepSize, numDesiredLeaves)
+	res, err := leavesInRange.Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
 func (a *ExecServerAPI) GetProofAt(ctx context.Context, execid uint64, position uint64) (string, error) {
 	run, err := a.getRun(execid)
 	if err != nil {
@@ -170,6 +200,14 @@ func (a *ExecServerAPI) ExecKeepAlive(ctx context.Context, execid uint64) error 
 		return err
 	}
 	return nil
+}
+
+func (a *ExecServerAPI) CheckAlive(ctx context.Context, execid uint64) error {
+	run, err := a.getRun(execid)
+	if err != nil {
+		return err
+	}
+	return run.CheckAlive(ctx)
 }
 
 func (a *ExecServerAPI) CloseExec(execid uint64) {

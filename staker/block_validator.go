@@ -84,6 +84,8 @@ type BlockValidator struct {
 
 type BlockValidatorConfig struct {
 	Enable                      bool                          `koanf:"enable"`
+	Evil                        bool                          `koanf:"evil"`
+	EvilInterceptDepositGwei    uint64                        `koanf:"evil-intercept-deposit-gwei"`
 	ValidationServer            rpcclient.ClientConfig        `koanf:"validation-server" reload:"hot"`
 	ValidationServerConfigs     []rpcclient.ClientConfig      `koanf:"validation-server-configs" reload:"hot"`
 	ValidationPoll              time.Duration                 `koanf:"validation-poll" reload:"hot"`
@@ -139,6 +141,8 @@ type BlockValidatorConfigFetcher func() *BlockValidatorConfig
 
 func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block-by-block validation")
+	f.Bool(prefix+".evil", DefaultBlockValidatorConfig.Evil, "enable evil bold")
+	f.Uint64(prefix+".evil-intercept-deposit-gwei", DefaultBlockValidatorConfig.EvilInterceptDepositGwei, "bold evil intercept")
 	rpcclient.RPCClientAddOptions(prefix+".validation-server", f, &DefaultBlockValidatorConfig.ValidationServer)
 	f.String(prefix+".validation-server-configs-list", DefaultBlockValidatorConfig.ValidationServerConfigsList, "array of validation rpc configs given as a json string. time duration should be supplied in number indicating nanoseconds")
 	f.Duration(prefix+".validation-poll", DefaultBlockValidatorConfig.ValidationPoll, "poll time to check validations")
@@ -167,6 +171,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	FailureIsFatal:              true,
 	Dangerous:                   DefaultBlockValidatorDangerousConfig,
 	MemoryFreeLimit:             "default",
+	EvilInterceptDepositGwei:    1_000_000, // 1M gwei or 0.001 ETH
 }
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
@@ -180,6 +185,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	PendingUpgradeModuleRoot: "latest",
 	FailureIsFatal:           true,
 	Dangerous:                DefaultBlockValidatorDangerousConfig,
+	EvilInterceptDepositGwei: 1_000_000, // 1M gwei or 0.001 ETH
 	MemoryFreeLimit:          "default",
 }
 

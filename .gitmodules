@@ -20,3 +20,6 @@
 [submodule "nitro-testnode"]
 	path = nitro-testnode
 	url = https://github.com/OffchainLabs/nitro-testnode.git
+[submodule "bold"]
+	path = bold
+	url = https://github.com/OffchainLabs/bold.git

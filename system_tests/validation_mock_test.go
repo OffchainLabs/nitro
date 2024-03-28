@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
+
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -85,6 +86,10 @@ func (s *mockSpawner) WriteToFile(input *validator.ValidationInput, expOut valid
 	return containers.NewReadyPromise[struct{}](struct{}{}, nil)
 }
 
+func (s *mockSpawner) CreateBoldExecutionRun(wasmModuleRoot common.Hash, stepSize uint64, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
+	return containers.NewReadyPromise[validator.ExecutionRun](nil, nil)
+}
+
 type mockValRun struct {
 	containers.Promise[validator.GoGlobalState]
 	root common.Hash
@@ -116,6 +121,11 @@ func (r *mockExecRun) GetStepAt(position uint64) containers.PromiseInterface[*va
 	}, nil)
 }
 
+func (r *mockExecRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves, fromBatch uint64) containers.PromiseInterface[[]common.Hash] {
+	// TODO: Add mock implementation for GetLeavesWithStepSize
+	return containers.NewReadyPromise[[]common.Hash](nil, nil)
+}
+
 func (r *mockExecRun) GetLastStep() containers.PromiseInterface[*validator.MachineStepResult] {
 	return r.GetStepAt(mockExecLastPos)
 }
@@ -128,6 +138,10 @@ func (r *mockExecRun) GetProofAt(uint64) containers.PromiseInterface[[]byte] {
 
 func (r *mockExecRun) PrepareRange(uint64, uint64) containers.PromiseInterface[struct{}] {
 	return containers.NewReadyPromise[struct{}](struct{}{}, nil)
+}
+
+func (r *mockExecRun) CheckAlive(ctx context.Context) error {
+	return nil
 }
 
 func (r *mockExecRun) Close() {}

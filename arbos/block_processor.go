@@ -42,21 +42,6 @@ var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, 
 var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
 var gasUsedSinceStartupCounter = metrics.NewRegisteredCounter("arb/gas_used", nil)
 
-// A helper struct that implements String() by marshalling to JSON.
-// This is useful for logging because it's lazy, so if the log level is too high to print the transaction,
-// it doesn't waste compute marshalling the transaction when the result wouldn't be used.
-type printTxAsJson struct {
-	tx *types.Transaction
-}
-
-func (p printTxAsJson) String() string {
-	json, err := p.tx.MarshalJSON()
-	if err != nil {
-		return fmt.Sprintf("[error marshalling tx: %v]", err)
-	}
-	return string(json)
-}
-
 type L1Info struct {
 	poster        common.Address
 	l1BlockNumber uint64
@@ -140,6 +125,27 @@ func NoopSequencingHooks() *SequencingHooks {
 	}
 }
 
+type ProduceConfig struct {
+	evil                       bool
+	interceptDepositGweiAmount *big.Int
+}
+type ProduceOpt func(*ProduceConfig)
+
+func WithEvilProduction() ProduceOpt {
+	return func(pc *ProduceConfig) {
+		pc.evil = true
+	}
+}
+
+func WithInterceptDepositSize(depositGwei *big.Int) ProduceOpt {
+	return func(pc *ProduceConfig) {
+		pc.interceptDepositGweiAmount = depositGwei
+	}
+}
+
+// By default, intercept and modify any Arbitrum deposits with a value of a 1M gwei, or 0.001 ETH.
+var DefaultEvilInterceptDepositGweiAmount = big.NewInt(1_000_000 * params.GWei) // 0.001 ETH
+
 func ProduceBlock(
 	message *arbostypes.L1IncomingMessage,
 	delayedMessagesRead uint64,
@@ -148,6 +154,7 @@ func ProduceBlock(
 	chainContext core.ChainContext,
 	chainConfig *params.ChainConfig,
 	batchFetcher arbostypes.FallibleBatchFetcher,
+	opts ...ProduceOpt,
 ) (*types.Block, types.Receipts, error) {
 	var batchFetchErr error
 	txes, err := ParseL2Transactions(message, chainConfig.ChainID, func(batchNum uint64, batchHash common.Hash) []byte {
@@ -171,9 +178,40 @@ func ProduceBlock(
 		txes = types.Transactions{}
 	}
 
+	produceCfg := &ProduceConfig{
+		interceptDepositGweiAmount: DefaultEvilInterceptDepositGweiAmount,
+	}
+	for _, o := range opts {
+		o(produceCfg)
+	}
+
+	var modifiedTxs []*types.Transaction
+	if produceCfg.evil {
+		modifiedTxs = make([]*types.Transaction, 0, len(txes))
+		for _, tx := range txes {
+			txData, ok := tx.GetInner().(*types.ArbitrumDepositTx)
+			if !ok {
+				// We only intercept Arbitrum deposit txs at the moment.
+				modifiedTxs = append(modifiedTxs, tx)
+				continue
+			}
+			if txData.Value.Cmp(produceCfg.interceptDepositGweiAmount) != 0 {
+				modifiedTxs = append(modifiedTxs, tx)
+				continue
+			}
+			newValue := new(big.Int).Add(txData.Value, big.NewInt(params.GWei))
+			log.Info(fmt.Sprintf("Modified tx value in evil validator with value %d, to value %d as hex %#x and %#x", txData.Value.Uint64(), newValue.Uint64(), txData.Value.Bytes(), newValue.Bytes()))
+			txData.Value = newValue
+			modified := types.NewTx(txData)
+			modifiedTxs = append(modifiedTxs, modified)
+		}
+	} else {
+		modifiedTxs = txes
+	}
+
 	hooks := NoopSequencingHooks()
 	return ProduceBlockAdvanced(
-		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks,
+		message.Header, modifiedTxs, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks,
 	)
 }
 
@@ -372,11 +410,6 @@ func ProduceBlockAdvanced(
 		hooks.TxErrors = append(hooks.TxErrors, err)
 
 		if err != nil {
-			logLevel := log.Debug
-			if chainConfig.DebugMode() {
-				logLevel = log.Warn
-			}
-			logLevel("error applying transaction", "tx", printTxAsJson{tx}, "err", err)
 			if !hooks.DiscardInvalidTxsEarly {
 				// we'll still deduct a TxGas's worth from the block-local rate limiter even if the tx was invalid
 				blockGasLeft = arbmath.SaturatingUSub(blockGasLeft, params.TxGas)
