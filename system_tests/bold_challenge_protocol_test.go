@@ -1,7 +1,7 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-//go:build challengetest && !race
+//asdasdgo:build challengetest && !race
 
 package arbtest
 
@@ -100,10 +100,12 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 			default:
 				time.Sleep(delay)
 				balance := big.NewInt(params.GWei)
+				if ctx.Err() != nil {
+					break
+				}
 				TransferBalance(t, "Faucet", "Asserter", balance, l1info, l1client, ctx)
 				latestBlock, err := l1client.BlockNumber(ctx)
 				if ctx.Err() != nil {
-					// don't require the error be nil if we're done
 					break
 				}
 				Require(t, err)
