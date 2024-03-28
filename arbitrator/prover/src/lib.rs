@@ -316,7 +316,7 @@ macro_rules! handle_preimage_resolution {
                 $hash, err,
             ),
         }
-        data
+        Some(data)
     }};
 }
 
@@ -332,11 +332,13 @@ pub unsafe extern "C" fn arbitrator_set_preimage_resolver(
                 if cache.contains(&hash) {
                     return cache.get(&hash).cloned();
                 }
-                let data = handle_preimage_resolution!(context, ty, hash, resolver);
-                cache.put(hash, data.clone());
-                return Some(data);
+                if let Some(data) = handle_preimage_resolution!(context, ty, hash, resolver) {
+                    cache.put(hash, data.clone());
+                    return Some(data);
+                }
+                return None;
             }
-            Some(handle_preimage_resolution!(context, ty, hash, resolver))
+            handle_preimage_resolution!(context, ty, hash, resolver)
         },
     ) as PreimageResolver);
 }
