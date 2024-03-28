@@ -329,12 +329,9 @@ pub unsafe extern "C" fn arbitrator_set_preimage_resolver(
                 cache.put(cache_key, true);
             } else {
                 drop(cache);
-                match CACHE_PREIMAGE_REHASH_CHECK.try_write() {
-                    Ok(mut cache) => {
-                        let _ = cache.pop(&cache_key);
-                        cache.put(cache_key.clone(), true);
-                    }
-                    Err(_) => {}
+                if let Ok(mut cache) = CACHE_PREIMAGE_REHASH_CHECK.try_write() {
+                    let _ = cache.pop(&cache_key);
+                    cache.put(cache_key, true);
                 };
             }
             Some(data)
