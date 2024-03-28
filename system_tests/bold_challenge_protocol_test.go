@@ -21,6 +21,7 @@ import (
 	modes "github.com/OffchainLabs/bold/challenge-manager/types"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/OffchainLabs/bold/solgen/go/bridgegen"
+	"github.com/OffchainLabs/bold/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
@@ -388,9 +389,7 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	manager.Start(ctx)
 	managerB.Start(ctx)
 
-	filterer, err := rollupgen.NewRollupUserLogicFilterer(assertionChain.RollupAddress(), l1client)
-	Require(t, err)
-	userLogic, err := rollupgen.NewRollupUserLogic(assertionChain.RollupAddress(), l1client)
+	filterer, err := challengeV2gen.NewEdgeChallengeManagerFilterer(assertionChain.RollupAddress(), l1client)
 	Require(t, err)
 
 	fromBlock := uint64(0)
@@ -410,26 +409,20 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 				End:     &toBlock,
 				Context: ctx,
 			}
-			it, err := filterer.FilterAssertionConfirmed(filterOpts, nil)
+			it, err := filterer.FilterEdgeConfirmedByOneStepProof(filterOpts, nil, nil)
 			Require(t, err)
 			for it.Next() {
 				if it.Error() != nil {
 					t.Fatalf("Error in filter iterator: %v", it.Error())
 				}
-				assertion, err := userLogic.GetAssertion(&bind.CallOpts{}, it.Event.AssertionHash)
-				Require(t, err)
-				if assertion.SecondChildBlock != 0 {
-					continue
-				}
-				creationInfo, err := assertionChain.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: it.Event.AssertionHash})
-				Require(t, err)
-				tx, _, err := l1client.TransactionByHash(ctx, creationInfo.TransactionHash)
+				t.Log("Received event of OSP confirmation!")
+				tx, _, err := l1client.TransactionByHash(ctx, it.Event.Raw.TxHash)
 				Require(t, err)
 				signer := types.NewCancunSigner(tx.ChainId())
 				address, err := signer.Sender(tx)
 				Require(t, err)
 				if address == l1info.GetDefaultTransactOpts("Asserter", ctx).From {
-					t.Logf("Assertion from honest party confirmed by challenge win %#x", it.Event.AssertionHash)
+					t.Log("Honest party won OSP, impossible for evil party to win if honest party continues")
 					Require(t, it.Close())
 					return
 				}
