@@ -30,6 +30,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
@@ -206,6 +207,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.BatchPoster.Enable = false
 	config.SeqCoordinator.Enable = false
 	config.BlockValidator = staker.TestBlockValidatorConfig
+	config.SyncMonitor = TestSyncMonitorConfig
 	config.Staker = staker.TestL1ValidatorConfig
 	config.Staker.Enable = false
 	config.BlockValidator.ValidationServerConfigs = []rpcclient.ClientConfig{{URL: ""}}
@@ -223,6 +225,7 @@ func ConfigDefaultL2Test() *Config {
 	config.SeqCoordinator.Signer.ECDSA.AcceptSequencer = false
 	config.SeqCoordinator.Signer.ECDSA.Dangerous.AcceptMissing = true
 	config.Staker = staker.TestL1ValidatorConfig
+	config.SyncMonitor = TestSyncMonitorConfig
 	config.Staker.Enable = false
 	config.BlockValidator.ValidationServerConfigs = []rpcclient.ClientConfig{{URL: ""}}
 	config.TransactionStreamer = DefaultTransactionStreamerConfig
@@ -275,7 +278,6 @@ type Node struct {
 	SeqCoordinator          *SeqCoordinator
 	MaintenanceRunner       *MaintenanceRunner
 	DASLifecycleManager     *das.LifecycleManager
-	ClassicOutboxRetriever  *ClassicOutboxRetriever
 	SyncMonitor             *SyncMonitor
 	configFetcher           ConfigFetcher
 	ctx                     context.Context
@@ -391,17 +393,10 @@ func createNodeImpl(
 
 	l2ChainId := l2Config.ChainID.Uint64()
 
-	syncMonitor := NewSyncMonitor(&config.SyncMonitor)
-	var classicOutbox *ClassicOutboxRetriever
-	classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "", true)
-	if err != nil {
-		if l2Config.ArbitrumChainParams.GenesisBlockNum > 0 {
-			log.Warn("Classic Msg Database not found", "err", err)
-		}
-		classicOutbox = nil
-	} else {
-		classicOutbox = NewClassicOutboxRetriever(classicMsgDb)
+	syncConfigFetcher := func() *SyncMonitorConfig {
+		return &configFetcher.Get().SyncMonitor
 	}
+	syncMonitor := NewSyncMonitor(syncConfigFetcher)
 
 	var l1Reader *headerreader.HeaderReader
 	if config.ParentChainReader.Enable {
@@ -498,7 +493,6 @@ func createNodeImpl(
 			SeqCoordinator:          coordinator,
 			MaintenanceRunner:       maintenanceRunner,
 			DASLifecycleManager:     nil,
-			ClassicOutboxRetriever:  classicOutbox,
 			SyncMonitor:             syncMonitor,
 			configFetcher:           configFetcher,
 			ctx:                     ctx,
@@ -803,7 +797,6 @@ func createNodeImpl(
 		SeqCoordinator:          coordinator,
 		MaintenanceRunner:       maintenanceRunner,
 		DASLifecycleManager:     dasLifecycleManager,
-		ClassicOutboxRetriever:  classicOutbox,
 		SyncMonitor:             syncMonitor,
 		configFetcher:           configFetcher,
 		ctx:                     ctx,
@@ -866,15 +859,18 @@ func (n *Node) Start(ctx context.Context) error {
 		execClient = nil
 	}
 	if execClient != nil {
-		err := execClient.Initialize(ctx, n, n.SyncMonitor)
+		err := execClient.Initialize(ctx)
 		if err != nil {
 			return fmt.Errorf("error initializing exec client: %w", err)
 		}
 	}
-	n.SyncMonitor.Initialize(n.InboxReader, n.TxStreamer, n.SeqCoordinator, n.Execution)
+	n.SyncMonitor.Initialize(n.InboxReader, n.TxStreamer, n.SeqCoordinator)
 	err := n.Stack.Start()
 	if err != nil {
 		return fmt.Errorf("error starting geth stack: %w", err)
+	}
+	if execClient != nil {
+		execClient.SetConsensusClient(n)
 	}
 	err = n.Execution.Start(ctx)
 	if err != nil {
@@ -988,6 +984,7 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.configFetcher != nil {
 		n.configFetcher.Start(ctx)
 	}
+	n.SyncMonitor.Start(ctx)
 	return nil
 }
 
@@ -1041,6 +1038,7 @@ func (n *Node) StopAndWait() {
 		// Just stops the redis client (most other stuff was stopped earlier)
 		n.SeqCoordinator.StopAndWait()
 	}
+	n.SyncMonitor.StopAndWait()
 	if n.DASLifecycleManager != nil {
 		n.DASLifecycleManager.StopAndWaitUntil(2 * time.Second)
 	}
@@ -1050,4 +1048,52 @@ func (n *Node) StopAndWait() {
 	if err := n.Stack.Close(); err != nil {
 		log.Error("error on stack close", "err", err)
 	}
+}
+
+func (n *Node) FetchBatch(ctx context.Context, batchNum uint64) ([]byte, common.Hash, error) {
+	return n.InboxReader.GetSequencerMessageBytes(ctx, batchNum)
+}
+
+func (n *Node) FindInboxBatchContainingMessage(message arbutil.MessageIndex) (uint64, bool, error) {
+	return n.InboxTracker.FindInboxBatchContainingMessage(message)
+}
+
+func (n *Node) GetBatchParentChainBlock(seqNum uint64) (uint64, error) {
+	return n.InboxTracker.GetBatchParentChainBlock(seqNum)
+}
+
+func (n *Node) FullSyncProgressMap() map[string]interface{} {
+	return n.SyncMonitor.FullSyncProgressMap()
+}
+
+func (n *Node) Synced() bool {
+	return n.SyncMonitor.Synced()
+}
+
+func (n *Node) SyncTargetMessageCount() arbutil.MessageIndex {
+	return n.SyncMonitor.SyncTargetMessageCount()
+}
+
+// TODO: switch from pulling to pushing safe/finalized
+func (n *Node) GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
+	return n.InboxReader.GetSafeMsgCount(ctx)
+}
+
+func (n *Node) GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
+	return n.InboxReader.GetFinalizedMsgCount(ctx)
+}
+
+func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) error {
+	return n.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta)
+}
+
+func (n *Node) ExpectChosenSequencer() error {
+	return n.TxStreamer.ExpectChosenSequencer()
+}
+
+func (n *Node) ValidatedMessageCount() (arbutil.MessageIndex, error) {
+	if n.BlockValidator == nil {
+		return 0, errors.New("validator not set up")
+	}
+	return n.BlockValidator.GetValidated(), nil
 }

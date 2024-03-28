@@ -123,7 +123,7 @@ func (r *BlockRecorder) RecordBlockCreation(
 	var readBatchInfo []validator.BatchInfo
 	if msg != nil {
 		batchFetcher := func(batchNum uint64) ([]byte, error) {
-			data, blockHash, err := r.execEngine.streamer.FetchBatch(batchNum)
+			data, blockHash, err := r.execEngine.consensus.FetchBatch(ctx, batchNum)
 			if err != nil {
 				return nil, err
 			}

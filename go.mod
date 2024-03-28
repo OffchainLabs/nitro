@@ -13,7 +13,6 @@ require (
 	github.com/OffchainLabs/bold v0.0.0-00010101000000-000000000000
 	github.com/Shopify/toxiproxy v2.1.4+incompatible
 	github.com/alicebob/miniredis/v2 v2.21.0
-	github.com/allegro/bigcache v1.2.1-0.20190218064605-e24eb225f156
 	github.com/andybalholm/brotli v1.0.4
 	github.com/aws/aws-sdk-go-v2 v1.16.4
 	github.com/aws/aws-sdk-go-v2/config v1.15.5
@@ -39,6 +38,7 @@ require (
 	github.com/libp2p/go-libp2p v0.27.8
 	github.com/multiformats/go-multiaddr v0.12.1
 	github.com/multiformats/go-multihash v0.2.3
+	github.com/pkg/errors v0.9.1
 	github.com/r3labs/diff/v3 v3.0.1
 	github.com/rivo/tview v0.0.0-20230814110005-ccc2c8119703
 	github.com/spf13/pflag v1.0.5
@@ -238,7 +238,6 @@ require (
 	github.com/opentracing/opentracing-go v1.2.0 // indirect
 	github.com/openzipkin/zipkin-go v0.4.0 // indirect
 	github.com/pbnjay/memory v0.0.0-20210728143218-7b4eea64cf58 // indirect
-	github.com/pkg/errors v0.9.1 // indirect
 	github.com/polydawn/refmt v0.89.0 // indirect
 	github.com/prometheus/client_golang v1.14.0 // indirect
 	github.com/prometheus/client_model v0.3.0 // indirect
