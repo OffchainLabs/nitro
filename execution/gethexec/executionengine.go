@@ -510,10 +510,6 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		statedb,
 		s.bc,
 		s.bc.Config(),
-		func(batchNum uint64) ([]byte, error) {
-			data, _, err := s.streamer.FetchBatch(batchNum)
-			return data, err
-		},
 		batchFetcher,
 		opts...,
 	)
