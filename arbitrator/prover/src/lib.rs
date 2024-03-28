@@ -18,18 +18,24 @@ pub mod wavm;
 use crate::machine::{argument_data_to_inbox, Machine};
 use arbutil::PreimageType;
 use eyre::Result;
+use lru::LruCache;
 use machine::{get_empty_preimage_resolver, GlobalState, MachineStatus, PreimageResolver};
 use static_assertions::const_assert_eq;
 use std::{
     ffi::CStr,
+    num::NonZeroUsize,
     os::raw::{c_char, c_int},
     path::Path,
     sync::{
         atomic::{self, AtomicU8},
-        Arc,
+        Arc, RwLock,
     },
 };
 use utils::{Bytes32, CBytes};
+
+lazy_static::lazy_static! {
+    static ref CACHE_PREIMAGE_REHASH_CHECK: RwLock<LruCache<(Bytes32, PreimageType), bool>> = RwLock::new(LruCache::new(NonZeroUsize::new(1024).unwrap()));
+}
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -302,18 +308,34 @@ pub unsafe extern "C" fn arbitrator_set_preimage_resolver(
                 return None;
             }
             let data = CBytes::from_raw_parts(res.ptr, res.len as usize);
-            #[cfg(debug_assertions)]
-            match crate::utils::hash_preimage(&data, ty) {
-                Ok(have_hash) if have_hash.as_slice() == *hash => {}
-                Ok(got_hash) => panic!(
-                    "Resolved incorrect data for hash {} (rehashed to {})",
-                    hash,
-                    Bytes32(got_hash),
-                ),
-                Err(err) => panic!(
-                    "Failed to hash preimage from resolver (expecting hash {}): {}",
-                    hash, err,
-                ),
+            // Check if preimage rehashes to the provided hash
+            let cache_key = (hash, ty);
+            let cache = CACHE_PREIMAGE_REHASH_CHECK.read().unwrap();
+            if !cache.contains(&cache_key) {
+                drop(cache);
+                match crate::utils::hash_preimage(&data, ty) {
+                    Ok(have_hash) if have_hash.as_slice() == *hash => {}
+                    Ok(got_hash) => panic!(
+                        "Resolved incorrect data for hash {} (rehashed to {})",
+                        hash,
+                        Bytes32(got_hash),
+                    ),
+                    Err(err) => panic!(
+                        "Failed to hash preimage from resolver (expecting hash {}): {}",
+                        hash, err,
+                    ),
+                }
+                let mut cache = CACHE_PREIMAGE_REHASH_CHECK.write().unwrap();
+                cache.put(cache_key, true);
+            } else {
+                drop(cache);
+                match CACHE_PREIMAGE_REHASH_CHECK.try_write() {
+                    Ok(mut cache) => {
+                        let _ = cache.pop(&cache_key);
+                        cache.put(cache_key.clone(), true);
+                    }
+                    Err(_) => {}
+                };
             }
             Some(data)
         },
