@@ -20,14 +20,12 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
-	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/merkletree"
 )
@@ -53,90 +51,129 @@ var merkleTopic common.Hash
 var l2ToL1TxTopic common.Hash
 var l2ToL1TransactionTopic common.Hash
 
-var blockInGenesis = errors.New("")
-var blockAfterLatestBatch = errors.New("")
-
 func (n NodeInterface) NitroGenesisBlock(c ctx) (huge, error) {
 	block := n.backend.ChainConfig().ArbitrumChainParams.GenesisBlockNum
 	return arbmath.UintToBig(block), nil
 }
 
+// bool will be false but no error if behind genesis
+func (n NodeInterface) blockNumToMessageIndex(blockNum uint64) (arbutil.MessageIndex, bool, error) {
+	node, err := gethExecFromNodeInterfaceBackend(n.backend)
+	if err != nil {
+		return 0, false, err
+	}
+	blockchain, err := blockchainFromNodeInterfaceBackend(n.backend)
+	if err != nil {
+		return 0, false, err
+	}
+	if blockNum < blockchain.Config().ArbitrumChainParams.GenesisBlockNum {
+		return 0, true, nil
+	}
+	msgIndex, err := node.ExecEngine.BlockNumberToMessageIndex(blockNum)
+	if err != nil {
+		return 0, false, err
+	}
+	return msgIndex, true, nil
+}
+
+func (n NodeInterface) msgNumToInboxBatch(msgIndex arbutil.MessageIndex) (uint64, bool, error) {
+	node, err := gethExecFromNodeInterfaceBackend(n.backend)
+	if err != nil {
+		return 0, false, err
+	}
+	fetcher := node.ExecEngine.GetBatchFetcher()
+	if fetcher == nil {
+		return 0, false, errors.New("batch fetcher not set")
+	}
+	return fetcher.FindInboxBatchContainingMessage(msgIndex)
+}
+
 func (n NodeInterface) FindBatchContainingBlock(c ctx, evm mech, blockNum uint64) (uint64, error) {
-	node, err := arbNodeFromNodeInterfaceBackend(n.backend)
+	msgIndex, found, err := n.blockNumToMessageIndex(blockNum)
 	if err != nil {
 		return 0, err
 	}
-	return findBatchContainingBlock(node, node.TxStreamer.GenesisBlockNumber(), blockNum)
+	if !found {
+		return 0, fmt.Errorf("block %v is part of genesis", blockNum)
+	}
+	res, found, err := n.msgNumToInboxBatch(msgIndex)
+	if err == nil && !found {
+		return 0, errors.New("block not yet found on any batch")
+	}
+	return res, err
 }
 
 func (n NodeInterface) GetL1Confirmations(c ctx, evm mech, blockHash bytes32) (uint64, error) {
-	node, err := arbNodeFromNodeInterfaceBackend(n.backend)
+	node, err := gethExecFromNodeInterfaceBackend(n.backend)
 	if err != nil {
 		return 0, err
 	}
-	if node.InboxReader == nil {
-		return 0, nil
-	}
-	bc, err := blockchainFromNodeInterfaceBackend(n.backend)
+	blockchain, err := blockchainFromNodeInterfaceBackend(n.backend)
 	if err != nil {
 		return 0, err
 	}
-	header := bc.GetHeaderByHash(blockHash)
+	header := blockchain.GetHeaderByHash(blockHash)
 	if header == nil {
 		return 0, errors.New("unknown block hash")
 	}
 	blockNum := header.Number.Uint64()
-	genesis := node.TxStreamer.GenesisBlockNumber()
-	batch, err := findBatchContainingBlock(node, genesis, blockNum)
-	if err != nil {
-		if errors.Is(err, blockInGenesis) {
-			batch = 0
-		} else if errors.Is(err, blockAfterLatestBatch) {
-			return 0, nil
-		} else {
-			return 0, err
-		}
-	}
-	meta, err := node.InboxTracker.GetBatchMetadata(batch)
+
+	// blocks behind genesis are treated as belonging to batch 0
+	msgNum, _, err := n.blockNumToMessageIndex(blockNum)
 	if err != nil {
 		return 0, err
 	}
-	if node.L1Reader.IsParentChainArbitrum() {
-		parentChainClient := node.L1Reader.Client()
+	// batches not yet posted have 0 confirmations but no error
+	batchNum, found, err := n.msgNumToInboxBatch(msgNum)
+	if err != nil {
+		return 0, err
+	}
+	if !found {
+		return 0, nil
+	}
+	parentChainBlockNum, err := node.ExecEngine.GetBatchFetcher().GetBatchParentChainBlock(batchNum)
+	if err != nil {
+		return 0, err
+	}
+
+	if node.ParentChainReader.IsParentChainArbitrum() {
+		parentChainClient := node.ParentChainReader.Client()
 		parentNodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, parentChainClient)
 		if err != nil {
 			return 0, err
 		}
-		parentChainBlock, err := parentChainClient.BlockByNumber(n.context, new(big.Int).SetUint64(meta.ParentChainBlock))
+		parentChainBlock, err := parentChainClient.BlockByNumber(n.context, new(big.Int).SetUint64(parentChainBlockNum))
 		if err != nil {
 			// Hide the parent chain RPC error from the client in case it contains sensitive information.
 			// Likely though, this error is just "not found" because the block got reorg'd.
-			return 0, fmt.Errorf("failed to get parent chain block %v containing batch", meta.ParentChainBlock)
+			return 0, fmt.Errorf("failed to get parent chain block %v containing batch", parentChainBlockNum)
 		}
 		confs, err := parentNodeInterface.GetL1Confirmations(&bind.CallOpts{Context: n.context}, parentChainBlock.Hash())
 		if err != nil {
 			log.Warn(
 				"Failed to get L1 confirmations from parent chain",
-				"blockNumber", meta.ParentChainBlock,
+				"blockNumber", parentChainBlockNum,
 				"blockHash", parentChainBlock.Hash(), "err", err,
 			)
 			return 0, fmt.Errorf("failed to get L1 confirmations from parent chain for block %v", parentChainBlock.Hash())
 		}
 		return confs, nil
 	}
-	latestL1Block, latestBatchCount := node.InboxReader.GetLastReadBlockAndBatchCount()
-	if latestBatchCount <= batch {
-		return 0, nil // batch was reorg'd out?
-	}
-	if latestL1Block < meta.ParentChainBlock || arbutil.BlockNumberToMessageCount(blockNum, genesis) > meta.MessageCount {
+	if node.ParentChainReader == nil {
 		return 0, nil
 	}
-	canonicalHash := bc.GetCanonicalHash(header.Number.Uint64())
-	if canonicalHash != header.Hash() {
-		return 0, errors.New("block hash is non-canonical")
+	latestHeader, err := node.ParentChainReader.LastHeaderWithError()
+	if err != nil {
+		return 0, err
 	}
-	confs := (latestL1Block - meta.ParentChainBlock) + 1 + node.InboxReader.GetDelayBlocks()
-	return confs, nil
+	if latestHeader == nil {
+		return 0, errors.New("no headers read from l1")
+	}
+	latestBlockNum := latestHeader.Number.Uint64()
+	if latestBlockNum < parentChainBlockNum {
+		return 0, nil
+	}
+	return (latestBlockNum - parentChainBlockNum), nil
 }
 
 func (n NodeInterface) EstimateRetryableTicket(
@@ -561,42 +598,18 @@ func (n NodeInterface) GasEstimateComponents(
 	return total, gasForL1, baseFee, l1BaseFeeEstimate, nil
 }
 
-func findBatchContainingBlock(node *arbnode.Node, genesis uint64, block uint64) (uint64, error) {
-	if block <= genesis {
-		return 0, fmt.Errorf("%wblock %v is part of genesis", blockInGenesis, block)
-	}
-	pos := arbutil.BlockNumberToMessageCount(block, genesis) - 1
-	high, err := node.InboxTracker.GetBatchCount()
-	if err != nil {
-		return 0, err
-	}
-	high--
-	latestCount, err := node.InboxTracker.GetBatchMessageCount(high)
-	if err != nil {
-		return 0, err
-	}
-	latestBlock := arbutil.MessageCountToBlockNumber(latestCount, genesis)
-	if int64(block) > latestBlock {
-		return 0, fmt.Errorf(
-			"%wrequested block %v is after latest on-chain block %v published in batch %v",
-			blockAfterLatestBatch, block, latestBlock, high,
-		)
-	}
-	return staker.FindBatchContainingMessageIndex(node.InboxTracker, pos, high)
-}
-
 func (n NodeInterface) LegacyLookupMessageBatchProof(c ctx, evm mech, batchNum huge, index uint64) (
 	proof []bytes32, path huge, l2Sender addr, l1Dest addr, l2Block huge, l1Block huge, timestamp huge, amount huge, calldataForL1 []byte, err error) {
 
-	node, err := arbNodeFromNodeInterfaceBackend(n.backend)
+	node, err := gethExecFromNodeInterfaceBackend(n.backend)
 	if err != nil {
 		return
 	}
-	if node.ClassicOutboxRetriever == nil {
+	if node.ClassicOutbox == nil {
 		err = errors.New("this node doesnt support classicLookupMessageBatchProof")
 		return
 	}
-	msg, err := node.ClassicOutboxRetriever.GetMsg(batchNum, index)
+	msg, err := node.ClassicOutbox.GetMsg(batchNum, index)
 	if err != nil {
 		return
 	}
