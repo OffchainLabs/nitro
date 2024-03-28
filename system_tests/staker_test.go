@@ -492,7 +492,6 @@ func TestStakersCooperative(t *testing.T) {
 }
 
 func TestStakerSwitchDuringRollupUpgrade(t *testing.T) {
-	t.Skip("Recently broken, needs investigation")
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 	stakerImpl, builder := setupNonBoldStaker(t, ctx)
