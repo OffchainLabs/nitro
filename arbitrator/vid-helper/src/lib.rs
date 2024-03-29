@@ -19,7 +19,7 @@ pub type VidScheme = Advz<Bn254, sha2::Sha256>;
 lazy_static! {
     // Initialize the byte array from JSON content
     static ref SRS_VEC: Vec<u8> = {
-        let json_content = include_str!("../../../config/vid-srs.json");
+        let json_content = include_str!("../../../config/vid_srs.json");
         serde_json::from_str(json_content).expect("Failed to deserialize")
     };
 }
