@@ -1,7 +1,6 @@
 mod bytes;
 mod namespace;
 
-//use ark_bls12_381::Bls12_381;
 use ark_bn254::Bn254;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use jf_primitives::{
@@ -21,10 +20,6 @@ lazy_static! {
     // Initialize the byte array from JSON content
     static ref SRS_VEC: Vec<u8> = {
         let json_content = include_str!("../../../config/vid-srs.json");
-        serde_json::from_str(json_content).expect("Failed to deserialize")
-    };
-    static ref PROOF: NamespaceProof = {
-        let json_content = include_str!("../../../config/proof.json");
         serde_json::from_str(json_content).expect("Failed to deserialize")
     };
 }
@@ -47,7 +42,6 @@ pub fn verify_namespace_helper(
     let commit_str = std::str::from_utf8(commit_bytes).unwrap();
     let txn_comm_str = std::str::from_utf8(tx_comm_bytes).unwrap();
 
-    dbg!(&proof_str);
     let proof: NamespaceProof = serde_json::from_str(proof_str).unwrap();
     let ns_table = NameSpaceTable::<TxTableEntryWord>::from_bytes(<&[u8] as Into<Bytes>>::into(
         ns_table_bytes,
