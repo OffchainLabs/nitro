@@ -94,6 +94,7 @@ fn main() {
     };
 
     let env = env.as_mut(&mut store);
+
     let user = env.process.socket.is_none();
     let time = format!("{}ms", env.process.timestamp.elapsed().as_millis());
     let time = color::when(user, time, color::PINK);

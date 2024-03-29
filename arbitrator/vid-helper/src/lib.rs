@@ -103,7 +103,8 @@ mod test {
         let mut rng = jf_utils::test_rng();
         UnivariateKzgPCS::<Bn254>::gen_srs_for_testing(&mut rng, checked_fft_size(200).unwrap())
             .unwrap()
-            .serialize_uncompressed(&mut bytes);
+            .serialize_uncompressed(&mut bytes)
+            .unwrap();
         let _ = std::fs::write("srs.json", serde_json::to_string(&bytes).unwrap());
     }
 }
