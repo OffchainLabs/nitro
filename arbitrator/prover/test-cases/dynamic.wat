@@ -54,7 +54,7 @@
         local.get $user
         i32.const 1 ;; $safe
         call $user_func
-        i32.const 5
+        i32.const 1
         i32.ne
         (if (then (unreachable)))
 
