@@ -302,6 +302,13 @@ func main() {
 			if !commitment.Equals(hotshotHeader.Commit()) {
 				panic(fmt.Sprintf("invalid hotshot header jst header at %v expected: %v, provided %v.", height, hotshotHeader.Commit(), commitment))
 			}
+			if jst.BlockMerkleProof == nil {
+				panic("block merkle proof missing from justification")
+			}
+			_, err = jst.BlockMerkleProof.Verify(commitment)
+			if err != nil {
+				panic("merkle proof verification failure")
+			}
 			arbvid.VerifyNamespace(chainConfig.ChainID.Uint64(), *jst.Proof, *jst.Header.PayloadCommitment, *jst.Header.NsTable, txs)
 		}
 

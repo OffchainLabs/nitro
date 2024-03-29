@@ -62,6 +62,7 @@ func runEspresso(t *testing.T, ctx context.Context) func() {
 		"espresso-sequencer1",
 		"commitment-task",
 		"state-relay-server",
+		"deploy-contracts",
 	}
 	invocation = append(invocation, nodes...)
 	procees := exec.Command("docker", invocation...)
@@ -341,7 +342,7 @@ func TestEspressoE2E(t *testing.T) {
 	defer cleanEspresso()
 
 	// wait for the commitment task
-	err = waitFor(t, ctx, func() bool {
+	err = waitForWith(t, ctx, 60*time.Second, 1*time.Second, func() bool {
 		out, err := exec.Command("curl", "http://127.0.0.1:60000/api/hotshot_contract").Output()
 		if err != nil {
 			log.Warn("retry to check the commitment task", "err", err)
@@ -434,7 +435,7 @@ func TestEspressoE2E(t *testing.T) {
 	builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
 		WrapL2ForDelayed(t, delayedTx, builder.L1Info, "Faucet", 100000),
 	})
-	err = waitForWith(t, ctx, 180*time.Second, 2*time.Second, func() bool {
+	err = waitForWith(t, ctx, 181*time.Second, 2*time.Second, func() bool {
 		balance2 := l2Node.GetBalance(t, addr2)
 		log.Info("waiting for balance", "addr", addr2, "balance", balance2)
 		return balance2.Cmp(transferAmount) >= 0

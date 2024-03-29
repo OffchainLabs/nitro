@@ -2,7 +2,7 @@ mod bytes;
 mod namespace;
 
 use ark_bn254::Bn254;
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use ark_serialize::CanonicalDeserialize;
 use jf_primitives::{
     pcs::prelude::UnivariateUniversalParams,
     vid::{advz::Advz, VidScheme as VidSchemeTrait},
@@ -80,8 +80,10 @@ fn hash_txns(namespace: u64, txns: &[Transaction]) -> String {
     format!("{:x}", hash_result)
 }
 
+#[cfg(test)]
 mod test {
     use super::*;
+    use ark_serialize::CanonicalSerialize;
     use jf_primitives::pcs::{
         checked_fft_size, prelude::UnivariateKzgPCS, PolynomialCommitmentScheme,
     };
