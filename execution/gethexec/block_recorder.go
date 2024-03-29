@@ -16,8 +16,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
-	"github.com/offchainlabs/nitro/util/containers"
-	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 )
 
@@ -284,39 +282,37 @@ func (r *BlockRecorder) RecordingDBReferenceCount() int64 {
 	return r.recordingDatabase.ReferenceCount()
 }
 
-func (r *BlockRecorder) PrepareForRecord(start, end arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
-	return stopwaiter.LaunchPromiseThread[struct{}](&r.execEngine.StopWaiterSafe, func(ctx context.Context) (struct{}, error) {
-		var references []*types.Header
-		if end < start {
-			return struct{}{}, fmt.Errorf("illegal range start %d > end %d", start, end)
+func (r *BlockRecorder) PrepareForRecord(ctx context.Context, start, end arbutil.MessageIndex) error {
+	var references []*types.Header
+	if end < start {
+		return fmt.Errorf("illegal range start %d > end %d", start, end)
+	}
+	numOfBlocks := uint64(end + 1 - start)
+	hdrNum := r.execEngine.MessageIndexToBlockNumber(start)
+	if start > 0 {
+		hdrNum-- // need to get previous
+	} else {
+		numOfBlocks-- // genesis block doesn't need preparation, so recording one less block
+	}
+	lastHdrNum := hdrNum + numOfBlocks
+	for hdrNum <= lastHdrNum {
+		header := r.execEngine.bc.GetHeaderByNumber(uint64(hdrNum))
+		if header == nil {
+			log.Warn("prepareblocks asked for non-found block", "hdrNum", hdrNum)
+			break
 		}
-		numOfBlocks := uint64(end + 1 - start)
-		hdrNum := r.execEngine.MessageIndexToBlockNumber(start)
-		if start > 0 {
-			hdrNum-- // need to get previous
-		} else {
-			numOfBlocks-- // genesis block doesn't need preparation, so recording one less block
+		_, err := r.recordingDatabase.GetOrRecreateState(ctx, header, stateLogFunc)
+		if err != nil {
+			log.Warn("prepareblocks failed to get state for block", "hdrNum", hdrNum, "err", err)
+			break
 		}
-		lastHdrNum := hdrNum + numOfBlocks
-		for hdrNum <= lastHdrNum {
-			header := r.execEngine.bc.GetHeaderByNumber(uint64(hdrNum))
-			if header == nil {
-				log.Warn("prepareblocks asked for non-found block", "hdrNum", hdrNum)
-				break
-			}
-			_, err := r.recordingDatabase.GetOrRecreateState(ctx, header, stateLogFunc)
-			if err != nil {
-				log.Warn("prepareblocks failed to get state for block", "hdrNum", hdrNum, "err", err)
-				break
-			}
-			references = append(references, header)
-			r.updateValidCandidateHdr(header)
-			r.updateLastHdr(header)
-			hdrNum++
-		}
-		r.preparedAddTrim(references, 1000)
-		return struct{}{}, nil
-	})
+		references = append(references, header)
+		r.updateValidCandidateHdr(header)
+		r.updateLastHdr(header)
+		hdrNum++
+	}
+	r.preparedAddTrim(references, 1000)
+	return nil
 }
 
 func (r *BlockRecorder) ReorgTo(hdr *types.Header) {

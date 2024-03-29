@@ -388,7 +388,9 @@ func (n *ExecutionNode) MarkValid(pos arbutil.MessageIndex, resultHash common.Ha
 }
 
 func (n *ExecutionNode) PrepareForRecord(start, end arbutil.MessageIndex) containers.PromiseInterface[struct{}] {
-	return n.Recorder.PrepareForRecord(start, end)
+	return stopwaiter.LaunchPromiseThread(n.ExecEngine, func(ctx context.Context) (struct{}, error) {
+		return struct{}{}, n.Recorder.PrepareForRecord(ctx, start, end)
+	})
 }
 
 func (n *ExecutionNode) Pause() containers.PromiseInterface[struct{}] {
