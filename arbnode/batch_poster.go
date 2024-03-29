@@ -1065,30 +1065,24 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		var use4844 bool
 		config := b.config()
 		if config.Post4844Blobs && b.daWriter == nil && latestHeader.ExcessBlobGas != nil && latestHeader.BlobGasUsed != nil {
-			arbOSVersion, err := b.arbOSVersionGetter.ArbOSVersionForMessageNumber(arbutil.MessageIndex(arbmath.SaturatingUSub(uint64(batchPosition.MessageCount), 1)))
-			if err != nil {
-				return false, err
-			}
-			if arbOSVersion >= 20 {
-				if config.IgnoreBlobPrice {
-					use4844 = true
-				} else {
-					backlog := atomic.LoadUint64(&b.backlog)
-					// Logic to prevent switching from non-4844 batches to 4844 batches too often,
-					// so that blocks can be filled efficiently. The geth txpool rejects txs for
-					// accounts that already have the other type of txs in the pool with
-					// "address already reserved". This logic makes sure that, if there is a backlog,
-					// that enough non-4844 batches have been posted to fill a block before switching.
-					if backlog == 0 ||
-						b.non4844BatchCount == 0 ||
-						b.non4844BatchCount > 16 {
-						blobFeePerByte := eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*latestHeader.ExcessBlobGas, *latestHeader.BlobGasUsed))
-						blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
-						blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
+			if config.IgnoreBlobPrice {
+				use4844 = true
+			} else {
+				backlog := atomic.LoadUint64(&b.backlog)
+				// Logic to prevent switching from non-4844 batches to 4844 batches too often,
+				// so that blocks can be filled efficiently. The geth txpool rejects txs for
+				// accounts that already have the other type of txs in the pool with
+				// "address already reserved". This logic makes sure that, if there is a backlog,
+				// that enough non-4844 batches have been posted to fill a block before switching.
+				if backlog == 0 ||
+					b.non4844BatchCount == 0 ||
+					b.non4844BatchCount > 16 {
+					blobFeePerByte := eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*latestHeader.ExcessBlobGas, *latestHeader.BlobGasUsed))
+					blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
+					blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
 
-						calldataFeePerByte := arbmath.BigMulByUint(latestHeader.BaseFee, 16)
-						use4844 = arbmath.BigLessThan(blobFeePerByte, calldataFeePerByte)
-					}
+					calldataFeePerByte := arbmath.BigMulByUint(latestHeader.BaseFee, 16)
+					use4844 = arbmath.BigLessThan(blobFeePerByte, calldataFeePerByte)
 				}
 			}
 		}
