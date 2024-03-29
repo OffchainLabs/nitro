@@ -11,8 +11,8 @@
     (import "env" "wavm_halt_and_set_finished" (func $halt                                   ))
 
     ;; WAVM Module hash
-    (data (i32.const 0x0)
-         "\66\bd\f4\8a\70\5a\41\12\25\3f\77\1c\e0\66\8d\43\74\57\8d\f8\2e\17\dc\7e\8b\6c\98\49\9c\02\55\6d") ;; user
+    (data (i32.const 0x000)
+        "\a4\73\76\c8\ea\84\f2\58\06\c6\17\83\a4\c1\a0\18\ab\72\5c\8c\03\53\95\db\91\6b\29\ec\3a\b9\43\14") ;; user
 
     (func $start (local $user i32) (local $internals i32)
         ;; link in user.wat
