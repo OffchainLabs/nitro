@@ -14,6 +14,7 @@ import (
 	"github.com/OffchainLabs/bold/containers"
 	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+	"github.com/OffchainLabs/bold/util"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/pkg/errors"
@@ -153,8 +154,17 @@ func (m *Manager) PostAssertionBasedOnParent(
 			return none, nil
 		}
 		return none, errors.Wrapf(err, "could not get execution state at batch count %d with parent block hash %v", batchCount, parentBlockHash)
-
 	}
+
+	// If the assertion is not an overflow assertion (has a 0 position in batch),
+	// then should check if we need to wait for the minimum number of blocks in between
+	// assertions. Overflow ones are not subject to this check onchain.
+	if newState.GlobalState.PosInBatch == 0 {
+		if err = m.waitToPostIfNeeded(ctx, parentCreationInfo); err != nil {
+			return none, err
+		}
+	}
+
 	srvlog.Info(
 		"Posting assertion with retrieved state", log.Ctx{
 			"batchCount":    batchCount,
@@ -181,4 +191,41 @@ func (m *Manager) PostAssertionBasedOnParent(
 	}
 	m.observedCanonicalAssertions <- assertion.Id()
 	return option.Some(creationInfo), nil
+}
+
+func (m *Manager) waitToPostIfNeeded(
+	ctx context.Context,
+	parentCreationInfo *protocol.AssertionCreatedInfo,
+) error {
+	latestBlock, err := m.backend.HeaderByNumber(ctx, util.GetSafeBlockNumber())
+	if err != nil {
+		return err
+	}
+	if !latestBlock.Number.IsUint64() {
+		return errors.New("latest block number not a uint64")
+	}
+	blocksSinceLast := uint64(0)
+	if parentCreationInfo.CreationBlock < latestBlock.Number.Uint64() {
+		blocksSinceLast = latestBlock.Number.Uint64() - parentCreationInfo.CreationBlock
+	}
+	minPeriodBlocks, err := m.chain.MinAssertionPeriodBlocks(ctx)
+	if err != nil {
+		return err
+	}
+	canPostNow := blocksSinceLast >= minPeriodBlocks
+
+	// If we cannot post just yet, we can wait.
+	if !canPostNow {
+		blocksLeftForConfirmation := minPeriodBlocks - blocksSinceLast
+		timeToWait := m.averageTimeForBlockCreation * time.Duration(blocksLeftForConfirmation)
+		log.Info(
+			fmt.Sprintf(
+				"Need to wait %d blocks before posting a next assertion, waiting for %v",
+				blocksLeftForConfirmation,
+				timeToWait,
+			),
+		)
+		<-time.After(timeToWait)
+	}
+	return nil
 }

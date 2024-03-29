@@ -128,6 +128,7 @@ type AssertionChain interface {
 		ctx context.Context, id AssertionHash,
 	) (*AssertionCreatedInfo, error)
 
+	MinAssertionPeriodBlocks(ctx context.Context) (uint64, error)
 	AssertionUnrivaledBlocks(ctx context.Context, assertionHash AssertionHash) (uint64, error)
 	TopLevelAssertion(ctx context.Context, edgeId EdgeId) (AssertionHash, error)
 	TopLevelClaimHeights(ctx context.Context, edgeId EdgeId) (OriginHeights, error)

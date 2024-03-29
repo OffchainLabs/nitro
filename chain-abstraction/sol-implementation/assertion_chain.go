@@ -431,6 +431,17 @@ func (a *AssertionChain) GenesisAssertionHash(ctx context.Context) (common.Hash,
 	return a.userLogic.GenesisAssertionHash(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}))
 }
 
+func (a *AssertionChain) MinAssertionPeriodBlocks(ctx context.Context) (uint64, error) {
+	minPeriod, err := a.rollup.MinimumAssertionPeriod(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}))
+	if err != nil {
+		return 0, err
+	}
+	if !minPeriod.IsUint64() {
+		return 0, errors.New("minimum assertion period was not a uint64")
+	}
+	return minPeriod.Uint64(), nil
+}
+
 func TryConfirmingAssertion(
 	ctx context.Context,
 	assertionHash common.Hash,
