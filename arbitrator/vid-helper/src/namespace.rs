@@ -2,6 +2,7 @@
 // This module is essentially copy and pasted VID logic from the sequencer repo. It is an unfortunate workaround
 // until the VID portion of the sequencer repo is WASM-compatible.
 use ark_bls12_381::Bls12_381;
+use ark_bn254::Bn254;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use core::fmt;
 use derivative::Derivative;
@@ -198,7 +199,7 @@ impl TryFrom<TxTableEntry> for NamespaceId {
     }
 }
 
-pub type VidScheme = jf_primitives::vid::advz::Advz<ark_bls12_381::Bls12_381, sha2::Sha256>;
+pub type VidScheme = jf_primitives::vid::advz::Advz<ark_bn254::Bn254, sha2::Sha256>;
 
 /// Namespace proof type
 ///
@@ -215,13 +216,14 @@ pub type VidScheme = jf_primitives::vid::advz::Advz<ark_bls12_381::Bls12_381, sh
 /// ```
 /// but that's still pretty crufty.
 pub type JellyfishNamespaceProof =
-    LargeRangeProof<<UnivariateKzgPCS<Bls12_381> as PolynomialCommitmentScheme>::Evaluation>;
+    LargeRangeProof<<UnivariateKzgPCS<Bn254> as PolynomialCommitmentScheme>::Evaluation>;
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(bound = "")] // for V
 pub enum NamespaceProof {
     Existence {
-        ns_payload_flat: Bytes,
+        #[serde(with = "base64_bytes")]
+        ns_payload_flat: Vec<u8>,
         ns_id: NamespaceId,
         ns_proof: JellyfishNamespaceProof,
         vid_common: <VidScheme as VidSchemeTrait>::Common,

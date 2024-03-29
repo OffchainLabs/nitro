@@ -1,8 +1,9 @@
 mod bytes;
 mod namespace;
 
-use ark_bls12_381::Bls12_381;
-use ark_serialize::CanonicalDeserialize;
+//use ark_bls12_381::Bls12_381;
+use ark_bn254::Bn254;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use jf_primitives::{
     pcs::prelude::UnivariateUniversalParams,
     vid::{advz::Advz, VidScheme as VidSchemeTrait},
@@ -14,12 +15,16 @@ use tagged_base64::TaggedBase64;
 
 use crate::bytes::Bytes;
 
-pub type VidScheme = Advz<Bls12_381, sha2::Sha256>;
+pub type VidScheme = Advz<Bn254, sha2::Sha256>;
 
 lazy_static! {
     // Initialize the byte array from JSON content
     static ref SRS_VEC: Vec<u8> = {
-        let json_content = include_str!("../../../config/vid_srs.json");
+        let json_content = include_str!("../../../config/vid-srs.json");
+        serde_json::from_str(json_content).expect("Failed to deserialize")
+    };
+    static ref PROOF: NamespaceProof = {
+        let json_content = include_str!("../../../config/proof.json");
         serde_json::from_str(json_content).expect("Failed to deserialize")
     };
 }
@@ -42,6 +47,7 @@ pub fn verify_namespace_helper(
     let commit_str = std::str::from_utf8(commit_bytes).unwrap();
     let txn_comm_str = std::str::from_utf8(tx_comm_bytes).unwrap();
 
+    dbg!(&proof_str);
     let proof: NamespaceProof = serde_json::from_str(proof_str).unwrap();
     let ns_table = NameSpaceTable::<TxTableEntryWord>::from_bytes(<&[u8] as Into<Bytes>>::into(
         ns_table_bytes,
@@ -49,10 +55,9 @@ pub fn verify_namespace_helper(
     let tagged = TaggedBase64::parse(&commit_str).unwrap();
     let commit: <VidScheme as VidSchemeTrait>::Commit = tagged.try_into().unwrap();
 
-    let srs = UnivariateUniversalParams::<Bls12_381>::deserialize_uncompressed_unchecked(
-        SRS_VEC.as_slice(),
-    )
-    .unwrap();
+    let srs =
+        UnivariateUniversalParams::<Bn254>::deserialize_uncompressed_unchecked(SRS_VEC.as_slice())
+            .unwrap();
     let num_storage_nodes = match &proof {
         NamespaceProof::Existence { vid_common, .. } => {
             VidScheme::get_num_storage_nodes(&vid_common)
@@ -81,12 +86,28 @@ fn hash_txns(namespace: u64, txns: &[Transaction]) -> String {
     format!("{:x}", hash_result)
 }
 
-#[test]
-fn test_verify_namespace_helper() {
-    let proof_bytes = b"{\"NonExistence\":{\"ns_id\":0}}";
-    let commit_bytes = b"HASH~1yS-KEtL3oDZDBJdsW51Pd7zywIiHesBZsTbpOzrxOfu";
-    let txn_comm_str = hash_txns(0, &[]);
-    let txn_comm_bytes = txn_comm_str.as_bytes();
-    let ns_table_bytes = &[0, 0, 0, 0];
-    verify_namespace_helper(0, proof_bytes, commit_bytes, ns_table_bytes, txn_comm_bytes);
+mod test {
+    use super::*;
+    use jf_primitives::pcs::{
+        checked_fft_size, prelude::UnivariateKzgPCS, PolynomialCommitmentScheme,
+    };
+    #[test]
+    fn test_verify_namespace_helper() {
+        let proof_bytes = b"{\"NonExistence\":{\"ns_id\":0}}";
+        let commit_bytes = b"HASH~1yS-KEtL3oDZDBJdsW51Pd7zywIiHesBZsTbpOzrxOfu";
+        let txn_comm_str = hash_txns(0, &[]);
+        let txn_comm_bytes = txn_comm_str.as_bytes();
+        let ns_table_bytes = &[0, 0, 0, 0];
+        verify_namespace_helper(0, proof_bytes, commit_bytes, ns_table_bytes, txn_comm_bytes);
+    }
+
+    #[test]
+    fn write_srs_to_file() {
+        let mut bytes = Vec::new();
+        let mut rng = jf_utils::test_rng();
+        UnivariateKzgPCS::<Bn254>::gen_srs_for_testing(&mut rng, checked_fft_size(200).unwrap())
+            .unwrap()
+            .serialize_uncompressed(&mut bytes);
+        let _ = std::fs::write("srs.json", serde_json::to_string(&bytes).unwrap());
+    }
 }

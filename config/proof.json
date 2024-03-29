@@ -1,0 +1,19 @@
+{
+    "Existence": {
+        "ns_payload_flat": "AQAAAHUAAAAC+HKDBkq6gICEC+vCAIQBycOAlAdiCSm0wPxIBgxPrzeLHoVoHJ3hhyOG8m/BAACAwICgORppiXGpBaR7rvZ1ZR67IFL0pH76idZN6LWJhPd3+xKgU6C/MvKrXkolCm141ZB1VlgQTqH4h5fV5POQ0Mwko7I=",
+        "ns_id": 412346,
+        "ns_proof": {
+            "prefix_elems": "FIELD~AAAAAAAAAAD7",
+            "suffix_elems": "FIELD~AAAAAAAAAAD7",
+            "prefix_bytes": [],
+            "suffix_bytes": []
+        },
+        "vid_common": {
+            "poly_commits": "FIELD~AwAAAAAAAAC32xjeDFk54jmyJ_mBEs7o9p4fRiKnTzBcHsoEHRT1CJrXeupsJNer9laIsCpTgZYWMHMry4iMz_EVowJA0kGJfBIsJFc6wZ6D4wM-lCTSzHMZizoyrrfUm9-s8jlbXBel",
+            "all_evals_digest": "FIELD~mG_I8RlF2EPG9FZ5csbcgmPxwocmt9mVHxBp4T5zLFt0",
+            "payload_byte_len": 125,
+            "num_storage_nodes": 2,
+            "multiplicity": 1
+        }
+    }
+}
