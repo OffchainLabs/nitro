@@ -53,7 +53,7 @@ func runEspresso(t *testing.T, ctx context.Context) func() {
 	}
 
 	shutdown()
-	invocation := []string{"compose", "up", "-d"}
+	invocation := []string{"compose", "up", "-d", "--build"}
 	nodes := []string{
 		"orchestrator",
 		"da-server",
@@ -71,8 +71,6 @@ func runEspresso(t *testing.T, ctx context.Context) func() {
 	go func() {
 		if err := procees.Run(); err != nil {
 			log.Error(err.Error())
-			output, _ := exec.Command("docker", "ps").Output()
-			log.Error("error running espresso containers: ", "output", string(output))
 			panic(err)
 		}
 	}()
