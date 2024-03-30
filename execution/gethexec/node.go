@@ -275,6 +275,10 @@ func CreateExecutionNode(
 
 }
 
+func (n *ExecutionNode) GetL1GasPriceEstimate() (uint64, error) {
+	return n.ExecEngine.GetL1GasPriceEstimate()
+}
+
 func (n *ExecutionNode) Initialize(ctx context.Context) error {
 	n.ArbInterface.Initialize(n)
 	err := n.Backend.Start()
