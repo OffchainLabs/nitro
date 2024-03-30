@@ -75,14 +75,14 @@ func (e *executionRun) GetLeavesWithStepSize(fromBatch, machineStartIndex, stepS
 		if err != nil {
 			return nil, err
 		}
-		log.Info(fmt.Sprintf("Advanced machine to index %d, beginning hash computation", machineStartIndex))
+		log.Debug(fmt.Sprintf("Advanced machine to index %d, beginning hash computation", machineStartIndex))
 		// If the machine is starting at index 0, we always want to start at the "Machine finished" global state status
 		// to align with the state roots that the inbox machine will produce.
 		var stateRoots []common.Hash
 
 		if machineStartIndex == 0 {
 			gs := machine.GetGlobalState()
-			log.Info(fmt.Sprintf("Start global state for machine index 0: %+v", gs), log.Ctx{
+			log.Debug(fmt.Sprintf("Start global state for machine index 0: %+v", gs), log.Ctx{
 				"fromBatch": fromBatch,
 			})
 			hash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
@@ -116,7 +116,7 @@ func (e *executionRun) GetLeavesWithStepSize(fromBatch, machineStartIndex, stepS
 				progressPercent := (float64(numIterations+1) / float64(numDesiredLeaves)) * 100
 				log.Info(
 					fmt.Sprintf(
-						"Subchallenge machine hash progress: %.2f%% - %d of %d leaves computed",
+						"Computing subchallenge progress: %.2f%% - %d of %d hashes needed",
 						progressPercent,
 						numIterations+1,
 						numDesiredLeaves,
@@ -153,7 +153,7 @@ func (e *executionRun) GetLeavesWithStepSize(fromBatch, machineStartIndex, stepS
 
 		}
 		log.Info(
-			"Machine finished execution, gathered all the necessary hashes",
+			"Successfully finished computing the data needed for opening a subchallenge",
 			log.Ctx{
 				"fromBatch":           fromBatch,
 				"stepSize":            stepSize,
