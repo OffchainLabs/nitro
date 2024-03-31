@@ -236,7 +236,7 @@ func (m *Manager) logChallengeConfigs(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	srvlog.Info("Challenge configs", log.Ctx{
+	srvlog.Info("Opening challenge with the following configuration", log.Ctx{
 		"address":               cm.Address(),
 		"bigStepNumber":         bigStepNum,
 		"challengePeriodBlocks": challengePeriodBlocks,

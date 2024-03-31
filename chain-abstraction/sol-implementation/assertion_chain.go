@@ -10,6 +10,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"os"
 	"sort"
 	"strings"
 	"time"
@@ -35,6 +36,7 @@ var (
 	ErrAlreadyExists    = errors.New("item already exists on-chain")
 	ErrPrevDoesNotExist = errors.New("assertion predecessor does not exist")
 	ErrTooLate          = errors.New("too late to create assertion sibling")
+	srvlog              = log.New("service", "contract-bindings")
 )
 
 var assertionCreatedId common.Hash
@@ -49,6 +51,7 @@ func init() {
 		panic("RollupCore ABI missing AssertionCreated event")
 	}
 	assertionCreatedId = assertionCreatedEvent.ID
+	srvlog.SetHandler(log.StreamHandler(os.Stdout, log.LogfmtFormat()))
 }
 
 // ChainBackend to interact with the underlying blockchain.
@@ -475,7 +478,7 @@ func TryConfirmingAssertion(
 		if !confirmable {
 			blocksLeftForConfirmation := confirmableAfterBlock - latestHeader.Number.Uint64()
 			timeToWait := averageTimeForBlockCreation * time.Duration(blocksLeftForConfirmation)
-			log.Info(
+			srvlog.Info(
 				fmt.Sprintf(
 					"Assertion with has %s needs at least %d blocks before being confirmable, waiting for %s",
 					containers.Trunc(assertionHash.Bytes()),

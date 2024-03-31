@@ -465,12 +465,23 @@ func (w *Watcher) AddVerifiedHonestEdge(ctx context.Context, edge protocol.Verif
 		"startRoot":      startRoot,
 		"endRoot":        endRoot,
 	}
-	log.Info("Adding verified honest edge to honest edge tree", fields)
-	if err := chal.honestEdgeTree.AddRoyalEdge(edge); err != nil {
-		log.Error("Could not add verified royal edge to local tree", log.Ctx{"error": err})
+	srvlog.Info("Observed an honest challenge edge created onchain, now tracking it locally", fields)
+	if err = chal.honestEdgeTree.AddRoyalEdge(edge); err != nil {
+		log.Error("Could not add verified honest edge to local cache", log.Ctx{"error": err})
 		return errors.Wrap(err, "could not add honest edge to challenge tree")
 	}
-	return w.saveEdgeToDB(ctx, edge, true /* is royal */)
+	go func() {
+		if _, err = retry.UntilSucceeds(ctx, func() (bool, error) {
+			if innerErr := w.saveEdgeToDB(ctx, edge, true /* is royal */); innerErr != nil {
+				srvlog.Error("Could not save edge to db", log.Ctx{"err": innerErr})
+				return false, innerErr
+			}
+			return false, nil
+		}); err != nil {
+			srvlog.Error("Could not save edge to db", log.Ctx{"err": err})
+		}
+	}()
+	return nil
 }
 
 // Filters for all edge added events within a range and processes them.
@@ -561,17 +572,32 @@ func (w *Watcher) AddEdge(ctx context.Context, edge protocol.SpecEdge) (bool, er
 		}
 	}
 	fields := log.Ctx{
-		"edgeId":         edge.Id().Hash,
-		"challengeLevel": edge.GetChallengeLevel(),
-		"assertionHash":  challengeParentAssertionHash.Hash,
-		"startHeight":    start,
-		"endHeight":      end,
-		"startRoot":      startRoot,
-		"endRoot":        endRoot,
-		"isRoyal":        isRoyalEdge,
+		"edgeId":                  edge.Id().Hash,
+		"challengeLevel":          edge.GetChallengeLevel(),
+		"challengedAssertionHash": challengeParentAssertionHash.Hash,
+		"startHeight":             start,
+		"endHeight":               end,
+		"startRoot":               startRoot,
+		"endRoot":                 endRoot,
+		"isHonestEdge":            isRoyalEdge,
 	}
-	log.Info("Observed edge from onchain event", fields)
-	return true, w.saveEdgeToDB(ctx, edge, isRoyalEdge)
+	if isRoyalEdge {
+		srvlog.Info("Observed an honest challenge edge created onchain, now tracking it locally", fields)
+	} else {
+		srvlog.Info("Observed an evil edge created onchain from an adversary, will make necessary moves on it", fields)
+	}
+	go func() {
+		if _, err = retry.UntilSucceeds(ctx, func() (bool, error) {
+			if innerErr := w.saveEdgeToDB(ctx, edge, isRoyalEdge); innerErr != nil {
+				srvlog.Error("Could not save edge to db", log.Ctx{"err": innerErr})
+				return false, innerErr
+			}
+			return false, nil
+		}); err != nil {
+			srvlog.Error("Could not save edge to db", log.Ctx{"err": err})
+		}
+	}()
+	return true, nil
 }
 
 // Processes an edge added event by adding it to the honest challenge tree if it is honest.

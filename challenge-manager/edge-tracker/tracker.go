@@ -197,7 +197,7 @@ func (et *Tracker) Spawn(ctx context.Context) {
 		return
 	}
 	fields := et.uniqueTrackerLogFields()
-	srvlog.Info("Tracking edge", fields)
+	srvlog.Info("Now tracking challenge edge locally and making moves", fields)
 	spawnedCounter.Inc(1)
 	et.challengeManager.MarkTrackedEdge(et.edge.Id(), et)
 	t := et.timeRef.NewTicker(et.actInterval)
@@ -206,7 +206,7 @@ func (et *Tracker) Spawn(ctx context.Context) {
 		select {
 		case <-t.C():
 			if et.ShouldDespawn(ctx) {
-				srvlog.Info("Tracked edge received notice it should exit - now despawning", fields)
+				srvlog.Debug("Tracked edge received notice it should exit - now despawning", fields)
 				spawnedCounter.Dec(1)
 				et.challengeManager.RemovedTrackedEdge(et.edge.Id())
 				return
@@ -445,16 +445,23 @@ func (et *Tracker) tryToConfirmEdge(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, errors.Wrap(err, "could not check the challenge period length")
 	}
-	fields["computedTimer"] = computedTimer
-	fields["onchainTimer"] = onchainTimer
-	fields["timeElapsed"] = end
-	srvlog.Info("Updated block challenge root edge inherited timer", fields)
+	localFields := log.Ctx{
+		"localTimer":       computedTimer,
+		"onchainTimer":     onchainTimer,
+		"confirmableAfter": chalPeriod,
+		"edgeId":           fmt.Sprintf("%#x", et.edge.Id().Bytes()[:4]),
+		"took":             end,
+		"fromBatch":        et.associatedAssertionMetadata.FromBatch,
+		"toBatch":          et.associatedAssertionMetadata.ToBatch,
+		"claimedAssertion": fmt.Sprintf("%#x", et.associatedAssertionMetadata.ClaimedAssertionHash[:4]),
+	}
+	srvlog.Info("Updated edge timer", localFields)
 	// Short circuit early if the edge is confirmable.
 	// We have a few things to check here:
 	// First, if the edge's onchain timer is greater than a challenge period, then we can
 	// immediately confirm by time by sending a transaction.
 	if onchainTimer >= protocol.InheritedTimer(chalPeriod) {
-		log.Info("Onchain timer is greater than challenge period", fields)
+		srvlog.Info("Onchain timer is greater than challenge period, now confirming edge by time", localFields)
 		if err := et.edge.ConfirmByTimer(ctx); err != nil {
 			return false, errors.Wrapf(
 				err,
@@ -463,7 +470,7 @@ func (et *Tracker) tryToConfirmEdge(ctx context.Context) (bool, error) {
 				chalPeriod,
 			)
 		}
-		srvlog.Info("Confirmed by time", et.uniqueTrackerLogFields())
+		srvlog.Info("Confirmed edge by time", fields)
 		confirmedCounter.Inc(1)
 		return true, nil
 	}
@@ -472,7 +479,7 @@ func (et *Tracker) tryToConfirmEdge(ctx context.Context) (bool, error) {
 	// challenge tree onchain until the edge has an onchain timer >= a challenge period.
 	// We let our confirmer dependency take care of this confirmatin job.
 	if uint64(computedTimer) >= chalPeriod {
-		log.Info("Local computed timer big enough to confirm", fields)
+		srvlog.Info("Local computed timer big enough to confirm edge", localFields)
 		if err := et.challengeConfirmer.beginConfirmationJob(
 			ctx,
 			assertionHash,
@@ -599,7 +606,7 @@ func (et *Tracker) bisect(ctx context.Context) (protocol.SpecEdge, protocol.Spec
 			containers.Trunc(endCommit.Bytes()),
 		)
 	}
-	srvlog.Info("Bisected royal edge", et.uniqueTrackerLogFields())
+	srvlog.Info("Making bisection move on local, honest edge", et.uniqueTrackerLogFields())
 	if addVerifiedErr := et.chainWatcher.AddVerifiedHonestEdge(ctx, firstChild); addVerifiedErr != nil {
 		// We simply log an error, as if this errored, it will be added later on by the chain watcher
 		// scraping events from the chain, but this is a helpful optimization.
@@ -792,7 +799,8 @@ func (et *Tracker) openSubchallengeLeaf(ctx context.Context) error {
 	fields["parentLastLeaf"] = containers.Trunc(endParentCommitment.LastLeaf.Bytes())
 	fields["parentStartHeight"] = startParentCommitment.Height
 	fields["parentEndHeight"] = endParentCommitment.Height
-	srvlog.Info("Creating subchallenge edge", fields)
+	srvlog.Info("Identified single point of disagreement within a challenge level, now opening subchallenge", fields)
+	srvlog.Info("Making subchallenge creation move on edge", fields)
 
 	manager, err := et.chain.SpecChallengeManager(ctx)
 	if err != nil {
@@ -814,7 +822,7 @@ func (et *Tracker) openSubchallengeLeaf(ctx context.Context) error {
 	fields["startCommitment"] = containers.Trunc(startHistory.Merkle.Bytes())
 	addedLeafChallengeLevel := addedLeaf.GetChallengeLevel()
 	fields["subChallengeType"] = addedLeafChallengeLevel
-	srvlog.Info("Created subchallenge edge", fields)
+	srvlog.Info("Successfully created a subchallenge edge", fields)
 
 	if addVerifiedErr := et.chainWatcher.AddVerifiedHonestEdge(ctx, addedLeaf); addVerifiedErr != nil {
 		// We simply log an error, as if this errored, it will be added later on by the chain watcher
@@ -844,6 +852,7 @@ func (et *Tracker) openSubchallengeLeaf(ctx context.Context) error {
 
 func (et *Tracker) submitOneStepProof(ctx context.Context) error {
 	fields := et.uniqueTrackerLogFields()
+	srvlog.Info("Identified single step of disagreement at the execution of a block, ready for one-step fraud proof", fields)
 	srvlog.Info("Submitting one-step-proof to protocol", fields)
 	originHeights, err := et.edge.TopLevelClaimHeight(ctx)
 	if err != nil {

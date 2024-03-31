@@ -195,17 +195,19 @@ func (m *Manager) processAllAssertionsInRange(
 	}
 
 	// Save all observed assertions to the database.
-	for _, fullInfo := range assertions {
-		if _, err := retry.UntilSucceeds(ctx, func() (bool, error) {
-			if err := m.saveAssertionToDB(ctx, fullInfo.assertion); err != nil {
+	go func() {
+		for _, fullInfo := range assertions {
+			if _, err := retry.UntilSucceeds(ctx, func() (bool, error) {
+				if err := m.saveAssertionToDB(ctx, fullInfo.assertion); err != nil {
+					srvlog.Error("Could not save assertion to DB", log.Ctx{"err": err})
+					return false, err
+				}
+				return true, nil
+			}); err != nil {
 				srvlog.Error("Could not save assertion to DB", log.Ctx{"err": err})
-				return false, err
 			}
-			return true, nil
-		}); err != nil {
-			return err
 		}
-	}
+	}()
 
 	m.assertionChainData.Lock()
 	defer m.assertionChainData.Unlock()
@@ -391,7 +393,7 @@ func (m *Manager) maybePostRivalAssertionAndChallenge(
 		return nil, nil
 	}
 
-	srvlog.Info("Disagreed with execution state from observed assertion", logFields)
+	srvlog.Warn("Disagreed with an observed assertion onchain", logFields)
 	evilAssertionCounter.Inc(1)
 
 	// Post what we believe is the correct rival assertion that follows the ancestor we agree with.
@@ -434,7 +436,6 @@ func (m *Manager) maybePostRivalAssertionAndChallenge(
 	if err != nil {
 		return nil, err
 	}
-	srvlog.Info("Waiting before submitting challenge on assertion", log.Ctx{"delay": randSecs})
 	time.Sleep(time.Duration(randSecs) * time.Second)
 	correctClaimedAssertionHash := protocol.AssertionHash{
 		Hash: correctRivalAssertion.Unwrap().AssertionHash,
@@ -486,9 +487,25 @@ func (m *Manager) maybePostRivalAssertion(
 		return none, postErr
 	}
 	if assertionOpt.IsSome() {
-		if err2 := m.saveAssertionToDB(ctx, assertionOpt.Unwrap()); err2 != nil {
-			return none, err2
-		}
+		creationInfo := assertionOpt.Unwrap()
+		srvlog.Info("Posted rival assertion to another that we disagreed with", log.Ctx{
+			"parentAssertionHash":       canonicalParent.AssertionHash,
+			"correctRivalAssertionHash": creationInfo.AssertionHash,
+			"transactionHash":           creationInfo.TransactionHash,
+			"postedAssertionState":      fmt.Sprintf("%+v", creationInfo.AfterState),
+		})
+		go func() {
+			if _, err2 := retry.UntilSucceeds(ctx, func() (bool, error) {
+				innerErr := m.saveAssertionToDB(ctx, assertionOpt.Unwrap())
+				if innerErr != nil {
+					srvlog.Error("Could not save assertion to DB", log.Ctx{"error": innerErr})
+					return false, innerErr
+				}
+				return false, nil
+			}); err2 != nil {
+				srvlog.Error("Could not save assertion to DB", log.Ctx{"error": err2})
+			}
+		}()
 	}
 	return assertionOpt, nil
 }

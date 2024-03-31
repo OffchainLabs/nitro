@@ -21,12 +21,16 @@ import (
 // and starting a challenge transaction. If the challenge creation is successful, we add a leaf
 // with an associated history commitment to it and spawn a challenge tracker in the background.
 func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionHash) (bool, error) {
+	srvlog.Info("Opening a challenge on an observed assertion", log.Ctx{
+		"assertionHash": id.Hash,
+		"validatorName": m.name,
+	})
 	assertion, err := m.chain.GetAssertion(ctx, id)
 	if err != nil {
 		return false, errors.Wrapf(err, "could not get assertion to challenge with id %#x", id)
 	}
 	if m.claimedAssertionsInChallenge.Has(id) {
-		srvlog.Info(fmt.Sprintf("Already challenged assertion with id %#x, skipping", id.Hash))
+		srvlog.Debug(fmt.Sprintf("Already challenged assertion with id %#x, skipping", id.Hash))
 		return false, nil
 	}
 	assertionStatus, err := m.chain.AssertionStatus(ctx, assertion.Id())
@@ -43,7 +47,7 @@ func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionH
 		return false, fmt.Errorf("could not add block challenge level zero edge %v: %w", m.name, err)
 	}
 	if alreadyExists {
-		srvlog.Info("Root level edge for challenged assertion already exists, skipping move", log.Ctx{"assertionHash": id.Hash})
+		srvlog.Info("Challenge on assertion already exists, now tracking it locally", log.Ctx{"assertionHash": id.Hash})
 		m.claimedAssertionsInChallenge.Insert(id)
 		return false, nil
 	}
@@ -72,7 +76,7 @@ func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionH
 	}
 	m.LaunchThread(tracker.Spawn)
 
-	srvlog.Info("Successfully created level zero edge for block challenge", log.Ctx{
+	srvlog.Info("Successfully opened a challenge on an invalid assertion", log.Ctx{
 		"name":          m.name,
 		"assertionHash": containers.Trunc(id.Bytes()),
 		"fromBatch":     edgeTrackerAssertionInfo.FromBatch,
