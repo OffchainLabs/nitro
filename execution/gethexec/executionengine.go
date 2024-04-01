@@ -609,11 +609,8 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 	}
 
 	startTime := time.Now()
-	var wg sync.WaitGroup
 	if s.prefetchBlock && msgForPrefetch != nil {
-		wg.Add(1)
 		go func() {
-			defer wg.Done()
 			_, _, _, err := s.createBlockFromNextMessage(msgForPrefetch)
 			if err != nil {
 				return
@@ -625,7 +622,6 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 	if err != nil {
 		return err
 	}
-	wg.Wait()
 	err = s.appendBlock(block, statedb, receipts, time.Since(startTime))
 	if err != nil {
 		return err
