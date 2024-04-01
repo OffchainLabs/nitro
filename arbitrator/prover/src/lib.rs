@@ -331,7 +331,7 @@ pub unsafe extern "C" fn arbitrator_set_preimage_resolver(
 ) {
     (*mach).set_preimage_resolver(Arc::new(
         move |context: u64, ty: PreimageType, hash: Bytes32| -> Option<CBytes> {
-            if let PreimageType::EthVersionedHash = ty {
+            if ty == PreimageType::EthVersionedHash {
                 let cache: Arc<OnceCell<CBytes>> = {
                     let mut locked = BLOBHASH_PREIMAGE_CACHE.lock().unwrap();
                     locked.get_or_insert(hash, Default::default).clone()
