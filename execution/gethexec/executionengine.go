@@ -328,6 +328,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		s.bc,
 		s.bc.Config(),
 		hooks,
+		false,
 	)
 	if err != nil {
 		return nil, err
@@ -419,7 +420,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 	}
 
 	startTime := time.Now()
-	block, statedb, receipts, err := s.createBlockFromNextMessage(&messageWithMeta)
+	block, statedb, receipts, err := s.createBlockFromNextMessage(&messageWithMeta, false)
 	if err != nil {
 		return nil, err
 	}
@@ -451,7 +452,7 @@ func (s *ExecutionEngine) MessageIndexToBlockNumber(messageNum arbutil.MessageIn
 }
 
 // must hold createBlockMutex
-func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWithMetadata) (*types.Block, *state.StateDB, types.Receipts, error) {
+func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWithMetadata, isMsgForPrefetch bool) (*types.Block, *state.StateDB, types.Receipts, error) {
 	currentHeader := s.bc.CurrentBlock()
 	if currentHeader == nil {
 		return nil, nil, nil, errors.New("failed to get current block header")
@@ -487,6 +488,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		s.bc,
 		s.bc.Config(),
 		batchFetcher,
+		isMsgForPrefetch,
 	)
 
 	return block, statedb, receipts, err
@@ -611,14 +613,14 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 	startTime := time.Now()
 	if s.prefetchBlock && msgForPrefetch != nil {
 		go func() {
-			_, _, _, err := s.createBlockFromNextMessage(msgForPrefetch)
+			_, _, _, err := s.createBlockFromNextMessage(msgForPrefetch, true)
 			if err != nil {
 				return
 			}
 		}()
 	}
 
-	block, statedb, receipts, err := s.createBlockFromNextMessage(msg)
+	block, statedb, receipts, err := s.createBlockFromNextMessage(msg, false)
 	if err != nil {
 		return err
 	}
