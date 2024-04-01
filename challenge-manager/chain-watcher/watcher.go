@@ -912,7 +912,7 @@ func (w *Watcher) saveEdgeToDB(
 		UpperChildId:        upperChildId,
 		HasChildren:         hasChildren,
 		IsRoyal:             isRoyal,
-		InheritedTimer:      uint64(inheritedTimer),
+		InheritedTimer:      uint64(inherited),
 		CumulativePathTimer: uint64(cumulative),
 		TimeUnrivaled:       timeUnrivaled,
 		HasRival:            hasRival,
