@@ -31,6 +31,7 @@ arbutil = { path = "../arbutil/" }
 c-kzg = "0.4.0" # TODO: look into switching to rust-kzg (no crates.io release or hosted rustdoc yet)
 sha2 = "0.9.9"
 lru = "0.12.3"
+once_cell = "1.19.0"
 
 [lib]
 name = "prover"
