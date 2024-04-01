@@ -11,6 +11,7 @@ package watcher
 import (
 	"context"
 	"fmt"
+	"math"
 	"os"
 	"sync/atomic"
 	"time"
@@ -885,27 +886,36 @@ func (w *Watcher) saveEdgeToDB(
 	if err != nil {
 		return err
 	}
+	inherited := inheritedTimer
+	if inherited == math.MaxUint64 {
+		inherited = (1 << 63) - 1
+	}
+	cumulative := inheritedTimer
+	if cumulative == math.MaxUint64 {
+		cumulative = (1 << 63) - 1
+	}
 	return w.apiDB.InsertEdge(&api.JsonEdge{
-		Id:                edge.Id().Hash,
-		ChallengeLevel:    uint8(edge.GetChallengeLevel()),
-		StartHistoryRoot:  startCommit,
-		StartHeight:       uint64(start),
-		EndHistoryRoot:    endCommit,
-		EndHeight:         uint64(end),
-		CreatedAtBlock:    creation,
-		MutualId:          common.Hash(edge.MutualId()),
-		OriginId:          common.Hash(edge.OriginId()),
-		ClaimId:           claimId,
-		MiniStaker:        miniStaker,
-		AssertionHash:     assertionHash.Hash,
-		Status:            status.String(),
-		LowerChildId:      lowerChildId,
-		UpperChildId:      upperChildId,
-		HasChildren:       hasChildren,
-		IsRoyal:           isRoyal,
-		InheritedTimer:    uint64(inheritedTimer),
-		TimeUnrivaled:     timeUnrivaled,
-		HasRival:          hasRival,
-		HasLengthOneRival: hasLengthOneRival,
+		Id:                  edge.Id().Hash,
+		ChallengeLevel:      uint8(edge.GetChallengeLevel()),
+		StartHistoryRoot:    startCommit,
+		StartHeight:         uint64(start),
+		EndHistoryRoot:      endCommit,
+		EndHeight:           uint64(end),
+		CreatedAtBlock:      creation,
+		MutualId:            common.Hash(edge.MutualId()),
+		OriginId:            common.Hash(edge.OriginId()),
+		ClaimId:             claimId,
+		MiniStaker:          miniStaker,
+		AssertionHash:       assertionHash.Hash,
+		Status:              status.String(),
+		LowerChildId:        lowerChildId,
+		UpperChildId:        upperChildId,
+		HasChildren:         hasChildren,
+		IsRoyal:             isRoyal,
+		InheritedTimer:      uint64(inheritedTimer),
+		CumulativePathTimer: uint64(cumulative),
+		TimeUnrivaled:       timeUnrivaled,
+		HasRival:            hasRival,
+		HasLengthOneRival:   hasLengthOneRival,
 	})
 }
