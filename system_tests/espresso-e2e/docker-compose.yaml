@@ -1,5 +1,21 @@
 version: '3.9'
 services:
+  deploy-contracts:
+    image: ghcr.io/espressosystems/espresso-sequencer/deploy:arbitrum-integrationmusl
+    environment:
+      - ESPRESSO_SEQUENCER_ORCHESTRATOR_URL
+      - ESPRESSO_SEQUENCER_L1_PROVIDER
+      - ESPRESSO_SEQUENCER_ETH_MNEMONIC=$ESPRESSO_COMMITMENT_ETH_MNEMONIC
+      - ESPRESSO_DEPLOYER_ACCOUNT_INDEX
+      - RUST_LOG
+      - RUST_LOG_FORMAT
+      - ASYNC_STD_THREAD_COUNT
+    depends_on:
+      orchestrator:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
   orchestrator:
     image: ghcr.io/espressosystems/espresso-sequencer/orchestrator:arbitrum-integrationmusl
     ports:
@@ -113,14 +129,13 @@ services:
     image: ghcr.io/espressosystems/espresso-sequencer/commitment-task:arbitrum-integrationmusl
     ports:
       - "$ESPRESSO_COMMITMENT_TASK_PORT:$ESPRESSO_COMMITMENT_TASK_PORT"
-    command: commitment-task --deploy
     environment:
       - ESPRESSO_SEQUENCER_ETH_MNEMONIC=$ESPRESSO_COMMITMENT_ETH_MNEMONIC
       - ESPRESSO_SEQUENCER_HOTSHOT_ACCOUNT_INDEX
       - ESPRESSO_COMMITMENT_TASK_PORT
       - ESPRESSO_SEQUENCER_URL
       - ESPRESSO_SEQUENCER_L1_PROVIDER
-      - ESPRESSO_SEQUENCER_L1_USE_LATEST_BLOCK_TAG
+      - ESPRESSO_SEQUENCER_HOTSHOT_ADDRESS
       - RUST_LOG
       - RUST_LOG_FORMAT
     depends_on:
@@ -130,6 +145,9 @@ services:
         condition: service_healthy
       da-server:
         condition: service_healthy
+      deploy-contracts:
+        condition: service_completed_successfully
+
     extra_hosts:
       - "host.docker.internal:host-gateway"
 

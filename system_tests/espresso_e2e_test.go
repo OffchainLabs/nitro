@@ -53,7 +53,7 @@ func runEspresso(t *testing.T, ctx context.Context) func() {
 	}
 
 	shutdown()
-	invocation := []string{"compose", "up", "-d"}
+	invocation := []string{"compose", "up", "-d", "--build"}
 	nodes := []string{
 		"orchestrator",
 		"da-server",
@@ -62,6 +62,7 @@ func runEspresso(t *testing.T, ctx context.Context) func() {
 		"espresso-sequencer1",
 		"commitment-task",
 		"state-relay-server",
+		"deploy-contracts",
 	}
 	invocation = append(invocation, nodes...)
 	procees := exec.Command("docker", invocation...)
@@ -334,14 +335,14 @@ func TestEspressoE2E(t *testing.T) {
 	})
 	Require(t, err)
 
-	l2Node, l2Info, cleanL2Node := createL2Node(ctx, t, hotShotUrl, builder)
-	defer cleanL2Node()
-
 	cleanEspresso := runEspresso(t, ctx)
 	defer cleanEspresso()
 
+	l2Node, l2Info, cleanL2Node := createL2Node(ctx, t, hotShotUrl, builder)
+	defer cleanL2Node()
+
 	// wait for the commitment task
-	err = waitFor(t, ctx, func() bool {
+	err = waitForWith(t, ctx, 60*time.Second, 1*time.Second, func() bool {
 		out, err := exec.Command("curl", "http://127.0.0.1:60000/api/hotshot_contract").Output()
 		if err != nil {
 			log.Warn("retry to check the commitment task", "err", err)
@@ -511,39 +512,40 @@ func TestEspressoE2E(t *testing.T) {
 	// Set the E2E_CHECK_STAKER env variable to any non-empty string to run the check.
 
 	checkStaker := os.Getenv("E2E_CHECK_STAKER")
-	if checkStaker != "" {
-		err = waitForWith(
-			t,
-			ctx,
-			time.Minute*20,
-			time.Second*5,
-			func() bool {
-				log.Info("good staker acts", "step", i)
-				txA, err := goodStaker.Act(ctx)
-				Require(t, err)
-				if txA != nil {
-					_, err = builder.L1.EnsureTxSucceeded(txA)
-					Require(t, err)
-				}
-
-				log.Info("bad staker acts", "step", i)
-				txB, err := badStaker.Act(ctx)
-				if txB != nil {
-					_, err = builder.L1.EnsureTxSucceeded(txB)
-					Require(t, err)
-				}
-				if err != nil {
-					ok := strings.Contains(err.Error(), "ERROR_HOTSHOT_COMMITMENT")
-					if ok {
-						return true
-					} else {
-						t.Fatal("unexpected err")
-					}
-				}
-				i += 1
-				return false
-
-			})
-		Require(t, err)
+	if checkStaker == "" {
+		return
 	}
+	err = waitForWith(
+		t,
+		ctx,
+		time.Minute*20,
+		time.Second*5,
+		func() bool {
+			log.Info("good staker acts", "step", i)
+			txA, err := goodStaker.Act(ctx)
+			Require(t, err)
+			if txA != nil {
+				_, err = builder.L1.EnsureTxSucceeded(txA)
+				Require(t, err)
+			}
+
+			log.Info("bad staker acts", "step", i)
+			txB, err := badStaker.Act(ctx)
+			if txB != nil {
+				_, err = builder.L1.EnsureTxSucceeded(txB)
+				Require(t, err)
+			}
+			if err != nil {
+				ok := strings.Contains(err.Error(), "ERROR_HOTSHOT_COMMITMENT")
+				if ok {
+					return true
+				} else {
+					t.Fatal("unexpected err")
+				}
+			}
+			i += 1
+			return false
+
+		})
+	Require(t, err)
 }
