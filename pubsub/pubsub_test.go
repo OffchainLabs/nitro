@@ -16,22 +16,36 @@ import (
 )
 
 var (
-	streamName     = "validator_stream"
+	streamName     = DefaultTestProducerConfig.RedisStream
 	consumersCount = 10
 	messagesCount  = 100
 )
 
-type testResult struct {
-	val string
+type testRequest struct {
+	request string
 }
 
-func (r *testResult) Marshal() any {
-	return r.val
+func (r *testRequest) Marshal() []byte {
+	return []byte(r.request)
 }
 
-func (r *testResult) Unmarshal(val any) (*testResult, error) {
-	return &testResult{
-		val: val.(string),
+func (r *testRequest) Unmarshal(val []byte) (*testRequest, error) {
+	return &testRequest{
+		request: string(val),
+	}, nil
+}
+
+type testResponse struct {
+	response string
+}
+
+func (r *testResponse) Marshal() []byte {
+	return []byte(r.response)
+}
+
+func (r *testResponse) Unmarshal(val []byte) (*testResponse, error) {
+	return &testResponse{
+		response: string(val),
 	}, nil
 }
 
@@ -43,32 +57,20 @@ func createGroup(ctx context.Context, t *testing.T, client redis.UniversalClient
 	}
 }
 
-func newProducerConsumers(ctx context.Context, t *testing.T) (*Producer[*testResult], []*Consumer[*testResult]) {
+func newProducerConsumers(ctx context.Context, t *testing.T) (*Producer[*testRequest, *testResponse], []*Consumer[*testRequest]) {
 	t.Helper()
 	redisURL := redisutil.CreateTestRedis(ctx, t)
-	producer, err := NewProducer[*testResult](
-		&ProducerConfig{
-			RedisURL:             redisURL,
-			RedisStream:          streamName,
-			RedisGroup:           defaultGroup,
-			CheckPendingInterval: 10 * time.Millisecond,
-			KeepAliveTimeout:     20 * time.Millisecond,
-			CheckResultInterval:  5 * time.Millisecond,
-		})
+	defaultProdCfg := DefaultTestProducerConfig
+	defaultProdCfg.RedisURL = redisURL
+	producer, err := NewProducer[*testRequest, *testResponse](defaultProdCfg)
 	if err != nil {
 		t.Fatalf("Error creating new producer: %v", err)
 	}
-	var consumers []*Consumer[*testResult]
+	defaultCfg := DefaultTestConsumerConfig
+	defaultCfg.RedisURL = redisURL
+	var consumers []*Consumer[*testRequest]
 	for i := 0; i < consumersCount; i++ {
-		c, err := NewConsumer[*testResult](ctx,
-			&ConsumerConfig{
-				RedisURL:          redisURL,
-				RedisStream:       streamName,
-				RedisGroup:        defaultGroup,
-				KeepAliveInterval: 5 * time.Millisecond,
-				KeepAliveTimeout:  30 * time.Millisecond,
-			},
-		)
+		c, err := NewConsumer[*testRequest](ctx, defaultCfg)
 		if err != nil {
 			t.Fatalf("Error creating new consumer: %v", err)
 		}
@@ -119,10 +121,7 @@ func TestProduce(t *testing.T) {
 					if res == nil {
 						continue
 					}
-					gotMessages[idx][res.ID] = res.Value.val
-					if err := c.ACK(ctx, res.ID); err != nil {
-						t.Errorf("Error ACKing message: %v, error: %v", res.ID, err)
-					}
+					gotMessages[idx][res.ID] = res.Value.request
 					if err := c.SetResult(ctx, res.ID, fmt.Sprintf("result for: %v", res.ID)); err != nil {
 						t.Errorf("Error setting a result: %v", err)
 					}
@@ -134,7 +133,7 @@ func TestProduce(t *testing.T) {
 	var gotResponses []string
 
 	for i := 0; i < messagesCount; i++ {
-		value := &testResult{val: fmt.Sprintf("msg: %d", i)}
+		value := &testRequest{request: fmt.Sprintf("msg: %d", i)}
 		p, err := producer.Produce(ctx, value)
 		if err != nil {
 			t.Errorf("Produce() unexpected error: %v", err)
@@ -143,7 +142,7 @@ func TestProduce(t *testing.T) {
 		if err != nil {
 			t.Errorf("Await() unexpected error: %v", err)
 		}
-		gotResponses = append(gotResponses, res.val)
+		gotResponses = append(gotResponses, res.response)
 	}
 
 	producer.StopWaiter.StopAndWait()
@@ -219,10 +218,7 @@ func TestClaimingOwnership(t *testing.T) {
 					if res == nil {
 						continue
 					}
-					gotMessages[idx][res.ID] = res.Value.val
-					if err := c.ACK(ctx, res.ID); err != nil {
-						t.Errorf("Error ACKing message: %v, error: %v", res.ID, err)
-					}
+					gotMessages[idx][res.ID] = res.Value.request
 					if err := c.SetResult(ctx, res.ID, fmt.Sprintf("result for: %v", res.ID)); err != nil {
 						t.Errorf("Error setting a result: %v", err)
 					}
@@ -232,9 +228,9 @@ func TestClaimingOwnership(t *testing.T) {
 			})
 	}
 
-	var promises []*containers.Promise[*testResult]
+	var promises []*containers.Promise[*testResponse]
 	for i := 0; i < messagesCount; i++ {
-		value := &testResult{val: fmt.Sprintf("msg: %d", i)}
+		value := &testRequest{request: fmt.Sprintf("msg: %d", i)}
 		promise, err := producer.Produce(ctx, value)
 		if err != nil {
 			t.Errorf("Produce() unexpected error: %v", err)
@@ -248,7 +244,7 @@ func TestClaimingOwnership(t *testing.T) {
 			t.Errorf("Await() unexpected error: %v", err)
 			continue
 		}
-		gotResponses = append(gotResponses, res.val)
+		gotResponses = append(gotResponses, res.response)
 	}
 
 	for {
