@@ -27,10 +27,11 @@ import (
 )
 
 var (
-	baseFeeGauge          = metrics.NewRegisteredGauge("arb/block/basefee", nil)
-	blockGasUsedHistogram = metrics.NewRegisteredHistogram("arb/block/gasused", nil, metrics.NewBoundedHistogramSample())
-	txCountHistogram      = metrics.NewRegisteredHistogram("arb/block/transactions/count", nil, metrics.NewBoundedHistogramSample())
-	txGasUsedHistogram    = metrics.NewRegisteredHistogram("arb/block/transactions/gasused", nil, metrics.NewBoundedHistogramSample())
+	baseFeeGauge               = metrics.NewRegisteredGauge("arb/block/basefee", nil)
+	blockGasUsedHistogram      = metrics.NewRegisteredHistogram("arb/block/gasused", nil, metrics.NewBoundedHistogramSample())
+	txCountHistogram           = metrics.NewRegisteredHistogram("arb/block/transactions/count", nil, metrics.NewBoundedHistogramSample())
+	txGasUsedHistogram         = metrics.NewRegisteredHistogram("arb/block/transactions/gasused", nil, metrics.NewBoundedHistogramSample())
+	gasUsedSinceStartupCounter = metrics.NewRegisteredCounter("arb/gas_used", nil)
 )
 
 type ExecutionEngine struct {
@@ -378,6 +379,8 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, err
 	}
 
+	s.cacheL1PriceDataOfMsg(pos, receipts, block)
+
 	return block, nil
 }
 
@@ -511,6 +514,7 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 		blockGasused += val
 	}
 	blockGasUsedHistogram.Update(int64(blockGasused))
+	gasUsedSinceStartupCounter.Inc(int64(blockGasused))
 	return nil
 }
 
@@ -527,6 +531,55 @@ func (s *ExecutionEngine) resultFromHeader(header *types.Header) (*execution.Mes
 
 func (s *ExecutionEngine) ResultAtPos(pos arbutil.MessageIndex) (*execution.MessageResult, error) {
 	return s.resultFromHeader(s.bc.GetHeaderByNumber(s.MessageIndexToBlockNumber(pos)))
+}
+
+func (s *ExecutionEngine) GetL1GasPriceEstimate() (uint64, error) {
+	bc := s.bc
+	latestHeader := bc.CurrentBlock()
+	latestState, err := bc.StateAt(latestHeader.Root)
+	if err != nil {
+		return 0, errors.New("error getting latest statedb while fetching l2 Estimate of L1 GasPrice")
+	}
+	arbState, err := arbosState.OpenSystemArbosState(latestState, nil, true)
+	if err != nil {
+		return 0, errors.New("error opening system arbos state while fetching l2 Estimate of L1 GasPrice")
+	}
+	l2EstimateL1GasPrice, err := arbState.L1PricingState().PricePerUnit()
+	if err != nil {
+		return 0, errors.New("error fetching l2 Estimate of L1 GasPrice")
+	}
+	return l2EstimateL1GasPrice.Uint64(), nil
+}
+
+func (s *ExecutionEngine) getL1PricingSurplus() (int64, error) {
+	bc := s.bc
+	latestHeader := bc.CurrentBlock()
+	latestState, err := bc.StateAt(latestHeader.Root)
+	if err != nil {
+		return 0, errors.New("error getting latest statedb while fetching current L1 pricing surplus")
+	}
+	arbState, err := arbosState.OpenSystemArbosState(latestState, nil, true)
+	if err != nil {
+		return 0, errors.New("error opening system arbos state while fetching current L1 pricing surplus")
+	}
+	surplus, err := arbState.L1PricingState().GetL1PricingSurplus()
+	if err != nil {
+		return 0, errors.New("error fetching current L1 pricing surplus")
+	}
+	return surplus.Int64(), nil
+}
+
+func (s *ExecutionEngine) cacheL1PriceDataOfMsg(num arbutil.MessageIndex, receipts types.Receipts, block *types.Block) {
+	var gasUsedForL1 uint64
+	for i := 1; i < len(receipts); i++ {
+		gasUsedForL1 += receipts[i].GasUsedForL1
+	}
+	gasChargedForL1 := gasUsedForL1 * block.BaseFee().Uint64()
+	var callDataUnits uint64
+	for _, tx := range block.Transactions() {
+		callDataUnits += tx.CalldataUnits
+	}
+	s.consensus.CacheL1PriceDataOfMsg(num, callDataUnits, gasChargedForL1)
 }
 
 // DigestMessage is used to create a block by executing msg against the latest state and storing it.

@@ -55,7 +55,7 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 	if s.consensus.Synced() {
 		built, err := s.exec.HeadMessageNumber()
 		consensusSyncTarget := s.consensus.SyncTargetMessageCount()
-		if err != nil && built+1 >= consensusSyncTarget {
+		if err == nil && built+1 >= consensusSyncTarget {
 			return make(map[string]interface{})
 		}
 	}
