@@ -27,10 +27,11 @@ import (
 )
 
 var (
-	baseFeeGauge          = metrics.NewRegisteredGauge("arb/block/basefee", nil)
-	blockGasUsedHistogram = metrics.NewRegisteredHistogram("arb/block/gasused", nil, metrics.NewBoundedHistogramSample())
-	txCountHistogram      = metrics.NewRegisteredHistogram("arb/block/transactions/count", nil, metrics.NewBoundedHistogramSample())
-	txGasUsedHistogram    = metrics.NewRegisteredHistogram("arb/block/transactions/gasused", nil, metrics.NewBoundedHistogramSample())
+	baseFeeGauge               = metrics.NewRegisteredGauge("arb/block/basefee", nil)
+	blockGasUsedHistogram      = metrics.NewRegisteredHistogram("arb/block/gasused", nil, metrics.NewBoundedHistogramSample())
+	txCountHistogram           = metrics.NewRegisteredHistogram("arb/block/transactions/count", nil, metrics.NewBoundedHistogramSample())
+	txGasUsedHistogram         = metrics.NewRegisteredHistogram("arb/block/transactions/gasused", nil, metrics.NewBoundedHistogramSample())
+	gasUsedSinceStartupCounter = metrics.NewRegisteredCounter("arb/gas_used", nil)
 )
 
 type ExecutionEngine struct {
@@ -513,6 +514,7 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 		blockGasused += val
 	}
 	blockGasUsedHistogram.Update(int64(blockGasused))
+	gasUsedSinceStartupCounter.Inc(int64(blockGasused))
 	return nil
 }
 
