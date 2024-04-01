@@ -13,6 +13,8 @@ services:
     depends_on:
       orchestrator:
         condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
 
   orchestrator:
     image: ghcr.io/espressosystems/espresso-sequencer/orchestrator:arbitrum-integrationmusl
