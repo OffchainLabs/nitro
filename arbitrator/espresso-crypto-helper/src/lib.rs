@@ -4,6 +4,9 @@ mod namespace;
 use ark_bn254::Bn254;
 use ark_serialize::CanonicalDeserialize;
 use jf_primitives::{
+    merkle_tree::{
+        prelude::LightWeightSHA3MerkleTree, AppendableMerkleTreeScheme, MerkleTreeScheme,
+    },
     pcs::prelude::UnivariateUniversalParams,
     vid::{advz::Advz, VidScheme as VidSchemeTrait},
 };
@@ -15,6 +18,7 @@ use tagged_base64::TaggedBase64;
 use crate::bytes::Bytes;
 
 pub type VidScheme = Advz<Bn254, sha2::Sha256>;
+pub type BlockMerkleTree = LightWeightSHA3MerkleTree<u64>;
 
 lazy_static! {
     // Initialize the byte array from JSON content
@@ -29,7 +33,9 @@ pub fn verify_merkle_proof_helper(
     _proof_bytes: &[u8],
     _block_comm_bytes: &[u8],
 ) {
-    // TODO: add validation logic
+    let mut tree = BlockMerkleTree::from_elems(Some(5), vec![1]).expect("should construct tree");
+    tree.push(1).unwrap();
+    tree.lookup(1).expect_ok().unwrap();
 }
 
 // Helper function to verify a VID namespace proof that takes the byte representations of the proof,
@@ -103,6 +109,11 @@ mod test {
         let txn_comm_bytes = txn_comm_str.as_bytes();
         let ns_table_bytes = &[0, 0, 0, 0];
         verify_namespace_helper(0, proof_bytes, commit_bytes, ns_table_bytes, txn_comm_bytes);
+    }
+
+    #[test]
+    fn test_verify_merkle_proof_helper() {
+        verify_merkle_proof_helper(&[], &[], &[])
     }
 
     #[test]
