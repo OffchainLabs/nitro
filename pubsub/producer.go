@@ -212,6 +212,10 @@ func (p *Producer[Request, Response]) checkPending(ctx context.Context) ([]*Mess
 	var ids []string
 	active := make(map[string]bool)
 	for _, msg := range pendingMessages {
+		// Ignore messages not produced by this producer.
+		if _, found := p.promises[msg.ID]; !found {
+			continue
+		}
 		alive, found := active[msg.Consumer]
 		if !found {
 			alive = p.isConsumerAlive(ctx, msg.Consumer)
