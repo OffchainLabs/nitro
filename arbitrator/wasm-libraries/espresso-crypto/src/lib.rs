@@ -29,7 +29,8 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_espressocrypto_verify
     )
 }
 
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_espressocrypto_verifyMerkleTree(
+#[no_mangle]
+pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_espressocrypto_verifyMerkleProof(
     sp: GoStack,
 ) {
     let root_buf_ptr = sp.read_u64(0);
@@ -40,7 +41,7 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_espressocrypto_verify
     let block_comm_buf_len = sp.read_u64(7);
 
     let root_bytes = read_slice(root_buf_ptr, root_buf_len);
-    let proof_bytes = read_slice(proof_buf_ptrk, proof_buf_len);
+    let proof_bytes = read_slice(proof_buf_ptr, proof_buf_len);
     let block_comm_bytes = read_slice(block_comm_buf_ptr, block_comm_buf_len);
 
     verify_merkle_proof_helper(&root_bytes, &proof_bytes, &block_comm_bytes)
