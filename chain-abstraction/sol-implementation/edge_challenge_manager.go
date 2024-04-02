@@ -24,8 +24,16 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/pkg/errors"
 )
+
+var (
+	errorConfirmingEdgeByOneStepProofCounter = metrics.GetOrRegisterCounter("arb/validator/tracker/error_confirming_edge_by_one_step_proof", nil)
+	invalidInclusionProofCounter             = metrics.GetOrRegisterCounter("arb/validator/tracker/invalid_inclusion_proof", nil)
+)
+
+const InvalidInclusionProofError = "invalid inclusion proof"
 
 func (e *specEdge) Id() protocol.EdgeId {
 	return protocol.EdgeId{Hash: e.id}
@@ -763,6 +771,7 @@ func (cm *specChallengeManager) ConfirmEdgeByOneStepProof(
 				post,
 			)
 		}); err != nil {
+		errorConfirmingEdgeByOneStepProofCounter.Inc(1)
 		return errors.Wrapf(
 			err,
 			"could not confirm one step proof at machine step %d: before hash %#x, computed after hash %#x, actual expected after hash %#x",
@@ -937,6 +946,9 @@ func (cm *specChallengeManager) AddBlockChallengeLevelZeroEdge(
 		)
 	})
 	if err != nil {
+		if strings.Contains(err.Error(), InvalidInclusionProofError) {
+			invalidInclusionProofCounter.Inc(1)
+		}
 		return nil, fmt.Errorf("could not create root block challenge edge: %w", err)
 	}
 	if len(receipt.Logs) == 0 {
@@ -1046,6 +1058,9 @@ func (cm *specChallengeManager) AddSubChallengeLevelZeroEdge(
 		)
 	})
 	if err != nil {
+		if strings.Contains(err.Error(), InvalidInclusionProofError) {
+			invalidInclusionProofCounter.Inc(1)
+		}
 		return nil, err
 	}
 

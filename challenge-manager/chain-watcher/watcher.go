@@ -85,6 +85,7 @@ type Watcher struct {
 	apiDB                       db.Database
 	assertionConfirmingInterval time.Duration
 	averageTimeForBlockCreation time.Duration
+	evilEdgesByLevel            *threadsafe.Map[protocol.ChallengeLevel, *threadsafe.Set[protocol.EdgeId]]
 }
 
 // New initializes a watcher service for frequently scanning the chain
@@ -116,6 +117,7 @@ func New(
 		apiDB:                       apiDB,
 		assertionConfirmingInterval: assertionConfirmingInterval,
 		averageTimeForBlockCreation: averageTimeForBlockCreation,
+		evilEdgesByLevel:            threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Set[protocol.EdgeId]](threadsafe.MapWithMetric[protocol.ChallengeLevel, *threadsafe.Set[protocol.EdgeId]]("evilEdgesByLevel")),
 	}, nil
 }
 
@@ -585,6 +587,20 @@ func (w *Watcher) AddEdge(ctx context.Context, edge protocol.SpecEdge) (bool, er
 	if isRoyalEdge {
 		srvlog.Info("Observed an honest challenge edge created onchain, now tracking it locally", fields)
 	} else {
+		if edge.ClaimId().IsSome() {
+			evilEdges, ok := w.evilEdgesByLevel.TryGet(edge.GetChallengeLevel())
+			if !ok {
+				evilEdges = threadsafe.NewSet[protocol.EdgeId](threadsafe.SetWithMetric[protocol.EdgeId]("evilEdges"))
+				w.evilEdgesByLevel.Put(edge.GetChallengeLevel(), evilEdges)
+			}
+			if evilEdges.NumItems() < 5 {
+				evilEdges.Insert(edge.Id())
+			}
+			if evilEdges.NumItems() >= 5 {
+				srvlog.Warn("High number of evil edges observed", log.Ctx{"numEvilEdges": evilEdges.NumItems(), "challengeLevel": edge.GetChallengeLevel()})
+				metrics.GetOrRegisterCounter("arb/validator/watcher/high_num_evil_edges_at_level_"+fmt.Sprint(edge.GetChallengeLevel()), nil).Inc(1)
+			}
+		}
 		srvlog.Info("Observed an evil edge created onchain from an adversary, will make necessary moves on it", fields)
 	}
 	go func() {

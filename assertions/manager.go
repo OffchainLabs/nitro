@@ -22,6 +22,7 @@ import (
 	"github.com/OffchainLabs/bold/challenge-manager/types"
 	"github.com/OffchainLabs/bold/containers/threadsafe"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+	"github.com/OffchainLabs/bold/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
@@ -35,6 +36,8 @@ var (
 	assertionConfirmedCounter             = metrics.GetOrRegisterCounter("arb/validator/scanner/assertion_confirmed", nil)
 	errorConfirmingAssertionByTimeCounter = metrics.NewRegisteredCounter("arb/validator/scanner/error_confirming_assertion_by_time", nil)
 	latestConfirmedAssertionGauge         = metrics.NewRegisteredGauge("arb/validator/scanner/latest_confirmed_assertion_block_number", nil)
+	evilAssertionConfirmedCounter         = metrics.GetOrRegisterCounter("arb/validator/scanner/evil_assertion_confirmed", nil)
+	safeBlockDelayCounter                 = metrics.GetOrRegisterCounter("arb/validator/scanner/safe_block_delay", nil)
 )
 
 func init() {
@@ -159,6 +162,41 @@ func (m *Manager) Start(ctx context.Context) {
 	m.LaunchThread(m.updateLatestConfirmedMetrics)
 	m.LaunchThread(m.syncAssertions)
 	m.LaunchThread(m.queueCanonicalAssertionsForConfirmation)
+	m.LaunchThread(m.checkLatestSafeBlock)
+}
+
+func (m *Manager) checkLatestSafeBlock(ctx context.Context) {
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Minute):
+			latestSafeBlock, err := m.backend.HeaderByNumber(ctx, util.GetSafeBlockNumber())
+			if err != nil {
+				srvlog.Error("Error getting latest safe block", "err", err)
+				continue
+			}
+			if !latestSafeBlock.Number.IsUint64() {
+				srvlog.Error("Latest safe block number not a uint64")
+				continue
+			}
+
+			latestBlock, err := m.backend.HeaderByNumber(ctx, nil)
+			if err != nil {
+				srvlog.Error("Error getting latest block", "err", err)
+				continue
+			}
+			if !latestBlock.Number.IsUint64() {
+				srvlog.Error("Latest block number not a uint64")
+				continue
+			}
+			safeBlockDelayInSeconds := (latestBlock.Number.Uint64() - latestSafeBlock.Number.Uint64()) * uint64(m.averageTimeForBlockCreation.Seconds())
+			if safeBlockDelayInSeconds > 1200 {
+				srvlog.Warn("Latest safe block is delayed by more that 20 minutes", "latestSafeBlock", latestSafeBlock.Number.Uint64(), "latestBlock", latestBlock.Number.Uint64())
+				safeBlockDelayCounter.Inc(1)
+			}
+		}
+	}
 }
 
 func (m *Manager) LayerZeroHeights(ctx context.Context) (*protocol.LayerZeroHeights, error) {
