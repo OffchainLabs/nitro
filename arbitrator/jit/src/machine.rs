@@ -20,7 +20,7 @@ use std::{
 use thiserror::Error;
 use wasmer::{
     imports, CompilerConfig, Function, FunctionEnv, FunctionEnvMut, Instance, Memory, Module,
-    RuntimeError, Store,
+    Pages, RuntimeError, Store,
 };
 use wasmer_compiler_cranelift::Cranelift;
 
@@ -281,7 +281,7 @@ impl WasmEnv {
         Ok(env)
     }
 
-    pub fn send_results(&mut self, error: Option<String>, memory_used: u64) {
+    pub fn send_results(&mut self, error: Option<String>, memory_used: Pages) {
         let writer = match &mut self.process.socket {
             Some((writer, _)) => writer,
             None => return,
@@ -308,7 +308,7 @@ impl WasmEnv {
         check!(socket::write_u64(writer, self.small_globals[1]));
         check!(socket::write_bytes32(writer, &self.large_globals[0]));
         check!(socket::write_bytes32(writer, &self.large_globals[1]));
-        check!(socket::write_u64(writer, memory_used));
+        check!(socket::write_u64(writer, memory_used.bytes().0 as u64));
         check!(writer.flush());
     }
 }

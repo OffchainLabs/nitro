@@ -60,7 +60,7 @@ func Open(sto *storage.Storage) *Programs {
 		backingStorage: sto,
 		programs:       sto.OpenSubStorage(programDataKey),
 		moduleHashes:   sto.OpenSubStorage(moduleHashesKey),
-		dataPricer:     openDataPricer(sto.OpenSubStorage(dataPricerKey)),
+		dataPricer:     openDataPricer(sto.OpenCachedSubStorage(dataPricerKey)),
 	}
 }
 
