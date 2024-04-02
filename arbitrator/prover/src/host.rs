@@ -480,7 +480,15 @@ pub fn new_internal_funcs(stylus_data: Option<StylusData>) -> Vec<Function> {
         add_func(&[inst(GlobalGet, depth)], UserStackLeft);
         add_func(&[inst(GlobalSet, depth)], UserSetStack);
         add_func(&[inst(MemorySize, 0)], UserMemorySize);
-        add_func(&[inst(Call, main)], CallMain);
+        add_func(
+            &[
+                inst(Call, main),
+                // force return value to boolean
+                Instruction::simple(I32Eqz),
+                Instruction::simple(I32Eqz),
+            ],
+            CallMain,
+        );
     }
     funcs
 }
