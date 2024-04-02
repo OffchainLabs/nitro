@@ -24,6 +24,13 @@ lazy_static! {
     };
 }
 
+pub fn verify_merkle_proof_helper(
+    _root_bytes: &[u8],
+    _proof_bytes: &[u8],
+    _block_comm_bytes: &[u8],
+) {
+}
+
 // Helper function to verify a VID namespace proof that takes the byte representations of the proof,
 // namespace table, and commitment string.
 //

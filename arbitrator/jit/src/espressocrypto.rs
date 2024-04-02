@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{gostack::GoStack, machine::WasmEnvMut};
-use vid_helper::verify_namespace_helper;
+use espresso_crypto_helper::{verify_merkle_proof_helper, verify_namespace_helper};
 
 pub fn verify_namespace(mut env: WasmEnvMut, sp: u32) {
     let (sp, _) = GoStack::new(sp, &mut env);
@@ -29,4 +29,21 @@ pub fn verify_namespace(mut env: WasmEnvMut, sp: u32) {
         &ns_table_bytes,
         &txs_comm_bytes,
     )
+}
+
+pub fn verify_merkle_tree(mut env: WasmEnvMut, sp: u32) {
+    let (sp, _) = GoStack::new(sp, &mut env);
+
+    let root_buf_ptr = sp.read_u64(0);
+    let root_buf_len = sp.read_u64(1);
+    let proof_buf_ptr = sp.read_u64(3);
+    let proof_buf_len = sp.read_u64(4);
+    let block_comm_buf_ptr = sp.read_u64(6);
+    let block_comm_buf_len = sp.read_u64(7);
+
+    let root_bytes = sp.read_slice(root_buf_ptr, root_buf_len);
+    let proof_bytes = sp.read_slice(proof_buf_ptr, proof_buf_len);
+    let block_comm_bytes = sp.read_slice(block_comm_buf_ptr, block_comm_buf_len);
+
+    verify_merkle_proof_helper(&root_bytes, &proof_bytes, &block_comm_bytes)
 }

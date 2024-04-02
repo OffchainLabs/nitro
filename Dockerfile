@@ -46,7 +46,7 @@ RUN apt-get install -y clang=1:14.0-55.7~deb12u1 lld=1:14.0-55.7~deb12u1
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.70.0 --target x86_64-unknown-linux-gnu wasm32-unknown-unknown wasm32-wasi
 COPY ./Makefile ./
 COPY arbitrator/arbutil arbitrator/arbutil
-COPY arbitrator/vid-helper arbitrator/vid-helper
+COPY arbitrator/espresso-crypto-helper arbitrator/espresso-crypto-helper
 COPY config/vid_srs.json config/vid_srs.json
 COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
 COPY --from=brotli-wasm-export / target/
@@ -60,7 +60,7 @@ FROM wasm-base as wasm-bin-builder
 RUN curl -L https://golang.org/dl/go1.20.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
 COPY ./Makefile ./go.mod ./go.sum ./
 COPY ./arbcompress ./arbcompress
-COPY ./arbvid ./arbvid
+COPY ./espressocrypto ./espressocrypto
 COPY ./arbos ./arbos
 COPY ./arbstate ./arbstate
 COPY ./arbutil ./arbutil
@@ -96,7 +96,7 @@ COPY ./Makefile ./
 COPY arbitrator/arbutil arbitrator/arbutil
 COPY arbitrator/prover arbitrator/prover
 COPY arbitrator/jit arbitrator/jit
-COPY arbitrator/vid-helper arbitrator/vid-helper
+COPY arbitrator/espresso-crypto-helper arbitrator/espresso-crypto-helper
 COPY config/vid_srs.json config/vid_srs.json
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header
 
@@ -113,7 +113,7 @@ COPY arbitrator/Cargo.* arbitrator/
 COPY arbitrator/arbutil arbitrator/arbutil
 COPY arbitrator/prover/Cargo.toml arbitrator/prover/
 COPY arbitrator/jit/Cargo.toml arbitrator/jit/
-COPY arbitrator/vid-helper arbitrator/vid-helper
+COPY arbitrator/espresso-crypto-helper arbitrator/espresso-crypto-helper
 COPY config/vid_srs.json config/vid_srs.json
 RUN mkdir arbitrator/prover/src arbitrator/jit/src && \
     echo "fn test() {}" > arbitrator/jit/src/lib.rs && \

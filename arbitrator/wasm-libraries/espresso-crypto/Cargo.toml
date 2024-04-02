@@ -1,11 +1,11 @@
 [package]
-name = "vid"
+name = "espresso-crypto"
 version = "0.1.0"
 edition = "2021"
 
 [dependencies]
 go-abi = { path = "../go-abi" }
-vid-helper = {path = "../../vid-helper"}
+espresso-crypto-helper = {path = "../../espresso-crypto-helper"}
 
 [lib]
 crate-type = ["cdylib", "rlib"]

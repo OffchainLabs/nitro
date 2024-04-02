@@ -10,7 +10,7 @@ use wasmer::Value;
 use std::path::PathBuf;
 
 mod arbcompress;
-mod arbvid;
+mod espressocrypto;
 mod gostack;
 mod machine;
 mod runtime;

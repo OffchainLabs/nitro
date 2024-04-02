@@ -1,6 +1,6 @@
 
 [package]
-name = "vid-helper"
+name = "espresso-crypto-helper"
 version = "0.1.0"
 edition = "2021"
 

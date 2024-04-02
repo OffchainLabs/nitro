@@ -1004,6 +1004,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "espresso-crypto-helper"
+version = "0.1.0"
+dependencies = [
+ "ark-bn254",
+ "ark-serialize",
+ "base64 0.22.0",
+ "base64-bytes",
+ "derivative",
+ "derive_more",
+ "jf-primitives",
+ "jf-utils",
+ "lazy_static",
+ "num-traits",
+ "serde",
+ "serde_json",
+ "sha2 0.10.8",
+ "tagged-base64",
+ "trait-set",
+]
+
+[[package]]
 name = "espresso-systems-common"
 version = "0.4.0"
 source = "git+https://github.com/espressosystems/espresso-systems-common?tag=0.4.0#5abd890f79014a86db31286e1f3a529f161e69de"
@@ -1352,6 +1373,7 @@ name = "jit"
 version = "0.1.0"
 dependencies = [
  "arbutil",
+ "espresso-crypto-helper",
  "eyre",
  "hex",
  "lazy_static",
@@ -1363,7 +1385,6 @@ dependencies = [
  "sha3 0.9.1",
  "structopt",
  "thiserror",
- "vid-helper",
  "wasmer",
  "wasmer-compiler-cranelift",
  "wasmer-compiler-llvm",
@@ -2599,27 +2620,6 @@ name = "version_check"
 version = "0.9.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "49874b5167b65d7193b8aba1567f5c7d93d001cafc34600cee003eda787e483f"
-
-[[package]]
-name = "vid-helper"
-version = "0.1.0"
-dependencies = [
- "ark-bn254",
- "ark-serialize",
- "base64 0.22.0",
- "base64-bytes",
- "derivative",
- "derive_more",
- "jf-primitives",
- "jf-utils",
- "lazy_static",
- "num-traits",
- "serde",
- "serde_json",
- "sha2 0.10.8",
- "tagged-base64",
- "trait-set",
-]
 
 [[package]]
 name = "wasi"
