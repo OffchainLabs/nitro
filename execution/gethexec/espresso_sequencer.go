@@ -45,6 +45,9 @@ type EspressoSequencer struct {
 	config       SequencerConfigFetcher
 	hotShotState *HotShotState
 	namespace    uint64
+
+	// The time when the last block was created
+	lastCreated time.Time
 }
 
 func NewEspressoSequencer(execEngine *ExecutionEngine, configFetcher SequencerConfigFetcher) (*EspressoSequencer, error) {
@@ -112,14 +115,14 @@ func (s *EspressoSequencer) createBlock(ctx context.Context) (returnValue bool) 
 func (s *EspressoSequencer) Start(ctxIn context.Context) error {
 	s.StopWaiter.Start(ctxIn, s)
 	s.CallIteratively(func(ctx context.Context) time.Duration {
-		retryBlockTime := time.Now().Add(retryTime)
 		madeBlock := s.createBlock(ctx)
 		if madeBlock {
+			s.lastCreated = time.Now()
 			// Allow the sequencer to catch up to HotShot
 			return 0
 		}
 		// If we didn't make a block, try again in a bit
-		return time.Until(retryBlockTime)
+		return retryTime
 	})
 
 	return nil
