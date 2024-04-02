@@ -52,19 +52,19 @@ func ConsumerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 
 // Consumer implements a consumer for redis stream provides heartbeat to
 // indicate it is alive.
-type Consumer[T Marshallable[T]] struct {
+type Consumer[Request Marshallable[Request], Response Marshallable[Response]] struct {
 	stopwaiter.StopWaiter
 	id     string
 	client redis.UniversalClient
 	cfg    *ConsumerConfig
 }
 
-type Message[T Marshallable[T]] struct {
+type Message[Request Marshallable[Request]] struct {
 	ID    string
-	Value T
+	Value Request
 }
 
-func NewConsumer[T Marshallable[T]](ctx context.Context, cfg *ConsumerConfig) (*Consumer[T], error) {
+func NewConsumer[Request Marshallable[Request], Response Marshallable[Response]](ctx context.Context, cfg *ConsumerConfig) (*Consumer[Request, Response], error) {
 	if cfg.RedisURL == "" {
 		return nil, fmt.Errorf("redis url cannot be empty")
 	}
@@ -72,7 +72,7 @@ func NewConsumer[T Marshallable[T]](ctx context.Context, cfg *ConsumerConfig) (*
 	if err != nil {
 		return nil, err
 	}
-	consumer := &Consumer[T]{
+	consumer := &Consumer[Request, Response]{
 		id:     uuid.NewString(),
 		client: c,
 		cfg:    cfg,
@@ -81,7 +81,7 @@ func NewConsumer[T Marshallable[T]](ctx context.Context, cfg *ConsumerConfig) (*
 }
 
 // Start starts the consumer to iteratively perform heartbeat in configured intervals.
-func (c *Consumer[T]) Start(ctx context.Context) {
+func (c *Consumer[Request, Response]) Start(ctx context.Context) {
 	c.StopWaiter.Start(ctx, c)
 	c.StopWaiter.CallIteratively(
 		func(ctx context.Context) time.Duration {
@@ -91,7 +91,7 @@ func (c *Consumer[T]) Start(ctx context.Context) {
 	)
 }
 
-func (c *Consumer[T]) StopAndWait() {
+func (c *Consumer[Request, Response]) StopAndWait() {
 	c.StopWaiter.StopAndWait()
 }
 
@@ -99,12 +99,12 @@ func heartBeatKey(id string) string {
 	return fmt.Sprintf("consumer:%s:heartbeat", id)
 }
 
-func (c *Consumer[T]) heartBeatKey() string {
+func (c *Consumer[Request, Response]) heartBeatKey() string {
 	return heartBeatKey(c.id)
 }
 
 // heartBeat updates the heartBeat key indicating aliveness.
-func (c *Consumer[T]) heartBeat(ctx context.Context) {
+func (c *Consumer[Request, Response]) heartBeat(ctx context.Context) {
 	if err := c.client.Set(ctx, c.heartBeatKey(), time.Now().UnixMilli(), 2*c.cfg.KeepAliveTimeout).Err(); err != nil {
 		l := log.Info
 		if ctx.Err() != nil {
@@ -116,7 +116,7 @@ func (c *Consumer[T]) heartBeat(ctx context.Context) {
 
 // Consumer first checks it there exists pending message that is claimed by
 // unresponsive consumer, if not then reads from the stream.
-func (c *Consumer[T]) Consume(ctx context.Context) (*Message[T], error) {
+func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Request], error) {
 	res, err := c.client.XReadGroup(ctx, &redis.XReadGroupArgs{
 		Group:    c.cfg.RedisGroup,
 		Consumer: c.id,
@@ -139,24 +139,24 @@ func (c *Consumer[T]) Consume(ctx context.Context) (*Message[T], error) {
 	var (
 		value    = res[0].Messages[0].Values[messageKey]
 		data, ok = (value).(string)
-		tmp      T
+		tmp      Request
 	)
 	if !ok {
 		return nil, fmt.Errorf("casting request to string: %w", err)
 	}
-	val, err := tmp.Unmarshal([]byte(data))
+	req, err := tmp.Unmarshal([]byte(data))
 	if err != nil {
 		return nil, fmt.Errorf("unmarshaling value: %v, error: %w", value, err)
 	}
 
-	return &Message[T]{
+	return &Message[Request]{
 		ID:    res[0].Messages[0].ID,
-		Value: val,
+		Value: req,
 	}, nil
 }
 
-func (c *Consumer[T]) SetResult(ctx context.Context, messageID string, result string) error {
-	acquired, err := c.client.SetNX(ctx, messageID, result, c.cfg.ResponseEntryTimeout).Result()
+func (c *Consumer[Request, Response]) SetResult(ctx context.Context, messageID string, result Response) error {
+	acquired, err := c.client.SetNX(ctx, messageID, result.Marshal(), c.cfg.ResponseEntryTimeout).Result()
 	if err != nil || !acquired {
 		return fmt.Errorf("setting result for  message: %v, error: %w", messageID, err)
 	}

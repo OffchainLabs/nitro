@@ -34,6 +34,11 @@ type Producer[Request Marshallable[Request], Response Marshallable[Response]] st
 
 	promisesLock sync.RWMutex
 	promises     map[string]*containers.Promise[Response]
+
+	// 	Used for running checks for pending messages with inactive consumers
+	// and checking responses from consumers iteratively for the first time when
+	// Produce is called.
+	once sync.Once
 }
 
 type ProducerConfig struct {
@@ -92,59 +97,61 @@ func NewProducer[Request Marshallable[Request], Response Marshallable[Response]]
 	}, nil
 }
 
-func (p *Producer[Request, Response]) Start(ctx context.Context) {
-	p.StopWaiter.Start(ctx, p)
-	p.StopWaiter.CallIteratively(
-		func(ctx context.Context) time.Duration {
-			msgs, err := p.checkPending(ctx)
-			if err != nil {
-				log.Error("Checking pending messages", "error", err)
-				return p.cfg.CheckPendingInterval
-			}
-			if len(msgs) == 0 {
-				return p.cfg.CheckPendingInterval
-			}
-			acked := make(map[string]Request)
-			for _, msg := range msgs {
-				if _, err := p.client.XAck(ctx, p.cfg.RedisStream, p.cfg.RedisGroup, msg.ID).Result(); err != nil {
-					log.Error("ACKing message", "error", err)
-					continue
-				}
-				acked[msg.ID] = msg.Value
-			}
-			for k, v := range acked {
-				// Only re-insert messages that were removed the the pending list first.
-				_, err := p.reproduce(ctx, v, k)
-				if err != nil {
-					log.Error("Re-inserting pending messages with inactive consumers", "error", err)
-				}
-			}
-			return p.cfg.CheckPendingInterval
-		},
-	)
-	// Iteratively check whether result were returned for some queries.
-	p.StopWaiter.CallIteratively(func(ctx context.Context) time.Duration {
-		p.promisesLock.Lock()
-		defer p.promisesLock.Unlock()
-		for id, promise := range p.promises {
-			res, err := p.client.Get(ctx, id).Result()
-			if err != nil {
-				if errors.Is(err, redis.Nil) {
-					continue
-				}
-				log.Error("Error reading value in redis", "key", id, "error", err)
-			}
-			var tmp Response
-			val, err := tmp.Unmarshal([]byte(res))
-			if err != nil {
-				log.Error("Error unmarshaling", "value", res, "error", err)
+// checkAndReproduce reproduce pending messages that were sent to consumers
+// that are currently inactive.
+func (p *Producer[Request, Response]) checkAndReproduce(ctx context.Context) time.Duration {
+	msgs, err := p.checkPending(ctx)
+	if err != nil {
+		log.Error("Checking pending messages", "error", err)
+		return p.cfg.CheckPendingInterval
+	}
+	if len(msgs) == 0 {
+		return p.cfg.CheckPendingInterval
+	}
+	acked := make(map[string]Request)
+	for _, msg := range msgs {
+		if _, err := p.client.XAck(ctx, p.cfg.RedisStream, p.cfg.RedisGroup, msg.ID).Result(); err != nil {
+			log.Error("ACKing message", "error", err)
+			continue
+		}
+		acked[msg.ID] = msg.Value
+	}
+	for k, v := range acked {
+		// Only re-insert messages that were removed the the pending list first.
+		_, err := p.reproduce(ctx, v, k)
+		if err != nil {
+			log.Error("Re-inserting pending messages with inactive consumers", "error", err)
+		}
+	}
+	return p.cfg.CheckPendingInterval
+}
+
+// checkResponses checks iteratively whether response for the promise is ready.
+func (p *Producer[Request, Response]) checkResponses(ctx context.Context) time.Duration {
+	p.promisesLock.Lock()
+	defer p.promisesLock.Unlock()
+	for id, promise := range p.promises {
+		res, err := p.client.Get(ctx, id).Result()
+		if err != nil {
+			if errors.Is(err, redis.Nil) {
 				continue
 			}
-			promise.Produce(val)
-			delete(p.promises, id)
+			log.Error("Error reading value in redis", "key", id, "error", err)
 		}
-		return p.cfg.CheckResultInterval
-	})
+		var tmp Response
+		val, err := tmp.Unmarshal([]byte(res))
+		if err != nil {
+			log.Error("Error unmarshaling", "value", res, "error", err)
+			continue
+		}
+		promise.Produce(val)
+		delete(p.promises, id)
+	}
+	return p.cfg.CheckResultInterval
+}
+
+func (p *Producer[Request, Response]) Start(ctx context.Context) {
+	p.StopWaiter.Start(ctx, p)
 }
 
 // reproduce is used when Producer claims ownership on the pending
@@ -170,6 +177,10 @@ func (p *Producer[Request, Response]) reproduce(ctx context.Context, value Reque
 }
 
 func (p *Producer[Request, Response]) Produce(ctx context.Context, value Request) (*containers.Promise[Response], error) {
+	p.once.Do(func() {
+		p.StopWaiter.CallIteratively(p.checkAndReproduce)
+		p.StopWaiter.CallIteratively(p.checkResponses)
+	})
 	return p.reproduce(ctx, value, "")
 }
 
@@ -210,6 +221,10 @@ func (p *Producer[Request, Response]) checkPending(ctx context.Context) ([]*Mess
 			continue
 		}
 		ids = append(ids, msg.ID)
+	}
+	if len(ids) == 0 {
+		log.Info("There are no pending messages with inactive consumers")
+		return nil, nil
 	}
 	log.Info("Attempting to claim", "messages", ids)
 	claimedMsgs, err := p.client.XClaim(ctx, &redis.XClaimArgs{

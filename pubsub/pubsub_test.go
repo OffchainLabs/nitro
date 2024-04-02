@@ -57,7 +57,7 @@ func createGroup(ctx context.Context, t *testing.T, client redis.UniversalClient
 	}
 }
 
-func newProducerConsumers(ctx context.Context, t *testing.T) (*Producer[*testRequest, *testResponse], []*Consumer[*testRequest]) {
+func newProducerConsumers(ctx context.Context, t *testing.T) (*Producer[*testRequest, *testResponse], []*Consumer[*testRequest, *testResponse]) {
 	t.Helper()
 	redisURL := redisutil.CreateTestRedis(ctx, t)
 	defaultProdCfg := DefaultTestProducerConfig
@@ -68,9 +68,9 @@ func newProducerConsumers(ctx context.Context, t *testing.T) (*Producer[*testReq
 	}
 	defaultCfg := DefaultTestConsumerConfig
 	defaultCfg.RedisURL = redisURL
-	var consumers []*Consumer[*testRequest]
+	var consumers []*Consumer[*testRequest, *testResponse]
 	for i := 0; i < consumersCount; i++ {
-		c, err := NewConsumer[*testRequest](ctx, defaultCfg)
+		c, err := NewConsumer[*testRequest, *testResponse](ctx, defaultCfg)
 		if err != nil {
 			t.Fatalf("Error creating new consumer: %v", err)
 		}
@@ -122,10 +122,11 @@ func TestProduce(t *testing.T) {
 						continue
 					}
 					gotMessages[idx][res.ID] = res.Value.request
-					if err := c.SetResult(ctx, res.ID, fmt.Sprintf("result for: %v", res.ID)); err != nil {
+					resp := &testResponse{response: fmt.Sprintf("result for: %v", res.ID)}
+					if err := c.SetResult(ctx, res.ID, resp); err != nil {
 						t.Errorf("Error setting a result: %v", err)
 					}
-					wantResponses[idx] = append(wantResponses[idx], fmt.Sprintf("result for: %v", res.ID))
+					wantResponses[idx] = append(wantResponses[idx], resp.response)
 				}
 			})
 	}
@@ -219,10 +220,11 @@ func TestClaimingOwnership(t *testing.T) {
 						continue
 					}
 					gotMessages[idx][res.ID] = res.Value.request
-					if err := c.SetResult(ctx, res.ID, fmt.Sprintf("result for: %v", res.ID)); err != nil {
+					resp := &testResponse{response: fmt.Sprintf("result for: %v", res.ID)}
+					if err := c.SetResult(ctx, res.ID, resp); err != nil {
 						t.Errorf("Error setting a result: %v", err)
 					}
-					wantResponses[idx] = append(wantResponses[idx], fmt.Sprintf("result for: %v", res.ID))
+					wantResponses[idx] = append(wantResponses[idx], resp.response)
 					total.Add(1)
 				}
 			})
