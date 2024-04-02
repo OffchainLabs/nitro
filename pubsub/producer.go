@@ -223,7 +223,7 @@ func (p *Producer[Request, Response]) checkPending(ctx context.Context) ([]*Mess
 		ids = append(ids, msg.ID)
 	}
 	if len(ids) == 0 {
-		log.Info("There are no pending messages with inactive consumers")
+		log.Trace("There are no pending messages with inactive consumers")
 		return nil, nil
 	}
 	log.Info("Attempting to claim", "messages", ids)
