@@ -20,7 +20,7 @@ import (
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
-	_ "github.com/offchainlabs/nitro/nodeInterface"
+	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
@@ -70,9 +70,7 @@ func mainImpl() int {
 	nodeConfig.WS.Apply(&stackConf)
 	nodeConfig.Auth.Apply(&stackConf)
 	nodeConfig.IPC.Apply(&stackConf)
-	stackConf.P2P.ListenAddr = ""
-	stackConf.P2P.NoDial = true
-	stackConf.P2P.NoDiscovery = true
+	nodeConfig.P2P.Apply(&stackConf)
 	vcsRevision, strippedRevision, vcsTime := confighelpers.GetVersion()
 	stackConf.Version = strippedRevision
 

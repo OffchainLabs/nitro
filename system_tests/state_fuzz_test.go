@@ -56,7 +56,7 @@ func BuildBlock(
 		return seqBatch, nil
 	}
 	block, _, err := arbos.ProduceBlock(
-		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher,
+		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher, false,
 	)
 	return block, err
 }
@@ -69,11 +69,11 @@ type inboxBackend struct {
 	delayedMessages       [][]byte
 }
 
-func (b *inboxBackend) PeekSequencerInbox() ([]byte, error) {
+func (b *inboxBackend) PeekSequencerInbox() ([]byte, common.Hash, error) {
 	if len(b.batches) == 0 {
-		return nil, errors.New("read past end of specified sequencer batches")
+		return nil, common.Hash{}, errors.New("read past end of specified sequencer batches")
 	}
-	return b.batches[0], nil
+	return b.batches[0], common.Hash{}, nil
 }
 
 func (b *inboxBackend) GetSequencerInboxPosition() uint64 {
@@ -121,6 +121,9 @@ func (c noopChainContext) GetHeader(common.Hash, uint64) *types.Header {
 
 func FuzzStateTransition(f *testing.F) {
 	f.Fuzz(func(t *testing.T, compressSeqMsg bool, seqMsg []byte, delayedMsg []byte) {
+		if len(seqMsg) > 0 && arbstate.IsL1AuthenticatedMessageHeaderByte(seqMsg[0]) {
+			return
+		}
 		chainDb := rawdb.NewMemoryDatabase()
 		chainConfig := params.ArbitrumRollupGoerliTestnetChainConfig()
 		serializedChainConfig, err := json.Marshal(chainConfig)

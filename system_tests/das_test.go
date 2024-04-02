@@ -123,7 +123,7 @@ func TestDASRekey(t *testing.T) {
 	l1NodeConfigB := arbnode.ConfigDefaultL1NonSequencerTest()
 	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 	sequencerTxOptsPtr := &sequencerTxOpts
-
+	parentChainID := big.NewInt(1337)
 	{
 		authorizeDASKeyset(t, ctx, pubkeyA, l1info, l1client)
 
@@ -141,8 +141,7 @@ func TestDASRekey(t *testing.T) {
 		l1NodeConfigA.DataAvailability.ParentChainNodeURL = "none"
 		execA, err := gethexec.CreateExecutionNode(ctx, l2stackA, l2chainDb, l2blockchain, l1client, gethexec.ConfigDefaultTest)
 		Require(t, err)
-
-		nodeA, err := arbnode.CreateNode(ctx, l2stackA, execA, l2arbDb, NewFetcherFromConfig(l1NodeConfigA), l2blockchain.Config(), l1client, addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, nil, feedErrChan)
+		nodeA, err := arbnode.CreateNode(ctx, l2stackA, execA, l2arbDb, NewFetcherFromConfig(l1NodeConfigA), l2blockchain.Config(), l1client, addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, nil, feedErrChan, parentChainID, nil)
 		Require(t, err)
 		Require(t, nodeA.Start(ctx))
 		l2clientA := ClientForStack(t, l2stackA)
@@ -189,7 +188,7 @@ func TestDASRekey(t *testing.T) {
 	Require(t, err)
 
 	l1NodeConfigA.DataAvailability.RPCAggregator = aggConfigForBackend(t, backendConfigB)
-	nodeA, err := arbnode.CreateNode(ctx, l2stackA, execA, l2arbDb, NewFetcherFromConfig(l1NodeConfigA), l2blockchain.Config(), l1client, addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, nil, feedErrChan)
+	nodeA, err := arbnode.CreateNode(ctx, l2stackA, execA, l2arbDb, NewFetcherFromConfig(l1NodeConfigA), l2blockchain.Config(), l1client, addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, nil, feedErrChan, parentChainID, nil)
 	Require(t, err)
 	Require(t, nodeA.Start(ctx))
 	l2clientA := ClientForStack(t, l2stackA)
@@ -254,19 +253,20 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	pubkey, _, err := das.GenerateAndStoreKeys(keyDir)
 	Require(t, err)
 
+	dbConfig := das.DefaultLocalDBStorageConfig
+	dbConfig.Enable = true
+	dbConfig.DataDir = dbDataDir
+
 	serverConfig := das.DataAvailabilityConfig{
 		Enable: true,
 
-		LocalCache: das.TestBigCacheConfig,
+		LocalCache: das.TestCacheConfig,
 
 		LocalFileStorage: das.LocalFileStorageConfig{
 			Enable:  true,
 			DataDir: fileDataDir,
 		},
-		LocalDBStorage: das.LocalDBStorageConfig{
-			Enable:  true,
-			DataDir: dbDataDir,
-		},
+		LocalDBStorage: dbConfig,
 
 		Key: das.KeyConfig{
 			KeyDir: keyDir,
@@ -322,7 +322,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 
 	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 	sequencerTxOptsPtr := &sequencerTxOpts
-	nodeA, err := arbnode.CreateNode(ctx, l2stackA, execA, l2arbDb, NewFetcherFromConfig(l1NodeConfigA), l2blockchain.Config(), l1client, addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, feedErrChan)
+	nodeA, err := arbnode.CreateNode(ctx, l2stackA, execA, l2arbDb, NewFetcherFromConfig(l1NodeConfigA), l2blockchain.Config(), l1client, addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, feedErrChan, big.NewInt(1337), nil)
 	Require(t, err)
 	Require(t, nodeA.Start(ctx))
 	l2clientA := ClientForStack(t, l2stackA)

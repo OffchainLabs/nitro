@@ -5,6 +5,7 @@
 
 pub mod binary;
 mod host;
+mod kzg;
 pub mod machine;
 /// cbindgen:ignore
 mod memory;
@@ -17,19 +18,25 @@ pub mod wavm;
 use crate::machine::{argument_data_to_inbox, Machine};
 use arbutil::PreimageType;
 use eyre::Result;
+use lru::LruCache;
 use machine::{get_empty_preimage_resolver, GlobalState, MachineStatus, PreimageResolver};
-use sha3::{Digest, Keccak256};
+use once_cell::sync::OnceCell;
 use static_assertions::const_assert_eq;
 use std::{
     ffi::CStr,
+    num::NonZeroUsize,
     os::raw::{c_char, c_int},
     path::Path,
     sync::{
         atomic::{self, AtomicU8},
-        Arc,
+        Arc, Mutex,
     },
 };
 use utils::{Bytes32, CBytes};
+
+lazy_static::lazy_static! {
+    static ref BLOBHASH_PREIMAGE_CACHE: Mutex<LruCache<Bytes32, Arc<OnceCell<CBytes>>>> = Mutex::new(LruCache::new(NonZeroUsize::new(12).unwrap()));
+}
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -290,6 +297,33 @@ pub struct ResolvedPreimage {
     pub len: isize, // negative if not found
 }
 
+unsafe fn handle_preimage_resolution(
+    context: u64,
+    ty: PreimageType,
+    hash: Bytes32,
+    resolver: unsafe extern "C" fn(u64, u8, *const u8) -> ResolvedPreimage,
+) -> Option<CBytes> {
+    let res = resolver(context, ty.into(), hash.as_ptr());
+    if res.len < 0 {
+        return None;
+    }
+    let data = CBytes::from_raw_parts(res.ptr, res.len as usize);
+    // Check if preimage rehashes to the provided hash
+    match crate::utils::hash_preimage(&data, ty) {
+        Ok(have_hash) if have_hash.as_slice() == *hash => {}
+        Ok(got_hash) => panic!(
+            "Resolved incorrect data for hash {} (rehashed to {})",
+            hash,
+            Bytes32(got_hash),
+        ),
+        Err(err) => panic!(
+            "Failed to hash preimage from resolver (expecting hash {}): {}",
+            hash, err,
+        ),
+    }
+    Some(data)
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn arbitrator_set_preimage_resolver(
     mach: *mut Machine,
@@ -297,20 +331,19 @@ pub unsafe extern "C" fn arbitrator_set_preimage_resolver(
 ) {
     (*mach).set_preimage_resolver(Arc::new(
         move |context: u64, ty: PreimageType, hash: Bytes32| -> Option<CBytes> {
-            let res = resolver(context, ty.into(), hash.as_ptr());
-            if res.len < 0 {
-                return None;
+            if ty == PreimageType::EthVersionedHash {
+                let cache: Arc<OnceCell<CBytes>> = {
+                    let mut locked = BLOBHASH_PREIMAGE_CACHE.lock().unwrap();
+                    locked.get_or_insert(hash, Default::default).clone()
+                };
+                return cache
+                    .get_or_try_init(|| {
+                        handle_preimage_resolution(context, ty, hash, resolver).ok_or(())
+                    })
+                    .ok()
+                    .cloned();
             }
-            let data = CBytes::from_raw_parts(res.ptr, res.len as usize);
-            let have_hash = Keccak256::digest(&data);
-            if have_hash.as_slice() != *hash {
-                panic!(
-                    "Resolved incorrect data for hash {}: got {}",
-                    hash,
-                    hex::encode(data),
-                );
-            }
-            Some(data)
+            handle_preimage_resolution(context, ty, hash, resolver)
         },
     ) as PreimageResolver);
 }

@@ -146,10 +146,6 @@ func (ps *L1PricingState) SetPayRewardsTo(addr common.Address) error {
 	return ps.payRewardsTo.Set(addr)
 }
 
-func (ps *L1PricingState) GetRewardsRecepient() (common.Address, error) {
-	return ps.payRewardsTo.Get()
-}
-
 func (ps *L1PricingState) EquilibrationUnits() (*big.Int, error) {
 	return ps.equilibrationUnits.Get()
 }
@@ -172,10 +168,6 @@ func (ps *L1PricingState) PerUnitReward() (uint64, error) {
 
 func (ps *L1PricingState) SetPerUnitReward(weiPerUnit uint64) error {
 	return ps.perUnitReward.Set(weiPerUnit)
-}
-
-func (ps *L1PricingState) GetRewardsRate() (uint64, error) {
-	return ps.perUnitReward.Get()
 }
 
 func (ps *L1PricingState) LastUpdateTime() (uint64, error) {
@@ -201,6 +193,23 @@ func (ps *L1PricingState) UnitsSinceUpdate() (uint64, error) {
 
 func (ps *L1PricingState) SetUnitsSinceUpdate(units uint64) error {
 	return ps.unitsSinceUpdate.Set(units)
+}
+
+func (ps *L1PricingState) GetL1PricingSurplus() (*big.Int, error) {
+	fundsDueForRefunds, err := ps.BatchPosterTable().TotalFundsDue()
+	if err != nil {
+		return nil, err
+	}
+	fundsDueForRewards, err := ps.FundsDueForRewards()
+	if err != nil {
+		return nil, err
+	}
+	haveFunds, err := ps.L1FeesAvailable()
+	if err != nil {
+		return nil, err
+	}
+	needFunds := arbmath.BigAdd(fundsDueForRefunds, fundsDueForRewards)
+	return arbmath.BigSub(haveFunds, needFunds), nil
 }
 
 func (ps *L1PricingState) LastSurplus() (*big.Int, error) {

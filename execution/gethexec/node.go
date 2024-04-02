@@ -50,6 +50,8 @@ type Config struct {
 	RPC                       arbitrum.Config                  `koanf:"rpc"`
 	TxLookupLimit             uint64                           `koanf:"tx-lookup-limit"`
 	Dangerous                 DangerousConfig                  `koanf:"dangerous"`
+	EnablePrefetchBlock       bool                             `koanf:"enable-prefetch-block"`
+	SyncMonitor               SyncMonitorConfig                `koanf:"sync-monitor"`
 
 	forwardingTarget string
 }
@@ -82,8 +84,10 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
 	TxPreCheckerConfigAddOptions(prefix+".tx-pre-checker", f)
 	CachingConfigAddOptions(prefix+".caching", f)
+	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
 	DangerousConfigAddOptions(prefix+".dangerous", f)
+	f.Bool(prefix+".enable-prefetch-block", ConfigDefault.EnablePrefetchBlock, "enable prefetching of blocks")
 }
 
 var ConfigDefault = Config{
@@ -98,6 +102,7 @@ var ConfigDefault = Config{
 	Caching:                   DefaultCachingConfig,
 	Dangerous:                 DefaultDangerousConfig,
 	Forwarder:                 DefaultNodeForwarderConfig,
+	EnablePrefetchBlock:       true,
 }
 
 func ConfigDefaultNonSequencerTest() *Config {
@@ -115,8 +120,8 @@ func ConfigDefaultNonSequencerTest() *Config {
 func ConfigDefaultTest() *Config {
 	config := ConfigDefault
 	config.Sequencer = TestSequencerConfig
-	config.ForwardingTarget = "null"
 	config.ParentChainReader = headerreader.TestConfig
+	config.ForwardingTarget = "null"
 
 	_ = config.Validate()
 
@@ -135,7 +140,9 @@ type ExecutionNode struct {
 	Sequencer         *Sequencer // either nil or same as TxPublisher
 	TxPublisher       TransactionPublisher
 	ConfigFetcher     ConfigFetcher
+	SyncMonitor       *SyncMonitor
 	ParentChainReader *headerreader.HeaderReader
+	ClassicOutbox     *ClassicOutboxRetriever
 	started           atomic.Bool
 }
 
@@ -149,6 +156,9 @@ func CreateExecutionNode(
 ) (*ExecutionNode, error) {
 	config := configFetcher()
 	execEngine, err := NewExecutionEngine(l2BlockChain)
+	if config.EnablePrefetchBlock {
+		execEngine.EnablePrefetchBlock()
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -163,6 +173,8 @@ func CreateExecutionNode(
 		if err != nil {
 			return nil, err
 		}
+	} else if config.Sequencer.Enable {
+		log.Warn("sequencer enabled without l1 client")
 	}
 
 	if config.Sequencer.Enable {
@@ -186,7 +198,7 @@ func CreateExecutionNode(
 	txprecheckConfigFetcher := func() *TxPreCheckerConfig { return &configFetcher().TxPreChecker }
 
 	txPublisher = NewTxPreChecker(txPublisher, l2BlockChain, txprecheckConfigFetcher)
-	arbInterface, err := NewArbInterface(execEngine, txPublisher)
+	arbInterface, err := NewArbInterface(l2BlockChain, txPublisher)
 	if err != nil {
 		return nil, err
 	}
@@ -197,6 +209,20 @@ func CreateExecutionNode(
 	backend, filterSystem, err := arbitrum.NewBackend(stack, &config.RPC, chainDB, arbInterface, filterConfig)
 	if err != nil {
 		return nil, err
+	}
+
+	syncMon := NewSyncMonitor(&config.SyncMonitor, execEngine)
+
+	var classicOutbox *ClassicOutboxRetriever
+
+	if l2BlockChain.Config().ArbitrumChainParams.GenesisBlockNum > 0 {
+		classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "", true)
+		if err != nil {
+			log.Warn("Classic Msg Database not found", "err", err)
+			classicOutbox = nil
+		} else {
+			classicOutbox = NewClassicOutboxRetriever(classicMsgDb)
+		}
 	}
 
 	apis := []rpc.API{{
@@ -242,13 +268,19 @@ func CreateExecutionNode(
 		Sequencer:         sequencer,
 		TxPublisher:       txPublisher,
 		ConfigFetcher:     configFetcher,
+		SyncMonitor:       syncMon,
 		ParentChainReader: parentChainReader,
+		ClassicOutbox:     classicOutbox,
 	}, nil
 
 }
 
-func (n *ExecutionNode) Initialize(ctx context.Context, arbnode interface{}, sync arbitrum.SyncProgressBackend) error {
-	n.ArbInterface.Initialize(arbnode)
+func (n *ExecutionNode) GetL1GasPriceEstimate() (uint64, error) {
+	return n.ExecEngine.GetL1GasPriceEstimate()
+}
+
+func (n *ExecutionNode) Initialize(ctx context.Context) error {
+	n.ArbInterface.Initialize(n)
 	err := n.Backend.Start()
 	if err != nil {
 		return fmt.Errorf("error starting geth backend: %w", err)
@@ -257,7 +289,7 @@ func (n *ExecutionNode) Initialize(ctx context.Context, arbnode interface{}, syn
 	if err != nil {
 		return fmt.Errorf("error initializing transaction publisher: %w", err)
 	}
-	err = n.Backend.APIBackend().SetSyncBackend(sync)
+	err = n.Backend.APIBackend().SetSyncBackend(n.SyncMonitor)
 	if err != nil {
 		return fmt.Errorf("error setting sync backend: %w", err)
 	}
@@ -311,8 +343,8 @@ func (n *ExecutionNode) StopAndWait() {
 	// }
 }
 
-func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata) error {
-	return n.ExecEngine.DigestMessage(num, msg)
+func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) error {
+	return n.ExecEngine.DigestMessage(num, msg, msgForPrefetch)
 }
 func (n *ExecutionNode) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) error {
 	return n.ExecEngine.Reorg(count, newMessages, oldMessages)
@@ -331,6 +363,9 @@ func (n *ExecutionNode) SequenceDelayedMessage(message *arbostypes.L1IncomingMes
 }
 func (n *ExecutionNode) ResultAtPos(pos arbutil.MessageIndex) (*execution.MessageResult, error) {
 	return n.ExecEngine.ResultAtPos(pos)
+}
+func (n *ExecutionNode) ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error) {
+	return n.ExecEngine.ArbOSVersionForMessageNumber(messageNum)
 }
 
 func (n *ExecutionNode) RecordBlockCreation(
@@ -352,11 +387,13 @@ func (n *ExecutionNode) Pause() {
 		n.Sequencer.Pause()
 	}
 }
+
 func (n *ExecutionNode) Activate() {
 	if n.Sequencer != nil {
 		n.Sequencer.Activate()
 	}
 }
+
 func (n *ExecutionNode) ForwardTo(url string) error {
 	if n.Sequencer != nil {
 		return n.Sequencer.ForwardTo(url)
@@ -364,9 +401,12 @@ func (n *ExecutionNode) ForwardTo(url string) error {
 		return errors.New("forwardTo not supported - sequencer not active")
 	}
 }
-func (n *ExecutionNode) SetTransactionStreamer(streamer execution.TransactionStreamer) {
-	n.ExecEngine.SetTransactionStreamer(streamer)
+
+func (n *ExecutionNode) SetConsensusClient(consensus execution.FullConsensusClient) {
+	n.ExecEngine.SetConsensus(consensus)
+	n.SyncMonitor.SetConsensusInfo(consensus)
 }
+
 func (n *ExecutionNode) MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) uint64 {
 	return n.ExecEngine.MessageIndexToBlockNumber(messageNum)
 }

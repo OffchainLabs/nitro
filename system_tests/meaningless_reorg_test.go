@@ -27,7 +27,7 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 	Require(t, err)
 	seqOpts := builder.L1Info.GetDefaultTransactOpts("Sequencer", ctx)
 
-	tx, err := seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(1), nil, big.NewInt(1), common.Address{})
+	tx, err := seqInbox.AddSequencerL2BatchFromOrigin8f111f3c(&seqOpts, big.NewInt(1), nil, big.NewInt(1), common.Address{}, common.Big0, common.Big0)
 	Require(t, err)
 	batchReceipt, err := builder.L1.EnsureTxSucceeded(tx)
 	Require(t, err)
@@ -69,7 +69,7 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 	// Produce a new l1Block so that the batch ends up in a different l1Block than before
 	builder.L1.TransferBalance(t, "User", "User", common.Big1, builder.L1Info)
 
-	tx, err = seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(1), nil, big.NewInt(1), common.Address{})
+	tx, err = seqInbox.AddSequencerL2BatchFromOrigin8f111f3c(&seqOpts, big.NewInt(1), nil, big.NewInt(1), common.Address{}, common.Big0, common.Big0)
 	Require(t, err)
 	newBatchReceipt, err := builder.L1.EnsureTxSucceeded(tx)
 	Require(t, err)
@@ -95,7 +95,7 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	_, err = builder.L2.ConsensusNode.InboxReader.GetSequencerMessageBytes(ctx, 1)
+	_, _, err = builder.L2.ConsensusNode.InboxReader.GetSequencerMessageBytes(ctx, 1)
 	Require(t, err)
 
 	l2Header, err := builder.L2.Client.HeaderByNumber(ctx, l2Receipt.BlockNumber)

@@ -8,6 +8,8 @@ use crate::{
 };
 
 use arbutil::{Color, PreimageType};
+use sha2::Sha256;
+use sha3::{Digest, Keccak256};
 use std::{
     io,
     io::{BufReader, BufWriter, ErrorKind},
@@ -192,9 +194,24 @@ pub fn resolve_preimage_impl(
         error!("Missing requested preimage for preimage type {preimage_type:?} hash {hash_hex} in {name}");
     };
 
+    // Check if preimage rehashes to the provided hash. Exclude blob preimages
+    let calculated_hash: [u8; 32] = match preimage_type {
+        PreimageType::Keccak256 => Keccak256::digest(preimage).into(),
+        PreimageType::Sha2_256 => Sha256::digest(preimage).into(),
+        PreimageType::EthVersionedHash => *hash,
+    };
+    if calculated_hash != *hash {
+        error!(
+            "Calculated hash {} of preimage {} does not match provided hash {}",
+            hex::encode(calculated_hash),
+            hex::encode(preimage),
+            hex::encode(*hash)
+        );
+    }
+
     let offset = match u32::try_from(offset) {
-        Ok(offset) => offset as usize,
-        Err(_) => error!("bad offset {offset} in {name}"),
+        Ok(offset) if offset % 32 == 0 => offset as usize,
+        _ => error!("bad offset {offset} in {name}"),
     };
 
     let len = std::cmp::min(32, preimage.len().saturating_sub(offset));

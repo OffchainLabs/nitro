@@ -164,12 +164,12 @@ func (con ArbGasInfo) GetL1BaseFeeEstimateInertia(c ctx, evm mech) (uint64, erro
 
 // GetL1RewardRate gets the L1 pricer reward rate
 func (con ArbGasInfo) GetL1RewardRate(c ctx, evm mech) (uint64, error) {
-	return c.State.L1PricingState().GetRewardsRate()
+	return c.State.L1PricingState().PerUnitReward()
 }
 
 // GetL1RewardRecipient gets the L1 pricer reward recipient
 func (con ArbGasInfo) GetL1RewardRecipient(c ctx, evm mech) (common.Address, error) {
-	return c.State.L1PricingState().GetRewardsRecepient()
+	return c.State.L1PricingState().PayRewardsTo()
 }
 
 // GetL1GasPriceEstimate gets the current estimate of the L1 basefee
@@ -202,20 +202,7 @@ func (con ArbGasInfo) GetL1PricingSurplus(c ctx, evm mech) (*big.Int, error) {
 		return con._preversion10_GetL1PricingSurplus(c, evm)
 	}
 	ps := c.State.L1PricingState()
-	fundsDueForRefunds, err := ps.BatchPosterTable().TotalFundsDue()
-	if err != nil {
-		return nil, err
-	}
-	fundsDueForRewards, err := ps.FundsDueForRewards()
-	if err != nil {
-		return nil, err
-	}
-	haveFunds, err := ps.L1FeesAvailable()
-	if err != nil {
-		return nil, err
-	}
-	needFunds := arbmath.BigAdd(fundsDueForRefunds, fundsDueForRewards)
-	return arbmath.BigSub(haveFunds, needFunds), nil
+	return ps.GetL1PricingSurplus()
 }
 
 func (con ArbGasInfo) _preversion10_GetL1PricingSurplus(c ctx, evm mech) (*big.Int, error) {
@@ -243,4 +230,24 @@ func (con ArbGasInfo) GetAmortizedCostCapBips(c ctx, evm mech) (uint64, error) {
 
 func (con ArbGasInfo) GetL1FeesAvailable(c ctx, evm mech) (huge, error) {
 	return c.State.L1PricingState().L1FeesAvailable()
+}
+
+func (con ArbGasInfo) GetL1PricingEquilibrationUnits(c ctx, evm mech) (*big.Int, error) {
+	return c.State.L1PricingState().EquilibrationUnits()
+}
+
+func (con ArbGasInfo) GetLastL1PricingUpdateTime(c ctx, evm mech) (uint64, error) {
+	return c.State.L1PricingState().LastUpdateTime()
+}
+
+func (con ArbGasInfo) GetL1PricingFundsDueForRewards(c ctx, evm mech) (*big.Int, error) {
+	return c.State.L1PricingState().FundsDueForRewards()
+}
+
+func (con ArbGasInfo) GetL1PricingUnitsSinceUpdate(c ctx, evm mech) (uint64, error) {
+	return c.State.L1PricingState().UnitsSinceUpdate()
+}
+
+func (con ArbGasInfo) GetLastL1PricingSurplus(c ctx, evm mech) (*big.Int, error) {
+	return c.State.L1PricingState().LastSurplus()
 }

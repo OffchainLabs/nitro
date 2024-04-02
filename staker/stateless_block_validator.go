@@ -39,6 +39,7 @@ type StatelessBlockValidator struct {
 	streamer     TransactionStreamerInterface
 	db           ethdb.Database
 	daService    arbstate.DataAvailabilityReader
+	blobReader   arbstate.BlobReader
 
 	moduleMutex           sync.Mutex
 	currentWasmModuleRoot common.Hash
@@ -55,6 +56,7 @@ type InboxTrackerInterface interface {
 	GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error)
 	GetBatchAcc(seqNum uint64) (common.Hash, error)
 	GetBatchCount() (uint64, error)
+	FindInboxBatchContainingMessage(pos arbutil.MessageIndex) (uint64, bool, error)
 }
 
 type TransactionStreamerInterface interface {
@@ -67,7 +69,7 @@ type TransactionStreamerInterface interface {
 }
 
 type InboxReaderInterface interface {
-	GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, error)
+	GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, common.Hash, error)
 }
 
 type GlobalStatePosition struct {
@@ -105,39 +107,6 @@ func GlobalStatePositionsAtCount(
 		return startPos, GlobalStatePosition{batch + 1, 0}, nil
 	}
 	return startPos, GlobalStatePosition{batch, posInBatch + 1}, nil
-}
-
-func FindBatchContainingMessageIndex(
-	tracker InboxTrackerInterface, pos arbutil.MessageIndex, high uint64,
-) (uint64, error) {
-	var low uint64
-	// Iteration preconditions:
-	// - high >= low
-	// - msgCount(low - 1) <= pos implies low <= target
-	// - msgCount(high) > pos implies high >= target
-	// Therefore, if low == high, then low == high == target
-	for high > low {
-		// Due to integer rounding, mid >= low && mid < high
-		mid := (low + high) / 2
-		count, err := tracker.GetBatchMessageCount(mid)
-		if err != nil {
-			return 0, err
-		}
-		if count < pos {
-			// Must narrow as mid >= low, therefore mid + 1 > low, therefore newLow > oldLow
-			// Keeps low precondition as msgCount(mid) < pos
-			low = mid + 1
-		} else if count == pos {
-			return mid + 1, nil
-		} else if count == pos+1 || mid == low { // implied: count > pos
-			return mid, nil
-		} else { // implied: count > pos + 1
-			// Must narrow as mid < high, therefore newHigh < lowHigh
-			// Keeps high precondition as msgCount(mid) > pos
-			high = mid
-		}
-	}
-	return low, nil
 }
 
 type ValidationEntryStage uint32
@@ -186,11 +155,13 @@ func newValidationEntry(
 	end validator.GoGlobalState,
 	msg *arbostypes.MessageWithMetadata,
 	batch []byte,
+	batchBlockHash common.Hash,
 	prevDelayed uint64,
 ) (*validationEntry, error) {
 	batchInfo := validator.BatchInfo{
-		Number: start.Batch,
-		Data:   batch,
+		Number:    start.Batch,
+		BlockHash: batchBlockHash,
+		Data:      batch,
 	}
 	hasDelayed := false
 	var delayedNum uint64
@@ -219,22 +190,28 @@ func NewStatelessBlockValidator(
 	recorder execution.ExecutionRecorder,
 	arbdb ethdb.Database,
 	das arbstate.DataAvailabilityReader,
+	blobReader arbstate.BlobReader,
 	config func() *BlockValidatorConfig,
 	stack *node.Node,
 ) (*StatelessBlockValidator, error) {
-	valConfFetcher := func() *rpcclient.ClientConfig { return &config().ValidationServer }
-	valClient := server_api.NewValidationClient(valConfFetcher, stack)
+	validationSpawners := make([]validator.ValidationSpawner, len(config().ValidationServerConfigs))
+	for i, serverConfig := range config().ValidationServerConfigs {
+		valConfFetcher := func() *rpcclient.ClientConfig { return &serverConfig }
+		validationSpawners[i] = server_api.NewValidationClient(valConfFetcher, stack)
+	}
+	valConfFetcher := func() *rpcclient.ClientConfig { return &config().ValidationServerConfigs[0] }
 	execClient := server_api.NewExecutionClient(valConfFetcher, stack)
 	validator := &StatelessBlockValidator{
 		config:             config(),
 		execSpawner:        execClient,
 		recorder:           recorder,
-		validationSpawners: []validator.ValidationSpawner{valClient},
+		validationSpawners: validationSpawners,
 		inboxReader:        inboxReader,
 		inboxTracker:       inbox,
 		streamer:           streamer,
 		db:                 arbdb,
 		daService:          das,
+		blobReader:         blobReader,
 	}
 	return validator, nil
 }
@@ -284,17 +261,39 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		if len(batch.Data) <= 40 {
 			continue
 		}
-		if !arbstate.IsDASMessageHeaderByte(batch.Data[40]) {
-			continue
-		}
-		if v.daService == nil {
-			log.Warn("No DAS configured, but sequencer message found with DAS header")
-		} else {
-			_, err := arbstate.RecoverPayloadFromDasBatch(
-				ctx, batch.Number, batch.Data, v.daService, e.Preimages, arbstate.KeysetValidate,
-			)
+		if arbstate.IsBlobHashesHeaderByte(batch.Data[40]) {
+			payload := batch.Data[41:]
+			if len(payload)%len(common.Hash{}) != 0 {
+				return fmt.Errorf("blob batch data is not a list of hashes as expected")
+			}
+			versionedHashes := make([]common.Hash, len(payload)/len(common.Hash{}))
+			for i := 0; i*32 < len(payload); i += 1 {
+				copy(versionedHashes[i][:], payload[i*32:(i+1)*32])
+			}
+			blobs, err := v.blobReader.GetBlobs(ctx, batch.BlockHash, versionedHashes)
 			if err != nil {
-				return err
+				return fmt.Errorf("failed to get blobs: %w", err)
+			}
+			if e.Preimages[arbutil.EthVersionedHashPreimageType] == nil {
+				e.Preimages[arbutil.EthVersionedHashPreimageType] = make(map[common.Hash][]byte)
+			}
+			for i, blob := range blobs {
+				// Prevent aliasing `blob` when slicing it, as for range loops overwrite the same variable
+				// Won't be necessary after Go 1.22 with https://go.dev/blog/loopvar-preview
+				b := blob
+				e.Preimages[arbutil.EthVersionedHashPreimageType][versionedHashes[i]] = b[:]
+			}
+		}
+		if arbstate.IsDASMessageHeaderByte(batch.Data[40]) {
+			if v.daService == nil {
+				log.Warn("No DAS configured, but sequencer message found with DAS header")
+			} else {
+				_, err := arbstate.RecoverPayloadFromDasBatch(
+					ctx, batch.Number, batch.Data, v.daService, e.Preimages, arbstate.KeysetValidate,
+				)
+				if err != nil {
+					return err
+				}
 			}
 		}
 	}
@@ -321,13 +320,12 @@ func (v *StatelessBlockValidator) GlobalStatePositionsAtCount(count arbutil.Mess
 	if count == 1 {
 		return GlobalStatePosition{}, GlobalStatePosition{1, 0}, nil
 	}
-	batchCount, err := v.inboxTracker.GetBatchCount()
+	batch, found, err := v.inboxTracker.FindInboxBatchContainingMessage(count - 1)
 	if err != nil {
 		return GlobalStatePosition{}, GlobalStatePosition{}, err
 	}
-	batch, err := FindBatchContainingMessageIndex(v.inboxTracker, count-1, batchCount)
-	if err != nil {
-		return GlobalStatePosition{}, GlobalStatePosition{}, err
+	if !found {
+		return GlobalStatePosition{}, GlobalStatePosition{}, errors.New("batch not found on L1 yet")
 	}
 	return GlobalStatePositionsAtCount(v.inboxTracker, count, batch)
 }
@@ -359,11 +357,11 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	}
 	start := buildGlobalState(*prevResult, startPos)
 	end := buildGlobalState(*result, endPos)
-	seqMsg, err := v.inboxReader.GetSequencerMessageBytes(ctx, startPos.BatchNumber)
+	seqMsg, batchBlockHash, err := v.inboxReader.GetSequencerMessageBytes(ctx, startPos.BatchNumber)
 	if err != nil {
 		return nil, err
 	}
-	entry, err := newValidationEntry(pos, start, end, msg, seqMsg, prevDelayed)
+	entry, err := newValidationEntry(pos, start, end, msg, seqMsg, batchBlockHash, prevDelayed)
 	if err != nil {
 		return nil, err
 	}
