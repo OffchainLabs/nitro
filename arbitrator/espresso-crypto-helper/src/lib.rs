@@ -29,6 +29,7 @@ pub fn verify_merkle_proof_helper(
     _proof_bytes: &[u8],
     _block_comm_bytes: &[u8],
 ) {
+    // TODO: add validation logic
 }
 
 // Helper function to verify a VID namespace proof that takes the byte representations of the proof,
