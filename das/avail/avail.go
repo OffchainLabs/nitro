@@ -2,11 +2,7 @@ package avail
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
-	"net/url"
 
 	"time"
 
@@ -15,9 +11,9 @@ import (
 	gsrpc_types "github.com/centrifuge/go-substrate-rpc-client/v4/types"
 	"github.com/centrifuge/go-substrate-rpc-client/v4/types/codec"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/vedhavyas/go-subkey"
-	"golang.org/x/crypto/sha3"
 )
 
 // AvailMessageHeaderFlag indicates that this data is a Blob Pointer
@@ -28,22 +24,9 @@ func IsAvailMessageHeaderByte(header byte) bool {
 	return (AvailMessageHeaderFlag & header) > 0
 }
 
-type BridgdeApiResponse struct {
-	BlobRoot           gsrpc_types.Hash   `json:"blobRoot"`
-	BlockHash          gsrpc_types.Hash   `json:"blockHash"`
-	BridgeRoot         gsrpc_types.Hash   `json:"bridgeRoot"`
-	DataRoot           gsrpc_types.Hash   `json:"dataRoot"`
-	DataRootCommitment gsrpc_types.Hash   `json:"dataRootCommitment"`
-	DataRootIndex      uint64             `json:"dataRootIndex"`
-	DataRootProof      []gsrpc_types.Hash `json:"dataRootProof"`
-	Leaf               gsrpc_types.Hash   `json:"leaf"`
-	LeafIndex          uint64             `json:"leafIndex"`
-	LeafProof          []gsrpc_types.Hash `json:"leafProof"`
-	RangeHash          gsrpc_types.Hash   `json:"rangeHash"`
-}
-
 type AvailDA struct {
 	enable      bool
+	l1Client    arbutil.L1Interface
 	timeout     time.Duration
 	appID       int
 	api         *gsrpc.SubstrateAPI
@@ -54,7 +37,7 @@ type AvailDA struct {
 	key         gsrpc_types.StorageKey
 }
 
-func NewAvailDA(cfg DAConfig) (*AvailDA, error) {
+func NewAvailDA(cfg DAConfig, l1Client arbutil.L1Interface) (*AvailDA, error) {
 
 	Seed := cfg.Seed
 	AppID := cfg.AppID
@@ -103,6 +86,7 @@ func NewAvailDA(cfg DAConfig) (*AvailDA, error) {
 
 	return &AvailDA{
 		enable:      cfg.Enable,
+		l1Client:    l1Client,
 		timeout:     cfg.Timeout,
 		appID:       appID,
 		api:         api,
@@ -189,40 +173,15 @@ outer:
 		}
 	}
 
-	// Calculated batch hash for batch commitment
-	var batchHash [32]byte
-	h := sha3.NewLegacyKeccak256()
-	h.Write(message)
-	h.Sum(batchHash[:0])
-
-	extrinsicIndex := 1
-	// Quering for merkle proof from Bridge Api
-	bridgeApiBaseURL := "https://bridge-api.sandbox.avail.tools"
-	blockHashPath := "/eth/proof/" + "0xf53613fa06b6b7f9dc5e4cf5f2849affc94e19d8a9e8999207ece01175c988ed" //+ finalizedblockHash.Hex()
-	params := url.Values{}
-	params.Add("index", fmt.Sprint(extrinsicIndex))
-
-	u, _ := url.ParseRequestURI(bridgeApiBaseURL)
-	u.Path = blockHashPath
-	u.RawQuery = params.Encode()
-	urlStr := fmt.Sprintf("%v", u)
-
-	// TODO: Add time difference between batch submission and querying merkle proof
-	resp, err := http.Get(urlStr) //nolint
-	if err != nil {
-		return nil, fmt.Errorf("bridge Api request not successfull, err=%w", err)
-	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
+	extrinsicIndex, err := GetExtrinsicIndex(a.api, finalizedblockHash, a.keyringPair.Address, o.Nonce)
 	if err != nil {
 		return nil, err
 	}
-	var bridgdeApiResponse BridgdeApiResponse
-	err = json.Unmarshal(body, &bridgdeApiResponse)
+
+	merkleProofInput, err := QueryMerkleProofInput(finalizedblockHash.Hex(), extrinsicIndex)
 	if err != nil {
 		return nil, err
 	}
-	var merkleProofInput MerkleProofInput = MerkleProofInput{bridgdeApiResponse.DataRootProof, bridgdeApiResponse.LeafProof, bridgdeApiResponse.RangeHash, bridgdeApiResponse.DataRootIndex, bridgdeApiResponse.BlobRoot, bridgdeApiResponse.BridgeRoot, bridgdeApiResponse.Leaf, bridgdeApiResponse.LeafIndex}
 
 	// Creating BlobPointer to submit over settlement layer
 	blobPointer := BlobPointer{BlockHash: finalizedblockHash, Sender: a.keyringPair.Address, Nonce: nonce, DasTreeRootHash: dastree.Hash(message), MerkleProofInput: merkleProofInput}
@@ -233,23 +192,7 @@ outer:
 		return nil, err
 	}
 
-	// buf := new(bytes.Buffer)
-	// err = binary.Write(buf, binary.BigEndian, AvailMessageHeaderFlag)
-	// if err != nil {
-	// 	log.Warn("⚠️ batch type byte serialization failed", "err", err)
-	// 	return nil, err
-	// }
-
-	// err = binary.Write(buf, binary.BigEndian, blobPointerData)
-	// if err != nil {
-	// 	log.Warn("⚠️ blob pointer data serialization failed", "err", err)
-	// 	return nil, err
-	// }
-
-	// serializedBlobPointerData := buf.Bytes()
-
 	return blobPointerData, nil
-
 }
 
 func (a *AvailDA) Read(ctx context.Context, blobPointer BlobPointer) ([]byte, error) {

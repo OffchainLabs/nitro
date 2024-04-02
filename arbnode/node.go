@@ -538,7 +538,7 @@ func createNodeImpl(
 	} else if l2Config.ArbitrumChainParams.DataAvailabilityCommittee {
 		return nil, errors.New("a data availability service is required for this chain, but it was not configured")
 	} else if config.Avail.Enable {
-		availService, err := avail.NewAvailDA(config.Avail)
+		availService, err := avail.NewAvailDA(config.Avail, l1client)
 		if err != nil {
 			return nil, err
 		}
