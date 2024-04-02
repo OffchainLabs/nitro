@@ -23,11 +23,17 @@ import (
 type ChainBackend interface {
 	bind.ContractBackend
 	ReceiptFetcher
+	TxFetcher
 }
 
 // ReceiptFetcher defines the ability to retrieve transactions receipts from the chain.
 type ReceiptFetcher interface {
 	TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error)
+}
+
+// ReceiptFetcher defines the ability to retrieve transactions receipts from the chain.
+type TxFetcher interface {
+	TransactionByHash(ctx context.Context, txHash common.Hash) (*types.Transaction, bool, error)
 }
 
 // LayerZeroHeights for edges configured as parameters in the challenge manager contract.
@@ -251,7 +257,7 @@ type SpecChallengeManager interface {
 	MultiUpdateInheritedTimers(
 		ctx context.Context,
 		challengeBranch []ReadOnlyEdge,
-	) error
+	) (*types.Transaction, error)
 	// Calculates an edge id for an edge.
 	CalculateEdgeId(
 		ctx context.Context,
@@ -355,9 +361,11 @@ type ReadOnlyEdge interface {
 	AssertionHash(ctx context.Context) (AssertionHash, error)
 	// The time in seconds an edge has been unrivaled.
 	TimeUnrivaled(ctx context.Context) (uint64, error)
-	// The inherited timer from the edge's children or claiming edges. Needs to be refreshed
-	// onchain over time.
-	InheritedTimer(ctx context.Context) (InheritedTimer, error)
+	// The inherited timer from the edge's children or claiming edges based on the latest block number.
+	// NOT reorg safe.
+	LatestInheritedTimer(ctx context.Context) (InheritedTimer, error)
+	// The inherited timer from the edge's children or claiming edges based on the the safe block number.
+	SafeHeadInheritedTimer(ctx context.Context) (InheritedTimer, error)
 	// Whether or not an edge has rivals.
 	HasRival(ctx context.Context) (bool, error)
 	// The status of an edge.
@@ -391,5 +399,5 @@ type SpecEdge interface {
 		prefixProof []byte,
 	) (VerifiedRoyalEdge, VerifiedRoyalEdge, error)
 	// Confirms an edge for having a total timer >= one challenge period.
-	ConfirmByTimer(ctx context.Context) error
+	ConfirmByTimer(ctx context.Context) (*types.Transaction, error)
 }

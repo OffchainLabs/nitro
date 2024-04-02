@@ -43,6 +43,7 @@ func init() {
 type Backend interface {
 	bind.DeployBackend
 	bind.ContractBackend
+	TransactionByHash(ctx context.Context, txHash common.Hash) (*types.Transaction, bool, error)
 }
 
 type CreatedValidatorFork struct {

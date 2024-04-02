@@ -13,6 +13,7 @@ import (
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	commitments "github.com/OffchainLabs/bold/state-commitments/history"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -165,9 +166,9 @@ func (m *MockSpecChallengeManager) ChallengePeriodBlocks(ctx context.Context) (u
 	args := m.Called(ctx)
 	return args.Get(0).(uint64), args.Error(1)
 }
-func (m *MockSpecChallengeManager) MultiUpdateInheritedTimers(ctx context.Context, branch []protocol.ReadOnlyEdge) error {
+func (m *MockSpecChallengeManager) MultiUpdateInheritedTimers(ctx context.Context, branch []protocol.ReadOnlyEdge) (*types.Transaction, error) {
 	args := m.Called(ctx, branch)
-	return args.Error(0)
+	return args.Get(0).(*types.Transaction), args.Error(1)
 }
 func (m *MockSpecChallengeManager) GetEdge(
 	ctx context.Context,
@@ -284,7 +285,11 @@ func (m *MockSpecEdge) TimeUnrivaled(ctx context.Context) (uint64, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(uint64), args.Error(1)
 }
-func (m *MockSpecEdge) InheritedTimer(ctx context.Context) (protocol.InheritedTimer, error) {
+func (m *MockSpecEdge) LatestInheritedTimer(ctx context.Context) (protocol.InheritedTimer, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(protocol.InheritedTimer), args.Error(1)
+}
+func (m *MockSpecEdge) SafeHeadInheritedTimer(ctx context.Context) (protocol.InheritedTimer, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(protocol.InheritedTimer), args.Error(1)
 }
@@ -338,9 +343,9 @@ func (m *MockSpecEdge) Bisect(
 	args := m.Called(ctx, prefixHistoryRoot, prefixProof)
 	return args.Get(0).(protocol.VerifiedRoyalEdge), args.Get(1).(protocol.VerifiedRoyalEdge), args.Error(2)
 }
-func (m *MockSpecEdge) ConfirmByTimer(ctx context.Context) error {
+func (m *MockSpecEdge) ConfirmByTimer(ctx context.Context) (*types.Transaction, error) {
 	args := m.Called(ctx)
-	return args.Error(0)
+	return args.Get(0).(*types.Transaction), args.Error(1)
 }
 func (m *MockSpecEdge) ConfirmByClaim(ctx context.Context, claimId protocol.ClaimId) error {
 	args := m.Called(ctx, claimId)

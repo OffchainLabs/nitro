@@ -126,3 +126,7 @@ func (m *MockContractBackend) SubscribeFilterLogs(ctx context.Context, query eth
 func (m *MockContractBackend) TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error) {
 	return nil, nil
 }
+
+func (m *MockContractBackend) TransactionByHash(ctx context.Context, txHash common.Hash) (*types.Transaction, bool, error) {
+	return nil, false, nil
+}

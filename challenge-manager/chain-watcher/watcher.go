@@ -156,7 +156,7 @@ func (w *Watcher) IsRoyal(assertionHash protocol.AssertionHash, edgeId protocol.
 	return chal.honestEdgeTree.HasRoyalEdge(edgeId)
 }
 
-func (w *Watcher) InheritedTimer(
+func (w *Watcher) SafeHeadInheritedTimer(
 	ctx context.Context,
 	edgeId protocol.EdgeId,
 ) (protocol.InheritedTimer, error) {
@@ -172,7 +172,7 @@ func (w *Watcher) InheritedTimer(
 		return 0, fmt.Errorf("no edge found with id %#x", edgeId.Hash)
 
 	}
-	return edgeOpt.Unwrap().InheritedTimer(ctx)
+	return edgeOpt.Unwrap().SafeHeadInheritedTimer(ctx)
 }
 
 func (w *Watcher) IsSynced() bool {
@@ -187,7 +187,7 @@ func (w *Watcher) Start(ctx context.Context) {
 		return w.getStartEndBlockNum(ctx)
 	})
 	if err != nil {
-		srvlog.Error("Could not get start and end block num", log.Ctx{"err": err})
+		srvlog.Error("Could not get start and end block num", log.Ctx{"error": err})
 		return
 	}
 	fromBlock := scanRange.startBlockNum
@@ -198,14 +198,14 @@ func (w *Watcher) Start(ctx context.Context) {
 		return w.chain.SpecChallengeManager(ctx)
 	})
 	if err != nil {
-		srvlog.Error("Could not get spec challenge manager", log.Ctx{"err": err})
+		srvlog.Error("Could not get spec challenge manager", log.Ctx{"error": err})
 		return
 	}
 	filterer, err := retry.UntilSucceeds(ctx, func() (*challengeV2gen.EdgeChallengeManagerFilterer, error) {
 		return challengeV2gen.NewEdgeChallengeManagerFilterer(challengeManager.Address(), w.backend)
 	})
 	if err != nil {
-		srvlog.Error("Could not initialize edge challenge manager filterer", log.Ctx{"err": err})
+		srvlog.Error("Could not initialize edge challenge manager filterer", log.Ctx{"error": err})
 		return
 	}
 	filterOpts := &bind.FilterOpts{
@@ -460,17 +460,18 @@ func (w *Watcher) AddVerifiedHonestEdge(ctx context.Context, edge protocol.Verif
 	start, startRoot := edge.StartCommitment()
 	end, endRoot := edge.EndCommitment()
 	fields := log.Ctx{
-		"edgeId":         edge.Id().Hash,
-		"challengeLevel": edge.GetChallengeLevel(),
-		"assertionHash":  assertionHash.Hash,
-		"startHeight":    start,
-		"endHeight":      end,
-		"startRoot":      startRoot,
-		"endRoot":        endRoot,
+		"edgeId":                  fmt.Sprintf("%#x", edge.Id().Hash.Bytes()[:4]),
+		"challengeLevel":          edge.GetChallengeLevel(),
+		"challengedAssertionHash": fmt.Sprintf("%#x", assertionHash.Hash.Bytes()[:4]),
+		"startHeight":             start,
+		"endHeight":               end,
+		"startCommit":             fmt.Sprintf("%#x", startRoot[:4]),
+		"endCommit":               fmt.Sprintf("%#x", endRoot[:4]),
+		"isHonestEdge":            true,
 	}
 	srvlog.Info("Observed an honest challenge edge created onchain, now tracking it locally", fields)
 	if err = chal.honestEdgeTree.AddRoyalEdge(edge); err != nil {
-		log.Error("Could not add verified honest edge to local cache", log.Ctx{"error": err})
+		srvlog.Error("Could not add verified honest edge to local cache", log.Ctx{"error": err})
 		return errors.Wrap(err, "could not add honest edge to challenge tree")
 	}
 	go func() {
@@ -575,13 +576,13 @@ func (w *Watcher) AddEdge(ctx context.Context, edge protocol.SpecEdge) (bool, er
 		}
 	}
 	fields := log.Ctx{
-		"edgeId":                  edge.Id().Hash,
+		"edgeId":                  fmt.Sprintf("%#x", edge.Id().Hash.Bytes()[:4]),
 		"challengeLevel":          edge.GetChallengeLevel(),
-		"challengedAssertionHash": challengeParentAssertionHash.Hash,
+		"challengedAssertionHash": fmt.Sprintf("%#x", challengeParentAssertionHash.Hash.Bytes()[:4]),
 		"startHeight":             start,
 		"endHeight":               end,
-		"startRoot":               startRoot,
-		"endRoot":                 endRoot,
+		"startCommit":             fmt.Sprintf("%#x", startRoot[:4]),
+		"endCommit":               fmt.Sprintf("%#x", endRoot[:4]),
 		"isHonestEdge":            isRoyalEdge,
 	}
 	if isRoyalEdge {
@@ -785,9 +786,35 @@ func (w *Watcher) confirmAssertionByChallengeWinner(ctx context.Context, edge pr
 		return w.chain.RollupUserLogic().RollupUserLogicCaller.ChallengeGracePeriodBlocks(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}))
 	})
 	if err != nil {
-		log.Error("Could not get challenge grace period blocks", log.Ctx{"err": err})
+		log.Error("Could not get challenge grace period blocks", log.Ctx{"error": err})
 		return
 	}
+	assertionCreationInfo, err := retry.UntilSucceeds(ctx, func() (*protocol.AssertionCreatedInfo, error) {
+		return w.chain.ReadAssertionCreationInfo(
+			ctx, protocol.AssertionHash{Hash: common.Hash(claimId)},
+		)
+	})
+	if err != nil {
+		log.Error("Could not get assertion creation info", log.Ctx{"error": err})
+		return
+	}
+	parentCreationInfo, err := retry.UntilSucceeds(ctx, func() (*protocol.AssertionCreatedInfo, error) {
+		return w.chain.ReadAssertionCreationInfo(
+			ctx, protocol.AssertionHash{Hash: assertionCreationInfo.ParentAssertionHash},
+		)
+	})
+	if err != nil {
+		log.Error("Could not get parent assertion creation info", log.Ctx{"error": err})
+		return
+	}
+	confirmableAtBlock := assertionCreationInfo.CreationBlock + parentCreationInfo.ConfirmPeriodBlocks
+	if edgeConfirmedAtBlock > confirmableAtBlock {
+		confirmableAtBlock = edgeConfirmedAtBlock
+	}
+	confirmableAtBlock += challengeGracePeriodBlocks
+
+	// Compute the number of blocks until we reach the assertion's
+	// deadline for confirmation.
 	ticker := time.NewTicker(w.assertionConfirmingInterval)
 	defer ticker.Stop()
 	for {
@@ -795,9 +822,16 @@ func (w *Watcher) confirmAssertionByChallengeWinner(ctx context.Context, edge pr
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			confirmed, err := solimpl.TryConfirmingAssertion(ctx, common.Hash(claimId), edgeConfirmedAtBlock+challengeGracePeriodBlocks, w.chain, w.averageTimeForBlockCreation, option.Some(edge.Id()))
+			confirmed, err := solimpl.TryConfirmingAssertion(
+				ctx,
+				common.Hash(claimId),
+				confirmableAtBlock,
+				w.chain,
+				w.averageTimeForBlockCreation,
+				option.Some(edge.Id()),
+			)
 			if err != nil {
-				srvlog.Error("Could not confirm assertion", log.Ctx{"err": err, "assertionHash": common.Hash(claimId)})
+				srvlog.Error("Could not confirm assertion", log.Ctx{"error": err, "assertionHash": common.Hash(claimId)})
 				errorConfirmingAssertionByWinnerCounter.Inc(1)
 				continue
 			}
@@ -864,7 +898,7 @@ func (w *Watcher) saveEdgeToDB(
 	if edge.ClaimId().IsSome() {
 		claimId = common.Hash(edge.ClaimId().Unwrap())
 	}
-	inheritedTimer, err := w.InheritedTimer(ctx, edge.Id())
+	inheritedTimer, err := w.SafeHeadInheritedTimer(ctx, edge.Id())
 	if err != nil {
 		return err
 	}

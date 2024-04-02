@@ -196,7 +196,7 @@ func (b *Backend) GetEdges(ctx context.Context, opts ...db.EdgeOption) ([]*api.J
 			e.TimeUnrivaled = timeUnrivaled
 			isRoyal := b.chainWatcher.IsRoyal(assertionHash, edge.Id())
 			if isRoyal {
-				inheritedTimer, err := b.chainWatcher.InheritedTimer(ctx, edge.Id())
+				inheritedTimer, err := b.chainWatcher.SafeHeadInheritedTimer(ctx, edge.Id())
 				if err != nil {
 					return nil, err
 				}

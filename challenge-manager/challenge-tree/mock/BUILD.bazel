@@ -10,5 +10,6 @@ go_library(
         "//chain-abstraction:protocol",
         "//containers/option",
         "@com_github_ethereum_go_ethereum//common",
+        "@com_github_ethereum_go_ethereum//core/types",
     ],
 )

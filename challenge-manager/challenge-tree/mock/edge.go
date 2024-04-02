@@ -9,6 +9,7 @@ import (
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/containers/option"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 )
 
 var _ = protocol.ReadOnlyEdge(&Edge{})
@@ -126,8 +127,13 @@ func (*Edge) TimeUnrivaled(_ context.Context) (uint64, error) {
 	return 0, nil
 }
 
-// TimeUnrivaled in seconds an edge has been unrivaled.
-func (e *Edge) InheritedTimer(_ context.Context) (protocol.InheritedTimer, error) {
+// SafeHeadInheritedTimer in seconds an edge has been unrivaled.
+func (e *Edge) SafeHeadInheritedTimer(_ context.Context) (protocol.InheritedTimer, error) {
+	return e.InnerInheritedTimer, nil
+}
+
+// LatestInheritedTimer in seconds an edge has been unrivaled.
+func (e *Edge) LatestInheritedTimer(_ context.Context) (protocol.InheritedTimer, error) {
 	return e.InnerInheritedTimer, nil
 }
 
@@ -160,8 +166,8 @@ func (*Edge) Bisect(
 	return nil, nil, errors.New("unimplemented")
 }
 
-func (*Edge) ConfirmByTimer(_ context.Context) error {
-	return errors.New("unimplemented")
+func (*Edge) ConfirmByTimer(_ context.Context) (*types.Transaction, error) {
+	return nil, errors.New("unimplemented")
 }
 
 func (*Edge) ConfirmedAtBlock(ctx context.Context) (uint64, error) {

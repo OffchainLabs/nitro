@@ -490,15 +490,20 @@ func TestEdgeChallengeManager_ConfirmByTime(t *testing.T) {
 
 	chalManager, err := bisectionScenario.topLevelFork.Chains[0].SpecChallengeManager(ctx)
 	require.NoError(t, err)
-	require.NoError(t, chalManager.MultiUpdateInheritedTimers(ctx, []protocol.ReadOnlyEdge{honestChildren1}))
-	require.NoError(t, chalManager.MultiUpdateInheritedTimers(ctx, []protocol.ReadOnlyEdge{honestChildren2}))
-	require.NoError(t, chalManager.MultiUpdateInheritedTimers(ctx, []protocol.ReadOnlyEdge{honestEdge}))
+	_, err = chalManager.MultiUpdateInheritedTimers(ctx, []protocol.ReadOnlyEdge{honestChildren1})
+	require.NoError(t, err)
+	_, err = chalManager.MultiUpdateInheritedTimers(ctx, []protocol.ReadOnlyEdge{honestChildren2})
+	require.NoError(t, err)
+	_, err = chalManager.MultiUpdateInheritedTimers(ctx, []protocol.ReadOnlyEdge{honestEdge})
+	require.NoError(t, err)
 
-	require.NoError(t, honestEdge.ConfirmByTimer(ctx))
+	_, err = honestEdge.ConfirmByTimer(ctx)
+	require.NoError(t, err)
 	s0, err := honestEdge.Status(ctx)
 	require.NoError(t, err)
 	require.Equal(t, protocol.EdgeConfirmed, s0)
-	require.NoError(t, honestEdge.ConfirmByTimer(ctx)) // already confirmed should not error.
+	_, err = honestEdge.ConfirmByTimer(ctx)
+	require.NoError(t, err)
 }
 
 func TestEdgeChallengeManager_ConfirmByTime_MoreComplexScenario(t *testing.T) {
@@ -555,9 +560,11 @@ func TestEdgeChallengeManager_ConfirmByTime_MoreComplexScenario(t *testing.T) {
 	t.Run("confirmed by timer", func(t *testing.T) {
 		chalManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
 		require.NoError(t, err)
-		require.NoError(t, chalManager.MultiUpdateInheritedTimers(ctx, []protocol.ReadOnlyEdge{honestEdge}))
+		_, err = chalManager.MultiUpdateInheritedTimers(ctx, []protocol.ReadOnlyEdge{honestEdge})
+		require.NoError(t, err)
 
-		require.NoError(t, honestEdge.ConfirmByTimer(ctx))
+		_, err = honestEdge.ConfirmByTimer(ctx)
+		require.NoError(t, err)
 		status, err := honestEdge.Status(ctx)
 		require.NoError(t, err)
 		require.Equal(t, protocol.EdgeConfirmed, status)
@@ -566,7 +573,8 @@ func TestEdgeChallengeManager_ConfirmByTime_MoreComplexScenario(t *testing.T) {
 		status, err := honestEdge.Status(ctx)
 		require.NoError(t, err)
 		require.Equal(t, protocol.EdgeConfirmed, status)
-		require.NoError(t, honestEdge.ConfirmByTimer(ctx))
+		_, err = honestEdge.ConfirmByTimer(ctx)
+		require.NoError(t, err)
 	})
 }
 

@@ -24,6 +24,18 @@ type ChainCommitter interface {
 	Commit() common.Hash
 }
 
+type transactConfig struct {
+	waitForSafe bool
+}
+
+type transactOpt func(tc *transactConfig)
+
+func withoutSafeWait() transactOpt {
+	return func(tc *transactConfig) {
+		tc.waitForSafe = false
+	}
+}
+
 // Runs a callback function meant to write to a chain backend, and if the
 // chain backend supports committing directly, we call the commit function before
 // returning. This function additionally waits for the transaction to complete and returns
@@ -34,7 +46,14 @@ func (a *AssertionChain) transact(
 	ctx context.Context,
 	backend ChainBackend,
 	fn func(opts *bind.TransactOpts) (*types.Transaction, error),
+	configOpts ...transactOpt,
 ) (*types.Receipt, error) {
+	config := &transactConfig{
+		waitForSafe: true,
+	}
+	for _, o := range configOpts {
+		o(config)
+	}
 	// We do not send the tx, but instead estimate gas first.
 	opts := copyTxOpts(a.txOpts)
 
@@ -79,11 +98,13 @@ func (a *AssertionChain) transact(
 		return nil, err
 	}
 
-	ctxWaitSafe, cancelWaitSafe := context.WithTimeout(ctx, time.Minute*20)
-	defer cancelWaitSafe()
-	receipt, err = a.waitForTxToBeSafe(ctxWaitSafe, backend, tx, receipt)
-	if err != nil {
-		return nil, err
+	if config.waitForSafe {
+		ctxWaitSafe, cancelWaitSafe := context.WithTimeout(ctx, time.Minute*20)
+		defer cancelWaitSafe()
+		receipt, err = a.waitForTxToBeSafe(ctxWaitSafe, backend, tx, receipt)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	if receipt.Status != types.ReceiptStatusSuccessful {

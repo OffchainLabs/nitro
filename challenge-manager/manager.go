@@ -280,6 +280,10 @@ func (m *Manager) ChallengeManagerAddress() common.Address {
 	return m.chalManagerAddr
 }
 
+func (m *Manager) BlockTimes() time.Duration {
+	return m.averageTimeForBlockCreation
+}
+
 // MarkTrackedEdge marks an edge id as being tracked by our challenge manager.
 func (m *Manager) MarkTrackedEdge(edgeId protocol.EdgeId, tracker *edgetracker.Tracker) {
 	m.trackedEdgeIds.Put(edgeId, tracker)
