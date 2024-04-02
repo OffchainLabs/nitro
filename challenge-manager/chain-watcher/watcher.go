@@ -807,11 +807,12 @@ func (w *Watcher) confirmAssertionByChallengeWinner(ctx context.Context, edge pr
 		log.Error("Could not get parent assertion creation info", log.Ctx{"error": err})
 		return
 	}
-	confirmableAtBlock := assertionCreationInfo.CreationBlock + parentCreationInfo.ConfirmPeriodBlocks
-	if edgeConfirmedAtBlock > confirmableAtBlock {
-		confirmableAtBlock = edgeConfirmedAtBlock
-	}
-	confirmableAtBlock += challengeGracePeriodBlocks
+	confirmableAtBlock := challengedAssertionConfirmableBlock(
+		parentCreationInfo,
+		edgeConfirmedAtBlock,
+		assertionCreationInfo,
+		challengeGracePeriodBlocks,
+	)
 
 	// Compute the number of blocks until we reach the assertion's
 	// deadline for confirmation.
@@ -843,6 +844,19 @@ func (w *Watcher) confirmAssertionByChallengeWinner(ctx context.Context, edge pr
 			}
 		}
 	}
+}
+
+func challengedAssertionConfirmableBlock(
+	parentInfo *protocol.AssertionCreatedInfo,
+	winningEdgeConfirmationBlock uint64,
+	info *protocol.AssertionCreatedInfo,
+	challengeGracePeriodBlocks uint64,
+) uint64 {
+	confirmableAtBlock := info.CreationBlock + parentInfo.ConfirmPeriodBlocks
+	if winningEdgeConfirmationBlock+challengeGracePeriodBlocks > confirmableAtBlock {
+		confirmableAtBlock = winningEdgeConfirmationBlock + challengeGracePeriodBlocks
+	}
+	return confirmableAtBlock
 }
 
 type filterRange struct {

@@ -30,4 +30,14 @@ go_test(
     name = "chain-watcher_test",
     srcs = ["watcher_test.go"],
     embed = [":chain-watcher"],
+    deps = [
+        "//chain-abstraction:protocol",
+        "//containers/option",
+        "//containers/threadsafe",
+        "//layer2-state-provider",
+        "//solgen/go/challengeV2gen",
+        "//testing/mocks",
+        "@com_github_ethereum_go_ethereum//common",
+        "@com_github_stretchr_testify//require",
+    ],
 )
