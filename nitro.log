@@ -6,3 +6,5 @@ INFO [04-01|20:47:46.208] WebSocket enabled                        url=ws://127.
 INFO [04-01|20:47:46.208] HTTP server started                      endpoint=127.0.0.1:8549 auth=true prefix= cors=localhost vhosts=
 INFO [04-01|20:47:46.209] New local node record                    seq=1,712,022,466,208 id=7634d85ee2f490a2 ip=127.0.0.1 udp=0 tcp=0
 INFO [04-01|20:47:46.209] Started P2P networking                   self=enode://a09139d459009b48bc39b851924cb44eb034d66785d2947ca044bfe3d587d8a4a4c2cb3e047e2f0c635c40458651e1a03c4d6bf136d8bbc0283179b4f2b8503a@127.0.0.1:0
+INFO [04-01|22:12:03.024] shutting down because of sigint 
+INFO [04-01|22:12:03.027] HTTP server stopped                      endpoint=127.0.0.1:8549
