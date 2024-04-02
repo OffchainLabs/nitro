@@ -305,11 +305,8 @@ func main() {
 			if jst.BlockMerkleProof == nil {
 				panic("block merkle proof missing from justification")
 			}
-			_, err = jst.BlockMerkleProof.Verify(commitment)
-			if err != nil {
-				panic("merkle proof verification failure")
-			}
 			espressocrypto.VerifyNamespace(chainConfig.ChainID.Uint64(), *jst.Proof, *jst.Header.PayloadCommitment, *jst.Header.NsTable, txs)
+			espressocrypto.VerifyMerkleProof(commitment, *jst.BlockMerkleProof, commitment)
 		}
 
 		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher)
