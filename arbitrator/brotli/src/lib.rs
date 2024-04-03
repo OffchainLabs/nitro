@@ -126,8 +126,7 @@ pub fn compress_into(
     dictionary: Dictionary,
 ) -> Result<Vec<u8>, BrotliStatus> {
     let max_size = compression_bound(input.len(), level);
-    let needed = max_size.saturating_sub(output.capacity() - output.len());
-    output.reserve_exact(needed);
+    output.reserve_exact(max_size);
 
     let space = output.spare_capacity_mut();
     let count = compress_fixed(input, space, level, window_size, dictionary)?.len();

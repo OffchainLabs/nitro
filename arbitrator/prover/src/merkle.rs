@@ -3,13 +3,14 @@
 
 use arbutil::Bytes32;
 use digest::Digest;
+use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
 use std::convert::TryFrom;
 
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MerkleType {
     Empty,
     Value,
@@ -42,7 +43,7 @@ impl MerkleType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Merkle {
     ty: MerkleType,
     layers: Vec<Vec<Bytes32>>,

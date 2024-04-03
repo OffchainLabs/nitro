@@ -9,6 +9,7 @@ cargo-fuzz = true
 
 [dependencies]
 libfuzzer-sys = "0.4"
+hex = "0.4.3"
 
 [dependencies.brotli]
 path = ".."
@@ -23,6 +24,13 @@ bench = false
 [[bin]]
 name = "decompress"
 path = "fuzz_targets/decompress.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "round-trip"
+path = "fuzz_targets/round_trip.rs"
 test = false
 doc = false
 bench = false
