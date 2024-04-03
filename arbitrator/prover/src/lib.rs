@@ -24,7 +24,7 @@ pub use machine::Machine;
 use arbutil::Bytes32;
 use eyre::{Report, Result};
 use machine::{
-    argument_data_to_inbox, get_empty_preimage_resolver, GlobalState, MachineStatus, Module,
+    argument_data_to_inbox, get_empty_preimage_resolver, GlobalState, MachineStatus,
     PreimageResolver,
 };
 use sha3::{Digest, Keccak256};
@@ -33,7 +33,7 @@ use std::{
     ffi::CStr,
     os::raw::{c_char, c_int},
     path::Path,
-    ptr,
+    ptr, slice,
     sync::{
         atomic::{self, AtomicU8},
         Arc,
@@ -190,7 +190,7 @@ pub unsafe extern "C" fn arbitrator_add_inbox_message(
 ) -> c_int {
     let mach = &mut *mach;
     if let Some(identifier) = argument_data_to_inbox(inbox_identifier) {
-        let slice = std::slice::from_raw_parts(data.ptr, data.len);
+        let slice = slice::from_raw_parts(data.ptr, data.len);
         let data = slice.to_vec();
         mach.add_inbox_msg(identifier, index, data);
         0
@@ -199,8 +199,7 @@ pub unsafe extern "C" fn arbitrator_add_inbox_message(
     }
 }
 
-/// Adds a user program to the machine's known set of wasms, compiling it into a link-able module.
-/// Returns a c string error (freeable with libc's free) on compilation error, or nullptr on success.
+/// Adds a user program to the machine's known set of wasms.
 #[no_mangle]
 pub unsafe extern "C" fn arbitrator_add_user_wasm(
     mach: *mut Machine,
@@ -208,9 +207,8 @@ pub unsafe extern "C" fn arbitrator_add_user_wasm(
     module_len: usize,
     module_hash: *const Bytes32,
 ) {
-    let module = std::slice::from_raw_parts(module, module_len);
-    let module = Module::from_bytes(module);
-    (*mach).add_stylus_module(module, *module_hash);
+    let module = slice::from_raw_parts(module, module_len);
+    (*mach).add_stylus_module(*module_hash, module.to_owned());
 }
 
 /// Like arbitrator_step, but stops early if it hits a host io operation.

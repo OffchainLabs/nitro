@@ -840,7 +840,8 @@ pub struct Machine {
     inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
     first_too_far: u64, // Not part of machine hash
     preimage_resolver: PreimageResolverWrapper,
-    stylus_modules: HashMap<Bytes32, Module>, // Not part of machine hash
+    /// Link-able Stylus modules in compressed form. Not part of the machine hash.
+    stylus_modules: HashMap<Bytes32, Vec<u8>>,
     initial_hash: Bytes32,
     context: u64,
     debug_info: bool, // Not part of machine hash
@@ -1153,12 +1154,12 @@ impl Machine {
 
         let module = Module::from_user_binary(&bin, debug_funcs, Some(stylus_data))?;
         let hash = module.hash();
-        self.add_stylus_module(module, hash);
+        self.add_stylus_module(hash, module.into_bytes());
         Ok(hash)
     }
 
     /// Adds a pre-built program to the machine's known set of wasms.
-    pub fn add_stylus_module(&mut self, module: Module, hash: Bytes32) {
+    pub fn add_stylus_module(&mut self, hash: Bytes32, module: Vec<u8>) {
         self.stylus_modules.insert(hash, module);
     }
 
@@ -2354,13 +2355,12 @@ impl Machine {
                         error!("no hash for {}", ptr)
                     };
                     let Some(module) = self.stylus_modules.get(&hash) else {
-                        let keys: Vec<_> = self.stylus_modules.keys().map(hex::encode).collect();
-                        bail!(
-                            "no program for {} in {{{}}}",
-                            hex::encode(hash),
-                            keys.join(", ")
-                        )
+                        let modules = &self.stylus_modules;
+                        let keys: Vec<_> = modules.keys().take(16).map(hex::encode).collect();
+                        let dots = (modules.len() > 16).then_some("...").unwrap_or_default();
+                        bail!("no program for {hash} in {{{}{dots}}}", keys.join(", "))
                     };
+                    let module = unsafe { Module::from_bytes(module) };
                     flush_module!();
                     let index = self.modules.len() as u32;
                     value_stack.push(index.into());
@@ -2520,6 +2520,7 @@ impl Machine {
             println!("{module}\n");
         }
         for module in self.stylus_modules.values() {
+            let module = unsafe { Module::from_bytes(module) };
             println!("{module}\n");
         }
     }
