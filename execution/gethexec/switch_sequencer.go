@@ -64,7 +64,7 @@ func (s *SwitchSequencer) SwitchToCentralized(ctx context.Context) error {
 	}
 	s.mode = SequencingMode_Centralized
 	s.espresso.StopAndWait()
-	return s.espresso.Start(ctx)
+	return s.centralized.Start(ctx)
 }
 
 func (s *SwitchSequencer) getRunningSequencer() TransactionPublisher {
