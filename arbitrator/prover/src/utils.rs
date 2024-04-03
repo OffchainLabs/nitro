@@ -1,8 +1,16 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+#[cfg(feature = "native")]
+use crate::kzg::ETHEREUM_KZG_SETTINGS;
+use arbutil::PreimageType;
+#[cfg(feature = "native")]
+use c_kzg::{Blob, KzgCommitment};
+use digest::Digest;
 use eyre::{eyre, Result};
 use serde::{Deserialize, Serialize};
+use sha2::Sha256;
+use sha3::Keccak256;
 use std::{borrow::Borrow, convert::TryInto, fmt, fs::File, io::Read, ops::Deref, path::Path};
 use wasmparser::{TableType, ValType};
 
@@ -59,6 +67,13 @@ impl From<&[u8]> for CBytes {
         }
     }
 }
+
+// There's no thread safety concerns for CBytes.
+// This type is basically a Box<[u8]> (which is Send + Sync) with libc as an allocator.
+// Any data races between threads are prevented by Rust borrowing rules,
+// and the data isn't thread-local so there's no concern moving it between threads.
+unsafe impl Send for CBytes {}
+unsafe impl Sync for CBytes {}
 
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "ValType")]
@@ -155,4 +170,21 @@ pub fn split_import(qualified: &str) -> Result<(&str, &str)> {
     let parts = parts.try_into().map_err(|_| eyre!("bad import"))?;
     let [module, name]: [&str; 2] = parts;
     Ok((module, name))
+}
+
+#[cfg(feature = "native")]
+pub fn hash_preimage(preimage: &[u8], ty: PreimageType) -> Result<[u8; 32]> {
+    match ty {
+        PreimageType::Keccak256 => Ok(Keccak256::digest(preimage).into()),
+        PreimageType::Sha2_256 => Ok(Sha256::digest(preimage).into()),
+        PreimageType::EthVersionedHash => {
+            // TODO: really we should also accept what version it is,
+            // but right now only one version is supported by this hash format anyways.
+            let blob = Box::new(Blob::from_bytes(preimage)?);
+            let commitment = KzgCommitment::blob_to_kzg_commitment(&blob, &ETHEREUM_KZG_SETTINGS)?;
+            let mut commitment_hash: [u8; 32] = Sha256::digest(&*commitment.to_bytes()).into();
+            commitment_hash[0] = 1;
+            Ok(commitment_hash)
+        }
+    }
 }

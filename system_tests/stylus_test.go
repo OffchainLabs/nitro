@@ -1,8 +1,8 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-//go:build stylustest
-// +build stylustest
+//go:build stylustest && !race
+// +build stylustest,!race
 
 package arbtest
 

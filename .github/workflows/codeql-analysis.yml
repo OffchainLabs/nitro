@@ -14,6 +14,8 @@ name: "CodeQL"
 on:
   push:
     branches: [ "master" ]
+  merge_group:
+    branches: [ "master" ]
   pull_request:
     # The branches below must be a subset of the branches above
     branches: [ "master" ]
@@ -30,7 +32,6 @@ jobs:
       contents: read
       security-events: write
     env:
-      CODEQL_EXTRACTOR_GO_BUILD_TRACING: 'on'
       WABT_VERSION: 1.0.32
 
     strategy:
@@ -42,7 +43,7 @@ jobs:
 
     steps:
     - name: Checkout
-      uses: actions/checkout@v3
+      uses: actions/checkout@v4
       with:
         token: ${{ secrets.PRIVATE_CHECKOUT }}
         submodules: true
@@ -73,12 +74,10 @@ jobs:
         go-version: 1.21.x
 
     - name: Install rust stable
-      uses: actions-rs/toolchain@v1
-      id: install-rust
-      with:
-        profile: minimal
-        toolchain: "stable"
-        override: true
+      uses: dtolnay/rust-toolchain@stable
+
+    - name: Install Foundry
+      uses: foundry-rs/foundry-toolchain@v1
 
     - name: Cache Rust Build Products
       uses: actions/cache@v3

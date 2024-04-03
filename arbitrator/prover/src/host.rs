@@ -11,7 +11,7 @@ use crate::{
     value::{ArbValueType, FunctionType},
     wavm::{wasm_to_wavm, Instruction, Opcode},
 };
-use arbutil::{evm::user::UserOutcomeKind, Color};
+use arbutil::{evm::user::UserOutcomeKind, Color, PreimageType};
 use eyre::{bail, ErrReport, Result};
 use lazy_static::lazy_static;
 use num_derive::FromPrimitive;
@@ -72,7 +72,9 @@ pub enum Hostio {
     WavmSetGlobalStateBytes32,
     WavmGetGlobalStateU64,
     WavmSetGlobalStateU64,
-    WavmReadPreImage,
+    WavmReadKeccakPreimage,
+    WavmReadSha256Preimage,
+    WavmReadEthVersionedHashPreimage,
     WavmReadInboxMessage,
     WavmReadDelayedInboxMessage,
     WavmHaltAndSetFinished,
@@ -117,7 +119,9 @@ impl FromStr for Hostio {
             ("env", "wavm_set_globalstate_bytes32") => WavmSetGlobalStateBytes32,
             ("env", "wavm_get_globalstate_u64") => WavmGetGlobalStateU64,
             ("env", "wavm_set_globalstate_u64") => WavmSetGlobalStateU64,
-            ("env", "wavm_read_pre_image") => WavmReadPreImage,
+            ("env", "wavm_read_keccak_256_preimage") => WavmReadKeccakPreimage,
+            ("env", "wavm_read_sha2_256_preimage") => WavmReadSha256Preimage,
+            ("env", "wavm_read_eth_versioned_hash_preimage") => WavmReadEthVersionedHashPreimage,
             ("env", "wavm_read_inbox_message") => WavmReadInboxMessage,
             ("env", "wavm_read_delayed_inbox_message") => WavmReadDelayedInboxMessage,
             ("env", "wavm_halt_and_set_finished") => WavmHaltAndSetFinished,
@@ -168,18 +172,20 @@ impl Hostio {
 
         #[rustfmt::skip]
         let ty = match self {
-            WavmCallerLoad8             => InternalFunc::WavmCallerLoad8.ty(),
-            WavmCallerLoad32            => InternalFunc::WavmCallerLoad32.ty(),
-            WavmCallerStore8            => InternalFunc::WavmCallerStore8.ty(),
-            WavmCallerStore32           => InternalFunc::WavmCallerStore32.ty(),
-            WavmGetGlobalStateBytes32   => func!([I32, I32]),
-            WavmSetGlobalStateBytes32   => func!([I32, I32]),
-            WavmGetGlobalStateU64       => func!([I32], [I64]),
-            WavmSetGlobalStateU64       => func!([I32, I64]),
-            WavmReadPreImage            => func!([I32, I32], [I32]),
-            WavmReadInboxMessage        => func!([I64, I32, I32], [I32]),
-            WavmReadDelayedInboxMessage => func!([I64, I32, I32], [I32]),
-            WavmHaltAndSetFinished      => func!(),
+            WavmCallerLoad8                  => InternalFunc::WavmCallerLoad8.ty(),
+            WavmCallerLoad32                 => InternalFunc::WavmCallerLoad32.ty(),
+            WavmCallerStore8                 => InternalFunc::WavmCallerStore8.ty(),
+            WavmCallerStore32                => InternalFunc::WavmCallerStore32.ty(),
+            WavmGetGlobalStateBytes32        => func!([I32, I32]),
+            WavmSetGlobalStateBytes32        => func!([I32, I32]),
+            WavmGetGlobalStateU64            => func!([I32], [I64]),
+            WavmSetGlobalStateU64            => func!([I32, I64]),
+            WavmReadKeccakPreimage           => func!([I32, I32], [I32]),
+            WavmReadSha256Preimage           => func!([I32, I32], [I32]),
+            WavmReadEthVersionedHashPreimage => func!([I32, I32], [I32]),
+            WavmReadInboxMessage             => func!([I64, I32, I32], [I32]),
+            WavmReadDelayedInboxMessage      => func!([I64, I32, I32], [I32]),
+            WavmHaltAndSetFinished           => func!(),
             WavmLinkModule              => func!([I32], [I32]),      // λ(module_hash) → module
             WavmUnlinkModule            => func!(),                  // λ()
             ProgramInkLeft              => func!([I32], [I64]),      // λ(module) → ink_left
@@ -270,10 +276,20 @@ impl Hostio {
                 opcode!(LocalGet, 1);
                 opcode!(SetGlobalStateU64);
             }
-            WavmReadPreImage => {
+            WavmReadKeccakPreimage => {
                 opcode!(LocalGet, 0);
                 opcode!(LocalGet, 1);
-                opcode!(ReadPreImage);
+                opcode!(ReadPreImage, PreimageType::Keccak256);
+            }
+            WavmReadSha256Preimage => {
+                opcode!(LocalGet, 0);
+                opcode!(LocalGet, 1);
+                opcode!(ReadPreImage, PreimageType::Sha2_256);
+            }
+            WavmReadEthVersionedHashPreimage => {
+                opcode!(LocalGet, 0);
+                opcode!(LocalGet, 1);
+                opcode!(ReadPreImage, PreimageType::EthVersionedHash);
             }
             WavmReadInboxMessage => {
                 opcode!(LocalGet, 0);

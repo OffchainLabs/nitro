@@ -7,10 +7,10 @@ package server_arb
 #cgo CFLAGS: -g -Wall -I../../target/include/
 #include "arbitrator.h"
 
-extern ResolvedPreimage preimageResolver(size_t context, const uint8_t* hash);
+extern ResolvedPreimage preimageResolver(size_t context, uint8_t preimageType, const uint8_t* hash);
 
-ResolvedPreimage preimageResolverC(size_t context, const uint8_t* hash) {
-  return preimageResolver(context, hash);
+ResolvedPreimage preimageResolverC(size_t context, uint8_t preimageType, const uint8_t* hash) {
+  return preimageResolver(context, preimageType, hash);
 }
 */
 import "C"

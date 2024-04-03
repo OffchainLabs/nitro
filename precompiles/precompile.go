@@ -14,6 +14,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/util"
 	templates "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -97,12 +98,8 @@ func RenderSolError(solErr abi.Error, data []byte) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	valsRange, ok := vals.([]interface{})
-	if !ok {
-		return "", errors.New("unexpected unpack result")
-	}
-	strVals := make([]string, 0, len(valsRange))
-	for _, val := range valsRange {
+	strVals := make([]string, 0, len(vals))
+	for _, val := range vals {
 		strVals = append(strVals, fmt.Sprintf("%v", val))
 	}
 	return fmt.Sprintf("error %v(%v)", solErr.Name, strings.Join(strVals, ", ")), nil
@@ -367,7 +364,7 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 			emitCost := gascost(args)
 			cost := emitCost[0].Interface().(uint64) //nolint:errcheck
 			if !emitCost[1].IsNil() {
-				// an error occured during gascost()
+				// an error occurred during gascost()
 				return []reflect.Value{emitCost[1]}
 			}
 			if err := callerCtx.Burn(cost); err != nil {
@@ -539,6 +536,11 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbGasInfo.methodsByName["GetL1FeesAvailable"].arbosVersion = 10
 	ArbGasInfo.methodsByName["GetL1RewardRate"].arbosVersion = 11
 	ArbGasInfo.methodsByName["GetL1RewardRecipient"].arbosVersion = 11
+	ArbGasInfo.methodsByName["GetL1PricingEquilibrationUnits"].arbosVersion = 20
+	ArbGasInfo.methodsByName["GetLastL1PricingUpdateTime"].arbosVersion = 20
+	ArbGasInfo.methodsByName["GetL1PricingFundsDueForRewards"].arbosVersion = 20
+	ArbGasInfo.methodsByName["GetL1PricingUnitsSinceUpdate"].arbosVersion = 20
+	ArbGasInfo.methodsByName["GetLastL1PricingSurplus"].arbosVersion = 20
 	insert(MakePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}))
 	insert(MakePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}))
 
@@ -555,15 +557,20 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwnerPublic := insert(MakePrecompile(templates.ArbOwnerPublicMetaData, &ArbOwnerPublic{Address: hex("6b")}))
 	ArbOwnerPublic.methodsByName["GetInfraFeeAccount"].arbosVersion = 5
 	ArbOwnerPublic.methodsByName["RectifyChainOwner"].arbosVersion = 11
+	ArbOwnerPublic.methodsByName["GetBrotliCompressionLevel"].arbosVersion = 20
+	ArbOwnerPublic.methodsByName["GetScheduledUpgrade"].arbosVersion = 20
 
 	ArbWasmImpl := &ArbWasm{Address: types.ArbWasmAddress}
 	ArbWasm := insert(MakePrecompile(templates.ArbWasmMetaData, ArbWasmImpl))
-	ArbWasm.arbosVersion = 11
+	ArbWasm.arbosVersion = arbostypes.ArbosVersion_Stylus
 	programs.ProgramNotActivatedError = ArbWasmImpl.ProgramNotActivatedError
 	programs.ProgramNeedsUpgradeError = ArbWasmImpl.ProgramNeedsUpgradeError
 	programs.ProgramExpiredError = ArbWasmImpl.ProgramExpiredError
 	programs.ProgramUpToDateError = ArbWasmImpl.ProgramUpToDateError
 	programs.ProgramKeepaliveTooSoon = ArbWasmImpl.ProgramKeepaliveTooSoonError
+	for _, method := range ArbWasm.methods {
+		method.arbosVersion = arbostypes.ArbosVersion_Stylus
+	}
 
 	ArbRetryableImpl := &ArbRetryableTx{Address: types.ArbRetryableTxAddress}
 	ArbRetryable := insert(MakePrecompile(templates.ArbRetryableTxMetaData, ArbRetryableImpl))
@@ -599,9 +606,21 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwner.methodsByName["SetInfraFeeAccount"].arbosVersion = 5
 	ArbOwner.methodsByName["ReleaseL1PricerSurplusFunds"].arbosVersion = 10
 	ArbOwner.methodsByName["SetChainConfig"].arbosVersion = 11
+	ArbOwner.methodsByName["SetBrotliCompressionLevel"].arbosVersion = 20
+	ArbOwner.methodsByName["SetInkPrice"].arbosVersion = arbostypes.ArbosVersion_Stylus
+	ArbOwner.methodsByName["SetWasmMaxStackDepth"].arbosVersion = arbostypes.ArbosVersion_Stylus
+	ArbOwner.methodsByName["SetWasmFreePages"].arbosVersion = arbostypes.ArbosVersion_Stylus
+	ArbOwner.methodsByName["SetWasmPageGas"].arbosVersion = arbostypes.ArbosVersion_Stylus
+	ArbOwner.methodsByName["SetWasmPageRamp"].arbosVersion = arbostypes.ArbosVersion_Stylus
+	ArbOwner.methodsByName["SetWasmPageLimit"].arbosVersion = arbostypes.ArbosVersion_Stylus
+	ArbOwner.methodsByName["SetWasmMinInitGas"].arbosVersion = arbostypes.ArbosVersion_Stylus
+	ArbOwner.methodsByName["SetWasmExpiryDays"].arbosVersion = arbostypes.ArbosVersion_Stylus
+	ArbOwner.methodsByName["SetWasmKeepaliveDays"].arbosVersion = arbostypes.ArbosVersion_Stylus
 
 	insert(ownerOnly(ArbOwnerImpl.Address, ArbOwner, emitOwnerActs))
-	insert(debugOnly(MakePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")})))
+	_, arbDebug := MakePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")})
+	arbDebug.methodsByName["Panic"].arbosVersion = arbostypes.ArbosVersion_Stylus
+	insert(debugOnly(arbDebug.address, arbDebug))
 
 	ArbosActs := insert(MakePrecompile(templates.ArbosActsMetaData, &ArbosActs{Address: types.ArbosAddress}))
 	arbos.InternalTxStartBlockMethodID = ArbosActs.GetMethodID("StartBlock")

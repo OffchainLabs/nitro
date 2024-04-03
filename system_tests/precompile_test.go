@@ -5,6 +5,7 @@ package arbtest
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 	"testing"
 
@@ -21,10 +22,11 @@ func TestPurePrecompileMethodCalls(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, node, client := CreateTestL2(t, ctx)
-	defer node.StopAndWait()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
 
-	arbSys, err := precompilesgen.NewArbSys(common.HexToAddress("0x64"), client)
+	arbSys, err := precompilesgen.NewArbSys(common.HexToAddress("0x64"), builder.L2.Client)
 	Require(t, err, "could not deploy ArbSys contract")
 	chainId, err := arbSys.ArbChainID(&bind.CallOpts{})
 	Require(t, err, "failed to get the ChainID")
@@ -37,10 +39,11 @@ func TestViewLogReverts(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, node, client := CreateTestL2(t, ctx)
-	defer node.StopAndWait()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
 
-	arbDebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), client)
+	arbDebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), builder.L2.Client)
 	Require(t, err, "could not deploy ArbSys contract")
 
 	err = arbDebug.EventsView(nil)
@@ -53,30 +56,34 @@ func TestCustomSolidityErrors(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, node, client := CreateTestL2(t, ctx)
-	defer node.StopAndWait()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
 
 	callOpts := &bind.CallOpts{Context: ctx}
-	arbDebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), client)
+	arbDebug, err := precompilesgen.NewArbDebug(common.HexToAddress("0xff"), builder.L2.Client)
 	Require(t, err, "could not bind ArbDebug contract")
 	customError := arbDebug.CustomRevert(callOpts, 1024)
 	if customError == nil {
 		Fatal(t, "customRevert call should have errored")
 	}
 	observedMessage := customError.Error()
-	expectedMessage := "execution reverted: error Custom(1024, This spider family wards off bugs: /\\oo/\\ //\\(oo)//\\ /\\oo/\\, true)"
+	expectedError := "Custom(1024, This spider family wards off bugs: /\\oo/\\ //\\(oo)//\\ /\\oo/\\, true)"
+	// The first error is server side. The second error is client side ABI decoding.
+	expectedMessage := fmt.Sprintf("execution reverted: error %v: %v", expectedError, expectedError)
 	if observedMessage != expectedMessage {
 		Fatal(t, observedMessage)
 	}
 
-	arbSys, err := precompilesgen.NewArbSys(arbos.ArbSysAddress, client)
+	arbSys, err := precompilesgen.NewArbSys(arbos.ArbSysAddress, builder.L2.Client)
 	Require(t, err, "could not bind ArbSys contract")
 	_, customError = arbSys.ArbBlockHash(callOpts, big.NewInt(1e9))
 	if customError == nil {
 		Fatal(t, "out of range ArbBlockHash call should have errored")
 	}
 	observedMessage = customError.Error()
-	expectedMessage = "execution reverted: error InvalidBlockNumber(1000000000, 1)"
+	expectedError = "InvalidBlockNumber(1000000000, 1)"
+	expectedMessage = fmt.Sprintf("execution reverted: error %v: %v", expectedError, expectedError)
 	if observedMessage != expectedMessage {
 		Fatal(t, observedMessage)
 	}
@@ -86,11 +93,12 @@ func TestPrecompileErrorGasLeft(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	info, node, client := CreateTestL2(t, ctx)
-	defer node.StopAndWait()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
 
-	auth := info.GetDefaultTransactOpts("Faucet", ctx)
-	_, _, simple, err := mocksgen.DeploySimple(&auth, client)
+	auth := builder.L2Info.GetDefaultTransactOpts("Faucet", ctx)
+	_, _, simple, err := mocksgen.DeploySimple(&auth, builder.L2.Client)
 	Require(t, err)
 
 	assertNotAllGasConsumed := func(to common.Address, input []byte) {
@@ -115,4 +123,55 @@ func TestPrecompileErrorGasLeft(t *testing.T) {
 	arbDebug, err := precompilesgen.ArbDebugMetaData.GetAbi()
 	Require(t, err)
 	assertNotAllGasConsumed(common.HexToAddress("0xff"), arbDebug.Methods["legacyError"].ID)
+}
+
+func TestScheduleArbosUpgrade(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+
+	arbOwnerPublic, err := precompilesgen.NewArbOwnerPublic(common.HexToAddress("0x6b"), builder.L2.Client)
+	Require(t, err, "could not bind ArbOwner contract")
+
+	arbOwner, err := precompilesgen.NewArbOwner(common.HexToAddress("0x70"), builder.L2.Client)
+	Require(t, err, "could not bind ArbOwner contract")
+
+	callOpts := &bind.CallOpts{Context: ctx}
+	scheduled, err := arbOwnerPublic.GetScheduledUpgrade(callOpts)
+	Require(t, err, "failed to call GetScheduledUpgrade before scheduling upgrade")
+	if scheduled.ArbosVersion != 0 || scheduled.ScheduledForTimestamp != 0 {
+		t.Errorf("expected no upgrade to be scheduled, got version %v timestamp %v", scheduled.ArbosVersion, scheduled.ScheduledForTimestamp)
+	}
+
+	// Schedule a noop upgrade, which should test GetScheduledUpgrade in the same way an already completed upgrade would.
+	tx, err := arbOwner.ScheduleArbOSUpgrade(&auth, 1, 1)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	scheduled, err = arbOwnerPublic.GetScheduledUpgrade(callOpts)
+	Require(t, err, "failed to call GetScheduledUpgrade after scheduling noop upgrade")
+	if scheduled.ArbosVersion != 0 || scheduled.ScheduledForTimestamp != 0 {
+		t.Errorf("expected completed scheduled upgrade to be ignored, got version %v timestamp %v", scheduled.ArbosVersion, scheduled.ScheduledForTimestamp)
+	}
+
+	// TODO: Once we have an ArbOS 30, test a real upgrade with it
+	// We can't test 11 -> 20 because 11 doesn't have the GetScheduledUpgrade method we want to test
+	var testVersion uint64 = 100
+	var testTimestamp uint64 = 1 << 62
+	tx, err = arbOwner.ScheduleArbOSUpgrade(&auth, 100, 1<<62)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	scheduled, err = arbOwnerPublic.GetScheduledUpgrade(callOpts)
+	Require(t, err, "failed to call GetScheduledUpgrade after scheduling upgrade")
+	if scheduled.ArbosVersion != testVersion || scheduled.ScheduledForTimestamp != testTimestamp {
+		t.Errorf("expected upgrade to be scheduled for version %v timestamp %v, got version %v timestamp %v", testVersion, testTimestamp, scheduled.ArbosVersion, scheduled.ScheduledForTimestamp)
+	}
 }

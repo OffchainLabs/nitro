@@ -7,9 +7,10 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/crypto"
+
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/validator"
 )
 
@@ -39,8 +40,8 @@ func HashChallengeState(
 		hashesBytes = append(hashesBytes, h[:]...)
 	}
 	return crypto.Keccak256Hash(
-		math.U256Bytes(new(big.Int).SetUint64(segmentStart)),
-		math.U256Bytes(new(big.Int).SetUint64(segmentLength)),
+		arbmath.Uint64ToU256Bytes(segmentStart),
+		arbmath.Uint64ToU256Bytes(segmentLength),
 		hashesBytes,
 	)
 }

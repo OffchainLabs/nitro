@@ -3,6 +3,7 @@ run-name: Go tests CI triggered from @${{ github.actor }} of ${{ github.head_ref
 
 on:
   workflow_dispatch:
+  merge_group:
   pull_request:
   push:
     branches:
@@ -28,7 +29,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           token: ${{ secrets.PRIVATE_CHECKOUT }}
           submodules: true
@@ -54,12 +55,12 @@ jobs:
           sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
 
       - name: Install rust stable
-        uses: actions-rs/toolchain@v1
-        id: install-rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
-          toolchain: "stable"
-          override: true
+          targets: 'wasm32-unknown-unknown, wasm32-wasi'
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
 
       - name: Install rust nightly
         uses: actions-rs/toolchain@v1
@@ -126,11 +127,13 @@ jobs:
         run: make -j build-node-deps
 
       - name: Lint
-        uses: golangci/golangci-lint-action@v2
+        uses: golangci/golangci-lint-action@v3
         with:
           version: latest
-          skip-go-installation: true
           skip-pkg-cache: true
+      - name: Custom Lint
+        run: |
+          go run ./linters ./...
 
       - name: Set environment variables
         run: |
@@ -143,13 +146,13 @@ jobs:
         if: matrix.test-mode == 'defaults'
         run: |
           packages=`go list ./...`
-          stdbuf -oL gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 --no-color=false -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=8 > >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
+          stdbuf -oL gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 --no-color=false -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -timeout 20m -parallel=8 > >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
 
       - name: run tests with race detection
         if: matrix.test-mode == 'race'
         run: |
           packages=`go list ./...`
-          stdbuf -oL gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 --no-color=false -- ./... -race -parallel=8 > >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
+          stdbuf -oL gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 --no-color=false -- ./... -race -timeout 30m -parallel=8 > >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
 
       - name: run redis tests
         if: matrix.test-mode == 'defaults'

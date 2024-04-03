@@ -5,7 +5,7 @@ use crate::{
     arbcompress, caller_env::GoRuntimeState, program, socket, stylus_backend::CothreadHandler,
     wasip1_stub, wavmio, Opts,
 };
-use arbutil::{Bytes32, Color};
+use arbutil::{Bytes32, Color, PreimageType};
 use eyre::{bail, ErrReport, Result, WrapErr};
 use sha3::{Digest, Keccak256};
 use std::{
@@ -20,7 +20,7 @@ use std::{
 use thiserror::Error;
 use wasmer::{
     imports, CompilerConfig, Function, FunctionEnv, FunctionEnvMut, Instance, Memory, Module,
-    RuntimeError, Store,
+    Pages, RuntimeError, Store,
 };
 use wasmer_compiler_cranelift::Cranelift;
 
@@ -76,7 +76,13 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
             "setGlobalStateU64" => func!(wavmio::set_global_state_u64),
             "readInboxMessage" => func!(wavmio::read_inbox_message),
             "readDelayedInboxMessage" => func!(wavmio::read_delayed_inbox_message),
-            "resolvePreImage" => func!(wavmio::resolve_preimage),
+            "resolvePreImage" => {
+                #[allow(deprecated)] // we're just keeping this around until we no longer need to validate old replay binaries
+                {
+                    func!(wavmio::resolve_keccak_preimage)
+                }
+            },
+            "resolveTypedPreimage" => func!(wavmio::resolve_typed_preimage),
         },
         "wasi_snapshot_preview1" => {
             "proc_exit" => func!(wasip1_stub::proc_exit),
@@ -178,7 +184,7 @@ impl From<RuntimeError> for Escape {
 
 pub type WasmEnvMut<'a> = FunctionEnvMut<'a, WasmEnv>;
 pub type Inbox = BTreeMap<u64, Vec<u8>>;
-pub type Oracle = BTreeMap<Bytes32, Vec<u8>>;
+pub type Preimages = BTreeMap<PreimageType, BTreeMap<Bytes32, Vec<u8>>>;
 pub type ModuleAsm = Arc<[u8]>;
 
 #[derive(Default)]
@@ -192,7 +198,7 @@ pub struct WasmEnv {
     /// An ordered list of the 32-byte globals
     pub large_globals: [Bytes32; 2],
     /// An oracle allowing the prover to reverse keccak256
-    pub preimages: Oracle,
+    pub preimages: Preimages,
     /// A collection of programs called during the course of execution
     pub module_asms: HashMap<Bytes32, ModuleAsm>,
     /// The sequencer inbox's messages
@@ -243,11 +249,12 @@ impl WasmEnv {
                 file.read_exact(&mut buf)?;
                 preimages.push(buf);
             }
+            let keccak_preimages = env.preimages.entry(PreimageType::Keccak256).or_default();
             for preimage in preimages {
                 let mut hasher = Keccak256::new();
                 hasher.update(&preimage);
                 let hash = hasher.finalize().into();
-                env.preimages.insert(hash, preimage);
+                keccak_preimages.insert(hash, preimage);
             }
         }
 
@@ -274,7 +281,7 @@ impl WasmEnv {
         Ok(env)
     }
 
-    pub fn send_results(&mut self, error: Option<String>) {
+    pub fn send_results(&mut self, error: Option<String>, memory_used: Pages) {
         let writer = match &mut self.process.socket {
             Some((writer, _)) => writer,
             None => return,
@@ -301,6 +308,7 @@ impl WasmEnv {
         check!(socket::write_u64(writer, self.small_globals[1]));
         check!(socket::write_bytes32(writer, &self.large_globals[0]));
         check!(socket::write_bytes32(writer, &self.large_globals[1]));
+        check!(socket::write_u64(writer, memory_used.bytes().0 as u64));
         check!(writer.flush());
     }
 }
@@ -312,8 +320,6 @@ pub struct ProcessEnv {
     pub debug: bool,
     /// Mechanism for asking for preimages and returning results
     pub socket: Option<(BufWriter<TcpStream>, BufReader<TcpStream>)>,
-    /// The last preimage received over the socket
-    pub last_preimage: Option<(Bytes32, Vec<u8>)>,
     /// A timestamp that helps with printing at various moments
     pub timestamp: Instant,
     /// How long to wait on any child threads to compute a result
@@ -328,7 +334,6 @@ impl Default for ProcessEnv {
             forks: false,
             debug: false,
             socket: None,
-            last_preimage: None,
             timestamp: Instant::now(),
             child_timeout: Duration::from_secs(15),
             reached_wavmio: false,

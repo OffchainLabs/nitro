@@ -22,6 +22,7 @@ var L1ConnectionConfigDefault = rpcclient.ClientConfig{
 	Retries:        2,
 	Timeout:        time.Minute,
 	ConnectionWait: time.Minute,
+	ArgLogLimit:    2048,
 }
 
 var L1ConfigDefault = L1Config{

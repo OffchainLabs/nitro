@@ -13,7 +13,7 @@ pub mod types;
 
 pub use color::{Color, DebugColor};
 use num_traits::Unsigned;
-pub use types::{Bytes20, Bytes32};
+pub use types::{Bytes20, Bytes32, PreimageType};
 
 /// Puts an arbitrary type on the heap.
 /// Note: the type must be later freed or the value will be leaked.

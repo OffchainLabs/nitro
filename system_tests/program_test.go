@@ -7,10 +7,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
-	"encoding/json"
 	"fmt"
 	"math/big"
-	"math/rand"
 	"os"
 	"path/filepath"
 	"strings"
@@ -24,12 +22,9 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/eth/tracers"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
 	"github.com/ethereum/go-ethereum/ethclient"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbcompress"
-	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -50,7 +45,9 @@ func TestProgramKeccak(t *testing.T) {
 }
 
 func keccakTest(t *testing.T, jit bool) {
-	ctx, node, _, l2client, auth, cleanup := setupProgramTest(t, jit)
+	builder, auth, cleanup := setupProgramTest(t, jit)
+	ctx := builder.ctx
+	l2client := builder.L2.Client
 	defer cleanup()
 	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
 
@@ -72,7 +69,7 @@ func keccakTest(t *testing.T, jit bool) {
 
 	stylusVersion, err := arbWasm.StylusVersion(nil)
 	Require(t, err)
-	statedb, err := node.Execution.Backend.ArbInterface().BlockChain().State()
+	statedb, err := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().State()
 	Require(t, err)
 	codehashVersion, err := arbWasm.CodehashVersion(nil, statedb.GetCodeHash(programAddress))
 	Require(t, err)
@@ -133,7 +130,7 @@ func keccakTest(t *testing.T, jit bool) {
 	ensure(mock.CallKeccak(&auth, programAddress, args))
 	ensure(mock.CallKeccak(&auth, otherAddressSameCode, args))
 
-	validateBlocks(t, 1, jit, ctx, node, l2client)
+	validateBlocks(t, 1, jit, builder)
 }
 
 func TestProgramActivateTwice(t *testing.T) {
@@ -142,7 +139,10 @@ func TestProgramActivateTwice(t *testing.T) {
 }
 
 func testActivateTwice(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
+	builder, auth, cleanup := setupProgramTest(t, jit)
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
 	defer cleanup()
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
@@ -219,7 +219,7 @@ func testActivateTwice(t *testing.T, jit bool) {
 	tx = l2info.PrepareTxTo("Owner", &multiAddr, 1e9, oneEth, args)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 
-	validateBlocks(t, 7, jit, ctx, node, l2client)
+	validateBlocks(t, 7, jit, builder)
 }
 
 func TestProgramErrors(t *testing.T) {
@@ -228,7 +228,10 @@ func TestProgramErrors(t *testing.T) {
 }
 
 func errorTest(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
+	builder, auth, cleanup := setupProgramTest(t, jit)
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
 	defer cleanup()
 
 	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("fallible"))
@@ -258,7 +261,7 @@ func errorTest(t *testing.T, jit bool) {
 	Require(t, l2client.SendTransaction(ctx, tx))
 	EnsureTxFailed(t, ctx, l2client, tx)
 
-	validateBlocks(t, 7, jit, ctx, node, l2client)
+	validateBlocks(t, 7, jit, builder)
 }
 
 func TestProgramStorage(t *testing.T) {
@@ -267,7 +270,10 @@ func TestProgramStorage(t *testing.T) {
 }
 
 func storageTest(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
+	builder, auth, cleanup := setupProgramTest(t, jit)
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
 	defer cleanup()
 	programAddress := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
 
@@ -285,7 +291,7 @@ func storageTest(t *testing.T, jit bool) {
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 	assertStorageAt(t, ctx, l2client, programAddress, key, value)
 
-	validateBlocks(t, 2, jit, ctx, node, l2client)
+	validateBlocks(t, 2, jit, builder)
 }
 
 func TestProgramCalls(t *testing.T) {
@@ -294,7 +300,10 @@ func TestProgramCalls(t *testing.T) {
 }
 
 func testCalls(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
+	builder, auth, cleanup := setupProgramTest(t, jit)
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
 	defer cleanup()
 	callsAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 
@@ -478,7 +487,7 @@ func testCalls(t *testing.T, jit bool) {
 	}
 
 	blocks := []uint64{10}
-	validateBlockRange(t, blocks, jit, ctx, node, l2client)
+	validateBlockRange(t, blocks, jit, builder)
 }
 
 func TestProgramReturnData(t *testing.T) {
@@ -487,7 +496,10 @@ func TestProgramReturnData(t *testing.T) {
 }
 
 func testReturnData(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
+	builder, auth, cleanup := setupProgramTest(t, jit)
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
 	defer cleanup()
 
 	ensure := func(tx *types.Transaction, err error) {
@@ -528,7 +540,7 @@ func testReturnData(t *testing.T, jit bool) {
 	testReadReturnData(2, 0, 0, 0, 1)
 	testReadReturnData(2, 0, 4, 4, 1)
 
-	validateBlocks(t, 11, jit, ctx, node, l2client)
+	validateBlocks(t, 11, jit, builder)
 }
 
 func TestProgramLogs(t *testing.T) {
@@ -537,7 +549,10 @@ func TestProgramLogs(t *testing.T) {
 }
 
 func testLogs(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
+	builder, auth, cleanup := setupProgramTest(t, jit)
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
 	defer cleanup()
 	logAddr := deployWasm(t, ctx, auth, l2client, rustFile("log"))
 	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
@@ -601,7 +616,7 @@ func testLogs(t *testing.T, jit bool) {
 		Fatal(t, "wrong address", receipt.Logs[0].Address)
 	}
 
-	validateBlocks(t, 11, jit, ctx, node, l2client)
+	validateBlocks(t, 11, jit, builder)
 }
 
 func TestProgramCreate(t *testing.T) {
@@ -610,7 +625,10 @@ func TestProgramCreate(t *testing.T) {
 }
 
 func testCreate(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
+	builder, auth, cleanup := setupProgramTest(t, jit)
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
 	defer cleanup()
 	createAddr := deployWasm(t, ctx, auth, l2client, rustFile("create"))
 	activateAuth := auth
@@ -694,110 +712,7 @@ func testCreate(t *testing.T, jit bool) {
 
 	// validate just the opcodes
 	blocks := []uint64{5, 6}
-	validateBlockRange(t, blocks, jit, ctx, node, l2client)
-}
-
-func TestProgramEvmData(t *testing.T) {
-	t.Parallel()
-	testEvmData(t, true)
-}
-
-func testEvmData(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
-	defer cleanup()
-	evmDataAddr := deployWasm(t, ctx, auth, l2client, rustFile("evm-data"))
-
-	ensure := func(tx *types.Transaction, err error) *types.Receipt {
-		t.Helper()
-		Require(t, err)
-		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
-		Require(t, err)
-		return receipt
-	}
-	burnArbGas, _ := util.NewCallParser(precompilesgen.ArbosTestABI, "burnArbGas")
-
-	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
-	ensure(tx, err)
-
-	evmDataGas := uint64(1000000000)
-	gasToBurn := uint64(1000000)
-	callBurnData, err := burnArbGas(new(big.Int).SetUint64(gasToBurn))
-	Require(t, err)
-	fundedAddr := l2info.Accounts["Faucet"].Address
-	ethPrecompile := common.BigToAddress(big.NewInt(1))
-	arbTestAddress := types.ArbosTestAddress
-
-	evmDataData := []byte{}
-	evmDataData = append(evmDataData, fundedAddr.Bytes()...)
-	evmDataData = append(evmDataData, ethPrecompile.Bytes()...)
-	evmDataData = append(evmDataData, arbTestAddress.Bytes()...)
-	evmDataData = append(evmDataData, evmDataAddr.Bytes()...)
-	evmDataData = append(evmDataData, callBurnData...)
-	opts := bind.CallOpts{
-		From: testhelpers.RandomAddress(),
-	}
-
-	result, err := mock.StaticcallEvmData(&opts, evmDataAddr, fundedAddr, evmDataGas, evmDataData)
-	Require(t, err)
-
-	advance := func(count int, name string) []byte {
-		t.Helper()
-		if len(result) < count {
-			Fatal(t, "not enough data left", name, count, len(result))
-		}
-		data := result[:count]
-		result = result[count:]
-		return data
-	}
-	getU32 := func(name string) uint32 {
-		t.Helper()
-		return binary.BigEndian.Uint32(advance(4, name))
-	}
-	getU64 := func(name string) uint64 {
-		t.Helper()
-		return binary.BigEndian.Uint64(advance(8, name))
-	}
-
-	inkPrice := uint64(getU32("ink price"))
-	gasLeftBefore := getU64("gas left before")
-	inkLeftBefore := getU64("ink left before")
-	gasLeftAfter := getU64("gas left after")
-	inkLeftAfter := getU64("ink left after")
-
-	gasUsed := gasLeftBefore - gasLeftAfter
-	calculatedGasUsed := (inkLeftBefore - inkLeftAfter) / inkPrice
-
-	// Should be within 1 gas
-	if !arbmath.Within(gasUsed, calculatedGasUsed, 1) {
-		Fatal(t, "gas and ink converted to gas don't match", gasUsed, calculatedGasUsed, inkPrice)
-	}
-
-	tx = l2info.PrepareTxTo("Owner", &evmDataAddr, evmDataGas, nil, evmDataData)
-	ensure(tx, l2client.SendTransaction(ctx, tx))
-
-	// test hostio tracing
-	js := `{
-            "hostio": function(info) { this.names.push(info.name); },
-            "result": function() { return this.names; },
-            "fault":  function() { return this.names; },
-            names: []
-        }`
-	var trace json.RawMessage
-	traceConfig := &tracers.TraceConfig{
-		Tracer: &js,
-	}
-	rpc := l2client.Client()
-	err = rpc.CallContext(ctx, &trace, "debug_traceTransaction", tx.Hash(), traceConfig)
-	Require(t, err)
-
-	for _, item := range []string{"user_entrypoint", "read_args", "write_result", "user_returned"} {
-		if !strings.Contains(string(trace), item) {
-			Fatal(t, "tracer missing hostio ", item, " ", trace)
-		}
-	}
-	colors.PrintGrey("trace: ", string(trace))
-
-	validateBlocks(t, 1, jit, ctx, node, l2client)
+	validateBlockRange(t, blocks, jit, builder)
 }
 
 func TestProgramMemory(t *testing.T) {
@@ -806,7 +721,10 @@ func TestProgramMemory(t *testing.T) {
 }
 
 func testMemory(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
+	builder, auth, cleanup := setupProgramTest(t, jit)
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
 	defer cleanup()
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
@@ -913,7 +831,7 @@ func testMemory(t *testing.T, jit bool) {
 		Fatal(t, "unexpected memory footprint", programMemoryFootprint)
 	}
 
-	validateBlocks(t, 2, jit, ctx, node, l2client)
+	validateBlocks(t, 2, jit, builder)
 }
 
 func TestProgramActivateFails(t *testing.T) {
@@ -922,7 +840,9 @@ func TestProgramActivateFails(t *testing.T) {
 }
 
 func testActivateFails(t *testing.T, jit bool) {
-	ctx, node, _, l2client, auth, cleanup := setupProgramTest(t, jit)
+	builder, auth, cleanup := setupProgramTest(t, jit)
+	ctx := builder.ctx
+	l2client := builder.L2.Client
 	defer cleanup()
 
 	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
@@ -950,7 +870,7 @@ func testActivateFails(t *testing.T, jit bool) {
 		blockToValidate = txRes.BlockNumber.Uint64()
 	})
 
-	validateBlockRange(t, []uint64{blockToValidate}, jit, ctx, node, l2client)
+	validateBlockRange(t, []uint64{blockToValidate}, jit, builder)
 }
 
 func TestProgramSdkStorage(t *testing.T) {
@@ -959,7 +879,10 @@ func TestProgramSdkStorage(t *testing.T) {
 }
 
 func testSdkStorage(t *testing.T, jit bool) {
-	ctx, node, l2info, l2client, auth, cleanup := setupProgramTest(t, jit)
+	builder, auth, cleanup := setupProgramTest(t, jit)
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
 	defer cleanup()
 
 	rust := deployWasm(t, ctx, auth, l2client, rustFile("sdk-storage"))
@@ -986,15 +909,15 @@ func testSdkStorage(t *testing.T, jit bool) {
 		colors.PrintBlue("rust ", rustCost, " sol ", solCost)
 
 		// ensure txes are sequenced before checking state
-		waitForSequencer(t, node, receipt.BlockNumber.Uint64())
+		waitForSequencer(t, builder, receipt.BlockNumber.Uint64())
 
-		bc := node.Execution.Backend.ArbInterface().BlockChain()
+		bc := builder.L2.ExecNode.Backend.ArbInterface().BlockChain()
 		statedb, err := bc.State()
 		Require(t, err)
 		trieHash := func(addr common.Address) common.Hash {
-			trie, err := statedb.StorageTrie(addr)
-			Require(t, err)
-			return trie.Hash()
+			stateObject := statedb.GetOrNewStateObject(addr)
+			return stateObject.Root()
+			// .StorageTrie(addr)
 		}
 
 		solTrie := trieHash(solidity)
@@ -1019,7 +942,9 @@ func testSdkStorage(t *testing.T, jit bool) {
 
 func TestProgramActivationLogs(t *testing.T) {
 	t.Parallel()
-	ctx, _, _, l2client, auth, cleanup := setupProgramTest(t, true)
+	builder, auth, cleanup := setupProgramTest(t, true)
+	l2client := builder.L2.Client
+	ctx := builder.ctx
 	defer cleanup()
 
 	wasm, _ := readWasmFile(t, watFile("memory"))
@@ -1061,7 +986,9 @@ func TestProgramEarlyExit(t *testing.T) {
 }
 
 func testEarlyExit(t *testing.T, jit bool) {
-	ctx, node, _, l2client, auth, cleanup := setupProgramTest(t, jit)
+	builder, auth, cleanup := setupProgramTest(t, jit)
+	ctx := builder.ctx
+	l2client := builder.L2.Client
 	defer cleanup()
 
 	earlyAddress := deployWasm(t, ctx, auth, l2client, "../arbitrator/stylus/tests/exit-early/exit-early.wat")
@@ -1083,48 +1010,47 @@ func testEarlyExit(t *testing.T, jit bool) {
 	ensure(mock.CheckRevertData(&auth, earlyAddress, data, data))
 	ensure(mock.CheckRevertData(&auth, panicAddress, data, []byte{}))
 
-	validateBlocks(t, 8, jit, ctx, node, l2client)
+	validateBlocks(t, 8, jit, builder)
 }
 
 func setupProgramTest(t *testing.T, jit bool) (
-	context.Context, *arbnode.Node, *BlockchainTestInfo, *ethclient.Client, bind.TransactOpts, func(),
+	*NodeBuilder, bind.TransactOpts, func(),
 ) {
 	ctx, cancel := context.WithCancel(context.Background())
-	rand.Seed(time.Now().UTC().UnixNano())
 
-	chainConfig := params.ArbitrumDevTestChainConfig()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 
-	l2config := arbnode.ConfigDefaultL1Test()
-	l2config.BlockValidator.Enable = false
-	l2config.Staker.Enable = true
-	l2config.BatchPoster.Enable = true
-	l2config.ParentChainReader.Enable = true
-	l2config.Sequencer.MaxRevertGasReject = 0
-	l2config.ParentChainReader.OldHeaderTimeout = 10 * time.Minute
+	builder.nodeConfig.BlockValidator.Enable = false
+	builder.nodeConfig.Staker.Enable = true
+	builder.nodeConfig.BatchPoster.Enable = true
+	builder.nodeConfig.ParentChainReader.Enable = true
+	builder.nodeConfig.ParentChainReader.OldHeaderTimeout = 10 * time.Minute
+
 	valConf := valnode.TestValidationConfig
 	valConf.UseJit = jit
 	_, valStack := createTestValidationNode(t, ctx, &valConf)
-	configByValidationNode(t, l2config, valStack)
+	configByValidationNode(t, builder.nodeConfig, valStack)
 
-	l2info, node, l2client, _, _, _, l1stack := createTestNodeOnL1WithConfig(t, ctx, true, l2config, chainConfig, nil)
+	builder.execConfig.Sequencer.MaxRevertGasReject = 0
+
+	builderCleanup := builder.Build(t)
 
 	cleanup := func() {
-		requireClose(t, l1stack)
-		node.StopAndWait()
+		builderCleanup()
 		cancel()
 	}
 
-	auth := l2info.GetDefaultTransactOpts("Owner", ctx)
+	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 
-	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
 	Require(t, err)
-	arbDebug, err := precompilesgen.NewArbDebug(types.ArbDebugAddress, l2client)
+	arbDebug, err := precompilesgen.NewArbDebug(types.ArbDebugAddress, builder.L2.Client)
 	Require(t, err)
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
 		Require(t, err)
-		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		receipt, err := EnsureTxSucceeded(ctx, builder.L2.Client, tx)
 		Require(t, err)
 		return receipt
 	}
@@ -1135,7 +1061,7 @@ func setupProgramTest(t *testing.T, jit bool) (
 
 	ensure(arbDebug.BecomeChainOwner(&auth))
 	ensure(arbOwner.SetInkPrice(&auth, inkPrice))
-	return ctx, node, l2info, l2client, auth, cleanup
+	return builder, auth, cleanup
 }
 
 func readWasmFile(t *testing.T, file string) ([]byte, []byte) {
@@ -1253,70 +1179,15 @@ func watFile(name string) string {
 	return fmt.Sprintf("../arbitrator/stylus/tests/%v.wat", name)
 }
 
-func validateBlocks(
-	t *testing.T, start uint64, jit bool, ctx context.Context, node *arbnode.Node, l2client *ethclient.Client,
-) {
-	t.Helper()
-	if jit || start == 0 {
-		start = 1
-	}
-
-	blockHeight, err := l2client.BlockNumber(ctx)
-	Require(t, err)
-
-	blocks := []uint64{}
-	for i := start; i <= blockHeight; i++ {
-		blocks = append(blocks, i)
-	}
-	validateBlockRange(t, blocks, jit, ctx, node, l2client)
-}
-
-func validateBlockRange(
-	t *testing.T, blocks []uint64, jit bool,
-	ctx context.Context, node *arbnode.Node, l2client *ethclient.Client,
-) {
-	waitForSequencer(t, node, arbmath.MaxInt(blocks...))
-	blockHeight, err := l2client.BlockNumber(ctx)
-	Require(t, err)
-
-	// validate everything
-	if jit {
-		blocks = []uint64{}
-		for i := uint64(1); i <= blockHeight; i++ {
-			blocks = append(blocks, i)
-		}
-	}
-
-	success := true
-	for _, block := range blocks {
-		// no classic data, so block numbers are message indicies
-		inboxPos := arbutil.MessageIndex(block)
-
-		now := time.Now()
-		correct, _, err := node.StatelessBlockValidator.ValidateResult(ctx, inboxPos, false, common.Hash{})
-		Require(t, err, "block", block)
-		passed := formatTime(time.Since(now))
-		if correct {
-			colors.PrintMint("yay!! we validated block ", block, " in ", passed)
-		} else {
-			colors.PrintRed("failed to validate block ", block, " in ", passed)
-		}
-		success = success && correct
-	}
-	if !success {
-		Fatal(t)
-	}
-}
-
-func waitForSequencer(t *testing.T, node *arbnode.Node, block uint64) {
+func waitForSequencer(t *testing.T, builder *NodeBuilder, block uint64) {
 	t.Helper()
 	msgCount := arbutil.BlockNumberToMessageCount(block, 0)
 	doUntil(t, 20*time.Millisecond, 500, func() bool {
-		batchCount, err := node.InboxTracker.GetBatchCount()
+		batchCount, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
 		Require(t, err)
-		meta, err := node.InboxTracker.GetBatchMetadata(batchCount - 1)
+		meta, err := builder.L2.ConsensusNode.InboxTracker.GetBatchMetadata(batchCount - 1)
 		Require(t, err)
-		msgExecuted, err := node.Execution.ExecEngine.HeadMessageNumber()
+		msgExecuted, err := builder.L2.ExecNode.ExecEngine.HeadMessageNumber()
 		Require(t, err)
 		return msgExecuted+1 >= msgCount && meta.MessageCount >= msgCount
 	})

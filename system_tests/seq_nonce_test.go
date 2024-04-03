@@ -15,7 +15,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
-	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -24,12 +23,13 @@ func TestSequencerParallelNonces(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	config := arbnode.ConfigDefaultL2Test()
-	config.Sequencer.NonceFailureCacheExpiry = time.Minute
-	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, config, false)
-	defer node.StopAndWait()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.takeOwnership = false
+	builder.execConfig.Sequencer.NonceFailureCacheExpiry = time.Minute
+	cleanup := builder.Build(t)
+	defer cleanup()
 
-	l2info.GenerateAccount("Destination")
+	builder.L2Info.GenerateAccount("Destination")
 
 	wg := sync.WaitGroup{}
 	for thread := 0; thread < 10; thread++ {
@@ -37,11 +37,11 @@ func TestSequencerParallelNonces(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			for i := 0; i < 10; i++ {
-				tx := l2info.PrepareTx("Owner", "Destination", l2info.TransferGas, common.Big1, nil)
+				tx := builder.L2Info.PrepareTx("Owner", "Destination", builder.L2Info.TransferGas, common.Big1, nil)
 				// Sleep a random amount of time up to 20 milliseconds
 				time.Sleep(time.Millisecond * time.Duration(rand.Intn(20)))
 				t.Log("Submitting transaction with nonce", tx.Nonce())
-				err := client.SendTransaction(ctx, tx)
+				err := builder.L2.Client.SendTransaction(ctx, tx)
 				Require(t, err)
 				t.Log("Got response for transaction with nonce", tx.Nonce())
 			}
@@ -49,8 +49,8 @@ func TestSequencerParallelNonces(t *testing.T) {
 	}
 	wg.Wait()
 
-	addr := l2info.GetAddress("Destination")
-	balance, err := client.BalanceAt(ctx, addr, nil)
+	addr := builder.L2Info.GetAddress("Destination")
+	balance, err := builder.L2.Client.BalanceAt(ctx, addr, nil)
 	Require(t, err)
 	if !arbmath.BigEquals(balance, big.NewInt(100)) {
 		Fatal(t, "Unexpected user balance", balance)
@@ -62,15 +62,16 @@ func TestSequencerNonceTooHigh(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	config := arbnode.ConfigDefaultL2Test()
-	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, config, false)
-	defer node.StopAndWait()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.takeOwnership = false
+	cleanup := builder.Build(t)
+	defer cleanup()
 
-	l2info.GetInfoWithPrivKey("Owner").Nonce++
+	builder.L2Info.GetInfoWithPrivKey("Owner").Nonce++
 
 	before := time.Now()
-	tx := l2info.PrepareTx("Owner", "Owner", l2info.TransferGas, common.Big0, nil)
-	err := client.SendTransaction(ctx, tx)
+	tx := builder.L2Info.PrepareTx("Owner", "Owner", builder.L2Info.TransferGas, common.Big0, nil)
+	err := builder.L2.Client.SendTransaction(ctx, tx)
 	if err == nil {
 		Fatal(t, "No error when nonce was too high")
 	}
@@ -78,7 +79,7 @@ func TestSequencerNonceTooHigh(t *testing.T) {
 		Fatal(t, "Unexpected transaction error", err)
 	}
 	elapsed := time.Since(before)
-	if elapsed > 2*config.Sequencer.NonceFailureCacheExpiry {
+	if elapsed > 2*builder.execConfig.Sequencer.NonceFailureCacheExpiry {
 		Fatal(t, "Sequencer took too long to respond with nonce too high")
 	}
 }
@@ -88,19 +89,20 @@ func TestSequencerNonceTooHighQueueFull(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	config := arbnode.ConfigDefaultL2Test()
-	config.Sequencer.NonceFailureCacheSize = 5
-	config.Sequencer.NonceFailureCacheExpiry = time.Minute
-	l2info, node, client := CreateTestL2WithConfig(t, ctx, nil, config, false)
-	defer node.StopAndWait()
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder.takeOwnership = false
+	builder.execConfig.Sequencer.NonceFailureCacheSize = 5
+	builder.execConfig.Sequencer.NonceFailureCacheExpiry = time.Minute
+	cleanup := builder.Build(t)
+	defer cleanup()
 
 	count := 15
 	var completed uint64
 	for i := 0; i < count; i++ {
-		l2info.GetInfoWithPrivKey("Owner").Nonce++
-		tx := l2info.PrepareTx("Owner", "Owner", l2info.TransferGas, common.Big0, nil)
+		builder.L2Info.GetInfoWithPrivKey("Owner").Nonce++
+		tx := builder.L2Info.PrepareTx("Owner", "Owner", builder.L2Info.TransferGas, common.Big0, nil)
 		go func() {
-			err := client.SendTransaction(ctx, tx)
+			err := builder.L2.Client.SendTransaction(ctx, tx)
 			if err == nil {
 				Fatal(t, "No error when nonce was too high")
 			}
@@ -110,7 +112,7 @@ func TestSequencerNonceTooHighQueueFull(t *testing.T) {
 
 	for wait := 9; wait >= 0; wait-- {
 		got := int(atomic.LoadUint64(&completed))
-		expected := count - config.Sequencer.NonceFailureCacheSize
+		expected := count - builder.execConfig.Sequencer.NonceFailureCacheSize
 		if got == expected {
 			break
 		}

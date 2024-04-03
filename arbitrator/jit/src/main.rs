@@ -78,6 +78,13 @@ fn main() -> Result<()> {
         }
     };
 
+    let memory_used = instance
+        .exports
+        .get_memory("memory")
+        .unwrap()
+        .view(&store)
+        .size();
+
     let env = env.as_mut(&mut store);
     let user = env.process.socket.is_none();
     let time = format!("{}ms", env.process.timestamp.elapsed().as_millis());
@@ -102,7 +109,7 @@ fn main() -> Result<()> {
         false => Some(message),
     };
 
-    env.send_results(error);
+    env.send_results(error, memory_used);
 
     if !success && opts.require_success {
         std::process::exit(1);
