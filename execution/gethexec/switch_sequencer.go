@@ -28,7 +28,7 @@ type SwitchSequencer struct {
 	lastSeenHotShotBlock uint64
 }
 
-func NewSequencerSwitch(centralized *Sequencer, espresso *EspressoSequencer, configFetcher SequencerConfigFetcher) (*SwitchSequencer, error) {
+func NewSwitchSequencer(centralized *Sequencer, espresso *EspressoSequencer, configFetcher SequencerConfigFetcher) (*SwitchSequencer, error) {
 	config := configFetcher()
 	if err := config.Validate(); err != nil {
 		return nil, err
