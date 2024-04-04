@@ -2,6 +2,8 @@ package vectorx
 
 import (
 	"context"
+	"fmt"
+	"time"
 
 	"github.com/ethereum/go-ethereum/log"
 
@@ -17,34 +19,35 @@ type VectorX struct {
 	Query  ethereum.FilterQuery
 }
 
-func (v *VectorX) subscribeForHeaderUpdate() (int, error) {
+func (v *VectorX) SubscribeForHeaderUpdate(finalizedBlockNumber int, t int64) error {
 	// Subscribe to the event stream
 	logs := make(chan types.Log)
 	sub, err := v.Client.SubscribeFilterLogs(context.Background(), v.Query, logs)
 	if err != nil {
-		return -1, err
+		return err
 	}
 	defer sub.Unsubscribe()
 
 	log.Info("🎧 Listening for vectorx HeadUpdate event")
-
+	timeout := time.After(time.Duration(t) * time.Second)
 	// Loop to process incoming events
 	for {
 		select {
 		case err := <-sub.Err():
-			return -1, err
+			return err
 		case vLog := <-logs:
-			// Decode the event log data
-			// event := struct {
-			// 	Message string
-			// }{}
 			event, err := v.Abi.Unpack("HeadUpdate", vLog.Data)
 			if err != nil {
-				return -1, err
+				return err
 			}
 
-			log.Info("Received message:", event)
-			return event[0], nil
+			log.Info("🤝 New HeadUpdate event from vecotorx", event[0])
+			val, _ := event[0].(uint32)
+			if val >= uint32(finalizedBlockNumber) {
+				return nil
+			}
+		case <-timeout:
+			return fmt.Errorf("⌛️  Timeout of %d seconds reached without getting HeadUpdate event from vectorx for blockNumber %v", t, finalizedBlockNumber)
 		}
 	}
 }

@@ -207,19 +207,11 @@ outer:
 
 	header, err := a.api.RPC.Chain.GetHeader(finalizedblockHash)
 	if err != nil {
-		return nil, fmt.Errorf("cannot get header:%+v", err)
+		return nil, fmt.Errorf("cannot get header for finalized block:%+v", err)
 	}
-
-	finalizedBlockNumber := header.Number
-subs:
-	for {
-		blockNumber, err := a.vectorx.subscribeForHeaderUpdate()
-		if err != nil {
-
-		}
-		if finalizedBlockNumber <= blockNumber {
-			break subs
-		}
+	err = a.vectorx.SubscribeForHeaderUpdate(int(header.Number), 7200)
+	if err != nil {
+		return nil, fmt.Errorf("cannot get the event for header update on vectorx:%+v", err)
 	}
 
 	extrinsicIndex, err := GetExtrinsicIndex(a.api, finalizedblockHash, a.keyringPair.Address, o.Nonce)
