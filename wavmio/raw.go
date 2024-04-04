@@ -26,5 +26,5 @@ func readInboxMessage(msgNum uint64, offset uint32, output unsafe.Pointer) uint3
 //go:wasmimport wavmio readDelayedInboxMessage
 func readDelayedInboxMessage(seqNum uint64, offset uint32, output unsafe.Pointer) uint32
 
-//go:wasmimport wavmio resolvePreImage
-func resolvePreImage(hash unsafe.Pointer, offset uint32, output unsafe.Pointer) uint32
+//go:wasmimport wavmio resolveTypedPreimage
+func resolveTypedPreimage(ty uint32, hash unsafe.Pointer, offset uint32, output unsafe.Pointer) uint32

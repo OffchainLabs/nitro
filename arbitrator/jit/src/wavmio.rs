@@ -6,7 +6,7 @@ use crate::{
     machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
     socket,
 };
-use arbutil::Color;
+use arbutil::{Color, PreimageType};
 use caller_env::{GuestPtr, MemAccess};
 use std::{
     io,
@@ -107,15 +107,48 @@ pub fn read_delayed_inbox_message(
 }
 
 /// Retrieves the preimage of the given hash.
-pub fn resolve_preimage(
-    mut env: WasmEnvMut,
+#[deprecated] // we're just keeping this around until we no longer need to validate old replay binaries
+pub fn resolve_keccak_preimage(
+    env: WasmEnvMut,
     hash_ptr: GuestPtr,
     offset: u32,
     out_ptr: GuestPtr,
 ) -> Result<u32, Escape> {
-    let (mut mem, exec) = env.jit_env();
+    resolve_preimage_impl(env, 0, hash_ptr, offset, out_ptr, "wavmio.ResolvePreImage")
+}
 
-    let name = "wavmio.resolvePreImage";
+pub fn resolve_typed_preimage(
+    env: WasmEnvMut,
+    preimage_type: u8,
+    hash_ptr: GuestPtr,
+    offset: u32,
+    out_ptr: GuestPtr,
+) -> Result<u32, Escape> {
+    resolve_preimage_impl(
+        env,
+        preimage_type,
+        hash_ptr,
+        offset,
+        out_ptr,
+        "wavmio.ResolveTypedPreimage",
+    )
+}
+
+pub fn resolve_preimage_impl(
+    mut env: WasmEnvMut,
+    preimage_type: u8,
+    hash_ptr: GuestPtr,
+    offset: u32,
+    out_ptr: GuestPtr,
+    name: &str,
+) -> Result<u32, Escape> {
+    let (mut mem, exec) = env.jit_env();
+    let offset = offset as usize;
+
+    let Ok(preimage_type) = preimage_type.try_into() else {
+        eprintln!("Go trying to resolve pre image with unknown type {preimage_type}");
+        return Ok(0);
+    };
 
     macro_rules! error {
         ($text:expr $(,$args:expr)*) => {{
@@ -125,26 +158,17 @@ pub fn resolve_preimage(
     }
 
     let hash = mem.read_bytes32(hash_ptr);
-    let hash_hex = hex::encode(hash);
 
-    let mut preimage = None;
-
-    // see if we've cached the preimage
-    if let Some((key, cached)) = &exec.process.last_preimage {
-        if *key == hash {
-            preimage = Some(cached);
-        }
-    }
-
-    // see if this is a known preimage
-    if preimage.is_none() {
-        preimage = exec.preimages.get(&hash);
-    }
-
-    let Some(preimage) = preimage else {
+    let Some(preimage) = exec
+        .preimages
+        .get(&preimage_type)
+        .and_then(|m| m.get(&hash))
+    else {
+        let hash_hex = hex::encode(hash);
         error!("Missing requested preimage for hash {hash_hex} in {name}")
     };
-    let Ok(offset) = usize::try_from(offset) else {
+
+    if offset % 32 != 0 {
         error!("bad offset {offset} in {name}")
     };
 
@@ -231,11 +255,17 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
         env.delayed_messages.insert(position, message);
     }
 
-    let preimage_count = socket::read_u32(stream)?;
-    for _ in 0..preimage_count {
-        let hash = socket::read_bytes32(stream)?;
-        let preimage = socket::read_bytes(stream)?;
-        env.preimages.insert(hash, preimage);
+    let preimage_types = socket::read_u32(stream)?;
+    for _ in 0..preimage_types {
+        let preimage_ty = PreimageType::try_from(socket::read_u8(stream)?)
+            .map_err(|e| Escape::Failure(e.to_string()))?;
+        let map = env.preimages.entry(preimage_ty).or_default();
+        let preimage_count = socket::read_u32(stream)?;
+        for _ in 0..preimage_count {
+            let hash = socket::read_bytes32(stream)?;
+            let preimage = socket::read_bytes(stream)?;
+            map.insert(hash, preimage);
+        }
     }
 
     let programs_count = socket::read_u32(stream)?;

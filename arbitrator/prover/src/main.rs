@@ -3,17 +3,16 @@
 
 #![cfg(feature = "native")]
 
-use arbutil::{format, Bytes32, Color, DebugColor};
+use arbutil::{format, Bytes32, Color, DebugColor, PreimageType};
 use eyre::{eyre, Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use prover::{
     machine::{GlobalState, InboxIdentifier, Machine, MachineStatus, PreimageResolver, ProofInfo},
-    utils::{file_bytes, CBytes},
+    utils::{file_bytes, hash_preimage, CBytes},
     wavm::Opcode,
 };
-use sha3::{Digest, Keccak256};
-use std::io::BufWriter;
 use std::sync::Arc;
+use std::{convert::TryInto, io::BufWriter};
 use std::{
     fs::File,
     io::{BufReader, ErrorKind, Read, Write},
@@ -88,24 +87,6 @@ struct Opts {
     max_steps: Option<u64>,
 }
 
-fn parse_size_delim(path: &Path) -> Result<Vec<Vec<u8>>> {
-    let mut file = BufReader::new(File::open(path)?);
-    let mut contents = Vec::new();
-    loop {
-        let mut size_buf = [0u8; 8];
-        match file.read_exact(&mut size_buf) {
-            Ok(()) => {}
-            Err(e) if e.kind() == ErrorKind::UnexpectedEof => break,
-            Err(e) => return Err(e.into()),
-        }
-        let size = u64::from_le_bytes(size_buf) as usize;
-        let mut buf = vec![0u8; size];
-        file.read_exact(&mut buf)?;
-        contents.push(buf);
-    }
-    Ok(contents)
-}
-
 fn file_with_stub_header(path: &Path, headerlength: usize) -> Result<Vec<u8>> {
     let mut msg = vec![0u8; headerlength];
     File::open(path).unwrap().read_to_end(&mut msg)?;
@@ -137,6 +118,7 @@ struct SimpleProfile {
 const INBOX_HEADER_LEN: usize = 40; // also in test-case's host-io.rs & contracts's OneStepProverHostIo.sol
 const DELAYED_HEADER_LEN: usize = 112; // also in test-case's host-io.rs & contracts's OneStepProverHostIo.sol
 
+#[cfg(feature = "native")]
 fn main() -> Result<()> {
     let opts = Opts::from_args();
 
@@ -169,19 +151,34 @@ fn main() -> Result<()> {
         delayed_position += 1;
     }
 
-    let mut preimages: HashMap<Bytes32, CBytes> = HashMap::default();
+    let mut preimages: HashMap<PreimageType, HashMap<Bytes32, CBytes>> = HashMap::default();
     if let Some(path) = opts.preimages {
-        preimages = parse_size_delim(&path)?
-            .into_iter()
-            .map(|b| {
-                let mut hasher = Keccak256::new();
-                hasher.update(&b);
-                (hasher.finalize().into(), CBytes::from(b.as_slice()))
-            })
-            .collect();
+        let mut file = BufReader::new(File::open(path)?);
+        loop {
+            let mut ty_buf = [0u8; 1];
+            match file.read_exact(&mut ty_buf) {
+                Ok(()) => {}
+                Err(e) if e.kind() == ErrorKind::UnexpectedEof => break,
+                Err(e) => return Err(e.into()),
+            }
+            let preimage_ty: PreimageType = ty_buf[0].try_into()?;
+
+            let mut size_buf = [0u8; 8];
+            file.read_exact(&mut size_buf)?;
+            let size = u64::from_le_bytes(size_buf) as usize;
+            let mut buf = vec![0u8; size];
+            file.read_exact(&mut buf)?;
+
+            let hash = hash_preimage(&buf, preimage_ty)?;
+            preimages
+                .entry(preimage_ty)
+                .or_default()
+                .insert(hash.into(), buf.as_slice().into());
+        }
     }
     let preimage_resolver =
-        Arc::new(move |_, hash| preimages.get(&hash).cloned()) as PreimageResolver;
+        Arc::new(move |_, ty, hash| preimages.get(&ty).and_then(|m| m.get(&hash)).cloned())
+            as PreimageResolver;
 
     let last_block_hash = decode_hex_arg(&opts.last_block_hash, "--last-block-hash")?;
     let last_send_root = decode_hex_arg(&opts.last_send_root, "--last-send-root")?;
@@ -232,7 +229,7 @@ fn main() -> Result<()> {
 
     let mut proofs: Vec<ProofInfo> = Vec::new();
     let mut seen_states = HashSet::default();
-    let mut opcode_counts: HashMap<Opcode, usize> = HashMap::default();
+    let mut proving_backoff: HashMap<(Opcode, u64), usize> = HashMap::default();
     let mut opcode_profile: HashMap<Opcode, SimpleProfile> = HashMap::default();
     let mut func_profile: HashMap<(usize, usize), SimpleProfile> = HashMap::default();
     let mut func_stack: Vec<(usize, usize, SimpleProfile)> = Vec::default();
@@ -263,7 +260,13 @@ fn main() -> Result<()> {
         let next_opcode = next_inst.opcode;
 
         if opts.proving_backoff {
-            let count_entry = opcode_counts.entry(next_opcode).or_insert(0);
+            let mut extra_data = 0;
+            if matches!(next_opcode, Opcode::ReadInboxMessage | Opcode::ReadPreImage) {
+                extra_data = next_inst.argument_data;
+            }
+            let count_entry = proving_backoff
+                .entry((next_opcode, extra_data))
+                .or_insert(0);
             *count_entry += 1;
             let count = *count_entry;
             // Apply an exponential backoff to how often to prove an instruction;

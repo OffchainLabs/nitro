@@ -36,6 +36,8 @@ wasmer-compiler-singlepass = { path = "../tools/wasmer/lib/compiler-singlepass",
 wasmparser.workspace = true
 num-derive = "0.4.1"
 num-traits = "0.2.17"
+c-kzg = { version = "0.4.0", optional = true } # TODO: look into switching to rust-kzg (no crates.io release or hosted rustdoc yet)
+sha2 = "0.9.9"
 
 [lib]
 name = "prover"
@@ -43,6 +45,6 @@ crate-type = ["staticlib", "lib"]
 
 [features]
 default = ["native", "rayon", "singlepass_rayon"]
-native = ["dep:wasmer", "dep:wasmer-compiler-singlepass", "brotli/wasmer_traits"]
+native = ["dep:wasmer", "dep:wasmer-compiler-singlepass", "brotli/wasmer_traits", "dep:c-kzg"]
 singlepass_rayon = ["wasmer-compiler-singlepass?/rayon"]
 rayon = ["dep:rayon"]

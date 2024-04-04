@@ -41,7 +41,7 @@ func BuildBlock(
 	if lastBlockHeader != nil {
 		delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 	}
-	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead, nil, arbstate.KeysetValidate)
+	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead, nil, nil, arbstate.KeysetValidate)
 
 	ctx := context.Background()
 	message, err := inboxMultiplexer.Pop(ctx)
@@ -69,11 +69,11 @@ type inboxBackend struct {
 	delayedMessages       [][]byte
 }
 
-func (b *inboxBackend) PeekSequencerInbox() ([]byte, error) {
+func (b *inboxBackend) PeekSequencerInbox() ([]byte, common.Hash, error) {
 	if len(b.batches) == 0 {
-		return nil, errors.New("read past end of specified sequencer batches")
+		return nil, common.Hash{}, errors.New("read past end of specified sequencer batches")
 	}
-	return b.batches[0], nil
+	return b.batches[0], common.Hash{}, nil
 }
 
 func (b *inboxBackend) GetSequencerInboxPosition() uint64 {
@@ -174,7 +174,7 @@ func FuzzStateTransition(f *testing.F) {
 		binary.BigEndian.PutUint64(seqBatch[32:40], uint64(len(delayedMessages)))
 		if compressSeqMsg {
 			seqBatch = append(seqBatch, arbstate.BrotliMessageHeaderByte)
-			seqMsgCompressed, err := arbcompress.CompressFast(seqMsg)
+			seqMsgCompressed, err := arbcompress.CompressLevel(seqMsg, 0)
 			if err != nil {
 				panic(fmt.Sprintf("failed to compress sequencer message: %v", err))
 			}

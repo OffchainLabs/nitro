@@ -84,14 +84,13 @@ func startClient(args []string) error {
 // datool client rpc store
 
 type ClientStoreConfig struct {
-	URL                   string                 `koanf:"url"`
-	Message               string                 `koanf:"message"`
-	RandomMessageSize     int                    `koanf:"random-message-size"`
-	DASRetentionPeriod    time.Duration          `koanf:"das-retention-period"`
-	SigningKey            string                 `koanf:"signing-key"`
-	SigningWallet         string                 `koanf:"signing-wallet"`
-	SigningWalletPassword string                 `koanf:"signing-wallet-password"`
-	Conf                  genericconf.ConfConfig `koanf:"conf"`
+	URL                   string        `koanf:"url"`
+	Message               string        `koanf:"message"`
+	RandomMessageSize     int           `koanf:"random-message-size"`
+	DASRetentionPeriod    time.Duration `koanf:"das-retention-period"`
+	SigningKey            string        `koanf:"signing-key"`
+	SigningWallet         string        `koanf:"signing-wallet"`
+	SigningWalletPassword string        `koanf:"signing-wallet-password"`
 }
 
 func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
@@ -103,7 +102,6 @@ func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
 	f.String("signing-wallet", "", "wallet containing ecdsa key to sign the message with")
 	f.String("signing-wallet-password", genericconf.PASSWORD_NOT_SET, "password to unlock the wallet, if not specified the user is prompted for the password")
 	f.Duration("das-retention-period", 24*time.Hour, "The period which DASes are requested to retain the stored batches.")
-	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {
@@ -196,17 +194,14 @@ func startClientStore(args []string) error {
 // datool client rest getbyhash
 
 type RESTClientGetByHashConfig struct {
-	URL      string                 `koanf:"url"`
-	DataHash string                 `koanf:"data-hash"`
-	Conf     genericconf.ConfConfig `koanf:"conf"`
+	URL      string `koanf:"url"`
+	DataHash string `koanf:"data-hash"`
 }
 
 func parseRESTClientGetByHashConfig(args []string) (*RESTClientGetByHashConfig, error) {
 	f := flag.NewFlagSet("datool client retrieve", flag.ContinueOnError)
 	f.String("url", "http://localhost:9877", "URL of DAS server to connect to.")
 	f.String("data-hash", "", "hash of the message to retrieve, if starts with '0x' it's treated as hex encoded, otherwise base64 encoded")
-
-	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {
@@ -257,8 +252,7 @@ func startRESTClientGetByHash(args []string) error {
 // das keygen
 
 type KeyGenConfig struct {
-	Dir  string
-	Conf genericconf.ConfConfig `koanf:"conf"`
+	Dir string
 	// ECDSA mode.
 	ECDSA bool `koanf:"ecdsa"`
 	// Wallet mode.
@@ -270,7 +264,6 @@ func parseKeyGenConfig(args []string) (*KeyGenConfig, error) {
 	f.String("dir", "", "the directory to generate the keys in")
 	f.Bool("ecdsa", false, "generate an ECDSA keypair instead of BLS")
 	f.Bool("wallet", false, "generate the ECDSA keypair in a wallet file")
-	genericconf.ConfConfigAddOptions("conf", f)
 
 	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {

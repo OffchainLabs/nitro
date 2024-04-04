@@ -8,6 +8,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/offchainlabs/nitro/arbutil"
 
 	"github.com/offchainlabs/nitro/util/jsonapi"
 	"github.com/offchainlabs/nitro/validator"
@@ -27,7 +28,7 @@ type ValidationInputJson struct {
 	Id            uint64
 	HasDelayedMsg bool
 	DelayedMsgNr  uint64
-	PreimagesB64  jsonapi.PreimagesMapJson
+	PreimagesB64  map[arbutil.PreimageType]*jsonapi.PreimagesMapJson
 	BatchInfo     []BatchInfoJson
 	UserWasms     map[common.Hash]UserWasmJson
 	DelayedMsgB64 string
@@ -36,13 +37,17 @@ type ValidationInputJson struct {
 }
 
 func ValidationInputToJson(entry *validator.ValidationInput) *ValidationInputJson {
+	jsonPreimagesMap := make(map[arbutil.PreimageType]*jsonapi.PreimagesMapJson)
+	for ty, preimages := range entry.Preimages {
+		jsonPreimagesMap[ty] = jsonapi.NewPreimagesMapJson(preimages)
+	}
 	res := &ValidationInputJson{
 		Id:            entry.Id,
 		HasDelayedMsg: entry.HasDelayedMsg,
 		DelayedMsgNr:  entry.DelayedMsgNr,
 		DelayedMsgB64: base64.StdEncoding.EncodeToString(entry.DelayedMsg),
 		StartState:    entry.StartState,
-		PreimagesB64:  jsonapi.NewPreimagesMapJson(entry.Preimages),
+		PreimagesB64:  jsonPreimagesMap,
 		UserWasms:     make(map[common.Hash]UserWasmJson),
 		DebugChain:    entry.DebugChain,
 	}
@@ -61,12 +66,16 @@ func ValidationInputToJson(entry *validator.ValidationInput) *ValidationInputJso
 }
 
 func ValidationInputFromJson(entry *ValidationInputJson) (*validator.ValidationInput, error) {
+	preimages := make(map[arbutil.PreimageType]map[common.Hash][]byte)
+	for ty, jsonPreimages := range entry.PreimagesB64 {
+		preimages[ty] = jsonPreimages.Map
+	}
 	valInput := &validator.ValidationInput{
 		Id:            entry.Id,
 		HasDelayedMsg: entry.HasDelayedMsg,
 		DelayedMsgNr:  entry.DelayedMsgNr,
 		StartState:    entry.StartState,
-		Preimages:     entry.PreimagesB64.Map,
+		Preimages:     preimages,
 		UserWasms:     make(state.UserWasms),
 		DebugChain:    entry.DebugChain,
 	}

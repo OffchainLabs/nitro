@@ -1,6 +1,8 @@
 // Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
+#[cfg(feature = "native")]
+use crate::kzg::prove_kzg_preimage;
 use crate::{
     binary::{
         self, parse, ExportKind, ExportMap, FloatInstruction, Local, NameCustomSection, WasmBinary,
@@ -17,8 +19,10 @@ use crate::{
         IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
     },
 };
-use arbutil::{math, Bytes32, Color};
+use arbutil::{math, Bytes32, Color, PreimageType};
 use brotli::Dictionary;
+#[cfg(feature = "native")]
+use c_kzg::BYTES_PER_BLOB;
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
@@ -870,7 +874,7 @@ pub struct MachineState<'a> {
     initial_hash: Bytes32,
 }
 
-pub type PreimageResolver = Arc<dyn Fn(u64, Bytes32) -> Option<CBytes>>;
+pub type PreimageResolver = Arc<dyn Fn(u64, PreimageType, Bytes32) -> Option<CBytes> + Send + Sync>;
 
 /// Wraps a preimage resolver to provide an easier API
 /// and cache the last preimage retrieved.
@@ -894,7 +898,8 @@ impl PreimageResolverWrapper {
         }
     }
 
-    pub fn get(&mut self, context: u64, hash: Bytes32) -> Option<&[u8]> {
+    #[cfg(feature = "native")]
+    pub fn get(&mut self, context: u64, ty: PreimageType, hash: Bytes32) -> Option<&[u8]> {
         // TODO: this is unnecessarily complicated by the rust borrow checker.
         // This will probably be simplifiable when Polonius is shipped.
         if matches!(&self.last_resolved, Some(r) if r.0 != hash) {
@@ -903,19 +908,20 @@ impl PreimageResolverWrapper {
         match &mut self.last_resolved {
             Some(resolved) => Some(&resolved.1),
             x => {
-                let data = (self.resolver)(context, hash)?;
+                let data = (self.resolver)(context, ty, hash)?;
                 Some(&x.insert((hash, data)).1)
             }
         }
     }
 
-    pub fn get_const(&self, context: u64, hash: Bytes32) -> Option<CBytes> {
+    #[cfg(feature = "native")]
+    pub fn get_const(&self, context: u64, ty: PreimageType, hash: Bytes32) -> Option<CBytes> {
         if let Some(resolved) = &self.last_resolved {
             if resolved.0 == hash {
                 return Some(resolved.1.clone());
             }
         }
-        (self.resolver)(context, hash)
+        (self.resolver)(context, ty, hash)
     }
 }
 
@@ -1007,6 +1013,7 @@ where
 }
 
 #[must_use]
+#[cfg(feature = "native")]
 fn prove_window<T, F, D, G>(items: &[T], stack_hasher: F, encoder: G) -> Vec<u8>
 where
     F: Fn(&[T]) -> Bytes32,
@@ -1027,6 +1034,7 @@ where
 }
 
 #[must_use]
+#[cfg(feature = "native")]
 fn prove_stack<T, F, D, G>(
     items: &[T],
     proving_depth: usize,
@@ -1056,6 +1064,7 @@ where
 // of in-between stacks ([2nd..last)).
 // Accepts prover function so that it can work both for proving stack and window.
 #[must_use]
+#[cfg(feature = "native")]
 fn prove_multistack<T, F, MF>(
     cothread: bool,
     items: Vec<&[T]>,
@@ -1092,6 +1101,7 @@ where
 }
 
 #[must_use]
+#[cfg(feature = "native")]
 fn exec_ibin_op<T>(a: T, b: T, op: IBinOpType) -> Option<T>
 where
     Wrapping<T>: ReinterpretAsSigned,
@@ -1127,6 +1137,7 @@ where
 }
 
 #[must_use]
+#[cfg(feature = "native")]
 fn exec_iun_op<T>(a: T, op: IUnOpType) -> u32
 where
     T: PrimInt,
@@ -1138,6 +1149,7 @@ where
     }
 }
 
+#[cfg(feature = "native")]
 fn exec_irel_op<T>(a: T, b: T, op: IRelOpType) -> Value
 where
     T: Ord,
@@ -1154,7 +1166,7 @@ where
 }
 
 pub fn get_empty_preimage_resolver() -> PreimageResolver {
-    Arc::new(|_, _| None) as _
+    Arc::new(|_, _, _| None) as _
 }
 
 impl Machine {
@@ -1226,7 +1238,7 @@ impl Machine {
             true,
             GlobalState::default(),
             HashMap::default(),
-            Arc::new(|_, _| panic!("tried to read preimage")),
+            Arc::new(|_, _, _| panic!("tried to read preimage")),
             Some(stylus_data),
         )?;
 
@@ -1745,6 +1757,7 @@ impl Machine {
         Ok(self.value_stacks[0].clone())
     }
 
+    #[cfg(feature = "native")]
     pub fn call_function(
         &mut self,
         module: &str,
@@ -1757,6 +1770,7 @@ impl Machine {
         self.get_final_result()
     }
 
+    #[cfg(feature = "native")]
     pub fn call_user_func(&mut self, func: &str, args: Vec<Value>, ink: u64) -> Result<Vec<Value>> {
         self.set_ink(ink);
         self.call_function("user", func, args)
@@ -1832,6 +1846,7 @@ impl Machine {
         Some(self.pc)
     }
 
+    #[cfg(feature = "native")]
     fn test_next_instruction(func: &Function, pc: &ProgramCounter) {
         let inst: usize = pc.inst.try_into().unwrap();
         debug_assert!(func.code.len() > inst);
@@ -1841,6 +1856,7 @@ impl Machine {
         self.steps
     }
 
+    #[cfg(feature = "native")]
     pub fn step_n(&mut self, n: u64) -> Result<()> {
         if self.is_halted() {
             return Ok(());
@@ -2390,20 +2406,36 @@ impl Machine {
                 Opcode::ReadPreImage => {
                     let offset = value_stack.pop().unwrap().assume_u32();
                     let ptr = value_stack.pop().unwrap().assume_u32();
+                    let preimage_ty = PreimageType::try_from(u8::try_from(inst.argument_data)?)?;
+                    // Preimage reads must be word aligned
+                    if offset % 32 != 0 {
+                        error!();
+                    }
 
                     let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) else {
-                        error!()
+                        error!();
                     };
-                    let Some(preimage) = self.preimage_resolver.get(self.context, hash) else {
+                    let Some(preimage) =
+                        self.preimage_resolver.get(self.context, preimage_ty, hash)
+                    else {
                         eprintln!(
                             "{} for hash {}",
                             "Missing requested preimage".red(),
                             hash.red(),
                         );
                         self.print_backtrace(true);
-                        bail!("missing requested preimage for hash {}", hash)
+                        bail!("missing requested preimage for hash {}", hash);
                     };
-
+                    if preimage_ty == PreimageType::EthVersionedHash
+                        && preimage.len() != BYTES_PER_BLOB
+                    {
+                        bail!(
+                            "kzg hash {} preimage should be {} bytes long but is instead {}",
+                            hash,
+                            BYTES_PER_BLOB,
+                            preimage.len(),
+                        );
+                    }
                     let offset = usize::try_from(offset).unwrap();
                     let len = std::cmp::min(32, preimage.len().saturating_sub(offset));
                     let read = preimage.get(offset..(offset + len)).unwrap_or_default();
@@ -2526,6 +2558,7 @@ impl Machine {
         Ok(())
     }
 
+    #[cfg(feature = "native")]
     fn host_call_hook(
         value_stack: &[Value],
         module: &Module,
@@ -2751,6 +2784,7 @@ impl Machine {
         h.finalize().into()
     }
 
+    #[cfg(feature = "native")]
     pub fn serialize_proof(&self) -> Vec<u8> {
         // Could be variable, but not worth it yet
         const STACK_PROVING_DEPTH: usize = 3;
@@ -2955,6 +2989,7 @@ impl Machine {
                 }
             }
             ReadPreImage | ReadInboxMessage => {
+                let offset = value_stack.last().unwrap().assume_u32();
                 let ptr = value_stack.get(value_stack.len() - 2).unwrap().assume_u32();
                 if let Some(mut idx) = usize::try_from(ptr).ok().filter(|x| x % 32 == 0) {
                     // Prove the leaf this index is in
@@ -2964,16 +2999,35 @@ impl Machine {
                     out!(mem_merkle.prove(idx).unwrap_or_default());
                     if op == Opcode::ReadPreImage {
                         let hash = Bytes32(prev_data);
-                        let Some(preimage) = self.preimage_resolver.get_const(self.context, hash)
+                        let preimage_ty = PreimageType::try_from(
+                            u8::try_from(next_inst.argument_data)
+                                .expect("ReadPreImage argument data is out of range for a u8"),
+                        )
+                        .expect("Invalid preimage type in ReadPreImage argument data");
+                        let Some(preimage) =
+                            self.preimage_resolver
+                                .get_const(self.context, preimage_ty, hash)
                         else {
-                            fail!("Missing requested preimage for hash {}", hash)
+                            panic!("Missing requested preimage for hash {}", hash)
                         };
                         data.push(0); // preimage proof type
-                        out!(preimage);
-                    } else if op == Opcode::ReadInboxMessage {
+                        match preimage_ty {
+                            PreimageType::Keccak256 | PreimageType::Sha2_256 => {
+                                // The proofs for these preimage types are just the raw preimages.
+                                data.extend(preimage);
+                            }
+                            PreimageType::EthVersionedHash => {
+                                prove_kzg_preimage(hash, &preimage, offset, &mut data)
+                                    .expect("Failed to generate KZG preimage proof");
+                            }
+                        }
+                    } else if next_inst.opcode == Opcode::ReadInboxMessage {
                         let msg_idx = value_stack.get(value_stack.len() - 3).unwrap().assume_u64();
-                        let inbox_id = argument_data_to_inbox(arg).expect("Bad inbox indentifier");
-                        if let Some(msg_data) = self.inbox_contents.get(&(inbox_id, msg_idx)) {
+                        let inbox_identifier =
+                            argument_data_to_inbox(arg).expect("Bad inbox indentifier");
+                        if let Some(msg_data) =
+                            self.inbox_contents.get(&(inbox_identifier, msg_idx))
+                        {
                             data.push(0); // inbox proof type
                             out!(msg_data);
                         }

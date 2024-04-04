@@ -60,7 +60,7 @@ func Open(sto *storage.Storage) *Programs {
 		backingStorage: sto,
 		programs:       sto.OpenSubStorage(programDataKey),
 		moduleHashes:   sto.OpenSubStorage(moduleHashesKey),
-		dataPricer:     openDataPricer(sto.OpenSubStorage(dataPricerKey)),
+		dataPricer:     openDataPricer(sto.OpenCachedSubStorage(dataPricerKey)),
 	}
 }
 
@@ -75,6 +75,10 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 	codeHash := statedb.GetCodeHash(address)
 	burner := p.programs.Burner()
 	time := evm.Context.Time
+
+	if statedb.HasSelfDestructed(address) {
+		return 0, codeHash, common.Hash{}, nil, false, errors.New("self destructed")
+	}
 
 	params, err := p.Params()
 	if err != nil {

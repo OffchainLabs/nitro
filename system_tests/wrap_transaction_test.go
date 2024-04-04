@@ -16,8 +16,10 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util/headerreader"
 )
 
 func GetPendingBlockNumber(ctx context.Context, client arbutil.L1Interface) (*big.Int, error) {
@@ -78,11 +80,27 @@ func EnsureTxSucceeded(ctx context.Context, client arbutil.L1Interface, tx *type
 }
 
 func EnsureTxSucceededWithTimeout(ctx context.Context, client arbutil.L1Interface, tx *types.Transaction, timeout time.Duration) (*types.Receipt, error) {
-	txRes, err := WaitForTx(ctx, client, tx.Hash(), timeout)
+	receipt, err := WaitForTx(ctx, client, tx.Hash(), timeout)
 	if err != nil {
-		return nil, fmt.Errorf("waitFoxTx got: %w", err)
+		return nil, fmt.Errorf("waitFoxTx (tx=%s) got: %w", tx.Hash().Hex(), err)
 	}
-	return txRes, arbutil.DetailTxError(ctx, client, tx, txRes)
+	if receipt.Status == types.ReceiptStatusSuccessful && tx.ChainId().Cmp(simulatedChainID) == 0 {
+		for {
+			safeBlock, err := client.HeaderByNumber(ctx, big.NewInt(int64(rpc.SafeBlockNumber)))
+			if err != nil {
+				return receipt, err
+			}
+			if safeBlock.Number.Cmp(receipt.BlockNumber) >= 0 {
+				break
+			}
+			select {
+			case <-time.After(headerreader.TestConfig.Dangerous.WaitForTxApprovalSafePoll):
+			case <-ctx.Done():
+				return receipt, ctx.Err()
+			}
+		}
+	}
+	return receipt, arbutil.DetailTxError(ctx, client, tx, receipt)
 }
 
 func EnsureTxFailed(t *testing.T, ctx context.Context, client arbutil.L1Interface, tx *types.Transaction) *types.Receipt {

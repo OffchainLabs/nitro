@@ -15,13 +15,21 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
+
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
+	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/containers"
+)
+
+var (
+	inboxLatestBatchGauge        = metrics.NewRegisteredGauge("arb/inbox/latest/batch", nil)
+	inboxLatestBatchMessageGauge = metrics.NewRegisteredGauge("arb/inbox/latest/batch/message", nil)
 )
 
 type InboxTracker struct {
@@ -30,12 +38,13 @@ type InboxTracker struct {
 	mutex      sync.Mutex
 	validator  *staker.BlockValidator
 	das        arbstate.DataAvailabilityReader
+	blobReader arbstate.BlobReader
 
 	batchMetaMutex sync.Mutex
 	batchMeta      *containers.LruCache[uint64, BatchMetadata]
 }
 
-func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, das arbstate.DataAvailabilityReader) (*InboxTracker, error) {
+func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, das arbstate.DataAvailabilityReader, blobReader arbstate.BlobReader) (*InboxTracker, error) {
 	// We support a nil txStreamer for the pruning code
 	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee && das == nil {
 		return nil, errors.New("data availability service required but unconfigured")
@@ -44,6 +53,7 @@ func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, das arb
 		db:         db,
 		txStreamer: txStreamer,
 		das:        das,
+		blobReader: blobReader,
 		batchMeta:  containers.NewLruCache[uint64, BatchMetadata](1000),
 	}
 	return tracker, nil
@@ -233,7 +243,7 @@ func (t *InboxTracker) PopulateFeedBacklog(broadcastServer *broadcaster.Broadcas
 	if err != nil {
 		return fmt.Errorf("error getting tx streamer message count: %w", err)
 	}
-	var feedMessages []*broadcaster.BroadcastFeedMessage
+	var feedMessages []*m.BroadcastFeedMessage
 	for seqNum := startMessage; seqNum < messageCount; seqNum++ {
 		message, err := t.txStreamer.GetMessage(seqNum)
 		if err != nil {
@@ -364,11 +374,11 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 		}
 
 		if seqNum != pos {
-			return errors.New("unexpected delayed sequence number")
+			return fmt.Errorf("unexpected delayed sequence number %v, expected %v", seqNum, pos)
 		}
 
 		if nextAcc != message.BeforeInboxAcc {
-			return errors.New("previous delayed accumulator mismatch")
+			return fmt.Errorf("previous delayed accumulator mismatch for message %v", seqNum)
 		}
 		nextAcc = message.AfterInboxAcc()
 
@@ -496,11 +506,12 @@ type multiplexerBackend struct {
 	inbox  *InboxTracker
 }
 
-func (b *multiplexerBackend) PeekSequencerInbox() ([]byte, error) {
+func (b *multiplexerBackend) PeekSequencerInbox() ([]byte, common.Hash, error) {
 	if len(b.batches) == 0 {
-		return nil, errors.New("read past end of specified sequencer batches")
+		return nil, common.Hash{}, errors.New("read past end of specified sequencer batches")
 	}
-	return b.batches[0].Serialize(b.ctx, b.client)
+	bytes, err := b.batches[0].Serialize(b.ctx, b.client)
+	return bytes, b.batches[0].BlockHash, err
 }
 
 func (b *multiplexerBackend) GetSequencerInboxPosition() uint64 {
@@ -595,7 +606,8 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		ctx:    ctx,
 		client: client,
 	}
-	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, t.das, arbstate.KeysetValidate)
+
+	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, t.das, t.blobReader, arbstate.KeysetValidate)
 	batchMessageCounts := make(map[uint64]arbutil.MessageIndex)
 	currentpos := prevbatchmeta.MessageCount + 1
 	for {
@@ -676,6 +688,8 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		"l1Block", latestL1Block,
 		"l1Timestamp", time.Unix(int64(latestTimestamp), 0),
 	)
+	inboxLatestBatchGauge.Update(int64(pos))
+	inboxLatestBatchMessageGauge.Update(int64(newMessageCount))
 
 	if t.validator != nil {
 		t.validator.ReorgToBatchCount(startPos)

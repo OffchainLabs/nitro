@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"regexp"
 	"sync"
 	"time"
 
@@ -18,17 +19,23 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	flag "github.com/spf13/pflag"
 )
+
+// A regexp matching "execution reverted" errors returned from the parent chain RPC.
+var ExecutionRevertedRegexp = regexp.MustCompile(`(?i)execution reverted|VM execution error\.?`)
+
+type ArbSysInterface interface {
+	ArbBlockNumber(*bind.CallOpts) (*big.Int, error)
+}
 
 type HeaderReader struct {
 	stopwaiter.StopWaiter
 	config                ConfigFetcher
 	client                arbutil.L1Interface
 	isParentChainArbitrum bool
-	arbSys                *precompilesgen.ArbSys
+	arbSys                ArbSysInterface
 
 	chanMutex sync.RWMutex
 	// All fields below require the chanMutex
@@ -46,19 +53,25 @@ type HeaderReader struct {
 
 type cachedHeader struct {
 	mutex          sync.Mutex
+	blockTag       string // "safe" or "finalized"
 	rpcBlockNum    *big.Int
 	headWhenCached *types.Header
 	header         *types.Header
 }
 
 type Config struct {
-	Enable               bool          `koanf:"enable"`
-	PollOnly             bool          `koanf:"poll-only" reload:"hot"`
-	PollInterval         time.Duration `koanf:"poll-interval" reload:"hot"`
-	SubscribeErrInterval time.Duration `koanf:"subscribe-err-interval" reload:"hot"`
-	TxTimeout            time.Duration `koanf:"tx-timeout" reload:"hot"`
-	OldHeaderTimeout     time.Duration `koanf:"old-header-timeout" reload:"hot"`
-	UseFinalityData      bool          `koanf:"use-finality-data" reload:"hot"`
+	Enable               bool            `koanf:"enable"`
+	PollOnly             bool            `koanf:"poll-only" reload:"hot"`
+	PollInterval         time.Duration   `koanf:"poll-interval" reload:"hot"`
+	SubscribeErrInterval time.Duration   `koanf:"subscribe-err-interval" reload:"hot"`
+	TxTimeout            time.Duration   `koanf:"tx-timeout" reload:"hot"`
+	OldHeaderTimeout     time.Duration   `koanf:"old-header-timeout" reload:"hot"`
+	UseFinalityData      bool            `koanf:"use-finality-data" reload:"hot"`
+	Dangerous            DangerousConfig `koanf:"dangerous"`
+}
+
+type DangerousConfig struct {
+	WaitForTxApprovalSafePoll time.Duration `koanf:"wait-for-tx-approval-safe-poll"`
 }
 
 type ConfigFetcher func() *Config
@@ -71,6 +84,9 @@ var DefaultConfig = Config{
 	TxTimeout:            5 * time.Minute,
 	OldHeaderTimeout:     5 * time.Minute,
 	UseFinalityData:      true,
+	Dangerous: DangerousConfig{
+		WaitForTxApprovalSafePoll: 0,
+	},
 }
 
 func AddOptions(prefix string, f *flag.FlagSet) {
@@ -78,8 +94,14 @@ func AddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".poll-only", DefaultConfig.PollOnly, "do not attempt to subscribe to header events")
 	f.Bool(prefix+".use-finality-data", DefaultConfig.UseFinalityData, "use l1 data about finalized/safe blocks")
 	f.Duration(prefix+".poll-interval", DefaultConfig.PollInterval, "interval when polling endpoint")
+	f.Duration(prefix+".subscribe-err-interval", DefaultConfig.SubscribeErrInterval, "interval for subscribe error")
 	f.Duration(prefix+".tx-timeout", DefaultConfig.TxTimeout, "timeout when waiting for a transaction")
 	f.Duration(prefix+".old-header-timeout", DefaultConfig.OldHeaderTimeout, "warns if the latest l1 block is at least this old")
+	AddDangerousOptions(prefix+".dangerous", f)
+}
+
+func AddDangerousOptions(prefix string, f *flag.FlagSet) {
+	f.Duration(prefix+".wait-for-tx-approval-safe-poll", DefaultConfig.Dangerous.WaitForTxApprovalSafePoll, "Dangerous! only meant to be used by system tests")
 }
 
 var TestConfig = Config{
@@ -89,20 +111,22 @@ var TestConfig = Config{
 	TxTimeout:        time.Second * 5,
 	OldHeaderTimeout: 5 * time.Minute,
 	UseFinalityData:  false,
+	Dangerous: DangerousConfig{
+		WaitForTxApprovalSafePoll: time.Millisecond * 100,
+	},
 }
 
-func New(ctx context.Context, client arbutil.L1Interface, config ConfigFetcher) (*HeaderReader, error) {
+func New(ctx context.Context, client arbutil.L1Interface, config ConfigFetcher, arbSysPrecompile ArbSysInterface) (*HeaderReader, error) {
 	isParentChainArbitrum := false
-	var arbSys *precompilesgen.ArbSys
-	codeAt, err := client.CodeAt(ctx, types.ArbSysAddress, nil)
-	if err != nil {
-		return nil, err
-	}
-	if len(codeAt) != 0 {
-		isParentChainArbitrum = true
-		arbSys, err = precompilesgen.NewArbSys(types.ArbSysAddress, client)
+	var arbSys ArbSysInterface
+	if arbSysPrecompile != nil {
+		codeAt, err := client.CodeAt(ctx, types.ArbSysAddress, nil)
 		if err != nil {
 			return nil, err
+		}
+		if len(codeAt) != 0 {
+			isParentChainArbitrum = true
+			arbSys = arbSysPrecompile
 		}
 	}
 	return &HeaderReader{
@@ -112,10 +136,12 @@ func New(ctx context.Context, client arbutil.L1Interface, config ConfigFetcher) 
 		arbSys:                arbSys,
 		outChannels:           make(map[chan<- *types.Header]struct{}),
 		outChannelsBehind:     make(map[chan<- *types.Header]struct{}),
-		safe:                  cachedHeader{rpcBlockNum: big.NewInt(rpc.SafeBlockNumber.Int64())},
-		finalized:             cachedHeader{rpcBlockNum: big.NewInt(rpc.FinalizedBlockNumber.Int64())},
+		safe:                  cachedHeader{blockTag: "safe", rpcBlockNum: big.NewInt(rpc.SafeBlockNumber.Int64())},
+		finalized:             cachedHeader{blockTag: "finalized", rpcBlockNum: big.NewInt(rpc.FinalizedBlockNumber.Int64())},
 	}, nil
 }
+
+func (s *HeaderReader) Config() *Config { return s.config() }
 
 // Subscribe to block header updates.
 // Subscribers are notified when there is a change.
@@ -312,7 +338,7 @@ func (s *HeaderReader) logIfHeaderIsOld() {
 	headerTime := time.Since(l1Timetamp)
 	if headerTime >= s.config().OldHeaderTimeout {
 		s.setError(fmt.Errorf("latest header is at least %v old", headerTime))
-		log.Warn(
+		log.Error(
 			"latest L1 block is old", "l1Block", storedHeader.Number,
 			"l1Timestamp", l1Timetamp, "age", headerTime,
 		)
@@ -325,22 +351,52 @@ func (s *HeaderReader) WaitForTxApproval(ctxIn context.Context, tx *types.Transa
 	ctx, cancel := context.WithTimeout(ctxIn, s.config().TxTimeout)
 	defer cancel()
 	txHash := tx.Hash()
+	waitForBlock := false
+	waitForSafePoll := s.config().Dangerous.WaitForTxApprovalSafePoll
 	for {
-		receipt, err := s.client.TransactionReceipt(ctx, txHash)
-		if err == nil && receipt.BlockNumber.IsUint64() {
-			receiptBlockNr := receipt.BlockNumber.Uint64()
-			callBlockNr := s.LastPendingCallBlockNr()
-			if callBlockNr > receiptBlockNr {
-				return receipt, arbutil.DetailTxError(ctx, s.client, tx, receipt)
+		if waitForBlock {
+			select {
+			case _, ok := <-headerchan:
+				if !ok {
+					return nil, fmt.Errorf("waiting for %v: channel closed", txHash)
+				}
+			case <-ctx.Done():
+				return nil, ctx.Err()
 			}
 		}
-		select {
-		case _, ok := <-headerchan:
-			if !ok {
-				return nil, fmt.Errorf("waiting for %v: channel closed", txHash)
+		waitForBlock = true
+		receipt, err := s.client.TransactionReceipt(ctx, txHash)
+		if err != nil || receipt == nil {
+			continue
+		}
+		if !receipt.BlockNumber.IsUint64() {
+			continue
+		}
+		receiptBlockNr := receipt.BlockNumber.Uint64()
+		callBlockNr := s.LastPendingCallBlockNr()
+		if callBlockNr <= receiptBlockNr {
+			continue
+		}
+		if waitForSafePoll != 0 {
+			safeBlock, err := s.client.BlockByNumber(ctx, big.NewInt(int64(rpc.SafeBlockNumber)))
+			if err != nil || safeBlock == nil {
+				log.Warn("parent chain: failed getting safeblock", "err", err)
+				continue
 			}
-		case <-ctx.Done():
-			return nil, ctx.Err()
+			if safeBlock.NumberU64() < receiptBlockNr {
+				log.Info("parent chain: waiting for safe block (see wait-for-tx-approval-safe-poll)", "waiting", receiptBlockNr, "safe", safeBlock.NumberU64())
+				select {
+				case <-time.After(time.Millisecond * 100):
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+				waitForBlock = false
+				continue
+			}
+		}
+		block, err := s.client.BlockByHash(ctx, receipt.BlockHash)
+		if block != nil && err == nil {
+			return receipt, arbutil.DetailTxError(ctx, s.client, tx, receipt)
 		}
 	}
 }
@@ -380,7 +436,7 @@ func (s *HeaderReader) LastPendingCallBlockNr() uint64 {
 
 var ErrBlockNumberNotSupported = errors.New("block number not supported")
 
-func headerIndicatesFinalitySupport(header *types.Header) bool {
+func HeaderIndicatesFinalitySupport(header *types.Header) bool {
 	if header.Difficulty.Sign() == 0 {
 		// This is an Ethereum PoS chain
 		return true
@@ -410,11 +466,16 @@ func (s *HeaderReader) getCached(ctx context.Context, c *cachedHeader) (*types.H
 	if HeadersEqual(currentHead, c.headWhenCached) {
 		return c.header, nil
 	}
-	if !s.config().UseFinalityData || !headerIndicatesFinalitySupport(currentHead) {
+	if !s.config().UseFinalityData || !HeaderIndicatesFinalitySupport(currentHead) {
 		return nil, ErrBlockNumberNotSupported
 	}
 	header, err := s.client.HeaderByNumber(ctx, c.rpcBlockNum)
 	if err != nil {
+		if !errors.Is(err, context.Canceled) {
+			log.Warn("Failed to get latest confirmed block", "blockTag", c.blockTag, "err", err)
+			// Hide error to caller to avoid exposing potentially sensitive L1 information.
+			err = fmt.Errorf("failed to get latest %v block", c.blockTag)
+		}
 		return nil, err
 	}
 	c.header = header

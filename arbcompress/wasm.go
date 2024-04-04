@@ -33,7 +33,7 @@ func Compress(input []byte, level uint32, dictionary Dictionary) ([]byte, error)
 	status := brotliCompress(
 		arbutil.SliceToUnsafePointer(input), uint32(len(input)),
 		arbutil.SliceToUnsafePointer(outBuf), unsafe.Pointer(&outLen),
-		level,
+		uint32(level),
 		WINDOW_SIZE,
 		dictionary,
 	)

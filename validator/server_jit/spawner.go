@@ -2,7 +2,6 @@ package server_jit
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"runtime"
 	"sync/atomic"
@@ -19,18 +18,23 @@ import (
 type JitSpawnerConfig struct {
 	Workers   int  `koanf:"workers" reload:"hot"`
 	Cranelift bool `koanf:"cranelift"`
+
+	// TODO: change WasmMemoryUsageLimit to a string and use resourcemanager.ParseMemLimit
+	WasmMemoryUsageLimit int `koanf:"wasm-memory-usage-limit"`
 }
 
 type JitSpawnerConfigFecher func() *JitSpawnerConfig
 
 var DefaultJitSpawnerConfig = JitSpawnerConfig{
-	Workers:   0,
-	Cranelift: true,
+	Workers:              0,
+	Cranelift:            true,
+	WasmMemoryUsageLimit: 4294967296, // 2^32 WASM memeory limit
 }
 
 func JitSpawnerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".workers", DefaultJitSpawnerConfig.Workers, "number of concurrent validation threads")
 	f.Bool(prefix+".cranelift", DefaultJitSpawnerConfig.Cranelift, "use Cranelift instead of LLVM when validating blocks using the jit-accelerated block validator")
+	f.Int(prefix+".wasm-memory-usage-limit", DefaultJitSpawnerConfig.WasmMemoryUsageLimit, "if memory used by a jit wasm exceeds this limit, a warning is logged")
 }
 
 type JitSpawner struct {
@@ -45,6 +49,7 @@ func NewJitSpawner(locator *server_common.MachineLocator, config JitSpawnerConfi
 	// TODO - preload machines
 	machineConfig := DefaultJitMachineConfig
 	machineConfig.JitCranelift = config().Cranelift
+	machineConfig.WasmMemoryUsageLimit = config().WasmMemoryUsageLimit
 	loader, err := NewJitMachineLoader(&machineConfig, locator, fatalErrChan)
 	if err != nil {
 		return nil, err
@@ -70,14 +75,7 @@ func (v *JitSpawner) execute(
 		return validator.GoGlobalState{}, fmt.Errorf("unabled to get WASM machine: %w", err)
 	}
 
-	resolver := func(hash common.Hash) ([]byte, error) {
-		// Check if it's a known preimage
-		if preimage, ok := entry.Preimages[hash]; ok {
-			return preimage, nil
-		}
-		return nil, errors.New("preimage not found")
-	}
-	state, err := machine.prove(ctx, entry, resolver)
+	state, err := machine.prove(ctx, entry)
 	return state, err
 }
 

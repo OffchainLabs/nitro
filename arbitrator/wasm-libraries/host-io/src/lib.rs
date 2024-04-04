@@ -5,13 +5,17 @@
 
 use caller_env::{static_caller::STATIC_MEM, GuestPtr, MemAccess};
 use core::ops::{Deref, DerefMut, Index, RangeTo};
+use core::convert::TryInto;
+use arbutil::PreimageType;
 
 extern "C" {
     pub fn wavm_get_globalstate_bytes32(idx: u32, ptr: *mut u8);
     pub fn wavm_set_globalstate_bytes32(idx: u32, ptr: *const u8);
     pub fn wavm_get_globalstate_u64(idx: u32) -> u64;
     pub fn wavm_set_globalstate_u64(idx: u32, val: u64);
-    pub fn wavm_read_pre_image(ptr: *mut u8, offset: usize) -> usize;
+    pub fn wavm_read_keccak_256_preimage(ptr: *mut u8, offset: usize) -> usize;
+    pub fn wavm_read_sha2_256_preimage(ptr: *mut u8, offset: usize) -> usize;
+    pub fn wavm_read_eth_versioned_hash_preimage(ptr: *mut u8, offset: usize) -> usize;
     pub fn wavm_read_inbox_message(msg_num: u64, ptr: *mut u8, offset: usize) -> usize;
     pub fn wavm_read_delayed_inbox_message(seq_num: u64, ptr: *mut u8, offset: usize) -> usize;
 }
@@ -110,7 +114,8 @@ pub unsafe extern "C" fn wavmio__readDelayedInboxMessage(
 
 /// Retrieves the preimage of the given hash.
 #[no_mangle]
-pub unsafe extern "C" fn wavmio__resolvePreImage(
+pub unsafe extern "C" fn wavmio__resolveTypedPreimage(
+    preimage_type: u8,
     hash_ptr: GuestPtr,
     offset: usize,
     out_ptr: GuestPtr,
@@ -121,8 +126,19 @@ pub unsafe extern "C" fn wavmio__resolvePreImage(
 
     let our_ptr = our_buf.as_mut_ptr();
     assert_eq!(our_ptr as usize % 32, 0);
+    let mut our_buf = MemoryLeaf([0u8; 32]);
+    let hash = STATIC_MEM.read_slice(hash_ptr, 32);
+    our_buf.copy_from_slice(&hash);
 
-    let read = wavm_read_pre_image(our_ptr, offset);
+    let our_ptr = our_buf.as_mut_ptr();
+    assert_eq!(our_ptr as usize % 32, 0);
+    let preimage_type: PreimageType = preimage_type.try_into().expect("unsupported preimage type");
+    let preimage_reader = match preimage_type {
+        PreimageType::Keccak256 => wavm_read_keccak_256_preimage,
+        PreimageType::Sha2_256 => wavm_read_sha2_256_preimage,
+        PreimageType::EthVersionedHash => wavm_read_eth_versioned_hash_preimage,
+    };
+    let read = preimage_reader(our_ptr, offset);
     assert!(read <= 32);
     STATIC_MEM.write_slice(out_ptr, &our_buf[..read]);
     read

@@ -55,7 +55,7 @@ type Aggregator struct {
 	maxAllowedServiceStoreFailures int
 	keysetHash                     [32]byte
 	keysetBytes                    []byte
-	bpVerifier                     *contracts.BatchPosterVerifier
+	addrVerifier                   *contracts.AddressVerifier
 }
 
 type ServiceDetails struct {
@@ -123,9 +123,9 @@ func NewAggregatorWithSeqInboxCaller(
 		return nil, err
 	}
 
-	var bpVerifier *contracts.BatchPosterVerifier
+	var addrVerifier *contracts.AddressVerifier
 	if seqInboxCaller != nil {
-		bpVerifier = contracts.NewBatchPosterVerifier(seqInboxCaller)
+		addrVerifier = contracts.NewAddressVerifier(seqInboxCaller)
 	}
 
 	return &Aggregator{
@@ -136,7 +136,7 @@ func NewAggregatorWithSeqInboxCaller(
 		maxAllowedServiceStoreFailures: config.RPCAggregator.AssumedHonest - 1,
 		keysetHash:                     keysetHash,
 		keysetBytes:                    keysetBytes,
-		bpVerifier:                     bpVerifier,
+		addrVerifier:                   addrVerifier,
 	}, nil
 }
 
@@ -166,16 +166,16 @@ type storeResponse struct {
 // signature is not checked, which is useful for testing.
 func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
 	log.Trace("das.Aggregator.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig))
-	if a.bpVerifier != nil {
+	if a.addrVerifier != nil {
 		actualSigner, err := DasRecoverSigner(message, timeout, sig)
 		if err != nil {
 			return nil, err
 		}
-		isBatchPoster, err := a.bpVerifier.IsBatchPoster(ctx, actualSigner)
+		isBatchPosterOrSequencer, err := a.addrVerifier.IsBatchPosterOrSequencer(ctx, actualSigner)
 		if err != nil {
 			return nil, err
 		}
-		if !isBatchPoster {
+		if !isBatchPosterOrSequencer {
 			return nil, errors.New("store request not properly signed")
 		}
 	}
@@ -290,6 +290,10 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 					cd.aggSignersMask = aggSignersMask
 					certDetailsChan <- cd
 					returned = true
+					if a.maxAllowedServiceStoreFailures > 0 && // Ignore the case where AssumedHonest = 1, probably a testnet
+						storeFailures+1 > a.maxAllowedServiceStoreFailures {
+						log.Error("das.Aggregator: storing the batch data succeeded to enough DAS commitee members to generate the Data Availability Cert, but if one more had failed then the cert would not have been able to be generated. Look for preceding logs with \"Error from backend\"")
+					}
 				} else if storeFailures > a.maxAllowedServiceStoreFailures {
 					cd := certDetails{}
 					cd.err = fmt.Errorf("aggregator failed to store message to at least %d out of %d DASes (assuming %d are honest). %w", a.requiredServicesForStore, len(a.services), a.config.AssumedHonest, BatchToDasFailed)
