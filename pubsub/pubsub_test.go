@@ -4,11 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"sort"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/go-redis/redis/v8"
 	"github.com/google/go-cmp/cmp"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -104,6 +102,7 @@ func wantMessages(n int) []string {
 }
 
 func TestRedisProduce(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	producer, consumers := newProducerConsumers(ctx, t)
 	producer.Start(ctx)
@@ -213,6 +212,7 @@ func awaitResponses(ctx context.Context, promises []*containers.Promise[string])
 	return responses, errors.Join(errs...)
 }
 
+// consume messages from every consumer except every skipNth.
 func consume(ctx context.Context, t *testing.T, consumers []*Consumer[string, string], skipN int) ([]map[string]string, [][]string) {
 	t.Helper()
 	gotMessages := messagesMaps(consumersCount)
@@ -251,10 +251,6 @@ func consume(ctx context.Context, t *testing.T, consumers []*Consumer[string, st
 }
 
 func TestRedisClaimingOwnership(t *testing.T) {
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stdout, log.TerminalFormat(false)))
-	glogger.Verbosity(log.LvlTrace)
-	log.Root().SetHandler(log.Handler(glogger))
-
 	ctx := context.Background()
 	producer, consumers := newProducerConsumers(ctx, t)
 	producer.Start(ctx)
@@ -300,10 +296,6 @@ func TestRedisClaimingOwnership(t *testing.T) {
 }
 
 func TestRedisClaimingOwnershipReproduceDisabled(t *testing.T) {
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stdout, log.TerminalFormat(false)))
-	glogger.Verbosity(log.LvlTrace)
-	log.Root().SetHandler(log.Handler(glogger))
-
 	ctx := context.Background()
 	producer, consumers := newProducerConsumers(ctx, t, &disableReproduce{})
 	producer.Start(ctx)
