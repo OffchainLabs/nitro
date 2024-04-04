@@ -31,7 +31,7 @@ type Program struct {
 	initGas       uint16
 	asmEstimateKb uint24 // Predicted size of the asm
 	footprint     uint16
-	activatedAt   uint64 // Last activation timestamp
+	activatedAt   uint24 // Hours since Arbitrum began
 	secondsLeft   uint64 // Not stored in state
 }
 
@@ -125,7 +125,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 		initGas:       info.initGas,
 		asmEstimateKb: estimateKb,
 		footprint:     info.footprint,
-		activatedAt:   time,
+		activatedAt:   hoursSinceArbitrum(time),
 	}
 	return stylusVersion, codeHash, info.moduleHash, dataFee, false, p.setProgram(codeHash, programData)
 }
@@ -231,7 +231,7 @@ func (p Programs) getProgram(codeHash common.Hash, time uint64, params *StylusPa
 		initGas:       arbmath.BytesToUint16(data[2:4]),
 		asmEstimateKb: arbmath.BytesToUint24(data[4:7]),
 		footprint:     arbmath.BytesToUint16(data[7:9]),
-		activatedAt:   arbmath.BytesToUint(data[9:17]),
+		activatedAt:   arbmath.BytesToUint24(data[9:12]),
 	}
 	if program.version == 0 {
 		return program, ProgramNotActivatedError()
@@ -245,7 +245,7 @@ func (p Programs) getProgram(codeHash common.Hash, time uint64, params *StylusPa
 
 	// ensure the program hasn't expired
 	expiryDays := params.ExpiryDays
-	age := time - program.activatedAt
+	age := hoursToAge(time, program.activatedAt)
 	expirySeconds := arbmath.DaysToSeconds(expiryDays)
 	if age > expirySeconds {
 		return program, ProgramExpiredError(age)
@@ -260,7 +260,7 @@ func (p Programs) setProgram(codehash common.Hash, program Program) error {
 	copy(data[2:], arbmath.Uint16ToBytes(program.initGas))
 	copy(data[4:], arbmath.Uint24ToBytes(program.asmEstimateKb))
 	copy(data[7:], arbmath.Uint16ToBytes(program.footprint))
-	copy(data[9:], arbmath.UintToBytes(program.activatedAt))
+	copy(data[9:], arbmath.Uint24ToBytes(program.activatedAt))
 	return p.programs.Set(codehash, data)
 }
 
@@ -271,8 +271,8 @@ func (p Programs) programExists(codeHash common.Hash, time uint64, params *Stylu
 	}
 
 	version := arbmath.BytesToUint16(data[:2])
-	activatedAt := arbmath.BytesToUint(data[9:17])
-	expired := time-activatedAt > arbmath.DaysToSeconds(params.ExpiryDays)
+	activatedAt := arbmath.BytesToUint24(data[9:12])
+	expired := hoursToAge(time, activatedAt) > arbmath.DaysToSeconds(params.ExpiryDays)
 	return version, expired, err
 }
 
@@ -283,7 +283,7 @@ func (p Programs) ProgramKeepalive(codeHash common.Hash, time uint64, params *St
 	}
 	keepaliveDays := params.KeepaliveDays
 	if program.secondsLeft < arbmath.DaysToSeconds(keepaliveDays) {
-		return nil, ProgramKeepaliveTooSoon(time - program.activatedAt)
+		return nil, ProgramKeepaliveTooSoon(hoursToAge(time, program.activatedAt))
 	}
 
 	stylusVersion := params.Version
@@ -296,7 +296,7 @@ func (p Programs) ProgramKeepalive(codeHash common.Hash, time uint64, params *St
 	if err != nil {
 		return nil, err
 	}
-	program.activatedAt = time
+	program.activatedAt = hoursSinceArbitrum(time)
 	return dataFee, p.setProgram(codeHash, program)
 
 }
@@ -396,4 +396,16 @@ func (status userStatus) toResult(data []byte, debug bool) ([]byte, string, erro
 		log.Error("program errored with unknown status", "status", status, "data", msg)
 		return nil, msg, vm.ErrExecutionReverted
 	}
+}
+
+// Hours since Arbitrum began, rounded down.
+func hoursSinceArbitrum(time uint64) uint24 {
+	return uint24((time - lastUpdateTimeOffset) / 3600)
+}
+
+// Computes program age in seconds from the hours passed since Arbitrum began.
+func hoursToAge(time uint64, hours uint24) uint64 {
+	seconds := arbmath.SaturatingUMul(uint64(hours), 3600)
+	activatedAt := arbmath.SaturatingUAdd(lastUpdateTimeOffset, seconds)
+	return arbmath.SaturatingUSub(time, activatedAt)
 }
