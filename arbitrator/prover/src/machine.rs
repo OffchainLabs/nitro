@@ -634,7 +634,7 @@ impl Module {
     /// Serializes the `Module` into bytes that can be stored in the db.
     /// The format employed is forward-compatible with future brotli dictionary and caching policies.
     pub fn into_bytes(&self) -> Vec<u8> {
-        let data = bincode::serialize(self).unwrap();
+        let data = bincode::serialize::<ModuleSerdeAll>(&self.into()).unwrap();
         let header = vec![1 + Into::<u8>::into(Dictionary::Empty)];
         brotli::compress_into(&data, header, 0, 22, Dictionary::Empty).expect("failed to compress")
     }
@@ -645,12 +645,107 @@ impl Module {
     ///
     /// The bytes must have been produced by `into_bytes` and represent a valid `Module`.
     pub unsafe fn from_bytes(data: &[u8]) -> Self {
-        if data[0] > 0 {
+        let module = if data[0] > 0 {
             let dict = Dictionary::try_from(data[0] - 1).expect("unknown dictionary");
             let data = brotli::decompress(&data[1..], dict).expect("failed to inflate");
-            bincode::deserialize(&data).unwrap()
+            bincode::deserialize::<ModuleSerdeAll>(&data)
         } else {
-            bincode::deserialize(&data[1..]).unwrap()
+            bincode::deserialize::<ModuleSerdeAll>(&data[1..])
+        };
+        module.unwrap().into()
+    }
+}
+
+/// This type exists to provide a serde option for serializing all the fields of a `Module`.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ModuleSerdeAll {
+    globals: Vec<Value>,
+    memory: Memory,
+    tables: Vec<Table>,
+    tables_merkle: Merkle,
+    funcs: Vec<FunctionSerdeAll>,
+    funcs_merkle: Arc<Merkle>,
+    types: Arc<Vec<FunctionType>>,
+    internals_offset: u32,
+    names: Arc<NameCustomSection>,
+    host_call_hooks: Arc<Vec<Option<(String, String)>>>,
+    start_function: Option<u32>,
+    func_types: Arc<Vec<FunctionType>>,
+    func_exports: Arc<HashMap<String, u32>>,
+    all_exports: Arc<ExportMap>,
+}
+
+impl From<ModuleSerdeAll> for Module {
+    fn from(module: ModuleSerdeAll) -> Self {
+        let funcs = module.funcs.into_iter().map(Function::from).collect();
+        Self {
+            globals: module.globals,
+            memory: module.memory,
+            tables: module.tables,
+            tables_merkle: module.tables_merkle,
+            funcs: Arc::new(funcs),
+            funcs_merkle: module.funcs_merkle,
+            types: module.types,
+            internals_offset: module.internals_offset,
+            names: module.names,
+            host_call_hooks: module.host_call_hooks,
+            start_function: module.start_function,
+            func_types: module.func_types,
+            func_exports: module.func_exports,
+            all_exports: module.all_exports,
+        }
+    }
+}
+
+impl From<&Module> for ModuleSerdeAll {
+    fn from(module: &Module) -> Self {
+        let funcs = Vec::clone(&module.funcs);
+        Self {
+            globals: module.globals.clone(),
+            memory: module.memory.clone(),
+            tables: module.tables.clone(),
+            tables_merkle: module.tables_merkle.clone(),
+            funcs: funcs.into_iter().map(FunctionSerdeAll::from).collect(),
+            funcs_merkle: module.funcs_merkle.clone(),
+            types: module.types.clone(),
+            internals_offset: module.internals_offset,
+            names: module.names.clone(),
+            host_call_hooks: module.host_call_hooks.clone(),
+            start_function: module.start_function,
+            func_types: module.func_types.clone(),
+            func_exports: module.func_exports.clone(),
+            all_exports: module.all_exports.clone(),
+        }
+    }
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FunctionSerdeAll {
+    code: Vec<Instruction>,
+    ty: FunctionType,
+    code_merkle: Merkle,
+    local_types: Vec<ArbValueType>,
+}
+
+impl From<FunctionSerdeAll> for Function {
+    fn from(func: FunctionSerdeAll) -> Self {
+        Self {
+            code: func.code,
+            ty: func.ty,
+            code_merkle: func.code_merkle,
+            local_types: func.local_types,
+        }
+    }
+}
+
+impl From<Function> for FunctionSerdeAll {
+    fn from(func: Function) -> Self {
+        Self {
+            code: func.code,
+            ty: func.ty,
+            code_merkle: func.code_merkle,
+            local_types: func.local_types,
         }
     }
 }
@@ -846,7 +941,8 @@ pub struct Machine {
     inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
     first_too_far: u64, // Not part of machine hash
     preimage_resolver: PreimageResolverWrapper,
-    stylus_modules: HashMap<Bytes32, Module>, // Not part of machine hash
+    /// Linkable Stylus modules in compressed form. Not part of the machine hash.
+    stylus_modules: HashMap<Bytes32, Vec<u8>>,
     initial_hash: Bytes32,
     context: u64,
     debug_info: bool, // Not part of machine hash
@@ -1165,12 +1261,12 @@ impl Machine {
 
         let module = Module::from_user_binary(&bin, debug_funcs, Some(stylus_data))?;
         let hash = module.hash();
-        self.add_stylus_module(module, hash);
+        self.add_stylus_module(hash, module.into_bytes());
         Ok(hash)
     }
 
     /// Adds a pre-built program to the machine's known set of wasms.
-    pub fn add_stylus_module(&mut self, module: Module, hash: Bytes32) {
+    pub fn add_stylus_module(&mut self, hash: Bytes32, module: Vec<u8>) {
         self.stylus_modules.insert(hash, module);
     }
 
@@ -2385,18 +2481,19 @@ impl Machine {
                     let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) else {
                         error!("no hash for {}", ptr)
                     };
-                    let Some(module) = self.stylus_modules.get(&hash) else {
-                        let keys: Vec<_> = self.stylus_modules.keys().map(hex::encode).collect();
-                        bail!(
-                            "no program for {} in {{{}}}",
-                            hex::encode(hash),
-                            keys.join(", ")
-                        )
+                    let Some(bytes) = self.stylus_modules.get(&hash) else {
+                        let modules = &self.stylus_modules;
+                        let keys: Vec<_> = modules.keys().take(16).map(hex::encode).collect();
+                        let dots = (modules.len() > 16).then_some("...").unwrap_or_default();
+                        bail!("no program for {hash} in {{{}{dots}}}", keys.join(", "))
                     };
                     flush_module!();
+
+                    // put the new module's offset on the stack
                     let index = self.modules.len() as u32;
                     value_stack.push(index.into());
-                    self.modules.push(module.clone());
+
+                    self.modules.push(unsafe { Module::from_bytes(bytes) });
                     if let Some(cached) = &mut self.modules_merkle {
                         cached.push_leaf(hash);
                     }
@@ -2553,6 +2650,7 @@ impl Machine {
             println!("{module}\n");
         }
         for module in self.stylus_modules.values() {
+            let module = unsafe { Module::from_bytes(module) };
             println!("{module}\n");
         }
     }
