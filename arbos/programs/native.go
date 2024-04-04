@@ -85,10 +85,11 @@ func activateProgram(
 	module := data[split:]
 
 	info := &activationInfo{
-		moduleHash:  hash,
-		initGas:     uint16(stylusData.init_gas),
-		asmEstimate: uint32(stylusData.asm_estimate),
-		footprint:   uint16(stylusData.footprint),
+		moduleHash:    hash,
+		initGas:       uint16(stylusData.init_gas),
+		cachedInitGas: uint16(stylusData.cached_init_gas),
+		asmEstimate:   uint32(stylusData.asm_estimate),
+		footprint:     uint16(stylusData.footprint),
 	}
 	db.ActivateWasm(hash, asm, module)
 	return info, err

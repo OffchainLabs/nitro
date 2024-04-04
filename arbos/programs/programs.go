@@ -29,8 +29,9 @@ type Programs struct {
 type Program struct {
 	version       uint16
 	initGas       uint16
-	asmEstimateKb uint24 // Predicted size of the asm
+	cachedInitGas uint16
 	footprint     uint16
+	asmEstimateKb uint24 // Predicted size of the asm
 	activatedAt   uint24 // Hours since Arbitrum began
 	secondsLeft   uint64 // Not stored in state
 }
@@ -123,8 +124,9 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 	programData := Program{
 		version:       stylusVersion,
 		initGas:       info.initGas,
-		asmEstimateKb: estimateKb,
+		cachedInitGas: info.cachedInitGas,
 		footprint:     info.footprint,
+		asmEstimateKb: estimateKb,
 		activatedAt:   hoursSinceArbitrum(time),
 	}
 	return stylusVersion, codeHash, info.moduleHash, dataFee, false, p.setProgram(codeHash, programData)
@@ -161,10 +163,12 @@ func (p Programs) CallProgram(
 		return nil, err
 	}
 
-	// pay for program init
+	// pay for memory init
 	open, ever := statedb.GetStylusPages()
 	model := NewMemoryModel(params.FreePages, params.PageGas)
 	memoryCost := model.GasCost(program.footprint, open, ever)
+
+	// pay for program init
 	callCost := uint64(program.initGas) + uint64(params.MinInitGas)
 	cost := common.SaturatingUAdd(memoryCost, callCost)
 	if err := contract.BurnGas(cost); err != nil {
@@ -229,9 +233,10 @@ func (p Programs) getProgram(codeHash common.Hash, time uint64, params *StylusPa
 	program := Program{
 		version:       arbmath.BytesToUint16(data[:2]),
 		initGas:       arbmath.BytesToUint16(data[2:4]),
-		asmEstimateKb: arbmath.BytesToUint24(data[4:7]),
-		footprint:     arbmath.BytesToUint16(data[7:9]),
-		activatedAt:   arbmath.BytesToUint24(data[9:12]),
+		cachedInitGas: arbmath.BytesToUint16(data[4:6]),
+		footprint:     arbmath.BytesToUint16(data[6:8]),
+		activatedAt:   arbmath.BytesToUint24(data[8:11]),
+		asmEstimateKb: arbmath.BytesToUint24(data[11:14]),
 	}
 	if program.version == 0 {
 		return program, ProgramNotActivatedError()
@@ -258,9 +263,10 @@ func (p Programs) setProgram(codehash common.Hash, program Program) error {
 	data := common.Hash{}
 	copy(data[0:], arbmath.Uint16ToBytes(program.version))
 	copy(data[2:], arbmath.Uint16ToBytes(program.initGas))
-	copy(data[4:], arbmath.Uint24ToBytes(program.asmEstimateKb))
-	copy(data[7:], arbmath.Uint16ToBytes(program.footprint))
-	copy(data[9:], arbmath.Uint24ToBytes(program.activatedAt))
+	copy(data[4:], arbmath.Uint16ToBytes(program.cachedInitGas))
+	copy(data[6:], arbmath.Uint16ToBytes(program.footprint))
+	copy(data[8:], arbmath.Uint24ToBytes(program.activatedAt))
+	copy(data[11:], arbmath.Uint24ToBytes(program.asmEstimateKb))
 	return p.programs.Set(codehash, data)
 }
 
@@ -317,9 +323,9 @@ func (p Programs) ProgramTimeLeft(codeHash common.Hash, time uint64, params *Sty
 	return program.secondsLeft, nil
 }
 
-func (p Programs) ProgramInitGas(codeHash common.Hash, time uint64, params *StylusParams) (uint32, error) {
+func (p Programs) ProgramInitGas(codeHash common.Hash, time uint64, params *StylusParams) (uint16, uint16, error) {
 	program, err := p.getProgram(codeHash, time, params)
-	return uint32(program.initGas), err
+	return program.initGas, program.cachedInitGas, err
 }
 
 func (p Programs) ProgramMemoryFootprint(codeHash common.Hash, time uint64, params *StylusParams) (uint16, error) {
@@ -363,10 +369,11 @@ type evmData struct {
 }
 
 type activationInfo struct {
-	moduleHash  common.Hash
-	initGas     uint16
-	asmEstimate uint32
-	footprint   uint16
+	moduleHash    common.Hash
+	initGas       uint16
+	cachedInitGas uint16
+	asmEstimate   uint32
+	footprint     uint16
 }
 
 type userStatus uint8

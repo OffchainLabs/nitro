@@ -42,6 +42,7 @@ func programActivate(
 	pages_ptr unsafe.Pointer,
 	asm_estimation_ptr unsafe.Pointer,
 	init_gas_ptr unsafe.Pointer,
+	cached_init_gas_ptr unsafe.Pointer,
 	version uint32,
 	debug uint32,
 	module_hash_ptr unsafe.Pointer,
@@ -65,6 +66,7 @@ func activateProgram(
 	gasPtr := burner.GasLeft()
 	asmEstimate := uint32(0)
 	initGas := uint16(0)
+	cachedInitGas := uint16(0)
 
 	footprint := uint16(pageLimit)
 	errLen := programActivate(
@@ -73,6 +75,7 @@ func activateProgram(
 		unsafe.Pointer(&footprint),
 		unsafe.Pointer(&asmEstimate),
 		unsafe.Pointer(&initGas),
+		unsafe.Pointer(&cachedInitGas),
 		uint32(version),
 		debugMode,
 		arbutil.SliceToUnsafePointer(moduleHash[:]),
@@ -84,7 +87,7 @@ func activateProgram(
 		err := errors.New(string(errBuf[:errLen]))
 		return nil, err
 	}
-	return &activationInfo{moduleHash, initGas, asmEstimate, footprint}, nil
+	return &activationInfo{moduleHash, initGas, cachedInitGas, asmEstimate, footprint}, nil
 }
 
 //go:wasmimport programs new_program

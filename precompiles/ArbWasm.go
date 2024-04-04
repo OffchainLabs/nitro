@@ -162,10 +162,10 @@ func (con ArbWasm) ProgramVersion(c ctx, evm mech, program addr) (uint16, error)
 }
 
 // Gets the cost to invoke the program (not including MinInitGas)
-func (con ArbWasm) ProgramInitGas(c ctx, evm mech, program addr) (uint32, error) {
+func (con ArbWasm) ProgramInitGas(c ctx, evm mech, program addr) (uint16, uint16, error) {
 	codehash, params, err := con.getCodeHash(c, program)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	return c.State.Programs().ProgramInitGas(codehash, evm.Context.Time, params)
 }
