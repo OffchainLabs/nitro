@@ -21,32 +21,24 @@ var (
 	messagesCount  = 100
 )
 
-type testRequest struct {
-	request string
+type testRequestMarshaller struct{}
+
+func (t *testRequestMarshaller) Marshal(val string) []byte {
+	return []byte(val)
 }
 
-func (r *testRequest) Marshal() []byte {
-	return []byte(r.request)
+func (t *testRequestMarshaller) Unmarshal(val []byte) (string, error) {
+	return string(val), nil
 }
 
-func (r *testRequest) Unmarshal(val []byte) (*testRequest, error) {
-	return &testRequest{
-		request: string(val),
-	}, nil
+type testResponseMarshaller struct{}
+
+func (t *testResponseMarshaller) Marshal(val string) []byte {
+	return []byte(val)
 }
 
-type testResponse struct {
-	response string
-}
-
-func (r *testResponse) Marshal() []byte {
-	return []byte(r.response)
-}
-
-func (r *testResponse) Unmarshal(val []byte) (*testResponse, error) {
-	return &testResponse{
-		response: string(val),
-	}, nil
+func (t *testResponseMarshaller) Unmarshal(val []byte) (string, error) {
+	return string(val), nil
 }
 
 func createGroup(ctx context.Context, t *testing.T, client redis.UniversalClient) {
@@ -67,7 +59,7 @@ func (e *disableReproduce) apply(_ *ConsumerConfig, prodCfg *ProducerConfig) {
 	prodCfg.EnableReproduce = false
 }
 
-func newProducerConsumers(ctx context.Context, t *testing.T, opts ...configOpt) (*Producer[*testRequest, *testResponse], []*Consumer[*testRequest, *testResponse]) {
+func newProducerConsumers(ctx context.Context, t *testing.T, opts ...configOpt) (*Producer[string, string], []*Consumer[string, string]) {
 	t.Helper()
 	redisURL := redisutil.CreateTestRedis(ctx, t)
 	prodCfg, consCfg := DefaultTestProducerConfig, DefaultTestConsumerConfig
@@ -75,14 +67,14 @@ func newProducerConsumers(ctx context.Context, t *testing.T, opts ...configOpt) 
 	for _, o := range opts {
 		o.apply(consCfg, prodCfg)
 	}
-	producer, err := NewProducer[*testRequest, *testResponse](prodCfg)
+	producer, err := NewProducer[string, string](prodCfg, &testRequestMarshaller{}, &testResponseMarshaller{})
 	if err != nil {
 		t.Fatalf("Error creating new producer: %v", err)
 	}
 
-	var consumers []*Consumer[*testRequest, *testResponse]
+	var consumers []*Consumer[string, string]
 	for i := 0; i < consumersCount; i++ {
-		c, err := NewConsumer[*testRequest, *testResponse](ctx, consCfg)
+		c, err := NewConsumer[string, string](ctx, consCfg, &testRequestMarshaller{}, &testResponseMarshaller{})
 		if err != nil {
 			t.Fatalf("Error creating new consumer: %v", err)
 		}
@@ -133,12 +125,12 @@ func TestRedisProduce(t *testing.T) {
 					if res == nil {
 						continue
 					}
-					gotMessages[idx][res.ID] = res.Value.request
-					resp := &testResponse{response: fmt.Sprintf("result for: %v", res.ID)}
+					gotMessages[idx][res.ID] = res.Value
+					resp := fmt.Sprintf("result for: %v", res.ID)
 					if err := c.SetResult(ctx, res.ID, resp); err != nil {
 						t.Errorf("Error setting a result: %v", err)
 					}
-					wantResponses[idx] = append(wantResponses[idx], resp.response)
+					wantResponses[idx] = append(wantResponses[idx], resp)
 				}
 			})
 	}
@@ -146,7 +138,7 @@ func TestRedisProduce(t *testing.T) {
 	var gotResponses []string
 
 	for i := 0; i < messagesCount; i++ {
-		value := &testRequest{request: fmt.Sprintf("msg: %d", i)}
+		value := fmt.Sprintf("msg: %d", i)
 		p, err := producer.Produce(ctx, value)
 		if err != nil {
 			t.Errorf("Produce() unexpected error: %v", err)
@@ -155,7 +147,7 @@ func TestRedisProduce(t *testing.T) {
 		if err != nil {
 			t.Errorf("Await() unexpected error: %v", err)
 		}
-		gotResponses = append(gotResponses, res.response)
+		gotResponses = append(gotResponses, res)
 	}
 
 	producer.StopWaiter.StopAndWait()
@@ -192,10 +184,10 @@ func flatten(responses [][]string) []string {
 	return ret
 }
 
-func produceMessages(ctx context.Context, producer *Producer[*testRequest, *testResponse]) ([]*containers.Promise[*testResponse], error) {
-	var promises []*containers.Promise[*testResponse]
+func produceMessages(ctx context.Context, producer *Producer[string, string]) ([]*containers.Promise[string], error) {
+	var promises []*containers.Promise[string]
 	for i := 0; i < messagesCount; i++ {
-		value := &testRequest{request: fmt.Sprintf("msg: %d", i)}
+		value := fmt.Sprintf("msg: %d", i)
 		promise, err := producer.Produce(ctx, value)
 		if err != nil {
 			return nil, err
@@ -205,7 +197,7 @@ func produceMessages(ctx context.Context, producer *Producer[*testRequest, *test
 	return promises, nil
 }
 
-func awaitResponses(ctx context.Context, promises []*containers.Promise[*testResponse]) ([]string, error) {
+func awaitResponses(ctx context.Context, promises []*containers.Promise[string]) ([]string, error) {
 	var (
 		responses []string
 		errs      []error
@@ -216,12 +208,12 @@ func awaitResponses(ctx context.Context, promises []*containers.Promise[*testRes
 			errs = append(errs, err)
 			continue
 		}
-		responses = append(responses, res.response)
+		responses = append(responses, res)
 	}
 	return responses, errors.Join(errs...)
 }
 
-func consume(ctx context.Context, t *testing.T, consumers []*Consumer[*testRequest, *testResponse], skipN int) ([]map[string]string, [][]string) {
+func consume(ctx context.Context, t *testing.T, consumers []*Consumer[string, string], skipN int) ([]map[string]string, [][]string) {
 	t.Helper()
 	gotMessages := messagesMaps(consumersCount)
 	wantResponses := make([][]string, consumersCount)
@@ -246,12 +238,12 @@ func consume(ctx context.Context, t *testing.T, consumers []*Consumer[*testReque
 					if res == nil {
 						continue
 					}
-					gotMessages[idx][res.ID] = res.Value.request
-					resp := &testResponse{response: fmt.Sprintf("result for: %v", res.ID)}
+					gotMessages[idx][res.ID] = res.Value
+					resp := fmt.Sprintf("result for: %v", res.ID)
 					if err := c.SetResult(ctx, res.ID, resp); err != nil {
 						t.Errorf("Error setting a result: %v", err)
 					}
-					wantResponses[idx] = append(wantResponses[idx], resp.response)
+					wantResponses[idx] = append(wantResponses[idx], resp)
 				}
 			})
 	}

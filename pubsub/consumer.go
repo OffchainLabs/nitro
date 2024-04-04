@@ -52,19 +52,21 @@ func ConsumerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 
 // Consumer implements a consumer for redis stream provides heartbeat to
 // indicate it is alive.
-type Consumer[Request Marshallable[Request], Response Marshallable[Response]] struct {
+type Consumer[Request any, Response any] struct {
 	stopwaiter.StopWaiter
 	id     string
 	client redis.UniversalClient
 	cfg    *ConsumerConfig
+	mReq   Marshaller[Request]
+	mResp  Marshaller[Response]
 }
 
-type Message[Request Marshallable[Request]] struct {
+type Message[Request any] struct {
 	ID    string
 	Value Request
 }
 
-func NewConsumer[Request Marshallable[Request], Response Marshallable[Response]](ctx context.Context, cfg *ConsumerConfig) (*Consumer[Request, Response], error) {
+func NewConsumer[Request any, Response any](ctx context.Context, cfg *ConsumerConfig, mReq Marshaller[Request], mResp Marshaller[Response]) (*Consumer[Request, Response], error) {
 	if cfg.RedisURL == "" {
 		return nil, fmt.Errorf("redis url cannot be empty")
 	}
@@ -76,6 +78,8 @@ func NewConsumer[Request Marshallable[Request], Response Marshallable[Response]]
 		id:     uuid.NewString(),
 		client: c,
 		cfg:    cfg,
+		mReq:   mReq,
+		mResp:  mResp,
 	}
 	return consumer, nil
 }
@@ -139,12 +143,11 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 	var (
 		value    = res[0].Messages[0].Values[messageKey]
 		data, ok = (value).(string)
-		tmp      Request
 	)
 	if !ok {
 		return nil, fmt.Errorf("casting request to string: %w", err)
 	}
-	req, err := tmp.Unmarshal([]byte(data))
+	req, err := c.mReq.Unmarshal([]byte(data))
 	if err != nil {
 		return nil, fmt.Errorf("unmarshaling value: %v, error: %w", value, err)
 	}
@@ -156,7 +159,7 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 }
 
 func (c *Consumer[Request, Response]) SetResult(ctx context.Context, messageID string, result Response) error {
-	acquired, err := c.client.SetNX(ctx, messageID, result.Marshal(), c.cfg.ResponseEntryTimeout).Result()
+	acquired, err := c.client.SetNX(ctx, messageID, c.mResp.Marshal(result), c.cfg.ResponseEntryTimeout).Result()
 	if err != nil || !acquired {
 		return fmt.Errorf("setting result for  message: %v, error: %w", messageID, err)
 	}

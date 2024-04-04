@@ -21,16 +21,18 @@ const (
 	defaultGroup = "default_consumer_group"
 )
 
-type Marshallable[T any] interface {
-	Marshal() []byte
+type Marshaller[T any] interface {
+	Marshal(T) []byte
 	Unmarshal(val []byte) (T, error)
 }
 
-type Producer[Request Marshallable[Request], Response Marshallable[Response]] struct {
+type Producer[Request any, Response any] struct {
 	stopwaiter.StopWaiter
 	id     string
 	client redis.UniversalClient
 	cfg    *ProducerConfig
+	mReq   Marshaller[Request]
+	mResp  Marshaller[Response]
 
 	promisesLock sync.RWMutex
 	promises     map[string]*containers.Promise[Response]
@@ -88,7 +90,7 @@ func ProducerAddConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".redis-group", DefaultProducerConfig.RedisGroup, "redis stream consumer group name")
 }
 
-func NewProducer[Request Marshallable[Request], Response Marshallable[Response]](cfg *ProducerConfig) (*Producer[Request, Response], error) {
+func NewProducer[Request any, Response any](cfg *ProducerConfig, mReq Marshaller[Request], mResp Marshaller[Response]) (*Producer[Request, Response], error) {
 	if cfg.RedisURL == "" {
 		return nil, fmt.Errorf("redis url cannot be empty")
 	}
@@ -100,6 +102,8 @@ func NewProducer[Request Marshallable[Request], Response Marshallable[Response]]
 		id:       uuid.NewString(),
 		client:   c,
 		cfg:      cfg,
+		mReq:     mReq,
+		mResp:    mResp,
 		promises: make(map[string]*containers.Promise[Response]),
 	}, nil
 }
@@ -158,8 +162,7 @@ func (p *Producer[Request, Response]) checkResponses(ctx context.Context) time.D
 			}
 			log.Error("Error reading value in redis", "key", id, "error", err)
 		}
-		var tmp Response
-		val, err := tmp.Unmarshal([]byte(res))
+		val, err := p.mResp.Unmarshal([]byte(res))
 		if err != nil {
 			log.Error("Error unmarshaling", "value", res, "error", err)
 			continue
@@ -180,7 +183,7 @@ func (p *Producer[Request, Response]) Start(ctx context.Context) {
 func (p *Producer[Request, Response]) reproduce(ctx context.Context, value Request, oldKey string) (*containers.Promise[Response], error) {
 	id, err := p.client.XAdd(ctx, &redis.XAddArgs{
 		Stream: p.cfg.RedisStream,
-		Values: map[string]any{messageKey: value.Marshal()},
+		Values: map[string]any{messageKey: p.mReq.Marshal(value)},
 	}).Result()
 	if err != nil {
 		return nil, fmt.Errorf("adding values to redis: %w", err)
@@ -275,8 +278,7 @@ func (p *Producer[Request, Response]) checkPending(ctx context.Context) ([]*Mess
 		if !ok {
 			return nil, fmt.Errorf("casting request: %v to bytes", msg.Values[messageKey])
 		}
-		var tmp Request
-		val, err := tmp.Unmarshal([]byte(data))
+		val, err := p.mReq.Unmarshal([]byte(data))
 		if err != nil {
 			return nil, fmt.Errorf("marshaling value: %v, error: %w", msg.Values[messageKey], err)
 		}
