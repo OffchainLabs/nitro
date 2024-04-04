@@ -613,10 +613,13 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 	if t.das != nil {
 		daProviders = append(daProviders, arbstate.NewDAProviderDAS(t.das))
 	}
+	if t.availDAReader != nil {
+		daProviders = append(daProviders, arbstate.NewDAProviderAvail(t.availDAReader))
+	}
 	if t.blobReader != nil {
 		daProviders = append(daProviders, arbstate.NewDAProviderBlobReader(t.blobReader))
 	}
-	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, daProviders, t.availDAReader, arbstate.KeysetValidate)
+	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, daProviders, arbstate.KeysetValidate)
 	batchMessageCounts := make(map[uint64]arbutil.MessageIndex)
 	currentpos := prevbatchmeta.MessageCount + 1
 	for {
