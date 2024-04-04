@@ -57,7 +57,7 @@ func BuildBlock(
 		return seqBatch, nil
 	}
 	block, _, err := arbos.ProduceBlock(
-		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher,
+		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher, false,
 	)
 	return block, err
 }

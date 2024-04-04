@@ -469,13 +469,10 @@ func (p *DataPoster) evalMaxFeeCapExpr(backlogOfBatches uint64, elapsed time.Dur
 var big4 = big.NewInt(4)
 
 // The dataPosterBacklog argument should *not* include extraBacklog (it's added in in this function)
-func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit uint64, numBlobs uint64, lastTx *types.Transaction, dataCreatedAt time.Time, dataPosterBacklog uint64) (*big.Int, *big.Int, *big.Int, error) {
+func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit uint64, numBlobs uint64, lastTx *types.Transaction, dataCreatedAt time.Time, dataPosterBacklog uint64, latestHeader *types.Header) (*big.Int, *big.Int, *big.Int, error) {
 	config := p.config()
 	dataPosterBacklog += p.extraBacklog()
-	latestHeader, err := p.headerReader.LastHeader(ctx)
-	if err != nil {
-		return nil, nil, nil, err
-	}
+
 	if latestHeader.BaseFee == nil {
 		return nil, nil, nil, fmt.Errorf("latest parent chain block %v missing BaseFee (either the parent chain does not have EIP-1559 or the parent chain node is not synced)", latestHeader.Number)
 	}
@@ -583,13 +580,8 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	blobGasUsed := params.BlobTxBlobGasPerBlob * numBlobs
 	currentBlobCost := arbmath.BigMulByUint(currentBlobFee, blobGasUsed)
 	currentNonBlobCost := arbmath.BigMulByUint(currentNonBlobFee, gasLimit)
-	currentTotalCost := arbmath.BigAdd(currentBlobCost, currentNonBlobCost)
-	if config.MaxFeeBidMultipleBips > 0 {
-		targetMaxCost = arbmath.BigMin(targetMaxCost, arbmath.BigMulByBips(currentTotalCost, config.MaxFeeBidMultipleBips))
-	}
-
 	newBlobFeeCap := arbmath.BigMul(targetMaxCost, currentBlobFee)
-	newBlobFeeCap.Div(newBlobFeeCap, currentTotalCost)
+	newBlobFeeCap.Div(newBlobFeeCap, arbmath.BigAdd(currentBlobCost, currentNonBlobCost))
 	if lastTx != nil && lastTx.BlobGasFeeCap() != nil {
 		newBlobFeeCap = arbmath.BigMax(newBlobFeeCap, arbmath.BigMulByBips(lastTx.BlobGasFeeCap(), minRbfIncrease))
 	}
@@ -604,6 +596,20 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 		baseFeeCostIncrease := arbmath.BigSub(newNonBlobCost, targetNonBlobCost)
 		newBlobCost := arbmath.BigSub(targetBlobCost, baseFeeCostIncrease)
 		newBlobFeeCap = arbmath.BigDivByUint(newBlobCost, blobGasUsed)
+	}
+
+	if config.MaxFeeBidMultipleBips > 0 {
+		// Limit the fee caps to be no greater than max(MaxFeeBidMultipleBips, minRbf)
+		maxNonBlobFee := arbmath.BigMulByBips(currentNonBlobFee, config.MaxFeeBidMultipleBips)
+		if lastTx != nil {
+			maxNonBlobFee = arbmath.BigMax(maxNonBlobFee, arbmath.BigMulByBips(lastTx.GasFeeCap(), minRbfIncrease))
+		}
+		maxBlobFee := arbmath.BigMulByBips(currentBlobFee, config.MaxFeeBidMultipleBips)
+		if lastTx != nil && lastTx.BlobGasFeeCap() != nil {
+			maxBlobFee = arbmath.BigMax(maxBlobFee, arbmath.BigMulByBips(lastTx.BlobGasFeeCap(), minRbfIncrease))
+		}
+		newBaseFeeCap = arbmath.BigMin(newBaseFeeCap, maxNonBlobFee)
+		newBlobFeeCap = arbmath.BigMin(newBlobFeeCap, maxBlobFee)
 	}
 
 	if arbmath.BigGreaterThan(newTipCap, newBaseFeeCap) {
@@ -683,7 +689,12 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 		return nil, fmt.Errorf("failed to update data poster balance: %w", err)
 	}
 
-	feeCap, tipCap, blobFeeCap, err := p.feeAndTipCaps(ctx, nonce, gasLimit, uint64(len(kzgBlobs)), nil, dataCreatedAt, 0)
+	latestHeader, err := p.headerReader.LastHeader(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	feeCap, tipCap, blobFeeCap, err := p.feeAndTipCaps(ctx, nonce, gasLimit, uint64(len(kzgBlobs)), nil, dataCreatedAt, 0, latestHeader)
 	if err != nil {
 		return nil, err
 	}
@@ -868,7 +879,12 @@ func updateGasCaps(tx *types.Transaction, newFeeCap, newTipCap, newBlobFeeCap *b
 
 // The mutex must be held by the caller.
 func (p *DataPoster) replaceTx(ctx context.Context, prevTx *storage.QueuedTransaction, backlogWeight uint64) error {
-	newFeeCap, newTipCap, newBlobFeeCap, err := p.feeAndTipCaps(ctx, prevTx.FullTx.Nonce(), prevTx.FullTx.Gas(), uint64(len(prevTx.FullTx.BlobHashes())), prevTx.FullTx, prevTx.Created, backlogWeight)
+	latestHeader, err := p.headerReader.LastHeader(ctx)
+	if err != nil {
+		return err
+	}
+
+	newFeeCap, newTipCap, newBlobFeeCap, err := p.feeAndTipCaps(ctx, prevTx.FullTx.Nonce(), prevTx.FullTx.Gas(), uint64(len(prevTx.FullTx.BlobHashes())), prevTx.FullTx, prevTx.Created, backlogWeight, latestHeader)
 	if err != nil {
 		return err
 	}

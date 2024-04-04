@@ -25,7 +25,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 )
@@ -40,7 +39,6 @@ var L2ToL1TransactionEventID common.Hash
 var L2ToL1TxEventID common.Hash
 var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, common.Address, *big.Int, *big.Int) error
 var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
-var gasUsedSinceStartupCounter = metrics.NewRegisteredCounter("arb/gas_used", nil)
 
 // A helper struct that implements String() by marshalling to JSON.
 // This is useful for logging because it's lazy, so if the log level is too high to print the transaction,
@@ -148,6 +146,7 @@ func ProduceBlock(
 	chainContext core.ChainContext,
 	chainConfig *params.ChainConfig,
 	batchFetcher arbostypes.FallibleBatchFetcher,
+	isMsgForPrefetch bool,
 ) (*types.Block, types.Receipts, error) {
 	var batchFetchErr error
 	txes, err := ParseL2Transactions(message, chainConfig.ChainID, func(batchNum uint64, batchHash common.Hash) []byte {
@@ -173,7 +172,7 @@ func ProduceBlock(
 
 	hooks := NoopSequencingHooks()
 	return ProduceBlockAdvanced(
-		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks,
+		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks, isMsgForPrefetch,
 	)
 }
 
@@ -187,6 +186,7 @@ func ProduceBlockAdvanced(
 	chainContext core.ChainContext,
 	chainConfig *params.ChainConfig,
 	sequencingHooks *SequencingHooks,
+	isMsgForPrefetch bool,
 ) (*types.Block, types.Receipts, error) {
 
 	state, err := arbosState.OpenSystemArbosState(statedb, nil, true)
@@ -376,7 +376,9 @@ func ProduceBlockAdvanced(
 			if chainConfig.DebugMode() {
 				logLevel = log.Warn
 			}
-			logLevel("error applying transaction", "tx", printTxAsJson{tx}, "err", err)
+			if !isMsgForPrefetch {
+				logLevel("error applying transaction", "tx", printTxAsJson{tx}, "err", err)
+			}
 			if !hooks.DiscardInvalidTxsEarly {
 				// we'll still deduct a TxGas's worth from the block-local rate limiter even if the tx was invalid
 				blockGasLeft = arbmath.SaturatingUSub(blockGasLeft, params.TxGas)
@@ -462,10 +464,6 @@ func ProduceBlockAdvanced(
 		}
 
 		blockGasLeft = arbmath.SaturatingUSub(blockGasLeft, computeUsed)
-
-		// Add gas used since startup to prometheus metric.
-		gasUsed := arbmath.SaturatingUSub(receipt.GasUsed, receipt.GasUsedForL1)
-		gasUsedSinceStartupCounter.Inc(arbmath.SaturatingCast(gasUsed))
 
 		complete = append(complete, tx)
 		receipts = append(receipts, receipt)

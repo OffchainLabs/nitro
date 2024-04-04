@@ -199,6 +199,11 @@ func (t *InboxTracker) GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex
 	return metadata.MessageCount, err
 }
 
+func (t *InboxTracker) GetBatchParentChainBlock(seqNum uint64) (uint64, error) {
+	metadata, err := t.GetBatchMetadata(seqNum)
+	return metadata.ParentChainBlock, err
+}
+
 // GetBatchAcc is a convenience function wrapping GetBatchMetadata
 func (t *InboxTracker) GetBatchAcc(seqNum uint64) (common.Hash, error) {
 	metadata, err := t.GetBatchMetadata(seqNum)
@@ -216,6 +221,54 @@ func (t *InboxTracker) GetBatchCount() (uint64, error) {
 		return 0, err
 	}
 	return count, nil
+}
+
+// err will return unexpected/internal errors
+// bool will be false if batch not found (meaning, block not yet posted on a batch)
+func (t *InboxTracker) FindInboxBatchContainingMessage(pos arbutil.MessageIndex) (uint64, bool, error) {
+	batchCount, err := t.GetBatchCount()
+	if err != nil {
+		return 0, false, err
+	}
+	low := uint64(0)
+	high := batchCount - 1
+	lastBatchMessageCount, err := t.GetBatchMessageCount(high)
+	if err != nil {
+		return 0, false, err
+	}
+	if lastBatchMessageCount <= pos {
+		return 0, false, nil
+	}
+	// Iteration preconditions:
+	// - high >= low
+	// - msgCount(low - 1) <= pos implies low <= target
+	// - msgCount(high) > pos implies high >= target
+	// Therefore, if low == high, then low == high == target
+	for {
+		// Due to integer rounding, mid >= low && mid < high
+		mid := (low + high) / 2
+		count, err := t.GetBatchMessageCount(mid)
+		if err != nil {
+			return 0, false, err
+		}
+		if count < pos {
+			// Must narrow as mid >= low, therefore mid + 1 > low, therefore newLow > oldLow
+			// Keeps low precondition as msgCount(mid) < pos
+			low = mid + 1
+		} else if count == pos {
+			return mid + 1, true, nil
+		} else if count == pos+1 || mid == low { // implied: count > pos
+			return mid, true, nil
+		} else {
+			// implied: count > pos + 1
+			// Must narrow as mid < high, therefore newHigh < oldHigh
+			// Keeps high precondition as msgCount(mid) > pos
+			high = mid
+		}
+		if high == low {
+			return high, true, nil
+		}
+	}
 }
 
 func (t *InboxTracker) PopulateFeedBacklog(broadcastServer *broadcaster.Broadcaster) error {

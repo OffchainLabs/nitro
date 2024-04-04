@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"net"
+	"runtime/debug"
 
 	"github.com/gobwas/ws"
 
@@ -60,7 +61,7 @@ func (b *Broadcaster) NewBroadcastFeedMessage(message arbostypes.MessageWithMeta
 func (b *Broadcaster) BroadcastSingle(msg arbostypes.MessageWithMetadata, seq arbutil.MessageIndex) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Error("recovered error in BroadcastSingle", "recover", r)
+			log.Error("recovered error in BroadcastSingle", "recover", r, "backtrace", string(debug.Stack()))
 			err = errors.New("panic in BroadcastSingle")
 		}
 	}()
@@ -84,7 +85,7 @@ func (b *Broadcaster) BroadcastSingleFeedMessage(bfm *m.BroadcastFeedMessage) {
 func (b *Broadcaster) BroadcastMessages(messages []arbostypes.MessageWithMetadata, seq arbutil.MessageIndex) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Error("recovered error in BroadcastMessages", "recover", r)
+			log.Error("recovered error in BroadcastMessages", "recover", r, "backtrace", string(debug.Stack()))
 			err = errors.New("panic in BroadcastMessages")
 		}
 	}()

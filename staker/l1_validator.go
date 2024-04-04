@@ -339,9 +339,13 @@ func (v *L1Validator) generateNodeAction(
 			batchNum = localBatchCount - 1
 			validatedCount = messageCount
 		} else {
-			batchNum, err = FindBatchContainingMessageIndex(v.inboxTracker, validatedCount-1, localBatchCount)
+			var found bool
+			batchNum, found, err = v.inboxTracker.FindInboxBatchContainingMessage(validatedCount - 1)
 			if err != nil {
 				return nil, false, err
+			}
+			if !found {
+				return nil, false, errors.New("batch not found on L1")
 			}
 		}
 		execResult, err := v.txStreamer.ResultAtCount(validatedCount)
