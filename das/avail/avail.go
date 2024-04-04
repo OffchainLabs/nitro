@@ -3,6 +3,8 @@ package avail
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 
 	"time"
 
@@ -10,8 +12,13 @@ import (
 	"github.com/centrifuge/go-substrate-rpc-client/v4/signature"
 	gsrpc_types "github.com/centrifuge/go-substrate-rpc-client/v4/types"
 	"github.com/centrifuge/go-substrate-rpc-client/v4/types/codec"
+	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/das/avail/vectorx"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/vedhavyas/go-subkey"
 )
@@ -26,7 +33,7 @@ func IsAvailMessageHeaderByte(header byte) bool {
 
 type AvailDA struct {
 	enable      bool
-	l1Client    arbutil.L1Interface
+	vectorx     vectorx.VectorX
 	timeout     time.Duration
 	appID       int
 	api         *gsrpc.SubstrateAPI
@@ -84,9 +91,34 @@ func NewAvailDA(cfg DAConfig, l1Client arbutil.L1Interface) (*AvailDA, error) {
 		return nil, err
 	}
 
+	// Contract address
+	contractAddress := common.HexToAddress(cfg.VectorX)
+
+	// Contract ABI (Application Binary Interface)
+	// Replace this with your contract's ABI
+	byteValue, err := os.ReadFile("./abi/vectorx.abi.json")
+	if err != nil {
+		log.Warn("⚠️ cannot read abi for vectorX: error:%v", err)
+		return nil, err
+	}
+	vectorxABI := string(byteValue)
+
+	// Parse the contract ABI
+	abi, err := abi.JSON(strings.NewReader(vectorxABI))
+	if err != nil {
+		log.Warn("⚠️ cannot create abi for vectorX: error:%v", err)
+		return nil, err
+	}
+
+	// Create a filter query to listen for events
+	query := ethereum.FilterQuery{
+		Addresses: []common.Address{contractAddress},
+		Topics:    [][]common.Hash{{abi.Events["HeadUpdate"].ID}},
+	}
+
 	return &AvailDA{
 		enable:      cfg.Enable,
-		l1Client:    l1Client,
+		vectorx:     vectorx.VectorX{Abi: abi, Client: *ethclient.NewClient(l1Client.Client()), Query: query},
 		timeout:     cfg.Timeout,
 		appID:       appID,
 		api:         api,
@@ -170,6 +202,23 @@ outer:
 			}
 		case <-timeout:
 			return nil, fmt.Errorf("⌛️  Timeout of %d seconds reached without getting finalized status for extrinsic", a.timeout)
+		}
+	}
+
+	header, err := a.api.RPC.Chain.GetHeader(finalizedblockHash)
+	if err != nil {
+		return nil, fmt.Errorf("cannot get header:%+v", err)
+	}
+
+	finalizedBlockNumber := header.Number
+subs:
+	for {
+		blockNumber, err := a.vectorx.subscribeForHeaderUpdate()
+		if err != nil {
+
+		}
+		if finalizedBlockNumber <= blockNumber {
+			break subs
 		}
 	}
 

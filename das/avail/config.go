@@ -8,6 +8,7 @@ type DAConfig struct {
 	Seed    string        `koanf:"seed"`
 	AppID   int           `koanf:"app-id"`
 	Timeout time.Duration `koanf:"timeout"`
+	VectorX string        `koanf:"vectorx"`
 }
 
 func NewDAConfig(api_url string, seed string, app_id int, timeout time.Duration) (*DAConfig, error) {
