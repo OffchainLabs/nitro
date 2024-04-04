@@ -9,12 +9,12 @@ import (
 
 	"github.com/go-redis/redis/v8"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/uuid"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/redisutil"
 )
 
 var (
-	streamName     = DefaultTestProducerConfig.RedisStream
 	consumersCount = 10
 	messagesCount  = 100
 )
@@ -39,9 +39,9 @@ func (t *testResponseMarshaller) Unmarshal(val []byte) (string, error) {
 	return string(val), nil
 }
 
-func createGroup(ctx context.Context, t *testing.T, client redis.UniversalClient) {
+func createGroup(ctx context.Context, t *testing.T, streamName, groupName string, client redis.UniversalClient) {
 	t.Helper()
-	_, err := client.XGroupCreateMkStream(ctx, streamName, defaultGroup, "$").Result()
+	_, err := client.XGroupCreateMkStream(ctx, streamName, groupName, "$").Result()
 	if err != nil {
 		t.Fatalf("Error creating stream group: %v", err)
 	}
@@ -57,11 +57,31 @@ func (e *disableReproduce) apply(_ *ConsumerConfig, prodCfg *ProducerConfig) {
 	prodCfg.EnableReproduce = false
 }
 
+func producerCfg() *ProducerConfig {
+	return &ProducerConfig{
+		EnableReproduce:      DefaultTestProducerConfig.EnableReproduce,
+		CheckPendingInterval: DefaultTestProducerConfig.CheckPendingInterval,
+		KeepAliveTimeout:     DefaultTestProducerConfig.KeepAliveTimeout,
+		CheckResultInterval:  DefaultTestProducerConfig.CheckResultInterval,
+	}
+}
+
+func consumerCfg() *ConsumerConfig {
+	return &ConsumerConfig{
+		ResponseEntryTimeout: DefaultTestConsumerConfig.ResponseEntryTimeout,
+		KeepAliveTimeout:     DefaultTestConsumerConfig.KeepAliveTimeout,
+	}
+}
+
 func newProducerConsumers(ctx context.Context, t *testing.T, opts ...configOpt) (*Producer[string, string], []*Consumer[string, string]) {
 	t.Helper()
 	redisURL := redisutil.CreateTestRedis(ctx, t)
-	prodCfg, consCfg := DefaultTestProducerConfig, DefaultTestConsumerConfig
+	prodCfg, consCfg := producerCfg(), consumerCfg()
 	prodCfg.RedisURL, consCfg.RedisURL = redisURL, redisURL
+	streamName := uuid.NewString()
+	groupName := fmt.Sprintf("group_%s", streamName)
+	prodCfg.RedisGroup, consCfg.RedisGroup = groupName, groupName
+	prodCfg.RedisStream, consCfg.RedisStream = streamName, streamName
 	for _, o := range opts {
 		o.apply(consCfg, prodCfg)
 	}
@@ -78,7 +98,7 @@ func newProducerConsumers(ctx context.Context, t *testing.T, opts ...configOpt) 
 		}
 		consumers = append(consumers, c)
 	}
-	createGroup(ctx, t, producer.client)
+	createGroup(ctx, t, streamName, groupName, producer.client)
 	return producer, consumers
 }
 
@@ -102,6 +122,7 @@ func wantMessages(n int) []string {
 }
 
 func TestRedisProduce(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	producer, consumers := newProducerConsumers(ctx, t)
 	producer.Start(ctx)
@@ -250,6 +271,7 @@ func consume(ctx context.Context, t *testing.T, consumers []*Consumer[string, st
 }
 
 func TestRedisClaimingOwnership(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	producer, consumers := newProducerConsumers(ctx, t)
 	producer.Start(ctx)
@@ -295,6 +317,7 @@ func TestRedisClaimingOwnership(t *testing.T) {
 }
 
 func TestRedisClaimingOwnershipReproduceDisabled(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	producer, consumers := newProducerConsumers(ctx, t, &disableReproduce{})
 	producer.Start(ctx)
