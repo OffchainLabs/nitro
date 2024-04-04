@@ -2481,7 +2481,7 @@ impl Machine {
                     let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) else {
                         error!("no hash for {}", ptr)
                     };
-                    let Some(module_bytes) = self.stylus_modules.get(&hash) else {
+                    let Some(bytes) = self.stylus_modules.get(&hash) else {
                         let modules = &self.stylus_modules;
                         let keys: Vec<_> = modules.keys().take(16).map(hex::encode).collect();
                         let dots = (modules.len() > 16).then_some("...").unwrap_or_default();
@@ -2493,16 +2493,7 @@ impl Machine {
                     let index = self.modules.len() as u32;
                     value_stack.push(index.into());
 
-                    let temp_mod = unsafe { Module::from_bytes(module_bytes) };
-                    println!(
-                        "\ndict {}\nexpected {}\nhash   {}\n",
-                        module_bytes[0],
-                        hash,
-                        temp_mod.hash()
-                    );
-
-                    self.modules
-                        .push(unsafe { Module::from_bytes(module_bytes) });
+                    self.modules.push(unsafe { Module::from_bytes(bytes) });
                     if let Some(cached) = &mut self.modules_merkle {
                         cached.push_leaf(hash);
                     }
