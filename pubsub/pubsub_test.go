@@ -102,7 +102,6 @@ func wantMessages(n int) []string {
 }
 
 func TestRedisProduce(t *testing.T) {
-	t.Parallel()
 	ctx := context.Background()
 	producer, consumers := newProducerConsumers(ctx, t)
 	producer.Start(ctx)
