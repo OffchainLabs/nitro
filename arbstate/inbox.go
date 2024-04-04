@@ -80,9 +80,19 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 		var err error
 		for _, provider := range daProviders {
 			if provider != nil && provider.IsValidHeaderByte(payload[0]) {
-				payload, err = provider.RecoverPayloadFromBatch(ctx, batchNum, batchBlockHash, data, nil, keysetValidationMode)
+				payload, err = provider.RecoverPayloadFromBatch(ctx, batchNum, batchBlockHash, data, nil, keysetValidationMode != daprovider.KeysetDontValidate)
 				if err != nil {
-					return nil, err
+					// Matches the way keyset validation was done inside DAS readers i.e logging the error
+					//  But other daproviders might just want to return the error
+					if errors.Is(err, daprovider.ErrSeqMsgValidation) && daprovider.IsDASMessageHeaderByte(payload[0]) {
+						logLevel := log.Error
+						if keysetValidationMode == daprovider.KeysetPanicIfInvalid {
+							logLevel = log.Crit
+						}
+						logLevel(err.Error())
+					} else {
+						return nil, err
+					}
 				}
 				if payload == nil {
 					return parsedMsg, nil

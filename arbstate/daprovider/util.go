@@ -106,6 +106,7 @@ var (
 	ErrBatchToDasFailed      = errors.New("unable to batch to DAS")
 	ErrNoBlobReader          = errors.New("blob batch payload was encountered but no BlobReader was configured")
 	ErrInvalidBlobDataFormat = errors.New("blob batch data is not a list of hashes as expected")
+	ErrSeqMsgValidation      = errors.New("error validating recovered payload from batch")
 )
 
 type KeysetValidationMode uint8
