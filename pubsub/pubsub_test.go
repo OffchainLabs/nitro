@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
-	"sync/atomic"
 	"testing"
-	"time"
 
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/go-redis/redis/v8"
 	"github.com/google/go-cmp/cmp"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -57,20 +57,32 @@ func createGroup(ctx context.Context, t *testing.T, client redis.UniversalClient
 	}
 }
 
-func newProducerConsumers(ctx context.Context, t *testing.T) (*Producer[*testRequest, *testResponse], []*Consumer[*testRequest, *testResponse]) {
+type configOpt interface {
+	apply(consCfg *ConsumerConfig, prodCfg *ProducerConfig)
+}
+
+type disableReproduce struct{}
+
+func (e *disableReproduce) apply(_ *ConsumerConfig, prodCfg *ProducerConfig) {
+	prodCfg.EnableReproduce = false
+}
+
+func newProducerConsumers(ctx context.Context, t *testing.T, opts ...configOpt) (*Producer[*testRequest, *testResponse], []*Consumer[*testRequest, *testResponse]) {
 	t.Helper()
 	redisURL := redisutil.CreateTestRedis(ctx, t)
-	defaultProdCfg := DefaultTestProducerConfig
-	defaultProdCfg.RedisURL = redisURL
-	producer, err := NewProducer[*testRequest, *testResponse](defaultProdCfg)
+	prodCfg, consCfg := DefaultTestProducerConfig, DefaultTestConsumerConfig
+	prodCfg.RedisURL, consCfg.RedisURL = redisURL, redisURL
+	for _, o := range opts {
+		o.apply(consCfg, prodCfg)
+	}
+	producer, err := NewProducer[*testRequest, *testResponse](prodCfg)
 	if err != nil {
 		t.Fatalf("Error creating new producer: %v", err)
 	}
-	defaultCfg := DefaultTestConsumerConfig
-	defaultCfg.RedisURL = redisURL
+
 	var consumers []*Consumer[*testRequest, *testResponse]
 	for i := 0; i < consumersCount; i++ {
-		c, err := NewConsumer[*testRequest, *testResponse](ctx, defaultCfg)
+		c, err := NewConsumer[*testRequest, *testResponse](ctx, consCfg)
 		if err != nil {
 			t.Fatalf("Error creating new consumer: %v", err)
 		}
@@ -99,7 +111,7 @@ func wantMessages(n int) []string {
 	return ret
 }
 
-func TestProduce(t *testing.T) {
+func TestRedisProduce(t *testing.T) {
 	ctx := context.Background()
 	producer, consumers := newProducerConsumers(ctx, t)
 	producer.Start(ctx)
@@ -180,26 +192,41 @@ func flatten(responses [][]string) []string {
 	return ret
 }
 
-func TestClaimingOwnership(t *testing.T) {
-	ctx := context.Background()
-	producer, consumers := newProducerConsumers(ctx, t)
-	producer.Start(ctx)
-	gotMessages := messagesMaps(consumersCount)
-
-	// Consumer messages in every third consumer but don't ack them to check
-	// that other consumers will claim ownership on those messages.
-	for i := 0; i < len(consumers); i += 3 {
-		i := i
-		if _, err := consumers[i].Consume(ctx); err != nil {
-			t.Errorf("Error consuming message: %v", err)
+func produceMessages(ctx context.Context, producer *Producer[*testRequest, *testResponse]) ([]*containers.Promise[*testResponse], error) {
+	var promises []*containers.Promise[*testResponse]
+	for i := 0; i < messagesCount; i++ {
+		value := &testRequest{request: fmt.Sprintf("msg: %d", i)}
+		promise, err := producer.Produce(ctx, value)
+		if err != nil {
+			return nil, err
 		}
-		consumers[i].StopAndWait()
+		promises = append(promises, promise)
 	}
-	var total atomic.Uint64
+	return promises, nil
+}
 
-	wantResponses := make([][]string, len(consumers))
-	for idx := 0; idx < len(consumers); idx++ {
-		if idx%3 == 0 {
+func awaitResponses(ctx context.Context, promises []*containers.Promise[*testResponse]) ([]string, error) {
+	var (
+		responses []string
+		errs      []error
+	)
+	for _, p := range promises {
+		res, err := p.Await(ctx)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		responses = append(responses, res.response)
+	}
+	return responses, errors.Join(errs...)
+}
+
+func consume(ctx context.Context, t *testing.T, consumers []*Consumer[*testRequest, *testResponse], skipN int) ([]map[string]string, [][]string) {
+	t.Helper()
+	gotMessages := messagesMaps(consumersCount)
+	wantResponses := make([][]string, consumersCount)
+	for idx := 0; idx < consumersCount; idx++ {
+		if idx%skipN == 0 {
 			continue
 		}
 		idx, c := idx, consumers[idx]
@@ -225,36 +252,39 @@ func TestClaimingOwnership(t *testing.T) {
 						t.Errorf("Error setting a result: %v", err)
 					}
 					wantResponses[idx] = append(wantResponses[idx], resp.response)
-					total.Add(1)
 				}
 			})
 	}
+	return gotMessages, wantResponses
+}
 
-	var promises []*containers.Promise[*testResponse]
-	for i := 0; i < messagesCount; i++ {
-		value := &testRequest{request: fmt.Sprintf("msg: %d", i)}
-		promise, err := producer.Produce(ctx, value)
-		if err != nil {
-			t.Errorf("Produce() unexpected error: %v", err)
-		}
-		promises = append(promises, promise)
-	}
-	var gotResponses []string
-	for _, p := range promises {
-		res, err := p.Await(ctx)
-		if err != nil {
-			t.Errorf("Await() unexpected error: %v", err)
-			continue
-		}
-		gotResponses = append(gotResponses, res.response)
+func TestRedisClaimingOwnership(t *testing.T) {
+	glogger := log.NewGlogHandler(log.StreamHandler(os.Stdout, log.TerminalFormat(false)))
+	glogger.Verbosity(log.LvlTrace)
+	log.Root().SetHandler(log.Handler(glogger))
+
+	ctx := context.Background()
+	producer, consumers := newProducerConsumers(ctx, t)
+	producer.Start(ctx)
+	promises, err := produceMessages(ctx, producer)
+	if err != nil {
+		t.Fatalf("Error producing messages: %v", err)
 	}
 
-	for {
-		if total.Load() < uint64(messagesCount) {
-			time.Sleep(100 * time.Millisecond)
-			continue
+	// Consumer messages in every third consumer but don't ack them to check
+	// that other consumers will claim ownership on those messages.
+	for i := 0; i < len(consumers); i += 3 {
+		i := i
+		if _, err := consumers[i].Consume(ctx); err != nil {
+			t.Errorf("Error consuming message: %v", err)
 		}
-		break
+		consumers[i].StopAndWait()
+	}
+
+	gotMessages, wantResponses := consume(ctx, t, consumers, 3)
+	gotResponses, err := awaitResponses(ctx, promises)
+	if err != nil {
+		t.Fatalf("Error awaiting responses: %v", err)
 	}
 	for _, c := range consumers {
 		c.StopWaiter.StopAndWait()
@@ -267,12 +297,60 @@ func TestClaimingOwnership(t *testing.T) {
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("Unexpected diff (-want +got):\n%s\n", diff)
 	}
-	WantResp := flatten(wantResponses)
-	sort.Slice(gotResponses, func(i, j int) bool {
-		return gotResponses[i] < gotResponses[j]
-	})
-	if diff := cmp.Diff(WantResp, gotResponses); diff != "" {
+	wantResp := flatten(wantResponses)
+	sort.Strings(gotResponses)
+	if diff := cmp.Diff(wantResp, gotResponses); diff != "" {
 		t.Errorf("Unexpected diff in responses:\n%s\n", diff)
+	}
+	if cnt := len(producer.promises); cnt != 0 {
+		t.Errorf("Producer still has %d unfullfilled promises", cnt)
+	}
+}
+
+func TestRedisClaimingOwnershipReproduceDisabled(t *testing.T) {
+	glogger := log.NewGlogHandler(log.StreamHandler(os.Stdout, log.TerminalFormat(false)))
+	glogger.Verbosity(log.LvlTrace)
+	log.Root().SetHandler(log.Handler(glogger))
+
+	ctx := context.Background()
+	producer, consumers := newProducerConsumers(ctx, t, &disableReproduce{})
+	producer.Start(ctx)
+	promises, err := produceMessages(ctx, producer)
+	if err != nil {
+		t.Fatalf("Error producing messages: %v", err)
+	}
+
+	// Consumer messages in every third consumer but don't ack them to check
+	// that other consumers will claim ownership on those messages.
+	for i := 0; i < len(consumers); i += 3 {
+		i := i
+		if _, err := consumers[i].Consume(ctx); err != nil {
+			t.Errorf("Error consuming message: %v", err)
+		}
+		consumers[i].StopAndWait()
+	}
+
+	gotMessages, _ := consume(ctx, t, consumers, 3)
+	gotResponses, err := awaitResponses(ctx, promises)
+	if err == nil {
+		t.Fatalf("All promises were fullfilled with reproduce disabled and some consumers killed")
+	}
+	for _, c := range consumers {
+		c.StopWaiter.StopAndWait()
+	}
+	got, err := mergeValues(gotMessages)
+	if err != nil {
+		t.Fatalf("mergeMaps() unexpected error: %v", err)
+	}
+	wantMsgCnt := messagesCount - (consumersCount / 3) - (consumersCount % 3)
+	if len(got) != wantMsgCnt {
+		t.Fatalf("Got: %d messages, want %d", len(got), wantMsgCnt)
+	}
+	if len(gotResponses) != wantMsgCnt {
+		t.Errorf("Got %d responses want: %d\n", len(gotResponses), wantMsgCnt)
+	}
+	if cnt := len(producer.promises); cnt != 0 {
+		t.Errorf("Producer still has %d unfullfilled promises", cnt)
 	}
 }
 
@@ -290,8 +368,6 @@ func mergeValues(messages []map[string]string) ([]string, error) {
 			ret = append(ret, v)
 		}
 	}
-	sort.Slice(ret, func(i, j int) bool {
-		return ret[i] < ret[j]
-	})
+	sort.Strings(ret)
 	return ret, nil
 }

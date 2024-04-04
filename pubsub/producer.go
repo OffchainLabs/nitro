@@ -42,7 +42,11 @@ type Producer[Request Marshallable[Request], Response Marshallable[Response]] st
 }
 
 type ProducerConfig struct {
-	RedisURL string `koanf:"redis-url"`
+	// When enabled, messages that are sent to consumers that later die before
+	// processing them, will be re-inserted into the stream to be proceesed by
+	// another consumer
+	EnableReproduce bool   `koanf:"enable-reproduce"`
+	RedisURL        string `koanf:"redis-url"`
 	// Redis stream name.
 	RedisStream string `koanf:"redis-stream"`
 	// Interval duration in which producer checks for pending messages delivered
@@ -58,6 +62,7 @@ type ProducerConfig struct {
 }
 
 var DefaultProducerConfig = &ProducerConfig{
+	EnableReproduce:      true,
 	RedisStream:          "default",
 	CheckPendingInterval: time.Second,
 	KeepAliveTimeout:     5 * time.Minute,
@@ -66,6 +71,7 @@ var DefaultProducerConfig = &ProducerConfig{
 }
 
 var DefaultTestProducerConfig = &ProducerConfig{
+	EnableReproduce:      true,
 	RedisStream:          "default",
 	RedisGroup:           defaultGroup,
 	CheckPendingInterval: 10 * time.Millisecond,
@@ -74,11 +80,12 @@ var DefaultTestProducerConfig = &ProducerConfig{
 }
 
 func ProducerAddConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.String(prefix+".redis-url", DefaultConsumerConfig.RedisURL, "redis url for redis stream")
-	f.Duration(prefix+".response-entry-timeout", DefaultConsumerConfig.ResponseEntryTimeout, "timeout for response entry")
-	f.Duration(prefix+".keepalive-timeout", DefaultConsumerConfig.KeepAliveTimeout, "timeout after which consumer is considered inactive if heartbeat wasn't performed")
-	f.String(prefix+".redis-stream", DefaultConsumerConfig.RedisStream, "redis stream name to read from")
-	f.String(prefix+".redis-group", DefaultConsumerConfig.RedisGroup, "redis stream consumer group name")
+	f.Bool(prefix+".enable-reproduce", DefaultProducerConfig.EnableReproduce, "when enabled, messages with dead consumer will be re-inserted into the stream")
+	f.String(prefix+".redis-url", DefaultProducerConfig.RedisURL, "redis url for redis stream")
+	f.Duration(prefix+".check-pending-interval", DefaultProducerConfig.CheckPendingInterval, "interval in which producer checks pending messages whether consumer processing them is inactive")
+	f.Duration(prefix+".keepalive-timeout", DefaultProducerConfig.KeepAliveTimeout, "timeout after which consumer is considered inactive if heartbeat wasn't performed")
+	f.String(prefix+".redis-stream", DefaultProducerConfig.RedisStream, "redis stream name to read from")
+	f.String(prefix+".redis-group", DefaultProducerConfig.RedisGroup, "redis stream consumer group name")
 }
 
 func NewProducer[Request Marshallable[Request], Response Marshallable[Response]](cfg *ProducerConfig) (*Producer[Request, Response], error) {
@@ -97,6 +104,15 @@ func NewProducer[Request Marshallable[Request], Response Marshallable[Response]]
 	}, nil
 }
 
+func (p *Producer[Request, Response]) errorPromisesFor(msgs []*Message[Request]) {
+	p.promisesLock.Lock()
+	defer p.promisesLock.Unlock()
+	for _, msg := range msgs {
+		p.promises[msg.ID].ProduceError(fmt.Errorf("internal error, consumer died while serving the request"))
+		delete(p.promises, msg.ID)
+	}
+}
+
 // checkAndReproduce reproduce pending messages that were sent to consumers
 // that are currently inactive.
 func (p *Producer[Request, Response]) checkAndReproduce(ctx context.Context) time.Duration {
@@ -106,6 +122,10 @@ func (p *Producer[Request, Response]) checkAndReproduce(ctx context.Context) tim
 		return p.cfg.CheckPendingInterval
 	}
 	if len(msgs) == 0 {
+		return p.cfg.CheckPendingInterval
+	}
+	if !p.cfg.EnableReproduce {
+		p.errorPromisesFor(msgs)
 		return p.cfg.CheckPendingInterval
 	}
 	acked := make(map[string]Request)
@@ -172,6 +192,7 @@ func (p *Producer[Request, Response]) reproduce(ctx context.Context, value Reque
 		pr := containers.NewPromise[Response](nil)
 		promise = &pr
 	}
+	delete(p.promises, oldKey)
 	p.promises[id] = promise
 	return promise, nil
 }
@@ -220,7 +241,7 @@ func (p *Producer[Request, Response]) checkPending(ctx context.Context) ([]*Mess
 	active := make(map[string]bool)
 	for _, msg := range pendingMessages {
 		// Ignore messages not produced by this producer.
-		if p.havePromiseFor(msg.ID) {
+		if !p.havePromiseFor(msg.ID) {
 			continue
 		}
 		alive, found := active[msg.Consumer]
@@ -250,12 +271,12 @@ func (p *Producer[Request, Response]) checkPending(ctx context.Context) ([]*Mess
 	}
 	var res []*Message[Request]
 	for _, msg := range claimedMsgs {
-		data, ok := (msg.Values[messageKey]).([]byte)
+		data, ok := (msg.Values[messageKey]).(string)
 		if !ok {
-			return nil, fmt.Errorf("casting request to bytes: %w", err)
+			return nil, fmt.Errorf("casting request: %v to bytes", msg.Values[messageKey])
 		}
 		var tmp Request
-		val, err := tmp.Unmarshal(data)
+		val, err := tmp.Unmarshal([]byte(data))
 		if err != nil {
 			return nil, fmt.Errorf("marshaling value: %v, error: %w", msg.Values[messageKey], err)
 		}
