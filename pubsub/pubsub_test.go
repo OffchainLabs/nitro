@@ -311,7 +311,7 @@ func TestRedisClaimingOwnership(t *testing.T) {
 	if diff := cmp.Diff(wantResp, gotResponses); diff != "" {
 		t.Errorf("Unexpected diff in responses:\n%s\n", diff)
 	}
-	if cnt := len(producer.promises); cnt != 0 {
+	if cnt := producer.promisesLen(); cnt != 0 {
 		t.Errorf("Producer still has %d unfullfilled promises", cnt)
 	}
 }

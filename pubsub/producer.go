@@ -177,6 +177,12 @@ func (p *Producer[Request, Response]) Start(ctx context.Context) {
 	p.StopWaiter.Start(ctx, p)
 }
 
+func (p *Producer[Request, Response]) promisesLen() int {
+	p.promisesLock.Lock()
+	defer p.promisesLock.Unlock()
+	return len(p.promises)
+}
+
 // reproduce is used when Producer claims ownership on the pending
 // message that was sent to inactive consumer and reinserts it into the stream,
 // so that seamlessly return the answer in the same promise.
