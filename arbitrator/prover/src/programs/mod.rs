@@ -374,7 +374,7 @@ pub struct StylusData {
     /// Global index for the amount of stack space remaining.
     pub depth_left: u32,
     /// Gas needed to invoke the program.
-    pub init_gas: u32,
+    pub init_gas: u16,
     /// Canonical estimate of the asm length in bytes.
     pub asm_estimate: u32,
     /// Initial memory size in pages.

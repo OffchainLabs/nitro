@@ -60,7 +60,7 @@ pub unsafe extern "C" fn programs__activate(
             STATIC_MEM.write_u64(gas_ptr, *gas_left);
             STATIC_MEM.write_u16(pages_ptr, data.footprint);
             STATIC_MEM.write_u32(asm_estimate_ptr, data.asm_estimate);
-            STATIC_MEM.write_u32(init_gas_ptr, data.init_gas);
+            STATIC_MEM.write_u16(init_gas_ptr, data.init_gas);
             STATIC_MEM.write_slice(module_hash_ptr, module.hash().as_slice());
             0
         }
@@ -71,7 +71,7 @@ pub unsafe extern "C" fn programs__activate(
             STATIC_MEM.write_u64(gas_ptr, 0);
             STATIC_MEM.write_u16(pages_ptr, 0);
             STATIC_MEM.write_u32(asm_estimate_ptr, 0);
-            STATIC_MEM.write_u32(init_gas_ptr, 0);
+            STATIC_MEM.write_u16(init_gas_ptr, 0);
             STATIC_MEM.write_slice(module_hash_ptr, Bytes32::default().as_slice());
             err_bytes.len()
         }

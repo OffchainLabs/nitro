@@ -28,7 +28,7 @@ type Programs struct {
 
 type Program struct {
 	version       uint16
-	initGas       uint24
+	initGas       uint16
 	asmEstimateKb uint24 // Predicted size of the asm
 	footprint     uint16
 	activatedAt   uint64 // Last activation timestamp
@@ -114,10 +114,6 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 	if err != nil {
 		return 0, codeHash, common.Hash{}, nil, true, err
 	}
-	initGas24, err := arbmath.IntToUint24(info.initGas)
-	if err != nil {
-		return 0, codeHash, common.Hash{}, nil, true, err
-	}
 
 	dataFee, err := p.dataPricer.UpdateModel(info.asmEstimate, time)
 	if err != nil {
@@ -126,7 +122,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 
 	programData := Program{
 		version:       stylusVersion,
-		initGas:       initGas24,
+		initGas:       info.initGas,
 		asmEstimateKb: estimateKb,
 		footprint:     info.footprint,
 		activatedAt:   time,
@@ -232,10 +228,10 @@ func (p Programs) getProgram(codeHash common.Hash, time uint64, params *StylusPa
 	}
 	program := Program{
 		version:       arbmath.BytesToUint16(data[:2]),
-		initGas:       arbmath.BytesToUint24(data[2:5]),
-		asmEstimateKb: arbmath.BytesToUint24(data[5:8]),
-		footprint:     arbmath.BytesToUint16(data[8:10]),
-		activatedAt:   arbmath.BytesToUint(data[10:18]),
+		initGas:       arbmath.BytesToUint16(data[2:4]),
+		asmEstimateKb: arbmath.BytesToUint24(data[4:7]),
+		footprint:     arbmath.BytesToUint16(data[7:9]),
+		activatedAt:   arbmath.BytesToUint(data[9:17]),
 	}
 	if program.version == 0 {
 		return program, ProgramNotActivatedError()
@@ -261,10 +257,10 @@ func (p Programs) getProgram(codeHash common.Hash, time uint64, params *StylusPa
 func (p Programs) setProgram(codehash common.Hash, program Program) error {
 	data := common.Hash{}
 	copy(data[0:], arbmath.Uint16ToBytes(program.version))
-	copy(data[2:], arbmath.Uint24ToBytes(program.initGas))
-	copy(data[5:], arbmath.Uint24ToBytes(program.asmEstimateKb))
-	copy(data[8:], arbmath.Uint16ToBytes(program.footprint))
-	copy(data[10:], arbmath.UintToBytes(program.activatedAt))
+	copy(data[2:], arbmath.Uint16ToBytes(program.initGas))
+	copy(data[4:], arbmath.Uint24ToBytes(program.asmEstimateKb))
+	copy(data[7:], arbmath.Uint16ToBytes(program.footprint))
+	copy(data[9:], arbmath.UintToBytes(program.activatedAt))
 	return p.programs.Set(codehash, data)
 }
 
@@ -275,7 +271,7 @@ func (p Programs) programExists(codeHash common.Hash, time uint64, params *Stylu
 	}
 
 	version := arbmath.BytesToUint16(data[:2])
-	activatedAt := arbmath.BytesToUint(data[10:18])
+	activatedAt := arbmath.BytesToUint(data[9:17])
 	expired := time-activatedAt > arbmath.DaysToSeconds(params.ExpiryDays)
 	return version, expired, err
 }
@@ -368,7 +364,7 @@ type evmData struct {
 
 type activationInfo struct {
 	moduleHash  common.Hash
-	initGas     uint32
+	initGas     uint16
 	asmEstimate uint32
 	footprint   uint16
 }

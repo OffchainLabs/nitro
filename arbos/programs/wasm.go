@@ -64,7 +64,7 @@ func activateProgram(
 	moduleHash := common.Hash{}
 	gasPtr := burner.GasLeft()
 	asmEstimate := uint32(0)
-	initGas := uint32(0)
+	initGas := uint16(0)
 
 	footprint := uint16(pageLimit)
 	errLen := programActivate(

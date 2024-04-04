@@ -42,7 +42,7 @@ pub fn activate(
             mem.write_u64(gas_ptr, *gas_left);
             mem.write_u16(pages_ptr, data.footprint);
             mem.write_u32(asm_estimate_ptr, data.asm_estimate);
-            mem.write_u32(init_gas_ptr, data.init_gas);
+            mem.write_u16(init_gas_ptr, data.init_gas);
             mem.write_bytes32(module_hash_ptr, module.hash());
             Ok(0)
         }
@@ -52,6 +52,8 @@ pub fn activate(
             mem.write_slice(err_buf, &err_bytes);
             mem.write_u64(gas_ptr, 0);
             mem.write_u16(pages_ptr, 0);
+            mem.write_u32(asm_estimate_ptr, 0);
+            mem.write_u16(init_gas_ptr, 0);
             mem.write_bytes32(module_hash_ptr, Bytes32::default());
             Ok(err_bytes.len() as u32)
         }

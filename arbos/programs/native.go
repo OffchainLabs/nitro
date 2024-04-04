@@ -86,7 +86,7 @@ func activateProgram(
 
 	info := &activationInfo{
 		moduleHash:  hash,
-		initGas:     uint32(stylusData.init_gas),
+		initGas:     uint16(stylusData.init_gas),
 		asmEstimate: uint32(stylusData.asm_estimate),
 		footprint:   uint16(stylusData.footprint),
 	}
