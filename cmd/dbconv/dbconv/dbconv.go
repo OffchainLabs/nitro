@@ -33,7 +33,7 @@ func openDB(config *DBConfig, readonly bool) (ethdb.Database, error) {
 		Type:              config.DBEngine,
 		Directory:         config.Data,
 		AncientsDirectory: "", // don't open freezer
-		Namespace:         "", // TODO do we need metrics namespace?
+		Namespace:         config.Namespace,
 		Cache:             config.Cache,
 		Handles:           config.Handles,
 		ReadOnly:          readonly,

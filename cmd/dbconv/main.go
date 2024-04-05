@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/ethereum/go-ethereum/metrics/exp"
 	"github.com/offchainlabs/nitro/cmd/dbconv/dbconv"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
@@ -48,6 +50,12 @@ func main() {
 		log.Error("Invalid config", "err", err)
 		return
 	}
+
+	if config.Metrics {
+		go metrics.CollectProcessMetrics(config.MetricsServer.UpdateInterval)
+		exp.Setup(fmt.Sprintf("%v:%v", config.MetricsServer.Addr, config.MetricsServer.Port))
+	}
+
 	conv := dbconv.NewDBConverter(config)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

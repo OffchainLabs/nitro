@@ -5,37 +5,42 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	flag "github.com/spf13/pflag"
 )
 
 type DBConfig struct {
-	Data     string `koanf:"data"`
-	DBEngine string `koanf:"db-engine"`
-	Handles  int    `koanf:"handles"`
-	Cache    int    `koanf:"cache"`
+	Data      string `koanf:"data"`
+	DBEngine  string `koanf:"db-engine"`
+	Handles   int    `koanf:"handles"`
+	Cache     int    `koanf:"cache"`
+	Namespace string `koanf:"namespace"`
 }
 
 // TODO
 var DBConfigDefault = DBConfig{}
 
-func DBConfigAddOptions(prefix string, f *flag.FlagSet) {
+func DBConfigAddOptions(prefix string, f *flag.FlagSet, defaultNamespace string) {
 	// TODO
 	f.String(prefix+".data", DBConfigDefault.Data, "directory of stored chain state")
 	f.String(prefix+".db-engine", DBConfigDefault.DBEngine, "backing database implementation to use ('leveldb' or 'pebble')")
 	f.Int(prefix+".handles", DBConfigDefault.Handles, "number of file descriptor handles to use for the database")
 	f.Int(prefix+".cache", DBConfigDefault.Cache, "the capacity(in megabytes) of the data caching")
+	f.String(prefix+".namespace", defaultNamespace, "metrics namespace")
 }
 
 type DBConvConfig struct {
-	Src                  DBConfig `koanf:"src"`
-	Dst                  DBConfig `koanf:"dst"`
-	Threads              int      `koanf:"threads"`
-	IdealBatchSize       int      `koanf:"ideal-batch-size"`
-	MinBatchesBeforeFork int      `koanf:"min-batches-before-fork"`
-	Convert              bool     `koanf:"convert"`
-	Compact              bool     `koanf:"compact"`
-	Verify               int      `koanf:"verify"`
-	LogLevel             int      `koanf:"log-level"`
+	Src                  DBConfig                        `koanf:"src"`
+	Dst                  DBConfig                        `koanf:"dst"`
+	Threads              int                             `koanf:"threads"`
+	IdealBatchSize       int                             `koanf:"ideal-batch-size"`
+	MinBatchesBeforeFork int                             `koanf:"min-batches-before-fork"`
+	Convert              bool                            `koanf:"convert"`
+	Compact              bool                            `koanf:"compact"`
+	Verify               int                             `koanf:"verify"`
+	LogLevel             int                             `koanf:"log-level"`
+	Metrics              bool                            `koanf:"metrics"`
+	MetricsServer        genericconf.MetricsServerConfig `koanf:"metrics-server"`
 }
 
 var DefaultDBConvConfig = DBConvConfig{
@@ -46,11 +51,12 @@ var DefaultDBConvConfig = DBConvConfig{
 	Compact:              false,
 	Verify:               0,
 	LogLevel:             int(log.LvlDebug),
+	Metrics:              false,
 }
 
 func DBConvConfigAddOptions(f *flag.FlagSet) {
-	DBConfigAddOptions("src", f)
-	DBConfigAddOptions("dst", f)
+	DBConfigAddOptions("src", f, "srcdb/")
+	DBConfigAddOptions("dst", f, "destdb/")
 	f.Int("threads", DefaultDBConvConfig.Threads, "number of threads to use")
 	f.Int("ideal-batch-size", DefaultDBConvConfig.IdealBatchSize, "ideal write batch size")
 	f.Int("min-batches-before-fork", DefaultDBConvConfig.MinBatchesBeforeFork, "minimal number of batches before forking a thread")
@@ -58,6 +64,8 @@ func DBConvConfigAddOptions(f *flag.FlagSet) {
 	f.Bool("compact", DefaultDBConvConfig.Compact, "enables compaction step")
 	f.Int("verify", DefaultDBConvConfig.Verify, "enables verification step (0 = disabled, 1 = only keys, 2 = keys and values)")
 	f.Int("log-level", DefaultDBConvConfig.LogLevel, "log level (0 crit - 5 trace)")
+	f.Bool("metrics", DefaultDBConvConfig.Metrics, "enable metrics")
+	genericconf.MetricsServerAddOptions("metrics-server", f)
 }
 
 func (c *DBConvConfig) Validate() error {
