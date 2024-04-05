@@ -4,16 +4,12 @@
 package daprovider
 
 import (
-	"bytes"
 	"context"
-	"encoding/binary"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/blobs"
 )
 
@@ -54,89 +50,7 @@ func (d *readerForDAS) RecoverPayloadFromBatch(
 	preimageRecorder PreimageRecorder,
 	validateSeqMsg bool,
 ) ([]byte, error) {
-	cert, err := DeserializeDASCertFrom(bytes.NewReader(sequencerMsg[40:]))
-	if err != nil {
-		log.Error("Failed to deserialize DAS message", "err", err)
-		return nil, nil
-	}
-	version := cert.Version
-
-	if version >= 2 {
-		log.Error("Your node software is probably out of date", "certificateVersion", version)
-		return nil, nil
-	}
-
-	getByHash := func(ctx context.Context, hash common.Hash) ([]byte, error) {
-		newHash := hash
-		if version == 0 {
-			newHash = dastree.FlatHashToTreeHash(hash)
-		}
-
-		preimage, err := d.dasReader.GetByHash(ctx, newHash)
-		if err != nil && hash != newHash {
-			log.Debug("error fetching new style hash, trying old", "new", newHash, "old", hash, "err", err)
-			preimage, err = d.dasReader.GetByHash(ctx, hash)
-		}
-		if err != nil {
-			return nil, err
-		}
-
-		switch {
-		case version == 0 && crypto.Keccak256Hash(preimage) != hash:
-			fallthrough
-		case version == 1 && dastree.Hash(preimage) != hash:
-			log.Error(
-				"preimage mismatch for hash",
-				"hash", hash, "err", ErrHashMismatch, "version", version,
-			)
-			return nil, ErrHashMismatch
-		}
-		return preimage, nil
-	}
-
-	keysetPreimage, err := getByHash(ctx, cert.KeysetHash)
-	if err != nil {
-		log.Error("Couldn't get keyset", "err", err)
-		return nil, err
-	}
-	if preimageRecorder != nil {
-		dastree.RecordHash(preimageRecorder, keysetPreimage)
-	}
-
-	keyset, err := DeserializeKeyset(bytes.NewReader(keysetPreimage), !validateSeqMsg)
-	if err != nil {
-		return nil, fmt.Errorf("%w. Couldn't deserialize keyset, err: %w, keyset hash: %x batch num: %d", ErrSeqMsgValidation, err, cert.KeysetHash, batchNum)
-	}
-	err = keyset.VerifySignature(cert.SignersMask, cert.SerializeSignableFields(), cert.Sig)
-	if err != nil {
-		log.Error("Bad signature on DAS batch", "err", err)
-		return nil, nil
-	}
-
-	maxTimestamp := binary.BigEndian.Uint64(sequencerMsg[8:16])
-	if cert.Timeout < maxTimestamp+MinLifetimeSecondsForDataAvailabilityCert {
-		log.Error("Data availability cert expires too soon", "err", "")
-		return nil, nil
-	}
-
-	dataHash := cert.DataHash
-	payload, err := getByHash(ctx, dataHash)
-	if err != nil {
-		log.Error("Couldn't fetch DAS batch contents", "err", err)
-		return nil, err
-	}
-
-	if preimageRecorder != nil {
-		if version == 0 {
-			treeLeaf := dastree.FlatHashToTreeLeaf(dataHash)
-			preimageRecorder(dataHash, payload, arbutil.Keccak256PreimageType)
-			preimageRecorder(crypto.Keccak256Hash(treeLeaf), treeLeaf, arbutil.Keccak256PreimageType)
-		} else {
-			dastree.RecordHash(preimageRecorder, payload)
-		}
-	}
-
-	return payload, nil
+	return RecoverPayloadFromDasBatch(ctx, batchNum, sequencerMsg, d.dasReader, preimageRecorder, validateSeqMsg)
 }
 
 // NewReaderForBlobReader is generally meant to be only used by nitro.

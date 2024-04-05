@@ -136,25 +136,15 @@ func RecoverPayloadFromDasBatch(
 	batchNum uint64,
 	sequencerMsg []byte,
 	dasReader DASReader,
-	preimages map[arbutil.PreimageType]map[common.Hash][]byte,
-	keysetValidationMode KeysetValidationMode,
+	preimageRecorder PreimageRecorder,
+	validateSeqMsg bool,
 ) ([]byte, error) {
-	var keccakPreimages map[common.Hash][]byte
-	if preimages != nil {
-		if preimages[arbutil.Keccak256PreimageType] == nil {
-			preimages[arbutil.Keccak256PreimageType] = make(map[common.Hash][]byte)
-		}
-		keccakPreimages = preimages[arbutil.Keccak256PreimageType]
-	}
 	cert, err := DeserializeDASCertFrom(bytes.NewReader(sequencerMsg[40:]))
 	if err != nil {
 		log.Error("Failed to deserialize DAS message", "err", err)
 		return nil, nil
 	}
 	version := cert.Version
-	recordPreimage := func(key common.Hash, value []byte, ty arbutil.PreimageType) {
-		keccakPreimages[key] = value
-	}
 
 	if version >= 2 {
 		log.Error("Your node software is probably out of date", "certificateVersion", version)
@@ -194,18 +184,13 @@ func RecoverPayloadFromDasBatch(
 		log.Error("Couldn't get keyset", "err", err)
 		return nil, err
 	}
-	if keccakPreimages != nil {
-		dastree.RecordHash(recordPreimage, keysetPreimage)
+	if preimageRecorder != nil {
+		dastree.RecordHash(preimageRecorder, keysetPreimage)
 	}
 
-	keyset, err := DeserializeKeyset(bytes.NewReader(keysetPreimage), keysetValidationMode == KeysetDontValidate)
+	keyset, err := DeserializeKeyset(bytes.NewReader(keysetPreimage), !validateSeqMsg)
 	if err != nil {
-		logLevel := log.Error
-		if keysetValidationMode == KeysetPanicIfInvalid {
-			logLevel = log.Crit
-		}
-		logLevel("Couldn't deserialize keyset", "err", err, "keysetHash", cert.KeysetHash, "batchNum", batchNum)
-		return nil, nil
+		return nil, fmt.Errorf("%w. Couldn't deserialize keyset, err: %w, keyset hash: %x batch num: %d", ErrSeqMsgValidation, err, cert.KeysetHash, batchNum)
 	}
 	err = keyset.VerifySignature(cert.SignersMask, cert.SerializeSignableFields(), cert.Sig)
 	if err != nil {
@@ -226,13 +211,13 @@ func RecoverPayloadFromDasBatch(
 		return nil, err
 	}
 
-	if keccakPreimages != nil {
+	if preimageRecorder != nil {
 		if version == 0 {
 			treeLeaf := dastree.FlatHashToTreeLeaf(dataHash)
-			keccakPreimages[dataHash] = payload
-			keccakPreimages[crypto.Keccak256Hash(treeLeaf)] = treeLeaf
+			preimageRecorder(dataHash, payload, arbutil.Keccak256PreimageType)
+			preimageRecorder(crypto.Keccak256Hash(treeLeaf), treeLeaf, arbutil.Keccak256PreimageType)
 		} else {
-			dastree.RecordHash(recordPreimage, payload)
+			dastree.RecordHash(preimageRecorder, payload)
 		}
 	}
 

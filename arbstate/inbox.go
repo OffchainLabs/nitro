@@ -49,7 +49,7 @@ const MaxDecompressedLen int = 1024 * 1024 * 16 // 16 MiB
 const maxZeroheavyDecompressedLen = 101*MaxDecompressedLen/100 + 64
 const MaxSegmentsPerSequencerMessage = 100 * 1024
 
-func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash common.Hash, data []byte, daProviders []daprovider.Reader, keysetValidationMode daprovider.KeysetValidationMode) (*sequencerMessage, error) {
+func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash common.Hash, data []byte, dapReaders []daprovider.Reader, keysetValidationMode daprovider.KeysetValidationMode) (*sequencerMessage, error) {
 	if len(data) < 40 {
 		return nil, errors.New("sequencer message missing L1 header")
 	}
@@ -74,13 +74,13 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 	// Stage 1: Extract the payload from any data availability header.
 	// It's important that multiple DAS strategies can't both be invoked in the same batch,
 	// as these headers are validated by the sequencer inbox and not other DASs.
-	// We try to extract payload from the first occuring valid DA provider in the daProviders list
+	// We try to extract payload from the first occuring valid DA reader in the dapReaders list
 	if len(payload) > 0 {
 		foundDA := false
 		var err error
-		for _, provider := range daProviders {
-			if provider != nil && provider.IsValidHeaderByte(payload[0]) {
-				payload, err = provider.RecoverPayloadFromBatch(ctx, batchNum, batchBlockHash, data, nil, keysetValidationMode != daprovider.KeysetDontValidate)
+		for _, dapReader := range dapReaders {
+			if dapReader != nil && dapReader.IsValidHeaderByte(payload[0]) {
+				payload, err = dapReader.RecoverPayloadFromBatch(ctx, batchNum, batchBlockHash, data, nil, keysetValidationMode != daprovider.KeysetDontValidate)
 				if err != nil {
 					// Matches the way keyset validation was done inside DAS readers i.e logging the error
 					//  But other daproviders might just want to return the error
@@ -164,7 +164,7 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 type inboxMultiplexer struct {
 	backend                   InboxBackend
 	delayedMessagesRead       uint64
-	daProviders               []daprovider.Reader
+	dapReaders                []daprovider.Reader
 	cachedSequencerMessage    *sequencerMessage
 	cachedSequencerMessageNum uint64
 	cachedSegmentNum          uint64
@@ -174,11 +174,11 @@ type inboxMultiplexer struct {
 	keysetValidationMode      daprovider.KeysetValidationMode
 }
 
-func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, daProviders []daprovider.Reader, keysetValidationMode daprovider.KeysetValidationMode) arbostypes.InboxMultiplexer {
+func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dapReaders []daprovider.Reader, keysetValidationMode daprovider.KeysetValidationMode) arbostypes.InboxMultiplexer {
 	return &inboxMultiplexer{
 		backend:              backend,
 		delayedMessagesRead:  delayedMessagesRead,
-		daProviders:          daProviders,
+		dapReaders:           dapReaders,
 		keysetValidationMode: keysetValidationMode,
 	}
 }
@@ -200,7 +200,7 @@ func (r *inboxMultiplexer) Pop(ctx context.Context) (*arbostypes.MessageWithMeta
 		}
 		r.cachedSequencerMessageNum = r.backend.GetSequencerInboxPosition()
 		var err error
-		r.cachedSequencerMessage, err = parseSequencerMessage(ctx, r.cachedSequencerMessageNum, batchBlockHash, bytes, r.daProviders, r.keysetValidationMode)
+		r.cachedSequencerMessage, err = parseSequencerMessage(ctx, r.cachedSequencerMessageNum, batchBlockHash, bytes, r.dapReaders, r.keysetValidationMode)
 		if err != nil {
 			return nil, err
 		}

@@ -213,9 +213,14 @@ func (s *l1SyncService) processBatchDelivered(ctx context.Context, batchDelivere
 
 	data = append(header, data...)
 	preimages := make(map[arbutil.PreimageType]map[common.Hash][]byte)
-	if _, err = daprovider.RecoverPayloadFromDasBatch(ctx, deliveredEvent.BatchSequenceNumber.Uint64(), data, s.dataSource, preimages, daprovider.KeysetValidate); err != nil {
-		log.Error("recover payload failed", "txhash", batchDeliveredLog.TxHash, "data", data)
-		return err
+	preimageRecorder := daprovider.RecordPreimagesTo(preimages)
+	if _, err = daprovider.RecoverPayloadFromDasBatch(ctx, deliveredEvent.BatchSequenceNumber.Uint64(), data, s.dataSource, preimageRecorder, true); err != nil {
+		if errors.Is(err, daprovider.ErrSeqMsgValidation) {
+			log.Error(err.Error())
+		} else {
+			log.Error("recover payload failed", "txhash", batchDeliveredLog.TxHash, "data", data)
+			return err
+		}
 	}
 	for _, preimages := range preimages {
 		for hash, contents := range preimages {

@@ -10,7 +10,6 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/staker/txbuilder"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/validator"
@@ -50,7 +49,6 @@ type L1Validator struct {
 	wallet         ValidatorWalletInterface
 	callOpts       bind.CallOpts
 
-	das                daprovider.DASReader
 	inboxTracker       InboxTrackerInterface
 	txStreamer         TransactionStreamerInterface
 	blockValidator     *BlockValidator
@@ -62,7 +60,6 @@ func NewL1Validator(
 	wallet ValidatorWalletInterface,
 	validatorUtilsAddress common.Address,
 	callOpts bind.CallOpts,
-	das daprovider.DASReader,
 	inboxTracker InboxTrackerInterface,
 	txStreamer TransactionStreamerInterface,
 	blockValidator *BlockValidator,
@@ -90,7 +87,6 @@ func NewL1Validator(
 		builder:        builder,
 		wallet:         wallet,
 		callOpts:       callOpts,
-		das:            das,
 		inboxTracker:   inboxTracker,
 		txStreamer:     txStreamer,
 		blockValidator: blockValidator,

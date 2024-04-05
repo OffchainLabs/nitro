@@ -552,14 +552,20 @@ func createNodeImpl(
 
 	var statelessBlockValidator *staker.StatelessBlockValidator
 	if config.BlockValidator.ValidationServerConfigs[0].URL != "" {
+		var dapReaders []daprovider.Reader
+		if daReader != nil {
+			dapReaders = append(dapReaders, daprovider.NewReaderForDAS(daReader))
+		}
+		if blobReader != nil {
+			dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(blobReader))
+		}
 		statelessBlockValidator, err = staker.NewStatelessBlockValidator(
 			inboxReader,
 			inboxTracker,
 			txStreamer,
 			exec,
 			rawdb.NewTable(arbDb, storage.BlockValidatorPrefix),
-			daReader,
-			blobReader,
+			dapReaders,
 			func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
 			stack,
 		)
