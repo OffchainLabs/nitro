@@ -30,15 +30,7 @@ type Reader interface {
 		preimageRecorder PreimageRecorder,
 		validateSeqMsg bool,
 	) ([]byte, error)
-
-	// RecordPreimagesTo takes in preimages map and returns a function that can be used
-	// In recording (hash,preimage) key value pairs into preimages map, when fetching payload
-	RecordPreimagesTo(
-		preimages map[arbutil.PreimageType]map[common.Hash][]byte,
-	) PreimageRecorder
 }
-
-type PreimageRecorder func(key common.Hash, value []byte)
 
 // NewReaderForDAS is generally meant to be only used by nitro.
 // DA Providers should implement methods in the Reader interface independently
@@ -52,18 +44,6 @@ type readerForDAS struct {
 
 func (d *readerForDAS) IsValidHeaderByte(headerByte byte) bool {
 	return IsDASMessageHeaderByte(headerByte)
-}
-
-func (d *readerForDAS) RecordPreimagesTo(preimages map[arbutil.PreimageType]map[common.Hash][]byte) PreimageRecorder {
-	if preimages == nil {
-		return nil
-	}
-	if preimages[arbutil.Keccak256PreimageType] == nil {
-		preimages[arbutil.Keccak256PreimageType] = make(map[common.Hash][]byte)
-	}
-	return func(key common.Hash, value []byte) {
-		preimages[arbutil.Keccak256PreimageType][key] = value
-	}
 }
 
 func (d *readerForDAS) RecoverPayloadFromBatch(
@@ -149,8 +129,8 @@ func (d *readerForDAS) RecoverPayloadFromBatch(
 	if preimageRecorder != nil {
 		if version == 0 {
 			treeLeaf := dastree.FlatHashToTreeLeaf(dataHash)
-			preimageRecorder(dataHash, payload)
-			preimageRecorder(crypto.Keccak256Hash(treeLeaf), treeLeaf)
+			preimageRecorder(dataHash, payload, arbutil.Keccak256PreimageType)
+			preimageRecorder(crypto.Keccak256Hash(treeLeaf), treeLeaf, arbutil.Keccak256PreimageType)
 		} else {
 			dastree.RecordHash(preimageRecorder, payload)
 		}
@@ -171,18 +151,6 @@ type readerForBlobReader struct {
 
 func (b *readerForBlobReader) IsValidHeaderByte(headerByte byte) bool {
 	return IsBlobHashesHeaderByte(headerByte)
-}
-
-func (b *readerForBlobReader) RecordPreimagesTo(preimages map[arbutil.PreimageType]map[common.Hash][]byte) PreimageRecorder {
-	if preimages == nil {
-		return nil
-	}
-	if preimages[arbutil.EthVersionedHashPreimageType] == nil {
-		preimages[arbutil.EthVersionedHashPreimageType] = make(map[common.Hash][]byte)
-	}
-	return func(key common.Hash, value []byte) {
-		preimages[arbutil.EthVersionedHashPreimageType][key] = value
-	}
 }
 
 func (b *readerForBlobReader) RecoverPayloadFromBatch(
@@ -210,7 +178,7 @@ func (b *readerForBlobReader) RecoverPayloadFromBatch(
 			// Prevent aliasing `blob` when slicing it, as for range loops overwrite the same variable
 			// Won't be necessary after Go 1.22 with https://go.dev/blog/loopvar-preview
 			b := blob
-			preimageRecorder(versionedHashes[i], b[:])
+			preimageRecorder(versionedHashes[i], b[:], arbutil.EthVersionedHashPreimageType)
 		}
 	}
 	payload, err := blobs.DecodeBlobs(kzgBlobs)

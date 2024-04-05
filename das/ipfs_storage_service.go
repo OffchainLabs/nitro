@@ -23,6 +23,7 @@ import (
 	"github.com/ipfs/interface-go-ipfs-core/path"
 	"github.com/multiformats/go-multihash"
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/ipfshelper"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
@@ -180,7 +181,7 @@ func (s *IpfsStorageService) Put(ctx context.Context, data []byte, timeout uint6
 
 	var chunks [][]byte
 
-	record := func(_ common.Hash, value []byte) {
+	record := func(_ common.Hash, value []byte, ty arbutil.PreimageType) {
 		chunks = append(chunks, value)
 	}
 

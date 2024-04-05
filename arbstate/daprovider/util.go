@@ -43,6 +43,22 @@ type BlobReader interface {
 	Initialize(ctx context.Context) error
 }
 
+type PreimageRecorder func(key common.Hash, value []byte, ty arbutil.PreimageType)
+
+// RecordPreimagesTo takes in preimages map and returns a function that can be used
+// In recording (hash,preimage) key value pairs into preimages map, when fetching payload through RecoverPayloadFromBatch
+func RecordPreimagesTo(preimages map[arbutil.PreimageType]map[common.Hash][]byte) PreimageRecorder {
+	if preimages == nil {
+		return nil
+	}
+	return func(key common.Hash, value []byte, ty arbutil.PreimageType) {
+		if preimages[ty] == nil {
+			preimages[ty] = make(map[common.Hash][]byte)
+		}
+		preimages[ty][key] = value
+	}
+}
+
 // DASMessageHeaderFlag indicates that this data is a certificate for the data availability service,
 // which will retrieve the full batch data.
 const DASMessageHeaderFlag byte = 0x80
@@ -136,7 +152,7 @@ func RecoverPayloadFromDasBatch(
 		return nil, nil
 	}
 	version := cert.Version
-	recordPreimage := func(key common.Hash, value []byte) {
+	recordPreimage := func(key common.Hash, value []byte, ty arbutil.PreimageType) {
 		keccakPreimages[key] = value
 	}
 
