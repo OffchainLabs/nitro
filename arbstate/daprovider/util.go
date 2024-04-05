@@ -43,6 +43,8 @@ type BlobReader interface {
 	Initialize(ctx context.Context) error
 }
 
+// PreimageRecorder is used to add (key,value) pair to the map accessed by key = ty of a bigger map, preimages.
+// If ty doesn't exist as a key in the preimages map, then it is intialized to map[common.Hash][]byte and then (key,value) pair is added
 type PreimageRecorder func(key common.Hash, value []byte, ty arbutil.PreimageType)
 
 // RecordPreimagesTo takes in preimages map and returns a function that can be used

@@ -261,8 +261,8 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		foundDA := false
 		for _, dapReader := range v.dapReaders {
 			if dapReader != nil && dapReader.IsValidHeaderByte(batch.Data[40]) {
-				recorder := daprovider.RecordPreimagesTo(e.Preimages)
-				_, err := dapReader.RecoverPayloadFromBatch(ctx, batch.Number, batch.BlockHash, batch.Data, recorder, true)
+				preimageRecorder := daprovider.RecordPreimagesTo(e.Preimages)
+				_, err := dapReader.RecoverPayloadFromBatch(ctx, batch.Number, batch.BlockHash, batch.Data, preimageRecorder, true)
 				if err != nil {
 					// Matches the way keyset validation was done inside DAS readers i.e logging the error
 					//  But other daproviders might just want to return the error
