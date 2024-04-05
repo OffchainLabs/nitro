@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro-contracts/blob/main/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
 pragma solidity ^0.8.0;
@@ -7,6 +7,7 @@ pragma solidity ^0.8.0;
 import "../challenge/IOldChallengeManager.sol";
 import "../libraries/DelegateCallAware.sol";
 import "../libraries/IGasRefunder.sol";
+import "../libraries/GasRefundEnabled.sol";
 import "@openzeppelin/contracts/utils/Address.sol";
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 
@@ -109,7 +110,7 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware, GasRefundEnab
         bytes[] calldata data,
         address[] calldata destination,
         uint256[] calldata amount
-    ) public payable onlyExecutorOrOwner refundsGas(gasRefunder) {
+    ) public payable onlyExecutorOrOwner refundsGas(gasRefunder, IReader4844(address(0))) {
         uint256 numTxes = data.length;
         if (numTxes != destination.length) revert BadArrayLength(numTxes, destination.length);
         if (numTxes != amount.length) revert BadArrayLength(numTxes, amount.length);
@@ -144,7 +145,7 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware, GasRefundEnab
         bytes calldata data,
         address destination,
         uint256 amount
-    ) public payable onlyExecutorOrOwner refundsGas(gasRefunder) {
+    ) public payable onlyExecutorOrOwner refundsGas(gasRefunder, IReader4844(address(0))) {
         if (data.length > 0) require(destination.isContract(), "NO_CODE_AT_ADDR");
         validateExecuteTransaction(destination);
         // We use a low level call here to allow for contract and non-contract calls
@@ -168,7 +169,7 @@ contract ValidatorWallet is OwnableUpgradeable, DelegateCallAware, GasRefundEnab
         IGasRefunder gasRefunder,
         IOldChallengeManager manager,
         uint64[] calldata challenges
-    ) public onlyExecutorOrOwner refundsGas(gasRefunder) {
+    ) public onlyExecutorOrOwner refundsGas(gasRefunder, IReader4844(address(0))) {
         uint256 challengesCount = challenges.length;
         for (uint256 i = 0; i < challengesCount; i++) {
             try manager.timeout(challenges[i]) {} catch (bytes memory error) {

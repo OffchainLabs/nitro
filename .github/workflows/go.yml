@@ -165,6 +165,9 @@ jobs:
       - name: Install packages
         run: yarn
 
+      - name: Build
+        run: yarn build:all
+
       - name: Run foundry tests
         run: forge test
 
@@ -217,6 +220,11 @@ jobs:
         with:
           no-simple: false
 
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly
+
       - name: Setup node/yarn
         uses: actions/setup-node@v3
         with:
@@ -228,7 +236,7 @@ jobs:
         run: yarn
 
       - name: Compile contracts
-        run: yarn build
+        run: yarn build:all
 
       - name: Copy .env
         run: |

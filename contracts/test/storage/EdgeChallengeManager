@@ -1,0 +1,15 @@
+| Name                           | Type                        | Slot | Offset | Bytes | Contract                                                      |
+|--------------------------------|-----------------------------|------|--------|-------|---------------------------------------------------------------|
+| _initialized                   | uint8                       | 0    | 0      | 1     | src/challengeV2/EdgeChallengeManager.sol:EdgeChallengeManager |
+| _initializing                  | bool                        | 0    | 1      | 1     | src/challengeV2/EdgeChallengeManager.sol:EdgeChallengeManager |
+| store                          | struct EdgeStore            | 1    | 0      | 96    | src/challengeV2/EdgeChallengeManager.sol:EdgeChallengeManager |
+| excessStakeReceiver            | address                     | 4    | 0      | 20    | src/challengeV2/EdgeChallengeManager.sol:EdgeChallengeManager |
+| stakeToken                     | contract IERC20             | 5    | 0      | 20    | src/challengeV2/EdgeChallengeManager.sol:EdgeChallengeManager |
+| stakeAmounts                   | uint256[]                   | 6    | 0      | 32    | src/challengeV2/EdgeChallengeManager.sol:EdgeChallengeManager |
+| challengePeriodBlocks          | uint64                      | 7    | 0      | 8     | src/challengeV2/EdgeChallengeManager.sol:EdgeChallengeManager |
+| assertionChain                 | contract IAssertionChain    | 7    | 8      | 20    | src/challengeV2/EdgeChallengeManager.sol:EdgeChallengeManager |
+| oneStepProofEntry              | contract IOneStepProofEntry | 8    | 0      | 20    | src/challengeV2/EdgeChallengeManager.sol:EdgeChallengeManager |
+| LAYERZERO_BLOCKEDGE_HEIGHT     | uint256                     | 9    | 0      | 32    | src/challengeV2/EdgeChallengeManager.sol:EdgeChallengeManager |
+| LAYERZERO_BIGSTEPEDGE_HEIGHT   | uint256                     | 10   | 0      | 32    | src/challengeV2/EdgeChallengeManager.sol:EdgeChallengeManager |
+| LAYERZERO_SMALLSTEPEDGE_HEIGHT | uint256                     | 11   | 0      | 32    | src/challengeV2/EdgeChallengeManager.sol:EdgeChallengeManager |
+| NUM_BIGSTEP_LEVEL              | uint8                       | 12   | 0      | 1     | src/challengeV2/EdgeChallengeManager.sol:EdgeChallengeManager |

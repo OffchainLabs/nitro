@@ -1,0 +1,15 @@
+{
+  "bridgeCreator()": "f860cefa",
+  "challengeManagerTemplate()": "9c683d10",
+  "createRollup(((uint64,address,uint256,bytes32,address,address,uint256,string,uint256[],(uint256,uint256,uint256,uint256),uint256,uint256,uint256,((bytes32[2],uint64[2]),uint8,bytes32),uint256,address,uint8,uint64),address[],uint256,address,bool,uint256,address[],address))": "ca96e939",
+  "l2FactoriesDeployer()": "ac0425bc",
+  "osp()": "f26a62c6",
+  "owner()": "8da5cb5b",
+  "renounceOwnership()": "715018a6",
+  "rollupAdminLogic()": "9dba3241",
+  "rollupUserLogic()": "9d4798e3",
+  "setTemplates(address,address,address,address,address,address,address,address)": "f0dae494",
+  "transferOwnership(address)": "f2fde38b",
+  "upgradeExecutorLogic()": "030cb85e",
+  "validatorWalletCreator()": "bc45e0ae"
+}

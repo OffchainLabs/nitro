@@ -58,9 +58,9 @@ func (l *LocalSimulatedBackend) ContractAddresses() *setup.RollupAddresses {
 	return l.setup.Addrs
 }
 
-func (l *LocalSimulatedBackend) DeployRollup(_ context.Context, _ ...challenge_testing.Opt) (common.Address, error) {
+func (l *LocalSimulatedBackend) DeployRollup(_ context.Context, _ ...challenge_testing.Opt) (*setup.RollupAddresses, error) {
 	// No-op, as the sim backend deploys the rollup on initialization.
-	return l.setup.Addrs.Rollup, nil
+	return l.setup.Addrs, nil
 }
 
 func NewSimulated(blockTime time.Duration, opts ...setup.Opt) (*LocalSimulatedBackend, error) {

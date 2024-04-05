@@ -25,9 +25,11 @@ contracts/cache
 contracts/out
 contracts/formatter.sh
 contracts/build
-contracts/test/storage/*-old.dot
+contracts/test/storage/*-old
+contracts/test/signatures/*-old
 contracts/coverage
 contracts/lcov.info
+contracts/forge-cache/
 
 .DS_Store
 .env

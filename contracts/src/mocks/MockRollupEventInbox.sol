@@ -1,11 +1,11 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro-contracts/blob/main/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
 pragma solidity ^0.8.0;
 
 import "../rollup/IRollupEventInbox.sol";
-import "../bridge/IBridge.sol";
+import "../bridge/IEthBridge.sol";
 import "../bridge/IDelayedMessageProvider.sol";
 import "../precompiles/ArbGasInfo.sol";
 import "../libraries/DelegateCallAware.sol";
@@ -54,7 +54,7 @@ contract MockRollupEventInbox is IRollupEventInbox, IDelayedMessageProvider, Del
             currentDataCost,
             chainConfig
         );
-        uint256 num = bridge.enqueueDelayedMessage(
+        uint256 num = IEthBridge(address(bridge)).enqueueDelayedMessage(
             INITIALIZATION_MSG_TYPE,
             address(0),
             keccak256(initMsg)

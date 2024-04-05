@@ -6,18 +6,21 @@ package solimpl_test
 import (
 	"context"
 	"math/big"
+	"strings"
 	"testing"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
 	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+	"github.com/OffchainLabs/bold/solgen/go/bridgegen"
 	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
 	"github.com/OffchainLabs/bold/testing/setup"
 	"github.com/OffchainLabs/bold/util"
 	"github.com/ethereum/go-ethereum"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
@@ -82,7 +85,7 @@ func TestNewStakeOnNewAssertion(t *testing.T) {
 
 func TestStakeOnNewAssertion(t *testing.T) {
 	ctx := context.Background()
-	cfg, err := setup.ChainsWithEdgeChallengeManager(setup.WithMockBridge())
+	cfg, err := setup.ChainsWithEdgeChallengeManager()
 	require.NoError(t, err)
 	chain := cfg.Chains[0]
 	backend := cfg.Backend
@@ -122,16 +125,18 @@ func TestStakeOnNewAssertion(t *testing.T) {
 		MachineStatus: protocol.MachineStatusFinished,
 	}
 
-	account := cfg.Accounts[1]
-	numNewMessages := uint64(1)
-	submitBatch(
+	enqueueSequencerMessageAsExecutor(
 		t,
-		ctx,
-		account.TxOpts,
-		cfg.Addrs.Bridge,
+		cfg.Accounts[0].TxOpts,
+		cfg.Addrs.UpgradeExecutor,
 		cfg.Backend,
-		common.BytesToHash([]byte("foo")), // Datahash, can be junk data.
-		numNewMessages,                    // Total number of messages to include in the batch.
+		cfg.Addrs.Bridge,
+		seqMessage{
+			dataHash:                 common.BytesToHash([]byte("foo")),
+			afterDelayedMessagesRead: big.NewInt(1),
+			prevMessageCount:         big.NewInt(1),
+			newMessageCount:          big.NewInt(2),
+		},
 	)
 
 	for i := uint64(0); i < 100; i++ {
@@ -147,6 +152,44 @@ func TestStakeOnNewAssertion(t *testing.T) {
 	// Expect the post state has indeed the number of messages we expect.
 	gotPostState := protocol.GoExecutionStateFromSolidity(newAssertionCreatedInfo.AfterState)
 	require.Equal(t, postState, gotPostState)
+}
+
+type seqMessage struct {
+	dataHash                 common.Hash
+	afterDelayedMessagesRead *big.Int
+	prevMessageCount         *big.Int
+	newMessageCount          *big.Int
+}
+
+func enqueueSequencerMessageAsExecutor(
+	t *testing.T,
+	opts *bind.TransactOpts,
+	executor common.Address,
+	backend *backends.SimulatedBackend,
+	bridge common.Address,
+	msg seqMessage,
+) {
+	execBindings, err := mocksgen.NewUpgradeExecutorMock(executor, backend)
+	require.NoError(t, err)
+	seqInboxABI, err := abi.JSON(strings.NewReader(bridgegen.AbsBridgeABI))
+	require.NoError(t, err)
+	data, err := seqInboxABI.Pack(
+		"setSequencerInbox",
+		executor,
+	)
+	require.NoError(t, err)
+	_, err = execBindings.ExecuteCall(opts, bridge, data)
+	require.NoError(t, err)
+	backend.Commit()
+
+	data, err = seqInboxABI.Pack(
+		"enqueueSequencerMessage",
+		msg.dataHash, msg.afterDelayedMessagesRead, msg.prevMessageCount, msg.newMessageCount,
+	)
+	require.NoError(t, err)
+	_, err = execBindings.ExecuteCall(opts, bridge, data)
+	require.NoError(t, err)
+	backend.Commit()
 }
 
 func TestAssertionUnrivaledBlocks(t *testing.T) {

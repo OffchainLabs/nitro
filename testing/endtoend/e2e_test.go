@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"strings"
 	"testing"
 	"time"
 
@@ -11,13 +12,16 @@ import (
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	challengemanager "github.com/OffchainLabs/bold/challenge-manager"
 	"github.com/OffchainLabs/bold/challenge-manager/types"
+	"github.com/OffchainLabs/bold/solgen/go/bridgegen"
 	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
 	"github.com/OffchainLabs/bold/testing/endtoend/backend"
 	statemanager "github.com/OffchainLabs/bold/testing/mocks/state-provider"
 	"github.com/OffchainLabs/bold/testing/setup"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/sync/errgroup"
 )
@@ -238,22 +242,22 @@ func runEndToEndTest(t *testing.T, cfg *e2eConfig) {
 
 	require.NoError(t, bk.Start(ctx))
 
-	rollupAdminBindings, err := rollupgen.NewRollupAdminLogic(rollupAddr, bk.Client())
-	require.NoError(t, err)
 	accounts := bk.Accounts()
-	_, err = rollupAdminBindings.SetMinimumAssertionPeriod(accounts[0], big.NewInt(1))
-	require.NoError(t, err)
-
 	bk.Commit()
 
-	bridgeAddr, err := rollupAdminBindings.Bridge(&bind.CallOpts{})
+	rollupUserBindings, err := rollupgen.NewRollupUserLogic(rollupAddr.Rollup, bk.Client())
 	require.NoError(t, err)
-	bridgeBindings, err := mocksgen.NewBridgeStub(bridgeAddr, bk.Client())
+	bridgeAddr, err := rollupUserBindings.Bridge(&bind.CallOpts{})
 	require.NoError(t, err)
-	dataHash := [32]byte{1}
-	_, err = bridgeBindings.EnqueueSequencerMessage(accounts[0], dataHash, big.NewInt(1), big.NewInt(1), big.NewInt(2))
-	require.NoError(t, err)
-	bk.Commit()
+	dataHash := common.Hash{1}
+	enqueueSequencerMessageAsExecutor(
+		t, accounts[0], rollupAddr.UpgradeExecutor, bk.Client(), bridgeAddr, seqMessage{
+			dataHash:                 dataHash,
+			afterDelayedMessagesRead: big.NewInt(1),
+			prevMessageCount:         big.NewInt(1),
+			newMessageCount:          big.NewInt(2),
+		},
+	)
 
 	baseStateManagerOpts := []statemanager.Opt{
 		statemanager.WithNumBatchesRead(cfg.inbox.numBatchesPosted),
@@ -278,7 +282,7 @@ func runEndToEndTest(t *testing.T, cfg *e2eConfig) {
 		challengemanager.WithName(name),
 	)
 	honestManager := setupChallengeManager(
-		t, ctx, bk.Client(), rollupAddr, honestStateManager, txOpts, name, honestOpts...,
+		t, ctx, bk.Client(), rollupAddr.Rollup, honestStateManager, txOpts, name, honestOpts...,
 	)
 	if !api.IsNil(honestManager.Database()) {
 		honestStateManager.UpdateAPIDatabase(honestManager.Database())
@@ -312,7 +316,7 @@ func runEndToEndTest(t *testing.T, cfg *e2eConfig) {
 			challengemanager.WithName(name),
 		)
 		evilManager := setupChallengeManager(
-			t, ctx, bk.Client(), rollupAddr, evilStateManager, txOpts, name, evilOpts...,
+			t, ctx, bk.Client(), rollupAddr.Rollup, evilStateManager, txOpts, name, evilOpts...,
 		)
 		evilChallengeManagers[i] = evilManager
 	}
@@ -331,4 +335,51 @@ func runEndToEndTest(t *testing.T, cfg *e2eConfig) {
 		})
 	}
 	require.NoError(t, g.Wait())
+}
+
+type seqMessage struct {
+	dataHash                 common.Hash
+	afterDelayedMessagesRead *big.Int
+	prevMessageCount         *big.Int
+	newMessageCount          *big.Int
+}
+
+type committer interface {
+	Commit() common.Hash
+}
+
+func enqueueSequencerMessageAsExecutor(
+	t *testing.T,
+	opts *bind.TransactOpts,
+	executor common.Address,
+	backend setup.Backend,
+	bridge common.Address,
+	msg seqMessage,
+) {
+	execBindings, err := mocksgen.NewUpgradeExecutorMock(executor, backend)
+	require.NoError(t, err)
+	seqInboxABI, err := abi.JSON(strings.NewReader(bridgegen.AbsBridgeABI))
+	require.NoError(t, err)
+
+	data, err := seqInboxABI.Pack(
+		"setSequencerInbox",
+		executor,
+	)
+	require.NoError(t, err)
+	_, err = execBindings.ExecuteCall(opts, bridge, data)
+	require.NoError(t, err)
+	if comm, ok := backend.(committer); ok {
+		comm.Commit()
+	}
+
+	seqQueueMsg, err := seqInboxABI.Pack(
+		"enqueueSequencerMessage",
+		msg.dataHash, msg.afterDelayedMessagesRead, msg.prevMessageCount, msg.newMessageCount,
+	)
+	require.NoError(t, err)
+	_, err = execBindings.ExecuteCall(opts, bridge, seqQueueMsg)
+	require.NoError(t, err)
+	if comm, ok := backend.(committer); ok {
+		comm.Commit()
+	}
 }

@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro-contracts/blob/main/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
 pragma solidity ^0.8.0;
@@ -8,8 +8,9 @@ import "./InboxStub.sol";
 import {BadSequencerMessageNumber} from "../libraries/Error.sol";
 
 import "../bridge/IBridge.sol";
+import "../bridge/IEthBridge.sol";
 
-contract BridgeStub is IBridge {
+contract BridgeStub is IBridge, IEthBridge {
     struct InOutInfo {
         uint256 index;
         bool allowed;
@@ -18,7 +19,6 @@ contract BridgeStub is IBridge {
     mapping(address => InOutInfo) private allowedDelayedInboxesMap;
     //mapping(address => InOutInfo) private allowedOutboxesMap;
 
-    IOwnable rollupItem;
     address[] public allowedDelayedInboxList;
     address[] public allowedOutboxList;
 
@@ -42,7 +42,7 @@ contract BridgeStub is IBridge {
     }
 
     function allowedOutboxes(address) external pure override returns (bool) {
-        return true;
+        revert("NOT_IMPLEMENTED");
     }
 
     function updateRollupAddress(IOwnable) external pure {
@@ -133,11 +133,21 @@ contract BridgeStub is IBridge {
     }
 
     function executeCall(
-        address,
-        uint256,
-        bytes calldata
-    ) external pure override returns (bool, bytes memory) {
-        revert("NOT_IMPLEMENTED_EXECUTE_CALL");
+        address to,
+        uint256 value,
+        bytes calldata data
+    ) external override returns (bool success, bytes memory returnData) {
+        (success, returnData) = _executeLowLevelCall(to, value, data);
+        emit BridgeCallTriggered(msg.sender, to, value, data);
+    }
+
+     function _executeLowLevelCall(
+        address to,
+        uint256 value,
+        bytes memory data
+    ) internal returns (bool success, bytes memory returnData) {
+        // solhint-disable-next-line avoid-low-level-calls
+        (success, returnData) = to.call{value: value}(data);
     }
 
     function setDelayedInbox(address inbox, bool enabled) external override {
@@ -164,6 +174,7 @@ contract BridgeStub is IBridge {
         address, /* outbox */
         bool /* enabled*/
     ) external pure override {
+        revert("NOT_IMPLEMENTED");
     }
 
     function delayedMessageCount() external view override returns (uint256) {
@@ -174,13 +185,13 @@ contract BridgeStub is IBridge {
         return sequencerInboxAccs.length;
     }
 
-    function rollup() external view override returns (IOwnable) {
-        return rollupItem;
+    function rollup() external pure override returns (IOwnable) {
+        revert("NOT_IMPLEMENTED");
     }
 
     function acceptFundsFromOldBridge() external payable {}
 
-    function initialize(IOwnable rollup_) external {
-        rollupItem = rollup_;
+    function initialize(IOwnable) external pure {
+        revert("NOT_IMPLEMENTED");
     }
 }

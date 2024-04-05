@@ -1,0 +1,16 @@
+{
+  "ERC1820_DEPLOYER()": "290302ce",
+  "ERC1820_PAYLOAD()": "2e796641",
+  "ERC1820_VALUE()": "db633c3e",
+  "ERC2470_DEPLOYER()": "55e34a6b",
+  "ERC2470_PAYLOAD()": "89cf8ae6",
+  "ERC2470_VALUE()": "9ed2c6f0",
+  "NICK_CREATE2_DEPLOYER()": "ef77e71a",
+  "NICK_CREATE2_PAYLOAD()": "1b9a680c",
+  "NICK_CREATE2_VALUE()": "4367d652",
+  "ZOLTU_CREATE2_DEPLOYER()": "d3a3faab",
+  "ZOLTU_CREATE2_PAYLOAD()": "75ae22b5",
+  "ZOLTU_VALUE()": "dd0c625a",
+  "getDeploymentTotalCost(address,uint256)": "acd7d02a",
+  "perform(address,address,uint256)": "d7c641e7"
+}

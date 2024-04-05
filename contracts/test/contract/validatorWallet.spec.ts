@@ -46,8 +46,8 @@ describe('Validator Wallet', () => {
     await wallet.transferOwnership(await owner.getAddress())
 
     const RollupMock = await ethers.getContractFactory('RollupMock')
-    rollupMock1 = (await RollupMock.deploy()) as RollupMock
-    rollupMock2 = (await RollupMock.deploy()) as RollupMock
+    rollupMock1 = (await RollupMock.deploy(ethers.constants.AddressZero)) as RollupMock
+    rollupMock2 = (await RollupMock.deploy(ethers.constants.AddressZero)) as RollupMock
 
     await accounts[0].sendTransaction({
       to: wallet.address,

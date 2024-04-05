@@ -1,0 +1,12 @@
+| Name             | Type                     | Slot | Offset | Bytes | Contract                             |
+|------------------|--------------------------|------|--------|-------|--------------------------------------|
+| _initialized     | uint8                    | 0    | 0      | 1     | src/bridge/ERC20Inbox.sol:ERC20Inbox |
+| _initializing    | bool                     | 0    | 1      | 1     | src/bridge/ERC20Inbox.sol:ERC20Inbox |
+| __gap            | uint256[50]              | 1    | 0      | 1600  | src/bridge/ERC20Inbox.sol:ERC20Inbox |
+| _paused          | bool                     | 51   | 0      | 1     | src/bridge/ERC20Inbox.sol:ERC20Inbox |
+| __gap            | uint256[49]              | 52   | 0      | 1568  | src/bridge/ERC20Inbox.sol:ERC20Inbox |
+| bridge           | contract IBridge         | 101  | 0      | 20    | src/bridge/ERC20Inbox.sol:ERC20Inbox |
+| sequencerInbox   | contract ISequencerInbox | 102  | 0      | 20    | src/bridge/ERC20Inbox.sol:ERC20Inbox |
+| allowListEnabled | bool                     | 102  | 20     | 1     | src/bridge/ERC20Inbox.sol:ERC20Inbox |
+| isAllowed        | mapping(address => bool) | 103  | 0      | 32    | src/bridge/ERC20Inbox.sol:ERC20Inbox |
+| __gap            | uint256[47]              | 104  | 0      | 1504  | src/bridge/ERC20Inbox.sol:ERC20Inbox |

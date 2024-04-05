@@ -1,115 +1,106 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro-contracts/blob/main/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
 pragma solidity ^0.8.0;
 
 import "../bridge/Bridge.sol";
 import "../bridge/SequencerInbox.sol";
-import "../bridge/ISequencerInbox.sol";
 import "../bridge/Inbox.sol";
 import "../bridge/Outbox.sol";
 import "./RollupEventInbox.sol";
+import "../bridge/ERC20Bridge.sol";
+import "../bridge/ERC20Inbox.sol";
+import "../rollup/ERC20RollupEventInbox.sol";
+import "../bridge/ERC20Outbox.sol";
 
 import "../bridge/IBridge.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
 
 contract BridgeCreator is Ownable {
-    Bridge public bridgeTemplate;
-    SequencerInbox public sequencerInboxTemplate;
-    Inbox public inboxTemplate;
-    RollupEventInbox public rollupEventInboxTemplate;
-    Outbox public outboxTemplate;
+    BridgeContracts public ethBasedTemplates;
+    BridgeContracts public erc20BasedTemplates;
 
     event TemplatesUpdated();
+    event ERC20TemplatesUpdated();
 
-    constructor(uint256 maxDataSize) Ownable() {
-        bridgeTemplate = new Bridge();
-        sequencerInboxTemplate = new SequencerInbox(maxDataSize);
-        inboxTemplate = new Inbox(maxDataSize);
-        rollupEventInboxTemplate = new RollupEventInbox();
-        outboxTemplate = new Outbox();
+    struct BridgeContracts {
+        IBridge bridge;
+        ISequencerInbox sequencerInbox;
+        IInboxBase inbox;
+        IRollupEventInbox rollupEventInbox;
+        IOutbox outbox;
     }
 
-    function updateTemplates(
-        address _bridgeTemplate,
-        address _sequencerInboxTemplate,
-        address _inboxTemplate,
-        address _rollupEventInboxTemplate,
-        address _outboxTemplate
-    ) external onlyOwner {
-        bridgeTemplate = Bridge(_bridgeTemplate);
-        sequencerInboxTemplate = SequencerInbox(_sequencerInboxTemplate);
-        inboxTemplate = Inbox(_inboxTemplate);
-        rollupEventInboxTemplate = RollupEventInbox(_rollupEventInboxTemplate);
-        outboxTemplate = Outbox(_outboxTemplate);
+    constructor(
+        BridgeContracts memory _ethBasedTemplates,
+        BridgeContracts memory _erc20BasedTemplates
+    ) Ownable() {
+        ethBasedTemplates = _ethBasedTemplates;
+        erc20BasedTemplates = _erc20BasedTemplates;
+    }
 
+    function updateTemplates(BridgeContracts calldata _newTemplates) external onlyOwner {
+        ethBasedTemplates = _newTemplates;
         emit TemplatesUpdated();
     }
 
-    struct CreateBridgeFrame {
-        ProxyAdmin admin;
-        Bridge bridge;
-        SequencerInbox sequencerInbox;
-        Inbox inbox;
-        RollupEventInbox rollupEventInbox;
-        Outbox outbox;
+    function updateERC20Templates(BridgeContracts calldata _newTemplates) external onlyOwner {
+        erc20BasedTemplates = _newTemplates;
+        emit ERC20TemplatesUpdated();
+    }
+
+    function _createBridge(address adminProxy, BridgeContracts storage templates)
+        internal
+        returns (BridgeContracts memory)
+    {
+        BridgeContracts memory frame;
+        frame.bridge = IBridge(
+            address(new TransparentUpgradeableProxy(address(templates.bridge), adminProxy, ""))
+        );
+        frame.sequencerInbox = ISequencerInbox(
+            address(
+                new TransparentUpgradeableProxy(address(templates.sequencerInbox), adminProxy, "")
+            )
+        );
+        frame.inbox = IInboxBase(
+            address(new TransparentUpgradeableProxy(address(templates.inbox), adminProxy, ""))
+        );
+        frame.rollupEventInbox = IRollupEventInbox(
+            address(
+                new TransparentUpgradeableProxy(address(templates.rollupEventInbox), adminProxy, "")
+            )
+        );
+        frame.outbox = IOutbox(
+            address(new TransparentUpgradeableProxy(address(templates.outbox), adminProxy, ""))
+        );
+        return frame;
     }
 
     function createBridge(
         address adminProxy,
         address rollup,
-        ISequencerInbox.MaxTimeVariation memory maxTimeVariation
-    )
-        external
-        returns (
-            Bridge,
-            SequencerInbox,
-            Inbox,
-            RollupEventInbox,
-            Outbox
-        )
-    {
-        CreateBridgeFrame memory frame;
-        {
-            frame.bridge = Bridge(
-                address(new TransparentUpgradeableProxy(address(bridgeTemplate), adminProxy, ""))
-            );
-            frame.sequencerInbox = SequencerInbox(
-                address(
-                    new TransparentUpgradeableProxy(address(sequencerInboxTemplate), adminProxy, "")
-                )
-            );
-            frame.inbox = Inbox(
-                address(new TransparentUpgradeableProxy(address(inboxTemplate), adminProxy, ""))
-            );
-            frame.rollupEventInbox = RollupEventInbox(
-                address(
-                    new TransparentUpgradeableProxy(
-                        address(rollupEventInboxTemplate),
-                        adminProxy,
-                        ""
-                    )
-                )
-            );
-            frame.outbox = Outbox(
-                address(new TransparentUpgradeableProxy(address(outboxTemplate), adminProxy, ""))
-            );
-        }
-
-        frame.bridge.initialize(IOwnable(rollup));
-        frame.sequencerInbox.initialize(IBridge(frame.bridge), maxTimeVariation);
-        frame.inbox.initialize(IBridge(frame.bridge), ISequencerInbox(frame.sequencerInbox));
-        frame.rollupEventInbox.initialize(IBridge(frame.bridge));
-        frame.outbox.initialize(IBridge(frame.bridge));
-
-        return (
-            frame.bridge,
-            frame.sequencerInbox,
-            frame.inbox,
-            frame.rollupEventInbox,
-            frame.outbox
+        address nativeToken,
+        ISequencerInbox.MaxTimeVariation calldata maxTimeVariation
+    ) external returns (BridgeContracts memory) {
+        // create ETH-based bridge if address zero is provided for native token, otherwise create ERC20-based bridge
+        BridgeContracts memory frame = _createBridge(
+            adminProxy,
+            nativeToken == address(0) ? ethBasedTemplates : erc20BasedTemplates
         );
+
+        // init contracts
+        if (nativeToken == address(0)) {
+            IEthBridge(address(frame.bridge)).initialize(IOwnable(rollup));
+        } else {
+            IERC20Bridge(address(frame.bridge)).initialize(IOwnable(rollup), nativeToken);
+        }
+        frame.sequencerInbox.initialize(IBridge(frame.bridge), maxTimeVariation);
+        frame.inbox.initialize(frame.bridge, frame.sequencerInbox);
+        frame.rollupEventInbox.initialize(frame.bridge);
+        frame.outbox.initialize(frame.bridge);
+
+        return frame;
     }
 }

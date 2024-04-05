@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro-contracts/blob/main/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
 // solhint-disable-next-line compiler-version
@@ -8,6 +8,28 @@ pragma solidity >=0.6.9 <0.9.0;
 import "./IOwnable.sol";
 
 interface IBridge {
+    /// @dev This is an instruction to offchain readers to inform them where to look
+    ///      for sequencer inbox batch data. This is not the type of data (eg. das, brotli encoded, or blob versioned hash)
+    ///      and this enum is not used in the state transition function, rather it informs an offchain
+    ///      reader where to find the data so that they can supply it to the replay binary
+    enum BatchDataLocation {
+        /// @notice The data can be found in the transaction call data
+        TxInput,
+        /// @notice The data can be found in an event emitted during the transaction
+        SeparateBatchEvent,
+        /// @notice This batch contains no data
+        NoData,
+        /// @notice The data can be found in the 4844 data blobs on this transaction
+        Blob
+    }
+
+    struct TimeBounds {
+        uint64 minTimestamp;
+        uint64 maxTimestamp;
+        uint64 minBlockNumber;
+        uint64 maxBlockNumber;
+    }
+
     event MessageDelivered(
         uint256 indexed messageIndex,
         bytes32 indexed beforeInboxAcc,
@@ -32,6 +54,8 @@ interface IBridge {
 
     event SequencerInboxUpdated(address newSequencerInbox);
 
+    event RollupUpdated(address rollup);
+
     function allowedDelayedInboxList(uint256) external returns (address);
 
     function allowedOutboxList(uint256) external returns (address);
@@ -53,17 +77,6 @@ interface IBridge {
     function allowedOutboxes(address outbox) external view returns (bool);
 
     function sequencerReportedSubMessageCount() external view returns (uint256);
-
-    /**
-     * @dev Enqueue a message in the delayed inbox accumulator.
-     *      These messages are later sequenced in the SequencerInbox, either
-     *      by the sequencer as part of a normal batch, or by force inclusion.
-     */
-    function enqueueDelayedMessage(
-        uint8 kind,
-        address sender,
-        bytes32 messageDataHash
-    ) external payable returns (uint256);
 
     function executeCall(
         address to,
@@ -108,10 +121,6 @@ interface IBridge {
     function setDelayedInbox(address inbox, bool enabled) external;
 
     function setOutbox(address inbox, bool enabled) external;
-
-    // ---------- initializer ----------
-
-    function initialize(IOwnable rollup_) external;
 
     function updateRollupAddress(IOwnable _rollup) external;
 }

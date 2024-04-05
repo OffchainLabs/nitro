@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro-contracts/blob/main/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
 pragma solidity >=0.4.21 <0.9.0;
@@ -77,6 +77,12 @@ interface ArbOwner {
 
     /// @notice Sets the base charge (in L1 gas) attributed to each data batch in the calldata pricer
     function setPerBatchGasCharge(int64 cost) external;
+
+    /**
+     * @notice Sets the Brotli compression level used for fast compression
+     * Available in ArbOS version 12 with default level as 1
+     */
+    function setBrotliCompressionLevel(uint64 level) external;
 
     /// @notice Sets the cost amortization cap in basis points
     function setAmortizedCostCapBips(uint64 cap) external;

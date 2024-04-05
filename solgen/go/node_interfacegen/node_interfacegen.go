@@ -42,7 +42,7 @@ type NodeInterfaceDebugRetryableInfo struct {
 
 // NodeInterfaceMetaData contains all meta data concerning the NodeInterface contract.
 var NodeInterfaceMetaData = &bind.MetaData{
-	ABI: "[{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"size\",\"type\":\"uint64\"},{\"internalType\":\"uint64\",\"name\":\"leaf\",\"type\":\"uint64\"}],\"name\":\"constructOutboxProof\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"send\",\"type\":\"bytes32\"},{\"internalType\":\"bytes32\",\"name\":\"root\",\"type\":\"bytes32\"},{\"internalType\":\"bytes32[]\",\"name\":\"proof\",\"type\":\"bytes32[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"sender\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"deposit\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"l2CallValue\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"excessFeeRefundAddress\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"callValueRefundAddress\",\"type\":\"address\"},{\"internalType\":\"bytes\",\"name\":\"data\",\"type\":\"bytes\"}],\"name\":\"estimateRetryableTicket\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"blockNum\",\"type\":\"uint64\"}],\"name\":\"findBatchContainingBlock\",\"outputs\":[{\"internalType\":\"uint64\",\"name\":\"batch\",\"type\":\"uint64\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"internalType\":\"bool\",\"name\":\"contractCreation\",\"type\":\"bool\"},{\"internalType\":\"bytes\",\"name\":\"data\",\"type\":\"bytes\"}],\"name\":\"gasEstimateComponents\",\"outputs\":[{\"internalType\":\"uint64\",\"name\":\"gasEstimate\",\"type\":\"uint64\"},{\"internalType\":\"uint64\",\"name\":\"gasEstimateForL1\",\"type\":\"uint64\"},{\"internalType\":\"uint256\",\"name\":\"baseFee\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"l1BaseFeeEstimate\",\"type\":\"uint256\"}],\"stateMutability\":\"payable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"internalType\":\"bool\",\"name\":\"contractCreation\",\"type\":\"bool\"},{\"internalType\":\"bytes\",\"name\":\"data\",\"type\":\"bytes\"}],\"name\":\"gasEstimateL1Component\",\"outputs\":[{\"internalType\":\"uint64\",\"name\":\"gasEstimateForL1\",\"type\":\"uint64\"},{\"internalType\":\"uint256\",\"name\":\"baseFee\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"l1BaseFeeEstimate\",\"type\":\"uint256\"}],\"stateMutability\":\"payable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"blockHash\",\"type\":\"bytes32\"}],\"name\":\"getL1Confirmations\",\"outputs\":[{\"internalType\":\"uint64\",\"name\":\"confirmations\",\"type\":\"uint64\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"batchNum\",\"type\":\"uint256\"},{\"internalType\":\"uint64\",\"name\":\"index\",\"type\":\"uint64\"}],\"name\":\"legacyLookupMessageBatchProof\",\"outputs\":[{\"internalType\":\"bytes32[]\",\"name\":\"proof\",\"type\":\"bytes32[]\"},{\"internalType\":\"uint256\",\"name\":\"path\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"l2Sender\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"l1Dest\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"l2Block\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"l1Block\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"timestamp\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"},{\"internalType\":\"bytes\",\"name\":\"calldataForL1\",\"type\":\"bytes\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"nitroGenesisBlock\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"number\",\"type\":\"uint256\"}],\"stateMutability\":\"pure\",\"type\":\"function\"}]",
+	ABI: "[{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"l2BlockNum\",\"type\":\"uint64\"}],\"name\":\"blockL1Num\",\"outputs\":[{\"internalType\":\"uint64\",\"name\":\"l1BlockNum\",\"type\":\"uint64\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"size\",\"type\":\"uint64\"},{\"internalType\":\"uint64\",\"name\":\"leaf\",\"type\":\"uint64\"}],\"name\":\"constructOutboxProof\",\"outputs\":[{\"internalType\":\"bytes32\",\"name\":\"send\",\"type\":\"bytes32\"},{\"internalType\":\"bytes32\",\"name\":\"root\",\"type\":\"bytes32\"},{\"internalType\":\"bytes32[]\",\"name\":\"proof\",\"type\":\"bytes32[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"sender\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"deposit\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"l2CallValue\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"excessFeeRefundAddress\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"callValueRefundAddress\",\"type\":\"address\"},{\"internalType\":\"bytes\",\"name\":\"data\",\"type\":\"bytes\"}],\"name\":\"estimateRetryableTicket\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"blockNum\",\"type\":\"uint64\"}],\"name\":\"findBatchContainingBlock\",\"outputs\":[{\"internalType\":\"uint64\",\"name\":\"batch\",\"type\":\"uint64\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"internalType\":\"bool\",\"name\":\"contractCreation\",\"type\":\"bool\"},{\"internalType\":\"bytes\",\"name\":\"data\",\"type\":\"bytes\"}],\"name\":\"gasEstimateComponents\",\"outputs\":[{\"internalType\":\"uint64\",\"name\":\"gasEstimate\",\"type\":\"uint64\"},{\"internalType\":\"uint64\",\"name\":\"gasEstimateForL1\",\"type\":\"uint64\"},{\"internalType\":\"uint256\",\"name\":\"baseFee\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"l1BaseFeeEstimate\",\"type\":\"uint256\"}],\"stateMutability\":\"payable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"to\",\"type\":\"address\"},{\"internalType\":\"bool\",\"name\":\"contractCreation\",\"type\":\"bool\"},{\"internalType\":\"bytes\",\"name\":\"data\",\"type\":\"bytes\"}],\"name\":\"gasEstimateL1Component\",\"outputs\":[{\"internalType\":\"uint64\",\"name\":\"gasEstimateForL1\",\"type\":\"uint64\"},{\"internalType\":\"uint256\",\"name\":\"baseFee\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"l1BaseFeeEstimate\",\"type\":\"uint256\"}],\"stateMutability\":\"payable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"blockHash\",\"type\":\"bytes32\"}],\"name\":\"getL1Confirmations\",\"outputs\":[{\"internalType\":\"uint64\",\"name\":\"confirmations\",\"type\":\"uint64\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"blockNum\",\"type\":\"uint64\"}],\"name\":\"l2BlockRangeForL1\",\"outputs\":[{\"internalType\":\"uint64\",\"name\":\"firstBlock\",\"type\":\"uint64\"},{\"internalType\":\"uint64\",\"name\":\"lastBlock\",\"type\":\"uint64\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"batchNum\",\"type\":\"uint256\"},{\"internalType\":\"uint64\",\"name\":\"index\",\"type\":\"uint64\"}],\"name\":\"legacyLookupMessageBatchProof\",\"outputs\":[{\"internalType\":\"bytes32[]\",\"name\":\"proof\",\"type\":\"bytes32[]\"},{\"internalType\":\"uint256\",\"name\":\"path\",\"type\":\"uint256\"},{\"internalType\":\"address\",\"name\":\"l2Sender\",\"type\":\"address\"},{\"internalType\":\"address\",\"name\":\"l1Dest\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"l2Block\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"l1Block\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"timestamp\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"amount\",\"type\":\"uint256\"},{\"internalType\":\"bytes\",\"name\":\"calldataForL1\",\"type\":\"bytes\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"nitroGenesisBlock\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"number\",\"type\":\"uint256\"}],\"stateMutability\":\"pure\",\"type\":\"function\"}]",
 }
 
 // NodeInterfaceABI is the input ABI used to generate the binding from.
@@ -191,6 +191,37 @@ func (_NodeInterface *NodeInterfaceTransactorRaw) Transact(opts *bind.TransactOp
 	return _NodeInterface.Contract.contract.Transact(opts, method, params...)
 }
 
+// BlockL1Num is a free data retrieval call binding the contract method 0x6f275ef2.
+//
+// Solidity: function blockL1Num(uint64 l2BlockNum) view returns(uint64 l1BlockNum)
+func (_NodeInterface *NodeInterfaceCaller) BlockL1Num(opts *bind.CallOpts, l2BlockNum uint64) (uint64, error) {
+	var out []interface{}
+	err := _NodeInterface.contract.Call(opts, &out, "blockL1Num", l2BlockNum)
+
+	if err != nil {
+		return *new(uint64), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(uint64)).(*uint64)
+
+	return out0, err
+
+}
+
+// BlockL1Num is a free data retrieval call binding the contract method 0x6f275ef2.
+//
+// Solidity: function blockL1Num(uint64 l2BlockNum) view returns(uint64 l1BlockNum)
+func (_NodeInterface *NodeInterfaceSession) BlockL1Num(l2BlockNum uint64) (uint64, error) {
+	return _NodeInterface.Contract.BlockL1Num(&_NodeInterface.CallOpts, l2BlockNum)
+}
+
+// BlockL1Num is a free data retrieval call binding the contract method 0x6f275ef2.
+//
+// Solidity: function blockL1Num(uint64 l2BlockNum) view returns(uint64 l1BlockNum)
+func (_NodeInterface *NodeInterfaceCallerSession) BlockL1Num(l2BlockNum uint64) (uint64, error) {
+	return _NodeInterface.Contract.BlockL1Num(&_NodeInterface.CallOpts, l2BlockNum)
+}
+
 // ConstructOutboxProof is a free data retrieval call binding the contract method 0x42696350.
 //
 // Solidity: function constructOutboxProof(uint64 size, uint64 leaf) view returns(bytes32 send, bytes32 root, bytes32[] proof)
@@ -301,6 +332,51 @@ func (_NodeInterface *NodeInterfaceSession) GetL1Confirmations(blockHash [32]byt
 // Solidity: function getL1Confirmations(bytes32 blockHash) view returns(uint64 confirmations)
 func (_NodeInterface *NodeInterfaceCallerSession) GetL1Confirmations(blockHash [32]byte) (uint64, error) {
 	return _NodeInterface.Contract.GetL1Confirmations(&_NodeInterface.CallOpts, blockHash)
+}
+
+// L2BlockRangeForL1 is a free data retrieval call binding the contract method 0x48e7f811.
+//
+// Solidity: function l2BlockRangeForL1(uint64 blockNum) view returns(uint64 firstBlock, uint64 lastBlock)
+func (_NodeInterface *NodeInterfaceCaller) L2BlockRangeForL1(opts *bind.CallOpts, blockNum uint64) (struct {
+	FirstBlock uint64
+	LastBlock  uint64
+}, error) {
+	var out []interface{}
+	err := _NodeInterface.contract.Call(opts, &out, "l2BlockRangeForL1", blockNum)
+
+	outstruct := new(struct {
+		FirstBlock uint64
+		LastBlock  uint64
+	})
+	if err != nil {
+		return *outstruct, err
+	}
+
+	outstruct.FirstBlock = *abi.ConvertType(out[0], new(uint64)).(*uint64)
+	outstruct.LastBlock = *abi.ConvertType(out[1], new(uint64)).(*uint64)
+
+	return *outstruct, err
+
+}
+
+// L2BlockRangeForL1 is a free data retrieval call binding the contract method 0x48e7f811.
+//
+// Solidity: function l2BlockRangeForL1(uint64 blockNum) view returns(uint64 firstBlock, uint64 lastBlock)
+func (_NodeInterface *NodeInterfaceSession) L2BlockRangeForL1(blockNum uint64) (struct {
+	FirstBlock uint64
+	LastBlock  uint64
+}, error) {
+	return _NodeInterface.Contract.L2BlockRangeForL1(&_NodeInterface.CallOpts, blockNum)
+}
+
+// L2BlockRangeForL1 is a free data retrieval call binding the contract method 0x48e7f811.
+//
+// Solidity: function l2BlockRangeForL1(uint64 blockNum) view returns(uint64 firstBlock, uint64 lastBlock)
+func (_NodeInterface *NodeInterfaceCallerSession) L2BlockRangeForL1(blockNum uint64) (struct {
+	FirstBlock uint64
+	LastBlock  uint64
+}, error) {
+	return _NodeInterface.Contract.L2BlockRangeForL1(&_NodeInterface.CallOpts, blockNum)
 }
 
 // LegacyLookupMessageBatchProof is a free data retrieval call binding the contract method 0x89496270.

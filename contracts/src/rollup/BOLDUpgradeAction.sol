@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro-contracts/blob/main/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
 pragma solidity ^0.8.0;
@@ -391,30 +391,26 @@ contract BOLDUpgradeAction {
 
         TransparentUpgradeableProxy bridge = TransparentUpgradeableProxy(payable(BRIDGE));
         address currentBridgeImpl = PROXY_ADMIN_BRIDGE.getProxyImplementation(bridge);
-        PROXY_ADMIN_BRIDGE.upgradeAndCall(
-            bridge, IMPL_BRIDGE, abi.encodeWithSelector(IBridge.updateRollupAddress.selector, newRollupAddress)
-        );
+        PROXY_ADMIN_BRIDGE.upgrade(bridge, IMPL_BRIDGE);
+        IBridge(BRIDGE).updateRollupAddress(IOwnable(newRollupAddress));
         PROXY_ADMIN_BRIDGE.upgrade(bridge, currentBridgeImpl);
 
         TransparentUpgradeableProxy sequencerInbox = TransparentUpgradeableProxy(payable(SEQ_INBOX));
         address currentSequencerInboxImpl = PROXY_ADMIN_BRIDGE.getProxyImplementation(sequencerInbox);
-        PROXY_ADMIN_SEQUENCER_INBOX.upgradeAndCall(
-            sequencerInbox, IMPL_SEQUENCER_INBOX, abi.encodeWithSelector(IOutbox.updateRollupAddress.selector)
-        );
+        PROXY_ADMIN_SEQUENCER_INBOX.upgrade(sequencerInbox, IMPL_SEQUENCER_INBOX);
+        ISequencerInbox(SEQ_INBOX).updateRollupAddress();
         PROXY_ADMIN_SEQUENCER_INBOX.upgrade(sequencerInbox, currentSequencerInboxImpl);
 
         TransparentUpgradeableProxy rollupEventInbox = TransparentUpgradeableProxy(payable(REI));
         address currentRollupEventInboxImpl = PROXY_ADMIN_REI.getProxyImplementation(rollupEventInbox);
-        PROXY_ADMIN_REI.upgradeAndCall(
-            rollupEventInbox, IMPL_REI, abi.encodeWithSelector(IOutbox.updateRollupAddress.selector)
-        );
+        PROXY_ADMIN_REI.upgrade(rollupEventInbox, IMPL_REI);
+        IRollupEventInbox(REI).updateRollupAddress();
         PROXY_ADMIN_REI.upgrade(rollupEventInbox, currentRollupEventInboxImpl);
 
         TransparentUpgradeableProxy outbox = TransparentUpgradeableProxy(payable(OUTBOX));
         address currentOutboxImpl = PROXY_ADMIN_REI.getProxyImplementation(outbox);
-        PROXY_ADMIN_OUTBOX.upgradeAndCall(
-            outbox, IMPL_OUTBOX, abi.encodeWithSelector(IOutbox.updateRollupAddress.selector)
-        );
+        PROXY_ADMIN_OUTBOX.upgrade(outbox, IMPL_OUTBOX);
+        IOutbox(OUTBOX).updateRollupAddress();
         PROXY_ADMIN_OUTBOX.upgrade(outbox, currentOutboxImpl);
     }
 
@@ -441,7 +437,7 @@ contract BOLDUpgradeAction {
         ContractDependencies memory connectedContracts = ContractDependencies({
             bridge: IBridge(BRIDGE),
             sequencerInbox: ISequencerInbox(SEQ_INBOX),
-            inbox: IInbox(INBOX),
+            inbox: IInboxBase(INBOX),
             outbox: IOutbox(OUTBOX),
             rollupEventInbox: IRollupEventInbox(REI),
             challengeManager: challengeManager,

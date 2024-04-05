@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro-contracts/blob/main/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
 pragma solidity ^0.8.0;
@@ -101,16 +101,35 @@ contract OneStepProverHostIo is IOneStepProver {
         state.u64Vals[idx] = val;
     }
 
+    uint256 internal constant BLS_MODULUS =
+        52435875175126190479447740508185965837690552500527637822603658699938581184513;
+    uint256 internal constant PRIMITIVE_ROOT_OF_UNITY =
+        10238227357739495823651030575849232062558860180284477541189508159991286009131;
+
+    // Computes b**e % m
+    // Really pure but the Solidity compiler sees the staticcall and requires view
+    function modExp256(
+        uint256 b,
+        uint256 e,
+        uint256 m
+    ) internal view returns (uint256) {
+        bytes memory modExpInput = abi.encode(32, 32, 32, b, e, m);
+        (bool modexpSuccess, bytes memory modExpOutput) = address(0x05).staticcall(modExpInput);
+        require(modexpSuccess, "MODEXP_FAILED");
+        require(modExpOutput.length == 32, "MODEXP_WRONG_LENGTH");
+        return uint256(bytes32(modExpOutput));
+    }
+
     function executeReadPreImage(
         ExecutionContext calldata,
         Machine memory mach,
         Module memory mod,
-        Instruction calldata,
+        Instruction calldata inst,
         bytes calldata proof
-    ) internal pure {
+    ) internal view {
         uint256 preimageOffset = mach.valueStack.pop().assumeI32();
         uint256 ptr = mach.valueStack.pop().assumeI32();
-        if (ptr + 32 > mod.moduleMemory.size || ptr % LEAF_SIZE != 0) {
+        if (preimageOffset % 32 != 0 || ptr + 32 > mod.moduleMemory.size || ptr % LEAF_SIZE != 0) {
             mach.status = MachineStatus.ERRORED;
             return;
         }
@@ -128,18 +147,92 @@ contract OneStepProverHostIo is IOneStepProver {
         bytes memory extracted;
         uint8 proofType = uint8(proof[proofOffset]);
         proofOffset++;
-        if (proofType == 0) {
+        // These values must be kept in sync with `arbitrator/arbutil/src/types.rs`
+        // and `arbutil/preimage_type.go` (both in the nitro repo).
+        if (inst.argumentData == 0) {
+            // The machine is asking for a keccak256 preimage
+
+            if (proofType == 0) {
+                bytes calldata preimage = proof[proofOffset:];
+                require(keccak256(preimage) == leafContents, "BAD_PREIMAGE");
+
+                uint256 preimageEnd = preimageOffset + 32;
+                if (preimageEnd > preimage.length) {
+                    preimageEnd = preimage.length;
+                }
+                extracted = preimage[preimageOffset:preimageEnd];
+            } else {
+                // TODO: support proving via an authenticated contract
+                revert("UNKNOWN_PREIMAGE_PROOF");
+            }
+        } else if (inst.argumentData == 1) {
+            // The machine is asking for a sha2-256 preimage
+
+            require(proofType == 0, "UNKNOWN_PREIMAGE_PROOF");
             bytes calldata preimage = proof[proofOffset:];
-            require(keccak256(preimage) == leafContents, "BAD_PREIMAGE");
+            require(sha256(preimage) == leafContents, "BAD_PREIMAGE");
 
             uint256 preimageEnd = preimageOffset + 32;
             if (preimageEnd > preimage.length) {
                 preimageEnd = preimage.length;
             }
             extracted = preimage[preimageOffset:preimageEnd];
+        } else if (inst.argumentData == 2) {
+            // The machine is asking for an Ethereum versioned hash preimage
+
+            require(proofType == 0, "UNKNOWN_PREIMAGE_PROOF");
+
+            // kzgProof should be a valid input to the EIP-4844 point evaluation precompile at address 0x0A.
+            // It should prove the preimageOffset/32'th word of the machine's requested KZG commitment.
+            bytes calldata kzgProof = proof[proofOffset:];
+
+            require(bytes32(kzgProof[:32]) == leafContents, "KZG_PROOF_WRONG_HASH");
+
+            uint256 fieldElementsPerBlob;
+            uint256 blsModulus;
+            {
+                (bool success, bytes memory kzgParams) = address(0x0A).staticcall(kzgProof);
+                require(success, "INVALID_KZG_PROOF");
+                require(kzgParams.length > 0, "KZG_PRECOMPILE_MISSING");
+                (fieldElementsPerBlob, blsModulus) = abi.decode(kzgParams, (uint256, uint256));
+            }
+
+            // With a hardcoded PRIMITIVE_ROOT_OF_UNITY, we can only support this BLS modulus.
+            // It may be worth in the future supporting arbitrary BLS moduli, but we would likely need to
+            // validate a user-supplied root of unity.
+            require(blsModulus == BLS_MODULUS, "UNKNOWN_BLS_MODULUS");
+
+            // If preimageOffset is greater than or equal to the blob size, leave extracted empty and call it here.
+            if (preimageOffset < fieldElementsPerBlob * 32) {
+                // We need to compute what point the polynomial should be evaluated at to get the right part of the preimage.
+                // KZG commitments use a bit reversal permutation to order the roots of unity.
+                // To account for that, we reverse the bit order of the index.
+                uint256 bitReversedIndex = 0;
+                // preimageOffset was required to be 32 byte aligned above
+                uint256 tmp = preimageOffset / 32;
+                for (uint256 i = 1; i < fieldElementsPerBlob; i <<= 1) {
+                    bitReversedIndex <<= 1;
+                    if (tmp & 1 == 1) {
+                        bitReversedIndex |= 1;
+                    }
+                    tmp >>= 1;
+                }
+
+                // First, we get the root of unity of order 2**fieldElementsPerBlob.
+                // We start with a root of unity of order 2**32 and then raise it to
+                // the power of (2**32)/fieldElementsPerBlob to get root of unity we need.
+                uint256 rootOfUnityPower = (1 << 32) / fieldElementsPerBlob;
+                // Then, we raise the root of unity to the power of bitReversedIndex,
+                // to retrieve this word of the KZG commitment.
+                rootOfUnityPower *= bitReversedIndex;
+                // z is the point the polynomial is evaluated at to retrieve this word of data
+                uint256 z = modExp256(PRIMITIVE_ROOT_OF_UNITY, rootOfUnityPower, blsModulus);
+                require(bytes32(kzgProof[32:64]) == bytes32(z), "KZG_PROOF_WRONG_Z");
+
+                extracted = kzgProof[64:96];
+            }
         } else {
-            // TODO: support proving via an authenticated contract
-            revert("UNKNOWN_PREIMAGE_PROOF");
+            revert("UNKNOWN_PREIMAGE_TYPE");
         }
 
         for (uint256 i = 0; i < extracted.length; i++) {

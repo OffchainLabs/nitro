@@ -7,8 +7,10 @@ package setup
 import (
 	"context"
 	"crypto/ecdsa"
+	"fmt"
 	"math/big"
 	"os"
+	"strings"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
@@ -19,9 +21,11 @@ import (
 	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
 	"github.com/OffchainLabs/bold/solgen/go/ospgen"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
+	"github.com/OffchainLabs/bold/solgen/go/yulgen"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
 	statemanager "github.com/OffchainLabs/bold/testing/mocks/state-provider"
 	"github.com/OffchainLabs/bold/util"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
@@ -44,6 +48,10 @@ type Backend interface {
 	bind.DeployBackend
 	bind.ContractBackend
 	TransactionByHash(ctx context.Context, txHash common.Hash) (*types.Transaction, bool, error)
+}
+
+type Committer interface {
+	Commit() common.Hash
 }
 
 type CreatedValidatorFork struct {
@@ -177,15 +185,15 @@ type ChainSetup struct {
 
 type Opt func(setup *ChainSetup)
 
-func WithMockBridge() Opt {
-	return func(setup *ChainSetup) {
-		setup.useMockBridge = true
-	}
-}
-
 func WithMockOneStepProver() Opt {
 	return func(setup *ChainSetup) {
 		setup.useMockOneStepProver = true
+	}
+}
+
+func WithMockBridge() Opt {
+	return func(setup *ChainSetup) {
+		setup.useMockBridge = false
 	}
 }
 
@@ -411,6 +419,7 @@ type RollupAddresses struct {
 	RollupUserLogic        common.Address `json:"rollup-user-logic"`
 	ValidatorUtils         common.Address `json:"validator-utils"`
 	ValidatorWalletCreator common.Address `json:"validator-wallet-creator"`
+	UpgradeExecutor        common.Address `json:"upgrade-executor"`
 	DeployedAt             uint64         `json:"deployed-at"`
 }
 
@@ -433,13 +442,19 @@ func DeployFullRollupStack(
 	tx, err := retry.UntilSucceeds[*types.Transaction](ctx, func() (*types.Transaction, error) {
 		creationTx, creationErr := rollupCreator.CreateRollup(
 			deployAuth,
-			config,
-			common.Address{},
-			[]common.Address{},
-			true, // Permissionless validation.
-			big.NewInt(challenge_testing.MaxDataSize),
+			rollupgen.RollupCreatorRollupDeploymentParams{
+				Config:                    config,
+				Validators:                []common.Address{},
+				MaxDataSize:               big.NewInt(challenge_testing.MaxDataSize),
+				NativeToken:               common.Address{},
+				DeployFactoriesToL2:       false,
+				MaxFeePerGasForRetryables: big.NewInt(0),
+				BatchPosters:              []common.Address{},
+				BatchPosterManager:        common.Address{},
+			},
 		)
 		if creationErr != nil {
+			fmt.Println(creationErr)
 			return nil, creationErr
 		}
 		err = challenge_testing.TxSucceeded(ctx, creationTx, rollupCreatorAddress, backend, err)
@@ -461,49 +476,63 @@ func DeployFullRollupStack(
 		return nil, err
 	}
 
-	sequencerInbox, err := bridgegen.NewSequencerInbox(info.SequencerInbox, backend)
+	upgradeExecBindings, err := mocksgen.NewUpgradeExecutorMock(info.UpgradeExecutor, backend)
 	if err != nil {
 		return nil, err
 	}
 
+	rollupABI, err := abi.JSON(strings.NewReader(rollupgen.RollupAdminLogicABI))
+	if err != nil {
+		return nil, err
+	}
+	setWhitelistDisabled, err := rollupABI.Pack("setValidatorWhitelistDisabled", true)
+	if err != nil {
+		return nil, err
+	}
+	setMinimumAssertionPeriod, err := rollupABI.Pack("setMinimumAssertionPeriod", big.NewInt(0))
+	if err != nil {
+		return nil, err
+	}
+	seqInboxABI, err := abi.JSON(strings.NewReader(bridgegen.SequencerInboxABI))
+	if err != nil {
+		return nil, err
+	}
+	setBatchPosterManager, err := seqInboxABI.Pack("setBatchPosterManager", deployAuth.From)
+	if err != nil {
+		return nil, err
+	}
+	txs := map[common.Address][][]byte{
+		info.RollupAddress:  {setWhitelistDisabled, setMinimumAssertionPeriod},
+		info.SequencerInbox: {setBatchPosterManager},
+	}
 	// if a zero sequencer address is specified, don't authorize any sequencers
 	if sequencer != (common.Address{}) {
-		srvlog.Info("Setting is batch poster")
-		_, err = retry.UntilSucceeds[*types.Transaction](ctx, func() (*types.Transaction, error) {
-			batchTx, err2 := sequencerInbox.SetIsBatchPoster(deployAuth, sequencer, true)
-			if err2 != nil {
-				return nil, err2
-			}
-			if waitErr := challenge_testing.WaitForTx(ctx, backend, batchTx); waitErr != nil {
-				return nil, errors.Wrap(waitErr, "errored waiting for sequencerInbox.SetIsBatchPoster transaction")
-			}
-			return batchTx, nil
-		})
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	rollup, err := rollupgen.NewRollupAdminLogic(info.RollupAddress, backend)
-	if err != nil {
-		return nil, err
-	}
-
-	srvlog.Info("Setting whitelist disabled")
-	_, err = retry.UntilSucceeds[*types.Transaction](ctx, func() (*types.Transaction, error) {
-		setTx, err2 := rollup.SetValidatorWhitelistDisabled(deployAuth, true)
+		setIsBatchPoster, err2 := seqInboxABI.Pack("setIsBatchPoster", deployAuth.From, true)
 		if err2 != nil {
 			return nil, err2
 		}
-		if waitErr := challenge_testing.WaitForTx(ctx, backend, setTx); waitErr != nil {
-			return nil, errors.Wrap(waitErr, "errored waiting for rollup.SetValidatorWhitelistDisabled transaction")
-		}
-		return setTx, nil
-	})
-	if err != nil {
-		return nil, err
+		txs[info.SequencerInbox] = append(txs[info.SequencerInbox], setIsBatchPoster)
 	}
-
+	for addr, items := range txs {
+		for _, item := range items {
+			_, err = retry.UntilSucceeds(ctx, func() (*types.Transaction, error) {
+				innerTx, err2 := upgradeExecBindings.ExecuteCall(deployAuth, addr, item)
+				if err2 != nil {
+					return nil, err2
+				}
+				if waitErr := challenge_testing.WaitForTx(ctx, backend, innerTx); waitErr != nil {
+					return nil, errors.Wrap(waitErr, "errored waiting for UpgradeExecutor transaction")
+				}
+				return innerTx, nil
+			})
+			if err != nil {
+				return nil, err
+			}
+		}
+	}
+	if committer, ok := backend.(Committer); ok {
+		committer.Commit()
+	}
 	if !creationReceipt.BlockNumber.IsUint64() {
 		return nil, errors.New("block number was not a uint64")
 	}
@@ -518,6 +547,7 @@ func DeployFullRollupStack(
 		RollupUserLogic:        rollupUserAddr,
 		ValidatorUtils:         validatorUtils,
 		ValidatorWalletCreator: validatorWalletCreator,
+		UpgradeExecutor:        info.UpgradeExecutor,
 	}, nil
 }
 
@@ -552,11 +582,25 @@ func deployBridgeCreator(
 		}
 	}
 
-	maxDataSize := big.NewInt(challenge_testing.MaxDataSize)
+	datahashesReader, err := retry.UntilSucceeds(ctx, func() (common.Address, error) {
+		readerAddr, tx, _, err2 := yulgen.DeployReader4844(auth, backend)
+		if err2 != nil {
+			return common.Address{}, err2
+		}
+		err2 = challenge_testing.TxSucceeded(ctx, tx, readerAddr, backend, err2)
+		if err2 != nil {
+			return common.Address{}, errors.Wrap(err2, "yulgen.DeployReader4844")
+		}
+		return readerAddr, nil
+	})
+	if err != nil {
+		return common.Address{}, err
+	}
 
+	maxDataSize := big.NewInt(challenge_testing.MaxDataSize)
 	srvlog.Info("Deploying seq inbox")
 	seqInboxTemplate, err := retry.UntilSucceeds[common.Address](ctx, func() (common.Address, error) {
-		seqInboxTemplateAddr, tx, _, err2 := bridgegen.DeploySequencerInbox(auth, backend, maxDataSize)
+		seqInboxTemplateAddr, tx, _, err2 := bridgegen.DeploySequencerInbox(auth, backend, maxDataSize, datahashesReader, false /* no fee token */)
 		if err2 != nil {
 			return common.Address{}, err2
 		}
@@ -618,13 +662,62 @@ func deployBridgeCreator(
 		return common.Address{}, err
 	}
 
+	ethTemplates := rollupgen.BridgeCreatorBridgeContracts{
+		SequencerInbox:   seqInboxTemplate,
+		Bridge:           bridgeTemplate,
+		Inbox:            inboxTemplate,
+		RollupEventInbox: rollupEventBridgeTemplate,
+		Outbox:           outboxTemplate,
+	}
+
+	/// deploy ERC20 based templates
+	erc20BridgeTemplate, err := retry.UntilSucceeds(ctx, func() (common.Address, error) {
+		addr, _, _, innerErr := bridgegen.DeployERC20Bridge(auth, backend)
+		return addr, innerErr
+	})
+	if err != nil {
+		return common.Address{}, err
+	}
+
+	erc20InboxTemplate, err := retry.UntilSucceeds(ctx, func() (common.Address, error) {
+		addr, _, _, innerErr := bridgegen.DeployERC20Inbox(auth, backend, maxDataSize)
+		return addr, innerErr
+	})
+	if err != nil {
+		return common.Address{}, err
+	}
+
+	erc20RollupEventBridgeTemplate, err := retry.UntilSucceeds(ctx, func() (common.Address, error) {
+		addr, _, _, innerErr := rollupgen.DeployERC20RollupEventInbox(auth, backend)
+		return addr, innerErr
+	})
+	if err != nil {
+		return common.Address{}, err
+	}
+
+	erc20OutboxTemplate, err := retry.UntilSucceeds(ctx, func() (common.Address, error) {
+		addr, _, _, innerErr := bridgegen.DeployERC20Outbox(auth, backend)
+		return addr, innerErr
+	})
+	if err != nil {
+		return common.Address{}, err
+	}
+
+	erc20Templates := rollupgen.BridgeCreatorBridgeContracts{
+		Bridge:           erc20BridgeTemplate,
+		SequencerInbox:   seqInboxTemplate,
+		Inbox:            erc20InboxTemplate,
+		RollupEventInbox: erc20RollupEventBridgeTemplate,
+		Outbox:           erc20OutboxTemplate,
+	}
+
 	type bridgeCreationResult struct {
 		bridgeCreatorAddr common.Address
 		bridgeCreator     *rollupgen.BridgeCreator
 	}
 	srvlog.Info("Deploying bridge creator itself")
 	result, err := retry.UntilSucceeds[*bridgeCreationResult](ctx, func() (*bridgeCreationResult, error) {
-		bridgeCreatorAddr, tx, bridgeCreator, err2 := rollupgen.DeployBridgeCreator(auth, backend, maxDataSize)
+		bridgeCreatorAddr, tx, bridgeCreator, err2 := rollupgen.DeployBridgeCreator(auth, backend, ethTemplates, erc20Templates)
 		if err2 != nil {
 			return nil, err2
 		}
@@ -643,7 +736,21 @@ func deployBridgeCreator(
 
 	srvlog.Info("Updating bridge creator templates")
 	_, err = retry.UntilSucceeds[*types.Transaction](ctx, func() (*types.Transaction, error) {
-		tx, err2 := result.bridgeCreator.UpdateTemplates(auth, bridgeTemplate, seqInboxTemplate, inboxTemplate, rollupEventBridgeTemplate, outboxTemplate)
+		tx, err2 := result.bridgeCreator.UpdateTemplates(auth, ethTemplates)
+		if err2 != nil {
+			return nil, err2
+		}
+		err2 = challenge_testing.TxSucceeded(ctx, tx, result.bridgeCreatorAddr, backend, err2)
+		if err2 != nil {
+			return nil, err2
+		}
+		return tx, nil
+	})
+	if err != nil {
+		return common.Address{}, err
+	}
+	_, err = retry.UntilSucceeds[*types.Transaction](ctx, func() (*types.Transaction, error) {
+		tx, err2 := result.bridgeCreator.UpdateERC20Templates(auth, erc20Templates)
 		if err2 != nil {
 			return nil, err2
 		}
@@ -816,7 +923,7 @@ func deployRollupCreator(
 	}
 
 	srvlog.Info("Deploying validator wallet creator contract")
-	validatorWalletCreator, err := retry.UntilSucceeds[common.Address](ctx, func() (common.Address, error) {
+	validatorWalletCreator, err := retry.UntilSucceeds(ctx, func() (common.Address, error) {
 		validatorWalletCreatorAddr, tx, _, err2 := rollupgen.DeployValidatorWalletCreator(auth, backend)
 		if err2 != nil {
 			return common.Address{}, err2
@@ -831,6 +938,22 @@ func deployRollupCreator(
 		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
 	}
 
+	srvlog.Info("Deploying upgrade executor mock")
+	upgradeExecutor, err := retry.UntilSucceeds(ctx, func() (common.Address, error) {
+		upgradeExecutorAddr, tx, _, err2 := mocksgen.DeployUpgradeExecutorMock(auth, backend)
+		if err2 != nil {
+			return common.Address{}, err2
+		}
+		err2 = challenge_testing.TxSucceeded(ctx, tx, upgradeExecutorAddr, backend, err2)
+		if err2 != nil {
+			return common.Address{}, err2
+		}
+		return upgradeExecutorAddr, nil
+	})
+	if err != nil {
+		return nil, common.Address{}, common.Address{}, common.Address{}, common.Address{}, err
+	}
+
 	srvlog.Info("Setting rollup templates")
 	_, err = retry.UntilSucceeds[*types.Transaction](ctx, func() (*types.Transaction, error) {
 		tx, err2 := result.rollupCreator.SetTemplates(
@@ -840,7 +963,9 @@ func deployRollupCreator(
 			challengeManagerAddr,
 			rollupAdminLogic,
 			rollupUserLogic,
+			upgradeExecutor,
 			validatorWalletCreator,
+			common.Address{},
 		)
 		if err2 != nil {
 			return nil, err2

@@ -1,0 +1,15 @@
+| Name                             | Type                                           | Slot | Offset | Bytes | Contract                     |
+|----------------------------------|------------------------------------------------|------|--------|-------|------------------------------|
+| _initialized                     | uint8                                          | 0    | 0      | 1     | src/bridge/Bridge.sol:Bridge |
+| _initializing                    | bool                                           | 0    | 1      | 1     | src/bridge/Bridge.sol:Bridge |
+| allowedDelayedInboxesMap         | mapping(address => struct AbsBridge.InOutInfo) | 1    | 0      | 32    | src/bridge/Bridge.sol:Bridge |
+| allowedOutboxesMap               | mapping(address => struct AbsBridge.InOutInfo) | 2    | 0      | 32    | src/bridge/Bridge.sol:Bridge |
+| allowedDelayedInboxList          | address[]                                      | 3    | 0      | 32    | src/bridge/Bridge.sol:Bridge |
+| allowedOutboxList                | address[]                                      | 4    | 0      | 32    | src/bridge/Bridge.sol:Bridge |
+| _activeOutbox                    | address                                        | 5    | 0      | 20    | src/bridge/Bridge.sol:Bridge |
+| delayedInboxAccs                 | bytes32[]                                      | 6    | 0      | 32    | src/bridge/Bridge.sol:Bridge |
+| sequencerInboxAccs               | bytes32[]                                      | 7    | 0      | 32    | src/bridge/Bridge.sol:Bridge |
+| rollup                           | contract IOwnable                              | 8    | 0      | 20    | src/bridge/Bridge.sol:Bridge |
+| sequencerInbox                   | address                                        | 9    | 0      | 20    | src/bridge/Bridge.sol:Bridge |
+| sequencerReportedSubMessageCount | uint256                                        | 10   | 0      | 32    | src/bridge/Bridge.sol:Bridge |
+| __gap                            | uint256[40]                                    | 11   | 0      | 1280  | src/bridge/Bridge.sol:Bridge |

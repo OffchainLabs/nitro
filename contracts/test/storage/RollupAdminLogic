@@ -1,0 +1,32 @@
+| Name                           | Type                                          | Slot | Offset | Bytes | Contract                                         |
+|--------------------------------|-----------------------------------------------|------|--------|-------|--------------------------------------------------|
+| _initialized                   | uint8                                         | 0    | 0      | 1     | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| _initializing                  | bool                                          | 0    | 1      | 1     | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| __gap                          | uint256[50]                                   | 1    | 0      | 1600  | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| _paused                        | bool                                          | 51   | 0      | 1     | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| __gap                          | uint256[49]                                   | 52   | 0      | 1568  | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| chainId                        | uint256                                       | 101  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| confirmPeriodBlocks            | uint64                                        | 102  | 0      | 8     | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| baseStake                      | uint256                                       | 103  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| wasmModuleRoot                 | bytes32                                       | 104  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| challengeManager               | contract IEdgeChallengeManager                | 105  | 0      | 20    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| challengeGracePeriodBlocks     | uint64                                        | 105  | 20     | 8     | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| inbox                          | contract IInboxBase                           | 106  | 0      | 20    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| bridge                         | contract IBridge                              | 107  | 0      | 20    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| outbox                         | contract IOutbox                              | 108  | 0      | 20    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| rollupEventInbox               | contract IRollupEventInbox                    | 109  | 0      | 20    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| validatorWalletCreator         | address                                       | 110  | 0      | 20    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| loserStakeEscrow               | address                                       | 111  | 0      | 20    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| stakeToken                     | address                                       | 112  | 0      | 20    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| minimumAssertionPeriod         | uint256                                       | 113  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| isValidator                    | mapping(address => bool)                      | 114  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| _latestConfirmed               | bytes32                                       | 115  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| _assertions                    | mapping(bytes32 => struct AssertionNode)      | 116  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| _stakerList                    | address[]                                     | 117  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| _stakerMap                     | mapping(address => struct IRollupCore.Staker) | 118  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| _withdrawableFunds             | mapping(address => uint256)                   | 119  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| totalWithdrawableFunds         | uint256                                       | 120  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| rollupDeploymentBlock          | uint256                                       | 121  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| validatorWhitelistDisabled     | bool                                          | 122  | 0      | 1     | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| anyTrustFastConfirmer          | address                                       | 122  | 1      | 20    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| _assertionCreatedAtArbSysBlock | mapping(bytes32 => uint256)                   | 123  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |

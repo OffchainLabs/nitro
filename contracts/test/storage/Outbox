@@ -1,0 +1,8 @@
+| Name    | Type                           | Slot | Offset | Bytes | Contract                     |
+|---------|--------------------------------|------|--------|-------|------------------------------|
+| rollup  | address                        | 0    | 0      | 20    | src/bridge/Outbox.sol:Outbox |
+| bridge  | contract IBridge               | 1    | 0      | 20    | src/bridge/Outbox.sol:Outbox |
+| spent   | mapping(uint256 => bytes32)    | 2    | 0      | 32    | src/bridge/Outbox.sol:Outbox |
+| roots   | mapping(bytes32 => bytes32)    | 3    | 0      | 32    | src/bridge/Outbox.sol:Outbox |
+| context | struct AbsOutbox.L2ToL1Context | 4    | 0      | 128   | src/bridge/Outbox.sol:Outbox |
+| __gap   | uint256[42]                    | 8    | 0      | 1344  | src/bridge/Outbox.sol:Outbox |

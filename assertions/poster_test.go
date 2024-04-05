@@ -5,7 +5,6 @@ package assertions_test
 
 import (
 	"context"
-	"math/big"
 	"testing"
 	"time"
 
@@ -14,7 +13,6 @@ import (
 	challengemanager "github.com/OffchainLabs/bold/challenge-manager"
 	"github.com/OffchainLabs/bold/challenge-manager/types"
 	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
-	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
 	statemanager "github.com/OffchainLabs/bold/testing/mocks/state-provider"
 	"github.com/OffchainLabs/bold/testing/setup"
@@ -24,8 +22,9 @@ import (
 )
 
 func TestPostAssertion(t *testing.T) {
+	ctx := context.Background()
 	setup, err := setup.ChainsWithEdgeChallengeManager(
-		setup.WithMockBridge(),
+		// setup.WithMockBridge(),
 		setup.WithMockOneStepProver(),
 		setup.WithChallengeTestingOpts(
 			challenge_testing.WithLayerZeroHeights(&protocol.LayerZeroHeights{
@@ -40,19 +39,11 @@ func TestPostAssertion(t *testing.T) {
 	bridgeBindings, err := mocksgen.NewBridgeStub(setup.Addrs.Bridge, setup.Backend)
 	require.NoError(t, err)
 
-	rollupAdminBindings, err := rollupgen.NewRollupAdminLogic(setup.Addrs.Rollup, setup.Backend)
-	require.NoError(t, err)
-	_, err = rollupAdminBindings.SetMinimumAssertionPeriod(setup.Accounts[0].TxOpts, big.NewInt(1))
-	require.NoError(t, err)
-	setup.Backend.Commit()
-
 	msgCount, err := bridgeBindings.SequencerMessageCount(util.GetSafeCallOpts(&bind.CallOpts{}))
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), msgCount.Uint64())
 
 	aliceChain := setup.Chains[0]
-
-	ctx := context.Background()
 
 	stateManagerOpts := setup.StateManagerOpts
 	stateManagerOpts = append(

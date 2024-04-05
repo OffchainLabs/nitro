@@ -32,7 +32,7 @@ var (
 // AddressAliasHelperMetaData contains all meta data concerning the AddressAliasHelper contract.
 var AddressAliasHelperMetaData = &bind.MetaData{
 	ABI: "[]",
-	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea26469706673582212200274468d8af1a36d9d4b98694c681da3c2c699de43a978ba4bf4190e90fee1cc64736f6c63430008110033",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea26469706673582212201b1c7c1eed6308a3167edcc47c3ecd54d20200159e384b2fa53f8ed918ceaeee64736f6c63430008110033",
 }
 
 // AddressAliasHelperABI is the input ABI used to generate the binding from.
@@ -205,7 +205,7 @@ func (_AddressAliasHelper *AddressAliasHelperTransactorRaw) Transact(opts *bind.
 // AdminFallbackProxyMetaData contains all meta data concerning the AdminFallbackProxy contract.
 var AdminFallbackProxyMetaData = &bind.MetaData{
 	ABI: "[{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"address\",\"name\":\"previousAdmin\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"address\",\"name\":\"newAdmin\",\"type\":\"address\"}],\"name\":\"AdminChanged\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"beacon\",\"type\":\"address\"}],\"name\":\"BeaconUpgraded\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"implementation\",\"type\":\"address\"}],\"name\":\"Upgraded\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"implementation\",\"type\":\"address\"}],\"name\":\"UpgradedSecondary\",\"type\":\"event\"},{\"stateMutability\":\"payable\",\"type\":\"fallback\"},{\"stateMutability\":\"payable\",\"type\":\"receive\"}]",
-	Bin: "0x608060405234801561001057600080fd5b50610245806100206000396000f3fe60806040523661001357610011610017565b005b6100115b610027610022610029565b61015b565b565b6000600436101561009b576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820152600b60248201527f4e4f5f46554e435f53494700000000000000000000000000000000000000000060448201526064015b60405180910390fd5b6000336100a661017f565b73ffffffffffffffffffffffffffffffffffffffff16036100ce576100c96101bf565b6100d6565b6100d66101e7565b905073ffffffffffffffffffffffffffffffffffffffff81163b610156576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820152601360248201527f5441524745545f4e4f545f434f4e5452414354000000000000000000000000006044820152606401610092565b919050565b3660008037600080366000845af43d6000803e80801561017a573d6000f35b3d6000fd5b60007fb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d61035b5473ffffffffffffffffffffffffffffffffffffffff16919050565b60007f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc6101a3565b60007f2b1dbce74324248c222f0ec2d5ed7bd323cfc425b336f0253c5ccfda7265546d6101a356fea264697066735822122079db84a24ce52436423818d6427891ec09c0063d50228fc3ed3e49bc0d180d5c64736f6c63430008110033",
+	Bin: "0x608060405234801561001057600080fd5b50610245806100206000396000f3fe60806040523661001357610011610017565b005b6100115b610027610022610029565b61015b565b565b6000600436101561009b576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820152600b60248201527f4e4f5f46554e435f53494700000000000000000000000000000000000000000060448201526064015b60405180910390fd5b6000336100a661017f565b73ffffffffffffffffffffffffffffffffffffffff16036100ce576100c96101bf565b6100d6565b6100d66101e7565b905073ffffffffffffffffffffffffffffffffffffffff81163b610156576040517f08c379a000000000000000000000000000000000000000000000000000000000815260206004820152601360248201527f5441524745545f4e4f545f434f4e5452414354000000000000000000000000006044820152606401610092565b919050565b3660008037600080366000845af43d6000803e80801561017a573d6000f35b3d6000fd5b60007fb53127684a568b3173ae13b9f8a6016e243e63b6e8ee1178d6a717850b5d61035b5473ffffffffffffffffffffffffffffffffffffffff16919050565b60007f360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc6101a3565b60007f2b1dbce74324248c222f0ec2d5ed7bd323cfc425b336f0253c5ccfda7265546d6101a356fea26469706673582212203170ab15fbcb10688949c192cd5e26073e1877dee31cd823a939d33a39fc1a6e64736f6c63430008110033",
 }
 
 // AdminFallbackProxyABI is the input ABI used to generate the binding from.
@@ -987,7 +987,7 @@ func (_AdminFallbackProxy *AdminFallbackProxyFilterer) ParseUpgradedSecondary(lo
 // ArbitrumCheckerMetaData contains all meta data concerning the ArbitrumChecker contract.
 var ArbitrumCheckerMetaData = &bind.MetaData{
 	ABI: "[]",
-	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea264697066735822122088f0f10a349caa75ac705621e66061a51e4a864400c471ac25ca30d141b1fb5264736f6c63430008110033",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea264697066735822122040c6bb794acf80741366e0fd21ce6d4bc9275edf89631a495ced7d2c12534ada64736f6c63430008110033",
 }
 
 // ArbitrumCheckerABI is the input ABI used to generate the binding from.
@@ -1160,7 +1160,7 @@ func (_ArbitrumChecker *ArbitrumCheckerTransactorRaw) Transact(opts *bind.Transa
 // CryptographyPrimitivesMetaData contains all meta data concerning the CryptographyPrimitives contract.
 var CryptographyPrimitivesMetaData = &bind.MetaData{
 	ABI: "[]",
-	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220f1825c30b183f222548264d973da80fdb28b52ae34fc25bd175f80f59d96e76e64736f6c63430008110033",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220cf259683d0f53e6866060206401ed3afb138c743830ab040df6197c5b8f3cc8e64736f6c63430008110033",
 }
 
 // CryptographyPrimitivesABI is the input ABI used to generate the binding from.
@@ -3355,10 +3355,223 @@ func (_IGasRefunder *IGasRefunderTransactorSession) OnGasSpent(spender common.Ad
 	return _IGasRefunder.Contract.OnGasSpent(&_IGasRefunder.TransactOpts, spender, gasUsed, calldataSize)
 }
 
+// IReader4844MetaData contains all meta data concerning the IReader4844 contract.
+var IReader4844MetaData = &bind.MetaData{
+	ABI: "[{\"inputs\":[],\"name\":\"getBlobBaseFee\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getDataHashes\",\"outputs\":[{\"internalType\":\"bytes32[]\",\"name\":\"\",\"type\":\"bytes32[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]",
+}
+
+// IReader4844ABI is the input ABI used to generate the binding from.
+// Deprecated: Use IReader4844MetaData.ABI instead.
+var IReader4844ABI = IReader4844MetaData.ABI
+
+// IReader4844 is an auto generated Go binding around an Ethereum contract.
+type IReader4844 struct {
+	IReader4844Caller     // Read-only binding to the contract
+	IReader4844Transactor // Write-only binding to the contract
+	IReader4844Filterer   // Log filterer for contract events
+}
+
+// IReader4844Caller is an auto generated read-only Go binding around an Ethereum contract.
+type IReader4844Caller struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// IReader4844Transactor is an auto generated write-only Go binding around an Ethereum contract.
+type IReader4844Transactor struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// IReader4844Filterer is an auto generated log filtering Go binding around an Ethereum contract events.
+type IReader4844Filterer struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// IReader4844Session is an auto generated Go binding around an Ethereum contract,
+// with pre-set call and transact options.
+type IReader4844Session struct {
+	Contract     *IReader4844      // Generic contract binding to set the session for
+	CallOpts     bind.CallOpts     // Call options to use throughout this session
+	TransactOpts bind.TransactOpts // Transaction auth options to use throughout this session
+}
+
+// IReader4844CallerSession is an auto generated read-only Go binding around an Ethereum contract,
+// with pre-set call options.
+type IReader4844CallerSession struct {
+	Contract *IReader4844Caller // Generic contract caller binding to set the session for
+	CallOpts bind.CallOpts      // Call options to use throughout this session
+}
+
+// IReader4844TransactorSession is an auto generated write-only Go binding around an Ethereum contract,
+// with pre-set transact options.
+type IReader4844TransactorSession struct {
+	Contract     *IReader4844Transactor // Generic contract transactor binding to set the session for
+	TransactOpts bind.TransactOpts      // Transaction auth options to use throughout this session
+}
+
+// IReader4844Raw is an auto generated low-level Go binding around an Ethereum contract.
+type IReader4844Raw struct {
+	Contract *IReader4844 // Generic contract binding to access the raw methods on
+}
+
+// IReader4844CallerRaw is an auto generated low-level read-only Go binding around an Ethereum contract.
+type IReader4844CallerRaw struct {
+	Contract *IReader4844Caller // Generic read-only contract binding to access the raw methods on
+}
+
+// IReader4844TransactorRaw is an auto generated low-level write-only Go binding around an Ethereum contract.
+type IReader4844TransactorRaw struct {
+	Contract *IReader4844Transactor // Generic write-only contract binding to access the raw methods on
+}
+
+// NewIReader4844 creates a new instance of IReader4844, bound to a specific deployed contract.
+func NewIReader4844(address common.Address, backend bind.ContractBackend) (*IReader4844, error) {
+	contract, err := bindIReader4844(address, backend, backend, backend)
+	if err != nil {
+		return nil, err
+	}
+	return &IReader4844{IReader4844Caller: IReader4844Caller{contract: contract}, IReader4844Transactor: IReader4844Transactor{contract: contract}, IReader4844Filterer: IReader4844Filterer{contract: contract}}, nil
+}
+
+// NewIReader4844Caller creates a new read-only instance of IReader4844, bound to a specific deployed contract.
+func NewIReader4844Caller(address common.Address, caller bind.ContractCaller) (*IReader4844Caller, error) {
+	contract, err := bindIReader4844(address, caller, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &IReader4844Caller{contract: contract}, nil
+}
+
+// NewIReader4844Transactor creates a new write-only instance of IReader4844, bound to a specific deployed contract.
+func NewIReader4844Transactor(address common.Address, transactor bind.ContractTransactor) (*IReader4844Transactor, error) {
+	contract, err := bindIReader4844(address, nil, transactor, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &IReader4844Transactor{contract: contract}, nil
+}
+
+// NewIReader4844Filterer creates a new log filterer instance of IReader4844, bound to a specific deployed contract.
+func NewIReader4844Filterer(address common.Address, filterer bind.ContractFilterer) (*IReader4844Filterer, error) {
+	contract, err := bindIReader4844(address, nil, nil, filterer)
+	if err != nil {
+		return nil, err
+	}
+	return &IReader4844Filterer{contract: contract}, nil
+}
+
+// bindIReader4844 binds a generic wrapper to an already deployed contract.
+func bindIReader4844(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
+	parsed, err := IReader4844MetaData.GetAbi()
+	if err != nil {
+		return nil, err
+	}
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_IReader4844 *IReader4844Raw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _IReader4844.Contract.IReader4844Caller.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_IReader4844 *IReader4844Raw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _IReader4844.Contract.IReader4844Transactor.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_IReader4844 *IReader4844Raw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _IReader4844.Contract.IReader4844Transactor.contract.Transact(opts, method, params...)
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_IReader4844 *IReader4844CallerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _IReader4844.Contract.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_IReader4844 *IReader4844TransactorRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _IReader4844.Contract.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_IReader4844 *IReader4844TransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _IReader4844.Contract.contract.Transact(opts, method, params...)
+}
+
+// GetBlobBaseFee is a free data retrieval call binding the contract method 0x1f6d6ef7.
+//
+// Solidity: function getBlobBaseFee() view returns(uint256)
+func (_IReader4844 *IReader4844Caller) GetBlobBaseFee(opts *bind.CallOpts) (*big.Int, error) {
+	var out []interface{}
+	err := _IReader4844.contract.Call(opts, &out, "getBlobBaseFee")
+
+	if err != nil {
+		return *new(*big.Int), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(*big.Int)).(**big.Int)
+
+	return out0, err
+
+}
+
+// GetBlobBaseFee is a free data retrieval call binding the contract method 0x1f6d6ef7.
+//
+// Solidity: function getBlobBaseFee() view returns(uint256)
+func (_IReader4844 *IReader4844Session) GetBlobBaseFee() (*big.Int, error) {
+	return _IReader4844.Contract.GetBlobBaseFee(&_IReader4844.CallOpts)
+}
+
+// GetBlobBaseFee is a free data retrieval call binding the contract method 0x1f6d6ef7.
+//
+// Solidity: function getBlobBaseFee() view returns(uint256)
+func (_IReader4844 *IReader4844CallerSession) GetBlobBaseFee() (*big.Int, error) {
+	return _IReader4844.Contract.GetBlobBaseFee(&_IReader4844.CallOpts)
+}
+
+// GetDataHashes is a free data retrieval call binding the contract method 0xe83a2d82.
+//
+// Solidity: function getDataHashes() view returns(bytes32[])
+func (_IReader4844 *IReader4844Caller) GetDataHashes(opts *bind.CallOpts) ([][32]byte, error) {
+	var out []interface{}
+	err := _IReader4844.contract.Call(opts, &out, "getDataHashes")
+
+	if err != nil {
+		return *new([][32]byte), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new([][32]byte)).(*[][32]byte)
+
+	return out0, err
+
+}
+
+// GetDataHashes is a free data retrieval call binding the contract method 0xe83a2d82.
+//
+// Solidity: function getDataHashes() view returns(bytes32[])
+func (_IReader4844 *IReader4844Session) GetDataHashes() ([][32]byte, error) {
+	return _IReader4844.Contract.GetDataHashes(&_IReader4844.CallOpts)
+}
+
+// GetDataHashes is a free data retrieval call binding the contract method 0xe83a2d82.
+//
+// Solidity: function getDataHashes() view returns(bytes32[])
+func (_IReader4844 *IReader4844CallerSession) GetDataHashes() ([][32]byte, error) {
+	return _IReader4844.Contract.GetDataHashes(&_IReader4844.CallOpts)
+}
+
 // MerkleLibMetaData contains all meta data concerning the MerkleLib contract.
 var MerkleLibMetaData = &bind.MetaData{
 	ABI: "[]",
-	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea26469706673582212207645fa9528c6fa661fff7f22099413f7c95bcbed0dbb89948e348514544066be64736f6c63430008110033",
+	Bin: "0x60566037600b82828239805160001a607314602a57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600080fdfea2646970667358221220d8ba33cb85457acc7fa0a70694265877c906b0737c0d44f7640ca6c62470c3c864736f6c63430008110033",
 }
 
 // MerkleLibABI is the input ABI used to generate the binding from.

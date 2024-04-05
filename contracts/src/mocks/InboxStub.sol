@@ -1,11 +1,13 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro-contracts/blob/main/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
 pragma solidity ^0.8.0;
 
+import "../bridge/IInboxBase.sol";
 import "../bridge/IInbox.sol";
 import "../bridge/IBridge.sol";
+import "../bridge/IEthBridge.sol";
 
 import "../bridge/Messages.sol";
 import "./BridgeStub.sol";
@@ -17,7 +19,7 @@ import {
     L2MessageType_unsignedContractTx
 } from "../libraries/MessageTypes.sol";
 
-contract InboxStub is IInbox {
+contract InboxStub is IInboxBase, IInbox {
     IBridge public override bridge;
     ISequencerInbox public override sequencerInbox;
 
@@ -70,7 +72,12 @@ contract InboxStub is IInbox {
         address sender,
         bytes32 messageDataHash
     ) internal returns (uint256) {
-        return bridge.enqueueDelayedMessage{value: msg.value}(kind, sender, messageDataHash);
+        return
+            IEthBridge(address(bridge)).enqueueDelayedMessage{value: msg.value}(
+                kind,
+                sender,
+                messageDataHash
+            );
     }
 
     function sendUnsignedTransaction(
@@ -156,7 +163,7 @@ contract InboxStub is IInbox {
         address,
         uint256,
         bytes calldata
-    ) external returns (uint256) {
+    ) external pure returns (uint256) {
         revert("NOT_IMPLEMENTED");
     }
 
@@ -166,7 +173,7 @@ contract InboxStub is IInbox {
         uint256,
         uint256,
         address
-    ) external returns (uint256) {
+    ) external pure returns (uint256) {
         revert("NOT_IMPLEMENTED");
     }
 
@@ -182,6 +189,26 @@ contract InboxStub is IInbox {
         override
         returns (uint256)
     {
+        revert("NOT_IMPLEMENTED");
+    }
+
+    function setAllowList(address[] memory, bool[] memory) external pure {
+        revert("NOT_IMPLEMENTED");
+    }
+
+    function setAllowListEnabled(bool) external pure {
+        revert("NOT_IMPLEMENTED");
+    }
+
+    function isAllowed(address) external pure returns (bool) {
+        revert("NOT_IMPLEMENTED");
+    }
+
+    function allowListEnabled() external pure returns (bool) {
+        revert("NOT_IMPLEMENTED");
+    }
+
+    function getProxyAdmin() external pure returns (address) {
         revert("NOT_IMPLEMENTED");
     }
 }

@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro-contracts/blob/main/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
 pragma solidity ^0.8.0;
@@ -81,7 +81,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     // so that the result of a challenge is observable widely before it causes an assertion to be confirmed
     uint64 public challengeGracePeriodBlocks;
 
-    IInbox public inbox;
+    IInboxBase public inbox;
     IBridge public bridge;
     IOutbox public outbox;
     IRollupEventInbox public rollupEventInbox;

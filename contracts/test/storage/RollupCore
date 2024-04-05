@@ -1,0 +1,32 @@
+| Name                           | Type                                          | Slot | Offset | Bytes | Contract                             |
+|--------------------------------|-----------------------------------------------|------|--------|-------|--------------------------------------|
+| _initialized                   | uint8                                         | 0    | 0      | 1     | src/rollup/RollupCore.sol:RollupCore |
+| _initializing                  | bool                                          | 0    | 1      | 1     | src/rollup/RollupCore.sol:RollupCore |
+| __gap                          | uint256[50]                                   | 1    | 0      | 1600  | src/rollup/RollupCore.sol:RollupCore |
+| _paused                        | bool                                          | 51   | 0      | 1     | src/rollup/RollupCore.sol:RollupCore |
+| __gap                          | uint256[49]                                   | 52   | 0      | 1568  | src/rollup/RollupCore.sol:RollupCore |
+| chainId                        | uint256                                       | 101  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
+| confirmPeriodBlocks            | uint64                                        | 102  | 0      | 8     | src/rollup/RollupCore.sol:RollupCore |
+| baseStake                      | uint256                                       | 103  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
+| wasmModuleRoot                 | bytes32                                       | 104  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
+| challengeManager               | contract IEdgeChallengeManager                | 105  | 0      | 20    | src/rollup/RollupCore.sol:RollupCore |
+| challengeGracePeriodBlocks     | uint64                                        | 105  | 20     | 8     | src/rollup/RollupCore.sol:RollupCore |
+| inbox                          | contract IInboxBase                           | 106  | 0      | 20    | src/rollup/RollupCore.sol:RollupCore |
+| bridge                         | contract IBridge                              | 107  | 0      | 20    | src/rollup/RollupCore.sol:RollupCore |
+| outbox                         | contract IOutbox                              | 108  | 0      | 20    | src/rollup/RollupCore.sol:RollupCore |
+| rollupEventInbox               | contract IRollupEventInbox                    | 109  | 0      | 20    | src/rollup/RollupCore.sol:RollupCore |
+| validatorWalletCreator         | address                                       | 110  | 0      | 20    | src/rollup/RollupCore.sol:RollupCore |
+| loserStakeEscrow               | address                                       | 111  | 0      | 20    | src/rollup/RollupCore.sol:RollupCore |
+| stakeToken                     | address                                       | 112  | 0      | 20    | src/rollup/RollupCore.sol:RollupCore |
+| minimumAssertionPeriod         | uint256                                       | 113  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
+| isValidator                    | mapping(address => bool)                      | 114  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
+| _latestConfirmed               | bytes32                                       | 115  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
+| _assertions                    | mapping(bytes32 => struct AssertionNode)      | 116  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
+| _stakerList                    | address[]                                     | 117  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
+| _stakerMap                     | mapping(address => struct IRollupCore.Staker) | 118  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
+| _withdrawableFunds             | mapping(address => uint256)                   | 119  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
+| totalWithdrawableFunds         | uint256                                       | 120  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
+| rollupDeploymentBlock          | uint256                                       | 121  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
+| validatorWhitelistDisabled     | bool                                          | 122  | 0      | 1     | src/rollup/RollupCore.sol:RollupCore |
+| anyTrustFastConfirmer          | address                                       | 122  | 1      | 20    | src/rollup/RollupCore.sol:RollupCore |
+| _assertionCreatedAtArbSysBlock | mapping(bytes32 => uint256)                   | 123  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |

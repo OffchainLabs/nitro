@@ -15,7 +15,9 @@ import {
   RollupUserLogic__factory,
   SequencerInbox__factory,
   StateHashPreImageLookup__factory,
+  IReader4844__factory,
 } from '../build/types'
+import { bytecode as Reader4844Bytecode } from '../out/yul/Reader4844.yul/Reader4844.json'
 import { DeployedContracts, Config } from './common'
 import { AssertionStateStruct } from '../build/types/src/challengeV2/IAssertionChain'
 // taken from https://github.com/OffchainLabs/nitro-contracts/blob/210e5b3bc96a513d276deaba90399130a60131d5/src/rollup/RollupUserLogic.sol
@@ -37,8 +39,17 @@ export const deployDependencies = async (
     console.log(`Bridge implementation deployed at: ${bridge.address}`)
   }
 
+  const contractFactory = new ContractFactory(
+    IReader4844__factory.abi,
+    Reader4844Bytecode,
+    signer
+  )
+  const reader4844 = await contractFactory.deploy()
+  await reader4844.deployed()
+  console.log(`Reader4844 deployed at ${reader4844.address}`)
+
   const seqInboxFac = new SequencerInbox__factory(signer)
-  const seqInbox = await seqInboxFac.deploy(maxDataSize)
+  const seqInbox = await seqInboxFac.deploy(maxDataSize, reader4844.address, false)
   if (log) {
     console.log(
       `Sequencer inbox implementation deployed at: ${seqInbox.address}`

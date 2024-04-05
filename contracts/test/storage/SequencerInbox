@@ -1,0 +1,14 @@
+| Name                        | Type                                                     | Slot | Offset | Bytes | Contract                                     |
+|-----------------------------|----------------------------------------------------------|------|--------|-------|----------------------------------------------|
+| totalDelayedMessagesRead    | uint256                                                  | 0    | 0      | 32    | src/bridge/SequencerInbox.sol:SequencerInbox |
+| bridge                      | contract IBridge                                         | 1    | 0      | 20    | src/bridge/SequencerInbox.sol:SequencerInbox |
+| rollup                      | contract IOwnable                                        | 2    | 0      | 20    | src/bridge/SequencerInbox.sol:SequencerInbox |
+| isBatchPoster               | mapping(address => bool)                                 | 3    | 0      | 32    | src/bridge/SequencerInbox.sol:SequencerInbox |
+| __LEGACY_MAX_TIME_VARIATION | struct ISequencerInbox.MaxTimeVariation                  | 4    | 0      | 128   | src/bridge/SequencerInbox.sol:SequencerInbox |
+| dasKeySetInfo               | mapping(bytes32 => struct ISequencerInbox.DasKeySetInfo) | 8    | 0      | 32    | src/bridge/SequencerInbox.sol:SequencerInbox |
+| isSequencer                 | mapping(address => bool)                                 | 9    | 0      | 32    | src/bridge/SequencerInbox.sol:SequencerInbox |
+| delayBlocks                 | uint64                                                   | 10   | 0      | 8     | src/bridge/SequencerInbox.sol:SequencerInbox |
+| futureBlocks                | uint64                                                   | 10   | 8      | 8     | src/bridge/SequencerInbox.sol:SequencerInbox |
+| delaySeconds                | uint64                                                   | 10   | 16     | 8     | src/bridge/SequencerInbox.sol:SequencerInbox |
+| futureSeconds               | uint64                                                   | 10   | 24     | 8     | src/bridge/SequencerInbox.sol:SequencerInbox |
+| batchPosterManager          | address                                                  | 11   | 0      | 20    | src/bridge/SequencerInbox.sol:SequencerInbox |

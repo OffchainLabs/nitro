@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro-contracts/blob/main/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
 pragma solidity ^0.8.0;
@@ -298,7 +298,7 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
      * @notice sets the rollup's inbox reference. Does not update the bridge's view.
      * @param newInbox new address of inbox
      */
-    function setInbox(IInbox newInbox) external {
+    function setInbox(IInboxBase newInbox) external {
         inbox = newInbox;
         emit OwnerFunctionCalled(28);
     }

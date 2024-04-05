@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro-contracts/blob/main/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
 // solhint-disable-next-line compiler-version
@@ -16,6 +16,8 @@ interface IOutbox {
         uint256 transactionIndex
     );
 
+    function initialize(IBridge _bridge) external;
+
     function rollup() external view returns (address); // the rollup contract
 
     function bridge() external view returns (IBridge); // the bridge contract
@@ -28,7 +30,7 @@ interface IOutbox {
     function OUTBOX_VERSION() external view returns (uint128); // the outbox version
 
     function updateSendRoot(bytes32 sendRoot, bytes32 l2BlockHash) external;
-    
+
     function updateRollupAddress() external;
 
     /// @notice When l2ToL1Sender returns a nonzero address, the message was originated by an L2 account
@@ -119,4 +121,10 @@ interface IOutbox {
         uint256 path,
         bytes32 item
     ) external pure returns (bytes32);
+
+    /**
+     * @dev function to be called one time during the outbox upgrade process
+     *      this is used to fix the storage slots
+     */
+    function postUpgradeInit() external;
 }

@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro-contracts/blob/main/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
 pragma solidity >=0.4.21 <0.9.0;
@@ -25,6 +25,17 @@ interface ArbOwnerPublic {
 
     /// @notice Get the infrastructure fee collector
     function getInfraFeeAccount() external view returns (address);
+
+    /// @notice Get the Brotli compression level used for fast compression
+    function getBrotliCompressionLevel() external view returns (uint64);
+
+    /// @notice Get the next scheduled ArbOS version upgrade and its activation timestamp.
+    /// Returns (0, 0) if no ArbOS upgrade is scheduled.
+    /// Available in ArbOS version 20.
+    function getScheduledUpgrade()
+        external
+        view
+        returns (uint64 arbosVersion, uint64 scheduledForTimestamp);
 
     event ChainOwnerRectified(address rectifiedOwner);
 }

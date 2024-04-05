@@ -1,8 +1,17 @@
 [profile.default]
 src = 'src'
 out = 'out'
-libs = ['lib']
-solc = '0.8.17'
+libs = ['node_modules', 'lib']
+cache_path  = 'forge-cache/sol'
 optimizer = true
 optimizer_runs = 2000
+via_ir = false
+solc_version = '0.8.17'
+
+[profile.yul]
+src = 'yul'
+out = 'out/yul'
+libs = ['node_modules', 'lib']
+cache_path  = 'forge-cache/yul'
+
 # See more config options https://github.com/foundry-rs/foundry/tree/master/config

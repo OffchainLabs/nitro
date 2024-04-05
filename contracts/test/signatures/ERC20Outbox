@@ -1,0 +1,23 @@
+{
+  "OUTBOX_VERSION()": "c75184df",
+  "bridge()": "e78cea92",
+  "calculateItemHash(address,address,uint256,uint256,uint256,uint256,bytes)": "9f0c04bf",
+  "calculateMerkleRoot(bytes32[],uint256,bytes32)": "007436d3",
+  "executeTransaction(bytes32[],uint256,address,address,uint256,uint256,uint256,uint256,bytes)": "08635a95",
+  "executeTransactionSimulation(uint256,address,address,uint256,uint256,uint256,uint256,bytes)": "288e5b10",
+  "initialize(address)": "c4d66de8",
+  "isSpent(uint256)": "5a129efe",
+  "l2ToL1BatchNum()": "11985271",
+  "l2ToL1Block()": "46547790",
+  "l2ToL1EthBlock()": "8515bc6a",
+  "l2ToL1OutputId()": "72f2a8c7",
+  "l2ToL1Sender()": "80648b02",
+  "l2ToL1Timestamp()": "b0f30537",
+  "l2ToL1WithdrawalAmount()": "cbf96f63",
+  "postUpgradeInit()": "95fcea78",
+  "rollup()": "cb23bcb5",
+  "roots(bytes32)": "ae6dead7",
+  "spent(uint256)": "d5b5cc23",
+  "updateRollupAddress()": "6ae71f12",
+  "updateSendRoot(bytes32,bytes32)": "a04cee60"
+}

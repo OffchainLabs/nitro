@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro-contracts/blob/main/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
 pragma solidity ^0.8.4;
@@ -16,6 +16,7 @@ import {
     InvalidOutboxSet
 } from "../libraries/Error.sol";
 import "../bridge/IBridge.sol";
+import "../bridge/IEthBridge.sol";
 import "../bridge/Messages.sol";
 import "../libraries/DelegateCallAware.sol";
 
@@ -26,7 +27,7 @@ import "../libraries/DelegateCallAware.sol";
  * Since the escrow is held here, this contract also contains a list of allowed
  * outboxes that can make calls from here and withdraw this escrow.
  */
-contract BridgeTester is Initializable, DelegateCallAware, IBridge {
+contract BridgeTester is Initializable, DelegateCallAware, IBridge, IEthBridge {
     using AddressUpgradeable for address;
 
     struct InOutInfo {
@@ -73,7 +74,7 @@ contract BridgeTester is Initializable, DelegateCallAware, IBridge {
         rollup = rollup_;
     }
 
-    function updateRollupAddress(IOwnable _rollup) external onlyDelegated onlyProxyOwner {
+    function updateRollupAddress(IOwnable _rollup) external {
         rollup = _rollup;
     }
 
@@ -195,7 +196,7 @@ contract BridgeTester is Initializable, DelegateCallAware, IBridge {
         InOutInfo storage info = allowedInboxesMap[inbox];
         bool alreadyEnabled = info.allowed;
         emit InboxToggle(inbox, enabled);
-        if (alreadyEnabled == enabled) {
+        if ((alreadyEnabled && enabled) || (!alreadyEnabled && !enabled)) {
             return;
         }
         if (enabled) {
@@ -215,7 +216,7 @@ contract BridgeTester is Initializable, DelegateCallAware, IBridge {
         InOutInfo storage info = allowedOutboxesMap[outbox];
         bool alreadyEnabled = info.allowed;
         emit OutboxToggle(outbox, enabled);
-        if (alreadyEnabled == enabled) {
+        if ((alreadyEnabled && enabled) || (!alreadyEnabled && !enabled)) {
             return;
         }
         if (enabled) {

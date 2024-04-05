@@ -5,20 +5,23 @@ package solimpl_test
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	commitments "github.com/OffchainLabs/bold/state-commitments/history"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
 	stateprovider "github.com/OffchainLabs/bold/testing/mocks/state-provider"
 	"github.com/OffchainLabs/bold/testing/setup"
 	"github.com/OffchainLabs/bold/util"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/stretchr/testify/require"
 )
 
@@ -578,6 +581,28 @@ func TestEdgeChallengeManager_ConfirmByTime_MoreComplexScenario(t *testing.T) {
 	})
 }
 
+func upgradeWasmModuleRoot(
+	t *testing.T,
+	opts *bind.TransactOpts,
+	executor common.Address,
+	backend *backends.SimulatedBackend,
+	rollup common.Address,
+	wasmModuleRoot common.Hash,
+) {
+	execBindings, err := mocksgen.NewUpgradeExecutorMock(executor, backend)
+	require.NoError(t, err)
+	abiItem, err := abi.JSON(strings.NewReader(rollupgen.RollupAdminLogicABI))
+	require.NoError(t, err)
+	data, err := abiItem.Pack(
+		"setWasmModuleRoot",
+		wasmModuleRoot,
+	)
+	require.NoError(t, err)
+	_, err = execBindings.ExecuteCall(opts, rollup, data)
+	require.NoError(t, err)
+	backend.Commit()
+}
+
 func TestUpgradingConfigMidChallenge(t *testing.T) {
 	ctx := context.Background()
 	scenario := setupOneStepProofScenario(t)
@@ -591,21 +616,14 @@ func TestUpgradingConfigMidChallenge(t *testing.T) {
 	require.NoError(t, err)
 
 	newWasmModuleRoot := common.BytesToHash([]byte("nyannyannyan"))
-	tx, err := adminLogic.SetWasmModuleRoot(adminAccount, newWasmModuleRoot)
-	require.NoError(t, err)
-	err = challenge_testing.WaitForTx(ctx, backend, tx)
-	require.NoError(t, err)
-	receipt, err := backend.TransactionReceipt(ctx, tx.Hash())
-	require.NoError(t, err)
-	require.Equal(t, types.ReceiptStatusSuccessful, receipt.Status)
-
-	tx, err = adminLogic.SetConfirmPeriodBlocks(adminAccount, uint64(329094))
-	require.NoError(t, err)
-	err = challenge_testing.WaitForTx(ctx, backend, tx)
-	require.NoError(t, err)
-	receipt, err = backend.TransactionReceipt(ctx, tx.Hash())
-	require.NoError(t, err)
-	require.Equal(t, types.ReceiptStatusSuccessful, receipt.Status)
+	upgradeWasmModuleRoot(
+		t,
+		adminAccount,
+		scenario.topLevelFork.Addrs.UpgradeExecutor,
+		backend,
+		rollupAddr,
+		newWasmModuleRoot,
+	)
 
 	// We confirm the edge by one-step-proof.
 	honestEdge := scenario.smallStepHonestEdge

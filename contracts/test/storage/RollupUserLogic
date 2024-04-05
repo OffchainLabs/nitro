@@ -1,0 +1,32 @@
+| Name                           | Type                                          | Slot | Offset | Bytes | Contract                                       |
+|--------------------------------|-----------------------------------------------|------|--------|-------|------------------------------------------------|
+| _initialized                   | uint8                                         | 0    | 0      | 1     | src/rollup/RollupUserLogic.sol:RollupUserLogic |
+| _initializing                  | bool                                          | 0    | 1      | 1     | src/rollup/RollupUserLogic.sol:RollupUserLogic |
+| __gap                          | uint256[50]                                   | 1    | 0      | 1600  | src/rollup/RollupUserLogic.sol:RollupUserLogic |
+| _paused                        | bool                                          | 51   | 0      | 1     | src/rollup/RollupUserLogic.sol:RollupUserLogic |
+| __gap                          | uint256[49]                                   | 52   | 0      | 1568  | src/rollup/RollupUserLogic.sol:RollupUserLogic |
+| chainId                        | uint256                                       | 101  | 0      | 32    | src/rollup/RollupUserLogic.sol:RollupUserLogic |
+| confirmPeriodBlocks            | uint64                                        | 102  | 0      | 8     | src/rollup/RollupUserLogic.sol:RollupUserLogic |
+| baseStake                      | uint256                                       | 103  | 0      | 32    | src/rollup/RollupUserLogic.sol:RollupUserLogic |
+| wasmModuleRoot                 | bytes32                                       | 104  | 0      | 32    | src/rollup/RollupUserLogic.sol:RollupUserLogic |
+| challengeManager               | contract IEdgeChallengeManager                | 105  | 0      | 20    | src/rollup/RollupUserLogic.sol:RollupUserLogic |
+| challengeGracePeriodBlocks     | uint64                                        | 105  | 20     | 8     | src/rollup/RollupUserLogic.sol:RollupUserLogic |
+| inbox                          | contract IInboxBase                           | 106  | 0      | 20    | src/rollup/RollupUserLogic.sol:RollupUserLogic |
+| bridge                         | contract IBridge                              | 107  | 0      | 20    | src/rollup/RollupUserLogic.sol:RollupUserLogic |
+| outbox                         | contract IOutbox                              | 108  | 0      | 20    | src/rollup/RollupUserLogic.sol:RollupUserLogic |
+| rollupEventInbox               | contract IRollupEventInbox                    | 109  | 0      | 20    | src/rollup/RollupUserLogic.sol:RollupUserLogic |
+| validatorWalletCreator         | address                                       | 110  | 0      | 20    | src/rollup/RollupUserLogic.sol:RollupUserLogic |
+| loserStakeEscrow               | address                                       | 111  | 0      | 20    | src/rollup/RollupUserLogic.sol:RollupUserLogic |
+| stakeToken                     | address                                       | 112  | 0      | 20    | src/rollup/RollupUserLogic.sol:RollupUserLogic |
+| minimumAssertionPeriod         | uint256                                       | 113  | 0      | 32    | src/rollup/RollupUserLogic.sol:RollupUserLogic |
+| isValidator                    | mapping(address => bool)                      | 114  | 0      | 32    | src/rollup/RollupUserLogic.sol:RollupUserLogic |
+| _latestConfirmed               | bytes32                                       | 115  | 0      | 32    | src/rollup/RollupUserLogic.sol:RollupUserLogic |
+| _assertions                    | mapping(bytes32 => struct AssertionNode)      | 116  | 0      | 32    | src/rollup/RollupUserLogic.sol:RollupUserLogic |
+| _stakerList                    | address[]                                     | 117  | 0      | 32    | src/rollup/RollupUserLogic.sol:RollupUserLogic |
+| _stakerMap                     | mapping(address => struct IRollupCore.Staker) | 118  | 0      | 32    | src/rollup/RollupUserLogic.sol:RollupUserLogic |
+| _withdrawableFunds             | mapping(address => uint256)                   | 119  | 0      | 32    | src/rollup/RollupUserLogic.sol:RollupUserLogic |
+| totalWithdrawableFunds         | uint256                                       | 120  | 0      | 32    | src/rollup/RollupUserLogic.sol:RollupUserLogic |
+| rollupDeploymentBlock          | uint256                                       | 121  | 0      | 32    | src/rollup/RollupUserLogic.sol:RollupUserLogic |
+| validatorWhitelistDisabled     | bool                                          | 122  | 0      | 1     | src/rollup/RollupUserLogic.sol:RollupUserLogic |
+| anyTrustFastConfirmer          | address                                       | 122  | 1      | 20    | src/rollup/RollupUserLogic.sol:RollupUserLogic |
+| _assertionCreatedAtArbSysBlock | mapping(bytes32 => uint256)                   | 123  | 0      | 32    | src/rollup/RollupUserLogic.sol:RollupUserLogic |

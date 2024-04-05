@@ -1,0 +1,8 @@
+| Name    | Type                           | Slot | Offset | Bytes | Contract                               |
+|---------|--------------------------------|------|--------|-------|----------------------------------------|
+| rollup  | address                        | 0    | 0      | 20    | src/bridge/ERC20Outbox.sol:ERC20Outbox |
+| bridge  | contract IBridge               | 1    | 0      | 20    | src/bridge/ERC20Outbox.sol:ERC20Outbox |
+| spent   | mapping(uint256 => bytes32)    | 2    | 0      | 32    | src/bridge/ERC20Outbox.sol:ERC20Outbox |
+| roots   | mapping(bytes32 => bytes32)    | 3    | 0      | 32    | src/bridge/ERC20Outbox.sol:ERC20Outbox |
+| context | struct AbsOutbox.L2ToL1Context | 4    | 0      | 128   | src/bridge/ERC20Outbox.sol:ERC20Outbox |
+| __gap   | uint256[42]                    | 8    | 0      | 1344  | src/bridge/ERC20Outbox.sol:ERC20Outbox |

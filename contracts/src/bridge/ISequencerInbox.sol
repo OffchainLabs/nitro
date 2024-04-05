@@ -1,5 +1,5 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// For license information, see https://github.com/OffchainLabs/nitro-contracts/blob/main/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
 // solhint-disable-next-line compiler-version
@@ -18,27 +18,14 @@ interface ISequencerInbox is IDelayedMessageProvider {
         uint256 futureSeconds;
     }
 
-    struct TimeBounds {
-        uint64 minTimestamp;
-        uint64 maxTimestamp;
-        uint64 minBlockNumber;
-        uint64 maxBlockNumber;
-    }
-
-    enum BatchDataLocation {
-        TxInput,
-        SeparateBatchEvent,
-        NoData
-    }
-
     event SequencerBatchDelivered(
         uint256 indexed batchSequenceNumber,
         bytes32 indexed beforeAcc,
         bytes32 indexed afterAcc,
         bytes32 delayedAcc,
         uint256 afterDelayedMessagesRead,
-        TimeBounds timeBounds,
-        BatchDataLocation dataLocation
+        IBridge.TimeBounds timeBounds,
+        IBridge.BatchDataLocation dataLocation
     );
 
     event OwnerFunctionCalled(uint256 indexed id);
@@ -61,9 +48,40 @@ interface ISequencerInbox is IDelayedMessageProvider {
     function HEADER_LENGTH() external view returns (uint256);
 
     /// @dev If the first batch data byte after the header has this bit set,
-    ///      the sequencer inbox has authenticated the data. Currently not used.
+    ///      the sequencer inbox has authenticated the data. Currently only used for 4844 blob support.
+    ///      See: https://github.com/OffchainLabs/nitro/blob/69de0603abf6f900a4128cab7933df60cad54ded/arbstate/das_reader.go
     // solhint-disable-next-line func-name-mixedcase
     function DATA_AUTHENTICATED_FLAG() external view returns (bytes1);
+
+    /// @dev If the first data byte after the header has this bit set,
+    ///      then the batch data is to be found in 4844 data blobs
+    ///      See: https://github.com/OffchainLabs/nitro/blob/69de0603abf6f900a4128cab7933df60cad54ded/arbstate/das_reader.go
+    // solhint-disable-next-line func-name-mixedcase
+    function DATA_BLOB_HEADER_FLAG() external view returns (bytes1);
+
+    /// @dev If the first data byte after the header has this bit set,
+    ///      then the batch data is a das message
+    ///      See: https://github.com/OffchainLabs/nitro/blob/69de0603abf6f900a4128cab7933df60cad54ded/arbstate/das_reader.go
+    // solhint-disable-next-line func-name-mixedcase
+    function DAS_MESSAGE_HEADER_FLAG() external view returns (bytes1);
+
+    /// @dev If the first data byte after the header has this bit set,
+    ///      then the batch data is a das message that employs a merklesization strategy
+    ///      See: https://github.com/OffchainLabs/nitro/blob/69de0603abf6f900a4128cab7933df60cad54ded/arbstate/das_reader.go
+    // solhint-disable-next-line func-name-mixedcase
+    function TREE_DAS_MESSAGE_HEADER_FLAG() external view returns (bytes1);
+
+    /// @dev If the first data byte after the header has this bit set,
+    ///      then the batch data has been brotli compressed
+    ///      See: https://github.com/OffchainLabs/nitro/blob/69de0603abf6f900a4128cab7933df60cad54ded/arbstate/das_reader.go
+    // solhint-disable-next-line func-name-mixedcase
+    function BROTLI_MESSAGE_HEADER_FLAG() external view returns (bytes1);
+
+    /// @dev If the first data byte after the header has this bit set,
+    ///      then the batch data uses a zero heavy encoding
+    ///      See: https://github.com/OffchainLabs/nitro/blob/69de0603abf6f900a4128cab7933df60cad54ded/arbstate/das_reader.go
+    // solhint-disable-next-line func-name-mixedcase
+    function ZERO_HEAVY_MESSAGE_HEADER_FLAG() external view returns (bytes1);
 
     function rollup() external view returns (IOwnable);
 
@@ -73,19 +91,24 @@ interface ISequencerInbox is IDelayedMessageProvider {
 
     function maxDataSize() external view returns (uint256);
 
+    /// @notice The batch poster manager has the ability to change the batch poster addresses
+    ///         This enables the batch poster to do key rotation
+    function batchPosterManager() external view returns (address);
+
     struct DasKeySetInfo {
         bool isValidKeyset;
         uint64 creationBlock;
     }
 
+    /// @dev returns 4 uint256 to be compatible with older version
     function maxTimeVariation()
         external
         view
         returns (
-            uint256,
-            uint256,
-            uint256,
-            uint256
+            uint256 delayBlocks,
+            uint256 futureBlocks,
+            uint256 delaySeconds,
+            uint256 futureSeconds
         );
 
     function dasKeySetInfo(bytes32) external view returns (bool, uint64);
@@ -130,9 +153,26 @@ interface ISequencerInbox is IDelayedMessageProvider {
         IGasRefunder gasRefunder
     ) external;
 
+    function addSequencerL2BatchFromOrigin(
+        uint256 sequenceNumber,
+        bytes calldata data,
+        uint256 afterDelayedMessagesRead,
+        IGasRefunder gasRefunder,
+        uint256 prevMessageCount,
+        uint256 newMessageCount
+    ) external;
+
     function addSequencerL2Batch(
         uint256 sequenceNumber,
         bytes calldata data,
+        uint256 afterDelayedMessagesRead,
+        IGasRefunder gasRefunder,
+        uint256 prevMessageCount,
+        uint256 newMessageCount
+    ) external;
+
+    function addSequencerL2BatchFromBlobs(
+        uint256 sequenceNumber,
         uint256 afterDelayedMessagesRead,
         IGasRefunder gasRefunder,
         uint256 prevMessageCount,
@@ -174,9 +214,16 @@ interface ISequencerInbox is IDelayedMessageProvider {
      */
     function setIsSequencer(address addr, bool isSequencer_) external;
 
+    /**
+     * @notice Updates the batch poster manager, the address which has the ability to rotate batch poster keys
+     * @param newBatchPosterManager The new batch poster manager to be set
+     */
+    function setBatchPosterManager(address newBatchPosterManager) external;
+
+    /// @notice Allows the rollup owner to sync the rollup address
+    function updateRollupAddress() external;
+
     // ---------- initializer ----------
 
     function initialize(IBridge bridge_, MaxTimeVariation calldata maxTimeVariation_) external;
-
-    function updateRollupAddress() external;
 }

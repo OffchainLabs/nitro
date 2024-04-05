@@ -164,7 +164,7 @@ func (a *AnvilLocal) Commit() common.Hash {
 	return common.Hash{}
 }
 
-func (a *AnvilLocal) DeployRollup(ctx context.Context, opts ...challenge_testing.Opt) (common.Address, error) {
+func (a *AnvilLocal) DeployRollup(ctx context.Context, opts ...challenge_testing.Opt) (*setup.RollupAddresses, error) {
 	prod := false
 	wasmModuleRoot := common.Hash{}
 	rollupOwner := a.accounts[0].From
@@ -183,17 +183,17 @@ func (a *AnvilLocal) DeployRollup(ctx context.Context, opts ...challenge_testing
 		"WETH",
 	)
 	if err != nil {
-		return common.Address{}, errors.Wrap(err, "could not deploy test weth")
+		return nil, errors.Wrap(err, "could not deploy test weth")
 	}
 	if waitErr := challenge_testing.WaitForTx(ctx, a.client, tx); waitErr != nil {
-		return common.Address{}, errors.Wrap(waitErr, "errored waiting for transaction")
+		return nil, errors.Wrap(waitErr, "errored waiting for transaction")
 	}
 	receipt, err := a.client.TransactionReceipt(ctx, tx.Hash())
 	if err != nil {
-		return common.Address{}, errors.Wrap(err, "could not get tx hash")
+		return nil, errors.Wrap(err, "could not get tx hash")
 	}
 	if receipt.Status != types.ReceiptStatusSuccessful {
-		return common.Address{}, errors.New("receipt not successful")
+		return nil, errors.New("receipt not successful")
 	}
 
 	miniStakeValues := []*big.Int{
@@ -223,89 +223,89 @@ func (a *AnvilLocal) DeployRollup(ctx context.Context, opts ...challenge_testing
 		true,  // Use a mock one step prover entry.
 	)
 	if err != nil {
-		return common.Address{}, errors.Wrap(err, "could not deploy rollup stack")
+		return nil, errors.Wrap(err, "could not deploy rollup stack")
 	}
 
 	value, ok := new(big.Int).SetString("100000", 10)
 	if !ok {
-		return common.Address{}, errors.New("could not set value")
+		return nil, errors.New("could not set value")
 	}
 	a.accounts[0].Value = value
 	mintTx, err := tokenBindings.Deposit(a.accounts[0])
 	if err != nil {
-		return common.Address{}, errors.Wrap(err, "could not mint test weth")
+		return nil, errors.Wrap(err, "could not mint test weth")
 	}
 	if waitErr := challenge_testing.WaitForTx(ctx, a.client, mintTx); waitErr != nil {
-		return common.Address{}, errors.Wrap(waitErr, "errored waiting for transaction")
+		return nil, errors.Wrap(waitErr, "errored waiting for transaction")
 	}
 	receipt, err = a.client.TransactionReceipt(ctx, mintTx.Hash())
 	if err != nil {
-		return common.Address{}, errors.Wrap(err, "could not get tx hash")
+		return nil, errors.Wrap(err, "could not get tx hash")
 	}
 	if receipt.Status != types.ReceiptStatusSuccessful {
-		return common.Address{}, errors.New("receipt errored")
+		return nil, errors.New("receipt errored")
 	}
 	a.accounts[0].Value = big.NewInt(0)
 	rollupCaller, err := rollupgen.NewRollupUserLogicCaller(result.Rollup, a.client)
 	if err != nil {
-		return common.Address{}, err
+		return nil, err
 	}
 	chalManagerAddr, err := rollupCaller.ChallengeManager(util.GetSafeCallOpts(&bind.CallOpts{}))
 	if err != nil {
-		return common.Address{}, err
+		return nil, err
 	}
 	seed, ok := new(big.Int).SetString("1000", 10)
 	if !ok {
-		return common.Address{}, errors.New("could not set big int")
+		return nil, errors.New("could not set big int")
 	}
 	for _, acc := range a.accounts[1:] {
 		transferTx, err := tokenBindings.TestWETH9Transactor.Transfer(a.accounts[0], acc.From, seed)
 		if err != nil {
-			return common.Address{}, errors.Wrap(err, "could not approve account")
+			return nil, errors.Wrap(err, "could not approve account")
 		}
 		if waitErr := challenge_testing.WaitForTx(ctx, a.client, transferTx); waitErr != nil {
-			return common.Address{}, errors.Wrap(waitErr, "errored waiting for transfer transaction")
+			return nil, errors.Wrap(waitErr, "errored waiting for transfer transaction")
 		}
 		receipt, err := a.client.TransactionReceipt(ctx, transferTx.Hash())
 		if err != nil {
-			return common.Address{}, errors.Wrap(err, "could not get tx receipt")
+			return nil, errors.Wrap(err, "could not get tx receipt")
 		}
 		if receipt.Status != types.ReceiptStatusSuccessful {
-			return common.Address{}, errors.New("receipt not successful")
+			return nil, errors.New("receipt not successful")
 		}
 		approveTx, err := tokenBindings.TestWETH9Transactor.Approve(acc, result.Rollup, value)
 		if err != nil {
-			return common.Address{}, errors.Wrap(err, "could not approve account")
+			return nil, errors.Wrap(err, "could not approve account")
 		}
 		if waitErr := challenge_testing.WaitForTx(ctx, a.client, approveTx); waitErr != nil {
-			return common.Address{}, errors.Wrap(waitErr, "errored waiting for approval transaction")
+			return nil, errors.Wrap(waitErr, "errored waiting for approval transaction")
 		}
 		receipt, err = a.client.TransactionReceipt(ctx, approveTx.Hash())
 		if err != nil {
-			return common.Address{}, errors.Wrap(err, "could not get tx receipt")
+			return nil, errors.Wrap(err, "could not get tx receipt")
 		}
 		if receipt.Status != types.ReceiptStatusSuccessful {
-			return common.Address{}, errors.New("receipt not successful")
+			return nil, errors.New("receipt not successful")
 		}
 		approveTx, err = tokenBindings.TestWETH9Transactor.Approve(acc, chalManagerAddr, value)
 		if err != nil {
-			return common.Address{}, errors.Wrap(err, "could not approve account")
+			return nil, errors.Wrap(err, "could not approve account")
 		}
 		if waitErr := challenge_testing.WaitForTx(ctx, a.client, approveTx); waitErr != nil {
-			return common.Address{}, errors.Wrap(waitErr, "errored waiting for approval transaction")
+			return nil, errors.Wrap(waitErr, "errored waiting for approval transaction")
 		}
 		receipt, err = a.client.TransactionReceipt(ctx, approveTx.Hash())
 		if err != nil {
-			return common.Address{}, errors.Wrap(err, "could not get tx receipt")
+			return nil, errors.Wrap(err, "could not get tx receipt")
 		}
 		if receipt.Status != types.ReceiptStatusSuccessful {
-			return common.Address{}, errors.New("receipt not successful")
+			return nil, errors.New("receipt not successful")
 		}
 	}
 
 	a.addresses = result
 
-	return result.Rollup, a.MineBlocks(ctx, 100) // At least 100 blocks should be mined for a challenge to be possible.
+	return result, a.MineBlocks(ctx, 100) // At least 100 blocks should be mined for a challenge to be possible.
 }
 
 // MineBlocks will call anvil to instantly mine n blocks.
