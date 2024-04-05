@@ -47,6 +47,14 @@ func createGroup(ctx context.Context, t *testing.T, streamName, groupName string
 	}
 }
 
+func destroyGroup(ctx context.Context, t *testing.T, streamName, groupName string, client redis.UniversalClient) {
+	t.Helper()
+	_, err := client.XGroupDestroy(ctx, streamName, groupName).Result()
+	if err != nil {
+		t.Fatalf("Error creating stream group: %v", err)
+	}
+}
+
 type configOpt interface {
 	apply(consCfg *ConsumerConfig, prodCfg *ProducerConfig)
 }
@@ -99,6 +107,16 @@ func newProducerConsumers(ctx context.Context, t *testing.T, opts ...configOpt) 
 		consumers = append(consumers, c)
 	}
 	createGroup(ctx, t, streamName, groupName, producer.client)
+	t.Cleanup(func() {
+		destroyGroup(ctx, t, streamName, groupName, producer.client)
+		var keys []string
+		for _, c := range consumers {
+			keys = append(keys, c.heartBeatKey())
+		}
+		if _, err := producer.client.Del(ctx, keys...).Result(); err != nil {
+			t.Fatalf("Error deleting heartbeat keys: %v\n", err)
+		}
+	})
 	return producer, consumers
 }
 
@@ -355,7 +373,7 @@ func TestRedisClaimingOwnershipReproduceDisabled(t *testing.T) {
 	if len(gotResponses) != wantMsgCnt {
 		t.Errorf("Got %d responses want: %d\n", len(gotResponses), wantMsgCnt)
 	}
-	if cnt := len(producer.promises); cnt != 0 {
+	if cnt := producer.promisesLen(); cnt != 0 {
 		t.Errorf("Producer still has %d unfullfilled promises", cnt)
 	}
 }
