@@ -12,6 +12,7 @@ import (
 	"io"
 	"math/big"
 	"os"
+	"strings"
 	"testing"
 	"time"
 
@@ -26,6 +27,7 @@ import (
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
 	"github.com/OffchainLabs/bold/testing/setup"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -119,7 +121,7 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	}()
 
 	l2nodeConfig := arbnode.ConfigDefaultL1Test()
-	_, l2nodeB, assertionChainB := create2ndNodeWithConfigForBoldProtocol(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, l2nodeConfig, nil, stakeTokenAddr)
+	_, l2nodeB, _ := create2ndNodeWithConfigForBoldProtocol(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, l2nodeConfig, nil, stakeTokenAddr)
 	defer l2nodeB.StopAndWait()
 
 	nodeAMessage, err := l2nodeA.Execution.HeadMessageNumber()
@@ -130,26 +132,10 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 		Fatal(t, "node A L2 genesis hash", nodeAMessage, "!= node B L2 genesis hash", nodeBMessage)
 	}
 
-	deployAuth := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
-
 	balance := big.NewInt(params.Ether)
 	balance.Mul(balance, big.NewInt(100))
 	TransferBalance(t, "Faucet", "Asserter", balance, l1info, l1client, ctx)
 	TransferBalance(t, "Faucet", "EvilAsserter", balance, l1info, l1client, ctx)
-
-	t.Log("Setting the minimum assertion period")
-	rollup, err := rollupgen.NewRollupAdminLogicTransactor(assertionChain.RollupAddress(), l1client)
-	Require(t, err)
-	tx, err := rollup.SetMinimumAssertionPeriod(&deployAuth, big.NewInt(0))
-	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l1client, tx)
-	Require(t, err)
-	rollup, err = rollupgen.NewRollupAdminLogicTransactor(assertionChainB.RollupAddress(), l1client)
-	Require(t, err)
-	tx, err = rollup.SetMinimumAssertionPeriod(&deployAuth, big.NewInt(0))
-	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l1client, tx)
-	Require(t, err)
 
 	valCfg := valnode.TestValidationConfig
 	valCfg.UseJit = false
@@ -249,6 +235,33 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 
 	// Post batches to the honest and evil sequencer inbox that are internally equal.
 	// This means the honest and evil sequencer inboxes will agree with all messages in the batch.
+	seqInboxABI, err := abi.JSON(strings.NewReader(bridgegen.SequencerInboxABI))
+	Require(t, err)
+
+	honestUpgradeExec, err := mocksgen.NewUpgradeExecutorMock(l1info.GetAddress("UpgradeExecutor"), l1client)
+	Require(t, err)
+	data, err := seqInboxABI.Pack(
+		"setIsBatchPoster",
+		sequencerTxOpts.From,
+		true,
+	)
+	Require(t, err)
+	honestRollupOwnerOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
+	_, err = honestUpgradeExec.ExecuteCall(&honestRollupOwnerOpts, honestSeqInbox, data)
+	Require(t, err)
+
+	evilUpgradeExec, err := mocksgen.NewUpgradeExecutorMock(l1info.GetAddress("EvilUpgradeExecutor"), l1client)
+	Require(t, err)
+	data, err = seqInboxABI.Pack(
+		"setIsBatchPoster",
+		sequencerTxOpts.From,
+		true,
+	)
+	Require(t, err)
+	evilRollupOwnerOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
+	_, err = evilUpgradeExec.ExecuteCall(&evilRollupOwnerOpts, evilSeqInbox, data)
+	Require(t, err)
+
 	totalMessagesPosted := int64(0)
 	numMessagesPerBatch := int64(5)
 	divergeAt := int64(-1)
@@ -513,6 +526,8 @@ func createTestNodeOnL1ForBoldProtocol(
 	l1info.SetContract("Bridge", addresses.Bridge)
 	l1info.SetContract("SequencerInbox", addresses.SequencerInbox)
 	l1info.SetContract("Inbox", addresses.Inbox)
+	l1info.SetContract("Rollup", addresses.Rollup)
+	l1info.SetContract("UpgradeExecutor", addresses.UpgradeExecutor)
 
 	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, getInitMessage(ctx, t, l1client, addresses), stackConfig, nil)
 	var sequencerTxOptsPtr *bind.TransactOpts
@@ -681,6 +696,7 @@ func deployContractsOnly(
 		ValidatorUtils:         addresses.ValidatorUtils,
 		ValidatorWalletCreator: addresses.ValidatorWalletCreator,
 		DeployedAt:             addresses.DeployedAt,
+		UpgradeExecutor:        addresses.UpgradeExecutor,
 	}
 }
 
@@ -708,6 +724,8 @@ func create2ndNodeWithConfigForBoldProtocol(
 	l1info.SetContract("EvilBridge", addresses.Bridge)
 	l1info.SetContract("EvilSequencerInbox", addresses.SequencerInbox)
 	l1info.SetContract("EvilInbox", addresses.Inbox)
+	l1info.SetContract("EvilRollup", addresses.Rollup)
+	l1info.SetContract("EvilUpgradeExecutor", addresses.UpgradeExecutor)
 
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()

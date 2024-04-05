@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -29,6 +30,7 @@ import (
 	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/OffchainLabs/bold/solgen/go/bridgegen"
+	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
 	prefixproofs "github.com/OffchainLabs/bold/state-commitments/prefix-proofs"
 	mockmanager "github.com/OffchainLabs/bold/testing/mocks/state-provider"
 )
@@ -45,6 +47,21 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 
 	seqInbox := l1info.GetAddress("SequencerInbox")
 	seqInboxBinding, err := bridgegen.NewSequencerInbox(seqInbox, l1client)
+	Require(t, err)
+
+	seqInboxABI, err := abi.JSON(strings.NewReader(bridgegen.SequencerInboxABI))
+	Require(t, err)
+
+	honestUpgradeExec, err := mocksgen.NewUpgradeExecutorMock(l1info.GetAddress("UpgradeExecutor"), l1client)
+	Require(t, err)
+	data, err := seqInboxABI.Pack(
+		"setIsBatchPoster",
+		sequencerTxOpts.From,
+		true,
+	)
+	Require(t, err)
+	honestRollupOwnerOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
+	_, err = honestUpgradeExec.ExecuteCall(&honestRollupOwnerOpts, seqInbox, data)
 	Require(t, err)
 
 	// We will make two batches, with 5 messages in each batch.
@@ -96,9 +113,9 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 	packedProof, err := historyCommitter.PrefixProof(ctx, request, bisectionHeight)
 	Require(t, err)
 
-	data, err := mockmanager.ProofArgs.Unpack(packedProof)
+	dataItem, err := mockmanager.ProofArgs.Unpack(packedProof)
 	Require(t, err)
-	preExpansion, ok := data[0].([][32]byte)
+	preExpansion, ok := dataItem[0].([][32]byte)
 	if !ok {
 		Fatal(t, "wrong type")
 	}
@@ -128,6 +145,21 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 
 	seqInbox := l1info.GetAddress("SequencerInbox")
 	seqInboxBinding, err := bridgegen.NewSequencerInbox(seqInbox, l1client)
+	Require(t, err)
+
+	seqInboxABI, err := abi.JSON(strings.NewReader(bridgegen.SequencerInboxABI))
+	Require(t, err)
+
+	honestUpgradeExec, err := mocksgen.NewUpgradeExecutorMock(l1info.GetAddress("UpgradeExecutor"), l1client)
+	Require(t, err)
+	data, err := seqInboxABI.Pack(
+		"setIsBatchPoster",
+		sequencerTxOpts.From,
+		true,
+	)
+	Require(t, err)
+	honestRollupOwnerOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
+	_, err = honestUpgradeExec.ExecuteCall(&honestRollupOwnerOpts, seqInbox, data)
 	Require(t, err)
 
 	// We will make two batches, with 5 messages in each batch.
