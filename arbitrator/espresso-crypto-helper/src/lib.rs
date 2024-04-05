@@ -1,29 +1,38 @@
 mod bytes;
-mod namespace;
+mod sequencer_data_structures;
 
 use ark_bn254::Bn254;
 use ark_serialize::CanonicalDeserialize;
+use committable::{Commitment, Committable};
+use ethers::solc::artifacts::Block;
 use jf_primitives::{
+    circuit::merkle_tree::MembershipProof,
     merkle_tree::{
-        prelude::LightWeightSHA3MerkleTree, AppendableMerkleTreeScheme, MerkleTreeScheme,
+        prelude::{LightWeightSHA3MerkleTree, MerkleProof},
+        AppendableMerkleTreeScheme, MerkleCommitment, MerkleTreeScheme,
     },
     pcs::prelude::UnivariateUniversalParams,
     vid::{advz::Advz, VidScheme as VidSchemeTrait},
 };
 use lazy_static::lazy_static;
-use namespace::{NameSpaceTable, NamespaceProof, Transaction, TxTableEntryWord};
+use sequencer_data_structures::{
+    BlockMerkleTree, Header, NameSpaceTable, NamespaceProof, Transaction, TxTableEntryWord,
+};
 use sha2::{Digest, Sha256};
 use tagged_base64::TaggedBase64;
 
 use crate::bytes::Bytes;
 
 pub type VidScheme = Advz<Bn254, sha2::Sha256>;
-pub type BlockMerkleTree = LightWeightSHA3MerkleTree<u64>;
 
 lazy_static! {
     // Initialize the byte array from JSON content
     static ref SRS_VEC: Vec<u8> = {
         let json_content = include_str!("../../../config/vid_srs.json");
+        serde_json::from_str(json_content).expect("Failed to deserialize")
+    };
+    static ref HEADER: serde_json::Value = {
+        let json_content = include_str!("../../../config/header.json");
         serde_json::from_str(json_content).expect("Failed to deserialize")
     };
 }
@@ -33,9 +42,17 @@ pub fn verify_merkle_proof_helper(
     _proof_bytes: &[u8],
     _block_comm_bytes: &[u8],
 ) {
-    let mut tree = BlockMerkleTree::from_elems(Some(5), vec![1]).expect("should construct tree");
-    tree.push(1).unwrap();
-    tree.lookup(1).expect_ok().unwrap();
+    let mut tree = BlockMerkleTree::from_elems(Some(6), Vec::<Commitment<Header>>::new())
+        .expect("should construct tree");
+    let header: Header = serde_json::from_value(HEADER.clone()).unwrap();
+    let leaf = header.commit();
+    tree.push(leaf);
+    let (comm, proof) = tree.lookup(0).expect_ok().unwrap();
+    let path = proof.merkle_path();
+    let new_proof = MerkleProof::new(0, path.to_vec());
+    BlockMerkleTree::verify(tree.commitment().digest(), 0, new_proof)
+        .unwrap()
+        .unwrap();
 }
 
 // Helper function to verify a VID namespace proof that takes the byte representations of the proof,
