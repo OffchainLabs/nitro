@@ -68,6 +68,9 @@ type TransactionStreamer struct {
 	broadcastServer *broadcaster.Broadcaster
 	inboxReader     *InboxReader
 	delayedBridge   *DelayedBridge
+
+	cachedL1PriceDataMutex sync.RWMutex
+	cachedL1PriceData      *L1PriceData
 }
 
 type TransactionStreamerConfig struct {
@@ -112,13 +115,129 @@ func NewTransactionStreamer(
 		broadcastServer:    broadcastServer,
 		fatalErrChan:       fatalErrChan,
 		config:             config,
+		cachedL1PriceData: &L1PriceData{
+			msgToL1PriceData: []L1PriceDataOfMsg{},
+		},
 	}
-	streamer.exec.SetTransactionStreamer(streamer)
 	err := streamer.cleanupInconsistentState()
 	if err != nil {
 		return nil, err
 	}
 	return streamer, nil
+}
+
+type L1PriceDataOfMsg struct {
+	callDataUnits            uint64
+	cummulativeCallDataUnits uint64
+	l1GasCharged             uint64
+	cummulativeL1GasCharged  uint64
+}
+
+type L1PriceData struct {
+	startOfL1PriceDataCache     arbutil.MessageIndex
+	endOfL1PriceDataCache       arbutil.MessageIndex
+	msgToL1PriceData            []L1PriceDataOfMsg
+	currentEstimateOfL1GasPrice uint64
+}
+
+func (s *TransactionStreamer) CurrentEstimateOfL1GasPrice() uint64 {
+	s.cachedL1PriceDataMutex.Lock()
+	defer s.cachedL1PriceDataMutex.Unlock()
+
+	currentEstimate, err := s.exec.GetL1GasPriceEstimate()
+	if err != nil {
+		log.Error("error fetching current L2 estimate of L1 gas price hence reusing cached estimate", "err", err)
+	} else {
+		s.cachedL1PriceData.currentEstimateOfL1GasPrice = currentEstimate
+	}
+	return s.cachedL1PriceData.currentEstimateOfL1GasPrice
+}
+
+func (s *TransactionStreamer) BacklogCallDataUnits() uint64 {
+	s.cachedL1PriceDataMutex.RLock()
+	defer s.cachedL1PriceDataMutex.RUnlock()
+
+	size := len(s.cachedL1PriceData.msgToL1PriceData)
+	if size == 0 {
+		return 0
+	}
+	return (s.cachedL1PriceData.msgToL1PriceData[size-1].cummulativeCallDataUnits -
+		s.cachedL1PriceData.msgToL1PriceData[0].cummulativeCallDataUnits +
+		s.cachedL1PriceData.msgToL1PriceData[0].callDataUnits)
+}
+
+func (s *TransactionStreamer) BacklogL1GasCharged() uint64 {
+	s.cachedL1PriceDataMutex.RLock()
+	defer s.cachedL1PriceDataMutex.RUnlock()
+
+	size := len(s.cachedL1PriceData.msgToL1PriceData)
+	if size == 0 {
+		return 0
+	}
+	return (s.cachedL1PriceData.msgToL1PriceData[size-1].cummulativeL1GasCharged -
+		s.cachedL1PriceData.msgToL1PriceData[0].cummulativeL1GasCharged +
+		s.cachedL1PriceData.msgToL1PriceData[0].l1GasCharged)
+}
+
+func (s *TransactionStreamer) TrimCache(to arbutil.MessageIndex) {
+	s.cachedL1PriceDataMutex.Lock()
+	defer s.cachedL1PriceDataMutex.Unlock()
+
+	if to < s.cachedL1PriceData.startOfL1PriceDataCache {
+		log.Info("trying to trim older cache which doesnt exist anymore")
+	} else if to >= s.cachedL1PriceData.endOfL1PriceDataCache {
+		s.cachedL1PriceData.startOfL1PriceDataCache = 0
+		s.cachedL1PriceData.endOfL1PriceDataCache = 0
+		s.cachedL1PriceData.msgToL1PriceData = []L1PriceDataOfMsg{}
+	} else {
+		newStart := to - s.cachedL1PriceData.startOfL1PriceDataCache + 1
+		s.cachedL1PriceData.msgToL1PriceData = s.cachedL1PriceData.msgToL1PriceData[newStart:]
+		s.cachedL1PriceData.startOfL1PriceDataCache = to + 1
+	}
+}
+
+func (s *TransactionStreamer) CacheL1PriceDataOfMsg(seqNum arbutil.MessageIndex, callDataUnits uint64, l1GasCharged uint64) {
+	s.cachedL1PriceDataMutex.Lock()
+	defer s.cachedL1PriceDataMutex.Unlock()
+
+	resetCache := func() {
+		s.cachedL1PriceData.startOfL1PriceDataCache = seqNum
+		s.cachedL1PriceData.endOfL1PriceDataCache = seqNum
+		s.cachedL1PriceData.msgToL1PriceData = []L1PriceDataOfMsg{{
+			callDataUnits:            callDataUnits,
+			cummulativeCallDataUnits: callDataUnits,
+			l1GasCharged:             l1GasCharged,
+			cummulativeL1GasCharged:  l1GasCharged,
+		}}
+	}
+	size := len(s.cachedL1PriceData.msgToL1PriceData)
+	if size == 0 ||
+		s.cachedL1PriceData.startOfL1PriceDataCache == 0 ||
+		s.cachedL1PriceData.endOfL1PriceDataCache == 0 ||
+		arbutil.MessageIndex(size) != s.cachedL1PriceData.endOfL1PriceDataCache-s.cachedL1PriceData.startOfL1PriceDataCache+1 {
+		resetCache()
+		return
+	}
+	if seqNum != s.cachedL1PriceData.endOfL1PriceDataCache+1 {
+		if seqNum > s.cachedL1PriceData.endOfL1PriceDataCache+1 {
+			log.Info("message position higher then current end of l1 price data cache, resetting cache to this message")
+			resetCache()
+		} else if seqNum < s.cachedL1PriceData.startOfL1PriceDataCache {
+			log.Info("message position lower than start of l1 price data cache, ignoring")
+		} else {
+			log.Info("message position already seen in l1 price data cache, ignoring")
+		}
+	} else {
+		cummulativeCallDataUnits := s.cachedL1PriceData.msgToL1PriceData[size-1].cummulativeCallDataUnits
+		cummulativeL1GasCharged := s.cachedL1PriceData.msgToL1PriceData[size-1].cummulativeL1GasCharged
+		s.cachedL1PriceData.msgToL1PriceData = append(s.cachedL1PriceData.msgToL1PriceData, L1PriceDataOfMsg{
+			callDataUnits:            callDataUnits,
+			cummulativeCallDataUnits: cummulativeCallDataUnits + callDataUnits,
+			l1GasCharged:             l1GasCharged,
+			cummulativeL1GasCharged:  cummulativeL1GasCharged + l1GasCharged,
+		})
+		s.cachedL1PriceData.endOfL1PriceDataCache = seqNum
+	}
 }
 
 // Encodes a uint64 as bytes in a lexically sortable manner for database iteration.
@@ -431,6 +550,21 @@ func (s *TransactionStreamer) AddMessages(pos arbutil.MessageIndex, messagesAreC
 	return s.AddMessagesAndEndBatch(pos, messagesAreConfirmed, messages, nil)
 }
 
+func (s *TransactionStreamer) FeedPendingMessageCount() arbutil.MessageIndex {
+	pos := atomic.LoadUint64(&s.broadcasterQueuedMessagesPos)
+	if pos == 0 {
+		return 0
+	}
+
+	s.insertionMutex.Lock()
+	defer s.insertionMutex.Unlock()
+	pos = atomic.LoadUint64(&s.broadcasterQueuedMessagesPos)
+	if pos == 0 {
+		return 0
+	}
+	return arbutil.MessageIndex(pos + uint64(len(s.broadcasterQueuedMessages)))
+}
+
 func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFeedMessage) error {
 	if len(feedMessages) == 0 {
 		return nil
@@ -567,6 +701,8 @@ func endBatch(batch ethdb.Batch) error {
 
 func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbostypes.MessageWithMetadata, batch ethdb.Batch) error {
 	if messagesAreConfirmed {
+		// Trim confirmed messages from l1pricedataCache
+		s.TrimCache(pos + arbutil.MessageIndex(len(messages)))
 		s.reorgMutex.RLock()
 		dups, _, _, err := s.countDuplicateMessages(pos, messages, nil)
 		s.reorgMutex.RUnlock()
@@ -824,10 +960,6 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	return nil
 }
 
-func (s *TransactionStreamer) FetchBatch(batchNum uint64) ([]byte, common.Hash, error) {
-	return s.inboxReader.GetSequencerMessageBytes(context.TODO(), batchNum)
-}
-
 // The caller must hold the insertionMutex
 func (s *TransactionStreamer) ExpectChosenSequencer() error {
 	if s.coordinator != nil {
@@ -867,10 +999,6 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(pos arbutil.MessageIndex
 	}
 
 	return nil
-}
-
-func (s *TransactionStreamer) GenesisBlockNumber() uint64 {
-	return s.chainConfig.ArbitrumChainParams.GenesisBlockNum
 }
 
 // PauseReorgs until a matching call to ResumeReorgs (may be called concurrently)

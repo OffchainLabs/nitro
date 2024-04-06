@@ -26,6 +26,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
@@ -67,10 +68,10 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 		// TODO could the ChainConfig be just []byte?
 		ChainConfig: string(serializedChainConfig),
 		SequencerInboxMaxTimeVariation: rollupgen.ISequencerInboxMaxTimeVariation{
-			DelayBlocks:   60 * 60 * 24 / 15,
-			FutureBlocks:  12,
-			DelaySeconds:  60 * 60 * 24,
-			FutureSeconds: 60 * 60,
+			DelayBlocks:   big.NewInt(60 * 60 * 24 / 15),
+			FutureBlocks:  big.NewInt(12),
+			DelaySeconds:  big.NewInt(60 * 60 * 24),
+			FutureSeconds: big.NewInt(60 * 60),
 		},
 	}
 }
@@ -87,7 +88,6 @@ type Config struct {
 	Staker              staker.L1ValidatorConfig    `koanf:"staker" reload:"hot"`
 	SeqCoordinator      SeqCoordinatorConfig        `koanf:"seq-coordinator"`
 	DataAvailability    das.DataAvailabilityConfig  `koanf:"data-availability"`
-	BlobClient          BlobClientConfig            `koanf:"blob-client"`
 	SyncMonitor         SyncMonitorConfig           `koanf:"sync-monitor"`
 	Dangerous           DangerousConfig             `koanf:"dangerous"`
 	TransactionStreamer TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
@@ -152,7 +152,6 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	staker.L1ValidatorConfigAddOptions(prefix+".staker", f)
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
 	das.DataAvailabilityConfigAddNodeOptions(prefix+".data-availability", f)
-	BlobClientAddOptions(prefix+".blob-client", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
@@ -191,12 +190,14 @@ func ConfigDefaultL1Test() *Config {
 
 func ConfigDefaultL1NonSequencerTest() *Config {
 	config := ConfigDefault
+	config.Dangerous = TestDangerousConfig
 	config.ParentChainReader = headerreader.TestConfig
 	config.InboxReader = TestInboxReaderConfig
 	config.DelayedSequencer.Enable = false
 	config.BatchPoster.Enable = false
 	config.SeqCoordinator.Enable = false
 	config.BlockValidator = staker.TestBlockValidatorConfig
+	config.SyncMonitor = TestSyncMonitorConfig
 	config.Staker = staker.TestL1ValidatorConfig
 	config.Staker.Enable = false
 	config.BlockValidator.ValidationServerConfigs = []rpcclient.ClientConfig{{URL: ""}}
@@ -206,6 +207,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 
 func ConfigDefaultL2Test() *Config {
 	config := ConfigDefault
+	config.Dangerous = TestDangerousConfig
 	config.ParentChainReader.Enable = false
 	config.SeqCoordinator = TestSeqCoordinatorConfig
 	config.Feed.Input.Verify.Dangerous.AcceptMissing = true
@@ -213,6 +215,7 @@ func ConfigDefaultL2Test() *Config {
 	config.SeqCoordinator.Signer.ECDSA.AcceptSequencer = false
 	config.SeqCoordinator.Signer.ECDSA.Dangerous.AcceptMissing = true
 	config.Staker = staker.TestL1ValidatorConfig
+	config.SyncMonitor = TestSyncMonitorConfig
 	config.Staker.Enable = false
 	config.BlockValidator.ValidationServerConfigs = []rpcclient.ClientConfig{{URL: ""}}
 	config.TransactionStreamer = DefaultTransactionStreamerConfig
@@ -223,16 +226,25 @@ func ConfigDefaultL2Test() *Config {
 type DangerousConfig struct {
 	NoL1Listener           bool `koanf:"no-l1-listener"`
 	NoSequencerCoordinator bool `koanf:"no-sequencer-coordinator"`
+	DisableBlobReader      bool `koanf:"disable-blob-reader"`
 }
 
 var DefaultDangerousConfig = DangerousConfig{
 	NoL1Listener:           false,
 	NoSequencerCoordinator: false,
+	DisableBlobReader:      false,
+}
+
+var TestDangerousConfig = DangerousConfig{
+	NoL1Listener:           false,
+	NoSequencerCoordinator: false,
+	DisableBlobReader:      true,
 }
 
 func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".no-l1-listener", DefaultDangerousConfig.NoL1Listener, "DANGEROUS! disables listening to L1. To be used in test nodes only")
 	f.Bool(prefix+".no-sequencer-coordinator", DefaultDangerousConfig.NoSequencerCoordinator, "DANGEROUS! allows sequencing without sequencer-coordinator")
+	f.Bool(prefix+".disable-blob-reader", DefaultDangerousConfig.DisableBlobReader, "DANGEROUS! disables the EIP-4844 blob reader, which is necessary to read batches")
 }
 
 type Node struct {
@@ -242,6 +254,7 @@ type Node struct {
 	L1Reader                *headerreader.HeaderReader
 	TxStreamer              *TransactionStreamer
 	DeployInfo              *chaininfo.RollupAddresses
+	BlobReader              arbstate.BlobReader
 	InboxReader             *InboxReader
 	InboxTracker            *InboxTracker
 	DelayedSequencer        *DelayedSequencer
@@ -255,7 +268,6 @@ type Node struct {
 	SeqCoordinator          *SeqCoordinator
 	MaintenanceRunner       *MaintenanceRunner
 	DASLifecycleManager     *das.LifecycleManager
-	ClassicOutboxRetriever  *ClassicOutboxRetriever
 	SyncMonitor             *SyncMonitor
 	configFetcher           ConfigFetcher
 	ctx                     context.Context
@@ -360,6 +372,7 @@ func createNodeImpl(
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
 	parentChainID *big.Int,
+	blobReader arbstate.BlobReader,
 ) (*Node, error) {
 	config := configFetcher.Get()
 
@@ -370,17 +383,10 @@ func createNodeImpl(
 
 	l2ChainId := l2Config.ChainID.Uint64()
 
-	syncMonitor := NewSyncMonitor(&config.SyncMonitor)
-	var classicOutbox *ClassicOutboxRetriever
-	classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "", true)
-	if err != nil {
-		if l2Config.ArbitrumChainParams.GenesisBlockNum > 0 {
-			log.Warn("Classic Msg Database not found", "err", err)
-		}
-		classicOutbox = nil
-	} else {
-		classicOutbox = NewClassicOutboxRetriever(classicMsgDb)
+	syncConfigFetcher := func() *SyncMonitorConfig {
+		return &configFetcher.Get().SyncMonitor
 	}
+	syncMonitor := NewSyncMonitor(syncConfigFetcher)
 
 	var l1Reader *headerreader.HeaderReader
 	if config.ParentChainReader.Enable {
@@ -463,6 +469,7 @@ func createNodeImpl(
 			L1Reader:                nil,
 			TxStreamer:              txStreamer,
 			DeployInfo:              nil,
+			BlobReader:              blobReader,
 			InboxReader:             nil,
 			InboxTracker:            nil,
 			DelayedSequencer:        nil,
@@ -476,7 +483,6 @@ func createNodeImpl(
 			SeqCoordinator:          coordinator,
 			MaintenanceRunner:       maintenanceRunner,
 			DASLifecycleManager:     nil,
-			ClassicOutboxRetriever:  classicOutbox,
 			SyncMonitor:             syncMonitor,
 			configFetcher:           configFetcher,
 			ctx:                     ctx,
@@ -521,14 +527,6 @@ func createNodeImpl(
 		}
 	} else if l2Config.ArbitrumChainParams.DataAvailabilityCommittee {
 		return nil, errors.New("a data availability service is required for this chain, but it was not configured")
-	}
-
-	var blobReader arbstate.BlobReader
-	if config.BlobClient.BeaconChainUrl != "" {
-		blobReader, err = NewBlobClient(config.BlobClient, l1client)
-		if err != nil {
-			return nil, err
-		}
 	}
 
 	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, daReader, blobReader)
@@ -688,6 +686,7 @@ func createNodeImpl(
 		L1Reader:                l1Reader,
 		TxStreamer:              txStreamer,
 		DeployInfo:              deployInfo,
+		BlobReader:              blobReader,
 		InboxReader:             inboxReader,
 		InboxTracker:            inboxTracker,
 		DelayedSequencer:        delayedSequencer,
@@ -701,7 +700,6 @@ func createNodeImpl(
 		SeqCoordinator:          coordinator,
 		MaintenanceRunner:       maintenanceRunner,
 		DASLifecycleManager:     dasLifecycleManager,
-		ClassicOutboxRetriever:  classicOutbox,
 		SyncMonitor:             syncMonitor,
 		configFetcher:           configFetcher,
 		ctx:                     ctx,
@@ -727,8 +725,9 @@ func CreateNode(
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
 	parentChainID *big.Int,
+	blobReader arbstate.BlobReader,
 ) (*Node, error) {
-	currentNode, err := createNodeImpl(ctx, stack, exec, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID)
+	currentNode, err := createNodeImpl(ctx, stack, exec, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader)
 	if err != nil {
 		return nil, err
 	}
@@ -757,25 +756,45 @@ func CreateNode(
 	return currentNode, nil
 }
 
+func (n *Node) CacheL1PriceDataOfMsg(pos arbutil.MessageIndex, callDataUnits uint64, l1GasCharged uint64) {
+	n.TxStreamer.CacheL1PriceDataOfMsg(pos, callDataUnits, l1GasCharged)
+}
+
+func (n *Node) BacklogL1GasCharged() uint64 {
+	return n.TxStreamer.BacklogL1GasCharged()
+}
+func (n *Node) BacklogCallDataUnits() uint64 {
+	return n.TxStreamer.BacklogCallDataUnits()
+}
+
 func (n *Node) Start(ctx context.Context) error {
 	execClient, ok := n.Execution.(*gethexec.ExecutionNode)
 	if !ok {
 		execClient = nil
 	}
 	if execClient != nil {
-		err := execClient.Initialize(ctx, n, n.SyncMonitor)
+		err := execClient.Initialize(ctx)
 		if err != nil {
 			return fmt.Errorf("error initializing exec client: %w", err)
 		}
 	}
-	n.SyncMonitor.Initialize(n.InboxReader, n.TxStreamer, n.SeqCoordinator, n.Execution)
+	n.SyncMonitor.Initialize(n.InboxReader, n.TxStreamer, n.SeqCoordinator)
 	err := n.Stack.Start()
 	if err != nil {
 		return fmt.Errorf("error starting geth stack: %w", err)
 	}
+	if execClient != nil {
+		execClient.SetConsensusClient(n)
+	}
 	err = n.Execution.Start(ctx)
 	if err != nil {
 		return fmt.Errorf("error starting exec client: %w", err)
+	}
+	if n.BlobReader != nil {
+		err = n.BlobReader.Initialize(ctx)
+		if err != nil {
+			return fmt.Errorf("error initializing blob reader: %w", err)
+		}
 	}
 	if n.InboxTracker != nil {
 		err = n.InboxTracker.Initialize()
@@ -817,12 +836,6 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.SeqCoordinator != nil {
 		n.SeqCoordinator.Start(ctx)
 	} else {
-		if n.DelayedSequencer != nil {
-			err := n.DelayedSequencer.ForceSequenceDelayed(ctx)
-			if err != nil {
-				return fmt.Errorf("error initially sequencing delayed instructions: %w", err)
-			}
-		}
 		n.Execution.Activate()
 	}
 	if n.MaintenanceRunner != nil {
@@ -885,6 +898,7 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.configFetcher != nil {
 		n.configFetcher.Start(ctx)
 	}
+	n.SyncMonitor.Start(ctx)
 	return nil
 }
 
@@ -938,6 +952,7 @@ func (n *Node) StopAndWait() {
 		// Just stops the redis client (most other stuff was stopped earlier)
 		n.SeqCoordinator.StopAndWait()
 	}
+	n.SyncMonitor.StopAndWait()
 	if n.DASLifecycleManager != nil {
 		n.DASLifecycleManager.StopAndWaitUntil(2 * time.Second)
 	}
@@ -947,4 +962,52 @@ func (n *Node) StopAndWait() {
 	if err := n.Stack.Close(); err != nil {
 		log.Error("error on stack close", "err", err)
 	}
+}
+
+func (n *Node) FetchBatch(ctx context.Context, batchNum uint64) ([]byte, common.Hash, error) {
+	return n.InboxReader.GetSequencerMessageBytes(ctx, batchNum)
+}
+
+func (n *Node) FindInboxBatchContainingMessage(message arbutil.MessageIndex) (uint64, bool, error) {
+	return n.InboxTracker.FindInboxBatchContainingMessage(message)
+}
+
+func (n *Node) GetBatchParentChainBlock(seqNum uint64) (uint64, error) {
+	return n.InboxTracker.GetBatchParentChainBlock(seqNum)
+}
+
+func (n *Node) FullSyncProgressMap() map[string]interface{} {
+	return n.SyncMonitor.FullSyncProgressMap()
+}
+
+func (n *Node) Synced() bool {
+	return n.SyncMonitor.Synced()
+}
+
+func (n *Node) SyncTargetMessageCount() arbutil.MessageIndex {
+	return n.SyncMonitor.SyncTargetMessageCount()
+}
+
+// TODO: switch from pulling to pushing safe/finalized
+func (n *Node) GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
+	return n.InboxReader.GetSafeMsgCount(ctx)
+}
+
+func (n *Node) GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
+	return n.InboxReader.GetFinalizedMsgCount(ctx)
+}
+
+func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) error {
+	return n.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta)
+}
+
+func (n *Node) ExpectChosenSequencer() error {
+	return n.TxStreamer.ExpectChosenSequencer()
+}
+
+func (n *Node) ValidatedMessageCount() (arbutil.MessageIndex, error) {
+	if n.BlockValidator == nil {
+		return 0, errors.New("validator not set up")
+	}
+	return n.BlockValidator.GetValidated(), nil
 }

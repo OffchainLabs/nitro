@@ -9,7 +9,7 @@ import (
 	"errors"
 	"time"
 
-	badger "github.com/dgraph-io/badger/v3"
+	badger "github.com/dgraph-io/badger/v4"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -25,9 +25,32 @@ type LocalDBStorageConfig struct {
 	DiscardAfterTimeout    bool   `koanf:"discard-after-timeout"`
 	SyncFromStorageService bool   `koanf:"sync-from-storage-service"`
 	SyncToStorageService   bool   `koanf:"sync-to-storage-service"`
+
+	// BadgerDB options
+	NumMemtables            int   `koanf:"num-memtables"`
+	NumLevelZeroTables      int   `koanf:"num-level-zero-tables"`
+	NumLevelZeroTablesStall int   `koanf:"num-level-zero-tables-stall"`
+	NumCompactors           int   `koanf:"num-compactors"`
+	BaseTableSize           int64 `koanf:"base-table-size"`
+	ValueLogFileSize        int64 `koanf:"value-log-file-size"`
 }
 
-var DefaultLocalDBStorageConfig = LocalDBStorageConfig{}
+var badgerDefaultOptions = badger.DefaultOptions("")
+
+var DefaultLocalDBStorageConfig = LocalDBStorageConfig{
+	Enable:                 false,
+	DataDir:                "",
+	DiscardAfterTimeout:    false,
+	SyncFromStorageService: false,
+	SyncToStorageService:   false,
+
+	NumMemtables:            badgerDefaultOptions.NumMemtables,
+	NumLevelZeroTables:      badgerDefaultOptions.NumLevelZeroTables,
+	NumLevelZeroTablesStall: badgerDefaultOptions.NumLevelZeroTablesStall,
+	NumCompactors:           badgerDefaultOptions.NumCompactors,
+	BaseTableSize:           badgerDefaultOptions.BaseTableSize,
+	ValueLogFileSize:        badgerDefaultOptions.ValueLogFileSize,
+}
 
 func LocalDBStorageConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultLocalDBStorageConfig.Enable, "enable storage/retrieval of sequencer batch data from a database on the local filesystem")
@@ -35,6 +58,14 @@ func LocalDBStorageConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".discard-after-timeout", DefaultLocalDBStorageConfig.DiscardAfterTimeout, "discard data after its expiry timeout")
 	f.Bool(prefix+".sync-from-storage-service", DefaultLocalDBStorageConfig.SyncFromStorageService, "enable db storage to be used as a source for regular sync storage")
 	f.Bool(prefix+".sync-to-storage-service", DefaultLocalDBStorageConfig.SyncToStorageService, "enable db storage to be used as a sink for regular sync storage")
+
+	f.Int(prefix+".num-memtables", DefaultLocalDBStorageConfig.NumMemtables, "BadgerDB option: sets the maximum number of tables to keep in memory before stalling")
+	f.Int(prefix+".num-level-zero-tables", DefaultLocalDBStorageConfig.NumLevelZeroTables, "BadgerDB option: sets the maximum number of Level 0 tables before compaction starts")
+	f.Int(prefix+".num-level-zero-tables-stall", DefaultLocalDBStorageConfig.NumLevelZeroTablesStall, "BadgerDB option: sets the number of Level 0 tables that once reached causes the DB to stall until compaction succeeds")
+	f.Int(prefix+".num-compactors", DefaultLocalDBStorageConfig.NumCompactors, "BadgerDB option: Sets the number of compaction workers to run concurrently")
+	f.Int64(prefix+".base-table-size", DefaultLocalDBStorageConfig.BaseTableSize, "BadgerDB option: sets the maximum size in bytes for LSM table or file in the base level")
+	f.Int64(prefix+".value-log-file-size", DefaultLocalDBStorageConfig.ValueLogFileSize, "BadgerDB option: sets the maximum size of a single log file")
+
 }
 
 type DBStorageService struct {
@@ -44,16 +75,23 @@ type DBStorageService struct {
 	stopWaiter          stopwaiter.StopWaiterSafe
 }
 
-func NewDBStorageService(ctx context.Context, dirPath string, discardAfterTimeout bool) (StorageService, error) {
-	db, err := badger.Open(badger.DefaultOptions(dirPath))
+func NewDBStorageService(ctx context.Context, config *LocalDBStorageConfig) (StorageService, error) {
+	options := badger.DefaultOptions(config.DataDir).
+		WithNumMemtables(config.NumMemtables).
+		WithNumLevelZeroTables(config.NumLevelZeroTables).
+		WithNumLevelZeroTablesStall(config.NumLevelZeroTablesStall).
+		WithNumCompactors(config.NumCompactors).
+		WithBaseTableSize(config.BaseTableSize).
+		WithValueLogFileSize(config.ValueLogFileSize)
+	db, err := badger.Open(options)
 	if err != nil {
 		return nil, err
 	}
 
 	ret := &DBStorageService{
 		db:                  db,
-		discardAfterTimeout: discardAfterTimeout,
-		dirPath:             dirPath,
+		discardAfterTimeout: config.DiscardAfterTimeout,
+		dirPath:             config.DataDir,
 	}
 	if err := ret.stopWaiter.Start(ctx, ret); err != nil {
 		return nil, err

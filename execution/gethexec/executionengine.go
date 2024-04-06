@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
@@ -20,16 +21,25 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+)
+
+var (
+	baseFeeGauge               = metrics.NewRegisteredGauge("arb/block/basefee", nil)
+	blockGasUsedHistogram      = metrics.NewRegisteredHistogram("arb/block/gasused", nil, metrics.NewBoundedHistogramSample())
+	txCountHistogram           = metrics.NewRegisteredHistogram("arb/block/transactions/count", nil, metrics.NewBoundedHistogramSample())
+	txGasUsedHistogram         = metrics.NewRegisteredHistogram("arb/block/transactions/gasused", nil, metrics.NewBoundedHistogramSample())
+	gasUsedSinceStartupCounter = metrics.NewRegisteredCounter("arb/gas_used", nil)
 )
 
 type ExecutionEngine struct {
 	stopwaiter.StopWaiter
 
-	bc       *core.BlockChain
-	streamer execution.TransactionStreamer
-	recorder *BlockRecorder
+	bc        *core.BlockChain
+	consensus execution.FullConsensusClient
+	recorder  *BlockRecorder
 
 	resequenceChan    chan []*arbostypes.MessageWithMetadata
 	createBlocksMutex sync.Mutex
@@ -83,14 +93,18 @@ func (s *ExecutionEngine) EnablePrefetchBlock() {
 	s.prefetchBlock = true
 }
 
-func (s *ExecutionEngine) SetTransactionStreamer(streamer execution.TransactionStreamer) {
+func (s *ExecutionEngine) SetConsensus(consensus execution.FullConsensusClient) {
 	if s.Started() {
-		panic("trying to set transaction streamer after start")
+		panic("trying to set transaction consensus after start")
 	}
-	if s.streamer != nil {
-		panic("trying to set transaction streamer when already set")
+	if s.consensus != nil {
+		panic("trying to set transaction consensus when already set")
 	}
-	s.streamer = streamer
+	s.consensus = consensus
+}
+
+func (s *ExecutionEngine) GetBatchFetcher() execution.BatchFetcher {
+	return s.consensus
 }
 
 func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) error {
@@ -266,7 +280,7 @@ func (s *ExecutionEngine) sequencerWrapper(sequencerFunc func() (*types.Block, e
 		}
 		// We got SequencerInsertLockTaken
 		// option 1: there was a race, we are no longer main sequencer
-		chosenErr := s.streamer.ExpectChosenSequencer()
+		chosenErr := s.consensus.ExpectChosenSequencer()
 		if chosenErr != nil {
 			return nil, chosenErr
 		}
@@ -314,6 +328,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		s.bc,
 		s.bc.Config(),
 		hooks,
+		false,
 	)
 	if err != nil {
 		return nil, err
@@ -353,7 +368,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, err
 	}
 
-	err = s.streamer.WriteMessageFromSequencer(pos, msgWithMeta)
+	err = s.consensus.WriteMessageFromSequencer(pos, msgWithMeta)
 	if err != nil {
 		return nil, err
 	}
@@ -364,6 +379,8 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	if err != nil {
 		return nil, err
 	}
+
+	s.cacheL1PriceDataOfMsg(pos, receipts, block)
 
 	return block, nil
 }
@@ -397,13 +414,13 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		DelayedMessagesRead: delayedSeqNum + 1,
 	}
 
-	err = s.streamer.WriteMessageFromSequencer(lastMsg+1, messageWithMeta)
+	err = s.consensus.WriteMessageFromSequencer(lastMsg+1, messageWithMeta)
 	if err != nil {
 		return nil, err
 	}
 
 	startTime := time.Now()
-	block, statedb, receipts, err := s.createBlockFromNextMessage(&messageWithMeta)
+	block, statedb, receipts, err := s.createBlockFromNextMessage(&messageWithMeta, false)
 	if err != nil {
 		return nil, err
 	}
@@ -435,7 +452,7 @@ func (s *ExecutionEngine) MessageIndexToBlockNumber(messageNum arbutil.MessageIn
 }
 
 // must hold createBlockMutex
-func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWithMetadata) (*types.Block, *state.StateDB, types.Receipts, error) {
+func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWithMetadata, isMsgForPrefetch bool) (*types.Block, *state.StateDB, types.Receipts, error) {
 	currentHeader := s.bc.CurrentBlock()
 	if currentHeader == nil {
 		return nil, nil, nil, errors.New("failed to get current block header")
@@ -458,6 +475,11 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	statedb.StartPrefetcher("TransactionStreamer")
 	defer statedb.StopPrefetcher()
 
+	batchFetcher := func(num uint64) ([]byte, error) {
+		data, _, err := s.consensus.FetchBatch(s.GetContext(), num)
+		return data, err
+	}
+
 	block, receipts, err := arbos.ProduceBlock(
 		msg.Message,
 		msg.DelayedMessagesRead,
@@ -465,10 +487,8 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		statedb,
 		s.bc,
 		s.bc.Config(),
-		func(batchNum uint64) ([]byte, error) {
-			data, _, err := s.streamer.FetchBatch(batchNum)
-			return data, err
-		},
+		batchFetcher,
+		isMsgForPrefetch,
 	)
 
 	return block, statedb, receipts, err
@@ -487,6 +507,16 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 	if status == core.SideStatTy {
 		return errors.New("geth rejected block as non-canonical")
 	}
+	baseFeeGauge.Update(block.BaseFee().Int64())
+	txCountHistogram.Update(int64(len(block.Transactions()) - 1))
+	var blockGasused uint64
+	for i := 1; i < len(receipts); i++ {
+		val := arbmath.SaturatingUSub(receipts[i].GasUsed, receipts[i].GasUsedForL1)
+		txGasUsedHistogram.Update(int64(val))
+		blockGasused += val
+	}
+	blockGasUsedHistogram.Update(int64(blockGasused))
+	gasUsedSinceStartupCounter.Inc(int64(blockGasused))
 	return nil
 }
 
@@ -503,6 +533,55 @@ func (s *ExecutionEngine) resultFromHeader(header *types.Header) (*execution.Mes
 
 func (s *ExecutionEngine) ResultAtPos(pos arbutil.MessageIndex) (*execution.MessageResult, error) {
 	return s.resultFromHeader(s.bc.GetHeaderByNumber(s.MessageIndexToBlockNumber(pos)))
+}
+
+func (s *ExecutionEngine) GetL1GasPriceEstimate() (uint64, error) {
+	bc := s.bc
+	latestHeader := bc.CurrentBlock()
+	latestState, err := bc.StateAt(latestHeader.Root)
+	if err != nil {
+		return 0, errors.New("error getting latest statedb while fetching l2 Estimate of L1 GasPrice")
+	}
+	arbState, err := arbosState.OpenSystemArbosState(latestState, nil, true)
+	if err != nil {
+		return 0, errors.New("error opening system arbos state while fetching l2 Estimate of L1 GasPrice")
+	}
+	l2EstimateL1GasPrice, err := arbState.L1PricingState().PricePerUnit()
+	if err != nil {
+		return 0, errors.New("error fetching l2 Estimate of L1 GasPrice")
+	}
+	return l2EstimateL1GasPrice.Uint64(), nil
+}
+
+func (s *ExecutionEngine) getL1PricingSurplus() (int64, error) {
+	bc := s.bc
+	latestHeader := bc.CurrentBlock()
+	latestState, err := bc.StateAt(latestHeader.Root)
+	if err != nil {
+		return 0, errors.New("error getting latest statedb while fetching current L1 pricing surplus")
+	}
+	arbState, err := arbosState.OpenSystemArbosState(latestState, nil, true)
+	if err != nil {
+		return 0, errors.New("error opening system arbos state while fetching current L1 pricing surplus")
+	}
+	surplus, err := arbState.L1PricingState().GetL1PricingSurplus()
+	if err != nil {
+		return 0, errors.New("error fetching current L1 pricing surplus")
+	}
+	return surplus.Int64(), nil
+}
+
+func (s *ExecutionEngine) cacheL1PriceDataOfMsg(num arbutil.MessageIndex, receipts types.Receipts, block *types.Block) {
+	var gasUsedForL1 uint64
+	for i := 1; i < len(receipts); i++ {
+		gasUsedForL1 += receipts[i].GasUsedForL1
+	}
+	gasChargedForL1 := gasUsedForL1 * block.BaseFee().Uint64()
+	var callDataUnits uint64
+	for _, tx := range block.Transactions() {
+		callDataUnits += tx.CalldataUnits
+	}
+	s.consensus.CacheL1PriceDataOfMsg(num, callDataUnits, gasChargedForL1)
 }
 
 // DigestMessage is used to create a block by executing msg against the latest state and storing it.
@@ -532,23 +611,19 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 	}
 
 	startTime := time.Now()
-	var wg sync.WaitGroup
 	if s.prefetchBlock && msgForPrefetch != nil {
-		wg.Add(1)
 		go func() {
-			defer wg.Done()
-			_, _, _, err := s.createBlockFromNextMessage(msgForPrefetch)
+			_, _, _, err := s.createBlockFromNextMessage(msgForPrefetch, true)
 			if err != nil {
 				return
 			}
 		}()
 	}
 
-	block, statedb, receipts, err := s.createBlockFromNextMessage(msg)
+	block, statedb, receipts, err := s.createBlockFromNextMessage(msg, false)
 	if err != nil {
 		return err
 	}
-	wg.Wait()
 	err = s.appendBlock(block, statedb, receipts, time.Since(startTime))
 	if err != nil {
 		return err

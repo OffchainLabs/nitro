@@ -25,6 +25,7 @@ pub use machine::Machine;
 
 use arbutil::{Bytes32, PreimageType};
 use eyre::{Report, Result};
+use lru::LruCache;
 use machine::{
     argument_data_to_inbox, get_empty_preimage_resolver, GlobalState, MachineStatus,
     PreimageResolver,
@@ -32,15 +33,20 @@ use machine::{
 use static_assertions::const_assert_eq;
 use std::{
     ffi::CStr,
+    num::NonZeroUsize,
     os::raw::{c_char, c_int},
     path::Path,
     ptr, slice,
     sync::{
         atomic::{self, AtomicU8},
-        Arc,
+        Arc, Mutex,
     },
 };
 use utils::CBytes;
+
+lazy_static::lazy_static! {
+    static ref BLOBHASH_PREIMAGE_CACHE: Mutex<LruCache<Bytes32, CBytes>> = Mutex::new(LruCache::new(NonZeroUsize::new(12).unwrap()));
+}
 
 #[repr(C)]
 #[derive(Clone, Copy)]
@@ -326,6 +332,30 @@ pub struct ResolvedPreimage {
     pub len: isize, // negative if not found
 }
 
+macro_rules! handle_preimage_resolution {
+    ($context:expr, $ty:expr, $hash:expr, $resolver:expr) => {{
+        let res = $resolver($context, $ty.into(), $hash.as_ptr());
+        if res.len < 0 {
+            return None;
+        }
+        let data = CBytes::from_raw_parts(res.ptr, res.len as usize);
+        // Check if preimage rehashes to the provided hash
+        match crate::utils::hash_preimage(&data, $ty) {
+            Ok(have_hash) if have_hash.as_slice() == *$hash => {}
+            Ok(got_hash) => panic!(
+                "Resolved incorrect data for hash {} (rehashed to {})",
+                $hash,
+                Bytes32(got_hash),
+            ),
+            Err(err) => panic!(
+                "Failed to hash preimage from resolver (expecting hash {}): {}",
+                $hash, err,
+            ),
+        }
+        Some(data)
+    }};
+}
+
 #[no_mangle]
 pub unsafe extern "C" fn arbitrator_set_preimage_resolver(
     mach: *mut Machine,
@@ -333,25 +363,18 @@ pub unsafe extern "C" fn arbitrator_set_preimage_resolver(
 ) {
     (*mach).set_preimage_resolver(Arc::new(
         move |context: u64, ty: PreimageType, hash: Bytes32| -> Option<CBytes> {
-            let res = resolver(context, ty.into(), hash.as_ptr());
-            if res.len < 0 {
+            if let PreimageType::EthVersionedHash = ty {
+                let mut cache = BLOBHASH_PREIMAGE_CACHE.lock().unwrap();
+                if cache.contains(&hash) {
+                    return cache.get(&hash).cloned();
+                }
+                if let Some(data) = handle_preimage_resolution!(context, ty, hash, resolver) {
+                    cache.put(hash, data.clone());
+                    return Some(data);
+                }
                 return None;
             }
-            let data = CBytes::from_raw_parts(res.ptr, res.len as usize);
-            #[cfg(debug_assertions)]
-            match crate::utils::hash_preimage(&data, ty) {
-                Ok(have_hash) if have_hash.as_slice() == *hash => {}
-                Ok(got_hash) => panic!(
-                    "Resolved incorrect data for hash {} (rehashed to {})",
-                    hash,
-                    Bytes32(got_hash),
-                ),
-                Err(err) => panic!(
-                    "Failed to hash preimage from resolver (expecting hash {}): {}",
-                    hash, err,
-                ),
-            }
-            Some(data)
+            handle_preimage_resolution!(context, ty, hash, resolver)
         },
     ) as PreimageResolver);
 }
