@@ -357,6 +357,7 @@ macro_rules! handle_preimage_resolution {
 }
 
 #[no_mangle]
+#[cfg(feature = "native")]
 pub unsafe extern "C" fn arbitrator_set_preimage_resolver(
     mach: *mut Machine,
     resolver: unsafe extern "C" fn(u64, u8, *const u8) -> ResolvedPreimage,
