@@ -57,6 +57,14 @@ func Uint8ToBytes(value uint8) []byte {
 	return []byte{value}
 }
 
+// casts a bool to its big-endian representation
+func BoolToBytes(value bool) []byte {
+	if value {
+		return Uint8ToBytes(1)
+	}
+	return Uint8ToBytes(0)
+}
+
 // BytesToUint creates a uint64 from its big-endian representation
 func BytesToUint(value []byte) uint64 {
 	return binary.BigEndian.Uint64(value)
@@ -75,6 +83,11 @@ func BytesToUint16(value []byte) uint16 {
 // creates a uint8 from its big-endian representation
 func BytesToUint8(value []byte) uint8 {
 	return value[0]
+}
+
+// creates a bool from its big-endian representation
+func BytesToBool(value []byte) bool {
+	return value[0] != 0
 }
 
 // BoolToUint32 assigns a nonzero value when true

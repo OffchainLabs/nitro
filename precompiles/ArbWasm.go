@@ -125,10 +125,10 @@ func (con ArbWasm) PageLimit(c ctx, _ mech) (uint16, error) {
 	return params.PageLimit, err
 }
 
-// Gets the minimum cost to invoke a program
-func (con ArbWasm) MinInitGas(c ctx, _ mech) (uint16, error) {
+// Gets the minimum costs to invoke a program
+func (con ArbWasm) MinInitGas(c ctx, _ mech) (uint8, uint8, error) {
 	params, err := c.State.Programs().Params()
-	return params.MinInitGas, err
+	return params.MinInitGas, params.MinCachedInitGas, err
 }
 
 // Gets the number of days after which programs deactivate

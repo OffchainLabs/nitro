@@ -34,6 +34,7 @@ type Program struct {
 	asmEstimateKb uint24 // Predicted size of the asm
 	activatedAt   uint24 // Hours since Arbitrum began
 	secondsLeft   uint64 // Not stored in state
+	cached        bool
 }
 
 type uint24 = arbmath.Uint24
@@ -128,6 +129,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 		footprint:     info.footprint,
 		asmEstimateKb: estimateKb,
 		activatedAt:   hoursSinceArbitrum(time),
+		cached:        false,
 	}
 	return stylusVersion, codeHash, info.moduleHash, dataFee, false, p.setProgram(codeHash, programData)
 }
@@ -166,12 +168,17 @@ func (p Programs) CallProgram(
 	// pay for memory init
 	open, ever := statedb.GetStylusPages()
 	model := NewMemoryModel(params.FreePages, params.PageGas)
-	memoryCost := model.GasCost(program.footprint, open, ever)
+	callCost := model.GasCost(program.footprint, open, ever)
 
 	// pay for program init
-	callCost := uint64(program.initGas) + uint64(params.MinInitGas)
-	cost := common.SaturatingUAdd(memoryCost, callCost)
-	if err := contract.BurnGas(cost); err != nil {
+	if program.cached {
+		callCost = arbmath.SaturatingUAdd(callCost, 64*uint64(params.MinCachedInitGas))
+		callCost = arbmath.SaturatingUAdd(callCost, uint64(program.cachedInitGas))
+	} else {
+		callCost = arbmath.SaturatingUAdd(callCost, 256*uint64(params.MinInitGas))
+		callCost = arbmath.SaturatingUAdd(callCost, uint64(program.initGas))
+	}
+	if err := contract.BurnGas(callCost); err != nil {
 		return nil, err
 	}
 	statedb.AddStylusPages(program.footprint)
@@ -237,6 +244,7 @@ func (p Programs) getProgram(codeHash common.Hash, time uint64, params *StylusPa
 		footprint:     arbmath.BytesToUint16(data[6:8]),
 		activatedAt:   arbmath.BytesToUint24(data[8:11]),
 		asmEstimateKb: arbmath.BytesToUint24(data[11:14]),
+		cached:        arbmath.BytesToBool(data[14:15]),
 	}
 	if program.version == 0 {
 		return program, ProgramNotActivatedError()
@@ -267,6 +275,7 @@ func (p Programs) setProgram(codehash common.Hash, program Program) error {
 	copy(data[6:], arbmath.Uint16ToBytes(program.footprint))
 	copy(data[8:], arbmath.Uint24ToBytes(program.activatedAt))
 	copy(data[11:], arbmath.Uint24ToBytes(program.asmEstimateKb))
+	copy(data[14:], arbmath.BoolToBytes(program.cached))
 	return p.programs.Set(codehash, data)
 }
 

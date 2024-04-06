@@ -231,13 +231,14 @@ func (con ArbOwner) SetWasmPageLimit(c ctx, evm mech, limit uint16) error {
 	return params.Save()
 }
 
-// Sets the minimum cost to invoke a program
-func (con ArbOwner) SetWasmMinInitGas(c ctx, _ mech, gas uint16) error {
+// Sets the minimum costs to invoke a program
+func (con ArbOwner) SetWasmMinInitGas(c ctx, _ mech, gas, cached uint8) error {
 	params, err := c.State.Programs().Params()
 	if err != nil {
 		return err
 	}
 	params.MinInitGas = gas
+	params.MinCachedInitGas = cached
 	return params.Save()
 }
 
