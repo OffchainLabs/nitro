@@ -44,6 +44,11 @@ func (con ArbWasmCache) EvictCodehash(c ctx, evm mech, codehash hash) error {
 	return con.setProgramCached(c, evm, codehash, false)
 }
 
+// Gets whether a program is cached. Note that the program may be expired.
+func (con ArbWasmCache) CodehashIsCached(c ctx, evm mech, codehash hash) (bool, error) {
+	return c.State.Programs().ProgramCached(codehash)
+}
+
 // Reads the trie table record at the given offset. Caller must be a cache manager or chain owner.
 func (con ArbWasmCache) ReadTrieTableRecord(c ctx, evm mech, offset uint64) (huge, addr, uint64, error) {
 	if !con.hasAccess(c) {

@@ -326,6 +326,13 @@ func (p Programs) ProgramKeepalive(codeHash common.Hash, time uint64, params *St
 
 }
 
+// Gets whether a program is cached. Note that the program may be expired.
+func (p Programs) ProgramCached(codeHash common.Hash) (bool, error) {
+	data, err := p.programs.Get(codeHash)
+	return arbmath.BytesToBool(data[14:15]), err
+}
+
+// Sets whether a program is cached. Errors if the program is expired.
 func (p Programs) SetProgramCached(codeHash common.Hash, cached bool, time uint64, params *StylusParams) error {
 	program, err := p.getProgram(codeHash, time, params)
 	if err != nil {
