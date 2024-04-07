@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/storage"
+	"github.com/offchainlabs/nitro/arbos/util"
 	am "github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -24,8 +25,8 @@ const initialMinInitGas = 0         // assume pricer is correct (update in case 
 const initialMinCachedInitGas = 0   // assume pricer is correct (update in case of emergency)
 const initialExpiryDays = 365       // deactivate after 1 year.
 const initialKeepaliveDays = 31     // wait a month before allowing reactivation
-const initialInitTableSizeBits = 0  // cache nothing
 const initialTrieTableSizeBits = 0  // cache nothing
+const initialTrieTableReads = 0     // cache nothing
 
 // This struct exists to collect the many Stylus configuration parameters into a single word.
 // The items here must only be modified in ArbOwner precompile methods (or in ArbOS upgrades).
@@ -42,29 +43,35 @@ type StylusParams struct {
 	MinCachedInitGas  uint8 // measured in 64-gas increments
 	ExpiryDays        uint16
 	KeepaliveDays     uint16
-	InitTableSizeBits uint8
 	TrieTableSizeBits uint8
+	TrieTableReads    uint8
 }
 
 // Provides a view of the Stylus parameters. Call Save() to persist.
 // Note: this method never returns nil.
 func (p Programs) Params() (*StylusParams, error) {
-	sto := p.backingStorage.OpenSubStorage(paramsKey)
+	sto := p.backingStorage.OpenCachedSubStorage(paramsKey)
 
-	// assume read is warm due to the frequency of access
-	if err := sto.Burner().Burn(params.WarmStorageReadCostEIP2929); err != nil {
+	// assume reads are warm due to the frequency of access
+	if err := sto.Burner().Burn(1 * params.WarmStorageReadCostEIP2929); err != nil {
 		return &StylusParams{}, err
 	}
 
-	// paid for the read above
-	word := sto.GetFree(common.Hash{})
-	data := word[:]
+	// paid for the reads above
+	next := uint64(0)
+	data := []byte{}
 	take := func(count int) []byte {
+		if len(data) < count {
+			word := sto.GetFree(util.UintToHash(next))
+			data = word[:]
+			next += 1
+		}
 		value := data[:count]
 		data = data[count:]
 		return value
 	}
 
+	// order matters!
 	return &StylusParams{
 		backingStorage:    sto,
 		Version:           am.BytesToUint16(take(2)),
@@ -78,8 +85,8 @@ func (p Programs) Params() (*StylusParams, error) {
 		MinCachedInitGas:  am.BytesToUint8(take(1)),
 		ExpiryDays:        am.BytesToUint16(take(2)),
 		KeepaliveDays:     am.BytesToUint16(take(2)),
-		InitTableSizeBits: am.BytesToUint8(take(1)),
 		TrieTableSizeBits: am.BytesToUint8(take(1)),
+		TrieTableReads:    am.BytesToUint8(take(1)),
 	}, nil
 }
 
@@ -90,6 +97,7 @@ func (p *StylusParams) Save() error {
 		return errors.New("invalid StylusParams")
 	}
 
+	// order matters!
 	data := am.ConcatByteSlices(
 		am.Uint16ToBytes(p.Version),
 		am.Uint24ToBytes(p.InkPrice),
@@ -102,12 +110,24 @@ func (p *StylusParams) Save() error {
 		am.Uint8ToBytes(p.MinCachedInitGas),
 		am.Uint16ToBytes(p.ExpiryDays),
 		am.Uint16ToBytes(p.KeepaliveDays),
-		am.Uint8ToBytes(p.InitTableSizeBits),
 		am.Uint8ToBytes(p.TrieTableSizeBits),
+		am.Uint8ToBytes(p.TrieTableReads),
 	)
-	word := common.Hash{}
-	copy(word[:], data) // right-pad with zeros
-	return p.backingStorage.SetByUint64(0, word)
+
+	slot := uint64(0)
+	for len(data) != 0 {
+		next := am.MinInt(32, len(data))
+		info := data[:next]
+		data = data[next:]
+
+		word := common.Hash{}
+		copy(word[:], info) // right-pad with zeros
+		if err := p.backingStorage.SetByUint64(slot, word); err != nil {
+			return err
+		}
+		slot += 1
+	}
+	return nil
 }
 
 func initStylusParams(sto *storage.Storage) {
@@ -124,8 +144,8 @@ func initStylusParams(sto *storage.Storage) {
 		MinCachedInitGas:  initialMinCachedInitGas,
 		ExpiryDays:        initialExpiryDays,
 		KeepaliveDays:     initialKeepaliveDays,
-		InitTableSizeBits: initialInitTableSizeBits,
 		TrieTableSizeBits: initialTrieTableSizeBits,
+		TrieTableReads:    initialTrieTableReads,
 	}
 	_ = params.Save()
 }

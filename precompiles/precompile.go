@@ -572,6 +572,13 @@ func Precompiles() map[addr]ArbosPrecompile {
 		method.arbosVersion = arbostypes.ArbosVersion_Stylus
 	}
 
+	ArbWasmCacheImpl := &ArbWasmCache{Address: types.ArbWasmCacheAddress}
+	ArbWasmCache := insert(MakePrecompile(templates.ArbWasmCacheMetaData, ArbWasmCacheImpl))
+	ArbWasmCache.arbosVersion = arbostypes.ArbosVersion_Stylus
+	for _, method := range ArbWasmCache.methods {
+		method.arbosVersion = arbostypes.ArbosVersion_Stylus
+	}
+
 	ArbRetryableImpl := &ArbRetryableTx{Address: types.ArbRetryableTxAddress}
 	ArbRetryable := insert(MakePrecompile(templates.ArbRetryableTxMetaData, ArbRetryableImpl))
 	arbos.ArbRetryableTxAddress = ArbRetryable.address
@@ -616,6 +623,8 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwner.methodsByName["SetWasmMinInitGas"].arbosVersion = arbostypes.ArbosVersion_Stylus
 	ArbOwner.methodsByName["SetWasmExpiryDays"].arbosVersion = arbostypes.ArbosVersion_Stylus
 	ArbOwner.methodsByName["SetWasmKeepaliveDays"].arbosVersion = arbostypes.ArbosVersion_Stylus
+	ArbOwner.methodsByName["AddWasmCacheManager"].arbosVersion = arbostypes.ArbosVersion_Stylus
+	ArbOwner.methodsByName["RemoveWasmCacheManager"].arbosVersion = arbostypes.ArbosVersion_Stylus
 
 	insert(ownerOnly(ArbOwnerImpl.Address, ArbOwner, emitOwnerActs))
 	_, arbDebug := MakePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")})

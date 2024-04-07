@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbcompress"
+	"github.com/offchainlabs/nitro/arbos/addressSet"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -24,6 +25,7 @@ type Programs struct {
 	programs       *storage.Storage
 	moduleHashes   *storage.Storage
 	dataPricer     *DataPricer
+	cacheManagers  *addressSet.AddressSet
 }
 
 type Program struct {
@@ -43,6 +45,7 @@ var paramsKey = []byte{0}
 var programDataKey = []byte{1}
 var moduleHashesKey = []byte{2}
 var dataPricerKey = []byte{3}
+var cacheManagersKey = []byte{4}
 
 var ErrProgramActivation = errors.New("program activation failed")
 
@@ -55,6 +58,7 @@ var ProgramKeepaliveTooSoon func(age uint64) error
 func Initialize(sto *storage.Storage) {
 	initStylusParams(sto.OpenSubStorage(paramsKey))
 	initDataPricer(sto.OpenSubStorage(dataPricerKey))
+	_ = addressSet.Initialize(sto.OpenCachedSubStorage(cacheManagersKey))
 }
 
 func Open(sto *storage.Storage) *Programs {
@@ -63,11 +67,16 @@ func Open(sto *storage.Storage) *Programs {
 		programs:       sto.OpenSubStorage(programDataKey),
 		moduleHashes:   sto.OpenSubStorage(moduleHashesKey),
 		dataPricer:     openDataPricer(sto.OpenCachedSubStorage(dataPricerKey)),
+		cacheManagers:  addressSet.OpenAddressSet(sto.OpenCachedSubStorage(cacheManagersKey)),
 	}
 }
 
 func (p Programs) DataPricer() *DataPricer {
 	return p.dataPricer
+}
+
+func (p Programs) CacheManagers() *addressSet.AddressSet {
+	return p.cacheManagers
 }
 
 func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode bool) (
@@ -88,7 +97,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 	}
 
 	stylusVersion := params.Version
-	currentVersion, expired, err := p.programExists(codeHash, time, params)
+	currentVersion, expired, cached, err := p.programExists(codeHash, time, params)
 	if err != nil {
 		return 0, codeHash, common.Hash{}, nil, false, err
 	}
@@ -129,7 +138,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 		footprint:     info.footprint,
 		asmEstimateKb: estimateKb,
 		activatedAt:   hoursSinceArbitrum(time),
-		cached:        false,
+		cached:        cached, // TODO: propagate to Rust
 	}
 	return stylusVersion, codeHash, info.moduleHash, dataFee, false, p.setProgram(codeHash, programData)
 }
@@ -279,16 +288,17 @@ func (p Programs) setProgram(codehash common.Hash, program Program) error {
 	return p.programs.Set(codehash, data)
 }
 
-func (p Programs) programExists(codeHash common.Hash, time uint64, params *StylusParams) (uint16, bool, error) {
+func (p Programs) programExists(codeHash common.Hash, time uint64, params *StylusParams) (uint16, bool, bool, error) {
 	data, err := p.programs.Get(codeHash)
 	if err != nil {
-		return 0, false, err
+		return 0, false, false, err
 	}
 
 	version := arbmath.BytesToUint16(data[:2])
 	activatedAt := arbmath.BytesToUint24(data[9:12])
+	cached := arbmath.BytesToBool(data[14:15])
 	expired := hoursToAge(time, activatedAt) > arbmath.DaysToSeconds(params.ExpiryDays)
-	return version, expired, err
+	return version, expired, cached, err
 }
 
 func (p Programs) ProgramKeepalive(codeHash common.Hash, time uint64, params *StylusParams) (*big.Int, error) {
@@ -314,6 +324,15 @@ func (p Programs) ProgramKeepalive(codeHash common.Hash, time uint64, params *St
 	program.activatedAt = hoursSinceArbitrum(time)
 	return dataFee, p.setProgram(codeHash, program)
 
+}
+
+func (p Programs) SetProgramCached(codeHash common.Hash, cached bool, time uint64, params *StylusParams) error {
+	program, err := p.getProgram(codeHash, time, params)
+	if err != nil {
+		return err
+	}
+	program.cached = cached // TODO: propagate to Rust
+	return p.setProgram(codeHash, program)
 }
 
 func (p Programs) CodehashVersion(codeHash common.Hash, time uint64, params *StylusParams) (uint16, error) {
