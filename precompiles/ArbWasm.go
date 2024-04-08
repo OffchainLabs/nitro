@@ -18,6 +18,7 @@ type ArbWasm struct {
 	ProgramLifetimeExtended        func(ctx, mech, hash, huge) error
 	ProgramLifetimeExtendedGasCost func(hash, huge) (uint64, error)
 
+	ProgramNotWasmError           func() error
 	ProgramNotActivatedError      func() error
 	ProgramNeedsUpgradeError      func(version, stylusVersion uint16) error
 	ProgramExpiredError           func(age uint64) error

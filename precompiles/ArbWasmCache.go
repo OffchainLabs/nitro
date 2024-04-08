@@ -3,7 +3,9 @@
 
 package precompiles
 
-import "errors"
+import (
+	"errors"
+)
 
 type ArbWasmCache struct {
 	Address addr // 0x72
@@ -34,21 +36,6 @@ func (con ArbWasmCache) SetTrieTableParams(c ctx, evm mech, bits, reads uint8) e
 	return params.Save()
 }
 
-// Caches all programs with the given codehash. Caller must be a cache manager or chain owner.
-func (con ArbWasmCache) CacheCodehash(c ctx, evm mech, codehash hash) error {
-	return con.setProgramCached(c, evm, codehash, true)
-}
-
-// Evicts all programs with the given codehash. Caller must be a cache manager or chain owner.
-func (con ArbWasmCache) EvictCodehash(c ctx, evm mech, codehash hash) error {
-	return con.setProgramCached(c, evm, codehash, false)
-}
-
-// Gets whether a program is cached. Note that the program may be expired.
-func (con ArbWasmCache) CodehashIsCached(c ctx, evm mech, codehash hash) (bool, error) {
-	return c.State.Programs().ProgramCached(codehash)
-}
-
 // Reads the trie table record at the given offset. Caller must be a cache manager or chain owner.
 func (con ArbWasmCache) ReadTrieTableRecord(c ctx, evm mech, offset uint64) (huge, addr, uint64, error) {
 	if !con.hasAccess(c) {
@@ -65,16 +52,19 @@ func (con ArbWasmCache) WriteTrieTableRecord(c ctx, evm mech, slot huge, program
 	return errors.New("unimplemented")
 }
 
-func (con ArbWasmCache) hasAccess(c ctx) bool {
-	manager, err := c.State.Programs().CacheManagers().IsMember(c.caller)
-	if err != nil {
-		return false
-	}
-	if manager {
-		return true
-	}
-	owner, err := c.State.ChainOwners().IsMember(c.caller)
-	return owner && err != nil
+// Caches all programs with the given codehash. Caller must be a cache manager or chain owner.
+func (con ArbWasmCache) CacheCodehash(c ctx, evm mech, codehash hash) error {
+	return con.setProgramCached(c, evm, codehash, true)
+}
+
+// Evicts all programs with the given codehash. Caller must be a cache manager or chain owner.
+func (con ArbWasmCache) EvictCodehash(c ctx, evm mech, codehash hash) error {
+	return con.setProgramCached(c, evm, codehash, false)
+}
+
+// Gets whether a program is cached. Note that the program may be expired.
+func (con ArbWasmCache) CodehashIsCached(c ctx, evm mech, codehash hash) (bool, error) {
+	return c.State.Programs().ProgramCached(codehash)
 }
 
 func (con ArbWasmCache) setProgramCached(c ctx, evm mech, codehash hash, cached bool) error {
@@ -86,4 +76,16 @@ func (con ArbWasmCache) setProgramCached(c ctx, evm mech, codehash hash, cached 
 		return err
 	}
 	return c.State.Programs().SetProgramCached(codehash, cached, evm.Context.Time, params)
+}
+
+func (con ArbWasmCache) hasAccess(c ctx) bool {
+	manager, err := c.State.Programs().CacheManagers().IsMember(c.caller)
+	if err != nil {
+		return false
+	}
+	if manager {
+		return true
+	}
+	owner, err := c.State.ChainOwners().IsMember(c.caller)
+	return owner && err == nil
 }

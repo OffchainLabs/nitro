@@ -1013,6 +1013,123 @@ func testEarlyExit(t *testing.T, jit bool) {
 	validateBlocks(t, 8, jit, builder)
 }
 
+func TestProgramCacheManager(t *testing.T) {
+	builder, ownerAuth, cleanup := setupProgramTest(t, true)
+	ctx := builder.ctx
+	l2client := builder.L2.Client
+	l2info := builder.L2Info
+	defer cleanup()
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+	denytx := func(tx *types.Transaction, err error) {
+		t.Helper()
+		Require(t, err)
+		signer := types.LatestSignerForChainID(tx.ChainId())
+		from, err := signer.Sender(tx)
+		Require(t, err)
+		msg := ethereum.CallMsg{
+			To:    tx.To(),
+			Value: big.NewInt(0),
+			Data:  tx.Data(),
+			From:  from,
+		}
+		_, err = l2client.CallContract(ctx, msg, nil)
+		if err == nil {
+			Fatal(t, "call should have failed")
+		}
+	}
+	assert := func(cond bool, err error, msg ...interface{}) {
+		t.Helper()
+		Require(t, err)
+		if !cond {
+			Fatal(t, msg...)
+		}
+	}
+
+	// precompiles we plan to use
+	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, builder.L2.Client)
+	Require(t, err)
+	arbWasmCache, err := precompilesgen.NewArbWasmCache(types.ArbWasmCacheAddress, builder.L2.Client)
+	Require(t, err)
+	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
+	ensure(arbOwner.SetInkPrice(&ownerAuth, 10_000))
+
+	// fund a user account we'll use to probe access-restricted methods
+	l2info.GenerateAccount("Anyone")
+	userAuth := l2info.GetDefaultTransactOpts("Anyone", ctx)
+	userAuth.GasLimit = 3e6
+	TransferBalance(t, "Owner", "Anyone", arbmath.BigMulByUint(oneEth, 32), l2info, l2client, ctx)
+
+	// deploy without activating a wasm
+	wasm, _ := readWasmFile(t, rustFile("keccak"))
+	program := deployContract(t, ctx, userAuth, l2client, wasm)
+	codehash := crypto.Keccak256Hash(wasm)
+
+	// try to manage the cache without authorization
+	manager, tx, mock, err := mocksgen.DeploySimpleCacheManager(&ownerAuth, l2client)
+	ensure(tx, err)
+	denytx(mock.CacheProgram(&userAuth, program))
+	denytx(mock.EvictProgram(&userAuth, program))
+	denytx(arbWasmCache.SetTrieTableParams(&userAuth, 10, 1))
+	denytx(arbWasmCache.WriteTrieTableRecord(&userAuth, common.Big0, program, 0, 0))
+
+	// check ownership
+	assert(arbOwner.IsChainOwner(nil, ownerAuth.From))
+	params, err := arbWasmCache.TrieTableParams(nil)
+	assert(params.Bits == 0 && params.Reads == 0, err)
+	ensure(arbWasmCache.SetTrieTableParams(&ownerAuth, 5, 2))
+	params, err = arbWasmCache.TrieTableParams(nil)
+	assert(params.Bits == 5 && params.Reads == 2, err)
+
+	// check non-membership
+	isManager, err := arbWasmCache.IsCacheManager(nil, manager)
+	assert(!isManager, err)
+	cached, err := arbWasmCache.CodehashIsCached(nil, codehash)
+	assert(!cached, err)
+
+	// athorize the manager
+	ensure(arbOwner.AddWasmCacheManager(&ownerAuth, manager))
+	assert(arbWasmCache.IsCacheManager(nil, manager))
+	ensure(mock.SetParams(&userAuth, 10, 1))
+	params, err = arbWasmCache.TrieTableParams(nil)
+	assert(params.Bits == 10 && params.Reads == 1, err)
+
+	// try to cache something inactive
+	denytx(mock.CacheProgram(&userAuth, program))
+	ensure(mock.EvictProgram(&userAuth, program))
+	denytx(mock.CacheProgram(&userAuth, testhelpers.RandomAddress()))
+	ensure(mock.EvictProgram(&userAuth, testhelpers.RandomAddress()))
+
+	// cache the active program
+	activateWasm(t, ctx, userAuth, l2client, program, "keccak")
+	ensure(mock.CacheProgram(&userAuth, program))
+	assert(arbWasmCache.CodehashIsCached(nil, codehash))
+
+	// compare gas costs
+	keccak := func() uint16 {
+		tx := l2info.PrepareTxTo("Owner", &program, 1e9, nil, []byte{0x00})
+		return uint16(ensure(tx, l2client.SendTransaction(ctx, tx)).GasUsedForL2())
+	}
+	ensure(mock.EvictProgram(&userAuth, program))
+	miss := keccak()
+	ensure(mock.CacheProgram(&userAuth, program))
+	hits := keccak()
+	cost, err := arbWasm.ProgramInitGas(nil, program)
+	assert(hits-cost.GasWhenCached == miss-cost.Gas, err)
+
+	// de-authorize manager
+	ensure(arbOwner.RemoveWasmCacheManager(&ownerAuth, manager))
+	denytx(mock.EvictProgram(&userAuth, program))
+	assert(arbWasmCache.CodehashIsCached(nil, codehash))
+}
+
 func setupProgramTest(t *testing.T, jit bool) (
 	*NodeBuilder, bind.TransactOpts, func(),
 ) {

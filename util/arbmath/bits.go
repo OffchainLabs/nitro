@@ -90,6 +90,14 @@ func BytesToBool(value []byte) bool {
 	return value[0] != 0
 }
 
+// BoolToUint8 assigns a nonzero value when true
+func BoolToUint8(value bool) uint8 {
+	if value {
+		return 1
+	}
+	return 0
+}
+
 // BoolToUint32 assigns a nonzero value when true
 func BoolToUint32(value bool) uint32 {
 	if value {

@@ -49,6 +49,7 @@ var cacheManagersKey = []byte{4}
 
 var ErrProgramActivation = errors.New("program activation failed")
 
+var ProgramNotWasmError func() error
 var ProgramNotActivatedError func() error
 var ProgramNeedsUpgradeError func(version, stylusVersion uint16) error
 var ProgramExpiredError func(age uint64) error
@@ -222,7 +223,7 @@ func (p Programs) CallProgram(
 func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
 	prefixedWasm := statedb.GetCode(program)
 	if prefixedWasm == nil {
-		return nil, fmt.Errorf("missing wasm at address %v", program)
+		return nil, ProgramNotWasmError()
 	}
 	wasm, dictByte, err := state.StripStylusPrefix(prefixedWasm)
 	if err != nil {
@@ -297,7 +298,7 @@ func (p Programs) programExists(codeHash common.Hash, time uint64, params *Stylu
 	version := arbmath.BytesToUint16(data[:2])
 	activatedAt := arbmath.BytesToUint24(data[9:12])
 	cached := arbmath.BytesToBool(data[14:15])
-	expired := hoursToAge(time, activatedAt) > arbmath.DaysToSeconds(params.ExpiryDays)
+	expired := activatedAt == 0 || hoursToAge(time, activatedAt) > arbmath.DaysToSeconds(params.ExpiryDays)
 	return version, expired, cached, err
 }
 
@@ -323,7 +324,6 @@ func (p Programs) ProgramKeepalive(codeHash common.Hash, time uint64, params *St
 	}
 	program.activatedAt = hoursSinceArbitrum(time)
 	return dataFee, p.setProgram(codeHash, program)
-
 }
 
 // Gets whether a program is cached. Note that the program may be expired.
@@ -332,14 +332,29 @@ func (p Programs) ProgramCached(codeHash common.Hash) (bool, error) {
 	return arbmath.BytesToBool(data[14:15]), err
 }
 
-// Sets whether a program is cached. Errors if the program is expired.
-func (p Programs) SetProgramCached(codeHash common.Hash, cached bool, time uint64, params *StylusParams) error {
-	program, err := p.getProgram(codeHash, time, params)
+// Sets whether a program is cached. Errors if trying to cache an expired program.
+func (p Programs) SetProgramCached(codeHash common.Hash, cache bool, time uint64, params *StylusParams) error {
+	data, err := p.programs.Get(codeHash)
 	if err != nil {
 		return err
 	}
-	program.cached = cached // TODO: propagate to Rust
-	return p.setProgram(codeHash, program)
+	version := arbmath.BytesToUint16(data[0:2])
+	activatedAt := arbmath.BytesToUint24(data[9:12])
+	cached := arbmath.BytesToBool(data[14:15])
+	age := hoursToAge(time, activatedAt)
+	expired := age > arbmath.DaysToSeconds(params.ExpiryDays)
+
+	if version == 0 && cache {
+		return ProgramNeedsUpgradeError(0, params.Version)
+	}
+	if expired && cache {
+		return ProgramExpiredError(age)
+	}
+	if cached == cache {
+		return nil
+	}
+	data[14] = arbmath.BoolToUint8(cache) // TODO: propagate to Rust
+	return p.programs.Set(codeHash, data)
 }
 
 func (p Programs) CodehashVersion(codeHash common.Hash, time uint64, params *StylusParams) (uint16, error) {
