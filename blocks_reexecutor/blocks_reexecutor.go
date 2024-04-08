@@ -42,10 +42,9 @@ func (c *Config) Validate() error {
 }
 
 var DefaultConfig = Config{
-	Enable:          false,
-	Mode:            "random",
-	Room:            runtime.NumCPU(),
-	BlocksPerThread: 10000,
+	Enable: false,
+	Mode:   "random",
+	Room:   runtime.NumCPU(),
 }
 
 var TestConfig = Config{
@@ -84,24 +83,37 @@ func New(c *Config, blockchain *core.BlockChain, fatalErrChan chan error) *Block
 		start = chainStart
 		end = chainEnd
 	}
-	if start < chainStart {
-		log.Warn("state reexecutor's start block number is lower than genesis, resetting to genesis")
+	if start < chainStart || start > chainEnd {
+		log.Warn("invalid state reexecutor's start block number, resetting to genesis", "start", start, "genesis", chainStart)
 		start = chainStart
 	}
-	if end > chainEnd {
-		log.Warn("state reexecutor's end block number is greater than latest, resetting to latest")
+	if end > chainEnd || end < chainStart {
+		log.Warn("invalid state reexecutor's end block number, resetting to latest", "end", end, "latest", chainEnd)
 		end = chainEnd
 	}
 	if c.Mode == "random" && end != start {
-		if c.BlocksPerThread > end-start {
-			c.BlocksPerThread = end - start
+		// Reexecute a range of 10000 or (non-zero) c.BlocksPerThread number of blocks between start to end picked randomly
+		rng := uint64(10000)
+		if c.BlocksPerThread != 0 {
+			rng = c.BlocksPerThread
 		}
-		start += uint64(rand.Intn(int(end - start - c.BlocksPerThread + 1)))
-		end = start + c.BlocksPerThread
+		if rng > end-start {
+			rng = end - start
+		}
+		start += uint64(rand.Intn(int(end - start - rng + 1)))
+		end = start + rng
 	}
-	// inclusive of block reexecution [start, end]
+	// Inclusive of block reexecution [start, end]
 	if start > 0 {
 		start--
+	}
+	// Divide work equally among available threads
+	if c.BlocksPerThread == 0 {
+		c.BlocksPerThread = 10000
+		work := (end - start) / uint64(c.Room)
+		if work > 0 {
+			c.BlocksPerThread = work
+		}
 	}
 	return &BlocksReExecutor{
 		config:       c,
@@ -125,11 +137,13 @@ func (s *BlocksReExecutor) LaunchBlocksReExecution(ctx context.Context, currentB
 	}
 	// we don't use state release pattern here
 	// TODO do we want to use release pattern here?
-	startState, startHeader, _, err := arbitrum.FindLastAvailableState(ctx, s.blockchain, s.stateFor, s.blockchain.GetHeaderByNumber(start), nil, -1)
+	startState, startHeader, release, err := arbitrum.FindLastAvailableState(ctx, s.blockchain, s.stateFor, s.blockchain.GetHeaderByNumber(start), nil, -1)
 	if err != nil {
 		s.fatalErrChan <- fmt.Errorf("blocksReExecutor failed to get last available state while searching for state at %d, err: %w", start, err)
 		return s.startBlock
 	}
+	// NoOp
+	defer release()
 	start = startHeader.Number.Uint64()
 	s.LaunchThread(func(ctx context.Context) {
 		_, err := arbitrum.AdvanceStateUpToBlock(ctx, s.blockchain, startState, s.blockchain.GetHeaderByNumber(currentBlock), startHeader, nil)
@@ -169,9 +183,14 @@ func (s *BlocksReExecutor) Impl(ctx context.Context) {
 	log.Info("BlocksReExecutor successfully completed re-execution of blocks against historic state", "stateAt", s.startBlock, "startBlock", s.startBlock+1, "endBlock", end)
 }
 
-func (s *BlocksReExecutor) Start(ctx context.Context) {
+func (s *BlocksReExecutor) Start(ctx context.Context, done chan struct{}) {
 	s.StopWaiter.Start(ctx, s)
-	s.LaunchThread(s.Impl)
+	s.LaunchThread(func(ctx context.Context) {
+		s.Impl(ctx)
+		if done != nil {
+			close(done)
+		}
+	})
 }
 
 func (s *BlocksReExecutor) StopAndWait() {
