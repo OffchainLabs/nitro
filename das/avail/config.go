@@ -1,6 +1,8 @@
 package avail
 
-import "time"
+import (
+	"time"
+)
 
 type DAConfig struct {
 	Enable  bool          `koanf:"enable"`
@@ -11,12 +13,13 @@ type DAConfig struct {
 	VectorX string        `koanf:"vectorx"`
 }
 
-func NewDAConfig(api_url string, seed string, app_id int, timeout time.Duration) (*DAConfig, error) {
+func NewDAConfig(api_url string, seed string, app_id int, timeout time.Duration, vectorx string) (*DAConfig, error) {
 	return &DAConfig{
 		Enable:  true,
 		ApiURL:  api_url,
 		Seed:    seed,
 		AppID:   app_id,
 		Timeout: timeout,
+		VectorX: vectorx,
 	}, nil
 }
