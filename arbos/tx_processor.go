@@ -11,7 +11,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 
 	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/ethereum/go-ethereum/core/types"
@@ -663,8 +662,7 @@ func (p *TxProcessor) ScheduledTxes() types.Transactions {
 		if log.Address != ArbRetryableTxAddress || log.Topics[0] != RedeemScheduledEventID {
 			continue
 		}
-		event := &precompilesgen.ArbRetryableTxRedeemScheduled{}
-		err := util.ParseRedeemScheduledLog(event, log)
+		event, err := util.ParseRedeemScheduledLog(log)
 		if err != nil {
 			glog.Error("Failed to parse RedeemScheduled log", "err", err)
 			continue

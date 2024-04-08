@@ -9,6 +9,13 @@ import (
 
 type ArbWasmCache struct {
 	Address addr // 0x72
+
+	UpdateProgramCache           func(ctx, mech, addr, bytes32, bool) error
+	UpdateTrieTable              func(ctx, mech, addr, huge, addr, bool) error
+	UpdateTrieTableParams        func(ctx, mech, addr, uint8, uint8) error
+	UpdateProgramCacheGasCost    func(addr, bytes32, bool) (uint64, error)
+	UpdateTrieTableGasCost       func(addr, huge, addr, bool) (uint64, error)
+	UpdateTrieTableParamsGasCost func(addr, uint8, uint8) (uint64, error)
 }
 
 // See if the user is a cache manager owner.
@@ -33,7 +40,10 @@ func (con ArbWasmCache) SetTrieTableParams(c ctx, evm mech, bits, reads uint8) e
 	}
 	params.TrieTableSizeBits = bits
 	params.TrieTableReads = reads
-	return params.Save()
+	if err := params.Save(); err != nil {
+		return err
+	}
+	return con.UpdateTrieTableParams(c, evm, c.caller, bits, reads)
 }
 
 // Reads the trie table record at the given offset. Caller must be a cache manager or chain owner.
@@ -75,7 +85,10 @@ func (con ArbWasmCache) setProgramCached(c ctx, evm mech, codehash hash, cached 
 	if err != nil {
 		return err
 	}
-	return c.State.Programs().SetProgramCached(codehash, cached, evm.Context.Time, params)
+	emitEvent := func() error {
+		return con.UpdateProgramCache(c, evm, c.caller, codehash, cached)
+	}
+	return c.State.Programs().SetProgramCached(emitEvent, codehash, cached, evm.Context.Time, params)
 }
 
 func (con ArbWasmCache) hasAccess(c ctx) bool {

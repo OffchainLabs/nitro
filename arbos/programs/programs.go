@@ -333,7 +333,7 @@ func (p Programs) ProgramCached(codeHash common.Hash) (bool, error) {
 }
 
 // Sets whether a program is cached. Errors if trying to cache an expired program.
-func (p Programs) SetProgramCached(codeHash common.Hash, cache bool, time uint64, params *StylusParams) error {
+func (p Programs) SetProgramCached(emitEvent func() error, codeHash common.Hash, cache bool, time uint64, params *StylusParams) error {
 	program, err := p.getProgram(codeHash, time)
 	if err != nil {
 		return err
@@ -348,6 +348,9 @@ func (p Programs) SetProgramCached(codeHash common.Hash, cache bool, time uint64
 	}
 	if program.cached == cache {
 		return nil
+	}
+	if err := emitEvent(); err != nil {
+		return err
 	}
 	if cache {
 		// pay to cache the program
