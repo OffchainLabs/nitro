@@ -23,6 +23,11 @@ func (con ArbWasmCache) IsCacheManager(c ctx, _ mech, addr addr) (bool, error) {
 	return c.State.Programs().CacheManagers().IsMember(addr)
 }
 
+// Retrieve all authorized address managers.
+func (con ArbWasmCache) AllCacheManagers(c ctx, _ mech) ([]addr, error) {
+	return c.State.Programs().CacheManagers().AllMembers(65536)
+}
+
 // Gets the trie table params.
 func (con ArbWasmCache) TrieTableParams(c ctx, evm mech) (uint8, uint8, error) {
 	params, err := c.State.Programs().Params()

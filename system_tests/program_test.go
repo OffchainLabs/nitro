@@ -1104,6 +1104,8 @@ func TestProgramCacheManager(t *testing.T) {
 	log := parseParamsLog(ensure(mock.SetParams(&userAuth, 10, 1)).Logs[0])
 	params, err = arbWasmCache.TrieTableParams(nil)
 	assert(log.Bits == 10 && params.Bits == 10 && log.Reads == 1 && params.Reads == 1 && log.Manager == manager, err)
+	all, err := arbWasmCache.AllCacheManagers(nil)
+	assert(len(all) == 1 && all[0] == manager, err)
 
 	// try to cache something inactive
 	denytx(mock.CacheProgram(&userAuth, program))
@@ -1138,6 +1140,8 @@ func TestProgramCacheManager(t *testing.T) {
 	ensure(arbOwner.RemoveWasmCacheManager(&ownerAuth, manager))
 	denytx(mock.EvictProgram(&userAuth, program))
 	assert(arbWasmCache.CodehashIsCached(nil, codehash))
+	all, err = arbWasmCache.AllCacheManagers(nil)
+	assert(len(all) == 0, err)
 
 	_ = parseTrieLog
 }
