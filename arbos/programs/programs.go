@@ -35,7 +35,7 @@ type Program struct {
 	footprint     uint16
 	asmEstimateKb uint24 // Predicted size of the asm
 	activatedAt   uint24 // Hours since Arbitrum began
-	secondsLeft   uint64 // Not stored in state
+	ageSeconds    uint64 // Not stored in state
 	cached        bool
 }
 
@@ -161,7 +161,7 @@ func (p Programs) CallProgram(
 		return nil, err
 	}
 
-	program, err := p.getProgram(contract.CodeHash, evm.Context.Time, params)
+	program, err := p.getActiveProgram(contract.CodeHash, evm.Context.Time, params)
 	if err != nil {
 		return nil, err
 	}
@@ -242,11 +242,9 @@ func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
 	return arbcompress.DecompressWithDictionary(wasm, MaxWasmSize, dict)
 }
 
-func (p Programs) getProgram(codeHash common.Hash, time uint64, params *StylusParams) (Program, error) {
+// Gets a program entry, which may be expired or not yet activated.
+func (p Programs) getProgram(codeHash common.Hash, time uint64) (Program, error) {
 	data, err := p.programs.Get(codeHash)
-	if err != nil {
-		return Program{}, err
-	}
 	program := Program{
 		version:       arbmath.BytesToUint16(data[:2]),
 		initGas:       arbmath.BytesToUint16(data[2:4]),
@@ -255,6 +253,16 @@ func (p Programs) getProgram(codeHash common.Hash, time uint64, params *StylusPa
 		activatedAt:   arbmath.BytesToUint24(data[8:11]),
 		asmEstimateKb: arbmath.BytesToUint24(data[11:14]),
 		cached:        arbmath.BytesToBool(data[14:15]),
+	}
+	program.ageSeconds = hoursToAge(time, program.activatedAt)
+	return program, err
+}
+
+// Gets a program entry. Errors if not active.
+func (p Programs) getActiveProgram(codeHash common.Hash, time uint64, params *StylusParams) (Program, error) {
+	program, err := p.getProgram(codeHash, time)
+	if err != nil {
+		return program, err
 	}
 	if program.version == 0 {
 		return program, ProgramNotActivatedError()
@@ -267,13 +275,9 @@ func (p Programs) getProgram(codeHash common.Hash, time uint64, params *StylusPa
 	}
 
 	// ensure the program hasn't expired
-	expiryDays := params.ExpiryDays
-	age := hoursToAge(time, program.activatedAt)
-	expirySeconds := arbmath.DaysToSeconds(expiryDays)
-	if age > expirySeconds {
-		return program, ProgramExpiredError(age)
+	if program.ageSeconds > arbmath.DaysToSeconds(params.ExpiryDays) {
+		return program, ProgramExpiredError(program.ageSeconds)
 	}
-	program.secondsLeft = arbmath.SaturatingUSub(expirySeconds, age)
 	return program, nil
 }
 
@@ -290,26 +294,22 @@ func (p Programs) setProgram(codehash common.Hash, program Program) error {
 }
 
 func (p Programs) programExists(codeHash common.Hash, time uint64, params *StylusParams) (uint16, bool, bool, error) {
-	data, err := p.programs.Get(codeHash)
+	program, err := p.getProgram(codeHash, time)
 	if err != nil {
 		return 0, false, false, err
 	}
-
-	version := arbmath.BytesToUint16(data[:2])
-	activatedAt := arbmath.BytesToUint24(data[9:12])
-	cached := arbmath.BytesToBool(data[14:15])
+	activatedAt := program.activatedAt
 	expired := activatedAt == 0 || hoursToAge(time, activatedAt) > arbmath.DaysToSeconds(params.ExpiryDays)
-	return version, expired, cached, err
+	return program.version, expired, program.cached, err
 }
 
 func (p Programs) ProgramKeepalive(codeHash common.Hash, time uint64, params *StylusParams) (*big.Int, error) {
-	program, err := p.getProgram(codeHash, time, params)
+	program, err := p.getActiveProgram(codeHash, time, params)
 	if err != nil {
 		return nil, err
 	}
-	keepaliveDays := params.KeepaliveDays
-	if program.secondsLeft < arbmath.DaysToSeconds(keepaliveDays) {
-		return nil, ProgramKeepaliveTooSoon(hoursToAge(time, program.activatedAt))
+	if program.ageSeconds < arbmath.DaysToSeconds(params.KeepaliveDays) {
+		return nil, ProgramKeepaliveTooSoon(program.ageSeconds)
 	}
 
 	stylusVersion := params.Version
@@ -334,52 +334,60 @@ func (p Programs) ProgramCached(codeHash common.Hash) (bool, error) {
 
 // Sets whether a program is cached. Errors if trying to cache an expired program.
 func (p Programs) SetProgramCached(codeHash common.Hash, cache bool, time uint64, params *StylusParams) error {
-	data, err := p.programs.Get(codeHash)
+	program, err := p.getProgram(codeHash, time)
 	if err != nil {
 		return err
 	}
-	version := arbmath.BytesToUint16(data[0:2])
-	activatedAt := arbmath.BytesToUint24(data[9:12])
-	cached := arbmath.BytesToBool(data[14:15])
-	age := hoursToAge(time, activatedAt)
-	expired := age > arbmath.DaysToSeconds(params.ExpiryDays)
+	expired := program.ageSeconds > arbmath.DaysToSeconds(params.ExpiryDays)
 
-	if version == 0 && cache {
+	if program.version == 0 && cache {
 		return ProgramNeedsUpgradeError(0, params.Version)
 	}
 	if expired && cache {
-		return ProgramExpiredError(age)
+		return ProgramExpiredError(program.ageSeconds)
 	}
-	if cached == cache {
+	if program.cached == cache {
 		return nil
 	}
-	data[14] = arbmath.BoolToUint8(cache) // TODO: propagate to Rust
-	return p.programs.Set(codeHash, data)
+	if cache {
+		// pay to cache the program
+		if err := p.programs.Burner().Burn(uint64(program.initGas)); err != nil {
+			return err
+		}
+	}
+	program.cached = cache // TODO: propagate to Rust
+	return p.setProgram(codeHash, program)
 }
 
 func (p Programs) CodehashVersion(codeHash common.Hash, time uint64, params *StylusParams) (uint16, error) {
-	program, err := p.getProgram(codeHash, time, params)
+	program, err := p.getActiveProgram(codeHash, time, params)
 	if err != nil {
 		return 0, err
 	}
 	return program.version, nil
 }
 
+// Gets the number of seconds left until expiration. Errors if it's already happened.
 func (p Programs) ProgramTimeLeft(codeHash common.Hash, time uint64, params *StylusParams) (uint64, error) {
-	program, err := p.getProgram(codeHash, time, params)
+	program, err := p.getActiveProgram(codeHash, time, params)
 	if err != nil {
 		return 0, err
 	}
-	return program.secondsLeft, nil
+	age := hoursToAge(time, program.activatedAt)
+	expirySeconds := arbmath.DaysToSeconds(params.ExpiryDays)
+	if age > expirySeconds {
+		return 0, ProgramExpiredError(age)
+	}
+	return arbmath.SaturatingUSub(expirySeconds, age), nil
 }
 
 func (p Programs) ProgramInitGas(codeHash common.Hash, time uint64, params *StylusParams) (uint16, uint16, error) {
-	program, err := p.getProgram(codeHash, time, params)
+	program, err := p.getActiveProgram(codeHash, time, params)
 	return program.initGas, program.cachedInitGas, err
 }
 
 func (p Programs) ProgramMemoryFootprint(codeHash common.Hash, time uint64, params *StylusParams) (uint16, error) {
-	program, err := p.getProgram(codeHash, time, params)
+	program, err := p.getActiveProgram(codeHash, time, params)
 	return program.footprint, err
 }
 
