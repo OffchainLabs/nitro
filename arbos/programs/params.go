@@ -25,26 +25,22 @@ const initialMinInitGas = 0         // assume pricer is correct (update in case 
 const initialMinCachedInitGas = 0   // assume pricer is correct (update in case of emergency)
 const initialExpiryDays = 365       // deactivate after 1 year.
 const initialKeepaliveDays = 31     // wait a month before allowing reactivation
-const initialTrieTableSizeBits = 0  // cache nothing
-const initialTrieTableReads = 0     // cache nothing
 
 // This struct exists to collect the many Stylus configuration parameters into a single word.
 // The items here must only be modified in ArbOwner precompile methods (or in ArbOS upgrades).
 type StylusParams struct {
-	backingStorage    *storage.Storage
-	Version           uint16 // must only be changed during ArbOS upgrades
-	InkPrice          uint24
-	MaxStackDepth     uint32
-	FreePages         uint16
-	PageGas           uint16
-	PageRamp          uint64
-	PageLimit         uint16
-	MinInitGas        uint8 // measured in 256-gas increments
-	MinCachedInitGas  uint8 // measured in 64-gas increments
-	ExpiryDays        uint16
-	KeepaliveDays     uint16
-	TrieTableSizeBits uint8
-	TrieTableReads    uint8
+	backingStorage   *storage.Storage
+	Version          uint16 // must only be changed during ArbOS upgrades
+	InkPrice         uint24
+	MaxStackDepth    uint32
+	FreePages        uint16
+	PageGas          uint16
+	PageRamp         uint64
+	PageLimit        uint16
+	MinInitGas       uint8 // measured in 256-gas increments
+	MinCachedInitGas uint8 // measured in 64-gas increments
+	ExpiryDays       uint16
+	KeepaliveDays    uint16
 }
 
 // Provides a view of the Stylus parameters. Call Save() to persist.
@@ -73,20 +69,18 @@ func (p Programs) Params() (*StylusParams, error) {
 
 	// order matters!
 	return &StylusParams{
-		backingStorage:    sto,
-		Version:           am.BytesToUint16(take(2)),
-		InkPrice:          am.BytesToUint24(take(3)),
-		MaxStackDepth:     am.BytesToUint32(take(4)),
-		FreePages:         am.BytesToUint16(take(2)),
-		PageGas:           am.BytesToUint16(take(2)),
-		PageRamp:          am.BytesToUint(take(8)),
-		PageLimit:         am.BytesToUint16(take(2)),
-		MinInitGas:        am.BytesToUint8(take(1)),
-		MinCachedInitGas:  am.BytesToUint8(take(1)),
-		ExpiryDays:        am.BytesToUint16(take(2)),
-		KeepaliveDays:     am.BytesToUint16(take(2)),
-		TrieTableSizeBits: am.BytesToUint8(take(1)),
-		TrieTableReads:    am.BytesToUint8(take(1)),
+		backingStorage:   sto,
+		Version:          am.BytesToUint16(take(2)),
+		InkPrice:         am.BytesToUint24(take(3)),
+		MaxStackDepth:    am.BytesToUint32(take(4)),
+		FreePages:        am.BytesToUint16(take(2)),
+		PageGas:          am.BytesToUint16(take(2)),
+		PageRamp:         am.BytesToUint(take(8)),
+		PageLimit:        am.BytesToUint16(take(2)),
+		MinInitGas:       am.BytesToUint8(take(1)),
+		MinCachedInitGas: am.BytesToUint8(take(1)),
+		ExpiryDays:       am.BytesToUint16(take(2)),
+		KeepaliveDays:    am.BytesToUint16(take(2)),
 	}, nil
 }
 
@@ -110,8 +104,6 @@ func (p *StylusParams) Save() error {
 		am.Uint8ToBytes(p.MinCachedInitGas),
 		am.Uint16ToBytes(p.ExpiryDays),
 		am.Uint16ToBytes(p.KeepaliveDays),
-		am.Uint8ToBytes(p.TrieTableSizeBits),
-		am.Uint8ToBytes(p.TrieTableReads),
 	)
 
 	slot := uint64(0)
@@ -132,20 +124,18 @@ func (p *StylusParams) Save() error {
 
 func initStylusParams(sto *storage.Storage) {
 	params := &StylusParams{
-		backingStorage:    sto,
-		Version:           1,
-		InkPrice:          initialInkPrice,
-		MaxStackDepth:     initialStackDepth,
-		FreePages:         InitialFreePages,
-		PageGas:           InitialPageGas,
-		PageRamp:          initialPageRamp,
-		PageLimit:         initialPageLimit,
-		MinInitGas:        initialMinInitGas,
-		MinCachedInitGas:  initialMinCachedInitGas,
-		ExpiryDays:        initialExpiryDays,
-		KeepaliveDays:     initialKeepaliveDays,
-		TrieTableSizeBits: initialTrieTableSizeBits,
-		TrieTableReads:    initialTrieTableReads,
+		backingStorage:   sto,
+		Version:          1,
+		InkPrice:         initialInkPrice,
+		MaxStackDepth:    initialStackDepth,
+		FreePages:        InitialFreePages,
+		PageGas:          InitialPageGas,
+		PageRamp:         initialPageRamp,
+		PageLimit:        initialPageLimit,
+		MinInitGas:       initialMinInitGas,
+		MinCachedInitGas: initialMinCachedInitGas,
+		ExpiryDays:       initialExpiryDays,
+		KeepaliveDays:    initialKeepaliveDays,
 	}
 	_ = params.Save()
 }

@@ -1060,10 +1060,7 @@ func TestProgramCacheManager(t *testing.T) {
 	arbOwner, err := pgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
 	Require(t, err)
 	ensure(arbOwner.SetInkPrice(&ownerAuth, 10_000))
-
-	parseTrieLog := logParser[pgen.ArbWasmCacheUpdateTrieTable](t, pgen.ArbWasmCacheABI, "UpdateProgramTrieTable")
-	parseParamsLog := logParser[pgen.ArbWasmCacheUpdateTrieTableParams](t, pgen.ArbWasmCacheABI, "UpdateTrieTableParams")
-	parseProgramLog := logParser[pgen.ArbWasmCacheUpdateProgramCache](t, pgen.ArbWasmCacheABI, "UpdateProgramCache")
+	parseLog := logParser[pgen.ArbWasmCacheUpdateProgramCache](t, pgen.ArbWasmCacheABI, "UpdateProgramCache")
 
 	// fund a user account we'll use to probe access-restricted methods
 	l2info.GenerateAccount("Anyone")
@@ -1081,29 +1078,14 @@ func TestProgramCacheManager(t *testing.T) {
 	ensure(tx, err)
 	denytx(mock.CacheProgram(&userAuth, program))
 	denytx(mock.EvictProgram(&userAuth, program))
-	denytx(arbWasmCache.SetTrieTableParams(&userAuth, 10, 1))
-	denytx(arbWasmCache.WriteTrieTableRecord(&userAuth, common.Big0, program, 0, 0))
-
-	// check ownership
-	assert(arbOwner.IsChainOwner(nil, ownerAuth.From))
-	params, err := arbWasmCache.TrieTableParams(nil)
-	assert(params.Bits == 0 && params.Reads == 0, err)
-	ensure(arbWasmCache.SetTrieTableParams(&ownerAuth, 5, 2))
-	params, err = arbWasmCache.TrieTableParams(nil)
-	assert(params.Bits == 5 && params.Reads == 2, err)
 
 	// check non-membership
 	isManager, err := arbWasmCache.IsCacheManager(nil, manager)
 	assert(!isManager, err)
-	cached, err := arbWasmCache.CodehashIsCached(nil, codehash)
-	assert(!cached, err)
 
 	// athorize the manager
 	ensure(arbOwner.AddWasmCacheManager(&ownerAuth, manager))
 	assert(arbWasmCache.IsCacheManager(nil, manager))
-	log := parseParamsLog(ensure(mock.SetParams(&userAuth, 10, 1)).Logs[0])
-	params, err = arbWasmCache.TrieTableParams(nil)
-	assert(log.Bits == 10 && params.Bits == 10 && log.Reads == 1 && params.Reads == 1 && log.Manager == manager, err)
 	all, err := arbWasmCache.AllCacheManagers(nil)
 	assert(len(all) == 1 && all[0] == manager, err)
 
@@ -1132,9 +1114,14 @@ func TestProgramCacheManager(t *testing.T) {
 
 	// check logs
 	empty := len(ensure(mock.CacheProgram(&userAuth, program)).Logs)
-	evict := parseProgramLog(ensure(mock.EvictProgram(&userAuth, program)).Logs[0])
-	cache := parseProgramLog(ensure(mock.CacheProgram(&userAuth, program)).Logs[0])
+	evict := parseLog(ensure(mock.EvictProgram(&userAuth, program)).Logs[0])
+	cache := parseLog(ensure(mock.CacheProgram(&userAuth, program)).Logs[0])
 	assert(empty == 0 && evict.Manager == manager && !evict.Cached && cache.Codehash == codehash && cache.Cached, nil)
+
+	// check ownership
+	assert(arbOwner.IsChainOwner(nil, ownerAuth.From))
+	ensure(arbWasmCache.EvictCodehash(&ownerAuth, codehash))
+	ensure(arbWasmCache.CacheCodehash(&ownerAuth, codehash))
 
 	// de-authorize manager
 	ensure(arbOwner.RemoveWasmCacheManager(&ownerAuth, manager))
@@ -1142,8 +1129,6 @@ func TestProgramCacheManager(t *testing.T) {
 	assert(arbWasmCache.CodehashIsCached(nil, codehash))
 	all, err = arbWasmCache.AllCacheManagers(nil)
 	assert(len(all) == 0, err)
-
-	_ = parseTrieLog
 }
 
 func setupProgramTest(t *testing.T, jit bool) (
