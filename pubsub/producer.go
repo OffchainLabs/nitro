@@ -1,3 +1,11 @@
+// Package pubsub implements publisher/subscriber model (one to many).
+// During normal operation, publisher returns "Promise" when publishing a
+// message, which will return resposne from consumer when awaited.
+// If the consumer processing the request becomes inactive, message is
+// re-inserted (if EnableReproduce flag is enabled), and will be picked up by
+// another consumer.
+// We are assuming here that keeepAliveTimeout is set to some sensible value
+// and once consumer becomes inactive, it doesn't activate without restart.
 package pubsub
 
 import (
@@ -37,7 +45,7 @@ type Producer[Request any, Response any] struct {
 	promisesLock sync.RWMutex
 	promises     map[string]*containers.Promise[Response]
 
-	// 	Used for running checks for pending messages with inactive consumers
+	// Used for running checks for pending messages with inactive consumers
 	// and checking responses from consumers iteratively for the first time when
 	// Produce is called.
 	once sync.Once
@@ -112,8 +120,10 @@ func (p *Producer[Request, Response]) errorPromisesFor(msgs []*Message[Request])
 	p.promisesLock.Lock()
 	defer p.promisesLock.Unlock()
 	for _, msg := range msgs {
-		p.promises[msg.ID].ProduceError(fmt.Errorf("internal error, consumer died while serving the request"))
-		delete(p.promises, msg.ID)
+		if msg != nil {
+			p.promises[msg.ID].ProduceError(fmt.Errorf("internal error, consumer died while serving the request"))
+			delete(p.promises, msg.ID)
+		}
 	}
 }
 
@@ -197,6 +207,9 @@ func (p *Producer[Request, Response]) reproduce(ctx context.Context, value Reque
 	p.promisesLock.Lock()
 	defer p.promisesLock.Unlock()
 	promise := p.promises[oldKey]
+	if oldKey != "" && promise == nil {
+		return nil, fmt.Errorf("errror reproducing the message, could not find existing one")
+	}
 	if oldKey == "" || promise == nil {
 		pr := containers.NewPromise[Response](nil)
 		promise = &pr
