@@ -9,7 +9,9 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
 
+	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_arb"
@@ -57,6 +59,8 @@ type ExecServerAPI struct {
 	runIdLock sync.Mutex
 	nextId    uint64
 	runs      map[uint64]*execRunEntry
+
+	consumer *pubsub.Consumer[GetLeavesHashRequest, []common.Hash]
 }
 
 func NewExecutionServerAPI(valSpawner validator.ValidationSpawner, execution validator.ExecutionSpawner, config server_arb.ArbitratorSpawnerConfigFecher) *ExecServerAPI {
@@ -122,6 +126,27 @@ func (a *ExecServerAPI) removeOldRuns(ctx context.Context) time.Duration {
 func (a *ExecServerAPI) Start(ctx_in context.Context) {
 	a.StopWaiter.Start(ctx_in, a)
 	a.CallIteratively(a.removeOldRuns)
+	if a.consumer != nil {
+		a.consumer.Start(ctx_in)
+		a.StopWaiter.CallIteratively(func(ctx context.Context) time.Duration {
+			msg, err := a.consumer.Consume(ctx)
+			if err != nil {
+				log.Error("Consuming request", "error", err)
+				// TODO: consider having this as config param.
+				return time.Second
+			}
+			hashes, err := a.GetLeavesWithStepSize(ctx, msg.Value.ExecutionID, msg.Value.FromBatch, msg.Value.MachineStartIndex, msg.Value.StepSize, msg.Value.NumDesiredLeaves)
+			if err != nil {
+				// TODO: log other fields as well.
+				log.Error("Error getting leaves with stepsize", "error", err)
+			}
+			if err := a.consumer.SetResult(ctx, msg.ID, hashes); err != nil {
+				log.Error("Error setting result", "error", err)
+			}
+			return time.Second
+		})
+
+	}
 }
 
 func (a *ExecServerAPI) WriteToFile(ctx context.Context, jsonInput *ValidationInputJson, expOut validator.GoGlobalState, moduleRoot common.Hash) error {

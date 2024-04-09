@@ -236,7 +236,11 @@ func NewStatelessBlockValidator(
 		validationSpawners[i] = server_api.NewValidationClient(valConfFetcher, stack)
 	}
 	valConfFetcher := func() *rpcclient.ClientConfig { return &config().ValidationServerConfigs[0] }
-	execClient := server_api.NewExecutionClient(valConfFetcher, stack)
+	execClient := server_api.NewExecutionClient(
+		&server_api.ExecutionClientOpts{
+			Config: valConfFetcher,
+			Stack:  stack,
+		})
 	validator := &StatelessBlockValidator{
 		config:             config(),
 		execSpawner:        execClient,

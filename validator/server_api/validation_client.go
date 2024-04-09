@@ -3,10 +3,12 @@ package server_api
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"sync/atomic"
 	"time"
 
+	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -96,14 +98,66 @@ func (c *ValidationClient) Room() int {
 	return int(room32)
 }
 
-type ExecutionClient struct {
-	ValidationClient
+type GetLeavesHashRequest struct {
+	ExecutionID       uint64
+	FromBatch         uint64
+	MachineStartIndex uint64
+	StepSize          uint64
+	NumDesiredLeaves  uint64
 }
 
-func NewExecutionClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *ExecutionClient {
-	return &ExecutionClient{
-		ValidationClient: *NewValidationClient(config, stack),
+// Generic marshaller
+type jsonMarshaller[T any] struct{}
+
+// Marshal converts a GetLeavesHashRequest into a JSON byte slice.
+func (j jsonMarshaller[T]) Marshal(v T) []byte {
+	data, err := json.Marshal(v)
+	if err != nil {
+		log.Error("error marshaling", "value", v, "error", err)
+		return nil
 	}
+	return data
+}
+
+// Unmarshal converts a JSON byte slice into a GetLeavesHashRequest.
+func (j jsonMarshaller[T]) Unmarshal(val []byte) (T, error) {
+	var v T
+	err := json.Unmarshal(val, &v)
+	if err != nil {
+		return v, err
+	}
+	return v, nil
+}
+
+type ExecutionClient struct {
+	ValidationClient
+
+	producer *pubsub.Producer[GetLeavesHashRequest, []common.Hash]
+}
+
+type RedisStreamCfg struct {
+	producerCfg *pubsub.ProducerConfig
+}
+
+type ExecutionClientOpts struct {
+	Config         rpcclient.ClientConfigFetcher
+	Stack          *node.Node
+	RedisStreamCfg *RedisStreamCfg
+}
+
+func NewExecutionClient(opts *ExecutionClientOpts) *ExecutionClient {
+	ret := &ExecutionClient{ValidationClient: *NewValidationClient(opts.Config, opts.Stack)}
+	if opts.RedisStreamCfg != nil {
+		p, err := pubsub.NewProducer[GetLeavesHashRequest, []common.Hash](
+			opts.RedisStreamCfg.producerCfg, jsonMarshaller[GetLeavesHashRequest]{}, jsonMarshaller[[]common.Hash]{},
+		)
+		if err != nil {
+			log.Error("Creating new producer", "error", err)
+			return ret
+		}
+		ret.producer = p
+	}
+	return ret
 }
 
 func (c *ExecutionClient) CreateBoldExecutionRun(wasmModuleRoot common.Hash, stepSize uint64, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
@@ -196,6 +250,20 @@ func (r *ExecutionClientRun) GetStepAt(pos uint64) containers.PromiseInterface[*
 }
 
 func (r *ExecutionClientRun) GetLeavesWithStepSize(fromBatch, machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[[]common.Hash] {
+	if r.client.producer != nil {
+		promise, err := r.client.producer.Produce(r.client.GetContext(), GetLeavesHashRequest{
+			ExecutionID:       r.id,
+			FromBatch:         fromBatch,
+			MachineStartIndex: machineStartIndex,
+			StepSize:          stepSize,
+			NumDesiredLeaves:  numDesiredLeaves,
+		})
+		if err != nil {
+			log.Error("Error producing GetLeavesHashRequest", "error", err)
+			return containers.NewReadyPromise(([]common.Hash)(nil), err)
+		}
+		return promise
+	}
 	return stopwaiter.LaunchPromiseThread[[]common.Hash](r, func(ctx context.Context) ([]common.Hash, error) {
 		var resJson []common.Hash
 		err := r.client.client.CallContext(ctx, &resJson, Namespace+"_getLeavesWithStepSize", r.id, fromBatch, machineStartIndex, stepSize, numDesiredLeaves)
