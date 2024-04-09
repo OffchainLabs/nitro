@@ -414,7 +414,7 @@ func TestEspressoE2E(t *testing.T) {
 	Require(t, err)
 
 	// Wait for the number of validated messages to catch up
-	err = waitFor(t, ctx, func() bool {
+	err = waitForWith(t, ctx, 60*time.Second, 5*time.Second, func() bool {
 		validatedCnt := node.ConsensusNode.BlockValidator.Validated(t)
 		log.Info("waiting for validation", "validatedCnt", validatedCnt, "msgCnt", msgCnt)
 		return validatedCnt >= msgCnt
