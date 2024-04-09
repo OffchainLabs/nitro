@@ -46,6 +46,7 @@ type BlobReader interface {
 		batchBlockHash common.Hash,
 		versionedHashes []common.Hash,
 	) ([]kzg4844.Blob, error)
+	Initialize(ctx context.Context) error
 }
 
 type sequencerMessage struct {
@@ -62,7 +63,12 @@ const maxZeroheavyDecompressedLen = 101*MaxDecompressedLen/100 + 64
 const MaxSegmentsPerSequencerMessage = 100 * 1024
 const MinLifetimeSecondsForDataAvailabilityCert = 7 * 24 * 60 * 60 // one week
 
-func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash common.Hash, data []byte, dasReader DataAvailabilityReader, blobReader BlobReader, keysetValidationMode KeysetValidationMode) (*sequencerMessage, error) {
+var (
+	ErrNoBlobReader          = errors.New("blob batch payload was encountered but no BlobReader was configured")
+	ErrInvalidBlobDataFormat = errors.New("blob batch data is not a list of hashes as expected")
+)
+
+func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash common.Hash, data []byte, daProviders []DataAvailabilityProvider, keysetValidationMode KeysetValidationMode) (*sequencerMessage, error) {
 	if len(data) < 40 {
 		return nil, errors.New("sequencer message missing L1 header")
 	}
@@ -87,41 +93,30 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 	// Stage 1: Extract the payload from any data availability header.
 	// It's important that multiple DAS strategies can't both be invoked in the same batch,
 	// as these headers are validated by the sequencer inbox and not other DASs.
-	if len(payload) > 0 && IsDASMessageHeaderByte(payload[0]) {
-		if dasReader == nil {
-			log.Error("No DAS Reader configured, but sequencer message found with DAS header")
-		} else {
-			var err error
-			payload, err = RecoverPayloadFromDasBatch(ctx, batchNum, data, dasReader, nil, keysetValidationMode)
-			if err != nil {
-				return nil, err
+	// We try to extract payload from the first occuring valid DA provider in the daProviders list
+	if len(payload) > 0 {
+		foundDA := false
+		var err error
+		for _, provider := range daProviders {
+			if provider != nil && provider.IsValidHeaderByte(payload[0]) {
+				payload, err = provider.RecoverPayloadFromBatch(ctx, batchNum, batchBlockHash, data, nil, keysetValidationMode)
+				if err != nil {
+					return nil, err
+				}
+				if payload == nil {
+					return parsedMsg, nil
+				}
+				foundDA = true
+				break
 			}
-			if payload == nil {
-				return parsedMsg, nil
-			}
-		}
-	} else if len(payload) > 0 && IsBlobHashesHeaderByte(payload[0]) {
-		blobHashes := payload[1:]
-		if len(blobHashes)%len(common.Hash{}) != 0 {
-			return nil, fmt.Errorf("blob batch data is not a list of hashes as expected")
-		}
-		versionedHashes := make([]common.Hash, len(blobHashes)/len(common.Hash{}))
-		for i := 0; i*32 < len(blobHashes); i += 1 {
-			copy(versionedHashes[i][:], blobHashes[i*32:(i+1)*32])
 		}
 
-		if blobReader == nil {
-			return nil, errors.New("blob batch payload was encountered but no BlobReader was configured")
-		}
-
-		kzgBlobs, err := blobReader.GetBlobs(ctx, batchBlockHash, versionedHashes)
-		if err != nil {
-			return nil, fmt.Errorf("failed to get blobs: %w", err)
-		}
-		payload, err = blobs.DecodeBlobs(kzgBlobs)
-		if err != nil {
-			log.Warn("Failed to decode blobs", "batchBlockHash", batchBlockHash, "versionedHashes", versionedHashes, "err", err)
-			return parsedMsg, nil
+		if !foundDA {
+			if IsDASMessageHeaderByte(payload[0]) {
+				log.Error("No DAS Reader configured, but sequencer message found with DAS header")
+			} else if IsBlobHashesHeaderByte(payload[0]) {
+				return nil, ErrNoBlobReader
+			}
 		}
 	}
 
@@ -283,6 +278,92 @@ func RecoverPayloadFromDasBatch(
 	return payload, nil
 }
 
+type DataAvailabilityProvider interface {
+	// IsValidHeaderByte returns true if the given headerByte has bits corresponding to the DA provider
+	IsValidHeaderByte(headerByte byte) bool
+
+	// RecoverPayloadFromBatch fetches the underlying payload from the DA provider given the batch header information
+	RecoverPayloadFromBatch(
+		ctx context.Context,
+		batchNum uint64,
+		batchBlockHash common.Hash,
+		sequencerMsg []byte,
+		preimages map[arbutil.PreimageType]map[common.Hash][]byte,
+		keysetValidationMode KeysetValidationMode,
+	) ([]byte, error)
+}
+
+// NewDAProviderDAS is generally meant to be only used by nitro.
+// DA Providers should implement methods in the DataAvailabilityProvider interface independently
+func NewDAProviderDAS(das DataAvailabilityReader) *dAProviderForDAS {
+	return &dAProviderForDAS{
+		das: das,
+	}
+}
+
+type dAProviderForDAS struct {
+	das DataAvailabilityReader
+}
+
+func (d *dAProviderForDAS) IsValidHeaderByte(headerByte byte) bool {
+	return IsDASMessageHeaderByte(headerByte)
+}
+
+func (d *dAProviderForDAS) RecoverPayloadFromBatch(
+	ctx context.Context,
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+	preimages map[arbutil.PreimageType]map[common.Hash][]byte,
+	keysetValidationMode KeysetValidationMode,
+) ([]byte, error) {
+	return RecoverPayloadFromDasBatch(ctx, batchNum, sequencerMsg, d.das, preimages, keysetValidationMode)
+}
+
+// NewDAProviderBlobReader is generally meant to be only used by nitro.
+// DA Providers should implement methods in the DataAvailabilityProvider interface independently
+func NewDAProviderBlobReader(blobReader BlobReader) *dAProviderForBlobReader {
+	return &dAProviderForBlobReader{
+		blobReader: blobReader,
+	}
+}
+
+type dAProviderForBlobReader struct {
+	blobReader BlobReader
+}
+
+func (b *dAProviderForBlobReader) IsValidHeaderByte(headerByte byte) bool {
+	return IsBlobHashesHeaderByte(headerByte)
+}
+
+func (b *dAProviderForBlobReader) RecoverPayloadFromBatch(
+	ctx context.Context,
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+	preimages map[arbutil.PreimageType]map[common.Hash][]byte,
+	keysetValidationMode KeysetValidationMode,
+) ([]byte, error) {
+	blobHashes := sequencerMsg[41:]
+	if len(blobHashes)%len(common.Hash{}) != 0 {
+		return nil, ErrInvalidBlobDataFormat
+	}
+	versionedHashes := make([]common.Hash, len(blobHashes)/len(common.Hash{}))
+	for i := 0; i*32 < len(blobHashes); i += 1 {
+		copy(versionedHashes[i][:], blobHashes[i*32:(i+1)*32])
+	}
+	kzgBlobs, err := b.blobReader.GetBlobs(ctx, batchBlockHash, versionedHashes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get blobs: %w", err)
+	}
+	payload, err := blobs.DecodeBlobs(kzgBlobs)
+	if err != nil {
+		log.Warn("Failed to decode blobs", "batchBlockHash", batchBlockHash, "versionedHashes", versionedHashes, "err", err)
+		return nil, nil
+	}
+	return payload, nil
+}
+
 type KeysetValidationMode uint8
 
 const KeysetValidate KeysetValidationMode = 0
@@ -292,8 +373,7 @@ const KeysetDontValidate KeysetValidationMode = 2
 type inboxMultiplexer struct {
 	backend                   InboxBackend
 	delayedMessagesRead       uint64
-	dasReader                 DataAvailabilityReader
-	blobReader                BlobReader
+	daProviders               []DataAvailabilityProvider
 	cachedSequencerMessage    *sequencerMessage
 	cachedSequencerMessageNum uint64
 	cachedSegmentNum          uint64
@@ -303,12 +383,11 @@ type inboxMultiplexer struct {
 	keysetValidationMode      KeysetValidationMode
 }
 
-func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dasReader DataAvailabilityReader, blobReader BlobReader, keysetValidationMode KeysetValidationMode) arbostypes.InboxMultiplexer {
+func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, daProviders []DataAvailabilityProvider, keysetValidationMode KeysetValidationMode) arbostypes.InboxMultiplexer {
 	return &inboxMultiplexer{
 		backend:              backend,
 		delayedMessagesRead:  delayedMessagesRead,
-		dasReader:            dasReader,
-		blobReader:           blobReader,
+		daProviders:          daProviders,
 		keysetValidationMode: keysetValidationMode,
 	}
 }
@@ -330,7 +409,7 @@ func (r *inboxMultiplexer) Pop(ctx context.Context) (*arbostypes.MessageWithMeta
 		}
 		r.cachedSequencerMessageNum = r.backend.GetSequencerInboxPosition()
 		var err error
-		r.cachedSequencerMessage, err = parseSequencerMessage(ctx, r.cachedSequencerMessageNum, batchBlockHash, bytes, r.dasReader, r.blobReader, r.keysetValidationMode)
+		r.cachedSequencerMessage, err = parseSequencerMessage(ctx, r.cachedSequencerMessageNum, batchBlockHash, bytes, r.daProviders, r.keysetValidationMode)
 		if err != nil {
 			return nil, err
 		}

@@ -1,4 +1,7 @@
-package arbnode
+// Copyright 2024, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
+package headerreader
 
 import (
 	"encoding/json"
@@ -8,6 +11,7 @@ import (
 	"reflect"
 	"testing"
 
+	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/r3labs/diff/v3"
 )
 
@@ -32,7 +36,9 @@ func TestSaveBlobsToDisk(t *testing.T) {
 		KzgProof:        []byte{2},
 	}}
 	testDir := t.TempDir()
-	err := saveBlobDataToDisk(response, 5, testDir)
+	rawData, err := json.Marshal(response)
+	Require(t, err)
+	err = saveBlobDataToDisk(rawData, 5, testDir)
 	Require(t, err)
 
 	filePath := path.Join(testDir, "5")
@@ -50,4 +56,14 @@ func TestSaveBlobsToDisk(t *testing.T) {
 		Require(t, err)
 		Fail(t, "blob data saved to disk does not match actual blob data", changelog)
 	}
+}
+
+func Require(t *testing.T, err error, printables ...interface{}) {
+	t.Helper()
+	testhelpers.RequireImpl(t, err, printables...)
+}
+
+func Fail(t *testing.T, printables ...interface{}) {
+	t.Helper()
+	testhelpers.FailImpl(t, printables...)
 }

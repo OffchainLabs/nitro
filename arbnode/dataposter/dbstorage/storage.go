@@ -58,6 +58,18 @@ func (s *Storage) FetchContents(_ context.Context, startingIndex uint64, maxResu
 	return res, it.Error()
 }
 
+func (s *Storage) Get(_ context.Context, index uint64) (*storage.QueuedTransaction, error) {
+	key := idxToKey(index)
+	value, err := s.db.Get(key)
+	if err != nil {
+		if errors.Is(err, leveldb.ErrNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return s.encDec().Decode(value)
+}
+
 func (s *Storage) lastItemIdx(context.Context) ([]byte, error) {
 	return s.db.Get(lastItemIdxKey)
 }

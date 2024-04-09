@@ -46,3 +46,10 @@ func (bips UBips) Uint64() uint64 {
 func (bips Bips) Uint64() uint64 {
 	return uint64(bips)
 }
+
+// BigDivToBips returns dividend/divisor as bips, saturating if out of bounds
+func BigDivToBips(dividend, divisor *big.Int) Bips {
+	value := BigMulByInt(dividend, int64(OneInBips))
+	value.Div(value, divisor)
+	return Bips(BigToUintSaturating(value))
+}
