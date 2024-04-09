@@ -211,12 +211,12 @@ func main() {
 		if backend.GetPositionWithinMessage() > 0 {
 			keysetValidationMode = daprovider.KeysetDontValidate
 		}
-		var daProviders []daprovider.Reader
+		var dapReaders []daprovider.Reader
 		if dasReader != nil {
-			daProviders = append(daProviders, daprovider.NewReaderForDAS(dasReader))
+			dapReaders = append(dapReaders, daprovider.NewReaderForDAS(dasReader))
 		}
-		daProviders = append(daProviders, daprovider.NewReaderForBlobReader(&BlobPreimageReader{}))
-		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, daProviders, keysetValidationMode)
+		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(&BlobPreimageReader{}))
+		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode)
 		ctx := context.Background()
 		message, err := inboxMultiplexer.Pop(ctx)
 		if err != nil {
