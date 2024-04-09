@@ -68,13 +68,13 @@ type SequencerConfig struct {
 	NonceFailureCacheExpiry     time.Duration   `koanf:"nonce-failure-cache-expiry" reload:"hot"`
 
 	// Espresso specific flags
-	Espresso                 bool          `koanf:"espresso"`
-	HotShotUrl               string        `koanf:"hotshot-url"`
-	EspressoNamespace        uint64        `koanf:"espresso-namespace"`
-	StartHotShotBlock        uint64        `koanf:"start-hotshot-block"`
-	MaxHotshotDriftTime      time.Duration `koanf:"max-hotshot-drift-time"`
-	ConsecutiveHotshotBlocks int           `koanf:"consecutive-hotshot-blocks"`
-	HotshotTimeFrame         time.Duration `koanf:"hotshot-time-frame"`
+	Espresso            bool          `koanf:"espresso"`
+	HotShotUrl          string        `koanf:"hotshot-url"`
+	LightClientAddress  string        `koanf:"light-client-address"`
+	EspressoNamespace   uint64        `koanf:"espresso-namespace"`
+	StartHotShotBlock   uint64        `koanf:"start-hotshot-block"`
+	MaxHotShotDriftTime time.Duration `koanf:"max-hotshot-drift-time"`
+	SwitchPollInterval  time.Duration `koanf:"switch-poll-interval"`
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -141,9 +141,8 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".hotshot-url", DefaultSequencerConfig.HotShotUrl, "")
 	f.Uint64(prefix+".espresso-namespace", DefaultSequencerConfig.EspressoNamespace, "espresso namespace that corresponds the L2 chain")
 	f.Uint64(prefix+".start-hotshot-block", DefaultSequencerConfig.StartHotShotBlock, "the starting block number of hotshot")
-	f.Duration(prefix+".max-hotshot-drift-time", DefaultSequencerConfig.MaxHotshotDriftTime, "maximum drift time of hotshot")
-	f.Int(prefix+".consecutive-hotshot-blocks", DefaultSequencerConfig.ConsecutiveHotshotBlocks, "required minimum blocks created by hotshot within the `hotshot-time-frame` before switching to espresso mode")
-	f.Duration(prefix+".hotshot-time-frame", DefaultSequencerConfig.HotshotTimeFrame, "interval of checking if espresso mode is available or not")
+	f.Duration(prefix+".max-hotshot-drift-time", DefaultSequencerConfig.MaxHotShotDriftTime, "maximum drift time of hotshot")
+	f.Duration(prefix+".switch-poll-interval", DefaultSequencerConfig.SwitchPollInterval, "the poll interval of checking the sequencer should be switched or not")
 }
 
 type txQueueItem struct {

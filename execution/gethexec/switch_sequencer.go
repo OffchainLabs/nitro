@@ -4,8 +4,12 @@ import (
 	"context"
 	"time"
 
+	lightClient "github.com/EspressoSystems/espresso-sequencer-go/light-client"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/arbitrum_types"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -20,28 +24,31 @@ type SwitchSequencer struct {
 	centralized *Sequencer
 	espresso    *EspressoSequencer
 
-	mode                     int
-	maxHotshotDirftTime      time.Duration
-	consecutiveHotshotBlocks int
-	hotshotTimeFrame         time.Duration
+	maxHotShotDriftTime time.Duration
+	switchPollInterval  time.Duration
+	lightClient         lightClient.LightClientReaderInterface
 
-	lastSeenHotShotBlock uint64
+	mode int
 }
 
-func NewSwitchSequencer(centralized *Sequencer, espresso *EspressoSequencer, configFetcher SequencerConfigFetcher) (*SwitchSequencer, error) {
+func NewSwitchSequencer(centralized *Sequencer, espresso *EspressoSequencer, l1client bind.ContractBackend, configFetcher SequencerConfigFetcher) (*SwitchSequencer, error) {
 	config := configFetcher()
 	if err := config.Validate(); err != nil {
 		return nil, err
 	}
 
+	lightClient, err := arbos.NewMockLightClientReader(common.HexToAddress(config.LightClientAddress), l1client)
+	if err != nil {
+		return nil, err
+	}
+
 	return &SwitchSequencer{
-		centralized:              centralized,
-		espresso:                 espresso,
-		mode:                     SequencingMode_Espresso,
-		maxHotshotDirftTime:      config.MaxHotshotDriftTime,
-		consecutiveHotshotBlocks: config.ConsecutiveHotshotBlocks,
-		hotshotTimeFrame:         config.HotshotTimeFrame,
-		lastSeenHotShotBlock:     0,
+		centralized:         centralized,
+		espresso:            espresso,
+		lightClient:         lightClient,
+		mode:                SequencingMode_Espresso,
+		maxHotShotDriftTime: config.MaxHotShotDriftTime,
+		switchPollInterval:  config.SwitchPollInterval,
 	}, nil
 }
 
@@ -92,29 +99,19 @@ func (s *SwitchSequencer) Start(ctx context.Context) error {
 		return err
 	}
 	s.CallIteratively(func(ctx context.Context) time.Duration {
-		now := time.Now()
-		if s.IsRunningEspressoMode() {
-			if s.espresso.lastCreated.Add(s.maxHotshotDirftTime).Before(now) {
-				_ = s.SwitchToCentralized(ctx)
-			}
-			return s.hotshotTimeFrame
+		espresso := s.lightClient.IsHotShotAvaliable(s.maxHotShotDriftTime)
+
+		var err error
+		if s.IsRunningEspressoMode() && !espresso {
+			err = s.SwitchToCentralized(ctx)
+		} else if !s.IsRunningEspressoMode() && espresso {
+			err = s.SwitchToEspresso(ctx)
 		}
 
-		b, err := s.espresso.hotShotState.client.FetchLatestBlockHeight(ctx)
 		if err != nil {
-			return 100 * time.Second
-		}
-		if s.lastSeenHotShotBlock == 0 {
-			s.lastSeenHotShotBlock = b
-			return s.hotshotTimeFrame
-		}
-		if b-s.lastSeenHotShotBlock <= uint64(s.consecutiveHotshotBlocks) {
-			s.lastSeenHotShotBlock = 0
-			_ = s.SwitchToEspresso(ctx)
 			return 0
 		}
-		s.lastSeenHotShotBlock = b
-		return s.hotshotTimeFrame
+		return s.switchPollInterval
 	})
 
 	return nil

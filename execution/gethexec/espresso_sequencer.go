@@ -29,7 +29,7 @@ type HotShotState struct {
 
 func NewHotShotState(log log.Logger, url string, startBlock uint64) *HotShotState {
 	return &HotShotState{
-		client:          *espressoClient.NewClient(log, url),
+		client:          *espressoClient.NewClient(url),
 		nextSeqBlockNum: startBlock,
 	}
 }

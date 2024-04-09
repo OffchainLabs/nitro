@@ -33,6 +33,7 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	hotshotClient "github.com/EspressoSystems/espresso-sequencer-go/client"
+	lightclient "github.com/EspressoSystems/espresso-sequencer-go/light-client"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
@@ -75,10 +76,6 @@ type batchPosterPosition struct {
 	NextSeqNum          uint64
 }
 
-type LightClientReaderInterface interface {
-	ValidatedHeight() (validatedHeight uint64, l1Height uint64, err error)
-}
-
 type BatchPoster struct {
 	stopwaiter.StopWaiter
 	l1Reader           *headerreader.HeaderReader
@@ -111,7 +108,7 @@ type BatchPoster struct {
 	accessList func(SequencerInboxAccs, AfterDelayedMessagesRead int) types.AccessList
 
 	// Espresso readers
-	lightClientReader LightClientReaderInterface
+	lightClientReader lightclient.LightClientReaderInterface
 	hotshotClient     *hotshotClient.Client
 }
 
@@ -314,17 +311,17 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		return nil, err
 	}
 	var hotShotClient *hotshotClient.Client
-	var lightClientReader LightClientReaderInterface
+	var lightClientReader lightclient.LightClientReaderInterface
 
 	hotShotUrl := opts.Config().HotShotUrl
 	lightClientAddr := opts.Config().LightClientAddress
 
 	if hotShotUrl != "" {
-		hotShotClient = hotshotClient.NewClient(log.New(), hotShotUrl)
+		hotShotClient = hotshotClient.NewClient(hotShotUrl)
 	}
 
 	if lightClientAddr != "" {
-		lightClientReader, err = NewMockLightClientReader(common.HexToAddress(lightClientAddr), opts.L1Reader.Client())
+		lightClientReader, err = arbos.NewMockLightClientReader(common.HexToAddress(lightClientAddr), opts.L1Reader.Client())
 		if err != nil {
 			return nil, err
 		}

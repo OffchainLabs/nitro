@@ -183,7 +183,7 @@ func CreateExecutionNode(
 			if err != nil {
 				return nil, err
 			}
-			switchSequencer, err := NewSwitchSequencer(sequencer, espressoSequencer, seqConfigFetcher)
+			switchSequencer, err := NewSwitchSequencer(sequencer, espressoSequencer, parentChainReader.Client(), seqConfigFetcher)
 			if err != nil {
 				return nil, err
 			}

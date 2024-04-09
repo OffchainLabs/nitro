@@ -1,5 +1,15 @@
 package arbtest
 
-import "testing"
+import (
+	"context"
+	"testing"
+)
 
-func TestEspressoSwitch(t *testing.T) {}
+func TestEspressoSwitch(t *testing.T) {
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder, l2Node, l2Info, cleanup := runNodes(ctx, t)
+	defer cleanup()
+}
