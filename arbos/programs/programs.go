@@ -150,10 +150,12 @@ func (p Programs) CallProgram(
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,
 	calldata []byte,
+	recentPrograms *RecentPrograms,
 	reentrant bool,
 ) ([]byte, error) {
 	evm := interpreter.Evm()
 	contract := scope.Contract
+	codeHash := contract.CodeHash
 	debugMode := evm.ChainConfig().DebugMode()
 
 	params, err := p.Params()
@@ -161,11 +163,11 @@ func (p Programs) CallProgram(
 		return nil, err
 	}
 
-	program, err := p.getActiveProgram(contract.CodeHash, evm.Context.Time, params)
+	program, err := p.getActiveProgram(codeHash, evm.Context.Time, params)
 	if err != nil {
 		return nil, err
 	}
-	moduleHash, err := p.moduleHashes.Get(contract.CodeHash)
+	moduleHash, err := p.moduleHashes.Get(codeHash)
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +183,8 @@ func (p Programs) CallProgram(
 	callCost := model.GasCost(program.footprint, open, ever)
 
 	// pay for program init
-	if program.cached {
+	cached := program.cached || recentPrograms.Insert(codeHash, params)
+	if cached {
 		callCost = arbmath.SaturatingUAdd(callCost, 64*uint64(params.MinCachedInitGas))
 		callCost = arbmath.SaturatingUAdd(callCost, uint64(program.cachedInitGas))
 	} else {

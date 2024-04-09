@@ -25,6 +25,7 @@ const initialMinInitGas = 0         // assume pricer is correct (update in case 
 const initialMinCachedInitGas = 0   // assume pricer is correct (update in case of emergency)
 const initialExpiryDays = 365       // deactivate after 1 year.
 const initialKeepaliveDays = 31     // wait a month before allowing reactivation
+const initialTxCacheSize = 16       // cache the 16 most recent programs
 
 // This struct exists to collect the many Stylus configuration parameters into a single word.
 // The items here must only be modified in ArbOwner precompile methods (or in ArbOS upgrades).
@@ -41,6 +42,7 @@ type StylusParams struct {
 	MinCachedInitGas uint8 // measured in 64-gas increments
 	ExpiryDays       uint16
 	KeepaliveDays    uint16
+	TxCacheSize      uint8
 }
 
 // Provides a view of the Stylus parameters. Call Save() to persist.
@@ -81,6 +83,7 @@ func (p Programs) Params() (*StylusParams, error) {
 		MinCachedInitGas: am.BytesToUint8(take(1)),
 		ExpiryDays:       am.BytesToUint16(take(2)),
 		KeepaliveDays:    am.BytesToUint16(take(2)),
+		TxCacheSize:      am.BytesToUint8(take(1)),
 	}, nil
 }
 
@@ -104,6 +107,7 @@ func (p *StylusParams) Save() error {
 		am.Uint8ToBytes(p.MinCachedInitGas),
 		am.Uint16ToBytes(p.ExpiryDays),
 		am.Uint16ToBytes(p.KeepaliveDays),
+		am.Uint8ToBytes(p.TxCacheSize),
 	)
 
 	slot := uint64(0)
@@ -136,6 +140,7 @@ func initStylusParams(sto *storage.Storage) {
 		MinCachedInitGas: initialMinCachedInitGas,
 		ExpiryDays:       initialExpiryDays,
 		KeepaliveDays:    initialKeepaliveDays,
+		TxCacheSize:      initialTxCacheSize,
 	}
 	_ = params.Save()
 }
