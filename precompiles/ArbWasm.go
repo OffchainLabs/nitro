@@ -153,6 +153,15 @@ func (con ArbWasm) CodehashVersion(c ctx, evm mech, codehash bytes32) (uint16, e
 	return c.State.Programs().CodehashVersion(codehash, evm.Context.Time, params)
 }
 
+// Gets a program's asm size in bytes
+func (con ArbWasm) CodehashAsmSize(c ctx, evm mech, codehash bytes32) (uint32, error) {
+	params, err := c.State.Programs().Params()
+	if err != nil {
+		return 0, err
+	}
+	return c.State.Programs().ProgramAsmSize(codehash, evm.Context.Time, params)
+}
+
 // Gets the stylus version that program at addr was most recently compiled with
 func (con ArbWasm) ProgramVersion(c ctx, evm mech, program addr) (uint16, error) {
 	codehash, err := c.GetCodeHash(program)

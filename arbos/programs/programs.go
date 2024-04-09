@@ -317,8 +317,7 @@ func (p Programs) ProgramKeepalive(codeHash common.Hash, time uint64, params *St
 		return nil, ProgramNeedsUpgradeError(program.version, stylusVersion)
 	}
 
-	bytes := arbmath.SaturatingUMul(program.asmEstimateKb.ToUint32(), 1024)
-	dataFee, err := p.dataPricer.UpdateModel(bytes, time)
+	dataFee, err := p.dataPricer.UpdateModel(program.asmSize(), time)
 	if err != nil {
 		return nil, err
 	}
@@ -392,6 +391,18 @@ func (p Programs) ProgramInitGas(codeHash common.Hash, time uint64, params *Styl
 func (p Programs) ProgramMemoryFootprint(codeHash common.Hash, time uint64, params *StylusParams) (uint16, error) {
 	program, err := p.getActiveProgram(codeHash, time, params)
 	return program.footprint, err
+}
+
+func (p Programs) ProgramAsmSize(codeHash common.Hash, time uint64, params *StylusParams) (uint32, error) {
+	program, err := p.getActiveProgram(codeHash, time, params)
+	if err != nil {
+		return 0, err
+	}
+	return program.asmSize(), nil
+}
+
+func (p Program) asmSize() uint32 {
+	return arbmath.SaturatingUMul(p.asmEstimateKb.ToUint32(), 1024)
 }
 
 type goParams struct {
