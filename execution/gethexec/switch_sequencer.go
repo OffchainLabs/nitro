@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -33,13 +34,17 @@ type SwitchSequencer struct {
 
 func NewSwitchSequencer(centralized *Sequencer, espresso *EspressoSequencer, l1client bind.ContractBackend, configFetcher SequencerConfigFetcher) (*SwitchSequencer, error) {
 	config := configFetcher()
-	if err := config.Validate(); err != nil {
+	err := config.Validate()
+	if err != nil {
 		return nil, err
 	}
 
-	lightClient, err := arbos.NewMockLightClientReader(common.HexToAddress(config.LightClientAddress), l1client)
-	if err != nil {
-		return nil, err
+	var lightClient lightClient.LightClientReaderInterface
+	if config.LightClientAddress != "" {
+		lightClient, err = arbos.NewMockLightClientReader(common.HexToAddress(config.LightClientAddress), l1client)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	return &SwitchSequencer{
@@ -57,19 +62,24 @@ func (s *SwitchSequencer) IsRunningEspressoMode() bool {
 }
 
 func (s *SwitchSequencer) SwitchToEspresso(ctx context.Context) error {
-	if s.mode == SequencingMode_Espresso {
+	if s.IsRunningEspressoMode() {
 		return nil
 	}
+	log.Info("Switching to espresso sequencer")
+
 	s.mode = SequencingMode_Espresso
+
 	s.centralized.StopAndWait()
 	return s.espresso.Start(ctx)
 }
 
 func (s *SwitchSequencer) SwitchToCentralized(ctx context.Context) error {
-	if s.mode == SequencingMode_Centralized {
+	if !s.IsRunningEspressoMode() {
 		return nil
 	}
 	s.mode = SequencingMode_Centralized
+	log.Info("Switching to centrialized sequencer")
+
 	s.espresso.StopAndWait()
 	return s.centralized.Start(ctx)
 }
@@ -90,29 +100,38 @@ func (s *SwitchSequencer) CheckHealth(ctx context.Context) error {
 }
 
 func (s *SwitchSequencer) Initialize(ctx context.Context) error {
-	return s.getRunningSequencer().Initialize(ctx)
+	err := s.centralized.Initialize(ctx)
+	if err != nil {
+		return err
+	}
+
+	return s.espresso.Initialize(ctx)
 }
 
 func (s *SwitchSequencer) Start(ctx context.Context) error {
+	s.StopWaiter.Start(ctx, s)
 	err := s.getRunningSequencer().Start(ctx)
 	if err != nil {
 		return err
 	}
-	s.CallIteratively(func(ctx context.Context) time.Duration {
-		espresso := s.lightClient.IsHotShotAvaliable(s.maxHotShotDriftTime)
 
-		var err error
-		if s.IsRunningEspressoMode() && !espresso {
-			err = s.SwitchToCentralized(ctx)
-		} else if !s.IsRunningEspressoMode() && espresso {
-			err = s.SwitchToEspresso(ctx)
-		}
+	if s.lightClient != nil {
+		s.CallIteratively(func(ctx context.Context) time.Duration {
+			espresso := s.lightClient.IsHotShotAvaliable(s.maxHotShotDriftTime)
 
-		if err != nil {
-			return 0
-		}
-		return s.switchPollInterval
-	})
+			var err error
+			if s.IsRunningEspressoMode() && !espresso {
+				err = s.SwitchToCentralized(ctx)
+			} else if !s.IsRunningEspressoMode() && espresso {
+				err = s.SwitchToEspresso(ctx)
+			}
+
+			if err != nil {
+				return 0
+			}
+			return s.switchPollInterval
+		})
+	}
 
 	return nil
 }
@@ -125,3 +144,17 @@ func (s *SwitchSequencer) StopAndWait() {
 func (s *SwitchSequencer) Started() bool {
 	return s.getRunningSequencer().Started()
 }
+
+func (s *SwitchSequencer) SetMode(ctx context.Context, m bool) {
+	if m {
+		s.SwitchToEspresso(ctx)
+	} else {
+		s.SwitchToCentralized(ctx)
+	}
+}
+
+func (s *Sequencer) SetMode(ctx context.Context, espresso bool)  {}
+func (s *EspressoSequencer) SetMode(ctx context.Context, m bool) {}
+func (s *RedisTxForwarder) SetMode(ctx context.Context, m bool)  {}
+func (s *TxDropper) SetMode(ctx context.Context, m bool)         {}
+func (s *TxForwarder) SetMode(ctx context.Context, m bool)       {}

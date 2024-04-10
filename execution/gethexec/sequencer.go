@@ -87,6 +87,9 @@ func (c *SequencerConfig) Validate() error {
 			return fmt.Errorf("sequencer sender whitelist entry \"%v\" is not a valid address", address)
 		}
 	}
+	if c.LightClientAddress == "" && c.Espresso {
+		log.Warn("LightClientAddress is empty, running the espresso test mode")
+	}
 	return nil
 }
 
