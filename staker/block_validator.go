@@ -580,15 +580,21 @@ func (v *BlockValidator) iterativeValidationEntryCreator(ctx context.Context, ig
 	return v.config().ValidationPoll
 }
 
+func (v *BlockValidator) isMemoryLimitExceeded() bool {
+	if v.MemoryFreeLimitChecker == nil {
+		return false
+	}
+	exceeded, err := v.MemoryFreeLimitChecker.IsLimitExceeded()
+	if err != nil {
+		log.Error("error checking if free-memory limit exceeded using MemoryFreeLimitChecker", "err", err)
+	}
+	return exceeded
+}
+
 func (v *BlockValidator) sendNextRecordRequests(ctx context.Context) (bool, error) {
-	if v.MemoryFreeLimitChecker != nil {
-		exceeded, err := v.MemoryFreeLimitChecker.IsLimitExceeded()
-		if err != nil {
-			log.Error("error checking if free-memory limit exceeded using MemoryFreeLimitChecker", "err", err)
-		}
-		if exceeded {
-			return false, nil
-		}
+	if v.isMemoryLimitExceeded() {
+		log.Warn("sendNextRecordRequests: aborting due to running low on memory")
+		return false, nil
 	}
 	v.reorgMutex.RLock()
 	pos := v.recordSent()
@@ -619,14 +625,9 @@ func (v *BlockValidator) sendNextRecordRequests(ctx context.Context) (bool, erro
 		return true, nil
 	}
 	for pos <= recordUntil {
-		if v.MemoryFreeLimitChecker != nil {
-			exceeded, err := v.MemoryFreeLimitChecker.IsLimitExceeded()
-			if err != nil {
-				log.Error("error checking if free-memory limit exceeded using MemoryFreeLimitChecker", "err", err)
-			}
-			if exceeded {
-				return false, nil
-			}
+		if v.isMemoryLimitExceeded() {
+			log.Warn("sendNextRecordRequests: aborting due to running low on memory")
+			return false, nil
 		}
 		validationStatus, found := v.validations.Load(pos)
 		if !found {
@@ -781,14 +782,9 @@ validationsLoop:
 			log.Trace("advanceValidations: no more room", "pos", pos)
 			return nil, nil
 		}
-		if v.MemoryFreeLimitChecker != nil {
-			exceeded, err := v.MemoryFreeLimitChecker.IsLimitExceeded()
-			if err != nil {
-				log.Error("error checking if free-memory limit exceeded using MemoryFreeLimitChecker", "err", err)
-			}
-			if exceeded {
-				return nil, nil
-			}
+		if v.isMemoryLimitExceeded() {
+			log.Warn("advanceValidations: aborting due to running low on memory")
+			return nil, nil
 		}
 		if currentStatus == Prepared {
 			input, err := validationStatus.Entry.ToInput()

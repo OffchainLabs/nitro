@@ -80,7 +80,7 @@ func externalSignerTestCfg(addr common.Address) (*dataposter.ExternalSignerCfg, 
 func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	httpSrv, srv := externalsignertest.NewServer(ctx, t)
+	httpSrv, srv := externalsignertest.NewServer(t)
 	cp, err := externalsignertest.CertPaths()
 	if err != nil {
 		t.Fatalf("Error getting cert paths: %v", err)

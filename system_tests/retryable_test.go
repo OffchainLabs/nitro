@@ -563,7 +563,7 @@ func TestDepositETH(t *testing.T) {
 	txOpts := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
 	txOpts.Value = big.NewInt(13)
 
-	l1tx, err := delayedInbox.DepositEth0(&txOpts)
+	l1tx, err := delayedInbox.DepositEth439370b1(&txOpts)
 	if err != nil {
 		t.Fatalf("DepositEth0() unexected error: %v", err)
 	}

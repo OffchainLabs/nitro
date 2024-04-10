@@ -58,6 +58,7 @@ type InboxTrackerInterface interface {
 	GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error)
 	GetBatchAcc(seqNum uint64) (common.Hash, error)
 	GetBatchCount() (uint64, error)
+	FindInboxBatchContainingMessage(pos arbutil.MessageIndex) (uint64, bool, error)
 }
 
 type TransactionStreamerInterface interface {
@@ -109,39 +110,6 @@ func GlobalStatePositionsAtCount(
 		return startPos, GlobalStatePosition{batch + 1, 0}, nil
 	}
 	return startPos, GlobalStatePosition{batch, posInBatch + 1}, nil
-}
-
-func FindBatchContainingMessageIndex(
-	tracker InboxTrackerInterface, pos arbutil.MessageIndex, high uint64,
-) (uint64, error) {
-	var low uint64
-	// Iteration preconditions:
-	// - high >= low
-	// - msgCount(low - 1) <= pos implies low <= target
-	// - msgCount(high) > pos implies high >= target
-	// Therefore, if low == high, then low == high == target
-	for high > low {
-		// Due to integer rounding, mid >= low && mid < high
-		mid := (low + high) / 2
-		count, err := tracker.GetBatchMessageCount(mid)
-		if err != nil {
-			return 0, err
-		}
-		if count < pos {
-			// Must narrow as mid >= low, therefore mid + 1 > low, therefore newLow > oldLow
-			// Keeps low precondition as msgCount(mid) < pos
-			low = mid + 1
-		} else if count == pos {
-			return mid + 1, nil
-		} else if count == pos+1 || mid == low { // implied: count > pos
-			return mid, nil
-		} else { // implied: count > pos + 1
-			// Must narrow as mid < high, therefore newHigh < lowHigh
-			// Keeps high precondition as msgCount(mid) > pos
-			high = mid
-		}
-	}
-	return low, nil
 }
 
 type ValidationEntryStage uint32
@@ -320,7 +288,10 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 				e.Preimages[arbutil.EthVersionedHashPreimageType] = make(map[common.Hash][]byte)
 			}
 			for i, blob := range blobs {
-				e.Preimages[arbutil.EthVersionedHashPreimageType][versionedHashes[i]] = blob[:]
+				// Prevent aliasing `blob` when slicing it, as for range loops overwrite the same variable
+				// Won't be necessary after Go 1.22 with https://go.dev/blog/loopvar-preview
+				b := blob
+				e.Preimages[arbutil.EthVersionedHashPreimageType][versionedHashes[i]] = b[:]
 			}
 		}
 		if arbstate.IsDASMessageHeaderByte(batch.Data[40]) {
@@ -359,13 +330,12 @@ func (v *StatelessBlockValidator) GlobalStatePositionsAtCount(count arbutil.Mess
 	if count == 1 {
 		return GlobalStatePosition{}, GlobalStatePosition{1, 0}, nil
 	}
-	batchCount, err := v.inboxTracker.GetBatchCount()
+	batch, found, err := v.inboxTracker.FindInboxBatchContainingMessage(count - 1)
 	if err != nil {
 		return GlobalStatePosition{}, GlobalStatePosition{}, err
 	}
-	batch, err := FindBatchContainingMessageIndex(v.inboxTracker, count-1, batchCount)
-	if err != nil {
-		return GlobalStatePosition{}, GlobalStatePosition{}, err
+	if !found {
+		return GlobalStatePosition{}, GlobalStatePosition{}, errors.New("batch not found on L1 yet")
 	}
 	return GlobalStatePositionsAtCount(v.inboxTracker, count, batch)
 }
