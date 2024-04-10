@@ -144,6 +144,12 @@ func (con ArbWasm) KeepaliveDays(c ctx, _ mech) (uint16, error) {
 	return params.KeepaliveDays, err
 }
 
+// Gets the number of extra programs ArbOS caches during a given tx.
+func (con ArbWasm) TxCacheSize(c ctx, _ mech) (uint8, error) {
+	params, err := c.State.Programs().Params()
+	return params.TxCacheSize, err
+}
+
 // Gets the stylus version that program with codehash was most recently compiled with
 func (con ArbWasm) CodehashVersion(c ctx, evm mech, codehash bytes32) (uint16, error) {
 	params, err := c.State.Programs().Params()

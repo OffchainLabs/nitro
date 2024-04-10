@@ -25,7 +25,7 @@ const initialMinInitGas = 0         // assume pricer is correct (update in case 
 const initialMinCachedInitGas = 0   // assume pricer is correct (update in case of emergency)
 const initialExpiryDays = 365       // deactivate after 1 year.
 const initialKeepaliveDays = 31     // wait a month before allowing reactivation
-const initialTxCacheSize = 16       // cache the 16 most recent programs
+const initialTxCacheSize = 32       // cache the 32 most recent programs
 
 // This struct exists to collect the many Stylus configuration parameters into a single word.
 // The items here must only be modified in ArbOwner precompile methods (or in ArbOS upgrades).

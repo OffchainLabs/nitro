@@ -262,6 +262,16 @@ func (con ArbOwner) SetWasmKeepaliveDays(c ctx, _ mech, days uint16) error {
 	return params.Save()
 }
 
+// Sets the number of extra programs ArbOS caches during a given tx
+func (con ArbOwner) SetWasmTxCacheSize(c ctx, _ mech, count uint8) error {
+	params, err := c.State.Programs().Params()
+	if err != nil {
+		return err
+	}
+	params.TxCacheSize = count
+	return params.Save()
+}
+
 // Adds account as a wasm cache manager
 func (con ArbOwner) AddWasmCacheManager(c ctx, _ mech, manager addr) error {
 	return c.State.Programs().CacheManagers().Add(manager)

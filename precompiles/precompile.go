@@ -612,17 +612,14 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwner.methodsByName["ReleaseL1PricerSurplusFunds"].arbosVersion = 10
 	ArbOwner.methodsByName["SetChainConfig"].arbosVersion = 11
 	ArbOwner.methodsByName["SetBrotliCompressionLevel"].arbosVersion = 20
-	ArbOwner.methodsByName["SetInkPrice"].arbosVersion = arbostypes.ArbosVersion_Stylus
-	ArbOwner.methodsByName["SetWasmMaxStackDepth"].arbosVersion = arbostypes.ArbosVersion_Stylus
-	ArbOwner.methodsByName["SetWasmFreePages"].arbosVersion = arbostypes.ArbosVersion_Stylus
-	ArbOwner.methodsByName["SetWasmPageGas"].arbosVersion = arbostypes.ArbosVersion_Stylus
-	ArbOwner.methodsByName["SetWasmPageRamp"].arbosVersion = arbostypes.ArbosVersion_Stylus
-	ArbOwner.methodsByName["SetWasmPageLimit"].arbosVersion = arbostypes.ArbosVersion_Stylus
-	ArbOwner.methodsByName["SetWasmMinInitGas"].arbosVersion = arbostypes.ArbosVersion_Stylus
-	ArbOwner.methodsByName["SetWasmExpiryDays"].arbosVersion = arbostypes.ArbosVersion_Stylus
-	ArbOwner.methodsByName["SetWasmKeepaliveDays"].arbosVersion = arbostypes.ArbosVersion_Stylus
-	ArbOwner.methodsByName["AddWasmCacheManager"].arbosVersion = arbostypes.ArbosVersion_Stylus
-	ArbOwner.methodsByName["RemoveWasmCacheManager"].arbosVersion = arbostypes.ArbosVersion_Stylus
+	stylusMethods := []string{
+		"SetInkPrice", "SetWasmMaxStackDepth", "SetWasmFreePages", "SetWasmPageGas", "SetWasmPageRamp",
+		"SetWasmPageLimit", "SetWasmMinInitGas", "SetWasmExpiryDays", "SetWasmKeepaliveDays", "SetWasmTxCacheSize",
+		"AddWasmCacheManager", "RemoveWasmCacheManager",
+	}
+	for _, method := range stylusMethods {
+		ArbOwner.methodsByName[method].arbosVersion = arbostypes.ArbosVersion_Stylus
+	}
 
 	insert(ownerOnly(ArbOwnerImpl.Address, ArbOwner, emitOwnerActs))
 	_, arbDebug := MakePrecompile(pgen.ArbDebugMetaData, &ArbDebug{Address: types.ArbDebugAddress})
