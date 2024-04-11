@@ -103,6 +103,11 @@ impl<D: DataReader, E: EvmApi<D>> NativeInstance<D, E> {
         Self::from_module(module, store, env)
     }
 
+    /// Creates a `NativeInstance` from a serialized module, or from a cached one if known.
+    ///
+    /// # Safety
+    ///
+    /// `module` must represent a valid module.
     pub unsafe fn deserialize_cached(
         module: &[u8],
         version: u16,
