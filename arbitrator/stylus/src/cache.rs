@@ -1,11 +1,6 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use std::{
-    collections::{hash_map::Entry, HashMap},
-    num::NonZeroUsize,
-};
-
 use arbutil::Bytes32;
 use eyre::Result;
 use lazy_static::lazy_static;
@@ -13,10 +8,14 @@ use lru::LruCache;
 use parking_lot::Mutex;
 use prover::programs::config::CompileConfig;
 use rand::Rng;
+use std::{
+    collections::{hash_map::Entry, HashMap},
+    num::NonZeroUsize,
+};
 use wasmer::{Engine, Module, Store};
 
 lazy_static! {
-    static ref INIT_CACHE: Mutex<InitCache> = Mutex::new(InitCache::new(64));
+    static ref INIT_CACHE: Mutex<InitCache> = Mutex::new(InitCache::new(256));
 }
 
 macro_rules! cache {
@@ -110,7 +109,7 @@ impl InitCache {
         None
     }
 
-    /// Inserts an item into the long term cache, stealing from the LRU one if able.
+    /// Inserts an item into the long term cache, stealing from the LRU cache if able.
     pub fn insert(
         module_hash: Bytes32,
         module: &[u8],
@@ -156,5 +155,14 @@ impl InitCache {
     pub fn evict(module_hash: Bytes32, version: u16, debug: bool) {
         let key = CacheKey::new(module_hash, version, debug);
         cache!().arbos.remove(&key);
+    }
+
+    /// Modifies the cache for reorg, dropping the long-term cache.
+    pub fn reorg(_block: u64) {
+        let mut cache = cache!();
+        let cache = &mut *cache;
+        for (key, item) in cache.arbos.drain() {
+            cache.lru.put(key, item); // not all will fit, just a heuristic
+        }
     }
 }

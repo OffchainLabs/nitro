@@ -227,13 +227,15 @@ pub unsafe extern "C" fn stylus_cache_module(
 }
 
 /// Evicts an activated user program from the init cache.
-///
-/// # Safety
-///
-/// `module` must represent a valid module produced from `stylus_activate`.
 #[no_mangle]
-pub unsafe extern "C" fn stylus_evict_module(module_hash: Bytes32, version: u16, debug: bool) {
+pub extern "C" fn stylus_evict_module(module_hash: Bytes32, version: u16, debug: bool) {
     InitCache::evict(module_hash, version, debug);
+}
+
+/// Reorgs the init cache. This will likely never happen.
+#[no_mangle]
+pub extern "C" fn stylus_reorg_vm(block: u64) {
+    InitCache::reorg(block);
 }
 
 /// Frees the vector. Does nothing when the vector is null.
