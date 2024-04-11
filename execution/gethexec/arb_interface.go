@@ -18,6 +18,10 @@ type TransactionPublisher interface {
 	Start(context.Context) error
 	StopAndWait()
 	Started() bool
+
+	// This is only for testing the switch sequencer. Will be removed if the espresso light client
+	// contract is ready and we will use another way to trigger the mode switching.
+	SetMode(ctx context.Context, espresso bool) error
 }
 
 type ArbInterface struct {
