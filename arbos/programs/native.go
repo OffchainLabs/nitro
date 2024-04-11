@@ -109,6 +109,7 @@ func callProgram(
 ) ([]byte, error) {
 	db := interpreter.Evm().StateDB
 	asm := db.GetActivatedAsm(moduleHash)
+	debug := stylusParams.debugMode
 
 	if db, ok := db.(*state.StateDB); ok {
 		db.RecordProgram(moduleHash)
@@ -124,13 +125,12 @@ func callProgram(
 		stylusParams.encode(),
 		evmApi.cNative,
 		evmData.encode(),
-		u32(stylusParams.debugMode),
+		cbool(debug),
 		output,
 		(*u64)(&scope.Contract.Gas),
 	))
 
 	depth := interpreter.Depth()
-	debug := stylusParams.debugMode != 0
 	data, msg, err := status.toResult(output.intoBytes(), debug)
 	if status == userFailure && debug {
 		log.Warn("program failure", "err", err, "msg", msg, "program", address, "depth", depth)
@@ -155,7 +155,7 @@ func cacheProgram(db vm.StateDB, module common.Hash, version uint16, debug bool,
 	if runMode == core.MessageCommitMode {
 		asm := db.GetActivatedAsm(module)
 		state.CacheWasmRust(asm, module, version, debug)
-		db.RecordCacheWasm(state.CacheWasm{ModuleHash: module})
+		db.RecordCacheWasm(state.CacheWasm{ModuleHash: module, Version: version, Debug: debug})
 	}
 }
 
@@ -163,13 +163,9 @@ func cacheProgram(db vm.StateDB, module common.Hash, version uint16, debug bool,
 // For gas estimation and eth_call, we ignore permanent updates and rely on Rust's LRU.
 func evictProgram(db vm.StateDB, module common.Hash, version uint16, debug bool, runMode core.MessageRunMode, forever bool) {
 	if runMode == core.MessageCommitMode {
-		state.EvictWasmRust(module)
+		state.EvictWasmRust(module, version, debug)
 		if !forever {
-			db.RecordEvictWasm(state.EvictWasm{
-				ModuleHash: module,
-				Version:    version,
-				Debug:      debug,
-			})
+			db.RecordEvictWasm(state.EvictWasm{ModuleHash: module, Version: version, Debug: debug})
 		}
 	}
 }
@@ -178,8 +174,8 @@ func init() {
 	state.CacheWasmRust = func(asm []byte, moduleHash common.Hash, version uint16, debug bool) {
 		C.stylus_cache_module(goSlice(asm), hashToBytes32(moduleHash), u16(version), cbool(debug))
 	}
-	state.EvictWasmRust = func(moduleHash common.Hash) {
-		C.stylus_evict_module(hashToBytes32(moduleHash))
+	state.EvictWasmRust = func(moduleHash common.Hash, version uint16, debug bool) {
+		C.stylus_evict_module(hashToBytes32(moduleHash), u16(version), cbool(debug))
 	}
 }
 
@@ -252,12 +248,14 @@ func (data *evmData) encode() C.EvmData {
 		block_number:     u64(data.blockNumber),
 		block_timestamp:  u64(data.blockTimestamp),
 		contract_address: addressToBytes20(data.contractAddress),
+		module_hash:      hashToBytes32(data.moduleHash),
 		msg_sender:       addressToBytes20(data.msgSender),
 		msg_value:        hashToBytes32(data.msgValue),
 		tx_gas_price:     hashToBytes32(data.txGasPrice),
 		tx_origin:        addressToBytes20(data.txOrigin),
 		reentrant:        u32(data.reentrant),
 		return_data_len:  0,
+		cached:           cbool(data.cached),
 		tracing:          cbool(data.tracing),
 	}
 }

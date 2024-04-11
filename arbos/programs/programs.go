@@ -215,11 +215,13 @@ func (p Programs) CallProgram(
 		blockNumber:     l1BlockNumber,
 		blockTimestamp:  evm.Context.Time,
 		contractAddress: scope.Contract.Address(),
+		moduleHash:      moduleHash,
 		msgSender:       scope.Contract.Caller(),
 		msgValue:        common.BigToHash(scope.Contract.Value()),
 		txGasPrice:      common.BigToHash(evm.TxContext.GasPrice),
 		txOrigin:        evm.TxContext.Origin,
 		reentrant:       arbmath.BoolToUint32(reentrant),
+		cached:          program.cached,
 		tracing:         tracingInfo != nil,
 	}
 
@@ -436,19 +438,16 @@ type goParams struct {
 	version   uint16
 	maxDepth  uint32
 	inkPrice  uint24
-	debugMode uint32
+	debugMode bool
 }
 
 func (p Programs) goParams(version uint16, debug bool, params *StylusParams) *goParams {
-	config := &goParams{
-		version:  version,
-		maxDepth: params.MaxStackDepth,
-		inkPrice: params.InkPrice,
+	return &goParams{
+		version:   version,
+		maxDepth:  params.MaxStackDepth,
+		inkPrice:  params.InkPrice,
+		debugMode: debug,
 	}
-	if debug {
-		config.debugMode = 1
-	}
-	return config
 }
 
 type evmData struct {
@@ -459,11 +458,13 @@ type evmData struct {
 	blockNumber     uint64
 	blockTimestamp  uint64
 	contractAddress common.Address
+	moduleHash      common.Hash
 	msgSender       common.Address
 	msgValue        common.Hash
 	txGasPrice      common.Hash
 	txOrigin        common.Address
 	reentrant       uint32
+	cached          bool
 	tracing         bool
 }
 

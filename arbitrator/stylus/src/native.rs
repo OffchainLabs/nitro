@@ -2,6 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use crate::{
+    cache::InitCache,
     env::{MeterData, WasmEnv},
     host,
 };
@@ -99,6 +100,27 @@ impl<D: DataReader, E: EvmApi<D>> NativeInstance<D, E> {
         let env = WasmEnv::new(compile, None, evm, evm_data);
         let store = env.compile.store();
         let module = unsafe { Module::deserialize_unchecked(&store, module)? };
+        Self::from_module(module, store, env)
+    }
+
+    pub unsafe fn deserialize_cached(
+        module: &[u8],
+        version: u16,
+        evm: E,
+        evm_data: EvmData,
+        debug: bool,
+    ) -> Result<Self> {
+        let compile = CompileConfig::version(version, debug);
+        let env = WasmEnv::new(compile, None, evm, evm_data);
+        let module_hash = env.evm_data.module_hash;
+
+        if let Some((module, store)) = InitCache::get(module_hash, version, debug) {
+            return Self::from_module(module, store, env);
+        }
+        let (module, store) = match env.evm_data.cached {
+            true => InitCache::insert(module_hash, module, version, debug)?,
+            false => InitCache::insert_lru(module_hash, module, version, debug)?,
+        };
         Self::from_module(module, store, env)
     }
 

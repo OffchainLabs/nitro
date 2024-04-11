@@ -21,11 +21,15 @@ use std::{marker::PhantomData, mem, ptr};
 pub use brotli;
 pub use prover;
 
+use crate::cache::InitCache;
+
 pub mod env;
-mod evm_api;
 pub mod host;
 pub mod native;
 pub mod run;
+
+mod cache;
+mod evm_api;
 
 #[cfg(test)]
 mod test;
@@ -173,20 +177,21 @@ pub unsafe extern "C" fn stylus_call(
     config: StylusConfig,
     req_handler: NativeRequestHandler,
     evm_data: EvmData,
-    debug_chain: u32,
+    debug_chain: bool,
     output: *mut RustBytes,
     gas: *mut u64,
 ) -> UserOutcomeKind {
     let module = module.slice();
     let calldata = calldata.slice().to_vec();
-    let compile = CompileConfig::version(config.version, debug_chain != 0);
     let evm_api = EvmApiRequestor::new(req_handler);
     let pricing = config.pricing;
     let output = &mut *output;
     let ink = pricing.gas_to_ink(*gas);
 
     // Safety: module came from compile_user_wasm and we've paid for memory expansion
-    let instance = unsafe { NativeInstance::deserialize(module, compile, evm_api, evm_data) };
+    let instance = unsafe {
+        NativeInstance::deserialize_cached(module, config.version, evm_api, evm_data, debug_chain)
+    };
     let mut instance = match instance {
         Ok(instance) => instance,
         Err(error) => panic!("failed to instantiate program: {error:?}"),
@@ -216,7 +221,9 @@ pub unsafe extern "C" fn stylus_cache_module(
     version: u16,
     debug: bool,
 ) {
-    println!("caching module {}", module_hash);
+    if let Err(error) = InitCache::insert(module_hash, module.slice(), version, debug) {
+        panic!("tried to cache invalid asm!: {error}");
+    }
 }
 
 /// Evicts an activated user program from the init cache.
@@ -225,8 +232,8 @@ pub unsafe extern "C" fn stylus_cache_module(
 ///
 /// `module` must represent a valid module produced from `stylus_activate`.
 #[no_mangle]
-pub unsafe extern "C" fn stylus_evict_module(module_hash: Bytes32) {
-    println!("evicting module {}", module_hash);
+pub unsafe extern "C" fn stylus_evict_module(module_hash: Bytes32, version: u16, debug: bool) {
+    InitCache::evict(module_hash, version, debug);
 }
 
 /// Frees the vector. Does nothing when the vector is null.

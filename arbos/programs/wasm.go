@@ -136,10 +136,10 @@ func callProgram(
 	params *goParams,
 	memoryModel *MemoryModel,
 ) ([]byte, error) {
-	debug := arbmath.UintToBool(params.debugMode)
 	reqHandler := newApiClosures(interpreter, tracingInfo, scope, memoryModel)
 	configHandler := params.createHandler()
 	dataHandler := evmData.createHandler()
+	debug := params.debugMode
 
 	module := newProgram(
 		unsafe.Pointer(&moduleHash[0]),

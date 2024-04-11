@@ -230,22 +230,26 @@ pub fn create_evm_data(
     block_number: u64,
     block_timestamp: u64,
     contract_address_ptr: GuestPtr,
+    module_hash_ptr: GuestPtr,
     msg_sender_ptr: GuestPtr,
     msg_value_ptr: GuestPtr,
     tx_gas_price_ptr: GuestPtr,
     tx_origin_ptr: GuestPtr,
+    cached: u32,
     reentrant: u32,
 ) -> Result<u64, Escape> {
     let (mut mem, _) = env.jit_env();
 
     let evm_data = EvmData {
         block_basefee: mem.read_bytes32(block_basefee_ptr),
+        cached: cached != 0,
         chainid,
         block_coinbase: mem.read_bytes20(block_coinbase_ptr),
         block_gas_limit,
         block_number,
         block_timestamp,
         contract_address: mem.read_bytes20(contract_address_ptr),
+        module_hash: mem.read_bytes32(module_hash_ptr),
         msg_sender: mem.read_bytes20(msg_sender_ptr),
         msg_value: mem.read_bytes32(msg_value_ptr),
         tx_gas_price: mem.read_bytes32(tx_gas_price_ptr),
