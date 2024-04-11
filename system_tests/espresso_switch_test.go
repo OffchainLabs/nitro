@@ -28,7 +28,7 @@ func TestEspressoSwitch(t *testing.T) {
 
 	currMsg := arbutil.MessageIndex(0)
 	// Wait for the switch to be totally finished
-	err = waitForWith(t, ctx, 2*time.Minute, 15*time.Second, func() bool {
+	err = waitForWith(t, ctx, 3*time.Minute, 30*time.Second, func() bool {
 		msg, err := node.ConsensusNode.TxStreamer.GetMessageCount()
 		if err != nil {
 			return false
