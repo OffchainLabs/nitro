@@ -9,7 +9,6 @@ import (
 	"math/big"
 
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
-	"github.com/offchainlabs/nitro/arbos/programs"
 
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -42,9 +41,8 @@ type TxProcessor struct {
 	computeHoldGas   uint64 // amount of gas temporarily held to prevent compute from exceeding the gas limit
 	delayedInbox     bool   // whether this tx was submitted through the delayed inbox
 	Contracts        []*vm.Contract
-	Programs         map[common.Address]uint  // # of distinct context spans for each program
-	RecentPrograms   *programs.RecentPrograms // programs recently accessed this tx
-	TopTxType        *byte                    // set once in StartTxHook
+	Programs         map[common.Address]uint // # of distinct context spans for each program
+	TopTxType        *byte                   // set once in StartTxHook
 	evm              *vm.EVM
 	CurrentRetryable *common.Hash
 	CurrentRefundTo  *common.Address
@@ -66,7 +64,6 @@ func NewTxProcessor(evm *vm.EVM, msg *core.Message) *TxProcessor {
 		delayedInbox:        evm.Context.Coinbase != l1pricing.BatchPosterAddress,
 		Contracts:           []*vm.Contract{},
 		Programs:            make(map[common.Address]uint),
-		RecentPrograms:      programs.NewRecentProgramsTracker(),
 		TopTxType:           nil,
 		evm:                 evm,
 		CurrentRetryable:    nil,
@@ -128,7 +125,6 @@ func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, interpre
 		interpreter,
 		tracingInfo,
 		input,
-		p.RecentPrograms,
 		reentrant,
 	)
 }
@@ -478,6 +474,10 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 		}
 	}
 	return tipReceipient, nil
+}
+
+func (p *TxProcessor) RunMode() core.MessageRunMode {
+	return p.msg.TxRunMode
 }
 
 func (p *TxProcessor) NonrefundableGas() uint64 {

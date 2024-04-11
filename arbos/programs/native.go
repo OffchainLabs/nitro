@@ -23,6 +23,7 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
@@ -99,7 +100,6 @@ func callProgram(
 	address common.Address,
 	moduleHash common.Hash,
 	scope *vm.ScopeContext,
-	db vm.StateDB,
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,
 	calldata []byte,
@@ -107,10 +107,12 @@ func callProgram(
 	stylusParams *goParams,
 	memoryModel *MemoryModel,
 ) ([]byte, error) {
+	db := interpreter.Evm().StateDB
+	asm := db.GetActivatedAsm(moduleHash)
+
 	if db, ok := db.(*state.StateDB); ok {
 		db.RecordProgram(moduleHash)
 	}
-	asm := db.GetActivatedAsm(moduleHash)
 
 	evmApi := newApi(interpreter, tracingInfo, scope, memoryModel)
 	defer evmApi.drop()
@@ -145,6 +147,40 @@ func handleReqImpl(apiId usize, req_type u32, data *rustSlice, costPtr *u64, out
 	*costPtr = u64(cost)
 	api.pinAndRef(response, out_response)
 	api.pinAndRef(raw_data, out_raw_data)
+}
+
+// Caches a program in Rust. We write a record so that we can undo on revert.
+// For gas estimation and eth_call, we ignore permanent updates and rely on Rust's LRU.
+func cacheProgram(db vm.StateDB, module common.Hash, version uint16, debug bool, runMode core.MessageRunMode) {
+	if runMode == core.MessageCommitMode {
+		asm := db.GetActivatedAsm(module)
+		state.CacheWasmRust(asm, module, version, debug)
+		db.RecordCacheWasm(state.CacheWasm{ModuleHash: module})
+	}
+}
+
+// Evicts a program in Rust. We write a record so that we can undo on revert, unless we don't need to (e.g. expired)
+// For gas estimation and eth_call, we ignore permanent updates and rely on Rust's LRU.
+func evictProgram(db vm.StateDB, module common.Hash, version uint16, debug bool, runMode core.MessageRunMode, forever bool) {
+	if runMode == core.MessageCommitMode {
+		state.EvictWasmRust(module)
+		if !forever {
+			db.RecordEvictWasm(state.EvictWasm{
+				ModuleHash: module,
+				Version:    version,
+				Debug:      debug,
+			})
+		}
+	}
+}
+
+func init() {
+	state.CacheWasmRust = func(asm []byte, moduleHash common.Hash, version uint16, debug bool) {
+		C.stylus_cache_module(goSlice(asm), hashToBytes32(moduleHash), u16(version), cbool(debug))
+	}
+	state.EvictWasmRust = func(moduleHash common.Hash) {
+		C.stylus_evict_module(hashToBytes32(moduleHash))
+	}
 }
 
 func (value bytes32) toHash() common.Hash {

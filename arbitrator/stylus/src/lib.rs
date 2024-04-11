@@ -160,7 +160,7 @@ pub unsafe extern "C" fn stylus_activate(
     UserOutcomeKind::Success
 }
 
-/// Calls a compiled user program.
+/// Calls an activated user program.
 ///
 /// # Safety
 ///
@@ -202,6 +202,31 @@ pub unsafe extern "C" fn stylus_call(
     };
     *gas = pricing.ink_to_gas(ink_left);
     status
+}
+
+/// Caches an activated user program.
+///
+/// # Safety
+///
+/// `module` must represent a valid module produced from `stylus_activate`.
+#[no_mangle]
+pub unsafe extern "C" fn stylus_cache_module(
+    module: GoSliceData,
+    module_hash: Bytes32,
+    version: u16,
+    debug: bool,
+) {
+    println!("caching module {}", module_hash);
+}
+
+/// Evicts an activated user program from the init cache.
+///
+/// # Safety
+///
+/// `module` must represent a valid module produced from `stylus_activate`.
+#[no_mangle]
+pub unsafe extern "C" fn stylus_evict_module(module_hash: Bytes32) {
+    println!("evicting module {}", module_hash);
 }
 
 /// Frees the vector. Does nothing when the vector is null.

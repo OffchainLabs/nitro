@@ -11,6 +11,7 @@ import (
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -90,6 +91,12 @@ func activateProgram(
 	return &activationInfo{moduleHash, initGas, cachedInitGas, asmEstimate, footprint}, nil
 }
 
+// stub any non-consensus, Rust-side caching updates
+func cacheProgram(db vm.StateDB, module common.Hash, version uint16, debug bool, mode core.MessageRunMode) {
+}
+func evictProgram(db vm.StateDB, module common.Hash, version uint16, debug bool, mode core.MessageRunMode, forever bool) {
+}
+
 //go:wasmimport programs new_program
 func newProgram(
 	hashPtr unsafe.Pointer,
@@ -122,7 +129,6 @@ func callProgram(
 	address common.Address,
 	moduleHash common.Hash,
 	scope *vm.ScopeContext,
-	db vm.StateDB,
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,
 	calldata []byte,

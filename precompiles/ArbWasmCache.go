@@ -35,18 +35,24 @@ func (con ArbWasmCache) CodehashIsCached(c ctx, evm mech, codehash hash) (bool, 
 	return c.State.Programs().ProgramCached(codehash)
 }
 
+// Caches all programs with the given codehash.
 func (con ArbWasmCache) setProgramCached(c ctx, evm mech, codehash hash, cached bool) error {
 	if !con.hasAccess(c) {
 		return c.BurnOut()
 	}
-	params, err := c.State.Programs().Params()
+	programs := c.State.Programs()
+	params, err := programs.Params()
 	if err != nil {
 		return err
 	}
+	debugMode := evm.ChainConfig().DebugMode()
+	txRunMode := c.txProcessor.RunMode()
 	emitEvent := func() error {
 		return con.UpdateProgramCache(c, evm, c.caller, codehash, cached)
 	}
-	return c.State.Programs().SetProgramCached(emitEvent, codehash, cached, evm.Context.Time, params)
+	return programs.SetProgramCached(
+		emitEvent, evm.StateDB, codehash, cached, evm.Context.Time, params, txRunMode, debugMode,
+	)
 }
 
 func (con ArbWasmCache) hasAccess(c ctx) bool {

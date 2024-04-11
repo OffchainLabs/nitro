@@ -30,12 +30,14 @@ type ArbWasm struct {
 // Compile a wasm program with the latest instrumentation
 func (con ArbWasm) ActivateProgram(c ctx, evm mech, value huge, program addr) (uint16, huge, error) {
 	debug := evm.ChainConfig().DebugMode()
+	runMode := c.txProcessor.RunMode()
+	programs := c.State.Programs()
 
 	// charge a fixed cost up front to begin activation
 	if err := c.Burn(1659168); err != nil {
 		return 0, nil, err
 	}
-	version, codeHash, moduleHash, dataFee, takeAllGas, err := c.State.Programs().ActivateProgram(evm, program, debug)
+	version, codeHash, moduleHash, dataFee, takeAllGas, err := programs.ActivateProgram(evm, program, runMode, debug)
 	if takeAllGas {
 		_ = c.BurnOut()
 	}
@@ -144,10 +146,10 @@ func (con ArbWasm) KeepaliveDays(c ctx, _ mech) (uint16, error) {
 	return params.KeepaliveDays, err
 }
 
-// Gets the number of extra programs ArbOS caches during a given tx.
-func (con ArbWasm) TxCacheSize(c ctx, _ mech) (uint8, error) {
+// Gets the number of extra programs ArbOS caches during a given block.
+func (con ArbWasm) BlockCacheSize(c ctx, _ mech) (uint16, error) {
 	params, err := c.State.Programs().Params()
-	return params.TxCacheSize, err
+	return params.BlockCacheSize, err
 }
 
 // Gets the stylus version that program with codehash was most recently compiled with

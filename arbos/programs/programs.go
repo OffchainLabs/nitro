@@ -9,6 +9,7 @@ import (
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
@@ -80,7 +81,7 @@ func (p Programs) CacheManagers() *addressSet.AddressSet {
 	return p.cacheManagers
 }
 
-func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode bool) (
+func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runMode core.MessageRunMode, debugMode bool) (
 	uint16, common.Hash, common.Hash, *big.Int, bool, error,
 ) {
 	statedb := evm.StateDB
@@ -118,6 +119,16 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 	if err != nil {
 		return 0, codeHash, common.Hash{}, nil, true, err
 	}
+
+	// replace the cached asm
+	if cached {
+		oldModuleHash, err := p.moduleHashes.Get(codeHash)
+		if err != nil {
+			return 0, codeHash, common.Hash{}, nil, true, err
+		}
+		evictProgram(statedb, oldModuleHash, currentVersion, debugMode, runMode, expired)
+		cacheProgram(statedb, info.moduleHash, stylusVersion, debugMode, runMode)
+	}
 	if err := p.moduleHashes.Set(codeHash, info.moduleHash); err != nil {
 		return 0, codeHash, common.Hash{}, nil, true, err
 	}
@@ -139,7 +150,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, debugMode
 		footprint:     info.footprint,
 		asmEstimateKb: estimateKb,
 		activatedAt:   hoursSinceArbitrum(time),
-		cached:        cached, // TODO: propagate to Rust
+		cached:        cached,
 	}
 	return stylusVersion, codeHash, info.moduleHash, dataFee, false, p.setProgram(codeHash, programData)
 }
@@ -150,7 +161,6 @@ func (p Programs) CallProgram(
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,
 	calldata []byte,
-	recentPrograms *RecentPrograms,
 	reentrant bool,
 ) ([]byte, error) {
 	evm := interpreter.Evm()
@@ -183,7 +193,7 @@ func (p Programs) CallProgram(
 	callCost := model.GasCost(program.footprint, open, ever)
 
 	// pay for program init
-	cached := program.cached || recentPrograms.Insert(codeHash, params)
+	cached := program.cached || statedb.GetRecentWasms().Insert(codeHash, params.BlockCacheSize)
 	if cached {
 		callCost = arbmath.SaturatingUAdd(callCost, 64*uint64(params.MinCachedInitGas))
 		callCost = arbmath.SaturatingUAdd(callCost, uint64(program.cachedInitGas))
@@ -217,10 +227,7 @@ func (p Programs) CallProgram(
 	if contract.CodeAddr != nil {
 		address = *contract.CodeAddr
 	}
-	return callProgram(
-		address, moduleHash, scope, statedb, interpreter,
-		tracingInfo, calldata, evmData, goParams, model,
-	)
+	return callProgram(address, moduleHash, scope, interpreter, tracingInfo, calldata, evmData, goParams, model)
 }
 
 func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
@@ -335,7 +342,16 @@ func (p Programs) ProgramCached(codeHash common.Hash) (bool, error) {
 }
 
 // Sets whether a program is cached. Errors if trying to cache an expired program.
-func (p Programs) SetProgramCached(emitEvent func() error, codeHash common.Hash, cache bool, time uint64, params *StylusParams) error {
+func (p Programs) SetProgramCached(
+	emitEvent func() error,
+	db vm.StateDB,
+	codeHash common.Hash,
+	cache bool,
+	time uint64,
+	params *StylusParams,
+	runMode core.MessageRunMode,
+	debug bool,
+) error {
 	program, err := p.getProgram(codeHash, time)
 	if err != nil {
 		return err
@@ -354,13 +370,21 @@ func (p Programs) SetProgramCached(emitEvent func() error, codeHash common.Hash,
 	if err := emitEvent(); err != nil {
 		return err
 	}
-	if cache {
-		// pay to cache the program
-		if err := p.programs.Burner().Burn(uint64(program.initGas)); err != nil {
-			return err
-		}
+
+	// pay to cache the program, or to re-cache in case of upcoming revert
+	if err := p.programs.Burner().Burn(uint64(program.initGas)); err != nil {
+		return err
 	}
-	program.cached = cache // TODO: propagate to Rust
+	moduleHash, err := p.moduleHashes.Get(codeHash)
+	if err != nil {
+		return err
+	}
+	if cache {
+		cacheProgram(db, moduleHash, program.version, debug, runMode)
+	} else {
+		evictProgram(db, moduleHash, program.version, debug, runMode, expired)
+	}
+	program.cached = cache
 	return p.setProgram(codeHash, program)
 }
 

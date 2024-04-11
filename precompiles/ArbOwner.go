@@ -262,13 +262,13 @@ func (con ArbOwner) SetWasmKeepaliveDays(c ctx, _ mech, days uint16) error {
 	return params.Save()
 }
 
-// Sets the number of extra programs ArbOS caches during a given tx
-func (con ArbOwner) SetWasmTxCacheSize(c ctx, _ mech, count uint8) error {
+// Sets the number of extra programs ArbOS caches during a given block
+func (con ArbOwner) SetWasmBlockCacheSize(c ctx, _ mech, count uint16) error {
 	params, err := c.State.Programs().Params()
 	if err != nil {
 		return err
 	}
-	params.TxCacheSize = count
+	params.BlockCacheSize = count
 	return params.Save()
 }
 

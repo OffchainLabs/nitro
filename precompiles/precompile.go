@@ -614,8 +614,8 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwner.methodsByName["SetBrotliCompressionLevel"].arbosVersion = 20
 	stylusMethods := []string{
 		"SetInkPrice", "SetWasmMaxStackDepth", "SetWasmFreePages", "SetWasmPageGas", "SetWasmPageRamp",
-		"SetWasmPageLimit", "SetWasmMinInitGas", "SetWasmExpiryDays", "SetWasmKeepaliveDays", "SetWasmTxCacheSize",
-		"AddWasmCacheManager", "RemoveWasmCacheManager",
+		"SetWasmPageLimit", "SetWasmMinInitGas", "SetWasmExpiryDays", "SetWasmKeepaliveDays",
+		"SetWasmBlockCacheSize", "AddWasmCacheManager", "RemoveWasmCacheManager",
 	}
 	for _, method := range stylusMethods {
 		ArbOwner.methodsByName[method].arbosVersion = arbostypes.ArbosVersion_Stylus
