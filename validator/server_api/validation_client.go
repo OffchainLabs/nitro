@@ -3,7 +3,6 @@ package server_api
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"sync/atomic"
 	"time"
@@ -106,58 +105,16 @@ type GetLeavesHashRequest struct {
 	NumDesiredLeaves  uint64
 }
 
-// Generic marshaller
-type jsonMarshaller[T any] struct{}
-
-// Marshal converts a GetLeavesHashRequest into a JSON byte slice.
-func (j jsonMarshaller[T]) Marshal(v T) []byte {
-	data, err := json.Marshal(v)
-	if err != nil {
-		log.Error("error marshaling", "value", v, "error", err)
-		return nil
-	}
-	return data
-}
-
-// Unmarshal converts a JSON byte slice into a GetLeavesHashRequest.
-func (j jsonMarshaller[T]) Unmarshal(val []byte) (T, error) {
-	var v T
-	err := json.Unmarshal(val, &v)
-	if err != nil {
-		return v, err
-	}
-	return v, nil
-}
-
 type ExecutionClient struct {
 	ValidationClient
 
 	producer *pubsub.Producer[GetLeavesHashRequest, []common.Hash]
 }
 
-type RedisStreamCfg struct {
-	producerCfg *pubsub.ProducerConfig
-}
-
-type ExecutionClientOpts struct {
-	Config         rpcclient.ClientConfigFetcher
-	Stack          *node.Node
-	RedisStreamCfg *RedisStreamCfg
-}
-
-func NewExecutionClient(opts *ExecutionClientOpts) *ExecutionClient {
-	ret := &ExecutionClient{ValidationClient: *NewValidationClient(opts.Config, opts.Stack)}
-	if opts.RedisStreamCfg != nil {
-		p, err := pubsub.NewProducer[GetLeavesHashRequest, []common.Hash](
-			opts.RedisStreamCfg.producerCfg, jsonMarshaller[GetLeavesHashRequest]{}, jsonMarshaller[[]common.Hash]{},
-		)
-		if err != nil {
-			log.Error("Creating new producer", "error", err)
-			return ret
-		}
-		ret.producer = p
+func NewExecutionClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *ExecutionClient {
+	return &ExecutionClient{
+		ValidationClient: *NewValidationClient(config, stack),
 	}
-	return ret
 }
 
 func (c *ExecutionClient) CreateBoldExecutionRun(wasmModuleRoot common.Hash, stepSize uint64, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {

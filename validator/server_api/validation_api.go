@@ -60,7 +60,7 @@ type ExecServerAPI struct {
 	nextId    uint64
 	runs      map[uint64]*execRunEntry
 
-	consumer *pubsub.Consumer[GetLeavesHashRequest, []common.Hash]
+	consumers []*pubsub.Consumer[GetLeavesHashRequest, []common.Hash]
 }
 
 func NewExecutionServerAPI(valSpawner validator.ValidationSpawner, execution validator.ExecutionSpawner, config server_arb.ArbitratorSpawnerConfigFecher) *ExecServerAPI {
@@ -126,26 +126,29 @@ func (a *ExecServerAPI) removeOldRuns(ctx context.Context) time.Duration {
 func (a *ExecServerAPI) Start(ctx_in context.Context) {
 	a.StopWaiter.Start(ctx_in, a)
 	a.CallIteratively(a.removeOldRuns)
-	if a.consumer != nil {
-		a.consumer.Start(ctx_in)
-		a.StopWaiter.CallIteratively(func(ctx context.Context) time.Duration {
-			msg, err := a.consumer.Consume(ctx)
-			if err != nil {
-				log.Error("Consuming request", "error", err)
+	if len(a.consumers) != 0 {
+		for i := 0; i < len(a.consumers); i++ {
+			a.consumers[i].Start(ctx_in)
+			a.StopWaiter.CallIteratively(func(ctx context.Context) time.Duration {
+				msg, err := a.consumers[i].Consume(ctx)
+				if err != nil {
+					log.Error("Consuming request", "error", err)
+					return 0
+				}
+				hashes, err := a.GetLeavesWithStepSize(ctx, msg.Value.ExecutionID, msg.Value.FromBatch, msg.Value.MachineStartIndex, msg.Value.StepSize, msg.Value.NumDesiredLeaves)
+				if err != nil {
+					// TODO: log other fields as well.
+					log.Error("Error getting leaves with stepsize", "error", err)
+					return 0
+				}
+				if err := a.consumers[i].SetResult(ctx, msg.ID, hashes); err != nil {
+					log.Error("Error setting result", "error", err)
+					return 0
+				}
 				// TODO: consider having this as config param.
 				return time.Second
-			}
-			hashes, err := a.GetLeavesWithStepSize(ctx, msg.Value.ExecutionID, msg.Value.FromBatch, msg.Value.MachineStartIndex, msg.Value.StepSize, msg.Value.NumDesiredLeaves)
-			if err != nil {
-				// TODO: log other fields as well.
-				log.Error("Error getting leaves with stepsize", "error", err)
-			}
-			if err := a.consumer.SetResult(ctx, msg.ID, hashes); err != nil {
-				log.Error("Error setting result", "error", err)
-			}
-			return time.Second
-		})
-
+			})
+		}
 	}
 }
 
