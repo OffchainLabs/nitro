@@ -25,6 +25,6 @@ func (l *MockLightClientReader) IsHotShotAvaliable(t time.Duration) bool {
 	return true
 }
 
-func (l *MockLightClientReader) FetchMerkleRootAtL1Block(L1BlockHeight uint64) (types.BlockMerkleRoot, error) {
+func (l *MockLightClientReader) FetchMerkleRootAtL1Block(l1BlockHeight uint64) (types.BlockMerkleRoot, error) {
 	return types.BlockMerkleRoot{}, nil
 }

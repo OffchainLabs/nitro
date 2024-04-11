@@ -89,9 +89,6 @@ func (s *StopWaiterSafe) Start(ctx context.Context, parent any) error {
 	s.name = getParentName(parent)
 	s.parentCtx = ctx
 	s.ctx, s.stopFunc = context.WithCancel(s.parentCtx)
-	if s.stopped {
-		// s.stopFunc()
-	}
 	return nil
 }
 
