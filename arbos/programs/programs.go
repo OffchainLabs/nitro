@@ -195,10 +195,10 @@ func (p Programs) CallProgram(
 	// pay for program init
 	cached := program.cached || statedb.GetRecentWasms().Insert(codeHash, params.BlockCacheSize)
 	if cached {
-		callCost = arbmath.SaturatingUAdd(callCost, 64*uint64(params.MinCachedInitGas))
+		callCost = arbmath.SaturatingUAdd(callCost, minCachedInitGasUnits*uint64(params.MinCachedInitGas))
 		callCost = arbmath.SaturatingUAdd(callCost, uint64(program.cachedInitGas))
 	} else {
-		callCost = arbmath.SaturatingUAdd(callCost, 256*uint64(params.MinInitGas))
+		callCost = arbmath.SaturatingUAdd(callCost, minInitGasUnits*uint64(params.MinInitGas))
 		callCost = arbmath.SaturatingUAdd(callCost, uint64(program.initGas))
 	}
 	if err := contract.BurnGas(callCost); err != nil {

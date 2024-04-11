@@ -27,6 +27,9 @@ const initialExpiryDays = 365       // deactivate after 1 year.
 const initialKeepaliveDays = 31     // wait a month before allowing reactivation
 const initialRecentCacheSize = 32   // cache the 32 most recent programs
 
+const minCachedInitGasUnits = 64
+const minInitGasUnits = 256
+
 // This struct exists to collect the many Stylus configuration parameters into a single word.
 // The items here must only be modified in ArbOwner precompile methods (or in ArbOS upgrades).
 type StylusParams struct {
