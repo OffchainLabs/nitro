@@ -9,7 +9,7 @@ use crate::{
     value::FunctionType,
     Machine,
 };
-use arbutil::{evm, operator::OperatorInfo};
+use arbutil::{evm, operator::OperatorInfo, Bytes32};
 use derivative::Derivative;
 use eyre::Result;
 use fnv::FnvHashMap as HashMap;
@@ -277,12 +277,12 @@ pub trait MeteredMachine {
 
     /// Pays for a write into the client.
     fn pay_for_write(&mut self, bytes: u32) -> Result<(), OutOfInkError> {
-        self.buy_ink(sat_add_mul(5040, 25, bytes.saturating_sub(32)))
+        self.buy_ink(sat_add_mul(5040, 30, bytes.saturating_sub(32)))
     }
 
     /// Pays for a read into the host.
     fn pay_for_read(&mut self, bytes: u32) -> Result<(), OutOfInkError> {
-        self.buy_ink(sat_add_mul(16381, 54, bytes.saturating_sub(32)))
+        self.buy_ink(sat_add_mul(16381, 55, bytes.saturating_sub(32)))
     }
 
     /// Pays for both I/O and keccak.
@@ -294,6 +294,18 @@ pub trait MeteredMachine {
     /// Pays for copying bytes from geth.
     fn pay_for_geth_bytes(&mut self, bytes: u32) -> Result<(), OutOfInkError> {
         self.pay_for_read(bytes) // TODO: determine value
+    }
+
+    /// Pays for the variable costs of exponentiation.
+    fn pay_for_pow(&mut self, exponent: &Bytes32) -> Result<(), OutOfInkError> {
+        let mut exp = 33;
+        for byte in exponent.iter() {
+            match *byte == 0 {
+                true => exp -= 1, // reduce cost for each big-endian 0 byte
+                false => break,
+            }
+        }
+        self.buy_ink(3000 + exp * 17500)
     }
 }
 

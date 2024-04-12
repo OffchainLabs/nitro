@@ -360,6 +360,34 @@ func transientStorageTest(t *testing.T, jit bool) {
 	validateBlocks(t, 7, jit, builder)
 }
 
+func TestProgramMath(t *testing.T) {
+	t.Parallel()
+	fastMathTest(t, true)
+}
+
+func fastMathTest(t *testing.T, jit bool) {
+	builder, auth, cleanup := setupProgramTest(t, jit)
+	ctx := builder.ctx
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	program := deployWasm(t, ctx, auth, l2client, rustFile("math"))
+
+	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
+	ensure(tx, err)
+	ensure(mock.MathTest(&auth, program))
+
+	validateBlocks(t, 6, jit, builder)
+}
+
 func TestProgramCalls(t *testing.T) {
 	t.Parallel()
 	testCalls(t, true)

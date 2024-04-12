@@ -216,6 +216,39 @@ pub unsafe extern "C" fn user_host__evm_ink_left() -> u64 {
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn user_host__math_div(value: GuestPtr, divisor: GuestPtr) {
+    hostio!(math_div(value, divisor))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__math_mod(value: GuestPtr, modulus: GuestPtr) {
+    hostio!(math_mod(value, modulus))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__math_pow(value: GuestPtr, exponent: GuestPtr) {
+    hostio!(math_pow(value, exponent))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__math_add_mod(
+    value: GuestPtr,
+    addend: GuestPtr,
+    modulus: GuestPtr,
+) {
+    hostio!(math_add_mod(value, addend, modulus))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__math_mul_mod(
+    value: GuestPtr,
+    multiplier: GuestPtr,
+    modulus: GuestPtr,
+) {
+    hostio!(math_mul_mod(value, multiplier, modulus))
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn user_host__msg_reentrant() -> u32 {
     hostio!(msg_reentrant())
 }

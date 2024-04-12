@@ -26,6 +26,10 @@ func TestProgramArbitratorTransientStorage(t *testing.T) {
 	transientStorageTest(t, false)
 }
 
+func TestProgramArbitratorMath(t *testing.T) {
+	fastMathTest(t, false)
+}
+
 func TestProgramArbitratorCalls(t *testing.T) {
 	testCalls(t, false)
 }

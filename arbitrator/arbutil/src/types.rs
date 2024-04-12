@@ -2,6 +2,7 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use num_enum::{IntoPrimitive, TryFromPrimitive};
+use ruint2::Uint;
 use serde::{Deserialize, Serialize};
 use std::{
     borrow::Borrow,
@@ -125,6 +126,20 @@ type GenericBytes32 = digest::generic_array::GenericArray<u8, digest::generic_ar
 impl From<GenericBytes32> for Bytes32 {
     fn from(x: GenericBytes32) -> Self {
         <[u8; 32]>::from(x).into()
+    }
+}
+
+type U256 = Uint<256, 4>;
+
+impl From<Bytes32> for U256 {
+    fn from(value: Bytes32) -> Self {
+        U256::from_be_bytes(value.0)
+    }
+}
+
+impl From<U256> for Bytes32 {
+    fn from(value: U256) -> Self {
+        Self(value.to_be_bytes())
     }
 }
 
