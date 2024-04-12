@@ -490,7 +490,7 @@ func (b *BatchPoster) checkReverts(ctx context.Context, to int64) (bool, error) 
 					return false, fmt.Errorf("getting a receipt for transaction: %v, %w", tx.Hash, err)
 				}
 				if r.Status == types.ReceiptStatusFailed {
-					shouldHalt := !b.config().DataPoster.UseNoOpStorage
+					shouldHalt := !b.dataPoster.UsingNoOpStorage()
 					logLevel := log.Warn
 					if shouldHalt {
 						logLevel = log.Error
