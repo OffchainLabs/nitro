@@ -231,12 +231,20 @@ pub unsafe extern "C" fn user_host__math_pow(value: GuestPtr, exponent: GuestPtr
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__math_add_mod(value: GuestPtr, addend: GuestPtr, modulus: GuestPtr) {
+pub unsafe extern "C" fn user_host__math_add_mod(
+    value: GuestPtr,
+    addend: GuestPtr,
+    modulus: GuestPtr,
+) {
     hostio!(math_add_mod(value, addend, modulus))
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn user_host__math_mul_mod(value: GuestPtr, multiplier: GuestPtr, modulus: GuestPtr) {
+pub unsafe extern "C" fn user_host__math_mul_mod(
+    value: GuestPtr,
+    multiplier: GuestPtr,
+    modulus: GuestPtr,
+) {
     hostio!(math_mul_mod(value, multiplier, modulus))
 }
 

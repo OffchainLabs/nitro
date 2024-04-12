@@ -10,7 +10,7 @@ use arbutil::{
         user::UserOutcomeKind,
         EvmData,
     },
-    pricing::{EVM_API_INK, HOSTIO_INK, PTR_INK},
+    pricing::{self, EVM_API_INK, HOSTIO_INK, PTR_INK},
     Bytes20, Bytes32,
 };
 pub use caller_env::GuestPtr;
@@ -748,7 +748,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     ///
     /// [`DIV`]: https://www.evm.codes/#04
     fn math_div(&mut self, value: GuestPtr, divisor: GuestPtr) -> Result<(), Self::Err> {
-        self.buy_ink(HOSTIO_INK + 2 * PTR_INK)?;
+        self.buy_ink(HOSTIO_INK + 3 * PTR_INK + pricing::DIV_INK)?;
         let (a, a32) = self.read_u256(value)?;
         let (b, b32) = self.read_u256(divisor)?;
 
@@ -763,7 +763,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     ///
     /// [`MOD`]: https://www.evm.codes/#06
     fn math_mod(&mut self, value: GuestPtr, modulus: GuestPtr) -> Result<(), Self::Err> {
-        self.buy_ink(HOSTIO_INK + 2 * PTR_INK)?;
+        self.buy_ink(HOSTIO_INK + 3 * PTR_INK + pricing::DIV_INK)?;
         let (a, a32) = self.read_u256(value)?;
         let (b, b32) = self.read_u256(modulus)?;
 
@@ -777,10 +777,11 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     ///
     /// [`EXP`]: https://www.evm.codes/#0A
     fn math_pow(&mut self, value: GuestPtr, exponent: GuestPtr) -> Result<(), Self::Err> {
-        self.buy_ink(HOSTIO_INK + 2 * PTR_INK)?;
+        self.buy_ink(HOSTIO_INK + 3 * PTR_INK)?;
         let (a, a32) = self.read_u256(value)?;
         let (b, b32) = self.read_u256(exponent)?;
 
+        self.pay_for_pow(&b32)?;
         let result = a.wrapping_pow(b).into();
         self.write_bytes32(value, result)?;
         trace!("math_pow", self, [a32, b32], result)
@@ -797,7 +798,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         addend: GuestPtr,
         modulus: GuestPtr,
     ) -> Result<(), Self::Err> {
-        self.buy_ink(HOSTIO_INK + 3 * PTR_INK)?;
+        self.buy_ink(HOSTIO_INK + 4 * PTR_INK + pricing::ADD_MOD_INK)?;
         let (a, a32) = self.read_u256(value)?;
         let (b, b32) = self.read_u256(addend)?;
         let (c, c32) = self.read_u256(modulus)?;
@@ -818,7 +819,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         multiplier: GuestPtr,
         modulus: GuestPtr,
     ) -> Result<(), Self::Err> {
-        self.buy_ink(HOSTIO_INK + 3 * PTR_INK)?;
+        self.buy_ink(HOSTIO_INK + 4 * PTR_INK + pricing::MUL_MOD_INK)?;
         let (a, a32) = self.read_u256(value)?;
         let (b, b32) = self.read_u256(multiplier)?;
         let (c, c32) = self.read_u256(modulus)?;
