@@ -10,6 +10,7 @@ package pubsub
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"sync"
@@ -29,9 +30,27 @@ const (
 	defaultGroup = "default_consumer_group"
 )
 
-type Marshaller[T any] interface {
-	Marshal(T) []byte
-	Unmarshal(val []byte) (T, error)
+// Generic marshaller for Request and Response generic types.
+// Note: unexported fields will be silently ignored.
+type jsonMarshaller[T any] struct{}
+
+// Marshal marshals generic type object with json marshal.
+func (m jsonMarshaller[T]) Marshal(v T) []byte {
+	data, err := json.Marshal(v)
+	if err != nil {
+		log.Error("error marshaling", "value", v, "error", err)
+		return nil
+	}
+	return data
+}
+
+// Unmarshal converts a JSON byte slice back to the generic type object.
+func (j jsonMarshaller[T]) Unmarshal(val []byte) (T, error) {
+	var v T
+	if err := json.Unmarshal(val, &v); err != nil {
+		return v, err
+	}
+	return v, nil
 }
 
 type Producer[Request any, Response any] struct {
@@ -39,8 +58,8 @@ type Producer[Request any, Response any] struct {
 	id     string
 	client redis.UniversalClient
 	cfg    *ProducerConfig
-	mReq   Marshaller[Request]
-	mResp  Marshaller[Response]
+	mReq   jsonMarshaller[Request]
+	mResp  jsonMarshaller[Response]
 
 	promisesLock sync.RWMutex
 	promises     map[string]*containers.Promise[Response]
@@ -85,7 +104,7 @@ var DefaultTestProducerConfig = &ProducerConfig{
 	RedisStream:          "default",
 	RedisGroup:           defaultGroup,
 	CheckPendingInterval: 10 * time.Millisecond,
-	KeepAliveTimeout:     20 * time.Millisecond,
+	KeepAliveTimeout:     100 * time.Millisecond,
 	CheckResultInterval:  5 * time.Millisecond,
 }
 
@@ -98,7 +117,7 @@ func ProducerAddConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".redis-group", DefaultProducerConfig.RedisGroup, "redis stream consumer group name")
 }
 
-func NewProducer[Request any, Response any](cfg *ProducerConfig, mReq Marshaller[Request], mResp Marshaller[Response]) (*Producer[Request, Response], error) {
+func NewProducer[Request any, Response any](cfg *ProducerConfig) (*Producer[Request, Response], error) {
 	if cfg.RedisURL == "" {
 		return nil, fmt.Errorf("redis url cannot be empty")
 	}
@@ -110,8 +129,8 @@ func NewProducer[Request any, Response any](cfg *ProducerConfig, mReq Marshaller
 		id:       uuid.NewString(),
 		client:   c,
 		cfg:      cfg,
-		mReq:     mReq,
-		mResp:    mResp,
+		mReq:     jsonMarshaller[Request]{},
+		mResp:    jsonMarshaller[Response]{},
 		promises: make(map[string]*containers.Promise[Response]),
 	}, nil
 }
@@ -120,8 +139,8 @@ func (p *Producer[Request, Response]) errorPromisesFor(msgs []*Message[Request])
 	p.promisesLock.Lock()
 	defer p.promisesLock.Unlock()
 	for _, msg := range msgs {
-		if msg != nil {
-			p.promises[msg.ID].ProduceError(fmt.Errorf("internal error, consumer died while serving the request"))
+		if promise, found := p.promises[msg.ID]; found {
+			promise.ProduceError(fmt.Errorf("internal error, consumer died while serving the request"))
 			delete(p.promises, msg.ID)
 		}
 	}
@@ -208,7 +227,9 @@ func (p *Producer[Request, Response]) reproduce(ctx context.Context, value Reque
 	defer p.promisesLock.Unlock()
 	promise := p.promises[oldKey]
 	if oldKey != "" && promise == nil {
-		return nil, fmt.Errorf("errror reproducing the message, could not find existing one")
+		// This will happen if the old consumer became inactive but then ack_d
+		// the message afterwards.
+		return nil, fmt.Errorf("error reproducing the message, could not find existing one")
 	}
 	if oldKey == "" || promise == nil {
 		pr := containers.NewPromise[Response](nil)

@@ -57,8 +57,8 @@ type Consumer[Request any, Response any] struct {
 	id     string
 	client redis.UniversalClient
 	cfg    *ConsumerConfig
-	mReq   Marshaller[Request]
-	mResp  Marshaller[Response]
+	mReq   jsonMarshaller[Request]
+	mResp  jsonMarshaller[Response]
 }
 
 type Message[Request any] struct {
@@ -66,7 +66,7 @@ type Message[Request any] struct {
 	Value Request
 }
 
-func NewConsumer[Request any, Response any](ctx context.Context, cfg *ConsumerConfig, mReq Marshaller[Request], mResp Marshaller[Response]) (*Consumer[Request, Response], error) {
+func NewConsumer[Request any, Response any](ctx context.Context, cfg *ConsumerConfig) (*Consumer[Request, Response], error) {
 	if cfg.RedisURL == "" {
 		return nil, fmt.Errorf("redis url cannot be empty")
 	}
@@ -78,8 +78,8 @@ func NewConsumer[Request any, Response any](ctx context.Context, cfg *ConsumerCo
 		id:     uuid.NewString(),
 		client: c,
 		cfg:    cfg,
-		mReq:   mReq,
-		mResp:  mResp,
+		mReq:   jsonMarshaller[Request]{},
+		mResp:  jsonMarshaller[Response]{},
 	}
 	return consumer, nil
 }
