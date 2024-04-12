@@ -277,12 +277,12 @@ pub trait MeteredMachine {
 
     /// Pays for a write into the client.
     fn pay_for_write(&mut self, bytes: u32) -> Result<(), OutOfInkError> {
-        self.buy_ink(sat_add_mul(5040, 25, bytes.saturating_sub(32)))
+        self.buy_ink(sat_add_mul(5040, 30, bytes.saturating_sub(32)))
     }
 
     /// Pays for a read into the host.
     fn pay_for_read(&mut self, bytes: u32) -> Result<(), OutOfInkError> {
-        self.buy_ink(sat_add_mul(16381, 54, bytes.saturating_sub(32)))
+        self.buy_ink(sat_add_mul(16381, 55, bytes.saturating_sub(32)))
     }
 
     /// Pays for both I/O and keccak.

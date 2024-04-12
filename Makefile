@@ -130,6 +130,8 @@ stylus_test_log_wasm              = $(call get_stylus_test_wasm,log)
 stylus_test_log_src               = $(call get_stylus_test_rust,log)
 stylus_test_create_wasm           = $(call get_stylus_test_wasm,create)
 stylus_test_create_src            = $(call get_stylus_test_rust,create)
+stylus_test_math_wasm             = $(call get_stylus_test_wasm,math)
+stylus_test_math_src              = $(call get_stylus_test_rust,math)
 stylus_test_evm-data_wasm         = $(call get_stylus_test_wasm,evm-data)
 stylus_test_evm-data_src          = $(call get_stylus_test_rust,evm-data)
 stylus_test_sdk-storage_wasm      = $(call get_stylus_test_wasm,sdk-storage)
@@ -139,7 +141,7 @@ stylus_test_erc20_src             = $(call get_stylus_test_rust,erc20)
 stylus_test_read-return-data_wasm = $(call get_stylus_test_wasm,read-return-data)
 stylus_test_read-return-data_src  = $(call get_stylus_test_rust,read-return-data)
 
-stylus_test_wasms = $(stylus_test_keccak_wasm) $(stylus_test_keccak-100_wasm) $(stylus_test_fallible_wasm) $(stylus_test_storage_wasm) $(stylus_test_multicall_wasm) $(stylus_test_log_wasm) $(stylus_test_create_wasm) $(stylus_test_sdk-storage_wasm) $(stylus_test_erc20_wasm) $(stylus_test_read-return-data_wasm) $(stylus_test_evm-data_wasm) $(stylus_test_bfs:.b=.wasm)
+stylus_test_wasms = $(stylus_test_keccak_wasm) $(stylus_test_keccak-100_wasm) $(stylus_test_fallible_wasm) $(stylus_test_storage_wasm) $(stylus_test_multicall_wasm) $(stylus_test_log_wasm) $(stylus_test_create_wasm) $(stylus_test_math_wasm) $(stylus_test_sdk-storage_wasm) $(stylus_test_erc20_wasm) $(stylus_test_read-return-data_wasm) $(stylus_test_evm-data_wasm) $(stylus_test_bfs:.b=.wasm)
 stylus_benchmarks = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(stylus_test_wasms)
 
 # user targets
@@ -401,6 +403,10 @@ $(stylus_test_log_wasm): $(stylus_test_log_src)
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
 $(stylus_test_create_wasm): $(stylus_test_create_src)
+	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
+	@touch -c $@ # cargo might decide to not rebuild the binary
+
+$(stylus_test_math_wasm): $(stylus_test_math_src)
 	$(cargo_nightly) --manifest-path $< --release --config $(stylus_cargo)
 	@touch -c $@ # cargo might decide to not rebuild the binary
 
