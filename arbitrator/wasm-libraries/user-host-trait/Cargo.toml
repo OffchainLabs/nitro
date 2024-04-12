@@ -8,3 +8,4 @@ arbutil = { path = "../../arbutil/" }
 caller-env = { path = "../../caller-env/" }
 prover = { path = "../../prover/", default-features = false }
 eyre = "0.6.5"
+ruint2 = "1.9.0"

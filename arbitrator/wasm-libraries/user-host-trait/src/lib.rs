@@ -19,6 +19,7 @@ use prover::{
     programs::{meter::OutOfInkError, prelude::*},
     value::Value,
 };
+use ruint2::Uint;
 use std::fmt::Display;
 
 macro_rules! be {
@@ -54,6 +55,7 @@ macro_rules! trace {
 }
 type Address = Bytes20;
 type Wei = Bytes32;
+type U256 = Uint<256, 4>;
 
 #[allow(clippy::too_many_arguments)]
 pub trait UserHost<DR: DataReader>: GasMeteredMachine {
@@ -77,9 +79,12 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     fn read_bytes20(&self, ptr: GuestPtr) -> Result<Bytes20, Self::MemoryErr> {
         self.read_fixed(ptr).map(Into::into)
     }
-
     fn read_bytes32(&self, ptr: GuestPtr) -> Result<Bytes32, Self::MemoryErr> {
         self.read_fixed(ptr).map(Into::into)
+    }
+    fn read_u256(&self, ptr: GuestPtr) -> Result<(U256, Bytes32), Self::MemoryErr> {
+        let value = self.read_bytes32(ptr)?;
+        Ok((value.into(), value))
     }
 
     fn say<D: Display>(&self, text: D);
@@ -88,7 +93,6 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     fn write_bytes20(&self, ptr: GuestPtr, src: Bytes20) -> Result<(), Self::MemoryErr> {
         self.write_slice(ptr, &src.0)
     }
-
     fn write_bytes32(&self, ptr: GuestPtr, src: Bytes32) -> Result<(), Self::MemoryErr> {
         self.write_slice(ptr, &src.0)
     }
@@ -736,6 +740,92 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         self.buy_ink(HOSTIO_INK)?;
         let ink = self.ink_ready()?;
         trace!("evm_ink_left", self, be!(ink), &[], ink)
+    }
+
+    /// Computes `value ÷ exponent` using 256-bit math, writing the result to the first.
+    /// The semantics are equivalent to that of the EVM's [`DIV`] opcode, which means that a `divisor` of `0`
+    /// writes `0` to `value`.
+    ///
+    /// [`DIV`]: https://www.evm.codes/#04
+    fn math_div(&mut self, value: GuestPtr, divisor: GuestPtr) -> Result<(), Self::Err> {
+        self.buy_ink(HOSTIO_INK + 2 * PTR_INK)?;
+        let (a, a32) = self.read_u256(value)?;
+        let (b, b32) = self.read_u256(divisor)?;
+
+        let result = a.checked_div(b).unwrap_or_default().into();
+        self.write_bytes32(value, result)?;
+        trace!("math_div", self, [a32, b32], result)
+    }
+
+    /// Computes `value % exponent` using 256-bit math, writing the result to the first.
+    /// The semantics are equivalent to that of the EVM's [`MOD`] opcode, which means that a `modulus` of `0`
+    /// writes `0` to `value`.
+    ///
+    /// [`MOD`]: https://www.evm.codes/#06
+    fn math_mod(&mut self, value: GuestPtr, modulus: GuestPtr) -> Result<(), Self::Err> {
+        self.buy_ink(HOSTIO_INK + 2 * PTR_INK)?;
+        let (a, a32) = self.read_u256(value)?;
+        let (b, b32) = self.read_u256(modulus)?;
+
+        let result = a.checked_rem(b).unwrap_or_default().into();
+        self.write_bytes32(value, result)?;
+        trace!("math_mod", self, [a32, b32], result)
+    }
+
+    /// Computes `value ^ exponent` using 256-bit math, writing the result to the first.
+    /// The semantics are equivalent to that of the EVM's [`EXP`] opcode.
+    ///
+    /// [`EXP`]: https://www.evm.codes/#0A
+    fn math_pow(&mut self, value: GuestPtr, exponent: GuestPtr) -> Result<(), Self::Err> {
+        self.buy_ink(HOSTIO_INK + 2 * PTR_INK)?;
+        let (a, a32) = self.read_u256(value)?;
+        let (b, b32) = self.read_u256(exponent)?;
+
+        let result = a.wrapping_pow(b).into();
+        self.write_bytes32(value, result)?;
+        trace!("math_pow", self, [a32, b32], result)
+    }
+
+    /// Computes `(value + addend) % modulus` using 256-bit math, writing the result to the first.
+    /// The semantics are equivalent to that of the EVM's [`ADDMOD`] opcode, which means that a `modulus` of `0`
+    /// writes `0` to `value`.
+    ///
+    /// [`ADDMOD`]: https://www.evm.codes/#08
+    fn math_add_mod(
+        &mut self,
+        value: GuestPtr,
+        addend: GuestPtr,
+        modulus: GuestPtr,
+    ) -> Result<(), Self::Err> {
+        self.buy_ink(HOSTIO_INK + 3 * PTR_INK)?;
+        let (a, a32) = self.read_u256(value)?;
+        let (b, b32) = self.read_u256(addend)?;
+        let (c, c32) = self.read_u256(modulus)?;
+
+        let result = a.add_mod(b, c).into();
+        self.write_bytes32(value, result)?;
+        trace!("math_add_mod", self, [a32, b32, c32], result)
+    }
+
+    /// Computes `(value * multiplier) % modulus` using 256-bit math, writing the result to the first.
+    /// The semantics are equivalent to that of the EVM's [`MULMOD`] opcode, which means that a `modulus` of `0`
+    /// writes `0` to `value`.
+    ///
+    /// [`MULMOD`]: https://www.evm.codes/#09
+    fn math_mul_mod(
+        &mut self,
+        value: GuestPtr,
+        multiplier: GuestPtr,
+        modulus: GuestPtr,
+    ) -> Result<(), Self::Err> {
+        self.buy_ink(HOSTIO_INK + 3 * PTR_INK)?;
+        let (a, a32) = self.read_u256(value)?;
+        let (b, b32) = self.read_u256(multiplier)?;
+        let (c, c32) = self.read_u256(modulus)?;
+
+        let result = a.mul_mod(b, c).into();
+        self.write_bytes32(value, result)?;
+        trace!("math_mul_mod", self, [a32, b32, c32], result)
     }
 
     /// Whether the current call is reentrant.
