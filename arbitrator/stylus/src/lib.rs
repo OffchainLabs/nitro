@@ -21,8 +21,10 @@ use std::{marker::PhantomData, mem, ptr};
 pub use brotli;
 pub use prover;
 
-pub mod env;
 mod evm_api;
+mod util;
+
+pub mod env;
 pub mod host;
 pub mod native;
 pub mod run;
@@ -189,7 +191,7 @@ pub unsafe extern "C" fn stylus_call(
     let instance = unsafe { NativeInstance::deserialize(module, compile, evm_api, evm_data) };
     let mut instance = match instance {
         Ok(instance) => instance,
-        Err(error) => panic!("failed to instantiate program: {error:?}"),
+        Err(error) => util::panic_with_wasm(module, error.wrap_err("init failed")),
     };
 
     let status = match instance.run_main(&calldata, config, ink) {

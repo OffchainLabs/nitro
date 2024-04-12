@@ -3,7 +3,7 @@
 
 use crate::{
     env::{MeterData, WasmEnv},
-    host,
+    host, util,
 };
 use arbutil::{
     evm::{
@@ -415,6 +415,9 @@ pub fn activate(
     let compile = CompileConfig::version(version, debug);
     let (module, stylus_data) = ProverModule::activate(wasm, version, page_limit, debug, gas)?;
 
-    let asm = self::module(wasm, compile).expect("failed to generate stylus module");
+    let asm = match self::module(wasm, compile) {
+        Ok(asm) => asm,
+        Err(err) => util::panic_with_wasm(wasm, err),
+    };
     Ok((asm, module, stylus_data))
 }
