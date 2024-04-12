@@ -304,6 +304,10 @@ func (p *DataPoster) MaxMempoolTransactions() uint64 {
 	return arbmath.MinInt(config.MaxMempoolTransactions, config.MaxMempoolWeight)
 }
 
+func (p *DataPoster) UsingNoOpStorage() bool {
+	return p.usingNoOpStorage
+}
+
 var ErrExceedsMaxMempoolSize = errors.New("posting this transaction will exceed max mempool size")
 
 // Does basic check whether posting transaction with specified nonce would
