@@ -31,6 +31,8 @@ impl From<u8> for EvmApiStatus {
 pub enum EvmApiMethod {
     GetBytes32,
     SetTrieSlots,
+    GetTransientBytes32,
+    SetTransientBytes32,
     ContractCall,
     DelegateCall,
     StaticCall,
@@ -84,6 +86,14 @@ pub trait EvmApi<D: DataReader>: Send + 'static {
     /// Persists any dirty values in the storage cache to the EVM state trie, dropping the cache entirely if requested.
     /// Analogous to repeated invocations of `vm.SSTORE`.
     fn flush_storage_cache(&mut self, clear: bool, gas_left: u64) -> Result<u64>;
+
+    /// Reads the 32-byte value in the EVM's transient state trie at offset `key`.
+    /// Analogous to `vm.TLOAD`.
+    fn get_transient_bytes32(&mut self, key: Bytes32) -> Bytes32;
+
+    /// Writes the 32-byte value in the EVM's transient state trie at offset `key`.
+    /// Analogous to `vm.TSTORE`.
+    fn set_transient_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Result<()>;
 
     /// Calls the contract at the given address.
     /// Returns the EVM return data's length, the gas cost, and whether the call succeeded.

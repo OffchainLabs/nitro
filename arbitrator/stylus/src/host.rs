@@ -141,6 +141,22 @@ pub(crate) fn storage_flush_cache<D: DataReader, E: EvmApi<D>>(
     hostio!(env, storage_flush_cache(clear != 0))
 }
 
+pub(crate) fn transient_load_bytes32<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+    key: GuestPtr,
+    dest: GuestPtr,
+) -> MaybeEscape {
+    hostio!(env, transient_load_bytes32(key, dest))
+}
+
+pub(crate) fn transient_store_bytes32<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+    key: GuestPtr,
+    value: GuestPtr,
+) -> MaybeEscape {
+    hostio!(env, transient_store_bytes32(key, value))
+}
+
 pub(crate) fn call_contract<D: DataReader, E: EvmApi<D>>(
     mut env: WasmEnvMut<D, E>,
     contract: GuestPtr,

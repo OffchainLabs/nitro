@@ -116,6 +116,14 @@ impl EvmApi<VecReader> for MockEvmApi {
         Ok(22100 * KEYS.lock().len() as u64) // pretend worst case
     }
 
+    fn get_transient_bytes32(&mut self, _key: Bytes32) -> Bytes32 {
+        unimplemented!()
+    }
+
+    fn set_transient_bytes32(&mut self, _key: Bytes32, _value: Bytes32) -> Result<()> {
+        unimplemented!()
+    }
+
     /// Simulates a contract call.
     /// Note: this call function is for testing purposes only and deviates from onchain behavior.
     fn contract_call(

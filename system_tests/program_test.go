@@ -172,9 +172,8 @@ func testActivateTwice(t *testing.T, jit bool) {
 
 	checkReverts := func() {
 		msg := ethereum.CallMsg{
-			To:    &keccakA,
-			Value: big.NewInt(0),
-			Data:  keccakArgs,
+			To:   &keccakA,
+			Data: keccakArgs,
 		}
 		_, err = l2client.CallContract(ctx, msg, nil)
 		if err == nil || !strings.Contains(err.Error(), "ProgramNotActivated") {
@@ -294,6 +293,73 @@ func storageTest(t *testing.T, jit bool) {
 	validateBlocks(t, 2, jit, builder)
 }
 
+func TestProgramTransientStorage(t *testing.T) {
+	t.Parallel()
+	transientStorageTest(t, true)
+}
+
+func transientStorageTest(t *testing.T, jit bool) {
+	builder, auth, cleanup := setupProgramTest(t, jit)
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	storage := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
+	multicall := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
+
+	trans := func(args []byte) []byte {
+		args[0] += 2
+		return args
+	}
+
+	zero := common.Hash{}
+	keys := []common.Hash{}
+	values := []common.Hash{}
+	stored := []common.Hash{}
+	args := argsForMulticall(vm.CALL, storage, nil, trans(argsForStorageWrite(zero, zero)))
+
+	for i := 0; i < 8; i++ {
+		keys = append(keys, testhelpers.RandomHash())
+		values = append(values, testhelpers.RandomHash())
+		if i%2 == 0 {
+			args = multicallAppend(args, vm.CALL, storage, argsForStorageWrite(keys[i], values[i]))
+			args = multicallAppend(args, vm.CALL, storage, argsForStorageRead(keys[i]))
+			stored = append(stored, values[i])
+		} else {
+			args = multicallAppend(args, vm.CALL, storage, trans(argsForStorageWrite(keys[i], values[i])))
+			args = multicallAppend(args, vm.CALL, storage, trans(argsForStorageRead(keys[i])))
+			stored = append(stored, zero)
+		}
+	}
+
+	// do an onchain call
+	tx := l2info.PrepareTxTo("Owner", &multicall, l2info.TransferGas, nil, args)
+	Require(t, l2client.SendTransaction(ctx, tx))
+	_, err := EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+
+	// do an equivalent eth_call
+	msg := ethereum.CallMsg{
+		To:   &multicall,
+		Data: args,
+	}
+	outs, err := l2client.CallContract(ctx, msg, nil)
+	Require(t, err)
+
+	for i, key := range keys {
+		offset := i * 32
+		value := common.BytesToHash(outs[offset : offset+32])
+		if values[i] != value {
+			Fatal(t, "unexpected value in transient storage", i, values[i], value)
+		}
+		assertStorageAt(t, ctx, l2client, storage, key, stored[i])
+		assertStorageAt(t, ctx, l2client, multicall, key, zero)
+	}
+
+	validateBlocks(t, 7, jit, builder)
+}
+
 func TestProgramCalls(t *testing.T) {
 	t.Parallel()
 	testCalls(t, true)
@@ -318,9 +384,8 @@ func testCalls(t *testing.T, jit bool) {
 	expectFailure := func(to common.Address, data []byte, errMsg string) {
 		t.Helper()
 		msg := ethereum.CallMsg{
-			To:    &to,
-			Value: big.NewInt(0),
-			Data:  data,
+			To:   &to,
+			Data: data,
 		}
 		_, err := l2client.CallContract(ctx, msg, nil)
 		if err == nil {

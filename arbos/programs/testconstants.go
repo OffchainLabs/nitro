@@ -15,73 +15,83 @@ import "fmt"
 func testConstants() error {
 
 	// this closure exists to avoid polluting the package namespace
-	errIfNotEq := func(index int, a RequestType, b uint32) error {
+	index := 1
+	errIfNotEq := func(a RequestType, b uint32) error {
 		if uint32(a) != b {
 			return fmt.Errorf("constant test %d failed! %d != %d", index, a, b)
 		}
+		index += 1
 		return nil
 	}
 
-	if err := errIfNotEq(1, GetBytes32, C.EvmApiMethod_GetBytes32); err != nil {
+	if err := errIfNotEq(GetBytes32, C.EvmApiMethod_GetBytes32); err != nil {
 		return err
 	}
-	if err := errIfNotEq(2, SetTrieSlots, C.EvmApiMethod_SetTrieSlots); err != nil {
+	if err := errIfNotEq(SetTrieSlots, C.EvmApiMethod_SetTrieSlots); err != nil {
 		return err
 	}
-	if err := errIfNotEq(3, ContractCall, C.EvmApiMethod_ContractCall); err != nil {
+	if err := errIfNotEq(GetTransientBytes32, C.EvmApiMethod_GetTransientBytes32); err != nil {
 		return err
 	}
-	if err := errIfNotEq(4, DelegateCall, C.EvmApiMethod_DelegateCall); err != nil {
+	if err := errIfNotEq(SetTransientBytes32, C.EvmApiMethod_SetTransientBytes32); err != nil {
 		return err
 	}
-	if err := errIfNotEq(5, StaticCall, C.EvmApiMethod_StaticCall); err != nil {
+	if err := errIfNotEq(ContractCall, C.EvmApiMethod_ContractCall); err != nil {
 		return err
 	}
-	if err := errIfNotEq(6, Create1, C.EvmApiMethod_Create1); err != nil {
+	if err := errIfNotEq(DelegateCall, C.EvmApiMethod_DelegateCall); err != nil {
 		return err
 	}
-	if err := errIfNotEq(7, Create2, C.EvmApiMethod_Create2); err != nil {
+	if err := errIfNotEq(StaticCall, C.EvmApiMethod_StaticCall); err != nil {
 		return err
 	}
-	if err := errIfNotEq(8, EmitLog, C.EvmApiMethod_EmitLog); err != nil {
+	if err := errIfNotEq(Create1, C.EvmApiMethod_Create1); err != nil {
 		return err
 	}
-	if err := errIfNotEq(9, AccountBalance, C.EvmApiMethod_AccountBalance); err != nil {
+	if err := errIfNotEq(Create2, C.EvmApiMethod_Create2); err != nil {
 		return err
 	}
-	if err := errIfNotEq(10, AccountCode, C.EvmApiMethod_AccountCode); err != nil {
+	if err := errIfNotEq(EmitLog, C.EvmApiMethod_EmitLog); err != nil {
 		return err
 	}
-	if err := errIfNotEq(12, AccountCodeHash, C.EvmApiMethod_AccountCodeHash); err != nil {
+	if err := errIfNotEq(AccountBalance, C.EvmApiMethod_AccountBalance); err != nil {
 		return err
 	}
-	if err := errIfNotEq(13, AddPages, C.EvmApiMethod_AddPages); err != nil {
+	if err := errIfNotEq(AccountCode, C.EvmApiMethod_AccountCode); err != nil {
 		return err
 	}
-	if err := errIfNotEq(14, CaptureHostIO, C.EvmApiMethod_CaptureHostIO); err != nil {
+	if err := errIfNotEq(AccountCodeHash, C.EvmApiMethod_AccountCodeHash); err != nil {
 		return err
 	}
-	if err := errIfNotEq(15, EvmApiMethodReqOffset, C.EVM_API_METHOD_REQ_OFFSET); err != nil {
+	if err := errIfNotEq(AddPages, C.EvmApiMethod_AddPages); err != nil {
+		return err
+	}
+	if err := errIfNotEq(CaptureHostIO, C.EvmApiMethod_CaptureHostIO); err != nil {
+		return err
+	}
+	if err := errIfNotEq(EvmApiMethodReqOffset, C.EVM_API_METHOD_REQ_OFFSET); err != nil {
 		return err
 	}
 
-	assertEq := func(index int, a apiStatus, b uint32) error {
+	index = 0
+	assertEq := func(a apiStatus, b uint32) error {
 		if uint32(a) != b {
 			return fmt.Errorf("constant test %d failed! %d != %d", index, a, b)
 		}
+		index += 1
 		return nil
 	}
 
-	if err := assertEq(0, Success, C.EvmApiStatus_Success); err != nil {
+	if err := assertEq(Success, C.EvmApiStatus_Success); err != nil {
 		return err
 	}
-	if err := assertEq(1, Failure, C.EvmApiStatus_Failure); err != nil {
+	if err := assertEq(Failure, C.EvmApiStatus_Failure); err != nil {
 		return err
 	}
-	if err := assertEq(2, OutOfGas, C.EvmApiStatus_OutOfGas); err != nil {
+	if err := assertEq(OutOfGas, C.EvmApiStatus_OutOfGas); err != nil {
 		return err
 	}
-	if err := assertEq(3, WriteProtection, C.EvmApiStatus_WriteProtection); err != nil {
+	if err := assertEq(WriteProtection, C.EvmApiStatus_WriteProtection); err != nil {
 		return err
 	}
 	return nil
