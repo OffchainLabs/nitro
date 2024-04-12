@@ -25,6 +25,8 @@ type RequestType int
 const (
 	GetBytes32 RequestType = iota
 	SetTrieSlots
+	GetTransientBytes32
+	SetTransientBytes32
 	ContractCall
 	DelegateCall
 	StaticCall
@@ -95,6 +97,16 @@ func newApiClosures(
 			*gasLeft -= cost
 			db.SetState(actingAddress, key, value)
 		}
+		return Success
+	}
+	getTransientBytes32 := func(key common.Hash) common.Hash {
+		return db.GetTransientState(actingAddress, key)
+	}
+	setTransientBytes32 := func(key, value common.Hash) apiStatus {
+		if readOnly {
+			return WriteProtection
+		}
+		db.SetTransientState(actingAddress, key, value)
 		return Success
 	}
 	doCall := func(
@@ -317,6 +329,15 @@ func newApiClosures(
 			gas := gasLeft
 			status := setTrieSlots(takeRest(), &gas)
 			return status.to_slice(), nil, gasLeft - gas
+		case GetTransientBytes32:
+			key := takeHash()
+			out := getTransientBytes32(key)
+			return out[:], nil, 0
+		case SetTransientBytes32:
+			key := takeHash()
+			value := takeHash()
+			status := setTransientBytes32(key, value)
+			return status.to_slice(), nil, 0
 		case ContractCall, DelegateCall, StaticCall:
 			var opcode vm.OpCode
 			switch req {

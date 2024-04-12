@@ -59,6 +59,16 @@ pub unsafe extern "C" fn user_host__storage_flush_cache(clear: u32) {
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn user_host__transient_load_bytes32(key: GuestPtr, dest: GuestPtr) {
+    hostio!(transient_load_bytes32(key, dest))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__transient_store_bytes32(key: GuestPtr, value: GuestPtr) {
+    hostio!(transient_store_bytes32(key, value))
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn user_host__call_contract(
     contract: GuestPtr,
     data: GuestPtr,

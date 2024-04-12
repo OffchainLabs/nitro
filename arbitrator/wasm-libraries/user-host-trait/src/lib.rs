@@ -185,6 +185,38 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         trace!("storage_flush_cache", self, [be!(clear as u8)], &[])
     }
 
+    /// Reads a 32-byte value from transient storage. Stylus's storage format is identical to
+    /// that of the EVM. This means that, under the hood, this hostio is accessing the 32-byte
+    /// value stored in the EVM's transient state trie at offset `key`, which will be `0` when not previously
+    /// set. The semantics, then, are equivalent to that of the EVM's [`TLOAD`] opcode.
+    ///
+    /// [`TLOAD`]: https://www.evm.codes/#5c
+    fn transient_load_bytes32(&mut self, key: GuestPtr, dest: GuestPtr) -> Result<(), Self::Err> {
+        self.buy_ink(HOSTIO_INK + 2 * PTR_INK + EVM_API_INK)?;
+        self.buy_gas(evm::TLOAD_GAS)?;
+
+        let key = self.read_bytes32(key)?;
+        let value = self.evm_api().get_transient_bytes32(key);
+        self.write_bytes32(dest, value)?;
+        trace!("transient_load_bytes32", self, key, value)
+    }
+
+    /// Writes a 32-byte value to transient storage. Stylus's storage format is identical to that
+    /// of the EVM. This means that, under the hood, this hostio represents storing a 32-byte value into
+    /// the EVM's transient state trie at offset `key`. The semantics, then, are equivalent to that of the
+    /// EVM's [`TSTORE`] opcode.
+    ///
+    /// [`TSTORE`]: https://www.evm.codes/#5d
+    fn transient_store_bytes32(&mut self, key: GuestPtr, value: GuestPtr) -> Result<(), Self::Err> {
+        self.buy_ink(HOSTIO_INK + 2 * PTR_INK + EVM_API_INK)?;
+        self.buy_gas(evm::TSTORE_GAS)?;
+
+        let key = self.read_bytes32(key)?;
+        let value = self.read_bytes32(value)?;
+        self.evm_api().set_transient_bytes32(key, value)?;
+        trace!("transient_store_bytes32", self, [key, value], &[])
+    }
+
     /// Calls the contract at the given address with options for passing value and to limit the
     /// amount of gas supplied. The return status indicates whether the call succeeded, and is
     /// nonzero on failure.
