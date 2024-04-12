@@ -1165,7 +1165,7 @@ impl Machine {
         Ok(mach)
     }
 
-    pub fn new_from_wavm(wavm_binary: &Path) -> Result<Machine> {
+    pub fn new_from_wavm(wavm_binary: &Path, always_merkleize: bool) -> Result<Machine> {
         let f = BufReader::new(File::open(wavm_binary)?);
         let decompressor = brotli2::read::BrotliDecoder::new(f);
         let mut modules: Vec<Module> = bincode::deserialize_from(decompressor)?;
@@ -1191,12 +1191,17 @@ impl Machine {
                 MerkleType::Function,
                 module.funcs.iter().map(Function::hash).collect(),
             ));
-            module.memory.cache_merkle_tree();
+            if always_merkleize {
+                module.memory.cache_merkle_tree();
+            }
         }
-        let modules_merkle = Some(Merkle::new(
-            MerkleType::Module,
-            modules.iter().map(Module::hash).collect(),
-        ));
+        let mut modules_merkle: Option<Merkle> = None;
+        if always_merkleize {
+            modules_merkle = Some(Merkle::new(
+                MerkleType::Module,
+                modules.iter().map(Module::hash).collect(),
+            ));
+        }
         let mut mach = Machine {
             status: MachineStatus::Running,
             steps: 0,

@@ -20,8 +20,14 @@ struct Args {
 fn main() -> eyre::Result<()> {
     let args = Args::parse();
     let step_sizes = [1, 1 << 10, 1 << 15, 1 << 20, 1 << 26];
+    let always_merkleize = false;
+    println!("Running benchmark with always merkleize feature on");
     for step_size in step_sizes {
-        let mut machine = prepare_machine(args.preimages_path.clone(), args.machine_path.clone())?;
+        let mut machine = prepare_machine(
+            args.preimages_path.clone(),
+            args.machine_path.clone(),
+            always_merkleize,
+        )?;
         let _ = machine.hash();
         let mut hash_times = vec![];
         let mut step_times = vec![];
