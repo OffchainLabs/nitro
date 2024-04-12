@@ -17,11 +17,10 @@ use native::NativeInstance;
 use prover::programs::{prelude::*, StylusData};
 use run::RunProgram;
 use std::{marker::PhantomData, mem, ptr};
+use cache::InitCache;
 
 pub use brotli;
 pub use prover;
-
-use crate::cache::InitCache;
 
 pub mod env;
 pub mod host;
@@ -30,6 +29,7 @@ pub mod run;
 
 mod cache;
 mod evm_api;
+mod util;
 
 #[cfg(test)]
 mod test;
@@ -194,7 +194,7 @@ pub unsafe extern "C" fn stylus_call(
     };
     let mut instance = match instance {
         Ok(instance) => instance,
-        Err(error) => panic!("failed to instantiate program: {error:?}"),
+        Err(error) => util::panic_with_wasm(module, error.wrap_err("init failed")),
     };
 
     let status = match instance.run_main(&calldata, config, ink) {

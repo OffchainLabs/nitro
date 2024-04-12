@@ -87,6 +87,14 @@ impl EvmApi<VecReader> for TestEvmApi {
         Ok(22100 * storage.len() as u64) // pretend worst case
     }
 
+    fn get_transient_bytes32(&mut self, _key: Bytes32) -> Bytes32 {
+        unimplemented!("tload not supported")
+    }
+
+    fn set_transient_bytes32(&mut self, _key: Bytes32, _value: Bytes32) -> Result<()> {
+        unimplemented!("tstore not supported")
+    }
+
     /// Simulates a contract call.
     /// Note: this call function is for testing purposes only and deviates from onchain behavior.
     fn contract_call(

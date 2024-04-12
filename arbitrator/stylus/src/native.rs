@@ -4,7 +4,7 @@
 use crate::{
     cache::InitCache,
     env::{MeterData, WasmEnv},
-    host,
+    host, util,
 };
 use arbutil::{
     evm::{
@@ -159,6 +159,8 @@ impl<D: DataReader, E: EvmApi<D>> NativeInstance<D, E> {
                 "storage_load_bytes32" => func!(host::storage_load_bytes32),
                 "storage_cache_bytes32" => func!(host::storage_cache_bytes32),
                 "storage_flush_cache" => func!(host::storage_flush_cache),
+                "transient_load_bytes32" => func!(host::transient_load_bytes32),
+                "transient_store_bytes32" => func!(host::transient_store_bytes32),
                 "call_contract" => func!(host::call_contract),
                 "delegate_call_contract" => func!(host::delegate_call_contract),
                 "static_call_contract" => func!(host::static_call_contract),
@@ -180,6 +182,11 @@ impl<D: DataReader, E: EvmApi<D>> NativeInstance<D, E> {
                 "block_number" => func!(host::block_number),
                 "block_timestamp" => func!(host::block_timestamp),
                 "contract_address" => func!(host::contract_address),
+                "math_div" => func!(host::math_div),
+                "math_mod" => func!(host::math_mod),
+                "math_pow" => func!(host::math_pow),
+                "math_add_mod" => func!(host::math_add_mod),
+                "math_mul_mod" => func!(host::math_mul_mod),
                 "msg_reentrant" => func!(host::msg_reentrant),
                 "msg_sender" => func!(host::msg_sender),
                 "msg_value" => func!(host::msg_value),
@@ -369,6 +376,8 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
             "storage_load_bytes32" => stub!(|_: u32, _: u32|),
             "storage_cache_bytes32" => stub!(|_: u32, _: u32|),
             "storage_flush_cache" => stub!(|_: u32|),
+            "transient_load_bytes32" => stub!(|_: u32, _: u32|),
+            "transient_store_bytes32" => stub!(|_: u32, _: u32|),
             "call_contract" => stub!(u8 <- |_: u32, _: u32, _: u32, _: u32, _: u64, _: u32|),
             "delegate_call_contract" => stub!(u8 <- |_: u32, _: u32, _: u32, _: u64, _: u32|),
             "static_call_contract" => stub!(u8 <- |_: u32, _: u32, _: u32, _: u64, _: u32|),
@@ -390,6 +399,11 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
             "block_number" => stub!(u64 <- ||),
             "block_timestamp" => stub!(u64 <- ||),
             "contract_address" => stub!(|_: u32|),
+            "math_div" => stub!(|_: u32, _: u32|),
+            "math_mod" => stub!(|_: u32, _: u32|),
+            "math_pow" => stub!(|_: u32, _: u32|),
+            "math_add_mod" => stub!(|_: u32, _: u32, _: u32|),
+            "math_mul_mod" => stub!(|_: u32, _: u32, _: u32|),
             "msg_reentrant" => stub!(u32 <- ||),
             "msg_sender" => stub!(|_: u32|),
             "msg_value" => stub!(|_: u32|),
@@ -428,6 +442,9 @@ pub fn activate(
     let compile = CompileConfig::version(version, debug);
     let (module, stylus_data) = ProverModule::activate(wasm, version, page_limit, debug, gas)?;
 
-    let asm = self::module(wasm, compile).expect("failed to generate stylus module");
+    let asm = match self::module(wasm, compile) {
+        Ok(asm) => asm,
+        Err(err) => util::panic_with_wasm(wasm, err),
+    };
     Ok((asm, module, stylus_data))
 }

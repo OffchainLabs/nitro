@@ -59,6 +59,16 @@ pub unsafe extern "C" fn user_host__storage_flush_cache(clear: u32) {
 }
 
 #[no_mangle]
+pub unsafe extern "C" fn user_host__transient_load_bytes32(key: GuestPtr, dest: GuestPtr) {
+    hostio!(transient_load_bytes32(key, dest))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__transient_store_bytes32(key: GuestPtr, value: GuestPtr) {
+    hostio!(transient_store_bytes32(key, value))
+}
+
+#[no_mangle]
 pub unsafe extern "C" fn user_host__call_contract(
     contract: GuestPtr,
     data: GuestPtr,
@@ -203,6 +213,39 @@ pub unsafe extern "C" fn user_host__evm_gas_left() -> u64 {
 #[no_mangle]
 pub unsafe extern "C" fn user_host__evm_ink_left() -> u64 {
     hostio!(evm_ink_left())
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__math_div(value: GuestPtr, divisor: GuestPtr) {
+    hostio!(math_div(value, divisor))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__math_mod(value: GuestPtr, modulus: GuestPtr) {
+    hostio!(math_mod(value, modulus))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__math_pow(value: GuestPtr, exponent: GuestPtr) {
+    hostio!(math_pow(value, exponent))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__math_add_mod(
+    value: GuestPtr,
+    addend: GuestPtr,
+    modulus: GuestPtr,
+) {
+    hostio!(math_add_mod(value, addend, modulus))
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn user_host__math_mul_mod(
+    value: GuestPtr,
+    multiplier: GuestPtr,
+    modulus: GuestPtr,
+) {
+    hostio!(math_mul_mod(value, multiplier, modulus))
 }
 
 #[no_mangle]

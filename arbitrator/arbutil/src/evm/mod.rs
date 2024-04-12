@@ -20,6 +20,10 @@ pub const COLD_SLOAD_GAS: u64 = 2100;
 // params.WarmStorageReadCostEIP2929
 pub const WARM_SLOAD_GAS: u64 = 100;
 
+// params.WarmStorageReadCostEIP2929 (see enable1153 in jump_table.go)
+pub const TLOAD_GAS: u64 = WARM_SLOAD_GAS;
+pub const TSTORE_GAS: u64 = WARM_SLOAD_GAS;
+
 // params.LogGas and params.LogDataGas
 pub const LOG_TOPIC_GAS: u64 = 375;
 pub const LOG_DATA_GAS: u64 = 8;

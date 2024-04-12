@@ -144,6 +144,22 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         Ok(cost)
     }
 
+    fn get_transient_bytes32(&mut self, key: Bytes32) -> Bytes32 {
+        let (res, ..) = self.request(EvmApiMethod::GetTransientBytes32, key);
+        res.try_into().unwrap()
+    }
+
+    fn set_transient_bytes32(&mut self, key: Bytes32, value: Bytes32) -> Result<()> {
+        let mut data = Vec::with_capacity(64);
+        data.extend(key);
+        data.extend(value);
+        let (res, ..) = self.request(EvmApiMethod::SetTransientBytes32, data);
+        if res[0] != EvmApiStatus::Success.into() {
+            bail!("{}", String::from_utf8_or_hex(res));
+        }
+        Ok(())
+    }
+
     fn contract_call(
         &mut self,
         contract: Bytes20,

@@ -141,6 +141,22 @@ pub(crate) fn storage_flush_cache<D: DataReader, E: EvmApi<D>>(
     hostio!(env, storage_flush_cache(clear != 0))
 }
 
+pub(crate) fn transient_load_bytes32<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+    key: GuestPtr,
+    dest: GuestPtr,
+) -> MaybeEscape {
+    hostio!(env, transient_load_bytes32(key, dest))
+}
+
+pub(crate) fn transient_store_bytes32<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+    key: GuestPtr,
+    value: GuestPtr,
+) -> MaybeEscape {
+    hostio!(env, transient_store_bytes32(key, value))
+}
+
 pub(crate) fn call_contract<D: DataReader, E: EvmApi<D>>(
     mut env: WasmEnvMut<D, E>,
     contract: GuestPtr,
@@ -325,6 +341,48 @@ pub(crate) fn evm_ink_left<D: DataReader, E: EvmApi<D>>(
     mut env: WasmEnvMut<D, E>,
 ) -> Result<u64, Escape> {
     hostio!(env, evm_ink_left())
+}
+
+pub(crate) fn math_div<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+    value: GuestPtr,
+    divisor: GuestPtr,
+) -> MaybeEscape {
+    hostio!(env, math_div(value, divisor))
+}
+
+pub(crate) fn math_mod<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+    value: GuestPtr,
+    modulus: GuestPtr,
+) -> MaybeEscape {
+    hostio!(env, math_mod(value, modulus))
+}
+
+pub(crate) fn math_pow<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+    value: GuestPtr,
+    exponent: GuestPtr,
+) -> MaybeEscape {
+    hostio!(env, math_pow(value, exponent))
+}
+
+pub(crate) fn math_add_mod<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+    value: GuestPtr,
+    addend: GuestPtr,
+    modulus: GuestPtr,
+) -> MaybeEscape {
+    hostio!(env, math_add_mod(value, addend, modulus))
+}
+
+pub(crate) fn math_mul_mod<D: DataReader, E: EvmApi<D>>(
+    mut env: WasmEnvMut<D, E>,
+    value: GuestPtr,
+    multiplier: GuestPtr,
+    modulus: GuestPtr,
+) -> MaybeEscape {
+    hostio!(env, math_mul_mod(value, multiplier, modulus))
 }
 
 pub(crate) fn msg_reentrant<D: DataReader, E: EvmApi<D>>(
