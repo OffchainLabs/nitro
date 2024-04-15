@@ -10,6 +10,7 @@ import (
 	"unsafe"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type stylusConfigHandler uint64
@@ -28,15 +29,18 @@ func createEvmData(
 	blockNumber uint64,
 	blockTimestamp uint64,
 	contractAddress unsafe.Pointer,
+	moduleHash unsafe.Pointer,
 	msgSender unsafe.Pointer,
 	msgValue unsafe.Pointer,
 	txGasPrice unsafe.Pointer,
 	txOrigin unsafe.Pointer,
+	cached uint32,
 	reentrant uint32,
 ) evmDataHandler
 
 func (params *goParams) createHandler() stylusConfigHandler {
-	return createStylusConfig(uint32(params.version), params.maxDepth, params.inkPrice.ToUint32(), params.debugMode)
+	debug := arbmath.BoolToUint32(params.debugMode)
+	return createStylusConfig(uint32(params.version), params.maxDepth, params.inkPrice.ToUint32(), debug)
 }
 
 func (data *evmData) createHandler() evmDataHandler {
@@ -48,10 +52,12 @@ func (data *evmData) createHandler() evmDataHandler {
 		data.blockNumber,
 		data.blockTimestamp,
 		arbutil.SliceToUnsafePointer(data.contractAddress[:]),
+		arbutil.SliceToUnsafePointer(data.moduleHash[:]),
 		arbutil.SliceToUnsafePointer(data.msgSender[:]),
 		arbutil.SliceToUnsafePointer(data.msgValue[:]),
 		arbutil.SliceToUnsafePointer(data.txGasPrice[:]),
 		arbutil.SliceToUnsafePointer(data.txOrigin[:]),
+		arbmath.BoolToUint32(data.cached),
 		data.reentrant,
 	)
 }

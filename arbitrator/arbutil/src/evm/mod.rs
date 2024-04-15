@@ -84,12 +84,14 @@ pub struct EvmData {
     pub block_number: u64,
     pub block_timestamp: u64,
     pub contract_address: Bytes20,
+    pub module_hash: Bytes32,
     pub msg_sender: Bytes20,
     pub msg_value: Bytes32,
     pub tx_gas_price: Bytes32,
     pub tx_origin: Bytes20,
     pub reentrant: u32,
     pub return_data_len: u32,
+    pub cached: bool,
     pub tracing: bool,
 }
 

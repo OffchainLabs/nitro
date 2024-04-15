@@ -25,6 +25,7 @@ rust-version = "1.67"
 [workspace.dependencies]
 cfg-if = "1.0.0"
 lazy_static = "1.4.0"
+lru = "0.12.3"
 num_enum = { version = "0.7.2", default-features = false }
 ruint2 = "1.9.0"
 wasmparser = "0.95"

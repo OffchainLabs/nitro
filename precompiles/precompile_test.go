@@ -190,14 +190,16 @@ func TestPrecompilesPerArbosVersion(t *testing.T) {
 		5:  3,
 		10: 2,
 		11: 4,
-		20: 8 + 27, // 27 for stylus
+		20: 8 + 37, // 37 for stylus
+		// TODO: move stylus methods to ArbOS 30
 	}
 
 	precompiles := Precompiles()
 	newMethodsPerArbosVersion := make(map[uint64]int)
 	for _, precompile := range precompiles {
 		for _, method := range precompile.Precompile().methods {
-			newMethodsPerArbosVersion[method.arbosVersion]++
+			version := arbmath.MaxInt(method.arbosVersion, precompile.Precompile().arbosVersion)
+			newMethodsPerArbosVersion[version]++
 		}
 	}
 

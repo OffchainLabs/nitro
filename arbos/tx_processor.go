@@ -11,7 +11,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 
 	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/ethereum/go-ethereum/core/types"
@@ -477,6 +476,10 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 	return tipReceipient, nil
 }
 
+func (p *TxProcessor) RunMode() core.MessageRunMode {
+	return p.msg.TxRunMode
+}
+
 func (p *TxProcessor) NonrefundableGas() uint64 {
 	// EVM-incentivized activity like freeing storage should only refund amounts paid to the network address,
 	// which represents the overall burden to node operators. A poster's costs, then, should not be eligible
@@ -663,8 +666,7 @@ func (p *TxProcessor) ScheduledTxes() types.Transactions {
 		if log.Address != ArbRetryableTxAddress || log.Topics[0] != RedeemScheduledEventID {
 			continue
 		}
-		event := &precompilesgen.ArbRetryableTxRedeemScheduled{}
-		err := util.ParseRedeemScheduledLog(event, log)
+		event, err := util.ParseRedeemScheduledLog(log)
 		if err != nil {
 			glog.Error("Failed to parse RedeemScheduled log", "err", err)
 			continue

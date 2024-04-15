@@ -29,7 +29,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
-	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	pgen "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -53,7 +53,7 @@ func keccakTest(t *testing.T, jit bool) {
 
 	wasm, _ := readWasmFile(t, rustFile("keccak"))
 	otherAddressSameCode := deployContract(t, ctx, auth, l2client, wasm)
-	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	arbWasm, err := pgen.NewArbWasm(types.ArbWasmAddress, l2client)
 	Require(t, err)
 
 	colors.PrintBlue("program deployed to ", programAddress.Hex())
@@ -153,7 +153,7 @@ func testActivateTwice(t *testing.T, jit bool) {
 		return receipt
 	}
 
-	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
+	arbOwner, err := pgen.NewArbOwner(types.ArbOwnerAddress, l2client)
 	Require(t, err)
 	ensure(arbOwner.SetInkPrice(&auth, 1))
 
@@ -190,8 +190,8 @@ func testActivateTwice(t *testing.T, jit bool) {
 	checkReverts()
 
 	// mechanisms for creating calldata
-	activateProgram, _ := util.NewCallParser(precompilesgen.ArbWasmABI, "activateProgram")
-	legacyError, _ := util.NewCallParser(precompilesgen.ArbDebugABI, "legacyError")
+	activateProgram, _ := util.NewCallParser(pgen.ArbWasmABI, "activateProgram")
+	legacyError, _ := util.NewCallParser(pgen.ArbDebugABI, "legacyError")
 	callKeccak, _ := util.NewCallParser(mocksgen.ProgramTestABI, "callKeccak")
 	pack := func(data []byte, err error) []byte {
 		Require(t, err)
@@ -524,9 +524,9 @@ func testCalls(t *testing.T, jit bool) {
 	expectFailure(callsAddr, argsForMulticall(vm.STATICCALL, storeAddr, nil, writeKey), "")
 
 	// mechanisms for creating calldata
-	burnArbGas, _ := util.NewCallParser(precompilesgen.ArbosTestABI, "burnArbGas")
-	customRevert, _ := util.NewCallParser(precompilesgen.ArbDebugABI, "customRevert")
-	legacyError, _ := util.NewCallParser(precompilesgen.ArbDebugABI, "legacyError")
+	burnArbGas, _ := util.NewCallParser(pgen.ArbosTestABI, "burnArbGas")
+	customRevert, _ := util.NewCallParser(pgen.ArbDebugABI, "customRevert")
+	legacyError, _ := util.NewCallParser(pgen.ArbDebugABI, "legacyError")
 	callKeccak, _ := util.NewCallParser(mocksgen.ProgramTestABI, "callKeccak")
 	pack := func(data []byte, err error) []byte {
 		Require(t, err)
@@ -755,7 +755,7 @@ func testCreate(t *testing.T, jit bool) {
 		}
 
 		// activate the program
-		arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
+		arbWasm, err := pgen.NewArbWasm(types.ArbWasmAddress, l2client)
 		Require(t, err)
 		tx, err = arbWasm.ActivateProgram(&activateAuth, storeAddr)
 		if err != nil {
@@ -828,9 +828,9 @@ func testMemory(t *testing.T, jit bool) {
 		return receipt
 	}
 
-	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, l2client)
+	arbOwner, err := pgen.NewArbOwner(types.ArbOwnerAddress, l2client)
 	Require(t, err)
-	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	arbWasm, err := pgen.NewArbWasm(types.ArbWasmAddress, l2client)
 	Require(t, err)
 
 	ensure(arbOwner.SetInkPrice(&auth, 1e4))
@@ -887,7 +887,7 @@ func testMemory(t *testing.T, jit bool) {
 	colors.PrintGrey("multicall.rs      ", multiAddr)
 	colors.PrintGrey("grow-and-call.wat ", growCallAddr)
 	colors.PrintGrey("grow-120.wat      ", growHugeAddr)
-	activate, _ := util.NewCallParser(precompilesgen.ArbWasmABI, "activateProgram")
+	activate, _ := util.NewCallParser(pgen.ArbWasmABI, "activateProgram")
 	pack := func(data []byte, err error) []byte {
 		Require(t, err)
 		return data
@@ -938,7 +938,7 @@ func testActivateFails(t *testing.T, jit bool) {
 	l2client := builder.L2.Client
 	defer cleanup()
 
-	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	arbWasm, err := pgen.NewArbWasm(types.ArbWasmAddress, l2client)
 	Require(t, err)
 
 	badExportWasm, _ := readWasmFile(t, watFile("bad-export"))
@@ -1041,7 +1041,7 @@ func TestProgramActivationLogs(t *testing.T) {
 	defer cleanup()
 
 	wasm, _ := readWasmFile(t, watFile("memory"))
-	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	arbWasm, err := pgen.NewArbWasm(types.ArbWasmAddress, l2client)
 	Require(t, err)
 
 	nolimitAuth := auth
@@ -1106,6 +1106,124 @@ func testEarlyExit(t *testing.T, jit bool) {
 	validateBlocks(t, 8, jit, builder)
 }
 
+func TestProgramCacheManager(t *testing.T) {
+	builder, ownerAuth, cleanup := setupProgramTest(t, true)
+	ctx := builder.ctx
+	l2client := builder.L2.Client
+	l2info := builder.L2Info
+	defer cleanup()
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+	denytx := func(tx *types.Transaction, err error) {
+		t.Helper()
+		Require(t, err)
+		signer := types.LatestSignerForChainID(tx.ChainId())
+		from, err := signer.Sender(tx)
+		Require(t, err)
+		msg := ethereum.CallMsg{
+			To:    tx.To(),
+			Value: big.NewInt(0),
+			Data:  tx.Data(),
+			From:  from,
+		}
+		_, err = l2client.CallContract(ctx, msg, nil)
+		if err == nil {
+			Fatal(t, "call should have failed")
+		}
+	}
+	assert := func(cond bool, err error, msg ...interface{}) {
+		t.Helper()
+		Require(t, err)
+		if !cond {
+			Fatal(t, msg...)
+		}
+	}
+
+	// precompiles we plan to use
+	arbWasm, err := pgen.NewArbWasm(types.ArbWasmAddress, builder.L2.Client)
+	Require(t, err)
+	arbWasmCache, err := pgen.NewArbWasmCache(types.ArbWasmCacheAddress, builder.L2.Client)
+	Require(t, err)
+	arbOwner, err := pgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	Require(t, err)
+	ensure(arbOwner.SetInkPrice(&ownerAuth, 10_000))
+	parseLog := logParser[pgen.ArbWasmCacheUpdateProgramCache](t, pgen.ArbWasmCacheABI, "UpdateProgramCache")
+
+	// fund a user account we'll use to probe access-restricted methods
+	l2info.GenerateAccount("Anyone")
+	userAuth := l2info.GetDefaultTransactOpts("Anyone", ctx)
+	userAuth.GasLimit = 3e6
+	TransferBalance(t, "Owner", "Anyone", arbmath.BigMulByUint(oneEth, 32), l2info, l2client, ctx)
+
+	// deploy without activating a wasm
+	wasm, _ := readWasmFile(t, rustFile("keccak"))
+	program := deployContract(t, ctx, userAuth, l2client, wasm)
+	codehash := crypto.Keccak256Hash(wasm)
+
+	// try to manage the cache without authorization
+	manager, tx, mock, err := mocksgen.DeploySimpleCacheManager(&ownerAuth, l2client)
+	ensure(tx, err)
+	denytx(mock.CacheProgram(&userAuth, program))
+	denytx(mock.EvictProgram(&userAuth, program))
+
+	// check non-membership
+	isManager, err := arbWasmCache.IsCacheManager(nil, manager)
+	assert(!isManager, err)
+
+	// athorize the manager
+	ensure(arbOwner.AddWasmCacheManager(&ownerAuth, manager))
+	assert(arbWasmCache.IsCacheManager(nil, manager))
+	all, err := arbWasmCache.AllCacheManagers(nil)
+	assert(len(all) == 1 && all[0] == manager, err)
+
+	// try to cache something inactive
+	denytx(mock.CacheProgram(&userAuth, program))
+	ensure(mock.EvictProgram(&userAuth, program))
+	denytx(mock.CacheProgram(&userAuth, testhelpers.RandomAddress()))
+	ensure(mock.EvictProgram(&userAuth, testhelpers.RandomAddress()))
+
+	// cache the active program
+	activateWasm(t, ctx, userAuth, l2client, program, "keccak")
+	ensure(mock.CacheProgram(&userAuth, program))
+	assert(arbWasmCache.CodehashIsCached(nil, codehash))
+
+	// compare gas costs
+	keccak := func() uint16 {
+		tx := l2info.PrepareTxTo("Owner", &program, 1e9, nil, []byte{0x00})
+		return uint16(ensure(tx, l2client.SendTransaction(ctx, tx)).GasUsedForL2())
+	}
+	ensure(mock.EvictProgram(&userAuth, program))
+	miss := keccak()
+	ensure(mock.CacheProgram(&userAuth, program))
+	hits := keccak()
+	cost, err := arbWasm.ProgramInitGas(nil, program)
+	assert(hits-cost.GasWhenCached == miss-cost.Gas, err)
+
+	// check logs
+	empty := len(ensure(mock.CacheProgram(&userAuth, program)).Logs)
+	evict := parseLog(ensure(mock.EvictProgram(&userAuth, program)).Logs[0])
+	cache := parseLog(ensure(mock.CacheProgram(&userAuth, program)).Logs[0])
+	assert(empty == 0 && evict.Manager == manager && !evict.Cached && cache.Codehash == codehash && cache.Cached, nil)
+
+	// check ownership
+	assert(arbOwner.IsChainOwner(nil, ownerAuth.From))
+	ensure(arbWasmCache.EvictCodehash(&ownerAuth, codehash))
+	ensure(arbWasmCache.CacheCodehash(&ownerAuth, codehash))
+
+	// de-authorize manager
+	ensure(arbOwner.RemoveWasmCacheManager(&ownerAuth, manager))
+	denytx(mock.EvictProgram(&userAuth, program))
+	assert(arbWasmCache.CodehashIsCached(nil, codehash))
+	all, err = arbWasmCache.AllCacheManagers(nil)
+	assert(len(all) == 0, err)
+}
+
 func setupProgramTest(t *testing.T, jit bool) (
 	*NodeBuilder, bind.TransactOpts, func(),
 ) {
@@ -1135,9 +1253,9 @@ func setupProgramTest(t *testing.T, jit bool) (
 
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 
-	arbOwner, err := precompilesgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
+	arbOwner, err := pgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
 	Require(t, err)
-	arbDebug, err := precompilesgen.NewArbDebug(types.ArbDebugAddress, builder.L2.Client)
+	arbDebug, err := pgen.NewArbDebug(types.ArbDebugAddress, builder.L2.Client)
 	Require(t, err)
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
@@ -1197,7 +1315,7 @@ func activateWasm(
 	program common.Address,
 	name string,
 ) {
-	arbWasm, err := precompilesgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	arbWasm, err := pgen.NewArbWasm(types.ArbWasmAddress, l2client)
 	Require(t, err)
 
 	timed(t, "activate "+name, func() {

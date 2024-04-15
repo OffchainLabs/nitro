@@ -21,6 +21,10 @@ func (value Uint24) ToUint32() uint32 {
 	return uint32(value)
 }
 
+func (value Uint24) ToUint64() uint64 {
+	return uint64(value)
+}
+
 func IntToUint24[T uint32 | uint64](value T) (Uint24, error) {
 	if value > T(MaxUint24) {
 		return Uint24(MaxUint24), errors.New("value out of range")

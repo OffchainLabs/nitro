@@ -17,7 +17,7 @@ use {
         meter::Meter, start::StartMover, MiddlewareWrapper,
     },
     std::sync::Arc,
-    wasmer::{Cranelift, CraneliftOptLevel, Store},
+    wasmer::{Cranelift, CraneliftOptLevel, Engine, Store},
     wasmer_compiler_singlepass::Singlepass,
 };
 
@@ -210,5 +210,10 @@ impl CompileConfig {
         }
 
         Store::new(compiler)
+    }
+
+    #[cfg(feature = "native")]
+    pub fn engine(&self) -> Engine {
+        self.store().engine().clone()
     }
 }

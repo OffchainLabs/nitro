@@ -43,6 +43,7 @@ pub unsafe extern "C" fn programs__activate(
     pages_ptr: GuestPtr,
     asm_estimate_ptr: GuestPtr,
     init_gas_ptr: GuestPtr,
+    cached_init_gas_ptr: GuestPtr,
     version: u16,
     debug: u32,
     module_hash_ptr: GuestPtr,
@@ -60,7 +61,8 @@ pub unsafe extern "C" fn programs__activate(
             STATIC_MEM.write_u64(gas_ptr, *gas_left);
             STATIC_MEM.write_u16(pages_ptr, data.footprint);
             STATIC_MEM.write_u32(asm_estimate_ptr, data.asm_estimate);
-            STATIC_MEM.write_u32(init_gas_ptr, data.init_gas);
+            STATIC_MEM.write_u16(init_gas_ptr, data.init_gas);
+            STATIC_MEM.write_u16(cached_init_gas_ptr, data.cached_init_gas);
             STATIC_MEM.write_slice(module_hash_ptr, module.hash().as_slice());
             0
         }
@@ -71,7 +73,8 @@ pub unsafe extern "C" fn programs__activate(
             STATIC_MEM.write_u64(gas_ptr, 0);
             STATIC_MEM.write_u16(pages_ptr, 0);
             STATIC_MEM.write_u32(asm_estimate_ptr, 0);
-            STATIC_MEM.write_u32(init_gas_ptr, 0);
+            STATIC_MEM.write_u16(init_gas_ptr, 0);
+            STATIC_MEM.write_u16(cached_init_gas_ptr, 0);
             STATIC_MEM.write_slice(module_hash_ptr, Bytes32::default().as_slice());
             err_bytes.len()
         }
@@ -245,20 +248,24 @@ pub unsafe extern "C" fn programs__create_evm_data(
     block_number: u64,
     block_timestamp: u64,
     contract_address_ptr: GuestPtr,
+    module_hash_ptr: GuestPtr,
     msg_sender_ptr: GuestPtr,
     msg_value_ptr: GuestPtr,
     tx_gas_price_ptr: GuestPtr,
     tx_origin_ptr: GuestPtr,
+    cached: u32,
     reentrant: u32,
 ) -> u64 {
     let evm_data = EvmData {
         block_basefee: read_bytes32(block_basefee_ptr),
+        cached: cached != 0,
         chainid,
         block_coinbase: read_bytes20(block_coinbase_ptr),
         block_gas_limit,
         block_number,
         block_timestamp,
         contract_address: read_bytes20(contract_address_ptr),
+        module_hash: read_bytes32(module_hash_ptr),
         msg_sender: read_bytes20(msg_sender_ptr),
         msg_value: read_bytes32(msg_value_ptr),
         tx_gas_price: read_bytes32(tx_gas_price_ptr),

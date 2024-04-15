@@ -11,6 +11,7 @@ import (
 	"unsafe"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -42,6 +43,7 @@ func programActivate(
 	pages_ptr unsafe.Pointer,
 	asm_estimation_ptr unsafe.Pointer,
 	init_gas_ptr unsafe.Pointer,
+	cached_init_gas_ptr unsafe.Pointer,
 	version uint32,
 	debug uint32,
 	module_hash_ptr unsafe.Pointer,
@@ -64,7 +66,8 @@ func activateProgram(
 	moduleHash := common.Hash{}
 	gasPtr := burner.GasLeft()
 	asmEstimate := uint32(0)
-	initGas := uint32(0)
+	initGas := uint16(0)
+	cachedInitGas := uint16(0)
 
 	footprint := uint16(pageLimit)
 	errLen := programActivate(
@@ -73,6 +76,7 @@ func activateProgram(
 		unsafe.Pointer(&footprint),
 		unsafe.Pointer(&asmEstimate),
 		unsafe.Pointer(&initGas),
+		unsafe.Pointer(&cachedInitGas),
 		uint32(version),
 		debugMode,
 		arbutil.SliceToUnsafePointer(moduleHash[:]),
@@ -84,7 +88,13 @@ func activateProgram(
 		err := errors.New(string(errBuf[:errLen]))
 		return nil, err
 	}
-	return &activationInfo{moduleHash, initGas, asmEstimate, footprint}, nil
+	return &activationInfo{moduleHash, initGas, cachedInitGas, asmEstimate, footprint}, nil
+}
+
+// stub any non-consensus, Rust-side caching updates
+func cacheProgram(db vm.StateDB, module common.Hash, version uint16, debug bool, mode core.MessageRunMode) {
+}
+func evictProgram(db vm.StateDB, module common.Hash, version uint16, debug bool, mode core.MessageRunMode, forever bool) {
 }
 
 //go:wasmimport programs new_program
@@ -119,7 +129,6 @@ func callProgram(
 	address common.Address,
 	moduleHash common.Hash,
 	scope *vm.ScopeContext,
-	db vm.StateDB,
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,
 	calldata []byte,
@@ -127,10 +136,10 @@ func callProgram(
 	params *goParams,
 	memoryModel *MemoryModel,
 ) ([]byte, error) {
-	debug := arbmath.UintToBool(params.debugMode)
 	reqHandler := newApiClosures(interpreter, tracingInfo, scope, memoryModel)
 	configHandler := params.createHandler()
 	dataHandler := evmData.createHandler()
+	debug := params.debugMode
 
 	module := newProgram(
 		unsafe.Pointer(&moduleHash[0]),

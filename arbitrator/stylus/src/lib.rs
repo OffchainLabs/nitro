@@ -11,6 +11,7 @@ use arbutil::{
     format::DebugBytes,
     Bytes32,
 };
+use cache::InitCache;
 use evm_api::NativeRequestHandler;
 use eyre::ErrReport;
 use native::NativeInstance;
@@ -21,13 +22,14 @@ use std::{marker::PhantomData, mem, ptr};
 pub use brotli;
 pub use prover;
 
-mod evm_api;
-mod util;
-
 pub mod env;
 pub mod host;
 pub mod native;
 pub mod run;
+
+mod cache;
+mod evm_api;
+mod util;
 
 #[cfg(test)]
 mod test;
@@ -162,7 +164,7 @@ pub unsafe extern "C" fn stylus_activate(
     UserOutcomeKind::Success
 }
 
-/// Calls a compiled user program.
+/// Calls an activated user program.
 ///
 /// # Safety
 ///
@@ -175,20 +177,21 @@ pub unsafe extern "C" fn stylus_call(
     config: StylusConfig,
     req_handler: NativeRequestHandler,
     evm_data: EvmData,
-    debug_chain: u32,
+    debug_chain: bool,
     output: *mut RustBytes,
     gas: *mut u64,
 ) -> UserOutcomeKind {
     let module = module.slice();
     let calldata = calldata.slice().to_vec();
-    let compile = CompileConfig::version(config.version, debug_chain != 0);
     let evm_api = EvmApiRequestor::new(req_handler);
     let pricing = config.pricing;
     let output = &mut *output;
     let ink = pricing.gas_to_ink(*gas);
 
     // Safety: module came from compile_user_wasm and we've paid for memory expansion
-    let instance = unsafe { NativeInstance::deserialize(module, compile, evm_api, evm_data) };
+    let instance = unsafe {
+        NativeInstance::deserialize_cached(module, config.version, evm_api, evm_data, debug_chain)
+    };
     let mut instance = match instance {
         Ok(instance) => instance,
         Err(error) => util::panic_with_wasm(module, error.wrap_err("init failed")),
@@ -204,6 +207,35 @@ pub unsafe extern "C" fn stylus_call(
     };
     *gas = pricing.ink_to_gas(ink_left);
     status
+}
+
+/// Caches an activated user program.
+///
+/// # Safety
+///
+/// `module` must represent a valid module produced from `stylus_activate`.
+#[no_mangle]
+pub unsafe extern "C" fn stylus_cache_module(
+    module: GoSliceData,
+    module_hash: Bytes32,
+    version: u16,
+    debug: bool,
+) {
+    if let Err(error) = InitCache::insert(module_hash, module.slice(), version, debug) {
+        panic!("tried to cache invalid asm!: {error}");
+    }
+}
+
+/// Evicts an activated user program from the init cache.
+#[no_mangle]
+pub extern "C" fn stylus_evict_module(module_hash: Bytes32, version: u16, debug: bool) {
+    InitCache::evict(module_hash, version, debug);
+}
+
+/// Reorgs the init cache. This will likely never happen.
+#[no_mangle]
+pub extern "C" fn stylus_reorg_vm(block: u64) {
+    InitCache::reorg(block);
 }
 
 /// Frees the vector. Does nothing when the vector is null.

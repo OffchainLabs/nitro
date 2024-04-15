@@ -1208,3 +1208,13 @@ func getExecNode(t *testing.T, node *arbnode.Node) *gethexec.ExecutionNode {
 	}
 	return gethExec
 }
+
+func logParser[T any](t *testing.T, source string, name string) func(*types.Log) *T {
+	parser := util.NewLogParser[T](source, name)
+	return func(log *types.Log) *T {
+		t.Helper()
+		event, err := parser(log)
+		Require(t, err, "failed to parse log")
+		return event
+	}
+}

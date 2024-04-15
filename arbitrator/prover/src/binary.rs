@@ -576,6 +576,7 @@ impl<'a> WasmBinary<'a> {
 
         // TODO: determine safe value
         let init_gas = 4096;
+        let cached_init_gas = 1024;
 
         let [ink_left, ink_status] = meter.globals();
         let depth_left = depth.globals();
@@ -584,6 +585,7 @@ impl<'a> WasmBinary<'a> {
             ink_status: ink_status.as_u32(),
             depth_left: depth_left.as_u32(),
             init_gas,
+            cached_init_gas,
             asm_estimate,
             footprint,
             user_main,

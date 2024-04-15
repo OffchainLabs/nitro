@@ -18,6 +18,7 @@ type ArbWasm struct {
 	ProgramLifetimeExtended        func(ctx, mech, hash, huge) error
 	ProgramLifetimeExtendedGasCost func(hash, huge) (uint64, error)
 
+	ProgramNotWasmError           func() error
 	ProgramNotActivatedError      func() error
 	ProgramNeedsUpgradeError      func(version, stylusVersion uint16) error
 	ProgramExpiredError           func(age uint64) error
@@ -29,12 +30,14 @@ type ArbWasm struct {
 // Compile a wasm program with the latest instrumentation
 func (con ArbWasm) ActivateProgram(c ctx, evm mech, value huge, program addr) (uint16, huge, error) {
 	debug := evm.ChainConfig().DebugMode()
+	runMode := c.txProcessor.RunMode()
+	programs := c.State.Programs()
 
 	// charge a fixed cost up front to begin activation
 	if err := c.Burn(1659168); err != nil {
 		return 0, nil, err
 	}
-	version, codeHash, moduleHash, dataFee, takeAllGas, err := c.State.Programs().ActivateProgram(evm, program, debug)
+	version, codeHash, moduleHash, dataFee, takeAllGas, err := programs.ActivateProgram(evm, program, runMode, debug)
 	if takeAllGas {
 		_ = c.BurnOut()
 	}
@@ -125,10 +128,10 @@ func (con ArbWasm) PageLimit(c ctx, _ mech) (uint16, error) {
 	return params.PageLimit, err
 }
 
-// Gets the minimum cost to invoke a program
-func (con ArbWasm) MinInitGas(c ctx, _ mech) (uint16, error) {
+// Gets the minimum costs to invoke a program
+func (con ArbWasm) MinInitGas(c ctx, _ mech) (uint8, uint8, error) {
 	params, err := c.State.Programs().Params()
-	return params.MinInitGas, err
+	return params.MinInitGas, params.MinCachedInitGas, err
 }
 
 // Gets the number of days after which programs deactivate
@@ -143,6 +146,12 @@ func (con ArbWasm) KeepaliveDays(c ctx, _ mech) (uint16, error) {
 	return params.KeepaliveDays, err
 }
 
+// Gets the number of extra programs ArbOS caches during a given block.
+func (con ArbWasm) BlockCacheSize(c ctx, _ mech) (uint16, error) {
+	params, err := c.State.Programs().Params()
+	return params.BlockCacheSize, err
+}
+
 // Gets the stylus version that program with codehash was most recently compiled with
 func (con ArbWasm) CodehashVersion(c ctx, evm mech, codehash bytes32) (uint16, error) {
 	params, err := c.State.Programs().Params()
@@ -150,6 +159,15 @@ func (con ArbWasm) CodehashVersion(c ctx, evm mech, codehash bytes32) (uint16, e
 		return 0, err
 	}
 	return c.State.Programs().CodehashVersion(codehash, evm.Context.Time, params)
+}
+
+// Gets a program's asm size in bytes
+func (con ArbWasm) CodehashAsmSize(c ctx, evm mech, codehash bytes32) (uint32, error) {
+	params, err := c.State.Programs().Params()
+	if err != nil {
+		return 0, err
+	}
+	return c.State.Programs().ProgramAsmSize(codehash, evm.Context.Time, params)
 }
 
 // Gets the stylus version that program at addr was most recently compiled with
@@ -162,10 +180,10 @@ func (con ArbWasm) ProgramVersion(c ctx, evm mech, program addr) (uint16, error)
 }
 
 // Gets the cost to invoke the program (not including MinInitGas)
-func (con ArbWasm) ProgramInitGas(c ctx, evm mech, program addr) (uint32, error) {
+func (con ArbWasm) ProgramInitGas(c ctx, evm mech, program addr) (uint16, uint16, error) {
 	codehash, params, err := con.getCodeHash(c, program)
 	if err != nil {
-		return 0, err
+		return 0, 0, err
 	}
 	return c.State.Programs().ProgramInitGas(codehash, evm.Context.Time, params)
 }

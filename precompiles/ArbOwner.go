@@ -231,13 +231,14 @@ func (con ArbOwner) SetWasmPageLimit(c ctx, evm mech, limit uint16) error {
 	return params.Save()
 }
 
-// Sets the minimum cost to invoke a program
-func (con ArbOwner) SetWasmMinInitGas(c ctx, _ mech, gas uint16) error {
+// Sets the minimum costs to invoke a program
+func (con ArbOwner) SetWasmMinInitGas(c ctx, _ mech, gas, cached uint8) error {
 	params, err := c.State.Programs().Params()
 	if err != nil {
 		return err
 	}
 	params.MinInitGas = gas
+	params.MinCachedInitGas = cached
 	return params.Save()
 }
 
@@ -259,6 +260,34 @@ func (con ArbOwner) SetWasmKeepaliveDays(c ctx, _ mech, days uint16) error {
 	}
 	params.KeepaliveDays = days
 	return params.Save()
+}
+
+// Sets the number of extra programs ArbOS caches during a given block
+func (con ArbOwner) SetWasmBlockCacheSize(c ctx, _ mech, count uint16) error {
+	params, err := c.State.Programs().Params()
+	if err != nil {
+		return err
+	}
+	params.BlockCacheSize = count
+	return params.Save()
+}
+
+// Adds account as a wasm cache manager
+func (con ArbOwner) AddWasmCacheManager(c ctx, _ mech, manager addr) error {
+	return c.State.Programs().CacheManagers().Add(manager)
+}
+
+// Removes account from the list of wasm cache managers
+func (con ArbOwner) RemoveWasmCacheManager(c ctx, _ mech, manager addr) error {
+	managers := c.State.Programs().CacheManagers()
+	isMember, err := managers.IsMember(manager)
+	if err != nil {
+		return err
+	}
+	if !isMember {
+		return errors.New("tried to remove non-manager")
+	}
+	return managers.Remove(manager, c.State.ArbOSVersion())
 }
 
 func (con ArbOwner) SetChainConfig(c ctx, evm mech, serializedChainConfig []byte) error {
