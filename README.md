@@ -3,13 +3,21 @@
 [![Go Report Card](https://goreportcard.com/badge/github.com/OffchainLabs/bold)](https://goreportcard.com/report/github.com/OffchainLabs/bold)
 [![codecov](https://codecov.io/gh/OffchainLabs/bold/branch/main/graph/badge.svg)](https://codecov.io/gh/OffchainLabs/bold)
 
-[![Go](https://github.com/OffchainLabs/bold/actions/workflows/go.yml/badge.svg)](https://github.com/OffchainLabs/bold/actions/workflows/go.yml)
+This repository implements Offchain Labs' BOLD (Bounded Liquidity Delay) Protocol: a dispute system to enable permissionless validation of Arbitrum chains. It is an efficient, all-vs-all challenge protocol that enables anyone on Ethereum to challenge invalid rollup state transitions. 
 
-This repository implements Offchain Labs' BOLD (Bounded Liquidity Delay) Protocol: a dispute system to enable permissionless validation of Arbitrum chains. It is an efficient, all-vs-all challenge protocol that enables anyone on Ethereum to challenge invalid rollup state transitions. Given state transitions are deterministic, this guarantees only one correct result for any given assertion. A **single, honest participant** will always win against malicious entities when challenging assertions posted to the settlement chain. 
+BOLD provides a fixed, upper-bound on challenge confirmations for Arbitrum chains.
+
+Given state transitions are deterministic, this guarantees only one correct result for any given assertion. An **honest participant** will always win against malicious entities when challenging assertions posted to the settlement chain. 
 
 ## Repository Structure
 
-For detailed information on how our code is architected and how it meets the BOLD specification, see [ARCHITECTURE.md](docs/ARCHITECTURE.md).
+For our research specification of BOLD, see [BOLDChallengeProtocol.pdf](docs/research-specs/BOLDChallengeProtocol.pdf).
+
+For our a technical deep dive into BOLD, see [TechnicalDeepDive.pdf](docs/research-specs/TechnicalDeepDive.pdf)
+
+For documentation on the economics of BOLD, see [Economics.pdf](docs/research-specs/Economics.pdf)
+
+For detailed information on how our code is architected, see [ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ```
 api/ 
@@ -80,7 +88,7 @@ malicious parties.
 
 ### Go Code
 
-Install [Go v1.19](https://go.dev/doc/install). Then:
+Install [Go v1.20](https://go.dev/doc/install). Then:
 
 ```
 git clone https://github.com/OffchainLabs/bold.git && cd bold
@@ -199,11 +207,11 @@ You should now have Go bindings inside of `solgen/go`
 
 ## Documentation
 
-Go doc reference is available at [pkg.go.dev][https://pkg.go.dev/github.com/OffchainLabs/bold], and an architecture guide to the codebase can be found under [ARCHITECTURE.md](./docs/ARCHITECTURE.md).
+Go doc reference is available at [pkg.go.dev][https://pkg.go.dev/github.com/OffchainLabs/bold], and all documentation about the codebase can be found under `docs/`
 
 ## Security Audit
 
-BOLD has been audited by [Trail of Bits](https://www.trailofbits.com/) as of commit [60f97068c12cca73c45117a05ba1922f949fd6ae](https://github.com/OffchainLabs/bold/commit/60f97068c12cca73c45117a05ba1922f949fd6ae). All issues found have been resolved.
+BOLD has been audited by [Trail of Bits](https://www.trailofbits.com/) as of commit [60f97068c12cca73c45117a05ba1922f949fd6ae](https://github.com/OffchainLabs/bold/commit/60f97068c12cca73c45117a05ba1922f949fd6ae), and a more updated audit is being completed, to be finalized in the coming few weeks.
 
 The audit report can be found under [docs/audits/TrailOfBitsAudit](./docs/audits/TrailOfBitsAudit.pdf).
 
@@ -213,4 +221,4 @@ BOLD uses [Business Source License 1.1](./LICENSE)
 
 ## Credits
 
-Huge credits on this project go to those who created BOLD and were involved in its implementation: Ed Felten, Yafah Edelman, Chris Buckland, Harry Ng, Lee Bousfield, Terence Tsao, Mario Alvarez, Preston Van Loon, Mahimna Kelkar, Aman Sanghi, Daniel Goldman, Raul Jordan
+Huge credits on this project go to those who created BOLD and were involved in its implementation: Ed Felten, Yafah Edelman, Chris Buckland, Harry Ng, Lee Bousfield, Terence Tsao, Mario Alvarez, Preston Van Loon, Mahimna Kelkar, Aman Sanghi, Daniel Goldman, Raul Jordan, Henry Arneson, Derek Lee, Victor Shoup
