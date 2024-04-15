@@ -151,7 +151,7 @@ impl Function {
     fn set_code_merkle(&mut self) {
         let code = &self.code;
         let chunks = math::div_ceil::<64>(code.len());
-        let crunch = |x: usize| Instruction::hash(&code[x..(x + 64).min(code.len())]);
+        let crunch = |x: usize| Instruction::hash(&code[64 * x..(64 * (x + 1)).min(code.len())]);
 
         #[cfg(feature = "rayon")]
         let code_hashes = (0..chunks).into_par_iter().map(crunch).collect();
