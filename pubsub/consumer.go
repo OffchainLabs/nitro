@@ -37,8 +37,8 @@ var DefaultConsumerConfig = &ConsumerConfig{
 }
 
 var DefaultTestConsumerConfig = &ConsumerConfig{
-	RedisStream:          "test_stream",
-	RedisGroup:           "test_group",
+	RedisStream:          "",
+	RedisGroup:           "",
 	ResponseEntryTimeout: time.Minute,
 	KeepAliveTimeout:     30 * time.Millisecond,
 }
