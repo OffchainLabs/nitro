@@ -18,7 +18,6 @@ import (
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
 	"github.com/OffchainLabs/bold/testing/setup"
-	"github.com/OffchainLabs/bold/util"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -701,51 +700,4 @@ func TestLatestCreatedAssertionHashes(t *testing.T) {
 	for i, id := range latest {
 		require.Equal(t, uint64(i), id.Big().Uint64())
 	}
-}
-
-type Commiter interface {
-	Commit() common.Hash
-}
-
-func submitBatch(
-	t *testing.T,
-	ctx context.Context,
-	txOpts *bind.TransactOpts,
-	bridgeStubAddr common.Address,
-	backend bind.ContractBackend,
-	batchDataHash common.Hash,
-	totalNewMessages uint64,
-) {
-	bridgeStub, err := mocksgen.NewBridgeStub(bridgeStubAddr, backend)
-	require.NoError(t, err)
-
-	delayedCount, err := bridgeStub.DelayedMessageCount(util.GetSafeCallOpts(&bind.CallOpts{}))
-	require.NoError(t, err)
-
-	seqMessageCount, err := bridgeStub.SequencerMessageCount(util.GetSafeCallOpts(&bind.CallOpts{}))
-	require.NoError(t, err)
-
-	totalNew := new(big.Int).SetUint64(totalNewMessages)
-	newMessageCount := new(big.Int).Add(seqMessageCount, totalNew)
-
-	_, err = bridgeStub.EnqueueSequencerMessage(
-		txOpts,
-		batchDataHash,
-		delayedCount,
-		seqMessageCount,
-		newMessageCount,
-	)
-	require.NoError(t, err)
-	commiter, ok := backend.(Commiter)
-	require.Equal(t, true, ok)
-	commiter.Commit()
-
-	gotMessageCount, err := bridgeStub.SequencerMessageCount(util.GetSafeCallOpts(&bind.CallOpts{}))
-	require.NoError(t, err)
-	require.Equal(
-		t,
-		newMessageCount.Uint64(),
-		gotMessageCount.Uint64(),
-		"message count after posting to bridge stub did not increase",
-	)
 }
