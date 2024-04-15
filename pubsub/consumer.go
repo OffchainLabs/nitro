@@ -2,6 +2,7 @@ package pubsub
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -31,13 +32,13 @@ type ConsumerConfig struct {
 var DefaultConsumerConfig = &ConsumerConfig{
 	ResponseEntryTimeout: time.Hour,
 	KeepAliveTimeout:     5 * time.Minute,
-	RedisStream:          "default",
-	RedisGroup:           defaultGroup,
+	RedisStream:          "",
+	RedisGroup:           "",
 }
 
 var DefaultTestConsumerConfig = &ConsumerConfig{
-	RedisStream:          "default",
-	RedisGroup:           defaultGroup,
+	RedisStream:          "test_stream",
+	RedisGroup:           "test_group",
 	ResponseEntryTimeout: time.Minute,
 	KeepAliveTimeout:     30 * time.Millisecond,
 }
@@ -57,8 +58,6 @@ type Consumer[Request any, Response any] struct {
 	id     string
 	client redis.UniversalClient
 	cfg    *ConsumerConfig
-	mReq   jsonMarshaller[Request]
-	mResp  jsonMarshaller[Response]
 }
 
 type Message[Request any] struct {
@@ -70,6 +69,12 @@ func NewConsumer[Request any, Response any](ctx context.Context, cfg *ConsumerCo
 	if cfg.RedisURL == "" {
 		return nil, fmt.Errorf("redis url cannot be empty")
 	}
+	if cfg.RedisStream == "" {
+		return nil, fmt.Errorf("redis stream name cannot be empty")
+	}
+	if cfg.RedisGroup == "" {
+		return nil, fmt.Errorf("redis group name cannot be emtpy")
+	}
 	c, err := redisutil.RedisClientFromURL(cfg.RedisURL)
 	if err != nil {
 		return nil, err
@@ -78,8 +83,6 @@ func NewConsumer[Request any, Response any](ctx context.Context, cfg *ConsumerCo
 		id:     uuid.NewString(),
 		client: c,
 		cfg:    cfg,
-		mReq:   jsonMarshaller[Request]{},
-		mResp:  jsonMarshaller[Response]{},
 	}
 	return consumer, nil
 }
@@ -147,8 +150,8 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 	if !ok {
 		return nil, fmt.Errorf("casting request to string: %w", err)
 	}
-	req, err := c.mReq.Unmarshal([]byte(data))
-	if err != nil {
+	var req Request
+	if err := json.Unmarshal([]byte(data), &req); err != nil {
 		return nil, fmt.Errorf("unmarshaling value: %v, error: %w", value, err)
 	}
 
@@ -159,7 +162,11 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 }
 
 func (c *Consumer[Request, Response]) SetResult(ctx context.Context, messageID string, result Response) error {
-	acquired, err := c.client.SetNX(ctx, messageID, c.mResp.Marshal(result), c.cfg.ResponseEntryTimeout).Result()
+	resp, err := json.Marshal(result)
+	if err != nil {
+		return fmt.Errorf("marshaling result: %w", err)
+	}
+	acquired, err := c.client.SetNX(ctx, messageID, resp, c.cfg.ResponseEntryTimeout).Result()
 	if err != nil || !acquired {
 		return fmt.Errorf("setting result for  message: %v, error: %w", messageID, err)
 	}

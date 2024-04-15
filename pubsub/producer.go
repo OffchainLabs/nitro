@@ -30,36 +30,11 @@ const (
 	defaultGroup = "default_consumer_group"
 )
 
-// Generic marshaller for Request and Response generic types.
-// Note: unexported fields will be silently ignored.
-type jsonMarshaller[T any] struct{}
-
-// Marshal marshals generic type object with json marshal.
-func (m jsonMarshaller[T]) Marshal(v T) []byte {
-	data, err := json.Marshal(v)
-	if err != nil {
-		log.Error("error marshaling", "value", v, "error", err)
-		return nil
-	}
-	return data
-}
-
-// Unmarshal converts a JSON byte slice back to the generic type object.
-func (j jsonMarshaller[T]) Unmarshal(val []byte) (T, error) {
-	var v T
-	if err := json.Unmarshal(val, &v); err != nil {
-		return v, err
-	}
-	return v, nil
-}
-
 type Producer[Request any, Response any] struct {
 	stopwaiter.StopWaiter
 	id     string
 	client redis.UniversalClient
 	cfg    *ProducerConfig
-	mReq   jsonMarshaller[Request]
-	mResp  jsonMarshaller[Response]
 
 	promisesLock sync.RWMutex
 	promises     map[string]*containers.Promise[Response]
@@ -92,17 +67,17 @@ type ProducerConfig struct {
 
 var DefaultProducerConfig = &ProducerConfig{
 	EnableReproduce:      true,
-	RedisStream:          "default",
+	RedisStream:          "",
+	RedisGroup:           "",
 	CheckPendingInterval: time.Second,
 	KeepAliveTimeout:     5 * time.Minute,
 	CheckResultInterval:  5 * time.Second,
-	RedisGroup:           defaultGroup,
 }
 
 var DefaultTestProducerConfig = &ProducerConfig{
 	EnableReproduce:      true,
-	RedisStream:          "default",
-	RedisGroup:           defaultGroup,
+	RedisStream:          "",
+	RedisGroup:           "",
 	CheckPendingInterval: 10 * time.Millisecond,
 	KeepAliveTimeout:     100 * time.Millisecond,
 	CheckResultInterval:  5 * time.Millisecond,
@@ -121,6 +96,12 @@ func NewProducer[Request any, Response any](cfg *ProducerConfig) (*Producer[Requ
 	if cfg.RedisURL == "" {
 		return nil, fmt.Errorf("redis url cannot be empty")
 	}
+	if cfg.RedisStream == "" {
+		return nil, fmt.Errorf("redis stream cannot be emtpy")
+	}
+	if cfg.RedisGroup == "" {
+		return nil, fmt.Errorf("redis group cannot be empty")
+	}
 	c, err := redisutil.RedisClientFromURL(cfg.RedisURL)
 	if err != nil {
 		return nil, err
@@ -129,8 +110,6 @@ func NewProducer[Request any, Response any](cfg *ProducerConfig) (*Producer[Requ
 		id:       uuid.NewString(),
 		client:   c,
 		cfg:      cfg,
-		mReq:     jsonMarshaller[Request]{},
-		mResp:    jsonMarshaller[Response]{},
 		promises: make(map[string]*containers.Promise[Response]),
 	}, nil
 }
@@ -191,12 +170,12 @@ func (p *Producer[Request, Response]) checkResponses(ctx context.Context) time.D
 			}
 			log.Error("Error reading value in redis", "key", id, "error", err)
 		}
-		val, err := p.mResp.Unmarshal([]byte(res))
-		if err != nil {
+		var resp Response
+		if err := json.Unmarshal([]byte(res), &resp); err != nil {
 			log.Error("Error unmarshaling", "value", res, "error", err)
 			continue
 		}
-		promise.Produce(val)
+		promise.Produce(resp)
 		delete(p.promises, id)
 	}
 	return p.cfg.CheckResultInterval
@@ -216,9 +195,13 @@ func (p *Producer[Request, Response]) promisesLen() int {
 // message that was sent to inactive consumer and reinserts it into the stream,
 // so that seamlessly return the answer in the same promise.
 func (p *Producer[Request, Response]) reproduce(ctx context.Context, value Request, oldKey string) (*containers.Promise[Response], error) {
+	val, err := json.Marshal(value)
+	if err != nil {
+		return nil, fmt.Errorf("marshaling value: %w", err)
+	}
 	id, err := p.client.XAdd(ctx, &redis.XAddArgs{
 		Stream: p.cfg.RedisStream,
-		Values: map[string]any{messageKey: p.mReq.Marshal(value)},
+		Values: map[string]any{messageKey: val},
 	}).Result()
 	if err != nil {
 		return nil, fmt.Errorf("adding values to redis: %w", err)
@@ -250,11 +233,10 @@ func (p *Producer[Request, Response]) Produce(ctx context.Context, value Request
 
 // Check if a consumer is with specified ID is alive.
 func (p *Producer[Request, Response]) isConsumerAlive(ctx context.Context, consumerID string) bool {
-	val, err := p.client.Get(ctx, heartBeatKey(consumerID)).Int64()
-	if err != nil {
+	if _, err := p.client.Get(ctx, heartBeatKey(consumerID)).Int64(); err != nil {
 		return false
 	}
-	return time.Now().UnixMilli()-val < int64(p.cfg.KeepAliveTimeout.Milliseconds())
+	return true
 }
 
 func (p *Producer[Request, Response]) havePromiseFor(messageID string) bool {
@@ -318,13 +300,13 @@ func (p *Producer[Request, Response]) checkPending(ctx context.Context) ([]*Mess
 		if !ok {
 			return nil, fmt.Errorf("casting request: %v to bytes", msg.Values[messageKey])
 		}
-		val, err := p.mReq.Unmarshal([]byte(data))
-		if err != nil {
+		var req Request
+		if err := json.Unmarshal([]byte(data), &req); err != nil {
 			return nil, fmt.Errorf("marshaling value: %v, error: %w", msg.Values[messageKey], err)
 		}
 		res = append(res, &Message[Request]{
 			ID:    msg.ID,
-			Value: val,
+			Value: req,
 		})
 	}
 	return res, nil
