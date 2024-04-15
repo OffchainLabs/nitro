@@ -11,13 +11,13 @@ use arbutil::{
     format::DebugBytes,
     Bytes32,
 };
+use cache::InitCache;
 use evm_api::NativeRequestHandler;
 use eyre::ErrReport;
 use native::NativeInstance;
 use prover::programs::{prelude::*, StylusData};
 use run::RunProgram;
 use std::{marker::PhantomData, mem, ptr};
-use cache::InitCache;
 
 pub use brotli;
 pub use prover;
