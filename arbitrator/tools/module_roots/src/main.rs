@@ -37,7 +37,7 @@ fn main() -> Result<()> {
         true,
         GlobalState::default(),
         HashMap::default(),
-        Arc::new(|_, _| panic!("tried to read preimage")),
+        Arc::new(|_, _, _| panic!("tried to read preimage")),
     )?;
 
     let mut stylus = vec![];

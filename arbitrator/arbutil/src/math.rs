@@ -33,3 +33,11 @@ where
         self.fold(T::zero(), |acc, x| acc.saturating_add(&x))
     }
 }
+
+/// Returns `num` divided by `N`, rounded up.
+pub fn div_ceil<const N: usize>(num: usize) -> usize {
+    match num % N {
+        0 => num / N,
+        _ => num / N + 1,
+    }
+}
