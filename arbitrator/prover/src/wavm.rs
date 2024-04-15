@@ -10,8 +10,6 @@ use arbutil::{Bytes32, Color, DebugColor};
 use digest::Digest;
 use eyre::{bail, ensure, Result};
 use fnv::FnvHashMap as HashMap;
-use lazy_static::lazy_static;
-use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
 use std::ops::{Add, AddAssign, Sub, SubAssign};
@@ -331,10 +329,6 @@ pub fn unpack_cross_module_call(data: u64) -> (u32, u32) {
     ((data >> 32) as u32, data as u32)
 }
 
-lazy_static! {
-    static ref OP_HASHES: Mutex<HashMap<Opcode, Bytes32>> = Mutex::new(HashMap::default());
-}
-
 impl Instruction {
     #[must_use]
     pub fn simple(opcode: Opcode) -> Instruction {
@@ -364,31 +358,25 @@ impl Instruction {
         }
     }
 
-    pub fn serialize_for_proof(self) -> [u8; 34] {
-        let mut ret = [0u8; 34];
-        ret[..2].copy_from_slice(&self.opcode.repr().to_be_bytes());
-        ret[2..].copy_from_slice(&*self.get_proving_argument_data());
-        ret
+    pub fn serialize_for_proof(code: &[Self]) -> Vec<u8> {
+        let mut data = Vec::with_capacity(1 + 34 * code.len());
+        data.push(code.len() as u8);
+        for inst in code {
+            data.extend(inst.opcode.repr().to_be_bytes());
+            data.extend(inst.get_proving_argument_data());
+        }
+        data
     }
 
-    pub fn hash(&self) -> Bytes32 {
-        let dataless = self.proving_argument_data.is_none() && self.argument_data == 0;
-        if dataless {
-            if let Some(hash) = OP_HASHES.lock().get(&self.opcode) {
-                return *hash;
-            }
-        }
-
+    pub fn hash(code: &[Self]) -> Bytes32 {
         let mut h = Keccak256::new();
-        h.update(b"Instruction:");
-        h.update(self.opcode.repr().to_be_bytes());
-        h.update(self.get_proving_argument_data());
-        let hash: Bytes32 = h.finalize().into();
-
-        if dataless {
-            OP_HASHES.lock().insert(self.opcode, hash);
+        h.update(b"Instructions:");
+        h.update((code.len() as u8).to_be_bytes());
+        for inst in code {
+            h.update(inst.opcode.repr().to_be_bytes());
+            h.update(inst.get_proving_argument_data());
         }
-        hash
+        h.finalize().into()
     }
 }
 

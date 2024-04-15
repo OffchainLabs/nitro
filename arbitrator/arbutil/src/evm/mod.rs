@@ -97,8 +97,5 @@ pub struct EvmData {
 
 /// Returns the minimum number of EVM words needed to store `bytes` bytes.
 pub fn evm_words(bytes: u32) -> u32 {
-    match bytes % 32 {
-        0 => bytes / 32,
-        _ => bytes / 32 + 1,
-    }
+    crate::math::div_ceil::<32>(bytes as usize) as u32
 }

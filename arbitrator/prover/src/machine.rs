@@ -136,19 +136,36 @@ impl Function {
             u32::try_from(code.len()).is_ok(),
             "Function instruction count doesn't fit in a u32",
         );
-
-        #[cfg(feature = "rayon")]
-        let code_hashes = code.par_iter().map(|i| i.hash()).collect();
-
-        #[cfg(not(feature = "rayon"))]
-        let code_hashes = code.iter().map(|i| i.hash()).collect();
-
-        Function {
+        let mut func = Function {
             code,
             ty,
-            code_merkle: Merkle::new(MerkleType::Instruction, code_hashes),
+            code_merkle: Merkle::default(), // TODO: make an option
             local_types,
-        }
+        };
+        func.set_code_merkle();
+        func
+    }
+
+    const CHUNK_SIZE: usize = 64;
+
+    fn set_code_merkle(&mut self) {
+        let code = &self.code;
+        let chunks = math::div_ceil::<64>(code.len());
+        let crunch = |x: usize| Instruction::hash(&code[64 * x..(64 * (x + 1)).min(code.len())]);
+
+        #[cfg(feature = "rayon")]
+        let code_hashes = (0..chunks).into_par_iter().map(crunch).collect();
+
+        #[cfg(not(feature = "rayon"))]
+        let code_hashes = (0..chunks).into_iter().map(crunch).collect();
+
+        self.code_merkle = Merkle::new(MerkleType::Instruction, code_hashes);
+    }
+
+    fn serialize_body_for_proof(&self, pc: ProgramCounter) -> Vec<u8> {
+        let start = pc.inst() / 64 * 64;
+        let end = (start + 64).min(self.code.len());
+        Instruction::serialize_for_proof(&self.code[start..end])
     }
 
     fn hash(&self) -> Bytes32 {
@@ -1540,17 +1557,9 @@ impl Machine {
             let tables: Result<_> = module.tables.iter().map(Table::hash).collect();
             module.tables_merkle = Merkle::new(MerkleType::Table, tables?);
 
-            let funcs =
-                Arc::get_mut(&mut module.funcs).expect("Multiple copies of module functions");
-            for func in funcs.iter_mut() {
-                #[cfg(feature = "rayon")]
-                let code_hashes = func.code.par_iter().map(|i| i.hash()).collect();
+            let funcs = Arc::get_mut(&mut module.funcs).expect("Multiple copies of module funcs");
+            funcs.iter_mut().for_each(Function::set_code_merkle);
 
-                #[cfg(not(feature = "rayon"))]
-                let code_hashes = func.code.iter().map(|i| i.hash()).collect();
-
-                func.code_merkle = Merkle::new(MerkleType::Instruction, code_hashes);
-            }
             module.funcs_merkle = Arc::new(Merkle::new(
                 MerkleType::Function,
                 module.funcs.iter().map(Function::hash).collect(),
@@ -2851,10 +2860,10 @@ impl Machine {
         // Begin next instruction proof
 
         let func = &module.funcs[self.pc.func()];
-        out!(func.code[self.pc.inst()].serialize_for_proof());
+        out!(func.serialize_body_for_proof(self.pc));
         out!(func
             .code_merkle
-            .prove(self.pc.inst())
+            .prove(self.pc.inst() / Function::CHUNK_SIZE)
             .expect("Failed to prove against code merkle"));
         out!(module
             .funcs_merkle
