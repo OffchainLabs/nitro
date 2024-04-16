@@ -29,7 +29,7 @@ type HotShotState struct {
 
 func NewHotShotState(log log.Logger, url string, startBlock uint64) *HotShotState {
 	return &HotShotState{
-		client:          *espressoClient.NewClient(log, url),
+		client:          *espressoClient.NewClient(url),
 		nextSeqBlockNum: startBlock,
 	}
 }
@@ -112,14 +112,13 @@ func (s *EspressoSequencer) createBlock(ctx context.Context) (returnValue bool) 
 func (s *EspressoSequencer) Start(ctxIn context.Context) error {
 	s.StopWaiter.Start(ctxIn, s)
 	s.CallIteratively(func(ctx context.Context) time.Duration {
-		retryBlockTime := time.Now().Add(retryTime)
 		madeBlock := s.createBlock(ctx)
 		if madeBlock {
 			// Allow the sequencer to catch up to HotShot
 			return 0
 		}
 		// If we didn't make a block, try again in a bit
-		return time.Until(retryBlockTime)
+		return retryTime
 	})
 
 	return nil

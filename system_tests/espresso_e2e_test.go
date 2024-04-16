@@ -307,16 +307,12 @@ func waitForWith(
 	}
 }
 
-func TestEspressoE2E(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+// We run one L1 node, two L2 nodes and the espresso containers in this function.
+func runNodes(ctx context.Context, t *testing.T) (*NodeBuilder, *TestClient, *BlockchainTestInfo, func()) {
 
 	cleanValNode := createValidationNode(ctx, t, false)
-	defer cleanValNode()
 
 	builder, cleanup := createL1ValidatorPosterNode(ctx, t, hotShotUrl)
-	defer cleanup()
-	node := builder.L2
 
 	err := waitFor(t, ctx, func() bool {
 		if e := exec.Command(
@@ -336,10 +332,8 @@ func TestEspressoE2E(t *testing.T) {
 	Require(t, err)
 
 	cleanEspresso := runEspresso(t, ctx)
-	defer cleanEspresso()
 
 	l2Node, l2Info, cleanL2Node := createL2Node(ctx, t, hotShotUrl, builder)
-	defer cleanL2Node()
 
 	// wait for the commitment task
 	err = waitForWith(t, ctx, 60*time.Second, 1*time.Second, func() bool {
@@ -352,9 +346,25 @@ func TestEspressoE2E(t *testing.T) {
 	})
 	Require(t, err)
 
+	return builder, l2Node, l2Info, func() {
+		cleanL2Node()
+		cleanEspresso()
+		cleanup()
+		cleanValNode()
+	}
+}
+
+func TestEspressoE2E(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder, l2Node, l2Info, cleanup := runNodes(ctx, t)
+	defer cleanup()
+	node := builder.L2
+
 	// Wait for the initial message
 	expected := arbutil.MessageIndex(1)
-	err = waitFor(t, ctx, func() bool {
+	err := waitFor(t, ctx, func() bool {
 		msgCnt, err := l2Node.ConsensusNode.TxStreamer.GetMessageCount()
 		if err != nil {
 			panic(err)
@@ -414,7 +424,7 @@ func TestEspressoE2E(t *testing.T) {
 	Require(t, err)
 
 	// Wait for the number of validated messages to catch up
-	err = waitFor(t, ctx, func() bool {
+	err = waitForWith(t, ctx, 60*time.Second, 5*time.Second, func() bool {
 		validatedCnt := node.ConsensusNode.BlockValidator.Validated(t)
 		log.Info("waiting for validation", "validatedCnt", validatedCnt, "msgCnt", msgCnt)
 		return validatedCnt >= msgCnt

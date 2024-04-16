@@ -81,16 +81,14 @@ func getParentName(parent any) string {
 func (s *StopWaiterSafe) Start(ctx context.Context, parent any) error {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	if s.started {
+	if s.started && !s.stopped {
 		return errors.New("start after start")
 	}
 	s.started = true
+	s.stopped = false
 	s.name = getParentName(parent)
 	s.parentCtx = ctx
 	s.ctx, s.stopFunc = context.WithCancel(s.parentCtx)
-	if s.stopped {
-		s.stopFunc()
-	}
 	return nil
 }
 
