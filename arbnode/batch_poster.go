@@ -216,9 +216,8 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	Enable:                             false,
 	DisableDasFallbackStoreDataOnChain: false,
 	// This default is overridden for L3 chains in applyChainParameters in cmd/nitro/nitro.go
-	MaxSize: 100000,
-	// TODO: is 1000 bytes an appropriate margin for error vs blob space efficiency?
-	Max4844BatchSize:               blobs.BlobEncodableData*(params.MaxBlobGasPerBlock/params.BlobTxBlobGasPerBlob) - 1000,
+	MaxSize:                        100000,
+	Max4844BatchSize:               blobs.BlobEncodableData*(params.MaxBlobGasPerBlock/params.BlobTxBlobGasPerBlob) - 2000,
 	PollInterval:                   time.Second * 10,
 	ErrorDelay:                     time.Second * 10,
 	MaxDelay:                       time.Hour,
@@ -491,7 +490,7 @@ func (b *BatchPoster) checkReverts(ctx context.Context, to int64) (bool, error) 
 					return false, fmt.Errorf("getting a receipt for transaction: %v, %w", tx.Hash, err)
 				}
 				if r.Status == types.ReceiptStatusFailed {
-					shouldHalt := !b.config().DataPoster.UseNoOpStorage
+					shouldHalt := !b.dataPoster.UsingNoOpStorage()
 					logLevel := log.Warn
 					if shouldHalt {
 						logLevel = log.Error
@@ -1278,7 +1277,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		return false, err
 	}
 	if len(kzgBlobs)*params.BlobTxBlobGasPerBlob > params.MaxBlobGasPerBlock {
-		return false, fmt.Errorf("produced %v blobs for batch but a block can only hold %v", len(kzgBlobs), params.MaxBlobGasPerBlock/params.BlobTxBlobGasPerBlob)
+		return false, fmt.Errorf("produced %v blobs for batch but a block can only hold %v (compressed batch was %v bytes long)", len(kzgBlobs), params.MaxBlobGasPerBlock/params.BlobTxBlobGasPerBlob, len(sequencerMsg))
 	}
 	accessList := b.accessList(int(batchPosition.NextSeqNum), int(b.building.segments.delayedMsg))
 	// On restart, we may be trying to estimate gas for a batch whose successor has
