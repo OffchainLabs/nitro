@@ -40,23 +40,25 @@ var (
 )
 
 type BoldConfig struct {
-	Enable                             bool   `koanf:"enable"`
-	Evil                               bool   `koanf:"evil"`
-	Mode                               string `koanf:"mode"`
-	BlockChallengeLeafHeight           uint64 `koanf:"block-challenge-leaf-height"`
-	BigStepLeafHeight                  uint64 `koanf:"big-step-leaf-height"`
-	SmallStepLeafHeight                uint64 `koanf:"small-step-leaf-height"`
-	NumBigSteps                        uint64 `koanf:"num-big-steps"`
-	ValidatorName                      string `koanf:"validator-name"`
-	MachineLeavesCachePath             string `koanf:"machine-leaves-cache-path"`
-	AssertionPostingIntervalSeconds    uint64 `koanf:"assertion-posting-interval-seconds"`
-	AssertionScanningIntervalSeconds   uint64 `koanf:"assertion-scanning-interval-seconds"`
-	AssertionConfirmingIntervalSeconds uint64 `koanf:"assertion-confirming-interval-seconds"`
-	EdgeTrackerWakeIntervalSeconds     uint64 `koanf:"edge-tracker-wake-interval-seconds"`
-	API                                bool   `koanf:"api"`
-	APIHost                            string `koanf:"api-host"`
-	APIPort                            uint16 `koanf:"api-port"`
-	APIDBPath                          string `koanf:"api-db-path"`
+	Enable                             bool          `koanf:"enable"`
+	Evil                               bool          `koanf:"evil"`
+	Mode                               string        `koanf:"mode"`
+	BlockChallengeLeafHeight           uint64        `koanf:"block-challenge-leaf-height"`
+	BigStepLeafHeight                  uint64        `koanf:"big-step-leaf-height"`
+	SmallStepLeafHeight                uint64        `koanf:"small-step-leaf-height"`
+	NumBigSteps                        uint64        `koanf:"num-big-steps"`
+	ValidatorName                      string        `koanf:"validator-name"`
+	MachineLeavesCachePath             string        `koanf:"machine-leaves-cache-path"`
+	AssertionPostingIntervalSeconds    uint64        `koanf:"assertion-posting-interval-seconds"`
+	AssertionScanningIntervalSeconds   uint64        `koanf:"assertion-scanning-interval-seconds"`
+	AssertionConfirmingIntervalSeconds uint64        `koanf:"assertion-confirming-interval-seconds"`
+	EdgeTrackerWakeIntervalSeconds     uint64        `koanf:"edge-tracker-wake-interval-seconds"`
+	API                                bool          `koanf:"api"`
+	APIHost                            string        `koanf:"api-host"`
+	APIPort                            uint16        `koanf:"api-port"`
+	APIDBPath                          string        `koanf:"api-db-path"`
+	EnableFastSync                     bool          `koanf:"enable-fast-sync"`
+	FastSyncDuration                   time.Duration `koanf:"fast-sync-duration"`
 }
 
 var DefaultBoldConfig = BoldConfig{
@@ -77,6 +79,8 @@ var DefaultBoldConfig = BoldConfig{
 	APIHost:                            "127.0.0.1",
 	APIPort:                            9393,
 	APIDBPath:                          "/tmp/bold-api-db",
+	EnableFastSync:                     false,
+	FastSyncDuration:                   30 * time.Second,
 }
 
 func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -97,6 +101,8 @@ func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".api-host", DefaultBoldConfig.APIHost, "bold api host")
 	f.Uint16(prefix+".api-port", DefaultBoldConfig.APIPort, "bold api port")
 	f.String(prefix+".api-db-path", DefaultBoldConfig.APIDBPath, "bold api db path")
+	f.Bool(prefix+".enable-fast-sync", DefaultBoldConfig.EnableFastSync, "enable fast sync")
+	f.Duration(prefix+".fast-sync-duration", DefaultBoldConfig.FastSyncDuration, "the duration for which the bold validator will fast sync in the beginning")
 }
 
 func (c *BoldConfig) Validate() error {

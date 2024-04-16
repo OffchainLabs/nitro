@@ -644,6 +644,9 @@ func createNodeImpl(
 		if config.Bold.API {
 			opts = append(opts, challengemanager.WithAPIEnabled(fmt.Sprintf("%s:%d", config.Bold.APIHost, config.Bold.APIPort), config.Bold.APIDBPath))
 		}
+		if config.Bold.EnableFastSync {
+			opts = append(opts, challengemanager.WithFastSyncDuration(config.Bold.FastSyncDuration))
+		}
 		manager, err := challengemanager.New(
 			ctx,
 			assertionChain,
