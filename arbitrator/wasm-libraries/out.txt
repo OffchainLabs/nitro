@@ -1,0 +1,56 @@
+warning: virtual workspace defaulting to `resolver = "1"` despite one or more workspace members being on edition 2021 which implies `resolver = "2"`
+note: to keep the current resolver, specify `workspace.resolver = "1"` in the workspace root's manifest
+note: to use the edition 2021 resolver, specify `workspace.resolver = "2"` in the workspace root's manifest
+note: for more details see https://doc.rust-lang.org/cargo/reference/resolver.html#resolver-versions
+   Compiling espresso-crypto-helper v0.1.0 (/Users/ngolub/Documents/projects/nitro-espresso-integration/arbitrator/espresso-crypto-helper)
+warning: unused import: `ethers::solc::artifacts::Block`
+ --> /Users/ngolub/Documents/projects/nitro-espresso-integration/arbitrator/espresso-crypto-helper/src/lib.rs:7:5
+  |
+7 | use ethers::solc::artifacts::Block;
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` on by default
+
+warning: unused import: `LightWeightSHA3MerkleTree`
+  --> /Users/ngolub/Documents/projects/nitro-espresso-integration/arbitrator/espresso-crypto-helper/src/lib.rs:11:19
+   |
+11 |         prelude::{LightWeightSHA3MerkleTree, MerkleProof},
+   |                   ^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused import: `AppendableMerkleTreeScheme`
+  --> /Users/ngolub/Documents/projects/nitro-espresso-integration/arbitrator/espresso-crypto-helper/src/sequencer_data_structures.rs:21:9
+   |
+21 |         AppendableMerkleTreeScheme, MerkleTreeScheme, ToTraversalPath,
+   |         ^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: unused variable: `comm`
+  --> /Users/ngolub/Documents/projects/nitro-espresso-integration/arbitrator/espresso-crypto-helper/src/lib.rs:50:10
+   |
+50 |     let (comm, proof) = tree.lookup(0).expect_ok().unwrap();
+   |          ^^^^ help: if this is intentional, prefix it with an underscore: `_comm`
+   |
+   = note: `#[warn(unused_variables)]` on by default
+
+warning: unused `std::result::Result` that must be used
+  --> /Users/ngolub/Documents/projects/nitro-espresso-integration/arbitrator/espresso-crypto-helper/src/lib.rs:49:5
+   |
+49 |     tree.push(leaf);
+   |     ^^^^^^^^^^^^^^^
+   |
+   = note: this `Result` may be an `Err` variant, which should be handled
+   = note: `#[warn(unused_must_use)]` on by default
+help: use `let _ = ...` to ignore the resulting value
+   |
+49 |     let _ = tree.push(leaf);
+   |     +++++++
+
+warning: `espresso-crypto-helper` (lib test) generated 5 warnings (run `cargo fix --lib -p espresso-crypto-helper --tests` to apply 3 suggestions)
+    Finished test [unoptimized + debuginfo] target(s) in 4.92s
+     Running unittests src/lib.rs (target/debug/deps/espresso_crypto_helper-f230a87e8aaff37e)
+
+running 1 test
+[/Users/ngolub/Documents/projects/nitro-espresso-integration/arbitrator/espresso-crypto-helper/src/lib.rs:53] value = "[{\"Leaf\":{\"value\":\"FIELD~4Ox6Wk3-3zk4RjzwFW_d_QHKg3JcmO6ALKKQHXA1yiMt\",\"pos\":\"FIELD~AAAAAAAAAAD7\",\"elem\":\"FIELD~CltsD5AWVMRYoPCVoir_T8qU3qJTIxi5qBjyWu9vr-is\"}},{\"Branch\":{\"value\":\"FIELD~AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA-\",\"children\":[{\"ForgettenSubtree\":{\"value\":\"FIELD~4Ox6Wk3-3zk4RjzwFW_d_QHKg3JcmO6ALKKQHXA1yiMt\"}},\"Empty\",\"Empty\"]}},{\"Branch\":{\"value\":\"FIELD~AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA-\",\"children\":[{\"ForgettenSubtree\":{\"value\":\"FIELD~tSexd5jIuofugMUAyLSz5eUcsC7_KlS1QAbD2bZGTq5a\"}},\"Empty\",\"Empty\"]}},{\"Branch\":{\"value\":\"FIELD~AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA-\",\"children\":[{\"ForgettenSubtree\":{\"value\":\"FIELD~LkmCHOA6Pnbcnwt2Kd6un3bUpT_zA5uIXuZiRLtqOaOL\"}},\"Empty\",\"Empty\"]}},{\"Branch\":{\"value\":\"FIELD~AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA-\",\"children\":[{\"ForgettenSubtree\":{\"value\":\"FIELD~SLs6D-a1iyI7Y-CODShWL_Pl32zEPA7PWkunQ0W_9-UQ\"}},\"Empty\",\"Empty\"]}},{\"Branch\":{\"value\":\"FIELD~AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA-\",\"children\":[{\"ForgettenSubtree\":{\"value\":\"FIELD~RRSCY_4_Gca8CeV0IXH35FT_kLaStASvTBP5BxOk0fVT\"}},\"Empty\",\"Empty\"]}},{\"Branch\":{\"value\":\"FIELD~AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA-\",\"children\":[{\"ForgettenSubtree\":{\"value\":\"FIELD~ManT0RPsMiVmfVndc2xz95S7cFlOcdA7qwc32yMfO6b6\"}},\"Empty\",\"Empty\"]}}]"
+test test::test_verify_merkle_proof_helper ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 0.00s
+

@@ -8,7 +8,7 @@ use ethers::solc::artifacts::Block;
 use jf_primitives::{
     circuit::merkle_tree::MembershipProof,
     merkle_tree::{
-        prelude::{LightWeightSHA3MerkleTree, MerkleProof},
+        prelude::{LightWeightSHA3MerkleTree, MerkleNode, MerkleProof, Sha3Node},
         AppendableMerkleTreeScheme, MerkleCommitment, MerkleTreeScheme,
     },
     pcs::prelude::UnivariateUniversalParams,
@@ -24,6 +24,7 @@ use tagged_base64::TaggedBase64;
 use crate::bytes::Bytes;
 
 pub type VidScheme = Advz<Bn254, sha2::Sha256>;
+pub type Proof = Vec<MerkleNode<Commitment<Header>, u64, Sha3Node>>;
 
 lazy_static! {
     // Initialize the byte array from JSON content
@@ -39,17 +40,22 @@ lazy_static! {
 
 pub fn verify_merkle_proof_helper(
     _root_bytes: &[u8],
-    _proof_bytes: &[u8],
+    proof_bytes: &[u8],
     _block_comm_bytes: &[u8],
 ) {
+    let proof_str = std::str::from_utf8(proof_bytes).unwrap();
+    dbg!(proof_str);
+    let proof: Proof = serde_json::from_str(proof_str).unwrap();
+
+    //MOCK CODE
     let mut tree = BlockMerkleTree::from_elems(Some(6), Vec::<Commitment<Header>>::new())
         .expect("should construct tree");
     let header: Header = serde_json::from_value(HEADER.clone()).unwrap();
     let leaf = header.commit();
     tree.push(leaf);
-    let (comm, proof) = tree.lookup(0).expect_ok().unwrap();
-    let path = proof.merkle_path();
-    let new_proof = MerkleProof::new(0, path.to_vec());
+
+    let (comm, _) = tree.lookup(0).expect_ok().unwrap();
+    let new_proof = MerkleProof::new(0, proof.to_vec());
     BlockMerkleTree::verify(tree.commitment().digest(), 0, new_proof)
         .unwrap()
         .unwrap();
@@ -118,6 +124,13 @@ mod test {
     use jf_primitives::pcs::{
         checked_fft_size, prelude::UnivariateKzgPCS, PolynomialCommitmentScheme,
     };
+
+    lazy_static! {
+        // Initialize the byte array from JSON content
+        static ref PROOF: &'static str = {
+            include_str!("../../../config/merkle_path.json")
+        };
+    }
     #[test]
     fn test_verify_namespace_helper() {
         let proof_bytes = b"{\"NonExistence\":{\"ns_id\":0}}";
@@ -130,7 +143,8 @@ mod test {
 
     #[test]
     fn test_verify_merkle_proof_helper() {
-        verify_merkle_proof_helper(&[], &[], &[])
+        let proof_bytes = PROOF.clone().as_bytes();
+        verify_merkle_proof_helper(&[], &proof_bytes, &[])
     }
 
     #[test]
