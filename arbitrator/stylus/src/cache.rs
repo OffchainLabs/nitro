@@ -7,11 +7,7 @@ use lazy_static::lazy_static;
 use lru::LruCache;
 use parking_lot::Mutex;
 use prover::programs::config::CompileConfig;
-use rand::Rng;
-use std::{
-    collections::{hash_map::Entry, HashMap},
-    num::NonZeroUsize,
-};
+use std::{collections::HashMap, num::NonZeroUsize};
 use wasmer::{Engine, Module, Store};
 
 lazy_static! {
@@ -50,20 +46,11 @@ impl CacheKey {
 struct CacheItem {
     module: Module,
     engine: Engine,
-    /// Represents the number of uses this item has left.
-    /// This is done to mitigate any potential memory leaks in wasmer, though likely isn't necessary.
-    /// TODO: remove after gaining confidence in wasmer.
-    uses: usize,
 }
 
 impl CacheItem {
     fn new(module: Module, engine: Engine) -> Self {
-        let uses = rand::thread_rng().gen_range(8..16);
-        Self {
-            module,
-            engine,
-            uses,
-        }
+        Self { module, engine }
     }
 
     fn data(&self) -> (Module, Store) {
@@ -85,26 +72,13 @@ impl InitCache {
         let key = CacheKey::new(module_hash, version, debug);
 
         // See if the item is in the long term cache
-        if let Entry::Occupied(mut entry) = cache.arbos.entry(key) {
-            let item = entry.get_mut();
-            item.uses = item.uses.saturating_sub(1);
-
-            let data = item.data();
-            if item.uses == 0 {
-                entry.remove();
-            }
-            return Some(data);
+        if let Some(item) = cache.arbos.get(&key) {
+            return Some(item.data());
         }
 
         // See if the item is in the LRU cache, promoting if so
-        if let Some(item) = cache.lru.get_mut(&key) {
-            item.uses = item.uses.saturating_sub(1);
-
-            let data = item.data();
-            if item.uses == 0 {
-                cache.lru.pop(&key);
-            }
-            return Some(data);
+        if let Some(item) = cache.lru.get(&key) {
+            return Some(item.data());
         }
         None
     }
