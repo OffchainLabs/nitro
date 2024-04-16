@@ -1,0 +1,22 @@
+[package]
+name = "bench"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "bench"
+path = "src/lib.rs"
+
+[[bin]]
+name = "benchbin"
+path = "src/bin.rs"
+
+[dependencies]
+hex = "0.4.3"
+eyre = "0.6.5"
+prover = { path = "../prover" }
+arbutil = { path = "../arbutil" }
+clap = { version = "4.4.8", features = ["derive"] }
+
+[profile.release]
+debug = true 
