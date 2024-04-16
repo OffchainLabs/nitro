@@ -254,6 +254,11 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
     /// @param mutualId The mutual id of the confirmed edge
     event EdgeConfirmedByOneStepProof(bytes32 indexed edgeId, bytes32 indexed mutualId);
 
+    /// @notice An edge's timer cache has been updated
+    /// @param edgeId   The edge that was updated
+    /// @param newValue The new value of its timer cache
+    event TimerCacheUpdated(bytes32 indexed edgeId, uint256 newValue);
+
     /// @notice A stake has been refunded for a confirmed layer zero block edge
     /// @param edgeId       The edge that was confirmed
     /// @param mutualId     The mutual id of the confirmed edge
@@ -482,18 +487,21 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
     /// @inheritdoc IEdgeChallengeManager
     function multiUpdateTimeCacheByChildren(bytes32[] calldata edgeIds) public {
         for (uint256 i = 0; i < edgeIds.length; i++) {
-            store.updateTimerCacheByChildren(edgeIds[i]);
+            (bool updated, uint256 newValue) = store.updateTimerCacheByChildren(edgeIds[i]);
+            if (updated) emit TimerCacheUpdated(edgeIds[i], newValue);
         }
     }
 
     /// @inheritdoc IEdgeChallengeManager
     function updateTimerCacheByChildren(bytes32 edgeId) public {
-        store.updateTimerCacheByChildren(edgeId);
+        (bool updated, uint256 newValue) = store.updateTimerCacheByChildren(edgeId);
+        if (updated) emit TimerCacheUpdated(edgeId, newValue);
     }
 
     /// @inheritdoc IEdgeChallengeManager
     function updateTimerCacheByClaim(bytes32 edgeId, bytes32 claimingEdgeId) public {
-        store.updateTimerCacheByClaim(edgeId, claimingEdgeId, NUM_BIGSTEP_LEVEL);
+        (bool updated, uint256 newValue) = store.updateTimerCacheByClaim(edgeId, claimingEdgeId, NUM_BIGSTEP_LEVEL);
+        if (updated) emit TimerCacheUpdated(edgeId, newValue);
     }
 
     /// @inheritdoc IEdgeChallengeManager

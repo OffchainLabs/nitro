@@ -32,6 +32,8 @@ contract EdgeChallengeManagerTest is Test {
     using ChallengeEdgeLib for ChallengeEdge;
     using AssertionStateLib for AssertionState;
 
+    event TimerCacheUpdated(bytes32 indexed edgeId, uint256 newValue);
+
     Random rand = new Random();
     bytes32 genesisBlockHash = rand.hash();
     AssertionState genesisState = StateToolsLib.randomState(rand, 4, genesisBlockHash, MachineStatus.FINISHED);
@@ -1347,11 +1349,26 @@ contract EdgeChallengeManagerTest is Test {
 
         _safeVmRoll(block.number + challengePeriodBlock);
 
+        vm.expectEmit(true, false, false, true);
+        emit TimerCacheUpdated(
+            edge1BigStepId,
+            challengePeriodBlock
+        );
         ei.challengeManager.updateTimerCacheByChildren(edge1BigStepId);
 
+        vm.expectEmit(true, false, false, true);
+        emit TimerCacheUpdated(
+            edges1[0].lowerChildId,
+            challengePeriodBlock
+        );
         ei.challengeManager.updateTimerCacheByClaim(edges1[0].lowerChildId, edge1BigStepId);
         ei.challengeManager.updateTimerCacheByChildren(edges1[0].upperChildId);
 
+        vm.expectEmit(true, false, false, true);
+        emit TimerCacheUpdated(
+            edges1[1].lowerChildId,
+            challengePeriodBlock
+        );
         ei.challengeManager.updateTimerCacheByChildren(edges1[1].lowerChildId);
         ei.challengeManager.updateTimerCacheByChildren(edges1[1].upperChildId);
 
