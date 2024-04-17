@@ -17,7 +17,6 @@ import (
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/containers"
-	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_arb"
@@ -148,9 +147,11 @@ func createMockValidationNode(t *testing.T, ctx context.Context, config *server_
 	if config == nil {
 		config = &server_arb.DefaultArbitratorSpawnerConfig
 	}
-	configFetcher := func() *server_arb.ArbitratorSpawnerConfig { return config }
+	serverAPIConfigFetcher := func() *server_api.ExecutionServerAPIConfig {
+		return &server_api.DefaultExecutionServerAPIConfig
+	}
 	spawner := &mockSpawner{}
-	serverAPI := server_api.NewExecutionServerAPI(spawner, spawner, configFetcher)
+	serverAPI := server_api.NewExecutionServerAPI(spawner, spawner, serverAPIConfigFetcher)
 
 	valAPIs := []rpc.API{{
 		Namespace:     server_api.Namespace,
@@ -181,7 +182,7 @@ func TestValidationServerAPI(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	_, validationDefault := createMockValidationNode(t, ctx, nil)
-	client := server_api.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), validationDefault)
+	client := server_api.NewExecutionClient(StaticFetcherFrom(t, &server_api.TestValidationClientConfig), validationDefault)
 	err := client.Start(ctx)
 	Require(t, err)
 
@@ -247,7 +248,7 @@ func TestValidationClientRoom(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	mockSpawner, spawnerStack := createMockValidationNode(t, ctx, nil)
-	client := server_api.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), spawnerStack)
+	client := server_api.NewExecutionClient(StaticFetcherFrom(t, &server_api.TestValidationClientConfig), spawnerStack)
 	err := client.Start(ctx)
 	Require(t, err)
 
@@ -332,7 +333,7 @@ func TestExecutionKeepAlive(t *testing.T) {
 	shortTimeoutConfig := server_arb.DefaultArbitratorSpawnerConfig
 	shortTimeoutConfig.ExecutionRunTimeout = time.Second
 	_, validationShortTO := createMockValidationNode(t, ctx, &shortTimeoutConfig)
-	configFetcher := StaticFetcherFrom(t, &rpcclient.TestClientConfig)
+	configFetcher := StaticFetcherFrom(t, &server_api.TestValidationClientConfig)
 
 	clientDefault := server_api.NewExecutionClient(configFetcher, validationDefault)
 	err := clientDefault.Start(ctx)

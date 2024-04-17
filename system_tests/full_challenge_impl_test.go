@@ -273,7 +273,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	var valStack *node.Node
 	var mockSpawn *mockSpawner
 	if useStubs {
-		mockSpawn, valStack = createMockValidationNode(t, ctx, &valnode.TestValidationConfig.Arbitrator)
+		mockSpawn, valStack = createMockValidationNode(t, ctx, &valnode.TestValidationConfig.ExecutionConfig.Arbitrator)
 	} else {
 		_, valStack = createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
 	}

@@ -74,7 +74,7 @@ var DefaultProducerConfig = &ProducerConfig{
 	CheckResultInterval:  5 * time.Second,
 }
 
-var DefaultTestProducerConfig = &ProducerConfig{
+var TestProducerConfig = &ProducerConfig{
 	EnableReproduce:      true,
 	RedisStream:          "",
 	RedisGroup:           "",
@@ -183,6 +183,10 @@ func (p *Producer[Request, Response]) checkResponses(ctx context.Context) time.D
 
 func (p *Producer[Request, Response]) Start(ctx context.Context) {
 	p.StopWaiter.Start(ctx, p)
+}
+
+func (p *Producer[Request, Response]) StopAndWait() {
+	p.StopWaiter.StopAndWait()
 }
 
 func (p *Producer[Request, Response]) promisesLen() int {

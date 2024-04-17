@@ -27,6 +27,7 @@ import (
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/server_api"
 )
 
 var (
@@ -83,18 +84,19 @@ type BlockValidator struct {
 }
 
 type BlockValidatorConfig struct {
-	Enable                      bool                          `koanf:"enable"`
-	ValidationServer            rpcclient.ClientConfig        `koanf:"validation-server" reload:"hot"`
-	ValidationServerConfigs     []rpcclient.ClientConfig      `koanf:"validation-server-configs" reload:"hot"`
-	ValidationPoll              time.Duration                 `koanf:"validation-poll" reload:"hot"`
-	PrerecordedBlocks           uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
-	ForwardBlocks               uint64                        `koanf:"forward-blocks" reload:"hot"`
-	CurrentModuleRoot           string                        `koanf:"current-module-root"`         // TODO(magic) requires reinitialization on hot reload
-	PendingUpgradeModuleRoot    string                        `koanf:"pending-upgrade-module-root"` // TODO(magic) requires StatelessBlockValidator recreation on hot reload
-	FailureIsFatal              bool                          `koanf:"failure-is-fatal" reload:"hot"`
-	Dangerous                   BlockValidatorDangerousConfig `koanf:"dangerous"`
-	MemoryFreeLimit             string                        `koanf:"memory-free-limit" reload:"hot"`
-	ValidationServerConfigsList string                        `koanf:"validation-server-configs-list" reload:"hot"`
+	Enable                      bool                                `koanf:"enable"`
+	ValidationServer            rpcclient.ClientConfig              `koanf:"validation-server" reload:"hot"`
+	ValidationClientConfigs     []server_api.ValidationClientConfig `koanf:"validation-client-config" reload:"hot"`
+	ValidationServerConfigs     []rpcclient.ClientConfig            `koanf:"validation-server-configs" reload:"hot"`
+	ValidationPoll              time.Duration                       `koanf:"validation-poll" reload:"hot"`
+	PrerecordedBlocks           uint64                              `koanf:"prerecorded-blocks" reload:"hot"`
+	ForwardBlocks               uint64                              `koanf:"forward-blocks" reload:"hot"`
+	CurrentModuleRoot           string                              `koanf:"current-module-root"`         // TODO(magic) requires reinitialization on hot reload
+	PendingUpgradeModuleRoot    string                              `koanf:"pending-upgrade-module-root"` // TODO(magic) requires StatelessBlockValidator recreation on hot reload
+	FailureIsFatal              bool                                `koanf:"failure-is-fatal" reload:"hot"`
+	Dangerous                   BlockValidatorDangerousConfig       `koanf:"dangerous"`
+	MemoryFreeLimit             string                              `koanf:"memory-free-limit" reload:"hot"`
+	ValidationServerConfigsList string                              `koanf:"validation-server-configs-list" reload:"hot"`
 
 	memoryFreeLimit int
 }

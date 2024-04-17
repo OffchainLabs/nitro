@@ -12,7 +12,6 @@ import (
 	"testing"
 
 	"github.com/offchainlabs/nitro/execution"
-	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator/server_api"
 
 	"github.com/offchainlabs/nitro/arbutil"
@@ -195,11 +194,11 @@ func NewStatelessBlockValidator(
 	stack *node.Node,
 ) (*StatelessBlockValidator, error) {
 	validationSpawners := make([]validator.ValidationSpawner, len(config().ValidationServerConfigs))
-	for i, serverConfig := range config().ValidationServerConfigs {
-		valConfFetcher := func() *rpcclient.ClientConfig { return &serverConfig }
-		validationSpawners[i] = server_api.NewValidationClient(valConfFetcher, stack)
+	for i, clientConfig := range config().ValidationClientConfigs {
+		cfgFetcher := func() *server_api.ValidationClientConfig { return &clientConfig }
+		validationSpawners[i] = server_api.NewValidationClient(cfgFetcher, stack)
 	}
-	valConfFetcher := func() *rpcclient.ClientConfig { return &config().ValidationServerConfigs[0] }
+	valConfFetcher := func() *server_api.ValidationClientConfig { return &config().ValidationClientConfigs[0] }
 	execClient := server_api.NewExecutionClient(valConfFetcher, stack)
 	validator := &StatelessBlockValidator{
 		config:             config(),

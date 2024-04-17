@@ -10,29 +10,15 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/jsonapi"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/server_api/validation"
 )
 
-type BatchInfoJson struct {
-	Number  uint64
-	DataB64 string
-}
-
-type ValidationInputJson struct {
-	Id            uint64
-	HasDelayedMsg bool
-	DelayedMsgNr  uint64
-	PreimagesB64  map[arbutil.PreimageType]*jsonapi.PreimagesMapJson
-	BatchInfo     []BatchInfoJson
-	DelayedMsgB64 string
-	StartState    validator.GoGlobalState
-}
-
-func ValidationInputToJson(entry *validator.ValidationInput) *ValidationInputJson {
+func ValidationInputToJson(entry *validator.ValidationInput) *validation.InputJSON {
 	jsonPreimagesMap := make(map[arbutil.PreimageType]*jsonapi.PreimagesMapJson)
 	for ty, preimages := range entry.Preimages {
 		jsonPreimagesMap[ty] = jsonapi.NewPreimagesMapJson(preimages)
 	}
-	res := &ValidationInputJson{
+	res := &validation.InputJSON{
 		Id:            entry.Id,
 		HasDelayedMsg: entry.HasDelayedMsg,
 		DelayedMsgNr:  entry.DelayedMsgNr,
@@ -42,12 +28,12 @@ func ValidationInputToJson(entry *validator.ValidationInput) *ValidationInputJso
 	}
 	for _, binfo := range entry.BatchInfo {
 		encData := base64.StdEncoding.EncodeToString(binfo.Data)
-		res.BatchInfo = append(res.BatchInfo, BatchInfoJson{binfo.Number, encData})
+		res.BatchInfo = append(res.BatchInfo, validation.BatchInfoJson{binfo.Number, encData})
 	}
 	return res
 }
 
-func ValidationInputFromJson(entry *ValidationInputJson) (*validator.ValidationInput, error) {
+func ValidationInputFromJson(entry *validation.InputJSON) (*validator.ValidationInput, error) {
 	preimages := make(map[arbutil.PreimageType]map[common.Hash][]byte)
 	for ty, jsonPreimages := range entry.PreimagesB64 {
 		preimages[ty] = jsonPreimages.Map

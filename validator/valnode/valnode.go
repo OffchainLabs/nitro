@@ -34,39 +34,38 @@ var DefaultWasmConfig = WasmConfig{
 }
 
 type Config struct {
-	UseJit     bool                               `koanf:"use-jit"`
-	ApiAuth    bool                               `koanf:"api-auth"`
-	ApiPublic  bool                               `koanf:"api-public"`
-	Arbitrator server_arb.ArbitratorSpawnerConfig `koanf:"arbitrator" reload:"hot"`
-	Jit        server_jit.JitSpawnerConfig        `koanf:"jit" reload:"hot"`
-	Wasm       WasmConfig                         `koanf:"wasm"`
+	UseJit          bool                                `koanf:"use-jit"`
+	ApiAuth         bool                                `koanf:"api-auth"`
+	ApiPublic       bool                                `koanf:"api-public"`
+	ExecutionConfig server_api.ExecutionServerAPIConfig `koanf:"execution_config" reload:"hot"`
+	Jit             server_jit.JitSpawnerConfig         `koanf:"jit" reload:"hot"`
+	Wasm            WasmConfig                          `koanf:"wasm"`
 }
 
 type ValidationConfigFetcher func() *Config
 
 var DefaultValidationConfig = Config{
-	UseJit:     true,
-	Jit:        server_jit.DefaultJitSpawnerConfig,
-	ApiAuth:    true,
-	ApiPublic:  false,
-	Arbitrator: server_arb.DefaultArbitratorSpawnerConfig,
-	Wasm:       DefaultWasmConfig,
+	UseJit:          true,
+	Jit:             server_jit.DefaultJitSpawnerConfig,
+	ApiAuth:         true,
+	ApiPublic:       false,
+	ExecutionConfig: server_api.DefaultExecutionServerAPIConfig,
+	Wasm:            DefaultWasmConfig,
 }
 
 var TestValidationConfig = Config{
-	UseJit:     true,
-	Jit:        server_jit.DefaultJitSpawnerConfig,
-	ApiAuth:    false,
-	ApiPublic:  true,
-	Arbitrator: server_arb.DefaultArbitratorSpawnerConfig,
-	Wasm:       DefaultWasmConfig,
+	UseJit:          true,
+	Jit:             server_jit.DefaultJitSpawnerConfig,
+	ApiAuth:         false,
+	ApiPublic:       true,
+	ExecutionConfig: server_api.TestExecutionServerAPIConfig,
+	Wasm:            DefaultWasmConfig,
 }
 
 func ValidationConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".use-jit", DefaultValidationConfig.UseJit, "use jit for validation")
 	f.Bool(prefix+".api-auth", DefaultValidationConfig.ApiAuth, "validate is an authenticated API")
 	f.Bool(prefix+".api-public", DefaultValidationConfig.ApiPublic, "validate is a public API")
-	server_arb.ArbitratorSpawnerConfigAddOptions(prefix+".arbitrator", f)
 	server_jit.JitSpawnerConfigAddOptions(prefix+".jit", f)
 	WasmConfigAddOptions(prefix+".wasm", f)
 }
@@ -96,8 +95,11 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 	if err != nil {
 		return nil, err
 	}
+	serverAPIConfigFetcher := func() *server_api.ExecutionServerAPIConfig {
+		return &configFetcher().ExecutionConfig
+	}
 	arbConfigFetcher := func() *server_arb.ArbitratorSpawnerConfig {
-		return &configFetcher().Arbitrator
+		return &serverAPIConfigFetcher().Arbitrator
 	}
 	arbSpawner, err := server_arb.NewArbitratorSpawner(locator, arbConfigFetcher)
 	if err != nil {
@@ -112,9 +114,9 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 		if err != nil {
 			return nil, err
 		}
-		serverAPI = server_api.NewExecutionServerAPI(jitSpawner, arbSpawner, arbConfigFetcher)
+		serverAPI = server_api.NewExecutionServerAPI(jitSpawner, arbSpawner, serverAPIConfigFetcher)
 	} else {
-		serverAPI = server_api.NewExecutionServerAPI(arbSpawner, arbSpawner, arbConfigFetcher)
+		serverAPI = server_api.NewExecutionServerAPI(arbSpawner, arbSpawner, serverAPIConfigFetcher)
 	}
 	valAPIs := []rpc.API{{
 		Namespace:     server_api.Namespace,

@@ -7,13 +7,14 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/offchainlabs/nitro/validator"
-
+	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
-
+	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/server_api/validation"
 	"github.com/offchainlabs/nitro/validator/server_common"
+	"github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
@@ -25,27 +26,79 @@ type ValidationClient struct {
 	client *rpcclient.RpcClient
 	name   string
 	room   int32
+
+	producer *pubsub.Producer[*validation.Request, validator.GoGlobalState]
 }
 
-func NewValidationClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *ValidationClient {
-	return &ValidationClient{
-		client: rpcclient.NewRpcClient(config, stack),
+type ValidationClientConfig struct {
+	RPCClientConfig rpcclient.ClientConfig `koanf:"rpc-client-config"`
+	ProducerCfg     pubsub.ProducerConfig  `koanf:"producer-cfg"`
+}
+
+var DefaultValidationClientConfig = ValidationClientConfig{
+	// TODO: implement.
+}
+
+var TestValidationClientConfig = ValidationClientConfig{
+	// TODO: implement.
+}
+
+func ValidationClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	// TODO: implement.
+}
+
+type ValidationClientConfigFetcher func() *ValidationClientConfig
+
+func NewValidationClient(config ValidationClientConfigFetcher, stack *node.Node) *ValidationClient {
+	rpcClientCfgFetcher := func() *rpcclient.ClientConfig {
+		return &config().RPCClientConfig
 	}
+	ret := &ValidationClient{
+		client: rpcclient.NewRpcClient(rpcClientCfgFetcher, stack),
+	}
+	producer, err := pubsub.NewProducer[*validation.Request, validator.GoGlobalState](
+		&config().ProducerCfg,
+	)
+	if err == nil {
+		ret.producer = producer
+	} else if config().ProducerCfg.RedisURL != "" {
+		log.Error("Error creating producer for validation client", "error", err)
+	}
+	return ret
 }
 
 func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
 	atomic.AddInt32(&c.room, -1)
-	promise := stopwaiter.LaunchPromiseThread[validator.GoGlobalState](c, func(ctx context.Context) (validator.GoGlobalState, error) {
-		input := ValidationInputToJson(entry)
-		var res validator.GoGlobalState
-		err := c.client.CallContext(ctx, &res, Namespace+"_validate", input, moduleRoot)
-		atomic.AddInt32(&c.room, 1)
-		return res, err
+	input := ValidationInputToJson(entry)
+	if c.producer == nil {
+		promise := stopwaiter.LaunchPromiseThread[validator.GoGlobalState](c, func(ctx context.Context) (validator.GoGlobalState, error) {
+			var res validator.GoGlobalState
+			err := c.client.CallContext(ctx, &res, Namespace+"_validate", input, moduleRoot)
+			atomic.AddInt32(&c.room, 1)
+			return res, err
+		})
+		return server_common.NewValRun(promise, moduleRoot)
+	}
+
+	var (
+		promise containers.PromiseInterface[validator.GoGlobalState]
+		err     error
+	)
+	promise, err = c.producer.Produce(c.GetContext(), &validation.Request{
+		Input:      input,
+		ModuleRoot: moduleRoot,
 	})
+	if err != nil {
+		promise = containers.NewReadyPromise(validator.GoGlobalState{}, err)
+	}
+	atomic.AddInt32(&c.room, 1)
 	return server_common.NewValRun(promise, moduleRoot)
 }
 
 func (c *ValidationClient) Start(ctx_in context.Context) error {
+	if c.producer != nil {
+		c.producer.Start(ctx_in)
+	}
 	c.StopWaiter.Start(ctx_in, c)
 	ctx := c.GetContext()
 	err := c.client.Start(ctx)
@@ -77,6 +130,9 @@ func (c *ValidationClient) Start(ctx_in context.Context) error {
 }
 
 func (c *ValidationClient) Stop() {
+	if c.producer != nil {
+		c.producer.StopAndWait()
+	}
 	c.StopWaiter.StopOnly()
 	if c.client != nil {
 		c.client.Close()
@@ -102,7 +158,7 @@ type ExecutionClient struct {
 	ValidationClient
 }
 
-func NewExecutionClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *ExecutionClient {
+func NewExecutionClient(config ValidationClientConfigFetcher, stack *node.Node) *ExecutionClient {
 	return &ExecutionClient{
 		ValidationClient: *NewValidationClient(config, stack),
 	}
