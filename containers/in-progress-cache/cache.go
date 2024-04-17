@@ -17,14 +17,19 @@ var (
 // instead of kicking off two expensive computations.
 type Cache[K comparable, V any] struct {
 	inProgress         map[K]bool
-	awaitingCompletion map[K][]chan V
+	awaitingCompletion map[K][]chan Response[V]
 	lock               sync.RWMutex
+}
+
+type Response[V any] struct {
+	value V
+	err   error
 }
 
 func New[K comparable, V any]() *Cache[K, V] {
 	return &Cache[K, V]{
 		inProgress:         make(map[K]bool),
-		awaitingCompletion: make(map[K][]chan V),
+		awaitingCompletion: make(map[K][]chan Response[V]),
 	}
 }
 
@@ -35,14 +40,14 @@ func (c *Cache[K, V]) Compute(requestId K, f func() (V, error)) (V, error) {
 		pendingRequestsCounter.Inc(1)
 
 		c.lock.RUnlock()
-		responseChan := make(chan V, 1)
+		responseChan := make(chan Response[V])
 		defer close(responseChan)
 
 		c.lock.Lock()
 		c.awaitingCompletion[requestId] = append(c.awaitingCompletion[requestId], responseChan)
 		c.lock.Unlock()
-		val := <-responseChan
-		return val, nil
+		response := <-responseChan
+		return response.value, response.err
 	}
 	c.lock.RUnlock()
 
@@ -51,12 +56,8 @@ func (c *Cache[K, V]) Compute(requestId K, f func() (V, error)) (V, error) {
 	inFlightRequestsCounter.Inc(1)
 	c.lock.Unlock()
 
-	// Do expensive operation
-	var zeroVal V
+	// Do expensive operation and notify all waiting goroutines of the result as well as the error
 	result, err := f()
-	if err != nil {
-		return zeroVal, err
-	}
 
 	c.lock.RLock()
 	receiversWaiting, ok := c.awaitingCompletion[requestId]
@@ -64,13 +65,13 @@ func (c *Cache[K, V]) Compute(requestId K, f func() (V, error)) (V, error) {
 
 	if ok {
 		for _, ch := range receiversWaiting {
-			ch <- result
+			ch <- Response[V]{result, err}
 		}
 	}
 
 	c.lock.Lock()
 	c.inProgress[requestId] = false
-	c.awaitingCompletion[requestId] = make([]chan V, 0)
+	c.awaitingCompletion[requestId] = make([]chan Response[V], 0)
 	c.lock.Unlock()
-	return result, nil
+	return result, err
 }
