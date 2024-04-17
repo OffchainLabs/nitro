@@ -24,6 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -560,15 +561,12 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 	}
 	var comm espressoTypes.Commitment
 	if v.config().Espresso {
-		height := endGS.HotShotHeight
-		fetchedCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(height)
+		_, jst, err := arbos.ParseEspressoMsg(msg.Message)
+		fetchedCommitment, err := v.lightClientReader.FetchMerkleRootAtL1Block(jst.BlockMerkleJustification.L1ProofHeight)
 		if err != nil {
 			return false, err
 		}
-		if fetchedCommitment == nil {
-			return false, fmt.Errorf("commitment not ready yet")
-		}
-		comm = *fetchedCommitment
+		comm = fetchedCommitment
 	}
 	entry, err := newValidationEntry(pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, v.nextCreateBatchBlockHash, v.nextCreatePrevDelayed, &comm)
 	if err != nil {

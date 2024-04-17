@@ -11,7 +11,9 @@ import (
 	"sync"
 	"testing"
 
+	lightclient "github.com/EspressoSystems/espresso-sequencer-go/light-client"
 	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator/server_api"
@@ -42,7 +44,7 @@ type StatelessBlockValidator struct {
 	daService    arbstate.DataAvailabilityReader
 	blobReader   arbstate.BlobReader
 
-	hotShotReader HotShotReaderInterface
+	lightClientReader lightclient.LightClientReaderInterface
 
 	moduleMutex           sync.Mutex
 	currentWasmModuleRoot common.Hash
@@ -82,10 +84,6 @@ type TransactionStreamerInterface interface {
 
 type InboxReaderInterface interface {
 	GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, common.Hash, error)
-}
-
-type HotShotReaderInterface interface {
-	L1HotShotCommitmentFromHeight(blockHeight uint64) (*espressoTypes.Commitment, error)
 }
 
 type GlobalStatePosition struct {
@@ -240,7 +238,7 @@ func newValidationEntry(
 func NewStatelessBlockValidator(
 	inboxReader InboxReaderInterface,
 	inbox InboxTrackerInterface,
-	hotShotReader HotShotReaderInterface,
+	lightClientReader lightclient.LightClientReaderInterface,
 	streamer TransactionStreamerInterface,
 	recorder execution.ExecutionRecorder,
 	arbdb ethdb.Database,
@@ -265,7 +263,7 @@ func NewStatelessBlockValidator(
 		execSpawner:        execClient,
 		recorder:           recorder,
 		validationSpawners: validationSpawners,
-		hotShotReader:      hotShotReader,
+		lightClientReader:  lightClientReader,
 		inboxReader:        inboxReader,
 		inboxTracker:       inbox,
 		streamer:           streamer,
@@ -426,15 +424,15 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	}
 	var comm espressoTypes.Commitment
 	if v.config.Espresso {
-		height := end.HotShotHeight
-		fetchedCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(height)
+		_, jst, err := arbos.ParseEspressoMsg(msg.Message)
 		if err != nil {
 			return nil, err
 		}
-		if fetchedCommitment == nil {
-			return nil, fmt.Errorf("commitment not ready yet")
+		fetchedCommitment, err := v.lightClientReader.FetchMerkleRootAtL1Block(jst.BlockMerkleJustification.L1ProofHeight)
+		if err != nil {
+			return nil, err
 		}
-		comm = *fetchedCommitment
+		comm = fetchedCommitment
 	}
 	entry, err := newValidationEntry(pos, start, end, msg, seqMsg, batchBlockHash, prevDelayed, &comm)
 	if err != nil {
@@ -527,8 +525,8 @@ func (v *StatelessBlockValidator) Stop() {
 }
 
 // This method should be only used in tests.
-func (s *StatelessBlockValidator) DebugEspresso_SetHotShotReader(reader HotShotReaderInterface, t *testing.T) {
-	s.hotShotReader = reader
+func (s *StatelessBlockValidator) DebugEspresso_SetHotShotReader(reader lightclient.LightClientReaderInterface, t *testing.T) {
+	s.lightClientReader = reader
 }
 
 // This method should be only used in tests.

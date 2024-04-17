@@ -3,13 +3,11 @@ mod sequencer_data_structures;
 
 use ark_bn254::Bn254;
 use ark_serialize::CanonicalDeserialize;
-use committable::{Commitment, Committable};
-use ethers::solc::artifacts::Block;
+use committable::Commitment;
 use jf_primitives::{
-    circuit::merkle_tree::MembershipProof,
     merkle_tree::{
-        prelude::{LightWeightSHA3MerkleTree, MerkleNode, MerkleProof, Sha3Node},
-        AppendableMerkleTreeScheme, MerkleCommitment, MerkleTreeScheme,
+        prelude::{MerkleNode, MerkleProof, Sha3Node},
+        MerkleTreeScheme,
     },
     pcs::prelude::UnivariateUniversalParams,
     vid::{advz::Advz, VidScheme as VidSchemeTrait},
@@ -32,33 +30,28 @@ lazy_static! {
         let json_content = include_str!("../../../config/vid_srs.json");
         serde_json::from_str(json_content).expect("Failed to deserialize")
     };
-    static ref HEADER: serde_json::Value = {
-        let json_content = include_str!("../../../config/header.json");
-        serde_json::from_str(json_content).expect("Failed to deserialize")
-    };
 }
 
-pub fn verify_merkle_proof_helper(
-    _root_bytes: &[u8],
-    proof_bytes: &[u8],
-    _block_comm_bytes: &[u8],
-) {
+// Helper function to verify a block merkle proof.
+//
+// proof_bytes: Byte representation of a block merkle proof.
+// root_bytes: Byte representation of a Sha3Node merkle root.
+// block_comm_bytes: Byte representation of the expected commitment of the leaf being verified.
+pub fn verify_merkle_proof_helper(root_bytes: &[u8], proof_bytes: &[u8], block_comm_bytes: &[u8]) {
     let proof_str = std::str::from_utf8(proof_bytes).unwrap();
-    dbg!(proof_str);
+
     let proof: Proof = serde_json::from_str(proof_str).unwrap();
+    let block_comm: Commitment<Header> =
+        Commitment::<Header>::deserialize_uncompressed_unchecked(block_comm_bytes).unwrap();
+    let root_comm: Sha3Node = Sha3Node::deserialize_uncompressed_unchecked(root_bytes).unwrap();
 
-    //MOCK CODE
-    let mut tree = BlockMerkleTree::from_elems(Some(6), Vec::<Commitment<Header>>::new())
-        .expect("should construct tree");
-    let header: Header = serde_json::from_value(HEADER.clone()).unwrap();
-    let leaf = header.commit();
-    tree.push(leaf);
-
-    let (comm, _) = tree.lookup(0).expect_ok().unwrap();
-    let new_proof = MerkleProof::new(0, proof.to_vec());
-    BlockMerkleTree::verify(tree.commitment().digest(), 0, new_proof)
+    // let (comm, _) = tree.lookup(0).expect_ok().unwrap();
+    let proof = MerkleProof::new(0, proof.to_vec());
+    let proved_comm = proof.elem().unwrap().clone();
+    BlockMerkleTree::verify(root_comm, 0, proof)
         .unwrap()
         .unwrap();
+    assert!(proved_comm == block_comm);
 }
 
 // Helper function to verify a VID namespace proof that takes the byte representations of the proof,

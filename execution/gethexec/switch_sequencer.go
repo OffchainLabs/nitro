@@ -117,7 +117,7 @@ func (s *SwitchSequencer) Start(ctx context.Context) error {
 
 	if s.lightClient != nil {
 		s.CallIteratively(func(ctx context.Context) time.Duration {
-			espresso := s.lightClient.IsHotShotAvaliable(s.maxHotShotDriftTime)
+			espresso := s.lightClient.IsHotShotAvailable(s.maxHotShotDriftTime)
 
 			var err error
 			if s.IsRunningEspressoMode() && !espresso {

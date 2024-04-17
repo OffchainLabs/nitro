@@ -712,7 +712,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 			if err != nil {
 				return err
 			}
-			jst.BlockMerkleProof = nil
+			jst.BlockMerkleJustification = nil
 			newMsg, err := arbos.MessageFromEspresso(messages[i].Message.Header, txs, jst)
 			if err != nil {
 				return err

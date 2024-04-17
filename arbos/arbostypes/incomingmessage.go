@@ -37,10 +37,15 @@ const MaxL2MessageSize = 256 * 1024
 
 const ArbosVersion_FixRedeemGas = uint64(11)
 
-type EspressoBlockJustification struct {
-	Header           espressoTypes.Header
-	Proof            *espressoTypes.NamespaceProof
+type BlockMerkleJustification struct {
 	BlockMerkleProof *espressoTypes.HotShotBlockMerkleProof
+	L1ProofHeight    uint64
+}
+
+type EspressoBlockJustification struct {
+	Header                   espressoTypes.Header
+	Proof                    *espressoTypes.NamespaceProof
+	BlockMerkleJustification *BlockMerkleJustification
 }
 
 type L1IncomingMessageHeader struct {

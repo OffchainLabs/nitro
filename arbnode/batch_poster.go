@@ -463,6 +463,7 @@ func AccessList(opts *AccessListOpts) types.AccessList {
 // Adds a block merkle proof to an Espresso justification, providing a proof that a set of transactions
 // hashes to some light client state root
 func (b *BatchPoster) addEspressoBlockMerkleProof(
+	ctx context.Context,
 	msg *arbostypes.MessageWithMetadata,
 ) error {
 	if arbos.IsEspressoMsg(msg.Message) {
@@ -478,11 +479,11 @@ func (b *BatchPoster) addEspressoBlockMerkleProof(
 		if validatedHotShotHeight < jst.Header.Height {
 			return fmt.Errorf("could not construct batch justification, light client is at height %v but the justification is for height %v", validatedHotShotHeight, jst.Header.Height)
 		}
-		proof, err := b.hotshotClient.FetchBlockMerkleProof(validatedL1Height, jst.Header.Height)
+		proof, err := b.hotshotClient.FetchBlockMerkleProof(ctx, validatedL1Height, jst.Header.Height)
 		if err != nil {
 			return err
 		}
-		jst.BlockMerkleProof = &proof
+		jst.BlockMerkleJustification = &arbostypes.BlockMerkleJustification{BlockMerkleProof: &proof, L1ProofHeight: validatedL1Height}
 		newMsg, err := arbos.MessageFromEspresso(msg.Message.Header, txs, jst)
 		if err != nil {
 			return err
@@ -1172,7 +1173,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			)
 			break
 		}
-		err = b.addEspressoBlockMerkleProof(msg)
+		err = b.addEspressoBlockMerkleProof(ctx, msg)
 		if err != nil {
 			return false, fmt.Errorf("error adding hotshot block merkle proof to justification: %w", err)
 		}

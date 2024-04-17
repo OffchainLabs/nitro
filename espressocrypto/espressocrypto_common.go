@@ -30,5 +30,5 @@ func VerifyNamespace(namespace uint64, proof espressoTypes.NamespaceProof, block
 }
 
 func VerifyMerkleProof(merkle_root espressoTypes.BlockMerkleRoot, proof espressoTypes.HotShotBlockMerkleProof, block_comm espressoTypes.Commitment) {
-	verifyMerkleProof(merkle_root, proof.Proof, block_comm)
+	verifyMerkleProof(merkle_root, proof, block_comm)
 }

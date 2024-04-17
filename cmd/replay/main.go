@@ -302,19 +302,11 @@ func main() {
 			if !commitment.Equals(hotshotHeader.Commit()) {
 				panic(fmt.Sprintf("invalid hotshot header jst header at %v expected: %v, provided %v.", height, hotshotHeader.Commit(), commitment))
 			}
-			if jst.BlockMerkleProof == nil {
-				panic("block merkle proof missing from justification")
+			if jst.BlockMerkleJustification == nil {
+				panic("block merkle justification missing")
 			}
 			espressocrypto.VerifyNamespace(chainConfig.ChainID.Uint64(), *jst.Proof, *jst.Header.PayloadCommitment, *jst.Header.NsTable, txs)
-
-			mockComm1 := espressoTypes.Commitment{}
-			mockComm2 := espressoTypes.Commitment{}
-			mockProofString := `{"proof":[]}`
-			mockProof := espressoTypes.HotShotBlockMerkleProof{
-				Proof:    json.RawMessage(mockProofString),
-				L1Height: 1,
-			}
-			espressocrypto.VerifyMerkleProof(mockComm1, mockProof, mockComm2)
+			espressocrypto.VerifyMerkleProof(commitment, *jst.BlockMerkleJustification.BlockMerkleProof, jst.Header.Commit())
 		}
 
 		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher)
