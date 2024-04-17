@@ -56,8 +56,6 @@ func runEspresso(t *testing.T, ctx context.Context) func() {
 	invocation := []string{"compose", "up", "-d", "--build"}
 	nodes := []string{
 		"orchestrator",
-		"da-server",
-		"consensus-server",
 		"espresso-sequencer0",
 		"espresso-sequencer1",
 		"commitment-task",
