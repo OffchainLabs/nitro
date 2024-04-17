@@ -71,8 +71,8 @@ impl From<ArbValueType> for ValType {
             V::F32 => Self::F32,
             V::F64 => Self::F64,
             V::RefNull => Self::Ref(RefType::NULLREF),
-            V::FuncRef => Self::Ref(RefType::FUNC),
-            V::InternalRef => Self::Ref(RefType::FUNC), // not analogous, but essentially a func pointer
+            V::FuncRef => Self::Ref(RefType::FUNCREF),
+            V::InternalRef => Self::Ref(RefType::FUNCREF), // not analogous, but essentially a func pointer
         }
     }
 }
@@ -85,8 +85,8 @@ pub fn parser_type(ty: &wasmer::Type) -> wasmer::wasmparser::ValType {
         wasmer::Type::F32 => wasmer::wasmparser::ValType::F32,
         wasmer::Type::F64 => wasmer::wasmparser::ValType::F64,
         wasmer::Type::V128 => wasmer::wasmparser::ValType::V128,
-        wasmer::Type::ExternRef => wasmer::wasmparser::ValType::Ref(RefType::EXTERN),
-        wasmer::Type::FuncRef => wasmer::wasmparser::ValType::Ref(RefType::FUNC),
+        wasmer::Type::ExternRef => wasmer::wasmparser::ValType::Ref(RefType::EXTERNREF),
+        wasmer::Type::FuncRef => wasmer::wasmparser::ValType::Ref(RefType::FUNCREF),
     }
 }
 
