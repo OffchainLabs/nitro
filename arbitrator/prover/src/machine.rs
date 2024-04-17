@@ -19,7 +19,7 @@ use crate::{
         IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
     },
 };
-use arbutil::{math, Bytes32, Color, PreimageType};
+use arbutil::{math, Bytes32, Color, DebugColor, PreimageType};
 use brotli::Dictionary;
 #[cfg(feature = "native")]
 use c_kzg::BYTES_PER_BLOB;
@@ -45,7 +45,7 @@ use std::{
     sync::Arc,
 };
 use wasmer_types::FunctionIndex;
-use wasmparser::{DataKind, ElementItem, ElementKind, Operator, TableType};
+use wasmparser::{DataKind, ElementItems, ElementKind, Operator, RefType, TableType};
 
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
@@ -485,7 +485,7 @@ impl Module {
 
             let offset = match (init.read()?, init.read()?, init.eof()) {
                 (Operator::I32Const { value }, Operator::End, true) => value as usize,
-                x => bail!("Non-constant element segment offset expression {:?}", x),
+                x => bail!("Non-constant element segment offset expression {x:?}"),
             };
             if !matches!(
                 offset.checked_add(data.data.len()),
@@ -493,14 +493,19 @@ impl Module {
             ) {
                 bail!(
                     "Out-of-bounds data memory init with offset {} and size {}",
-                    offset,
-                    data.data.len(),
+                    offset.red(),
+                    data.data.len().red(),
                 );
             }
             memory.set_range(offset, data.data)?;
         }
 
         for table in &bin.tables {
+            let element_type = table.element_type;
+            ensure!(
+                element_type == RefType::FUNCREF,
+                "unsupported table type {element_type}"
+            );
             tables.push(Table {
                 elems: vec![TableElement::default(); usize::try_from(table.initial).unwrap()],
                 ty: *table,
@@ -513,31 +518,26 @@ impl Module {
                 ElementKind::Active {
                     table_index,
                     offset_expr,
-                } => (table_index, offset_expr.get_operators_reader()),
-                _ => continue,
+                } => (
+                    table_index.unwrap_or_default() as usize,
+                    offset_expr.get_operators_reader(),
+                ),
+                _ => continue, // we don't support the ops that use these
             };
             let offset = match (init.read()?, init.read()?, init.eof()) {
                 (Operator::I32Const { value }, Operator::End, true) => value as usize,
-                x => bail!("Non-constant element segment offset expression {:?}", x),
+                x => bail!("Non-constant element segment offset expression {x:?}"),
             };
-            let Some(table) = tables.get_mut(t as usize) else {
-                bail!("Element segment for non-exsistent table {}", t)
+            let Some(table) = tables.get_mut(t) else {
+                bail!("Element segment for non-exsistent table {}", t.red())
             };
-            let expected_ty = table.ty.element_type;
-            ensure!(
-                expected_ty == elem.ty,
-                "Element type expected to be of table type {:?} but of type {:?}",
-                expected_ty,
-                elem.ty
-            );
 
             let mut contents = vec![];
-            let mut item_reader = elem.items.get_items_reader()?;
-            for _ in 0..item_reader.get_count() {
-                let item = item_reader.read()?;
-                let ElementItem::Func(index) = item else {
-                    bail!("Non-constant element initializers are not supported")
-                };
+            let ElementItems::Functions(item_reader) = elem.items.clone() else {
+                bail!("Non-constant element initializers are not supported");
+            };
+            for func in item_reader.into_iter() {
+                let index = func?;
                 let func_ty = func_types[index as usize].clone();
                 contents.push(TableElement {
                     val: Value::FuncRef(index),
@@ -548,9 +548,7 @@ impl Module {
             let len = contents.len();
             ensure!(
                 offset.saturating_add(len) <= table.elems.len(),
-                "Out of bounds element segment at offset {} and length {} for table of length {}",
-                offset,
-                len,
+                "Out of bounds element segment at offset {offset} and length {len} for table of length {}",
                 table.elems.len(),
             );
             table.elems[offset..][..len].clone_from_slice(&contents);
@@ -1330,7 +1328,7 @@ impl Machine {
                 if kind == ExportKind::Func {
                     let ty = match lib.get_function(FunctionIndex::from_u32(export)) {
                         Ok(ty) => ty,
-                        Err(error) => bail!("failed to read export {}: {}", name, error),
+                        Err(error) => bail!("failed to read export {name}: {error}"),
                     };
                     let import = AvailableImport::new(ty, module, export);
                     available_imports.insert(name.to_owned(), import);
@@ -1699,7 +1697,7 @@ impl Machine {
         let Some(module) = self.modules.iter().position(|m| m.name() == name) else {
             let names: Vec<_> = self.modules.iter().map(|m| m.name()).collect();
             let names = names.join(", ");
-            bail!("module {} not found among: {}", name.red(), names)
+            bail!("module {} not found among: {names}", name.red())
         };
         Ok(module as u32)
     }
@@ -1732,7 +1730,7 @@ impl Machine {
                 "func {} has type {} but received args {:?}",
                 name.red(),
                 ty.red(),
-                args
+                args.debug_red(),
             )
         }
 

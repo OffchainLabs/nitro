@@ -384,20 +384,28 @@ impl<'a> FuncDepthChecker<'a> {
                     I32Store, I64Store, F32Store, F64Store, I32Store8, I32Store16, I64Store8, I64Store16, I64Store32,
                 ) => pop!(2),
 
-                unsupported @ dot!(Try, Catch, Throw, Rethrow) => {
-                    bail!("exception-handling extension not supported {:?}", unsupported)
+                unsupported @ dot!(Try, Catch, Throw, Rethrow, ThrowRef, TryTable) => {
+                    bail!("exception-handling extension not supported {unsupported:?}")
                 },
 
                 unsupported @ dot!(ReturnCall, ReturnCallIndirect) => {
-                    bail!("tail-call extension not supported {:?}", unsupported)
+                    bail!("tail-call extension not supported {unsupported:?}")
+                }
+
+                unsupported @ dot!(CallRef, ReturnCallRef) => {
+                    bail!("typed function references extension not supported {unsupported:?}")
                 }
 
                 unsupported @ (dot!(Delegate) | op!(CatchAll)) => {
-                    bail!("exception-handling extension not supported {:?}", unsupported)
+                    bail!("exception-handling extension not supported {unsupported:?}")
                 },
 
-                unsupported @ (op!(RefIsNull) | dot!(TypedSelect, RefNull, RefFunc)) => {
-                    bail!("reference-types extension not supported {:?}", unsupported)
+                unsupported @ (op!(RefIsNull) | dot!(TypedSelect, RefNull, RefFunc, RefEq)) => {
+                    bail!("reference-types extension not supported {unsupported:?}")
+                },
+
+                unsupported @ dot!(RefAsNonNull, BrOnNull, BrOnNonNull) => {
+                    bail!("typed function references extension not supported {unsupported:?}")
                 },
 
                 unsupported @ (
@@ -405,7 +413,22 @@ impl<'a> FuncDepthChecker<'a> {
                         MemoryInit, DataDrop, TableInit, ElemDrop,
                         TableCopy, TableFill, TableGet, TableSet, TableGrow, TableSize
                     )
-                ) => bail!("bulk-memory-operations extension not fully supported {:?}", unsupported),
+                ) => bail!("bulk-memory-operations extension not fully supported {unsupported:?}"),
+
+                unsupported @ dot!(MemoryDiscard) => {
+                    bail!("typed function references extension not supported {unsupported:?}")
+                }
+
+                unsupported @ (
+                    dot!(
+                        StructNew, StructNewDefault, StructGet, StructGetS, StructGetU, StructSet,
+                        ArrayNew, ArrayNewDefault, ArrayNewFixed, ArrayNewData, ArrayNewElem,
+                        ArrayGet, ArrayGetS, ArrayGetU, ArraySet, ArrayLen, ArrayFill, ArrayCopy,
+                        ArrayInitData, ArrayInitElem,
+                        RefTestNonNull, RefTestNullable, RefCastNonNull, RefCastNullable,
+                        BrOnCast, BrOnCastFail, AnyConvertExtern, ExternConvertAny, RefI31, I31GetS, I31GetU
+                    )
+                ) => bail!("garbage collection extension not supported {unsupported:?}"),
 
                 unsupported @ (
                     dot!(
@@ -425,7 +448,7 @@ impl<'a> FuncDepthChecker<'a> {
                         I64AtomicRmw32XchgU, I32AtomicRmwCmpxchg, I64AtomicRmwCmpxchg, I32AtomicRmw8CmpxchgU,
                         I32AtomicRmw16CmpxchgU, I64AtomicRmw8CmpxchgU, I64AtomicRmw16CmpxchgU, I64AtomicRmw32CmpxchgU
                     )
-                ) => bail!("threads extension not supported {:?}", unsupported),
+                ) => bail!("threads extension not supported {unsupported:?}"),
 
                 unsupported @ (
                     dot!(
@@ -471,14 +494,13 @@ impl<'a> FuncDepthChecker<'a> {
                         F64x2Max, F64x2PMin, F64x2PMax, I32x4TruncSatF32x4S, I32x4TruncSatF32x4U, F32x4ConvertI32x4S,
                         F32x4ConvertI32x4U, I32x4TruncSatF64x2SZero, I32x4TruncSatF64x2UZero, F64x2ConvertLowI32x4S,
                         F64x2ConvertLowI32x4U, F32x4DemoteF64x2Zero, F64x2PromoteLowF32x4, I8x16RelaxedSwizzle,
-                        I32x4RelaxedTruncSatF32x4S, I32x4RelaxedTruncSatF32x4U, I32x4RelaxedTruncSatF64x2SZero,
-                        I32x4RelaxedTruncSatF64x2UZero, F32x4RelaxedFma, F32x4RelaxedFnma, F64x2RelaxedFma,
-                        F64x2RelaxedFnma, I8x16RelaxedLaneselect, I16x8RelaxedLaneselect, I32x4RelaxedLaneselect,
+                        I32x4RelaxedTruncF32x4S, I32x4RelaxedTruncF32x4U, I32x4RelaxedTruncF64x2SZero,
+                        I32x4RelaxedTruncF64x2UZero, F32x4RelaxedMadd, F32x4RelaxedNmadd, F64x2RelaxedMadd,
+                        F64x2RelaxedNmadd, I8x16RelaxedLaneselect, I16x8RelaxedLaneselect, I32x4RelaxedLaneselect,
                         I64x2RelaxedLaneselect, F32x4RelaxedMin, F32x4RelaxedMax, F64x2RelaxedMin, F64x2RelaxedMax,
-                        I16x8RelaxedQ15mulrS, I16x8DotI8x16I7x16S, I32x4DotI8x16I7x16AddS,
-                        F32x4RelaxedDotBf16x8AddF32x4
+                        I16x8RelaxedQ15mulrS, I16x8RelaxedDotI8x16I7x16S, I32x4RelaxedDotI8x16I7x16AddS
                     )
-                ) => bail!("SIMD extension not supported {:?}", unsupported),
+                ) => bail!("SIMD extension not supported {unsupported:?}"),
             };
         }
 
