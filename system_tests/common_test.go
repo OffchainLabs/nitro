@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"math/big"
 	"net"
 	"os"
@@ -64,6 +65,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	"golang.org/x/exp/slog"
 )
 
 type info = *BlockchainTestInfo
@@ -590,7 +592,8 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 
 	nodeConf := ethconfig.Defaults
 	nodeConf.NetworkId = chainConfig.ChainID.Uint64()
-	l1Genesis := core.DeveloperGenesisBlock(15_000_000, l1info.GetAddress("Faucet"))
+	faucetAddr := l1info.GetAddress("Faucet")
+	l1Genesis := core.DeveloperGenesisBlock(15_000_000, &faucetAddr)
 	infoGenesis := l1info.GetGenesisAlloc()
 	for acct, info := range infoGenesis {
 		l1Genesis.Alloc[acct] = info
@@ -1114,13 +1117,14 @@ func deploySimple(
 func TestMain(m *testing.M) {
 	logLevelEnv := os.Getenv("TEST_LOGLEVEL")
 	if logLevelEnv != "" {
-		logLevel, err := strconv.ParseUint(logLevelEnv, 10, 32)
-		if err != nil || logLevel > uint64(log.LvlTrace) {
+		logLevel, err := strconv.ParseInt(logLevelEnv, 10, 32)
+		if err != nil || logLevel > int64(log.LevelCrit) {
 			log.Warn("TEST_LOGLEVEL exists but out of bound, ignoring", "logLevel", logLevelEnv, "max", log.LvlTrace)
 		}
-		glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
-		glogger.Verbosity(log.Lvl(logLevel))
-		log.Root().SetHandler(glogger)
+		glogger := log.NewGlogHandler(
+			log.NewTerminalHandler(io.Writer(os.Stderr), false))
+		glogger.Verbosity(slog.Level(logLevel))
+		log.SetDefault(log.NewLogger(glogger))
 	}
 	code := m.Run()
 	os.Exit(code)
