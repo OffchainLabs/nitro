@@ -562,6 +562,9 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 	var comm espressoTypes.Commitment
 	if v.config().Espresso {
 		_, jst, err := arbos.ParseEspressoMsg(msg.Message)
+		if err != nil {
+			return false, err
+		}
 		fetchedCommitment, err := v.lightClientReader.FetchMerkleRootAtL1Block(jst.BlockMerkleJustification.L1ProofHeight)
 		if err != nil {
 			return false, err
