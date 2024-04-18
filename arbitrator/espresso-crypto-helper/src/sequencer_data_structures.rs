@@ -10,10 +10,7 @@ use committable::{Commitment, Committable, RawCommitmentBuilder};
 use core::fmt;
 use derivative::Derivative;
 use derive_more::{Add, Display, From, Into, Sub};
-use ethers::{
-    abi::Address,
-    types::{Signature, H256, U256},
-};
+use ethereum_types::{Address, Signature, H256, U256};
 use jf_primitives::{
     merkle_tree::{
         prelude::{LightWeightSHA3MerkleTree, Sha3Digest, Sha3Node},

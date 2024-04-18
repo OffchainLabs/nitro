@@ -1,6 +1,3 @@
-brotli v0.1.0 (/Users/ngolub/Documents/projects/nitro-espresso-integration/arbitrator/wasm-libraries/brotli)
-└── go-abi v0.1.0 (/Users/ngolub/Documents/projects/nitro-espresso-integration/arbitrator/wasm-libraries/go-abi)
-
 espresso-crypto v0.1.0 (/Users/ngolub/Documents/projects/nitro-espresso-integration/arbitrator/wasm-libraries/espresso-crypto)
 ├── espresso-crypto-helper v0.1.0 (/Users/ngolub/Documents/projects/nitro-espresso-integration/arbitrator/espresso-crypto-helper)
 │   ├── ark-bn254 v0.4.0
@@ -543,6 +540,8 @@ espresso-crypto v0.1.0 (/Users/ngolub/Documents/projects/nitro-espresso-integrat
 │   │   │   │   │   │   │   ├── libc v0.2.153
 │   │   │   │   │   │   │   ├── mio v0.8.11
 │   │   │   │   │   │   │   │   └── libc v0.2.153
+│   │   │   │   │   │   │   ├── num_cpus v1.16.0
+│   │   │   │   │   │   │   │   └── libc v0.2.153
 │   │   │   │   │   │   │   ├── pin-project-lite v0.2.13
 │   │   │   │   │   │   │   └── socket2 v0.5.6
 │   │   │   │   │   │   │       └── libc v0.2.153
@@ -687,6 +686,96 @@ espresso-crypto v0.1.0 (/Users/ngolub/Documents/projects/nitro-espresso-integrat
 │   │   ├── ethers-etherscan v2.0.14
 │   │   │   ├── chrono v0.4.37 (*)
 │   │   │   ├── ethers-core v2.0.14 (*)
+│   │   │   ├── ethers-solc v2.0.14
+│   │   │   │   ├── cfg-if v1.0.0
+│   │   │   │   ├── const-hex v1.11.3 (*)
+│   │   │   │   ├── dirs v5.0.1
+│   │   │   │   │   └── dirs-sys v0.4.1
+│   │   │   │   │       ├── libc v0.2.153
+│   │   │   │   │       └── option-ext v0.2.0
+│   │   │   │   ├── dunce v1.0.4
+│   │   │   │   ├── ethers-core v2.0.14 (*)
+│   │   │   │   ├── glob v0.3.1
+│   │   │   │   ├── home v0.5.9
+│   │   │   │   ├── md-5 v0.10.6
+│   │   │   │   │   ├── cfg-if v1.0.0
+│   │   │   │   │   └── digest v0.10.7 (*)
+│   │   │   │   ├── num_cpus v1.16.0 (*)
+│   │   │   │   ├── once_cell v1.18.0
+│   │   │   │   ├── path-slash v0.2.1
+│   │   │   │   ├── rayon v1.10.0
+│   │   │   │   │   ├── either v1.9.0
+│   │   │   │   │   └── rayon-core v1.12.1
+│   │   │   │   │       ├── crossbeam-deque v0.8.5
+│   │   │   │   │       │   ├── crossbeam-epoch v0.9.18
+│   │   │   │   │       │   │   └── crossbeam-utils v0.8.19
+│   │   │   │   │       │   └── crossbeam-utils v0.8.19
+│   │   │   │   │       └── crossbeam-utils v0.8.19
+│   │   │   │   ├── regex v1.10.4 (*)
+│   │   │   │   ├── semver v1.0.20 (*)
+│   │   │   │   ├── serde v1.0.193 (*)
+│   │   │   │   ├── serde_json v1.0.109 (*)
+│   │   │   │   ├── solang-parser v0.3.3
+│   │   │   │   │   ├── itertools v0.11.0
+│   │   │   │   │   │   └── either v1.9.0
+│   │   │   │   │   ├── lalrpop-util v0.20.2
+│   │   │   │   │   ├── phf v0.11.2
+│   │   │   │   │   │   ├── phf_macros v0.11.2 (proc-macro)
+│   │   │   │   │   │   │   ├── phf_generator v0.11.2
+│   │   │   │   │   │   │   │   ├── phf_shared v0.11.2
+│   │   │   │   │   │   │   │   │   └── siphasher v0.3.11
+│   │   │   │   │   │   │   │   └── rand v0.8.4 (*)
+│   │   │   │   │   │   │   ├── phf_shared v0.11.2 (*)
+│   │   │   │   │   │   │   ├── proc-macro2 v1.0.66 (*)
+│   │   │   │   │   │   │   ├── quote v1.0.32 (*)
+│   │   │   │   │   │   │   └── syn v2.0.32 (*)
+│   │   │   │   │   │   └── phf_shared v0.11.2 (*)
+│   │   │   │   │   ├── thiserror v1.0.55 (*)
+│   │   │   │   │   └── unicode-xid v0.2.4
+│   │   │   │   │   [build-dependencies]
+│   │   │   │   │   └── lalrpop v0.20.2
+│   │   │   │   │       ├── ascii-canvas v3.0.0
+│   │   │   │   │       │   └── term v0.7.0
+│   │   │   │   │       │       └── dirs-next v2.0.0
+│   │   │   │   │       │           ├── cfg-if v1.0.0
+│   │   │   │   │       │           └── dirs-sys-next v0.1.2
+│   │   │   │   │       │               └── libc v0.2.153
+│   │   │   │   │       ├── bit-set v0.5.3
+│   │   │   │   │       │   └── bit-vec v0.6.3
+│   │   │   │   │       ├── ena v0.14.2
+│   │   │   │   │       │   └── log v0.4.20
+│   │   │   │   │       ├── itertools v0.11.0 (*)
+│   │   │   │   │       ├── lalrpop-util v0.20.2
+│   │   │   │   │       ├── petgraph v0.6.4
+│   │   │   │   │       │   ├── fixedbitset v0.4.2
+│   │   │   │   │       │   └── indexmap v2.0.0 (*)
+│   │   │   │   │       ├── regex v1.10.4 (*)
+│   │   │   │   │       ├── regex-syntax v0.8.3
+│   │   │   │   │       ├── string_cache v0.8.7
+│   │   │   │   │       │   ├── new_debug_unreachable v1.0.6
+│   │   │   │   │       │   ├── once_cell v1.18.0
+│   │   │   │   │       │   ├── parking_lot v0.12.1
+│   │   │   │   │       │   │   ├── lock_api v0.4.11
+│   │   │   │   │       │   │   │   └── scopeguard v1.2.0
+│   │   │   │   │       │   │   │   [build-dependencies]
+│   │   │   │   │       │   │   │   └── autocfg v1.1.0
+│   │   │   │   │       │   │   └── parking_lot_core v0.9.9
+│   │   │   │   │       │   │       ├── cfg-if v1.0.0
+│   │   │   │   │       │   │       ├── libc v0.2.153
+│   │   │   │   │       │   │       └── smallvec v1.13.2
+│   │   │   │   │       │   ├── phf_shared v0.10.0
+│   │   │   │   │       │   │   └── siphasher v0.3.11
+│   │   │   │   │       │   └── precomputed-hash v0.1.1
+│   │   │   │   │       ├── term v0.7.0 (*)
+│   │   │   │   │       ├── tiny-keccak v2.0.2 (*)
+│   │   │   │   │       ├── unicode-xid v0.2.4
+│   │   │   │   │       └── walkdir v2.5.0 (*)
+│   │   │   │   ├── thiserror v1.0.55 (*)
+│   │   │   │   ├── tiny-keccak v2.0.2 (*)
+│   │   │   │   ├── tokio v1.37.0 (*)
+│   │   │   │   ├── tracing v0.1.40 (*)
+│   │   │   │   ├── walkdir v2.5.0 (*)
+│   │   │   │   └── yansi v0.5.1
 │   │   │   ├── reqwest v0.11.27 (*)
 │   │   │   ├── semver v1.0.20 (*)
 │   │   │   ├── serde v1.0.193 (*)
@@ -789,7 +878,8 @@ espresso-crypto v0.1.0 (/Users/ngolub/Documents/projects/nitro-espresso-integrat
 │   │   │   ├── tracing-futures v0.2.5 (*)
 │   │   │   └── url v2.5.0 (*)
 │   │   ├── ethers-providers v2.0.14 (*)
-│   │   └── ethers-signers v2.0.14 (*)
+│   │   ├── ethers-signers v2.0.14 (*)
+│   │   └── ethers-solc v2.0.14 (*)
 │   ├── jf-primitives v0.4.0-pre.0 (https://github.com/EspressoSystems/jellyfish?tag=0.4.2#f85f9024)
 │   │   ├── anyhow v1.0.79
 │   │   ├── ark-bls12-377 v0.4.0
@@ -854,8 +944,7 @@ espresso-crypto v0.1.0 (/Users/ngolub/Documents/projects/nitro-espresso-integrat
 │   │   ├── ark-std v0.4.0 (*)
 │   │   ├── blst v0.3.11
 │   │   │   ├── threadpool v1.8.1
-│   │   │   │   └── num_cpus v1.16.0
-│   │   │   │       └── libc v0.2.153
+│   │   │   │   └── num_cpus v1.16.0 (*)
 │   │   │   └── zeroize v1.7.0 (*)
 │   │   │   [build-dependencies]
 │   │   │   └── cc v1.0.83 (*)
@@ -986,22 +1075,3 @@ espresso-crypto v0.1.0 (/Users/ngolub/Documents/projects/nitro-espresso-integrat
 │   │   └── syn v1.0.109 (*)
 │   └── typenum v1.16.0
 └── go-abi v0.1.0 (/Users/ngolub/Documents/projects/nitro-espresso-integration/arbitrator/wasm-libraries/go-abi)
-
-go-abi v0.1.0 (/Users/ngolub/Documents/projects/nitro-espresso-integration/arbitrator/wasm-libraries/go-abi)
-
-go-stub v0.1.0 (/Users/ngolub/Documents/projects/nitro-espresso-integration/arbitrator/wasm-libraries/go-stub)
-├── fnv v1.0.7
-├── go-abi v0.1.0 (/Users/ngolub/Documents/projects/nitro-espresso-integration/arbitrator/wasm-libraries/go-abi)
-├── rand v0.8.4 (*)
-└── rand_pcg v0.3.1
-    └── rand_core v0.6.4 (*)
-
-host-io v0.1.0 (/Users/ngolub/Documents/projects/nitro-espresso-integration/arbitrator/wasm-libraries/host-io)
-├── arbutil v0.1.0 (/Users/ngolub/Documents/projects/nitro-espresso-integration/arbitrator/arbutil)
-│   ├── digest v0.10.7 (*)
-│   ├── num_enum v0.7.0 (*)
-│   ├── sha2 v0.10.7 (*)
-│   └── sha3 v0.10.8 (*)
-└── go-abi v0.1.0 (/Users/ngolub/Documents/projects/nitro-espresso-integration/arbitrator/wasm-libraries/go-abi)
-
-wasi-stub v0.1.0 (/Users/ngolub/Documents/projects/nitro-espresso-integration/arbitrator/wasm-libraries/wasi-stub)
