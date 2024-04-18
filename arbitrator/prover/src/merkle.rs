@@ -43,6 +43,15 @@ impl MerkleType {
     }
 }
 
+/// A Merkle tree with a fixed number of layers
+/// 
+/// https://en.wikipedia.org/wiki/Merkle_tree
+/// 
+/// Each instance's leaves contain the hashes of a specific [MerkleType].
+/// The tree does not grow. It can be over-provisioned using the
+/// [Merkle::new_advanced] method and passing a minimum depth.
+/// 
+/// This structure does not contain the data itself, only the hashes.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Merkle {
     ty: MerkleType,
@@ -60,6 +69,8 @@ fn hash_node(ty: MerkleType, a: Bytes32, b: Bytes32) -> Bytes32 {
 }
 
 impl Merkle {
+    // Creates a new Merkle tree with the given type and leaf hashes.
+    // The tree is built up to the minimum depth necessary to hold all the leaves.
     pub fn new(ty: MerkleType, hashes: Vec<Bytes32>) -> Merkle {
         Self::new_advanced(ty, hashes, Bytes32::default(), 0)
     }
@@ -161,6 +172,8 @@ impl Merkle {
         *self = Self::new_advanced(self.ty, leaves, empty, self.min_depth);
     }
 
+    // Sets the leaf at the given index to the given hash.
+    // Panics if the index is out of bounds (since the structure doesn't grow).
     pub fn set(&mut self, mut idx: usize, hash: Bytes32) {
         if self.layers[0][idx] == hash {
             return;
@@ -186,4 +199,46 @@ impl Merkle {
             idx >>= 1;
         }
     }
+}
+
+#[test]
+#[ignore]
+fn simple_merkle() {
+    let hashes = vec![
+        Bytes32::from([1; 32]),
+        Bytes32::from([2; 32]),
+        Bytes32::from([3; 32]),
+        Bytes32::from([4; 32]),
+        Bytes32::from([5; 32]),
+    ];
+    let mut expected = hash_node(MerkleType::Value,
+        hash_node(
+            MerkleType::Value,
+            hash_node(MerkleType::Value, Bytes32::from([1; 32]), Bytes32::from([2; 32])),
+            hash_node(MerkleType::Value, Bytes32::from([3; 32]), Bytes32::from([4; 32]))),
+        hash_node(
+            MerkleType::Value,
+            hash_node(MerkleType::Value, Bytes32::from([5; 32]), Bytes32::from([0; 32])),
+            hash_node(MerkleType::Value, Bytes32::from([0; 32]), Bytes32::from([0; 32]))));
+    let mut merkle = Merkle::new(MerkleType::Value, hashes.clone());
+    assert_eq!(merkle.root(), expected);
+
+    merkle.set(5, Bytes32::from([6; 32]));
+    expected = hash_node(MerkleType::Value,
+        hash_node(
+            MerkleType::Value,
+            hash_node(MerkleType::Value, Bytes32::from([1; 32]), Bytes32::from([2; 32])),
+            hash_node(MerkleType::Value, Bytes32::from([3; 32]), Bytes32::from([4; 32]))),
+        hash_node(
+            MerkleType::Value,
+            hash_node(MerkleType::Value, Bytes32::from([5; 32]), Bytes32::from([6; 32])),
+            hash_node(MerkleType::Value, Bytes32::from([0; 32]), Bytes32::from([0; 32]))));
+    assert_eq!(merkle.root(), expected);
+}
+
+#[test]
+#[should_panic]
+fn set_with_bad_index_panics() {
+    let mut merkle = Merkle::new(MerkleType::Value, vec![Bytes32::default()]);
+    merkle.set(1, Bytes32::default());
 }
