@@ -30,6 +30,7 @@ fn main() -> eyre::Result<()> {
         println!("Running benchmark with always merkleize feature off");
     }
     for step_size in step_sizes {
+        let total = std::time::Instant::now();
         let mut machine = prepare_machine(
             args.preimages_path.clone(),
             args.machine_path.clone(),
@@ -65,12 +66,14 @@ fn main() -> eyre::Result<()> {
                 break;
             }
         }
+        let total_end_time = total.elapsed();
         println!(
-            "avg hash time {:?}, avg step time {:?}, step size {}, num_iters {}",
+            "avg hash time {:?}, avg step time {:?}, step size {}, num_iters {}, total time {:?}",
             average(&hash_times),
             average(&step_times),
             step_size,
             num_iters,
+            total_end_time,
         );
     }
     Ok(())
