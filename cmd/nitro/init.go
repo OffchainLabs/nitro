@@ -155,6 +155,10 @@ func validateBlockChain(blockChain *core.BlockChain, chainConfig *params.ChainCo
 			return fmt.Errorf("invalid chain config, not compatible with previous: %w", err)
 		}
 	}
+	// Add a check to make sure we don't allow accidentally downgrading ArbOS
+	if currentArbosState.ArbOSVersion() > chainConfig.ArbitrumChainParams.InitialArbOSVersion {
+		return fmt.Errorf("attempted to launch node with ArbOS version %v on ArbOS state with version %v", chainConfig.ArbitrumChainParams.InitialArbOSVersion, currentArbosState.ArbOSVersion())
+	}
 
 	return nil
 }
