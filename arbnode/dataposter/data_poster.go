@@ -1105,9 +1105,7 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 		for _, tx := range queueContents {
 			previouslyUnsent := !tx.Sent
 			sendAttempted := false
-			replacing := false
 			if now.After(tx.NextReplacement) {
-				replacing = true
 				nonceBacklog := arbmath.SaturatingUSub(latestNonce, tx.FullTx.Nonce())
 				weightBacklog := arbmath.SaturatingUSub(latestCumulativeWeight, tx.CumulativeWeight())
 				err := p.replaceTx(ctx, tx, arbmath.MaxInt(nonceBacklog, weightBacklog))
@@ -1117,7 +1115,7 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 			if nextCheck.After(tx.NextReplacement) {
 				nextCheck = tx.NextReplacement
 			}
-			if !replacing && previouslyUnsent {
+			if !sendAttempted && previouslyUnsent {
 				err := p.sendTx(ctx, tx, tx)
 				sendAttempted = true
 				p.maybeLogError(err, tx, "failed to re-send transaction")
