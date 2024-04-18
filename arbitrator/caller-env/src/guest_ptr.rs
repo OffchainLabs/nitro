@@ -41,3 +41,9 @@ impl Deref for GuestPtr {
         &self.0
     }
 }
+
+impl GuestPtr {
+    pub fn to_u64(self) -> u64 {
+        self.into()
+    }
+}

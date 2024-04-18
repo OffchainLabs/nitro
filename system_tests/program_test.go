@@ -838,7 +838,8 @@ func testMemory(t *testing.T, jit bool) {
 
 	memoryAddr := deployWasm(t, ctx, auth, l2client, watFile("memory"))
 	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
-	growCallAddr := deployWasm(t, ctx, auth, l2client, watFile("grow-and-call"))
+	growCallAddr := deployWasm(t, ctx, auth, l2client, watFile("grow/grow-and-call"))
+	growFixed := deployWasm(t, ctx, auth, l2client, watFile("grow/fixed"))
 
 	expectFailure := func(to common.Address, data []byte, value *big.Int) {
 		t.Helper()
@@ -881,7 +882,7 @@ func testMemory(t *testing.T, jit bool) {
 	expectFailure(multiAddr, args, oneEth)
 
 	// check that activation fails when out of memory
-	wasm, _ := readWasmFile(t, watFile("grow-120"))
+	wasm, _ := readWasmFile(t, watFile("grow/grow-120"))
 	growHugeAddr := deployContract(t, ctx, auth, l2client, wasm)
 	colors.PrintGrey("memory.wat        ", memoryAddr)
 	colors.PrintGrey("multicall.rs      ", multiAddr)
@@ -923,6 +924,10 @@ func testMemory(t *testing.T, jit bool) {
 	if programMemoryFootprint != 120 {
 		Fatal(t, "unexpected memory footprint", programMemoryFootprint)
 	}
+
+	// check edge case where memory doesn't require `pay_for_memory_grow`
+	tx = l2info.PrepareTxTo("Owner", &growFixed, 1e9, nil, args)
+	ensure(tx, l2client.SendTransaction(ctx, tx))
 
 	validateBlocks(t, 2, jit, builder)
 }
