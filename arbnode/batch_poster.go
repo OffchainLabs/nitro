@@ -479,7 +479,7 @@ func (b *BatchPoster) addEspressoBlockMerkleProof(
 		if validatedHotShotHeight < jst.Header.Height {
 			return fmt.Errorf("could not construct batch justification, light client is at height %v but the justification is for height %v", validatedHotShotHeight, jst.Header.Height)
 		}
-		proof, err := b.hotshotClient.FetchBlockMerkleProof(ctx, validatedL1Height, jst.Header.Height)
+		proof, err := b.hotshotClient.FetchBlockMerkleProof(ctx, validatedHotShotHeight, jst.Header.Height)
 		if err != nil {
 			return err
 		}

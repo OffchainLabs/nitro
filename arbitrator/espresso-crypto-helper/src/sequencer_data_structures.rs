@@ -15,7 +15,7 @@ use jf_primitives::{
     merkle_tree::{
         prelude::{LightWeightSHA3MerkleTree, Sha3Digest, Sha3Node},
         universal_merkle_tree::UniversalMerkleTree,
-        AppendableMerkleTreeScheme, MerkleTreeScheme, ToTraversalPath,
+        MerkleTreeScheme, ToTraversalPath,
     },
     vid::{
         payload_prover::{PayloadProver, Statement},
