@@ -840,6 +840,7 @@ func testMemory(t *testing.T, jit bool) {
 	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 	growCallAddr := deployWasm(t, ctx, auth, l2client, watFile("grow/grow-and-call"))
 	growFixed := deployWasm(t, ctx, auth, l2client, watFile("grow/fixed"))
+	memWrite := deployWasm(t, ctx, auth, l2client, watFile("grow/mem-write"))
 
 	expectFailure := func(to common.Address, data []byte, value *big.Int) {
 		t.Helper()
@@ -929,7 +930,40 @@ func testMemory(t *testing.T, jit bool) {
 	tx = l2info.PrepareTxTo("Owner", &growFixed, 1e9, nil, args)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 
-	validateBlocks(t, 2, jit, builder)
+	// check memory boundary conditions
+	type Case struct {
+		pass bool
+		size uint8
+		spot uint32
+		data uint32
+	}
+	cases := []Case{
+		Case{true, 0, 0, 0},
+		Case{true, 1, 4, 0},
+		Case{true, 1, 65536, 0},
+		Case{false, 1, 65536, 1}, // 1st byte out of bounds
+		Case{false, 1, 65537, 0}, // 2nd byte out of bounds
+		Case{true, 1, 65535, 1},  // last byte in bounds
+		Case{false, 1, 65535, 2}, // 1st byte over-run
+		Case{true, 2, 131072, 0},
+		Case{false, 2, 131073, 0},
+	}
+	for _, test := range cases {
+		args := []byte{}
+		if test.size > 0 {
+			args = append(args, test.size)
+			args = binary.LittleEndian.AppendUint32(args, test.spot)
+			args = binary.LittleEndian.AppendUint32(args, test.data)
+		}
+		if test.pass {
+			tx = l2info.PrepareTxTo("Owner", &memWrite, 1e9, nil, args)
+			ensure(tx, l2client.SendTransaction(ctx, tx))
+		} else {
+			expectFailure(memWrite, args, nil)
+		}
+	}
+
+	validateBlocks(t, 3, jit, builder)
 }
 
 func TestProgramActivateFails(t *testing.T) {
