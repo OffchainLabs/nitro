@@ -936,7 +936,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 		return endBatch(batch)
 	}
 
-	err := s.writeMessages(messageStartPos, messages, batch)
+	err := s.writeMessages(messageStartPos, messages, nil, batch)
 	if err != nil {
 		return err
 	}
@@ -966,7 +966,11 @@ func (s *TransactionStreamer) ExpectChosenSequencer() error {
 	return nil
 }
 
-func (s *TransactionStreamer) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) error {
+func (s *TransactionStreamer) WriteMessageFromSequencer(
+	pos arbutil.MessageIndex,
+	msgWithMeta arbostypes.MessageWithMetadata,
+	blockHash common.Hash,
+) error {
 	if err := s.ExpectChosenSequencer(); err != nil {
 		return err
 	}
@@ -990,7 +994,7 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(pos arbutil.MessageIndex
 		}
 	}
 
-	if err := s.writeMessages(pos, []arbostypes.MessageWithMetadata{msgWithMeta}, nil); err != nil {
+	if err := s.writeMessages(pos, []arbostypes.MessageWithMetadata{msgWithMeta}, &blockHash, nil); err != nil {
 		return err
 	}
 
@@ -1024,7 +1028,12 @@ func (s *TransactionStreamer) writeMessage(pos arbutil.MessageIndex, msg arbosty
 
 // The mutex must be held, and pos must be the latest message count.
 // `batch` may be nil, which initializes a new batch. The batch is closed out in this function.
-func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages []arbostypes.MessageWithMetadata, batch ethdb.Batch) error {
+func (s *TransactionStreamer) writeMessages(
+	pos arbutil.MessageIndex,
+	messages []arbostypes.MessageWithMetadata,
+	blockHash *common.Hash,
+	batch ethdb.Batch,
+) error {
 	if batch == nil {
 		batch = s.db.NewBatch()
 	}
@@ -1050,7 +1059,7 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 	}
 
 	if s.broadcastServer != nil {
-		if err := s.broadcastServer.BroadcastMessages(messages, pos); err != nil {
+		if err := s.broadcastServer.BroadcastMessages(messages, pos, blockHash); err != nil {
 			log.Error("failed broadcasting message", "pos", pos, "err", err)
 		}
 	}
