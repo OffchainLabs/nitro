@@ -19,7 +19,6 @@ type RedisValidationClientConfig struct {
 	Name           string                `koanf:"name"`
 	Room           int32                 `koanf:"room"`
 	RedisURL       string                `koanf:"redis-url"`
-	RedisStream    string                `koanf:"redis-stream"`
 	ProducerConfig pubsub.ProducerConfig `koanf:"producer-config"`
 	// Supported wasm module roots, when the list is empty this is disabled.
 	ModuleRoots []string `koanf:"module-roots"`
@@ -33,7 +32,6 @@ var DefaultRedisValidationClientConfig = RedisValidationClientConfig{
 	Name:           "redis validation client",
 	Room:           2,
 	RedisURL:       "",
-	RedisStream:    "",
 	ProducerConfig: pubsub.DefaultProducerConfig,
 }
 
@@ -41,14 +39,12 @@ var TestRedisValidationClientConfig = RedisValidationClientConfig{
 	Name:           "test redis validation client",
 	Room:           2,
 	RedisURL:       "",
-	RedisStream:    "",
 	ProducerConfig: pubsub.TestProducerConfig,
 }
 
 func RedisValidationClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".name", DefaultRedisValidationClientConfig.Name, "validation client name")
 	f.Int32(prefix+".room", DefaultRedisValidationClientConfig.Room, "validation client room")
-	f.String(prefix+".redis-stream", DefaultRedisValidationClientConfig.RedisStream, "redis stream name")
 	pubsub.ProducerAddConfigAddOptions(prefix+".producer-config", f)
 	f.StringSlice(prefix+".module-roots", nil, "Supported module root hashes")
 }

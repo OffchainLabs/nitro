@@ -72,7 +72,9 @@ import (
 type info = *BlockchainTestInfo
 type client = arbutil.L1Interface
 
-const wasmModuleRoot = "0x0e5403827cef82bcbb6f4ba1b6f3d84edc5b4b8991b164f623ff2eacda768e35"
+var wasmModuleRoots = []string{
+	"0x0e5403827cef82bcbb6f4ba1b6f3d84edc5b4b8991b164f623ff2eacda768e35",
+}
 
 type SecondNodeParams struct {
 	nodeConfig  *arbnode.Config
@@ -598,15 +600,17 @@ func AddDefaultValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Co
 	// Enable redis streams when URL is specified
 	if redisURL != "" {
 		conf.Arbitrator.RedisValidationServerConfig = validation.DefaultRedisValidationServerConfig
-		redisStream := server_api.RedisStreamForRoot(common.HexToHash(wasmModuleRoot))
 		redisClient, err := redisutil.RedisClientFromURL(redisURL)
 		if err != nil {
 			t.Fatalf("Error creating redis coordinator: %v", err)
 		}
-		createGroup(ctx, t, redisStream, redisClient)
-		conf.Arbitrator.RedisValidationServerConfig.RedisURL = redisURL
-		conf.Arbitrator.RedisValidationServerConfig.ModuleRoots = []string{wasmModuleRoot}
-		t.Cleanup(func() { destroyGroup(ctx, t, redisStream, redisClient) })
+		for _, rootModule := range wasmModuleRoots {
+			redisStream := server_api.RedisStreamForRoot(common.HexToHash(rootModule))
+			createGroup(ctx, t, redisStream, redisClient)
+			conf.Arbitrator.RedisValidationServerConfig.RedisURL = redisURL
+			t.Cleanup(func() { destroyGroup(ctx, t, redisStream, redisClient) })
+		}
+		conf.Arbitrator.RedisValidationServerConfig.ModuleRoots = wasmModuleRoots
 	}
 	_, valStack := createTestValidationNode(t, ctx, &conf)
 	configByValidationNode(t, nodeConfig, valStack)

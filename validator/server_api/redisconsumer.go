@@ -65,7 +65,7 @@ func (s *RedisValidationServer) Start(ctx_in context.Context) {
 			valRun := s.spawner.Launch(req.Value, moduleRoot)
 			res, err := valRun.Await(ctx)
 			if err != nil {
-				log.Error("Error validating", "input", "request value", req.Value, "error", err)
+				log.Error("Error validating", "request value", req.Value, "error", err)
 				return 0
 			}
 			if err := c.SetResult(ctx, req.ID, res); err != nil {

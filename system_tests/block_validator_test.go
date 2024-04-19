@@ -73,20 +73,14 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 	if useRedisStreams {
 		redisURL = redisutil.CreateTestRedis(ctx, t)
 		validatorConfig.BlockValidator.RedisValidationClientConfig = server_api.DefaultRedisValidationClientConfig
-		validatorConfig.BlockValidator.RedisValidationClientConfig.ModuleRoots = []string{wasmModuleRoot}
-		stream := server_api.RedisStreamForRoot(common.HexToHash(wasmModuleRoot))
-		validatorConfig.BlockValidator.RedisValidationClientConfig.RedisStream = stream
+		validatorConfig.BlockValidator.RedisValidationClientConfig.ModuleRoots = wasmModuleRoots
 		validatorConfig.BlockValidator.RedisValidationClientConfig.RedisURL = redisURL
+		validatorConfig.BlockValidator.PendingUpgradeModuleRoot = wasmModuleRoots[0]
 	}
 
 	AddDefaultValNode(t, ctx, validatorConfig, !arbitrator, redisURL)
 
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: validatorConfig})
-	if useRedisStreams {
-		if err := testClientB.ConsensusNode.BlockValidator.SetCurrentWasmModuleRoot(common.HexToHash(wasmModuleRoot)); err != nil {
-			t.Fatalf("Error setting wasm module root: %v", err)
-		}
-	}
 	defer cleanupB()
 	builder.L2Info.GenerateAccount("User2")
 
