@@ -22,7 +22,7 @@ Additional Use Grant: You may use the Licensed Work in a production environment 
                       Expansion Program Term of Use](https://docs.arbitrum.foundation/assets/files/Arbitrum%20Expansion%20Program%20Jan182024-4f08b0c2cb476a55dc153380fa3e64b0.pdf). For purposes of this
                       Additional Use Grant, the "Covered Arbitrum Chains" are 
                       (a) Arbitrum One (chainid:42161), Arbitrum Nova (chainid:42170), 
-                      rbitrum Rinkeby testnet/Rinkarby (chainid:421611),Arbitrum Nitro
+                      Arbitrum Rinkeby testnet/Rinkarby (chainid:421611),Arbitrum Nitro
                       Goerli testnet (chainid:421613), and Arbitrum Sepolia Testnet
                       (chainid:421614); (b) any future blockchains authorized to be
                       designated as Covered Arbitrum Chains by the decentralized autonomous
