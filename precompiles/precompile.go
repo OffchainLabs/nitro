@@ -16,7 +16,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/util"
 	pgen "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -559,7 +558,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 
 	ArbWasmImpl := &ArbWasm{Address: types.ArbWasmAddress}
 	ArbWasm := insert(MakePrecompile(pgen.ArbWasmMetaData, ArbWasmImpl))
-	ArbWasm.arbosVersion = arbostypes.ArbosVersion_Stylus
+	ArbWasm.arbosVersion = types.ArbosVersion_Stylus
 	programs.ProgramNotWasmError = ArbWasmImpl.ProgramNotWasmError
 	programs.ProgramNotActivatedError = ArbWasmImpl.ProgramNotActivatedError
 	programs.ProgramNeedsUpgradeError = ArbWasmImpl.ProgramNeedsUpgradeError
@@ -572,7 +571,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 
 	ArbWasmCacheImpl := &ArbWasmCache{Address: types.ArbWasmCacheAddress}
 	ArbWasmCache := insert(MakePrecompile(pgen.ArbWasmCacheMetaData, ArbWasmCacheImpl))
-	ArbWasmCache.arbosVersion = arbostypes.ArbosVersion_Stylus
+	ArbWasmCache.arbosVersion = types.ArbosVersion_Stylus
 	for _, method := range ArbWasmCache.methods {
 		method.arbosVersion = ArbWasmCache.arbosVersion
 	}
@@ -618,17 +617,22 @@ func Precompiles() map[addr]ArbosPrecompile {
 		"SetWasmBlockCacheSize", "AddWasmCacheManager", "RemoveWasmCacheManager",
 	}
 	for _, method := range stylusMethods {
-		ArbOwner.methodsByName[method].arbosVersion = arbostypes.ArbosVersion_Stylus
+		ArbOwner.methodsByName[method].arbosVersion = types.ArbosVersion_Stylus
 	}
 
 	insert(ownerOnly(ArbOwnerImpl.Address, ArbOwner, emitOwnerActs))
 	_, arbDebug := MakePrecompile(pgen.ArbDebugMetaData, &ArbDebug{Address: types.ArbDebugAddress})
-	arbDebug.methodsByName["Panic"].arbosVersion = arbostypes.ArbosVersion_Stylus
+	arbDebug.methodsByName["Panic"].arbosVersion = types.ArbosVersion_Stylus
 	insert(debugOnly(arbDebug.address, arbDebug))
 
 	ArbosActs := insert(MakePrecompile(pgen.ArbosActsMetaData, &ArbosActs{Address: types.ArbosAddress}))
 	arbos.InternalTxStartBlockMethodID = ArbosActs.GetMethodID("StartBlock")
 	arbos.InternalTxBatchPostingReportMethodID = ArbosActs.GetMethodID("BatchPostingReport")
+
+	for _, contract := range contracts {
+		precompile := contract.Precompile()
+		arbosState.PrecompileMinArbOSVersions[precompile.address] = precompile.arbosVersion
+	}
 
 	return contracts
 }
