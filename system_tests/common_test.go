@@ -72,11 +72,6 @@ import (
 type info = *BlockchainTestInfo
 type client = arbutil.L1Interface
 
-var wasmModuleRoots = []string{
-	"0xb1e1f56cdcb7453d9416e9b242ded14aa4324674f1173e86fec9b85e923284e7",
-	// "0x0e5403827cef82bcbb6f4ba1b6f3d84edc5b4b8991b164f623ff2eacda768e35",
-}
-
 type SecondNodeParams struct {
 	nodeConfig  *arbnode.Config
 	execConfig  *gethexec.Config
@@ -589,6 +584,15 @@ func configByValidationNode(t *testing.T, clientConfig *arbnode.Config, valStack
 	clientConfig.BlockValidator.ValidationServerConfigs[0].JWTSecret = ""
 }
 
+func currentRootModule(t *testing.T) common.Hash {
+	t.Helper()
+	locator, err := server_common.NewMachineLocator("")
+	if err != nil {
+		t.Fatalf("Error creating machine locator: %v", err)
+	}
+	return locator.LatestWasmModuleRoot()
+}
+
 func AddDefaultValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool, redisURL string) {
 	if !nodeConfig.ValidatorRequired() {
 		return
@@ -605,13 +609,11 @@ func AddDefaultValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Co
 		if err != nil {
 			t.Fatalf("Error creating redis coordinator: %v", err)
 		}
-		for _, rootModule := range wasmModuleRoots {
-			redisStream := server_api.RedisStreamForRoot(common.HexToHash(rootModule))
-			createGroup(ctx, t, redisStream, redisClient)
-			conf.Arbitrator.RedisValidationServerConfig.RedisURL = redisURL
-			t.Cleanup(func() { destroyGroup(ctx, t, redisStream, redisClient) })
-		}
-		conf.Arbitrator.RedisValidationServerConfig.ModuleRoots = wasmModuleRoots
+		redisStream := server_api.RedisStreamForRoot(currentRootModule(t))
+		createGroup(ctx, t, redisStream, redisClient)
+		conf.Arbitrator.RedisValidationServerConfig.RedisURL = redisURL
+		t.Cleanup(func() { destroyGroup(ctx, t, redisStream, redisClient) })
+		conf.Arbitrator.RedisValidationServerConfig.ModuleRoots = []string{currentRootModule(t).Hex()}
 	}
 	_, valStack := createTestValidationNode(t, ctx, &conf)
 	configByValidationNode(t, nodeConfig, valStack)
