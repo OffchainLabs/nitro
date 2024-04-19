@@ -5,7 +5,7 @@ use arbutil::Bytes32;
 use digest::Digest;
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
@@ -48,8 +48,14 @@ impl MerkleType {
 /// https://en.wikipedia.org/wiki/Merkle_tree
 /// 
 /// Each instance's leaves contain the hashes of a specific [MerkleType].
-/// The tree does not grow. It can be over-provisioned using the
-/// [Merkle::new_advanced] method and passing a minimum depth.
+/// The tree does not grow in height, but it can be initialized with fewer
+/// leaves than the number that could be contained in its layers.
+/// 
+/// When initialized with [Merkle::new], the tree has the minimum depth
+/// necessary to hold all the leaves. (e.g. 5 leaves -> 4 layers.)
+/// 
+/// It can be over-provisioned using the [Merkle::new_advanced] method
+/// and passing a minimum depth.
 /// 
 /// This structure does not contain the data itself, only the hashes.
 #[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -69,12 +75,15 @@ fn hash_node(ty: MerkleType, a: Bytes32, b: Bytes32) -> Bytes32 {
 }
 
 impl Merkle {
-    // Creates a new Merkle tree with the given type and leaf hashes.
-    // The tree is built up to the minimum depth necessary to hold all the leaves.
+    /// Creates a new Merkle tree with the given type and leaf hashes.
+    /// The tree is built up to the minimum depth necessary to hold all the
+    /// leaves.
     pub fn new(ty: MerkleType, hashes: Vec<Bytes32>) -> Merkle {
         Self::new_advanced(ty, hashes, Bytes32::default(), 0)
     }
 
+    /// Creates a new Merkle tree with the given type, leaf hashes, a hash to
+    /// use for representing empty leaves, and a minimum depth.
     pub fn new_advanced(
         ty: MerkleType,
         hashes: Vec<Bytes32>,
@@ -124,6 +133,13 @@ impl Merkle {
         } else {
             &self.layers[0]
         }
+    }
+
+    // Returns the total number of leaves the tree can hold.
+    #[inline]
+    fn capacity(&self) -> usize {
+        let base: usize = 2;
+        base.pow((self.layers.len() -1).try_into().unwrap())
     }
 
     #[must_use]
@@ -199,11 +215,28 @@ impl Merkle {
             idx >>= 1;
         }
     }
+
+    /// Extends the leaves of the tree with the given hashes.
+    /// 
+    /// Returns the new number of leaves in the tree.
+    /// Erorrs if the number of hashes plus the current leaves is greater than
+    /// the capacity of the tree.
+    pub fn extend(&mut self, hashes: Vec<Bytes32>) -> Result<usize, String> {
+        if hashes.len() > self.capacity() - self.layers[0].len() {
+            return Err("Cannot extend with more leaves than the capicity of the tree.".to_owned());
+        }
+        let mut idx = self.layers[0].len();
+        self.layers[0].resize(idx + hashes.len(), self.empty_layers[0]);
+        for hash in hashes {
+            self.set(idx, hash);
+            idx += 1;
+        }
+        return Ok(self.layers[0].len());
+    }
 }
 
 #[test]
-#[ignore]
-fn simple_merkle() {
+fn extend_works() {
     let hashes = vec![
         Bytes32::from([1; 32]),
         Bytes32::from([2; 32]),
@@ -221,9 +254,14 @@ fn simple_merkle() {
             hash_node(MerkleType::Value, Bytes32::from([5; 32]), Bytes32::from([0; 32])),
             hash_node(MerkleType::Value, Bytes32::from([0; 32]), Bytes32::from([0; 32]))));
     let mut merkle = Merkle::new(MerkleType::Value, hashes.clone());
+    assert_eq!(merkle.capacity(), 8);
     assert_eq!(merkle.root(), expected);
 
-    merkle.set(5, Bytes32::from([6; 32]));
+    let new_size = match merkle.extend(vec![Bytes32::from([6; 32])]) {
+        Ok(size) => size,
+        Err(e) => panic!("{}", e)
+    };
+    assert_eq!(new_size, 6);
     expected = hash_node(MerkleType::Value,
         hash_node(
             MerkleType::Value,
@@ -237,8 +275,17 @@ fn simple_merkle() {
 }
 
 #[test]
+fn correct_capacity() {
+    let merkle = Merkle::new(MerkleType::Value, vec![Bytes32::from([1; 32])]);
+    assert_eq!(merkle.capacity(), 1);
+    let merkle = Merkle::new_advanced(MerkleType::Memory, vec![Bytes32::from([1; 32])], Bytes32::default(), 11);
+    assert_eq!(merkle.capacity(), 1024);
+}
+
+#[test]
 #[should_panic]
 fn set_with_bad_index_panics() {
-    let mut merkle = Merkle::new(MerkleType::Value, vec![Bytes32::default()]);
-    merkle.set(1, Bytes32::default());
+    let mut merkle = Merkle::new(MerkleType::Value, vec![Bytes32::default(), Bytes32::default()]);
+    assert_eq!(merkle.capacity(), 2);
+    merkle.set(2, Bytes32::default());
 }
