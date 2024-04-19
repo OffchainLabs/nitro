@@ -936,7 +936,17 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 		return endBatch(batch)
 	}
 
-	err := s.writeMessages(messageStartPos, messages, nil, batch)
+	msgsWithBlocksHashes := make([]broadcaster.MessageWithMetadataAndBlockHash, 0, len(messages))
+	for _, msg := range messages {
+		msgsWithBlocksHashes = append(
+			msgsWithBlocksHashes,
+			broadcaster.MessageWithMetadataAndBlockHash{
+				Message:   msg,
+				BlockHash: nil,
+			},
+		)
+	}
+	err := s.writeMessages(messageStartPos, msgsWithBlocksHashes, batch)
 	if err != nil {
 		return err
 	}
@@ -994,7 +1004,13 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(
 		}
 	}
 
-	if err := s.writeMessages(pos, []arbostypes.MessageWithMetadata{msgWithMeta}, &blockHash, nil); err != nil {
+	msgWithBlockHash := []broadcaster.MessageWithMetadataAndBlockHash{
+		{
+			Message:   msgWithMeta,
+			BlockHash: &blockHash,
+		},
+	}
+	if err := s.writeMessages(pos, msgWithBlockHash, nil); err != nil {
 		return err
 	}
 
@@ -1030,21 +1046,20 @@ func (s *TransactionStreamer) writeMessage(pos arbutil.MessageIndex, msg arbosty
 // `batch` may be nil, which initializes a new batch. The batch is closed out in this function.
 func (s *TransactionStreamer) writeMessages(
 	pos arbutil.MessageIndex,
-	messages []arbostypes.MessageWithMetadata,
-	blockHash *common.Hash,
+	messagesWithBlockHash []broadcaster.MessageWithMetadataAndBlockHash,
 	batch ethdb.Batch,
 ) error {
 	if batch == nil {
 		batch = s.db.NewBatch()
 	}
-	for i, msg := range messages {
-		err := s.writeMessage(pos+arbutil.MessageIndex(i), msg, batch)
+	for i, msg := range messagesWithBlockHash {
+		err := s.writeMessage(pos+arbutil.MessageIndex(i), msg.Message, batch)
 		if err != nil {
 			return err
 		}
 	}
 
-	err := setMessageCount(batch, pos+arbutil.MessageIndex(len(messages)))
+	err := setMessageCount(batch, pos+arbutil.MessageIndex(len(messagesWithBlockHash)))
 	if err != nil {
 		return err
 	}
@@ -1059,7 +1074,7 @@ func (s *TransactionStreamer) writeMessages(
 	}
 
 	if s.broadcastServer != nil {
-		if err := s.broadcastServer.BroadcastMessages(messages, pos, blockHash); err != nil {
+		if err := s.broadcastServer.BroadcastMessages(messagesWithBlockHash, pos); err != nil {
 			log.Error("failed broadcasting message", "pos", pos, "err", err)
 		}
 	}

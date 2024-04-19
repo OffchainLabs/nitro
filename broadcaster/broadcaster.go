@@ -22,6 +22,11 @@ import (
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
+type MessageWithMetadataAndBlockHash struct {
+	Message   arbostypes.MessageWithMetadata
+	BlockHash *common.Hash
+}
+
 type Broadcaster struct {
 	server     *wsbroadcastserver.WSBroadcastServer
 	backlog    backlog.Backlog
@@ -89,9 +94,8 @@ func (b *Broadcaster) BroadcastSingleFeedMessage(bfm *m.BroadcastFeedMessage) {
 }
 
 func (b *Broadcaster) BroadcastMessages(
-	messages []arbostypes.MessageWithMetadata,
+	messagesWithBlockHash []MessageWithMetadataAndBlockHash,
 	seq arbutil.MessageIndex,
-	blockHash *common.Hash,
 ) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -100,8 +104,8 @@ func (b *Broadcaster) BroadcastMessages(
 		}
 	}()
 	var feedMessages []*m.BroadcastFeedMessage
-	for i, msg := range messages {
-		bfm, err := b.NewBroadcastFeedMessage(msg, seq+arbutil.MessageIndex(i), blockHash)
+	for i, msg := range messagesWithBlockHash {
+		bfm, err := b.NewBroadcastFeedMessage(msg.Message, seq+arbutil.MessageIndex(i), msg.BlockHash)
 		if err != nil {
 			return err
 		}
