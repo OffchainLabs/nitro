@@ -39,8 +39,6 @@ const (
 	upgradeArbOs
 )
 
-var moduleRoot = "0xe5059c8450e490232bf1ffe02b7cf056349dccea517c8ac7c6d28a0e91ae68cd"
-
 func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops int, workload workloadType, arbitrator bool, useRedisStreams bool) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -75,8 +73,8 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 	if useRedisStreams {
 		redisURL = redisutil.CreateTestRedis(ctx, t)
 		validatorConfig.BlockValidator.RedisValidationClientConfig = server_api.DefaultRedisValidationClientConfig
-		validatorConfig.BlockValidator.RedisValidationClientConfig.ModuleRoots = []string{moduleRoot}
-		stream := server_api.RedisStreamForRoot(common.HexToHash(moduleRoot))
+		validatorConfig.BlockValidator.RedisValidationClientConfig.ModuleRoots = []string{wasmModuleRoot}
+		stream := server_api.RedisStreamForRoot(common.HexToHash(wasmModuleRoot))
 		validatorConfig.BlockValidator.RedisValidationClientConfig.RedisStream = stream
 		validatorConfig.BlockValidator.RedisValidationClientConfig.RedisURL = redisURL
 	}
@@ -84,6 +82,9 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 	AddDefaultValNode(t, ctx, validatorConfig, !arbitrator, redisURL)
 
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: validatorConfig})
+	if useRedisStreams {
+		testClientB.ConsensusNode.BlockValidator.SetCurrentWasmModuleRoot(common.HexToHash(wasmModuleRoot))
+	}
 	defer cleanupB()
 	builder.L2Info.GenerateAccount("User2")
 
