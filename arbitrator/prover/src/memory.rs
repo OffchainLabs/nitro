@@ -288,7 +288,7 @@ impl Memory {
     }
 
     pub fn get_range(&self, offset: usize, len: usize) -> Option<&[u8]> {
-        let end = offset.checked_add(len)?;
+        let end: usize = offset.checked_add(len)?;
         if end > self.buffer.len() {
             return None;
         }
@@ -309,11 +309,12 @@ impl Memory {
     }
 
     pub fn resize(&mut self, new_size: usize) {
-        let had_merkle_tree = self.merkle.is_some();
-        self.merkle = None;
+        println!("Resizing memory.");
         self.buffer.resize(new_size, 0);
-        if had_merkle_tree {
-            self.cache_merkle_tree();
+        if let Some(mut merkle) = self.merkle.take() {
+            let extra = new_size - merkle.len();
+            merkle.extend(vec![hash_leaf([0u8; 32]); extra])
+            .expect("Couldn't extend merkle tree");
         }
     }
 }

@@ -142,6 +142,11 @@ impl Merkle {
         base.pow((self.layers.len() -1).try_into().unwrap())
     }
 
+    // Returns the number of leaves in the tree.
+    pub fn len(&self) -> usize {
+        self.layers[0].len()
+    }
+
     #[must_use]
     pub fn prove(&self, idx: usize) -> Option<Vec<u8>> {
         if idx >= self.leaves().len() {
