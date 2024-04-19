@@ -73,7 +73,8 @@ type info = *BlockchainTestInfo
 type client = arbutil.L1Interface
 
 var wasmModuleRoots = []string{
-	"0x0e5403827cef82bcbb6f4ba1b6f3d84edc5b4b8991b164f623ff2eacda768e35",
+	"0xb1e1f56cdcb7453d9416e9b242ded14aa4324674f1173e86fec9b85e923284e7",
+	// "0x0e5403827cef82bcbb6f4ba1b6f3d84edc5b4b8991b164f623ff2eacda768e35",
 }
 
 type SecondNodeParams struct {

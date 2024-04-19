@@ -1033,12 +1033,13 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 // Initialize must be called after SetCurrentWasmModuleRoot sets the current one
 func (v *BlockValidator) Initialize(ctx context.Context) error {
 	config := v.config()
-	if config.RedisValidationClientConfig.Enabled() && v.execSpawner == nil {
-		return nil
-	}
+
 	currentModuleRoot := config.CurrentModuleRoot
 	switch currentModuleRoot {
 	case "latest":
+		if v.execSpawner == nil {
+			return fmt.Errorf(`execution spawner is nil while current module root is "latest"`)
+		}
 		latest, err := v.execSpawner.LatestWasmModuleRoot().Await(ctx)
 		if err != nil {
 			return err

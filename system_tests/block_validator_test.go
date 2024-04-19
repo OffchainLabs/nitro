@@ -75,7 +75,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 		validatorConfig.BlockValidator.RedisValidationClientConfig = server_api.DefaultRedisValidationClientConfig
 		validatorConfig.BlockValidator.RedisValidationClientConfig.ModuleRoots = wasmModuleRoots
 		validatorConfig.BlockValidator.RedisValidationClientConfig.RedisURL = redisURL
-		validatorConfig.BlockValidator.PendingUpgradeModuleRoot = wasmModuleRoots[0]
+		validatorConfig.BlockValidator.CurrentModuleRoot = wasmModuleRoots[0]
 	}
 
 	AddDefaultValNode(t, ctx, validatorConfig, !arbitrator, redisURL)
