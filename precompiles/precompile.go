@@ -630,6 +630,11 @@ func Precompiles() map[addr]ArbosPrecompile {
 	arbos.InternalTxStartBlockMethodID = ArbosActs.GetMethodID("StartBlock")
 	arbos.InternalTxBatchPostingReportMethodID = ArbosActs.GetMethodID("BatchPostingReport")
 
+	for _, contract := range contracts {
+		precompile := contract.Precompile()
+		arbosState.PrecompileMinArbOSVersions[precompile.address] = precompile.arbosVersion
+	}
+
 	return contracts
 }
 

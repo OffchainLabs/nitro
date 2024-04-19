@@ -162,25 +162,11 @@ var (
 	programsSubspace     SubspaceID = []byte{8}
 )
 
-// Returns a list of precompiles that only appear in Arbitrum chains (i.e. ArbOS precompiles) at the genesis block
-func getArbitrumOnlyGenesisPrecompiles(chainConfig *params.ChainConfig) []common.Address {
-	rules := chainConfig.Rules(big.NewInt(0), false, 0, chainConfig.ArbitrumChainParams.InitialArbOSVersion)
-	arbPrecompiles := vm.ActivePrecompiles(rules)
-	rules.IsArbitrum = false
-	ethPrecompiles := vm.ActivePrecompiles(rules)
+var PrecompileMinArbOSVersions = make(map[common.Address]uint64)
 
-	ethPrecompilesSet := make(map[common.Address]bool)
-	for _, addr := range ethPrecompiles {
-		ethPrecompilesSet[addr] = true
-	}
-
-	var arbOnlyPrecompiles []common.Address
-	for _, addr := range arbPrecompiles {
-		if !ethPrecompilesSet[addr] {
-			arbOnlyPrecompiles = append(arbOnlyPrecompiles, addr)
-		}
-	}
-	return arbOnlyPrecompiles
+type arbPrecompile struct {
+	address      common.Address
+	arbosVersion uint64
 }
 
 func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage) (*ArbosState, error) {
@@ -200,8 +186,10 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 
 	// Solidity requires call targets have code, but precompiles don't.
 	// To work around this, we give precompiles fake code.
-	for _, genesisPrecompile := range getArbitrumOnlyGenesisPrecompiles(chainConfig) {
-		stateDB.SetCode(genesisPrecompile, []byte{byte(vm.INVALID)})
+	for addr, version := range PrecompileMinArbOSVersions {
+		if version == 0 {
+			stateDB.SetCode(addr, []byte{byte(vm.INVALID)})
+		}
 	}
 
 	// may be the zero address
@@ -317,23 +305,35 @@ func (state *ArbosState) UpgradeArbosVersion(
 			if !firstTime {
 				ensure(state.chainOwners.ClearList())
 			}
-		// ArbOS versions 12 through 19 are left to Orbit chains for custom upgrades.
+
+		case 12, 13, 14, 15, 16, 17, 18, 19:
+			// these versions are left to Orbit chains for custom upgrades.
+
 		case 20:
 			// Update Brotli compression level for fast compression from 0 to 1
 			ensure(state.SetBrotliCompressionLevel(1))
-			// TODO: move to the first version that introduces stylus
+
+		case 21, 22, 23, 24, 25, 26, 27, 28, 29:
+			// these versions are left to Orbit chains for custom upgrades.
+
+		case 30:
 			programs.Initialize(state.backingStorage.OpenSubStorage(programsSubspace))
+
 		default:
-			if nextArbosVersion >= 12 && nextArbosVersion <= 19 {
-				// ArbOS versions 12 through 19 are left to Orbit chains for custom upgrades.
-			} else {
-				return fmt.Errorf(
-					"the chain is upgrading to unsupported ArbOS version %v, %w",
-					nextArbosVersion,
-					ErrFatalNodeOutOfDate,
-				)
+			return fmt.Errorf(
+				"the chain is upgrading to unsupported ArbOS version %v, %w",
+				nextArbosVersion,
+				ErrFatalNodeOutOfDate,
+			)
+		}
+
+		// install any new precompiles
+		for addr, version := range PrecompileMinArbOSVersions {
+			if version == nextArbosVersion {
+				stateDB.SetCode(addr, []byte{byte(vm.INVALID)})
 			}
 		}
+
 		state.arbosVersion = nextArbosVersion
 	}
 
