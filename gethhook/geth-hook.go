@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/precompiles"
 )
@@ -51,8 +52,13 @@ func init() {
 	}
 
 	for k, v := range vm.PrecompiledContractsBerlin {
-		vm.PrecompiledAddressesArbitrum = append(vm.PrecompiledAddressesArbitrum, k)
-		vm.PrecompiledContractsArbitrum[k] = v
+		vm.PrecompiledAddressesArbitrumNitro = append(vm.PrecompiledAddressesArbitrumNitro, k)
+		vm.PrecompiledContractsArbitrumNitro[k] = v
+	}
+
+	for k, v := range vm.PrecompiledContractsCancun {
+		vm.PrecompiledAddressesArbitrumStylus = append(vm.PrecompiledAddressesArbitrumStylus, k)
+		vm.PrecompiledContractsArbitrumStylus[k] = v
 	}
 
 	precompileErrors := make(map[[4]byte]abi.Error)
@@ -63,8 +69,13 @@ func init() {
 			precompileErrors[id] = errABI
 		}
 		var wrapped vm.AdvancedPrecompile = ArbosPrecompileWrapper{precompile}
-		vm.PrecompiledContractsArbitrum[addr] = wrapped
-		vm.PrecompiledAddressesArbitrum = append(vm.PrecompiledAddressesArbitrum, addr)
+		vm.PrecompiledContractsArbitrumStylus[addr] = wrapped
+		vm.PrecompiledAddressesArbitrumStylus = append(vm.PrecompiledAddressesArbitrumStylus, addr)
+
+		if precompile.Precompile().ArbosVersion() < params.ArbosVersion_Stylus {
+			vm.PrecompiledContractsArbitrumNitro[addr] = wrapped
+			vm.PrecompiledAddressesArbitrumNitro = append(vm.PrecompiledAddressesArbitrumNitro, addr)
+		}
 	}
 
 	core.RenderRPCError = func(data []byte) error {
