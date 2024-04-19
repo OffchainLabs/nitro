@@ -29,6 +29,16 @@ type ConsumerConfig struct {
 	RedisGroup string `koanf:"redis-group"`
 }
 
+func (c ConsumerConfig) Clone() ConsumerConfig {
+	return ConsumerConfig{
+		ResponseEntryTimeout: c.ResponseEntryTimeout,
+		KeepAliveTimeout:     c.KeepAliveTimeout,
+		RedisURL:             c.RedisURL,
+		RedisStream:          c.RedisStream,
+		RedisGroup:           c.RedisGroup,
+	}
+}
+
 var DefaultConsumerConfig = &ConsumerConfig{
 	ResponseEntryTimeout: time.Hour,
 	KeepAliveTimeout:     5 * time.Minute,
@@ -36,7 +46,7 @@ var DefaultConsumerConfig = &ConsumerConfig{
 	RedisGroup:           "",
 }
 
-var DefaultTestConsumerConfig = &ConsumerConfig{
+var TestConsumerConfig = &ConsumerConfig{
 	RedisStream:          "",
 	RedisGroup:           "",
 	ResponseEntryTimeout: time.Minute,
@@ -65,7 +75,7 @@ type Message[Request any] struct {
 	Value Request
 }
 
-func NewConsumer[Request any, Response any](ctx context.Context, cfg *ConsumerConfig) (*Consumer[Request, Response], error) {
+func NewConsumer[Request any, Response any](cfg *ConsumerConfig) (*Consumer[Request, Response], error) {
 	if cfg.RedisURL == "" {
 		return nil, fmt.Errorf("redis url cannot be empty")
 	}

@@ -65,7 +65,19 @@ type ProducerConfig struct {
 	RedisGroup string `koanf:"redis-group"`
 }
 
-var DefaultProducerConfig = &ProducerConfig{
+func (c ProducerConfig) Clone() ProducerConfig {
+	return ProducerConfig{
+		EnableReproduce:      c.EnableReproduce,
+		RedisURL:             c.RedisURL,
+		RedisStream:          c.RedisStream,
+		CheckPendingInterval: c.CheckPendingInterval,
+		KeepAliveTimeout:     c.KeepAliveTimeout,
+		CheckResultInterval:  c.CheckResultInterval,
+		RedisGroup:           c.RedisGroup,
+	}
+}
+
+var DefaultProducerConfig = ProducerConfig{
 	EnableReproduce:      true,
 	RedisStream:          "",
 	RedisGroup:           "",
@@ -74,7 +86,7 @@ var DefaultProducerConfig = &ProducerConfig{
 	CheckResultInterval:  5 * time.Second,
 }
 
-var DefaultTestProducerConfig = &ProducerConfig{
+var TestProducerConfig = ProducerConfig{
 	EnableReproduce:      true,
 	RedisStream:          "",
 	RedisGroup:           "",

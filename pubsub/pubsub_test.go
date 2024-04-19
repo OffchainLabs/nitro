@@ -54,17 +54,17 @@ func (e *disableReproduce) apply(_ *ConsumerConfig, prodCfg *ProducerConfig) {
 
 func producerCfg() *ProducerConfig {
 	return &ProducerConfig{
-		EnableReproduce:      DefaultTestProducerConfig.EnableReproduce,
-		CheckPendingInterval: DefaultTestProducerConfig.CheckPendingInterval,
-		KeepAliveTimeout:     DefaultTestProducerConfig.KeepAliveTimeout,
-		CheckResultInterval:  DefaultTestProducerConfig.CheckResultInterval,
+		EnableReproduce:      TestProducerConfig.EnableReproduce,
+		CheckPendingInterval: TestProducerConfig.CheckPendingInterval,
+		KeepAliveTimeout:     TestProducerConfig.KeepAliveTimeout,
+		CheckResultInterval:  TestProducerConfig.CheckResultInterval,
 	}
 }
 
 func consumerCfg() *ConsumerConfig {
 	return &ConsumerConfig{
-		ResponseEntryTimeout: DefaultTestConsumerConfig.ResponseEntryTimeout,
-		KeepAliveTimeout:     DefaultTestConsumerConfig.KeepAliveTimeout,
+		ResponseEntryTimeout: TestConsumerConfig.ResponseEntryTimeout,
+		KeepAliveTimeout:     TestConsumerConfig.KeepAliveTimeout,
 	}
 }
 
@@ -87,7 +87,7 @@ func newProducerConsumers(ctx context.Context, t *testing.T, opts ...configOpt) 
 
 	var consumers []*Consumer[testRequest, testResponse]
 	for i := 0; i < consumersCount; i++ {
-		c, err := NewConsumer[testRequest, testResponse](ctx, consCfg)
+		c, err := NewConsumer[testRequest, testResponse](consCfg)
 		if err != nil {
 			t.Fatalf("Error creating new consumer: %v", err)
 		}

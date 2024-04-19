@@ -17,6 +17,7 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/server_api/validation"
 	"github.com/offchainlabs/nitro/validator/server_common"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -27,10 +28,11 @@ import (
 var arbitratorValidationSteps = metrics.NewRegisteredHistogram("arbitrator/validation/steps", nil, metrics.NewBoundedHistogramSample())
 
 type ArbitratorSpawnerConfig struct {
-	Workers             int                `koanf:"workers" reload:"hot"`
-	OutputPath          string             `koanf:"output-path" reload:"hot"`
-	Execution           MachineCacheConfig `koanf:"execution" reload:"hot"` // hot reloading for new executions only
-	ExecutionRunTimeout time.Duration      `koanf:"execution-run-timeout" reload:"hot"`
+	Workers                     int                                    `koanf:"workers" reload:"hot"`
+	OutputPath                  string                                 `koanf:"output-path" reload:"hot"`
+	Execution                   MachineCacheConfig                     `koanf:"execution" reload:"hot"` // hot reloading for new executions only
+	ExecutionRunTimeout         time.Duration                          `koanf:"execution-run-timeout" reload:"hot"`
+	RedisValidationServerConfig validation.RedisValidationServerConfig `koanf:"redis-validation-server-config"`
 }
 
 type ArbitratorSpawnerConfigFecher func() *ArbitratorSpawnerConfig
@@ -47,6 +49,7 @@ func ArbitratorSpawnerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".execution-run-timeout", DefaultArbitratorSpawnerConfig.ExecutionRunTimeout, "timeout before discarding execution run")
 	f.String(prefix+".output-path", DefaultArbitratorSpawnerConfig.OutputPath, "path to write machines to")
 	MachineCacheConfigConfigAddOptions(prefix+".execution", f)
+	validation.RedisValidationServerConfigAddOptions(prefix+".redis-validation-server-config", f)
 }
 
 func DefaultArbitratorSpawnerConfigFetcher() *ArbitratorSpawnerConfig {
