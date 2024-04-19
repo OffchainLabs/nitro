@@ -38,10 +38,11 @@ type ArbitratorSpawnerConfig struct {
 type ArbitratorSpawnerConfigFecher func() *ArbitratorSpawnerConfig
 
 var DefaultArbitratorSpawnerConfig = ArbitratorSpawnerConfig{
-	Workers:             0,
-	OutputPath:          "./target/output",
-	Execution:           DefaultMachineCacheConfig,
-	ExecutionRunTimeout: time.Minute * 15,
+	Workers:                     0,
+	OutputPath:                  "./target/output",
+	Execution:                   DefaultMachineCacheConfig,
+	ExecutionRunTimeout:         time.Minute * 15,
+	RedisValidationServerConfig: validation.DefaultRedisValidationServerConfig,
 }
 
 func ArbitratorSpawnerConfigAddOptions(prefix string, f *flag.FlagSet) {

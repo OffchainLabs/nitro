@@ -34,18 +34,20 @@ type BatchInfoJson struct {
 type RedisValidationServerConfig struct {
 	ConsumerConfig pubsub.ConsumerConfig `koanf:"consumer-config"`
 	// Supported wasm module roots.
-	ModuleRoots []common.Hash `koanf:"module-roots"`
+	ModuleRoots []string `koanf:"module-roots"`
 }
 
-var DefaultRedisValidationServerConfig = &RedisValidationServerConfig{
-	ConsumerConfig: *pubsub.DefaultConsumerConfig,
+var DefaultRedisValidationServerConfig = RedisValidationServerConfig{
+	ConsumerConfig: pubsub.DefaultConsumerConfig,
+	ModuleRoots:    []string{},
 }
 
-var TestRedisValidationServerConfig = &RedisValidationServerConfig{
-	ConsumerConfig: *pubsub.TestConsumerConfig,
+var TestRedisValidationServerConfig = RedisValidationServerConfig{
+	ConsumerConfig: pubsub.TestConsumerConfig,
+	ModuleRoots:    []string{},
 }
 
 func RedisValidationServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	pubsub.ProducerAddConfigAddOptions(prefix+".producer-config", f)
-	// TODO(anodar): initialize module roots here.
+	pubsub.ConsumerConfigAddOptions(prefix+".consumer-config", f)
+	f.StringSlice(prefix+".module-roots", nil, "Supported module root hashes")
 }

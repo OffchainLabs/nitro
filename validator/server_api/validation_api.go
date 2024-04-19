@@ -9,10 +9,10 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/server_api/validation"
 	"github.com/offchainlabs/nitro/validator/server_arb"
 )
 
@@ -30,7 +30,7 @@ func (a *ValidationServerAPI) Room() int {
 	return a.spawner.Room()
 }
 
-func (a *ValidationServerAPI) Validate(ctx context.Context, entry *ValidationInputJson, moduleRoot common.Hash) (validator.GoGlobalState, error) {
+func (a *ValidationServerAPI) Validate(ctx context.Context, entry *validation.InputJSON, moduleRoot common.Hash) (validator.GoGlobalState, error) {
 	valInput, err := ValidationInputFromJson(entry)
 	if err != nil {
 		return validator.GoGlobalState{}, err
@@ -58,26 +58,19 @@ type ExecServerAPI struct {
 	runIdLock sync.Mutex
 	nextId    uint64
 	runs      map[uint64]*execRunEntry
-
-	redisConsumer *RedisValidationServer
 }
 
 func NewExecutionServerAPI(valSpawner validator.ValidationSpawner, execution validator.ExecutionSpawner, config server_arb.ArbitratorSpawnerConfigFecher) *ExecServerAPI {
-	redisConsumer, err := NewRedisValidationServer(&config().RedisValidationServerConfig)
-	if err != nil {
-		log.Error("Creating new redis validation server", "error", err)
-	}
 	return &ExecServerAPI{
 		ValidationServerAPI: *NewValidationServerAPI(valSpawner),
 		execSpawner:         execution,
 		nextId:              rand.Uint64(), // good-enough to aver reusing ids after reboot
 		runs:                make(map[uint64]*execRunEntry),
 		config:              config,
-		redisConsumer:       redisConsumer,
 	}
 }
 
-func (a *ExecServerAPI) CreateExecutionRun(ctx context.Context, wasmModuleRoot common.Hash, jsonInput *ValidationInputJson) (uint64, error) {
+func (a *ExecServerAPI) CreateExecutionRun(ctx context.Context, wasmModuleRoot common.Hash, jsonInput *validation.InputJSON) (uint64, error) {
 	input, err := ValidationInputFromJson(jsonInput)
 	if err != nil {
 		return 0, err
@@ -113,12 +106,9 @@ func (a *ExecServerAPI) removeOldRuns(ctx context.Context) time.Duration {
 func (a *ExecServerAPI) Start(ctx_in context.Context) {
 	a.StopWaiter.Start(ctx_in, a)
 	a.CallIteratively(a.removeOldRuns)
-	if a.redisConsumer != nil {
-		a.redisConsumer.Start(ctx_in)
-	}
 }
 
-func (a *ExecServerAPI) WriteToFile(ctx context.Context, jsonInput *ValidationInputJson, expOut validator.GoGlobalState, moduleRoot common.Hash) error {
+func (a *ExecServerAPI) WriteToFile(ctx context.Context, jsonInput *validation.InputJSON, expOut validator.GoGlobalState, moduleRoot common.Hash) error {
 	input, err := ValidationInputFromJson(jsonInput)
 	if err != nil {
 		return err

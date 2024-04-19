@@ -25,7 +25,8 @@ type RedisValidationServer struct {
 
 func NewRedisValidationServer(cfg *validation.RedisValidationServerConfig) (*RedisValidationServer, error) {
 	res := &RedisValidationServer{}
-	for _, mr := range cfg.ModuleRoots {
+	for _, hash := range cfg.ModuleRoots {
+		mr := common.HexToHash(hash)
 		conf := cfg.ConsumerConfig.Clone()
 		conf.RedisStream, conf.RedisGroup = redisStreamForRoot(mr), redisGroupForRoot(mr)
 		c, err := pubsub.NewConsumer[*validator.ValidationInput, validator.GoGlobalState](&conf)

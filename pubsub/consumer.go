@@ -39,14 +39,14 @@ func (c ConsumerConfig) Clone() ConsumerConfig {
 	}
 }
 
-var DefaultConsumerConfig = &ConsumerConfig{
+var DefaultConsumerConfig = ConsumerConfig{
 	ResponseEntryTimeout: time.Hour,
 	KeepAliveTimeout:     5 * time.Minute,
 	RedisStream:          "",
 	RedisGroup:           "",
 }
 
-var TestConsumerConfig = &ConsumerConfig{
+var TestConsumerConfig = ConsumerConfig{
 	RedisStream:          "",
 	RedisGroup:           "",
 	ResponseEntryTimeout: time.Minute,

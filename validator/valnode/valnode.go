@@ -5,6 +5,7 @@ import (
 
 	"github.com/offchainlabs/nitro/validator"
 
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
 	flag "github.com/spf13/pflag"
@@ -75,6 +76,8 @@ type ValidationNode struct {
 	config     ValidationConfigFetcher
 	arbSpawner *server_arb.ArbitratorSpawner
 	jitSpawner *server_jit.JitSpawner
+
+	redisConsumer *server_api.RedisValidationServer
 }
 
 func EnsureValidationExposedViaAuthRPC(stackConf *node.Config) {
@@ -116,6 +119,10 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 	} else {
 		serverAPI = server_api.NewExecutionServerAPI(arbSpawner, arbSpawner, arbConfigFetcher)
 	}
+	redisConsumer, err := server_api.NewRedisValidationServer(&arbConfigFetcher().RedisValidationServerConfig)
+	if err != nil {
+		log.Error("Creating new redis validation server", "error", err)
+	}
 	valAPIs := []rpc.API{{
 		Namespace:     server_api.Namespace,
 		Version:       "1.0",
@@ -125,7 +132,7 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 	}}
 	stack.RegisterAPIs(valAPIs)
 
-	return &ValidationNode{configFetcher, arbSpawner, jitSpawner}, nil
+	return &ValidationNode{configFetcher, arbSpawner, jitSpawner, redisConsumer}, nil
 }
 
 func (v *ValidationNode) Start(ctx context.Context) error {
@@ -136,6 +143,9 @@ func (v *ValidationNode) Start(ctx context.Context) error {
 		if err := v.jitSpawner.Start(ctx); err != nil {
 			return err
 		}
+	}
+	if v.redisConsumer != nil {
+		v.redisConsumer.Start(ctx)
 	}
 	return nil
 }
