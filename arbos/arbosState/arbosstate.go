@@ -164,11 +164,6 @@ var (
 
 var PrecompileMinArbOSVersions = make(map[common.Address]uint64)
 
-type arbPrecompile struct {
-	address      common.Address
-	arbosVersion uint64
-}
-
 func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage) (*ArbosState, error) {
 	sto := storage.NewGeth(stateDB, burner)
 	arbosVersion, err := sto.GetUint64ByUint64(uint64(versionOffset))
