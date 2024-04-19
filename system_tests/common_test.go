@@ -72,7 +72,7 @@ import (
 type info = *BlockchainTestInfo
 type client = arbutil.L1Interface
 
-const wasmModuleRoot = "0xe5059c8450e490232bf1ffe02b7cf056349dccea517c8ac7c6d28a0e91ae68cd"
+const wasmModuleRoot = "0x0e5403827cef82bcbb6f4ba1b6f3d84edc5b4b8991b164f623ff2eacda768e35"
 
 type SecondNodeParams struct {
 	nodeConfig  *arbnode.Config

@@ -83,7 +83,9 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: validatorConfig})
 	if useRedisStreams {
-		testClientB.ConsensusNode.BlockValidator.SetCurrentWasmModuleRoot(common.HexToHash(wasmModuleRoot))
+		if err := testClientB.ConsensusNode.BlockValidator.SetCurrentWasmModuleRoot(common.HexToHash(wasmModuleRoot)); err != nil {
+			t.Fatalf("Error setting wasm module root: %v", err)
+		}
 	}
 	defer cleanupB()
 	builder.L2Info.GenerateAccount("User2")
