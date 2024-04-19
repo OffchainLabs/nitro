@@ -8,6 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -17,6 +18,8 @@ import (
 type RedisValidationClientConfig struct {
 	Name           string                `koanf:"name"`
 	Room           int32                 `koanf:"room"`
+	RedisURL       string                `koanf:"redis-url"`
+	RedisStream    string                `koanf:"redis-stream"`
 	ProducerConfig pubsub.ProducerConfig `koanf:"producer-config"`
 	// Supported wasm module roots.
 	ModuleRoots []string `koanf:"module-roots"`
@@ -25,18 +28,23 @@ type RedisValidationClientConfig struct {
 var DefaultRedisValidationClientConfig = RedisValidationClientConfig{
 	Name:           "redis validation client",
 	Room:           2,
+	RedisURL:       "",
+	RedisStream:    "",
 	ProducerConfig: pubsub.DefaultProducerConfig,
 }
 
 var TestRedisValidationClientConfig = RedisValidationClientConfig{
 	Name:           "test redis validation client",
 	Room:           2,
+	RedisURL:       "",
+	RedisStream:    "",
 	ProducerConfig: pubsub.TestProducerConfig,
 }
 
 func RedisValidationClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".name", DefaultRedisValidationClientConfig.Name, "validation client name")
-	f.Uint64(prefix+".room", uint64(DefaultRedisValidationClientConfig.Room), "validation client room")
+	f.Int32(prefix+".room", DefaultRedisValidationClientConfig.Room, "validation client room")
+	f.String(prefix+".redis-stream", DefaultRedisValidationClientConfig.RedisStream, "redis stream name")
 	pubsub.ProducerAddConfigAddOptions(prefix+".producer-config", f)
 	f.StringSlice(prefix+".module-roots", nil, "Supported module root hashes")
 }
@@ -50,10 +58,6 @@ type RedisValidationClient struct {
 	producers map[common.Hash]*pubsub.Producer[*validator.ValidationInput, validator.GoGlobalState]
 }
 
-func redisGroupForRoot(moduleRoot common.Hash) string {
-	return fmt.Sprintf("group:%s", moduleRoot.Hex())
-}
-
 func redisStreamForRoot(moduleRoot common.Hash) string {
 	return fmt.Sprintf("stream:%s", moduleRoot.Hex())
 }
@@ -64,11 +68,17 @@ func NewRedisValidationClient(cfg *RedisValidationClientConfig) (*RedisValidatio
 		room:      cfg.Room,
 		producers: make(map[common.Hash]*pubsub.Producer[*validator.ValidationInput, validator.GoGlobalState]),
 	}
+	if cfg.RedisURL == "" {
+		return nil, fmt.Errorf("redis url cannot be empty")
+	}
+	redisClient, err := redisutil.RedisClientFromURL(cfg.RedisURL)
+	if err != nil {
+		return nil, err
+	}
 	for _, hash := range cfg.ModuleRoots {
 		mr := common.HexToHash(hash)
-		c := cfg.ProducerConfig.Clone()
-		c.RedisStream, c.RedisGroup = redisGroupForRoot(mr), redisStreamForRoot(mr)
-		p, err := pubsub.NewProducer[*validator.ValidationInput, validator.GoGlobalState](&c)
+		p, err := pubsub.NewProducer[*validator.ValidationInput, validator.GoGlobalState](
+			redisClient, redisStreamForRoot(mr), &cfg.ProducerConfig)
 		if err != nil {
 			return nil, fmt.Errorf("creating producer for validation: %w", err)
 		}

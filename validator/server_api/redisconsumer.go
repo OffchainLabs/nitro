@@ -8,6 +8,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/pubsub"
+	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_api/validation"
@@ -24,18 +25,25 @@ type RedisValidationServer struct {
 }
 
 func NewRedisValidationServer(cfg *validation.RedisValidationServerConfig) (*RedisValidationServer, error) {
-	res := &RedisValidationServer{}
+	if cfg.RedisURL == "" {
+		return nil, fmt.Errorf("redis url cannot be empty")
+	}
+	redisClient, err := redisutil.RedisClientFromURL(cfg.RedisURL)
+	if err != nil {
+		return nil, err
+	}
+	consumers := make(map[common.Hash]*pubsub.Consumer[*validator.ValidationInput, validator.GoGlobalState])
 	for _, hash := range cfg.ModuleRoots {
 		mr := common.HexToHash(hash)
-		conf := cfg.ConsumerConfig.Clone()
-		conf.RedisStream, conf.RedisGroup = redisStreamForRoot(mr), redisGroupForRoot(mr)
-		c, err := pubsub.NewConsumer[*validator.ValidationInput, validator.GoGlobalState](&conf)
+		c, err := pubsub.NewConsumer[*validator.ValidationInput, validator.GoGlobalState](redisClient, redisStreamForRoot(mr), &cfg.ConsumerConfig)
 		if err != nil {
 			return nil, fmt.Errorf("creating consumer for validation: %w", err)
 		}
-		res.consumers[mr] = c
+		consumers[mr] = c
 	}
-	return res, nil
+	return &RedisValidationServer{
+		consumers: consumers,
+	}, nil
 }
 
 func (s *RedisValidationServer) Start(ctx_in context.Context) {
