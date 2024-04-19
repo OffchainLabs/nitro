@@ -21,8 +21,12 @@ type RedisValidationClientConfig struct {
 	RedisURL       string                `koanf:"redis-url"`
 	RedisStream    string                `koanf:"redis-stream"`
 	ProducerConfig pubsub.ProducerConfig `koanf:"producer-config"`
-	// Supported wasm module roots.
+	// Supported wasm module roots, when the list is empty this is disabled.
 	ModuleRoots []string `koanf:"module-roots"`
+}
+
+func (c RedisValidationClientConfig) Enabled() bool {
+	return len(c.ModuleRoots) > 0
 }
 
 var DefaultRedisValidationClientConfig = RedisValidationClientConfig{
@@ -58,7 +62,7 @@ type RedisValidationClient struct {
 	producers map[common.Hash]*pubsub.Producer[*validator.ValidationInput, validator.GoGlobalState]
 }
 
-func redisStreamForRoot(moduleRoot common.Hash) string {
+func RedisStreamForRoot(moduleRoot common.Hash) string {
 	return fmt.Sprintf("stream:%s", moduleRoot.Hex())
 }
 
@@ -75,10 +79,13 @@ func NewRedisValidationClient(cfg *RedisValidationClientConfig) (*RedisValidatio
 	if err != nil {
 		return nil, err
 	}
+	if len(cfg.ModuleRoots) == 0 {
+		return nil, fmt.Errorf("moduleRoots must be specified to enable redis streams")
+	}
 	for _, hash := range cfg.ModuleRoots {
 		mr := common.HexToHash(hash)
 		p, err := pubsub.NewProducer[*validator.ValidationInput, validator.GoGlobalState](
-			redisClient, redisStreamForRoot(mr), &cfg.ProducerConfig)
+			redisClient, RedisStreamForRoot(mr), &cfg.ProducerConfig)
 		if err != nil {
 			return nil, fmt.Errorf("creating producer for validation: %w", err)
 		}

@@ -16,6 +16,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -27,8 +28,10 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/validator/server_api"
+	"github.com/offchainlabs/nitro/validator/server_api/validation"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
 
@@ -504,6 +507,24 @@ func createStackConfigForTest(dataDir string) *node.Config {
 	return &stackConf
 }
 
+func createGroup(ctx context.Context, t *testing.T, streamName string, client redis.UniversalClient) {
+	t.Helper()
+	// Stream name and group name are the same.
+	if _, err := client.XGroupCreateMkStream(ctx, streamName, streamName, "$").Result(); err != nil {
+		log.Debug("Error creating stream group: %v", err)
+	}
+}
+
+func destroyGroup(ctx context.Context, t *testing.T, streamName string, client redis.UniversalClient) {
+	t.Helper()
+	if client == nil {
+		return
+	}
+	if _, err := client.XGroupDestroy(ctx, streamName, streamName).Result(); err != nil {
+		log.Debug("Error destroying a stream group", "error", err)
+	}
+}
+
 func createTestValidationNode(t *testing.T, ctx context.Context, config *valnode.Config) (*valnode.ValidationNode, *node.Node) {
 	stackConf := node.DefaultConfig
 	stackConf.HTTPPort = 0
@@ -556,19 +577,35 @@ func StaticFetcherFrom[T any](t *testing.T, config *T) func() *T {
 }
 
 func configByValidationNode(t *testing.T, clientConfig *arbnode.Config, valStack *node.Node) {
+	if len(clientConfig.BlockValidator.ValidationServerConfigs) == 0 {
+		return
+	}
 	clientConfig.BlockValidator.ValidationServerConfigs[0].URL = valStack.WSEndpoint()
 	clientConfig.BlockValidator.ValidationServerConfigs[0].JWTSecret = ""
 }
 
-func AddDefaultValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool) {
+func AddDefaultValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool, redisURL string) {
 	if !nodeConfig.ValidatorRequired() {
 		return
 	}
-	if nodeConfig.BlockValidator.ValidationServerConfigs[0].URL != "" {
+	if len(nodeConfig.BlockValidator.ValidationServerConfigs) > 0 && nodeConfig.BlockValidator.ValidationServerConfigs[0].URL != "" {
 		return
 	}
 	conf := valnode.TestValidationConfig
 	conf.UseJit = useJit
+	// Enable redis streams when URL is specified
+	if redisURL != "" {
+		conf.Arbitrator.RedisValidationServerConfig = validation.DefaultRedisValidationServerConfig
+		redisStream := server_api.RedisStreamForRoot(common.HexToHash(moduleRoot))
+		redisClient, err := redisutil.RedisClientFromURL(redisURL)
+		if err != nil {
+			t.Fatalf("Error creating redis coordinator: %v", err)
+		}
+		createGroup(ctx, t, redisStream, redisClient)
+		conf.Arbitrator.RedisValidationServerConfig.RedisURL = redisURL
+		conf.Arbitrator.RedisValidationServerConfig.ModuleRoots = []string{moduleRoot}
+		t.Cleanup(func() { destroyGroup(ctx, t, redisStream, redisClient) })
+	}
 	_, valStack := createTestValidationNode(t, ctx, &conf)
 	configByValidationNode(t, nodeConfig, valStack)
 }
@@ -798,7 +835,7 @@ func createTestNodeWithL1(
 		execConfig.Sequencer.Enable = false
 	}
 
-	AddDefaultValNode(t, ctx, nodeConfig, true)
+	AddDefaultValNode(t, ctx, nodeConfig, true, "")
 
 	Require(t, execConfig.Validate())
 	execConfigFetcher := func() *gethexec.Config { return execConfig }
@@ -833,7 +870,7 @@ func createTestNode(
 
 	feedErrChan := make(chan error, 10)
 
-	AddDefaultValNode(t, ctx, nodeConfig, true)
+	AddDefaultValNode(t, ctx, nodeConfig, true, "")
 
 	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, l2Info, "", chainConfig, &execConfig.Caching)
 
@@ -939,7 +976,7 @@ func Create2ndNodeWithConfig(
 	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, coreCacheConfig, initReader, chainConfig, initMessage, gethexec.ConfigDefaultTest().TxLookupLimit, 0)
 	Require(t, err)
 
-	AddDefaultValNode(t, ctx, nodeConfig, true)
+	AddDefaultValNode(t, ctx, nodeConfig, true, "")
 
 	Require(t, execConfig.Validate())
 	Require(t, nodeConfig.Validate())

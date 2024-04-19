@@ -119,7 +119,7 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 	} else {
 		serverAPI = server_api.NewExecutionServerAPI(arbSpawner, arbSpawner, arbConfigFetcher)
 	}
-	redisConsumer, err := server_api.NewRedisValidationServer(&arbConfigFetcher().RedisValidationServerConfig)
+	redisConsumer, err := server_api.NewRedisValidationServer(&arbConfigFetcher().RedisValidationServerConfig, arbSpawner)
 	if err != nil {
 		log.Error("Creating new redis validation server", "error", err)
 	}

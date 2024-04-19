@@ -48,21 +48,20 @@ func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot c
 func (c *ValidationClient) Start(ctx_in context.Context) error {
 	c.StopWaiter.Start(ctx_in, c)
 	ctx := c.GetContext()
-	err := c.client.Start(ctx)
-	if err != nil {
-		return err
+	if c.client != nil {
+		if err := c.client.Start(ctx); err != nil {
+			return err
+		}
 	}
 	var name string
-	err = c.client.CallContext(ctx, &name, Namespace+"_name")
-	if err != nil {
+	if err := c.client.CallContext(ctx, &name, Namespace+"_name"); err != nil {
 		return err
 	}
 	if len(name) == 0 {
 		return errors.New("couldn't read name from server")
 	}
 	var room int
-	err = c.client.CallContext(c.GetContext(), &room, Namespace+"_room")
-	if err != nil {
+	if err := c.client.CallContext(c.GetContext(), &room, Namespace+"_room"); err != nil {
 		return err
 	}
 	if room < 2 {

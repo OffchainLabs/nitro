@@ -129,7 +129,6 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 	if len(res) != 1 || len(res[0].Messages) != 1 {
 		return nil, fmt.Errorf("redis returned entries: %+v, for querying single message", res)
 	}
-	log.Debug(fmt.Sprintf("Consumer: %s consuming message: %s", c.id, res[0].Messages[0].ID))
 	var (
 		value    = res[0].Messages[0].Values[messageKey]
 		data, ok = (value).(string)
@@ -141,7 +140,7 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 	if err := json.Unmarshal([]byte(data), &req); err != nil {
 		return nil, fmt.Errorf("unmarshaling value: %v, error: %w", value, err)
 	}
-
+	log.Debug("Redis stream consuming", "consumer_id", c.id, "message_id", res[0].Messages[0].ID)
 	return &Message[Request]{
 		ID:    res[0].Messages[0].ID,
 		Value: req,

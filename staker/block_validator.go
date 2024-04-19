@@ -111,18 +111,19 @@ func (c *BlockValidatorConfig) Validate() error {
 		}
 		c.memoryFreeLimit = limit
 	}
+	streamsEnabled := c.RedisValidationClientConfig.Enabled()
 	if c.ValidationServerConfigs == nil {
 		if c.ValidationServerConfigsList == "default" {
 			c.ValidationServerConfigs = []rpcclient.ClientConfig{c.ValidationServer}
 		} else {
 			var validationServersConfigs []rpcclient.ClientConfig
-			if err := json.Unmarshal([]byte(c.ValidationServerConfigsList), &validationServersConfigs); err != nil {
+			if err := json.Unmarshal([]byte(c.ValidationServerConfigsList), &validationServersConfigs); err != nil && !streamsEnabled {
 				return fmt.Errorf("failed to parse block-validator validation-server-configs-list string: %w", err)
 			}
 			c.ValidationServerConfigs = validationServersConfigs
 		}
 	}
-	if len(c.ValidationServerConfigs) == 0 {
+	if len(c.ValidationServerConfigs) == 0 && !streamsEnabled {
 		return fmt.Errorf("block-validator validation-server-configs is empty, need at least one validation server config")
 	}
 	for _, serverConfig := range c.ValidationServerConfigs {
@@ -1032,6 +1033,9 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 // Initialize must be called after SetCurrentWasmModuleRoot sets the current one
 func (v *BlockValidator) Initialize(ctx context.Context) error {
 	config := v.config()
+	if config.RedisValidationClientConfig.Enabled() && v.execSpawner == nil {
+		return nil
+	}
 	currentModuleRoot := config.CurrentModuleRoot
 	switch currentModuleRoot {
 	case "latest":

@@ -33,7 +33,6 @@ type BatchInfoJson struct {
 
 type RedisValidationServerConfig struct {
 	RedisURL       string                `koanf:"redis-url"`
-	RedisStream    string                `koanf:"redis-stream"`
 	ConsumerConfig pubsub.ConsumerConfig `koanf:"consumer-config"`
 	// Supported wasm module roots.
 	ModuleRoots []string `koanf:"module-roots"`
@@ -41,14 +40,12 @@ type RedisValidationServerConfig struct {
 
 var DefaultRedisValidationServerConfig = RedisValidationServerConfig{
 	RedisURL:       "",
-	RedisStream:    "",
 	ConsumerConfig: pubsub.DefaultConsumerConfig,
 	ModuleRoots:    []string{},
 }
 
 var TestRedisValidationServerConfig = RedisValidationServerConfig{
 	RedisURL:       "",
-	RedisStream:    "",
 	ConsumerConfig: pubsub.TestConsumerConfig,
 	ModuleRoots:    []string{},
 }

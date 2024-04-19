@@ -217,6 +217,7 @@ func (p *Producer[Request, Response]) reproduce(ctx context.Context, value Reque
 }
 
 func (p *Producer[Request, Response]) Produce(ctx context.Context, value Request) (*containers.Promise[Response], error) {
+	log.Debug("Redis stream producing", "value", value)
 	p.once.Do(func() {
 		p.StopWaiter.CallIteratively(p.checkAndReproduce)
 		p.StopWaiter.CallIteratively(p.checkResponses)

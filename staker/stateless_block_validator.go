@@ -194,24 +194,20 @@ func NewStatelessBlockValidator(
 	config func() *BlockValidatorConfig,
 	stack *node.Node,
 ) (*StatelessBlockValidator, error) {
-
-	validationSpawners := make([]validator.ValidationSpawner, len(config().ValidationServerConfigs))
-	for i, serverConfig := range config().ValidationServerConfigs {
-		valConfFetcher := func() *rpcclient.ClientConfig { return &serverConfig }
-		validationSpawners[i] = server_api.NewValidationClient(valConfFetcher, stack)
-	}
+	var validationSpawners []validator.ValidationSpawner
 	redisValClient, err := server_api.NewRedisValidationClient(&config().RedisValidationClientConfig)
 	if err != nil {
 		log.Error("Creating redis validation client", "error", err)
 	} else {
 		validationSpawners = append(validationSpawners, redisValClient)
 	}
+	for _, serverConfig := range config().ValidationServerConfigs {
+		valConfFetcher := func() *rpcclient.ClientConfig { return &serverConfig }
+		validationSpawners = append(validationSpawners, server_api.NewValidationClient(valConfFetcher, stack))
+	}
 
-	valConfFetcher := func() *rpcclient.ClientConfig { return &config().ValidationServerConfigs[0] }
-	execClient := server_api.NewExecutionClient(valConfFetcher, stack)
 	validator := &StatelessBlockValidator{
 		config:             config(),
-		execSpawner:        execClient,
 		recorder:           recorder,
 		validationSpawners: validationSpawners,
 		inboxReader:        inboxReader,
@@ -220,6 +216,12 @@ func NewStatelessBlockValidator(
 		db:                 arbdb,
 		daService:          das,
 		blobReader:         blobReader,
+	}
+	if len(config().ValidationServerConfigs) != 0 {
+		valConfFetcher := func() *rpcclient.ClientConfig {
+			return &config().ValidationServerConfigs[0]
+		}
+		validator.execSpawner = server_api.NewExecutionClient(valConfFetcher, stack)
 	}
 	return validator, nil
 }
@@ -425,14 +427,16 @@ func (v *StatelessBlockValidator) OverrideRecorder(t *testing.T, recorder execut
 }
 
 func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
-	err := v.execSpawner.Start(ctx_in)
-	if err != nil {
-		return err
-	}
 	for _, spawner := range v.validationSpawners {
 		if err := spawner.Start(ctx_in); err != nil {
 			return err
 		}
+	}
+	if v.execSpawner == nil {
+		return nil
+	}
+	if err := v.execSpawner.Start(ctx_in); err != nil {
+		return err
 	}
 	if v.config.PendingUpgradeModuleRoot != "" {
 		if v.config.PendingUpgradeModuleRoot == "latest" {
@@ -453,7 +457,9 @@ func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
 }
 
 func (v *StatelessBlockValidator) Stop() {
-	v.execSpawner.Stop()
+	if v.execSpawner != nil {
+		v.execSpawner.Stop()
+	}
 	for _, spawner := range v.validationSpawners {
 		spawner.Stop()
 	}

@@ -24,7 +24,7 @@ type RedisValidationServer struct {
 	consumers map[common.Hash]*pubsub.Consumer[*validator.ValidationInput, validator.GoGlobalState]
 }
 
-func NewRedisValidationServer(cfg *validation.RedisValidationServerConfig) (*RedisValidationServer, error) {
+func NewRedisValidationServer(cfg *validation.RedisValidationServerConfig, spawner validator.ValidationSpawner) (*RedisValidationServer, error) {
 	if cfg.RedisURL == "" {
 		return nil, fmt.Errorf("redis url cannot be empty")
 	}
@@ -35,7 +35,7 @@ func NewRedisValidationServer(cfg *validation.RedisValidationServerConfig) (*Red
 	consumers := make(map[common.Hash]*pubsub.Consumer[*validator.ValidationInput, validator.GoGlobalState])
 	for _, hash := range cfg.ModuleRoots {
 		mr := common.HexToHash(hash)
-		c, err := pubsub.NewConsumer[*validator.ValidationInput, validator.GoGlobalState](redisClient, redisStreamForRoot(mr), &cfg.ConsumerConfig)
+		c, err := pubsub.NewConsumer[*validator.ValidationInput, validator.GoGlobalState](redisClient, RedisStreamForRoot(mr), &cfg.ConsumerConfig)
 		if err != nil {
 			return nil, fmt.Errorf("creating consumer for validation: %w", err)
 		}
@@ -43,6 +43,7 @@ func NewRedisValidationServer(cfg *validation.RedisValidationServerConfig) (*Red
 	}
 	return &RedisValidationServer{
 		consumers: consumers,
+		spawner:   spawner,
 	}, nil
 }
 
@@ -56,6 +57,10 @@ func (s *RedisValidationServer) Start(ctx_in context.Context) {
 			if err != nil {
 				log.Error("Consuming request", "error", err)
 				return 0
+			}
+			if req == nil {
+				// There's nothing in the queue.
+				return time.Second
 			}
 			valRun := s.spawner.Launch(req.Value, moduleRoot)
 			res, err := valRun.Await(ctx)
