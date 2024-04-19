@@ -398,7 +398,7 @@ func ProduceBlockAdvanced(
 		txGasUsed := header.GasUsed - preTxHeaderGasUsed
 
 		arbosVer := types.DeserializeHeaderExtraInformation(header).ArbOSFormatVersion
-		if arbosVer >= arbostypes.ArbosVersion_FixRedeemGas {
+		if arbosVer >= types.ArbosVersion_FixRedeemGas {
 			// subtract gas burned for future use
 			for _, scheduledTx := range result.ScheduledTxes {
 				switch inner := scheduledTx.GetInner().(type) {
