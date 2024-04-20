@@ -9,6 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/staterecovery"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 )
@@ -49,7 +50,8 @@ func TestRectreateMissingStates(t *testing.T) {
 		stack, err := node.New(builder.l2StackConfig)
 		Require(t, err)
 		defer stack.Close()
-		chainDb, err := stack.OpenDatabase("l2chaindata", 0, 0, "l2chaindata/", false)
+		// TODO get pebble.ExtraOptions from conf.PersistentConfig
+		chainDb, err := stack.OpenDatabaseWithExtraOptions("l2chaindata", 0, 0, "l2chaindata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions())
 		Require(t, err)
 		defer chainDb.Close()
 		cacheConfig := gethexec.DefaultCacheConfigFor(stack, &gethexec.DefaultCachingConfig)
