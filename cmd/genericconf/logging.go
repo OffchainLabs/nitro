@@ -2,6 +2,7 @@ package genericconf
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -55,7 +56,7 @@ func (l *fileHandlerFactory) newHandler(logFormat log.Format, config *FileLoggin
 		case records <- r:
 			return nil
 		default:
-			return fmt.Errorf("Buffer overflow, dropping record")
+			return errors.New("Buffer overflow, dropping record")
 		}
 	})
 }

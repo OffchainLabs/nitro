@@ -327,7 +327,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				}
 			}
 			if initMessage == nil {
-				return chainDb, nil, fmt.Errorf("failed to get init message while attempting to get serialized chain config")
+				return chainDb, nil, errors.New("failed to get init message while attempting to get serialized chain config")
 			}
 			parsedInitMessage, err = initMessage.ParseInitMessage()
 			if err != nil {

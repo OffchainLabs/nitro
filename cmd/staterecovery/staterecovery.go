@@ -1,6 +1,7 @@
 package staterecovery
 
 import (
+	"errors"
 	"fmt"
 	"time"
 
@@ -17,7 +18,7 @@ func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheCon
 	start := time.Now()
 	currentHeader := bc.CurrentBlock()
 	if currentHeader == nil {
-		return fmt.Errorf("current header is nil")
+		return errors.New("current header is nil")
 	}
 	target := currentHeader.Number.Uint64()
 	current := startBlock
