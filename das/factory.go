@@ -6,7 +6,6 @@ package das
 import (
 	"context"
 	"errors"
-	"fmt"
 	"math"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -324,7 +323,7 @@ func CreateDAReaderForNode(
 	}
 
 	if !config.RestAggregator.Enable && !config.IpfsStorage.Enable {
-		return nil, nil, fmt.Errorf("--node.data-availability.enable was set but neither of --node.data-availability.(rest-aggregator|ipfs-storage) were enabled. When running a Nitro Anytrust node in non-Batch Poster mode, some way to get the batch data is required.")
+		return nil, nil, errors.New("--node.data-availability.enable was set but neither of --node.data-availability.(rest-aggregator|ipfs-storage) were enabled. When running a Nitro Anytrust node in non-Batch Poster mode, some way to get the batch data is required.")
 	}
 
 	if config.RestAggregator.SyncToStorage.Eager {
