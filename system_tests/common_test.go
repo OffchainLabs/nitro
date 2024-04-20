@@ -31,7 +31,6 @@ import (
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/validator/server_api"
-	"github.com/offchainlabs/nitro/validator/server_api/validation"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
 
@@ -507,7 +506,7 @@ func createStackConfigForTest(dataDir string) *node.Config {
 	return &stackConf
 }
 
-func createGroup(ctx context.Context, t *testing.T, streamName string, client redis.UniversalClient) {
+func createRedisGroup(ctx context.Context, t *testing.T, streamName string, client redis.UniversalClient) {
 	t.Helper()
 	// Stream name and group name are the same.
 	if _, err := client.XGroupCreateMkStream(ctx, streamName, streamName, "$").Result(); err != nil {
@@ -515,7 +514,7 @@ func createGroup(ctx context.Context, t *testing.T, streamName string, client re
 	}
 }
 
-func destroyGroup(ctx context.Context, t *testing.T, streamName string, client redis.UniversalClient) {
+func destroyRedisGroup(ctx context.Context, t *testing.T, streamName string, client redis.UniversalClient) {
 	t.Helper()
 	if client == nil {
 		return
@@ -576,12 +575,9 @@ func StaticFetcherFrom[T any](t *testing.T, config *T) func() *T {
 	return func() *T { return &tCopy }
 }
 
-func configByValidationNode(t *testing.T, clientConfig *arbnode.Config, valStack *node.Node) {
-	if len(clientConfig.BlockValidator.ValidationServerConfigs) == 0 {
-		return
-	}
-	clientConfig.BlockValidator.ValidationServerConfigs[0].URL = valStack.WSEndpoint()
-	clientConfig.BlockValidator.ValidationServerConfigs[0].JWTSecret = ""
+func configByValidationNode(clientConfig *arbnode.Config, valStack *node.Node) {
+	clientConfig.BlockValidator.ExecutionServerConfig.URL = valStack.WSEndpoint()
+	clientConfig.BlockValidator.ExecutionServerConfig.JWTSecret = ""
 }
 
 func currentRootModule(t *testing.T) common.Hash {
@@ -597,26 +593,23 @@ func AddDefaultValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Co
 	if !nodeConfig.ValidatorRequired() {
 		return
 	}
-	if len(nodeConfig.BlockValidator.ValidationServerConfigs) > 0 && nodeConfig.BlockValidator.ValidationServerConfigs[0].URL != "" {
-		return
-	}
 	conf := valnode.TestValidationConfig
 	conf.UseJit = useJit
 	// Enable redis streams when URL is specified
 	if redisURL != "" {
-		conf.Arbitrator.RedisValidationServerConfig = validation.DefaultRedisValidationServerConfig
+		conf.Arbitrator.RedisValidationServerConfig = server_api.DefaultRedisValidationServerConfig
 		redisClient, err := redisutil.RedisClientFromURL(redisURL)
 		if err != nil {
 			t.Fatalf("Error creating redis coordinator: %v", err)
 		}
 		redisStream := server_api.RedisStreamForRoot(currentRootModule(t))
-		createGroup(ctx, t, redisStream, redisClient)
+		createRedisGroup(ctx, t, redisStream, redisClient)
 		conf.Arbitrator.RedisValidationServerConfig.RedisURL = redisURL
-		t.Cleanup(func() { destroyGroup(ctx, t, redisStream, redisClient) })
+		t.Cleanup(func() { destroyRedisGroup(ctx, t, redisStream, redisClient) })
 		conf.Arbitrator.RedisValidationServerConfig.ModuleRoots = []string{currentRootModule(t).Hex()}
 	}
 	_, valStack := createTestValidationNode(t, ctx, &conf)
-	configByValidationNode(t, nodeConfig, valStack)
+	configByValidationNode(nodeConfig, valStack)
 }
 
 func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *node.Config) (info, *ethclient.Client, *eth.Ethereum, *node.Node) {

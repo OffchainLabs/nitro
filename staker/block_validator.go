@@ -14,8 +14,6 @@ import (
 	"testing"
 	"time"
 
-	flag "github.com/spf13/pflag"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
@@ -27,7 +25,9 @@ import (
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
-	"github.com/offchainlabs/nitro/validator/server_api"
+	"github.com/spf13/pflag"
+
+	validatorclient "github.com/offchainlabs/nitro/validator/client"
 )
 
 var (
@@ -84,19 +84,20 @@ type BlockValidator struct {
 }
 
 type BlockValidatorConfig struct {
-	Enable                      bool                                   `koanf:"enable"`
-	ValidationServer            rpcclient.ClientConfig                 `koanf:"validation-server" reload:"hot"`
-	RedisValidationClientConfig server_api.RedisValidationClientConfig `koanf:"redis-validation-client-config"`
-	ValidationServerConfigs     []rpcclient.ClientConfig               `koanf:"validation-server-configs" reload:"hot"`
-	ValidationPoll              time.Duration                          `koanf:"validation-poll" reload:"hot"`
-	PrerecordedBlocks           uint64                                 `koanf:"prerecorded-blocks" reload:"hot"`
-	ForwardBlocks               uint64                                 `koanf:"forward-blocks" reload:"hot"`
-	CurrentModuleRoot           string                                 `koanf:"current-module-root"`         // TODO(magic) requires reinitialization on hot reload
-	PendingUpgradeModuleRoot    string                                 `koanf:"pending-upgrade-module-root"` // TODO(magic) requires StatelessBlockValidator recreation on hot reload
-	FailureIsFatal              bool                                   `koanf:"failure-is-fatal" reload:"hot"`
-	Dangerous                   BlockValidatorDangerousConfig          `koanf:"dangerous"`
-	MemoryFreeLimit             string                                 `koanf:"memory-free-limit" reload:"hot"`
-	ValidationServerConfigsList string                                 `koanf:"validation-server-configs-list" reload:"hot"`
+	Enable                      bool                                        `koanf:"enable"`
+	ValidationServer            rpcclient.ClientConfig                      `koanf:"validation-server" reload:"hot"`
+	RedisValidationClientConfig validatorclient.RedisValidationClientConfig `koanf:"redis-validation-client-config"`
+	ValidationServerConfigs     []rpcclient.ClientConfig                    `koanf:"validation-server-configs" reload:"hot"`
+	ExecutionServerConfig       rpcclient.ClientConfig                      `koanf:"execution-server-config" reload:"hot"`
+	ValidationPoll              time.Duration                               `koanf:"validation-poll" reload:"hot"`
+	PrerecordedBlocks           uint64                                      `koanf:"prerecorded-blocks" reload:"hot"`
+	ForwardBlocks               uint64                                      `koanf:"forward-blocks" reload:"hot"`
+	CurrentModuleRoot           string                                      `koanf:"current-module-root"`         // TODO(magic) requires reinitialization on hot reload
+	PendingUpgradeModuleRoot    string                                      `koanf:"pending-upgrade-module-root"` // TODO(magic) requires StatelessBlockValidator recreation on hot reload
+	FailureIsFatal              bool                                        `koanf:"failure-is-fatal" reload:"hot"`
+	Dangerous                   BlockValidatorDangerousConfig               `koanf:"dangerous"`
+	MemoryFreeLimit             string                                      `koanf:"memory-free-limit" reload:"hot"`
+	ValidationServerConfigsList string                                      `koanf:"validation-server-configs-list" reload:"hot"`
 
 	memoryFreeLimit int
 }
@@ -113,9 +114,8 @@ func (c *BlockValidatorConfig) Validate() error {
 	}
 	streamsEnabled := c.RedisValidationClientConfig.Enabled()
 	if c.ValidationServerConfigs == nil {
-		if c.ValidationServerConfigsList == "default" {
-			c.ValidationServerConfigs = []rpcclient.ClientConfig{c.ValidationServer}
-		} else {
+		c.ValidationServerConfigs = []rpcclient.ClientConfig{c.ValidationServer}
+		if c.ValidationServerConfigsList != "default" {
 			var validationServersConfigs []rpcclient.ClientConfig
 			if err := json.Unmarshal([]byte(c.ValidationServerConfigsList), &validationServersConfigs); err != nil && !streamsEnabled {
 				return fmt.Errorf("failed to parse block-validator validation-server-configs-list string: %w", err)
@@ -131,6 +131,9 @@ func (c *BlockValidatorConfig) Validate() error {
 			return fmt.Errorf("failed to validate one of the block-validator validation-server-configs. url: %s, err: %w", serverConfig.URL, err)
 		}
 	}
+	if err := c.ExecutionServerConfig.Validate(); err != nil {
+		return fmt.Errorf("validating execution server config: %w", err)
+	}
 	return nil
 }
 
@@ -140,7 +143,7 @@ type BlockValidatorDangerousConfig struct {
 
 type BlockValidatorConfigFetcher func() *BlockValidatorConfig
 
-func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
+func BlockValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block-by-block validation")
 	rpcclient.RPCClientAddOptions(prefix+".validation-server", f, &DefaultBlockValidatorConfig.ValidationServer)
 	f.String(prefix+".validation-server-configs-list", DefaultBlockValidatorConfig.ValidationServerConfigsList, "array of validation rpc configs given as a json string. time duration should be supplied in number indicating nanoseconds")
@@ -154,7 +157,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".memory-free-limit", DefaultBlockValidatorConfig.MemoryFreeLimit, "minimum free-memory limit after reaching which the blockvalidator pauses validation. Enabled by default as 1GB, to disable provide empty string")
 }
 
-func BlockValidatorDangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
+func BlockValidatorDangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".reset-block-validation", DefaultBlockValidatorDangerousConfig.ResetBlockValidation, "resets block-by-block validation, starting again at genesis")
 }
 
@@ -176,6 +179,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                   false,
 	ValidationServer:         rpcclient.TestClientConfig,
 	ValidationServerConfigs:  []rpcclient.ClientConfig{rpcclient.TestClientConfig},
+	ExecutionServerConfig:    rpcclient.TestClientConfig,
 	ValidationPoll:           100 * time.Millisecond,
 	ForwardBlocks:            128,
 	PrerecordedBlocks:        uint64(2 * runtime.NumCPU()),

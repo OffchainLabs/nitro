@@ -11,19 +11,19 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/offchainlabs/nitro/execution"
-	"github.com/offchainlabs/nitro/util/rpcclient"
-	"github.com/offchainlabs/nitro/validator/server_api"
-
-	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/validator"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
+
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/util/rpcclient"
+	"github.com/offchainlabs/nitro/validator"
+
+	validatorclient "github.com/offchainlabs/nitro/validator/client"
 )
 
 type StatelessBlockValidator struct {
@@ -195,7 +195,7 @@ func NewStatelessBlockValidator(
 	stack *node.Node,
 ) (*StatelessBlockValidator, error) {
 	var validationSpawners []validator.ValidationSpawner
-	redisValClient, err := server_api.NewRedisValidationClient(&config().RedisValidationClientConfig)
+	redisValClient, err := validatorclient.NewRedisValidationClient(&config().RedisValidationClientConfig)
 	if err != nil {
 		log.Error("Creating redis validation client", "error", err)
 	} else {
@@ -203,7 +203,7 @@ func NewStatelessBlockValidator(
 	}
 	for _, serverConfig := range config().ValidationServerConfigs {
 		valConfFetcher := func() *rpcclient.ClientConfig { return &serverConfig }
-		validationSpawners = append(validationSpawners, server_api.NewValidationClient(valConfFetcher, stack))
+		validationSpawners = append(validationSpawners, validatorclient.NewValidationClient(valConfFetcher, stack))
 	}
 
 	validator := &StatelessBlockValidator{
@@ -217,12 +217,10 @@ func NewStatelessBlockValidator(
 		daService:          das,
 		blobReader:         blobReader,
 	}
-	if len(config().ValidationServerConfigs) != 0 {
-		valConfFetcher := func() *rpcclient.ClientConfig {
-			return &config().ValidationServerConfigs[0]
-		}
-		validator.execSpawner = server_api.NewExecutionClient(valConfFetcher, stack)
+	valConfFetcher := func() *rpcclient.ClientConfig {
+		return &config().ExecutionServerConfig
 	}
+	validator.execSpawner = validatorclient.NewExecutionClient(valConfFetcher, stack)
 	return validator, nil
 }
 
@@ -432,9 +430,6 @@ func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
 			return err
 		}
 	}
-	if v.execSpawner == nil {
-		return nil
-	}
 	if err := v.execSpawner.Start(ctx_in); err != nil {
 		return err
 	}
@@ -457,9 +452,7 @@ func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
 }
 
 func (v *StatelessBlockValidator) Stop() {
-	if v.execSpawner != nil {
-		v.execSpawner.Stop()
-	}
+	v.execSpawner.Stop()
 	for _, spawner := range v.validationSpawners {
 		spawner.Stop()
 	}

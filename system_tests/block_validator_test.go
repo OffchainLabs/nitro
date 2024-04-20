@@ -27,7 +27,8 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/redisutil"
-	"github.com/offchainlabs/nitro/validator/server_api"
+
+	validatorclient "github.com/offchainlabs/nitro/validator/client"
 )
 
 type workloadType uint
@@ -72,9 +73,10 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 	redisURL := ""
 	if useRedisStreams {
 		redisURL = redisutil.CreateTestRedis(ctx, t)
-		validatorConfig.BlockValidator.RedisValidationClientConfig = server_api.DefaultRedisValidationClientConfig
+		validatorConfig.BlockValidator.RedisValidationClientConfig = validatorclient.DefaultRedisValidationClientConfig
 		validatorConfig.BlockValidator.RedisValidationClientConfig.ModuleRoots = []string{currentRootModule(t).Hex()}
 		validatorConfig.BlockValidator.RedisValidationClientConfig.RedisURL = redisURL
+		validatorConfig.BlockValidator.ValidationServerConfigs = nil
 	}
 
 	AddDefaultValNode(t, ctx, validatorConfig, !arbitrator, redisURL)

@@ -17,7 +17,7 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
-	"github.com/offchainlabs/nitro/validator/server_api/validation"
+	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_common"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -32,7 +32,7 @@ type ArbitratorSpawnerConfig struct {
 	OutputPath                  string                                 `koanf:"output-path" reload:"hot"`
 	Execution                   MachineCacheConfig                     `koanf:"execution" reload:"hot"` // hot reloading for new executions only
 	ExecutionRunTimeout         time.Duration                          `koanf:"execution-run-timeout" reload:"hot"`
-	RedisValidationServerConfig validation.RedisValidationServerConfig `koanf:"redis-validation-server-config"`
+	RedisValidationServerConfig server_api.RedisValidationServerConfig `koanf:"redis-validation-server-config"`
 }
 
 type ArbitratorSpawnerConfigFecher func() *ArbitratorSpawnerConfig
@@ -42,7 +42,7 @@ var DefaultArbitratorSpawnerConfig = ArbitratorSpawnerConfig{
 	OutputPath:                  "./target/output",
 	Execution:                   DefaultMachineCacheConfig,
 	ExecutionRunTimeout:         time.Minute * 15,
-	RedisValidationServerConfig: validation.DefaultRedisValidationServerConfig,
+	RedisValidationServerConfig: server_api.DefaultRedisValidationServerConfig,
 }
 
 func ArbitratorSpawnerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -50,7 +50,7 @@ func ArbitratorSpawnerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".execution-run-timeout", DefaultArbitratorSpawnerConfig.ExecutionRunTimeout, "timeout before discarding execution run")
 	f.String(prefix+".output-path", DefaultArbitratorSpawnerConfig.OutputPath, "path to write machines to")
 	MachineCacheConfigConfigAddOptions(prefix+".execution", f)
-	validation.RedisValidationServerConfigAddOptions(prefix+".redis-validation-server-config", f)
+	server_api.RedisValidationServerConfigAddOptions(prefix+".redis-validation-server-config", f)
 }
 
 func DefaultArbitratorSpawnerConfigFetcher() *ArbitratorSpawnerConfig {

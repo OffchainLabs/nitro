@@ -1,4 +1,4 @@
-package server_api
+package client
 
 import (
 	"context"
@@ -11,6 +11,7 @@ import (
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/spf13/pflag"
 )
@@ -58,10 +59,6 @@ type RedisValidationClient struct {
 	producers map[common.Hash]*pubsub.Producer[*validator.ValidationInput, validator.GoGlobalState]
 }
 
-func RedisStreamForRoot(moduleRoot common.Hash) string {
-	return fmt.Sprintf("stream:%s", moduleRoot.Hex())
-}
-
 func NewRedisValidationClient(cfg *RedisValidationClientConfig) (*RedisValidationClient, error) {
 	res := &RedisValidationClient{
 		name:      cfg.Name,
@@ -81,7 +78,7 @@ func NewRedisValidationClient(cfg *RedisValidationClientConfig) (*RedisValidatio
 	for _, hash := range cfg.ModuleRoots {
 		mr := common.HexToHash(hash)
 		p, err := pubsub.NewProducer[*validator.ValidationInput, validator.GoGlobalState](
-			redisClient, RedisStreamForRoot(mr), &cfg.ProducerConfig)
+			redisClient, server_api.RedisStreamForRoot(mr), &cfg.ProducerConfig)
 		if err != nil {
 			return nil, fmt.Errorf("creating producer for validation: %w", err)
 		}

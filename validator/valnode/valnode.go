@@ -77,7 +77,7 @@ type ValidationNode struct {
 	arbSpawner *server_arb.ArbitratorSpawner
 	jitSpawner *server_jit.JitSpawner
 
-	redisConsumer *server_api.RedisValidationServer
+	redisConsumer *RedisValidationServer
 }
 
 func EnsureValidationExposedViaAuthRPC(stackConf *node.Config) {
@@ -106,7 +106,7 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 	if err != nil {
 		return nil, err
 	}
-	var serverAPI *server_api.ExecServerAPI
+	var serverAPI *ExecServerAPI
 	var jitSpawner *server_jit.JitSpawner
 	if config.UseJit {
 		jitConfigFetcher := func() *server_jit.JitSpawnerConfig { return &configFetcher().Jit }
@@ -115,11 +115,11 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 		if err != nil {
 			return nil, err
 		}
-		serverAPI = server_api.NewExecutionServerAPI(jitSpawner, arbSpawner, arbConfigFetcher)
+		serverAPI = NewExecutionServerAPI(jitSpawner, arbSpawner, arbConfigFetcher)
 	} else {
-		serverAPI = server_api.NewExecutionServerAPI(arbSpawner, arbSpawner, arbConfigFetcher)
+		serverAPI = NewExecutionServerAPI(arbSpawner, arbSpawner, arbConfigFetcher)
 	}
-	redisConsumer, err := server_api.NewRedisValidationServer(&arbConfigFetcher().RedisValidationServerConfig, arbSpawner)
+	redisConsumer, err := NewRedisValidationServer(&arbConfigFetcher().RedisValidationServerConfig, arbSpawner)
 	if err != nil {
 		log.Error("Creating new redis validation server", "error", err)
 	}

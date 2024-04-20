@@ -22,13 +22,6 @@ type ConsumerConfig struct {
 	KeepAliveTimeout time.Duration `koanf:"keepalive-timeout"`
 }
 
-func (c ConsumerConfig) Clone() ConsumerConfig {
-	return ConsumerConfig{
-		ResponseEntryTimeout: c.ResponseEntryTimeout,
-		KeepAliveTimeout:     c.KeepAliveTimeout,
-	}
-}
-
 var DefaultConsumerConfig = ConsumerConfig{
 	ResponseEntryTimeout: time.Hour,
 	KeepAliveTimeout:     5 * time.Minute,

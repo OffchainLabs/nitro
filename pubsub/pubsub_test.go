@@ -28,7 +28,7 @@ type testResponse struct {
 	Response string
 }
 
-func createGroup(ctx context.Context, t *testing.T, streamName string, client redis.UniversalClient) {
+func createRedisGroup(ctx context.Context, t *testing.T, streamName string, client redis.UniversalClient) {
 	t.Helper()
 	// Stream name and group name are the same.
 	if _, err := client.XGroupCreateMkStream(ctx, streamName, streamName, "$").Result(); err != nil {
@@ -36,7 +36,7 @@ func createGroup(ctx context.Context, t *testing.T, streamName string, client re
 	}
 }
 
-func destroyGroup(ctx context.Context, t *testing.T, streamName string, client redis.UniversalClient) {
+func destroyRedisGroup(ctx context.Context, t *testing.T, streamName string, client redis.UniversalClient) {
 	t.Helper()
 	if _, err := client.XGroupDestroy(ctx, streamName, streamName).Result(); err != nil {
 		log.Debug("Error destroying a stream group", "error", err)
@@ -93,10 +93,10 @@ func newProducerConsumers(ctx context.Context, t *testing.T, opts ...configOpt) 
 		}
 		consumers = append(consumers, c)
 	}
-	createGroup(ctx, t, streamName, producer.client)
+	createRedisGroup(ctx, t, streamName, producer.client)
 	t.Cleanup(func() {
 		ctx := context.Background()
-		destroyGroup(ctx, t, streamName, producer.client)
+		destroyRedisGroup(ctx, t, streamName, producer.client)
 		var keys []string
 		for _, c := range consumers {
 			keys = append(keys, c.heartBeatKey())

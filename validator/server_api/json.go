@@ -4,65 +4,17 @@
 package server_api
 
 import (
-	"encoding/base64"
+	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/util/jsonapi"
 	"github.com/offchainlabs/nitro/validator"
-	"github.com/offchainlabs/nitro/validator/server_api/validation"
+	"github.com/spf13/pflag"
 )
 
-func ValidationInputToJson(entry *validator.ValidationInput) *validation.InputJSON {
-	jsonPreimagesMap := make(map[arbutil.PreimageType]*jsonapi.PreimagesMapJson)
-	for ty, preimages := range entry.Preimages {
-		jsonPreimagesMap[ty] = jsonapi.NewPreimagesMapJson(preimages)
-	}
-	res := &validation.InputJSON{
-		Id:            entry.Id,
-		HasDelayedMsg: entry.HasDelayedMsg,
-		DelayedMsgNr:  entry.DelayedMsgNr,
-		DelayedMsgB64: base64.StdEncoding.EncodeToString(entry.DelayedMsg),
-		StartState:    entry.StartState,
-		PreimagesB64:  jsonPreimagesMap,
-	}
-	for _, binfo := range entry.BatchInfo {
-		encData := base64.StdEncoding.EncodeToString(binfo.Data)
-		res.BatchInfo = append(res.BatchInfo, validation.BatchInfoJson{Number: binfo.Number, DataB64: encData})
-	}
-	return res
-}
-
-func ValidationInputFromJson(entry *validation.InputJSON) (*validator.ValidationInput, error) {
-	preimages := make(map[arbutil.PreimageType]map[common.Hash][]byte)
-	for ty, jsonPreimages := range entry.PreimagesB64 {
-		preimages[ty] = jsonPreimages.Map
-	}
-	valInput := &validator.ValidationInput{
-		Id:            entry.Id,
-		HasDelayedMsg: entry.HasDelayedMsg,
-		DelayedMsgNr:  entry.DelayedMsgNr,
-		StartState:    entry.StartState,
-		Preimages:     preimages,
-	}
-	delayed, err := base64.StdEncoding.DecodeString(entry.DelayedMsgB64)
-	if err != nil {
-		return nil, err
-	}
-	valInput.DelayedMsg = delayed
-	for _, binfo := range entry.BatchInfo {
-		data, err := base64.StdEncoding.DecodeString(binfo.DataB64)
-		if err != nil {
-			return nil, err
-		}
-		decInfo := validator.BatchInfo{
-			Number: binfo.Number,
-			Data:   data,
-		}
-		valInput.BatchInfo = append(valInput.BatchInfo, decInfo)
-	}
-	return valInput, nil
-}
+const Namespace string = "validation"
 
 type MachineStepResultJson struct {
 	Hash        common.Hash
@@ -88,4 +40,52 @@ func MachineStepResultFromJson(resultJson *MachineStepResultJson) (*validator.Ma
 		Status:      validator.MachineStatus(resultJson.Status),
 		GlobalState: resultJson.GlobalState,
 	}, nil
+}
+
+func RedisStreamForRoot(moduleRoot common.Hash) string {
+	return fmt.Sprintf("stream:%s", moduleRoot.Hex())
+}
+
+type Request struct {
+	Input      *InputJSON
+	ModuleRoot common.Hash
+}
+
+type InputJSON struct {
+	Id            uint64
+	HasDelayedMsg bool
+	DelayedMsgNr  uint64
+	PreimagesB64  map[arbutil.PreimageType]*jsonapi.PreimagesMapJson
+	BatchInfo     []BatchInfoJson
+	DelayedMsgB64 string
+	StartState    validator.GoGlobalState
+}
+
+type BatchInfoJson struct {
+	Number  uint64
+	DataB64 string
+}
+
+type RedisValidationServerConfig struct {
+	RedisURL       string                `koanf:"redis-url"`
+	ConsumerConfig pubsub.ConsumerConfig `koanf:"consumer-config"`
+	// Supported wasm module roots.
+	ModuleRoots []string `koanf:"module-roots"`
+}
+
+var DefaultRedisValidationServerConfig = RedisValidationServerConfig{
+	RedisURL:       "",
+	ConsumerConfig: pubsub.DefaultConsumerConfig,
+	ModuleRoots:    []string{},
+}
+
+var TestRedisValidationServerConfig = RedisValidationServerConfig{
+	RedisURL:       "",
+	ConsumerConfig: pubsub.TestConsumerConfig,
+	ModuleRoots:    []string{},
+}
+
+func RedisValidationServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	pubsub.ConsumerConfigAddOptions(prefix+".consumer-config", f)
+	f.StringSlice(prefix+".module-roots", nil, "Supported module root hashes")
 }

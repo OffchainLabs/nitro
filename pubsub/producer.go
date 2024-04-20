@@ -61,15 +61,6 @@ type ProducerConfig struct {
 	CheckResultInterval time.Duration `koanf:"check-result-interval"`
 }
 
-func (c ProducerConfig) Clone() ProducerConfig {
-	return ProducerConfig{
-		EnableReproduce:      c.EnableReproduce,
-		CheckPendingInterval: c.CheckPendingInterval,
-		KeepAliveTimeout:     c.KeepAliveTimeout,
-		CheckResultInterval:  c.CheckResultInterval,
-	}
-}
-
 var DefaultProducerConfig = ProducerConfig{
 	EnableReproduce:      true,
 	CheckPendingInterval: time.Second,

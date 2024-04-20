@@ -1,4 +1,4 @@
-package server_api
+package valnode
 
 import (
 	"context"
@@ -11,7 +11,7 @@ import (
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
-	"github.com/offchainlabs/nitro/validator/server_api/validation"
+	"github.com/offchainlabs/nitro/validator/server_api"
 )
 
 // RedisValidationServer implements consumer for the requests originated from
@@ -24,7 +24,7 @@ type RedisValidationServer struct {
 	consumers map[common.Hash]*pubsub.Consumer[*validator.ValidationInput, validator.GoGlobalState]
 }
 
-func NewRedisValidationServer(cfg *validation.RedisValidationServerConfig, spawner validator.ValidationSpawner) (*RedisValidationServer, error) {
+func NewRedisValidationServer(cfg *server_api.RedisValidationServerConfig, spawner validator.ValidationSpawner) (*RedisValidationServer, error) {
 	if cfg.RedisURL == "" {
 		return nil, fmt.Errorf("redis url cannot be empty")
 	}
@@ -35,7 +35,7 @@ func NewRedisValidationServer(cfg *validation.RedisValidationServerConfig, spawn
 	consumers := make(map[common.Hash]*pubsub.Consumer[*validator.ValidationInput, validator.GoGlobalState])
 	for _, hash := range cfg.ModuleRoots {
 		mr := common.HexToHash(hash)
-		c, err := pubsub.NewConsumer[*validator.ValidationInput, validator.GoGlobalState](redisClient, RedisStreamForRoot(mr), &cfg.ConsumerConfig)
+		c, err := pubsub.NewConsumer[*validator.ValidationInput, validator.GoGlobalState](redisClient, server_api.RedisStreamForRoot(mr), &cfg.ConsumerConfig)
 		if err != nil {
 			return nil, fmt.Errorf("creating consumer for validation: %w", err)
 		}
