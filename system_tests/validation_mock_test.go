@@ -67,10 +67,12 @@ func (s *mockSpawner) Launch(entry *validator.ValidationInput, moduleRoot common
 
 var mockWasmModuleRoot common.Hash = common.HexToHash("0xa5a5a5")
 
-func (s *mockSpawner) Start(context.Context) error { return nil }
-func (s *mockSpawner) Stop()                       {}
-func (s *mockSpawner) Name() string                { return "mock" }
-func (s *mockSpawner) Room() int                   { return 4 }
+func (s *mockSpawner) Start(context.Context) error {
+	return nil
+}
+func (s *mockSpawner) Stop()        {}
+func (s *mockSpawner) Name() string { return "mock" }
+func (s *mockSpawner) Room() int    { return 4 }
 
 func (s *mockSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
 	s.ExecSpawned = append(s.ExecSpawned, input.Id)

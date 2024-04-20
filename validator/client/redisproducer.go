@@ -26,7 +26,7 @@ type RedisValidationClientConfig struct {
 }
 
 func (c RedisValidationClientConfig) Enabled() bool {
-	return len(c.ModuleRoots) > 0
+	return c.RedisURL != ""
 }
 
 var DefaultRedisValidationClientConfig = RedisValidationClientConfig{

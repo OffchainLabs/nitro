@@ -195,10 +195,12 @@ func NewStatelessBlockValidator(
 	stack *node.Node,
 ) (*StatelessBlockValidator, error) {
 	var validationSpawners []validator.ValidationSpawner
-	redisValClient, err := validatorclient.NewRedisValidationClient(&config().RedisValidationClientConfig)
-	if err != nil {
-		log.Error("Creating redis validation client", "error", err)
-	} else {
+	if config().RedisValidationClientConfig.Enabled() {
+		redisValClient, err := validatorclient.NewRedisValidationClient(&config().RedisValidationClientConfig)
+		if err != nil {
+			return nil, fmt.Errorf("creating new redis validation client: %w", err)
+			// log.Error("Creating redis validation client, redis validator disabled", "error", err)
+		}
 		validationSpawners = append(validationSpawners, redisValClient)
 	}
 	for _, serverConfig := range config().ValidationServerConfigs {
@@ -427,17 +429,17 @@ func (v *StatelessBlockValidator) OverrideRecorder(t *testing.T, recorder execut
 func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
 	for _, spawner := range v.validationSpawners {
 		if err := spawner.Start(ctx_in); err != nil {
-			return err
+			return fmt.Errorf("starting validation spawner: %w", err)
 		}
 	}
 	if err := v.execSpawner.Start(ctx_in); err != nil {
-		return err
+		return fmt.Errorf("starting execution spawner: %w", err)
 	}
 	if v.config.PendingUpgradeModuleRoot != "" {
 		if v.config.PendingUpgradeModuleRoot == "latest" {
 			latest, err := v.execSpawner.LatestWasmModuleRoot().Await(ctx_in)
 			if err != nil {
-				return err
+				return fmt.Errorf("getting latest wasm module root: %w", err)
 			}
 			v.pendingWasmModuleRoot = latest
 		} else {

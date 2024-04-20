@@ -51,10 +51,8 @@ func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot c
 func (c *ValidationClient) Start(ctx_in context.Context) error {
 	c.StopWaiter.Start(ctx_in, c)
 	ctx := c.GetContext()
-	if c.client != nil {
-		if err := c.client.Start(ctx); err != nil {
-			return err
-		}
+	if err := c.client.Start(ctx); err != nil {
+		return err
 	}
 	var name string
 	if err := c.client.CallContext(ctx, &name, server_api.Namespace+"_name"); err != nil {
