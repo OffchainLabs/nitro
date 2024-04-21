@@ -309,7 +309,6 @@ impl Memory {
     }
 
     pub fn resize(&mut self, new_size: usize) {
-        println!("Resizing memory.");
         self.buffer.resize(new_size, 0);
         if let Some(mut merkle) = self.merkle.take() {
             let extra = new_size - merkle.len();
