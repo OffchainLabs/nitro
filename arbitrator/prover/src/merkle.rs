@@ -144,6 +144,12 @@ impl Merkle {
                     .get(right_child_idx)
                     .cloned()
                     .unwrap_or_else(|| self.empty_layers[layer_i - 1]);
+                let new_hash = hash_node(self.ty, left, right);
+                if *idx < layers[layer_i].len() {
+                    layers[layer_i][*idx] = new_hash;
+                } else {
+                    layers[layer_i].push(new_hash);
+                }
                 layers[layer_i][*idx] = hash_node(self.ty, left, right);
                 if layer_i < layers.len() - 1 {
                     next_dirty.insert(idx >> 1);

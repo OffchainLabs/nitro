@@ -11,7 +11,7 @@ mod kzg;
 pub mod machine;
 /// cbindgen:ignore
 mod memory;
-mod merkle;
+pub mod merkle;
 mod print;
 pub mod programs;
 mod reinterpret;

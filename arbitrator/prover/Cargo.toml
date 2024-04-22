@@ -40,6 +40,14 @@ c-kzg = { version = "0.4.0", optional = true } # TODO: look into switching to ru
 sha2 = "0.9.9"
 lru = "0.12.3"
 
+[dev-dependencies]
+criterion = { version = "0.5.0", features = ["html_reports"] }
+rand = "0.8.4"
+
+[[bench]]
+name = "merkle_bench"
+harness = false
+
 [lib]
 name = "prover"
 crate-type = ["staticlib", "lib"]
