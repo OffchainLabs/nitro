@@ -115,7 +115,7 @@ type PebbleConfig struct {
 	WALDir                      string                   `koanf:"wal-dir"`
 	WALMinSyncInterval          int                      `koanf:"wal-min-sync-interval"`
 	TargetByteDeletionRate      int                      `koanf:"target-byte-deletion-rate"`
-	Experimental                PebbleExperimentalConfig `koaf:"experimental"`
+	Experimental                PebbleExperimentalConfig `koanf:"experimental"`
 }
 
 var PebbleConfigDefault = PebbleConfig{
@@ -144,7 +144,7 @@ func PebbleConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".wal-bytes-per-sync", PebbleConfigDefault.WALBytesPerSync, "number of bytes to write to a write-ahead log (WAL) before calling Sync on it in the backgroud (0 = pebble default)")
 	f.String(prefix+".wal-dir", PebbleConfigDefault.WALDir, "directory to store write-ahead logs (WALs) in. If empty, WALs will be stored in the same directory as sstables")
 	f.Int(prefix+".wal-min-sync-interval", PebbleConfigDefault.WALMinSyncInterval, "minimum duration in microseconds between syncs of the WAL. If WAL syncs are requested faster than this interval, they will be artificially delayed.")
-	PebbleExperimentalConfigAddOptions(".experimental", f)
+	PebbleExperimentalConfigAddOptions(prefix+".experimental", f)
 }
 
 type PebbleExperimentalConfig struct {
