@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/redisutil"
@@ -23,10 +24,33 @@ type RedisValidationClientConfig struct {
 	ProducerConfig pubsub.ProducerConfig `koanf:"producer-config"`
 	// Supported wasm module roots, when the list is empty this is disabled.
 	ModuleRoots []string `koanf:"module-roots"`
+	moduleRoots []common.Hash
 }
 
 func (c RedisValidationClientConfig) Enabled() bool {
 	return c.RedisURL != ""
+}
+
+func (c *RedisValidationClientConfig) Validate() error {
+	m := make(map[string]bool)
+	// Add all moduleRoot hashes in case Validate is called twice so that we
+	// don't add duplicate moduleRoots again.
+	for _, mr := range c.moduleRoots {
+		m[mr.Hex()] = true
+	}
+	for _, mr := range c.ModuleRoots {
+		if _, exists := m[mr]; exists {
+			log.Warn("Duplicate module root", "hash", mr)
+			continue
+		}
+		h := common.HexToHash(mr)
+		if h == (common.Hash{}) {
+			return fmt.Errorf("invalid module root hash: %q", mr)
+		}
+		m[mr] = true
+		c.moduleRoots = append(c.moduleRoots, h)
+	}
+	return nil
 }
 
 var DefaultRedisValidationClientConfig = RedisValidationClientConfig{
@@ -72,11 +96,10 @@ func NewRedisValidationClient(cfg *RedisValidationClientConfig) (*RedisValidatio
 	if err != nil {
 		return nil, err
 	}
-	if len(cfg.ModuleRoots) == 0 {
+	if len(cfg.moduleRoots) == 0 {
 		return nil, fmt.Errorf("moduleRoots must be specified to enable redis streams")
 	}
-	for _, hash := range cfg.ModuleRoots {
-		mr := common.HexToHash(hash)
+	for _, mr := range cfg.moduleRoots {
 		p, err := pubsub.NewProducer[*validator.ValidationInput, validator.GoGlobalState](
 			redisClient, server_api.RedisStreamForRoot(mr), &cfg.ProducerConfig)
 		if err != nil {

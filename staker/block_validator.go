@@ -134,6 +134,9 @@ func (c *BlockValidatorConfig) Validate() error {
 	if err := c.ExecutionServerConfig.Validate(); err != nil {
 		return fmt.Errorf("validating execution server config: %w", err)
 	}
+	if err := c.RedisValidationClientConfig.Validate(); err != nil {
+		return fmt.Errorf("validating redis validation client configuration: %w", err)
+	}
 	return nil
 }
 
@@ -146,6 +149,8 @@ type BlockValidatorConfigFetcher func() *BlockValidatorConfig
 func BlockValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block-by-block validation")
 	rpcclient.RPCClientAddOptions(prefix+".validation-server", f, &DefaultBlockValidatorConfig.ValidationServer)
+	rpcclient.RPCClientAddOptions(prefix+".execution-server-config", f, &DefaultBlockValidatorConfig.ExecutionServerConfig)
+	validatorclient.RedisValidationClientConfigAddOptions(prefix+"redis-validation-client-config", f)
 	f.String(prefix+".validation-server-configs-list", DefaultBlockValidatorConfig.ValidationServerConfigsList, "array of validation rpc configs given as a json string. time duration should be supplied in number indicating nanoseconds")
 	f.Duration(prefix+".validation-poll", DefaultBlockValidatorConfig.ValidationPoll, "poll time to check validations")
 	f.Uint64(prefix+".forward-blocks", DefaultBlockValidatorConfig.ForwardBlocks, "prepare entries for up to that many blocks ahead of validation (small footprint)")
@@ -165,6 +170,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                      false,
 	ValidationServerConfigsList: "default",
 	ValidationServer:            rpcclient.DefaultClientConfig,
+	ExecutionServerConfig:       rpcclient.DefaultClientConfig,
 	ValidationPoll:              time.Second,
 	ForwardBlocks:               1024,
 	PrerecordedBlocks:           uint64(2 * runtime.NumCPU()),

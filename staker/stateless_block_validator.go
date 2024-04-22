@@ -208,7 +208,10 @@ func NewStatelessBlockValidator(
 		validationSpawners = append(validationSpawners, validatorclient.NewValidationClient(valConfFetcher, stack))
 	}
 
-	validator := &StatelessBlockValidator{
+	valConfFetcher := func() *rpcclient.ClientConfig {
+		return &config().ExecutionServerConfig
+	}
+	return &StatelessBlockValidator{
 		config:             config(),
 		recorder:           recorder,
 		validationSpawners: validationSpawners,
@@ -218,12 +221,8 @@ func NewStatelessBlockValidator(
 		db:                 arbdb,
 		daService:          das,
 		blobReader:         blobReader,
-	}
-	valConfFetcher := func() *rpcclient.ClientConfig {
-		return &config().ExecutionServerConfig
-	}
-	validator.execSpawner = validatorclient.NewExecutionClient(valConfFetcher, stack)
-	return validator, nil
+		execSpawner:        validatorclient.NewExecutionClient(valConfFetcher, stack),
+	}, nil
 }
 
 func (v *StatelessBlockValidator) GetModuleRootsToValidate() []common.Hash {
