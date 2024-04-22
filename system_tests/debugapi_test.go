@@ -55,4 +55,10 @@ func TestDebugAPI(t *testing.T) {
 	flatCallTracer := "flatCallTracer"
 	err = l2rpc.CallContext(ctx, &result, "debug_traceTransaction", tx.Hash(), &tracers.TraceConfig{Tracer: &flatCallTracer})
 	Require(t, err)
+
+	timeout := "100us"
+	err = l2rpc.CallContext(ctx, &result, "debug_traceBlockByNumber", rpc.LatestBlockNumber, &tracers.TraceConfig{Tracer: &flatCallTracer, Timeout: &timeout})
+	if err == nil {
+		t.Fatal("Expected error, but got nil")
+	}
 }
