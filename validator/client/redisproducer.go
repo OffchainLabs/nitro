@@ -58,6 +58,7 @@ var DefaultRedisValidationClientConfig = RedisValidationClientConfig{
 	Room:           2,
 	RedisURL:       "",
 	ProducerConfig: pubsub.DefaultProducerConfig,
+	ModuleRoots:    []string{},
 }
 
 var TestRedisValidationClientConfig = RedisValidationClientConfig{
@@ -65,6 +66,7 @@ var TestRedisValidationClientConfig = RedisValidationClientConfig{
 	Room:           2,
 	RedisURL:       "",
 	ProducerConfig: pubsub.TestProducerConfig,
+	ModuleRoots:    []string{},
 }
 
 func RedisValidationClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
