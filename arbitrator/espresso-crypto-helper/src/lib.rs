@@ -2,12 +2,15 @@ mod bytes;
 mod sequencer_data_structures;
 
 use ark_bn254::Bn254;
-use ark_serialize::CanonicalDeserialize;
-use committable::Commitment;
+use ark_ff::PrimeField;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use committable::{Commitment, Committable};
 use jf_primitives::{
+    crhf::{VariableLengthRescueCRHF, CRHF},
+    errors::PrimitivesError,
     merkle_tree::{
         prelude::{MerkleNode, MerkleProof, Sha3Node},
-        MerkleTreeScheme,
+        MerkleCommitment, MerkleTreeScheme,
     },
     pcs::prelude::UnivariateUniversalParams,
     vid::{advz::Advz, VidScheme as VidSchemeTrait},
@@ -23,6 +26,7 @@ use crate::bytes::Bytes;
 
 pub type VidScheme = Advz<Bn254, sha2::Sha256>;
 pub type Proof = Vec<MerkleNode<Commitment<Header>, u64, Sha3Node>>;
+pub type CircuitField = ark_ed_on_bn254::Fq;
 
 lazy_static! {
     // Initialize the byte array from JSON content
@@ -36,22 +40,35 @@ lazy_static! {
 //
 // proof_bytes: Byte representation of a block merkle proof.
 // root_bytes: Byte representation of a Sha3Node merkle root.
-// block_comm_bytes: Byte representation of the expected commitment of the leaf being verified.
-pub fn verify_merkle_proof_helper(root_bytes: &[u8], proof_bytes: &[u8], block_comm_bytes: &[u8]) {
+// header_bytes: Byte representation of the HotShot header being validated as a Merkle leaf.
+// circuit_block_bytes: Circuit representation of the HotShot header commitment returned by the light client contract.
+pub fn verify_merkle_proof_helper(
+    proof_bytes: &[u8],
+    header_bytes: &[u8],
+    _circuit_block_bytes: &[u8],
+) {
     let proof_str = std::str::from_utf8(proof_bytes).unwrap();
+    let header_str = std::str::from_utf8(header_bytes).unwrap();
 
     let proof: Proof = serde_json::from_str(proof_str).unwrap();
-    let block_comm: Commitment<Header> =
-        Commitment::<Header>::deserialize_uncompressed_unchecked(block_comm_bytes).unwrap();
-    let root_comm: Sha3Node = Sha3Node::deserialize_uncompressed_unchecked(root_bytes).unwrap();
+    let header: Header = serde_json::from_str(header_str).unwrap();
+    let block_comm: Commitment<Header> = header.commit();
 
-    // let (comm, _) = tree.lookup(0).expect_ok().unwrap();
-    let proof = MerkleProof::new(0, proof.to_vec());
+    let proof = MerkleProof::new(header.height, proof.to_vec());
     let proved_comm = proof.elem().unwrap().clone();
-    BlockMerkleTree::verify(root_comm, 0, proof)
+    BlockMerkleTree::verify(header.block_merkle_tree_root.digest(), 0, proof)
         .unwrap()
         .unwrap();
+
     assert!(proved_comm == block_comm);
+
+    let mut block_comm_root_bytes = vec![];
+    block_comm
+        .serialize_compressed(&mut block_comm_root_bytes)
+        .unwrap();
+    let bytes = hash_bytes_to_field(&block_comm_root_bytes).unwrap();
+    // TOOD: check that circuit bytes match hashed leaf
+    dbg!(bytes);
 }
 
 // Helper function to verify a VID namespace proof that takes the byte representations of the proof,
@@ -110,10 +127,19 @@ fn hash_txns(namespace: u64, txns: &[Transaction]) -> String {
     format!("{:x}", hash_result)
 }
 
+fn hash_bytes_to_field(bytes: &[u8]) -> Result<CircuitField, PrimitivesError> {
+    // make sure that `mod_order` won't happen.
+    let bytes_len = ((<CircuitField as PrimeField>::MODULUS_BIT_SIZE + 7) / 8 - 1) as usize;
+    let elem = bytes
+        .chunks(bytes_len)
+        .map(CircuitField::from_le_bytes_mod_order)
+        .collect::<Vec<_>>();
+    Ok(VariableLengthRescueCRHF::<_, 1>::evaluate(elem)?[0])
+}
+
 #[cfg(test)]
 mod test {
     use super::*;
-    use ark_serialize::CanonicalSerialize;
     use jf_primitives::pcs::{
         checked_fft_size, prelude::UnivariateKzgPCS, PolynomialCommitmentScheme,
     };
@@ -137,7 +163,16 @@ mod test {
     #[test]
     fn test_verify_merkle_proof_helper() {
         let proof_bytes = PROOF.clone().as_bytes();
-        verify_merkle_proof_helper(&[], &proof_bytes, &[])
+        let commit_str =
+            "MERKLE_COMM~Al5pIe5Gb0OYxtWY2pmPvwy7BSlv5CZH4bzrMxYC0r8gAAAAAAAAAA4AAAAAAAAAhA";
+        let tagged = TaggedBase64::parse(&commit_str).unwrap();
+        let block_comm: BlockMerkleCommitment = tagged.try_into().unwrap();
+        let mut block_comm_root_bytes = vec![];
+        block_comm
+            .serialize_compressed(&mut block_comm_root_bytes)
+            .unwrap();
+        let bytes = hash_bytes_to_field(&block_comm_root_bytes).unwrap();
+        dbg!(bytes);
     }
 
     #[test]

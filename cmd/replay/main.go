@@ -299,14 +299,15 @@ func main() {
 			} else {
 				panic(fmt.Sprintf("invalid hotshot block height: %v, got: %v", height, validatedHeight+1))
 			}
-			if !commitment.Equals(hotshotHeader.Commit()) {
-				panic(fmt.Sprintf("invalid hotshot header jst header at %v expected: %v, provided %v.", height, hotshotHeader.Commit(), commitment))
-			}
 			if jst.BlockMerkleJustification == nil {
 				panic("block merkle justification missing")
 			}
+			jsonHeader, err := json.Marshal(hotshotHeader)
+			if err != nil {
+				panic("unable to serialize header")
+			}
 			espressocrypto.VerifyNamespace(chainConfig.ChainID.Uint64(), *jst.Proof, *jst.Header.PayloadCommitment, *jst.Header.NsTable, txs)
-			espressocrypto.VerifyMerkleProof(commitment, *jst.BlockMerkleJustification.BlockMerkleProof, jst.Header.Commit())
+			espressocrypto.VerifyMerkleProof(*jst.BlockMerkleJustification.BlockMerkleProof, jsonHeader, commitment)
 		}
 
 		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher)

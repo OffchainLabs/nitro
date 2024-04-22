@@ -1069,6 +1069,8 @@ name = "espresso-crypto-helper"
 version = "0.1.0"
 dependencies = [
  "ark-bn254",
+ "ark-ed-on-bn254",
+ "ark-ff",
  "ark-serialize",
  "base64 0.22.0",
  "base64-bytes",

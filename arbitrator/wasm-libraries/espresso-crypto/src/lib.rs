@@ -33,16 +33,16 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_espressocrypto_verify
 pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_espressocrypto_verifyMerkleProof(
     sp: GoStack,
 ) {
-    let root_buf_ptr = sp.read_u64(0);
-    let root_buf_len = sp.read_u64(1);
-    let proof_buf_ptr = sp.read_u64(3);
-    let proof_buf_len = sp.read_u64(4);
-    let block_comm_buf_ptr = sp.read_u64(6);
-    let block_comm_buf_len = sp.read_u64(7);
+    let proof_buf_ptr = sp.read_u64(0);
+    let proof_buf_len = sp.read_u64(1);
+    let header_buf_ptr = sp.read_u64(3);
+    let header_buf_len = sp.read_u64(4);
+    let circuit_buf_ptr = sp.read_u64(6);
+    let circuit_buf_len = sp.read_u64(7);
 
-    let root_bytes = read_slice(root_buf_ptr, root_buf_len);
     let proof_bytes = read_slice(proof_buf_ptr, proof_buf_len);
-    let block_comm_bytes = read_slice(block_comm_buf_ptr, block_comm_buf_len);
+    let header_bytes = read_slice(header_buf_ptr, header_buf_len);
+    let circuit_comm_bytes = read_slice(circuit_buf_ptr, circuit_buf_len);
 
-    verify_merkle_proof_helper(&root_bytes, &proof_bytes, &block_comm_bytes)
+    verify_merkle_proof_helper(&proof_bytes, &header_bytes, &circuit_comm_bytes)
 }

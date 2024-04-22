@@ -6,6 +6,8 @@ edition = "2021"
 
 [dependencies]
 ark-bn254 = "0.4"
+ark-ed-on-bn254 = "0.4"
+ark-ff = "0.4"
 ark-serialize = { version = "0.4", features = ["derive"] }
 base64 = "0.22"
 derive_more = "0.99.17"

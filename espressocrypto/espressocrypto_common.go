@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
+	"encoding/json"
 
 	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 )
@@ -29,6 +30,6 @@ func VerifyNamespace(namespace uint64, proof espressoTypes.NamespaceProof, block
 	verifyNamespace(namespace, proof, []byte(block_comm.String()), ns_table.Bytes, []byte(txnComm))
 }
 
-func VerifyMerkleProof(merkle_root espressoTypes.BlockMerkleRoot, proof espressoTypes.HotShotBlockMerkleProof, block_comm espressoTypes.Commitment) {
-	verifyMerkleProof(merkle_root, proof, block_comm)
+func VerifyMerkleProof(proof espressoTypes.HotShotBlockMerkleProof, header json.RawMessage, circuit_comm_bytes espressoTypes.Commitment) {
+	verifyMerkleProof(proof, header, circuit_comm_bytes)
 }
