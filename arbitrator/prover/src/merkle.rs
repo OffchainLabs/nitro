@@ -5,6 +5,7 @@ use arbutil::Bytes32;
 use digest::Digest;
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
+use core::panic;
 use std::convert::{TryFrom, TryInto};
 
 #[cfg(feature = "rayon")]
@@ -203,7 +204,13 @@ impl Merkle {
         let empty_layers = &self.empty_layers;
         let layers_len = self.layers.len();
         for (layer_i, layer) in self.layers.iter_mut().enumerate() {
-            layer[idx] = next_hash;
+            if idx < layer.len() {
+                layer[idx] = next_hash;
+            } else if idx == layer.len() {
+                layer.push(next_hash);
+            } else {
+                panic!("Index {} out of bounds {}", idx, layer.len());
+            }
             if layer_i == layers_len - 1 {
                 // next_hash isn't needed
                 break;
