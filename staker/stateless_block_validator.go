@@ -199,7 +199,6 @@ func NewStatelessBlockValidator(
 		redisValClient, err := validatorclient.NewRedisValidationClient(&config().RedisValidationClientConfig)
 		if err != nil {
 			return nil, fmt.Errorf("creating new redis validation client: %w", err)
-			// log.Error("Creating redis validation client, redis validator disabled", "error", err)
 		}
 		validationSpawners = append(validationSpawners, redisValClient)
 	}
@@ -223,6 +222,19 @@ func NewStatelessBlockValidator(
 		blobReader:         blobReader,
 		execSpawner:        validatorclient.NewExecutionClient(valConfFetcher, stack),
 	}, nil
+}
+
+func (v *StatelessBlockValidator) Initialize(moduleRoots []common.Hash) error {
+	if len(v.validationSpawners) == 0 {
+		return nil
+	}
+	// First spawner is always RedisValidationClient if RedisStreams are enabled.
+	if v, ok := v.validationSpawners[0].(*validatorclient.RedisValidationClient); ok {
+		if err := v.Initialize(moduleRoots); err != nil {
+			return fmt.Errorf("initializing redis validation client module roots: %w", err)
+		}
+	}
+	return nil
 }
 
 func (v *StatelessBlockValidator) GetModuleRootsToValidate() []common.Hash {

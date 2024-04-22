@@ -74,7 +74,6 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 	if useRedisStreams {
 		redisURL = redisutil.CreateTestRedis(ctx, t)
 		validatorConfig.BlockValidator.RedisValidationClientConfig = validatorclient.DefaultRedisValidationClientConfig
-		validatorConfig.BlockValidator.RedisValidationClientConfig.ModuleRoots = []string{currentRootModule(t).Hex()}
 		validatorConfig.BlockValidator.RedisValidationClientConfig.RedisURL = redisURL
 		validatorConfig.BlockValidator.ValidationServerConfigs = nil
 	}

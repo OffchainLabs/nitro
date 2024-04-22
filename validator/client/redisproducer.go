@@ -7,6 +7,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/redisutil"
@@ -22,35 +23,10 @@ type RedisValidationClientConfig struct {
 	Room           int32                 `koanf:"room"`
 	RedisURL       string                `koanf:"redis-url"`
 	ProducerConfig pubsub.ProducerConfig `koanf:"producer-config"`
-	// Supported wasm module roots, when the list is empty this is disabled.
-	ModuleRoots []string `koanf:"module-roots"`
-	moduleRoots []common.Hash
 }
 
 func (c RedisValidationClientConfig) Enabled() bool {
 	return c.RedisURL != ""
-}
-
-func (c *RedisValidationClientConfig) Validate() error {
-	m := make(map[string]bool)
-	// Add all moduleRoot hashes in case Validate is called twice so that we
-	// don't add duplicate moduleRoots again.
-	for _, mr := range c.moduleRoots {
-		m[mr.Hex()] = true
-	}
-	for _, mr := range c.ModuleRoots {
-		if _, exists := m[mr]; exists {
-			log.Warn("Duplicate module root", "hash", mr)
-			continue
-		}
-		h := common.HexToHash(mr)
-		if h == (common.Hash{}) {
-			return fmt.Errorf("invalid module root hash: %q", mr)
-		}
-		m[mr] = true
-		c.moduleRoots = append(c.moduleRoots, h)
-	}
-	return nil
 }
 
 var DefaultRedisValidationClientConfig = RedisValidationClientConfig{
@@ -58,7 +34,6 @@ var DefaultRedisValidationClientConfig = RedisValidationClientConfig{
 	Room:           2,
 	RedisURL:       "",
 	ProducerConfig: pubsub.DefaultProducerConfig,
-	ModuleRoots:    []string{},
 }
 
 var TestRedisValidationClientConfig = RedisValidationClientConfig{
@@ -66,14 +41,12 @@ var TestRedisValidationClientConfig = RedisValidationClientConfig{
 	Room:           2,
 	RedisURL:       "",
 	ProducerConfig: pubsub.TestProducerConfig,
-	ModuleRoots:    []string{},
 }
 
 func RedisValidationClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".name", DefaultRedisValidationClientConfig.Name, "validation client name")
 	f.Int32(prefix+".room", DefaultRedisValidationClientConfig.Room, "validation client room")
 	pubsub.ProducerAddConfigAddOptions(prefix+".producer-config", f)
-	f.StringSlice(prefix+".module-roots", nil, "Supported module root hashes")
 }
 
 // RedisValidationClient implements validation client through redis streams.
@@ -82,15 +55,12 @@ type RedisValidationClient struct {
 	name string
 	room int32
 	// producers stores moduleRoot to producer mapping.
-	producers map[common.Hash]*pubsub.Producer[*validator.ValidationInput, validator.GoGlobalState]
+	producers      map[common.Hash]*pubsub.Producer[*validator.ValidationInput, validator.GoGlobalState]
+	producerConfig pubsub.ProducerConfig
+	redisClient    redis.UniversalClient
 }
 
 func NewRedisValidationClient(cfg *RedisValidationClientConfig) (*RedisValidationClient, error) {
-	res := &RedisValidationClient{
-		name:      cfg.Name,
-		room:      cfg.Room,
-		producers: make(map[common.Hash]*pubsub.Producer[*validator.ValidationInput, validator.GoGlobalState]),
-	}
 	if cfg.RedisURL == "" {
 		return nil, fmt.Errorf("redis url cannot be empty")
 	}
@@ -98,18 +68,30 @@ func NewRedisValidationClient(cfg *RedisValidationClientConfig) (*RedisValidatio
 	if err != nil {
 		return nil, err
 	}
-	if len(cfg.moduleRoots) == 0 {
-		return nil, fmt.Errorf("moduleRoots must be specified to enable redis streams")
-	}
-	for _, mr := range cfg.moduleRoots {
-		p, err := pubsub.NewProducer[*validator.ValidationInput, validator.GoGlobalState](
-			redisClient, server_api.RedisStreamForRoot(mr), &cfg.ProducerConfig)
-		if err != nil {
-			return nil, fmt.Errorf("creating producer for validation: %w", err)
+	return &RedisValidationClient{
+		name:           cfg.Name,
+		room:           cfg.Room,
+		producers:      make(map[common.Hash]*pubsub.Producer[*validator.ValidationInput, validator.GoGlobalState]),
+		producerConfig: cfg.ProducerConfig,
+		redisClient:    redisClient,
+	}, nil
+}
+
+func (c *RedisValidationClient) Initialize(moduleRoots []common.Hash) error {
+	for _, mr := range moduleRoots {
+		if _, exists := c.producers[mr]; exists {
+			log.Warn("Producer already existsw for module root", "hash", mr)
+			continue
 		}
-		res.producers[mr] = p
+		p, err := pubsub.NewProducer[*validator.ValidationInput, validator.GoGlobalState](
+			c.redisClient, server_api.RedisStreamForRoot(mr), &c.producerConfig)
+		if err != nil {
+			return fmt.Errorf("creating producer for validation: %w", err)
+		}
+		p.Start(c.GetContext())
+		c.producers[mr] = p
 	}
-	return res, nil
+	return nil
 }
 
 func (c *RedisValidationClient) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {

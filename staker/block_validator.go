@@ -134,9 +134,6 @@ func (c *BlockValidatorConfig) Validate() error {
 	if err := c.ExecutionServerConfig.Validate(); err != nil {
 		return fmt.Errorf("validating execution server config: %w", err)
 	}
-	if err := c.RedisValidationClientConfig.Validate(); err != nil {
-		return fmt.Errorf("validating redis validation client configuration: %w", err)
-	}
 	return nil
 }
 
@@ -1068,6 +1065,9 @@ func (v *BlockValidator) Initialize(ctx context.Context) error {
 		}
 	}
 	log.Info("BlockValidator initialized", "current", v.currentWasmModuleRoot, "pending", v.pendingWasmModuleRoot)
+	if err := v.StatelessBlockValidator.Initialize([]common.Hash{v.currentWasmModuleRoot, v.pendingWasmModuleRoot}); err != nil {
+		return fmt.Errorf("initializing block validator with module roots: %w", err)
+	}
 	return nil
 }
 
