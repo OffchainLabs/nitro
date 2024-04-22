@@ -234,7 +234,7 @@ impl Memory {
         let buf = value.to_le_bytes();
         self.buffer[idx..end_idx].copy_from_slice(&buf[..bytes.into()]);
 
-        if let Some(mut merkle) = self.merkle.take() {
+        if let Some(merkle) = self.merkle.take() {
             let start_leaf = idx / Self::LEAF_SIZE;
             merkle.set(start_leaf, hash_leaf(self.get_leaf_data(start_leaf)));
             let end_leaf = (end_idx - 1) / Self::LEAF_SIZE;
@@ -262,7 +262,7 @@ impl Memory {
         let end_idx = end_idx as usize;
         self.buffer[idx..end_idx].copy_from_slice(value);
 
-        if let Some(mut merkle) = self.merkle.take() {
+        if let Some(merkle) = self.merkle.take() {
             let start_leaf = idx / Self::LEAF_SIZE;
             merkle.set(start_leaf, hash_leaf(self.get_leaf_data(start_leaf)));
             // No need for second merkle
@@ -310,7 +310,7 @@ impl Memory {
 
     pub fn resize(&mut self, new_size: usize) {
         self.buffer.resize(new_size, 0);
-        if let Some(mut merkle) = self.merkle.take() {
+        if let Some(merkle) = self.merkle.take() {
             let extra = new_size - merkle.len();
             merkle.extend(vec![hash_leaf([0u8; 32]); extra])
             .expect("Couldn't extend merkle tree");
