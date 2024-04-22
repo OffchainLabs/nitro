@@ -5,7 +5,7 @@ use arbutil::Bytes32;
 use digest::Digest;
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
-use std::{collections::HashSet, convert::{TryFrom, TryInto}, sync::{Arc, Mutex, MutexGuard}};
+use std::{collections::BTreeSet, convert::{TryFrom, TryInto}, sync::{Arc, Mutex, MutexGuard}};
 
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
@@ -66,7 +66,7 @@ pub struct Merkle {
     empty_layers: Vec<Bytes32>,
     min_depth: usize,
     #[serde(skip)]
-    dirty_indices: Arc<Mutex<HashSet<usize>>>,
+    dirty_indices: Arc<Mutex<BTreeSet<usize>>>,
 }
 
 fn hash_node(ty: MerkleType, a: Bytes32, b: Bytes32) -> Bytes32 {
@@ -124,7 +124,7 @@ impl Merkle {
             layers: Arc::new(Mutex::new(layers)),
             empty_layers,
             min_depth,
-            dirty_indices: Arc::new(Mutex::new(HashSet::new())),
+            dirty_indices: Arc::new(Mutex::new(BTreeSet::new())),
         }
     }
 
@@ -132,7 +132,7 @@ impl Merkle {
         if self.dirty_indices.lock().unwrap().is_empty() {
             return;
         }
-        let mut next_dirty: HashSet<usize> = HashSet::new();
+        let mut next_dirty: BTreeSet<usize> = BTreeSet::new();
         let mut dirty = self.dirty_indices.lock().unwrap();
         let layers = &mut self.layers.lock().unwrap();
         for layer_i in 1..layers.len() {
