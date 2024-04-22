@@ -304,6 +304,10 @@ func (p *DataPoster) MaxMempoolTransactions() uint64 {
 	return arbmath.MinInt(config.MaxMempoolTransactions, config.MaxMempoolWeight)
 }
 
+func (p *DataPoster) UsingNoOpStorage() bool {
+	return p.usingNoOpStorage
+}
+
 var ErrExceedsMaxMempoolSize = errors.New("posting this transaction will exceed max mempool size")
 
 // Does basic check whether posting transaction with specified nonce would
@@ -828,6 +832,37 @@ func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransacti
 	if err := p.saveTx(ctx, prevTx, newTx); err != nil {
 		return err
 	}
+
+	// The following check is to avoid sending transactions of a different type (eg DynamicFeeTxType vs BlobTxType)
+	// to the previous tx if the previous tx is not yet included in a reorg resistant block, in order to avoid issues
+	// where eventual consistency of parent chain mempools causes a tx with higher nonce blocking a tx of a
+	// different type with a lower nonce.
+	// If we decide not to send this tx yet, just leave it queued and with Sent set to false.
+	// The resending/repricing loop in DataPoster.Start will keep trying.
+	if !newTx.Sent && newTx.FullTx.Nonce() > 0 {
+		precedingTx, err := p.queue.Get(ctx, arbmath.SaturatingUSub(newTx.FullTx.Nonce(), 1))
+		if err != nil {
+			return fmt.Errorf("couldn't get preceding tx in DataPoster to check if should send tx with nonce %d: %w", newTx.FullTx.Nonce(), err)
+		}
+		if precedingTx != nil && // precedingTx == nil -> the actual preceding tx was already confirmed
+			precedingTx.FullTx.Type() != newTx.FullTx.Type() {
+			latestBlockNumber, err := p.client.BlockNumber(ctx)
+			if err != nil {
+				return fmt.Errorf("couldn't get block number in DataPoster to check if should send tx with nonce %d: %w", newTx.FullTx.Nonce(), err)
+			}
+			prevBlockNumber := arbmath.SaturatingUSub(latestBlockNumber, 1)
+			reorgResistantNonce, err := p.client.NonceAt(ctx, p.Sender(), new(big.Int).SetUint64(prevBlockNumber))
+			if err != nil {
+				return fmt.Errorf("couldn't determine reorg resistant nonce in DataPoster to check if should send tx with nonce %d: %w", newTx.FullTx.Nonce(), err)
+			}
+
+			if precedingTx.FullTx.Nonce() > reorgResistantNonce {
+				log.Info("DataPoster is holding off on sending a transaction of different type to the previous transaction until the previous transaction has been included in a reorg resistant block (it remains queued and will be retried)", "nonce", newTx.FullTx.Nonce(), "prevType", precedingTx.FullTx.Type(), "type", newTx.FullTx.Type())
+				return nil
+			}
+		}
+	}
+
 	if err := p.client.SendTransaction(ctx, newTx.FullTx); err != nil {
 		if !rpcclient.IsAlreadyKnownError(err) && !strings.Contains(err.Error(), "nonce too low") {
 			log.Warn("DataPoster failed to send transaction", "err", err, "nonce", newTx.FullTx.Nonce(), "feeCap", newTx.FullTx.GasFeeCap(), "tipCap", newTx.FullTx.GasTipCap(), "blobFeeCap", newTx.FullTx.BlobGasFeeCap(), "gas", newTx.FullTx.Gas())
@@ -1068,19 +1103,21 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 			latestNonce = latestQueued.FullTx.Nonce()
 		}
 		for _, tx := range queueContents {
-			replacing := false
+			previouslyUnsent := !tx.Sent
+			sendAttempted := false
 			if now.After(tx.NextReplacement) {
-				replacing = true
 				nonceBacklog := arbmath.SaturatingUSub(latestNonce, tx.FullTx.Nonce())
 				weightBacklog := arbmath.SaturatingUSub(latestCumulativeWeight, tx.CumulativeWeight())
 				err := p.replaceTx(ctx, tx, arbmath.MaxInt(nonceBacklog, weightBacklog))
+				sendAttempted = true
 				p.maybeLogError(err, tx, "failed to replace-by-fee transaction")
 			}
 			if nextCheck.After(tx.NextReplacement) {
 				nextCheck = tx.NextReplacement
 			}
-			if !replacing && !tx.Sent {
+			if !sendAttempted && previouslyUnsent {
 				err := p.sendTx(ctx, tx, tx)
+				sendAttempted = true
 				p.maybeLogError(err, tx, "failed to re-send transaction")
 				if err != nil {
 					nextSend := time.Now().Add(time.Minute)
@@ -1088,6 +1125,12 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 						nextCheck = nextSend
 					}
 				}
+			}
+			if previouslyUnsent && sendAttempted {
+				// Don't try to send more than 1 unsent transaction, to play nicely with parent chain mempools.
+				// Transactions will be unsent if there was some error when originally sending them,
+				// or if transaction type changes and the prior tx is not yet reorg resistant.
+				break
 			}
 		}
 		wait := time.Until(nextCheck)

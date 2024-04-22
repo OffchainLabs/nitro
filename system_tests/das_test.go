@@ -25,6 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -175,10 +176,11 @@ func TestDASRekey(t *testing.T) {
 	l2stackA, err := node.New(stackConfig)
 	Require(t, err)
 
-	l2chainDb, err := l2stackA.OpenDatabase("chaindb", 0, 0, "", false)
+	// TODO get pebble.ExtraOptions from conf.PersistentConfig
+	l2chainDb, err := l2stackA.OpenDatabaseWithExtraOptions("l2chaindata", 0, 0, "l2chaindata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions())
 	Require(t, err)
 
-	l2arbDb, err := l2stackA.OpenDatabase("arbitrumdata", 0, 0, "", false)
+	l2arbDb, err := l2stackA.OpenDatabaseWithExtraOptions("arbitrumdata", 0, 0, "arbitrumdata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions())
 	Require(t, err)
 
 	l2blockchain, err := gethexec.GetBlockChain(l2chainDb, nil, chainConfig, gethexec.ConfigDefaultTest().TxLookupLimit)
