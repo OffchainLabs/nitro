@@ -101,3 +101,7 @@ func ValidationServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	pubsub.ConsumerConfigAddOptions(prefix+".consumer-config", f)
 	f.StringSlice(prefix+".module-roots", nil, "Supported module root hashes")
 }
+
+func (cfg *ValidationServerConfig) Enabled() bool {
+	return cfg.RedisURL != ""
+}

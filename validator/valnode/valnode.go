@@ -119,9 +119,13 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 	} else {
 		serverAPI = NewExecutionServerAPI(arbSpawner, arbSpawner, arbConfigFetcher)
 	}
-	redisConsumer, err := redis.NewValidationServer(&arbConfigFetcher().RedisValidationServerConfig, arbSpawner)
-	if err != nil {
-		log.Error("Creating new redis validation server", "error", err)
+	var redisConsumer *redis.ValidationServer
+	redisValidationConfig := arbConfigFetcher().RedisValidationServerConfig
+	if redisValidationConfig.Enabled() {
+		redisConsumer, err = redis.NewValidationServer(&redisValidationConfig, arbSpawner)
+		if err != nil {
+			log.Error("Creating new redis validation server", "error", err)
+		}
 	}
 	valAPIs := []rpc.API{{
 		Namespace:     server_api.Namespace,
