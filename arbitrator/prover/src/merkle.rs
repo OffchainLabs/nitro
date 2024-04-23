@@ -3,9 +3,10 @@
 
 use arbutil::Bytes32;
 use digest::Digest;
+use itertools::sorted;
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
-use std::{collections::BTreeSet, convert::{TryFrom, TryInto}, sync::{Arc, Mutex, MutexGuard}};
+use std::{collections::HashSet, convert::{TryFrom, TryInto}, sync::{Arc, Mutex, MutexGuard}};
 
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
@@ -66,7 +67,7 @@ pub struct Merkle {
     empty_layers: Vec<Bytes32>,
     min_depth: usize,
     #[serde(skip)]
-    dirty_indices: Arc<Mutex<BTreeSet<usize>>>,
+    dirty_indices: Arc<Mutex<HashSet<usize>>>,
 }
 
 fn hash_node(ty: MerkleType, a: Bytes32, b: Bytes32) -> Bytes32 {
@@ -119,12 +120,13 @@ impl Merkle {
             empty_layers.push(hash_node(ty, empty_layer, empty_layer));
             layers.push(new_layer);
         }
+        let dirty_indices = Arc::new(Mutex::new(HashSet::with_capacity(layers[0].len())));
         Merkle {
             ty,
             layers: Arc::new(Mutex::new(layers)),
             empty_layers,
             min_depth,
-            dirty_indices: Arc::new(Mutex::new(BTreeSet::new())),
+            dirty_indices,
         }
     }
 
@@ -132,11 +134,12 @@ impl Merkle {
         if self.dirty_indices.lock().unwrap().is_empty() {
             return;
         }
-        let mut next_dirty: BTreeSet<usize> = BTreeSet::new();
-        let mut dirty = self.dirty_indices.lock().unwrap();
+        println!("Rehashing with dirty indices: {:?} of {:?}", self.dirty_indices.lock().unwrap().len(), self.len());
         let layers = &mut self.layers.lock().unwrap();
+        let mut next_dirty: HashSet<usize> = HashSet::with_capacity(layers[2].len());
+        let mut dirty = self.dirty_indices.lock().unwrap();
         for layer_i in 1..layers.len() {
-            for idx in dirty.iter() {
+            for idx in sorted(dirty.iter()) {
                 let left_child_idx = idx << 1;
                 let right_child_idx = left_child_idx + 1;
                 let left = layers[layer_i -1][left_child_idx];
@@ -156,7 +159,9 @@ impl Merkle {
                 }
             }
             dirty.clone_from(&next_dirty);
-            next_dirty.clear();
+            if layer_i < layers.len() - 1 {
+                next_dirty = HashSet::with_capacity(layers[layer_i + 1].len());
+            }
         }
     }
 
