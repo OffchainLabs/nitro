@@ -23,6 +23,7 @@ import (
 )
 
 func createArbMachine(ctx context.Context, locator *server_common.MachineLocator, config *ArbitratorMachineConfig, moduleRoot common.Hash) (*arbMachines, error) {
+	fmt.Errorf("anodar moduleRoot: %v", moduleRoot)
 	binPath := filepath.Join(locator.GetMachinePath(moduleRoot), config.WavmBinaryPath)
 	cBinPath := C.CString(binPath)
 	defer C.free(unsafe.Pointer(cBinPath))

@@ -84,6 +84,7 @@ func NewMachineLocator(rootPath string) (*MachineLocator, error) {
 			moduleRoots[moduleRoot] = true
 			if file.Name() == "latest" {
 				latestModuleRoot = moduleRoot
+				rootPath = dir
 			}
 		}
 	}
