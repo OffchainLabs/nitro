@@ -32,12 +32,10 @@ fn merkle_benchmark(c: &mut Criterion) {
         Bytes32::from([5; 32]),
     ];
 
-    let merkle = Merkle::new_advanced(MerkleType::Memory, leaves.clone(), Bytes32::default(), 20);
-    assert_eq!(merkle.len(), 5);
-
     // Perform many calls to set leaves to new values
     c.bench_function("extend_set_leaves_and_root", |b| {
         b.iter(|| {
+            let merkle = Merkle::new_advanced(MerkleType::Memory, leaves.clone(), Bytes32::default(), 20);
             extend_and_set_leavees(merkle.clone(), &mut rng);
         })
     });
