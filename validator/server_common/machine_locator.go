@@ -81,10 +81,6 @@ func NewMachineLocator(rootPath string) (*MachineLocator, error) {
 				continue
 			}
 			moduleRoot := common.HexToHash(strings.TrimSpace(string(mrContent)))
-			if moduleRoot == (common.Hash{}) {
-				log.Warn("Malformed module root hash in module-root file", "hash", string(mrContent))
-				continue
-			}
 			moduleRoots[moduleRoot] = true
 			if file.Name() == "latest" {
 				latestModuleRoot = moduleRoot
