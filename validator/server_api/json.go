@@ -8,10 +8,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/util/jsonapi"
 	"github.com/offchainlabs/nitro/validator"
-	"github.com/spf13/pflag"
 )
 
 const Namespace string = "validation"
@@ -64,28 +62,4 @@ type InputJSON struct {
 type BatchInfoJson struct {
 	Number  uint64
 	DataB64 string
-}
-
-type RedisValidationServerConfig struct {
-	RedisURL       string                `koanf:"redis-url"`
-	ConsumerConfig pubsub.ConsumerConfig `koanf:"consumer-config"`
-	// Supported wasm module roots.
-	ModuleRoots []string `koanf:"module-roots"`
-}
-
-var DefaultRedisValidationServerConfig = RedisValidationServerConfig{
-	RedisURL:       "",
-	ConsumerConfig: pubsub.DefaultConsumerConfig,
-	ModuleRoots:    []string{},
-}
-
-var TestRedisValidationServerConfig = RedisValidationServerConfig{
-	RedisURL:       "",
-	ConsumerConfig: pubsub.TestConsumerConfig,
-	ModuleRoots:    []string{},
-}
-
-func RedisValidationServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	pubsub.ConsumerConfigAddOptions(prefix+".consumer-config", f)
-	f.StringSlice(prefix+".module-roots", nil, "Supported module root hashes")
 }

@@ -33,6 +33,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
+	rediscons "github.com/offchainlabs/nitro/validator/valnode/redis"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -601,7 +602,7 @@ func AddDefaultValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Co
 	conf.UseJit = useJit
 	// Enable redis streams when URL is specified
 	if redisURL != "" {
-		conf.Arbitrator.RedisValidationServerConfig = server_api.DefaultRedisValidationServerConfig
+		conf.Arbitrator.RedisValidationServerConfig = rediscons.DefaultValidationServerConfig
 		redisClient, err := redisutil.RedisClientFromURL(redisURL)
 		if err != nil {
 			t.Fatalf("Error creating redis coordinator: %v", err)

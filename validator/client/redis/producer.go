@@ -1,4 +1,4 @@
-package client
+package redis
 
 import (
 	"context"
@@ -18,39 +18,39 @@ import (
 	"github.com/spf13/pflag"
 )
 
-type RedisValidationClientConfig struct {
+type ValidationClientConfig struct {
 	Name           string                `koanf:"name"`
 	Room           int32                 `koanf:"room"`
 	RedisURL       string                `koanf:"redis-url"`
 	ProducerConfig pubsub.ProducerConfig `koanf:"producer-config"`
 }
 
-func (c RedisValidationClientConfig) Enabled() bool {
+func (c ValidationClientConfig) Enabled() bool {
 	return c.RedisURL != ""
 }
 
-var DefaultRedisValidationClientConfig = RedisValidationClientConfig{
+var DefaultValidationClientConfig = ValidationClientConfig{
 	Name:           "redis validation client",
 	Room:           2,
 	RedisURL:       "",
 	ProducerConfig: pubsub.DefaultProducerConfig,
 }
 
-var TestRedisValidationClientConfig = RedisValidationClientConfig{
+var TestValidationClientConfig = ValidationClientConfig{
 	Name:           "test redis validation client",
 	Room:           2,
 	RedisURL:       "",
 	ProducerConfig: pubsub.TestProducerConfig,
 }
 
-func RedisValidationClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.String(prefix+".name", DefaultRedisValidationClientConfig.Name, "validation client name")
-	f.Int32(prefix+".room", DefaultRedisValidationClientConfig.Room, "validation client room")
+func ValidationClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.String(prefix+".name", DefaultValidationClientConfig.Name, "validation client name")
+	f.Int32(prefix+".room", DefaultValidationClientConfig.Room, "validation client room")
 	pubsub.ProducerAddConfigAddOptions(prefix+".producer-config", f)
 }
 
-// RedisValidationClient implements validation client through redis streams.
-type RedisValidationClient struct {
+// ValidationClient implements validation client through redis streams.
+type ValidationClient struct {
 	stopwaiter.StopWaiter
 	name string
 	room int32
@@ -60,7 +60,7 @@ type RedisValidationClient struct {
 	redisClient    redis.UniversalClient
 }
 
-func NewRedisValidationClient(cfg *RedisValidationClientConfig) (*RedisValidationClient, error) {
+func NewValidationClient(cfg *ValidationClientConfig) (*ValidationClient, error) {
 	if cfg.RedisURL == "" {
 		return nil, fmt.Errorf("redis url cannot be empty")
 	}
@@ -68,7 +68,7 @@ func NewRedisValidationClient(cfg *RedisValidationClientConfig) (*RedisValidatio
 	if err != nil {
 		return nil, err
 	}
-	return &RedisValidationClient{
+	return &ValidationClient{
 		name:           cfg.Name,
 		room:           cfg.Room,
 		producers:      make(map[common.Hash]*pubsub.Producer[*validator.ValidationInput, validator.GoGlobalState]),
@@ -77,7 +77,7 @@ func NewRedisValidationClient(cfg *RedisValidationClientConfig) (*RedisValidatio
 	}, nil
 }
 
-func (c *RedisValidationClient) Initialize(moduleRoots []common.Hash) error {
+func (c *ValidationClient) Initialize(moduleRoots []common.Hash) error {
 	for _, mr := range moduleRoots {
 		if _, exists := c.producers[mr]; exists {
 			log.Warn("Producer already existsw for module root", "hash", mr)
@@ -94,7 +94,7 @@ func (c *RedisValidationClient) Initialize(moduleRoots []common.Hash) error {
 	return nil
 }
 
-func (c *RedisValidationClient) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
+func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
 	atomic.AddInt32(&c.room, -1)
 	defer atomic.AddInt32(&c.room, 1)
 	producer, found := c.producers[moduleRoot]
@@ -110,7 +110,7 @@ func (c *RedisValidationClient) Launch(entry *validator.ValidationInput, moduleR
 	return server_common.NewValRun(promise, moduleRoot)
 }
 
-func (c *RedisValidationClient) Start(ctx_in context.Context) error {
+func (c *ValidationClient) Start(ctx_in context.Context) error {
 	for _, p := range c.producers {
 		p.Start(ctx_in)
 	}
@@ -118,20 +118,20 @@ func (c *RedisValidationClient) Start(ctx_in context.Context) error {
 	return nil
 }
 
-func (c *RedisValidationClient) Stop() {
+func (c *ValidationClient) Stop() {
 	for _, p := range c.producers {
 		p.StopAndWait()
 	}
 	c.StopWaiter.StopAndWait()
 }
 
-func (c *RedisValidationClient) Name() string {
+func (c *ValidationClient) Name() string {
 	if c.Started() {
 		return c.name
 	}
 	return "(not started)"
 }
 
-func (c *RedisValidationClient) Room() int {
+func (c *ValidationClient) Room() int {
 	return int(c.room)
 }

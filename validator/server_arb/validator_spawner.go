@@ -11,14 +11,14 @@ import (
 	"sync/atomic"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
-	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_common"
+	"github.com/offchainlabs/nitro/validator/valnode/redis"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
@@ -28,11 +28,11 @@ import (
 var arbitratorValidationSteps = metrics.NewRegisteredHistogram("arbitrator/validation/steps", nil, metrics.NewBoundedHistogramSample())
 
 type ArbitratorSpawnerConfig struct {
-	Workers                     int                                    `koanf:"workers" reload:"hot"`
-	OutputPath                  string                                 `koanf:"output-path" reload:"hot"`
-	Execution                   MachineCacheConfig                     `koanf:"execution" reload:"hot"` // hot reloading for new executions only
-	ExecutionRunTimeout         time.Duration                          `koanf:"execution-run-timeout" reload:"hot"`
-	RedisValidationServerConfig server_api.RedisValidationServerConfig `koanf:"redis-validation-server-config"`
+	Workers                     int                          `koanf:"workers" reload:"hot"`
+	OutputPath                  string                       `koanf:"output-path" reload:"hot"`
+	Execution                   MachineCacheConfig           `koanf:"execution" reload:"hot"` // hot reloading for new executions only
+	ExecutionRunTimeout         time.Duration                `koanf:"execution-run-timeout" reload:"hot"`
+	RedisValidationServerConfig redis.ValidationServerConfig `koanf:"redis-validation-server-config"`
 }
 
 type ArbitratorSpawnerConfigFecher func() *ArbitratorSpawnerConfig
@@ -42,15 +42,15 @@ var DefaultArbitratorSpawnerConfig = ArbitratorSpawnerConfig{
 	OutputPath:                  "./target/output",
 	Execution:                   DefaultMachineCacheConfig,
 	ExecutionRunTimeout:         time.Minute * 15,
-	RedisValidationServerConfig: server_api.DefaultRedisValidationServerConfig,
+	RedisValidationServerConfig: redis.DefaultValidationServerConfig,
 }
 
-func ArbitratorSpawnerConfigAddOptions(prefix string, f *flag.FlagSet) {
+func ArbitratorSpawnerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".workers", DefaultArbitratorSpawnerConfig.Workers, "number of concurrent validation threads")
 	f.Duration(prefix+".execution-run-timeout", DefaultArbitratorSpawnerConfig.ExecutionRunTimeout, "timeout before discarding execution run")
 	f.String(prefix+".output-path", DefaultArbitratorSpawnerConfig.OutputPath, "path to write machines to")
 	MachineCacheConfigConfigAddOptions(prefix+".execution", f)
-	server_api.RedisValidationServerConfigAddOptions(prefix+".redis-validation-server-config", f)
+	redis.ValidationServerConfigAddOptions(prefix+".redis-validation-server-config", f)
 }
 
 func DefaultArbitratorSpawnerConfigFetcher() *ArbitratorSpawnerConfig {

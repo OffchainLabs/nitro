@@ -25,9 +25,8 @@ import (
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/client/redis"
 	"github.com/spf13/pflag"
-
-	validatorclient "github.com/offchainlabs/nitro/validator/client"
 )
 
 var (
@@ -84,20 +83,20 @@ type BlockValidator struct {
 }
 
 type BlockValidatorConfig struct {
-	Enable                      bool                                        `koanf:"enable"`
-	ValidationServer            rpcclient.ClientConfig                      `koanf:"validation-server" reload:"hot"`
-	RedisValidationClientConfig validatorclient.RedisValidationClientConfig `koanf:"redis-validation-client-config"`
-	ValidationServerConfigs     []rpcclient.ClientConfig                    `koanf:"validation-server-configs" reload:"hot"`
-	ExecutionServerConfig       rpcclient.ClientConfig                      `koanf:"execution-server-config" reload:"hot"`
-	ValidationPoll              time.Duration                               `koanf:"validation-poll" reload:"hot"`
-	PrerecordedBlocks           uint64                                      `koanf:"prerecorded-blocks" reload:"hot"`
-	ForwardBlocks               uint64                                      `koanf:"forward-blocks" reload:"hot"`
-	CurrentModuleRoot           string                                      `koanf:"current-module-root"`         // TODO(magic) requires reinitialization on hot reload
-	PendingUpgradeModuleRoot    string                                      `koanf:"pending-upgrade-module-root"` // TODO(magic) requires StatelessBlockValidator recreation on hot reload
-	FailureIsFatal              bool                                        `koanf:"failure-is-fatal" reload:"hot"`
-	Dangerous                   BlockValidatorDangerousConfig               `koanf:"dangerous"`
-	MemoryFreeLimit             string                                      `koanf:"memory-free-limit" reload:"hot"`
-	ValidationServerConfigsList string                                      `koanf:"validation-server-configs-list" reload:"hot"`
+	Enable                      bool                          `koanf:"enable"`
+	ValidationServer            rpcclient.ClientConfig        `koanf:"validation-server" reload:"hot"`
+	RedisValidationClientConfig redis.ValidationClientConfig  `koanf:"redis-validation-client-config"`
+	ValidationServerConfigs     []rpcclient.ClientConfig      `koanf:"validation-server-configs" reload:"hot"`
+	ExecutionServerConfig       rpcclient.ClientConfig        `koanf:"execution-server-config" reload:"hot"`
+	ValidationPoll              time.Duration                 `koanf:"validation-poll" reload:"hot"`
+	PrerecordedBlocks           uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
+	ForwardBlocks               uint64                        `koanf:"forward-blocks" reload:"hot"`
+	CurrentModuleRoot           string                        `koanf:"current-module-root"`         // TODO(magic) requires reinitialization on hot reload
+	PendingUpgradeModuleRoot    string                        `koanf:"pending-upgrade-module-root"` // TODO(magic) requires StatelessBlockValidator recreation on hot reload
+	FailureIsFatal              bool                          `koanf:"failure-is-fatal" reload:"hot"`
+	Dangerous                   BlockValidatorDangerousConfig `koanf:"dangerous"`
+	MemoryFreeLimit             string                        `koanf:"memory-free-limit" reload:"hot"`
+	ValidationServerConfigsList string                        `koanf:"validation-server-configs-list" reload:"hot"`
 
 	memoryFreeLimit int
 }
@@ -147,7 +146,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block-by-block validation")
 	rpcclient.RPCClientAddOptions(prefix+".validation-server", f, &DefaultBlockValidatorConfig.ValidationServer)
 	rpcclient.RPCClientAddOptions(prefix+".execution-server-config", f, &DefaultBlockValidatorConfig.ExecutionServerConfig)
-	validatorclient.RedisValidationClientConfigAddOptions(prefix+".redis-validation-client-config", f)
+	redis.ValidationClientConfigAddOptions(prefix+".redis-validation-client-config", f)
 	f.String(prefix+".validation-server-configs-list", DefaultBlockValidatorConfig.ValidationServerConfigsList, "array of validation rpc configs given as a json string. time duration should be supplied in number indicating nanoseconds")
 	f.Duration(prefix+".validation-poll", DefaultBlockValidatorConfig.ValidationPoll, "poll time to check validations")
 	f.Uint64(prefix+".forward-blocks", DefaultBlockValidatorConfig.ForwardBlocks, "prepare entries for up to that many blocks ahead of validation (small footprint)")
@@ -168,7 +167,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	ValidationServerConfigsList: "default",
 	ValidationServer:            rpcclient.DefaultClientConfig,
 	ExecutionServerConfig:       rpcclient.DefaultClientConfig,
-	RedisValidationClientConfig: validatorclient.DefaultRedisValidationClientConfig,
+	RedisValidationClientConfig: redis.DefaultValidationClientConfig,
 	ValidationPoll:              time.Second,
 	ForwardBlocks:               1024,
 	PrerecordedBlocks:           uint64(2 * runtime.NumCPU()),
@@ -183,7 +182,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                      false,
 	ValidationServer:            rpcclient.TestClientConfig,
 	ValidationServerConfigs:     []rpcclient.ClientConfig{rpcclient.TestClientConfig},
-	RedisValidationClientConfig: validatorclient.TestRedisValidationClientConfig,
+	RedisValidationClientConfig: redis.TestValidationClientConfig,
 	ExecutionServerConfig:       rpcclient.TestClientConfig,
 	ValidationPoll:              100 * time.Millisecond,
 	ForwardBlocks:               128,
@@ -1065,7 +1064,11 @@ func (v *BlockValidator) Initialize(ctx context.Context) error {
 		}
 	}
 	log.Info("BlockValidator initialized", "current", v.currentWasmModuleRoot, "pending", v.pendingWasmModuleRoot)
-	if err := v.StatelessBlockValidator.Initialize([]common.Hash{v.currentWasmModuleRoot, v.pendingWasmModuleRoot}); err != nil {
+	moduleRoots := []common.Hash{v.currentWasmModuleRoot}
+	if v.pendingWasmModuleRoot != v.currentWasmModuleRoot {
+		moduleRoots = append(moduleRoots, v.pendingWasmModuleRoot)
+	}
+	if err := v.StatelessBlockValidator.Initialize(moduleRoots); err != nil {
 		return fmt.Errorf("initializing block validator with module roots: %w", err)
 	}
 	return nil

@@ -22,6 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/client/redis"
 
 	validatorclient "github.com/offchainlabs/nitro/validator/client"
 )
@@ -196,7 +197,7 @@ func NewStatelessBlockValidator(
 ) (*StatelessBlockValidator, error) {
 	var validationSpawners []validator.ValidationSpawner
 	if config().RedisValidationClientConfig.Enabled() {
-		redisValClient, err := validatorclient.NewRedisValidationClient(&config().RedisValidationClientConfig)
+		redisValClient, err := redis.NewValidationClient(&config().RedisValidationClientConfig)
 		if err != nil {
 			return nil, fmt.Errorf("creating new redis validation client: %w", err)
 		}
@@ -229,7 +230,7 @@ func (v *StatelessBlockValidator) Initialize(moduleRoots []common.Hash) error {
 		return nil
 	}
 	// First spawner is always RedisValidationClient if RedisStreams are enabled.
-	if v, ok := v.validationSpawners[0].(*validatorclient.RedisValidationClient); ok {
+	if v, ok := v.validationSpawners[0].(*redis.ValidationClient); ok {
 		if err := v.Initialize(moduleRoots); err != nil {
 			return fmt.Errorf("initializing redis validation client module roots: %w", err)
 		}

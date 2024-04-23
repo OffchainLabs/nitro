@@ -1,4 +1,4 @@
-package valnode
+package redis
 
 import (
 	"context"
@@ -12,11 +12,12 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_api"
+	"github.com/spf13/pflag"
 )
 
-// RedisValidationServer implements consumer for the requests originated from
+// ValidationServer implements consumer for the requests originated from
 // RedisValidationClient producers.
-type RedisValidationServer struct {
+type ValidationServer struct {
 	stopwaiter.StopWaiter
 	spawner validator.ValidationSpawner
 
@@ -24,7 +25,7 @@ type RedisValidationServer struct {
 	consumers map[common.Hash]*pubsub.Consumer[*validator.ValidationInput, validator.GoGlobalState]
 }
 
-func NewRedisValidationServer(cfg *server_api.RedisValidationServerConfig, spawner validator.ValidationSpawner) (*RedisValidationServer, error) {
+func NewValidationServer(cfg *ValidationServerConfig, spawner validator.ValidationSpawner) (*ValidationServer, error) {
 	if cfg.RedisURL == "" {
 		return nil, fmt.Errorf("redis url cannot be empty")
 	}
@@ -41,13 +42,13 @@ func NewRedisValidationServer(cfg *server_api.RedisValidationServerConfig, spawn
 		}
 		consumers[mr] = c
 	}
-	return &RedisValidationServer{
+	return &ValidationServer{
 		consumers: consumers,
 		spawner:   spawner,
 	}, nil
 }
 
-func (s *RedisValidationServer) Start(ctx_in context.Context) {
+func (s *ValidationServer) Start(ctx_in context.Context) {
 	s.StopWaiter.Start(ctx_in, s)
 	for moduleRoot, c := range s.consumers {
 		c := c
@@ -75,4 +76,28 @@ func (s *RedisValidationServer) Start(ctx_in context.Context) {
 			return time.Second
 		})
 	}
+}
+
+type ValidationServerConfig struct {
+	RedisURL       string                `koanf:"redis-url"`
+	ConsumerConfig pubsub.ConsumerConfig `koanf:"consumer-config"`
+	// Supported wasm module roots.
+	ModuleRoots []string `koanf:"module-roots"`
+}
+
+var DefaultValidationServerConfig = ValidationServerConfig{
+	RedisURL:       "",
+	ConsumerConfig: pubsub.DefaultConsumerConfig,
+	ModuleRoots:    []string{},
+}
+
+var TestValidationServerConfig = ValidationServerConfig{
+	RedisURL:       "",
+	ConsumerConfig: pubsub.TestConsumerConfig,
+	ModuleRoots:    []string{},
+}
+
+func ValidationServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	pubsub.ConsumerConfigAddOptions(prefix+".consumer-config", f)
+	f.StringSlice(prefix+".module-roots", nil, "Supported module root hashes")
 }
