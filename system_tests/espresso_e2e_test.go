@@ -61,6 +61,7 @@ func runEspresso(t *testing.T, ctx context.Context) func() {
 		"commitment-task",
 		"state-relay-server",
 		"deploy-contracts",
+		"prover-service",
 	}
 	invocation = append(invocation, nodes...)
 	procees := exec.Command("docker", invocation...)
@@ -157,6 +158,7 @@ func createL1ValidatorPosterNode(ctx context.Context, t *testing.T, hotshotUrl s
 
 	builder.nodeConfig.Feed.Input.URL = []string{fmt.Sprintf("ws://127.0.0.1:%d", broadcastPort)}
 	builder.nodeConfig.BatchPoster.Enable = true
+	builder.nodeConfig.BatchPoster.ErrorDelay = 5 * time.Second
 	builder.nodeConfig.BatchPoster.MaxSize = 41
 	builder.nodeConfig.BatchPoster.PollInterval = 10 * time.Second
 	builder.nodeConfig.BatchPoster.MaxDelay = -1000 * time.Hour

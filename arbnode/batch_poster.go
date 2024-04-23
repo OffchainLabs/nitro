@@ -461,7 +461,7 @@ func AccessList(opts *AccessListOpts) types.AccessList {
 }
 
 // Adds a block merkle proof to an Espresso justification, providing a proof that a set of transactions
-// hashes to some light client state root
+// hashes to some light client state root.
 func (b *BatchPoster) addEspressoBlockMerkleProof(
 	ctx context.Context,
 	msg *arbostypes.MessageWithMetadata,
@@ -476,12 +476,12 @@ func (b *BatchPoster) addEspressoBlockMerkleProof(
 			return err
 
 		}
-		if validatedHotShotHeight < jst.Header.Height {
+		if validatedHotShotHeight < jst.Header.Height || validatedHotShotHeight == 18446744073709551615 {
 			return fmt.Errorf("could not construct batch justification, light client is at height %v but the justification is for height %v", validatedHotShotHeight, jst.Header.Height)
 		}
 		proof, err := b.hotshotClient.FetchBlockMerkleProof(ctx, validatedHotShotHeight, jst.Header.Height)
 		if err != nil {
-			return err
+			return fmt.Errorf("error fetching the block merkle proof for validated height %v and leaf height %v. Request failed with error %w", validatedHotShotHeight, jst.Header.Height, err)
 		}
 		jst.BlockMerkleJustification = &arbostypes.BlockMerkleJustification{BlockMerkleProof: &proof, L1ProofHeight: validatedL1Height}
 		newMsg, err := arbos.MessageFromEspresso(msg.Message.Header, txs, jst)
