@@ -58,9 +58,7 @@ func init() {
 	precompileErrors := make(map[[4]byte]abi.Error)
 	for addr, precompile := range precompiles.Precompiles() {
 		for _, errABI := range precompile.Precompile().GetErrorABIs() {
-			var id [4]byte
-			copy(id[:], errABI.ID[:4])
-			precompileErrors[id] = errABI
+			precompileErrors[[4]byte(errABI.ID.Bytes())] = errABI
 		}
 		var wrapped vm.AdvancedPrecompile = ArbosPrecompileWrapper{precompile}
 		vm.PrecompiledContractsArbitrum[addr] = wrapped
