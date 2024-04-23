@@ -67,7 +67,7 @@ pub struct Merkle {
     empty_layers: Vec<Bytes32>,
     min_depth: usize,
     #[serde(skip)]
-    dirty_indices: Arc<Mutex<HashSet<usize>>>,
+    dirty_layers: Arc<Mutex<Vec<HashSet<usize>>>>,
 }
 
 fn hash_node(ty: MerkleType, a: Bytes32, b: Bytes32) -> Bytes32 {
@@ -105,6 +105,7 @@ impl Merkle {
         }
         let mut layers = vec![hashes];
         let mut empty_layers = vec![empty_hash];
+        let mut dirty_indices: Vec<HashSet<usize>> = Vec::new();
         while layers.last().unwrap().len() > 1 || layers.len() < min_depth {
             let empty_layer = *empty_layers.last().unwrap();
 
@@ -114,31 +115,33 @@ impl Merkle {
             #[cfg(not(feature = "rayon"))]
             let new_layer = layers.last().unwrap().chunks(2);
 
-            let new_layer = new_layer
+            let new_layer: Vec<Bytes32> = new_layer
                 .map(|chunk| hash_node(ty, chunk[0], chunk.get(1).cloned().unwrap_or(empty_layer)))
                 .collect();
             empty_layers.push(hash_node(ty, empty_layer, empty_layer));
+            dirty_indices.push(HashSet::with_capacity(new_layer.len()));
             layers.push(new_layer);
         }
-        let dirty_indices = Arc::new(Mutex::new(HashSet::with_capacity(layers[0].len())));
+        let dirty_layers = Arc::new(Mutex::new(dirty_indices));
         Merkle {
             ty,
             layers: Arc::new(Mutex::new(layers)),
             empty_layers,
             min_depth,
-            dirty_indices,
+            dirty_layers,
         }
     }
 
     fn rehash(&self) {
-        if self.dirty_indices.lock().unwrap().is_empty() {
+        let dirty_layers = &mut self.dirty_layers.lock().unwrap();
+        if dirty_layers[0].is_empty() {
             return;
         }
         let layers = &mut self.layers.lock().unwrap();
-        let mut next_dirty: HashSet<usize> = HashSet::with_capacity(layers[2].len());
-        let mut dirty = self.dirty_indices.lock().unwrap();
         for layer_i in 1..layers.len() {
-            for idx in sorted(dirty.iter()) {
+            let dirty_i = layer_i - 1;
+            let dirt = dirty_layers[dirty_i].clone();
+            for idx in sorted(dirt.iter()) {
                 let left_child_idx = idx << 1;
                 let right_child_idx = left_child_idx + 1;
                 let left = layers[layer_i -1][left_child_idx];
@@ -152,15 +155,11 @@ impl Merkle {
                 } else {
                     layers[layer_i].push(new_hash);
                 }
-                layers[layer_i][*idx] = hash_node(self.ty, left, right);
                 if layer_i < layers.len() - 1 {
-                    next_dirty.insert(idx >> 1);
+                    dirty_layers[dirty_i + 1].insert(idx >> 1);
                 }
             }
-            dirty.clone_from(&next_dirty);
-            if layer_i < layers.len() - 1 {
-                next_dirty = HashSet::with_capacity(layers[layer_i + 1].len());
-            }
+            dirty_layers[dirty_i].clear();
         }
     }
 
@@ -245,7 +244,7 @@ impl Merkle {
             return;
         }
         locked_layers[0][idx] = hash;
-        self.dirty_indices.lock().unwrap().insert(idx >> 1);
+        self.dirty_layers.lock().unwrap()[0].insert(idx >> 1);
     }
 
     /// Extends the leaves of the tree with the given hashes.
