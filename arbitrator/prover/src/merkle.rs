@@ -134,7 +134,6 @@ impl Merkle {
         if self.dirty_indices.lock().unwrap().is_empty() {
             return;
         }
-        println!("Rehashing with dirty indices: {:?} of {:?}", self.dirty_indices.lock().unwrap().len(), self.len());
         let layers = &mut self.layers.lock().unwrap();
         let mut next_dirty: HashSet<usize> = HashSet::with_capacity(layers[2].len());
         let mut dirty = self.dirty_indices.lock().unwrap();
