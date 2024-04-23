@@ -232,22 +232,11 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         bytes32 indexed edgeId, bytes32 indexed lowerChildId, bytes32 indexed upperChildId, bool lowerChildAlreadyExists
     );
 
-    /// @notice An edge can be confirmed if both of its children were already confirmed.
-    /// @param edgeId   The edge that was confirmed
-    /// @param mutualId The mutual id of the confirmed edge
-    event EdgeConfirmedByChildren(bytes32 indexed edgeId, bytes32 indexed mutualId);
-
     /// @notice An edge can be confirmed if the cumulative time (in blocks) unrivaled of it and a direct chain of ancestors is greater than a threshold
     /// @param edgeId               The edge that was confirmed
     /// @param mutualId             The mutual id of the confirmed edge
     /// @param totalTimeUnrivaled   The cumulative amount of time (in blocks) this edge spent unrivaled
     event EdgeConfirmedByTime(bytes32 indexed edgeId, bytes32 indexed mutualId, uint256 totalTimeUnrivaled);
-
-    /// @notice An edge can be confirmed if a zero layer edge in the level below claims this edge
-    /// @param edgeId           The edge that was confirmed
-    /// @param mutualId         The mutual id of the confirmed edge
-    /// @param claimingEdgeId   The id of the zero layer edge that claimed this edge
-    event EdgeConfirmedByClaim(bytes32 indexed edgeId, bytes32 indexed mutualId, bytes32 claimingEdgeId);
 
     /// @notice A SmallStep edge of length 1 can be confirmed via a one step proof
     /// @param edgeId   The edge that was confirmed
