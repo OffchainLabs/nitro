@@ -144,6 +144,7 @@ func PebbleConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".wal-bytes-per-sync", PebbleConfigDefault.WALBytesPerSync, "number of bytes to write to a write-ahead log (WAL) before calling Sync on it in the backgroud (0 = pebble default)")
 	f.String(prefix+".wal-dir", PebbleConfigDefault.WALDir, "directory to store write-ahead logs (WALs) in. If empty, WALs will be stored in the same directory as sstables")
 	f.Int(prefix+".wal-min-sync-interval", PebbleConfigDefault.WALMinSyncInterval, "minimum duration in microseconds between syncs of the WAL. If WAL syncs are requested faster than this interval, they will be artificially delayed.")
+	f.Int(prefix+".target-byte-deletion-rate", PebbleConfigDefault.TargetByteDeletionRate, "rate (in bytes per second) at which sstable file deletions are limited to (under normal circumstances).")
 	PebbleExperimentalConfigAddOptions(prefix+".experimental", f)
 }
 
