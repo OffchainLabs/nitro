@@ -116,6 +116,8 @@ type PebbleConfig struct {
 	WALMinSyncInterval          int                      `koanf:"wal-min-sync-interval"`
 	TargetByteDeletionRate      int                      `koanf:"target-byte-deletion-rate"`
 	Experimental                PebbleExperimentalConfig `koanf:"experimental"`
+	TargetFileSize              int64                    `koanf:"target-file-size"`
+	TargetFileSizeEqualLayers   bool                     `koanf:"target-file-size-equal-layers"`
 }
 
 var PebbleConfigDefault = PebbleConfig{
@@ -131,6 +133,8 @@ var PebbleConfigDefault = PebbleConfig{
 	WALMinSyncInterval:          0,  // pebble default will be used
 	TargetByteDeletionRate:      0,  // pebble default will be used
 	Experimental:                PebbleExperimentalConfigDefault,
+	TargetFileSize:              2 * 1024 * 1024,
+	TargetFileSizeEqualLayers:   true,
 }
 
 func PebbleConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -146,6 +150,8 @@ func PebbleConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".wal-min-sync-interval", PebbleConfigDefault.WALMinSyncInterval, "minimum duration in microseconds between syncs of the WAL. If WAL syncs are requested faster than this interval, they will be artificially delayed.")
 	f.Int(prefix+".target-byte-deletion-rate", PebbleConfigDefault.TargetByteDeletionRate, "rate (in bytes per second) at which sstable file deletions are limited to (under normal circumstances).")
 	PebbleExperimentalConfigAddOptions(prefix+".experimental", f)
+	f.Int64(prefix+".target-file-size", PebbleConfigDefault.TargetFileSize, "target file size for the level 0")
+	f.Bool(prefix+".target-file-size-equal-layers", PebbleConfigDefault.TargetFileSizeEqualLayers, "if true same target-file-size will be uses for all layers, otherwise target size for layer n = 2 * target size for layer n - 1")
 }
 
 type PebbleExperimentalConfig struct {
@@ -186,6 +192,18 @@ func (c *PebbleConfig) ExtraOptions() *pebble.ExtraOptions {
 			return time.Microsecond * time.Duration(c.WALMinSyncInterval)
 		}
 	}
+	var levels []pebble.ExtraLevelOptions
+	if c.TargetFileSize > 0 {
+		if c.TargetFileSizeEqualLayers {
+			for i := 0; i < 7; i++ {
+				levels = append(levels, pebble.ExtraLevelOptions{TargetFileSize: c.TargetFileSize})
+			}
+		} else {
+			for i := 0; i < 7; i++ {
+				levels = append(levels, pebble.ExtraLevelOptions{TargetFileSize: c.TargetFileSize << i})
+			}
+		}
+	}
 	return &pebble.ExtraOptions{
 		BytesPerSync:                c.BytesPerSync,
 		L0CompactionFileThreshold:   c.L0CompactionFileThreshold,
@@ -206,5 +224,6 @@ func (c *PebbleConfig) ExtraOptions() *pebble.ExtraOptions {
 			MaxWriterConcurrency:      c.Experimental.MaxWriterConcurrency,
 			ForceWriterParallelism:    c.Experimental.ForceWriterParallelism,
 		},
+		Levels: levels,
 	}
 }
