@@ -134,7 +134,7 @@ impl Merkle {
 
     fn rehash(&self) {
         let dirty_layers = &mut self.dirty_layers.lock().unwrap();
-        if dirty_layers[0].is_empty() {
+        if dirty_layers.is_empty() || dirty_layers[0].is_empty() {
             return;
         }
         let layers = &mut self.layers.lock().unwrap();
