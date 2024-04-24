@@ -5,6 +5,7 @@ package server_arb
 
 import (
 	"context"
+	"encoding/binary"
 	"fmt"
 	"sync"
 
@@ -85,7 +86,15 @@ func (e *executionRun) GetProofAt(position uint64) containers.PromiseInterface[[
 		if err != nil {
 			return nil, err
 		}
-		return machine.ProveNextStep(), nil
+
+		opcode := machine.GetNextOpcode()
+		opcodeBytes := make([]byte, 2)
+		binary.BigEndian.PutUint16(opcodeBytes, opcode)
+
+		proof := machine.ProveNextStep()
+
+		proof = append(proof, opcodeBytes...)
+		return proof, nil
 	})
 }
 

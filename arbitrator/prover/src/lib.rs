@@ -351,3 +351,11 @@ pub unsafe extern "C" fn arbitrator_gen_proof(mach: *mut Machine) -> RustByteArr
 pub unsafe extern "C" fn arbitrator_free_proof(proof: RustByteArray) {
     drop(Vec::from_raw_parts(proof.ptr, proof.len, proof.capacity))
 }
+
+#[no_mangle]
+pub unsafe extern "C" fn arbitrator_get_opcode(mach: *mut Machine) -> u16 {
+    match (*mach).get_next_instruction() {
+        Some(instruction) => return instruction.opcode.repr(),
+        None => panic!("Failed to get next opcode for Machine"),
+    }
+}

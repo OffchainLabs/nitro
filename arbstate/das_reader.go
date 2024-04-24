@@ -37,7 +37,7 @@ const DASMessageHeaderFlag byte = 0x80
 
 // CelestiaMessageHeaderFlag indicates that this data is a Blob Pointer
 // which will be used to retrieve data from Celestia
-const CelestiaMessageHeaderFlag byte = 0x0c
+const CelestiaMessageHeaderFlag byte = 0x63
 
 // TreeDASMessageHeaderFlag indicates that this DAS certificate data employs the new merkelization strategy.
 // Ignored when DASMessageHeaderFlag is not set.

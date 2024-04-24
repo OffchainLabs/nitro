@@ -41,36 +41,37 @@ func getSplitPoint(length int64) int64 {
 }
 
 // getChildrenHashes splits the preimage into the hashes of the left and right children.
-func getChildrenHashes(oracle func(bytes32) ([]byte, error), preimage []byte) (leftChild, rightChild common.Hash, err error) {
+func getChildrenHashes(preimage []byte) (leftChild, rightChild common.Hash, err error) {
 	leftChild = common.BytesToHash(preimage[:32])
 	rightChild = common.BytesToHash(preimage[32:])
 	return leftChild, rightChild, nil
 }
 
-// walkMerkleTree recursively walks down the Merkle tree and collects leaf node data.
+// MerkleTreeContent recursively walks down the Merkle tree and collects leaf node data.
 func MerkleTreeContent(oracle func(bytes32) ([]byte, error), rootHash common.Hash) ([][]byte, error) {
-	preimage, err := oracle(rootHash)
-	if err != nil {
-		return nil, err
+	stack := []common.Hash{rootHash}
+	var data [][]byte
+
+	for len(stack) > 0 {
+		currentHash := stack[len(stack)-1]
+		stack = stack[:len(stack)-1]
+
+		preimage, err := oracle(currentHash)
+		if err != nil {
+			return nil, err
+		}
+
+		if preimage[0] == leafPrefix[0] {
+			data = append(data, preimage[1:])
+		} else {
+			leftChildHash, rightChildHash, err := getChildrenHashes(preimage[1:])
+			if err != nil {
+				return nil, err
+			}
+			stack = append(stack, rightChildHash)
+			stack = append(stack, leftChildHash)
+		}
 	}
 
-	if preimage[0] == leafPrefix[0] {
-		return [][]byte{preimage[1:]}, nil
-	}
-
-	leftChildHash, rightChildHash, err := getChildrenHashes(oracle, preimage[1:])
-	if err != nil {
-		return nil, err
-	}
-	leftData, err := MerkleTreeContent(oracle, leftChildHash)
-	if err != nil {
-		return nil, err
-	}
-	rightData, err := MerkleTreeContent(oracle, rightChildHash)
-	if err != nil {
-		return nil, err
-	}
-
-	// Combine the data from the left and right subtrees.
-	return append(leftData, rightData...), nil
+	return data, nil
 }
