@@ -110,6 +110,7 @@ type PebbleConfig struct {
 	L0CompactionThreshold       int                      `koanf:"l0-compaction-threshold"`
 	L0StopWritesThreshold       int                      `koanf:"l0-stop-writes-threshold"`
 	LBaseMaxBytes               int64                    `koanf:"l-base-max-bytes"`
+	MemTableStopWritesThreshold int                      `koanf:"mem-table-stop-writes-threshold"`
 	MaxConcurrentCompactions    int                      `koanf:"max-concurrent-compactions"`
 	DisableAutomaticCompactions bool                     `koanf:"disable-automatic-compactions"`
 	WALBytesPerSync             int                      `koanf:"wal-bytes-per-sync"`
@@ -131,6 +132,7 @@ var PebbleConfigDefault = PebbleConfig{
 	L0CompactionThreshold:       0, // pebble default will be used
 	L0StopWritesThreshold:       0, // pebble default will be used
 	LBaseMaxBytes:               0, // pebble default will be used
+	MemTableStopWritesThreshold: 2,
 	MaxConcurrentCompactions:    runtime.NumCPU(),
 	DisableAutomaticCompactions: false,
 	WALBytesPerSync:             0,  // pebble default will be used
@@ -150,6 +152,7 @@ func PebbleConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".l0-compaction-threshold", PebbleConfigDefault.L0CompactionThreshold, "amount of L0 read-amplification necessary to trigger an L0 compaction (0 = pebble default)")
 	f.Int(prefix+".l0-stop-writes-threshold", PebbleConfigDefault.L0StopWritesThreshold, "hard limit on L0 read-amplification, computed as the number of L0 sublevels. Writes are stopped when this threshold is reached (0 = pebble default)")
 	f.Int64(prefix+".l-base-max-bytes", PebbleConfigDefault.LBaseMaxBytes, "hard limit on L0 read-amplification, computed as the number of L0 sublevels. Writes are stopped when this threshold is reached (0 = pebble default)")
+	f.Int(prefix+".mem-table-stop-writes-threshold", PebbleConfigDefault.MemTableStopWritesThreshold, "hard limit on the number of queued of MemTables")
 	f.Int(prefix+".max-concurrent-compactions", PebbleConfigDefault.MaxConcurrentCompactions, "maximum number of concurrent compactions (0 = pebble default)")
 	f.Bool(prefix+".disable-automatic-compactions", PebbleConfigDefault.DisableAutomaticCompactions, "disables automatic compactions")
 	f.Int(prefix+".wal-bytes-per-sync", PebbleConfigDefault.WALBytesPerSync, "number of bytes to write to a write-ahead log (WAL) before calling Sync on it in the backgroud (0 = pebble default)")
@@ -219,6 +222,7 @@ func (c *PebbleConfig) ExtraOptions() *pebble.ExtraOptions {
 		L0CompactionThreshold:       c.L0CompactionThreshold,
 		L0StopWritesThreshold:       c.L0StopWritesThreshold,
 		LBaseMaxBytes:               c.LBaseMaxBytes,
+		MemTableStopWritesThreshold: c.MemTableStopWritesThreshold,
 		MaxConcurrentCompactions:    maxConcurrentCompactions,
 		DisableAutomaticCompactions: c.DisableAutomaticCompactions,
 		WALBytesPerSync:             c.WALBytesPerSync,
