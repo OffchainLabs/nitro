@@ -187,7 +187,7 @@ func (con ArbGasInfo) GetGasBacklog(c ctx, evm mech) (uint64, error) {
 	return c.State.L2PricingState().GasBacklog()
 }
 
-// GetPricingInertia gets the L2 basefee in response to backlogged gas
+// GetPricingInertia gets how slowly ArbOS updates the L2 basefee in response to backlogged gas
 func (con ArbGasInfo) GetPricingInertia(c ctx, evm mech) (uint64, error) {
 	return c.State.L2PricingState().PricingInertia()
 }
@@ -197,6 +197,7 @@ func (con ArbGasInfo) GetGasBacklogTolerance(c ctx, evm mech) (uint64, error) {
 	return c.State.L2PricingState().BacklogTolerance()
 }
 
+// GetL1PricingSurplus gets the surplus of funds for L1 batch posting payments (may be negative)
 func (con ArbGasInfo) GetL1PricingSurplus(c ctx, evm mech) (*big.Int, error) {
 	if c.State.ArbOSVersion() < 10 {
 		return con._preversion10_GetL1PricingSurplus(c, evm)
@@ -220,34 +221,42 @@ func (con ArbGasInfo) _preversion10_GetL1PricingSurplus(c ctx, evm mech) (*big.I
 	return arbmath.BigSub(haveFunds, needFunds), nil
 }
 
+// GetPerBatchGasCharge gets the base charge (in L1 gas) attributed to each data batch in the calldata pricer
 func (con ArbGasInfo) GetPerBatchGasCharge(c ctx, evm mech) (int64, error) {
 	return c.State.L1PricingState().PerBatchGasCost()
 }
 
+// GetAmortizedCostCapBips gets the cost amortization cap in basis points
 func (con ArbGasInfo) GetAmortizedCostCapBips(c ctx, evm mech) (uint64, error) {
 	return c.State.L1PricingState().AmortizedCostCapBips()
 }
 
+// GetL1FeesAvailable gets the available funds from L1 fees
 func (con ArbGasInfo) GetL1FeesAvailable(c ctx, evm mech) (huge, error) {
 	return c.State.L1PricingState().L1FeesAvailable()
 }
 
+// GetL1PricingEquilibrationUnits gets the equilibration units parameter for L1 price adjustment algorithm
 func (con ArbGasInfo) GetL1PricingEquilibrationUnits(c ctx, evm mech) (*big.Int, error) {
 	return c.State.L1PricingState().EquilibrationUnits()
 }
 
+// GetLastL1PricingUpdateTime gets the last time the L1 calldata pricer was updated
 func (con ArbGasInfo) GetLastL1PricingUpdateTime(c ctx, evm mech) (uint64, error) {
 	return c.State.L1PricingState().LastUpdateTime()
 }
 
+// GetL1PricingFundsDueForRewards gets the amount of L1 calldata payments due for rewards (per the L1 reward rate)
 func (con ArbGasInfo) GetL1PricingFundsDueForRewards(c ctx, evm mech) (*big.Int, error) {
 	return c.State.L1PricingState().FundsDueForRewards()
 }
 
+// GetL1PricingUnitsSinceUpdate gets the amount of L1 calldata posted since the last update
 func (con ArbGasInfo) GetL1PricingUnitsSinceUpdate(c ctx, evm mech) (uint64, error) {
 	return c.State.L1PricingState().UnitsSinceUpdate()
 }
 
+// GetLastL1PricingSurplus gets the L1 pricing surplus as of the last update (may be negative)
 func (con ArbGasInfo) GetLastL1PricingSurplus(c ctx, evm mech) (*big.Int, error) {
 	return c.State.L1PricingState().LastSurplus()
 }
