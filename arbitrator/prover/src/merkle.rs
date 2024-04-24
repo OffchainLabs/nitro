@@ -3,6 +3,26 @@
 
 use arbutil::Bytes32;
 use digest::Digest;
+
+use enum_iterator::Sequence;
+
+#[cfg(feature = "counters")]
+use enum_iterator::all;
+
+
+#[cfg(feature = "counters")]
+use std::sync::atomic::AtomicUsize;
+
+#[cfg(feature = "counters")]
+use std::sync::atomic::Ordering;
+
+#[cfg(feature = "counters")]
+use lazy_static::lazy_static;
+
+
+#[cfg(feature = "counters")]
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
 use core::panic;
@@ -11,7 +31,54 @@ use std::convert::{TryFrom, TryInto};
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[cfg(feature = "counters")]
+lazy_static! {
+    static ref NEW_COUNTERS: HashMap<&'static MerkleType, AtomicUsize> = {
+        let mut map = HashMap::new();
+        map.insert(&MerkleType::Empty, AtomicUsize::new(0));
+        map.insert(&MerkleType::Value, AtomicUsize::new(0));
+        map.insert(&MerkleType::Function, AtomicUsize::new(0));
+        map.insert(&MerkleType::Instruction, AtomicUsize::new(0));
+        map.insert(&MerkleType::Memory, AtomicUsize::new(0));
+        map.insert(&MerkleType::Table, AtomicUsize::new(0));
+        map.insert(&MerkleType::TableElement, AtomicUsize::new(0));
+        map.insert(&MerkleType::Module, AtomicUsize::new(0));
+        map
+    };
+}
+#[cfg(feature = "counters")]
+lazy_static! {
+    static ref ROOT_COUNTERS: HashMap<&'static MerkleType, AtomicUsize> = {
+        let mut map = HashMap::new();
+        map.insert(&MerkleType::Empty, AtomicUsize::new(0));
+        map.insert(&MerkleType::Value, AtomicUsize::new(0));
+        map.insert(&MerkleType::Function, AtomicUsize::new(0));
+        map.insert(&MerkleType::Instruction, AtomicUsize::new(0));
+        map.insert(&MerkleType::Memory, AtomicUsize::new(0));
+        map.insert(&MerkleType::Table, AtomicUsize::new(0));
+        map.insert(&MerkleType::TableElement, AtomicUsize::new(0));
+        map.insert(&MerkleType::Module, AtomicUsize::new(0));
+        map
+    };
+}
+#[cfg(feature = "counters")]
+lazy_static! {
+    static ref SET_COUNTERS: HashMap<&'static MerkleType, AtomicUsize> = {
+        let mut map = HashMap::new();
+        map.insert(&MerkleType::Empty, AtomicUsize::new(0));
+        map.insert(&MerkleType::Value, AtomicUsize::new(0));
+        map.insert(&MerkleType::Function, AtomicUsize::new(0));
+        map.insert(&MerkleType::Instruction, AtomicUsize::new(0));
+        map.insert(&MerkleType::Memory, AtomicUsize::new(0));
+        map.insert(&MerkleType::Table, AtomicUsize::new(0));
+        map.insert(&MerkleType::TableElement, AtomicUsize::new(0));
+        map.insert(&MerkleType::Module, AtomicUsize::new(0));
+        map
+    };
+}
+
+
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize, Sequence)]
 pub enum MerkleType {
     Empty,
     Value,
@@ -26,6 +93,29 @@ pub enum MerkleType {
 impl Default for MerkleType {
     fn default() -> Self {
         Self::Empty
+    }
+}
+
+#[cfg(feature = "counters")]
+pub fn printCounters() {
+    for ty in all::<MerkleType>() {
+        if ty == MerkleType::Empty {
+            continue;
+        }
+        println!("{} New: {}, Root: {}, Set: {}",
+        ty.get_prefix(), NEW_COUNTERS[&ty].load(Ordering::Relaxed), ROOT_COUNTERS[&ty].load(Ordering::Relaxed), SET_COUNTERS[&ty].load(Ordering::Relaxed));
+    }
+}
+
+#[cfg(feature = "counters")]
+pub fn resetCounters() {
+    for ty in all::<MerkleType>() {
+        if ty == MerkleType::Empty {
+            continue;
+        }
+        NEW_COUNTERS[&ty].store(0, Ordering::Relaxed);
+        ROOT_COUNTERS[&ty].store(0, Ordering::Relaxed);
+        SET_COUNTERS[&ty].store(0, Ordering::Relaxed);
     }
 }
 
@@ -91,6 +181,8 @@ impl Merkle {
         empty_hash: Bytes32,
         min_depth: usize,
     ) -> Merkle {
+        #[cfg(feature = "counters")]
+        NEW_COUNTERS[&ty].fetch_add(1, Ordering::Relaxed);
         if hashes.is_empty() {
             return Merkle::default();
         }
@@ -120,6 +212,8 @@ impl Merkle {
     }
 
     pub fn root(&self) -> Bytes32 {
+        #[cfg(feature = "counters")]
+        ROOT_COUNTERS[&self.ty].fetch_add(1, Ordering::Relaxed);
         if let Some(layer) = self.layers.last() {
             assert_eq!(layer.len(), 1);
             layer[0]
@@ -197,6 +291,8 @@ impl Merkle {
     // Sets the leaf at the given index to the given hash.
     // Panics if the index is out of bounds (since the structure doesn't grow).
     pub fn set(&mut self, mut idx: usize, hash: Bytes32) {
+        #[cfg(feature = "counters")]
+        SET_COUNTERS[&self.ty].fetch_add(1, Ordering::Relaxed);
         if self.layers[0][idx] == hash {
             return;
         }

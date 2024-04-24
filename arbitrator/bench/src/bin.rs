@@ -3,7 +3,12 @@ use std::{path::PathBuf, time::Duration};
 use bench::prepare::*;
 use clap::Parser;
 use eyre::bail;
+use gperftools::profiler::PROFILER;
+use gperftools::heap_profiler::HEAP_PROFILER;
 use prover::machine::MachineStatus;
+
+#[cfg(feature = "counters")]
+use prover::merkle;
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -30,7 +35,6 @@ fn main() -> eyre::Result<()> {
         println!("Running benchmark with always merkleize feature off");
     }
     for step_size in step_sizes {
-        let total = std::time::Instant::now();
         let mut machine = prepare_machine(
             args.preimages_path.clone(),
             args.machine_path.clone(),
@@ -40,6 +44,11 @@ fn main() -> eyre::Result<()> {
         let mut hash_times = vec![];
         let mut step_times = vec![];
         let mut num_iters = 0;
+        PROFILER.lock().unwrap().start(format!("./target/bench-{}.prof", step_size)).unwrap();
+        HEAP_PROFILER.lock().unwrap().start(format!("./target/bench-{}.hprof", step_size)).unwrap();
+        #[cfg(feature = "counters")]
+        merkle::resetCounters();
+        let total = std::time::Instant::now();
         loop {
             let start = std::time::Instant::now();
             machine.step_n(step_size)?;
@@ -66,6 +75,8 @@ fn main() -> eyre::Result<()> {
                 break;
             }
         }
+        PROFILER.lock().unwrap().stop().unwrap();
+        HEAP_PROFILER.lock().unwrap().stop().unwrap();
         let total_end_time = total.elapsed();
         println!(
             "avg hash time {:?}, avg step time {:?}, step size {}, num_iters {}, total time {:?}",
@@ -75,6 +86,8 @@ fn main() -> eyre::Result<()> {
             num_iters,
             total_end_time,
         );
+        #[cfg(feature = "counters")]
+        merkle::printCounters();
     }
     Ok(())
 }
