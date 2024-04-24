@@ -14,8 +14,6 @@ import (
 	"testing"
 	"time"
 
-	flag "github.com/spf13/pflag"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
@@ -27,6 +25,8 @@ import (
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/client/redis"
+	"github.com/spf13/pflag"
 )
 
 var (
@@ -85,7 +85,9 @@ type BlockValidator struct {
 type BlockValidatorConfig struct {
 	Enable                      bool                          `koanf:"enable"`
 	ValidationServer            rpcclient.ClientConfig        `koanf:"validation-server" reload:"hot"`
+	RedisValidationClientConfig redis.ValidationClientConfig  `koanf:"redis-validation-client-config"`
 	ValidationServerConfigs     []rpcclient.ClientConfig      `koanf:"validation-server-configs" reload:"hot"`
+	ExecutionServerConfig       rpcclient.ClientConfig        `koanf:"execution-server-config" reload:"hot"`
 	ValidationPoll              time.Duration                 `koanf:"validation-poll" reload:"hot"`
 	PrerecordedBlocks           uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
 	ForwardBlocks               uint64                        `koanf:"forward-blocks" reload:"hot"`
@@ -109,24 +111,27 @@ func (c *BlockValidatorConfig) Validate() error {
 		}
 		c.memoryFreeLimit = limit
 	}
+	streamsEnabled := c.RedisValidationClientConfig.Enabled()
 	if c.ValidationServerConfigs == nil {
-		if c.ValidationServerConfigsList == "default" {
-			c.ValidationServerConfigs = []rpcclient.ClientConfig{c.ValidationServer}
-		} else {
+		c.ValidationServerConfigs = []rpcclient.ClientConfig{c.ValidationServer}
+		if c.ValidationServerConfigsList != "default" {
 			var validationServersConfigs []rpcclient.ClientConfig
-			if err := json.Unmarshal([]byte(c.ValidationServerConfigsList), &validationServersConfigs); err != nil {
+			if err := json.Unmarshal([]byte(c.ValidationServerConfigsList), &validationServersConfigs); err != nil && !streamsEnabled {
 				return fmt.Errorf("failed to parse block-validator validation-server-configs-list string: %w", err)
 			}
 			c.ValidationServerConfigs = validationServersConfigs
 		}
 	}
-	if len(c.ValidationServerConfigs) == 0 {
+	if len(c.ValidationServerConfigs) == 0 && !streamsEnabled {
 		return fmt.Errorf("block-validator validation-server-configs is empty, need at least one validation server config")
 	}
 	for _, serverConfig := range c.ValidationServerConfigs {
 		if err := serverConfig.Validate(); err != nil {
 			return fmt.Errorf("failed to validate one of the block-validator validation-server-configs. url: %s, err: %w", serverConfig.URL, err)
 		}
+	}
+	if err := c.ExecutionServerConfig.Validate(); err != nil {
+		return fmt.Errorf("validating execution server config: %w", err)
 	}
 	return nil
 }
@@ -137,9 +142,11 @@ type BlockValidatorDangerousConfig struct {
 
 type BlockValidatorConfigFetcher func() *BlockValidatorConfig
 
-func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
+func BlockValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block-by-block validation")
 	rpcclient.RPCClientAddOptions(prefix+".validation-server", f, &DefaultBlockValidatorConfig.ValidationServer)
+	rpcclient.RPCClientAddOptions(prefix+".execution-server-config", f, &DefaultBlockValidatorConfig.ExecutionServerConfig)
+	redis.ValidationClientConfigAddOptions(prefix+".redis-validation-client-config", f)
 	f.String(prefix+".validation-server-configs-list", DefaultBlockValidatorConfig.ValidationServerConfigsList, "array of validation rpc configs given as a json string. time duration should be supplied in number indicating nanoseconds")
 	f.Duration(prefix+".validation-poll", DefaultBlockValidatorConfig.ValidationPoll, "poll time to check validations")
 	f.Uint64(prefix+".forward-blocks", DefaultBlockValidatorConfig.ForwardBlocks, "prepare entries for up to that many blocks ahead of validation (small footprint)")
@@ -151,7 +158,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".memory-free-limit", DefaultBlockValidatorConfig.MemoryFreeLimit, "minimum free-memory limit after reaching which the blockvalidator pauses validation. Enabled by default as 1GB, to disable provide empty string")
 }
 
-func BlockValidatorDangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
+func BlockValidatorDangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".reset-block-validation", DefaultBlockValidatorDangerousConfig.ResetBlockValidation, "resets block-by-block validation, starting again at genesis")
 }
 
@@ -159,6 +166,8 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                      false,
 	ValidationServerConfigsList: "default",
 	ValidationServer:            rpcclient.DefaultClientConfig,
+	ExecutionServerConfig:       rpcclient.DefaultClientConfig,
+	RedisValidationClientConfig: redis.DefaultValidationClientConfig,
 	ValidationPoll:              time.Second,
 	ForwardBlocks:               1024,
 	PrerecordedBlocks:           uint64(2 * runtime.NumCPU()),
@@ -170,17 +179,19 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 }
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
-	Enable:                   false,
-	ValidationServer:         rpcclient.TestClientConfig,
-	ValidationServerConfigs:  []rpcclient.ClientConfig{rpcclient.TestClientConfig},
-	ValidationPoll:           100 * time.Millisecond,
-	ForwardBlocks:            128,
-	PrerecordedBlocks:        uint64(2 * runtime.NumCPU()),
-	CurrentModuleRoot:        "latest",
-	PendingUpgradeModuleRoot: "latest",
-	FailureIsFatal:           true,
-	Dangerous:                DefaultBlockValidatorDangerousConfig,
-	MemoryFreeLimit:          "default",
+	Enable:                      false,
+	ValidationServer:            rpcclient.TestClientConfig,
+	ValidationServerConfigs:     []rpcclient.ClientConfig{rpcclient.TestClientConfig},
+	RedisValidationClientConfig: redis.TestValidationClientConfig,
+	ExecutionServerConfig:       rpcclient.TestClientConfig,
+	ValidationPoll:              100 * time.Millisecond,
+	ForwardBlocks:               128,
+	PrerecordedBlocks:           uint64(2 * runtime.NumCPU()),
+	CurrentModuleRoot:           "latest",
+	PendingUpgradeModuleRoot:    "latest",
+	FailureIsFatal:              true,
+	Dangerous:                   DefaultBlockValidatorDangerousConfig,
+	MemoryFreeLimit:             "default",
 }
 
 var DefaultBlockValidatorDangerousConfig = BlockValidatorDangerousConfig{
@@ -1030,9 +1041,13 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 // Initialize must be called after SetCurrentWasmModuleRoot sets the current one
 func (v *BlockValidator) Initialize(ctx context.Context) error {
 	config := v.config()
+
 	currentModuleRoot := config.CurrentModuleRoot
 	switch currentModuleRoot {
 	case "latest":
+		if v.execSpawner == nil {
+			return fmt.Errorf(`execution spawner is nil while current module root is "latest"`)
+		}
 		latest, err := v.execSpawner.LatestWasmModuleRoot().Await(ctx)
 		if err != nil {
 			return err
@@ -1049,6 +1064,13 @@ func (v *BlockValidator) Initialize(ctx context.Context) error {
 		}
 	}
 	log.Info("BlockValidator initialized", "current", v.currentWasmModuleRoot, "pending", v.pendingWasmModuleRoot)
+	moduleRoots := []common.Hash{v.currentWasmModuleRoot}
+	if v.pendingWasmModuleRoot != v.currentWasmModuleRoot {
+		moduleRoots = append(moduleRoots, v.pendingWasmModuleRoot)
+	}
+	if err := v.StatelessBlockValidator.Initialize(moduleRoots); err != nil {
+		return fmt.Errorf("initializing block validator with module roots: %w", err)
+	}
 	return nil
 }
 
