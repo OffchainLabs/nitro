@@ -5,6 +5,7 @@ package conf
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"path"
 	"path/filepath"
@@ -116,8 +117,12 @@ type PebbleConfig struct {
 	WALMinSyncInterval          int                      `koanf:"wal-min-sync-interval"`
 	TargetByteDeletionRate      int                      `koanf:"target-byte-deletion-rate"`
 	Experimental                PebbleExperimentalConfig `koanf:"experimental"`
-	TargetFileSize              int64                    `koanf:"target-file-size"`
-	TargetFileSizeEqualLayers   bool                     `koanf:"target-file-size-equal-layers"`
+
+	// level specific
+	BlockSize                 int   `koanf:"block-size"`
+	IndexBlockSize            int   `koanf:"index-block-size"`
+	TargetFileSize            int64 `koanf:"target-file-size"`
+	TargetFileSizeEqualLevels bool  `koanf:"target-file-size-equal-levels"`
 }
 
 var PebbleConfigDefault = PebbleConfig{
@@ -133,8 +138,10 @@ var PebbleConfigDefault = PebbleConfig{
 	WALMinSyncInterval:          0,  // pebble default will be used
 	TargetByteDeletionRate:      0,  // pebble default will be used
 	Experimental:                PebbleExperimentalConfigDefault,
+	BlockSize:                   4096,
+	IndexBlockSize:              4096,
 	TargetFileSize:              2 * 1024 * 1024,
-	TargetFileSizeEqualLayers:   true,
+	TargetFileSizeEqualLevels:   true,
 }
 
 func PebbleConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -149,9 +156,11 @@ func PebbleConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".wal-dir", PebbleConfigDefault.WALDir, "directory to store write-ahead logs (WALs) in. If empty, WALs will be stored in the same directory as sstables")
 	f.Int(prefix+".wal-min-sync-interval", PebbleConfigDefault.WALMinSyncInterval, "minimum duration in microseconds between syncs of the WAL. If WAL syncs are requested faster than this interval, they will be artificially delayed.")
 	f.Int(prefix+".target-byte-deletion-rate", PebbleConfigDefault.TargetByteDeletionRate, "rate (in bytes per second) at which sstable file deletions are limited to (under normal circumstances).")
+	f.Int(prefix+".block-size", PebbleConfigDefault.BlockSize, "target uncompressed size in bytes of each table block")
+	f.Int(prefix+".index-block-size", PebbleConfigDefault.IndexBlockSize, fmt.Sprintf("target uncompressed size in bytes of each index block. When the index block size is larger than this target, two-level indexes are automatically enabled. Setting this option to a large value (such as %d) disables the automatic creation of two-level indexes.", math.MaxInt32))
 	PebbleExperimentalConfigAddOptions(prefix+".experimental", f)
 	f.Int64(prefix+".target-file-size", PebbleConfigDefault.TargetFileSize, "target file size for the level 0")
-	f.Bool(prefix+".target-file-size-equal-layers", PebbleConfigDefault.TargetFileSizeEqualLayers, "if true same target-file-size will be uses for all layers, otherwise target size for layer n = 2 * target size for layer n - 1")
+	f.Bool(prefix+".target-file-size-equal-levels", PebbleConfigDefault.TargetFileSizeEqualLevels, "if true same target-file-size will be uses for all levels, otherwise target size for layer n = 2 * target size for layer n - 1")
 }
 
 type PebbleExperimentalConfig struct {
@@ -193,16 +202,16 @@ func (c *PebbleConfig) ExtraOptions() *pebble.ExtraOptions {
 		}
 	}
 	var levels []pebble.ExtraLevelOptions
-	if c.TargetFileSize > 0 {
-		if c.TargetFileSizeEqualLayers {
-			for i := 0; i < 7; i++ {
-				levels = append(levels, pebble.ExtraLevelOptions{TargetFileSize: c.TargetFileSize})
-			}
-		} else {
-			for i := 0; i < 7; i++ {
-				levels = append(levels, pebble.ExtraLevelOptions{TargetFileSize: c.TargetFileSize << i})
-			}
+	for i := 0; i < 7; i++ {
+		targetFileSize := c.TargetFileSize
+		if !c.TargetFileSizeEqualLevels {
+			targetFileSize = targetFileSize << i
 		}
+		levels = append(levels, pebble.ExtraLevelOptions{
+			BlockSize:      c.BlockSize,
+			IndexBlockSize: c.IndexBlockSize,
+			TargetFileSize: targetFileSize,
+		})
 	}
 	return &pebble.ExtraOptions{
 		BytesPerSync:                c.BytesPerSync,
@@ -226,4 +235,9 @@ func (c *PebbleConfig) ExtraOptions() *pebble.ExtraOptions {
 		},
 		Levels: levels,
 	}
+}
+
+func (c *PebbleConfig) Validate() error {
+	// TODO
+	return nil
 }
