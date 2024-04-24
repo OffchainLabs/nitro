@@ -421,6 +421,8 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 	if err != nil {
 		return nil, err
 	}
+	blockCalcTime := time.Since(startTime)
+
 	blockHash := block.Hash()
 	messageWithMeta.L2BlockHash = &blockHash
 
@@ -429,7 +431,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		return nil, err
 	}
 
-	err = s.appendBlock(block, statedb, receipts, time.Since(startTime))
+	err = s.appendBlock(block, statedb, receipts, blockCalcTime)
 	if err != nil {
 		return nil, err
 	}
