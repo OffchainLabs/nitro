@@ -33,6 +33,10 @@ func TransferBalance(
 			return fmt.Errorf("%w: addr %v have %v want %v", vm.ErrInsufficientBalance, *from, balance, amount)
 		}
 		evm.StateDB.SubBalance(*from, amount)
+		if evm.Context.ArbOSVersion >= 30 {
+			// ensure the from account is "touched" for EIP-161
+			evm.StateDB.AddBalance(*from, common.Big0)
+		}
 	}
 	if to != nil {
 		evm.StateDB.AddBalance(*to, amount)
