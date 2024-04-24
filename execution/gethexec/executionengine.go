@@ -358,9 +358,11 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, err
 	}
 
+	l2BlockHash := block.Hash()
 	msgWithMeta := arbostypes.MessageWithMetadata{
 		Message:             msg,
 		DelayedMessagesRead: delayedMessagesRead,
+		L2BlockHash:         &l2BlockHash,
 	}
 
 	pos, err := s.BlockNumberToMessageIndex(lastBlockHeader.Number.Uint64() + 1)
@@ -368,7 +370,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, err
 	}
 
-	err = s.consensus.WriteMessageFromSequencer(pos, msgWithMeta, block.Hash())
+	err = s.consensus.WriteMessageFromSequencer(pos, msgWithMeta)
 	if err != nil {
 		return nil, err
 	}
@@ -419,8 +421,10 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 	if err != nil {
 		return nil, err
 	}
+	blockHash := block.Hash()
+	messageWithMeta.L2BlockHash = &blockHash
 
-	err = s.consensus.WriteMessageFromSequencer(lastMsg+1, messageWithMeta, block.Hash())
+	err = s.consensus.WriteMessageFromSequencer(lastMsg+1, messageWithMeta)
 	if err != nil {
 		return nil, err
 	}

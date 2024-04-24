@@ -34,7 +34,6 @@ type BroadcastMessage struct {
 type BroadcastFeedMessage struct {
 	SequenceNumber arbutil.MessageIndex           `json:"sequenceNumber"`
 	Message        arbostypes.MessageWithMetadata `json:"message"`
-	BlockHash      *common.Hash                   `json:"blockHash,omitempty"`
 	Signature      []byte                         `json:"signature"`
 
 	CumulativeSumMsgSize uint64 `json:"-"`

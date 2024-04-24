@@ -302,7 +302,7 @@ func (t *InboxTracker) PopulateFeedBacklog(broadcastServer *broadcaster.Broadcas
 		if err != nil {
 			return fmt.Errorf("error getting message %v: %w", seqNum, err)
 		}
-		feedMessage, err := broadcastServer.NewBroadcastFeedMessage(*message, seqNum, nil)
+		feedMessage, err := broadcastServer.NewBroadcastFeedMessage(*message, seqNum)
 		if err != nil {
 			return fmt.Errorf("error creating broadcast feed message %v: %w", seqNum, err)
 		}

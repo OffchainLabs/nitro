@@ -773,19 +773,25 @@ func (s *TransactionStreamer) countDuplicateMessages(
 			}
 			var duplicateMessage bool
 			if nextMessage.Message != nil {
-				if dbMessageParsed.Message.BatchGasCost == nil || nextMessage.Message.BatchGasCost == nil {
-					// Remove both of the batch gas costs and see if the messages still differ
+				if dbMessageParsed.Message.BatchGasCost == nil || nextMessage.Message.BatchGasCost == nil || dbMessageParsed.L2BlockHash == nil || nextMessage.L2BlockHash == nil {
+					// Remove both of the batch gas costs and l2 block hashes and see if the messages still differ
 					nextMessageCopy := nextMessage
 					nextMessageCopy.Message = new(arbostypes.L1IncomingMessage)
 					*nextMessageCopy.Message = *nextMessage.Message
+
 					batchGasCostBkup := dbMessageParsed.Message.BatchGasCost
+					l2BlockHashBkup := dbMessageParsed.L2BlockHash
+
 					dbMessageParsed.Message.BatchGasCost = nil
+					dbMessageParsed.L2BlockHash = nil
 					nextMessageCopy.Message.BatchGasCost = nil
+					nextMessageCopy.L2BlockHash = nil
+
 					if reflect.DeepEqual(dbMessageParsed, nextMessageCopy) {
-						// Actually this isn't a reorg; only the batch gas costs differed
+						// Actually this isn't a reorg; only the batch gas costs or l2 block hashes differed
 						duplicateMessage = true
-						// If possible - update the message in the database to add the gas cost cache.
-						if batch != nil && nextMessage.Message.BatchGasCost != nil {
+						// If possible - update the message in the database to add the gas cost and l2 block hashes.
+						if batch != nil && (nextMessage.Message.BatchGasCost != nil || nextMessage.L2BlockHash != nil) {
 							if *batch == nil {
 								*batch = s.db.NewBatch()
 							}
@@ -795,6 +801,7 @@ func (s *TransactionStreamer) countDuplicateMessages(
 						}
 					}
 					dbMessageParsed.Message.BatchGasCost = batchGasCostBkup
+					dbMessageParsed.L2BlockHash = l2BlockHashBkup
 				}
 			}
 
@@ -936,17 +943,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 		return endBatch(batch)
 	}
 
-	msgsWithBlocksHashes := make([]broadcaster.MessageWithMetadataAndBlockHash, 0, len(messages))
-	for _, msg := range messages {
-		msgsWithBlocksHashes = append(
-			msgsWithBlocksHashes,
-			broadcaster.MessageWithMetadataAndBlockHash{
-				Message:   msg,
-				BlockHash: nil,
-			},
-		)
-	}
-	err := s.writeMessages(messageStartPos, msgsWithBlocksHashes, batch)
+	err := s.writeMessages(messageStartPos, messages, batch)
 	if err != nil {
 		return err
 	}
@@ -976,11 +973,7 @@ func (s *TransactionStreamer) ExpectChosenSequencer() error {
 	return nil
 }
 
-func (s *TransactionStreamer) WriteMessageFromSequencer(
-	pos arbutil.MessageIndex,
-	msgWithMeta arbostypes.MessageWithMetadata,
-	blockHash common.Hash,
-) error {
+func (s *TransactionStreamer) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) error {
 	if err := s.ExpectChosenSequencer(); err != nil {
 		return err
 	}
@@ -1004,13 +997,7 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(
 		}
 	}
 
-	msgWithBlockHash := []broadcaster.MessageWithMetadataAndBlockHash{
-		{
-			Message:   msgWithMeta,
-			BlockHash: &blockHash,
-		},
-	}
-	if err := s.writeMessages(pos, msgWithBlockHash, nil); err != nil {
+	if err := s.writeMessages(pos, []arbostypes.MessageWithMetadata{msgWithMeta}, nil); err != nil {
 		return err
 	}
 
@@ -1044,22 +1031,18 @@ func (s *TransactionStreamer) writeMessage(pos arbutil.MessageIndex, msg arbosty
 
 // The mutex must be held, and pos must be the latest message count.
 // `batch` may be nil, which initializes a new batch. The batch is closed out in this function.
-func (s *TransactionStreamer) writeMessages(
-	pos arbutil.MessageIndex,
-	messagesWithBlockHash []broadcaster.MessageWithMetadataAndBlockHash,
-	batch ethdb.Batch,
-) error {
+func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages []arbostypes.MessageWithMetadata, batch ethdb.Batch) error {
 	if batch == nil {
 		batch = s.db.NewBatch()
 	}
-	for i, msg := range messagesWithBlockHash {
-		err := s.writeMessage(pos+arbutil.MessageIndex(i), msg.Message, batch)
+	for i, msg := range messages {
+		err := s.writeMessage(pos+arbutil.MessageIndex(i), msg, batch)
 		if err != nil {
 			return err
 		}
 	}
 
-	err := setMessageCount(batch, pos+arbutil.MessageIndex(len(messagesWithBlockHash)))
+	err := setMessageCount(batch, pos+arbutil.MessageIndex(len(messages)))
 	if err != nil {
 		return err
 	}
@@ -1074,7 +1057,7 @@ func (s *TransactionStreamer) writeMessages(
 	}
 
 	if s.broadcastServer != nil {
-		if err := s.broadcastServer.BroadcastMessages(messagesWithBlockHash, pos); err != nil {
+		if err := s.broadcastServer.BroadcastMessages(messages, pos); err != nil {
 			log.Error("failed broadcasting message", "pos", pos, "err", err)
 		}
 	}
