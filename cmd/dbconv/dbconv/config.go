@@ -5,16 +5,18 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	flag "github.com/spf13/pflag"
 )
 
 type DBConfig struct {
-	Data      string `koanf:"data"`
-	DBEngine  string `koanf:"db-engine"`
-	Handles   int    `koanf:"handles"`
-	Cache     int    `koanf:"cache"`
-	Namespace string `koanf:"namespace"`
+	Data      string            `koanf:"data"`
+	DBEngine  string            `koanf:"db-engine"`
+	Handles   int               `koanf:"handles"`
+	Cache     int               `koanf:"cache"`
+	Namespace string            `koanf:"namespace"`
+	Pebble    conf.PebbleConfig `koanf:"pebble"`
 }
 
 // TODO
@@ -27,6 +29,7 @@ func DBConfigAddOptions(prefix string, f *flag.FlagSet, defaultNamespace string)
 	f.Int(prefix+".handles", DBConfigDefault.Handles, "number of file descriptor handles to use for the database")
 	f.Int(prefix+".cache", DBConfigDefault.Cache, "the capacity(in megabytes) of the data caching")
 	f.String(prefix+".namespace", defaultNamespace, "metrics namespace")
+	conf.PebbleConfigAddOptions(prefix+".pebble", f)
 }
 
 type DBConvConfig struct {
@@ -52,6 +55,7 @@ var DefaultDBConvConfig = DBConvConfig{
 	Verify:               0,
 	LogLevel:             int(log.LvlDebug),
 	Metrics:              false,
+	MetricsServer:        genericconf.MetricsServerConfigDefault,
 }
 
 func DBConvConfigAddOptions(f *flag.FlagSet) {

@@ -30,13 +30,14 @@ func NewDBConverter(config *DBConvConfig) *DBConverter {
 
 func openDB(config *DBConfig, readonly bool) (ethdb.Database, error) {
 	return rawdb.Open(rawdb.OpenOptions{
-		Type:              config.DBEngine,
-		Directory:         config.Data,
-		AncientsDirectory: "", // don't open freezer
-		Namespace:         config.Namespace,
-		Cache:             config.Cache,
-		Handles:           config.Handles,
-		ReadOnly:          readonly,
+		Type:               config.DBEngine,
+		Directory:          config.Data,
+		AncientsDirectory:  "", // don't open freezer
+		Namespace:          config.Namespace,
+		Cache:              config.Cache,
+		Handles:            config.Handles,
+		ReadOnly:           readonly,
+		PebbleExtraOptions: config.Pebble.ExtraOptions(),
 	})
 }
 
