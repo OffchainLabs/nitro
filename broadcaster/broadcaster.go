@@ -82,27 +82,6 @@ func (b *Broadcaster) BroadcastSingleFeedMessage(bfm *m.BroadcastFeedMessage) {
 	b.BroadcastFeedMessages(broadcastFeedMessages)
 }
 
-func (b *Broadcaster) BroadcastMessages(messages []arbostypes.MessageWithMetadata, seq arbutil.MessageIndex) (err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			log.Error("recovered error in BroadcastMessages", "recover", r, "backtrace", string(debug.Stack()))
-			err = errors.New("panic in BroadcastMessages")
-		}
-	}()
-	var feedMessages []*m.BroadcastFeedMessage
-	for i, msg := range messages {
-		bfm, err := b.NewBroadcastFeedMessage(msg, seq+arbutil.MessageIndex(i))
-		if err != nil {
-			return err
-		}
-		feedMessages = append(feedMessages, bfm)
-	}
-
-	b.BroadcastFeedMessages(feedMessages)
-
-	return nil
-}
-
 func (b *Broadcaster) BroadcastFeedMessages(messages []*m.BroadcastFeedMessage) {
 
 	bm := &m.BroadcastMessage{

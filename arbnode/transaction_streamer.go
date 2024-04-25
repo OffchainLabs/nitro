@@ -1000,6 +1000,7 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(pos arbutil.MessageIndex
 	if err := s.writeMessages(pos, []arbostypes.MessageWithMetadata{msgWithMeta}, nil); err != nil {
 		return err
 	}
+	s.BroadcastMessage(msgWithMeta, pos)
 
 	return nil
 }
@@ -1029,6 +1030,15 @@ func (s *TransactionStreamer) writeMessage(pos arbutil.MessageIndex, msg arbosty
 	return batch.Put(key, msgBytes)
 }
 
+func (s *TransactionStreamer) BroadcastMessage(msg arbostypes.MessageWithMetadata, pos arbutil.MessageIndex) {
+	if s.broadcastServer == nil {
+		return
+	}
+	if err := s.broadcastServer.BroadcastSingle(msg, pos); err != nil {
+		log.Error("failed broadcasting message", "pos", pos, "err", err)
+	}
+}
+
 // The mutex must be held, and pos must be the latest message count.
 // `batch` may be nil, which initializes a new batch. The batch is closed out in this function.
 func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages []arbostypes.MessageWithMetadata, batch ethdb.Batch) error {
@@ -1054,12 +1064,6 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 	select {
 	case s.newMessageNotifier <- struct{}{}:
 	default:
-	}
-
-	if s.broadcastServer != nil {
-		if err := s.broadcastServer.BroadcastMessages(messages, pos); err != nil {
-			log.Error("failed broadcasting message", "pos", pos, "err", err)
-		}
 	}
 
 	return nil

@@ -997,6 +997,10 @@ func (n *Node) GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, 
 	return n.InboxReader.GetFinalizedMsgCount(ctx)
 }
 
+func (n *Node) BroadcastMessage(msg arbostypes.MessageWithMetadata, pos arbutil.MessageIndex) {
+	n.TxStreamer.BroadcastMessage(msg, pos)
+}
+
 func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) error {
 	return n.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta)
 }

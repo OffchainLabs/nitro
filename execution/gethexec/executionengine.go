@@ -630,6 +630,14 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 	if err != nil {
 		return err
 	}
+
+	if s.consensus != nil {
+		l2BlockHash := block.Hash()
+		msg.L2BlockHash = &l2BlockHash
+
+		s.consensus.BroadcastMessage(*msg, num)
+	}
+
 	err = s.appendBlock(block, statedb, receipts, time.Since(startTime))
 	if err != nil {
 		return err
