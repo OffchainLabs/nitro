@@ -778,12 +778,9 @@ func (s *TransactionStreamer) countDuplicateMessages(
 					nextMessageCopy := nextMessage
 					nextMessageCopy.Message = new(arbostypes.L1IncomingMessage)
 					*nextMessageCopy.Message = *nextMessage.Message
-
 					batchGasCostBkup := dbMessageParsed.Message.BatchGasCost
-
 					dbMessageParsed.Message.BatchGasCost = nil
 					nextMessageCopy.Message.BatchGasCost = nil
-
 					if reflect.DeepEqual(dbMessageParsed, nextMessageCopy) {
 						// Actually this isn't a reorg; only the batch gas costs differed
 						duplicateMessage = true
