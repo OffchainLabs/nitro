@@ -147,7 +147,7 @@ func Test_recursiveInheritedTimerCompute(t *testing.T) {
 		require.NoError(t, err)
 		require.Equal(t, expected+expectedUpperChild, uint64(timer))
 	})
-	t.Run("edge with length one returns the max of its local timer or onchain timer", func(t *testing.T) {
+	t.Run("edge with length one and no subchallenge returns local timer", func(t *testing.T) {
 		edge := newEdge(&newCfg{t: t, edgeId: "big-16.a-17.a", createdAt: 2})
 		ht.edges.Put(edge.Id(), edge)
 		blockNum := uint64(10)
@@ -157,14 +157,6 @@ func Test_recursiveInheritedTimerCompute(t *testing.T) {
 		require.NoError(t, err)
 		expected := blockNum - edge.CreationBlock
 		require.Equal(t, expected, uint64(timer))
-
-		// Onchain value is greater than all of them, returns onchain value
-		// and checks we updated our local cache after that.
-		edge.InnerInheritedTimer = 100
-		ht.edges.Put(edge.Id(), edge)
-		timer, err = ht.recursiveInheritedTimerCompute(ctx, edge.Id(), blockNum)
-		require.NoError(t, err)
-		require.Equal(t, uint64(100), uint64(timer))
 	})
 	t.Run("claimed edge includes claiming edge's inherited timer", func(t *testing.T) {
 		claimingEdge := newEdge(&newCfg{t: t, edgeId: "big-0.a-32.a", createdAt: 2})
