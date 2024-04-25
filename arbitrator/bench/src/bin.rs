@@ -3,8 +3,13 @@ use std::{path::PathBuf, time::Duration};
 use bench::prepare::*;
 use clap::Parser;
 use eyre::bail;
+
+#[cfg(feature = "cpuprof")]
 use gperftools::profiler::PROFILER;
+
+#[cfg(feature = "heapprof")]
 use gperftools::heap_profiler::HEAP_PROFILER;
+
 use prover::machine::MachineStatus;
 
 #[cfg(feature = "counters")]
@@ -44,10 +49,15 @@ fn main() -> eyre::Result<()> {
         let mut hash_times = vec![];
         let mut step_times = vec![];
         let mut num_iters = 0;
+
+        #[cfg(feature = "cpuprof")]
         PROFILER.lock().unwrap().start(format!("./target/bench-{}.prof", step_size)).unwrap();
+
+        #[cfg(feature = "heapprof")]
         HEAP_PROFILER.lock().unwrap().start(format!("./target/bench-{}.hprof", step_size)).unwrap();
+
         #[cfg(feature = "counters")]
-        merkle::resetCounters();
+        merkle::reset_counters();
         let total = std::time::Instant::now();
         loop {
             let start = std::time::Instant::now();
@@ -75,8 +85,13 @@ fn main() -> eyre::Result<()> {
                 break;
             }
         }
+
+        #[cfg(feature = "cpuprof")]
         PROFILER.lock().unwrap().stop().unwrap();
+
+        #[cfg(feature = "heapprof")]
         HEAP_PROFILER.lock().unwrap().stop().unwrap();
+
         let total_end_time = total.elapsed();
         println!(
             "avg hash time {:?}, avg step time {:?}, step size {}, num_iters {}, total time {:?}",
@@ -87,7 +102,7 @@ fn main() -> eyre::Result<()> {
             total_end_time,
         );
         #[cfg(feature = "counters")]
-        merkle::printCounters();
+        merkle::print_counters();
     }
     Ok(())
 }

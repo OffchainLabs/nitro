@@ -97,7 +97,7 @@ impl Default for MerkleType {
 }
 
 #[cfg(feature = "counters")]
-pub fn printCounters() {
+pub fn print_counters() {
     for ty in all::<MerkleType>() {
         if ty == MerkleType::Empty {
             continue;
@@ -108,7 +108,7 @@ pub fn printCounters() {
 }
 
 #[cfg(feature = "counters")]
-pub fn resetCounters() {
+pub fn reset_counters() {
     for ty in all::<MerkleType>() {
         if ty == MerkleType::Empty {
             continue;
