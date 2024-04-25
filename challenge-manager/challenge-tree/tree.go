@@ -45,14 +45,15 @@ func buildEdgeCreationTimeKey(originId protocol.OriginId, mutualId protocol.Mutu
 // RoyalChallengeTree keeps track of royal edges the honest node agrees with in a particular challenge.
 // All edges tracked in this data structure are part of the same, top-level assertion challenge.
 type RoyalChallengeTree struct {
-	edges                 *threadsafe.Map[protocol.EdgeId, protocol.SpecEdge]
-	edgeCreationTimes     *threadsafe.Map[OriginPlusMutualId, *threadsafe.Map[protocol.EdgeId, creationTime]]
-	topLevelAssertionHash protocol.AssertionHash
-	metadataReader        MetadataReader
-	histChecker           l2stateprovider.HistoryChecker
-	validatorName         string
-	totalChallengeLevels  uint8
-	royalRootEdgesByLevel *threadsafe.Map[protocol.ChallengeLevel, *threadsafe.Slice[protocol.SpecEdge]]
+	edges                       *threadsafe.Map[protocol.EdgeId, protocol.SpecEdge]
+	edgeCreationTimes           *threadsafe.Map[OriginPlusMutualId, *threadsafe.Map[protocol.EdgeId, creationTime]]
+	topLevelAssertionHash       protocol.AssertionHash
+	metadataReader              MetadataReader
+	histChecker                 l2stateprovider.HistoryChecker
+	validatorName               string
+	totalChallengeLevels        uint8
+	royalRootEdgesByLevel       *threadsafe.Map[protocol.ChallengeLevel, *threadsafe.Slice[protocol.SpecEdge]]
+	pathWeightsToEssentialNodes map[protocol.EdgeId]essentialNode
 }
 
 func New(

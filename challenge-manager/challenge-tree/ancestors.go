@@ -18,12 +18,6 @@ var (
 	ErrNoLowerChildYet      = errors.New("edge does not yet have a lower child")
 )
 
-// PathTimer for an honest edge defined as the cumulative unrivaled time
-// of it and its honest ancestors all the way up to the assertion chain level.
-// This also includes the time the assertion, which the challenge corresponds to,
-// has been unrivaled.
-type PathTimer uint64
-
 // HonestAncestors of an edge id all the way up to and including the
 // block challenge level zero edge.
 type HonestAncestors []protocol.ReadOnlyEdge
