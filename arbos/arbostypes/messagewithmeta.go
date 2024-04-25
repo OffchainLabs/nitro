@@ -16,7 +16,6 @@ var uniquifyingPrefix = []byte("Arbitrum Nitro Feed:")
 type MessageWithMetadata struct {
 	Message             *L1IncomingMessage `json:"message"`
 	DelayedMessagesRead uint64             `json:"delayedMessagesRead"`
-	L2BlockHash         *common.Hash       `json:"l2BlockHash,omitempty" rlp:"nilList,optional"`
 }
 
 var EmptyTestMessageWithMetadata = MessageWithMetadata{

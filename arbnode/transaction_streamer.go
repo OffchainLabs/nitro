@@ -773,25 +773,22 @@ func (s *TransactionStreamer) countDuplicateMessages(
 			}
 			var duplicateMessage bool
 			if nextMessage.Message != nil {
-				if dbMessageParsed.Message.BatchGasCost == nil || nextMessage.Message.BatchGasCost == nil || dbMessageParsed.L2BlockHash == nil || nextMessage.L2BlockHash == nil {
-					// Remove both of the batch gas costs and l2 block hashes and see if the messages still differ
+				if dbMessageParsed.Message.BatchGasCost == nil || nextMessage.Message.BatchGasCost == nil {
+					// Remove both of the batch gas costs and see if the messages still differ
 					nextMessageCopy := nextMessage
 					nextMessageCopy.Message = new(arbostypes.L1IncomingMessage)
 					*nextMessageCopy.Message = *nextMessage.Message
 
 					batchGasCostBkup := dbMessageParsed.Message.BatchGasCost
-					l2BlockHashBkup := dbMessageParsed.L2BlockHash
 
 					dbMessageParsed.Message.BatchGasCost = nil
-					dbMessageParsed.L2BlockHash = nil
 					nextMessageCopy.Message.BatchGasCost = nil
-					nextMessageCopy.L2BlockHash = nil
 
 					if reflect.DeepEqual(dbMessageParsed, nextMessageCopy) {
-						// Actually this isn't a reorg; only the batch gas costs or l2 block hashes differed
+						// Actually this isn't a reorg; only the batch gas costs differed
 						duplicateMessage = true
-						// If possible - update the message in the database to add the gas cost and l2 block hashes.
-						if batch != nil && (nextMessage.Message.BatchGasCost != nil || nextMessage.L2BlockHash != nil) {
+						// If possible - update the message in the database to add the gas cost cache.
+						if batch != nil && nextMessage.Message.BatchGasCost != nil {
 							if *batch == nil {
 								*batch = s.db.NewBatch()
 							}
@@ -801,7 +798,6 @@ func (s *TransactionStreamer) countDuplicateMessages(
 						}
 					}
 					dbMessageParsed.Message.BatchGasCost = batchGasCostBkup
-					dbMessageParsed.L2BlockHash = l2BlockHashBkup
 				}
 			}
 
@@ -973,7 +969,11 @@ func (s *TransactionStreamer) ExpectChosenSequencer() error {
 	return nil
 }
 
-func (s *TransactionStreamer) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) error {
+func (s *TransactionStreamer) WriteMessageFromSequencer(
+	pos arbutil.MessageIndex,
+	msgWithMeta arbostypes.MessageWithMetadata,
+	msgResult execution.MessageResult,
+) error {
 	if err := s.ExpectChosenSequencer(); err != nil {
 		return err
 	}
@@ -1000,7 +1000,7 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(pos arbutil.MessageIndex
 	if err := s.writeMessages(pos, []arbostypes.MessageWithMetadata{msgWithMeta}, nil); err != nil {
 		return err
 	}
-	s.BroadcastMessage(msgWithMeta, pos)
+	s.BroadcastMessage(msgWithMeta, pos, msgResult)
 
 	return nil
 }
@@ -1030,11 +1030,15 @@ func (s *TransactionStreamer) writeMessage(pos arbutil.MessageIndex, msg arbosty
 	return batch.Put(key, msgBytes)
 }
 
-func (s *TransactionStreamer) BroadcastMessage(msg arbostypes.MessageWithMetadata, pos arbutil.MessageIndex) {
+func (s *TransactionStreamer) BroadcastMessage(
+	msg arbostypes.MessageWithMetadata,
+	pos arbutil.MessageIndex,
+	msgResult execution.MessageResult,
+) {
 	if s.broadcastServer == nil {
 		return
 	}
-	if err := s.broadcastServer.BroadcastSingle(msg, pos); err != nil {
+	if err := s.broadcastServer.BroadcastSingle(msg, pos, &msgResult.BlockHash); err != nil {
 		log.Error("failed broadcasting message", "pos", pos, "err", err)
 	}
 }

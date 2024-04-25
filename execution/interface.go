@@ -90,8 +90,8 @@ type ConsensusInfo interface {
 }
 
 type ConsensusSequencer interface {
-	BroadcastMessage(msg arbostypes.MessageWithMetadata, pos arbutil.MessageIndex)
-	WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) error
+	BroadcastMessage(msg arbostypes.MessageWithMetadata, pos arbutil.MessageIndex, msgResult MessageResult)
+	WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult MessageResult) error
 	ExpectChosenSequencer() error
 	CacheL1PriceDataOfMsg(pos arbutil.MessageIndex, callDataUnits uint64, l1GasCharged uint64)
 	BacklogL1GasCharged() uint64

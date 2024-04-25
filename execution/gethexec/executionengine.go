@@ -358,19 +358,20 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, err
 	}
 
-	l2BlockHash := block.Hash()
-	msgWithMeta := arbostypes.MessageWithMetadata{
-		Message:             msg,
-		DelayedMessagesRead: delayedMessagesRead,
-		L2BlockHash:         &l2BlockHash,
-	}
-
 	pos, err := s.BlockNumberToMessageIndex(lastBlockHeader.Number.Uint64() + 1)
 	if err != nil {
 		return nil, err
 	}
 
-	err = s.consensus.WriteMessageFromSequencer(pos, msgWithMeta)
+	msgWithMeta := arbostypes.MessageWithMetadata{
+		Message:             msg,
+		DelayedMessagesRead: delayedMessagesRead,
+	}
+	msgResult := execution.MessageResult{
+		BlockHash: block.Hash(),
+	}
+
+	err = s.consensus.WriteMessageFromSequencer(pos, msgWithMeta, msgResult)
 	if err != nil {
 		return nil, err
 	}
@@ -423,10 +424,11 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 	}
 	blockCalcTime := time.Since(startTime)
 
-	blockHash := block.Hash()
-	messageWithMeta.L2BlockHash = &blockHash
+	msgResult := execution.MessageResult{
+		BlockHash: block.Hash(),
+	}
 
-	err = s.consensus.WriteMessageFromSequencer(lastMsg+1, messageWithMeta)
+	err = s.consensus.WriteMessageFromSequencer(lastMsg+1, messageWithMeta, msgResult)
 	if err != nil {
 		return nil, err
 	}
@@ -632,10 +634,10 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 	}
 
 	if s.consensus != nil {
-		l2BlockHash := block.Hash()
-		msg.L2BlockHash = &l2BlockHash
-
-		s.consensus.BroadcastMessage(*msg, num)
+		msgResult := execution.MessageResult{
+			BlockHash: block.Hash(),
+		}
+		s.consensus.BroadcastMessage(*msg, num, msgResult)
 	}
 
 	err = s.appendBlock(block, statedb, receipts, time.Since(startTime))
