@@ -54,11 +54,15 @@ pub fn verify_merkle_proof_helper(
     let header: Header = serde_json::from_str(header_str).unwrap();
     let block_comm: Commitment<Header> = header.commit();
 
-    let proof = MerkleProof::new(header.height, proof.to_vec());
+    let proof = MerkleProof::new(header.height - 1, proof.to_vec());
     let proved_comm = proof.elem().unwrap().clone();
-    BlockMerkleTree::verify(header.block_merkle_tree_root.digest(), 0, proof)
-        .unwrap()
-        .unwrap();
+    BlockMerkleTree::verify(
+        header.block_merkle_tree_root.digest(),
+        header.height - 1,
+        proof,
+    )
+    .unwrap()
+    .unwrap();
 
     assert!(proved_comm == block_comm);
 
@@ -147,7 +151,10 @@ mod test {
     lazy_static! {
         // Initialize the byte array from JSON content
         static ref PROOF: &'static str = {
-            include_str!("../../../config/merkle_path.json")
+            include_str!("../../../config/test_merkle_path.json")
+        };
+        static ref HEADER: &'static str = {
+            include_str!("../../../config/test_header.json")
         };
     }
     #[test]
@@ -163,16 +170,9 @@ mod test {
     #[test]
     fn test_verify_merkle_proof_helper() {
         let proof_bytes = PROOF.clone().as_bytes();
-        let commit_str =
-            "MERKLE_COMM~Al5pIe5Gb0OYxtWY2pmPvwy7BSlv5CZH4bzrMxYC0r8gAAAAAAAAAA4AAAAAAAAAhA";
-        let tagged = TaggedBase64::parse(&commit_str).unwrap();
-        let block_comm: BlockMerkleCommitment = tagged.try_into().unwrap();
-        let mut block_comm_root_bytes = vec![];
-        block_comm
-            .serialize_compressed(&mut block_comm_root_bytes)
-            .unwrap();
-        let bytes = hash_bytes_to_field(&block_comm_root_bytes).unwrap();
-        dbg!(bytes);
+        let header_bytes = HEADER.clone().as_bytes();
+        let circuit_block_bytes = [];
+        verify_merkle_proof_helper(proof_bytes, header_bytes, &circuit_block_bytes)
     }
 
     #[test]

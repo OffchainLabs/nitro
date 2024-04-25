@@ -9,16 +9,21 @@ ark-bn254 = "0.4"
 ark-ed-on-bn254 = "0.4"
 ark-ff = "0.4"
 ark-serialize = { version = "0.4", features = ["derive"] }
+ark-std = { version = "0.4", default-features = false }
 base64 = "0.22"
 derive_more = "0.99.17"
+digest = "0.10"
+ethers-core = "2.0.14"
+sha2 = "0.10"
 base64-bytes = "0.1"
 serde_json = "1.0"
-committable = { git = "https://github.com/EspressoSystems/commit" }
+committable = "0.2"
 ethereum-types = "0.14.1"
 tagged-base64 = { git = "https://github.com/EspressoSystems/tagged-base64", tag = "0.3.4" }
 lazy_static = "1.4"
-serde = { version = "1.0", features = ["derive"] }
-sha2 = { version = "0.10.1" }
+serde = { version = "1.0.195", features = ["derive"] }
+itertools = "0.12"
+either =  {version = "1.11.0", features = ["serde"]}
 jf-primitives = { git = "https://github.com/EspressoSystems/jellyfish", tag = "0.4.2", features = [
     "test-srs", "std"
 ], default-features = false}

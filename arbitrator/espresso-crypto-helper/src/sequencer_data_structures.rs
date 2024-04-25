@@ -10,7 +10,9 @@ use committable::{Commitment, Committable, RawCommitmentBuilder};
 use core::fmt;
 use derivative::Derivative;
 use derive_more::{Add, Display, From, Into, Sub};
-use ethereum_types::{Address, Signature, H256, U256};
+use digest::OutputSizeUser;
+use either::Either;
+use ethers_core::types::{Address, Signature, H256, U256};
 use jf_primitives::{
     merkle_tree::{
         prelude::{LightWeightSHA3MerkleTree, Sha3Digest, Sha3Node},
@@ -31,7 +33,9 @@ use serde::{Deserialize, Serialize};
 use std::default::Default;
 use std::mem::size_of;
 use std::{marker::PhantomData, ops::Range};
+use tagged_base64::tagged;
 use trait_set::trait_set;
+use typenum::Unsigned;
 
 use crate::bytes::Bytes;
 
@@ -465,17 +469,142 @@ impl<TableWord: TableWordTraits> Table<TableWord> for NameSpaceTable<TableWord> 
     }
 }
 
+#[derive(Default, Hash, Copy, Clone, Debug, Deserialize, Serialize, PartialEq, Eq, From, Into)]
+pub struct ChainId(U256);
+
+macro_rules! impl_to_fixed_bytes {
+    ($struct_name:ident, $type:ty) => {
+        impl $struct_name {
+            pub(crate) fn to_fixed_bytes(self) -> [u8; core::mem::size_of::<$type>()] {
+                let mut bytes = [0u8; core::mem::size_of::<$type>()];
+                self.0.to_little_endian(&mut bytes);
+                bytes
+            }
+        }
+    };
+}
+
+impl_to_fixed_bytes!(ChainId, U256);
+
+impl From<u16> for ChainId {
+    fn from(id: u16) -> Self {
+        Self(id.into())
+    }
+}
+
+/// Global variables for an Espresso blockchain.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub struct ChainConfig {
+    /// Espresso chain ID
+    chain_id: ChainId,
+    /// Maximum size in bytes of a block
+    max_block_size: u64,
+    /// Minimum fee in WEI per byte of payload
+    base_fee: FeeAmount,
+}
+
+impl Default for ChainConfig {
+    fn default() -> Self {
+        Self::new(
+            U256::from(35353), // arbitrarily chosen chain ID
+            10240,             // 10 kB max_block_size
+            0,                 // no fees
+        )
+    }
+}
+
+impl ChainConfig {
+    pub fn new(
+        chain_id: impl Into<ChainId>,
+        max_block_size: u64,
+        base_fee: impl Into<FeeAmount>,
+    ) -> Self {
+        Self {
+            chain_id: chain_id.into(),
+            max_block_size,
+            base_fee: base_fee.into(),
+        }
+    }
+    pub fn max_block_size(&self) -> u64 {
+        self.max_block_size
+    }
+}
+
+impl Committable for ChainConfig {
+    fn tag() -> String {
+        "CHAIN_CONFIG".to_string()
+    }
+
+    fn commit(&self) -> Commitment<Self> {
+        committable::RawCommitmentBuilder::new(&Self::tag())
+            .fixed_size_field("chain_id", &self.chain_id.to_fixed_bytes())
+            .u64_field("max_block_size", self.max_block_size)
+            .fixed_size_field("base_fee", &self.base_fee.to_fixed_bytes())
+            .finalize()
+    }
+}
+
+#[derive(Clone, Debug, Copy, PartialEq, Deserialize, Serialize, Eq, Hash)]
+pub struct ResolvableChainConfig {
+    chain_config: Either<ChainConfig, Commitment<ChainConfig>>,
+}
+
+impl ResolvableChainConfig {
+    pub fn commit(&self) -> Commitment<ChainConfig> {
+        match self.chain_config {
+            Either::Left(config) => config.commit(),
+            Either::Right(commitment) => commitment,
+        }
+    }
+    pub fn resolve(self) -> Option<ChainConfig> {
+        match self.chain_config {
+            Either::Left(config) => Some(config),
+            Either::Right(_) => None,
+        }
+    }
+}
+
+impl From<Commitment<ChainConfig>> for ResolvableChainConfig {
+    fn from(value: Commitment<ChainConfig>) -> Self {
+        Self {
+            chain_config: Either::Right(value),
+        }
+    }
+}
+
+impl From<ChainConfig> for ResolvableChainConfig {
+    fn from(value: ChainConfig) -> Self {
+        Self {
+            chain_config: Either::Left(value),
+        }
+    }
+}
+
 pub type BlockMerkleTree = LightWeightSHA3MerkleTree<Commitment<Header>>;
 pub type BlockMerkleCommitment = <BlockMerkleTree as MerkleTreeScheme>::Commitment;
+
+#[tagged("BUILDER_COMMITMENT")]
+#[derive(Clone, Debug, Hash, PartialEq, Eq, CanonicalSerialize, CanonicalDeserialize)]
+/// Commitment that builders use to sign block options.
+/// A thin wrapper around a Sha256 digest.
+pub struct BuilderCommitment(Sha256Digest);
+
+impl AsRef<Sha256Digest> for BuilderCommitment {
+    fn as_ref(&self) -> &Sha256Digest {
+        &self.0
+    }
+}
 
 // Header values
 #[derive(Clone, Debug, Deserialize, Serialize, Hash, PartialEq, Eq)]
 pub struct Header {
+    pub chain_config: ResolvableChainConfig,
     pub height: u64,
     pub timestamp: u64,
     pub l1_head: u64,
     pub l1_finalized: Option<L1BlockInfo>,
     pub payload_commitment: VidCommitment,
+    pub builder_commitment: BuilderCommitment,
     pub ns_table: NameSpaceTable<TxTableEntryWord>,
     pub block_merkle_tree_root: BlockMerkleCommitment,
     pub fee_merkle_tree_root: FeeMerkleCommitment,
@@ -493,13 +622,17 @@ impl Committable for Header {
         self.fee_merkle_tree_root
             .serialize_with_mode(&mut fmt_bytes, ark_serialize::Compress::Yes)
             .unwrap();
+
         RawCommitmentBuilder::new(&Self::tag())
+            .field("chain_config", self.chain_config.commit())
             .u64_field("height", self.height)
             .u64_field("timestamp", self.timestamp)
             .u64_field("l1_head", self.l1_head)
             .optional("l1_finalized", &self.l1_finalized)
             .constant_str("payload_commitment")
             .fixed_size_bytes(self.payload_commitment.as_ref().as_ref())
+            .constant_str("builder_commitment")
+            .fixed_size_bytes(self.builder_commitment.as_ref())
             .field("ns_table", self.ns_table.commit())
             .var_size_field("block_merkle_tree_root", &bmt_bytes)
             .var_size_field("fee_merkle_tree_root", &fmt_bytes)
@@ -508,6 +641,8 @@ impl Committable for Header {
     }
 
     fn tag() -> String {
+        // We use the tag "BLOCK" since blocks are identified by the hash of their header. This will
+        // thus be more intuitive to users than "HEADER".
         "BLOCK".into()
     }
 }
@@ -515,6 +650,9 @@ impl Committable for Header {
 pub type FeeMerkleTree =
     UniversalMerkleTree<FeeAmount, Sha3Digest, FeeAccount, typenum::U256, Sha3Node>;
 pub type FeeMerkleCommitment = <FeeMerkleTree as MerkleTreeScheme>::Commitment;
+
+/// Type alias for byte array of SHA256 digest length
+type Sha256Digest = [u8; <sha2::Sha256 as OutputSizeUser>::OutputSize::USIZE];
 
 #[derive(
     Default, Hash, Copy, Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Add, Sub, From, Into,
@@ -527,6 +665,12 @@ impl FeeAmount {
         let mut bytes = [0u8; core::mem::size_of::<U256>()];
         self.0.to_little_endian(&mut bytes);
         bytes
+    }
+}
+
+impl From<u64> for FeeAmount {
+    fn from(amt: u64) -> Self {
+        Self(amt.into())
     }
 }
 

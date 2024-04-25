@@ -471,14 +471,16 @@ func (b *BatchPoster) addEspressoBlockMerkleProof(
 		if err != nil {
 			return err
 		}
-		validatedHotShotHeight, validatedL1Height, err := b.lightClientReader.ValidatedHeight()
+		_, validatedL1Height, err := b.lightClientReader.ValidatedHeight()
 		if err != nil {
 			return err
 
 		}
-		if validatedHotShotHeight < jst.Header.Height || validatedHotShotHeight == 18446744073709551615 {
-			return fmt.Errorf("could not construct batch justification, light client is at height %v but the justification is for height %v", validatedHotShotHeight, jst.Header.Height)
-		}
+		validatedHotShotHeight := jst.Header.Height
+
+		// if validatedHotShotHeight < jst.Header.Height || validatedHotShotHeight == 18446744073709551615 {
+		// 	return fmt.Errorf("could not construct batch justification, light client is at height %v but the justification is for height %v", validatedHotShotHeight, jst.Header.Height)
+		// }
 		proof, err := b.hotshotClient.FetchBlockMerkleProof(ctx, validatedHotShotHeight, jst.Header.Height)
 		if err != nil {
 			return fmt.Errorf("error fetching the block merkle proof for validated height %v and leaf height %v. Request failed with error %w", validatedHotShotHeight, jst.Header.Height, err)

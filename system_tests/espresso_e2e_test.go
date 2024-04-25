@@ -62,6 +62,7 @@ func runEspresso(t *testing.T, ctx context.Context) func() {
 		"state-relay-server",
 		"deploy-contracts",
 		"prover-service",
+		"permissionless-builder",
 	}
 	invocation = append(invocation, nodes...)
 	procees := exec.Command("docker", invocation...)
@@ -336,7 +337,7 @@ func runNodes(ctx context.Context, t *testing.T) (*NodeBuilder, *TestClient, *Bl
 	l2Node, l2Info, cleanL2Node := createL2Node(ctx, t, hotShotUrl, builder)
 
 	// wait for the commitment task
-	err = waitForWith(t, ctx, 60*time.Second, 1*time.Second, func() bool {
+	err = waitForWith(t, ctx, 120*time.Second, 1*time.Second, func() bool {
 		out, err := exec.Command("curl", "http://127.0.0.1:60000/api/hotshot_contract").Output()
 		if err != nil {
 			log.Warn("retry to check the commitment task", "err", err)

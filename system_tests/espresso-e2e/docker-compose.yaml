@@ -2,7 +2,7 @@ version: '3.9'
 services:
   deploy-contracts:
     command: deploy --use-mock-contract
-    image: ghcr.io/espressosystems/espresso-sequencer/deploy:arbitrum-integrationmusl
+    image: ghcr.io/espressosystems/espresso-sequencer/deploy:main
     environment:
       - ESPRESSO_SEQUENCER_ORCHESTRATOR_URL
       - ESPRESSO_SEQUENCER_L1_PROVIDER
@@ -19,10 +19,11 @@ services:
       - "host.docker.internal:host-gateway"
 
   orchestrator:
-    image: ghcr.io/espressosystems/espresso-sequencer/orchestrator:arbitrum-integrationmusl
+    image: ghcr.io/espressosystems/espresso-sequencer/orchestrator:main
     ports:
       - "$ESPRESSO_ORCHESTRATOR_PORT:$ESPRESSO_ORCHESTRATOR_PORT"
     environment:
+      - ESPRESSO_ORCHESTRATOR_BUILDER_URL=http://permissionless-builder:$ESPRESSO_BUILDER_SERVER_PORT
       - ESPRESSO_ORCHESTRATOR_PORT
       - ESPRESSO_ORCHESTRATOR_NUM_NODES
       - ESPRESSO_ORCHESTRATOR_START_DELAY
@@ -32,6 +33,29 @@ services:
       - ESPRESSO_ORCHESTRATOR_MAX_PROPOSE_TIME
       - RUST_LOG
       - RUST_LOG_FORMAT
+
+  permissionless-builder:
+    image: ghcr.io/espressosystems/espresso-sequencer/builder:main
+    ports:
+      - "$ESPRESSO_BUILDER_SERVER_PORT:$ESPRESSO_BUILDER_SERVER_PORT"
+    environment:
+      - ESPRESSO_SEQUENCER_HOTSHOT_EVENT_STREAMING_API_URL=http://sequencer0:$ESPRESSO_SEQUENCER_HOTSHOT_EVENT_STREAMING_API_PORT
+      - ESPRESSO_SEQUENCER_STATE_PEERS=http://sequencer0:$ESPRESSO_SEQUENCER_API_PORT
+      - ESPRESSO_BUILDER_ETH_MNEMONIC
+      - ESPRESSO_BUILDER_ETH_ACCOUNT_INDEX
+      - ESPRESSO_BUILDER_L1_PROVIDER
+      - ESPRESSO_BUILDER_SERVER_PORT
+      - ESPRESSO_BUILDER_CHANNEL_CAPACITY
+      - ESPRESSO_BUILDER_BOOTSTRAPPED_VIEW
+      - ESPRESSO_BUILDER_WEBSERVER_RESPONSE_TIMEOUT_DURATION
+      - ESPRESSO_BUILDER_BUFFER_VIEW_NUM_COUNT
+      - RUST_LOG
+      - RUST_LOG_FORMAT
+      - ASYNC_STD_THREAD_COUNT
+    depends_on:
+      espresso-sequencer0:
+        condition: service_healthy
+
 
   # We use KeyDB (a Redis variant) to maintain consistency between
   # different parts of the CDN
@@ -103,7 +127,7 @@ services:
 
 
   espresso-sequencer0:
-    image: ghcr.io/espressosystems/espresso-sequencer/sequencer:arbitrum-integrationmusl
+    image: ghcr.io/espressosystems/espresso-sequencer/sequencer:main
     ports:
       - "$ESPRESSO_SEQUENCER_API_PORT:$ESPRESSO_SEQUENCER_API_PORT"
     # Run the API server (with options taken from the environment) and the optional submission API
@@ -128,6 +152,8 @@ services:
       - ESPRESSO_SEQUENCER_STAKE_TABLE_CAPACITY=10
       - ESPRESSO_SEQUENCER_PREFUNDED_BUILDER_ACCOUNTS
       - ESPRESSO_SEQUENCER_STATE_PEERS=http://espresso-sequencer1:$ESPRESSO_SEQUENCER_API_PORT
+      - ESPRESSO_SEQUENCER_MAX_BLOCK_SIZE
+      - ESPRESSO_SEQUENCER_BASE_FEE
       - RUST_LOG
       - RUST_LOG_FORMAT
     depends_on:
@@ -147,7 +173,7 @@ services:
       - "host.docker.internal:host-gateway"
 
   espresso-sequencer1:
-    image: ghcr.io/espressosystems/espresso-sequencer/sequencer:arbitrum-integrationmusl
+    image: ghcr.io/espressosystems/espresso-sequencer/sequencer:main
     ports:
       - "$ESPRESSO_SEQUENCER1_API_PORT:$ESPRESSO_SEQUENCER_API_PORT"
     # Run the API server (with options taken from the environment)
@@ -169,6 +195,8 @@ services:
       - ESPRESSO_SEQUENCER_PREFUNDED_BUILDER_ACCOUNTS
       - ESPRESSO_SEQUENCER_STAKE_TABLE_CAPACITY=10
       - ESPRESSO_SEQUENCER_STATE_PEERS=http://espresso-sequencer0:$ESPRESSO_SEQUENCER_API_PORT
+      - ESPRESSO_SEQUENCER_MAX_BLOCK_SIZE
+      - ESPRESSO_SEQUENCER_BASE_FEE
       - RUST_LOG
       - RUST_LOG_FORMAT
     depends_on:
@@ -188,7 +216,7 @@ services:
       - "host.docker.internal:host-gateway"
 
   commitment-task:
-    image: ghcr.io/espressosystems/espresso-sequencer/commitment-task:arbitrum-integrationmusl
+    image: ghcr.io/espressosystems/espresso-sequencer/commitment-task:main
     ports:
       - "$ESPRESSO_COMMITMENT_TASK_PORT:$ESPRESSO_COMMITMENT_TASK_PORT"
     environment:
@@ -210,7 +238,7 @@ services:
       - "host.docker.internal:host-gateway"
 
   state-relay-server:
-    image: ghcr.io/espressosystems/espresso-sequencer/state-relay-server:arbitrum-integrationmusl
+    image: ghcr.io/espressosystems/espresso-sequencer/state-relay-server:main
     ports:
       - "$ESPRESSO_STATE_RELAY_SERVER_PORT:$ESPRESSO_STATE_RELAY_SERVER_PORT"
     environment:
@@ -245,6 +273,7 @@ services:
       - ESPRESSO_STATE_PROVER_UPDATE_INTERVAL
       - ESPRESSO_SEQUENCER_L1_PROVIDER
       - ESPRESSO_SEQUENCER_ETH_MNEMONIC
+      - RAYON_NUM_THREADS=2
       - ESPRESSO_SEQUENCER_LIGHTCLIENT_ADDRESS
       - MNEMONIC=$ESPRESSO_SEQUENCER_ETH_MNEMONIC
       - ESPRESSO_SEQUENCER_STAKE_TABLE_CAPACITY=10
