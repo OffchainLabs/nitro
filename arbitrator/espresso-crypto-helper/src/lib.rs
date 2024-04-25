@@ -22,7 +22,7 @@ use sequencer_data_structures::{
 use sha2::{Digest, Sha256};
 use tagged_base64::TaggedBase64;
 
-use crate::bytes::Bytes;
+use crate::{bytes::Bytes, sequencer_data_structures::BlockMerkleCommitment};
 
 pub type VidScheme = Advz<Bn254, sha2::Sha256>;
 pub type Proof = Vec<MerkleNode<Commitment<Header>, u64, Sha3Node>>;
@@ -45,26 +45,27 @@ lazy_static! {
 pub fn verify_merkle_proof_helper(
     proof_bytes: &[u8],
     header_bytes: &[u8],
+    block_comm_bytes: &[u8],
     _circuit_block_bytes: &[u8],
 ) {
     let proof_str = std::str::from_utf8(proof_bytes).unwrap();
     let header_str = std::str::from_utf8(header_bytes).unwrap();
+    let block_comm_str = std::str::from_utf8(block_comm_bytes).unwrap();
+    let tagged = TaggedBase64::parse(&block_comm_str).unwrap();
+    let block_comm: BlockMerkleCommitment = tagged.try_into().unwrap();
 
     let proof: Proof = serde_json::from_str(proof_str).unwrap();
+    dbg!(&header_str);
     let header: Header = serde_json::from_str(header_str).unwrap();
-    let block_comm: Commitment<Header> = header.commit();
+    let header_comm: Commitment<Header> = header.commit();
 
-    let proof = MerkleProof::new(header.height - 1, proof.to_vec());
+    let proof = MerkleProof::new(header.height, proof.to_vec());
     let proved_comm = proof.elem().unwrap().clone();
-    BlockMerkleTree::verify(
-        header.block_merkle_tree_root.digest(),
-        header.height - 1,
-        proof,
-    )
-    .unwrap()
-    .unwrap();
+    BlockMerkleTree::verify(block_comm.digest(), header.height, proof)
+        .unwrap()
+        .unwrap();
 
-    assert!(proved_comm == block_comm);
+    assert!(proved_comm == header_comm);
 
     let mut block_comm_root_bytes = vec![];
     block_comm
@@ -171,8 +172,15 @@ mod test {
     fn test_verify_merkle_proof_helper() {
         let proof_bytes = PROOF.clone().as_bytes();
         let header_bytes = HEADER.clone().as_bytes();
+        let block_comm_bytes =
+            b"MERKLE_COMM~vc7j-uHdU6RGWMlKRVReWs5VGn_vuG-F-0s-jZ2eUa0gAAAAAAAAAAIAAAAAAAAAvQ";
         let circuit_block_bytes = [];
-        verify_merkle_proof_helper(proof_bytes, header_bytes, &circuit_block_bytes)
+        verify_merkle_proof_helper(
+            proof_bytes,
+            header_bytes,
+            block_comm_bytes,
+            &circuit_block_bytes,
+        );
     }
 
     #[test]

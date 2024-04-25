@@ -478,14 +478,20 @@ func (b *BatchPoster) addEspressoBlockMerkleProof(
 		}
 		validatedHotShotHeight := jst.Header.Height
 
+		// The next header contains the block commitment merkle tree commitment that validates this header
+		nextHeader, err := b.hotshotClient.FetchHeaderByHeight(ctx, validatedHotShotHeight+1)
+		if err != nil {
+			return fmt.Errorf("error fetching the next header at height %v, request failed with error %w", validatedHotShotHeight+1, err)
+		}
+
 		// if validatedHotShotHeight < jst.Header.Height || validatedHotShotHeight == 18446744073709551615 {
 		// 	return fmt.Errorf("could not construct batch justification, light client is at height %v but the justification is for height %v", validatedHotShotHeight, jst.Header.Height)
 		// }
-		proof, err := b.hotshotClient.FetchBlockMerkleProof(ctx, validatedHotShotHeight, jst.Header.Height)
+		proof, err := b.hotshotClient.FetchBlockMerkleProof(ctx, validatedHotShotHeight+1, jst.Header.Height)
 		if err != nil {
-			return fmt.Errorf("error fetching the block merkle proof for validated height %v and leaf height %v. Request failed with error %w", validatedHotShotHeight, jst.Header.Height, err)
+			return fmt.Errorf("error fetching the block merkle proof for validated height %v and leaf height %v. Request failed with error %w", validatedHotShotHeight+1, jst.Header.Height, err)
 		}
-		jst.BlockMerkleJustification = &arbostypes.BlockMerkleJustification{BlockMerkleProof: &proof, L1ProofHeight: validatedL1Height}
+		jst.BlockMerkleJustification = &arbostypes.BlockMerkleJustification{BlockMerkleProof: &proof, L1ProofHeight: validatedL1Height, BlockMerkleComm: nextHeader.BlockMerkleTreeRoot}
 		newMsg, err := arbos.MessageFromEspresso(msg.Message.Header, txs, jst)
 		if err != nil {
 			return err

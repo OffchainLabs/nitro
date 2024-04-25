@@ -307,7 +307,7 @@ func main() {
 				panic("unable to serialize header")
 			}
 			espressocrypto.VerifyNamespace(chainConfig.ChainID.Uint64(), *jst.Proof, *jst.Header.PayloadCommitment, *jst.Header.NsTable, txs)
-			espressocrypto.VerifyMerkleProof(*&jst.BlockMerkleJustification.BlockMerkleProof.Proof, jsonHeader, commitment)
+			espressocrypto.VerifyMerkleProof(jst.BlockMerkleJustification.BlockMerkleProof.Proof, jsonHeader, *jst.BlockMerkleJustification.BlockMerkleComm, commitment)
 		}
 
 		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher)

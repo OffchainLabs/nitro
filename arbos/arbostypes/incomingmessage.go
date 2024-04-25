@@ -39,6 +39,7 @@ const ArbosVersion_FixRedeemGas = uint64(11)
 
 type BlockMerkleJustification struct {
 	BlockMerkleProof *espressoTypes.HotShotBlockMerkleProof
+	BlockMerkleComm  *espressoTypes.TaggedBase64
 	L1ProofHeight    uint64
 }
 
