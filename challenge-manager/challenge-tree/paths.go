@@ -151,6 +151,8 @@ type essentialLocalTimers []uint64
 // Use a depth-first-search approach (DFS) to gather the
 // essential branches of the protocol graph. We manage our own
 // visitor stack to avoid recursion.
+//
+// Invariant: the input node must be essential.
 func (ht *RoyalChallengeTree) findEssentialPaths(
 	ctx context.Context,
 	essentialNode protocol.ReadOnlyEdge,
