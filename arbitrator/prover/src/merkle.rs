@@ -10,7 +10,6 @@ use enum_iterator::Sequence;
 #[cfg(feature = "counters")]
 use enum_iterator::all;
 
-
 #[cfg(feature = "counters")]
 use std::sync::atomic::AtomicUsize;
 
@@ -19,7 +18,6 @@ use std::sync::atomic::Ordering;
 
 #[cfg(feature = "counters")]
 use lazy_static::lazy_static;
-
 
 #[cfg(feature = "counters")]
 use std::collections::HashMap;
@@ -30,6 +28,10 @@ use std::{collections::HashSet, convert::{TryFrom, TryInto}, sync::{Arc, Mutex, 
 
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
+
+mod zerohashes;
+
+use zerohashes::ZERO_HASHES;
 
 #[cfg(feature = "counters")]
 lazy_static! {
@@ -154,7 +156,6 @@ pub struct Merkle {
     ty: MerkleType,
     #[serde(with = "arc_mutex_sedre")]
     layers: Arc<Mutex<Vec<Vec<Bytes32>>>>,
-    empty_layers: Vec<Bytes32>,
     min_depth: usize,
     #[serde(skip)]
     dirty_layers: Arc<Mutex<Vec<HashSet<usize>>>>,
@@ -199,12 +200,11 @@ impl Merkle {
         depth = depth.max(min_depth);
         let mut layers: Vec<Vec<Bytes32>> = Vec::with_capacity(depth);
         layers.push(hashes);
-        let mut empty_layers: Vec<Bytes32> = Vec::with_capacity(depth);
-        empty_layers.push(empty_hash);
         let mut dirty_indices: Vec<HashSet<usize>> = Vec::with_capacity(depth);
+        let mut layer_i = 0usize;
         while layers.last().unwrap().len() > 1 || layers.len() < min_depth {
             let layer = layers.last().unwrap();
-            let empty_layer = *empty_layers.last().unwrap();
+            let empty_hash = ZERO_HASHES[&ty][layer_i];
 
             #[cfg(feature = "rayon")]
             let chunks = layer.par_chunks(2);
@@ -214,17 +214,16 @@ impl Merkle {
 
             let mut new_layer: Vec<Bytes32> = Vec::with_capacity(layer.len() >> 1);
             chunks
-                .map(|chunk| hash_node(ty, chunk[0], chunk.get(1).cloned().unwrap_or(empty_layer)))
+                .map(|chunk| hash_node(ty, chunk[0], chunk.get(1).cloned().unwrap_or(empty_hash)))
                 .collect_into_vec(&mut new_layer);
-            empty_layers.push(hash_node(ty, empty_layer, empty_layer));
             dirty_indices.push(HashSet::with_capacity(new_layer.len()));
             layers.push(new_layer);
+            layer_i += 1;
         }
         let dirty_layers = Arc::new(Mutex::new(dirty_indices));
         Merkle {
             ty,
             layers: Arc::new(Mutex::new(layers)),
-            empty_layers,
             min_depth,
             dirty_layers,
         }
@@ -246,7 +245,7 @@ impl Merkle {
                 let right = layers[layer_i-1]
                     .get(right_child_idx)
                     .cloned()
-                    .unwrap_or_else(|| self.empty_layers[layer_i - 1]);
+                    .unwrap_or_else(|| ZERO_HASHES[&self.ty][layer_i - 1]);
                 let new_hash = hash_node(self.ty, left, right);
                 if *idx < layers[layer_i].len() {
                     layers[layer_i][*idx] = new_hash;
@@ -307,7 +306,7 @@ impl Merkle {
                 layer
                     .get(counterpart)
                     .cloned()
-                    .unwrap_or_else(|| self.empty_layers[layer_i]),
+                    .unwrap_or_else(|| ZERO_HASHES[&self.ty][layer_i]),
             );
             idx >>= 1;
         }
@@ -319,7 +318,7 @@ impl Merkle {
     pub fn push_leaf(&mut self, leaf: Bytes32) {
         let mut leaves = self.layers.lock().unwrap().swap_remove(0);
         leaves.push(leaf);
-        let empty = self.empty_layers[0];
+        let empty = ZERO_HASHES[&self.ty][0];
         *self = Self::new_advanced(self.ty, leaves, empty, self.min_depth);
     }
 
@@ -328,7 +327,7 @@ impl Merkle {
     pub fn pop_leaf(&mut self) {
         let mut leaves = self.layers.lock().unwrap().swap_remove(0);
         leaves.pop();
-        let empty = self.empty_layers[0];
+        let empty = ZERO_HASHES[&self.ty][0];
         *self = Self::new_advanced(self.ty, leaves, empty, self.min_depth);
     }
 
@@ -360,7 +359,7 @@ impl Merkle {
             return Err("Cannot extend with more leaves than the capicity of the tree.".to_owned());
         }
         let mut idx = layers[0].len();
-        layers[0].resize(idx + hashes.len(), self.empty_layers[0]);
+        layers[0].resize(idx + hashes.len(), ZERO_HASHES[&self.ty][0]);
         for hash in hashes {
             self.locked_set(&mut layers, idx, hash);
             idx += 1;
