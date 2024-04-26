@@ -14,7 +14,7 @@ import (
 
 func TestMarshallingAndUnmarshalingBlobPointer(t *testing.T) {
 	extrinsicIndex := 1
-	bridgeApiBaseURL := "https://bridge-api.sandbox.avail.tools"
+	bridgeApiBaseURL := "https://hex-bridge-api.sandbox.avail.tools"
 	blockHashPath := "/eth/proof/" + "0xf53613fa06b6b7f9dc5e4cf5f2849affc94e19d8a9e8999207ece01175c988ed" //+ finalizedblockHash.Hex()
 	params := url.Values{}
 	params.Add("index", fmt.Sprint(extrinsicIndex))

@@ -56,7 +56,7 @@ func NewAvailDA(cfg DAConfig, l1Client arbutil.L1Interface) (*AvailDA, error) {
 	}
 
 	// Creating new substrate api
-	api, err := gsrpc.NewSubstrateAPI(cfg.ApiURL)
+	api, err := gsrpc.NewSubstrateAPI(cfg.AvailApiURL)
 	if err != nil {
 		return nil, err
 	}
@@ -95,18 +95,25 @@ func NewAvailDA(cfg DAConfig, l1Client arbutil.L1Interface) (*AvailDA, error) {
 	contractAddress := common.HexToAddress(cfg.VectorX)
 
 	// Contract ABI (Application Binary Interface)
-	// Replace this with your contract's ABI
-	byteValue, err := os.ReadFile("./abi/vectorx.abi.json")
-	if err != nil {
-		log.Warn("⚠️ cannot read abi for vectorX: error:%v", err)
-		return nil, err
-	}
-	vectorxABI := string(byteValue)
+	pwd, _ := os.Getwd()
+	log.Info(pwd)
+	// byteValue, err := os.ReadFile(pwd + "/das/avail/vectorx/abi/Vectorx.abi.json")
+	// if err != nil {
+	// 	log.Warn("⚠️ cannot read abi for vectorX: error:%v", err)
+	// 	return nil, err
+	// }
+	// vectorxABI := string(byteValue)
 
 	// Parse the contract ABI
-	abi, err := abi.JSON(strings.NewReader(vectorxABI))
+	abi, err := abi.JSON(strings.NewReader(vectorx.VectorxABI))
 	if err != nil {
 		log.Warn("⚠️ cannot create abi for vectorX: error:%v", err)
+		return nil, err
+	}
+
+	//Connect to L1 node thru web socket
+	client, err := ethclient.Dial(cfg.ArbSepoliaRPC)
+	if err != nil {
 		return nil, err
 	}
 
@@ -118,7 +125,7 @@ func NewAvailDA(cfg DAConfig, l1Client arbutil.L1Interface) (*AvailDA, error) {
 
 	return &AvailDA{
 		enable:      cfg.Enable,
-		vectorx:     vectorx.VectorX{Abi: abi, Client: *ethclient.NewClient(l1Client.Client()), Query: query},
+		vectorx:     vectorx.VectorX{Abi: abi, Client: client, Query: query},
 		timeout:     cfg.Timeout,
 		appID:       appID,
 		api:         api,
@@ -209,6 +216,7 @@ outer:
 	if err != nil {
 		return nil, fmt.Errorf("cannot get header for finalized block:%+v", err)
 	}
+
 	err = a.vectorx.SubscribeForHeaderUpdate(int(header.Number), 7200)
 	if err != nil {
 		return nil, fmt.Errorf("cannot get the event for header update on vectorx:%+v", err)
@@ -218,6 +226,7 @@ outer:
 	if err != nil {
 		return nil, err
 	}
+	log.Info("Finalized extrinsic", "extrinsicIndex", extrinsicIndex)
 
 	merkleProofInput, err := QueryMerkleProofInput(finalizedblockHash.Hex(), extrinsicIndex)
 	if err != nil {

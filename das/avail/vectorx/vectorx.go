@@ -13,9 +13,31 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
+const VectorxABI = `[
+    {
+        "type": "event",
+        "name": "HeadUpdate",
+        "inputs": [
+            {
+                "name": "blockNumber",
+                "type": "uint32",
+                "indexed": false,
+                "internalType": "uint32"
+            },
+            {
+                "name": "headerHash",
+                "type": "bytes32",
+                "indexed": false,
+                "internalType": "bytes32"
+            }
+        ],
+        "anonymous": false
+    }
+]`
+
 type VectorX struct {
 	Abi    abi.ABI
-	Client ethclient.Client
+	Client *ethclient.Client
 	Query  ethereum.FilterQuery
 }
 
@@ -28,7 +50,7 @@ func (v *VectorX) SubscribeForHeaderUpdate(finalizedBlockNumber int, t int64) er
 	}
 	defer sub.Unsubscribe()
 
-	log.Info("🎧 Listening for vectorx HeadUpdate event")
+	log.Info("🎧  Listening for vectorx HeadUpdate event")
 	timeout := time.After(time.Duration(t) * time.Second)
 	// Loop to process incoming events
 	for {
@@ -41,7 +63,7 @@ func (v *VectorX) SubscribeForHeaderUpdate(finalizedBlockNumber int, t int64) er
 				return err
 			}
 
-			log.Info("🤝 New HeadUpdate event from vecotorx", event[0])
+			log.Info("🤝  New HeadUpdate event from vecotorx", "blockNumber", event[0])
 			val, _ := event[0].(uint32)
 			if val >= uint32(finalizedBlockNumber) {
 				return nil
