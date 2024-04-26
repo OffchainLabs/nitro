@@ -188,6 +188,26 @@ const fn empty_hash_at(ty: MerkleType, layer_i: usize) -> Bytes32 {
     }
 }
 
+#[inline]
+#[cfg(feature = "rayon")]
+fn new_layer(ty: MerkleType, layer: &Vec<Bytes32>, empty_hash: Bytes32) -> Vec<Bytes32> {
+    let mut new_layer: Vec<Bytes32> = Vec::with_capacity(layer.len() >> 1);
+    let chunks = layer.par_chunks(2);
+    chunks
+        .map(|chunk| hash_node(ty, chunk[0], chunk.get(1).cloned().unwrap_or(empty_hash)))
+        .collect_into_vec(&mut new_layer);
+    new_layer
+}
+
+#[inline]
+#[cfg(not(feature = "rayon"))]
+fn new_layer(ty: MerkleType, layer: &Vec<Bytes32>, empty_hash: Bytes32) -> Vec<Bytes32> {
+    let new_layer = layer.chunks(2)
+        .map(|chunk| hash_node(ty, chunk[0], chunk.get(1).cloned().unwrap_or(empty_hash)))
+        .collect();
+    new_layer
+}
+
 impl Merkle {
     /// Creates a new Merkle tree with the given type and leaf hashes.
     /// The tree is built up to the minimum depth necessary to hold all the
@@ -219,16 +239,7 @@ impl Merkle {
             let layer = layers.last().unwrap();
             let empty_hash = empty_hash_at(ty, layer_i);
 
-            #[cfg(feature = "rayon")]
-            let chunks = layer.par_chunks(2);
-
-            #[cfg(not(feature = "rayon"))]
-            let chunks = layer.chunks(2);
-
-            let mut new_layer: Vec<Bytes32> = Vec::with_capacity(layer.len() >> 1);
-            chunks
-                .map(|chunk| hash_node(ty, chunk[0], chunk.get(1).cloned().unwrap_or(empty_hash)))
-                .collect_into_vec(&mut new_layer);
+            let new_layer = new_layer(ty, layer, empty_hash);
             dirty_indices.push(HashSet::with_capacity(new_layer.len()));
             layers.push(new_layer);
             layer_i += 1;
