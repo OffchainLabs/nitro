@@ -195,21 +195,27 @@ impl Merkle {
         if hashes.is_empty() {
             return Merkle::default();
         }
-        let mut layers = vec![hashes];
-        let mut empty_layers = vec![empty_hash];
-        let mut dirty_indices: Vec<HashSet<usize>> = Vec::new();
+        let mut depth = (hashes.len() as f64).log2().ceil() as usize;
+        depth = depth.max(min_depth);
+        let mut layers: Vec<Vec<Bytes32>> = Vec::with_capacity(depth);
+        layers.push(hashes);
+        let mut empty_layers: Vec<Bytes32> = Vec::with_capacity(depth);
+        empty_layers.push(empty_hash);
+        let mut dirty_indices: Vec<HashSet<usize>> = Vec::with_capacity(depth);
         while layers.last().unwrap().len() > 1 || layers.len() < min_depth {
+            let layer = layers.last().unwrap();
             let empty_layer = *empty_layers.last().unwrap();
 
             #[cfg(feature = "rayon")]
-            let new_layer = layers.last().unwrap().par_chunks(2);
+            let chunks = layer.par_chunks(2);
 
             #[cfg(not(feature = "rayon"))]
-            let new_layer = layers.last().unwrap().chunks(2);
+            let chunks = layer.chunks(2);
 
-            let new_layer: Vec<Bytes32> = new_layer
+            let mut new_layer: Vec<Bytes32> = Vec::with_capacity(layer.len() >> 1);
+            chunks
                 .map(|chunk| hash_node(ty, chunk[0], chunk.get(1).cloned().unwrap_or(empty_layer)))
-                .collect();
+                .collect_into_vec(&mut new_layer);
             empty_layers.push(hash_node(ty, empty_layer, empty_layer));
             dirty_indices.push(HashSet::with_capacity(new_layer.len()));
             layers.push(new_layer);
