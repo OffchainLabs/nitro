@@ -187,7 +187,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 	}
 	balance := statedb.GetBalance(sender)
 	cost := tx.Cost()
-	if arbmath.BigLessThan(balance, cost) {
+	if arbmath.BigLessThan(balance.ToBig(), cost) {
 		return fmt.Errorf("%w: address %v have %v want %v", core.ErrInsufficientFunds, sender, balance, cost)
 	}
 	if config.Strictness >= TxPreCheckerStrictnessFullValidation && tx.Nonce() > stateNonce {
