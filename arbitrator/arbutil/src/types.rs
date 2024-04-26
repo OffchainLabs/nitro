@@ -27,6 +27,12 @@ pub enum PreimageType {
 #[repr(C)]
 pub struct Bytes32(pub [u8; 32]);
 
+impl Bytes32 {
+    pub const fn new(x: [u8; 32]) -> Self {
+        Self(x)
+    }
+}
+
 impl Deref for Bytes32 {
     type Target = [u8; 32];
 
