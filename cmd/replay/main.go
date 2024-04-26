@@ -230,8 +230,11 @@ func main() {
 		if dasReader != nil {
 			daProviders = append(daProviders, arbstate.NewDAProviderDAS(dasReader))
 		}
+		if availDAReader != nil {
+			daProviders = append(daProviders, arbstate.NewDAProviderAvail(availDAReader))
+		}
 		daProviders = append(daProviders, arbstate.NewDAProviderBlobReader(&BlobPreimageReader{}))
-		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, daProviders, availDAReader, keysetValidationMode)
+		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, daProviders, keysetValidationMode)
 		ctx := context.Background()
 		message, err := inboxMultiplexer.Pop(ctx)
 		if err != nil {
