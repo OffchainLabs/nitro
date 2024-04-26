@@ -470,8 +470,8 @@ const MODULE_HASHES: &[Bytes32; 64] = &[
 ];
 
 pub const ZERO_HASHES: &[&[Bytes32; 64]; 7] = &[
-    FUNCTION_HASHES,
     VALUE_HASHES,
+    FUNCTION_HASHES,
     INSTRUCTION_HASHES,
     MEMORY_HASHES,
     TABLE_HASHES,
