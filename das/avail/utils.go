@@ -97,19 +97,19 @@ func QueryMerkleProofInput(blockHash string, extrinsicIndex int) (MerkleProofInp
 			return MerkleProofInput{}, err
 		}
 
-		var byte32ArrayDataRootProof [][32]byte
+		var dataRootProof [][32]byte
 		for _, hash := range bridgeApiResponse.DataRootProof {
 			var byte32Array [32]byte
 			copy(byte32Array[:], hash[:])
-			byte32ArrayDataRootProof = append(byte32ArrayDataRootProof, byte32Array)
+			dataRootProof = append(dataRootProof, byte32Array)
 		}
-		var byte32ArrayLeafProof [][32]byte
+		var leafProof [][32]byte
 		for _, hash := range bridgeApiResponse.LeafProof {
 			var byte32Array [32]byte
 			copy(byte32Array[:], hash[:])
-			byte32ArrayLeafProof = append(byte32ArrayLeafProof, byte32Array)
+			leafProof = append(leafProof, byte32Array)
 		}
-		var merkleProofInput MerkleProofInput = MerkleProofInput{byte32ArrayDataRootProof, byte32ArrayLeafProof, bridgeApiResponse.RangeHash, bridgeApiResponse.DataRootIndex, bridgeApiResponse.BlobRoot, bridgeApiResponse.BridgeRoot, bridgeApiResponse.Leaf, bridgeApiResponse.LeafIndex}
+		var merkleProofInput MerkleProofInput = MerkleProofInput{dataRootProof, leafProof, bridgeApiResponse.RangeHash, bridgeApiResponse.DataRootIndex, bridgeApiResponse.BlobRoot, bridgeApiResponse.BridgeRoot, bridgeApiResponse.Leaf, bridgeApiResponse.LeafIndex}
 		return merkleProofInput, nil
 	}
 }
