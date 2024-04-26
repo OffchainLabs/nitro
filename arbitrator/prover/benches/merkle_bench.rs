@@ -41,5 +41,20 @@ fn merkle_benchmark(c: &mut Criterion) {
     });
 }
 
-criterion_group!(benches, merkle_benchmark);
+fn merkle_construction(c: &mut Criterion) {
+    let mut rng = rand::thread_rng();
+    let mut leaves: Vec<Bytes32> = Vec::with_capacity(1 >> 20);
+    for _ in 0..(1 >> 20) {
+        leaves.push(Bytes32::from([rng.gen_range(0u8..9); 32]));
+    }
+
+    c.bench_function("merkle_construction", |b| {
+        b.iter(|| {
+            let merkle = Merkle::new_advanced(MerkleType::Memory, leaves.clone(), Bytes32::default(), 21);
+            merkle.root();
+        })
+    });
+}
+
+criterion_group!(benches, merkle_benchmark, merkle_construction);
 criterion_main!(benches);
