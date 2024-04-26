@@ -10,7 +10,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
-	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/spf13/pflag"
 )
@@ -21,24 +20,14 @@ type ConsumerConfig struct {
 	// Duration after which consumer is considered to be dead if heartbeat
 	// is not updated.
 	KeepAliveTimeout time.Duration `koanf:"keepalive-timeout"`
-	// Redis url for Redis streams and locks.
-	RedisURL string `koanf:"redis-url"`
-	// Redis stream name.
-	RedisStream string `koanf:"redis-stream"`
-	// Redis consumer group name.
-	RedisGroup string `koanf:"redis-group"`
 }
 
-var DefaultConsumerConfig = &ConsumerConfig{
+var DefaultConsumerConfig = ConsumerConfig{
 	ResponseEntryTimeout: time.Hour,
 	KeepAliveTimeout:     5 * time.Minute,
-	RedisStream:          "",
-	RedisGroup:           "",
 }
 
-var DefaultTestConsumerConfig = &ConsumerConfig{
-	RedisStream:          "",
-	RedisGroup:           "",
+var TestConsumerConfig = ConsumerConfig{
 	ResponseEntryTimeout: time.Minute,
 	KeepAliveTimeout:     30 * time.Millisecond,
 }
@@ -46,18 +35,17 @@ var DefaultTestConsumerConfig = &ConsumerConfig{
 func ConsumerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".response-entry-timeout", DefaultConsumerConfig.ResponseEntryTimeout, "timeout for response entry")
 	f.Duration(prefix+".keepalive-timeout", DefaultConsumerConfig.KeepAliveTimeout, "timeout after which consumer is considered inactive if heartbeat wasn't performed")
-	f.String(prefix+".redis-url", DefaultConsumerConfig.RedisURL, "redis url for redis stream")
-	f.String(prefix+".redis-stream", DefaultConsumerConfig.RedisStream, "redis stream name to read from")
-	f.String(prefix+".redis-group", DefaultConsumerConfig.RedisGroup, "redis stream consumer group name")
 }
 
 // Consumer implements a consumer for redis stream provides heartbeat to
 // indicate it is alive.
 type Consumer[Request any, Response any] struct {
 	stopwaiter.StopWaiter
-	id     string
-	client redis.UniversalClient
-	cfg    *ConsumerConfig
+	id          string
+	client      redis.UniversalClient
+	redisStream string
+	redisGroup  string
+	cfg         *ConsumerConfig
 }
 
 type Message[Request any] struct {
@@ -65,24 +53,16 @@ type Message[Request any] struct {
 	Value Request
 }
 
-func NewConsumer[Request any, Response any](ctx context.Context, cfg *ConsumerConfig) (*Consumer[Request, Response], error) {
-	if cfg.RedisURL == "" {
-		return nil, fmt.Errorf("redis url cannot be empty")
-	}
-	if cfg.RedisStream == "" {
+func NewConsumer[Request any, Response any](client redis.UniversalClient, streamName string, cfg *ConsumerConfig) (*Consumer[Request, Response], error) {
+	if streamName == "" {
 		return nil, fmt.Errorf("redis stream name cannot be empty")
 	}
-	if cfg.RedisGroup == "" {
-		return nil, fmt.Errorf("redis group name cannot be emtpy")
-	}
-	c, err := redisutil.RedisClientFromURL(cfg.RedisURL)
-	if err != nil {
-		return nil, err
-	}
 	consumer := &Consumer[Request, Response]{
-		id:     uuid.NewString(),
-		client: c,
-		cfg:    cfg,
+		id:          uuid.NewString(),
+		client:      client,
+		redisStream: streamName,
+		redisGroup:  streamName, // There is 1-1 mapping of redis stream and consumer group.
+		cfg:         cfg,
 	}
 	return consumer, nil
 }
@@ -125,11 +105,11 @@ func (c *Consumer[Request, Response]) heartBeat(ctx context.Context) {
 // unresponsive consumer, if not then reads from the stream.
 func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Request], error) {
 	res, err := c.client.XReadGroup(ctx, &redis.XReadGroupArgs{
-		Group:    c.cfg.RedisGroup,
+		Group:    c.redisGroup,
 		Consumer: c.id,
 		// Receive only messages that were never delivered to any other consumer,
 		// that is, only new messages.
-		Streams: []string{c.cfg.RedisStream, ">"},
+		Streams: []string{c.redisStream, ">"},
 		Count:   1,
 		Block:   time.Millisecond, // 0 seems to block the read instead of immediately returning
 	}).Result()
@@ -142,7 +122,6 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 	if len(res) != 1 || len(res[0].Messages) != 1 {
 		return nil, fmt.Errorf("redis returned entries: %+v, for querying single message", res)
 	}
-	log.Debug(fmt.Sprintf("Consumer: %s consuming message: %s", c.id, res[0].Messages[0].ID))
 	var (
 		value    = res[0].Messages[0].Values[messageKey]
 		data, ok = (value).(string)
@@ -154,7 +133,7 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 	if err := json.Unmarshal([]byte(data), &req); err != nil {
 		return nil, fmt.Errorf("unmarshaling value: %v, error: %w", value, err)
 	}
-
+	log.Debug("Redis stream consuming", "consumer_id", c.id, "message_id", res[0].Messages[0].ID)
 	return &Message[Request]{
 		ID:    res[0].Messages[0].ID,
 		Value: req,
@@ -170,7 +149,7 @@ func (c *Consumer[Request, Response]) SetResult(ctx context.Context, messageID s
 	if err != nil || !acquired {
 		return fmt.Errorf("setting result for  message: %v, error: %w", messageID, err)
 	}
-	if _, err := c.client.XAck(ctx, c.cfg.RedisStream, c.cfg.RedisGroup, messageID).Result(); err != nil {
+	if _, err := c.client.XAck(ctx, c.redisStream, c.redisGroup, messageID).Result(); err != nil {
 		return fmt.Errorf("acking message: %v, error: %w", messageID, err)
 	}
 	return nil

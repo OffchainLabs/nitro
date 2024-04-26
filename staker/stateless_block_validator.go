@@ -11,19 +11,20 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/offchainlabs/nitro/execution"
-	"github.com/offchainlabs/nitro/util/rpcclient"
-	"github.com/offchainlabs/nitro/validator/server_api"
-
-	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/validator"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
+
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/util/rpcclient"
+	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/client/redis"
+
+	validatorclient "github.com/offchainlabs/nitro/validator/client"
 )
 
 type StatelessBlockValidator struct {
@@ -194,16 +195,24 @@ func NewStatelessBlockValidator(
 	config func() *BlockValidatorConfig,
 	stack *node.Node,
 ) (*StatelessBlockValidator, error) {
-	validationSpawners := make([]validator.ValidationSpawner, len(config().ValidationServerConfigs))
-	for i, serverConfig := range config().ValidationServerConfigs {
-		valConfFetcher := func() *rpcclient.ClientConfig { return &serverConfig }
-		validationSpawners[i] = server_api.NewValidationClient(valConfFetcher, stack)
+	var validationSpawners []validator.ValidationSpawner
+	if config().RedisValidationClientConfig.Enabled() {
+		redisValClient, err := redis.NewValidationClient(&config().RedisValidationClientConfig)
+		if err != nil {
+			return nil, fmt.Errorf("creating new redis validation client: %w", err)
+		}
+		validationSpawners = append(validationSpawners, redisValClient)
 	}
-	valConfFetcher := func() *rpcclient.ClientConfig { return &config().ValidationServerConfigs[0] }
-	execClient := server_api.NewExecutionClient(valConfFetcher, stack)
-	validator := &StatelessBlockValidator{
+	for _, serverConfig := range config().ValidationServerConfigs {
+		valConfFetcher := func() *rpcclient.ClientConfig { return &serverConfig }
+		validationSpawners = append(validationSpawners, validatorclient.NewValidationClient(valConfFetcher, stack))
+	}
+
+	valConfFetcher := func() *rpcclient.ClientConfig {
+		return &config().ExecutionServerConfig
+	}
+	return &StatelessBlockValidator{
 		config:             config(),
-		execSpawner:        execClient,
 		recorder:           recorder,
 		validationSpawners: validationSpawners,
 		inboxReader:        inboxReader,
@@ -212,8 +221,21 @@ func NewStatelessBlockValidator(
 		db:                 arbdb,
 		daService:          das,
 		blobReader:         blobReader,
+		execSpawner:        validatorclient.NewExecutionClient(valConfFetcher, stack),
+	}, nil
+}
+
+func (v *StatelessBlockValidator) Initialize(moduleRoots []common.Hash) error {
+	if len(v.validationSpawners) == 0 {
+		return nil
 	}
-	return validator, nil
+	// First spawner is always RedisValidationClient if RedisStreams are enabled.
+	if v, ok := v.validationSpawners[0].(*redis.ValidationClient); ok {
+		if err := v.Initialize(moduleRoots); err != nil {
+			return fmt.Errorf("initializing redis validation client module roots: %w", err)
+		}
+	}
+	return nil
 }
 
 func (v *StatelessBlockValidator) GetModuleRootsToValidate() []common.Hash {
@@ -417,20 +439,19 @@ func (v *StatelessBlockValidator) OverrideRecorder(t *testing.T, recorder execut
 }
 
 func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
-	err := v.execSpawner.Start(ctx_in)
-	if err != nil {
-		return err
-	}
 	for _, spawner := range v.validationSpawners {
 		if err := spawner.Start(ctx_in); err != nil {
-			return err
+			return fmt.Errorf("starting validation spawner: %w", err)
 		}
+	}
+	if err := v.execSpawner.Start(ctx_in); err != nil {
+		return fmt.Errorf("starting execution spawner: %w", err)
 	}
 	if v.config.PendingUpgradeModuleRoot != "" {
 		if v.config.PendingUpgradeModuleRoot == "latest" {
 			latest, err := v.execSpawner.LatestWasmModuleRoot().Await(ctx_in)
 			if err != nil {
-				return err
+				return fmt.Errorf("getting latest wasm module root: %w", err)
 			}
 			v.pendingWasmModuleRoot = latest
 		} else {
