@@ -312,8 +312,10 @@ impl Memory {
         self.buffer.resize(new_size, 0);
         if let Some(merkle) = self.merkle.take() {
             let extra = new_size - merkle.len();
-            merkle.extend(vec![hash_leaf([0u8; 32]); extra])
-            .expect("Couldn't extend merkle tree");
+            merkle
+                .extend(vec![hash_leaf([0u8; 32]); extra])
+                .expect("Couldn't extend merkle tree");
+            self.merkle = Some(merkle);
         }
     }
 }
