@@ -65,28 +65,28 @@ func TestComputeAncestors(t *testing.T) {
 
 	t.Run("junk edge errored", func(t *testing.T) {
 		// We start by querying for ancestors for a block edge id.
-		_, err := tree.ComputeAncestors(ctx, id("foo"), blockNum)
+		_, _, err := tree.ComputeAncestors(ctx, id("foo"), blockNum)
 		require.ErrorContains(t, err, "not found in honest challenge tree")
 	})
 	t.Run("dishonest edge lookup errored", func(t *testing.T) {
-		_, err := tree.ComputeAncestors(ctx, id("blk-0.a-16.b"), blockNum)
+		_, _, err := tree.ComputeAncestors(ctx, id("blk-0.a-16.b"), blockNum)
 		require.ErrorContains(t, err, "not found in honest challenge tree")
 	})
 	t.Run("block challenge: level zero edge has no ancestors", func(t *testing.T) {
-		resp, err := tree.ComputeAncestors(ctx, id("blk-0.a-16.a"), blockNum)
+		resp, _, err := tree.ComputeAncestors(ctx, id("blk-0.a-16.a"), blockNum)
 		require.NoError(t, err)
 		require.Equal(t, 0, len(resp))
 	})
 	t.Run("block challenge: single ancestor", func(t *testing.T) {
-		resp, err := tree.ComputeAncestors(ctx, id("blk-0.a-8.a"), blockNum)
+		resp, _, err := tree.ComputeAncestors(ctx, id("blk-0.a-8.a"), blockNum)
 		require.NoError(t, err)
 		require.Equal(t, id("blk-0.a-16.a"), resp[0].Id())
-		resp, err = tree.ComputeAncestors(ctx, id("blk-8.a-16.a"), blockNum)
+		resp, _, err = tree.ComputeAncestors(ctx, id("blk-8.a-16.a"), blockNum)
 		require.NoError(t, err)
 		require.Equal(t, id("blk-0.a-16.a"), resp[0].Id())
 	})
 	t.Run("block challenge: many ancestors", func(t *testing.T) {
-		resp, err := tree.ComputeAncestors(ctx, id("blk-4.a-5.a"), blockNum)
+		resp, _, err := tree.ComputeAncestors(ctx, id("blk-4.a-5.a"), blockNum)
 		require.NoError(t, err)
 		wanted := []protocol.EdgeId{
 			id("blk-4.a-6.a"),
@@ -99,7 +99,7 @@ func TestComputeAncestors(t *testing.T) {
 		}
 	})
 	t.Run("big step challenge: level zero edge has ancestors from block challenge", func(t *testing.T) {
-		resp, err := tree.ComputeAncestors(ctx, id("big-0.a-16.a"), blockNum)
+		resp, _, err := tree.ComputeAncestors(ctx, id("big-0.a-16.a"), blockNum)
 		require.NoError(t, err)
 		wanted := []protocol.EdgeId{
 			id("blk-4.a-5.a"),
@@ -113,7 +113,7 @@ func TestComputeAncestors(t *testing.T) {
 		}
 	})
 	t.Run("big step challenge: many ancestors plus block challenge ancestors", func(t *testing.T) {
-		resp, err := tree.ComputeAncestors(ctx, id("big-5.a-6.a"), blockNum)
+		resp, _, err := tree.ComputeAncestors(ctx, id("big-5.a-6.a"), blockNum)
 		require.NoError(t, err)
 		wanted := []protocol.EdgeId{
 			// Big step chal.
@@ -133,7 +133,7 @@ func TestComputeAncestors(t *testing.T) {
 		}
 	})
 	t.Run("small step challenge: level zero edge has ancestors from big and block challenge", func(t *testing.T) {
-		resp, err := tree.ComputeAncestors(ctx, id("smol-0.a-16.a"), blockNum)
+		resp, _, err := tree.ComputeAncestors(ctx, id("smol-0.a-16.a"), blockNum)
 		require.NoError(t, err)
 		wanted := []protocol.EdgeId{
 			// Big step chal.
@@ -154,7 +154,7 @@ func TestComputeAncestors(t *testing.T) {
 		}
 	})
 	t.Run("small step challenge: lowest level edge has full ancestry", func(t *testing.T) {
-		resp, err := tree.ComputeAncestors(ctx, id("smol-5.a-6.a"), blockNum)
+		resp, _, err := tree.ComputeAncestors(ctx, id("smol-5.a-6.a"), blockNum)
 		require.NoError(t, err)
 		wanted := []protocol.EdgeId{
 			// Small step chal.

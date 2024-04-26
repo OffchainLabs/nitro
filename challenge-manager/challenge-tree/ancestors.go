@@ -32,11 +32,11 @@ func (ht *RoyalChallengeTree) ComputeAncestors(
 	ctx context.Context,
 	edgeId protocol.EdgeId,
 	blockNumber uint64,
-) (HonestAncestors, error) {
+) (HonestAncestors, []EdgeLocalTimer, error) {
 	// Checks if the edge exists before performing any computation.
 	startEdge, ok := ht.edges.TryGet(edgeId)
 	if !ok {
-		return nil, errNotFound(edgeId)
+		return nil, nil, errNotFound(edgeId)
 	}
 	currentChallengeLevel := startEdge.GetReversedChallengeLevel()
 
@@ -45,6 +45,7 @@ func (ht *RoyalChallengeTree) ComputeAncestors(
 	currentEdge := startEdge
 
 	ancestry := make([]protocol.ReadOnlyEdge, 0)
+	localTimers := make([]EdgeLocalTimer, 0)
 
 	// Challenge levels go from lowest to highest, where lowest is the smallest challenge level
 	// (where challenges are over individual, WASM opcodes). If we have 3 challenge levels,
@@ -54,7 +55,7 @@ func (ht *RoyalChallengeTree) ComputeAncestors(
 		// Compute the root edge for the current challenge level.
 		rootEdge, err := ht.honestRootAncestorAtChallengeLevel(currentEdge, currentChallengeLevel)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		// Compute the ancestors for the current edge in the current challenge level.
@@ -62,7 +63,7 @@ func (ht *RoyalChallengeTree) ComputeAncestors(
 			ctx, rootEdge, currentEdge, blockNumber,
 		)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 
 		// Expand the total ancestry and timers slices. We want ancestors from
@@ -70,6 +71,7 @@ func (ht *RoyalChallengeTree) ComputeAncestors(
 		containers.Reverse(ancestorLocalTimers)
 		containers.Reverse(ancestorsAtLevel)
 		ancestry = append(ancestry, ancestorsAtLevel...)
+		localTimers = append(localTimers, ancestorLocalTimers...)
 
 		// Advance the challenge level.
 		currentChallengeLevel += 1
@@ -82,7 +84,7 @@ func (ht *RoyalChallengeTree) ComputeAncestors(
 		// at the next challenge level to link between levels.
 		nextLevelClaimedEdge, err := ht.getClaimedEdge(rootEdge)
 		if err != nil {
-			return nil, err
+			return nil, nil, err
 		}
 		// Update the cursor to be the claimed edge at the next challenge level.
 		currentEdge = nextLevelClaimedEdge
@@ -90,7 +92,7 @@ func (ht *RoyalChallengeTree) ComputeAncestors(
 		// Include the next level claimed edge in the ancestry list.
 		ancestry = append(ancestry, nextLevelClaimedEdge)
 	}
-	return ancestry, nil
+	return ancestry, localTimers, nil
 }
 
 // Computes the list of ancestors in a challenge level from a root edge down
@@ -167,7 +169,7 @@ func (ht *RoyalChallengeTree) hasHonestAncestry(ctx context.Context, eg protocol
 	if chalLevel == protocol.NewBlockChallengeLevel() && claimId.IsSome() {
 		return true, nil
 	}
-	ancestry, err := ht.ComputeAncestors(
+	ancestry, _, err := ht.ComputeAncestors(
 		ctx,
 		eg.Id(),
 		0, /* block num (unimportant here) */
