@@ -101,7 +101,7 @@ func getOptions(address common.Address, rootHash common.Hash, slotValueMap map[c
 }
 
 func getFulfillableBlockTimeLimits(t *testing.T, blockNumber uint64, timestamp uint64) []*arbitrum_types.ConditionalOptions {
-	future := math.HexOrDecimal64(timestamp + 40)
+	future := math.HexOrDecimal64(timestamp + 70)
 	past := math.HexOrDecimal64(timestamp - 1)
 	futureBlockNumber := math.HexOrDecimal64(blockNumber + 1000)
 	currentBlockNumber := math.HexOrDecimal64(blockNumber)
