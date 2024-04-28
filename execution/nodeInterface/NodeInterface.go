@@ -606,7 +606,7 @@ func (n NodeInterface) LegacyLookupMessageBatchProof(c ctx, evm mech, batchNum h
 		return
 	}
 	if node.ClassicOutbox == nil {
-		err = errors.New("this node doesnt support classicLookupMessageBatchProof")
+		err = errors.New("this node doesn't support classicLookupMessageBatchProof")
 		return
 	}
 	msg, err := node.ClassicOutbox.GetMsg(batchNum, index)

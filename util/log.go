@@ -28,7 +28,7 @@ func NewEphemeralErrorHandler(duration time.Duration, errorString string, ignore
 	}
 }
 
-// LogLevel method defaults to returning the input currentLogLevel if the given error doesnt contain the errorSubstring,
+// LogLevel method defaults to returning the input currentLogLevel if the given error doesn't contain the errorSubstring,
 // but if it does, then returns one of the corresponding loglevels as follows
 //   - IgnoredErrLogLevel - if the error has been repeating for less than the IgnoreDuration of time. Defaults to log.Debug
 //   - log.Warn - if the error has been repeating for less than the given duration of time

@@ -184,7 +184,7 @@ func (s *TransactionStreamer) TrimCache(to arbutil.MessageIndex) {
 	defer s.cachedL1PriceDataMutex.Unlock()
 
 	if to < s.cachedL1PriceData.startOfL1PriceDataCache {
-		log.Info("trying to trim older cache which doesnt exist anymore")
+		log.Info("trying to trim older cache which doesn't exist anymore")
 	} else if to >= s.cachedL1PriceData.endOfL1PriceDataCache {
 		s.cachedL1PriceData.startOfL1PriceDataCache = 0
 		s.cachedL1PriceData.endOfL1PriceDataCache = 0

@@ -215,7 +215,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	if initFile != "" {
 		reader, err := os.Open(initFile)
 		if err != nil {
-			return nil, nil, fmt.Errorf("couln't open init '%v' archive: %w", initFile, err)
+			return nil, nil, fmt.Errorf("couldn't open init '%v' archive: %w", initFile, err)
 		}
 		stat, err := reader.Stat()
 		if err != nil {
@@ -224,7 +224,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		log.Info("extracting downloaded init archive", "size", fmt.Sprintf("%dMB", stat.Size()/1024/1024))
 		err = extract.Archive(context.Background(), reader, stack.InstanceDir(), nil)
 		if err != nil {
-			return nil, nil, fmt.Errorf("couln't extract init archive '%v' err:%w", initFile, err)
+			return nil, nil, fmt.Errorf("couldn't extract init archive '%v' err:%w", initFile, err)
 		}
 	}
 

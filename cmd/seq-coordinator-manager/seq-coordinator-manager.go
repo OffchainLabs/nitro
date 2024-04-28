@@ -279,7 +279,7 @@ func (sm *manager) addSeqPriorityForm(ctx context.Context) *tview.Form {
 		pages.SwitchToPage("Menu")
 	})
 	addSeqForm.AddButton("Add", func() {
-		// check if url is valid, i.e it doesnt already exist in the priority list
+		// check if url is valid, i.e it doesn't already exist in the priority list
 		if _, ok := sm.prioritiesSet[URL]; !ok && URL != "" {
 			sm.prioritiesSet[URL] = true
 			sm.priorityList = append(sm.priorityList, URL)
