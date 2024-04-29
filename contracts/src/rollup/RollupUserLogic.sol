@@ -134,11 +134,11 @@ contract RollupUserLogic is RollupCore, UUPSNotUpgradeable, IRollupUser {
      * @notice Create a new stake
      * @param depositAmount The amount of either eth or tokens staked
      */
-    function _newStake(uint256 depositAmount) internal onlyValidator whenNotPaused {
+    function _newStake(uint256 depositAmount, address withdrawalAddress) internal onlyValidator whenNotPaused {
         // Verify that sender is not already a staker
         require(!isStaked(msg.sender), "ALREADY_STAKED");
         // amount will be checked when creating an assertion
-        createNewStake(msg.sender, depositAmount);
+        createNewStake(msg.sender, depositAmount, withdrawalAddress);
     }
 
     /**
@@ -310,17 +310,32 @@ contract RollupUserLogic is RollupCore, UUPSNotUpgradeable, IRollupUser {
     }
 
     /**
-     * @notice Create a new stake on a new assertion
-     * @param tokenAmount Amount of the rollups staking token to stake
-     * @param assertion Assertion describing the state change between the old assertion and the new one
-     * @param expectedAssertionHash Assertion hash of the assertion that will be created
+     * @notice Deprecated, use the function with `withdrawalAddress` instead
+     *         Using this default `withdrawalAddress` to msg.sender
      */
     function newStakeOnNewAssertion(
         uint256 tokenAmount,
         AssertionInputs calldata assertion,
         bytes32 expectedAssertionHash
     ) external {
-        _newStake(tokenAmount);
+        newStakeOnNewAssertion(tokenAmount, assertion, expectedAssertionHash, msg.sender);
+    }
+
+    /**
+     * @notice Create a new stake on a new assertion
+     * @param tokenAmount Amount of the rollups staking token to stake
+     * @param assertion Assertion describing the state change between the old assertion and the new one
+     * @param expectedAssertionHash Assertion hash of the assertion that will be created
+     * @param withdrawalAddress The address the send the stake back upon withdrawal
+     */
+    function newStakeOnNewAssertion(
+        uint256 tokenAmount,
+        AssertionInputs calldata assertion,
+        bytes32 expectedAssertionHash,
+        address withdrawalAddress
+    ) public {
+        require(withdrawalAddress != address(0), "EMPTY_WITHDRAWAL_ADDRESS");
+        _newStake(tokenAmount, withdrawalAddress);
         stakeOnNewAssertion(assertion, expectedAssertionHash);
         /// @dev This is an external call, safe because it's at the end of the function
         receiveTokens(tokenAmount);
