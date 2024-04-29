@@ -28,8 +28,8 @@ var ErrSequencerInsertLockTaken = errors.New("insert lock taken")
 
 // always needed
 type ExecutionClient interface {
-	DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) error
-	Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) error
+	DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*MessageResult, error)
+	Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) ([]*MessageResult, error)
 	HeadMessageNumber() (arbutil.MessageIndex, error)
 	HeadMessageNumberSync(t *testing.T) (arbutil.MessageIndex, error)
 	ResultAtPos(pos arbutil.MessageIndex) (*MessageResult, error)
@@ -90,7 +90,6 @@ type ConsensusInfo interface {
 }
 
 type ConsensusSequencer interface {
-	BroadcastMessage(msg arbostypes.MessageWithMetadata, pos arbutil.MessageIndex, msgResult MessageResult)
 	WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult MessageResult) error
 	ExpectChosenSequencer() error
 	CacheL1PriceDataOfMsg(pos arbutil.MessageIndex, callDataUnits uint64, l1GasCharged uint64)

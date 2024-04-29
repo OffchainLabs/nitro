@@ -456,10 +456,19 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 	s.reorgMutex.Lock()
 	defer s.reorgMutex.Unlock()
 
-	err = s.exec.Reorg(count, newMessages, oldMessages)
+	messagesResults, err := s.exec.Reorg(count, newMessages, oldMessages)
 	if err != nil {
 		return err
 	}
+
+	messagesWithBlockHash := make([]broadcaster.MessageWithMetadataAndBlockHash, 0, len(messagesResults))
+	for i := 0; i < len(messagesResults); i++ {
+		messagesWithBlockHash = append(messagesWithBlockHash, broadcaster.MessageWithMetadataAndBlockHash{
+			Message:   newMessages[i],
+			BlockHash: &messagesResults[i].BlockHash,
+		})
+	}
+	s.broadcastMessages(messagesWithBlockHash, count)
 
 	if s.validator != nil {
 		err = s.validator.Reorg(s.GetContext(), count)
@@ -997,7 +1006,12 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(
 	if err := s.writeMessages(pos, []arbostypes.MessageWithMetadata{msgWithMeta}, nil); err != nil {
 		return err
 	}
-	s.BroadcastMessage(msgWithMeta, pos, msgResult)
+
+	msgWithBlockHash := broadcaster.MessageWithMetadataAndBlockHash{
+		Message:   msgWithMeta,
+		BlockHash: &msgResult.BlockHash,
+	}
+	s.broadcastMessages([]broadcaster.MessageWithMetadataAndBlockHash{msgWithBlockHash}, pos)
 
 	return nil
 }
@@ -1027,16 +1041,15 @@ func (s *TransactionStreamer) writeMessage(pos arbutil.MessageIndex, msg arbosty
 	return batch.Put(key, msgBytes)
 }
 
-func (s *TransactionStreamer) BroadcastMessage(
-	msg arbostypes.MessageWithMetadata,
+func (s *TransactionStreamer) broadcastMessages(
+	msgs []broadcaster.MessageWithMetadataAndBlockHash,
 	pos arbutil.MessageIndex,
-	msgResult execution.MessageResult,
 ) {
 	if s.broadcastServer == nil {
 		return
 	}
-	if err := s.broadcastServer.BroadcastSingle(msg, pos, &msgResult.BlockHash); err != nil {
-		log.Error("failed broadcasting message", "pos", pos, "err", err)
+	if err := s.broadcastServer.BroadcastMessages(msgs, pos); err != nil {
+		log.Error("failed broadcasting messages", "pos", pos, "err", err)
 	}
 }
 
@@ -1118,7 +1131,8 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context, exec execution
 		}
 		msgForPrefetch = msg
 	}
-	if err = s.exec.DigestMessage(pos, msg, msgForPrefetch); err != nil {
+	msgResult, err := s.exec.DigestMessage(pos, msg, msgForPrefetch)
+	if err != nil {
 		logger := log.Warn
 		if prevMessageCount < msgCount {
 			logger = log.Debug
@@ -1126,6 +1140,13 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context, exec execution
 		logger("feedOneMsg failed to send message to execEngine", "err", err, "pos", pos)
 		return false
 	}
+
+	msgWithBlockHash := broadcaster.MessageWithMetadataAndBlockHash{
+		Message:   *msg,
+		BlockHash: &msgResult.BlockHash,
+	}
+	s.broadcastMessages([]broadcaster.MessageWithMetadataAndBlockHash{msgWithBlockHash}, pos)
+
 	return pos+1 < msgCount
 }
 
