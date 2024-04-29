@@ -246,7 +246,7 @@ func (ht *RoyalChallengeTree) findEssentialPaths(
 			continue
 		}
 
-		// Otherwise, the node is a leaf and we can push to the list of paths
+		// Otherwise, the node is a qualified leaf and we can push to the list of paths
 		// and all the timers of the path.
 		allPaths = append(allPaths, path)
 		allTimers = append(allTimers, currentTimers)
@@ -265,6 +265,9 @@ func (ht *RoyalChallengeTree) isClaimedEdge(ctx context.Context, edge protocol.R
 	if !hasLengthOne(edge) {
 		return false, nil
 	}
+	// Note: the specification requires that the claiming edge is correctly constructed.
+	// This is not checked here, because the honest validator only trackers
+	// essential edges as an invariant.
 	claimingEdge, ok := ht.findClaimingEdge(ctx, edge.Id())
 	if !ok {
 		return false, nil
