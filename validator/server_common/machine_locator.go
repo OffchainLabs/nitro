@@ -81,6 +81,9 @@ func NewMachineLocator(rootPath string) (*MachineLocator, error) {
 				continue
 			}
 			moduleRoot := common.HexToHash(strings.TrimSpace(string(mrContent)))
+			if file.Name() != "latest" && file.Name() != moduleRoot.Hex() {
+				continue
+			}
 			moduleRoots[moduleRoot] = true
 			if file.Name() == "latest" {
 				latestModuleRoot = moduleRoot
