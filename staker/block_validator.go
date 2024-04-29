@@ -122,6 +122,12 @@ func (c *BlockValidatorConfig) Validate() error {
 			c.ValidationServerConfigs = validationServersConfigs
 		}
 	}
+	for _, vc := range c.ValidationServerConfigs {
+		if err := vc.Validate(); err != nil {
+			return fmt.Errorf("validating validation server configs: %w", err)
+		}
+	}
+
 	if len(c.ValidationServerConfigs) == 0 && !streamsEnabled {
 		return fmt.Errorf("block-validator validation-server-configs is empty, need at least one validation server config")
 	}
@@ -132,6 +138,9 @@ func (c *BlockValidatorConfig) Validate() error {
 	}
 	if err := c.ExecutionServerConfig.Validate(); err != nil {
 		return fmt.Errorf("validating execution server config: %w", err)
+	}
+	if err := c.ValidationServer.Validate(); err != nil {
+		return fmt.Errorf("validating validation server config: %w", err)
 	}
 	return nil
 }

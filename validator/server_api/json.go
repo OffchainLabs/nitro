@@ -4,6 +4,7 @@
 package server_api
 
 import (
+	"encoding/base64"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -62,4 +63,55 @@ type InputJSON struct {
 type BatchInfoJson struct {
 	Number  uint64
 	DataB64 string
+}
+
+func ValidationInputToJson(entry *validator.ValidationInput) *InputJSON {
+	jsonPreimagesMap := make(map[arbutil.PreimageType]*jsonapi.PreimagesMapJson)
+	for ty, preimages := range entry.Preimages {
+		jsonPreimagesMap[ty] = jsonapi.NewPreimagesMapJson(preimages)
+	}
+	res := &InputJSON{
+		Id:            entry.Id,
+		HasDelayedMsg: entry.HasDelayedMsg,
+		DelayedMsgNr:  entry.DelayedMsgNr,
+		DelayedMsgB64: base64.StdEncoding.EncodeToString(entry.DelayedMsg),
+		StartState:    entry.StartState,
+		PreimagesB64:  jsonPreimagesMap,
+	}
+	for _, binfo := range entry.BatchInfo {
+		encData := base64.StdEncoding.EncodeToString(binfo.Data)
+		res.BatchInfo = append(res.BatchInfo, BatchInfoJson{Number: binfo.Number, DataB64: encData})
+	}
+	return res
+}
+
+func ValidationInputFromJson(entry *InputJSON) (*validator.ValidationInput, error) {
+	preimages := make(map[arbutil.PreimageType]map[common.Hash][]byte)
+	for ty, jsonPreimages := range entry.PreimagesB64 {
+		preimages[ty] = jsonPreimages.Map
+	}
+	valInput := &validator.ValidationInput{
+		Id:            entry.Id,
+		HasDelayedMsg: entry.HasDelayedMsg,
+		DelayedMsgNr:  entry.DelayedMsgNr,
+		StartState:    entry.StartState,
+		Preimages:     preimages,
+	}
+	delayed, err := base64.StdEncoding.DecodeString(entry.DelayedMsgB64)
+	if err != nil {
+		return nil, err
+	}
+	valInput.DelayedMsg = delayed
+	for _, binfo := range entry.BatchInfo {
+		data, err := base64.StdEncoding.DecodeString(binfo.DataB64)
+		if err != nil {
+			return nil, err
+		}
+		decInfo := validator.BatchInfo{
+			Number: binfo.Number,
+			Data:   data,
+		}
+		valInput.BatchInfo = append(valInput.BatchInfo, decInfo)
+	}
+	return valInput, nil
 }
