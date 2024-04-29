@@ -33,6 +33,8 @@ mod zerohashes;
 
 use zerohashes::ZERO_HASHES;
 
+use crate::print;
+
 #[cfg(feature = "counters")]
 lazy_static! {
     static ref NEW_COUNTERS: HashMap<&'static MerkleType, AtomicUsize> = {
@@ -382,7 +384,7 @@ impl Merkle {
         if hashes.len() > capacity(layers.as_ref()) - layers[0].len() {
             return Err("Cannot extend with more leaves than the capicity of the tree.".to_owned());
         }
-        let mut idx = layers.len();
+        let mut idx = layers[0].len();
         let mut new_size = idx + hashes.len();
         for (layer_i, layer) in layers.iter_mut().enumerate() {
             layer.resize(new_size, empty_hash_at(self.ty, layer_i));
