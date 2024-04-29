@@ -31,7 +31,7 @@ pub fn verify_namespace(mut env: WasmEnvMut, sp: u32) {
     )
 }
 
-pub fn verify_merkle_tree(mut env: WasmEnvMut, sp: u32) {
+pub fn verify_merkle_proof(mut env: WasmEnvMut, sp: u32) {
     let (sp, _) = GoStack::new(sp, &mut env);
 
     let proof_buf_ptr = sp.read_u64(0);

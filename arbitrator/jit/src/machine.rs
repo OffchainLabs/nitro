@@ -110,7 +110,7 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
             "github.com/offchainlabs/nitro/wavmio.readHotShotCommitment" => func!(wavmio::read_hotshot_commitment),
             "github.com/offchainlabs/nitro/wavmio.readDelayedInboxMessage" => func!(wavmio::read_delayed_inbox_message),
             "github.com/offchainlabs/nitro/espressocrypto.verifyNamespace" => func!(espressocrypto::verify_namespace),
-            "github.com/offchainlabs/nitro/espressocrypto.verifyMerkleProof" => func!(espressocrypto::verify_merkle_tree),
+            "github.com/offchainlabs/nitro/espressocrypto.verifyMerkleProof" => func!(espressocrypto::verify_merkle_proof),
             "github.com/offchainlabs/nitro/wavmio.resolvePreImage" => {
                 #[allow(deprecated)] // we're just keeping this around until we no longer need to validate old replay binaries
                 {

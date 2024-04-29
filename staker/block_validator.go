@@ -561,15 +561,15 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 	}
 	var comm espressoTypes.Commitment
 	if v.config().Espresso {
-		_, _, err := arbos.ParseEspressoMsg(msg.Message)
+		_, jst, err := arbos.ParseEspressoMsg(msg.Message)
 		if err != nil {
 			return false, err
 		}
-		//fetchedCommitment, err := v.lightClientReader.FetchMerkleRootAtL1Block(jst.BlockMerkleJustification.L1ProofHeight)
+		fetchedCommitment, err := v.lightClientReader.FetchMerkleRootAtL1Block(jst.BlockMerkleJustification.L1ProofHeight)
 		if err != nil {
 			return false, err
 		}
-		comm = espressoTypes.Commitment{}
+		comm = fetchedCommitment
 	}
 	entry, err := newValidationEntry(pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, v.nextCreateBatchBlockHash, v.nextCreatePrevDelayed, &comm)
 	if err != nil {
