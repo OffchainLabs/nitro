@@ -38,15 +38,22 @@ func NewSyncMonitor(config *SyncMonitorConfig, exec *ExecutionEngine) *SyncMonit
 
 func (s *SyncMonitor) FullSyncProgressMap() map[string]interface{} {
 	res := s.consensus.FullSyncProgressMap()
-	consensusSyncTarget := s.consensus.SyncTargetMessageCount()
 
-	built, err := s.exec.HeadMessageNumber()
+	res["consensusSyncTarget"] = s.consensus.SyncTargetMessageCount()
+
+	header, err := s.exec.getCurrentHeader()
 	if err != nil {
-		res["headMsgNumberError"] = err
+		res["currentHeaderError"] = err
+	} else {
+		blockNum := header.Number.Uint64()
+		res["blockNum"] = blockNum
+		messageNum, err := s.exec.BlockNumberToMessageIndex(blockNum)
+		if err != nil {
+			res["messageOfLastBlockError"] = err
+		} else {
+			res["messageOfLastBlock"] = messageNum
+		}
 	}
-
-	res["builtBlock"] = built
-	res["consensusSyncTarget"] = consensusSyncTarget
 
 	return res
 }

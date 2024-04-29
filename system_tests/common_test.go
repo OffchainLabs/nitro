@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"math/big"
 	"net"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbstate"
@@ -27,10 +29,12 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
+	rediscons "github.com/offchainlabs/nitro/validator/valnode/redis"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -64,6 +68,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	"golang.org/x/exp/slog"
 )
 
 type info = *BlockchainTestInfo
@@ -504,6 +509,24 @@ func createStackConfigForTest(dataDir string) *node.Config {
 	return &stackConf
 }
 
+func createRedisGroup(ctx context.Context, t *testing.T, streamName string, client redis.UniversalClient) {
+	t.Helper()
+	// Stream name and group name are the same.
+	if _, err := client.XGroupCreateMkStream(ctx, streamName, streamName, "$").Result(); err != nil {
+		log.Debug("Error creating stream group: %v", err)
+	}
+}
+
+func destroyRedisGroup(ctx context.Context, t *testing.T, streamName string, client redis.UniversalClient) {
+	t.Helper()
+	if client == nil {
+		return
+	}
+	if _, err := client.XGroupDestroy(ctx, streamName, streamName).Result(); err != nil {
+		log.Debug("Error destroying a stream group", "error", err)
+	}
+}
+
 func createTestValidationNode(t *testing.T, ctx context.Context, config *valnode.Config) (*valnode.ValidationNode, *node.Node) {
 	stackConf := node.DefaultConfig
 	stackConf.HTTPPort = 0
@@ -555,22 +578,45 @@ func StaticFetcherFrom[T any](t *testing.T, config *T) func() *T {
 	return func() *T { return &tCopy }
 }
 
-func configByValidationNode(t *testing.T, clientConfig *arbnode.Config, valStack *node.Node) {
-	clientConfig.BlockValidator.ValidationServerConfigs[0].URL = valStack.WSEndpoint()
-	clientConfig.BlockValidator.ValidationServerConfigs[0].JWTSecret = ""
+func configByValidationNode(clientConfig *arbnode.Config, valStack *node.Node) {
+	clientConfig.BlockValidator.ExecutionServerConfig.URL = valStack.WSEndpoint()
+	clientConfig.BlockValidator.ExecutionServerConfig.JWTSecret = ""
+	if len(clientConfig.BlockValidator.ValidationServerConfigs) != 0 {
+		clientConfig.BlockValidator.ValidationServerConfigs[0].URL = valStack.WSEndpoint()
+		clientConfig.BlockValidator.ValidationServerConfigs[0].JWTSecret = ""
+	}
 }
 
-func AddDefaultValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool) {
-	if !nodeConfig.ValidatorRequired() {
-		return
+func currentRootModule(t *testing.T) common.Hash {
+	t.Helper()
+	locator, err := server_common.NewMachineLocator("")
+	if err != nil {
+		t.Fatalf("Error creating machine locator: %v", err)
 	}
-	if nodeConfig.BlockValidator.ValidationServerConfigs[0].URL != "" {
+	return locator.LatestWasmModuleRoot()
+}
+
+func AddDefaultValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool, redisURL string) {
+	if !nodeConfig.ValidatorRequired() {
 		return
 	}
 	conf := valnode.TestValidationConfig
 	conf.UseJit = useJit
+	// Enable redis streams when URL is specified
+	if redisURL != "" {
+		conf.Arbitrator.RedisValidationServerConfig = rediscons.DefaultValidationServerConfig
+		redisClient, err := redisutil.RedisClientFromURL(redisURL)
+		if err != nil {
+			t.Fatalf("Error creating redis coordinator: %v", err)
+		}
+		redisStream := server_api.RedisStreamForRoot(currentRootModule(t))
+		createRedisGroup(ctx, t, redisStream, redisClient)
+		conf.Arbitrator.RedisValidationServerConfig.RedisURL = redisURL
+		t.Cleanup(func() { destroyRedisGroup(ctx, t, redisStream, redisClient) })
+		conf.Arbitrator.RedisValidationServerConfig.ModuleRoots = []string{currentRootModule(t).Hex()}
+	}
 	_, valStack := createTestValidationNode(t, ctx, &conf)
-	configByValidationNode(t, nodeConfig, valStack)
+	configByValidationNode(nodeConfig, valStack)
 }
 
 func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *node.Config) (info, *ethclient.Client, *eth.Ethereum, *node.Node) {
@@ -590,7 +636,8 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 
 	nodeConf := ethconfig.Defaults
 	nodeConf.NetworkId = chainConfig.ChainID.Uint64()
-	l1Genesis := core.DeveloperGenesisBlock(15_000_000, l1info.GetAddress("Faucet"))
+	faucetAddr := l1info.GetAddress("Faucet")
+	l1Genesis := core.DeveloperGenesisBlock(15_000_000, &faucetAddr)
 	infoGenesis := l1info.GetGenesisAlloc()
 	for acct, info := range infoGenesis {
 		l1Genesis.Alloc[acct] = info
@@ -718,9 +765,9 @@ func createL2BlockChainWithStackConfig(
 	stack, err = node.New(stackConfig)
 	Require(t, err)
 
-	chainDb, err := stack.OpenDatabase("chaindb", 0, 0, "", false)
+	chainDb, err := stack.OpenDatabase("l2chaindata", 0, 0, "l2chaindata/", false)
 	Require(t, err)
-	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "", false)
+	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "arbitrumdata/", false)
 	Require(t, err)
 
 	initReader := statetransfer.NewMemoryInitDataReader(&l2info.ArbInitData)
@@ -798,7 +845,7 @@ func createTestNodeWithL1(
 		execConfig.Sequencer.Enable = false
 	}
 
-	AddDefaultValNode(t, ctx, nodeConfig, true)
+	AddDefaultValNode(t, ctx, nodeConfig, true, "")
 
 	Require(t, execConfig.Validate())
 	execConfigFetcher := func() *gethexec.Config { return execConfig }
@@ -833,7 +880,7 @@ func createTestNode(
 
 	feedErrChan := make(chan error, 10)
 
-	AddDefaultValNode(t, ctx, nodeConfig, true)
+	AddDefaultValNode(t, ctx, nodeConfig, true, "")
 
 	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, l2Info, "", chainConfig, &execConfig.Caching)
 
@@ -922,9 +969,9 @@ func Create2ndNodeWithConfig(
 	l2stack, err := node.New(stackConfig)
 	Require(t, err)
 
-	l2chainDb, err := l2stack.OpenDatabase("chaindb", 0, 0, "", false)
+	l2chainDb, err := l2stack.OpenDatabase("l2chaindata", 0, 0, "l2chaindata/", false)
 	Require(t, err)
-	l2arbDb, err := l2stack.OpenDatabase("arbitrumdata", 0, 0, "", false)
+	l2arbDb, err := l2stack.OpenDatabase("arbitrumdata", 0, 0, "arbitrumdata/", false)
 	Require(t, err)
 	initReader := statetransfer.NewMemoryInitDataReader(l2InitData)
 
@@ -939,7 +986,7 @@ func Create2ndNodeWithConfig(
 	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, coreCacheConfig, initReader, chainConfig, initMessage, gethexec.ConfigDefaultTest().TxLookupLimit, 0)
 	Require(t, err)
 
-	AddDefaultValNode(t, ctx, nodeConfig, true)
+	AddDefaultValNode(t, ctx, nodeConfig, true, "")
 
 	Require(t, execConfig.Validate())
 	Require(t, nodeConfig.Validate())
@@ -1114,13 +1161,14 @@ func deploySimple(
 func TestMain(m *testing.M) {
 	logLevelEnv := os.Getenv("TEST_LOGLEVEL")
 	if logLevelEnv != "" {
-		logLevel, err := strconv.ParseUint(logLevelEnv, 10, 32)
-		if err != nil || logLevel > uint64(log.LvlTrace) {
+		logLevel, err := strconv.ParseInt(logLevelEnv, 10, 32)
+		if err != nil || logLevel > int64(log.LevelCrit) {
 			log.Warn("TEST_LOGLEVEL exists but out of bound, ignoring", "logLevel", logLevelEnv, "max", log.LvlTrace)
 		}
-		glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
-		glogger.Verbosity(log.Lvl(logLevel))
-		log.Root().SetHandler(glogger)
+		glogger := log.NewGlogHandler(
+			log.NewTerminalHandler(io.Writer(os.Stderr), false))
+		glogger.Verbosity(slog.Level(logLevel))
+		log.SetDefault(log.NewLogger(glogger))
 	}
 	code := m.Run()
 	os.Exit(code)
