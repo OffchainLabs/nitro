@@ -305,7 +305,7 @@ impl Merkle {
             } else if idx == layer.len() {
                 layer.push(next_hash);
             } else {
-                panic!("Index {} out of bounds {}", idx, layer.len());
+                panic!("Index {} out of bounds {} in layer {}", idx, layer.len(), layer_i);
             }
             if layer_i == layers_len - 1 {
                 // next_hash isn't needed
@@ -334,7 +334,11 @@ impl Merkle {
             return Err("Cannot extend with more leaves than the capicity of the tree.".to_owned());
         }
         let mut idx = self.layers[0].len();
-        self.layers[0].resize(idx + hashes.len(), self.empty_layers[0]);
+        let mut new_size = idx + hashes.len();
+        for (layer_i, layer) in self.layers.iter_mut().enumerate() {
+            layer.resize(new_size, self.empty_layers[layer_i]);
+            new_size >>= 1;
+        }
         for hash in hashes {
             self.set(idx, hash);
             idx += 1;

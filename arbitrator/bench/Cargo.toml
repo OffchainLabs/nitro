@@ -23,6 +23,3 @@ gperftools = { version = "0.2.0", optional = true }
 counters = []
 cpuprof = ["gperftools"]
 heapprof = ["gperftools", "gperftools/heap"]
-
-[profile.release]
-debug = true 
