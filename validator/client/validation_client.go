@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -25,9 +26,10 @@ import (
 
 type ValidationClient struct {
 	stopwaiter.StopWaiter
-	client *rpcclient.RpcClient
-	name   string
-	room   int32
+	client          *rpcclient.RpcClient
+	name            string
+	room            int32
+	wasmModuleRoots []common.Hash
 }
 
 func NewValidationClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *ValidationClient {
@@ -61,6 +63,13 @@ func (c *ValidationClient) Start(ctx_in context.Context) error {
 	if len(name) == 0 {
 		return errors.New("couldn't read name from server")
 	}
+	var moduleRoots []common.Hash
+	if err := c.client.CallContext(c.GetContext(), &moduleRoots, server_api.Namespace+"_wasmModuleRoots"); err != nil {
+		return err
+	}
+	if len(moduleRoots) == 0 {
+		return fmt.Errorf("server reported no wasmModuleRoots")
+	}
 	var room int
 	if err := c.client.CallContext(c.GetContext(), &room, server_api.Namespace+"_room"); err != nil {
 		return err
@@ -72,8 +81,16 @@ func (c *ValidationClient) Start(ctx_in context.Context) error {
 		log.Info("connected to validation server", "name", name, "room", room)
 	}
 	atomic.StoreInt32(&c.room, int32(room))
+	c.wasmModuleRoots = moduleRoots
 	c.name = name
 	return nil
+}
+
+func (c *ValidationClient) WasmModuleRoots() ([]common.Hash, error) {
+	if c.Started() {
+		return c.wasmModuleRoots, nil
+	}
+	return nil, errors.New("not started")
 }
 
 func (c *ValidationClient) Stop() {

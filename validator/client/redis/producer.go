@@ -58,6 +58,7 @@ type ValidationClient struct {
 	producers      map[common.Hash]*pubsub.Producer[*validator.ValidationInput, validator.GoGlobalState]
 	producerConfig pubsub.ProducerConfig
 	redisClient    redis.UniversalClient
+	moduleRoots    []common.Hash
 }
 
 func NewValidationClient(cfg *ValidationClientConfig) (*ValidationClient, error) {
@@ -90,8 +91,13 @@ func (c *ValidationClient) Initialize(moduleRoots []common.Hash) error {
 		}
 		p.Start(c.GetContext())
 		c.producers[mr] = p
+		c.moduleRoots = append(c.moduleRoots, mr)
 	}
 	return nil
+}
+
+func (c *ValidationClient) WasmModuleRoots() ([]common.Hash, error) {
+	return c.moduleRoots, nil
 }
 
 func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
