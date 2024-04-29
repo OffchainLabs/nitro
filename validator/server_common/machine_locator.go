@@ -8,21 +8,20 @@ import (
 	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
 )
 
 type MachineLocator struct {
-	rootPath string
-	latest   common.Hash
+	rootPath    string
+	latest      common.Hash
+	moduleRoots []common.Hash
 }
 
 var ErrMachineNotFound = errors.New("machine not found")
 
 func NewMachineLocator(rootPath string) (*MachineLocator, error) {
-	var places []string
-
-	if rootPath != "" {
-		places = append(places, rootPath)
-	} else {
+	dirs := []string{rootPath}
+	if rootPath == "" {
 		// Check the project dir: <project>/arbnode/node.go => ../../target/machines
 		_, thisFile, _, ok := runtime.Caller(0)
 		if !ok {
@@ -30,7 +29,7 @@ func NewMachineLocator(rootPath string) (*MachineLocator, error) {
 		}
 		projectDir := filepath.Dir(filepath.Dir(filepath.Dir(thisFile)))
 		projectPath := filepath.Join(filepath.Join(projectDir, "target"), "machines")
-		places = append(places, projectPath)
+		dirs = append(dirs, projectPath)
 
 		// Check the working directory: ./machines and ./target/machines
 		workDir, err := os.Getwd()
@@ -39,8 +38,8 @@ func NewMachineLocator(rootPath string) (*MachineLocator, error) {
 		}
 		workPath1 := filepath.Join(workDir, "machines")
 		workPath2 := filepath.Join(filepath.Join(workDir, "target"), "machines")
-		places = append(places, workPath1)
-		places = append(places, workPath2)
+		dirs = append(dirs, workPath1)
+		dirs = append(dirs, workPath2)
 
 		// Check above the executable: <binary> => ../../machines
 		execfile, err := os.Executable()
@@ -48,22 +47,59 @@ func NewMachineLocator(rootPath string) (*MachineLocator, error) {
 			return nil, err
 		}
 		execPath := filepath.Join(filepath.Dir(filepath.Dir(execfile)), "machines")
-		places = append(places, execPath)
+		dirs = append(dirs, execPath)
 	}
 
-	for _, place := range places {
-		if _, err := os.Stat(place); err == nil {
-			var latestModuleRoot common.Hash
-			latestModuleRootPath := filepath.Join(place, "latest", "module-root.txt")
-			fileBytes, err := os.ReadFile(latestModuleRootPath)
-			if err == nil {
-				s := strings.TrimSpace(string(fileBytes))
-				latestModuleRoot = common.HexToHash(s)
+	var (
+		moduleRoots      = make(map[common.Hash]bool)
+		latestModuleRoot common.Hash
+	)
+
+	for _, dir := range dirs {
+		fInfo, err := os.Stat(dir)
+		if err != nil {
+			log.Warn("Getting file info", "error", err)
+			continue
+		}
+		if !fInfo.IsDir() {
+			// Skip files that are not directories.
+			continue
+		}
+		files, err := os.ReadDir(dir)
+		if err != nil {
+			log.Warn("Reading directory", "dir", dir, "error", err)
+		}
+		for _, file := range files {
+			mrFile := filepath.Join(dir, file.Name(), "module-root.txt")
+			if _, err := os.Stat(mrFile); errors.Is(err, os.ErrNotExist) {
+				// Skip if module-roots file does not exist.
+				continue
 			}
-			return &MachineLocator{place, latestModuleRoot}, nil
+			mrContent, err := os.ReadFile(mrFile)
+			if err != nil {
+				log.Warn("Reading module roots file", "file path", mrFile, "error", err)
+				continue
+			}
+			moduleRoot := common.HexToHash(strings.TrimSpace(string(mrContent)))
+			if file.Name() != "latest" && file.Name() != moduleRoot.Hex() {
+				continue
+			}
+			moduleRoots[moduleRoot] = true
+			if file.Name() == "latest" {
+				latestModuleRoot = moduleRoot
+				rootPath = dir
+			}
 		}
 	}
-	return nil, ErrMachineNotFound
+	var roots []common.Hash
+	for k := range moduleRoots {
+		roots = append(roots, k)
+	}
+	return &MachineLocator{
+		rootPath:    rootPath,
+		latest:      latestModuleRoot,
+		moduleRoots: roots,
+	}, nil
 }
 
 func (l MachineLocator) GetMachinePath(moduleRoot common.Hash) string {
@@ -80,4 +116,8 @@ func (l MachineLocator) LatestWasmModuleRoot() common.Hash {
 
 func (l MachineLocator) RootPath() string {
 	return l.rootPath
+}
+
+func (l MachineLocator) ModuleRoots() []common.Hash {
+	return l.moduleRoots
 }
