@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"io"
 	"math/big"
 	"net"
 	"net/http"
@@ -32,6 +33,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
+	"golang.org/x/exp/slog"
 )
 
 func startLocalDASServer(
@@ -175,10 +177,10 @@ func TestDASRekey(t *testing.T) {
 	l2stackA, err := node.New(stackConfig)
 	Require(t, err)
 
-	l2chainDb, err := l2stackA.OpenDatabase("chaindb", 0, 0, "", false)
+	l2chainDb, err := l2stackA.OpenDatabase("l2chaindata", 0, 0, "l2chaindata/", false)
 	Require(t, err)
 
-	l2arbDb, err := l2stackA.OpenDatabase("arbitrumdata", 0, 0, "", false)
+	l2arbDb, err := l2stackA.OpenDatabase("arbitrumdata", 0, 0, "arbitrumdata/", false)
 	Require(t, err)
 
 	l2blockchain, err := gethexec.GetBlockChain(l2chainDb, nil, chainConfig, gethexec.ConfigDefaultTest().TxLookupLimit)
@@ -356,9 +358,10 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 }
 
 func enableLogging(logLvl int) {
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
-	glogger.Verbosity(log.Lvl(logLvl))
-	log.Root().SetHandler(glogger)
+	glogger := log.NewGlogHandler(
+		log.NewTerminalHandler(io.Writer(os.Stderr), false))
+	glogger.Verbosity(slog.Level(logLvl))
+	log.SetDefault(log.NewLogger(glogger))
 }
 
 func initTest(t *testing.T) {

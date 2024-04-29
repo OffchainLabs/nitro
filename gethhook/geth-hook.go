@@ -58,13 +58,20 @@ func init() {
 	precompileErrors := make(map[[4]byte]abi.Error)
 	for addr, precompile := range precompiles.Precompiles() {
 		for _, errABI := range precompile.Precompile().GetErrorABIs() {
-			var id [4]byte
-			copy(id[:], errABI.ID[:4])
-			precompileErrors[id] = errABI
+			precompileErrors[[4]byte(errABI.ID.Bytes())] = errABI
 		}
 		var wrapped vm.AdvancedPrecompile = ArbosPrecompileWrapper{precompile}
 		vm.PrecompiledContractsArbitrum[addr] = wrapped
 		vm.PrecompiledAddressesArbitrum = append(vm.PrecompiledAddressesArbitrum, addr)
+	}
+
+	for addr, precompile := range vm.PrecompiledContractsArbitrum {
+		vm.PrecompiledContractsArbOS30[addr] = precompile
+		vm.PrecompiledAddressesArbOS30 = append(vm.PrecompiledAddressesArbOS30, addr)
+	}
+	for addr, precompile := range vm.PrecompiledContractsP256Verify {
+		vm.PrecompiledContractsArbOS30[addr] = precompile
+		vm.PrecompiledAddressesArbOS30 = append(vm.PrecompiledAddressesArbOS30, addr)
 	}
 
 	core.RenderRPCError = func(data []byte) error {
