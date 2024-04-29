@@ -28,7 +28,7 @@ pub enum PreimageType {
 pub struct Bytes32(pub [u8; 32]);
 
 impl Bytes32 {
-    pub const fn new(x: [u8; 32]) -> Self {
+    pub const fn new_direct(x: [u8; 32]) -> Self {
         Self(x)
     }
 }

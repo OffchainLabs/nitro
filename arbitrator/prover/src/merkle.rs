@@ -177,7 +177,7 @@ fn capacity(layers: &Vec<Vec<Bytes32>>) -> usize {
 
 const fn empty_hash_at(ty: MerkleType, layer_i: usize) -> Bytes32 {
     match ty {
-        MerkleType::Empty => Bytes32::new([0u8; 32]),
+        MerkleType::Empty => Bytes32::new_direct([0u8; 32]),
         MerkleType::Value => ZERO_HASHES[0][layer_i],
         MerkleType::Function => ZERO_HASHES[1][layer_i],
         MerkleType::Instruction => ZERO_HASHES[2][layer_i],
@@ -382,8 +382,12 @@ impl Merkle {
         if hashes.len() > capacity(layers.as_ref()) - layers[0].len() {
             return Err("Cannot extend with more leaves than the capicity of the tree.".to_owned());
         }
-        let mut idx = layers[0].len();
-        layers[0].resize(idx + hashes.len(), empty_hash_at(self.ty, 0));
+        let mut idx = layers.len();
+        let mut new_size = idx + hashes.len();
+        for (layer_i, layer) in layers.iter_mut().enumerate() {
+            layer.resize(new_size, empty_hash_at(self.ty, layer_i));
+            new_size >>= 1;
+        }
         for hash in hashes {
             self.locked_set(&mut layers, idx, hash);
             idx += 1;

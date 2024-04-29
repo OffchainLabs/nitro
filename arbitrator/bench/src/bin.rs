@@ -33,7 +33,7 @@ struct Args {
 
 fn main() -> eyre::Result<()> {
     let args = Args::parse();
-    let step_sizes = [1, 1 << 10, 1 << 15, 1 << 20];
+    let step_sizes = [1, 1 << 10, 1 << 15, 1 << 20, 1 << 24];
     if args.always_merkleize {
         println!("Running benchmark with always merkleize feature on");
     } else {
@@ -94,7 +94,7 @@ fn main() -> eyre::Result<()> {
 
         let total_end_time = total.elapsed();
         println!(
-            "avg hash time {:?}, avg step time {:?}, step size {}, num_iters {}, total time {:?}",
+            "avg hash time {:>12?}, avg step time {:>12?}, step size {:>8}, num_iters {}, total time {:>12?}",
             average(&hash_times),
             average(&step_times),
             step_size,
