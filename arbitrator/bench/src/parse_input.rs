@@ -58,21 +58,21 @@ impl FileData {
         let mut line = String::new();
         while reader.read_line(&mut line)? > 0 {
             if line.starts_with("Id:") {
-                id = line.split(":").nth(1).unwrap().trim().parse().unwrap();
+                id = line.split(':').nth(1).unwrap().trim().parse().unwrap();
             } else if line.starts_with("HasDelayedMsg:") {
-                has_delayed_msg = line.split(":").nth(1).unwrap().trim().parse().unwrap();
+                has_delayed_msg = line.split(':').nth(1).unwrap().trim().parse().unwrap();
             } else if line.starts_with("DelayedMsgNr:") {
-                delayed_msg_nr = line.split(":").nth(1).unwrap().trim().parse().unwrap();
+                delayed_msg_nr = line.split(':').nth(1).unwrap().trim().parse().unwrap();
             } else if line.starts_with("Preimages:") {
                 items.push(Item::from_reader(&mut reader, &mut line)?);
             } else if line.starts_with("BatchInfo:") {
-                let parts: Vec<_> = line.split(",").collect();
-                batch_info.number = parts[0].split(":").nth(2).unwrap().trim().parse().unwrap();
-                batch_info.data = hex::decode(parts[1].split(":").nth(1).unwrap().trim()).unwrap();
+                let parts: Vec<_> = line.split(',').collect();
+                batch_info.number = parts[0].split(':').nth(2).unwrap().trim().parse().unwrap();
+                batch_info.data = hex::decode(parts[1].split(':').nth(1).unwrap().trim()).unwrap();
             } else if line.starts_with("DelayedMsg:") {
-                delayed_msg = hex::decode(line.split(":").nth(1).unwrap().trim()).unwrap();
+                delayed_msg = hex::decode(line.split(':').nth(1).unwrap().trim()).unwrap();
             } else if line.starts_with("StartState:") {
-                let parts: Vec<_> = line.split(",").collect();
+                let parts: Vec<_> = line.split(',').collect();
 
                 // Parsing block_hash
                 let block_hash_str = parts[0].split("BlockHash:").nth(1).unwrap().trim();
@@ -80,13 +80,13 @@ impl FileData {
                     hex::decode(block_hash_str.strip_prefix("0x").unwrap()).unwrap();
 
                 // Parsing send_root
-                let send_root_str = parts[1].split(":").nth(1).unwrap().trim();
+                let send_root_str = parts[1].split(':').nth(1).unwrap().trim();
                 start_state.send_root =
                     hex::decode(send_root_str.strip_prefix("0x").unwrap()).unwrap();
 
                 // Parsing batch
                 start_state.batch = parts[2]
-                    .split(":")
+                    .split(':')
                     .nth(1)
                     .unwrap()
                     .trim()
@@ -95,7 +95,7 @@ impl FileData {
 
                 // Parsing pos_in_batch
                 start_state.pos_in_batch = parts[3]
-                    .split(":")
+                    .split(':')
                     .nth(1)
                     .unwrap()
                     .trim()
@@ -131,12 +131,12 @@ impl Item {
             }
             if line.starts_with("Preimages:") {
                 line.clear();
-                while reader.read_line(line)? > 0 && line.starts_with("\t") {
-                    let parts: Vec<_> = line.trim().split(",").collect();
-                    let type_ = parts[0].split(":").nth(1).unwrap().trim().parse().unwrap();
+                while reader.read_line(line)? > 0 && line.starts_with('\t') {
+                    let parts: Vec<_> = line.trim().split(',').collect();
+                    let type_ = parts[0].split(':').nth(1).unwrap().trim().parse().unwrap();
                     let hash = hex::decode(
                         parts[1]
-                            .split(":")
+                            .split(':')
                             .nth(1)
                             .unwrap()
                             .trim()
@@ -144,7 +144,7 @@ impl Item {
                             .unwrap(),
                     )
                     .unwrap();
-                    let data = hex::decode(parts[2].split(":").nth(1).unwrap().trim()).unwrap();
+                    let data = hex::decode(parts[2].split(':').nth(1).unwrap().trim()).unwrap();
                     preimages.push(Preimage { type_, hash, data });
                     line.clear();
                 }

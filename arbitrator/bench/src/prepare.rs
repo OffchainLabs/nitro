@@ -14,11 +14,11 @@ pub fn prepare_machine(
     machines: PathBuf,
     always_merkleize: bool,
 ) -> eyre::Result<Machine> {
-    let file = File::open(&preimages)?;
+    let file = File::open(preimages)?;
     let reader = BufReader::new(file);
 
     let data = FileData::from_reader(reader)?;
-    let item = data.items.get(0).unwrap().clone();
+    let item = data.items.first().unwrap().clone();
     let preimages = item.preimages;
     let preimages = preimages
         .into_iter()
