@@ -25,6 +25,8 @@ var L1ConnectionConfigDefault = rpcclient.ClientConfig{
 	Timeout:        time.Minute,
 	ConnectionWait: time.Minute,
 	ArgLogLimit:    2048,
+	// Use geth's unexported wsDefaultReadLimit from rpc/websocket.go
+	WebsocketMessageSizeLimit: 32 * 1024 * 1024,
 }
 
 var L1ConfigDefault = ParentChainConfig{

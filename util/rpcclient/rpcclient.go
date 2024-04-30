@@ -21,14 +21,15 @@ import (
 )
 
 type ClientConfig struct {
-	URL            string        `json:"url,omitempty" koanf:"url"`
-	JWTSecret      string        `json:"jwtsecret,omitempty" koanf:"jwtsecret"`
-	Timeout        time.Duration `json:"timeout,omitempty" koanf:"timeout" reload:"hot"`
-	Retries        uint          `json:"retries,omitempty" koanf:"retries" reload:"hot"`
-	ConnectionWait time.Duration `json:"connection-wait,omitempty" koanf:"connection-wait"`
-	ArgLogLimit    uint          `json:"arg-log-limit,omitempty" koanf:"arg-log-limit" reload:"hot"`
-	RetryErrors    string        `json:"retry-errors,omitempty" koanf:"retry-errors" reload:"hot"`
-	RetryDelay     time.Duration `json:"retry-delay,omitempty" koanf:"retry-delay"`
+	URL                       string        `json:"url,omitempty" koanf:"url"`
+	JWTSecret                 string        `json:"jwtsecret,omitempty" koanf:"jwtsecret"`
+	Timeout                   time.Duration `json:"timeout,omitempty" koanf:"timeout" reload:"hot"`
+	Retries                   uint          `json:"retries,omitempty" koanf:"retries" reload:"hot"`
+	ConnectionWait            time.Duration `json:"connection-wait,omitempty" koanf:"connection-wait"`
+	ArgLogLimit               uint          `json:"arg-log-limit,omitempty" koanf:"arg-log-limit" reload:"hot"`
+	RetryErrors               string        `json:"retry-errors,omitempty" koanf:"retry-errors" reload:"hot"`
+	RetryDelay                time.Duration `json:"retry-delay,omitempty" koanf:"retry-delay"`
+	WebsocketMessageSizeLimit int64         `json:"websocket-message-size-limit,omitempty" koanf:"websocket-message-size-limit"`
 
 	retryErrors *regexp.Regexp
 }
@@ -46,8 +47,9 @@ func (c *ClientConfig) Validate() error {
 type ClientConfigFetcher func() *ClientConfig
 
 var TestClientConfig = ClientConfig{
-	URL:       "self",
-	JWTSecret: "",
+	URL:                       "self",
+	JWTSecret:                 "",
+	WebsocketMessageSizeLimit: 32 * 1024 * 1024,
 }
 
 var DefaultClientConfig = ClientConfig{
@@ -56,6 +58,8 @@ var DefaultClientConfig = ClientConfig{
 	Retries:     3,
 	RetryErrors: "websocket: close.*|dial tcp .*|.*i/o timeout|.*connection reset by peer|.*connection refused",
 	ArgLogLimit: 2048,
+	// Use geth's unexported wsDefaultReadLimit from rpc/websocket.go
+	WebsocketMessageSizeLimit: 32 * 1024 * 1024,
 }
 
 func RPCClientAddOptions(prefix string, f *flag.FlagSet, defaultConfig *ClientConfig) {
@@ -67,6 +71,7 @@ func RPCClientAddOptions(prefix string, f *flag.FlagSet, defaultConfig *ClientCo
 	f.Uint(prefix+".retries", defaultConfig.Retries, "number of retries in case of failure(0 mean one attempt)")
 	f.String(prefix+".retry-errors", defaultConfig.RetryErrors, "Errors matching this regular expression are automatically retried")
 	f.Duration(prefix+".retry-delay", defaultConfig.RetryDelay, "delay between retries")
+	f.Int64(prefix+".websocket-message-size-limit", defaultConfig.WebsocketMessageSizeLimit, "websocket message size limit used by the RPC client. 0 means no limit")
 }
 
 type RpcClient struct {
@@ -256,9 +261,9 @@ func (c *RpcClient) Start(ctx_in context.Context) error {
 		var err error
 		var client *rpc.Client
 		if jwt == nil {
-			client, err = rpc.DialContext(ctx, url)
+			client, err = rpc.DialOptions(ctx, url, rpc.WithWebsocketMessageSizeLimit(c.config().WebsocketMessageSizeLimit))
 		} else {
-			client, err = rpc.DialOptions(ctx, url, rpc.WithHTTPAuth(node.NewJWTAuth([32]byte(*jwt))))
+			client, err = rpc.DialOptions(ctx, url, rpc.WithHTTPAuth(node.NewJWTAuth([32]byte(*jwt))), rpc.WithWebsocketMessageSizeLimit(c.config().WebsocketMessageSizeLimit))
 		}
 		cancelCtx()
 		if err == nil {
