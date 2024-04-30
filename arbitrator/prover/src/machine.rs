@@ -157,7 +157,7 @@ impl Function {
         let code_hashes = (0..chunks).into_par_iter().map(crunch).collect();
 
         #[cfg(not(feature = "rayon"))]
-        let code_hashes = (0..chunks).into_iter().map(crunch).collect();
+        let code_hashes = (0..chunks).map(crunch).collect();
 
         self.code_merkle = Merkle::new(MerkleType::Instruction, code_hashes);
     }

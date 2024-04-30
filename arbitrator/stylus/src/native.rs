@@ -119,8 +119,8 @@ impl<D: DataReader, E: EvmApi<D>> NativeInstance<D, E> {
         let env = WasmEnv::new(compile, None, evm, evm_data);
         let module_hash = env.evm_data.module_hash;
 
-        if let Some((m, store)) = InitCache::get(module_hash, version, debug) {
-            return Self::from_module(m, store, env);
+        if let Some((module, store)) = InitCache::get(module_hash, version, debug) {
+            return Self::from_module(module, store, env);
         }
         let (module, store) = match env.evm_data.cached {
             true => InitCache::insert(module_hash, module, version, debug)?,
