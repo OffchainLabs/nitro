@@ -651,6 +651,13 @@ contract EdgeChallengeManagerTest is Test {
         );
     }
 
+    function testCantConfirmEdgeByTimeTwice() public {
+        (EdgeInitData memory ei, bytes32 edge1Id) = testCanConfirmByChildren();
+
+        vm.expectRevert(abi.encodeWithSelector(EdgeNotPending.selector, edge1Id, EdgeStatus.Confirmed));
+        ei.challengeManager.confirmEdgeByTime(edge1Id, ei.a1Data);
+    }
+
     function bisect(
         EdgeChallengeManager challengeManager,
         bytes32 edgeId,
