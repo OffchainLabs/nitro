@@ -51,10 +51,18 @@ fn main() -> eyre::Result<()> {
         let mut num_iters = 0;
 
         #[cfg(feature = "cpuprof")]
-        PROFILER.lock().unwrap().start(format!("./target/bench-{}.prof", step_size)).unwrap();
+        PROFILER
+            .lock()
+            .unwrap()
+            .start(format!("./target/bench-{}.prof", step_size))
+            .unwrap();
 
         #[cfg(feature = "heapprof")]
-        HEAP_PROFILER.lock().unwrap().start(format!("./target/bench-{}.hprof", step_size)).unwrap();
+        HEAP_PROFILER
+            .lock()
+            .unwrap()
+            .start(format!("./target/bench-{}.hprof", step_size))
+            .unwrap();
 
         #[cfg(feature = "counters")]
         merkle::reset_counters();
