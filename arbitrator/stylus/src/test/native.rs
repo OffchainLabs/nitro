@@ -193,11 +193,12 @@ fn test_import_export_safety() -> Result<()> {
             return Ok(());
         }
 
+        let codehash = &Bytes32::default();
         let mut compile = test_compile_config();
         let mut bin = bin?;
-        assert!(bin.clone().instrument(&compile).is_err());
+        assert!(bin.clone().instrument(&compile, codehash).is_err());
         compile.debug.debug_info = false;
-        assert!(bin.instrument(&compile).is_err());
+        assert!(bin.instrument(&compile, &codehash).is_err());
 
         if both {
             assert!(TestInstance::new_test(file, compile).is_err());

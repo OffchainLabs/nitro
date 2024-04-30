@@ -140,7 +140,7 @@ fn new_test_machine(path: &str, compile: &CompileConfig) -> Result<Machine> {
     let wat = std::fs::read(path)?;
     let wasm = wasmer::wat2wasm(&wat)?;
     let mut bin = prover::binary::parse(&wasm, Path::new("user"))?;
-    let stylus_data = bin.instrument(compile)?;
+    let stylus_data = bin.instrument(compile, &Bytes32::default())?;
 
     let wat = std::fs::read("tests/test.wat")?;
     let wasm = wasmer::wat2wasm(&wat)?;
