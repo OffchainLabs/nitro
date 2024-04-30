@@ -19,7 +19,7 @@ use crate::{
         IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
     },
 };
-use arbutil::{crypto, math, Bytes32, Color, DebugColor, PreimageType};
+use arbutil::{math, Bytes32, Color, DebugColor, PreimageType};
 use brotli::Dictionary;
 #[cfg(feature = "native")]
 use c_kzg::BYTES_PER_BLOB;
@@ -305,8 +305,6 @@ pub struct Module {
     pub(crate) func_exports: Arc<HashMap<String, u32>>,
     #[serde(default)]
     pub(crate) all_exports: Arc<ExportMap>,
-    /// Keccak of the source WASM.
-    pub(crate) wasm_hash: Arc<Bytes32>,
 }
 
 lazy_static! {
@@ -581,7 +579,6 @@ impl Module {
             func_types: Arc::new(func_types),
             func_exports: Arc::new(func_exports),
             all_exports: Arc::new(bin.exports.clone()),
-            wasm_hash: Arc::new(crypto::keccak(bin.wasm).into()),
         })
     }
 
@@ -624,7 +621,6 @@ impl Module {
         h.update(self.memory.hash());
         h.update(self.tables_merkle.root());
         h.update(self.funcs_merkle.root());
-        h.update(*self.wasm_hash);
         h.update(self.internals_offset.to_be_bytes());
         h.finalize().into()
     }
@@ -646,7 +642,6 @@ impl Module {
 
         data.extend(self.tables_merkle.root());
         data.extend(self.funcs_merkle.root());
-        data.extend(*self.wasm_hash);
         data.extend(self.internals_offset.to_be_bytes());
         data
     }
@@ -693,7 +688,6 @@ pub struct ModuleSerdeAll {
     func_types: Arc<Vec<FunctionType>>,
     func_exports: Arc<HashMap<String, u32>>,
     all_exports: Arc<ExportMap>,
-    wasm_hash: Arc<Bytes32>,
 }
 
 impl From<ModuleSerdeAll> for Module {
@@ -714,7 +708,6 @@ impl From<ModuleSerdeAll> for Module {
             func_types: module.func_types,
             func_exports: module.func_exports,
             all_exports: module.all_exports,
-            wasm_hash: module.wasm_hash,
         }
     }
 }
@@ -737,7 +730,6 @@ impl From<&Module> for ModuleSerdeAll {
             func_types: module.func_types.clone(),
             func_exports: module.func_exports.clone(),
             all_exports: module.all_exports.clone(),
-            wasm_hash: module.wasm_hash.clone(),
         }
     }
 }
@@ -1480,7 +1472,6 @@ impl Machine {
             func_types: Arc::new(vec![FunctionType::default()]),
             func_exports: Default::default(),
             all_exports: Default::default(),
-            wasm_hash: Default::default(),
         };
         modules[0] = entrypoint;
 

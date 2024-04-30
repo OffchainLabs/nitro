@@ -292,8 +292,8 @@ pub struct WasmBinary<'a> {
     pub codes: Vec<Code<'a>>,
     pub datas: Vec<Data<'a>>,
     pub names: NameCustomSection,
-    /// The original, uninstrumented wasm.
-    pub wasm: &'a [u8],
+    /// The soruce wasm, if known.
+    pub wasm: Option<&'a [u8]>,
 }
 
 pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
@@ -325,7 +325,7 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
         .wrap_err_with(|| eyre!("failed to validate {}", path.to_string_lossy().red()))?;
 
     let mut binary = WasmBinary {
-        wasm: input,
+        wasm: Some(input),
         ..Default::default()
     };
     let sections: Vec<_> = Parser::new(0).parse_all(input).collect::<Result<_, _>>()?;
@@ -571,6 +571,8 @@ impl<'a> WasmBinary<'a> {
             code.expr = build;
         }
 
+        let wasm = self.wasm.take().unwrap();
+
         // 4GB maximum implies `footprint` fits in a u16
         let footprint = self.memory_info()?.min.0 as u16;
 
@@ -581,7 +583,7 @@ impl<'a> WasmBinary<'a> {
         // predict costs
         let funcs = self.codes.len() as u64;
         let globals = self.globals.len() as u64;
-        let wasm_len = self.wasm.len() as u64;
+        let wasm_len = wasm.len() as u64;
 
         let data_len: u64 = self.datas.iter().map(|x| x.range.len() as u64).sum();
         let elem_len: u64 = self.elements.iter().map(|x| x.range.len() as u64).sum();
