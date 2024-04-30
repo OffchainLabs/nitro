@@ -81,7 +81,7 @@ func (p *DataPricer) UpdateModel(tempBytes uint32, time uint64) (*big.Int, error
 	}
 
 	exponent := arbmath.OneInBips * arbmath.Bips(demand) / arbmath.Bips(inertia)
-	multiplier := arbmath.ApproxExpBasisPoints(exponent, 8).Uint64()
+	multiplier := arbmath.ApproxExpBasisPoints(exponent, 12).Uint64()
 	costPerByte := arbmath.SaturatingUMul(uint64(minPrice), multiplier) / 10000
 	costInWei := arbmath.SaturatingUMul(costPerByte, uint64(tempBytes))
 	return arbmath.UintToBig(costInWei), nil
