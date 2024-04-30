@@ -129,9 +129,17 @@ func (con ArbWasm) PageLimit(c ctx, _ mech) (uint16, error) {
 }
 
 // Gets the minimum costs to invoke a program
-func (con ArbWasm) MinInitGas(c ctx, _ mech) (uint8, uint8, error) {
+func (con ArbWasm) MinInitGas(c ctx, _ mech) (uint64, uint64, error) {
 	params, err := c.State.Programs().Params()
-	return params.MinInitGas, params.MinCachedInitGas, err
+	init := uint64(params.MinInitGas) * programs.MinInitGasUnits
+	cached := uint64(params.MinCachedInitGas) * programs.MinCachedGasUnits
+	return init, cached, err
+}
+
+// Gets the linear adjustment made to program init costs
+func (con ArbWasm) InitCostScalar(c ctx, _ mech) (uint64, error) {
+	params, err := c.State.Programs().Params()
+	return uint64(params.InitCostScalar) * programs.CostScalarPercent, err
 }
 
 // Gets the number of days after which programs deactivate
@@ -179,8 +187,8 @@ func (con ArbWasm) ProgramVersion(c ctx, evm mech, program addr) (uint16, error)
 	return con.CodehashVersion(c, evm, codehash)
 }
 
-// Gets the cost to invoke the program (not including MinInitGas)
-func (con ArbWasm) ProgramInitGas(c ctx, evm mech, program addr) (uint16, uint16, error) {
+// Gets the cost to invoke the program
+func (con ArbWasm) ProgramInitGas(c ctx, evm mech, program addr) (uint64, uint64, error) {
 	codehash, params, err := con.getCodeHash(c, program)
 	if err != nil {
 		return 0, 0, err

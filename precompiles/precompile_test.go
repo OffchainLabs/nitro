@@ -190,7 +190,7 @@ func TestPrecompilesPerArbosVersion(t *testing.T) {
 		5:  3,
 		10: 2,
 		11: 4,
-		20: 8 + 37, // 37 for stylus
+		20: 8 + 38, // 38 for stylus
 		// TODO: move stylus methods to ArbOS 30
 	}
 

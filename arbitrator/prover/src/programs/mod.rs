@@ -48,7 +48,10 @@ pub trait ModuleMod {
     fn all_functions(&self) -> Result<HashMap<FunctionIndex, ArbFunctionType>>;
     fn all_signatures(&self) -> Result<HashMap<SignatureIndex, ArbFunctionType>>;
     fn get_import(&self, module: &str, name: &str) -> Result<ImportIndex>;
-    fn move_start_function(&mut self, name: &str) -> Result<()>;
+    /// Moves the start function, returning true if present.
+    fn move_start_function(&mut self, name: &str) -> Result<bool>;
+    /// Drops debug-only info like export names.
+    fn drop_exports_and_names(&mut self, keep: &HashMap<&str, ExportKind>);
     fn memory_info(&self) -> Result<MemoryType>;
 }
 
@@ -224,17 +227,26 @@ impl ModuleMod for ModuleInfo {
             .ok_or_else(|| eyre!("missing import {}", name.red()))
     }
 
-    fn move_start_function(&mut self, name: &str) -> Result<()> {
+    fn move_start_function(&mut self, name: &str) -> Result<bool> {
         if let Some(prior) = self.exports.get(name) {
             bail!("function {} already exists @ index {:?}", name.red(), prior)
         }
 
-        if let Some(start) = self.start_function.take() {
+        let start = self.start_function.take();
+        if let Some(start) = start {
             let export = ExportIndex::Function(start);
             self.exports.insert(name.to_owned(), export);
             self.function_names.insert(start, name.to_owned());
         }
-        Ok(())
+        Ok(start.is_some())
+    }
+
+    fn drop_exports_and_names(&mut self, keep: &HashMap<&str, ExportKind>) {
+        self.exports.retain(|name, export| {
+            keep.get(name.as_str())
+                .map_or(false, |x| *x == (*export).into())
+        });
+        self.function_names.clear();
     }
 
     fn memory_info(&self) -> Result<MemoryType> {
@@ -336,17 +348,24 @@ impl<'a> ModuleMod for WasmBinary<'a> {
             .ok_or_else(|| eyre!("missing import {}", name.red()))
     }
 
-    fn move_start_function(&mut self, name: &str) -> Result<()> {
+    fn move_start_function(&mut self, name: &str) -> Result<bool> {
         if let Some(prior) = self.exports.get(name) {
             bail!("function {} already exists @ index {:?}", name.red(), prior)
         }
 
-        if let Some(start) = self.start.take() {
+        let start = self.start.take();
+        if let Some(start) = start {
             let name = name.to_owned();
             self.exports.insert(name.clone(), (start, ExportKind::Func));
             self.names.functions.insert(start, name);
         }
-        Ok(())
+        Ok(start.is_some())
+    }
+
+    fn drop_exports_and_names(&mut self, keep: &HashMap<&str, ExportKind>) {
+        self.exports
+            .retain(|name, ty| keep.get(name.as_str()).map_or(false, |x| *x == ty.1));
+        self.names.functions.clear();
     }
 
     fn memory_info(&self) -> Result<MemoryType> {
@@ -373,10 +392,10 @@ pub struct StylusData {
     pub ink_status: u32,
     /// Global index for the amount of stack space remaining.
     pub depth_left: u32,
-    /// Gas needed to invoke the program.
-    pub init_gas: u16,
-    /// Gas needed to invoke the program when stored in the init cache.
-    pub cached_init_gas: u16,
+    /// Cost paid to invoke the program. See `programs.go` for the translation to gas.
+    pub init_cost: u16,
+    /// Cost paid to invoke the program when stored in the init cache.
+    pub cached_init_cost: u16,
     /// Canonical estimate of the asm length in bytes.
     pub asm_estimate: u32,
     /// Initial memory size in pages.

@@ -42,8 +42,8 @@ pub unsafe extern "C" fn programs__activate(
     wasm_size: usize,
     pages_ptr: GuestPtr,
     asm_estimate_ptr: GuestPtr,
-    init_gas_ptr: GuestPtr,
-    cached_init_gas_ptr: GuestPtr,
+    init_cost_ptr: GuestPtr,
+    cached_init_cost_ptr: GuestPtr,
     version: u16,
     debug: u32,
     module_hash_ptr: GuestPtr,
@@ -61,8 +61,8 @@ pub unsafe extern "C" fn programs__activate(
             STATIC_MEM.write_u64(gas_ptr, *gas_left);
             STATIC_MEM.write_u16(pages_ptr, data.footprint);
             STATIC_MEM.write_u32(asm_estimate_ptr, data.asm_estimate);
-            STATIC_MEM.write_u16(init_gas_ptr, data.init_gas);
-            STATIC_MEM.write_u16(cached_init_gas_ptr, data.cached_init_gas);
+            STATIC_MEM.write_u16(init_cost_ptr, data.init_cost);
+            STATIC_MEM.write_u16(cached_init_cost_ptr, data.cached_init_cost);
             STATIC_MEM.write_slice(module_hash_ptr, module.hash().as_slice());
             0
         }
@@ -73,8 +73,8 @@ pub unsafe extern "C" fn programs__activate(
             STATIC_MEM.write_u64(gas_ptr, 0);
             STATIC_MEM.write_u16(pages_ptr, 0);
             STATIC_MEM.write_u32(asm_estimate_ptr, 0);
-            STATIC_MEM.write_u16(init_gas_ptr, 0);
-            STATIC_MEM.write_u16(cached_init_gas_ptr, 0);
+            STATIC_MEM.write_u16(init_cost_ptr, 0);
+            STATIC_MEM.write_u16(cached_init_cost_ptr, 0);
             STATIC_MEM.write_slice(module_hash_ptr, Bytes32::default().as_slice());
             err_bytes.len()
         }

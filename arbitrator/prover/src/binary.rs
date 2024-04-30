@@ -20,7 +20,7 @@ use nom::{
 };
 use serde::{Deserialize, Serialize};
 use std::{convert::TryInto, fmt::Debug, hash::Hash, mem, path::Path, str::FromStr};
-use wasmer_types::{entity::EntityRef, FunctionIndex, LocalFunctionIndex};
+use wasmer_types::{entity::EntityRef, ExportIndex, FunctionIndex, LocalFunctionIndex};
 use wasmparser::{
     Data, Element, ExternalKind, MemoryType, Name, NameSectionReader, Naming, Operator, Parser,
     Payload, TableType, TypeRef, ValType, Validator, WasmFeatures,
@@ -232,17 +232,27 @@ pub enum ExportKind {
     Tag,
 }
 
-impl TryFrom<ExternalKind> for ExportKind {
-    type Error = eyre::Error;
-
-    fn try_from(kind: ExternalKind) -> Result<Self> {
+impl From<ExternalKind> for ExportKind {
+    fn from(kind: ExternalKind) -> Self {
         use ExternalKind as E;
         match kind {
-            E::Func => Ok(Self::Func),
-            E::Table => Ok(Self::Table),
-            E::Memory => Ok(Self::Memory),
-            E::Global => Ok(Self::Global),
-            E::Tag => Ok(Self::Tag),
+            E::Func => Self::Func,
+            E::Table => Self::Table,
+            E::Memory => Self::Memory,
+            E::Global => Self::Global,
+            E::Tag => Self::Tag,
+        }
+    }
+}
+
+impl From<ExportIndex> for ExportKind {
+    fn from(value: ExportIndex) -> Self {
+        use ExportIndex as E;
+        match value {
+            E::Function(_) => Self::Func,
+            E::Table(_) => Self::Table,
+            E::Memory(_) => Self::Memory,
+            E::Global(_) => Self::Global,
         }
     }
 }
@@ -271,7 +281,7 @@ pub type ExportMap = HashMap<String, (u32, ExportKind)>;
 pub struct WasmBinary<'a> {
     pub types: Vec<FunctionType>,
     pub imports: Vec<FuncImport<'a>>,
-    /// Maps *local* function indices to global type signatures
+    /// Maps *local* function indices to global type signatures.
     pub functions: Vec<u32>,
     pub tables: Vec<TableType>,
     pub memories: Vec<MemoryType>,
@@ -282,6 +292,8 @@ pub struct WasmBinary<'a> {
     pub codes: Vec<Code<'a>>,
     pub datas: Vec<Data<'a>>,
     pub names: NameCustomSection,
+    /// The original, uninstrumented wasm.
+    pub wasm: &'a [u8],
 }
 
 pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
@@ -312,7 +324,10 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
         .validate_all(input)
         .wrap_err_with(|| eyre!("failed to validate {}", path.to_string_lossy().red()))?;
 
-    let mut binary = WasmBinary::default();
+    let mut binary = WasmBinary {
+        wasm: input,
+        ..Default::default()
+    };
     let sections: Vec<_> = Parser::new(0).parse_all(input).collect::<Result<_, _>>()?;
 
     for section in sections {
@@ -390,14 +405,7 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
                         let name = || name.clone();
                         binary.names.functions.entry(index).or_insert_with(name);
                     }
-
-                    // TODO: we'll only support the types also in wasmparser 0.95+
-                    if matches!(kind, E::Func | E::Table | E::Memory | E::Global | E::Tag) {
-                        let kind = kind.try_into()?;
-                        binary.exports.insert(name, (export.index, kind));
-                    } else {
-                        bail!("unsupported export kind {:?}", export)
-                    }
+                    binary.exports.insert(name, (export.index, kind.into()));
                 }
             }
             FunctionSection(functions) => process!(binary.functions, functions),
@@ -509,17 +517,17 @@ impl<'a> Debug for WasmBinary<'a> {
 impl<'a> WasmBinary<'a> {
     /// Instruments a user wasm, producing a version bounded via configurable instrumentation.
     pub fn instrument(&mut self, compile: &CompileConfig) -> Result<StylusData> {
+        let start = StartMover::new(compile.debug.debug_info);
         let meter = Meter::new(&compile.pricing);
         let dygas = DynamicMeter::new(&compile.pricing);
         let depth = DepthChecker::new(compile.bounds);
         let bound = HeapBound::new(compile.bounds);
-        let start = StartMover::default();
 
+        start.update_module(self)?;
         meter.update_module(self)?;
         dygas.update_module(self)?;
         depth.update_module(self)?;
         bound.update_module(self)?;
-        start.update_module(self)?;
 
         let count = compile.debug.count_ops.then(Counter::new);
         if let Some(count) = &count {
@@ -550,11 +558,11 @@ impl<'a> WasmBinary<'a> {
 
             // add the instrumentation in the order of application
             // note: this must be consistent with native execution
+            apply!(start);
             apply!(meter);
             apply!(dygas);
             apply!(depth);
             apply!(bound);
-            apply!(start);
 
             if let Some(count) = &count {
                 apply!(*count);
@@ -570,12 +578,38 @@ impl<'a> WasmBinary<'a> {
         let ty = FunctionType::new([ArbValueType::I32], [ArbValueType::I32]);
         let user_main = self.check_func(STYLUS_ENTRY_POINT, ty)?;
 
-        // naively assume for now an upper bound of 5Mb
-        let asm_estimate = 5 * 1024 * 1024;
+        // predict costs
+        let funcs = self.codes.len() as u64;
+        let globals = self.globals.len() as u64;
+        let wasm_len = self.wasm.len() as u64;
 
-        // TODO: determine safe value
-        let init_gas = 4096;
-        let cached_init_gas = 1024;
+        let data_len: u64 = self.datas.iter().map(|x| x.range.len() as u64).sum();
+        let elem_len: u64 = self.elements.iter().map(|x| x.range.len() as u64).sum();
+        let data_len = data_len + elem_len;
+
+        let mut type_len = 0;
+        for index in &self.functions {
+            let ty = &self.types[*index as usize];
+            type_len += (ty.inputs.len() + ty.outputs.len()) as u64;
+        }
+
+        let mut asm_estimate: u64 = 512000;
+        asm_estimate = asm_estimate.saturating_add(funcs.saturating_mul(996829) / 1000);
+        asm_estimate = asm_estimate.saturating_add(type_len.saturating_mul(11416) / 1000);
+        asm_estimate = asm_estimate.saturating_add(wasm_len.saturating_mul(62628) / 10000);
+
+        let mut cached_init: u64 = 0;
+        cached_init = cached_init.saturating_add(funcs.saturating_mul(13420) / 100_000);
+        cached_init = cached_init.saturating_add(type_len.saturating_mul(89) / 100_000);
+        cached_init = cached_init.saturating_add(wasm_len.saturating_mul(122) / 100_000);
+        cached_init = cached_init.saturating_add(globals.saturating_mul(1628) / 1000);
+        cached_init = cached_init.saturating_add(data_len.saturating_mul(75244) / 100_000);
+        cached_init = cached_init.saturating_add(footprint as u64 * 5);
+
+        let mut init = cached_init;
+        init = init.saturating_add(funcs.saturating_mul(8252) / 1000);
+        init = init.saturating_add(type_len.saturating_mul(1059) / 1000);
+        init = init.saturating_add(wasm_len.saturating_mul(1286) / 10_000);
 
         let [ink_left, ink_status] = meter.globals();
         let depth_left = depth.globals();
@@ -583,9 +617,9 @@ impl<'a> WasmBinary<'a> {
             ink_left: ink_left.as_u32(),
             ink_status: ink_status.as_u32(),
             depth_left: depth_left.as_u32(),
-            init_gas,
-            cached_init_gas,
-            asm_estimate,
+            init_cost: init.try_into()?,
+            cached_init_cost: cached_init.try_into()?,
+            asm_estimate: asm_estimate.try_into()?,
             footprint,
             user_main,
         })

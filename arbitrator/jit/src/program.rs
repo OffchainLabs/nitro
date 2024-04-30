@@ -23,8 +23,8 @@ pub fn activate(
     wasm_size: u32,
     pages_ptr: GuestPtr,
     asm_estimate_ptr: GuestPtr,
-    init_gas_ptr: GuestPtr,
-    cached_init_gas_ptr: GuestPtr,
+    init_cost_ptr: GuestPtr,
+    cached_init_cost_ptr: GuestPtr,
     version: u16,
     debug: u32,
     module_hash_ptr: GuestPtr,
@@ -43,8 +43,8 @@ pub fn activate(
             mem.write_u64(gas_ptr, *gas_left);
             mem.write_u16(pages_ptr, data.footprint);
             mem.write_u32(asm_estimate_ptr, data.asm_estimate);
-            mem.write_u16(init_gas_ptr, data.init_gas);
-            mem.write_u16(cached_init_gas_ptr, data.cached_init_gas);
+            mem.write_u16(init_cost_ptr, data.init_cost);
+            mem.write_u16(cached_init_cost_ptr, data.cached_init_cost);
             mem.write_bytes32(module_hash_ptr, module.hash());
             Ok(0)
         }
@@ -55,8 +55,8 @@ pub fn activate(
             mem.write_u64(gas_ptr, 0);
             mem.write_u16(pages_ptr, 0);
             mem.write_u32(asm_estimate_ptr, 0);
-            mem.write_u16(init_gas_ptr, 0);
-            mem.write_u16(cached_init_gas_ptr, 0);
+            mem.write_u16(init_cost_ptr, 0);
+            mem.write_u16(cached_init_cost_ptr, 0);
             mem.write_bytes32(module_hash_ptr, Bytes32::default());
             Ok(err_bytes.len() as u32)
         }
