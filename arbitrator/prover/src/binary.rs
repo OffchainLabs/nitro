@@ -22,9 +22,8 @@ use serde::{Deserialize, Serialize};
 use std::{convert::TryInto, fmt::Debug, hash::Hash, mem, path::Path, str::FromStr};
 use wasmer_types::{entity::EntityRef, FunctionIndex, LocalFunctionIndex};
 use wasmparser::{
-    Data, Element, Export, ExternalKind, Global, Import, MemoryType, Name, NameSectionReader,
-    Naming, Operator, Parser, Payload, SectionReader, SectionWithLimitedItems, TableType, Type,
-    TypeRef, ValType, Validator, WasmFeatures,
+    Data, Element, ExternalKind, MemoryType, Name, NameSectionReader, Naming, Operator, Parser,
+    Payload, TableType, TypeRef, ValType, Validator, WasmFeatures,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -297,12 +296,17 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
         relaxed_simd: false,
         threads: false,
         tail_call: false,
-        deterministic_only: false,
+        floats: true,
         multi_memory: false,
         exceptions: false,
         memory64: false,
         extended_const: false,
         component_model: false,
+        function_references: false,
+        memory_control: false,
+        gc: false,
+        component_model_values: false,
+        component_model_nested_names: false,
     };
     Validator::new_with_features(features)
         .validate_all(input)
@@ -311,33 +315,21 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
     let mut binary = WasmBinary::default();
     let sections: Vec<_> = Parser::new(0).parse_all(input).collect::<Result<_, _>>()?;
 
-    for mut section in sections {
+    for section in sections {
         use Payload::*;
 
         macro_rules! process {
             ($dest:expr, $source:expr) => {{
-                for _ in 0..$source.get_count() {
-                    let item = $source.read()?;
-                    $dest.push(item.into())
+                for item in $source.into_iter() {
+                    $dest.push(item?.into())
                 }
-            }};
-        }
-        macro_rules! flatten {
-            ($ty:tt, $source:expr) => {{
-                let mut values: Vec<$ty> = Vec::new();
-                for _ in 0..$source.get_count() {
-                    let item = $source.read()?;
-                    values.push(item.into())
-                }
-                values
             }};
         }
 
-        match &mut section {
+        match section {
             TypeSection(type_section) => {
-                for _ in 0..type_section.get_count() {
-                    let Type::Func(ty) = type_section.read()?;
-                    binary.types.push(ty.try_into()?);
+                for func in type_section.into_iter_err_on_gc_types() {
+                    binary.types.push(func?.try_into()?);
                 }
             }
             CodeSectionEntry(codes) => {
@@ -363,8 +355,8 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
                 binary.codes.push(code);
             }
             GlobalSection(globals) => {
-                for global in flatten!(Global, globals) {
-                    let mut init = global.init_expr.get_operators_reader();
+                for global in globals {
+                    let mut init = global?.init_expr.get_operators_reader();
 
                     let value = match (init.read()?, init.read()?, init.eof()) {
                         (op, Operator::End, true) => op_as_const(op)?,
@@ -374,7 +366,8 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
                 }
             }
             ImportSection(imports) => {
-                for import in flatten!(Import, imports) {
+                for import in imports {
+                    let import = import?;
                     let TypeRef::Func(offset) = import.ty else {
                         bail!("unsupported import kind {:?}", import)
                     };
@@ -388,7 +381,8 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
             }
             ExportSection(exports) => {
                 use ExternalKind as E;
-                for export in flatten!(Export, exports) {
+                for export in exports {
+                    let export = export?;
                     let name = export.name.to_owned();
                     let kind = export.kind;
                     if let E::Func = kind {
@@ -407,9 +401,13 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
                 }
             }
             FunctionSection(functions) => process!(binary.functions, functions),
-            TableSection(tables) => process!(binary.tables, tables),
+            TableSection(tables) => {
+                for table in tables {
+                    binary.tables.push(table?.ty);
+                }
+            }
             MemorySection(memories) => process!(binary.memories, memories),
-            StartSection { func, .. } => binary.start = Some(*func),
+            StartSection { func, .. } => binary.start = Some(func),
             ElementSection(elements) => process!(binary.elements, elements),
             DataSection(datas) => process!(binary.datas, datas),
             CodeSectionStart { .. } => {}
@@ -418,14 +416,15 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
                     continue;
                 }
 
-                let mut name_reader = NameSectionReader::new(reader.data(), reader.data_offset())?;
+                // CHECK: maybe reader.data_offset()
+                let name_reader = NameSectionReader::new(reader.data(), 0);
 
-                while !name_reader.eof() {
-                    match name_reader.read()? {
+                for name in name_reader {
+                    match name? {
                         Name::Module { name, .. } => binary.names.module = name.to_owned(),
-                        Name::Function(mut namemap) => {
-                            for _ in 0..namemap.get_count() {
-                                let Naming { index, name } = namemap.read()?;
+                        Name::Function(namemap) => {
+                            for naming in namemap {
+                                let Naming { index, name } = naming?;
                                 binary.names.functions.insert(index, name.to_owned());
                             }
                         }
@@ -433,8 +432,8 @@ pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
                     }
                 }
             }
-            Version { num, .. } => ensure!(*num == 1, "wasm format version not supported {}", num),
-            UnknownSection { id, .. } => bail!("unsupported unknown section type {}", id),
+            Version { num, .. } => ensure!(num == 1, "wasm format version not supported {num}"),
+            UnknownSection { id, .. } => bail!("unsupported unknown section type {id}"),
             End(_) => {}
             x => bail!("unsupported section type {:?}", x),
         }
