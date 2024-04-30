@@ -32,6 +32,7 @@ type InboxReaderConfig struct {
 	TargetMessagesRead  uint64        `koanf:"target-messages-read" reload:"hot"`
 	MaxBlocksToRead     uint64        `koanf:"max-blocks-to-read" reload:"hot"`
 	ReadMode            string        `koanf:"read-mode" reload:"hot"`
+	FirstBatchToKeep    uint64        `koanf:"first-batch-to-keep" reload:"hot"`
 }
 
 type InboxReaderConfigFetcher func() *InboxReaderConfig
@@ -56,6 +57,7 @@ func InboxReaderConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".target-messages-read", DefaultInboxReaderConfig.TargetMessagesRead, "if adjust-blocks-to-read is enabled, the target number of messages to read at once")
 	f.Uint64(prefix+".max-blocks-to-read", DefaultInboxReaderConfig.MaxBlocksToRead, "if adjust-blocks-to-read is enabled, the maximum number of blocks to read at once")
 	f.String(prefix+".read-mode", DefaultInboxReaderConfig.ReadMode, "mode to only read latest or safe or finalized L1 blocks. Enabling safe or finalized disables feed input and output. Defaults to latest. Takes string input, valid strings- latest, safe, finalized")
+	f.Uint64(prefix+".first-batch-to-keep", DefaultInboxReaderConfig.FirstBatchToKeep, "the first batch to keep in the database while adding messages")
 }
 
 var DefaultInboxReaderConfig = InboxReaderConfig{
@@ -67,6 +69,7 @@ var DefaultInboxReaderConfig = InboxReaderConfig{
 	TargetMessagesRead:  500,
 	MaxBlocksToRead:     2000,
 	ReadMode:            "latest",
+	FirstBatchToKeep:    0,
 }
 
 var TestInboxReaderConfig = InboxReaderConfig{
@@ -78,6 +81,7 @@ var TestInboxReaderConfig = InboxReaderConfig{
 	TargetMessagesRead:  500,
 	MaxBlocksToRead:     2000,
 	ReadMode:            "latest",
+	FirstBatchToKeep:    0,
 }
 
 type InboxReader struct {
@@ -139,6 +143,9 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 			return err
 		}
 		if batchCount > 0 {
+			if r.tracker.GetFirstBatchToKeep() != 0 {
+				break
+			}
 			// Validate the init message matches our L2 blockchain
 			message, err := r.tracker.GetDelayedMessage(0)
 			if err != nil {
