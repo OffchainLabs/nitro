@@ -151,7 +151,7 @@ func checkAccounts(db *state.StateDB, arbState *ArbosState, accts []statetransfe
 		if db.GetNonce(addr) != acct.Nonce {
 			t.Fatal()
 		}
-		if db.GetBalance(addr).Cmp(acct.EthBalance) != 0 {
+		if db.GetBalance(addr).ToBig().Cmp(acct.EthBalance) != 0 {
 			t.Fatal()
 		}
 		if acct.ContractInfo != nil {

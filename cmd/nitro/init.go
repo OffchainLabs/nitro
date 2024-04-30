@@ -155,6 +155,17 @@ func validateBlockChain(blockChain *core.BlockChain, chainConfig *params.ChainCo
 			return fmt.Errorf("invalid chain config, not compatible with previous: %w", err)
 		}
 	}
+	// Make sure we don't allow accidentally downgrading ArbOS
+	if chainConfig.DebugMode() {
+		if currentArbosState.ArbOSVersion() > currentArbosState.MaxDebugArbosVersionSupported() {
+			return fmt.Errorf("attempted to launch node in debug mode with ArbOS version %v on ArbOS state with version %v", currentArbosState.MaxDebugArbosVersionSupported(), currentArbosState.ArbOSVersion())
+		}
+	} else {
+		if currentArbosState.ArbOSVersion() > currentArbosState.MaxArbosVersionSupported() {
+			return fmt.Errorf("attempted to launch node with ArbOS version %v on ArbOS state with version %v", currentArbosState.MaxArbosVersionSupported(), currentArbosState.ArbOSVersion())
+		}
+
+	}
 
 	return nil
 }

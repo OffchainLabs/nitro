@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/eth/gasestimator"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
@@ -161,8 +162,12 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	Require(t, err, "failed to estimate retryable submission")
 	estimate := tx.Gas()
 	expectedEstimate := params.TxGas + params.TxDataNonZeroGasEIP2028*4
-	if estimate != expectedEstimate {
-		t.Errorf("estimated retryable ticket at %v gas but expected %v", estimate, expectedEstimate)
+	if float64(estimate) > float64(expectedEstimate)*(1+gasestimator.EstimateGasErrorRatio) {
+		t.Errorf("estimated retryable ticket at %v gas but expected %v, with error margin of %v",
+			estimate,
+			expectedEstimate,
+			gasestimator.EstimateGasErrorRatio,
+		)
 	}
 
 	// submit & auto redeem the retryable using the gas estimate

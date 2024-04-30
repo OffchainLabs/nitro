@@ -65,6 +65,15 @@ func init() {
 		vm.PrecompiledAddressesArbitrum = append(vm.PrecompiledAddressesArbitrum, addr)
 	}
 
+	for addr, precompile := range vm.PrecompiledContractsArbitrum {
+		vm.PrecompiledContractsArbOS30[addr] = precompile
+		vm.PrecompiledAddressesArbOS30 = append(vm.PrecompiledAddressesArbOS30, addr)
+	}
+	for addr, precompile := range vm.PrecompiledContractsP256Verify {
+		vm.PrecompiledContractsArbOS30[addr] = precompile
+		vm.PrecompiledAddressesArbOS30 = append(vm.PrecompiledAddressesArbOS30, addr)
+	}
+
 	core.RenderRPCError = func(data []byte) error {
 		if len(data) < 4 {
 			return nil
