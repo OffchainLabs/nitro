@@ -135,7 +135,7 @@ func newApiClosures(
 
 		// apply the 63/64ths rule
 		startGas := am.SaturatingUSub(gasLeft, baseCost) * 63 / 64
-		gas := am.MinInt(gasReq, startGas)
+		gas := am.MinInt(startGas, gasReq)
 
 		// Tracing: emit the call (value transfer is done later in evm.Call)
 		if tracingInfo != nil {
@@ -162,7 +162,7 @@ func newApiClosures(
 		}
 
 		interpreter.SetReturnData(ret)
-		cost := arbmath.SaturatingUSub(startGas, returnGas+baseCost)
+		cost := am.SaturatingUAdd(baseCost, am.SaturatingUSub(gas, returnGas))
 		return ret, cost, err
 	}
 	create := func(code []byte, endowment, salt *big.Int, gas uint64) (common.Address, []byte, uint64, error) {
