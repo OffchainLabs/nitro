@@ -16,12 +16,45 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/params"
+	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/merkletree"
 )
+
+func TestP256VerifyEnabled(t *testing.T) {
+	gethhook.RequireHookedGeth()
+	for _, tc := range []struct {
+		arbOSVersion   uint64
+		wantP256Verify bool
+	}{
+		{
+			arbOSVersion:   20,
+			wantP256Verify: false,
+		},
+		{
+			arbOSVersion:   30,
+			wantP256Verify: true,
+		},
+	} {
+		addresses := arbosState.GetArbitrumOnlyGenesisPrecompiles(&params.ChainConfig{
+			ArbitrumChainParams: params.ArbitrumChainParams{
+				EnableArbOS:         true,
+				InitialArbOSVersion: tc.arbOSVersion,
+			},
+		})
+		got := false
+		for _, a := range addresses {
+			got = got || (a == common.BytesToAddress([]byte{0x01, 0x00}))
+		}
+		if got != tc.wantP256Verify {
+			t.Errorf("Got P256Verify enabled: %t, want: %t", got, tc.wantP256Verify)
+		}
+	}
+}
 
 func TestOutboxProofs(t *testing.T) {
 	t.Parallel()
