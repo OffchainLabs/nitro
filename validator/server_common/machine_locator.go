@@ -71,7 +71,7 @@ func NewMachineLocator(rootPath string) (*MachineLocator, error) {
 		}
 		for _, file := range files {
 			mrFile := filepath.Join(dir, file.Name(), "module-root.txt")
-			if _, err := os.Stat(mrFile); errors.Is(err, os.ErrNotExist) {
+			if _, err := os.Stat(mrFile); err != nil {
 				// Skip if module-roots file does not exist.
 				continue
 			}
