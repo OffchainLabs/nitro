@@ -27,6 +27,7 @@ pub fn activate(
     cached_init_cost_ptr: GuestPtr,
     version: u16,
     debug: u32,
+    codehash: GuestPtr,
     module_hash_ptr: GuestPtr,
     gas_ptr: GuestPtr,
     err_buf: GuestPtr,
@@ -34,11 +35,12 @@ pub fn activate(
 ) -> Result<u32, Escape> {
     let (mut mem, _) = env.jit_env();
     let wasm = mem.read_slice(wasm_ptr, wasm_size as usize);
+    let codehash = &mem.read_bytes32(codehash);
     let debug = debug != 0;
 
     let page_limit = mem.read_u16(pages_ptr);
     let gas_left = &mut mem.read_u64(gas_ptr);
-    match Module::activate(&wasm, version, page_limit, debug, gas_left) {
+    match Module::activate(&wasm, codehash, version, page_limit, debug, gas_left) {
         Ok((module, data)) => {
             mem.write_u64(gas_ptr, *gas_left);
             mem.write_u16(pages_ptr, data.footprint);

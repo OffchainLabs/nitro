@@ -46,6 +46,7 @@ type rustSlice = C.RustSlice
 func activateProgram(
 	db vm.StateDB,
 	program common.Address,
+	codehash common.Hash,
 	wasm []byte,
 	page_limit uint16,
 	version uint16,
@@ -56,6 +57,7 @@ func activateProgram(
 	asmLen := usize(0)
 	moduleHash := &bytes32{}
 	stylusData := &C.StylusData{}
+	codeHash := hashToBytes32(codehash)
 
 	status := userStatus(C.stylus_activate(
 		goSlice(wasm),
@@ -64,6 +66,7 @@ func activateProgram(
 		cbool(debug),
 		output,
 		&asmLen,
+		&codeHash,
 		moduleHash,
 		stylusData,
 		(*u64)(burner.GasLeft()),

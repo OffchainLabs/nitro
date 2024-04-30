@@ -12,7 +12,7 @@ use arbutil::{
         EvmData,
     },
     operator::OperatorCode,
-    Color,
+    Bytes32, Color,
 };
 use eyre::{bail, eyre, ErrReport, Result};
 use prover::{
@@ -434,13 +434,15 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
 
 pub fn activate(
     wasm: &[u8],
+    codehash: &Bytes32,
     version: u16,
     page_limit: u16,
     debug: bool,
     gas: &mut u64,
 ) -> Result<(Vec<u8>, ProverModule, StylusData)> {
     let compile = CompileConfig::version(version, debug);
-    let (module, stylus_data) = ProverModule::activate(wasm, version, page_limit, debug, gas)?;
+    let (module, stylus_data) =
+        ProverModule::activate(wasm, codehash, version, page_limit, debug, gas)?;
 
     let asm = match self::module(wasm, compile) {
         Ok(asm) => asm,

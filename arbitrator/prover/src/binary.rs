@@ -9,7 +9,7 @@ use crate::{
     },
     value::{ArbValueType, FunctionType, IntegerValType, Value},
 };
-use arbutil::{math::SaturatingSum, Color, DebugColor};
+use arbutil::{math::SaturatingSum, Bytes32, Color, DebugColor};
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use nom::{
@@ -294,6 +294,8 @@ pub struct WasmBinary<'a> {
     pub names: NameCustomSection,
     /// The soruce wasm, if known.
     pub wasm: Option<&'a [u8]>,
+    /// Consensus data used to make module hashes unique.
+    pub extra_data: Vec<u8>,
 }
 
 pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
@@ -516,7 +518,11 @@ impl<'a> Debug for WasmBinary<'a> {
 
 impl<'a> WasmBinary<'a> {
     /// Instruments a user wasm, producing a version bounded via configurable instrumentation.
-    pub fn instrument(&mut self, compile: &CompileConfig) -> Result<StylusData> {
+    pub fn instrument(
+        &mut self,
+        compile: &CompileConfig,
+        codehash: &Bytes32,
+    ) -> Result<StylusData> {
         let start = StartMover::new(compile.debug.debug_info);
         let meter = Meter::new(&compile.pricing);
         let dygas = DynamicMeter::new(&compile.pricing);
@@ -572,6 +578,8 @@ impl<'a> WasmBinary<'a> {
         }
 
         let wasm = self.wasm.take().unwrap();
+        self.extra_data.extend(*codehash);
+        self.extra_data.extend(compile.version.to_be_bytes());
 
         // 4GB maximum implies `footprint` fits in a u16
         let footprint = self.memory_info()?.min.0 as u16;
@@ -632,9 +640,10 @@ impl<'a> WasmBinary<'a> {
         wasm: &'a [u8],
         page_limit: u16,
         compile: &CompileConfig,
+        codehash: &Bytes32,
     ) -> Result<(WasmBinary<'a>, StylusData)> {
         let mut bin = parse(wasm, Path::new("user"))?;
-        let stylus_data = bin.instrument(compile)?;
+        let stylus_data = bin.instrument(compile, codehash)?;
 
         let Some(memory) = bin.memories.first() else {
             bail!("missing memory with export name \"memory\"")

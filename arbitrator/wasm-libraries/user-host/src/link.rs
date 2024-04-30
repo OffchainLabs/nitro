@@ -46,17 +46,19 @@ pub unsafe extern "C" fn programs__activate(
     cached_init_cost_ptr: GuestPtr,
     version: u16,
     debug: u32,
+    codehash: GuestPtr,
     module_hash_ptr: GuestPtr,
     gas_ptr: GuestPtr,
     err_buf: GuestPtr,
     err_buf_len: usize,
 ) -> usize {
     let wasm = STATIC_MEM.read_slice(wasm_ptr, wasm_size);
+    let codehash = &read_bytes32(codehash);
     let debug = debug != 0;
 
     let page_limit = STATIC_MEM.read_u16(pages_ptr);
     let gas_left = &mut STATIC_MEM.read_u64(gas_ptr);
-    match Module::activate(&wasm, version, page_limit, debug, gas_left) {
+    match Module::activate(&wasm, codehash, version, page_limit, debug, gas_left) {
         Ok((module, data)) => {
             STATIC_MEM.write_u64(gas_ptr, *gas_left);
             STATIC_MEM.write_u16(pages_ptr, data.footprint);

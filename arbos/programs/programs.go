@@ -115,7 +115,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runMode c
 	// require the program's footprint not exceed the remaining memory budget
 	pageLimit := am.SaturatingUSub(params.PageLimit, statedb.GetStylusPagesOpen())
 
-	info, err := activateProgram(statedb, address, wasm, pageLimit, stylusVersion, debugMode, burner)
+	info, err := activateProgram(statedb, address, codeHash, wasm, pageLimit, stylusVersion, debugMode, burner)
 	if err != nil {
 		return 0, codeHash, common.Hash{}, nil, true, err
 	}

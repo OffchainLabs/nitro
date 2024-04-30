@@ -8,7 +8,7 @@ use crate::{
     programs::config::CompileConfig,
     value::{FunctionType as ArbFunctionType, Value},
 };
-use arbutil::{math::SaturatingSum, Color};
+use arbutil::{math::SaturatingSum, Bytes32, Color};
 use eyre::{bail, eyre, Report, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
 use std::fmt::Debug;
@@ -417,6 +417,7 @@ impl StylusData {
 impl Module {
     pub fn activate(
         wasm: &[u8],
+        codehash: &Bytes32,
         version: u16,
         page_limit: u16,
         debug: bool,
@@ -447,8 +448,8 @@ impl Module {
         pay!(wasm_len.saturating_mul(31_733 / 100_000));
 
         let compile = CompileConfig::version(version, debug);
-        let (bin, stylus_data) =
-            WasmBinary::parse_user(wasm, page_limit, &compile).wrap_err("failed to parse wasm")?;
+        let (bin, stylus_data) = WasmBinary::parse_user(wasm, page_limit, &compile, codehash)
+            .wrap_err("failed to parse wasm")?;
 
         // pay for funcs
         let funcs = bin.functions.len() as u64;

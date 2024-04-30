@@ -1433,7 +1433,7 @@ dependencies = [
 
 [[package]]
 name = "wasmer-types"
-version = "4.3.0-alpha.1"
+version = "4.2.8"
 dependencies = [
  "bytecheck",
  "enum-iterator",
