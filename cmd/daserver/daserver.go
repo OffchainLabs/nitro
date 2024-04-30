@@ -7,11 +7,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
 	"time"
+
+	"golang.org/x/exp/slog"
 
 	koanfjson "github.com/knadh/koanf/parsers/json"
 	flag "github.com/spf13/pflag"
@@ -182,14 +185,14 @@ func startup() error {
 		confighelpers.PrintErrorAndExit(errors.New("please specify at least one of --enable-rest or --enable-rpc"), printSampleUsage)
 	}
 
-	logFormat, err := genericconf.ParseLogType(serverConfig.LogType)
+	handler, err := genericconf.HandlerFromLogType(serverConfig.LogType, io.Writer(os.Stderr))
 	if err != nil {
 		flag.Usage()
-		panic(fmt.Sprintf("Error parsing log type: %v", err))
+		return fmt.Errorf("error parsing log type when creating handler: %w", err)
 	}
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, logFormat))
-	glogger.Verbosity(log.Lvl(serverConfig.LogLevel))
-	log.Root().SetHandler(glogger)
+	glogger := log.NewGlogHandler(handler)
+	glogger.Verbosity(slog.Level(serverConfig.LogLevel))
+	log.SetDefault(log.NewLogger(glogger))
 
 	if err := startMetrics(serverConfig); err != nil {
 		return err
