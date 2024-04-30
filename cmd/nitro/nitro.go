@@ -399,7 +399,7 @@ func mainImpl() int {
 	}
 
 	var sameProcessValidationNodeEnabled bool
-	if nodeConfig.Node.BlockValidator.Enable && (nodeConfig.Node.BlockValidator.ValidationServerConfigs[0].URL == "self" || nodeConfig.Node.BlockValidator.ValidationServerConfigs[0].URL == "self-auth") {
+	if nodeConfig.Node.BlockValidator.Enable && (nodeConfig.Node.BlockValidator.ExecutionServerConfigs[0].URL == "self" || nodeConfig.Node.BlockValidator.ExecutionServerConfigs[0].URL == "self-auth") {
 		sameProcessValidationNodeEnabled = true
 		valnode.EnsureValidationExposedViaAuthRPC(&stackConf)
 	}

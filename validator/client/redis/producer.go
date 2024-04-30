@@ -87,7 +87,8 @@ func (c *ValidationClient) Initialize(moduleRoots []common.Hash) error {
 		p, err := pubsub.NewProducer[*validator.ValidationInput, validator.GoGlobalState](
 			c.redisClient, server_api.RedisStreamForRoot(mr), &c.producerConfig)
 		if err != nil {
-			return fmt.Errorf("creating producer for validation: %w", err)
+			log.Warn("failed init redis for %v: %w", mr, err)
+			continue
 		}
 		p.Start(c.GetContext())
 		c.producers[mr] = p

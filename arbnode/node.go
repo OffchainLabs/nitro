@@ -200,7 +200,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.SyncMonitor = TestSyncMonitorConfig
 	config.Staker = staker.TestL1ValidatorConfig
 	config.Staker.Enable = false
-	config.BlockValidator.ValidationServerConfigs = []rpcclient.ClientConfig{{URL: ""}}
+	config.BlockValidator.ExecutionServerConfigs = []rpcclient.ClientConfig{{URL: ""}}
 
 	return &config
 }
@@ -217,7 +217,7 @@ func ConfigDefaultL2Test() *Config {
 	config.Staker = staker.TestL1ValidatorConfig
 	config.SyncMonitor = TestSyncMonitorConfig
 	config.Staker.Enable = false
-	config.BlockValidator.ValidationServerConfigs = []rpcclient.ClientConfig{{URL: ""}}
+	config.BlockValidator.ExecutionServerConfigs = []rpcclient.ClientConfig{{URL: ""}}
 	config.TransactionStreamer = DefaultTransactionStreamerConfig
 
 	return &config
@@ -540,7 +540,7 @@ func createNodeImpl(
 	txStreamer.SetInboxReaders(inboxReader, delayedBridge)
 
 	var statelessBlockValidator *staker.StatelessBlockValidator
-	if config.BlockValidator.RedisValidationClientConfig.Enabled() || config.BlockValidator.ValidationServerConfigs[0].URL != "" {
+	if config.BlockValidator.RedisValidationClientConfig.Enabled() || config.BlockValidator.ExecutionServerConfigs[0].URL != "" {
 		statelessBlockValidator, err = staker.NewStatelessBlockValidator(
 			inboxReader,
 			inboxTracker,
