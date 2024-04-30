@@ -436,14 +436,24 @@ pub fn pricing_v1(op: &Operator, tys: &HashMap<SignatureIndex, FunctionType>) ->
 
         // we don't support the following, so return u64::MAX
         dot!(
-            Try, Catch, CatchAll, Delegate, Throw, Rethrow,
+            Try, Catch, CatchAll, Delegate, Throw, Rethrow, ThrowRef, TryTable,
 
-            RefNull, RefIsNull, RefFunc,
+            RefNull, RefIsNull, RefFunc, RefEq,
+
+            CallRef, ReturnCallRef, RefAsNonNull, BrOnNull, BrOnNonNull,
 
             TypedSelect, ReturnCall, ReturnCallIndirect,
 
             MemoryInit, DataDrop, TableInit, ElemDrop,
             TableCopy, TableFill, TableGet, TableSet, TableGrow, TableSize,
+
+            MemoryDiscard,
+
+            StructNew, StructNewDefault, StructGet, StructGetS, StructGetU, StructSet,
+            ArrayNew, ArrayNewDefault, ArrayNewFixed, ArrayNewData, ArrayNewElem,
+            ArrayGet, ArrayGetS, ArrayGetU, ArraySet, ArrayLen, ArrayFill, ArrayCopy,
+            ArrayInitData, ArrayInitElem, RefTestNonNull, RefTestNullable, RefCastNonNull, RefCastNullable,
+            BrOnCast, BrOnCastFail, AnyConvertExtern, ExternConvertAny, RefI31, I31GetS, I31GetU,
 
             F32Load, F64Load, F32Store, F64Store, F32Const, F64Const,
             F32Eq, F32Ne, F32Lt, F32Gt, F32Le, F32Ge,
@@ -511,11 +521,11 @@ pub fn pricing_v1(op: &Operator, tys: &HashMap<SignatureIndex, FunctionType>) ->
             F64x2Max, F64x2PMin, F64x2PMax, I32x4TruncSatF32x4S, I32x4TruncSatF32x4U, F32x4ConvertI32x4S,
             F32x4ConvertI32x4U, I32x4TruncSatF64x2SZero, I32x4TruncSatF64x2UZero, F64x2ConvertLowI32x4S,
             F64x2ConvertLowI32x4U, F32x4DemoteF64x2Zero, F64x2PromoteLowF32x4, I8x16RelaxedSwizzle,
-            I32x4RelaxedTruncSatF32x4S, I32x4RelaxedTruncSatF32x4U, I32x4RelaxedTruncSatF64x2SZero,
-            I32x4RelaxedTruncSatF64x2UZero, F32x4RelaxedFma, F32x4RelaxedFnma, F64x2RelaxedFma,
-            F64x2RelaxedFnma, I8x16RelaxedLaneselect, I16x8RelaxedLaneselect, I32x4RelaxedLaneselect,
+            I32x4RelaxedTruncF32x4S, I32x4RelaxedTruncF32x4U, I32x4RelaxedTruncF64x2SZero,
+            I32x4RelaxedTruncF64x2UZero, F32x4RelaxedMadd, F32x4RelaxedNmadd, F64x2RelaxedMadd,
+            F64x2RelaxedNmadd, I8x16RelaxedLaneselect, I16x8RelaxedLaneselect, I32x4RelaxedLaneselect,
             I64x2RelaxedLaneselect, F32x4RelaxedMin, F32x4RelaxedMax, F64x2RelaxedMin, F64x2RelaxedMax,
-            I16x8RelaxedQ15mulrS, I16x8DotI8x16I7x16S, I32x4DotI8x16I7x16AddS, F32x4RelaxedDotBf16x8AddF32x4
+            I16x8RelaxedQ15mulrS, I16x8RelaxedDotI8x16I7x16S, I32x4RelaxedDotI8x16I7x16AddS
         ) => u64::MAX,
     };
     ink
