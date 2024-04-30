@@ -89,6 +89,14 @@ func (b *Broadcaster) BroadcastSingle(
 	return nil
 }
 
+func (b *Broadcaster) BroadcastSingleFeedMessage(bfm *m.BroadcastFeedMessage) {
+	broadcastFeedMessages := make([]*m.BroadcastFeedMessage, 0, 1)
+
+	broadcastFeedMessages = append(broadcastFeedMessages, bfm)
+
+	b.BroadcastFeedMessages(broadcastFeedMessages)
+}
+
 func (b *Broadcaster) BroadcastMessages(
 	messagesWithBlockHash []MessageWithMetadataAndBlockHash,
 	seq arbutil.MessageIndex,
@@ -111,14 +119,6 @@ func (b *Broadcaster) BroadcastMessages(
 	b.BroadcastFeedMessages(feedMessages)
 
 	return nil
-}
-
-func (b *Broadcaster) BroadcastSingleFeedMessage(bfm *m.BroadcastFeedMessage) {
-	broadcastFeedMessages := make([]*m.BroadcastFeedMessage, 0, 1)
-
-	broadcastFeedMessages = append(broadcastFeedMessages, bfm)
-
-	b.BroadcastFeedMessages(broadcastFeedMessages)
 }
 
 func (b *Broadcaster) BroadcastFeedMessages(messages []*m.BroadcastFeedMessage) {
