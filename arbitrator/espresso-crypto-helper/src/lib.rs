@@ -59,7 +59,6 @@ pub fn verify_merkle_proof_helper(
     let block_comm: BlockMerkleCommitment = tagged.try_into().unwrap();
 
     let proof: Proof = serde_json::from_str(proof_str).unwrap();
-    dbg!(&header_str);
     let header: Header = serde_json::from_str(header_str).unwrap();
     let header_comm: Commitment<Header> = header.commit();
 
@@ -179,7 +178,17 @@ mod test {
         let header_bytes = HEADER.clone().as_bytes();
         let block_comm_bytes =
             b"MERKLE_COMM~vc7j-uHdU6RGWMlKRVReWs5VGn_vuG-F-0s-jZ2eUa0gAAAAAAAAAAIAAAAAAAAAvQ";
-        let circuit_block_bytes = [];
+        let block_comm_str = std::str::from_utf8(block_comm_bytes).unwrap();
+        let tagged = TaggedBase64::parse(&block_comm_str).unwrap();
+        let block_comm: BlockMerkleCommitment = tagged.try_into().unwrap();
+        let mut block_comm_root_bytes = vec![];
+        block_comm
+            .serialize_compressed(&mut block_comm_root_bytes)
+            .unwrap();
+        let field_bytes = hash_bytes_to_field(&block_comm_root_bytes).unwrap();
+        let circuit_block_u256 = field_to_u256(field_bytes);
+        let mut circuit_block_bytes: Vec<u8> = vec![0; 32];
+        circuit_block_u256.to_little_endian(&mut circuit_block_bytes);
         verify_merkle_proof_helper(
             proof_bytes,
             header_bytes,
