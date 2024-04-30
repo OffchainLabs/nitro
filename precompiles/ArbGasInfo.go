@@ -218,7 +218,7 @@ func (con ArbGasInfo) _preversion10_GetL1PricingSurplus(c ctx, evm mech) (*big.I
 	}
 	haveFunds := evm.StateDB.GetBalance(l1pricing.L1PricerFundsPoolAddress)
 	needFunds := arbmath.BigAdd(fundsDueForRefunds, fundsDueForRewards)
-	return arbmath.BigSub(haveFunds, needFunds), nil
+	return arbmath.BigSub(haveFunds.ToBig(), needFunds), nil
 }
 
 // GetPerBatchGasCharge gets the base charge (in L1 gas) attributed to each data batch in the calldata pricer

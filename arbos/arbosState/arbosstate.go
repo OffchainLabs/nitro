@@ -303,7 +303,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 		case 10:
 			ensure(state.l1PricingState.SetL1FeesAvailable(stateDB.GetBalance(
 				l1pricing.L1PricerFundsPoolAddress,
-			)))
+			).ToBig()))
 		case 11:
 			// Update the PerBatchGasCost to a more accurate value compared to the old v6 default.
 			ensure(state.l1PricingState.SetPerBatchGasCost(l1pricing.InitialPerBatchGasCostV12))
