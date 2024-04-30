@@ -5,6 +5,7 @@ use ark_bn254::Bn254;
 use ark_ff::PrimeField;
 use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use committable::{Commitment, Committable};
+use ethers_core::types::U256;
 use jf_primitives::{
     crhf::{VariableLengthRescueCRHF, CRHF},
     errors::PrimitivesError,
@@ -22,7 +23,10 @@ use sequencer_data_structures::{
 use sha2::{Digest, Sha256};
 use tagged_base64::TaggedBase64;
 
-use crate::{bytes::Bytes, sequencer_data_structures::BlockMerkleCommitment};
+use crate::{
+    bytes::Bytes,
+    sequencer_data_structures::{field_to_u256, BlockMerkleCommitment},
+};
 
 pub type VidScheme = Advz<Bn254, sha2::Sha256>;
 pub type Proof = Vec<MerkleNode<Commitment<Header>, u64, Sha3Node>>;
@@ -46,7 +50,7 @@ pub fn verify_merkle_proof_helper(
     proof_bytes: &[u8],
     header_bytes: &[u8],
     block_comm_bytes: &[u8],
-    _circuit_block_bytes: &[u8],
+    circuit_block_bytes: &[u8],
 ) {
     let proof_str = std::str::from_utf8(proof_bytes).unwrap();
     let header_str = std::str::from_utf8(header_bytes).unwrap();
@@ -65,15 +69,16 @@ pub fn verify_merkle_proof_helper(
         .unwrap()
         .unwrap();
 
-    assert!(proved_comm == header_comm);
-
     let mut block_comm_root_bytes = vec![];
     block_comm
         .serialize_compressed(&mut block_comm_root_bytes)
         .unwrap();
-    let bytes = hash_bytes_to_field(&block_comm_root_bytes).unwrap();
-    // TOOD: check that circuit bytes match hashed leaf
-    dbg!(bytes);
+    let field_bytes = hash_bytes_to_field(&block_comm_root_bytes).unwrap();
+    let local_block_comm_u256 = field_to_u256(field_bytes);
+    let circuit_block_comm_u256 = U256::from_little_endian(circuit_block_bytes);
+
+    assert!(proved_comm == header_comm);
+    assert!(local_block_comm_u256 == circuit_block_comm_u256)
 }
 
 // Helper function to verify a VID namespace proof that takes the byte representations of the proof,

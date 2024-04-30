@@ -2,10 +2,10 @@
 // This module is essentially copy and pasted VID logic from the sequencer repo. It is an unfortunate workaround
 // until the VID portion of the sequencer repo is WASM-compatible.
 use ark_bn254::Bn254;
+use ark_ff::{BigInteger, PrimeField};
 use ark_serialize::{
     CanonicalDeserialize, CanonicalSerialize, Compress, Read, SerializationError, Valid, Validate,
 };
-
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use core::fmt;
 use derivative::Derivative;
@@ -853,3 +853,10 @@ impl Committable for FeeInfo {
 }
 
 pub type VidCommitment = <VidScheme as VidSchemeTrait>::Commit;
+
+pub fn field_to_u256<F: PrimeField>(f: F) -> U256 {
+    if F::MODULUS_BIT_SIZE > 256 {
+        panic!("Shouldn't convert a >256-bit field to U256");
+    }
+    U256::from_little_endian(&f.into_bigint().to_bytes_le())
+}
