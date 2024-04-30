@@ -10,6 +10,7 @@ use enum_iterator::Sequence;
 use enum_iterator::all;
 
 
+use std::cmp::Ordering;
 #[cfg(feature = "counters")]
 use std::sync::atomic::AtomicUsize;
 
@@ -242,6 +243,10 @@ impl Merkle {
         self.layers[0].len()
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.layers.is_empty() || self.layers[0].is_empty()
+    }
+
     #[must_use]
     pub fn prove(&self, idx: usize) -> Option<Vec<u8>> {
         if idx >= self.leaves().len() {
@@ -300,12 +305,10 @@ impl Merkle {
         let empty_layers = &self.empty_layers;
         let layers_len = self.layers.len();
         for (layer_i, layer) in self.layers.iter_mut().enumerate() {
-            if idx < layer.len() {
-                layer[idx] = next_hash;
-            } else if idx == layer.len() {
-                layer.push(next_hash);
-            } else {
-                panic!("Index {} out of bounds {} in layer {}", idx, layer.len(), layer_i);
+            match idx.cmp(&layer.len()) {
+                Ordering::Less => layer[idx] = next_hash,
+                Ordering::Equal => layer.push(next_hash),
+                Ordering::Greater => panic!("Index {} out of bounds {} in layer {}", idx, layer.len(), layer_i),
             }
             if layer_i == layers_len - 1 {
                 // next_hash isn't needed
@@ -343,7 +346,7 @@ impl Merkle {
             self.set(idx, hash);
             idx += 1;
         }
-        return Ok(self.layers[0].len());
+        Ok(self.layers[0].len())
     }
 }
 

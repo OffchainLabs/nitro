@@ -58,7 +58,7 @@ impl Merkle {
         Self::new_advanced(ty, hashes, Bytes32::default(), 0)
     }
     pub fn new_advanced(
-        ty: MerkleType,
+        _ty: MerkleType,
         hashes: Vec<Bytes32>,
         empty_hash: Bytes32,
         min_depth: usize,
