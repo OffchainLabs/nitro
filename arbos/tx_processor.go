@@ -144,6 +144,8 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		// We intentionally use the variant here that doesn't do tracing,
 		// because this transfer is represented as the outer eth transaction.
 		// This transfer is necessary because we don't actually invoke the EVM.
+		// Since MintBalance already called AddBalance on `from`,
+		// we don't have EIP-161 concerns around not touching `from`.
 		core.Transfer(evm.StateDB, from, *to, uint256.MustFromBig(value))
 		return true, 0, nil, nil
 	case *types.ArbitrumInternalTx:

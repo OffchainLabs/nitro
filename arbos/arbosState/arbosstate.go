@@ -324,9 +324,22 @@ func (state *ArbosState) UpgradeArbosVersion(
 		case 20:
 			// Update Brotli compression level for fast compression from 0 to 1
 			ensure(state.SetBrotliCompressionLevel(1))
+		// ArbOS versions 21 through 29 are left to Orbit chains for custom upgrades.
+		case 30:
+			if !chainConfig.DebugMode() {
+				// This upgrade isn't finalized so we only want to support it for testing
+				return fmt.Errorf(
+					"the chain is upgrading to unsupported ArbOS version %v, %w",
+					nextArbosVersion,
+					ErrFatalNodeOutOfDate,
+				)
+			}
+			// no state changes needed
 		default:
 			if nextArbosVersion >= 12 && nextArbosVersion <= 19 {
 				// ArbOS versions 12 through 19 are left to Orbit chains for custom upgrades.
+			} else if nextArbosVersion >= 21 && nextArbosVersion <= 29 {
+				// ArbOS versions 21 through 29 are left to Orbit chains for custom upgrades.
 			} else {
 				return fmt.Errorf(
 					"the chain is upgrading to unsupported ArbOS version %v, %w",
