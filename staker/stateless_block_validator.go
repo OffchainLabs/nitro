@@ -199,10 +199,10 @@ func NewStatelessBlockValidator(
 			return nil, fmt.Errorf("creating new redis validation client: %w", err)
 		}
 	}
-	configs := config().ExecutionServerConfigs
+	configs := config().ValidationServerConfigs
 	for i := range configs {
 		i := i
-		confFetcher := func() *rpcclient.ClientConfig { return &config().ExecutionServerConfigs[i] }
+		confFetcher := func() *rpcclient.ClientConfig { return &config().ValidationServerConfigs[i] }
 		executionSpawners = append(executionSpawners, validatorclient.NewExecutionClient(confFetcher, stack))
 	}
 
@@ -398,7 +398,7 @@ func (v *StatelessBlockValidator) ValidateResult(
 		}
 	}
 	if run == nil {
-		return false, &entry.End, errors.New("this validation not supported by node")
+		return false, nil, fmt.Errorf("validation woth WasmModuleRoot %v not supported by node", moduleRoot)
 	}
 	defer run.Cancel()
 	gsEnd, err := run.Await(ctx)

@@ -579,8 +579,8 @@ func StaticFetcherFrom[T any](t *testing.T, config *T) func() *T {
 }
 
 func configByValidationNode(clientConfig *arbnode.Config, valStack *node.Node) {
-	clientConfig.BlockValidator.ExecutionServerConfigs[0].URL = valStack.WSEndpoint()
-	clientConfig.BlockValidator.ExecutionServerConfigs[0].JWTSecret = ""
+	clientConfig.BlockValidator.ValidationServerConfigs[0].URL = valStack.WSEndpoint()
+	clientConfig.BlockValidator.ValidationServerConfigs[0].JWTSecret = ""
 }
 
 func currentRootModule(t *testing.T) common.Hash {
