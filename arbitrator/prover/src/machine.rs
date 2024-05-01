@@ -1243,11 +1243,11 @@ impl Machine {
         let soft_float = std::fs::read("../../target/machines/latest/soft-float.wasm")?;
         let soft_float = parse(&soft_float, Path::new("soft-float"))?;
 
-        let mut machine: Machine = Self::from_binaries(
+        let mut machine = Self::from_binaries(
             &[soft_float, wasi_stub, user_test],
             bin,
             false,
-            true,
+            false,
             false,
             compile.debug.debug_funcs,
             true,
