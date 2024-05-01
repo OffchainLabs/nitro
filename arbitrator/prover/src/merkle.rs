@@ -9,6 +9,7 @@ use enum_iterator::Sequence;
 #[cfg(feature = "counters")]
 use enum_iterator::all;
 
+use std::cmp::max;
 use std::cmp::Ordering;
 #[cfg(feature = "counters")]
 use std::sync::atomic::AtomicUsize;
@@ -347,7 +348,7 @@ impl Merkle {
         let mut new_size = idx + hashes.len();
         for (layer_i, layer) in self.layers.iter_mut().enumerate() {
             layer.resize(new_size, self.empty_layers[layer_i]);
-            new_size >>= 1;
+            new_size = max(new_size >> 1, 1);
         }
         for hash in hashes {
             self.set(idx, hash);
