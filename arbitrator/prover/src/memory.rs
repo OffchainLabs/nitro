@@ -125,7 +125,6 @@ impl Memory {
         Cow::Owned(Merkle::new_advanced(
             MerkleType::Memory,
             leaf_hashes,
-            hash_leaf([0u8; 32]),
             Self::MEMORY_LAYERS,
         ))
     }

@@ -35,8 +35,7 @@ fn merkle_benchmark(c: &mut Criterion) {
     // Perform many calls to set leaves to new values
     c.bench_function("extend_set_leaves_and_root", |b| {
         b.iter(|| {
-            let merkle =
-                Merkle::new_advanced(MerkleType::Memory, leaves.clone(), Bytes32::default(), 20);
+            let merkle = Merkle::new_advanced(MerkleType::Memory, leaves.clone(), 20);
             extend_and_set_leavees(merkle.clone(), &mut rng);
         })
     });
@@ -51,8 +50,7 @@ fn merkle_construction(c: &mut Criterion) {
 
     c.bench_function("merkle_construction", |b| {
         b.iter(|| {
-            let merkle =
-                Merkle::new_advanced(MerkleType::Memory, leaves.clone(), Bytes32::default(), 21);
+            let merkle = Merkle::new_advanced(MerkleType::Memory, leaves.clone(), 21);
             merkle.root();
         })
     });
