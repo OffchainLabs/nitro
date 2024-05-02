@@ -219,6 +219,8 @@ jobs:
       - uses: OffchainLabs/actions/run-nitro-test-node@main
         with:
           no-simple: false
+          nitro-contracts-branch: "2e8eeb9f28104465de0557851aa7607b037cafcf"
+          token-bridge-branch: "v1.2.1"
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1

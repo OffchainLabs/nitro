@@ -32,6 +32,7 @@
   "loserStakeEscrow()": "f065de3f",
   "minimumAssertionPeriod()": "45e38b64",
   "newStakeOnNewAssertion(uint256,((bytes32,bytes32,(bytes32,uint256,address,uint64,uint64)),((bytes32[2],uint64[2]),uint8,bytes32),((bytes32[2],uint64[2]),uint8,bytes32)),bytes32)": "7300201c",
+  "newStakeOnNewAssertion(uint256,((bytes32,bytes32,(bytes32,uint256,address,uint64,uint64)),((bytes32[2],uint64[2]),uint8,bytes32),((bytes32[2],uint64[2]),uint8,bytes32)),bytes32,address)": "50f32f68",
   "outbox()": "ce11e6ab",
   "owner()": "8da5cb5b",
   "paused()": "5c975abb",
