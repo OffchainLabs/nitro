@@ -119,7 +119,7 @@ impl Memory {
             })
             .collect();
         let size = leaf_hashes.len();
-        let mut m = Merkle::new_advanced(MerkleType::Memory, leaf_hashes, Self::MEMORY_LAYERS);
+        let m = Merkle::new_advanced(MerkleType::Memory, leaf_hashes, Self::MEMORY_LAYERS);
         if size < leaves {
             m.resize(leaves).expect("Couldn't resize merkle tree");
         }
@@ -306,7 +306,7 @@ impl Memory {
 
     pub fn resize(&mut self, new_size: usize) {
         self.buffer.resize(new_size, 0);
-        if let Some(mut merkle) = self.merkle.take() {
+        if let Some(merkle) = self.merkle.take() {
             merkle
                 .resize(new_size)
                 .expect("Couldn't resize merkle tree");

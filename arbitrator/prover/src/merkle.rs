@@ -391,33 +391,10 @@ impl Merkle {
         self.dirty_layers.lock().unwrap()[0].insert(idx >> 1);
     }
 
-    /// Extends the leaves of the tree with the given hashes.
-    ///
-    /// Returns the new number of leaves in the tree.
-    /// Erorrs if the number of hashes plus the current leaves is greater than
-    /// the capacity of the tree.
-    pub fn extend(&self, hashes: Vec<Bytes32>) -> Result<usize, String> {
-        let mut layers = self.layers.lock().unwrap();
-        if hashes.len() > capacity(layers.as_ref()) - layers[0].len() {
-            return Err("Cannot extend with more leaves than the capicity of the tree.".to_owned());
-        }
-        let mut idx = layers[0].len();
-        let mut new_size = idx + hashes.len();
-        for (layer_i, layer) in layers.iter_mut().enumerate() {
-            layer.resize(new_size, *empty_hash_at(self.ty, layer_i));
-            new_size = max(new_size >> 1, 1);
-        }
-        for hash in hashes {
-            self.locked_set(&mut layers, idx, hash);
-            idx += 1;
-        }
-        Ok(layers[0].len())
-    }
-
     /// Resizes the number of leaves the tree can hold.
     ///
     /// The extra space is filled with empty hashes.
-    pub fn resize(&mut self, new_len: usize) -> Result<usize, String> {
+    pub fn resize(&self, new_len: usize) -> Result<usize, String> {
         if new_len > self.capacity() {
             return Err(
                 "Cannot resize to a length greater than the capacity of the tree.".to_owned(),
@@ -471,86 +448,6 @@ pub mod arc_mutex_sedre {
 }
 
 #[test]
-fn extend_works() {
-    let hashes = vec![
-        Bytes32::from([1; 32]),
-        Bytes32::from([2; 32]),
-        Bytes32::from([3; 32]),
-        Bytes32::from([4; 32]),
-        Bytes32::from([5; 32]),
-    ];
-    let mut expected = hash_node(
-        MerkleType::Value,
-        hash_node(
-            MerkleType::Value,
-            hash_node(
-                MerkleType::Value,
-                Bytes32::from([1; 32]),
-                Bytes32::from([2; 32]),
-            ),
-            hash_node(
-                MerkleType::Value,
-                Bytes32::from([3; 32]),
-                Bytes32::from([4; 32]),
-            ),
-        ),
-        hash_node(
-            MerkleType::Value,
-            hash_node(
-                MerkleType::Value,
-                Bytes32::from([5; 32]),
-                Bytes32::from([0; 32]),
-            ),
-            hash_node(
-                MerkleType::Value,
-                Bytes32::from([0; 32]),
-                Bytes32::from([0; 32]),
-            ),
-        ),
-    );
-    let merkle = Merkle::new(MerkleType::Value, hashes.clone());
-    assert_eq!(merkle.capacity(), 8);
-    assert_eq!(merkle.root(), expected);
-
-    let new_size = match merkle.extend(vec![Bytes32::from([6; 32])]) {
-        Ok(size) => size,
-        Err(e) => panic!("{}", e),
-    };
-    assert_eq!(new_size, 6);
-    expected = hash_node(
-        MerkleType::Value,
-        hash_node(
-            MerkleType::Value,
-            hash_node(
-                MerkleType::Value,
-                Bytes32::from([1; 32]),
-                Bytes32::from([2; 32]),
-            ),
-            hash_node(
-                MerkleType::Value,
-                Bytes32::from([3; 32]),
-                Bytes32::from([4; 32]),
-            ),
-        ),
-        hash_node(
-            MerkleType::Value,
-            hash_node(
-                MerkleType::Value,
-                Bytes32::from([5; 32]),
-                Bytes32::from([6; 32]),
-            ),
-            hash_node(
-                MerkleType::Value,
-                Bytes32::from([0; 32]),
-                Bytes32::from([0; 32]),
-            ),
-        ),
-    );
-    assert_eq!(merkle.root(), expected);
-    merkle.prove(1).unwrap();
-}
-
-#[test]
 fn resize_works() {
     let hashes = vec![
         Bytes32::from([1; 32]),
@@ -588,7 +485,7 @@ fn resize_works() {
             ),
         ),
     );
-    let mut merkle = Merkle::new(MerkleType::Value, hashes.clone());
+    let merkle = Merkle::new(MerkleType::Value, hashes.clone());
     assert_eq!(merkle.capacity(), 8);
     assert_eq!(merkle.root(), expected);
 
