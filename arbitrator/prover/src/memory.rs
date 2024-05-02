@@ -320,6 +320,20 @@ mod test {
     use crate::memory::round_up_to_power_of_two;
 
     #[test]
+    pub fn empty_leaf_hash() {
+        let leaf = [0u8; 32];
+        let hash = super::hash_leaf(leaf);
+        print!("Bytes32::new_direct([");
+        for i in 0..32 {
+            print!("{}", hash[i]);
+            if i < 31 {
+                print!(", ");
+            }
+        }
+        print!("]);");
+    }
+
+    #[test]
     pub fn test_round_up_power_of_two() {
         assert_eq!(round_up_to_power_of_two(0), 1);
         assert_eq!(round_up_to_power_of_two(1), 1);

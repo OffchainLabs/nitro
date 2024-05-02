@@ -3,12 +3,12 @@
 
 use arbutil::Bytes32;
 use digest::Digest;
-use itertools::sorted;
 
 use enum_iterator::Sequence;
 
 #[cfg(feature = "counters")]
 use enum_iterator::all;
+use itertools::Itertools;
 
 use std::cmp::max;
 
@@ -274,7 +274,7 @@ impl Merkle {
         for layer_i in 1..layers.len() {
             let dirty_i = layer_i - 1;
             let dirt = dirty_layers[dirty_i].clone();
-            for idx in sorted(dirt.iter()) {
+            for idx in dirt.iter().sorted() {
                 let left_child_idx = idx << 1;
                 let right_child_idx = left_child_idx + 1;
                 let left = layers[layer_i - 1][left_child_idx];
@@ -334,6 +334,7 @@ impl Merkle {
     /// creates a merkle proof regardless of if the leaf has content
     #[must_use]
     pub fn prove_any(&self, mut idx: usize) -> Vec<u8> {
+        self.rehash();
         let layers = self.layers.lock().unwrap();
         let mut proof = vec![u8::try_from(layers.len() - 1).unwrap()];
         for (layer_i, layer) in layers.iter().enumerate() {
@@ -635,6 +636,32 @@ fn correct_capacity() {
     assert_eq!(merkle.capacity(), 1);
     let merkle = Merkle::new_advanced(MerkleType::Memory, vec![Bytes32::from([1; 32])], 11);
     assert_eq!(merkle.capacity(), 1024);
+}
+
+#[test]
+#[ignore = "This is just used for generating the zero hashes for the memory merkle trees."]
+fn emit_memory_zerohashes() {
+    // The following code was generated from the empty_leaf_hash() test in the memory package.
+    let mut left = Bytes32::new_direct([
+        57, 29, 211, 154, 252, 227, 18, 99, 65, 126, 203, 166, 252, 232, 32, 3, 98, 194, 254, 186,
+        118, 14, 139, 192, 101, 156, 55, 194, 101, 11, 11, 168,
+    ]);
+    let mut right = Bytes32::new_direct([
+        57, 29, 211, 154, 252, 227, 18, 99, 65, 126, 203, 166, 252, 232, 32, 3, 98, 194, 254, 186,
+        118, 14, 139, 192, 101, 156, 55, 194, 101, 11, 11, 168,
+    ]);
+    for _ in 0..64 {
+        print!("Bytes32::new_direct([");
+        for i in 0..32 {
+            print!("{}", left[i]);
+            if i < 31 {
+                print!(", ");
+            }
+        }
+        println!("]),");
+        left = hash_node(MerkleType::Memory, left, right);
+        right = hash_node(MerkleType::Memory, left, right);
+    }
 }
 
 #[test]
