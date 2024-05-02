@@ -32,6 +32,7 @@ func TestSnapSync(t *testing.T) {
 	builder.BridgeBalance(t, "Faucet", big.NewInt(1).Mul(big.NewInt(params.Ether), big.NewInt(10000)))
 
 	builder.L2Info.GenerateAccount("BackgroundUser")
+	// Sync node till batch count is 10
 	for {
 		tx := builder.L2Info.PrepareTx("Faucet", "BackgroundUser", builder.L2Info.TransferGas, big.NewInt(1), nil)
 		err := builder.L2.Client.SendTransaction(ctx, tx)
@@ -55,19 +56,25 @@ func TestSnapSync(t *testing.T) {
 	Require(t, err)
 	prevMessage, err := builder.L2.ConsensusNode.TxStreamer.GetMessage(prevBatchMetaData.MessageCount - 1)
 	Require(t, err)
+	// Create a config with snap sync enabled and same database directory as the first node
 	nodeConfig := builder.nodeConfig
 	nodeConfig.SnapSync.Enabled = true
 	nodeConfig.SnapSync.BatchCount = batchCount
 	nodeConfig.SnapSync.DelayedCount = delayedCount
 	nodeConfig.SnapSync.PrevDelayedRead = prevMessage.DelayedMessagesRead
 	nodeConfig.SnapSync.PrevBatchMessageCount = uint64(prevBatchMetaData.MessageCount)
+	// Cleanup the message data, but keep the block state data.
+	// This is to simulate a snap sync environment where we’ve just gotten the block state but don’t have any messages.
 	err = os.RemoveAll(builder.l2StackConfig.ResolvePath("arbitrumdata"))
 	Require(t, err)
 
+	// Cleanup the previous node to release the database lock
 	builder.L2.cleanup()
 	defer builder.L1.cleanup()
+	// New node with snap sync enabled, and the same database directory as the first node but with no message data.
 	nodeB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: builder.l2StackConfig, nodeConfig: nodeConfig})
 	defer cleanupB()
+	// Sync node till batch count is 20
 	for {
 		tx := builder.L2Info.PrepareTx("Faucet", "BackgroundUser", builder.L2Info.TransferGas, big.NewInt(1), nil)
 		err := nodeB.Client.SendTransaction(ctx, tx)
@@ -80,5 +87,4 @@ func TestSnapSync(t *testing.T) {
 			break
 		}
 	}
-
 }

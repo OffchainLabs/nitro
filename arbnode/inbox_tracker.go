@@ -392,8 +392,6 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 		if firstBatchToKeep > 0 {
 			firstBatchToKeep--
 		}
-	}
-	if t.snapSyncConfig.Enabled {
 		for len(messages) > 0 {
 			pos, err := messages[0].Message.Header.SeqNum()
 			if err != nil {
