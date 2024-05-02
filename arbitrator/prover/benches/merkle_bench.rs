@@ -44,8 +44,8 @@ fn merkle_benchmark(c: &mut Criterion) {
 
 fn merkle_construction(c: &mut Criterion) {
     let mut rng = rand::thread_rng();
-    let mut leaves: Vec<Bytes32> = Vec::with_capacity(1 >> 20);
-    for _ in 0..(1 >> 20) {
+    let mut leaves: Vec<Bytes32> = Vec::with_capacity(1 << 20);
+    for _ in 0..(1 << 20) {
         leaves.push(Bytes32::from([rng.gen_range(0u8..9); 32]));
     }
 
