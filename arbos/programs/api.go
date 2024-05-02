@@ -110,7 +110,7 @@ func newApiClosures(
 		return Success
 	}
 	doCall := func(
-		contract common.Address, opcode vm.OpCode, input []byte, gas uint64, value *big.Int,
+		contract common.Address, opcode vm.OpCode, input []byte, gasLeft, gasReq uint64, value *big.Int,
 	) ([]byte, uint64, error) {
 		// This closure can perform each kind of contract call based on the opcode passed in.
 		// The implementation for each should match that of the EVM.
@@ -127,18 +127,15 @@ func newApiClosures(
 			return nil, 0, vm.ErrWriteProtection
 		}
 
-		startGas := gas
-
 		// computes makeCallVariantGasCallEIP2929 and gasCall/gasDelegateCall/gasStaticCall
-		baseCost, err := vm.WasmCallCost(db, contract, value, startGas)
+		baseCost, err := vm.WasmCallCost(db, contract, value, gasLeft)
 		if err != nil {
-			return nil, gas, err
+			return nil, gasLeft, err
 		}
-		gas -= baseCost
 
 		// apply the 63/64ths rule
-		one64th := gas / 64
-		gas -= one64th
+		startGas := am.SaturatingUSub(gasLeft, baseCost) * 63 / 64
+		gas := am.MinInt(startGas, gasReq)
 
 		// Tracing: emit the call (value transfer is done later in evm.Call)
 		if tracingInfo != nil {
@@ -165,7 +162,7 @@ func newApiClosures(
 		}
 
 		interpreter.SetReturnData(ret)
-		cost := arbmath.SaturatingUSub(startGas, returnGas+one64th) // user gets 1/64th back
+		cost := am.SaturatingUAdd(baseCost, am.SaturatingUSub(gas, returnGas))
 		return ret, cost, err
 	}
 	create := func(code []byte, endowment, salt *big.Int, gas uint64) (common.Address, []byte, uint64, error) {
@@ -352,10 +349,11 @@ func newApiClosures(
 			}
 			contract := takeAddress()
 			value := takeU256()
-			gas := takeU64()
+			gasLeft := takeU64()
+			gasReq := takeU64()
 			calldata := takeRest()
 
-			ret, cost, err := doCall(contract, opcode, calldata, gas, value)
+			ret, cost, err := doCall(contract, opcode, calldata, gasLeft, gasReq, value)
 			statusByte := byte(0)
 			if err != nil {
 				statusByte = 2 // TODO: err value

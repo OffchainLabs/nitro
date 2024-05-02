@@ -19,7 +19,7 @@ use crate::{
         IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
     },
 };
-use arbutil::{math, Bytes32, Color, DebugColor, PreimageType};
+use arbutil::{crypto, math, Bytes32, Color, DebugColor, PreimageType};
 use brotli::Dictionary;
 #[cfg(feature = "native")]
 use c_kzg::BYTES_PER_BLOB;
@@ -157,7 +157,7 @@ impl Function {
         let code_hashes = (0..chunks).into_par_iter().map(crunch).collect();
 
         #[cfg(not(feature = "rayon"))]
-        let code_hashes = (0..chunks).into_iter().map(crunch).collect();
+        let code_hashes = (0..chunks).map(crunch).collect();
 
         self.code_merkle = Merkle::new(MerkleType::Instruction, code_hashes);
     }
@@ -305,6 +305,8 @@ pub struct Module {
     pub(crate) func_exports: Arc<HashMap<String, u32>>,
     #[serde(default)]
     pub(crate) all_exports: Arc<ExportMap>,
+    /// Used to make modules unique.
+    pub(crate) extra_hash: Arc<Bytes32>,
 }
 
 lazy_static! {
@@ -579,6 +581,7 @@ impl Module {
             func_types: Arc::new(func_types),
             func_exports: Arc::new(func_exports),
             all_exports: Arc::new(bin.exports.clone()),
+            extra_hash: Arc::new(crypto::keccak(&bin.extra_data).into()),
         })
     }
 
@@ -621,6 +624,7 @@ impl Module {
         h.update(self.memory.hash());
         h.update(self.tables_merkle.root());
         h.update(self.funcs_merkle.root());
+        h.update(*self.extra_hash);
         h.update(self.internals_offset.to_be_bytes());
         h.finalize().into()
     }
@@ -642,6 +646,7 @@ impl Module {
 
         data.extend(self.tables_merkle.root());
         data.extend(self.funcs_merkle.root());
+        data.extend(*self.extra_hash);
         data.extend(self.internals_offset.to_be_bytes());
         data
     }
@@ -688,6 +693,7 @@ pub struct ModuleSerdeAll {
     func_types: Arc<Vec<FunctionType>>,
     func_exports: Arc<HashMap<String, u32>>,
     all_exports: Arc<ExportMap>,
+    extra_hash: Arc<Bytes32>,
 }
 
 impl From<ModuleSerdeAll> for Module {
@@ -708,6 +714,7 @@ impl From<ModuleSerdeAll> for Module {
             func_types: module.func_types,
             func_exports: module.func_exports,
             all_exports: module.all_exports,
+            extra_hash: module.extra_hash,
         }
     }
 }
@@ -730,6 +737,7 @@ impl From<&Module> for ModuleSerdeAll {
             func_types: module.func_types.clone(),
             func_exports: module.func_exports.clone(),
             all_exports: module.all_exports.clone(),
+            extra_hash: module.extra_hash.clone(),
         }
     }
 }
@@ -1234,7 +1242,7 @@ impl Machine {
         let data = std::fs::read(path)?;
         let wasm = wasmer::wat2wasm(&data)?;
         let mut bin = binary::parse(&wasm, Path::new("user"))?;
-        let stylus_data = bin.instrument(compile)?;
+        let stylus_data = bin.instrument(compile, &Bytes32::default())?;
 
         let user_test = std::fs::read("../../target/machines/latest/user_test.wasm")?;
         let user_test = parse(&user_test, Path::new("user_test"))?;
@@ -1264,10 +1272,16 @@ impl Machine {
 
     /// Adds a user program to the machine's known set of wasms, compiling it into a link-able module.
     /// Note that the module produced will need to be configured before execution via hostio calls.
-    pub fn add_program(&mut self, wasm: &[u8], version: u16, debug_funcs: bool) -> Result<Bytes32> {
+    pub fn add_program(
+        &mut self,
+        wasm: &[u8],
+        codehash: &Bytes32,
+        version: u16,
+        debug_funcs: bool,
+    ) -> Result<Bytes32> {
         let mut bin = binary::parse(wasm, Path::new("user"))?;
         let config = CompileConfig::version(version, debug_funcs);
-        let stylus_data = bin.instrument(&config)?;
+        let stylus_data = bin.instrument(&config, codehash)?;
 
         // enable debug mode if debug funcs are available
         if debug_funcs {
@@ -1467,11 +1481,12 @@ impl Machine {
             types: Arc::new(entrypoint_types),
             names: Arc::new(entrypoint_names),
             internals_offset: 0,
-            host_call_hooks: Arc::new(Vec::new()),
+            host_call_hooks: Default::default(),
             start_function: None,
             func_types: Arc::new(vec![FunctionType::default()]),
-            func_exports: Arc::new(HashMap::default()),
-            all_exports: Arc::new(HashMap::default()),
+            func_exports: Default::default(),
+            all_exports: Default::default(),
+            extra_hash: Default::default(),
         };
         modules[0] = entrypoint;
 

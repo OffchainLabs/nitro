@@ -130,7 +130,8 @@ impl EvmApi<VecReader> for MockEvmApi {
         &mut self,
         _contract: Bytes20,
         _calldata: &[u8],
-        _gas: u64,
+        _gas_left: u64,
+        _gas_req: u64,
         _value: Bytes32,
     ) -> (u32, u64, UserOutcomeKind) {
         unimplemented!()
@@ -140,7 +141,8 @@ impl EvmApi<VecReader> for MockEvmApi {
         &mut self,
         _contract: Bytes20,
         _calldata: &[u8],
-        _gas: u64,
+        _gas_left: u64,
+        _gas_req: u64,
     ) -> (u32, u64, UserOutcomeKind) {
         unimplemented!()
     }
@@ -149,7 +151,8 @@ impl EvmApi<VecReader> for MockEvmApi {
         &mut self,
         _contract: Bytes20,
         _calldata: &[u8],
-        _gas: u64,
+        _gas_left: u64,
+        _gas_req: u64,
     ) -> (u32, u64, UserOutcomeKind) {
         unimplemented!()
     }

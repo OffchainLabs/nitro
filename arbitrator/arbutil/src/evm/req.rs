@@ -45,13 +45,15 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApiRequestor<D, H> {
         call_type: EvmApiMethod,
         contract: Bytes20,
         input: &[u8],
-        gas: u64,
+        gas_left: u64,
+        gas_req: u64,
         value: Bytes32,
     ) -> (u32, u64, UserOutcomeKind) {
-        let mut request = Vec::with_capacity(20 + 32 + 8 + input.len());
+        let mut request = Vec::with_capacity(20 + 32 + 8 + 8 + input.len());
         request.extend(contract);
         request.extend(value);
-        request.extend(gas.to_be_bytes());
+        request.extend(gas_left.to_be_bytes());
+        request.extend(gas_req.to_be_bytes());
         request.extend(input);
 
         let (res, data, cost) = self.request(call_type, &request);
@@ -164,23 +166,33 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         &mut self,
         contract: Bytes20,
         input: &[u8],
-        gas: u64,
+        gas_left: u64,
+        gas_req: u64,
         value: Bytes32,
     ) -> (u32, u64, UserOutcomeKind) {
-        self.call_request(EvmApiMethod::ContractCall, contract, input, gas, value)
+        self.call_request(
+            EvmApiMethod::ContractCall,
+            contract,
+            input,
+            gas_left,
+            gas_req,
+            value,
+        )
     }
 
     fn delegate_call(
         &mut self,
         contract: Bytes20,
         input: &[u8],
-        gas: u64,
+        gas_left: u64,
+        gas_req: u64,
     ) -> (u32, u64, UserOutcomeKind) {
         self.call_request(
             EvmApiMethod::DelegateCall,
             contract,
             input,
-            gas,
+            gas_left,
+            gas_req,
             Bytes32::default(),
         )
     }
@@ -189,13 +201,15 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         &mut self,
         contract: Bytes20,
         input: &[u8],
-        gas: u64,
+        gas_left: u64,
+        gas_req: u64,
     ) -> (u32, u64, UserOutcomeKind) {
         self.call_request(
             EvmApiMethod::StaticCall,
             contract,
             input,
-            gas,
+            gas_left,
+            gas_req,
             Bytes32::default(),
         )
     }

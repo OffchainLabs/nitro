@@ -124,6 +124,8 @@ pub struct CompilePricingParams {
 pub struct CompileDebugParams {
     /// Allow debug functions
     pub debug_funcs: bool,
+    /// Retain debug info
+    pub debug_info: bool,
     /// Add instrumentation to count the number of times each kind of opcode is executed
     pub count_ops: bool,
     /// Whether to use the Cranelift compiler
@@ -156,6 +158,7 @@ impl CompileConfig {
         let mut config = Self::default();
         config.version = version;
         config.debug.debug_funcs = debug_chain;
+        config.debug.debug_info = debug_chain;
 
         match version {
             0 => {}
@@ -190,19 +193,19 @@ impl CompileConfig {
         compiler.canonicalize_nans(true);
         compiler.enable_verifier();
 
+        let start = MiddlewareWrapper::new(StartMover::new(self.debug.debug_info));
         let meter = MiddlewareWrapper::new(Meter::new(&self.pricing));
         let dygas = MiddlewareWrapper::new(DynamicMeter::new(&self.pricing));
         let depth = MiddlewareWrapper::new(DepthChecker::new(self.bounds));
         let bound = MiddlewareWrapper::new(HeapBound::new(self.bounds));
-        let start = MiddlewareWrapper::new(StartMover::default());
 
         // add the instrumentation in the order of application
         // note: this must be consistent with the prover
+        compiler.push_middleware(Arc::new(start));
         compiler.push_middleware(Arc::new(meter));
         compiler.push_middleware(Arc::new(dygas));
         compiler.push_middleware(Arc::new(depth));
         compiler.push_middleware(Arc::new(bound));
-        compiler.push_middleware(Arc::new(start));
 
         if self.debug.count_ops {
             let counter = Counter::new();
