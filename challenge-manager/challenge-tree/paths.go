@@ -11,82 +11,6 @@ import (
 	"github.com/OffchainLabs/bold/containers/option"
 )
 
-type uint64Heap []uint64
-
-func (h uint64Heap) Len() int           { return len(h) }
-func (h uint64Heap) Less(i, j int) bool { return h[i] < h[j] }
-func (h uint64Heap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
-func (h uint64Heap) Peek() uint64 {
-	return h[0]
-}
-
-func (h *uint64Heap) Push(x any) {
-	*h = append(*h, x.(uint64))
-}
-
-func (h *uint64Heap) Pop() any {
-	old := *h
-	n := len(old)
-	x := old[n-1]
-	*h = old[0 : n-1]
-	return x
-}
-
-type pathWeightMinHeap struct {
-	items *uint64Heap
-}
-
-func newPathWeightMinHeap() *pathWeightMinHeap {
-	items := &uint64Heap{}
-	heap.Init(items)
-	return &pathWeightMinHeap{items}
-}
-
-func (h *pathWeightMinHeap) Len() int {
-	return h.items.Len()
-}
-
-func (h *pathWeightMinHeap) Push(item uint64) {
-	heap.Push(h.items, item)
-}
-
-func (h *pathWeightMinHeap) Pop() uint64 {
-	return heap.Pop(h.items).(uint64)
-}
-
-func (h *pathWeightMinHeap) Peek() option.Option[uint64] {
-	if h.items.Len() == 0 {
-		return option.None[uint64]()
-	}
-	return option.Some(h.items.Peek())
-}
-
-type stack[T any] struct {
-	dll *list.List
-}
-
-func newStack[T any]() *stack[T] {
-	return &stack[T]{dll: list.New()}
-}
-
-func (s *stack[T]) len() int {
-	return s.dll.Len()
-}
-
-func (s *stack[T]) push(x T) {
-	s.dll.PushBack(x)
-}
-
-func (s *stack[T]) pop() option.Option[T] {
-	if s.dll.Len() == 0 {
-		return option.None[T]()
-	}
-	tail := s.dll.Back()
-	val := tail.Value
-	s.dll.Remove(tail)
-	return option.Some(val.(T))
-}
-
 type essentialPath []protocol.EdgeId
 
 type isConfirmableArgs struct {
@@ -109,22 +33,21 @@ type isConfirmableArgs struct {
 func (ht *RoyalChallengeTree) IsConfirmableEssentialNode(
 	ctx context.Context,
 	args isConfirmableArgs,
-) (bool, []essentialPath, error) {
+) (bool, []essentialPath, uint64, error) {
 	essentialNode, ok := ht.edges.TryGet(args.essentialNode)
 	if !ok {
-		return false, nil, fmt.Errorf("essential node not found")
+		return false, nil, 0, fmt.Errorf("essential node not found")
 	}
-	// TODO: Check if the essential node is indeed, essential.
 	essentialPaths, essentialTimers, err := ht.findEssentialPaths(
 		ctx,
 		essentialNode,
 		args.blockNum,
 	)
 	if err != nil {
-		return false, nil, err
+		return false, nil, 0, err
 	}
 	if len(essentialPaths) == 0 || len(essentialTimers) == 0 {
-		return false, nil, fmt.Errorf("no essential paths found")
+		return false, nil, 0, fmt.Errorf("no essential paths found")
 	}
 	// An essential node is confirmable if all of its essential paths
 	// down the tree have a path weight >= the confirmation threshold.
@@ -140,10 +63,11 @@ func (ht *RoyalChallengeTree) IsConfirmableEssentialNode(
 		pathWeights.Push(pathWeight)
 	}
 	if pathWeights.items.Len() == 0 {
-		return false, nil, fmt.Errorf("no path weights computed")
+		return false, nil, 0, fmt.Errorf("no path weights computed")
 	}
-	allEssentialPathsConfirmable := pathWeights.Pop() >= args.confirmationThreshold
-	return allEssentialPathsConfirmable, essentialPaths, nil
+	minWeight := pathWeights.Pop()
+	allEssentialPathsConfirmable := minWeight >= args.confirmationThreshold
+	return allEssentialPathsConfirmable, essentialPaths, minWeight, nil
 }
 
 type essentialLocalTimers []uint64
@@ -168,7 +92,7 @@ func (ht *RoyalChallengeTree) findEssentialPaths(
 	}
 	stack := newStack[*visited]()
 
-	localTimer, err := ht.LocalTimer(essentialNode, 0)
+	localTimer, err := ht.LocalTimer(essentialNode, blockNum)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -248,13 +172,13 @@ func (ht *RoyalChallengeTree) findEssentialPaths(
 
 		// Otherwise, the node is a qualified leaf and we can push to the list of paths
 		// and all the timers of the path.
+		// Onchain actions expect ordered paths from leaf to root, so we
+		// preserve that ordering to make it easier for callers to use this data.
+		containers.Reverse(path)
+		containers.Reverse(currentTimers)
 		allPaths = append(allPaths, path)
 		allTimers = append(allTimers, currentTimers)
 	}
-	// Onchain actions expect ordered paths from leaf to root, so we
-	// preserve that ordering to make it easier for callers to use this data.
-	containers.Reverse(allPaths)
-	containers.Reverse(allTimers)
 	return allPaths, allTimers, nil
 }
 
@@ -266,7 +190,7 @@ func (ht *RoyalChallengeTree) isClaimedEdge(ctx context.Context, edge protocol.R
 		return false, nil
 	}
 	// Note: the specification requires that the claiming edge is correctly constructed.
-	// This is not checked here, because the honest validator only trackers
+	// This is not checked here, because the honest validator only tracks
 	// essential edges as an invariant.
 	claimingEdge, ok := ht.findClaimingEdge(edge.Id())
 	if !ok {
@@ -275,7 +199,84 @@ func (ht *RoyalChallengeTree) isClaimedEdge(ctx context.Context, edge protocol.R
 	return true, claimingEdge
 }
 
+// Proof nodes are nodes that have length one at the lowest challenge level.
 func isProofNode(ctx context.Context, edge protocol.ReadOnlyEdge) bool {
 	isSmallStep := edge.GetChallengeLevel() == protocol.ChallengeLevel(edge.GetTotalChallengeLevels(ctx)-1)
 	return isSmallStep && hasLengthOne(edge)
+}
+
+type uint64Heap []uint64
+
+func (h uint64Heap) Len() int           { return len(h) }
+func (h uint64Heap) Less(i, j int) bool { return h[i] < h[j] }
+func (h uint64Heap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h uint64Heap) Peek() uint64 {
+	return h[0]
+}
+
+func (h *uint64Heap) Push(x any) {
+	*h = append(*h, x.(uint64))
+}
+
+func (h *uint64Heap) Pop() any {
+	old := *h
+	n := len(old)
+	x := old[n-1]
+	*h = old[0 : n-1]
+	return x
+}
+
+type pathWeightMinHeap struct {
+	items *uint64Heap
+}
+
+func newPathWeightMinHeap() *pathWeightMinHeap {
+	items := &uint64Heap{}
+	heap.Init(items)
+	return &pathWeightMinHeap{items}
+}
+
+func (h *pathWeightMinHeap) Len() int {
+	return h.items.Len()
+}
+
+func (h *pathWeightMinHeap) Push(item uint64) {
+	heap.Push(h.items, item)
+}
+
+func (h *pathWeightMinHeap) Pop() uint64 {
+	return heap.Pop(h.items).(uint64)
+}
+
+func (h *pathWeightMinHeap) Peek() option.Option[uint64] {
+	if h.items.Len() == 0 {
+		return option.None[uint64]()
+	}
+	return option.Some(h.items.Peek())
+}
+
+type stack[T any] struct {
+	dll *list.List
+}
+
+func newStack[T any]() *stack[T] {
+	return &stack[T]{dll: list.New()}
+}
+
+func (s *stack[T]) len() int {
+	return s.dll.Len()
+}
+
+func (s *stack[T]) push(x T) {
+	s.dll.PushBack(x)
+}
+
+func (s *stack[T]) pop() option.Option[T] {
+	if s.dll.Len() == 0 {
+		return option.None[T]()
+	}
+	tail := s.dll.Back()
+	val := tail.Value
+	s.dll.Remove(tail)
+	return option.Some(val.(T))
 }
