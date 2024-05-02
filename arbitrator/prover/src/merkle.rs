@@ -184,6 +184,9 @@ fn hash_node(ty: MerkleType, a: impl AsRef<[u8]>, b: impl AsRef<[u8]>) -> Bytes3
 
 #[inline]
 fn capacity(layers: &Vec<Vec<Bytes32>>) -> usize {
+    if layers.is_empty() {
+        return 0;
+    }
     let base: usize = 2;
     base.pow((layers.len() - 1).try_into().unwrap())
 }
@@ -235,7 +238,7 @@ impl Merkle {
     pub fn new_advanced(ty: MerkleType, hashes: Vec<Bytes32>, min_depth: usize) -> Merkle {
         #[cfg(feature = "counters")]
         NEW_COUNTERS[&ty].fetch_add(1, Ordering::Relaxed);
-        if hashes.is_empty() {
+        if hashes.is_empty() && min_depth == 0 {
             return Merkle::default();
         }
         let mut depth = (hashes.len() as f64).log2().ceil() as usize;
@@ -306,7 +309,6 @@ impl Merkle {
 
     // Returns the total number of leaves the tree can hold.
     #[inline]
-    #[cfg(test)]
     fn capacity(&self) -> usize {
         return capacity(self.layers.lock().unwrap().as_ref());
     }
@@ -407,6 +409,28 @@ impl Merkle {
         for hash in hashes {
             self.locked_set(&mut layers, idx, hash);
             idx += 1;
+        }
+        Ok(layers[0].len())
+    }
+
+    /// Resizes the number of leaves the tree can hold.
+    ///
+    /// The extra space is filled with empty hashes.
+    pub fn resize(&mut self, new_len: usize) -> Result<usize, String> {
+        if new_len > self.capacity() {
+            return Err(
+                "Cannot resize to a length greater than the capacity of the tree.".to_owned(),
+            );
+        }
+        let mut layers = self.layers.lock().unwrap();
+        let mut layer_size = new_len;
+        for (layer_i, layer) in layers.iter_mut().enumerate() {
+            layer.resize(layer_size, *empty_hash_at(self.ty, layer_i));
+            layer_size = max(layer_size >> 1, 1);
+        }
+        let start = layers[0].len();
+        for i in start..new_len {
+            self.dirty_layers.lock().unwrap()[0].insert(i);
         }
         Ok(layers[0].len())
     }
@@ -526,6 +550,86 @@ fn extend_works() {
 }
 
 #[test]
+fn resize_works() {
+    let hashes = vec![
+        Bytes32::from([1; 32]),
+        Bytes32::from([2; 32]),
+        Bytes32::from([3; 32]),
+        Bytes32::from([4; 32]),
+        Bytes32::from([5; 32]),
+    ];
+    let mut expected = hash_node(
+        MerkleType::Value,
+        hash_node(
+            MerkleType::Value,
+            hash_node(
+                MerkleType::Value,
+                Bytes32::from([1; 32]),
+                Bytes32::from([2; 32]),
+            ),
+            hash_node(
+                MerkleType::Value,
+                Bytes32::from([3; 32]),
+                Bytes32::from([4; 32]),
+            ),
+        ),
+        hash_node(
+            MerkleType::Value,
+            hash_node(
+                MerkleType::Value,
+                Bytes32::from([5; 32]),
+                Bytes32::from([0; 32]),
+            ),
+            hash_node(
+                MerkleType::Value,
+                Bytes32::from([0; 32]),
+                Bytes32::from([0; 32]),
+            ),
+        ),
+    );
+    let mut merkle = Merkle::new(MerkleType::Value, hashes.clone());
+    assert_eq!(merkle.capacity(), 8);
+    assert_eq!(merkle.root(), expected);
+
+    let new_size = match merkle.resize(6) {
+        Ok(size) => size,
+        Err(e) => panic!("{}", e),
+    };
+    assert_eq!(new_size, 6);
+    merkle.set(5, Bytes32::from([6; 32]));
+    expected = hash_node(
+        MerkleType::Value,
+        hash_node(
+            MerkleType::Value,
+            hash_node(
+                MerkleType::Value,
+                Bytes32::from([1; 32]),
+                Bytes32::from([2; 32]),
+            ),
+            hash_node(
+                MerkleType::Value,
+                Bytes32::from([3; 32]),
+                Bytes32::from([4; 32]),
+            ),
+        ),
+        hash_node(
+            MerkleType::Value,
+            hash_node(
+                MerkleType::Value,
+                Bytes32::from([5; 32]),
+                Bytes32::from([6; 32]),
+            ),
+            hash_node(
+                MerkleType::Value,
+                Bytes32::from([0; 32]),
+                Bytes32::from([0; 32]),
+            ),
+        ),
+    );
+    assert_eq!(merkle.root(), expected);
+}
+
+#[test]
 fn correct_capacity() {
     let merkle = Merkle::new(MerkleType::Value, vec![Bytes32::from([1; 32])]);
     assert_eq!(merkle.capacity(), 1);
@@ -536,7 +640,7 @@ fn correct_capacity() {
 #[test]
 #[should_panic(expected = "index out of bounds")]
 fn set_with_bad_index_panics() {
-    let mut merkle = Merkle::new(
+    let merkle = Merkle::new(
         MerkleType::Value,
         vec![Bytes32::default(), Bytes32::default()],
     );

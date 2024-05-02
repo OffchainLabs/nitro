@@ -111,22 +111,19 @@ impl Memory {
         #[cfg(not(feature = "rayon"))]
         let leaf_hashes = self.buffer.chunks(Self::LEAF_SIZE);
 
-        let mut leaf_hashes: Vec<Bytes32> = leaf_hashes
+        let leaf_hashes: Vec<Bytes32> = leaf_hashes
             .map(|leaf| {
                 let mut full_leaf = [0u8; 32];
                 full_leaf[..leaf.len()].copy_from_slice(leaf);
                 hash_leaf(full_leaf)
             })
             .collect();
-        if leaf_hashes.len() < leaves {
-            let empty_hash = hash_leaf([0u8; 32]);
-            leaf_hashes.resize(leaves, empty_hash);
+        let size = leaf_hashes.len();
+        let mut m = Merkle::new_advanced(MerkleType::Memory, leaf_hashes, Self::MEMORY_LAYERS);
+        if size < leaves {
+            m.resize(leaves).expect("Couldn't resize merkle tree");
         }
-        Cow::Owned(Merkle::new_advanced(
-            MerkleType::Memory,
-            leaf_hashes,
-            Self::MEMORY_LAYERS,
-        ))
+        Cow::Owned(m)
     }
 
     pub fn get_leaf_data(&self, leaf_idx: usize) -> [u8; Self::LEAF_SIZE] {
@@ -309,11 +306,10 @@ impl Memory {
 
     pub fn resize(&mut self, new_size: usize) {
         self.buffer.resize(new_size, 0);
-        if let Some(merkle) = self.merkle.take() {
-            let extra = new_size - merkle.len();
+        if let Some(mut merkle) = self.merkle.take() {
             merkle
-                .extend(vec![hash_leaf([0u8; 32]); extra])
-                .expect("Couldn't extend merkle tree");
+                .resize(new_size)
+                .expect("Couldn't resize merkle tree");
             self.merkle = Some(merkle);
         }
     }
