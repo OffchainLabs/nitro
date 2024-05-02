@@ -170,7 +170,7 @@ pub struct Merkle {
     #[serde(with = "arc_mutex_sedre")]
     layers: Arc<Mutex<Vec<Vec<Bytes32>>>>,
     min_depth: usize,
-    #[serde(skip)]
+    #[serde(with = "arc_mutex_sedre")]
     dirty_layers: Arc<Mutex<Vec<HashSet<usize>>>>,
 }
 
@@ -559,6 +559,16 @@ fn emit_memory_zerohashes() {
         left = hash_node(MerkleType::Memory, left, right);
         right = hash_node(MerkleType::Memory, left, right);
     }
+}
+
+#[test]
+fn serialization_roundtrip() {
+    let merkle = Merkle::new_advanced(MerkleType::Value, vec![Bytes32::from([1; 32])], 4);
+    merkle.resize(4).expect("resize failed");
+    merkle.set(3, Bytes32::from([2; 32]));
+    let serialized = bincode::serialize(&merkle).unwrap();
+    let deserialized: Merkle = bincode::deserialize(&serialized).unwrap();
+    assert_eq!(merkle, deserialized);
 }
 
 #[test]
