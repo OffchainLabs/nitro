@@ -146,9 +146,7 @@ func (ht *RoyalChallengeTree) BlockChallengeRootEdge(ctx context.Context) (proto
 	return blockChalEdges.Get(0).Unwrap(), nil
 }
 
-func (ht *RoyalChallengeTree) findClaimingEdge(
-	ctx context.Context, claimedEdge protocol.EdgeId,
-) (protocol.SpecEdge, bool) {
+func (ht *RoyalChallengeTree) findClaimingEdge(claimedEdge protocol.EdgeId) (protocol.SpecEdge, bool) {
 	var foundEdge protocol.SpecEdge
 	var ok bool
 	_ = ht.edges.ForEach(func(_ protocol.EdgeId, edge protocol.SpecEdge) error {

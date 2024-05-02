@@ -57,7 +57,7 @@ func (ht *RoyalChallengeTree) recursiveInheritedTimerCompute(
 	// compute the recursive timer for it. If the onchain is bigger, return the onchain here.
 	if hasLengthOne(edge) {
 		claimingEdgeTimer := protocol.InheritedTimer(0)
-		claimingEdge, ok := ht.findClaimingEdge(ctx, edge.Id())
+		claimingEdge, ok := ht.findClaimingEdge(edge.Id())
 		if ok {
 			claimingEdgeTimer, err = ht.recursiveInheritedTimerCompute(
 				ctx,

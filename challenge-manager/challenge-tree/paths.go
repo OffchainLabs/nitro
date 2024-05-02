@@ -268,7 +268,7 @@ func (ht *RoyalChallengeTree) isClaimedEdge(ctx context.Context, edge protocol.R
 	// Note: the specification requires that the claiming edge is correctly constructed.
 	// This is not checked here, because the honest validator only trackers
 	// essential edges as an invariant.
-	claimingEdge, ok := ht.findClaimingEdge(ctx, edge.Id())
+	claimingEdge, ok := ht.findClaimingEdge(edge.Id())
 	if !ok {
 		return false, nil
 	}
