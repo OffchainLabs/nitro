@@ -28,16 +28,17 @@ type testResponse struct {
 	Response string
 }
 
-func createGroup(ctx context.Context, t *testing.T, streamName, groupName string, client redis.UniversalClient) {
+func createRedisGroup(ctx context.Context, t *testing.T, streamName string, client redis.UniversalClient) {
 	t.Helper()
-	if _, err := client.XGroupCreateMkStream(ctx, streamName, groupName, "$").Result(); err != nil {
+	// Stream name and group name are the same.
+	if _, err := client.XGroupCreateMkStream(ctx, streamName, streamName, "$").Result(); err != nil {
 		t.Fatalf("Error creating stream group: %v", err)
 	}
 }
 
-func destroyGroup(ctx context.Context, t *testing.T, streamName, groupName string, client redis.UniversalClient) {
+func destroyRedisGroup(ctx context.Context, t *testing.T, streamName string, client redis.UniversalClient) {
 	t.Helper()
-	if _, err := client.XGroupDestroy(ctx, streamName, groupName).Result(); err != nil {
+	if _, err := client.XGroupDestroy(ctx, streamName, streamName).Result(); err != nil {
 		log.Debug("Error destroying a stream group", "error", err)
 	}
 }
@@ -54,49 +55,48 @@ func (e *disableReproduce) apply(_ *ConsumerConfig, prodCfg *ProducerConfig) {
 
 func producerCfg() *ProducerConfig {
 	return &ProducerConfig{
-		EnableReproduce:      DefaultTestProducerConfig.EnableReproduce,
-		CheckPendingInterval: DefaultTestProducerConfig.CheckPendingInterval,
-		KeepAliveTimeout:     DefaultTestProducerConfig.KeepAliveTimeout,
-		CheckResultInterval:  DefaultTestProducerConfig.CheckResultInterval,
+		EnableReproduce:      TestProducerConfig.EnableReproduce,
+		CheckPendingInterval: TestProducerConfig.CheckPendingInterval,
+		KeepAliveTimeout:     TestProducerConfig.KeepAliveTimeout,
+		CheckResultInterval:  TestProducerConfig.CheckResultInterval,
 	}
 }
 
 func consumerCfg() *ConsumerConfig {
 	return &ConsumerConfig{
-		ResponseEntryTimeout: DefaultTestConsumerConfig.ResponseEntryTimeout,
-		KeepAliveTimeout:     DefaultTestConsumerConfig.KeepAliveTimeout,
+		ResponseEntryTimeout: TestConsumerConfig.ResponseEntryTimeout,
+		KeepAliveTimeout:     TestConsumerConfig.KeepAliveTimeout,
 	}
 }
 
 func newProducerConsumers(ctx context.Context, t *testing.T, opts ...configOpt) (*Producer[testRequest, testResponse], []*Consumer[testRequest, testResponse]) {
 	t.Helper()
-	redisURL := redisutil.CreateTestRedis(ctx, t)
+	redisClient, err := redisutil.RedisClientFromURL(redisutil.CreateTestRedis(ctx, t))
+	if err != nil {
+		t.Fatalf("RedisClientFromURL() unexpected error: %v", err)
+	}
 	prodCfg, consCfg := producerCfg(), consumerCfg()
-	prodCfg.RedisURL, consCfg.RedisURL = redisURL, redisURL
-	streamName := uuid.NewString()
-	groupName := fmt.Sprintf("group_%s", streamName)
-	prodCfg.RedisGroup, consCfg.RedisGroup = groupName, groupName
-	prodCfg.RedisStream, consCfg.RedisStream = streamName, streamName
+	streamName := fmt.Sprintf("stream:%s", uuid.NewString())
 	for _, o := range opts {
 		o.apply(consCfg, prodCfg)
 	}
-	producer, err := NewProducer[testRequest, testResponse](prodCfg)
+	producer, err := NewProducer[testRequest, testResponse](redisClient, streamName, prodCfg)
 	if err != nil {
 		t.Fatalf("Error creating new producer: %v", err)
 	}
 
 	var consumers []*Consumer[testRequest, testResponse]
 	for i := 0; i < consumersCount; i++ {
-		c, err := NewConsumer[testRequest, testResponse](ctx, consCfg)
+		c, err := NewConsumer[testRequest, testResponse](redisClient, streamName, consCfg)
 		if err != nil {
 			t.Fatalf("Error creating new consumer: %v", err)
 		}
 		consumers = append(consumers, c)
 	}
-	createGroup(ctx, t, streamName, groupName, producer.client)
+	createRedisGroup(ctx, t, streamName, producer.client)
 	t.Cleanup(func() {
 		ctx := context.Background()
-		destroyGroup(ctx, t, streamName, groupName, producer.client)
+		destroyRedisGroup(ctx, t, streamName, producer.client)
 		var keys []string
 		for _, c := range consumers {
 			keys = append(keys, c.heartBeatKey())

@@ -569,7 +569,7 @@ func createNodeImpl(
 	txStreamer.SetInboxReaders(inboxReader, delayedBridge)
 
 	var statelessBlockValidator *staker.StatelessBlockValidator
-	if config.BlockValidator.ValidationServerConfigs[0].URL != "" {
+	if config.BlockValidator.RedisValidationClientConfig.Enabled() || config.BlockValidator.ValidationServerConfigs[0].URL != "" {
 		statelessBlockValidator, err = staker.NewStatelessBlockValidator(
 			inboxReader,
 			inboxTracker,

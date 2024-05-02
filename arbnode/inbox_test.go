@@ -234,7 +234,7 @@ func TestTransactionStreamer(t *testing.T) {
 					Fail(t, "error getting block state", err)
 				}
 				haveBalance := state.GetBalance(acct)
-				if balance.Cmp(haveBalance) != 0 {
+				if balance.Cmp(haveBalance.ToBig()) != 0 {
 					t.Error("unexpected balance for account", acct, "; expected", balance, "got", haveBalance)
 				}
 			}

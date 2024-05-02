@@ -5,6 +5,7 @@ package staker
 
 import (
 	"context"
+	"io"
 	"math/big"
 	"os"
 	"path"
@@ -116,9 +117,10 @@ func runChallengeTest(
 	testTimeout bool,
 	maxInboxMessage uint64,
 ) {
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
-	glogger.Verbosity(log.LvlDebug)
-	log.Root().SetHandler(glogger)
+	glogger := log.NewGlogHandler(
+		log.NewTerminalHandler(io.Writer(os.Stderr), false))
+	glogger.Verbosity(log.LevelDebug)
+	log.SetDefault(log.NewLogger(glogger))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
