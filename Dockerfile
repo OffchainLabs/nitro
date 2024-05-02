@@ -276,7 +276,8 @@ USER root
 
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
-    apt-get install -y xxd netcat-traditional
+    apt-get install -y xxd netcat-traditional && \
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /usr/lib/python3.9/__pycache__/ /usr/lib/python3.9/*/__pycache__/ /var/log/*
 COPY scripts/split-val-entry.sh /usr/local/bin
 ENTRYPOINT [ "/usr/local/bin/split-val-entry.sh" ]
 USER user
