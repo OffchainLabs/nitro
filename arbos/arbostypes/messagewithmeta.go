@@ -18,6 +18,11 @@ type MessageWithMetadata struct {
 	DelayedMessagesRead uint64             `json:"delayedMessagesRead"`
 }
 
+type MessageWithMetadataAndBlockHash struct {
+	Message   MessageWithMetadata
+	BlockHash *common.Hash
+}
+
 var EmptyTestMessageWithMetadata = MessageWithMetadata{
 	Message: &EmptyTestIncomingMessage,
 }

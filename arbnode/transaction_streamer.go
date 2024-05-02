@@ -465,9 +465,9 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 		return err
 	}
 
-	messagesWithBlockHash := make([]broadcaster.MessageWithMetadataAndBlockHash, 0, len(messagesResults))
+	messagesWithBlockHash := make([]arbostypes.MessageWithMetadataAndBlockHash, 0, len(messagesResults))
 	for i := 0; i < len(messagesResults); i++ {
-		messagesWithBlockHash = append(messagesWithBlockHash, broadcaster.MessageWithMetadataAndBlockHash{
+		messagesWithBlockHash = append(messagesWithBlockHash, arbostypes.MessageWithMetadataAndBlockHash{
 			Message:   newMessages[i],
 			BlockHash: &messagesResults[i].BlockHash,
 		})
@@ -1011,11 +1011,11 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(
 		return err
 	}
 
-	msgWithBlockHash := broadcaster.MessageWithMetadataAndBlockHash{
+	msgWithBlockHash := arbostypes.MessageWithMetadataAndBlockHash{
 		Message:   msgWithMeta,
 		BlockHash: &msgResult.BlockHash,
 	}
-	s.broadcastMessages([]broadcaster.MessageWithMetadataAndBlockHash{msgWithBlockHash}, pos)
+	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockHash{msgWithBlockHash}, pos)
 
 	return nil
 }
@@ -1046,7 +1046,7 @@ func (s *TransactionStreamer) writeMessage(pos arbutil.MessageIndex, msg arbosty
 }
 
 func (s *TransactionStreamer) broadcastMessages(
-	msgs []broadcaster.MessageWithMetadataAndBlockHash,
+	msgs []arbostypes.MessageWithMetadataAndBlockHash,
 	pos arbutil.MessageIndex,
 ) {
 	if s.broadcastServer == nil {
@@ -1145,11 +1145,11 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context, exec execution
 		return false
 	}
 
-	msgWithBlockHash := broadcaster.MessageWithMetadataAndBlockHash{
+	msgWithBlockHash := arbostypes.MessageWithMetadataAndBlockHash{
 		Message:   *msg,
 		BlockHash: &msgResult.BlockHash,
 	}
-	s.broadcastMessages([]broadcaster.MessageWithMetadataAndBlockHash{msgWithBlockHash}, pos)
+	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockHash{msgWithBlockHash}, pos)
 
 	return pos+1 < msgCount
 }
