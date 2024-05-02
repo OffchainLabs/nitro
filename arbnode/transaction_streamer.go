@@ -50,9 +50,10 @@ type TransactionStreamer struct {
 	execLastMsgCount arbutil.MessageIndex
 	validator        *staker.BlockValidator
 
-	db           ethdb.Database
-	fatalErrChan chan<- error
-	config       TransactionStreamerConfigFetcher
+	db             ethdb.Database
+	fatalErrChan   chan<- error
+	config         TransactionStreamerConfigFetcher
+	snapSyncConfig SnapSyncConfigFetcher
 
 	insertionMutex     sync.Mutex // cannot be acquired while reorgMutex is held
 	reorgMutex         sync.RWMutex
@@ -80,6 +81,7 @@ type TransactionStreamerConfig struct {
 }
 
 type TransactionStreamerConfigFetcher func() *TransactionStreamerConfig
+type SnapSyncConfigFetcher func() *SnapSyncConfig
 
 var DefaultTransactionStreamerConfig = TransactionStreamerConfig{
 	MaxBroadcasterQueueSize: 50_000,
@@ -106,6 +108,7 @@ func NewTransactionStreamer(
 	broadcastServer *broadcaster.Broadcaster,
 	fatalErrChan chan<- error,
 	config TransactionStreamerConfigFetcher,
+	snapSyncConfig SnapSyncConfigFetcher,
 ) (*TransactionStreamer, error) {
 	streamer := &TransactionStreamer{
 		exec:               exec,
@@ -115,6 +118,7 @@ func NewTransactionStreamer(
 		broadcastServer:    broadcastServer,
 		fatalErrChan:       fatalErrChan,
 		config:             config,
+		snapSyncConfig:     snapSyncConfig,
 		cachedL1PriceData: &L1PriceData{
 			msgToL1PriceData: []L1PriceDataOfMsg{},
 		},
@@ -721,6 +725,9 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, m
 }
 
 func (s *TransactionStreamer) getPrevPrevDelayedRead(pos arbutil.MessageIndex) (uint64, error) {
+	if s.snapSyncConfig().Enabled && uint64(pos) == s.snapSyncConfig().PrevBatchMessageCount {
+		return s.snapSyncConfig().PrevDelayedRead, nil
+	}
 	var prevDelayedRead uint64
 	if pos > 0 {
 		prevMsg, err := s.GetMessage(pos - 1)

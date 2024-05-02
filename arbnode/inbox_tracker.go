@@ -33,30 +33,30 @@ var (
 )
 
 type InboxTracker struct {
-	db               ethdb.Database
-	txStreamer       *TransactionStreamer
-	mutex            sync.Mutex
-	validator        *staker.BlockValidator
-	das              arbstate.DataAvailabilityReader
-	blobReader       arbstate.BlobReader
-	firstBatchToKeep uint64
+	db             ethdb.Database
+	txStreamer     *TransactionStreamer
+	mutex          sync.Mutex
+	validator      *staker.BlockValidator
+	das            arbstate.DataAvailabilityReader
+	blobReader     arbstate.BlobReader
+	snapSyncConfig SnapSyncConfig
 
 	batchMetaMutex sync.Mutex
 	batchMeta      *containers.LruCache[uint64, BatchMetadata]
 }
 
-func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, das arbstate.DataAvailabilityReader, blobReader arbstate.BlobReader, firstBatchToKeep uint64) (*InboxTracker, error) {
+func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, das arbstate.DataAvailabilityReader, blobReader arbstate.BlobReader, snapSyncConfig SnapSyncConfig) (*InboxTracker, error) {
 	// We support a nil txStreamer for the pruning code
 	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee && das == nil {
 		return nil, errors.New("data availability service required but unconfigured")
 	}
 	tracker := &InboxTracker{
-		db:               db,
-		txStreamer:       txStreamer,
-		das:              das,
-		blobReader:       blobReader,
-		batchMeta:        containers.NewLruCache[uint64, BatchMetadata](1000),
-		firstBatchToKeep: firstBatchToKeep,
+		db:             db,
+		txStreamer:     txStreamer,
+		das:            das,
+		blobReader:     blobReader,
+		batchMeta:      containers.NewLruCache[uint64, BatchMetadata](1000),
+		snapSyncConfig: snapSyncConfig,
 	}
 	return tracker, nil
 }
@@ -209,10 +209,6 @@ func (t *InboxTracker) GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex
 func (t *InboxTracker) GetBatchParentChainBlock(seqNum uint64) (uint64, error) {
 	metadata, err := t.GetBatchMetadata(seqNum)
 	return metadata.ParentChainBlock, err
-}
-
-func (t *InboxTracker) GetFirstBatchToKeep() uint64 {
-	return t.firstBatchToKeep
 }
 
 // GetBatchAcc is a convenience function wrapping GetBatchMetadata
@@ -390,18 +386,27 @@ func (t *InboxTracker) GetDelayedMessageBytes(seqNum uint64) ([]byte, error) {
 
 func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardReorg bool) error {
 	var nextAcc common.Hash
-	for len(messages) > 0 {
-		pos, err := messages[0].Message.Header.SeqNum()
-		if err != nil {
-			return err
+	firstBatchToKeep := uint64(0)
+	if t.snapSyncConfig.Enabled {
+		firstBatchToKeep = t.snapSyncConfig.BatchCount
+		if firstBatchToKeep > 0 {
+			firstBatchToKeep--
 		}
-		if pos+1 == t.firstBatchToKeep {
-			nextAcc = messages[0].AfterInboxAcc()
-		}
-		if pos < t.firstBatchToKeep {
-			messages = messages[1:]
-		} else {
-			break
+	}
+	if t.snapSyncConfig.Enabled {
+		for len(messages) > 0 {
+			pos, err := messages[0].Message.Header.SeqNum()
+			if err != nil {
+				return err
+			}
+			if pos+1 == firstBatchToKeep {
+				nextAcc = messages[0].AfterInboxAcc()
+			}
+			if pos < firstBatchToKeep {
+				messages = messages[1:]
+			} else {
+				break
+			}
 		}
 	}
 	if len(messages) == 0 {
@@ -428,7 +433,7 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 		}
 	}
 
-	if pos > t.firstBatchToKeep {
+	if pos > firstBatchToKeep {
 		var err error
 		nextAcc, err = t.GetDelayedAcc(pos - 1)
 		if err != nil {
@@ -618,24 +623,27 @@ var delayedMessagesMismatch = errors.New("sequencer batch delayed messages missi
 func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L1Interface, batches []*SequencerInboxBatch) error {
 	var nextAcc common.Hash
 	var prevbatchmeta BatchMetadata
-	sequenceNumberToKeep := t.firstBatchToKeep
-	if sequenceNumberToKeep > 0 {
-		sequenceNumberToKeep--
-	}
-	for len(batches) > 0 {
-		if batches[0].SequenceNumber+1 == sequenceNumberToKeep {
-			nextAcc = batches[0].AfterInboxAcc
-			prevbatchmeta = BatchMetadata{
-				Accumulator:         batches[0].AfterInboxAcc,
-				DelayedMessageCount: batches[0].AfterDelayedCount,
-				//MessageCount:        batchMessageCounts[batches[0].SequenceNumber],
-				ParentChainBlock: batches[0].ParentChainBlockNumber,
-			}
+	sequenceNumberToKeep := uint64(0)
+	if t.snapSyncConfig.Enabled {
+		sequenceNumberToKeep = t.snapSyncConfig.BatchCount
+		if sequenceNumberToKeep > 0 {
+			sequenceNumberToKeep--
 		}
-		if batches[0].SequenceNumber < sequenceNumberToKeep {
-			batches = batches[1:]
-		} else {
-			break
+		for len(batches) > 0 {
+			if batches[0].SequenceNumber+1 == sequenceNumberToKeep {
+				nextAcc = batches[0].AfterInboxAcc
+				prevbatchmeta = BatchMetadata{
+					Accumulator:         batches[0].AfterInboxAcc,
+					DelayedMessageCount: batches[0].AfterDelayedCount,
+					MessageCount:        arbutil.MessageIndex(t.snapSyncConfig.PrevBatchMessageCount),
+					ParentChainBlock:    batches[0].ParentChainBlockNumber,
+				}
+			}
+			if batches[0].SequenceNumber < sequenceNumberToKeep {
+				batches = batches[1:]
+			} else {
+				break
+			}
 		}
 	}
 	if len(batches) == 0 {
@@ -672,7 +680,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 			return errors.New("previous batch accumulator mismatch")
 		}
 
-		if batch.AfterDelayedCount > 0 && t.firstBatchToKeep == 0 {
+		if batch.AfterDelayedCount > 0 && !t.snapSyncConfig.Enabled {
 			haveDelayedAcc, err := t.GetDelayedAcc(batch.AfterDelayedCount - 1)
 			if errors.Is(err, AccumulatorNotFoundErr) {
 				// We somehow missed a referenced delayed message; go back and look for it

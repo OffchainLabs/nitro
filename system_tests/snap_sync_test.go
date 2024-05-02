@@ -15,7 +15,7 @@ import (
 	"time"
 )
 
-func TestSync(t *testing.T) {
+func TestSnapSync(t *testing.T) {
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
 
@@ -27,8 +27,7 @@ func TestSync(t *testing.T) {
 		types.NewArbitrumSigner(types.NewLondonSigner(builder.chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
 		transferGas,
 	)
-	cleanup := builder.Build(t)
-	defer cleanup()
+	builder.Build(t)
 
 	builder.BridgeBalance(t, "Faucet", big.NewInt(1).Mul(big.NewInt(params.Ether), big.NewInt(10000)))
 
@@ -47,16 +46,26 @@ func TestSync(t *testing.T) {
 	}
 	<-time.After(time.Second * 5)
 
-	count, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
+	batchCount, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
+	Require(t, err)
+	delayedCount, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedCount()
+	Require(t, err)
+	// Last batch is batchCount - 1, so prev batch is batchCount - 2
+	prevBatchMetaData, err := builder.L2.ConsensusNode.InboxTracker.GetBatchMetadata(batchCount - 2)
+	Require(t, err)
+	prevMessage, err := builder.L2.ConsensusNode.TxStreamer.GetMessage(prevBatchMetaData.MessageCount - 1)
 	Require(t, err)
 	nodeConfig := builder.nodeConfig
-	nodeConfig.InboxReader.FirstBatchToKeep = count
-
+	nodeConfig.SnapSync.Enabled = true
+	nodeConfig.SnapSync.BatchCount = batchCount
+	nodeConfig.SnapSync.DelayedCount = delayedCount
+	nodeConfig.SnapSync.PrevDelayedRead = prevMessage.DelayedMessagesRead
+	nodeConfig.SnapSync.PrevBatchMessageCount = uint64(prevBatchMetaData.MessageCount)
 	err = os.RemoveAll(builder.l2StackConfig.ResolvePath("arbitrumdata"))
 	Require(t, err)
 
 	builder.L2.cleanup()
-
+	defer builder.L1.cleanup()
 	nodeB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: builder.l2StackConfig, nodeConfig: nodeConfig})
 	defer cleanupB()
 	for {

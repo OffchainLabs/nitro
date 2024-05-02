@@ -93,6 +93,7 @@ type Config struct {
 	TransactionStreamer TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
 	Maintenance         MaintenanceConfig           `koanf:"maintenance" reload:"hot"`
 	ResourceMgmt        resourcemanager.Config      `koanf:"resource-mgmt" reload:"hot"`
+	SnapSync            SnapSyncConfig              `koanf:"snap-sync" reload:"hot"`
 }
 
 func (c *Config) Validate() error {
@@ -156,6 +157,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
 	MaintenanceConfigAddOptions(prefix+".maintenance", f)
+	SnapSyncConfigAddOptions(prefix+".snap-sync", f)
 }
 
 var ConfigDefault = Config{
@@ -175,6 +177,7 @@ var ConfigDefault = Config{
 	TransactionStreamer: DefaultTransactionStreamerConfig,
 	ResourceMgmt:        resourcemanager.DefaultConfig,
 	Maintenance:         DefaultMaintenanceConfig,
+	SnapSync:            DefaultSnapSyncConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -271,6 +274,31 @@ type Node struct {
 	SyncMonitor             *SyncMonitor
 	configFetcher           ConfigFetcher
 	ctx                     context.Context
+}
+
+type SnapSyncConfig struct {
+	Enabled               bool   `koanf:"enabled" reload:"hot"`
+	PrevBatchMessageCount uint64 `koanf:"prev-batch-message-count" reload:"hot"`
+	PrevDelayedRead       uint64 `koanf:"prev-delayed-read" reload:"hot"`
+	BatchCount            uint64 `koanf:"batch-count" reload:"hot"`
+	DelayedCount          uint64 `koanf:"delayed-count" reload:"hot"`
+}
+
+var DefaultSnapSyncConfig = SnapSyncConfig{
+	Enabled:               false,
+	PrevBatchMessageCount: 0,
+	BatchCount:            0,
+	DelayedCount:          0,
+	PrevDelayedRead:       0,
+}
+
+func SnapSyncConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enabled", DefaultSnapSyncConfig.Enabled, "enable snap sync")
+	f.Uint64(prefix+".prev-batch-message-count", DefaultSnapSyncConfig.PrevBatchMessageCount, "previous batch message count")
+	f.Uint64(prefix+".batch-count", DefaultSnapSyncConfig.BatchCount, "batch count")
+	f.Uint64(prefix+".delayed-count", DefaultSnapSyncConfig.DelayedCount, "delayed count")
+	f.Uint64(prefix+".prev-delayed-read", DefaultSnapSyncConfig.PrevDelayedRead, "previous delayed read")
+
 }
 
 type ConfigFetcher interface {
@@ -410,7 +438,8 @@ func createNodeImpl(
 	}
 
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &configFetcher.Get().TransactionStreamer }
-	txStreamer, err := NewTransactionStreamer(arbDb, l2Config, exec, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher)
+	snapSyncConfigFetcher := func() *SnapSyncConfig { return &configFetcher.Get().SnapSync }
+	txStreamer, err := NewTransactionStreamer(arbDb, l2Config, exec, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher, snapSyncConfigFetcher)
 	if err != nil {
 		return nil, err
 	}
@@ -529,7 +558,7 @@ func createNodeImpl(
 		return nil, errors.New("a data availability service is required for this chain, but it was not configured")
 	}
 
-	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, daReader, blobReader, config.InboxReader.FirstBatchToKeep)
+	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, daReader, blobReader, config.SnapSync)
 	if err != nil {
 		return nil, err
 	}
