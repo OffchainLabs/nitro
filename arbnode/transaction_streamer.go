@@ -468,8 +468,8 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 	messagesWithComputedBlockHash := make([]arbostypes.MessageWithMetadataAndBlockHash, 0, len(messagesResults))
 	for i := 0; i < len(messagesResults); i++ {
 		messagesWithComputedBlockHash = append(messagesWithComputedBlockHash, arbostypes.MessageWithMetadataAndBlockHash{
-			Message:   newMessages[i].Message,
-			BlockHash: &messagesResults[i].BlockHash,
+			MessageWithMeta: newMessages[i].MessageWithMeta,
+			BlockHash:       &messagesResults[i].BlockHash,
 		})
 	}
 	s.broadcastMessages(messagesWithComputedBlockHash, count)
@@ -589,8 +589,8 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFe
 			return fmt.Errorf("invalid feed message at sequence number %v", feedMessage.SequenceNumber)
 		}
 		msgWithBlockHash := arbostypes.MessageWithMetadataAndBlockHash{
-			Message:   feedMessage.Message,
-			BlockHash: feedMessage.BlockHash,
+			MessageWithMeta: feedMessage.Message,
+			BlockHash:       feedMessage.BlockHash,
 		}
 		messages = append(messages, msgWithBlockHash)
 		broadcastAfterPos++
@@ -611,7 +611,7 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFe
 	messages = messages[dups:]
 	broadcastStartPos += arbutil.MessageIndex(dups)
 	if oldMsg != nil {
-		s.logReorg(broadcastStartPos, oldMsg, &messages[0].Message, false)
+		s.logReorg(broadcastStartPos, oldMsg, &messages[0].MessageWithMeta, false)
 	}
 	if len(messages) == 0 {
 		// No new messages received
@@ -686,7 +686,7 @@ func (s *TransactionStreamer) AddFakeInitMessage() error {
 	chainIdBytes := arbmath.U256Bytes(s.chainConfig.ChainID)
 	msg := append(append(chainIdBytes, 0), chainConfigJson...)
 	return s.AddMessages(0, false, []arbostypes.MessageWithMetadataAndBlockHash{{
-		Message: arbostypes.MessageWithMetadata{
+		MessageWithMeta: arbostypes.MessageWithMetadata{
 			Message: &arbostypes.L1IncomingMessage{
 				Header: &arbostypes.L1IncomingMessageHeader{
 					Kind:      arbostypes.L1MessageType_Initialize,
@@ -775,7 +775,7 @@ func (s *TransactionStreamer) countDuplicateMessages(
 		if err != nil {
 			return 0, false, nil, err
 		}
-		nextMessage := messages[curMsg].Message
+		nextMessage := messages[curMsg].MessageWithMeta
 		wantMessage, err := rlp.EncodeToBytes(nextMessage)
 		if err != nil {
 			return 0, false, nil, err
@@ -867,7 +867,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 			return err
 		}
 		if duplicates > 0 {
-			lastDelayedRead = messages[duplicates-1].Message.DelayedMessagesRead
+			lastDelayedRead = messages[duplicates-1].MessageWithMeta.DelayedMessagesRead
 			messages = messages[duplicates:]
 			messageStartPos += arbutil.MessageIndex(duplicates)
 		}
@@ -905,13 +905,13 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 			return err
 		}
 		if duplicates > 0 {
-			lastDelayedRead = messages[duplicates-1].Message.DelayedMessagesRead
+			lastDelayedRead = messages[duplicates-1].MessageWithMeta.DelayedMessagesRead
 			messages = messages[duplicates:]
 			messageStartPos += arbutil.MessageIndex(duplicates)
 		}
 	}
 	if oldMsg != nil {
-		s.logReorg(messageStartPos, oldMsg, &messages[0].Message, confirmedReorg)
+		s.logReorg(messageStartPos, oldMsg, &messages[0].MessageWithMeta, confirmedReorg)
 	}
 
 	if feedReorg {
@@ -931,12 +931,12 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	// Validate delayed message counts of remaining messages
 	for i, msg := range messages {
 		msgPos := messageStartPos + arbutil.MessageIndex(i)
-		diff := msg.Message.DelayedMessagesRead - lastDelayedRead
+		diff := msg.MessageWithMeta.DelayedMessagesRead - lastDelayedRead
 		if diff != 0 && diff != 1 {
-			return fmt.Errorf("attempted to insert jump from %v delayed messages read to %v delayed messages read at message index %v", lastDelayedRead, msg.Message.DelayedMessagesRead, msgPos)
+			return fmt.Errorf("attempted to insert jump from %v delayed messages read to %v delayed messages read at message index %v", lastDelayedRead, msg.MessageWithMeta.DelayedMessagesRead, msgPos)
 		}
-		lastDelayedRead = msg.Message.DelayedMessagesRead
-		if msg.Message.Message == nil {
+		lastDelayedRead = msg.MessageWithMeta.DelayedMessagesRead
+		if msg.MessageWithMeta.Message == nil {
 			return fmt.Errorf("attempted to insert nil message at position %v", msgPos)
 		}
 	}
@@ -1015,8 +1015,8 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(
 	}
 
 	msgWithBlockHash := arbostypes.MessageWithMetadataAndBlockHash{
-		Message:   msgWithMeta,
-		BlockHash: &msgResult.BlockHash,
+		MessageWithMeta: msgWithMeta,
+		BlockHash:       &msgResult.BlockHash,
 	}
 
 	if err := s.writeMessages(pos, []arbostypes.MessageWithMetadataAndBlockHash{msgWithBlockHash}, nil); err != nil {
@@ -1071,7 +1071,7 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 		batch = s.db.NewBatch()
 	}
 	for i, msg := range messages {
-		err := s.writeMessage(pos+arbutil.MessageIndex(i), msg.Message, batch)
+		err := s.writeMessage(pos+arbutil.MessageIndex(i), msg.MessageWithMeta, batch)
 		if err != nil {
 			return err
 		}
@@ -1153,8 +1153,8 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context, exec execution
 	}
 
 	msgWithBlockHash := arbostypes.MessageWithMetadataAndBlockHash{
-		Message:   *msg,
-		BlockHash: &msgResult.BlockHash,
+		MessageWithMeta: *msg,
+		BlockHash:       &msgResult.BlockHash,
 	}
 	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockHash{msgWithBlockHash}, pos)
 

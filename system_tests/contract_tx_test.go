@@ -71,7 +71,7 @@ func TestContractTxDeploy(t *testing.T) {
 
 		err = builder.L2.ConsensusNode.TxStreamer.AddMessages(pos, true, []arbostypes.MessageWithMetadataAndBlockHash{
 			{
-				Message: arbostypes.MessageWithMetadata{
+				MessageWithMeta: arbostypes.MessageWithMetadata{
 					Message: &arbostypes.L1IncomingMessage{
 						Header: &arbostypes.L1IncomingMessageHeader{
 							Kind:        arbostypes.L1MessageType_L2Message,

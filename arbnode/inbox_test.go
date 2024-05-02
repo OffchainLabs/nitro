@@ -155,7 +155,7 @@ func TestTransactionStreamer(t *testing.T) {
 				var requestId common.Hash
 				binary.BigEndian.PutUint64(requestId.Bytes()[:8], uint64(i))
 				messages = append(messages, arbostypes.MessageWithMetadataAndBlockHash{
-					Message: arbostypes.MessageWithMetadata{
+					MessageWithMeta: arbostypes.MessageWithMetadata{
 						Message: &arbostypes.L1IncomingMessage{
 							Header: &arbostypes.L1IncomingMessageHeader{
 								Kind:      arbostypes.L1MessageType_L2Message,

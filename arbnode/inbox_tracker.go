@@ -674,7 +674,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 			return err
 		}
 		msgWithBlockHash := arbostypes.MessageWithMetadataAndBlockHash{
-			Message: *msg,
+			MessageWithMeta: *msg,
 		}
 		messages = append(messages, msgWithBlockHash)
 		batchMessageCounts[batchSeqNum] = currentpos
@@ -736,7 +736,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 	}
 	var latestTimestamp uint64
 	if len(messages) > 0 {
-		latestTimestamp = messages[len(messages)-1].Message.Message.Header.Timestamp
+		latestTimestamp = messages[len(messages)-1].MessageWithMeta.Message.Header.Timestamp
 	}
 	log.Info(
 		"InboxTracker",

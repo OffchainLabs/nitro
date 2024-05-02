@@ -149,9 +149,9 @@ func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbost
 	for i := range newMessages {
 		var msgForPrefetch *arbostypes.MessageWithMetadata
 		if i < len(newMessages)-1 {
-			msgForPrefetch = &newMessages[i].Message
+			msgForPrefetch = &newMessages[i].MessageWithMeta
 		}
-		msgResult, err := s.digestMessageWithBlockMutex(count+arbutil.MessageIndex(i), &newMessages[i].Message, msgForPrefetch)
+		msgResult, err := s.digestMessageWithBlockMutex(count+arbutil.MessageIndex(i), &newMessages[i].MessageWithMeta, msgForPrefetch)
 		if err != nil {
 			return nil, err
 		}

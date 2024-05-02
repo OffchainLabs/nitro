@@ -19,8 +19,8 @@ type MessageWithMetadata struct {
 }
 
 type MessageWithMetadataAndBlockHash struct {
-	Message   MessageWithMetadata
-	BlockHash *common.Hash
+	MessageWithMeta MessageWithMetadata
+	BlockHash       *common.Hash
 }
 
 var EmptyTestMessageWithMetadata = MessageWithMetadata{

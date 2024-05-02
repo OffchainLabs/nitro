@@ -593,7 +593,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 			}
 		}
 		msgWithBlockHash := arbostypes.MessageWithMetadataAndBlockHash{
-			Message: message,
+			MessageWithMeta: message,
 		}
 		messages = append(messages, msgWithBlockHash)
 		msgToRead++
