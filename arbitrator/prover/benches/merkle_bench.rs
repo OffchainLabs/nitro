@@ -1,6 +1,6 @@
+use arbutil::Bytes32;
 use criterion::{criterion_group, criterion_main, Criterion};
 use prover::merkle::{Merkle, MerkleType};
-use arbutil::Bytes32;
 use rand::Rng;
 
 fn extend_and_set_leavees(merkle: Merkle, rng: &mut rand::rngs::ThreadRng) {
@@ -14,7 +14,7 @@ fn extend_and_set_leavees(merkle: Merkle, rng: &mut rand::rngs::ThreadRng) {
 
     for _ in 0..100 {
         merkle.extend(new_leaves.clone()).expect("extend failed");
-        for _ in 0..(merkle.len()/10) {
+        for _ in 0..(merkle.len() / 10) {
             let random_index = rng.gen_range(0..merkle.len());
             merkle.set(random_index, Bytes32::from([rng.gen_range(0u8..9); 32]));
         }
@@ -35,7 +35,8 @@ fn merkle_benchmark(c: &mut Criterion) {
     // Perform many calls to set leaves to new values
     c.bench_function("extend_set_leaves_and_root", |b| {
         b.iter(|| {
-            let merkle = Merkle::new_advanced(MerkleType::Memory, leaves.clone(), Bytes32::default(), 20);
+            let merkle =
+                Merkle::new_advanced(MerkleType::Memory, leaves.clone(), Bytes32::default(), 20);
             extend_and_set_leavees(merkle.clone(), &mut rng);
         })
     });
@@ -50,7 +51,8 @@ fn merkle_construction(c: &mut Criterion) {
 
     c.bench_function("merkle_construction", |b| {
         b.iter(|| {
-            let merkle = Merkle::new_advanced(MerkleType::Memory, leaves.clone(), Bytes32::default(), 21);
+            let merkle =
+                Merkle::new_advanced(MerkleType::Memory, leaves.clone(), Bytes32::default(), 21);
             merkle.root();
         })
     });

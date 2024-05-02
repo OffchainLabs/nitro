@@ -149,7 +149,7 @@ fn test_count() -> Result<()> {
     compiler.canonicalize_nans(true);
     compiler.enable_verifier();
 
-    let starter = StartMover::default();
+    let starter = StartMover::new(true);
     let counter = Counter::new();
     compiler.push_middleware(Arc::new(MiddlewareWrapper::new(starter)));
     compiler.push_middleware(Arc::new(MiddlewareWrapper::new(counter)));
@@ -183,22 +183,35 @@ fn test_import_export_safety() -> Result<()> {
     //     bad-export2.wat  there's a func named `stylus_global_with_random_name`
     //     bad-import.wat   there's an import named `stylus_global_with_random_name`
 
-    fn check(path: &str, both: bool) -> Result<()> {
-        if both {
-            let compile = test_compile_config();
-            assert!(TestInstance::new_test(path, compile).is_err());
-        }
-        let path = &Path::new(path);
+    fn check(file: &str, both: bool, instrument: bool) -> Result<()> {
+        let path = &Path::new(file);
         let wat = std::fs::read(path)?;
         let wasm = wasmer::wat2wasm(&wat)?;
-        assert!(binary::parse(&wasm, path).is_err());
+        let bin = binary::parse(&wasm, path);
+        if !instrument {
+            assert!(bin.is_err());
+            return Ok(());
+        }
+
+        let codehash = &Bytes32::default();
+        let mut compile = test_compile_config();
+        let mut bin = bin?;
+        assert!(bin.clone().instrument(&compile, codehash).is_err());
+        compile.debug.debug_info = false;
+        assert!(bin.instrument(&compile, &codehash).is_err());
+
+        if both {
+            assert!(TestInstance::new_test(file, compile).is_err());
+        }
         Ok(())
     }
 
     // TODO: perform all the same checks in instances
-    check("tests/bad-export.wat", true)?;
-    check("tests/bad-export2.wat", false)?;
-    check("tests/bad-import.wat", false)
+    check("tests/bad-mods/bad-export.wat", true, false)?;
+    check("tests/bad-mods/bad-export2.wat", true, false)?;
+    check("tests/bad-mods/bad-export3.wat", true, true)?;
+    check("tests/bad-mods/bad-export4.wat", false, true)?;
+    check("tests/bad-mods/bad-import.wat", true, false)
 }
 
 #[test]

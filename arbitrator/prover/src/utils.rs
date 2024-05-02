@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use sha2::Sha256;
 use sha3::Keccak256;
 use std::{borrow::Borrow, convert::TryInto, fmt, fs::File, io::Read, ops::Deref, path::Path};
-use wasmparser::{TableType, ValType};
+use wasmparser::{RefType, TableType};
 
 /// A Vec<u8> allocated with libc::malloc
 pub struct CBytes {
@@ -75,23 +75,41 @@ impl From<&[u8]> for CBytes {
 unsafe impl Send for CBytes {}
 unsafe impl Sync for CBytes {}
 
+/// Unfortunately, [`wasmparser::RefType`] isn't serde and its contents aren't public.
+/// This type enables serde via a 1:1 transmute.
 #[derive(Serialize, Deserialize)]
-#[serde(remote = "ValType")]
-enum RemoteType {
-    I32,
-    I64,
-    F32,
-    F64,
-    V128,
-    FuncRef,
-    ExternRef,
+struct RemoteRefType(pub [u8; 3]);
+
+impl From<RefType> for RemoteRefType {
+    fn from(value: RefType) -> Self {
+        unsafe { std::mem::transmute(value) }
+    }
+}
+
+impl From<RemoteRefType> for RefType {
+    fn from(value: RemoteRefType) -> Self {
+        unsafe { std::mem::transmute(value) }
+    }
+}
+
+mod remote_convert {
+    use super::{RefType, RemoteRefType};
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer>(value: &RefType, serializer: S) -> Result<S::Ok, S::Error> {
+        RemoteRefType::from(*value).serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<RefType, D::Error> {
+        Ok(RemoteRefType::deserialize(deserializer)?.into())
+    }
 }
 
 #[derive(Serialize, Deserialize)]
 #[serde(remote = "TableType")]
 pub struct RemoteTableType {
-    #[serde(with = "RemoteType")]
-    pub element_type: ValType,
+    #[serde(with = "remote_convert")]
+    pub element_type: RefType,
     pub initial: u32,
     pub maximum: Option<u32>,
 }

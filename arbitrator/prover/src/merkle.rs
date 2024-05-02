@@ -10,6 +10,8 @@ use enum_iterator::Sequence;
 #[cfg(feature = "counters")]
 use enum_iterator::all;
 
+use std::cmp::max;
+use std::cmp::Ordering;
 #[cfg(feature = "counters")]
 use std::sync::atomic::AtomicUsize;
 
@@ -22,9 +24,14 @@ use lazy_static::lazy_static;
 #[cfg(feature = "counters")]
 use std::collections::HashMap;
 
+use core::panic;
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
-use std::{collections::HashSet, convert::{TryFrom, TryInto}, sync::{Arc, Mutex, MutexGuard}};
+use std::{
+    collections::HashSet,
+    convert::{TryFrom, TryInto},
+    sync::{Arc, Mutex, MutexGuard},
+};
 
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
@@ -81,7 +88,6 @@ lazy_static! {
     };
 }
 
-
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize, Sequence)]
 pub enum MerkleType {
     Empty,
@@ -106,8 +112,13 @@ pub fn print_counters() {
         if ty == MerkleType::Empty {
             continue;
         }
-        println!("{} New: {}, Root: {}, Set: {}",
-        ty.get_prefix(), NEW_COUNTERS[&ty].load(Ordering::Relaxed), ROOT_COUNTERS[&ty].load(Ordering::Relaxed), SET_COUNTERS[&ty].load(Ordering::Relaxed));
+        println!(
+            "{} New: {}, Root: {}, Set: {}",
+            ty.get_prefix(),
+            NEW_COUNTERS[&ty].load(Ordering::Relaxed),
+            ROOT_COUNTERS[&ty].load(Ordering::Relaxed),
+            SET_COUNTERS[&ty].load(Ordering::Relaxed)
+        );
     }
 }
 
@@ -139,19 +150,19 @@ impl MerkleType {
 }
 
 /// A Merkle tree with a fixed number of layers
-/// 
+///
 /// https://en.wikipedia.org/wiki/Merkle_tree
-/// 
+///
 /// Each instance's leaves contain the hashes of a specific [MerkleType].
 /// The tree does not grow in height, but it can be initialized with fewer
 /// leaves than the number that could be contained in its layers.
-/// 
+///
 /// When initialized with [Merkle::new], the tree has the minimum depth
 /// necessary to hold all the leaves. (e.g. 5 leaves -> 4 layers.)
-/// 
+///
 /// It can be over-provisioned using the [Merkle::new_advanced] method
 /// and passing a minimum depth.
-/// 
+///
 /// This structure does not contain the data itself, only the hashes.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Merkle {
@@ -204,7 +215,8 @@ fn new_layer(ty: MerkleType, layer: &Vec<Bytes32>, empty_hash: Bytes32) -> Vec<B
 #[inline]
 #[cfg(not(feature = "rayon"))]
 fn new_layer(ty: MerkleType, layer: &Vec<Bytes32>, empty_hash: Bytes32) -> Vec<Bytes32> {
-    let new_layer = layer.chunks(2)
+    let new_layer = layer
+        .chunks(2)
         .map(|chunk| hash_node(ty, chunk[0], chunk.get(1).cloned().unwrap_or(empty_hash)))
         .collect();
     new_layer
@@ -267,8 +279,8 @@ impl Merkle {
             for idx in sorted(dirt.iter()) {
                 let left_child_idx = idx << 1;
                 let right_child_idx = left_child_idx + 1;
-                let left = layers[layer_i -1][left_child_idx];
-                let right = layers[layer_i-1]
+                let left = layers[layer_i - 1][left_child_idx];
+                let right = layers[layer_i - 1]
                     .get(right_child_idx)
                     .cloned()
                     .unwrap_or_else(|| empty_hash_at(self.ty, layer_i - 1));
@@ -308,6 +320,10 @@ impl Merkle {
     // Returns the number of leaves in the tree.
     pub fn len(&self) -> usize {
         self.layers.lock().unwrap()[0].len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.layers.is_empty() || self.layers[0].is_empty()
     }
 
     #[must_use]
@@ -353,7 +369,7 @@ impl Merkle {
     pub fn pop_leaf(&mut self) {
         let mut leaves = self.layers.lock().unwrap().swap_remove(0);
         leaves.pop();
-        let empty = empty_hash_at(self.ty,0);
+        let empty = empty_hash_at(self.ty, 0);
         *self = Self::new_advanced(self.ty, leaves, empty, self.min_depth);
     }
 
@@ -366,16 +382,48 @@ impl Merkle {
         self.locked_set(&mut layers, idx, hash);
     }
 
-    fn locked_set(&self, locked_layers: &mut MutexGuard<Vec<Vec<Bytes32>>>, idx: usize, hash: Bytes32) {
+    fn locked_set(
+        &self,
+        locked_layers: &mut MutexGuard<Vec<Vec<Bytes32>>>,
+        idx: usize,
+        hash: Bytes32,
+    ) {
         if locked_layers[0][idx] == hash {
             return;
         }
-        locked_layers[0][idx] = hash;
-        self.dirty_layers.lock().unwrap()[0].insert(idx >> 1);
+        let mut next_hash = hash;
+        let empty_layers = &self.empty_layers;
+        let layers_len = self.layers.len();
+        for (layer_i, layer) in self.layers.iter_mut().enumerate() {
+            match idx.cmp(&layer.len()) {
+                Ordering::Less => layer[idx] = next_hash,
+                Ordering::Equal => layer.push(next_hash),
+                Ordering::Greater => panic!(
+                    "Index {} out of bounds {} in layer {}",
+                    idx,
+                    layer.len(),
+                    layer_i
+                ),
+            }
+            if layer_i == layers_len - 1 {
+                // next_hash isn't needed
+                break;
+            }
+            let counterpart = layer
+                .get(idx ^ 1)
+                .cloned()
+                .unwrap_or_else(|| empty_layers[layer_i]);
+            if idx % 2 == 0 {
+                next_hash = hash_node(self.ty, next_hash, counterpart);
+            } else {
+                next_hash = hash_node(self.ty, counterpart, next_hash);
+            }
+            idx >>= 1;
+        }
     }
 
     /// Extends the leaves of the tree with the given hashes.
-    /// 
+    ///
     /// Returns the new number of leaves in the tree.
     /// Erorrs if the number of hashes plus the current leaves is greater than
     /// the capacity of the tree.
@@ -388,13 +436,13 @@ impl Merkle {
         let mut new_size = idx + hashes.len();
         for (layer_i, layer) in layers.iter_mut().enumerate() {
             layer.resize(new_size, empty_hash_at(self.ty, layer_i));
-            new_size >>= 1;
+            new_size = max(new_size >> 1, 1);
         }
         for hash in hashes {
             self.locked_set(&mut layers, idx, hash);
             idx += 1;
         }
-        return Ok(layers[0].len());
+        Ok(self.layers[0].len())
     }
 }
 
@@ -407,7 +455,10 @@ impl PartialEq for Merkle {
 impl Eq for Merkle {}
 
 pub mod arc_mutex_sedre {
-    pub fn serialize<S, T>(data: &std::sync::Arc<std::sync::Mutex<T>>, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S, T>(
+        data: &std::sync::Arc<std::sync::Mutex<T>>,
+        serializer: S,
+    ) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
         T: serde::Serialize,
@@ -415,12 +466,16 @@ pub mod arc_mutex_sedre {
         data.lock().unwrap().serialize(serializer)
     }
 
-    pub fn deserialize<'de, D, T>(deserializer: D) -> Result<std::sync::Arc<std::sync::Mutex<T>>, D::Error>
+    pub fn deserialize<'de, D, T>(
+        deserializer: D,
+    ) -> Result<std::sync::Arc<std::sync::Mutex<T>>, D::Error>
     where
         D: serde::Deserializer<'de>,
         T: serde::Deserialize<'de>,
     {
-        Ok(std::sync::Arc::new(std::sync::Mutex::new(T::deserialize(deserializer)?)))
+        Ok(std::sync::Arc::new(std::sync::Mutex::new(T::deserialize(
+            deserializer,
+        )?)))
     }
 }
 
@@ -433,34 +488,73 @@ fn extend_works() {
         Bytes32::from([4; 32]),
         Bytes32::from([5; 32]),
     ];
-    let mut expected = hash_node(MerkleType::Value,
+    let mut expected = hash_node(
+        MerkleType::Value,
         hash_node(
             MerkleType::Value,
-            hash_node(MerkleType::Value, Bytes32::from([1; 32]), Bytes32::from([2; 32])),
-            hash_node(MerkleType::Value, Bytes32::from([3; 32]), Bytes32::from([4; 32]))),
+            hash_node(
+                MerkleType::Value,
+                Bytes32::from([1; 32]),
+                Bytes32::from([2; 32]),
+            ),
+            hash_node(
+                MerkleType::Value,
+                Bytes32::from([3; 32]),
+                Bytes32::from([4; 32]),
+            ),
+        ),
         hash_node(
             MerkleType::Value,
-            hash_node(MerkleType::Value, Bytes32::from([5; 32]), Bytes32::from([0; 32])),
-            hash_node(MerkleType::Value, Bytes32::from([0; 32]), Bytes32::from([0; 32]))));
-    let merkle = Merkle::new(MerkleType::Value, hashes.clone());
+            hash_node(
+                MerkleType::Value,
+                Bytes32::from([5; 32]),
+                Bytes32::from([0; 32]),
+            ),
+            hash_node(
+                MerkleType::Value,
+                Bytes32::from([0; 32]),
+                Bytes32::from([0; 32]),
+            ),
+        ),
+    );
+    let mut merkle = Merkle::new(MerkleType::Value, hashes.clone());
     assert_eq!(merkle.capacity(), 8);
     assert_eq!(merkle.root(), expected);
 
     let new_size = match merkle.extend(vec![Bytes32::from([6; 32])]) {
         Ok(size) => size,
-        Err(e) => panic!("{}", e)
+        Err(e) => panic!("{}", e),
     };
     assert_eq!(new_size, 6);
-    expected = hash_node(MerkleType::Value,
+    expected = hash_node(
+        MerkleType::Value,
         hash_node(
             MerkleType::Value,
-            hash_node(MerkleType::Value, Bytes32::from([1; 32]), Bytes32::from([2; 32])),
-            hash_node(MerkleType::Value, Bytes32::from([3; 32]), Bytes32::from([4; 32]))),
+            hash_node(
+                MerkleType::Value,
+                Bytes32::from([1; 32]),
+                Bytes32::from([2; 32]),
+            ),
+            hash_node(
+                MerkleType::Value,
+                Bytes32::from([3; 32]),
+                Bytes32::from([4; 32]),
+            ),
+        ),
         hash_node(
             MerkleType::Value,
-            hash_node(MerkleType::Value, Bytes32::from([5; 32]), Bytes32::from([6; 32])),
-            hash_node(MerkleType::Value, Bytes32::from([0; 32]), Bytes32::from([0; 32]))));
-    assert_eq!(merkle.capacity(), 8);
+            hash_node(
+                MerkleType::Value,
+                Bytes32::from([5; 32]),
+                Bytes32::from([6; 32]),
+            ),
+            hash_node(
+                MerkleType::Value,
+                Bytes32::from([0; 32]),
+                Bytes32::from([0; 32]),
+            ),
+        ),
+    );
     assert_eq!(merkle.root(), expected);
     merkle.prove(1).unwrap();
 }
@@ -469,14 +563,22 @@ fn extend_works() {
 fn correct_capacity() {
     let merkle = Merkle::new(MerkleType::Value, vec![Bytes32::from([1; 32])]);
     assert_eq!(merkle.capacity(), 1);
-    let merkle = Merkle::new_advanced(MerkleType::Memory, vec![Bytes32::from([1; 32])], Bytes32::default(), 11);
+    let merkle = Merkle::new_advanced(
+        MerkleType::Memory,
+        vec![Bytes32::from([1; 32])],
+        Bytes32::default(),
+        11,
+    );
     assert_eq!(merkle.capacity(), 1024);
 }
 
 #[test]
 #[should_panic(expected = "index out of bounds")]
 fn set_with_bad_index_panics() {
-    let merkle = Merkle::new(MerkleType::Value, vec![Bytes32::default(), Bytes32::default()]);
+    let mut merkle = Merkle::new(
+        MerkleType::Value,
+        vec![Bytes32::default(), Bytes32::default()],
+    );
     assert_eq!(merkle.capacity(), 2);
     merkle.set(2, Bytes32::default());
 }

@@ -101,12 +101,14 @@ impl EvmApi<VecReader> for TestEvmApi {
         &mut self,
         contract: Bytes20,
         calldata: &[u8],
-        gas: u64,
+        _gas_left: u64,
+        gas_req: u64,
         _value: Bytes32,
     ) -> (u32, u64, UserOutcomeKind) {
         let compile = self.compile.clone();
         let evm_data = self.evm_data;
         let config = *self.configs.lock().get(&contract).unwrap();
+        let gas = gas_req; // Not consensus behavior
 
         let mut native = unsafe {
             let contracts = self.contracts.lock();
@@ -129,7 +131,8 @@ impl EvmApi<VecReader> for TestEvmApi {
         &mut self,
         _contract: Bytes20,
         _calldata: &[u8],
-        _gas: u64,
+        _gas_left: u64,
+        _gas_req: u64,
     ) -> (u32, u64, UserOutcomeKind) {
         todo!("delegate call not yet supported")
     }
@@ -138,10 +141,11 @@ impl EvmApi<VecReader> for TestEvmApi {
         &mut self,
         contract: Bytes20,
         calldata: &[u8],
-        gas: u64,
+        gas_left: u64,
+        gas_req: u64,
     ) -> (u32, u64, UserOutcomeKind) {
         println!("note: overriding static call with call");
-        self.contract_call(contract, calldata, gas, Bytes32::default())
+        self.contract_call(contract, calldata, gas_left, gas_req, Bytes32::default())
     }
 
     fn create1(

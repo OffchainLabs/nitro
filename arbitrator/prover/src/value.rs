@@ -13,7 +13,7 @@ use std::{
     fmt::Display,
     ops::Add,
 };
-use wasmparser::{FuncType, ValType};
+use wasmparser::{FuncType, RefType, ValType};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 #[repr(u8)]
@@ -43,9 +43,21 @@ impl TryFrom<ValType> for ArbValueType {
             V::I64 => Self::I64,
             V::F32 => Self::F32,
             V::F64 => Self::F64,
-            V::FuncRef => Self::FuncRef,
-            V::ExternRef => Self::FuncRef,
+            V::Ref(ty) => ty.try_into()?,
             V::V128 => bail!("128-bit types are not supported"),
+        })
+    }
+}
+
+impl TryFrom<RefType> for ArbValueType {
+    type Error = eyre::Error;
+
+    fn try_from(value: RefType) -> Result<Self> {
+        Ok(match value {
+            RefType::FUNCREF => Self::FuncRef,
+            RefType::EXTERNREF => Self::FuncRef,
+            RefType::NULLREF => Self::RefNull,
+            _ => bail!("ref extensions not supported"),
         })
     }
 }
@@ -58,8 +70,9 @@ impl From<ArbValueType> for ValType {
             V::I64 => Self::I64,
             V::F32 => Self::F32,
             V::F64 => Self::F64,
-            // InternalRef's aren't analogous, but they can be viewed as function pointers from wavm's perspective
-            V::RefNull | V::FuncRef | V::InternalRef => Self::FuncRef,
+            V::RefNull => Self::Ref(RefType::NULLREF),
+            V::FuncRef => Self::Ref(RefType::FUNCREF),
+            V::InternalRef => Self::Ref(RefType::FUNCREF), // not analogous, but essentially a func pointer
         }
     }
 }
@@ -72,8 +85,8 @@ pub fn parser_type(ty: &wasmer::Type) -> wasmer::wasmparser::ValType {
         wasmer::Type::F32 => wasmer::wasmparser::ValType::F32,
         wasmer::Type::F64 => wasmer::wasmparser::ValType::F64,
         wasmer::Type::V128 => wasmer::wasmparser::ValType::V128,
-        wasmer::Type::ExternRef => wasmer::wasmparser::ValType::ExternRef,
-        wasmer::Type::FuncRef => wasmer::wasmparser::ValType::FuncRef,
+        wasmer::Type::ExternRef => wasmer::wasmparser::ValType::Ref(RefType::EXTERNREF),
+        wasmer::Type::FuncRef => wasmer::wasmparser::ValType::Ref(RefType::FUNCREF),
     }
 }
 

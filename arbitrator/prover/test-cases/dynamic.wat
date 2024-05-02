@@ -12,7 +12,7 @@
 
     ;; WAVM Module hash
     (data (i32.const 0x000)
-        "\3a\eb\a0\67\68\ef\f5\f9\4e\ec\84\88\ac\54\b7\b7\07\a5\12\9c\fb\73\50\37\33\d9\9e\90\ea\72\97\8c") ;; user
+        "\87\12\6b\19\8a\ce\0c\ba\00\6a\ab\9b\b7\45\bb\0a\ac\48\4d\6b\b8\b5\f9\03\a2\99\8f\64\00\9f\e2\04") ;; user
 
     (func $start (local $user i32) (local $internals i32)
         ;; link in user.wat

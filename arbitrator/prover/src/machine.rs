@@ -19,7 +19,7 @@ use crate::{
         IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
     },
 };
-use arbutil::{math, Bytes32, Color, PreimageType};
+use arbutil::{crypto, math, Bytes32, Color, DebugColor, PreimageType};
 use brotli::Dictionary;
 #[cfg(feature = "native")]
 use c_kzg::BYTES_PER_BLOB;
@@ -45,7 +45,7 @@ use std::{
     sync::Arc,
 };
 use wasmer_types::FunctionIndex;
-use wasmparser::{DataKind, ElementItem, ElementKind, Operator, TableType};
+use wasmparser::{DataKind, ElementItems, ElementKind, Operator, RefType, TableType};
 
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
@@ -157,7 +157,7 @@ impl Function {
         let code_hashes = (0..chunks).into_par_iter().map(crunch).collect();
 
         #[cfg(not(feature = "rayon"))]
-        let code_hashes = (0..chunks).into_iter().map(crunch).collect();
+        let code_hashes = (0..chunks).map(crunch).collect();
 
         self.code_merkle = Merkle::new(MerkleType::Instruction, code_hashes);
     }
@@ -305,6 +305,8 @@ pub struct Module {
     pub(crate) func_exports: Arc<HashMap<String, u32>>,
     #[serde(default)]
     pub(crate) all_exports: Arc<ExportMap>,
+    /// Used to make modules unique.
+    pub(crate) extra_hash: Arc<Bytes32>,
 }
 
 lazy_static! {
@@ -485,7 +487,7 @@ impl Module {
 
             let offset = match (init.read()?, init.read()?, init.eof()) {
                 (Operator::I32Const { value }, Operator::End, true) => value as usize,
-                x => bail!("Non-constant element segment offset expression {:?}", x),
+                x => bail!("Non-constant element segment offset expression {x:?}"),
             };
             if !matches!(
                 offset.checked_add(data.data.len()),
@@ -493,14 +495,19 @@ impl Module {
             ) {
                 bail!(
                     "Out-of-bounds data memory init with offset {} and size {}",
-                    offset,
-                    data.data.len(),
+                    offset.red(),
+                    data.data.len().red(),
                 );
             }
             memory.set_range(offset, data.data)?;
         }
 
         for table in &bin.tables {
+            let element_type = table.element_type;
+            ensure!(
+                element_type == RefType::FUNCREF,
+                "unsupported table type {element_type}"
+            );
             tables.push(Table {
                 elems: vec![TableElement::default(); usize::try_from(table.initial).unwrap()],
                 ty: *table,
@@ -513,31 +520,26 @@ impl Module {
                 ElementKind::Active {
                     table_index,
                     offset_expr,
-                } => (table_index, offset_expr.get_operators_reader()),
-                _ => continue,
+                } => (
+                    table_index.unwrap_or_default() as usize,
+                    offset_expr.get_operators_reader(),
+                ),
+                _ => continue, // we don't support the ops that use these
             };
             let offset = match (init.read()?, init.read()?, init.eof()) {
                 (Operator::I32Const { value }, Operator::End, true) => value as usize,
-                x => bail!("Non-constant element segment offset expression {:?}", x),
+                x => bail!("Non-constant element segment offset expression {x:?}"),
             };
-            let Some(table) = tables.get_mut(t as usize) else {
-                bail!("Element segment for non-exsistent table {}", t)
+            let Some(table) = tables.get_mut(t) else {
+                bail!("Element segment for non-exsistent table {}", t.red())
             };
-            let expected_ty = table.ty.element_type;
-            ensure!(
-                expected_ty == elem.ty,
-                "Element type expected to be of table type {:?} but of type {:?}",
-                expected_ty,
-                elem.ty
-            );
 
             let mut contents = vec![];
-            let mut item_reader = elem.items.get_items_reader()?;
-            for _ in 0..item_reader.get_count() {
-                let item = item_reader.read()?;
-                let ElementItem::Func(index) = item else {
-                    bail!("Non-constant element initializers are not supported")
-                };
+            let ElementItems::Functions(item_reader) = elem.items.clone() else {
+                bail!("Non-constant element initializers are not supported");
+            };
+            for func in item_reader.into_iter() {
+                let index = func?;
                 let func_ty = func_types[index as usize].clone();
                 contents.push(TableElement {
                     val: Value::FuncRef(index),
@@ -548,9 +550,7 @@ impl Module {
             let len = contents.len();
             ensure!(
                 offset.saturating_add(len) <= table.elems.len(),
-                "Out of bounds element segment at offset {} and length {} for table of length {}",
-                offset,
-                len,
+                "Out of bounds element segment at offset {offset} and length {len} for table of length {}",
                 table.elems.len(),
             );
             table.elems[offset..][..len].clone_from_slice(&contents);
@@ -581,6 +581,7 @@ impl Module {
             func_types: Arc::new(func_types),
             func_exports: Arc::new(func_exports),
             all_exports: Arc::new(bin.exports.clone()),
+            extra_hash: Arc::new(crypto::keccak(&bin.extra_data).into()),
         })
     }
 
@@ -623,6 +624,7 @@ impl Module {
         h.update(self.memory.hash());
         h.update(self.tables_merkle.root());
         h.update(self.funcs_merkle.root());
+        h.update(*self.extra_hash);
         h.update(self.internals_offset.to_be_bytes());
         h.finalize().into()
     }
@@ -644,6 +646,7 @@ impl Module {
 
         data.extend(self.tables_merkle.root());
         data.extend(self.funcs_merkle.root());
+        data.extend(*self.extra_hash);
         data.extend(self.internals_offset.to_be_bytes());
         data
     }
@@ -690,6 +693,7 @@ pub struct ModuleSerdeAll {
     func_types: Arc<Vec<FunctionType>>,
     func_exports: Arc<HashMap<String, u32>>,
     all_exports: Arc<ExportMap>,
+    extra_hash: Arc<Bytes32>,
 }
 
 impl From<ModuleSerdeAll> for Module {
@@ -710,6 +714,7 @@ impl From<ModuleSerdeAll> for Module {
             func_types: module.func_types,
             func_exports: module.func_exports,
             all_exports: module.all_exports,
+            extra_hash: module.extra_hash,
         }
     }
 }
@@ -732,6 +737,7 @@ impl From<&Module> for ModuleSerdeAll {
             func_types: module.func_types.clone(),
             func_exports: module.func_exports.clone(),
             all_exports: module.all_exports.clone(),
+            extra_hash: module.extra_hash.clone(),
         }
     }
 }
@@ -1236,7 +1242,7 @@ impl Machine {
         let data = std::fs::read(path)?;
         let wasm = wasmer::wat2wasm(&data)?;
         let mut bin = binary::parse(&wasm, Path::new("user"))?;
-        let stylus_data = bin.instrument(compile)?;
+        let stylus_data = bin.instrument(compile, &Bytes32::default())?;
 
         let user_test = std::fs::read("../../target/machines/latest/user_test.wasm")?;
         let user_test = parse(&user_test, Path::new("user_test"))?;
@@ -1266,10 +1272,16 @@ impl Machine {
 
     /// Adds a user program to the machine's known set of wasms, compiling it into a link-able module.
     /// Note that the module produced will need to be configured before execution via hostio calls.
-    pub fn add_program(&mut self, wasm: &[u8], version: u16, debug_funcs: bool) -> Result<Bytes32> {
+    pub fn add_program(
+        &mut self,
+        wasm: &[u8],
+        codehash: &Bytes32,
+        version: u16,
+        debug_funcs: bool,
+    ) -> Result<Bytes32> {
         let mut bin = binary::parse(wasm, Path::new("user"))?;
         let config = CompileConfig::version(version, debug_funcs);
-        let stylus_data = bin.instrument(&config)?;
+        let stylus_data = bin.instrument(&config, codehash)?;
 
         // enable debug mode if debug funcs are available
         if debug_funcs {
@@ -1330,7 +1342,7 @@ impl Machine {
                 if kind == ExportKind::Func {
                     let ty = match lib.get_function(FunctionIndex::from_u32(export)) {
                         Ok(ty) => ty,
-                        Err(error) => bail!("failed to read export {}: {}", name, error),
+                        Err(error) => bail!("failed to read export {name}: {error}"),
                     };
                     let import = AvailableImport::new(ty, module, export);
                     available_imports.insert(name.to_owned(), import);
@@ -1469,11 +1481,12 @@ impl Machine {
             types: Arc::new(entrypoint_types),
             names: Arc::new(entrypoint_names),
             internals_offset: 0,
-            host_call_hooks: Arc::new(Vec::new()),
+            host_call_hooks: Default::default(),
             start_function: None,
             func_types: Arc::new(vec![FunctionType::default()]),
-            func_exports: Arc::new(HashMap::default()),
-            all_exports: Arc::new(HashMap::default()),
+            func_exports: Default::default(),
+            all_exports: Default::default(),
+            extra_hash: Default::default(),
         };
         modules[0] = entrypoint;
 
@@ -1709,7 +1722,7 @@ impl Machine {
         let Some(module) = self.modules.iter().position(|m| m.name() == name) else {
             let names: Vec<_> = self.modules.iter().map(|m| m.name()).collect();
             let names = names.join(", ");
-            bail!("module {} not found among: {}", name.red(), names)
+            bail!("module {} not found among: {names}", name.red())
         };
         Ok(module as u32)
     }
@@ -1742,7 +1755,7 @@ impl Machine {
                 "func {} has type {} but received args {:?}",
                 name.red(),
                 ty.red(),
-                args
+                args.debug_red(),
             )
         }
 

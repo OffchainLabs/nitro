@@ -1,6 +1,7 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
+use arbutil::Bytes32;
 use eyre::{Result, WrapErr};
 use prover::{machine::GlobalState, utils::file_bytes, Machine};
 use std::{collections::HashMap, fmt::Display, path::PathBuf, sync::Arc};
@@ -45,7 +46,10 @@ fn main() -> Result<()> {
         relocate!(module);
         let error = || format!("failed to read module at {}", module.to_string_lossy());
         let wasm = file_bytes(&module).wrap_err_with(error)?;
-        let hash = mach.add_program(&wasm, 1, true).wrap_err_with(error)?;
+        let code = &Bytes32::default();
+        let hash = mach
+            .add_program(&wasm, code, 1, true)
+            .wrap_err_with(error)?;
         let name = module.file_stem().unwrap().to_string_lossy();
         stylus.push((name.to_owned(), hash));
         println!("{} {}", name, hash);
