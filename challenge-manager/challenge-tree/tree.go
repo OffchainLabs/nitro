@@ -53,7 +53,7 @@ type RoyalChallengeTree struct {
 	validatorName            string
 	totalChallengeLevels     uint8
 	royalRootEdgesByLevel    *threadsafe.Map[protocol.ChallengeLevel, *threadsafe.Slice[protocol.SpecEdge]]
-	essentialNodePathWeights map[protocol.EdgeId]*pathMinHeap
+	essentialNodePathWeights map[protocol.EdgeId]*pathWeightMinHeap
 }
 
 func New(
@@ -73,7 +73,7 @@ func New(
 		// The total number of challenge levels include block challenges, small step challenges, and N big step challenges.
 		totalChallengeLevels:     numBigStepLevels + 2,
 		royalRootEdgesByLevel:    threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Slice[protocol.SpecEdge]](threadsafe.MapWithMetric[protocol.ChallengeLevel, *threadsafe.Slice[protocol.SpecEdge]]("royalRootEdgesByLevel")),
-		essentialNodePathWeights: make(map[protocol.EdgeId]*pathMinHeap),
+		essentialNodePathWeights: make(map[protocol.EdgeId]*pathWeightMinHeap),
 	}
 }
 
