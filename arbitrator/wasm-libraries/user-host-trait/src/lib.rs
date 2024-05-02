@@ -245,8 +245,8 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         ret_len: GuestPtr,
     ) -> Result<u8, Self::Err> {
         let value = Some(value);
-        let call = |api: &mut Self::A, contract, data: &_, gas, value: Option<_>| {
-            api.contract_call(contract, data, gas, value.unwrap())
+        let call = |api: &mut Self::A, contract, data: &_, left, req, value: Option<_>| {
+            api.contract_call(contract, data, left, req, value.unwrap())
         };
         self.do_call(contract, data, data_len, value, gas, ret_len, call, "")
     }
@@ -273,8 +273,9 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         gas: u64,
         ret_len: GuestPtr,
     ) -> Result<u8, Self::Err> {
-        let call =
-            |api: &mut Self::A, contract, data: &_, gas, _| api.delegate_call(contract, data, gas);
+        let call = |api: &mut Self::A, contract, data: &_, left, req, _| {
+            api.delegate_call(contract, data, left, req)
+        };
         self.do_call(
             contract, data, data_len, None, gas, ret_len, call, "delegate",
         )
@@ -302,8 +303,9 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         gas: u64,
         ret_len: GuestPtr,
     ) -> Result<u8, Self::Err> {
-        let call =
-            |api: &mut Self::A, contract, data: &_, gas, _| api.static_call(contract, data, gas);
+        let call = |api: &mut Self::A, contract, data: &_, left, req, _| {
+            api.static_call(contract, data, left, req)
+        };
         self.do_call(contract, data, data_len, None, gas, ret_len, call, "static")
     }
 
@@ -315,27 +317,33 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         calldata: GuestPtr,
         calldata_len: u32,
         value: Option<GuestPtr>,
-        mut gas: u64,
+        gas: u64,
         return_data_len: GuestPtr,
         call: F,
         name: &str,
     ) -> Result<u8, Self::Err>
     where
-        F: FnOnce(&mut Self::A, Address, &[u8], u64, Option<Wei>) -> (u32, u64, UserOutcomeKind),
+        F: FnOnce(
+            &mut Self::A,
+            Address,
+            &[u8],
+            u64,
+            u64,
+            Option<Wei>,
+        ) -> (u32, u64, UserOutcomeKind),
     {
         self.buy_ink(HOSTIO_INK + 3 * PTR_INK + EVM_API_INK)?;
         self.pay_for_read(calldata_len)?;
         self.pay_for_geth_bytes(calldata_len)?;
 
-        let gas_passed = gas;
-        gas = gas.min(self.gas_left()?); // provide no more than what the user has
-
+        let gas_left = self.gas_left()?;
+        let gas_req = gas.min(gas_left);
         let contract = self.read_bytes20(contract)?;
         let input = self.read_slice(calldata, calldata_len)?;
         let value = value.map(|x| self.read_bytes32(x)).transpose()?;
         let api = self.evm_api();
 
-        let (outs_len, gas_cost, status) = call(api, contract, &input, gas, value);
+        let (outs_len, gas_cost, status) = call(api, contract, &input, gas_left, gas_req, value);
         self.buy_gas(gas_cost)?;
         *self.evm_return_data_len() = outs_len;
         self.write_u32(return_data_len, outs_len)?;
@@ -348,7 +356,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
             return trace!(
                 &name,
                 self,
-                [contract, be!(gas_passed), value, &input],
+                [contract, be!(gas), value, &input],
                 [be!(outs_len), be!(status)],
                 status
             );

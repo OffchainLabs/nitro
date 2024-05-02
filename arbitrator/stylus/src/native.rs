@@ -12,7 +12,7 @@ use arbutil::{
         EvmData,
     },
     operator::OperatorCode,
-    Color,
+    Bytes32, Color,
 };
 use eyre::{bail, eyre, ErrReport, Result};
 use prover::{
@@ -23,7 +23,7 @@ use prover::{
         depth::STYLUS_STACK_LEFT,
         meter::{STYLUS_INK_LEFT, STYLUS_INK_STATUS},
         prelude::*,
-        start::STYLUS_START,
+        start::StartMover,
         StylusData,
     },
 };
@@ -340,7 +340,7 @@ impl<D: DataReader, E: EvmApi<D>> StartlessMachine for NativeInstance<D, E> {
         let store = &self.store;
         let exports = &self.instance.exports;
         exports
-            .get_typed_function(store, STYLUS_START)
+            .get_typed_function(store, StartMover::NAME)
             .map_err(ErrReport::new)
     }
 }
@@ -434,13 +434,15 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
 
 pub fn activate(
     wasm: &[u8],
+    codehash: &Bytes32,
     version: u16,
     page_limit: u16,
     debug: bool,
     gas: &mut u64,
 ) -> Result<(Vec<u8>, ProverModule, StylusData)> {
     let compile = CompileConfig::version(version, debug);
-    let (module, stylus_data) = ProverModule::activate(wasm, version, page_limit, debug, gas)?;
+    let (module, stylus_data) =
+        ProverModule::activate(wasm, codehash, version, page_limit, debug, gas)?;
 
     let asm = match self::module(wasm, compile) {
         Ok(asm) => asm,

@@ -83,7 +83,7 @@ impl InitCache {
         None
     }
 
-    /// Inserts an item into the long term cache, stealing from the LRU cache if able.
+    /// Inserts an item into the long term cache, cloning from the LRU cache if able.
     pub fn insert(
         module_hash: Bytes32,
         module: &[u8],
@@ -92,9 +92,9 @@ impl InitCache {
     ) -> Result<(Module, Store)> {
         let key = CacheKey::new(module_hash, version, debug);
 
-        // if in LRU, move to ArbOS
+        // if in LRU, add to ArbOS
         let mut cache = cache!();
-        if let Some(item) = cache.lru.pop(&key) {
+        if let Some(item) = cache.lru.peek(&key).cloned() {
             cache.arbos.insert(key, item.clone());
             return Ok(item.data());
         }

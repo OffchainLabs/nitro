@@ -204,7 +204,9 @@ fn main() -> Result<()> {
     for path in &opts.stylus_modules {
         let err = || eyre!("failed to read module at {}", path.to_string_lossy().red());
         let wasm = file_bytes(path).wrap_err_with(err)?;
-        mach.add_program(&wasm, 1, true).wrap_err_with(err)?;
+        let codehash = &Bytes32::default();
+        mach.add_program(&wasm, codehash, 1, true)
+            .wrap_err_with(err)?;
     }
 
     if opts.print_modules {

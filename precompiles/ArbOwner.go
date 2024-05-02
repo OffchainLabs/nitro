@@ -11,7 +11,9 @@ import (
 	"math/big"
 
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	am "github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
@@ -211,16 +213,6 @@ func (con ArbOwner) SetWasmPageGas(c ctx, evm mech, gas uint16) error {
 	return params.Save()
 }
 
-// Sets the ramp that drives exponential wasm memory costs
-func (con ArbOwner) SetWasmPageRamp(c ctx, evm mech, ramp uint64) error {
-	params, err := c.State.Programs().Params()
-	if err != nil {
-		return err
-	}
-	params.PageRamp = ramp
-	return params.Save()
-}
-
 // Sets the initial number of pages a wasm may allocate
 func (con ArbOwner) SetWasmPageLimit(c ctx, evm mech, limit uint16) error {
 	params, err := c.State.Programs().Params()
@@ -232,13 +224,23 @@ func (con ArbOwner) SetWasmPageLimit(c ctx, evm mech, limit uint16) error {
 }
 
 // Sets the minimum costs to invoke a program
-func (con ArbOwner) SetWasmMinInitGas(c ctx, _ mech, gas, cached uint8) error {
+func (con ArbOwner) SetWasmMinInitGas(c ctx, _ mech, gas, cached uint64) error {
 	params, err := c.State.Programs().Params()
 	if err != nil {
 		return err
 	}
-	params.MinInitGas = gas
-	params.MinCachedInitGas = cached
+	params.MinInitGas = am.SaturatingUUCast[uint8](am.DivCeil(gas, programs.MinInitGasUnits))
+	params.MinCachedInitGas = am.SaturatingUUCast[uint8](am.DivCeil(cached, programs.MinCachedGasUnits))
+	return params.Save()
+}
+
+// Sets the linear adjustment made to program init costs
+func (con ArbOwner) SetWasmInitCostScalar(c ctx, _ mech, percent uint64) error {
+	params, err := c.State.Programs().Params()
+	if err != nil {
+		return err
+	}
+	params.InitCostScalar = am.SaturatingUUCast[uint8](am.DivCeil(percent, programs.CostScalarPercent))
 	return params.Save()
 }
 

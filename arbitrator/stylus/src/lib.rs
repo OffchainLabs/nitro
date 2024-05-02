@@ -141,6 +141,7 @@ pub unsafe extern "C" fn stylus_activate(
     debug: bool,
     output: *mut RustBytes,
     asm_len: *mut usize,
+    codehash: *const Bytes32,
     module_hash: *mut Bytes32,
     stylus_data: *mut StylusData,
     gas: *mut u64,
@@ -148,12 +149,14 @@ pub unsafe extern "C" fn stylus_activate(
     let wasm = wasm.slice();
     let output = &mut *output;
     let module_hash = &mut *module_hash;
+    let codehash = &*codehash;
     let gas = &mut *gas;
 
-    let (asm, module, info) = match native::activate(wasm, version, page_limit, debug, gas) {
-        Ok(val) => val,
-        Err(err) => return output.write_err(err),
-    };
+    let (asm, module, info) =
+        match native::activate(wasm, codehash, version, page_limit, debug, gas) {
+            Ok(val) => val,
+            Err(err) => return output.write_err(err),
+        };
     *asm_len = asm.len();
     *module_hash = module.hash();
     *stylus_data = info;
