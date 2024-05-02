@@ -63,6 +63,7 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
+	"golang.org/x/exp/slog"
 )
 
 func printSampleUsage(name string) {
@@ -208,7 +209,7 @@ func mainImpl() int {
 		}
 		stackConf.JWTSecret = filename
 	}
-	err = genericconf.InitLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, pathResolver(nodeConfig.Persistent.LogDir))
+	err = genericconf.InitLog(nodeConfig.LogType, slog.Level(nodeConfig.LogLevel), &nodeConfig.FileLogging, pathResolver(nodeConfig.Persistent.LogDir))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
 		return 1
@@ -600,7 +601,7 @@ func mainImpl() int {
 	}
 
 	liveNodeConfig.SetOnReloadHook(func(oldCfg *NodeConfig, newCfg *NodeConfig) error {
-		if err := genericconf.InitLog(newCfg.LogType, log.Lvl(newCfg.LogLevel), &newCfg.FileLogging, pathResolver(nodeConfig.Persistent.LogDir)); err != nil {
+		if err := genericconf.InitLog(newCfg.LogType, slog.Level(newCfg.LogLevel), &newCfg.FileLogging, pathResolver(nodeConfig.Persistent.LogDir)); err != nil {
 			return fmt.Errorf("failed to re-init logging: %w", err)
 		}
 		return currentNode.OnConfigReload(&oldCfg.Node, &newCfg.Node)

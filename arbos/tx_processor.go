@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math/big"
 
+	"github.com/holiman/uint256"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -143,7 +144,9 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		// We intentionally use the variant here that doesn't do tracing,
 		// because this transfer is represented as the outer eth transaction.
 		// This transfer is necessary because we don't actually invoke the EVM.
-		core.Transfer(evm.StateDB, from, *to, value)
+		// Since MintBalance already called AddBalance on `from`,
+		// we don't have EIP-161 concerns around not touching `from`.
+		core.Transfer(evm.StateDB, from, *to, uint256.MustFromBig(value))
 		return true, 0, nil, nil
 	case *types.ArbitrumInternalTx:
 		defer (startTracer())()
@@ -172,7 +175,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		// check that the user has enough balance to pay for the max submission fee
 		balanceAfterMint := evm.StateDB.GetBalance(tx.From)
-		if balanceAfterMint.Cmp(tx.MaxSubmissionFee) < 0 {
+		if balanceAfterMint.ToBig().Cmp(tx.MaxSubmissionFee) < 0 {
 			err := fmt.Errorf(
 				"insufficient funds for max submission fee: address %v have %v want %v",
 				tx.From, balanceAfterMint, tx.MaxSubmissionFee,
@@ -256,7 +259,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 
 		maxGasCost := arbmath.BigMulByUint(tx.GasFeeCap, usergas)
 		maxFeePerGasTooLow := arbmath.BigLessThan(tx.GasFeeCap, effectiveBaseFee)
-		if arbmath.BigLessThan(balance, maxGasCost) || usergas < params.TxGas || maxFeePerGasTooLow {
+		if arbmath.BigLessThan(balance.ToBig(), maxGasCost) || usergas < params.TxGas || maxFeePerGasTooLow {
 			// User either specified too low of a gas fee cap, didn't have enough balance to pay for gas,
 			// or the specified gas limit is below the minimum transaction gas cost.
 			// Either way, attempt to refund the gas costs, since we're not doing the auto-redeem.
