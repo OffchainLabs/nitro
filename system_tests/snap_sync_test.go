@@ -29,6 +29,8 @@ func TestSnapSync(t *testing.T) {
 	)
 	builder.Build(t)
 
+	// Added a delay, since BridgeBalance times out if the node is just created and not synced.
+	<-time.After(time.Second * 1)
 	builder.BridgeBalance(t, "Faucet", big.NewInt(1).Mul(big.NewInt(params.Ether), big.NewInt(10000)))
 
 	builder.L2Info.GenerateAccount("BackgroundUser")
