@@ -188,6 +188,13 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 	return b
 }
 
+func (b *NodeBuilder) WithArbOSVersion(arbosVersion uint64) *NodeBuilder {
+	newChainConfig := *b.chainConfig
+	newChainConfig.ArbitrumChainParams.InitialArbOSVersion = arbosVersion
+	b.chainConfig = &newChainConfig
+	return b
+}
+
 func (b *NodeBuilder) Build(t *testing.T) func() {
 	if b.execConfig.RPC.MaxRecreateStateDepth == arbitrum.UninitializedMaxRecreateStateDepth {
 		if b.execConfig.Caching.Archive {
