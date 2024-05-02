@@ -3,7 +3,6 @@ package avail
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 
 	"time"
@@ -94,16 +93,6 @@ func NewAvailDA(cfg DAConfig, l1Client arbutil.L1Interface) (*AvailDA, error) {
 	// Contract address
 	contractAddress := common.HexToAddress(cfg.VectorX)
 
-	// Contract ABI (Application Binary Interface)
-	pwd, _ := os.Getwd()
-	log.Info(pwd)
-	// byteValue, err := os.ReadFile(pwd + "/das/avail/vectorx/abi/Vectorx.abi.json")
-	// if err != nil {
-	// 	log.Warn("⚠️ cannot read abi for vectorX: error:%v", err)
-	// 	return nil, err
-	// }
-	// vectorxABI := string(byteValue)
-
 	// Parse the contract ABI
 	abi, err := abi.JSON(strings.NewReader(vectorx.VectorxABI))
 	if err != nil {
@@ -156,7 +145,6 @@ func (a *AvailDA) Store(ctx context.Context, message []byte) ([]byte, error) {
 	}
 
 	nonce := GetAccountNonce(uint32(accountInfo.Nonce))
-	// fmt.Println("Nonce from localDatabase:", nonce, "    ::::::::   from acountInfo:", accountInfo.Nonce)
 	o := gsrpc_types.SignatureOptions{
 		BlockHash:          a.genesisHash,
 		Era:                gsrpc_types.ExtrinsicEra{IsMortalEra: false},
@@ -228,7 +216,7 @@ outer:
 	}
 	log.Info("Finalized extrinsic", "extrinsicIndex", extrinsicIndex)
 
-	merkleProofInput, err := QueryMerkleProofInput(finalizedblockHash.Hex(), extrinsicIndex)
+	merkleProofInput, err := QueryMerkleProofInput(finalizedblockHash.Hex(), extrinsicIndex, 1200)
 	if err != nil {
 		return nil, err
 	}

@@ -61,7 +61,7 @@ type BridgeApiResponse struct {
 	RangeHash          gsrpc_types.Hash   `json:"rangeHash"`
 }
 
-func QueryMerkleProofInput(blockHash string, extrinsicIndex int) (MerkleProofInput, error) {
+func QueryMerkleProofInput(blockHash string, extrinsicIndex int, t int64) (MerkleProofInput, error) {
 	// Quering for merkle proof from Bridge Api
 	bridgeApiBaseURL := "https://hex-bridge-api.sandbox.avail.tools/"
 	blockHashPath := "/eth/proof/" + blockHash
@@ -73,43 +73,54 @@ func QueryMerkleProofInput(blockHash string, extrinsicIndex int) (MerkleProofInp
 	u.RawQuery = params.Encode()
 	urlStr := fmt.Sprintf("%v", u)
 
+	var resp *http.Response
+	timeout := time.After(time.Duration(t) * time.Second)
+
+outer:
 	for {
-		resp, err := http.Get(urlStr) //nolint
-		if err != nil {
-			return MerkleProofInput{}, fmt.Errorf("bridge Api request not successfull, err=%w", err)
-		}
-		defer resp.Body.Close()
+		select {
+		case <-timeout:
+			return MerkleProofInput{}, fmt.Errorf("⌛️  Timeout of %d seconds reached without merkleProofInput from bridge-api for blockHash %v and extrinsic index %v", t, blockHash, extrinsicIndex)
 
-		if resp.StatusCode != 200 {
-			log.Info("MerkleProofInput is not yet available from bridge-api", "status", resp.Status)
-			time.Sleep(3 * time.Minute)
-			continue
+		default:
+			var err error
+			resp, err = http.Get(urlStr) //nolint
+			if err != nil {
+				return MerkleProofInput{}, fmt.Errorf("bridge Api request not successfull, err=%w", err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != 200 {
+				log.Info("⚠️🥱  MerkleProofInput is not yet available from bridge-api", "status", resp.Status)
+				time.Sleep(3 * time.Minute)
+				continue
+			}
+			break outer
 		}
-
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return MerkleProofInput{}, err
-		}
-		fmt.Println(string(body))
-		var bridgeApiResponse BridgeApiResponse
-		err = json.Unmarshal(body, &bridgeApiResponse)
-		if err != nil {
-			return MerkleProofInput{}, err
-		}
-
-		var dataRootProof [][32]byte
-		for _, hash := range bridgeApiResponse.DataRootProof {
-			var byte32Array [32]byte
-			copy(byte32Array[:], hash[:])
-			dataRootProof = append(dataRootProof, byte32Array)
-		}
-		var leafProof [][32]byte
-		for _, hash := range bridgeApiResponse.LeafProof {
-			var byte32Array [32]byte
-			copy(byte32Array[:], hash[:])
-			leafProof = append(leafProof, byte32Array)
-		}
-		var merkleProofInput MerkleProofInput = MerkleProofInput{dataRootProof, leafProof, bridgeApiResponse.RangeHash, bridgeApiResponse.DataRootIndex, bridgeApiResponse.BlobRoot, bridgeApiResponse.BridgeRoot, bridgeApiResponse.Leaf, bridgeApiResponse.LeafIndex}
-		return merkleProofInput, nil
 	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return MerkleProofInput{}, err
+	}
+	fmt.Println(string(body))
+	var bridgeApiResponse BridgeApiResponse
+	err = json.Unmarshal(body, &bridgeApiResponse)
+	if err != nil {
+		return MerkleProofInput{}, err
+	}
+
+	var dataRootProof [][32]byte
+	for _, hash := range bridgeApiResponse.DataRootProof {
+		var byte32Array [32]byte
+		copy(byte32Array[:], hash[:])
+		dataRootProof = append(dataRootProof, byte32Array)
+	}
+	var leafProof [][32]byte
+	for _, hash := range bridgeApiResponse.LeafProof {
+		var byte32Array [32]byte
+		copy(byte32Array[:], hash[:])
+		leafProof = append(leafProof, byte32Array)
+	}
+	var merkleProofInput MerkleProofInput = MerkleProofInput{dataRootProof, leafProof, bridgeApiResponse.RangeHash, bridgeApiResponse.DataRootIndex, bridgeApiResponse.BlobRoot, bridgeApiResponse.BridgeRoot, bridgeApiResponse.Leaf, bridgeApiResponse.LeafIndex}
+	return merkleProofInput, nil
 }

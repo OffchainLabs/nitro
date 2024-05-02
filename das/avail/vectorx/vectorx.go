@@ -50,7 +50,7 @@ func (v *VectorX) SubscribeForHeaderUpdate(finalizedBlockNumber int, t int64) er
 	}
 	defer sub.Unsubscribe()
 
-	log.Info("🎧  Listening for vectorx HeadUpdate event")
+	log.Info("🎧  Listening for vectorx HeadUpdate event with", "blockNumber", finalizedBlockNumber)
 	timeout := time.After(time.Duration(t) * time.Second)
 	// Loop to process incoming events
 	for {
