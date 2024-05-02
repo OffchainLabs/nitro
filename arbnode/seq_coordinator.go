@@ -533,7 +533,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 	if readUntil > localMsgCount+c.config.MsgPerPoll {
 		readUntil = localMsgCount + c.config.MsgPerPoll
 	}
-	var messages []arbostypes.MessageWithMetadata
+	var messages []arbostypes.MessageWithMetadataAndBlockHash
 	msgToRead := localMsgCount
 	var msgReadErr error
 	for msgToRead < readUntil {
@@ -592,7 +592,10 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 				DelayedMessagesRead: lastDelayedMsg,
 			}
 		}
-		messages = append(messages, message)
+		msgWithBlockHash := arbostypes.MessageWithMetadataAndBlockHash{
+			Message: message,
+		}
+		messages = append(messages, msgWithBlockHash)
 		msgToRead++
 	}
 	if len(messages) > 0 {

@@ -652,7 +652,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		pos++
 	}
 
-	var messages []arbostypes.MessageWithMetadata
+	var messages []arbostypes.MessageWithMetadataAndBlockHash
 	backend := &multiplexerBackend{
 		batchSeqNum: batches[0].SequenceNumber,
 		batches:     batches,
@@ -673,7 +673,10 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		if err != nil {
 			return err
 		}
-		messages = append(messages, *msg)
+		msgWithBlockHash := arbostypes.MessageWithMetadataAndBlockHash{
+			Message: *msg,
+		}
+		messages = append(messages, msgWithBlockHash)
 		batchMessageCounts[batchSeqNum] = currentpos
 		currentpos += 1
 	}
@@ -733,7 +736,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 	}
 	var latestTimestamp uint64
 	if len(messages) > 0 {
-		latestTimestamp = messages[len(messages)-1].Message.Header.Timestamp
+		latestTimestamp = messages[len(messages)-1].Message.Message.Header.Timestamp
 	}
 	log.Info(
 		"InboxTracker",

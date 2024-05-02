@@ -72,9 +72,11 @@ func TestReorgResequencing(t *testing.T) {
 		},
 		L2msg: append(builder.L2Info.GetAddress("User4").Bytes(), arbmath.Uint64ToU256Bytes(params.Ether)...),
 	}
-	err = builder.L2.ConsensusNode.TxStreamer.AddMessages(startMsgCount, true, []arbostypes.MessageWithMetadata{{
-		Message:             newMessage,
-		DelayedMessagesRead: prevMessage.DelayedMessagesRead + 1,
+	err = builder.L2.ConsensusNode.TxStreamer.AddMessages(startMsgCount, true, []arbostypes.MessageWithMetadataAndBlockHash{{
+		Message: arbostypes.MessageWithMetadata{
+			Message:             newMessage,
+			DelayedMessagesRead: prevMessage.DelayedMessagesRead + 1,
+		},
 	}})
 	Require(t, err)
 
