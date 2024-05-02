@@ -292,7 +292,7 @@ pub struct WasmBinary<'a> {
     pub codes: Vec<Code<'a>>,
     pub datas: Vec<Data<'a>>,
     pub names: NameCustomSection,
-    /// The soruce wasm, if known.
+    /// The source wasm, if known.
     pub wasm: Option<&'a [u8]>,
     /// Consensus data used to make module hashes unique.
     pub extra_data: Vec<u8>,
