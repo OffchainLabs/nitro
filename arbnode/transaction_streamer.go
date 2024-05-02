@@ -775,8 +775,8 @@ func (s *TransactionStreamer) countDuplicateMessages(
 		if err != nil {
 			return 0, false, nil, err
 		}
-		nextMessage := messages[curMsg].MessageWithMeta
-		wantMessage, err := rlp.EncodeToBytes(nextMessage)
+		nextMessage := messages[curMsg]
+		wantMessage, err := rlp.EncodeToBytes(nextMessage.MessageWithMeta)
 		if err != nil {
 			return 0, false, nil, err
 		}
@@ -792,12 +792,12 @@ func (s *TransactionStreamer) countDuplicateMessages(
 				return curMsg, true, nil, nil
 			}
 			var duplicateMessage bool
-			if nextMessage.Message != nil {
-				if dbMessageParsed.Message.BatchGasCost == nil || nextMessage.Message.BatchGasCost == nil {
+			if nextMessage.MessageWithMeta.Message != nil {
+				if dbMessageParsed.Message.BatchGasCost == nil || nextMessage.MessageWithMeta.Message.BatchGasCost == nil {
 					// Remove both of the batch gas costs and see if the messages still differ
-					nextMessageCopy := nextMessage
+					nextMessageCopy := nextMessage.MessageWithMeta
 					nextMessageCopy.Message = new(arbostypes.L1IncomingMessage)
-					*nextMessageCopy.Message = *nextMessage.Message
+					*nextMessageCopy.Message = *nextMessage.MessageWithMeta.Message
 					batchGasCostBkup := dbMessageParsed.Message.BatchGasCost
 					dbMessageParsed.Message.BatchGasCost = nil
 					nextMessageCopy.Message.BatchGasCost = nil
@@ -805,7 +805,7 @@ func (s *TransactionStreamer) countDuplicateMessages(
 						// Actually this isn't a reorg; only the batch gas costs differed
 						duplicateMessage = true
 						// If possible - update the message in the database to add the gas cost cache.
-						if batch != nil && nextMessage.Message.BatchGasCost != nil {
+						if batch != nil && nextMessage.MessageWithMeta.Message.BatchGasCost != nil {
 							if *batch == nil {
 								*batch = s.db.NewBatch()
 							}
@@ -1043,9 +1043,20 @@ func (s *TransactionStreamer) PopulateFeedBacklog() error {
 	return s.inboxReader.tracker.PopulateFeedBacklog(s.broadcastServer)
 }
 
-func (s *TransactionStreamer) writeMessage(pos arbutil.MessageIndex, msg arbostypes.MessageWithMetadata, batch ethdb.Batch) error {
+func (s *TransactionStreamer) writeMessage(pos arbutil.MessageIndex, msg arbostypes.MessageWithMetadataAndBlockHash, batch ethdb.Batch) error {
+	// write message with metadata
 	key := dbKey(messagePrefix, uint64(pos))
-	msgBytes, err := rlp.EncodeToBytes(msg)
+	msgBytes, err := rlp.EncodeToBytes(msg.MessageWithMeta)
+	if err != nil {
+		return err
+	}
+	if err := batch.Put(key, msgBytes); err != nil {
+		return err
+	}
+
+	// write block hash
+	key = dbKey(blockHashInputFeedPrefix, uint64(pos))
+	msgBytes, err = rlp.EncodeToBytes(msg.BlockHash)
 	if err != nil {
 		return err
 	}
@@ -1071,7 +1082,7 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 		batch = s.db.NewBatch()
 	}
 	for i, msg := range messages {
-		err := s.writeMessage(pos+arbutil.MessageIndex(i), msg.MessageWithMeta, batch)
+		err := s.writeMessage(pos+arbutil.MessageIndex(i), msg, batch)
 		if err != nil {
 			return err
 		}
