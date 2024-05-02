@@ -84,6 +84,10 @@ func (s *ArbitratorSpawner) LatestWasmModuleRoot() containers.PromiseInterface[c
 	return containers.NewReadyPromise(s.locator.LatestWasmModuleRoot(), nil)
 }
 
+func (s *ArbitratorSpawner) WasmModuleRoots() ([]common.Hash, error) {
+	return s.locator.ModuleRoots(), nil
+}
+
 func (s *ArbitratorSpawner) Name() string {
 	return "arbitrator"
 }

@@ -38,6 +38,10 @@ func (a *ValidationServerAPI) Validate(ctx context.Context, entry *server_api.In
 	return valRun.Await(ctx)
 }
 
+func (a *ValidationServerAPI) WasmModuleRoots() ([]common.Hash, error) {
+	return a.spawner.WasmModuleRoots()
+}
+
 func NewValidationServerAPI(spawner validator.ValidationSpawner) *ValidationServerAPI {
 	return &ValidationServerAPI{spawner}
 }

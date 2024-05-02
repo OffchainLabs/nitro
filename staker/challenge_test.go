@@ -193,6 +193,7 @@ func runChallengeTest(
 
 	for i := 0; i < 100; i++ {
 		if testTimeout {
+			backend.Commit()
 			err = backend.AdjustTime(time.Second * 40)
 		}
 		Require(t, err)
