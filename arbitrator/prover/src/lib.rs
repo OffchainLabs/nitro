@@ -4,7 +4,6 @@
 #![allow(clippy::missing_safety_doc, clippy::too_many_arguments)]
 
 pub mod binary;
-pub mod flat_merkle;
 mod host;
 #[cfg(feature = "native")]
 mod kzg;
