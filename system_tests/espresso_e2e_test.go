@@ -31,7 +31,6 @@ import (
 )
 
 var workingDir = "./espresso-e2e"
-var hotShotAddress = "0x217788c286797d56cd59af5e493f3699c39cbbe8"
 var lightClientAddress = "0xb075b82c7a23e0994df4793422a1f03dbcf9136f"
 var hostIoAddress = "0xF34C2fac45527E55ED122f80a969e79A40547e6D"
 var hotShotUrl = "http://127.0.0.1:50000"
