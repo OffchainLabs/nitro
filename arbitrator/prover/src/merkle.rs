@@ -182,15 +182,6 @@ fn hash_node(ty: MerkleType, a: impl AsRef<[u8]>, b: impl AsRef<[u8]>) -> Bytes3
     h.finalize().into()
 }
 
-#[inline]
-fn capacity(layers: &Vec<Vec<Bytes32>>) -> usize {
-    if layers.is_empty() {
-        return 0;
-    }
-    let base: usize = 2;
-    base.pow((layers.len() - 1).try_into().unwrap())
-}
-
 const fn empty_hash_at(ty: MerkleType, layer_i: usize) -> &'static Bytes32 {
     match ty {
         MerkleType::Empty => EMPTY_HASH,
@@ -310,7 +301,12 @@ impl Merkle {
     // Returns the total number of leaves the tree can hold.
     #[inline]
     fn capacity(&self) -> usize {
-        return capacity(self.layers.lock().unwrap().as_ref());
+        let layers = self.layers.lock().unwrap();
+        if layers.is_empty() {
+            return 0;
+        }
+        let base: usize = 2;
+        base.pow((layers.len() - 1).try_into().unwrap())
     }
 
     // Returns the number of leaves in the tree.
