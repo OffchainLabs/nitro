@@ -56,6 +56,10 @@ func globalstateToTestPreimages(gs validator.GoGlobalState) map[common.Hash][]by
 	return preimages
 }
 
+func (s *mockSpawner) WasmModuleRoots() ([]common.Hash, error) {
+	return mockWasmModuleRoots, nil
+}
+
 func (s *mockSpawner) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
 	run := &mockValRun{
 		Promise: containers.NewPromise[validator.GoGlobalState](nil),
@@ -66,7 +70,7 @@ func (s *mockSpawner) Launch(entry *validator.ValidationInput, moduleRoot common
 	return run
 }
 
-var mockWasmModuleRoot common.Hash = common.HexToHash("0xa5a5a5")
+var mockWasmModuleRoots []common.Hash = []common.Hash{common.HexToHash("0xa5a5a5"), common.HexToHash("0x1212")}
 
 func (s *mockSpawner) Start(context.Context) error {
 	return nil
@@ -84,7 +88,7 @@ func (s *mockSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *vali
 }
 
 func (s *mockSpawner) LatestWasmModuleRoot() containers.PromiseInterface[common.Hash] {
-	return containers.NewReadyPromise[common.Hash](mockWasmModuleRoot, nil)
+	return containers.NewReadyPromise[common.Hash](mockWasmModuleRoots[0], nil)
 }
 
 func (s *mockSpawner) WriteToFile(input *validator.ValidationInput, expOut validator.GoGlobalState, moduleRoot common.Hash) containers.PromiseInterface[struct{}] {
@@ -194,8 +198,19 @@ func TestValidationServerAPI(t *testing.T) {
 	wasmRoot, err := client.LatestWasmModuleRoot().Await(ctx)
 	Require(t, err)
 
-	if wasmRoot != mockWasmModuleRoot {
+	if wasmRoot != mockWasmModuleRoots[0] {
 		t.Error("unexpected mock wasmModuleRoot")
+	}
+
+	roots, err := client.WasmModuleRoots()
+	Require(t, err)
+	if len(roots) != len(mockWasmModuleRoots) {
+		Fatal(t, "wrong number of wasmModuleRoots", len(roots))
+	}
+	for i := range roots {
+		if roots[i] != mockWasmModuleRoots[i] {
+			Fatal(t, "unexpected root", roots[i], mockWasmModuleRoots[i])
+		}
 	}
 
 	hash1 := common.HexToHash("0x11223344556677889900aabbccddeeff")
