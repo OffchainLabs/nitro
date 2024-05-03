@@ -316,6 +316,14 @@ func (state *ArbosState) UpgradeArbosVersion(
 			// these versions are left to Orbit chains for custom upgrades.
 
 		case 30:
+			if !chainConfig.DebugMode() {
+				// This upgrade isn't finalized so we only want to support it for testing
+				return fmt.Errorf(
+					"the chain is upgrading to unsupported ArbOS version %v, %w",
+					nextArbosVersion,
+					ErrFatalNodeOutOfDate,
+				)
+			}
 			programs.Initialize(state.backingStorage.OpenSubStorage(programsSubspace))
 
 		default:
