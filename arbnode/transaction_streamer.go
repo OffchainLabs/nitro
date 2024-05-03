@@ -583,7 +583,7 @@ func (s *TransactionStreamer) GetProcessedMessageCount() (arbutil.MessageIndex, 
 	return msgCount, nil
 }
 
-func (s *TransactionStreamer) AddMessages(pos arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbostypes.MessageWithMetadataAndBlockHash) error {
+func (s *TransactionStreamer) AddMessages(pos arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbostypes.MessageWithMetadata) error {
 	return s.AddMessagesAndEndBatch(pos, messagesAreConfirmed, messages, nil)
 }
 
@@ -713,19 +713,16 @@ func (s *TransactionStreamer) AddFakeInitMessage() error {
 	}
 	chainIdBytes := arbmath.U256Bytes(s.chainConfig.ChainID)
 	msg := append(append(chainIdBytes, 0), chainConfigJson...)
-	return s.AddMessages(0, false, []arbostypes.MessageWithMetadataAndBlockHash{{
-		MessageWithMeta: arbostypes.MessageWithMetadata{
-			Message: &arbostypes.L1IncomingMessage{
-				Header: &arbostypes.L1IncomingMessageHeader{
-					Kind:      arbostypes.L1MessageType_Initialize,
-					RequestId: &common.Hash{},
-					L1BaseFee: common.Big0,
-				},
-				L2msg: msg,
+	return s.AddMessages(0, false, []arbostypes.MessageWithMetadata{{
+		Message: &arbostypes.L1IncomingMessage{
+			Header: &arbostypes.L1IncomingMessageHeader{
+				Kind:      arbostypes.L1MessageType_Initialize,
+				RequestId: &common.Hash{},
+				L1BaseFee: common.Big0,
 			},
-			DelayedMessagesRead: 1,
+			L2msg: msg,
 		},
-		BlockHash: nil,
+		DelayedMessagesRead: 1,
 	}})
 }
 
@@ -743,12 +740,19 @@ func endBatch(batch ethdb.Batch) error {
 	return batch.Write()
 }
 
-func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbostypes.MessageWithMetadataAndBlockHash, batch ethdb.Batch) error {
+func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbostypes.MessageWithMetadata, batch ethdb.Batch) error {
+	messagesWithBlockHash := make([]arbostypes.MessageWithMetadataAndBlockHash, 0, len(messages))
+	for _, message := range messages {
+		messagesWithBlockHash = append(messagesWithBlockHash, arbostypes.MessageWithMetadataAndBlockHash{
+			MessageWithMeta: message,
+		})
+	}
+
 	if messagesAreConfirmed {
 		// Trim confirmed messages from l1pricedataCache
 		s.TrimCache(pos + arbutil.MessageIndex(len(messages)))
 		s.reorgMutex.RLock()
-		dups, _, _, err := s.countDuplicateMessages(pos, messages, nil)
+		dups, _, _, err := s.countDuplicateMessages(pos, messagesWithBlockHash, nil)
 		s.reorgMutex.RUnlock()
 		if err != nil {
 			return err
@@ -765,7 +769,7 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, m
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
 
-	return s.addMessagesAndEndBatchImpl(pos, messagesAreConfirmed, messages, batch)
+	return s.addMessagesAndEndBatchImpl(pos, messagesAreConfirmed, messagesWithBlockHash, batch)
 }
 
 func (s *TransactionStreamer) getPrevPrevDelayedRead(pos arbutil.MessageIndex) (uint64, error) {

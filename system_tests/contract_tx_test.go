@@ -69,23 +69,21 @@ func TestContractTxDeploy(t *testing.T) {
 		l2Msg = append(l2Msg, arbmath.U256Bytes(contractTx.Value)...)
 		l2Msg = append(l2Msg, contractTx.Data...)
 
-		err = builder.L2.ConsensusNode.TxStreamer.AddMessages(pos, true, []arbostypes.MessageWithMetadataAndBlockHash{
+		err = builder.L2.ConsensusNode.TxStreamer.AddMessages(pos, true, []arbostypes.MessageWithMetadata{
 			{
-				MessageWithMeta: arbostypes.MessageWithMetadata{
-					Message: &arbostypes.L1IncomingMessage{
-						Header: &arbostypes.L1IncomingMessageHeader{
-							Kind:        arbostypes.L1MessageType_L2Message,
-							Poster:      from,
-							BlockNumber: 0,
-							Timestamp:   0,
-							RequestId:   &contractTx.RequestId,
-							L1BaseFee:   &big.Int{},
-						},
-						L2msg:        l2Msg,
-						BatchGasCost: new(uint64),
+				Message: &arbostypes.L1IncomingMessage{
+					Header: &arbostypes.L1IncomingMessageHeader{
+						Kind:        arbostypes.L1MessageType_L2Message,
+						Poster:      from,
+						BlockNumber: 0,
+						Timestamp:   0,
+						RequestId:   &contractTx.RequestId,
+						L1BaseFee:   &big.Int{},
 					},
-					DelayedMessagesRead: delayedMessagesRead,
+					L2msg:        l2Msg,
+					BatchGasCost: new(uint64),
 				},
+				DelayedMessagesRead: delayedMessagesRead,
 			},
 		})
 		Require(t, err)

@@ -91,10 +91,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 			return false
 		}
 		Require(t, err)
-		emptyMessageWithBlockHash := arbostypes.MessageWithMetadataAndBlockHash{
-			MessageWithMeta: emptyMessage,
-		}
-		Require(t, node.TxStreamer.AddMessages(curMsgs, false, []arbostypes.MessageWithMetadataAndBlockHash{emptyMessageWithBlockHash}))
+		Require(t, node.TxStreamer.AddMessages(curMsgs, false, []arbostypes.MessageWithMetadata{emptyMessage}))
 		return true
 	}
 

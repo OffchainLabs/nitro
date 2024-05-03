@@ -128,7 +128,7 @@ func TestTransactionStreamer(t *testing.T) {
 			}
 			state.balances = newBalances
 
-			var messages []arbostypes.MessageWithMetadataAndBlockHash
+			var messages []arbostypes.MessageWithMetadata
 			// TODO replay a random amount of messages too
 			numMessages := rand.Int() % 5
 			for j := 0; j < numMessages; j++ {
@@ -154,18 +154,16 @@ func TestTransactionStreamer(t *testing.T) {
 				l2Message = append(l2Message, arbmath.U256Bytes(value)...)
 				var requestId common.Hash
 				binary.BigEndian.PutUint64(requestId.Bytes()[:8], uint64(i))
-				messages = append(messages, arbostypes.MessageWithMetadataAndBlockHash{
-					MessageWithMeta: arbostypes.MessageWithMetadata{
-						Message: &arbostypes.L1IncomingMessage{
-							Header: &arbostypes.L1IncomingMessageHeader{
-								Kind:      arbostypes.L1MessageType_L2Message,
-								Poster:    source,
-								RequestId: &requestId,
-							},
-							L2msg: l2Message,
+				messages = append(messages, arbostypes.MessageWithMetadata{
+					Message: &arbostypes.L1IncomingMessage{
+						Header: &arbostypes.L1IncomingMessageHeader{
+							Kind:      arbostypes.L1MessageType_L2Message,
+							Poster:    source,
+							RequestId: &requestId,
 						},
-						DelayedMessagesRead: 1,
+						L2msg: l2Message,
 					},
+					DelayedMessagesRead: 1,
 				})
 				state.balances[source].Sub(state.balances[source], value)
 				if state.balances[dest] == nil {
