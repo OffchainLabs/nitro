@@ -85,7 +85,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 	if chainConfig == nil {
 		return nil, errors.New("database doesn't have a chain config (was this node initialized?)")
 	}
-	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "", true)
+	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "arbitrumdata/", true)
 	if err != nil {
 		return nil, err
 	}

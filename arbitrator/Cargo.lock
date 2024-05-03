@@ -1630,6 +1630,7 @@ dependencies = [
  "num",
  "num-derive",
  "num-traits",
+ "once_cell",
  "parking_lot",
  "rand",
  "rayon",

@@ -88,7 +88,7 @@ func init() {
 				return msg, nil, nil
 			}
 
-			evm, vmError := backend.GetEVM(ctx, msg, statedb, header, &vm.Config{NoBaseFee: true}, blockCtx)
+			evm := backend.GetEVM(ctx, msg, statedb, header, &vm.Config{NoBaseFee: true}, blockCtx)
 			go func() {
 				<-ctx.Done()
 				evm.Cancel()
@@ -110,7 +110,7 @@ func init() {
 				ReturnData:    output,
 				ScheduledTxes: nil,
 			}
-			return msg, res, vmError()
+			return msg, res, statedb.Error()
 		}
 		return msg, nil, nil
 	}
