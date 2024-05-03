@@ -783,8 +783,8 @@ func createTestNodeOnL1WithConfigImpl(
 		l2info = NewArbTestInfo(t, chainConfig.ChainID)
 	}
 	var hotShotAddr common.Address
-	if nodeConfig.BlockValidator.HotShotAddress != "" {
-		hotShotAddr = common.HexToAddress(nodeConfig.BlockValidator.HotShotAddress)
+	if nodeConfig.BlockValidator.LightClientAddress != "" {
+		hotShotAddr = common.HexToAddress(nodeConfig.BlockValidator.LightClientAddress)
 	}
 	addresses, initMessage := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig, hotShotAddr)
 	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, initMessage, l2StackConfig, &execConfig.Caching)

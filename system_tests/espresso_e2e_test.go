@@ -168,7 +168,7 @@ func createL1ValidatorPosterNode(ctx context.Context, t *testing.T, hotshotUrl s
 	builder.nodeConfig.BlockValidator.Enable = true
 	builder.nodeConfig.BlockValidator.ValidationPoll = 2 * time.Second
 	builder.nodeConfig.BlockValidator.ValidationServer.URL = fmt.Sprintf("ws://127.0.0.1:%d", arbValidationPort)
-	builder.nodeConfig.BlockValidator.HotShotAddress = lightClientAddress
+	builder.nodeConfig.BlockValidator.LightClientAddress = lightClientAddress
 	builder.nodeConfig.BlockValidator.Espresso = true
 	builder.nodeConfig.DelayedSequencer.Enable = false
 
@@ -221,7 +221,7 @@ func createStaker(ctx context.Context, t *testing.T, builder *NodeBuilder, incor
 	config.Staker.Enable = false
 	config.BlockValidator.Enable = true
 	config.BlockValidator.ValidationPoll = 2 * time.Second
-	config.BlockValidator.HotShotAddress = hotShotAddress
+	config.BlockValidator.LightClientAddress = lightClientAddress
 	config.BlockValidator.Espresso = true
 	config.BlockValidator.ValidationServer.URL = fmt.Sprintf("ws://127.0.0.1:%d", arbValidationPort)
 	testClient, cleanup := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: config})

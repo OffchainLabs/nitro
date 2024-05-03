@@ -248,7 +248,7 @@ func NewStatelessBlockValidator(
 	stack *node.Node,
 ) (*StatelessBlockValidator, error) {
 	// Sanity check, also used to surpress the unused koanf field lint error
-	if config().Espresso && config().HotShotAddress == "" {
+	if config().Espresso && config().LightClientAddress == "" {
 		return nil, errors.New("cannot create a new stateless block validator in espresso mode without a hotshot reader")
 	}
 	validationSpawners := make([]validator.ValidationSpawner, len(config().ValidationServerConfigs))

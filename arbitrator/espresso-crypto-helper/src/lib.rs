@@ -78,16 +78,15 @@ pub fn verify_merkle_proof_helper(
 
     assert!(proved_comm == header_comm);
     assert!(local_block_comm_u256 == circuit_block_comm_u256);
-    dbg!("we finished validating exeution");
 }
 
 // Helper function to verify a VID namespace proof that takes the byte representations of the proof,
 // namespace table, and commitment string.
 //
-// proof_bytes: Byte representation of a JSON NamespaceProof string
-// commit_bytes: Byte representation of a TaggedBase64 payload commitment string
-// ns_table_bytes: Raw bytes of the namespace table
-// tx_comm_bytes: Byte representation of a hex encoded Sha256 digest that the transaction set commits to
+// proof_bytes: Byte representation of a JSON NamespaceProof string.
+// commit_bytes: Byte representation of a TaggedBase64 payload commitment string.
+// ns_table_bytes: Raw bytes of the namespace table.
+// tx_comm_bytes: Byte representation of a hex encoded Sha256 digest that the transaction set commits to.
 pub fn verify_namespace_helper(
     namespace: u64,
     proof_bytes: &[u8],

@@ -43,11 +43,6 @@ pub fn verify_merkle_proof(mut env: WasmEnvMut, sp: u32) {
     let circuit_buf_ptr = sp.read_u64(9);
     let circuit_buf_len = sp.read_u64(10);
 
-    dbg!("debug pointers");
-    dbg!(&proof_buf_ptr);
-    dbg!(&proof_buf_len);
-    dbg!(&circuit_buf_ptr);
-    dbg!(&circuit_buf_len);
     let proof_bytes = sp.read_slice(proof_buf_ptr, proof_buf_len);
     let header_bytes = sp.read_slice(header_buf_ptr, header_buf_len);
     let block_comm_bytes = sp.read_slice(block_comm_buf_ptr, block_comm_buf_len);

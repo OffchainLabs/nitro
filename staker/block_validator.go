@@ -102,8 +102,8 @@ type BlockValidatorConfig struct {
 	memoryFreeLimit int
 
 	// Espresso specific flags
-	Espresso       bool   `koanf:"espresso"`
-	HotShotAddress string `koanf:"hotshot-address"` //nolint
+	Espresso           bool   `koanf:"espresso"`
+	LightClientAddress string `koanf:"light-client-address"` //nolint
 }
 
 func (c *BlockValidatorConfig) Validate() error {
