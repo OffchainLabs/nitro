@@ -30,7 +30,7 @@ use sha3::Keccak256;
 use std::{
     collections::HashSet,
     convert::{TryFrom, TryInto},
-    sync::{Arc, Mutex, MutexGuard},
+    sync::{Arc, Mutex},
 };
 
 #[cfg(feature = "rayon")]
@@ -371,19 +371,10 @@ impl Merkle {
         #[cfg(feature = "counters")]
         SET_COUNTERS[&self.ty].fetch_add(1, Ordering::Relaxed);
         let mut layers = self.layers.lock().unwrap();
-        self.locked_set(&mut layers, idx, hash);
-    }
-
-    fn locked_set(
-        &self,
-        locked_layers: &mut MutexGuard<Vec<Vec<Bytes32>>>,
-        idx: usize,
-        hash: Bytes32,
-    ) {
-        if locked_layers[0][idx] == hash {
+        if layers[0][idx] == hash {
             return;
         }
-        locked_layers[0][idx] = hash;
+        layers[0][idx] = hash;
         self.dirty_layers.lock().unwrap()[0].insert(idx >> 1);
     }
 
