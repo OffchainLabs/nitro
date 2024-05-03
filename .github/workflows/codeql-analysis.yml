@@ -45,8 +45,10 @@ jobs:
     - name: Checkout
       uses: actions/checkout@v4
       with:
-        token: ${{ secrets.PRIVATE_CHECKOUT }}
         submodules: true
+
+    - name: Install dependencies
+      run: sudo apt update && sudo apt install -y wabt
 
     # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
