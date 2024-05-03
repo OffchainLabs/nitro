@@ -202,6 +202,7 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.nodeConfig.DelayedSequencer.Enable = false
 	cleanup := builder.Build(t)
 	defer cleanup()
 

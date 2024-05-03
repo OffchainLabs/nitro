@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbtest
@@ -36,13 +36,17 @@ import (
 	"github.com/offchainlabs/nitro/validator/valnode"
 	rediscons "github.com/offchainlabs/nitro/validator/valnode/redis"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/catalyst"
 	"github.com/ethereum/go-ethereum/eth/downloader"
@@ -185,6 +189,13 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 	b.l1StackConfig = createStackConfigForTest(b.dataDir)
 	b.l2StackConfig = createStackConfigForTest(b.dataDir)
 	b.execConfig = gethexec.ConfigDefaultTest()
+	return b
+}
+
+func (b *NodeBuilder) WithArbOSVersion(arbosVersion uint64) *NodeBuilder {
+	newChainConfig := *b.chainConfig
+	newChainConfig.ArbitrumChainParams.InitialArbOSVersion = arbosVersion
+	b.chainConfig = &newChainConfig
 	return b
 }
 
@@ -579,12 +590,8 @@ func StaticFetcherFrom[T any](t *testing.T, config *T) func() *T {
 }
 
 func configByValidationNode(clientConfig *arbnode.Config, valStack *node.Node) {
-	clientConfig.BlockValidator.ExecutionServerConfig.URL = valStack.WSEndpoint()
-	clientConfig.BlockValidator.ExecutionServerConfig.JWTSecret = ""
-	if len(clientConfig.BlockValidator.ValidationServerConfigs) != 0 {
-		clientConfig.BlockValidator.ValidationServerConfigs[0].URL = valStack.WSEndpoint()
-		clientConfig.BlockValidator.ValidationServerConfigs[0].JWTSecret = ""
-	}
+	clientConfig.BlockValidator.ValidationServerConfigs[0].URL = valStack.WSEndpoint()
+	clientConfig.BlockValidator.ValidationServerConfigs[0].JWTSecret = ""
 }
 
 func currentRootModule(t *testing.T) common.Hash {
@@ -1158,6 +1165,76 @@ func deploySimple(
 	return addr, simple
 }
 
+func deployContractInitCode(code []byte, revert bool) []byte {
+	// a small prelude to return the given contract code
+	last_opcode := vm.RETURN
+	if revert {
+		last_opcode = vm.REVERT
+	}
+	deploy := []byte{byte(vm.PUSH32)}
+	deploy = append(deploy, math.U256Bytes(big.NewInt(int64(len(code))))...)
+	deploy = append(deploy, byte(vm.DUP1))
+	deploy = append(deploy, byte(vm.PUSH1))
+	deploy = append(deploy, 42) // the prelude length
+	deploy = append(deploy, byte(vm.PUSH1))
+	deploy = append(deploy, 0)
+	deploy = append(deploy, byte(vm.CODECOPY))
+	deploy = append(deploy, byte(vm.PUSH1))
+	deploy = append(deploy, 0)
+	deploy = append(deploy, byte(last_opcode))
+	deploy = append(deploy, code...)
+	return deploy
+}
+
+func deployContract(
+	t *testing.T, ctx context.Context, auth bind.TransactOpts, client *ethclient.Client, code []byte,
+) common.Address {
+	deploy := deployContractInitCode(code, false)
+	basefee := arbmath.BigMulByFrac(GetBaseFee(t, client, ctx), 6, 5) // current*1.2
+	nonce, err := client.NonceAt(ctx, auth.From, nil)
+	Require(t, err)
+	gas, err := client.EstimateGas(ctx, ethereum.CallMsg{
+		From:      auth.From,
+		GasPrice:  basefee,
+		GasTipCap: auth.GasTipCap,
+		Value:     big.NewInt(0),
+		Data:      deploy,
+	})
+	Require(t, err)
+	tx := types.NewContractCreation(nonce, big.NewInt(0), gas, basefee, deploy)
+	tx, err = auth.Signer(auth.From, tx)
+	Require(t, err)
+	Require(t, client.SendTransaction(ctx, tx))
+	_, err = EnsureTxSucceeded(ctx, client, tx)
+	Require(t, err)
+	return crypto.CreateAddress(auth.From, nonce)
+}
+
+func sendContractCall(
+	t *testing.T, ctx context.Context, to common.Address, client *ethclient.Client, data []byte,
+) []byte {
+	t.Helper()
+	msg := ethereum.CallMsg{
+		To:    &to,
+		Value: big.NewInt(0),
+		Data:  data,
+	}
+	res, err := client.CallContract(ctx, msg, nil)
+	Require(t, err)
+	return res
+}
+
+func doUntil(t *testing.T, delay time.Duration, max int, lambda func() bool) {
+	t.Helper()
+	for i := 0; i < max; i++ {
+		if lambda() {
+			return
+		}
+		time.Sleep(delay)
+	}
+	Fatal(t, "failed to complete after ", delay*time.Duration(max))
+}
+
 func TestMain(m *testing.M) {
 	logLevelEnv := os.Getenv("TEST_LOGLEVEL")
 	if logLevelEnv != "" {
@@ -1181,4 +1258,14 @@ func getExecNode(t *testing.T, node *arbnode.Node) *gethexec.ExecutionNode {
 		t.Fatal("failed to get exec node from arbnode")
 	}
 	return gethExec
+}
+
+func logParser[T any](t *testing.T, source string, name string) func(*types.Log) *T {
+	parser := util.NewLogParser[T](source, name)
+	return func(log *types.Log) *T {
+		t.Helper()
+		event, err := parser(log)
+		Require(t, err, "failed to parse log")
+		return event
+	}
 }

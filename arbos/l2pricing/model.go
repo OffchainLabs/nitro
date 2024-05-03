@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package l2pricing
@@ -30,7 +30,7 @@ func (ps *L2PricingState) AddToGasPool(gas int64) error {
 		return err
 	}
 	// pay off some of the backlog with the added gas, stopping at 0
-	backlog = arbmath.SaturatingUCast(arbmath.SaturatingSub(int64(backlog), gas))
+	backlog = arbmath.SaturatingUCast[uint64](arbmath.SaturatingSub(int64(backlog), gas))
 	return ps.SetGasBacklog(backlog)
 }
 
@@ -46,7 +46,7 @@ func (ps *L2PricingState) UpdatePricingModel(l2BaseFee *big.Int, timePassed uint
 	if backlog > tolerance*speedLimit {
 		excess := int64(backlog - tolerance*speedLimit)
 		exponentBips := arbmath.NaturalToBips(excess) / arbmath.Bips(inertia*speedLimit)
-		baseFee = arbmath.BigMulByBips(minBaseFee, arbmath.ApproxExpBasisPoints(exponentBips))
+		baseFee = arbmath.BigMulByBips(minBaseFee, arbmath.ApproxExpBasisPoints(exponentBips, 4))
 	}
 	_ = ps.SetBaseFeeWei(baseFee)
 }

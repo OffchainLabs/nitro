@@ -193,6 +193,7 @@ func runChallengeTest(
 
 	for i := 0; i < 100; i++ {
 		if testTimeout {
+			backend.Commit()
 			err = backend.AdjustTime(time.Second * 40)
 		}
 		Require(t, err)
@@ -249,7 +250,7 @@ func createBaseMachine(t *testing.T, wasmname string, wasmModules []string) *ser
 		modulePaths = append(modulePaths, path.Join(wasmDir, moduleName))
 	}
 
-	machine, err := server_arb.LoadSimpleMachine(wasmPath, modulePaths)
+	machine, err := server_arb.LoadSimpleMachine(wasmPath, modulePaths, true)
 	Require(t, err)
 
 	return machine

@@ -1,0 +1,11 @@
+[package]
+name = "user-host-trait"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+arbutil = { path = "../../arbutil/" }
+caller-env = { path = "../../caller-env/" }
+prover = { path = "../../prover/", default-features = false }
+eyre = "0.6.5"
+ruint2 = "1.9.0"

@@ -25,6 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/merkleAccumulator"
+	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -48,6 +49,7 @@ type ArbosState struct {
 	addressTable                  *addressTable.AddressTable
 	chainOwners                   *addressSet.AddressSet
 	sendMerkle                    *merkleAccumulator.MerkleAccumulator
+	programs                      *programs.Programs
 	blockhashes                   *blockhash.Blockhashes
 	chainId                       storage.StorageBackedBigInt
 	chainConfig                   storage.StorageBackedBytes
@@ -73,7 +75,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 	return &ArbosState{
 		arbosVersion,
 		20,
-		20,
+		30,
 		backingStorage.OpenStorageBackedUint64(uint64(upgradeVersionOffset)),
 		backingStorage.OpenStorageBackedUint64(uint64(upgradeTimestampOffset)),
 		backingStorage.OpenStorageBackedAddress(uint64(networkFeeAccountOffset)),
@@ -83,6 +85,7 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 		addressTable.Open(backingStorage.OpenCachedSubStorage(addressTableSubspace)),
 		addressSet.OpenAddressSet(backingStorage.OpenCachedSubStorage(chainOwnerSubspace)),
 		merkleAccumulator.OpenMerkleAccumulator(backingStorage.OpenCachedSubStorage(sendMerkleSubspace)),
+		programs.Open(backingStorage.OpenSubStorage(programsSubspace)),
 		blockhash.OpenBlockhashes(backingStorage.OpenCachedSubStorage(blockhashesSubspace)),
 		backingStorage.OpenStorageBackedBigInt(uint64(chainIdOffset)),
 		backingStorage.OpenStorageBackedBytes(chainConfigSubspace),
@@ -160,32 +163,10 @@ var (
 	sendMerkleSubspace   SubspaceID = []byte{5}
 	blockhashesSubspace  SubspaceID = []byte{6}
 	chainConfigSubspace  SubspaceID = []byte{7}
+	programsSubspace     SubspaceID = []byte{8}
 )
 
-// Returns a list of precompiles that only appear in Arbitrum chains (i.e. ArbOS precompiles) at the genesis block
-func GetArbitrumOnlyGenesisPrecompiles(chainConfig *params.ChainConfig) []common.Address {
-	rules := chainConfig.Rules(big.NewInt(0), false, 0, chainConfig.ArbitrumChainParams.InitialArbOSVersion)
-	arbPrecompiles := vm.ActivePrecompiles(rules)
-	rules.IsArbitrum = false
-	ethPrecompiles := vm.ActivePrecompiles(rules)
-
-	ethPrecompilesSet := make(map[common.Address]bool)
-	for _, addr := range ethPrecompiles {
-		ethPrecompilesSet[addr] = true
-	}
-
-	var arbOnlyPrecompiles []common.Address
-	for _, addr := range arbPrecompiles {
-		if !ethPrecompilesSet[addr] {
-			arbOnlyPrecompiles = append(arbOnlyPrecompiles, addr)
-		}
-	}
-	return arbOnlyPrecompiles
-}
-
-// During early development we sometimes change the storage format of version 1, for convenience. But as soon as we
-// start running long-lived chains, every change to the storage format will require defining a new version and
-// providing upgrade code.
+var PrecompileMinArbOSVersions = make(map[common.Address]uint64)
 
 func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage) (*ArbosState, error) {
 	sto := storage.NewGeth(stateDB, burner)
@@ -204,8 +185,10 @@ func InitializeArbosState(stateDB vm.StateDB, burner burn.Burner, chainConfig *p
 
 	// Solidity requires call targets have code, but precompiles don't.
 	// To work around this, we give precompiles fake code.
-	for _, genesisPrecompile := range GetArbitrumOnlyGenesisPrecompiles(chainConfig) {
-		stateDB.SetCode(genesisPrecompile, []byte{byte(vm.INVALID)})
+	for addr, version := range PrecompileMinArbOSVersions {
+		if version == 0 {
+			stateDB.SetCode(addr, []byte{byte(vm.INVALID)})
+		}
 	}
 
 	// may be the zero address
@@ -303,7 +286,8 @@ func (state *ArbosState) UpgradeArbosVersion(
 		case 10:
 			ensure(state.l1PricingState.SetL1FeesAvailable(stateDB.GetBalance(
 				l1pricing.L1PricerFundsPoolAddress,
-			)))
+			).ToBig()))
+
 		case 11:
 			// Update the PerBatchGasCost to a more accurate value compared to the old v6 default.
 			ensure(state.l1PricingState.SetPerBatchGasCost(l1pricing.InitialPerBatchGasCostV12))
@@ -320,21 +304,43 @@ func (state *ArbosState) UpgradeArbosVersion(
 			if !firstTime {
 				ensure(state.chainOwners.ClearList())
 			}
-		// ArbOS versions 12 through 19 are left to Orbit chains for custom upgrades.
+
+		case 12, 13, 14, 15, 16, 17, 18, 19:
+			// these versions are left to Orbit chains for custom upgrades.
+
 		case 20:
 			// Update Brotli compression level for fast compression from 0 to 1
 			ensure(state.SetBrotliCompressionLevel(1))
-		default:
-			if nextArbosVersion >= 12 && nextArbosVersion <= 19 {
-				// ArbOS versions 12 through 19 are left to Orbit chains for custom upgrades.
-			} else {
+
+		case 21, 22, 23, 24, 25, 26, 27, 28, 29:
+			// these versions are left to Orbit chains for custom upgrades.
+
+		case 30:
+			if !chainConfig.DebugMode() {
+				// This upgrade isn't finalized so we only want to support it for testing
 				return fmt.Errorf(
 					"the chain is upgrading to unsupported ArbOS version %v, %w",
 					nextArbosVersion,
 					ErrFatalNodeOutOfDate,
 				)
 			}
+			programs.Initialize(state.backingStorage.OpenSubStorage(programsSubspace))
+
+		default:
+			return fmt.Errorf(
+				"the chain is upgrading to unsupported ArbOS version %v, %w",
+				nextArbosVersion,
+				ErrFatalNodeOutOfDate,
+			)
 		}
+
+		// install any new precompiles
+		for addr, version := range PrecompileMinArbOSVersions {
+			if version == nextArbosVersion {
+				stateDB.SetCode(addr, []byte{byte(vm.INVALID)})
+			}
+		}
+
 		state.arbosVersion = nextArbosVersion
 	}
 
@@ -433,6 +439,10 @@ func (state *ArbosState) SendMerkleAccumulator() *merkleAccumulator.MerkleAccumu
 		state.sendMerkle = merkleAccumulator.OpenMerkleAccumulator(state.backingStorage.OpenCachedSubStorage(sendMerkleSubspace))
 	}
 	return state.sendMerkle
+}
+
+func (state *ArbosState) Programs() *programs.Programs {
+	return state.programs
 }
 
 func (state *ArbosState) Blockhashes() *blockhash.Blockhashes {

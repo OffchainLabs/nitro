@@ -1,13 +1,15 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbmath
 
 import (
+	"bytes"
 	"math"
 	"math/rand"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -59,6 +61,63 @@ func TestMath(t *testing.T) {
 			Fail(t, "incorrect", "2^", i, diff, approx, correct)
 		}
 	}
+
+	assert := func(cond bool) {
+		t.Helper()
+		if !cond {
+			Fail(t)
+		}
+	}
+	assert(uint64(math.MaxInt64) == SaturatingUCast[uint64](int64(math.MaxInt64)))
+	assert(uint64(math.MaxInt64-1) == SaturatingUCast[uint64](int64(math.MaxInt64-1)))
+	assert(uint64(math.MaxInt64-1) == SaturatingUCast[uint64](math.MaxInt64-1))
+	assert(uint64(math.MaxInt64) == SaturatingUCast[uint64](math.MaxInt64))
+	assert(uint32(math.MaxUint32) == SaturatingUCast[uint32](math.MaxInt64-1))
+	assert(uint16(math.MaxUint16) == SaturatingUCast[uint16](math.MaxInt32))
+	assert(uint16(math.MaxUint16) == SaturatingUCast[uint16](math.MaxInt32-1))
+	assert(uint16(math.MaxUint16) == SaturatingUCast[uint16](math.MaxInt-1))
+	assert(uint8(math.MaxUint8) == SaturatingUCast[uint8](math.MaxInt-1))
+	assert(uint(math.MaxInt-1) == SaturatingUCast[uint](math.MaxInt-1))
+	assert(uint(math.MaxInt-1) == SaturatingUCast[uint](int64(math.MaxInt-1)))
+
+	assert(int64(math.MaxInt64) == SaturatingCast[int64, uint64](math.MaxUint64))
+	assert(int64(math.MaxInt64) == SaturatingCast[int64, uint64](math.MaxUint64-1))
+	assert(int32(math.MaxInt32) == SaturatingCast[int32, uint64](math.MaxUint64))
+	assert(int32(math.MaxInt32) == SaturatingCast[int32, uint64](math.MaxUint64-1))
+	assert(int8(math.MaxInt8) == SaturatingCast[int8, uint16](math.MaxUint16))
+	assert(int8(32) == SaturatingCast[int8, uint16](32))
+	assert(int16(0) == SaturatingCast[int16, uint32](0))
+	assert(int16(math.MaxInt16) == SaturatingCast[int16, uint32](math.MaxInt16))
+	assert(int16(math.MaxInt16) == SaturatingCast[int16, uint16](math.MaxInt16))
+	assert(int16(math.MaxInt8) == SaturatingCast[int16, uint8](math.MaxInt8))
+
+	assert(uint32(math.MaxUint32) == SaturatingUUCast[uint32, uint64](math.MaxUint64))
+	assert(uint32(math.MaxUint16) == SaturatingUUCast[uint32, uint64](math.MaxUint16))
+	assert(uint32(math.MaxUint16) == SaturatingUUCast[uint32, uint16](math.MaxUint16))
+	assert(uint16(math.MaxUint16) == SaturatingUUCast[uint16, uint16](math.MaxUint16))
+}
+
+func TestSlices(t *testing.T) {
+	assert_eq := func(left, right []uint8) {
+		t.Helper()
+		if !bytes.Equal(left, right) {
+			Fail(t, common.Bytes2Hex(left), " ", common.Bytes2Hex(right))
+		}
+	}
+
+	data := []uint8{0, 1, 2, 3}
+	assert_eq(SliceWithRunoff(data, 4, 4), data[0:0])
+	assert_eq(SliceWithRunoff(data, 1, 0), data[0:0])
+	assert_eq(SliceWithRunoff(data, 0, 0), data[0:0])
+	assert_eq(SliceWithRunoff(data, 0, 1), data[0:1])
+	assert_eq(SliceWithRunoff(data, 1, 3), data[1:3])
+	assert_eq(SliceWithRunoff(data, 0, 4), data[0:4])
+	assert_eq(SliceWithRunoff(data, 0, 5), data[0:4])
+	assert_eq(SliceWithRunoff(data, 2, math.MaxUint8), data[2:4])
+
+	assert_eq(SliceWithRunoff(data, -1, -2), []uint8{})
+	assert_eq(SliceWithRunoff(data, 5, 3), []uint8{})
+	assert_eq(SliceWithRunoff(data, 7, 8), []uint8{})
 }
 
 func Fail(t *testing.T, printables ...interface{}) {

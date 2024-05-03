@@ -341,7 +341,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	}
 	var wasmModuleRoot common.Hash
 	if useStubs {
-		wasmModuleRoot = mockWasmModuleRoot
+		wasmModuleRoot = mockWasmModuleRoots[0]
 	} else {
 		wasmModuleRoot = locator.LatestWasmModuleRoot()
 		if (wasmModuleRoot == common.Hash{}) {
