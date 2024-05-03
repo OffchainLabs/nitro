@@ -8,6 +8,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/arbutil"
+
 	"github.com/offchainlabs/nitro/util/jsonapi"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -57,6 +58,13 @@ type InputJSON struct {
 	BatchInfo     []BatchInfoJson
 	DelayedMsgB64 string
 	StartState    validator.GoGlobalState
+	UserWasms     map[common.Hash]UserWasmJson
+	DebugChain    bool
+}
+
+type UserWasmJson struct {
+	Module string
+	Asm    string
 }
 
 type BatchInfoJson struct {

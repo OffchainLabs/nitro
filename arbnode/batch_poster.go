@@ -1119,7 +1119,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	}
 
 	config := b.config()
-	forcePostBatch := time.Since(firstMsgTime) >= config.MaxDelay
+	forcePostBatch := config.MaxDelay <= 0 || time.Since(firstMsgTime) >= config.MaxDelay
 
 	var l1BoundMaxBlockNumber uint64 = math.MaxUint64
 	var l1BoundMaxTimestamp uint64 = math.MaxUint64

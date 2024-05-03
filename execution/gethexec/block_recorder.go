@@ -173,6 +173,7 @@ func (r *BlockRecorder) RecordBlockCreation(
 		BlockHash: blockHash,
 		Preimages: preimages,
 		BatchInfo: readBatchInfo,
+		UserWasms: recordingdb.UserWasms(),
 	}, err
 }
 

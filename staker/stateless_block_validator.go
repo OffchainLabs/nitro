@@ -10,10 +10,11 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
-
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -61,6 +62,7 @@ type TransactionStreamerInterface interface {
 	ResultAtCount(count arbutil.MessageIndex) (*execution.MessageResult, error)
 	PauseReorgs()
 	ResumeReorgs()
+	ChainConfig() *params.ChainConfig
 }
 
 type InboxReaderInterface interface {
@@ -120,12 +122,14 @@ type validationEntry struct {
 	End           validator.GoGlobalState
 	HasDelayedMsg bool
 	DelayedMsgNr  uint64
+	ChainConfig   *params.ChainConfig
 	// valid when created, removed after recording
 	msg *arbostypes.MessageWithMetadata
 	// Has batch when created - others could be added on record
 	BatchInfo []validator.BatchInfo
 	// Valid since Ready
 	Preimages  map[arbutil.PreimageType]map[common.Hash][]byte
+	UserWasms  state.UserWasms
 	DelayedMsg []byte
 }
 
@@ -138,9 +142,11 @@ func (e *validationEntry) ToInput() (*validator.ValidationInput, error) {
 		HasDelayedMsg: e.HasDelayedMsg,
 		DelayedMsgNr:  e.DelayedMsgNr,
 		Preimages:     e.Preimages,
+		UserWasms:     e.UserWasms,
 		BatchInfo:     e.BatchInfo,
 		DelayedMsg:    e.DelayedMsg,
 		StartState:    e.Start,
+		DebugChain:    e.ChainConfig.DebugMode(),
 	}, nil
 }
 
@@ -152,6 +158,7 @@ func newValidationEntry(
 	batch []byte,
 	batchBlockHash common.Hash,
 	prevDelayed uint64,
+	chainConfig *params.ChainConfig,
 ) (*validationEntry, error) {
 	batchInfo := validator.BatchInfo{
 		Number:    start.Batch,
@@ -175,6 +182,7 @@ func newValidationEntry(
 		DelayedMsgNr:  delayedNum,
 		msg:           msg,
 		BatchInfo:     []validator.BatchInfo{batchInfo},
+		ChainConfig:   chainConfig,
 	}, nil
 }
 
@@ -242,6 +250,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		if recording.Preimages != nil {
 			e.Preimages[arbutil.Keccak256PreimageType] = recording.Preimages
 		}
+		e.UserWasms = recording.UserWasms
 	}
 	if e.HasDelayedMsg {
 		delayedMsg, err := v.inboxTracker.GetDelayedMessageBytes(e.DelayedMsgNr)
@@ -358,7 +367,7 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
-	entry, err := newValidationEntry(pos, start, end, msg, seqMsg, batchBlockHash, prevDelayed)
+	entry, err := newValidationEntry(pos, start, end, msg, seqMsg, batchBlockHash, prevDelayed, v.streamer.ChainConfig())
 	if err != nil {
 		return nil, err
 	}
