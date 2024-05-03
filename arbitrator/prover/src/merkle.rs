@@ -539,25 +539,21 @@ fn correct_capacity() {
 #[ignore = "This is just used for generating the zero hashes for the memory merkle trees."]
 fn emit_memory_zerohashes() {
     // The following code was generated from the empty_leaf_hash() test in the memory package.
-    let mut left = Bytes32::new_direct([
+    let mut empty_node = Bytes32::new_direct([
         57, 29, 211, 154, 252, 227, 18, 99, 65, 126, 203, 166, 252, 232, 32, 3, 98, 194, 254, 186,
         118, 14, 139, 192, 101, 156, 55, 194, 101, 11, 11, 168,
-    ]);
-    let mut right = Bytes32::new_direct([
-        57, 29, 211, 154, 252, 227, 18, 99, 65, 126, 203, 166, 252, 232, 32, 3, 98, 194, 254, 186,
-        118, 14, 139, 192, 101, 156, 55, 194, 101, 11, 11, 168,
-    ]);
+    ])
+    .clone();
     for _ in 0..64 {
         print!("Bytes32::new_direct([");
         for i in 0..32 {
-            print!("{}", left[i]);
+            print!("{}", empty_node[i]);
             if i < 31 {
                 print!(", ");
             }
         }
         println!("]),");
-        left = hash_node(MerkleType::Memory, left, right);
-        right = hash_node(MerkleType::Memory, left, right);
+        empty_node = hash_node(MerkleType::Memory, empty_node, empty_node);
     }
 }
 

@@ -317,7 +317,21 @@ impl Memory {
 
 #[cfg(test)]
 mod test {
+    use arbutil::Bytes32;
+
     use crate::memory::round_up_to_power_of_two;
+
+    use super::Memory;
+
+    #[test]
+    pub fn fixed_memory_hash() {
+        let module_memory_hash = Bytes32::from([
+            86u8, 177, 192, 60, 217, 123, 221, 153, 118, 79, 229, 122, 210, 48, 187, 104, 40, 84,
+            112, 63, 137, 86, 54, 2, 56, 118, 72, 158, 242, 225, 65, 80,
+        ]);
+        let memory = Memory::new(65536, 1);
+        assert_eq!(memory.hash(), module_memory_hash);
+    }
 
     #[test]
     pub fn empty_leaf_hash() {
