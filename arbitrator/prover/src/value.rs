@@ -1,15 +1,19 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::{binary::FloatType, utils::Bytes32};
-use arbutil::Color;
+use crate::binary::FloatType;
+use arbutil::{Bytes32, Color};
 use digest::Digest;
-use eyre::{bail, Result};
+use eyre::{bail, ErrReport, Result};
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, TryFromInto};
 use sha3::Keccak256;
-use std::{convert::TryFrom, fmt::Display};
-use wasmparser::{FuncType, Type};
+use std::{
+    convert::{TryFrom, TryInto},
+    fmt::Display,
+    ops::Add,
+};
+use wasmparser::{FuncType, RefType, ValType};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug, Hash, Serialize, Deserialize)]
 #[repr(u8)]
@@ -29,21 +33,69 @@ impl ArbValueType {
     }
 }
 
-impl TryFrom<Type> for ArbValueType {
+impl TryFrom<ValType> for ArbValueType {
     type Error = eyre::Error;
 
-    fn try_from(ty: Type) -> Result<ArbValueType> {
-        use Type::*;
+    fn try_from(ty: ValType) -> Result<ArbValueType> {
+        use ValType as V;
         Ok(match ty {
-            I32 => Self::I32,
-            I64 => Self::I64,
-            F32 => Self::F32,
-            F64 => Self::F64,
-            FuncRef => Self::FuncRef,
-            ExternRef => Self::FuncRef,
-            V128 => bail!("128-bit types are not supported"),
+            V::I32 => Self::I32,
+            V::I64 => Self::I64,
+            V::F32 => Self::F32,
+            V::F64 => Self::F64,
+            V::Ref(ty) => ty.try_into()?,
+            V::V128 => bail!("128-bit types are not supported"),
         })
     }
+}
+
+impl TryFrom<RefType> for ArbValueType {
+    type Error = eyre::Error;
+
+    fn try_from(value: RefType) -> Result<Self> {
+        Ok(match value {
+            RefType::FUNCREF => Self::FuncRef,
+            RefType::EXTERNREF => Self::FuncRef,
+            RefType::NULLREF => Self::RefNull,
+            _ => bail!("ref extensions not supported"),
+        })
+    }
+}
+
+impl From<ArbValueType> for ValType {
+    fn from(ty: ArbValueType) -> Self {
+        use ArbValueType as V;
+        match ty {
+            V::I32 => Self::I32,
+            V::I64 => Self::I64,
+            V::F32 => Self::F32,
+            V::F64 => Self::F64,
+            V::RefNull => Self::Ref(RefType::NULLREF),
+            V::FuncRef => Self::Ref(RefType::FUNCREF),
+            V::InternalRef => Self::Ref(RefType::FUNCREF), // not analogous, but essentially a func pointer
+        }
+    }
+}
+
+#[cfg(feature = "native")]
+pub fn parser_type(ty: &wasmer::Type) -> wasmer::wasmparser::ValType {
+    match ty {
+        wasmer::Type::I32 => wasmer::wasmparser::ValType::I32,
+        wasmer::Type::I64 => wasmer::wasmparser::ValType::I64,
+        wasmer::Type::F32 => wasmer::wasmparser::ValType::F32,
+        wasmer::Type::F64 => wasmer::wasmparser::ValType::F64,
+        wasmer::Type::V128 => wasmer::wasmparser::ValType::V128,
+        wasmer::Type::ExternRef => wasmer::wasmparser::ValType::Ref(RefType::EXTERNREF),
+        wasmer::Type::FuncRef => wasmer::wasmparser::ValType::Ref(RefType::FUNCREF),
+    }
+}
+
+#[cfg(feature = "native")]
+pub fn parser_func_type(ty: wasmer::FunctionType) -> FuncType {
+    let convert = |t: &[wasmer::Type]| -> Vec<ValType> { t.iter().map(parser_type).collect() };
+    let params = convert(ty.params());
+    let results = convert(ty.results());
+    FuncType::new(params, results)
 }
 
 impl From<FloatType> for ArbValueType {
@@ -109,6 +161,16 @@ impl ProgramCounter {
 
     pub fn inst(self) -> usize {
         self.inst as usize
+    }
+}
+
+impl Add<u32> for ProgramCounter {
+    type Output = ProgramCounter;
+
+    fn add(self, rhs: u32) -> Self::Output {
+        let mut counter = self;
+        counter.inst += rhs;
+        counter
     }
 }
 
@@ -282,6 +344,70 @@ impl PartialEq for Value {
     }
 }
 
+impl From<u8> for Value {
+    fn from(value: u8) -> Self {
+        Value::I32(value.into())
+    }
+}
+
+impl From<u16> for Value {
+    fn from(value: u16) -> Self {
+        Value::I32(value.into())
+    }
+}
+
+impl From<u32> for Value {
+    fn from(value: u32) -> Self {
+        Value::I32(value)
+    }
+}
+
+impl From<u64> for Value {
+    fn from(value: u64) -> Self {
+        Value::I64(value)
+    }
+}
+
+impl From<f32> for Value {
+    fn from(value: f32) -> Self {
+        Value::F32(value)
+    }
+}
+
+impl From<f64> for Value {
+    fn from(value: f64) -> Self {
+        Value::F64(value)
+    }
+}
+
+impl From<ProgramCounter> for Value {
+    fn from(value: ProgramCounter) -> Self {
+        Value::InternalRef(value)
+    }
+}
+
+impl TryInto<u32> for Value {
+    type Error = ErrReport;
+
+    fn try_into(self) -> Result<u32, Self::Error> {
+        match self {
+            Value::I32(value) => Ok(value),
+            _ => bail!("value not a u32"),
+        }
+    }
+}
+
+impl TryInto<u64> for Value {
+    type Error = ErrReport;
+
+    fn try_into(self) -> Result<u64> {
+        match self {
+            Value::I64(value) => Ok(value),
+            _ => bail!("value not a u64"),
+        }
+    }
+}
+
 impl Eq for Value {}
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -291,8 +417,15 @@ pub struct FunctionType {
 }
 
 impl FunctionType {
-    pub fn new(inputs: Vec<ArbValueType>, outputs: Vec<ArbValueType>) -> FunctionType {
-        FunctionType { inputs, outputs }
+    pub fn new<T, U>(inputs: T, outputs: U) -> FunctionType
+    where
+        T: Into<Vec<ArbValueType>>,
+        U: Into<Vec<ArbValueType>>,
+    {
+        FunctionType {
+            inputs: inputs.into(),
+            outputs: outputs.into(),
+        }
     }
 
     pub fn hash(&self) -> Bytes32 {
@@ -317,13 +450,58 @@ impl TryFrom<FuncType> for FunctionType {
         let mut inputs = vec![];
         let mut outputs = vec![];
 
-        for input in func.params.iter() {
+        for input in func.params() {
             inputs.push(ArbValueType::try_from(*input)?)
         }
-        for output in func.returns.iter() {
+        for output in func.results() {
             outputs.push(ArbValueType::try_from(*output)?)
         }
-
         Ok(Self { inputs, outputs })
+    }
+}
+
+impl Display for FunctionType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let mut signature = "λ(".to_string();
+        if !self.inputs.is_empty() {
+            for arg in &self.inputs {
+                signature += &format!("{}, ", arg);
+            }
+            signature.pop();
+            signature.pop();
+        }
+        signature += ")";
+
+        let output_tuple = self.outputs.len() > 2;
+        if !self.outputs.is_empty() {
+            signature += " -> ";
+            if output_tuple {
+                signature += "(";
+            }
+            for out in &self.outputs {
+                signature += &format!("{}, ", out);
+            }
+            signature.pop();
+            signature.pop();
+            if output_tuple {
+                signature += ")";
+            }
+        }
+        write!(f, "{}", signature)
+    }
+}
+
+impl Display for ArbValueType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use ArbValueType::*;
+        match self {
+            I32 => write!(f, "i32"),
+            I64 => write!(f, "i64"),
+            F32 => write!(f, "f32"),
+            F64 => write!(f, "f64"),
+            RefNull => write!(f, "null"),
+            FuncRef => write!(f, "func"),
+            InternalRef => write!(f, "internal"),
+        }
     }
 }

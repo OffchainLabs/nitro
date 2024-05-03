@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbos
@@ -14,7 +14,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/ethereum/go-ethereum/arbitrum_types"
@@ -399,7 +398,7 @@ func ProduceBlockAdvanced(
 		txGasUsed := header.GasUsed - preTxHeaderGasUsed
 
 		arbosVer := types.DeserializeHeaderExtraInformation(header).ArbOSFormatVersion
-		if arbosVer >= arbostypes.ArbosVersion_FixRedeemGas {
+		if arbosVer >= params.ArbosVersion_FixRedeemGas {
 			// subtract gas burned for future use
 			for _, scheduledTx := range result.ScheduledTxes {
 				switch inner := scheduledTx.GetInner().(type) {
@@ -444,16 +443,14 @@ func ProduceBlockAdvanced(
 				// L2->L1 withdrawals remove eth from the system
 				switch txLog.Topics[0] {
 				case L2ToL1TransactionEventID:
-					event := &precompilesgen.ArbSysL2ToL1Transaction{}
-					err := util.ParseL2ToL1TransactionLog(event, txLog)
+					event, err := util.ParseL2ToL1TransactionLog(txLog)
 					if err != nil {
 						log.Error("Failed to parse L2ToL1Transaction log", "err", err)
 					} else {
 						expectedBalanceDelta.Sub(expectedBalanceDelta, event.Callvalue)
 					}
 				case L2ToL1TxEventID:
-					event := &precompilesgen.ArbSysL2ToL1Tx{}
-					err := util.ParseL2ToL1TxLog(event, txLog)
+					event, err := util.ParseL2ToL1TxLog(txLog)
 					if err != nil {
 						log.Error("Failed to parse L2ToL1Tx log", "err", err)
 					} else {
