@@ -156,7 +156,7 @@ func (con ArbOwner) ReleaseL1PricerSurplusFunds(c ctx, evm mech, maxWeiToRelease
 	if err != nil {
 		return nil, err
 	}
-	weiToTransfer := new(big.Int).Sub(balance, recognized)
+	weiToTransfer := new(big.Int).Sub(balance.ToBig(), recognized)
 	if weiToTransfer.Sign() < 0 {
 		return common.Big0, nil
 	}

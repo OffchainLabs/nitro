@@ -215,7 +215,7 @@ func (p Programs) CallProgram(
 		contractAddress: scope.Contract.Address(),
 		moduleHash:      moduleHash,
 		msgSender:       scope.Contract.Caller(),
-		msgValue:        common.BigToHash(scope.Contract.Value()),
+		msgValue:        scope.Contract.Value().Bytes32(),
 		txGasPrice:      common.BigToHash(evm.TxContext.GasPrice),
 		txOrigin:        evm.TxContext.Origin,
 		reentrant:       am.BoolToUint32(reentrant),

@@ -1,4 +1,7 @@
-package server_api
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+
+package valnode
 
 import (
 	"context"
@@ -9,13 +12,14 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
 
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_arb"
 )
-
-const Namespace string = "validation"
 
 type ValidationServerAPI struct {
 	spawner validator.ValidationSpawner
@@ -29,13 +33,17 @@ func (a *ValidationServerAPI) Room() int {
 	return a.spawner.Room()
 }
 
-func (a *ValidationServerAPI) Validate(ctx context.Context, entry *ValidationInputJson, moduleRoot common.Hash) (validator.GoGlobalState, error) {
+func (a *ValidationServerAPI) Validate(ctx context.Context, entry *server_api.InputJSON, moduleRoot common.Hash) (validator.GoGlobalState, error) {
 	valInput, err := ValidationInputFromJson(entry)
 	if err != nil {
 		return validator.GoGlobalState{}, err
 	}
 	valRun := a.spawner.Launch(valInput, moduleRoot)
 	return valRun.Await(ctx)
+}
+
+func (a *ValidationServerAPI) WasmModuleRoots() ([]common.Hash, error) {
+	return a.spawner.WasmModuleRoots()
 }
 
 func NewValidationServerAPI(spawner validator.ValidationSpawner) *ValidationServerAPI {
@@ -69,7 +77,7 @@ func NewExecutionServerAPI(valSpawner validator.ValidationSpawner, execution val
 	}
 }
 
-func (a *ExecServerAPI) CreateExecutionRun(ctx context.Context, wasmModuleRoot common.Hash, jsonInput *ValidationInputJson) (uint64, error) {
+func (a *ExecServerAPI) CreateExecutionRun(ctx context.Context, wasmModuleRoot common.Hash, jsonInput *server_api.InputJSON) (uint64, error) {
 	input, err := ValidationInputFromJson(jsonInput)
 	if err != nil {
 		return 0, err
@@ -107,7 +115,7 @@ func (a *ExecServerAPI) Start(ctx_in context.Context) {
 	a.CallIteratively(a.removeOldRuns)
 }
 
-func (a *ExecServerAPI) WriteToFile(ctx context.Context, jsonInput *ValidationInputJson, expOut validator.GoGlobalState, moduleRoot common.Hash) error {
+func (a *ExecServerAPI) WriteToFile(ctx context.Context, jsonInput *server_api.InputJSON, expOut validator.GoGlobalState, moduleRoot common.Hash) error {
 	input, err := ValidationInputFromJson(jsonInput)
 	if err != nil {
 		return err
@@ -129,7 +137,7 @@ func (a *ExecServerAPI) getRun(id uint64) (validator.ExecutionRun, error) {
 	return entry.run, nil
 }
 
-func (a *ExecServerAPI) GetStepAt(ctx context.Context, execid uint64, position uint64) (*MachineStepResultJson, error) {
+func (a *ExecServerAPI) GetStepAt(ctx context.Context, execid uint64, position uint64) (*server_api.MachineStepResultJson, error) {
 	run, err := a.getRun(execid)
 	if err != nil {
 		return nil, err
@@ -139,7 +147,7 @@ func (a *ExecServerAPI) GetStepAt(ctx context.Context, execid uint64, position u
 	if err != nil {
 		return nil, err
 	}
-	return MachineStepResultToJson(res), nil
+	return server_api.MachineStepResultToJson(res), nil
 }
 
 func (a *ExecServerAPI) GetProofAt(ctx context.Context, execid uint64, position uint64) (string, error) {
@@ -181,4 +189,52 @@ func (a *ExecServerAPI) CloseExec(execid uint64) {
 	}
 	run.run.Close()
 	delete(a.runs, execid)
+}
+
+func ValidationInputFromJson(entry *server_api.InputJSON) (*validator.ValidationInput, error) {
+	preimages := make(map[arbutil.PreimageType]map[common.Hash][]byte)
+	for ty, jsonPreimages := range entry.PreimagesB64 {
+		preimages[ty] = jsonPreimages.Map
+	}
+	valInput := &validator.ValidationInput{
+		Id:            entry.Id,
+		HasDelayedMsg: entry.HasDelayedMsg,
+		DelayedMsgNr:  entry.DelayedMsgNr,
+		StartState:    entry.StartState,
+		Preimages:     preimages,
+		UserWasms:     make(state.UserWasms),
+		DebugChain:    entry.DebugChain,
+	}
+	delayed, err := base64.StdEncoding.DecodeString(entry.DelayedMsgB64)
+	if err != nil {
+		return nil, err
+	}
+	valInput.DelayedMsg = delayed
+	for _, binfo := range entry.BatchInfo {
+		data, err := base64.StdEncoding.DecodeString(binfo.DataB64)
+		if err != nil {
+			return nil, err
+		}
+		decInfo := validator.BatchInfo{
+			Number: binfo.Number,
+			Data:   data,
+		}
+		valInput.BatchInfo = append(valInput.BatchInfo, decInfo)
+	}
+	for moduleHash, info := range entry.UserWasms {
+		asm, err := base64.StdEncoding.DecodeString(info.Asm)
+		if err != nil {
+			return nil, err
+		}
+		module, err := base64.StdEncoding.DecodeString(info.Module)
+		if err != nil {
+			return nil, err
+		}
+		decInfo := state.ActivatedWasm{
+			Asm:    asm,
+			Module: module,
+		}
+		valInput.UserWasms[moduleHash] = decInfo
+	}
+	return valInput, nil
 }

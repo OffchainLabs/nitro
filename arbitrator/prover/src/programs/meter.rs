@@ -401,7 +401,7 @@ pub fn pricing_v1(op: &Operator, tys: &HashMap<SignatureIndex, FunctionType>) ->
         dot!(I32Store, I32Store8, I32Store16) => 825,
         dot!(I64Store, I64Store8, I64Store16, I64Store32) => 950,
         dot!(MemorySize) => 3000,
-        dot!(MemoryGrow) => 1, // cost handled by memory pricer
+        dot!(MemoryGrow) => 8050, // rest of cost handled by memory pricer
 
         op!(I32Eqz, I32Eq, I32Ne, I32LtS, I32LtU, I32GtS, I32GtU, I32LeS, I32LeU, I32GeS, I32GeU) => 170,
         op!(I64Eqz, I64Eq, I64Ne, I64LtS, I64LtU, I64GtS, I64GtU, I64LeS, I64LeU, I64GeS, I64GeU) => 225,

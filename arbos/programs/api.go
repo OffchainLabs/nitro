@@ -5,7 +5,6 @@ package programs
 
 import (
 	"errors"
-	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -21,6 +20,7 @@ import (
 type RequestHandler func(req RequestType, input []byte) ([]byte, []byte, uint64)
 
 type RequestType int
+type u256 = uint256.Int
 
 const (
 	GetBytes32 RequestType = iota
@@ -110,7 +110,7 @@ func newApiClosures(
 		return Success
 	}
 	doCall := func(
-		contract common.Address, opcode vm.OpCode, input []byte, gasLeft, gasReq uint64, value *big.Int,
+		contract common.Address, opcode vm.OpCode, input []byte, gasLeft, gasReq uint64, value *u256,
 	) ([]byte, uint64, error) {
 		// This closure can perform each kind of contract call based on the opcode passed in.
 		// The implementation for each should match that of the EVM.
@@ -165,7 +165,7 @@ func newApiClosures(
 		cost := am.SaturatingUAdd(baseCost, am.SaturatingUSub(gas, returnGas))
 		return ret, cost, err
 	}
-	create := func(code []byte, endowment, salt *big.Int, gas uint64) (common.Address, []byte, uint64, error) {
+	create := func(code []byte, endowment, salt *u256, gas uint64) (common.Address, []byte, uint64, error) {
 		// This closure can perform both kinds of contract creation based on the salt passed in.
 		// The implementation for each should match that of the EVM.
 		//
@@ -215,8 +215,7 @@ func newApiClosures(
 		if opcode == vm.CREATE {
 			res, addr, returnGas, suberr = evm.Create(contract, code, gas, endowment)
 		} else {
-			salt256, _ := uint256.FromBig(salt)
-			res, addr, returnGas, suberr = evm.Create2(contract, code, gas, endowment, salt256)
+			res, addr, returnGas, suberr = evm.Create2(contract, code, gas, endowment, salt)
 		}
 		if suberr != nil {
 			addr = zeroAddr
@@ -245,7 +244,7 @@ func newApiClosures(
 	accountBalance := func(address common.Address) (common.Hash, uint64) {
 		cost := vm.WasmAccountTouchCost(chainConfig, evm.StateDB, address, false)
 		balance := evm.StateDB.GetBalance(address)
-		return common.BigToHash(balance), cost
+		return balance.Bytes32(), cost
 	}
 	accountCode := func(address common.Address, gas uint64) ([]byte, uint64) {
 		// In the future it'll be possible to know the size of a contract before loading it.
@@ -295,8 +294,8 @@ func newApiClosures(
 		takeHash := func() common.Hash {
 			return common.BytesToHash(takeInput(32, "expected hash"))
 		}
-		takeU256 := func() *big.Int {
-			return common.BytesToHash(takeInput(32, "expected big")).Big()
+		takeU256 := func() *u256 {
+			return am.BytesToUint256(takeInput(32, "expected big"))
 		}
 		takeU64 := func() uint64 {
 			return am.BytesToUint(takeInput(8, "expected u64"))
@@ -362,7 +361,7 @@ func newApiClosures(
 		case Create1, Create2:
 			gas := takeU64()
 			endowment := takeU256()
-			var salt *big.Int
+			var salt *u256
 			if req == Create2 {
 				salt = takeU256()
 			}

@@ -9,6 +9,7 @@ import (
 
 type ValidationSpawner interface {
 	Launch(entry *ValidationInput, moduleRoot common.Hash) ValidationRun
+	WasmModuleRoots() ([]common.Hash, error)
 	Start(context.Context) error
 	Stop()
 	Name() string

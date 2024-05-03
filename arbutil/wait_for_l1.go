@@ -41,7 +41,6 @@ func SendTxAsCall(ctx context.Context, client L1Interface, tx *types.Transaction
 		From:       from,
 		To:         tx.To(),
 		Gas:        gas,
-		GasPrice:   tx.GasPrice(),
 		GasFeeCap:  tx.GasFeeCap(),
 		GasTipCap:  tx.GasTipCap(),
 		Value:      tx.Value(),

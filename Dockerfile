@@ -316,5 +316,15 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
 
 USER user
 
+FROM nitro-node-dev as nitro-node-split
+USER root
+
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y xxd netcat-traditional
+COPY scripts/split-val-entry.sh /usr/local/bin
+ENTRYPOINT [ "/usr/local/bin/split-val-entry.sh" ]
+USER user
+
 FROM nitro-node as nitro-node-default
 # Just to ensure nitro-node-dist is default
