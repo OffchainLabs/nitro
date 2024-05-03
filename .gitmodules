@@ -1,6 +1,6 @@
 [submodule "go-ethereum"]
 	path = go-ethereum
-	url = https://github.com/OffchainLabs/polygeth.git
+	url = https://github.com/OffchainLabs/go-ethereum.git
 [submodule "fastcache"]
 	path = fastcache
 	url = https://github.com/OffchainLabs/fastcache.git
@@ -12,7 +12,7 @@
 	url = https://github.com/google/brotli.git
 [submodule "contracts"]
 	path = contracts
-	url = https://github.com/OffchainLabs/stylus-contracts.git
+	url = https://github.com/OffchainLabs/nitro-contracts.git
 	branch = develop
 [submodule "arbitrator/wasm-testsuite/testsuite"]
 	path = arbitrator/wasm-testsuite/testsuite
