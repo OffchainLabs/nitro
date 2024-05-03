@@ -15,9 +15,9 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -28,26 +28,20 @@ import (
 func TestP256VerifyEnabled(t *testing.T) {
 	gethhook.RequireHookedGeth()
 	for _, tc := range []struct {
-		arbOSVersion   uint64
+		stylusEnabled  bool
 		wantP256Verify bool
 	}{
 		{
-			arbOSVersion:   20,
+			stylusEnabled:  false,
 			wantP256Verify: false,
 		},
 		{
-			arbOSVersion:   30,
+			stylusEnabled:  true,
 			wantP256Verify: true,
 		},
 	} {
-		addresses := arbosState.GetArbitrumOnlyGenesisPrecompiles(&params.ChainConfig{
-			ArbitrumChainParams: params.ArbitrumChainParams{
-				EnableArbOS:         true,
-				InitialArbOSVersion: tc.arbOSVersion,
-			},
-		})
 		got := false
-		for _, a := range addresses {
+		for _, a := range vm.ActivePrecompiles(params.Rules{IsStylus: tc.stylusEnabled}) {
 			got = got || (a == common.BytesToAddress([]byte{0x01, 0x00}))
 		}
 		if got != tc.wantP256Verify {
