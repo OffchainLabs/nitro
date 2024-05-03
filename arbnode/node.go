@@ -556,7 +556,7 @@ func createNodeImpl(
 	if config.BlockValidator.ValidationServerConfigs[0].URL != "" {
 		var lightClientReader *lightclient.LightClientReader
 		if config.BlockValidator.Espresso {
-			addr := common.HexToAddress(config.BlockValidator.HotShotAddress)
+			addr := common.HexToAddress(config.BlockValidator.LightClientAddress)
 			lightClientReader, err = lightclient.NewLightClientReader(addr, l1client)
 			if err != nil {
 				return nil, err
