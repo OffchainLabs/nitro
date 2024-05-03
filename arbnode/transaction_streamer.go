@@ -530,6 +530,30 @@ func (s *TransactionStreamer) GetMessage(seqNum arbutil.MessageIndex) (*arbostyp
 	return &message, nil
 }
 
+func (s *TransactionStreamer) getMessageWithMetadataAndBlockHash(seqNum arbutil.MessageIndex) (*arbostypes.MessageWithMetadataAndBlockHash, error) {
+	msg, err := s.GetMessage(seqNum)
+	if err != nil {
+		return nil, err
+	}
+
+	key := dbKey(blockHashInputFeedPrefix, uint64(seqNum))
+	data, err := s.db.Get(key)
+	if err != nil {
+		return nil, err
+	}
+	var blockHash *common.Hash
+	err = rlp.DecodeBytes(data, &blockHash)
+	if err != nil {
+		return nil, err
+	}
+
+	msgWithBlockHash := arbostypes.MessageWithMetadataAndBlockHash{
+		MessageWithMeta: *msg,
+		BlockHash:       blockHash,
+	}
+	return &msgWithBlockHash, nil
+}
+
 // Note: if changed to acquire the mutex, some internal users may need to be updated to a non-locking version.
 func (s *TransactionStreamer) GetMessageCount() (arbutil.MessageIndex, error) {
 	posBytes, err := s.db.Get(messageCountKey)
@@ -1117,6 +1141,20 @@ func (s *TransactionStreamer) ResultAtCount(count arbutil.MessageIndex) (*execut
 	return s.exec.ResultAtPos(count - 1)
 }
 
+func (s *TransactionStreamer) checkResult(msgResult *execution.MessageResult, expectedBlockHash *common.Hash) {
+	if expectedBlockHash == nil {
+		return
+	}
+	if msgResult.BlockHash != *expectedBlockHash {
+		log.Error(
+			"block_hash_mismatch",
+			"expected", expectedBlockHash,
+			"actual", msgResult.BlockHash,
+		)
+		return
+	}
+}
+
 // exposed for testing
 // return value: true if should be called again immediately
 func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context, exec execution.ExecutionSequencer) bool {
@@ -1143,7 +1181,7 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context, exec execution
 	if pos >= msgCount {
 		return false
 	}
-	msg, err := s.GetMessage(pos)
+	msgAndBlockHash, err := s.getMessageWithMetadataAndBlockHash(pos)
 	if err != nil {
 		log.Error("feedOneMsg failed to readMessage", "err", err, "pos", pos)
 		return false
@@ -1157,7 +1195,7 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context, exec execution
 		}
 		msgForPrefetch = msg
 	}
-	msgResult, err := s.exec.DigestMessage(pos, msg, msgForPrefetch)
+	msgResult, err := s.exec.DigestMessage(pos, &msgAndBlockHash.MessageWithMeta, msgForPrefetch)
 	if err != nil {
 		logger := log.Warn
 		if prevMessageCount < msgCount {
@@ -1167,8 +1205,10 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context, exec execution
 		return false
 	}
 
+	s.checkResult(msgResult, msgAndBlockHash.BlockHash)
+
 	msgWithBlockHash := arbostypes.MessageWithMetadataAndBlockHash{
-		MessageWithMeta: *msg,
+		MessageWithMeta: msgAndBlockHash.MessageWithMeta,
 		BlockHash:       &msgResult.BlockHash,
 	}
 	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockHash{msgWithBlockHash}, pos)
