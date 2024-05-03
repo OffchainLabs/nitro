@@ -930,7 +930,7 @@ func testMemory(t *testing.T, jit bool) {
 		validateBlocks(t, 3, jit, builder)
 		t.Skip("Succeeded up to here. Diagnose tests with larger numbers of blocks later.")
 	}
-	/*// check edge case where memory doesn't require `pay_for_memory_grow`
+	// check edge case where memory doesn't require `pay_for_memory_grow`
 	tx = l2info.PrepareTxTo("Owner", &growFixed, 1e9, nil, args)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 
@@ -965,9 +965,7 @@ func testMemory(t *testing.T, jit bool) {
 		} else {
 			expectFailure(memWrite, args, nil)
 		}
-	}*/
-	_ = memWrite
-	_ = growFixed
+	}
 
 	validateBlocks(t, 3, jit, builder)
 }
