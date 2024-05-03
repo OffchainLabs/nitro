@@ -25,6 +25,26 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
+func blockIsEmpty(block *types.Block) bool {
+	for _, tx := range block.Transactions() {
+		if tx.Type() != types.ArbitrumInternalTxType {
+			return false
+		}
+	}
+	return true
+}
+
+func nonEmptyBlockHeight(t *testing.T, builder *NodeBuilder) uint64 {
+	latestBlock, err := builder.L2.Client.BlockByNumber(builder.ctx, nil)
+	Require(t, err)
+	for blockIsEmpty(latestBlock) {
+		prior := arbmath.BigSubByUint(latestBlock.Number(), 1)
+		latestBlock, err = builder.L2.Client.BlockByNumber(builder.ctx, prior)
+		Require(t, err)
+	}
+	return latestBlock.NumberU64()
+}
+
 // used in program test
 func validateBlocks(
 	t *testing.T, start uint64, jit bool, builder *NodeBuilder,
@@ -34,9 +54,7 @@ func validateBlocks(
 		start = 1
 	}
 
-	blockHeight, err := builder.L2.Client.BlockNumber(builder.ctx)
-	Require(t, err)
-
+	blockHeight := nonEmptyBlockHeight(t, builder)
 	blocks := []uint64{}
 	for i := start; i <= blockHeight; i++ {
 		blocks = append(blocks, i)
@@ -50,17 +68,17 @@ func validateBlockRange(
 	builder *NodeBuilder,
 ) {
 	ctx := builder.ctx
-	waitForSequencer(t, builder, arbmath.MaxInt(blocks...))
-	blockHeight, err := builder.L2.Client.BlockNumber(ctx)
-	Require(t, err)
 
 	// validate everything
 	if jit {
+		blockHeight := nonEmptyBlockHeight(t, builder)
 		blocks = []uint64{}
 		for i := uint64(1); i <= blockHeight; i++ {
 			blocks = append(blocks, i)
 		}
 	}
+
+	waitForSequencer(t, builder, arbmath.MaxInt(blocks...))
 
 	success := true
 	wasmModuleRoot := currentRootModule(t)

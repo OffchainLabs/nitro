@@ -16,7 +16,7 @@ use eyre::{eyre, Result};
 use prover::programs::prelude::*;
 use std::fmt::Display;
 use user_host_trait::UserHost;
-use wasmer_types::WASM_PAGE_SIZE;
+use wasmer_types::{Pages, WASM_PAGE_SIZE};
 
 // allows introspection into user modules
 #[link(wasm_import_module = "hostio")]
@@ -186,9 +186,14 @@ impl Program {
         unsafe { PROGRAMS.last_mut().expect("no program") }
     }
 
-    /// Reads the program's memory size in pages
-    fn memory_size(&self) -> u32 {
-        unsafe { program_memory_size(self.module) }
+    /// Reads the program's memory size in pages.
+    fn memory_size(&self) -> Pages {
+        unsafe { Pages(program_memory_size(self.module)) }
+    }
+
+    /// Reads the program's memory size in bytes.
+    fn memory_size_bytes(&self) -> u64 {
+        self.memory_size().0 as u64 * WASM_PAGE_SIZE as u64
     }
 
     /// Provides the length of the program's calldata in bytes.
@@ -198,8 +203,8 @@ impl Program {
 
     /// Ensures an access is within bounds
     fn check_memory_access(&self, ptr: GuestPtr, bytes: u32) -> Result<(), MemoryBoundsError> {
-        let last_page = ptr.saturating_add(bytes) / (WASM_PAGE_SIZE as u32);
-        if last_page > self.memory_size() {
+        let end = ptr.to_u64() + bytes as u64;
+        if end > self.memory_size_bytes() {
             return Err(MemoryBoundsError);
         }
         Ok(())

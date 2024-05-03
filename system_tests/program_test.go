@@ -838,7 +838,9 @@ func testMemory(t *testing.T, jit bool) {
 
 	memoryAddr := deployWasm(t, ctx, auth, l2client, watFile("memory"))
 	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
-	growCallAddr := deployWasm(t, ctx, auth, l2client, watFile("grow-and-call"))
+	growCallAddr := deployWasm(t, ctx, auth, l2client, watFile("grow/grow-and-call"))
+	growFixed := deployWasm(t, ctx, auth, l2client, watFile("grow/fixed"))
+	memWrite := deployWasm(t, ctx, auth, l2client, watFile("grow/mem-write"))
 
 	expectFailure := func(to common.Address, data []byte, value *big.Int) {
 		t.Helper()
@@ -881,7 +883,7 @@ func testMemory(t *testing.T, jit bool) {
 	expectFailure(multiAddr, args, oneEth)
 
 	// check that activation fails when out of memory
-	wasm, _ := readWasmFile(t, watFile("grow-120"))
+	wasm, _ := readWasmFile(t, watFile("grow/grow-120"))
 	growHugeAddr := deployContract(t, ctx, auth, l2client, wasm)
 	colors.PrintGrey("memory.wat        ", memoryAddr)
 	colors.PrintGrey("multicall.rs      ", multiAddr)
@@ -924,7 +926,44 @@ func testMemory(t *testing.T, jit bool) {
 		Fatal(t, "unexpected memory footprint", programMemoryFootprint)
 	}
 
-	validateBlocks(t, 2, jit, builder)
+	// check edge case where memory doesn't require `pay_for_memory_grow`
+	tx = l2info.PrepareTxTo("Owner", &growFixed, 1e9, nil, args)
+	ensure(tx, l2client.SendTransaction(ctx, tx))
+
+	// check memory boundary conditions
+	type Case struct {
+		pass bool
+		size uint8
+		spot uint32
+		data uint32
+	}
+	cases := []Case{
+		{true, 0, 0, 0},
+		{true, 1, 4, 0},
+		{true, 1, 65536, 0},
+		{false, 1, 65536, 1}, // 1st byte out of bounds
+		{false, 1, 65537, 0}, // 2nd byte out of bounds
+		{true, 1, 65535, 1},  // last byte in bounds
+		{false, 1, 65535, 2}, // 1st byte over-run
+		{true, 2, 131072, 0},
+		{false, 2, 131073, 0},
+	}
+	for _, test := range cases {
+		args := []byte{}
+		if test.size > 0 {
+			args = append(args, test.size)
+			args = binary.LittleEndian.AppendUint32(args, test.spot)
+			args = binary.LittleEndian.AppendUint32(args, test.data)
+		}
+		if test.pass {
+			tx = l2info.PrepareTxTo("Owner", &memWrite, 1e9, nil, args)
+			ensure(tx, l2client.SendTransaction(ctx, tx))
+		} else {
+			expectFailure(memWrite, args, nil)
+		}
+	}
+
+	validateBlocks(t, 3, jit, builder)
 }
 
 func TestProgramActivateFails(t *testing.T) {
