@@ -46,6 +46,7 @@ func programActivate(
 	cached_init_gas_ptr unsafe.Pointer,
 	version uint32,
 	debug uint32,
+	codehash unsafe.Pointer,
 	module_hash_ptr unsafe.Pointer,
 	gas_ptr unsafe.Pointer,
 	err_buf unsafe.Pointer,
@@ -55,6 +56,7 @@ func programActivate(
 func activateProgram(
 	db vm.StateDB,
 	program addr,
+	codehash common.Hash,
 	wasm []byte,
 	pageLimit u16,
 	version u16,
@@ -79,6 +81,7 @@ func activateProgram(
 		unsafe.Pointer(&cachedInitGas),
 		uint32(version),
 		debugMode,
+		arbutil.SliceToUnsafePointer(codehash[:]),
 		arbutil.SliceToUnsafePointer(moduleHash[:]),
 		unsafe.Pointer(gasPtr),
 		arbutil.SliceToUnsafePointer(errBuf),

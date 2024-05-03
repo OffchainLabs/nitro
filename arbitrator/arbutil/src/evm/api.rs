@@ -102,7 +102,8 @@ pub trait EvmApi<D: DataReader>: Send + 'static {
         &mut self,
         contract: Bytes20,
         calldata: &[u8],
-        gas: u64,
+        gas_left: u64,
+        gas_req: u64,
         value: Bytes32,
     ) -> (u32, u64, UserOutcomeKind);
 
@@ -113,7 +114,8 @@ pub trait EvmApi<D: DataReader>: Send + 'static {
         &mut self,
         contract: Bytes20,
         calldata: &[u8],
-        gas: u64,
+        gas_left: u64,
+        gas_req: u64,
     ) -> (u32, u64, UserOutcomeKind);
 
     /// Static-calls the contract at the given address.
@@ -123,7 +125,8 @@ pub trait EvmApi<D: DataReader>: Send + 'static {
         &mut self,
         contract: Bytes20,
         calldata: &[u8],
-        gas: u64,
+        gas_left: u64,
+        gas_req: u64,
     ) -> (u32, u64, UserOutcomeKind);
 
     /// Deploys a new contract using the init code provided.

@@ -63,12 +63,15 @@ func validateBlockRange(
 	}
 
 	success := true
+	wasmModuleRoot := currentRootModule(t)
 	for _, block := range blocks {
 		// no classic data, so block numbers are message indicies
 		inboxPos := arbutil.MessageIndex(block)
 
 		now := time.Now()
-		correct, _, err := builder.L2.ConsensusNode.StatelessBlockValidator.ValidateResult(ctx, inboxPos, false, common.Hash{})
+		correct, _, err := builder.L2.ConsensusNode.StatelessBlockValidator.ValidateResult(
+			ctx, inboxPos, false, wasmModuleRoot,
+		)
 		Require(t, err, "block", block)
 		passed := formatTime(time.Since(now))
 		if correct {

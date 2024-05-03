@@ -16,7 +16,6 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/util"
 	pgen "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -559,7 +558,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 
 	ArbWasmImpl := &ArbWasm{Address: types.ArbWasmAddress}
 	ArbWasm := insert(MakePrecompile(pgen.ArbWasmMetaData, ArbWasmImpl))
-	ArbWasm.arbosVersion = arbostypes.ArbosVersion_Stylus
+	ArbWasm.arbosVersion = params.ArbosVersion_Stylus
 	programs.ProgramNotWasmError = ArbWasmImpl.ProgramNotWasmError
 	programs.ProgramNotActivatedError = ArbWasmImpl.ProgramNotActivatedError
 	programs.ProgramNeedsUpgradeError = ArbWasmImpl.ProgramNeedsUpgradeError
@@ -572,7 +571,7 @@ func Precompiles() map[addr]ArbosPrecompile {
 
 	ArbWasmCacheImpl := &ArbWasmCache{Address: types.ArbWasmCacheAddress}
 	ArbWasmCache := insert(MakePrecompile(pgen.ArbWasmCacheMetaData, ArbWasmCacheImpl))
-	ArbWasmCache.arbosVersion = arbostypes.ArbosVersion_Stylus
+	ArbWasmCache.arbosVersion = params.ArbosVersion_Stylus
 	for _, method := range ArbWasmCache.methods {
 		method.arbosVersion = ArbWasmCache.arbosVersion
 	}
@@ -613,22 +612,28 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbOwner.methodsByName["SetChainConfig"].arbosVersion = 11
 	ArbOwner.methodsByName["SetBrotliCompressionLevel"].arbosVersion = 20
 	stylusMethods := []string{
-		"SetInkPrice", "SetWasmMaxStackDepth", "SetWasmFreePages", "SetWasmPageGas", "SetWasmPageRamp",
-		"SetWasmPageLimit", "SetWasmMinInitGas", "SetWasmExpiryDays", "SetWasmKeepaliveDays",
+		"SetInkPrice", "SetWasmMaxStackDepth", "SetWasmFreePages", "SetWasmPageGas",
+		"SetWasmPageLimit", "SetWasmMinInitGas", "SetWasmInitCostScalar",
+		"SetWasmExpiryDays", "SetWasmKeepaliveDays",
 		"SetWasmBlockCacheSize", "AddWasmCacheManager", "RemoveWasmCacheManager",
 	}
 	for _, method := range stylusMethods {
-		ArbOwner.methodsByName[method].arbosVersion = arbostypes.ArbosVersion_Stylus
+		ArbOwner.methodsByName[method].arbosVersion = params.ArbosVersion_Stylus
 	}
 
 	insert(ownerOnly(ArbOwnerImpl.Address, ArbOwner, emitOwnerActs))
 	_, arbDebug := MakePrecompile(pgen.ArbDebugMetaData, &ArbDebug{Address: types.ArbDebugAddress})
-	arbDebug.methodsByName["Panic"].arbosVersion = arbostypes.ArbosVersion_Stylus
+	arbDebug.methodsByName["Panic"].arbosVersion = params.ArbosVersion_Stylus
 	insert(debugOnly(arbDebug.address, arbDebug))
 
 	ArbosActs := insert(MakePrecompile(pgen.ArbosActsMetaData, &ArbosActs{Address: types.ArbosAddress}))
 	arbos.InternalTxStartBlockMethodID = ArbosActs.GetMethodID("StartBlock")
 	arbos.InternalTxBatchPostingReportMethodID = ArbosActs.GetMethodID("BatchPostingReport")
+
+	for _, contract := range contracts {
+		precompile := contract.Precompile()
+		arbosState.PrecompileMinArbOSVersions[precompile.address] = precompile.arbosVersion
+	}
 
 	return contracts
 }
@@ -645,6 +650,10 @@ func (p *Precompile) GetMethodID(name string) bytes4 {
 		panic(fmt.Sprintf("Precompile %v does not have a method with the name %v", p.name, name))
 	}
 	return *(*bytes4)(method.template.ID)
+}
+
+func (p *Precompile) ArbosVersion() uint64 {
+	return p.arbosVersion
 }
 
 // Call a precompile in typed form, deserializing its inputs and serializing its outputs

@@ -5,6 +5,7 @@ package precompiles
 
 import (
 	"fmt"
+	"io"
 	"math/big"
 	"os"
 	"testing"
@@ -181,17 +182,18 @@ func TestEventCosts(t *testing.T) {
 
 func TestPrecompilesPerArbosVersion(t *testing.T) {
 	// Set up a logger in case log.Crit is called by Precompiles()
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
-	glogger.Verbosity(log.LvlWarn)
-	log.Root().SetHandler(glogger)
+	glogger := log.NewGlogHandler(
+		log.NewTerminalHandler(io.Writer(os.Stderr), false))
+	glogger.Verbosity(log.LevelWarn)
+	log.SetDefault(log.NewLogger(glogger))
 
 	expectedNewMethodsPerArbosVersion := map[uint64]int{
 		0:  89,
 		5:  3,
 		10: 2,
 		11: 4,
-		20: 8 + 37, // 37 for stylus
-		// TODO: move stylus methods to ArbOS 30
+		20: 8,
+		30: 38,
 	}
 
 	precompiles := Precompiles()

@@ -8,7 +8,7 @@ use crate::{
     test::{check_instrumentation, new_test_machine},
 };
 use eyre::Result;
-use prover::programs::{prelude::*, start::STYLUS_START};
+use prover::programs::{prelude::*, start::StartMover};
 use wasmer::{imports, Function};
 
 #[test]
@@ -77,6 +77,6 @@ fn test_console() -> Result<()> {
     native.call_func(starter, ink)?;
 
     let mut machine = new_test_machine(filename, &compile)?;
-    machine.call_user_func(STYLUS_START, vec![], ink)?;
+    machine.call_user_func(StartMover::NAME, vec![], ink)?;
     check_instrumentation(native, machine)
 }

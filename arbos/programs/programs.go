@@ -18,7 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/util/arbmath"
+	am "github.com/offchainlabs/nitro/util/arbmath"
 )
 
 type Programs struct {
@@ -31,8 +31,8 @@ type Programs struct {
 
 type Program struct {
 	version       uint16
-	initGas       uint16
-	cachedInitGas uint16
+	initCost      uint16
+	cachedCost    uint16
 	footprint     uint16
 	asmEstimateKb uint24 // Predicted size of the asm
 	activatedAt   uint24 // Hours since Arbitrum began
@@ -40,7 +40,7 @@ type Program struct {
 	cached        bool
 }
 
-type uint24 = arbmath.Uint24
+type uint24 = am.Uint24
 
 var paramsKey = []byte{0}
 var programDataKey = []byte{1}
@@ -113,9 +113,9 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runMode c
 	}
 
 	// require the program's footprint not exceed the remaining memory budget
-	pageLimit := arbmath.SaturatingUSub(params.PageLimit, statedb.GetStylusPagesOpen())
+	pageLimit := am.SaturatingUSub(params.PageLimit, statedb.GetStylusPagesOpen())
 
-	info, err := activateProgram(statedb, address, wasm, pageLimit, stylusVersion, debugMode, burner)
+	info, err := activateProgram(statedb, address, codeHash, wasm, pageLimit, stylusVersion, debugMode, burner)
 	if err != nil {
 		return 0, codeHash, common.Hash{}, nil, true, err
 	}
@@ -133,7 +133,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runMode c
 		return 0, codeHash, common.Hash{}, nil, true, err
 	}
 
-	estimateKb, err := arbmath.IntToUint24(arbmath.DivCeil(info.asmEstimate, 1024)) // stored in kilobytes
+	estimateKb, err := am.IntToUint24(am.DivCeil(info.asmEstimate, 1024)) // stored in kilobytes
 	if err != nil {
 		return 0, codeHash, common.Hash{}, nil, true, err
 	}
@@ -145,8 +145,8 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runMode c
 
 	programData := Program{
 		version:       stylusVersion,
-		initGas:       info.initGas,
-		cachedInitGas: info.cachedInitGas,
+		initCost:      info.initGas,
+		cachedCost:    info.cachedInitGas,
 		footprint:     info.footprint,
 		asmEstimateKb: estimateKb,
 		activatedAt:   hoursSinceArbitrum(time),
@@ -195,11 +195,9 @@ func (p Programs) CallProgram(
 	// pay for program init
 	cached := program.cached || statedb.GetRecentWasms().Insert(codeHash, params.BlockCacheSize)
 	if cached {
-		callCost = arbmath.SaturatingUAdd(callCost, minCachedInitGasUnits*uint64(params.MinCachedInitGas))
-		callCost = arbmath.SaturatingUAdd(callCost, uint64(program.cachedInitGas))
+		callCost = am.SaturatingUAdd(callCost, program.cachedGas(params))
 	} else {
-		callCost = arbmath.SaturatingUAdd(callCost, minInitGasUnits*uint64(params.MinInitGas))
-		callCost = arbmath.SaturatingUAdd(callCost, uint64(program.initGas))
+		callCost = am.SaturatingUAdd(callCost, program.initGas(params))
 	}
 	if err := contract.BurnGas(callCost); err != nil {
 		return nil, err
@@ -217,10 +215,10 @@ func (p Programs) CallProgram(
 		contractAddress: scope.Contract.Address(),
 		moduleHash:      moduleHash,
 		msgSender:       scope.Contract.Caller(),
-		msgValue:        common.BigToHash(scope.Contract.Value()),
+		msgValue:        scope.Contract.Value().Bytes32(),
 		txGasPrice:      common.BigToHash(evm.TxContext.GasPrice),
 		txOrigin:        evm.TxContext.Origin,
-		reentrant:       arbmath.BoolToUint32(reentrant),
+		reentrant:       am.BoolToUint32(reentrant),
 		cached:          program.cached,
 		tracing:         tracingInfo != nil,
 	}
@@ -258,13 +256,13 @@ func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
 func (p Programs) getProgram(codeHash common.Hash, time uint64) (Program, error) {
 	data, err := p.programs.Get(codeHash)
 	program := Program{
-		version:       arbmath.BytesToUint16(data[:2]),
-		initGas:       arbmath.BytesToUint16(data[2:4]),
-		cachedInitGas: arbmath.BytesToUint16(data[4:6]),
-		footprint:     arbmath.BytesToUint16(data[6:8]),
-		activatedAt:   arbmath.BytesToUint24(data[8:11]),
-		asmEstimateKb: arbmath.BytesToUint24(data[11:14]),
-		cached:        arbmath.BytesToBool(data[14:15]),
+		version:       am.BytesToUint16(data[:2]),
+		initCost:      am.BytesToUint16(data[2:4]),
+		cachedCost:    am.BytesToUint16(data[4:6]),
+		footprint:     am.BytesToUint16(data[6:8]),
+		activatedAt:   am.BytesToUint24(data[8:11]),
+		asmEstimateKb: am.BytesToUint24(data[11:14]),
+		cached:        am.BytesToBool(data[14:15]),
 	}
 	program.ageSeconds = hoursToAge(time, program.activatedAt)
 	return program, err
@@ -287,7 +285,7 @@ func (p Programs) getActiveProgram(codeHash common.Hash, time uint64, params *St
 	}
 
 	// ensure the program hasn't expired
-	if program.ageSeconds > arbmath.DaysToSeconds(params.ExpiryDays) {
+	if program.ageSeconds > am.DaysToSeconds(params.ExpiryDays) {
 		return program, ProgramExpiredError(program.ageSeconds)
 	}
 	return program, nil
@@ -295,13 +293,13 @@ func (p Programs) getActiveProgram(codeHash common.Hash, time uint64, params *St
 
 func (p Programs) setProgram(codehash common.Hash, program Program) error {
 	data := common.Hash{}
-	copy(data[0:], arbmath.Uint16ToBytes(program.version))
-	copy(data[2:], arbmath.Uint16ToBytes(program.initGas))
-	copy(data[4:], arbmath.Uint16ToBytes(program.cachedInitGas))
-	copy(data[6:], arbmath.Uint16ToBytes(program.footprint))
-	copy(data[8:], arbmath.Uint24ToBytes(program.activatedAt))
-	copy(data[11:], arbmath.Uint24ToBytes(program.asmEstimateKb))
-	copy(data[14:], arbmath.BoolToBytes(program.cached))
+	copy(data[0:], am.Uint16ToBytes(program.version))
+	copy(data[2:], am.Uint16ToBytes(program.initCost))
+	copy(data[4:], am.Uint16ToBytes(program.cachedCost))
+	copy(data[6:], am.Uint16ToBytes(program.footprint))
+	copy(data[8:], am.Uint24ToBytes(program.activatedAt))
+	copy(data[11:], am.Uint24ToBytes(program.asmEstimateKb))
+	copy(data[14:], am.BoolToBytes(program.cached))
 	return p.programs.Set(codehash, data)
 }
 
@@ -311,7 +309,7 @@ func (p Programs) programExists(codeHash common.Hash, time uint64, params *Stylu
 		return 0, false, false, err
 	}
 	activatedAt := program.activatedAt
-	expired := activatedAt == 0 || hoursToAge(time, activatedAt) > arbmath.DaysToSeconds(params.ExpiryDays)
+	expired := activatedAt == 0 || hoursToAge(time, activatedAt) > am.DaysToSeconds(params.ExpiryDays)
 	return program.version, expired, program.cached, err
 }
 
@@ -320,7 +318,7 @@ func (p Programs) ProgramKeepalive(codeHash common.Hash, time uint64, params *St
 	if err != nil {
 		return nil, err
 	}
-	if program.ageSeconds < arbmath.DaysToSeconds(params.KeepaliveDays) {
+	if program.ageSeconds < am.DaysToSeconds(params.KeepaliveDays) {
 		return nil, ProgramKeepaliveTooSoon(program.ageSeconds)
 	}
 
@@ -340,7 +338,7 @@ func (p Programs) ProgramKeepalive(codeHash common.Hash, time uint64, params *St
 // Gets whether a program is cached. Note that the program may be expired.
 func (p Programs) ProgramCached(codeHash common.Hash) (bool, error) {
 	data, err := p.programs.Get(codeHash)
-	return arbmath.BytesToBool(data[14:15]), err
+	return am.BytesToBool(data[14:15]), err
 }
 
 // Sets whether a program is cached. Errors if trying to cache an expired program.
@@ -358,7 +356,7 @@ func (p Programs) SetProgramCached(
 	if err != nil {
 		return err
 	}
-	expired := program.ageSeconds > arbmath.DaysToSeconds(params.ExpiryDays)
+	expired := program.ageSeconds > am.DaysToSeconds(params.ExpiryDays)
 
 	if program.version == 0 && cache {
 		return ProgramNeedsUpgradeError(0, params.Version)
@@ -374,7 +372,7 @@ func (p Programs) SetProgramCached(
 	}
 
 	// pay to cache the program, or to re-cache in case of upcoming revert
-	if err := p.programs.Burner().Burn(uint64(program.initGas)); err != nil {
+	if err := p.programs.Burner().Burn(uint64(program.initCost)); err != nil {
 		return err
 	}
 	moduleHash, err := p.moduleHashes.Get(codeHash)
@@ -405,16 +403,16 @@ func (p Programs) ProgramTimeLeft(codeHash common.Hash, time uint64, params *Sty
 		return 0, err
 	}
 	age := hoursToAge(time, program.activatedAt)
-	expirySeconds := arbmath.DaysToSeconds(params.ExpiryDays)
+	expirySeconds := am.DaysToSeconds(params.ExpiryDays)
 	if age > expirySeconds {
 		return 0, ProgramExpiredError(age)
 	}
-	return arbmath.SaturatingUSub(expirySeconds, age), nil
+	return am.SaturatingUSub(expirySeconds, age), nil
 }
 
-func (p Programs) ProgramInitGas(codeHash common.Hash, time uint64, params *StylusParams) (uint16, uint16, error) {
+func (p Programs) ProgramInitGas(codeHash common.Hash, time uint64, params *StylusParams) (uint64, uint64, error) {
 	program, err := p.getActiveProgram(codeHash, time, params)
-	return program.initGas, program.cachedInitGas, err
+	return program.initGas(params), program.cachedGas(params), err
 }
 
 func (p Programs) ProgramMemoryFootprint(codeHash common.Hash, time uint64, params *StylusParams) (uint16, error) {
@@ -431,7 +429,19 @@ func (p Programs) ProgramAsmSize(codeHash common.Hash, time uint64, params *Styl
 }
 
 func (p Program) asmSize() uint32 {
-	return arbmath.SaturatingUMul(p.asmEstimateKb.ToUint32(), 1024)
+	return am.SaturatingUMul(p.asmEstimateKb.ToUint32(), 1024)
+}
+
+func (p Program) initGas(params *StylusParams) uint64 {
+	base := uint64(params.MinInitGas) * MinInitGasUnits
+	dyno := am.SaturatingUMul(uint64(p.initCost), uint64(params.InitCostScalar)*CostScalarPercent)
+	return am.SaturatingUAdd(base, am.DivCeil(dyno, 100))
+}
+
+func (p Program) cachedGas(params *StylusParams) uint64 {
+	base := uint64(params.MinCachedInitGas) * MinCachedGasUnits
+	dyno := am.SaturatingUMul(uint64(p.cachedCost), uint64(params.CachedCostScalar)*CostScalarPercent)
+	return am.SaturatingUAdd(base, am.DivCeil(dyno, 100))
 }
 
 type goParams struct {
@@ -512,7 +522,7 @@ func hoursSinceArbitrum(time uint64) uint24 {
 
 // Computes program age in seconds from the hours passed since Arbitrum began.
 func hoursToAge(time uint64, hours uint24) uint64 {
-	seconds := arbmath.SaturatingUMul(uint64(hours), 3600)
-	activatedAt := arbmath.SaturatingUAdd(lastUpdateTimeOffset, seconds)
-	return arbmath.SaturatingUSub(time, activatedAt)
+	seconds := am.SaturatingUMul(uint64(hours), 3600)
+	activatedAt := am.SaturatingUAdd(lastUpdateTimeOffset, seconds)
+	return am.SaturatingUSub(time, activatedAt)
 }

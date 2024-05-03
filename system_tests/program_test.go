@@ -980,7 +980,7 @@ func testActivateFails(t *testing.T, jit bool) {
 	arbWasm, err := pgen.NewArbWasm(types.ArbWasmAddress, l2client)
 	Require(t, err)
 
-	badExportWasm, _ := readWasmFile(t, watFile("bad-export"))
+	badExportWasm, _ := readWasmFile(t, watFile("bad-mods/bad-export"))
 	auth.GasLimit = 32000000 // skip gas estimation
 	badExportAddr := deployContract(t, ctx, auth, l2client, badExportWasm)
 
@@ -1046,14 +1046,9 @@ func testSdkStorage(t *testing.T, jit bool) {
 		bc := builder.L2.ExecNode.Backend.ArbInterface().BlockChain()
 		statedb, err := bc.State()
 		Require(t, err)
-		trieHash := func(addr common.Address) common.Hash {
-			stateObject := statedb.GetOrNewStateObject(addr)
-			return stateObject.Root()
-			// .StorageTrie(addr)
-		}
 
-		solTrie := trieHash(solidity)
-		rustTrie := trieHash(rust)
+		solTrie := statedb.GetStorageRoot(solidity)
+		rustTrie := statedb.GetStorageRoot(rust)
 		if solTrie != rustTrie {
 			Fatal(t, solTrie, rustTrie)
 		}
@@ -1233,9 +1228,9 @@ func TestProgramCacheManager(t *testing.T) {
 	assert(arbWasmCache.CodehashIsCached(nil, codehash))
 
 	// compare gas costs
-	keccak := func() uint16 {
+	keccak := func() uint64 {
 		tx := l2info.PrepareTxTo("Owner", &program, 1e9, nil, []byte{0x00})
-		return uint16(ensure(tx, l2client.SendTransaction(ctx, tx)).GasUsedForL2())
+		return ensure(tx, l2client.SendTransaction(ctx, tx)).GasUsedForL2()
 	}
 	ensure(mock.EvictProgram(&userAuth, program))
 	miss := keccak()
@@ -1279,7 +1274,7 @@ func setupProgramTest(t *testing.T, jit bool) (
 	valConf := valnode.TestValidationConfig
 	valConf.UseJit = jit
 	_, valStack := createTestValidationNode(t, ctx, &valConf)
-	configByValidationNode(t, builder.nodeConfig, valStack)
+	configByValidationNode(builder.nodeConfig, valStack)
 
 	builder.execConfig.Sequencer.MaxRevertGasReject = 0
 
@@ -1315,6 +1310,7 @@ func setupProgramTest(t *testing.T, jit bool) (
 }
 
 func readWasmFile(t *testing.T, file string) ([]byte, []byte) {
+	t.Helper()
 	name := strings.TrimSuffix(filepath.Base(file), filepath.Ext(file))
 	source, err := os.ReadFile(file)
 	Require(t, err)

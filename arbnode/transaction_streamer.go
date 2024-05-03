@@ -1070,8 +1070,9 @@ func (s *TransactionStreamer) ResultAtCount(count arbutil.MessageIndex) (*execut
 	return s.exec.ResultAtPos(count - 1)
 }
 
+// exposed for testing
 // return value: true if should be called again immediately
-func (s *TransactionStreamer) executeNextMsg(ctx context.Context, exec execution.ExecutionSequencer) bool {
+func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context, exec execution.ExecutionSequencer) bool {
 	if ctx.Err() != nil {
 		return false
 	}
@@ -1121,7 +1122,7 @@ func (s *TransactionStreamer) executeNextMsg(ctx context.Context, exec execution
 }
 
 func (s *TransactionStreamer) executeMessages(ctx context.Context, ignored struct{}) time.Duration {
-	if s.executeNextMsg(ctx, s.exec) {
+	if s.ExecuteNextMsg(ctx, s.exec) {
 		return 0
 	}
 	return s.config().ExecuteMessageLoopDelay

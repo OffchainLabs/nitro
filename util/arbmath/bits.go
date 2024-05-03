@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/holiman/uint256"
 )
 
 type bytes32 = common.Hash
@@ -83,6 +84,13 @@ func BytesToUint16(value []byte) uint16 {
 // creates a uint8 from its big-endian representation
 func BytesToUint8(value []byte) uint8 {
 	return value[0]
+}
+
+// creates a uint256 from its big-endian representation
+func BytesToUint256(value []byte) *uint256.Int {
+	int := &uint256.Int{}
+	int.SetBytes(value)
+	return int
 }
 
 // creates a bool from its big-endian representation
