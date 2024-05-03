@@ -926,10 +926,6 @@ func testMemory(t *testing.T, jit bool) {
 		Fatal(t, "unexpected memory footprint", programMemoryFootprint)
 	}
 
-	if !t.Failed() {
-		validateBlocks(t, 3, jit, builder)
-		t.Skip("Succeeded up to here. Diagnose tests with larger numbers of blocks later.")
-	}
 	// check edge case where memory doesn't require `pay_for_memory_grow`
 	tx = l2info.PrepareTxTo("Owner", &growFixed, 1e9, nil, args)
 	ensure(tx, l2client.SendTransaction(ctx, tx))
