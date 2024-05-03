@@ -18,7 +18,7 @@ func (con ArbInfo) GetBalance(c ctx, evm mech, account addr) (huge, error) {
 	if err := c.Burn(params.BalanceGasEIP1884); err != nil {
 		return nil, err
 	}
-	return evm.StateDB.GetBalance(account), nil
+	return evm.StateDB.GetBalance(account).ToBig(), nil
 }
 
 // GetCode retrieves a contract's deployed code

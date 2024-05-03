@@ -22,6 +22,9 @@ import (
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_arb"
+	"github.com/offchainlabs/nitro/validator/valnode"
+
+	validatorclient "github.com/offchainlabs/nitro/validator/client"
 )
 
 type mockSpawner struct {
@@ -65,10 +68,12 @@ func (s *mockSpawner) Launch(entry *validator.ValidationInput, moduleRoot common
 
 var mockWasmModuleRoot common.Hash = common.HexToHash("0xa5a5a5")
 
-func (s *mockSpawner) Start(context.Context) error { return nil }
-func (s *mockSpawner) Stop()                       {}
-func (s *mockSpawner) Name() string                { return "mock" }
-func (s *mockSpawner) Room() int                   { return 4 }
+func (s *mockSpawner) Start(context.Context) error {
+	return nil
+}
+func (s *mockSpawner) Stop()        {}
+func (s *mockSpawner) Name() string { return "mock" }
+func (s *mockSpawner) Room() int    { return 4 }
 
 func (s *mockSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
 	s.ExecSpawned = append(s.ExecSpawned, input.Id)
@@ -151,7 +156,7 @@ func createMockValidationNode(t *testing.T, ctx context.Context, config *server_
 	}
 	configFetcher := func() *server_arb.ArbitratorSpawnerConfig { return config }
 	spawner := &mockSpawner{}
-	serverAPI := server_api.NewExecutionServerAPI(spawner, spawner, configFetcher)
+	serverAPI := valnode.NewExecutionServerAPI(spawner, spawner, configFetcher)
 
 	valAPIs := []rpc.API{{
 		Namespace:     server_api.Namespace,
@@ -182,7 +187,7 @@ func TestValidationServerAPI(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	_, validationDefault := createMockValidationNode(t, ctx, nil)
-	client := server_api.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), validationDefault)
+	client := validatorclient.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), validationDefault)
 	err := client.Start(ctx)
 	Require(t, err)
 
@@ -248,7 +253,7 @@ func TestValidationClientRoom(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	mockSpawner, spawnerStack := createMockValidationNode(t, ctx, nil)
-	client := server_api.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), spawnerStack)
+	client := validatorclient.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), spawnerStack)
 	err := client.Start(ctx)
 	Require(t, err)
 
@@ -335,10 +340,10 @@ func TestExecutionKeepAlive(t *testing.T) {
 	_, validationShortTO := createMockValidationNode(t, ctx, &shortTimeoutConfig)
 	configFetcher := StaticFetcherFrom(t, &rpcclient.TestClientConfig)
 
-	clientDefault := server_api.NewExecutionClient(configFetcher, validationDefault)
+	clientDefault := validatorclient.NewExecutionClient(configFetcher, validationDefault)
 	err := clientDefault.Start(ctx)
 	Require(t, err)
-	clientShortTO := server_api.NewExecutionClient(configFetcher, validationShortTO)
+	clientShortTO := validatorclient.NewExecutionClient(configFetcher, validationShortTO)
 	err = clientShortTO.Start(ctx)
 	Require(t, err)
 

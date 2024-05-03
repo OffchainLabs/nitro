@@ -1007,14 +1007,9 @@ func testSdkStorage(t *testing.T, jit bool) {
 		bc := builder.L2.ExecNode.Backend.ArbInterface().BlockChain()
 		statedb, err := bc.State()
 		Require(t, err)
-		trieHash := func(addr common.Address) common.Hash {
-			stateObject := statedb.GetOrNewStateObject(addr)
-			return stateObject.Root()
-			// .StorageTrie(addr)
-		}
 
-		solTrie := trieHash(solidity)
-		rustTrie := trieHash(rust)
+		solTrie := statedb.GetStorageRoot(solidity)
+		rustTrie := statedb.GetStorageRoot(rust)
 		if solTrie != rustTrie {
 			Fatal(t, solTrie, rustTrie)
 		}
@@ -1240,7 +1235,7 @@ func setupProgramTest(t *testing.T, jit bool) (
 	valConf := valnode.TestValidationConfig
 	valConf.UseJit = jit
 	_, valStack := createTestValidationNode(t, ctx, &valConf)
-	configByValidationNode(t, builder.nodeConfig, valStack)
+	configByValidationNode(builder.nodeConfig, valStack)
 
 	builder.execConfig.Sequencer.MaxRevertGasReject = 0
 

@@ -1,4 +1,7 @@
-package server_api
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+
+package client
 
 import (
 	"context"
@@ -7,12 +10,15 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/validator"
 
 	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/jsonapi"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 
+	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_common"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -38,7 +44,7 @@ func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot c
 	promise := stopwaiter.LaunchPromiseThread[validator.GoGlobalState](c, func(ctx context.Context) (validator.GoGlobalState, error) {
 		input := ValidationInputToJson(entry)
 		var res validator.GoGlobalState
-		err := c.client.CallContext(ctx, &res, Namespace+"_validate", input, moduleRoot)
+		err := c.client.CallContext(ctx, &res, server_api.Namespace+"_validate", input, moduleRoot)
 		atomic.AddInt32(&c.room, 1)
 		return res, err
 	})
@@ -48,21 +54,18 @@ func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot c
 func (c *ValidationClient) Start(ctx_in context.Context) error {
 	c.StopWaiter.Start(ctx_in, c)
 	ctx := c.GetContext()
-	err := c.client.Start(ctx)
-	if err != nil {
+	if err := c.client.Start(ctx); err != nil {
 		return err
 	}
 	var name string
-	err = c.client.CallContext(ctx, &name, Namespace+"_name")
-	if err != nil {
+	if err := c.client.CallContext(ctx, &name, server_api.Namespace+"_name"); err != nil {
 		return err
 	}
 	if len(name) == 0 {
 		return errors.New("couldn't read name from server")
 	}
 	var room int
-	err = c.client.CallContext(c.GetContext(), &room, Namespace+"_room")
-	if err != nil {
+	if err := c.client.CallContext(c.GetContext(), &room, server_api.Namespace+"_room"); err != nil {
 		return err
 	}
 	if room < 2 {
@@ -111,7 +114,7 @@ func NewExecutionClient(config rpcclient.ClientConfigFetcher, stack *node.Node) 
 func (c *ExecutionClient) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
 	return stopwaiter.LaunchPromiseThread[validator.ExecutionRun](c, func(ctx context.Context) (validator.ExecutionRun, error) {
 		var res uint64
-		err := c.client.CallContext(ctx, &res, Namespace+"_createExecutionRun", wasmModuleRoot, ValidationInputToJson(input))
+		err := c.client.CallContext(ctx, &res, server_api.Namespace+"_createExecutionRun", wasmModuleRoot, ValidationInputToJson(input))
 		if err != nil {
 			return nil, err
 		}
@@ -133,7 +136,7 @@ type ExecutionClientRun struct {
 func (c *ExecutionClient) LatestWasmModuleRoot() containers.PromiseInterface[common.Hash] {
 	return stopwaiter.LaunchPromiseThread[common.Hash](c, func(ctx context.Context) (common.Hash, error) {
 		var res common.Hash
-		err := c.client.CallContext(ctx, &res, Namespace+"_latestWasmModuleRoot")
+		err := c.client.CallContext(ctx, &res, server_api.Namespace+"_latestWasmModuleRoot")
 		if err != nil {
 			return common.Hash{}, err
 		}
@@ -144,13 +147,13 @@ func (c *ExecutionClient) LatestWasmModuleRoot() containers.PromiseInterface[com
 func (c *ExecutionClient) WriteToFile(input *validator.ValidationInput, expOut validator.GoGlobalState, moduleRoot common.Hash) containers.PromiseInterface[struct{}] {
 	jsonInput := ValidationInputToJson(input)
 	return stopwaiter.LaunchPromiseThread[struct{}](c, func(ctx context.Context) (struct{}, error) {
-		err := c.client.CallContext(ctx, nil, Namespace+"_writeToFile", jsonInput, expOut, moduleRoot)
+		err := c.client.CallContext(ctx, nil, server_api.Namespace+"_writeToFile", jsonInput, expOut, moduleRoot)
 		return struct{}{}, err
 	})
 }
 
 func (r *ExecutionClientRun) SendKeepAlive(ctx context.Context) time.Duration {
-	err := r.client.client.CallContext(ctx, nil, Namespace+"_execKeepAlive", r.id)
+	err := r.client.client.CallContext(ctx, nil, server_api.Namespace+"_execKeepAlive", r.id)
 	if err != nil {
 		log.Error("execution run keepalive failed", "err", err)
 	}
@@ -164,12 +167,12 @@ func (r *ExecutionClientRun) Start(ctx_in context.Context) {
 
 func (r *ExecutionClientRun) GetStepAt(pos uint64) containers.PromiseInterface[*validator.MachineStepResult] {
 	return stopwaiter.LaunchPromiseThread[*validator.MachineStepResult](r, func(ctx context.Context) (*validator.MachineStepResult, error) {
-		var resJson MachineStepResultJson
-		err := r.client.client.CallContext(ctx, &resJson, Namespace+"_getStepAt", r.id, pos)
+		var resJson server_api.MachineStepResultJson
+		err := r.client.client.CallContext(ctx, &resJson, server_api.Namespace+"_getStepAt", r.id, pos)
 		if err != nil {
 			return nil, err
 		}
-		res, err := MachineStepResultFromJson(&resJson)
+		res, err := server_api.MachineStepResultFromJson(&resJson)
 		if err != nil {
 			return nil, err
 		}
@@ -180,7 +183,7 @@ func (r *ExecutionClientRun) GetStepAt(pos uint64) containers.PromiseInterface[*
 func (r *ExecutionClientRun) GetProofAt(pos uint64) containers.PromiseInterface[[]byte] {
 	return stopwaiter.LaunchPromiseThread[[]byte](r, func(ctx context.Context) ([]byte, error) {
 		var resString string
-		err := r.client.client.CallContext(ctx, &resString, Namespace+"_getProofAt", r.id, pos)
+		err := r.client.client.CallContext(ctx, &resString, server_api.Namespace+"_getProofAt", r.id, pos)
 		if err != nil {
 			return nil, err
 		}
@@ -194,7 +197,7 @@ func (r *ExecutionClientRun) GetLastStep() containers.PromiseInterface[*validato
 
 func (r *ExecutionClientRun) PrepareRange(start, end uint64) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread[struct{}](r, func(ctx context.Context) (struct{}, error) {
-		err := r.client.client.CallContext(ctx, nil, Namespace+"_prepareRange", r.id, start, end)
+		err := r.client.client.CallContext(ctx, nil, server_api.Namespace+"_prepareRange", r.id, start, end)
 		if err != nil && ctx.Err() == nil {
 			log.Warn("prepare execution got error", "err", err)
 		}
@@ -205,9 +208,38 @@ func (r *ExecutionClientRun) PrepareRange(start, end uint64) containers.PromiseI
 func (r *ExecutionClientRun) Close() {
 	r.StopOnly()
 	r.LaunchUntrackedThread(func() {
-		err := r.client.client.CallContext(r.GetParentContext(), nil, Namespace+"_closeExec", r.id)
+		err := r.client.client.CallContext(r.GetParentContext(), nil, server_api.Namespace+"_closeExec", r.id)
 		if err != nil {
 			log.Warn("closing execution client run got error", "err", err, "client", r.client.Name(), "id", r.id)
 		}
 	})
+}
+
+func ValidationInputToJson(entry *validator.ValidationInput) *server_api.InputJSON {
+	jsonPreimagesMap := make(map[arbutil.PreimageType]*jsonapi.PreimagesMapJson)
+	for ty, preimages := range entry.Preimages {
+		jsonPreimagesMap[ty] = jsonapi.NewPreimagesMapJson(preimages)
+	}
+	res := &server_api.InputJSON{
+		Id:            entry.Id,
+		HasDelayedMsg: entry.HasDelayedMsg,
+		DelayedMsgNr:  entry.DelayedMsgNr,
+		DelayedMsgB64: base64.StdEncoding.EncodeToString(entry.DelayedMsg),
+		StartState:    entry.StartState,
+		PreimagesB64:  jsonPreimagesMap,
+		UserWasms:     make(map[common.Hash]server_api.UserWasmJson),
+		DebugChain:    entry.DebugChain,
+	}
+	for _, binfo := range entry.BatchInfo {
+		encData := base64.StdEncoding.EncodeToString(binfo.Data)
+		res.BatchInfo = append(res.BatchInfo, server_api.BatchInfoJson{Number: binfo.Number, DataB64: encData})
+	}
+	for moduleHash, info := range entry.UserWasms {
+		encWasm := server_api.UserWasmJson{
+			Asm:    base64.StdEncoding.EncodeToString(info.Asm),
+			Module: base64.StdEncoding.EncodeToString(info.Module),
+		}
+		res.UserWasms[moduleHash] = encWasm
+	}
+	return res
 }
