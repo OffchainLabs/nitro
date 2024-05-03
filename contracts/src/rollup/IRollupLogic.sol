@@ -41,5 +41,12 @@ interface IRollupUser is IRollupCore, IOwnable {
         bytes32 expectedAssertionHash
     ) external;
 
+    function newStakeOnNewAssertion(
+        uint256 tokenAmount,
+        AssertionInputs calldata assertion,
+        bytes32 expectedAssertionHash,
+        address withdrawalAddress
+    ) external;
+
     function addToDeposit(address stakerAddress, uint256 tokenAmount) external;
 }

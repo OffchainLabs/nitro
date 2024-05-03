@@ -17,6 +17,7 @@ interface IRollupCore is IAssertionChain {
         bytes32 latestStakedAssertion;
         uint64 index;
         bool isStaked;
+        address withdrawalAddress;
     }
 
     event RollupInitialized(bytes32 machineHash, uint256 chainId);
@@ -39,7 +40,7 @@ interface IRollupCore is IAssertionChain {
         uint64 indexed challengeIndex, address asserter, address challenger, uint64 challengedAssertion
     );
 
-    event UserStakeUpdated(address indexed user, uint256 initialBalance, uint256 finalBalance);
+    event UserStakeUpdated(address indexed user, address indexed withdrawalAddress, uint256 initialBalance, uint256 finalBalance);
 
     event UserWithdrawableFundsUpdated(address indexed user, uint256 initialBalance, uint256 finalBalance);
 
