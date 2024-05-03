@@ -321,7 +321,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 	}
 
 	if lightClientAddr != "" {
-		lightClientReader, err = arbos.NewMockLightClientReader(common.HexToAddress(lightClientAddr), opts.L1Reader.Client())
+		lightClientReader, err = lightclient.NewLightClientReader(common.HexToAddress(lightClientAddr), opts.L1Reader.Client())
 		if err != nil {
 			return nil, err
 		}
@@ -476,15 +476,15 @@ func (b *BatchPoster) addEspressoBlockMerkleProof(
 			return err
 
 		}
-		// The next header contains the block commitment merkle tree commitment that validates this header
-		nextHeader, err := b.hotshotClient.FetchHeaderByHeight(ctx, validatedHotShotHeight+1)
-		if err != nil {
-			return fmt.Errorf("error fetching the next header at height %v, request failed with error %w", validatedHotShotHeight+1, err)
-		}
-
-		if validatedHotShotHeight < jst.Header.Height+1 || validatedHotShotHeight == 18446744073709551615 {
+		if validatedHotShotHeight < jst.Header.Height+1 {
 			return fmt.Errorf("could not construct batch justification, light client is at height %v but the justification is for height %v", validatedHotShotHeight, jst.Header.Height)
 		}
+		// The next header contains the block commitment merkle tree commitment that validates the header of interest
+		nextHeader, err := b.hotshotClient.FetchHeaderByHeight(ctx, validatedHotShotHeight)
+		if err != nil {
+			return fmt.Errorf("error fetching the next header at height %v, request failed with error %w", validatedHotShotHeight, err)
+		}
+
 		proof, err := b.hotshotClient.FetchBlockMerkleProof(ctx, validatedHotShotHeight, jst.Header.Height)
 		if err != nil {
 			return fmt.Errorf("error fetching the block merkle proof for validated height %v and leaf height %v. Request failed with error %w", validatedHotShotHeight, jst.Header.Height, err)

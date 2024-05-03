@@ -565,10 +565,14 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		if err != nil {
 			return false, err
 		}
+		log.Error("printing the jst", "%v", jst.BlockMerkleJustification)
+		log.Error("printing the jst", "%v", jst)
 		fetchedCommitment, err := v.lightClientReader.FetchMerkleRootAtL1Block(jst.BlockMerkleJustification.L1ProofHeight)
 		if err != nil {
+			log.Error("error attempting to fetch block merkle root from the light client contract", "L1ProofHeight", jst.BlockMerkleJustification.L1ProofHeight)
 			return false, err
 		}
+		log.Error("printing the fetched comm", "%v", fetchedCommitment)
 		comm = fetchedCommitment
 	}
 	entry, err := newValidationEntry(pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, v.nextCreateBatchBlockHash, v.nextCreatePrevDelayed, &comm)

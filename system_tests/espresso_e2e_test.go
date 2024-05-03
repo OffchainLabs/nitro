@@ -32,7 +32,7 @@ import (
 
 var workingDir = "./espresso-e2e"
 var hotShotAddress = "0x217788c286797d56cd59af5e493f3699c39cbbe8"
-var lightClientAddress = "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0"
+var lightClientAddress = "0xb075b82c7a23e0994df4793422a1f03dbcf9136f"
 var hostIoAddress = "0xF34C2fac45527E55ED122f80a969e79A40547e6D"
 var hotShotUrl = "http://127.0.0.1:50000"
 
@@ -168,7 +168,7 @@ func createL1ValidatorPosterNode(ctx context.Context, t *testing.T, hotshotUrl s
 	builder.nodeConfig.BlockValidator.Enable = true
 	builder.nodeConfig.BlockValidator.ValidationPoll = 2 * time.Second
 	builder.nodeConfig.BlockValidator.ValidationServer.URL = fmt.Sprintf("ws://127.0.0.1:%d", arbValidationPort)
-	builder.nodeConfig.BlockValidator.HotShotAddress = hotShotAddress
+	builder.nodeConfig.BlockValidator.HotShotAddress = lightClientAddress
 	builder.nodeConfig.BlockValidator.Espresso = true
 	builder.nodeConfig.DelayedSequencer.Enable = false
 

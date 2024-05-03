@@ -77,7 +77,8 @@ pub fn verify_merkle_proof_helper(
     let circuit_block_comm_u256 = U256::from_little_endian(circuit_block_bytes);
 
     assert!(proved_comm == header_comm);
-    assert!(local_block_comm_u256 == circuit_block_comm_u256)
+    assert!(local_block_comm_u256 == circuit_block_comm_u256);
+    dbg!("we finished validating exeution");
 }
 
 // Helper function to verify a VID namespace proof that takes the byte representations of the proof,

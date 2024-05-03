@@ -430,8 +430,10 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 		}
 		fetchedCommitment, err := v.lightClientReader.FetchMerkleRootAtL1Block(jst.BlockMerkleJustification.L1ProofHeight)
 		if err != nil {
+			log.Error("error fetching light client commitment", "L1ProofHeight", jst.BlockMerkleJustification.L1ProofHeight, "%v", err)
 			return nil, err
 		}
+		log.Error("commitment to append", "%v", fetchedCommitment)
 		comm = fetchedCommitment
 	}
 	entry, err := newValidationEntry(pos, start, end, msg, seqMsg, batchBlockHash, prevDelayed, &comm)

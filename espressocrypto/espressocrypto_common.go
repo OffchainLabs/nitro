@@ -31,5 +31,5 @@ func VerifyNamespace(namespace uint64, proof espressoTypes.NamespaceProof, block
 }
 
 func VerifyMerkleProof(proof json.RawMessage, header json.RawMessage, blockComm espressoTypes.TaggedBase64, circuit_comm_bytes espressoTypes.Commitment) {
-	verifyMerkleProof(proof, header, []byte(blockComm.String()), circuit_comm_bytes)
+	verifyMerkleProof(proof, header, []byte(blockComm.String()), circuit_comm_bytes[:])
 }
