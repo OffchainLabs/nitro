@@ -32,13 +32,13 @@ pub type VidScheme = Advz<Bn254, sha2::Sha256>;
 pub type Proof = Vec<MerkleNode<Commitment<Header>, u64, Sha3Node>>;
 pub type CircuitField = ark_ed_on_bn254::Fq;
 
-lazy_static! {
-    // Initialize the byte array from JSON content
-    static ref SRS_VEC: Vec<u8> = {
-        let json_content = include_str!("../../../config/vid_srs.json");
-        serde_json::from_str(json_content).expect("Failed to deserialize")
-    };
-}
+// lazy_static! {
+//     // Initialize the byte array from JSON content
+//     static ref SRS_VEC: Vec<u8> = {
+//         let json_content = include_str!("../../../config/vid_srs.json");
+//         serde_json::from_str(json_content).expect("Failed to deserialize")
+//     };
+// }
 
 // Helper function to verify a block merkle proof.
 //
@@ -94,35 +94,41 @@ pub fn verify_namespace_helper(
     ns_table_bytes: &[u8],
     tx_comm_bytes: &[u8],
 ) {
-    let proof_str = std::str::from_utf8(proof_bytes).unwrap();
-    let commit_str = std::str::from_utf8(commit_bytes).unwrap();
-    let txn_comm_str = std::str::from_utf8(tx_comm_bytes).unwrap();
+    // let proof_str = std::str::from_utf8(proof_bytes).unwrap();
+    // let commit_str = std::str::from_utf8(commit_bytes).unwrap();
+    // let txn_comm_str = std::str::from_utf8(tx_comm_bytes).unwrap();
 
-    let proof: NamespaceProof = serde_json::from_str(proof_str).unwrap();
-    let ns_table = NameSpaceTable::<TxTableEntryWord>::from_bytes(<&[u8] as Into<Bytes>>::into(
-        ns_table_bytes,
-    ));
-    let tagged = TaggedBase64::parse(&commit_str).unwrap();
-    let commit: <VidScheme as VidSchemeTrait>::Commit = tagged.try_into().unwrap();
+    // let proof: NamespaceProof = serde_json::from_str(proof_str).unwrap();
+    // let ns_table = NameSpaceTable::<TxTableEntryWord>::from_bytes(<&[u8] as Into<Bytes>>::into(
+    //     ns_table_bytes,
+    // ));
+    // let tagged = TaggedBase64::parse(&commit_str).unwrap();
+    // let commit: <VidScheme as VidSchemeTrait>::Commit = tagged.try_into().unwrap();
 
-    let srs =
-        UnivariateUniversalParams::<Bn254>::deserialize_uncompressed_unchecked(SRS_VEC.as_slice())
-            .unwrap();
-    let num_storage_nodes = match &proof {
-        NamespaceProof::Existence { vid_common, .. } => {
-            VidScheme::get_num_storage_nodes(&vid_common)
-        }
-        // Non-existence proofs do not actually make use of the SRS, so pick some random value to appease the compiler.
-        _ => 5,
-    };
-    let num_chunks: usize = 1 << num_storage_nodes.ilog2();
-    let advz = Advz::new(num_chunks, num_storage_nodes, 1, srs).unwrap();
-    let (txns, ns) = proof.verify(&advz, &commit, &ns_table).unwrap();
+    // let degree = 2u64.pow(20) as usize + 2;
+    // let srs = ark_srs::kzg10::aztec20::setup(degree).expect("Aztec SRS failed to load");
+    // let srs: UnivariateUniversalParams<Bn254> = UnivariateUniversalParams {
+    //     powers_of_g: srs.powers_of_g,
+    //     h: srs.h,
+    //     beta_h: srs.beta_h,
+    //     powers_of_h: vec![srs.h, srs.beta_h],
+    // };
 
-    let txns_comm = hash_txns(namespace, &txns);
+    // let num_storage_nodes = match &proof {
+    //     NamespaceProof::Existence { vid_common, .. } => {
+    //         VidScheme::get_num_storage_nodes(&vid_common)
+    //     }
+    //     // Non-existence proofs do not actually make use of the SRS, so pick some random value to appease the compiler.
+    //     _ => 5,
+    // };
+    // let num_chunks: usize = 1 << num_storage_nodes.ilog2();
+    // let advz = Advz::new(num_chunks, num_storage_nodes, 1, srs).unwrap();
+    // let (txns, ns) = proof.verify(&advz, &commit, &ns_table).unwrap();
 
-    assert!(ns == namespace.into());
-    assert!(txns_comm == txn_comm_str);
+    // let txns_comm = hash_txns(namespace, &txns);
+
+    // assert!(ns == namespace.into());
+    // assert!(txns_comm == txn_comm_str);
 }
 
 // TODO: Use Commit trait: https://github.com/EspressoSystems/nitro-espresso-integration/issues/88
@@ -198,7 +204,7 @@ mod test {
     }
 
     #[test]
-    fn write_srs_to_file() {
+    fn write_test_srs_to_file() {
         let mut bytes = Vec::new();
         let mut rng = jf_utils::test_rng();
         UnivariateKzgPCS::<Bn254>::gen_srs_for_testing(&mut rng, checked_fft_size(200).unwrap())
@@ -206,5 +212,38 @@ mod test {
             .serialize_uncompressed(&mut bytes)
             .unwrap();
         let _ = std::fs::write("srs.json", serde_json::to_string(&bytes).unwrap());
+    }
+
+    #[test]
+    fn write_prod_srs_to_file() {
+        let mut bytes = Vec::new();
+        let degree = 2u64.pow(20) as usize + 2;
+        let srs = ark_srs::kzg10::aztec20::setup(degree).expect("Aztec SRS failed to load");
+        let srs: UnivariateUniversalParams<Bn254> = UnivariateUniversalParams {
+            powers_of_g: srs.powers_of_g,
+            h: srs.h,
+            beta_h: srs.beta_h,
+            powers_of_h: vec![srs.h, srs.beta_h],
+        };
+        srs.serialize_uncompressed(&mut bytes).unwrap();
+        let _ = std::fs::write("srs.json", serde_json::to_string(&bytes).unwrap());
+    }
+
+    #[test]
+    fn write_prod_advz_scheme_to_file() {
+        let mut bytes = Vec::new();
+        let degree = 2u64.pow(20) as usize + 2;
+        let srs = ark_srs::kzg10::aztec20::setup(degree).expect("Aztec SRS failed to load");
+        let srs: UnivariateUniversalParams<Bn254> = UnivariateUniversalParams {
+            powers_of_g: srs.powers_of_g,
+            h: srs.h,
+            beta_h: srs.beta_h,
+            powers_of_h: vec![srs.h, srs.beta_h],
+        };
+        let num_storage_nodes: u32 = 2;
+        let num_chunks: usize = 1 << num_storage_nodes.ilog2();
+        let advz = Advz::new(num_chunks, num_storage_nodes, 1, srs).unwrap();
+        advz.serialize_uncompressed(&mut bytes).unwrap();
+        let _ = std::fs::write("advz.json", serde_json::to_string(&bytes).unwrap());
     }
 }

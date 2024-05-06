@@ -1,0 +1,1016 @@
+=== RUN   TestEspressoE2E
+INFO [05-03|16:08:10.576] Starting peer-to-peer node               instance=system_tests.test/darwin-amd64/go1.20.9
+INFO [05-03|16:08:10.578] WebSocket enabled                        url=ws://127.0.0.1:54321
+INFO [05-03|16:08:10.578] New Key                                  name=Owner Address=0x26E554a8acF9003b83495c7f45F06edCB803d4e3
+INFO [05-03|16:08:10.578] New Key                                  name=Faucet Address=0xaF24Ca6c2831f4d4F629418b50C227DF0885613A
+INFO [05-03|16:08:10.579] New Key                                  name=Faucet Address=0xaF24Ca6c2831f4d4F629418b50C227DF0885613A
+INFO [05-03|16:08:10.579] New local node record                    seq=1,714,766,890,578 id=f3be3c0114f30f62 ip=127.0.0.1 udp=0 tcp=0
+INFO [05-03|16:08:10.579] Started P2P networking                   self=enode://f3c879f0ac736b44a1fc59c7252ca4bd53765995753921011940b7b431ed42092564a6af5638001bf2b1d3b9ead07f1b6068d49a72a1f21e5449520dfaea94b2@127.0.0.1:0
+INFO [05-03|16:08:10.579] Allocated trie memory caches             clean=154.00MiB dirty=256.00MiB
+INFO [05-03|16:08:10.579] Using leveldb as the backing database 
+INFO [05-03|16:08:10.579] Allocated cache and file handles         database=/var/folders/9f/51361g3x1kb67fdf_9zydv200000gn/T/TestEspressoE2E156393867/003/system_tests.test/chaindata cache=512.00MiB handles=16
+INFO [05-03|16:08:10.663] Using LevelDB as the backing database 
+INFO [05-03|16:08:10.906] Opened ancient database                  database=/var/folders/9f/51361g3x1kb67fdf_9zydv200000gn/T/TestEspressoE2E156393867/003/system_tests.test/chaindata/ancient/chain readonly=false
+INFO [05-03|16:08:10.906] State schema set to default              scheme=hash
+INFO [05-03|16:08:10.906] Initialising Ethereum protocol           network=412,346 dbversion=<nil>
+INFO [05-03|16:08:10.906] Writing custom genesis block 
+INFO [05-03|16:08:10.907] Persisted trie from memory database      nodes=12 size=1.83KiB time="122.788µs" gcnodes=0 gcsize=0.00B gctime=0s livenodes=0 livesize=0.00B
+INFO [05-03|16:08:10.908]  
+INFO [05-03|16:08:10.908] --------------------------------------------------------------------------------------------------------------------------------------------------------- 
+INFO [05-03|16:08:10.908] Chain ID:  1337 (unknown) 
+INFO [05-03|16:08:10.908] Consensus: unknown 
+INFO [05-03|16:08:10.908]  
+INFO [05-03|16:08:10.908] Pre-Merge hard forks (block based): 
+INFO [05-03|16:08:10.908]  - Homestead:                   #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/homestead.md) 
+INFO [05-03|16:08:10.908]  - Tangerine Whistle (EIP 150): #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/tangerine-whistle.md) 
+INFO [05-03|16:08:10.908]  - Spurious Dragon/1 (EIP 155): #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/spurious-dragon.md) 
+INFO [05-03|16:08:10.908]  - Spurious Dragon/2 (EIP 158): #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/spurious-dragon.md) 
+INFO [05-03|16:08:10.908]  - Byzantium:                   #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/byzantium.md) 
+INFO [05-03|16:08:10.908]  - Constantinople:              #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/constantinople.md) 
+INFO [05-03|16:08:10.908]  - Petersburg:                  #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/petersburg.md) 
+INFO [05-03|16:08:10.908]  - Istanbul:                    #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/istanbul.md) 
+INFO [05-03|16:08:10.908]  - Muir Glacier:                #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/muir-glacier.md) 
+INFO [05-03|16:08:10.908]  - Berlin:                      #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/berlin.md) 
+INFO [05-03|16:08:10.908]  - London:                      #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/london.md) 
+INFO [05-03|16:08:10.908]  - Arrow Glacier:               #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/arrow-glacier.md) 
+INFO [05-03|16:08:10.908]  - Gray Glacier:                #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/gray-glacier.md) 
+INFO [05-03|16:08:10.908]  
+INFO [05-03|16:08:10.908] Merge configured: 
+INFO [05-03|16:08:10.908]  - Hard-fork specification:    https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/paris.md 
+INFO [05-03|16:08:10.908]  - Network known to be merged: true 
+INFO [05-03|16:08:10.908]  - Total terminal difficulty:  0 
+INFO [05-03|16:08:10.908]  
+INFO [05-03|16:08:10.908] Post-Merge hard forks (timestamp based): 
+INFO [05-03|16:08:10.908]  - Shanghai:                    @0          (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/shanghai.md) 
+INFO [05-03|16:08:10.908]  
+INFO [05-03|16:08:10.908] --------------------------------------------------------------------------------------------------------------------------------------------------------- 
+INFO [05-03|16:08:10.908]  
+INFO [05-03|16:08:10.908] Loaded most recent local block           number=0 hash=c33d8c..aa8e2e td=0 age=55y1mo2w
+WARN [05-03|16:08:10.908] Failed to load snapshot                  err="missing or corrupted snapshot"
+INFO [05-03|16:08:10.908] Rebuilding state snapshot 
+INFO [05-03|16:08:10.908] Initialized transaction indexer          limit=2,350,000
+INFO [05-03|16:08:10.908] Resuming state snapshot generation       root=7935ab..9a7b77 accounts=0 slots=0 storage=0.00B dangling=0 elapsed="314.529µs"
+INFO [05-03|16:08:10.909] Generated state snapshot                 accounts=10 slots=0 storage=412.00B dangling=0 elapsed="778.797µs"
+INFO [05-03|16:08:10.909] Regenerated local transaction journal    transactions=0 accounts=0
+INFO [05-03|16:08:10.915] Chain post-merge, sync via beacon client 
+INFO [05-03|16:08:10.916] Gasprice oracle is ignoring threshold set threshold=2
+INFO [05-03|16:08:10.916] Entered PoS stage 
+INFO [05-03|16:08:10.917] Starting peer-to-peer node               instance=system_tests.test/darwin-amd64/go1.20.9
+WARN [05-03|16:08:10.917] P2P server will be useless, neither dialing nor listening 
+INFO [05-03|16:08:11.030] HTTP server started                      endpoint=[::]:8545 auth=false prefix= cors= vhosts=*
+INFO [05-03|16:08:11.030] WebSocket enabled                        url=ws://[::]:8546
+INFO [05-03|16:08:11.030] Legacy pool tip threshold updated        tip=1,000,000,000
+INFO [05-03|16:08:11.031] New local node record                    seq=1,714,766,891,030 id=edba1fdb0d8ecb4a ip=127.0.0.1 udp=0 tcp=0
+INFO [05-03|16:08:11.031] Started P2P networking                   self=enode://71e2364d586e02fac68553712371c2f67c08e45f24a416bd258ae5e96906c146cdbc8640474a012ff00523da3039c92aecac133a0fe663692a586d5213197870@127.0.0.1:0
+INFO [05-03|16:08:11.031] New Key                                  name=RollupOwner Address=0x57Ff0F473737a1c161bfF9efDF016F7991585088
+INFO [05-03|16:08:11.031] New Key                                  name=Sequencer   Address=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23
+INFO [05-03|16:08:11.031] New Key                                  name=User        Address=0x7E23C8862920797d81916d62c274dd9217113e28
+INFO [05-03|16:08:11.032] Setting new local account                address=0xaF24Ca6c2831f4d4F629418b50C227DF0885613A
+INFO [05-03|16:08:11.032] Submitted transaction                    hash=0x9286dbba2f98a4adb92370e9d687bf7a71e2419ddcbc9fe797881865d70c846f from=0xaF24Ca6c2831f4d4F629418b50C227DF0885613A nonce=0 recipient=0x57Ff0F473737a1c161bfF9efDF016F7991585088 value=9,223,372,036,854,775,807
+INFO [05-03|16:08:11.032] Starting work on payload                 id=0xebb317adc704552a
+INFO [05-03|16:08:11.032] Updated payload                          id=0xebb317adc704552a number=1 hash=02a064..57f318 txs=1 withdrawals=0 gas=21000 fees=0 root=b95c0a..74ff5d elapsed="279.236µs"
+INFO [05-03|16:08:11.032] Submitted transaction                    hash=0x4d3e3de605309cac55540fedfc26aa5bc81504206a5220a3e939f8fe7d330f19 from=0xaF24Ca6c2831f4d4F629418b50C227DF0885613A nonce=1 recipient=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23 value=9,223,372,036,854,775,807
+INFO [05-03|16:08:11.032] Stopping work on payload                 id=0xebb317adc704552a reason=delivery
+INFO [05-03|16:08:11.033] Submitted transaction                    hash=0x65c0cbb70bb4d0cbbcc86296b1cf67f33105df1e22af42b4c93c1aa78b948ee7 from=0xaF24Ca6c2831f4d4F629418b50C227DF0885613A nonce=2 recipient=0x7E23C8862920797d81916d62c274dd9217113e28 value=9,223,372,036,854,775,807
+INFO [05-03|16:08:11.033] Imported new potential chain segment     number=1 hash=02a064..57f318 blocks=1 txs=1 mgas=0.021 elapsed="406.231µs" mgasps=51.695 snapdiffs=146.00B triedirty=1.40KiB
+INFO [05-03|16:08:11.033] Chain head was updated                   number=1 hash=02a064..57f318 root=b95c0a..74ff5d elapsed="106.439µs"
+INFO [05-03|16:08:11.034] Starting work on payload                 id=0xe0f3ae3807c7b48d
+INFO [05-03|16:08:11.034] Updated payload                          id=0xe0f3ae3807c7b48d number=2 hash=ed343f..24ad2d txs=1 withdrawals=0 gas=21000 fees=0 root=1b5a27..295b95 elapsed="140.572µs"
+INFO [05-03|16:08:11.034] Stopping work on payload                 id=0xe0f3ae3807c7b48d reason=delivery
+INFO [05-03|16:08:11.034] Imported new potential chain segment     number=2 hash=ed343f..24ad2d blocks=1 txs=1 mgas=0.021 elapsed="472.709µs" mgasps=44.425 snapdiffs=292.00B triedirty=2.38KiB
+INFO [05-03|16:08:11.034] Chain head was updated                   number=2 hash=ed343f..24ad2d root=1b5a27..295b95 elapsed="56.693µs"
+INFO [05-03|16:08:11.035] Starting work on payload                 id=0xeb116b6dc3e485a9
+INFO [05-03|16:08:11.035] Updated payload                          id=0xeb116b6dc3e485a9 number=3 hash=2d4a7c..6e8785 txs=1 withdrawals=0 gas=21000 fees=0 root=210029..a0eda2 elapsed="245.318µs"
+INFO [05-03|16:08:11.035] Stopping work on payload                 id=0xeb116b6dc3e485a9 reason=delivery
+INFO [05-03|16:08:11.036] Imported new potential chain segment     number=3 hash=2d4a7c..6e8785 blocks=1 txs=1 mgas=0.021 elapsed="460.851µs" mgasps=45.568 snapdiffs=438.00B triedirty=3.57KiB
+INFO [05-03|16:08:11.036] Chain head was updated                   number=3 hash=2d4a7c..6e8785 root=210029..a0eda2 elapsed="48.567µs"
+INFO [05-03|16:08:11.042] Setting new local account                address=0x57Ff0F473737a1c161bfF9efDF016F7991585088
+INFO [05-03|16:08:11.042] Submitted contract creation              hash=0x0923f01f199e1effea89322bdafa06821b2db30fd950dce612b0a3e67ce4ddb4 from=0x57Ff0F473737a1c161bfF9efDF016F7991585088 nonce=0 contract=0xA46C59ce2FCaF445F96f66F0411e06A94D34BF45 value=0
+INFO [05-03|16:08:11.042] Starting work on payload                 id=0xd9d797e4aadc8779
+INFO [05-03|16:08:11.042] Updated payload                          id=0xd9d797e4aadc8779 number=4 hash=194410..5c0e00 txs=1 withdrawals=0 gas=1,385,401 fees=0.001385401 root=1e8bb2..648020 elapsed="279.374µs"
+INFO [05-03|16:08:11.042] Stopping work on payload                 id=0xd9d797e4aadc8779 reason=delivery
+INFO [05-03|16:08:11.043] Imported new potential chain segment     number=4 hash=194410..5c0e00 blocks=1 txs=1 mgas=1.385 elapsed="624.901µs" mgasps=2216.993 snapdiffs=596.00B triedirty=5.46KiB
+INFO [05-03|16:08:11.043] Chain head was updated                   number=4 hash=194410..5c0e00 root=1e8bb2..648020 elapsed="166.968µs"
+INFO [05-03|16:08:11.053] Submitted contract creation              hash=0x8faa304cee6a9b6795285f11e132e30c58128aefd449216457d3bb15dda11eeb from=0x57Ff0F473737a1c161bfF9efDF016F7991585088 nonce=1 contract=0xC0d44eBf2024FAa79d5aa2F2b1a19329E53a8a77 value=0
+INFO [05-03|16:08:11.053] Starting work on payload                 id=0x6f8b83200267ca4b
+INFO [05-03|16:08:11.053] Updated payload                          id=0x6f8b83200267ca4b number=5 hash=88dd39..2db073 txs=1 withdrawals=0 gas=73727     fees=7.3727e-05  root=f4a1ec..8e1d0a elapsed="181.774µs"
+INFO [05-03|16:08:11.053] Stopping work on payload                 id=0x6f8b83200267ca4b reason=delivery
+INFO [05-03|16:08:11.054] Imported new potential chain segment     number=5 hash=88dd39..2db073 blocks=1 txs=1 mgas=0.074 elapsed="430.044µs" mgasps=171.441  snapdiffs=754.00B triedirty=7.57KiB
+INFO [05-03|16:08:11.054] Chain head was updated                   number=5 hash=88dd39..2db073 root=f4a1ec..8e1d0a elapsed="136.337µs"
+INFO [05-03|16:08:11.062] Starting work on payload                 id=0x4f695241563df2d5
+INFO [05-03|16:08:11.062] Submitted contract creation              hash=0xb88bdb88345c6f9d5655294d141236a70fcd7466e1391f1ffc383d516182c2ff from=0x57Ff0F473737a1c161bfF9efDF016F7991585088 nonce=2 contract=0x871464604Ce05d630517695fE4446717506485B8 value=0
+INFO [05-03|16:08:11.063] Updated payload                          id=0x4f695241563df2d5 number=6 hash=f558a7..b10128 txs=1 withdrawals=0 gas=3,179,634 fees=0.003179634 root=bc1565..11dd34 elapsed="364.202µs"
+INFO [05-03|16:08:11.063] Stopping work on payload                 id=0x4f695241563df2d5 reason=delivery
+INFO [05-03|16:08:11.064] Imported new potential chain segment     number=6 hash=f558a7..b10128 blocks=1 txs=1 mgas=3.180 elapsed="879.764µs" mgasps=3614.190 snapdiffs=944.00B triedirty=9.25KiB
+INFO [05-03|16:08:11.064] Chain head was updated                   number=6 hash=f558a7..b10128 root=bc1565..11dd34 elapsed="235.902µs"
+INFO [05-03|16:08:11.076] Submitted contract creation              hash=0xd2c3ed6532dcb8c1fa05a68ce0a31a99cac7f2ba823ee5da0a53365eb75a39a6 from=0x57Ff0F473737a1c161bfF9efDF016F7991585088 nonce=3 contract=0xFE24a1d448a05c1d45C71dec3d218072dFBfA88b value=0
+INFO [05-03|16:08:11.076] Starting work on payload                 id=0xc7f36bf74fce16c6
+INFO [05-03|16:08:11.076] Updated payload                          id=0xc7f36bf74fce16c6 number=7 hash=08a803..dbd3c6 txs=1 withdrawals=0 gas=2,311,194 fees=0.002311194 root=d02e1d..11e1c3 elapsed="329.71µs"
+INFO [05-03|16:08:11.076] Stopping work on payload                 id=0xc7f36bf74fce16c6 reason=delivery
+INFO [05-03|16:08:11.077] Imported new potential chain segment     number=7 hash=08a803..dbd3c6 blocks=1 txs=1 mgas=2.311 elapsed="730.774µs" mgasps=3162.666 snapdiffs=1.08KiB triedirty=11.38KiB
+INFO [05-03|16:08:11.077] Chain head was updated                   number=7 hash=08a803..dbd3c6 root=d02e1d..11e1c3 elapsed="198.732µs"
+INFO [05-03|16:08:11.084] Submitted contract creation              hash=0xa1f96753e93d228e67dd68dcd5f008ff22a948561b46b1d286b4f0c4c3899327 from=0x57Ff0F473737a1c161bfF9efDF016F7991585088 nonce=4 contract=0x68c55BbCAbb6EC7D623c420B6169CF277Fe040b5 value=0
+INFO [05-03|16:08:11.084] Starting work on payload                 id=0x6a80f8430c5844ec
+INFO [05-03|16:08:11.084] Updated payload                          id=0x6a80f8430c5844ec number=8 hash=0fd92a..0f8e4c txs=1 withdrawals=0 gas=564,937   fees=0.000564937 root=2736ff..1ad5e4 elapsed="210.996µs"
+INFO [05-03|16:08:11.084] Stopping work on payload                 id=0x6a80f8430c5844ec reason=delivery
+INFO [05-03|16:08:11.084] Imported new potential chain segment     number=8 hash=0fd92a..0f8e4c blocks=1 txs=1 mgas=0.565 elapsed="479.905µs" mgasps=1177.185 snapdiffs=1.23KiB triedirty=13.51KiB
+INFO [05-03|16:08:11.085] Chain head was updated                   number=8 hash=0fd92a..0f8e4c root=2736ff..1ad5e4 elapsed="150.806µs"
+INFO [05-03|16:08:11.091] Submitted contract creation              hash=0x3c2a5ad877fc96fac02fb6aae77e281c8fdfeb834c28020f15146945749cb22b from=0x57Ff0F473737a1c161bfF9efDF016F7991585088 nonce=5 contract=0x921D7e54132EeC49687ac00C3cEFAa7ACD6dfD86 value=0
+INFO [05-03|16:08:11.091] Starting work on payload                 id=0x976c68699fa64e0d
+INFO [05-03|16:08:11.091] Updated payload                          id=0x976c68699fa64e0d number=9 hash=689d2f..34f716 txs=1 withdrawals=0 gas=1,313,393 fees=0.001313393 root=c14a53..65742b elapsed="247.419µs"
+INFO [05-03|16:08:11.091] Stopping work on payload                 id=0x976c68699fa64e0d reason=delivery
+INFO [05-03|16:08:11.092] Imported new potential chain segment     number=9 hash=689d2f..34f716 blocks=1 txs=1 mgas=1.313 elapsed="573.069µs" mgasps=2291.858 snapdiffs=1.38KiB triedirty=15.23KiB
+INFO [05-03|16:08:11.092] Chain head was updated                   number=9 hash=689d2f..34f716 root=c14a53..65742b elapsed="176.636µs"
+INFO [05-03|16:08:11.099] Submitted contract creation              hash=0x8cef521f894c0af218dff9d2af0c16f877d2c97ede0dbbad5e7cd873df9080bc from=0x57Ff0F473737a1c161bfF9efDF016F7991585088 nonce=6 contract=0x8A9dA5e5455B307e99515702E3E753809e26A71b value=0
+INFO [05-03|16:08:11.099] Starting work on payload                 id=0x66e309f244f13716
+INFO [05-03|16:08:11.100] Updated payload                          id=0x66e309f244f13716 number=10 hash=77bfb4..9a203a txs=1 withdrawals=0 gas=1,689,990 fees=0.00168999  root=01c90b..98324a elapsed="253.006µs"
+INFO [05-03|16:08:11.100] Stopping work on payload                 id=0x66e309f244f13716 reason=delivery
+INFO [05-03|16:08:11.100] Imported new potential chain segment     number=10 hash=77bfb4..9a203a blocks=1 txs=1 mgas=1.690 elapsed="614.764µs" mgasps=2749.006 snapdiffs=1.54KiB triedirty=17.18KiB
+INFO [05-03|16:08:11.101] Chain head was updated                   number=10 hash=77bfb4..9a203a root=01c90b..98324a elapsed="163.988µs"
+INFO [05-03|16:08:11.108] Submitted contract creation              hash=0xe8b9a3b0b210447f19622cef4d68f84d5c03d13c0458bac8e32153b10041925a from=0x57Ff0F473737a1c161bfF9efDF016F7991585088 nonce=7 contract=0x6Fe8F13052e9d166cf09a37fb089C5c9bdc1B080 value=0
+INFO [05-03|16:08:11.108] Starting work on payload                 id=0x1ee3f934059a5008
+INFO [05-03|16:08:11.109] Updated payload                          id=0x1ee3f934059a5008 number=11 hash=b5db9d..633656 txs=1 withdrawals=0 gas=2,023,931 fees=0.002023931 root=f8d4ab..36e4dc elapsed="304.133µs"
+INFO [05-03|16:08:11.109] Stopping work on payload                 id=0x1ee3f934059a5008 reason=delivery
+INFO [05-03|16:08:11.109] Imported new potential chain segment     number=11 hash=b5db9d..633656 blocks=1 txs=1 mgas=2.024 elapsed="652.921µs" mgasps=3099.810 snapdiffs=1.69KiB triedirty=19.56KiB
+INFO [05-03|16:08:11.110] Chain head was updated                   number=11 hash=b5db9d..633656 root=f8d4ab..36e4dc elapsed="158.385µs"
+INFO [05-03|16:08:11.115] Submitted contract creation              hash=0x64d9cc7bb50375fc8442df6c04b2c018de1967e99f8734cc05c601486730d4cb from=0x57Ff0F473737a1c161bfF9efDF016F7991585088 nonce=8 contract=0x64a43e36cC9cE3126a39d5B8034195B308940273 value=0
+INFO [05-03|16:08:11.115] Starting work on payload                 id=0xebec41b744aefae0
+INFO [05-03|16:08:11.115] Updated payload                          id=0xebec41b744aefae0 number=12 hash=0c0ff0..588157 txs=1 withdrawals=0 gas=565,201   fees=0.000565201 root=649eb6..d4b0ce elapsed="167.643µs"
+INFO [05-03|16:08:11.115] Stopping work on payload                 id=0xebec41b744aefae0 reason=delivery
+INFO [05-03|16:08:11.116] Imported new potential chain segment     number=12 hash=0c0ff0..588157 blocks=1 txs=1 mgas=0.565 elapsed="402.439µs" mgasps=1404.439 snapdiffs=1.85KiB triedirty=21.30KiB
+INFO [05-03|16:08:11.116] Chain head was updated                   number=12 hash=0c0ff0..588157 root=649eb6..d4b0ce elapsed="119.101µs"
+INFO [05-03|16:08:11.121] Submitted contract creation              hash=0x7e583ff59a59c8593fc59c5f0f6c8204dd225e629814b455abe48f23ebefd997 from=0x57Ff0F473737a1c161bfF9efDF016F7991585088 nonce=9 contract=0xe1593eE43c49131b49d77047AF8283dC055f3e6E value=0
+INFO [05-03|16:08:11.121] Starting work on payload                 id=0x209a7edc9a97c0a6
+INFO [05-03|16:08:11.121] Updated payload                          id=0x209a7edc9a97c0a6 number=13 hash=06a7ba..c01cc0 txs=1 withdrawals=0 gas=1,320,734 fees=0.001320734 root=bd5eb1..aa821e elapsed="202.333µs"
+INFO [05-03|16:08:11.121] Stopping work on payload                 id=0x209a7edc9a97c0a6 reason=delivery
+INFO [05-03|16:08:11.122] Imported new potential chain segment     number=13 hash=06a7ba..c01cc0 blocks=1 txs=1 mgas=1.321 elapsed="491.247µs" mgasps=2688.533 snapdiffs=2.00KiB triedirty=23.08KiB
+INFO [05-03|16:08:11.122] Chain head was updated                   number=13 hash=06a7ba..c01cc0 root=bd5eb1..aa821e elapsed="147.398µs"
+INFO [05-03|16:08:11.129] Submitted contract creation              hash=0x009de693cfebb9bbdae428039f1ad8ff80296dbdc405a4a19f5d144d4d89ea2a from=0x57Ff0F473737a1c161bfF9efDF016F7991585088 nonce=10 contract=0xd8Ef51E29965b7c1388c0BFD630D4cFc46D661b5 value=0
+INFO [05-03|16:08:11.129] Starting work on payload                 id=0xfe96c01400800270
+INFO [05-03|16:08:11.129] Updated payload                          id=0xfe96c01400800270 number=14 hash=de03fb..7acbf2 txs=1 withdrawals=0 gas=1,779,051 fees=0.001779051 root=2b5348..3f045a elapsed="308.987µs"
+INFO [05-03|16:08:11.129] Stopping work on payload                 id=0xfe96c01400800270 reason=delivery
+INFO [05-03|16:08:11.130] Imported new potential chain segment     number=14 hash=de03fb..7acbf2 blocks=1 txs=1 mgas=1.779 elapsed="654.065µs" mgasps=2719.991 snapdiffs=2.76KiB triedirty=27.84KiB
+INFO [05-03|16:08:11.130] Chain head was updated                   number=14 hash=de03fb..7acbf2 root=2b5348..3f045a elapsed="158.424µs"
+INFO [05-03|16:08:11.138] Starting work on payload                 id=0x6c409bfa92b21303
+INFO [05-03|16:08:11.138] Submitted contract creation              hash=0xca18ad4a625d3ba867b6ba258b09d69ed31506696514201e310148545b023c6f from=0x57Ff0F473737a1c161bfF9efDF016F7991585088 nonce=11 contract=0x112022E83AaD0dC3a1a61312b19c2F68A43ed17f value=0
+INFO [05-03|16:08:11.138] Updated payload                          id=0x6c409bfa92b21303 number=15 hash=6f38b6..367c28 txs=1 withdrawals=0 gas=2,168,459 fees=0.002168459 root=03c36d..94f5b1 elapsed="229.321µs"
+INFO [05-03|16:08:11.138] Stopping work on payload                 id=0x6c409bfa92b21303 reason=delivery
+INFO [05-03|16:08:11.139] Imported new potential chain segment     number=15 hash=6f38b6..367c28 blocks=1 txs=1 mgas=2.168 elapsed="591.007µs" mgasps=3669.092 snapdiffs=2.91KiB triedirty=29.89KiB
+INFO [05-03|16:08:11.139] Chain head was updated                   number=15 hash=6f38b6..367c28 root=03c36d..94f5b1 elapsed="159.545µs"
+INFO [05-03|16:08:11.146] Starting work on payload                 id=0xb61d03acf3e88d67
+INFO [05-03|16:08:11.146] Submitted contract creation              hash=0x10e84209664b63cb30affbe1720bfe7d74d77fe885223722b90510ce9cf5648d from=0x57Ff0F473737a1c161bfF9efDF016F7991585088 nonce=12 contract=0x13336A35bDbf0B32b3Db83dc1f76dCc33eDAbDc7 value=0
+INFO [05-03|16:08:11.146] Updated payload                          id=0xb61d03acf3e88d67 number=16 hash=2cceca..6b543c txs=1 withdrawals=0 gas=1,713,610 fees=0.00171361  root=a19ff1..cba23a elapsed="229.418µs"
+INFO [05-03|16:08:11.146] Stopping work on payload                 id=0xb61d03acf3e88d67 reason=delivery
+INFO [05-03|16:08:11.147] Imported new potential chain segment     number=16 hash=2cceca..6b543c blocks=1 txs=1 mgas=1.714 elapsed="557.262µs" mgasps=3075.053 snapdiffs=3.07KiB triedirty=32.15KiB
+INFO [05-03|16:08:11.147] Chain head was updated                   number=16 hash=2cceca..6b543c root=a19ff1..cba23a elapsed="146.422µs"
+INFO [05-03|16:08:11.154] Submitted contract creation              hash=0x230acfaf3aa3e9e12e419454644b290773013cc33d25a295cf76f2187e9c2ecf from=0x57Ff0F473737a1c161bfF9efDF016F7991585088 nonce=13 contract=0xc917c6b60239C48bd6C7155A6BEeFF79978C8cBd value=0
+INFO [05-03|16:08:11.154] Starting work on payload                 id=0xc540830434538de1
+INFO [05-03|16:08:11.154] Updated payload                          id=0xc540830434538de1 number=17 hash=e43e6b..f7d6cc txs=1 withdrawals=0 gas=2,010,542 fees=0.002010542 root=fa549c..0873ab elapsed="261.612µs"
+INFO [05-03|16:08:11.154] Stopping work on payload                 id=0xc540830434538de1 reason=delivery
+INFO [05-03|16:08:11.155] Imported new potential chain segment     number=17 hash=e43e6b..f7d6cc blocks=1 txs=1 mgas=2.011 elapsed="596.453µs" mgasps=3370.831 snapdiffs=3.22KiB triedirty=34.20KiB
+INFO [05-03|16:08:11.155] Chain head was updated                   number=17 hash=e43e6b..f7d6cc root=fa549c..0873ab elapsed="163.655µs"
+INFO [05-03|16:08:11.165] Starting work on payload                 id=0x2bf9b19d713ac66e
+INFO [05-03|16:08:11.165] Submitted contract creation              hash=0x782f0d5b8567e0c10e0f005e11731f7f20a88629895bd3071cae728f8a32d555 from=0x57Ff0F473737a1c161bfF9efDF016F7991585088 nonce=14 contract=0xF34C2fac45527E55ED122f80a969e79A40547e6D value=0
+INFO [05-03|16:08:11.165] Updated payload                          id=0x2bf9b19d713ac66e number=18 hash=8f9ed5..965488 txs=1 withdrawals=0 gas=2,784,040 fees=0.00278404  root=086d62..4c63f1 elapsed="330.825µs"
+INFO [05-03|16:08:11.165] Stopping work on payload                 id=0x2bf9b19d713ac66e reason=delivery
+INFO [05-03|16:08:11.166] Imported new potential chain segment     number=18 hash=8f9ed5..965488 blocks=1 txs=1 mgas=2.784 elapsed="727.242µs" mgasps=3828.217 snapdiffs=3.46KiB triedirty=36.26KiB
+INFO [05-03|16:08:11.166] Chain head was updated                   number=18 hash=8f9ed5..965488 root=086d62..4c63f1 elapsed="181.233µs"
+INFO [05-03|16:08:11.175] Submitted contract creation              hash=0xab4a2a2c56cb33c585e927ba2a8cd503df78196fd9e6c60ec63379f4c5216544 from=0x57Ff0F473737a1c161bfF9efDF016F7991585088 nonce=15 contract=0xDC5640e29e332cb493Bc580126EB1Fe758af3173 value=0
+INFO [05-03|16:08:11.175] Starting work on payload                 id=0x861e458dea09a590
+INFO [05-03|16:08:11.175] Updated payload                          id=0x861e458dea09a590 number=19 hash=3af150..98cd31 txs=1 withdrawals=0 gas=2,777,195 fees=0.002777195 root=793b2b..9e837f elapsed="340.239µs"
+INFO [05-03|16:08:11.175] Stopping work on payload                 id=0x861e458dea09a590 reason=delivery
+INFO [05-03|16:08:11.177] Imported new potential chain segment     number=19 hash=3af150..98cd31 blocks=1 txs=1 mgas=2.777 elapsed="967.776µs" mgasps=2869.667 snapdiffs=3.61KiB triedirty=38.13KiB
+INFO [05-03|16:08:11.177] Chain head was updated                   number=19 hash=3af150..98cd31 root=793b2b..9e837f elapsed="233.722µs"
+INFO [05-03|16:08:11.187] Submitted contract creation              hash=0x2ed8160690b68d99ca185f8af5f0183ac159ead13c8a2716fa9067f40d260e9c from=0x57Ff0F473737a1c161bfF9efDF016F7991585088 nonce=16 contract=0xffd0c2C95214aa9980D7419bd87c260C80Ce2546 value=0
+INFO [05-03|16:08:11.187] Starting work on payload                 id=0xdb0e69a95b3b5b37
+INFO [05-03|16:08:11.188] Updated payload                          id=0xdb0e69a95b3b5b37 number=20 hash=ac40fb..56f8b9 txs=1 withdrawals=0 gas=2,053,329 fees=0.002053329 root=e359be..4ed5dd elapsed="338.272µs"
+INFO [05-03|16:08:11.188] Stopping work on payload                 id=0xdb0e69a95b3b5b37 reason=delivery
+INFO [05-03|16:08:11.189] Imported new potential chain segment     number=20 hash=ac40fb..56f8b9 blocks=1 txs=1 mgas=2.053 elapsed="932.425µs" mgasps=2202.139 snapdiffs=4.01KiB triedirty=41.30KiB
+INFO [05-03|16:08:11.189] Chain head was updated                   number=20 hash=ac40fb..56f8b9 root=e359be..4ed5dd elapsed="199.431µs"
+INFO [05-03|16:08:11.204] Starting work on payload                 id=0x1d530672526dc207
+INFO [05-03|16:08:11.204] Submitted contract creation              hash=0xb5982726de1ca41d2de0c81cc2a993a9a25fe23d58b76fd018f9edfdbd2e8eb2 from=0x57Ff0F473737a1c161bfF9efDF016F7991585088 nonce=17 contract=0x5B68312416aEC3496385914A5F589e2aA429412A value=0
+INFO [05-03|16:08:11.205] Updated payload                          id=0x1d530672526dc207 number=21 hash=ad717d..3bfb2a txs=1 withdrawals=0 gas=5,095,148 fees=0.005095148 root=edb039..a3dbeb elapsed="471.149µs"
+INFO [05-03|16:08:11.205] Stopping work on payload                 id=0x1d530672526dc207 reason=delivery
+INFO [05-03|16:08:11.206] Imported new potential chain segment     number=21 hash=ad717d..3bfb2a blocks=1 txs=1 mgas=5.095 elapsed="990.02µs"  mgasps=5146.510 snapdiffs=4.19KiB triedirty=43.42KiB
+INFO [05-03|16:08:11.207] Chain head was updated                   number=21 hash=ad717d..3bfb2a root=edb039..a3dbeb elapsed="285.817µs"
+INFO [05-03|16:08:11.224] Starting work on payload                 id=0x63d0738bd210d02a
+INFO [05-03|16:08:11.224] Submitted contract creation              hash=0xb3209e8037155b66daed680517e4bc12c36e86232e943d190cde129d4d764133 from=0x57Ff0F473737a1c161bfF9efDF016F7991585088 nonce=18 contract=0x548c9E48e32748F36CD0265E6e6359e20c2432FA value=0
+INFO [05-03|16:08:11.225] Updated payload                          id=0x63d0738bd210d02a number=22 hash=9945e0..93fc2c txs=1 withdrawals=0 gas=5,364,510 fees=0.00536451  root=18b1b1..e2f0a5 elapsed="466.301µs"
+INFO [05-03|16:08:11.225] Stopping work on payload                 id=0x63d0738bd210d02a reason=delivery
+INFO [05-03|16:08:11.226] Imported new potential chain segment     number=22 hash=9945e0..93fc2c blocks=1 txs=1 mgas=5.365 elapsed="997.841µs" mgasps=5376.117 snapdiffs=4.38KiB triedirty=45.32KiB
+INFO [05-03|16:08:11.227] Chain head was updated                   number=22 hash=9945e0..93fc2c root=18b1b1..e2f0a5 elapsed="286.962µs"
+INFO [05-03|16:08:11.247] Submitted contract creation              hash=0xf805564b2f19956fbecb52c59d83873b8bf67bde49b14abb5930fff39302dfef from=0x57Ff0F473737a1c161bfF9efDF016F7991585088 nonce=19 contract=0x1174d3891010c0e64f57f3E47f1dEd82DC1DFA34 value=0
+INFO [05-03|16:08:11.247] Starting work on payload                 id=0x49724d13ee4a08fd
+INFO [05-03|16:08:11.248] Updated payload                          id=0x49724d13ee4a08fd number=23 hash=8dc178..579031 txs=1 withdrawals=0 gas=4,076,321 fees=0.004076321 root=bdeb6f..6d0a44 elapsed="879.497µs"
+INFO [05-03|16:08:11.249] Stopping work on payload                 id=0x49724d13ee4a08fd reason=delivery
+INFO [05-03|16:08:11.250] Imported new potential chain segment     number=23 hash=8dc178..579031 blocks=1 txs=1 mgas=4.076 elapsed=1.520ms     mgasps=2681.578 snapdiffs=4.62KiB triedirty=47.71KiB
+INFO [05-03|16:08:11.251] Chain head was updated                   number=23 hash=8dc178..579031 root=bdeb6f..6d0a44 elapsed="316.644µs"
+INFO [05-03|16:08:11.267] Submitted contract creation              hash=0x1cf959344c931e9526e6e6f4de9417b098b2ea355bd09ba386e15e85729c79cc from=0x57Ff0F473737a1c161bfF9efDF016F7991585088 nonce=20 contract=0x454Df6179dEbE92aC81Bfb974a4ad731Cd7dB628 value=0
+INFO [05-03|16:08:11.267] Starting work on payload                 id=0x37c83bf08077c65d
+INFO [05-03|16:08:11.268] Updated payload                          id=0x37c83bf08077c65d number=24 hash=1cd7e3..9a5018 txs=1 withdrawals=0 gas=1,433,426 fees=0.001433426 root=04361a..01b890 elapsed="466.435µs"
+INFO [05-03|16:08:11.268] Stopping work on payload                 id=0x37c83bf08077c65d reason=delivery
+INFO [05-03|16:08:11.269] Imported new potential chain segment     number=24 hash=1cd7e3..9a5018 blocks=1 txs=1 mgas=1.433 elapsed=1.171ms     mgasps=1223.537 snapdiffs=4.87KiB triedirty=50.23KiB
+INFO [05-03|16:08:11.270] Chain head was updated                   number=24 hash=1cd7e3..9a5018 root=04361a..01b890 elapsed="255.62µs"
+INFO [05-03|16:08:11.280] Starting work on payload                 id=0x90b8e8a273113415
+INFO [05-03|16:08:11.280] Submitted contract creation              hash=0x19f8b86d274ad13829c70fe416c989c6ff542572dfd4f07f95701383afa413f4 from=0x57Ff0F473737a1c161bfF9efDF016F7991585088 nonce=21 contract=0x5E6d7135B0a5F12bF935A83B7d5b5e4a8BFf112d value=0
+INFO [05-03|16:08:11.281] Updated payload                          id=0x90b8e8a273113415 number=25 hash=e77a87..c649d3 txs=1 withdrawals=0 gas=2,140,187 fees=0.002140187 root=a1c273..6738a0 elapsed="342.846µs"
+INFO [05-03|16:08:11.281] Stopping work on payload                 id=0x90b8e8a273113415 reason=delivery
+INFO [05-03|16:08:11.282] Imported new potential chain segment     number=25 hash=e77a87..c649d3 blocks=1 txs=1 mgas=2.140 elapsed="987.333µs" mgasps=2167.645 snapdiffs=5.02KiB triedirty=52.61KiB
+INFO [05-03|16:08:11.282] Chain head was updated                   number=25 hash=e77a87..c649d3 root=a1c273..6738a0 elapsed="274.805µs"
+INFO [05-03|16:08:11.302] Submitted contract creation              hash=0x28dee2d13944d7474b3636de97147660bd42190235ce09b0a716aa0f0ad937dd from=0x57Ff0F473737a1c161bfF9efDF016F7991585088 nonce=22 contract=0xa433f59F800E7c1478a6D92d49e18791D5e73A1b value=0
+INFO [05-03|16:08:11.302] Starting work on payload                 id=0xd10b6dbc4363d76d
+INFO [05-03|16:08:11.302] Updated payload                          id=0xd10b6dbc4363d76d number=26 hash=56082d..f97720 txs=1 withdrawals=0 gas=3,513,580 fees=0.00351358  root=aa5e9e..a690c7 elapsed="573.877µs"
+INFO [05-03|16:08:11.302] Stopping work on payload                 id=0xd10b6dbc4363d76d reason=delivery
+INFO [05-03|16:08:11.304] Imported new potential chain segment     number=26 hash=56082d..f97720 blocks=1 txs=1 mgas=3.514 elapsed=1.105ms     mgasps=3179.420 snapdiffs=5.38KiB triedirty=55.94KiB
+INFO [05-03|16:08:11.304] Chain head was updated                   number=26 hash=56082d..f97720 root=aa5e9e..a690c7 elapsed="336.603µs"
+INFO [05-03|16:08:11.316] Submitted contract creation              hash=0x582e9842cdcc0f95b8f5c886cc23380f3ddf6832e48a79afedc67d7388810c63 from=0x57Ff0F473737a1c161bfF9efDF016F7991585088 nonce=23 contract=0xB211efa485d87C29b9486E7631D3140e16D28E08 value=0
+INFO [05-03|16:08:11.316] Starting work on payload                 id=0x398ac93778b4767a
+INFO [05-03|16:08:11.316] Updated payload                          id=0x398ac93778b4767a number=27 hash=ad30d8..b699e2 txs=1 withdrawals=0 gas=1,279,746 fees=0.001279746 root=eaa31d..c60289 elapsed="253.241µs"
+INFO [05-03|16:08:11.316] Stopping work on payload                 id=0x398ac93778b4767a reason=delivery
+INFO [05-03|16:08:11.317] Imported new potential chain segment     number=27 hash=ad30d8..b699e2 blocks=1 txs=1 mgas=1.280 elapsed="710.193µs" mgasps=1801.969 snapdiffs=5.53KiB triedirty=58.63KiB
+INFO [05-03|16:08:11.317] Chain head was updated                   number=27 hash=ad30d8..b699e2 root=eaa31d..c60289 elapsed="219.501µs"
+INFO [05-03|16:08:11.325] Submitted transaction                    hash=0x86325807fcac78b5742ee420cb3877a7a1dc599465b7cd7d24b4cb73d080fd57 from=0x57Ff0F473737a1c161bfF9efDF016F7991585088 nonce=24 recipient=0x1174d3891010c0e64f57f3E47f1dEd82DC1DFA34 value=0
+INFO [05-03|16:08:11.326] Starting work on payload                 id=0x03cf9de86360eedb
+INFO [05-03|16:08:11.326] Updated payload                          id=0x03cf9de86360eedb number=28 hash=927b8a..c5f4eb txs=1 withdrawals=0 gas=227,594   fees=0.000227594 root=879d1e..03f5ef elapsed="346.981µs"
+INFO [05-03|16:08:11.326] Stopping work on payload                 id=0x03cf9de86360eedb reason=delivery
+INFO [05-03|16:08:11.327] Imported new potential chain segment     number=28 hash=927b8a..c5f4eb blocks=1 txs=1 mgas=0.228 elapsed="670.537µs" mgasps=339.420  snapdiffs=6.19KiB triedirty=63.20KiB
+INFO [05-03|16:08:11.327] Chain head was updated                   number=28 hash=927b8a..c5f4eb root=879d1e..03f5ef elapsed="69.595µs"
+INFO [05-03|16:08:11.407] Submitted transaction                    hash=0x64635d64c58db6eedded5f9420d1d2f2271ab3023925936ce6c3d0b109438f10 from=0x57Ff0F473737a1c161bfF9efDF016F7991585088 nonce=25 recipient=0x1174d3891010c0e64f57f3E47f1dEd82DC1DFA34 value=0
+INFO [05-03|16:08:11.407] Starting work on payload                 id=0x9203698b2dd4aa57
+INFO [05-03|16:08:11.411] Updated payload                          id=0x9203698b2dd4aa57 number=29 hash=b0c3ac..b88901 txs=1 withdrawals=0 gas=6,501,389 fees=0.006501389 root=5be99a..e218bf elapsed=3.981ms
+INFO [05-03|16:08:11.412] Stopping work on payload                 id=0x9203698b2dd4aa57 reason=delivery
+INFO [05-03|16:08:11.416] Imported new potential chain segment     number=29 hash=b0c3ac..b88901 blocks=1 txs=1 mgas=6.501 elapsed=4.469ms     mgasps=1454.476 snapdiffs=11.23KiB triedirty=90.65KiB
+INFO [05-03|16:08:11.416] Chain head was updated                   number=29 hash=b0c3ac..b88901 root=5be99a..e218bf elapsed="205.564µs"
+INFO [05-03|16:08:11.422] Using leveldb as the backing database 
+INFO [05-03|16:08:11.422] Allocated cache and file handles         database=/var/folders/9f/51361g3x1kb67fdf_9zydv200000gn/T/TestEspressoE2E156393867/001/system_tests.test/chaindb cache=16.00MiB  handles=16
+INFO [05-03|16:08:11.504] Using LevelDB as the backing database 
+INFO [05-03|16:08:11.504] Using leveldb as the backing database 
+INFO [05-03|16:08:11.504] Allocated cache and file handles         database=/var/folders/9f/51361g3x1kb67fdf_9zydv200000gn/T/TestEspressoE2E156393867/001/system_tests.test/arbitrumdata cache=16.00MiB  handles=16
+INFO [05-03|16:08:11.589] Using LevelDB as the backing database 
+ERROR[05-03|16:08:11.589] Zero state root hash! 
+ERROR[05-03|16:08:11.589] Zero state root hash! 
+INFO [05-03|16:08:11.589] addresss table import complete 
+INFO [05-03|16:08:11.589] retryables import complete 
+INFO [05-03|16:08:11.590] Persisted trie from memory database      nodes=77 size=8.89KiB time="227.868µs" gcnodes=0 gcsize=0.00B gctime=0s livenodes=0 livesize=0.00B
+INFO [05-03|16:08:11.591] wrote genesis block                      number=0  hash=0f4a0f..f054fa
+INFO [05-03|16:08:11.591]  
+INFO [05-03|16:08:11.591] --------------------------------------------------------------------------------------------------------------------------------------------------------- 
+INFO [05-03|16:08:11.591] Chain ID:  412346 (unknown) 
+INFO [05-03|16:08:11.591] Consensus: Clique (proof-of-authority) 
+INFO [05-03|16:08:11.591]  
+INFO [05-03|16:08:11.591] Pre-Merge hard forks (block based): 
+INFO [05-03|16:08:11.591]  - Homestead:                   #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/homestead.md) 
+INFO [05-03|16:08:11.591]  - Tangerine Whistle (EIP 150): #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/tangerine-whistle.md) 
+INFO [05-03|16:08:11.591]  - Spurious Dragon/1 (EIP 155): #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/spurious-dragon.md) 
+INFO [05-03|16:08:11.591]  - Spurious Dragon/2 (EIP 158): #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/spurious-dragon.md) 
+INFO [05-03|16:08:11.591]  - Byzantium:                   #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/byzantium.md) 
+INFO [05-03|16:08:11.591]  - Constantinople:              #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/constantinople.md) 
+INFO [05-03|16:08:11.591]  - Petersburg:                  #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/petersburg.md) 
+INFO [05-03|16:08:11.591]  - Istanbul:                    #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/istanbul.md) 
+INFO [05-03|16:08:11.591]  - Muir Glacier:                #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/muir-glacier.md) 
+INFO [05-03|16:08:11.591]  - Berlin:                      #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/berlin.md) 
+INFO [05-03|16:08:11.591]  - London:                      #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/london.md) 
+INFO [05-03|16:08:11.591]  
+INFO [05-03|16:08:11.591] The Merge is not yet available for this network! 
+INFO [05-03|16:08:11.591]  - Hard-fork specification: https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/paris.md 
+INFO [05-03|16:08:11.591]  
+INFO [05-03|16:08:11.591] Post-Merge hard forks (timestamp based): 
+INFO [05-03|16:08:11.591]  
+INFO [05-03|16:08:11.591] --------------------------------------------------------------------------------------------------------------------------------------------------------- 
+INFO [05-03|16:08:11.591]  
+INFO [05-03|16:08:11.591] Loaded most recent local block           number=0  hash=0f4a0f..f054fa td=1 age=55y1mo2w
+WARN [05-03|16:08:11.591] Failed to load snapshot                  err="missing or corrupted snapshot"
+INFO [05-03|16:08:11.591] Rebuilding state snapshot 
+INFO [05-03|16:08:11.591] Resuming state snapshot generation       root=23d8fb..e22ed0 accounts=0  slots=0 storage=0.00B   dangling=0 elapsed="318.361µs"
+INFO [05-03|16:08:11.591] Initialized transaction indexer          limit=126,230,400
+INFO [05-03|16:08:11.592] Starting peer-to-peer node               instance=system_tests.test/darwin-amd64/go1.20.9
+INFO [05-03|16:08:11.592] Generated state snapshot                 accounts=17 slots=39 storage=4.23KiB dangling=0 elapsed="763.039µs"
+INFO [05-03|16:08:11.592] WebSocket enabled                        url=ws://127.0.0.1:55637
+WARN [05-03|16:08:11.593] delayed sequencer is not enabled, despite sequencer and l1 reader being enabled 
+INFO [05-03|16:08:11.593] Using leveldb as the backing database 
+INFO [05-03|16:08:11.593] Allocated cache and file handles         database=/var/folders/9f/51361g3x1kb67fdf_9zydv200000gn/T/TestEspressoE2E156393867/001/system_tests.test/classic-msg cache=16.00MiB  handles=16 readonly=true
+INFO [05-03|16:08:11.593] New local node record                    seq=1,714,766,891,593 id=fa3fce396d8aee6a   ip=127.0.0.1 udp=0 tcp=0
+INFO [05-03|16:08:11.593] Started P2P networking                   self=enode://6c75fbdf931d85bd19796a2c01aa3bc68ba166e75a2a3995c6f75993dbeb051434a6e01614e8bb97025c54711d2f3dc5b3b1bc33759dfbdbf67862d11e8f294a@127.0.0.1:0
+WARN [05-03|16:08:11.594] Cgroups V1 or V2 is unsupported, memory-free-limit feature inside block-validator is disabled 
+INFO [05-03|16:08:11.595] Starting peer-to-peer node               instance=system_tests.test/darwin-amd64/go1.20.9
+WARN [05-03|16:08:11.595] P2P server will be useless, neither dialing nor listening 
+INFO [05-03|16:08:11.671] InboxTracker                             SequencerBatchCount=0
+INFO [05-03|16:08:11.672] New local node record                    seq=1,714,766,891,671 id=8eb0b3627987e6bb   ip=127.0.0.1 udp=0 tcp=0
+INFO [05-03|16:08:11.672] Started P2P networking                   self=enode://b993361ca7cf6cb0cb1fcefc062c2a19f37a072b7e934024ceb4eb73ea83a46baa3a4f4da3b2c23710d273ab512e30fb2bdf7a9733c578e71269f872117726f9@127.0.0.1:0
+WARN [05-03|16:08:11.673] empty sequencer message 
+WARN [05-03|16:08:11.673] reading virtual delayed message segment  delayedMessagesRead=0 afterDelayedMessages=1
+INFO [05-03|16:08:11.673] InboxTracker                             sequencerBatchCount=1 messageCount=1 l1Block=29 l1Timestamp=2024-05-03T16:08:39-0400
+INFO [05-03|16:08:11.772] connected to validation server           name=jit-cranelift room=12
+INFO [05-03|16:08:11.773] connected to validation server           name=jit-cranelift room=12
+INFO [05-03|16:08:11.774] BlockValidator initialized               current=08fc3b..18664b pending=08fc3b..18664b
+INFO [05-03|16:08:11.774] connecting to arbitrum inbox message broadcaster url=ws://127.0.0.1:9642
+WARN [05-03|16:08:11.774] failed connect to sequencer broadcast, waiting and retrying url=ws://127.0.0.1:9642  err="broadcast client unable to connect: dial tcp 127.0.0.1:9642: connect: connection refused"
+INFO [05-03|16:08:11.795] New Key                                  name=CommitmentTask Address=0x5E1497dD1f08C87b2d8FE23e9AAB6c1De833D927
+INFO [05-03|16:08:11.796] Submitted transaction                    hash=0xe83bae7b959c6a38c9a8844c969b84901a6294d684168ab329300cfbe985063c from=0xaF24Ca6c2831f4d4F629418b50C227DF0885613A nonce=3  recipient=0x5E1497dD1f08C87b2d8FE23e9AAB6c1De833D927 value=9,000,000,000,000,000,000
+INFO [05-03|16:08:11.797] Starting work on payload                 id=0xd67f5b5983c4552f
+INFO [05-03|16:08:11.798] Updated payload                          id=0xd67f5b5983c4552f number=30 hash=c73091..f81e9e txs=1 withdrawals=0 gas=21000     fees=0           root=3a2bdd..811885 elapsed="168.595µs"
+INFO [05-03|16:08:11.798] Stopping work on payload                 id=0xd67f5b5983c4552f reason=delivery
+INFO [05-03|16:08:11.798] Imported new potential chain segment     number=30 hash=c73091..f81e9e blocks=1 txs=1 mgas=0.021 elapsed="418.723µs" mgasps=50.152   snapdiffs=11.34KiB triedirty=92.34KiB
+INFO [05-03|16:08:11.798] Chain head was updated                   number=30 hash=c73091..f81e9e root=3a2bdd..811885 elapsed="51.063µs"
+INFO [05-03|16:08:11.799] New Key                                  name=Staker1        Address=0x2dB6a6A3B44d99Da8133D57Ed08d9132eAAf026F
+INFO [05-03|16:08:11.800] Submitted transaction                    hash=0x410e04a7dbac7b0c0b5cdca44ba1d59a8d2b26daf8d2694890174a2cfd3f8d65 from=0xaF24Ca6c2831f4d4F629418b50C227DF0885613A nonce=4  recipient=0x2dB6a6A3B44d99Da8133D57Ed08d9132eAAf026F value=9,000,000,000,000,000,000
+INFO [05-03|16:08:11.800] Starting work on payload                 id=0xc29ad9a9d42a4f43
+INFO [05-03|16:08:11.800] Updated payload                          id=0xc29ad9a9d42a4f43 number=31 hash=712e19..1884d9 txs=1 withdrawals=0 gas=21000     fees=0           root=b9f182..74ccef elapsed="150.324µs"
+INFO [05-03|16:08:11.800] Stopping work on payload                 id=0xc29ad9a9d42a4f43 reason=delivery
+INFO [05-03|16:08:11.801] Imported new potential chain segment     number=31 hash=712e19..1884d9 blocks=1 txs=1 mgas=0.021 elapsed="345.002µs" mgasps=60.869   snapdiffs=11.46KiB triedirty=94.20KiB
+INFO [05-03|16:08:11.801] Chain head was updated                   number=31 hash=712e19..1884d9 root=b9f182..74ccef elapsed="45.99µs"
+INFO [05-03|16:08:11.802] New Key                                  name=Staker2        Address=0x0502a7209Bc02f2611Fa912f5c2B3778ed64B23D
+INFO [05-03|16:08:11.802] Submitted transaction                    hash=0xe7ffc19879afc76804b4b0750392f690a4bd2b0d9b3ba2824f89dfa64cccffa1 from=0xaF24Ca6c2831f4d4F629418b50C227DF0885613A nonce=5  recipient=0x0502a7209Bc02f2611Fa912f5c2B3778ed64B23D value=9,000,000,000,000,000,000
+INFO [05-03|16:08:11.802] Starting work on payload                 id=0xcfabe63c9ffea9e0
+INFO [05-03|16:08:11.803] Updated payload                          id=0xcfabe63c9ffea9e0 number=32 hash=67a658..ca56e7 txs=1 withdrawals=0 gas=21000     fees=0           root=6af80d..f6d52f elapsed="140.746µs"
+INFO [05-03|16:08:11.803] Stopping work on payload                 id=0xcfabe63c9ffea9e0 reason=delivery
+INFO [05-03|16:08:11.803] Imported new potential chain segment     number=32 hash=67a658..ca56e7 blocks=1 txs=1 mgas=0.021 elapsed="344.508µs" mgasps=60.956   snapdiffs=11.57KiB triedirty=95.92KiB
+INFO [05-03|16:08:11.803] Chain head was updated                   number=32 hash=67a658..ca56e7 root=6af80d..f6d52f elapsed="46.174µs"
+INFO [05-03|16:08:11.810] Submitted transaction                    hash=0xef5fa658ea9f11593fc513e2e107fdf7eb9f44da4f4a3c97735db4f33a430fd5 from=0x57Ff0F473737a1c161bfF9efDF016F7991585088 nonce=26 recipient=0x0C78e925CA3cb35427F09BEf6d60e8f89Dd877D1 value=0
+INFO [05-03|16:08:11.810] Starting work on payload                 id=0x9e07cecf41772ed1
+INFO [05-03|16:08:11.810] Updated payload                          id=0x9e07cecf41772ed1 number=33 hash=b98e30..3ff772 txs=1 withdrawals=0 gas=70118     fees=7.0118e-05  root=1251a5..0235e3 elapsed="366.467µs"
+INFO [05-03|16:08:11.811] Stopping work on payload                 id=0x9e07cecf41772ed1 reason=delivery
+INFO [05-03|16:08:11.811] Imported new potential chain segment     number=33 hash=b98e30..3ff772 blocks=1 txs=1 mgas=0.070 elapsed="637.689µs" mgasps=109.956  snapdiffs=11.92KiB triedirty=99.92KiB
+INFO [05-03|16:08:11.811] Chain head was updated                   number=33 hash=b98e30..3ff772 root=1251a5..0235e3 elapsed="67.245µs"
+INFO [05-03|16:08:11.817] Submitted transaction                    hash=0x526f3d6a8db94ca333586cf17e88e2794d891928064dfb6c3a249c03f34ce1e5 from=0x57Ff0F473737a1c161bfF9efDF016F7991585088 nonce=27 recipient=0x0C78e925CA3cb35427F09BEf6d60e8f89Dd877D1 value=0
+INFO [05-03|16:08:11.818] Starting work on payload                 id=0xcd0b6d9ba5df120b
+INFO [05-03|16:08:11.818] Updated payload                          id=0xcd0b6d9ba5df120b number=34 hash=922e92..ce22b5 txs=1 withdrawals=0 gas=100,395   fees=0.000100395 root=5fcf56..f05c44 elapsed="405.183µs"
+INFO [05-03|16:08:11.818] Stopping work on payload                 id=0xcd0b6d9ba5df120b reason=delivery
+INFO [05-03|16:08:11.819] Imported new potential chain segment     number=34 hash=922e92..ce22b5 blocks=1 txs=1 mgas=0.100 elapsed="675.216µs" mgasps=148.686  snapdiffs=12.27KiB triedirty=103.70KiB
+INFO [05-03|16:08:11.819] Chain head was updated                   number=34 hash=922e92..ce22b5 root=5fcf56..f05c44 elapsed="63.333µs"
+INFO [05-03|16:08:12.774] connecting to arbitrum inbox message broadcaster url=ws://127.0.0.1:9642
+WARN [05-03|16:08:12.775] failed connect to sequencer broadcast, waiting and retrying url=ws://127.0.0.1:9642  err="broadcast client unable to connect: dial tcp 127.0.0.1:9642: connect: connection refused"
+INFO [05-03|16:08:13.100] Using leveldb as the backing database 
+INFO [05-03|16:08:13.100] Allocated cache and file handles         database=/var/folders/9f/51361g3x1kb67fdf_9zydv200000gn/T/TestEspressoE2E156393867/005/system_tests.test/chaindb cache=16.00MiB  handles=16
+INFO [05-03|16:08:13.208] Using LevelDB as the backing database 
+INFO [05-03|16:08:13.209] Using leveldb as the backing database 
+INFO [05-03|16:08:13.209] Allocated cache and file handles         database=/var/folders/9f/51361g3x1kb67fdf_9zydv200000gn/T/TestEspressoE2E156393867/005/system_tests.test/arbitrumdata cache=16.00MiB  handles=16
+INFO [05-03|16:08:13.310] Using LevelDB as the backing database 
+ERROR[05-03|16:08:13.311] Zero state root hash! 
+ERROR[05-03|16:08:13.311] Zero state root hash! 
+INFO [05-03|16:08:13.312] addresss table import complete 
+INFO [05-03|16:08:13.312] retryables import complete 
+INFO [05-03|16:08:13.313] Persisted trie from memory database      nodes=77 size=8.89KiB time="195.626µs" gcnodes=0 gcsize=0.00B gctime=0s livenodes=0 livesize=0.00B
+INFO [05-03|16:08:13.313] wrote genesis block                      number=0  hash=0f4a0f..f054fa
+INFO [05-03|16:08:13.313]  
+INFO [05-03|16:08:13.313] --------------------------------------------------------------------------------------------------------------------------------------------------------- 
+INFO [05-03|16:08:13.313] Chain ID:  412346 (unknown) 
+INFO [05-03|16:08:13.313] Consensus: Clique (proof-of-authority) 
+INFO [05-03|16:08:13.313]  
+INFO [05-03|16:08:13.313] Pre-Merge hard forks (block based): 
+INFO [05-03|16:08:13.313]  - Homestead:                   #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/homestead.md) 
+INFO [05-03|16:08:13.313]  - Tangerine Whistle (EIP 150): #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/tangerine-whistle.md) 
+INFO [05-03|16:08:13.313]  - Spurious Dragon/1 (EIP 155): #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/spurious-dragon.md) 
+INFO [05-03|16:08:13.313]  - Spurious Dragon/2 (EIP 158): #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/spurious-dragon.md) 
+INFO [05-03|16:08:13.313]  - Byzantium:                   #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/byzantium.md) 
+INFO [05-03|16:08:13.313]  - Constantinople:              #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/constantinople.md) 
+INFO [05-03|16:08:13.313]  - Petersburg:                  #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/petersburg.md) 
+INFO [05-03|16:08:13.313]  - Istanbul:                    #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/istanbul.md) 
+INFO [05-03|16:08:13.313]  - Muir Glacier:                #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/muir-glacier.md) 
+INFO [05-03|16:08:13.313]  - Berlin:                      #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/berlin.md) 
+INFO [05-03|16:08:13.313]  - London:                      #0        (https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/london.md) 
+INFO [05-03|16:08:13.313]  
+INFO [05-03|16:08:13.313] The Merge is not yet available for this network! 
+INFO [05-03|16:08:13.313]  - Hard-fork specification: https://github.com/ethereum/execution-specs/blob/master/network-upgrades/mainnet-upgrades/paris.md 
+INFO [05-03|16:08:13.313]  
+INFO [05-03|16:08:13.313] Post-Merge hard forks (timestamp based): 
+INFO [05-03|16:08:13.313]  
+INFO [05-03|16:08:13.313] --------------------------------------------------------------------------------------------------------------------------------------------------------- 
+INFO [05-03|16:08:13.313]  
+INFO [05-03|16:08:13.313] Loaded most recent local block           number=0  hash=0f4a0f..f054fa td=1 age=55y1mo2w
+WARN [05-03|16:08:13.313] Failed to load snapshot                  err="missing or corrupted snapshot"
+INFO [05-03|16:08:13.313] Rebuilding state snapshot 
+WARN [05-03|16:08:13.313] LightClientAddress is empty, running the espresso test mode 
+INFO [05-03|16:08:13.313] Resuming state snapshot generation       root=23d8fb..e22ed0 accounts=0  slots=0  storage=0.00B   dangling=0 elapsed="285.198µs"
+INFO [05-03|16:08:13.314] Initialized transaction indexer          limit=126,230,400
+WARN [05-03|16:08:13.314] LightClientAddress is empty, running the espresso test mode 
+WARN [05-03|16:08:13.314] LightClientAddress is empty, running the espresso test mode 
+WARN [05-03|16:08:13.314] LightClientAddress is empty, running the espresso test mode 
+INFO [05-03|16:08:13.314] Generated state snapshot                 accounts=17 slots=39 storage=4.23KiB dangling=0 elapsed="927.985µs"
+INFO [05-03|16:08:13.314] Using leveldb as the backing database 
+INFO [05-03|16:08:13.314] Allocated cache and file handles         database=/var/folders/9f/51361g3x1kb67fdf_9zydv200000gn/T/TestEspressoE2E156393867/005/system_tests.test/classic-msg cache=16.00MiB  handles=16 readonly=true
+WARN [05-03|16:08:13.315] validation not supported                 err="no validator url specified"
+INFO [05-03|16:08:13.315] Starting peer-to-peer node               instance=system_tests.test/darwin-amd64/go1.20.9
+WARN [05-03|16:08:13.315] P2P server will be useless, neither dialing nor listening 
+INFO [05-03|16:08:13.439] InboxTracker                             SequencerBatchCount=0
+WARN [05-03|16:08:13.439] Unable to fetch the latest hotshot block 
+INFO [05-03|16:08:13.440] New local node record                    seq=1,714,766,893,439 id=b8e13551536d48ab   ip=127.0.0.1 udp=0 tcp=0
+INFO [05-03|16:08:13.440] Started P2P networking                   self=enode://c907dcf469d1e92966b4e68ad9b4f56b65f178c9ad46f3d05bf3d77e33e4ca9fc2bdca42209568cbae3403aaefcfdc21ad8a5878429f0440a6e0ddead2c9a6b5@127.0.0.1:0
+WARN [05-03|16:08:13.441] empty sequencer message 
+WARN [05-03|16:08:13.441] reading virtual delayed message segment  delayedMessagesRead=0 afterDelayedMessages=1
+INFO [05-03|16:08:13.441] InboxTracker                             sequencerBatchCount=1 messageCount=1 l1Block=29 l1Timestamp=2024-05-03T16:08:39-0400
+INFO [05-03|16:08:13.539] arbitrum websocket broadcast server is listening address=[::]:9642
+WARN [05-03|16:08:13.567] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:14.440] Unable to fetch the latest hotshot block 
+WARN [05-03|16:08:14.589] retry to check the commitment task       err="exit status 7"
+INFO [05-03|16:08:14.775] connecting to arbitrum inbox message broadcaster url=ws://127.0.0.1:9642
+INFO [05-03|16:08:14.775] Feed connected                           feedServerVersion=2 chainId=412,346 requestedSeqNum=0
+WARN [05-03|16:08:15.441] Unable to fetch the latest hotshot block 
+WARN [05-03|16:08:15.615] retry to check the commitment task       err="exit status 7"
+INFO [05-03|16:08:16.423] Setting new local account                address=0x5E1497dD1f08C87b2d8FE23e9AAB6c1De833D927
+INFO [05-03|16:08:16.424] Submitted contract creation              hash=0x0093b02e03a2838bd9af0ff638d540c4164e4f739d0f49014d40057f87d57b7d from=0x5E1497dD1f08C87b2d8FE23e9AAB6c1De833D927 nonce=0  contract=0x217788c286797D56Cd59aF5e493f3699C39cbbe8 value=0
+INFO [05-03|16:08:16.424] Starting work on payload                 id=0xef324b1ac74d0ae6
+INFO [05-03|16:08:16.424] Updated payload                          id=0xef324b1ac74d0ae6 number=35 hash=ba10ad..b53d33 txs=1 withdrawals=0 gas=385,461   fees=0.0006810860319 root=b40fe3..061871 elapsed="243.483µs"
+INFO [05-03|16:08:16.424] Stopping work on payload                 id=0xef324b1ac74d0ae6 reason=delivery
+INFO [05-03|16:08:16.425] Imported new potential chain segment     number=35 hash=ba10ad..b53d33 blocks=1 txs=1 mgas=0.385 elapsed="678.008µs" mgasps=568.520  snapdiffs=12.42KiB triedirty=106.33KiB
+INFO [05-03|16:08:16.425] Chain head was updated                   number=35 hash=ba10ad..b53d33 root=b40fe3..061871 elapsed="180.728µs"
+WARN [05-03|16:08:16.442] Unable to fetch the latest hotshot block 
+WARN [05-03|16:08:16.650] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:17.443] Unable to fetch the latest hotshot block 
+WARN [05-03|16:08:17.674] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:18.443] Unable to fetch the latest hotshot block 
+WARN [05-03|16:08:18.697] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:19.443] Unable to fetch the latest hotshot block 
+WARN [05-03|16:08:19.718] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:20.444] Unable to fetch the latest hotshot block 
+WARN [05-03|16:08:20.741] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:21.445] Unable to fetch the latest hotshot block 
+WARN [05-03|16:08:21.767] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:22.447] Unable to fetch the latest hotshot block 
+WARN [05-03|16:08:22.795] retry to check the commitment task       err="exit status 7"
+INFO [05-03|16:08:23.460] Submitted contract creation              hash=0xf932801e8890db6aa7b33b9c75449f989c65a72f83cdab6d1c6919ab247f902c from=0x5E1497dD1f08C87b2d8FE23e9AAB6c1De833D927 nonce=1  contract=0x7DD3F2a3fAeF3B9F2364c335163244D3388Feb83 value=0
+INFO [05-03|16:08:23.460] Starting work on payload                 id=0xaf1b3925da4c2dbb
+INFO [05-03|16:08:23.461] Updated payload                          id=0xaf1b3925da4c2dbb number=36 hash=aceddf..0e2cbc txs=1 withdrawals=0 gas=63360     fees=0.00019008      root=95cba6..58c893 elapsed="425.843µs"
+INFO [05-03|16:08:23.461] Stopping work on payload                 id=0xaf1b3925da4c2dbb reason=delivery
+WARN [05-03|16:08:23.461] Unable to fetch the latest hotshot block 
+INFO [05-03|16:08:23.462] Imported new potential chain segment     number=36 hash=aceddf..0e2cbc blocks=1 txs=1 mgas=0.063 elapsed="706.417µs" mgasps=89.692   snapdiffs=12.58KiB triedirty=108.54KiB
+INFO [05-03|16:08:23.462] Chain head was updated                   number=36 hash=aceddf..0e2cbc root=95cba6..58c893 elapsed="177.554µs"
+WARN [05-03|16:08:23.833] retry to check the commitment task       err="exit status 7"
+INFO [05-03|16:08:24.464] Starting sequencing at the latest hotshot block "block number"=1
+WARN [05-03|16:08:24.474] Unable to fetch header for block number, will retry block_num=1
+WARN [05-03|16:08:24.848] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:25.478] Unable to fetch header for block number, will retry block_num=1
+WARN [05-03|16:08:25.866] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:26.481] Unable to fetch header for block number, will retry block_num=1
+WARN [05-03|16:08:26.890] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:27.485] Unable to fetch header for block number, will retry block_num=1
+WARN [05-03|16:08:27.917] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:28.490] Unable to fetch header for block number, will retry block_num=1
+WARN [05-03|16:08:28.945] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:29.492] Unable to fetch header for block number, will retry block_num=1
+WARN [05-03|16:08:29.968] retry to check the commitment task       err="exit status 7"
+INFO [05-03|16:08:30.471] Submitted contract creation              hash=0xd4a057e43a24cadc92ef07c9b3999309523cf1518bff38365fa985e94d13aa0f from=0x5E1497dD1f08C87b2d8FE23e9AAB6c1De833D927 nonce=2  contract=0x0f1F89AAF1c6fDb7ff9D361E4388F5F3997f12A8 value=0
+INFO [05-03|16:08:30.471] Starting work on payload                 id=0x12d483b74db89fe2
+INFO [05-03|16:08:30.472] Updated payload                          id=0x12d483b74db89fe2 number=37 hash=83b121..8d9ede txs=1 withdrawals=0 gas=63360     fees=0.00019008      root=653c5c..0e908f elapsed="282.166µs"
+INFO [05-03|16:08:30.472] Stopping work on payload                 id=0x12d483b74db89fe2 reason=delivery
+INFO [05-03|16:08:30.472] Imported new potential chain segment     number=37 hash=83b121..8d9ede blocks=1 txs=1 mgas=0.063 elapsed="551.438µs" mgasps=114.900  snapdiffs=12.73KiB triedirty=110.84KiB
+INFO [05-03|16:08:30.473] Chain head was updated                   number=37 hash=83b121..8d9ede root=653c5c..0e908f elapsed="268.885µs"
+WARN [05-03|16:08:30.495] Unable to fetch header for block number, will retry block_num=1
+WARN [05-03|16:08:30.995] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:31.497] Unable to fetch header for block number, will retry block_num=1
+WARN [05-03|16:08:32.015] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:32.499] Unable to fetch header for block number, will retry block_num=1
+WARN [05-03|16:08:33.033] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:33.502] Unable to fetch header for block number, will retry block_num=1
+WARN [05-03|16:08:34.057] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:34.505] Unable to fetch header for block number, will retry block_num=1
+WARN [05-03|16:08:35.087] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:35.508] Unable to fetch header for block number, will retry block_num=1
+WARN [05-03|16:08:36.106] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:36.511] Unable to fetch header for block number, will retry block_num=1
+WARN [05-03|16:08:37.127] retry to check the commitment task       err="exit status 7"
+INFO [05-03|16:08:37.499] Submitted contract creation              hash=0x190173562468ae98398f7427893cfe7d05f4bc957647d5352a9efc215c0bb1e8 from=0x5E1497dD1f08C87b2d8FE23e9AAB6c1De833D927 nonce=3  contract=0x60571c8F4B52954A24A5E7306d435E951528d963 value=0
+INFO [05-03|16:08:37.499] Starting work on payload                 id=0xac0884048263a779
+INFO [05-03|16:08:37.500] Updated payload                          id=0xac0884048263a779 number=38 hash=546f6f..c1cbf5 txs=1 withdrawals=0 gas=5,501,498 fees=0.016504494     root=5d2dfa..c783f7 elapsed="744.756µs"
+INFO [05-03|16:08:37.500] Stopping work on payload                 id=0xac0884048263a779 reason=delivery
+INFO [05-03|16:08:37.502] Imported new potential chain segment     number=38 hash=546f6f..c1cbf5 blocks=1 txs=1 mgas=5.501 elapsed=1.505ms     mgasps=3655.257 snapdiffs=13.31KiB triedirty=115.84KiB
+INFO [05-03|16:08:37.502] Chain head was updated                   number=38 hash=546f6f..c1cbf5 root=5d2dfa..c783f7 elapsed="383.319µs"
+WARN [05-03|16:08:37.513] Unable to fetch header for block number, will retry block_num=1
+WARN [05-03|16:08:38.151] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:38.516] Unable to fetch header for block number, will retry block_num=1
+WARN [05-03|16:08:39.176] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:39.518] Unable to fetch header for block number, will retry block_num=1
+WARN [05-03|16:08:40.203] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:40.521] Unable to fetch header for block number, will retry block_num=1
+WARN [05-03|16:08:41.225] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:41.524] Unable to fetch header for block number, will retry block_num=1
+WARN [05-03|16:08:42.244] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:42.527] Unable to fetch header for block number, will retry block_num=1
+WARN [05-03|16:08:43.262] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:43.529] Unable to fetch header for block number, will retry block_num=1
+WARN [05-03|16:08:44.286] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:44.531] Unable to fetch header for block number, will retry block_num=1
+INFO [05-03|16:08:44.673] Submitted contract creation              hash=0x8f7a15081e2cf54060f1fa2109efc34be05b0ef2fc149b786cf4376297f2fe99 from=0x5E1497dD1f08C87b2d8FE23e9AAB6c1De833D927 nonce=4  contract=0xb075b82c7a23e0994dF4793422A1f03Dbcf9136F value=0
+INFO [05-03|16:08:44.673] Starting work on payload                 id=0xccc12f37ee539086
+INFO [05-03|16:08:44.674] Updated payload                          id=0xccc12f37ee539086 number=39 hash=9f8bbd..7e5031 txs=1 withdrawals=0 gas=482,217   fees=0.001446651     root=75d797..395132 elapsed="875.775µs"
+INFO [05-03|16:08:44.674] Stopping work on payload                 id=0xccc12f37ee539086 reason=delivery
+INFO [05-03|16:08:44.693] Imported new potential chain segment     number=39 hash=9f8bbd..7e5031 blocks=1 txs=1 mgas=0.482 elapsed=18.922ms    mgasps=25.484   snapdiffs=14.31KiB triedirty=122.51KiB
+INFO [05-03|16:08:44.693] Chain head was updated                   number=39 hash=9f8bbd..7e5031 root=75d797..395132 elapsed="244.017µs"
+WARN [05-03|16:08:45.314] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:45.535] Unable to fetch header for block number, will retry block_num=1
+WARN [05-03|16:08:46.335] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:46.537] Unable to fetch header for block number, will retry block_num=1
+WARN [05-03|16:08:47.360] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:47.540] Unable to fetch header for block number, will retry block_num=1
+WARN [05-03|16:08:48.383] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:48.542] Unable to fetch header for block number, will retry block_num=1
+WARN [05-03|16:08:49.405] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:49.546] Unable to fetch header for block number, will retry block_num=1
+WARN [05-03|16:08:50.426] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:50.549] Unable to fetch header for block number, will retry block_num=1
+WARN [05-03|16:08:51.446] retry to check the commitment task       err="exit status 7"
+WARN [05-03|16:08:51.552] Unable to fetch header for block number, will retry block_num=1
+INFO [05-03|16:08:52.402] Submitted transaction                    hash=0x00d3be495d6f5f4c3a0c783b7701a2fa474ecf5d90365eab66206e067316e805 from=0x5E1497dD1f08C87b2d8FE23e9AAB6c1De833D927 nonce=5  recipient=0x217788c286797D56Cd59aF5e493f3699C39cbbe8 value=0
+INFO [05-03|16:08:52.402] Starting work on payload                 id=0xe23378a57897761f
+INFO [05-03|16:08:52.403] Updated payload                          id=0xe23378a57897761f number=40 hash=907d9c..7ef619 txs=1 withdrawals=0 gas=68987     fees=0.000206961     root=16cc1a..bfdf2c elapsed="307.557µs"
+INFO [05-03|16:08:52.403] Stopping work on payload                 id=0xe23378a57897761f reason=delivery
+INFO [05-03|16:08:52.404] Imported new potential chain segment     number=40 hash=907d9c..7ef619 blocks=1 txs=1 mgas=0.069 elapsed="811.398µs" mgasps=85.022   snapdiffs=14.60KiB triedirty=125.52KiB
+INFO [05-03|16:08:52.404] Chain head was updated                   number=40 hash=907d9c..7ef619 root=16cc1a..bfdf2c elapsed="140.95µs"
+WARN [05-03|16:08:52.555] Unable to fetch header for block number, will retry block_num=1
+WARN [05-03|16:08:53.557] Unable to fetch header for block number, will retry block_num=1
+WARN [05-03|16:08:54.575] Unable to fetch header for block number, will retry block_num=1
+INFO [05-03|16:08:55.659] created block                            l2Block=1 l2BlockHash=c6ddb9..236c73
+WARN [05-03|16:08:55.859] Unable to fetch header for block number, will retry block_num=8
+INFO [05-03|16:08:56.661] created block                            l2Block=7 l2BlockHash=a1d9d1..f2be9b
+WARN [05-03|16:08:57.122] Unable to fetch header for block number, will retry block_num=15
+INFO [05-03|16:08:57.661] created block                            l2Block=14 l2BlockHash=2e7b85..6c15af
+INFO [05-03|16:08:58.662] created block                            l2Block=21 l2BlockHash=620087..96d816
+WARN [05-03|16:08:58.782] Unable to fetch header for block number, will retry block_num=26
+INFO [05-03|16:08:59.662] created block                            l2Block=25 l2BlockHash=921d2d..7a24f2
+INFO [05-03|16:09:00.662] created block                            l2Block=37 l2BlockHash=f281d1..b42d63
+WARN [05-03|16:09:00.753] Unable to fetch header for block number, will retry block_num=39
+INFO [05-03|16:09:01.663] created block                            l2Block=38 l2BlockHash=2290a3..dccac0
+WARN [05-03|16:09:01.786] error posting batch                      err="error adding hotshot block merkle proof to justification: could not construct batch justification, light client is at height 0 but the justification is for height 1"
+INFO [05-03|16:09:02.667] created block                            l2Block=49 l2BlockHash=f81dfa..fbe2c5
+INFO [05-03|16:09:02.963] Submitted transaction                    hash=0x227a9656375a00107b6dbd62ed079c87d3fa6f042656e9190aa24f8be4423161 from=0x5E1497dD1f08C87b2d8FE23e9AAB6c1De833D927 nonce=6  recipient=0x217788c286797D56Cd59aF5e493f3699C39cbbe8 value=0
+INFO [05-03|16:09:02.963] Starting work on payload                 id=0x16a280d6ce986e9b
+INFO [05-03|16:09:02.965] Updated payload                          id=0x16a280d6ce986e9b number=41 hash=f7ecf8..89c2c5 txs=1 withdrawals=0 gas=767,297   fees=0.002301891     root=555c5b..1581bb elapsed=1.519ms
+INFO [05-03|16:09:02.965] Stopping work on payload                 id=0x16a280d6ce986e9b reason=delivery
+INFO [05-03|16:09:02.967] Imported new potential chain segment     number=41 hash=f7ecf8..89c2c5 blocks=1 txs=1 mgas=0.767 elapsed=1.799ms     mgasps=426.447  snapdiffs=16.79KiB triedirty=138.05KiB
+INFO [05-03|16:09:02.967] Chain head was updated                   number=41 hash=f7ecf8..89c2c5 root=555c5b..1581bb elapsed="159.771µs"
+WARN [05-03|16:09:03.190] Unable to fetch header for block number, will retry block_num=56
+INFO [05-03|16:09:03.667] created block                            l2Block=55 l2BlockHash=90207b..d69762
+INFO [05-03|16:09:04.668] created block                            l2Block=60 l2BlockHash=0d1842..ea657e
+WARN [05-03|16:09:05.009] Unable to fetch header for block number, will retry block_num=69
+INFO [05-03|16:09:05.668] created block                            l2Block=68 l2BlockHash=1d271a..e804d4
+INFO [05-03|16:09:05.733] Submitted transaction                    hash=0x2c33e7bfe9f2beb4fcbe1b05ca90c74d555e6c9d376fd3ab02e192b21b3f420f from=0x5E1497dD1f08C87b2d8FE23e9AAB6c1De833D927 nonce=7  recipient=0xb075b82c7a23e0994dF4793422A1f03Dbcf9136F value=0
+INFO [05-03|16:09:05.733] Starting work on payload                 id=0xdc356f82d6328210
+INFO [05-03|16:09:05.746] Updated payload                          id=0xdc356f82d6328210 number=42 hash=575291..507ec9 txs=1 withdrawals=0 gas=658,359   fees=0.001975077     root=39da54..afeffc elapsed=12.129ms
+INFO [05-03|16:09:05.746] Stopping work on payload                 id=0xdc356f82d6328210 reason=delivery
+INFO [05-03|16:09:05.760] Imported new potential chain segment     number=42 hash=575291..507ec9 blocks=1 txs=1 mgas=0.658 elapsed=14.676ms    mgasps=44.858   snapdiffs=17.19KiB triedirty=142.28KiB
+INFO [05-03|16:09:05.761] Chain head was updated                   number=42 hash=575291..507ec9 root=39da54..afeffc elapsed="150.315µs"
+WARN [05-03|16:09:06.195] Unable to fetch header for block number, will retry block_num=79
+INFO [05-03|16:09:06.668] created block                            l2Block=78 l2BlockHash=0f1392..57fe31
+INFO [05-03|16:09:06.873] Setting new local account                address=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23
+INFO [05-03|16:09:06.873] Submitted transaction                    hash=0x197d2d7e3c7349770f944e034a85d8220811e21bd39ae9507c9655383cc3028b from=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23 nonce=0  recipient=0xafBb5B29467a4d54c887C884a9737343b3f363aF value=0
+INFO [05-03|16:09:06.873] DataPoster sent transaction              nonce=0  hash=197d2d..c3028b feeCap=60,004,603,042 tipCap=1,000,000,000 blobFeeCap=<nil> gas=185,027
+INFO [05-03|16:09:06.873] BatchPoster: batch sent                  sequenceNumber=1 from=1 to=2 prevDelayed=1 currentDelayed=1 totalSegments=3 numBlobs=0
+ERROR[05-03|16:09:06.873] a large batch posting backlog exists     recentlyHitL1Bounds=false currentPosition=2 messageCount=79 messagesPerBatch=1 postedMessages=1 unpostedMessages=77 batchBacklogEstimate=77
+INFO [05-03|16:09:06.874] Starting work on payload                 id=0x298127a4847203b5
+INFO [05-03|16:09:06.874] Updated payload                          id=0x298127a4847203b5 number=43 hash=c5c74b..07bd25 txs=1 withdrawals=0 gas=173,818   fees=0.000173818     root=de22a4..7b20c6 elapsed="650.905µs"
+INFO [05-03|16:09:06.874] Stopping work on payload                 id=0x298127a4847203b5 reason=delivery
+INFO [05-03|16:09:06.876] Imported new potential chain segment     number=43 hash=c5c74b..07bd25 blocks=1 txs=1 mgas=0.174 elapsed=1.105ms     mgasps=157.252  snapdiffs=17.60KiB triedirty=147.04KiB
+INFO [05-03|16:09:06.876] Chain head was updated                   number=43 hash=c5c74b..07bd25 root=de22a4..7b20c6 elapsed="102.738µs"
+INFO [05-03|16:09:06.880] InboxTracker                             sequencerBatchCount=2 messageCount=2  l1Block=43 l1Timestamp=2024-05-03T16:08:54-0400
+INFO [05-03|16:09:06.880] InboxTracker                             sequencerBatchCount=2 messageCount=2  l1Block=43 l1Timestamp=2024-05-03T16:08:54-0400
+ERROR[05-03|16:09:06.880] Writing new block justification to DB 
+ERROR[05-03|16:09:06.880] Writing new block justification to DB 
+WARN [05-03|16:09:06.916] lack of L1 balance prevents posting transaction with desired fee cap balance=9,223,103,344,872,279,751 weight=1 maxMempoolWeight=18 balanceForTransaction=361,690,327,249,893,323 gasLimit=187,107 targetMaxCost=4,448,656,899,155,624,208 nonce=1  softConfNonce=0
+INFO [05-03|16:09:06.917] Submitted transaction                    hash=0x13ecdf7d8916678453387e4c2f9831abc8805d4dac16835152ba0d049ccdc319 from=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23 nonce=1  recipient=0xafBb5B29467a4d54c887C884a9737343b3f363aF value=0
+INFO [05-03|16:09:06.917] Starting work on payload                 id=0xaa3653f56b2958cd
+INFO [05-03|16:09:06.917] DataPoster sent transaction              nonce=1  hash=13ecdf..cdc319 feeCap=1,933,066,786,650 tipCap=1,000,000,000 blobFeeCap=<nil> gas=187,107
+INFO [05-03|16:09:06.917] BatchPoster: batch sent                  sequenceNumber=2 from=2 to=3 prevDelayed=1 currentDelayed=1 totalSegments=3 numBlobs=0
+ERROR[05-03|16:09:06.917] a large batch posting backlog exists     recentlyHitL1Bounds=false currentPosition=3 messageCount=79 messagesPerBatch=1 postedMessages=1 unpostedMessages=76 batchBacklogEstimate=76
+INFO [05-03|16:09:06.918] Updated payload                          id=0xaa3653f56b2958cd number=44 hash=e60e54..781dd2 txs=1 withdrawals=0 gas=175,866   fees=0.000175866     root=849fb7..0d706d elapsed="407.135µs"
+INFO [05-03|16:09:06.918] Stopping work on payload                 id=0xaa3653f56b2958cd reason=delivery
+INFO [05-03|16:09:06.918] Imported new potential chain segment     number=44 hash=e60e54..781dd2 blocks=1 txs=1 mgas=0.176 elapsed="765.124µs" mgasps=229.853  snapdiffs=18.01KiB triedirty=151.26KiB
+INFO [05-03|16:09:06.919] Chain head was updated                   number=44 hash=e60e54..781dd2 root=849fb7..0d706d elapsed="76.278µs"
+INFO [05-03|16:09:06.922] InboxTracker                             sequencerBatchCount=3 messageCount=3  l1Block=44 l1Timestamp=2024-05-03T16:08:54-0400
+INFO [05-03|16:09:06.922] InboxTracker                             sequencerBatchCount=3 messageCount=3  l1Block=44 l1Timestamp=2024-05-03T16:08:54-0400
+ERROR[05-03|16:09:06.922] Writing new block justification to DB 
+ERROR[05-03|16:09:06.922] Writing new block justification to DB 
+WARN [05-03|16:09:06.969] lack of L1 balance prevents posting transaction with desired fee cap balance=9,222,843,219,365,332,669 weight=1 maxMempoolWeight=18 balanceForTransaction=361,680,126,249,620,888 gasLimit=187,023 targetMaxCost=4,332,201,645,916,211,802 nonce=2  softConfNonce=1
+INFO [05-03|16:09:06.970] Submitted transaction                    hash=0xb7299c0091c1d00d957b80086c203d461bc41a9ebd02ca61bd060beff6e164f8 from=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23 nonce=2  recipient=0xafBb5B29467a4d54c887C884a9737343b3f363aF value=0
+INFO [05-03|16:09:06.971] DataPoster sent transaction              nonce=2  hash=b7299c..e164f8 feeCap=1,933,880,465,234 tipCap=1,000,000,000 blobFeeCap=<nil> gas=187,023
+INFO [05-03|16:09:06.971] Starting work on payload                 id=0x42226fa9a3ba804c
+INFO [05-03|16:09:06.971] BatchPoster: batch sent                  sequenceNumber=3 from=3 to=4 prevDelayed=1 currentDelayed=1 totalSegments=3 numBlobs=0
+ERROR[05-03|16:09:06.971] a large batch posting backlog exists     recentlyHitL1Bounds=false currentPosition=4 messageCount=79 messagesPerBatch=1 postedMessages=1 unpostedMessages=75 batchBacklogEstimate=75
+INFO [05-03|16:09:06.971] Updated payload                          id=0x42226fa9a3ba804c number=45 hash=51a86a..b69238 txs=1 withdrawals=0 gas=175,782   fees=0.000175782     root=0e77b9..c88902 elapsed="579.791µs"
+INFO [05-03|16:09:06.971] Stopping work on payload                 id=0x42226fa9a3ba804c reason=delivery
+INFO [05-03|16:09:06.972] Imported new potential chain segment     number=45 hash=51a86a..b69238 blocks=1 txs=1 mgas=0.176 elapsed=1.070ms     mgasps=164.165  snapdiffs=18.42KiB triedirty=155.89KiB
+INFO [05-03|16:09:06.973] Chain head was updated                   number=45 hash=51a86a..b69238 root=0e77b9..c88902 elapsed="145.179µs"
+INFO [05-03|16:09:06.977] InboxTracker                             sequencerBatchCount=4 messageCount=4  l1Block=45 l1Timestamp=2024-05-03T16:08:54-0400
+INFO [05-03|16:09:06.978] InboxTracker                             sequencerBatchCount=4 messageCount=4  l1Block=45 l1Timestamp=2024-05-03T16:08:54-0400
+ERROR[05-03|16:09:06.978] Writing new block justification to DB 
+ERROR[05-03|16:09:06.978] Writing new block justification to DB 
+WARN [05-03|16:09:07.027] lack of L1 balance prevents posting transaction with desired fee cap balance=9,222,593,509,032,640,837 weight=1 maxMempoolWeight=18 balanceForTransaction=361,670,333,687,554,542 gasLimit=187,023 targetMaxCost=4,219,239,761,660,647,209 nonce=3  softConfNonce=2
+INFO [05-03|16:09:07.028] Submitted transaction                    hash=0x09f9f7de12afb56f69cbaa2ec5542f7a8093a8d36c319568c4e38dd07b0ef266 from=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23 nonce=3  recipient=0xafBb5B29467a4d54c887C884a9737343b3f363aF value=0
+INFO [05-03|16:09:07.028] DataPoster sent transaction              nonce=3  hash=09f9f7..0ef266 feeCap=1,933,828,105,032 tipCap=1,000,000,000 blobFeeCap=<nil> gas=187,023
+INFO [05-03|16:09:07.028] Starting work on payload                 id=0x184c44184375389d
+INFO [05-03|16:09:07.028] BatchPoster: batch sent                  sequenceNumber=4 from=4 to=5 prevDelayed=1 currentDelayed=1 totalSegments=3 numBlobs=0
+ERROR[05-03|16:09:07.028] a large batch posting backlog exists     recentlyHitL1Bounds=false currentPosition=5 messageCount=79 messagesPerBatch=1 postedMessages=1 unpostedMessages=74 batchBacklogEstimate=74
+INFO [05-03|16:09:07.029] Updated payload                          id=0x184c44184375389d number=46 hash=5e867a..ae49c4 txs=1 withdrawals=0 gas=175,782   fees=0.000175782     root=0b3bd9..437fa0 elapsed="626.801µs"
+INFO [05-03|16:09:07.029] Stopping work on payload                 id=0x184c44184375389d reason=delivery
+INFO [05-03|16:09:07.030] Imported new potential chain segment     number=46 hash=5e867a..ae49c4 blocks=1 txs=1 mgas=0.176 elapsed="804.547µs" mgasps=218.486  snapdiffs=18.83KiB triedirty=160.42KiB
+INFO [05-03|16:09:07.030] Chain head was updated                   number=46 hash=5e867a..ae49c4 root=0b3bd9..437fa0 elapsed="83.82µs"
+INFO [05-03|16:09:07.045] InboxTracker                             sequencerBatchCount=5 messageCount=5  l1Block=46 l1Timestamp=2024-05-03T16:08:54-0400
+ERROR[05-03|16:09:07.046] Writing new block justification to DB 
+INFO [05-03|16:09:07.051] InboxTracker                             sequencerBatchCount=5 messageCount=5  l1Block=46 l1Timestamp=2024-05-03T16:08:54-0400
+ERROR[05-03|16:09:07.051] Writing new block justification to DB 
+WARN [05-03|16:09:07.146] lack of L1 balance prevents posting transaction with desired fee cap balance=9,222,352,832,460,192,103 weight=1 maxMempoolWeight=18 balanceForTransaction=361,660,895,390,595,768 gasLimit=186,999 targetMaxCost=4,107,246,933,784,816,986 nonce=4  softConfNonce=3
+INFO [05-03|16:09:07.148] Submitted transaction                    hash=0x10de3a035220005f01801b2202d54e2004f32f9e9a339046db42ce3184b024c4 from=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23 nonce=4  recipient=0xafBb5B29467a4d54c887C884a9737343b3f363aF value=0
+INFO [05-03|16:09:07.148] DataPoster sent transaction              nonce=4  hash=10de3a..b024c4 feeCap=1,934,025,825,756 tipCap=1,000,000,000 blobFeeCap=<nil> gas=186,999
+INFO [05-03|16:09:07.148] Starting work on payload                 id=0x8705c3770e18d48c
+INFO [05-03|16:09:07.148] BatchPoster: batch sent                  sequenceNumber=5 from=5 to=6 prevDelayed=1 currentDelayed=1 totalSegments=3 numBlobs=0
+ERROR[05-03|16:09:07.148] a large batch posting backlog exists     recentlyHitL1Bounds=false currentPosition=6 messageCount=79 messagesPerBatch=1 postedMessages=1 unpostedMessages=73 batchBacklogEstimate=73
+INFO [05-03|16:09:07.148] Updated payload                          id=0x8705c3770e18d48c number=47 hash=ec5e0b..3b75d8 txs=1 withdrawals=0 gas=175,758   fees=0.000175758     root=3d00ad..1e5e65 elapsed="580.256µs"
+INFO [05-03|16:09:07.148] Stopping work on payload                 id=0x8705c3770e18d48c reason=delivery
+INFO [05-03|16:09:07.149] Imported new potential chain segment     number=47 hash=ec5e0b..3b75d8 blocks=1 txs=1 mgas=0.176 elapsed="973.79µs"  mgasps=180.489  snapdiffs=19.24KiB triedirty=165.49KiB
+INFO [05-03|16:09:07.150] Chain head was updated                   number=47 hash=ec5e0b..3b75d8 root=3d00ad..1e5e65 elapsed="86.956µs"
+INFO [05-03|16:09:07.169] InboxTracker                             sequencerBatchCount=6 messageCount=6  l1Block=47 l1Timestamp=2024-05-03T16:08:54-0400
+INFO [05-03|16:09:07.169] InboxTracker                             sequencerBatchCount=6 messageCount=6  l1Block=47 l1Timestamp=2024-05-03T16:08:54-0400
+ERROR[05-03|16:09:07.169] Writing new block justification to DB 
+ERROR[05-03|16:09:07.169] Writing new block justification to DB 
+WARN [05-03|16:09:07.213] lack of L1 balance prevents posting transaction with desired fee cap balance=9,222,120,117,711,953,053 weight=1 maxMempoolWeight=18 balanceForTransaction=361,651,769,322,037,374 gasLimit=187,059 targetMaxCost=3,998,573,959,134,148,905 nonce=5  softConfNonce=4
+INFO [05-03|16:09:07.215] Submitted transaction                    hash=0x1913269666b923ead3caec8bb892e659205264986f9e08760bfd306900bab3d8 from=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23 nonce=5  recipient=0xafBb5B29467a4d54c887C884a9737343b3f363aF value=0
+INFO [05-03|16:09:07.215] Starting work on payload                 id=0x21bdc6cef3d02759
+INFO [05-03|16:09:07.215] DataPoster sent transaction              nonce=5  hash=191326..bab3d8 feeCap=1,933,356,691,322 tipCap=1,000,000,000 blobFeeCap=<nil> gas=187,059
+INFO [05-03|16:09:07.215] BatchPoster: batch sent                  sequenceNumber=6 from=6 to=7 prevDelayed=1 currentDelayed=1 totalSegments=3 numBlobs=0
+ERROR[05-03|16:09:07.215] a large batch posting backlog exists     recentlyHitL1Bounds=false currentPosition=7 messageCount=79 messagesPerBatch=1 postedMessages=1 unpostedMessages=72 batchBacklogEstimate=72
+INFO [05-03|16:09:07.215] Updated payload                          id=0x21bdc6cef3d02759 number=48 hash=43b2a0..b95136 txs=1 withdrawals=0 gas=175,818   fees=0.000175818     root=7f43d9..5f8617 elapsed="767.78µs"
+INFO [05-03|16:09:07.216] Stopping work on payload                 id=0x21bdc6cef3d02759 reason=delivery
+INFO [05-03|16:09:07.217] Imported new potential chain segment     number=48 hash=43b2a0..b95136 blocks=1 txs=1 mgas=0.176 elapsed=1.082ms     mgasps=162.450  snapdiffs=19.65KiB triedirty=170.02KiB
+INFO [05-03|16:09:07.217] Chain head was updated                   number=48 hash=43b2a0..b95136 root=7f43d9..5f8617 elapsed="110.173µs"
+INFO [05-03|16:09:07.253] InboxTracker                             sequencerBatchCount=7 messageCount=7  l1Block=48 l1Timestamp=2024-05-03T16:08:55-0400
+ERROR[05-03|16:09:07.253] Writing new block justification to DB 
+INFO [05-03|16:09:07.255] InboxTracker                             sequencerBatchCount=7 messageCount=7  l1Block=48 l1Timestamp=2024-05-03T16:08:55-0400
+ERROR[05-03|16:09:07.255] Writing new block justification to DB 
+WARN [05-03|16:09:07.285] lack of L1 balance prevents posting transaction with desired fee cap balance=9,221,894,286,126,500,191 weight=1 maxMempoolWeight=18 balanceForTransaction=361,642,913,181,431,380 gasLimit=187,107 targetMaxCost=3,891,077,956,464,246,879 nonce=6  softConfNonce=5
+INFO [05-03|16:09:07.287] Submitted transaction                    hash=0x6b9a178b6115cb918f7f945c46adc198ca3c5a8d392ab34384db4a38cef5af93 from=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23 nonce=6  recipient=0xafBb5B29467a4d54c887C884a9737343b3f363aF value=0
+INFO [05-03|16:09:07.287] DataPoster sent transaction              nonce=6  hash=6b9a17..f5af93 feeCap=1,932,813,380,479 tipCap=1,000,000,000 blobFeeCap=<nil> gas=187,107
+INFO [05-03|16:09:07.287] BatchPoster: batch sent                  sequenceNumber=7 from=7 to=8 prevDelayed=1 currentDelayed=1 totalSegments=3 numBlobs=0
+ERROR[05-03|16:09:07.287] a large batch posting backlog exists     recentlyHitL1Bounds=false currentPosition=8 messageCount=81 messagesPerBatch=1 postedMessages=1 unpostedMessages=73 batchBacklogEstimate=73
+INFO [05-03|16:09:07.287] Starting work on payload                 id=0xdc69b0fcb21812b2
+INFO [05-03|16:09:07.288] Updated payload                          id=0xdc69b0fcb21812b2 number=49 hash=6aac40..ded4ac txs=1 withdrawals=0 gas=175,866   fees=0.000175866     root=bdb410..892cea elapsed="743.873µs"
+INFO [05-03|16:09:07.288] Stopping work on payload                 id=0xdc69b0fcb21812b2 reason=delivery
+INFO [05-03|16:09:07.289] Imported new potential chain segment     number=49 hash=6aac40..ded4ac blocks=1 txs=1 mgas=0.176 elapsed=1.293ms     mgasps=135.938  snapdiffs=20.06KiB triedirty=175.01KiB
+INFO [05-03|16:09:07.290] Chain head was updated                   number=49 hash=6aac40..ded4ac root=bdb410..892cea elapsed="131.536µs"
+INFO [05-03|16:09:07.308] InboxTracker                             sequencerBatchCount=8 messageCount=8  l1Block=49 l1Timestamp=2024-05-03T16:08:55-0400
+ERROR[05-03|16:09:07.309] Writing new block justification to DB 
+INFO [05-03|16:09:07.350] InboxTracker                             sequencerBatchCount=8 messageCount=8  l1Block=49 l1Timestamp=2024-05-03T16:08:55-0400
+ERROR[05-03|16:09:07.350] Writing new block justification to DB 
+WARN [05-03|16:09:07.397] lack of L1 balance prevents posting transaction with desired fee cap balance=9,221,674,506,406,173,049 weight=1 maxMempoolWeight=18 balanceForTransaction=361,634,294,368,869,531 gasLimit=187,035 targetMaxCost=3,998,060,958,511,518,060 nonce=7  softConfNonce=6
+INFO [05-03|16:09:07.398] Submitted transaction                    hash=0x095b77ef93c1f81a57141aa0cd2fed9ec8ac8c0e8d668960ca8728b6654242f8 from=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23 nonce=7  recipient=0xafBb5B29467a4d54c887C884a9737343b3f363aF value=0
+INFO [05-03|16:09:07.398] DataPoster sent transaction              nonce=7  hash=095b77..4242f8 feeCap=1,933,511,344,768 tipCap=1,000,000,000 blobFeeCap=<nil> gas=187,035
+INFO [05-03|16:09:07.398] Starting work on payload                 id=0x3feb9dbfe36e8138
+INFO [05-03|16:09:07.398] BatchPoster: batch sent                  sequenceNumber=8 from=8 to=9 prevDelayed=1 currentDelayed=1 totalSegments=3 numBlobs=0
+ERROR[05-03|16:09:07.398] a large batch posting backlog exists     recentlyHitL1Bounds=false currentPosition=9 messageCount=85 messagesPerBatch=1 postedMessages=1 unpostedMessages=76 batchBacklogEstimate=76
+INFO [05-03|16:09:07.400] Updated payload                          id=0x3feb9dbfe36e8138 number=50 hash=46ab41..be12e6 txs=1 withdrawals=0 gas=175,794   fees=0.000175794     root=0a070f..44c2e4 elapsed=1.036ms
+INFO [05-03|16:09:07.400] Stopping work on payload                 id=0x3feb9dbfe36e8138 reason=delivery
+INFO [05-03|16:09:07.401] Imported new potential chain segment     number=50 hash=46ab41..be12e6 blocks=1 txs=1 mgas=0.176 elapsed=1.181ms     mgasps=148.816  snapdiffs=20.47KiB triedirty=179.67KiB
+INFO [05-03|16:09:07.401] Chain head was updated                   number=50 hash=46ab41..be12e6 root=0a070f..44c2e4 elapsed="160.552µs"
+INFO [05-03|16:09:07.408] InboxTracker                             sequencerBatchCount=9 messageCount=9  l1Block=50 l1Timestamp=2024-05-03T16:08:55-0400
+INFO [05-03|16:09:07.408] InboxTracker                             sequencerBatchCount=9 messageCount=9  l1Block=50 l1Timestamp=2024-05-03T16:08:55-0400
+ERROR[05-03|16:09:07.409] Writing new block justification to DB 
+ERROR[05-03|16:09:07.409] Writing new block justification to DB 
+WARN [05-03|16:09:07.441] Unable to fetch header for block number, will retry block_num=90
+WARN [05-03|16:09:07.474] lack of L1 balance prevents posting transaction with desired fee cap balance=9,221,460,180,977,363,563 weight=1 maxMempoolWeight=18 balanceForTransaction=361,625,889,450,092,688 gasLimit=186,492 targetMaxCost=4,319,901,494,150,087,352 nonce=8  softConfNonce=7
+INFO [05-03|16:09:07.476] Submitted transaction                    hash=0x31dae4e1196f0a12cffe579022ff615dc715d7e042bd8ad7ad2a4a7c8bf53d41 from=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23 nonce=8  recipient=0xafBb5B29467a4d54c887C884a9737343b3f363aF value=0
+INFO [05-03|16:09:07.476] DataPoster sent transaction              nonce=8  hash=31dae4..f53d41 feeCap=1,939,095,990,445 tipCap=1,000,000,000 blobFeeCap=<nil> gas=186,492
+INFO [05-03|16:09:07.476] Starting work on payload                 id=0x8084e2c975b50987
+INFO [05-03|16:09:07.476] BatchPoster: batch sent                  sequenceNumber=9 from=9 to=10 prevDelayed=1 currentDelayed=1 totalSegments=3 numBlobs=0
+ERROR[05-03|16:09:07.476] a large batch posting backlog exists     recentlyHitL1Bounds=false currentPosition=10 messageCount=88 messagesPerBatch=1 postedMessages=1 unpostedMessages=78 batchBacklogEstimate=78
+INFO [05-03|16:09:07.477] Updated payload                          id=0x8084e2c975b50987 number=51 hash=b70b00..3d56f8 txs=1 withdrawals=0 gas=175,251   fees=0.000175251     root=216f7d..cc611a elapsed="817.531µs"
+INFO [05-03|16:09:07.477] Stopping work on payload                 id=0x8084e2c975b50987 reason=delivery
+INFO [05-03|16:09:07.478] Imported new potential chain segment     number=51 hash=b70b00..3d56f8 blocks=1 txs=1 mgas=0.175 elapsed=1.401ms     mgasps=125.030  snapdiffs=20.89KiB triedirty=184.64KiB
+INFO [05-03|16:09:07.478] Chain head was updated                   number=51 hash=b70b00..3d56f8 root=216f7d..cc611a elapsed="127.251µs"
+INFO [05-03|16:09:07.484] InboxTracker                             sequencerBatchCount=10 messageCount=10 l1Block=51 l1Timestamp=2024-05-03T16:08:55-0400
+INFO [05-03|16:09:07.484] InboxTracker                             sequencerBatchCount=10 messageCount=10 l1Block=51 l1Timestamp=2024-05-03T16:08:55-0400
+ERROR[05-03|16:09:07.485] Writing new block justification to DB 
+ERROR[05-03|16:09:07.485] Writing new block justification to DB 
+WARN [05-03|16:09:07.571] lack of L1 balance prevents posting transaction with desired fee cap balance=9,221,251,211,933,118,979 weight=1 maxMempoolWeight=18 balanceForTransaction=361,617,694,585,612,508 gasLimit=186,480 targetMaxCost=4,549,366,898,700,346,800 nonce=9  softConfNonce=8
+INFO [05-03|16:09:07.572] Starting work on payload                 id=0xd32ffc6b6779cde8
+INFO [05-03|16:09:07.572] Submitted transaction                    hash=0xc739280cc31d1f6d5ac2576330adfb2b10cebe6dc095d089a78c36f1e59cdf2d from=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23 nonce=9  recipient=0xafBb5B29467a4d54c887C884a9737343b3f363aF value=0
+INFO [05-03|16:09:07.573] DataPoster sent transaction              nonce=9  hash=c73928..9cdf2d feeCap=1,939,176,826,392 tipCap=1,000,000,000 blobFeeCap=<nil> gas=186,480
+INFO [05-03|16:09:07.573] BatchPoster: batch sent                  sequenceNumber=10 from=10 to=11 prevDelayed=1 currentDelayed=1 totalSegments=3 numBlobs=0
+ERROR[05-03|16:09:07.573] a large batch posting backlog exists     recentlyHitL1Bounds=false currentPosition=11 messageCount=90 messagesPerBatch=1 postedMessages=1 unpostedMessages=79 batchBacklogEstimate=79
+INFO [05-03|16:09:07.573] Updated payload                          id=0xd32ffc6b6779cde8 number=52 hash=6c4da8..40af7b txs=1 withdrawals=0 gas=175,239   fees=0.000175239     root=fe314f..e4ddab elapsed="644.634µs"
+INFO [05-03|16:09:07.573] Stopping work on payload                 id=0xd32ffc6b6779cde8 reason=delivery
+INFO [05-03|16:09:07.574] Imported new potential chain segment     number=52 hash=6c4da8..40af7b blocks=1 txs=1 mgas=0.175 elapsed=1.144ms     mgasps=153.084  snapdiffs=21.30KiB triedirty=189.60KiB
+INFO [05-03|16:09:07.575] Chain head was updated                   number=52 hash=6c4da8..40af7b root=fe314f..e4ddab elapsed="130.35µs"
+INFO [05-03|16:09:07.582] InboxTracker                             sequencerBatchCount=11 messageCount=11 l1Block=52 l1Timestamp=2024-05-03T16:08:55-0400
+INFO [05-03|16:09:07.582] InboxTracker                             sequencerBatchCount=11 messageCount=11 l1Block=52 l1Timestamp=2024-05-03T16:08:55-0400
+ERROR[05-03|16:09:07.582] Writing new block justification to DB 
+ERROR[05-03|16:09:07.582] Writing new block justification to DB 
+WARN [05-03|16:09:07.640] lack of L1 balance prevents posting transaction with desired fee cap balance=9,221,046,377,967,801,580 weight=1 maxMempoolWeight=18 balanceForTransaction=361,609,661,881,090,258 gasLimit=186,504 targetMaxCost=4,667,076,923,746,155,888 nonce=10 softConfNonce=9
+INFO [05-03|16:09:07.641] Submitted transaction                    hash=0x8522a30791eed878835b69140181603ec03778877c1c9bca87d7a032d42ece56 from=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23 nonce=10 recipient=0xafBb5B29467a4d54c887C884a9737343b3f363aF value=0
+INFO [05-03|16:09:07.641] Starting work on payload                 id=0x882de46754adf921
+INFO [05-03|16:09:07.641] DataPoster sent transaction              nonce=10 hash=8522a3..2ece56 feeCap=1,938,884,216,322 tipCap=1,000,000,000 blobFeeCap=<nil> gas=186,504
+INFO [05-03|16:09:07.641] BatchPoster: batch sent                  sequenceNumber=11 from=11 to=12 prevDelayed=1 currentDelayed=1 totalSegments=3 numBlobs=0
+ERROR[05-03|16:09:07.641] a large batch posting backlog exists     recentlyHitL1Bounds=false currentPosition=12 messageCount=90 messagesPerBatch=1 postedMessages=1 unpostedMessages=78 batchBacklogEstimate=78
+INFO [05-03|16:09:07.642] Updated payload                          id=0x882de46754adf921 number=53 hash=1069fc..3693a9 txs=1 withdrawals=0 gas=175,263   fees=0.000175263     root=c3e4ba..7fd92a elapsed="731.684µs"
+INFO [05-03|16:09:07.642] Stopping work on payload                 id=0x882de46754adf921 reason=delivery
+INFO [05-03|16:09:07.644] Imported new potential chain segment     number=53 hash=1069fc..3693a9 blocks=1 txs=1 mgas=0.175 elapsed=1.369ms     mgasps=127.962  snapdiffs=21.71KiB triedirty=194.41KiB
+INFO [05-03|16:09:07.644] Chain head was updated                   number=53 hash=1069fc..3693a9 root=c3e4ba..7fd92a elapsed="161.296µs"
+INFO [05-03|16:09:07.657] InboxTracker                             sequencerBatchCount=12 messageCount=12 l1Block=53 l1Timestamp=2024-05-03T16:08:55-0400
+INFO [05-03|16:09:07.658] InboxTracker                             sequencerBatchCount=12 messageCount=12 l1Block=53 l1Timestamp=2024-05-03T16:08:55-0400
+ERROR[05-03|16:09:07.659] Writing new block justification to DB 
+ERROR[05-03|16:09:07.659] Writing new block justification to DB 
+INFO [05-03|16:09:07.669] created block                            l2Block=89 l2BlockHash=05769f..fa032d
+WARN [05-03|16:09:07.765] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,845,133,656,094,504 weight=1 maxMempoolWeight=18 balanceForTransaction=361,601,769,947,297,823 gasLimit=186,492 targetMaxCost=4,549,659,549,044,023,260 nonce=11 softConfNonce=10
+INFO [05-03|16:09:07.766] Submitted transaction                    hash=0x6aed14664c7397ea71448ca527c225b816e9f99f8c38772471fcb6053dadcc5e from=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23 nonce=11 recipient=0xafBb5B29467a4d54c887C884a9737343b3f363aF value=0
+INFO [05-03|16:09:07.766] DataPoster sent transaction              nonce=11 hash=6aed14..adcc5e feeCap=1,938,966,657,804 tipCap=1,000,000,000 blobFeeCap=<nil> gas=186,492
+INFO [05-03|16:09:07.766] Starting work on payload                 id=0x7e0f25d2f72ccc84
+INFO [05-03|16:09:07.766] BatchPoster: batch sent                  sequenceNumber=12 from=12 to=13 prevDelayed=1 currentDelayed=1 totalSegments=3 numBlobs=0
+ERROR[05-03|16:09:07.766] a large batch posting backlog exists     recentlyHitL1Bounds=false currentPosition=13 messageCount=90 messagesPerBatch=1 postedMessages=1 unpostedMessages=77 batchBacklogEstimate=77
+INFO [05-03|16:09:07.767] Updated payload                          id=0x7e0f25d2f72ccc84 number=54 hash=f32f86..f2dd92 txs=1 withdrawals=0 gas=175,251   fees=0.000175251     root=237d14..37b781 elapsed="921.326µs"
+INFO [05-03|16:09:07.767] Stopping work on payload                 id=0x7e0f25d2f72ccc84 reason=delivery
+INFO [05-03|16:09:07.769] Imported new potential chain segment     number=54 hash=f32f86..f2dd92 blocks=1 txs=1 mgas=0.175 elapsed=1.629ms     mgasps=107.530  snapdiffs=22.12KiB triedirty=199.03KiB
+INFO [05-03|16:09:07.769] Chain head was updated                   number=54 hash=f32f86..f2dd92 root=237d14..37b781 elapsed="148.717µs"
+INFO [05-03|16:09:07.775] InboxTracker                             sequencerBatchCount=13 messageCount=13 l1Block=54 l1Timestamp=2024-05-03T16:08:56-0400
+ERROR[05-03|16:09:07.775] Writing new block justification to DB 
+INFO [05-03|16:09:07.776] InboxTracker                             sequencerBatchCount=13 messageCount=13 l1Block=54 l1Timestamp=2024-05-03T16:08:56-0400
+ERROR[05-03|16:09:07.777] Writing new block justification to DB 
+WARN [05-03|16:09:07.876] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,647,078,502,993,441 weight=1 maxMempoolWeight=18 balanceForTransaction=361,594,003,078,548,762 gasLimit=186,492 targetMaxCost=4,434,034,522,695,797,136 nonce=12 softConfNonce=11
+INFO [05-03|16:09:07.878] Submitted transaction                    hash=0x33861442622c0cbe3b2a02963e36f53406bffb9080fa6a76a34892e428440172 from=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23 nonce=12 recipient=0xafBb5B29467a4d54c887C884a9737343b3f363aF value=0
+INFO [05-03|16:09:07.878] Starting work on payload                 id=0xbc612e73911e0513
+INFO [05-03|16:09:07.878] DataPoster sent transaction              nonce=12 hash=338614..440172 feeCap=1,938,925,010,609 tipCap=1,000,000,000 blobFeeCap=<nil> gas=186,492
+INFO [05-03|16:09:07.878] BatchPoster: batch sent                  sequenceNumber=13 from=13 to=14 prevDelayed=1 currentDelayed=1 totalSegments=3 numBlobs=0
+ERROR[05-03|16:09:07.878] a large batch posting backlog exists     recentlyHitL1Bounds=false currentPosition=14 messageCount=90 messagesPerBatch=1 postedMessages=1 unpostedMessages=76 batchBacklogEstimate=76
+INFO [05-03|16:09:07.879] Updated payload                          id=0xbc612e73911e0513 number=55 hash=447c7c..9930ab txs=1 withdrawals=0 gas=175,251   fees=0.000175251     root=7c995f..68e02e elapsed=1.085ms
+INFO [05-03|16:09:07.879] Stopping work on payload                 id=0xbc612e73911e0513 reason=delivery
+INFO [05-03|16:09:07.880] Imported new potential chain segment     number=55 hash=447c7c..9930ab blocks=1 txs=1 mgas=0.175 elapsed=1.389ms     mgasps=126.100  snapdiffs=22.53KiB triedirty=203.69KiB
+INFO [05-03|16:09:07.881] Chain head was updated                   number=55 hash=447c7c..9930ab root=7c995f..68e02e elapsed="137.16µs"
+INFO [05-03|16:09:07.888] InboxTracker                             sequencerBatchCount=14 messageCount=14 l1Block=55 l1Timestamp=2024-05-03T16:08:56-0400
+INFO [05-03|16:09:07.888] InboxTracker                             sequencerBatchCount=14 messageCount=14 l1Block=55 l1Timestamp=2024-05-03T16:08:56-0400
+ERROR[05-03|16:09:07.889] Writing new block justification to DB 
+ERROR[05-03|16:09:07.889] Writing new block justification to DB 
+WARN [05-03|16:09:07.919] error posting batch                      err="error adding hotshot block merkle proof to justification: could not construct batch justification, light client is at height 15 but the justification is for height 15"
+WARN [05-03|16:09:08.543] Unable to fetch header for block number, will retry block_num=99
+INFO [05-03|16:09:08.670] created block                            l2Block=98 l2BlockHash=353160..901340
+INFO [05-03|16:09:09.670] created block                            l2Block=106 l2BlockHash=ff0c90..0eb5c9
+WARN [05-03|16:09:09.678] Unable to fetch header for block number, will retry block_num=109
+INFO [05-03|16:09:10.670] created block                            l2Block=108 l2BlockHash=c0b02b..7ee9bc
+INFO [05-03|16:09:11.671] created block                            l2Block=119 l2BlockHash=d2ecd4..97e308
+INFO [05-03|16:09:11.785] Data poster transactions confirmed       previousNonce=0 newNonce=13 previousL1Block=42 newL1Block=55
+WARN [05-03|16:09:12.277] Unable to fetch header for block number, will retry block_num=127
+INFO [05-03|16:09:12.671] created block                            l2Block=126 l2BlockHash=b7cdf6..b28a4f
+WARN [05-03|16:09:13.012] error posting batch                      err="error adding hotshot block merkle proof to justification: could not construct batch justification, light client is at height 15 but the justification is for height 15"
+INFO [05-03|16:09:13.671] created block                            l2Block=130 l2BlockHash=7901c6..1265c3
+INFO [05-03|16:09:14.671] created block                            l2Block=141 l2BlockHash=0294e5..d49080
+WARN [05-03|16:09:15.240] Unable to fetch header for block number, will retry block_num=149
+INFO [05-03|16:09:15.672] created block                            l2Block=148 l2BlockHash=6fded2..a7bd32
+INFO [05-03|16:09:16.672] created block                            l2Block=153 l2BlockHash=4972d1..6424c2
+INFO [05-03|16:09:16.831] Submitted transaction                    hash=0x0e016ea5cf65e181f97779878f6222ca3fecc6ccc90261490a6540798686f406 from=0x5E1497dD1f08C87b2d8FE23e9AAB6c1De833D927 nonce=8  recipient=0x217788c286797D56Cd59aF5e493f3699C39cbbe8 value=0
+INFO [05-03|16:09:16.831] Starting work on payload                 id=0x17c4ad8378950411
+INFO [05-03|16:09:16.834] Updated payload                          id=0x17c4ad8378950411 number=56 hash=69eaf5..2a160c txs=1 withdrawals=0 gas=1,935,704 fees=0.005807112     root=0150ff..3e4b76 elapsed=2.585ms
+INFO [05-03|16:09:16.834] Stopping work on payload                 id=0x17c4ad8378950411 reason=delivery
+INFO [05-03|16:09:16.838] Imported new potential chain segment     number=56 hash=69eaf5..2a160c blocks=1 txs=1 mgas=1.936 elapsed=3.811ms     mgasps=507.903  snapdiffs=27.83KiB triedirty=233.29KiB
+INFO [05-03|16:09:16.838] Chain head was updated                   number=56 hash=69eaf5..2a160c root=0150ff..3e4b76 elapsed="238.107µs"
+WARN [05-03|16:09:17.379] Unable to fetch header for block number, will retry block_num=164
+INFO [05-03|16:09:17.672] created block                            l2Block=163 l2BlockHash=fa3542..40919e
+WARN [05-03|16:09:18.147] error posting batch                      err="error adding hotshot block merkle proof to justification: could not construct batch justification, light client is at height 15 but the justification is for height 15"
+INFO [05-03|16:09:18.672] created block                            l2Block=166 l2BlockHash=84d707..b2e2c9
+INFO [05-03|16:09:19.673] created block                            l2Block=178 l2BlockHash=1962c4..6f22e4
+WARN [05-03|16:09:19.905] Unable to fetch header for block number, will retry block_num=183
+INFO [05-03|16:09:20.673] created block                            l2Block=182 l2BlockHash=77f930..95c78f
+INFO [05-03|16:09:21.673] created block                            l2Block=183 l2BlockHash=903ac6..575877
+INFO [05-03|16:09:22.674] created block                            l2Block=186 l2BlockHash=080479..9bbbed
+WARN [05-03|16:09:23.277] error posting batch                      err="error adding hotshot block merkle proof to justification: could not construct batch justification, light client is at height 15 but the justification is for height 15"
+INFO [05-03|16:09:23.674] created block                            l2Block=194 l2BlockHash=904eec..a99e73
+INFO [05-03|16:09:24.674] created block                            l2Block=200 l2BlockHash=961186..7db817
+INFO [05-03|16:09:25.675] created block                            l2Block=208 l2BlockHash=094bd0..45e98c
+INFO [05-03|16:09:25.810] validated execution                      messageCount=14 globalstate="{BlockHash:0x735f8403072347fec243417319829588c82101590c06c123e761d1237f76d46c SendRoot:0x0000000000000000000000000000000000000000000000000000000000000000 Batch:14 PosInBatch:0 HotShotHeight:13}" WasmRoots=[0x08fc3bbd6d05674216e9c88b24fbe5f9875460015a59dfa8875cbe11e818664b]
+commitment from replay: [12 171 134 75 0 236 124 39 55 11 150 47 133 249 222 226 159 90 115 162 129 91 69 137 117 243 110 192 196 185 19 10]commitment from replay: [12 171 134 75 0 236 124 39 55 11 150 47 133 249 222 226 159 90 115 162 129 91 69 137 117 243 110 192 196 185 19 10]commitment from replay: [12 171 134 75 0 236 124 39 55 11 150 47 133 249 222 226 159 90 115 162 129 91 69 137 117 243 110 192 196 185 19 10]commitment from replay: [12 171 134 75 0 236 124 39 55 11 150 47 133 249 222 226 159 90 115 162 129 91 69 137 117 243 110 192 196 185 19 10]commitment from replay: [12 171 134 75 0 236 124 39 55 11 150 47 133 249 222 226 159 90 115 162 129 91 69 137 117 243 110 192 196 185 19 10]commitment from replay: [12 171 134 75 0 236 124 39 55 11 150 47 133 249 222 226 159 90 115 162 129 91 69 137 117 243 110 192 196 185 19 10]commitment from replay: [12 171 134 75 0 236 124 39 55 11 150 47 133 249 222 226 159 90 115 162 129 91 69 137 117 243 110 192 196 185 19 10]commitment from replay: [12 171 134 75 0 236 124 39 55 11 150 47 133 249 222 226 159 90 115 162 129 91 69 137 117 243 110 192 196 185 19 10]commitment from replay: [12 171 134 75 0 236 124 39 55 11 150 47 133 249 222 226 159 90 115 162 129 91 69 137 117 243 110 192 196 185 19 10]commitment from replay: [12 171 134 75 0 236 124 39 55 11 150 47 133 249 222 226 159 90 115 162 129 91 69 137 117 243 110 192 196 185 19 10]commitment from replay: [12 171 134 75 0 236 124 39 55 11 150 47 133 249 222 226 159 90 115 162 129 91 69 137 117 243 110 192 196 185 19 10]commitment from replay: [12 171 134 75 0 236 124 39 55 11 150 47 133 249 222 226 159 90 115 162 129 91 69 137 117 243 110 192 196 185 19 10]commitment from replay: [12 171 134 75 0 236 124 39 55 11 150 47 133 249 222 226 159 90 115 162 129 91 69 137 117 243 110 192 196 185 19 10]INFO [05-03|16:09:26.675] created block                            l2Block=215 l2BlockHash=ab3bd7..62ca99
+WARN [05-03|16:09:27.262] Unable to fetch header for block number, will retry block_num=224
+INFO [05-03|16:09:27.675] created block                            l2Block=223 l2BlockHash=064fa7..93a80f
+WARN [05-03|16:09:28.428] error posting batch                      err="error adding hotshot block merkle proof to justification: could not construct batch justification, light client is at height 15 but the justification is for height 15"
+INFO [05-03|16:09:28.675] created block                            l2Block=229 l2BlockHash=74d38e..0fee54
+WARN [05-03|16:09:29.333] Unable to fetch header for block number, will retry block_num=241
+INFO [05-03|16:09:29.676] created block                            l2Block=240 l2BlockHash=d38daf..ef68c5
+INFO [05-03|16:09:30.677] created block                            l2Block=245 l2BlockHash=5bf92a..0f7a66
+WARN [05-03|16:09:31.277] Unable to fetch header for block number, will retry block_num=257
+INFO [05-03|16:09:31.678] created block                            l2Block=256 l2BlockHash=0917ec..495f25
+INFO [05-03|16:09:32.036] Submitted transaction                    hash=0xc165f333c57ebf83463625f38c9850a493ce531eab60c7ef2bafa026eff0c9d9 from=0x5E1497dD1f08C87b2d8FE23e9AAB6c1De833D927 nonce=9  recipient=0x217788c286797D56Cd59aF5e493f3699C39cbbe8 value=0
+INFO [05-03|16:09:32.036] Starting work on payload                 id=0xbdf561e87d7468ca
+INFO [05-03|16:09:32.040] Updated payload                          id=0xbdf561e87d7468ca number=57 hash=57cef9..903b2a txs=1 withdrawals=0 gas=2,198,033 fees=0.006594099     root=b79ada..7430e5 elapsed=3.514ms
+INFO [05-03|16:09:32.040] Stopping work on payload                 id=0xbdf561e87d7468ca reason=delivery
+INFO [05-03|16:09:32.044] Imported new potential chain segment     number=57 hash=57cef9..903b2a blocks=1 txs=1 mgas=2.198 elapsed=3.121ms     mgasps=704.229  snapdiffs=33.83KiB triedirty=274.55KiB
+INFO [05-03|16:09:32.044] Chain head was updated                   number=57 hash=57cef9..903b2a root=b79ada..7430e5 elapsed="142.025µs"
+INFO [05-03|16:09:32.679] created block                            l2Block=262 l2BlockHash=2f2c5c..925667
+WARN [05-03|16:09:33.484] error posting batch                      err="error adding hotshot block merkle proof to justification: could not construct batch justification, light client is at height 15 but the justification is for height 15"
+WARN [05-03|16:09:33.533] Unable to fetch header for block number, will retry block_num=276
+INFO [05-03|16:09:33.679] created block                            l2Block=275 l2BlockHash=02bccb..098503
+INFO [05-03|16:09:34.679] created block                            l2Block=277 l2BlockHash=d654c9..8b6bc1
+WARN [05-03|16:09:35.649] Unable to fetch header for block number, will retry block_num=293
+INFO [05-03|16:09:35.679] created block                            l2Block=292 l2BlockHash=0dc8ae..fc2b2d
+INFO [05-03|16:09:36.737] created block                            l2Block=293 l2BlockHash=6b2f1a..a4546f
+INFO [05-03|16:09:37.737] created block                            l2Block=308 l2BlockHash=f5121d..f53e9d
+WARN [05-03|16:09:38.131] Unable to fetch header for block number, will retry block_num=314
+WARN [05-03|16:09:38.589] error posting batch                      err="error adding hotshot block merkle proof to justification: could not construct batch justification, light client is at height 15 but the justification is for height 15"
+INFO [05-03|16:09:38.737] created block                            l2Block=313 l2BlockHash=13ad51..c2a89b
+INFO [05-03|16:09:39.737] created block                            l2Block=321 l2BlockHash=cef228..15e015
+WARN [05-03|16:09:40.590] Unable to fetch header for block number, will retry block_num=335
+INFO [05-03|16:09:40.737] created block                            l2Block=334 l2BlockHash=d8a654..f3d4da
+INFO [05-03|16:09:41.737] created block                            l2Block=336 l2BlockHash=b5ec56..457b8a
+WARN [05-03|16:09:42.614] Unable to fetch header for block number, will retry block_num=352
+INFO [05-03|16:09:42.738] created block                            l2Block=351 l2BlockHash=bba3fe..8518d9
+INFO [05-03|16:09:43.770] created block                            l2Block=352 l2BlockHash=98a212..2e9fad
+WARN [05-03|16:09:43.845] error posting batch                      err="error adding hotshot block merkle proof to justification: could not construct batch justification, light client is at height 15 but the justification is for height 15"
+INFO [05-03|16:09:44.771] created block                            l2Block=362 l2BlockHash=e8342e..d5ccf1
+INFO [05-03|16:09:45.771] created block                            l2Block=368 l2BlockHash=c47050..a7d081
+INFO [05-03|16:09:46.771] created block                            l2Block=372 l2BlockHash=b48d2c..6be06a
+INFO [05-03|16:09:47.771] created block                            l2Block=377 l2BlockHash=8b4e85..889266
+INFO [05-03|16:09:48.772] created block                            l2Block=384 l2BlockHash=5d39aa..e6a074
+WARN [05-03|16:09:49.200] error posting batch                      err="error adding hotshot block merkle proof to justification: could not construct batch justification, light client is at height 15 but the justification is for height 15"
+INFO [05-03|16:09:49.773] created block                            l2Block=389 l2BlockHash=05656f..e9d258
+INFO [05-03|16:09:50.773] created block                            l2Block=392 l2BlockHash=1dc809..7f69e3
+INFO [05-03|16:09:50.838] Submitted transaction                    hash=0x03cdc161bb64748acbdd613d11db91100abfef6b01c6c0631a7678f91c8575ac from=0x5E1497dD1f08C87b2d8FE23e9AAB6c1De833D927 nonce=10 recipient=0x217788c286797D56Cd59aF5e493f3699C39cbbe8 value=0
+INFO [05-03|16:09:50.838] Starting work on payload                 id=0x449ba42e4dd60b6b
+INFO [05-03|16:09:50.843] Updated payload                          id=0x449ba42e4dd60b6b number=58 hash=6c1c31..e6bfad txs=1 withdrawals=0 gas=2,866,433 fees=0.008599299     root=f3ace2..f685f1 elapsed=4.875ms
+INFO [05-03|16:09:50.844] Stopping work on payload                 id=0x449ba42e4dd60b6b reason=delivery
+INFO [05-03|16:09:50.850] Imported new potential chain segment     number=58 hash=6c1c31..e6bfad blocks=1 txs=1 mgas=2.866 elapsed=6.362ms     mgasps=450.487  snapdiffs=41.60KiB triedirty=332.13KiB
+INFO [05-03|16:09:50.851] Chain head was updated                   number=58 hash=6c1c31..e6bfad root=f3ace2..f685f1 elapsed="278.305µs"
+INFO [05-03|16:09:51.773] created block                            l2Block=402 l2BlockHash=9964bf..2566e9
+INFO [05-03|16:09:51.797] Submitted transaction                    hash=0xf202c60e016ad3b97ebbf3524b8c20720fc060b0ef3de2e28ed4aff8e8c20c72 from=0x5E1497dD1f08C87b2d8FE23e9AAB6c1De833D927 nonce=11 recipient=0xb075b82c7a23e0994dF4793422A1f03Dbcf9136F value=0
+INFO [05-03|16:09:51.797] Starting work on payload                 id=0x60c7d634825424ec
+INFO [05-03|16:09:51.806] Updated payload                          id=0x60c7d634825424ec number=59 hash=82f0b0..403328 txs=1 withdrawals=0 gas=591,454   fees=0.001774362     root=a4ad1f..71b501 elapsed=8.450ms
+INFO [05-03|16:09:51.806] Stopping work on payload                 id=0x60c7d634825424ec reason=delivery
+INFO [05-03|16:09:51.815] Imported new potential chain segment     number=59 hash=82f0b0..403328 blocks=1 txs=1 mgas=0.591 elapsed=9.024ms     mgasps=65.536   snapdiffs=41.89KiB triedirty=335.52KiB
+INFO [05-03|16:09:51.815] Chain head was updated                   number=59 hash=82f0b0..403328 root=a4ad1f..71b501 elapsed="93.863µs"
+INFO [05-03|16:09:52.773] created block                            l2Block=414 l2BlockHash=aa0a9e..7264dd
+WARN [05-03|16:09:53.580] Unable to fetch header for block number, will retry block_num=426
+INFO [05-03|16:09:53.773] created block                            l2Block=425 l2BlockHash=31f2a7..950149
+WARN [05-03|16:09:54.512] Served eth_sendRawTransaction            reqid=53848 duration="110.408µs" err="tx fee (4.41 ether) exceeds the configured cap (1.00 ether)"
+WARN [05-03|16:09:54.513] DataPoster failed to send transaction    err="tx fee (4.41 ether) exceeds the configured cap (1.00 ether)" nonce=13 feeCap=23,164,095,102,219 tipCap=1,000,000,000 blobFeeCap=<nil> gas=190,596
+WARN [05-03|16:09:54.513] error posting batch                      err="tx fee (4.41 ether) exceeds the configured cap (1.00 ether)"
+INFO [05-03|16:09:54.773] created block                            l2Block=428 l2BlockHash=d90b20..b4a2cf
+INFO [05-03|16:09:55.773] created block                            l2Block=439 l2BlockHash=43a600..090415
+INFO [05-03|16:09:56.774] created block                            l2Block=450 l2BlockHash=6c72e9..3290d2
+WARN [05-03|16:09:57.149] Unable to fetch header for block number, will retry block_num=456
+INFO [05-03|16:09:57.774] created block                            l2Block=455 l2BlockHash=be1a42..689abf
+INFO [05-03|16:09:58.775] created block                            l2Block=457 l2BlockHash=b6e102..442386
+INFO [05-03|16:09:59.775] created block                            l2Block=464 l2BlockHash=f0c6d8..79facd
+WARN [05-03|16:09:59.801] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=361,586,345,516,899,830 gasLimit=193,004 targetMaxCost=4,470,766,479,502,691,200 nonce=14 softConfNonce=13
+INFO [05-03|16:09:59.803] Submitted transaction                    hash=0x012329c557e9ed40e6e7c3c8305d0f91524f1488e1e82b3a8fde4ac78c375c3d from=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23 nonce=14 recipient=0xafBb5B29467a4d54c887C884a9737343b3f363aF value=0
+INFO [05-03|16:09:59.803] DataPoster sent transaction              nonce=14 hash=012329..375c3d feeCap=1,873,465,552,614  tipCap=1,000,000,000 blobFeeCap=<nil> gas=193,004
+INFO [05-03|16:09:59.803] BatchPoster: batch sent                  sequenceNumber=15 from=15 to=16 prevDelayed=1 currentDelayed=1 totalSegments=3 numBlobs=0
+ERROR[05-03|16:09:59.803] a large batch posting backlog exists     recentlyHitL1Bounds=false currentPosition=16 messageCount=463 messagesPerBatch=1 postedMessages=1 unpostedMessages=447 batchBacklogEstimate=447
+WARN [05-03|16:10:00.298] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=361,586,345,516,899,830 gasLimit=195,150 targetMaxCost=155,982,636,811,267,790,850 nonce=15 softConfNonce=13
+INFO [05-03|16:10:00.299] Submitted transaction                    hash=0x0403492d27230081bfd37a3f1cf8f302b3d86d3ca39229d76586cffa70127215 from=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23 nonce=15 recipient=0xafBb5B29467a4d54c887C884a9737343b3f363aF value=0
+INFO [05-03|16:10:00.299] DataPoster sent transaction              nonce=15 hash=040349..127215 feeCap=1,852,863,671,621  tipCap=1,000,000,000 blobFeeCap=<nil> gas=195,150
+INFO [05-03|16:10:00.299] BatchPoster: batch sent                  sequenceNumber=16 from=16 to=17 prevDelayed=1 currentDelayed=1 totalSegments=3 numBlobs=0
+ERROR[05-03|16:10:00.299] a large batch posting backlog exists     recentlyHitL1Bounds=false currentPosition=17 messageCount=465 messagesPerBatch=1 postedMessages=1 unpostedMessages=448 batchBacklogEstimate=448
+WARN [05-03|16:10:00.684] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=361,586,345,516,899,830 gasLimit=195,090 targetMaxCost=156,633,100,818,349,919,190 nonce=16 softConfNonce=13
+INFO [05-03|16:10:00.685] Submitted transaction                    hash=0xd297deea57d90975d8558a48857203aa67ae9941097820c1a5642de8ef91925f from=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23 nonce=16 recipient=0xafBb5B29467a4d54c887C884a9737343b3f363aF value=0
+INFO [05-03|16:10:00.685] DataPoster sent transaction              nonce=16 hash=d297de..91925f feeCap=1,853,433,520,513  tipCap=1,000,000,000 blobFeeCap=<nil> gas=195,090
+INFO [05-03|16:10:00.685] BatchPoster: batch sent                  sequenceNumber=17 from=17 to=18 prevDelayed=1 currentDelayed=1 totalSegments=3 numBlobs=0
+ERROR[05-03|16:10:00.685] a large batch posting backlog exists     recentlyHitL1Bounds=false currentPosition=18 messageCount=469 messagesPerBatch=1 postedMessages=1 unpostedMessages=451 batchBacklogEstimate=451
+INFO [05-03|16:10:00.775] created block                            l2Block=472 l2BlockHash=1f88f4..579ab1
+WARN [05-03|16:10:00.936] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=361,586,345,516,899,830 gasLimit=195,114 targetMaxCost=158,757,259,851,869,404,212 nonce=17 softConfNonce=13
+INFO [05-03|16:10:00.939] Submitted transaction                    hash=0xddc568a39b938e4c5925f7785d2de2a2325625322d91eaa82100faa68175dd99 from=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23 nonce=17 recipient=0xafBb5B29467a4d54c887C884a9737343b3f363aF value=0
+INFO [05-03|16:10:00.939] DataPoster sent transaction              nonce=17 hash=ddc568..75dd99 feeCap=1,853,205,538,899  tipCap=1,000,000,000 blobFeeCap=<nil> gas=195,114
+INFO [05-03|16:10:00.940] BatchPoster: batch sent                  sequenceNumber=18 from=18 to=19 prevDelayed=1 currentDelayed=1 totalSegments=3 numBlobs=0
+ERROR[05-03|16:10:00.940] a large batch posting backlog exists     recentlyHitL1Bounds=false currentPosition=19 messageCount=472 messagesPerBatch=1 postedMessages=1 unpostedMessages=453 batchBacklogEstimate=453
+WARN [05-03|16:10:01.433] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=361,586,345,516,899,830 gasLimit=195,078 targetMaxCost=160,138,772,385,543,579,264 nonce=18 softConfNonce=13
+INFO [05-03|16:10:01.435] Submitted transaction                    hash=0x011b37eeb2b0f9425095913d94c97f03cd3c64b89e8bd6fea69a97f2af4ea69f from=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23 nonce=18 recipient=0xafBb5B29467a4d54c887C884a9737343b3f363aF value=0
+INFO [05-03|16:10:01.435] DataPoster sent transaction              nonce=18 hash=011b37..4ea69f feeCap=1,853,547,532,355  tipCap=1,000,000,000 blobFeeCap=<nil> gas=195,078
+INFO [05-03|16:10:01.435] BatchPoster: batch sent                  sequenceNumber=19 from=19 to=20 prevDelayed=1 currentDelayed=1 totalSegments=3 numBlobs=0
+ERROR[05-03|16:10:01.435] a large batch posting backlog exists     recentlyHitL1Bounds=false currentPosition=20 messageCount=474 messagesPerBatch=1 postedMessages=1 unpostedMessages=454 batchBacklogEstimate=454
+INFO [05-03|16:10:01.776] created block                            l2Block=480 l2BlockHash=419907..53697a
+WARN [05-03|16:10:01.776] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=361,586,345,516,899,830 gasLimit=195,114 targetMaxCost=160,876,198,477,650,020,484 nonce=19 softConfNonce=13
+INFO [05-03|16:10:01.777] Submitted transaction                    hash=0x8361afb47cae5c5b9b83e59dbfe8491d99501d0f0425ab854076616d3f400803 from=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23 nonce=19 recipient=0xafBb5B29467a4d54c887C884a9737343b3f363aF value=0
+INFO [05-03|16:10:01.777] DataPoster sent transaction              nonce=19 hash=8361af..400803 feeCap=1,853,205,538,899  tipCap=1,000,000,000 blobFeeCap=<nil> gas=195,114
+INFO [05-03|16:10:01.777] BatchPoster: batch sent                  sequenceNumber=20 from=20 to=21 prevDelayed=1 currentDelayed=1 totalSegments=3 numBlobs=0
+ERROR[05-03|16:10:01.777] a large batch posting backlog exists     recentlyHitL1Bounds=false currentPosition=21 messageCount=477 messagesPerBatch=1 postedMessages=1 unpostedMessages=456 batchBacklogEstimate=456
+WARN [05-03|16:10:01.791] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=4,610,225,905,340,472,836 gasLimit=190,596 targetMaxCost=162,737,749,172,766,346,824 nonce=13 softConfNonce=13
+WARN [05-03|16:10:01.792] Served eth_sendRawTransaction            reqid=57626 duration="98.515µs"  err="tx fee (4.41 ether) exceeds the configured cap (1.00 ether)"
+WARN [05-03|16:10:01.792] DataPoster failed to send transaction    err="tx fee (4.41 ether) exceeds the configured cap (1.00 ether)" nonce=13 feeCap=23,164,095,102,219 tipCap=1,000,000,000 blobFeeCap=<nil> gas=190,596
+ERROR[05-03|16:10:01.792] failed to replace-by-fee transaction     err="tx fee (4.41 ether) exceeds the configured cap (1.00 ether)" nonce=13 feeCap=23,164,095,102,219 tipCap=1,000,000,000 blobFeeCap=<nil> gas=190,596
+WARN [05-03|16:10:01.792] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=361,586,345,516,899,830   gasLimit=193,004 targetMaxCost=164,081,215,782,967,522,452 nonce=14 softConfNonce=13
+WARN [05-03|16:10:01.793] Served eth_sendRawTransaction            reqid=57632 duration="123.314µs" err="already known"
+INFO [05-03|16:10:01.793] DataPoster transaction already known     err="already known"                 nonce=14 hash=012329..375c3d
+WARN [05-03|16:10:01.793] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=361,586,345,516,899,830   gasLimit=195,150 targetMaxCost=165,186,692,465,767,646,100 nonce=15 softConfNonce=13
+WARN [05-03|16:10:01.794] Served eth_sendRawTransaction            reqid=57636 duration="129.763µs" err="already known"
+INFO [05-03|16:10:01.794] DataPoster transaction already known     err="already known"                 nonce=15 hash=040349..127215
+WARN [05-03|16:10:01.794] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=361,586,345,516,899,830   gasLimit=195,090 targetMaxCost=164,418,753,311,607,667,740 nonce=16 softConfNonce=13
+WARN [05-03|16:10:01.795] Served eth_sendRawTransaction            reqid=57640 duration="190.253µs" err="already known"
+INFO [05-03|16:10:01.795] DataPoster transaction already known     err="already known"                 nonce=16 hash=d297de..91925f
+WARN [05-03|16:10:02.142] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=361,586,345,516,899,830   gasLimit=195,246 targetMaxCost=162,406,426,798,670,671,008 nonce=20 softConfNonce=13
+INFO [05-03|16:10:02.143] Submitted transaction                    hash=0x5c4211959bdbe368273da7a0ad433e6d062a6ef78f13ba80752abb06b1599e89 from=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23 nonce=20 recipient=0xafBb5B29467a4d54c887C884a9737343b3f363aF value=0
+INFO [05-03|16:10:02.143] DataPoster sent transaction              nonce=20 hash=5c4211..599e89 feeCap=1,851,952,641,882  tipCap=1,000,000,000 blobFeeCap=<nil> gas=195,246
+INFO [05-03|16:10:02.143] BatchPoster: batch sent                  sequenceNumber=21 from=21 to=22 prevDelayed=1 currentDelayed=1 totalSegments=3 numBlobs=0
+ERROR[05-03|16:10:02.143] a large batch posting backlog exists     recentlyHitL1Bounds=false currentPosition=22 messageCount=481 messagesPerBatch=1 postedMessages=1 unpostedMessages=459 batchBacklogEstimate=459
+WARN [05-03|16:10:02.514] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=361,586,345,516,899,830   gasLimit=195,030 targetMaxCost=164,368,186,772,564,867,400 nonce=21 softConfNonce=13
+INFO [05-03|16:10:02.515] Submitted transaction                    hash=0x6157adb2eec07763624d4984c9a14c16a7849f8bc47a7d9c1469477711aca018 from=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23 nonce=21 recipient=0xafBb5B29467a4d54c887C884a9737343b3f363aF value=0
+INFO [05-03|16:10:02.515] DataPoster sent transaction              nonce=21 hash=6157ad..aca018 feeCap=1,854,003,720,027  tipCap=1,000,000,000 blobFeeCap=<nil> gas=195,030
+INFO [05-03|16:10:02.515] BatchPoster: batch sent                  sequenceNumber=22 from=22 to=23 prevDelayed=1 currentDelayed=1 totalSegments=3 numBlobs=0
+ERROR[05-03|16:10:02.515] a large batch posting backlog exists     recentlyHitL1Bounds=false currentPosition=23 messageCount=483 messagesPerBatch=1 postedMessages=1 unpostedMessages=460 batchBacklogEstimate=460
+INFO [05-03|16:10:02.776] created block                            l2Block=487 l2BlockHash=9cc1dc..6d1d19
+WARN [05-03|16:10:02.839] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=180,793,172,758,449,915   gasLimit=195,138 targetMaxCost=165,176,534,976,692,639,148 nonce=22 softConfNonce=13
+INFO [05-03|16:10:02.840] Submitted transaction                    hash=0xafbcac2f8144d850d22787221e2e9e069ad76d6446fbe5b4e481f9093de29687 from=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23 nonce=22 recipient=0xafBb5B29467a4d54c887C884a9737343b3f363aF value=0
+INFO [05-03|16:10:02.840] DataPoster sent transaction              nonce=22 hash=afbcac..e29687 feeCap=926,488,806,682    tipCap=1,000,000,000 blobFeeCap=<nil> gas=195,138
+INFO [05-03|16:10:02.840] BatchPoster: batch sent                  sequenceNumber=23 from=23 to=24 prevDelayed=1 currentDelayed=1 totalSegments=3 numBlobs=0
+ERROR[05-03|16:10:02.840] a large batch posting backlog exists     recentlyHitL1Bounds=false currentPosition=24 messageCount=486 messagesPerBatch=1 postedMessages=1 unpostedMessages=462 batchBacklogEstimate=462
+WARN [05-03|16:10:03.355] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=180,793,172,758,449,915   gasLimit=195,162 targetMaxCost=166,636,364,587,654,161,750 nonce=23 softConfNonce=13
+INFO [05-03|16:10:03.356] Submitted transaction                    hash=0xf3adac524258b229b7189d6d09cb9adcb2011441db3c52c7058780786f67ebb1 from=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23 nonce=23 recipient=0xafBb5B29467a4d54c887C884a9737343b3f363aF value=0
+INFO [05-03|16:10:03.356] DataPoster sent transaction              nonce=23 hash=f3adac..67ebb1 feeCap=926,374,871,944    tipCap=1,000,000,000 blobFeeCap=<nil> gas=195,162
+INFO [05-03|16:10:03.356] BatchPoster: batch sent                  sequenceNumber=24 from=24 to=25 prevDelayed=1 currentDelayed=1 totalSegments=3 numBlobs=0
+ERROR[05-03|16:10:03.356] a large batch posting backlog exists     recentlyHitL1Bounds=false currentPosition=25 messageCount=488 messagesPerBatch=1 postedMessages=1 unpostedMessages=463 batchBacklogEstimate=463
+WARN [05-03|16:10:03.578] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=180,793,172,758,449,915   gasLimit=195,138 targetMaxCost=167,337,883,279,006,148,178 nonce=24 softConfNonce=13
+INFO [05-03|16:10:03.579] Submitted transaction                    hash=0x7d4bfe57b7ccbb8110e9b4df2a2be038ae012d6c1e5c33d351ecbe7ee2d540ca from=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23 nonce=24 recipient=0xafBb5B29467a4d54c887C884a9737343b3f363aF value=0
+INFO [05-03|16:10:03.580] DataPoster sent transaction              nonce=24 hash=7d4bfe..d540ca feeCap=926,488,806,682    tipCap=1,000,000,000 blobFeeCap=<nil> gas=195,138
+INFO [05-03|16:10:03.580] BatchPoster: batch sent                  sequenceNumber=25 from=25 to=26 prevDelayed=1 currentDelayed=1 totalSegments=3 numBlobs=0
+ERROR[05-03|16:10:03.580] a large batch posting backlog exists     recentlyHitL1Bounds=false currentPosition=26 messageCount=491 messagesPerBatch=1 postedMessages=1 unpostedMessages=465 batchBacklogEstimate=465
+INFO [05-03|16:10:03.776] created block                            l2Block=493 l2BlockHash=a68b95..14246b
+WARN [05-03|16:10:03.960] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=180,793,172,758,449,915   gasLimit=195,090 targetMaxCost=168,745,069,977,909,411,840 nonce=25 softConfNonce=13
+INFO [05-03|16:10:03.962] Submitted transaction                    hash=0x5807ca6d1c167f5005faea394028411cc2a18d439fd55aaff76781b75b2d0c73 from=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23 nonce=25 recipient=0xafBb5B29467a4d54c887C884a9737343b3f363aF value=0
+INFO [05-03|16:10:03.962] DataPoster sent transaction              nonce=25 hash=5807ca..2d0c73 feeCap=926,716,760,256    tipCap=1,000,000,000 blobFeeCap=<nil> gas=195,090
+INFO [05-03|16:10:03.962] BatchPoster: batch sent                  sequenceNumber=26 from=26 to=27 prevDelayed=1 currentDelayed=1 totalSegments=3 numBlobs=0
+ERROR[05-03|16:10:03.962] a large batch posting backlog exists     recentlyHitL1Bounds=false currentPosition=27 messageCount=493 messagesPerBatch=1 postedMessages=1 unpostedMessages=466 batchBacklogEstimate=466
+WARN [05-03|16:10:04.347] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=180,793,172,758,449,915   gasLimit=195,270 targetMaxCost=169,627,948,557,285,398,430 nonce=26 softConfNonce=13
+INFO [05-03|16:10:04.349] Submitted transaction                    hash=0xa05510191889c793aebe3d5cc031dfafa5a4650a858277737b303e2c8bd95f2d from=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23 nonce=26 recipient=0xafBb5B29467a4d54c887C884a9737343b3f363aF value=0
+INFO [05-03|16:10:04.349] DataPoster sent transaction              nonce=26 hash=a05510..d95f2d feeCap=925,862,512,205    tipCap=1,000,000,000 blobFeeCap=<nil> gas=195,270
+INFO [05-03|16:10:04.349] BatchPoster: batch sent                  sequenceNumber=27 from=27 to=28 prevDelayed=1 currentDelayed=1 totalSegments=3 numBlobs=0
+ERROR[05-03|16:10:04.349] a large batch posting backlog exists     recentlyHitL1Bounds=false currentPosition=28 messageCount=496 messagesPerBatch=1 postedMessages=1 unpostedMessages=468 batchBacklogEstimate=468
+INFO [05-03|16:10:04.777] created block                            l2Block=500 l2BlockHash=93cd05..ebeebc
+WARN [05-03|16:10:04.874] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=180,793,172,758,449,915   gasLimit=195,150 targetMaxCost=170,981,867,642,788,009,650 nonce=27 softConfNonce=13
+INFO [05-03|16:10:04.875] Submitted transaction                    hash=0x05b3703bd51e74630a248d77829f409470a3cd662b702d3be6f3eed53543a55b from=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23 nonce=27 recipient=0xafBb5B29467a4d54c887C884a9737343b3f363aF value=0
+INFO [05-03|16:10:04.875] DataPoster sent transaction              nonce=27 hash=05b370..43a55b feeCap=926,431,835,810    tipCap=1,000,000,000 blobFeeCap=<nil> gas=195,150
+INFO [05-03|16:10:04.875] BatchPoster: batch sent                  sequenceNumber=28 from=28 to=29 prevDelayed=1 currentDelayed=1 totalSegments=3 numBlobs=0
+ERROR[05-03|16:10:04.875] a large batch posting backlog exists     recentlyHitL1Bounds=false currentPosition=29 messageCount=498 messagesPerBatch=1 postedMessages=1 unpostedMessages=469 batchBacklogEstimate=469
+WARN [05-03|16:10:05.196] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=180,793,172,758,449,915   gasLimit=195,090 targetMaxCost=171,660,495,829,542,504,960 nonce=28 softConfNonce=13
+INFO [05-03|16:10:05.197] Submitted transaction                    hash=0x9cb1e08a01701bc5109c763b0e5e278256264a88cbdf46a7b7eb66274a6b51a6 from=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23 nonce=28 recipient=0xafBb5B29467a4d54c887C884a9737343b3f363aF value=0
+INFO [05-03|16:10:05.197] DataPoster sent transaction              nonce=28 hash=9cb1e0..6b51a6 feeCap=926,716,760,256    tipCap=1,000,000,000 blobFeeCap=<nil> gas=195,090
+INFO [05-03|16:10:05.197] BatchPoster: batch sent                  sequenceNumber=29 from=29 to=30 prevDelayed=1 currentDelayed=1 totalSegments=3 numBlobs=0
+ERROR[05-03|16:10:05.197] a large batch posting backlog exists     recentlyHitL1Bounds=false currentPosition=30 messageCount=502 messagesPerBatch=1 postedMessages=1 unpostedMessages=472 batchBacklogEstimate=472
+INFO [05-03|16:10:05.778] created block                            l2Block=507 l2BlockHash=684dab..a43e4f
+WARN [05-03|16:10:05.798] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=180,793,172,758,449,915   gasLimit=195,330 targetMaxCost=174,077,339,620,581,741,540 nonce=29 softConfNonce=13
+INFO [05-03|16:10:05.800] Submitted transaction                    hash=0x04e983a40683755561cc8fc3785150f9cb53bbed4c97e8b1a61c50d649383e98 from=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23 nonce=29 recipient=0xafBb5B29467a4d54c887C884a9737343b3f363aF value=0
+INFO [05-03|16:10:05.800] DataPoster sent transaction              nonce=29 hash=04e983..383e98 feeCap=925,578,112,724    tipCap=1,000,000,000 blobFeeCap=<nil> gas=195,330
+INFO [05-03|16:10:05.800] BatchPoster: batch sent                  sequenceNumber=30 from=30 to=31 prevDelayed=1 currentDelayed=1 totalSegments=3 numBlobs=0
+ERROR[05-03|16:10:05.800] a large batch posting backlog exists     recentlyHitL1Bounds=false currentPosition=31 messageCount=506 messagesPerBatch=1 postedMessages=1 unpostedMessages=475 batchBacklogEstimate=475
+WARN [05-03|16:10:06.058] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=180,793,172,758,449,915   gasLimit=195,294 targetMaxCost=176,264,577,034,843,984,302 nonce=30 softConfNonce=13
+INFO [05-03|16:10:06.059] Submitted transaction                    hash=0x22d23205f2afd10be65d1f4d8a81368fa0485cca77b7e6606e7cc1e5bce9f300 from=0xb386a74Dcab67b66F8AC07B4f08365d37495Dd23 nonce=30 recipient=0xafBb5B29467a4d54c887C884a9737343b3f363aF value=0
+INFO [05-03|16:10:06.059] DataPoster sent transaction              nonce=30 hash=22d232..e9f300 feeCap=925,748,731,443    tipCap=1,000,000,000 blobFeeCap=<nil> gas=195,294
+INFO [05-03|16:10:06.059] BatchPoster: batch sent                  sequenceNumber=31 from=31 to=32 prevDelayed=1 currentDelayed=1 totalSegments=3 numBlobs=0
+ERROR[05-03|16:10:06.059] a large batch posting backlog exists     recentlyHitL1Bounds=false currentPosition=32 messageCount=508 messagesPerBatch=1 postedMessages=1 unpostedMessages=476 batchBacklogEstimate=476
+INFO [05-03|16:10:06.778] created block                            l2Block=515 l2BlockHash=45f803..300f5a
+INFO [05-03|16:10:07.778] created block                            l2Block=525 l2BlockHash=e8fcac..1831eb
+INFO [05-03|16:10:08.779] created block                            l2Block=535 l2BlockHash=1e11ca..12d958
+INFO [05-03|16:10:09.780] created block                            l2Block=546 l2BlockHash=4abe55..206f45
+INFO [05-03|16:10:10.782] created block                            l2Block=553 l2BlockHash=f72e64..f6720a
+INFO [05-03|16:10:11.782] created block                            l2Block=559 l2BlockHash=3d65da..a7666a
+WARN [05-03|16:10:11.798] Served eth_sendRawTransaction            reqid=62849 duration="126.695µs" err="tx fee (4.41 ether) exceeds the configured cap (1.00 ether)"
+WARN [05-03|16:10:11.798] DataPoster failed to send transaction    err="tx fee (4.41 ether) exceeds the configured cap (1.00 ether)" nonce=13 feeCap=23,164,095,102,219 tipCap=1,000,000,000 blobFeeCap=<nil> gas=190,596
+ERROR[05-03|16:10:11.798] failed to re-send transaction            err="tx fee (4.41 ether) exceeds the configured cap (1.00 ether)" nonce=13 feeCap=23,164,095,102,219 tipCap=1,000,000,000 blobFeeCap=<nil> gas=190,596
+WARN [05-03|16:10:11.798] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=361,586,345,516,899,830   gasLimit=195,114 targetMaxCost=186,635,156,339,004,482,334 nonce=17 softConfNonce=13
+WARN [05-03|16:10:11.799] Served eth_sendRawTransaction            reqid=62853 duration="119.752µs" err="already known"
+INFO [05-03|16:10:11.799] DataPoster transaction already known     err="already known"                 nonce=17 hash=ddc568..75dd99
+WARN [05-03|16:10:11.800] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=361,586,345,516,899,830   gasLimit=195,078 targetMaxCost=185,838,355,926,724,485,738 nonce=18 softConfNonce=13
+WARN [05-03|16:10:11.801] Served eth_sendRawTransaction            reqid=62857 duration="114.669µs" err="already known"
+INFO [05-03|16:10:11.801] DataPoster transaction already known     err="already known"                 nonce=18 hash=011b37..4ea69f
+WARN [05-03|16:10:11.801] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=361,586,345,516,899,830   gasLimit=195,114 targetMaxCost=185,111,706,229,381,751,310 nonce=19 softConfNonce=13
+WARN [05-03|16:10:11.802] Served eth_sendRawTransaction            reqid=62861 duration="109.201µs" err="already known"
+INFO [05-03|16:10:11.802] DataPoster transaction already known     err="already known"                 nonce=19 hash=8361af..400803
+WARN [05-03|16:10:11.802] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=361,586,345,516,899,830   gasLimit=195,246 targetMaxCost=184,477,041,970,857,537,426 nonce=20 softConfNonce=13
+WARN [05-03|16:10:11.803] Served eth_sendRawTransaction            reqid=62867 duration="156.424µs" err="already known"
+INFO [05-03|16:10:11.803] DataPoster transaction already known     err="already known"                 nonce=20 hash=5c4211..599e89
+WARN [05-03|16:10:11.803] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=361,586,345,516,899,830   gasLimit=195,030 targetMaxCost=183,515,459,114,260,840,050 nonce=21 softConfNonce=13
+WARN [05-03|16:10:11.804] Served eth_sendRawTransaction            reqid=62871 duration="180.466µs" err="already known"
+INFO [05-03|16:10:11.804] DataPoster transaction already known     err="already known"                 nonce=21 hash=6157ad..aca018
+WARN [05-03|16:10:11.805] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=180,793,172,758,449,915   gasLimit=195,138 targetMaxCost=182,860,727,924,077,632,594 nonce=22 softConfNonce=13
+WARN [05-03|16:10:11.806] Served eth_sendRawTransaction            reqid=62875 duration="165.073µs" err="already known"
+INFO [05-03|16:10:11.806] DataPoster transaction already known     err="already known"                 nonce=22 hash=afbcac..e29687
+WARN [05-03|16:10:11.806] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=180,793,172,758,449,915   gasLimit=195,162 targetMaxCost=182,128,330,523,184,129,282 nonce=23 softConfNonce=13
+WARN [05-03|16:10:11.807] Served eth_sendRawTransaction            reqid=62879 duration="216.391µs" err="already known"
+INFO [05-03|16:10:11.807] DataPoster transaction already known     err="already known"                 nonce=23 hash=f3adac..67ebb1
+WARN [05-03|16:10:11.807] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=180,793,172,758,449,915   gasLimit=195,138 targetMaxCost=181,352,700,656,747,954,406 nonce=24 softConfNonce=13
+WARN [05-03|16:10:11.808] Served eth_sendRawTransaction            reqid=62886 duration="180.128µs" err="already known"
+INFO [05-03|16:10:11.808] DataPoster transaction already known     err="already known"                 nonce=24 hash=7d4bfe..d540ca
+WARN [05-03|16:10:11.809] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=180,793,172,758,449,915   gasLimit=195,090 targetMaxCost=180,556,604,882,585,177,610 nonce=25 softConfNonce=13
+WARN [05-03|16:10:11.809] Served eth_sendRawTransaction            reqid=62891 duration="97.683µs"  err="already known"
+INFO [05-03|16:10:11.809] DataPoster transaction already known     err="already known"                 nonce=25 hash=5807ca..2d0c73
+WARN [05-03|16:10:11.810] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=180,793,172,758,449,915   gasLimit=195,270 targetMaxCost=179,972,577,750,530,514,420 nonce=26 softConfNonce=13
+WARN [05-03|16:10:11.810] Served eth_sendRawTransaction            reqid=62895 duration="109.797µs" err="already known"
+INFO [05-03|16:10:11.810] DataPoster transaction already known     err="already known"                 nonce=26 hash=a05510..d95f2d
+WARN [05-03|16:10:11.810] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=180,793,172,758,449,915   gasLimit=195,150 targetMaxCost=179,113,383,132,960,460,200 nonce=27 softConfNonce=13
+WARN [05-03|16:10:11.811] Served eth_sendRawTransaction            reqid=62899 duration="99.715µs"  err="already known"
+INFO [05-03|16:10:11.811] DataPoster transaction already known     err="already known"                 nonce=27 hash=05b370..43a55b
+WARN [05-03|16:10:11.811] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=180,793,172,758,449,915   gasLimit=195,090 targetMaxCost=178,311,509,164,481,257,320 nonce=28 softConfNonce=13
+WARN [05-03|16:10:11.812] Served eth_sendRawTransaction            reqid=62903 duration="80.387µs"  err="already known"
+INFO [05-03|16:10:11.812] DataPoster transaction already known     err="already known"                 nonce=28 hash=9cb1e0..6b51a6
+WARN [05-03|16:10:11.812] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=180,793,172,758,449,915   gasLimit=195,330 targetMaxCost=177,784,707,641,425,419,540 nonce=29 softConfNonce=13
+WARN [05-03|16:10:11.812] Served eth_sendRawTransaction            reqid=62907 duration="92.647µs"  err="already known"
+INFO [05-03|16:10:11.813] DataPoster transaction already known     err="already known"                 nonce=29 hash=04e983..383e98
+WARN [05-03|16:10:11.813] lack of L1 balance prevents posting transaction with desired fee cap balance=9,220,451,810,680,945,672 weight=1 maxMempoolWeight=18 balanceForTransaction=180,793,172,758,449,915   gasLimit=195,294 targetMaxCost=177,007,479,777,208,878,666 nonce=30 softConfNonce=13
+WARN [05-03|16:10:11.813] Served eth_sendRawTransaction            reqid=62913 duration="99.843µs"  err="already known"
+INFO [05-03|16:10:11.814] DataPoster transaction already known     err="already known"                 nonce=30 hash=22d232..e9f300
+INFO [05-03|16:10:12.782] created block                            l2Block=569 l2BlockHash=171ac0..7786e6
+INFO [05-03|16:10:13.144] Submitted transaction                    hash=0x8af9e043bf3f918c5fdc87018c8d2482770c8bcf372587e87448dbe56ba0294a from=0x5E1497dD1f08C87b2d8FE23e9AAB6c1De833D927 nonce=12 recipient=0x217788c286797D56Cd59aF5e493f3699C39cbbe8 value=0
+INFO [05-03|16:10:13.144] Starting work on payload                 id=0x1aed039769a49a10
+INFO [05-03|16:10:13.149] Updated payload                          id=0x1aed039769a49a10 number=60 hash=7461e3..988c9e txs=1 withdrawals=0 gas=3,368,216 fees=0.010104648     root=a8fa9b..71e3be elapsed=4.413ms
+INFO [05-03|16:10:13.149] Stopping work on payload                 id=0x1aed039769a49a10 reason=delivery
+INFO [05-03|16:10:13.157] Imported new potential chain segment     number=60 hash=7461e3..988c9e blocks=1 txs=1 mgas=3.368 elapsed=8.344ms     mgasps=403.630  snapdiffs=51.00KiB triedirty=407.85KiB
+INFO [05-03|16:10:13.158] Chain head was updated                   number=60 hash=7461e3..988c9e root=a8fa9b..71e3be elapsed="256.905µs"
+    espresso_e2e_test.go:347: [31;1m [] context deadline exceeded [0;0m
+INFO [05-03|16:10:13.539] delayed sequencer: context done          err="context canceled"
+INFO [05-03|16:10:13.540] HTTP server stopped                      endpoint=127.0.0.1:54321
+ERROR[05-03|16:10:13.540] Error fetching transactions              err="Get \"http://127.0.0.1:50000/v0/availability/block/576/namespace/412346\": context canceled"
+INFO [05-03|16:10:13.540] HTTP server stopped                      endpoint=127.0.0.1:55637
+INFO [05-03|16:10:13.540] delayed sequencer: context done          err="context canceled"
+--- FAIL: TestEspressoE2E (122.97s)
+FAIL
+ERROR[01-01|00:00:00.380] Zero state root hash! 
+FAIL	github.com/offchainlabs/nitro/system_tests	125.187s
+FAIL

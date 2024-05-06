@@ -20,18 +20,25 @@ func TestEspressoParsing(t *testing.T) {
 		BlockNumber: 1,
 	}
 	var mockProof = json.RawMessage(`{"NonExistence":{"ns_id":0}}`)
-	payloadCommitment, err := tagged_base64.New("payloadCommitment", []byte{1, 2, 3})
+	var mockChainConfig = &espressoTypes.ResolvableChainConfig{
+		espressoTypes.EitherChainConfig{
+			Left: &espressoTypes.ChainConfig{ChainId: *espressoTypes.NewU256().SetUint64(0x8a19), MaxBlockSize: 10240, BaseFee: *espressoTypes.NewU256().SetUint64(0)},
+		},
+	}
+	mockCommitment, err := tagged_base64.New("payloadCommitment", []byte{1, 2, 3})
 	Require(t, err)
 	root, err := tagged_base64.New("root", []byte{4, 5, 6})
 	Require(t, err)
 	expectJst := &arbostypes.EspressoBlockJustification{
 		Header: espressoTypes.Header{
 			L1Head:              1,
+			ChainConfig:         mockChainConfig,
 			Timestamp:           2,
 			Height:              3,
 			NsTable:             &espressoTypes.NsTable{Bytes: []byte{1}},
 			L1Finalized:         &espressoTypes.L1BlockInfo{},
-			PayloadCommitment:   payloadCommitment,
+			PayloadCommitment:   mockCommitment,
+			BuilderCommitment:   mockCommitment,
 			BlockMerkleTreeRoot: root,
 			FeeMerkleTreeRoot:   root,
 			FeeInfo:             &espressoTypes.FeeInfo{},
