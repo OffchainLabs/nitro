@@ -90,7 +90,7 @@ COPY --from=contracts-builder workspace/contracts/node_modules/@offchainlabs/upg
 COPY --from=contracts-builder workspace/.make/ .make/
 RUN PATH="$PATH:/usr/local/go/bin" NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-wasm-bin
 
-FROM rust:1.75-slim-bullseye as prover-header-builder
+FROM rust:1.75-slim-bookworm as prover-header-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
@@ -115,15 +115,15 @@ RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header
 FROM scratch as prover-header-export
 COPY --from=prover-header-builder /workspace/target/ /
 
-FROM rust:1.75-slim-bullseye as prover-builder
+FROM rust:1.75-slim-bookworm as prover-builder-setup
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
-    apt-get install -y make wget gpg software-properties-common zlib1g-dev libstdc++-10-dev wabt
+    apt-get install -y make wget gpg software-properties-common zlib1g-dev libstdc++-12-dev wabt
 RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
-    add-apt-repository 'deb http://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-15 main' && \
+    add-apt-repository 'deb http://apt.llvm.org/bookworm/ llvm-toolchain-bookworm-15 main' && \
     apt-get update && \
-    apt-get install -y llvm-15-dev libclang-common-15-dev libpolly-15-dev
+    apt-get install -y llvm-15-dev libclang-common-15-dev
 COPY --from=brotli-library-export / target/
 COPY arbitrator/Cargo.* arbitrator/
 COPY arbitrator/arbutil arbitrator/arbutil
@@ -211,7 +211,7 @@ RUN mkdir 0x965a35130f4e34b7b2339eac03b2eacc659e2dafe850d213ea6a7cdf9edfa99f && 
     wget https://stylus-wasm-17f27dd494229dfd10d4e756f7e2fb953e83bd3d1be8278b33a.s3.us-west-2.amazonaws.com/0x965a35130f4e34b7b2339eac03b2eacc659e2dafe850d213ea6a7cdf9edfa99f/replay.wasm && \
     wget https://stylus-wasm-17f27dd494229dfd10d4e756f7e2fb953e83bd3d1be8278b33a.s3.us-west-2.amazonaws.com/0x965a35130f4e34b7b2339eac03b2eacc659e2dafe850d213ea6a7cdf9edfa99f/machine.wavm.br
 
-FROM golang:1.21-bullseye as node-builder
+FROM golang:1.21-bookworm as node-builder
 WORKDIR /workspace
 ARG version=""
 ARG datetime=""
