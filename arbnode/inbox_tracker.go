@@ -388,7 +388,7 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 	var nextAcc common.Hash
 	firstBatchToKeep := uint64(0)
 	if t.snapSyncConfig.Enabled {
-		firstBatchToKeep = t.snapSyncConfig.BatchCount
+		firstBatchToKeep = t.snapSyncConfig.DelayedCount
 		if firstBatchToKeep > 0 {
 			firstBatchToKeep--
 		}
