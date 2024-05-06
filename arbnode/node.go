@@ -562,7 +562,25 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, new(big.Int).SetUint64(deployInfo.DeployedAt), delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &configFetcher.Get().InboxReader })
+	firstMessageBlock := new(big.Int).SetUint64(deployInfo.DeployedAt)
+	if config.SnapSync.Enabled {
+		firstMessageToRead := config.SnapSync.DelayedCount
+		if firstMessageToRead > config.SnapSync.BatchCount {
+			firstMessageToRead = config.SnapSync.BatchCount
+		}
+		if firstMessageToRead > 0 {
+			firstMessageToRead--
+		}
+		// Find the first block containing the first message to read
+		// Subtract 1 to get the block before the first message to read,
+		// this is done to fetch previous batch metadata needed for snap sync.
+		block, err := FindBlockContainingBatch(ctx, deployInfo.Rollup, l1client, firstMessageToRead-1)
+		if err != nil {
+			return nil, err
+		}
+		firstMessageBlock.SetUint64(block)
+	}
+	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, firstMessageBlock, delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &configFetcher.Get().InboxReader })
 	if err != nil {
 		return nil, err
 	}
@@ -733,6 +751,43 @@ func createNodeImpl(
 		configFetcher:           configFetcher,
 		ctx:                     ctx,
 	}, nil
+}
+
+func FindBlockContainingBatch(ctx context.Context, rollupAddress common.Address, l1Client arbutil.L1Interface, batch uint64) (uint64, error) {
+	callOpts := bind.CallOpts{Context: ctx}
+	rollup, err := staker.NewRollupWatcher(rollupAddress, l1Client, callOpts)
+	if err != nil {
+		return 0, err
+	}
+	latestCreatedNum, err := rollup.LatestNodeCreated(&callOpts)
+	if err != nil {
+		return 0, err
+	}
+	low := uint64(0)
+	high := latestCreatedNum
+	for low < high {
+		mid := low + (high-low)/2
+
+		midNode, err := rollup.LookupNode(ctx, mid)
+		if err != nil {
+			return 0, err
+		}
+		if midNode.InboxMaxCount.Uint64() < batch {
+			low = mid + 1
+		} else {
+			high = mid
+		}
+	}
+	nodeContainingBatch, err := rollup.LookupNode(ctx, low-1)
+	if err != nil {
+		return 0, err
+	}
+	blockHashContainingBatch := nodeContainingBatch.Assertion.AfterState.GlobalState.BlockHash
+	blockContainingBatch, err := l1Client.BlockByHash(ctx, blockHashContainingBatch)
+	if err != nil {
+		return 0, err
+	}
+	return blockContainingBatch.Number().Uint64(), nil
 }
 
 func (n *Node) OnConfigReload(_ *Config, _ *Config) error {
