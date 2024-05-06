@@ -976,16 +976,10 @@ contract RollupTest is Test {
     }
 
     function testSuccessWithdrawExcessStake() public {
+        uint256 prevBal = token.balanceOf(loserStakeEscrow);
         testSuccessCreateSecondChild();
-        vm.prank(loserStakeEscrow);
-        userRollup.withdrawStakerFunds();
-    }
-
-    function testRevertWithdrawNoExcessStake() public {
-        testSuccessCreateAssertion();
-        vm.prank(loserStakeEscrow);
-        vm.expectRevert("NO_FUNDS_TO_WITHDRAW");
-        userRollup.withdrawStakerFunds();
+        uint256 afterBal = token.balanceOf(loserStakeEscrow);
+        assertEq(afterBal - prevBal, BASE_STAKE, "loser stake not sent to escrow");
     }
 
     function testRevertAlreadyStaked() public {
