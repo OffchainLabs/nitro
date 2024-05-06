@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbos
@@ -12,7 +12,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 
 	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/ethereum/go-ethereum/core/types"
@@ -42,8 +41,9 @@ type TxProcessor struct {
 	posterGas        uint64
 	computeHoldGas   uint64 // amount of gas temporarily held to prevent compute from exceeding the gas limit
 	delayedInbox     bool   // whether this tx was submitted through the delayed inbox
-	Callers          []common.Address
-	TopTxType        *byte // set once in StartTxHook
+	Contracts        []*vm.Contract
+	Programs         map[common.Address]uint // # of distinct context spans for each program
+	TopTxType        *byte                   // set once in StartTxHook
 	evm              *vm.EVM
 	CurrentRetryable *common.Hash
 	CurrentRefundTo  *common.Address
@@ -63,7 +63,8 @@ func NewTxProcessor(evm *vm.EVM, msg *core.Message) *TxProcessor {
 		PosterFee:           new(big.Int),
 		posterGas:           0,
 		delayedInbox:        evm.Context.Coinbase != l1pricing.BatchPosterAddress,
-		Callers:             []common.Address{},
+		Contracts:           []*vm.Contract{},
+		Programs:            make(map[common.Address]uint),
 		TopTxType:           nil,
 		evm:                 evm,
 		CurrentRetryable:    nil,
@@ -73,12 +74,22 @@ func NewTxProcessor(evm *vm.EVM, msg *core.Message) *TxProcessor {
 	}
 }
 
-func (p *TxProcessor) PushCaller(addr common.Address) {
-	p.Callers = append(p.Callers, addr)
+func (p *TxProcessor) PushContract(contract *vm.Contract) {
+	p.Contracts = append(p.Contracts, contract)
+
+	if !contract.IsDelegateOrCallcode() {
+		p.Programs[contract.Address()]++
+	}
 }
 
-func (p *TxProcessor) PopCaller() {
-	p.Callers = p.Callers[:len(p.Callers)-1]
+func (p *TxProcessor) PopContract() {
+	newLen := len(p.Contracts) - 1
+	popped := p.Contracts[newLen]
+	p.Contracts = p.Contracts[:newLen]
+
+	if !popped.IsDelegateOrCallcode() {
+		p.Programs[popped.Address()]--
+	}
 }
 
 // Attempts to subtract up to `take` from `pool` without going negative.
@@ -94,6 +105,29 @@ func takeFunds(pool *big.Int, take *big.Int) *big.Int {
 	}
 	pool.Sub(pool, take)
 	return new(big.Int).Set(take)
+}
+
+func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, interpreter *vm.EVMInterpreter) ([]byte, error) {
+	contract := scope.Contract
+	acting := contract.Address()
+
+	var tracingInfo *util.TracingInfo
+	if interpreter.Config().Tracer != nil {
+		caller := contract.CallerAddress
+		tracingInfo = util.NewTracingInfo(interpreter.Evm(), caller, acting, util.TracingDuringEVM)
+	}
+
+	// reentrant if more than one open same-actor context span exists
+	reentrant := p.Programs[acting] > 1
+
+	return p.state.Programs().CallProgram(
+		scope,
+		p.evm.StateDB,
+		interpreter,
+		tracingInfo,
+		input,
+		reentrant,
+	)
 }
 
 func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, returnData []byte) {
@@ -445,6 +479,10 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 	return tipReceipient, nil
 }
 
+func (p *TxProcessor) RunMode() core.MessageRunMode {
+	return p.msg.TxRunMode
+}
+
 func (p *TxProcessor) NonrefundableGas() uint64 {
 	// EVM-incentivized activity like freeing storage should only refund amounts paid to the network address,
 	// which represents the overall burden to node operators. A poster's costs, then, should not be eligible
@@ -551,7 +589,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			}
 		}
 		// we've already credited the network fee account, but we didn't charge the gas pool yet
-		p.state.Restrict(p.state.L2PricingState().AddToGasPool(-arbmath.SaturatingCast(gasUsed)))
+		p.state.Restrict(p.state.L2PricingState().AddToGasPool(-arbmath.SaturatingCast[int64](gasUsed)))
 		return
 	}
 
@@ -610,7 +648,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			log.Error("total gas used < poster gas component", "gasUsed", gasUsed, "posterGas", p.posterGas)
 			computeGas = gasUsed
 		}
-		p.state.Restrict(p.state.L2PricingState().AddToGasPool(-arbmath.SaturatingCast(computeGas)))
+		p.state.Restrict(p.state.L2PricingState().AddToGasPool(-arbmath.SaturatingCast[int64](computeGas)))
 	}
 }
 
@@ -631,8 +669,7 @@ func (p *TxProcessor) ScheduledTxes() types.Transactions {
 		if log.Address != ArbRetryableTxAddress || log.Topics[0] != RedeemScheduledEventID {
 			continue
 		}
-		event := &precompilesgen.ArbRetryableTxRedeemScheduled{}
-		err := util.ParseRedeemScheduledLog(event, log)
+		event, err := util.ParseRedeemScheduledLog(log)
 		if err != nil {
 			glog.Error("Failed to parse RedeemScheduled log", "err", err)
 			continue

@@ -284,6 +284,10 @@ func (s *TransactionStreamer) SetInboxReaders(inboxReader *InboxReader, delayedB
 	s.delayedBridge = delayedBridge
 }
 
+func (s *TransactionStreamer) ChainConfig() *params.ChainConfig {
+	return s.chainConfig
+}
+
 func (s *TransactionStreamer) cleanupInconsistentState() error {
 	// If it doesn't exist yet, set the message count to 0
 	hasMessageCount, err := s.db.Has(messageCountKey)

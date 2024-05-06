@@ -1,5 +1,14 @@
+// Copyright 2022-2024, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+
 package gethexec
 
+/*
+#cgo CFLAGS: -g -Wall -I../../target/include/
+#cgo LDFLAGS: ${SRCDIR}/../../target/lib/libstylus.a -ldl -lm
+#include "arbitrator.h"
+*/
+import "C"
 import (
 	"context"
 	"encoding/binary"
@@ -127,6 +136,9 @@ func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbost
 		log.Warn("reorg target block not found", "block", blockNum)
 		return nil
 	}
+
+	// reorg Rust-side VM state
+	C.stylus_reorg_vm(C.uint64_t(blockNum))
 
 	err := s.bc.ReorgToOldBlock(targetBlock)
 	if err != nil {

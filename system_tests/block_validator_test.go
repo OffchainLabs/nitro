@@ -74,7 +74,6 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 		redisURL = redisutil.CreateTestRedis(ctx, t)
 		validatorConfig.BlockValidator.RedisValidationClientConfig = redis.DefaultValidationClientConfig
 		validatorConfig.BlockValidator.RedisValidationClientConfig.RedisURL = redisURL
-		validatorConfig.BlockValidator.ValidationServerConfigs = nil
 	}
 
 	AddDefaultValNode(t, ctx, validatorConfig, !arbitrator, redisURL)
