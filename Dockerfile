@@ -292,7 +292,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
 
 USER user
 
-FROM nitro-node as nitro-node-dev
+FROM nitro-node as nitro-node-dev-base
 USER root
 # Copy in latest WASM module root
 RUN rm -f /home/user/target/machines/latest
@@ -316,13 +316,19 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
 
 USER user
 
-FROM nitro-node-dev as nitro-node-split
+FROM offchainlabs/nitro-node:v2.3.4-rc.5-b4cc111 as nitro-legacy
+
+FROM nitro-node-dev-base as nitro-node-dev
 USER root
 
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y xxd netcat-traditional
 COPY scripts/split-val-entry.sh /usr/local/bin
+COPY --from=nitro-legacy /home/user/target/machines /home/user/nitro-legacy/machines
+RUN rm -rf /workspace/target/legacy-machines/latest
+COPY --from=nitro-legacy /usr/local/bin/nitro-val /home/user/nitro-legacy/bin/nitro-val
+COPY --from=nitro-legacy /usr/local/bin/jit /home/user/nitro-legacy/bin/jit
 ENTRYPOINT [ "/usr/local/bin/split-val-entry.sh" ]
 USER user
 
