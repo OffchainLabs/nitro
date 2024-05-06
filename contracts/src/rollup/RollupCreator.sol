@@ -141,18 +141,38 @@ contract RollupCreator is Ownable {
     {
         {
             // Make sure the immutable maxDataSize is as expected
-            (, ISequencerInbox ethSequencerInbox, IInboxBase ethInbox, , ) = bridgeCreator
-                .ethBasedTemplates();
+            (
+                ,
+                ISequencerInbox ethSequencerInbox,
+                ISequencerInbox ethDelayBufferableSequencerInbox,
+                IInboxBase ethInbox,
+                ,
+
+            ) = bridgeCreator.ethBasedTemplates();
             require(
                 deployParams.maxDataSize == ethSequencerInbox.maxDataSize(),
                 "SI_MAX_DATA_SIZE_MISMATCH"
             );
+            require(
+                deployParams.maxDataSize == ethDelayBufferableSequencerInbox.maxDataSize(),
+                "SI_MAX_DATA_SIZE_MISMATCH"
+            );
             require(deployParams.maxDataSize == ethInbox.maxDataSize(), "I_MAX_DATA_SIZE_MISMATCH");
 
-            (, ISequencerInbox erc20SequencerInbox, IInboxBase erc20Inbox, , ) = bridgeCreator
-                .erc20BasedTemplates();
+            (
+                ,
+                ISequencerInbox erc20SequencerInbox,
+                ISequencerInbox erc20DelayBufferableSequencerInbox,
+                IInboxBase erc20Inbox,
+                ,
+
+            ) = bridgeCreator.erc20BasedTemplates();
             require(
                 deployParams.maxDataSize == erc20SequencerInbox.maxDataSize(),
+                "SI_MAX_DATA_SIZE_MISMATCH"
+            );
+            require(
+                deployParams.maxDataSize == erc20DelayBufferableSequencerInbox.maxDataSize(),
                 "SI_MAX_DATA_SIZE_MISMATCH"
             );
             require(
@@ -171,7 +191,8 @@ contract RollupCreator is Ownable {
             address(proxyAdmin),
             address(rollup),
             deployParams.nativeToken,
-            deployParams.config.sequencerInboxMaxTimeVariation
+            deployParams.config.sequencerInboxMaxTimeVariation,
+            deployParams.config.bufferConfig
         );
 
         IEdgeChallengeManager challengeManager = createChallengeManager(address(rollup), address(proxyAdmin), deployParams.config);

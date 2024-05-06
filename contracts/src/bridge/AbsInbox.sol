@@ -6,6 +6,7 @@ pragma solidity ^0.8.4;
 
 import {
     DataTooLarge,
+    Deprecated,
     GasLimitTooLarge,
     InsufficientValue,
     InsufficientSubmissionCost,
@@ -131,19 +132,8 @@ abstract contract AbsInbox is DelegateCallAware, PausableUpgradeable, IInboxBase
     }
 
     /// @inheritdoc IInboxBase
-    function sendL2MessageFromOrigin(bytes calldata messageData)
-        external
-        whenNotPaused
-        onlyAllowed
-        returns (uint256)
-    {
-        if (_chainIdChanged()) revert L1Forked();
-        // solhint-disable-next-line avoid-tx-origin
-        if (msg.sender != tx.origin) revert NotOrigin();
-        if (messageData.length > maxDataSize) revert DataTooLarge(messageData.length, maxDataSize);
-        uint256 msgNum = _deliverToBridge(L2_MSG, msg.sender, keccak256(messageData), 0);
-        emit InboxMessageDeliveredFromOrigin(msgNum);
-        return msgNum;
+    function sendL2MessageFromOrigin(bytes calldata) external pure returns (uint256) {
+        revert Deprecated();
     }
 
     /// @inheritdoc IInboxBase

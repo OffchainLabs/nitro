@@ -54,7 +54,8 @@ export async function deployContract(
   signer: any,
   constructorArgs: any[] = [],
   verify: boolean = true,
-  overrides?: Overrides
+  overrides?: Overrides,
+  contractPathAndName?: string // optional
 ): Promise<Contract> {
   const factory: ContractFactory = await ethers.getContractFactory(contractName)
   const connectedFactory: ContractFactory = factory.connect(signer)
@@ -66,10 +67,12 @@ export async function deployContract(
 
   const contract: Contract = await connectedFactory.deploy(...deploymentArgs)
   await contract.deployTransaction.wait()
+  // sleep 3 slots to ensure contract is mined
+  await new Promise((r) => setTimeout(r, 3*12000))
   console.log(`New ${contractName} created at address:`, contract.address)
 
   if (verify)
-    await verifyContract(contractName, contract.address, constructorArgs)
+    await verifyContract(contractName, contract.address, constructorArgs, contractPathAndName)
 
   return contract
 }
@@ -91,7 +94,7 @@ export async function deployAllContracts(
 ): Promise<Record<string, Contract>> {
   const isOnArb = await _isRunningOnArbitrum(signer)
 
-  const ethBridge = await deployContract('Bridge', signer, [])
+  const ethBridge = await deployContract('Bridge', signer, [],true, undefined ,'src/bridge/Bridge.sol:Bridge')
   const reader4844 = isOnArb
     ? ethers.constants.AddressZero
     : (await Toolkit4844.deployReader4844(signer)).address
@@ -100,6 +103,14 @@ export async function deployAllContracts(
     maxDataSize,
     reader4844,
     false,
+    false
+  ])
+
+  const ethDelayBufferableSequencerInbox = await deployContract('SequencerInbox', signer, [
+    maxDataSize,
+    reader4844,
+    false,
+    true
   ])
 
   const ethInbox = await deployContract('Inbox', signer, [maxDataSize])
@@ -115,6 +126,13 @@ export async function deployAllContracts(
     maxDataSize,
     reader4844,
     true,
+    false
+  ])
+  const erc20DelayBufferableSequencerInbox = await deployContract('SequencerInbox', signer, [
+    maxDataSize,
+    reader4844,
+    true,
+    true
   ])
   const erc20Inbox = await deployContract('ERC20Inbox', signer, [maxDataSize])
   const erc20RollupEventInbox = await deployContract(
@@ -128,6 +146,7 @@ export async function deployAllContracts(
     [
       ethBridge.address,
       ethSequencerInbox.address,
+      ethDelayBufferableSequencerInbox.address,
       ethInbox.address,
       ethRollupEventInbox.address,
       ethOutbox.address,
@@ -135,10 +154,11 @@ export async function deployAllContracts(
     [
       erc20Bridge.address,
       erc20SequencerInbox.address,
+      erc20DelayBufferableSequencerInbox.address,
       erc20Inbox.address,
       erc20RollupEventInbox.address,
       erc20Outbox.address,
-    ],
+    ]
   ])
   const prover0 = await deployContract('OneStepProver0', signer)
   const proverMem = await deployContract('OneStepProverMemory', signer)

@@ -1,7 +1,7 @@
 {
   "bridgeCreator()": "f860cefa",
   "challengeManagerTemplate()": "9c683d10",
-  "createRollup(((uint64,address,uint256,bytes32,address,address,uint256,string,uint256[],(uint256,uint256,uint256,uint256),uint256,uint256,uint256,((bytes32[2],uint64[2]),uint8,bytes32),uint256,address,uint8,uint64),address[],uint256,address,bool,uint256,address[],address))": "ca96e939",
+  "createRollup(((uint64,address,uint256,bytes32,address,address,uint256,string,uint256[],(uint256,uint256,uint256,uint256),uint256,uint256,uint256,((bytes32[2],uint64[2]),uint8,bytes32),uint256,address,uint8,uint64,(uint64,uint64,uint64)),address[],uint256,address,bool,uint256,address[],address))": "5491abea",
   "l2FactoriesDeployer()": "ac0425bc",
   "osp()": "f26a62c6",
   "owner()": "8da5cb5b",
