@@ -44,23 +44,41 @@ func TestTransfer(t *testing.T) {
 func TestP256Verify(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	builder.chainConfig.ArbitrumChainParams.InitialArbOSVersion = 30
-	cleanup := builder.Build(t)
-	defer cleanup()
-	addr := common.BytesToAddress([]byte{0x01, 0x00})
-	got, err := builder.L2.Client.CallContract(ctx, ethereum.CallMsg{
-		From:  builder.L2Info.GetAddress("Owner"),
-		To:    &addr,
-		Gas:   builder.L2Info.TransferGas,
-		Data:  common.Hex2Bytes("4cee90eb86eaa050036147a12d49004b6b9c72bd725d39d4785011fe190f0b4da73bd4903f0ce3b639bbbf6e8e80d16931ff4bcf5993d58468e8fb19086e8cac36dbcd03009df8c59286b162af3bd7fcc0450c9aa81be5d10d312af6c66b1d604aebd3099c618202fcfe16ae7770b0c49ab5eadf74b754204a3bb6060e44eff37618b065f9832de4ca6ca971a7a1adc826d0f7c00181a5fb2ddf79ae00b4e10e"),
-		Value: big.NewInt(1e12),
-	}, nil)
-	if err != nil {
-		t.Fatalf("Calling p256 precompile, unexpected error: %v", err)
-	}
-	want := common.Hex2Bytes("0000000000000000000000000000000000000000000000000000000000000001")
-	if !bytes.Equal(got, want) {
-		t.Errorf("P256Verify() = %v, want: %v", got, want)
+	for _, tc := range []struct {
+		desc           string
+		initialVersion uint64
+		want           []byte
+	}{
+		{
+			desc:           "p256 should not be enabled on arbOS 20",
+			initialVersion: 20,
+			want:           nil,
+		},
+		{
+			desc:           "p256 should be enabled on arbOS 20",
+			initialVersion: 30,
+			want:           common.Hex2Bytes("0000000000000000000000000000000000000000000000000000000000000001"),
+		},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+			builder.chainConfig.ArbitrumChainParams.InitialArbOSVersion = tc.initialVersion
+			cleanup := builder.Build(t)
+			defer cleanup()
+			addr := common.BytesToAddress([]byte{0x01, 0x00})
+			got, err := builder.L2.Client.CallContract(ctx, ethereum.CallMsg{
+				From:  builder.L2Info.GetAddress("Owner"),
+				To:    &addr,
+				Gas:   builder.L2Info.TransferGas,
+				Data:  common.Hex2Bytes("4cee90eb86eaa050036147a12d49004b6b9c72bd725d39d4785011fe190f0b4da73bd4903f0ce3b639bbbf6e8e80d16931ff4bcf5993d58468e8fb19086e8cac36dbcd03009df8c59286b162af3bd7fcc0450c9aa81be5d10d312af6c66b1d604aebd3099c618202fcfe16ae7770b0c49ab5eadf74b754204a3bb6060e44eff37618b065f9832de4ca6ca971a7a1adc826d0f7c00181a5fb2ddf79ae00b4e10e"),
+				Value: big.NewInt(1e12),
+			}, nil)
+			if err != nil {
+				t.Fatalf("CallContract() unexpected error: %v", err)
+			}
+			if !bytes.Equal(got, tc.want) {
+				t.Errorf("P256Verify() = %v, want: %v", got, tc.want)
+			}
+		})
 	}
 }
