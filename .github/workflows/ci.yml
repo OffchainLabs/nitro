@@ -126,8 +126,9 @@ jobs:
         run: make -j build-node-deps
 
       - name: Lint
-        uses: golangci/golangci-lint-action@v3
+        uses: golangci/golangci-lint-action@v5
         with:
+          annotations: false
           version: latest
           skip-pkg-cache: true
       - name: Custom Lint
