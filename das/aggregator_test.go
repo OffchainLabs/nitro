@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
 	"strconv"
@@ -158,9 +159,10 @@ func min(a, b int) int {
 }
 
 func enableLogging() {
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
-	glogger.Verbosity(log.LvlTrace)
-	log.Root().SetHandler(glogger)
+	glogger := log.NewGlogHandler(
+		log.NewTerminalHandler(io.Writer(os.Stderr), false))
+	glogger.Verbosity(log.LevelTrace)
+	log.SetDefault(log.NewLogger(glogger))
 }
 
 func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {

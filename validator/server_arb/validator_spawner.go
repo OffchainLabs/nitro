@@ -84,6 +84,10 @@ func (s *ArbitratorSpawner) LatestWasmModuleRoot() containers.PromiseInterface[c
 	return containers.NewReadyPromise(s.locator.LatestWasmModuleRoot(), nil)
 }
 
+func (s *ArbitratorSpawner) WasmModuleRoots() ([]common.Hash, error) {
+	return s.locator.ModuleRoots(), nil
+}
+
 func (s *ArbitratorSpawner) Name() string {
 	return "arbitrator"
 }
@@ -112,6 +116,16 @@ func (v *ArbitratorSpawner) loadEntryToMachine(ctx context.Context, entry *valid
 				"err", err, "seq", entry.StartState.Batch, "blockNr", entry.Id,
 			)
 			return fmt.Errorf("error while trying to add sequencer msg for proving: %w", err)
+		}
+	}
+	for moduleHash, info := range entry.UserWasms {
+		err = mach.AddUserWasm(moduleHash, info.Module)
+		if err != nil {
+			log.Error(
+				"error adding user wasm for proving",
+				"err", err, "moduleHash", moduleHash, "blockNr", entry.Id,
+			)
+			return fmt.Errorf("error adding user wasm for proving: %w", err)
 		}
 	}
 	if entry.HasDelayedMsg {

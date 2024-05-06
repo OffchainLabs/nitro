@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/eth/gasestimator"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
@@ -31,7 +32,7 @@ import (
 	"github.com/offchainlabs/nitro/util/colors"
 )
 
-func retryableSetup(t *testing.T) (
+func retryableSetup(t *testing.T, modifyNodeConfig ...func(*NodeBuilder)) (
 	*NodeBuilder,
 	*bridgegen.Inbox,
 	func(*types.Receipt) *types.Transaction,
@@ -40,6 +41,9 @@ func retryableSetup(t *testing.T) (
 ) {
 	ctx, cancel := context.WithCancel(context.Background())
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	for _, f := range modifyNodeConfig {
+		f(builder)
+	}
 	builder.Build(t)
 
 	builder.L2Info.GenerateAccount("User2")
@@ -158,8 +162,12 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	Require(t, err, "failed to estimate retryable submission")
 	estimate := tx.Gas()
 	expectedEstimate := params.TxGas + params.TxDataNonZeroGasEIP2028*4
-	if estimate != expectedEstimate {
-		t.Errorf("estimated retryable ticket at %v gas but expected %v", estimate, expectedEstimate)
+	if float64(estimate) > float64(expectedEstimate)*(1+gasestimator.EstimateGasErrorRatio) {
+		t.Errorf("estimated retryable ticket at %v gas but expected %v, with error margin of %v",
+			estimate,
+			expectedEstimate,
+			gasestimator.EstimateGasErrorRatio,
+		)
 	}
 
 	// submit & auto redeem the retryable using the gas estimate
@@ -200,9 +208,11 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	}
 }
 
-func TestSubmitRetryableEmptyEscrow(t *testing.T) {
+func testSubmitRetryableEmptyEscrow(t *testing.T, arbosVersion uint64) {
 	t.Parallel()
-	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
+	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t, func(builder *NodeBuilder) {
+		builder.WithArbOSVersion(arbosVersion)
+	})
 	defer teardown()
 
 	user2Address := builder.L2Info.GetAddress("User2")
@@ -273,12 +283,18 @@ func TestSubmitRetryableEmptyEscrow(t *testing.T) {
 	escrowAccount := retryables.RetryableEscrowAddress(l2Tx.Hash())
 	state, err := builder.L2.ExecNode.ArbInterface.BlockChain().State()
 	Require(t, err)
-	escrowCodeHash := state.GetCodeHash(escrowAccount)
-	if escrowCodeHash == (common.Hash{}) {
-		Fatal(t, "Escrow account deleted (or not created)")
-	} else if escrowCodeHash != types.EmptyCodeHash {
-		Fatal(t, "Escrow account has unexpected code hash", escrowCodeHash)
+	escrowExists := state.Exist(escrowAccount)
+	if escrowExists != (arbosVersion < 30) {
+		Fatal(t, "Escrow account existance", escrowExists, "doesn't correspond to ArbOS version", arbosVersion)
 	}
+}
+
+func TestSubmitRetryableEmptyEscrowArbOS20(t *testing.T) {
+	testSubmitRetryableEmptyEscrow(t, 20)
+}
+
+func TestSubmitRetryableEmptyEscrowArbOS30(t *testing.T) {
+	testSubmitRetryableEmptyEscrow(t, 30)
 }
 
 func TestSubmitRetryableFailThenRetry(t *testing.T) {
