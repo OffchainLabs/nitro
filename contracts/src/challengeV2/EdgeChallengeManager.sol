@@ -184,11 +184,11 @@ interface IEdgeChallengeManager {
     ///         until it gets to the origin assertion
     function getPrevAssertionHash(bytes32 edgeId) external view returns (bytes32);
 
-    /// @notice Fetch the raw first rival record for this edge
-    /// @dev    Returns 0 if the edge does not exist
-    ///         Returns a magic string if the edge exists but is unrivaled
-    ///         Returns the id of the second edge created with the same mutual id as this edge, if a rival exists
-    function firstRival(bytes32 edgeId) external view returns (bytes32);
+    /// @notice Fetch the raw first rival record for the given mutual id
+    /// @dev    Returns 0 if there is no edge with the given mutual id
+    ///         Returns a magic value if there is one edge but it is unrivaled
+    ///         Returns the id of the second edge created with the mutual id, if > 1 exists
+    function firstRival(bytes32 mutualId) external view returns (bytes32);
 }
 
 /// @title  A challenge manager that uses edge structures to decide between Assertions
