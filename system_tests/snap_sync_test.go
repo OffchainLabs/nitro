@@ -47,7 +47,8 @@ func TestSnapSync(t *testing.T) {
 			break
 		}
 	}
-	<-time.After(time.Second * 5)
+	// Wait for the last batch to be processed
+	<-time.After(10 * time.Millisecond)
 
 	batchCount, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
 	Require(t, err)
