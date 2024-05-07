@@ -627,9 +627,9 @@ impl<'a> WasmBinary<'a> {
             ink_left: ink_left.as_u32(),
             ink_status: ink_status.as_u32(),
             depth_left: depth_left.as_u32(),
-            init_cost: init.try_into()?,
-            cached_init_cost: cached_init.try_into()?,
-            asm_estimate: asm_estimate.try_into()?,
+            init_cost: init.try_into().wrap_err("init cost too high")?,
+            cached_init_cost: cached_init.try_into().wrap_err("cached cost too high")?,
+            asm_estimate: asm_estimate.try_into().wrap_err("asm estimate too large")?,
             footprint,
             user_main,
         })
