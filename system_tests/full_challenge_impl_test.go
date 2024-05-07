@@ -249,9 +249,10 @@ func createL2Nodes(t *testing.T, ctx context.Context, conf *arbnode.Config, chai
 }
 
 func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, challengeMsgIdx int64) {
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+	glogger := log.NewGlogHandler(
+		log.NewTerminalHandler(io.Writer(os.Stderr), false))
 	glogger.Verbosity(log.LvlInfo)
-	log.Root().SetHandler(glogger)
+	log.SetDefault(log.NewLogger(glogger))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -277,7 +278,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	} else {
 		_, valStack = createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
 	}
-	configByValidationNode(t, conf, valStack)
+	configByValidationNode(conf, valStack)
 
 	fatalErrChan := make(chan error, 10)
 	asserterRollupAddresses, initMessage := DeployOnTestL1(t, ctx, l1Info, l1Backend, chainConfig)
@@ -340,7 +341,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	}
 	var wasmModuleRoot common.Hash
 	if useStubs {
-		wasmModuleRoot = mockWasmModuleRoot
+		wasmModuleRoot = mockWasmModuleRoots[0]
 	} else {
 		wasmModuleRoot = locator.LatestWasmModuleRoot()
 		if (wasmModuleRoot == common.Hash{}) {

@@ -65,7 +65,7 @@ func TestPruning(t *testing.T) {
 		stack, err := node.New(builder.l2StackConfig)
 		Require(t, err)
 		defer stack.Close()
-		chainDb, err := stack.OpenDatabase("chaindb", 0, 0, "", false)
+		chainDb, err := stack.OpenDatabase("l2chaindata", 0, 0, "l2chaindata/", false)
 		Require(t, err)
 		defer chainDb.Close()
 		chainDbEntriesBeforePruning := countStateEntries(chainDb)
