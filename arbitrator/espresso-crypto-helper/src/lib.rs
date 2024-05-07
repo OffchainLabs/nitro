@@ -3,7 +3,8 @@ mod sequencer_data_structures;
 
 use ark_bn254::Bn254;
 use ark_ff::PrimeField;
-use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
+use ark_serialize::CanonicalSerialize;
+use bytes::Bytes;
 use committable::{Commitment, Committable};
 use ethers_core::types::U256;
 use jf_primitives::{
@@ -18,27 +19,24 @@ use jf_primitives::{
 };
 use lazy_static::lazy_static;
 use sequencer_data_structures::{
-    BlockMerkleTree, Header, NameSpaceTable, NamespaceProof, Transaction, TxTableEntryWord,
+    field_to_u256, BlockMerkleCommitment, BlockMerkleTree, Header, NameSpaceTable, NamespaceProof,
+    Transaction, TxTableEntryWord,
 };
 use sha2::{Digest, Sha256};
 use tagged_base64::TaggedBase64;
 
-use crate::{
-    bytes::Bytes,
-    sequencer_data_structures::{field_to_u256, BlockMerkleCommitment},
-};
-
-pub type VidScheme = Advz<Bn254, sha2::Sha256>;
+// pub type VidScheme = Advz<Bn254, sha2::Sha256>;
 pub type Proof = Vec<MerkleNode<Commitment<Header>, u64, Sha3Node>>;
 pub type CircuitField = ark_ed_on_bn254::Fq;
+pub type VidScheme = Advz<Bn254, sha2::Sha256>;
 
-// lazy_static! {
-//     // Initialize the byte array from JSON content
-//     static ref SRS_VEC: Vec<u8> = {
-//         let json_content = include_str!("../../../config/vid_srs.json");
-//         serde_json::from_str(json_content).expect("Failed to deserialize")
-//     };
-// }
+lazy_static! {
+    // Initialize the byte array from JSON content
+    static ref SRS_VEC: Vec<u8> = {
+        let json_content = include_str!("../../../config/vid_srs.json");
+        serde_json::from_str(json_content).expect("Failed to deserialize")
+    };
+}
 
 // Helper function to verify a block merkle proof.
 //
@@ -94,41 +92,41 @@ pub fn verify_namespace_helper(
     ns_table_bytes: &[u8],
     tx_comm_bytes: &[u8],
 ) {
-    // let proof_str = std::str::from_utf8(proof_bytes).unwrap();
-    // let commit_str = std::str::from_utf8(commit_bytes).unwrap();
-    // let txn_comm_str = std::str::from_utf8(tx_comm_bytes).unwrap();
+    let proof_str = std::str::from_utf8(proof_bytes).unwrap();
+    let commit_str = std::str::from_utf8(commit_bytes).unwrap();
+    let txn_comm_str = std::str::from_utf8(tx_comm_bytes).unwrap();
 
-    // let proof: NamespaceProof = serde_json::from_str(proof_str).unwrap();
-    // let ns_table = NameSpaceTable::<TxTableEntryWord>::from_bytes(<&[u8] as Into<Bytes>>::into(
-    //     ns_table_bytes,
-    // ));
-    // let tagged = TaggedBase64::parse(&commit_str).unwrap();
-    // let commit: <VidScheme as VidSchemeTrait>::Commit = tagged.try_into().unwrap();
+    let proof: NamespaceProof = serde_json::from_str(proof_str).unwrap();
+    let ns_table = NameSpaceTable::<TxTableEntryWord>::from_bytes(<&[u8] as Into<Bytes>>::into(
+        ns_table_bytes,
+    ));
+    let tagged = TaggedBase64::parse(&commit_str).unwrap();
+    let commit: <VidScheme as VidSchemeTrait>::Commit = tagged.try_into().unwrap();
 
-    // let degree = 2u64.pow(20) as usize + 2;
-    // let srs = ark_srs::kzg10::aztec20::setup(degree).expect("Aztec SRS failed to load");
-    // let srs: UnivariateUniversalParams<Bn254> = UnivariateUniversalParams {
-    //     powers_of_g: srs.powers_of_g,
-    //     h: srs.h,
-    //     beta_h: srs.beta_h,
-    //     powers_of_h: vec![srs.h, srs.beta_h],
-    // };
+    let degree = 2u64.pow(20) as usize + 2;
+    let srs = ark_srs::kzg10::aztec20::setup(degree).expect("Aztec SRS failed to load");
+    let srs: UnivariateUniversalParams<Bn254> = UnivariateUniversalParams {
+        powers_of_g: srs.powers_of_g,
+        h: srs.h,
+        beta_h: srs.beta_h,
+        powers_of_h: vec![srs.h, srs.beta_h],
+    };
 
-    // let num_storage_nodes = match &proof {
-    //     NamespaceProof::Existence { vid_common, .. } => {
-    //         VidScheme::get_num_storage_nodes(&vid_common)
-    //     }
-    //     // Non-existence proofs do not actually make use of the SRS, so pick some random value to appease the compiler.
-    //     _ => 5,
-    // };
-    // let num_chunks: usize = 1 << num_storage_nodes.ilog2();
-    // let advz = Advz::new(num_chunks, num_storage_nodes, 1, srs).unwrap();
-    // let (txns, ns) = proof.verify(&advz, &commit, &ns_table).unwrap();
+    let num_storage_nodes = match &proof {
+        NamespaceProof::Existence { vid_common, .. } => {
+            VidScheme::get_num_storage_nodes(&vid_common)
+        }
+        // Non-existence proofs do not actually make use of the SRS, so pick some random value to appease the compiler.
+        _ => 5,
+    };
+    let num_chunks: usize = 1 << num_storage_nodes.ilog2();
+    let advz = Advz::new(num_chunks, num_storage_nodes, 1, srs).unwrap();
+    let (txns, ns) = proof.verify(&advz, &commit, &ns_table).unwrap();
 
-    // let txns_comm = hash_txns(namespace, &txns);
+    let txns_comm = hash_txns(namespace, &txns);
 
-    // assert!(ns == namespace.into());
-    // assert!(txns_comm == txn_comm_str);
+    assert!(ns == namespace.into());
+    assert!(txns_comm == txn_comm_str);
 }
 
 // TODO: Use Commit trait: https://github.com/EspressoSystems/nitro-espresso-integration/issues/88

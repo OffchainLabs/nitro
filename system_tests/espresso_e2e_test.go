@@ -30,7 +30,8 @@ import (
 
 var workingDir = "./espresso-e2e"
 var lightClientAddress = "0xb075b82c7a23e0994df4793422a1f03dbcf9136f"
-var hostIoAddress = "0xF34C2fac45527E55ED122f80a969e79A40547e6D"
+
+// var hostIoAddress = "0xF34C2fac45527E55ED122f80a969e79A40547e6D"
 var hotShotUrl = "http://127.0.0.1:50000"
 
 var (
@@ -455,6 +456,9 @@ func TestEspressoE2E(t *testing.T) {
 		return balance2.Cmp(transferAmount) >= 0
 	})
 	Require(t, err)
+
+	// TOOD: uncomment once we fix fraud proofs
+	// https://github.com/EspressoSystems/nitro-espresso-integration/issues/117
 
 	// hostIo, err := ospgen.NewOneStepProverHostIo(common.HexToAddress(hostIoAddress), builder.L1.Client)
 	// Require(t, err)
