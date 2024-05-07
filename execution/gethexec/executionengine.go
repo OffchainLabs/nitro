@@ -688,11 +688,11 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 	default:
 	}
 
-	msgResult := execution.MessageResult{
-		BlockHash: block.Hash(),
+	msgResult, err := s.resultFromHeader(block.Header())
+	if err != nil {
+		return nil, err
 	}
-
-	return &msgResult, nil
+	return msgResult, nil
 }
 
 func (s *ExecutionEngine) ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error) {
