@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro-contracts/blob/main/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
@@ -134,6 +134,8 @@ library Instructions {
     uint16 internal constant DUP = 0x8008;
     uint16 internal constant CROSS_MODULE_CALL = 0x8009;
     uint16 internal constant CALLER_MODULE_INTERNAL_CALL = 0x800A;
+    uint16 internal constant CROSS_MODULE_FORWARD = 0x800B;
+    uint16 internal constant CROSS_MODULE_INTERNAL_CALL = 0x800C;
 
     uint16 internal constant GET_GLOBAL_STATE_BYTES32 = 0x8010;
     uint16 internal constant SET_GLOBAL_STATE_BYTES32 = 0x8011;
@@ -143,11 +145,44 @@ library Instructions {
     uint16 internal constant READ_PRE_IMAGE = 0x8020;
     uint16 internal constant READ_INBOX_MESSAGE = 0x8021;
     uint16 internal constant HALT_AND_SET_FINISHED = 0x8022;
+    uint16 internal constant LINK_MODULE = 0x8023;
+    uint16 internal constant UNLINK_MODULE = 0x8024;
+
+    uint16 internal constant NEW_COTHREAD = 0x8030;
+    uint16 internal constant POP_COTHREAD = 0x8031;
+    uint16 internal constant SWITCH_COTHREAD = 0x8032;
 
     uint256 internal constant INBOX_INDEX_SEQUENCER = 0;
     uint256 internal constant INBOX_INDEX_DELAYED = 1;
 
-    function hash(Instruction memory inst) internal pure returns (bytes32) {
-        return keccak256(abi.encodePacked("Instruction:", inst.opcode, inst.argumentData));
+    function hash(Instruction[] memory code) internal pure returns (bytes32) {
+        // To avoid quadratic expense, we declare a `bytes` early and populate its contents.
+        bytes memory data = new bytes(13 + 1 + 34 * code.length);
+        assembly {
+            // Represents the string "Instructions:", which we place after the length word.
+            mstore(
+                add(data, 32),
+                0x496e737472756374696f6e733a00000000000000000000000000000000000000
+            )
+        }
+
+        // write the instruction count
+        uint256 offset = 13;
+        data[offset] = bytes1(uint8(code.length));
+        offset++;
+
+        // write each instruction
+        for (uint256 i = 0; i < code.length; i++) {
+            Instruction memory inst = code[i];
+            data[offset] = bytes1(uint8(inst.opcode >> 8));
+            data[offset + 1] = bytes1(uint8(inst.opcode));
+            offset += 2;
+            uint256 argumentData = inst.argumentData;
+            assembly {
+                mstore(add(add(data, 32), offset), argumentData)
+            }
+            offset += 32;
+        }
+        return keccak256(data);
     }
 }

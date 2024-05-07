@@ -308,7 +308,7 @@ func (a *AssertionChain) NewStakeOnNewAssertion(
 		ctx,
 		parentAssertionCreationInfo,
 		postState,
-		a.userLogic.RollupUserLogicTransactor.NewStakeOnNewAssertion,
+		a.userLogic.RollupUserLogicTransactor.NewStakeOnNewAssertion0,
 	)
 }
 

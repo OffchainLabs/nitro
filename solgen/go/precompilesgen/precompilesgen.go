@@ -901,7 +901,7 @@ func (_ArbBLS *ArbBLSTransactorRaw) Transact(opts *bind.TransactOpts, method str
 
 // ArbDebugMetaData contains all meta data concerning the ArbDebug contract.
 var ArbDebugMetaData = &bind.MetaData{
-	ABI: "[{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"\",\"type\":\"uint64\"},{\"internalType\":\"string\",\"name\":\"\",\"type\":\"string\"},{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"name\":\"Custom\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"Unused\",\"type\":\"error\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"bool\",\"name\":\"flag\",\"type\":\"bool\"},{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"value\",\"type\":\"bytes32\"}],\"name\":\"Basic\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"bool\",\"name\":\"flag\",\"type\":\"bool\"},{\"indexed\":false,\"internalType\":\"bool\",\"name\":\"not\",\"type\":\"bool\"},{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"value\",\"type\":\"bytes32\"},{\"indexed\":false,\"internalType\":\"address\",\"name\":\"conn\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"caller\",\"type\":\"address\"}],\"name\":\"Mixed\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"bool\",\"name\":\"flag\",\"type\":\"bool\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"field\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint24\",\"name\":\"number\",\"type\":\"uint24\"},{\"indexed\":false,\"internalType\":\"bytes32\",\"name\":\"value\",\"type\":\"bytes32\"},{\"indexed\":false,\"internalType\":\"bytes\",\"name\":\"store\",\"type\":\"bytes\"}],\"name\":\"Store\",\"type\":\"event\"},{\"inputs\":[],\"name\":\"becomeChainOwner\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"number\",\"type\":\"uint64\"}],\"name\":\"customRevert\",\"outputs\":[],\"stateMutability\":\"pure\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bool\",\"name\":\"flag\",\"type\":\"bool\"},{\"internalType\":\"bytes32\",\"name\":\"value\",\"type\":\"bytes32\"}],\"name\":\"events\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"payable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"eventsView\",\"outputs\":[],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"legacyError\",\"outputs\":[],\"stateMutability\":\"pure\",\"type\":\"function\"}]",
+	ABI: "[{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"\",\"type\":\"uint64\"},{\"internalType\":\"string\",\"name\":\"\",\"type\":\"string\"},{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"name\":\"Custom\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"Unused\",\"type\":\"error\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":false,\"internalType\":\"bool\",\"name\":\"flag\",\"type\":\"bool\"},{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"value\",\"type\":\"bytes32\"}],\"name\":\"Basic\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"bool\",\"name\":\"flag\",\"type\":\"bool\"},{\"indexed\":false,\"internalType\":\"bool\",\"name\":\"not\",\"type\":\"bool\"},{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"value\",\"type\":\"bytes32\"},{\"indexed\":false,\"internalType\":\"address\",\"name\":\"conn\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"caller\",\"type\":\"address\"}],\"name\":\"Mixed\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"bool\",\"name\":\"flag\",\"type\":\"bool\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"field\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint24\",\"name\":\"number\",\"type\":\"uint24\"},{\"indexed\":false,\"internalType\":\"bytes32\",\"name\":\"value\",\"type\":\"bytes32\"},{\"indexed\":false,\"internalType\":\"bytes\",\"name\":\"store\",\"type\":\"bytes\"}],\"name\":\"Store\",\"type\":\"event\"},{\"inputs\":[],\"name\":\"becomeChainOwner\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"number\",\"type\":\"uint64\"}],\"name\":\"customRevert\",\"outputs\":[],\"stateMutability\":\"pure\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bool\",\"name\":\"flag\",\"type\":\"bool\"},{\"internalType\":\"bytes32\",\"name\":\"value\",\"type\":\"bytes32\"}],\"name\":\"events\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"},{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"payable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"eventsView\",\"outputs\":[],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"legacyError\",\"outputs\":[],\"stateMutability\":\"pure\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"panic\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]",
 }
 
 // ArbDebugABI is the input ABI used to generate the binding from.
@@ -1177,6 +1177,27 @@ func (_ArbDebug *ArbDebugSession) Events(flag bool, value [32]byte) (*types.Tran
 // Solidity: function events(bool flag, bytes32 value) payable returns(address, uint256)
 func (_ArbDebug *ArbDebugTransactorSession) Events(flag bool, value [32]byte) (*types.Transaction, error) {
 	return _ArbDebug.Contract.Events(&_ArbDebug.TransactOpts, flag, value)
+}
+
+// Panic is a paid mutator transaction binding the contract method 0x4700d305.
+//
+// Solidity: function panic() returns()
+func (_ArbDebug *ArbDebugTransactor) Panic(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _ArbDebug.contract.Transact(opts, "panic")
+}
+
+// Panic is a paid mutator transaction binding the contract method 0x4700d305.
+//
+// Solidity: function panic() returns()
+func (_ArbDebug *ArbDebugSession) Panic() (*types.Transaction, error) {
+	return _ArbDebug.Contract.Panic(&_ArbDebug.TransactOpts)
+}
+
+// Panic is a paid mutator transaction binding the contract method 0x4700d305.
+//
+// Solidity: function panic() returns()
+func (_ArbDebug *ArbDebugTransactorSession) Panic() (*types.Transaction, error) {
+	return _ArbDebug.Contract.Panic(&_ArbDebug.TransactOpts)
 }
 
 // ArbDebugBasicIterator is returned from FilterBasic and is used to iterate over the raw logs and unpacked data for Basic events raised by the ArbDebug contract.
@@ -3010,7 +3031,7 @@ func (_ArbInfo *ArbInfoCallerSession) GetCode(account common.Address) ([]byte, e
 
 // ArbOwnerMetaData contains all meta data concerning the ArbOwner contract.
 var ArbOwnerMetaData = &bind.MetaData{
-	ABI: "[{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"bytes4\",\"name\":\"method\",\"type\":\"bytes4\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"owner\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"bytes\",\"name\":\"data\",\"type\":\"bytes\"}],\"name\":\"OwnerActs\",\"type\":\"event\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"addChainOwner\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getAllChainOwners\",\"outputs\":[{\"internalType\":\"address[]\",\"name\":\"\",\"type\":\"address[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getInfraFeeAccount\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getNetworkFeeAccount\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"}],\"name\":\"isChainOwner\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"maxWeiToRelease\",\"type\":\"uint256\"}],\"name\":\"releaseL1PricerSurplusFunds\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"ownerToRemove\",\"type\":\"address\"}],\"name\":\"removeChainOwner\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"newVersion\",\"type\":\"uint64\"},{\"internalType\":\"uint64\",\"name\":\"timestamp\",\"type\":\"uint64\"}],\"name\":\"scheduleArbOSUpgrade\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"cap\",\"type\":\"uint64\"}],\"name\":\"setAmortizedCostCapBips\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"level\",\"type\":\"uint64\"}],\"name\":\"setBrotliCompressionLevel\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"string\",\"name\":\"chainConfig\",\"type\":\"string\"}],\"name\":\"setChainConfig\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"newInfraFeeAccount\",\"type\":\"address\"}],\"name\":\"setInfraFeeAccount\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"inertia\",\"type\":\"uint64\"}],\"name\":\"setL1BaseFeeEstimateInertia\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"pricePerUnit\",\"type\":\"uint256\"}],\"name\":\"setL1PricePerUnit\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"equilibrationUnits\",\"type\":\"uint256\"}],\"name\":\"setL1PricingEquilibrationUnits\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"inertia\",\"type\":\"uint64\"}],\"name\":\"setL1PricingInertia\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"weiPerUnit\",\"type\":\"uint64\"}],\"name\":\"setL1PricingRewardRate\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"recipient\",\"type\":\"address\"}],\"name\":\"setL1PricingRewardRecipient\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"priceInWei\",\"type\":\"uint256\"}],\"name\":\"setL2BaseFee\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"sec\",\"type\":\"uint64\"}],\"name\":\"setL2GasBacklogTolerance\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"sec\",\"type\":\"uint64\"}],\"name\":\"setL2GasPricingInertia\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"limit\",\"type\":\"uint64\"}],\"name\":\"setMaxTxGasLimit\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"priceInWei\",\"type\":\"uint256\"}],\"name\":\"setMinimumL2BaseFee\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"newNetworkFeeAccount\",\"type\":\"address\"}],\"name\":\"setNetworkFeeAccount\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"int64\",\"name\":\"cost\",\"type\":\"int64\"}],\"name\":\"setPerBatchGasCharge\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"limit\",\"type\":\"uint64\"}],\"name\":\"setSpeedLimit\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]",
+	ABI: "[{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"bytes4\",\"name\":\"method\",\"type\":\"bytes4\"},{\"indexed\":true,\"internalType\":\"address\",\"name\":\"owner\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"bytes\",\"name\":\"data\",\"type\":\"bytes\"}],\"name\":\"OwnerActs\",\"type\":\"event\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"newOwner\",\"type\":\"address\"}],\"name\":\"addChainOwner\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"manager\",\"type\":\"address\"}],\"name\":\"addWasmCacheManager\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getAllChainOwners\",\"outputs\":[{\"internalType\":\"address[]\",\"name\":\"\",\"type\":\"address[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getInfraFeeAccount\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"getNetworkFeeAccount\",\"outputs\":[{\"internalType\":\"address\",\"name\":\"\",\"type\":\"address\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"addr\",\"type\":\"address\"}],\"name\":\"isChainOwner\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"maxWeiToRelease\",\"type\":\"uint256\"}],\"name\":\"releaseL1PricerSurplusFunds\",\"outputs\":[{\"internalType\":\"uint256\",\"name\":\"\",\"type\":\"uint256\"}],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"ownerToRemove\",\"type\":\"address\"}],\"name\":\"removeChainOwner\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"manager\",\"type\":\"address\"}],\"name\":\"removeWasmCacheManager\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"newVersion\",\"type\":\"uint64\"},{\"internalType\":\"uint64\",\"name\":\"timestamp\",\"type\":\"uint64\"}],\"name\":\"scheduleArbOSUpgrade\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"cap\",\"type\":\"uint64\"}],\"name\":\"setAmortizedCostCapBips\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"level\",\"type\":\"uint64\"}],\"name\":\"setBrotliCompressionLevel\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"string\",\"name\":\"chainConfig\",\"type\":\"string\"}],\"name\":\"setChainConfig\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"newInfraFeeAccount\",\"type\":\"address\"}],\"name\":\"setInfraFeeAccount\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint32\",\"name\":\"price\",\"type\":\"uint32\"}],\"name\":\"setInkPrice\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"inertia\",\"type\":\"uint64\"}],\"name\":\"setL1BaseFeeEstimateInertia\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"pricePerUnit\",\"type\":\"uint256\"}],\"name\":\"setL1PricePerUnit\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"equilibrationUnits\",\"type\":\"uint256\"}],\"name\":\"setL1PricingEquilibrationUnits\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"inertia\",\"type\":\"uint64\"}],\"name\":\"setL1PricingInertia\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"weiPerUnit\",\"type\":\"uint64\"}],\"name\":\"setL1PricingRewardRate\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"recipient\",\"type\":\"address\"}],\"name\":\"setL1PricingRewardRecipient\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"priceInWei\",\"type\":\"uint256\"}],\"name\":\"setL2BaseFee\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"sec\",\"type\":\"uint64\"}],\"name\":\"setL2GasBacklogTolerance\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"sec\",\"type\":\"uint64\"}],\"name\":\"setL2GasPricingInertia\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"limit\",\"type\":\"uint64\"}],\"name\":\"setMaxTxGasLimit\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"priceInWei\",\"type\":\"uint256\"}],\"name\":\"setMinimumL2BaseFee\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"newNetworkFeeAccount\",\"type\":\"address\"}],\"name\":\"setNetworkFeeAccount\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"int64\",\"name\":\"cost\",\"type\":\"int64\"}],\"name\":\"setPerBatchGasCharge\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"limit\",\"type\":\"uint64\"}],\"name\":\"setSpeedLimit\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint16\",\"name\":\"count\",\"type\":\"uint16\"}],\"name\":\"setWasmBlockCacheSize\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint16\",\"name\":\"_days\",\"type\":\"uint16\"}],\"name\":\"setWasmExpiryDays\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint16\",\"name\":\"pages\",\"type\":\"uint16\"}],\"name\":\"setWasmFreePages\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"percent\",\"type\":\"uint64\"}],\"name\":\"setWasmInitCostScalar\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint16\",\"name\":\"_days\",\"type\":\"uint16\"}],\"name\":\"setWasmKeepaliveDays\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint32\",\"name\":\"depth\",\"type\":\"uint32\"}],\"name\":\"setWasmMaxStackDepth\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint8\",\"name\":\"gas\",\"type\":\"uint8\"},{\"internalType\":\"uint16\",\"name\":\"cached\",\"type\":\"uint16\"}],\"name\":\"setWasmMinInitGas\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint16\",\"name\":\"gas\",\"type\":\"uint16\"}],\"name\":\"setWasmPageGas\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"uint16\",\"name\":\"limit\",\"type\":\"uint16\"}],\"name\":\"setWasmPageLimit\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"}]",
 }
 
 // ArbOwnerABI is the input ABI used to generate the binding from.
@@ -3304,6 +3325,27 @@ func (_ArbOwner *ArbOwnerTransactorSession) AddChainOwner(newOwner common.Addres
 	return _ArbOwner.Contract.AddChainOwner(&_ArbOwner.TransactOpts, newOwner)
 }
 
+// AddWasmCacheManager is a paid mutator transaction binding the contract method 0xffdca515.
+//
+// Solidity: function addWasmCacheManager(address manager) returns()
+func (_ArbOwner *ArbOwnerTransactor) AddWasmCacheManager(opts *bind.TransactOpts, manager common.Address) (*types.Transaction, error) {
+	return _ArbOwner.contract.Transact(opts, "addWasmCacheManager", manager)
+}
+
+// AddWasmCacheManager is a paid mutator transaction binding the contract method 0xffdca515.
+//
+// Solidity: function addWasmCacheManager(address manager) returns()
+func (_ArbOwner *ArbOwnerSession) AddWasmCacheManager(manager common.Address) (*types.Transaction, error) {
+	return _ArbOwner.Contract.AddWasmCacheManager(&_ArbOwner.TransactOpts, manager)
+}
+
+// AddWasmCacheManager is a paid mutator transaction binding the contract method 0xffdca515.
+//
+// Solidity: function addWasmCacheManager(address manager) returns()
+func (_ArbOwner *ArbOwnerTransactorSession) AddWasmCacheManager(manager common.Address) (*types.Transaction, error) {
+	return _ArbOwner.Contract.AddWasmCacheManager(&_ArbOwner.TransactOpts, manager)
+}
+
 // ReleaseL1PricerSurplusFunds is a paid mutator transaction binding the contract method 0x314bcf05.
 //
 // Solidity: function releaseL1PricerSurplusFunds(uint256 maxWeiToRelease) returns(uint256)
@@ -3344,6 +3386,27 @@ func (_ArbOwner *ArbOwnerSession) RemoveChainOwner(ownerToRemove common.Address)
 // Solidity: function removeChainOwner(address ownerToRemove) returns()
 func (_ArbOwner *ArbOwnerTransactorSession) RemoveChainOwner(ownerToRemove common.Address) (*types.Transaction, error) {
 	return _ArbOwner.Contract.RemoveChainOwner(&_ArbOwner.TransactOpts, ownerToRemove)
+}
+
+// RemoveWasmCacheManager is a paid mutator transaction binding the contract method 0xbf197322.
+//
+// Solidity: function removeWasmCacheManager(address manager) returns()
+func (_ArbOwner *ArbOwnerTransactor) RemoveWasmCacheManager(opts *bind.TransactOpts, manager common.Address) (*types.Transaction, error) {
+	return _ArbOwner.contract.Transact(opts, "removeWasmCacheManager", manager)
+}
+
+// RemoveWasmCacheManager is a paid mutator transaction binding the contract method 0xbf197322.
+//
+// Solidity: function removeWasmCacheManager(address manager) returns()
+func (_ArbOwner *ArbOwnerSession) RemoveWasmCacheManager(manager common.Address) (*types.Transaction, error) {
+	return _ArbOwner.Contract.RemoveWasmCacheManager(&_ArbOwner.TransactOpts, manager)
+}
+
+// RemoveWasmCacheManager is a paid mutator transaction binding the contract method 0xbf197322.
+//
+// Solidity: function removeWasmCacheManager(address manager) returns()
+func (_ArbOwner *ArbOwnerTransactorSession) RemoveWasmCacheManager(manager common.Address) (*types.Transaction, error) {
+	return _ArbOwner.Contract.RemoveWasmCacheManager(&_ArbOwner.TransactOpts, manager)
 }
 
 // ScheduleArbOSUpgrade is a paid mutator transaction binding the contract method 0xe388b381.
@@ -3449,6 +3512,27 @@ func (_ArbOwner *ArbOwnerSession) SetInfraFeeAccount(newInfraFeeAccount common.A
 // Solidity: function setInfraFeeAccount(address newInfraFeeAccount) returns()
 func (_ArbOwner *ArbOwnerTransactorSession) SetInfraFeeAccount(newInfraFeeAccount common.Address) (*types.Transaction, error) {
 	return _ArbOwner.Contract.SetInfraFeeAccount(&_ArbOwner.TransactOpts, newInfraFeeAccount)
+}
+
+// SetInkPrice is a paid mutator transaction binding the contract method 0x8c1d4fda.
+//
+// Solidity: function setInkPrice(uint32 price) returns()
+func (_ArbOwner *ArbOwnerTransactor) SetInkPrice(opts *bind.TransactOpts, price uint32) (*types.Transaction, error) {
+	return _ArbOwner.contract.Transact(opts, "setInkPrice", price)
+}
+
+// SetInkPrice is a paid mutator transaction binding the contract method 0x8c1d4fda.
+//
+// Solidity: function setInkPrice(uint32 price) returns()
+func (_ArbOwner *ArbOwnerSession) SetInkPrice(price uint32) (*types.Transaction, error) {
+	return _ArbOwner.Contract.SetInkPrice(&_ArbOwner.TransactOpts, price)
+}
+
+// SetInkPrice is a paid mutator transaction binding the contract method 0x8c1d4fda.
+//
+// Solidity: function setInkPrice(uint32 price) returns()
+func (_ArbOwner *ArbOwnerTransactorSession) SetInkPrice(price uint32) (*types.Transaction, error) {
+	return _ArbOwner.Contract.SetInkPrice(&_ArbOwner.TransactOpts, price)
 }
 
 // SetL1BaseFeeEstimateInertia is a paid mutator transaction binding the contract method 0x718f7805.
@@ -3743,6 +3827,195 @@ func (_ArbOwner *ArbOwnerSession) SetSpeedLimit(limit uint64) (*types.Transactio
 // Solidity: function setSpeedLimit(uint64 limit) returns()
 func (_ArbOwner *ArbOwnerTransactorSession) SetSpeedLimit(limit uint64) (*types.Transaction, error) {
 	return _ArbOwner.Contract.SetSpeedLimit(&_ArbOwner.TransactOpts, limit)
+}
+
+// SetWasmBlockCacheSize is a paid mutator transaction binding the contract method 0x380f1457.
+//
+// Solidity: function setWasmBlockCacheSize(uint16 count) returns()
+func (_ArbOwner *ArbOwnerTransactor) SetWasmBlockCacheSize(opts *bind.TransactOpts, count uint16) (*types.Transaction, error) {
+	return _ArbOwner.contract.Transact(opts, "setWasmBlockCacheSize", count)
+}
+
+// SetWasmBlockCacheSize is a paid mutator transaction binding the contract method 0x380f1457.
+//
+// Solidity: function setWasmBlockCacheSize(uint16 count) returns()
+func (_ArbOwner *ArbOwnerSession) SetWasmBlockCacheSize(count uint16) (*types.Transaction, error) {
+	return _ArbOwner.Contract.SetWasmBlockCacheSize(&_ArbOwner.TransactOpts, count)
+}
+
+// SetWasmBlockCacheSize is a paid mutator transaction binding the contract method 0x380f1457.
+//
+// Solidity: function setWasmBlockCacheSize(uint16 count) returns()
+func (_ArbOwner *ArbOwnerTransactorSession) SetWasmBlockCacheSize(count uint16) (*types.Transaction, error) {
+	return _ArbOwner.Contract.SetWasmBlockCacheSize(&_ArbOwner.TransactOpts, count)
+}
+
+// SetWasmExpiryDays is a paid mutator transaction binding the contract method 0xaac68018.
+//
+// Solidity: function setWasmExpiryDays(uint16 _days) returns()
+func (_ArbOwner *ArbOwnerTransactor) SetWasmExpiryDays(opts *bind.TransactOpts, _days uint16) (*types.Transaction, error) {
+	return _ArbOwner.contract.Transact(opts, "setWasmExpiryDays", _days)
+}
+
+// SetWasmExpiryDays is a paid mutator transaction binding the contract method 0xaac68018.
+//
+// Solidity: function setWasmExpiryDays(uint16 _days) returns()
+func (_ArbOwner *ArbOwnerSession) SetWasmExpiryDays(_days uint16) (*types.Transaction, error) {
+	return _ArbOwner.Contract.SetWasmExpiryDays(&_ArbOwner.TransactOpts, _days)
+}
+
+// SetWasmExpiryDays is a paid mutator transaction binding the contract method 0xaac68018.
+//
+// Solidity: function setWasmExpiryDays(uint16 _days) returns()
+func (_ArbOwner *ArbOwnerTransactorSession) SetWasmExpiryDays(_days uint16) (*types.Transaction, error) {
+	return _ArbOwner.Contract.SetWasmExpiryDays(&_ArbOwner.TransactOpts, _days)
+}
+
+// SetWasmFreePages is a paid mutator transaction binding the contract method 0x3f37a846.
+//
+// Solidity: function setWasmFreePages(uint16 pages) returns()
+func (_ArbOwner *ArbOwnerTransactor) SetWasmFreePages(opts *bind.TransactOpts, pages uint16) (*types.Transaction, error) {
+	return _ArbOwner.contract.Transact(opts, "setWasmFreePages", pages)
+}
+
+// SetWasmFreePages is a paid mutator transaction binding the contract method 0x3f37a846.
+//
+// Solidity: function setWasmFreePages(uint16 pages) returns()
+func (_ArbOwner *ArbOwnerSession) SetWasmFreePages(pages uint16) (*types.Transaction, error) {
+	return _ArbOwner.Contract.SetWasmFreePages(&_ArbOwner.TransactOpts, pages)
+}
+
+// SetWasmFreePages is a paid mutator transaction binding the contract method 0x3f37a846.
+//
+// Solidity: function setWasmFreePages(uint16 pages) returns()
+func (_ArbOwner *ArbOwnerTransactorSession) SetWasmFreePages(pages uint16) (*types.Transaction, error) {
+	return _ArbOwner.Contract.SetWasmFreePages(&_ArbOwner.TransactOpts, pages)
+}
+
+// SetWasmInitCostScalar is a paid mutator transaction binding the contract method 0x67e0718f.
+//
+// Solidity: function setWasmInitCostScalar(uint64 percent) returns()
+func (_ArbOwner *ArbOwnerTransactor) SetWasmInitCostScalar(opts *bind.TransactOpts, percent uint64) (*types.Transaction, error) {
+	return _ArbOwner.contract.Transact(opts, "setWasmInitCostScalar", percent)
+}
+
+// SetWasmInitCostScalar is a paid mutator transaction binding the contract method 0x67e0718f.
+//
+// Solidity: function setWasmInitCostScalar(uint64 percent) returns()
+func (_ArbOwner *ArbOwnerSession) SetWasmInitCostScalar(percent uint64) (*types.Transaction, error) {
+	return _ArbOwner.Contract.SetWasmInitCostScalar(&_ArbOwner.TransactOpts, percent)
+}
+
+// SetWasmInitCostScalar is a paid mutator transaction binding the contract method 0x67e0718f.
+//
+// Solidity: function setWasmInitCostScalar(uint64 percent) returns()
+func (_ArbOwner *ArbOwnerTransactorSession) SetWasmInitCostScalar(percent uint64) (*types.Transaction, error) {
+	return _ArbOwner.Contract.SetWasmInitCostScalar(&_ArbOwner.TransactOpts, percent)
+}
+
+// SetWasmKeepaliveDays is a paid mutator transaction binding the contract method 0x2a9cbe3e.
+//
+// Solidity: function setWasmKeepaliveDays(uint16 _days) returns()
+func (_ArbOwner *ArbOwnerTransactor) SetWasmKeepaliveDays(opts *bind.TransactOpts, _days uint16) (*types.Transaction, error) {
+	return _ArbOwner.contract.Transact(opts, "setWasmKeepaliveDays", _days)
+}
+
+// SetWasmKeepaliveDays is a paid mutator transaction binding the contract method 0x2a9cbe3e.
+//
+// Solidity: function setWasmKeepaliveDays(uint16 _days) returns()
+func (_ArbOwner *ArbOwnerSession) SetWasmKeepaliveDays(_days uint16) (*types.Transaction, error) {
+	return _ArbOwner.Contract.SetWasmKeepaliveDays(&_ArbOwner.TransactOpts, _days)
+}
+
+// SetWasmKeepaliveDays is a paid mutator transaction binding the contract method 0x2a9cbe3e.
+//
+// Solidity: function setWasmKeepaliveDays(uint16 _days) returns()
+func (_ArbOwner *ArbOwnerTransactorSession) SetWasmKeepaliveDays(_days uint16) (*types.Transaction, error) {
+	return _ArbOwner.Contract.SetWasmKeepaliveDays(&_ArbOwner.TransactOpts, _days)
+}
+
+// SetWasmMaxStackDepth is a paid mutator transaction binding the contract method 0x4567cc8e.
+//
+// Solidity: function setWasmMaxStackDepth(uint32 depth) returns()
+func (_ArbOwner *ArbOwnerTransactor) SetWasmMaxStackDepth(opts *bind.TransactOpts, depth uint32) (*types.Transaction, error) {
+	return _ArbOwner.contract.Transact(opts, "setWasmMaxStackDepth", depth)
+}
+
+// SetWasmMaxStackDepth is a paid mutator transaction binding the contract method 0x4567cc8e.
+//
+// Solidity: function setWasmMaxStackDepth(uint32 depth) returns()
+func (_ArbOwner *ArbOwnerSession) SetWasmMaxStackDepth(depth uint32) (*types.Transaction, error) {
+	return _ArbOwner.Contract.SetWasmMaxStackDepth(&_ArbOwner.TransactOpts, depth)
+}
+
+// SetWasmMaxStackDepth is a paid mutator transaction binding the contract method 0x4567cc8e.
+//
+// Solidity: function setWasmMaxStackDepth(uint32 depth) returns()
+func (_ArbOwner *ArbOwnerTransactorSession) SetWasmMaxStackDepth(depth uint32) (*types.Transaction, error) {
+	return _ArbOwner.Contract.SetWasmMaxStackDepth(&_ArbOwner.TransactOpts, depth)
+}
+
+// SetWasmMinInitGas is a paid mutator transaction binding the contract method 0x8293405e.
+//
+// Solidity: function setWasmMinInitGas(uint8 gas, uint16 cached) returns()
+func (_ArbOwner *ArbOwnerTransactor) SetWasmMinInitGas(opts *bind.TransactOpts, gas uint8, cached uint16) (*types.Transaction, error) {
+	return _ArbOwner.contract.Transact(opts, "setWasmMinInitGas", gas, cached)
+}
+
+// SetWasmMinInitGas is a paid mutator transaction binding the contract method 0x8293405e.
+//
+// Solidity: function setWasmMinInitGas(uint8 gas, uint16 cached) returns()
+func (_ArbOwner *ArbOwnerSession) SetWasmMinInitGas(gas uint8, cached uint16) (*types.Transaction, error) {
+	return _ArbOwner.Contract.SetWasmMinInitGas(&_ArbOwner.TransactOpts, gas, cached)
+}
+
+// SetWasmMinInitGas is a paid mutator transaction binding the contract method 0x8293405e.
+//
+// Solidity: function setWasmMinInitGas(uint8 gas, uint16 cached) returns()
+func (_ArbOwner *ArbOwnerTransactorSession) SetWasmMinInitGas(gas uint8, cached uint16) (*types.Transaction, error) {
+	return _ArbOwner.Contract.SetWasmMinInitGas(&_ArbOwner.TransactOpts, gas, cached)
+}
+
+// SetWasmPageGas is a paid mutator transaction binding the contract method 0xaaa619e0.
+//
+// Solidity: function setWasmPageGas(uint16 gas) returns()
+func (_ArbOwner *ArbOwnerTransactor) SetWasmPageGas(opts *bind.TransactOpts, gas uint16) (*types.Transaction, error) {
+	return _ArbOwner.contract.Transact(opts, "setWasmPageGas", gas)
+}
+
+// SetWasmPageGas is a paid mutator transaction binding the contract method 0xaaa619e0.
+//
+// Solidity: function setWasmPageGas(uint16 gas) returns()
+func (_ArbOwner *ArbOwnerSession) SetWasmPageGas(gas uint16) (*types.Transaction, error) {
+	return _ArbOwner.Contract.SetWasmPageGas(&_ArbOwner.TransactOpts, gas)
+}
+
+// SetWasmPageGas is a paid mutator transaction binding the contract method 0xaaa619e0.
+//
+// Solidity: function setWasmPageGas(uint16 gas) returns()
+func (_ArbOwner *ArbOwnerTransactorSession) SetWasmPageGas(gas uint16) (*types.Transaction, error) {
+	return _ArbOwner.Contract.SetWasmPageGas(&_ArbOwner.TransactOpts, gas)
+}
+
+// SetWasmPageLimit is a paid mutator transaction binding the contract method 0x6595381a.
+//
+// Solidity: function setWasmPageLimit(uint16 limit) returns()
+func (_ArbOwner *ArbOwnerTransactor) SetWasmPageLimit(opts *bind.TransactOpts, limit uint16) (*types.Transaction, error) {
+	return _ArbOwner.contract.Transact(opts, "setWasmPageLimit", limit)
+}
+
+// SetWasmPageLimit is a paid mutator transaction binding the contract method 0x6595381a.
+//
+// Solidity: function setWasmPageLimit(uint16 limit) returns()
+func (_ArbOwner *ArbOwnerSession) SetWasmPageLimit(limit uint16) (*types.Transaction, error) {
+	return _ArbOwner.Contract.SetWasmPageLimit(&_ArbOwner.TransactOpts, limit)
+}
+
+// SetWasmPageLimit is a paid mutator transaction binding the contract method 0x6595381a.
+//
+// Solidity: function setWasmPageLimit(uint16 limit) returns()
+func (_ArbOwner *ArbOwnerTransactorSession) SetWasmPageLimit(limit uint16) (*types.Transaction, error) {
+	return _ArbOwner.Contract.SetWasmPageLimit(&_ArbOwner.TransactOpts, limit)
 }
 
 // ArbOwnerOwnerActsIterator is returned from FilterOwnerActs and is used to iterate over the raw logs and unpacked data for OwnerActs events raised by the ArbOwner contract.
@@ -6709,6 +6982,1518 @@ func (_ArbSys *ArbSysFilterer) WatchSendMerkleUpdate(opts *bind.WatchOpts, sink 
 func (_ArbSys *ArbSysFilterer) ParseSendMerkleUpdate(log types.Log) (*ArbSysSendMerkleUpdate, error) {
 	event := new(ArbSysSendMerkleUpdate)
 	if err := _ArbSys.contract.UnpackLog(event, "SendMerkleUpdate", log); err != nil {
+		return nil, err
+	}
+	event.Raw = log
+	return event, nil
+}
+
+// ArbWasmMetaData contains all meta data concerning the ArbWasm contract.
+var ArbWasmMetaData = &bind.MetaData{
+	ABI: "[{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"ageInSeconds\",\"type\":\"uint64\"}],\"name\":\"ProgramExpired\",\"type\":\"error\"},{\"inputs\":[{\"internalType\":\"uint256\",\"name\":\"have\",\"type\":\"uint256\"},{\"internalType\":\"uint256\",\"name\":\"want\",\"type\":\"uint256\"}],\"name\":\"ProgramInsufficientValue\",\"type\":\"error\"},{\"inputs\":[{\"internalType\":\"uint64\",\"name\":\"ageInSeconds\",\"type\":\"uint64\"}],\"name\":\"ProgramKeepaliveTooSoon\",\"type\":\"error\"},{\"inputs\":[{\"internalType\":\"uint16\",\"name\":\"version\",\"type\":\"uint16\"},{\"internalType\":\"uint16\",\"name\":\"stylusVersion\",\"type\":\"uint16\"}],\"name\":\"ProgramNeedsUpgrade\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"ProgramNotActivated\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"ProgramNotWasm\",\"type\":\"error\"},{\"inputs\":[],\"name\":\"ProgramUpToDate\",\"type\":\"error\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"codehash\",\"type\":\"bytes32\"},{\"indexed\":false,\"internalType\":\"bytes32\",\"name\":\"moduleHash\",\"type\":\"bytes32\"},{\"indexed\":false,\"internalType\":\"address\",\"name\":\"program\",\"type\":\"address\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"dataFee\",\"type\":\"uint256\"},{\"indexed\":false,\"internalType\":\"uint16\",\"name\":\"version\",\"type\":\"uint16\"}],\"name\":\"ProgramActivated\",\"type\":\"event\"},{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"codehash\",\"type\":\"bytes32\"},{\"indexed\":false,\"internalType\":\"uint256\",\"name\":\"dataFee\",\"type\":\"uint256\"}],\"name\":\"ProgramLifetimeExtended\",\"type\":\"event\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"program\",\"type\":\"address\"}],\"name\":\"activateProgram\",\"outputs\":[{\"internalType\":\"uint16\",\"name\":\"version\",\"type\":\"uint16\"},{\"internalType\":\"uint256\",\"name\":\"dataFee\",\"type\":\"uint256\"}],\"stateMutability\":\"payable\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"blockCacheSize\",\"outputs\":[{\"internalType\":\"uint16\",\"name\":\"count\",\"type\":\"uint16\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"codehash\",\"type\":\"bytes32\"}],\"name\":\"codehashAsmSize\",\"outputs\":[{\"internalType\":\"uint32\",\"name\":\"size\",\"type\":\"uint32\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"codehash\",\"type\":\"bytes32\"}],\"name\":\"codehashKeepalive\",\"outputs\":[],\"stateMutability\":\"payable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"codehash\",\"type\":\"bytes32\"}],\"name\":\"codehashVersion\",\"outputs\":[{\"internalType\":\"uint16\",\"name\":\"version\",\"type\":\"uint16\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"expiryDays\",\"outputs\":[{\"internalType\":\"uint16\",\"name\":\"_days\",\"type\":\"uint16\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"freePages\",\"outputs\":[{\"internalType\":\"uint16\",\"name\":\"pages\",\"type\":\"uint16\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"initCostScalar\",\"outputs\":[{\"internalType\":\"uint64\",\"name\":\"percent\",\"type\":\"uint64\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"inkPrice\",\"outputs\":[{\"internalType\":\"uint32\",\"name\":\"price\",\"type\":\"uint32\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"keepaliveDays\",\"outputs\":[{\"internalType\":\"uint16\",\"name\":\"_days\",\"type\":\"uint16\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"maxStackDepth\",\"outputs\":[{\"internalType\":\"uint32\",\"name\":\"depth\",\"type\":\"uint32\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"minInitGas\",\"outputs\":[{\"internalType\":\"uint8\",\"name\":\"gas\",\"type\":\"uint8\"},{\"internalType\":\"uint8\",\"name\":\"cached\",\"type\":\"uint8\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"pageGas\",\"outputs\":[{\"internalType\":\"uint16\",\"name\":\"gas\",\"type\":\"uint16\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"pageLimit\",\"outputs\":[{\"internalType\":\"uint16\",\"name\":\"limit\",\"type\":\"uint16\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"pageRamp\",\"outputs\":[{\"internalType\":\"uint64\",\"name\":\"ramp\",\"type\":\"uint64\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"program\",\"type\":\"address\"}],\"name\":\"programInitGas\",\"outputs\":[{\"internalType\":\"uint64\",\"name\":\"gas\",\"type\":\"uint64\"},{\"internalType\":\"uint64\",\"name\":\"gasWhenCached\",\"type\":\"uint64\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"program\",\"type\":\"address\"}],\"name\":\"programMemoryFootprint\",\"outputs\":[{\"internalType\":\"uint16\",\"name\":\"footprint\",\"type\":\"uint16\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"program\",\"type\":\"address\"}],\"name\":\"programTimeLeft\",\"outputs\":[{\"internalType\":\"uint64\",\"name\":\"_secs\",\"type\":\"uint64\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"program\",\"type\":\"address\"}],\"name\":\"programVersion\",\"outputs\":[{\"internalType\":\"uint16\",\"name\":\"version\",\"type\":\"uint16\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[],\"name\":\"stylusVersion\",\"outputs\":[{\"internalType\":\"uint16\",\"name\":\"version\",\"type\":\"uint16\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]",
+}
+
+// ArbWasmABI is the input ABI used to generate the binding from.
+// Deprecated: Use ArbWasmMetaData.ABI instead.
+var ArbWasmABI = ArbWasmMetaData.ABI
+
+// ArbWasm is an auto generated Go binding around an Ethereum contract.
+type ArbWasm struct {
+	ArbWasmCaller     // Read-only binding to the contract
+	ArbWasmTransactor // Write-only binding to the contract
+	ArbWasmFilterer   // Log filterer for contract events
+}
+
+// ArbWasmCaller is an auto generated read-only Go binding around an Ethereum contract.
+type ArbWasmCaller struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// ArbWasmTransactor is an auto generated write-only Go binding around an Ethereum contract.
+type ArbWasmTransactor struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// ArbWasmFilterer is an auto generated log filtering Go binding around an Ethereum contract events.
+type ArbWasmFilterer struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// ArbWasmSession is an auto generated Go binding around an Ethereum contract,
+// with pre-set call and transact options.
+type ArbWasmSession struct {
+	Contract     *ArbWasm          // Generic contract binding to set the session for
+	CallOpts     bind.CallOpts     // Call options to use throughout this session
+	TransactOpts bind.TransactOpts // Transaction auth options to use throughout this session
+}
+
+// ArbWasmCallerSession is an auto generated read-only Go binding around an Ethereum contract,
+// with pre-set call options.
+type ArbWasmCallerSession struct {
+	Contract *ArbWasmCaller // Generic contract caller binding to set the session for
+	CallOpts bind.CallOpts  // Call options to use throughout this session
+}
+
+// ArbWasmTransactorSession is an auto generated write-only Go binding around an Ethereum contract,
+// with pre-set transact options.
+type ArbWasmTransactorSession struct {
+	Contract     *ArbWasmTransactor // Generic contract transactor binding to set the session for
+	TransactOpts bind.TransactOpts  // Transaction auth options to use throughout this session
+}
+
+// ArbWasmRaw is an auto generated low-level Go binding around an Ethereum contract.
+type ArbWasmRaw struct {
+	Contract *ArbWasm // Generic contract binding to access the raw methods on
+}
+
+// ArbWasmCallerRaw is an auto generated low-level read-only Go binding around an Ethereum contract.
+type ArbWasmCallerRaw struct {
+	Contract *ArbWasmCaller // Generic read-only contract binding to access the raw methods on
+}
+
+// ArbWasmTransactorRaw is an auto generated low-level write-only Go binding around an Ethereum contract.
+type ArbWasmTransactorRaw struct {
+	Contract *ArbWasmTransactor // Generic write-only contract binding to access the raw methods on
+}
+
+// NewArbWasm creates a new instance of ArbWasm, bound to a specific deployed contract.
+func NewArbWasm(address common.Address, backend bind.ContractBackend) (*ArbWasm, error) {
+	contract, err := bindArbWasm(address, backend, backend, backend)
+	if err != nil {
+		return nil, err
+	}
+	return &ArbWasm{ArbWasmCaller: ArbWasmCaller{contract: contract}, ArbWasmTransactor: ArbWasmTransactor{contract: contract}, ArbWasmFilterer: ArbWasmFilterer{contract: contract}}, nil
+}
+
+// NewArbWasmCaller creates a new read-only instance of ArbWasm, bound to a specific deployed contract.
+func NewArbWasmCaller(address common.Address, caller bind.ContractCaller) (*ArbWasmCaller, error) {
+	contract, err := bindArbWasm(address, caller, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &ArbWasmCaller{contract: contract}, nil
+}
+
+// NewArbWasmTransactor creates a new write-only instance of ArbWasm, bound to a specific deployed contract.
+func NewArbWasmTransactor(address common.Address, transactor bind.ContractTransactor) (*ArbWasmTransactor, error) {
+	contract, err := bindArbWasm(address, nil, transactor, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &ArbWasmTransactor{contract: contract}, nil
+}
+
+// NewArbWasmFilterer creates a new log filterer instance of ArbWasm, bound to a specific deployed contract.
+func NewArbWasmFilterer(address common.Address, filterer bind.ContractFilterer) (*ArbWasmFilterer, error) {
+	contract, err := bindArbWasm(address, nil, nil, filterer)
+	if err != nil {
+		return nil, err
+	}
+	return &ArbWasmFilterer{contract: contract}, nil
+}
+
+// bindArbWasm binds a generic wrapper to an already deployed contract.
+func bindArbWasm(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
+	parsed, err := ArbWasmMetaData.GetAbi()
+	if err != nil {
+		return nil, err
+	}
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_ArbWasm *ArbWasmRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _ArbWasm.Contract.ArbWasmCaller.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_ArbWasm *ArbWasmRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _ArbWasm.Contract.ArbWasmTransactor.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_ArbWasm *ArbWasmRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _ArbWasm.Contract.ArbWasmTransactor.contract.Transact(opts, method, params...)
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_ArbWasm *ArbWasmCallerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _ArbWasm.Contract.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_ArbWasm *ArbWasmTransactorRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _ArbWasm.Contract.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_ArbWasm *ArbWasmTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _ArbWasm.Contract.contract.Transact(opts, method, params...)
+}
+
+// BlockCacheSize is a free data retrieval call binding the contract method 0x7af6e819.
+//
+// Solidity: function blockCacheSize() view returns(uint16 count)
+func (_ArbWasm *ArbWasmCaller) BlockCacheSize(opts *bind.CallOpts) (uint16, error) {
+	var out []interface{}
+	err := _ArbWasm.contract.Call(opts, &out, "blockCacheSize")
+
+	if err != nil {
+		return *new(uint16), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(uint16)).(*uint16)
+
+	return out0, err
+
+}
+
+// BlockCacheSize is a free data retrieval call binding the contract method 0x7af6e819.
+//
+// Solidity: function blockCacheSize() view returns(uint16 count)
+func (_ArbWasm *ArbWasmSession) BlockCacheSize() (uint16, error) {
+	return _ArbWasm.Contract.BlockCacheSize(&_ArbWasm.CallOpts)
+}
+
+// BlockCacheSize is a free data retrieval call binding the contract method 0x7af6e819.
+//
+// Solidity: function blockCacheSize() view returns(uint16 count)
+func (_ArbWasm *ArbWasmCallerSession) BlockCacheSize() (uint16, error) {
+	return _ArbWasm.Contract.BlockCacheSize(&_ArbWasm.CallOpts)
+}
+
+// CodehashAsmSize is a free data retrieval call binding the contract method 0x4089267f.
+//
+// Solidity: function codehashAsmSize(bytes32 codehash) view returns(uint32 size)
+func (_ArbWasm *ArbWasmCaller) CodehashAsmSize(opts *bind.CallOpts, codehash [32]byte) (uint32, error) {
+	var out []interface{}
+	err := _ArbWasm.contract.Call(opts, &out, "codehashAsmSize", codehash)
+
+	if err != nil {
+		return *new(uint32), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(uint32)).(*uint32)
+
+	return out0, err
+
+}
+
+// CodehashAsmSize is a free data retrieval call binding the contract method 0x4089267f.
+//
+// Solidity: function codehashAsmSize(bytes32 codehash) view returns(uint32 size)
+func (_ArbWasm *ArbWasmSession) CodehashAsmSize(codehash [32]byte) (uint32, error) {
+	return _ArbWasm.Contract.CodehashAsmSize(&_ArbWasm.CallOpts, codehash)
+}
+
+// CodehashAsmSize is a free data retrieval call binding the contract method 0x4089267f.
+//
+// Solidity: function codehashAsmSize(bytes32 codehash) view returns(uint32 size)
+func (_ArbWasm *ArbWasmCallerSession) CodehashAsmSize(codehash [32]byte) (uint32, error) {
+	return _ArbWasm.Contract.CodehashAsmSize(&_ArbWasm.CallOpts, codehash)
+}
+
+// CodehashVersion is a free data retrieval call binding the contract method 0xd70c0ca7.
+//
+// Solidity: function codehashVersion(bytes32 codehash) view returns(uint16 version)
+func (_ArbWasm *ArbWasmCaller) CodehashVersion(opts *bind.CallOpts, codehash [32]byte) (uint16, error) {
+	var out []interface{}
+	err := _ArbWasm.contract.Call(opts, &out, "codehashVersion", codehash)
+
+	if err != nil {
+		return *new(uint16), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(uint16)).(*uint16)
+
+	return out0, err
+
+}
+
+// CodehashVersion is a free data retrieval call binding the contract method 0xd70c0ca7.
+//
+// Solidity: function codehashVersion(bytes32 codehash) view returns(uint16 version)
+func (_ArbWasm *ArbWasmSession) CodehashVersion(codehash [32]byte) (uint16, error) {
+	return _ArbWasm.Contract.CodehashVersion(&_ArbWasm.CallOpts, codehash)
+}
+
+// CodehashVersion is a free data retrieval call binding the contract method 0xd70c0ca7.
+//
+// Solidity: function codehashVersion(bytes32 codehash) view returns(uint16 version)
+func (_ArbWasm *ArbWasmCallerSession) CodehashVersion(codehash [32]byte) (uint16, error) {
+	return _ArbWasm.Contract.CodehashVersion(&_ArbWasm.CallOpts, codehash)
+}
+
+// ExpiryDays is a free data retrieval call binding the contract method 0x309f6555.
+//
+// Solidity: function expiryDays() view returns(uint16 _days)
+func (_ArbWasm *ArbWasmCaller) ExpiryDays(opts *bind.CallOpts) (uint16, error) {
+	var out []interface{}
+	err := _ArbWasm.contract.Call(opts, &out, "expiryDays")
+
+	if err != nil {
+		return *new(uint16), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(uint16)).(*uint16)
+
+	return out0, err
+
+}
+
+// ExpiryDays is a free data retrieval call binding the contract method 0x309f6555.
+//
+// Solidity: function expiryDays() view returns(uint16 _days)
+func (_ArbWasm *ArbWasmSession) ExpiryDays() (uint16, error) {
+	return _ArbWasm.Contract.ExpiryDays(&_ArbWasm.CallOpts)
+}
+
+// ExpiryDays is a free data retrieval call binding the contract method 0x309f6555.
+//
+// Solidity: function expiryDays() view returns(uint16 _days)
+func (_ArbWasm *ArbWasmCallerSession) ExpiryDays() (uint16, error) {
+	return _ArbWasm.Contract.ExpiryDays(&_ArbWasm.CallOpts)
+}
+
+// FreePages is a free data retrieval call binding the contract method 0x4490c19d.
+//
+// Solidity: function freePages() view returns(uint16 pages)
+func (_ArbWasm *ArbWasmCaller) FreePages(opts *bind.CallOpts) (uint16, error) {
+	var out []interface{}
+	err := _ArbWasm.contract.Call(opts, &out, "freePages")
+
+	if err != nil {
+		return *new(uint16), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(uint16)).(*uint16)
+
+	return out0, err
+
+}
+
+// FreePages is a free data retrieval call binding the contract method 0x4490c19d.
+//
+// Solidity: function freePages() view returns(uint16 pages)
+func (_ArbWasm *ArbWasmSession) FreePages() (uint16, error) {
+	return _ArbWasm.Contract.FreePages(&_ArbWasm.CallOpts)
+}
+
+// FreePages is a free data retrieval call binding the contract method 0x4490c19d.
+//
+// Solidity: function freePages() view returns(uint16 pages)
+func (_ArbWasm *ArbWasmCallerSession) FreePages() (uint16, error) {
+	return _ArbWasm.Contract.FreePages(&_ArbWasm.CallOpts)
+}
+
+// InitCostScalar is a free data retrieval call binding the contract method 0x5fc94c0b.
+//
+// Solidity: function initCostScalar() view returns(uint64 percent)
+func (_ArbWasm *ArbWasmCaller) InitCostScalar(opts *bind.CallOpts) (uint64, error) {
+	var out []interface{}
+	err := _ArbWasm.contract.Call(opts, &out, "initCostScalar")
+
+	if err != nil {
+		return *new(uint64), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(uint64)).(*uint64)
+
+	return out0, err
+
+}
+
+// InitCostScalar is a free data retrieval call binding the contract method 0x5fc94c0b.
+//
+// Solidity: function initCostScalar() view returns(uint64 percent)
+func (_ArbWasm *ArbWasmSession) InitCostScalar() (uint64, error) {
+	return _ArbWasm.Contract.InitCostScalar(&_ArbWasm.CallOpts)
+}
+
+// InitCostScalar is a free data retrieval call binding the contract method 0x5fc94c0b.
+//
+// Solidity: function initCostScalar() view returns(uint64 percent)
+func (_ArbWasm *ArbWasmCallerSession) InitCostScalar() (uint64, error) {
+	return _ArbWasm.Contract.InitCostScalar(&_ArbWasm.CallOpts)
+}
+
+// InkPrice is a free data retrieval call binding the contract method 0xd1c17abc.
+//
+// Solidity: function inkPrice() view returns(uint32 price)
+func (_ArbWasm *ArbWasmCaller) InkPrice(opts *bind.CallOpts) (uint32, error) {
+	var out []interface{}
+	err := _ArbWasm.contract.Call(opts, &out, "inkPrice")
+
+	if err != nil {
+		return *new(uint32), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(uint32)).(*uint32)
+
+	return out0, err
+
+}
+
+// InkPrice is a free data retrieval call binding the contract method 0xd1c17abc.
+//
+// Solidity: function inkPrice() view returns(uint32 price)
+func (_ArbWasm *ArbWasmSession) InkPrice() (uint32, error) {
+	return _ArbWasm.Contract.InkPrice(&_ArbWasm.CallOpts)
+}
+
+// InkPrice is a free data retrieval call binding the contract method 0xd1c17abc.
+//
+// Solidity: function inkPrice() view returns(uint32 price)
+func (_ArbWasm *ArbWasmCallerSession) InkPrice() (uint32, error) {
+	return _ArbWasm.Contract.InkPrice(&_ArbWasm.CallOpts)
+}
+
+// KeepaliveDays is a free data retrieval call binding the contract method 0x0a936455.
+//
+// Solidity: function keepaliveDays() view returns(uint16 _days)
+func (_ArbWasm *ArbWasmCaller) KeepaliveDays(opts *bind.CallOpts) (uint16, error) {
+	var out []interface{}
+	err := _ArbWasm.contract.Call(opts, &out, "keepaliveDays")
+
+	if err != nil {
+		return *new(uint16), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(uint16)).(*uint16)
+
+	return out0, err
+
+}
+
+// KeepaliveDays is a free data retrieval call binding the contract method 0x0a936455.
+//
+// Solidity: function keepaliveDays() view returns(uint16 _days)
+func (_ArbWasm *ArbWasmSession) KeepaliveDays() (uint16, error) {
+	return _ArbWasm.Contract.KeepaliveDays(&_ArbWasm.CallOpts)
+}
+
+// KeepaliveDays is a free data retrieval call binding the contract method 0x0a936455.
+//
+// Solidity: function keepaliveDays() view returns(uint16 _days)
+func (_ArbWasm *ArbWasmCallerSession) KeepaliveDays() (uint16, error) {
+	return _ArbWasm.Contract.KeepaliveDays(&_ArbWasm.CallOpts)
+}
+
+// MaxStackDepth is a free data retrieval call binding the contract method 0x8ccfaa70.
+//
+// Solidity: function maxStackDepth() view returns(uint32 depth)
+func (_ArbWasm *ArbWasmCaller) MaxStackDepth(opts *bind.CallOpts) (uint32, error) {
+	var out []interface{}
+	err := _ArbWasm.contract.Call(opts, &out, "maxStackDepth")
+
+	if err != nil {
+		return *new(uint32), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(uint32)).(*uint32)
+
+	return out0, err
+
+}
+
+// MaxStackDepth is a free data retrieval call binding the contract method 0x8ccfaa70.
+//
+// Solidity: function maxStackDepth() view returns(uint32 depth)
+func (_ArbWasm *ArbWasmSession) MaxStackDepth() (uint32, error) {
+	return _ArbWasm.Contract.MaxStackDepth(&_ArbWasm.CallOpts)
+}
+
+// MaxStackDepth is a free data retrieval call binding the contract method 0x8ccfaa70.
+//
+// Solidity: function maxStackDepth() view returns(uint32 depth)
+func (_ArbWasm *ArbWasmCallerSession) MaxStackDepth() (uint32, error) {
+	return _ArbWasm.Contract.MaxStackDepth(&_ArbWasm.CallOpts)
+}
+
+// MinInitGas is a free data retrieval call binding the contract method 0x99d0b38d.
+//
+// Solidity: function minInitGas() view returns(uint8 gas, uint8 cached)
+func (_ArbWasm *ArbWasmCaller) MinInitGas(opts *bind.CallOpts) (struct {
+	Gas    uint8
+	Cached uint8
+}, error) {
+	var out []interface{}
+	err := _ArbWasm.contract.Call(opts, &out, "minInitGas")
+
+	outstruct := new(struct {
+		Gas    uint8
+		Cached uint8
+	})
+	if err != nil {
+		return *outstruct, err
+	}
+
+	outstruct.Gas = *abi.ConvertType(out[0], new(uint8)).(*uint8)
+	outstruct.Cached = *abi.ConvertType(out[1], new(uint8)).(*uint8)
+
+	return *outstruct, err
+
+}
+
+// MinInitGas is a free data retrieval call binding the contract method 0x99d0b38d.
+//
+// Solidity: function minInitGas() view returns(uint8 gas, uint8 cached)
+func (_ArbWasm *ArbWasmSession) MinInitGas() (struct {
+	Gas    uint8
+	Cached uint8
+}, error) {
+	return _ArbWasm.Contract.MinInitGas(&_ArbWasm.CallOpts)
+}
+
+// MinInitGas is a free data retrieval call binding the contract method 0x99d0b38d.
+//
+// Solidity: function minInitGas() view returns(uint8 gas, uint8 cached)
+func (_ArbWasm *ArbWasmCallerSession) MinInitGas() (struct {
+	Gas    uint8
+	Cached uint8
+}, error) {
+	return _ArbWasm.Contract.MinInitGas(&_ArbWasm.CallOpts)
+}
+
+// PageGas is a free data retrieval call binding the contract method 0x7af4ba49.
+//
+// Solidity: function pageGas() view returns(uint16 gas)
+func (_ArbWasm *ArbWasmCaller) PageGas(opts *bind.CallOpts) (uint16, error) {
+	var out []interface{}
+	err := _ArbWasm.contract.Call(opts, &out, "pageGas")
+
+	if err != nil {
+		return *new(uint16), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(uint16)).(*uint16)
+
+	return out0, err
+
+}
+
+// PageGas is a free data retrieval call binding the contract method 0x7af4ba49.
+//
+// Solidity: function pageGas() view returns(uint16 gas)
+func (_ArbWasm *ArbWasmSession) PageGas() (uint16, error) {
+	return _ArbWasm.Contract.PageGas(&_ArbWasm.CallOpts)
+}
+
+// PageGas is a free data retrieval call binding the contract method 0x7af4ba49.
+//
+// Solidity: function pageGas() view returns(uint16 gas)
+func (_ArbWasm *ArbWasmCallerSession) PageGas() (uint16, error) {
+	return _ArbWasm.Contract.PageGas(&_ArbWasm.CallOpts)
+}
+
+// PageLimit is a free data retrieval call binding the contract method 0x9786f96e.
+//
+// Solidity: function pageLimit() view returns(uint16 limit)
+func (_ArbWasm *ArbWasmCaller) PageLimit(opts *bind.CallOpts) (uint16, error) {
+	var out []interface{}
+	err := _ArbWasm.contract.Call(opts, &out, "pageLimit")
+
+	if err != nil {
+		return *new(uint16), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(uint16)).(*uint16)
+
+	return out0, err
+
+}
+
+// PageLimit is a free data retrieval call binding the contract method 0x9786f96e.
+//
+// Solidity: function pageLimit() view returns(uint16 limit)
+func (_ArbWasm *ArbWasmSession) PageLimit() (uint16, error) {
+	return _ArbWasm.Contract.PageLimit(&_ArbWasm.CallOpts)
+}
+
+// PageLimit is a free data retrieval call binding the contract method 0x9786f96e.
+//
+// Solidity: function pageLimit() view returns(uint16 limit)
+func (_ArbWasm *ArbWasmCallerSession) PageLimit() (uint16, error) {
+	return _ArbWasm.Contract.PageLimit(&_ArbWasm.CallOpts)
+}
+
+// PageRamp is a free data retrieval call binding the contract method 0x11c82ae8.
+//
+// Solidity: function pageRamp() view returns(uint64 ramp)
+func (_ArbWasm *ArbWasmCaller) PageRamp(opts *bind.CallOpts) (uint64, error) {
+	var out []interface{}
+	err := _ArbWasm.contract.Call(opts, &out, "pageRamp")
+
+	if err != nil {
+		return *new(uint64), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(uint64)).(*uint64)
+
+	return out0, err
+
+}
+
+// PageRamp is a free data retrieval call binding the contract method 0x11c82ae8.
+//
+// Solidity: function pageRamp() view returns(uint64 ramp)
+func (_ArbWasm *ArbWasmSession) PageRamp() (uint64, error) {
+	return _ArbWasm.Contract.PageRamp(&_ArbWasm.CallOpts)
+}
+
+// PageRamp is a free data retrieval call binding the contract method 0x11c82ae8.
+//
+// Solidity: function pageRamp() view returns(uint64 ramp)
+func (_ArbWasm *ArbWasmCallerSession) PageRamp() (uint64, error) {
+	return _ArbWasm.Contract.PageRamp(&_ArbWasm.CallOpts)
+}
+
+// ProgramInitGas is a free data retrieval call binding the contract method 0x62b688aa.
+//
+// Solidity: function programInitGas(address program) view returns(uint64 gas, uint64 gasWhenCached)
+func (_ArbWasm *ArbWasmCaller) ProgramInitGas(opts *bind.CallOpts, program common.Address) (struct {
+	Gas           uint64
+	GasWhenCached uint64
+}, error) {
+	var out []interface{}
+	err := _ArbWasm.contract.Call(opts, &out, "programInitGas", program)
+
+	outstruct := new(struct {
+		Gas           uint64
+		GasWhenCached uint64
+	})
+	if err != nil {
+		return *outstruct, err
+	}
+
+	outstruct.Gas = *abi.ConvertType(out[0], new(uint64)).(*uint64)
+	outstruct.GasWhenCached = *abi.ConvertType(out[1], new(uint64)).(*uint64)
+
+	return *outstruct, err
+
+}
+
+// ProgramInitGas is a free data retrieval call binding the contract method 0x62b688aa.
+//
+// Solidity: function programInitGas(address program) view returns(uint64 gas, uint64 gasWhenCached)
+func (_ArbWasm *ArbWasmSession) ProgramInitGas(program common.Address) (struct {
+	Gas           uint64
+	GasWhenCached uint64
+}, error) {
+	return _ArbWasm.Contract.ProgramInitGas(&_ArbWasm.CallOpts, program)
+}
+
+// ProgramInitGas is a free data retrieval call binding the contract method 0x62b688aa.
+//
+// Solidity: function programInitGas(address program) view returns(uint64 gas, uint64 gasWhenCached)
+func (_ArbWasm *ArbWasmCallerSession) ProgramInitGas(program common.Address) (struct {
+	Gas           uint64
+	GasWhenCached uint64
+}, error) {
+	return _ArbWasm.Contract.ProgramInitGas(&_ArbWasm.CallOpts, program)
+}
+
+// ProgramMemoryFootprint is a free data retrieval call binding the contract method 0xaef36be3.
+//
+// Solidity: function programMemoryFootprint(address program) view returns(uint16 footprint)
+func (_ArbWasm *ArbWasmCaller) ProgramMemoryFootprint(opts *bind.CallOpts, program common.Address) (uint16, error) {
+	var out []interface{}
+	err := _ArbWasm.contract.Call(opts, &out, "programMemoryFootprint", program)
+
+	if err != nil {
+		return *new(uint16), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(uint16)).(*uint16)
+
+	return out0, err
+
+}
+
+// ProgramMemoryFootprint is a free data retrieval call binding the contract method 0xaef36be3.
+//
+// Solidity: function programMemoryFootprint(address program) view returns(uint16 footprint)
+func (_ArbWasm *ArbWasmSession) ProgramMemoryFootprint(program common.Address) (uint16, error) {
+	return _ArbWasm.Contract.ProgramMemoryFootprint(&_ArbWasm.CallOpts, program)
+}
+
+// ProgramMemoryFootprint is a free data retrieval call binding the contract method 0xaef36be3.
+//
+// Solidity: function programMemoryFootprint(address program) view returns(uint16 footprint)
+func (_ArbWasm *ArbWasmCallerSession) ProgramMemoryFootprint(program common.Address) (uint16, error) {
+	return _ArbWasm.Contract.ProgramMemoryFootprint(&_ArbWasm.CallOpts, program)
+}
+
+// ProgramTimeLeft is a free data retrieval call binding the contract method 0xc775a62a.
+//
+// Solidity: function programTimeLeft(address program) view returns(uint64 _secs)
+func (_ArbWasm *ArbWasmCaller) ProgramTimeLeft(opts *bind.CallOpts, program common.Address) (uint64, error) {
+	var out []interface{}
+	err := _ArbWasm.contract.Call(opts, &out, "programTimeLeft", program)
+
+	if err != nil {
+		return *new(uint64), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(uint64)).(*uint64)
+
+	return out0, err
+
+}
+
+// ProgramTimeLeft is a free data retrieval call binding the contract method 0xc775a62a.
+//
+// Solidity: function programTimeLeft(address program) view returns(uint64 _secs)
+func (_ArbWasm *ArbWasmSession) ProgramTimeLeft(program common.Address) (uint64, error) {
+	return _ArbWasm.Contract.ProgramTimeLeft(&_ArbWasm.CallOpts, program)
+}
+
+// ProgramTimeLeft is a free data retrieval call binding the contract method 0xc775a62a.
+//
+// Solidity: function programTimeLeft(address program) view returns(uint64 _secs)
+func (_ArbWasm *ArbWasmCallerSession) ProgramTimeLeft(program common.Address) (uint64, error) {
+	return _ArbWasm.Contract.ProgramTimeLeft(&_ArbWasm.CallOpts, program)
+}
+
+// ProgramVersion is a free data retrieval call binding the contract method 0xcc8f4e88.
+//
+// Solidity: function programVersion(address program) view returns(uint16 version)
+func (_ArbWasm *ArbWasmCaller) ProgramVersion(opts *bind.CallOpts, program common.Address) (uint16, error) {
+	var out []interface{}
+	err := _ArbWasm.contract.Call(opts, &out, "programVersion", program)
+
+	if err != nil {
+		return *new(uint16), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(uint16)).(*uint16)
+
+	return out0, err
+
+}
+
+// ProgramVersion is a free data retrieval call binding the contract method 0xcc8f4e88.
+//
+// Solidity: function programVersion(address program) view returns(uint16 version)
+func (_ArbWasm *ArbWasmSession) ProgramVersion(program common.Address) (uint16, error) {
+	return _ArbWasm.Contract.ProgramVersion(&_ArbWasm.CallOpts, program)
+}
+
+// ProgramVersion is a free data retrieval call binding the contract method 0xcc8f4e88.
+//
+// Solidity: function programVersion(address program) view returns(uint16 version)
+func (_ArbWasm *ArbWasmCallerSession) ProgramVersion(program common.Address) (uint16, error) {
+	return _ArbWasm.Contract.ProgramVersion(&_ArbWasm.CallOpts, program)
+}
+
+// StylusVersion is a free data retrieval call binding the contract method 0xa996e0c2.
+//
+// Solidity: function stylusVersion() view returns(uint16 version)
+func (_ArbWasm *ArbWasmCaller) StylusVersion(opts *bind.CallOpts) (uint16, error) {
+	var out []interface{}
+	err := _ArbWasm.contract.Call(opts, &out, "stylusVersion")
+
+	if err != nil {
+		return *new(uint16), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(uint16)).(*uint16)
+
+	return out0, err
+
+}
+
+// StylusVersion is a free data retrieval call binding the contract method 0xa996e0c2.
+//
+// Solidity: function stylusVersion() view returns(uint16 version)
+func (_ArbWasm *ArbWasmSession) StylusVersion() (uint16, error) {
+	return _ArbWasm.Contract.StylusVersion(&_ArbWasm.CallOpts)
+}
+
+// StylusVersion is a free data retrieval call binding the contract method 0xa996e0c2.
+//
+// Solidity: function stylusVersion() view returns(uint16 version)
+func (_ArbWasm *ArbWasmCallerSession) StylusVersion() (uint16, error) {
+	return _ArbWasm.Contract.StylusVersion(&_ArbWasm.CallOpts)
+}
+
+// ActivateProgram is a paid mutator transaction binding the contract method 0x58c780c2.
+//
+// Solidity: function activateProgram(address program) payable returns(uint16 version, uint256 dataFee)
+func (_ArbWasm *ArbWasmTransactor) ActivateProgram(opts *bind.TransactOpts, program common.Address) (*types.Transaction, error) {
+	return _ArbWasm.contract.Transact(opts, "activateProgram", program)
+}
+
+// ActivateProgram is a paid mutator transaction binding the contract method 0x58c780c2.
+//
+// Solidity: function activateProgram(address program) payable returns(uint16 version, uint256 dataFee)
+func (_ArbWasm *ArbWasmSession) ActivateProgram(program common.Address) (*types.Transaction, error) {
+	return _ArbWasm.Contract.ActivateProgram(&_ArbWasm.TransactOpts, program)
+}
+
+// ActivateProgram is a paid mutator transaction binding the contract method 0x58c780c2.
+//
+// Solidity: function activateProgram(address program) payable returns(uint16 version, uint256 dataFee)
+func (_ArbWasm *ArbWasmTransactorSession) ActivateProgram(program common.Address) (*types.Transaction, error) {
+	return _ArbWasm.Contract.ActivateProgram(&_ArbWasm.TransactOpts, program)
+}
+
+// CodehashKeepalive is a paid mutator transaction binding the contract method 0xc689bad5.
+//
+// Solidity: function codehashKeepalive(bytes32 codehash) payable returns()
+func (_ArbWasm *ArbWasmTransactor) CodehashKeepalive(opts *bind.TransactOpts, codehash [32]byte) (*types.Transaction, error) {
+	return _ArbWasm.contract.Transact(opts, "codehashKeepalive", codehash)
+}
+
+// CodehashKeepalive is a paid mutator transaction binding the contract method 0xc689bad5.
+//
+// Solidity: function codehashKeepalive(bytes32 codehash) payable returns()
+func (_ArbWasm *ArbWasmSession) CodehashKeepalive(codehash [32]byte) (*types.Transaction, error) {
+	return _ArbWasm.Contract.CodehashKeepalive(&_ArbWasm.TransactOpts, codehash)
+}
+
+// CodehashKeepalive is a paid mutator transaction binding the contract method 0xc689bad5.
+//
+// Solidity: function codehashKeepalive(bytes32 codehash) payable returns()
+func (_ArbWasm *ArbWasmTransactorSession) CodehashKeepalive(codehash [32]byte) (*types.Transaction, error) {
+	return _ArbWasm.Contract.CodehashKeepalive(&_ArbWasm.TransactOpts, codehash)
+}
+
+// ArbWasmProgramActivatedIterator is returned from FilterProgramActivated and is used to iterate over the raw logs and unpacked data for ProgramActivated events raised by the ArbWasm contract.
+type ArbWasmProgramActivatedIterator struct {
+	Event *ArbWasmProgramActivated // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *ArbWasmProgramActivatedIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(ArbWasmProgramActivated)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(ArbWasmProgramActivated)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *ArbWasmProgramActivatedIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *ArbWasmProgramActivatedIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// ArbWasmProgramActivated represents a ProgramActivated event raised by the ArbWasm contract.
+type ArbWasmProgramActivated struct {
+	Codehash   [32]byte
+	ModuleHash [32]byte
+	Program    common.Address
+	DataFee    *big.Int
+	Version    uint16
+	Raw        types.Log // Blockchain specific contextual infos
+}
+
+// FilterProgramActivated is a free log retrieval operation binding the contract event 0xc0e812780707128d9a180db8ee4d1c1f1300b6dd0626d577b5d9ac759b76253c.
+//
+// Solidity: event ProgramActivated(bytes32 indexed codehash, bytes32 moduleHash, address program, uint256 dataFee, uint16 version)
+func (_ArbWasm *ArbWasmFilterer) FilterProgramActivated(opts *bind.FilterOpts, codehash [][32]byte) (*ArbWasmProgramActivatedIterator, error) {
+
+	var codehashRule []interface{}
+	for _, codehashItem := range codehash {
+		codehashRule = append(codehashRule, codehashItem)
+	}
+
+	logs, sub, err := _ArbWasm.contract.FilterLogs(opts, "ProgramActivated", codehashRule)
+	if err != nil {
+		return nil, err
+	}
+	return &ArbWasmProgramActivatedIterator{contract: _ArbWasm.contract, event: "ProgramActivated", logs: logs, sub: sub}, nil
+}
+
+// WatchProgramActivated is a free log subscription operation binding the contract event 0xc0e812780707128d9a180db8ee4d1c1f1300b6dd0626d577b5d9ac759b76253c.
+//
+// Solidity: event ProgramActivated(bytes32 indexed codehash, bytes32 moduleHash, address program, uint256 dataFee, uint16 version)
+func (_ArbWasm *ArbWasmFilterer) WatchProgramActivated(opts *bind.WatchOpts, sink chan<- *ArbWasmProgramActivated, codehash [][32]byte) (event.Subscription, error) {
+
+	var codehashRule []interface{}
+	for _, codehashItem := range codehash {
+		codehashRule = append(codehashRule, codehashItem)
+	}
+
+	logs, sub, err := _ArbWasm.contract.WatchLogs(opts, "ProgramActivated", codehashRule)
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(ArbWasmProgramActivated)
+				if err := _ArbWasm.contract.UnpackLog(event, "ProgramActivated", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// ParseProgramActivated is a log parse operation binding the contract event 0xc0e812780707128d9a180db8ee4d1c1f1300b6dd0626d577b5d9ac759b76253c.
+//
+// Solidity: event ProgramActivated(bytes32 indexed codehash, bytes32 moduleHash, address program, uint256 dataFee, uint16 version)
+func (_ArbWasm *ArbWasmFilterer) ParseProgramActivated(log types.Log) (*ArbWasmProgramActivated, error) {
+	event := new(ArbWasmProgramActivated)
+	if err := _ArbWasm.contract.UnpackLog(event, "ProgramActivated", log); err != nil {
+		return nil, err
+	}
+	event.Raw = log
+	return event, nil
+}
+
+// ArbWasmProgramLifetimeExtendedIterator is returned from FilterProgramLifetimeExtended and is used to iterate over the raw logs and unpacked data for ProgramLifetimeExtended events raised by the ArbWasm contract.
+type ArbWasmProgramLifetimeExtendedIterator struct {
+	Event *ArbWasmProgramLifetimeExtended // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *ArbWasmProgramLifetimeExtendedIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(ArbWasmProgramLifetimeExtended)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(ArbWasmProgramLifetimeExtended)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *ArbWasmProgramLifetimeExtendedIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *ArbWasmProgramLifetimeExtendedIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// ArbWasmProgramLifetimeExtended represents a ProgramLifetimeExtended event raised by the ArbWasm contract.
+type ArbWasmProgramLifetimeExtended struct {
+	Codehash [32]byte
+	DataFee  *big.Int
+	Raw      types.Log // Blockchain specific contextual infos
+}
+
+// FilterProgramLifetimeExtended is a free log retrieval operation binding the contract event 0x03802ba32e3bd489d2ab04abb93d10687e0b6883bcb091206ca75172d248f2ec.
+//
+// Solidity: event ProgramLifetimeExtended(bytes32 indexed codehash, uint256 dataFee)
+func (_ArbWasm *ArbWasmFilterer) FilterProgramLifetimeExtended(opts *bind.FilterOpts, codehash [][32]byte) (*ArbWasmProgramLifetimeExtendedIterator, error) {
+
+	var codehashRule []interface{}
+	for _, codehashItem := range codehash {
+		codehashRule = append(codehashRule, codehashItem)
+	}
+
+	logs, sub, err := _ArbWasm.contract.FilterLogs(opts, "ProgramLifetimeExtended", codehashRule)
+	if err != nil {
+		return nil, err
+	}
+	return &ArbWasmProgramLifetimeExtendedIterator{contract: _ArbWasm.contract, event: "ProgramLifetimeExtended", logs: logs, sub: sub}, nil
+}
+
+// WatchProgramLifetimeExtended is a free log subscription operation binding the contract event 0x03802ba32e3bd489d2ab04abb93d10687e0b6883bcb091206ca75172d248f2ec.
+//
+// Solidity: event ProgramLifetimeExtended(bytes32 indexed codehash, uint256 dataFee)
+func (_ArbWasm *ArbWasmFilterer) WatchProgramLifetimeExtended(opts *bind.WatchOpts, sink chan<- *ArbWasmProgramLifetimeExtended, codehash [][32]byte) (event.Subscription, error) {
+
+	var codehashRule []interface{}
+	for _, codehashItem := range codehash {
+		codehashRule = append(codehashRule, codehashItem)
+	}
+
+	logs, sub, err := _ArbWasm.contract.WatchLogs(opts, "ProgramLifetimeExtended", codehashRule)
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(ArbWasmProgramLifetimeExtended)
+				if err := _ArbWasm.contract.UnpackLog(event, "ProgramLifetimeExtended", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// ParseProgramLifetimeExtended is a log parse operation binding the contract event 0x03802ba32e3bd489d2ab04abb93d10687e0b6883bcb091206ca75172d248f2ec.
+//
+// Solidity: event ProgramLifetimeExtended(bytes32 indexed codehash, uint256 dataFee)
+func (_ArbWasm *ArbWasmFilterer) ParseProgramLifetimeExtended(log types.Log) (*ArbWasmProgramLifetimeExtended, error) {
+	event := new(ArbWasmProgramLifetimeExtended)
+	if err := _ArbWasm.contract.UnpackLog(event, "ProgramLifetimeExtended", log); err != nil {
+		return nil, err
+	}
+	event.Raw = log
+	return event, nil
+}
+
+// ArbWasmCacheMetaData contains all meta data concerning the ArbWasmCache contract.
+var ArbWasmCacheMetaData = &bind.MetaData{
+	ABI: "[{\"anonymous\":false,\"inputs\":[{\"indexed\":true,\"internalType\":\"address\",\"name\":\"manager\",\"type\":\"address\"},{\"indexed\":true,\"internalType\":\"bytes32\",\"name\":\"codehash\",\"type\":\"bytes32\"},{\"indexed\":false,\"internalType\":\"bool\",\"name\":\"cached\",\"type\":\"bool\"}],\"name\":\"UpdateProgramCache\",\"type\":\"event\"},{\"inputs\":[],\"name\":\"allCacheManagers\",\"outputs\":[{\"internalType\":\"address[]\",\"name\":\"managers\",\"type\":\"address[]\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"codehash\",\"type\":\"bytes32\"}],\"name\":\"cacheCodehash\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"codehash\",\"type\":\"bytes32\"}],\"name\":\"codehashIsCached\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"bytes32\",\"name\":\"codehash\",\"type\":\"bytes32\"}],\"name\":\"evictCodehash\",\"outputs\":[],\"stateMutability\":\"nonpayable\",\"type\":\"function\"},{\"inputs\":[{\"internalType\":\"address\",\"name\":\"manager\",\"type\":\"address\"}],\"name\":\"isCacheManager\",\"outputs\":[{\"internalType\":\"bool\",\"name\":\"\",\"type\":\"bool\"}],\"stateMutability\":\"view\",\"type\":\"function\"}]",
+}
+
+// ArbWasmCacheABI is the input ABI used to generate the binding from.
+// Deprecated: Use ArbWasmCacheMetaData.ABI instead.
+var ArbWasmCacheABI = ArbWasmCacheMetaData.ABI
+
+// ArbWasmCache is an auto generated Go binding around an Ethereum contract.
+type ArbWasmCache struct {
+	ArbWasmCacheCaller     // Read-only binding to the contract
+	ArbWasmCacheTransactor // Write-only binding to the contract
+	ArbWasmCacheFilterer   // Log filterer for contract events
+}
+
+// ArbWasmCacheCaller is an auto generated read-only Go binding around an Ethereum contract.
+type ArbWasmCacheCaller struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// ArbWasmCacheTransactor is an auto generated write-only Go binding around an Ethereum contract.
+type ArbWasmCacheTransactor struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// ArbWasmCacheFilterer is an auto generated log filtering Go binding around an Ethereum contract events.
+type ArbWasmCacheFilterer struct {
+	contract *bind.BoundContract // Generic contract wrapper for the low level calls
+}
+
+// ArbWasmCacheSession is an auto generated Go binding around an Ethereum contract,
+// with pre-set call and transact options.
+type ArbWasmCacheSession struct {
+	Contract     *ArbWasmCache     // Generic contract binding to set the session for
+	CallOpts     bind.CallOpts     // Call options to use throughout this session
+	TransactOpts bind.TransactOpts // Transaction auth options to use throughout this session
+}
+
+// ArbWasmCacheCallerSession is an auto generated read-only Go binding around an Ethereum contract,
+// with pre-set call options.
+type ArbWasmCacheCallerSession struct {
+	Contract *ArbWasmCacheCaller // Generic contract caller binding to set the session for
+	CallOpts bind.CallOpts       // Call options to use throughout this session
+}
+
+// ArbWasmCacheTransactorSession is an auto generated write-only Go binding around an Ethereum contract,
+// with pre-set transact options.
+type ArbWasmCacheTransactorSession struct {
+	Contract     *ArbWasmCacheTransactor // Generic contract transactor binding to set the session for
+	TransactOpts bind.TransactOpts       // Transaction auth options to use throughout this session
+}
+
+// ArbWasmCacheRaw is an auto generated low-level Go binding around an Ethereum contract.
+type ArbWasmCacheRaw struct {
+	Contract *ArbWasmCache // Generic contract binding to access the raw methods on
+}
+
+// ArbWasmCacheCallerRaw is an auto generated low-level read-only Go binding around an Ethereum contract.
+type ArbWasmCacheCallerRaw struct {
+	Contract *ArbWasmCacheCaller // Generic read-only contract binding to access the raw methods on
+}
+
+// ArbWasmCacheTransactorRaw is an auto generated low-level write-only Go binding around an Ethereum contract.
+type ArbWasmCacheTransactorRaw struct {
+	Contract *ArbWasmCacheTransactor // Generic write-only contract binding to access the raw methods on
+}
+
+// NewArbWasmCache creates a new instance of ArbWasmCache, bound to a specific deployed contract.
+func NewArbWasmCache(address common.Address, backend bind.ContractBackend) (*ArbWasmCache, error) {
+	contract, err := bindArbWasmCache(address, backend, backend, backend)
+	if err != nil {
+		return nil, err
+	}
+	return &ArbWasmCache{ArbWasmCacheCaller: ArbWasmCacheCaller{contract: contract}, ArbWasmCacheTransactor: ArbWasmCacheTransactor{contract: contract}, ArbWasmCacheFilterer: ArbWasmCacheFilterer{contract: contract}}, nil
+}
+
+// NewArbWasmCacheCaller creates a new read-only instance of ArbWasmCache, bound to a specific deployed contract.
+func NewArbWasmCacheCaller(address common.Address, caller bind.ContractCaller) (*ArbWasmCacheCaller, error) {
+	contract, err := bindArbWasmCache(address, caller, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &ArbWasmCacheCaller{contract: contract}, nil
+}
+
+// NewArbWasmCacheTransactor creates a new write-only instance of ArbWasmCache, bound to a specific deployed contract.
+func NewArbWasmCacheTransactor(address common.Address, transactor bind.ContractTransactor) (*ArbWasmCacheTransactor, error) {
+	contract, err := bindArbWasmCache(address, nil, transactor, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &ArbWasmCacheTransactor{contract: contract}, nil
+}
+
+// NewArbWasmCacheFilterer creates a new log filterer instance of ArbWasmCache, bound to a specific deployed contract.
+func NewArbWasmCacheFilterer(address common.Address, filterer bind.ContractFilterer) (*ArbWasmCacheFilterer, error) {
+	contract, err := bindArbWasmCache(address, nil, nil, filterer)
+	if err != nil {
+		return nil, err
+	}
+	return &ArbWasmCacheFilterer{contract: contract}, nil
+}
+
+// bindArbWasmCache binds a generic wrapper to an already deployed contract.
+func bindArbWasmCache(address common.Address, caller bind.ContractCaller, transactor bind.ContractTransactor, filterer bind.ContractFilterer) (*bind.BoundContract, error) {
+	parsed, err := ArbWasmCacheMetaData.GetAbi()
+	if err != nil {
+		return nil, err
+	}
+	return bind.NewBoundContract(address, *parsed, caller, transactor, filterer), nil
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_ArbWasmCache *ArbWasmCacheRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _ArbWasmCache.Contract.ArbWasmCacheCaller.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_ArbWasmCache *ArbWasmCacheRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _ArbWasmCache.Contract.ArbWasmCacheTransactor.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_ArbWasmCache *ArbWasmCacheRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _ArbWasmCache.Contract.ArbWasmCacheTransactor.contract.Transact(opts, method, params...)
+}
+
+// Call invokes the (constant) contract method with params as input values and
+// sets the output to result. The result type might be a single field for simple
+// returns, a slice of interfaces for anonymous returns and a struct for named
+// returns.
+func (_ArbWasmCache *ArbWasmCacheCallerRaw) Call(opts *bind.CallOpts, result *[]interface{}, method string, params ...interface{}) error {
+	return _ArbWasmCache.Contract.contract.Call(opts, result, method, params...)
+}
+
+// Transfer initiates a plain transaction to move funds to the contract, calling
+// its default method if one is available.
+func (_ArbWasmCache *ArbWasmCacheTransactorRaw) Transfer(opts *bind.TransactOpts) (*types.Transaction, error) {
+	return _ArbWasmCache.Contract.contract.Transfer(opts)
+}
+
+// Transact invokes the (paid) contract method with params as input values.
+func (_ArbWasmCache *ArbWasmCacheTransactorRaw) Transact(opts *bind.TransactOpts, method string, params ...interface{}) (*types.Transaction, error) {
+	return _ArbWasmCache.Contract.contract.Transact(opts, method, params...)
+}
+
+// AllCacheManagers is a free data retrieval call binding the contract method 0x0ec1d773.
+//
+// Solidity: function allCacheManagers() view returns(address[] managers)
+func (_ArbWasmCache *ArbWasmCacheCaller) AllCacheManagers(opts *bind.CallOpts) ([]common.Address, error) {
+	var out []interface{}
+	err := _ArbWasmCache.contract.Call(opts, &out, "allCacheManagers")
+
+	if err != nil {
+		return *new([]common.Address), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new([]common.Address)).(*[]common.Address)
+
+	return out0, err
+
+}
+
+// AllCacheManagers is a free data retrieval call binding the contract method 0x0ec1d773.
+//
+// Solidity: function allCacheManagers() view returns(address[] managers)
+func (_ArbWasmCache *ArbWasmCacheSession) AllCacheManagers() ([]common.Address, error) {
+	return _ArbWasmCache.Contract.AllCacheManagers(&_ArbWasmCache.CallOpts)
+}
+
+// AllCacheManagers is a free data retrieval call binding the contract method 0x0ec1d773.
+//
+// Solidity: function allCacheManagers() view returns(address[] managers)
+func (_ArbWasmCache *ArbWasmCacheCallerSession) AllCacheManagers() ([]common.Address, error) {
+	return _ArbWasmCache.Contract.AllCacheManagers(&_ArbWasmCache.CallOpts)
+}
+
+// CodehashIsCached is a free data retrieval call binding the contract method 0xa72f179b.
+//
+// Solidity: function codehashIsCached(bytes32 codehash) view returns(bool)
+func (_ArbWasmCache *ArbWasmCacheCaller) CodehashIsCached(opts *bind.CallOpts, codehash [32]byte) (bool, error) {
+	var out []interface{}
+	err := _ArbWasmCache.contract.Call(opts, &out, "codehashIsCached", codehash)
+
+	if err != nil {
+		return *new(bool), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(bool)).(*bool)
+
+	return out0, err
+
+}
+
+// CodehashIsCached is a free data retrieval call binding the contract method 0xa72f179b.
+//
+// Solidity: function codehashIsCached(bytes32 codehash) view returns(bool)
+func (_ArbWasmCache *ArbWasmCacheSession) CodehashIsCached(codehash [32]byte) (bool, error) {
+	return _ArbWasmCache.Contract.CodehashIsCached(&_ArbWasmCache.CallOpts, codehash)
+}
+
+// CodehashIsCached is a free data retrieval call binding the contract method 0xa72f179b.
+//
+// Solidity: function codehashIsCached(bytes32 codehash) view returns(bool)
+func (_ArbWasmCache *ArbWasmCacheCallerSession) CodehashIsCached(codehash [32]byte) (bool, error) {
+	return _ArbWasmCache.Contract.CodehashIsCached(&_ArbWasmCache.CallOpts, codehash)
+}
+
+// IsCacheManager is a free data retrieval call binding the contract method 0x85e2de85.
+//
+// Solidity: function isCacheManager(address manager) view returns(bool)
+func (_ArbWasmCache *ArbWasmCacheCaller) IsCacheManager(opts *bind.CallOpts, manager common.Address) (bool, error) {
+	var out []interface{}
+	err := _ArbWasmCache.contract.Call(opts, &out, "isCacheManager", manager)
+
+	if err != nil {
+		return *new(bool), err
+	}
+
+	out0 := *abi.ConvertType(out[0], new(bool)).(*bool)
+
+	return out0, err
+
+}
+
+// IsCacheManager is a free data retrieval call binding the contract method 0x85e2de85.
+//
+// Solidity: function isCacheManager(address manager) view returns(bool)
+func (_ArbWasmCache *ArbWasmCacheSession) IsCacheManager(manager common.Address) (bool, error) {
+	return _ArbWasmCache.Contract.IsCacheManager(&_ArbWasmCache.CallOpts, manager)
+}
+
+// IsCacheManager is a free data retrieval call binding the contract method 0x85e2de85.
+//
+// Solidity: function isCacheManager(address manager) view returns(bool)
+func (_ArbWasmCache *ArbWasmCacheCallerSession) IsCacheManager(manager common.Address) (bool, error) {
+	return _ArbWasmCache.Contract.IsCacheManager(&_ArbWasmCache.CallOpts, manager)
+}
+
+// CacheCodehash is a paid mutator transaction binding the contract method 0x4ceac817.
+//
+// Solidity: function cacheCodehash(bytes32 codehash) returns()
+func (_ArbWasmCache *ArbWasmCacheTransactor) CacheCodehash(opts *bind.TransactOpts, codehash [32]byte) (*types.Transaction, error) {
+	return _ArbWasmCache.contract.Transact(opts, "cacheCodehash", codehash)
+}
+
+// CacheCodehash is a paid mutator transaction binding the contract method 0x4ceac817.
+//
+// Solidity: function cacheCodehash(bytes32 codehash) returns()
+func (_ArbWasmCache *ArbWasmCacheSession) CacheCodehash(codehash [32]byte) (*types.Transaction, error) {
+	return _ArbWasmCache.Contract.CacheCodehash(&_ArbWasmCache.TransactOpts, codehash)
+}
+
+// CacheCodehash is a paid mutator transaction binding the contract method 0x4ceac817.
+//
+// Solidity: function cacheCodehash(bytes32 codehash) returns()
+func (_ArbWasmCache *ArbWasmCacheTransactorSession) CacheCodehash(codehash [32]byte) (*types.Transaction, error) {
+	return _ArbWasmCache.Contract.CacheCodehash(&_ArbWasmCache.TransactOpts, codehash)
+}
+
+// EvictCodehash is a paid mutator transaction binding the contract method 0xce972013.
+//
+// Solidity: function evictCodehash(bytes32 codehash) returns()
+func (_ArbWasmCache *ArbWasmCacheTransactor) EvictCodehash(opts *bind.TransactOpts, codehash [32]byte) (*types.Transaction, error) {
+	return _ArbWasmCache.contract.Transact(opts, "evictCodehash", codehash)
+}
+
+// EvictCodehash is a paid mutator transaction binding the contract method 0xce972013.
+//
+// Solidity: function evictCodehash(bytes32 codehash) returns()
+func (_ArbWasmCache *ArbWasmCacheSession) EvictCodehash(codehash [32]byte) (*types.Transaction, error) {
+	return _ArbWasmCache.Contract.EvictCodehash(&_ArbWasmCache.TransactOpts, codehash)
+}
+
+// EvictCodehash is a paid mutator transaction binding the contract method 0xce972013.
+//
+// Solidity: function evictCodehash(bytes32 codehash) returns()
+func (_ArbWasmCache *ArbWasmCacheTransactorSession) EvictCodehash(codehash [32]byte) (*types.Transaction, error) {
+	return _ArbWasmCache.Contract.EvictCodehash(&_ArbWasmCache.TransactOpts, codehash)
+}
+
+// ArbWasmCacheUpdateProgramCacheIterator is returned from FilterUpdateProgramCache and is used to iterate over the raw logs and unpacked data for UpdateProgramCache events raised by the ArbWasmCache contract.
+type ArbWasmCacheUpdateProgramCacheIterator struct {
+	Event *ArbWasmCacheUpdateProgramCache // Event containing the contract specifics and raw log
+
+	contract *bind.BoundContract // Generic contract to use for unpacking event data
+	event    string              // Event name to use for unpacking event data
+
+	logs chan types.Log        // Log channel receiving the found contract events
+	sub  ethereum.Subscription // Subscription for errors, completion and termination
+	done bool                  // Whether the subscription completed delivering logs
+	fail error                 // Occurred error to stop iteration
+}
+
+// Next advances the iterator to the subsequent event, returning whether there
+// are any more events found. In case of a retrieval or parsing error, false is
+// returned and Error() can be queried for the exact failure.
+func (it *ArbWasmCacheUpdateProgramCacheIterator) Next() bool {
+	// If the iterator failed, stop iterating
+	if it.fail != nil {
+		return false
+	}
+	// If the iterator completed, deliver directly whatever's available
+	if it.done {
+		select {
+		case log := <-it.logs:
+			it.Event = new(ArbWasmCacheUpdateProgramCache)
+			if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+				it.fail = err
+				return false
+			}
+			it.Event.Raw = log
+			return true
+
+		default:
+			return false
+		}
+	}
+	// Iterator still in progress, wait for either a data or an error event
+	select {
+	case log := <-it.logs:
+		it.Event = new(ArbWasmCacheUpdateProgramCache)
+		if err := it.contract.UnpackLog(it.Event, it.event, log); err != nil {
+			it.fail = err
+			return false
+		}
+		it.Event.Raw = log
+		return true
+
+	case err := <-it.sub.Err():
+		it.done = true
+		it.fail = err
+		return it.Next()
+	}
+}
+
+// Error returns any retrieval or parsing error occurred during filtering.
+func (it *ArbWasmCacheUpdateProgramCacheIterator) Error() error {
+	return it.fail
+}
+
+// Close terminates the iteration process, releasing any pending underlying
+// resources.
+func (it *ArbWasmCacheUpdateProgramCacheIterator) Close() error {
+	it.sub.Unsubscribe()
+	return nil
+}
+
+// ArbWasmCacheUpdateProgramCache represents a UpdateProgramCache event raised by the ArbWasmCache contract.
+type ArbWasmCacheUpdateProgramCache struct {
+	Manager  common.Address
+	Codehash [32]byte
+	Cached   bool
+	Raw      types.Log // Blockchain specific contextual infos
+}
+
+// FilterUpdateProgramCache is a free log retrieval operation binding the contract event 0x1bfaa29b4618e78f5b398027d530826dbb266dc976a5067f67fdad15434ecfab.
+//
+// Solidity: event UpdateProgramCache(address indexed manager, bytes32 indexed codehash, bool cached)
+func (_ArbWasmCache *ArbWasmCacheFilterer) FilterUpdateProgramCache(opts *bind.FilterOpts, manager []common.Address, codehash [][32]byte) (*ArbWasmCacheUpdateProgramCacheIterator, error) {
+
+	var managerRule []interface{}
+	for _, managerItem := range manager {
+		managerRule = append(managerRule, managerItem)
+	}
+	var codehashRule []interface{}
+	for _, codehashItem := range codehash {
+		codehashRule = append(codehashRule, codehashItem)
+	}
+
+	logs, sub, err := _ArbWasmCache.contract.FilterLogs(opts, "UpdateProgramCache", managerRule, codehashRule)
+	if err != nil {
+		return nil, err
+	}
+	return &ArbWasmCacheUpdateProgramCacheIterator{contract: _ArbWasmCache.contract, event: "UpdateProgramCache", logs: logs, sub: sub}, nil
+}
+
+// WatchUpdateProgramCache is a free log subscription operation binding the contract event 0x1bfaa29b4618e78f5b398027d530826dbb266dc976a5067f67fdad15434ecfab.
+//
+// Solidity: event UpdateProgramCache(address indexed manager, bytes32 indexed codehash, bool cached)
+func (_ArbWasmCache *ArbWasmCacheFilterer) WatchUpdateProgramCache(opts *bind.WatchOpts, sink chan<- *ArbWasmCacheUpdateProgramCache, manager []common.Address, codehash [][32]byte) (event.Subscription, error) {
+
+	var managerRule []interface{}
+	for _, managerItem := range manager {
+		managerRule = append(managerRule, managerItem)
+	}
+	var codehashRule []interface{}
+	for _, codehashItem := range codehash {
+		codehashRule = append(codehashRule, codehashItem)
+	}
+
+	logs, sub, err := _ArbWasmCache.contract.WatchLogs(opts, "UpdateProgramCache", managerRule, codehashRule)
+	if err != nil {
+		return nil, err
+	}
+	return event.NewSubscription(func(quit <-chan struct{}) error {
+		defer sub.Unsubscribe()
+		for {
+			select {
+			case log := <-logs:
+				// New log arrived, parse the event and forward to the user
+				event := new(ArbWasmCacheUpdateProgramCache)
+				if err := _ArbWasmCache.contract.UnpackLog(event, "UpdateProgramCache", log); err != nil {
+					return err
+				}
+				event.Raw = log
+
+				select {
+				case sink <- event:
+				case err := <-sub.Err():
+					return err
+				case <-quit:
+					return nil
+				}
+			case err := <-sub.Err():
+				return err
+			case <-quit:
+				return nil
+			}
+		}
+	}), nil
+}
+
+// ParseUpdateProgramCache is a log parse operation binding the contract event 0x1bfaa29b4618e78f5b398027d530826dbb266dc976a5067f67fdad15434ecfab.
+//
+// Solidity: event UpdateProgramCache(address indexed manager, bytes32 indexed codehash, bool cached)
+func (_ArbWasmCache *ArbWasmCacheFilterer) ParseUpdateProgramCache(log types.Log) (*ArbWasmCacheUpdateProgramCache, error) {
+	event := new(ArbWasmCacheUpdateProgramCache)
+	if err := _ArbWasmCache.contract.UnpackLog(event, "UpdateProgramCache", log); err != nil {
 		return nil, err
 	}
 	event.Raw = log

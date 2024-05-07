@@ -19,13 +19,6 @@ contract OneStepProverMemory is IOneStepProver {
     uint256 private constant LEAF_SIZE = 32;
     uint64 private constant PAGE_SIZE = 65536;
 
-    function pullLeafByte(bytes32 leaf, uint256 idx) internal pure returns (uint8) {
-        require(idx < LEAF_SIZE, "BAD_PULL_LEAF_BYTE_IDX");
-        // Take into account that we are casting the leaf to a big-endian integer
-        uint256 leafShift = (LEAF_SIZE - 1 - idx) * 8;
-        return uint8(uint256(leaf) >> leafShift);
-    }
-
     function setLeafByte(
         bytes32 oldLeaf,
         uint256 idx,
@@ -109,35 +102,13 @@ contract OneStepProverMemory is IOneStepProver {
             revert("INVALID_MEMORY_LOAD_OPCODE");
         }
 
-        // Neither of these can overflow as they're computed with much less than 256 bit integers.
-        uint256 startIdx = inst.argumentData + mach.valueStack.pop().assumeI32();
-        if (startIdx + readBytes > mod.moduleMemory.size) {
+        uint256 index = inst.argumentData + mach.valueStack.pop().assumeI32();
+        (bool err, uint256 value, ) = mod.moduleMemory.load(index, readBytes, proof, 0);
+        if (err) {
             mach.status = MachineStatus.ERRORED;
             return;
         }
-
-        uint256 proofOffset = 0;
-        uint256 lastProvedLeafIdx = ~uint256(0);
-        bytes32 lastProvedLeafContents;
-        uint64 readValue;
-        for (uint256 i = 0; i < readBytes; i++) {
-            uint256 idx = startIdx + i;
-            uint256 leafIdx = idx / LEAF_SIZE;
-            if (leafIdx != lastProvedLeafIdx) {
-                // This hits the stack size if we phrase it as mod.moduleMemory.proveLeaf(...)
-                (lastProvedLeafContents, proofOffset, ) = ModuleMemoryLib.proveLeaf(
-                    mod.moduleMemory,
-                    leafIdx,
-                    proof,
-                    proofOffset
-                );
-                lastProvedLeafIdx = leafIdx;
-            }
-            uint256 indexWithinLeaf = idx % LEAF_SIZE;
-            readValue |=
-                uint64(pullLeafByte(lastProvedLeafContents, indexWithinLeaf)) <<
-                uint64(i * 8);
-        }
+        uint64 readValue = uint64(value);
 
         if (signed) {
             // Go down to the original uint size, change to signed, go up to correct size, convert back to unsigned

@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro-contracts/blob/main/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
@@ -35,5 +35,10 @@ library ValueStackLib {
 
     function push(ValueStack memory stack, Value memory val) internal pure {
         return stack.proved.push(val);
+    }
+
+    function overwrite(ValueStack memory stack, bytes32 root) internal pure {
+        stack.remainingHash = root;
+        delete stack.proved;
     }
 }

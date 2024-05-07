@@ -14,6 +14,10 @@ import "../ERC20Mock.sol";
 import "./StateTools.sol";
 
 contract MockOneStepProofEntry is IOneStepProofEntry {
+    function getStartMachineHash(bytes32 globalStateHash, bytes32 wasmModuleRoot) external pure returns(bytes32) {
+        return keccak256(abi.encodePacked("Machine:", globalStateHash, wasmModuleRoot));
+    }
+
     function proveOneStep(ExecutionContext calldata, uint256, bytes32, bytes calldata proof)
         external
         pure

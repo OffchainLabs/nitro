@@ -18,6 +18,10 @@ contract MockOneStepProofEntry is IOneStepProofEntry {
 
     uint256 public testMachineStep;
 
+    function getStartMachineHash(bytes32 globalStateHash, bytes32 wasmModuleRoot) external pure returns(bytes32) {
+        return keccak256(abi.encodePacked("Machine:", globalStateHash, wasmModuleRoot));
+    }
+
     function proveOneStep(ExecutionContext calldata, uint256 machineStep, bytes32, bytes calldata proof)
         external
         view

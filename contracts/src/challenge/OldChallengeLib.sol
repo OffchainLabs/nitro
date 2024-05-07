@@ -63,17 +63,7 @@ library OldChallengeLib {
         ValueStack memory internalStack;
         StackFrameWindow memory frameStack;
 
-        Machine memory mach = Machine({
-            status: MachineStatus.RUNNING,
-            valueStack: values,
-            internalStack: internalStack,
-            frameStack: frameStack,
-            globalStateHash: globalStateHash,
-            moduleIdx: 0,
-            functionIdx: 0,
-            functionPc: 0,
-            modulesRoot: wasmModuleRoot
-        });
+        Machine memory mach;
         return mach.hash();
     }
 

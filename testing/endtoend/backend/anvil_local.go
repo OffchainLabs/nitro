@@ -168,7 +168,7 @@ func (a *AnvilLocal) DeployRollup(ctx context.Context, opts ...challenge_testing
 	prod := false
 	wasmModuleRoot := common.Hash{}
 	rollupOwner := a.accounts[0].From
-	loserStakeEscrow := common.Address{}
+	loserStakeEscrow := rollupOwner
 	anyTrustFastConfirmer := common.Address{}
 	genesisExecutionState := rollupgen.AssertionState{
 		GlobalState:   rollupgen.GlobalState{},

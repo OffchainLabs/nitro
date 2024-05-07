@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro-contracts/blob/main/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
@@ -11,6 +11,7 @@ import "../state/Deserialize.sol";
 import "./IOneStepProver.sol";
 
 contract OneStepProver0 is IOneStepProver {
+    using MachineLib for Machine;
     using MerkleProofLib for MerkleProof;
     using StackFrameLib for StackFrameWindow;
     using ValueLib for Value;
@@ -90,28 +91,11 @@ contract OneStepProver0 is IOneStepProver {
         bytes calldata
     ) internal pure {
         StackFrame memory frame = mach.frameStack.pop();
-        if (frame.returnPc.valueType == ValueType.REF_NULL) {
-            mach.status = MachineStatus.ERRORED;
-            return;
-        } else if (frame.returnPc.valueType != ValueType.INTERNAL_REF) {
-            revert("INVALID_RETURN_PC_TYPE");
-        }
-        uint256 data = frame.returnPc.contents;
-        uint32 pc = uint32(data);
-        uint32 func = uint32(data >> 32);
-        uint32 mod = uint32(data >> 64);
-        require(data >> 96 == 0, "INVALID_RETURN_PC_DATA");
-        mach.functionPc = pc;
-        mach.functionIdx = func;
-        mach.moduleIdx = mod;
+        mach.setPc(frame.returnPc);
     }
 
     function createReturnValue(Machine memory mach) internal pure returns (Value memory) {
-        uint256 returnData = 0;
-        returnData |= mach.functionPc;
-        returnData |= uint256(mach.functionIdx) << 32;
-        returnData |= uint256(mach.moduleIdx) << 64;
-        return Value({valueType: ValueType.INTERNAL_REF, contents: returnData});
+        return ValueLib.newPc(mach.functionPc, mach.functionIdx, mach.moduleIdx);
     }
 
     function executeCall(
@@ -154,6 +138,62 @@ contract OneStepProver0 is IOneStepProver {
         require(inst.argumentData >> 64 == 0, "BAD_CROSS_MODULE_CALL_DATA");
         mach.moduleIdx = module;
         mach.functionIdx = func;
+        mach.functionPc = 0;
+    }
+
+    function executeCrossModuleForward(
+        Machine memory mach,
+        Module memory,
+        Instruction calldata inst,
+        bytes calldata
+    ) internal pure {
+        // Push the return pc to the stack
+        mach.valueStack.push(createReturnValue(mach));
+
+        // Push caller's caller module info to the stack
+        StackFrame memory frame = mach.frameStack.peek();
+        mach.valueStack.push(ValueLib.newI32(frame.callerModule));
+        mach.valueStack.push(ValueLib.newI32(frame.callerModuleInternals));
+
+        // Jump to the target
+        uint32 func = uint32(inst.argumentData);
+        uint32 module = uint32(inst.argumentData >> 32);
+        require(inst.argumentData >> 64 == 0, "BAD_CROSS_MODULE_CALL_DATA");
+        mach.moduleIdx = module;
+        mach.functionIdx = func;
+        mach.functionPc = 0;
+    }
+
+    function executeCrossModuleInternalCall(
+        Machine memory mach,
+        Module memory mod,
+        Instruction calldata inst,
+        bytes calldata proof
+    ) internal pure {
+        // Get the target from the stack
+        uint32 internalIndex = uint32(inst.argumentData);
+        uint32 moduleIndex = mach.valueStack.pop().assumeI32();
+        Module memory calledMod;
+
+        MerkleProof memory modProof;
+        uint256 offset = 0;
+        (calledMod, offset) = Deserialize.module(proof, offset);
+        (modProof, offset) = Deserialize.merkleProof(proof, offset);
+        require(
+            modProof.computeRootFromModule(moduleIndex, calledMod) == mach.modulesRoot,
+            "CROSS_MODULE_INTERNAL_MODULES_ROOT"
+        );
+
+        // Push the return pc to the stack
+        mach.valueStack.push(createReturnValue(mach));
+
+        // Push caller module info to the stack
+        mach.valueStack.push(ValueLib.newI32(mach.moduleIdx));
+        mach.valueStack.push(ValueLib.newI32(mod.internalsOffset));
+
+        // Jump to the target
+        mach.moduleIdx = moduleIndex;
+        mach.functionIdx = internalIndex + calledMod.internalsOffset;
         mach.functionPc = 0;
     }
 
@@ -454,6 +494,10 @@ contract OneStepProver0 is IOneStepProver {
             impl = executeCall;
         } else if (opcode == Instructions.CROSS_MODULE_CALL) {
             impl = executeCrossModuleCall;
+        } else if (opcode == Instructions.CROSS_MODULE_FORWARD) {
+            impl = executeCrossModuleForward;
+        } else if (opcode == Instructions.CROSS_MODULE_INTERNAL_CALL) {
+            impl = executeCrossModuleInternalCall;
         } else if (opcode == Instructions.CALLER_MODULE_INTERNAL_CALL) {
             impl = executeCallerModuleInternalCall;
         } else if (opcode == Instructions.CALL_INDIRECT) {

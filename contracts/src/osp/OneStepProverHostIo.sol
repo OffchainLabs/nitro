@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro-contracts/blob/main/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
@@ -6,6 +6,8 @@ pragma solidity ^0.8.0;
 
 import "../state/Value.sol";
 import "../state/Machine.sol";
+import "../state/MerkleProof.sol";
+import "../state/MultiStack.sol";
 import "../state/Deserialize.sol";
 import "../state/ModuleMemory.sol";
 import "./IOneStepProver.sol";
@@ -14,10 +16,13 @@ import "../bridge/IBridge.sol";
 
 contract OneStepProverHostIo is IOneStepProver {
     using GlobalStateLib for GlobalState;
+    using MachineLib for Machine;
     using MerkleProofLib for MerkleProof;
     using ModuleMemoryLib for ModuleMemory;
+    using MultiStackLib for MultiStack;
     using ValueLib for Value;
     using ValueStackLib for ValueStack;
+    using StackFrameLib for StackFrameWindow;
 
     uint256 private constant LEAF_SIZE = 32;
     uint256 private constant INBOX_NUM = 2;
@@ -52,7 +57,7 @@ contract OneStepProverHostIo is IOneStepProver {
             mach.status = MachineStatus.ERRORED;
             return;
         }
-        if (ptr + 32 > mod.moduleMemory.size || ptr % LEAF_SIZE != 0) {
+        if (!mod.moduleMemory.isValidLeaf(ptr)) {
             mach.status = MachineStatus.ERRORED;
             return;
         }
@@ -380,6 +385,103 @@ contract OneStepProverHostIo is IOneStepProver {
         mach.status = MachineStatus.FINISHED;
     }
 
+    function isPowerOfTwo(uint256 value) internal pure returns (bool) {
+        return value != 0 && (value & (value - 1) == 0);
+    }
+
+    function proveLastLeaf(
+        Machine memory mach,
+        uint256 offset,
+        bytes calldata proof
+    )
+        internal
+        pure
+        returns (
+            uint256 leaf,
+            MerkleProof memory leafProof,
+            MerkleProof memory zeroProof
+        )
+    {
+        string memory prefix = "Module merkle tree:";
+        bytes32 root = mach.modulesRoot;
+
+        {
+            Module memory leafModule;
+            uint32 leaf32;
+            (leafModule, offset) = Deserialize.module(proof, offset);
+            (leaf32, offset) = Deserialize.u32(proof, offset);
+            (leafProof, offset) = Deserialize.merkleProof(proof, offset);
+            leaf = uint256(leaf32);
+
+            bytes32 compRoot = leafProof.computeRootFromModule(leaf, leafModule);
+            require(compRoot == root, "WRONG_ROOT_FOR_LEAF");
+        }
+
+        // if tree is unbalanced, check that the next leaf is 0
+        bool balanced = isPowerOfTwo(leaf + 1);
+        if (balanced) {
+            require(1 << leafProof.counterparts.length == leaf + 1, "WRONG_LEAF");
+        } else {
+            (zeroProof, offset) = Deserialize.merkleProof(proof, offset);
+            bytes32 compRoot = zeroProof.computeRootUnsafe(leaf + 1, 0, prefix);
+            require(compRoot == root, "WRONG_ROOT_FOR_ZERO");
+        }
+
+        return (leaf, leafProof, zeroProof);
+    }
+
+    function executeLinkModule(
+        ExecutionContext calldata,
+        Machine memory mach,
+        Module memory mod,
+        Instruction calldata,
+        bytes calldata proof
+    ) internal pure {
+        string memory prefix = "Module merkle tree:";
+        bytes32 root = mach.modulesRoot;
+
+        uint256 pointer = mach.valueStack.pop().assumeI32();
+        if (!mod.moduleMemory.isValidLeaf(pointer)) {
+            mach.status = MachineStatus.ERRORED;
+            return;
+        }
+        (bytes32 userMod, uint256 offset, ) = mod.moduleMemory.proveLeaf(
+            pointer / LEAF_SIZE,
+            proof,
+            0
+        );
+
+        (uint256 leaf, , MerkleProof memory zeroProof) = proveLastLeaf(mach, offset, proof);
+
+        bool balanced = isPowerOfTwo(leaf + 1);
+        if (balanced) {
+            mach.modulesRoot = MerkleProofLib.growToNewRoot(root, leaf + 1, userMod, 0, prefix);
+        } else {
+            mach.modulesRoot = zeroProof.computeRootUnsafe(leaf + 1, userMod, prefix);
+        }
+
+        mach.valueStack.push(ValueLib.newI32(uint32(leaf + 1)));
+    }
+
+    function executeUnlinkModule(
+        ExecutionContext calldata,
+        Machine memory mach,
+        Module memory,
+        Instruction calldata,
+        bytes calldata proof
+    ) internal pure {
+        string memory prefix = "Module merkle tree:";
+
+        (uint256 leaf, MerkleProof memory leafProof, ) = proveLastLeaf(mach, 0, proof);
+
+        bool shrink = isPowerOfTwo(leaf);
+        if (shrink) {
+            mach.modulesRoot = leafProof.counterparts[leafProof.counterparts.length - 1];
+        } else {
+            mach.modulesRoot = leafProof.computeRootUnsafe(leaf, 0, prefix);
+        }
+    }
+
     function executeGlobalStateAccess(
         ExecutionContext calldata,
         Machine memory mach,
@@ -408,6 +510,93 @@ contract OneStepProverHostIo is IOneStepProver {
         }
 
         mach.globalStateHash = state.hash();
+    }
+
+    function executeNewCoThread(
+        ExecutionContext calldata,
+        Machine memory mach,
+        Module memory,
+        Instruction calldata,
+        bytes calldata
+    ) internal pure {
+        if (mach.recoveryPc != MachineLib.NO_RECOVERY_PC) {
+            // cannot create new cothread from inside cothread
+            mach.status = MachineStatus.ERRORED;
+            return;
+        }
+        mach.frameMultiStack.pushNew();
+        mach.valueMultiStack.pushNew();
+    }
+
+    function provePopCothread(MultiStack memory multi, bytes calldata proof) internal pure {
+        uint256 proofOffset = 0;
+        bytes32 newInactiveCoThread;
+        bytes32 newRemaining;
+        (newInactiveCoThread, proofOffset) = Deserialize.b32(proof, proofOffset);
+        (newRemaining, proofOffset) = Deserialize.b32(proof, proofOffset);
+        if (newInactiveCoThread == MultiStackLib.NO_STACK_HASH) {
+            require(newRemaining == bytes32(0), "WRONG_COTHREAD_EMPTY");
+            require(multi.remainingHash == bytes32(0), "WRONG_COTHREAD_EMPTY");
+        } else {
+            require(
+                keccak256(abi.encodePacked("cothread:", newInactiveCoThread, newRemaining)) ==
+                    multi.remainingHash,
+                "WRONG_COTHREAD_POP"
+            );
+        }
+        multi.remainingHash = newRemaining;
+        multi.inactiveStackHash = newInactiveCoThread;
+    }
+
+    function executePopCoThread(
+        ExecutionContext calldata,
+        Machine memory mach,
+        Module memory,
+        Instruction calldata,
+        bytes calldata proof
+    ) internal pure {
+        if (mach.recoveryPc != MachineLib.NO_RECOVERY_PC) {
+            // cannot pop cothread from inside cothread
+            mach.status = MachineStatus.ERRORED;
+            return;
+        }
+        if (mach.frameMultiStack.inactiveStackHash == MultiStackLib.NO_STACK_HASH) {
+            // cannot pop cothread if there isn't one
+            mach.status = MachineStatus.ERRORED;
+            return;
+        }
+        provePopCothread(mach.valueMultiStack, proof);
+        provePopCothread(mach.frameMultiStack, proof[64:]);
+    }
+
+    function executeSwitchCoThread(
+        ExecutionContext calldata,
+        Machine memory mach,
+        Module memory,
+        Instruction calldata inst,
+        bytes calldata
+    ) internal pure {
+        if (mach.frameMultiStack.inactiveStackHash == MultiStackLib.NO_STACK_HASH) {
+            // cannot switch cothread if there isn't one
+            mach.status = MachineStatus.ERRORED;
+            return;
+        }
+        if (inst.argumentData == 0) {
+            if (mach.recoveryPc == MachineLib.NO_RECOVERY_PC) {
+                // switching to main thread, from main thread
+                mach.status = MachineStatus.ERRORED;
+                return;
+            }
+            mach.recoveryPc = MachineLib.NO_RECOVERY_PC;
+        } else {
+            if (mach.recoveryPc != MachineLib.NO_RECOVERY_PC) {
+                // switching from cothread to cothread
+                mach.status = MachineStatus.ERRORED;
+                return;
+            }
+            mach.setRecoveryFromPc(uint32(inst.argumentData));
+        }
+        mach.switchCoThreadStacks();
     }
 
     function executeOneStep(
@@ -441,6 +630,16 @@ contract OneStepProverHostIo is IOneStepProver {
             impl = executeReadInboxMessage;
         } else if (opcode == Instructions.HALT_AND_SET_FINISHED) {
             impl = executeHaltAndSetFinished;
+        } else if (opcode == Instructions.LINK_MODULE) {
+            impl = executeLinkModule;
+        } else if (opcode == Instructions.UNLINK_MODULE) {
+            impl = executeUnlinkModule;
+        } else if (opcode == Instructions.NEW_COTHREAD) {
+            impl = executeNewCoThread;
+        } else if (opcode == Instructions.POP_COTHREAD) {
+            impl = executePopCoThread;
+        } else if (opcode == Instructions.SWITCH_COTHREAD) {
+            impl = executeSwitchCoThread;
         } else {
             revert("INVALID_MEMORY_OPCODE");
         }
