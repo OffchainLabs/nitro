@@ -672,6 +672,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	shouldResolveNodes := effectiveStrategy >= ResolveNodesStrategy ||
 		(effectiveStrategy >= StakeLatestStrategy && rawInfo == nil && requiredStakeElevated)
 	resolvingNode := false
+	shouldAdvanceNodes := effectiveStrategy > WatchtowerStrategy
 	if shouldResolveNodes {
 		arbTx, err := s.resolveTimedOutChallenges(ctx)
 		if err != nil {
@@ -755,7 +756,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 
 	// Don't attempt to create a new stake if we're resolving a node and the stake is elevated,
 	// as that might affect the current required stake.
-	if (rawInfo != nil || !resolvingNode || !requiredStakeElevated) && canActFurther() {
+	if (rawInfo != nil || !resolvingNode || !requiredStakeElevated) && shouldAdvanceNodes && canActFurther() {
 		// Advance stake up to 20 times in one transaction
 		for i := 0; info.CanProgress && i < 20; i++ {
 			if err := s.advanceStake(ctx, &info, effectiveStrategy); err != nil {
