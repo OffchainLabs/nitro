@@ -93,7 +93,7 @@ type Config struct {
 	TransactionStreamer TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
 	Maintenance         MaintenanceConfig           `koanf:"maintenance" reload:"hot"`
 	ResourceMgmt        resourcemanager.Config      `koanf:"resource-mgmt" reload:"hot"`
-	SnapSync            SnapSyncConfig              `koanf:"snap-sync" reload:"hot"`
+	SnapSync            SnapSyncConfig              `koanf:"snap-sync"`
 }
 
 func (c *Config) Validate() error {
@@ -277,11 +277,11 @@ type Node struct {
 }
 
 type SnapSyncConfig struct {
-	Enabled               bool   `koanf:"enabled" reload:"hot"`
-	PrevBatchMessageCount uint64 `koanf:"prev-batch-message-count" reload:"hot"`
-	PrevDelayedRead       uint64 `koanf:"prev-delayed-read" reload:"hot"`
-	BatchCount            uint64 `koanf:"batch-count" reload:"hot"`
-	DelayedCount          uint64 `koanf:"delayed-count" reload:"hot"`
+	Enabled               bool   `koanf:"enabled"`
+	PrevBatchMessageCount uint64 `koanf:"prev-batch-message-count"`
+	PrevDelayedRead       uint64 `koanf:"prev-delayed-read"`
+	BatchCount            uint64 `koanf:"batch-count"`
+	DelayedCount          uint64 `koanf:"delayed-count"`
 }
 
 var DefaultSnapSyncConfig = SnapSyncConfig{
