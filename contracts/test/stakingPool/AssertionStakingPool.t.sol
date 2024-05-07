@@ -57,7 +57,7 @@ contract AssertionPoolTest is Test {
     });
     AssertionState firstState;
 
-    AssertionStakingPool pool;
+    IAssertionStakingPool pool;
 
     AssertionStakingPoolCreator aspcreator;
     address staker1 = address(4000001);
@@ -243,7 +243,7 @@ contract AssertionPoolTest is Test {
         });
         aspcreator = new AssertionStakingPoolCreator();
         pool =
-            AssertionStakingPool(aspcreator.createPoolForAssertion(address(rollupAddr), assertionInputs, assertionHash));
+            aspcreator.createPool(address(rollupAddr), assertionHash);
 
         token.transfer(staker1, staker1Bal);
         token.transfer(staker2, staker2Bal);
@@ -286,55 +286,9 @@ contract AssertionPoolTest is Test {
     function testGetPool() external {
         assertEq(
             address(pool),
-            address(aspcreator.getPool(rollupAddr, assertionInputs, assertionHash)),
+            address(aspcreator.getPool(rollupAddr, assertionHash)),
             "getPool returns created pool's expected address"
         );
-    }
-
-    function testgetRequiredStake() external {
-        assertEq(pool.getRequiredStake(), BASE_STAKE, "required stake set");
-    }
-
-    function testOverDeposit() external {
-        vm.prank(staker1);
-        pool.depositIntoPool(staker1Bal);
-        vm.prank(staker2);
-        pool.depositIntoPool(staker2Bal);
-
-        vm.startPrank(excessStaker);
-        pool.depositIntoPool(excessStakerBal);
-        pool.withdrawFromPool();
-        vm.stopPrank();
-        assertEq(token.balanceOf(excessStaker), excessStakerBal, "excess balance returned");
-    }
-
-    function testCanDepositAndWithdrawWhilePending() external {
-        vm.prank(staker1);
-        pool.depositIntoPool(staker1Bal);
-        vm.prank(staker2);
-        pool.depositIntoPool(staker2Bal);
-
-        assertEq(token.balanceOf(address(pool)), staker1Bal + staker2Bal, "tokens depositted into pool");
-        assertEq(token.balanceOf(address(staker1)), uint256(0), "tokens depositted into pool");
-        assertEq(token.balanceOf(address(staker2)), uint256(0), "tokens depositted into pool");
-
-        vm.prank(staker1);
-        pool.withdrawFromPool();
-
-        vm.prank(staker2);
-        pool.withdrawFromPool();
-
-        assertEq(token.balanceOf(address(pool)), uint256(0), "tokens withdrawn from pool");
-        assertEq(token.balanceOf(address(staker1)), staker1Bal, "tokens withdrawn from pool");
-        assertEq(token.balanceOf(address(staker2)), staker2Bal, "tokens withdrawn from pool");
-    }
-
-    function testCantAssertWithInsufficientStake() external {
-        vm.prank(staker1);
-        pool.depositIntoPool(staker1Bal);
-
-        vm.expectRevert("ERC20: transfer amount exceeds balance");
-        pool.createAssertion();
     }
 
     function testCantAssertTwice() external {
@@ -343,10 +297,10 @@ contract AssertionPoolTest is Test {
         vm.prank(staker2);
         pool.depositIntoPool(staker2Bal);
 
-        pool.createAssertion();
+        pool.createAssertion(assertionInputs);
 
         vm.expectRevert("ALREADY_STAKED");
-        pool.createAssertion();
+        pool.createAssertion(assertionInputs);
     }
 
     function testCantAssertTwiceAfterConfirmed() external {
@@ -355,7 +309,19 @@ contract AssertionPoolTest is Test {
         pool.withdrawStakeBackIntoPool();
 
         vm.expectRevert("EXPECTED_ASSERTION_SEEN");
-        pool.createAssertion();
+        pool.createAssertion(assertionInputs);
+    }
+
+    function testCantMakeBadAssertion() external {
+        vm.prank(staker1);
+        pool.depositIntoPool(staker1Bal);
+        vm.prank(staker2);
+        pool.depositIntoPool(staker2Bal);
+
+        AssertionInputs memory _inputs = assertionInputs;
+        _inputs.afterState.endHistoryRoot = keccak256("bad");
+        vm.expectRevert("UNEXPECTED_ASSERTION_HASH");
+        pool.createAssertion(_inputs);
     }
 
     function _createAssertion() internal {
@@ -365,7 +331,7 @@ contract AssertionPoolTest is Test {
         pool.depositIntoPool(staker2Bal);
 
         vm.prank(rando);
-        pool.createAssertion();
+        pool.createAssertion(assertionInputs);
     }
 
     function _createAndConfirmAssertion() internal {
@@ -392,64 +358,5 @@ contract AssertionPoolTest is Test {
         _createAssertion();
         assertEq(token.balanceOf(address(pool)), 0, "stake moved to rollup");
         assertEq(token.balanceOf(address(userRollup)), BASE_STAKE, "stake moved to rollup");
-    }
-
-    function testCanDepositInAssertedState() external {
-        _createAssertion();
-        vm.startPrank(excessStaker);
-        pool.depositIntoPool(excessStakerBal);
-        pool.withdrawFromPool();
-        vm.stopPrank();
-
-        assertEq(token.balanceOf(excessStaker), excessStakerBal, "excess balance returned");
-    }
-
-    function testPartialWithdraw() external {
-        vm.prank(staker1);
-        pool.depositIntoPool(staker1Bal);
-
-        vm.startPrank(fullStaker);
-        pool.depositIntoPool(fullStakerBal);
-        pool.createAssertion();
-
-        vm.expectRevert("ERC20: transfer amount exceeds balance");
-        pool.withdrawFromPool();
-
-        pool.withdrawFromPool(staker1Bal);
-        assertEq(token.balanceOf(fullStaker), staker1Bal, "partial stake returned");
-
-        vm.stopPrank();
-    }
-
-    function testReturnStake() external {
-        _createAndConfirmAssertion();
-        vm.prank(rando);
-        pool.makeStakeWithdrawable();
-
-        pool.withdrawStakeBackIntoPool();
-        assertEq(token.balanceOf(address(pool)), BASE_STAKE, "tokens returned to pool");
-        assertEq(token.balanceOf(address(userRollup)), 0, "tokens returned to pool");
-
-        vm.prank(staker1);
-        pool.withdrawFromPool();
-
-        vm.prank(staker2);
-        pool.withdrawFromPool();
-
-        assertEq(token.balanceOf(address(pool)), 0, "tokens returned to users");
-        assertEq(token.balanceOf(staker1), staker1Bal, "tokens returned to users");
-        assertEq(token.balanceOf(staker2), staker2Bal, "tokens returned to users");
-    }
-
-    function testCantWithdrawTwice() external {
-        _createAndConfirmAssertion();
-        pool.makeStakeWithdrawable();
-        pool.withdrawStakeBackIntoPool();
-
-        vm.startPrank(staker1);
-        pool.withdrawFromPool();
-        vm.expectRevert(abi.encodeWithSelector(NoBalanceToWithdraw.selector, staker1));
-        pool.withdrawFromPool();
-        vm.stopPrank();
     }
 }
