@@ -405,11 +405,6 @@ func TestEspressoE2E(t *testing.T) {
 	Require(t, err)
 
 	err = waitForWith(t, ctx, time.Second*120, time.Second*1, func() bool {
-		/// try spamming txn
-		transferAmount := big.NewInt(1e16)
-		tx := l2Info.PrepareTx("Faucet", newAccount, 3e7, transferAmount, nil)
-		err = l2Node.Client.SendTransaction(ctx, tx)
-		///
 		Require(t, err)
 		balance := l2Node.GetBalance(t, addr)
 		log.Info("waiting for balance", "addr", addr, "balance", balance)
