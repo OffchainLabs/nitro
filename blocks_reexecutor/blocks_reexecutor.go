@@ -104,7 +104,8 @@ func New(c *Config, blockchain *core.BlockChain, fatalErrChan chan error) *Block
 		end = start + rng
 	}
 	// Inclusive of block reexecution [start, end]
-	if start > 0 {
+	// Do not reexecute genesis block i,e chainStart
+	if start > 0 && start != chainStart {
 		start--
 	}
 	// Divide work equally among available threads
