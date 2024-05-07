@@ -278,7 +278,7 @@ func main() {
 
 		validatingAgainstEspresso := arbos.IsEspressoMsg(message.Message) && chainConfig.ArbitrumChainParams.EnableEspresso
 		if validatingAgainstEspresso {
-			txs, jst, err := arbos.ParseEspressoMsg(message.Message)
+			_, jst, err := arbos.ParseEspressoMsg(message.Message)
 			if err != nil {
 				panic(err)
 			}
