@@ -153,7 +153,7 @@ COPY brotli brotli
 RUN touch -a -m arbitrator/prover/src/lib.rs
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-lib
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-bin
-RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make CARGOFLAGS="--features=llvm" build-jit
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-jit
 
 FROM scratch as prover-export
 COPY --from=prover-builder /workspace/target/ /
@@ -204,13 +204,6 @@ COPY ./scripts/download-machine.sh .
 #RUN ./download-machine.sh consensus-v11.1 0x68e4fe5023f792d4ef584796c84d710303a5e12ea02d6e37e2b5e9c4332507c4
 #RUN ./download-machine.sh consensus-v20 0x8b104a2e80ac6165dc58b9048de12f301d70b02a0ab51396c22b4b4b802a16a4
 RUN ./download-machine.sh consensus-v30-rc.1 0x8805d035d5fdb8bb4450f306d9ab82633e2b6316260529cdcaf1b3702afbd5d5
-
-RUN mkdir 0x965a35130f4e34b7b2339eac03b2eacc659e2dafe850d213ea6a7cdf9edfa99f && \
-    ln -sfT 0x965a35130f4e34b7b2339eac03b2eacc659e2dafe850d213ea6a7cdf9edfa99f latest && \
-    cd 0x965a35130f4e34b7b2339eac03b2eacc659e2dafe850d213ea6a7cdf9edfa99f && \
-    wget https://stylus-wasm-17f27dd494229dfd10d4e756f7e2fb953e83bd3d1be8278b33a.s3.us-west-2.amazonaws.com/0x965a35130f4e34b7b2339eac03b2eacc659e2dafe850d213ea6a7cdf9edfa99f/module-root.txt && \
-    wget https://stylus-wasm-17f27dd494229dfd10d4e756f7e2fb953e83bd3d1be8278b33a.s3.us-west-2.amazonaws.com/0x965a35130f4e34b7b2339eac03b2eacc659e2dafe850d213ea6a7cdf9edfa99f/replay.wasm && \
-    wget https://stylus-wasm-17f27dd494229dfd10d4e756f7e2fb953e83bd3d1be8278b33a.s3.us-west-2.amazonaws.com/0x965a35130f4e34b7b2339eac03b2eacc659e2dafe850d213ea6a7cdf9edfa99f/machine.wavm.br
 
 FROM golang:1.21-bullseye as node-builder
 WORKDIR /workspace
