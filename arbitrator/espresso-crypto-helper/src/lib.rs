@@ -3,7 +3,7 @@ mod sequencer_data_structures;
 
 use ark_bn254::Bn254;
 use ark_ff::PrimeField;
-use ark_serialize::CanonicalSerialize;
+use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use bytes::Bytes;
 use committable::{Commitment, Committable};
 use ethers_core::types::U256;
@@ -33,7 +33,7 @@ pub type VidScheme = Advz<Bn254, sha2::Sha256>;
 lazy_static! {
     // Initialize the byte array from JSON content
     static ref SRS_VEC: Vec<u8> = {
-        let json_content = include_str!("../../../config/vid_srs.json");
+        let json_content = include_str!("../vid_srs.json");
         serde_json::from_str(json_content).expect("Failed to deserialize")
     };
 }
@@ -103,15 +103,10 @@ pub fn verify_namespace_helper(
     let tagged = TaggedBase64::parse(&commit_str).unwrap();
     let commit: <VidScheme as VidSchemeTrait>::Commit = tagged.try_into().unwrap();
 
-    let degree = 2u64.pow(20) as usize + 2;
-    let srs = ark_srs::kzg10::aztec20::setup(degree).expect("Aztec SRS failed to load");
-    let srs: UnivariateUniversalParams<Bn254> = UnivariateUniversalParams {
-        powers_of_g: srs.powers_of_g,
-        h: srs.h,
-        beta_h: srs.beta_h,
-        powers_of_h: vec![srs.h, srs.beta_h],
-    };
-
+    dbg!("here we are deserializing the srs");
+    let srs =
+        UnivariateUniversalParams::<Bn254>::deserialize_uncompressed_unchecked(SRS_VEC.as_slice())
+            .unwrap();
     let num_storage_nodes = match &proof {
         NamespaceProof::Existence { vid_common, .. } => {
             VidScheme::get_num_storage_nodes(&vid_common)
@@ -120,8 +115,10 @@ pub fn verify_namespace_helper(
         _ => 5,
     };
     let num_chunks: usize = 1 << num_storage_nodes.ilog2();
+    dbg!("here we are constructing the advz scheme");
     let advz = Advz::new(num_chunks, num_storage_nodes, 1, srs).unwrap();
     let (txns, ns) = proof.verify(&advz, &commit, &ns_table).unwrap();
+    dbg!("...and we are done constructing the scheme");
 
     let txns_comm = hash_txns(namespace, &txns);
 
@@ -152,22 +149,25 @@ fn hash_bytes_to_field(bytes: &[u8]) -> Result<CircuitField, PrimitivesError> {
 
 #[cfg(test)]
 mod test {
+    use self::sequencer_data_structures::JellyfishNamespaceProof;
+
     use super::*;
-    use jf_primitives::pcs::{
-        checked_fft_size, prelude::UnivariateKzgPCS, PolynomialCommitmentScheme,
+    use jf_primitives::{
+        pcs::{checked_fft_size, prelude::UnivariateKzgPCS, PolynomialCommitmentScheme},
+        vid::payload_prover::PayloadProver,
     };
 
     lazy_static! {
         // Initialize the byte array from JSON content
         static ref PROOF: &'static str = {
-            include_str!("../../../config/test_merkle_path.json")
+            include_str!("./mock_data/test_merkle_path.json")
         };
         static ref HEADER: &'static str = {
-            include_str!("../../../config/test_header.json")
+            include_str!("./mock_data/test_header.json")
         };
     }
     #[test]
-    fn test_verify_namespace_helper() {
+    fn test_verify_namespace_helper_non_inclusion() {
         let proof_bytes = b"{\"NonExistence\":{\"ns_id\":0}}";
         let commit_bytes = b"HASH~1yS-KEtL3oDZDBJdsW51Pd7zywIiHesBZsTbpOzrxOfu";
         let txn_comm_str = hash_txns(0, &[]);
@@ -215,7 +215,7 @@ mod test {
     #[test]
     fn write_prod_srs_to_file() {
         let mut bytes = Vec::new();
-        let degree = 2u64.pow(20) as usize + 2;
+        let degree = 4;
         let srs = ark_srs::kzg10::aztec20::setup(degree).expect("Aztec SRS failed to load");
         let srs: UnivariateUniversalParams<Bn254> = UnivariateUniversalParams {
             powers_of_g: srs.powers_of_g,
@@ -224,12 +224,15 @@ mod test {
             powers_of_h: vec![srs.h, srs.beta_h],
         };
         srs.serialize_uncompressed(&mut bytes).unwrap();
-        let _ = std::fs::write("srs.json", serde_json::to_string(&bytes).unwrap());
+        let _ = std::fs::write("vid_srs.json", serde_json::to_string(&bytes).unwrap());
     }
 
     #[test]
-    fn write_prod_advz_scheme_to_file() {
-        let mut bytes = Vec::new();
+    fn avdz_equivalence_test() {
+        let num_storage_nodes: usize = 5;
+        let num_chunks: usize = 1 << num_storage_nodes.ilog2();
+
+        // First, generate the scheme using an extremely large SRS, which should trim the coefficients internally.
         let degree = 2u64.pow(20) as usize + 2;
         let srs = ark_srs::kzg10::aztec20::setup(degree).expect("Aztec SRS failed to load");
         let srs: UnivariateUniversalParams<Bn254> = UnivariateUniversalParams {
@@ -238,10 +241,28 @@ mod test {
             beta_h: srs.beta_h,
             powers_of_h: vec![srs.h, srs.beta_h],
         };
-        let num_storage_nodes: u32 = 2;
-        let num_chunks: usize = 1 << num_storage_nodes.ilog2();
-        let advz = Advz::new(num_chunks, num_storage_nodes, 1, srs).unwrap();
-        advz.serialize_uncompressed(&mut bytes).unwrap();
-        let _ = std::fs::write("advz.json", serde_json::to_string(&bytes).unwrap());
+        let first_advz: VidScheme = Advz::new(num_chunks, num_storage_nodes, 1, srs).unwrap();
+
+        // Now generate a new scheme with an SRS with a smaller degree argument.
+        let degree = 4;
+        let srs = ark_srs::kzg10::aztec20::setup(degree).expect("Aztec SRS failed to load");
+        let srs: UnivariateUniversalParams<Bn254> = UnivariateUniversalParams {
+            powers_of_g: srs.powers_of_g,
+            h: srs.h,
+            beta_h: srs.beta_h,
+            powers_of_h: vec![srs.h, srs.beta_h],
+        };
+        let second_advz: VidScheme = Advz::new(num_chunks, num_storage_nodes, 1, srs).unwrap();
+
+        // Check that some random proof is identical,
+        let proof_slice = vec![0; 32];
+        let range = 0..31;
+        let first_proof: JellyfishNamespaceProof = first_advz
+            .payload_proof(&proof_slice, range.clone())
+            .unwrap();
+        let second_proof: JellyfishNamespaceProof =
+            second_advz.payload_proof(&proof_slice, range).unwrap();
+
+        assert_eq!(second_proof, first_proof);
     }
 }
