@@ -536,15 +536,24 @@ func (s *TransactionStreamer) getMessageWithMetadataAndBlockHash(seqNum arbutil.
 		return nil, err
 	}
 
+	// get block hash
 	key := dbKey(blockHashInputFeedPrefix, uint64(seqNum))
-	data, err := s.db.Get(key)
+	hasBlockHash, err := s.db.Has(key)
 	if err != nil {
 		return nil, err
 	}
 	var blockHash *common.Hash
-	err = rlp.DecodeBytes(data, &blockHash)
-	if err != nil {
-		return nil, err
+	if hasBlockHash {
+		data, err := s.db.Get(key)
+		if err != nil {
+			return nil, err
+		}
+		var storedBlockHash common.Hash
+		err = rlp.DecodeBytes(data, &storedBlockHash)
+		if err != nil {
+			return nil, err
+		}
+		blockHash = &storedBlockHash
 	}
 
 	msgWithBlockHash := arbostypes.MessageWithMetadataAndBlockHash{
@@ -1087,8 +1096,13 @@ func (s *TransactionStreamer) writeMessage(pos arbutil.MessageIndex, msg arbosty
 	}
 
 	// write block hash
+	if msg.BlockHash == nil {
+		// don't write nil block hash to avoid issues with rlp decoder that
+		// doesn't produce nil values by default
+		return nil
+	}
 	key = dbKey(blockHashInputFeedPrefix, uint64(pos))
-	msgBytes, err = rlp.EncodeToBytes(msg.BlockHash)
+	msgBytes, err = rlp.EncodeToBytes(*msg.BlockHash)
 	if err != nil {
 		return err
 	}
