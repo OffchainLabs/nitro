@@ -140,6 +140,12 @@ type L1PriceData struct {
 	currentEstimateOfL1GasPrice uint64
 }
 
+// Represents a block's hash in the database.
+// Necessary because RLP decoder doesn't produce nil values by default.
+type blockHashDBValue struct {
+	BlockHash *common.Hash `rlp:"nil"`
+}
+
 func (s *TransactionStreamer) CurrentEstimateOfL1GasPrice() uint64 {
 	s.cachedL1PriceDataMutex.Lock()
 	defer s.cachedL1PriceDataMutex.Unlock()
@@ -548,12 +554,12 @@ func (s *TransactionStreamer) getMessageWithMetadataAndBlockHash(seqNum arbutil.
 		if err != nil {
 			return nil, err
 		}
-		var storedBlockHash common.Hash
-		err = rlp.DecodeBytes(data, &storedBlockHash)
+		var blockHashDBVal blockHashDBValue
+		err = rlp.DecodeBytes(data, &blockHashDBVal)
 		if err != nil {
 			return nil, err
 		}
-		blockHash = &storedBlockHash
+		blockHash = blockHashDBVal.BlockHash
 	}
 
 	msgWithBlockHash := arbostypes.MessageWithMetadataAndBlockHash{
@@ -1096,13 +1102,11 @@ func (s *TransactionStreamer) writeMessage(pos arbutil.MessageIndex, msg arbosty
 	}
 
 	// write block hash
-	if msg.BlockHash == nil {
-		// don't write nil block hash to avoid issues with rlp decoder that
-		// doesn't produce nil values by default
-		return nil
+	blockHashDBVal := blockHashDBValue{
+		BlockHash: msg.BlockHash,
 	}
 	key = dbKey(blockHashInputFeedPrefix, uint64(pos))
-	msgBytes, err = rlp.EncodeToBytes(*msg.BlockHash)
+	msgBytes, err = rlp.EncodeToBytes(blockHashDBVal)
 	if err != nil {
 		return err
 	}
