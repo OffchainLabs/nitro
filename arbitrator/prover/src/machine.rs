@@ -1739,7 +1739,7 @@ impl Machine {
 
     pub fn jump_into_func(&mut self, module: u32, func: u32, mut args: Vec<Value>) -> Result<()> {
         let Some(source_module) = self.modules.get(module as usize) else {
-            bail!("no module at offest {}", module.red())
+            bail!("no module at offset {}", module.red())
         };
         let Some(source_func) = source_module.funcs.get(func as usize) else {
             bail!(

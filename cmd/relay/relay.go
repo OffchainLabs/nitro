@@ -20,7 +20,6 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/relay"
-	"golang.org/x/exp/slog"
 )
 
 func main() {
@@ -69,8 +68,12 @@ func startup() error {
 		flag.Usage()
 		return fmt.Errorf("error parsing log type when creating handler: %w", err)
 	}
+	logLevel, err := genericconf.ToSlogLevel(relayConfig.LogLevel)
+	if err != nil {
+		confighelpers.PrintErrorAndExit(err, printSampleUsage)
+	}
 	glogger := log.NewGlogHandler(handler)
-	glogger.Verbosity(slog.Level(relayConfig.LogLevel))
+	glogger.Verbosity(logLevel)
 	log.SetDefault(log.NewLogger(glogger))
 
 	vcsRevision, _, vcsTime := confighelpers.GetVersion()
