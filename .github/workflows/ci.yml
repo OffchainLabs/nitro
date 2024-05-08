@@ -72,6 +72,8 @@ jobs:
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
+        with:
+          version: nightly-f625d0fa7c51e65b4bf1e8f7931cd1c6e2e285e9
 
       - name: Cache Build Products
         uses: actions/cache@v3
