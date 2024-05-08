@@ -291,4 +291,5 @@ services:
         condition: service_healthy
       deploy-contracts:
         condition: service_completed_successfully
-
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
