@@ -442,6 +442,7 @@ impl<TableWord: TableWordTraits> NameSpaceTable<TableWord> {
     }
 }
 
+#[allow(dead_code)]
 pub trait Table<TableWord: TableWordTraits> {
     // Read TxTableEntry::byte_len() bytes from `table_bytes` starting at `offset`.
     // if `table_bytes` has too few bytes at this `offset` then pad with zero.
