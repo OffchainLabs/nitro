@@ -98,7 +98,7 @@ func (machine *JitMachine) prove(
 	// Wait for the forked process to connect
 	conn, err := tcp.Accept()
 	if err != nil {
-		return state, err
+		return state, fmt.Errorf("error waiting for jit machine to connect back to validator: %w", err)
 	}
 	go func() {
 		<-ctx.Done()
