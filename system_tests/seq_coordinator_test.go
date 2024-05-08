@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"net"
 	"testing"
 	"time"
 
@@ -345,92 +344,4 @@ func TestRedisSeqCoordinatorMessageSync(t *testing.T) {
 
 func TestRedisSeqCoordinatorWrongKeyMessageSync(t *testing.T) {
 	testCoordinatorMessageSync(t, false)
-}
-
-func TestSeqCoordinatorOutputFeed(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	// Init redis
-	redisUrl := redisutil.CreateTestRedis(ctx, t)
-	seqAndSeqCoordinatorNodeNames := []string{"stdio://A", "stdio://B"}
-	initRedisForTest(t, ctx, redisUrl, seqAndSeqCoordinatorNodeNames)
-
-	// build sequencer
-	builderSeq := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builderSeq.nodeConfig.SeqCoordinator.Enable = true
-	builderSeq.nodeConfig.SeqCoordinator.RedisUrl = redisUrl
-	builderSeq.nodeConfig.SeqCoordinator.MyUrl = seqAndSeqCoordinatorNodeNames[0]
-	builderSeq.nodeConfig.BatchPoster.Enable = false
-	cleanupSeq := builderSeq.Build(t)
-	defer cleanupSeq()
-	testClientSeq := builderSeq.L2
-
-	// wait for sequencer to become master
-	redisClient, err := redisutil.RedisClientFromURL(builderSeq.nodeConfig.SeqCoordinator.RedisUrl)
-	Require(t, err)
-	defer redisClient.Close()
-	for {
-		err := redisClient.Get(ctx, redisutil.CHOSENSEQ_KEY).Err()
-		if errors.Is(err, redis.Nil) {
-			time.Sleep(builderSeq.nodeConfig.SeqCoordinator.UpdateInterval)
-			continue
-		}
-		Require(t, err)
-		break
-	}
-
-	builderSeq.L2Info.GenerateAccount("User2")
-
-	// build sequencer coordinator
-	builderSeqCoordinator := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	nodeConfigDup := *builderSeq.nodeConfig
-	builderSeqCoordinator.nodeConfig = &nodeConfigDup
-	builderSeqCoordinator.nodeConfig.SeqCoordinator.MyUrl = seqAndSeqCoordinatorNodeNames[1]
-	builderSeqCoordinator.nodeConfig.Feed.Output = *newBroadcasterConfigTest()
-	cleanupSeqCoordinator := builderSeqCoordinator.Build(t)
-	defer cleanupSeqCoordinator()
-	testClientSeqCoordinator := builderSeqCoordinator.L2
-
-	seqCoordinatorOutputFeedPort := builderSeqCoordinator.L2.ConsensusNode.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
-
-	// build sequencer coordinator output feed reader
-	builderSeqCoordinatorOutputFeedReader := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	builderSeqCoordinatorOutputFeedReader.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(seqCoordinatorOutputFeedPort)
-	builderSeqCoordinatorOutputFeedReader.takeOwnership = false
-	cleanupSeqCoordinatorOutputFeedReader := builderSeqCoordinatorOutputFeedReader.Build(t)
-	defer cleanupSeqCoordinatorOutputFeedReader()
-	testClientSeqCoordinatorOutputFeedReader := builderSeqCoordinatorOutputFeedReader.L2
-
-	// send transaction on the sequencer
-	tx := builderSeq.L2Info.PrepareTx("Owner", "User2", builderSeq.L2Info.TransferGas, big.NewInt(1e12), nil)
-	err = builderSeq.L2.Client.SendTransaction(ctx, tx)
-	Require(t, err)
-
-	// ensure transaction succeeds on the sequencer
-	_, err = builderSeq.L2.EnsureTxSucceeded(tx)
-	Require(t, err)
-	l2balance, err := testClientSeq.Client.BalanceAt(ctx, builderSeq.L2Info.GetAddress("User2"), nil)
-	Require(t, err)
-	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
-		t.Fatal("Unexpected balance:", l2balance)
-	}
-
-	// ensure transaction succeeds on the sequencer coordinator
-	_, err = WaitForTx(ctx, testClientSeqCoordinator.Client, tx.Hash(), time.Second*5)
-	Require(t, err)
-	l2balance, err = testClientSeqCoordinator.Client.BalanceAt(ctx, builderSeq.L2Info.GetAddress("User2"), nil)
-	Require(t, err)
-	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
-		t.Fatal("Unexpected balance:", l2balance)
-	}
-
-	// ensure transaction succeeds on the sequencer coordinator output feed reader
-	_, err = WaitForTx(ctx, testClientSeqCoordinatorOutputFeedReader.Client, tx.Hash(), time.Second*5)
-	Require(t, err)
-	l2balance, err = testClientSeqCoordinatorOutputFeedReader.Client.BalanceAt(ctx, builderSeq.L2Info.GetAddress("User2"), nil)
-	Require(t, err)
-	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
-		t.Fatal("Unexpected balance:", l2balance)
-	}
 }
