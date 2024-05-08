@@ -80,6 +80,10 @@ interface IOldRollupAdmin {
     function resume() external;
 }
 
+interface ISeqInboxPostUpgradeInit {
+    function postUpgradeInit(BufferConfig memory bufferConfig_) external;
+}
+
 /// @title  Provides pre-images to a state hash
 /// @notice We need to use the execution state of the latest confirmed node as the genesis
 ///         in the new rollup. However the this full state is not available on chain, only
@@ -200,6 +204,11 @@ contract BOLDUpgradeAction {
     bool public immutable DISABLE_VALIDATOR_WHITELIST;
     uint64 public immutable CHALLENGE_GRACE_PERIOD_BLOCKS;
     address public immutable MINI_STAKE_AMOUNTS_STORAGE;
+    bool public immutable IS_DELAY_BUFFERABLE;
+    // buffer config
+    uint64 public immutable MAX;
+    uint64 public immutable THRESHOLD;
+    uint64 public immutable REPLENISH_RATE_IN_BASIS;
 
     IOneStepProofEntry public immutable OSP;
     // proxy admins of the contracts to be upgraded
@@ -207,12 +216,14 @@ contract BOLDUpgradeAction {
     ProxyAdmin public immutable PROXY_ADMIN_BRIDGE;
     ProxyAdmin public immutable PROXY_ADMIN_REI;
     ProxyAdmin public immutable PROXY_ADMIN_SEQUENCER_INBOX;
+    ProxyAdmin public immutable PROXY_ADMIN_INBOX;
     StateHashPreImageLookup public immutable PREIMAGE_LOOKUP;
     RollupReader public immutable ROLLUP_READER;
 
     // new contract implementations
     address public immutable IMPL_BRIDGE;
     address public immutable IMPL_SEQUENCER_INBOX;
+    address public immutable IMPL_INBOX;
     address public immutable IMPL_REI;
     address public immutable IMPL_OUTBOX;
     // the old rollup, but with whenNotPaused protection removed from stake withdrawal functions
@@ -237,6 +248,8 @@ contract BOLDUpgradeAction {
         uint256 smallStepLeafSize;
         uint8 numBigStepLevel;
         uint64 challengeGracePeriodBlocks;
+        bool isDelayBufferable;
+        BufferConfig bufferConfig;
     }
 
     // Unfortunately these are not discoverable on-chain, so we need to supply them
@@ -245,11 +258,13 @@ contract BOLDUpgradeAction {
         address bridge;
         address rei;
         address seqInbox;
+        address inbox;
     }
 
     struct Implementations {
         address bridge;
         address seqInbox;
+        address inbox;
         address rei;
         address outbox;
         address oldRollupUser;
@@ -288,11 +303,13 @@ contract BOLDUpgradeAction {
         PROXY_ADMIN_BRIDGE = ProxyAdmin(proxyAdmins.bridge);
         PROXY_ADMIN_REI = ProxyAdmin(proxyAdmins.rei);
         PROXY_ADMIN_SEQUENCER_INBOX = ProxyAdmin(proxyAdmins.seqInbox);
+        PROXY_ADMIN_INBOX = ProxyAdmin(proxyAdmins.inbox);
         PREIMAGE_LOOKUP = new StateHashPreImageLookup();
         ROLLUP_READER = new RollupReader(contracts.rollup);
 
         IMPL_BRIDGE = implementations.bridge;
         IMPL_SEQUENCER_INBOX = implementations.seqInbox;
+        IMPL_INBOX = implementations.inbox;
         IMPL_REI = implementations.rei;
         IMPL_OUTBOX = implementations.outbox;
         IMPL_PATCHED_OLD_ROLLUP_USER = implementations.oldRollupUser;
@@ -313,6 +330,10 @@ contract BOLDUpgradeAction {
         SMALLSTEP_LEAF_SIZE = settings.smallStepLeafSize;
         NUM_BIGSTEP_LEVEL = settings.numBigStepLevel;
         CHALLENGE_GRACE_PERIOD_BLOCKS = settings.challengeGracePeriodBlocks;
+        IS_DELAY_BUFFERABLE = settings.isDelayBufferable;
+        MAX = settings.bufferConfig.max;
+        THRESHOLD = settings.bufferConfig.threshold;
+        REPLENISH_RATE_IN_BASIS = settings.bufferConfig.replenishRateInBasis;
     }
 
     /// @dev    Refund the existing stakers, pause and upgrade the current rollup to
@@ -392,28 +413,52 @@ contract BOLDUpgradeAction {
         // the rollup address to be set to the new rollup address
 
         TransparentUpgradeableProxy bridge = TransparentUpgradeableProxy(payable(BRIDGE));
-        address currentBridgeImpl = PROXY_ADMIN_BRIDGE.getProxyImplementation(bridge);
         PROXY_ADMIN_BRIDGE.upgrade(bridge, IMPL_BRIDGE);
         IBridge(BRIDGE).updateRollupAddress(IOwnable(newRollupAddress));
-        PROXY_ADMIN_BRIDGE.upgrade(bridge, currentBridgeImpl);
 
-        TransparentUpgradeableProxy sequencerInbox = TransparentUpgradeableProxy(payable(SEQ_INBOX));
-        address currentSequencerInboxImpl = PROXY_ADMIN_BRIDGE.getProxyImplementation(sequencerInbox);
-        PROXY_ADMIN_SEQUENCER_INBOX.upgrade(sequencerInbox, IMPL_SEQUENCER_INBOX);
-        ISequencerInbox(SEQ_INBOX).updateRollupAddress();
-        PROXY_ADMIN_SEQUENCER_INBOX.upgrade(sequencerInbox, currentSequencerInboxImpl);
+        upgradeSequencerInbox();
+
+        TransparentUpgradeableProxy inbox = TransparentUpgradeableProxy(payable(INBOX));
+        PROXY_ADMIN_INBOX.upgrade(inbox, IMPL_INBOX);
 
         TransparentUpgradeableProxy rollupEventInbox = TransparentUpgradeableProxy(payable(REI));
-        address currentRollupEventInboxImpl = PROXY_ADMIN_REI.getProxyImplementation(rollupEventInbox);
         PROXY_ADMIN_REI.upgrade(rollupEventInbox, IMPL_REI);
         IRollupEventInbox(REI).updateRollupAddress();
-        PROXY_ADMIN_REI.upgrade(rollupEventInbox, currentRollupEventInboxImpl);
 
         TransparentUpgradeableProxy outbox = TransparentUpgradeableProxy(payable(OUTBOX));
-        address currentOutboxImpl = PROXY_ADMIN_REI.getProxyImplementation(outbox);
         PROXY_ADMIN_OUTBOX.upgrade(outbox, IMPL_OUTBOX);
         IOutbox(OUTBOX).updateRollupAddress();
-        PROXY_ADMIN_OUTBOX.upgrade(outbox, currentOutboxImpl);
+    }
+
+    function upgradeSequencerInbox() private {
+        TransparentUpgradeableProxy sequencerInbox = TransparentUpgradeableProxy(payable(SEQ_INBOX));
+
+        if (IS_DELAY_BUFFERABLE) {
+            PROXY_ADMIN_SEQUENCER_INBOX.upgradeAndCall(
+                sequencerInbox,
+                IMPL_SEQUENCER_INBOX,
+                abi.encodeCall(ISeqInboxPostUpgradeInit.postUpgradeInit,(
+                    BufferConfig({
+                        max: MAX, 
+                        threshold: THRESHOLD, 
+                        replenishRateInBasis: REPLENISH_RATE_IN_BASIS
+                    })
+                ))
+            );
+        } else {
+            PROXY_ADMIN_SEQUENCER_INBOX.upgrade(sequencerInbox, IMPL_SEQUENCER_INBOX);
+        }
+
+        // verify
+        require(
+            PROXY_ADMIN_SEQUENCER_INBOX.getProxyImplementation(sequencerInbox) == IMPL_SEQUENCER_INBOX,
+            "DelayBuffer: new seq inbox implementation not set"
+        );
+        require(
+            ISequencerInbox(SEQ_INBOX).isDelayBufferable() == IS_DELAY_BUFFERABLE,
+            "DelayBuffer: isDelayBufferable not set"
+        );
+        ISequencerInbox(SEQ_INBOX).updateRollupAddress();
     }
 
     function perform(address[] memory validators) external {
