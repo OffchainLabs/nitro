@@ -115,6 +115,7 @@ func OpenSystemArbosStateOrPanic(stateDB vm.StateDB, tracingInfo *util.TracingIn
 // NewArbosMemoryBackedArbOSState creates and initializes a memory-backed ArbOS state (for testing only)
 func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
 	raw := rawdb.NewMemoryDatabase()
+	// TODO pathdb
 	db := state.NewDatabase(raw)
 	statedb, err := state.New(common.Hash{}, db, nil)
 	if err != nil {

@@ -81,6 +81,7 @@ func NewMemoryBacked(burner burn.Burner) *Storage {
 // NewMemoryBackedStateDB uses Geth's memory-backed database to create a statedb
 func NewMemoryBackedStateDB() vm.StateDB {
 	raw := rawdb.NewMemoryDatabase()
+	// TODO pathdb
 	db := state.NewDatabase(raw)
 	statedb, err := state.New(common.Hash{}, db, nil)
 	if err != nil {

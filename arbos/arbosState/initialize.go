@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/ethereum/go-ethereum/trie/triedb/pathdb"
 	"github.com/holiman/uint256"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -52,7 +53,8 @@ func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint
 }
 
 func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, timestamp uint64, accountsPerSync uint) (common.Hash, error) {
-	stateDatabase := state.NewDatabase(db)
+	// TODO pathdb
+	stateDatabase := state.NewDatabaseWithConfig(db, &trie.Config{Preimages: false, PathDB: pathdb.Defaults})
 	statedb, err := state.New(common.Hash{}, stateDatabase, nil)
 	if err != nil {
 		log.Crit("failed to init empty statedb", "error", err)

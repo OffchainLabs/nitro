@@ -105,6 +105,9 @@ func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core
 		SnapshotRestoreMaxGas:              cachingConfig.SnapshotRestoreGasLimit,
 		MaxNumberOfBlocksToSkipStateSaving: cachingConfig.MaxNumberOfBlocksToSkipStateSaving,
 		MaxAmountOfGasToSkipStateSaving:    cachingConfig.MaxAmountOfGasToSkipStateSaving,
+
+		// TODO pathdb
+		StateScheme: rawdb.PathScheme,
 	}
 }
 
