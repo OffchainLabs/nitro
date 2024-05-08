@@ -304,7 +304,6 @@ func TestBlockHashFeedMismatch(t *testing.T) {
 		Version: 1,
 		Messages: []*message.BroadcastFeedMessage{
 			{
-				// SequenceNumber: 1,
 				SequenceNumber: 2,
 				Message: arbostypes.MessageWithMetadata{
 					Message: &arbostypes.L1IncomingMessage{
