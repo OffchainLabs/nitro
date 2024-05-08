@@ -23,4 +23,6 @@ interface IAssertionChain {
     function getSecondChildCreationBlock(bytes32 assertionHash) external view returns (uint64);
     function isFirstChild(bytes32 assertionHash) external view returns (bool);
     function isPending(bytes32 assertionHash) external view returns (bool);
+    function isValidator(address) external view returns (bool);
+    function validatorWhitelistDisabled() external view returns (bool);
 }

@@ -28,6 +28,9 @@ contract MockAssertionChain is IAssertionChain {
     address public challengeManager;
     uint64 public confirmPeriodBlocks;
 
+    bool public validatorWhitelistDisabled;
+    mapping(address => bool) public isValidator;
+
     function assertionExists(bytes32 assertionHash) public view returns (bool) {
         return assertions[assertionHash].height != 0;
     }
@@ -151,5 +154,13 @@ contract MockAssertionChain is IAssertionChain {
         require(beforeStateHash == StateToolsLib.hash(assertions[predecessorId].state), "Before state hash does not match predecessor");
 
         return addAssertionUnsafe(predecessorId, height, nextInboxPosition, afterState, successionChallenge);
+    }
+
+    function setValidatorWhitelistDisabled(bool x) external {
+        validatorWhitelistDisabled = x;
+    }
+
+    function setIsValidator(address user, bool x) external {
+        isValidator[user] = x;
     }
 }

@@ -18,7 +18,7 @@ contract MockOneStepProofEntry is IOneStepProofEntry {
 
     uint256 public testMachineStep;
 
-    function getStartMachineHash(bytes32 globalStateHash, bytes32 wasmModuleRoot) external pure returns(bytes32) {
+    function getStartMachineHash(bytes32 globalStateHash, bytes32 wasmModuleRoot) external pure returns (bytes32) {
         return keccak256(abi.encodePacked("Machine:", globalStateHash, wasmModuleRoot));
     }
 
@@ -68,9 +68,12 @@ contract EdgeChallengeManagerLibAccess {
         AssertionReferenceData memory ard,
         IOneStepProofEntry oneStepProofEntry,
         uint256 expectedEndHeight,
-        uint8 numBigStepLevel
+        uint8 numBigStepLevel,
+        bool whitelistEnabled
     ) public returns (EdgeAddedData memory) {
-        return store.createLayerZeroEdge(args, ard, oneStepProofEntry, expectedEndHeight, numBigStepLevel);
+        return store.createLayerZeroEdge(
+            args, ard, oneStepProofEntry, expectedEndHeight, numBigStepLevel, whitelistEnabled
+        );
     }
 
     function getPrevAssertionHash(bytes32 edgeId) public view returns (bytes32) {
@@ -138,6 +141,14 @@ contract EdgeChallengeManagerLibAccess {
 
     function firstRivals(bytes32 mutualId) public view returns (bytes32) {
         return store.firstRivals[mutualId];
+    }
+
+    function hasMadeLayerZeroRival(address account, bytes32 mutualId) public view returns (bool) {
+        return store.hasMadeLayerZeroRival[account][mutualId];
+    }
+
+    function setHasMadeLayerZeroRival(address account, bytes32 mutualId, bool x) public {
+        store.hasMadeLayerZeroRival[account][mutualId] = x;
     }
 
     function remove(bytes32 edgeId) public {
@@ -668,17 +679,13 @@ contract EdgeChallengeManagerLibTest is Test {
         bool upperHasRival
     ) internal {
         bytes memory prefixProof = abi.encode(
-                ProofUtils.expansionFromLeaves(states, 0, bisectionPoint + 1),
-                ProofUtils.generatePrefixProof(
-                    bisectionPoint + 1, ArrayUtilsLib.slice(states, bisectionPoint + 1, states.length)
-                )
-            );
-        (bytes32 lowerChildId, EdgeAddedData memory lowerChildAdded, EdgeAddedData memory upperChildAdded) = store
-            .bisectEdge(
-            edge.idMem(),
-            bisectionRoot,
-            prefixProof
+            ProofUtils.expansionFromLeaves(states, 0, bisectionPoint + 1),
+            ProofUtils.generatePrefixProof(
+                bisectionPoint + 1, ArrayUtilsLib.slice(states, bisectionPoint + 1, states.length)
+            )
         );
+        (bytes32 lowerChildId, EdgeAddedData memory lowerChildAdded, EdgeAddedData memory upperChildAdded) =
+            store.bisectEdge(edge.idMem(), bisectionRoot, prefixProof);
         bisectEdgeEmitted(
             edge,
             bisectionRoot,
@@ -1253,7 +1260,7 @@ contract EdgeChallengeManagerLibTest is Test {
         }
 
         MockOneStepProofEntry entry = new MockOneStepProofEntry(expectedStartMachineStep);
-        
+
         if (data.revertArg.length != 0) {
             vm.expectRevert(data.revertArg);
         }
@@ -1385,13 +1392,24 @@ contract EdgeChallengeManagerLibTest is Test {
         return ExecStateVars(assertionState, machineHash);
     }
 
-    function createZeroBlockEdge(uint256 mode) internal {
+    function createZeroBlockEdge(uint256 mode) internal returns (EdgeAddedData memory) {
+        return createZeroBlockEdge(mode, "");
+    }
+
+    function createZeroBlockEdge(uint256 mode, bytes memory extraData) internal returns (EdgeAddedData memory) {
         bytes memory revertArg;
         MockOneStepProofEntry entry = new MockOneStepProofEntry(0);
         uint256 expectedEndHeight = 2 ** 2;
         if (mode == 139) {
             expectedEndHeight = 2 ** 5 - 1;
             revertArg = abi.encodeWithSelector(NotPowerOfTwo.selector, expectedEndHeight);
+        }
+
+        bool whitelistEnabled = mode == 150 || mode == 151;
+
+        if (mode == 151) {
+            bytes32 expectedMutualId = abi.decode(extraData, (bytes32));
+            revertArg = abi.encodeWithSelector(AccountHasMadeLayerZeroRival.selector, address(this), expectedMutualId);
         }
 
         ExecStateVars memory startExec = randomAssertionState(entry);
@@ -1475,7 +1493,7 @@ contract EdgeChallengeManagerLibTest is Test {
             vm.expectRevert(revertArg);
         }
         EdgeAddedData memory addedEdge =
-            store.createLayerZeroEdge(args, ard, entry, expectedEndHeight, NUM_BIGSTEP_LEVEL);
+            store.createLayerZeroEdge(args, ard, entry, expectedEndHeight, NUM_BIGSTEP_LEVEL, whitelistEnabled);
         if (revertArg.length == 0) {
             assertEq(
                 store.get(addedEdge.edgeId).startHistoryRoot,
@@ -1487,6 +1505,8 @@ contract EdgeChallengeManagerLibTest is Test {
                 "Start history root"
             );
         }
+
+        return addedEdge;
     }
 
     function testCreateLayerZeroEdgeBlockA() public {
@@ -1539,6 +1559,16 @@ contract EdgeChallengeManagerLibTest is Test {
 
     function testCreateLayerZeroEdgeEmptyPrefixProof() public {
         createZeroBlockEdge(148);
+    }
+
+    function testPerAccountRivalRestriction() public {
+        uint256 snapshot = vm.snapshot();
+        EdgeAddedData memory edgeAdded = createZeroBlockEdge(150);
+        assertTrue(store.hasMadeLayerZeroRival(address(this), edgeAdded.mutualId));
+        vm.revertTo(snapshot);
+
+        store.setHasMadeLayerZeroRival(address(this), edgeAdded.mutualId, true);
+        createZeroBlockEdge(151, abi.encode(edgeAdded.mutualId));
     }
 
     function createClaimEdge(EdgeChallengeManagerLibAccess c, uint256 start, uint256 end, bool includeRival)
@@ -1653,7 +1683,8 @@ contract EdgeChallengeManagerLibTest is Test {
             vars.emptyArd,
             vars.a,
             vars.expectedEndHeight,
-            NUM_BIGSTEP_LEVEL
+            NUM_BIGSTEP_LEVEL,
+            false
         );
     }
 
@@ -1741,7 +1772,8 @@ contract EdgeChallengeManagerLibTest is Test {
             ard,
             mockOsp,
             expectedEndHeight,
-            numBigStepLevel
+            numBigStepLevel,
+            false
         ).edgeId;
     }
 
@@ -1910,13 +1942,14 @@ contract EdgeChallengeManagerLibTest is Test {
                     prefixProof: abi.encode(
                         ProofUtils.expansionFromLeaves(states1, 0, 1),
                         ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(states1, 1, states1.length))
-                        ),
+                    ),
                     proof: typeSpecificProof1
                 }),
                 emptyArd,
                 mockOsp,
                 32,
-                1
+                1,
+                false
             ).edgeId;
         }
 
@@ -1954,13 +1987,14 @@ contract EdgeChallengeManagerLibTest is Test {
                     prefixProof: abi.encode(
                         ProofUtils.expansionFromLeaves(states2, 0, 1),
                         ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(states2, 1, states2.length))
-                        ),
+                    ),
                     proof: typeSpecificProof2
                 }),
                 emptyArd,
                 mockOsp,
                 32,
-                1
+                1,
+                false
             ).edgeId;
         }
 

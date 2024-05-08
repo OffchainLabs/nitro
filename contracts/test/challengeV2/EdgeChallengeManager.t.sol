@@ -14,7 +14,7 @@ import "../ERC20Mock.sol";
 import "./StateTools.sol";
 
 contract MockOneStepProofEntry is IOneStepProofEntry {
-    function getStartMachineHash(bytes32 globalStateHash, bytes32 wasmModuleRoot) external pure returns(bytes32) {
+    function getStartMachineHash(bytes32 globalStateHash, bytes32 wasmModuleRoot) external pure returns (bytes32) {
         return keccak256(abi.encodePacked("Machine:", globalStateHash, wasmModuleRoot));
     }
 
@@ -96,6 +96,7 @@ contract EdgeChallengeManagerTest is Test {
 
     function deploy() internal returns (MockAssertionChain, EdgeChallengeManager, bytes32) {
         MockAssertionChain assertionChain = new MockAssertionChain();
+        assertionChain.setValidatorWhitelistDisabled(true);
         EdgeChallengeManager challengeManagerTemplate = new EdgeChallengeManager();
         EdgeChallengeManager challengeManager = EdgeChallengeManager(
             address(new TransparentUpgradeableProxy(address(challengeManagerTemplate), address(new ProxyAdmin()), ""))
@@ -325,6 +326,19 @@ contract EdgeChallengeManagerTest is Test {
         });
     }
 
+    function testWhitelist() public {
+        (MockAssertionChain assertionChain, EdgeChallengeManager challengeManager, bytes32 genesis) = deploy();
+
+        assertionChain.setValidatorWhitelistDisabled(false);
+
+        CreateEdgeArgs memory emptyArgs;
+        vm.expectRevert(abi.encodeWithSelector(NotValidator.selector, address(this)));
+        challengeManager.createLayerZeroEdge(emptyArgs);
+
+        assertionChain.setIsValidator(address(this), true);
+        testCanCreateEdgeWithStake();
+    }
+
     function testRevertBlockNoFork() public {
         (MockAssertionChain assertionChain, EdgeChallengeManager challengeManager, bytes32 genesis) = deploy();
 
@@ -350,12 +364,12 @@ contract EdgeChallengeManagerTest is Test {
                 prefixProof: abi.encode(
                     ProofUtils.expansionFromLeaves(states, 0, 1),
                     ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(states, 1, states.length))
-                    ),
+                ),
                 proof: abi.encode(
                     ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), states.length - 1),
                     genesisStateData,
                     AssertionStateData(a1State, genesisAssertionHash, bytes32(0))
-                    )
+                )
             })
         );
     }
@@ -376,12 +390,12 @@ contract EdgeChallengeManagerTest is Test {
                 prefixProof: abi.encode(
                     ProofUtils.expansionFromLeaves(states, 0, 1),
                     ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(states, 1, states.length))
-                    ),
+                ),
                 proof: abi.encode(
                     ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), states.length - 1),
                     genesisStateData,
                     ei.a1Data
-                    )
+                )
             })
         );
     }
@@ -402,7 +416,7 @@ contract EdgeChallengeManagerTest is Test {
                 prefixProof: abi.encode(
                     ProofUtils.expansionFromLeaves(states, 0, 1),
                     ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(states, 1, states.length))
-                    ),
+                ),
                 proof: ""
             })
         );
@@ -424,10 +438,10 @@ contract EdgeChallengeManagerTest is Test {
                 prefixProof: abi.encode(
                     ProofUtils.expansionFromLeaves(states, 0, 1),
                     ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(states, 1, states.length))
-                    ),
+                ),
                 proof: abi.encode(
                     ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), 0), genesisStateData, ei.a1Data
-                    )
+                )
             })
         );
     }
@@ -448,10 +462,10 @@ contract EdgeChallengeManagerTest is Test {
                 prefixProof: abi.encode(
                     ProofUtils.expansionFromLeaves(states, 0, 1),
                     ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(states, 1, states.length))
-                    ),
+                ),
                 proof: abi.encode(
                     ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), 0), genesisStateData, ei.a1Data
-                    )
+                )
             })
         );
     }
@@ -472,10 +486,10 @@ contract EdgeChallengeManagerTest is Test {
                 prefixProof: abi.encode(
                     ProofUtils.expansionFromLeaves(states, 0, 1),
                     ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(states, 1, states.length))
-                    ),
+                ),
                 proof: abi.encode(
                     ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), states.length - 1), ei.a2Data, ei.a1Data
-                    )
+                )
             })
         );
     }
@@ -500,12 +514,12 @@ contract EdgeChallengeManagerTest is Test {
                 prefixProof: abi.encode(
                     ProofUtils.expansionFromLeaves(states, 0, 1),
                     ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(states, 1, states.length))
-                    ),
+                ),
                 proof: abi.encode(
                     ProofUtils.generateInclusionProof(ProofUtils.rehashed(states), states.length - 1),
                     genesisStateData,
                     ei.a1Data
-                    )
+                )
             })
         );
         uint256 afterBalance = stakeToken.balanceOf(address(this));
@@ -592,12 +606,12 @@ contract EdgeChallengeManagerTest is Test {
                     prefixProof: abi.encode(
                         ProofUtils.expansionFromLeaves(states2, 0, 1),
                         ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(states2, 1, states2.length))
-                        ),
+                    ),
                     proof: abi.encode(
                         ProofUtils.generateInclusionProof(ProofUtils.rehashed(states2), states2.length - 1),
                         genesisStateData,
                         ei.a2Data
-                        )
+                    )
                 })
             );
 
@@ -845,7 +859,7 @@ contract EdgeChallengeManagerTest is Test {
                 prefixProof: abi.encode(
                     ProofUtils.expansionFromLeaves(states1, 0, 1),
                     ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(states1, 1, states1.length))
-                    ),
+                ),
                 proof: generateEdgeProof(states1, bigStepStates)
             })
         );
@@ -882,7 +896,7 @@ contract EdgeChallengeManagerTest is Test {
                 prefixProof: abi.encode(
                     ProofUtils.expansionFromLeaves(bigStepStates, 0, 1),
                     ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(bigStepStates, 1, bigStepStates.length))
-                    ),
+                ),
                 proof: generateEdgeProof(states1, bigStepStates)
             })
         );
@@ -919,7 +933,7 @@ contract EdgeChallengeManagerTest is Test {
                 prefixProof: abi.encode(
                     ProofUtils.expansionFromLeaves(bigStepStates, 0, 1),
                     ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(bigStepStates, 1, bigStepStates.length))
-                    ),
+                ),
                 proof: ""
             })
         );
@@ -961,10 +975,10 @@ contract EdgeChallengeManagerTest is Test {
                 prefixProof: abi.encode(
                     ProofUtils.expansionFromLeaves(bigStepStates, 0, 1),
                     ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(bigStepStates, 1, bigStepStates.length))
-                    ),
+                ),
                 proof: abi.encode(
                     states1[0], states1[1], claimEndInclusionProof, claimEndInclusionProof, edgeInclusionProof
-                    )
+                )
             })
         );
     }
@@ -1005,10 +1019,10 @@ contract EdgeChallengeManagerTest is Test {
                 prefixProof: abi.encode(
                     ProofUtils.expansionFromLeaves(bigStepStates, 0, 1),
                     ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(bigStepStates, 1, bigStepStates.length))
-                    ),
+                ),
                 proof: abi.encode(
                     states1[0], states1[1], claimStartInclusionProof, claimStartInclusionProof, edgeInclusionProof
-                    )
+                )
             })
         );
     }
@@ -1049,10 +1063,10 @@ contract EdgeChallengeManagerTest is Test {
                 prefixProof: abi.encode(
                     ProofUtils.expansionFromLeaves(bigStepStates, 0, 1),
                     ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(bigStepStates, 1, bigStepStates.length))
-                    ),
+                ),
                 proof: abi.encode(
                     states1[0], states1[1], claimStartInclusionProof, claimEndInclusionProof, claimStartInclusionProof
-                    )
+                )
             })
         );
     }
@@ -1088,7 +1102,7 @@ contract EdgeChallengeManagerTest is Test {
                 prefixProof: abi.encode(
                     ProofUtils.expansionFromLeaves(bigStepStates, 0, 1),
                     ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(bigStepStates, 1, bigStepStates.length))
-                    ),
+                ),
                 proof: generateEdgeProof(states1, bigStepStates)
             })
         );
@@ -1132,7 +1146,7 @@ contract EdgeChallengeManagerTest is Test {
                     prefixProof: abi.encode(
                         ProofUtils.expansionFromLeaves(bigStepStates1, 0, 1),
                         ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(bigStepStates1, 1, bigStepStates1.length))
-                        ),
+                    ),
                     proof: generateEdgeProof(states1, bigStepStates1)
                 })
             );
@@ -1153,7 +1167,7 @@ contract EdgeChallengeManagerTest is Test {
                     prefixProof: abi.encode(
                         ProofUtils.expansionFromLeaves(bigStepStates2, 0, 1),
                         ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(bigStepStates2, 1, bigStepStates2.length))
-                        ),
+                    ),
                     proof: generateEdgeProof(states2, bigStepStates2)
                 })
             );
@@ -1181,7 +1195,7 @@ contract EdgeChallengeManagerTest is Test {
                     prefixProof: abi.encode(
                         ProofUtils.expansionFromLeaves(smallStepStates1, 0, 1),
                         ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(smallStepStates1, 1, smallStepStates1.length))
-                        ),
+                    ),
                     proof: generateEdgeProof(bigStepStates1, smallStepStates1)
                 })
             );
@@ -1222,7 +1236,7 @@ contract EdgeChallengeManagerTest is Test {
                     prefixProof: abi.encode(
                         ProofUtils.expansionFromLeaves(bigStepStates1, 0, 1),
                         ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(bigStepStates1, 1, bigStepStates1.length))
-                        ),
+                    ),
                     proof: generateEdgeProof(states1, bigStepStates1)
                 })
             );
@@ -1267,7 +1281,7 @@ contract EdgeChallengeManagerTest is Test {
                     prefixProof: abi.encode(
                         ProofUtils.expansionFromLeaves(bigStepStates1, 0, 1),
                         ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(bigStepStates1, 1, bigStepStates1.length))
-                        ),
+                    ),
                     proof: generateEdgeProof(states1, bigStepStates1)
                 })
             );
@@ -1288,7 +1302,7 @@ contract EdgeChallengeManagerTest is Test {
                     prefixProof: abi.encode(
                         ProofUtils.expansionFromLeaves(bigStepStates2, 0, 1),
                         ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(bigStepStates2, 1, bigStepStates2.length))
-                        ),
+                    ),
                     proof: generateEdgeProof(states2, bigStepStates2)
                 })
             );
@@ -1316,7 +1330,7 @@ contract EdgeChallengeManagerTest is Test {
                     prefixProof: abi.encode(
                         ProofUtils.expansionFromLeaves(smallStepStates1, 0, 1),
                         ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(smallStepStates1, 1, smallStepStates1.length))
-                        ),
+                    ),
                     proof: generateEdgeProof(bigStepStates1, smallStepStates1)
                 })
             );
@@ -1353,7 +1367,7 @@ contract EdgeChallengeManagerTest is Test {
                 prefixProof: abi.encode(
                     ProofUtils.expansionFromLeaves(bigStepStates, 0, 1),
                     ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(bigStepStates, 1, bigStepStates.length))
-                    ),
+                ),
                 proof: generateEdgeProof(states1, bigStepStates)
             })
         );
@@ -1361,25 +1375,16 @@ contract EdgeChallengeManagerTest is Test {
         _safeVmRoll(block.number + challengePeriodBlock);
 
         vm.expectEmit(true, false, false, true);
-        emit TimerCacheUpdated(
-            edge1BigStepId,
-            challengePeriodBlock
-        );
+        emit TimerCacheUpdated(edge1BigStepId, challengePeriodBlock);
         ei.challengeManager.updateTimerCacheByChildren(edge1BigStepId);
 
         vm.expectEmit(true, false, false, true);
-        emit TimerCacheUpdated(
-            edges1[0].lowerChildId,
-            challengePeriodBlock
-        );
+        emit TimerCacheUpdated(edges1[0].lowerChildId, challengePeriodBlock);
         ei.challengeManager.updateTimerCacheByClaim(edges1[0].lowerChildId, edge1BigStepId);
         ei.challengeManager.updateTimerCacheByChildren(edges1[0].upperChildId);
 
         vm.expectEmit(true, false, false, true);
-        emit TimerCacheUpdated(
-            edges1[1].lowerChildId,
-            challengePeriodBlock
-        );
+        emit TimerCacheUpdated(edges1[1].lowerChildId, challengePeriodBlock);
         ei.challengeManager.updateTimerCacheByChildren(edges1[1].lowerChildId);
         ei.challengeManager.updateTimerCacheByChildren(edges1[1].upperChildId);
 
@@ -1444,7 +1449,7 @@ contract EdgeChallengeManagerTest is Test {
                 prefixProof: abi.encode(
                     ProofUtils.expansionFromLeaves(states, 0, 1),
                     ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(states, 1, states.length))
-                    ),
+                ),
                 proof: typeSpecificProof1
             })
         );
@@ -1508,7 +1513,7 @@ contract EdgeChallengeManagerTest is Test {
                     prefixProof: abi.encode(
                         ProofUtils.expansionFromLeaves(states1, 0, 1),
                         ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(states1, 1, states1.length))
-                        ),
+                    ),
                     proof: typeSpecificProof1
                 })
             );
@@ -1547,7 +1552,7 @@ contract EdgeChallengeManagerTest is Test {
                     prefixProof: abi.encode(
                         ProofUtils.expansionFromLeaves(states2, 0, 1),
                         ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(states2, 1, states2.length))
-                        ),
+                    ),
                     proof: typeSpecificProof2
                 })
             );
