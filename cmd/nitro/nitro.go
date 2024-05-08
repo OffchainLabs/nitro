@@ -42,7 +42,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 	blocksreexecutor "github.com/offchainlabs/nitro/blocks_reexecutor"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -207,7 +207,7 @@ func mainImpl() int {
 		}
 		stackConf.JWTSecret = filename
 	}
-	err = genericconf.InitLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, pathResolver(nodeConfig.Persistent.LogDir))
+	err = genericconf.InitLog(nodeConfig.LogType, nodeConfig.LogLevel, &nodeConfig.FileLogging, pathResolver(nodeConfig.Persistent.LogDir))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
 		return 1
@@ -324,7 +324,7 @@ func mainImpl() int {
 	var rollupAddrs chaininfo.RollupAddresses
 	var l1Client *ethclient.Client
 	var l1Reader *headerreader.HeaderReader
-	var blobReader arbstate.BlobReader
+	var blobReader daprovider.BlobReader
 	if nodeConfig.Node.ParentChainReader.Enable {
 		confFetcher := func() *rpcclient.ClientConfig { return &liveNodeConfig.Get().ParentChain.Connection }
 		rpcClient := rpcclient.NewRpcClient(confFetcher, nil)
@@ -599,7 +599,7 @@ func mainImpl() int {
 	}
 
 	liveNodeConfig.SetOnReloadHook(func(oldCfg *NodeConfig, newCfg *NodeConfig) error {
-		if err := genericconf.InitLog(newCfg.LogType, log.Lvl(newCfg.LogLevel), &newCfg.FileLogging, pathResolver(nodeConfig.Persistent.LogDir)); err != nil {
+		if err := genericconf.InitLog(newCfg.LogType, newCfg.LogLevel, &newCfg.FileLogging, pathResolver(nodeConfig.Persistent.LogDir)); err != nil {
 			return fmt.Errorf("failed to re-init logging: %w", err)
 		}
 		return currentNode.OnConfigReload(&oldCfg.Node, &newCfg.Node)
@@ -690,7 +690,7 @@ type NodeConfig struct {
 	Validation       valnode.Config                  `koanf:"validation" reload:"hot"`
 	ParentChain      conf.ParentChainConfig          `koanf:"parent-chain" reload:"hot"`
 	Chain            conf.L2Config                   `koanf:"chain"`
-	LogLevel         int                             `koanf:"log-level" reload:"hot"`
+	LogLevel         string                          `koanf:"log-level" reload:"hot"`
 	LogType          string                          `koanf:"log-type" reload:"hot"`
 	FileLogging      genericconf.FileLoggingConfig   `koanf:"file-logging" reload:"hot"`
 	Persistent       conf.PersistentConfig           `koanf:"persistent"`
@@ -716,7 +716,7 @@ var NodeConfigDefault = NodeConfig{
 	Validation:       valnode.DefaultValidationConfig,
 	ParentChain:      conf.L1ConfigDefault,
 	Chain:            conf.L2ConfigDefault,
-	LogLevel:         int(log.LvlInfo),
+	LogLevel:         "INFO",
 	LogType:          "plaintext",
 	FileLogging:      genericconf.DefaultFileLoggingConfig,
 	Persistent:       conf.PersistentConfigDefault,
@@ -742,7 +742,7 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	valnode.ValidationConfigAddOptions("validation", f)
 	conf.L1ConfigAddOptions("parent-chain", f)
 	conf.L2ConfigAddOptions("chain", f)
-	f.Int("log-level", NodeConfigDefault.LogLevel, "log level")
+	f.String("log-level", NodeConfigDefault.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
 	f.String("log-type", NodeConfigDefault.LogType, "log type (plaintext or json)")
 	genericconf.FileLoggingConfigAddOptions("file-logging", f)
 	conf.PersistentConfigAddOptions("persistent", f)

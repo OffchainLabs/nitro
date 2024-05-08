@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/validator"
@@ -21,6 +22,7 @@ type RecordResult struct {
 	BlockHash common.Hash
 	Preimages map[common.Hash][]byte
 	BatchInfo []validator.BatchInfo
+	UserWasms state.UserWasms
 }
 
 var ErrRetrySequencer = errors.New("please retry transaction")

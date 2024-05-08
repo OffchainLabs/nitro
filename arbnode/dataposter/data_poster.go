@@ -845,7 +845,7 @@ func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransacti
 			return fmt.Errorf("couldn't get preceding tx in DataPoster to check if should send tx with nonce %d: %w", newTx.FullTx.Nonce(), err)
 		}
 		if precedingTx != nil && // precedingTx == nil -> the actual preceding tx was already confirmed
-			precedingTx.FullTx.Type() != newTx.FullTx.Type() {
+			(precedingTx.FullTx.Type() != newTx.FullTx.Type() || !precedingTx.Sent) {
 			latestBlockNumber, err := p.client.BlockNumber(ctx)
 			if err != nil {
 				return fmt.Errorf("couldn't get block number in DataPoster to check if should send tx with nonce %d: %w", newTx.FullTx.Nonce(), err)
@@ -857,7 +857,7 @@ func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransacti
 			}
 
 			if precedingTx.FullTx.Nonce() > reorgResistantNonce {
-				log.Info("DataPoster is holding off on sending a transaction of different type to the previous transaction until the previous transaction has been included in a reorg resistant block (it remains queued and will be retried)", "nonce", newTx.FullTx.Nonce(), "prevType", precedingTx.FullTx.Type(), "type", newTx.FullTx.Type())
+				log.Info("DataPoster is avoiding creating a mempool nonce gap (the tx remains queued and will be retried)", "nonce", newTx.FullTx.Nonce(), "prevType", precedingTx.FullTx.Type(), "type", newTx.FullTx.Type(), "prevSent", precedingTx.Sent)
 				return nil
 			}
 		}

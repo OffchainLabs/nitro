@@ -5,7 +5,7 @@
 ;; https://github.com/WebAssembly/bulk-memory-operations/blob/master/proposals/bulk-memory-operations/Overview.md
 
 (module
-    (memory 0)
+    (memory (export "memory") 0 0)
     (func $memory_fill (param $dest i32) (param $value i32) (param $size i32)
         (local $value64 i64)
         ;; the bounds check happens before any data is written according to the spec
