@@ -4,7 +4,6 @@
 
 pragma solidity ^0.8.0;
 
-import "../challenge/OldChallengeLib.sol";
 import "../state/GlobalState.sol";
 import "../bridge/ISequencerInbox.sol";
 
