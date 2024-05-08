@@ -21,7 +21,7 @@ func TestEspressoParsing(t *testing.T) {
 	}
 	var mockProof = json.RawMessage(`{"NonExistence":{"ns_id":0}}`)
 	var mockChainConfig = &espressoTypes.ResolvableChainConfig{
-		espressoTypes.EitherChainConfig{
+		ChainConfig: espressoTypes.EitherChainConfig{
 			Left: &espressoTypes.ChainConfig{ChainId: *espressoTypes.NewU256().SetUint64(0x8a19), MaxBlockSize: 10240, BaseFee: *espressoTypes.NewU256().SetUint64(0)},
 		},
 	}

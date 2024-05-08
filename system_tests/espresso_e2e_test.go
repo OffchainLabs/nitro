@@ -211,6 +211,7 @@ func createL1ValidatorPosterNode(ctx context.Context, t *testing.T, hotshotUrl s
 	return builder, cleanup
 }
 
+//lint:ignore U1000 Ignore unused function temporarily
 func createStaker(ctx context.Context, t *testing.T, builder *NodeBuilder, incorrectHeight uint64) (*staker.Staker, *staker.BlockValidator, func()) {
 	config := arbnode.ConfigDefaultL1Test()
 	config.Sequencer = false
