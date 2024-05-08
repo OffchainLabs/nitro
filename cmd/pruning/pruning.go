@@ -233,6 +233,7 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 }
 
 func PruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node, initConfig *conf.InitConfig, cacheConfig *core.CacheConfig, l1Client arbutil.L1Interface, rollupAddrs chaininfo.RollupAddresses, validatorRequired bool) error {
+	// TODO pathdb doesn't need and doesn't support prunning
 	if initConfig.Prune == "" {
 		return pruner.RecoverPruning(stack.InstanceDir(), chainDb)
 	}
