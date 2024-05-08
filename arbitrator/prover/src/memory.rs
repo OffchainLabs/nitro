@@ -263,6 +263,7 @@ impl Memory {
             merkle.set(start_leaf, hash_leaf(self.get_leaf_data(start_leaf)));
             // No need for second merkle
             assert!(value.len() <= Self::LEAF_SIZE);
+            self.merkle = Some(merkle);
         }
 
         true
