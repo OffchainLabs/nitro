@@ -18,15 +18,11 @@ pub fn prepare_machine(
     let reader = BufReader::new(file);
 
     let data = FileData::from_reader(reader)?;
-    let item = data.items.first().unwrap().clone();
-    let preimages = item.preimages;
-    let preimages = preimages
+    let preimages = data
+        .preimages_b64
         .into_iter()
-        .map(|preimage| {
-            let hash: [u8; 32] = preimage.hash.try_into().unwrap();
-            let hash: Bytes32 = hash.into();
-            (hash, preimage.data)
-        })
+        .map(|preimage| preimage.1.into_iter().map(|(k, v)| (k, v)))
+        .flatten()
         .collect::<HashMap<Bytes32, Vec<u8>>>();
     let preimage_resolver = move |_: u64, _: PreimageType, hash: Bytes32| -> Option<CBytes> {
         preimages
@@ -59,11 +55,13 @@ pub fn prepare_machine(
 
     // println!("Adding sequencer inbox message");
     let identifier = argument_data_to_inbox(0).unwrap();
-    mach.add_inbox_msg(identifier, data.batch_info.number, data.batch_info.data);
+    for batch_info in data.batch_info.iter() {
+        mach.add_inbox_msg(identifier, batch_info.number, batch_info.data_b64.clone());
+    }
 
     // println!("Adding delayed inbox message");
     let identifier = argument_data_to_inbox(1).unwrap();
-    mach.add_inbox_msg(identifier, data.delayed_msg_nr, data.delayed_msg);
+    mach.add_inbox_msg(identifier, data.delayed_msg_nr, data.delayed_msg_b64);
 
     Ok(mach)
 }
