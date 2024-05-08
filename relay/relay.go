@@ -10,8 +10,6 @@ import (
 
 	flag "github.com/spf13/pflag"
 
-	"github.com/ethereum/go-ethereum/log"
-
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcastclients"
@@ -120,7 +118,7 @@ func (r *Relay) StopAndWait() {
 type Config struct {
 	Conf          genericconf.ConfConfig          `koanf:"conf"`
 	Chain         L2Config                        `koanf:"chain"`
-	LogLevel      int                             `koanf:"log-level"`
+	LogLevel      string                          `koanf:"log-level"`
 	LogType       string                          `koanf:"log-type"`
 	Metrics       bool                            `koanf:"metrics"`
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
@@ -133,7 +131,7 @@ type Config struct {
 var ConfigDefault = Config{
 	Conf:          genericconf.ConfConfigDefault,
 	Chain:         L2ConfigDefault,
-	LogLevel:      int(log.LvlInfo),
+	LogLevel:      "INFO",
 	LogType:       "plaintext",
 	Metrics:       false,
 	MetricsServer: genericconf.MetricsServerConfigDefault,
@@ -146,7 +144,7 @@ var ConfigDefault = Config{
 func ConfigAddOptions(f *flag.FlagSet) {
 	genericconf.ConfConfigAddOptions("conf", f)
 	L2ConfigAddOptions("chain", f)
-	f.Int("log-level", ConfigDefault.LogLevel, "log level")
+	f.String("log-level", ConfigDefault.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
 	f.String("log-type", ConfigDefault.LogType, "log type")
 	f.Bool("metrics", ConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
