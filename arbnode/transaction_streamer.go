@@ -542,7 +542,9 @@ func (s *TransactionStreamer) getMessageWithMetadataAndBlockHash(seqNum arbutil.
 		return nil, err
 	}
 
-	// get block hash
+	// Get block hash.
+	// First check if key exists in database so this procedure is backwards compatible
+	// with databases' snapshots that don't have block hashes stored.
 	key := dbKey(blockHashInputFeedPrefix, uint64(seqNum))
 	hasBlockHash, err := s.db.Has(key)
 	if err != nil {
