@@ -9,7 +9,6 @@ import (
 	"sync"
 
 	"github.com/ethereum/go-ethereum/log"
-	"golang.org/x/exp/slog"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
@@ -90,7 +89,7 @@ func (l *fileLoggerFactory) close() error {
 }
 
 // initLog is not threadsafe
-func InitLog(logType string, logLevel slog.Level, fileLoggingConfig *FileLoggingConfig, pathResolver func(string) string) error {
+func InitLog(logType string, logLevel string, fileLoggingConfig *FileLoggingConfig, pathResolver func(string) string) error {
 	var glogger *log.GlogHandler
 	// always close previous instance of file logger
 	if err := globalFileLoggerFactory.close(); err != nil {
@@ -111,8 +110,14 @@ func InitLog(logType string, logLevel slog.Level, fileLoggingConfig *FileLogging
 		flag.Usage()
 		return fmt.Errorf("error parsing log type when creating handler: %w", err)
 	}
+	slogLevel, err := ToSlogLevel(logLevel)
+	if err != nil {
+		flag.Usage()
+		return fmt.Errorf("error parsing log level: %w", err)
+	}
+
 	glogger = log.NewGlogHandler(handler)
-	glogger.Verbosity(logLevel)
+	glogger.Verbosity(slogLevel)
 	log.SetDefault(log.NewLogger(glogger))
 	return nil
 }
