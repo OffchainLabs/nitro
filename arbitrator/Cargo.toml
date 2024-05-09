@@ -3,7 +3,7 @@ members = [
         "arbutil",
         "prover",
         "jit",
-        "vid-helper"
+        "espresso-crypto-helper"
 ]
 
 [profile.release]

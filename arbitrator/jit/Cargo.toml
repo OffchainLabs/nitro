@@ -5,7 +5,7 @@ edition = "2021"
 
 [dependencies]
 arbutil = { path = "../arbutil/" }
-vid-helper = { path = "../vid-helper/" }
+espresso-crypto-helper = { path = "../espresso-crypto-helper/" }
 wasmer = "3.1.0"
 wasmer-compiler-cranelift = "3.1.0"
 wasmer-compiler-llvm = { version = "3.1.0", optional = true }

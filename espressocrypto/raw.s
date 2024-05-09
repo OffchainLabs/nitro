@@ -10,3 +10,7 @@
 TEXT ·verifyNamespace(SB), NOSPLIT, $0
   CallImport
   RET
+
+TEXT ·verifyMerkleProof(SB), NOSPLIT, $0
+  CallImport
+  RET

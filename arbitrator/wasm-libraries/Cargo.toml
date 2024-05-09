@@ -1,2 +1,2 @@
 [workspace]
-members = ["brotli", "wasi-stub", "go-stub", "go-abi", "host-io", "vid"]
+members = ["brotli", "wasi-stub", "go-stub", "go-abi", "host-io", "espresso-crypto"]

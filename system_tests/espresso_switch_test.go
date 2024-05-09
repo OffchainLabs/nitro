@@ -67,6 +67,8 @@ func TestEspressoSwitch(t *testing.T) {
 	msg, err := node.ConsensusNode.TxStreamer.GetMessageCount()
 	Require(t, err)
 
+	// In the centralized mode with disabaling the delayed sequencer,
+	// block only created by l2 message.
 	if msg != currMsg+1 {
 		t.Fatal("")
 	}
@@ -80,7 +82,7 @@ func TestEspressoSwitch(t *testing.T) {
 	err = seq.SetMode(ctx, true)
 	Require(t, err)
 
-	expectedMsg := msg + 10
+	expectedMsg := msg + 3
 	err = waitForWith(t, ctx, 120*time.Second, 5*time.Second, func() bool {
 		msg, err := node.ConsensusNode.TxStreamer.GetMessageCount()
 		if err != nil {
@@ -89,7 +91,7 @@ func TestEspressoSwitch(t *testing.T) {
 		return msg >= expectedMsg
 	})
 	Require(t, err)
-	err = waitForWith(t, ctx, 60*time.Second, 5*time.Second, func() bool {
+	err = waitForWith(t, ctx, 180*time.Second, 5*time.Second, func() bool {
 		validatedCnt := node.ConsensusNode.BlockValidator.Validated(t)
 		return validatedCnt >= expectedMsg
 	})

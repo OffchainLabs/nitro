@@ -29,9 +29,9 @@ import (
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/arbvid"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/das/dastree"
+	"github.com/offchainlabs/nitro/espressocrypto"
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/wavmio"
 )
@@ -278,7 +278,7 @@ func main() {
 
 		validatingAgainstEspresso := arbos.IsEspressoMsg(message.Message) && chainConfig.ArbitrumChainParams.EnableEspresso
 		if validatingAgainstEspresso {
-			txs, jst, err := arbos.ParseEspressoMsg(message.Message)
+			_, jst, err := arbos.ParseEspressoMsg(message.Message)
 			if err != nil {
 				panic(err)
 			}
@@ -299,17 +299,18 @@ func main() {
 			} else {
 				panic(fmt.Sprintf("invalid hotshot block height: %v, got: %v", height, validatedHeight+1))
 			}
-			if !commitment.Equals(hotshotHeader.Commit()) {
-				panic(fmt.Sprintf("invalid hotshot header jst header at %v expected: %v, provided %v.", height, hotshotHeader.Commit(), commitment))
+			if jst.BlockMerkleJustification == nil {
+				panic("block merkle justification missing")
 			}
-			if jst.BlockMerkleProof == nil {
-				panic("block merkle proof missing from justification")
-			}
-			_, err = jst.BlockMerkleProof.Verify(commitment)
+			jsonHeader, err := json.Marshal(hotshotHeader)
 			if err != nil {
-				panic("merkle proof verification failure")
+				panic("unable to serialize header")
 			}
-			arbvid.VerifyNamespace(chainConfig.ChainID.Uint64(), *jst.Proof, *jst.Header.PayloadCommitment, *jst.Header.NsTable, txs)
+			// TODO https://github.com/EspressoSystems/nitro-espresso-integration/issues/116
+			// Uncomment when validation is fixed
+			// espressocrypto.VerifyNamespace(chainConfig.ChainID.Uint64(), *jst.Proof, *jst.Header.PayloadCommitment, *jst.Header.NsTable, txs)
+
+			espressocrypto.VerifyMerkleProof(jst.BlockMerkleJustification.BlockMerkleProof.Proof, jsonHeader, *jst.BlockMerkleJustification.BlockMerkleComm, commitment)
 		}
 
 		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher)

@@ -565,7 +565,7 @@ func endBatch(batch ethdb.Batch) error {
 func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbostypes.MessageWithMetadata, batch ethdb.Batch) error {
 	if messagesAreConfirmed {
 		s.reorgMutex.RLock()
-		dups, _, _, err := s.countDuplicateMessages(pos, messages, nil)
+		dups, _, _, err := s.countDuplicateMessages(pos, messages, &batch)
 		s.reorgMutex.RUnlock()
 		if err != nil {
 			return err
@@ -661,6 +661,33 @@ func (s *TransactionStreamer) countDuplicateMessages(
 					}
 					dbMessageParsed.Message.BatchGasCost = batchGasCostBkup
 				}
+				if arbos.IsEspressoMsg(dbMessageParsed.Message) && !bytes.Equal(nextMessage.Message.L2msg, dbMessageParsed.Message.L2msg) {
+					// Check to see if the difference is the existence of block merkle proof in the new message,
+					// The batcher can append this on the fly (see AddEspressoBlockMerkleProof).
+					// If this is the case, update the database with the block merkle justification.
+					_, newJst, err := arbos.ParseEspressoMsg(nextMessage.Message)
+					if err != nil {
+						return 0, false, nil, err
+
+					}
+					_, oldJst, err := arbos.ParseEspressoMsg(dbMessageParsed.Message)
+					if err != nil {
+						return 0, false, nil, err
+					}
+					if oldJst.BlockMerkleJustification == nil && newJst.BlockMerkleJustification != nil {
+						duplicateMessage = true
+						if batch != nil {
+							log.Error("Writing new block justification to DB")
+							if *batch == nil {
+								*batch = s.db.NewBatch()
+							}
+							if err := s.writeMessage(pos, nextMessage, *batch); err != nil {
+								return 0, false, nil, err
+							}
+						}
+					}
+
+				}
 			}
 
 			if !duplicateMessage {
@@ -701,25 +728,25 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	var hasNewConfirmedMessages bool
 	var cacheClearLen int
 
-	for i := 0; i < len(messages); i++ {
-		// In Espresso mode, we can get strange reorg behavior because the batcher manipulates the justification after sequencing.
-		// To get around this, we simply wipe the block merkle proof before adding a batch to the transaction streamer.
-		// The justification is only relevant for validation purposes so it shouldn't matter that we don't store the proof
-		// in the node's execution database.
-		// TODO: investigate whether modifying the RLP encoding would be the better approach
-		if arbos.IsEspressoMsg(messages[i].Message) {
-			txs, jst, err := arbos.ParseEspressoMsg(messages[i].Message)
-			if err != nil {
-				return err
-			}
-			jst.BlockMerkleProof = nil
-			newMsg, err := arbos.MessageFromEspresso(messages[i].Message.Header, txs, jst)
-			if err != nil {
-				return err
-			}
-			messages[i].Message = &newMsg
-		}
-	}
+	// for i := 0; i < len(messages); i++ {
+	// In Espresso mode, we can get strange reorg behavior because the batcher manipulates the justification after sequencing.
+	// To get around this, we simply wipe the block merkle proof before adding a batch to the transaction streamer.
+	// The justification is only relevant for validation purposes so it shouldn't matter that we don't store the proof
+	// in the node's execution database.
+	// TODO: investigate whether modifying the RLP encoding would be the better approach
+	// 	if arbos.IsEspressoMsg(messages[i].Message) {
+	// 		txs, jst, err := arbos.ParseEspressoMsg(messages[i].Message)
+	// 		if err != nil {
+	// 			return err
+	// 		}
+	// 		jst.BlockMerkleJustification = nil
+	// 		newMsg, err := arbos.MessageFromEspresso(messages[i].Message.Header, txs, jst)
+	// 		if err != nil {
+	// 			return err
+	// 		}
+	// 		messages[i].Message = &newMsg
+	// 	}
+	// }
 
 	messagesAfterPos := messageStartPos + arbutil.MessageIndex(len(messages))
 	broadcastStartPos := arbutil.MessageIndex(atomic.LoadUint64(&s.broadcasterQueuedMessagesPos))

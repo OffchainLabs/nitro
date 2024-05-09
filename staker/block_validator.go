@@ -24,6 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -101,8 +102,8 @@ type BlockValidatorConfig struct {
 	memoryFreeLimit int
 
 	// Espresso specific flags
-	Espresso       bool   `koanf:"espresso"`
-	HotShotAddress string `koanf:"hotshot-address"` //nolint
+	Espresso           bool   `koanf:"espresso"`
+	LightClientAddress string `koanf:"light-client-address"` //nolint
 }
 
 func (c *BlockValidatorConfig) Validate() error {
@@ -152,7 +153,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".prerecorded-blocks", DefaultBlockValidatorConfig.PrerecordedBlocks, "record that many blocks ahead of validation (larger footprint)")
 	f.String(prefix+".current-module-root", DefaultBlockValidatorConfig.CurrentModuleRoot, "current wasm module root ('current' read from chain, 'latest' from machines/latest dir, or provide hash)")
 	f.String(prefix+".pending-upgrade-module-root", DefaultBlockValidatorConfig.PendingUpgradeModuleRoot, "pending upgrade wasm module root to additionally validate (hash, 'latest' or empty)")
-	f.String(prefix+".hotshot-address", DefaultBlockValidatorConfig.HotShotAddress, "hotshot contract address that stores the commitments that must be validated against espresso sequencer batches")
+	f.String(prefix+".light-client-address", DefaultBlockValidatorConfig.LightClientAddress, "address of the hotshot light client contract")
 	f.Bool(prefix+".failure-is-fatal", DefaultBlockValidatorConfig.FailureIsFatal, "failing a validation is treated as a fatal error")
 	f.Bool(prefix+".espresso", DefaultBlockValidatorConfig.Espresso, "if true, hotshot header preimages will be added to validation entries to verify that transactions have been sequenced by espresso")
 	BlockValidatorDangerousConfigAddOptions(prefix+".dangerous", f)
@@ -559,16 +560,17 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		return false, fmt.Errorf("illegal batch msg count %d pos %d batch %d", v.nextCreateBatchMsgCount, pos, endGS.Batch)
 	}
 	var comm espressoTypes.Commitment
-	if v.config().Espresso {
-		height := endGS.HotShotHeight
-		fetchedCommitment, err := v.hotShotReader.L1HotShotCommitmentFromHeight(height)
+	if arbos.IsEspressoMsg(msg.Message) {
+		_, jst, err := arbos.ParseEspressoMsg(msg.Message)
 		if err != nil {
 			return false, err
 		}
-		if fetchedCommitment == nil {
-			return false, fmt.Errorf("commitment not ready yet")
+		fetchedCommitment, err := v.lightClientReader.FetchMerkleRootAtL1Block(jst.BlockMerkleJustification.L1ProofHeight)
+		if err != nil {
+			log.Error("error attempting to fetch block merkle root from the light client contract", "L1ProofHeight", jst.BlockMerkleJustification.L1ProofHeight)
+			return false, err
 		}
-		comm = *fetchedCommitment
+		comm = fetchedCommitment
 	}
 	entry, err := newValidationEntry(pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, v.nextCreateBatchBlockHash, v.nextCreatePrevDelayed, &comm)
 	if err != nil {

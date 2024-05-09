@@ -21,7 +21,7 @@ func (l *MockLightClientReader) ValidatedHeight() (validatedHeight uint64, l1Hei
 	return 18446744073709551615, 18446744073709551615, nil
 }
 
-func (l *MockLightClientReader) IsHotShotAvaliable(t time.Duration) bool {
+func (l *MockLightClientReader) IsHotShotAvailable(t time.Duration) bool {
 	return true
 }
 

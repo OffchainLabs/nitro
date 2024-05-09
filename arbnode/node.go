@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	lightclient "github.com/EspressoSystems/espresso-sequencer-go/light-client"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -553,10 +554,10 @@ func createNodeImpl(
 
 	var statelessBlockValidator *staker.StatelessBlockValidator
 	if config.BlockValidator.ValidationServerConfigs[0].URL != "" {
-		var hotShotReader *HotShotReader
+		var lightClientReader *lightclient.LightClientReader
 		if config.BlockValidator.Espresso {
-			addr := common.HexToAddress(config.BlockValidator.HotShotAddress)
-			hotShotReader, err = NewHotShotReader(addr, l1client)
+			addr := common.HexToAddress(config.BlockValidator.LightClientAddress)
+			lightClientReader, err = lightclient.NewLightClientReader(addr, l1client)
 			if err != nil {
 				return nil, err
 			}
@@ -564,7 +565,7 @@ func createNodeImpl(
 		statelessBlockValidator, err = staker.NewStatelessBlockValidator(
 			inboxReader,
 			inboxTracker,
-			hotShotReader,
+			lightClientReader,
 			txStreamer,
 			exec,
 			rawdb.NewTable(arbDb, storage.BlockValidatorPrefix),
