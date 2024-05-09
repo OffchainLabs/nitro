@@ -14,6 +14,10 @@ contract SimpleOneStepProofEntry is IOneStepProofEntry {
     // This constant must be synchronized with the one in execution/engine.go
     uint64 public constant STEPS_PER_BATCH = 2000;
 
+    function getStartMachineHash(bytes32 globalStateHash, bytes32 wasmModuleRoot) external pure returns(bytes32) {
+        return keccak256(abi.encodePacked("Machine:", globalStateHash, wasmModuleRoot));
+    }
+
     function proveOneStep(
         ExecutionContext calldata execCtx,
         uint256 step,
@@ -47,6 +51,5 @@ contract SimpleOneStepProofEntry is IOneStepProofEntry {
     function getMachineHash(ExecutionState calldata execState) external pure override returns (bytes32) {
         require(execState.machineStatus == MachineStatus.FINISHED, "BAD_MACHINE_STATUS");
         return execState.globalState.hash();
-
     }
 }

@@ -82,6 +82,8 @@ struct EdgeStore {
     /// @notice A mapping of mutualId to the edge id of the confirmed rival with that mutualId
     /// @dev    Each group of rivals (edges sharing mutual id) can only have at most one confirmed edge
     mapping(bytes32 => bytes32) confirmedRivals;
+    /// @notice A mapping of account -> mutualId -> bool indicating if the account has created a layer zero edge with a mutual id
+    mapping(address => mapping(bytes32 => bool)) hasMadeLayerZeroRival;
 }
 
 /// @notice Input data to a one step proof
@@ -412,7 +414,8 @@ library EdgeChallengeManagerLib {
         AssertionReferenceData memory ard,
         IOneStepProofEntry oneStepProofEntry,
         uint256 expectedEndHeight,
-        uint8 numBigStepLevel
+        uint8 numBigStepLevel,
+        bool whitelistEnabled
     ) internal returns (EdgeAddedData memory) {
         // each edge type requires some specific checks
         (ProofData memory proofData, bytes32 originId) =
@@ -421,6 +424,17 @@ library EdgeChallengeManagerLib {
         (bytes32 startHistoryRoot) = layerZeroCommonChecks(proofData, args, expectedEndHeight);
         // we only wrap the struct creation in a function as doing so with exceeds the stack limit
         ChallengeEdge memory ce = toLayerZeroEdge(originId, startHistoryRoot, args);
+
+        // if the validator whitelist is enabled, we can enforce that a single party cannot create two layer zero edges that rival each other
+        // if the validator whitelist is disabled, this check serves no purpose since an attacker can create new accounts
+        if (whitelistEnabled) {
+            bytes32 mutualId = ce.mutualIdMem();
+            if (store.hasMadeLayerZeroRival[msg.sender][mutualId]) {
+                revert AccountHasMadeLayerZeroRival(msg.sender, mutualId);
+            }
+            store.hasMadeLayerZeroRival[msg.sender][mutualId] = true;
+        }
+
         return add(store, ce);
     }
 
@@ -485,7 +499,10 @@ library EdgeChallengeManagerLib {
     /// @dev    The cache is only updated if the new value is greater than the current value.
     ///         If the new value is greater than uint64 max then the cache is set to uint64 max
     /// @return (bool, uint256) A boolean indicating if the cache was updated, and the value of the cache
-    function updateTimerCache(EdgeStore storage store, bytes32 edgeId, uint256 newValue) internal returns (bool, uint256) {
+    function updateTimerCache(EdgeStore storage store, bytes32 edgeId, uint256 newValue)
+        internal
+        returns (bool, uint256)
+    {
         uint256 currentAccuTimer = store.edges[edgeId].totalTimeUnrivaledCache;
         newValue = newValue > type(uint64).max ? type(uint64).max : newValue;
         // only update when increased
@@ -727,7 +744,7 @@ library EdgeChallengeManagerLib {
 
         // we also check the edge is pending in setConfirmed()
         store.edges[edgeId].setConfirmed();
-        
+
         // also checks that no other rival has been confirmed
         setConfirmedRival(store, edgeId);
 

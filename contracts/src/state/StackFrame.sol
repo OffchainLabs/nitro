@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro-contracts/blob/main/LICENSE
 // SPDX-License-Identifier: BUSL-1.1
 
@@ -59,5 +59,10 @@ library StackFrameLib {
         }
         newProved[window.proved.length] = frame;
         window.proved = newProved;
+    }
+
+    function overwrite(StackFrameWindow memory window, bytes32 root) internal pure {
+        window.remainingHash = root;
+        delete window.proved;
     }
 }

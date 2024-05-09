@@ -223,6 +223,8 @@ contract RollupTest is Test {
         validators.push(validator1);
         validators.push(validator2);
         validators.push(validator3);
+        validators.push(address(this));
+        flags.push(true);
         flags.push(true);
         flags.push(true);
         flags.push(true);
@@ -837,12 +839,12 @@ contract RollupTest is Test {
                 prefixProof: abi.encode(
                     ProofUtils.expansionFromLeaves(randomStates1, 0, 1),
                     ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(randomStates1, 1, randomStates1.length))
-                    ),
+                ),
                 proof: abi.encode(
                     ProofUtils.generateInclusionProof(ProofUtils.rehashed(randomStates1), randomStates1.length - 1),
                     AssertionStateData(data.beforeState, bytes32(0), bytes32(0)),
                     AssertionStateData(data.afterState1, genesisHash, userRollup.bridge().sequencerInboxAccs(0))
-                    )
+                )
             })
         );
     }
@@ -855,6 +857,8 @@ contract RollupTest is Test {
         bytes32 root =
             MerkleTreeLib.root(ProofUtils.expansionFromLeaves(randomStates2, 0, LAYERZERO_BLOCKEDGE_HEIGHT + 1));
 
+        token.transfer(validator1, 1 ether);
+        vm.startPrank(validator1);
         bytes32 e2Id = challengeManager.createLayerZeroEdge(
             CreateEdgeArgs({
                 level: 0,
@@ -864,14 +868,15 @@ contract RollupTest is Test {
                 prefixProof: abi.encode(
                     ProofUtils.expansionFromLeaves(randomStates2, 0, 1),
                     ProofUtils.generatePrefixProof(1, ArrayUtilsLib.slice(randomStates2, 1, randomStates2.length))
-                    ),
+                ),
                 proof: abi.encode(
                     ProofUtils.generateInclusionProof(ProofUtils.rehashed(randomStates2), randomStates2.length - 1),
                     AssertionStateData(data.beforeState, bytes32(0), bytes32(0)),
                     AssertionStateData(data.afterState2, genesisHash, userRollup.bridge().sequencerInboxAccs(0))
-                    )
+                )
             })
         );
+        vm.stopPrank();
 
         return (data.e1Id, e2Id);
     }

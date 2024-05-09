@@ -275,7 +275,7 @@ func ChainsWithEdgeChallengeManager(opts ...Opt) (*ChainSetup, error) {
 	wasmModuleRoot := common.Hash{}
 	rollupOwner := accs[0].AccountAddr
 	chainId := big.NewInt(1337)
-	loserStakeEscrow := common.Address{}
+	loserStakeEscrow := rollupOwner
 	cfgOpts := &rollupgen.Config{}
 	for _, o := range setp.challengeTestingOpts {
 		o(cfgOpts)
@@ -600,7 +600,23 @@ func deployBridgeCreator(
 	maxDataSize := big.NewInt(challenge_testing.MaxDataSize)
 	srvlog.Info("Deploying seq inbox")
 	seqInboxTemplate, err := retry.UntilSucceeds[common.Address](ctx, func() (common.Address, error) {
-		seqInboxTemplateAddr, tx, _, err2 := bridgegen.DeploySequencerInbox(auth, backend, maxDataSize, datahashesReader, false /* no fee token */)
+		seqInboxTemplateAddr, tx, _, err2 := bridgegen.DeploySequencerInbox(auth, backend, maxDataSize, datahashesReader, false /* no fee token */, false /* disable delay buffer */)
+		if err2 != nil {
+			return common.Address{}, err2
+		}
+		err2 = challenge_testing.TxSucceeded(ctx, tx, seqInboxTemplateAddr, backend, err2)
+		if err2 != nil {
+			return common.Address{}, errors.Wrap(err2, "bridgegen.DeploySequencerInbox")
+		}
+		return seqInboxTemplateAddr, nil
+	})
+	if err != nil {
+		return common.Address{}, err
+	}
+
+	srvlog.Info("Deploying seq inbox bufferable")
+	seqInboxBufferableTemplate, err := retry.UntilSucceeds[common.Address](ctx, func() (common.Address, error) {
+		seqInboxTemplateAddr, tx, _, err2 := bridgegen.DeploySequencerInbox(auth, backend, maxDataSize, datahashesReader, false /* no fee token */, true /* enable delay buffer */)
 		if err2 != nil {
 			return common.Address{}, err2
 		}
@@ -662,12 +678,13 @@ func deployBridgeCreator(
 		return common.Address{}, err
 	}
 
-	ethTemplates := rollupgen.BridgeCreatorBridgeContracts{
-		SequencerInbox:   seqInboxTemplate,
-		Bridge:           bridgeTemplate,
-		Inbox:            inboxTemplate,
-		RollupEventInbox: rollupEventBridgeTemplate,
-		Outbox:           outboxTemplate,
+	ethTemplates := rollupgen.BridgeCreatorBridgeTemplates{
+		SequencerInbox:                seqInboxTemplate,
+		Bridge:                        bridgeTemplate,
+		Inbox:                         inboxTemplate,
+		RollupEventInbox:              rollupEventBridgeTemplate,
+		Outbox:                        outboxTemplate,
+		DelayBufferableSequencerInbox: seqInboxBufferableTemplate,
 	}
 
 	/// deploy ERC20 based templates
@@ -703,12 +720,13 @@ func deployBridgeCreator(
 		return common.Address{}, err
 	}
 
-	erc20Templates := rollupgen.BridgeCreatorBridgeContracts{
-		Bridge:           erc20BridgeTemplate,
-		SequencerInbox:   seqInboxTemplate,
-		Inbox:            erc20InboxTemplate,
-		RollupEventInbox: erc20RollupEventBridgeTemplate,
-		Outbox:           erc20OutboxTemplate,
+	erc20Templates := rollupgen.BridgeCreatorBridgeTemplates{
+		Bridge:                        erc20BridgeTemplate,
+		SequencerInbox:                seqInboxTemplate,
+		Inbox:                         erc20InboxTemplate,
+		RollupEventInbox:              erc20RollupEventBridgeTemplate,
+		Outbox:                        erc20OutboxTemplate,
+		DelayBufferableSequencerInbox: seqInboxBufferableTemplate,
 	}
 
 	type bridgeCreationResult struct {

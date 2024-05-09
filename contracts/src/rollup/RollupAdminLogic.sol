@@ -52,11 +52,9 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
         minimumAssertionPeriod = 75;
         challengeGracePeriodBlocks = config.challengeGracePeriodBlocks;
 
-        // the owner can't access the rollup user facet where escrow is redeemable
-        require(config.loserStakeEscrow != _getAdmin(), "INVALID_ESCROW_ADMIN");
-        // this next check shouldn't be an issue if the owner controls an AdminProxy
-        // that accesses the admin facet, but still seems like a good extra precaution
-        require(config.loserStakeEscrow != config.owner, "INVALID_ESCROW_OWNER");
+        // loser stake is now sent directly to loserStakeEscrow, it must not
+        // be address(0) because some token do not allow transfers to address(0)
+        require(config.loserStakeEscrow != address(0), "INVALID_ESCROW_0");
         loserStakeEscrow = config.loserStakeEscrow;
 
         stakeToken = config.stakeToken;
@@ -269,9 +267,9 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
     }
 
     function setLoserStakeEscrow(address newLoserStakerEscrow) external override {
-        // escrow holder can't be proxy admin, since escrow is only redeemable through
-        // the primary user logic contract
-        require(newLoserStakerEscrow != _getAdmin(), "INVALID_ESCROW");
+        // loser stake is now sent directly to loserStakeEscrow, it must not
+        // be address(0) because some token do not allow transfers to address(0)
+        require(newLoserStakerEscrow != address(0), "INVALID_ESCROW_0");
         loserStakeEscrow = newLoserStakerEscrow;
         emit OwnerFunctionCalled(25);
     }

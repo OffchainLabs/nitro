@@ -10,6 +10,7 @@ import "../bridge/IOutbox.sol";
 import "../bridge/IInboxBase.sol";
 import "./IRollupEventInbox.sol";
 import "../challengeV2/EdgeChallengeManager.sol";
+import "../challengeV2/IAssertionChain.sol";
 
 interface IRollupCore is IAssertionChain {
     struct Staker {
@@ -67,10 +68,6 @@ interface IRollupCore is IAssertionChain {
     function stakeToken() external view returns (address);
 
     function minimumAssertionPeriod() external view returns (uint256);
-
-    function isValidator(address) external view returns (bool);
-
-    function validatorWhitelistDisabled() external view returns (bool);
 
     function genesisAssertionHash() external pure returns (bytes32);
 

@@ -11,6 +11,7 @@
   },
   "proxyAdmins": {
     "outbox": "0x2a1f38c9097e7883570e0b02bfbe6869cc25d8a3",
+    "inbox": "0x2a1f38c9097e7883570e0b02bfbe6869cc25d8a3",
     "bridge": "0x2a1f38c9097e7883570e0b02bfbe6869cc25d8a3",
     "rei": "0x2a1f38c9097e7883570e0b02bfbe6869cc25d8a3",
     "seqInbox": "0x2a1f38c9097e7883570e0b02bfbe6869cc25d8a3"
@@ -36,7 +37,13 @@
     "bigStepLeafSize": 512,
     "smallStepLeafSize": 128,
     "numBigStepLevel": 4,
-    "maxDataSize": 117964
+    "maxDataSize": 117964,
+    "isDelayBufferable": true,
+    "bufferConfig": {
+      "max": 14400,
+      "threshold": 300,
+      "replenishRateInBasis": 500
+    }
   },
   "validators": [
     "0xf10EF80c6eF4930A62C5F9661c91339Df4dBB173"

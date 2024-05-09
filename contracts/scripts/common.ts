@@ -6,6 +6,7 @@ export interface DeployedContracts {
   seqInbox: string
   rei: string
   outbox: string
+  inbox: string
   oldRollupUser: string
   newRollupUser: string
   newRollupAdmin: string
@@ -46,6 +47,7 @@ export interface Config {
   }
   proxyAdmins: {
     outbox: string
+    inbox: string
     bridge: string
     rei: string
     seqInbox: string
@@ -65,6 +67,12 @@ export interface Config {
     bigStepLeafSize: number
     smallStepLeafSize: number
     numBigStepLevel: number
+    isDelayBufferable: boolean
+    bufferConfig: {
+      max: number
+      threshold: number
+      replenishRateInBasis: number
+    }
   }
   validators: string[]
 }

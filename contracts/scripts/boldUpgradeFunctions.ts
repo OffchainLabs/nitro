@@ -14,6 +14,7 @@ import {
   RollupReader__factory,
   RollupUserLogic__factory,
   SequencerInbox__factory,
+  Inbox__factory,
   StateHashPreImageLookup__factory,
   IReader4844__factory,
 } from '../build/types'
@@ -29,6 +30,8 @@ import {
 export const deployDependencies = async (
   signer: Signer,
   maxDataSize: number,
+  isUsingFeeToken: boolean,
+  isDelayBufferable: boolean,
   log: boolean = false,
 ): Promise<
   Omit<DeployedContracts, 'boldAction' | 'preImageHashLookup' | 'rollupReader'>
@@ -49,7 +52,7 @@ export const deployDependencies = async (
   console.log(`Reader4844 deployed at ${reader4844.address}`)
 
   const seqInboxFac = new SequencerInbox__factory(signer)
-  const seqInbox = await seqInboxFac.deploy(maxDataSize, reader4844.address, false, false)
+  const seqInbox = await seqInboxFac.deploy(maxDataSize, reader4844.address, isUsingFeeToken, isDelayBufferable)
   if (log) {
     console.log(
       `Sequencer inbox implementation deployed at: ${seqInbox.address}`
@@ -66,6 +69,12 @@ export const deployDependencies = async (
   const outbox = await outboxFac.deploy()
   if (log) {
     console.log(`Outbox implementation deployed at: ${outbox.address}`)
+  }
+
+  const inboxFac = new Inbox__factory(signer)
+  const inbox = await inboxFac.deploy(maxDataSize)
+  if (log) {
+    console.log(`Inbox implementation deployed at: ${inbox.address}`)
   }
 
   const oldRollupUserFac = new ContractFactory(
@@ -141,6 +150,7 @@ export const deployDependencies = async (
     seqInbox: seqInbox.address,
     rei: rei.address,
     outbox: outbox.address,
+    inbox: inbox.address,
     oldRollupUser: oldRollupUser.address,
     newRollupUser: newRollupUser.address,
     newRollupAdmin: newRollupAdmin.address,
@@ -158,8 +168,15 @@ export const deployBoldUpgrade = async (
   config: Config,
   log: boolean = false
 ): Promise<DeployedContracts> => {
-  const deployed = await deployDependencies(wallet, config.settings.maxDataSize, log)
-
+  const sequencerInbox = SequencerInbox__factory.connect(config.contracts.sequencerInbox, wallet)
+  const isUsingFeeToken = await sequencerInbox.isUsingFeeToken()
+  const deployed = await deployDependencies(
+    wallet, 
+    config.settings.maxDataSize, 
+    isUsingFeeToken,
+    config.settings.isDelayBufferable,
+    log
+  )
   const fac = new BOLDUpgradeAction__factory(wallet)
   const boldUpgradeAction = await fac.deploy(
     { ...config.contracts, osp: deployed.osp },

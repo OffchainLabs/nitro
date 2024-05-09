@@ -104,3 +104,7 @@ error LevelTooHigh(uint8 level, uint8 numBigStepLevels);
 error InvalidEdgeType(EdgeType edgeType);
 /// @dev Thrown when endHistoryRoot not matching the assertion
 error EndHistoryRootMismatch(bytes32 endHistoryRoot, bytes32 assertionEndRoot);
+/// @dev Thrown when the validator whitelist is enabled and the account attempting to create a layer zero edge is not whitelisted
+error NotValidator(address account);
+/// @dev Thrown when an account has already created a rivalling layer zero edge
+error AccountHasMadeLayerZeroRival(address account, bytes32 mutualId);
