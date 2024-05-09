@@ -520,6 +520,10 @@ func dbKey(prefix []byte, pos uint64) []byte {
 	return key
 }
 
+func isErrNotFound(err error) bool {
+	return errors.Is(err, leveldb.ErrNotFound) || errors.Is(err, pebble.ErrNotFound)
+}
+
 // Note: if changed to acquire the mutex, some internal users may need to be updated to a non-locking version.
 func (s *TransactionStreamer) GetMessage(seqNum arbutil.MessageIndex) (*arbostypes.MessageWithMetadata, error) {
 	key := dbKey(messagePrefix, uint64(seqNum))
@@ -543,25 +547,20 @@ func (s *TransactionStreamer) getMessageWithMetadataAndBlockHash(seqNum arbutil.
 	}
 
 	// Get block hash.
-	// First check if key exists in database so this procedure is backwards compatible
-	// with databases' snapshots that don't have block hashes stored.
+	// To keep it backwards compatible it is possible that a message related
+	// to a sequence number exists in the database but the block hash doesn't.
 	key := dbKey(blockHashInputFeedPrefix, uint64(seqNum))
-	hasBlockHash, err := s.db.Has(key)
-	if err != nil {
-		return nil, err
-	}
 	var blockHash *common.Hash
-	if hasBlockHash {
-		data, err := s.db.Get(key)
-		if err != nil {
-			return nil, err
-		}
+	data, err := s.db.Get(key)
+	if err == nil {
 		var blockHashDBVal blockHashDBValue
 		err = rlp.DecodeBytes(data, &blockHashDBVal)
 		if err != nil {
 			return nil, err
 		}
 		blockHash = blockHashDBVal.BlockHash
+	} else if !isErrNotFound(err) {
+		return nil, err
 	}
 
 	msgWithBlockHash := arbostypes.MessageWithMetadataAndBlockHash{
@@ -706,7 +705,7 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFe
 	if broadcastStartPos > 0 {
 		_, err := s.GetMessage(broadcastStartPos - 1)
 		if err != nil {
-			if !errors.Is(err, leveldb.ErrNotFound) && !errors.Is(err, pebble.ErrNotFound) {
+			if !isErrNotFound(err) {
 				return err
 			}
 			// Message before current message doesn't exist in database, so don't add current messages yet
