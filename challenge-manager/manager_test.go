@@ -149,7 +149,7 @@ func setupEdgeTrackersForBisection(
 	)
 	require.NoError(t, err)
 
-	honestEdge, _, _, err := honestValidator.addBlockChallengeLevelZeroEdge(ctx, createdData.Leaf1)
+	honestEdge, _, _, _, err := honestValidator.addBlockChallengeLevelZeroEdge(ctx, createdData.Leaf1)
 	require.NoError(t, err)
 
 	// If we specify an optional amount of blocks to delay the evil root edge creation by, do so
@@ -161,7 +161,7 @@ func setupEdgeTrackersForBisection(
 		}
 	}
 
-	evilEdge, _, _, err := evilValidator.addBlockChallengeLevelZeroEdge(ctx, createdData.Leaf2)
+	evilEdge, _, _, _, err := evilValidator.addBlockChallengeLevelZeroEdge(ctx, createdData.Leaf2)
 	require.NoError(t, err)
 
 	// Check unrivaled statuses.
@@ -177,7 +177,7 @@ func setupEdgeTrackersForBisection(
 	require.NoError(t, err)
 	numBigStepLevels := numBigStepLevelsRaw
 
-	honestWatcher, err := watcher.New(honestValidator.chain, honestValidator, honestValidator.stateManager, createdData.Backend, time.Second, numBigStepLevels, "alice", nil, honestValidator.assertionConfirmingInterval, honestValidator.averageTimeForBlockCreation)
+	honestWatcher, err := watcher.New(honestValidator.chain, honestValidator, honestValidator.stateManager, createdData.Backend, time.Second, numBigStepLevels, "alice", nil, honestValidator.assertionConfirmingInterval, honestValidator.averageTimeForBlockCreation, nil)
 	require.NoError(t, err)
 	honestValidator.watcher = honestWatcher
 	assertionInfo := &edgetracker.AssociatedAssertionMetadata{
@@ -198,7 +198,7 @@ func setupEdgeTrackersForBisection(
 	)
 	require.NoError(t, err)
 
-	evilWatcher, err := watcher.New(evilValidator.chain, evilValidator, evilValidator.stateManager, createdData.Backend, time.Second, numBigStepLevels, "alice", nil, evilValidator.assertionConfirmingInterval, evilValidator.averageTimeForBlockCreation)
+	evilWatcher, err := watcher.New(evilValidator.chain, evilValidator, evilValidator.stateManager, createdData.Backend, time.Second, numBigStepLevels, "alice", nil, evilValidator.assertionConfirmingInterval, evilValidator.averageTimeForBlockCreation, nil)
 	require.NoError(t, err)
 	evilValidator.watcher = evilWatcher
 	tracker2, err := edgetracker.New(

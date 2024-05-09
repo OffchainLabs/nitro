@@ -86,6 +86,9 @@ type Watcher struct {
 	assertionConfirmingInterval time.Duration
 	averageTimeForBlockCreation time.Duration
 	evilEdgesByLevel            *threadsafe.Map[protocol.ChallengeLevel, *threadsafe.Set[protocol.EdgeId]]
+	// Optional list of challenges to track, keyed by challenged parent assertion hash. If nil,
+	// all challenges will be tracked.
+	challengesToTrack []protocol.AssertionHash
 }
 
 // New initializes a watcher service for frequently scanning the chain
@@ -101,6 +104,7 @@ func New(
 	apiDB db.Database,
 	assertionConfirmingInterval time.Duration,
 	averageTimeForBlockCreation time.Duration,
+	challengesToTrack []protocol.AssertionHash,
 ) (*Watcher, error) {
 	if interval == 0 {
 		return nil, errors.New("chain watcher polling interval must be greater than 0")
@@ -118,6 +122,7 @@ func New(
 		assertionConfirmingInterval: assertionConfirmingInterval,
 		averageTimeForBlockCreation: averageTimeForBlockCreation,
 		evilEdgesByLevel:            threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Set[protocol.EdgeId]](threadsafe.MapWithMetric[protocol.ChallengeLevel, *threadsafe.Set[protocol.EdgeId]]("evilEdgesByLevel")),
+		challengesToTrack:           challengesToTrack,
 	}, nil
 }
 
@@ -634,7 +639,29 @@ func (w *Watcher) processEdgeAddedEvent(
 	if edgeOpt.IsNone() {
 		return false, fmt.Errorf("no edge found with id %#x", event.EdgeId)
 	}
+	edge := edgeOpt.Unwrap()
+	challengeParentAssertionHash, err := edge.AssertionHash(ctx)
+	if err != nil {
+		return false, err
+	}
+	// If we specified a list of challenges we should track, we should
+	// ignore those that are on that list.
+	if !w.shouldTrackChallenge(challengeParentAssertionHash) {
+		return false, nil
+	}
 	return w.AddEdge(ctx, edgeOpt.Unwrap())
+}
+
+func (w *Watcher) shouldTrackChallenge(challengeParentAssertionHash protocol.AssertionHash) bool {
+	if len(w.challengesToTrack) == 0 {
+		return true
+	}
+	for _, hash := range w.challengesToTrack {
+		if hash == challengeParentAssertionHash {
+			return true
+		}
+	}
+	return false
 }
 
 // Filters for edge confirmed by one step proof events within a range.
@@ -735,6 +762,10 @@ func (w *Watcher) processEdgeConfirmation(
 	challengeParentAssertionHash, err := edge.AssertionHash(ctx)
 	if err != nil {
 		return err
+	}
+
+	if !w.shouldTrackChallenge(challengeParentAssertionHash) {
+		return nil
 	}
 
 	// If an edge does not have a claim ID, it is not a level zero edge, and thus we can return early,
