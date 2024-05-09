@@ -8,12 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"net"
 	"testing"
 	"time"
 
 	"github.com/go-redis/redis/v8"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -21,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/redisutil"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func initRedisForTest(t *testing.T, ctx context.Context, redisUrl string, nodeNames []string) {
@@ -270,6 +273,8 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 }
 
 func testCoordinatorMessageSync(t *testing.T, successCase bool) {
+	logHandler := testhelpers.InitTestLog(t, log.LvlTrace)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -304,15 +309,24 @@ func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 
 	nodeConfigDup := *builder.nodeConfig
 	builder.nodeConfig = &nodeConfigDup
-
+	builder.nodeConfig.Feed.Output = *newBroadcasterConfigTest()
 	builder.nodeConfig.SeqCoordinator.MyUrl = nodeNames[1]
 	if !successCase {
 		builder.nodeConfig.SeqCoordinator.Signer.ECDSA.AcceptSequencer = false
 		builder.nodeConfig.SeqCoordinator.Signer.ECDSA.AllowedAddresses = []string{builder.L2Info.GetAddress("User2").Hex()}
 	}
-
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: builder.nodeConfig})
 	defer cleanupB()
+
+	// Build nodeBOutputFeedReader.
+	// nodeB doesn't sequence transactions, but adds messages related to them to its output feed.
+	// nodeBOutputFeedReader reads those messages from this feed and processes them.
+	// nodeBOutputFeedReader doesn't read messages from L1 since none of the nodes posts to L1.
+	nodeBPort := testClientB.ConsensusNode.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
+	nodeConfigNodeBOutputFeedReader := arbnode.ConfigDefaultL1NonSequencerTest()
+	nodeConfigNodeBOutputFeedReader.Feed.Input = *newBroadcastClientConfigTest(nodeBPort)
+	testClientNodeBOutputFeedReader, cleanupNodeBOutputFeedReader := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfigNodeBOutputFeedReader})
+	defer cleanupNodeBOutputFeedReader()
 
 	tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 
@@ -329,6 +343,19 @@ func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 		Require(t, err)
 		if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 			t.Fatal("Unexpected balance:", l2balance)
+		}
+
+		// check that nodeBOutputFeedReader also processed the transaction
+		_, err = WaitForTx(ctx, testClientNodeBOutputFeedReader.Client, tx.Hash(), time.Second*5)
+		Require(t, err)
+		l2balance, err = testClientNodeBOutputFeedReader.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
+		Require(t, err)
+		if l2balance.Cmp(big.NewInt(1e12)) != 0 {
+			t.Fatal("Unexpected balance:", l2balance)
+		}
+
+		if logHandler.WasLogged("block_hash_mismatch") {
+			t.Fatal("block_hash_mismatch was logged unexpectedly")
 		}
 	} else {
 		_, err = WaitForTx(ctx, testClientB.Client, tx.Hash(), time.Second)
