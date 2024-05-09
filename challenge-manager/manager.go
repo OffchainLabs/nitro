@@ -66,14 +66,16 @@ type Manager struct {
 	watcher                     *watcher.Watcher
 	trackedEdgeIds              *threadsafe.Map[protocol.EdgeId, *edgetracker.Tracker]
 	batchIndexForAssertionCache *threadsafe.LruMap[protocol.AssertionHash, edgetracker.AssociatedAssertionMetadata]
-	assertionManager            *assertions.Manager
-	assertionPostingInterval    time.Duration
-	assertionScanningInterval   time.Duration
-	assertionConfirmingInterval time.Duration
-	averageTimeForBlockCreation time.Duration
-	mode                        types.Mode
-	maxDelaySeconds             int
-
+	// Optional list of challenges to track, keyed by challenged parent assertion hash. If nil,
+	// all challenges will be tracked.
+	challengesToTrack            []protocol.AssertionHash
+	assertionManager             *assertions.Manager
+	assertionPostingInterval     time.Duration
+	assertionScanningInterval    time.Duration
+	assertionConfirmingInterval  time.Duration
+	averageTimeForBlockCreation  time.Duration
+	mode                         types.Mode
+	maxDelaySeconds              int
 	claimedAssertionsInChallenge *threadsafe.LruSet[protocol.AssertionHash]
 	// API
 	apiAddr   string
@@ -146,6 +148,15 @@ func WithAPIEnabled(addr string, dbPath string) Opt {
 func WithRPCClient(client *rpc.Client) Opt {
 	return func(val *Manager) {
 		val.client = client
+	}
+}
+
+func WithChallengesToTrack(parentAssertionHashes []string) Opt {
+	return func(val *Manager) {
+		val.challengesToTrack = make([]protocol.AssertionHash, len(parentAssertionHashes))
+		for i, hash := range parentAssertionHashes {
+			val.challengesToTrack[i] = protocol.AssertionHash{Hash: common.HexToHash(hash)}
+		}
 	}
 }
 
@@ -223,7 +234,7 @@ func New(
 		m.apiDB = apiDB
 	}
 
-	watcher, err := watcher.New(m.chain, m, m.stateManager, m.backend, m.chainWatcherInterval, numBigStepLevels, m.name, m.apiDB, m.assertionConfirmingInterval, m.averageTimeForBlockCreation)
+	watcher, err := watcher.New(m.chain, m, m.stateManager, m.backend, m.chainWatcherInterval, numBigStepLevels, m.name, m.apiDB, m.assertionConfirmingInterval, m.averageTimeForBlockCreation, m.challengesToTrack)
 	if err != nil {
 		return nil, err
 	}
