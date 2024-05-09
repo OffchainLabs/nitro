@@ -132,7 +132,12 @@ jobs:
         with:
           version: '2.22.0'
 
-      - name: Run test
+      - name: Run E2E test
         run: |
           packages=`go list ./... | grep system_tests`
-          gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 -- -v -timeout 35m -p 1 ./... -run 'TestEspressoE2E|TestEspressoSwitch'
+          gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 -- -v -timeout 25m -p 1 ./... -run 'TestEspressoE2E'
+
+      - name: Run switch test
+        run: |
+          packages=`go list ./... | grep system_tests`
+          gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 -- -v -timeout 15m -p 1 ./... -run 'TestEspressoSwitch'
