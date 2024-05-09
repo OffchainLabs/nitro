@@ -262,7 +262,7 @@ func TestLyingSequencerLocalDAS(t *testing.T) {
 	testLyingSequencer(t, "files")
 }
 
-func TestBlockHashFeedMismatch(t *testing.T) {
+func testBlockHashComparison(t *testing.T, blockHash *common.Hash, mustMismatch bool) {
 	logHandler := testhelpers.InitTestLog(t, log.LvlTrace)
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -302,7 +302,6 @@ func TestBlockHashFeedMismatch(t *testing.T) {
 	userAccount := "User2"
 	txHash := common.HexToHash("0x633f62b463cc0e52d842406995fb590654db40aace77bfca863ba0e8d2290f97")
 	poster := common.HexToAddress("0xa4b000000000000000000073657175656e636572")
-	blockHash := common.HexToHash("0x1111111111111111111111111111111111111111111111111111111111111111")
 	l2msg := []byte{4, 2, 248, 111, 131, 6, 74, 186, 128, 128, 132, 11, 235, 194, 0, 131, 122, 18, 0, 148, 12, 112, 159, 52, 15, 11, 178, 227, 97, 34, 158, 52, 91, 126, 38, 153, 157, 9, 105, 171, 133, 232, 212, 165, 16, 0, 128, 192, 1, 160, 75, 109, 200, 183, 223, 114, 85, 128, 133, 94, 26, 103, 145, 247, 47, 0, 114, 132, 133, 234, 222, 235, 102, 45, 2, 109, 83, 65, 210, 142, 242, 209, 160, 96, 90, 108, 188, 197, 195, 43, 222, 103, 155, 153, 81, 119, 74, 177, 103, 110, 134, 94, 221, 72, 236, 20, 86, 94, 226, 94, 5, 206, 196, 122, 119}
 	broadcastMessage := message.BroadcastMessage{
 		Version: 1,
@@ -323,7 +322,7 @@ func TestBlockHashFeedMismatch(t *testing.T) {
 					},
 					DelayedMessagesRead: 1,
 				},
-				BlockHash: &blockHash,
+				BlockHash: blockHash,
 				Signature: nil,
 			},
 		},
@@ -344,8 +343,19 @@ func TestBlockHashFeedMismatch(t *testing.T) {
 		t.Fatal("Unexpected balance:", l2balance)
 	}
 
-	// check that block hash mismatch
-	if !logHandler.WasLogged("block_hash_mismatch") {
+	mismatched := logHandler.WasLogged("block_hash_mismatch")
+	if mustMismatch && !mismatched {
 		t.Fatal("Failed to log block_hash_mismatch")
+	} else if !mustMismatch && mismatched {
+		t.Fatal("block_hash_mismatch was logged unexpectedly")
 	}
+}
+
+func TestBlockHashFeedMismatch(t *testing.T) {
+	blockHash := common.HexToHash("0x1111111111111111111111111111111111111111111111111111111111111111")
+	testBlockHashComparison(t, &blockHash, true)
+}
+
+func TestBlockHashFeedNil(t *testing.T) {
+	testBlockHashComparison(t, nil, false)
 }
