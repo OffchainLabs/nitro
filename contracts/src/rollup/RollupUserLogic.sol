@@ -212,7 +212,7 @@ contract RollupUserLogic is RollupCore, UUPSNotUpgradeable, IRollupUser {
             // only 1 of the children can be confirmed and get their stake refunded
             // so we send the other children's stake to the loserStakeEscrow
             // NOTE: if the losing staker have staked more than requiredStake, the excess stake will be stuck
-            increaseWithdrawableFunds(loserStakeEscrow, assertion.beforeStateData.configData.requiredStake);
+            IERC20(stakeToken).safeTransfer(loserStakeEscrow, assertion.beforeStateData.configData.requiredStake);
         }
     }
 
@@ -292,7 +292,7 @@ contract RollupUserLogic is RollupCore, UUPSNotUpgradeable, IRollupUser {
                 // only 1 of the children can be confirmed and get their stake refunded
                 // so we send the other children's stake to the loserStakeEscrow
                 // NOTE: if the losing staker have staked more than requiredStake, the excess stake will be stuck
-                increaseWithdrawableFunds(loserStakeEscrow, assertion.beforeStateData.configData.requiredStake);
+                IERC20(stakeToken).safeTransfer(loserStakeEscrow, assertion.beforeStateData.configData.requiredStake);
             }
         }
 

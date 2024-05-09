@@ -35,6 +35,7 @@ struct Config {
     address anyTrustFastConfirmer;
     uint8 numBigStepLevel;
     uint64 challengeGracePeriodBlocks;
+    BufferConfig bufferConfig;
 }
 
 struct ContractDependencies {

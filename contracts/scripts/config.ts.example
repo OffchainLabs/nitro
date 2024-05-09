@@ -4,6 +4,8 @@ import { ethers } from 'ethers'
 // This need to be adjusted for Orbit chains
 export const maxDataSize = 117964
 
+export const isUsingFeeToken = false;
+
 export const config = {
   rollupConfig: {
     confirmPeriodBlocks: ethers.BigNumber.from('45818'),
@@ -19,15 +21,23 @@ export const config = {
       '{"chainId":13331370,"homesteadBlock":0,"daoForkBlock":null,"daoForkSupport":true,"eip150Block":0,"eip150Hash":"0x0000000000000000000000000000000000000000000000000000000000000000","eip155Block":0,"eip158Block":0,"byzantiumBlock":0,"constantinopleBlock":0,"petersburgBlock":0,"istanbulBlock":0,"muirGlacierBlock":0,"berlinBlock":0,"londonBlock":0,"clique":{"period":0,"epoch":0},"arbitrum":{"EnableArbOS":true,"AllowDebugPrecompiles":false,"DataAvailabilityCommittee":false,"InitialArbOSVersion":10,"InitialChainOwner":"0x1234123412341234123412341234123412341234","GenesisBlockNum":0}}',
     genesisBlockNum: ethers.BigNumber.from('0'),
     sequencerInboxMaxTimeVariation: {
-      delayBlocks: ethers.BigNumber.from('5760'),
+      delayBlocks: ethers.BigNumber.from('7200'),
       futureBlocks: ethers.BigNumber.from('12'),
       delaySeconds: ethers.BigNumber.from('86400'),
       futureSeconds: ethers.BigNumber.from('3600'),
     },
+    bufferConfig: {
+      threshold: ethers.BigNumber.from('600'),
+      max: ethers.BigNumber.from('14400'),
+      replenishRateInBasis: ethers.BigNumber.from('833'),
+    }
   },
   validators: [
     '0x1234123412341234123412341234123412341234',
     '0x1234512345123451234512345123451234512345',
   ],
-  batchPoster: '0x1234123412341234123412341234123412341234',
+  batchPosterManager: '0x1234123412341234123412341234123412341234',
+  batchPosters: [
+    '0x1234123412341234123412341234123412341234'
+  ]
 }

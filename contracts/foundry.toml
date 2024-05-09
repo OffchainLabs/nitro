@@ -7,11 +7,16 @@ optimizer = true
 optimizer_runs = 2000
 via_ir = false
 solc_version = '0.8.17'
+remappings = ['@openzeppelin/contracts-upgradeable/=node_modules/@openzeppelin/contracts-upgradeable/', 
+              '@openzeppelin/contracts/=node_modules/@openzeppelin/contracts/', 
+              '@offchainlabs/upgrade-executor/=node_modules/@offchainlabs/upgrade-executor/']
 
 [profile.yul]
 src = 'yul'
 out = 'out/yul'
 libs = ['node_modules', 'lib']
 cache_path  = 'forge-cache/yul'
+remappings = []
+auto_detect_remappings = false
 
 # See more config options https://github.com/foundry-rs/foundry/tree/master/config

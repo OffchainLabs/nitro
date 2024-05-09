@@ -12,3 +12,4 @@
 | delaySeconds                | uint64                                                   | 10   | 16     | 8     | src/bridge/SequencerInbox.sol:SequencerInbox |
 | futureSeconds               | uint64                                                   | 10   | 24     | 8     | src/bridge/SequencerInbox.sol:SequencerInbox |
 | batchPosterManager          | address                                                  | 11   | 0      | 20    | src/bridge/SequencerInbox.sol:SequencerInbox |
+| buffer                      | struct BufferData                                        | 12   | 0      | 64    | src/bridge/SequencerInbox.sol:SequencerInbox |

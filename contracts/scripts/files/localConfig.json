@@ -3,11 +3,11 @@
     "bridge": "0x5eCF728ffC5C5E802091875f96281B5aeECf6C49",
     "inbox": "0x9f8c1c641336A371031499e3c362e40d58d0f254",
     "outbox": "0x50143333b44Ea46255BEb67255C9Afd35551072F",
-    "rollup": "0x8553016d4F782A42882BD982CDaD9a3B3dfb36BC",
+    "rollup": "0xC3124dD1FA0e5D6135c25279760DBF9d9286467B",
     "sequencerInbox": "0x18d19C5d3E685f5be5b9C86E097f0E439285D216",
     "rollupEventInbox": "0x0e73faf857e1ca53e700856fcf19f31f920a1e3c",
     "upgradeExecutor": "0x513d9f96d4d0563debae8a0dc307ea0e46b10ed7",
-    "l1Timelock": "0x8553016d4F782A42882BD982CDaD9a3B3dfb36BC"
+    "l1Timelock": "0xC3124dD1FA0e5D6135c25279760DBF9d9286467B"
   },
   "proxyAdmins": {
     "outbox": "0x2a1f38c9097e7883570e0b02bfbe6869cc25d8a3",

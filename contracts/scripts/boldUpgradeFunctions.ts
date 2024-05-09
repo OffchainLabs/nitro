@@ -49,7 +49,7 @@ export const deployDependencies = async (
   console.log(`Reader4844 deployed at ${reader4844.address}`)
 
   const seqInboxFac = new SequencerInbox__factory(signer)
-  const seqInbox = await seqInboxFac.deploy(maxDataSize, reader4844.address, false)
+  const seqInbox = await seqInboxFac.deploy(maxDataSize, reader4844.address, false, false)
   if (log) {
     console.log(
       `Sequencer inbox implementation deployed at: ${seqInbox.address}`

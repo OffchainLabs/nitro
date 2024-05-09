@@ -30,7 +30,7 @@ import "../../src/assertionStakingPool/AssertionStakingPoolCreator.sol";
 import "@openzeppelin/contracts/proxy/transparent/ProxyAdmin.sol";
 import "@openzeppelin/contracts/proxy/transparent/TransparentUpgradeableProxy.sol";
 
-contract AssertinPoolTest is Test {
+contract AssertionPoolTest is Test {
     address constant owner = address(1337);
     address constant sequencer = address(7331);
 
@@ -94,18 +94,20 @@ contract AssertinPoolTest is Test {
     );
 
     IReader4844 dummyReader4844 = IReader4844(address(137));
-    BridgeCreator.BridgeContracts ethBasedTemplates =
-        BridgeCreator.BridgeContracts({
+    BridgeCreator.BridgeTemplates ethBasedTemplates =
+        BridgeCreator.BridgeTemplates({
             bridge: new Bridge(),
-            sequencerInbox: new SequencerInbox(MAX_DATA_SIZE, dummyReader4844, false),
+            sequencerInbox: new SequencerInbox(MAX_DATA_SIZE, dummyReader4844, false, false),
+            delayBufferableSequencerInbox: new SequencerInbox(MAX_DATA_SIZE, dummyReader4844, false, true),
             inbox: new Inbox(MAX_DATA_SIZE),
             rollupEventInbox: new RollupEventInbox(),
             outbox: new Outbox()
         });
-    BridgeCreator.BridgeContracts erc20BasedTemplates =
-        BridgeCreator.BridgeContracts({
+    BridgeCreator.BridgeTemplates erc20BasedTemplates =
+        BridgeCreator.BridgeTemplates({
             bridge: new ERC20Bridge(),
-            sequencerInbox: new SequencerInbox(MAX_DATA_SIZE, dummyReader4844, true),
+            sequencerInbox: new SequencerInbox(MAX_DATA_SIZE, dummyReader4844, true, false),
+            delayBufferableSequencerInbox: new SequencerInbox(MAX_DATA_SIZE, dummyReader4844, true, false),
             inbox: new ERC20Inbox(MAX_DATA_SIZE),
             rollupEventInbox: new ERC20RollupEventInbox(),
             outbox: new ERC20Outbox()
@@ -173,7 +175,8 @@ contract AssertinPoolTest is Test {
             layerZeroSmallStepEdgeHeight: 2 ** 5,
             numBigStepLevel: 2,
             anyTrustFastConfirmer: address(300001),
-            challengeGracePeriodBlocks: CHALLENGE_GRACE_PERIOD_BLOCKS
+            challengeGracePeriodBlocks: CHALLENGE_GRACE_PERIOD_BLOCKS,
+            bufferConfig: BufferConfig({threshold: 600, max: 14400, replenishRateInBasis: 500})
         });
 
         vm.expectEmit(false, false, false, false);

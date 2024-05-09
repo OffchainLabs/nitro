@@ -179,6 +179,15 @@ error NotBatchPosterManager(address);
 /// @dev Thrown when a data blob feature is attempted to be used on a chain that doesnt support it
 error DataBlobsNotSupported();
 
+/// @dev Thrown when batches are posted without buffer proof, this is only allowed in a sync state or when no new delayed messages are read
+error DelayProofRequired();
+
+/// @dev The DelayedAccPreimage is invalid
+error InvalidDelayedAccPreimage();
+
+/// @dev Thrown when the sequencer attempts to post a batch with delay / sync proofs without delay bufferability enabled
+error NotDelayBufferable();
+
 /// @dev Thrown when an init param was supplied as empty
 error InitParamZero(string name);
 
@@ -199,3 +208,12 @@ error Deprecated();
 
 /// @dev Thrown when any component of maxTimeVariation is over uint64
 error BadMaxTimeVariation();
+
+/// @dev Thrown when any component of bufferConfig is zero
+error BadBufferConfig();
+
+/// @dev Thrown when extra gas is not a uint64
+error ExtraGasNotUint64();
+
+/// @dev Thrown when keysetBytes is too large
+error KeysetTooLarge();
