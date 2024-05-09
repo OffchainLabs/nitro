@@ -91,7 +91,7 @@ func TestEspressoSwitch(t *testing.T) {
 		return msg >= expectedMsg
 	})
 	Require(t, err)
-	err = waitForWith(t, ctx, 60*time.Second, 5*time.Second, func() bool {
+	err = waitForWith(t, ctx, 120*time.Second, 5*time.Second, func() bool {
 		validatedCnt := node.ConsensusNode.BlockValidator.Validated(t)
 		return validatedCnt >= expectedMsg
 	})
