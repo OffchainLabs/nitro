@@ -39,6 +39,7 @@ services:
     environment:
       - ESPRESSO_SEQUENCER_HOTSHOT_EVENT_STREAMING_API_URL=http://espresso-sequencer0:$ESPRESSO_SEQUENCER_HOTSHOT_EVENT_STREAMING_API_PORT
       - ESPRESSO_SEQUENCER_STATE_PEERS=http://espresso-sequencer0:$ESPRESSO_SEQUENCER_API_PORT
+      - ESPRESSO_SEQUENCER_MAX_BLOCK_SIZE
       - ESPRESSO_BUILDER_ETH_MNEMONIC
       - ESPRESSO_BUILDER_ETH_ACCOUNT_INDEX
       - ESPRESSO_BUILDER_L1_PROVIDER
@@ -143,6 +144,7 @@ services:
       - ESPRESSO_SEQUENCER_POSTGRES_HOST=sequencer-db
       - ESPRESSO_SEQUENCER_POSTGRES_USER=root
       - ESPRESSO_SEQUENCER_POSTGRES_PASSWORD=password
+      - ESPRESSO_SEQUENCER_POSTGRES_DATABASE=sequencer
       - ESPRESSO_SEQUENCER_PRIVATE_STATE_KEY=$ESPRESSO_DEMO_SEQUENCER_STATE_PRIVATE_KEY_0
       - ESPRESSO_SEQUENCER_LIBP2P_BIND_ADDRESS=0.0.0.0:$ESPRESSO_DEMO_SEQUENCER_LIBP2P_PORT_0
       - ESPRESSO_SEQUENCER_LIBP2P_ADVERTISE_ADDRESS=espresso-sequencer0:$ESPRESSO_DEMO_SEQUENCER_LIBP2P_PORT_0
@@ -256,6 +258,7 @@ services:
     environment:
       - POSTGRES_PASSWORD=password
       - POSTGRES_USER=root
+      - POSTGRES_DB=sequencer
     healthcheck:
       # Postgres can be falsely "ready" once before running init scripts.
       # See https://github.com/docker-library/postgres/issues/146 for discussion.
