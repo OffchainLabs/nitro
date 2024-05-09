@@ -273,12 +273,11 @@ func TestBlockHashFeedMismatch(t *testing.T) {
 	}
 	bklg := backlog.NewBacklog(backlogConfiFetcher)
 
-	feedErrChan := make(chan error)
 	wsBroadcastServer := wsbroadcastserver.NewWSBroadcastServer(
 		newBroadcasterConfigTest,
 		bklg,
 		412346,
-		feedErrChan,
+		nil,
 	)
 	err := wsBroadcastServer.Initialize()
 	if err != nil {
@@ -292,11 +291,16 @@ func TestBlockHashFeedMismatch(t *testing.T) {
 
 	port := wsBroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
 	cleanup := builder.Build(t)
 	defer cleanup()
+	testClient := builder.L2
 
+	// related to:
+	// - builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	userAccount := "User2"
+	txHash := common.HexToHash("0x633f62b463cc0e52d842406995fb590654db40aace77bfca863ba0e8d2290f97")
 	poster := common.HexToAddress("0xa4b000000000000000000073657175656e636572")
 	blockHash := common.HexToHash("0x1111111111111111111111111111111111111111111111111111111111111111")
 	l2msg := []byte{4, 2, 248, 111, 131, 6, 74, 186, 128, 128, 132, 11, 235, 194, 0, 131, 122, 18, 0, 148, 12, 112, 159, 52, 15, 11, 178, 227, 97, 34, 158, 52, 91, 126, 38, 153, 157, 9, 105, 171, 133, 232, 212, 165, 16, 0, 128, 192, 1, 160, 75, 109, 200, 183, 223, 114, 85, 128, 133, 94, 26, 103, 145, 247, 47, 0, 114, 132, 133, 234, 222, 235, 102, 45, 2, 109, 83, 65, 210, 142, 242, 209, 160, 96, 90, 108, 188, 197, 195, 43, 222, 103, 155, 153, 81, 119, 74, 177, 103, 110, 134, 94, 221, 72, 236, 20, 86, 94, 226, 94, 5, 206, 196, 122, 119}
@@ -304,16 +308,16 @@ func TestBlockHashFeedMismatch(t *testing.T) {
 		Version: 1,
 		Messages: []*message.BroadcastFeedMessage{
 			{
-				SequenceNumber: 2,
+				SequenceNumber: 1,
 				Message: arbostypes.MessageWithMetadata{
 					Message: &arbostypes.L1IncomingMessage{
 						Header: &arbostypes.L1IncomingMessageHeader{
 							Kind:        arbostypes.L1MessageType_L2Message,
 							Poster:      poster,
 							BlockNumber: 29,
-							Timestamp:   1715136502,
+							Timestamp:   1715295980,
 							RequestId:   nil,
-							L1BaseFee:   big.NewInt(0),
+							L1BaseFee:   nil,
 						},
 						L2msg: l2msg,
 					},
@@ -326,8 +330,21 @@ func TestBlockHashFeedMismatch(t *testing.T) {
 	}
 	wsBroadcastServer.Broadcast(&broadcastMessage)
 
-	time.Sleep(time.Second * 2)
+	// By now, even though block hash mismatch, the transaction should still be processed
+	builder.L2Info.GenerateAccount(userAccount)
+	_, err = WaitForTx(ctx, testClient.Client, txHash, time.Second*15)
+	if err != nil {
+		t.Fatal("error waiting for tx:", err)
+	}
+	l2balance, err := testClient.Client.BalanceAt(ctx, builder.L2Info.GetAddress(userAccount), nil)
+	if err != nil {
+		t.Fatal("error getting balance:", err)
+	}
+	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
+		t.Fatal("Unexpected balance:", l2balance)
+	}
 
+	// check that block hash mismatch
 	if !logHandler.WasLogged("block_hash_mismatch") {
 		t.Fatal("Failed to log block_hash_mismatch")
 	}
