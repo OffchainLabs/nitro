@@ -55,11 +55,11 @@ func TestSnapSync(t *testing.T) {
 	}
 	// Wait for nodeB to sync up to the first node
 	for {
-		count, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
+		header, err := builder.L2.Client.HeaderByNumber(ctx, nil)
 		Require(t, err)
-		countNodeB, err := nodeB.ConsensusNode.InboxTracker.GetBatchCount()
+		headerNodeB, err := nodeB.Client.HeaderByNumber(ctx, nil)
 		Require(t, err)
-		if count == countNodeB {
+		if header.Number.Cmp(headerNodeB.Number) == 0 {
 			break
 		} else {
 			<-time.After(10 * time.Millisecond)
@@ -77,11 +77,11 @@ func TestSnapSync(t *testing.T) {
 	Require(t, err)
 	// Create a config with snap sync enabled and same database directory as the 2nd node
 	nodeConfig := builder.nodeConfig
-	nodeConfig.SnapSync.Enabled = true
-	nodeConfig.SnapSync.BatchCount = batchCount
-	nodeConfig.SnapSync.DelayedCount = delayedCount
-	nodeConfig.SnapSync.PrevDelayedRead = prevMessage.DelayedMessagesRead
-	nodeConfig.SnapSync.PrevBatchMessageCount = uint64(prevBatchMetaData.MessageCount)
+	nodeConfig.SnapSyncTest.Enabled = true
+	nodeConfig.SnapSyncTest.BatchCount = batchCount
+	nodeConfig.SnapSyncTest.DelayedCount = delayedCount
+	nodeConfig.SnapSyncTest.PrevDelayedRead = prevMessage.DelayedMessagesRead
+	nodeConfig.SnapSyncTest.PrevBatchMessageCount = uint64(prevBatchMetaData.MessageCount)
 	// Cleanup the message data of 2nd node, but keep the block state data.
 	// This is to simulate a snap sync environment where we’ve just gotten the block state but don’t have any messages.
 	err = os.RemoveAll(nodeB.ConsensusNode.Stack.ResolvePath("arbitrumdata"))
@@ -121,6 +121,21 @@ func TestSnapSync(t *testing.T) {
 			Require(t, err)
 			if metadata != metadataNodeC {
 				t.Error("Batch metadata mismatch")
+			}
+			break
+		} else {
+			<-time.After(10 * time.Millisecond)
+		}
+
+		header, err := builder.L2.Client.HeaderByNumber(ctx, nil)
+		Require(t, err)
+		headerNodeB, err := nodeB.Client.HeaderByNumber(ctx, nil)
+		Require(t, err)
+		if header.Number.Cmp(headerNodeB.Number) == 0 {
+			// Once the node is synced up, check if the block hash is the same for the last block
+			// This is to ensure that the snap sync worked correctly
+			if header.Hash().Cmp(headerNodeB.Hash()) != 0 {
+				t.Error("Block hash mismatch")
 			}
 			break
 		} else {
