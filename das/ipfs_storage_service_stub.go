@@ -14,7 +14,7 @@ import (
 	"errors"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	flag "github.com/spf13/pflag"
 )
 
@@ -47,8 +47,8 @@ func (s *IpfsStorageService) Put(ctx context.Context, data []byte, timeout uint6
 	return ErrIpfsNotSupported
 }
 
-func (s *IpfsStorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
-	return arbstate.KeepForever, ErrIpfsNotSupported
+func (s *IpfsStorageService) ExpirationPolicy(ctx context.Context) (daprovider.ExpirationPolicy, error) {
+	return daprovider.KeepForever, ErrIpfsNotSupported
 }
 
 func (s *IpfsStorageService) Sync(ctx context.Context) error {
