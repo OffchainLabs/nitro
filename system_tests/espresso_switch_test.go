@@ -67,6 +67,8 @@ func TestEspressoSwitch(t *testing.T) {
 	msg, err := node.ConsensusNode.TxStreamer.GetMessageCount()
 	Require(t, err)
 
+	// In the centralized mode with disabaling the delayed sequencer,
+	// block only created by l2 message.
 	if msg != currMsg+1 {
 		t.Fatal("")
 	}
