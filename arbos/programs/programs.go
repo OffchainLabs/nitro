@@ -205,6 +205,12 @@ func (p Programs) CallProgram(
 	statedb.AddStylusPages(program.footprint)
 	defer statedb.SetStylusPagesOpen(open)
 
+	localAsm, err := getLocalAsm(statedb, moduleHash, contract.Address(), params.PageLimit, evm.Context.Time, debugMode, program)
+	if err != nil {
+		log.Crit("failed to get local wasm for activated program", "program", contract.Address())
+		return nil, err
+	}
+
 	evmData := &evmData{
 		blockBasefee:    common.BigToHash(evm.Context.BaseFee),
 		chainId:         evm.ChainConfig().ChainID.Uint64(),
@@ -227,7 +233,7 @@ func (p Programs) CallProgram(
 	if contract.CodeAddr != nil {
 		address = *contract.CodeAddr
 	}
-	return callProgram(address, moduleHash, scope, interpreter, tracingInfo, calldata, evmData, goParams, model)
+	return callProgram(address, moduleHash, localAsm, scope, interpreter, tracingInfo, calldata, evmData, goParams, model)
 }
 
 func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {

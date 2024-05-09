@@ -24,6 +24,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
@@ -53,6 +54,24 @@ func activateProgram(
 	debug bool,
 	burner burn.Burner,
 ) (*activationInfo, error) {
+	info, asm, module, err := activateProgramInternal(db, program, codehash, wasm, page_limit, version, debug, burner)
+	if err != nil {
+		return nil, err
+	}
+	db.ActivateWasm(info.moduleHash, asm, module)
+	return info, nil
+}
+
+func activateProgramInternal(
+	db vm.StateDB,
+	program common.Address,
+	codehash common.Hash,
+	wasm []byte,
+	page_limit uint16,
+	version uint16,
+	debug bool,
+	burner burn.Burner,
+) (*activationInfo, []byte, []byte, error) {
 	output := &rustBytes{}
 	asmLen := usize(0)
 	moduleHash := &bytes32{}
@@ -78,9 +97,9 @@ func activateProgram(
 			log.Warn("activation failed", "err", err, "msg", msg, "program", program)
 		}
 		if errors.Is(err, vm.ErrExecutionReverted) {
-			return nil, fmt.Errorf("%w: %s", ErrProgramActivation, msg)
+			return nil, nil, nil, fmt.Errorf("%w: %s", ErrProgramActivation, msg)
 		}
-		return nil, err
+		return nil, nil, nil, err
 	}
 
 	hash := moduleHash.toHash()
@@ -95,13 +114,55 @@ func activateProgram(
 		asmEstimate:   uint32(stylusData.asm_estimate),
 		footprint:     uint16(stylusData.footprint),
 	}
-	db.ActivateWasm(hash, asm, module)
-	return info, err
+	return info, asm, module, err
+}
+
+func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, address common.Address, pagelimit uint16, time uint64, debugMode bool, program Program) ([]byte, error) {
+	localAsm, err := statedb.TryGetActivatedAsm(moduleHash)
+	if err == nil || len(localAsm) > 0 {
+		return localAsm, nil
+	}
+
+	codeHash := statedb.GetCodeHash(address)
+	burner := burn.NewSystemBurner(nil, false)
+
+	wasm, err := getWasm(statedb, address)
+	if err != nil {
+		return nil, err
+	}
+
+	// we know program is activated, so it must be in correct version and not use too much memory
+	info, asm, module, err := activateProgramInternal(statedb, address, codeHash, wasm, pagelimit, program.version, debugMode, burner)
+
+	if err != nil {
+		return nil, err
+	}
+
+	if info.moduleHash != moduleHash {
+		return nil, errors.New("failed to re-activate program not found in database")
+	}
+
+	currentHoursSince := hoursSinceArbitrum(time)
+	if currentHoursSince > program.activatedAt {
+		// stylus program is active on-chain, and was activated in the past
+		// so we store it directly to database
+		batch := statedb.Database().WasmStore().NewBatch()
+		rawdb.WriteActivation(batch, moduleHash, asm, module)
+		if err := batch.Write(); err != nil {
+			log.Error("failed writing re-activation to state", "address", address, "err", err)
+		}
+	} else {
+		// program activated recently, possibly in this eth_call
+		// store it to statedb. It will be stored to database if statedb is commited
+		statedb.ActivateWasm(info.moduleHash, asm, module)
+	}
+	return asm, nil
 }
 
 func callProgram(
 	address common.Address,
 	moduleHash common.Hash,
+	localAsm []byte,
 	scope *vm.ScopeContext,
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,
@@ -111,7 +172,6 @@ func callProgram(
 	memoryModel *MemoryModel,
 ) ([]byte, error) {
 	db := interpreter.Evm().StateDB
-	asm := db.GetActivatedAsm(moduleHash)
 	debug := stylusParams.debugMode
 
 	if db, ok := db.(*state.StateDB); ok {
@@ -123,7 +183,7 @@ func callProgram(
 
 	output := &rustBytes{}
 	status := userStatus(C.stylus_call(
-		goSlice(asm),
+		goSlice(localAsm),
 		goSlice(calldata),
 		stylusParams.encode(),
 		evmApi.cNative,
