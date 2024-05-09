@@ -73,20 +73,22 @@ type trackedChallenge struct {
 // are used during the confirmation process in edge tracker goroutines.
 type Watcher struct {
 	stopwaiter.StopWaiter
-	histChecker                         l2stateprovider.HistoryChecker
-	chain                               protocol.AssertionChain
-	edgeManager                         EdgeManager
-	pollEventsInterval                  time.Duration
-	challenges                          *threadsafe.Map[protocol.AssertionHash, *trackedChallenge]
-	backend                             bind.ContractBackend
-	validatorName                       string
-	numBigStepLevels                    uint8
-	initialSyncCompleted                atomic.Bool
-	apiDB                               db.Database
-	assertionConfirmingInterval         time.Duration
-	averageTimeForBlockCreation         time.Duration
-	evilEdgesByLevel                    *threadsafe.Map[protocol.ChallengeLevel, *threadsafe.Set[protocol.EdgeId]]
-	trackChallengeParentAssertionHashes []protocol.AssertionHash // Only track challenges for these parent assertion hashes. Track all if empty / nil.
+	histChecker                 l2stateprovider.HistoryChecker
+	chain                       protocol.AssertionChain
+	edgeManager                 EdgeManager
+	pollEventsInterval          time.Duration
+	challenges                  *threadsafe.Map[protocol.AssertionHash, *trackedChallenge]
+	backend                     bind.ContractBackend
+	validatorName               string
+	numBigStepLevels            uint8
+	initialSyncCompleted        atomic.Bool
+	apiDB                       db.Database
+	assertionConfirmingInterval time.Duration
+	averageTimeForBlockCreation time.Duration
+	evilEdgesByLevel            *threadsafe.Map[protocol.ChallengeLevel, *threadsafe.Set[protocol.EdgeId]]
+	// Optional list of challenges to track, keyed by challenged parent assertion hash. If nil,
+	// all challenges will be tracked.
+	challengesToTrack []protocol.AssertionHash
 }
 
 // New initializes a watcher service for frequently scanning the chain
@@ -102,25 +104,25 @@ func New(
 	apiDB db.Database,
 	assertionConfirmingInterval time.Duration,
 	averageTimeForBlockCreation time.Duration,
-	trackChallengeParentAssertionHashes []protocol.AssertionHash,
+	challengesToTrack []protocol.AssertionHash,
 ) (*Watcher, error) {
 	if interval == 0 {
 		return nil, errors.New("chain watcher polling interval must be greater than 0")
 	}
 	return &Watcher{
-		chain:                               chain,
-		edgeManager:                         edgeManager,
-		pollEventsInterval:                  interval,
-		challenges:                          threadsafe.NewMap[protocol.AssertionHash, *trackedChallenge](threadsafe.MapWithMetric[protocol.AssertionHash, *trackedChallenge]("challenges")),
-		backend:                             backend,
-		histChecker:                         histChecker,
-		numBigStepLevels:                    numBigStepLevels,
-		validatorName:                       validatorName,
-		apiDB:                               apiDB,
-		assertionConfirmingInterval:         assertionConfirmingInterval,
-		averageTimeForBlockCreation:         averageTimeForBlockCreation,
-		evilEdgesByLevel:                    threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Set[protocol.EdgeId]](threadsafe.MapWithMetric[protocol.ChallengeLevel, *threadsafe.Set[protocol.EdgeId]]("evilEdgesByLevel")),
-		trackChallengeParentAssertionHashes: trackChallengeParentAssertionHashes,
+		chain:                       chain,
+		edgeManager:                 edgeManager,
+		pollEventsInterval:          interval,
+		challenges:                  threadsafe.NewMap[protocol.AssertionHash, *trackedChallenge](threadsafe.MapWithMetric[protocol.AssertionHash, *trackedChallenge]("challenges")),
+		backend:                     backend,
+		histChecker:                 histChecker,
+		numBigStepLevels:            numBigStepLevels,
+		validatorName:               validatorName,
+		apiDB:                       apiDB,
+		assertionConfirmingInterval: assertionConfirmingInterval,
+		averageTimeForBlockCreation: averageTimeForBlockCreation,
+		evilEdgesByLevel:            threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Set[protocol.EdgeId]](threadsafe.MapWithMetric[protocol.ChallengeLevel, *threadsafe.Set[protocol.EdgeId]]("evilEdgesByLevel")),
+		challengesToTrack:           challengesToTrack,
 	}, nil
 }
 
@@ -642,17 +644,19 @@ func (w *Watcher) processEdgeAddedEvent(
 	if err != nil {
 		return false, err
 	}
-	if !w.allowTrackingEdgeWithChallengeParentAssertionHash(challengeParentAssertionHash) {
+	// If we specified a list of challenges we should track, we should
+	// ignore those that are on that list.
+	if !w.shouldTrackChallenge(challengeParentAssertionHash) {
 		return false, nil
 	}
 	return w.AddEdge(ctx, edgeOpt.Unwrap())
 }
 
-func (w *Watcher) allowTrackingEdgeWithChallengeParentAssertionHash(challengeParentAssertionHash protocol.AssertionHash) bool {
-	if len(w.trackChallengeParentAssertionHashes) == 0 {
+func (w *Watcher) shouldTrackChallenge(challengeParentAssertionHash protocol.AssertionHash) bool {
+	if len(w.challengesToTrack) == 0 {
 		return true
 	}
-	for _, hash := range w.trackChallengeParentAssertionHashes {
+	for _, hash := range w.challengesToTrack {
 		if hash == challengeParentAssertionHash {
 			return true
 		}
@@ -760,7 +764,7 @@ func (w *Watcher) processEdgeConfirmation(
 		return err
 	}
 
-	if !w.allowTrackingEdgeWithChallengeParentAssertionHash(challengeParentAssertionHash) {
+	if !w.shouldTrackChallenge(challengeParentAssertionHash) {
 		return nil
 	}
 
