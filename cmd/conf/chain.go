@@ -20,13 +20,12 @@ type ParentChainConfig struct {
 }
 
 var L1ConnectionConfigDefault = rpcclient.ClientConfig{
-	URL:            "",
-	Retries:        2,
-	Timeout:        time.Minute,
-	ConnectionWait: time.Minute,
-	ArgLogLimit:    2048,
-	// Use geth's unexported wsDefaultReadLimit from rpc/websocket.go
-	WebsocketMessageSizeLimit: 32 * 1024 * 1024,
+	URL:                       "",
+	Retries:                   2,
+	Timeout:                   time.Minute,
+	ConnectionWait:            time.Minute,
+	ArgLogLimit:               2048,
+	WebsocketMessageSizeLimit: 256 * 1024 * 1024,
 }
 
 var L1ConfigDefault = ParentChainConfig{
