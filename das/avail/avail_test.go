@@ -1,10 +1,7 @@
 package avail
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
-	"net/http"
 	"net/url"
 	"testing"
 
@@ -25,35 +22,13 @@ func TestMarshallingAndUnmarshalingBlobPointer(t *testing.T) {
 	urlStr := fmt.Sprintf("%v", u)
 	t.Log(urlStr)
 	// TODO: Add time difference between batch submission and querying merkle proof
-	resp, err := http.Get(urlStr) //nolint
+	bridgeApiResponse, err := queryForBridgeApiRespose(600, urlStr)
 	if err != nil {
 		t.Fatalf("Bridge Api request not successfull, err=%v", err)
 	}
-	defer resp.Body.Close()
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatalf("unable to read data from response body, err=%v", err)
-	}
-	var bridgeApiResponse BridgeApiResponse
-	err = json.Unmarshal(body, &bridgeApiResponse)
-	if err != nil {
-		t.Fatalf("unable to unmarshal bridge api response, err=%v", err)
-	}
 	t.Logf("%+v", bridgeApiResponse)
 
-	var dataRootProof [][32]byte
-	for _, hash := range bridgeApiResponse.DataRootProof {
-		var byte32Array [32]byte
-		copy(byte32Array[:], hash[:])
-		dataRootProof = append(dataRootProof, byte32Array)
-	}
-	var leafProof [][32]byte
-	for _, hash := range bridgeApiResponse.LeafProof {
-		var byte32Array [32]byte
-		copy(byte32Array[:], hash[:])
-		leafProof = append(leafProof, byte32Array)
-	}
-	var merkleProofInput MerkleProofInput = MerkleProofInput{dataRootProof, leafProof, bridgeApiResponse.RangeHash, bridgeApiResponse.DataRootIndex, bridgeApiResponse.BlobRoot, bridgeApiResponse.BridgeRoot, bridgeApiResponse.Leaf, bridgeApiResponse.LeafIndex}
+	merkleProofInput := createMerkleProofInput(bridgeApiResponse)
 	t.Logf("%+v", merkleProofInput)
 
 	var blobPointer BlobPointer = BlobPointer{gsrpc_types.NewHash([]byte{245, 54, 19, 250, 6, 182, 183, 249, 220, 94, 76, 245, 242, 132, 154, 255, 201, 78, 25, 216, 169, 232, 153, 146, 7, 236, 224, 17, 117, 201, 136, 237}),

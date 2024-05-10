@@ -41,7 +41,7 @@ type VectorX struct {
 	Query  ethereum.FilterQuery
 }
 
-func (v *VectorX) SubscribeForHeaderUpdate(finalizedBlockNumber int, t int64) error {
+func (v *VectorX) SubscribeForHeaderUpdate(finalizedBlockNumber int, t time.Duration) error {
 	// Subscribe to the event stream
 	logs := make(chan types.Log)
 	sub, err := v.Client.SubscribeFilterLogs(context.Background(), v.Query, logs)
@@ -51,7 +51,7 @@ func (v *VectorX) SubscribeForHeaderUpdate(finalizedBlockNumber int, t int64) er
 	defer sub.Unsubscribe()
 
 	log.Info("🎧  Listening for vectorx HeadUpdate event with", "blockNumber", finalizedBlockNumber)
-	timeout := time.After(time.Duration(t) * time.Second)
+	timeout := time.After(t * time.Second)
 	// Loop to process incoming events
 	for {
 		select {

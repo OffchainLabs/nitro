@@ -10,7 +10,6 @@ import (
 	gsrpc "github.com/centrifuge/go-substrate-rpc-client/v4"
 	"github.com/centrifuge/go-substrate-rpc-client/v4/signature"
 	gsrpc_types "github.com/centrifuge/go-substrate-rpc-client/v4/types"
-	"github.com/centrifuge/go-substrate-rpc-client/v4/types/codec"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
@@ -19,7 +18,6 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/das/avail/vectorx"
 	"github.com/offchainlabs/nitro/das/dastree"
-	"github.com/vedhavyas/go-subkey"
 )
 
 // AvailMessageHeaderFlag indicates that this data is a Blob Pointer
@@ -31,16 +29,19 @@ func IsAvailMessageHeaderByte(header byte) bool {
 }
 
 type AvailDA struct {
-	enable      bool
-	vectorx     vectorx.VectorX
-	timeout     time.Duration
-	appID       int
-	api         *gsrpc.SubstrateAPI
-	meta        *gsrpc_types.Metadata
-	genesisHash gsrpc_types.Hash
-	rv          *gsrpc_types.RuntimeVersion
-	keyringPair signature.KeyringPair
-	key         gsrpc_types.StorageKey
+	enable              bool
+	vectorx             vectorx.VectorX
+	finalizationTimeout time.Duration
+	appID               int
+	api                 *gsrpc.SubstrateAPI
+	meta                *gsrpc_types.Metadata
+	genesisHash         gsrpc_types.Hash
+	rv                  *gsrpc_types.RuntimeVersion
+	keyringPair         signature.KeyringPair
+	key                 gsrpc_types.StorageKey
+	bridgeApiBaseURL    string
+	bridgeApiTimeout    time.Duration
+	vectorXTimeout      time.Duration
 }
 
 func NewAvailDA(cfg DAConfig, l1Client arbutil.L1Interface) (*AvailDA, error) {
@@ -113,91 +114,27 @@ func NewAvailDA(cfg DAConfig, l1Client arbutil.L1Interface) (*AvailDA, error) {
 	}
 
 	return &AvailDA{
-		enable:      cfg.Enable,
-		vectorx:     vectorx.VectorX{Abi: abi, Client: client, Query: query},
-		timeout:     cfg.Timeout,
-		appID:       appID,
-		api:         api,
-		meta:        meta,
-		genesisHash: genesisHash,
-		rv:          rv,
-		keyringPair: keyringPair,
-		key:         key,
+		enable:              cfg.Enable,
+		vectorx:             vectorx.VectorX{Abi: abi, Client: client, Query: query},
+		finalizationTimeout: time.Duration(cfg.Timeout),
+		appID:               appID,
+		api:                 api,
+		meta:                meta,
+		genesisHash:         genesisHash,
+		rv:                  rv,
+		keyringPair:         keyringPair,
+		key:                 key,
+		bridgeApiBaseURL:    "https://turing-bridge-api.fra.avail.so/",
+		bridgeApiTimeout:    time.Duration(1200),
+		vectorXTimeout:      time.Duration(10000),
 	}, nil
 }
 
 func (a *AvailDA) Store(ctx context.Context, message []byte) ([]byte, error) {
 
-	c, err := gsrpc_types.NewCall(a.meta, "DataAvailability.submit_data", gsrpc_types.NewBytes(message))
+	finalizedblockHash, nonce, err := submitData(a, message)
 	if err != nil {
-		log.Warn("⚠️ cannot create new call: error:%v", err)
-		return nil, err
-	}
-
-	// Create the extrinsic
-	ext := gsrpc_types.NewExtrinsic(c)
-
-	var accountInfo gsrpc_types.AccountInfo
-	ok, err := a.api.RPC.State.GetStorageLatest(a.key, &accountInfo)
-	if err != nil || !ok {
-		log.Warn("⚠️ cannot get latest storage: error:%v", err)
-		return nil, err
-	}
-
-	nonce := GetAccountNonce(uint32(accountInfo.Nonce))
-	o := gsrpc_types.SignatureOptions{
-		BlockHash:          a.genesisHash,
-		Era:                gsrpc_types.ExtrinsicEra{IsMortalEra: false},
-		GenesisHash:        a.genesisHash,
-		Nonce:              gsrpc_types.NewUCompactFromUInt(uint64(nonce)),
-		SpecVersion:        a.rv.SpecVersion,
-		Tip:                gsrpc_types.NewUCompactFromUInt(0),
-		AppID:              gsrpc_types.NewUCompactFromUInt(uint64(a.appID)),
-		TransactionVersion: a.rv.TransactionVersion,
-	}
-
-	// Sign the transaction using Alice's default account
-	err = ext.Sign(a.keyringPair, o)
-	if err != nil {
-		log.Warn("⚠️ cannot sign: error:%v", err)
-		return nil, err
-	}
-
-	// Send the extrinsic
-	sub, err := a.api.RPC.Author.SubmitAndWatchExtrinsic(ext)
-	if err != nil {
-		log.Warn("⚠️ cannot submit extrinsic: error:%v", err)
-		return nil, err
-	}
-
-	log.Info("✅  Tx batch is submitted to Avail", "length", len(message), "address", a.keyringPair.Address, "appID", a.appID)
-
-	defer sub.Unsubscribe()
-	timeout := time.After(time.Duration(a.timeout) * time.Second)
-	var finalizedblockHash gsrpc_types.Hash
-
-outer:
-	for {
-		select {
-		case status := <-sub.Chan():
-			if status.IsInBlock {
-				log.Info("📥  Submit data extrinsic included in block", "blockHash", status.AsInBlock.Hex())
-			}
-			if status.IsFinalized {
-				finalizedblockHash = status.AsFinalized
-				break outer
-			} else if status.IsDropped {
-				return nil, fmt.Errorf("❌ Extrinsic dropped")
-			} else if status.IsUsurped {
-				return nil, fmt.Errorf("❌ Extrinsic usurped")
-			} else if status.IsRetracted {
-				return nil, fmt.Errorf("❌ Extrinsic retracted")
-			} else if status.IsInvalid {
-				return nil, fmt.Errorf("❌ Extrinsic invalid")
-			}
-		case <-timeout:
-			return nil, fmt.Errorf("⌛️  Timeout of %d seconds reached without getting finalized status for extrinsic", a.timeout)
-		}
+		return nil, fmt.Errorf("cannot submit data to avail:%+v", err)
 	}
 
 	header, err := a.api.RPC.Chain.GetHeader(finalizedblockHash)
@@ -205,24 +142,24 @@ outer:
 		return nil, fmt.Errorf("cannot get header for finalized block:%+v", err)
 	}
 
-	err = a.vectorx.SubscribeForHeaderUpdate(int(header.Number), 7200)
+	err = a.vectorx.SubscribeForHeaderUpdate(int(header.Number), a.vectorXTimeout)
 	if err != nil {
 		return nil, fmt.Errorf("cannot get the event for header update on vectorx:%+v", err)
 	}
 
-	extrinsicIndex, err := GetExtrinsicIndex(a.api, finalizedblockHash, a.keyringPair.Address, o.Nonce)
+	extrinsicIndex, err := GetExtrinsicIndex(a.api, finalizedblockHash, a.keyringPair.Address, nonce)
 	if err != nil {
 		return nil, err
 	}
 	log.Info("Finalized extrinsic", "extrinsicIndex", extrinsicIndex)
 
-	merkleProofInput, err := QueryMerkleProofInput(finalizedblockHash.Hex(), extrinsicIndex, 1200)
+	merkleProofInput, err := QueryMerkleProofInput(a.bridgeApiBaseURL, finalizedblockHash.Hex(), extrinsicIndex, a.bridgeApiTimeout)
 	if err != nil {
 		return nil, err
 	}
 
 	// Creating BlobPointer to submit over settlement layer
-	blobPointer := BlobPointer{BlockHash: finalizedblockHash, Sender: a.keyringPair.Address, Nonce: nonce, DasTreeRootHash: dastree.Hash(message), MerkleProofInput: merkleProofInput}
+	blobPointer := BlobPointer{BlockHash: finalizedblockHash, Sender: a.keyringPair.Address, Nonce: uint32(nonce.Int64()), DasTreeRootHash: dastree.Hash(message), MerkleProofInput: merkleProofInput}
 	log.Info("✅  Sucesfully included in block data to Avail", "BlobPointer:", blobPointer)
 	blobPointerData, err := blobPointer.MarshalToBinary()
 	if err != nil {
@@ -248,24 +185,86 @@ func (a *AvailDA) Read(ctx context.Context, blobPointer BlobPointer) ([]byte, er
 	}
 
 	// Extracting the required extrinsic according to the reference
-	for _, ext := range avail_blk.Block.Extrinsics {
-		// Extracting sender address for extrinsic
-		ext_Addr, err := subkey.SS58Address(ext.Signature.Signer.AsID.ToBytes(), 42)
-		if err != nil {
-			log.Error("❌ unable to get sender address from extrinsic", "err", err)
-		}
-
-		if ext_Addr == Address && ext.Signature.Nonce.Int64() == Nonce.Int64() {
-			args := ext.Method.Args
-			var data []byte
-			err = codec.Decode(args, &data)
-			if err != nil {
-				return []byte{}, fmt.Errorf("❌ unable to decode the extrinsic data by address: %v with nonce: %v", Address, Nonce)
-			}
-			return data, nil
-		}
+	data, err := extractExtrinsic(Address, Nonce.Int64(), avail_blk)
+	if err != nil {
+		return nil, err
 	}
 
 	log.Info("✅  Succesfully fetched data from Avail")
-	return nil, fmt.Errorf("❌ unable to find any extrinsic for this blobPointer:%+v", blobPointer)
+	return data, nil
+}
+
+func submitData(a *AvailDA, message []byte) (gsrpc_types.Hash, gsrpc_types.UCompact, error) {
+	c, err := gsrpc_types.NewCall(a.meta, "DataAvailability.submit_data", gsrpc_types.NewBytes(message))
+	if err != nil {
+		log.Warn("⚠️ cannot create new call: error:%v", err)
+		return gsrpc_types.Hash{}, gsrpc_types.UCompact{}, err
+	}
+
+	// Create the extrinsic
+	ext := gsrpc_types.NewExtrinsic(c)
+
+	var accountInfo gsrpc_types.AccountInfo
+	ok, err := a.api.RPC.State.GetStorageLatest(a.key, &accountInfo)
+	if err != nil || !ok {
+		log.Warn("⚠️ cannot get latest storage: error:%v", err)
+		return gsrpc_types.Hash{}, gsrpc_types.UCompact{}, err
+	}
+
+	o := gsrpc_types.SignatureOptions{
+		BlockHash:          a.genesisHash,
+		Era:                gsrpc_types.ExtrinsicEra{IsMortalEra: false},
+		GenesisHash:        a.genesisHash,
+		Nonce:              gsrpc_types.NewUCompactFromUInt(uint64(accountInfo.Nonce)),
+		SpecVersion:        a.rv.SpecVersion,
+		Tip:                gsrpc_types.NewUCompactFromUInt(0),
+		AppID:              gsrpc_types.NewUCompactFromUInt(uint64(a.appID)),
+		TransactionVersion: a.rv.TransactionVersion,
+	}
+
+	// Sign the transaction using Alice's default account
+	err = ext.Sign(a.keyringPair, o)
+	if err != nil {
+		log.Warn("⚠️ cannot sign: error:%v", err)
+		return gsrpc_types.Hash{}, gsrpc_types.UCompact{}, err
+	}
+
+	// Send the extrinsic
+	sub, err := a.api.RPC.Author.SubmitAndWatchExtrinsic(ext)
+	if err != nil {
+		log.Warn("⚠️ cannot submit extrinsic: error:%v", err)
+		return gsrpc_types.Hash{}, gsrpc_types.UCompact{}, err
+	}
+
+	log.Info("✅  Tx batch is submitted to Avail", "length", len(message), "address", a.keyringPair.Address, "appID", a.appID)
+
+	defer sub.Unsubscribe()
+	timeout := time.After(a.finalizationTimeout * time.Second)
+	var finalizedblockHash gsrpc_types.Hash
+
+outer:
+	for {
+		select {
+		case status := <-sub.Chan():
+			if status.IsInBlock {
+				log.Info("📥  Submit data extrinsic included in block", "blockHash", status.AsInBlock.Hex())
+			}
+			if status.IsFinalized {
+				finalizedblockHash = status.AsFinalized
+				break outer
+			} else if status.IsDropped {
+				return gsrpc_types.Hash{}, gsrpc_types.UCompact{}, fmt.Errorf("❌ Extrinsic dropped")
+			} else if status.IsUsurped {
+				return gsrpc_types.Hash{}, gsrpc_types.UCompact{}, fmt.Errorf("❌ Extrinsic usurped")
+			} else if status.IsRetracted {
+				return gsrpc_types.Hash{}, gsrpc_types.UCompact{}, fmt.Errorf("❌ Extrinsic retracted")
+			} else if status.IsInvalid {
+				return gsrpc_types.Hash{}, gsrpc_types.UCompact{}, fmt.Errorf("❌ Extrinsic invalid")
+			}
+		case <-timeout:
+			return gsrpc_types.Hash{}, gsrpc_types.UCompact{}, fmt.Errorf("⌛️  Timeout of %d seconds reached without getting finalized status for extrinsic", a.finalizationTimeout)
+		}
+	}
+
+	return finalizedblockHash, o.Nonce, nil
 }

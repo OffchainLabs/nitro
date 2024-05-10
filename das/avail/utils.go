@@ -10,20 +10,10 @@ import (
 
 	gsrpc "github.com/centrifuge/go-substrate-rpc-client/v4"
 	gsrpc_types "github.com/centrifuge/go-substrate-rpc-client/v4/types"
+	"github.com/centrifuge/go-substrate-rpc-client/v4/types/codec"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/vedhavyas/go-subkey"
 )
-
-var localNonce uint32 = 0
-
-func GetAccountNonce(accountNonce uint32) uint32 {
-	if accountNonce > localNonce {
-		localNonce = accountNonce
-		return accountNonce
-	}
-	localNonce++
-	return localNonce
-}
 
 func GetExtrinsicIndex(api *gsrpc.SubstrateAPI, blockHash gsrpc_types.Hash, address string, nonce gsrpc_types.UCompact) (int, error) {
 	// Fetching block based on block hash
@@ -47,6 +37,27 @@ func GetExtrinsicIndex(api *gsrpc.SubstrateAPI, blockHash gsrpc_types.Hash, addr
 	return -1, fmt.Errorf("❌ unable to find any extrinsic in block %v, from address %v with nonce %v", blockHash, address, nonce)
 }
 
+func extractExtrinsic(address string, nonce int64, avail_blk *gsrpc_types.SignedBlock) ([]byte, error) {
+	for _, ext := range avail_blk.Block.Extrinsics {
+		// Extracting sender address for extrinsic
+		ext_Addr, err := subkey.SS58Address(ext.Signature.Signer.AsID.ToBytes(), 42)
+		if err != nil {
+			log.Error("❌ unable to get sender address from extrinsic", "err", err)
+		}
+
+		if ext_Addr == address && ext.Signature.Nonce.Int64() == nonce {
+			args := ext.Method.Args
+			var data []byte
+			err = codec.Decode(args, &data)
+			if err != nil {
+				return []byte{}, fmt.Errorf("❌ unable to decode the extrinsic data by address: %v with nonce: %v", address, nonce)
+			}
+			return data, nil
+		}
+	}
+	return nil, fmt.Errorf("❌ unable to find any extrinsic")
+}
+
 type BridgeApiResponse struct {
 	BlobRoot           gsrpc_types.Hash   `json:"blobRoot"`
 	BlockHash          gsrpc_types.Hash   `json:"blockHash"`
@@ -61,9 +72,8 @@ type BridgeApiResponse struct {
 	RangeHash          gsrpc_types.Hash   `json:"rangeHash"`
 }
 
-func QueryMerkleProofInput(blockHash string, extrinsicIndex int, t int64) (MerkleProofInput, error) {
+func QueryMerkleProofInput(bridgeApiBaseURL string, blockHash string, extrinsicIndex int, t time.Duration) (MerkleProofInput, error) {
 	// Quering for merkle proof from Bridge Api
-	bridgeApiBaseURL := "https://hex-bridge-api.sandbox.avail.tools/"
 	blockHashPath := "/eth/proof/" + blockHash
 	params := url.Values{}
 	params.Add("index", fmt.Sprint(extrinsicIndex))
@@ -73,20 +83,29 @@ func QueryMerkleProofInput(blockHash string, extrinsicIndex int, t int64) (Merkl
 	u.RawQuery = params.Encode()
 	urlStr := fmt.Sprintf("%v", u)
 
-	var resp *http.Response
-	timeout := time.After(time.Duration(t) * time.Second)
+	bridgeApiResponse, err := queryForBridgeApiRespose(t, urlStr)
+	if err != nil {
+		return MerkleProofInput{}, fmt.Errorf("failed querying bridgeApiResponse for blockHash:%v and extrinsicIndex:%v, error:%w", blockHash, extrinsicIndex, err)
+	}
 
-outer:
+	merkleProofInput := createMerkleProofInput(bridgeApiResponse)
+
+	return merkleProofInput, nil
+}
+
+func queryForBridgeApiRespose(t time.Duration, urlStr string) (BridgeApiResponse, error) {
+	var resp *http.Response
+	timeout := time.After(t * time.Second)
 	for {
 		select {
 		case <-timeout:
-			return MerkleProofInput{}, fmt.Errorf("⌛️  Timeout of %d seconds reached without merkleProofInput from bridge-api for blockHash %v and extrinsic index %v", t, blockHash, extrinsicIndex)
+			return BridgeApiResponse{}, fmt.Errorf("⌛️  Timeout of %f min reached without merkleProofInput from bridge-api", t.Minutes())
 
 		default:
 			var err error
 			resp, err = http.Get(urlStr) //nolint
 			if err != nil {
-				return MerkleProofInput{}, fmt.Errorf("bridge Api request not successfull, err=%w", err)
+				return BridgeApiResponse{}, err
 			}
 			defer resp.Body.Close()
 			if resp.StatusCode != 200 {
@@ -94,33 +113,33 @@ outer:
 				time.Sleep(3 * time.Minute)
 				continue
 			}
-			break outer
+			body, err := io.ReadAll(resp.Body)
+			if err != nil {
+				return BridgeApiResponse{}, err
+			}
+			var bridgeApiResponse BridgeApiResponse
+			err = json.Unmarshal(body, &bridgeApiResponse)
+			if err != nil {
+				return BridgeApiResponse{}, err
+			}
+			return bridgeApiResponse, nil
 		}
 	}
+}
 
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return MerkleProofInput{}, err
-	}
-	fmt.Println(string(body))
-	var bridgeApiResponse BridgeApiResponse
-	err = json.Unmarshal(body, &bridgeApiResponse)
-	if err != nil {
-		return MerkleProofInput{}, err
-	}
-
+func createMerkleProofInput(b BridgeApiResponse) MerkleProofInput {
 	var dataRootProof [][32]byte
-	for _, hash := range bridgeApiResponse.DataRootProof {
+	for _, hash := range b.DataRootProof {
 		var byte32Array [32]byte
 		copy(byte32Array[:], hash[:])
 		dataRootProof = append(dataRootProof, byte32Array)
 	}
 	var leafProof [][32]byte
-	for _, hash := range bridgeApiResponse.LeafProof {
+	for _, hash := range b.LeafProof {
 		var byte32Array [32]byte
 		copy(byte32Array[:], hash[:])
 		leafProof = append(leafProof, byte32Array)
 	}
-	var merkleProofInput MerkleProofInput = MerkleProofInput{dataRootProof, leafProof, bridgeApiResponse.RangeHash, bridgeApiResponse.DataRootIndex, bridgeApiResponse.BlobRoot, bridgeApiResponse.BridgeRoot, bridgeApiResponse.Leaf, bridgeApiResponse.LeafIndex}
-	return merkleProofInput, nil
+	var merkleProofInput MerkleProofInput = MerkleProofInput{dataRootProof, leafProof, b.RangeHash, b.DataRootIndex, b.BlobRoot, b.BridgeRoot, b.Leaf, b.LeafIndex}
+	return merkleProofInput
 }
