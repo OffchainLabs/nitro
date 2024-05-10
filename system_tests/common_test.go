@@ -44,6 +44,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -776,7 +777,7 @@ func createL2BlockChainWithStackConfig(
 	Require(t, err)
 	wasmData, err := stack.OpenDatabase("wasm", 0, 0, "wasm/", false)
 	Require(t, err)
-	chainDb := stack.WrapDatabaseWithWasm(chainData, wasmData)
+	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmData)
 	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "arbitrumdata/", false)
 	Require(t, err)
 
@@ -983,7 +984,7 @@ func Create2ndNodeWithConfig(
 	Require(t, err)
 	wasmData, err := l2stack.OpenDatabase("wasm", 0, 0, "wasm/", false)
 	Require(t, err)
-	l2chainDb := l2stack.WrapDatabaseWithWasm(l2chainData, wasmData)
+	l2chainDb := rawdb.WrapDatabaseWithWasm(l2chainData, wasmData)
 
 	l2arbDb, err := l2stack.OpenDatabase("arbitrumdata", 0, 0, "arbitrumdata/", false)
 	Require(t, err)
