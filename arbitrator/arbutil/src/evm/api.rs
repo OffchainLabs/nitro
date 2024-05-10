@@ -153,7 +153,7 @@ pub trait EvmApi<D: DataReader>: Send + 'static {
     ) -> (eyre::Result<Bytes20>, u32, u64);
 
     /// Returns the EVM return data.
-    /// Analogous to `vm.RETURNDATA`.
+    /// Analogous to `vm.RETURNDATACOPY`.
     fn get_return_data(&self) -> D;
 
     /// Emits an EVM log with the given number of topics and data, the first bytes of which should be the topic data.
