@@ -844,25 +844,26 @@ func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransacti
 		if err != nil {
 			return fmt.Errorf("couldn't get preceding tx in DataPoster to check if should send tx with nonce %d: %w", newTx.FullTx.Nonce(), err)
 		}
-		var latestBlockNumber, prevBlockNumber, reorgResistantNonce uint64
-		if precedingTx != nil && // precedingTx == nil -> the actual preceding tx was already confirmed
-			(precedingTx.FullTx.Type() != newTx.FullTx.Type() || !precedingTx.Sent) {
-			latestBlockNumber, err = p.client.BlockNumber(ctx)
-			if err != nil {
-				return fmt.Errorf("couldn't get block number in DataPoster to check if should send tx with nonce %d: %w", newTx.FullTx.Nonce(), err)
-			}
-			prevBlockNumber = arbmath.SaturatingUSub(latestBlockNumber, 1)
-			reorgResistantNonce, err = p.client.NonceAt(ctx, p.Sender(), new(big.Int).SetUint64(prevBlockNumber))
-			if err != nil {
-				return fmt.Errorf("couldn't determine reorg resistant nonce in DataPoster to check if should send tx with nonce %d: %w", newTx.FullTx.Nonce(), err)
-			}
+		if precedingTx != nil { // precedingTx == nil -> the actual preceding tx was already confirmed
+			var latestBlockNumber, prevBlockNumber, reorgResistantNonce uint64
+			if precedingTx.FullTx.Type() != newTx.FullTx.Type() || !precedingTx.Sent {
+				latestBlockNumber, err = p.client.BlockNumber(ctx)
+				if err != nil {
+					return fmt.Errorf("couldn't get block number in DataPoster to check if should send tx with nonce %d: %w", newTx.FullTx.Nonce(), err)
+				}
+				prevBlockNumber = arbmath.SaturatingUSub(latestBlockNumber, 1)
+				reorgResistantNonce, err = p.client.NonceAt(ctx, p.Sender(), new(big.Int).SetUint64(prevBlockNumber))
+				if err != nil {
+					return fmt.Errorf("couldn't determine reorg resistant nonce in DataPoster to check if should send tx with nonce %d: %w", newTx.FullTx.Nonce(), err)
+				}
 
-			if precedingTx.FullTx.Nonce() > reorgResistantNonce {
-				log.Info("DataPoster is avoiding creating a mempool nonce gap (the tx remains queued and will be retried)", "nonce", newTx.FullTx.Nonce(), "prevType", precedingTx.FullTx.Type(), "type", newTx.FullTx.Type(), "prevSent", precedingTx.Sent)
-				return nil
+				if precedingTx.FullTx.Nonce() > reorgResistantNonce {
+					log.Info("DataPoster is avoiding creating a mempool nonce gap (the tx remains queued and will be retried)", "nonce", newTx.FullTx.Nonce(), "prevType", precedingTx.FullTx.Type(), "type", newTx.FullTx.Type(), "prevSent", precedingTx.Sent)
+					return nil
+				}
+			} else {
+				log.Info("DataPoster will send previously unsent batch tx", "nonce", newTx.FullTx.Nonce(), "prevType", precedingTx.FullTx.Type(), "type", newTx.FullTx.Type(), "prevSent", precedingTx.Sent, "latestBlockNumber", latestBlockNumber, "prevBlockNumber", prevBlockNumber, "reorgResistantNonce", reorgResistantNonce)
 			}
-		} else {
-			log.Info("DataPoster will send previously unsent batch tx", "nonce", newTx.FullTx.Nonce(), "prevType", precedingTx.FullTx.Type(), "type", newTx.FullTx.Type(), "prevSent", precedingTx.Sent, "latestBlockNumber", latestBlockNumber, "prevBlockNumber", prevBlockNumber, "reorgResistantNonce", reorgResistantNonce)
 		}
 	}
 
