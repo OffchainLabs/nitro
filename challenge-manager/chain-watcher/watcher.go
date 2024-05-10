@@ -414,6 +414,39 @@ func (w *Watcher) ComputeAncestors(
 	return chal.honestEdgeTree.ComputeAncestors(ctx, edgeId, blockHeader.Number.Uint64())
 }
 
+func (w *Watcher) PathWeightToClosestEssentialAncestor(
+	ctx context.Context,
+	challengedAssertionHash protocol.AssertionHash,
+	edge protocol.ReadOnlyEdge,
+) (uint64, error) {
+	chal, ok := w.challenges.TryGet(challengedAssertionHash)
+	if !ok {
+		return 0, fmt.Errorf(
+			"could not get challenge for top level assertion %#x",
+			challengedAssertionHash,
+		)
+	}
+	blockHeader, err := w.chain.Backend().HeaderByNumber(ctx, util.GetSafeBlockNumber())
+	if err != nil {
+		return 0, err
+	}
+	if !blockHeader.Number.IsUint64() {
+		return 0, errors.New("block number is not uint64")
+	}
+	if !chal.honestEdgeTree.HasRoyalEdge(edge.Id()) {
+		return 0, fmt.Errorf("edge with id %#x is not yet tracked locally", edge.Id().Hash)
+	}
+	essentialAncestor, err := chal.honestEdgeTree.ClosestEssentialAncestor(ctx, edge)
+	if err != nil {
+		return 0, err
+	}
+	return chal.honestEdgeTree.ComputePathWeight(ctx, challengetree.ComputePathWeightArgs{
+		Child:    edge.Id(),
+		Ancestor: essentialAncestor.Id(),
+		BlockNum: blockHeader.Number.Uint64(),
+	})
+}
+
 func (w *Watcher) ComputeRootInheritedTimer(
 	ctx context.Context,
 	challengedAssertionHash protocol.AssertionHash,

@@ -4,6 +4,7 @@
 package challengetree
 
 import (
+	"context"
 	"testing"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
@@ -12,6 +13,59 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 )
+
+func TestClosestEssentialAncestor(t *testing.T) {
+	ctx := context.Background()
+	tree := &RoyalChallengeTree{
+		edges:                 threadsafe.NewMap[protocol.EdgeId, protocol.SpecEdge](),
+		edgeCreationTimes:     threadsafe.NewMap[OriginPlusMutualId, *threadsafe.Map[protocol.EdgeId, creationTime]](),
+		metadataReader:        &mockMetadataReader{},
+		totalChallengeLevels:  3,
+		royalRootEdgesByLevel: threadsafe.NewMap[protocol.ChallengeLevel, *threadsafe.Slice[protocol.SpecEdge]](),
+	}
+	tree.royalRootEdgesByLevel.Put(2, threadsafe.NewSlice[protocol.SpecEdge]())
+	tree.royalRootEdgesByLevel.Put(1, threadsafe.NewSlice[protocol.SpecEdge]())
+	tree.royalRootEdgesByLevel.Put(0, threadsafe.NewSlice[protocol.SpecEdge]())
+
+	// Edge ids that belong to block challenges are prefixed with "blk".
+	// For big step, prefixed with "big", and small step, prefixed with "smol".
+	setupBlockChallengeTreeSnapshot(t, tree, "ass.a")
+	blockRootEdges := tree.royalRootEdgesByLevel.Get(2 /* big step level */)
+	blockRootEdges.Push(tree.edges.Get(id("blk-0.a-16.a")))
+	claimId := "blk-4.a-5.a"
+	setupBigStepChallengeSnapshot(t, tree, claimId)
+	bigStepRootEdges := tree.royalRootEdgesByLevel.Get(1 /* big step level */)
+	bigStepRootEdges.Push(tree.edges.Get(id("big-0.a-16.a")))
+	claimId = "big-4.a-5.a"
+	setupSmallStepChallengeSnapshot(t, tree, claimId)
+	smallStepRootEdges := tree.royalRootEdgesByLevel.Get(0 /* small step level */)
+	smallStepRootEdges.Push(tree.edges.Get(id("smol-0.a-16.a")))
+
+	t.Run("essential edge is its own closest essential ancestor", func(t *testing.T) {
+		edge := tree.edges.Get(id("big-0.a-16.a"))
+		ancestor, err := tree.ClosestEssentialAncestor(ctx, edge)
+		require.NoError(t, err)
+		require.Equal(t, id("big-0.a-16.a"), ancestor.Id())
+	})
+	t.Run("block challenge level", func(t *testing.T) {
+		edge := tree.edges.Get(id("blk-5.a-6.a"))
+		ancestor, err := tree.ClosestEssentialAncestor(ctx, edge)
+		require.NoError(t, err)
+		require.Equal(t, id("blk-0.a-16.a"), ancestor.Id())
+	})
+	t.Run("big step subchallenge edge", func(t *testing.T) {
+		edge := tree.edges.Get(id("big-6.a-8.a"))
+		ancestor, err := tree.ClosestEssentialAncestor(ctx, edge)
+		require.NoError(t, err)
+		require.Equal(t, id("big-0.a-16.a"), ancestor.Id())
+	})
+	t.Run("small step subchallenge edge", func(t *testing.T) {
+		edge := tree.edges.Get(id("smol-6.a-8.a"))
+		ancestor, err := tree.ClosestEssentialAncestor(ctx, edge)
+		require.NoError(t, err)
+		require.Equal(t, id("smol-0.a-16.a"), ancestor.Id())
+	})
+}
 
 func Test_findOriginEdge(t *testing.T) {
 	edges := threadsafe.NewSlice[protocol.SpecEdge]()
