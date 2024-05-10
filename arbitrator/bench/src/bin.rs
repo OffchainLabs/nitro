@@ -13,7 +13,7 @@ use gperftools::heap_profiler::HEAP_PROFILER;
 use prover::machine::MachineStatus;
 
 #[cfg(feature = "counters")]
-use prover::merkle;
+use prover::{machine, memory, merkle};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -34,6 +34,8 @@ struct Args {
 fn main() -> eyre::Result<()> {
     let args = Args::parse();
     let step_sizes = [1, 1 << 10, 1 << 15, 1 << 20, 1 << 24, 1 << 26, 1 << 28];
+    // let step_sizes = [1, 1 << 10, 1 << 15, 1 << 20, 1 << 24];
+
     if args.always_merkleize {
         println!("Running benchmark with always merkleize feature on");
     } else {
@@ -65,7 +67,11 @@ fn main() -> eyre::Result<()> {
             .unwrap();
 
         #[cfg(feature = "counters")]
-        merkle::reset_counters();
+        {
+            machine::reset_counters();
+            memory::reset_counters();
+            merkle::reset_counters();
+        }
         let total = std::time::Instant::now();
         loop {
             let start = std::time::Instant::now();
@@ -112,7 +118,11 @@ fn main() -> eyre::Result<()> {
             total_end_time,
         );
         #[cfg(feature = "counters")]
-        merkle::print_counters();
+        {
+            machine::print_counters();
+            memory::print_counters();
+            merkle::print_counters();
+        }
     }
     Ok(())
 }

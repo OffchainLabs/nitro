@@ -32,6 +32,10 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use sha3::Keccak256;
 use smallvec::SmallVec;
+
+#[cfg(feature = "counters")]
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use std::{
     borrow::Cow,
     convert::{TryFrom, TryInto},
@@ -44,11 +48,36 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
+
 use wasmer_types::FunctionIndex;
 use wasmparser::{DataKind, ElementItems, ElementKind, Operator, RefType, TableType};
 
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
+
+#[cfg(feature = "counters")]
+static GET_MODULES_MERKLE_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(feature = "counters")]
+static FLUSH_MODULE_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(feature = "counters")]
+pub fn print_counters() {
+    println!(
+        "GET_MODULES_MERKLE_COUNTER: {}",
+        GET_MODULES_MERKLE_COUNTER.load(Ordering::Relaxed)
+    );
+    println!(
+        "FLUSH_MODULE_COUNTER: {}",
+        FLUSH_MODULE_COUNTER.load(Ordering::Relaxed)
+    );
+}
+
+#[cfg(feature = "counters")]
+pub fn reset_counters() {
+    GET_MODULES_MERKLE_COUNTER.store(0, Ordering::Relaxed);
+    FLUSH_MODULE_COUNTER.store(0, Ordering::Relaxed);
+}
 
 fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
     let mut h = Keccak256::new();
@@ -1918,6 +1947,8 @@ impl Machine {
         }
         macro_rules! flush_module {
             () => {
+                #[cfg(feature = "counters")]
+                FLUSH_MODULE_COUNTER.fetch_add(1, Ordering::Relaxed);
                 if let Some(merkle) = self.modules_merkle.as_mut() {
                     merkle.set(self.pc.module(), module.hash());
                 }
@@ -2696,6 +2727,9 @@ impl Machine {
     }
 
     fn get_modules_merkle(&self) -> Cow<Merkle> {
+        #[cfg(feature = "counters")]
+        GET_MODULES_MERKLE_COUNTER.fetch_add(1, Ordering::Relaxed);
+
         if let Some(merkle) = &self.modules_merkle {
             Cow::Borrowed(merkle)
         } else {

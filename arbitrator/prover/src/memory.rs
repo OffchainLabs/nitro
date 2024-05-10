@@ -11,10 +11,30 @@ use eyre::{bail, ErrReport, Result};
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
 use std::{borrow::Cow, convert::TryFrom};
+
+#[cfg(feature = "counters")]
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use wasmer_types::Pages;
 
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
+
+#[cfg(feature = "counters")]
+static MEM_HASH_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(feature = "counters")]
+pub fn reset_counters() {
+    MEM_HASH_COUNTER.store(0, Ordering::Relaxed);
+}
+
+#[cfg(feature = "counters")]
+pub fn print_counters() {
+    println!(
+        "Memory hash count: {}",
+        MEM_HASH_COUNTER.load(Ordering::Relaxed)
+    );
+}
 
 pub struct MemoryType {
     pub min: Pages,
@@ -138,6 +158,8 @@ impl Memory {
     }
 
     pub fn hash(&self) -> Bytes32 {
+        #[cfg(feature = "counters")]
+        MEM_HASH_COUNTER.fetch_add(1, Ordering::Relaxed);
         let mut h = Keccak256::new();
         h.update("Memory:");
         h.update((self.buffer.len() as u64).to_be_bytes());

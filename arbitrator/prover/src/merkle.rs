@@ -87,6 +87,21 @@ lazy_static! {
         map
     };
 }
+#[cfg(feature = "counters")]
+lazy_static! {
+    static ref RESIZE_COUNTERS: HashMap<&'static MerkleType, AtomicUsize> = {
+        let mut map = HashMap::new();
+        map.insert(&MerkleType::Empty, AtomicUsize::new(0));
+        map.insert(&MerkleType::Value, AtomicUsize::new(0));
+        map.insert(&MerkleType::Function, AtomicUsize::new(0));
+        map.insert(&MerkleType::Instruction, AtomicUsize::new(0));
+        map.insert(&MerkleType::Memory, AtomicUsize::new(0));
+        map.insert(&MerkleType::Table, AtomicUsize::new(0));
+        map.insert(&MerkleType::TableElement, AtomicUsize::new(0));
+        map.insert(&MerkleType::Module, AtomicUsize::new(0));
+        map
+    };
+}
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize, Sequence)]
 pub enum MerkleType {
@@ -113,11 +128,12 @@ pub fn print_counters() {
             continue;
         }
         println!(
-            "{} New: {}, Root: {}, Set: {}",
+            "{} New: {}, Root: {}, Set: {} Resize: {}",
             ty.get_prefix(),
             NEW_COUNTERS[&ty].load(Ordering::Relaxed),
             ROOT_COUNTERS[&ty].load(Ordering::Relaxed),
-            SET_COUNTERS[&ty].load(Ordering::Relaxed)
+            SET_COUNTERS[&ty].load(Ordering::Relaxed),
+            RESIZE_COUNTERS[&ty].load(Ordering::Relaxed),
         );
     }
 }
@@ -131,6 +147,7 @@ pub fn reset_counters() {
         NEW_COUNTERS[&ty].store(0, Ordering::Relaxed);
         ROOT_COUNTERS[&ty].store(0, Ordering::Relaxed);
         SET_COUNTERS[&ty].store(0, Ordering::Relaxed);
+        RESIZE_COUNTERS[&ty].store(0, Ordering::Relaxed);
     }
 }
 
@@ -382,6 +399,8 @@ impl Merkle {
     ///
     /// The extra space is filled with empty hashes.
     pub fn resize(&self, new_len: usize) -> Result<usize, String> {
+        #[cfg(feature = "counters")]
+        RESIZE_COUNTERS[&self.ty].fetch_add(1, Ordering::Relaxed);
         if new_len > self.capacity() {
             return Err(
                 "Cannot resize to a length greater than the capacity of the tree.".to_owned(),

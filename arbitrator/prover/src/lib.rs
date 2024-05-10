@@ -9,7 +9,7 @@ mod host;
 mod kzg;
 pub mod machine;
 /// cbindgen:ignore
-mod memory;
+pub mod memory;
 pub mod merkle;
 mod print;
 pub mod programs;
