@@ -184,3 +184,8 @@ pub unsafe extern "C" fn wasi_snapshot_preview1__path_rename(
 pub unsafe extern "C" fn wasi_snapshot_preview1__path_unlink_file(_: i32, _: i32, _: i32) -> u16 {
     ERRNO_BADF
 }
+
+#[no_mangle]
+pub unsafe extern "C" fn wasi_snapshot_preview1__sock_accept(_: i32, _: i32, _: i32) -> u16 {
+    ERRNO_BADF
+}
