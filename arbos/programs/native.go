@@ -54,7 +54,7 @@ func activateProgram(
 	debug bool,
 	burner burn.Burner,
 ) (*activationInfo, error) {
-	info, asm, module, err := activateProgramInternal(db, program, codehash, wasm, page_limit, version, debug, burner)
+	info, asm, module, err := activateProgramInternal(db, program, codehash, wasm, page_limit, version, debug, burner.GasLeft())
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +70,7 @@ func activateProgramInternal(
 	page_limit uint16,
 	version uint16,
 	debug bool,
-	burner burn.Burner,
+	gasLeft *uint64,
 ) (*activationInfo, []byte, []byte, error) {
 	output := &rustBytes{}
 	asmLen := usize(0)
@@ -88,7 +88,7 @@ func activateProgramInternal(
 		&codeHash,
 		moduleHash,
 		stylusData,
-		(*u64)(burner.GasLeft()),
+		(*u64)(gasLeft),
 	))
 
 	data, msg, err := status.toResult(output.intoBytes(), debug)
@@ -124,15 +124,15 @@ func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, address common.Addr
 	}
 
 	codeHash := statedb.GetCodeHash(address)
-	burner := burn.NewSystemBurner(nil, false)
 
 	wasm, err := getWasm(statedb, address)
 	if err != nil {
 		return nil, err
 	}
 
+	unlimitedGas := uint64(0xffffffffffff)
 	// we know program is activated, so it must be in correct version and not use too much memory
-	info, asm, module, err := activateProgramInternal(statedb, address, codeHash, wasm, pagelimit, program.version, debugMode, burner)
+	info, asm, module, err := activateProgramInternal(statedb, address, codeHash, wasm, pagelimit, program.version, debugMode, &unlimitedGas)
 
 	if err != nil {
 		return nil, err
