@@ -772,8 +772,11 @@ func createL2BlockChainWithStackConfig(
 	stack, err = node.New(stackConfig)
 	Require(t, err)
 
-	chainDb, err := stack.OpenDatabaseWithFreezerAndWasm("l2chaindata", "wasm", 0, 0, "ancient", "l2chaindata/", false)
+	chainData, err := stack.OpenDatabase("l2chaindata", 0, 0, "l2chaindata/", false)
 	Require(t, err)
+	wasmData, err := stack.OpenDatabase("wasm", 0, 0, "wasm/", false)
+	Require(t, err)
+	chainDb := stack.WrapDatabaseWithWasm(chainData, wasmData)
 	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "arbitrumdata/", false)
 	Require(t, err)
 
@@ -976,8 +979,12 @@ func Create2ndNodeWithConfig(
 	l2stack, err := node.New(stackConfig)
 	Require(t, err)
 
-	l2chainDb, err := l2stack.OpenDatabaseWithFreezerAndWasm("l2chaindata", "wasm", 0, 0, "", "l2chaindata/", false)
+	l2chainData, err := l2stack.OpenDatabase("l2chaindata", 0, 0, "l2chaindata/", false)
 	Require(t, err)
+	wasmData, err := l2stack.OpenDatabase("wasm", 0, 0, "wasm/", false)
+	Require(t, err)
+	l2chainDb := l2stack.WrapDatabaseWithWasm(l2chainData, wasmData)
+
 	l2arbDb, err := l2stack.OpenDatabase("arbitrumdata", 0, 0, "arbitrumdata/", false)
 	Require(t, err)
 	initReader := statetransfer.NewMemoryInitDataReader(l2InitData)
