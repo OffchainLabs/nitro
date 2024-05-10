@@ -1,12 +1,14 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package testhelpers
 
 import (
 	"context"
-	"crypto/rand"
+	crypto "crypto/rand"
 	"io"
+	"math/big"
+	"math/rand"
 	"os"
 	"regexp"
 	"sync"
@@ -32,17 +34,45 @@ func FailImpl(t *testing.T, printables ...interface{}) {
 }
 
 func RandomizeSlice(slice []byte) []byte {
-	_, err := rand.Read(slice)
+	_, err := crypto.Read(slice)
 	if err != nil {
 		panic(err)
 	}
 	return slice
 }
 
+func RandomSlice(size uint64) []byte {
+	return RandomizeSlice(make([]byte, size))
+}
+
+func RandomHash() common.Hash {
+	var hash common.Hash
+	RandomizeSlice(hash[:])
+	return hash
+}
+
 func RandomAddress() common.Address {
 	var address common.Address
 	RandomizeSlice(address[:])
 	return address
+}
+
+func RandomCallValue(limit int64) *big.Int {
+	return big.NewInt(rand.Int63n(limit))
+}
+
+// Computes a psuedo-random uint64 on the interval [min, max]
+func RandomUint32(min, max uint32) uint32 {
+	return uint32(RandomUint64(uint64(min), uint64(max)))
+}
+
+// Computes a psuedo-random uint64 on the interval [min, max]
+func RandomUint64(min, max uint64) uint64 {
+	return uint64(rand.Uint64()%(max-min+1) + min)
+}
+
+func RandomBool() bool {
+	return rand.Int31n(2) == 0
 }
 
 type LogHandler struct {

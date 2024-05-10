@@ -7,17 +7,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"regexp"
-	"sync"
 	"testing"
 
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
+
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
-
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -30,8 +30,8 @@ import (
 type StatelessBlockValidator struct {
 	config *BlockValidatorConfig
 
-	execSpawner        validator.ExecutionSpawner
-	validationSpawners []validator.ValidationSpawner
+	execSpawners   []validator.ExecutionSpawner
+	redisValidator *redis.ValidationClient
 
 	recorder execution.ExecutionRecorder
 
@@ -39,12 +39,7 @@ type StatelessBlockValidator struct {
 	inboxTracker InboxTrackerInterface
 	streamer     TransactionStreamerInterface
 	db           ethdb.Database
-	daService    arbstate.DataAvailabilityReader
-	blobReader   arbstate.BlobReader
-
-	moduleMutex           sync.Mutex
-	currentWasmModuleRoot common.Hash
-	pendingWasmModuleRoot common.Hash
+	dapReaders   []daprovider.Reader
 }
 
 type BlockValidatorRegistrer interface {
@@ -67,6 +62,7 @@ type TransactionStreamerInterface interface {
 	ResultAtCount(count arbutil.MessageIndex) (*execution.MessageResult, error)
 	PauseReorgs()
 	ResumeReorgs()
+	ChainConfig() *params.ChainConfig
 }
 
 type InboxReaderInterface interface {
@@ -126,12 +122,14 @@ type validationEntry struct {
 	End           validator.GoGlobalState
 	HasDelayedMsg bool
 	DelayedMsgNr  uint64
+	ChainConfig   *params.ChainConfig
 	// valid when created, removed after recording
 	msg *arbostypes.MessageWithMetadata
 	// Has batch when created - others could be added on record
 	BatchInfo []validator.BatchInfo
 	// Valid since Ready
 	Preimages  map[arbutil.PreimageType]map[common.Hash][]byte
+	UserWasms  state.UserWasms
 	DelayedMsg []byte
 }
 
@@ -144,9 +142,11 @@ func (e *validationEntry) ToInput() (*validator.ValidationInput, error) {
 		HasDelayedMsg: e.HasDelayedMsg,
 		DelayedMsgNr:  e.DelayedMsgNr,
 		Preimages:     e.Preimages,
+		UserWasms:     e.UserWasms,
 		BatchInfo:     e.BatchInfo,
 		DelayedMsg:    e.DelayedMsg,
 		StartState:    e.Start,
+		DebugChain:    e.ChainConfig.DebugMode(),
 	}, nil
 }
 
@@ -158,6 +158,7 @@ func newValidationEntry(
 	batch []byte,
 	batchBlockHash common.Hash,
 	prevDelayed uint64,
+	chainConfig *params.ChainConfig,
 ) (*validationEntry, error) {
 	batchInfo := validator.BatchInfo{
 		Number:    start.Batch,
@@ -181,6 +182,7 @@ func newValidationEntry(
 		DelayedMsgNr:  delayedNum,
 		msg:           msg,
 		BatchInfo:     []validator.BatchInfo{batchInfo},
+		ChainConfig:   chainConfig,
 	}, nil
 }
 
@@ -190,63 +192,42 @@ func NewStatelessBlockValidator(
 	streamer TransactionStreamerInterface,
 	recorder execution.ExecutionRecorder,
 	arbdb ethdb.Database,
-	das arbstate.DataAvailabilityReader,
-	blobReader arbstate.BlobReader,
+	dapReaders []daprovider.Reader,
 	config func() *BlockValidatorConfig,
 	stack *node.Node,
 ) (*StatelessBlockValidator, error) {
-	var validationSpawners []validator.ValidationSpawner
+	var executionSpawners []validator.ExecutionSpawner
+	var redisValClient *redis.ValidationClient
+
 	if config().RedisValidationClientConfig.Enabled() {
-		redisValClient, err := redis.NewValidationClient(&config().RedisValidationClientConfig)
+		var err error
+		redisValClient, err = redis.NewValidationClient(&config().RedisValidationClientConfig)
 		if err != nil {
 			return nil, fmt.Errorf("creating new redis validation client: %w", err)
 		}
-		validationSpawners = append(validationSpawners, redisValClient)
 	}
-	for _, serverConfig := range config().ValidationServerConfigs {
-		valConfFetcher := func() *rpcclient.ClientConfig { return &serverConfig }
-		validationSpawners = append(validationSpawners, validatorclient.NewValidationClient(valConfFetcher, stack))
+	configs := config().ValidationServerConfigs
+	for i := range configs {
+		i := i
+		confFetcher := func() *rpcclient.ClientConfig { return &config().ValidationServerConfigs[i] }
+		executionSpawners = append(executionSpawners, validatorclient.NewExecutionClient(confFetcher, stack))
 	}
 
-	valConfFetcher := func() *rpcclient.ClientConfig {
-		return &config().ExecutionServerConfig
+	if len(executionSpawners) == 0 {
+		return nil, errors.New("no enabled execution servers")
 	}
+
 	return &StatelessBlockValidator{
-		config:             config(),
-		recorder:           recorder,
-		validationSpawners: validationSpawners,
-		inboxReader:        inboxReader,
-		inboxTracker:       inbox,
-		streamer:           streamer,
-		db:                 arbdb,
-		daService:          das,
-		blobReader:         blobReader,
-		execSpawner:        validatorclient.NewExecutionClient(valConfFetcher, stack),
+		config:         config(),
+		recorder:       recorder,
+		redisValidator: redisValClient,
+		inboxReader:    inboxReader,
+		inboxTracker:   inbox,
+		streamer:       streamer,
+		db:             arbdb,
+		dapReaders:     dapReaders,
+		execSpawners:   executionSpawners,
 	}, nil
-}
-
-func (v *StatelessBlockValidator) Initialize(moduleRoots []common.Hash) error {
-	if len(v.validationSpawners) == 0 {
-		return nil
-	}
-	// First spawner is always RedisValidationClient if RedisStreams are enabled.
-	if v, ok := v.validationSpawners[0].(*redis.ValidationClient); ok {
-		if err := v.Initialize(moduleRoots); err != nil {
-			return fmt.Errorf("initializing redis validation client module roots: %w", err)
-		}
-	}
-	return nil
-}
-
-func (v *StatelessBlockValidator) GetModuleRootsToValidate() []common.Hash {
-	v.moduleMutex.Lock()
-	defer v.moduleMutex.Unlock()
-
-	validatingModuleRoots := []common.Hash{v.currentWasmModuleRoot}
-	if (v.currentWasmModuleRoot != v.pendingWasmModuleRoot && v.pendingWasmModuleRoot != common.Hash{}) {
-		validatingModuleRoots = append(validatingModuleRoots, v.pendingWasmModuleRoot)
-	}
-	return validatingModuleRoots
 }
 
 func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *validationEntry) error {
@@ -267,6 +248,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		if recording.Preimages != nil {
 			e.Preimages[arbutil.Keccak256PreimageType] = recording.Preimages
 		}
+		e.UserWasms = recording.UserWasms
 	}
 	if e.HasDelayedMsg {
 		delayedMsg, err := v.inboxTracker.GetDelayedMessageBytes(e.DelayedMsgNr)
@@ -283,39 +265,27 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		if len(batch.Data) <= 40 {
 			continue
 		}
-		if arbstate.IsBlobHashesHeaderByte(batch.Data[40]) {
-			payload := batch.Data[41:]
-			if len(payload)%len(common.Hash{}) != 0 {
-				return fmt.Errorf("blob batch data is not a list of hashes as expected")
-			}
-			versionedHashes := make([]common.Hash, len(payload)/len(common.Hash{}))
-			for i := 0; i*32 < len(payload); i += 1 {
-				copy(versionedHashes[i][:], payload[i*32:(i+1)*32])
-			}
-			blobs, err := v.blobReader.GetBlobs(ctx, batch.BlockHash, versionedHashes)
-			if err != nil {
-				return fmt.Errorf("failed to get blobs: %w", err)
-			}
-			if e.Preimages[arbutil.EthVersionedHashPreimageType] == nil {
-				e.Preimages[arbutil.EthVersionedHashPreimageType] = make(map[common.Hash][]byte)
-			}
-			for i, blob := range blobs {
-				// Prevent aliasing `blob` when slicing it, as for range loops overwrite the same variable
-				// Won't be necessary after Go 1.22 with https://go.dev/blog/loopvar-preview
-				b := blob
-				e.Preimages[arbutil.EthVersionedHashPreimageType][versionedHashes[i]] = b[:]
+		foundDA := false
+		for _, dapReader := range v.dapReaders {
+			if dapReader != nil && dapReader.IsValidHeaderByte(batch.Data[40]) {
+				preimageRecorder := daprovider.RecordPreimagesTo(e.Preimages)
+				_, err := dapReader.RecoverPayloadFromBatch(ctx, batch.Number, batch.BlockHash, batch.Data, preimageRecorder, true)
+				if err != nil {
+					// Matches the way keyset validation was done inside DAS readers i.e logging the error
+					//  But other daproviders might just want to return the error
+					if errors.Is(err, daprovider.ErrSeqMsgValidation) && daprovider.IsDASMessageHeaderByte(batch.Data[40]) {
+						log.Error(err.Error())
+					} else {
+						return err
+					}
+				}
+				foundDA = true
+				break
 			}
 		}
-		if arbstate.IsDASMessageHeaderByte(batch.Data[40]) {
-			if v.daService == nil {
-				log.Warn("No DAS configured, but sequencer message found with DAS header")
-			} else {
-				_, err := arbstate.RecoverPayloadFromDasBatch(
-					ctx, batch.Number, batch.Data, v.daService, e.Preimages, arbstate.KeysetValidate,
-				)
-				if err != nil {
-					return err
-				}
+		if !foundDA {
+			if daprovider.IsDASMessageHeaderByte(batch.Data[40]) {
+				log.Error("No DAS Reader configured, but sequencer message found with DAS header")
 			}
 		}
 	}
@@ -383,7 +353,7 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	if err != nil {
 		return nil, err
 	}
-	entry, err := newValidationEntry(pos, start, end, msg, seqMsg, batchBlockHash, prevDelayed)
+	entry, err := newValidationEntry(pos, start, end, msg, seqMsg, batchBlockHash, prevDelayed, v.streamer.ChainConfig())
 	if err != nil {
 		return nil, err
 	}
@@ -406,30 +376,29 @@ func (v *StatelessBlockValidator) ValidateResult(
 	if err != nil {
 		return false, nil, err
 	}
-	var spawners []validator.ValidationSpawner
-	if useExec {
-		spawners = append(spawners, v.execSpawner)
-	} else {
-		spawners = v.validationSpawners
-	}
-	if len(spawners) == 0 {
-		return false, &entry.End, errors.New("no validation defined")
-	}
-	var runs []validator.ValidationRun
-	for _, spawner := range spawners {
-		run := spawner.Launch(input, moduleRoot)
-		runs = append(runs, run)
-	}
-	defer func() {
-		for _, run := range runs {
-			run.Cancel()
+	var run validator.ValidationRun
+	if !useExec {
+		if v.redisValidator != nil {
+			if validator.SpawnerSupportsModule(v.redisValidator, moduleRoot) {
+				run = v.redisValidator.Launch(input, moduleRoot)
+			}
 		}
-	}()
-	for _, run := range runs {
-		gsEnd, err := run.Await(ctx)
-		if err != nil || gsEnd != entry.End {
-			return false, &gsEnd, err
+	}
+	if run == nil {
+		for _, spawner := range v.execSpawners {
+			if validator.SpawnerSupportsModule(spawner, moduleRoot) {
+				run = spawner.Launch(input, moduleRoot)
+				break
+			}
 		}
+	}
+	if run == nil {
+		return false, nil, fmt.Errorf("validation woth WasmModuleRoot %v not supported by node", moduleRoot)
+	}
+	defer run.Cancel()
+	gsEnd, err := run.Await(ctx)
+	if err != nil || gsEnd != entry.End {
+		return false, &gsEnd, err
 	}
 	return true, &entry.End, nil
 }
@@ -438,36 +407,40 @@ func (v *StatelessBlockValidator) OverrideRecorder(t *testing.T, recorder execut
 	v.recorder = recorder
 }
 
-func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
-	for _, spawner := range v.validationSpawners {
-		if err := spawner.Start(ctx_in); err != nil {
-			return fmt.Errorf("starting validation spawner: %w", err)
+func (v *StatelessBlockValidator) GetLatestWasmModuleRoot(ctx context.Context) (common.Hash, error) {
+	var lastErr error
+	for _, spawner := range v.execSpawners {
+		var latest common.Hash
+		latest, lastErr = spawner.LatestWasmModuleRoot().Await(ctx)
+		if latest != (common.Hash{}) && lastErr == nil {
+			return latest, nil
+		}
+		if ctx.Err() != nil {
+			return common.Hash{}, ctx.Err()
 		}
 	}
-	if err := v.execSpawner.Start(ctx_in); err != nil {
-		return fmt.Errorf("starting execution spawner: %w", err)
+	return common.Hash{}, fmt.Errorf("couldn't detect latest WasmModuleRoot: %w", lastErr)
+}
+
+func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
+	if v.redisValidator != nil {
+		if err := v.redisValidator.Start(ctx_in); err != nil {
+			return fmt.Errorf("starting execution spawner: %w", err)
+		}
 	}
-	if v.config.PendingUpgradeModuleRoot != "" {
-		if v.config.PendingUpgradeModuleRoot == "latest" {
-			latest, err := v.execSpawner.LatestWasmModuleRoot().Await(ctx_in)
-			if err != nil {
-				return fmt.Errorf("getting latest wasm module root: %w", err)
-			}
-			v.pendingWasmModuleRoot = latest
-		} else {
-			valid, _ := regexp.MatchString("(0x)?[0-9a-fA-F]{64}", v.config.PendingUpgradeModuleRoot)
-			v.pendingWasmModuleRoot = common.HexToHash(v.config.PendingUpgradeModuleRoot)
-			if (!valid || v.pendingWasmModuleRoot == common.Hash{}) {
-				return errors.New("pending-upgrade-module-root config value illegal")
-			}
+	for _, spawner := range v.execSpawners {
+		if err := spawner.Start(ctx_in); err != nil {
+			return err
 		}
 	}
 	return nil
 }
 
 func (v *StatelessBlockValidator) Stop() {
-	v.execSpawner.Stop()
-	for _, spawner := range v.validationSpawners {
+	for _, spawner := range v.execSpawners {
 		spawner.Stop()
+	}
+	if v.redisValidator != nil {
+		v.redisValidator.Stop()
 	}
 }

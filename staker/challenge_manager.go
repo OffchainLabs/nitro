@@ -478,9 +478,18 @@ func (m *ChallengeManager) createExecutionBackend(ctx context.Context, step uint
 		}
 	}
 	input.BatchInfo = prunedBatches
-	execRun, err := m.validator.execSpawner.CreateExecutionRun(m.wasmModuleRoot, input).Await(ctx)
-	if err != nil {
-		return fmt.Errorf("error creating execution backend for msg %v: %w", initialCount, err)
+	var execRun validator.ExecutionRun
+	for _, spawner := range m.validator.execSpawners {
+		if validator.SpawnerSupportsModule(spawner, m.wasmModuleRoot) {
+			execRun, err = spawner.CreateExecutionRun(m.wasmModuleRoot, input).Await(ctx)
+			if err != nil {
+				return fmt.Errorf("error creating execution backend for msg %v: %w", initialCount, err)
+			}
+			break
+		}
+	}
+	if execRun == nil {
+		return fmt.Errorf("did not find valid execution backend")
 	}
 	backend, err := NewExecutionChallengeBackend(execRun)
 	if err != nil {
