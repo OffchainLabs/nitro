@@ -14,8 +14,6 @@ import (
 	"syscall"
 	"time"
 
-	"golang.org/x/exp/slog"
-
 	koanfjson "github.com/knadh/koanf/parsers/json"
 	flag "github.com/spf13/pflag"
 
@@ -46,7 +44,7 @@ type DAServerConfig struct {
 	DataAvailability das.DataAvailabilityConfig `koanf:"data-availability"`
 
 	Conf     genericconf.ConfConfig `koanf:"conf"`
-	LogLevel int                    `koanf:"log-level"`
+	LogLevel string                 `koanf:"log-level"`
 	LogType  string                 `koanf:"log-type"`
 
 	Metrics       bool                            `koanf:"metrics"`
@@ -66,7 +64,7 @@ var DefaultDAServerConfig = DAServerConfig{
 	RESTServerTimeouts: genericconf.HTTPServerTimeoutConfigDefault,
 	DataAvailability:   das.DefaultDataAvailabilityConfig,
 	Conf:               genericconf.ConfConfigDefault,
-	LogLevel:           int(log.LvlInfo),
+	LogLevel:           "INFO",
 	LogType:            "plaintext",
 	Metrics:            false,
 	MetricsServer:      genericconf.MetricsServerConfigDefault,
@@ -103,7 +101,7 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 	f.Bool("pprof", DefaultDAServerConfig.PProf, "enable pprof")
 	genericconf.PProfAddOptions("pprof-cfg", f)
 
-	f.Int("log-level", int(log.LvlInfo), "log level; 1: ERROR, 2: WARN, 3: INFO, 4: DEBUG, 5: TRACE")
+	f.String("log-level", DefaultDAServerConfig.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
 	f.String("log-type", DefaultDAServerConfig.LogType, "log type (plaintext or json)")
 
 	das.DataAvailabilityConfigAddDaserverOptions("data-availability", f)
@@ -185,13 +183,18 @@ func startup() error {
 		confighelpers.PrintErrorAndExit(errors.New("please specify at least one of --enable-rest or --enable-rpc"), printSampleUsage)
 	}
 
+	logLevel, err := genericconf.ToSlogLevel(serverConfig.LogLevel)
+	if err != nil {
+		confighelpers.PrintErrorAndExit(err, printSampleUsage)
+	}
+
 	handler, err := genericconf.HandlerFromLogType(serverConfig.LogType, io.Writer(os.Stderr))
 	if err != nil {
 		flag.Usage()
 		return fmt.Errorf("error parsing log type when creating handler: %w", err)
 	}
 	glogger := log.NewGlogHandler(handler)
-	glogger.Verbosity(slog.Level(serverConfig.LogLevel))
+	glogger.Verbosity(logLevel)
 	log.SetDefault(log.NewLogger(glogger))
 
 	if err := startMetrics(serverConfig); err != nil {

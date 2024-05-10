@@ -176,6 +176,11 @@ func callProgram(
 	db := interpreter.Evm().StateDB
 	debug := stylusParams.debugMode
 
+	if len(asm) == 0 {
+		log.Error("missing asm", "program", address, "module", moduleHash)
+		panic("missing asm")
+	}
+
 	if db, ok := db.(*state.StateDB); ok {
 		db.RecordProgram(moduleHash)
 	}

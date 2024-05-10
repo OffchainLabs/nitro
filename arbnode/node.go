@@ -27,7 +27,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcastclients"
@@ -254,7 +254,7 @@ type Node struct {
 	L1Reader                *headerreader.HeaderReader
 	TxStreamer              *TransactionStreamer
 	DeployInfo              *chaininfo.RollupAddresses
-	BlobReader              arbstate.BlobReader
+	BlobReader              daprovider.BlobReader
 	InboxReader             *InboxReader
 	InboxTracker            *InboxTracker
 	DelayedSequencer        *DelayedSequencer
@@ -372,7 +372,7 @@ func createNodeImpl(
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
 	parentChainID *big.Int,
-	blobReader arbstate.BlobReader,
+	blobReader daprovider.BlobReader,
 ) (*Node, error) {
 	config := configFetcher.Get()
 
@@ -529,7 +529,18 @@ func createNodeImpl(
 		return nil, errors.New("a data availability service is required for this chain, but it was not configured")
 	}
 
-	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, daReader, blobReader)
+	// We support a nil txStreamer for the pruning code
+	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee && daReader == nil {
+		return nil, errors.New("data availability service required but unconfigured")
+	}
+	var dapReaders []daprovider.Reader
+	if daReader != nil {
+		dapReaders = append(dapReaders, daprovider.NewReaderForDAS(daReader))
+	}
+	if blobReader != nil {
+		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(blobReader))
+	}
+	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, dapReaders)
 	if err != nil {
 		return nil, err
 	}
@@ -547,8 +558,7 @@ func createNodeImpl(
 			txStreamer,
 			exec,
 			rawdb.NewTable(arbDb, storage.BlockValidatorPrefix),
-			daReader,
-			blobReader,
+			dapReaders,
 			func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
 			stack,
 		)
@@ -655,6 +665,10 @@ func createNodeImpl(
 		if txOptsBatchPoster == nil && config.BatchPoster.DataPoster.ExternalSigner.URL == "" {
 			return nil, errors.New("batchposter, but no TxOpts")
 		}
+		var dapWriter daprovider.Writer
+		if daWriter != nil {
+			dapWriter = daprovider.NewWriterForDAS(daWriter)
+		}
 		batchPoster, err = NewBatchPoster(ctx, &BatchPosterOpts{
 			DataPosterDB:  rawdb.NewTable(arbDb, storage.BatchPosterPrefix),
 			L1Reader:      l1Reader,
@@ -665,7 +679,7 @@ func createNodeImpl(
 			Config:        func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster },
 			DeployInfo:    deployInfo,
 			TransactOpts:  txOptsBatchPoster,
-			DAWriter:      daWriter,
+			DAPWriter:     dapWriter,
 			ParentChainID: parentChainID,
 		})
 		if err != nil {
@@ -725,7 +739,7 @@ func CreateNode(
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
 	parentChainID *big.Int,
-	blobReader arbstate.BlobReader,
+	blobReader daprovider.BlobReader,
 ) (*Node, error) {
 	currentNode, err := createNodeImpl(ctx, stack, exec, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader)
 	if err != nil {
@@ -997,8 +1011,8 @@ func (n *Node) GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, 
 	return n.InboxReader.GetFinalizedMsgCount(ctx)
 }
 
-func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) error {
-	return n.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta)
+func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult execution.MessageResult) error {
+	return n.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta, msgResult)
 }
 
 func (n *Node) ExpectChosenSequencer() error {
