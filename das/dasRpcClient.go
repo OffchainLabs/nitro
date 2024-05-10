@@ -13,7 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
@@ -34,7 +34,7 @@ func NewDASRPCClient(target string) (*DASRPCClient, error) {
 	}, nil
 }
 
-func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64, reqSig []byte) (*arbstate.DataAvailabilityCertificate, error) {
+func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64, reqSig []byte) (*daprovider.DataAvailabilityCertificate, error) {
 	log.Trace("das.DASRPCClient.Store(...)", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(reqSig), "this", *c)
 	var ret StoreResult
 	if err := c.clnt.CallContext(ctx, &ret, "das_store", hexutil.Bytes(message), hexutil.Uint64(timeout), hexutil.Bytes(reqSig)); err != nil {
@@ -44,7 +44,7 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 	if err != nil {
 		return nil, err
 	}
-	return &arbstate.DataAvailabilityCertificate{
+	return &daprovider.DataAvailabilityCertificate{
 		DataHash:    common.BytesToHash(ret.DataHash),
 		Timeout:     uint64(ret.Timeout),
 		SignersMask: uint64(ret.SignersMask),
@@ -62,11 +62,11 @@ func (c *DASRPCClient) HealthCheck(ctx context.Context) error {
 	return c.clnt.CallContext(ctx, nil, "das_healthCheck")
 }
 
-func (c *DASRPCClient) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+func (c *DASRPCClient) ExpirationPolicy(ctx context.Context) (daprovider.ExpirationPolicy, error) {
 	var res string
 	err := c.clnt.CallContext(ctx, &res, "das_expirationPolicy")
 	if err != nil {
 		return -1, err
 	}
-	return arbstate.StringToExpirationPolicy(res)
+	return daprovider.StringToExpirationPolicy(res)
 }
