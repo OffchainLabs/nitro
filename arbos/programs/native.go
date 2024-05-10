@@ -119,7 +119,7 @@ func activateProgramInternal(
 
 func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, address common.Address, pagelimit uint16, time uint64, debugMode bool, program Program) ([]byte, error) {
 	localAsm, err := statedb.TryGetActivatedAsm(moduleHash)
-	if err == nil || len(localAsm) > 0 {
+	if err == nil && len(localAsm) > 0 {
 		return localAsm, nil
 	}
 
@@ -127,19 +127,21 @@ func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, address common.Addr
 
 	wasm, err := getWasm(statedb, address)
 	if err != nil {
-		return nil, err
+		log.Error("Failed to reactivate program: getWasm", "address", address, "expected moduleHash", moduleHash, "err", err)
+		return nil, fmt.Errorf("failed to reactivate program address: %v err: %w", address, err)
 	}
 
 	unlimitedGas := uint64(0xffffffffffff)
 	// we know program is activated, so it must be in correct version and not use too much memory
 	info, asm, module, err := activateProgramInternal(statedb, address, codeHash, wasm, pagelimit, program.version, debugMode, &unlimitedGas)
-
 	if err != nil {
-		return nil, err
+		log.Error("failed to reactivate program", "address", address, "expected moduleHash", moduleHash, "err", err)
+		return nil, fmt.Errorf("failed to reactivate program address: %v err: %w", address, err)
 	}
 
 	if info.moduleHash != moduleHash {
-		return nil, errors.New("failed to re-activate program not found in database")
+		log.Error("failed to reactivate program", "address", address, "expected moduleHash", moduleHash, "got", info.moduleHash)
+		return nil, fmt.Errorf("failed to reactivate program. address: %v, expected ModuleHash: %v", address, moduleHash)
 	}
 
 	currentHoursSince := hoursSinceArbitrum(time)
