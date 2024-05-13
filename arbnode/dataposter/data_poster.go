@@ -304,6 +304,10 @@ func (p *DataPoster) MaxMempoolTransactions() uint64 {
 	return arbmath.MinInt(config.MaxMempoolTransactions, config.MaxMempoolWeight)
 }
 
+func (p *DataPoster) UsingNoOpStorage() bool {
+	return p.usingNoOpStorage
+}
+
 var ErrExceedsMaxMempoolSize = errors.New("posting this transaction will exceed max mempool size")
 
 // Does basic check whether posting transaction with specified nonce would
@@ -469,13 +473,10 @@ func (p *DataPoster) evalMaxFeeCapExpr(backlogOfBatches uint64, elapsed time.Dur
 var big4 = big.NewInt(4)
 
 // The dataPosterBacklog argument should *not* include extraBacklog (it's added in in this function)
-func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit uint64, numBlobs uint64, lastTx *types.Transaction, dataCreatedAt time.Time, dataPosterBacklog uint64) (*big.Int, *big.Int, *big.Int, error) {
+func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit uint64, numBlobs uint64, lastTx *types.Transaction, dataCreatedAt time.Time, dataPosterBacklog uint64, latestHeader *types.Header) (*big.Int, *big.Int, *big.Int, error) {
 	config := p.config()
 	dataPosterBacklog += p.extraBacklog()
-	latestHeader, err := p.headerReader.LastHeader(ctx)
-	if err != nil {
-		return nil, nil, nil, err
-	}
+
 	if latestHeader.BaseFee == nil {
 		return nil, nil, nil, fmt.Errorf("latest parent chain block %v missing BaseFee (either the parent chain does not have EIP-1559 or the parent chain node is not synced)", latestHeader.Number)
 	}
@@ -601,6 +602,20 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 		newBlobFeeCap = arbmath.BigDivByUint(newBlobCost, blobGasUsed)
 	}
 
+	if config.MaxFeeBidMultipleBips > 0 {
+		// Limit the fee caps to be no greater than max(MaxFeeBidMultipleBips, minRbf)
+		maxNonBlobFee := arbmath.BigMulByBips(currentNonBlobFee, config.MaxFeeBidMultipleBips)
+		if lastTx != nil {
+			maxNonBlobFee = arbmath.BigMax(maxNonBlobFee, arbmath.BigMulByBips(lastTx.GasFeeCap(), minRbfIncrease))
+		}
+		maxBlobFee := arbmath.BigMulByBips(currentBlobFee, config.MaxFeeBidMultipleBips)
+		if lastTx != nil && lastTx.BlobGasFeeCap() != nil {
+			maxBlobFee = arbmath.BigMax(maxBlobFee, arbmath.BigMulByBips(lastTx.BlobGasFeeCap(), minRbfIncrease))
+		}
+		newBaseFeeCap = arbmath.BigMin(newBaseFeeCap, maxNonBlobFee)
+		newBlobFeeCap = arbmath.BigMin(newBlobFeeCap, maxBlobFee)
+	}
+
 	if arbmath.BigGreaterThan(newTipCap, newBaseFeeCap) {
 		log.Info(
 			"reducing new tip cap to new basefee cap",
@@ -678,7 +693,12 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 		return nil, fmt.Errorf("failed to update data poster balance: %w", err)
 	}
 
-	feeCap, tipCap, blobFeeCap, err := p.feeAndTipCaps(ctx, nonce, gasLimit, uint64(len(kzgBlobs)), nil, dataCreatedAt, 0)
+	latestHeader, err := p.headerReader.LastHeader(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	feeCap, tipCap, blobFeeCap, err := p.feeAndTipCaps(ctx, nonce, gasLimit, uint64(len(kzgBlobs)), nil, dataCreatedAt, 0, latestHeader)
 	if err != nil {
 		return nil, err
 	}
@@ -812,6 +832,41 @@ func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransacti
 	if err := p.saveTx(ctx, prevTx, newTx); err != nil {
 		return err
 	}
+
+	// The following check is to avoid sending transactions of a different type (eg DynamicFeeTxType vs BlobTxType)
+	// to the previous tx if the previous tx is not yet included in a reorg resistant block, in order to avoid issues
+	// where eventual consistency of parent chain mempools causes a tx with higher nonce blocking a tx of a
+	// different type with a lower nonce.
+	// If we decide not to send this tx yet, just leave it queued and with Sent set to false.
+	// The resending/repricing loop in DataPoster.Start will keep trying.
+	if !newTx.Sent && newTx.FullTx.Nonce() > 0 {
+		precedingTx, err := p.queue.Get(ctx, arbmath.SaturatingUSub(newTx.FullTx.Nonce(), 1))
+		if err != nil {
+			return fmt.Errorf("couldn't get preceding tx in DataPoster to check if should send tx with nonce %d: %w", newTx.FullTx.Nonce(), err)
+		}
+		if precedingTx != nil { // precedingTx == nil -> the actual preceding tx was already confirmed
+			var latestBlockNumber, prevBlockNumber, reorgResistantNonce uint64
+			if precedingTx.FullTx.Type() != newTx.FullTx.Type() || !precedingTx.Sent {
+				latestBlockNumber, err = p.client.BlockNumber(ctx)
+				if err != nil {
+					return fmt.Errorf("couldn't get block number in DataPoster to check if should send tx with nonce %d: %w", newTx.FullTx.Nonce(), err)
+				}
+				prevBlockNumber = arbmath.SaturatingUSub(latestBlockNumber, 1)
+				reorgResistantNonce, err = p.client.NonceAt(ctx, p.Sender(), new(big.Int).SetUint64(prevBlockNumber))
+				if err != nil {
+					return fmt.Errorf("couldn't determine reorg resistant nonce in DataPoster to check if should send tx with nonce %d: %w", newTx.FullTx.Nonce(), err)
+				}
+
+				if precedingTx.FullTx.Nonce() > reorgResistantNonce {
+					log.Info("DataPoster is avoiding creating a mempool nonce gap (the tx remains queued and will be retried)", "nonce", newTx.FullTx.Nonce(), "prevType", precedingTx.FullTx.Type(), "type", newTx.FullTx.Type(), "prevSent", precedingTx.Sent)
+					return nil
+				}
+			} else {
+				log.Info("DataPoster will send previously unsent batch tx", "nonce", newTx.FullTx.Nonce(), "prevType", precedingTx.FullTx.Type(), "type", newTx.FullTx.Type(), "prevSent", precedingTx.Sent, "latestBlockNumber", latestBlockNumber, "prevBlockNumber", prevBlockNumber, "reorgResistantNonce", reorgResistantNonce)
+			}
+		}
+	}
+
 	if err := p.client.SendTransaction(ctx, newTx.FullTx); err != nil {
 		if !rpcclient.IsAlreadyKnownError(err) && !strings.Contains(err.Error(), "nonce too low") {
 			log.Warn("DataPoster failed to send transaction", "err", err, "nonce", newTx.FullTx.Nonce(), "feeCap", newTx.FullTx.GasFeeCap(), "tipCap", newTx.FullTx.GasTipCap(), "blobFeeCap", newTx.FullTx.BlobGasFeeCap(), "gas", newTx.FullTx.Gas())
@@ -863,7 +918,12 @@ func updateGasCaps(tx *types.Transaction, newFeeCap, newTipCap, newBlobFeeCap *b
 
 // The mutex must be held by the caller.
 func (p *DataPoster) replaceTx(ctx context.Context, prevTx *storage.QueuedTransaction, backlogWeight uint64) error {
-	newFeeCap, newTipCap, newBlobFeeCap, err := p.feeAndTipCaps(ctx, prevTx.FullTx.Nonce(), prevTx.FullTx.Gas(), uint64(len(prevTx.FullTx.BlobHashes())), prevTx.FullTx, prevTx.Created, backlogWeight)
+	latestHeader, err := p.headerReader.LastHeader(ctx)
+	if err != nil {
+		return err
+	}
+
+	newFeeCap, newTipCap, newBlobFeeCap, err := p.feeAndTipCaps(ctx, prevTx.FullTx.Nonce(), prevTx.FullTx.Gas(), uint64(len(prevTx.FullTx.BlobHashes())), prevTx.FullTx, prevTx.Created, backlogWeight, latestHeader)
 	if err != nil {
 		return err
 	}
@@ -1047,19 +1107,21 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 			latestNonce = latestQueued.FullTx.Nonce()
 		}
 		for _, tx := range queueContents {
-			replacing := false
+			previouslyUnsent := !tx.Sent
+			sendAttempted := false
 			if now.After(tx.NextReplacement) {
-				replacing = true
 				nonceBacklog := arbmath.SaturatingUSub(latestNonce, tx.FullTx.Nonce())
 				weightBacklog := arbmath.SaturatingUSub(latestCumulativeWeight, tx.CumulativeWeight())
 				err := p.replaceTx(ctx, tx, arbmath.MaxInt(nonceBacklog, weightBacklog))
+				sendAttempted = true
 				p.maybeLogError(err, tx, "failed to replace-by-fee transaction")
 			}
 			if nextCheck.After(tx.NextReplacement) {
 				nextCheck = tx.NextReplacement
 			}
-			if !replacing && !tx.Sent {
+			if !sendAttempted && previouslyUnsent {
 				err := p.sendTx(ctx, tx, tx)
+				sendAttempted = true
 				p.maybeLogError(err, tx, "failed to re-send transaction")
 				if err != nil {
 					nextSend := time.Now().Add(time.Minute)
@@ -1067,6 +1129,12 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 						nextCheck = nextSend
 					}
 				}
+			}
+			if previouslyUnsent && sendAttempted {
+				// Don't try to send more than 1 unsent transaction, to play nicely with parent chain mempools.
+				// Transactions will be unsent if there was some error when originally sending them,
+				// or if transaction type changes and the prior tx is not yet reorg resistant.
+				break
 			}
 		}
 		wait := time.Until(nextCheck)
@@ -1117,6 +1185,7 @@ type DataPosterConfig struct {
 	MinBlobTxTipCapGwei    float64           `koanf:"min-blob-tx-tip-cap-gwei" reload:"hot"`
 	MaxTipCapGwei          float64           `koanf:"max-tip-cap-gwei" reload:"hot"`
 	MaxBlobTxTipCapGwei    float64           `koanf:"max-blob-tx-tip-cap-gwei" reload:"hot"`
+	MaxFeeBidMultipleBips  arbmath.Bips      `koanf:"max-fee-bid-multiple-bips" reload:"hot"`
 	NonceRbfSoftConfs      uint64            `koanf:"nonce-rbf-soft-confs" reload:"hot"`
 	AllocateMempoolBalance bool              `koanf:"allocate-mempool-balance" reload:"hot"`
 	UseDBStorage           bool              `koanf:"use-db-storage"`
@@ -1171,6 +1240,7 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPost
 	f.Float64(prefix+".min-blob-tx-tip-cap-gwei", defaultDataPosterConfig.MinBlobTxTipCapGwei, "the minimum tip cap to post EIP-4844 blob carrying transactions at")
 	f.Float64(prefix+".max-tip-cap-gwei", defaultDataPosterConfig.MaxTipCapGwei, "the maximum tip cap to post transactions at")
 	f.Float64(prefix+".max-blob-tx-tip-cap-gwei", defaultDataPosterConfig.MaxBlobTxTipCapGwei, "the maximum tip cap to post EIP-4844 blob carrying transactions at")
+	f.Uint64(prefix+".max-fee-bid-multiple-bips", uint64(defaultDataPosterConfig.MaxFeeBidMultipleBips), "the maximum multiple of the current price to bid for a transaction's fees (may be exceeded due to min rbf increase, 0 = unlimited)")
 	f.Uint64(prefix+".nonce-rbf-soft-confs", defaultDataPosterConfig.NonceRbfSoftConfs, "the maximum probable reorg depth, used to determine when a transaction will no longer likely need replaced-by-fee")
 	f.Bool(prefix+".allocate-mempool-balance", defaultDataPosterConfig.AllocateMempoolBalance, "if true, don't put transactions in the mempool that spend a total greater than the batch poster's balance")
 	f.Bool(prefix+".use-db-storage", defaultDataPosterConfig.UseDBStorage, "uses database storage when enabled")
@@ -1212,6 +1282,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	MinBlobTxTipCapGwei:    1, // default geth minimum, and relays aren't likely to accept lower values given propagation time
 	MaxTipCapGwei:          5,
 	MaxBlobTxTipCapGwei:    1, // lower than normal because 4844 rbf is a minimum of a 2x
+	MaxFeeBidMultipleBips:  arbmath.OneInBips * 10,
 	NonceRbfSoftConfs:      1,
 	AllocateMempoolBalance: true,
 	UseDBStorage:           true,
@@ -1245,6 +1316,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	MinBlobTxTipCapGwei:    1,
 	MaxTipCapGwei:          5,
 	MaxBlobTxTipCapGwei:    1,
+	MaxFeeBidMultipleBips:  arbmath.OneInBips * 10,
 	NonceRbfSoftConfs:      1,
 	AllocateMempoolBalance: true,
 	UseDBStorage:           false,

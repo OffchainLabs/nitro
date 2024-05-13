@@ -1,29 +1,33 @@
-// Copyright 2022, Offchain Labs, Inc.
+// Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
+<<<<<<< HEAD
     arbcompress, espressocrypto, gostack::GoRuntimeState, runtime, socket, syscall,
     syscall::JsRuntimeState, wavmio, wavmio::Bytes32, Opts,
+=======
+    arbcompress, caller_env::GoRuntimeState, program, socket, stylus_backend::CothreadHandler,
+    wasip1_stub, wavmio, Opts,
+>>>>>>> 28033f9469206d8f9639023772d51882bba8883b
 };
-
-use arbutil::{Color, PreimageType};
-use eyre::{bail, Result, WrapErr};
+use arbutil::{Bytes32, Color, PreimageType};
+use eyre::{bail, ErrReport, Result, WrapErr};
 use sha3::{Digest, Keccak256};
-use thiserror::Error;
-use wasmer::{
-    imports, CompilerConfig, Function, FunctionEnv, FunctionEnvMut, Instance, Memory, Module,
-    RuntimeError, Store, TypedFunction,
-};
-use wasmer_compiler_cranelift::Cranelift;
-
 use std::{
-    collections::BTreeMap,
+    collections::{BTreeMap, HashMap},
     fs::File,
     io::{self, Write},
     io::{BufReader, BufWriter, ErrorKind, Read},
     net::TcpStream,
-    time::Instant,
+    sync::Arc,
+    time::{Duration, Instant},
 };
+use thiserror::Error;
+use wasmer::{
+    imports, CompilerConfig, Function, FunctionEnv, FunctionEnvMut, Instance, Memory, Module,
+    Pages, RuntimeError, Store,
+};
+use wasmer_compiler_cranelift::Cranelift;
 
 pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Store) {
     let file = &opts.binary;
@@ -60,18 +64,13 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
     };
 
     let func_env = FunctionEnv::new(&mut store, env);
-    macro_rules! native {
-        ($func:expr) => {
-            Function::new_typed(&mut store, $func)
-        };
-    }
     macro_rules! func {
         ($func:expr) => {
             Function::new_typed_with_env(&mut store, &func_env, $func)
         };
     }
-
     let imports = imports! {
+<<<<<<< HEAD
         "go" => {
             "debug" => native!(runtime::go_debug),
 
@@ -112,15 +111,73 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
             "github.com/offchainlabs/nitro/espressocrypto.verifyNamespace" => func!(espressocrypto::verify_namespace),
             "github.com/offchainlabs/nitro/espressocrypto.verifyMerkleProof" => func!(espressocrypto::verify_merkle_proof),
             "github.com/offchainlabs/nitro/wavmio.resolvePreImage" => {
+=======
+        "arbcompress" => {
+            "brotli_compress" => func!(arbcompress::brotli_compress),
+            "brotli_decompress" => func!(arbcompress::brotli_decompress),
+        },
+        "wavmio" => {
+            "getGlobalStateBytes32" => func!(wavmio::get_global_state_bytes32),
+            "setGlobalStateBytes32" => func!(wavmio::set_global_state_bytes32),
+            "getGlobalStateU64" => func!(wavmio::get_global_state_u64),
+            "setGlobalStateU64" => func!(wavmio::set_global_state_u64),
+            "readInboxMessage" => func!(wavmio::read_inbox_message),
+            "readDelayedInboxMessage" => func!(wavmio::read_delayed_inbox_message),
+            "resolvePreImage" => {
+>>>>>>> 28033f9469206d8f9639023772d51882bba8883b
                 #[allow(deprecated)] // we're just keeping this around until we no longer need to validate old replay binaries
                 {
                     func!(wavmio::resolve_keccak_preimage)
                 }
             },
-            "github.com/offchainlabs/nitro/wavmio.resolveTypedPreimage" => func!(wavmio::resolve_typed_preimage),
-
-            "github.com/offchainlabs/nitro/arbcompress.brotliCompress" => func!(arbcompress::brotli_compress),
-            "github.com/offchainlabs/nitro/arbcompress.brotliDecompress" => func!(arbcompress::brotli_decompress),
+            "resolveTypedPreimage" => func!(wavmio::resolve_typed_preimage),
+        },
+        "wasi_snapshot_preview1" => {
+            "proc_exit" => func!(wasip1_stub::proc_exit),
+            "environ_sizes_get" => func!(wasip1_stub::environ_sizes_get),
+            "fd_write" => func!(wasip1_stub::fd_write),
+            "environ_get" => func!(wasip1_stub::environ_get),
+            "fd_close" => func!(wasip1_stub::fd_close),
+            "fd_read" => func!(wasip1_stub::fd_read),
+            "fd_readdir" => func!(wasip1_stub::fd_readdir),
+            "fd_sync" => func!(wasip1_stub::fd_sync),
+            "fd_seek" => func!(wasip1_stub::fd_seek),
+            "fd_datasync" => func!(wasip1_stub::fd_datasync),
+            "path_open" => func!(wasip1_stub::path_open),
+            "path_create_directory" => func!(wasip1_stub::path_create_directory),
+            "path_remove_directory" => func!(wasip1_stub::path_remove_directory),
+            "path_readlink" => func!(wasip1_stub::path_readlink),
+            "path_rename" => func!(wasip1_stub::path_rename),
+            "path_filestat_get" => func!(wasip1_stub::path_filestat_get),
+            "path_unlink_file" => func!(wasip1_stub::path_unlink_file),
+            "fd_prestat_get" => func!(wasip1_stub::fd_prestat_get),
+            "fd_prestat_dir_name" => func!(wasip1_stub::fd_prestat_dir_name),
+            "fd_filestat_get" => func!(wasip1_stub::fd_filestat_get),
+            "fd_filestat_set_size" => func!(wasip1_stub::fd_filestat_set_size),
+            "fd_pread" => func!(wasip1_stub::fd_pread),
+            "fd_pwrite" => func!(wasip1_stub::fd_pwrite),
+            "sock_accept" => func!(wasip1_stub::sock_accept),
+            "sock_shutdown" => func!(wasip1_stub::sock_shutdown),
+            "sched_yield" => func!(wasip1_stub::sched_yield),
+            "clock_time_get" => func!(wasip1_stub::clock_time_get),
+            "random_get" => func!(wasip1_stub::random_get),
+            "args_sizes_get" => func!(wasip1_stub::args_sizes_get),
+            "args_get" => func!(wasip1_stub::args_get),
+            "poll_oneoff" => func!(wasip1_stub::poll_oneoff),
+            "fd_fdstat_get" => func!(wasip1_stub::fd_fdstat_get),
+            "fd_fdstat_set_flags" => func!(wasip1_stub::fd_fdstat_set_flags),
+        },
+        "programs" => {
+            "new_program" => func!(program::new_program),
+            "pop" => func!(program::pop),
+            "set_response" => func!(program::set_response),
+            "get_request" => func!(program::get_request),
+            "get_request_data" => func!(program::get_request_data),
+            "start_program" => func!(program::start_program),
+            "send_response" => func!(program::send_response),
+            "create_stylus_config" => func!(program::create_stylus_config),
+            "create_evm_data" => func!(program::create_evm_data),
+            "activate" => func!(program::activate),
         },
     };
 
@@ -128,23 +185,13 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
         Ok(instance) => instance,
         Err(err) => panic!("Failed to create instance: {}", err.red()),
     };
-    let memory = match instance.exports.get_memory("mem") {
+    let memory = match instance.exports.get_memory("memory") {
         Ok(memory) => memory.clone(),
         Err(err) => panic!("Failed to get memory: {}", err.red()),
-    };
-    let resume = match instance.exports.get_typed_function(&store, "resume") {
-        Ok(resume) => resume,
-        Err(err) => panic!("Failed to get the {} func: {}", "resume".red(), err.red()),
-    };
-    let getsp = match instance.exports.get_typed_function(&store, "getsp") {
-        Ok(getsp) => getsp,
-        Err(err) => panic!("Failed to get the {} func: {}", "getsp".red(), err.red()),
     };
 
     let env = func_env.as_mut(&mut store);
     env.memory = Some(memory);
-    env.exports.resume = Some(resume);
-    env.exports.get_stack_pointer = Some(getsp);
     (instance, func_env, store)
 }
 
@@ -156,6 +203,8 @@ pub enum Escape {
     Failure(String),
     #[error("hostio failed with `{0}`")]
     HostIO(String),
+    #[error("comms with child instance failed with `{0}`")]
+    Child(ErrReport),
     #[error("hostio socket failed with `{0}`")]
     SocketError(#[from] io::Error),
 }
@@ -167,12 +216,8 @@ impl Escape {
         Err(Self::Exit(code))
     }
 
-    pub fn hostio<S: std::convert::AsRef<str>>(message: S) -> MaybeEscape {
+    pub fn hostio<T, S: std::convert::AsRef<str>>(message: S) -> Result<T, Escape> {
         Err(Self::HostIO(message.as_ref().to_string()))
-    }
-
-    pub fn failure<S: std::convert::AsRef<str>>(message: S) -> MaybeEscape {
-        Err(Self::Failure(message.as_ref().to_string()))
     }
 }
 
@@ -187,8 +232,13 @@ impl From<RuntimeError> for Escape {
 
 pub type WasmEnvMut<'a> = FunctionEnvMut<'a, WasmEnv>;
 pub type Inbox = BTreeMap<u64, Vec<u8>>;
+<<<<<<< HEAD
 pub type HotShotCommitmentMap = BTreeMap<u64, [u8; 32]>;
 pub type Preimages = BTreeMap<PreimageType, BTreeMap<[u8; 32], Vec<u8>>>;
+=======
+pub type Preimages = BTreeMap<PreimageType, BTreeMap<Bytes32, Vec<u8>>>;
+pub type ModuleAsm = Arc<[u8]>;
+>>>>>>> 28033f9469206d8f9639023772d51882bba8883b
 
 #[derive(Default)]
 pub struct WasmEnv {
@@ -196,14 +246,14 @@ pub struct WasmEnv {
     pub memory: Option<Memory>,
     /// Go's general runtime state
     pub go_state: GoRuntimeState,
-    /// The state of Go's js runtime
-    pub js_state: JsRuntimeState,
     /// An ordered list of the 8-byte globals
     pub small_globals: [u64; 3],
     /// An ordered list of the 32-byte globals
     pub large_globals: [Bytes32; 2],
     /// An oracle allowing the prover to reverse keccak256
     pub preimages: Preimages,
+    /// A collection of programs called during the course of execution
+    pub module_asms: HashMap<Bytes32, ModuleAsm>,
     /// The sequencer inbox's messages
     pub sequencer_messages: Inbox,
     /// Mapping from batch positions to hotshot commitments
@@ -212,8 +262,8 @@ pub struct WasmEnv {
     pub delayed_messages: Inbox,
     /// The purpose and connections of this process
     pub process: ProcessEnv,
-    /// The exported funcs callable in hostio
-    pub exports: WasmEnvFuncs,
+    // threads
+    pub threads: Vec<CothreadHandler>,
 }
 
 impl WasmEnv {
@@ -270,10 +320,10 @@ impl WasmEnv {
                     if arg.starts_with("0x") {
                         arg = &arg[2..];
                     }
-                    let mut bytes32 = Bytes32::default();
+                    let mut bytes32 = [0u8; 32];
                     hex::decode_to_slice(arg, &mut bytes32)
                         .wrap_err_with(|| format!("failed to parse {} contents", name))?;
-                    Ok(bytes32)
+                    Ok(bytes32.into())
                 }
                 None => Ok(Bytes32::default()),
             }
@@ -286,7 +336,7 @@ impl WasmEnv {
         Ok(env)
     }
 
-    pub fn send_results(&mut self, error: Option<String>, memory_used: u64) {
+    pub fn send_results(&mut self, error: Option<String>, memory_used: Pages) {
         let writer = match &mut self.process.socket {
             Some((writer, _)) => writer,
             None => return,
@@ -314,7 +364,7 @@ impl WasmEnv {
         check!(socket::write_u64(writer, self.small_globals[2]));
         check!(socket::write_bytes32(writer, &self.large_globals[0]));
         check!(socket::write_bytes32(writer, &self.large_globals[1]));
-        check!(socket::write_u64(writer, memory_used));
+        check!(socket::write_u64(writer, memory_used.bytes().0 as u64));
         check!(writer.flush());
     }
 }
@@ -328,6 +378,8 @@ pub struct ProcessEnv {
     pub socket: Option<(BufWriter<TcpStream>, BufReader<TcpStream>)>,
     /// A timestamp that helps with printing at various moments
     pub timestamp: Instant,
+    /// How long to wait on any child threads to compute a result
+    pub child_timeout: Duration,
     /// Whether the machine has reached the first wavmio instruction
     pub reached_wavmio: bool,
 }
@@ -339,15 +391,8 @@ impl Default for ProcessEnv {
             debug: false,
             socket: None,
             timestamp: Instant::now(),
+            child_timeout: Duration::from_secs(15),
             reached_wavmio: false,
         }
     }
-}
-
-#[derive(Default)]
-pub struct WasmEnvFuncs {
-    /// Calls `resume` from the go runtime
-    pub resume: Option<TypedFunction<(), ()>>,
-    /// Calls `getsp` from the go runtime
-    pub get_stack_pointer: Option<TypedFunction<(), i32>>,
 }

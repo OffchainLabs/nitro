@@ -1,12 +1,14 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// Copyright 2021-2023, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use arbutil::{format, Color, DebugColor, PreimageType};
-use eyre::{Context, Result};
+#![cfg(feature = "native")]
+
+use arbutil::{format, Bytes32, Color, DebugColor, PreimageType};
+use eyre::{eyre, Context, Result};
 use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use prover::{
     machine::{GlobalState, InboxIdentifier, Machine, MachineStatus, PreimageResolver, ProofInfo},
-    utils::{hash_preimage, Bytes32, CBytes},
+    utils::{file_bytes, hash_preimage, CBytes},
     wavm::Opcode,
 };
 use std::sync::Arc;
@@ -34,6 +36,11 @@ struct Opts {
     inbox_add_stub_headers: bool,
     #[structopt(long)]
     always_merkleize: bool,
+    #[structopt(long)]
+    debug_funcs: bool,
+    #[structopt(long)]
+    /// print modules to the console
+    print_modules: bool,
     /// profile output instead of generting proofs
     #[structopt(short = "p", long)]
     profile_run: bool,
@@ -66,6 +73,8 @@ struct Opts {
     delayed_inbox: Vec<PathBuf>,
     #[structopt(long)]
     preimages: Option<PathBuf>,
+    #[structopt(long)]
+    stylus_modules: Vec<PathBuf>,
     /// Require that the machine end in the Finished state
     #[structopt(long)]
     require_success: bool,
@@ -111,6 +120,7 @@ struct SimpleProfile {
 const INBOX_HEADER_LEN: usize = 40; // also in test-case's host-io.rs & contracts's OneStepProverHostIo.sol
 const DELAYED_HEADER_LEN: usize = 112; // also in test-case's host-io.rs & contracts's OneStepProverHostIo.sol
 
+#[cfg(feature = "native")]
 fn main() -> Result<()> {
     let opts = Opts::from_args();
 
@@ -190,10 +200,25 @@ fn main() -> Result<()> {
         true,
         opts.always_merkleize,
         opts.allow_hostapi,
+        opts.debug_funcs,
+        true,
         global_state,
         inbox_contents,
         preimage_resolver,
     )?;
+
+    for path in &opts.stylus_modules {
+        let err = || eyre!("failed to read module at {}", path.to_string_lossy().red());
+        let wasm = file_bytes(path).wrap_err_with(err)?;
+        let codehash = &Bytes32::default();
+        mach.add_program(&wasm, codehash, 1, true)
+            .wrap_err_with(err)?;
+    }
+
+    if opts.print_modules {
+        mach.print_modules();
+    }
+
     if let Some(output_path) = opts.generate_binaries {
         let mut module_root_file = File::create(output_path.join("module-root.txt"))?;
         writeln!(module_root_file, "0x{}", mach.get_modules_root())?;
@@ -325,8 +350,12 @@ fn main() -> Result<()> {
             }
         } else {
             let values = mach.get_data_stack();
+            let inters = mach.get_internals_stack();
             if !values.is_empty() {
                 println!("{} {}", "Machine stack".grey(), format::commas(values));
+            }
+            if !inters.is_empty() {
+                println!("{} {}", "Internals    ".grey(), format::commas(inters));
             }
             print!(
                 "Generating proof {} (inst {}) for {}{}",
@@ -380,10 +409,7 @@ fn main() -> Result<()> {
     println!("End machine hash: {}", mach.hash());
     println!("End machine stack: {:?}", mach.get_data_stack());
     println!("End machine backtrace:");
-    for (module, func, pc) in mach.get_backtrace() {
-        let func = rustc_demangle::demangle(&func);
-        println!("  {} {} @ {}", module, func.mint(), pc.blue());
-    }
+    mach.print_backtrace(false);
 
     if let Some(out) = opts.output {
         let out = File::create(out)?;
@@ -431,14 +457,11 @@ fn main() -> Result<()> {
         let opts_binary = opts.binary;
         let opts_libraries = opts.libraries;
         let format_pc = |module_num: usize, func_num: usize| -> (String, String) {
-            let names = match mach.get_module_names(module_num) {
-                Some(n) => n,
-                None => {
-                    return (
-                        format!("[unknown {}]", module_num),
-                        format!("[unknown {}]", func_num),
-                    );
-                }
+            let Some(names) = mach.get_module_names(module_num) else {
+                return (
+                    format!("[unknown {}]", module_num),
+                    format!("[unknown {}]", func_num),
+                );
             };
             let module_name = if module_num == 0 {
                 names.module.clone()
@@ -509,6 +532,5 @@ fn main() -> Result<()> {
         eprintln!("Machine didn't finish: {}", mach.get_status().red());
         std::process::exit(1);
     }
-
     Ok(())
 }

@@ -20,6 +20,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcaster"
 	m "github.com/offchainlabs/nitro/broadcaster/message"
@@ -37,23 +38,17 @@ type InboxTracker struct {
 	txStreamer *TransactionStreamer
 	mutex      sync.Mutex
 	validator  *staker.BlockValidator
-	das        arbstate.DataAvailabilityReader
-	blobReader arbstate.BlobReader
+	dapReaders []daprovider.Reader
 
 	batchMetaMutex sync.Mutex
 	batchMeta      *containers.LruCache[uint64, BatchMetadata]
 }
 
-func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, das arbstate.DataAvailabilityReader, blobReader arbstate.BlobReader) (*InboxTracker, error) {
-	// We support a nil txStreamer for the pruning code
-	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee && das == nil {
-		return nil, errors.New("data availability service required but unconfigured")
-	}
+func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapReaders []daprovider.Reader) (*InboxTracker, error) {
 	tracker := &InboxTracker{
 		db:         db,
 		txStreamer: txStreamer,
-		das:        das,
-		blobReader: blobReader,
+		dapReaders: dapReaders,
 		batchMeta:  containers.NewLruCache[uint64, BatchMetadata](1000),
 	}
 	return tracker, nil
@@ -204,6 +199,11 @@ func (t *InboxTracker) GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex
 	return metadata.MessageCount, err
 }
 
+func (t *InboxTracker) GetBatchParentChainBlock(seqNum uint64) (uint64, error) {
+	metadata, err := t.GetBatchMetadata(seqNum)
+	return metadata.ParentChainBlock, err
+}
+
 // GetBatchAcc is a convenience function wrapping GetBatchMetadata
 func (t *InboxTracker) GetBatchAcc(seqNum uint64) (common.Hash, error) {
 	metadata, err := t.GetBatchMetadata(seqNum)
@@ -221,6 +221,54 @@ func (t *InboxTracker) GetBatchCount() (uint64, error) {
 		return 0, err
 	}
 	return count, nil
+}
+
+// err will return unexpected/internal errors
+// bool will be false if batch not found (meaning, block not yet posted on a batch)
+func (t *InboxTracker) FindInboxBatchContainingMessage(pos arbutil.MessageIndex) (uint64, bool, error) {
+	batchCount, err := t.GetBatchCount()
+	if err != nil {
+		return 0, false, err
+	}
+	low := uint64(0)
+	high := batchCount - 1
+	lastBatchMessageCount, err := t.GetBatchMessageCount(high)
+	if err != nil {
+		return 0, false, err
+	}
+	if lastBatchMessageCount <= pos {
+		return 0, false, nil
+	}
+	// Iteration preconditions:
+	// - high >= low
+	// - msgCount(low - 1) <= pos implies low <= target
+	// - msgCount(high) > pos implies high >= target
+	// Therefore, if low == high, then low == high == target
+	for {
+		// Due to integer rounding, mid >= low && mid < high
+		mid := (low + high) / 2
+		count, err := t.GetBatchMessageCount(mid)
+		if err != nil {
+			return 0, false, err
+		}
+		if count < pos {
+			// Must narrow as mid >= low, therefore mid + 1 > low, therefore newLow > oldLow
+			// Keeps low precondition as msgCount(mid) < pos
+			low = mid + 1
+		} else if count == pos {
+			return mid + 1, true, nil
+		} else if count == pos+1 || mid == low { // implied: count > pos
+			return mid, true, nil
+		} else {
+			// implied: count > pos + 1
+			// Must narrow as mid < high, therefore newHigh < oldHigh
+			// Keeps high precondition as msgCount(mid) > pos
+			high = mid
+		}
+		if high == low {
+			return high, true, nil
+		}
+	}
 }
 
 func (t *InboxTracker) PopulateFeedBacklog(broadcastServer *broadcaster.Broadcaster) error {
@@ -249,7 +297,14 @@ func (t *InboxTracker) PopulateFeedBacklog(broadcastServer *broadcaster.Broadcas
 		if err != nil {
 			return fmt.Errorf("error getting message %v: %w", seqNum, err)
 		}
-		feedMessage, err := broadcastServer.NewBroadcastFeedMessage(*message, seqNum)
+
+		msgResult, err := t.txStreamer.ResultAtCount(seqNum)
+		var blockHash *common.Hash
+		if err == nil {
+			blockHash = &msgResult.BlockHash
+		}
+
+		feedMessage, err := broadcastServer.NewBroadcastFeedMessage(*message, seqNum, blockHash)
 		if err != nil {
 			return fmt.Errorf("error creating broadcast feed message %v: %w", seqNum, err)
 		}
@@ -606,14 +661,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		ctx:    ctx,
 		client: client,
 	}
-	var daProviders []arbstate.DataAvailabilityProvider
-	if t.das != nil {
-		daProviders = append(daProviders, arbstate.NewDAProviderDAS(t.das))
-	}
-	if t.blobReader != nil {
-		daProviders = append(daProviders, arbstate.NewDAProviderBlobReader(t.blobReader))
-	}
-	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, daProviders, arbstate.KeysetValidate)
+	multiplexer := arbstate.NewInboxMultiplexer(backend, prevbatchmeta.DelayedMessageCount, t.dapReaders, daprovider.KeysetValidate)
 	batchMessageCounts := make(map[uint64]arbutil.MessageIndex)
 	currentpos := prevbatchmeta.MessageCount + 1
 	for {

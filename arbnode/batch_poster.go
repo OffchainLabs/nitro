@@ -18,6 +18,7 @@ import (
 	"github.com/andybalholm/brotli"
 	"github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -41,10 +42,10 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util"
@@ -56,8 +57,18 @@ import (
 )
 
 var (
-	batchPosterWalletBalance      = metrics.NewRegisteredGaugeFloat64("arb/batchposter/wallet/balanceether", nil)
-	batchPosterGasRefunderBalance = metrics.NewRegisteredGaugeFloat64("arb/batchposter/gasrefunder/balanceether", nil)
+	batchPosterWalletBalance      = metrics.NewRegisteredGaugeFloat64("arb/batchposter/wallet/eth", nil)
+	batchPosterGasRefunderBalance = metrics.NewRegisteredGaugeFloat64("arb/batchposter/gasrefunder/eth", nil)
+	baseFeeGauge                  = metrics.NewRegisteredGauge("arb/batchposter/basefee", nil)
+	blobFeeGauge                  = metrics.NewRegisteredGauge("arb/batchposter/blobfee", nil)
+	l1GasPriceGauge               = metrics.NewRegisteredGauge("arb/batchposter/l1gasprice", nil)
+	l1GasPriceEstimateGauge       = metrics.NewRegisteredGauge("arb/batchposter/l1gasprice/estimate", nil)
+	latestBatchSurplusGauge       = metrics.NewRegisteredGauge("arb/batchposter/latestbatchsurplus", nil)
+	blockGasUsedGauge             = metrics.NewRegisteredGauge("arb/batchposter/blockgas/used", nil)
+	blockGasLimitGauge            = metrics.NewRegisteredGauge("arb/batchposter/blockgas/limit", nil)
+	blobGasUsedGauge              = metrics.NewRegisteredGauge("arb/batchposter/blobgas/used", nil)
+	blobGasLimitGauge             = metrics.NewRegisteredGauge("arb/batchposter/blobgas/limit", nil)
+	suggestedTipCapGauge          = metrics.NewRegisteredGauge("arb/batchposter/suggestedtipcap", nil)
 
 	usableBytesInBlob    = big.NewInt(int64(len(kzg4844.Blob{}) * 31 / 32))
 	blobTxBlobGasPerBlob = big.NewInt(params.BlobTxBlobGasPerBlob)
@@ -91,7 +102,7 @@ type BatchPoster struct {
 	bridgeAddr         common.Address
 	gasRefunderAddr    common.Address
 	building           *buildingBatch
-	daWriter           das.DataAvailabilityServiceWriter
+	dapWriter          daprovider.Writer
 	dataPoster         *dataposter.DataPoster
 	redisLock          *redislock.Simple
 	messagesPerBatch   *arbmath.MovingAverage[uint64]
@@ -126,7 +137,7 @@ const (
 
 type BatchPosterConfig struct {
 	Enable                             bool `koanf:"enable"`
-	DisableDasFallbackStoreDataOnChain bool `koanf:"disable-das-fallback-store-data-on-chain" reload:"hot"`
+	DisableDapFallbackStoreDataOnChain bool `koanf:"disable-dap-fallback-store-data-on-chain" reload:"hot"`
 	// Max batch size.
 	MaxSize int `koanf:"max-size" reload:"hot"`
 	// Maximum 4844 blob enabled batch size.
@@ -138,20 +149,21 @@ type BatchPosterConfig struct {
 	// Batch post polling interval.
 	PollInterval time.Duration `koanf:"poll-interval" reload:"hot"`
 	// Batch posting error delay.
-	ErrorDelay         time.Duration               `koanf:"error-delay" reload:"hot"`
-	CompressionLevel   int                         `koanf:"compression-level" reload:"hot"`
-	DASRetentionPeriod time.Duration               `koanf:"das-retention-period" reload:"hot"`
-	GasRefunderAddress string                      `koanf:"gas-refunder-address" reload:"hot"`
-	DataPoster         dataposter.DataPosterConfig `koanf:"data-poster" reload:"hot"`
-	RedisUrl           string                      `koanf:"redis-url"`
-	RedisLock          redislock.SimpleCfg         `koanf:"redis-lock" reload:"hot"`
-	ExtraBatchGas      uint64                      `koanf:"extra-batch-gas" reload:"hot"`
-	Post4844Blobs      bool                        `koanf:"post-4844-blobs" reload:"hot"`
-	IgnoreBlobPrice    bool                        `koanf:"ignore-blob-price" reload:"hot"`
-	ParentChainWallet  genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
-	L1BlockBound       string                      `koanf:"l1-block-bound" reload:"hot"`
-	L1BlockBoundBypass time.Duration               `koanf:"l1-block-bound-bypass" reload:"hot"`
-	UseAccessLists     bool                        `koanf:"use-access-lists" reload:"hot"`
+	ErrorDelay                     time.Duration               `koanf:"error-delay" reload:"hot"`
+	CompressionLevel               int                         `koanf:"compression-level" reload:"hot"`
+	DASRetentionPeriod             time.Duration               `koanf:"das-retention-period" reload:"hot"`
+	GasRefunderAddress             string                      `koanf:"gas-refunder-address" reload:"hot"`
+	DataPoster                     dataposter.DataPosterConfig `koanf:"data-poster" reload:"hot"`
+	RedisUrl                       string                      `koanf:"redis-url"`
+	RedisLock                      redislock.SimpleCfg         `koanf:"redis-lock" reload:"hot"`
+	ExtraBatchGas                  uint64                      `koanf:"extra-batch-gas" reload:"hot"`
+	Post4844Blobs                  bool                        `koanf:"post-4844-blobs" reload:"hot"`
+	IgnoreBlobPrice                bool                        `koanf:"ignore-blob-price" reload:"hot"`
+	ParentChainWallet              genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
+	L1BlockBound                   string                      `koanf:"l1-block-bound" reload:"hot"`
+	L1BlockBoundBypass             time.Duration               `koanf:"l1-block-bound-bypass" reload:"hot"`
+	UseAccessLists                 bool                        `koanf:"use-access-lists" reload:"hot"`
+	GasEstimateBaseFeeMultipleBips arbmath.Bips                `koanf:"gas-estimate-base-fee-multiple-bips"`
 
 	gasRefunder  common.Address
 	l1BlockBound l1BlockBound
@@ -189,7 +201,7 @@ type BatchPosterConfigFetcher func() *BatchPosterConfig
 
 func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBatchPosterConfig.Enable, "enable posting batches to l1")
-	f.Bool(prefix+".disable-das-fallback-store-data-on-chain", DefaultBatchPosterConfig.DisableDasFallbackStoreDataOnChain, "If unable to batch to DAS, disable fallback storing data on chain")
+	f.Bool(prefix+".disable-dap-fallback-store-data-on-chain", DefaultBatchPosterConfig.DisableDapFallbackStoreDataOnChain, "If unable to batch to DA provider, disable fallback storing data on chain")
 	f.Int(prefix+".max-size", DefaultBatchPosterConfig.MaxSize, "maximum batch size")
 	f.Int(prefix+".max-4844-batch-size", DefaultBatchPosterConfig.Max4844BatchSize, "maximum 4844 blob enabled batch size")
 	f.Duration(prefix+".max-delay", DefaultBatchPosterConfig.MaxDelay, "maximum batch posting delay")
@@ -208,6 +220,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".use-access-lists", DefaultBatchPosterConfig.UseAccessLists, "post batches with access lists to reduce gas usage (disabled for L3s)")
 	f.String(prefix+".hotshot-url", DefaultBatchPosterConfig.HotShotUrl, "specifies the hotshot url if we are batching in espresso mode")
 	f.String(prefix+".light-client-address", DefaultBatchPosterConfig.LightClientAddress, "specifies the hotshot light client address if we are batching in espresso mode")
+	f.Uint64(prefix+".gas-estimate-base-fee-multiple-bips", uint64(DefaultBatchPosterConfig.GasEstimateBaseFeeMultipleBips), "for gas estimation, use this multiple of the basefee (measured in basis points) as the max fee per gas")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfig)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.ParentChainWallet.Pathname)
@@ -215,27 +228,27 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 
 var DefaultBatchPosterConfig = BatchPosterConfig{
 	Enable:                             false,
-	DisableDasFallbackStoreDataOnChain: false,
+	DisableDapFallbackStoreDataOnChain: false,
 	// This default is overridden for L3 chains in applyChainParameters in cmd/nitro/nitro.go
-	MaxSize: 100000,
-	// TODO: is 1000 bytes an appropriate margin for error vs blob space efficiency?
-	Max4844BatchSize:   blobs.BlobEncodableData*(params.MaxBlobGasPerBlock/params.BlobTxBlobGasPerBlob) - 1000,
-	PollInterval:       time.Second * 10,
-	ErrorDelay:         time.Second * 10,
-	MaxDelay:           time.Hour,
-	WaitForMaxDelay:    false,
-	CompressionLevel:   brotli.BestCompression,
-	DASRetentionPeriod: time.Hour * 24 * 15,
-	GasRefunderAddress: "",
-	ExtraBatchGas:      50_000,
-	Post4844Blobs:      false,
-	IgnoreBlobPrice:    false,
-	DataPoster:         dataposter.DefaultDataPosterConfig,
-	ParentChainWallet:  DefaultBatchPosterL1WalletConfig,
-	L1BlockBound:       "",
-	L1BlockBoundBypass: time.Hour,
-	UseAccessLists:     true,
-	RedisLock:          redislock.DefaultCfg,
+	MaxSize:                        100000,
+	Max4844BatchSize:               blobs.BlobEncodableData*(params.MaxBlobGasPerBlock/params.BlobTxBlobGasPerBlob) - 2000,
+	PollInterval:                   time.Second * 10,
+	ErrorDelay:                     time.Second * 10,
+	MaxDelay:                       time.Hour,
+	WaitForMaxDelay:                false,
+	CompressionLevel:               brotli.BestCompression,
+	DASRetentionPeriod:             time.Hour * 24 * 15,
+	GasRefunderAddress:             "",
+	ExtraBatchGas:                  50_000,
+	Post4844Blobs:                  false,
+	IgnoreBlobPrice:                false,
+	DataPoster:                     dataposter.DefaultDataPosterConfig,
+	ParentChainWallet:              DefaultBatchPosterL1WalletConfig,
+	L1BlockBound:                   "",
+	L1BlockBoundBypass:             time.Hour,
+	UseAccessLists:                 true,
+	RedisLock:                      redislock.DefaultCfg,
+	GasEstimateBaseFeeMultipleBips: arbmath.OneInBips * 3 / 2,
 }
 
 var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
@@ -247,24 +260,25 @@ var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
 }
 
 var TestBatchPosterConfig = BatchPosterConfig{
-	Enable:             true,
-	MaxSize:            100000,
-	Max4844BatchSize:   DefaultBatchPosterConfig.Max4844BatchSize,
-	PollInterval:       time.Millisecond * 10,
-	ErrorDelay:         time.Millisecond * 10,
-	MaxDelay:           0,
-	WaitForMaxDelay:    false,
-	CompressionLevel:   2,
-	DASRetentionPeriod: time.Hour * 24 * 15,
-	GasRefunderAddress: "",
-	ExtraBatchGas:      10_000,
-	Post4844Blobs:      true,
-	IgnoreBlobPrice:    false,
-	DataPoster:         dataposter.TestDataPosterConfig,
-	ParentChainWallet:  DefaultBatchPosterL1WalletConfig,
-	L1BlockBound:       "",
-	L1BlockBoundBypass: time.Hour,
-	UseAccessLists:     true,
+	Enable:                         true,
+	MaxSize:                        100000,
+	Max4844BatchSize:               DefaultBatchPosterConfig.Max4844BatchSize,
+	PollInterval:                   time.Millisecond * 10,
+	ErrorDelay:                     time.Millisecond * 10,
+	MaxDelay:                       0,
+	WaitForMaxDelay:                false,
+	CompressionLevel:               2,
+	DASRetentionPeriod:             time.Hour * 24 * 15,
+	GasRefunderAddress:             "",
+	ExtraBatchGas:                  10_000,
+	Post4844Blobs:                  true,
+	IgnoreBlobPrice:                false,
+	DataPoster:                     dataposter.TestDataPosterConfig,
+	ParentChainWallet:              DefaultBatchPosterL1WalletConfig,
+	L1BlockBound:                   "",
+	L1BlockBoundBypass:             time.Hour,
+	UseAccessLists:                 true,
+	GasEstimateBaseFeeMultipleBips: arbmath.OneInBips * 3 / 2,
 }
 
 type BatchPosterOpts struct {
@@ -277,7 +291,7 @@ type BatchPosterOpts struct {
 	Config        BatchPosterConfigFetcher
 	DeployInfo    *chaininfo.RollupAddresses
 	TransactOpts  *bind.TransactOpts
-	DAWriter      das.DataAvailabilityServiceWriter
+	DAPWriter     daprovider.Writer
 	ParentChainID *big.Int
 }
 
@@ -340,7 +354,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		seqInboxAddr:       opts.DeployInfo.SequencerInbox,
 		gasRefunderAddr:    opts.Config().gasRefunder,
 		bridgeAddr:         opts.DeployInfo.Bridge,
-		daWriter:           opts.DAWriter,
+		dapWriter:          opts.DAPWriter,
 		redisLock:          redisLock,
 		hotshotClient:      hotShotClient,
 		lightClientReader:  lightClientReader,
@@ -499,6 +513,35 @@ func (b *BatchPoster) addEspressoBlockMerkleProof(
 	return nil
 }
 
+type txInfo struct {
+	Hash      common.Hash       `json:"hash"`
+	Nonce     hexutil.Uint64    `json:"nonce"`
+	From      common.Address    `json:"from"`
+	To        *common.Address   `json:"to"`
+	Gas       hexutil.Uint64    `json:"gas"`
+	GasPrice  *hexutil.Big      `json:"gasPrice"`
+	GasFeeCap *hexutil.Big      `json:"maxFeePerGas,omitempty"`
+	GasTipCap *hexutil.Big      `json:"maxPriorityFeePerGas,omitempty"`
+	Input     hexutil.Bytes     `json:"input"`
+	Value     *hexutil.Big      `json:"value"`
+	Accesses  *types.AccessList `json:"accessList,omitempty"`
+}
+
+// getTxsInfoByBlock fetches all the transactions inside block of id 'number' using json rpc
+// and returns an array of txInfo which has fields that are necessary in checking for batch reverts
+func (b *BatchPoster) getTxsInfoByBlock(ctx context.Context, number int64) ([]txInfo, error) {
+	blockNrStr := rpc.BlockNumber(number).String()
+	rawRpcClient := b.l1Reader.Client().Client()
+	var blk struct {
+		Transactions []txInfo `json:"transactions"`
+	}
+	err := rawRpcClient.CallContext(ctx, &blk, "eth_getBlockByNumber", blockNrStr, true)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching block %d : %w", number, err)
+	}
+	return blk.Transactions, nil
+}
+
 // checkRevert checks blocks with number in range [from, to] whether they
 // contain reverted batch_poster transaction.
 // It returns true if it finds batch posting needs to halt, which is true if a batch reverts
@@ -508,35 +551,87 @@ func (b *BatchPoster) checkReverts(ctx context.Context, to int64) (bool, error) 
 		return false, fmt.Errorf("wrong range, from: %d > to: %d", b.nextRevertCheckBlock, to)
 	}
 	for ; b.nextRevertCheckBlock <= to; b.nextRevertCheckBlock++ {
-		number := big.NewInt(b.nextRevertCheckBlock)
-		block, err := b.l1Reader.Client().BlockByNumber(ctx, number)
+		txs, err := b.getTxsInfoByBlock(ctx, b.nextRevertCheckBlock)
 		if err != nil {
-			return false, fmt.Errorf("getting block: %v by number: %w", number, err)
+			return false, fmt.Errorf("error getting transactions data of block %d: %w", b.nextRevertCheckBlock, err)
 		}
-		for idx, tx := range block.Transactions() {
-			from, err := b.l1Reader.Client().TransactionSender(ctx, tx, block.Hash(), uint(idx))
-			if err != nil {
-				return false, fmt.Errorf("getting sender of transaction tx: %v, %w", tx.Hash(), err)
-			}
-			if from == b.dataPoster.Sender() {
-				r, err := b.l1Reader.Client().TransactionReceipt(ctx, tx.Hash())
+		for _, tx := range txs {
+			if tx.From == b.dataPoster.Sender() {
+				r, err := b.l1Reader.Client().TransactionReceipt(ctx, tx.Hash)
 				if err != nil {
-					return false, fmt.Errorf("getting a receipt for transaction: %v, %w", tx.Hash(), err)
+					return false, fmt.Errorf("getting a receipt for transaction: %v, %w", tx.Hash, err)
 				}
 				if r.Status == types.ReceiptStatusFailed {
-					shouldHalt := !b.config().DataPoster.UseNoOpStorage
+					shouldHalt := !b.dataPoster.UsingNoOpStorage()
 					logLevel := log.Warn
 					if shouldHalt {
 						logLevel = log.Error
 					}
-					txErr := arbutil.DetailTxError(ctx, b.l1Reader.Client(), tx, r)
-					logLevel("Transaction from batch poster reverted", "nonce", tx.Nonce(), "txHash", tx.Hash(), "blockNumber", r.BlockNumber, "blockHash", r.BlockHash, "txErr", txErr)
+					al := types.AccessList{}
+					if tx.Accesses != nil {
+						al = *tx.Accesses
+					}
+					txErr := arbutil.DetailTxErrorUsingCallMsg(ctx, b.l1Reader.Client(), tx.Hash, r, ethereum.CallMsg{
+						From:       tx.From,
+						To:         tx.To,
+						Gas:        uint64(tx.Gas),
+						GasPrice:   tx.GasPrice.ToInt(),
+						GasFeeCap:  tx.GasFeeCap.ToInt(),
+						GasTipCap:  tx.GasTipCap.ToInt(),
+						Value:      tx.Value.ToInt(),
+						Data:       tx.Input,
+						AccessList: al,
+					})
+					logLevel("Transaction from batch poster reverted", "nonce", tx.Nonce, "txHash", tx.Hash, "blockNumber", r.BlockNumber, "blockHash", r.BlockHash, "txErr", txErr)
 					return shouldHalt, nil
 				}
 			}
 		}
 	}
 	return false, nil
+}
+
+func (b *BatchPoster) pollForL1PriceData(ctx context.Context) {
+	headerCh, unsubscribe := b.l1Reader.Subscribe(false)
+	defer unsubscribe()
+
+	blobGasLimitGauge.Update(params.MaxBlobGasPerBlock)
+	for {
+		select {
+		case h, ok := <-headerCh:
+			if !ok {
+				log.Info("L1 headers channel checking for l1 price data has been closed")
+				return
+			}
+			baseFeeGauge.Update(h.BaseFee.Int64())
+			l1GasPrice := h.BaseFee.Uint64()
+			if h.BlobGasUsed != nil {
+				if h.ExcessBlobGas != nil {
+					blobFeePerByte := eip4844.CalcBlobFee(eip4844.CalcExcessBlobGas(*h.ExcessBlobGas, *h.BlobGasUsed))
+					blobFeePerByte.Mul(blobFeePerByte, blobTxBlobGasPerBlob)
+					blobFeePerByte.Div(blobFeePerByte, usableBytesInBlob)
+					blobFeeGauge.Update(blobFeePerByte.Int64())
+					if l1GasPrice > blobFeePerByte.Uint64()/16 {
+						l1GasPrice = blobFeePerByte.Uint64() / 16
+					}
+				}
+				blobGasUsedGauge.Update(int64(*h.BlobGasUsed))
+			}
+			blockGasUsedGauge.Update(int64(h.GasUsed))
+			blockGasLimitGauge.Update(int64(h.GasLimit))
+			suggestedTipCap, err := b.l1Reader.Client().SuggestGasTipCap(ctx)
+			if err != nil {
+				log.Error("unable to fetch suggestedTipCap from l1 client to update arb/batchposter/suggestedtipcap metric", "err", err)
+			} else {
+				suggestedTipCapGauge.Update(suggestedTipCap.Int64())
+			}
+			l1GasPriceEstimate := b.streamer.CurrentEstimateOfL1GasPrice()
+			l1GasPriceGauge.Update(int64(l1GasPrice))
+			l1GasPriceEstimateGauge.Update(int64(l1GasPriceEstimate))
+		case <-ctx.Done():
+			return
+		}
+	}
 }
 
 // pollForReverts runs a gouroutine that listens to l1 block headers, checks
@@ -860,7 +955,7 @@ func (s *batchSegments) CloseAndGetBytes() ([]byte, error) {
 	}
 	compressedBytes := s.compressedBuffer.Bytes()
 	fullMsg := make([]byte, 1, len(compressedBytes)+1)
-	fullMsg[0] = arbstate.BrotliMessageHeaderByte
+	fullMsg[0] = daprovider.BrotliMessageHeaderByte
 	fullMsg = append(fullMsg, compressedBytes...)
 	return fullMsg, nil
 }
@@ -918,11 +1013,12 @@ func (b *BatchPoster) encodeAddBatch(
 var ErrNormalGasEstimationFailed = errors.New("normal gas estimation failed")
 
 type estimateGasParams struct {
-	From       common.Address   `json:"from"`
-	To         *common.Address  `json:"to"`
-	Data       hexutil.Bytes    `json:"data"`
-	AccessList types.AccessList `json:"accessList"`
-	BlobHashes []common.Hash    `json:"blobVersionedHashes,omitempty"`
+	From         common.Address   `json:"from"`
+	To           *common.Address  `json:"to"`
+	Data         hexutil.Bytes    `json:"data"`
+	MaxFeePerGas *hexutil.Big     `json:"maxFeePerGas"`
+	AccessList   types.AccessList `json:"accessList"`
+	BlobHashes   []common.Hash    `json:"blobVersionedHashes,omitempty"`
 }
 
 func estimateGas(client rpc.ClientInterface, ctx context.Context, params estimateGasParams) (uint64, error) {
@@ -933,16 +1029,22 @@ func estimateGas(client rpc.ClientInterface, ctx context.Context, params estimat
 
 func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, delayedMessages uint64, realData []byte, realBlobs []kzg4844.Blob, realNonce uint64, realAccessList types.AccessList) (uint64, error) {
 	config := b.config()
+	rpcClient := b.l1Reader.Client()
+	rawRpcClient := rpcClient.Client()
 	useNormalEstimation := b.dataPoster.MaxMempoolTransactions() == 1
 	if !useNormalEstimation {
 		// Check if we can use normal estimation anyways because we're at the latest nonce
-		latestNonce, err := b.l1Reader.Client().NonceAt(ctx, b.dataPoster.Sender(), nil)
+		latestNonce, err := rpcClient.NonceAt(ctx, b.dataPoster.Sender(), nil)
 		if err != nil {
 			return 0, err
 		}
 		useNormalEstimation = latestNonce == realNonce
 	}
-	rawRpcClient := b.l1Reader.Client().Client()
+	latestHeader, err := rpcClient.HeaderByNumber(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	maxFeePerGas := arbmath.BigMulByBips(latestHeader.BaseFee, config.GasEstimateBaseFeeMultipleBips)
 	if useNormalEstimation {
 		_, realBlobHashes, err := blobs.ComputeCommitmentsAndHashes(realBlobs)
 		if err != nil {
@@ -950,11 +1052,12 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 		}
 		// If we're at the latest nonce, we can skip the special future tx estimate stuff
 		gas, err := estimateGas(rawRpcClient, ctx, estimateGasParams{
-			From:       b.dataPoster.Sender(),
-			To:         &b.seqInboxAddr,
-			Data:       realData,
-			BlobHashes: realBlobHashes,
-			AccessList: realAccessList,
+			From:         b.dataPoster.Sender(),
+			To:           &b.seqInboxAddr,
+			Data:         realData,
+			MaxFeePerGas: (*hexutil.Big)(maxFeePerGas),
+			BlobHashes:   realBlobHashes,
+			AccessList:   realAccessList,
 		})
 		if err != nil {
 			return 0, fmt.Errorf("%w: %w", ErrNormalGasEstimationFailed, err)
@@ -975,10 +1078,11 @@ func (b *BatchPoster) estimateGas(ctx context.Context, sequencerMessage []byte, 
 		return 0, fmt.Errorf("failed to compute blob commitments: %w", err)
 	}
 	gas, err := estimateGas(rawRpcClient, ctx, estimateGasParams{
-		From:       b.dataPoster.Sender(),
-		To:         &b.seqInboxAddr,
-		Data:       data,
-		BlobHashes: blobHashes,
+		From:         b.dataPoster.Sender(),
+		To:           &b.seqInboxAddr,
+		Data:         data,
+		MaxFeePerGas: (*hexutil.Big)(maxFeePerGas),
+		BlobHashes:   blobHashes,
 		// This isn't perfect because we're probably estimating the batch at a different sequence number,
 		// but it should overestimate rather than underestimate which is fine.
 		AccessList: realAccessList,
@@ -1031,7 +1135,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		}
 		var use4844 bool
 		config := b.config()
-		if config.Post4844Blobs && latestHeader.ExcessBlobGas != nil && latestHeader.BlobGasUsed != nil {
+		if config.Post4844Blobs && b.dapWriter == nil && latestHeader.ExcessBlobGas != nil && latestHeader.BlobGasUsed != nil {
 			arbOSVersion, err := b.arbOSVersionGetter.ArbOSVersionForMessageNumber(arbutil.MessageIndex(arbmath.SaturatingUSub(uint64(batchPosition.MessageCount), 1)))
 			if err != nil {
 				return false, err
@@ -1087,7 +1191,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	}
 
 	config := b.config()
-	forcePostBatch := time.Since(firstMsgTime) >= config.MaxDelay
+	forcePostBatch := config.MaxDelay <= 0 || time.Since(firstMsgTime) >= config.MaxDelay
 
 	var l1BoundMaxBlockNumber uint64 = math.MaxUint64
 	var l1BoundMaxTimestamp uint64 = math.MaxUint64
@@ -1218,7 +1322,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		return false, nil
 	}
 
-	if b.daWriter != nil {
+	if b.dapWriter != nil {
 		if !b.redisLock.AttemptLock(ctx) {
 			return false, errAttemptLockFailed
 		}
@@ -1230,17 +1334,9 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		if nonce != gotNonce || !bytes.Equal(batchPositionBytes, gotMeta) {
 			return false, fmt.Errorf("%w: nonce changed from %d to %d while creating batch", storage.ErrStorageRace, nonce, gotNonce)
 		}
-
-		cert, err := b.daWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{}) // b.daWriter will append signature if enabled
-		if errors.Is(err, das.BatchToDasFailed) {
-			if config.DisableDasFallbackStoreDataOnChain {
-				return false, errors.New("unable to batch to DAS and fallback storing data on chain is disabled")
-			}
-			log.Warn("Falling back to storing data on chain", "err", err)
-		} else if err != nil {
+		sequencerMsg, err = b.dapWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{}, config.DisableDapFallbackStoreDataOnChain)
+		if err != nil {
 			return false, err
-		} else {
-			sequencerMsg = das.Serialize(cert)
 		}
 	}
 
@@ -1249,7 +1345,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		return false, err
 	}
 	if len(kzgBlobs)*params.BlobTxBlobGasPerBlob > params.MaxBlobGasPerBlock {
-		return false, fmt.Errorf("produced %v blobs for batch but a block can only hold %v", len(kzgBlobs), params.MaxBlobGasPerBlock/params.BlobTxBlobGasPerBlob)
+		return false, fmt.Errorf("produced %v blobs for batch but a block can only hold %v (compressed batch was %v bytes long)", len(kzgBlobs), params.MaxBlobGasPerBlock/params.BlobTxBlobGasPerBlob, len(sequencerMsg))
 	}
 	accessList := b.accessList(int(batchPosition.NextSeqNum), int(b.building.segments.delayedMsg))
 	// On restart, we may be trying to estimate gas for a batch whose successor has
@@ -1295,6 +1391,14 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		"totalSegments", len(b.building.segments.rawSegments),
 		"numBlobs", len(kzgBlobs),
 	)
+
+	surplus := arbmath.SaturatingMul(
+		arbmath.SaturatingSub(
+			l1GasPriceGauge.Snapshot().Value(),
+			l1GasPriceEstimateGauge.Snapshot().Value()),
+		int64(len(sequencerMsg)*16),
+	)
+	latestBatchSurplusGauge.Update(surplus)
 
 	recentlyHitL1Bounds := time.Since(b.lastHitL1Bounds) < config.PollInterval*3
 	postedMessages := b.building.msgCount - batchPosition.MessageCount
@@ -1365,6 +1469,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 	b.redisLock.Start(ctxIn)
 	b.StopWaiter.Start(ctxIn, b)
 	b.LaunchThread(b.pollForReverts)
+	b.LaunchThread(b.pollForL1PriceData)
 	commonEphemeralErrorHandler := util.NewEphemeralErrorHandler(time.Minute, "", 0)
 	exceedMaxMempoolSizeEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, dataposter.ErrExceedsMaxMempoolSize.Error(), time.Minute)
 	storageRaceEphemeralErrorHandler := util.NewEphemeralErrorHandler(5*time.Minute, storage.ErrStorageRace.Error(), time.Minute)

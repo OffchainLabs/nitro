@@ -26,6 +26,8 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/redisutil"
+	"github.com/offchainlabs/nitro/validator/client/redis"
 )
 
 type workloadType uint
@@ -37,7 +39,7 @@ const (
 	upgradeArbOs
 )
 
-func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops int, workload workloadType, arbitrator bool) {
+func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops int, workload workloadType, arbitrator bool, useRedisStreams bool) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -67,7 +69,15 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 	validatorConfig.BlockValidator.Enable = true
 	validatorConfig.DataAvailability = l1NodeConfigA.DataAvailability
 	validatorConfig.DataAvailability.RPCAggregator.Enable = false
-	AddDefaultValNode(t, ctx, validatorConfig, !arbitrator)
+	redisURL := ""
+	if useRedisStreams {
+		redisURL = redisutil.CreateTestRedis(ctx, t)
+		validatorConfig.BlockValidator.RedisValidationClientConfig = redis.DefaultValidationClientConfig
+		validatorConfig.BlockValidator.RedisValidationClientConfig.RedisURL = redisURL
+	}
+
+	AddDefaultValNode(t, ctx, validatorConfig, !arbitrator, redisURL)
+
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: validatorConfig})
 	defer cleanupB()
 	builder.L2Info.GenerateAccount("User2")
@@ -239,17 +249,21 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 }
 
 func TestBlockValidatorSimpleOnchainUpgradeArbOs(t *testing.T) {
-	testBlockValidatorSimple(t, "onchain", 1, upgradeArbOs, true)
+	testBlockValidatorSimple(t, "onchain", 1, upgradeArbOs, true, false)
 }
 
 func TestBlockValidatorSimpleOnchain(t *testing.T) {
-	testBlockValidatorSimple(t, "onchain", 1, ethSend, true)
+	testBlockValidatorSimple(t, "onchain", 1, ethSend, true, false)
+}
+
+func TestBlockValidatorSimpleOnchainWithRedisStreams(t *testing.T) {
+	testBlockValidatorSimple(t, "onchain", 1, ethSend, true, true)
 }
 
 func TestBlockValidatorSimpleLocalDAS(t *testing.T) {
-	testBlockValidatorSimple(t, "files", 1, ethSend, true)
+	testBlockValidatorSimple(t, "files", 1, ethSend, true, false)
 }
 
 func TestBlockValidatorSimpleJITOnchain(t *testing.T) {
-	testBlockValidatorSimple(t, "files", 8, smallContract, false)
+	testBlockValidatorSimple(t, "files", 8, smallContract, false, false)
 }

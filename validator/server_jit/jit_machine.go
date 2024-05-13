@@ -98,7 +98,7 @@ func (machine *JitMachine) prove(
 	// Wait for the forked process to connect
 	conn, err := tcp.Accept()
 	if err != nil {
-		return state, err
+		return state, fmt.Errorf("error waiting for jit machine to connect back to validator: %w", err)
 	}
 	go func() {
 		<-ctx.Done()
@@ -120,6 +120,9 @@ func (machine *JitMachine) prove(
 	}
 	writeUint8 := func(data uint8) error {
 		return writeExact([]byte{data})
+	}
+	writeUint32 := func(data uint32) error {
+		return writeExact(arbmath.Uint32ToBytes(data))
 	}
 	writeUint64 := func(data uint64) error {
 		return writeExact(arbmath.UintToBytes(data))
@@ -197,14 +200,14 @@ func (machine *JitMachine) prove(
 
 	// send known preimages
 	preimageTypes := entry.Preimages
-	if err := writeUint64(uint64(len(preimageTypes))); err != nil {
+	if err := writeUint32(uint32(len(preimageTypes))); err != nil {
 		return state, err
 	}
 	for ty, preimages := range preimageTypes {
 		if err := writeUint8(uint8(ty)); err != nil {
 			return state, err
 		}
-		if err := writeUint64(uint64(len(preimages))); err != nil {
+		if err := writeUint32(uint32(len(preimages))); err != nil {
 			return state, err
 		}
 		for hash, preimage := range preimages {
@@ -214,6 +217,20 @@ func (machine *JitMachine) prove(
 			if err := writeBytes(preimage); err != nil {
 				return state, err
 			}
+		}
+	}
+
+	// send user wasms
+	userWasms := entry.UserWasms
+	if err := writeUint32(uint32(len(userWasms))); err != nil {
+		return state, err
+	}
+	for moduleHash, info := range userWasms {
+		if err := writeExact(moduleHash[:]); err != nil {
+			return state, err
+		}
+		if err := writeBytes(info.Asm); err != nil {
+			return state, err
 		}
 	}
 

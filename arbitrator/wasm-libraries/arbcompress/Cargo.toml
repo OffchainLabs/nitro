@@ -1,0 +1,13 @@
+[package]
+name = "arbcompress"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+brotli.path = "../../brotli"
+caller-env = { path = "../../caller-env/", features = ["static_caller"] }
+paste = "1.0.14"

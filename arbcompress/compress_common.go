@@ -1,7 +1,14 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbcompress
+
+type Dictionary uint32
+
+const (
+	EmptyDictionary Dictionary = iota
+	StylusProgramDictionary
+)
 
 const LEVEL_WELL = 11
 const WINDOW_SIZE = 22 // BROTLI_DEFAULT_WINDOW
@@ -11,5 +18,5 @@ func compressedBufferSizeFor(length int) int {
 }
 
 func CompressLevel(input []byte, level int) ([]byte, error) {
-	return compressLevel(input, level)
+	return Compress(input, uint32(level), EmptyDictionary)
 }

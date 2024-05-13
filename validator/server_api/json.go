@@ -4,86 +4,17 @@
 package server_api
 
 import (
-	"encoding/base64"
+	"fmt"
 
 	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/arbutil"
+
 	"github.com/offchainlabs/nitro/util/jsonapi"
 	"github.com/offchainlabs/nitro/validator"
 )
 
-type BatchInfoJson struct {
-	Number  uint64
-	DataB64 string
-}
-
-type ValidationInputJson struct {
-	Id                uint64
-	HasDelayedMsg     bool
-	DelayedMsgNr      uint64
-	PreimagesB64      map[arbutil.PreimageType]*jsonapi.PreimagesMapJson
-	BatchInfo         []BatchInfoJson
-	HotShotHeight     uint64
-	HotShotCommitment espressoTypes.Commitment
-	DelayedMsgB64     string
-	StartState        validator.GoGlobalState
-}
-
-func ValidationInputToJson(entry *validator.ValidationInput) *ValidationInputJson {
-	jsonPreimagesMap := make(map[arbutil.PreimageType]*jsonapi.PreimagesMapJson)
-	for ty, preimages := range entry.Preimages {
-		jsonPreimagesMap[ty] = jsonapi.NewPreimagesMapJson(preimages)
-	}
-	res := &ValidationInputJson{
-		Id:                entry.Id,
-		HasDelayedMsg:     entry.HasDelayedMsg,
-		DelayedMsgNr:      entry.DelayedMsgNr,
-		DelayedMsgB64:     base64.StdEncoding.EncodeToString(entry.DelayedMsg),
-		StartState:        entry.StartState,
-		HotShotHeight:     entry.HotShotHeight,
-		HotShotCommitment: entry.HotShotCommitment,
-		PreimagesB64:      jsonPreimagesMap,
-	}
-	for _, binfo := range entry.BatchInfo {
-		encData := base64.StdEncoding.EncodeToString(binfo.Data)
-		res.BatchInfo = append(res.BatchInfo, BatchInfoJson{Number: binfo.Number, DataB64: encData})
-	}
-	return res
-}
-
-func ValidationInputFromJson(entry *ValidationInputJson) (*validator.ValidationInput, error) {
-	preimages := make(map[arbutil.PreimageType]map[common.Hash][]byte)
-	for ty, jsonPreimages := range entry.PreimagesB64 {
-		preimages[ty] = jsonPreimages.Map
-	}
-	valInput := &validator.ValidationInput{
-		Id:                entry.Id,
-		HasDelayedMsg:     entry.HasDelayedMsg,
-		DelayedMsgNr:      entry.DelayedMsgNr,
-		StartState:        entry.StartState,
-		HotShotHeight:     entry.HotShotHeight,
-		HotShotCommitment: entry.HotShotCommitment,
-		Preimages:         preimages,
-	}
-	delayed, err := base64.StdEncoding.DecodeString(entry.DelayedMsgB64)
-	if err != nil {
-		return nil, err
-	}
-	valInput.DelayedMsg = delayed
-	for _, binfo := range entry.BatchInfo {
-		data, err := base64.StdEncoding.DecodeString(binfo.DataB64)
-		if err != nil {
-			return nil, err
-		}
-		decInfo := validator.BatchInfo{
-			Number: binfo.Number,
-			Data:   data,
-		}
-		valInput.BatchInfo = append(valInput.BatchInfo, decInfo)
-	}
-	return valInput, nil
-}
+const Namespace string = "validation"
 
 type MachineStepResultJson struct {
 	Hash        common.Hash
@@ -109,4 +40,38 @@ func MachineStepResultFromJson(resultJson *MachineStepResultJson) (*validator.Ma
 		Status:      validator.MachineStatus(resultJson.Status),
 		GlobalState: resultJson.GlobalState,
 	}, nil
+}
+
+func RedisStreamForRoot(moduleRoot common.Hash) string {
+	return fmt.Sprintf("stream:%s", moduleRoot.Hex())
+}
+
+type Request struct {
+	Input      *InputJSON
+	ModuleRoot common.Hash
+}
+
+type InputJSON struct {
+	Id            uint64
+	HasDelayedMsg bool
+	DelayedMsgNr  uint64
+	PreimagesB64  map[arbutil.PreimageType]*jsonapi.PreimagesMapJson
+	BatchInfo     []BatchInfoJson
+	DelayedMsgB64 string
+	StartState    validator.GoGlobalState
+	UserWasms     map[common.Hash]UserWasmJson
+	DebugChain    bool
+
+	HotShotHeight     uint64
+	HotShotCommitment espressoTypes.Commitment
+}
+
+type UserWasmJson struct {
+	Module string
+	Asm    string
+}
+
+type BatchInfoJson struct {
+	Number  uint64
+	DataB64 string
 }

@@ -10,7 +10,6 @@ import (
 	"math"
 	"math/big"
 	"strings"
-	"sync"
 	"sync/atomic"
 	"time"
 
@@ -99,10 +98,6 @@ type InboxReader struct {
 
 	// Atomic
 	lastSeenBatchCount uint64
-
-	// Behind the mutex
-	lastReadMutex      sync.RWMutex
-	lastReadBlock      uint64
 	lastReadBatchCount uint64
 }
 
@@ -396,10 +391,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 			// There's nothing to do
 			from = arbmath.BigAddByUint(currentHeight, 1)
 			blocksToFetch = config.DefaultBlocksToRead
-			r.lastReadMutex.Lock()
-			r.lastReadBlock = currentHeight.Uint64()
-			r.lastReadBatchCount = checkingBatchCount
-			r.lastReadMutex.Unlock()
+			atomic.StoreUint64(&r.lastReadBatchCount, checkingBatchCount)
 			storeSeenBatchCount()
 			if !r.caughtUp && readMode == "latest" {
 				r.caughtUp = true
@@ -531,10 +523,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 				}
 				if len(sequencerBatches) > 0 {
 					readAnyBatches = true
-					r.lastReadMutex.Lock()
-					r.lastReadBlock = to.Uint64()
-					r.lastReadBatchCount = sequencerBatches[len(sequencerBatches)-1].SequenceNumber + 1
-					r.lastReadMutex.Unlock()
+					atomic.StoreUint64(&r.lastReadBatchCount, sequencerBatches[len(sequencerBatches)-1].SequenceNumber+1)
 					storeSeenBatchCount()
 				}
 			}
@@ -561,10 +550,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 		}
 
 		if !readAnyBatches {
-			r.lastReadMutex.Lock()
-			r.lastReadBlock = currentHeight.Uint64()
-			r.lastReadBatchCount = checkingBatchCount
-			r.lastReadMutex.Unlock()
+			atomic.StoreUint64(&r.lastReadBatchCount, checkingBatchCount)
 			storeSeenBatchCount()
 		}
 	}
@@ -635,10 +621,8 @@ func (r *InboxReader) GetSequencerMessageBytes(ctx context.Context, seqNum uint6
 	return nil, common.Hash{}, fmt.Errorf("sequencer batch %v not found in L1 block %v (found batches %v)", seqNum, metadata.ParentChainBlock, seenBatches)
 }
 
-func (r *InboxReader) GetLastReadBlockAndBatchCount() (uint64, uint64) {
-	r.lastReadMutex.RLock()
-	defer r.lastReadMutex.RUnlock()
-	return r.lastReadBlock, r.lastReadBatchCount
+func (r *InboxReader) GetLastReadBatchCount() uint64 {
+	return atomic.LoadUint64(&r.lastReadBatchCount)
 }
 
 // GetLastSeenBatchCount returns how many sequencer batches the inbox reader has read in from L1.

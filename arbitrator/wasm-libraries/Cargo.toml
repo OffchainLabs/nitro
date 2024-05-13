@@ -1,2 +1,13 @@
 [workspace]
-members = ["brotli", "wasi-stub", "go-stub", "go-abi", "host-io", "espresso-crypto"]
+members = [
+	"arbcompress",
+	"wasi-stub",
+	"host-io",
+	"user-host",
+        "user-host-trait",
+	"user-test",
+	"program-exec",
+        "forward",
+		"espresso-crypto",
+]
+resolver = "2"

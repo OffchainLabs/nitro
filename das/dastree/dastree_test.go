@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -25,7 +26,7 @@ func TestDASTree(t *testing.T) {
 		tests = append(tests, large)
 	}
 
-	record := func(key bytes32, value []byte) {
+	record := func(key bytes32, value []byte, ty arbutil.PreimageType) {
 		colors.PrintGrey("storing ", key, " ", pretty.PrettyBytes(value))
 		store[key] = value
 		if crypto.Keccak256Hash(value) != key {

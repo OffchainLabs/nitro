@@ -42,7 +42,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 	blocksreexecutor "github.com/offchainlabs/nitro/blocks_reexecutor"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -51,7 +51,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/execution/gethexec"
-	_ "github.com/offchainlabs/nitro/nodeInterface"
+	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
@@ -207,7 +207,7 @@ func mainImpl() int {
 		}
 		stackConf.JWTSecret = filename
 	}
-	err = genericconf.InitLog(nodeConfig.LogType, log.Lvl(nodeConfig.LogLevel), &nodeConfig.FileLogging, pathResolver(nodeConfig.Persistent.LogDir))
+	err = genericconf.InitLog(nodeConfig.LogType, nodeConfig.LogLevel, &nodeConfig.FileLogging, pathResolver(nodeConfig.Persistent.LogDir))
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
 		return 1
@@ -293,14 +293,7 @@ func mainImpl() int {
 		}
 	}
 
-	combinedL2ChainInfoFile := nodeConfig.Chain.InfoFiles
-	if nodeConfig.Chain.InfoIpfsUrl != "" {
-		l2ChainInfoIpfsFile, err := util.GetL2ChainInfoIpfsFile(ctx, nodeConfig.Chain.InfoIpfsUrl, nodeConfig.Chain.InfoIpfsDownloadPath)
-		if err != nil {
-			log.Error("error getting chain info file from ipfs", "err", err)
-		}
-		combinedL2ChainInfoFile = append(combinedL2ChainInfoFile, l2ChainInfoIpfsFile)
-	}
+	combinedL2ChainInfoFile := aggregateL2ChainInfoFiles(ctx, nodeConfig.Chain.InfoFiles, nodeConfig.Chain.InfoIpfsUrl, nodeConfig.Chain.InfoIpfsDownloadPath)
 
 	if nodeConfig.Node.Staker.Enable {
 		if !nodeConfig.Node.ParentChainReader.Enable {
@@ -331,7 +324,7 @@ func mainImpl() int {
 	var rollupAddrs chaininfo.RollupAddresses
 	var l1Client *ethclient.Client
 	var l1Reader *headerreader.HeaderReader
-	var blobReader arbstate.BlobReader
+	var blobReader daprovider.BlobReader
 	if nodeConfig.Node.ParentChainReader.Enable {
 		confFetcher := func() *rpcclient.ClientConfig { return &liveNodeConfig.Get().ParentChain.Connection }
 		rpcClient := rpcclient.NewRpcClient(confFetcher, nil)
@@ -494,7 +487,7 @@ func mainImpl() int {
 		return 1
 	}
 
-	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "", false)
+	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "arbitrumdata/", false)
 	deferFuncs = append(deferFuncs, func() { closeDb(arbDb, "arbDb") })
 	if err != nil {
 		log.Error("failed to open database", "err", err)
@@ -505,9 +498,19 @@ func mainImpl() int {
 		return 0
 	}
 
-	if l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee && !nodeConfig.Node.DataAvailability.Enable {
+	chainInfo, err := chaininfo.ProcessChainInfo(nodeConfig.Chain.ID, nodeConfig.Chain.Name, combinedL2ChainInfoFile, nodeConfig.Chain.InfoJson)
+	if err != nil {
+		log.Error("error processing l2 chain info", "err", err)
+		return 1
+	}
+	if err := validateBlockChain(l2BlockChain, chainInfo.ChainConfig); err != nil {
+		log.Error("user provided chain config is not compatible with onchain chain config", "err", err)
+		return 1
+	}
+
+	if l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee != nodeConfig.Node.DataAvailability.Enable {
 		flag.Usage()
-		log.Error("a data availability service must be configured for this chain (see the --node.data-availability family of options)")
+		log.Error(fmt.Sprintf("data availability service usage for this chain is set to %v but --node.data-availability.enable is set to %v", l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee, nodeConfig.Node.DataAvailability.Enable))
 		return 1
 	}
 
@@ -596,7 +599,7 @@ func mainImpl() int {
 	}
 
 	liveNodeConfig.SetOnReloadHook(func(oldCfg *NodeConfig, newCfg *NodeConfig) error {
-		if err := genericconf.InitLog(newCfg.LogType, log.Lvl(newCfg.LogLevel), &newCfg.FileLogging, pathResolver(nodeConfig.Persistent.LogDir)); err != nil {
+		if err := genericconf.InitLog(newCfg.LogType, newCfg.LogLevel, &newCfg.FileLogging, pathResolver(nodeConfig.Persistent.LogDir)); err != nil {
 			return fmt.Errorf("failed to re-init logging: %w", err)
 		}
 		return currentNode.OnConfigReload(&oldCfg.Node, &newCfg.Node)
@@ -687,7 +690,7 @@ type NodeConfig struct {
 	Validation       valnode.Config                  `koanf:"validation" reload:"hot"`
 	ParentChain      conf.ParentChainConfig          `koanf:"parent-chain" reload:"hot"`
 	Chain            conf.L2Config                   `koanf:"chain"`
-	LogLevel         int                             `koanf:"log-level" reload:"hot"`
+	LogLevel         string                          `koanf:"log-level" reload:"hot"`
 	LogType          string                          `koanf:"log-type" reload:"hot"`
 	FileLogging      genericconf.FileLoggingConfig   `koanf:"file-logging" reload:"hot"`
 	Persistent       conf.PersistentConfig           `koanf:"persistent"`
@@ -713,7 +716,7 @@ var NodeConfigDefault = NodeConfig{
 	Validation:       valnode.DefaultValidationConfig,
 	ParentChain:      conf.L1ConfigDefault,
 	Chain:            conf.L2ConfigDefault,
-	LogLevel:         int(log.LvlInfo),
+	LogLevel:         "INFO",
 	LogType:          "plaintext",
 	FileLogging:      genericconf.DefaultFileLoggingConfig,
 	Persistent:       conf.PersistentConfigDefault,
@@ -739,7 +742,7 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	valnode.ValidationConfigAddOptions("validation", f)
 	conf.L1ConfigAddOptions("parent-chain", f)
 	conf.L2ConfigAddOptions("chain", f)
-	f.Int("log-level", NodeConfigDefault.LogLevel, "log level")
+	f.String("log-level", NodeConfigDefault.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
 	f.String("log-type", NodeConfigDefault.LogType, "log type (plaintext or json)")
 	genericconf.FileLoggingConfigAddOptions("file-logging", f)
 	conf.PersistentConfigAddOptions("persistent", f)
@@ -903,15 +906,19 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	return &nodeConfig, &l1Wallet, &l2DevWallet, nil
 }
 
-func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) error {
-	combinedL2ChainInfoFiles := l2ChainInfoFiles
+func aggregateL2ChainInfoFiles(ctx context.Context, l2ChainInfoFiles []string, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) []string {
 	if l2ChainInfoIpfsUrl != "" {
 		l2ChainInfoIpfsFile, err := util.GetL2ChainInfoIpfsFile(ctx, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
 		if err != nil {
 			log.Error("error getting l2 chain info file from ipfs", "err", err)
 		}
-		combinedL2ChainInfoFiles = append(combinedL2ChainInfoFiles, l2ChainInfoIpfsFile)
+		l2ChainInfoFiles = append(l2ChainInfoFiles, l2ChainInfoIpfsFile)
 	}
+	return l2ChainInfoFiles
+}
+
+func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) error {
+	combinedL2ChainInfoFiles := aggregateL2ChainInfoFiles(ctx, l2ChainInfoFiles, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
 	chainInfo, err := chaininfo.ProcessChainInfo(chainId, chainName, combinedL2ChainInfoFiles, l2ChainInfoJson)
 	if err != nil {
 		return err

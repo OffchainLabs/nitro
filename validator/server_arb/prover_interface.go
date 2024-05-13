@@ -1,11 +1,11 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package server_arb
 
 /*
-#cgo CFLAGS: -g -Wall -I../../target/include/
-#cgo LDFLAGS: ${SRCDIR}/../../target/lib/libprover.a -ldl -lm
+#cgo CFLAGS: -g -Wall -I../target/include/
+#cgo LDFLAGS: ${SRCDIR}/../../target/lib/libstylus.a -ldl -lm
 #include "arbitrator.h"
 #include <stdlib.h>
 
