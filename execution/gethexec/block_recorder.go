@@ -150,6 +150,7 @@ func (r *BlockRecorder) RecordBlockCreation(
 			chaincontext,
 			chainConfig,
 			batchFetcher,
+			false,
 			opts...,
 		)
 		if err != nil {
@@ -178,6 +179,7 @@ func (r *BlockRecorder) RecordBlockCreation(
 		BlockHash: blockHash,
 		Preimages: preimages,
 		BatchInfo: readBatchInfo,
+		UserWasms: recordingdb.UserWasms(),
 	}, err
 }
 

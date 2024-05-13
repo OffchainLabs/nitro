@@ -41,13 +41,21 @@ RUN apt-get update && apt-get install -y curl build-essential=12.9
 
 FROM wasm-base as wasm-libs-builder
 	# clang / lld used by soft-float wasm
-RUN apt-get install -y clang=1:14.0-55.7~deb12u1 lld=1:14.0-55.7~deb12u1
-    # pinned rust 1.70.0
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.70.0 --target x86_64-unknown-linux-gnu wasm32-unknown-unknown wasm32-wasi
+RUN apt-get install -y clang=1:14.0-55.7~deb12u1 lld=1:14.0-55.7~deb12u1 wabt
+    # pinned rust 1.75.0
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.75.0 --target x86_64-unknown-linux-gnu wasm32-unknown-unknown wasm32-wasi
 COPY ./Makefile ./
+COPY arbitrator/Cargo.* arbitrator/
 COPY arbitrator/arbutil arbitrator/arbutil
+COPY arbitrator/brotli arbitrator/brotli
+COPY arbitrator/caller-env arbitrator/caller-env
+COPY arbitrator/prover arbitrator/prover
 COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
+COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
+COPY brotli brotli
+COPY scripts/build-brotli.sh scripts/
 COPY --from=brotli-wasm-export / target/
+RUN apt-get update && apt-get install -y cmake
 RUN . ~/.cargo/env && NITRO_BUILD_IGNORE_TIMESTAMPS=1 RUSTFLAGS='-C symbol-mangling-version=v0' make build-wasm-libs
 
 FROM scratch as wasm-libs-export
@@ -55,7 +63,7 @@ COPY --from=wasm-libs-builder /workspace/ /
 
 FROM wasm-base as wasm-bin-builder
     # pinned go version
-RUN curl -L https://golang.org/dl/go1.20.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
+RUN curl -L https://golang.org/dl/go1.21.7.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
 COPY ./Makefile ./go.mod ./go.sum ./
 COPY ./arbcompress ./arbcompress
 COPY ./arbos ./arbos
@@ -83,45 +91,70 @@ COPY --from=contracts-builder workspace/contracts/node_modules/@offchainlabs/upg
 COPY --from=contracts-builder workspace/.make/ .make/
 RUN PATH="$PATH:/usr/local/go/bin" NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-wasm-bin
 
-FROM rust:1.70-slim-bookworm as prover-header-builder
+FROM rust:1.75-slim-bullseye as prover-header-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
-    apt-get install -y make clang && \
+    apt-get install -y make clang wabt && \
     cargo install --force cbindgen
-COPY arbitrator/Cargo.* arbitrator/cbindgen.toml arbitrator/
+COPY arbitrator/Cargo.* arbitrator/
 COPY ./Makefile ./
 COPY arbitrator/arbutil arbitrator/arbutil
+COPY arbitrator/brotli arbitrator/brotli
+COPY arbitrator/caller-env arbitrator/caller-env
 COPY arbitrator/prover arbitrator/prover
+COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
 COPY arbitrator/jit arbitrator/jit
+COPY arbitrator/stylus arbitrator/stylus
+COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
+COPY --from=brotli-wasm-export / target/
+COPY scripts/build-brotli.sh scripts/
+COPY brotli brotli
+RUN apt-get update && apt-get install -y cmake
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header
 
 FROM scratch as prover-header-export
 COPY --from=prover-header-builder /workspace/target/ /
 
-FROM rust:1.75-slim-bookworm as prover-builder
+FROM rust:1.75-slim-bullseye as prover-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
-    apt-get install -y make wget gpg software-properties-common zlib1g-dev \
-        libstdc++-11-dev wabt clang llvm-dev libclang-common-14-dev libpolly-14-dev
+    apt-get install -y make wget gpg software-properties-common zlib1g-dev libstdc++-10-dev wabt
+RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
+    add-apt-repository 'deb http://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-15 main' && \
+    apt-get update && \
+    apt-get install -y llvm-15-dev libclang-common-15-dev libpolly-15-dev
+COPY --from=brotli-library-export / target/
 COPY arbitrator/Cargo.* arbitrator/
 COPY arbitrator/arbutil arbitrator/arbutil
+COPY arbitrator/brotli arbitrator/brotli
+COPY arbitrator/caller-env arbitrator/caller-env
 COPY arbitrator/prover/Cargo.toml arbitrator/prover/
 COPY arbitrator/jit/Cargo.toml arbitrator/jit/
-RUN mkdir arbitrator/prover/src arbitrator/jit/src && \
-    echo "fn test() {}" > arbitrator/jit/src/lib.rs && \
+COPY arbitrator/stylus/Cargo.toml arbitrator/stylus/
+COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
+COPY arbitrator/wasm-libraries/user-host-trait/Cargo.toml arbitrator/wasm-libraries/user-host-trait/Cargo.toml
+RUN bash -c 'mkdir arbitrator/{prover,jit,stylus}/src arbitrator/wasm-libraries/user-host-trait/src'
+RUN echo "fn test() {}" > arbitrator/jit/src/lib.rs && \
     echo "fn test() {}" > arbitrator/prover/src/lib.rs && \
+    echo "fn test() {}" > arbitrator/stylus/src/lib.rs && \
+    echo "fn test() {}" > arbitrator/wasm-libraries/user-host-trait/src/lib.rs && \
     cargo build --manifest-path arbitrator/Cargo.toml --release --lib && \
-    rm arbitrator/jit/src/lib.rs
+    rm arbitrator/prover/src/lib.rs arbitrator/jit/src/lib.rs arbitrator/stylus/src/lib.rs && \
+    rm arbitrator/wasm-libraries/user-host-trait/src/lib.rs
 COPY ./Makefile ./
 COPY arbitrator/prover arbitrator/prover
+COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
 COPY arbitrator/jit arbitrator/jit
-COPY --from=brotli-library-export / target/
+COPY arbitrator/stylus arbitrator/stylus
+COPY --from=brotli-wasm-export / target/
+COPY scripts/build-brotli.sh scripts/
+COPY brotli brotli
 RUN touch -a -m arbitrator/prover/src/lib.rs
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-lib
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-bin
-RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make CARGOFLAGS="--features=llvm" build-jit
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-jit
 
 FROM scratch as prover-export
 COPY --from=prover-builder /workspace/target/ /
@@ -135,7 +168,12 @@ COPY --from=prover-export / target/
 COPY --from=wasm-bin-builder /workspace/target/ target/
 COPY --from=wasm-bin-builder /workspace/.make/ .make/
 COPY --from=wasm-libs-builder /workspace/target/ target/
+COPY --from=wasm-libs-builder /workspace/arbitrator/prover/ arbitrator/prover/
+COPY --from=wasm-libs-builder /workspace/arbitrator/tools/wasmer/ arbitrator/tools/wasmer/
 COPY --from=wasm-libs-builder /workspace/arbitrator/wasm-libraries/ arbitrator/wasm-libraries/
+COPY --from=wasm-libs-builder /workspace/arbitrator/arbutil arbitrator/arbutil
+COPY --from=wasm-libs-builder /workspace/arbitrator/brotli arbitrator/brotli
+COPY --from=wasm-libs-builder /workspace/arbitrator/caller-env arbitrator/caller-env
 COPY --from=wasm-libs-builder /workspace/.make/ .make/
 COPY ./Makefile ./
 COPY ./arbitrator ./arbitrator
@@ -159,15 +197,15 @@ COPY ./scripts/download-machine.sh .
 #RUN ./download-machine.sh consensus-v7 0x53dd4b9a3d807a8cbb4d58fbfc6a0857c3846d46956848cae0a1cc7eca2bb5a8
 #RUN ./download-machine.sh consensus-v7.1 0x2b20e1490d1b06299b222f3239b0ae07e750d8f3b4dedd19f500a815c1548bbc
 #RUN ./download-machine.sh consensus-v9 0xd1842bfbe047322b3f3b3635b5fe62eb611557784d17ac1d2b1ce9c170af6544
-RUN ./download-machine.sh consensus-v10 0x6b94a7fc388fd8ef3def759297828dc311761e88d8179c7ee8d3887dc554f3c3
-RUN ./download-machine.sh consensus-v10.1 0xda4e3ad5e7feacb817c21c8d0220da7650fe9051ece68a3f0b1c5d38bbb27b21
-RUN ./download-machine.sh consensus-v10.2 0x0754e09320c381566cc0449904c377a52bd34a6b9404432e80afd573b67f7b17
-RUN ./download-machine.sh consensus-v10.3 0xf559b6d4fa869472dabce70fe1c15221bdda837533dfd891916836975b434dec
-RUN ./download-machine.sh consensus-v11 0xf4389b835497a910d7ba3ebfb77aa93da985634f3c052de1290360635be40c4a
-RUN ./download-machine.sh consensus-v11.1 0x68e4fe5023f792d4ef584796c84d710303a5e12ea02d6e37e2b5e9c4332507c4
-RUN ./download-machine.sh consensus-v20 0x8b104a2e80ac6165dc58b9048de12f301d70b02a0ab51396c22b4b4b802a16a4
+#RUN ./download-machine.sh consensus-v10 0x6b94a7fc388fd8ef3def759297828dc311761e88d8179c7ee8d3887dc554f3c3
+#RUN ./download-machine.sh consensus-v10.1 0xda4e3ad5e7feacb817c21c8d0220da7650fe9051ece68a3f0b1c5d38bbb27b21
+#RUN ./download-machine.sh consensus-v10.2 0x0754e09320c381566cc0449904c377a52bd34a6b9404432e80afd573b67f7b17
+#RUN ./download-machine.sh consensus-v10.3 0xf559b6d4fa869472dabce70fe1c15221bdda837533dfd891916836975b434dec
+#RUN ./download-machine.sh consensus-v11 0xf4389b835497a910d7ba3ebfb77aa93da985634f3c052de1290360635be40c4a
+#RUN ./download-machine.sh consensus-v11.1 0x68e4fe5023f792d4ef584796c84d710303a5e12ea02d6e37e2b5e9c4332507c4
+#RUN ./download-machine.sh consensus-v20 0x8b104a2e80ac6165dc58b9048de12f301d70b02a0ab51396c22b4b4b802a16a4
 
-FROM golang:1.20-bookworm as node-builder
+FROM golang:1.21-bullseye as node-builder
 WORKDIR /workspace
 ARG version=""
 ARG datetime=""
@@ -272,6 +310,16 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /usr/lib/python3.9/__pycache__/ /usr/lib/python3.9/*/__pycache__/ /var/log/* && \
     nitro --version
 
+USER user
+
+FROM nitro-node-dev as nitro-node-split
+USER root
+
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y xxd netcat-traditional
+COPY scripts/split-val-entry.sh /usr/local/bin
+ENTRYPOINT [ "/usr/local/bin/split-val-entry.sh" ]
 USER user
 
 FROM nitro-node as nitro-node-default

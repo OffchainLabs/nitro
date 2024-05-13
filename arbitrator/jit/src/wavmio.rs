@@ -1,13 +1,15 @@
-// Copyright 2022, Offchain Labs, Inc.
+// Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    gostack::GoStack,
-    machine::{Escape, Inbox, MaybeEscape, WasmEnv, WasmEnvMut},
+    caller_env::JitEnv,
+    machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
     socket,
 };
-
 use arbutil::{Color, PreimageType};
+use caller_env::{GuestPtr, MemAccess};
+use sha2::Sha256;
+use sha3::{Digest, Keccak256};
 use std::{
     io,
     io::{BufReader, BufWriter, ErrorKind},
@@ -15,166 +17,139 @@ use std::{
     time::Instant,
 };
 
-pub type Bytes32 = [u8; 32];
+/// Reads 32-bytes of global state.
+pub fn get_global_state_bytes32(mut env: WasmEnvMut, idx: u32, out_ptr: GuestPtr) -> MaybeEscape {
+    let (mut mem, exec) = env.jit_env();
+    ready_hostio(exec)?;
 
-pub fn get_global_state_bytes32(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
-    let (sp, env) = GoStack::new(sp, &mut env);
-    ready_hostio(env)?;
-
-    let global = sp.read_u64(0) as u32 as usize;
-    let out_ptr = sp.read_u64(1);
-    let mut out_len = sp.read_u64(2) as usize;
-    if out_len < 32 {
-        eprintln!("Go trying to read block hash into {out_len} bytes long buffer");
-    } else {
-        out_len = 32;
-    }
-
-    let global = match env.large_globals.get(global) {
-        Some(global) => global,
-        None => return Escape::hostio("global read out of bounds in wavmio.getGlobalStateBytes32"),
+    let Some(global) = exec.large_globals.get(idx as usize) else {
+        return Escape::hostio("global read out of bounds in wavmio.getGlobalStateBytes32");
     };
-    sp.write_slice(out_ptr, &global[..out_len]);
+    mem.write_slice(out_ptr, &global[..32]);
     Ok(())
 }
 
-pub fn set_global_state_bytes32(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
-    let (sp, env) = GoStack::new(sp, &mut env);
-    ready_hostio(env)?;
+/// Writes 32-bytes of global state.
+pub fn set_global_state_bytes32(mut env: WasmEnvMut, idx: u32, src_ptr: GuestPtr) -> MaybeEscape {
+    let (mem, exec) = env.jit_env();
+    ready_hostio(exec)?;
 
-    let global = sp.read_u64(0) as u32 as usize;
-    let src_ptr = sp.read_u64(1);
-    let src_len = sp.read_u64(2);
-    if src_len != 32 {
-        eprintln!("Go trying to set 32-byte global with a {src_len} bytes long buffer");
-        return Ok(());
-    }
-
-    let slice = sp.read_slice(src_ptr, src_len);
+    let slice = mem.read_slice(src_ptr, 32);
     let slice = &slice.try_into().unwrap();
-    match env.large_globals.get_mut(global) {
+    match exec.large_globals.get_mut(idx as usize) {
         Some(global) => *global = *slice,
-        None => {
-            return Escape::hostio("global write out of bounds in wavmio.setGlobalStateBytes32")
-        }
-    }
+        None => return Escape::hostio("global write oob in wavmio.setGlobalStateBytes32"),
+    };
     Ok(())
 }
 
-pub fn get_global_state_u64(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
-    let (sp, env) = GoStack::new(sp, &mut env);
-    ready_hostio(env)?;
+/// Reads 8-bytes of global state
+pub fn get_global_state_u64(mut env: WasmEnvMut, idx: u32) -> Result<u64, Escape> {
+    let (_, exec) = env.jit_env();
+    ready_hostio(exec)?;
 
-    let global = sp.read_u64(0) as u32 as usize;
-    match env.small_globals.get(global) {
-        Some(global) => sp.write_u64(1, *global),
-        None => return Escape::hostio("global read out of bounds in wavmio.getGlobalStateU64"),
+    match exec.small_globals.get(idx as usize) {
+        Some(global) => Ok(*global),
+        None => Escape::hostio("global read out of bounds in wavmio.getGlobalStateU64"),
     }
-    Ok(())
 }
 
-pub fn set_global_state_u64(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
-    let (sp, env) = GoStack::new(sp, &mut env);
-    ready_hostio(env)?;
+/// Writes 8-bytes of global state
+pub fn set_global_state_u64(mut env: WasmEnvMut, idx: u32, val: u64) -> MaybeEscape {
+    let (_, exec) = env.jit_env();
+    ready_hostio(exec)?;
 
-    let global = sp.read_u64(0) as u32 as usize;
-    match env.small_globals.get_mut(global) {
-        Some(global) => *global = sp.read_u64(1),
+    match exec.small_globals.get_mut(idx as usize) {
+        Some(global) => *global = val,
         None => return Escape::hostio("global write out of bounds in wavmio.setGlobalStateU64"),
     }
     Ok(())
 }
 
-pub fn read_inbox_message(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
-    let (sp, env) = GoStack::new(sp, &mut env);
-    ready_hostio(env)?;
+/// Reads an inbox message.
+pub fn read_inbox_message(
+    mut env: WasmEnvMut,
+    msg_num: u64,
+    offset: u32,
+    out_ptr: GuestPtr,
+) -> Result<u32, Escape> {
+    let (mut mem, exec) = env.jit_env();
+    ready_hostio(exec)?;
 
-    let inbox = &env.sequencer_messages;
-    inbox_message_impl(&sp, inbox, "wavmio.readInboxMessage")
-}
-
-pub fn read_delayed_inbox_message(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
-    let (sp, env) = GoStack::new(sp, &mut env);
-    ready_hostio(env)?;
-
-    let inbox = &env.delayed_messages;
-    inbox_message_impl(&sp, inbox, "wavmio.readDelayedInboxMessage")
-}
-
-/// Reads an inbox message
-/// note: the order of the checks is very important.
-fn inbox_message_impl(sp: &GoStack, inbox: &Inbox, name: &str) -> MaybeEscape {
-    let msg_num = sp.read_u64(0);
-    let offset = sp.read_u64(1);
-    let out_ptr = sp.read_u64(2);
-    let out_len = sp.read_u64(3);
-    if out_len != 32 {
-        eprintln!("Go trying to read inbox message with out len {out_len} in {name}");
-        sp.write_u64(5, 0);
-        return Ok(());
-    }
-
-    macro_rules! error {
-        ($text:expr $(,$args:expr)*) => {{
-            let text = format!($text $(,$args)*);
-            return Escape::hostio(&text)
-        }};
-    }
-
-    let message = match inbox.get(&msg_num) {
+    let message = match exec.sequencer_messages.get(&msg_num) {
         Some(message) => message,
-        None => error!("missing inbox message {msg_num} in {name}"),
+        None => return Escape::hostio(format!("missing sequencer inbox message {msg_num}")),
     };
-
-    if out_ptr + 32 > sp.memory_size() {
-        error!("unknown message type in {name}");
-    }
-    let offset = match u32::try_from(offset) {
-        Ok(offset) => offset as usize,
-        Err(_) => error!("bad offset {offset} in {name}"),
-    };
-
+    let offset = offset as usize;
     let len = std::cmp::min(32, message.len().saturating_sub(offset));
     let read = message.get(offset..(offset + len)).unwrap_or_default();
-    sp.write_slice(out_ptr, read);
-    sp.write_u64(5, read.len() as u64);
-    Ok(())
+    mem.write_slice(out_ptr, read);
+    Ok(read.len() as u32)
 }
 
+/// Reads a delayed inbox message.
+pub fn read_delayed_inbox_message(
+    mut env: WasmEnvMut,
+    msg_num: u64,
+    offset: u32,
+    out_ptr: GuestPtr,
+) -> Result<u32, Escape> {
+    let (mut mem, exec) = env.jit_env();
+    ready_hostio(exec)?;
+
+    let message = match exec.delayed_messages.get(&msg_num) {
+        Some(message) => message,
+        None => return Escape::hostio(format!("missing delayed inbox message {msg_num}")),
+    };
+    let offset = offset as usize;
+    let len = std::cmp::min(32, message.len().saturating_sub(offset));
+    let read = message.get(offset..(offset + len)).unwrap_or_default();
+    mem.write_slice(out_ptr, read);
+    Ok(read.len() as u32)
+}
+
+/// Retrieves the preimage of the given hash.
 #[deprecated] // we're just keeping this around until we no longer need to validate old replay binaries
-pub fn resolve_keccak_preimage(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
-    let (sp, env) = GoStack::new(sp, &mut env);
-    resolve_preimage_impl(env, sp, 0, "wavmio.ResolvePreImage")
+pub fn resolve_keccak_preimage(
+    env: WasmEnvMut,
+    hash_ptr: GuestPtr,
+    offset: u32,
+    out_ptr: GuestPtr,
+) -> Result<u32, Escape> {
+    resolve_preimage_impl(env, 0, hash_ptr, offset, out_ptr, "wavmio.ResolvePreImage")
 }
 
-pub fn resolve_typed_preimage(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
-    let (mut sp, env) = GoStack::new(sp, &mut env);
-    let preimage_type = sp.read_u8(0);
-    sp.shift_start(8); // to account for the preimage type being the first slot
-    resolve_preimage_impl(env, sp, preimage_type, "wavmio.ResolveTypedPreimage")
+pub fn resolve_typed_preimage(
+    env: WasmEnvMut,
+    preimage_type: u8,
+    hash_ptr: GuestPtr,
+    offset: u32,
+    out_ptr: GuestPtr,
+) -> Result<u32, Escape> {
+    resolve_preimage_impl(
+        env,
+        preimage_type,
+        hash_ptr,
+        offset,
+        out_ptr,
+        "wavmio.ResolveTypedPreimage",
+    )
 }
 
 pub fn resolve_preimage_impl(
-    env: &mut WasmEnv,
-    sp: GoStack,
+    mut env: WasmEnvMut,
     preimage_type: u8,
+    hash_ptr: GuestPtr,
+    offset: u32,
+    out_ptr: GuestPtr,
     name: &str,
-) -> MaybeEscape {
-    let hash_ptr = sp.read_u64(0);
-    let hash_len = sp.read_u64(1);
-    let offset = sp.read_u64(3);
-    let out_ptr = sp.read_u64(4);
-    let out_len = sp.read_u64(5);
-    if hash_len != 32 || out_len != 32 {
-        eprintln!("Go trying to resolve pre image with hash len {hash_len} and out len {out_len}");
-        sp.write_u64(7, 0);
-        return Ok(());
-    }
+) -> Result<u32, Escape> {
+    let (mut mem, exec) = env.jit_env();
+    let offset = offset as usize;
 
     let Ok(preimage_type) = preimage_type.try_into() else {
         eprintln!("Go trying to resolve pre image with unknown type {preimage_type}");
-        sp.write_u64(7, 0);
-        return Ok(());
+        return Ok(0);
     };
 
     macro_rules! error {
@@ -184,24 +159,40 @@ pub fn resolve_preimage_impl(
         }};
     }
 
-    let hash = sp.read_slice(hash_ptr, hash_len);
-    let hash: &[u8; 32] = &hash.try_into().unwrap();
-    let hash_hex = hex::encode(hash);
+    let hash = mem.read_bytes32(hash_ptr);
 
-    let Some(preimage) = env.preimages.get(&preimage_type).and_then(|m| m.get(hash)) else {
-        error!("Missing requested preimage for preimage type {preimage_type:?} hash {hash_hex} in {name}");
+    let Some(preimage) = exec
+        .preimages
+        .get(&preimage_type)
+        .and_then(|m| m.get(&hash))
+    else {
+        let hash_hex = hex::encode(hash);
+        error!("Missing requested preimage for hash {hash_hex} in {name}")
     };
 
-    let offset = match u32::try_from(offset) {
-        Ok(offset) if offset % 32 == 0 => offset as usize,
-        _ => error!("bad offset {offset} in {name}"),
+    // Check if preimage rehashes to the provided hash. Exclude blob preimages
+    let calculated_hash: [u8; 32] = match preimage_type {
+        PreimageType::Keccak256 => Keccak256::digest(preimage).into(),
+        PreimageType::Sha2_256 => Sha256::digest(preimage).into(),
+        PreimageType::EthVersionedHash => *hash,
+    };
+    if calculated_hash != *hash {
+        error!(
+            "Calculated hash {} of preimage {} does not match provided hash {}",
+            hex::encode(calculated_hash),
+            hex::encode(preimage),
+            hex::encode(*hash)
+        );
+    }
+
+    if offset % 32 != 0 {
+        error!("bad offset {offset} in {name}")
     };
 
     let len = std::cmp::min(32, preimage.len().saturating_sub(offset));
     let read = preimage.get(offset..(offset + len)).unwrap_or_default();
-    sp.write_slice(out_ptr, read);
-    sp.write_u64(7, read.len() as u64);
-    Ok(())
+    mem.write_slice(out_ptr, read);
+    Ok(read.len() as u32)
 }
 
 fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
@@ -237,7 +228,7 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
 
         address.pop(); // pop the newline
         if address.is_empty() {
-            return Ok(());
+            return Escape::exit(0);
         }
         if debug {
             println!("Child will connect to {address}");
@@ -281,17 +272,24 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
         env.delayed_messages.insert(position, message);
     }
 
-    let preimage_types = socket::read_u64(stream)?;
+    let preimage_types = socket::read_u32(stream)?;
     for _ in 0..preimage_types {
         let preimage_ty = PreimageType::try_from(socket::read_u8(stream)?)
             .map_err(|e| Escape::Failure(e.to_string()))?;
         let map = env.preimages.entry(preimage_ty).or_default();
-        let preimage_count = socket::read_u64(stream)?;
+        let preimage_count = socket::read_u32(stream)?;
         for _ in 0..preimage_count {
             let hash = socket::read_bytes32(stream)?;
             let preimage = socket::read_bytes(stream)?;
             map.insert(hash, preimage);
         }
+    }
+
+    let programs_count = socket::read_u32(stream)?;
+    for _ in 0..programs_count {
+        let module_hash = socket::read_bytes32(stream)?;
+        let module_asm = socket::read_boxed_slice(stream)?;
+        env.module_asms.insert(module_hash, module_asm.into());
     }
 
     if socket::read_u8(stream)? != socket::READY {

@@ -280,6 +280,10 @@ func (s *TransactionStreamer) SetInboxReaders(inboxReader *InboxReader, delayedB
 	s.delayedBridge = delayedBridge
 }
 
+func (s *TransactionStreamer) ChainConfig() *params.ChainConfig {
+	return s.chainConfig
+}
+
 func (s *TransactionStreamer) cleanupInconsistentState() error {
 	// If it doesn't exist yet, set the message count to 0
 	hasMessageCount, err := s.db.Has(messageCountKey)
@@ -456,10 +460,19 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 	s.reorgMutex.Lock()
 	defer s.reorgMutex.Unlock()
 
-	err = s.exec.Reorg(count, newMessages, oldMessages)
+	messagesResults, err := s.exec.Reorg(count, newMessages, oldMessages)
 	if err != nil {
 		return err
 	}
+
+	messagesWithBlockHash := make([]broadcaster.MessageWithMetadataAndBlockHash, 0, len(messagesResults))
+	for i := 0; i < len(messagesResults); i++ {
+		messagesWithBlockHash = append(messagesWithBlockHash, broadcaster.MessageWithMetadataAndBlockHash{
+			Message:   newMessages[i],
+			BlockHash: &messagesResults[i].BlockHash,
+		})
+	}
+	s.broadcastMessages(messagesWithBlockHash, count)
 
 	if s.validator != nil {
 		err = s.validator.Reorg(s.GetContext(), count)
@@ -966,7 +979,11 @@ func (s *TransactionStreamer) ExpectChosenSequencer() error {
 	return nil
 }
 
-func (s *TransactionStreamer) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) error {
+func (s *TransactionStreamer) WriteMessageFromSequencer(
+	pos arbutil.MessageIndex,
+	msgWithMeta arbostypes.MessageWithMetadata,
+	msgResult execution.MessageResult,
+) error {
 	if err := s.ExpectChosenSequencer(); err != nil {
 		return err
 	}
@@ -993,6 +1010,12 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(pos arbutil.MessageIndex
 	if err := s.writeMessages(pos, []arbostypes.MessageWithMetadata{msgWithMeta}, nil); err != nil {
 		return err
 	}
+
+	msgWithBlockHash := broadcaster.MessageWithMetadataAndBlockHash{
+		Message:   msgWithMeta,
+		BlockHash: &msgResult.BlockHash,
+	}
+	s.broadcastMessages([]broadcaster.MessageWithMetadataAndBlockHash{msgWithBlockHash}, pos)
 
 	return nil
 }
@@ -1022,6 +1045,18 @@ func (s *TransactionStreamer) writeMessage(pos arbutil.MessageIndex, msg arbosty
 	return batch.Put(key, msgBytes)
 }
 
+func (s *TransactionStreamer) broadcastMessages(
+	msgs []broadcaster.MessageWithMetadataAndBlockHash,
+	pos arbutil.MessageIndex,
+) {
+	if s.broadcastServer == nil {
+		return
+	}
+	if err := s.broadcastServer.BroadcastMessages(msgs, pos); err != nil {
+		log.Error("failed broadcasting messages", "pos", pos, "err", err)
+	}
+}
+
 // The mutex must be held, and pos must be the latest message count.
 // `batch` may be nil, which initializes a new batch. The batch is closed out in this function.
 func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages []arbostypes.MessageWithMetadata, batch ethdb.Batch) error {
@@ -1049,12 +1084,6 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 	default:
 	}
 
-	if s.broadcastServer != nil {
-		if err := s.broadcastServer.BroadcastMessages(messages, pos); err != nil {
-			log.Error("failed broadcasting message", "pos", pos, "err", err)
-		}
-	}
-
 	return nil
 }
 
@@ -1066,8 +1095,9 @@ func (s *TransactionStreamer) ResultAtCount(count arbutil.MessageIndex) (*execut
 	return s.exec.ResultAtPos(count - 1)
 }
 
+// exposed for testing
 // return value: true if should be called again immediately
-func (s *TransactionStreamer) executeNextMsg(ctx context.Context, exec execution.ExecutionSequencer) bool {
+func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context, exec execution.ExecutionSequencer) bool {
 	if ctx.Err() != nil {
 		return false
 	}
@@ -1105,7 +1135,8 @@ func (s *TransactionStreamer) executeNextMsg(ctx context.Context, exec execution
 		}
 		msgForPrefetch = msg
 	}
-	if err = s.exec.DigestMessage(pos, msg, msgForPrefetch); err != nil {
+	msgResult, err := s.exec.DigestMessage(pos, msg, msgForPrefetch)
+	if err != nil {
 		logger := log.Warn
 		if prevMessageCount < msgCount {
 			logger = log.Debug
@@ -1113,11 +1144,18 @@ func (s *TransactionStreamer) executeNextMsg(ctx context.Context, exec execution
 		logger("feedOneMsg failed to send message to execEngine", "err", err, "pos", pos)
 		return false
 	}
+
+	msgWithBlockHash := broadcaster.MessageWithMetadataAndBlockHash{
+		Message:   *msg,
+		BlockHash: &msgResult.BlockHash,
+	}
+	s.broadcastMessages([]broadcaster.MessageWithMetadataAndBlockHash{msgWithBlockHash}, pos)
+
 	return pos+1 < msgCount
 }
 
 func (s *TransactionStreamer) executeMessages(ctx context.Context, ignored struct{}) time.Duration {
-	if s.executeNextMsg(ctx, s.exec) {
+	if s.ExecuteNextMsg(ctx, s.exec) {
 		return 0
 	}
 	return s.config().ExecuteMessageLoopDelay

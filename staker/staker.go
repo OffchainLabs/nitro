@@ -298,7 +298,7 @@ func NewStaker(
 	}
 	client := l1Reader.Client()
 	val, err := NewL1Validator(client, wallet, validatorUtilsAddress, callOpts,
-		statelessBlockValidator.daService, statelessBlockValidator.inboxTracker, statelessBlockValidator.streamer, blockValidator)
+		statelessBlockValidator.inboxTracker, statelessBlockValidator.streamer, blockValidator)
 	if err != nil {
 		return nil, err
 	}

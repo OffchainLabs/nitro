@@ -5,6 +5,7 @@ package staker
 
 import (
 	"context"
+	"io"
 	"math/big"
 	"os"
 	"path"
@@ -117,9 +118,10 @@ func runChallengeTest(
 	testTimeout bool,
 	maxInboxMessage uint64,
 ) {
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
-	glogger.Verbosity(log.LvlDebug)
-	log.Root().SetHandler(glogger)
+	glogger := log.NewGlogHandler(
+		log.NewTerminalHandler(io.Writer(os.Stderr), false))
+	glogger.Verbosity(log.LevelDebug)
+	log.SetDefault(log.NewLogger(glogger))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -196,6 +198,7 @@ func runChallengeTest(
 
 	for i := 0; i < 100; i++ {
 		if testTimeout {
+			backend.Commit()
 			err = backend.AdjustTime(time.Second * 40)
 		}
 		Require(t, err)
@@ -252,7 +255,7 @@ func createBaseMachine(t *testing.T, wasmname string, wasmModules []string) *ser
 		modulePaths = append(modulePaths, path.Join(wasmDir, moduleName))
 	}
 
-	machine, err := server_arb.LoadSimpleMachine(wasmPath, modulePaths)
+	machine, err := server_arb.LoadSimpleMachine(wasmPath, modulePaths, true)
 	Require(t, err)
 
 	return machine

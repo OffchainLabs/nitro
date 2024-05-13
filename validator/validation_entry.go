@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
@@ -19,9 +20,11 @@ type ValidationInput struct {
 	HasDelayedMsg bool
 	DelayedMsgNr  uint64
 	Preimages     map[arbutil.PreimageType]map[common.Hash][]byte
+	UserWasms     state.UserWasms
 	BatchInfo     []BatchInfo
 	DelayedMsg    []byte
 	StartState    GoGlobalState
+	DebugChain    bool
 }
 
 func (b BatchInfo) String() string {

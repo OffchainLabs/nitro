@@ -1,0 +1,293 @@
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+
+package client
+
+import (
+	"context"
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"sync/atomic"
+	"time"
+
+	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/validator"
+
+	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/jsonapi"
+	"github.com/offchainlabs/nitro/util/rpcclient"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
+
+	"github.com/offchainlabs/nitro/validator/server_api"
+	"github.com/offchainlabs/nitro/validator/server_common"
+
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/node"
+)
+
+type ValidationClient struct {
+	stopwaiter.StopWaiter
+	client          *rpcclient.RpcClient
+	name            string
+	room            int32
+	wasmModuleRoots []common.Hash
+}
+
+func NewValidationClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *ValidationClient {
+	return &ValidationClient{
+		client: rpcclient.NewRpcClient(config, stack),
+	}
+}
+
+func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
+	atomic.AddInt32(&c.room, -1)
+	promise := stopwaiter.LaunchPromiseThread[validator.GoGlobalState](c, func(ctx context.Context) (validator.GoGlobalState, error) {
+		input := ValidationInputToJson(entry)
+		var res validator.GoGlobalState
+		err := c.client.CallContext(ctx, &res, server_api.Namespace+"_validate", input, moduleRoot)
+		atomic.AddInt32(&c.room, 1)
+		return res, err
+	})
+	return server_common.NewValRun(promise, moduleRoot)
+}
+
+func (c *ValidationClient) Start(ctx_in context.Context) error {
+	c.StopWaiter.Start(ctx_in, c)
+	ctx := c.GetContext()
+	if err := c.client.Start(ctx); err != nil {
+		return err
+	}
+	var name string
+	if err := c.client.CallContext(ctx, &name, server_api.Namespace+"_name"); err != nil {
+		return err
+	}
+	if len(name) == 0 {
+		return errors.New("couldn't read name from server")
+	}
+	var moduleRoots []common.Hash
+	if err := c.client.CallContext(c.GetContext(), &moduleRoots, server_api.Namespace+"_wasmModuleRoots"); err != nil {
+		return err
+	}
+	if len(moduleRoots) == 0 {
+		return fmt.Errorf("server reported no wasmModuleRoots")
+	}
+	var room int
+	if err := c.client.CallContext(c.GetContext(), &room, server_api.Namespace+"_room"); err != nil {
+		return err
+	}
+	if room < 2 {
+		log.Warn("validation server not enough room, overriding to 2", "name", name, "room", room)
+		room = 2
+	} else {
+		log.Info("connected to validation server", "name", name, "room", room)
+	}
+	atomic.StoreInt32(&c.room, int32(room))
+	c.wasmModuleRoots = moduleRoots
+	c.name = name
+	return nil
+}
+
+func (c *ValidationClient) WasmModuleRoots() ([]common.Hash, error) {
+	if c.Started() {
+		return c.wasmModuleRoots, nil
+	}
+	return nil, errors.New("not started")
+}
+
+func (c *ValidationClient) Stop() {
+	c.StopWaiter.StopOnly()
+	if c.client != nil {
+		c.client.Close()
+	}
+}
+
+func (c *ValidationClient) Name() string {
+	if c.Started() {
+		return c.name
+	}
+	return "(not started)"
+}
+
+func (c *ValidationClient) Room() int {
+	room32 := atomic.LoadInt32(&c.room)
+	if room32 < 0 {
+		return 0
+	}
+	return int(room32)
+}
+
+type ExecutionClient struct {
+	ValidationClient
+}
+
+func NewExecutionClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *ExecutionClient {
+	return &ExecutionClient{
+		ValidationClient: *NewValidationClient(config, stack),
+	}
+}
+
+func (c *ExecutionClient) CreateBoldExecutionRun(wasmModuleRoot common.Hash, stepSize uint64, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
+	return stopwaiter.LaunchPromiseThread[validator.ExecutionRun](c, func(ctx context.Context) (validator.ExecutionRun, error) {
+		var res uint64
+		err := c.client.CallContext(ctx, &res, Namespace+"_createBoldExecutionRun", wasmModuleRoot, stepSize, ValidationInputToJson(input))
+		if err != nil {
+			return nil, err
+		}
+		run := &ExecutionClientRun{
+			client: c,
+			id:     res,
+		}
+		run.Start(c.GetContext()) // note: not this temporary thread's context!
+		return run, nil
+	})
+}
+
+func (c *ExecutionClient) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
+	return stopwaiter.LaunchPromiseThread[validator.ExecutionRun](c, func(ctx context.Context) (validator.ExecutionRun, error) {
+		var res uint64
+		err := c.client.CallContext(ctx, &res, server_api.Namespace+"_createExecutionRun", wasmModuleRoot, ValidationInputToJson(input))
+		if err != nil {
+			return nil, err
+		}
+		run := &ExecutionClientRun{
+			client: c,
+			id:     res,
+		}
+		run.Start(c.GetContext()) // note: not this temporary thread's context!
+		return run, nil
+	})
+}
+
+type ExecutionClientRun struct {
+	stopwaiter.StopWaiter
+	client *ExecutionClient
+	id     uint64
+}
+
+func (c *ExecutionClient) LatestWasmModuleRoot() containers.PromiseInterface[common.Hash] {
+	return stopwaiter.LaunchPromiseThread[common.Hash](c, func(ctx context.Context) (common.Hash, error) {
+		var res common.Hash
+		err := c.client.CallContext(ctx, &res, server_api.Namespace+"_latestWasmModuleRoot")
+		if err != nil {
+			return common.Hash{}, err
+		}
+		return res, nil
+	})
+}
+
+func (c *ExecutionClient) WriteToFile(input *validator.ValidationInput, expOut validator.GoGlobalState, moduleRoot common.Hash) containers.PromiseInterface[struct{}] {
+	jsonInput := ValidationInputToJson(input)
+	return stopwaiter.LaunchPromiseThread[struct{}](c, func(ctx context.Context) (struct{}, error) {
+		err := c.client.CallContext(ctx, nil, server_api.Namespace+"_writeToFile", jsonInput, expOut, moduleRoot)
+		return struct{}{}, err
+	})
+}
+
+func (r *ExecutionClientRun) SendKeepAlive(ctx context.Context) time.Duration {
+	err := r.client.client.CallContext(ctx, nil, server_api.Namespace+"_execKeepAlive", r.id)
+	if err != nil {
+		log.Error("execution run keepalive failed", "err", err)
+	}
+	return time.Minute // TODO: configurable
+}
+
+func (r *ExecutionClientRun) CheckAlive(ctx context.Context) error {
+	return r.client.client.CallContext(ctx, nil, Namespace+"_checkAlive", r.id)
+}
+
+func (r *ExecutionClientRun) Start(ctx_in context.Context) {
+	r.StopWaiter.Start(ctx_in, r)
+	r.CallIteratively(r.SendKeepAlive)
+}
+
+func (r *ExecutionClientRun) GetStepAt(pos uint64) containers.PromiseInterface[*validator.MachineStepResult] {
+	return stopwaiter.LaunchPromiseThread[*validator.MachineStepResult](r, func(ctx context.Context) (*validator.MachineStepResult, error) {
+		var resJson server_api.MachineStepResultJson
+		err := r.client.client.CallContext(ctx, &resJson, server_api.Namespace+"_getStepAt", r.id, pos)
+		if err != nil {
+			return nil, err
+		}
+		res, err := server_api.MachineStepResultFromJson(&resJson)
+		if err != nil {
+			return nil, err
+		}
+		return res, err
+	})
+}
+
+func (r *ExecutionClientRun) GetLeavesWithStepSize(fromBatch, machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[[]common.Hash] {
+	return stopwaiter.LaunchPromiseThread[[]common.Hash](r, func(ctx context.Context) ([]common.Hash, error) {
+		var resJson []common.Hash
+		err := r.client.client.CallContext(ctx, &resJson, Namespace+"_getLeavesWithStepSize", r.id, fromBatch, machineStartIndex, stepSize, numDesiredLeaves)
+		if err != nil {
+			return nil, err
+		}
+		return resJson, err
+	})
+}
+
+func (r *ExecutionClientRun) GetProofAt(pos uint64) containers.PromiseInterface[[]byte] {
+	return stopwaiter.LaunchPromiseThread[[]byte](r, func(ctx context.Context) ([]byte, error) {
+		var resString string
+		err := r.client.client.CallContext(ctx, &resString, server_api.Namespace+"_getProofAt", r.id, pos)
+		if err != nil {
+			return nil, err
+		}
+		return base64.StdEncoding.DecodeString(resString)
+	})
+}
+
+func (r *ExecutionClientRun) GetLastStep() containers.PromiseInterface[*validator.MachineStepResult] {
+	return r.GetStepAt(^uint64(0))
+}
+
+func (r *ExecutionClientRun) PrepareRange(start, end uint64) containers.PromiseInterface[struct{}] {
+	return stopwaiter.LaunchPromiseThread[struct{}](r, func(ctx context.Context) (struct{}, error) {
+		err := r.client.client.CallContext(ctx, nil, server_api.Namespace+"_prepareRange", r.id, start, end)
+		if err != nil && ctx.Err() == nil {
+			log.Warn("prepare execution got error", "err", err)
+		}
+		return struct{}{}, err
+	})
+}
+
+func (r *ExecutionClientRun) Close() {
+	r.StopOnly()
+	r.LaunchUntrackedThread(func() {
+		err := r.client.client.CallContext(r.GetParentContext(), nil, server_api.Namespace+"_closeExec", r.id)
+		if err != nil {
+			log.Warn("closing execution client run got error", "err", err, "client", r.client.Name(), "id", r.id)
+		}
+	})
+}
+
+func ValidationInputToJson(entry *validator.ValidationInput) *server_api.InputJSON {
+	jsonPreimagesMap := make(map[arbutil.PreimageType]*jsonapi.PreimagesMapJson)
+	for ty, preimages := range entry.Preimages {
+		jsonPreimagesMap[ty] = jsonapi.NewPreimagesMapJson(preimages)
+	}
+	res := &server_api.InputJSON{
+		Id:            entry.Id,
+		HasDelayedMsg: entry.HasDelayedMsg,
+		DelayedMsgNr:  entry.DelayedMsgNr,
+		DelayedMsgB64: base64.StdEncoding.EncodeToString(entry.DelayedMsg),
+		StartState:    entry.StartState,
+		PreimagesB64:  jsonPreimagesMap,
+		UserWasms:     make(map[common.Hash]server_api.UserWasmJson),
+		DebugChain:    entry.DebugChain,
+	}
+	for _, binfo := range entry.BatchInfo {
+		encData := base64.StdEncoding.EncodeToString(binfo.Data)
+		res.BatchInfo = append(res.BatchInfo, server_api.BatchInfoJson{Number: binfo.Number, DataB64: encData})
+	}
+	for moduleHash, info := range entry.UserWasms {
+		encWasm := server_api.UserWasmJson{
+			Asm:    base64.StdEncoding.EncodeToString(info.Asm),
+			Module: base64.StdEncoding.EncodeToString(info.Module),
+		}
+		res.UserWasms[moduleHash] = encWasm
+	}
+	return res
+}

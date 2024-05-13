@@ -8,13 +8,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
-
-	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -27,6 +26,8 @@ import (
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/client/redis"
+	"github.com/spf13/pflag"
 )
 
 var (
@@ -74,6 +75,13 @@ type BlockValidator struct {
 	sendRecordChan          chan struct{}
 	progressValidationsChan chan struct{}
 
+	chosenValidator map[common.Hash]validator.ValidationSpawner
+
+	// wasmModuleRoot
+	moduleMutex           sync.Mutex
+	currentWasmModuleRoot common.Hash
+	pendingWasmModuleRoot common.Hash
+
 	// for testing only
 	testingProgressMadeChan chan struct{}
 
@@ -86,8 +94,9 @@ type BlockValidatorConfig struct {
 	Enable                      bool                          `koanf:"enable"`
 	Evil                        bool                          `koanf:"evil"`
 	EvilInterceptDepositGwei    uint64                        `koanf:"evil-intercept-deposit-gwei"`
+	RedisValidationClientConfig redis.ValidationClientConfig  `koanf:"redis-validation-client-config"`
 	ValidationServer            rpcclient.ClientConfig        `koanf:"validation-server" reload:"hot"`
-	ValidationServerConfigs     []rpcclient.ClientConfig      `koanf:"validation-server-configs" reload:"hot"`
+	ValidationServerConfigs     []rpcclient.ClientConfig      `koanf:"validation-server-configs"`
 	ValidationPoll              time.Duration                 `koanf:"validation-poll" reload:"hot"`
 	PrerecordedBlocks           uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
 	ForwardBlocks               uint64                        `koanf:"forward-blocks" reload:"hot"`
@@ -96,7 +105,7 @@ type BlockValidatorConfig struct {
 	FailureIsFatal              bool                          `koanf:"failure-is-fatal" reload:"hot"`
 	Dangerous                   BlockValidatorDangerousConfig `koanf:"dangerous"`
 	MemoryFreeLimit             string                        `koanf:"memory-free-limit" reload:"hot"`
-	ValidationServerConfigsList string                        `koanf:"validation-server-configs-list" reload:"hot"`
+	ValidationServerConfigsList string                        `koanf:"validation-server-configs-list"`
 
 	memoryFreeLimit int
 }
@@ -111,23 +120,20 @@ func (c *BlockValidatorConfig) Validate() error {
 		}
 		c.memoryFreeLimit = limit
 	}
-	if c.ValidationServerConfigs == nil {
-		if c.ValidationServerConfigsList == "default" {
-			c.ValidationServerConfigs = []rpcclient.ClientConfig{c.ValidationServer}
-		} else {
-			var validationServersConfigs []rpcclient.ClientConfig
-			if err := json.Unmarshal([]byte(c.ValidationServerConfigsList), &validationServersConfigs); err != nil {
+	streamsEnabled := c.RedisValidationClientConfig.Enabled()
+	if len(c.ValidationServerConfigs) == 0 {
+		c.ValidationServerConfigs = []rpcclient.ClientConfig{c.ValidationServer}
+		if c.ValidationServerConfigsList != "default" {
+			var executionServersConfigs []rpcclient.ClientConfig
+			if err := json.Unmarshal([]byte(c.ValidationServerConfigsList), &executionServersConfigs); err != nil && !streamsEnabled {
 				return fmt.Errorf("failed to parse block-validator validation-server-configs-list string: %w", err)
 			}
-			c.ValidationServerConfigs = validationServersConfigs
+			c.ValidationServerConfigs = executionServersConfigs
 		}
 	}
-	if len(c.ValidationServerConfigs) == 0 {
-		return fmt.Errorf("block-validator validation-server-configs is empty, need at least one validation server config")
-	}
-	for _, serverConfig := range c.ValidationServerConfigs {
-		if err := serverConfig.Validate(); err != nil {
-			return fmt.Errorf("failed to validate one of the block-validator validation-server-configs. url: %s, err: %w", serverConfig.URL, err)
+	for i := range c.ValidationServerConfigs {
+		if err := c.ValidationServerConfigs[i].Validate(); err != nil {
+			return fmt.Errorf("failed to validate one of the block-validator validation-server-configs. url: %s, err: %w", c.ValidationServerConfigs[i].URL, err)
 		}
 	}
 	return nil
@@ -139,12 +145,13 @@ type BlockValidatorDangerousConfig struct {
 
 type BlockValidatorConfigFetcher func() *BlockValidatorConfig
 
-func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
+func BlockValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block-by-block validation")
 	f.Bool(prefix+".evil", DefaultBlockValidatorConfig.Evil, "enable evil bold")
 	f.Uint64(prefix+".evil-intercept-deposit-gwei", DefaultBlockValidatorConfig.EvilInterceptDepositGwei, "bold evil intercept")
 	rpcclient.RPCClientAddOptions(prefix+".validation-server", f, &DefaultBlockValidatorConfig.ValidationServer)
-	f.String(prefix+".validation-server-configs-list", DefaultBlockValidatorConfig.ValidationServerConfigsList, "array of validation rpc configs given as a json string. time duration should be supplied in number indicating nanoseconds")
+	redis.ValidationClientConfigAddOptions(prefix+".redis-validation-client-config", f)
+	f.String(prefix+".validation-server-configs-list", DefaultBlockValidatorConfig.ValidationServerConfigsList, "array of execution rpc configs given as a json string. time duration should be supplied in number indicating nanoseconds")
 	f.Duration(prefix+".validation-poll", DefaultBlockValidatorConfig.ValidationPoll, "poll time to check validations")
 	f.Uint64(prefix+".forward-blocks", DefaultBlockValidatorConfig.ForwardBlocks, "prepare entries for up to that many blocks ahead of validation (small footprint)")
 	f.Uint64(prefix+".prerecorded-blocks", DefaultBlockValidatorConfig.PrerecordedBlocks, "record that many blocks ahead of validation (larger footprint)")
@@ -155,7 +162,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".memory-free-limit", DefaultBlockValidatorConfig.MemoryFreeLimit, "minimum free-memory limit after reaching which the blockvalidator pauses validation. Enabled by default as 1GB, to disable provide empty string")
 }
 
-func BlockValidatorDangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
+func BlockValidatorDangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".reset-block-validation", DefaultBlockValidatorDangerousConfig.ResetBlockValidation, "resets block-by-block validation, starting again at genesis")
 }
 
@@ -163,6 +170,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                      false,
 	ValidationServerConfigsList: "default",
 	ValidationServer:            rpcclient.DefaultClientConfig,
+	RedisValidationClientConfig: redis.DefaultValidationClientConfig,
 	ValidationPoll:              time.Second,
 	ForwardBlocks:               1024,
 	PrerecordedBlocks:           uint64(2 * runtime.NumCPU()),
@@ -175,18 +183,19 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 }
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
-	Enable:                   false,
-	ValidationServer:         rpcclient.TestClientConfig,
-	ValidationServerConfigs:  []rpcclient.ClientConfig{rpcclient.TestClientConfig},
-	ValidationPoll:           100 * time.Millisecond,
-	ForwardBlocks:            128,
-	PrerecordedBlocks:        uint64(2 * runtime.NumCPU()),
-	CurrentModuleRoot:        "latest",
-	PendingUpgradeModuleRoot: "latest",
-	FailureIsFatal:           true,
-	Dangerous:                DefaultBlockValidatorDangerousConfig,
-	EvilInterceptDepositGwei: 1_000_000, // 1M gwei or 0.001 ETH
-	MemoryFreeLimit:          "default",
+	Enable:                      false,
+	EvilInterceptDepositGwei:    1_000_000, // 1M gwei or 0.001 ETH
+	ValidationServer:            rpcclient.TestClientConfig,
+	ValidationServerConfigs:     []rpcclient.ClientConfig{rpcclient.TestClientConfig},
+	RedisValidationClientConfig: redis.TestValidationClientConfig,
+	ValidationPoll:              100 * time.Millisecond,
+	ForwardBlocks:               128,
+	PrerecordedBlocks:           uint64(2 * runtime.NumCPU()),
+	CurrentModuleRoot:           "latest",
+	PendingUpgradeModuleRoot:    "latest",
+	FailureIsFatal:              true,
+	Dangerous:                   DefaultBlockValidatorDangerousConfig,
+	MemoryFreeLimit:             "default",
 }
 
 var DefaultBlockValidatorDangerousConfig = BlockValidatorDangerousConfig{
@@ -327,6 +336,17 @@ func nonBlockingTrigger(channel chan struct{}) {
 	}
 }
 
+func (v *BlockValidator) GetModuleRootsToValidate() []common.Hash {
+	v.moduleMutex.Lock()
+	defer v.moduleMutex.Unlock()
+
+	validatingModuleRoots := []common.Hash{v.currentWasmModuleRoot}
+	if v.currentWasmModuleRoot != v.pendingWasmModuleRoot && v.pendingWasmModuleRoot != (common.Hash{}) {
+		validatingModuleRoots = append(validatingModuleRoots, v.pendingWasmModuleRoot)
+	}
+	return validatingModuleRoots
+}
+
 // called from NewBlockValidator, doesn't need to catch locks
 func ReadLastValidatedInfo(db ethdb.Database) (*GlobalStateValidatedInfo, error) {
 	exists, err := db.Has(lastGlobalStateValidatedInfoKey)
@@ -455,8 +475,13 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoo
 	if err != nil {
 		return err
 	}
-	_, err = v.execSpawner.WriteToFile(input, validationEntry.End, moduleRoot).Await(v.GetContext())
-	return err
+	for _, spawner := range v.execSpawners {
+		if validator.SpawnerSupportsModule(spawner, moduleRoot) {
+			_, err = spawner.WriteToFile(input, validationEntry.End, moduleRoot).Await(v.GetContext())
+			return err
+		}
+	}
+	return errors.New("did not find exec spawner for wasmModuleRoot")
 }
 
 func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
@@ -555,7 +580,10 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 	} else {
 		return false, fmt.Errorf("illegal batch msg count %d pos %d batch %d", v.nextCreateBatchMsgCount, pos, endGS.Batch)
 	}
-	entry, err := newValidationEntry(pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, v.nextCreateBatchBlockHash, v.nextCreatePrevDelayed)
+	chainConfig := v.streamer.ChainConfig()
+	entry, err := newValidationEntry(
+		pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, v.nextCreateBatchBlockHash, v.nextCreatePrevDelayed, chainConfig,
+	)
 	if err != nil {
 		return false, err
 	}
@@ -699,14 +727,6 @@ func (v *BlockValidator) advanceValidations(ctx context.Context) (*arbutil.Messa
 	defer v.reorgMutex.RUnlock()
 
 	wasmRoots := v.GetModuleRootsToValidate()
-	rooms := make([]int, len(v.validationSpawners))
-	currentSpawnerIndex := 0
-	for i, spawner := range v.validationSpawners {
-		here := spawner.Room() / len(wasmRoots)
-		if here > 0 {
-			rooms[i] = here
-		}
-	}
 	pos := v.validated() - 1 // to reverse the first +1 in the loop
 validationsLoop:
 	for {
@@ -775,15 +795,15 @@ validationsLoop:
 			log.Trace("result validated", "count", v.validated(), "blockHash", v.lastValidGS.BlockHash)
 			continue
 		}
-		for currentSpawnerIndex < len(rooms) {
-			if rooms[currentSpawnerIndex] > 0 {
-				break
+		for _, moduleRoot := range wasmRoots {
+			if v.chosenValidator[moduleRoot] == nil {
+				v.possiblyFatal(fmt.Errorf("did not find spawner for moduleRoot :%v", moduleRoot))
+				continue
 			}
-			currentSpawnerIndex++
-		}
-		if currentSpawnerIndex == len(rooms) {
-			log.Trace("advanceValidations: no more room", "pos", pos)
-			return nil, nil
+			if v.chosenValidator[moduleRoot].Room() == 0 {
+				log.Trace("advanceValidations: no more room", "moduleRoot", moduleRoot)
+				return nil, nil
+			}
 		}
 		if v.isMemoryLimitExceeded() {
 			log.Warn("advanceValidations: aborting due to running low on memory")
@@ -803,8 +823,8 @@ validationsLoop:
 			defer validatorPendingValidationsGauge.Dec(1)
 			var runs []validator.ValidationRun
 			for _, moduleRoot := range wasmRoots {
-				run := v.validationSpawners[currentSpawnerIndex].Launch(input, moduleRoot)
-				log.Trace("advanceValidations: launched", "pos", validationStatus.Entry.Pos, "moduleRoot", moduleRoot, "spawner", currentSpawnerIndex)
+				run := v.chosenValidator[moduleRoot].Launch(input, moduleRoot)
+				log.Trace("advanceValidations: launched", "pos", validationStatus.Entry.Pos, "moduleRoot", moduleRoot)
 				runs = append(runs, run)
 			}
 			validationCtx, cancel := context.WithCancel(ctx)
@@ -827,10 +847,6 @@ validationsLoop:
 				}
 				nonBlockingTrigger(v.progressValidationsChan)
 			})
-			rooms[currentSpawnerIndex]--
-			if rooms[currentSpawnerIndex] == 0 {
-				currentSpawnerIndex++
-			}
 		}
 	}
 }
@@ -1036,10 +1052,11 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 // Initialize must be called after SetCurrentWasmModuleRoot sets the current one
 func (v *BlockValidator) Initialize(ctx context.Context) error {
 	config := v.config()
+
 	currentModuleRoot := config.CurrentModuleRoot
 	switch currentModuleRoot {
 	case "latest":
-		latest, err := v.execSpawner.LatestWasmModuleRoot().Await(ctx)
+		latest, err := v.GetLatestWasmModuleRoot(ctx)
 		if err != nil {
 			return err
 		}
@@ -1054,7 +1071,47 @@ func (v *BlockValidator) Initialize(ctx context.Context) error {
 			return errors.New("current-module-root config value illegal")
 		}
 	}
+	pendingModuleRoot := config.PendingUpgradeModuleRoot
+	if pendingModuleRoot != "" {
+		if pendingModuleRoot == "latest" {
+			latest, err := v.GetLatestWasmModuleRoot(ctx)
+			if err != nil {
+				return err
+			}
+			v.pendingWasmModuleRoot = latest
+		} else {
+			valid, _ := regexp.MatchString("(0x)?[0-9a-fA-F]{64}", pendingModuleRoot)
+			v.pendingWasmModuleRoot = common.HexToHash(pendingModuleRoot)
+			if (!valid || v.pendingWasmModuleRoot == common.Hash{}) {
+				return errors.New("pending-upgrade-module-root config value illegal")
+			}
+		}
+	}
 	log.Info("BlockValidator initialized", "current", v.currentWasmModuleRoot, "pending", v.pendingWasmModuleRoot)
+	moduleRoots := []common.Hash{v.currentWasmModuleRoot}
+	if v.pendingWasmModuleRoot != v.currentWasmModuleRoot && v.pendingWasmModuleRoot != (common.Hash{}) {
+		moduleRoots = append(moduleRoots, v.pendingWasmModuleRoot)
+	}
+	// First spawner is always RedisValidationClient if RedisStreams are enabled.
+	if v.redisValidator != nil {
+		err := v.redisValidator.Initialize(moduleRoots)
+		if err != nil {
+			return err
+		}
+	}
+	v.chosenValidator = make(map[common.Hash]validator.ValidationSpawner)
+	for _, root := range moduleRoots {
+		if v.redisValidator != nil && validator.SpawnerSupportsModule(v.redisValidator, root) {
+			v.chosenValidator[root] = v.redisValidator
+		} else {
+			for _, spawner := range v.execSpawners {
+				if validator.SpawnerSupportsModule(spawner, root) {
+					v.chosenValidator[root] = spawner
+					break
+				}
+			}
+		}
+	}
 	return nil
 }
 

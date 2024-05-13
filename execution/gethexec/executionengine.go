@@ -1,5 +1,14 @@
+// Copyright 2022-2024, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+
 package gethexec
 
+/*
+#cgo CFLAGS: -g -Wall -I../../target/include/
+#cgo LDFLAGS: ${SRCDIR}/../../target/lib/libstylus.a -ldl -lm
+#include "arbitrator.h"
+*/
+import "C"
 import (
 	"context"
 	"encoding/binary"
@@ -28,10 +37,11 @@ import (
 )
 
 var (
-	baseFeeGauge          = metrics.NewRegisteredGauge("arb/block/basefee", nil)
-	blockGasUsedHistogram = metrics.NewRegisteredHistogram("arb/block/gasused", nil, metrics.NewBoundedHistogramSample())
-	txCountHistogram      = metrics.NewRegisteredHistogram("arb/block/transactions/count", nil, metrics.NewBoundedHistogramSample())
-	txGasUsedHistogram    = metrics.NewRegisteredHistogram("arb/block/transactions/gasused", nil, metrics.NewBoundedHistogramSample())
+	baseFeeGauge               = metrics.NewRegisteredGauge("arb/block/basefee", nil)
+	blockGasUsedHistogram      = metrics.NewRegisteredHistogram("arb/block/gasused", nil, metrics.NewBoundedHistogramSample())
+	txCountHistogram           = metrics.NewRegisteredHistogram("arb/block/transactions/count", nil, metrics.NewBoundedHistogramSample())
+	txGasUsedHistogram         = metrics.NewRegisteredHistogram("arb/block/transactions/gasused", nil, metrics.NewBoundedHistogramSample())
+	gasUsedSinceStartupCounter = metrics.NewRegisteredCounter("arb/gas_used", nil)
 )
 
 type ExecutionEngine struct {
@@ -128,9 +138,9 @@ func (s *ExecutionEngine) GetBatchFetcher() execution.BatchFetcher {
 	return s.consensus
 }
 
-func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) error {
+func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
 	if count == 0 {
-		return errors.New("cannot reorg out genesis")
+		return nil, errors.New("cannot reorg out genesis")
 	}
 	s.createBlocksMutex.Lock()
 	resequencing := false
@@ -146,22 +156,28 @@ func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbost
 	targetBlock := s.bc.GetBlockByNumber(uint64(blockNum))
 	if targetBlock == nil {
 		log.Warn("reorg target block not found", "block", blockNum)
-		return nil
+		return nil, nil
 	}
+
+	// reorg Rust-side VM state
+	C.stylus_reorg_vm(C.uint64_t(blockNum))
 
 	err := s.bc.ReorgToOldBlock(targetBlock)
 	if err != nil {
-		return err
+		return nil, err
 	}
+
+	newMessagesResults := make([]*execution.MessageResult, 0, len(oldMessages))
 	for i := range newMessages {
 		var msgForPrefetch *arbostypes.MessageWithMetadata
 		if i < len(newMessages)-1 {
 			msgForPrefetch = &newMessages[i]
 		}
-		err := s.digestMessageWithBlockMutex(count+arbutil.MessageIndex(i), &newMessages[i], msgForPrefetch)
+		msgResult, err := s.digestMessageWithBlockMutex(count+arbutil.MessageIndex(i), &newMessages[i], msgForPrefetch)
 		if err != nil {
-			return err
+			return nil, err
 		}
+		newMessagesResults = append(newMessagesResults, msgResult)
 	}
 	if s.recorder != nil {
 		s.recorder.ReorgTo(targetBlock.Header())
@@ -170,7 +186,7 @@ func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbost
 		s.resequenceChan <- oldMessages
 		resequencing = true
 	}
-	return nil
+	return newMessagesResults, nil
 }
 
 func (s *ExecutionEngine) getCurrentHeader() (*types.Header, error) {
@@ -349,6 +365,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		s.bc,
 		s.bc.Config(),
 		hooks,
+		false,
 	)
 	if err != nil {
 		return nil, err
@@ -378,17 +395,21 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, err
 	}
 
-	msgWithMeta := arbostypes.MessageWithMetadata{
-		Message:             msg,
-		DelayedMessagesRead: delayedMessagesRead,
-	}
-
 	pos, err := s.BlockNumberToMessageIndex(lastBlockHeader.Number.Uint64() + 1)
 	if err != nil {
 		return nil, err
 	}
 
-	err = s.consensus.WriteMessageFromSequencer(pos, msgWithMeta)
+	msgWithMeta := arbostypes.MessageWithMetadata{
+		Message:             msg,
+		DelayedMessagesRead: delayedMessagesRead,
+	}
+	msgResult, err := s.resultFromHeader(block.Header())
+	if err != nil {
+		return nil, err
+	}
+
+	err = s.consensus.WriteMessageFromSequencer(pos, msgWithMeta, *msgResult)
 	if err != nil {
 		return nil, err
 	}
@@ -434,18 +455,24 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		DelayedMessagesRead: delayedSeqNum + 1,
 	}
 
-	err = s.consensus.WriteMessageFromSequencer(lastMsg+1, messageWithMeta)
-	if err != nil {
-		return nil, err
-	}
-
 	startTime := time.Now()
-	block, statedb, receipts, err := s.createBlockFromNextMessage(&messageWithMeta)
+	block, statedb, receipts, err := s.createBlockFromNextMessage(&messageWithMeta, false)
+	if err != nil {
+		return nil, err
+	}
+	blockCalcTime := time.Since(startTime)
+
+	msgResult, err := s.resultFromHeader(block.Header())
 	if err != nil {
 		return nil, err
 	}
 
-	err = s.appendBlock(block, statedb, receipts, time.Since(startTime))
+	err = s.consensus.WriteMessageFromSequencer(lastMsg+1, messageWithMeta, *msgResult)
+	if err != nil {
+		return nil, err
+	}
+
+	err = s.appendBlock(block, statedb, receipts, blockCalcTime)
 	if err != nil {
 		return nil, err
 	}
@@ -472,7 +499,7 @@ func (s *ExecutionEngine) MessageIndexToBlockNumber(messageNum arbutil.MessageIn
 }
 
 // must hold createBlockMutex
-func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWithMetadata) (*types.Block, *state.StateDB, types.Receipts, error) {
+func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWithMetadata, isMsgForPrefetch bool) (*types.Block, *state.StateDB, types.Receipts, error) {
 	currentHeader := s.bc.CurrentBlock()
 	if currentHeader == nil {
 		return nil, nil, nil, errors.New("failed to get current block header")
@@ -513,6 +540,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		s.bc,
 		s.bc.Config(),
 		batchFetcher,
+		isMsgForPrefetch,
 		opts...,
 	)
 
@@ -541,6 +569,7 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 		blockGasused += val
 	}
 	blockGasUsedHistogram.Update(int64(blockGasused))
+	gasUsedSinceStartupCounter.Inc(int64(blockGasused))
 	return nil
 }
 
@@ -613,59 +642,56 @@ func (s *ExecutionEngine) cacheL1PriceDataOfMsg(num arbutil.MessageIndex, receip
 // in parallel, creates a block by executing msgForPrefetch (msg+1) against the latest state
 // but does not store the block.
 // This helps in filling the cache, so that the next block creation is faster.
-func (s *ExecutionEngine) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) error {
+func (s *ExecutionEngine) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*execution.MessageResult, error) {
 	if !s.createBlocksMutex.TryLock() {
-		return errors.New("createBlock mutex held")
+		return nil, errors.New("createBlock mutex held")
 	}
 	defer s.createBlocksMutex.Unlock()
 	return s.digestMessageWithBlockMutex(num, msg, msgForPrefetch)
 }
 
-func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) error {
+func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*execution.MessageResult, error) {
 	currentHeader, err := s.getCurrentHeader()
 	if err != nil {
-		return err
+		return nil, err
 	}
 	curMsg, err := s.BlockNumberToMessageIndex(currentHeader.Number.Uint64())
 	if err != nil {
-		return err
+		return nil, err
 	}
 	if curMsg+1 != num {
-		return fmt.Errorf("wrong message number in digest got %d expected %d", num, curMsg+1)
+		return nil, fmt.Errorf("wrong message number in digest got %d expected %d", num, curMsg+1)
 	}
 
 	startTime := time.Now()
-	var wg sync.WaitGroup
 	if s.prefetchBlock && msgForPrefetch != nil {
-		wg.Add(1)
 		go func() {
-			defer wg.Done()
-			_, _, _, err := s.createBlockFromNextMessage(msgForPrefetch)
+			_, _, _, err := s.createBlockFromNextMessage(msgForPrefetch, true)
 			if err != nil {
 				return
 			}
 		}()
 	}
 
-	block, statedb, receipts, err := s.createBlockFromNextMessage(msg)
+	block, statedb, receipts, err := s.createBlockFromNextMessage(msg, false)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	wg.Wait()
+
 	err = s.appendBlock(block, statedb, receipts, time.Since(startTime))
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if time.Now().After(s.nextScheduledVersionCheck) {
 		s.nextScheduledVersionCheck = time.Now().Add(time.Minute)
 		arbState, err := arbosState.OpenSystemArbosState(statedb, nil, true)
 		if err != nil {
-			return err
+			return nil, err
 		}
 		version, timestampInt, err := arbState.GetScheduledUpgrade()
 		if err != nil {
-			return err
+			return nil, err
 		}
 		var timeUntilUpgrade time.Duration
 		var timestamp time.Time
@@ -701,7 +727,12 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 	case s.newBlockNotifier <- struct{}{}:
 	default:
 	}
-	return nil
+
+	msgResult, err := s.resultFromHeader(block.Header())
+	if err != nil {
+		return nil, err
+	}
+	return msgResult, nil
 }
 
 func (s *ExecutionEngine) ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error) {

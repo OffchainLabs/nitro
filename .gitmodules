@@ -17,9 +17,21 @@
 [submodule "arbitrator/wasm-testsuite/testsuite"]
 	path = arbitrator/wasm-testsuite/testsuite
 	url = https://github.com/WebAssembly/testsuite.git
+[submodule "arbitrator/tools/wasmer"]
+	path = arbitrator/tools/wasmer
+	url = https://github.com/OffchainLabs/wasmer.git
 [submodule "nitro-testnode"]
 	path = nitro-testnode
 	url = https://github.com/OffchainLabs/nitro-testnode.git
 [submodule "bold"]
 	path = bold
 	url = https://github.com/OffchainLabs/bold.git
+[submodule "arbitrator/langs/rust"]
+	path = arbitrator/langs/rust
+	url = https://github.com/OffchainLabs/stylus-sdk-rs.git
+[submodule "arbitrator/langs/c"]
+	path = arbitrator/langs/c
+	url = https://github.com/OffchainLabs/stylus-sdk-c.git
+[submodule "arbitrator/langs/bf"]
+	path = arbitrator/langs/bf
+	url = https://github.com/OffchainLabs/stylus-sdk-bf.git
