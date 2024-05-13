@@ -4,8 +4,12 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+alloy-primitives = "0.3.1"
+alloy-sol-types = "0.3.1"
+mini-alloc = "0.4.2"
 stylus-sdk = { path = "../../../langs/rust/stylus-sdk", features = ["reentrant"] }
 hex = "0.4.3"
+wee_alloc = "0.4.5"
 
 [profile.release]
 codegen-units = 1
