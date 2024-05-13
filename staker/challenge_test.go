@@ -250,7 +250,7 @@ func createBaseMachine(t *testing.T, wasmname string, wasmModules []string) *ser
 		modulePaths = append(modulePaths, path.Join(wasmDir, moduleName))
 	}
 
-	machine, err := server_arb.LoadSimpleMachine(wasmPath, modulePaths)
+	machine, err := server_arb.LoadSimpleMachine(wasmPath, modulePaths, true)
 	Require(t, err)
 
 	return machine

@@ -1,3 +1,6 @@
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+
 package client
 
 import (
@@ -241,10 +244,19 @@ func ValidationInputToJson(entry *validator.ValidationInput) *server_api.InputJS
 		DelayedMsgB64: base64.StdEncoding.EncodeToString(entry.DelayedMsg),
 		StartState:    entry.StartState,
 		PreimagesB64:  jsonPreimagesMap,
+		UserWasms:     make(map[common.Hash]server_api.UserWasmJson),
+		DebugChain:    entry.DebugChain,
 	}
 	for _, binfo := range entry.BatchInfo {
 		encData := base64.StdEncoding.EncodeToString(binfo.Data)
 		res.BatchInfo = append(res.BatchInfo, server_api.BatchInfoJson{Number: binfo.Number, DataB64: encData})
+	}
+	for moduleHash, info := range entry.UserWasms {
+		encWasm := server_api.UserWasmJson{
+			Asm:    base64.StdEncoding.EncodeToString(info.Asm),
+			Module: base64.StdEncoding.EncodeToString(info.Module),
+		}
+		res.UserWasms[moduleHash] = encWasm
 	}
 	return res
 }

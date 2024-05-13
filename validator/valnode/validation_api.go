@@ -1,3 +1,6 @@
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+
 package valnode
 
 import (
@@ -9,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -198,6 +202,8 @@ func ValidationInputFromJson(entry *server_api.InputJSON) (*validator.Validation
 		DelayedMsgNr:  entry.DelayedMsgNr,
 		StartState:    entry.StartState,
 		Preimages:     preimages,
+		UserWasms:     make(state.UserWasms),
+		DebugChain:    entry.DebugChain,
 	}
 	delayed, err := base64.StdEncoding.DecodeString(entry.DelayedMsgB64)
 	if err != nil {
@@ -214,6 +220,21 @@ func ValidationInputFromJson(entry *server_api.InputJSON) (*validator.Validation
 			Data:   data,
 		}
 		valInput.BatchInfo = append(valInput.BatchInfo, decInfo)
+	}
+	for moduleHash, info := range entry.UserWasms {
+		asm, err := base64.StdEncoding.DecodeString(info.Asm)
+		if err != nil {
+			return nil, err
+		}
+		module, err := base64.StdEncoding.DecodeString(info.Module)
+		if err != nil {
+			return nil, err
+		}
+		decInfo := state.ActivatedWasm{
+			Asm:    asm,
+			Module: module,
+		}
+		valInput.UserWasms[moduleHash] = decInfo
 	}
 	return valInput, nil
 }

@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbutil
@@ -41,7 +41,6 @@ func SendTxAsCall(ctx context.Context, client L1Interface, tx *types.Transaction
 		From:       from,
 		To:         tx.To(),
 		Gas:        gas,
-		GasPrice:   tx.GasPrice(),
 		GasFeeCap:  tx.GasFeeCap(),
 		GasTipCap:  tx.GasTipCap(),
 		Value:      tx.Value(),

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/validator"
@@ -21,6 +22,7 @@ type RecordResult struct {
 	BlockHash common.Hash
 	Preimages map[common.Hash][]byte
 	BatchInfo []validator.BatchInfo
+	UserWasms state.UserWasms
 }
 
 var ErrRetrySequencer = errors.New("please retry transaction")
@@ -28,8 +30,8 @@ var ErrSequencerInsertLockTaken = errors.New("insert lock taken")
 
 // always needed
 type ExecutionClient interface {
-	DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) error
-	Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) error
+	DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*MessageResult, error)
+	Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) ([]*MessageResult, error)
 	HeadMessageNumber() (arbutil.MessageIndex, error)
 	HeadMessageNumberSync(t *testing.T) (arbutil.MessageIndex, error)
 	ResultAtPos(pos arbutil.MessageIndex) (*MessageResult, error)
@@ -90,7 +92,7 @@ type ConsensusInfo interface {
 }
 
 type ConsensusSequencer interface {
-	WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) error
+	WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult MessageResult) error
 	ExpectChosenSequencer() error
 	CacheL1PriceDataOfMsg(pos arbutil.MessageIndex, callDataUnits uint64, l1GasCharged uint64)
 	BacklogL1GasCharged() uint64

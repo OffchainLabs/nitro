@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
+
 	"reflect"
 	"time"
 
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/nat"
@@ -20,7 +20,7 @@ import (
 type ValidationNodeConfig struct {
 	Conf          genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
 	Validation    valnode.Config                  `koanf:"validation" reload:"hot"`
-	LogLevel      int                             `koanf:"log-level" reload:"hot"`
+	LogLevel      string                          `koanf:"log-level" reload:"hot"`
 	LogType       string                          `koanf:"log-type" reload:"hot"`
 	FileLogging   genericconf.FileLoggingConfig   `koanf:"file-logging" reload:"hot"`
 	Persistent    conf.PersistentConfig           `koanf:"persistent"`
@@ -61,7 +61,7 @@ var IPCConfigDefault = genericconf.IPCConfig{
 
 var ValidationNodeConfigDefault = ValidationNodeConfig{
 	Conf:          genericconf.ConfConfigDefault,
-	LogLevel:      int(log.LvlInfo),
+	LogLevel:      "INFO",
 	LogType:       "plaintext",
 	Persistent:    conf.PersistentConfigDefault,
 	HTTP:          HTTPConfigDefault,
@@ -79,7 +79,7 @@ var ValidationNodeConfigDefault = ValidationNodeConfig{
 func ValidationNodeConfigAddOptions(f *flag.FlagSet) {
 	genericconf.ConfConfigAddOptions("conf", f)
 	valnode.ValidationConfigAddOptions("validation", f)
-	f.Int("log-level", ValidationNodeConfigDefault.LogLevel, "log level")
+	f.String("log-level", ValidationNodeConfigDefault.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
 	f.String("log-type", ValidationNodeConfigDefault.LogType, "log type (plaintext or json)")
 	genericconf.FileLoggingConfigAddOptions("file-logging", f)
 	conf.PersistentConfigAddOptions("persistent", f)

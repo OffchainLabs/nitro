@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -409,6 +410,7 @@ func (m *mockBlockRecorder) RecordBlockCreation(
 		Pos:       pos,
 		BlockHash: res.BlockHash,
 		Preimages: globalstateToTestPreimages(globalState),
+		UserWasms: make(state.UserWasms),
 	}, nil
 }
 
