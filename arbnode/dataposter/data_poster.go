@@ -667,10 +667,10 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 
 	// Ensure we bid at least 1 wei to prevent division by zero
 	if newBaseFeeCap.Sign() == 0 {
-		newBaseFeeCap.SetInt64(1)
+		newBaseFeeCap = big.NewInt(1)
 	}
 	if newBlobFeeCap.Sign() == 0 {
-		newBlobFeeCap.SetInt64(1)
+		newBlobFeeCap = big.NewInt(1)
 	}
 
 	return newBaseFeeCap, newTipCap, newBlobFeeCap, nil
