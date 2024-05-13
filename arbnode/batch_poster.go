@@ -41,6 +41,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/das/avail"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util"
@@ -88,6 +89,7 @@ type BatchPoster struct {
 	gasRefunderAddr    common.Address
 	building           *buildingBatch
 	daWriter           das.DataAvailabilityServiceWriter
+	availDAWriter      avail.DataAvailabilityWriter
 	dataPoster         *dataposter.DataPoster
 	redisLock          *redislock.Simple
 	messagesPerBatch   *arbmath.MovingAverage[uint64]
@@ -264,6 +266,7 @@ type BatchPosterOpts struct {
 	DeployInfo    *chaininfo.RollupAddresses
 	TransactOpts  *bind.TransactOpts
 	DAWriter      das.DataAvailabilityServiceWriter
+	AvailDAWriter avail.DataAvailabilityWriter
 	ParentChainID *big.Int
 }
 
@@ -310,6 +313,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		gasRefunderAddr:    opts.Config().gasRefunder,
 		bridgeAddr:         opts.DeployInfo.Bridge,
 		daWriter:           opts.DAWriter,
+		availDAWriter:      opts.AvailDAWriter,
 		redisLock:          redisLock,
 	}
 	b.messagesPerBatch, err = arbmath.NewMovingAverage[uint64](20)
@@ -1165,6 +1169,16 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			return false, err
 		} else {
 			sequencerMsg = das.Serialize(cert)
+		}
+	}
+
+	// ideally we make this part of the above statment by having everything under a single unified interface (soon TM)
+	if b.daWriter == nil && b.availDAWriter != nil {
+		// Store the data on Avail and return a marhsalled BlobPointer, which gets used as the sequencerMsg
+		// which is later used to retrieve the data from Avail
+		sequencerMsg, err = b.availDAWriter.Store(ctx, sequencerMsg)
+		if err != nil {
+			return false, err
 		}
 	}
 

@@ -33,6 +33,7 @@ import (
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/das/avail"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -87,6 +88,7 @@ type Config struct {
 	Staker              staker.L1ValidatorConfig    `koanf:"staker" reload:"hot"`
 	SeqCoordinator      SeqCoordinatorConfig        `koanf:"seq-coordinator"`
 	DataAvailability    das.DataAvailabilityConfig  `koanf:"data-availability"`
+	Avail               avail.DAConfig              `koanf:"avail"`
 	SyncMonitor         SyncMonitorConfig           `koanf:"sync-monitor"`
 	Dangerous           DangerousConfig             `koanf:"dangerous"`
 	TransactionStreamer TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
@@ -510,6 +512,8 @@ func createNodeImpl(
 	var daWriter das.DataAvailabilityServiceWriter
 	var daReader das.DataAvailabilityServiceReader
 	var dasLifecycleManager *das.LifecycleManager
+	var availDAWriter avail.DataAvailabilityWriter
+	var availDAReader avail.DataAvailabilityReader
 	if config.DataAvailability.Enable {
 		if config.BatchPoster.Enable {
 			daWriter, daReader, dasLifecycleManager, err = das.CreateBatchPosterDAS(ctx, &config.DataAvailability, dataSigner, l1client, deployInfo.SequencerInbox)
@@ -533,9 +537,16 @@ func createNodeImpl(
 		}
 	} else if l2Config.ArbitrumChainParams.DataAvailabilityCommittee {
 		return nil, errors.New("a data availability service is required for this chain, but it was not configured")
+	} else if config.Avail.Enable {
+		availService, err := avail.NewAvailDA(config.Avail, l1client)
+		if err != nil {
+			return nil, err
+		}
+		availDAWriter = availService
+		availDAReader = availService
 	}
 
-	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, daReader, blobReader)
+	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, daReader, availDAReader, blobReader)
 	if err != nil {
 		return nil, err
 	}
@@ -554,6 +565,7 @@ func createNodeImpl(
 			exec,
 			rawdb.NewTable(arbDb, storage.BlockValidatorPrefix),
 			daReader,
+			availDAReader,
 			blobReader,
 			func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
 			stack,
@@ -672,6 +684,7 @@ func createNodeImpl(
 			DeployInfo:    deployInfo,
 			TransactOpts:  txOptsBatchPoster,
 			DAWriter:      daWriter,
+			AvailDAWriter: availDAWriter,
 			ParentChainID: parentChainID,
 		})
 		if err != nil {

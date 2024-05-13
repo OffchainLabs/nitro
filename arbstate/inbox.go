@@ -23,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/das/avail"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/blobs"
 	"github.com/offchainlabs/nitro/zeroheavy"
@@ -165,6 +166,55 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 	return parsedMsg, nil
 }
 
+func RecoverPayloadFromAvailBatch(ctx context.Context, batchNum uint64, sequencerMsg []byte, availDAReader avail.DataAvailabilityReader, preimages map[arbutil.PreimageType]map[common.Hash][]byte) ([]byte, error) {
+	var keccakPreimages map[common.Hash][]byte
+	if preimages != nil {
+		if preimages[arbutil.Keccak256PreimageType] == nil {
+			preimages[arbutil.Keccak256PreimageType] = make(map[common.Hash][]byte)
+		}
+		keccakPreimages = preimages[arbutil.Keccak256PreimageType]
+	}
+
+	buf := bytes.NewBuffer(sequencerMsg[40:])
+
+	header, err := buf.ReadByte()
+	if err != nil {
+		log.Error("Couldn't deserialize Avail header byte", "err", err)
+		return nil, err
+	}
+	if !avail.IsAvailMessageHeaderByte(header) {
+		return nil, errors.New("tried to deserialize a message that doesn't have the Avail header")
+	}
+
+	recordPreimage := func(key common.Hash, value []byte) {
+		keccakPreimages[key] = value
+	}
+
+	blobPointer := avail.BlobPointer{}
+	err = blobPointer.UnmarshalFromBinary(buf.Bytes())
+	if err != nil {
+		log.Error("Couldn't unmarshal Avail blob pointer", "err", err)
+		return nil, err
+	}
+
+	log.Info("Attempting to fetch data for", "batchNum", batchNum, "availBlockHash", blobPointer.BlockHash)
+	payload, err := availDAReader.Read(ctx, blobPointer)
+	if err != nil {
+		log.Error("Failed to resolve blob pointer from avail", "err", err)
+		return nil, err
+	}
+
+	log.Info("Succesfully fetched payload from Avail", "batchNum", batchNum, "availBlockHash", blobPointer.BlockHash)
+
+	log.Info("Recording Sha256 preimage for Avail data")
+
+	if keccakPreimages != nil {
+		log.Info("Data is being recorded into the orcale", "length", len(payload))
+		dastree.RecordHash(recordPreimage, payload)
+	}
+	return payload, nil
+}
+
 func RecoverPayloadFromDasBatch(
 	ctx context.Context,
 	batchNum uint64,
@@ -286,6 +336,31 @@ type DataAvailabilityProvider interface {
 		preimages map[arbutil.PreimageType]map[common.Hash][]byte,
 		keysetValidationMode KeysetValidationMode,
 	) ([]byte, error)
+}
+
+func NewDAProviderAvail(availDA AvailDataAvailibilityReader) *dAProviderForAvail {
+	return &dAProviderForAvail{
+		availDA: availDA,
+	}
+}
+
+type dAProviderForAvail struct {
+	availDA AvailDataAvailibilityReader
+}
+
+func (a *dAProviderForAvail) IsValidHeaderByte(headerByte byte) bool {
+	return avail.IsAvailMessageHeaderByte(headerByte)
+}
+
+func (a *dAProviderForAvail) RecoverPayloadFromBatch(
+	ctx context.Context,
+	batchNum uint64,
+	batchBlockHash common.Hash,
+	sequencerMsg []byte,
+	preimages map[arbutil.PreimageType]map[common.Hash][]byte,
+	keysetValidationMode KeysetValidationMode,
+) ([]byte, error) {
+	return RecoverPayloadFromAvailBatch(ctx, batchNum, sequencerMsg, a.availDA, preimages)
 }
 
 // NewDAProviderDAS is generally meant to be only used by nitro.

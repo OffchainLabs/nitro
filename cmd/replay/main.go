@@ -29,6 +29,7 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/das/avail"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/wavmio"
@@ -119,6 +120,17 @@ func (dasReader *PreimageDASReader) ExpirationPolicy(ctx context.Context) (arbst
 	return arbstate.DiscardImmediately, nil
 }
 
+type PreimageAvailDAReader struct{}
+
+func (availDAReader *PreimageAvailDAReader) Read(ctx context.Context, blobPointer avail.BlobPointer) ([]byte, error) {
+	oracle := func(hash common.Hash) ([]byte, error) {
+		return wavmio.ResolveTypedPreimage(arbutil.Keccak256PreimageType, hash)
+	}
+	data, err := dastree.Content(blobPointer.DasTreeRootHash, oracle)
+	log.Info("Data is being retrieved from oracle", len(data))
+	return data, err
+}
+
 type BlobPreimageReader struct {
 }
 
@@ -196,7 +208,7 @@ func main() {
 		panic(fmt.Sprintf("Error opening state db: %v", err.Error()))
 	}
 
-	readMessage := func(dasEnabled bool) *arbostypes.MessageWithMetadata {
+	readMessage := func(dasEnabled bool, availDAEnabled bool) *arbostypes.MessageWithMetadata {
 		var delayedMessagesRead uint64
 		if lastBlockHeader != nil {
 			delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
@@ -204,6 +216,10 @@ func main() {
 		var dasReader arbstate.DataAvailabilityReader
 		if dasEnabled {
 			dasReader = &PreimageDASReader{}
+		}
+		var availDAReader arbstate.AvailDataAvailibilityReader
+		if availDAEnabled {
+			availDAReader = &PreimageAvailDAReader{}
 		}
 		backend := WavmInbox{}
 		var keysetValidationMode = arbstate.KeysetPanicIfInvalid
@@ -213,6 +229,9 @@ func main() {
 		var daProviders []arbstate.DataAvailabilityProvider
 		if dasReader != nil {
 			daProviders = append(daProviders, arbstate.NewDAProviderDAS(dasReader))
+		}
+		if availDAReader != nil {
+			daProviders = append(daProviders, arbstate.NewDAProviderAvail(availDAReader))
 		}
 		daProviders = append(daProviders, arbstate.NewDAProviderBlobReader(&BlobPreimageReader{}))
 		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, daProviders, keysetValidationMode)
@@ -227,6 +246,8 @@ func main() {
 
 	var newBlock *types.Block
 	if lastBlockStateRoot != (common.Hash{}) {
+		log.Info("Running main func of replay binary", "lastBlockStateRoot", lastBlockStateRoot)
+
 		// ArbOS has already been initialized.
 		// Load the chain config and then produce a block normally.
 
@@ -267,7 +288,7 @@ func main() {
 			}
 		}
 
-		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee)
+		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee, true)
 
 		chainContext := WavmChainContext{}
 		batchFetcher := func(batchNum uint64) ([]byte, error) {
@@ -281,7 +302,7 @@ func main() {
 	} else {
 		// Initialize ArbOS with this init message and create the genesis block.
 
-		message := readMessage(false)
+		message := readMessage(false, false)
 
 		initMessage, err := message.Message.ParseInitMessage()
 		if err != nil {
