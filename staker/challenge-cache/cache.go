@@ -94,10 +94,10 @@ func (c *Cache) Get(
 		return nil, err
 	}
 	if _, err := os.Stat(fName); err != nil {
-		srvlog.Warn("Cache miss", log.Ctx{"fileName": fName})
+		srvlog.Warn("Cache miss", "fileName", fName)
 		return nil, ErrNotFoundInCache
 	}
-	srvlog.Debug("Cache hit", log.Ctx{"fileName": fName})
+	srvlog.Debug("Cache hit", "fileName", fName)
 	f, err := os.Open(fName)
 	if err != nil {
 		return nil, err

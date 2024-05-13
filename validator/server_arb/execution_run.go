@@ -82,9 +82,7 @@ func (e *executionRun) GetLeavesWithStepSize(fromBatch, machineStartIndex, stepS
 
 		if machineStartIndex == 0 {
 			gs := machine.GetGlobalState()
-			log.Debug(fmt.Sprintf("Start global state for machine index 0: %+v", gs), log.Ctx{
-				"fromBatch": fromBatch,
-			})
+			log.Debug(fmt.Sprintf("Start global state for machine index 0: %+v", gs), "fromBatch", fromBatch)
 			hash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
 			stateRoots = append(stateRoots, hash)
 		} else {
@@ -121,15 +119,13 @@ func (e *executionRun) GetLeavesWithStepSize(fromBatch, machineStartIndex, stepS
 						numIterations+1,
 						numDesiredLeaves,
 					),
-					log.Ctx{
-						"fromBatch":         fromBatch,
-						"machinePosition":   numIterations*stepSize + machineStartIndex,
-						"timeSinceStart":    time.Since(start),
-						"stepSize":          stepSize,
-						"startHash":         startHash,
-						"machineStartIndex": machineStartIndex,
-						"numDesiredLeaves":  numDesiredLeaves,
-					},
+					"fromBatch", fromBatch,
+					"machinePosition", numIterations*stepSize+machineStartIndex,
+					"timeSinceStart", time.Since(start),
+					"stepSize", stepSize,
+					"startHash", startHash,
+					"machineStartIndex", machineStartIndex,
+					"numDesiredLeaves", numDesiredLeaves,
 				)
 			}
 
@@ -154,15 +150,13 @@ func (e *executionRun) GetLeavesWithStepSize(fromBatch, machineStartIndex, stepS
 		}
 		log.Info(
 			"Successfully finished computing the data needed for opening a subchallenge",
-			log.Ctx{
-				"fromBatch":           fromBatch,
-				"stepSize":            stepSize,
-				"startHash":           startHash,
-				"machineStartIndex":   machineStartIndex,
-				"numDesiredLeaves":    numDesiredLeaves,
-				"finishedHash":        stateRoots[len(stateRoots)-1],
-				"finishedGlobalState": fmt.Sprintf("%+v", machine.GetGlobalState()),
-			},
+			"fromBatch", fromBatch,
+			"stepSize", stepSize,
+			"startHash", startHash,
+			"machineStartIndex", machineStartIndex,
+			"numDesiredLeaves", numDesiredLeaves,
+			"finishedHash", stateRoots[len(stateRoots)-1],
+			"finishedGlobalState", fmt.Sprintf("%+v", machine.GetGlobalState()),
 		)
 
 		// If the machine finished in less than the number of hashes we anticipate, we pad
