@@ -12,7 +12,7 @@ import (
 	badger "github.com/dgraph-io/badger/v4"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -173,11 +173,11 @@ func (dbs *DBStorageService) Close(ctx context.Context) error {
 	return dbs.stopWaiter.StopAndWait()
 }
 
-func (dbs *DBStorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+func (dbs *DBStorageService) ExpirationPolicy(ctx context.Context) (daprovider.ExpirationPolicy, error) {
 	if dbs.discardAfterTimeout {
-		return arbstate.DiscardAfterDataTimeout, nil
+		return daprovider.DiscardAfterDataTimeout, nil
 	}
-	return arbstate.KeepForever, nil
+	return daprovider.KeepForever, nil
 }
 
 func (dbs *DBStorageService) String() string {

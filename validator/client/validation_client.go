@@ -1,15 +1,21 @@
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+
 package client
 
 import (
 	"context"
 	"encoding/base64"
 	"errors"
+	"fmt"
 	"sync/atomic"
 	"time"
 
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/validator"
 
 	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/jsonapi"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 
@@ -23,9 +29,10 @@ import (
 
 type ValidationClient struct {
 	stopwaiter.StopWaiter
-	client *rpcclient.RpcClient
-	name   string
-	room   int32
+	client          *rpcclient.RpcClient
+	name            string
+	room            int32
+	wasmModuleRoots []common.Hash
 }
 
 func NewValidationClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *ValidationClient {
@@ -59,6 +66,13 @@ func (c *ValidationClient) Start(ctx_in context.Context) error {
 	if len(name) == 0 {
 		return errors.New("couldn't read name from server")
 	}
+	var moduleRoots []common.Hash
+	if err := c.client.CallContext(c.GetContext(), &moduleRoots, server_api.Namespace+"_wasmModuleRoots"); err != nil {
+		return err
+	}
+	if len(moduleRoots) == 0 {
+		return fmt.Errorf("server reported no wasmModuleRoots")
+	}
 	var room int
 	if err := c.client.CallContext(c.GetContext(), &room, server_api.Namespace+"_room"); err != nil {
 		return err
@@ -70,8 +84,16 @@ func (c *ValidationClient) Start(ctx_in context.Context) error {
 		log.Info("connected to validation server", "name", name, "room", room)
 	}
 	atomic.StoreInt32(&c.room, int32(room))
+	c.wasmModuleRoots = moduleRoots
 	c.name = name
 	return nil
+}
+
+func (c *ValidationClient) WasmModuleRoots() ([]common.Hash, error) {
+	if c.Started() {
+		return c.wasmModuleRoots, nil
+	}
+	return nil, errors.New("not started")
 }
 
 func (c *ValidationClient) Stop() {
@@ -205,4 +227,33 @@ func (r *ExecutionClientRun) Close() {
 			log.Warn("closing execution client run got error", "err", err, "client", r.client.Name(), "id", r.id)
 		}
 	})
+}
+
+func ValidationInputToJson(entry *validator.ValidationInput) *server_api.InputJSON {
+	jsonPreimagesMap := make(map[arbutil.PreimageType]*jsonapi.PreimagesMapJson)
+	for ty, preimages := range entry.Preimages {
+		jsonPreimagesMap[ty] = jsonapi.NewPreimagesMapJson(preimages)
+	}
+	res := &server_api.InputJSON{
+		Id:            entry.Id,
+		HasDelayedMsg: entry.HasDelayedMsg,
+		DelayedMsgNr:  entry.DelayedMsgNr,
+		DelayedMsgB64: base64.StdEncoding.EncodeToString(entry.DelayedMsg),
+		StartState:    entry.StartState,
+		PreimagesB64:  jsonPreimagesMap,
+		UserWasms:     make(map[common.Hash]server_api.UserWasmJson),
+		DebugChain:    entry.DebugChain,
+	}
+	for _, binfo := range entry.BatchInfo {
+		encData := base64.StdEncoding.EncodeToString(binfo.Data)
+		res.BatchInfo = append(res.BatchInfo, server_api.BatchInfoJson{Number: binfo.Number, DataB64: encData})
+	}
+	for moduleHash, info := range entry.UserWasms {
+		encWasm := server_api.UserWasmJson{
+			Asm:    base64.StdEncoding.EncodeToString(info.Asm),
+			Module: base64.StdEncoding.EncodeToString(info.Module),
+		}
+		res.UserWasms[moduleHash] = encWasm
+	}
+	return res
 }

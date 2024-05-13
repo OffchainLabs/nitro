@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package main
@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"os"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -48,7 +49,7 @@ func MerkleSample(data [][]byte, toproove int) (bool, error) {
 	// Verify the proof for 'Baz'
 }
 
-func testCompression(data []byte) {
+func testCompression(data []byte, doneChan chan struct{}) {
 	compressed, err := arbcompress.CompressLevel(data, 0)
 	if err != nil {
 		panic(err)
@@ -60,6 +61,7 @@ func testCompression(data []byte) {
 	if !bytes.Equal(decompressed, data) {
 		panic("data differs after compression / decompression")
 	}
+	doneChan <- struct{}{}
 }
 
 const FIELD_ELEMENTS_PER_BLOB = 4096
@@ -79,34 +81,59 @@ func main() {
 		[]byte("Baz"),
 	}
 
-	verified, err := MerkleSample(data, 0)
-	if err != nil {
-		panic(err)
-	}
-	if !verified {
-		panic("failed to verify proof for Baz")
-	}
-	verified, err = MerkleSample(data, 1)
-	if err != nil {
-		panic(err)
-	}
-	if !verified {
-		panic("failed to verify proof for Baz")
-	}
+	var wg sync.WaitGroup
 
-	verified, err = MerkleSample(data, -1)
-	if err != nil {
-		if verified {
-			panic("succeeded to verify proof invalid")
+	wg.Add(1)
+	go func() {
+		verified, err := MerkleSample(data, 0)
+		if err != nil {
+			panic(err)
 		}
+		if !verified {
+			panic("failed to verify proof for Baz")
+		}
+		wg.Done()
+	}()
+	wg.Add(1)
+	go func() {
+		verified, err := MerkleSample(data, 1)
+		if err != nil {
+			panic(err)
+		}
+		if !verified {
+			panic("failed to verify proof for Baz")
+		}
+		wg.Done()
+	}()
+	wg.Add(1)
+	go func() {
+		verified, err := MerkleSample(data, -1)
+		if err != nil {
+			if verified {
+				panic("succeeded to verify proof invalid")
+			}
+		}
+		wg.Done()
+	}()
+	wg.Wait()
+	println("verified proofs with waitgroup!\n")
+
+	doneChan1 := make(chan struct{})
+	doneChan2 := make(chan struct{})
+	go testCompression([]byte{}, doneChan1)
+	go testCompression([]byte("This is a test string la la la la la la la la la la"), doneChan2)
+	<-doneChan2
+	<-doneChan1
+
+	println("compression + chan test passed!\n")
+
+	if wavmio.GetInboxPosition() != 0 {
+		panic("unexpected inbox pos")
 	}
-
-	println("verified both proofs!\n")
-
-	testCompression([]byte{})
-	testCompression([]byte("This is a test string la la la la la la la la la la"))
-
-	println("test compression passed!\n")
+	if wavmio.GetLastBlockHash() != (common.Hash{}) {
+		panic("unexpected lastblock hash")
+	}
+	println("wavmio test passed!\n")
 
 	checkPreimage := func(ty arbutil.PreimageType, hash common.Hash) {
 		preimage, err := wavmio.ResolveTypedPreimage(ty, hash)

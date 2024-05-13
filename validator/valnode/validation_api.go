@@ -1,3 +1,6 @@
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+
 package valnode
 
 import (
@@ -9,7 +12,9 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
 
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_api"
@@ -35,6 +40,10 @@ func (a *ValidationServerAPI) Validate(ctx context.Context, entry *server_api.In
 	}
 	valRun := a.spawner.Launch(valInput, moduleRoot)
 	return valRun.Await(ctx)
+}
+
+func (a *ValidationServerAPI) WasmModuleRoots() ([]common.Hash, error) {
+	return a.spawner.WasmModuleRoots()
 }
 
 func NewValidationServerAPI(spawner validator.ValidationSpawner) *ValidationServerAPI {
@@ -180,4 +189,52 @@ func (a *ExecServerAPI) CloseExec(execid uint64) {
 	}
 	run.run.Close()
 	delete(a.runs, execid)
+}
+
+func ValidationInputFromJson(entry *server_api.InputJSON) (*validator.ValidationInput, error) {
+	preimages := make(map[arbutil.PreimageType]map[common.Hash][]byte)
+	for ty, jsonPreimages := range entry.PreimagesB64 {
+		preimages[ty] = jsonPreimages.Map
+	}
+	valInput := &validator.ValidationInput{
+		Id:            entry.Id,
+		HasDelayedMsg: entry.HasDelayedMsg,
+		DelayedMsgNr:  entry.DelayedMsgNr,
+		StartState:    entry.StartState,
+		Preimages:     preimages,
+		UserWasms:     make(state.UserWasms),
+		DebugChain:    entry.DebugChain,
+	}
+	delayed, err := base64.StdEncoding.DecodeString(entry.DelayedMsgB64)
+	if err != nil {
+		return nil, err
+	}
+	valInput.DelayedMsg = delayed
+	for _, binfo := range entry.BatchInfo {
+		data, err := base64.StdEncoding.DecodeString(binfo.DataB64)
+		if err != nil {
+			return nil, err
+		}
+		decInfo := validator.BatchInfo{
+			Number: binfo.Number,
+			Data:   data,
+		}
+		valInput.BatchInfo = append(valInput.BatchInfo, decInfo)
+	}
+	for moduleHash, info := range entry.UserWasms {
+		asm, err := base64.StdEncoding.DecodeString(info.Asm)
+		if err != nil {
+			return nil, err
+		}
+		module, err := base64.StdEncoding.DecodeString(info.Module)
+		if err != nil {
+			return nil, err
+		}
+		decInfo := state.ActivatedWasm{
+			Asm:    asm,
+			Module: module,
+		}
+		valInput.UserWasms[moduleHash] = decInfo
+	}
+	return valInput, nil
 }

@@ -7,6 +7,7 @@ import (
 	"encoding/binary"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/holiman/uint256"
 )
 
 type bytes32 = common.Hash
@@ -43,4 +44,97 @@ func Uint32ToBytes(value uint32) []byte {
 	result := make([]byte, 4)
 	binary.BigEndian.PutUint32(result, value)
 	return result
+}
+
+// Uint16ToBytes casts a uint16 to its big-endian representation
+func Uint16ToBytes(value uint16) []byte {
+	result := make([]byte, 2)
+	binary.BigEndian.PutUint16(result, value)
+	return result
+}
+
+// casts a uint8 to its big-endian representation
+func Uint8ToBytes(value uint8) []byte {
+	return []byte{value}
+}
+
+// casts a bool to its big-endian representation
+func BoolToBytes(value bool) []byte {
+	if value {
+		return Uint8ToBytes(1)
+	}
+	return Uint8ToBytes(0)
+}
+
+// BytesToUint creates a uint64 from its big-endian representation
+func BytesToUint(value []byte) uint64 {
+	return binary.BigEndian.Uint64(value)
+}
+
+// BytesToUint32 creates a uint32 from its big-endian representation
+func BytesToUint32(value []byte) uint32 {
+	return binary.BigEndian.Uint32(value)
+}
+
+// BytesToUint16 creates a uint16 from its big-endian representation
+func BytesToUint16(value []byte) uint16 {
+	return binary.BigEndian.Uint16(value)
+}
+
+// creates a uint8 from its big-endian representation
+func BytesToUint8(value []byte) uint8 {
+	return value[0]
+}
+
+// creates a uint256 from its big-endian representation
+func BytesToUint256(value []byte) *uint256.Int {
+	int := &uint256.Int{}
+	int.SetBytes(value)
+	return int
+}
+
+// creates a bool from its big-endian representation
+func BytesToBool(value []byte) bool {
+	return value[0] != 0
+}
+
+// BoolToUint8 assigns a nonzero value when true
+func BoolToUint8(value bool) uint8 {
+	if value {
+		return 1
+	}
+	return 0
+}
+
+// BoolToUint32 assigns a nonzero value when true
+func BoolToUint32(value bool) uint32 {
+	if value {
+		return 1
+	}
+	return 0
+}
+
+// BoolToUint32 assigns a nonzero value when true
+func UintToBool[T Unsigned](value T) bool {
+	return value != 0
+}
+
+// Ensures a slice is non-nil
+func NonNilSlice[T any](slice []T) []T {
+	if slice == nil {
+		return []T{}
+	}
+	return slice
+}
+
+// Equivalent to slice[start:offset], but truncates when out of bounds rather than panicking.
+func SliceWithRunoff[S any, I Integer](slice []S, start, end I) []S {
+	len := I(len(slice))
+	start = MaxInt(start, 0)
+	end = MaxInt(start, end)
+
+	if slice == nil || start >= len {
+		return []S{}
+	}
+	return slice[start:MinInt(end, len)]
 }
