@@ -10,7 +10,13 @@ use digest::Digest;
 use eyre::{bail, ErrReport, Result};
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
-use std::{borrow::Cow, convert::TryFrom};
+use std::{
+    borrow::Cow,
+    collections::HashSet,
+    convert::TryFrom,
+    ops::Deref,
+    sync::{Arc, Mutex},
+};
 
 #[cfg(feature = "counters")]
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -64,12 +70,14 @@ impl TryFrom<&wasmparser::MemoryType> for MemoryType {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Memory {
     buffer: Vec<u8>,
     #[serde(skip)]
     pub merkle: Option<Merkle>,
     pub max_size: u64,
+    #[serde(skip)]
+    dirty_indices: Arc<Mutex<HashSet<usize>>>,
 }
 
 fn hash_leaf(bytes: [u8; Memory::LEAF_SIZE]) -> Bytes32 {
@@ -98,6 +106,16 @@ fn div_round_up(num: usize, denom: usize) -> usize {
     res
 }
 
+impl PartialEq for Memory {
+    fn eq(&self, other: &Memory) -> bool {
+        self.buffer == other.buffer
+            && self.merkle == other.merkle
+            && self.max_size == other.max_size
+            && self.dirty_indices.lock().unwrap().deref()
+                == other.dirty_indices.lock().unwrap().deref()
+    }
+}
+
 impl Memory {
     pub const LEAF_SIZE: usize = 32;
     /// Only used when initializing a memory to determine its size
@@ -111,6 +129,7 @@ impl Memory {
             buffer: vec![0u8; size],
             merkle: None,
             max_size,
+            dirty_indices: Arc::new(Mutex::new(HashSet::new())),
         }
     }
 
@@ -120,6 +139,11 @@ impl Memory {
 
     pub fn merkelize(&self) -> Cow<'_, Merkle> {
         if let Some(m) = &self.merkle {
+            for idx in self.dirty_indices.lock().unwrap().iter() {
+                let leaf_idx = idx / Self::LEAF_SIZE;
+                m.set(leaf_idx, hash_leaf(self.get_leaf_data(leaf_idx)));
+            }
+            self.dirty_indices.lock().unwrap().clear();
             return Cow::Borrowed(m);
         }
         // Round the size up to 8 byte long leaves, then round up to the next power of two number of leaves
@@ -143,6 +167,7 @@ impl Memory {
         if size < leaves {
             m.resize(leaves).expect("Couldn't resize merkle tree");
         }
+        self.dirty_indices.lock().unwrap().clear();
         Cow::Owned(m)
     }
 
@@ -251,16 +276,8 @@ impl Memory {
         let end_idx = end_idx as usize;
         let buf = value.to_le_bytes();
         self.buffer[idx..end_idx].copy_from_slice(&buf[..bytes.into()]);
-
-        if let Some(merkle) = self.merkle.take() {
-            let start_leaf = idx / Self::LEAF_SIZE;
-            merkle.set(start_leaf, hash_leaf(self.get_leaf_data(start_leaf)));
-            let end_leaf = (end_idx - 1) / Self::LEAF_SIZE;
-            if end_leaf != start_leaf {
-                merkle.set(end_leaf, hash_leaf(self.get_leaf_data(end_leaf)));
-            }
-            self.merkle = Some(merkle);
-        }
+        self.dirty_indices.lock().unwrap().insert(idx);
+        self.dirty_indices.lock().unwrap().insert(end_idx - 1);
 
         true
     }
@@ -279,14 +296,7 @@ impl Memory {
         let idx = idx as usize;
         let end_idx = end_idx as usize;
         self.buffer[idx..end_idx].copy_from_slice(value);
-
-        if let Some(merkle) = self.merkle.take() {
-            let start_leaf = idx / Self::LEAF_SIZE;
-            merkle.set(start_leaf, hash_leaf(self.get_leaf_data(start_leaf)));
-            // No need for second merkle
-            assert!(value.len() <= Self::LEAF_SIZE);
-            self.merkle = Some(merkle);
-        }
+        self.dirty_indices.lock().unwrap().insert(idx);
 
         true
     }

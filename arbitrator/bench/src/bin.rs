@@ -34,7 +34,6 @@ struct Args {
 fn main() -> eyre::Result<()> {
     let args = Args::parse();
     let step_sizes = [1, 1 << 10, 1 << 15, 1 << 20, 1 << 24, 1 << 26, 1 << 28];
-    // let step_sizes = [1, 1 << 10, 1 << 15, 1 << 20, 1 << 24];
 
     if args.always_merkleize {
         println!("Running benchmark with always merkleize feature on");
