@@ -390,7 +390,7 @@ func (s *StateManager) CollectMachineHashes(
 	if err != nil {
 		return nil, err
 	}
-	execRun, err := s.validator.execSpawner.CreateBoldExecutionRun(cfg.WasmModuleRoot, uint64(cfg.StepSize), input).Await(ctx)
+	execRun, err := s.validator.execSpawners[0].CreateBoldExecutionRun(cfg.WasmModuleRoot, uint64(cfg.StepSize), input).Await(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -469,7 +469,7 @@ func (s *StateManager) CollectProof(
 	if err != nil {
 		return nil, err
 	}
-	execRun, err := s.validator.execSpawner.CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
+	execRun, err := s.validator.execSpawners[0].CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
 	if err != nil {
 		return nil, err
 	}

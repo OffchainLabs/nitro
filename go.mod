@@ -47,7 +47,7 @@ require (
 	github.com/wealdtech/go-merkletree v1.0.0
 	golang.org/x/crypto v0.21.0
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa
-	golang.org/x/sys v0.18.0
+	golang.org/x/sys v0.20.0
 	golang.org/x/term v0.18.0
 	golang.org/x/tools v0.16.0
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
