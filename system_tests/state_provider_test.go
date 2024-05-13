@@ -1,7 +1,7 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 
-//go:build challengetest && !race
+//asdasdasdgo:build challengetest && !race
 
 package arbtest
 
@@ -346,7 +346,6 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context) (*arbnode.Node, *
 		l2node.Execution,
 		l2node.ArbDB,
 		nil,
-		l2node.BlobReader,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
 	)

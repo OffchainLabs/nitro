@@ -1,7 +1,7 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-//go:build challengetest && !race
+// asdasdgo:build challengetest && !race
 
 package arbtest
 
@@ -149,7 +149,6 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 		l2nodeA.Execution,
 		l2nodeA.ArbDB,
 		nil,
-		l2nodeA.BlobReader,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
 	)
@@ -164,7 +163,6 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 		l2nodeB.Execution,
 		l2nodeB.ArbDB,
 		nil,
-		l2nodeB.BlobReader,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
 	)
@@ -543,7 +541,7 @@ func createTestNodeOnL1ForBoldProtocol(
 		nodeConfig.DelayedSequencer.Enable = false
 	}
 
-	AddDefaultValNode(t, ctx, nodeConfig, true)
+	AddDefaultValNode(t, ctx, nodeConfig, true, "")
 
 	execConfig := gethexec.ConfigDefaultTest()
 	Require(t, execConfig.Validate())
@@ -743,7 +741,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	l2arbDb, err := l2stack.OpenDatabase("arbdb", 0, 0, "", false)
 	Require(t, err)
 
-	AddDefaultValNode(t, ctx, nodeConfig, true)
+	AddDefaultValNode(t, ctx, nodeConfig, true, "")
 
 	dataSigner := signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("Sequencer").PrivateKey)
 	txOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)

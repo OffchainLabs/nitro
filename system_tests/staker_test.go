@@ -581,7 +581,6 @@ func setupNonBoldStaker(t *testing.T, ctx context.Context) (*staker.Staker, *Nod
 		l2node.Execution,
 		l2node.ArbDB,
 		nil,
-		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
 	)
