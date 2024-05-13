@@ -3,6 +3,8 @@ package redis
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -18,11 +20,34 @@ import (
 	"github.com/spf13/pflag"
 )
 
+type ValidationClientInitConfig struct {
+	// If set, will terminate the binary once ValidationClient is initialized.
+	ThenQuit bool `koanf:"then-quit"`
+	// If set, this will be used instead of ones read from locator.
+	ModuleRoots []string `koanf:"module-roots"`
+}
+
+var DefaultValidationClientInitConfig = &ValidationClientInitConfig{
+	ThenQuit:    false,
+	ModuleRoots: []string{},
+}
+
+var TestValidationClientInitConfig = &ValidationClientInitConfig{
+	ThenQuit:    false,
+	ModuleRoots: []string{},
+}
+
+func ValidationClientInitConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Bool(prefix+".then-quit", DefaultValidationClientInitConfig.ThenQuit, "quit after init is done")
+	f.StringSlice(prefix+".module-roots", DefaultValidationClientInitConfig.ModuleRoots, "list of WASM module roots")
+}
+
 type ValidationClientConfig struct {
-	Name           string                `koanf:"name"`
-	Room           int32                 `koanf:"room"`
-	RedisURL       string                `koanf:"redis-url"`
-	ProducerConfig pubsub.ProducerConfig `koanf:"producer-config"`
+	Name           string                     `koanf:"name"`
+	Room           int32                      `koanf:"room"`
+	RedisURL       string                     `koanf:"redis-url"`
+	ProducerConfig pubsub.ProducerConfig      `koanf:"producer-config"`
+	InitConfig     ValidationClientInitConfig `koanf:"init-config"`
 }
 
 func (c ValidationClientConfig) Enabled() bool {
@@ -59,6 +84,7 @@ type ValidationClient struct {
 	producerConfig pubsub.ProducerConfig
 	redisClient    redis.UniversalClient
 	moduleRoots    []common.Hash
+	thenQuit       bool // If set, halts binary after initialize function.
 }
 
 func NewValidationClient(cfg *ValidationClientConfig) (*ValidationClient, error) {
@@ -69,20 +95,35 @@ func NewValidationClient(cfg *ValidationClientConfig) (*ValidationClient, error)
 	if err != nil {
 		return nil, err
 	}
-	return &ValidationClient{
+	ret := &ValidationClient{
 		name:           cfg.Name,
 		room:           cfg.Room,
 		producers:      make(map[common.Hash]*pubsub.Producer[*validator.ValidationInput, validator.GoGlobalState]),
 		producerConfig: cfg.ProducerConfig,
 		redisClient:    redisClient,
-	}, nil
+	}
+	// Parse module roots from init config, if there are any.
+	for _, mrHex := range cfg.InitConfig.ModuleRoots {
+		if mr := common.HexToHash(strings.TrimSpace(string(mrHex))); mr != (common.Hash{}) {
+			ret.moduleRoots = append(ret.moduleRoots, mr)
+		}
+	}
+	return ret, nil
 }
 
-func (c *ValidationClient) Initialize(moduleRoots []common.Hash) error {
+// Initialize creates redis stream for each  WASM module root, if exists skips,
+// and starts producers if `then-quit` flag is not set.
+func (c *ValidationClient) Initialize(ctx context.Context, moduleRoots []common.Hash) error {
+	if c.moduleRoots != nil {
+		moduleRoots = c.moduleRoots
+	}
 	for _, mr := range moduleRoots {
 		if _, exists := c.producers[mr]; exists {
 			log.Warn("Producer already existsw for module root", "hash", mr)
 			continue
+		}
+		if err := pubsub.CreateStream(ctx, server_api.RedisStreamForRoot(mr), c.redisClient); err != nil {
+			return fmt.Errorf("creating redis stream: %w", err)
 		}
 		p, err := pubsub.NewProducer[*validator.ValidationInput, validator.GoGlobalState](
 			c.redisClient, server_api.RedisStreamForRoot(mr), &c.producerConfig)
@@ -93,6 +134,11 @@ func (c *ValidationClient) Initialize(moduleRoots []common.Hash) error {
 		p.Start(c.GetContext())
 		c.producers[mr] = p
 		c.moduleRoots = append(c.moduleRoots, mr)
+	}
+
+	if c.thenQuit {
+		log.Info("Validation client initialized, then-quit flag is set, existing.")
+		os.Exit(0)
 	}
 	return nil
 }

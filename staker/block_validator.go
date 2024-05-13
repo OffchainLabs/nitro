@@ -1088,9 +1088,8 @@ func (v *BlockValidator) Initialize(ctx context.Context) error {
 	}
 	// First spawner is always RedisValidationClient if RedisStreams are enabled.
 	if v.redisValidator != nil {
-		err := v.redisValidator.Initialize(moduleRoots)
-		if err != nil {
-			return err
+		if err := v.redisValidator.Initialize(ctx, moduleRoots); err != nil {
+			return fmt.Errorf("initializing redis validator: %w", err)
 		}
 	}
 	v.chosenValidator = make(map[common.Hash]validator.ValidationSpawner)
