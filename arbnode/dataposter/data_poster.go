@@ -666,8 +666,12 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	}
 
 	// Ensure we bid at least 1 wei to prevent division by zero
-	newBaseFeeCap = arbmath.BigMax(newBaseFeeCap, common.Big1)
-	newBlobFeeCap = arbmath.BigMax(newBlobFeeCap, common.Big1)
+	if newBaseFeeCap.Sign() == 0 {
+		newBaseFeeCap.SetInt64(1)
+	}
+	if newBlobFeeCap.Sign() == 0 {
+		newBlobFeeCap.SetInt64(1)
+	}
 
 	return newBaseFeeCap, newTipCap, newBlobFeeCap, nil
 }
