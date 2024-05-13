@@ -1221,7 +1221,6 @@ impl Machine {
         library_paths: &[PathBuf],
         binary_path: &Path,
         language_support: bool,
-        always_merkleize: bool,
         allow_hostapi_from_main: bool,
         debug_funcs: bool,
         debug_info: bool,
@@ -1246,7 +1245,6 @@ impl Machine {
             &libraries,
             bin,
             language_support,
-            always_merkleize,
             allow_hostapi_from_main,
             debug_funcs,
             debug_info,
@@ -1277,7 +1275,6 @@ impl Machine {
             bin,
             false,
             true,
-            false,
             compile.debug.debug_funcs,
             true,
             GlobalState::default(),
@@ -1324,7 +1321,6 @@ impl Machine {
         libraries: &[WasmBinary<'_>],
         bin: WasmBinary<'_>,
         runtime_support: bool,
-        always_merkleize: bool,
         allow_hostapi_from_main: bool,
         debug_funcs: bool,
         debug_info: bool,
@@ -1527,18 +1523,12 @@ impl Machine {
 
             let tables_hashes: Result<_, _> = module.tables.iter().map(Table::hash).collect();
             module.tables_merkle = Merkle::new(MerkleType::Table, tables_hashes?);
-
-            if always_merkleize {
-                module.memory.cache_merkle_tree();
-            }
+            module.memory.cache_merkle_tree();
         }
-        let mut modules_merkle = None;
-        if always_merkleize {
-            modules_merkle = Some(Merkle::new(
-                MerkleType::Module,
-                modules.iter().map(Module::hash).collect(),
-            ));
-        }
+        let modules_merkle = Some(Merkle::new(
+            MerkleType::Module,
+            modules.iter().map(Module::hash).collect(),
+        ));
 
         // find the first inbox index that's out of bounds
         let first_too_far = inbox_contents
@@ -1572,7 +1562,7 @@ impl Machine {
         Ok(mach)
     }
 
-    pub fn new_from_wavm(wavm_binary: &Path, always_merkleize: bool) -> Result<Machine> {
+    pub fn new_from_wavm(wavm_binary: &Path) -> Result<Machine> {
         let mut modules: Vec<Module> = {
             let compressed = std::fs::read(wavm_binary)?;
             let Ok(modules) = brotli::decompress(&compressed, Dictionary::Empty) else {
@@ -1598,17 +1588,12 @@ impl Machine {
                 MerkleType::Function,
                 module.funcs.iter().map(Function::hash).collect(),
             ));
-            if always_merkleize {
-                module.memory.cache_merkle_tree();
-            }
+            module.memory.cache_merkle_tree();
         }
-        let mut modules_merkle: Option<Merkle> = None;
-        if always_merkleize {
-            modules_merkle = Some(Merkle::new(
-                MerkleType::Module,
-                modules.iter().map(Module::hash).collect(),
-            ));
-        }
+        let modules_merkle = Some(Merkle::new(
+            MerkleType::Module,
+            modules.iter().map(Module::hash).collect(),
+        ));
         let mut mach = Machine {
             status: MachineStatus::Running,
             thread_state: ThreadState::Main,

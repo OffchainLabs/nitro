@@ -35,8 +35,6 @@ struct Opts {
     #[structopt(long)]
     inbox_add_stub_headers: bool,
     #[structopt(long)]
-    always_merkleize: bool,
-    #[structopt(long)]
     debug_funcs: bool,
     #[structopt(long)]
     /// print modules to the console
@@ -192,7 +190,6 @@ fn main() -> Result<()> {
         &opts.libraries,
         &opts.binary,
         true,
-        opts.always_merkleize,
         opts.allow_hostapi,
         opts.debug_funcs,
         true,

@@ -25,27 +25,15 @@ struct Args {
     /// Path to a machine.wavm.br
     #[arg(short, long)]
     machine_path: PathBuf,
-
-    /// Should the memory tree always Merkleize
-    #[arg(short, long)]
-    always_merkleize: bool,
 }
 
 fn main() -> eyre::Result<()> {
     let args = Args::parse();
     let step_sizes = [1, 1 << 10, 1 << 15, 1 << 20, 1 << 24, 1 << 26, 1 << 28];
 
-    if args.always_merkleize {
-        println!("Running benchmark with always merkleize feature on");
-    } else {
-        println!("Running benchmark with always merkleize feature off");
-    }
+    println!("Running benchmark with always merkleize feature on");
     for step_size in step_sizes {
-        let mut machine = prepare_machine(
-            args.preimages_path.clone(),
-            args.machine_path.clone(),
-            args.always_merkleize,
-        )?;
+        let mut machine = prepare_machine(args.preimages_path.clone(), args.machine_path.clone())?;
         let _ = machine.hash();
         let mut hash_times = vec![];
         let mut step_times = vec![];

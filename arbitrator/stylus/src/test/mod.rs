@@ -151,7 +151,6 @@ fn new_test_machine(path: &str, compile: &CompileConfig) -> Result<Machine> {
         bin,
         false,
         true,
-        true,
         compile.debug.debug_funcs,
         true,
         GlobalState::default(),
