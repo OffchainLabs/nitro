@@ -277,19 +277,21 @@ type Node struct {
 }
 
 type SnapSyncConfig struct {
-	Enabled               bool
-	PrevBatchMessageCount uint64
-	PrevDelayedRead       uint64
-	BatchCount            uint64
-	DelayedCount          uint64
+	Enabled                   bool
+	PrevBatchMessageCount     uint64
+	PrevDelayedRead           uint64
+	BatchCount                uint64
+	DelayedCount              uint64
+	ParentChainAssertionBlock uint64
 }
 
 var DefaultSnapSyncConfig = SnapSyncConfig{
-	Enabled:               false,
-	PrevBatchMessageCount: 0,
-	BatchCount:            0,
-	DelayedCount:          0,
-	PrevDelayedRead:       0,
+	Enabled:                   false,
+	PrevBatchMessageCount:     0,
+	PrevDelayedRead:           0,
+	BatchCount:                0,
+	DelayedCount:              0,
+	ParentChainAssertionBlock: 0,
 }
 
 type ConfigFetcher interface {
@@ -564,7 +566,25 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, new(big.Int).SetUint64(deployInfo.DeployedAt), delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &configFetcher.Get().InboxReader })
+	firstMessageBlock := new(big.Int).SetUint64(deployInfo.DeployedAt)
+	if config.SnapSyncTest.Enabled {
+		firstMessageToRead := config.SnapSyncTest.DelayedCount
+		if firstMessageToRead > config.SnapSyncTest.BatchCount {
+			firstMessageToRead = config.SnapSyncTest.BatchCount
+		}
+		if firstMessageToRead > 0 {
+			firstMessageToRead--
+		}
+		// Find the first block containing the first message to read
+		// Subtract 1 to get the block before the first message to read,
+		// this is done to fetch previous batch metadata needed for snap sync.
+		block, err := FindBlockContainingBatch(ctx, deployInfo.Rollup, l1client, config.SnapSyncTest.ParentChainAssertionBlock, firstMessageToRead-1)
+		if err != nil {
+			return nil, err
+		}
+		firstMessageBlock.SetUint64(block)
+	}
+	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, firstMessageBlock, delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &configFetcher.Get().InboxReader })
 	if err != nil {
 		return nil, err
 	}
@@ -738,6 +758,45 @@ func createNodeImpl(
 		configFetcher:           configFetcher,
 		ctx:                     ctx,
 	}, nil
+}
+
+func FindBlockContainingBatch(ctx context.Context, rollupAddress common.Address, l1Client arbutil.L1Interface, parentChainAssertionBlock uint64, batch uint64) (uint64, error) {
+	callOpts := bind.CallOpts{Context: ctx}
+	rollup, err := staker.NewRollupWatcher(rollupAddress, l1Client, callOpts)
+	if err != nil {
+		return 0, err
+	}
+	high := parentChainAssertionBlock
+	low := high / 2
+	// Exponentially reduce high and low by a factor of 2 until lowNode.InboxMaxCount < batch
+	// This will give us a range (low to high) of blocks that contain the batch
+	for low > 0 {
+		lowNode, err := rollup.LookupNodeByBlockNumber(ctx, low)
+		if err != nil {
+			return 0, err
+		}
+		if lowNode.InboxMaxCount.Uint64() > batch {
+			high = low
+			low = low / 2
+		} else {
+			break
+		}
+	}
+	// Then binary search between low and high to find the block containing the batch
+	for low < high {
+		mid := low + (high-low)/2
+
+		midNode, err := rollup.LookupNodeByBlockNumber(ctx, mid)
+		if err != nil {
+			return 0, err
+		}
+		if midNode.InboxMaxCount.Uint64() < batch {
+			low = mid + 1
+		} else {
+			high = mid
+		}
+	}
+	return low, nil
 }
 
 func (n *Node) OnConfigReload(_ *Config, _ *Config) error {

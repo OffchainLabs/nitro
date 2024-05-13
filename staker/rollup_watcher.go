@@ -57,7 +57,6 @@ func NewRollupWatcher(address common.Address, client arbutil.L1Interface, callOp
 	if err != nil {
 		return nil, err
 	}
-
 	return &RollupWatcher{
 		address:         address,
 		client:          client,
@@ -143,6 +142,44 @@ func (r *RollupWatcher) LookupNode(ctx context.Context, number uint64) (*NodeInf
 	}
 	if len(logs) > 1 {
 		return nil, fmt.Errorf("found multiple instances of requested node %v", number)
+	}
+	ethLog := logs[0]
+	parsedLog, err := r.ParseNodeCreated(ethLog)
+	if err != nil {
+		return nil, err
+	}
+	l1BlockProposed, err := arbutil.CorrespondingL1BlockNumber(ctx, r.client, ethLog.BlockNumber)
+	if err != nil {
+		return nil, err
+	}
+	return &NodeInfo{
+		NodeNum:                  parsedLog.NodeNum,
+		L1BlockProposed:          l1BlockProposed,
+		ParentChainBlockProposed: ethLog.BlockNumber,
+		Assertion:                NewAssertionFromSolidity(parsedLog.Assertion),
+		InboxMaxCount:            parsedLog.InboxMaxCount,
+		AfterInboxBatchAcc:       parsedLog.AfterInboxBatchAcc,
+		NodeHash:                 parsedLog.NodeHash,
+		WasmModuleRoot:           parsedLog.WasmModuleRoot,
+	}, nil
+}
+
+func (r *RollupWatcher) LookupNodeByBlockNumber(ctx context.Context, blockNumber uint64) (*NodeInfo, error) {
+	var query = ethereum.FilterQuery{
+		FromBlock: big.NewInt(int64(blockNumber)),
+		ToBlock:   big.NewInt(int64(blockNumber)),
+		Addresses: []common.Address{r.address},
+		Topics:    [][]common.Hash{{nodeCreatedID}},
+	}
+	logs, err := r.client.FilterLogs(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	if len(logs) == 0 {
+		return nil, fmt.Errorf("couldn't find node at the request blockNumber %v", blockNumber)
+	}
+	if len(logs) > 1 {
+		return nil, fmt.Errorf("found multiple instances of node at the requested blockNumber %v", blockNumber)
 	}
 	ethLog := logs[0]
 	parsedLog, err := r.ParseNodeCreated(ethLog)
