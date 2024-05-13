@@ -1276,7 +1276,7 @@ impl Machine {
             &[soft_float, wasi_stub, user_test],
             bin,
             false,
-            false,
+            true,
             false,
             compile.debug.debug_funcs,
             true,
