@@ -57,6 +57,7 @@ func NewRollupWatcher(address common.Address, client arbutil.L1Interface, callOp
 	if err != nil {
 		return nil, err
 	}
+
 	return &RollupWatcher{
 		address:         address,
 		client:          client,
