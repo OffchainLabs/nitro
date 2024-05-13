@@ -129,6 +129,11 @@ func (c *BlockValidatorConfig) Validate() error {
 			c.ValidationServerConfigs = executionServersConfigs
 		}
 	}
+	for i := range c.ValidationServerConfigs {
+		if err := c.ValidationServerConfigs[i].Validate(); err != nil {
+			return fmt.Errorf("failed to validate one of the block-validator validation-server-configs. url: %s, err: %w", c.ValidationServerConfigs[i].URL, err)
+		}
+	}
 	return nil
 }
 
