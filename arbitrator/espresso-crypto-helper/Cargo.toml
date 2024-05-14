@@ -9,7 +9,6 @@ ark-bn254 = "0.4"
 ark-ed-on-bn254 = "0.4"
 ark-ff = "0.4"
 ark-serialize = { version = "0.4", features = ["derive"] }
-ark-srs = { version = "0.3.1" }
 ark-std = { version = "0.4", default-features = false }
 base64 = "0.22"
 derive_more = "0.99.17"
@@ -36,3 +35,6 @@ typenum = { version = "1.15.0", default-features = false, features = [
 ] }
 num-traits = "0.2.17"
 derivative = "2.2"
+
+[dev-dependencies]
+ark-srs = { version = "0.3.1" }
