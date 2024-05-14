@@ -209,7 +209,6 @@ pub unsafe extern "C" fn arbitrator_add_inbox_message(
     }
 }
 
-<<<<<<< HEAD
 #[no_mangle]
 pub unsafe extern "C" fn arbitrator_add_hotshot_commitment(
     mach: *mut Machine,
@@ -228,7 +227,8 @@ pub unsafe extern "C" fn arbitrator_add_hotshot_commitment(
     } else {
         1
     }
-=======
+}
+
 /// Adds a user program to the machine's known set of wasms.
 #[no_mangle]
 pub unsafe extern "C" fn arbitrator_add_user_wasm(
@@ -239,7 +239,6 @@ pub unsafe extern "C" fn arbitrator_add_user_wasm(
 ) {
     let module = slice::from_raw_parts(module, module_len);
     (*mach).add_stylus_module(*module_hash, module.to_owned());
->>>>>>> 28033f9469206d8f9639023772d51882bba8883b
 }
 
 /// Like arbitrator_step, but stops early if it hits a host io operation.
@@ -270,6 +269,7 @@ pub unsafe extern "C" fn arbitrator_step_until_host_io(
 }
 
 #[no_mangle]
+#[cfg(feature = "native")]
 pub unsafe extern "C" fn arbitrator_step_until_read_hotshot(
     mach: *mut Machine,
     condition: *const u8,

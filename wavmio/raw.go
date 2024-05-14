@@ -30,4 +30,4 @@ func readDelayedInboxMessage(seqNum uint64, offset uint32, output unsafe.Pointer
 func resolveTypedPreimage(ty uint32, hash unsafe.Pointer, offset uint32, output unsafe.Pointer) uint32
 
 //go:wasmimport wavmio readHotShotCommitment
-func readHotShotCommitment(pos uint64, output []byte)
+func readHotShotCommitment(h uint64, output unsafe.Pointer)

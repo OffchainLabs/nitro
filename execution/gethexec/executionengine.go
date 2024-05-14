@@ -371,6 +371,7 @@ func (s *ExecutionEngine) SequenceTransactionsEspresso(
 			s.bc.Config(),
 			hooks,
 			&jst.Header,
+			false,
 		)
 		if err != nil {
 			return nil, err
@@ -392,8 +393,12 @@ func (s *ExecutionEngine) SequenceTransactionsEspresso(
 			Message:             &msg,
 			DelayedMessagesRead: delayedMessagesRead,
 		}
+		msgResult, err := s.resultFromHeader(block.Header())
+		if err != nil {
+			return nil, err
+		}
 
-		err = s.streamer.WriteMessageFromSequencer(pos, msgWithMeta)
+		err = s.consensus.WriteMessageFromSequencer(pos, msgWithMeta, *msgResult)
 		if err != nil {
 			return nil, err
 		}

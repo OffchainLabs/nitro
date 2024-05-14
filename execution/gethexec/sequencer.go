@@ -101,19 +101,20 @@ func (c *SequencerConfig) Validate() error {
 	}
 	if c.LightClientAddress == "" && c.Espresso {
 		log.Warn("LightClientAddress is empty, running the espresso test mode")
-	var err error
-	if c.ExpectedSurplusSoftThreshold != "default" {
-		if c.expectedSurplusSoftThreshold, err = strconv.Atoi(c.ExpectedSurplusSoftThreshold); err != nil {
-			return fmt.Errorf("invalid expected-surplus-soft-threshold value provided in batchposter config %w", err)
+		var err error
+		if c.ExpectedSurplusSoftThreshold != "default" {
+			if c.expectedSurplusSoftThreshold, err = strconv.Atoi(c.ExpectedSurplusSoftThreshold); err != nil {
+				return fmt.Errorf("invalid expected-surplus-soft-threshold value provided in batchposter config %w", err)
+			}
 		}
-	}
-	if c.ExpectedSurplusHardThreshold != "default" {
-		if c.expectedSurplusHardThreshold, err = strconv.Atoi(c.ExpectedSurplusHardThreshold); err != nil {
-			return fmt.Errorf("invalid expected-surplus-hard-threshold value provided in batchposter config %w", err)
+		if c.ExpectedSurplusHardThreshold != "default" {
+			if c.expectedSurplusHardThreshold, err = strconv.Atoi(c.ExpectedSurplusHardThreshold); err != nil {
+				return fmt.Errorf("invalid expected-surplus-hard-threshold value provided in batchposter config %w", err)
+			}
 		}
-	}
-	if c.expectedSurplusSoftThreshold < c.expectedSurplusHardThreshold {
-		return errors.New("expected-surplus-soft-threshold cannot be lower than expected-surplus-hard-threshold")
+		if c.expectedSurplusSoftThreshold < c.expectedSurplusHardThreshold {
+			return errors.New("expected-surplus-soft-threshold cannot be lower than expected-surplus-hard-threshold")
+		}
 	}
 	return nil
 }

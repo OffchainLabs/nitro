@@ -2,13 +2,8 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-<<<<<<< HEAD
-    gostack::GoStack,
-    machine::{Escape, HotShotCommitmentMap, Inbox, MaybeEscape, WasmEnv, WasmEnvMut},
-=======
     caller_env::JitEnv,
-    machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
->>>>>>> 28033f9469206d8f9639023772d51882bba8883b
+    machine::{Escape, HotShotCommitmentMap, MaybeEscape, WasmEnv, WasmEnvMut},
     socket,
 };
 use arbutil::{Color, PreimageType};
@@ -71,85 +66,6 @@ pub fn set_global_state_u64(mut env: WasmEnvMut, idx: u32, val: u64) -> MaybeEsc
     Ok(())
 }
 
-<<<<<<< HEAD
-pub fn read_hotshot_commitment(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
-    let (sp, env) = GoStack::new(sp, &mut env);
-    ready_hostio(env)?;
-    let hotshot_comms = &env.hotshot_comm_map;
-
-    read_hotshot_commitment_impl(&sp, hotshot_comms, "wavmio.readHotShotCommitment")
-}
-
-pub fn read_inbox_message(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
-    let (sp, env) = GoStack::new(sp, &mut env);
-    ready_hostio(env)?;
-
-    let inbox = &env.sequencer_messages;
-    inbox_message_impl(&sp, inbox, "wavmio.readInboxMessage")
-}
-
-pub fn read_delayed_inbox_message(mut env: WasmEnvMut, sp: u32) -> MaybeEscape {
-    let (sp, env) = GoStack::new(sp, &mut env);
-    ready_hostio(env)?;
-
-    let inbox = &env.delayed_messages;
-    inbox_message_impl(&sp, inbox, "wavmio.readDelayedInboxMessage")
-}
-
-// Reads a hotshot commitment
-fn read_hotshot_commitment_impl(
-    sp: &GoStack,
-    comm_map: &HotShotCommitmentMap,
-    commitment: &str,
-) -> MaybeEscape {
-    let h = sp.read_u64(0);
-    let out_ptr = sp.read_u64(1);
-    let out_len = sp.read_u64(2);
-    if out_len != 32 {
-        eprintln!("Go trying to read commitment bytes with out len {out_len} in {commitment}");
-        sp.write_u64(5, 0);
-        return Ok(());
-    }
-
-    let comm = comm_map.get(&h);
-    if comm.is_none() {
-        return Escape::hostio(format!(
-            "jit machine failed to read the hotshot commitment at {}",
-            h
-        ));
-    }
-    let comm = comm.unwrap();
-
-    if out_ptr + 32 > sp.memory_size() {
-        let text = format!("memory bounds exceeded in {}", commitment);
-        return Escape::hostio(&text);
-    }
-    sp.write_slice(out_ptr, comm);
-    Ok(())
-}
-
-/// Reads an inbox message
-/// note: the order of the checks is very important.
-fn inbox_message_impl(sp: &GoStack, inbox: &Inbox, name: &str) -> MaybeEscape {
-    let msg_num = sp.read_u64(0);
-    let offset = sp.read_u64(1);
-    let out_ptr = sp.read_u64(2);
-    let out_len = sp.read_u64(3);
-    if out_len != 32 {
-        eprintln!("Go trying to read inbox message with out len {out_len} in {name}");
-        sp.write_u64(5, 0);
-        return Ok(());
-    }
-
-    macro_rules! error {
-        ($text:expr $(,$args:expr)*) => {{
-            let text = format!($text $(,$args)*);
-            return Escape::hostio(&text)
-        }};
-    }
-
-    let message = match inbox.get(&msg_num) {
-=======
 /// Reads an inbox message.
 pub fn read_inbox_message(
     mut env: WasmEnvMut,
@@ -161,7 +77,6 @@ pub fn read_inbox_message(
     ready_hostio(exec)?;
 
     let message = match exec.sequencer_messages.get(&msg_num) {
->>>>>>> 28033f9469206d8f9639023772d51882bba8883b
         Some(message) => message,
         None => return Escape::hostio(format!("missing sequencer inbox message {msg_num}")),
     };
@@ -170,6 +85,27 @@ pub fn read_inbox_message(
     let read = message.get(offset..(offset + len)).unwrap_or_default();
     mem.write_slice(out_ptr, read);
     Ok(read.len() as u32)
+}
+
+pub fn read_hotshot_commitment(
+    mut env: WasmEnvMut,
+    h: u64,
+    out_ptr: GuestPtr,
+) -> Result<(), Escape> {
+    let (mut mem, exec) = env.jit_env();
+    ready_hostio(exec)?;
+
+    let comm = match exec.hotshot_comm_map.get(&h) {
+        Some(comm) => comm,
+        None => {
+            return Escape::hostio(format!(
+                "jit machine failed to read the hotshot commitment at {}",
+                h
+            ))
+        }
+    };
+    mem.write_slice(out_ptr, comm);
+    Ok(())
 }
 
 /// Reads a delayed inbox message.
@@ -349,7 +285,7 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
     env.small_globals = [inbox_position, position_within_message, last_hotshot_height];
     env.large_globals = [last_block_hash, last_send_root];
     env.hotshot_comm_map
-        .insert(validating_hotshot_height, hotshot_comm);
+        .insert(validating_hotshot_height, hotshot_comm.0);
 
     while socket::read_u8(stream)? == socket::ANOTHER {
         let position = socket::read_u64(stream)?;

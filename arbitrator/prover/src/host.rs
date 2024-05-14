@@ -188,9 +188,7 @@ impl Hostio {
             WavmReadInboxMessage             => func!([I64, I32, I32], [I32]),
             WavmReadDelayedInboxMessage      => func!([I64, I32, I32], [I32]),
             WavmHaltAndSetFinished           => func!(),
-<<<<<<< HEAD
             WavmReadHotShotCommitment => func!([I32, I64]),
-=======
             WavmLinkModule              => func!([I32], [I32]),      // λ(module_hash) → module
             WavmUnlinkModule            => func!(),                  // λ()
             ProgramInkLeft              => func!([I32], [I64]),      // λ(module) → ink_left
@@ -214,7 +212,6 @@ impl Hostio {
             UserInkLeft                 => InternalFunc::UserInkLeft.ty(),
             UserInkStatus               => InternalFunc::UserInkStatus.ty(),
             UserSetInk                  => InternalFunc::UserSetInk.ty(),
->>>>>>> 28033f9469206d8f9639023772d51882bba8883b
         };
         ty
     }

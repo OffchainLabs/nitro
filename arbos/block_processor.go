@@ -195,7 +195,7 @@ func ProduceBlock(
 	hooks := NoopSequencingHooks()
 
 	return ProduceBlockAdvanced(
-		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks, espressoHeader, isMsgForPrefetch
+		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks, espressoHeader, isMsgForPrefetch,
 	)
 }
 

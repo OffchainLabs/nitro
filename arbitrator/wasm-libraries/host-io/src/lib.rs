@@ -79,12 +79,13 @@ pub unsafe extern "C" fn wavmio__setGlobalStateU64(idx: u32, val: u64) {
     wavm_set_globalstate_u64(idx, val);
 }
 
-pub unsafe extern "C" fn wavmio__readHotShotCommitment(h: u64, offset: usize, out_ptr: GuestPtr) {
+#[no_mangle]
+pub unsafe extern "C" fn wavmio__readHotShotCommitment(h: u64, out_ptr: GuestPtr) {
     let mut our_buf = MemoryLeaf([0u8; 32]);
     let our_ptr = our_buf.as_mut_ptr();
     assert_eq!(our_ptr as usize % 32, 0);
     wavm_read_hotshot_commitment(our_ptr, h);
-    write_slice(&our_buf.0[..32], out_ptr);
+    STATIC_MEM.write_slice(out_ptr, &our_buf.0[..32]);
 }
 
 /// Reads an inbox message

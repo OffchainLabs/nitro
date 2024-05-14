@@ -10,7 +10,7 @@
 
   outputs = { flake-utils, nixpkgs, foundry, rust-overlay, ... }:
     let
-      goVersion = 20; # Change this to update the whole stack
+      goVersion = 21; # Change this to update the whole stack
       overlays = [
         (import rust-overlay)
         (final: prev: {

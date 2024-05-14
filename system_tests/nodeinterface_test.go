@@ -39,7 +39,7 @@ func TestFindBatch(t *testing.T) {
 
 	chainConfig := params.ArbitrumDevTestChainConfig()
 	fatalErrChan := make(chan error, 10)
-	rollupAddresses, initMsg := DeployOnTestL1(t, ctx, l1Info, l1Backend, chainConfig)
+	rollupAddresses, initMsg := DeployOnTestL1(t, ctx, l1Info, l1Backend, chainConfig, common.Address{})
 
 	bridgeAddr, seqInbox, seqInboxAddr := setupSequencerInboxStub(ctx, t, l1Info, l1Backend, chainConfig)
 

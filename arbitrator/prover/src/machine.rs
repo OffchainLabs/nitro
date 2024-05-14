@@ -1547,11 +1547,8 @@ impl Machine {
             stylus_modules: HashMap::default(),
             initial_hash: Bytes32::default(),
             context: 0,
-<<<<<<< HEAD
             hotshot_commitments: Default::default(),
-=======
             debug_info,
->>>>>>> 28033f9469206d8f9639023772d51882bba8883b
         };
         mach.initial_hash = mach.hash();
         Ok(mach)
@@ -1602,11 +1599,8 @@ impl Machine {
             stylus_modules: HashMap::default(),
             initial_hash: Bytes32::default(),
             context: 0,
-<<<<<<< HEAD
             hotshot_commitments: Default::default(),
-=======
             debug_info: false,
->>>>>>> 28033f9469206d8f9639023772d51882bba8883b
         };
         mach.initial_hash = mach.hash();
         Ok(mach)
@@ -2482,8 +2476,8 @@ impl Machine {
                     value_stack.push(Value::I32(len as u32));
                 }
                 Opcode::ReadHotShotCommitment => {
-                    let height = self.value_stack.pop().unwrap().assume_u64();
-                    let ptr = self.value_stack.pop().unwrap().assume_u32();
+                    let height = value_stack.pop().unwrap().assume_u64();
+                    let ptr = value_stack.pop().unwrap().assume_u32();
                     if let Some(commitment) = self.hotshot_commitments.get(&height) {
                         if ptr as u64 + 32 > module.memory.size() {
                             error!();
@@ -3078,15 +3072,16 @@ impl Machine {
                         unreachable!()
                     }
                 }
-            } else if matches!(next_inst.opcode, Opcode::ReadHotShotCommitment) {
-                let ptr = self.value_stack.get(0).unwrap().assume_u32();
+            }
+            ReadHotShotCommitment => {
+                let ptr = value_stack.get(0).unwrap().assume_u32();
                 if let Some(mut idx) = usize::try_from(ptr).ok().filter(|x| x % 32 == 0) {
                     idx /= Memory::LEAF_SIZE;
                     let prev_data = module.memory.get_leaf_data(idx);
                     data.extend(prev_data);
                     data.extend(mem_merkle.prove(idx).unwrap_or_default());
 
-                    let h = self.value_stack.get(1).unwrap().assume_u64();
+                    let h = value_stack.get(1).unwrap().assume_u64();
                     if let Some(commitment) = self.hotshot_commitments.get(&h) {
                         data.extend(commitment);
                         println!("read hotshot commitment proof generated. height: {:?}, commitment: {:?}", h, commitment);

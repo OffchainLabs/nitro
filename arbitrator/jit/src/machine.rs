@@ -2,13 +2,8 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-<<<<<<< HEAD
-    arbcompress, espressocrypto, gostack::GoRuntimeState, runtime, socket, syscall,
-    syscall::JsRuntimeState, wavmio, wavmio::Bytes32, Opts,
-=======
-    arbcompress, caller_env::GoRuntimeState, program, socket, stylus_backend::CothreadHandler,
-    wasip1_stub, wavmio, Opts,
->>>>>>> 28033f9469206d8f9639023772d51882bba8883b
+    arbcompress, caller_env::GoRuntimeState, espressocrypto, program, socket,
+    stylus_backend::CothreadHandler, wasip1_stub, wavmio, Opts,
 };
 use arbutil::{Bytes32, Color, PreimageType};
 use eyre::{bail, ErrReport, Result, WrapErr};
@@ -70,48 +65,10 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
         };
     }
     let imports = imports! {
-<<<<<<< HEAD
-        "go" => {
-            "debug" => native!(runtime::go_debug),
-
-            "runtime.resetMemoryDataView" => native!(runtime::reset_memory_data_view),
-            "runtime.wasmExit" => func!(runtime::wasm_exit),
-            "runtime.wasmWrite" => func!(runtime::wasm_write),
-            "runtime.nanotime1" => func!(runtime::nanotime1),
-            "runtime.walltime" => func!(runtime::walltime),
-            "runtime.walltime1" => func!(runtime::walltime1),
-            "runtime.scheduleTimeoutEvent" => func!(runtime::schedule_timeout_event),
-            "runtime.clearTimeoutEvent" => func!(runtime::clear_timeout_event),
-            "runtime.getRandomData" => func!(runtime::get_random_data),
-
-            "syscall/js.finalizeRef" => func!(syscall::js_finalize_ref),
-            "syscall/js.stringVal" => func!(syscall::js_string_val),
-            "syscall/js.valueGet" => func!(syscall::js_value_get),
-            "syscall/js.valueSet" => func!(syscall::js_value_set),
-            "syscall/js.valueDelete" => func!(syscall::js_value_delete),
-            "syscall/js.valueIndex" => func!(syscall::js_value_index),
-            "syscall/js.valueSetIndex" => func!(syscall::js_value_set_index),
-            "syscall/js.valueCall" => func!(syscall::js_value_call),
-            "syscall/js.valueInvoke" => func!(syscall::js_value_invoke),
-            "syscall/js.valueNew" => func!(syscall::js_value_new),
-            "syscall/js.valueLength" => func!(syscall::js_value_length),
-            "syscall/js.valuePrepareString" => func!(syscall::js_value_prepare_string),
-            "syscall/js.valueLoadString" => func!(syscall::js_value_load_string),
-            "syscall/js.valueInstanceOf" => func!(syscall::js_value_instance_of),
-            "syscall/js.copyBytesToGo" => func!(syscall::js_copy_bytes_to_go),
-            "syscall/js.copyBytesToJS" => func!(syscall::js_copy_bytes_to_js),
-
-            "github.com/offchainlabs/nitro/wavmio.getGlobalStateBytes32" => func!(wavmio::get_global_state_bytes32),
-            "github.com/offchainlabs/nitro/wavmio.setGlobalStateBytes32" => func!(wavmio::set_global_state_bytes32),
-            "github.com/offchainlabs/nitro/wavmio.getGlobalStateU64" => func!(wavmio::get_global_state_u64),
-            "github.com/offchainlabs/nitro/wavmio.setGlobalStateU64" => func!(wavmio::set_global_state_u64),
-            "github.com/offchainlabs/nitro/wavmio.readInboxMessage" => func!(wavmio::read_inbox_message),
-            "github.com/offchainlabs/nitro/wavmio.readHotShotCommitment" => func!(wavmio::read_hotshot_commitment),
-            "github.com/offchainlabs/nitro/wavmio.readDelayedInboxMessage" => func!(wavmio::read_delayed_inbox_message),
-            "github.com/offchainlabs/nitro/espressocrypto.verifyNamespace" => func!(espressocrypto::verify_namespace),
-            "github.com/offchainlabs/nitro/espressocrypto.verifyMerkleProof" => func!(espressocrypto::verify_merkle_proof),
-            "github.com/offchainlabs/nitro/wavmio.resolvePreImage" => {
-=======
+        "espressocrypto" => {
+            "verifyNamespace" => func!(espressocrypto::verify_namespace),
+            "verifyMerkleProof" => func!(espressocrypto::verify_merkle_proof),
+        },
         "arbcompress" => {
             "brotli_compress" => func!(arbcompress::brotli_compress),
             "brotli_decompress" => func!(arbcompress::brotli_decompress),
@@ -124,13 +81,13 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
             "readInboxMessage" => func!(wavmio::read_inbox_message),
             "readDelayedInboxMessage" => func!(wavmio::read_delayed_inbox_message),
             "resolvePreImage" => {
->>>>>>> 28033f9469206d8f9639023772d51882bba8883b
                 #[allow(deprecated)] // we're just keeping this around until we no longer need to validate old replay binaries
                 {
                     func!(wavmio::resolve_keccak_preimage)
                 }
             },
             "resolveTypedPreimage" => func!(wavmio::resolve_typed_preimage),
+            "readHotShotCommitment" => func!(wavmio::read_hotshot_commitment),
         },
         "wasi_snapshot_preview1" => {
             "proc_exit" => func!(wasip1_stub::proc_exit),
@@ -232,13 +189,9 @@ impl From<RuntimeError> for Escape {
 
 pub type WasmEnvMut<'a> = FunctionEnvMut<'a, WasmEnv>;
 pub type Inbox = BTreeMap<u64, Vec<u8>>;
-<<<<<<< HEAD
-pub type HotShotCommitmentMap = BTreeMap<u64, [u8; 32]>;
-pub type Preimages = BTreeMap<PreimageType, BTreeMap<[u8; 32], Vec<u8>>>;
-=======
 pub type Preimages = BTreeMap<PreimageType, BTreeMap<Bytes32, Vec<u8>>>;
 pub type ModuleAsm = Arc<[u8]>;
->>>>>>> 28033f9469206d8f9639023772d51882bba8883b
+pub type HotShotCommitmentMap = BTreeMap<u64, [u8; 32]>;
 
 #[derive(Default)]
 pub struct WasmEnv {

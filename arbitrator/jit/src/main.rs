@@ -8,12 +8,8 @@ use std::path::PathBuf;
 use structopt::StructOpt;
 
 mod arbcompress;
-<<<<<<< HEAD
-mod espressocrypto;
-mod gostack;
-=======
 mod caller_env;
->>>>>>> 28033f9469206d8f9639023772d51882bba8883b
+mod espressocrypto;
 mod machine;
 mod program;
 mod socket;
