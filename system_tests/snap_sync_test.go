@@ -122,19 +122,20 @@ func TestSnapSync(t *testing.T) {
 			if metadata != metadataNodeC {
 				t.Error("Batch metadata mismatch")
 			}
+			break
 		} else {
 			<-time.After(10 * time.Millisecond)
-			continue
 		}
-
+	}
+	for {
 		header, err := builder.L2.Client.HeaderByNumber(ctx, nil)
 		Require(t, err)
-		headerNodeB, err := nodeB.Client.HeaderByNumber(ctx, nil)
+		headerNodeC, err := nodeC.Client.HeaderByNumber(ctx, nil)
 		Require(t, err)
-		if header.Number.Cmp(headerNodeB.Number) == 0 {
+		if header.Number.Cmp(headerNodeC.Number) == 0 {
 			// Once the node is synced up, check if the block hash is the same for the last block
 			// This is to ensure that the snap sync worked correctly
-			if header.Hash().Cmp(headerNodeB.Hash()) != 0 {
+			if header.Hash().Cmp(headerNodeC.Hash()) != 0 {
 				t.Error("Block hash mismatch")
 			}
 			break
