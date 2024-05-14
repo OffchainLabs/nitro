@@ -438,7 +438,7 @@ func (v *StatelessBlockValidator) ValidateResult(
 		}
 	}
 	if run == nil {
-		return false, nil, fmt.Errorf("validation woth WasmModuleRoot %v not supported by node", moduleRoot)
+		return false, nil, fmt.Errorf("validation with WasmModuleRoot %v not supported by node", moduleRoot)
 	}
 	defer run.Cancel()
 	gsEnd, err := run.Await(ctx)
