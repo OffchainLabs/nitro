@@ -183,7 +183,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		}
 	}
 
-	maxBlocks := uint64(1 << 26)
+	maxBlocks := uint64(1 << 14)
 
 	t.Run("StatesInBatchRange", func(t *testing.T) {
 		fromBatch := l2stateprovider.Batch(1)

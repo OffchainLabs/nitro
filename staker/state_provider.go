@@ -249,8 +249,10 @@ func (s *StateManager) StatesInBatchRange(
 		Batch:      uint64(fromBatch),
 		PosInBatch: 0,
 	}
-	machineHashes := []common.Hash{machineHash(startState)}
-	states := []validator.GoGlobalState{startState}
+	machineHashes := make([]common.Hash, 0, totalDesiredHashes)
+	states := make([]validator.GoGlobalState, 0, totalDesiredHashes)
+	machineHashes = append(machineHashes, machineHash(startState))
+	states = append(states, startState)
 
 	for batch := fromBatch; batch < toBatch; batch++ {
 		batchMessageCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(batch))

@@ -602,7 +602,7 @@ func deployContractsOnly(
 	Require(t, err)
 	wasmModuleRoot := locator.LatestWasmModuleRoot()
 
-	loserStakeEscrow := common.Address{}
+	loserStakeEscrow := l1TransactionOpts.From
 	genesisExecutionState := rollupgen.AssertionState{
 		GlobalState:    rollupgen.GlobalState{},
 		MachineStatus:  1,
