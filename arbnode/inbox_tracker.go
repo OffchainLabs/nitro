@@ -684,7 +684,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 			return errors.New("previous batch accumulator mismatch")
 		}
 
-		if batch.AfterDelayedCount > 0 && !t.snapSyncConfig.Enabled {
+		if batch.AfterDelayedCount > 0 {
 			haveDelayedAcc, err := t.GetDelayedAcc(batch.AfterDelayedCount - 1)
 			if errors.Is(err, AccumulatorNotFoundErr) {
 				// We somehow missed a referenced delayed message; go back and look for it

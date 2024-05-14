@@ -68,8 +68,6 @@ func TestSnapSync(t *testing.T) {
 
 	batchCount, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
 	Require(t, err)
-	delayedCount, err := builder.L2.ConsensusNode.InboxTracker.GetDelayedCount()
-	Require(t, err)
 	// Last batch is batchCount - 1, so prev batch is batchCount - 2
 	prevBatchMetaData, err := builder.L2.ConsensusNode.InboxTracker.GetBatchMetadata(batchCount - 2)
 	Require(t, err)
@@ -79,7 +77,7 @@ func TestSnapSync(t *testing.T) {
 	nodeConfig := builder.nodeConfig
 	nodeConfig.SnapSyncTest.Enabled = true
 	nodeConfig.SnapSyncTest.BatchCount = batchCount
-	nodeConfig.SnapSyncTest.DelayedCount = delayedCount
+	nodeConfig.SnapSyncTest.DelayedCount = prevBatchMetaData.DelayedMessageCount - 1
 	nodeConfig.SnapSyncTest.PrevDelayedRead = prevMessage.DelayedMessagesRead
 	nodeConfig.SnapSyncTest.PrevBatchMessageCount = uint64(prevBatchMetaData.MessageCount)
 	// Cleanup the message data of 2nd node, but keep the block state data.
