@@ -16,10 +16,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/blsSignatures"
 
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/arbstate"
 )
 
 func TestDAS_BasicAggregationLocal(t *testing.T) {
@@ -123,7 +123,7 @@ type WrapStore struct {
 	DataAvailabilityServiceWriter
 }
 
-func (w *WrapStore) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
+func (w *WrapStore) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*daprovider.DataAvailabilityCertificate, error) {
 	switch w.injector.shouldFail() {
 	case success:
 		return w.DataAvailabilityServiceWriter.Store(ctx, message, timeout, sig)

@@ -20,7 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -94,7 +94,7 @@ type l1SyncService struct {
 
 	config     SyncToStorageConfig
 	syncTo     StorageService
-	dataSource arbstate.DataAvailabilityReader
+	dataSource daprovider.DASReader
 
 	l1Reader      *headerreader.HeaderReader
 	inboxContract *bridgegen.SequencerInbox
@@ -161,7 +161,7 @@ func writeSyncState(syncDir string, blockNr uint64) error {
 	return os.Rename(f.Name(), path)
 }
 
-func newl1SyncService(config *SyncToStorageConfig, syncTo StorageService, dataSource arbstate.DataAvailabilityReader, l1Reader *headerreader.HeaderReader, inboxAddr common.Address) (*l1SyncService, error) {
+func newl1SyncService(config *SyncToStorageConfig, syncTo StorageService, dataSource daprovider.DASReader, l1Reader *headerreader.HeaderReader, inboxAddr common.Address) (*l1SyncService, error) {
 	l1Client := l1Reader.Client()
 	inboxContract, err := bridgegen.NewSequencerInbox(inboxAddr, l1Client)
 	if err != nil {
@@ -213,9 +213,14 @@ func (s *l1SyncService) processBatchDelivered(ctx context.Context, batchDelivere
 
 	data = append(header, data...)
 	preimages := make(map[arbutil.PreimageType]map[common.Hash][]byte)
-	if _, err = arbstate.RecoverPayloadFromDasBatch(ctx, deliveredEvent.BatchSequenceNumber.Uint64(), data, s.dataSource, preimages, arbstate.KeysetValidate); err != nil {
-		log.Error("recover payload failed", "txhash", batchDeliveredLog.TxHash, "data", data)
-		return err
+	preimageRecorder := daprovider.RecordPreimagesTo(preimages)
+	if _, err = daprovider.RecoverPayloadFromDasBatch(ctx, deliveredEvent.BatchSequenceNumber.Uint64(), data, s.dataSource, preimageRecorder, true); err != nil {
+		if errors.Is(err, daprovider.ErrSeqMsgValidation) {
+			log.Error(err.Error())
+		} else {
+			log.Error("recover payload failed", "txhash", batchDeliveredLog.TxHash, "data", data)
+			return err
+		}
 	}
 	for _, preimages := range preimages {
 		for hash, contents := range preimages {
@@ -291,7 +296,7 @@ func FindDASDataFromLog(
 		log.Warn("BatchDelivered - no data found", "data", data)
 		return nil, nil
 	}
-	if !arbstate.IsDASMessageHeaderByte(data[0]) {
+	if !daprovider.IsDASMessageHeaderByte(data[0]) {
 		log.Warn("BatchDelivered - data not DAS")
 		return nil, nil
 	}
@@ -417,7 +422,7 @@ type SyncingFallbackStorageService struct {
 
 func NewSyncingFallbackStorageService(ctx context.Context,
 	primary StorageService,
-	backup arbstate.DataAvailabilityReader,
+	backup daprovider.DASReader,
 	backupHealthChecker DataAvailabilityServiceHealthChecker,
 	l1Reader *headerreader.HeaderReader,
 	inboxAddr common.Address,

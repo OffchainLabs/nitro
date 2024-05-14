@@ -592,7 +592,7 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	targetBlobCost := arbmath.BigMulByUint(newBlobFeeCap, blobGasUsed)
 	targetNonBlobCost := arbmath.BigSub(targetMaxCost, targetBlobCost)
 	newBaseFeeCap := arbmath.BigDivByUint(targetNonBlobCost, gasLimit)
-	if lastTx != nil && numBlobs > 0 && arbmath.BigDivToBips(newBaseFeeCap, lastTx.GasFeeCap()) < minRbfIncrease {
+	if lastTx != nil && numBlobs > 0 && lastTx.GasFeeCap().Sign() > 0 && arbmath.BigDivToBips(newBaseFeeCap, lastTx.GasFeeCap()) < minRbfIncrease {
 		// Increase the non-blob fee cap to the minimum rbf increase
 		newBaseFeeCap = arbmath.BigMulByBips(lastTx.GasFeeCap(), minRbfIncrease)
 		newNonBlobCost := arbmath.BigMulByUint(newBaseFeeCap, gasLimit)
@@ -663,6 +663,14 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 		log.Info("can't meet current parent chain fees with current target max cost", logFields...)
 		// wait until we have a higher target max cost to replace by fee
 		return lastTx.GasFeeCap(), lastTx.GasTipCap(), lastTx.BlobGasFeeCap(), nil
+	}
+
+	// Ensure we bid at least 1 wei to prevent division by zero
+	if newBaseFeeCap.Sign() == 0 {
+		newBaseFeeCap = big.NewInt(1)
+	}
+	if newBlobFeeCap.Sign() == 0 {
+		newBlobFeeCap = big.NewInt(1)
 	}
 
 	return newBaseFeeCap, newTipCap, newBlobFeeCap, nil
@@ -844,21 +852,25 @@ func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransacti
 		if err != nil {
 			return fmt.Errorf("couldn't get preceding tx in DataPoster to check if should send tx with nonce %d: %w", newTx.FullTx.Nonce(), err)
 		}
-		if precedingTx != nil && // precedingTx == nil -> the actual preceding tx was already confirmed
-			(precedingTx.FullTx.Type() != newTx.FullTx.Type() || !precedingTx.Sent) {
-			latestBlockNumber, err := p.client.BlockNumber(ctx)
-			if err != nil {
-				return fmt.Errorf("couldn't get block number in DataPoster to check if should send tx with nonce %d: %w", newTx.FullTx.Nonce(), err)
-			}
-			prevBlockNumber := arbmath.SaturatingUSub(latestBlockNumber, 1)
-			reorgResistantNonce, err := p.client.NonceAt(ctx, p.Sender(), new(big.Int).SetUint64(prevBlockNumber))
-			if err != nil {
-				return fmt.Errorf("couldn't determine reorg resistant nonce in DataPoster to check if should send tx with nonce %d: %w", newTx.FullTx.Nonce(), err)
-			}
+		if precedingTx != nil { // precedingTx == nil -> the actual preceding tx was already confirmed
+			var latestBlockNumber, prevBlockNumber, reorgResistantNonce uint64
+			if precedingTx.FullTx.Type() != newTx.FullTx.Type() || !precedingTx.Sent {
+				latestBlockNumber, err = p.client.BlockNumber(ctx)
+				if err != nil {
+					return fmt.Errorf("couldn't get block number in DataPoster to check if should send tx with nonce %d: %w", newTx.FullTx.Nonce(), err)
+				}
+				prevBlockNumber = arbmath.SaturatingUSub(latestBlockNumber, 1)
+				reorgResistantNonce, err = p.client.NonceAt(ctx, p.Sender(), new(big.Int).SetUint64(prevBlockNumber))
+				if err != nil {
+					return fmt.Errorf("couldn't determine reorg resistant nonce in DataPoster to check if should send tx with nonce %d: %w", newTx.FullTx.Nonce(), err)
+				}
 
-			if precedingTx.FullTx.Nonce() > reorgResistantNonce {
-				log.Info("DataPoster is avoiding creating a mempool nonce gap (the tx remains queued and will be retried)", "nonce", newTx.FullTx.Nonce(), "prevType", precedingTx.FullTx.Type(), "type", newTx.FullTx.Type(), "prevSent", precedingTx.Sent)
-				return nil
+				if precedingTx.FullTx.Nonce() > reorgResistantNonce {
+					log.Info("DataPoster is avoiding creating a mempool nonce gap (the tx remains queued and will be retried)", "nonce", newTx.FullTx.Nonce(), "prevType", precedingTx.FullTx.Type(), "type", newTx.FullTx.Type(), "prevSent", precedingTx.Sent)
+					return nil
+				}
+			} else {
+				log.Info("DataPoster will send previously unsent batch tx", "nonce", newTx.FullTx.Nonce(), "prevType", precedingTx.FullTx.Type(), "type", newTx.FullTx.Type(), "prevSent", precedingTx.Sent, "latestBlockNumber", latestBlockNumber, "prevBlockNumber", prevBlockNumber, "reorgResistantNonce", reorgResistantNonce)
 			}
 		}
 	}
@@ -930,8 +942,8 @@ func (p *DataPoster) replaceTx(ctx context.Context, prevTx *storage.QueuedTransa
 	}
 
 	newTx := *prevTx
-	if arbmath.BigDivToBips(newFeeCap, prevTx.FullTx.GasFeeCap()) < minRbfIncrease ||
-		(prevTx.FullTx.BlobGasFeeCap() != nil && arbmath.BigDivToBips(newBlobFeeCap, prevTx.FullTx.BlobGasFeeCap()) < minRbfIncrease) {
+	if (prevTx.FullTx.GasFeeCap().Sign() > 0 && arbmath.BigDivToBips(newFeeCap, prevTx.FullTx.GasFeeCap()) < minRbfIncrease) ||
+		(prevTx.FullTx.BlobGasFeeCap() != nil && prevTx.FullTx.BlobGasFeeCap().Sign() > 0 && arbmath.BigDivToBips(newBlobFeeCap, prevTx.FullTx.BlobGasFeeCap()) < minRbfIncrease) {
 		log.Debug(
 			"no need to replace by fee transaction",
 			"nonce", prevTx.FullTx.Nonce(),
