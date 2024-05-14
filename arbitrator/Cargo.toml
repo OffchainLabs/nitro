@@ -5,6 +5,16 @@ members = [
         "jit",
         "espresso-crypto-helper"
 ]
+resolver = "2"
 
 [profile.release]
 debug = true
+
+# [replace]
+# "ark-ec:0.4.2" = { path = "../../algebra/ec" }
+# "ark-ff:0.4.2" = { path = "../../algebra/ff" }
+# "ark-poly:0.4.2" = { path = "../../algebra/poly" }
+# "ark-serialize:0.4.2" = { path = "../../algebra/serialize" }
+# "ark-std:0.4.0" = { path = "../../std" }
+
+

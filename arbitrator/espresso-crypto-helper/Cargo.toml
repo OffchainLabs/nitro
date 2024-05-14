@@ -24,8 +24,9 @@ lazy_static = "1.4"
 serde = { version = "1.0.195", features = ["derive"] }
 itertools = "0.12"
 either =  {version = "1.11.0", features = ["serde"]}
+
 jf-primitives = { git = "https://github.com/EspressoSystems/jellyfish", tag = "0.4.2", features = [
-    "test-srs", "std"
+    "std"
 ], default-features = false}
 jf-utils = { git = "https://github.com/EspressoSystems/jellyfish", tag = "0.4.2", features = [
 ], default-features = false}

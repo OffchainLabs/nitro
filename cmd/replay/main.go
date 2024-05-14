@@ -306,10 +306,7 @@ func main() {
 			if err != nil {
 				panic("unable to serialize header")
 			}
-			// TODO https://github.com/EspressoSystems/nitro-espresso-integration/issues/116
-			// Uncomment when validation is fixed
 			espressocrypto.VerifyNamespace(chainConfig.ChainID.Uint64(), *jst.Proof, *jst.Header.PayloadCommitment, *jst.Header.NsTable, txs)
-
 			espressocrypto.VerifyMerkleProof(jst.BlockMerkleJustification.BlockMerkleProof.Proof, jsonHeader, *jst.BlockMerkleJustification.BlockMerkleComm, commitment)
 		}
 
