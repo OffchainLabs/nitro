@@ -1,7 +1,7 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-//go:build challengetest && !race
+//asdgo:build challengetest && !race
 
 package arbtest
 
@@ -61,8 +61,8 @@ import (
 // 32 Mb of state roots in memory at once.
 var (
 	blockChallengeLeafHeight     = uint64(1 << 5) // 32
-	bigStepChallengeLeafHeight   = uint64(1 << 6)
-	smallStepChallengeLeafHeight = uint64(1 << 6)
+	bigStepChallengeLeafHeight   = uint64(1 << 11)
+	smallStepChallengeLeafHeight = uint64(1 << 10)
 )
 
 func TestChallengeProtocolBOLD(t *testing.T) {
@@ -178,6 +178,8 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 		[]l2stateprovider.Height{
 			l2stateprovider.Height(blockChallengeLeafHeight),
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
+			l2stateprovider.Height(bigStepChallengeLeafHeight),
+			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(smallStepChallengeLeafHeight),
 		},
 		"good",
@@ -189,6 +191,8 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 		"/tmp/evil",
 		[]l2stateprovider.Height{
 			l2stateprovider.Height(blockChallengeLeafHeight),
+			l2stateprovider.Height(bigStepChallengeLeafHeight),
+			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(smallStepChallengeLeafHeight),
 		},
@@ -343,8 +347,6 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(smallStepChallengeLeafHeight),
 		},
 		stateManager,
@@ -357,8 +359,6 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 		stateManagerB,
 		[]l2stateprovider.Height{
 			l2stateprovider.Height(blockChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
 			l2stateprovider.Height(bigStepChallengeLeafHeight),
@@ -610,7 +610,7 @@ func deployContractsOnly(
 	}
 	genesisInboxCount := big.NewInt(0)
 	anyTrustFastConfirmer := common.Address{}
-	miniStakeValues := []*big.Int{big.NewInt(5), big.NewInt(4), big.NewInt(3), big.NewInt(2), big.NewInt(1), big.NewInt(1), big.NewInt(1)}
+	miniStakeValues := []*big.Int{big.NewInt(5), big.NewInt(4), big.NewInt(3), big.NewInt(2), big.NewInt(1)}
 	cfg := challenge_testing.GenerateRollupConfig(
 		false,
 		wasmModuleRoot,
@@ -627,7 +627,7 @@ func deployContractsOnly(
 			BigStepChallengeHeight:   bigStepChallengeLeafHeight,
 			SmallStepChallengeHeight: smallStepChallengeLeafHeight,
 		}),
-		challenge_testing.WithNumBigStepLevels(uint8(5)),       // TODO: Hardcoded.
+		challenge_testing.WithNumBigStepLevels(uint8(3)),       // TODO: Hardcoded.
 		challenge_testing.WithConfirmPeriodBlocks(uint64(120)), // TODO: Hardcoded.
 	)
 	config, err := json.Marshal(params.ArbitrumDevTestChainConfig())
