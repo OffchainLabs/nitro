@@ -1,7 +1,7 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 
-//asdasdasdgo:build challengetest && !race
+//go:build challengetest && !race
 
 package arbtest
 
@@ -270,10 +270,9 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		_ = result
 
 		state := protocol.GoGlobalState{
-			BlockHash:  result.BlockHash,
-			SendRoot:   result.SendRoot,
-			Batch:      3,
-			PosInBatch: 0,
+			BlockHash: result.BlockHash,
+			SendRoot:  result.SendRoot,
+			Batch:     3,
 		}
 		got, err := stateManager.ExecutionStateAfterPreviousState(ctx, 3, &first.GlobalState, maxBlocks)
 		Require(t, err)
