@@ -389,13 +389,20 @@ func (t *InboxTracker) GetDelayedMessageBytes(seqNum uint64) ([]byte, error) {
 func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardReorg bool) error {
 	var nextAcc common.Hash
 	firstBatchToKeep := uint64(0)
-	if t.snapSyncConfig.Enabled {
+	if len(messages) == 0 {
+		return nil
+	}
+	pos, err := messages[0].Message.Header.SeqNum()
+	if err != nil {
+		return err
+	}
+	if t.snapSyncConfig.Enabled && pos < t.snapSyncConfig.DelayedCount {
 		firstBatchToKeep = t.snapSyncConfig.DelayedCount
 		if firstBatchToKeep > 0 {
 			firstBatchToKeep--
 		}
 		for len(messages) > 0 {
-			pos, err := messages[0].Message.Header.SeqNum()
+			pos, err = messages[0].Message.Header.SeqNum()
 			if err != nil {
 				return err
 			}
@@ -409,13 +416,10 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 			}
 		}
 	}
-	if len(messages) == 0 {
-		return nil
-	}
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 
-	pos, err := messages[0].Message.Header.SeqNum()
+	pos, err = messages[0].Message.Header.SeqNum()
 	if err != nil {
 		return err
 	}
@@ -624,7 +628,10 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 	var nextAcc common.Hash
 	var prevbatchmeta BatchMetadata
 	sequenceNumberToKeep := uint64(0)
-	if t.snapSyncConfig.Enabled {
+	if len(batches) == 0 {
+		return nil
+	}
+	if t.snapSyncConfig.Enabled && batches[0].SequenceNumber < t.snapSyncConfig.BatchCount {
 		sequenceNumberToKeep = t.snapSyncConfig.BatchCount
 		if sequenceNumberToKeep > 0 {
 			sequenceNumberToKeep--
@@ -645,9 +652,6 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 				break
 			}
 		}
-	}
-	if len(batches) == 0 {
-		return nil
 	}
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
