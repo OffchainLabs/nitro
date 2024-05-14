@@ -11,11 +11,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/validator"
 
 	"github.com/offchainlabs/nitro/util/containers"
-	"github.com/offchainlabs/nitro/util/jsonapi"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 
@@ -227,33 +225,4 @@ func (r *ExecutionClientRun) Close() {
 			log.Warn("closing execution client run got error", "err", err, "client", r.client.Name(), "id", r.id)
 		}
 	})
-}
-
-func ValidationInputToJson(entry *validator.ValidationInput) *server_api.InputJSON {
-	jsonPreimagesMap := make(map[arbutil.PreimageType]*jsonapi.PreimagesMapJson)
-	for ty, preimages := range entry.Preimages {
-		jsonPreimagesMap[ty] = jsonapi.NewPreimagesMapJson(preimages)
-	}
-	res := &server_api.InputJSON{
-		Id:            entry.Id,
-		HasDelayedMsg: entry.HasDelayedMsg,
-		DelayedMsgNr:  entry.DelayedMsgNr,
-		DelayedMsgB64: base64.StdEncoding.EncodeToString(entry.DelayedMsg),
-		StartState:    entry.StartState,
-		PreimagesB64:  jsonPreimagesMap,
-		UserWasms:     make(map[common.Hash]server_api.UserWasmJson),
-		DebugChain:    entry.DebugChain,
-	}
-	for _, binfo := range entry.BatchInfo {
-		encData := base64.StdEncoding.EncodeToString(binfo.Data)
-		res.BatchInfo = append(res.BatchInfo, server_api.BatchInfoJson{Number: binfo.Number, DataB64: encData})
-	}
-	for moduleHash, info := range entry.UserWasms {
-		encWasm := server_api.UserWasmJson{
-			Asm:    base64.StdEncoding.EncodeToString(info.Asm),
-			Module: base64.StdEncoding.EncodeToString(info.Module),
-		}
-		res.UserWasms[moduleHash] = encWasm
-	}
-	return res
 }

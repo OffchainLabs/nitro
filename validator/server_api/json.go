@@ -8,6 +8,7 @@ import (
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/offchainlabs/nitro/arbutil"
 
 	"github.com/offchainlabs/nitro/util/jsonapi"
@@ -85,10 +86,19 @@ func ValidationInputToJson(entry *validator.ValidationInput) *InputJSON {
 		DelayedMsgB64: base64.StdEncoding.EncodeToString(entry.DelayedMsg),
 		StartState:    entry.StartState,
 		PreimagesB64:  jsonPreimagesMap,
+		UserWasms:     make(map[common.Hash]UserWasmJson),
+		DebugChain:    entry.DebugChain,
 	}
 	for _, binfo := range entry.BatchInfo {
 		encData := base64.StdEncoding.EncodeToString(binfo.Data)
 		res.BatchInfo = append(res.BatchInfo, BatchInfoJson{Number: binfo.Number, DataB64: encData})
+	}
+	for moduleHash, info := range entry.UserWasms {
+		encWasm := UserWasmJson{
+			Asm:    base64.StdEncoding.EncodeToString(info.Asm),
+			Module: base64.StdEncoding.EncodeToString(info.Module),
+		}
+		res.UserWasms[moduleHash] = encWasm
 	}
 	return res
 }
@@ -104,6 +114,8 @@ func ValidationInputFromJson(entry *InputJSON) (*validator.ValidationInput, erro
 		DelayedMsgNr:  entry.DelayedMsgNr,
 		StartState:    entry.StartState,
 		Preimages:     preimages,
+		UserWasms:     make(state.UserWasms),
+		DebugChain:    entry.DebugChain,
 	}
 	delayed, err := base64.StdEncoding.DecodeString(entry.DelayedMsgB64)
 	if err != nil {
@@ -120,6 +132,21 @@ func ValidationInputFromJson(entry *InputJSON) (*validator.ValidationInput, erro
 			Data:   data,
 		}
 		valInput.BatchInfo = append(valInput.BatchInfo, decInfo)
+	}
+	for moduleHash, info := range entry.UserWasms {
+		asm, err := base64.StdEncoding.DecodeString(info.Asm)
+		if err != nil {
+			return nil, err
+		}
+		module, err := base64.StdEncoding.DecodeString(info.Module)
+		if err != nil {
+			return nil, err
+		}
+		decInfo := state.ActivatedWasm{
+			Asm:    asm,
+			Module: module,
+		}
+		valInput.UserWasms[moduleHash] = decInfo
 	}
 	return valInput, nil
 }
