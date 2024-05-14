@@ -103,7 +103,6 @@ pub fn verify_namespace_helper(
     let tagged = TaggedBase64::parse(&commit_str).unwrap();
     let commit: <VidScheme as VidSchemeTrait>::Commit = tagged.try_into().unwrap();
 
-    dbg!("here we are deserializing the srs");
     let srs =
         UnivariateUniversalParams::<Bn254>::deserialize_uncompressed_unchecked(SRS_VEC.as_slice())
             .unwrap();
@@ -115,10 +114,8 @@ pub fn verify_namespace_helper(
         _ => 5,
     };
     let num_chunks: usize = 1 << num_storage_nodes.ilog2();
-    dbg!("here we are constructing the advz scheme");
     let advz = Advz::new(num_chunks, num_storage_nodes, 1, srs).unwrap();
     let (txns, ns) = proof.verify(&advz, &commit, &ns_table).unwrap();
-    dbg!("...and we are done constructing the scheme");
 
     let txns_comm = hash_txns(namespace, &txns);
 
