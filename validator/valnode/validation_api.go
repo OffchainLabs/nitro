@@ -76,7 +76,7 @@ func NewExecutionServerAPI(valSpawner validator.ValidationSpawner, execution val
 }
 
 func (a *ExecServerAPI) CreateBoldExecutionRun(ctx context.Context, wasmModuleRoot common.Hash, stepSize uint64, jsonInput *server_api.InputJSON) (uint64, error) {
-	input, err := ValidationInputFromJson(jsonInput)
+	input, err := server_api.ValidationInputFromJson(jsonInput)
 	if err != nil {
 		return 0, err
 	}
