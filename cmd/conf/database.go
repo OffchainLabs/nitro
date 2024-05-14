@@ -163,27 +163,27 @@ type PebbleExperimentalConfig struct {
 }
 
 var PebbleExperimentalConfigDefault = PebbleExperimentalConfig{
-	BytesPerSync:                0, // pebble default will be used
-	L0CompactionFileThreshold:   0, // pebble default will be used
-	L0CompactionThreshold:       0, // pebble default will be used
-	L0StopWritesThreshold:       0, // pebble default will be used
-	LBaseMaxBytes:               0, // pebble default will be used
+	BytesPerSync:                512 << 10, // 512 KB
+	L0CompactionFileThreshold:   500,
+	L0CompactionThreshold:       4,
+	L0StopWritesThreshold:       12,
+	LBaseMaxBytes:               64 << 20, // 64 MB
 	MemTableStopWritesThreshold: 2,
 	DisableAutomaticCompactions: false,
-	WALBytesPerSync:             0,  // pebble default will be used
-	WALDir:                      "", // default will use same dir as for sstables
-	WALMinSyncInterval:          0,  // pebble default will be used
-	TargetByteDeletionRate:      0,  // pebble default will be used
+	WALBytesPerSync:             0,  // no background syncing
+	WALDir:                      "", // use same dir as for sstables
+	WALMinSyncInterval:          0,  // no artificial delay
+	TargetByteDeletionRate:      0,  // deletion pacing disabled
 
-	BlockSize:                 4096,
-	IndexBlockSize:            4096,
-	TargetFileSize:            2 * 1024 * 1024,
+	BlockSize:                 4 << 10, // 4 KB
+	IndexBlockSize:            4 << 10, // 4 KB
+	TargetFileSize:            2 << 20, // 2 MB
 	TargetFileSizeEqualLevels: true,
 
-	L0CompactionConcurrency:   0,
-	CompactionDebtConcurrency: 0,
-	ReadCompactionRate:        0,
-	ReadSamplingMultiplier:    -1,
+	L0CompactionConcurrency:   10,
+	CompactionDebtConcurrency: 1 << 30, // 1GB
+	ReadCompactionRate:        16000,   // see ReadSamplingMultiplier comment
+	ReadSamplingMultiplier:    -1,      // geth default, disables read sampling and disables read triggered compaction
 	MaxWriterConcurrency:      0,
 	ForceWriterParallelism:    false,
 }
@@ -196,7 +196,7 @@ func PebbleExperimentalConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int64(prefix+".l-base-max-bytes", PebbleExperimentalConfigDefault.LBaseMaxBytes, "The maximum number of bytes for LBase. The base level is the level which L0 is compacted into. The base level is determined dynamically based on the existing data in the LSM. The maximum number of bytes for other levels is computed dynamically based on the base level's maximum size. When the maximum number of bytes for a level is exceeded, compaction is requested.")
 	f.Int(prefix+".mem-table-stop-writes-threshold", PebbleExperimentalConfigDefault.MemTableStopWritesThreshold, "hard limit on the number of queued of MemTables")
 	f.Bool(prefix+".disable-automatic-compactions", PebbleExperimentalConfigDefault.DisableAutomaticCompactions, "disables automatic compactions")
-	f.Int(prefix+".wal-bytes-per-sync", PebbleExperimentalConfigDefault.WALBytesPerSync, "number of bytes to write to a write-ahead log (WAL) before calling Sync on it in the backgroud")
+	f.Int(prefix+".wal-bytes-per-sync", PebbleExperimentalConfigDefault.WALBytesPerSync, "number of bytes to write to a write-ahead log (WAL) before calling Sync on it in the background")
 	f.String(prefix+".wal-dir", PebbleExperimentalConfigDefault.WALDir, "absolute path of directory to store write-ahead logs (WALs) in. If empty, WALs will be stored in the same directory as sstables")
 	f.Int(prefix+".wal-min-sync-interval", PebbleExperimentalConfigDefault.WALMinSyncInterval, "minimum duration in microseconds between syncs of the WAL. If WAL syncs are requested faster than this interval, they will be artificially delayed.")
 	f.Int(prefix+".target-byte-deletion-rate", PebbleExperimentalConfigDefault.TargetByteDeletionRate, "rate (in bytes per second) at which sstable file deletions are limited to (under normal circumstances).")
