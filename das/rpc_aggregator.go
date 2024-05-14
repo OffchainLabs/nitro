@@ -12,7 +12,7 @@ import (
 	"math/bits"
 	"net/url"
 
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/metricsutil"
@@ -102,7 +102,7 @@ func KeysetHashFromServices(services []ServiceDetails, assumedHonest uint64) ([3
 		return [32]byte{}, nil, errors.New("at least two signers share a mask")
 	}
 
-	keyset := &arbstate.DataAvailabilityKeyset{
+	keyset := &daprovider.DataAvailabilityKeyset{
 		AssumedHonest: uint64(assumedHonest),
 		PubKeys:       pubKeys,
 	}
