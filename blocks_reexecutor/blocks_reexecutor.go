@@ -25,6 +25,8 @@ type Config struct {
 	EndBlock        uint64 `koanf:"end-block"`
 	Room            int    `koanf:"room"`
 	BlocksPerThread uint64 `koanf:"blocks-per-thread"`
+
+	blocksPerThread uint64
 }
 
 func (c *Config) Validate() error {
@@ -35,8 +37,13 @@ func (c *Config) Validate() error {
 	if c.EndBlock < c.StartBlock {
 		return errors.New("invalid block range for blocks re-execution")
 	}
-	if c.Room == 0 {
-		return errors.New("room for blocks re-execution cannot be zero")
+	if c.Room < 0 {
+		return errors.New("room for blocks re-execution should be greater than 0")
+	}
+	if c.BlocksPerThread != 0 {
+		c.blocksPerThread = c.BlocksPerThread
+	} else {
+		c.blocksPerThread = 10000
 	}
 	return nil
 }
@@ -52,6 +59,7 @@ var TestConfig = Config{
 	Mode:            "full",
 	Room:            runtime.NumCPU(),
 	BlocksPerThread: 10,
+	blocksPerThread: 10,
 }
 
 func ConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -93,10 +101,7 @@ func New(c *Config, blockchain *core.BlockChain, fatalErrChan chan error) *Block
 	}
 	if c.Mode == "random" && end != start {
 		// Reexecute a range of 10000 or (non-zero) c.BlocksPerThread number of blocks between start to end picked randomly
-		rng := uint64(10000)
-		if c.BlocksPerThread != 0 {
-			rng = c.BlocksPerThread
-		}
+		rng := c.blocksPerThread
 		if rng > end-start {
 			rng = end - start
 		}
@@ -108,12 +113,11 @@ func New(c *Config, blockchain *core.BlockChain, fatalErrChan chan error) *Block
 	if start > 0 && start != chainStart {
 		start--
 	}
-	// Divide work equally among available threads
+	// Divide work equally among available threads when BlocksPerThread is zero
 	if c.BlocksPerThread == 0 {
-		c.BlocksPerThread = 10000
 		work := (end - start) / uint64(c.Room)
 		if work > 0 {
-			c.BlocksPerThread = work
+			c.blocksPerThread = work
 		}
 	}
 	return &BlocksReExecutor{
@@ -132,12 +136,10 @@ func New(c *Config, blockchain *core.BlockChain, fatalErrChan chan error) *Block
 
 // LaunchBlocksReExecution launches the thread to apply blocks of range [currentBlock-s.config.BlocksPerThread, currentBlock] to the last available valid state
 func (s *BlocksReExecutor) LaunchBlocksReExecution(ctx context.Context, currentBlock uint64) uint64 {
-	start := arbmath.SaturatingUSub(currentBlock, s.config.BlocksPerThread)
+	start := arbmath.SaturatingUSub(currentBlock, s.config.blocksPerThread)
 	if start < s.startBlock {
 		start = s.startBlock
 	}
-	// we don't use state release pattern here
-	// TODO do we want to use release pattern here?
 	startState, startHeader, release, err := arbitrum.FindLastAvailableState(ctx, s.blockchain, s.stateFor, s.blockchain.GetHeaderByNumber(start), nil, -1)
 	if err != nil {
 		s.fatalErrChan <- fmt.Errorf("blocksReExecutor failed to get last available state while searching for state at %d, err: %w", start, err)
