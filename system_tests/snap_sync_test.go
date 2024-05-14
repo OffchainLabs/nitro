@@ -122,9 +122,9 @@ func TestSnapSync(t *testing.T) {
 			if metadata != metadataNodeC {
 				t.Error("Batch metadata mismatch")
 			}
-			break
 		} else {
 			<-time.After(10 * time.Millisecond)
+			continue
 		}
 
 		header, err := builder.L2.Client.HeaderByNumber(ctx, nil)
