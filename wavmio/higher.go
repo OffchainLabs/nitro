@@ -58,11 +58,7 @@ func ReadInboxMessage(msgNum uint64) []byte {
 }
 
 func ReadHotShotCommitment(h uint64) (commitment [32]byte) {
-	bytes := readBuffer(func(_ uint32, buf unsafe.Pointer) uint32 {
-		readHotShotCommitment(h, buf)
-		return 32
-	})
-	copy(commitment[:], bytes)
+	readHotShotCommitment(h, unsafe.Pointer(&commitment))
 	return commitment
 }
 

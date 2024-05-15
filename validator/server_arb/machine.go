@@ -253,7 +253,11 @@ func (m *ArbitratorMachine) StepUntilReadHotShot(ctx context.Context) error {
 	conditionByte, cancel := manageConditionByte(ctx)
 	defer cancel()
 
-	C.arbitrator_step_until_read_hotshot(m.ptr, conditionByte)
+	err := C.arbitrator_step_until_read_hotshot(m.ptr, conditionByte)
+	defer C.free(unsafe.Pointer(err))
+	if err != nil {
+		return errors.New(C.GoString(err))
+	}
 
 	return ctx.Err()
 }

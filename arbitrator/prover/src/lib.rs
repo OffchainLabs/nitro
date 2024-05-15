@@ -216,7 +216,7 @@ pub unsafe extern "C" fn arbitrator_add_hotshot_commitment(
     data: CByteArray,
 ) -> c_int {
     let mach = &mut *mach;
-    let slice = std::slice::from_raw_parts(data.ptr, data.len);
+    let slice = slice::from_raw_parts(data.ptr, data.len);
     if slice.len() != 32 {
         return 3;
     }
@@ -279,10 +279,10 @@ pub unsafe extern "C" fn arbitrator_step_until_read_hotshot(
     while condition.load(atomic::Ordering::Relaxed) == 0 {
         for _ in 0..1_000_000 {
             if mach.is_halted() {
-                return std::ptr::null_mut();
+                return ptr::null_mut();
             }
             if mach.next_instruction_is_read_hotshot() {
-                return std::ptr::null_mut();
+                return ptr::null_mut();
             }
             match mach.step_n(1) {
                 Ok(()) => {}
@@ -290,7 +290,7 @@ pub unsafe extern "C" fn arbitrator_step_until_read_hotshot(
             }
         }
     }
-    std::ptr::null_mut()
+    ptr::null_mut()
 }
 
 #[no_mangle]
