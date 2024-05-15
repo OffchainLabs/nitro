@@ -5,14 +5,16 @@ package arbtest
 
 import (
 	"context"
-	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/nitro/arbos/l2pricing"
-	"github.com/offchainlabs/nitro/util"
 	"math/big"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/params"
+
+	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/util"
 )
 
 func TestSnapSync(t *testing.T) {
@@ -146,7 +148,7 @@ func TestSnapSync(t *testing.T) {
 		}
 	}
 	// Fetching message count - 1 instead on the latest block number as the latest block number might not be
-	// present in the snap sync node since it does not the sequencer feed.
+	// present in the snap sync node since it does not have the sequencer feed.
 	header, err := builder.L2.Client.HeaderByNumber(ctx, big.NewInt(int64(finalMessageCount)-1))
 	Require(t, err)
 	headerNodeC, err := nodeC.Client.HeaderByNumber(ctx, big.NewInt(int64(finalMessageCount)-1))
