@@ -1151,7 +1151,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 		nextBlock := time.Now().Add(s.config().MaxBlockSpeed)
 		var madeBlock bool
 		if s.enableProfiling {
-			s.createBlockWithProfiling(ctx)
+			madeBlock = s.createBlockWithProfiling(ctx)
 		} else {
 			madeBlock = s.createBlock(ctx)
 		}
