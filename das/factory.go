@@ -277,15 +277,14 @@ func CreateDAComponentsForDaserver(
 			seqInboxCaller = nil
 		}
 
-		privKey, err := config.Key.BLSPrivKey()
+		daWriter, err = NewSignAfterStoreDASWriter(ctx, *config, storageService)
 		if err != nil {
 			return nil, nil, nil, nil, err
 		}
 
-		daWriter, err = NewSignAfterStoreDASWriterWithSeqInboxCaller(
-			privKey,
+		daWriter, err = NewSignatureVerifierWithSeqInboxCaller(
 			seqInboxCaller,
-			storageService,
+			daWriter,
 			config.ExtraSignatureCheckingPublicKey,
 		)
 		if err != nil {
