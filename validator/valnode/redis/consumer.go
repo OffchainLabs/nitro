@@ -3,10 +3,13 @@ package redis
 import (
 	"context"
 	"fmt"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -42,10 +45,54 @@ func NewValidationServer(cfg *ValidationServerConfig, spawner validator.Validati
 		}
 		consumers[mr] = c
 	}
+	var (
+		wg          sync.WaitGroup
+		initialized atomic.Bool
+	)
+	initialized.Store(true)
+	for i := 0; i < len(cfg.ModuleRoots); i++ {
+		mr := cfg.ModuleRoots[i]
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			done := waitForStream(redisClient, mr)
+			select {
+			case <-time.After(cfg.StreamTimeout):
+				initialized.Store(false)
+				return
+			case <-done:
+				return
+			}
+		}()
+	}
+	wg.Wait()
+	if !initialized.Load() {
+		return nil, fmt.Errorf("waiting for streams to be created: timed out")
+	}
 	return &ValidationServer{
 		consumers: consumers,
 		spawner:   spawner,
 	}, nil
+}
+
+func streamExists(client redis.UniversalClient, streamName string) bool {
+	groups, err := client.XInfoStream(context.TODO(), streamName).Result()
+	if err != nil {
+		log.Error("Reading redis streams", "error", err)
+		return false
+	}
+	return groups.Groups > 0
+}
+
+func waitForStream(client redis.UniversalClient, streamName string) chan struct{} {
+	var ret chan struct{}
+	go func() {
+		if streamExists(client, streamName) {
+			ret <- struct{}{}
+		}
+		time.Sleep(time.Millisecond * 100)
+	}()
+	return ret
 }
 
 func (s *ValidationServer) Start(ctx_in context.Context) {
@@ -83,6 +130,8 @@ type ValidationServerConfig struct {
 	ConsumerConfig pubsub.ConsumerConfig `koanf:"consumer-config"`
 	// Supported wasm module roots.
 	ModuleRoots []string `koanf:"module-roots"`
+	// Timeout on polling for existence of each redis stream.
+	StreamTimeout time.Duration `koanf:"stream-timeout"`
 }
 
 var DefaultValidationServerConfig = ValidationServerConfig{
