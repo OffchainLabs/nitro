@@ -28,6 +28,8 @@ var (
 	rpcStoreFailureGauge      = metrics.NewRegisteredGauge("arb/das/rpc/store/failure", nil)
 	rpcStoreStoredBytesGauge  = metrics.NewRegisteredGauge("arb/das/rpc/store/bytes", nil)
 	rpcStoreDurationHistogram = metrics.NewRegisteredHistogram("arb/das/rpc/store/duration", nil, metrics.NewBoundedHistogramSample())
+
+	// TODO chunk store metrics
 )
 
 type DASRPCServer struct {
@@ -116,6 +118,28 @@ func (serv *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, time
 		Sig:         blsSignatures.SignatureToBytes(cert.Sig),
 		Version:     hexutil.Uint64(cert.Version),
 	}, nil
+}
+
+type StartChunkedStoreResult struct {
+	ChunkedStoreId hexutil.Uint64 `json:"chunkedStoreId,omitempty"`
+}
+
+type SendChunkResult struct {
+	Ok hexutil.Uint64 `json:"sendChunkResult,omitempty"`
+}
+
+func (serv *DASRPCServer) StartChunkedStore(ctx context.Context, timestamp hexutil.Uint64, nChunks hexutil.Uint64, totalSize hexutil.Uint64, timeout hexutil.Uint64, sig hexutil.Bytes) (*StartChunkedStoreResult, error) {
+	return &StartChunkedStoreResult{}, nil
+
+}
+
+func (serv *DASRPCServer) SendChunk(ctx context.Context, message hexutil.Bytes, timeout hexutil.Uint64, sig hexutil.Bytes) (*SendChunkResult, error) {
+	return &SendChunkResult{}, nil
+}
+
+func (serv *DASRPCServer) CommitChunkedStore(ctx context.Context, message hexutil.Bytes, timeout hexutil.Uint64, sig hexutil.Bytes) (*StoreResult, error) {
+	// TODO tracing, metrics, and timers
+	return &StoreResult{}, nil
 }
 
 func (serv *DASRPCServer) HealthCheck(ctx context.Context) error {

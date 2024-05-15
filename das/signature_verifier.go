@@ -28,7 +28,7 @@ type SignatureVerifier struct {
 
 	// Extra batch poster verifier, for local installations to have their
 	// own way of testing Stores.
-	extraBpVerifier func(message []byte, timeout uint64, sig []byte) bool
+	extraBpVerifier func(message []byte, sig []byte, extraFields ...uint64) bool
 }
 
 func NewSignatureVerifier(ctx context.Context, config DataAvailabilityConfig, inner DataAvailabilityServiceWriter) (*SignatureVerifier, error) {
@@ -65,7 +65,7 @@ func NewSignatureVerifierWithSeqInboxCaller(
 		addrVerifier = contracts.NewAddressVerifier(seqInboxCaller)
 	}
 
-	var extraBpVerifier func(message []byte, timeout uint64, sig []byte) bool
+	var extraBpVerifier func(message []byte, sig []byte, extraFeilds ...uint64) bool
 	if extraSignatureCheckingPublicKey != "" {
 		var pubkey []byte
 		var err error
@@ -84,9 +84,9 @@ func NewSignatureVerifierWithSeqInboxCaller(
 				return nil, err
 			}
 		}
-		extraBpVerifier = func(message []byte, timeout uint64, sig []byte) bool {
+		extraBpVerifier = func(message []byte, sig []byte, extraFields ...uint64) bool {
 			if len(sig) >= 64 {
-				return crypto.VerifySignature(pubkey, dasStoreHash(message, timeout), sig[:64])
+				return crypto.VerifySignature(pubkey, dasStoreHash(message, extraFields...), sig[:64])
 			}
 			return false
 		}
@@ -106,11 +106,11 @@ func (v *SignatureVerifier) Store(
 	log.Trace("das.SignatureVerifier.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig), "this", v)
 	var verified bool
 	if v.extraBpVerifier != nil {
-		verified = v.extraBpVerifier(message, timeout, sig)
+		verified = v.extraBpVerifier(message, sig, timeout)
 	}
 
 	if !verified && v.addrVerifier != nil {
-		actualSigner, err := DasRecoverSigner(message, timeout, sig)
+		actualSigner, err := DasRecoverSigner(message, sig, timeout)
 		if err != nil {
 			return nil, err
 		}

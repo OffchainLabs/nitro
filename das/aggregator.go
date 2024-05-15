@@ -165,7 +165,7 @@ type storeResponse struct {
 func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*daprovider.DataAvailabilityCertificate, error) {
 	log.Trace("das.Aggregator.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig))
 	if a.addrVerifier != nil {
-		actualSigner, err := DasRecoverSigner(message, timeout, sig)
+		actualSigner, err := DasRecoverSigner(message, sig, timeout)
 		if err != nil {
 			return nil, err
 		}

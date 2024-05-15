@@ -20,22 +20,26 @@ import (
 
 var uniquifyingPrefix = []byte("Arbitrum Nitro DAS API Store:")
 
-func applyDasSigner(signer signature.DataSignerFunc, data []byte, timeout uint64) ([]byte, error) {
-	return signer(dasStoreHash(data, timeout))
+func applyDasSigner(signer signature.DataSignerFunc, data []byte, extraFields ...uint64) ([]byte, error) {
+	return signer(dasStoreHash(data, extraFields...))
 }
 
-func DasRecoverSigner(data []byte, timeout uint64, sig []byte) (common.Address, error) {
-	pk, err := crypto.SigToPub(dasStoreHash(data, timeout), sig)
+func DasRecoverSigner(data []byte, sig []byte, extraFields ...uint64) (common.Address, error) {
+	pk, err := crypto.SigToPub(dasStoreHash(data, extraFields...), sig)
 	if err != nil {
 		return common.Address{}, err
 	}
 	return crypto.PubkeyToAddress(*pk), nil
 }
 
-func dasStoreHash(data []byte, timeout uint64) []byte {
-	var buf8 [8]byte
-	binary.BigEndian.PutUint64(buf8[:], timeout)
-	return dastree.HashBytes(uniquifyingPrefix, buf8[:], data)
+func dasStoreHash(data []byte, extraFields ...uint64) []byte {
+	var buf []byte
+
+	for _, field := range extraFields {
+		buf = binary.BigEndian.AppendUint64(buf, field)
+	}
+
+	return dastree.HashBytes(uniquifyingPrefix, buf, data)
 }
 
 type StoreSigningDAS struct {
@@ -49,7 +53,7 @@ func NewStoreSigningDAS(inner DataAvailabilityServiceWriter, signer signature.Da
 	if err != nil {
 		return nil, err
 	}
-	addr, err := DasRecoverSigner([]byte{}, 0, sig)
+	addr, err := DasRecoverSigner([]byte{}, sig, 0)
 	if err != nil {
 		return nil, err
 	}
