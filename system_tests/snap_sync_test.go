@@ -110,36 +110,30 @@ func TestSnapSync(t *testing.T) {
 		Require(t, err)
 		countNodeC, err := nodeC.ConsensusNode.InboxTracker.GetBatchCount()
 		Require(t, err)
-		if count == countNodeC {
-			// Once the node is synced up, check if the batch metadata is the same for the last batch
-			// This is to ensure that the snap sync worked correctly
-			metadata, err := builder.L2.ConsensusNode.InboxTracker.GetBatchMetadata(count - 1)
-			Require(t, err)
-			metadataNodeC, err := nodeC.ConsensusNode.InboxTracker.GetBatchMetadata(countNodeC - 1)
-			Require(t, err)
-			if metadata != metadataNodeC {
-				t.Error("Batch metadata mismatch")
-			}
-			break
-		} else {
+		if count != countNodeC {
 			<-time.After(10 * time.Millisecond)
+			continue
 		}
-	}
-	for {
-		header, err := builder.L2.Client.HeaderByNumber(ctx, nil)
+		// Once the node is synced up, check if the batch metadata is the same for the last batch
+		// This is to ensure that the snap sync worked correctly
+		metadata, err := builder.L2.ConsensusNode.InboxTracker.GetBatchMetadata(count - 1)
 		Require(t, err)
-		headerNodeC, err := nodeC.Client.HeaderByNumber(ctx, nil)
+		metadataNodeC, err := nodeC.ConsensusNode.InboxTracker.GetBatchMetadata(countNodeC - 1)
 		Require(t, err)
-		if header.Number.Cmp(headerNodeC.Number) == 0 {
-			// Once the node is synced up, check if the block hash is the same for the last block
-			// This is to ensure that the snap sync worked correctly
-			if header.Hash().Cmp(headerNodeC.Hash()) != 0 {
-				t.Error("Block hash mismatch")
-			}
-			break
-		} else {
-			<-time.After(10 * time.Millisecond)
+		if metadata != metadataNodeC {
+			t.Error("Batch metadata mismatch")
 		}
+		// Fetching message count - 1 instead on the latest block number as the latest block number might not be
+		// present in the snap sync node since it does not the sequencer feed.
+		header, err := builder.L2.Client.HeaderByNumber(ctx, big.NewInt(int64(metadata.MessageCount)-1))
+		Require(t, err)
+		headerNodeC, err := nodeC.Client.HeaderByNumber(ctx, big.NewInt(int64(metadata.MessageCount)-1))
+		Require(t, err)
+		// Once the node is synced up, check if the block hash is the same for the last block
+		// This is to ensure that the snap sync worked correctly
+		if header.Hash().Cmp(headerNodeC.Hash()) != 0 {
+			t.Error("Block hash mismatch")
+		}
+		break
 	}
-
 }
