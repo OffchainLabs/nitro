@@ -12,12 +12,15 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster/backlog"
 	"github.com/offchainlabs/nitro/broadcaster/message"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/relay"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -297,41 +300,41 @@ func testBlockHashComparison(t *testing.T, blockHash *common.Hash, mustMismatch 
 	defer cleanup()
 	testClient := builder.L2
 
-	// related to:
-	// - builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 	userAccount := "User2"
-	txHash := common.HexToHash("0x633f62b463cc0e52d842406995fb590654db40aace77bfca863ba0e8d2290f97")
-	poster := common.HexToAddress("0xa4b000000000000000000073657175656e636572")
-	l2msg := []byte{4, 2, 248, 111, 131, 6, 74, 186, 128, 128, 132, 11, 235, 194, 0, 131, 122, 18, 0, 148, 12, 112, 159, 52, 15, 11, 178, 227, 97, 34, 158, 52, 91, 126, 38, 153, 157, 9, 105, 171, 133, 232, 212, 165, 16, 0, 128, 192, 1, 160, 75, 109, 200, 183, 223, 114, 85, 128, 133, 94, 26, 103, 145, 247, 47, 0, 114, 132, 133, 234, 222, 235, 102, 45, 2, 109, 83, 65, 210, 142, 242, 209, 160, 96, 90, 108, 188, 197, 195, 43, 222, 103, 155, 153, 81, 119, 74, 177, 103, 110, 134, 94, 221, 72, 236, 20, 86, 94, 226, 94, 5, 206, 196, 122, 119}
+	builder.L2Info.GenerateAccount(userAccount)
+	tx := builder.L2Info.PrepareTx("Owner", userAccount, builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	l1IncomingMsgHeader := arbostypes.L1IncomingMessageHeader{
+		Kind:        arbostypes.L1MessageType_L2Message,
+		Poster:      l1pricing.BatchPosterAddress,
+		BlockNumber: 29,
+		Timestamp:   1715295980,
+		RequestId:   nil,
+		L1BaseFee:   nil,
+	}
+	l1IncomingMsg, err := gethexec.MessageFromTxes(
+		&l1IncomingMsgHeader,
+		types.Transactions{tx},
+		[]error{nil},
+	)
+	Require(t, err)
+
 	broadcastMessage := message.BroadcastMessage{
 		Version: 1,
 		Messages: []*message.BroadcastFeedMessage{
 			{
 				SequenceNumber: 1,
 				Message: arbostypes.MessageWithMetadata{
-					Message: &arbostypes.L1IncomingMessage{
-						Header: &arbostypes.L1IncomingMessageHeader{
-							Kind:        arbostypes.L1MessageType_L2Message,
-							Poster:      poster,
-							BlockNumber: 29,
-							Timestamp:   1715295980,
-							RequestId:   nil,
-							L1BaseFee:   nil,
-						},
-						L2msg: l2msg,
-					},
+					Message:             l1IncomingMsg,
 					DelayedMessagesRead: 1,
 				},
 				BlockHash: blockHash,
-				Signature: nil,
 			},
 		},
 	}
 	wsBroadcastServer.Broadcast(&broadcastMessage)
 
 	// By now, even though block hash mismatch, the transaction should still be processed
-	builder.L2Info.GenerateAccount(userAccount)
-	_, err = WaitForTx(ctx, testClient.Client, txHash, time.Second*15)
+	_, err = WaitForTx(ctx, testClient.Client, tx.Hash(), time.Second*15)
 	if err != nil {
 		t.Fatal("error waiting for tx:", err)
 	}
