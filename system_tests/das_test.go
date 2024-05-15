@@ -178,7 +178,6 @@ func TestDASRekey(t *testing.T) {
 	l2stackA, err := node.New(stackConfig)
 	Require(t, err)
 
-	// TODO get pebble.ExtraOptions from conf.PersistentConfig
 	l2chainDb, err := l2stackA.OpenDatabaseWithExtraOptions("l2chaindata", 0, 0, "l2chaindata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata"))
 	Require(t, err)
 

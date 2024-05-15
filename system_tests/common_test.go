@@ -773,7 +773,6 @@ func createL2BlockChainWithStackConfig(
 	stack, err = node.New(stackConfig)
 	Require(t, err)
 
-	// TODO get pebble.ExtraOptions from conf.PersistentConfig when opening the DBs
 	chainDb, err := stack.OpenDatabaseWithExtraOptions("l2chaindata", 0, 0, "l2chaindata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata"))
 	Require(t, err)
 	arbDb, err := stack.OpenDatabaseWithExtraOptions("arbitrumdata", 0, 0, "arbitrumdata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdata"))
@@ -978,7 +977,6 @@ func Create2ndNodeWithConfig(
 	l2stack, err := node.New(stackConfig)
 	Require(t, err)
 
-	// TODO get pebble.ExtraOptions from conf.PersistentConfig when opening the DBs
 	l2chainDb, err := l2stack.OpenDatabaseWithExtraOptions("l2chaindata", 0, 0, "l2chaindata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata"))
 	Require(t, err)
 	l2arbDb, err := l2stack.OpenDatabaseWithExtraOptions("arbitrumdata", 0, 0, "arbitrumdata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdata"))

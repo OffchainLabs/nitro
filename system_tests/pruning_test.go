@@ -65,7 +65,6 @@ func TestPruning(t *testing.T) {
 		stack, err := node.New(builder.l2StackConfig)
 		Require(t, err)
 		defer stack.Close()
-		// TODO get pebble.ExtraOptions from conf.PersistentConfig
 		chainDb, err := stack.OpenDatabaseWithExtraOptions("l2chaindata", 0, 0, "l2chaindata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata"))
 		Require(t, err)
 		defer chainDb.Close()
