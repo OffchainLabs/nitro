@@ -184,7 +184,6 @@ func CreateExecutionNode(
 			return nil, err
 		}
 		if config.Sequencer.Espresso {
-			seqConfigFetcher := func() *SequencerConfig { return &configFetcher().Sequencer }
 			espressoSequencer, err := NewEspressoSequencer(execEngine, seqConfigFetcher)
 			if err != nil {
 				return nil, err

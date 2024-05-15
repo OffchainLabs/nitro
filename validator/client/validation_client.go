@@ -246,6 +246,9 @@ func ValidationInputToJson(entry *validator.ValidationInput) *server_api.InputJS
 		PreimagesB64:  jsonPreimagesMap,
 		UserWasms:     make(map[common.Hash]server_api.UserWasmJson),
 		DebugChain:    entry.DebugChain,
+
+		HotShotHeight:     entry.HotShotHeight,
+		HotShotCommitment: entry.HotShotCommitment,
 	}
 	for _, binfo := range entry.BatchInfo {
 		encData := base64.StdEncoding.EncodeToString(binfo.Data)

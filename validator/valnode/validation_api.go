@@ -204,6 +204,9 @@ func ValidationInputFromJson(entry *server_api.InputJSON) (*validator.Validation
 		Preimages:     preimages,
 		UserWasms:     make(state.UserWasms),
 		DebugChain:    entry.DebugChain,
+
+		HotShotHeight:     entry.HotShotHeight,
+		HotShotCommitment: entry.HotShotCommitment,
 	}
 	delayed, err := base64.StdEncoding.DecodeString(entry.DelayedMsgB64)
 	if err != nil {

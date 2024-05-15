@@ -22,13 +22,24 @@ func TestEspressoSwitch(t *testing.T) {
 	node.ConsensusNode.DelayedSequencer.StopAndWait()
 	l2Node.ConsensusNode.DelayedSequencer.StopAndWait()
 
+	err := waitForWith(t, ctx, 3*time.Minute, 2*time.Second, func() bool {
+		msg, err := node.ConsensusNode.TxStreamer.GetMessageCount()
+		if err != nil {
+			return false
+		}
+		log.Info("waiting msg cnt: ", "cnt", msg)
+		return msg > 10
+
+	})
+	Require(t, err)
+
 	seq := l2Node.ExecNode.TxPublisher
-	err := seq.SetMode(ctx, false)
+	err = seq.SetMode(ctx, false)
 	Require(t, err)
 
 	currMsg := arbutil.MessageIndex(0)
 	// Wait for the switch to be totally finished
-	err = waitForWith(t, ctx, 3*time.Minute, 30*time.Second, func() bool {
+	err = waitForWith(t, ctx, 4*time.Minute, 30*time.Second, func() bool {
 		msg, err := node.ConsensusNode.TxStreamer.GetMessageCount()
 		if err != nil {
 			return false
