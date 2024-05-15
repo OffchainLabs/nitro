@@ -105,6 +105,7 @@ func TestSnapSync(t *testing.T) {
 		}
 	}
 	// Wait for nodeB to sync up to the first node
+	finalMessageCount := uint64(0)
 	for {
 		count, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
 		Require(t, err)
@@ -123,35 +124,36 @@ func TestSnapSync(t *testing.T) {
 		if metadata != metadataNodeC {
 			t.Error("Batch metadata mismatch")
 		}
-		for {
-			latestHeader, err := builder.L2.Client.HeaderByNumber(ctx, nil)
-			Require(t, err)
-			if latestHeader.Number.Uint64() < uint64(metadata.MessageCount)-1 {
-				<-time.After(10 * time.Millisecond)
-			} else {
-				break
-			}
-		}
-		for {
-			latestHeaderNodeC, err := nodeC.Client.HeaderByNumber(ctx, nil)
-			Require(t, err)
-			if latestHeaderNodeC.Number.Uint64() < uint64(metadata.MessageCount)-1 {
-				<-time.After(10 * time.Millisecond)
-			} else {
-				break
-			}
-		}
-		// Fetching message count - 1 instead on the latest block number as the latest block number might not be
-		// present in the snap sync node since it does not the sequencer feed.
-		header, err := builder.L2.Client.HeaderByNumber(ctx, big.NewInt(int64(metadata.MessageCount)-1))
-		Require(t, err)
-		headerNodeC, err := nodeC.Client.HeaderByNumber(ctx, big.NewInt(int64(metadata.MessageCount)-1))
-		Require(t, err)
-		// Once the node is synced up, check if the block hash is the same for the last block
-		// This is to ensure that the snap sync worked correctly
-		if header.Hash().Cmp(headerNodeC.Hash()) != 0 {
-			t.Error("Block hash mismatch")
-		}
+		finalMessageCount = uint64(metadata.MessageCount)
 		break
+	}
+	for {
+		latestHeader, err := builder.L2.Client.HeaderByNumber(ctx, nil)
+		Require(t, err)
+		if latestHeader.Number.Uint64() < uint64(finalMessageCount)-1 {
+			<-time.After(10 * time.Millisecond)
+		} else {
+			break
+		}
+	}
+	for {
+		latestHeaderNodeC, err := nodeC.Client.HeaderByNumber(ctx, nil)
+		Require(t, err)
+		if latestHeaderNodeC.Number.Uint64() < uint64(finalMessageCount)-1 {
+			<-time.After(10 * time.Millisecond)
+		} else {
+			break
+		}
+	}
+	// Fetching message count - 1 instead on the latest block number as the latest block number might not be
+	// present in the snap sync node since it does not the sequencer feed.
+	header, err := builder.L2.Client.HeaderByNumber(ctx, big.NewInt(int64(finalMessageCount)-1))
+	Require(t, err)
+	headerNodeC, err := nodeC.Client.HeaderByNumber(ctx, big.NewInt(int64(finalMessageCount)-1))
+	Require(t, err)
+	// Once the node is synced up, check if the block hash is the same for the last block
+	// This is to ensure that the snap sync worked correctly
+	if header.Hash().Cmp(headerNodeC.Hash()) != 0 {
+		t.Error("Block hash mismatch")
 	}
 }
