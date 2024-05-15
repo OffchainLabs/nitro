@@ -3,7 +3,7 @@
 
 use crate::{
     caller_env::JitEnv,
-    machine::{Escape, HotShotCommitmentMap, MaybeEscape, WasmEnv, WasmEnvMut},
+    machine::{Escape, MaybeEscape, WasmEnv, WasmEnvMut},
     socket,
 };
 use arbutil::{Color, PreimageType};
