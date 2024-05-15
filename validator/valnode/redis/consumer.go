@@ -33,9 +33,13 @@ func NewValidationServer(cfg *ValidationServerConfig, spawner validator.Validati
 	if err != nil {
 		return nil, err
 	}
+
 	consumers := make(map[common.Hash]*pubsub.Consumer[*validator.ValidationInput, validator.GoGlobalState])
 	for _, hash := range cfg.ModuleRoots {
 		mr := common.HexToHash(hash)
+		if err := pubsub.CreateStream(context.TODO(), server_api.RedisStreamForRoot(mr), redisClient); err != nil {
+			return nil, fmt.Errorf("creating redis stream: %w", err)
+		}
 		c, err := pubsub.NewConsumer[*validator.ValidationInput, validator.GoGlobalState](redisClient, server_api.RedisStreamForRoot(mr), &cfg.ConsumerConfig)
 		if err != nil {
 			return nil, fmt.Errorf("creating consumer for validation: %w", err)

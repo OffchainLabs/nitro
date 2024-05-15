@@ -78,8 +78,11 @@ func NewValidationClient(cfg *ValidationClientConfig) (*ValidationClient, error)
 	}, nil
 }
 
-func (c *ValidationClient) Initialize(moduleRoots []common.Hash) error {
+func (c *ValidationClient) Initialize(ctx context.Context, moduleRoots []common.Hash) error {
 	for _, mr := range moduleRoots {
+		if err := pubsub.CreateStream(ctx, server_api.RedisStreamForRoot(mr), c.redisClient); err != nil {
+			return fmt.Errorf("creating redis stream: %w", err)
+		}
 		if _, exists := c.producers[mr]; exists {
 			log.Warn("Producer already existsw for module root", "hash", mr)
 			continue
