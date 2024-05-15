@@ -146,6 +146,10 @@ type blockHashDBValue struct {
 	BlockHash *common.Hash `rlp:"nil"`
 }
 
+const (
+	BlockHashMismatchLogMsg = "BlockHash from feed doesn't match locally computed hash. Check feed source."
+)
+
 func (s *TransactionStreamer) CurrentEstimateOfL1GasPrice() uint64 {
 	s.cachedL1PriceDataMutex.Lock()
 	defer s.cachedL1PriceDataMutex.Unlock()
@@ -547,8 +551,8 @@ func (s *TransactionStreamer) getMessageWithMetadataAndBlockHash(seqNum arbutil.
 	}
 
 	// Get block hash.
-	// To keep it backwards compatible it is possible that a message related
-	// to a sequence number exists in the database but the block hash doesn't.
+	// To keep it backwards compatible, since it is possible that a message related
+	// to a sequence number exists in the database, but the block hash doesn't.
 	key := dbKey(blockHashInputFeedPrefix, uint64(seqNum))
 	var blockHash *common.Hash
 	data, err := s.db.Get(key)
@@ -1170,7 +1174,7 @@ func (s *TransactionStreamer) checkResult(msgResult *execution.MessageResult, ex
 	}
 	if msgResult.BlockHash != *expectedBlockHash {
 		log.Error(
-			"block_hash_mismatch",
+			BlockHashMismatchLogMsg,
 			"expected", expectedBlockHash,
 			"actual", msgResult.BlockHash,
 		)

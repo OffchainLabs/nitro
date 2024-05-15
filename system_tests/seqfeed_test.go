@@ -346,11 +346,11 @@ func testBlockHashComparison(t *testing.T, blockHash *common.Hash, mustMismatch 
 		t.Fatal("Unexpected balance:", l2balance)
 	}
 
-	mismatched := logHandler.WasLogged("block_hash_mismatch")
+	mismatched := logHandler.WasLogged(arbnode.BlockHashMismatchLogMsg)
 	if mustMismatch && !mismatched {
-		t.Fatal("Failed to log block_hash_mismatch")
+		t.Fatal("Failed to log BlockHashMismatchLogMsg")
 	} else if !mustMismatch && mismatched {
-		t.Fatal("block_hash_mismatch was logged unexpectedly")
+		t.Fatal("BlockHashMismatchLogMsg was logged unexpectedly")
 	}
 }
 

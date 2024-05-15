@@ -354,8 +354,8 @@ func testCoordinatorMessageSync(t *testing.T, successCase bool) {
 			t.Fatal("Unexpected balance:", l2balance)
 		}
 
-		if logHandler.WasLogged("block_hash_mismatch") {
-			t.Fatal("block_hash_mismatch was logged unexpectedly")
+		if logHandler.WasLogged(arbnode.BlockHashMismatchLogMsg) {
+			t.Fatal("BlockHashMismatchLogMsg was logged unexpectedly")
 		}
 	} else {
 		_, err = WaitForTx(ctx, testClientB.Client, tx.Hash(), time.Second)
