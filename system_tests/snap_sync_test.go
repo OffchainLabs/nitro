@@ -123,6 +123,24 @@ func TestSnapSync(t *testing.T) {
 		if metadata != metadataNodeC {
 			t.Error("Batch metadata mismatch")
 		}
+		for {
+			latestHeader, err := builder.L2.Client.HeaderByNumber(ctx, nil)
+			Require(t, err)
+			if latestHeader.Number.Uint64() < uint64(metadata.MessageCount)-1 {
+				<-time.After(10 * time.Millisecond)
+			} else {
+				break
+			}
+		}
+		for {
+			latestHeaderNodeC, err := nodeC.Client.HeaderByNumber(ctx, nil)
+			Require(t, err)
+			if latestHeaderNodeC.Number.Uint64() < uint64(metadata.MessageCount)-1 {
+				<-time.After(10 * time.Millisecond)
+			} else {
+				break
+			}
+		}
 		// Fetching message count - 1 instead on the latest block number as the latest block number might not be
 		// present in the snap sync node since it does not the sequencer feed.
 		header, err := builder.L2.Client.HeaderByNumber(ctx, big.NewInt(int64(metadata.MessageCount)-1))
