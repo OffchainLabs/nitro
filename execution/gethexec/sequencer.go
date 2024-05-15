@@ -792,19 +792,17 @@ func (s *Sequencer) createBlockWithProfiling(ctx context.Context) bool {
 	pprofFile, err := os.CreateTemp("", id+".pprof")
 	if err != nil {
 		log.Error("Creating temporary file for profiling CPU", "error", err)
-		return false
 	}
 	traceFile, err := os.CreateTemp("", id+".trace")
 	if err != nil {
 		log.Error("Creating temporary file for tracing", "error", err)
-		return false
 	}
 	if err := pprof.StartCPUProfile(pprofFile); err != nil {
 		log.Error("Starting CPU profiling", "error", err)
-		deleteFiles(pprofFile, traceFile)
-		return false
+		deleteFiles(pprofFile)
 	}
 	if err := trace.Start(traceFile); err != nil {
+		deleteFiles(traceFile)
 		log.Error("Starting tracing", "error", err)
 	}
 	start := time.Now()
