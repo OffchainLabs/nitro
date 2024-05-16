@@ -1304,7 +1304,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	UseNoOpStorage:         false,
 	LegacyStorageEncoding:  false,
 	Dangerous:              DangerousConfig{ClearDBStorage: false},
-	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction", InsecureSkipVerify: true},
+	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction", InsecureSkipVerify: false},
 	MaxFeeCapFormula:       "((BacklogOfBatches * UrgencyGWei) ** 2) + ((ElapsedTime/ElapsedTimeBase) ** 2) * ElapsedTimeImportance + TargetPriceGWei",
 	ElapsedTimeBase:        10 * time.Minute,
 	ElapsedTimeImportance:  10,
