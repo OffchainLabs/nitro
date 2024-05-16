@@ -30,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
@@ -821,6 +822,10 @@ func (c *NodeConfig) CanReload(new *NodeConfig) error {
 	return err
 }
 
+var (
+	invalidCachingStateSchemeForValidator = errors.New("PathScheme cannot be used as Caching.StateScheme when validator is required")
+)
+
 func (c *NodeConfig) Validate() error {
 	if c.Init.RecreateMissingStateFrom > 0 && !c.Execution.Caching.Archive {
 		return errors.New("recreate-missing-state-from enabled for a non-archive node")
@@ -839,6 +844,9 @@ func (c *NodeConfig) Validate() error {
 	}
 	if err := c.BlocksReExecutor.Validate(); err != nil {
 		return err
+	}
+	if c.Node.ValidatorRequired() && (c.Execution.Caching.StateScheme == rawdb.PathScheme) {
+		return invalidCachingStateSchemeForValidator
 	}
 	return c.Persistent.Validate()
 }
