@@ -63,31 +63,31 @@ func NewAvailDA(cfg DAConfig, l1Client arbutil.L1Interface) (*AvailDA, error) {
 
 	meta, err := api.RPC.State.GetMetadataLatest()
 	if err != nil {
-		log.Warn("⚠️ cannot get metadata: error:%v", err)
+		log.Warn("⚠️ cannot get metadata", "error", err)
 		return nil, err
 	}
 
 	genesisHash, err := api.RPC.Chain.GetBlockHash(0)
 	if err != nil {
-		log.Warn("⚠️ cannot get block hash: error:%v", err)
+		log.Warn("⚠️ cannot get block hash", "error", err)
 		return nil, err
 	}
 
 	rv, err := api.RPC.State.GetRuntimeVersionLatest()
 	if err != nil {
-		log.Warn("⚠️ cannot get runtime version: error:%v", err)
+		log.Warn("⚠️ cannot get runtime version", "error", err)
 		return nil, err
 	}
 
 	keyringPair, err := signature.KeyringPairFromSecret(Seed, 42)
 	if err != nil {
-		log.Warn("⚠️ cannot create LeyPair: error:%v", err)
+		log.Warn("⚠️ cannot create LeyPair", "error", err)
 		return nil, err
 	}
 
 	key, err := gsrpc_types.CreateStorageKey(meta, "System", "Account", keyringPair.PublicKey)
 	if err != nil {
-		log.Warn("⚠️ cannot create storage key: error:%v", err)
+		log.Warn("⚠️ cannot create storage key", "error", err)
 		return nil, err
 	}
 
@@ -97,7 +97,7 @@ func NewAvailDA(cfg DAConfig, l1Client arbutil.L1Interface) (*AvailDA, error) {
 	// Parse the contract ABI
 	abi, err := abi.JSON(strings.NewReader(vectorx.VectorxABI))
 	if err != nil {
-		log.Warn("⚠️ cannot create abi for vectorX: error:%v", err)
+		log.Warn("⚠️ cannot create abi for vectorX", "error", err)
 		return nil, err
 	}
 
@@ -124,7 +124,7 @@ func NewAvailDA(cfg DAConfig, l1Client arbutil.L1Interface) (*AvailDA, error) {
 		rv:                  rv,
 		keyringPair:         keyringPair,
 		key:                 key,
-		bridgeApiBaseURL:    "https://turing-bridge-api.fra.avail.so/",
+		bridgeApiBaseURL:    "https://hex-bridge-api.sandbox.avail.tools/",
 		bridgeApiTimeout:    time.Duration(1200),
 		vectorXTimeout:      time.Duration(10000),
 	}, nil
@@ -197,7 +197,7 @@ func (a *AvailDA) Read(ctx context.Context, blobPointer BlobPointer) ([]byte, er
 func submitData(a *AvailDA, message []byte) (gsrpc_types.Hash, gsrpc_types.UCompact, error) {
 	c, err := gsrpc_types.NewCall(a.meta, "DataAvailability.submit_data", gsrpc_types.NewBytes(message))
 	if err != nil {
-		log.Warn("⚠️ cannot create new call: error:%v", err)
+		log.Warn("⚠️ cannot create new call", "error", err)
 		return gsrpc_types.Hash{}, gsrpc_types.UCompact{}, err
 	}
 
@@ -207,7 +207,7 @@ func submitData(a *AvailDA, message []byte) (gsrpc_types.Hash, gsrpc_types.UComp
 	var accountInfo gsrpc_types.AccountInfo
 	ok, err := a.api.RPC.State.GetStorageLatest(a.key, &accountInfo)
 	if err != nil || !ok {
-		log.Warn("⚠️ cannot get latest storage: error:%v", err)
+		log.Warn("⚠️ cannot get latest storage", "error", err)
 		return gsrpc_types.Hash{}, gsrpc_types.UCompact{}, err
 	}
 
@@ -225,14 +225,14 @@ func submitData(a *AvailDA, message []byte) (gsrpc_types.Hash, gsrpc_types.UComp
 	// Sign the transaction using Alice's default account
 	err = ext.Sign(a.keyringPair, o)
 	if err != nil {
-		log.Warn("⚠️ cannot sign: error:%v", err)
+		log.Warn("⚠️ cannot sign", "error", err)
 		return gsrpc_types.Hash{}, gsrpc_types.UCompact{}, err
 	}
 
 	// Send the extrinsic
 	sub, err := a.api.RPC.Author.SubmitAndWatchExtrinsic(ext)
 	if err != nil {
-		log.Warn("⚠️ cannot submit extrinsic: error:%v", err)
+		log.Warn("⚠️ cannot submit extrinsic", "error", err)
 		return gsrpc_types.Hash{}, gsrpc_types.UCompact{}, err
 	}
 
