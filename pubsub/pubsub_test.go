@@ -235,7 +235,7 @@ func TestRedisProduce(t *testing.T) {
 					if _, err := consumers[i].Consume(ctx); err != nil {
 						t.Errorf("Error consuming message: %v", err)
 					}
-					//Terminate half of the consumers, send interrupt to others.
+					// Terminate half of the consumers, send interrupt to others.
 					if i%2 == 0 {
 						consumers[i].StopAndWait()
 					} else {
