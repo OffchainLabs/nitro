@@ -24,14 +24,14 @@ func (m *Manager) syncAssertions(ctx context.Context) {
 		return m.chain.LatestConfirmed(ctx)
 	})
 	if err != nil {
-		srvlog.Error("Could not get latest confirmed assertion", log.Ctx{"err": err})
+		log.Error("Could not get latest confirmed assertion", "err", err)
 		return
 	}
 	latestConfirmedInfo, err := retry.UntilSucceeds(ctx, func() (*protocol.AssertionCreatedInfo, error) {
 		return m.chain.ReadAssertionCreationInfo(ctx, latestConfirmed.Id())
 	})
 	if err != nil {
-		srvlog.Error("Could not get latest confirmed assertion", log.Ctx{"err": err})
+		log.Error("Could not get latest confirmed assertion", "err", err)
 		return
 	}
 
@@ -50,18 +50,18 @@ func (m *Manager) syncAssertions(ctx context.Context) {
 		return rollupgen.NewRollupUserLogicFilterer(m.rollupAddr, m.backend)
 	})
 	if err != nil {
-		srvlog.Error("Could not get rollup user logic filterer", log.Ctx{"err": err})
+		log.Error("Could not get rollup user logic filterer", "err", err)
 		return
 	}
 	latestBlock, err := retry.UntilSucceeds(ctx, func() (*gethtypes.Header, error) {
 		return m.backend.HeaderByNumber(ctx, util.GetSafeBlockNumber())
 	})
 	if err != nil {
-		srvlog.Error("Could not get header by number", log.Ctx{"err": err})
+		log.Error("Could not get header by number", "err", err)
 		return
 	}
 	if !latestBlock.Number.IsUint64() {
-		srvlog.Error("Latest block number was not a uint64")
+		log.Error("Latest block number was not a uint64")
 		return
 	}
 	toBlock := latestBlock.Number.Uint64()
@@ -74,13 +74,13 @@ func (m *Manager) syncAssertions(ctx context.Context) {
 		_, err = retry.UntilSucceeds(ctx, func() (bool, error) {
 			innerErr := m.processAllAssertionsInRange(ctx, filterer, filterOpts)
 			if innerErr != nil {
-				srvlog.Error("Could not process assertions in range", log.Ctx{"err": innerErr})
+				log.Error("Could not process assertions in range", "err", innerErr)
 				return false, innerErr
 			}
 			return true, nil
 		})
 		if err != nil {
-			srvlog.Error("Could not check for assertion added event")
+			log.Error("Could not check for assertion added event")
 			return
 		}
 		fromBlock = toBlock
@@ -93,11 +93,11 @@ func (m *Manager) syncAssertions(ctx context.Context) {
 		case <-ticker.C:
 			latestBlock, err := m.backend.HeaderByNumber(ctx, util.GetSafeBlockNumber())
 			if err != nil {
-				srvlog.Error("Could not get header by number", log.Ctx{"err": err})
+				log.Error("Could not get header by number", "err", err)
 				continue
 			}
 			if !latestBlock.Number.IsUint64() {
-				srvlog.Error("Latest block number was not a uint64")
+				log.Error("Latest block number was not a uint64")
 				continue
 			}
 			toBlock := latestBlock.Number.Uint64()
@@ -112,13 +112,13 @@ func (m *Manager) syncAssertions(ctx context.Context) {
 			_, err = retry.UntilSucceeds(ctx, func() (bool, error) {
 				innerErr := m.processAllAssertionsInRange(ctx, filterer, filterOpts)
 				if innerErr != nil {
-					srvlog.Error("Could not process assertions in range", log.Ctx{"err": innerErr})
+					log.Error("Could not process assertions in range", "err", innerErr)
 					return false, innerErr
 				}
 				return true, nil
 			})
 			if err != nil {
-				srvlog.Error("Could not check for assertion added", log.Ctx{"err": err})
+				log.Error("Could not check for assertion added", "err", err)
 				return
 			}
 			fromBlock = toBlock
@@ -146,7 +146,7 @@ func (m *Manager) processAllAssertionsInRange(
 	}
 	defer func() {
 		if err = it.Close(); err != nil {
-			srvlog.Error("Could not close filter iterator", log.Ctx{"err": err})
+			log.Error("Could not close filter iterator", "err", err)
 		}
 	}()
 
@@ -165,7 +165,7 @@ func (m *Manager) processAllAssertionsInRange(
 		assertionOpt, err := retry.UntilSucceeds(ctx, func() (option.Option[*protocol.AssertionCreatedInfo], error) {
 			item, innerErr := m.extractAssertionFromEvent(ctx, it.Event)
 			if innerErr != nil {
-				srvlog.Error("Could not extract assertion from event", log.Ctx{"err": innerErr})
+				log.Error("Could not extract assertion from event", "err", innerErr)
 				return option.None[*protocol.AssertionCreatedInfo](), innerErr
 			}
 			return item, nil
@@ -199,12 +199,12 @@ func (m *Manager) processAllAssertionsInRange(
 		for _, fullInfo := range assertions {
 			if _, err := retry.UntilSucceeds(ctx, func() (bool, error) {
 				if err := m.saveAssertionToDB(ctx, fullInfo.assertion); err != nil {
-					srvlog.Error("Could not save assertion to DB", log.Ctx{"err": err})
+					log.Error("Could not save assertion to DB", "err", err)
 					return false, err
 				}
 				return true, nil
 			}); err != nil {
-				srvlog.Error("Could not save assertion to DB", log.Ctx{"err": err})
+				log.Error("Could not save assertion to DB", "err", err)
 			}
 		}
 	}()
@@ -215,7 +215,7 @@ func (m *Manager) processAllAssertionsInRange(
 	// Determine the canonical branch of all assertions.
 	if _, err := retry.UntilSucceeds(ctx, func() (bool, error) {
 		if innerErr := m.findCanonicalAssertionBranch(ctx, assertions); innerErr != nil {
-			srvlog.Error("Could not find canonical assertion branch", log.Ctx{"err": innerErr})
+			log.Error("Could not find canonical assertion branch", "err", innerErr)
 			return false, innerErr
 		}
 		return true, nil
@@ -227,7 +227,7 @@ func (m *Manager) processAllAssertionsInRange(
 	// to figure out which ones are invalid and therefore should be challenged.
 	if _, err := retry.UntilSucceeds(ctx, func() (bool, error) {
 		if innerErr := m.respondToAnyInvalidAssertions(ctx, assertions, m); innerErr != nil {
-			srvlog.Error("Could not find canonical assertion branch", log.Ctx{"err": innerErr})
+			log.Error("Could not find canonical assertion branch", "err", innerErr)
 			return false, innerErr
 		}
 		return true, nil
@@ -245,9 +245,9 @@ func (m *Manager) extractAssertionFromEvent(
 ) (option.Option[*protocol.AssertionCreatedInfo], error) {
 	none := option.None[*protocol.AssertionCreatedInfo]()
 	if event.AssertionHash == (common.Hash{}) {
-		srvlog.Warn("Encountered an assertion with a zero hash", log.Ctx{
-			"creationEvent": fmt.Sprintf("%+v", event),
-		})
+		log.Warn("Encountered an assertion with a zero hash",
+			"creationEvent", fmt.Sprintf("%+v", event),
+		)
 		return none, nil
 	}
 	assertionHash := protocol.AssertionHash{Hash: event.AssertionHash}
@@ -284,8 +284,8 @@ func (m *Manager) findCanonicalAssertionBranch(
 					// execution state claimed by the assertion, and this function will be retried
 					// by the caller if wrapped in a retryable call.
 					chainCatchingUpCounter.Inc(1)
-					srvlog.Info("Chain still syncing "+
-						"will reattempt processing when caught up", log.Ctx{"err": err})
+					log.Info("Chain still syncing "+
+						"will reattempt processing when caught up", "err", err)
 					return false, l2stateprovider.ErrChainCatchingUp
 				case err != nil:
 					return false, err
@@ -346,7 +346,7 @@ func (m *Manager) respondToAnyInvalidAssertions(
 					invalidAssertion: assertion,
 				})
 				if innerErr != nil {
-					srvlog.Error("Could not post rival assertion and/or challenge", log.Ctx{"err": innerErr})
+					log.Error("Could not post rival assertion and/or challenge", "err", innerErr)
 					return nil, innerErr
 				}
 				return posted, nil
@@ -381,19 +381,19 @@ func (m *Manager) maybePostRivalAssertionAndChallenge(
 		return nil, errors.New("invalid assertion does not have correct canonical parent")
 	}
 	batchCount := args.invalidAssertion.InboxMaxCount.Uint64()
-	logFields := log.Ctx{
-		"validatorName":         m.validatorName,
-		"canonicalParentHash":   args.invalidAssertion.ParentAssertionHash,
-		"detectedAssertionHash": args.invalidAssertion.AssertionHash,
-		"batchCount":            batchCount,
+	logFields := []any{
+		"validatorName", m.validatorName,
+		"canonicalParentHash", args.invalidAssertion.ParentAssertionHash,
+		"detectedAssertionHash", args.invalidAssertion.AssertionHash,
+		"batchCount", batchCount,
 	}
 	if !m.canPostRivalAssertion() {
-		srvlog.Warn("Detected invalid assertion, but not configured to post a rival stake", logFields)
+		log.Warn("Detected invalid assertion, but not configured to post a rival stake", logFields...)
 		evilAssertionCounter.Inc(1)
 		return nil, nil
 	}
 
-	srvlog.Warn("Disagreed with an observed assertion onchain", logFields)
+	log.Warn("Disagreed with an observed assertion onchain", logFields...)
 	evilAssertionCounter.Inc(1)
 
 	// Post what we believe is the correct rival assertion that follows the ancestor we agree with.
@@ -402,7 +402,7 @@ func (m *Manager) maybePostRivalAssertionAndChallenge(
 		return nil, err
 	}
 	if correctRivalAssertion.IsNone() {
-		srvlog.Warn(fmt.Sprintf("Expected to post a rival assertion to %#x, but did not post anything", args.invalidAssertion.AssertionHash))
+		log.Warn(fmt.Sprintf("Expected to post a rival assertion to %#x, but did not post anything", args.invalidAssertion.AssertionHash))
 		return nil, nil
 	}
 	assertionHash := protocol.AssertionHash{Hash: correctRivalAssertion.Unwrap().AssertionHash}
@@ -411,18 +411,18 @@ func (m *Manager) maybePostRivalAssertionAndChallenge(
 		return nil, errors.Wrapf(err, "could not read assertion creation info for %#x", assertionHash.Hash)
 	}
 	if !m.canPostChallenge() {
-		srvlog.Warn("Posted rival assertion and stake, but not configured to initiate a challenge", logFields)
+		log.Warn("Posted rival assertion and stake, but not configured to initiate a challenge", logFields...)
 		return postedRival, nil
 	}
 
 	if args.canonicalParent.ChallengeManager != m.challengeManagerAddr {
-		srvlog.Warn("Posted rival assertion, but could not challenge as challenge manager address did not match, "+
-			"start a new server with the right challenge manager address", log.Ctx{
-			"correctAssertion":                  postedRival.AssertionHash,
-			"evilAssertion":                     args.invalidAssertion.AssertionHash,
-			"expectedChallengeManagerAddress":   args.canonicalParent.ChallengeManager,
-			"configuredChallengeManagerAddress": m.challengeManagerAddr,
-		})
+		log.Warn("Posted rival assertion, but could not challenge as challenge manager address did not match, "+
+			"start a new server with the right challenge manager address",
+			"correctAssertion", postedRival.AssertionHash,
+			"evilAssertion", args.invalidAssertion.AssertionHash,
+			"expectedChallengeManagerAddress", args.canonicalParent.ChallengeManager,
+			"configuredChallengeManagerAddress", m.challengeManagerAddr,
+		)
 		return nil, nil
 	}
 
@@ -450,7 +450,7 @@ func (m *Manager) maybePostRivalAssertionAndChallenge(
 	}
 
 	if err := m.logChallengeConfigs(ctx); err != nil {
-		srvlog.Error("Could not log challenge configs", log.Ctx{"err": err})
+		log.Error("Could not log challenge configs", "err", err)
 	}
 	return postedRival, nil
 }
@@ -488,22 +488,22 @@ func (m *Manager) maybePostRivalAssertion(
 	}
 	if assertionOpt.IsSome() {
 		creationInfo := assertionOpt.Unwrap()
-		srvlog.Info("Posted rival assertion to another that we disagreed with", log.Ctx{
-			"parentAssertionHash":       canonicalParent.AssertionHash,
-			"correctRivalAssertionHash": creationInfo.AssertionHash,
-			"transactionHash":           creationInfo.TransactionHash,
-			"postedAssertionState":      fmt.Sprintf("%+v", creationInfo.AfterState),
-		})
+		log.Info("Posted rival assertion to another that we disagreed with",
+			"parentAssertionHash", canonicalParent.AssertionHash,
+			"correctRivalAssertionHash", creationInfo.AssertionHash,
+			"transactionHash", creationInfo.TransactionHash,
+			"postedAssertionState", fmt.Sprintf("%+v", creationInfo.AfterState),
+		)
 		go func() {
 			if _, err2 := retry.UntilSucceeds(ctx, func() (bool, error) {
 				innerErr := m.saveAssertionToDB(ctx, assertionOpt.Unwrap())
 				if innerErr != nil {
-					srvlog.Error("Could not save assertion to DB", log.Ctx{"error": innerErr})
+					log.Error("Could not save assertion to DB", "err", innerErr)
 					return false, innerErr
 				}
 				return false, nil
 			}); err2 != nil {
-				srvlog.Error("Could not save assertion to DB", log.Ctx{"error": err2})
+				log.Error("Could not save assertion to DB", "err", err2)
 			}
 		}()
 	}

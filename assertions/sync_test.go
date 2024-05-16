@@ -42,6 +42,7 @@ func Test_extractAssertionFromEvent(t *testing.T) {
 		),
 	)
 	require.NoError(t, err)
+	_ = setup
 
 	bridgeBindings, err := mocksgen.NewBridgeStub(setup.Addrs.Bridge, setup.Backend)
 	require.NoError(t, err)

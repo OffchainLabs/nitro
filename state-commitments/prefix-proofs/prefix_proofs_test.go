@@ -17,11 +17,11 @@ import (
 	statemanager "github.com/OffchainLabs/bold/testing/mocks/state-provider"
 	"github.com/OffchainLabs/bold/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethclient/simulated"
 	"github.com/stretchr/testify/require"
 )
 
@@ -525,10 +525,10 @@ func runBitEquivalenceTest(
 	}
 }
 
-func setupMerkleTreeContract(t testing.TB) (*mocksgen.MerkleTreeAccess, *backends.SimulatedBackend) {
+func setupMerkleTreeContract(t testing.TB) (*mocksgen.MerkleTreeAccess, *simulated.Backend) {
 	numChains := uint64(1)
 	accs, backend := setupAccounts(t, numChains)
-	_, _, merkleTreeContract, err := mocksgen.DeployMerkleTreeAccess(accs[0].txOpts, backend)
+	_, _, merkleTreeContract, err := mocksgen.DeployMerkleTreeAccess(accs[0].txOpts, backend.Client())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -542,7 +542,7 @@ type testAccount struct {
 	txOpts      *bind.TransactOpts
 }
 
-func setupAccounts(t testing.TB, numAccounts uint64) ([]*testAccount, *backends.SimulatedBackend) {
+func setupAccounts(t testing.TB, numAccounts uint64) ([]*testAccount, *simulated.Backend) {
 	genesis := make(core.GenesisAlloc)
 	gasLimit := uint64(100000000)
 
@@ -579,7 +579,7 @@ func setupAccounts(t testing.TB, numAccounts uint64) ([]*testAccount, *backends.
 			txOpts:      txOpts,
 		}
 	}
-	backend := backends.NewSimulatedBackend(genesis, gasLimit)
+	backend := simulated.NewBackend(genesis, simulated.WithBlockGasLimit(gasLimit))
 	return accs, backend
 }
 

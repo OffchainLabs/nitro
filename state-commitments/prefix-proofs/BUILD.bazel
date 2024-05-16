@@ -30,11 +30,11 @@ go_test(
         "//testing/mocks/state-provider",
         "//util",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind",
-        "@com_github_ethereum_go_ethereum//accounts/abi/bind/backends",
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_ethereum_go_ethereum//common/hexutil",
         "@com_github_ethereum_go_ethereum//core",
         "@com_github_ethereum_go_ethereum//crypto",
+        "@com_github_ethereum_go_ethereum//ethclient/simulated",
         "@com_github_stretchr_testify//require",
     ],
 )

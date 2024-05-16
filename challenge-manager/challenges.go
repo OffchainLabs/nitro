@@ -9,11 +9,11 @@ import (
 
 	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+	"github.com/ethereum/go-ethereum/log"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	edgetracker "github.com/OffchainLabs/bold/challenge-manager/edge-tracker"
 	"github.com/OffchainLabs/bold/containers"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/pkg/errors"
 )
 
@@ -21,16 +21,16 @@ import (
 // and starting a challenge transaction. If the challenge creation is successful, we add a leaf
 // with an associated history commitment to it and spawn a challenge tracker in the background.
 func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionHash) (bool, error) {
-	srvlog.Info("Opening a challenge on an observed assertion", log.Ctx{
-		"assertionHash": id.Hash,
-		"validatorName": m.name,
-	})
+	log.Info("Opening a challenge on an observed assertion",
+		"assertionHash", id.Hash,
+		"validatorName", m.name,
+	)
 	assertion, err := m.chain.GetAssertion(ctx, id)
 	if err != nil {
 		return false, errors.Wrapf(err, "could not get assertion to challenge with id %#x", id)
 	}
 	if m.claimedAssertionsInChallenge.Has(id) {
-		srvlog.Debug(fmt.Sprintf("Already challenged assertion with id %#x, skipping", id.Hash))
+		log.Debug(fmt.Sprintf("Already challenged assertion with id %#x, skipping", id.Hash))
 		return false, nil
 	}
 	assertionStatus, err := m.chain.AssertionStatus(ctx, assertion.Id())
@@ -38,7 +38,7 @@ func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionH
 		return false, errors.Wrapf(err, "could not get assertion status with id %#x", id)
 	}
 	if assertionStatus == protocol.AssertionConfirmed {
-		srvlog.Info("Skipping challenge submission on already confirmed assertion", log.Ctx{"assertionHash": id.Hash})
+		log.Info("Skipping challenge submission on already confirmed assertion", "assertionHash", id.Hash)
 		return false, nil
 	}
 	// We then add a level zero edge to initiate a challenge.
@@ -47,20 +47,20 @@ func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionH
 		return false, fmt.Errorf("could not add block challenge level zero edge %v: %w", m.name, err)
 	}
 	if !shouldTrack {
-		srvlog.Info("Challenge not in list of specified challenges to track, skipping", log.Ctx{"assertionHash": id.Hash})
+		log.Info("Challenge not in list of specified challenges to track, skipping", "assertionHash", id.Hash)
 		return false, nil
 	}
 	if alreadyExists {
-		srvlog.Info("Challenge on assertion already exists, now tracking it locally", log.Ctx{"assertionHash": id.Hash})
+		log.Info("Challenge on assertion already exists, now tracking it locally", "assertionHash", id.Hash)
 		m.claimedAssertionsInChallenge.Insert(id)
 		return false, nil
 	}
 	if verifiedErr := m.watcher.AddVerifiedHonestEdge(ctx, levelZeroEdge); verifiedErr != nil {
-		fields := log.Ctx{
-			"edgeId": levelZeroEdge.Id(),
-			"err":    verifiedErr,
+		fields := []any{
+			"edgeId", levelZeroEdge.Id(),
+			"err", verifiedErr,
 		}
-		srvlog.Error("could not add verified honest edge to chain watcher", fields)
+		log.Error("could not add verified honest edge to chain watcher", fields...)
 	}
 	// Start tracking the challenge.
 	tracker, err := edgetracker.New(
@@ -80,12 +80,12 @@ func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionH
 	}
 	m.LaunchThread(tracker.Spawn)
 
-	srvlog.Info("Successfully opened a challenge on an invalid assertion", log.Ctx{
-		"name":          m.name,
-		"assertionHash": containers.Trunc(id.Bytes()),
-		"fromBatch":     edgeTrackerAssertionInfo.FromBatch,
-		"toBatch":       edgeTrackerAssertionInfo.ToBatch,
-	})
+	log.Info("Successfully opened a challenge on an invalid assertion",
+		"name", m.name,
+		"assertionHash", containers.Trunc(id.Bytes()),
+		"fromBatch", edgeTrackerAssertionInfo.FromBatch,
+		"toBatch", edgeTrackerAssertionInfo.ToBatch,
+	)
 	return true, nil
 }
 

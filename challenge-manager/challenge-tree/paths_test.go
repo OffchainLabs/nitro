@@ -121,6 +121,235 @@ func Test_findEssentialPaths(t *testing.T) {
 	require.Equal(t, wantCTimers, pathLocalTimers[2])
 }
 
+func Test_pathWeightMinHeap(t *testing.T) {
+	h := newPathWeightMinHeap()
+	require.Equal(t, 0, h.Len())
+	h.Push(uint64(3))
+	h.Push(uint64(1))
+	h.Push(uint64(2))
+	require.Equal(t, uint64(1), h.Peek().Unwrap())
+	require.Equal(t, uint64(1), h.Pop())
+	require.Equal(t, uint64(2), h.Pop())
+	require.Equal(t, uint64(3), h.Pop())
+	require.Equal(t, 0, h.Len())
+	require.True(t, h.Peek().IsNone())
+}
+
+func Test_stack(t *testing.T) {
+	s := newStack[int]()
+	require.Equal(t, 0, s.len())
+	s.push(10)
+	require.Equal(t, 1, s.len())
+
+	result := s.pop()
+	require.False(t, result.IsNone())
+	require.Equal(t, 10, result.Unwrap())
+
+	result = s.pop()
+	require.True(t, result.IsNone())
+
+	s.push(10)
+	s.push(20)
+	s.push(30)
+	require.Equal(t, 3, s.len())
+	s.pop()
+	require.Equal(t, 2, s.len())
+	s.pop()
+	require.Equal(t, 1, s.len())
+	s.pop()
+	require.Equal(t, 0, s.len())
+}
+
+func TestComputePathWeight(t *testing.T) {
+	ctx := context.Background()
+	ht := &RoyalChallengeTree{
+		edges: threadsafe.NewMap[protocol.EdgeId, protocol.SpecEdge](),
+	}
+	t.Run("edges not found", func(t *testing.T) {
+		unseenEdge := newEdge(&newCfg{t: t, edgeId: "blk-0.a-4.a", createdAt: 4})
+		unseenAncestor := newEdge(&newCfg{t: t, edgeId: "blk-0.a-8.a", createdAt: 2})
+		_, err := ht.ComputePathWeight(
+			ctx,
+			ComputePathWeightArgs{
+				Child:    unseenEdge.Id(),
+				Ancestor: unseenAncestor.Id(),
+				BlockNum: 10,
+			},
+		)
+		require.ErrorContains(t, err, "child edge not yet tracked")
+		ht.edges.Put(unseenEdge.Id(), unseenEdge)
+		_, err = ht.ComputePathWeight(
+			ctx,
+			ComputePathWeightArgs{
+				Child:    unseenEdge.Id(),
+				Ancestor: unseenAncestor.Id(),
+				BlockNum: 10,
+			},
+		)
+		require.ErrorContains(t, err, "ancestor not yet tracked")
+	})
+	// To see the relationship between the edges, their creation times,
+	// and the time they became rivaled, see the setupEssentialPathsTest function.
+	tree, honestEdges := setupEssentialPathsTest(t)
+	tree.royalRootEdgesByLevel.Put(2, threadsafe.NewSlice[protocol.SpecEdge]())
+	tree.royalRootEdgesByLevel.Put(1, threadsafe.NewSlice[protocol.SpecEdge]())
+	tree.royalRootEdgesByLevel.Put(0, threadsafe.NewSlice[protocol.SpecEdge]())
+
+	blockRootEdges := tree.royalRootEdgesByLevel.Get(2 /* big step level */)
+	blockRootEdges.Push(tree.edges.Get(id("blk-0.a-4.a")))
+	bigStepRootEdges := tree.royalRootEdgesByLevel.Get(1 /* big step level */)
+	bigStepRootEdges.Push(tree.edges.Get(id("big-0.a-4.a")))
+
+	t.Run("length 0 path", func(t *testing.T) {
+		child := protocol.SpecEdge(honestEdges["blk-2.a-4.a"])
+		ancestor := child
+		weight, err := tree.ComputePathWeight(
+			ctx,
+			ComputePathWeightArgs{
+				Child:    child.Id(),
+				Ancestor: ancestor.Id(),
+				BlockNum: 10,
+			},
+		)
+		require.NoError(t, err)
+		require.Equal(t, uint64(1), weight)
+
+		// Querying at a future block number should not change the result,
+		// as the terminal node is rivaled.
+		weight, err = tree.ComputePathWeight(
+			ctx,
+			ComputePathWeightArgs{
+				Child:    child.Id(),
+				Ancestor: ancestor.Id(),
+				BlockNum: 20,
+			},
+		)
+		require.NoError(t, err)
+		require.Equal(t, uint64(1), weight)
+	})
+
+	t.Run("length 1 path with rivaled terminal", func(t *testing.T) {
+		child := protocol.SpecEdge(honestEdges["blk-2.a-4.a"])
+		ancestor := protocol.SpecEdge(honestEdges["blk-0.a-4.a"])
+		weight, err := tree.ComputePathWeight(
+			ctx,
+			ComputePathWeightArgs{
+				Child:    child.Id(),
+				Ancestor: ancestor.Id(),
+				BlockNum: 10,
+			},
+		)
+		require.NoError(t, err)
+		require.Equal(t, uint64(2), weight)
+
+		// Querying at a future block number should not change the result,
+		// as the terminal node is rivaled.
+		weight, err = tree.ComputePathWeight(
+			ctx,
+			ComputePathWeightArgs{
+				Child:    child.Id(),
+				Ancestor: ancestor.Id(),
+				BlockNum: 20,
+			},
+		)
+		require.NoError(t, err)
+		require.Equal(t, uint64(2), weight)
+	})
+	t.Run("length 2 path with unrivaled terminal", func(t *testing.T) {
+		child := protocol.SpecEdge(honestEdges["blk-0.a-2.a"])
+		ancestor := protocol.SpecEdge(honestEdges["blk-0.a-4.a"])
+		weight, err := tree.ComputePathWeight(
+			ctx,
+			ComputePathWeightArgs{
+				Child:    child.Id(),
+				Ancestor: ancestor.Id(),
+				BlockNum: 10,
+			},
+		)
+		require.NoError(t, err)
+		require.Equal(t, uint64(8), weight)
+
+		isUnrivaled, err := tree.IsUnrivaledAtBlockNum(child, 20)
+		require.NoError(t, err)
+		require.True(t, isUnrivaled)
+
+		// Should increase if we query at a future block number,
+		// as in the tree setup, blk-3.a-4.a is unrivaled.
+		weight, err = tree.ComputePathWeight(
+			ctx,
+			ComputePathWeightArgs{
+				Child:    child.Id(),
+				Ancestor: ancestor.Id(),
+				BlockNum: 20,
+			},
+		)
+		require.NoError(t, err)
+		require.Equal(t, uint64(18), weight)
+	})
+	t.Run("length 3 path with unrivaled terminal", func(t *testing.T) {
+		child := protocol.SpecEdge(honestEdges["blk-3.a-4.a"])
+		ancestor := protocol.SpecEdge(honestEdges["blk-0.a-4.a"])
+		weight, err := tree.ComputePathWeight(
+			ctx,
+			ComputePathWeightArgs{
+				Child:    child.Id(),
+				Ancestor: ancestor.Id(),
+				BlockNum: 10,
+			},
+		)
+		require.NoError(t, err)
+		require.Equal(t, uint64(7), weight)
+
+		isUnrivaled, err := tree.IsUnrivaledAtBlockNum(child, 20)
+		require.NoError(t, err)
+		require.True(t, isUnrivaled)
+
+		// Should increase if we query at a future block number,
+		// as in the tree setup, blk-3.a-4.a is unrivaled.
+		weight, err = tree.ComputePathWeight(
+			ctx,
+			ComputePathWeightArgs{
+				Child:    child.Id(),
+				Ancestor: ancestor.Id(),
+				BlockNum: 20,
+			},
+		)
+		require.NoError(t, err)
+		require.Equal(t, uint64(17), weight)
+	})
+	t.Run("path ending in refinement node across challenge level", func(t *testing.T) {
+		child := protocol.SpecEdge(honestEdges["big-0.a-4.a"])
+		ancestor := protocol.SpecEdge(honestEdges["blk-0.a-4.a"])
+		weight, err := tree.ComputePathWeight(
+			ctx,
+			ComputePathWeightArgs{
+				Child:    child.Id(),
+				Ancestor: ancestor.Id(),
+				BlockNum: 10,
+			},
+		)
+		require.NoError(t, err)
+		require.Equal(t, uint64(6), weight)
+
+		isUnrivaled, err := tree.IsUnrivaledAtBlockNum(child, 20)
+		require.NoError(t, err)
+		require.True(t, isUnrivaled)
+
+		// Should increase if we query at a future block number,
+		// as in the tree setup, blk-3.a-4.a is unrivaled.
+		weight, err = tree.ComputePathWeight(
+			ctx,
+			ComputePathWeightArgs{
+				Child:    child.Id(),
+				Ancestor: ancestor.Id(),
+				BlockNum: 20,
+			},
+		)
+		require.NoError(t, err)
+		require.Equal(t, uint64(16), weight)
+	})
+}
+
 // Set up a challenge tree, down to two challenge levels.
 func setupEssentialPathsTest(t *testing.T) (*RoyalChallengeTree, map[mock.EdgeId]*mock.Edge) {
 	t.Helper()
@@ -225,45 +454,6 @@ func setupEssentialPathsTest(t *testing.T) (*RoyalChallengeTree, map[mock.EdgeId
 	mutuals.Put(a.Id(), creationTime(aCreation))
 	mutuals.Put(b.Id(), creationTime(bCreation))
 	return tree, honestEdges
-}
-
-func Test_pathWeightMinHeap(t *testing.T) {
-	h := newPathWeightMinHeap()
-	require.Equal(t, 0, h.Len())
-	h.Push(uint64(3))
-	h.Push(uint64(1))
-	h.Push(uint64(2))
-	require.Equal(t, uint64(1), h.Peek().Unwrap())
-	require.Equal(t, uint64(1), h.Pop())
-	require.Equal(t, uint64(2), h.Pop())
-	require.Equal(t, uint64(3), h.Pop())
-	require.Equal(t, 0, h.Len())
-	require.True(t, h.Peek().IsNone())
-}
-
-func Test_stack(t *testing.T) {
-	s := newStack[int]()
-	require.Equal(t, 0, s.len())
-	s.push(10)
-	require.Equal(t, 1, s.len())
-
-	result := s.pop()
-	require.False(t, result.IsNone())
-	require.Equal(t, 10, result.Unwrap())
-
-	result = s.pop()
-	require.True(t, result.IsNone())
-
-	s.push(10)
-	s.push(20)
-	s.push(30)
-	require.Equal(t, 3, s.len())
-	s.pop()
-	require.Equal(t, 2, s.len())
-	s.pop()
-	require.Equal(t, 1, s.len())
-	s.pop()
-	require.Equal(t, 0, s.len())
 }
 
 func Test_isProofNode(t *testing.T) {

@@ -164,7 +164,7 @@ func enqueueSequencerMessageAsExecutor(
 	t *testing.T,
 	opts *bind.TransactOpts,
 	executor common.Address,
-	backend *backends.SimulatedBackend,
+	backend *setup.SimulatedBackendWrapper,
 	bridge common.Address,
 	msg seqMessage,
 ) {
