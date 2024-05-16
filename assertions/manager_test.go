@@ -97,7 +97,6 @@ func TestSkipsProcessingAssertionFromEvilFork(t *testing.T) {
 		aliceStateManager,
 		setup.Addrs.Rollup,
 		challengemanager.WithMode(types.DefensiveMode),
-		challengemanager.WithEdgeTrackerWakeInterval(time.Hour),
 	)
 	require.NoError(t, err)
 	aliceChalManager.Start(ctx)
@@ -296,7 +295,6 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 		charlieStateManager,
 		setup.Addrs.Rollup,
 		challengemanager.WithMode(types.DefensiveMode),
-		challengemanager.WithEdgeTrackerWakeInterval(time.Hour),
 	)
 	require.NoError(t, err)
 	chalManager.Start(ctx)

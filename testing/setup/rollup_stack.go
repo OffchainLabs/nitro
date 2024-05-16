@@ -221,7 +221,6 @@ func ChainsWithEdgeChallengeManager(opts ...Opt) (*ChainSetup, error) {
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("Before deploy")
 	stakeToken, tx, tokenBindings, err := mocksgen.DeployTestWETH9(
 		accs[0].TxOpts,
 		backend,

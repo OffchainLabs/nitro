@@ -12,6 +12,7 @@ import (
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/containers"
+	"github.com/OffchainLabs/bold/containers/events"
 	"github.com/OffchainLabs/bold/containers/fsm"
 	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
@@ -20,6 +21,7 @@ import (
 	commitments "github.com/OffchainLabs/bold/state-commitments/history"
 	utilTime "github.com/OffchainLabs/bold/time"
 	"github.com/ethereum/go-ethereum/common"
+	gethtypes "github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/pkg/errors"
@@ -54,6 +56,7 @@ type ChallengeTracker interface {
 	MarkTrackedEdge(protocol.EdgeId, *Tracker)
 	RemovedTrackedEdge(protocol.EdgeId)
 	BlockTimes() time.Duration
+	NewBlockSubscriber() *events.Producer[*gethtypes.Header]
 }
 
 // AssociatedAssertionMetadata for the tracked edge.
@@ -65,13 +68,6 @@ type AssociatedAssertionMetadata struct {
 }
 
 type Opt func(et *Tracker)
-
-// WithActInterval sets the duration between actions. The default is one second.
-func WithActInterval(d time.Duration) Opt {
-	return func(et *Tracker) {
-		et.actInterval = d
-	}
-}
 
 // WithTimeReference allows setting the timer used by the tracker to determine that time
 // passed in accordance with the act interval set with [WithActInterval]. The default is
@@ -102,7 +98,6 @@ type Tracker struct {
 	edge                        protocol.SpecEdge
 	fsm                         *fsm.Fsm[edgeTrackerAction, State]
 	fsmOpts                     []fsm.Opt[edgeTrackerAction, State]
-	actInterval                 time.Duration
 	timeRef                     utilTime.Reference
 	validatorName               string
 	chain                       protocol.Protocol
@@ -130,14 +125,10 @@ func New(
 		chainWatcher:                chainWatcher,
 		challengeManager:            challengeManager,
 		associatedAssertionMetadata: assertionCreationInfo,
-		actInterval:                 time.Second,
 		timeRef:                     utilTime.NewRealTimeReference(),
 	}
 	for _, o := range opts {
 		o(tr)
-	}
-	if tr.actInterval == 0 {
-		return nil, errors.New("edge tracker act interval must be greater than 0")
 	}
 	chalManager, err := retry.UntilSucceeds(ctx, func() (protocol.SpecChallengeManager, error) {
 		return chain.SpecChallengeManager(ctx)
@@ -195,24 +186,23 @@ func (et *Tracker) Spawn(ctx context.Context) {
 	log.Info("Now tracking challenge edge locally and making moves", fields...)
 	spawnedCounter.Inc(1)
 	et.challengeManager.MarkTrackedEdge(et.edge.Id(), et)
-	t := et.timeRef.NewTicker(et.actInterval)
-	defer t.Stop()
+
+	subscription := et.challengeManager.NewBlockSubscriber().Subscribe()
 	for {
-		select {
-		case <-t.C():
-			if et.ShouldDespawn(ctx) {
-				log.Debug("Tracked edge received notice it should exit - now despawning", fields...)
-				spawnedCounter.Dec(1)
-				et.challengeManager.RemovedTrackedEdge(et.edge.Id())
-				return
-			}
-			if err := et.Act(ctx); err != nil {
-				log.Error("Could not act with edge tracker", fields, "err", err)
-			}
-		case <-ctx.Done():
+		_, shouldExit := subscription.Next(ctx)
+		if ctx.Err() != nil || shouldExit {
 			log.Debug("Edge tracker goroutine exiting", fields...)
 			spawnedCounter.Dec(1)
 			return
+		}
+		if et.ShouldDespawn(ctx) {
+			log.Debug("Tracked edge received notice it should exit - now despawning", fields...)
+			spawnedCounter.Dec(1)
+			et.challengeManager.RemovedTrackedEdge(et.edge.Id())
+			return
+		}
+		if err := et.Act(ctx); err != nil {
+			log.Error("Could not act with edge tracker", append(fields, "err", err)...)
 		}
 	}
 }
@@ -298,7 +288,6 @@ func (et *Tracker) Act(ctx context.Context) error {
 			et.chainWatcher,
 			et.challengeManager,
 			et.associatedAssertionMetadata,
-			WithActInterval(et.actInterval),
 			WithTimeReference(et.timeRef),
 			WithValidatorName(et.validatorName),
 			WithFSMOpts(et.fsmOpts...),
@@ -316,7 +305,6 @@ func (et *Tracker) Act(ctx context.Context) error {
 			et.chainWatcher,
 			et.challengeManager,
 			et.associatedAssertionMetadata,
-			WithActInterval(et.actInterval),
 			WithTimeReference(et.timeRef),
 			WithValidatorName(et.validatorName),
 			WithFSMOpts(et.fsmOpts...),
@@ -820,7 +808,6 @@ func (et *Tracker) openSubchallengeLeaf(ctx context.Context) error {
 		et.chainWatcher,
 		et.challengeManager,
 		et.associatedAssertionMetadata,
-		WithActInterval(et.actInterval),
 		WithTimeReference(et.timeRef),
 		WithValidatorName(et.validatorName),
 		WithFSMOpts(et.fsmOpts...),

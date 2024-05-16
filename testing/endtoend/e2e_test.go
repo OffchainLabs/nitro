@@ -66,7 +66,6 @@ type actorParams struct {
 // Configures intervals related to timings in the system.
 type timeParams struct {
 	blockTime                            time.Duration
-	challengeMoveInterval                time.Duration
 	assertionPostingInterval             time.Duration
 	assertionScanningInterval            time.Duration
 	assertionConfirmationAttemptInterval time.Duration
@@ -77,7 +76,6 @@ func defaultTimeParams() timeParams {
 		// Fast block time.
 		blockTime: time.Second,
 		// Go very fast.
-		challengeMoveInterval:                time.Second,
 		assertionPostingInterval:             time.Hour,
 		assertionScanningInterval:            time.Second,
 		assertionConfirmationAttemptInterval: time.Second,
@@ -167,7 +165,6 @@ func TestEndToEnd_TwoEvilValidators(t *testing.T) {
 	protocolCfg.challengePeriodBlocks = 50
 	timeCfg := defaultTimeParams()
 	timeCfg.blockTime = time.Millisecond * 500
-	timeCfg.challengeMoveInterval = time.Millisecond * 500
 	timeCfg.assertionPostingInterval = time.Hour
 	runEndToEndTest(t, &e2eConfig{
 		backend:  simulated,
@@ -190,7 +187,6 @@ func TestEndToEnd_ManyEvilValidators(t *testing.T) {
 	protocolCfg.challengePeriodBlocks = 100
 	timeCfg := defaultTimeParams()
 	timeCfg.blockTime = time.Millisecond * 500
-	timeCfg.challengeMoveInterval = time.Millisecond * 500
 	timeCfg.assertionPostingInterval = time.Hour
 	runEndToEndTest(t, &e2eConfig{
 		backend:  simulated,
@@ -270,7 +266,6 @@ func runEndToEndTest(t *testing.T, cfg *e2eConfig) {
 	require.NoError(t, err)
 
 	baseChallengeManagerOpts := []challengemanager.Opt{
-		challengemanager.WithEdgeTrackerWakeInterval(cfg.timings.challengeMoveInterval),
 		challengemanager.WithMode(types.MakeMode),
 		challengemanager.WithAssertionPostingInterval(cfg.timings.assertionPostingInterval),
 		challengemanager.WithAssertionScanningInterval(cfg.timings.assertionScanningInterval),

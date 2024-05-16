@@ -12,6 +12,7 @@ go_library(
     importpath = "github.com/OffchainLabs/bold/testing/endtoend/backend",
     visibility = ["//testing/endtoend:__subpackages__"],
     deps = [
+        "//chain-abstraction:protocol",
         "//solgen/go/mocksgen",
         "//solgen/go/rollupgen",
         "//testing",
