@@ -83,6 +83,9 @@ type isConfirmableArgs struct {
 // and insert each weight into a min-heap. If the min element of this heap
 // has a weight >= the confirmation threshold, the
 // essential node is then confirmable.
+//
+// Note: the specified argument essential node must indeed be essential, otherwise,
+// this function will error.
 func (ht *RoyalChallengeTree) IsConfirmableEssentialNode(
 	ctx context.Context,
 	args isConfirmableArgs,
@@ -90,6 +93,9 @@ func (ht *RoyalChallengeTree) IsConfirmableEssentialNode(
 	essentialNode, ok := ht.edges.TryGet(args.essentialNode)
 	if !ok {
 		return false, nil, 0, fmt.Errorf("essential node not found")
+	}
+	if essentialNode.ClaimId().IsNone() {
+		return false, nil, 0, fmt.Errorf("specified input argument %#x is not essential", args.essentialNode.Hash)
 	}
 	essentialPaths, essentialTimers, err := ht.findEssentialPaths(
 		ctx,
