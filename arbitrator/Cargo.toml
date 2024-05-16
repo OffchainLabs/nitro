@@ -5,6 +5,7 @@ members = [
         "jit",
         "espresso-crypto-helper"
 ]
+resolver = "2"
 
 [profile.release]
 debug = true
