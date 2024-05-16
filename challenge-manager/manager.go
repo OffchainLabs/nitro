@@ -10,7 +10,6 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math/big"
-	"os"
 	"time"
 
 	apibackend "github.com/OffchainLabs/bold/api/backend"
@@ -34,14 +33,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 )
-
-var (
-	srvlog = log.New("service", "challenge-manager")
-)
-
-func init() {
-	srvlog.SetHandler(log.StreamHandler(os.Stdout, log.LogfmtFormat()))
-}
 
 type Opt = func(val *Manager)
 
@@ -408,9 +399,9 @@ func (m *Manager) ChallengeManager() *challengeV2gen.EdgeChallengeManagerFiltere
 
 func (m *Manager) Start(ctx context.Context) {
 	m.StopWaiter.Start(ctx, m)
-	srvlog.Info("Started challenge manager", log.Ctx{
-		"validatorAddress": m.address.Hex(),
-	})
+	log.Info("Started challenge manager",
+		"validatorAddress", m.address.Hex(),
+	)
 
 	// Start the assertion manager.
 	m.LaunchThread(m.assertionManager.Start)
@@ -426,10 +417,10 @@ func (m *Manager) Start(ctx context.Context) {
 	if m.api != nil {
 		m.LaunchThread(func(ctx context.Context) {
 			if err := m.api.Start(ctx); err != nil {
-				srvlog.Error("Could not start API server", log.Ctx{
-					"address": m.apiAddr,
-					"err":     err,
-				})
+				log.Error("Could not start API server",
+					"address", m.apiAddr,
+					"err", err,
+				)
 			}
 		})
 	}

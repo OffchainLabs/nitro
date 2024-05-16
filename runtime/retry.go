@@ -18,7 +18,6 @@ const defaultSleepTime = time.Second
 
 var (
 	retryCounter = metrics.NewRegisteredCounter("arb/validator/runtime/retry", nil)
-	pkglog       = log.New("package", "retry")
 )
 
 type RetryConfig struct {
@@ -49,10 +48,10 @@ func UntilSucceedsMultipleReturnValue[T, U any](ctx context.Context, fn func() (
 		got, got2, err := fn()
 		if err != nil {
 			count++
-			pkglog.Error("Could not succeed function after retries", log.Ctx{
-				"retryCount": count,
-				"err":        err,
-			})
+			log.Error("Could not succeed function after retries",
+				"retryCount", count,
+				"err", err,
+			)
 			retryCounter.Inc(1)
 			time.Sleep(cfg.sleepTime)
 			continue

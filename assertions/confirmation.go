@@ -33,14 +33,14 @@ func (m *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertion
 		return m.chain.ReadAssertionCreationInfo(ctx, assertionHash)
 	})
 	if err != nil {
-		log.Error("Could not get assertion creation info", log.Ctx{"error": err})
+		log.Error("Could not get assertion creation info", "err", err)
 		return
 	}
 	prevCreationInfo, err := retry.UntilSucceeds(ctx, func() (*protocol.AssertionCreatedInfo, error) {
 		return m.chain.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: creationInfo.ParentAssertionHash})
 	})
 	if err != nil {
-		log.Error("Could not get prev assertion creation info", log.Ctx{"error": err})
+		log.Error("Could not get prev assertion creation info", "err", err)
 		return
 	}
 	ticker := time.NewTicker(m.confirmationAttemptInterval)
@@ -52,12 +52,12 @@ func (m *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertion
 		case <-ticker.C:
 			parentAssertion, err := m.chain.GetAssertion(ctx, protocol.AssertionHash{Hash: creationInfo.ParentAssertionHash})
 			if err != nil {
-				log.Error("Could not get parent assertion", log.Ctx{"error": err})
+				log.Error("Could not get parent assertion", "err", err)
 				continue
 			}
 			parentAssertionHasSecondChild, err := parentAssertion.HasSecondChild()
 			if err != nil {
-				log.Error("Could not confirm if parent assertion has second child", log.Ctx{"error": err})
+				log.Error("Could not confirm if parent assertion has second child", "err", err)
 				continue
 			}
 			// Assertions that have a rival assertion cannot be confirmed by time.
@@ -67,14 +67,14 @@ func (m *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertion
 			confirmed, err := solimpl.TryConfirmingAssertion(ctx, creationInfo.AssertionHash, prevCreationInfo.ConfirmPeriodBlocks+creationInfo.CreationBlock, m.chain, m.averageTimeForBlockCreation, option.None[protocol.EdgeId]())
 			if err != nil {
 				if !strings.Contains(err.Error(), "PREV_NOT_LATEST_CONFIRMED") {
-					srvlog.Error("Could not confirm assertion", log.Ctx{"err": err, "assertionHash": assertionHash.Hash})
+					log.Error("Could not confirm assertion", "err", err, "assertionHash", assertionHash.Hash)
 					errorConfirmingAssertionByTimeCounter.Inc(1)
 				}
 				continue
 			}
 			if confirmed {
 				assertionConfirmedCounter.Inc(1)
-				srvlog.Info("Confirmed assertion by time", log.Ctx{"assertionHash": creationInfo.AssertionHash})
+				log.Info("Confirmed assertion by time", "assertionHash", creationInfo.AssertionHash)
 				return
 			}
 		}
@@ -89,11 +89,11 @@ func (m *Manager) updateLatestConfirmedMetrics(ctx context.Context) {
 		case <-ticker.C:
 			latestConfirmed, err := m.chain.LatestConfirmed(ctx)
 			if err != nil {
-				srvlog.Debug("Could not fetch latest confirmed assertion", log.Ctx{"error": err})
+				log.Debug("Could not fetch latest confirmed assertion", "err", err)
 				continue
 			}
 			if _, ok := m.assertionChainData.canonicalAssertions[latestConfirmed.Id()]; !ok {
-				srvlog.Warn("Evil assertion was possibly confirmed", log.Ctx{"assertionHash": latestConfirmed.Id().Hash})
+				log.Warn("Evil assertion was possibly confirmed", "assertionHash", latestConfirmed.Id().Hash)
 				evilAssertionConfirmedCounter.Inc(1)
 			}
 			latestConfirmedAssertionGauge.Update(int64(latestConfirmed.CreatedAtBlock()))

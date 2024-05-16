@@ -22,7 +22,6 @@ import (
 	"github.com/OffchainLabs/bold/util"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 )
@@ -352,7 +351,7 @@ func enqueueSequencerMessageAsExecutor(
 	t *testing.T,
 	opts *bind.TransactOpts,
 	executor common.Address,
-	backend *backends.SimulatedBackend,
+	backend *setup.SimulatedBackendWrapper,
 	bridge common.Address,
 	msg seqMessage,
 ) {

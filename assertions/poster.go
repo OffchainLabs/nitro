@@ -28,13 +28,13 @@ var (
 
 func (m *Manager) postAssertionRoutine(ctx context.Context) {
 	if m.challengeReader.Mode() < types.MakeMode {
-		srvlog.Warn("Staker strategy not configured to stake on latest assertions")
+		log.Warn("Staker strategy not configured to stake on latest assertions")
 		return
 	}
-	srvlog.Info("Ready to post")
+	log.Info("Ready to post")
 	if _, err := m.PostAssertion(ctx); err != nil {
 		if !errors.Is(err, solimpl.ErrAlreadyExists) {
-			srvlog.Error("Could not submit latest assertion to L1", log.Ctx{"error": err})
+			log.Error("Could not submit latest assertion to L1", "err", err)
 			errorPostingAssertionCounter.Inc(1)
 		}
 	}
@@ -48,9 +48,9 @@ func (m *Manager) postAssertionRoutine(ctx context.Context) {
 				switch {
 				case errors.Is(err, solimpl.ErrAlreadyExists):
 				case errors.Is(err, solimpl.ErrBatchNotYetFound):
-					srvlog.Info("Waiting for more batches to post assertions about them onchain")
+					log.Info("Waiting for more batches to post assertions about them onchain")
 				default:
-					srvlog.Error("Could not submit latest assertion", log.Ctx{"error": err, "validatorName": m.validatorName})
+					log.Error("Could not submit latest assertion", "err", err, "validatorName", m.validatorName)
 					errorPostingAssertionCounter.Inc(1)
 				}
 			}
@@ -138,11 +138,10 @@ func (m *Manager) PostAssertionBasedOnParent(
 	if err != nil {
 		if errors.Is(err, l2stateprovider.ErrChainCatchingUp) {
 			chainCatchingUpCounter.Inc(1)
-			srvlog.Info(
-				"Waiting for more batches to post next assertion", log.Ctx{
-					"latestStakedAssertionBatchCount": batchCount,
-					"latestStakedAssertionBlockHash":  containers.Trunc(parentBlockHash[:]),
-				},
+			log.Info(
+				"Waiting for more batches to post next assertion",
+				"latestStakedAssertionBatchCount", batchCount,
+				"latestStakedAssertionBlockHash", containers.Trunc(parentBlockHash[:]),
 			)
 			return none, nil
 		}
@@ -158,11 +157,10 @@ func (m *Manager) PostAssertionBasedOnParent(
 		}
 	}
 
-	srvlog.Info(
-		"Posting assertion for batch we agree with", log.Ctx{
-			"requiredInboxMaxCount": batchCount,
-			"validatorName":         m.validatorName,
-		},
+	log.Info(
+		"Posting assertion for batch we agree with",
+		"requiredInboxMaxCount", batchCount,
+		"validatorName", m.validatorName,
 	)
 	assertion, err := submitFn(
 		ctx,
@@ -177,13 +175,13 @@ func (m *Manager) PostAssertionBasedOnParent(
 	if err != nil {
 		return none, err
 	}
-	srvlog.Info("Successfully submitted assertion", log.Ctx{
-		"validatorName":         m.validatorName,
-		"requiredInboxMaxCount": batchCount,
-		"postedExecutionState":  fmt.Sprintf("%+v", newState),
-		"assertionHash":         creationInfo.AssertionHash,
-		"transactionHash":       creationInfo.TransactionHash,
-	})
+	log.Info("Successfully submitted assertion",
+		"validatorName", m.validatorName,
+		"requiredInboxMaxCount", batchCount,
+		"postedExecutionState", fmt.Sprintf("%+v", newState),
+		"assertionHash", creationInfo.AssertionHash,
+		"transactionHash", creationInfo.TransactionHash,
+	)
 	m.observedCanonicalAssertions <- assertion.Id()
 	return option.Some(creationInfo), nil
 }
@@ -213,7 +211,7 @@ func (m *Manager) waitToPostIfNeeded(
 	if !canPostNow {
 		blocksLeftForConfirmation := minPeriodBlocks - blocksSinceLast
 		timeToWait := m.averageTimeForBlockCreation * time.Duration(blocksLeftForConfirmation)
-		srvlog.Info(
+		log.Info(
 			fmt.Sprintf(
 				"Need to wait %d blocks before posting next assertion, waiting for %v",
 				blocksLeftForConfirmation,

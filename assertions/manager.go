@@ -10,7 +10,6 @@ import (
 	"context"
 	"crypto/rand"
 	"math/big"
-	"os"
 	"sync"
 	"time"
 
@@ -30,7 +29,6 @@ import (
 )
 
 var (
-	srvlog                                = log.New("service", "assertions")
 	evilAssertionCounter                  = metrics.NewRegisteredCounter("arb/validator/scanner/evil_assertion", nil)
 	challengeSubmittedCounter             = metrics.NewRegisteredCounter("arb/validator/scanner/challenge_submitted", nil)
 	assertionConfirmedCounter             = metrics.GetOrRegisterCounter("arb/validator/scanner/assertion_confirmed", nil)
@@ -39,10 +37,6 @@ var (
 	evilAssertionConfirmedCounter         = metrics.GetOrRegisterCounter("arb/validator/scanner/evil_assertion_confirmed", nil)
 	safeBlockDelayCounter                 = metrics.GetOrRegisterCounter("arb/validator/scanner/safe_block_delay", nil)
 )
-
-func init() {
-	srvlog.SetHandler(log.StreamHandler(os.Stdout, log.LogfmtFormat()))
-}
 
 // The Manager struct is responsible for several tasks related to the assertion chain:
 // 1. It continuously polls the assertion chain to check for posted, on-chain assertions starting from the latest confirmed assertion up to the newest one.
@@ -173,26 +167,26 @@ func (m *Manager) checkLatestSafeBlock(ctx context.Context) {
 		case <-time.After(time.Minute):
 			latestSafeBlock, err := m.backend.HeaderByNumber(ctx, util.GetSafeBlockNumber())
 			if err != nil {
-				srvlog.Error("Error getting latest safe block", "err", err)
+				log.Error("Error getting latest safe block", "err", err)
 				continue
 			}
 			if !latestSafeBlock.Number.IsUint64() {
-				srvlog.Error("Latest safe block number not a uint64")
+				log.Error("Latest safe block number not a uint64")
 				continue
 			}
 
 			latestBlock, err := m.backend.HeaderByNumber(ctx, nil)
 			if err != nil {
-				srvlog.Error("Error getting latest block", "err", err)
+				log.Error("Error getting latest block", "err", err)
 				continue
 			}
 			if !latestBlock.Number.IsUint64() {
-				srvlog.Error("Latest block number not a uint64")
+				log.Error("Latest block number not a uint64")
 				continue
 			}
 			safeBlockDelayInSeconds := (latestBlock.Number.Uint64() - latestSafeBlock.Number.Uint64()) * uint64(m.averageTimeForBlockCreation.Seconds())
 			if safeBlockDelayInSeconds > 1200 {
-				srvlog.Warn("Latest safe block is delayed by more that 20 minutes", "latestSafeBlock", latestSafeBlock.Number.Uint64(), "latestBlock", latestBlock.Number.Uint64())
+				log.Warn("Latest safe block is delayed by more that 20 minutes", "latestSafeBlock", latestSafeBlock.Number.Uint64(), "latestBlock", latestBlock.Number.Uint64())
 				safeBlockDelayCounter.Inc(1)
 			}
 		}
@@ -274,12 +268,12 @@ func (m *Manager) logChallengeConfigs(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	srvlog.Info("Opening challenge with the following configuration", log.Ctx{
-		"address":               cm.Address(),
-		"bigStepNumber":         bigStepNum,
-		"challengePeriodBlocks": challengePeriodBlocks,
-		"layerZeroHeights":      layerZeroHeights,
-	})
+	log.Info("Opening challenge with the following configuration",
+		"address", cm.Address(),
+		"bigStepNumber", bigStepNum,
+		"challengePeriodBlocks", challengePeriodBlocks,
+		"layerZeroHeights", layerZeroHeights,
+	)
 	return nil
 }
 

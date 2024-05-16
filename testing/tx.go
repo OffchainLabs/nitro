@@ -10,7 +10,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/pkg/errors"
@@ -46,9 +45,13 @@ func TxSucceeded(
 	return nil
 }
 
+type committer interface {
+	Commit() common.Hash
+}
+
 // WaitForTx to be mined. This method will trigger .Commit() on a simulated backend.
 func WaitForTx(ctx context.Context, be bind.DeployBackend, tx *types.Transaction) error {
-	if simulated, ok := be.(*backends.SimulatedBackend); ok {
+	if simulated, ok := be.(committer); ok {
 		simulated.Commit()
 	}
 
