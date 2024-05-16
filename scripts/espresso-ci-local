@@ -5,6 +5,7 @@ set -euo pipefail
 trap 'echo "ERROR: $BASH_SOURCE:$LINENO $BASH_COMMAND" >&2' ERR
 
 make all
+make test-go-deps
 echo "Build passed"
 
 make lint
