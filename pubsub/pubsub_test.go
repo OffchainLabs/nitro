@@ -7,6 +7,7 @@ import (
 	"os"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/go-redis/redis/v8"
@@ -202,6 +203,7 @@ func consume(ctx context.Context, t *testing.T, consumers []*Consumer[testReques
 }
 
 func TestRedisProduce(t *testing.T) {
+	log.SetDefault(log.NewLogger(log.NewTerminalHandlerWithLevel(os.Stderr, log.LevelTrace, true)))
 	t.Parallel()
 	for _, tc := range []struct {
 		name          string
@@ -213,7 +215,7 @@ func TestRedisProduce(t *testing.T) {
 		},
 		{
 			name:          "some consumers killed, others should take over their work",
-			killConsumers: false,
+			killConsumers: true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -233,7 +235,7 @@ func TestRedisProduce(t *testing.T) {
 					if _, err := consumers[i].Consume(ctx); err != nil {
 						t.Errorf("Error consuming message: %v", err)
 					}
-					// Terminate half of the consumers, send interrupt to others.
+					//Terminate half of the consumers, send interrupt to others.
 					if i%2 == 0 {
 						consumers[i].StopAndWait()
 					} else {
@@ -242,6 +244,7 @@ func TestRedisProduce(t *testing.T) {
 				}
 
 			}
+			time.Sleep(time.Second)
 			gotMessages, wantResponses := consume(ctx, t, consumers)
 			gotResponses, err := awaitResponses(ctx, promises)
 			if err != nil {
