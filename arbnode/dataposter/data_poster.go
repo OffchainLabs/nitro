@@ -1282,7 +1282,7 @@ func addExternalSignerOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".root-ca", DefaultDataPosterConfig.ExternalSigner.RootCA, "external signer root CA")
 	f.String(prefix+".client-cert", DefaultDataPosterConfig.ExternalSigner.ClientCert, "rpc client cert")
 	f.String(prefix+".client-private-key", DefaultDataPosterConfig.ExternalSigner.ClientPrivateKey, "rpc client private key")
-	f.Bool(prefix+".client-private-key", DefaultDataPosterConfig.ExternalSigner.InsecureSkipVerify, "skip TLS certificate verification")
+	f.Bool(prefix+".insecure-skip-verify", DefaultDataPosterConfig.ExternalSigner.InsecureSkipVerify, "skip TLS certificate verification")
 }
 
 var DefaultDataPosterConfig = DataPosterConfig{
