@@ -5,6 +5,7 @@ package arbmath
 
 import (
 	"bytes"
+	"fmt"
 	"math"
 	"math/rand"
 	"testing"
@@ -118,6 +119,114 @@ func TestSlices(t *testing.T) {
 	assert_eq(SliceWithRunoff(data, -1, -2), []uint8{})
 	assert_eq(SliceWithRunoff(data, 5, 3), []uint8{})
 	assert_eq(SliceWithRunoff(data, 7, 8), []uint8{})
+}
+
+func testMinMaxValues[T Integer](t *testing.T, min T, max T) {
+	gotMin := MinIntValue[T]()
+	if gotMin != min {
+		Fail(t, "expected min", min, "but got", gotMin)
+	}
+	gotMax := MaxIntValue[T]()
+	if gotMax != max {
+		Fail(t, "expected max", max, "but got", gotMax)
+	}
+}
+
+func TestMinMaxValues(t *testing.T) {
+	testMinMaxValues[uint8](t, 0, math.MaxUint8)
+	testMinMaxValues[uint16](t, 0, math.MaxUint16)
+	testMinMaxValues[uint32](t, 0, math.MaxUint32)
+	testMinMaxValues[uint64](t, 0, math.MaxUint64)
+	testMinMaxValues[int8](t, math.MinInt8, math.MaxInt8)
+	testMinMaxValues[int16](t, math.MinInt16, math.MaxInt16)
+	testMinMaxValues[int32](t, math.MinInt32, math.MaxInt32)
+	testMinMaxValues[int64](t, math.MinInt64, math.MaxInt64)
+}
+
+func TestSaturatingAdd(t *testing.T) {
+	tests := []struct {
+		a, b, expected int64
+	}{
+		{2, 3, 5},
+		{-1, -2, -3},
+		{math.MaxInt64, 1, math.MaxInt64},
+		{math.MaxInt64, math.MaxInt64, math.MaxInt64},
+		{math.MinInt64, -1, math.MinInt64},
+		{math.MinInt64, math.MinInt64, math.MinInt64},
+	}
+
+	for _, tc := range tests {
+		t.Run(fmt.Sprintf("%v + %v = %v", tc.a, tc.b, tc.expected), func(t *testing.T) {
+			sum := SaturatingAdd(int64(tc.a), int64(tc.b))
+			if sum != tc.expected {
+				t.Errorf("SaturatingAdd(%v, %v) = %v; want %v", tc.a, tc.b, sum, tc.expected)
+			}
+		})
+	}
+}
+
+func TestSaturatingSub(t *testing.T) {
+	tests := []struct {
+		a, b, expected int64
+	}{
+		{5, 3, 2},
+		{-3, -2, -1},
+		{math.MinInt64, 1, math.MinInt64},
+		{math.MinInt64, -1, math.MinInt64 + 1},
+		{math.MinInt64, math.MinInt64, 0},
+		{0, math.MinInt64, math.MaxInt64},
+	}
+
+	for _, tc := range tests {
+		t.Run("", func(t *testing.T) {
+			sum := SaturatingSub(int64(tc.a), int64(tc.b))
+			if sum != tc.expected {
+				t.Errorf("SaturatingSub(%v, %v) = %v; want %v", tc.a, tc.b, sum, tc.expected)
+			}
+		})
+	}
+}
+
+func TestSaturatingMul(t *testing.T) {
+	tests := []struct {
+		a, b, expected int64
+	}{
+		{5, 3, 15},
+		{-3, -2, 6},
+		{math.MaxInt64, 2, math.MaxInt64},
+		{math.MinInt64, 2, math.MinInt64},
+	}
+
+	for _, tc := range tests {
+		t.Run(fmt.Sprintf("%v - %v = %v", tc.a, tc.b, tc.expected), func(t *testing.T) {
+			sum := SaturatingMul(int64(tc.a), int64(tc.b))
+			if sum != tc.expected {
+				t.Errorf("SaturatingMul(%v, %v) = %v; want %v", tc.a, tc.b, sum, tc.expected)
+			}
+		})
+	}
+}
+
+func TestSaturatingNeg(t *testing.T) {
+	tests := []struct {
+		value    int64
+		expected int64
+	}{
+		{0, 0},
+		{5, -5},
+		{-5, 5},
+		{math.MinInt64, math.MaxInt64},
+		{math.MaxInt64, math.MinInt64 + 1},
+	}
+
+	for _, tc := range tests {
+		t.Run(fmt.Sprintf("-%v = %v", tc.value, tc.expected), func(t *testing.T) {
+			result := SaturatingNeg(tc.value)
+			if result != tc.expected {
+				t.Errorf("SaturatingNeg(%v) = %v: expected %v", tc.value, result, tc.expected)
+			}
+		})
+	}
 }
 
 func Fail(t *testing.T, printables ...interface{}) {
