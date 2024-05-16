@@ -38,6 +38,7 @@ type CachingConfig struct {
 	MaxNumberOfBlocksToSkipStateSaving uint32        `koanf:"max-number-of-blocks-to-skip-state-saving"`
 	MaxAmountOfGasToSkipStateSaving    uint64        `koanf:"max-amount-of-gas-to-skip-state-saving"`
 	StylusLRUCache                     uint32        `koanf:"stylus-lru-cache"`
+	StateScheme                        string        `koanf:"state-scheme"`
 }
 
 func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -53,6 +54,7 @@ func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint32(prefix+".max-number-of-blocks-to-skip-state-saving", DefaultCachingConfig.MaxNumberOfBlocksToSkipStateSaving, "maximum number of blocks to skip state saving to persistent storage (archive node only) -- warning: this option seems to cause issues")
 	f.Uint64(prefix+".max-amount-of-gas-to-skip-state-saving", DefaultCachingConfig.MaxAmountOfGasToSkipStateSaving, "maximum amount of gas in blocks to skip saving state to Persistent storage (archive node only) -- warning: this option seems to cause issues")
 	f.Uint32(prefix+".stylus-lru-cache", DefaultCachingConfig.StylusLRUCache, "initialized stylus programs to keep in LRU cache")
+	f.String(prefix+".state-scheme", DefaultCachingConfig.StateScheme, "scheme to use for state trie storage (hashdb, pathdb)")
 }
 
 var DefaultCachingConfig = CachingConfig{
@@ -68,6 +70,7 @@ var DefaultCachingConfig = CachingConfig{
 	MaxNumberOfBlocksToSkipStateSaving: 0,
 	MaxAmountOfGasToSkipStateSaving:    0,
 	StylusLRUCache:                     256,
+	StateScheme:                        rawdb.HashScheme,
 }
 
 var TestCachingConfig = CachingConfig{
@@ -83,7 +86,12 @@ var TestCachingConfig = CachingConfig{
 	MaxNumberOfBlocksToSkipStateSaving: 0,
 	MaxAmountOfGasToSkipStateSaving:    0,
 	StylusLRUCache:                     0,
+	StateScheme:                        rawdb.PathScheme,
 }
+
+var (
+	InvalidStateSchemeForArchive = errors.New("Archive cannot be set when using PathScheme as the StateScheme")
+)
 
 // TODO remove stack from parameters as it is no longer needed here
 func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core.CacheConfig {
@@ -105,10 +113,25 @@ func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core
 		SnapshotRestoreMaxGas:              cachingConfig.SnapshotRestoreGasLimit,
 		MaxNumberOfBlocksToSkipStateSaving: cachingConfig.MaxNumberOfBlocksToSkipStateSaving,
 		MaxAmountOfGasToSkipStateSaving:    cachingConfig.MaxAmountOfGasToSkipStateSaving,
-
-		// TODO pathdb
-		StateScheme: rawdb.PathScheme,
+		StateScheme:                        cachingConfig.StateScheme,
 	}
+}
+
+func (c *CachingConfig) validateStateScheme() error {
+	switch c.StateScheme {
+	case rawdb.HashScheme:
+	case rawdb.PathScheme:
+		if c.Archive {
+			return InvalidStateSchemeForArchive
+		}
+	default:
+		return errors.New("Invalid StateScheme")
+	}
+	return nil
+}
+
+func (c *CachingConfig) Validate() error {
+	return c.validateStateScheme()
 }
 
 func WriteOrTestGenblock(chainDb ethdb.Database, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, accountsPerSync uint) error {
