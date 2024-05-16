@@ -20,8 +20,8 @@ func TestBroadcast(t *testing.T) {
 	sub := producer.Subscribe()
 	done := make(chan bool)
 	go func() {
-		event, err := sub.Next(context.Background())
-		require.NoError(t, err)
+		event, shouldEnd := sub.Next(context.Background())
+		require.False(t, shouldEnd)
 		require.Equal(t, 42, event)
 		done <- true
 	}()
@@ -45,8 +45,8 @@ func TestBroadcastTimeout(t *testing.T) {
 		sub.events <- 42
 	}()
 
-	event, err := sub.Next(context.Background())
-	require.NoError(t, err)
+	event, shouldEnd := sub.Next(context.Background())
+	require.False(t, shouldEnd)
 	require.Equal(t, 42, event)
 }
 
@@ -59,8 +59,8 @@ func TestEventProducer_Start(t *testing.T) {
 
 	// Simulate removing the subscription.
 	cancel()
-	_, err := sub.Next(ctx)
-	if err == nil {
-		t.Error("Expected an error after context cancellation, got none")
+	_, shouldEnd := sub.Next(ctx)
+	if !shouldEnd {
+		t.Error("Expected to end after context cancellation")
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"path"
 	"time"
 
+	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
@@ -152,7 +153,7 @@ func (a *AnvilLocal) Start(ctx context.Context) error {
 }
 
 // Client returns the ethclient associated with the backend.
-func (a *AnvilLocal) Client() setup.Backend {
+func (a *AnvilLocal) Client() protocol.ChainBackend {
 	return a.client
 }
 

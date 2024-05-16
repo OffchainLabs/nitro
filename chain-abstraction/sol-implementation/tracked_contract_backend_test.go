@@ -123,6 +123,10 @@ func (m *MockContractBackend) SubscribeFilterLogs(ctx context.Context, query eth
 	return nil, nil
 }
 
+func (m *MockContractBackend) SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) (ethereum.Subscription, error) {
+	return nil, nil
+}
+
 func (m *MockContractBackend) TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error) {
 	return nil, nil
 }

@@ -13,6 +13,7 @@ import (
 	"github.com/OffchainLabs/bold/containers/option"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	commitments "github.com/OffchainLabs/bold/state-commitments/history"
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -24,6 +25,7 @@ type ChainBackend interface {
 	bind.ContractBackend
 	ReceiptFetcher
 	TxFetcher
+	HeadSubscriber
 }
 
 // ReceiptFetcher defines the ability to retrieve transactions receipts from the chain.
@@ -34,6 +36,11 @@ type ReceiptFetcher interface {
 // ReceiptFetcher defines the ability to retrieve transactions receipts from the chain.
 type TxFetcher interface {
 	TransactionByHash(ctx context.Context, txHash common.Hash) (*types.Transaction, bool, error)
+}
+
+// ReceiptFetcher defines the ability to retrieve transactions receipts from the chain.
+type HeadSubscriber interface {
+	SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) (ethereum.Subscription, error)
 }
 
 // LayerZeroHeights for edges configured as parameters in the challenge manager contract.

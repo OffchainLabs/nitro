@@ -59,7 +59,6 @@ func TestPostAssertion(t *testing.T) {
 		stateManager,
 		setup.Addrs.Rollup,
 		challengemanager.WithMode(types.DefensiveMode),
-		challengemanager.WithEdgeTrackerWakeInterval(time.Hour),
 	)
 	require.NoError(t, err)
 	chalManager.Start(ctx)

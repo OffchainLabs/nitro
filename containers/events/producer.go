@@ -115,16 +115,16 @@ type Subscription[T any] struct {
 }
 
 // Next waits for the next event or context cancelation, returning the event or an error.
-func (es *Subscription[T]) Next(ctx context.Context) (T, error) {
+func (es *Subscription[T]) Next(ctx context.Context) (T, bool) {
 	var zeroVal T
 	for {
 		select {
 		case ev := <-es.events:
-			return ev, nil
+			return ev, false
 		case <-ctx.Done():
 			es.done <- es.id
 			close(es.events)
-			return zeroVal, ctx.Err()
+			return zeroVal, true
 		}
 	}
 }

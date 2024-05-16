@@ -4,7 +4,6 @@ import (
 	"context"
 	"math/big"
 
-	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -13,8 +12,7 @@ import (
 )
 
 var (
-	_ protocol.ChainBackend = &SimulatedBackendWrapper{}
-	_ bind.ContractBackend  = &SimulatedBackendWrapper{}
+	_ bind.ContractBackend = &SimulatedBackendWrapper{}
 )
 
 type SimulatedBackendWrapper struct {
@@ -71,6 +69,10 @@ func (s *SimulatedBackendWrapper) FilterLogs(ctx context.Context, query ethereum
 
 func (s *SimulatedBackendWrapper) SubscribeFilterLogs(ctx context.Context, query ethereum.FilterQuery, ch chan<- types.Log) (ethereum.Subscription, error) {
 	return s.Client().SubscribeFilterLogs(ctx, query, ch)
+}
+
+func (s *SimulatedBackendWrapper) SubscribeNewHead(ctx context.Context, ch chan<- *types.Header) (ethereum.Subscription, error) {
+	return s.Client().SubscribeNewHead(ctx, ch)
 }
 
 func (s *SimulatedBackendWrapper) TransactionReceipt(ctx context.Context, txHash common.Hash) (*types.Receipt, error) {
