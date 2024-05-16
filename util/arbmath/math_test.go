@@ -121,26 +121,22 @@ func TestSlices(t *testing.T) {
 	assert_eq(SliceWithRunoff(data, 7, 8), []uint8{})
 }
 
-func testMinMaxValues[T Integer](t *testing.T, min T, max T) {
-	gotMin := MinIntValue[T]()
+func testMinMaxSignedValues[T Signed](t *testing.T, min T, max T) {
+	gotMin := MinSignedValue[T]()
 	if gotMin != min {
 		Fail(t, "expected min", min, "but got", gotMin)
 	}
-	gotMax := MaxIntValue[T]()
+	gotMax := MaxSignedValue[T]()
 	if gotMax != max {
 		Fail(t, "expected max", max, "but got", gotMax)
 	}
 }
 
-func TestMinMaxValues(t *testing.T) {
-	testMinMaxValues[uint8](t, 0, math.MaxUint8)
-	testMinMaxValues[uint16](t, 0, math.MaxUint16)
-	testMinMaxValues[uint32](t, 0, math.MaxUint32)
-	testMinMaxValues[uint64](t, 0, math.MaxUint64)
-	testMinMaxValues[int8](t, math.MinInt8, math.MaxInt8)
-	testMinMaxValues[int16](t, math.MinInt16, math.MaxInt16)
-	testMinMaxValues[int32](t, math.MinInt32, math.MaxInt32)
-	testMinMaxValues[int64](t, math.MinInt64, math.MaxInt64)
+func TestMinMaxSignedValues(t *testing.T) {
+	testMinMaxSignedValues[int8](t, math.MinInt8, math.MaxInt8)
+	testMinMaxSignedValues[int16](t, math.MinInt16, math.MaxInt16)
+	testMinMaxSignedValues[int32](t, math.MinInt32, math.MaxInt32)
+	testMinMaxSignedValues[int64](t, math.MinInt64, math.MaxInt64)
 }
 
 func TestSaturatingAdd(t *testing.T) {

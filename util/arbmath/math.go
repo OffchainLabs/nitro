@@ -259,32 +259,22 @@ func BigFloatMulByUint(multiplicand *big.Float, multiplier uint64) *big.Float {
 	return new(big.Float).Mul(multiplicand, UintToBigFloat(multiplier))
 }
 
-func MaxIntValue[T Integer]() T {
-	allBits := ^T(0)
-	if allBits < 0 {
-		// This is a signed integer
-		return T((uint64(1) << (8*unsafe.Sizeof(allBits) - 1)) - 1)
-	}
-	return allBits
+func MaxSignedValue[T Signed]() T {
+	return T((uint64(1) << (8*unsafe.Sizeof(T(0)) - 1)) - 1)
 }
 
-func MinIntValue[T Integer]() T {
-	allBits := ^T(0)
-	if allBits < 0 {
-		// This is a signed integer
-		return T(uint64(1) << ((8 * unsafe.Sizeof(allBits)) - 1))
-	}
-	return 0
+func MinSignedValue[T Signed]() T {
+	return T(uint64(1) << ((8 * unsafe.Sizeof(T(0))) - 1))
 }
 
 // SaturatingAdd add two integers without overflow
 func SaturatingAdd[T Signed](a, b T) T {
 	sum := a + b
 	if b > 0 && sum < a {
-		sum = MaxIntValue[T]()
+		sum = MaxSignedValue[T]()
 	}
 	if b < 0 && sum > a {
-		sum = MinIntValue[T]()
+		sum = MinSignedValue[T]()
 	}
 	return sum
 }
@@ -329,9 +319,9 @@ func SaturatingMul[T Signed](a, b T) T {
 	product := a * b
 	if b != 0 && product/b != a {
 		if (a > 0 && b > 0) || (a < 0 && b < 0) {
-			product = MaxIntValue[T]()
+			product = MaxSignedValue[T]()
 		} else {
-			product = MinIntValue[T]()
+			product = MinSignedValue[T]()
 		}
 	}
 	return product
@@ -381,8 +371,8 @@ func SaturatingCastToUint(value *big.Int) uint64 {
 
 // Negates an int without underflow
 func SaturatingNeg[T Signed](value T) T {
-	if value < 0 && value == MinIntValue[T]() {
-		return MaxIntValue[T]()
+	if value < 0 && value == MinSignedValue[T]() {
+		return MaxSignedValue[T]()
 	}
 	return -value
 }
