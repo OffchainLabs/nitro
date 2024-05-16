@@ -169,12 +169,12 @@ func callProgram(
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,
 	calldata []byte,
-	evmData *evmData,
-	stylusParams *goParams,
+	evmData *EvmData,
+	stylusParams *ProgParams,
 	memoryModel *MemoryModel,
 ) ([]byte, error) {
 	db := interpreter.Evm().StateDB
-	debug := stylusParams.debugMode
+	debug := stylusParams.DebugMode
 
 	if len(localAsm) == 0 {
 		log.Error("missing asm", "program", address, "module", moduleHash)
@@ -302,18 +302,18 @@ func goSlice(slice []byte) C.GoSliceData {
 	}
 }
 
-func (params *goParams) encode() C.StylusConfig {
+func (params *ProgParams) encode() C.StylusConfig {
 	pricing := C.PricingParams{
-		ink_price: u32(params.inkPrice.ToUint32()),
+		ink_price: u32(params.InkPrice.ToUint32()),
 	}
 	return C.StylusConfig{
-		version:   u16(params.version),
-		max_depth: u32(params.maxDepth),
+		version:   u16(params.Version),
+		max_depth: u32(params.MaxDepth),
 		pricing:   pricing,
 	}
 }
 
-func (data *evmData) encode() C.EvmData {
+func (data *EvmData) encode() C.EvmData {
 	return C.EvmData{
 		block_basefee:    hashToBytes32(data.blockBasefee),
 		chainid:          u64(data.chainId),
