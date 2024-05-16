@@ -135,14 +135,26 @@ func callProgram(
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,
 	calldata []byte,
-	evmData *evmData,
-	params *goParams,
+	evmData *EvmData,
+	params *ProgParams,
 	memoryModel *MemoryModel,
 ) ([]byte, error) {
 	reqHandler := newApiClosures(interpreter, tracingInfo, scope, memoryModel)
+	gasLeft, retData, err := CallProgramLoop(moduleHash, calldata, scope.Contract.Gas, evmData, params, reqHandler)
+	scope.Contract.Gas = gasLeft
+	return retData, err
+}
+
+func CallProgramLoop(
+	moduleHash common.Hash,
+	calldata []byte,
+	gas uint64,
+	evmData *EvmData,
+	params *ProgParams,
+	reqHandler RequestHandler) (uint64, []byte, error) {
 	configHandler := params.createHandler()
 	dataHandler := evmData.createHandler()
-	debug := params.debugMode
+	debug := params.DebugMode
 
 	module := newProgram(
 		unsafe.Pointer(&moduleHash[0]),
@@ -150,7 +162,7 @@ func callProgram(
 		uint32(len(calldata)),
 		configHandler,
 		dataHandler,
-		scope.Contract.Gas,
+		gas,
 	)
 	reqId := startProgram(module)
 	for {
@@ -162,12 +174,11 @@ func callProgram(
 			popProgram()
 			status := userStatus(reqTypeId)
 			gasLeft := arbmath.BytesToUint(reqData[:8])
-			scope.Contract.Gas = gasLeft
 			data, msg, err := status.toResult(reqData[8:], debug)
 			if status == userFailure && debug {
-				log.Warn("program failure", "err", err, "msg", msg, "program", address)
+				log.Warn("program failure", "err", err, "msg", msg, "moduleHash", moduleHash)
 			}
-			return data, err
+			return gasLeft, data, err
 		}
 
 		reqType := RequestType(reqTypeId - EvmApiMethodReqOffset)
