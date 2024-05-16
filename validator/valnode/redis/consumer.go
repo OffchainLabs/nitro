@@ -3,13 +3,10 @@ package redis
 import (
 	"context"
 	"fmt"
-	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -25,7 +22,8 @@ type ValidationServer struct {
 	spawner validator.ValidationSpawner
 
 	// consumers stores moduleRoot to consumer mapping.
-	consumers map[common.Hash]*pubsub.Consumer[*validator.ValidationInput, validator.GoGlobalState]
+	consumers     map[common.Hash]*pubsub.Consumer[*validator.ValidationInput, validator.GoGlobalState]
+	streamTimeout time.Duration
 }
 
 func NewValidationServer(cfg *ValidationServerConfig, spawner validator.ValidationSpawner) (*ValidationServer, error) {
@@ -45,83 +43,72 @@ func NewValidationServer(cfg *ValidationServerConfig, spawner validator.Validati
 		}
 		consumers[mr] = c
 	}
-	var (
-		wg          sync.WaitGroup
-		initialized atomic.Bool
-	)
-	initialized.Store(true)
-	for i := 0; i < len(cfg.ModuleRoots); i++ {
-		mr := cfg.ModuleRoots[i]
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			done := waitForStream(redisClient, mr)
-			select {
-			case <-time.After(cfg.StreamTimeout):
-				initialized.Store(false)
-				return
-			case <-done:
-				return
-			}
-		}()
-	}
-	wg.Wait()
-	if !initialized.Load() {
-		return nil, fmt.Errorf("waiting for streams to be created: timed out")
-	}
 	return &ValidationServer{
-		consumers: consumers,
-		spawner:   spawner,
+		consumers:     consumers,
+		spawner:       spawner,
+		streamTimeout: cfg.StreamTimeout,
 	}, nil
-}
-
-func streamExists(client redis.UniversalClient, streamName string) bool {
-	groups, err := client.XInfoStream(context.TODO(), streamName).Result()
-	if err != nil {
-		log.Error("Reading redis streams", "error", err)
-		return false
-	}
-	return groups.Groups > 0
-}
-
-func waitForStream(client redis.UniversalClient, streamName string) chan struct{} {
-	var ret chan struct{}
-	go func() {
-		if streamExists(client, streamName) {
-			ret <- struct{}{}
-		}
-		time.Sleep(time.Millisecond * 100)
-	}()
-	return ret
 }
 
 func (s *ValidationServer) Start(ctx_in context.Context) {
 	s.StopWaiter.Start(ctx_in, s)
+	// Channel that all consumers use to indicate their readiness.
+	readyStreams := make(chan struct{}, len(s.consumers))
 	for moduleRoot, c := range s.consumers {
 		c := c
+		moduleRoot := moduleRoot
 		c.Start(ctx_in)
-		s.StopWaiter.CallIteratively(func(ctx context.Context) time.Duration {
-			req, err := c.Consume(ctx)
-			if err != nil {
-				log.Error("Consuming request", "error", err)
-				return 0
+		// Channel for single consumer, once readiness is indicated in this,
+		// consumer will start consuming iteratively.
+		ready := make(chan struct{}, 1)
+		s.StopWaiter.LaunchThread(func(ctx context.Context) {
+			for {
+				if pubsub.StreamExists(ctx, c.RedisClient(), c.StreamName()) {
+					ready <- struct{}{}
+					readyStreams <- struct{}{}
+					return
+				}
+				time.Sleep(time.Millisecond * 100)
 			}
-			if req == nil {
-				// There's nothing in the queue.
-				return time.Second
-			}
-			valRun := s.spawner.Launch(req.Value, moduleRoot)
-			res, err := valRun.Await(ctx)
-			if err != nil {
-				log.Error("Error validating", "request value", req.Value, "error", err)
-				return 0
-			}
-			if err := c.SetResult(ctx, req.ID, res); err != nil {
-				log.Error("Error setting result for request", "id", req.ID, "result", res, "error", err)
-				return 0
-			}
-			return time.Second
 		})
+		s.StopWaiter.LaunchThread(func(ctx context.Context) {
+			<-ready // Wait until the stream exists and start consuming iteratively.
+			s.StopWaiter.CallIteratively(func(ctx context.Context) time.Duration {
+				req, err := c.Consume(ctx)
+				if err != nil {
+					log.Error("Consuming request", "error", err)
+					return 0
+				}
+				if req == nil {
+					// There's nothing in the queue.
+					return time.Second
+				}
+				valRun := s.spawner.Launch(req.Value, moduleRoot)
+				res, err := valRun.Await(ctx)
+				if err != nil {
+					log.Error("Error validating", "request value", req.Value, "error", err)
+					return 0
+				}
+				if err := c.SetResult(ctx, req.ID, res); err != nil {
+					log.Error("Error setting result for request", "id", req.ID, "result", res, "error", err)
+					return 0
+				}
+				return time.Second
+			})
+		})
+	}
+
+	for {
+		select {
+		case <-readyStreams:
+			log.Trace("At least one stream is ready")
+			return // Don't block Start if at least one of the stream is ready.
+		case <-time.After(s.streamTimeout):
+			log.Error("Waiting for redis streams timed out")
+		case <-ctx_in.Done():
+			log.Error(("Context expired, failed to start"))
+			return
+		}
 	}
 }
 

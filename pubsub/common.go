@@ -3,6 +3,7 @@ package pubsub
 import (
 	"context"
 
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/go-redis/redis/v8"
 )
 
@@ -14,4 +15,15 @@ func CreateStream(ctx context.Context, streamName string, client redis.Universal
 		return nil
 	}
 	return err
+}
+
+// StreamExists returns whether there are any consumer group for specified
+// redis stream.
+func StreamExists(ctx context.Context, client redis.UniversalClient, streamName string) bool {
+	groups, err := client.XInfoStream(ctx, streamName).Result()
+	if err != nil {
+		log.Error("Reading redis streams", "error", err)
+		return false
+	}
+	return groups.Groups > 0
 }

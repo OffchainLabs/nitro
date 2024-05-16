@@ -86,6 +86,14 @@ func heartBeatKey(id string) string {
 	return fmt.Sprintf("consumer:%s:heartbeat", id)
 }
 
+func (c *Consumer[Request, Response]) RedisClient() redis.UniversalClient {
+	return c.client
+}
+
+func (c *Consumer[Request, Response]) StreamName() string {
+	return c.redisStream
+}
+
 func (c *Consumer[Request, Response]) heartBeatKey() string {
 	return heartBeatKey(c.id)
 }
