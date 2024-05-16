@@ -108,8 +108,8 @@ func (c *Consumer[Request, Response]) listenForInterrupt() {
 }
 
 func (c *Consumer[Request, Response]) StopAndWait() {
-	c.StopWaiter.StopAndWait()
 	c.deleteHeartBeat(c.GetContext())
+	c.StopWaiter.StopAndWait()
 }
 
 func heartBeatKey(id string) string {
