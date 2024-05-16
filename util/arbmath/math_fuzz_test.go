@@ -13,12 +13,12 @@ func toBig[T Signed](a T) *big.Int {
 }
 
 func saturatingBigToInt[T Signed](a *big.Int) T {
-	// MinIntValue and MaxIntValue are already separately tested
-	if a.Cmp(toBig(MaxIntValue[T]())) > 0 {
-		return MaxIntValue[T]()
+	// MinSignedValue and MaxSignedValue are already separately tested
+	if a.Cmp(toBig(MaxSignedValue[T]())) > 0 {
+		return MaxSignedValue[T]()
 	}
-	if a.Cmp(toBig(MinIntValue[T]())) < 0 {
-		return MinIntValue[T]()
+	if a.Cmp(toBig(MinSignedValue[T]())) < 0 {
+		return MinSignedValue[T]()
 	}
 	return T(a.Int64())
 }
