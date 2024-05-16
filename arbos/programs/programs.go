@@ -527,12 +527,12 @@ func (status userStatus) toResult(data []byte, debug bool) ([]byte, string, erro
 
 // Hours since Arbitrum began, rounded down.
 func hoursSinceArbitrum(time uint64) uint24 {
-	return uint24((time - lastUpdateTimeOffset) / 3600)
+	return uint24((time - ArbitrumStartTime) / 3600)
 }
 
 // Computes program age in seconds from the hours passed since Arbitrum began.
 func hoursToAge(time uint64, hours uint24) uint64 {
 	seconds := am.SaturatingUMul(uint64(hours), 3600)
-	activatedAt := am.SaturatingUAdd(lastUpdateTimeOffset, seconds)
+	activatedAt := am.SaturatingUAdd(ArbitrumStartTime, seconds)
 	return am.SaturatingUSub(time, activatedAt)
 }
