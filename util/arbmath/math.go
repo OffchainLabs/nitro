@@ -74,14 +74,6 @@ func MaxInt[T Number](values ...T) T {
 	return max
 }
 
-// AbsValue the absolute value of a number
-func AbsValue[T Number](value T) T {
-	if value < 0 {
-		return -value // never happens for unsigned types
-	}
-	return value
-}
-
 // Checks if two ints are sufficiently close to one another
 func Within[T Unsigned](a, b, bound T) bool {
 	min := MinInt(a, b)
@@ -267,14 +259,22 @@ func BigFloatMulByUint(multiplicand *big.Float, multiplier uint64) *big.Float {
 	return new(big.Float).Mul(multiplicand, UintToBigFloat(multiplier))
 }
 
+func MaxSignedValue[T Signed]() T {
+	return T((uint64(1) << (8*unsafe.Sizeof(T(0)) - 1)) - 1)
+}
+
+func MinSignedValue[T Signed]() T {
+	return T(uint64(1) << ((8 * unsafe.Sizeof(T(0))) - 1))
+}
+
 // SaturatingAdd add two integers without overflow
 func SaturatingAdd[T Signed](a, b T) T {
 	sum := a + b
 	if b > 0 && sum < a {
-		sum = ^T(0) >> 1
+		sum = MaxSignedValue[T]()
 	}
 	if b < 0 && sum > a {
-		sum = (^T(0) >> 1) + 1
+		sum = MinSignedValue[T]()
 	}
 	return sum
 }
@@ -290,7 +290,11 @@ func SaturatingUAdd[T Unsigned](a, b T) T {
 
 // SaturatingSub subtract an int64 from another without overflow
 func SaturatingSub(minuend, subtrahend int64) int64 {
-	return SaturatingAdd(minuend, -subtrahend)
+	if subtrahend == math.MinInt64 {
+		// The absolute value of MinInt64 is one greater than MaxInt64
+		return SaturatingAdd(SaturatingAdd(minuend, math.MaxInt64), 1)
+	}
+	return SaturatingAdd(minuend, SaturatingNeg(subtrahend))
 }
 
 // SaturatingUSub subtract an integer from another without underflow
@@ -315,9 +319,9 @@ func SaturatingMul[T Signed](a, b T) T {
 	product := a * b
 	if b != 0 && product/b != a {
 		if (a > 0 && b > 0) || (a < 0 && b < 0) {
-			product = ^T(0) >> 1
+			product = MaxSignedValue[T]()
 		} else {
-			product = (^T(0) >> 1) + 1
+			product = MinSignedValue[T]()
 		}
 	}
 	return product
@@ -367,8 +371,8 @@ func SaturatingCastToUint(value *big.Int) uint64 {
 
 // Negates an int without underflow
 func SaturatingNeg[T Signed](value T) T {
-	if value == ^T(0) {
-		return (^T(0)) >> 1
+	if value < 0 && value == MinSignedValue[T]() {
+		return MaxSignedValue[T]()
 	}
 	return -value
 }
