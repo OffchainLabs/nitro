@@ -1,5 +1,5 @@
 {
-  description = "A Nix-flake-based Go 1.20 development environment";
+  description = "A Nix-flake-based Go 1.21 development environment";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
   inputs.flake-utils.url = "github:numtide/flake-utils";
