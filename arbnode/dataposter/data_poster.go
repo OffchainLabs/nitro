@@ -220,8 +220,8 @@ func rpcClient(ctx context.Context, opts *ExternalSignerCfg) (*rpc.Client, error
 		// Dataposter verifies that signed transaction was signed by the account
 		// that it expects to be signed with. So signer is already authenticated
 		// on application level and does not need to rely on TLS for authentication.
-		InsecureSkipVerify: opts.InsecureSkipVerify,
-	} // #nosec G402
+		InsecureSkipVerify: opts.InsecureSkipVerify, // #nosec G402
+	}
 
 	if opts.ClientCert != "" && opts.ClientPrivateKey != "" {
 		log.Info("Client certificate for external signer is enabled")
