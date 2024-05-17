@@ -194,7 +194,14 @@ pub unsafe extern "C" fn stylus_call(
 
     // Safety: module came from compile_user_wasm and we've paid for memory expansion
     let instance = unsafe {
-        NativeInstance::deserialize_cached(module, config.version, evm_api, evm_data, long_term_tag, debug_chain)
+        NativeInstance::deserialize_cached(
+            module,
+            config.version,
+            evm_api,
+            evm_data,
+            long_term_tag,
+            debug_chain,
+        )
     };
     let mut instance = match instance {
         Ok(instance) => instance,
@@ -241,7 +248,12 @@ pub unsafe extern "C" fn stylus_cache_module(
 
 /// Evicts an activated user program from the init cache.
 #[no_mangle]
-pub extern "C" fn stylus_evict_module(module_hash: Bytes32, version: u16, arbos_tag: u32, debug: bool) {
+pub extern "C" fn stylus_evict_module(
+    module_hash: Bytes32,
+    version: u16,
+    arbos_tag: u32,
+    debug: bool,
+) {
     InitCache::evict(module_hash, version, arbos_tag, debug);
 }
 

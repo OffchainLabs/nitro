@@ -126,7 +126,8 @@ impl<D: DataReader, E: EvmApi<D>> NativeInstance<D, E> {
         if !env.evm_data.cached {
             long_term_tag = 0;
         }
-        let (module, store) = InitCache::insert(module_hash, module, version, long_term_tag, debug)?;
+        let (module, store) =
+            InitCache::insert(module_hash, module, version, long_term_tag, debug)?;
         Self::from_module(module, store, env)
     }
 

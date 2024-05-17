@@ -72,7 +72,9 @@ impl InitCache {
     }
 
     pub fn set_lru_size(size: u32) {
-        cache!().lru.resize(NonZeroUsize::new(size.try_into().unwrap()).unwrap())
+        cache!()
+            .lru
+            .resize(NonZeroUsize::new(size.try_into().unwrap()).unwrap())
     }
 
     /// Retrieves a cached value, updating items as necessary.
@@ -106,7 +108,7 @@ impl InitCache {
         // if in LRU, add to ArbOS
         let mut cache = cache!();
         if let Some(item) = cache.long_term.get(&key) {
-            return Ok(item.data())
+            return Ok(item.data());
         }
         if let Some(item) = cache.lru.peek(&key).cloned() {
             if long_term_tag == Self::ARBOS_TAG {
@@ -135,7 +137,7 @@ impl InitCache {
     /// Evicts an item in the long-term cache.
     pub fn evict(module_hash: Bytes32, version: u16, long_term_tag: u32, debug: bool) {
         if long_term_tag != Self::ARBOS_TAG {
-            return
+            return;
         }
         let key = CacheKey::new(module_hash, version, debug);
         let mut cache = cache!();
@@ -146,8 +148,8 @@ impl InitCache {
 
     pub fn clear_long_term(long_term_tag: u32) {
         if long_term_tag != Self::ARBOS_TAG {
-            return
-        }        
+            return;
+        }
         let mut cache = cache!();
         let cache = &mut *cache;
         for (key, item) in cache.long_term.drain() {
