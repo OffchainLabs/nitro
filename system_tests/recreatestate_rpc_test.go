@@ -449,7 +449,7 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 }
 
 func TestSkippingSavingStateAndRecreatingAfterRestart(t *testing.T) {
-	cacheConfig := gethexec.DefaultCachingConfig
+	cacheConfig := gethexec.TestCachingConfig
 	cacheConfig.Archive = true
 	cacheConfig.SnapshotCache = 0 // disable snapshots
 	cacheConfig.BlockAge = 0      // use only Caching.BlockCount to keep only last N blocks in dirties cache, no matter how new they are

@@ -66,6 +66,10 @@ impl InitCache {
         }
     }
 
+    pub fn set_lru_size(size: u32) {
+        cache!().lru.resize(NonZeroUsize::new(size.try_into().unwrap()).unwrap())
+    }
+
     /// Retrieves a cached value, updating items as necessary.
     pub fn get(module_hash: Bytes32, version: u16, debug: bool) -> Option<(Module, Store)> {
         let mut cache = cache!();

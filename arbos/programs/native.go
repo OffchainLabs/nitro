@@ -253,6 +253,10 @@ func init() {
 	}
 }
 
+func ResizeWasmLruCache(size uint32) {
+	C.stylus_cache_lru_resize(u32(size))
+}
+
 func (value bytes32) toHash() common.Hash {
 	hash := common.Hash{}
 	for index, b := range value.bytes {

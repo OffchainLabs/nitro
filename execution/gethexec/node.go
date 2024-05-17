@@ -107,6 +107,7 @@ var ConfigDefault = Config{
 
 func ConfigDefaultNonSequencerTest() *Config {
 	config := ConfigDefault
+	config.Caching = TestCachingConfig
 	config.ParentChainReader = headerreader.TestConfig
 	config.Sequencer.Enable = false
 	config.Forwarder = DefaultTestForwarderConfig
@@ -119,6 +120,7 @@ func ConfigDefaultNonSequencerTest() *Config {
 
 func ConfigDefaultTest() *Config {
 	config := ConfigDefault
+	config.Caching = TestCachingConfig
 	config.Sequencer = TestSequencerConfig
 	config.ParentChainReader = headerreader.TestConfig
 	config.ForwardingTarget = "null"
@@ -280,6 +282,7 @@ func (n *ExecutionNode) GetL1GasPriceEstimate() (uint64, error) {
 }
 
 func (n *ExecutionNode) Initialize(ctx context.Context) error {
+	n.ExecEngine.Initialize(n.ConfigFetcher().Caching.StylusLRUCache)
 	n.ArbInterface.Initialize(n)
 	err := n.Backend.Start()
 	if err != nil {
