@@ -5,12 +5,14 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/ethereum/go-ethereum/trie/triedb/hashdb"
+	"github.com/ethereum/go-ethereum/trie/triedb/pathdb"
 )
 
 func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheConfig *core.CacheConfig, startBlock uint64) error {
@@ -30,13 +32,18 @@ func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheCon
 	if previousBlock == nil {
 		return fmt.Errorf("start block parent is missing, parent block number: %d", current-1)
 	}
-	// TODO pathdb
-	hashConfig := *hashdb.Defaults
-	hashConfig.CleanCacheSize = cacheConfig.TrieCleanLimit * 1024 * 1024
+
 	trieConfig := &trie.Config{
 		Preimages: false,
-		HashDB:    &hashConfig,
 	}
+	if cacheConfig.StateScheme == rawdb.PathScheme {
+		trieConfig.PathDB = pathdb.Defaults
+	} else {
+		hashConfig := *hashdb.Defaults
+		hashConfig.CleanCacheSize = cacheConfig.TrieCleanLimit * 1024 * 1024
+		trieConfig.HashDB = &hashConfig
+	}
+
 	database := state.NewDatabaseWithConfig(chainDb, trieConfig)
 	defer database.TrieDB().Close()
 	previousState, err := state.New(previousBlock.Root(), database, nil)
