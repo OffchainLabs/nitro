@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 
@@ -57,6 +58,8 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 	}
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	// By now PathDB is not supported when using block validation
+	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 	builder.nodeConfig = l1NodeConfigA
 	builder.chainConfig = chainConfig
 	builder.L2Info = nil
