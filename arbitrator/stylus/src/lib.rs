@@ -183,6 +183,7 @@ pub unsafe extern "C" fn stylus_call(
     debug_chain: bool,
     output: *mut RustBytes,
     gas: *mut u64,
+    long_term_tag: u32,
 ) -> UserOutcomeKind {
     let module = module.slice();
     let calldata = calldata.slice().to_vec();
@@ -193,7 +194,7 @@ pub unsafe extern "C" fn stylus_call(
 
     // Safety: module came from compile_user_wasm and we've paid for memory expansion
     let instance = unsafe {
-        NativeInstance::deserialize_cached(module, config.version, evm_api, evm_data, debug_chain)
+        NativeInstance::deserialize_cached(module, config.version, evm_api, evm_data, long_term_tag, debug_chain)
     };
     let mut instance = match instance {
         Ok(instance) => instance,
@@ -223,28 +224,31 @@ pub extern "C" fn stylus_cache_lru_resize(size: u32) {
 /// # Safety
 ///
 /// `module` must represent a valid module produced from `stylus_activate`.
+/// arbos_tag: a tag for arbos cache. 0 won't affect real caching
+/// currently only if tag==1 caching will be affected
 #[no_mangle]
 pub unsafe extern "C" fn stylus_cache_module(
     module: GoSliceData,
     module_hash: Bytes32,
     version: u16,
+    arbos_tag: u32,
     debug: bool,
 ) {
-    if let Err(error) = InitCache::insert(module_hash, module.slice(), version, debug) {
+    if let Err(error) = InitCache::insert(module_hash, module.slice(), version, arbos_tag, debug) {
         panic!("tried to cache invalid asm!: {error}");
     }
 }
 
 /// Evicts an activated user program from the init cache.
 #[no_mangle]
-pub extern "C" fn stylus_evict_module(module_hash: Bytes32, version: u16, debug: bool) {
-    InitCache::evict(module_hash, version, debug);
+pub extern "C" fn stylus_evict_module(module_hash: Bytes32, version: u16, arbos_tag: u32, debug: bool) {
+    InitCache::evict(module_hash, version, arbos_tag, debug);
 }
 
 /// Reorgs the init cache. This will likely never happen.
 #[no_mangle]
-pub extern "C" fn stylus_reorg_vm(block: u64) {
-    InitCache::reorg(block);
+pub extern "C" fn stylus_reorg_vm(_block: u64, arbos_tag: u32) {
+    InitCache::clear_long_term(arbos_tag);
 }
 
 /// Frees the vector. Does nothing when the vector is null.
