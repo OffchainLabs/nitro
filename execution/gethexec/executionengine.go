@@ -147,8 +147,9 @@ func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbost
 		return nil, nil
 	}
 
+	tag := s.bc.StateCache().WasmCacheTag()
 	// reorg Rust-side VM state
-	C.stylus_reorg_vm(C.uint64_t(blockNum))
+	C.stylus_reorg_vm(C.uint64_t(blockNum), C.uint32_t(tag))
 
 	err := s.bc.ReorgToOldBlock(targetBlock)
 	if err != nil {

@@ -172,6 +172,7 @@ func callProgram(
 	evmData *EvmData,
 	stylusParams *ProgParams,
 	memoryModel *MemoryModel,
+	arbos_tag uint32,
 ) ([]byte, error) {
 	db := interpreter.Evm().StateDB
 	debug := stylusParams.DebugMode
@@ -198,6 +199,7 @@ func callProgram(
 		cbool(debug),
 		output,
 		(*u64)(&scope.Contract.Gas),
+		u32(arbos_tag),
 	))
 
 	depth := interpreter.Depth()
@@ -228,8 +230,9 @@ func cacheProgram(db vm.StateDB, module common.Hash, program Program, params *St
 		if err != nil {
 			panic("unable to recreate wasm")
 		}
-		state.CacheWasmRust(asm, module, program.version, debug)
-		db.RecordCacheWasm(state.CacheWasm{ModuleHash: module, Version: program.version, Debug: debug})
+		tag := db.Database().WasmCacheTag()
+		state.CacheWasmRust(asm, module, program.version, tag, debug)
+		db.RecordCacheWasm(state.CacheWasm{ModuleHash: module, Version: program.version, Tag: tag, Debug: debug})
 	}
 }
 
@@ -237,19 +240,20 @@ func cacheProgram(db vm.StateDB, module common.Hash, program Program, params *St
 // For gas estimation and eth_call, we ignore permanent updates and rely on Rust's LRU.
 func evictProgram(db vm.StateDB, module common.Hash, version uint16, debug bool, runMode core.MessageRunMode, forever bool) {
 	if runMode == core.MessageCommitMode {
-		state.EvictWasmRust(module, version, debug)
+		tag := db.Database().WasmCacheTag()
+		state.EvictWasmRust(module, version, tag, debug)
 		if !forever {
-			db.RecordEvictWasm(state.EvictWasm{ModuleHash: module, Version: version, Debug: debug})
+			db.RecordEvictWasm(state.EvictWasm{ModuleHash: module, Version: version, Tag: tag, Debug: debug})
 		}
 	}
 }
 
 func init() {
-	state.CacheWasmRust = func(asm []byte, moduleHash common.Hash, version uint16, debug bool) {
-		C.stylus_cache_module(goSlice(asm), hashToBytes32(moduleHash), u16(version), cbool(debug))
+	state.CacheWasmRust = func(asm []byte, moduleHash common.Hash, version uint16, tag uint32, debug bool) {
+		C.stylus_cache_module(goSlice(asm), hashToBytes32(moduleHash), u16(version), u32(tag), cbool(debug))
 	}
-	state.EvictWasmRust = func(moduleHash common.Hash, version uint16, debug bool) {
-		C.stylus_evict_module(hashToBytes32(moduleHash), u16(version), cbool(debug))
+	state.EvictWasmRust = func(moduleHash common.Hash, version uint16, tag uint32, debug bool) {
+		C.stylus_evict_module(hashToBytes32(moduleHash), u16(version), u32(tag), cbool(debug))
 	}
 }
 
