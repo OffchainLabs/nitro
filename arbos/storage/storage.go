@@ -18,6 +18,8 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/trie"
+	"github.com/ethereum/go-ethereum/trie/triedb/pathdb"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -73,16 +75,17 @@ func NewGeth(statedb vm.StateDB, burner burn.Burner) *Storage {
 	}
 }
 
-// NewMemoryBacked uses Geth's memory-backed database to create an evm key-value store
+// NewMemoryBacked uses Geth's memory-backed database to create an evm key-value store.
+// Only used for testing.
 func NewMemoryBacked(burner burn.Burner) *Storage {
 	return NewGeth(NewMemoryBackedStateDB(), burner)
 }
 
 // NewMemoryBackedStateDB uses Geth's memory-backed database to create a statedb
+// Only used for testing.
 func NewMemoryBackedStateDB() vm.StateDB {
 	raw := rawdb.NewMemoryDatabase()
-	// TODO pathdb
-	db := state.NewDatabase(raw)
+	db := state.NewDatabaseWithConfig(raw, &trie.Config{Preimages: false, PathDB: pathdb.Defaults})
 	statedb, err := state.New(common.Hash{}, db, nil)
 	if err != nil {
 		panic("failed to init empty statedb")
