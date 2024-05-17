@@ -9,7 +9,7 @@ use crate::{
     },
     host,
     memory::Memory,
-    merkle::{Merkle, MerkleType},
+    merkle::{CleanMerkle, DirtyMerkle, MerkleType},
     programs::{config::CompileConfig, meter::MeteredMachine, ModuleMod, StylusData},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
     utils::{file_bytes, CBytes, RemoteTableType},
@@ -33,7 +33,7 @@ use serde_with::serde_as;
 use sha3::Keccak256;
 use smallvec::SmallVec;
 use std::{
-    borrow::Cow,
+    borrow::{Borrow, Cow},
     convert::{TryFrom, TryInto},
     fmt::{self, Display},
     fs::File,
@@ -77,7 +77,7 @@ pub struct Function {
     pub code: Vec<Instruction>,
     pub ty: FunctionType,
     #[serde(skip)]
-    code_merkle: Merkle,
+    code_merkle: CleanMerkle,
     pub local_types: Vec<ArbValueType>,
 }
 
@@ -101,7 +101,7 @@ impl Function {
         insts.push(Instruction {
             opcode: Opcode::InitFrame,
             argument_data: 0,
-            proving_argument_data: Some(Merkle::new(MerkleType::Value, empty_local_hashes).root()),
+            proving_argument_data: Some(CleanMerkle::new(MerkleType::Value, empty_local_hashes).root()),
         });
         // Fill in parameters
         for i in (0..func_ty.inputs.len()).rev() {
@@ -139,7 +139,7 @@ impl Function {
         let mut func = Function {
             code,
             ty,
-            code_merkle: Merkle::default(), // TODO: make an option
+            code_merkle: Default::default(), // TODO: make an option
             local_types,
         };
         func.set_code_merkle();
@@ -159,7 +159,7 @@ impl Function {
         #[cfg(not(feature = "rayon"))]
         let code_hashes = (0..chunks).map(crunch).collect();
 
-        self.code_merkle = Merkle::new(MerkleType::Instruction, code_hashes);
+        self.code_merkle = CleanMerkle::new(MerkleType::Instruction, code_hashes);
     }
 
     fn serialize_body_for_proof(&self, pc: ProgramCounter) -> Vec<u8> {
@@ -190,7 +190,7 @@ impl StackFrame {
         h.update("Stack frame:");
         h.update(self.return_ref.hash());
         h.update(
-            Merkle::new(
+            CleanMerkle::new(
                 MerkleType::Value,
                 self.locals.iter().map(|v| v.hash()).collect(),
             )
@@ -205,7 +205,7 @@ impl StackFrame {
         let mut data = Vec::new();
         data.extend(self.return_ref.serialize_for_proof());
         data.extend(
-            Merkle::new(
+            CleanMerkle::new(
                 MerkleType::Value,
                 self.locals.iter().map(|v| v.hash()).collect(),
             )
@@ -249,7 +249,7 @@ pub(crate) struct Table {
     pub ty: TableType,
     pub elems: Vec<TableElement>,
     #[serde(skip)]
-    elems_merkle: Merkle,
+    elems_merkle: CleanMerkle,
 }
 
 impl Table {
@@ -289,10 +289,10 @@ pub struct Module {
     pub(crate) memory: Memory,
     pub(crate) tables: Vec<Table>,
     #[serde(skip)]
-    pub(crate) tables_merkle: Merkle,
+    pub(crate) tables_merkle: CleanMerkle,
     pub(crate) funcs: Arc<Vec<Function>>,
     #[serde(skip)]
-    pub(crate) funcs_merkle: Arc<Merkle>,
+    pub(crate) funcs_merkle: Arc<CleanMerkle>,
     pub(crate) types: Arc<Vec<FunctionType>>,
     pub(crate) internals_offset: u32,
     pub(crate) names: Arc<NameCustomSection>,
@@ -511,7 +511,7 @@ impl Module {
             tables.push(Table {
                 elems: vec![TableElement::default(); usize::try_from(table.initial).unwrap()],
                 ty: *table,
-                elems_merkle: Merkle::default(),
+                elems_merkle: Default::default(),
             });
         }
 
@@ -566,9 +566,9 @@ impl Module {
         Ok(Module {
             memory,
             globals: bin.globals.clone(),
-            tables_merkle: Merkle::new(MerkleType::Table, tables_hashes?),
+            tables_merkle: CleanMerkle::new(MerkleType::Table, tables_hashes?),
             tables,
-            funcs_merkle: Arc::new(Merkle::new(
+            funcs_merkle: Arc::new(CleanMerkle::new(
                 MerkleType::Function,
                 code.iter().map(|f| f.hash()).collect(),
             )),
@@ -615,7 +615,7 @@ impl Module {
         let mut h = Keccak256::new();
         h.update("Module:");
         h.update(
-            Merkle::new(
+            CleanMerkle::new(
                 MerkleType::Value,
                 self.globals.iter().map(|v| v.hash()).collect(),
             )
@@ -629,11 +629,11 @@ impl Module {
         h.finalize().into()
     }
 
-    fn serialize_for_proof(&self, mem_merkle: &Merkle) -> Vec<u8> {
+    fn serialize_for_proof<L: Borrow<Vec<Vec<Bytes32>>>>(&self, mem_merkle: &CleanMerkle<L>) -> Vec<u8> {
         let mut data = Vec::new();
 
         data.extend(
-            Merkle::new(
+            CleanMerkle::new(
                 MerkleType::Value,
                 self.globals.iter().map(|v| v.hash()).collect(),
             )
@@ -682,9 +682,9 @@ pub struct ModuleSerdeAll {
     globals: Vec<Value>,
     memory: Memory,
     tables: Vec<Table>,
-    tables_merkle: Merkle,
+    tables_merkle: CleanMerkle,
     funcs: Vec<FunctionSerdeAll>,
-    funcs_merkle: Arc<Merkle>,
+    funcs_merkle: Arc<CleanMerkle>,
     types: Arc<Vec<FunctionType>>,
     internals_offset: u32,
     names: Arc<NameCustomSection>,
@@ -747,7 +747,7 @@ impl From<&Module> for ModuleSerdeAll {
 pub struct FunctionSerdeAll {
     code: Vec<Instruction>,
     ty: FunctionType,
-    code_merkle: Merkle,
+    code_merkle: CleanMerkle,
     local_types: Vec<ArbValueType>,
 }
 
@@ -957,7 +957,7 @@ pub struct Machine {
     internal_stack: Vec<Value>,
     frame_stacks: Vec<Vec<StackFrame>>,
     modules: Vec<Module>,
-    modules_merkle: Option<Merkle>,
+    modules_merkle: Option<DirtyMerkle>,
     global_state: GlobalState,
     pc: ProgramCounter,
     stdio_output: Vec<u8>,
@@ -1472,8 +1472,8 @@ impl Machine {
             globals: Vec::new(),
             memory: Memory::default(),
             tables: Vec::new(),
-            tables_merkle: Merkle::default(),
-            funcs_merkle: Arc::new(Merkle::new(
+            tables_merkle: CleanMerkle::default(),
+            funcs_merkle: Arc::new(CleanMerkle::new(
                 MerkleType::Function,
                 entrypoint_funcs.iter().map(Function::hash).collect(),
             )),
@@ -1498,14 +1498,14 @@ impl Machine {
         // Merkleize things if requested
         for module in &mut modules {
             for table in module.tables.iter_mut() {
-                table.elems_merkle = Merkle::new(
+                table.elems_merkle = CleanMerkle::new(
                     MerkleType::TableElement,
                     table.elems.iter().map(TableElement::hash).collect(),
                 );
             }
 
             let tables_hashes: Result<_, _> = module.tables.iter().map(Table::hash).collect();
-            module.tables_merkle = Merkle::new(MerkleType::Table, tables_hashes?);
+            module.tables_merkle = CleanMerkle::new(MerkleType::Table, tables_hashes?);
 
             if always_merkleize {
                 module.memory.cache_merkle_tree();
@@ -1513,7 +1513,7 @@ impl Machine {
         }
         let mut modules_merkle = None;
         if always_merkleize {
-            modules_merkle = Some(Merkle::new(
+            modules_merkle = Some(DirtyMerkle::new(
                 MerkleType::Module,
                 modules.iter().map(Module::hash).collect(),
             ));
@@ -1562,18 +1562,18 @@ impl Machine {
 
         for module in modules.iter_mut() {
             for table in module.tables.iter_mut() {
-                table.elems_merkle = Merkle::new(
+                table.elems_merkle = CleanMerkle::new(
                     MerkleType::TableElement,
                     table.elems.iter().map(TableElement::hash).collect(),
                 );
             }
             let tables: Result<_> = module.tables.iter().map(Table::hash).collect();
-            module.tables_merkle = Merkle::new(MerkleType::Table, tables?);
+            module.tables_merkle = CleanMerkle::new(MerkleType::Table, tables?);
 
             let funcs = Arc::get_mut(&mut module.funcs).expect("Multiple copies of module funcs");
             funcs.iter_mut().for_each(Function::set_code_merkle);
 
-            module.funcs_merkle = Arc::new(Merkle::new(
+            module.funcs_merkle = Arc::new(CleanMerkle::new(
                 MerkleType::Function,
                 module.funcs.iter().map(Function::hash).collect(),
             ));
@@ -1581,9 +1581,9 @@ impl Machine {
                 module.memory.cache_merkle_tree();
             }
         }
-        let mut modules_merkle: Option<Merkle> = None;
+        let mut modules_merkle: Option<DirtyMerkle> = None;
         if always_merkleize {
-            modules_merkle = Some(Merkle::new(
+            modules_merkle = Some(DirtyMerkle::new(
                 MerkleType::Module,
                 modules.iter().map(Module::hash).collect(),
             ));
@@ -1692,7 +1692,7 @@ impl Machine {
         for module in &mut self.modules {
             module.memory.cache_merkle_tree();
         }
-        self.modules_merkle = Some(Merkle::new(
+        self.modules_merkle = Some(DirtyMerkle::new(
             MerkleType::Module,
             self.modules.iter().map(Module::hash).collect(),
         ));
@@ -2695,14 +2695,14 @@ impl Machine {
         self.status
     }
 
-    fn get_modules_merkle(&self) -> Cow<Merkle> {
+    fn get_modules_merkle(&self) -> CleanMerkle<Cow<Vec<Vec<Bytes32>>>> {
         if let Some(merkle) = &self.modules_merkle {
-            Cow::Borrowed(merkle)
+            merkle.clean().to_cow()
         } else {
-            Cow::Owned(Merkle::new(
+            CleanMerkle::new(
                 MerkleType::Module,
                 self.modules.iter().map(Module::hash).collect(),
-            ))
+            ).to_cow()
         }
     }
 
@@ -2914,14 +2914,14 @@ impl Machine {
                 let idx = arg as usize;
                 out!(locals[idx].serialize_for_proof());
                 let merkle =
-                    Merkle::new(MerkleType::Value, locals.iter().map(|v| v.hash()).collect());
+                    CleanMerkle::new(MerkleType::Value, locals.iter().map(|v| v.hash()).collect());
                 out!(merkle.prove(idx).expect("Out of bounds local access"));
             }
             GlobalGet | GlobalSet => {
                 let idx = arg as usize;
                 out!(module.globals[idx].serialize_for_proof());
                 let globals_merkle = module.globals.iter().map(|v| v.hash()).collect();
-                let merkle = Merkle::new(MerkleType::Value, globals_merkle);
+                let merkle = CleanMerkle::new(MerkleType::Value, globals_merkle);
                 out!(merkle.prove(idx).expect("Out of bounds global access"));
             }
             MemoryLoad { .. } | MemoryStore { .. } => {
@@ -2958,9 +2958,9 @@ impl Machine {
                         copy.modules[self.pc.module()]
                             .memory
                             .merkelize()
-                            .into_owned()
+                            .to_owned()
                     } else {
-                        mem_merkle.into_owned()
+                        mem_merkle.to_owned()
                     };
                     out!(second_mem_merkle.prove(next_leaf_idx).unwrap_or_default());
                 }

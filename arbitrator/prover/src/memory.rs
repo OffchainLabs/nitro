@@ -2,7 +2,7 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use crate::{
-    merkle::{Merkle, MerkleType},
+    merkle::{CleanMerkle, DirtyMerkle, MerkleType},
     value::{ArbValueType, Value},
 };
 use arbutil::Bytes32;
@@ -44,13 +44,21 @@ impl TryFrom<&wasmparser::MemoryType> for MemoryType {
     }
 }
 
-#[derive(PartialEq, Eq, Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Memory {
     buffer: Vec<u8>,
     #[serde(skip)]
-    pub merkle: Option<Merkle>,
+    pub merkle: Option<DirtyMerkle>,
     pub max_size: u64,
 }
+
+impl PartialEq for Memory {
+    fn eq(&self, other: &Self) -> bool {
+        self.buffer == other.buffer && self.max_size == other.max_size
+    }
+}
+
+impl Eq for Memory {}
 
 fn hash_leaf(bytes: [u8; Memory::LEAF_SIZE]) -> Bytes32 {
     let mut h = Keccak256::new();
@@ -98,10 +106,7 @@ impl Memory {
         self.buffer.len() as u64
     }
 
-    pub fn merkelize(&self) -> Cow<'_, Merkle> {
-        if let Some(m) = &self.merkle {
-            return Cow::Borrowed(m);
-        }
+    fn make_dirty_merkle(&self) -> DirtyMerkle {
         // Round the size up to 8 byte long leaves, then round up to the next power of two number of leaves
         let leaves = round_up_to_power_of_two(div_round_up(self.buffer.len(), Self::LEAF_SIZE));
 
@@ -119,11 +124,18 @@ impl Memory {
             })
             .collect();
         let size = leaf_hashes.len();
-        let m = Merkle::new_advanced(MerkleType::Memory, leaf_hashes, Self::MEMORY_LAYERS);
+        let mut m = DirtyMerkle::new_advanced(MerkleType::Memory, leaf_hashes, Self::MEMORY_LAYERS);
         if size < leaves {
             m.resize(leaves).expect("Couldn't resize merkle tree");
         }
-        Cow::Owned(m)
+        m
+    }
+
+    pub fn merkelize(&self) -> CleanMerkle<Cow<'_, Vec<Vec<Bytes32>>>> {
+        if let Some(merkle) = &self.merkle {
+            return merkle.clean().to_cow();
+        }
+        self.make_dirty_merkle().into_clean().to_cow()
     }
 
     pub fn get_leaf_data(&self, leaf_idx: usize) -> [u8; Self::LEAF_SIZE] {
@@ -230,7 +242,7 @@ impl Memory {
         let buf = value.to_le_bytes();
         self.buffer[idx..end_idx].copy_from_slice(&buf[..bytes.into()]);
 
-        if let Some(merkle) = self.merkle.take() {
+        if let Some(mut merkle) = self.merkle.take() {
             let start_leaf = idx / Self::LEAF_SIZE;
             merkle.set(start_leaf, hash_leaf(self.get_leaf_data(start_leaf)));
             let end_leaf = (end_idx - 1) / Self::LEAF_SIZE;
@@ -258,12 +270,11 @@ impl Memory {
         let end_idx = end_idx as usize;
         self.buffer[idx..end_idx].copy_from_slice(value);
 
-        if let Some(merkle) = self.merkle.take() {
+        if let Some(mut merkle) = self.merkle.take() {
             let start_leaf = idx / Self::LEAF_SIZE;
             merkle.set(start_leaf, hash_leaf(self.get_leaf_data(start_leaf)));
             // No need for second merkle
             assert!(value.len() <= Self::LEAF_SIZE);
-            self.merkle = Some(merkle);
         }
 
         true
@@ -302,12 +313,14 @@ impl Memory {
     }
 
     pub fn cache_merkle_tree(&mut self) {
-        self.merkle = Some(self.merkelize().into_owned());
+        if self.merkle.is_none() {
+            self.merkle = Some(self.make_dirty_merkle());
+        }
     }
 
     pub fn resize(&mut self, new_size: usize) {
         self.buffer.resize(new_size, 0);
-        if let Some(merkle) = self.merkle.take() {
+        if let Some(mut merkle) = self.merkle.take() {
             merkle
                 .resize(new_size)
                 .expect("Couldn't resize merkle tree");
@@ -330,7 +343,7 @@ mod test {
             86u8, 177, 192, 60, 217, 123, 221, 153, 118, 79, 229, 122, 210, 48, 187, 104, 40, 84,
             112, 63, 137, 86, 54, 2, 56, 118, 72, 158, 242, 225, 65, 80,
         ]);
-        let memory = Memory::new(65536, 1);
+        let mut memory = Memory::new(65536, 1);
         assert_eq!(memory.hash(), module_memory_hash);
     }
 
