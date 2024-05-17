@@ -477,7 +477,7 @@ func TryConfirmingAssertion(
 			timeToWait := averageTimeForBlockCreation * time.Duration(blocksLeftForConfirmation)
 			log.Info(
 				fmt.Sprintf(
-					"Assertion with has %s needs at least %d blocks before being confirmable, waiting for %s",
+					"Assertion with hash %s needs at least %d blocks before being confirmable, waiting for %s",
 					containers.Trunc(assertionHash.Bytes()),
 					blocksLeftForConfirmation,
 					timeToWait,

@@ -13,6 +13,7 @@ go_library(
     deps = [
         "//chain-abstraction:protocol",
         "//containers",
+        "//containers/events",
         "//containers/fsm",
         "//containers/option",
         "//layer2-state-provider",

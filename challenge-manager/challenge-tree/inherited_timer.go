@@ -61,7 +61,7 @@ func (ht *RoyalChallengeTree) recursiveInheritedTimerCompute(
 			return 0, innerErr
 		}
 		claimingEdgeTimer := protocol.InheritedTimer(0)
-		claimingEdge, ok := ht.findClaimingEdge(ctx, edge.Id())
+		claimingEdge, ok := ht.findClaimingEdge(edge.Id())
 		if ok {
 			claimingEdgeTimer, innerErr = ht.recursiveInheritedTimerCompute(
 				ctx,
