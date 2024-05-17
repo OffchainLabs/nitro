@@ -115,6 +115,7 @@ func ConfigDefaultNonSequencerTest() *Config {
 	config.Sequencer.Enable = false
 	config.Forwarder = DefaultTestForwarderConfig
 	config.ForwardingTarget = "null"
+	config.Caching = DefaultTestCachingConfig()
 
 	_ = config.Validate()
 
@@ -127,6 +128,7 @@ func ConfigDefaultTest() *Config {
 	config.Sequencer = TestSequencerConfig
 	config.ParentChainReader = headerreader.TestConfig
 	config.ForwardingTarget = "null"
+	config.Caching = DefaultTestCachingConfig()
 
 	_ = config.Validate()
 

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/trie"
@@ -19,6 +20,7 @@ func TestRectreateMissingStates(t *testing.T) {
 	defer cancel()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.execConfig.Caching.Archive = true
+	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 	builder.execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 16
 	builder.execConfig.Caching.SnapshotCache = 0 // disable snapshots
 	_ = builder.Build(t)
