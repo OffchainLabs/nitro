@@ -1,6 +1,9 @@
 // Copyright 2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
+//go:build !wasm
+// +build !wasm
+
 package programs
 
 // This file exists because cgo isn't allowed in tests
