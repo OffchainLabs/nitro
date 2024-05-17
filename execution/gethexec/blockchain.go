@@ -39,6 +39,7 @@ type CachingConfig struct {
 	MaxAmountOfGasToSkipStateSaving    uint64        `koanf:"max-amount-of-gas-to-skip-state-saving"`
 	StylusLRUCache                     uint32        `koanf:"stylus-lru-cache"`
 	StateScheme                        string        `koanf:"state-scheme"`
+	StateHistory                       uint64        `koanf:"state-history"`
 }
 
 func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -55,6 +56,7 @@ func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".max-amount-of-gas-to-skip-state-saving", DefaultCachingConfig.MaxAmountOfGasToSkipStateSaving, "maximum amount of gas in blocks to skip saving state to Persistent storage (archive node only) -- warning: this option seems to cause issues")
 	f.Uint32(prefix+".stylus-lru-cache", DefaultCachingConfig.StylusLRUCache, "initialized stylus programs to keep in LRU cache")
 	f.String(prefix+".state-scheme", DefaultCachingConfig.StateScheme, "scheme to use for state trie storage (hashdb, pathdb)")
+	f.Uint64(prefix+".state-history", DefaultCachingConfig.StateHistory, "number of recent blocks to retain state history for (pathdb state-scheme only)")
 }
 
 var DefaultCachingConfig = CachingConfig{
@@ -71,6 +73,7 @@ var DefaultCachingConfig = CachingConfig{
 	MaxAmountOfGasToSkipStateSaving:    0,
 	StylusLRUCache:                     256,
 	StateScheme:                        rawdb.HashScheme,
+	StateHistory:                       90000,
 }
 
 var TestCachingConfig = CachingConfig{
@@ -114,6 +117,7 @@ func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core
 		MaxNumberOfBlocksToSkipStateSaving: cachingConfig.MaxNumberOfBlocksToSkipStateSaving,
 		MaxAmountOfGasToSkipStateSaving:    cachingConfig.MaxAmountOfGasToSkipStateSaving,
 		StateScheme:                        cachingConfig.StateScheme,
+		StateHistory:                       cachingConfig.StateHistory,
 	}
 }
 

@@ -37,7 +37,13 @@ func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheCon
 		Preimages: false,
 	}
 	if cacheConfig.StateScheme == rawdb.PathScheme {
-		trieConfig.PathDB = pathdb.Defaults
+		// TODO: RecreateMissingStates should only be used for archive nodes,
+		// check if it is worth keeping this option here
+		trieConfig.PathDB = &pathdb.Config{
+			StateHistory:   cacheConfig.StateHistory,
+			CleanCacheSize: cacheConfig.TrieCleanLimit * 1024 * 1024,
+			DirtyCacheSize: cacheConfig.TrieDirtyLimit * 1024 * 1024,
+		}
 	} else {
 		hashConfig := *hashdb.Defaults
 		hashConfig.CleanCacheSize = cacheConfig.TrieCleanLimit * 1024 * 1024
