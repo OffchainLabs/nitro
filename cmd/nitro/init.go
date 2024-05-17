@@ -38,6 +38,7 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/wasmstorerebuilder"
 )
 
 func downloadInit(ctx context.Context, initConfig *conf.InitConfig) (string, error) {
@@ -205,7 +206,34 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 						return chainDb, l2BlockChain, fmt.Errorf("failed to recreate missing states: %w", err)
 					}
 				}
-
+				latestBlock := l2BlockChain.CurrentBlock()
+				if latestBlock.Number.Uint64() <= chainConfig.ArbitrumChainParams.GenesisBlockNum {
+					// If there is only genesis block or no blocks in the blockchain, set Rebuilding of wasmdb to Done
+					log.Info("setting rebuilding of wasmdb to done")
+					if err = wasmstorerebuilder.SetRebuildingParam(wasmDb, wasmstorerebuilder.RebuildingPositionKey, wasmstorerebuilder.RebuildingDone); err != nil {
+						return nil, nil, fmt.Errorf("unable to set rebuilding status of wasmdb to done: %w", err)
+					}
+				} else {
+					key, err := wasmstorerebuilder.GetRebuildingParam[common.Hash](wasmDb, wasmstorerebuilder.RebuildingPositionKey)
+					if err != nil {
+						log.Info("unable to get codehash position in rebuilding of wasmdb, its possible it isnt initialized yet, so initializing it and starting rebuilding", "err", err)
+						if err := wasmstorerebuilder.SetRebuildingParam(wasmDb, wasmstorerebuilder.RebuildingPositionKey, common.Hash{}); err != nil {
+							return nil, nil, fmt.Errorf("unable to set rebuilding status of wasmdb to beginning: %w", err)
+						}
+					}
+					startBlockTime, err := wasmstorerebuilder.GetRebuildingParam[uint64](wasmDb, wasmstorerebuilder.RebuildingStartBlockTimeKey)
+					if err != nil {
+						log.Info("unable to get rebuilding start time of wasmdb so initializing it to current block time", "err", err)
+						if err := wasmstorerebuilder.SetRebuildingParam(wasmDb, wasmstorerebuilder.RebuildingStartBlockTimeKey, latestBlock.Time); err != nil {
+							return nil, nil, fmt.Errorf("unable to set rebuilding status of wasmdb to beginning: %w", err)
+						}
+						startBlockTime = latestBlock.Time
+					}
+					if key != wasmstorerebuilder.RebuildingDone {
+						log.Info("starting or continuing rebuilding of wasm store", "codeHash", key, "startBlockTime", startBlockTime)
+						go wasmstorerebuilder.RebuildWasmStore(ctx, wasmDb, l2BlockChain, key, startBlockTime)
+					}
+				}
 				return chainDb, l2BlockChain, nil
 			}
 			readOnlyDb.Close()
@@ -244,6 +272,13 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		return nil, nil, err
 	}
 	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb)
+
+	// Rebuilding wasmdb is not required when just starting out
+	err = wasmstorerebuilder.SetRebuildingParam(wasmDb, wasmstorerebuilder.RebuildingPositionKey, wasmstorerebuilder.RebuildingDone)
+	log.Info("setting rebuilding of wasmdb to done")
+	if err != nil {
+		return nil, nil, fmt.Errorf("unable to set rebuilding of wasmdb to done: %w", err)
+	}
 
 	if config.Init.ImportFile != "" {
 		initDataReader, err = statetransfer.NewJsonInitDataReader(config.Init.ImportFile)
