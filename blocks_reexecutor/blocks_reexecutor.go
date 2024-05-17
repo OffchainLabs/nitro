@@ -25,8 +25,6 @@ type Config struct {
 	EndBlock        uint64 `koanf:"end-block"`
 	Room            int    `koanf:"room"`
 	BlocksPerThread uint64 `koanf:"blocks-per-thread"`
-
-	blocksPerThread uint64
 }
 
 func (c *Config) Validate() error {
@@ -39,11 +37,6 @@ func (c *Config) Validate() error {
 	}
 	if c.Room < 0 {
 		return errors.New("room for blocks re-execution should be greater than 0")
-	}
-	if c.BlocksPerThread != 0 {
-		c.blocksPerThread = c.BlocksPerThread
-	} else {
-		c.blocksPerThread = 10000
 	}
 	return nil
 }
@@ -59,7 +52,6 @@ var TestConfig = Config{
 	Mode:            "full",
 	Room:            runtime.NumCPU(),
 	BlocksPerThread: 10,
-	blocksPerThread: 10,
 }
 
 func ConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -73,13 +65,14 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 type BlocksReExecutor struct {
 	stopwaiter.StopWaiter
-	config       *Config
-	blockchain   *core.BlockChain
-	stateFor     arbitrum.StateForHeaderFunction
-	done         chan struct{}
-	fatalErrChan chan error
-	startBlock   uint64
-	currentBlock uint64
+	config          *Config
+	blockchain      *core.BlockChain
+	stateFor        arbitrum.StateForHeaderFunction
+	done            chan struct{}
+	fatalErrChan    chan error
+	startBlock      uint64
+	currentBlock    uint64
+	blocksPerThread uint64
 }
 
 func New(c *Config, blockchain *core.BlockChain, fatalErrChan chan error) *BlocksReExecutor {
@@ -99,9 +92,13 @@ func New(c *Config, blockchain *core.BlockChain, fatalErrChan chan error) *Block
 		log.Warn("invalid state reexecutor's end block number, resetting to latest", "end", end, "latest", chainEnd)
 		end = chainEnd
 	}
+	blocksPerThread := uint64(10000)
+	if c.BlocksPerThread != 0 {
+		blocksPerThread = c.BlocksPerThread
+	}
 	if c.Mode == "random" && end != start {
 		// Reexecute a range of 10000 or (non-zero) c.BlocksPerThread number of blocks between start to end picked randomly
-		rng := c.blocksPerThread
+		rng := blocksPerThread
 		if rng > end-start {
 			rng = end - start
 		}
@@ -117,16 +114,17 @@ func New(c *Config, blockchain *core.BlockChain, fatalErrChan chan error) *Block
 	if c.BlocksPerThread == 0 {
 		work := (end - start) / uint64(c.Room)
 		if work > 0 {
-			c.blocksPerThread = work
+			blocksPerThread = work
 		}
 	}
 	return &BlocksReExecutor{
-		config:       c,
-		blockchain:   blockchain,
-		currentBlock: end,
-		startBlock:   start,
-		done:         make(chan struct{}, c.Room),
-		fatalErrChan: fatalErrChan,
+		config:          c,
+		blockchain:      blockchain,
+		currentBlock:    end,
+		startBlock:      start,
+		blocksPerThread: blocksPerThread,
+		done:            make(chan struct{}, c.Room),
+		fatalErrChan:    fatalErrChan,
 		stateFor: func(header *types.Header) (*state.StateDB, arbitrum.StateReleaseFunc, error) {
 			state, err := blockchain.StateAt(header.Root)
 			return state, arbitrum.NoopStateRelease, err
@@ -136,7 +134,7 @@ func New(c *Config, blockchain *core.BlockChain, fatalErrChan chan error) *Block
 
 // LaunchBlocksReExecution launches the thread to apply blocks of range [currentBlock-s.config.BlocksPerThread, currentBlock] to the last available valid state
 func (s *BlocksReExecutor) LaunchBlocksReExecution(ctx context.Context, currentBlock uint64) uint64 {
-	start := arbmath.SaturatingUSub(currentBlock, s.config.blocksPerThread)
+	start := arbmath.SaturatingUSub(currentBlock, s.blocksPerThread)
 	if start < s.startBlock {
 		start = s.startBlock
 	}
