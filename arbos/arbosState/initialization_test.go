@@ -13,6 +13,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/trie"
+	"github.com/ethereum/go-ethereum/trie/triedb/pathdb"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/statetransfer"
@@ -63,7 +65,7 @@ func tryMarshalUnmarshal(input *statetransfer.ArbosInitializationInfo, t *testin
 	stateroot, err := InitializeArbosInDatabase(raw, initReader, chainConfig, arbostypes.TestInitMessage, 0, 0)
 	Require(t, err)
 
-	stateDb, err := state.New(stateroot, state.NewDatabase(raw), nil)
+	stateDb, err := state.New(stateroot, state.NewDatabaseWithConfig(raw, &trie.Config{Preimages: false, PathDB: pathdb.Defaults}), nil)
 	Require(t, err)
 
 	arbState, err := OpenArbosState(stateDb, &burn.SystemBurner{})
