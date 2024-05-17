@@ -15,6 +15,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/trie"
+	"github.com/ethereum/go-ethereum/trie/triedb/pathdb"
 
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/addressSet"
@@ -115,8 +117,7 @@ func OpenSystemArbosStateOrPanic(stateDB vm.StateDB, tracingInfo *util.TracingIn
 // NewArbosMemoryBackedArbOSState creates and initializes a memory-backed ArbOS state (for testing only)
 func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
 	raw := rawdb.NewMemoryDatabase()
-	// TODO pathdb
-	db := state.NewDatabase(raw)
+	db := state.NewDatabaseWithConfig(raw, &trie.Config{Preimages: false, PathDB: pathdb.Defaults})
 	statedb, err := state.New(common.Hash{}, db, nil)
 	if err != nil {
 		log.Crit("failed to init empty statedb", "error", err)
