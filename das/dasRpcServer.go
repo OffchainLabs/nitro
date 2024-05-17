@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/rand"
 	"net"
 	"net/http"
 	"time"
@@ -36,25 +37,30 @@ type DASRPCServer struct {
 	daReader        DataAvailabilityServiceReader
 	daWriter        DataAvailabilityServiceWriter
 	daHealthChecker DataAvailabilityServiceHealthChecker
+
+	signatureVerifier *SignatureVerifier
+
+	batches batchBuilder
 }
 
-func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, daReader DataAvailabilityServiceReader, daWriter DataAvailabilityServiceWriter, daHealthChecker DataAvailabilityServiceHealthChecker) (*http.Server, error) {
+func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, daReader DataAvailabilityServiceReader, daWriter DataAvailabilityServiceWriter, daHealthChecker DataAvailabilityServiceHealthChecker, signatureVerifier *SignatureVerifier) (*http.Server, error) {
 	listener, err := net.Listen("tcp", fmt.Sprintf("%s:%d", addr, portNum))
 	if err != nil {
 		return nil, err
 	}
-	return StartDASRPCServerOnListener(ctx, listener, rpcServerTimeouts, daReader, daWriter, daHealthChecker)
+	return StartDASRPCServerOnListener(ctx, listener, rpcServerTimeouts, daReader, daWriter, daHealthChecker, signatureVerifier)
 }
 
-func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, daReader DataAvailabilityServiceReader, daWriter DataAvailabilityServiceWriter, daHealthChecker DataAvailabilityServiceHealthChecker) (*http.Server, error) {
+func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, daReader DataAvailabilityServiceReader, daWriter DataAvailabilityServiceWriter, daHealthChecker DataAvailabilityServiceHealthChecker, signatureVerifier *SignatureVerifier) (*http.Server, error) {
 	if daWriter == nil {
 		return nil, errors.New("No writer backend was configured for DAS RPC server. Has the BLS signing key been set up (--data-availability.key.key-dir or --data-availability.key.priv-key options)?")
 	}
 	rpcServer := rpc.NewServer()
 	err := rpcServer.RegisterName("das", &DASRPCServer{
-		daReader:        daReader,
-		daWriter:        daWriter,
-		daHealthChecker: daHealthChecker,
+		daReader:          daReader,
+		daWriter:          daWriter,
+		daHealthChecker:   daHealthChecker,
+		signatureVerifier: signatureVerifier,
 	})
 	if err != nil {
 		return nil, err
@@ -90,8 +96,8 @@ type StoreResult struct {
 	Version     hexutil.Uint64 `json:"version,omitempty"`
 }
 
-func (serv *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, timeout hexutil.Uint64, sig hexutil.Bytes) (*StoreResult, error) {
-	log.Trace("dasRpc.DASRPCServer.Store", "message", pretty.FirstFewBytes(message), "message length", len(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig), "this", serv)
+func (s *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, timeout hexutil.Uint64, sig hexutil.Bytes) (*StoreResult, error) {
+	log.Trace("dasRpc.DASRPCServer.Store", "message", pretty.FirstFewBytes(message), "message length", len(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig), "this", s)
 	rpcStoreRequestGauge.Inc(1)
 	start := time.Now()
 	success := false
@@ -104,7 +110,11 @@ func (serv *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, time
 		rpcStoreDurationHistogram.Update(time.Since(start).Nanoseconds())
 	}()
 
-	cert, err := serv.daWriter.Store(ctx, message, uint64(timeout), sig)
+	if err := s.signatureVerifier.verify(ctx, message, sig, uint64(timeout)); err != nil {
+		return nil, err
+	}
+
+	cert, err := s.daWriter.Store(ctx, message, uint64(timeout), nil)
 	if err != nil {
 		return nil, err
 	}
@@ -121,25 +131,146 @@ func (serv *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, time
 }
 
 type StartChunkedStoreResult struct {
-	ChunkedStoreId hexutil.Uint64 `json:"chunkedStoreId,omitempty"`
+	BatchId hexutil.Uint64 `json:"batchId,omitempty"`
 }
 
 type SendChunkResult struct {
 	Ok hexutil.Uint64 `json:"sendChunkResult,omitempty"`
 }
 
-func (serv *DASRPCServer) StartChunkedStore(ctx context.Context, timestamp hexutil.Uint64, nChunks hexutil.Uint64, totalSize hexutil.Uint64, timeout hexutil.Uint64, sig hexutil.Bytes) (*StartChunkedStoreResult, error) {
-	return &StartChunkedStoreResult{}, nil
+type batch struct {
+	chunks                     [][]byte
+	expectedChunks, seenChunks uint64
+	timeout                    uint64
+}
+
+const (
+	maxPendingBatches = 10
+)
+
+type batchBuilder struct {
+	batches map[uint64]batch
+}
+
+func (b *batchBuilder) assign(nChunks, timeout uint64) (uint64, error) {
+	if len(b.batches) >= maxPendingBatches {
+		return 0, fmt.Errorf("can't start new batch, already %d pending", b.batches)
+	}
+
+	id := rand.Uint64()
+	_, ok := b.batches[id]
+	if ok {
+		return 0, fmt.Errorf("can't start new batch, try again")
+	}
+
+	b.batches[id] = batch{
+		chunks:         make([][]byte, nChunks),
+		expectedChunks: nChunks,
+		timeout:        timeout,
+	}
+	return id, nil
+}
+
+func (b *batchBuilder) add(id, idx uint64, data []byte) error {
+	batch, ok := b.batches[id]
+	if !ok {
+		return fmt.Errorf("unknown batch(%d)", id)
+	}
+
+	if idx >= uint64(len(batch.chunks)) {
+		return fmt.Errorf("batch(%d): chunk(%d) out of range", id, idx)
+	}
+
+	if batch.chunks[idx] != nil {
+		return fmt.Errorf("batch(%d): chunk(%d) already added", id, idx)
+	}
+
+	// todo check chunk size
+
+	batch.chunks[idx] = data
+	batch.seenChunks++
+	return nil
+}
+
+func (b *batchBuilder) close(id uint64) ([]byte, uint64, error) {
+	batch, ok := b.batches[id]
+	if !ok {
+		return nil, 0, fmt.Errorf("unknown batch(%d)", id)
+	}
+
+	if batch.expectedChunks != batch.seenChunks {
+		return nil, 0, fmt.Errorf("incomplete batch(%d): got %d/%d chunks", id, batch.seenChunks, batch.expectedChunks)
+	}
+
+	// todo check total size
+
+	var flattened []byte
+	for _, chunk := range batch.chunks {
+		flattened = append(flattened, chunk...)
+	}
+	return flattened, batch.timeout, nil
+}
+
+func (s *DASRPCServer) StartChunkedStore(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout hexutil.Uint64, sig hexutil.Bytes) (*StartChunkedStoreResult, error) {
+	if err := s.signatureVerifier.verify(ctx, []byte{}, sig, uint64(timestamp), uint64(nChunks), uint64(totalSize), uint64(timeout)); err != nil {
+		return nil, err
+	}
+
+	// Prevent replay of old messages
+	if time.Since(time.Unix(int64(timestamp), 0)).Abs() > time.Minute {
+		return nil, errors.New("too much time has elapsed since request was signed")
+	}
+
+	id, err := s.batches.assign(uint64(nChunks), uint64(timeout))
+	if err != nil {
+		return nil, err
+	}
+
+	return &StartChunkedStoreResult{
+		BatchId: hexutil.Uint64(id),
+	}, nil
 
 }
 
-func (serv *DASRPCServer) SendChunk(ctx context.Context, message hexutil.Bytes, timeout hexutil.Uint64, sig hexutil.Bytes) (*SendChunkResult, error) {
-	return &SendChunkResult{}, nil
+func (s *DASRPCServer) SendChunk(ctx context.Context, batchId, chunkId hexutil.Uint64, message hexutil.Bytes, sig hexutil.Bytes) (*SendChunkResult, error) {
+	if err := s.signatureVerifier.verify(ctx, message, sig, uint64(batchId), uint64(chunkId)); err != nil {
+		return nil, err
+	}
+
+	if err := s.batches.add(uint64(batchId), uint64(chunkId), message); err != nil {
+		return nil, err
+	}
+
+	return &SendChunkResult{
+		Ok: hexutil.Uint64(1), // TODO probably not needed
+	}, nil
 }
 
-func (serv *DASRPCServer) CommitChunkedStore(ctx context.Context, message hexutil.Bytes, timeout hexutil.Uint64, sig hexutil.Bytes) (*StoreResult, error) {
+func (s *DASRPCServer) CommitChunkedStore(ctx context.Context, batchId hexutil.Uint64, sig hexutil.Bytes) (*StoreResult, error) {
+	if err := s.signatureVerifier.verify(ctx, []byte{}, sig, uint64(batchId)); err != nil {
+		return nil, err
+	}
+
+	message, timeout, err := s.batches.close(uint64(batchId))
+	if err != nil {
+		return nil, err
+	}
+
+	cert, err := s.daWriter.Store(ctx, message, timeout, nil)
+	if err != nil {
+		return nil, err
+	}
+	return &StoreResult{
+		KeysetHash:  cert.KeysetHash[:],
+		DataHash:    cert.DataHash[:],
+		Timeout:     hexutil.Uint64(cert.Timeout),
+		SignersMask: hexutil.Uint64(cert.SignersMask),
+		Sig:         blsSignatures.SignatureToBytes(cert.Sig),
+		Version:     hexutil.Uint64(cert.Version),
+	}, nil
+
 	// TODO tracing, metrics, and timers
-	return &StoreResult{}, nil
+
 }
 
 func (serv *DASRPCServer) HealthCheck(ctx context.Context) error {

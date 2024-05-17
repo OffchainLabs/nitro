@@ -191,9 +191,9 @@ func CreateDAComponentsForDaserver(
 	config *DataAvailabilityConfig,
 	l1Reader *headerreader.HeaderReader,
 	seqInboxAddress *common.Address,
-) (DataAvailabilityServiceReader, DataAvailabilityServiceWriter, DataAvailabilityServiceHealthChecker, *LifecycleManager, error) {
+) (DataAvailabilityServiceReader, DataAvailabilityServiceWriter, *SignatureVerifier, DataAvailabilityServiceHealthChecker, *LifecycleManager, error) {
 	if !config.Enable {
-		return nil, nil, nil, nil, nil
+		return nil, nil, nil, nil, nil, nil
 	}
 
 	// Check config requirements
@@ -201,7 +201,7 @@ func CreateDAComponentsForDaserver(
 		!config.LocalFileStorage.Enable &&
 		!config.S3Storage.Enable &&
 		!config.IpfsStorage.Enable {
-		return nil, nil, nil, nil, errors.New("At least one of --data-availability.(local-db-storage|local-file-storage|s3-storage|ipfs-storage) must be enabled.")
+		return nil, nil, nil, nil, nil, errors.New("At least one of --data-availability.(local-db-storage|local-file-storage|s3-storage|ipfs-storage) must be enabled.")
 	}
 	// Done checking config requirements
 
@@ -209,12 +209,12 @@ func CreateDAComponentsForDaserver(
 	var syncToStorageServices []StorageService
 	storageService, dasLifecycleManager, err := CreatePersistentStorageService(ctx, config, &syncFromStorageServices, &syncToStorageServices)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
 
 	storageService, err = WrapStorageWithCache(ctx, config, storageService, &syncFromStorageServices, &syncToStorageServices, dasLifecycleManager)
 	if err != nil {
-		return nil, nil, nil, nil, err
+		return nil, nil, nil, nil, nil, err
 	}
 
 	// The REST aggregator is used as the fallback if requested data is not present
@@ -222,7 +222,7 @@ func CreateDAComponentsForDaserver(
 	if config.RestAggregator.Enable {
 		restAgg, err := NewRestfulClientAggregator(ctx, &config.RestAggregator)
 		if err != nil {
-			return nil, nil, nil, nil, err
+			return nil, nil, nil, nil, nil, err
 		}
 		restAgg.Start(ctx)
 		dasLifecycleManager.Register(restAgg)
@@ -237,7 +237,7 @@ func CreateDAComponentsForDaserver(
 
 		if syncConf.Eager {
 			if l1Reader == nil || seqInboxAddress == nil {
-				return nil, nil, nil, nil, errors.New("l1-node-url and sequencer-inbox-address must be specified along with sync-to-storage.eager")
+				return nil, nil, nil, nil, nil, errors.New("l1-node-url and sequencer-inbox-address must be specified along with sync-to-storage.eager")
 			}
 			storageService, err = NewSyncingFallbackStorageService(
 				ctx,
@@ -249,7 +249,7 @@ func CreateDAComponentsForDaserver(
 				syncConf)
 			dasLifecycleManager.Register(storageService)
 			if err != nil {
-				return nil, nil, nil, nil, err
+				return nil, nil, nil, nil, nil, err
 			}
 		} else {
 			storageService = NewFallbackStorageService(storageService, restAgg, restAgg,
@@ -262,13 +262,14 @@ func CreateDAComponentsForDaserver(
 	var daWriter DataAvailabilityServiceWriter
 	var daReader DataAvailabilityServiceReader = storageService
 	var daHealthChecker DataAvailabilityServiceHealthChecker = storageService
+	var signatureVerifier *SignatureVerifier
 
 	if config.Key.KeyDir != "" || config.Key.PrivKey != "" {
 		var seqInboxCaller *bridgegen.SequencerInboxCaller
 		if seqInboxAddress != nil {
 			seqInbox, err := bridgegen.NewSequencerInbox(*seqInboxAddress, (*l1Reader).Client())
 			if err != nil {
-				return nil, nil, nil, nil, err
+				return nil, nil, nil, nil, nil, err
 			}
 
 			seqInboxCaller = &seqInbox.SequencerInboxCaller
@@ -279,16 +280,15 @@ func CreateDAComponentsForDaserver(
 
 		daWriter, err = NewSignAfterStoreDASWriter(ctx, *config, storageService)
 		if err != nil {
-			return nil, nil, nil, nil, err
+			return nil, nil, nil, nil, nil, err
 		}
 
-		daWriter, err = NewSignatureVerifierWithSeqInboxCaller(
+		signatureVerifier, err = NewSignatureVerifierWithSeqInboxCaller(
 			seqInboxCaller,
-			daWriter,
 			config.ExtraSignatureCheckingPublicKey,
 		)
 		if err != nil {
-			return nil, nil, nil, nil, err
+			return nil, nil, nil, nil, nil, err
 		}
 	}
 
@@ -300,11 +300,11 @@ func CreateDAComponentsForDaserver(
 	if seqInboxAddress != nil {
 		daReader, err = NewChainFetchReader(daReader, (*l1Reader).Client(), *seqInboxAddress)
 		if err != nil {
-			return nil, nil, nil, nil, err
+			return nil, nil, nil, nil, nil, err
 		}
 	}
 
-	return daReader, daWriter, daHealthChecker, dasLifecycleManager, nil
+	return daReader, daWriter, signatureVerifier, daHealthChecker, dasLifecycleManager, nil
 }
 
 func CreateDAReaderForNode(

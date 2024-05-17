@@ -53,7 +53,7 @@ func TestRPC(t *testing.T) {
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	localDas, err := NewSignAfterStoreDASWriter(ctx, config, storageService)
 	testhelpers.RequireImpl(t, err)
-	dasServer, err := StartDASRPCServerOnListener(ctx, lis, genericconf.HTTPServerTimeoutConfigDefault, storageService, localDas, storageService)
+	dasServer, err := StartDASRPCServerOnListener(ctx, lis, genericconf.HTTPServerTimeoutConfigDefault, storageService, localDas, storageService, &SignatureVerifier{})
 	defer func() {
 		if err := dasServer.Shutdown(ctx); err != nil {
 			panic(err)
