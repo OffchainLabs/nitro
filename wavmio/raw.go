@@ -1,16 +1,33 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-//go:build js
-// +build js
+//go:build wasm
+// +build wasm
 
 package wavmio
 
-func getGlobalStateBytes32(idx uint64, output []byte)
-func setGlobalStateBytes32(idx uint64, val []byte)
-func getGlobalStateU64(idx uint64) uint64
-func setGlobalStateU64(idx uint64, val uint64)
-func readInboxMessage(msgNum uint64, offset uint32, output []byte) uint32
-func readHotShotCommitment(pos uint64, output []byte)
-func readDelayedInboxMessage(seqNum uint64, offset uint32, output []byte) uint32
-func resolveTypedPreimage(ty uint8, hash []byte, offset uint32, output []byte) uint32
+import "unsafe"
+
+//go:wasmimport wavmio getGlobalStateBytes32
+func getGlobalStateBytes32(idx uint32, output unsafe.Pointer)
+
+//go:wasmimport wavmio setGlobalStateBytes32
+func setGlobalStateBytes32(idx uint32, val unsafe.Pointer)
+
+//go:wasmimport wavmio getGlobalStateU64
+func getGlobalStateU64(idx uint32) uint64
+
+//go:wasmimport wavmio setGlobalStateU64
+func setGlobalStateU64(idx uint32, val uint64)
+
+//go:wasmimport wavmio readInboxMessage
+func readInboxMessage(msgNum uint64, offset uint32, output unsafe.Pointer) uint32
+
+//go:wasmimport wavmio readDelayedInboxMessage
+func readDelayedInboxMessage(seqNum uint64, offset uint32, output unsafe.Pointer) uint32
+
+//go:wasmimport wavmio resolveTypedPreimage
+func resolveTypedPreimage(ty uint32, hash unsafe.Pointer, offset uint32, output unsafe.Pointer) uint32
+
+//go:wasmimport wavmio readHotShotCommitment
+func readHotShotCommitment(h uint64, output unsafe.Pointer)

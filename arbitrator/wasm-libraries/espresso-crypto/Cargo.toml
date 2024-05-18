@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-go-abi = { path = "../go-abi" }
+caller-env = { path = "../../caller-env/", default-features = false, features = ["static_caller"] }
 espresso-crypto-helper = {path = "../../espresso-crypto-helper"}
 
 [lib]

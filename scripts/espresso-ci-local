@@ -1,21 +1,41 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Print failing command on exit
+trap 'echo "ERROR: $BASH_SOURCE:$LINENO $BASH_COMMAND" >&2' ERR
+
 make all
+make test-go-deps
 echo "Build passed"
 
 make lint
 echo "Lint passed"
 
-make test-go
+echo run tests without race detection
+packages=`go list ./...`
+stdbuf -oL gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 --no-color=false -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -timeout 35m -skip 'TestEspressoE2E|TestEspressoSwitch' -parallel=4 > >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
 echo "Go tests passed"
 
-make test-go-challenge
-echo "Go challenge tests passed"
+echo run tests with race detection
+packages=`go list ./...`
+stdbuf -oL gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 --no-color=false -- ./... -race -skip 'TestEspressoE2E|TestEspressoSwitch' -timeout=40m -parallel=4 > >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
+echo "Race tests passed"
 
 container=$(docker run -d -p 6379:6379 redis)
 trap "exit" INT TERM
-trap "docker rm -f $container" EXIT
-
-make test-go-redis
+trap 'docker rm -f $container' EXIT
+echo run redis tests
+gotestsum --format short-verbose -- -timeout 20m -p 1 -run TestRedis ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
 echo "Redis tests passed"
+
+echo run challenge tests
+packages=`go list ./...`
+stdbuf -oL gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 --no-color=false -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=4 -tags=challengetest -run=TestChallenge > >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
+echo "Go challenge tests passed"
+
+echo run stylus tests
+packages=`go list ./...`
+stdbuf -oL gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 --no-color=false -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=4 -tags=stylustest -run=TestProgramArbitrator > >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
+echo "Stylus tests passed"
+
+echo "All tests passed"

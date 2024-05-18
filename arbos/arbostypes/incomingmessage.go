@@ -35,8 +35,6 @@ const (
 
 const MaxL2MessageSize = 256 * 1024
 
-const ArbosVersion_FixRedeemGas = uint64(11)
-
 type BlockMerkleJustification struct {
 	// Merkle proof validating the justification header.
 	BlockMerkleProof *espressoTypes.HotShotBlockMerkleProof

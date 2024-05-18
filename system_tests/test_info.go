@@ -246,6 +246,9 @@ func (b *BlockchainTestInfo) PrepareTxTo(
 	b.T.Helper()
 	info := b.GetInfoWithPrivKey(from)
 	txNonce := atomic.AddUint64(&info.Nonce, 1) - 1
+	if value == nil {
+		value = common.Big0
+	}
 	txData := &types.DynamicFeeTx{
 		To:        to,
 		Gas:       gas,

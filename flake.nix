@@ -1,5 +1,5 @@
 {
-  description = "A Nix-flake-based Go 1.20 development environment";
+  description = "A Nix-flake-based Go 1.21 development environment";
 
   inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
   inputs.flake-utils.url = "github:numtide/flake-utils";
@@ -10,7 +10,7 @@
 
   outputs = { flake-utils, nixpkgs, foundry, rust-overlay, ... }:
     let
-      goVersion = 20; # Change this to update the whole stack
+      goVersion = 21; # Change this to update the whole stack
       overlays = [
         (import rust-overlay)
         (final: prev: {
@@ -37,6 +37,19 @@
           extensions = [ "rustfmt" "clippy" "llvm-tools-preview" "rust-src" ];
           targets = [ "wasm32-unknown-unknown" "wasm32-wasi" ];
         };
+        nightlyToolchain = pkgs.rust-bin.selectLatestNightlyWith (
+          toolchain: toolchain.default.override { extensions = [ "rust-src" ]; }
+        );
+        # A script that calls nightly cargo if invoked with `+nightly`
+        # as the first argument, otherwise it calls stable cargo.
+        cargo-with-nightly = pkgs.writeShellScriptBin "cargo" ''
+          if [[ "$1" == "+nightly" ]]; then
+            shift
+            # Prepend nightly toolchain directory containing cargo, rustc, etc.
+            exec env PATH="${nightlyToolchain}/bin:$PATH" cargo "$@"
+          fi
+          exec ${stableToolchain}/bin/cargo "$@"
+        '';
         shellHook = ''
           # Prevent cargo aliases from using programs in `~/.cargo` to avoid conflicts
           # with rustup installations.
@@ -106,6 +119,7 @@
               name = "espresso-nitro-dev-shell";
               buildInputs = with pkgs; [
                 cmake
+                cargo-with-nightly
                 stableToolchain
 
                 llvmPkgs.clang

@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -28,6 +29,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/das/dastree"
@@ -117,8 +119,8 @@ func (dasReader *PreimageDASReader) HealthCheck(ctx context.Context) error {
 	return nil
 }
 
-func (dasReader *PreimageDASReader) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
-	return arbstate.DiscardImmediately, nil
+func (dasReader *PreimageDASReader) ExpirationPolicy(ctx context.Context) (daprovider.ExpirationPolicy, error) {
+	return daprovider.DiscardImmediately, nil
 }
 
 type BlobPreimageReader struct {
@@ -174,9 +176,10 @@ func main() {
 	wavmio.StubInit()
 	gethhook.RequireHookedGeth()
 
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
-	glogger.Verbosity(log.LvlError)
-	log.Root().SetHandler(glogger)
+	glogger := log.NewGlogHandler(
+		log.NewTerminalHandler(io.Writer(os.Stderr), false))
+	glogger.Verbosity(log.LevelError)
+	log.SetDefault(log.NewLogger(glogger))
 
 	populateEcdsaCaches()
 
@@ -203,21 +206,21 @@ func main() {
 		if lastBlockHeader != nil {
 			delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 		}
-		var dasReader arbstate.DataAvailabilityReader
+		var dasReader daprovider.DASReader
 		if dasEnabled {
 			dasReader = &PreimageDASReader{}
 		}
 		backend := WavmInbox{}
-		var keysetValidationMode = arbstate.KeysetPanicIfInvalid
+		var keysetValidationMode = daprovider.KeysetPanicIfInvalid
 		if backend.GetPositionWithinMessage() > 0 {
-			keysetValidationMode = arbstate.KeysetDontValidate
+			keysetValidationMode = daprovider.KeysetDontValidate
 		}
-		var daProviders []arbstate.DataAvailabilityProvider
+		var dapReaders []daprovider.Reader
 		if dasReader != nil {
-			daProviders = append(daProviders, arbstate.NewDAProviderDAS(dasReader))
+			dapReaders = append(dapReaders, daprovider.NewReaderForDAS(dasReader))
 		}
-		daProviders = append(daProviders, arbstate.NewDAProviderBlobReader(&BlobPreimageReader{}))
-		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, daProviders, keysetValidationMode)
+		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(&BlobPreimageReader{}))
+		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode)
 		ctx := context.Background()
 		message, err := inboxMultiplexer.Pop(ctx)
 		if err != nil {
@@ -310,7 +313,7 @@ func main() {
 			espressocrypto.VerifyMerkleProof(jst.BlockMerkleJustification.BlockMerkleProof.Proof, jsonHeader, *jst.BlockMerkleJustification.BlockMerkleComm, commitment)
 		}
 
-		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher)
+		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher, false)
 		if err != nil {
 			panic(err)
 		}

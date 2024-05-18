@@ -4,9 +4,9 @@
 use crate::{
     binary::FloatInstruction,
     host::InternalFunc,
-    utils::Bytes32,
     value::{ArbValueType, FunctionType, IntegerValType},
 };
+use arbutil::{Bytes32, Color, DebugColor};
 use digest::Digest;
 use eyre::{bail, ensure, Result};
 use fnv::FnvHashMap as HashMap;
@@ -141,6 +141,10 @@ pub enum Opcode {
     Dup,
     /// Call a function in a different module
     CrossModuleCall,
+    /// Call a function in a different module, acting as the caller's module
+    CrossModuleForward,
+    /// Call a function in a different module provided via the stack
+    CrossModuleInternalCall,
     /// Call a caller module's internal method with a given function offset
     CallerModuleInternalCall,
     /// Gets bytes32 from global state
@@ -155,10 +159,21 @@ pub enum Opcode {
     ReadPreImage,
     /// Reads the current inbox message into the pointer on the stack at an offset
     ReadInboxMessage,
-    /// Reads the HotShot commitment on the stack at an offset
-    ReadHotShotCommitment,
+    /// Dynamically adds a module to the replay machine
+    LinkModule,
+    /// Dynamically removes the last module to the replay machine
+    UnlinkModule,
     /// Stop exexcuting the machine and move to the finished status
     HaltAndSetFinished,
+    /// create cothread (cannot be called from cothread)
+    NewCoThread,
+    /// pop cothread (cannot be called from cothread)
+    PopCoThread,
+    /// switch between main and a cothread
+    SwitchThread,
+
+    /// Reads the HotShot commitment on the stack at an offset
+    ReadHotShotCommitment,
 }
 
 impl Opcode {
@@ -261,6 +276,8 @@ impl Opcode {
             Opcode::MoveFromInternalToStack => 0x8006,
             Opcode::Dup => 0x8008,
             Opcode::CrossModuleCall => 0x8009,
+            Opcode::CrossModuleForward => 0x800B,
+            Opcode::CrossModuleInternalCall => 0x800C,
             Opcode::CallerModuleInternalCall => 0x800A,
             Opcode::GetGlobalStateBytes32 => 0x8010,
             Opcode::SetGlobalStateBytes32 => 0x8011,
@@ -268,7 +285,13 @@ impl Opcode {
             Opcode::SetGlobalStateU64 => 0x8013,
             Opcode::ReadPreImage => 0x8020,
             Opcode::ReadInboxMessage => 0x8021,
+            Opcode::LinkModule => 0x8023,
+            Opcode::UnlinkModule => 0x8024,
             Opcode::HaltAndSetFinished => 0x8022,
+            Opcode::NewCoThread => 0x8030,
+            Opcode::PopCoThread => 0x8031,
+            Opcode::SwitchThread => 0x8032,
+
             Opcode::ReadHotShotCommitment => 0x9001,
         }
     }
@@ -341,18 +364,24 @@ impl Instruction {
         }
     }
 
-    pub fn serialize_for_proof(self) -> [u8; 34] {
-        let mut ret = [0u8; 34];
-        ret[..2].copy_from_slice(&self.opcode.repr().to_be_bytes());
-        ret[2..].copy_from_slice(&*self.get_proving_argument_data());
-        ret
+    pub fn serialize_for_proof(code: &[Self]) -> Vec<u8> {
+        let mut data = Vec::with_capacity(1 + 34 * code.len());
+        data.push(code.len() as u8);
+        for inst in code {
+            data.extend(inst.opcode.repr().to_be_bytes());
+            data.extend(inst.get_proving_argument_data());
+        }
+        data
     }
 
-    pub fn hash(self) -> Bytes32 {
+    pub fn hash(code: &[Self]) -> Bytes32 {
         let mut h = Keccak256::new();
-        h.update(b"Instruction:");
-        h.update(self.opcode.repr().to_be_bytes());
-        h.update(self.get_proving_argument_data());
+        h.update(b"Instructions:");
+        h.update((code.len() as u8).to_be_bytes());
+        for inst in code {
+            h.update(inst.opcode.repr().to_be_bytes());
+            h.update(inst.get_proving_argument_data());
+        }
         h.finalize().into()
     }
 }
@@ -420,14 +449,8 @@ impl Sub for StackState {
     type Output = isize;
 
     fn sub(self, rhs: Self) -> Self::Output {
-        let s = match self {
-            Self::Reachable(s) => s,
-            Self::Unreachable => return 0,
-        };
-        let rhs = match rhs {
-            Self::Reachable(rhs) => rhs,
-            Self::Unreachable => return 0,
-        };
+        let Self::Reachable(s) = self else { return 0 };
+        let Self::Reachable(rhs) = rhs else { return 0 };
         s as isize - rhs as isize
     }
 }
@@ -440,6 +463,7 @@ pub fn wasm_to_wavm(
     all_types: &[FunctionType],
     all_types_func_idx: u32,
     internals_offset: u32,
+    name: &str,
 ) -> Result<()> {
     use Operator::*;
 
@@ -568,9 +592,8 @@ pub fn wasm_to_wavm(
 
             let func = $func;
             let sig = func.signature();
-            let (module, func) = match fp_impls.get(&func) {
-                Some((module, func)) => (module, func),
-                None => bail!("No implementation for floating point operation {:?}", &func),
+            let Some((module, func)) = fp_impls.get(&func) else {
+                bail!("No implementation for floating point operation {} in {}", func.debug_red(), name.red());
             };
 
             // Reinterpret float args into ints
@@ -706,17 +729,17 @@ pub fn wasm_to_wavm(
                 opcode!(Unreachable);
                 stack = StackState::Unreachable;
             },
-            Nop => opcode!(Nop),
-            Block { ty } => {
-                scopes.push(Scope::Simple(*ty, vec![], height_after_block!(ty)));
+            Nop => {},
+            Block { blockty } => {
+                scopes.push(Scope::Simple(*blockty, vec![], height_after_block!(blockty)));
             }
-            Loop { ty } => {
-                scopes.push(Scope::Loop(*ty, out.len(), stack, height_after_block!(ty)));
+            Loop { blockty } => {
+                scopes.push(Scope::Loop(*blockty, out.len(), stack, height_after_block!(blockty)));
             }
-            If { ty } => {
+            If { blockty } => {
                 opcode!(I32Eqz);
                 stack -= 1; // the else block shouldn't have the conditional that gets popped next instruction
-                scopes.push(Scope::IfElse(*ty, vec![], Some(out.len()), stack, height_after_block!(ty)));
+                scopes.push(Scope::IfElse(*blockty, vec![], Some(out.len()), stack, height_after_block!(blockty)));
                 opcode!(ArbitraryJumpIf);
             }
             Else => {
@@ -729,12 +752,12 @@ pub fn wasm_to_wavm(
                         *cond = None;
                         stack = *if_height;
                     }
-                    x => bail!("malformed if-else scope {:?}", x),
+                    x => bail!("malformed if-else scope {x:?}"),
                 }
             }
 
-            unsupported @ dot!(Try, Catch, Throw, Rethrow) => {
-                bail!("exception-handling extension not supported {:?}", unsupported)
+            unsupported @ dot!(Try, Catch, Throw, Rethrow, ThrowRef, TryTable) => {
+                bail!("exception-handling extension not supported {unsupported:?}")
             },
 
             End => {
@@ -754,11 +777,11 @@ pub fn wasm_to_wavm(
             }
             Br { relative_depth } => branch!(ArbitraryJump, *relative_depth),
             BrIf { relative_depth } => branch!(ArbitraryJumpIf, *relative_depth),
-            BrTable { table } => {
+            BrTable { targets } => {
                 let start_stack = stack;
                 // evaluate each branch
                 let mut subjumps = vec![];
-                for (index, target) in table.targets().enumerate() {
+                for (index, target) in targets.targets().enumerate() {
                     opcode!(Dup, @push 1);
                     opcode!(I32Const, index as u64, @push 1);
                     compare!(I32, Eq, false);
@@ -768,7 +791,7 @@ pub fn wasm_to_wavm(
 
                 // nothing matched: drop the index and jump to the default.
                 opcode!(Drop, @pop 1);
-                branch!(ArbitraryJump, table.default());
+                branch!(ArbitraryJump, targets.default());
 
                 // simulate a jump table of branches
                 for (jump, branch) in subjumps {
@@ -781,25 +804,29 @@ pub fn wasm_to_wavm(
             Return => branch!(ArbitraryJump, scopes.len() - 1),
             Call { function_index } => call!(*function_index),
 
-            CallIndirect { index, table_index, .. } => {
-                let ty = &all_types[*index as usize];
+            CallIndirect { type_index, table_index, .. } => {
+                let ty = &all_types[*type_index as usize];
                 let delta = ty.outputs.len() as isize - ty.inputs.len() as isize;
-                opcode!(CallIndirect, pack_call_indirect(*table_index, *index), @push delta - 1);
+                opcode!(CallIndirect, pack_call_indirect(*table_index, *type_index), @push delta - 1);
             }
 
             unsupported @ dot!(ReturnCall, ReturnCallIndirect) => {
-                bail!("tail-call extension not supported {:?}", unsupported)
+                bail!("tail-call extension not supported {unsupported:?}")
+            }
+
+            unsupported @ dot!(CallRef, ReturnCallRef) => {
+                bail!("typed function references extension not supported {unsupported:?}")
             }
 
             unsupported @ (dot!(Delegate) | op!(CatchAll)) => {
-                bail!("exception-handling extension not supported {:?}", unsupported)
+                bail!("exception-handling extension not supported {unsupported:?}")
             },
 
             Drop => opcode!(Drop, @pop 1),
             Select => opcode!(Select, @pop 2),
 
             unsupported @ dot!(TypedSelect) => {
-                bail!("reference-types extension not supported {:?}", unsupported)
+                bail!("reference-types extension not supported {unsupported:?}")
             },
 
             LocalGet { local_index } => opcode!(LocalGet, *local_index as u64, @push 1),
@@ -846,9 +873,13 @@ pub fn wasm_to_wavm(
             F32Const { value } => opcode!(F32Const, value.bits() as u64,  @push 1),
             F64Const { value } => opcode!(F64Const, value.bits(),         @push 1),
 
-            unsupported @ (dot!(RefNull) | op!(RefIsNull) | dot!(RefFunc)) => {
-                bail!("reference-types extension not supported {:?}", unsupported)
+            unsupported @ (dot!(RefNull) | op!(RefIsNull) | dot!(RefFunc, RefEq)) => {
+                bail!("reference-types extension not supported {unsupported:?}")
             },
+
+            unsupported @ dot!(RefAsNonNull, BrOnNull, BrOnNonNull) => {
+                bail!("typed function references extension not supported {unsupported:?}")
+            }
 
             I32Eqz => opcode!(I32Eqz),
             I32Eq => compare!(I32, Eq, false),
@@ -991,8 +1022,8 @@ pub fn wasm_to_wavm(
                 ensure!(*mem == 0, "multi-memory proposal not supported");
                 call!(internals_offset + InternalFunc::MemoryFill as u32)
             },
-            MemoryCopy { src, dst } => {
-                ensure!(*src == 0 && *dst == 0, "multi-memory proposal not supported");
+            MemoryCopy { src_mem, dst_mem } => {
+                ensure!(*src_mem == 0 && *dst_mem == 0, "multi-memory proposal not supported");
                 call!(internals_offset + InternalFunc::MemoryCopy as u32)
             },
 
@@ -1001,7 +1032,21 @@ pub fn wasm_to_wavm(
                     MemoryInit, DataDrop, TableInit, ElemDrop,
                     TableCopy, TableFill, TableGet, TableSet, TableGrow, TableSize
                 )
-            ) => bail!("bulk-memory-operations extension not fully supported {:?}", unsupported),
+            ) => bail!("bulk-memory-operations extension not fully supported {unsupported:?}"),
+
+            unsupported @ dot!(MemoryDiscard) => {
+                bail!("memory control proposal {unsupported:?}")
+            },
+
+            unsupported @ (
+                dot!(
+                    StructNew, StructNewDefault, StructGet, StructGetS, StructGetU, StructSet,
+                    ArrayNew, ArrayNewDefault, ArrayNewFixed, ArrayNewData, ArrayNewElem,
+                    ArrayGet, ArrayGetS, ArrayGetU, ArraySet, ArrayLen, ArrayFill, ArrayCopy,
+                    ArrayInitData, ArrayInitElem, RefTestNonNull, RefTestNullable, RefCastNonNull, RefCastNullable,
+                    BrOnCast, BrOnCastFail, AnyConvertExtern, ExternConvertAny, RefI31, I31GetS, I31GetU
+                )
+            ) => bail!("garbage collection extension not supported {unsupported:?}"),
 
             unsupported @ (
                 dot!(
@@ -1020,7 +1065,7 @@ pub fn wasm_to_wavm(
                     I64AtomicRmw32XchgU, I32AtomicRmwCmpxchg, I64AtomicRmwCmpxchg, I32AtomicRmw8CmpxchgU,
                     I32AtomicRmw16CmpxchgU, I64AtomicRmw8CmpxchgU, I64AtomicRmw16CmpxchgU, I64AtomicRmw32CmpxchgU
                 )
-            ) => bail!("threads extension not supported {:?}", unsupported),
+            ) => bail!("threads extension not supported {unsupported:?}"),
 
             unsupported @ (
                 dot!(
@@ -1041,12 +1086,12 @@ pub fn wasm_to_wavm(
                     V128Not, V128And, V128AndNot, V128Or, V128Xor, V128Bitselect, V128AnyTrue,
                     I8x16Abs, I8x16Neg, I8x16Popcnt, I8x16AllTrue, I8x16Bitmask, I8x16NarrowI16x8S, I8x16NarrowI16x8U,
                     I8x16Shl, I8x16ShrS, I8x16ShrU, I8x16Add, I8x16AddSatS, I8x16AddSatU, I8x16Sub, I8x16SubSatS,
-                    I8x16SubSatU, I8x16MinS, I8x16MinU, I8x16MaxS, I8x16MaxU, I8x16RoundingAverageU,
+                    I8x16SubSatU, I8x16MinS, I8x16MinU, I8x16MaxS, I8x16MaxU, I8x16AvgrU,
                     I16x8ExtAddPairwiseI8x16S, I16x8ExtAddPairwiseI8x16U, I16x8Abs, I16x8Neg, I16x8Q15MulrSatS,
                     I16x8AllTrue, I16x8Bitmask, I16x8NarrowI32x4S, I16x8NarrowI32x4U, I16x8ExtendLowI8x16S,
                     I16x8ExtendHighI8x16S, I16x8ExtendLowI8x16U, I16x8ExtendHighI8x16U, I16x8Shl, I16x8ShrS, I16x8ShrU,
                     I16x8Add, I16x8AddSatS, I16x8AddSatU, I16x8Sub, I16x8SubSatS, I16x8SubSatU, I16x8Mul, I16x8MinS,
-                    I16x8MinU, I16x8MaxS, I16x8MaxU, I16x8RoundingAverageU, I16x8ExtMulLowI8x16S,
+                    I16x8MinU, I16x8MaxS, I16x8MaxU, I16x8AvgrU, I16x8ExtMulLowI8x16S,
                     I16x8ExtMulHighI8x16S, I16x8ExtMulLowI8x16U, I16x8ExtMulHighI8x16U, I32x4ExtAddPairwiseI16x8S,
                     I32x4ExtAddPairwiseI16x8U, I32x4Abs, I32x4Neg, I32x4AllTrue, I32x4Bitmask, I32x4ExtendLowI16x8S,
                     I32x4ExtendHighI16x8S, I32x4ExtendLowI16x8U, I32x4ExtendHighI16x8U, I32x4Shl, I32x4ShrS, I32x4ShrU,
@@ -1061,14 +1106,14 @@ pub fn wasm_to_wavm(
                     F64x2Max, F64x2PMin, F64x2PMax, I32x4TruncSatF32x4S, I32x4TruncSatF32x4U, F32x4ConvertI32x4S,
                     F32x4ConvertI32x4U, I32x4TruncSatF64x2SZero, I32x4TruncSatF64x2UZero, F64x2ConvertLowI32x4S,
                     F64x2ConvertLowI32x4U, F32x4DemoteF64x2Zero, F64x2PromoteLowF32x4, I8x16RelaxedSwizzle,
-                    I32x4RelaxedTruncSatF32x4S, I32x4RelaxedTruncSatF32x4U, I32x4RelaxedTruncSatF64x2SZero,
-                    I32x4RelaxedTruncSatF64x2UZero, F32x4Fma, F32x4Fms, F64x2Fma, F64x2Fms, I8x16LaneSelect,
-                    I16x8LaneSelect, I32x4LaneSelect, I64x2LaneSelect, F32x4RelaxedMin, F32x4RelaxedMax,
-                    F64x2RelaxedMin, F64x2RelaxedMax
+                    I32x4RelaxedTruncF32x4S, I32x4RelaxedTruncF32x4U, I32x4RelaxedTruncF64x2SZero,
+                    I32x4RelaxedTruncF64x2UZero, F32x4RelaxedMadd, F32x4RelaxedNmadd, F64x2RelaxedMadd,
+                    F64x2RelaxedNmadd, I8x16RelaxedLaneselect, I16x8RelaxedLaneselect, I32x4RelaxedLaneselect,
+                    I64x2RelaxedLaneselect, F32x4RelaxedMin, F32x4RelaxedMax, F64x2RelaxedMin, F64x2RelaxedMax,
+                    I16x8RelaxedQ15mulrS, I16x8RelaxedDotI8x16I7x16S, I32x4RelaxedDotI8x16I7x16AddS
                 )
-            ) => bail!("SIMD extension not supported {:?}", unsupported)
+            ) => bail!("SIMD extension not supported {unsupported:?}")
         };
     }
-
     Ok(())
 }

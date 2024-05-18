@@ -26,6 +26,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/statetransfer"
 )
 
@@ -41,7 +42,7 @@ func BuildBlock(
 	if lastBlockHeader != nil {
 		delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 	}
-	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead, nil, arbstate.KeysetValidate)
+	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead, nil, daprovider.KeysetValidate)
 
 	ctx := context.Background()
 	message, err := inboxMultiplexer.Pop(ctx)
@@ -56,7 +57,7 @@ func BuildBlock(
 		return seqBatch, nil
 	}
 	block, _, err := arbos.ProduceBlock(
-		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher,
+		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher, false,
 	)
 	return block, err
 }
@@ -121,7 +122,7 @@ func (c noopChainContext) GetHeader(common.Hash, uint64) *types.Header {
 
 func FuzzStateTransition(f *testing.F) {
 	f.Fuzz(func(t *testing.T, compressSeqMsg bool, seqMsg []byte, delayedMsg []byte) {
-		if len(seqMsg) > 0 && arbstate.IsL1AuthenticatedMessageHeaderByte(seqMsg[0]) {
+		if len(seqMsg) > 0 && daprovider.IsL1AuthenticatedMessageHeaderByte(seqMsg[0]) {
 			return
 		}
 		chainDb := rawdb.NewMemoryDatabase()
@@ -176,7 +177,7 @@ func FuzzStateTransition(f *testing.F) {
 		binary.BigEndian.PutUint64(seqBatch[24:32], ^uint64(0))
 		binary.BigEndian.PutUint64(seqBatch[32:40], uint64(len(delayedMessages)))
 		if compressSeqMsg {
-			seqBatch = append(seqBatch, arbstate.BrotliMessageHeaderByte)
+			seqBatch = append(seqBatch, daprovider.BrotliMessageHeaderByte)
 			seqMsgCompressed, err := arbcompress.CompressLevel(seqMsg, 0)
 			if err != nil {
 				panic(fmt.Sprintf("failed to compress sequencer message: %v", err))

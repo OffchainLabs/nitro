@@ -87,7 +87,7 @@ func TestEspressoBuilderGuaranteedTx(t *testing.T) {
 
 	otherBuilderTx := testInfo.PrepareTx("Owner", "Faucet", 1000000, big.NewInt(1000000), getExtraBytes(common.Address{10: 5}))
 	hooks := arbos.NoopSequencingHooks()
-	_, _, err = arbos.ProduceBlockAdvanced(&l1Header, types.Transactions{otherBuilderTx}, 0, genesis, statedb, chainContext, chainConfig, hooks, &espressoHeader)
+	_, _, err = arbos.ProduceBlockAdvanced(&l1Header, types.Transactions{otherBuilderTx}, 0, genesis, statedb, chainContext, chainConfig, hooks, &espressoHeader, false)
 	if err != nil {
 		panic(err)
 	}
@@ -101,7 +101,7 @@ func TestEspressoBuilderGuaranteedTx(t *testing.T) {
 
 	hooks2 := arbos.NoopSequencingHooks()
 	thisBuilderTx := testInfo.PrepareTx("Owner", "Faucet", 1000000, big.NewInt(1000000), getExtraBytes(builderAddr))
-	_, _, err = arbos.ProduceBlockAdvanced(&l1Header, types.Transactions{thisBuilderTx}, 0, genesis, statedb, chainContext, chainConfig, hooks2, &espressoHeader)
+	_, _, err = arbos.ProduceBlockAdvanced(&l1Header, types.Transactions{thisBuilderTx}, 0, genesis, statedb, chainContext, chainConfig, hooks2, &espressoHeader, false)
 	if err != nil {
 		panic(err)
 	}

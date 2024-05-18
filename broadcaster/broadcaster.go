@@ -7,9 +7,11 @@ import (
 	"context"
 	"errors"
 	"net"
+	"runtime/debug"
 
 	"github.com/gobwas/ws"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -19,6 +21,11 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
+
+type MessageWithMetadataAndBlockHash struct {
+	Message   arbostypes.MessageWithMetadata
+	BlockHash *common.Hash
+}
 
 type Broadcaster struct {
 	server     *wsbroadcastserver.WSBroadcastServer
@@ -37,7 +44,11 @@ func NewBroadcaster(config wsbroadcastserver.BroadcasterConfigFetcher, chainId u
 	}
 }
 
-func (b *Broadcaster) NewBroadcastFeedMessage(message arbostypes.MessageWithMetadata, sequenceNumber arbutil.MessageIndex) (*m.BroadcastFeedMessage, error) {
+func (b *Broadcaster) NewBroadcastFeedMessage(
+	message arbostypes.MessageWithMetadata,
+	sequenceNumber arbutil.MessageIndex,
+	blockHash *common.Hash,
+) (*m.BroadcastFeedMessage, error) {
 	var messageSignature []byte
 	if b.dataSigner != nil {
 		hash, err := message.Hash(sequenceNumber, b.chainId)
@@ -53,18 +64,23 @@ func (b *Broadcaster) NewBroadcastFeedMessage(message arbostypes.MessageWithMeta
 	return &m.BroadcastFeedMessage{
 		SequenceNumber: sequenceNumber,
 		Message:        message,
+		BlockHash:      blockHash,
 		Signature:      messageSignature,
 	}, nil
 }
 
-func (b *Broadcaster) BroadcastSingle(msg arbostypes.MessageWithMetadata, seq arbutil.MessageIndex) (err error) {
+func (b *Broadcaster) BroadcastSingle(
+	msg arbostypes.MessageWithMetadata,
+	seq arbutil.MessageIndex,
+	blockHash *common.Hash,
+) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Error("recovered error in BroadcastSingle", "recover", r)
+			log.Error("recovered error in BroadcastSingle", "recover", r, "backtrace", string(debug.Stack()))
 			err = errors.New("panic in BroadcastSingle")
 		}
 	}()
-	bfm, err := b.NewBroadcastFeedMessage(msg, seq)
+	bfm, err := b.NewBroadcastFeedMessage(msg, seq, blockHash)
 	if err != nil {
 		return err
 	}
@@ -81,16 +97,19 @@ func (b *Broadcaster) BroadcastSingleFeedMessage(bfm *m.BroadcastFeedMessage) {
 	b.BroadcastFeedMessages(broadcastFeedMessages)
 }
 
-func (b *Broadcaster) BroadcastMessages(messages []arbostypes.MessageWithMetadata, seq arbutil.MessageIndex) (err error) {
+func (b *Broadcaster) BroadcastMessages(
+	messagesWithBlockHash []MessageWithMetadataAndBlockHash,
+	seq arbutil.MessageIndex,
+) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			log.Error("recovered error in BroadcastMessages", "recover", r)
+			log.Error("recovered error in BroadcastMessages", "recover", r, "backtrace", string(debug.Stack()))
 			err = errors.New("panic in BroadcastMessages")
 		}
 	}()
 	var feedMessages []*m.BroadcastFeedMessage
-	for i, msg := range messages {
-		bfm, err := b.NewBroadcastFeedMessage(msg, seq+arbutil.MessageIndex(i))
+	for i, msg := range messagesWithBlockHash {
+		bfm, err := b.NewBroadcastFeedMessage(msg.Message, seq+arbutil.MessageIndex(i), msg.BlockHash)
 		if err != nil {
 			return err
 		}

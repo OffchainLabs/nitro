@@ -6,9 +6,13 @@ edition = "2021"
 [dependencies]
 arbutil = { path = "../arbutil/" }
 espresso-crypto-helper = { path = "../espresso-crypto-helper/" }
-wasmer = "3.1.0"
-wasmer-compiler-cranelift = "3.1.0"
-wasmer-compiler-llvm = { version = "3.1.0", optional = true }
+brotli = { path = "../brotli/", features = ["wasmer_traits"] }
+caller-env = { path = "../caller-env/", features = ["wasmer_traits"] }
+prover = { path = "../prover/", default-features = false, features = ["native"] }
+stylus = { path = "../stylus/", default-features = false }
+wasmer = { path = "../tools/wasmer/lib/api/" }
+wasmer-compiler-llvm = { path = "../tools/wasmer/lib/compiler-llvm/", optional = true }
+wasmer-compiler-cranelift = { path = "../tools/wasmer/lib/compiler-cranelift/" }
 eyre = "0.6.5"
 parking_lot = "0.12.1"
 rand = { version = "0.8.4", default-features = false }
@@ -20,6 +24,7 @@ sha3 = "0.9.1"
 libc = "0.2.132"
 ouroboros = "0.16.0"
 lazy_static = "1.4"
+sha2 = "0.9.9"
 
 [features]
 llvm = ["dep:wasmer-compiler-llvm"]

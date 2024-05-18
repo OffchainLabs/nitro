@@ -47,6 +47,9 @@ jobs:
       with:
         submodules: true
 
+    - name: Install dependencies
+      run: sudo apt update && sudo apt install -y wabt
+
     # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v2
@@ -70,7 +73,7 @@ jobs:
     - name: Install go
       uses: actions/setup-go@v4
       with:
-        go-version: 1.20.x
+        go-version: 1.21.x
 
     - name: Install rust stable
       uses: dtolnay/rust-toolchain@stable
@@ -78,7 +81,7 @@ jobs:
     - name: Install Foundry
       uses: foundry-rs/foundry-toolchain@v1
       with:
-        version: nightly-f625d0fa7c51e65b4bf1e8f7931cd1c6e2e285e9
+        version: nightly
 
     - name: Cache Rust Build Products
       uses: actions/cache@v3

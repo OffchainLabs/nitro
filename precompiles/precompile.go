@@ -1,4 +1,4 @@
-// Copyright 2021-2023, Offchain Labs, Inc.
+// Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 package precompiles
@@ -16,8 +16,9 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
+	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/util"
-	templates "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	pgen "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -514,12 +515,6 @@ func MakePrecompile(metadata *bind.MetaData, implementer interface{}) (addr, *Pr
 }
 
 func Precompiles() map[addr]ArbosPrecompile {
-
-	//nolint:gocritic
-	hex := func(s string) addr {
-		return common.HexToAddress(s)
-	}
-
 	contracts := make(map[addr]ArbosPrecompile)
 
 	insert := func(address addr, impl ArbosPrecompile) *Precompile {
@@ -527,12 +522,12 @@ func Precompiles() map[addr]ArbosPrecompile {
 		return impl.Precompile()
 	}
 
-	insert(MakePrecompile(templates.ArbInfoMetaData, &ArbInfo{Address: hex("65")}))
-	insert(MakePrecompile(templates.ArbAddressTableMetaData, &ArbAddressTable{Address: hex("66")}))
-	insert(MakePrecompile(templates.ArbBLSMetaData, &ArbBLS{Address: hex("67")}))
-	insert(MakePrecompile(templates.ArbFunctionTableMetaData, &ArbFunctionTable{Address: hex("68")}))
-	insert(MakePrecompile(templates.ArbosTestMetaData, &ArbosTest{Address: hex("69")}))
-	ArbGasInfo := insert(MakePrecompile(templates.ArbGasInfoMetaData, &ArbGasInfo{Address: hex("6c")}))
+	insert(MakePrecompile(pgen.ArbInfoMetaData, &ArbInfo{Address: types.ArbInfoAddress}))
+	insert(MakePrecompile(pgen.ArbAddressTableMetaData, &ArbAddressTable{Address: types.ArbAddressTableAddress}))
+	insert(MakePrecompile(pgen.ArbBLSMetaData, &ArbBLS{Address: types.ArbBLSAddress}))
+	insert(MakePrecompile(pgen.ArbFunctionTableMetaData, &ArbFunctionTable{Address: types.ArbFunctionTableAddress}))
+	insert(MakePrecompile(pgen.ArbosTestMetaData, &ArbosTest{Address: types.ArbosTestAddress}))
+	ArbGasInfo := insert(MakePrecompile(pgen.ArbGasInfoMetaData, &ArbGasInfo{Address: types.ArbGasInfoAddress}))
 	ArbGasInfo.methodsByName["GetL1FeesAvailable"].arbosVersion = 10
 	ArbGasInfo.methodsByName["GetL1RewardRate"].arbosVersion = 11
 	ArbGasInfo.methodsByName["GetL1RewardRecipient"].arbosVersion = 11
@@ -541,8 +536,8 @@ func Precompiles() map[addr]ArbosPrecompile {
 	ArbGasInfo.methodsByName["GetL1PricingFundsDueForRewards"].arbosVersion = 20
 	ArbGasInfo.methodsByName["GetL1PricingUnitsSinceUpdate"].arbosVersion = 20
 	ArbGasInfo.methodsByName["GetLastL1PricingSurplus"].arbosVersion = 20
-	insert(MakePrecompile(templates.ArbAggregatorMetaData, &ArbAggregator{Address: hex("6d")}))
-	insert(MakePrecompile(templates.ArbStatisticsMetaData, &ArbStatistics{Address: hex("6f")}))
+	insert(MakePrecompile(pgen.ArbAggregatorMetaData, &ArbAggregator{Address: types.ArbAggregatorAddress}))
+	insert(MakePrecompile(pgen.ArbStatisticsMetaData, &ArbStatistics{Address: types.ArbStatisticsAddress}))
 
 	eventCtx := func(gasLimit uint64, err error) *Context {
 		if err != nil {
@@ -554,14 +549,35 @@ func Precompiles() map[addr]ArbosPrecompile {
 		}
 	}
 
-	ArbOwnerPublic := insert(MakePrecompile(templates.ArbOwnerPublicMetaData, &ArbOwnerPublic{Address: hex("6b")}))
+	ArbOwnerPublicImpl := &ArbOwnerPublic{Address: types.ArbOwnerPublicAddress}
+	ArbOwnerPublic := insert(MakePrecompile(pgen.ArbOwnerPublicMetaData, ArbOwnerPublicImpl))
 	ArbOwnerPublic.methodsByName["GetInfraFeeAccount"].arbosVersion = 5
 	ArbOwnerPublic.methodsByName["RectifyChainOwner"].arbosVersion = 11
 	ArbOwnerPublic.methodsByName["GetBrotliCompressionLevel"].arbosVersion = 20
 	ArbOwnerPublic.methodsByName["GetScheduledUpgrade"].arbosVersion = 20
 
+	ArbWasmImpl := &ArbWasm{Address: types.ArbWasmAddress}
+	ArbWasm := insert(MakePrecompile(pgen.ArbWasmMetaData, ArbWasmImpl))
+	ArbWasm.arbosVersion = params.ArbosVersion_Stylus
+	programs.ProgramNotWasmError = ArbWasmImpl.ProgramNotWasmError
+	programs.ProgramNotActivatedError = ArbWasmImpl.ProgramNotActivatedError
+	programs.ProgramNeedsUpgradeError = ArbWasmImpl.ProgramNeedsUpgradeError
+	programs.ProgramExpiredError = ArbWasmImpl.ProgramExpiredError
+	programs.ProgramUpToDateError = ArbWasmImpl.ProgramUpToDateError
+	programs.ProgramKeepaliveTooSoon = ArbWasmImpl.ProgramKeepaliveTooSoonError
+	for _, method := range ArbWasm.methods {
+		method.arbosVersion = ArbWasm.arbosVersion
+	}
+
+	ArbWasmCacheImpl := &ArbWasmCache{Address: types.ArbWasmCacheAddress}
+	ArbWasmCache := insert(MakePrecompile(pgen.ArbWasmCacheMetaData, ArbWasmCacheImpl))
+	ArbWasmCache.arbosVersion = params.ArbosVersion_Stylus
+	for _, method := range ArbWasmCache.methods {
+		method.arbosVersion = ArbWasmCache.arbosVersion
+	}
+
 	ArbRetryableImpl := &ArbRetryableTx{Address: types.ArbRetryableTxAddress}
-	ArbRetryable := insert(MakePrecompile(templates.ArbRetryableTxMetaData, ArbRetryableImpl))
+	ArbRetryable := insert(MakePrecompile(pgen.ArbRetryableTxMetaData, ArbRetryableImpl))
 	arbos.ArbRetryableTxAddress = ArbRetryable.address
 	arbos.RedeemScheduledEventID = ArbRetryable.events["RedeemScheduled"].template.ID
 	arbos.EmitReedeemScheduledEvent = func(
@@ -579,29 +595,45 @@ func Precompiles() map[addr]ArbosPrecompile {
 		return ArbRetryableImpl.TicketCreated(context, evm, ticketId)
 	}
 
-	ArbSys := insert(MakePrecompile(templates.ArbSysMetaData, &ArbSys{Address: types.ArbSysAddress}))
+	ArbSys := insert(MakePrecompile(pgen.ArbSysMetaData, &ArbSys{Address: types.ArbSysAddress}))
 	arbos.ArbSysAddress = ArbSys.address
 	arbos.L2ToL1TransactionEventID = ArbSys.events["L2ToL1Transaction"].template.ID
 	arbos.L2ToL1TxEventID = ArbSys.events["L2ToL1Tx"].template.ID
 
-	ArbOwnerImpl := &ArbOwner{Address: hex("70")}
+	ArbOwnerImpl := &ArbOwner{Address: types.ArbOwnerAddress}
 	emitOwnerActs := func(evm mech, method bytes4, owner addr, data []byte) error {
 		context := eventCtx(ArbOwnerImpl.OwnerActsGasCost(method, owner, data))
 		return ArbOwnerImpl.OwnerActs(context, evm, method, owner, data)
 	}
-	_, ArbOwner := MakePrecompile(templates.ArbOwnerMetaData, ArbOwnerImpl)
+	_, ArbOwner := MakePrecompile(pgen.ArbOwnerMetaData, ArbOwnerImpl)
 	ArbOwner.methodsByName["GetInfraFeeAccount"].arbosVersion = 5
 	ArbOwner.methodsByName["SetInfraFeeAccount"].arbosVersion = 5
 	ArbOwner.methodsByName["ReleaseL1PricerSurplusFunds"].arbosVersion = 10
 	ArbOwner.methodsByName["SetChainConfig"].arbosVersion = 11
 	ArbOwner.methodsByName["SetBrotliCompressionLevel"].arbosVersion = 20
+	stylusMethods := []string{
+		"SetInkPrice", "SetWasmMaxStackDepth", "SetWasmFreePages", "SetWasmPageGas",
+		"SetWasmPageLimit", "SetWasmMinInitGas", "SetWasmInitCostScalar",
+		"SetWasmExpiryDays", "SetWasmKeepaliveDays",
+		"SetWasmBlockCacheSize", "AddWasmCacheManager", "RemoveWasmCacheManager",
+	}
+	for _, method := range stylusMethods {
+		ArbOwner.methodsByName[method].arbosVersion = params.ArbosVersion_Stylus
+	}
 
 	insert(ownerOnly(ArbOwnerImpl.Address, ArbOwner, emitOwnerActs))
-	insert(debugOnly(MakePrecompile(templates.ArbDebugMetaData, &ArbDebug{Address: hex("ff")})))
+	_, arbDebug := MakePrecompile(pgen.ArbDebugMetaData, &ArbDebug{Address: types.ArbDebugAddress})
+	arbDebug.methodsByName["Panic"].arbosVersion = params.ArbosVersion_Stylus
+	insert(debugOnly(arbDebug.address, arbDebug))
 
-	ArbosActs := insert(MakePrecompile(templates.ArbosActsMetaData, &ArbosActs{Address: types.ArbosAddress}))
+	ArbosActs := insert(MakePrecompile(pgen.ArbosActsMetaData, &ArbosActs{Address: types.ArbosAddress}))
 	arbos.InternalTxStartBlockMethodID = ArbosActs.GetMethodID("StartBlock")
 	arbos.InternalTxBatchPostingReportMethodID = ArbosActs.GetMethodID("BatchPostingReport")
+
+	for _, contract := range contracts {
+		precompile := contract.Precompile()
+		arbosState.PrecompileMinArbOSVersions[precompile.address] = precompile.arbosVersion
+	}
 
 	return contracts
 }
@@ -618,6 +650,10 @@ func (p *Precompile) GetMethodID(name string) bytes4 {
 		panic(fmt.Sprintf("Precompile %v does not have a method with the name %v", p.name, name))
 	}
 	return *(*bytes4)(method.template.ID)
+}
+
+func (p *Precompile) ArbosVersion() uint64 {
+	return p.arbosVersion
 }
 
 // Call a precompile in typed form, deserializing its inputs and serializing its outputs
@@ -745,8 +781,14 @@ func (p *Precompile) Call(
 			}
 			return solErr.data, callerCtx.gasLeft, vm.ErrExecutionReverted
 		}
+		if errors.Is(errRet, programs.ErrProgramActivation) {
+			return nil, 0, errRet
+		}
 		if !errors.Is(errRet, vm.ErrOutOfGas) {
-			log.Debug("precompile reverted with non-solidity error", "precompile", precompileAddress, "input", input, "err", errRet)
+			log.Debug(
+				"precompile reverted with non-solidity error",
+				"precompile", precompileAddress, "input", input, "err", errRet,
+			)
 		}
 		// nolint:errorlint
 		if arbosVersion >= 11 || errRet == vm.ErrExecutionReverted {

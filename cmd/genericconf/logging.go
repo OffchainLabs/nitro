@@ -4,22 +4,46 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"io"
 	"os"
+	"sync"
 
 	"github.com/ethereum/go-ethereum/log"
 	"gopkg.in/natefinch/lumberjack.v2"
 )
 
-var globalFileHandlerFactory = fileHandlerFactory{}
+var globalFileLoggerFactory = fileLoggerFactory{}
 
-type fileHandlerFactory struct {
-	writer  *lumberjack.Logger
-	records chan *log.Record
-	cancel  context.CancelFunc
+type fileLoggerFactory struct {
+	// writerMutex is to avoid parallel writes to the file-logger
+	writerMutex sync.Mutex
+	writer      *lumberjack.Logger
+
+	cancel context.CancelFunc
+
+	// writeStartPing and writeDonePing are used to simulate sending of data via a buffered channel
+	// when Write is called and receiving it on another go-routine to write it to the io.Writer.
+	writeStartPing chan struct{}
+	writeDonePing  chan struct{}
 }
 
-// newHandler is not threadsafe
-func (l *fileHandlerFactory) newHandler(logFormat log.Format, config *FileLoggingConfig, filename string) log.Handler {
+// Write is essentially a wrapper for filewriter or lumberjack.Logger's Write method to implement
+// config.BufSize functionality, data is dropped when l.writeStartPing channel (of size config.BuffSize) is full
+func (l *fileLoggerFactory) Write(p []byte) (n int, err error) {
+	select {
+	case l.writeStartPing <- struct{}{}:
+		// Write data to the filelogger
+		l.writerMutex.Lock()
+		_, _ = l.writer.Write(p)
+		l.writerMutex.Unlock()
+		l.writeDonePing <- struct{}{}
+	default:
+	}
+	return len(p), nil
+}
+
+// newFileWriter is not threadsafe
+func (l *fileLoggerFactory) newFileWriter(config *FileLoggingConfig, filename string) io.Writer {
 	l.close()
 	l.writer = &lumberjack.Logger{
 		Filename:   filename,
@@ -28,40 +52,29 @@ func (l *fileHandlerFactory) newHandler(logFormat log.Format, config *FileLoggin
 		MaxAge:     config.MaxAge,
 		Compress:   config.Compress,
 	}
-	// capture copy of the pointer
-	writer := l.writer
-	// lumberjack.Logger already locks on Write, no need for SyncHandler proxy which is used in StreamHandler
-	unsafeStreamHandler := log.LazyHandler(log.FuncHandler(func(r *log.Record) error {
-		_, err := writer.Write(logFormat.Format(r))
-		return err
-	}))
-	l.records = make(chan *log.Record, config.BufSize)
+	l.writeStartPing = make(chan struct{}, config.BufSize)
+	l.writeDonePing = make(chan struct{}, config.BufSize)
 	// capture copy
-	records := l.records
+	writeStartPing := l.writeStartPing
+	writeDonePing := l.writeDonePing
 	var consumerCtx context.Context
 	consumerCtx, l.cancel = context.WithCancel(context.Background())
 	go func() {
+		// writeStartPing channel signals Write operations to correctly implement config.BufSize functionality
 		for {
 			select {
-			case r := <-records:
-				_ = unsafeStreamHandler.Log(r)
+			case <-writeStartPing:
+				<-writeDonePing
 			case <-consumerCtx.Done():
 				return
 			}
 		}
 	}()
-	return log.FuncHandler(func(r *log.Record) error {
-		select {
-		case records <- r:
-			return nil
-		default:
-			return fmt.Errorf("Buffer overflow, dropping record")
-		}
-	})
+	return l
 }
 
 // close is not threadsafe
-func (l *fileHandlerFactory) close() error {
+func (l *fileLoggerFactory) close() error {
 	if l.cancel != nil {
 		l.cancel()
 		l.cancel = nil
@@ -76,28 +89,35 @@ func (l *fileHandlerFactory) close() error {
 }
 
 // initLog is not threadsafe
-func InitLog(logType string, logLevel log.Lvl, fileLoggingConfig *FileLoggingConfig, pathResolver func(string) string) error {
-	logFormat, err := ParseLogType(logType)
-	if err != nil {
-		flag.Usage()
-		return fmt.Errorf("error parsing log type: %w", err)
-	}
+func InitLog(logType string, logLevel string, fileLoggingConfig *FileLoggingConfig, pathResolver func(string) string) error {
 	var glogger *log.GlogHandler
 	// always close previous instance of file logger
-	if err := globalFileHandlerFactory.close(); err != nil {
+	if err := globalFileLoggerFactory.close(); err != nil {
 		return fmt.Errorf("failed to close file writer: %w", err)
 	}
+	var output io.Writer
 	if fileLoggingConfig.Enable {
-		glogger = log.NewGlogHandler(
-			log.MultiHandler(
-				log.StreamHandler(os.Stderr, logFormat),
-				// on overflow records are dropped silently as MultiHandler ignores errors
-				globalFileHandlerFactory.newHandler(logFormat, fileLoggingConfig, pathResolver(fileLoggingConfig.File)),
-			))
+		output = io.MultiWriter(
+			io.Writer(os.Stderr),
+			// on overflow writeStartPing are dropped silently
+			globalFileLoggerFactory.newFileWriter(fileLoggingConfig, pathResolver(fileLoggingConfig.File)),
+		)
 	} else {
-		glogger = log.NewGlogHandler(log.StreamHandler(os.Stderr, logFormat))
+		output = io.Writer(os.Stderr)
 	}
-	glogger.Verbosity(logLevel)
-	log.Root().SetHandler(glogger)
+	handler, err := HandlerFromLogType(logType, output)
+	if err != nil {
+		flag.Usage()
+		return fmt.Errorf("error parsing log type when creating handler: %w", err)
+	}
+	slogLevel, err := ToSlogLevel(logLevel)
+	if err != nil {
+		flag.Usage()
+		return fmt.Errorf("error parsing log level: %w", err)
+	}
+
+	glogger = log.NewGlogHandler(handler)
+	glogger.Verbosity(slogLevel)
+	log.SetDefault(log.NewLogger(glogger))
 	return nil
 }

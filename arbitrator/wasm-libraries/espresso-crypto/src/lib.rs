@@ -1,24 +1,22 @@
+use caller_env::{static_caller::STATIC_MEM, GuestPtr, MemAccess};
 use espresso_crypto_helper::{verify_merkle_proof_helper, verify_namespace_helper};
-use go_abi::*;
 
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_espressocrypto_verifyNamespace(
-    sp: GoStack,
+pub unsafe extern "C" fn espressocrypto__verifyNamespace(
+    namespace: u64,
+    proof_ptr: GuestPtr,
+    proof_len: u64,
+    payload_comm_ptr: GuestPtr,
+    payload_comm_len: u64,
+    ns_table_ptr: GuestPtr,
+    ns_table_len: u64,
+    txs_comm_ptr: GuestPtr,
+    txs_comm_len: u64,
 ) {
-    let namespace = sp.read_u64(0);
-    let proof_buf_ptr = sp.read_u64(1);
-    let proof_buf_len = sp.read_u64(2);
-    let payload_comm_buf_ptr = sp.read_u64(4);
-    let payload_comm_buf_len = sp.read_u64(5);
-    let ns_table_bytes_ptr = sp.read_u64(7);
-    let ns_table_bytes_len = sp.read_u64(8);
-    let txs_comm_ptr = sp.read_u64(10);
-    let txs_comm_len = sp.read_u64(11);
-
-    let proof_bytes = read_slice(proof_buf_ptr, proof_buf_len);
-    let payload_comm_bytes = read_slice(payload_comm_buf_ptr, payload_comm_buf_len);
-    let tx_comm_bytes = read_slice(txs_comm_ptr, txs_comm_len);
-    let ns_table_bytes = read_slice(ns_table_bytes_ptr, ns_table_bytes_len);
+    let proof_bytes = STATIC_MEM.read_slice(proof_ptr, proof_len as usize);
+    let payload_comm_bytes = STATIC_MEM.read_slice(payload_comm_ptr, payload_comm_len as usize);
+    let tx_comm_bytes = STATIC_MEM.read_slice(txs_comm_ptr, txs_comm_len as usize);
+    let ns_table_bytes = STATIC_MEM.read_slice(ns_table_ptr, ns_table_len as usize);
 
     verify_namespace_helper(
         namespace,
@@ -30,22 +28,20 @@ pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_espressocrypto_verify
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn go__github_com_offchainlabs_nitro_espressocrypto_verifyMerkleProof(
-    sp: GoStack,
+pub unsafe extern "C" fn espressocrypto__verifyMerkleProof(
+    proof_ptr: GuestPtr,
+    proof_len: u64,
+    header_ptr: GuestPtr,
+    header_len: u64,
+    block_comm_ptr: GuestPtr,
+    block_comm_len: u64,
+    circuit_ptr: GuestPtr,
+    circuit_len: u64,
 ) {
-    let proof_buf_ptr = sp.read_u64(0);
-    let proof_buf_len = sp.read_u64(1);
-    let header_buf_ptr = sp.read_u64(3);
-    let header_buf_len = sp.read_u64(4);
-    let block_comm_buf_ptr = sp.read_u64(6);
-    let block_comm_buf_len = sp.read_u64(7);
-    let circuit_buf_ptr = sp.read_u64(9);
-    let circuit_buf_len = sp.read_u64(10);
-
-    let proof_bytes = read_slice(proof_buf_ptr, proof_buf_len);
-    let header_bytes = read_slice(header_buf_ptr, header_buf_len);
-    let block_comm_bytes = read_slice(block_comm_buf_ptr, block_comm_buf_len);
-    let circuit_comm_bytes = read_slice(circuit_buf_ptr, circuit_buf_len);
+    let proof_bytes = STATIC_MEM.read_slice(proof_ptr, proof_len as usize);
+    let header_bytes = STATIC_MEM.read_slice(header_ptr, header_len as usize);
+    let block_comm_bytes = STATIC_MEM.read_slice(block_comm_ptr, block_comm_len as usize);
+    let circuit_comm_bytes = STATIC_MEM.read_slice(circuit_ptr, circuit_len as usize);
 
     verify_merkle_proof_helper(
         &proof_bytes,

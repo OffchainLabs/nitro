@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/validator"
@@ -22,6 +23,7 @@ type RecordResult struct {
 	BlockHash common.Hash
 	Preimages map[common.Hash][]byte
 	BatchInfo []validator.BatchInfo
+	UserWasms state.UserWasms
 }
 
 var ErrRetrySequencer = errors.New("please retry transaction")
@@ -29,8 +31,8 @@ var ErrSequencerInsertLockTaken = errors.New("insert lock taken")
 
 // always needed
 type ExecutionClient interface {
-	DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) error
-	Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) error
+	DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*MessageResult, error)
+	Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) ([]*MessageResult, error)
 	HeadMessageNumber() (arbutil.MessageIndex, error)
 	HeadMessageNumberSync(t *testing.T) (arbutil.MessageIndex, error)
 	ResultAtPos(pos arbutil.MessageIndex) (*MessageResult, error)
@@ -55,7 +57,7 @@ type ExecutionSequencer interface {
 	ForwardTo(url string) error
 	SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error
 	NextDelayedMessageNumber() (uint64, error)
-	SetTransactionStreamer(streamer TransactionStreamer)
+	GetL1GasPriceEstimate() (uint64, error)
 }
 
 type FullExecutionClient interface {
@@ -68,19 +70,38 @@ type FullExecutionClient interface {
 
 	Maintenance() error
 
-	// TODO: only used to get safe/finalized block numbers
-	MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) uint64
-
 	ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error)
 }
 
 // not implemented in execution, used as input
+// BatchFetcher is required for any execution node
 type BatchFetcher interface {
-	FetchBatch(batchNum uint64) ([]byte, common.Hash, error)
+	FetchBatch(ctx context.Context, batchNum uint64) ([]byte, common.Hash, error)
+	FindInboxBatchContainingMessage(message arbutil.MessageIndex) (uint64, bool, error)
+	GetBatchParentChainBlock(seqNum uint64) (uint64, error)
 }
 
-type TransactionStreamer interface {
-	BatchFetcher
-	WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata) error
+type ConsensusInfo interface {
+	Synced() bool
+	FullSyncProgressMap() map[string]interface{}
+	SyncTargetMessageCount() arbutil.MessageIndex
+
+	// TODO: switch from pulling to pushing safe/finalized
+	GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex, error)
+	GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error)
+	ValidatedMessageCount() (arbutil.MessageIndex, error)
+}
+
+type ConsensusSequencer interface {
+	WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult MessageResult) error
 	ExpectChosenSequencer() error
+	CacheL1PriceDataOfMsg(pos arbutil.MessageIndex, callDataUnits uint64, l1GasCharged uint64)
+	BacklogL1GasCharged() uint64
+	BacklogCallDataUnits() uint64
+}
+
+type FullConsensusClient interface {
+	BatchFetcher
+	ConsensusInfo
+	ConsensusSequencer
 }
