@@ -178,10 +178,15 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				if !arbmath.BigEquals(chainConfig.ChainID, chainId) {
 					return nil, nil, fmt.Errorf("database has chain ID %v but config has chain ID %v (are you sure this database is for the right chain?)", chainConfig.ChainID, chainId)
 				}
-				chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, config.Persistent.Ancient, "l2chaindata/", false)
+				chainData, err := stack.OpenDatabaseWithFreezer("l2chaindata", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, config.Persistent.Ancient, "l2chaindata/", false)
 				if err != nil {
-					return chainDb, nil, err
+					return nil, nil, err
 				}
+				wasmDb, err := stack.OpenDatabase("wasm", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, "wasm/", false)
+				if err != nil {
+					return nil, nil, err
+				}
+				chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb)
 				err = pruning.PruneChainDb(ctx, chainDb, stack, &config.Init, cacheConfig, l1Client, rollupAddrs, config.Node.ValidatorRequired())
 				if err != nil {
 					return chainDb, nil, fmt.Errorf("error pruning: %w", err)
@@ -230,10 +235,15 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 
 	var initDataReader statetransfer.InitDataReader = nil
 
-	chainDb, err := stack.OpenDatabaseWithFreezer("l2chaindata", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, config.Persistent.Ancient, "l2chaindata/", false)
+	chainData, err := stack.OpenDatabaseWithFreezer("l2chaindata", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, config.Persistent.Ancient, "l2chaindata/", false)
 	if err != nil {
-		return chainDb, nil, err
+		return nil, nil, err
 	}
+	wasmDb, err := stack.OpenDatabase("wasm", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, "wasm/", false)
+	if err != nil {
+		return nil, nil, err
+	}
+	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb)
 
 	if config.Init.ImportFile != "" {
 		initDataReader, err = statetransfer.NewJsonInitDataReader(config.Init.ImportFile)

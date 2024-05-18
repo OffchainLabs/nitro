@@ -217,6 +217,10 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 func rpcClient(ctx context.Context, opts *ExternalSignerCfg) (*rpc.Client, error) {
 	tlsCfg := &tls.Config{
 		MinVersion: tls.VersionTLS12,
+		// Dataposter verifies that signed transaction was signed by the account
+		// that it expects to be signed with. So signer is already authenticated
+		// on application level and does not need to rely on TLS for authentication.
+		InsecureSkipVerify: opts.InsecureSkipVerify, // #nosec G402
 	}
 
 	if opts.ClientCert != "" && opts.ClientPrivateKey != "" {
@@ -592,7 +596,7 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	targetBlobCost := arbmath.BigMulByUint(newBlobFeeCap, blobGasUsed)
 	targetNonBlobCost := arbmath.BigSub(targetMaxCost, targetBlobCost)
 	newBaseFeeCap := arbmath.BigDivByUint(targetNonBlobCost, gasLimit)
-	if lastTx != nil && numBlobs > 0 && arbmath.BigDivToBips(newBaseFeeCap, lastTx.GasFeeCap()) < minRbfIncrease {
+	if lastTx != nil && numBlobs > 0 && lastTx.GasFeeCap().Sign() > 0 && arbmath.BigDivToBips(newBaseFeeCap, lastTx.GasFeeCap()) < minRbfIncrease {
 		// Increase the non-blob fee cap to the minimum rbf increase
 		newBaseFeeCap = arbmath.BigMulByBips(lastTx.GasFeeCap(), minRbfIncrease)
 		newNonBlobCost := arbmath.BigMulByUint(newBaseFeeCap, gasLimit)
@@ -663,6 +667,14 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 		log.Info("can't meet current parent chain fees with current target max cost", logFields...)
 		// wait until we have a higher target max cost to replace by fee
 		return lastTx.GasFeeCap(), lastTx.GasTipCap(), lastTx.BlobGasFeeCap(), nil
+	}
+
+	// Ensure we bid at least 1 wei to prevent division by zero
+	if newBaseFeeCap.Sign() == 0 {
+		newBaseFeeCap = big.NewInt(1)
+	}
+	if newBlobFeeCap.Sign() == 0 {
+		newBlobFeeCap = big.NewInt(1)
 	}
 
 	return newBaseFeeCap, newTipCap, newBlobFeeCap, nil
@@ -934,8 +946,8 @@ func (p *DataPoster) replaceTx(ctx context.Context, prevTx *storage.QueuedTransa
 	}
 
 	newTx := *prevTx
-	if arbmath.BigDivToBips(newFeeCap, prevTx.FullTx.GasFeeCap()) < minRbfIncrease ||
-		(prevTx.FullTx.BlobGasFeeCap() != nil && arbmath.BigDivToBips(newBlobFeeCap, prevTx.FullTx.BlobGasFeeCap()) < minRbfIncrease) {
+	if (prevTx.FullTx.GasFeeCap().Sign() > 0 && arbmath.BigDivToBips(newFeeCap, prevTx.FullTx.GasFeeCap()) < minRbfIncrease) ||
+		(prevTx.FullTx.BlobGasFeeCap() != nil && prevTx.FullTx.BlobGasFeeCap().Sign() > 0 && arbmath.BigDivToBips(newBlobFeeCap, prevTx.FullTx.BlobGasFeeCap()) < minRbfIncrease) {
 		log.Debug(
 			"no need to replace by fee transaction",
 			"nonce", prevTx.FullTx.Nonce(),
@@ -1215,6 +1227,8 @@ type ExternalSignerCfg struct {
 	// (Optional) Client certificate key for mtls.
 	// This is required when client-cert is set.
 	ClientPrivateKey string `koanf:"client-private-key"`
+	// TLS config option, when enabled skips certificate verification of external signer.
+	InsecureSkipVerify bool `koanf:"insecure-skip-verify"`
 }
 
 type DangerousConfig struct {
@@ -1268,6 +1282,7 @@ func addExternalSignerOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".root-ca", DefaultDataPosterConfig.ExternalSigner.RootCA, "external signer root CA")
 	f.String(prefix+".client-cert", DefaultDataPosterConfig.ExternalSigner.ClientCert, "rpc client cert")
 	f.String(prefix+".client-private-key", DefaultDataPosterConfig.ExternalSigner.ClientPrivateKey, "rpc client private key")
+	f.Bool(prefix+".insecure-skip-verify", DefaultDataPosterConfig.ExternalSigner.InsecureSkipVerify, "skip TLS certificate verification")
 }
 
 var DefaultDataPosterConfig = DataPosterConfig{
@@ -1289,7 +1304,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	UseNoOpStorage:         false,
 	LegacyStorageEncoding:  false,
 	Dangerous:              DangerousConfig{ClearDBStorage: false},
-	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction"},
+	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction", InsecureSkipVerify: false},
 	MaxFeeCapFormula:       "((BacklogOfBatches * UrgencyGWei) ** 2) + ((ElapsedTime/ElapsedTimeBase) ** 2) * ElapsedTimeImportance + TargetPriceGWei",
 	ElapsedTimeBase:        10 * time.Minute,
 	ElapsedTimeImportance:  10,
@@ -1322,7 +1337,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	UseDBStorage:           false,
 	UseNoOpStorage:         false,
 	LegacyStorageEncoding:  false,
-	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction"},
+	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction", InsecureSkipVerify: true},
 	MaxFeeCapFormula:       "((BacklogOfBatches * UrgencyGWei) ** 2) + ((ElapsedTime/ElapsedTimeBase) ** 2) * ElapsedTimeImportance + TargetPriceGWei",
 	ElapsedTimeBase:        10 * time.Minute,
 	ElapsedTimeImportance:  10,
