@@ -137,8 +137,10 @@ func FuzzStateTransition(f *testing.F) {
 			ChainConfig:           chainConfig,
 			SerializedChainConfig: serializedChainConfig,
 		}
+		cacheConfig := core.DefaultCacheConfigWithScheme(rawdb.PathScheme)
 		stateRoot, err := arbosState.InitializeArbosInDatabase(
 			chainDb,
+			cacheConfig,
 			statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{}),
 			chainConfig,
 			initMessage,
@@ -148,7 +150,8 @@ func FuzzStateTransition(f *testing.F) {
 		if err != nil {
 			panic(err)
 		}
-		statedb, err := state.New(stateRoot, state.NewDatabase(chainDb), nil)
+		trieDBConfig := arbosState.TriedbConfig(cacheConfig)
+		statedb, err := state.New(stateRoot, state.NewDatabaseWithConfig(chainDb, trieDBConfig), nil)
 		if err != nil {
 			panic(err)
 		}
