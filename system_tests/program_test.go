@@ -1475,6 +1475,8 @@ func setupProgramTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder))
 		opt(builder)
 	}
 
+	// setupProgramTest is being called from tests that validate blocks.
+	// By now validation only works with HashScheme set.
 	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 	builder.nodeConfig.BlockValidator.Enable = false
 	builder.nodeConfig.Staker.Enable = true
