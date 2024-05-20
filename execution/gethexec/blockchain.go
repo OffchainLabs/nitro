@@ -93,7 +93,7 @@ var TestCachingConfig = CachingConfig{
 }
 
 var (
-	InvalidStateSchemeForArchive = errors.New("Archive cannot be set when using PathScheme as the StateScheme")
+	InvalidStateSchemeForArchive = errors.New("archive cannot be set when using path as the state-scheme")
 )
 
 func DefaultTestCachingConfig() CachingConfig {
