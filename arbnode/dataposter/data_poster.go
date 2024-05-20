@@ -217,6 +217,10 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 func rpcClient(ctx context.Context, opts *ExternalSignerCfg) (*rpc.Client, error) {
 	tlsCfg := &tls.Config{
 		MinVersion: tls.VersionTLS12,
+		// Dataposter verifies that signed transaction was signed by the account
+		// that it expects to be signed with. So signer is already authenticated
+		// on application level and does not need to rely on TLS for authentication.
+		InsecureSkipVerify: opts.InsecureSkipVerify, // #nosec G402
 	}
 
 	if opts.ClientCert != "" && opts.ClientPrivateKey != "" {
@@ -1223,6 +1227,8 @@ type ExternalSignerCfg struct {
 	// (Optional) Client certificate key for mtls.
 	// This is required when client-cert is set.
 	ClientPrivateKey string `koanf:"client-private-key"`
+	// TLS config option, when enabled skips certificate verification of external signer.
+	InsecureSkipVerify bool `koanf:"insecure-skip-verify"`
 }
 
 type DangerousConfig struct {
@@ -1276,6 +1282,7 @@ func addExternalSignerOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".root-ca", DefaultDataPosterConfig.ExternalSigner.RootCA, "external signer root CA")
 	f.String(prefix+".client-cert", DefaultDataPosterConfig.ExternalSigner.ClientCert, "rpc client cert")
 	f.String(prefix+".client-private-key", DefaultDataPosterConfig.ExternalSigner.ClientPrivateKey, "rpc client private key")
+	f.Bool(prefix+".insecure-skip-verify", DefaultDataPosterConfig.ExternalSigner.InsecureSkipVerify, "skip TLS certificate verification")
 }
 
 var DefaultDataPosterConfig = DataPosterConfig{
@@ -1297,7 +1304,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	UseNoOpStorage:         false,
 	LegacyStorageEncoding:  false,
 	Dangerous:              DangerousConfig{ClearDBStorage: false},
-	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction"},
+	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction", InsecureSkipVerify: false},
 	MaxFeeCapFormula:       "((BacklogOfBatches * UrgencyGWei) ** 2) + ((ElapsedTime/ElapsedTimeBase) ** 2) * ElapsedTimeImportance + TargetPriceGWei",
 	ElapsedTimeBase:        10 * time.Minute,
 	ElapsedTimeImportance:  10,
@@ -1330,7 +1337,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	UseDBStorage:           false,
 	UseNoOpStorage:         false,
 	LegacyStorageEncoding:  false,
-	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction"},
+	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction", InsecureSkipVerify: true},
 	MaxFeeCapFormula:       "((BacklogOfBatches * UrgencyGWei) ** 2) + ((ElapsedTime/ElapsedTimeBase) ** 2) * ElapsedTimeImportance + TargetPriceGWei",
 	ElapsedTimeBase:        10 * time.Minute,
 	ElapsedTimeImportance:  10,
