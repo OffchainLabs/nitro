@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"crypto/ecdsa"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -452,7 +453,21 @@ func mainImpl() int {
 		if len(allowedWasmModuleRoots) > 0 {
 			moduleRootMatched := false
 			for _, root := range allowedWasmModuleRoots {
-				if common.HexToHash(root) == moduleRoot {
+				bytes, err := hex.DecodeString(root)
+				if err == nil {
+					if common.HexToHash(root) == common.BytesToHash(bytes) {
+						moduleRootMatched = true
+						break
+					}
+					continue
+				}
+				locator, locatorErr := server_common.NewMachineLocator(root)
+				if err != nil {
+					log.Warn("allowed-wasm-module-roots: value not a hex nor valid path:", "value", root, "locatorErr", locatorErr, "decodeErr", err)
+					continue
+				}
+				path := locator.GetMachinePath(moduleRoot)
+				if _, err := os.Stat(path); err == nil {
 					moduleRootMatched = true
 					break
 				}
