@@ -12,7 +12,6 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/triedb"
 	"github.com/ethereum/go-ethereum/triedb/hashdb"
-	"github.com/ethereum/go-ethereum/triedb/pathdb"
 )
 
 func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheConfig *core.CacheConfig, startBlock uint64) error {
@@ -33,21 +32,15 @@ func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheCon
 		return fmt.Errorf("start block parent is missing, parent block number: %d", current-1)
 	}
 
+	if cacheConfig.StateScheme == rawdb.PathScheme {
+		return fmt.Errorf("recreating missing states, which is supposed to only run in archive mode, is not supported with path scheme")
+	}
+
+	hashConfig := *hashdb.Defaults
+	hashConfig.CleanCacheSize = cacheConfig.TrieCleanLimit * 1024 * 1024
 	trieConfig := &triedb.Config{
 		Preimages: false,
-	}
-	if cacheConfig.StateScheme == rawdb.PathScheme {
-		// TODO: RecreateMissingStates should only be used for archive nodes,
-		// check if it is worth keeping this option here
-		trieConfig.PathDB = &pathdb.Config{
-			StateHistory:   cacheConfig.StateHistory,
-			CleanCacheSize: cacheConfig.TrieCleanLimit * 1024 * 1024,
-			DirtyCacheSize: cacheConfig.TrieDirtyLimit * 1024 * 1024,
-		}
-	} else {
-		hashConfig := *hashdb.Defaults
-		hashConfig.CleanCacheSize = cacheConfig.TrieCleanLimit * 1024 * 1024
-		trieConfig.HashDB = &hashConfig
+		HashDB:    &hashConfig,
 	}
 
 	database := state.NewDatabaseWithConfig(chainDb, trieConfig)
