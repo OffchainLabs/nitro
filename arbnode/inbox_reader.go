@@ -32,6 +32,9 @@ type InboxReaderConfig struct {
 	TargetMessagesRead  uint64        `koanf:"target-messages-read" reload:"hot"`
 	MaxBlocksToRead     uint64        `koanf:"max-blocks-to-read" reload:"hot"`
 	ReadMode            string        `koanf:"read-mode" reload:"hot"`
+	EnableSnapSync      bool          `koanf:"enable-snap-sync"`
+	// SnapSyncTest is only used for testing purposes, these should not be configured in production.
+	SnapSyncTest SnapSyncConfig
 }
 
 type InboxReaderConfigFetcher func() *InboxReaderConfig
@@ -56,6 +59,7 @@ func InboxReaderConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".target-messages-read", DefaultInboxReaderConfig.TargetMessagesRead, "if adjust-blocks-to-read is enabled, the target number of messages to read at once")
 	f.Uint64(prefix+".max-blocks-to-read", DefaultInboxReaderConfig.MaxBlocksToRead, "if adjust-blocks-to-read is enabled, the maximum number of blocks to read at once")
 	f.String(prefix+".read-mode", DefaultInboxReaderConfig.ReadMode, "mode to only read latest or safe or finalized L1 blocks. Enabling safe or finalized disables feed input and output. Defaults to latest. Takes string input, valid strings- latest, safe, finalized")
+	f.Bool(prefix+".enable-snap-sync", false, "enable snap sync")
 }
 
 var DefaultInboxReaderConfig = InboxReaderConfig{
@@ -95,13 +99,14 @@ type InboxReader struct {
 	caughtUpChan   chan struct{}
 	client         arbutil.L1Interface
 	l1Reader       *headerreader.HeaderReader
+	rollupAddress  common.Address
 
 	// Atomic
 	lastSeenBatchCount uint64
 	lastReadBatchCount uint64
 }
 
-func NewInboxReader(tracker *InboxTracker, client arbutil.L1Interface, l1Reader *headerreader.HeaderReader, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config InboxReaderConfigFetcher) (*InboxReader, error) {
+func NewInboxReader(tracker *InboxTracker, client arbutil.L1Interface, l1Reader *headerreader.HeaderReader, firstMessageBlock *big.Int, rollupAddress common.Address, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config InboxReaderConfigFetcher) (*InboxReader, error) {
 	err := config().Validate()
 	if err != nil {
 		return nil, err
@@ -115,12 +120,40 @@ func NewInboxReader(tracker *InboxTracker, client arbutil.L1Interface, l1Reader 
 		firstMessageBlock: firstMessageBlock,
 		caughtUpChan:      make(chan struct{}),
 		config:            config,
+		rollupAddress:     rollupAddress,
 	}, nil
 }
 
 func (r *InboxReader) Start(ctxIn context.Context) error {
 	r.StopWaiter.Start(ctxIn, r)
 	hadError := false
+	if r.config().EnableSnapSync {
+		batchCount, err := r.tracker.GetBatchCount()
+		if err != nil {
+			return err
+		}
+		if batchCount == 0 {
+			snapSyncConfig := r.fetchSnapSyncParameters()
+			r.tracker.SetSnapSyncParameters(snapSyncConfig)
+			r.tracker.txStreamer.SetSnapSyncParameters(snapSyncConfig)
+			firstMessageToRead := snapSyncConfig.DelayedCount
+			if firstMessageToRead > snapSyncConfig.BatchCount {
+				firstMessageToRead = snapSyncConfig.BatchCount
+			}
+			if firstMessageToRead > 0 {
+				firstMessageToRead--
+			}
+			// Find the first block containing the first message to read
+			// Subtract 1 to get the block before the first message to read,
+			// this is done to fetch previous batch metadata needed for snap sync.
+			block, err := FindBlockContainingBatch(ctxIn, r.rollupAddress, r.client, snapSyncConfig.ParentChainAssertionBlock, firstMessageToRead-1)
+			if err != nil {
+				return err
+			}
+			r.firstMessageBlock.SetUint64(block)
+		}
+
+	}
 	r.CallIteratively(func(ctx context.Context) time.Duration {
 		err := r.run(ctx, hadError)
 		if err != nil && !errors.Is(err, context.Canceled) && !strings.Contains(err.Error(), "header not found") {
@@ -139,7 +172,7 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 			return err
 		}
 		if batchCount > 0 {
-			if r.tracker.snapSyncConfig.Enabled {
+			if r.config().EnableSnapSync {
 				break
 			}
 			// Validate the init message matches our L2 blockchain
@@ -170,6 +203,12 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 	}
 
 	return nil
+}
+
+func (r *InboxReader) fetchSnapSyncParameters() SnapSyncConfig {
+	// In the future, we will implement a way to fetch this is from other nodes,
+	// but for now we will just use the test config
+	return r.config().SnapSyncTest
 }
 
 // assumes l1block is recent so we could do a simple-search from the end

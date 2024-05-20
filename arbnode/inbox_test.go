@@ -66,7 +66,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 		Fail(t, err)
 	}
 	execSeq := &execClientWrapper{execEngine, t}
-	inbox, err := NewTransactionStreamer(arbDb, bc.Config(), execSeq, nil, make(chan error, 1), transactionStreamerConfigFetcher, &DefaultSnapSyncConfig)
+	inbox, err := NewTransactionStreamer(arbDb, bc.Config(), execSeq, nil, make(chan error, 1), transactionStreamerConfigFetcher)
 	if err != nil {
 		Fail(t, err)
 	}

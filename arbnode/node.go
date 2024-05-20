@@ -93,8 +93,6 @@ type Config struct {
 	TransactionStreamer TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
 	Maintenance         MaintenanceConfig           `koanf:"maintenance" reload:"hot"`
 	ResourceMgmt        resourcemanager.Config      `koanf:"resource-mgmt" reload:"hot"`
-	// SnapSyncConfig is only used for testing purposes, these should not be configured in production.
-	SnapSyncTest SnapSyncConfig
 }
 
 func (c *Config) Validate() error {
@@ -177,7 +175,6 @@ var ConfigDefault = Config{
 	TransactionStreamer: DefaultTransactionStreamerConfig,
 	ResourceMgmt:        resourcemanager.DefaultConfig,
 	Maintenance:         DefaultMaintenanceConfig,
-	SnapSyncTest:        DefaultSnapSyncConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -283,15 +280,6 @@ type SnapSyncConfig struct {
 	BatchCount                uint64
 	DelayedCount              uint64
 	ParentChainAssertionBlock uint64
-}
-
-var DefaultSnapSyncConfig = SnapSyncConfig{
-	Enabled:                   false,
-	PrevBatchMessageCount:     0,
-	PrevDelayedRead:           0,
-	BatchCount:                0,
-	DelayedCount:              0,
-	ParentChainAssertionBlock: 0,
 }
 
 type ConfigFetcher interface {
@@ -431,7 +419,7 @@ func createNodeImpl(
 	}
 
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &configFetcher.Get().TransactionStreamer }
-	txStreamer, err := NewTransactionStreamer(arbDb, l2Config, exec, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher, &configFetcher.Get().SnapSyncTest)
+	txStreamer, err := NewTransactionStreamer(arbDb, l2Config, exec, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher)
 	if err != nil {
 		return nil, err
 	}
@@ -561,29 +549,11 @@ func createNodeImpl(
 	if blobReader != nil {
 		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(blobReader))
 	}
-	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, dapReaders, config.SnapSyncTest)
+	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, dapReaders)
 	if err != nil {
 		return nil, err
 	}
-	firstMessageBlock := new(big.Int).SetUint64(deployInfo.DeployedAt)
-	if config.SnapSyncTest.Enabled {
-		firstMessageToRead := config.SnapSyncTest.DelayedCount
-		if firstMessageToRead > config.SnapSyncTest.BatchCount {
-			firstMessageToRead = config.SnapSyncTest.BatchCount
-		}
-		if firstMessageToRead > 0 {
-			firstMessageToRead--
-		}
-		// Find the first block containing the first message to read
-		// Subtract 1 to get the block before the first message to read,
-		// this is done to fetch previous batch metadata needed for snap sync.
-		block, err := FindBlockContainingBatch(ctx, deployInfo.Rollup, l1client, config.SnapSyncTest.ParentChainAssertionBlock, firstMessageToRead-1)
-		if err != nil {
-			return nil, err
-		}
-		firstMessageBlock.SetUint64(block)
-	}
-	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, firstMessageBlock, delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &configFetcher.Get().InboxReader })
+	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, new(big.Int).SetUint64(deployInfo.DeployedAt), deployInfo.Rollup, delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &configFetcher.Get().InboxReader })
 	if err != nil {
 		return nil, err
 	}

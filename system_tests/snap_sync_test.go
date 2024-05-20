@@ -77,11 +77,12 @@ func TestSnapSync(t *testing.T) {
 	Require(t, err)
 	// Create a config with snap sync enabled and same database directory as the 2nd node
 	nodeConfig := builder.nodeConfig
-	nodeConfig.SnapSyncTest.Enabled = true
-	nodeConfig.SnapSyncTest.BatchCount = batchCount
-	nodeConfig.SnapSyncTest.DelayedCount = prevBatchMetaData.DelayedMessageCount - 1
-	nodeConfig.SnapSyncTest.PrevDelayedRead = prevMessage.DelayedMessagesRead
-	nodeConfig.SnapSyncTest.PrevBatchMessageCount = uint64(prevBatchMetaData.MessageCount)
+	nodeConfig.InboxReader.EnableSnapSync = true
+	nodeConfig.InboxReader.SnapSyncTest.Enabled = true
+	nodeConfig.InboxReader.SnapSyncTest.BatchCount = batchCount
+	nodeConfig.InboxReader.SnapSyncTest.DelayedCount = prevBatchMetaData.DelayedMessageCount - 1
+	nodeConfig.InboxReader.SnapSyncTest.PrevDelayedRead = prevMessage.DelayedMessagesRead
+	nodeConfig.InboxReader.SnapSyncTest.PrevBatchMessageCount = uint64(prevBatchMetaData.MessageCount)
 	// Cleanup the message data of 2nd node, but keep the block state data.
 	// This is to simulate a snap sync environment where we’ve just gotten the block state but don’t have any messages.
 	err = os.RemoveAll(nodeB.ConsensusNode.Stack.ResolvePath("arbitrumdata"))
