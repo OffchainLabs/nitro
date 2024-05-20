@@ -118,10 +118,10 @@ func (m *MessagePruner) prune(ctx context.Context, count arbutil.MessageIndex, g
 func (m *MessagePruner) deleteOldMessagesFromDB(ctx context.Context, messageCount arbutil.MessageIndex, delayedMessageCount uint64) error {
 	prunedKeysRange, err := deleteFromLastPrunedUptoEndKey(ctx, m.transactionStreamer.db, blockHashInputFeedPrefix, &m.cachedPrunedBlockHashesInputFeed, uint64(messageCount))
 	if err != nil {
-		return fmt.Errorf("error deleting last batch messages' block hashes: %w", err)
+		return fmt.Errorf("error deleting expected block hashes: %w", err)
 	}
 	if len(prunedKeysRange) > 0 {
-		log.Info("Pruned last batch messages' block hashes:", "first pruned key", prunedKeysRange[0], "last pruned key", prunedKeysRange[len(prunedKeysRange)-1])
+		log.Info("Pruned expected block hashes:", "first pruned key", prunedKeysRange[0], "last pruned key", prunedKeysRange[len(prunedKeysRange)-1])
 	}
 
 	prunedKeysRange, err = deleteFromLastPrunedUptoEndKey(ctx, m.transactionStreamer.db, messagePrefix, &m.cachedPrunedMessages, uint64(messageCount))
