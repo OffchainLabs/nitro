@@ -1458,3 +1458,81 @@ func formatTime(duration time.Duration) string {
 	}
 	return fmt.Sprintf("%.2f%s", span, units[unit])
 }
+
+func TestWasmRecreate(t *testing.T) {
+	builder, auth, cleanup := setupProgramTest(t, true)
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	storage := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
+
+	zero := common.Hash{}
+	val := common.HexToHash("0x121233445566")
+
+	// do an onchain call - store value
+	storeTx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, argsForStorageWrite(zero, val))
+	Require(t, l2client.SendTransaction(ctx, storeTx))
+	_, err := EnsureTxSucceeded(ctx, l2client, storeTx)
+	Require(t, err)
+
+	testDir := t.TempDir()
+	nodeBStack := createStackConfigForTest(testDir)
+	nodeB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack})
+
+	_, err = EnsureTxSucceeded(ctx, nodeB.Client, storeTx)
+	Require(t, err)
+
+	// make sure reading 2nd value succeeds from 2nd node
+	loadTx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, argsForStorageRead(zero))
+	result, err := arbutil.SendTxAsCall(ctx, nodeB.Client, loadTx, l2info.GetAddress("Owner"), nil, true)
+	Require(t, err)
+	if common.BytesToHash(result) != val {
+		Fatal(t, "got wrong value")
+	}
+	// close nodeB
+	cleanupB()
+
+	// delete wasm dir of nodeB
+
+	wasmPath := filepath.Join(testDir, "system_tests.test", "wasm")
+	dirContents, err := os.ReadDir(wasmPath)
+	Require(t, err)
+	if len(dirContents) == 0 {
+		Fatal(t, "not contents found before delete")
+	}
+	os.RemoveAll(wasmPath)
+
+	// recreate nodeB - using same source dir (wasm deleted)
+	nodeB, cleanupB = builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack})
+
+	// test nodeB - sees existing transaction
+	_, err = EnsureTxSucceeded(ctx, nodeB.Client, storeTx)
+	Require(t, err)
+
+	// test nodeB - answers eth_call (requires reloading wasm)
+	result, err = arbutil.SendTxAsCall(ctx, nodeB.Client, loadTx, l2info.GetAddress("Owner"), nil, true)
+	Require(t, err)
+	if common.BytesToHash(result) != val {
+		Fatal(t, "got wrong value")
+	}
+
+	// send new tx (requires wasm) and check nodeB sees it as well
+	Require(t, l2client.SendTransaction(ctx, loadTx))
+
+	_, err = EnsureTxSucceeded(ctx, l2client, loadTx)
+	Require(t, err)
+
+	_, err = EnsureTxSucceeded(ctx, nodeB.Client, loadTx)
+	Require(t, err)
+
+	cleanupB()
+	dirContents, err = os.ReadDir(wasmPath)
+	Require(t, err)
+	if len(dirContents) == 0 {
+		Fatal(t, "not contents found before delete")
+	}
+	os.RemoveAll(wasmPath)
+
+}
