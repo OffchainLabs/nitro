@@ -203,6 +203,7 @@ COPY ./scripts/download-machine.sh .
 #RUN ./download-machine.sh consensus-v11 0xf4389b835497a910d7ba3ebfb77aa93da985634f3c052de1290360635be40c4a
 #RUN ./download-machine.sh consensus-v11.1 0x68e4fe5023f792d4ef584796c84d710303a5e12ea02d6e37e2b5e9c4332507c4
 #RUN ./download-machine.sh consensus-v20 0x8b104a2e80ac6165dc58b9048de12f301d70b02a0ab51396c22b4b4b802a16a4
+RUN ./download-machine.sh consensus-v30-rc.1 0x8805d035d5fdb8bb4450f306d9ab82633e2b6316260529cdcaf1b3702afbd5d5
 
 FROM golang:1.21-bookworm as node-builder
 WORKDIR /workspace
@@ -268,11 +269,15 @@ USER user
 WORKDIR /home/user/
 ENTRYPOINT [ "/usr/local/bin/nitro" ]
 
+FROM offchainlabs/nitro-node:v2.3.4-rc.5-b4cc111 as nitro-legacy
+
 FROM nitro-node-slim as nitro-node
 USER root
 COPY --from=prover-export /bin/jit                        /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/daserver  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/datool    /usr/local/bin/
+COPY --from=nitro-legacy /home/user/target/machines /home/user/nitro-legacy/machines
+RUN rm -rf /workspace/target/legacy-machines/latest
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y \
@@ -282,10 +287,23 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /usr/lib/python3.9/__pycache__/ /usr/lib/python3.9/*/__pycache__/ /var/log/* && \
     nitro --version
+ENTRYPOINT [ "/usr/local/bin/nitro" , "--validation.wasm.allowed-wasm-module-roots", "/home/user/nitro-legacy/machines,/workspace/machines"]
 
 USER user
 
-FROM nitro-node as nitro-node-dev-base
+FROM nitro-node as nitro-node-validator
+USER root
+COPY --from=nitro-legacy /usr/local/bin/nitro-val /home/user/nitro-legacy/bin/nitro-val
+COPY --from=nitro-legacy /usr/local/bin/jit /home/user/nitro-legacy/bin/jit
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y xxd netcat-traditional && \
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /usr/lib/python3.9/__pycache__/ /usr/lib/python3.9/*/__pycache__/ /var/log/*
+COPY scripts/split-val-entry.sh /usr/local/bin
+ENTRYPOINT [ "/usr/local/bin/split-val-entry.sh" ]
+USER user
+
+FROM nitro-node-validator as nitro-node-dev
 USER root
 # Copy in latest WASM module root
 RUN rm -f /home/user/target/machines/latest
@@ -307,23 +325,6 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /usr/lib/python3.9/__pycache__/ /usr/lib/python3.9/*/__pycache__/ /var/log/* && \
     nitro --version
 
-USER user
-
-FROM offchainlabs/nitro-node:v2.3.4-rc.5-b4cc111 as nitro-legacy
-
-FROM nitro-node-dev-base as nitro-node-dev
-USER root
-
-RUN export DEBIAN_FRONTEND=noninteractive && \
-    apt-get update && \
-    apt-get install -y xxd netcat-traditional && \
-    rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /usr/lib/python3.9/__pycache__/ /usr/lib/python3.9/*/__pycache__/ /var/log/*
-COPY scripts/split-val-entry.sh /usr/local/bin
-COPY --from=nitro-legacy /home/user/target/machines /home/user/nitro-legacy/machines
-RUN rm -rf /workspace/target/legacy-machines/latest
-COPY --from=nitro-legacy /usr/local/bin/nitro-val /home/user/nitro-legacy/bin/nitro-val
-COPY --from=nitro-legacy /usr/local/bin/jit /home/user/nitro-legacy/bin/jit
-ENTRYPOINT [ "/usr/local/bin/split-val-entry.sh" ]
 USER user
 
 FROM nitro-node as nitro-node-default
