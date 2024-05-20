@@ -844,7 +844,7 @@ func (c *NodeConfig) CanReload(new *NodeConfig) error {
 }
 
 var (
-	invalidCachingStateSchemeForValidator = errors.New("PathScheme cannot be used as Caching.StateScheme when validator is required")
+	invalidCachingStateSchemeForValidator = errors.New("path cannot be used as execution.caching.state-scheme when validator is required")
 )
 
 func (c *NodeConfig) Validate() error {
