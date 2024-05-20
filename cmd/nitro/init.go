@@ -301,6 +301,10 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 					return nil, nil, err
 				}
 				chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1)
+				_, err = rawdb.ParseStateScheme(cacheConfig.StateScheme, chainDb)
+				if err != nil {
+					return nil, nil, err
+				}
 				err = pruning.PruneChainDb(ctx, chainDb, stack, &config.Init, cacheConfig, persistentConfig, l1Client, rollupAddrs, config.Node.ValidatorRequired())
 				if err != nil {
 					return chainDb, nil, fmt.Errorf("error pruning: %w", err)
@@ -358,6 +362,10 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		return nil, nil, err
 	}
 	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1)
+	_, err = rawdb.ParseStateScheme(cacheConfig.StateScheme, chainDb)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	if config.Init.ImportFile != "" {
 		initDataReader, err = statetransfer.NewJsonInitDataReader(config.Init.ImportFile)
