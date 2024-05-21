@@ -15,6 +15,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
@@ -238,9 +239,8 @@ func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *Blockcha
 	return bridgeAddr, seqInbox, seqInboxAddr
 }
 
-func createL2Nodes(t *testing.T, ctx context.Context, conf *arbnode.Config, chainConfig *params.ChainConfig, l1Client arbutil.L1Interface, l2info *BlockchainTestInfo, rollupAddresses *chaininfo.RollupAddresses, initMsg *arbostypes.ParsedInitMessage, txOpts *bind.TransactOpts, signer signature.DataSignerFunc, fatalErrChan chan error) (*arbnode.Node, *gethexec.ExecutionNode) {
-	cachingConfig := gethexec.DefaultTestCachingConfig()
-	_, stack, l2ChainDb, l2ArbDb, l2Blockchain := createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, initMsg, nil, &cachingConfig)
+func createL2Nodes(t *testing.T, ctx context.Context, cachingConfig *gethexec.CachingConfig, conf *arbnode.Config, chainConfig *params.ChainConfig, l1Client arbutil.L1Interface, l2info *BlockchainTestInfo, rollupAddresses *chaininfo.RollupAddresses, initMsg *arbostypes.ParsedInitMessage, txOpts *bind.TransactOpts, signer signature.DataSignerFunc, fatalErrChan chan error) (*arbnode.Node, *gethexec.ExecutionNode) {
+	_, stack, l2ChainDb, l2ArbDb, l2Blockchain := createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, initMsg, nil, cachingConfig)
 	execNode, err := gethexec.CreateExecutionNode(ctx, stack, l2ChainDb, l2Blockchain, l1Client, gethexec.ConfigDefaultTest)
 	Require(t, err)
 	consensusNode, err := arbnode.CreateNode(ctx, stack, execNode, l2ArbDb, NewFetcherFromConfig(conf), chainConfig, l1Client, rollupAddresses, txOpts, txOpts, signer, fatalErrChan, big.NewInt(1337), nil)
@@ -272,11 +272,14 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	conf.BatchPoster.Enable = false
 	conf.InboxReader.CheckDelay = time.Second
 
+	cachingConfig := gethexec.DefaultTestCachingConfig()
 	var valStack *node.Node
 	var mockSpawn *mockSpawner
 	if useStubs {
 		mockSpawn, valStack = createMockValidationNode(t, ctx, &valnode.TestValidationConfig.Arbitrator)
 	} else {
+		// By now validation only works with HashScheme set
+		cachingConfig.StateScheme = rawdb.HashScheme
 		_, valStack = createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
 	}
 	configByValidationNode(conf, valStack)
@@ -295,7 +298,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	asserterRollupAddresses.Bridge = asserterBridgeAddr
 	asserterRollupAddresses.SequencerInbox = asserterSeqInboxAddr
 	asserterL2Info := NewArbTestInfo(t, chainConfig.ChainID)
-	asserterL2, asserterExec := createL2Nodes(t, ctx, conf, chainConfig, l1Backend, asserterL2Info, asserterRollupAddresses, initMessage, nil, nil, fatalErrChan)
+	asserterL2, asserterExec := createL2Nodes(t, ctx, &cachingConfig, conf, chainConfig, l1Backend, asserterL2Info, asserterRollupAddresses, initMessage, nil, nil, fatalErrChan)
 	err := asserterL2.Start(ctx)
 	Require(t, err)
 
@@ -303,7 +306,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	challengerRollupAddresses.Bridge = challengerBridgeAddr
 	challengerRollupAddresses.SequencerInbox = challengerSeqInboxAddr
 	challengerL2Info := NewArbTestInfo(t, chainConfig.ChainID)
-	challengerL2, challengerExec := createL2Nodes(t, ctx, conf, chainConfig, l1Backend, challengerL2Info, &challengerRollupAddresses, initMessage, nil, nil, fatalErrChan)
+	challengerL2, challengerExec := createL2Nodes(t, ctx, &cachingConfig, conf, chainConfig, l1Backend, challengerL2Info, &challengerRollupAddresses, initMessage, nil, nil, fatalErrChan)
 	err = challengerL2.Start(ctx)
 	Require(t, err)
 
