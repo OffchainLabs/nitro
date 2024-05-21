@@ -346,7 +346,7 @@ func (n *ExecutionNode) StopAndWait() {
 func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*execution.MessageResult, error) {
 	return n.ExecEngine.DigestMessage(num, msg, msgForPrefetch)
 }
-func (n *ExecutionNode) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
+func (n *ExecutionNode) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockHash, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
 	return n.ExecEngine.Reorg(count, newMessages, oldMessages)
 }
 func (n *ExecutionNode) HeadMessageNumber() (arbutil.MessageIndex, error) {
