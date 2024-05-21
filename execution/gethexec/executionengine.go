@@ -1,6 +1,9 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
+//go:build !wasm
+// +build !wasm
+
 package gethexec
 
 /*
@@ -28,6 +31,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -70,6 +74,12 @@ func NewExecutionEngine(bc *core.BlockChain) (*ExecutionEngine, error) {
 		resequenceChan:   make(chan []*arbostypes.MessageWithMetadata),
 		newBlockNotifier: make(chan struct{}, 1),
 	}, nil
+}
+
+func (n *ExecutionEngine) Initialize(rustCacheSize uint32) {
+	if rustCacheSize != 0 {
+		programs.ResizeWasmLruCache(rustCacheSize)
+	}
 }
 
 func (s *ExecutionEngine) SetRecorder(recorder *BlockRecorder) {
@@ -116,7 +126,7 @@ func (s *ExecutionEngine) GetBatchFetcher() execution.BatchFetcher {
 	return s.consensus
 }
 
-func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
+func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockHash, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
 	if count == 0 {
 		return nil, errors.New("cannot reorg out genesis")
 	}
@@ -137,8 +147,9 @@ func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbost
 		return nil, nil
 	}
 
+	tag := s.bc.StateCache().WasmCacheTag()
 	// reorg Rust-side VM state
-	C.stylus_reorg_vm(C.uint64_t(blockNum))
+	C.stylus_reorg_vm(C.uint64_t(blockNum), C.uint32_t(tag))
 
 	err := s.bc.ReorgToOldBlock(targetBlock)
 	if err != nil {
@@ -149,9 +160,9 @@ func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbost
 	for i := range newMessages {
 		var msgForPrefetch *arbostypes.MessageWithMetadata
 		if i < len(newMessages)-1 {
-			msgForPrefetch = &newMessages[i]
+			msgForPrefetch = &newMessages[i].MessageWithMeta
 		}
-		msgResult, err := s.digestMessageWithBlockMutex(count+arbutil.MessageIndex(i), &newMessages[i], msgForPrefetch)
+		msgResult, err := s.digestMessageWithBlockMutex(count+arbutil.MessageIndex(i), &newMessages[i].MessageWithMeta, msgForPrefetch)
 		if err != nil {
 			return nil, err
 		}
@@ -197,7 +208,7 @@ func (s *ExecutionEngine) NextDelayedMessageNumber() (uint64, error) {
 	return currentHeader.Nonce.Uint64(), nil
 }
 
-func messageFromTxes(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, txErrors []error) (*arbostypes.L1IncomingMessage, error) {
+func MessageFromTxes(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, txErrors []error) (*arbostypes.L1IncomingMessage, error) {
 	var l2Message []byte
 	if len(txes) == 1 && txErrors[0] == nil {
 		txBytes, err := txes[0].MarshalBinary()
@@ -368,7 +379,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, nil
 	}
 
-	msg, err := messageFromTxes(header, txes, hooks.TxErrors)
+	msg, err := MessageFromTxes(header, txes, hooks.TxErrors)
 	if err != nil {
 		return nil, err
 	}
