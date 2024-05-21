@@ -777,7 +777,7 @@ func createL2BlockChainWithStackConfig(
 	Require(t, err)
 	wasmData, err := stack.OpenDatabase("wasm", 0, 0, "wasm/", false)
 	Require(t, err)
-	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmData)
+	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmData, 0)
 	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "arbitrumdata/", false)
 	Require(t, err)
 
@@ -984,7 +984,7 @@ func Create2ndNodeWithConfig(
 	Require(t, err)
 	wasmData, err := l2stack.OpenDatabase("wasm", 0, 0, "wasm/", false)
 	Require(t, err)
-	l2chainDb := rawdb.WrapDatabaseWithWasm(l2chainData, wasmData)
+	l2chainDb := rawdb.WrapDatabaseWithWasm(l2chainData, wasmData, 0)
 
 	l2arbDb, err := l2stack.OpenDatabase("arbitrumdata", 0, 0, "arbitrumdata/", false)
 	Require(t, err)
