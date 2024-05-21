@@ -502,3 +502,8 @@ func IsEspressoMsg(msg *arbostypes.L1IncomingMessage) bool {
 	return msg.Header.Kind == arbostypes.L1MessageType_L2Message &&
 		msg.L2msg[0] == L2MessageKind_EspressoTx
 }
+
+func IsL2NonEspressoMsg(msg *arbostypes.L1IncomingMessage) bool {
+	return msg.Header.Kind == arbostypes.L1MessageType_L2Message &&
+		msg.L2msg[0] != L2MessageKind_EspressoTx
+}

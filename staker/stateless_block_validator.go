@@ -144,10 +144,13 @@ type validationEntry struct {
 	// Has batch when created - others could be added on record
 	BatchInfo []validator.BatchInfo
 	// Valid since Ready
-	Preimages         map[arbutil.PreimageType]map[common.Hash][]byte
-	UserWasms         state.UserWasms
-	DelayedMsg        []byte
-	HotShotCommitment espressoTypes.Commitment
+	Preimages  map[arbutil.PreimageType]map[common.Hash][]byte
+	UserWasms  state.UserWasms
+	DelayedMsg []byte
+
+	L1BlockHeight      uint64
+	HotShotCommitment  espressoTypes.Commitment
+	HotShotAvailablity bool
 }
 
 func (e *validationEntry) ToInput() (*validator.ValidationInput, error) {
@@ -155,17 +158,18 @@ func (e *validationEntry) ToInput() (*validator.ValidationInput, error) {
 		return nil, errors.New("cannot create input from non-ready entry")
 	}
 	return &validator.ValidationInput{
-		Id:                uint64(e.Pos),
-		HasDelayedMsg:     e.HasDelayedMsg,
-		DelayedMsgNr:      e.DelayedMsgNr,
-		Preimages:         e.Preimages,
-		UserWasms:         e.UserWasms,
-		BatchInfo:         e.BatchInfo,
-		DelayedMsg:        e.DelayedMsg,
-		StartState:        e.Start,
-		DebugChain:        e.ChainConfig.DebugMode(),
-		HotShotHeight:     e.End.HotShotHeight,
-		HotShotCommitment: e.HotShotCommitment,
+		Id:                  uint64(e.Pos),
+		HasDelayedMsg:       e.HasDelayedMsg,
+		DelayedMsgNr:        e.DelayedMsgNr,
+		Preimages:           e.Preimages,
+		UserWasms:           e.UserWasms,
+		BatchInfo:           e.BatchInfo,
+		DelayedMsg:          e.DelayedMsg,
+		StartState:          e.Start,
+		DebugChain:          e.ChainConfig.DebugMode(),
+		L1BlockHeight:       e.L1BlockHeight,
+		HotShotCommitment:   e.HotShotCommitment,
+		HotShotAvailability: e.HotShotAvailablity,
 	}, nil
 }
 
@@ -179,6 +183,7 @@ func newValidationEntry(
 	prevDelayed uint64,
 	chainConfig *params.ChainConfig,
 	hotShotCommitment *espressoTypes.Commitment,
+	hotShotAvaiability bool,
 ) (*validationEntry, error) {
 	batchInfo := validator.BatchInfo{
 		Number:    start.Batch,
@@ -194,16 +199,17 @@ func newValidationEntry(
 		return nil, fmt.Errorf("illegal validation entry delayedMessage %d, previous %d", msg.DelayedMessagesRead, prevDelayed)
 	}
 	return &validationEntry{
-		Stage:             ReadyForRecord,
-		Pos:               pos,
-		Start:             start,
-		End:               end,
-		HasDelayedMsg:     hasDelayed,
-		DelayedMsgNr:      delayedNum,
-		msg:               msg,
-		BatchInfo:         []validator.BatchInfo{batchInfo},
-		ChainConfig:       chainConfig,
-		HotShotCommitment: *hotShotCommitment,
+		Stage:              ReadyForRecord,
+		Pos:                pos,
+		Start:              start,
+		End:                end,
+		HasDelayedMsg:      hasDelayed,
+		DelayedMsgNr:       delayedNum,
+		msg:                msg,
+		BatchInfo:          []validator.BatchInfo{batchInfo},
+		ChainConfig:        chainConfig,
+		HotShotCommitment:  *hotShotCommitment,
+		HotShotAvailablity: hotShotAvaiability,
 	}, nil
 }
 
@@ -383,6 +389,7 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 		return nil, err
 	}
 	var comm espressoTypes.Commitment
+	var hotShotAvaiability bool
 	if arbos.IsEspressoMsg(msg.Message) {
 		_, jst, err := arbos.ParseEspressoMsg(msg.Message)
 		if err != nil {
@@ -395,8 +402,11 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 		}
 		log.Error("commitment to append", "%v", fetchedCommitment)
 		comm = fetchedCommitment
+		hotShotAvaiability = true
+	} else if arbos.IsL2NonEspressoMsg(msg.Message) {
+		hotShotAvaiability = false
 	}
-	entry, err := newValidationEntry(pos, start, end, msg, seqMsg, batchBlockHash, prevDelayed, v.streamer.ChainConfig(), &comm)
+	entry, err := newValidationEntry(pos, start, end, msg, seqMsg, batchBlockHash, prevDelayed, v.streamer.ChainConfig(), &comm, hotShotAvaiability)
 	if err != nil {
 		return nil, err
 	}

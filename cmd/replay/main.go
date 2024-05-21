@@ -280,6 +280,7 @@ func main() {
 		}
 
 		validatingAgainstEspresso := arbos.IsEspressoMsg(message.Message) && chainConfig.ArbitrumChainParams.EnableEspresso
+		validatingAgainstCentrailized := arbos.IsL2NonEspressoMsg(message.Message) && chainConfig.ArbitrumChainParams.EnableEspresso
 		if validatingAgainstEspresso {
 			txs, jst, err := arbos.ParseEspressoMsg(message.Message)
 			if err != nil {
@@ -311,6 +312,11 @@ func main() {
 			}
 			espressocrypto.VerifyNamespace(chainConfig.ChainID.Uint64(), *jst.Proof, *jst.Header.PayloadCommitment, *jst.Header.NsTable, txs)
 			espressocrypto.VerifyMerkleProof(jst.BlockMerkleJustification.BlockMerkleProof.Proof, jsonHeader, *jst.BlockMerkleJustification.BlockMerkleComm, commitment)
+		} else if validatingAgainstCentrailized {
+			l1Block := message.Message.Header.BlockNumber
+			if wavmio.GetHotShotAvailability(l1Block) {
+				panic("getting the centrailized message while hotshot is good")
+			}
 		}
 
 		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher, false)

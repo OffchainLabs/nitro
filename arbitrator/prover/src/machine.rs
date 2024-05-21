@@ -2489,6 +2489,9 @@ impl Machine {
                         error!()
                     }
                 }
+                Opcode::GetHotShotAvailability => {
+                    todo!()
+                }
                 Opcode::ReadInboxMessage => {
                     let offset = value_stack.pop().unwrap().assume_u32();
                     let ptr = value_stack.pop().unwrap().assume_u32();

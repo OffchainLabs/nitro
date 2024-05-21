@@ -22,12 +22,10 @@ type ValidationInput struct {
 	BatchInfo     []BatchInfo
 	DelayedMsg    []byte
 	StartState    GoGlobalState
-	// The validating hotshot height.
-	// We can't just use the `StartState.HotShotHeight + 1` to calculate
-	// this one because the StartState might have the 0 height and this
-	// is allowed for now.
-	HotShotHeight uint64
+	DebugChain    bool
+
+	L1BlockHeight uint64
 	// The validating hotshot commitment
-	HotShotCommitment espressoTypes.Commitment
-	DebugChain        bool
+	HotShotCommitment   espressoTypes.Commitment
+	HotShotAvailability bool
 }

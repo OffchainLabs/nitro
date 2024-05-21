@@ -62,8 +62,9 @@ type InputJSON struct {
 	UserWasms     map[common.Hash]UserWasmJson
 	DebugChain    bool
 
-	HotShotHeight     uint64
-	HotShotCommitment espressoTypes.Commitment
+	L1BlockHeight       uint64
+	HotShotAvailability bool
+	HotShotCommitment   espressoTypes.Commitment
 }
 
 type UserWasmJson struct {
