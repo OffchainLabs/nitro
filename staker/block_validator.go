@@ -1097,12 +1097,17 @@ func (v *BlockValidator) Initialize(ctx context.Context) error {
 	for _, root := range moduleRoots {
 		if v.redisValidator != nil && validator.SpawnerSupportsModule(v.redisValidator, root) {
 			v.chosenValidator[root] = v.redisValidator
+			log.Info("validator chosen", "WasmMosuleRoot", root, "chosen", "redis")
 		} else {
 			for _, spawner := range v.execSpawners {
 				if validator.SpawnerSupportsModule(spawner, root) {
 					v.chosenValidator[root] = spawner
+					log.Info("validator chosen", "WasmMosuleRoot", root, "chosen", spawner.Name())
 					break
 				}
+			}
+			if v.chosenValidator[root] == nil {
+				log.Error("validator not found", "WasmMosuleRoot", root)
 			}
 		}
 	}
