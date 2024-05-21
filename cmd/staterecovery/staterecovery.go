@@ -31,7 +31,7 @@ func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheCon
 		return fmt.Errorf("start block parent is missing, parent block number: %d", current-1)
 	}
 	hashConfig := *hashdb.Defaults
-	hashConfig.CleanCacheSize = cacheConfig.TrieCleanLimit
+	hashConfig.CleanCacheSize = cacheConfig.TrieCleanLimit * 1024 * 1024
 	trieConfig := &trie.Config{
 		Preimages: false,
 		HashDB:    &hashConfig,
