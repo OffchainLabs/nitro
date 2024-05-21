@@ -76,6 +76,9 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		transferGas,
 	)
 
+	// By now validation only works with HashScheme set
+	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
+
 	builder.nodeConfig.BatchPoster.MaxDelay = -1000 * time.Hour
 	cleanupA := builder.Build(t)
 	defer cleanupA()
