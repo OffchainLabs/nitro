@@ -87,9 +87,15 @@ func (e *executionRun) GetProofAt(position uint64) containers.PromiseInterface[[
 			return nil, err
 		}
 
-		opcode := machine.GetNextOpcode()
 		opcodeBytes := make([]byte, 2)
-		binary.BigEndian.PutUint16(opcodeBytes, opcode)
+		if machine.IsRunning() {
+			opcode := machine.GetNextOpcode()
+
+			binary.BigEndian.PutUint16(opcodeBytes, opcode)
+		} else {
+			// append dummy opcode if the machine is halted
+			binary.BigEndian.PutUint16(opcodeBytes, 0xFFFF)
+		}
 
 		proof := machine.ProveNextStep()
 

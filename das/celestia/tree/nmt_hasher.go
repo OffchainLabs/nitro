@@ -24,7 +24,7 @@ func (h *NmtPreimageHasher) Sum(b []byte) []byte {
 }
 
 func (h *NmtPreimageHasher) Write(p []byte) (n int, err error) {
-	h.data = append(h.data[:0], p...) // Update the data slice with the new data
+	h.data = append(h.data, p...)
 	return h.Hash.Write(p)
 }
 

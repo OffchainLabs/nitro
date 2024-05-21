@@ -1,4 +1,4 @@
-package celestia
+package types
 
 import (
 	"bytes"

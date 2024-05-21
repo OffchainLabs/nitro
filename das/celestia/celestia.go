@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/das/celestia/types"
 	"github.com/offchainlabs/nitro/solgen/go/celestiagen"
 
 	blobstreamx "github.com/succinctlabs/blobstreamx/bindings"
@@ -35,7 +36,7 @@ type DAConfig struct {
 
 type ValidatorConfig struct {
 	TendermintRPC  string `koanf:"tendermint-rpc"`
-	EthClient      string `koanf:"eth-ws"`
+	EthClient      string `koanf:"eth-rpc"`
 	BlobstreamAddr string `koanf:"blobstream"`
 }
 
@@ -71,7 +72,7 @@ func CelestiaDAConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".namespace-id", "", "Celestia Namespace to post data to")
 	f.String(prefix+".auth-token", "", "Auth token for Celestia Node")
 	f.String(prefix+".validator-config"+".tendermint-rpc", "", "Tendermint RPC endpoint, only used for validation")
-	f.String(prefix+".validator-config"+".eth-ws", "", "L1 Websocket connection, only used for validation")
+	f.String(prefix+".validator-config"+".eth-rpc", "", "L1 Websocket connection, only used for validation")
 	f.String(prefix+".validator-config"+".blobstream", "", "Blobstream address, only used for validation")
 }
 
@@ -143,9 +144,12 @@ func NewCelestiaDA(cfg *DAConfig, ethClient *ethclient.Client) (*CelestiaDA, err
 	}, nil
 }
 
-// TODO (Diego): add retry logic and gas fee bumps
 func (c *CelestiaDA) Store(ctx context.Context, message []byte) ([]byte, error) {
-
+	// set a 5 minute timeout context on submissions
+	// if it takes longer than that to succesfully submit and verify a blob,
+	// then there's an issue with the connection to the celestia node
+	ctx, cancel := context.WithTimeout(ctx, time.Duration(time.Minute*5))
+	defer cancel()
 	dataBlob, err := blob.NewBlobV0(*c.Namespace, message)
 	if err != nil {
 		log.Warn("Error creating blob", "err", err)
@@ -220,7 +224,7 @@ func (c *CelestiaDA) Store(ctx context.Context, message []byte) ([]byte, error) 
 		return nil, fmt.Errorf("storing Celestia information, odsSize*startRow=%v was larger than blobIndex=%v", odsSize*startRow, blob.Index)
 	}
 	startIndexOds := blobIndex - odsSize*startRow
-	blobPointer := BlobPointer{
+	blobPointer := types.BlobPointer{
 		BlockHeight:  height,
 		Start:        startIndexOds,
 		SharesLength: sharesLength,
@@ -253,16 +257,7 @@ func (c *CelestiaDA) Store(ctx context.Context, message []byte) ([]byte, error) 
 	return serializedBlobPointerData, nil
 }
 
-type SquareData struct {
-	RowRoots    [][]byte
-	ColumnRoots [][]byte
-	Rows        [][][]byte
-	SquareSize  uint64 // Refers to original data square size
-	StartRow    uint64
-	EndRow      uint64
-}
-
-func (c *CelestiaDA) Read(ctx context.Context, blobPointer *BlobPointer) ([]byte, *SquareData, error) {
+func (c *CelestiaDA) Read(ctx context.Context, blobPointer *types.BlobPointer) ([]byte, *types.SquareData, error) {
 	// Wait until our client is synced
 	err := c.Client.Header.SyncWait(ctx)
 	if err != nil {
@@ -333,16 +328,16 @@ func (c *CelestiaDA) Read(ctx context.Context, blobPointer *BlobPointer) ([]byte
 
 	endRow := endIndexOds / odsSize
 
-	if endRow > odsSize || startRow > odsSize {
-		log.Error("endRow > odsSize || startRow > odsSize", "endRow", endRow, "startRow", startRow, "odsSize", odsSize)
+	if endRow >= odsSize || startRow >= odsSize {
+		log.Error("endRow >= odsSize || startRow >= odsSize", "endRow", endRow, "startRow", startRow, "odsSize", odsSize)
 		return []byte{}, nil, nil
 	}
 
 	startColumn := blobPointer.Start % odsSize
 	endColumn := endIndexOds % odsSize
 
-	if startRow == endRow && startColumn > endColumn+1 {
-		log.Error("startColumn > endColumn+1 on the same row", "startColumn", startColumn, "endColumn+1 ", endColumn+1)
+	if startRow == endRow && startColumn >= endColumn {
+		log.Error("start and end row are the same and startColumn >= endColumn", "startColumn", startColumn, "endColumn+1 ", endColumn+1)
 		return []byte{}, nil, nil
 	}
 
@@ -351,12 +346,7 @@ func (c *CelestiaDA) Read(ctx context.Context, blobPointer *BlobPointer) ([]byte
 		rows = append(rows, eds.Row(uint(i)))
 	}
 
-	printRows := [][][]byte{}
-	for i := 0; i < int(squareSize); i++ {
-		printRows = append(printRows, eds.Row(uint(i)))
-	}
-
-	squareData := SquareData{
+	squareData := types.SquareData{
 		RowRoots:    header.DAH.RowRoots,
 		ColumnRoots: header.DAH.ColumnRoots,
 		Rows:        rows,
@@ -373,9 +363,10 @@ func (c *CelestiaDA) GetProof(ctx context.Context, msg []byte) ([]byte, error) {
 		return nil, fmt.Errorf("no celestia prover config found")
 	}
 
+	fmt.Printf("Inbox Message: %v\n", msg)
 	buf := bytes.NewBuffer(msg)
-	msgLength := uint32(len(msg) + 1)
-	blobPointer := BlobPointer{}
+	// msgLength := uint32(len(msg) + 1)
+	blobPointer := types.BlobPointer{}
 	blobBytes := buf.Bytes()
 	err := blobPointer.UnmarshalBinary(blobBytes)
 	if err != nil {
@@ -404,6 +395,9 @@ func (c *CelestiaDA) GetProof(ctx context.Context, msg []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
+
+	fmt.Printf("Blob Pointer Height: %v\n", blobPointer.BlockHeight)
+	fmt.Printf("Latest Blobstream Height: %v\n", latestCelestiaBlock)
 
 	var backwards bool
 	if blobPointer.BlockHeight < latestCelestiaBlock {
@@ -455,7 +449,7 @@ func (c *CelestiaDA) GetProof(ctx context.Context, msg []byte) ([]byte, error) {
 	log.Info("Verified Celestia Attestation", "height", blobPointer.BlockHeight, "valid", valid)
 
 	if valid {
-		sharesProof, err := c.Prover.Trpc.ProveShares(ctx, blobPointer.BlockHeight, blobPointer.Start, blobPointer.Start+blobPointer.SharesLength-1)
+		sharesProof, err := c.Prover.Trpc.ProveShares(ctx, blobPointer.BlockHeight, blobPointer.Start, blobPointer.Start+blobPointer.SharesLength)
 		if err != nil {
 			log.Error("Unable to get ShareProof", "err", err)
 			return nil, err
@@ -482,10 +476,12 @@ func (c *CelestiaDA) GetProof(ctx context.Context, msg []byte) ([]byte, error) {
 			return nil, err
 		}
 
-		// apend size of batch + proofData
-		sizeBytes := make([]byte, 4)
-		binary.BigEndian.PutUint32(sizeBytes, uint32((len(proofData)))+msgLength)
-		proofData = append(proofData, sizeBytes...)
+		fmt.Printf("Proof Data: %v\n", proofData)
+
+		// // apend size of batch + proofData
+		// sizeBytes := make([]byte, 4)
+		// binary.BigEndian.PutUint32(sizeBytes, uint32((len(proofData)))+msgLength)
+		// proofData = append(proofData, sizeBytes...)
 
 		return proofData, nil
 	}
@@ -496,12 +492,12 @@ func (c *CelestiaDA) GetProof(ctx context.Context, msg []byte) ([]byte, error) {
 func (c *CelestiaDA) filter(ctx context.Context, latestBlock uint64, celestiaHeight uint64, backwards bool) (*blobstreamx.BlobstreamXDataCommitmentStored, error) {
 	// Geth has a default of 5000 block limit for filters
 	start := uint64(0)
-	if latestBlock < 5000 {
-		start = 0
+	if latestBlock > 5000 {
+		start = latestBlock - 5000
 	}
 	end := latestBlock
 
-	for attempt := 0; attempt < 10; attempt++ {
+	for attempt := 0; attempt < 11; attempt++ {
 		eventsIterator, err := c.Prover.BlobstreamX.FilterDataCommitmentStored(
 			&bind.FilterOpts{
 				Context: ctx,
@@ -543,9 +539,13 @@ func (c *CelestiaDA) filter(ctx context.Context, latestBlock uint64, celestiaHei
 		}
 
 		if backwards {
-			start -= 5000
+			if start >= 5000 {
+				start -= 5000
+			} else {
+				start = 0
+			}
 			if end < 5000 {
-				end = start + 10
+				end = start + 1000
 			} else {
 				end -= 5000
 			}

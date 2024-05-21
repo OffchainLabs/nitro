@@ -47,7 +47,7 @@ require (
 	github.com/tendermint/tendermint v0.34.29
 	github.com/wealdtech/go-merkletree v1.0.0
 	golang.org/x/crypto v0.17.0
-	golang.org/x/sys v0.15.0
+	golang.org/x/sys v0.20.0
 	golang.org/x/term v0.15.0
 	golang.org/x/tools v0.15.0
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
@@ -142,7 +142,7 @@ require (
 	github.com/golang/protobuf v1.5.3 // indirect
 	github.com/google/flatbuffers v1.12.1 // indirect
 	github.com/google/gopacket v1.1.19 // indirect
-	github.com/google/pprof v0.0.0-20230821062121-407c9e7a662f // indirect
+	github.com/google/pprof v0.0.0-20240521024322-9665fa269a30 // indirect
 	github.com/graph-gophers/graphql-go v1.3.0 // indirect
 	github.com/grpc-ecosystem/grpc-gateway/v2 v2.7.0 // indirect
 	github.com/gtank/merlin v0.1.1 // indirect

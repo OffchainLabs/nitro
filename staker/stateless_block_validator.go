@@ -24,7 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/das/celestia"
+	celestiaTypes "github.com/offchainlabs/nitro/das/celestia/types"
 )
 
 type StatelessBlockValidator struct {
@@ -40,7 +40,7 @@ type StatelessBlockValidator struct {
 	streamer        TransactionStreamerInterface
 	db              ethdb.Database
 	daService       arbstate.DataAvailabilityReader
-	celestiaService celestia.DataAvailabilityReader
+	celestiaService celestiaTypes.DataAvailabilityReader
 	blobReader      arbstate.BlobReader
 
 	moduleMutex           sync.Mutex
@@ -225,7 +225,7 @@ func NewStatelessBlockValidator(
 	arbdb ethdb.Database,
 	das arbstate.DataAvailabilityReader,
 	blobReader arbstate.BlobReader,
-	celestiaService celestia.DataAvailabilityReader,
+	celestiaService celestiaTypes.DataAvailabilityReader,
 	config func() *BlockValidatorConfig,
 	stack *node.Node,
 ) (*StatelessBlockValidator, error) {

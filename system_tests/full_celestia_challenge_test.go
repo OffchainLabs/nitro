@@ -11,8 +11,11 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"math/big"
+	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"strings"
 	"testing"
@@ -32,6 +35,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/das/celestia"
+	celestiaTypes "github.com/offchainlabs/nitro/das/celestia/types"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
@@ -41,6 +45,12 @@ import (
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
+
+func init() {
+	go func() {
+		fmt.Println(http.ListenAndServe("localhost:6060", nil))
+	}()
+}
 
 // TODO:
 // Find a way to trigger the other two cases
@@ -117,7 +127,7 @@ func makeCelestiaBatch(t *testing.T, l2Node *arbnode.Node, celestiaDA *celestia.
 		Require(t, err)
 	}
 
-	blobPointer := celestia.BlobPointer{}
+	blobPointer := celestiaTypes.BlobPointer{}
 	blobBytes := buf.Bytes()
 	err = blobPointer.UnmarshalBinary(blobBytes)
 	Require(t, err)
@@ -155,6 +165,7 @@ func makeCelestiaBatch(t *testing.T, l2Node *arbnode.Node, celestiaDA *celestia.
 }
 
 func RunCelestiaChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, challengeMsgIdx int64, undecided bool, counterFactual bool) {
+
 	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
 	glogger.Verbosity(log.LvlInfo)
 	log.Root().SetHandler(glogger)
@@ -185,14 +196,13 @@ func RunCelestiaChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs boo
 
 	conf.Celestia = celestia.DAConfig{
 		Enable:      true,
-		GasPrice:    0.3,
+		GasPrice:    0.1,
 		Rpc:         "http://localhost:26658",
 		NamespaceId: "000008e5f679bf7116cb",
-		AuthToken:   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJBbGxvdyI6WyJwdWJsaWMiLCJyZWFkIiwid3JpdGUiLCJhZG1pbiJdfQ.69uo5771bnKLfE6uCZpksgkSr-GfyisUtNoiU5iWFOA",
+		AuthToken:   "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJBbGxvdyI6WyJwdWJsaWMiLCJyZWFkIiwid3JpdGUiLCJhZG1pbiJdfQ.8iCpZJaiui7QPTCj4m5f2M7JyHkJtr6Xha0bmE5Vv7Y",
 		ValidatorConfig: &celestia.ValidatorConfig{
 			TendermintRPC:  "http://localhost:26657",
 			BlobstreamAddr: blobstream.Hex(),
-			MaxIterations:  10,
 		},
 	}
 

@@ -16,7 +16,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/blsSignatures"
-	"github.com/offchainlabs/nitro/das/celestia"
+	celestiaTypes "github.com/offchainlabs/nitro/das/celestia/types"
 	"github.com/offchainlabs/nitro/das/dastree"
 )
 
@@ -26,7 +26,7 @@ type DataAvailabilityReader interface {
 }
 
 type CelestiaDataAvailabilityReader interface {
-	celestia.DataAvailabilityReader
+	celestiaTypes.DataAvailabilityReader
 }
 
 var ErrHashMismatch = errors.New("result does not match expected hash")

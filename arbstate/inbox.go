@@ -23,8 +23,8 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/das/celestia"
 	"github.com/offchainlabs/nitro/das/celestia/tree"
+	celestiaTypes "github.com/offchainlabs/nitro/das/celestia/types"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/blobs"
 	"github.com/offchainlabs/nitro/zeroheavy"
@@ -368,14 +368,14 @@ func (b *dAProviderForBlobReader) RecoverPayloadFromBatch(
 	return payload, nil
 }
 
-func NewDAProviderCelestia(celestia celestia.DataAvailabilityReader) *dAProviderForCelestia {
+func NewDAProviderCelestia(celestia celestiaTypes.DataAvailabilityReader) *dAProviderForCelestia {
 	return &dAProviderForCelestia{
 		celestia: celestia,
 	}
 }
 
 type dAProviderForCelestia struct {
-	celestia celestia.DataAvailabilityReader
+	celestia celestiaTypes.DataAvailabilityReader
 }
 
 func (c *dAProviderForCelestia) IsValidHeaderByte(headerByte byte) bool {
@@ -397,7 +397,7 @@ func RecoverPayloadFromCelestiaBatch(
 	ctx context.Context,
 	batchNum uint64,
 	sequencerMsg []byte,
-	celestiaReader celestia.DataAvailabilityReader,
+	celestiaReader celestiaTypes.DataAvailabilityReader,
 	preimages map[arbutil.PreimageType]map[common.Hash][]byte,
 ) ([]byte, error) {
 	var sha256Preimages map[common.Hash][]byte
@@ -424,7 +424,7 @@ func RecoverPayloadFromCelestiaBatch(
 		sha256Preimages[key] = value
 	}
 
-	blobPointer := celestia.BlobPointer{}
+	blobPointer := celestiaTypes.BlobPointer{}
 	blobBytes := buf.Bytes()
 	err = blobPointer.UnmarshalBinary(blobBytes)
 	if err != nil {

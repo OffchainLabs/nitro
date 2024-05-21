@@ -34,6 +34,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/das/celestia"
+	celestiaTypes "github.com/offchainlabs/nitro/das/celestia/types"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -512,8 +513,8 @@ func createNodeImpl(
 	var daWriter das.DataAvailabilityServiceWriter
 	var daReader das.DataAvailabilityServiceReader
 	var dasLifecycleManager *das.LifecycleManager
-	var celestiaReader celestia.DataAvailabilityReader
-	var celestiaWriter celestia.DataAvailabilityWriter
+	var celestiaReader celestiaTypes.DataAvailabilityReader
+	var celestiaWriter celestiaTypes.DataAvailabilityWriter
 	if config.DataAvailability.Enable {
 		if config.BatchPoster.Enable {
 			daWriter, daReader, dasLifecycleManager, err = das.CreateBatchPosterDAS(ctx, &config.DataAvailability, dataSigner, l1client, deployInfo.SequencerInbox)

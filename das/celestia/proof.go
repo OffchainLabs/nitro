@@ -7,12 +7,6 @@ import (
 	coretypes "github.com/tendermint/tendermint/rpc/core/types"
 )
 
-type CelestiaProof struct {
-	namespaceNode     NamespaceNode
-	binaryMerkleProof BinaryMerkleProof
-	attestationProof  AttestationProof
-}
-
 type Namespace struct {
 	Version [1]byte
 	Id      [28]byte

@@ -582,41 +582,44 @@ func (m *ChallengeManager) getDAProof(ctx context.Context, proof []byte) ([]byte
 	// get the proof's opcode
 	opCodeBytes := proof[len(proof)-2:]
 	opCode := binary.BigEndian.Uint16(opCodeBytes)
+	// remove opcode bytes
+	proof = proof[:len(proof)-2]
 	if opCode == ReadInboxMessage {
-
-		// remove opcode bytes
-		proof = proof[:len(proof)-2]
-
-		// Read the last 8 bytes as a uint64 to get our batch number
-		batchNumBytes := proof[len(proof)-8:]
-		batchNum := binary.BigEndian.Uint64(batchNumBytes)
-		batchData, _, err := m.validator.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
-		if err != nil {
-			log.Error("Couldn't get sequencer message bytes", "err", err)
-			return nil, err
-		}
-
-		buf := bytes.NewBuffer(batchData[40:])
-
-		header, err := buf.ReadByte()
-		if err != nil {
-			log.Error("Couldn't deserialize Celestia header byte", "err", err)
-			return nil, nil
-		}
-		daProof := []byte{}
-		if celestia.IsCelestiaMessageHeaderByte(header) {
-			log.Info("Fetching da proof for Celestia", "batchNum", batchNum)
-			blobBytes := buf.Bytes()
-
-			daProof, err = m.validator.celestiaService.GetProof(ctx, blobBytes)
+		messageType := proof[len(proof)-1]
+		// remove inbox message type byte
+		proof = proof[:len(proof)-1]
+		if messageType == 0x0 {
+			// Read the last 8 bytes as a uint64 to get our batch number
+			batchNumBytes := proof[len(proof)-8:]
+			batchNum := binary.BigEndian.Uint64(batchNumBytes)
+			batchData, _, err := m.validator.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
 			if err != nil {
+				log.Error("Couldn't get sequencer message bytes", "err", err)
 				return nil, err
 			}
-		}
 
-		// remove batch number from proof
-		proof = proof[:len(proof)-8]
-		proof = append(proof, daProof...)
+			buf := bytes.NewBuffer(batchData[40:])
+
+			header, err := buf.ReadByte()
+			if err != nil {
+				log.Error("Couldn't deserialize Celestia header byte", "err", err)
+				return nil, nil
+			}
+			daProof := []byte{}
+			if celestia.IsCelestiaMessageHeaderByte(header) {
+				log.Info("Fetching da proof for Celestia", "batchNum", batchNum)
+				blobBytes := buf.Bytes()
+
+				daProof, err = m.validator.celestiaService.GetProof(ctx, blobBytes)
+				if err != nil {
+					return nil, err
+				}
+			}
+
+			// remove batch number from proof
+			proof = proof[:len(proof)-8]
+			proof = append(proof, daProof...)
+		}
 	}
 
 	return proof, nil

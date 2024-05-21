@@ -58,7 +58,7 @@ func DeployOneStepProofEntry(t *testing.T, ctx context.Context, auth *bind.Trans
 	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)
 
-	ospHostIo, tx, _, err := ospgen.DeployOneStepProverHostIo(auth, client)
+	ospHostIo, tx, _, err := mocksgen.DeployOneStepProverHostIoCelestiaMock(auth, client)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, client, tx)
 	Require(t, err)

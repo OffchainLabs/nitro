@@ -30,8 +30,8 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
-	"github.com/offchainlabs/nitro/das/celestia"
 	"github.com/offchainlabs/nitro/das/celestia/tree"
+	celestiaTypes "github.com/offchainlabs/nitro/das/celestia/types"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/wavmio"
@@ -153,7 +153,7 @@ func (r *BlobPreimageReader) Initialize(ctx context.Context) error {
 type PreimageCelestiaReader struct {
 }
 
-func (dasReader *PreimageCelestiaReader) Read(ctx context.Context, blobPointer *celestia.BlobPointer) ([]byte, *celestia.SquareData, error) {
+func (dasReader *PreimageCelestiaReader) Read(ctx context.Context, blobPointer *celestiaTypes.BlobPointer) ([]byte, *celestiaTypes.SquareData, error) {
 	oracle := func(hash common.Hash) ([]byte, error) {
 		return wavmio.ResolveTypedPreimage(arbutil.Sha2_256PreimageType, hash)
 	}
@@ -196,15 +196,15 @@ func (dasReader *PreimageCelestiaReader) Read(ctx context.Context, blobPointer *
 	}
 	endRow := endIndexOds / odsSize
 
-	if endRow > odsSize || startRow > odsSize {
+	if endRow >= odsSize || startRow >= odsSize {
 		return nil, nil, fmt.Errorf("Error rows out of bounds: startRow=%v endRow=%v odsSize=%v", startRow, endRow, odsSize)
 	}
 
 	startColumn := blobPointer.Start % odsSize
 	endColumn := endIndexOds % odsSize
 
-	if startRow == endRow && startColumn > endColumn+1 {
-		log.Error("startColumn > endColumn+1 on the same row", "startColumn", startColumn, "endColumn+1 ", endColumn+1)
+	if startRow == endRow && startColumn >= endColumn {
+		log.Error("start and end row are the same, and startColumn >= endColumn", "startColumn", startColumn, "endColumn+1 ", endColumn+1)
 		return []byte{}, nil, nil
 	}
 
@@ -255,7 +255,7 @@ func (dasReader *PreimageCelestiaReader) Read(ctx context.Context, blobPointer *
 	}
 
 	data = data[:sequenceLength]
-	squareData := celestia.SquareData{
+	squareData := celestiaTypes.SquareData{
 		RowRoots:    rowRoots,
 		ColumnRoots: leaves[squareSize:],
 		Rows:        rows,
@@ -325,30 +325,19 @@ func main() {
 			delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 		}
 
+		// TODO: consider removing this panic
 		if arbChainParams.DataAvailabilityCommittee && arbChainParams.CelestiaDA {
 			panic(fmt.Sprintf("Error Multiple DA providers enabled: DAC is %v and CelestiaDA is %v", arbChainParams.DataAvailabilityCommittee, arbChainParams.CelestiaDA))
 		}
 
-		var dasReader arbstate.DataAvailabilityReader
-		if arbChainParams.DataAvailabilityCommittee {
-			dasReader = &PreimageDASReader{}
-		}
-		var celestiaReader celestia.DataAvailabilityReader
-		if arbChainParams.CelestiaDA {
-			celestiaReader = &PreimageCelestiaReader{}
-		}
 		backend := WavmInbox{}
 		var keysetValidationMode = arbstate.KeysetPanicIfInvalid
 		if backend.GetPositionWithinMessage() > 0 {
 			keysetValidationMode = arbstate.KeysetDontValidate
 		}
 		var daProviders []arbstate.DataAvailabilityProvider
-		if dasReader != nil {
-			daProviders = append(daProviders, arbstate.NewDAProviderDAS(dasReader))
-		}
-		if celestiaReader != nil {
-			daProviders = append(daProviders, arbstate.NewDAProviderCelestia(celestiaReader))
-		}
+		daProviders = append(daProviders, arbstate.NewDAProviderDAS(&PreimageDASReader{}))
+		daProviders = append(daProviders, arbstate.NewDAProviderCelestia(&PreimageCelestiaReader{}))
 		daProviders = append(daProviders, arbstate.NewDAProviderBlobReader(&BlobPreimageReader{}))
 		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, daProviders, keysetValidationMode)
 		ctx := context.Background()
