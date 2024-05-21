@@ -462,7 +462,7 @@ func mainImpl() int {
 					continue
 				}
 				locator, locatorErr := server_common.NewMachineLocator(root)
-				if err != nil {
+				if locatorErr != nil {
 					log.Warn("allowed-wasm-module-roots: value not a hex nor valid path:", "value", root, "locatorErr", locatorErr, "decodeErr", err)
 					continue
 				}
