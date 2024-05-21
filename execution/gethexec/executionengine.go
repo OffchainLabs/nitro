@@ -126,7 +126,7 @@ func (s *ExecutionEngine) GetBatchFetcher() execution.BatchFetcher {
 	return s.consensus
 }
 
-func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
+func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockHash, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
 	if count == 0 {
 		return nil, errors.New("cannot reorg out genesis")
 	}
@@ -160,9 +160,9 @@ func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbost
 	for i := range newMessages {
 		var msgForPrefetch *arbostypes.MessageWithMetadata
 		if i < len(newMessages)-1 {
-			msgForPrefetch = &newMessages[i]
+			msgForPrefetch = &newMessages[i].MessageWithMeta
 		}
-		msgResult, err := s.digestMessageWithBlockMutex(count+arbutil.MessageIndex(i), &newMessages[i], msgForPrefetch)
+		msgResult, err := s.digestMessageWithBlockMutex(count+arbutil.MessageIndex(i), &newMessages[i].MessageWithMeta, msgForPrefetch)
 		if err != nil {
 			return nil, err
 		}
@@ -208,7 +208,7 @@ func (s *ExecutionEngine) NextDelayedMessageNumber() (uint64, error) {
 	return currentHeader.Nonce.Uint64(), nil
 }
 
-func messageFromTxes(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, txErrors []error) (*arbostypes.L1IncomingMessage, error) {
+func MessageFromTxes(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, txErrors []error) (*arbostypes.L1IncomingMessage, error) {
 	var l2Message []byte
 	if len(txes) == 1 && txErrors[0] == nil {
 		txBytes, err := txes[0].MarshalBinary()
@@ -379,7 +379,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, nil
 	}
 
-	msg, err := messageFromTxes(header, txes, hooks.TxErrors)
+	msg, err := MessageFromTxes(header, txes, hooks.TxErrors)
 	if err != nil {
 		return nil, err
 	}
