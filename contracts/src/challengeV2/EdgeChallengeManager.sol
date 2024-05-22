@@ -82,7 +82,7 @@ interface IEdgeChallengeManager {
     /// @notice Update multiple edges' timer cache by their children. Equivalent to calling updateTimerCacheByChildren for each edge.
     ///         Revert when the last edge's timer cache is already above maximumCachedTime.
     /// @param edgeIds           The ids of the edges to update
-    /// @param maximumCachedTime The maximum amount of cached time allowed on the edge (β∗)
+    /// @param maximumCachedTime The maximum amount of cached time allowed on the last edge (β∗)
     function multiUpdateTimeCacheByChildren(bytes32[] calldata edgeIds, uint256 maximumCachedTime) external;
 
     /// @notice Update an edge's timer cache by its children.
@@ -90,7 +90,7 @@ interface IEdgeChallengeManager {
     ///         This function should not be used for edges without children.
     ///         Revert when the edge's timer cache is already above maximumCachedTime.
     /// @param edgeId            The id of the edge to update
-    /// @param maximumCachedTime The required time to be cached on this edge (β∗)
+    /// @param maximumCachedTime The maximum amount of cached time allowed on the edge (β∗)
     function updateTimerCacheByChildren(bytes32 edgeId, uint256 maximumCachedTime) external;
 
     /// @notice Given a one step fork edge and an edge with matching claim id,
@@ -98,7 +98,7 @@ interface IEdgeChallengeManager {
     ///         Revert when the edge's timer cache is already above maximumCachedTime.
     /// @param edgeId            The id of the edge to update
     /// @param claimingEdgeId    The id of the edge which has a claimId equal to edgeId
-    /// @param maximumCachedTime The required time to be cached on this edge (β∗)
+    /// @param maximumCachedTime The maximum amount of cached time allowed on the edge (β∗)
     function updateTimerCacheByClaim(bytes32 edgeId, bytes32 claimingEdgeId, uint256 maximumCachedTime) external;
 
     /// @notice Confirm an edge by executing a one step proof
