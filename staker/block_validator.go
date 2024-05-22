@@ -585,6 +585,7 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		return false, fmt.Errorf("illegal batch msg count %d pos %d batch %d", v.nextCreateBatchMsgCount, pos, endGS.Batch)
 	}
 	var comm espressoTypes.Commitment
+	var hotShotAvailability bool
 	if arbos.IsEspressoMsg(msg.Message) {
 		_, jst, err := arbos.ParseEspressoMsg(msg.Message)
 		if err != nil {
@@ -596,10 +597,13 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 			return false, err
 		}
 		comm = fetchedCommitment
+		hotShotAvailability = true
+	} else if arbos.IsL2NonEspressoMsg(msg.Message) {
+		hotShotAvailability = false
 	}
 	chainConfig := v.streamer.ChainConfig()
 	entry, err := newValidationEntry(
-		pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, v.nextCreateBatchBlockHash, v.nextCreatePrevDelayed, chainConfig, &comm,
+		pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, v.nextCreateBatchBlockHash, v.nextCreatePrevDelayed, chainConfig, &comm, hotShotAvailability,
 	)
 	if err != nil {
 		return false, err

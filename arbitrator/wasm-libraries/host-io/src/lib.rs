@@ -18,6 +18,7 @@ extern "C" {
     pub fn wavm_read_eth_versioned_hash_preimage(ptr: *mut u8, offset: usize) -> usize;
     pub fn wavm_read_inbox_message(msg_num: u64, ptr: *mut u8, offset: usize) -> usize;
     pub fn wavm_read_hotshot_commitment(ptr: *mut u8, height: u64);
+    pub fn wavm_get_hotshot_availability(height: u64) -> u32;
     pub fn wavm_read_delayed_inbox_message(seq_num: u64, ptr: *mut u8, offset: usize) -> usize;
 }
 
@@ -86,6 +87,11 @@ pub unsafe extern "C" fn wavmio__readHotShotCommitment(h: u64, out_ptr: GuestPtr
     assert_eq!(our_ptr as usize % 32, 0);
     wavm_read_hotshot_commitment(our_ptr, h);
     STATIC_MEM.write_slice(out_ptr, &our_buf.0[..32]);
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn wavmio__getHotShotAvailability(h: u64) -> u32 {
+    wavm_get_hotshot_availability(h)
 }
 
 /// Reads an inbox message

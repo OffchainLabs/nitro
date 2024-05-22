@@ -31,3 +31,6 @@ func resolveTypedPreimage(ty uint32, hash unsafe.Pointer, offset uint32, output 
 
 //go:wasmimport wavmio readHotShotCommitment
 func readHotShotCommitment(h uint64, output unsafe.Pointer)
+
+//go:wasmimport wavmio getHotShotAvailability
+func getHotShotAvailability(l1Height uint64) uint32

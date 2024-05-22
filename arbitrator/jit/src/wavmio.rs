@@ -87,6 +87,26 @@ pub fn read_inbox_message(
     Ok(read.len() as u32)
 }
 
+pub fn get_hotshot_availability(mut env: WasmEnvMut, h: u64) -> Result<u32, Escape> {
+    let (_mem, exec) = env.jit_env();
+    ready_hostio(exec)?;
+
+    let availability = match exec.hotshot_avail_map.get(&h) {
+        Some(availability) => availability,
+        None => {
+            return Escape::hostio(format!(
+                "jit machine failed to read the hotshot availability at {}",
+                h
+            ))
+        }
+    };
+    if *availability {
+        Ok(1)
+    } else {
+        Ok(0)
+    }
+}
+
 pub fn read_hotshot_commitment(
     mut env: WasmEnvMut,
     h: u64,
@@ -278,14 +298,21 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
     let position_within_message = socket::read_u64(stream)?;
     let last_block_hash = socket::read_bytes32(stream)?;
     let last_send_root = socket::read_bytes32(stream)?;
-    let last_hotshot_height = socket::read_u64(stream)?;
-    let validating_hotshot_height = socket::read_u64(stream)?;
+    let validated_hotshot_height = socket::read_u64(stream)?;
     let hotshot_comm = socket::read_bytes32(stream)?;
+    let l1_block_height = socket::read_u64(stream)?;
+    let hotshot_avail = socket::read_u8(stream)?;
 
-    env.small_globals = [inbox_position, position_within_message, last_hotshot_height];
+    env.small_globals = [
+        inbox_position,
+        position_within_message,
+        validated_hotshot_height,
+    ];
     env.large_globals = [last_block_hash, last_send_root];
     env.hotshot_comm_map
-        .insert(validating_hotshot_height, hotshot_comm.0);
+        .insert(validated_hotshot_height + 1, hotshot_comm.0);
+    env.hotshot_avail_map
+        .insert(l1_block_height, hotshot_avail > 0);
 
     while socket::read_u8(stream)? == socket::ANOTHER {
         let position = socket::read_u64(stream)?;

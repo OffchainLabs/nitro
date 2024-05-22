@@ -138,7 +138,7 @@ func (v *ArbitratorSpawner) loadEntryToMachine(ctx context.Context, entry *valid
 			return fmt.Errorf("error while trying to add delayed msg for proving: %w", err)
 		}
 	}
-	err = mach.AddHotShotCommitment(entry.HotShotHeight, entry.HotShotCommitment[:])
+	err = mach.AddHotShotCommitment(entry.StartState.HotShotHeight+1, entry.HotShotCommitment[:])
 	if err != nil {
 		log.Error("error while setting hotshot commitment: %w", err)
 		return fmt.Errorf("error while setting hotshot commitment: %w", err)
