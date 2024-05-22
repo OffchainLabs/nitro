@@ -223,7 +223,12 @@ fn new_layer(ty: MerkleType, layer: &Vec<Bytes32>, empty_hash: &'static Bytes32)
 
 impl Clone for Merkle {
     fn clone(&self) -> Self {
-        Merkle::new_advanced(self.ty, self.layers.lock().data[0].clone(), self.min_depth)
+        let leaves = if self.layers.lock().data.is_empty() {
+            vec![]
+        } else {
+            self.layers.lock().data[0].clone()
+        };
+        Merkle::new_advanced(self.ty, leaves, self.min_depth)
     }
 }
 
