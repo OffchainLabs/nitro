@@ -851,7 +851,8 @@ func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransacti
 	// different type with a lower nonce.
 	// If we decide not to send this tx yet, just leave it queued and with Sent set to false.
 	// The resending/repricing loop in DataPoster.Start will keep trying.
-	if !newTx.Sent && newTx.FullTx.Nonce() > 0 {
+	previouslySent := newTx.Sent || (prevTx != nil && prevTx.Sent) // if we've previously sent this nonce
+	if !previouslySent && newTx.FullTx.Nonce() > 0 {
 		precedingTx, err := p.queue.Get(ctx, arbmath.SaturatingUSub(newTx.FullTx.Nonce(), 1))
 		if err != nil {
 			return fmt.Errorf("couldn't get preceding tx in DataPoster to check if should send tx with nonce %d: %w", newTx.FullTx.Nonce(), err)
