@@ -4,12 +4,14 @@
 package gethexec
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"math"
 	"math/big"
 	"os"
+	"path"
 	"runtime/debug"
 	"runtime/pprof"
 	"runtime/trace"
@@ -768,41 +770,15 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 	return outputQueueItems
 }
 
-func deleteFiles(files ...*os.File) {
-	for _, f := range files {
-		if err := os.Remove(f.Name()); err != nil {
-			log.Error("Error removing file", "name", f.Name())
-		}
-	}
-}
-
-func closeFiles(files ...*os.File) {
-	for _, f := range files {
-		if err := os.Remove(f.Name()); err != nil {
-			log.Error("Error closing file", "name", f.Name())
-		}
-	}
-}
-
 // createBlockWithProfiling runs create block with tracing and CPU profiling
 // enabled. If the block creation takes longer than 5 seconds, it keeps both
 // and prints out filenames in an error log line.
 func (s *Sequencer) createBlockWithProfiling(ctx context.Context) bool {
-	id := uuid.NewString()
-	pprofFile, err := os.CreateTemp("", id+".pprof")
-	if err != nil {
-		log.Error("Creating temporary file for profiling CPU", "error", err)
-	}
-	traceFile, err := os.CreateTemp("", id+".trace")
-	if err != nil {
-		log.Error("Creating temporary file for tracing", "error", err)
-	}
-	if err := pprof.StartCPUProfile(pprofFile); err != nil {
+	pprofBuf, traceBuf := bytes.NewBuffer(nil), bytes.NewBuffer(nil)
+	if err := pprof.StartCPUProfile(pprofBuf); err != nil {
 		log.Error("Starting CPU profiling", "error", err)
-		deleteFiles(pprofFile)
 	}
-	if err := trace.Start(traceFile); err != nil {
-		deleteFiles(traceFile)
+	if err := trace.Start(traceBuf); err != nil {
 		log.Error("Starting tracing", "error", err)
 	}
 	start := time.Now()
@@ -810,13 +786,26 @@ func (s *Sequencer) createBlockWithProfiling(ctx context.Context) bool {
 	elapsed := time.Since(start)
 	pprof.StopCPUProfile()
 	trace.Stop()
-	closeFiles(pprofFile, traceFile)
 	if elapsed > 5*time.Second {
-		log.Error("Block creation took longer than 5 seconds", "pprof", pprofFile.Name())
+		writeAndLog(pprofBuf, traceBuf)
 		return res
 	}
-	deleteFiles(pprofFile, traceFile)
 	return res
+}
+
+func writeAndLog(pprof, trace *bytes.Buffer) {
+	id := uuid.NewString()
+	pprofFile := path.Join(os.TempDir(), id+".pprof")
+	if err := os.WriteFile(pprofFile, pprof.Bytes(), 0o644); err != nil {
+		log.Error("Creating temporary file for pprof", "fileName", pprofFile, "error", err)
+		return
+	}
+	traceFile := path.Join(os.TempDir(), id+".trace")
+	if err := os.WriteFile(traceFile, trace.Bytes(), 0o644); err != nil {
+		log.Error("Creating temporary file for trace", "fileName", traceFile, "error", err)
+		return
+	}
+	log.Debug("Block creation took longer than 5 seconds, created pprof and trace files", "pprof", pprofFile, "traceFile", traceFile)
 }
 
 func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
