@@ -32,7 +32,6 @@ use sha3::Keccak256;
 use std::{
     collections::HashSet,
     convert::{TryFrom, TryInto},
-    sync::Arc,
 };
 
 #[cfg(feature = "rayon")]
@@ -189,11 +188,11 @@ struct Layers {
 /// and passing a minimum depth.
 ///
 /// This structure does not contain the data itself, only the hashes.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Merkle {
     ty: MerkleType,
-    #[serde(with = "arc_mutex_sedre")]
-    layers: Arc<Mutex<Layers>>,
+    #[serde(with = "mutex_sedre")]
+    layers: Mutex<Layers>,
     min_depth: usize,
 }
 
@@ -239,6 +238,12 @@ fn new_layer(ty: MerkleType, layer: &Vec<Bytes32>, empty_hash: &'static Bytes32)
     new_layer
 }
 
+impl Clone for Merkle {
+    fn clone(&self) -> Self {
+        Merkle::new_advanced(self.ty, self.layers.lock().data[0].clone(), self.min_depth)
+    }
+}
+
 impl Merkle {
     /// Creates a new Merkle tree with the given type and leaf hashes.
     /// The tree is built up to the minimum depth necessary to hold all the
@@ -270,10 +275,10 @@ impl Merkle {
             layers.push(new_layer);
             layer_i += 1;
         }
-        let layers = Arc::new(Mutex::new(Layers {
+        let layers = Mutex::new(Layers {
             data: layers,
             dirt: dirty_indices,
-        }));
+        });
         Merkle {
             ty,
             layers,
@@ -435,11 +440,10 @@ impl PartialEq for Merkle {
 
 impl Eq for Merkle {}
 
-pub mod arc_mutex_sedre {
+pub mod mutex_sedre {
     use parking_lot::Mutex;
-    use std::sync::Arc;
 
-    pub fn serialize<S, T>(data: &Arc<Mutex<T>>, serializer: S) -> Result<S::Ok, S::Error>
+    pub fn serialize<S, T>(data: &Mutex<T>, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
         T: serde::Serialize,
@@ -447,12 +451,12 @@ pub mod arc_mutex_sedre {
         data.lock().serialize(serializer)
     }
 
-    pub fn deserialize<'de, D, T>(deserializer: D) -> Result<Arc<Mutex<T>>, D::Error>
+    pub fn deserialize<'de, D, T>(deserializer: D) -> Result<Mutex<T>, D::Error>
     where
         D: serde::Deserializer<'de>,
         T: serde::Deserialize<'de>,
     {
-        Ok(Arc::new(Mutex::new(T::deserialize(deserializer)?)))
+        Ok(Mutex::new(T::deserialize(deserializer)?))
     }
 }
 
@@ -564,6 +568,15 @@ fn emit_memory_zerohashes() {
         println!("]),");
         empty_node = hash_node(MerkleType::Memory, empty_node, empty_node);
     }
+}
+
+#[test]
+fn clone_is_separate() {
+    let merkle = Merkle::new_advanced(MerkleType::Value, vec![Bytes32::from([1; 32])], 4);
+    let m2 = merkle.clone();
+    m2.resize(4).expect("resize failed");
+    m2.set(3, Bytes32::from([2; 32]));
+    assert_ne!(merkle, m2);
 }
 
 #[test]
