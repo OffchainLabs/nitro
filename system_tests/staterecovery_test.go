@@ -53,7 +53,7 @@ func TestRectreateMissingStates(t *testing.T) {
 		chainDb, err := stack.OpenDatabaseWithExtraOptions("l2chaindata", 0, 0, "l2chaindata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata"))
 		Require(t, err)
 		defer chainDb.Close()
-		cacheConfig := gethexec.DefaultCacheConfigFor(stack, &gethexec.DefaultCachingConfig)
+		cacheConfig := gethexec.DefaultCacheConfigFor(stack, &gethexec.TestCachingConfig)
 		bc, err := gethexec.GetBlockChain(chainDb, cacheConfig, builder.chainConfig, builder.execConfig.TxLookupLimit)
 		Require(t, err)
 		err = staterecovery.RecreateMissingStates(chainDb, bc, cacheConfig, 1)
