@@ -1808,18 +1808,20 @@ contract EdgeChallengeManagerTest is Test {
 
     /// @dev gracefully handle revert when updating timer cache
     ///      TODO: consider removing this hack to make the test more robust
-    function _updateTimerCacheByChildren(EdgeChallengeManager challengeManager, bytes32 edgeId, uint256 requiredTime)
-        internal
-    {
+    function _updateTimerCacheByChildren(
+        EdgeChallengeManager challengeManager,
+        bytes32 edgeId,
+        uint256 maximumCachedTime
+    ) internal {
         uint256 totalTimeUnrivaledCache = challengeManager.getEdge(edgeId).totalTimeUnrivaledCache;
-        if (totalTimeUnrivaledCache >= requiredTime) {
+        if (totalTimeUnrivaledCache >= maximumCachedTime) {
             vm.expectRevert(
-                abi.encodeWithSelector(CachedTimeSufficient.selector, totalTimeUnrivaledCache, requiredTime)
+                abi.encodeWithSelector(CachedTimeSufficient.selector, totalTimeUnrivaledCache, maximumCachedTime)
             );
         } else {
-            requiredTime = totalTimeUnrivaledCache + 1;
+            maximumCachedTime = totalTimeUnrivaledCache + 1;
         }
-        challengeManager.updateTimerCacheByChildren(edgeId, requiredTime);
+        challengeManager.updateTimerCacheByChildren(edgeId, maximumCachedTime);
     }
 
     /// @dev gracefully handle revert when updating timer cache
@@ -1828,17 +1830,17 @@ contract EdgeChallengeManagerTest is Test {
         EdgeChallengeManager challengeManager,
         bytes32 edgeId,
         bytes32 claimingEdgeId,
-        uint256 requiredTime
+        uint256 maximumCachedTime
     ) internal {
         uint256 totalTimeUnrivaledCache = challengeManager.getEdge(edgeId).totalTimeUnrivaledCache;
-        if (totalTimeUnrivaledCache >= requiredTime) {
+        if (totalTimeUnrivaledCache >= maximumCachedTime) {
             vm.expectRevert(
-                abi.encodeWithSelector(CachedTimeSufficient.selector, totalTimeUnrivaledCache, requiredTime)
+                abi.encodeWithSelector(CachedTimeSufficient.selector, totalTimeUnrivaledCache, maximumCachedTime)
             );
         } else {
-            requiredTime = totalTimeUnrivaledCache + 1;
+            maximumCachedTime = totalTimeUnrivaledCache + 1;
         }
-        challengeManager.updateTimerCacheByClaim(edgeId, claimingEdgeId, requiredTime);
+        challengeManager.updateTimerCacheByClaim(edgeId, claimingEdgeId, maximumCachedTime);
     }
 
     function _updateTimers(EdgeInitData memory ei, BisectionChildren[] memory allWinners) internal {

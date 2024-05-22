@@ -100,8 +100,8 @@ contract EdgeChallengeManagerLibAccess {
         return store.timeUnrivaledTotal(edgeId);
     }
 
-    function updateTimerCacheByChildren(bytes32 edgeId, uint256 requiredTime) public {
-        store.updateTimerCacheByChildren(edgeId, requiredTime);
+    function updateTimerCacheByChildren(bytes32 edgeId, uint256 maximumCachedTime) public {
+        store.updateTimerCacheByChildren(edgeId, maximumCachedTime);
     }
 
     function mandatoryBisectionHeight(uint256 start, uint256 end) public pure returns (uint256) {

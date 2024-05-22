@@ -80,26 +80,26 @@ interface IEdgeChallengeManager {
     function confirmEdgeByTime(bytes32 edgeId, AssertionStateData calldata claimStateData) external;
 
     /// @notice Update multiple edges' timer cache by their children. Equivalent to calling updateTimerCacheByChildren for each edge.
-    ///         Revert when the last edge's timer cache is not updated or is already sufficient.
-    /// @param edgeIds       The ids of the edges to update
-    /// @param requiredTime The required time to be cached on the last edge (β∗)
-    function multiUpdateTimeCacheByChildren(bytes32[] calldata edgeIds, uint256 requiredTime) external;
+    ///         Revert when the last edge's timer cache is already above maximumCachedTime.
+    /// @param edgeIds           The ids of the edges to update
+    /// @param maximumCachedTime The maximum amount of cached time allowed on the edge (β∗)
+    function multiUpdateTimeCacheByChildren(bytes32[] calldata edgeIds, uint256 maximumCachedTime) external;
 
     /// @notice Update an edge's timer cache by its children.
     ///         Sets the edge's timer cache to its timeUnrivaled + (minimum timer cache of its children).
     ///         This function should not be used for edges without children.
-    ///         Revert when the edge's timer cache is not updated or is already sufficient.
-    /// @param edgeId           The id of the edge to update
-    /// @param requiredTime     The required time to be cached on this edge (β∗)
-    function updateTimerCacheByChildren(bytes32 edgeId, uint256 requiredTime) external;
+    ///         Revert when the edge's timer cache is already above maximumCachedTime.
+    /// @param edgeId            The id of the edge to update
+    /// @param maximumCachedTime The required time to be cached on this edge (β∗)
+    function updateTimerCacheByChildren(bytes32 edgeId, uint256 maximumCachedTime) external;
 
     /// @notice Given a one step fork edge and an edge with matching claim id,
     ///         set the one step fork edge's timer cache to its timeUnrivaled + claiming edge's timer cache.
-    ///         Revert when the edge's timer cache is not updated or is already sufficient.
-    /// @param edgeId           The id of the edge to update
-    /// @param claimingEdgeId   The id of the edge which has a claimId equal to edgeId
-    /// @param requiredTime     The required time to be cached on this edge (β∗)
-    function updateTimerCacheByClaim(bytes32 edgeId, bytes32 claimingEdgeId, uint256 requiredTime) external;
+    ///         Revert when the edge's timer cache is already above maximumCachedTime.
+    /// @param edgeId            The id of the edge to update
+    /// @param claimingEdgeId    The id of the edge which has a claimId equal to edgeId
+    /// @param maximumCachedTime The required time to be cached on this edge (β∗)
+    function updateTimerCacheByClaim(bytes32 edgeId, bytes32 claimingEdgeId, uint256 maximumCachedTime) external;
 
     /// @notice Confirm an edge by executing a one step proof
     /// @dev    One step proofs can only be executed against edges that have length one and of type SmallStep
@@ -490,25 +490,25 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
     }
 
     /// @inheritdoc IEdgeChallengeManager
-    function multiUpdateTimeCacheByChildren(bytes32[] calldata edgeIds, uint256 requiredTime) public {
+    function multiUpdateTimeCacheByChildren(bytes32[] calldata edgeIds, uint256 maximumCachedTime) public {
         if (edgeIds.length == 0) revert EmptyArray();
         // revert early if the last edge already has sufficient time
-        store.validateCurrentTimer(edgeIds[edgeIds.length - 1], requiredTime);
+        store.validateCurrentTimer(edgeIds[edgeIds.length - 1], maximumCachedTime);
         for (uint256 i = 0; i < edgeIds.length; i++) {
             updateTimerCacheByChildren(edgeIds[i], type(uint256).max);
         }
     }
 
     /// @inheritdoc IEdgeChallengeManager
-    function updateTimerCacheByChildren(bytes32 edgeId, uint256 requiredTime) public {
-        (bool updated, uint256 newValue) = store.updateTimerCacheByChildren(edgeId, requiredTime);
+    function updateTimerCacheByChildren(bytes32 edgeId, uint256 maximumCachedTime) public {
+        (bool updated, uint256 newValue) = store.updateTimerCacheByChildren(edgeId, maximumCachedTime);
         if (updated) emit TimerCacheUpdated(edgeId, newValue);
     }
 
     /// @inheritdoc IEdgeChallengeManager
-    function updateTimerCacheByClaim(bytes32 edgeId, bytes32 claimingEdgeId, uint256 requiredTime) public {
+    function updateTimerCacheByClaim(bytes32 edgeId, bytes32 claimingEdgeId, uint256 maximumCachedTime) public {
         (bool updated, uint256 newValue) =
-            store.updateTimerCacheByClaim(edgeId, claimingEdgeId, NUM_BIGSTEP_LEVEL, requiredTime);
+            store.updateTimerCacheByClaim(edgeId, claimingEdgeId, NUM_BIGSTEP_LEVEL, maximumCachedTime);
         if (updated) emit TimerCacheUpdated(edgeId, newValue);
     }
 
