@@ -285,6 +285,7 @@ func TestRedisReproduceDisabled(t *testing.T) {
 	// Consumer messages in every third consumer but don't ack them to check
 	// that other consumers will claim ownership on those messages.
 	for i := 0; i < len(consumers); i += 3 {
+		consumers[i].Start(ctx)
 		if _, err := consumers[i].Consume(ctx); err != nil {
 			t.Errorf("Error consuming message: %v", err)
 		}
