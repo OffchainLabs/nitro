@@ -114,3 +114,5 @@ error InputLengthMismatch(uint256 length1, uint256 length2);
 error CachedTimeSufficient(uint256 actual, uint256 expected);
 /// @dev Throw when the cached time is insufficient
 error CachedTimeInsufficient(uint256 actual, uint256 expected);
+/// @dev Throw when the input is a empty array
+error EmptyArray();

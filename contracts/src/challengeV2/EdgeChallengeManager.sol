@@ -511,6 +511,9 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
 
     /// @inheritdoc IEdgeChallengeManager
     function multiUpdateTimeCacheByChildren(bytes32[] calldata edgeIds, uint256[] calldata requiredTimes) public {
+        if (edgeIds.length == 0) {
+            revert EmptyArray();
+        }
         if (edgeIds.length != requiredTimes.length) {
             revert InputLengthMismatch(edgeIds.length, requiredTimes.length);
         }
