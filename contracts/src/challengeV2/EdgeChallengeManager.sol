@@ -80,7 +80,7 @@ interface IEdgeChallengeManager {
     function confirmEdgeByTime(bytes32 edgeId, AssertionStateData calldata claimStateData) external;
 
     /// @notice Update multiple edges' timer cache by their children. Equivalent to calling updateTimerCacheByChildren for each edge.
-    ///         Revert when none of the edges' timer cache is updated.
+    ///         Revert when the last edge's timer cache is not updated enough or is already sufficient.
     /// @param edgeIds       The ids of the edges to update
     /// @param requiredTimes The required times to be cached on the edges
     function multiUpdateTimeCacheByChildren(bytes32[] calldata edgeIds, uint256[] calldata requiredTimes) external;
@@ -494,21 +494,21 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         if (edgeIds.length != requiredTimes.length) {
             revert InputLengthMismatch(edgeIds.length, requiredTimes.length);
         }
-        bool isSuccess;
         for (uint256 i = 0; i < edgeIds.length; i++) {
             uint256 totalTimeUnrivaledCache = store.get(edgeIds[i]).totalTimeUnrivaledCache;
             if (totalTimeUnrivaledCache >= requiredTimes[i]) {
                 revert CachedTimeSufficient(totalTimeUnrivaledCache, requiredTimes[i]);
             }
             (bool updated, uint256 newValue) = store.updateTimerCacheByChildren(edgeIds[i]);
+
+            if (i == edgeIds.length - 1) {
+                // only revert if the last edge failed to update
+                if (!updated) revert CachedTimeNotUpdated();
+                if (newValue < requiredTimes[i]) revert CachedTimeInsufficient(newValue, requiredTimes[i]);
+            }
             if (!updated) continue;
             emit TimerCacheUpdated(edgeIds[i], newValue);
-            if (newValue >= requiredTimes[i]) {
-                // only mark as success if at least one edge is updated above the required time
-                isSuccess = true;
-            }
         }
-        if (!isSuccess) revert CachedTimeNotUpdated();
     }
 
     /// @inheritdoc IEdgeChallengeManager
