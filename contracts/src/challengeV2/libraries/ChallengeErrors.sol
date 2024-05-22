@@ -108,11 +108,7 @@ error EndHistoryRootMismatch(bytes32 endHistoryRoot, bytes32 assertionEndRoot);
 error NotValidator(address account);
 /// @dev Thrown when an account has already created a rivalling layer zero edge
 error AccountHasMadeLayerZeroRival(address account, bytes32 mutualId);
-/// @dev Throw when the input lengths do not match
-error InputLengthMismatch(uint256 length1, uint256 length2);
 /// @dev Throw when the cached time is already sufficient
 error CachedTimeSufficient(uint256 actual, uint256 expected);
-/// @dev Throw when the cached time is insufficient
-error CachedTimeInsufficient(uint256 actual, uint256 expected);
-/// @dev Throw when the input is a empty array
+/// @dev Throw when the input is an empty array
 error EmptyArray();

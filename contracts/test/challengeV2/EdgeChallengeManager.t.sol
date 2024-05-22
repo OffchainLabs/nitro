@@ -624,9 +624,6 @@ contract EdgeChallengeManagerTest is Test {
 
         _safeVmRoll(block.number + challengePeriodBlock);
 
-        vm.expectRevert(abi.encodeWithSelector(CachedTimeInsufficient.selector, challengePeriodBlock, 10000));
-        ei.challengeManager.updateTimerCacheByChildren(children.lowerChildId, 10000);
-
         ei.challengeManager.updateTimerCacheByChildren(children.lowerChildId, challengePeriodBlock);
 
         vm.expectRevert(
@@ -667,21 +664,7 @@ contract EdgeChallengeManagerTest is Test {
         edgeIds[2] = children.lowerChildId;
         edgeIds[3] = children.upperChildId;
         edgeIds[4] = edge2Id;
-        uint256[] memory requiredTimes = new uint256[](2);
-        vm.expectRevert(abi.encodeWithSelector(InputLengthMismatch.selector, 5, 2));
-        ei.challengeManager.multiUpdateTimeCacheByChildren(edgeIds, requiredTimes);
-
-        requiredTimes = new uint256[](5);
-        requiredTimes[0] = challengePeriodBlock;
-        requiredTimes[1] = challengePeriodBlock;
-        requiredTimes[2] = challengePeriodBlock;
-        requiredTimes[3] = challengePeriodBlock;
-        requiredTimes[4] = 10000;
-        vm.expectRevert(abi.encodeWithSelector(CachedTimeInsufficient.selector, challengePeriodBlock, 10000));
-        ei.challengeManager.multiUpdateTimeCacheByChildren(edgeIds, requiredTimes);
-
-        requiredTimes[4] = challengePeriodBlock;
-        ei.challengeManager.multiUpdateTimeCacheByChildren(edgeIds, requiredTimes);
+        ei.challengeManager.multiUpdateTimeCacheByChildren(edgeIds, challengePeriodBlock);
 
         vm.expectRevert(abi.encodeWithSelector(RivalEdgeConfirmed.selector, edge2Id, edge1Id));
         ei.challengeManager.confirmEdgeByTime(edge2Id, ei.a2Data);

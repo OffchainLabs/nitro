@@ -495,15 +495,29 @@ library EdgeChallengeManagerLib {
         return totalTimeUnrivaled;
     }
 
+    /// @dev revert if the current totalTimeUnrivaledCache on the edge is greater than or equal to the required time
+    /// @return the current totalTimeUnrivaledCache on the edge
+    function validateCurrentTimer(EdgeStore storage store, bytes32 edgeId, uint256 requiredTime)
+        internal
+        view
+        returns (uint256)
+    {
+        uint256 currentAccuTimer = store.edges[edgeId].totalTimeUnrivaledCache;
+        if (currentAccuTimer >= requiredTime) {
+            revert CachedTimeSufficient(currentAccuTimer, requiredTime);
+        }
+        return currentAccuTimer;
+    }
+
     /// @notice Update the timer cache for an edge
     /// @dev    The cache is only updated if the new value is greater than the current value.
     ///         If the new value is greater than uint64 max then the cache is set to uint64 max
     /// @return (bool, uint256) A boolean indicating if the cache was updated, and the value of the cache
-    function updateTimerCache(EdgeStore storage store, bytes32 edgeId, uint256 newValue)
+    function updateTimerCache(EdgeStore storage store, bytes32 edgeId, uint256 newValue, uint256 requiredTime)
         internal
         returns (bool, uint256)
     {
-        uint256 currentAccuTimer = store.edges[edgeId].totalTimeUnrivaledCache;
+        uint256 currentAccuTimer = validateCurrentTimer(store, edgeId, requiredTime);
         newValue = newValue > type(uint64).max ? type(uint64).max : newValue;
         // only update when increased
         if (newValue > currentAccuTimer) {
@@ -513,21 +527,25 @@ library EdgeChallengeManagerLib {
         return (false, currentAccuTimer);
     }
 
-    function updateTimerCacheByChildren(EdgeStore storage store, bytes32 edgeId) internal returns (bool, uint256) {
-        return updateTimerCache(store, edgeId, timeUnrivaledTotal(store, edgeId));
+    function updateTimerCacheByChildren(EdgeStore storage store, bytes32 edgeId, uint256 requiredTime)
+        internal
+        returns (bool, uint256)
+    {
+        return updateTimerCache(store, edgeId, timeUnrivaledTotal(store, edgeId), requiredTime);
     }
 
     function updateTimerCacheByClaim(
         EdgeStore storage store,
         bytes32 edgeId,
         bytes32 claimingEdgeId,
-        uint8 numBigStepLevel
+        uint8 numBigStepLevel,
+        uint256 requiredTime
     ) internal returns (bool, uint256) {
         // calculate the time unrivaled without inheritance
         uint256 totalTimeUnrivaled = timeUnrivaled(store, edgeId);
         checkClaimIdLink(store, edgeId, claimingEdgeId, numBigStepLevel);
         totalTimeUnrivaled += store.edges[claimingEdgeId].totalTimeUnrivaledCache;
-        return updateTimerCache(store, edgeId, totalTimeUnrivaled);
+        return updateTimerCache(store, edgeId, totalTimeUnrivaled, requiredTime);
     }
 
     /// @notice The amount of time (in blocks) this edge has spent without rivals

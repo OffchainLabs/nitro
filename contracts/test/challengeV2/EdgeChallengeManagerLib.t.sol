@@ -100,8 +100,8 @@ contract EdgeChallengeManagerLibAccess {
         return store.timeUnrivaledTotal(edgeId);
     }
 
-    function updateTimerCacheByChildren(bytes32 edgeId) public {
-        store.updateTimerCacheByChildren(edgeId);
+    function updateTimerCacheByChildren(bytes32 edgeId, uint256 requiredTime) public {
+        store.updateTimerCacheByChildren(edgeId, requiredTime);
     }
 
     function mandatoryBisectionHeight(uint256 start, uint256 end) public pure returns (uint256) {
@@ -1111,10 +1111,12 @@ contract EdgeChallengeManagerLibTest is Test {
         assertEq(store.timeUnrivaledTotal(edge2.idMem()), 0);
 
         // update the child caches, since they are leaves, this should just set the cache to the time unrivaled
-        store.updateTimerCacheByChildren(lowerChildId1);
-        store.updateTimerCacheByChildren(upperChildAdded1.edgeId);
-        store.updateTimerCacheByChildren(lowerChildId2);
-        store.updateTimerCacheByChildren(upperChildAdded2.edgeId);
+        store.updateTimerCacheByChildren(lowerChildId1, 220);
+        store.updateTimerCacheByChildren(upperChildAdded1.edgeId, 20);
+        vm.expectRevert(abi.encodeWithSelector(CachedTimeSufficient.selector, 220, 220));
+        store.updateTimerCacheByChildren(lowerChildId2, 220);
+        vm.expectRevert(abi.encodeWithSelector(CachedTimeSufficient.selector, 0, 0));
+        store.updateTimerCacheByChildren(upperChildAdded2.edgeId, 0);
         assertEq(store.get(lowerChildId1).totalTimeUnrivaledCache, 220);
         assertEq(store.get(upperChildAdded1.edgeId).totalTimeUnrivaledCache, 20);
         assertEq(store.get(lowerChildId2).totalTimeUnrivaledCache, 220);
@@ -1125,8 +1127,9 @@ contract EdgeChallengeManagerLibTest is Test {
         assertEq(store.timeUnrivaledTotal(edge2.idMem()), 0);
 
         // updating the cache should set the cache to the time unrivaled total
-        store.updateTimerCacheByChildren(edge1.idMem());
-        store.updateTimerCacheByChildren(edge2.idMem());
+        store.updateTimerCacheByChildren(edge1.idMem(), 22);
+        vm.expectRevert(abi.encodeWithSelector(CachedTimeSufficient.selector, 0, 0));
+        store.updateTimerCacheByChildren(edge2.idMem(), 0);
         assertEq(store.get(edge1.idMem()).totalTimeUnrivaledCache, 22);
         assertEq(store.get(edge2.idMem()).totalTimeUnrivaledCache, 0);
     }
