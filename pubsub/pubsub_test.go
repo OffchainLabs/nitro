@@ -232,15 +232,11 @@ func TestRedisProduce(t *testing.T) {
 				// Consumer messages in every third consumer but don't ack them to check
 				// that other consumers will claim ownership on those messages.
 				for i := 0; i < len(consumers); i += 3 {
+					consumers[i].Start(ctx)
 					if _, err := consumers[i].Consume(ctx); err != nil {
 						t.Errorf("Error consuming message: %v", err)
 					}
-					// Terminate half of the consumers, send interrupt to others.
-					if i%2 == 0 {
-						consumers[i].StopAndWait()
-					} else {
-						consumers[i].signals <- os.Interrupt
-					}
+					consumers[i].StopAndWait()
 				}
 
 			}
@@ -252,7 +248,7 @@ func TestRedisProduce(t *testing.T) {
 			}
 			producer.StopAndWait()
 			for _, c := range consumers {
-				c.StopWaiter.StopAndWait()
+				c.StopAndWait()
 			}
 			got, err := mergeValues(gotMessages)
 			if err != nil {

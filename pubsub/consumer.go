@@ -5,10 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"os"
-	"os/signal"
 	"sync/atomic"
-	"syscall"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -53,7 +50,6 @@ type Consumer[Request any, Response any] struct {
 	// terminating indicates whether interrupt was received, in which case
 	// consumer should clean up for graceful shutdown.
 	terminating atomic.Bool
-	signals     chan os.Signal
 }
 
 type Message[Request any] struct {
@@ -72,14 +68,12 @@ func NewConsumer[Request any, Response any](client redis.UniversalClient, stream
 		redisGroup:  streamName, // There is 1-1 mapping of redis stream and consumer group.
 		cfg:         cfg,
 		terminating: atomic.Bool{},
-		signals:     make(chan os.Signal, 1),
 	}, nil
 }
 
 // Start starts the consumer to iteratively perform heartbeat in configured intervals.
 func (c *Consumer[Request, Response]) Start(ctx context.Context) {
 	c.StopWaiter.Start(ctx, c)
-	c.listenForInterrupt()
 	c.StopWaiter.CallIteratively(
 		func(ctx context.Context) time.Duration {
 			if !c.terminating.Load() {
@@ -92,22 +86,8 @@ func (c *Consumer[Request, Response]) Start(ctx context.Context) {
 	)
 }
 
-// listenForInterrupt launches a thread that notifies the channel when interrupt
-// is received.
-func (c *Consumer[Request, Response]) listenForInterrupt() {
-	signal.Notify(c.signals, syscall.SIGINT, syscall.SIGTERM)
-	c.StopWaiter.LaunchThread(func(ctx context.Context) {
-		select {
-		case sig := <-c.signals:
-			log.Info("Received interrup", "signal", sig.String())
-		case <-ctx.Done():
-			log.Info("Context is done", "error", ctx.Err())
-		}
-		c.deleteHeartBeat(ctx)
-	})
-}
-
 func (c *Consumer[Request, Response]) StopAndWait() {
+	c.deleteHeartBeat(c.GetParentContext())
 	c.StopWaiter.StopAndWait()
 }
 
