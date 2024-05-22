@@ -80,7 +80,8 @@ interface IEdgeChallengeManager {
     function confirmEdgeByTime(bytes32 edgeId, AssertionStateData calldata claimStateData) external;
 
     /// @notice Update multiple edges' timer cache by their children. Equivalent to calling updateTimerCacheByChildren for each edge.
-    ///         Revert when the last edge's timer cache is already above maximumCachedTime.
+    ///         May update timer cache above maximum if the last edge's timer cache was below maximumCachedTime.
+    ///         Revert when the last edge's timer cache is already equal to or above maximumCachedTime.
     /// @param edgeIds           The ids of the edges to update
     /// @param maximumCachedTime The maximum amount of cached time allowed on the last edge (β∗)
     function multiUpdateTimeCacheByChildren(bytes32[] calldata edgeIds, uint256 maximumCachedTime) external;
@@ -88,14 +89,16 @@ interface IEdgeChallengeManager {
     /// @notice Update an edge's timer cache by its children.
     ///         Sets the edge's timer cache to its timeUnrivaled + (minimum timer cache of its children).
     ///         This function should not be used for edges without children.
-    ///         Revert when the edge's timer cache is already above maximumCachedTime.
+    ///         May update timer cache above maximum if the last edge's timer cache was below maximumCachedTime.
+    ///         Revert when the edge's timer cache is already equal to or above maximumCachedTime.
     /// @param edgeId            The id of the edge to update
     /// @param maximumCachedTime The maximum amount of cached time allowed on the edge (β∗)
     function updateTimerCacheByChildren(bytes32 edgeId, uint256 maximumCachedTime) external;
 
     /// @notice Given a one step fork edge and an edge with matching claim id,
     ///         set the one step fork edge's timer cache to its timeUnrivaled + claiming edge's timer cache.
-    ///         Revert when the edge's timer cache is already above maximumCachedTime.
+    ///         May update timer cache above maximum if the last edge's timer cache was below maximumCachedTime.
+    ///         Revert when the edge's timer cache is already equal to or above maximumCachedTime.
     /// @param edgeId            The id of the edge to update
     /// @param claimingEdgeId    The id of the edge which has a claimId equal to edgeId
     /// @param maximumCachedTime The maximum amount of cached time allowed on the edge (β∗)
