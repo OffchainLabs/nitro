@@ -489,38 +489,41 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         return (lowerChildId, upperChildAdded.edgeId);
     }
 
+    function _updateTimerCacheByChildren(bytes32 edgeId, uint256 requiredTime, bool shouldRevert) public {
+        uint256 totalTimeUnrivaledCache = store.get(edgeId).totalTimeUnrivaledCache;
+        if (totalTimeUnrivaledCache >= requiredTime) {
+            if (shouldRevert) {
+                revert CachedTimeSufficient(totalTimeUnrivaledCache, requiredTime);
+            } else {
+                return;
+            }
+        }
+        (, uint256 newValue) = store.updateTimerCacheByChildren(edgeId);
+        if (newValue < requiredTime) {
+            if (shouldRevert) {
+                revert CachedTimeInsufficient(newValue, requiredTime);
+            } else {
+                return;
+            }
+        }
+        emit TimerCacheUpdated(edgeId, newValue);
+    }
+
     /// @inheritdoc IEdgeChallengeManager
     function multiUpdateTimeCacheByChildren(bytes32[] calldata edgeIds, uint256[] calldata requiredTimes) public {
         if (edgeIds.length != requiredTimes.length) {
             revert InputLengthMismatch(edgeIds.length, requiredTimes.length);
         }
-        for (uint256 i = 0; i < edgeIds.length; i++) {
-            uint256 totalTimeUnrivaledCache = store.get(edgeIds[i]).totalTimeUnrivaledCache;
-            if (totalTimeUnrivaledCache >= requiredTimes[i]) {
-                revert CachedTimeSufficient(totalTimeUnrivaledCache, requiredTimes[i]);
-            }
-            (bool updated, uint256 newValue) = store.updateTimerCacheByChildren(edgeIds[i]);
-
-            if (i == edgeIds.length - 1) {
-                // only revert if the last edge failed to update
-                if (!updated) revert CachedTimeNotUpdated();
-                if (newValue < requiredTimes[i]) revert CachedTimeInsufficient(newValue, requiredTimes[i]);
-            }
-            if (!updated) continue;
-            emit TimerCacheUpdated(edgeIds[i], newValue);
+        for (uint256 i = 0; i < edgeIds.length - 1; i++) {
+            _updateTimerCacheByChildren(edgeIds[i], requiredTimes[i], false);
         }
+        // only revert based on the result of the last edge timer cache udpate
+        _updateTimerCacheByChildren(edgeIds[edgeIds.length - 1], requiredTimes[edgeIds.length - 1], true);
     }
 
     /// @inheritdoc IEdgeChallengeManager
     function updateTimerCacheByChildren(bytes32 edgeId, uint256 requiredTime) public {
-        uint256 totalTimeUnrivaledCache = store.get(edgeId).totalTimeUnrivaledCache;
-        if (totalTimeUnrivaledCache >= requiredTime) {
-            revert CachedTimeSufficient(totalTimeUnrivaledCache, requiredTime);
-        }
-        (bool updated, uint256 newValue) = store.updateTimerCacheByChildren(edgeId);
-        if (!updated) revert CachedTimeNotUpdated();
-        if (newValue < requiredTime) revert CachedTimeInsufficient(newValue, requiredTime);
-        emit TimerCacheUpdated(edgeId, newValue);
+        _updateTimerCacheByChildren(edgeId, requiredTime, true);
     }
 
     /// @inheritdoc IEdgeChallengeManager
@@ -529,8 +532,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         if (totalTimeUnrivaledCache >= requiredTime) {
             revert CachedTimeSufficient(totalTimeUnrivaledCache, requiredTime);
         }
-        (bool updated, uint256 newValue) = store.updateTimerCacheByClaim(edgeId, claimingEdgeId, NUM_BIGSTEP_LEVEL);
-        if (!updated) revert CachedTimeNotUpdated();
+        (, uint256 newValue) = store.updateTimerCacheByClaim(edgeId, claimingEdgeId, NUM_BIGSTEP_LEVEL);
         if (newValue < requiredTime) revert CachedTimeInsufficient(newValue, requiredTime);
         emit TimerCacheUpdated(edgeId, newValue);
     }

@@ -676,9 +676,6 @@ contract EdgeChallengeManagerTest is Test {
         requiredTimes[1] = challengePeriodBlock;
         requiredTimes[2] = challengePeriodBlock;
         requiredTimes[3] = challengePeriodBlock;
-        vm.expectRevert(abi.encodeWithSelector(CachedTimeNotUpdated.selector));
-        ei.challengeManager.multiUpdateTimeCacheByChildren(edgeIds, requiredTimes);
-
         requiredTimes[4] = 10000;
         vm.expectRevert(abi.encodeWithSelector(CachedTimeInsufficient.selector, challengePeriodBlock, 10000));
         ei.challengeManager.multiUpdateTimeCacheByChildren(edgeIds, requiredTimes);
