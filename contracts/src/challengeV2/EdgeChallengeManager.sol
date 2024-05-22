@@ -489,7 +489,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         return (lowerChildId, upperChildAdded.edgeId);
     }
 
-    function _updateTimerCacheByChildren(bytes32 edgeId, uint256 requiredTime, bool shouldRevert) public {
+    function _updateTimerCacheByChildren(bytes32 edgeId, uint256 requiredTime, bool shouldRevert) internal {
         uint256 totalTimeUnrivaledCache = store.get(edgeId).totalTimeUnrivaledCache;
         if (totalTimeUnrivaledCache >= requiredTime) {
             if (shouldRevert) {
