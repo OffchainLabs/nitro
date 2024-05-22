@@ -52,7 +52,7 @@ func TestRectreateMissingStates(t *testing.T) {
 		chainDb, err := stack.OpenDatabase("l2chaindata", 0, 0, "l2chaindata/", false)
 		Require(t, err)
 		defer chainDb.Close()
-		cacheConfig := gethexec.DefaultCacheConfigFor(stack, &gethexec.DefaultCachingConfig)
+		cacheConfig := gethexec.DefaultCacheConfigFor(stack, &gethexec.TestCachingConfig)
 		bc, err := gethexec.GetBlockChain(chainDb, cacheConfig, builder.chainConfig, builder.execConfig.TxLookupLimit)
 		Require(t, err)
 		err = staterecovery.RecreateMissingStates(chainDb, bc, cacheConfig, 1)
