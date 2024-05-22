@@ -80,23 +80,25 @@ interface IEdgeChallengeManager {
     function confirmEdgeByTime(bytes32 edgeId, AssertionStateData calldata claimStateData) external;
 
     /// @notice Update multiple edges' timer cache by their children. Equivalent to calling updateTimerCacheByChildren for each edge.
-    /// @param edgeIds The ids of the edges to update
+    ///         Revert when none of the edges' timer cache is updated.
+    /// @param edgeIds       The ids of the edges to update
+    /// @param requiredTimes The required times to be cached on the edges
     function multiUpdateTimeCacheByChildren(bytes32[] calldata edgeIds, uint256[] calldata requiredTimes) external;
 
-    /// @notice If a confirmed edge exists whose claim id is equal to this edge, then this edge can be confirmed
-    /// @dev    When zero layer edges are created they reference an edge, or assertion, in the level below. If a zero layer
-    ///         edge is confirmed, it becomes possible to also confirm the edge that it claims
-    /// @param edgeId           The id of the edge to confirm
     /// @notice Update an edge's timer cache by its children.
     ///         Sets the edge's timer cache to its timeUnrivaled + (minimum timer cache of its children).
     ///         This function should not be used for edges without children.
-    /// @param edgeId The id of the edge to update
+    ///         Revert when the edge's timer cache is not updated or already sufficient.
+    /// @param edgeId           The id of the edge to update
+    /// @param requiredTime     The required time to be cached on this edge, also know as β∗
     function updateTimerCacheByChildren(bytes32 edgeId, uint256 requiredTime) external;
 
     /// @notice Given a one step fork edge and an edge with matching claim id,
     ///         set the one step fork edge's timer cache to its timeUnrivaled + claiming edge's timer cache.
+    ///         Revert when the edge's timer cache is not updated or already sufficient.
     /// @param edgeId           The id of the edge to update
     /// @param claimingEdgeId   The id of the edge which has a claimId equal to edgeId
+    /// @param requiredTime     The required time to be cached on this edge, also know as β∗
     function updateTimerCacheByClaim(bytes32 edgeId, bytes32 claimingEdgeId, uint256 requiredTime) external;
 
     /// @notice Confirm an edge by executing a one step proof
