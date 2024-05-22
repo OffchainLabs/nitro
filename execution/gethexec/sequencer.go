@@ -796,12 +796,12 @@ func (s *Sequencer) createBlockWithProfiling(ctx context.Context) bool {
 func writeAndLog(pprof, trace *bytes.Buffer) {
 	id := uuid.NewString()
 	pprofFile := path.Join(os.TempDir(), id+".pprof")
-	if err := os.WriteFile(pprofFile, pprof.Bytes(), 0o644); err != nil {
+	if err := os.WriteFile(pprofFile, pprof.Bytes(), 0o600); err != nil {
 		log.Error("Creating temporary file for pprof", "fileName", pprofFile, "error", err)
 		return
 	}
 	traceFile := path.Join(os.TempDir(), id+".trace")
-	if err := os.WriteFile(traceFile, trace.Bytes(), 0o644); err != nil {
+	if err := os.WriteFile(traceFile, trace.Bytes(), 0o600); err != nil {
 		log.Error("Creating temporary file for trace", "fileName", traceFile, "error", err)
 		return
 	}
