@@ -127,6 +127,7 @@ func (p *TxProcessor) ExecuteWASM(scope *vm.ScopeContext, input []byte, interpre
 		tracingInfo,
 		input,
 		reentrant,
+		p.RunMode(),
 	)
 }
 
