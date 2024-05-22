@@ -964,6 +964,7 @@ pub struct Machine {
     stdio_output: Vec<u8>,
     inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
     hotshot_commitments: HashMap<u64, [u8; 32]>,
+    hotshot_availabilities: HashMap<u64, bool>,
     first_too_far: u64, // Not part of machine hash
     preimage_resolver: PreimageResolverWrapper,
     /// Linkable Stylus modules in compressed form. Not part of the machine hash.
@@ -1549,6 +1550,7 @@ impl Machine {
             context: 0,
             hotshot_commitments: Default::default(),
             debug_info,
+            hotshot_availabilities: Default::default(),
         };
         mach.initial_hash = mach.hash();
         Ok(mach)
@@ -1600,6 +1602,7 @@ impl Machine {
             initial_hash: Bytes32::default(),
             context: 0,
             hotshot_commitments: Default::default(),
+            hotshot_availabilities: Default::default(),
             debug_info: false,
         };
         mach.initial_hash = mach.hash();
@@ -2490,7 +2493,13 @@ impl Machine {
                     }
                 }
                 Opcode::GetHotShotAvailability => {
-                    todo!()
+                    let height = value_stack.pop().unwrap().assume_u64();
+                    if let Some(is_alive) = self.hotshot_availabilities.get(&height) {
+                        let value = if *is_alive { 1 } else { 0 };
+                        value_stack.push(Value::I32(value));
+                    } else {
+                        error!()
+                    }
                 }
                 Opcode::ReadInboxMessage => {
                     let offset = value_stack.pop().unwrap().assume_u32();

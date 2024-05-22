@@ -208,6 +208,7 @@ func newValidationEntry(
 		msg:                msg,
 		BatchInfo:          []validator.BatchInfo{batchInfo},
 		ChainConfig:        chainConfig,
+		L1BlockHeight:      msg.Message.Header.BlockNumber,
 		HotShotCommitment:  *hotShotCommitment,
 		HotShotAvailablity: hotShotAvaiability,
 	}, nil
