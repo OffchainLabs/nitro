@@ -1797,7 +1797,8 @@ contract EdgeChallengeManagerTest is Test {
         return (ei, allWinners);
     }
 
-    /// @dev gracefully handle revert in case of time already sufficient
+    /// @dev gracefully handle revert when updating timer cache
+    ///      TODO: consider removing this hack to make the test more robust
     function _updateTimerCacheByChildren(EdgeChallengeManager challengeManager, bytes32 edgeId, uint256 requiredTime)
         internal
     {
@@ -1806,11 +1807,14 @@ contract EdgeChallengeManagerTest is Test {
             vm.expectRevert(
                 abi.encodeWithSelector(CachedTimeSufficient.selector, totalTimeUnrivaledCache, requiredTime)
             );
+        } else {
+            requiredTime = totalTimeUnrivaledCache + 1;
         }
         challengeManager.updateTimerCacheByChildren(edgeId, requiredTime);
     }
 
-    /// @dev gracefully handle revert in case of time already sufficient
+    /// @dev gracefully handle revert when updating timer cache
+    ///      TODO: consider removing this hack to make the test more robust
     function _updateTimerCacheByClaim(
         EdgeChallengeManager challengeManager,
         bytes32 edgeId,
@@ -1822,6 +1826,8 @@ contract EdgeChallengeManagerTest is Test {
             vm.expectRevert(
                 abi.encodeWithSelector(CachedTimeSufficient.selector, totalTimeUnrivaledCache, requiredTime)
             );
+        } else {
+            requiredTime = totalTimeUnrivaledCache + 1;
         }
         challengeManager.updateTimerCacheByClaim(edgeId, claimingEdgeId, requiredTime);
     }

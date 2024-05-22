@@ -112,5 +112,7 @@ error AccountHasMadeLayerZeroRival(address account, bytes32 mutualId);
 error InputLengthMismatch(uint256 length1, uint256 length2);
 /// @dev Throw when the cached time is already sufficient
 error CachedTimeSufficient(uint256 actual, uint256 expected);
+/// @dev Throw when the cached time is insufficient
+error CachedTimeInsufficient(uint256 actual, uint256 expected);
 /// @dev Throw when the cached time is not updated
 error CachedTimeNotUpdated();
