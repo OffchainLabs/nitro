@@ -624,7 +624,16 @@ contract EdgeChallengeManagerTest is Test {
 
         _safeVmRoll(block.number + challengePeriodBlock);
 
+        vm.expectRevert(abi.encodeWithSelector(CachedTimeInsufficient.selector, challengePeriodBlock, 10000));
+        ei.challengeManager.updateTimerCacheByChildren(children.lowerChildId, 10000);
+
         ei.challengeManager.updateTimerCacheByChildren(children.lowerChildId, challengePeriodBlock);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(CachedTimeSufficient.selector, challengePeriodBlock, challengePeriodBlock)
+        );
+        ei.challengeManager.updateTimerCacheByChildren(children.lowerChildId, challengePeriodBlock);
+
         ei.challengeManager.updateTimerCacheByChildren(children.upperChildId, challengePeriodBlock);
         ei.challengeManager.confirmEdgeByTime(edge1Id, ei.a1Data);
 
@@ -651,11 +660,31 @@ contract EdgeChallengeManagerTest is Test {
         BisectionChildren memory children = bisect(ei.challengeManager, edge2Id, states2, 16, states2.length - 1);
         BisectionChildren memory children2 = bisect(ei.challengeManager, children.lowerChildId, states2, 8, 16);
         _safeVmRoll(block.number + challengePeriodBlock);
-        ei.challengeManager.updateTimerCacheByChildren(children2.lowerChildId, challengePeriodBlock);
-        ei.challengeManager.updateTimerCacheByChildren(children2.upperChildId, challengePeriodBlock);
-        ei.challengeManager.updateTimerCacheByChildren(children.lowerChildId, challengePeriodBlock);
-        ei.challengeManager.updateTimerCacheByChildren(children.upperChildId, challengePeriodBlock);
-        ei.challengeManager.updateTimerCacheByChildren(edge2Id, challengePeriodBlock);
+
+        bytes32[] memory edgeIds = new bytes32[](5);
+        edgeIds[0] = children2.lowerChildId;
+        edgeIds[1] = children2.upperChildId;
+        edgeIds[2] = children.lowerChildId;
+        edgeIds[3] = children.upperChildId;
+        edgeIds[4] = edge2Id;
+        uint256[] memory requiredTimes = new uint256[](2);
+        vm.expectRevert(abi.encodeWithSelector(InputLengthMismatch.selector, 5, 2));
+        ei.challengeManager.multiUpdateTimeCacheByChildren(edgeIds, requiredTimes);
+
+        requiredTimes = new uint256[](5);
+        requiredTimes[0] = challengePeriodBlock;
+        requiredTimes[1] = challengePeriodBlock;
+        requiredTimes[2] = challengePeriodBlock;
+        requiredTimes[3] = challengePeriodBlock;
+        vm.expectRevert(abi.encodeWithSelector(CachedTimeNotUpdated.selector));
+        ei.challengeManager.multiUpdateTimeCacheByChildren(edgeIds, requiredTimes);
+
+        requiredTimes[4] = 10000;
+        vm.expectRevert(abi.encodeWithSelector(CachedTimeInsufficient.selector, challengePeriodBlock, 10000));
+        ei.challengeManager.multiUpdateTimeCacheByChildren(edgeIds, requiredTimes);
+
+        requiredTimes[4] = challengePeriodBlock;
+        ei.challengeManager.multiUpdateTimeCacheByChildren(edgeIds, requiredTimes);
 
         vm.expectRevert(abi.encodeWithSelector(RivalEdgeConfirmed.selector, edge2Id, edge1Id));
         ei.challengeManager.confirmEdgeByTime(edge2Id, ei.a2Data);
