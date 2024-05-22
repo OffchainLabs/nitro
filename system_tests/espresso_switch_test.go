@@ -2,7 +2,6 @@ package arbtest
 
 import (
 	"context"
-	"fmt"
 	"math/big"
 	"testing"
 	"time"
@@ -82,7 +81,7 @@ func TestEspressoSwitch(t *testing.T) {
 	// In the centralized mode with disabaling the delayed sequencer,
 	// block only created by l2 message.
 	if msg != currMsg+1 {
-		t.Fatal(fmt.Sprintf("curr message cnt: %v, expected %v", msg, currMsg+1))
+		t.Fatal("")
 	}
 
 	err = waitForWith(t, ctx, 60*time.Second, 5*time.Second, func() bool {

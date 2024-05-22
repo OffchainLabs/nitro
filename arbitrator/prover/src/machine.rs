@@ -3102,6 +3102,15 @@ impl Machine {
                     panic!("Should never ever get here")
                 }
             }
+            GetHotShotAvailability => {
+                let h = value_stack.get(0).unwrap().assume_u64();
+                if let Some(avail) = self.hotshot_availabilities.get(&h) {
+                    let v: u8 = if *avail { 1 } else { 0 };
+                    data.push(v);
+                } else {
+                    panic!("cannot find the hotshot availability {}", h)
+                }
+            }
             LinkModule | UnlinkModule => {
                 if op == LinkModule {
                     let leaf_index = match value_stack.last() {
