@@ -498,15 +498,13 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
                 return;
             }
         }
-        (, uint256 newValue) = store.updateTimerCacheByChildren(edgeId);
+        (bool updated, uint256 newValue) = store.updateTimerCacheByChildren(edgeId);
         if (newValue < requiredTime) {
             if (shouldRevert) {
                 revert CachedTimeInsufficient(newValue, requiredTime);
-            } else {
-                return;
             }
         }
-        emit TimerCacheUpdated(edgeId, newValue);
+        if (updated) emit TimerCacheUpdated(edgeId, newValue);
     }
 
     /// @inheritdoc IEdgeChallengeManager
@@ -535,9 +533,9 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
         if (totalTimeUnrivaledCache >= requiredTime) {
             revert CachedTimeSufficient(totalTimeUnrivaledCache, requiredTime);
         }
-        (, uint256 newValue) = store.updateTimerCacheByClaim(edgeId, claimingEdgeId, NUM_BIGSTEP_LEVEL);
+        (bool updated, uint256 newValue) = store.updateTimerCacheByClaim(edgeId, claimingEdgeId, NUM_BIGSTEP_LEVEL);
         if (newValue < requiredTime) revert CachedTimeInsufficient(newValue, requiredTime);
-        emit TimerCacheUpdated(edgeId, newValue);
+        if (updated) emit TimerCacheUpdated(edgeId, newValue);
     }
 
     /// @inheritdoc IEdgeChallengeManager
