@@ -87,8 +87,8 @@ func (c *Consumer[Request, Response]) Start(ctx context.Context) {
 }
 
 func (c *Consumer[Request, Response]) StopAndWait() {
-	c.deleteHeartBeat(c.GetParentContext())
 	c.StopWaiter.StopAndWait()
+	c.deleteHeartBeat(c.GetParentContext())
 }
 
 func heartBeatKey(id string) string {
