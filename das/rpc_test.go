@@ -75,7 +75,7 @@ func TestRPC(t *testing.T) {
 		},
 		RequestTimeout: 5 * time.Second,
 	}
-	rpcAgg, err := NewRPCAggregatorWithSeqInboxCaller(aggConf, nil)
+	rpcAgg, err := NewRPCAggregatorWithSeqInboxCaller(aggConf, nil, nil)
 	testhelpers.RequireImpl(t, err)
 
 	msg := testhelpers.RandomizeSlice(make([]byte, 100))

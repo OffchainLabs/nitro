@@ -16,26 +16,53 @@ import (
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/util/pretty"
+	"github.com/offchainlabs/nitro/util/signature"
 )
 
 type DASRPCClient struct { // implements DataAvailabilityService
-	clnt *rpc.Client
-	url  string
+	clnt   *rpc.Client
+	url    string
+	signer signature.DataSignerFunc
 }
 
-func NewDASRPCClient(target string) (*DASRPCClient, error) {
+func nilSigner(_ []byte) ([]byte, error) {
+	return []byte{}, nil
+}
+
+func NewDASRPCClient(target string, signer signature.DataSignerFunc) (*DASRPCClient, error) {
 	clnt, err := rpc.Dial(target)
 	if err != nil {
 		return nil, err
 	}
+	if signer == nil {
+		signer = nilSigner
+	}
 	return &DASRPCClient{
-		clnt: clnt,
-		url:  target,
+		clnt:   clnt,
+		url:    target,
+		signer: signer,
 	}, nil
 }
 
 func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64, reqSig []byte) (*daprovider.DataAvailabilityCertificate, error) {
-	log.Trace("das.DASRPCClient.Store(...)", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(reqSig), "this", *c)
+	/*
+		var ret StartChunkedStoreResult
+		if err := c.clnt.CallContext(ctx, &ret, "das_startChunkedStore", hexutil.Bytes(message), hexutil.Uint64(timeout), hexutil.Bytes(reqSig)); err != nil {
+		}
+	*/
+
+	return c.legacyStore(ctx, message, timeout)
+
+}
+
+func (c *DASRPCClient) legacyStore(ctx context.Context, message []byte, timeout uint64) (*daprovider.DataAvailabilityCertificate, error) {
+	log.Trace("das.DASRPCClient.Store(...)", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "this", *c)
+
+	reqSig, err := applyDasSigner(c.signer, message, timeout)
+	if err != nil {
+		return nil, err
+	}
+
 	var ret StoreResult
 	if err := c.clnt.CallContext(ctx, &ret, "das_store", hexutil.Bytes(message), hexutil.Uint64(timeout), hexutil.Bytes(reqSig)); err != nil {
 		return nil, err

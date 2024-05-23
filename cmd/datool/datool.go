@@ -121,12 +121,7 @@ func startClientStore(args []string) error {
 		return err
 	}
 
-	client, err := das.NewDASRPCClient(config.URL)
-	if err != nil {
-		return err
-	}
-
-	var dasClient das.DataAvailabilityServiceWriter = client
+	var signer signature.DataSignerFunc
 	if config.SigningKey != "" {
 		var privateKey *ecdsa.PrivateKey
 		if config.SigningKey[:2] == "0x" {
@@ -140,12 +135,7 @@ func startClientStore(args []string) error {
 				return err
 			}
 		}
-		signer := signature.DataSignerFromPrivateKey(privateKey)
-
-		dasClient, err = das.NewStoreSigningDAS(dasClient, signer)
-		if err != nil {
-			return err
-		}
+		signer = signature.DataSignerFromPrivateKey(privateKey)
 	} else if config.SigningWallet != "" {
 		walletConf := &genericconf.WalletConfig{
 			Pathname:      config.SigningWallet,
@@ -154,14 +144,15 @@ func startClientStore(args []string) error {
 			Account:       "",
 			OnlyCreateKey: false,
 		}
-		_, signer, err := util.OpenWallet("datool", walletConf, nil)
+		_, signer, err = util.OpenWallet("datool", walletConf, nil)
 		if err != nil {
 			return err
 		}
-		dasClient, err = das.NewStoreSigningDAS(dasClient, signer)
-		if err != nil {
-			return err
-		}
+	}
+
+	client, err := das.NewDASRPCClient(config.URL, signer)
+	if err != nil {
+		return err
 	}
 
 	ctx := context.Background()
@@ -173,9 +164,9 @@ func startClientStore(args []string) error {
 		if err != nil {
 			return err
 		}
-		cert, err = dasClient.Store(ctx, message, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{})
+		cert, err = client.Store(ctx, message, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{})
 	} else if len(config.Message) > 0 {
-		cert, err = dasClient.Store(ctx, []byte(config.Message), uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{})
+		cert, err = client.Store(ctx, []byte(config.Message), uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{})
 	} else {
 		return errors.New("--message or --random-message-size must be specified")
 	}
@@ -361,7 +352,7 @@ func dumpKeyset(args []string) error {
 		return err
 	}
 
-	services, err := das.ParseServices(config.Keyset)
+	services, err := das.ParseServices(config.Keyset, nil)
 	if err != nil {
 		return err
 	}

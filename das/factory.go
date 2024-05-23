@@ -158,16 +158,9 @@ func CreateBatchPosterDAS(
 	// Done checking config requirements
 
 	var daWriter DataAvailabilityServiceWriter
-	daWriter, err := NewRPCAggregator(ctx, *config)
+	daWriter, err := NewRPCAggregator(ctx, *config, dataSigner)
 	if err != nil {
 		return nil, nil, nil, err
-	}
-	if dataSigner != nil {
-		// In some tests the batch poster does not sign Store requests
-		daWriter, err = NewStoreSigningDAS(daWriter, dataSigner)
-		if err != nil {
-			return nil, nil, nil, err
-		}
 	}
 
 	restAgg, err := NewRestfulClientAggregator(ctx, &config.RestAggregator)
