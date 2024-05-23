@@ -38,12 +38,12 @@ func createEvmData(
 	reentrant uint32,
 ) evmDataHandler
 
-func (params *goParams) createHandler() stylusConfigHandler {
-	debug := arbmath.BoolToUint32(params.debugMode)
-	return createStylusConfig(uint32(params.version), params.maxDepth, params.inkPrice.ToUint32(), debug)
+func (params *ProgParams) createHandler() stylusConfigHandler {
+	debug := arbmath.BoolToUint32(params.DebugMode)
+	return createStylusConfig(uint32(params.Version), params.MaxDepth, params.InkPrice.ToUint32(), debug)
 }
 
-func (data *evmData) createHandler() evmDataHandler {
+func (data *EvmData) createHandler() evmDataHandler {
 	return createEvmData(
 		arbutil.SliceToUnsafePointer(data.blockBasefee[:]),
 		data.chainId,
