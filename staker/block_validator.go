@@ -791,8 +791,9 @@ validationsLoop:
 		}
 		for _, moduleRoot := range wasmRoots {
 			if v.chosenValidator[moduleRoot] == nil {
-				v.possiblyFatal(fmt.Errorf("did not find spawner for moduleRoot :%v", moduleRoot))
-				continue
+				notFoundErr := fmt.Errorf("did not find spawner for moduleRoot :%v", moduleRoot)
+				v.possiblyFatal(notFoundErr)
+				return nil, notFoundErr
 			}
 			if v.chosenValidator[moduleRoot].Room() == 0 {
 				log.Trace("advanceValidations: no more room", "moduleRoot", moduleRoot)
@@ -1107,7 +1108,7 @@ func (v *BlockValidator) Initialize(ctx context.Context) error {
 				}
 			}
 			if v.chosenValidator[root] == nil {
-				log.Error("validator not found", "WasmModuleRoot", root)
+				return fmt.Errorf("cannot validate WasmModuleRoot %v", root)
 			}
 		}
 	}
