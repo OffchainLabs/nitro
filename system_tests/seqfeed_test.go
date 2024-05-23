@@ -11,10 +11,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/broadcastclient"
+	"github.com/offchainlabs/nitro/broadcaster/backlog"
+	"github.com/offchainlabs/nitro/broadcaster/message"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/relay"
 	"github.com/offchainlabs/nitro/util/signature"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
 )
 
@@ -38,7 +47,8 @@ func newBroadcastClientConfigTest(port int) *broadcastclient.Config {
 }
 
 func TestSequencerFeed(t *testing.T) {
-	t.Parallel()
+	logHandler := testhelpers.InitTestLog(t, log.LvlTrace)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -72,6 +82,10 @@ func TestSequencerFeed(t *testing.T) {
 	Require(t, err)
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 		t.Fatal("Unexpected balance:", l2balance)
+	}
+
+	if logHandler.WasLogged(arbnode.BlockHashMismatchLogMsg) {
+		t.Fatal("BlockHashMismatchLogMsg was logged unexpectedly")
 	}
 }
 
@@ -249,4 +263,102 @@ func TestLyingSequencer(t *testing.T) {
 
 func TestLyingSequencerLocalDAS(t *testing.T) {
 	testLyingSequencer(t, "files")
+}
+
+func testBlockHashComparison(t *testing.T, blockHash *common.Hash, mustMismatch bool) {
+	logHandler := testhelpers.InitTestLog(t, log.LvlTrace)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	backlogConfiFetcher := func() *backlog.Config {
+		return &backlog.DefaultTestConfig
+	}
+	bklg := backlog.NewBacklog(backlogConfiFetcher)
+
+	wsBroadcastServer := wsbroadcastserver.NewWSBroadcastServer(
+		newBroadcasterConfigTest,
+		bklg,
+		412346,
+		nil,
+	)
+	err := wsBroadcastServer.Initialize()
+	if err != nil {
+		t.Fatal("error initializing wsBroadcastServer:", err)
+	}
+	err = wsBroadcastServer.Start(ctx)
+	if err != nil {
+		t.Fatal("error starting wsBroadcastServer:", err)
+	}
+	defer wsBroadcastServer.StopAndWait()
+
+	port := wsBroadcastServer.ListenerAddr().(*net.TCPAddr).Port
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.nodeConfig.Feed.Input = *newBroadcastClientConfigTest(port)
+	cleanup := builder.Build(t)
+	defer cleanup()
+	testClient := builder.L2
+
+	userAccount := "User2"
+	builder.L2Info.GenerateAccount(userAccount)
+	tx := builder.L2Info.PrepareTx("Owner", userAccount, builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	l1IncomingMsgHeader := arbostypes.L1IncomingMessageHeader{
+		Kind:        arbostypes.L1MessageType_L2Message,
+		Poster:      l1pricing.BatchPosterAddress,
+		BlockNumber: 29,
+		Timestamp:   1715295980,
+		RequestId:   nil,
+		L1BaseFee:   nil,
+	}
+	l1IncomingMsg, err := gethexec.MessageFromTxes(
+		&l1IncomingMsgHeader,
+		types.Transactions{tx},
+		[]error{nil},
+	)
+	Require(t, err)
+
+	broadcastMessage := message.BroadcastMessage{
+		Version: 1,
+		Messages: []*message.BroadcastFeedMessage{
+			{
+				SequenceNumber: 1,
+				Message: arbostypes.MessageWithMetadata{
+					Message:             l1IncomingMsg,
+					DelayedMessagesRead: 1,
+				},
+				BlockHash: blockHash,
+			},
+		},
+	}
+	wsBroadcastServer.Broadcast(&broadcastMessage)
+
+	// By now, even though block hash mismatch, the transaction should still be processed
+	_, err = WaitForTx(ctx, testClient.Client, tx.Hash(), time.Second*15)
+	if err != nil {
+		t.Fatal("error waiting for tx:", err)
+	}
+	l2balance, err := testClient.Client.BalanceAt(ctx, builder.L2Info.GetAddress(userAccount), nil)
+	if err != nil {
+		t.Fatal("error getting balance:", err)
+	}
+	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
+		t.Fatal("Unexpected balance:", l2balance)
+	}
+
+	mismatched := logHandler.WasLogged(arbnode.BlockHashMismatchLogMsg)
+	if mustMismatch && !mismatched {
+		t.Fatal("Failed to log BlockHashMismatchLogMsg")
+	} else if !mustMismatch && mismatched {
+		t.Fatal("BlockHashMismatchLogMsg was logged unexpectedly")
+	}
+}
+
+func TestBlockHashFeedMismatch(t *testing.T) {
+	blockHash := common.HexToHash("0x1111111111111111111111111111111111111111111111111111111111111111")
+	testBlockHashComparison(t, &blockHash, true)
+}
+
+func TestBlockHashFeedNil(t *testing.T) {
+	testBlockHashComparison(t, nil, false)
 }

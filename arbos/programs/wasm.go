@@ -146,6 +146,7 @@ func callProgram(
 	evmData *EvmData,
 	params *ProgParams,
 	memoryModel *MemoryModel,
+	_arbos_tag uint32,
 ) ([]byte, error) {
 	reqHandler := newApiClosures(interpreter, tracingInfo, scope, memoryModel)
 	gasLeft, retData, err := CallProgramLoop(moduleHash, calldata, scope.Contract.Gas, evmData, params, reqHandler)

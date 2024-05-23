@@ -187,7 +187,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				if err != nil {
 					return nil, nil, err
 				}
-				chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb)
+				chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1)
 				err = pruning.PruneChainDb(ctx, chainDb, stack, &config.Init, cacheConfig, l1Client, rollupAddrs, config.Node.ValidatorRequired())
 				if err != nil {
 					return chainDb, nil, fmt.Errorf("error pruning: %w", err)
@@ -271,7 +271,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	if err != nil {
 		return nil, nil, err
 	}
-	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb)
+	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1)
 
 	// Rebuilding wasmdb is not required when just starting out
 	err = wasmstorerebuilder.SetRebuildingParam(wasmDb, wasmstorerebuilder.RebuildingPositionKey, wasmstorerebuilder.RebuildingDone)

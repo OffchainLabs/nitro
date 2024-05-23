@@ -167,6 +167,7 @@ func (p Programs) CallProgram(
 	tracingInfo *util.TracingInfo,
 	calldata []byte,
 	reentrant bool,
+	runmode core.MessageRunMode,
 ) ([]byte, error) {
 	evm := interpreter.Evm()
 	contract := scope.Contract
@@ -238,7 +239,11 @@ func (p Programs) CallProgram(
 	if contract.CodeAddr != nil {
 		address = *contract.CodeAddr
 	}
-	return callProgram(address, moduleHash, localAsm, scope, interpreter, tracingInfo, calldata, evmData, goParams, model)
+	var arbos_tag uint32
+	if runmode == core.MessageCommitMode {
+		arbos_tag = statedb.Database().WasmCacheTag()
+	}
+	return callProgram(address, moduleHash, localAsm, scope, interpreter, tracingInfo, calldata, evmData, goParams, model, arbos_tag)
 }
 
 func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
