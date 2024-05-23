@@ -57,14 +57,13 @@ func NewConsumer[Request any, Response any](client redis.UniversalClient, stream
 	if streamName == "" {
 		return nil, fmt.Errorf("redis stream name cannot be empty")
 	}
-	consumer := &Consumer[Request, Response]{
+	return &Consumer[Request, Response]{
 		id:          uuid.NewString(),
 		client:      client,
 		redisStream: streamName,
 		redisGroup:  streamName, // There is 1-1 mapping of redis stream and consumer group.
 		cfg:         cfg,
-	}
-	return consumer, nil
+	}, nil
 }
 
 // Start starts the consumer to iteratively perform heartbeat in configured intervals.
@@ -80,6 +79,7 @@ func (c *Consumer[Request, Response]) Start(ctx context.Context) {
 
 func (c *Consumer[Request, Response]) StopAndWait() {
 	c.StopWaiter.StopAndWait()
+	c.deleteHeartBeat(c.GetParentContext())
 }
 
 func heartBeatKey(id string) string {
@@ -88,6 +88,17 @@ func heartBeatKey(id string) string {
 
 func (c *Consumer[Request, Response]) heartBeatKey() string {
 	return heartBeatKey(c.id)
+}
+
+// deleteHeartBeat deletes the heartbeat to indicate it is being shut down.
+func (c *Consumer[Request, Response]) deleteHeartBeat(ctx context.Context) {
+	if err := c.client.Del(ctx, c.heartBeatKey()).Err(); err != nil {
+		l := log.Info
+		if ctx.Err() != nil {
+			l = log.Error
+		}
+		l("Deleting heardbeat", "consumer", c.id, "error", err)
+	}
 }
 
 // heartBeat updates the heartBeat key indicating aliveness.
