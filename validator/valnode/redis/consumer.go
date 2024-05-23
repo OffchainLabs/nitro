@@ -148,7 +148,7 @@ var TestValidationServerConfig = ValidationServerConfig{
 func ValidationServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	pubsub.ConsumerConfigAddOptions(prefix+".consumer-config", f)
 	f.StringSlice(prefix+".module-roots", nil, "Supported module root hashes")
-	f.Duration(prefix+"stream-timeout", DefaultValidationServerConfig.StreamTimeout, "Timeout on polling for existence of redis streams")
+	f.Duration(prefix+".stream-timeout", DefaultValidationServerConfig.StreamTimeout, "Timeout on polling for existence of redis streams")
 }
 
 func (cfg *ValidationServerConfig) Enabled() bool {
