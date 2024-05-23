@@ -72,10 +72,13 @@ func TriedbConfig(c *core.CacheConfig) *trie.Config {
 	return config
 }
 
-func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, timestamp uint64, accountsPerSync uint) (common.Hash, error) {
+func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, timestamp uint64, accountsPerSync uint) (root common.Hash, err error) {
 	triedbConfig := TriedbConfig(cacheConfig)
 	triedbConfig.Preimages = false
 	stateDatabase := state.NewDatabaseWithConfig(db, triedbConfig)
+	defer func() {
+		err = stateDatabase.TrieDB().Close()
+	}()
 	statedb, err := state.New(common.Hash{}, stateDatabase, nil)
 	if err != nil {
 		log.Crit("failed to init empty statedb", "error", err)
