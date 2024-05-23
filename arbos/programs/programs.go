@@ -248,9 +248,10 @@ func (p Programs) CallProgram(
 
 func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
 	prefixedWasm := statedb.GetCode(program)
-	return getWasmInternal(prefixedWasm)
+	return getWasmFromContractCode(prefixedWasm)
 }
-func getWasmInternal(prefixedWasm []byte) ([]byte, error) {
+
+func getWasmFromContractCode(prefixedWasm []byte) ([]byte, error) {
 	if prefixedWasm == nil {
 		return nil, ProgramNotWasmError()
 	}
@@ -321,9 +322,9 @@ func (p Programs) SaveActiveProgramToWasmStore(statedb *state.StateDB, codeHash 
 		return nil
 	}
 
-	wasm, err := getWasmInternal(code)
+	wasm, err := getWasmFromContractCode(code)
 	if err != nil {
-		log.Error("Failed to reactivate program while rebuilding wasm store: getWasmInternal", "expected moduleHash", moduleHash, "err", err)
+		log.Error("Failed to reactivate program while rebuilding wasm store: getWasmFromContractCode", "expected moduleHash", moduleHash, "err", err)
 		return fmt.Errorf("failed to reactivate program while rebuilding wasm store: %w", err)
 	}
 

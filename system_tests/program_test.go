@@ -31,12 +31,12 @@ import (
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	pgen "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
-	"github.com/offchainlabs/nitro/util/wasmstorerebuilder"
 	"github.com/offchainlabs/nitro/validator/valnode"
 	"github.com/wasmerio/wasmer-go/wasmer"
 )
@@ -1633,19 +1633,19 @@ func TestWasmStoreRebuilding(t *testing.T) {
 	}
 
 	// Start rebuilding and wait for it to finish
-	log.Info("starting rebuilding wasm store")
-	wasmstorerebuilder.RebuildWasmStore(ctx, wasmDbAfterDelete, bc, common.Hash{}, bc.CurrentBlock().Time)
+	log.Info("starting rebuilding of wasm store")
+	gethexec.RebuildWasmStore(ctx, wasmDbAfterDelete, bc, common.Hash{}, bc.CurrentBlock().Hash())
 
 	wasmDbAfterRebuild := getLatestStateWasmStore(bc)
 
 	// Before comparing, check if rebuilding was set to done and then delete the keys that are used to track rebuilding status
-	status, err := wasmstorerebuilder.GetRebuildingParam[common.Hash](wasmDbAfterRebuild, wasmstorerebuilder.RebuildingPositionKey)
+	status, err := gethexec.ReadFromKeyValueStore[common.Hash](wasmDbAfterRebuild, gethexec.RebuildingPositionKey)
 	Require(t, err)
-	if status != wasmstorerebuilder.RebuildingDone {
+	if status != gethexec.RebuildingDone {
 		Fatal(t, "rebuilding was not set to done after successful completion")
 	}
-	Require(t, wasmDbAfterRebuild.Delete(wasmstorerebuilder.RebuildingPositionKey))
-	Require(t, wasmDbAfterRebuild.Delete(wasmstorerebuilder.RebuildingStartBlockTimeKey))
+	Require(t, wasmDbAfterRebuild.Delete(gethexec.RebuildingPositionKey))
+	Require(t, wasmDbAfterRebuild.Delete(gethexec.RebuildingStartBlockHashKey))
 
 	rebuiltStoreMap, err := createMapFromDb(wasmDbAfterRebuild)
 	Require(t, err)
