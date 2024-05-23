@@ -68,13 +68,18 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 					readyStreams <- struct{}{}
 					return
 				}
-				time.Sleep(time.Millisecond * 100)
+				select {
+				case <-ctx.Done():
+					log.Info("Context done", "error", ctx.Err().Error())
+					return
+				case <-time.After(time.Millisecond * 100):
+				}
 			}
 		})
 		s.StopWaiter.LaunchThread(func(ctx context.Context) {
 			select {
 			case <-ctx.Done():
-				log.Error("Context done", "error", ctx.Err().Error())
+				log.Info("Context done", "error", ctx.Err().Error())
 				return
 			case <-ready: // Wait until the stream exists and start consuming iteratively.
 			}
@@ -111,7 +116,7 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 		case <-time.After(s.streamTimeout):
 			log.Error("Waiting for redis streams timed out")
 		case <-ctx_in.Done():
-			log.Error(("Context expired, failed to start"))
+			log.Info(("Context expired, failed to start"))
 			return
 		}
 	}
@@ -130,17 +135,20 @@ var DefaultValidationServerConfig = ValidationServerConfig{
 	RedisURL:       "",
 	ConsumerConfig: pubsub.DefaultConsumerConfig,
 	ModuleRoots:    []string{},
+	StreamTimeout:  10 * time.Minute,
 }
 
 var TestValidationServerConfig = ValidationServerConfig{
 	RedisURL:       "",
 	ConsumerConfig: pubsub.TestConsumerConfig,
 	ModuleRoots:    []string{},
+	StreamTimeout:  time.Minute,
 }
 
 func ValidationServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	pubsub.ConsumerConfigAddOptions(prefix+".consumer-config", f)
 	f.StringSlice(prefix+".module-roots", nil, "Supported module root hashes")
+	f.Duration(prefix+"stream-timeout", DefaultValidationServerConfig.StreamTimeout, "Timeout on polling for existence of redis streams")
 }
 
 func (cfg *ValidationServerConfig) Enabled() bool {
