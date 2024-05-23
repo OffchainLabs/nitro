@@ -18,7 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 )
 
-var RebuildingPositionKey []byte = []byte("_rebuildingPosition")             // contains the codehash upto where rebuilding of wasm store was last completed
+var RebuildingPositionKey []byte = []byte("_rebuildingPosition")             // contains the codehash upto which rebuilding of wasm store was last completed. Initialized to common.Hash{} at the start
 var RebuildingStartBlockHashKey []byte = []byte("_rebuildingStartBlockHash") // contains the block hash of starting block when rebuilding of wasm store first began
 var RebuildingDone common.Hash = common.BytesToHash([]byte("_done"))         // indicates that the rebuilding is done, if RebuildingPositionKey holds this value it implies rebuilding was completed
 
@@ -86,7 +86,7 @@ func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, l2Bloc
 		code := iter.Value()
 		if state.IsStylusProgram(code) {
 			if err := programs.SaveActiveProgramToWasmStore(stateDb, codeHash, code, latestHeader.Time, l2Blockchain.Config().DebugMode(), rebuildingStartHeader.Time); err != nil {
-				log.Error("error while rebuilding wasm store, aborting rebuilding", "err", err)
+				log.Error("error while rebuilding of wasm store, aborting rebuilding", "err", err)
 				return
 			}
 		}
@@ -95,7 +95,7 @@ func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, l2Bloc
 		if count%50 == 0 || ctx.Err() != nil {
 			log.Info("Storing rebuilding status to disk", "codeHash", codeHash)
 			if err := WriteToKeyValueStore(wasmStore, RebuildingPositionKey, codeHash); err != nil {
-				log.Error("error updating position to wasm store mid way though rebuilding, aborting", "err", err)
+				log.Error("error updating codehash position in rebuilding of wasm store", "err", err)
 				return
 			}
 			// If outer context is cancelled we should terminate rebuilding
@@ -108,7 +108,7 @@ func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, l2Bloc
 	iter.Release()
 	// Set rebuilding position to done indicating completion
 	if err := WriteToKeyValueStore(wasmStore, RebuildingPositionKey, RebuildingDone); err != nil {
-		log.Error("error updating rebuilding position to done", "err", err)
+		log.Error("error updating codehash position in rebuilding of wasm store to done", "err", err)
 		return
 	}
 	log.Info("Rebuilding of wasm store was successful")
