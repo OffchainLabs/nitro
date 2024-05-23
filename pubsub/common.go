@@ -11,15 +11,15 @@ import (
 // does not return an error.
 func CreateStream(ctx context.Context, streamName string, client redis.UniversalClient) error {
 	_, err := client.XGroupCreateMkStream(ctx, streamName, streamName, "$").Result()
-	if err == nil || err.Error() == "BUSYGROUP Consumer Group name already exists" {
-		return nil
+	if err != nil && !StreamExists(ctx, streamName, client) {
+		return err
 	}
-	return err
+	return nil
 }
 
 // StreamExists returns whether there are any consumer group for specified
 // redis stream.
-func StreamExists(ctx context.Context, client redis.UniversalClient, streamName string) bool {
+func StreamExists(ctx context.Context, streamName string, client redis.UniversalClient) bool {
 	groups, err := client.XInfoStream(ctx, streamName).Result()
 	if err != nil {
 		log.Error("Reading redis streams", "error", err)

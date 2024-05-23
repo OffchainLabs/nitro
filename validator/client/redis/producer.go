@@ -43,7 +43,7 @@ var TestValidationClientConfig = ValidationClientConfig{
 	Room:           2,
 	RedisURL:       "",
 	ProducerConfig: pubsub.TestProducerConfig,
-	CreateStreams:  true,
+	CreateStreams:  false,
 }
 
 func ValidationClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -63,6 +63,7 @@ type ValidationClient struct {
 	producerConfig pubsub.ProducerConfig
 	redisClient    redis.UniversalClient
 	moduleRoots    []common.Hash
+	createStreams  bool
 }
 
 func NewValidationClient(cfg *ValidationClientConfig) (*ValidationClient, error) {
@@ -79,13 +80,16 @@ func NewValidationClient(cfg *ValidationClientConfig) (*ValidationClient, error)
 		producers:      make(map[common.Hash]*pubsub.Producer[*validator.ValidationInput, validator.GoGlobalState]),
 		producerConfig: cfg.ProducerConfig,
 		redisClient:    redisClient,
+		createStreams:  cfg.CreateStreams,
 	}, nil
 }
 
 func (c *ValidationClient) Initialize(ctx context.Context, moduleRoots []common.Hash) error {
 	for _, mr := range moduleRoots {
-		if err := pubsub.CreateStream(ctx, server_api.RedisStreamForRoot(mr), c.redisClient); err != nil {
-			return fmt.Errorf("creating redis stream: %w", err)
+		if c.createStreams {
+			if err := pubsub.CreateStream(ctx, server_api.RedisStreamForRoot(mr), c.redisClient); err != nil {
+				return fmt.Errorf("creating redis stream: %w", err)
+			}
 		}
 		if _, exists := c.producers[mr]; exists {
 			log.Warn("Producer already existsw for module root", "hash", mr)

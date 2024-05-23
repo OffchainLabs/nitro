@@ -63,7 +63,7 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 		ready := make(chan struct{}, 1)
 		s.StopWaiter.LaunchThread(func(ctx context.Context) {
 			for {
-				if pubsub.StreamExists(ctx, c.RedisClient(), c.StreamName()) {
+				if pubsub.StreamExists(ctx, c.StreamName(), c.RedisClient()) {
 					ready <- struct{}{}
 					readyStreams <- struct{}{}
 					return
@@ -72,7 +72,12 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 			}
 		})
 		s.StopWaiter.LaunchThread(func(ctx context.Context) {
-			<-ready // Wait until the stream exists and start consuming iteratively.
+			select {
+			case <-ctx.Done():
+				log.Error("Context done", "error", ctx.Err().Error())
+				return
+			case <-ready: // Wait until the stream exists and start consuming iteratively.
+			}
 			s.StopWaiter.CallIteratively(func(ctx context.Context) time.Duration {
 				req, err := c.Consume(ctx)
 				if err != nil {
