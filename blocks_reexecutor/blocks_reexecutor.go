@@ -35,7 +35,7 @@ func (c *Config) Validate() error {
 	if c.EndBlock < c.StartBlock {
 		return errors.New("invalid block range for blocks re-execution")
 	}
-	if c.Room < 0 {
+	if c.Room <= 0 {
 		return errors.New("room for blocks re-execution should be greater than 0")
 	}
 	return nil
