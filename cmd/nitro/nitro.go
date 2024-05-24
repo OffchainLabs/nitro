@@ -453,7 +453,7 @@ func mainImpl() int {
 		if len(allowedWasmModuleRoots) > 0 {
 			moduleRootMatched := false
 			for _, root := range allowedWasmModuleRoots {
-				bytes, err := hex.DecodeString(root)
+				bytes, err := hex.DecodeString(strings.TrimPrefix(root, "0x"))
 				if err == nil {
 					if common.HexToHash(root) == common.BytesToHash(bytes) {
 						moduleRootMatched = true
@@ -491,7 +491,7 @@ func mainImpl() int {
 		}
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching), l1Client, rollupAddrs)
+	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching), &nodeConfig.Persistent, l1Client, rollupAddrs)
 	if l2BlockChain != nil {
 		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
 	}
@@ -502,7 +502,7 @@ func mainImpl() int {
 		return 1
 	}
 
-	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "arbitrumdata/", false)
+	arbDb, err := stack.OpenDatabaseWithExtraOptions("arbitrumdata", 0, 0, "arbitrumdata/", false, nodeConfig.Persistent.Pebble.ExtraOptions("arbitrumdata"))
 	deferFuncs = append(deferFuncs, func() { closeDb(arbDb, "arbDb") })
 	if err != nil {
 		log.Error("failed to open database", "err", err)
