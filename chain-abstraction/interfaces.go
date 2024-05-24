@@ -264,6 +264,7 @@ type SpecChallengeManager interface {
 	MultiUpdateInheritedTimers(
 		ctx context.Context,
 		challengeBranch []ReadOnlyEdge,
+		desiredNewTimerForLastEdge uint64,
 	) (*types.Transaction, error)
 	// Calculates an edge id for an edge.
 	CalculateEdgeId(

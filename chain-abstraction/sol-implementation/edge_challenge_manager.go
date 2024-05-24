@@ -639,7 +639,11 @@ func (cm *specChallengeManager) CalculateEdgeId(
 func (cm *specChallengeManager) MultiUpdateInheritedTimers(
 	ctx context.Context,
 	challengeBranch []protocol.ReadOnlyEdge,
+	desiredNewTimerForLastEdge uint64,
 ) (*types.Transaction, error) {
+	if len(challengeBranch) == 0 {
+		return nil, errors.New("no edges to update")
+	}
 	edgeIds := make([][32]byte, 0)
 	var lastReceipt *types.Receipt
 	for _, edgeId := range challengeBranch {
@@ -652,6 +656,7 @@ func (cm *specChallengeManager) MultiUpdateInheritedTimers(
 					return cm.writer.MultiUpdateTimeCacheByChildren(
 						opts,
 						edgeIds,
+						new(big.Int).SetUint64(desiredNewTimerForLastEdge),
 					)
 				},
 				withoutSafeWait(),
@@ -670,6 +675,7 @@ func (cm *specChallengeManager) MultiUpdateInheritedTimers(
 						opts,
 						edgeId.ClaimId().Unwrap(),
 						edgeId.Id().Hash,
+						new(big.Int).SetUint64(desiredNewTimerForLastEdge),
 					)
 				},
 				withoutSafeWait(),
@@ -692,6 +698,7 @@ func (cm *specChallengeManager) MultiUpdateInheritedTimers(
 				return cm.writer.MultiUpdateTimeCacheByChildren(
 					opts,
 					edgeIds,
+					new(big.Int).SetUint64(desiredNewTimerForLastEdge),
 				)
 			},
 			withoutSafeWait(),

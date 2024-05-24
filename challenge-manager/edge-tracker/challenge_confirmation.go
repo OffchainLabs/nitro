@@ -37,6 +37,7 @@ type ChainWriter interface {
 	MultiUpdateInheritedTimers(
 		ctx context.Context,
 		challengeBranch []protocol.ReadOnlyEdge,
+		desiredNewTimerForLastEdge uint64,
 	) (*types.Transaction, error)
 }
 
@@ -87,6 +88,7 @@ func newChallengeConfirmer(
 func (cc *challengeConfirmer) beginConfirmationJob(
 	ctx context.Context,
 	challengedAssertionHash protocol.AssertionHash,
+	computedTimer uint64,
 	royalRootEdge protocol.SpecEdge,
 	challengePeriodBlocks uint64,
 ) error {
@@ -142,6 +144,7 @@ func (cc *challengeConfirmer) beginConfirmationJob(
 		tx, innerErr := cc.propageTimerUpdateToBranch(
 			ctx,
 			royalRootEdge,
+			computedTimer,
 			challengedAssertionHash,
 			i,
 			len(royalBranches),
@@ -211,6 +214,7 @@ func (cc *challengeConfirmer) beginConfirmationJob(
 func (cc *challengeConfirmer) propageTimerUpdateToBranch(
 	ctx context.Context,
 	royalRootEdge protocol.SpecEdge,
+	computedLocalTimer uint64,
 	claimedAssertionHash protocol.AssertionHash,
 	branchIdx,
 	totalBranches int,
@@ -227,7 +231,7 @@ func (cc *challengeConfirmer) propageTimerUpdateToBranch(
 		"branch", fmt.Sprintf("%d/%d", branchIdx, totalBranches-1),
 	}
 	tx, err := retry.UntilSucceeds(ctx, func() (*types.Transaction, error) {
-		tx, innerErr := cc.writer.MultiUpdateInheritedTimers(ctx, branch)
+		tx, innerErr := cc.writer.MultiUpdateInheritedTimers(ctx, branch, computedLocalTimer)
 		if innerErr != nil {
 			log.Error("Could not transact multi-update inherited timers", fields, "err", innerErr)
 			return nil, innerErr

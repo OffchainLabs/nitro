@@ -624,8 +624,14 @@ contract EdgeChallengeManagerTest is Test {
 
         _safeVmRoll(block.number + challengePeriodBlock);
 
-        ei.challengeManager.updateTimerCacheByChildren(children.lowerChildId);
-        ei.challengeManager.updateTimerCacheByChildren(children.upperChildId);
+        ei.challengeManager.updateTimerCacheByChildren(children.lowerChildId, challengePeriodBlock);
+
+        vm.expectRevert(
+            abi.encodeWithSelector(CachedTimeSufficient.selector, challengePeriodBlock, challengePeriodBlock)
+        );
+        ei.challengeManager.updateTimerCacheByChildren(children.lowerChildId, challengePeriodBlock);
+
+        ei.challengeManager.updateTimerCacheByChildren(children.upperChildId, challengePeriodBlock);
         ei.challengeManager.confirmEdgeByTime(edge1Id, ei.a1Data);
 
         assertTrue(ei.challengeManager.getEdge(edge1Id).status == EdgeStatus.Confirmed, "Edge confirmed");
@@ -650,12 +656,15 @@ contract EdgeChallengeManagerTest is Test {
 
         BisectionChildren memory children = bisect(ei.challengeManager, edge2Id, states2, 16, states2.length - 1);
         BisectionChildren memory children2 = bisect(ei.challengeManager, children.lowerChildId, states2, 8, 16);
-        _safeVmRoll(block.number + challengePeriodBlock + 5);
-        ei.challengeManager.updateTimerCacheByChildren(children2.lowerChildId);
-        ei.challengeManager.updateTimerCacheByChildren(children2.upperChildId);
-        ei.challengeManager.updateTimerCacheByChildren(children.lowerChildId);
-        ei.challengeManager.updateTimerCacheByChildren(children.upperChildId);
-        ei.challengeManager.updateTimerCacheByChildren(edge2Id);
+        _safeVmRoll(block.number + challengePeriodBlock);
+
+        bytes32[] memory edgeIds = new bytes32[](5);
+        edgeIds[0] = children2.lowerChildId;
+        edgeIds[1] = children2.upperChildId;
+        edgeIds[2] = children.lowerChildId;
+        edgeIds[3] = children.upperChildId;
+        edgeIds[4] = edge2Id;
+        ei.challengeManager.multiUpdateTimeCacheByChildren(edgeIds, challengePeriodBlock);
 
         vm.expectRevert(abi.encodeWithSelector(RivalEdgeConfirmed.selector, edge2Id, edge1Id));
         ei.challengeManager.confirmEdgeByTime(edge2Id, ei.a2Data);
@@ -1376,26 +1385,26 @@ contract EdgeChallengeManagerTest is Test {
 
         vm.expectEmit(true, false, false, true);
         emit TimerCacheUpdated(edge1BigStepId, challengePeriodBlock);
-        ei.challengeManager.updateTimerCacheByChildren(edge1BigStepId);
+        ei.challengeManager.updateTimerCacheByChildren(edge1BigStepId, challengePeriodBlock);
 
         vm.expectEmit(true, false, false, true);
         emit TimerCacheUpdated(edges1[0].lowerChildId, challengePeriodBlock);
-        ei.challengeManager.updateTimerCacheByClaim(edges1[0].lowerChildId, edge1BigStepId);
-        ei.challengeManager.updateTimerCacheByChildren(edges1[0].upperChildId);
+        ei.challengeManager.updateTimerCacheByClaim(edges1[0].lowerChildId, edge1BigStepId, challengePeriodBlock);
+        ei.challengeManager.updateTimerCacheByChildren(edges1[0].upperChildId, challengePeriodBlock);
 
         vm.expectEmit(true, false, false, true);
         emit TimerCacheUpdated(edges1[1].lowerChildId, challengePeriodBlock);
-        ei.challengeManager.updateTimerCacheByChildren(edges1[1].lowerChildId);
-        ei.challengeManager.updateTimerCacheByChildren(edges1[1].upperChildId);
+        ei.challengeManager.updateTimerCacheByChildren(edges1[1].lowerChildId, challengePeriodBlock);
+        ei.challengeManager.updateTimerCacheByChildren(edges1[1].upperChildId, challengePeriodBlock);
 
-        ei.challengeManager.updateTimerCacheByChildren(edges1[2].lowerChildId);
-        ei.challengeManager.updateTimerCacheByChildren(edges1[2].upperChildId);
+        ei.challengeManager.updateTimerCacheByChildren(edges1[2].lowerChildId, challengePeriodBlock);
+        ei.challengeManager.updateTimerCacheByChildren(edges1[2].upperChildId, challengePeriodBlock);
 
-        ei.challengeManager.updateTimerCacheByChildren(edges1[3].lowerChildId);
-        ei.challengeManager.updateTimerCacheByChildren(edges1[3].upperChildId);
+        ei.challengeManager.updateTimerCacheByChildren(edges1[3].lowerChildId, challengePeriodBlock);
+        ei.challengeManager.updateTimerCacheByChildren(edges1[3].upperChildId, challengePeriodBlock);
 
-        ei.challengeManager.updateTimerCacheByChildren(edges1[4].lowerChildId);
-        ei.challengeManager.updateTimerCacheByChildren(edges1[4].upperChildId);
+        ei.challengeManager.updateTimerCacheByChildren(edges1[4].lowerChildId, challengePeriodBlock);
+        ei.challengeManager.updateTimerCacheByChildren(edges1[4].upperChildId, challengePeriodBlock);
 
         ei.challengeManager.confirmEdgeByTime(edges1[5].lowerChildId, ei.a1Data);
 
@@ -1622,54 +1631,58 @@ contract EdgeChallengeManagerTest is Test {
         BisectionChildren[] memory allWinners =
             concat(concat(toDynamic(ssbd.edges1), toDynamic(bsbd.edges1)), toDynamic(blockEdges1));
 
-        ei.challengeManager.updateTimerCacheByChildren(allWinners[0].lowerChildId);
-        ei.challengeManager.updateTimerCacheByChildren(allWinners[0].upperChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[0].lowerChildId, challengePeriodBlock);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[0].upperChildId, challengePeriodBlock);
 
-        ei.challengeManager.updateTimerCacheByChildren(allWinners[1].lowerChildId);
-        ei.challengeManager.updateTimerCacheByChildren(allWinners[1].upperChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[1].lowerChildId, challengePeriodBlock);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[1].upperChildId, challengePeriodBlock);
 
-        ei.challengeManager.updateTimerCacheByChildren(allWinners[2].lowerChildId);
-        ei.challengeManager.updateTimerCacheByChildren(allWinners[2].upperChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[2].lowerChildId, challengePeriodBlock);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[2].upperChildId, challengePeriodBlock);
 
-        ei.challengeManager.updateTimerCacheByChildren(allWinners[3].lowerChildId);
-        ei.challengeManager.updateTimerCacheByChildren(allWinners[3].upperChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[3].lowerChildId, challengePeriodBlock);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[3].upperChildId, challengePeriodBlock);
 
-        ei.challengeManager.updateTimerCacheByChildren(allWinners[4].lowerChildId);
-        ei.challengeManager.updateTimerCacheByChildren(allWinners[4].upperChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[4].lowerChildId, challengePeriodBlock);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[4].upperChildId, challengePeriodBlock);
 
-        ei.challengeManager.updateTimerCacheByChildren(allWinners[5].lowerChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[5].lowerChildId, challengePeriodBlock);
 
-        ei.challengeManager.updateTimerCacheByClaim(allWinners[6].lowerChildId, allWinners[5].lowerChildId);
-        ei.challengeManager.updateTimerCacheByChildren(allWinners[6].upperChildId);
+        ei.challengeManager.updateTimerCacheByClaim(
+            allWinners[6].lowerChildId, allWinners[5].lowerChildId, challengePeriodBlock
+        );
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[6].upperChildId, challengePeriodBlock);
 
-        ei.challengeManager.updateTimerCacheByChildren(allWinners[7].lowerChildId);
-        ei.challengeManager.updateTimerCacheByChildren(allWinners[7].upperChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[7].lowerChildId, challengePeriodBlock);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[7].upperChildId, challengePeriodBlock);
 
-        ei.challengeManager.updateTimerCacheByChildren(allWinners[8].lowerChildId);
-        ei.challengeManager.updateTimerCacheByChildren(allWinners[8].upperChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[8].lowerChildId, challengePeriodBlock);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[8].upperChildId, challengePeriodBlock);
 
-        ei.challengeManager.updateTimerCacheByChildren(allWinners[9].lowerChildId);
-        ei.challengeManager.updateTimerCacheByChildren(allWinners[9].upperChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[9].lowerChildId, challengePeriodBlock);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[9].upperChildId, challengePeriodBlock);
 
-        ei.challengeManager.updateTimerCacheByChildren(allWinners[10].lowerChildId);
-        ei.challengeManager.updateTimerCacheByChildren(allWinners[10].upperChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[10].lowerChildId, challengePeriodBlock);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[10].upperChildId, challengePeriodBlock);
 
-        ei.challengeManager.updateTimerCacheByChildren(allWinners[11].lowerChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[11].lowerChildId, challengePeriodBlock);
 
-        ei.challengeManager.updateTimerCacheByClaim(allWinners[12].lowerChildId, allWinners[11].lowerChildId);
-        ei.challengeManager.updateTimerCacheByChildren(allWinners[12].upperChildId);
+        ei.challengeManager.updateTimerCacheByClaim(
+            allWinners[12].lowerChildId, allWinners[11].lowerChildId, challengePeriodBlock
+        );
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[12].upperChildId, challengePeriodBlock);
 
-        ei.challengeManager.updateTimerCacheByChildren(allWinners[13].lowerChildId);
-        ei.challengeManager.updateTimerCacheByChildren(allWinners[13].upperChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[13].lowerChildId, challengePeriodBlock);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[13].upperChildId, challengePeriodBlock);
 
-        ei.challengeManager.updateTimerCacheByChildren(allWinners[14].lowerChildId);
-        ei.challengeManager.updateTimerCacheByChildren(allWinners[14].upperChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[14].lowerChildId, challengePeriodBlock);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[14].upperChildId, challengePeriodBlock);
 
-        ei.challengeManager.updateTimerCacheByChildren(allWinners[15].lowerChildId);
-        ei.challengeManager.updateTimerCacheByChildren(allWinners[15].upperChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[15].lowerChildId, challengePeriodBlock);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[15].upperChildId, challengePeriodBlock);
 
-        ei.challengeManager.updateTimerCacheByChildren(allWinners[16].lowerChildId);
-        ei.challengeManager.updateTimerCacheByChildren(allWinners[16].upperChildId);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[16].lowerChildId, challengePeriodBlock);
+        ei.challengeManager.updateTimerCacheByChildren(allWinners[16].upperChildId, challengePeriodBlock);
 
         ei.challengeManager.confirmEdgeByTime(allWinners[17].lowerChildId, ei.a1Data);
 
@@ -1793,20 +1806,60 @@ contract EdgeChallengeManagerTest is Test {
         return (ei, allWinners);
     }
 
+    /// @dev gracefully handle revert when updating timer cache
+    ///      TODO: consider removing this hack to make the test more robust
+    function _updateTimerCacheByChildren(
+        EdgeChallengeManager challengeManager,
+        bytes32 edgeId,
+        uint256 maximumCachedTime
+    ) internal {
+        uint256 totalTimeUnrivaledCache = challengeManager.getEdge(edgeId).totalTimeUnrivaledCache;
+        if (totalTimeUnrivaledCache >= maximumCachedTime) {
+            vm.expectRevert(
+                abi.encodeWithSelector(CachedTimeSufficient.selector, totalTimeUnrivaledCache, maximumCachedTime)
+            );
+        } else {
+            maximumCachedTime = totalTimeUnrivaledCache + 1;
+        }
+        challengeManager.updateTimerCacheByChildren(edgeId, maximumCachedTime);
+    }
+
+    /// @dev gracefully handle revert when updating timer cache
+    ///      TODO: consider removing this hack to make the test more robust
+    function _updateTimerCacheByClaim(
+        EdgeChallengeManager challengeManager,
+        bytes32 edgeId,
+        bytes32 claimingEdgeId,
+        uint256 maximumCachedTime
+    ) internal {
+        uint256 totalTimeUnrivaledCache = challengeManager.getEdge(edgeId).totalTimeUnrivaledCache;
+        if (totalTimeUnrivaledCache >= maximumCachedTime) {
+            vm.expectRevert(
+                abi.encodeWithSelector(CachedTimeSufficient.selector, totalTimeUnrivaledCache, maximumCachedTime)
+            );
+        } else {
+            maximumCachedTime = totalTimeUnrivaledCache + 1;
+        }
+        challengeManager.updateTimerCacheByClaim(edgeId, claimingEdgeId, maximumCachedTime);
+    }
+
     function _updateTimers(EdgeInitData memory ei, BisectionChildren[] memory allWinners) internal {
-        ei.challengeManager.updateTimerCacheByChildren(allWinners[0].upperChildId);
+        _updateTimerCacheByChildren(ei.challengeManager, allWinners[0].upperChildId, challengePeriodBlock);
         for (uint256 i = 1; i < allWinners.length; i++) {
             if ((i + 1) % 6 != 0) {
                 if (i % 6 != 0) {
-                    ei.challengeManager.updateTimerCacheByChildren(allWinners[i].lowerChildId);
+                    _updateTimerCacheByChildren(ei.challengeManager, allWinners[i].lowerChildId, challengePeriodBlock);
                 } else {
-                    ei.challengeManager.updateTimerCacheByClaim(
-                        allWinners[i].lowerChildId, allWinners[i - 1].lowerChildId
+                    _updateTimerCacheByClaim(
+                        ei.challengeManager,
+                        allWinners[i].lowerChildId,
+                        allWinners[i - 1].lowerChildId,
+                        challengePeriodBlock
                     );
                 }
-                ei.challengeManager.updateTimerCacheByChildren(allWinners[i].upperChildId);
+                _updateTimerCacheByChildren(ei.challengeManager, allWinners[i].upperChildId, challengePeriodBlock);
             } else {
-                ei.challengeManager.updateTimerCacheByChildren(allWinners[i].lowerChildId);
+                _updateTimerCacheByChildren(ei.challengeManager, allWinners[i].lowerChildId, challengePeriodBlock);
             }
         }
     }
