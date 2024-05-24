@@ -45,16 +45,11 @@ func TestBlocksReExecutorModes(t *testing.T) {
 		}
 	}
 
-	success := make(chan struct{})
-
 	// Reexecute blocks at mode full
-	go func() {
-		executorFull := blocksreexecutor.New(&blocksreexecutor.TestConfig, blockchain, feedErrChan)
-		executorFull.StopWaiter.Start(ctx, executorFull)
-		executorFull.Impl(ctx)
-		executorFull.StopAndWait()
-		success <- struct{}{}
-	}()
+	success := make(chan struct{})
+	executorFull := blocksreexecutor.New(&blocksreexecutor.TestConfig, blockchain, feedErrChan)
+	executorFull.Start(ctx, success)
+
 	select {
 	case err := <-feedErrChan:
 		t.Errorf("error occurred: %v", err)
@@ -66,15 +61,12 @@ func TestBlocksReExecutorModes(t *testing.T) {
 	}
 
 	// Reexecute blocks at mode random
-	go func() {
-		c := &blocksreexecutor.TestConfig
-		c.Mode = "random"
-		executorRandom := blocksreexecutor.New(c, blockchain, feedErrChan)
-		executorRandom.StopWaiter.Start(ctx, executorRandom)
-		executorRandom.Impl(ctx)
-		executorRandom.StopAndWait()
-		success <- struct{}{}
-	}()
+	success = make(chan struct{})
+	c := &blocksreexecutor.TestConfig
+	c.Mode = "random"
+	executorRandom := blocksreexecutor.New(c, blockchain, feedErrChan)
+	executorRandom.Start(ctx, success)
+
 	select {
 	case err := <-feedErrChan:
 		t.Errorf("error occurred: %v", err)
