@@ -57,6 +57,7 @@ type BoldConfig struct {
 	APIHost                            string `koanf:"api-host"`
 	APIPort                            uint16 `koanf:"api-port"`
 	APIDBPath                          string `koanf:"api-db-path"`
+	RpcHeadBlockNumber                 int64  `koanf:"rpc-head-block-number"`
 }
 
 var DefaultBoldConfig = BoldConfig{
@@ -77,6 +78,7 @@ var DefaultBoldConfig = BoldConfig{
 	APIHost:                            "127.0.0.1",
 	APIPort:                            9393,
 	APIDBPath:                          "/tmp/bold-api-db",
+	RpcHeadBlockNumber:                 -3, // Finalized block
 }
 
 func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -97,6 +99,7 @@ func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".api-host", DefaultBoldConfig.APIHost, "bold api host")
 	f.Uint16(prefix+".api-port", DefaultBoldConfig.APIPort, "bold api port")
 	f.String(prefix+".api-db-path", DefaultBoldConfig.APIDBPath, "bold api db path")
+	f.Int64(prefix+".rpc-head-block-number", DefaultBoldConfig.RpcHeadBlockNumber, "head block number (safe(-4), final(-3), latest(-2)) to use for RPC calls")
 }
 
 func (c *BoldConfig) Validate() error {
