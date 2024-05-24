@@ -218,7 +218,7 @@ func CreateExecutionNode(
 	var classicOutbox *ClassicOutboxRetriever
 
 	if l2BlockChain.Config().ArbitrumChainParams.GenesisBlockNum > 0 {
-		classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "classicmsg/", true)
+		classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "classicmsg/", true) // TODO can we skip using ExtraOptions here?
 		if err != nil {
 			log.Warn("Classic Msg Database not found", "err", err)
 			classicOutbox = nil
