@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -16,7 +18,6 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -38,8 +39,7 @@ type StatelessBlockValidator struct {
 	inboxTracker InboxTrackerInterface
 	streamer     TransactionStreamerInterface
 	db           ethdb.Database
-	daService    arbstate.DataAvailabilityReader
-	blobReader   arbstate.BlobReader
+	dapReaders   []daprovider.Reader
 }
 
 type BlockValidatorRegistrer interface {
@@ -192,8 +192,7 @@ func NewStatelessBlockValidator(
 	streamer TransactionStreamerInterface,
 	recorder execution.ExecutionRecorder,
 	arbdb ethdb.Database,
-	das arbstate.DataAvailabilityReader,
-	blobReader arbstate.BlobReader,
+	dapReaders []daprovider.Reader,
 	config func() *BlockValidatorConfig,
 	stack *node.Node,
 ) (*StatelessBlockValidator, error) {
@@ -226,8 +225,7 @@ func NewStatelessBlockValidator(
 		inboxTracker:   inbox,
 		streamer:       streamer,
 		db:             arbdb,
-		daService:      das,
-		blobReader:     blobReader,
+		dapReaders:     dapReaders,
 		execSpawners:   executionSpawners,
 	}, nil
 }
@@ -267,39 +265,27 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		if len(batch.Data) <= 40 {
 			continue
 		}
-		if arbstate.IsBlobHashesHeaderByte(batch.Data[40]) {
-			payload := batch.Data[41:]
-			if len(payload)%len(common.Hash{}) != 0 {
-				return fmt.Errorf("blob batch data is not a list of hashes as expected")
-			}
-			versionedHashes := make([]common.Hash, len(payload)/len(common.Hash{}))
-			for i := 0; i*32 < len(payload); i += 1 {
-				copy(versionedHashes[i][:], payload[i*32:(i+1)*32])
-			}
-			blobs, err := v.blobReader.GetBlobs(ctx, batch.BlockHash, versionedHashes)
-			if err != nil {
-				return fmt.Errorf("failed to get blobs: %w", err)
-			}
-			if e.Preimages[arbutil.EthVersionedHashPreimageType] == nil {
-				e.Preimages[arbutil.EthVersionedHashPreimageType] = make(map[common.Hash][]byte)
-			}
-			for i, blob := range blobs {
-				// Prevent aliasing `blob` when slicing it, as for range loops overwrite the same variable
-				// Won't be necessary after Go 1.22 with https://go.dev/blog/loopvar-preview
-				b := blob
-				e.Preimages[arbutil.EthVersionedHashPreimageType][versionedHashes[i]] = b[:]
+		foundDA := false
+		for _, dapReader := range v.dapReaders {
+			if dapReader != nil && dapReader.IsValidHeaderByte(batch.Data[40]) {
+				preimageRecorder := daprovider.RecordPreimagesTo(e.Preimages)
+				_, err := dapReader.RecoverPayloadFromBatch(ctx, batch.Number, batch.BlockHash, batch.Data, preimageRecorder, true)
+				if err != nil {
+					// Matches the way keyset validation was done inside DAS readers i.e logging the error
+					//  But other daproviders might just want to return the error
+					if errors.Is(err, daprovider.ErrSeqMsgValidation) && daprovider.IsDASMessageHeaderByte(batch.Data[40]) {
+						log.Error(err.Error())
+					} else {
+						return err
+					}
+				}
+				foundDA = true
+				break
 			}
 		}
-		if arbstate.IsDASMessageHeaderByte(batch.Data[40]) {
-			if v.daService == nil {
-				log.Warn("No DAS configured, but sequencer message found with DAS header")
-			} else {
-				_, err := arbstate.RecoverPayloadFromDasBatch(
-					ctx, batch.Number, batch.Data, v.daService, e.Preimages, arbstate.KeysetValidate,
-				)
-				if err != nil {
-					return err
-				}
+		if !foundDA {
+			if daprovider.IsDASMessageHeaderByte(batch.Data[40]) {
+				log.Error("No DAS Reader configured, but sequencer message found with DAS header")
 			}
 		}
 	}
@@ -407,7 +393,7 @@ func (v *StatelessBlockValidator) ValidateResult(
 		}
 	}
 	if run == nil {
-		return false, nil, fmt.Errorf("validation woth WasmModuleRoot %v not supported by node", moduleRoot)
+		return false, nil, fmt.Errorf("validation with WasmModuleRoot %v not supported by node", moduleRoot)
 	}
 	defer run.Cancel()
 	gsEnd, err := run.Await(ctx)

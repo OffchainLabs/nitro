@@ -120,14 +120,13 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runMode c
 		return 0, codeHash, common.Hash{}, nil, true, err
 	}
 
-	// replace the cached asm
+	// remove prev asm
 	if cached {
 		oldModuleHash, err := p.moduleHashes.Get(codeHash)
 		if err != nil {
 			return 0, codeHash, common.Hash{}, nil, true, err
 		}
 		evictProgram(statedb, oldModuleHash, currentVersion, debugMode, runMode, expired)
-		cacheProgram(statedb, info.moduleHash, stylusVersion, debugMode, runMode)
 	}
 	if err := p.moduleHashes.Set(codeHash, info.moduleHash); err != nil {
 		return 0, codeHash, common.Hash{}, nil, true, err
@@ -152,6 +151,11 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runMode c
 		activatedAt:   hoursSinceArbitrum(time),
 		cached:        cached,
 	}
+	// replace the cached asm
+	if cached {
+		cacheProgram(statedb, info.moduleHash, programData, params, debugMode, time, runMode)
+	}
+
 	return stylusVersion, codeHash, info.moduleHash, dataFee, false, p.setProgram(codeHash, programData)
 }
 
@@ -162,6 +166,7 @@ func (p Programs) CallProgram(
 	tracingInfo *util.TracingInfo,
 	calldata []byte,
 	reentrant bool,
+	runmode core.MessageRunMode,
 ) ([]byte, error) {
 	evm := interpreter.Evm()
 	contract := scope.Contract
@@ -181,7 +186,7 @@ func (p Programs) CallProgram(
 	if err != nil {
 		return nil, err
 	}
-	goParams := p.goParams(program.version, debugMode, params)
+	goParams := p.progParams(program.version, debugMode, params)
 	l1BlockNumber, err := evm.ProcessingHook.L1BlockNumber(evm.Context)
 	if err != nil {
 		return nil, err
@@ -205,7 +210,13 @@ func (p Programs) CallProgram(
 	statedb.AddStylusPages(program.footprint)
 	defer statedb.SetStylusPagesOpen(open)
 
-	evmData := &evmData{
+	localAsm, err := getLocalAsm(statedb, moduleHash, contract.Address(), params.PageLimit, evm.Context.Time, debugMode, program)
+	if err != nil {
+		log.Crit("failed to get local wasm for activated program", "program", contract.Address())
+		return nil, err
+	}
+
+	evmData := &EvmData{
 		blockBasefee:    common.BigToHash(evm.Context.BaseFee),
 		chainId:         evm.ChainConfig().ChainID.Uint64(),
 		blockCoinbase:   evm.Context.Coinbase,
@@ -227,7 +238,11 @@ func (p Programs) CallProgram(
 	if contract.CodeAddr != nil {
 		address = *contract.CodeAddr
 	}
-	return callProgram(address, moduleHash, scope, interpreter, tracingInfo, calldata, evmData, goParams, model)
+	var arbos_tag uint32
+	if runmode == core.MessageCommitMode {
+		arbos_tag = statedb.Database().WasmCacheTag()
+	}
+	return callProgram(address, moduleHash, localAsm, scope, interpreter, tracingInfo, calldata, evmData, goParams, model, arbos_tag)
 }
 
 func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
@@ -380,7 +395,7 @@ func (p Programs) SetProgramCached(
 		return err
 	}
 	if cache {
-		cacheProgram(db, moduleHash, program.version, debug, runMode)
+		cacheProgram(db, moduleHash, program, params, debug, time, runMode)
 	} else {
 		evictProgram(db, moduleHash, program.version, debug, runMode, expired)
 	}
@@ -444,23 +459,23 @@ func (p Program) cachedGas(params *StylusParams) uint64 {
 	return am.SaturatingUAdd(base, am.DivCeil(dyno, 100))
 }
 
-type goParams struct {
-	version   uint16
-	maxDepth  uint32
-	inkPrice  uint24
-	debugMode bool
+type ProgParams struct {
+	Version   uint16
+	MaxDepth  uint32
+	InkPrice  uint24
+	DebugMode bool
 }
 
-func (p Programs) goParams(version uint16, debug bool, params *StylusParams) *goParams {
-	return &goParams{
-		version:   version,
-		maxDepth:  params.MaxStackDepth,
-		inkPrice:  params.InkPrice,
-		debugMode: debug,
+func (p Programs) progParams(version uint16, debug bool, params *StylusParams) *ProgParams {
+	return &ProgParams{
+		Version:   version,
+		MaxDepth:  params.MaxStackDepth,
+		InkPrice:  params.InkPrice,
+		DebugMode: debug,
 	}
 }
 
-type evmData struct {
+type EvmData struct {
 	blockBasefee    common.Hash
 	chainId         uint64
 	blockCoinbase   common.Address
