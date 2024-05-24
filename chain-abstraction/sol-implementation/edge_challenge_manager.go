@@ -640,10 +640,18 @@ func (cm *specChallengeManager) MultiUpdateInheritedTimers(
 	ctx context.Context,
 	challengeBranch []protocol.ReadOnlyEdge,
 ) (*types.Transaction, error) {
+	if len(challengeBranch) == 0 {
+		return nil, errors.New("no edges to update")
+	}
 	edgeIds := make([][32]byte, 0)
 	var lastReceipt *types.Receipt
 	for _, edgeId := range challengeBranch {
 		edgeIds = append(edgeIds, edgeId.Id().Hash)
+		lastEdge, err := cm.caller.GetEdge(&bind.CallOpts{Context: ctx}, edgeIds[len(edgeIds)-1])
+		if err != nil {
+			return nil, err
+		}
+		lastEdgeTimer := lastEdge.TotalTimeUnrivaledCache
 		if challengetree.IsClaimingAnEdge(edgeId) {
 			_, err := cm.assertionChain.transact(
 				ctx,
@@ -652,6 +660,7 @@ func (cm *specChallengeManager) MultiUpdateInheritedTimers(
 					return cm.writer.MultiUpdateTimeCacheByChildren(
 						opts,
 						edgeIds,
+						new(big.Int).SetUint64(lastEdgeTimer),
 					)
 				},
 				withoutSafeWait(),
@@ -670,6 +679,7 @@ func (cm *specChallengeManager) MultiUpdateInheritedTimers(
 						opts,
 						edgeId.ClaimId().Unwrap(),
 						edgeId.Id().Hash,
+						new(big.Int).SetUint64(lastEdgeTimer),
 					)
 				},
 				withoutSafeWait(),
@@ -685,6 +695,11 @@ func (cm *specChallengeManager) MultiUpdateInheritedTimers(
 		}
 	}
 	if len(edgeIds) > 0 {
+		lastEdge, err := cm.caller.GetEdge(&bind.CallOpts{Context: ctx}, edgeIds[len(edgeIds)-1])
+		if err != nil {
+			return nil, err
+		}
+		lastEdgeTimer := lastEdge.TotalTimeUnrivaledCache
 		receipt, err := cm.assertionChain.transact(
 			ctx,
 			cm.assertionChain.backend,
@@ -692,6 +707,7 @@ func (cm *specChallengeManager) MultiUpdateInheritedTimers(
 				return cm.writer.MultiUpdateTimeCacheByChildren(
 					opts,
 					edgeIds,
+					new(big.Int).SetUint64(lastEdgeTimer),
 				)
 			},
 			withoutSafeWait(),
