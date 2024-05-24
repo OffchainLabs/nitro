@@ -88,7 +88,6 @@ interface IEdgeChallengeManager {
 
     /// @notice Update an edge's timer cache by its children.
     ///         Sets the edge's timer cache to its timeUnrivaled + (minimum timer cache of its children).
-    ///         This function should not be used for edges without children.
     ///         May update timer cache above maximum if the last edge's timer cache was below maximumCachedTime.
     ///         Revert when the edge's timer cache is already equal to or above maximumCachedTime.
     /// @param edgeId            The id of the edge to update
