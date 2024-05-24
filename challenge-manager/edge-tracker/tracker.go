@@ -452,6 +452,7 @@ func (et *Tracker) tryToConfirmEdge(ctx context.Context) (bool, error) {
 		if err := et.challengeConfirmer.beginConfirmationJob(
 			ctx,
 			assertionHash,
+			uint64(computedTimer),
 			et.edge,
 			chalPeriod,
 		); err != nil {

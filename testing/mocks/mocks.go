@@ -166,8 +166,8 @@ func (m *MockSpecChallengeManager) ChallengePeriodBlocks(ctx context.Context) (u
 	args := m.Called(ctx)
 	return args.Get(0).(uint64), args.Error(1)
 }
-func (m *MockSpecChallengeManager) MultiUpdateInheritedTimers(ctx context.Context, branch []protocol.ReadOnlyEdge) (*types.Transaction, error) {
-	args := m.Called(ctx, branch)
+func (m *MockSpecChallengeManager) MultiUpdateInheritedTimers(ctx context.Context, branch []protocol.ReadOnlyEdge, desiredTimerForLastEdge uint64) (*types.Transaction, error) {
+	args := m.Called(ctx, branch, desiredTimerForLastEdge)
 	return args.Get(0).(*types.Transaction), args.Error(1)
 }
 func (m *MockSpecChallengeManager) GetEdge(
