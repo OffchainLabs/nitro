@@ -24,14 +24,14 @@ type ChainCommitter interface {
 }
 
 type transactConfig struct {
-	waitForSafe bool
+	waitForDesiredBlockNum bool
 }
 
 type transactOpt func(tc *transactConfig)
 
 func withoutSafeWait() transactOpt {
 	return func(tc *transactConfig) {
-		tc.waitForSafe = false
+		tc.waitForDesiredBlockNum = false
 	}
 }
 
@@ -48,7 +48,7 @@ func (a *AssertionChain) transact(
 	configOpts ...transactOpt,
 ) (*types.Receipt, error) {
 	config := &transactConfig{
-		waitForSafe: true,
+		waitForDesiredBlockNum: true,
 	}
 	for _, o := range configOpts {
 		o(config)
@@ -97,7 +97,7 @@ func (a *AssertionChain) transact(
 		return nil, err
 	}
 
-	if config.waitForSafe {
+	if config.waitForDesiredBlockNum {
 		ctxWaitSafe, cancelWaitSafe := context.WithTimeout(ctx, time.Minute*20)
 		defer cancelWaitSafe()
 		receipt, err = a.waitForTxToBeSafe(ctxWaitSafe, backend, tx, receipt)

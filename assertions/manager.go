@@ -155,10 +155,10 @@ func (m *Manager) Start(ctx context.Context) {
 	m.LaunchThread(m.updateLatestConfirmedMetrics)
 	m.LaunchThread(m.syncAssertions)
 	m.LaunchThread(m.queueCanonicalAssertionsForConfirmation)
-	m.LaunchThread(m.checkLatestSafeBlock)
+	m.LaunchThread(m.checkLatestDesiredBlock)
 }
 
-func (m *Manager) checkLatestSafeBlock(ctx context.Context) {
+func (m *Manager) checkLatestDesiredBlock(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
