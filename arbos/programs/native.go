@@ -24,6 +24,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
@@ -53,6 +54,24 @@ func activateProgram(
 	debug bool,
 	burner burn.Burner,
 ) (*activationInfo, error) {
+	info, asm, module, err := activateProgramInternal(db, program, codehash, wasm, page_limit, version, debug, burner.GasLeft())
+	if err != nil {
+		return nil, err
+	}
+	db.ActivateWasm(info.moduleHash, asm, module)
+	return info, nil
+}
+
+func activateProgramInternal(
+	db vm.StateDB,
+	program common.Address,
+	codehash common.Hash,
+	wasm []byte,
+	page_limit uint16,
+	version uint16,
+	debug bool,
+	gasLeft *uint64,
+) (*activationInfo, []byte, []byte, error) {
 	output := &rustBytes{}
 	asmLen := usize(0)
 	moduleHash := &bytes32{}
@@ -69,7 +88,7 @@ func activateProgram(
 		&codeHash,
 		moduleHash,
 		stylusData,
-		(*u64)(burner.GasLeft()),
+		(*u64)(gasLeft),
 	))
 
 	data, msg, err := status.toResult(output.intoBytes(), debug)
@@ -78,9 +97,9 @@ func activateProgram(
 			log.Warn("activation failed", "err", err, "msg", msg, "program", program)
 		}
 		if errors.Is(err, vm.ErrExecutionReverted) {
-			return nil, fmt.Errorf("%w: %s", ErrProgramActivation, msg)
+			return nil, nil, nil, fmt.Errorf("%w: %s", ErrProgramActivation, msg)
 		}
-		return nil, err
+		return nil, nil, nil, err
 	}
 
 	hash := moduleHash.toHash()
@@ -95,26 +114,70 @@ func activateProgram(
 		asmEstimate:   uint32(stylusData.asm_estimate),
 		footprint:     uint16(stylusData.footprint),
 	}
-	db.ActivateWasm(hash, asm, module)
-	return info, err
+	return info, asm, module, err
+}
+
+func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, address common.Address, pagelimit uint16, time uint64, debugMode bool, program Program) ([]byte, error) {
+	localAsm, err := statedb.TryGetActivatedAsm(moduleHash)
+	if err == nil && len(localAsm) > 0 {
+		return localAsm, nil
+	}
+
+	codeHash := statedb.GetCodeHash(address)
+
+	wasm, err := getWasm(statedb, address)
+	if err != nil {
+		log.Error("Failed to reactivate program: getWasm", "address", address, "expected moduleHash", moduleHash, "err", err)
+		return nil, fmt.Errorf("failed to reactivate program address: %v err: %w", address, err)
+	}
+
+	unlimitedGas := uint64(0xffffffffffff)
+	// we know program is activated, so it must be in correct version and not use too much memory
+	info, asm, module, err := activateProgramInternal(statedb, address, codeHash, wasm, pagelimit, program.version, debugMode, &unlimitedGas)
+	if err != nil {
+		log.Error("failed to reactivate program", "address", address, "expected moduleHash", moduleHash, "err", err)
+		return nil, fmt.Errorf("failed to reactivate program address: %v err: %w", address, err)
+	}
+
+	if info.moduleHash != moduleHash {
+		log.Error("failed to reactivate program", "address", address, "expected moduleHash", moduleHash, "got", info.moduleHash)
+		return nil, fmt.Errorf("failed to reactivate program. address: %v, expected ModuleHash: %v", address, moduleHash)
+	}
+
+	currentHoursSince := hoursSinceArbitrum(time)
+	if currentHoursSince > program.activatedAt {
+		// stylus program is active on-chain, and was activated in the past
+		// so we store it directly to database
+		batch := statedb.Database().WasmStore().NewBatch()
+		rawdb.WriteActivation(batch, moduleHash, asm, module)
+		if err := batch.Write(); err != nil {
+			log.Error("failed writing re-activation to state", "address", address, "err", err)
+		}
+	} else {
+		// program activated recently, possibly in this eth_call
+		// store it to statedb. It will be stored to database if statedb is commited
+		statedb.ActivateWasm(info.moduleHash, asm, module)
+	}
+	return asm, nil
 }
 
 func callProgram(
 	address common.Address,
 	moduleHash common.Hash,
+	localAsm []byte,
 	scope *vm.ScopeContext,
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,
 	calldata []byte,
-	evmData *evmData,
-	stylusParams *goParams,
+	evmData *EvmData,
+	stylusParams *ProgParams,
 	memoryModel *MemoryModel,
+	arbos_tag uint32,
 ) ([]byte, error) {
 	db := interpreter.Evm().StateDB
-	asm := db.GetActivatedAsm(moduleHash)
-	debug := stylusParams.debugMode
+	debug := stylusParams.DebugMode
 
-	if len(asm) == 0 {
+	if len(localAsm) == 0 {
 		log.Error("missing asm", "program", address, "module", moduleHash)
 		panic("missing asm")
 	}
@@ -128,7 +191,7 @@ func callProgram(
 
 	output := &rustBytes{}
 	status := userStatus(C.stylus_call(
-		goSlice(asm),
+		goSlice(localAsm),
 		goSlice(calldata),
 		stylusParams.encode(),
 		evmApi.cNative,
@@ -136,6 +199,7 @@ func callProgram(
 		cbool(debug),
 		output,
 		(*u64)(&scope.Contract.Gas),
+		u32(arbos_tag),
 	))
 
 	depth := interpreter.Depth()
@@ -159,11 +223,16 @@ func handleReqImpl(apiId usize, req_type u32, data *rustSlice, costPtr *u64, out
 
 // Caches a program in Rust. We write a record so that we can undo on revert.
 // For gas estimation and eth_call, we ignore permanent updates and rely on Rust's LRU.
-func cacheProgram(db vm.StateDB, module common.Hash, version uint16, debug bool, runMode core.MessageRunMode) {
+func cacheProgram(db vm.StateDB, module common.Hash, program Program, params *StylusParams, debug bool, time uint64, runMode core.MessageRunMode) {
 	if runMode == core.MessageCommitMode {
-		asm := db.GetActivatedAsm(module)
-		state.CacheWasmRust(asm, module, version, debug)
-		db.RecordCacheWasm(state.CacheWasm{ModuleHash: module, Version: version, Debug: debug})
+		// address is only used for logging
+		asm, err := getLocalAsm(db, module, common.Address{}, params.PageLimit, time, debug, program)
+		if err != nil {
+			panic("unable to recreate wasm")
+		}
+		tag := db.Database().WasmCacheTag()
+		state.CacheWasmRust(asm, module, program.version, tag, debug)
+		db.RecordCacheWasm(state.CacheWasm{ModuleHash: module, Version: program.version, Tag: tag, Debug: debug})
 	}
 }
 
@@ -171,20 +240,25 @@ func cacheProgram(db vm.StateDB, module common.Hash, version uint16, debug bool,
 // For gas estimation and eth_call, we ignore permanent updates and rely on Rust's LRU.
 func evictProgram(db vm.StateDB, module common.Hash, version uint16, debug bool, runMode core.MessageRunMode, forever bool) {
 	if runMode == core.MessageCommitMode {
-		state.EvictWasmRust(module, version, debug)
+		tag := db.Database().WasmCacheTag()
+		state.EvictWasmRust(module, version, tag, debug)
 		if !forever {
-			db.RecordEvictWasm(state.EvictWasm{ModuleHash: module, Version: version, Debug: debug})
+			db.RecordEvictWasm(state.EvictWasm{ModuleHash: module, Version: version, Tag: tag, Debug: debug})
 		}
 	}
 }
 
 func init() {
-	state.CacheWasmRust = func(asm []byte, moduleHash common.Hash, version uint16, debug bool) {
-		C.stylus_cache_module(goSlice(asm), hashToBytes32(moduleHash), u16(version), cbool(debug))
+	state.CacheWasmRust = func(asm []byte, moduleHash common.Hash, version uint16, tag uint32, debug bool) {
+		C.stylus_cache_module(goSlice(asm), hashToBytes32(moduleHash), u16(version), u32(tag), cbool(debug))
 	}
-	state.EvictWasmRust = func(moduleHash common.Hash, version uint16, debug bool) {
-		C.stylus_evict_module(hashToBytes32(moduleHash), u16(version), cbool(debug))
+	state.EvictWasmRust = func(moduleHash common.Hash, version uint16, tag uint32, debug bool) {
+		C.stylus_evict_module(hashToBytes32(moduleHash), u16(version), u32(tag), cbool(debug))
 	}
+}
+
+func ResizeWasmLruCache(size uint32) {
+	C.stylus_cache_lru_resize(u32(size))
 }
 
 func (value bytes32) toHash() common.Hash {
@@ -236,18 +310,18 @@ func goSlice(slice []byte) C.GoSliceData {
 	}
 }
 
-func (params *goParams) encode() C.StylusConfig {
+func (params *ProgParams) encode() C.StylusConfig {
 	pricing := C.PricingParams{
-		ink_price: u32(params.inkPrice.ToUint32()),
+		ink_price: u32(params.InkPrice.ToUint32()),
 	}
 	return C.StylusConfig{
-		version:   u16(params.version),
-		max_depth: u32(params.maxDepth),
+		version:   u16(params.Version),
+		max_depth: u32(params.MaxDepth),
 		pricing:   pricing,
 	}
 }
 
-func (data *evmData) encode() C.EvmData {
+func (data *EvmData) encode() C.EvmData {
 	return C.EvmData{
 		block_basefee:    hashToBytes32(data.blockBasefee),
 		chainid:          u64(data.chainId),

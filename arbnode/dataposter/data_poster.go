@@ -212,6 +212,10 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 func rpcClient(ctx context.Context, opts *ExternalSignerCfg) (*rpc.Client, error) {
 	tlsCfg := &tls.Config{
 		MinVersion: tls.VersionTLS12,
+		// Dataposter verifies that signed transaction was signed by the account
+		// that it expects to be signed with. So signer is already authenticated
+		// on application level and does not need to rely on TLS for authentication.
+		InsecureSkipVerify: opts.InsecureSkipVerify, // #nosec G402
 	}
 
 	if opts.ClientCert != "" && opts.ClientPrivateKey != "" {
@@ -857,31 +861,31 @@ func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransacti
 	// different type with a lower nonce.
 	// If we decide not to send this tx yet, just leave it queued and with Sent set to false.
 	// The resending/repricing loop in DataPoster.Start will keep trying.
-	if !newTx.Sent && newTx.FullTx.Nonce() > 0 {
+	previouslySent := newTx.Sent || (prevTx != nil && prevTx.Sent) // if we've previously sent this nonce
+	if !previouslySent && newTx.FullTx.Nonce() > 0 {
 		precedingTx, err := p.queue.Get(ctx, arbmath.SaturatingUSub(newTx.FullTx.Nonce(), 1))
 		if err != nil {
 			return fmt.Errorf("couldn't get preceding tx in DataPoster to check if should send tx with nonce %d: %w", newTx.FullTx.Nonce(), err)
 		}
 		if precedingTx != nil { // precedingTx == nil -> the actual preceding tx was already confirmed
-			var latestBlockNumber, prevBlockNumber, reorgResistantNonce uint64
+			var latestBlockNumber, prevBlockNumber, reorgResistantTxCount uint64
 			if precedingTx.FullTx.Type() != newTx.FullTx.Type() || !precedingTx.Sent {
 				latestBlockNumber, err = p.client.BlockNumber(ctx)
 				if err != nil {
 					return fmt.Errorf("couldn't get block number in DataPoster to check if should send tx with nonce %d: %w", newTx.FullTx.Nonce(), err)
 				}
 				prevBlockNumber = arbmath.SaturatingUSub(latestBlockNumber, 1)
-				reorgResistantNonce, err = p.client.NonceAt(ctx, p.Sender(), new(big.Int).SetUint64(prevBlockNumber))
+				reorgResistantTxCount, err = p.client.NonceAt(ctx, p.Sender(), new(big.Int).SetUint64(prevBlockNumber))
 				if err != nil {
 					return fmt.Errorf("couldn't determine reorg resistant nonce in DataPoster to check if should send tx with nonce %d: %w", newTx.FullTx.Nonce(), err)
 				}
 
-				if precedingTx.FullTx.Nonce() > reorgResistantNonce {
-					log.Info("DataPoster is avoiding creating a mempool nonce gap (the tx remains queued and will be retried)", "nonce", newTx.FullTx.Nonce(), "prevType", precedingTx.FullTx.Type(), "type", newTx.FullTx.Type(), "prevSent", precedingTx.Sent)
+				if newTx.FullTx.Nonce() > reorgResistantTxCount {
+					log.Info("DataPoster is avoiding creating a mempool nonce gap (the tx remains queued and will be retried)", "nonce", newTx.FullTx.Nonce(), "prevType", precedingTx.FullTx.Type(), "type", newTx.FullTx.Type(), "prevSent", precedingTx.Sent, "latestBlockNumber", latestBlockNumber, "prevBlockNumber", prevBlockNumber, "reorgResistantTxCount", reorgResistantTxCount)
 					return nil
 				}
-			} else {
-				log.Info("DataPoster will send previously unsent batch tx", "nonce", newTx.FullTx.Nonce(), "prevType", precedingTx.FullTx.Type(), "type", newTx.FullTx.Type(), "prevSent", precedingTx.Sent, "latestBlockNumber", latestBlockNumber, "prevBlockNumber", prevBlockNumber, "reorgResistantNonce", reorgResistantNonce)
 			}
+			log.Debug("DataPoster will send previously unsent batch tx", "nonce", newTx.FullTx.Nonce(), "prevType", precedingTx.FullTx.Type(), "type", newTx.FullTx.Type(), "prevSent", precedingTx.Sent, "latestBlockNumber", latestBlockNumber, "prevBlockNumber", prevBlockNumber, "reorgResistantTxCount", reorgResistantTxCount)
 		}
 	}
 
@@ -1233,6 +1237,8 @@ type ExternalSignerCfg struct {
 	// (Optional) Client certificate key for mtls.
 	// This is required when client-cert is set.
 	ClientPrivateKey string `koanf:"client-private-key"`
+	// TLS config option, when enabled skips certificate verification of external signer.
+	InsecureSkipVerify bool `koanf:"insecure-skip-verify"`
 }
 
 type DangerousConfig struct {
@@ -1286,6 +1292,7 @@ func addExternalSignerOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".root-ca", DefaultDataPosterConfig.ExternalSigner.RootCA, "external signer root CA")
 	f.String(prefix+".client-cert", DefaultDataPosterConfig.ExternalSigner.ClientCert, "rpc client cert")
 	f.String(prefix+".client-private-key", DefaultDataPosterConfig.ExternalSigner.ClientPrivateKey, "rpc client private key")
+	f.Bool(prefix+".insecure-skip-verify", DefaultDataPosterConfig.ExternalSigner.InsecureSkipVerify, "skip TLS certificate verification")
 }
 
 var DefaultDataPosterConfig = DataPosterConfig{
@@ -1307,7 +1314,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	UseNoOpStorage:         false,
 	LegacyStorageEncoding:  false,
 	Dangerous:              DangerousConfig{ClearDBStorage: false},
-	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction"},
+	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction", InsecureSkipVerify: false},
 	MaxFeeCapFormula:       "((BacklogOfBatches * UrgencyGWei) ** 2) + ((ElapsedTime/ElapsedTimeBase) ** 2) * ElapsedTimeImportance + TargetPriceGWei",
 	ElapsedTimeBase:        10 * time.Minute,
 	ElapsedTimeImportance:  10,
@@ -1340,7 +1347,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	UseDBStorage:           false,
 	UseNoOpStorage:         false,
 	LegacyStorageEncoding:  false,
-	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction"},
+	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction", InsecureSkipVerify: true},
 	MaxFeeCapFormula:       "((BacklogOfBatches * UrgencyGWei) ** 2) + ((ElapsedTime/ElapsedTimeBase) ** 2) * ElapsedTimeImportance + TargetPriceGWei",
 	ElapsedTimeBase:        10 * time.Minute,
 	ElapsedTimeImportance:  10,
