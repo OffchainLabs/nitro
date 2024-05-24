@@ -840,11 +840,12 @@ library EdgeChallengeManagerLib {
             store.edges[edgeId].endHistoryRoot, afterHash, machineStep + 1, afterHistoryInclusionProof
         );
 
+        // we also check the edge is pending in setConfirmed()
+        store.edges[edgeId].setConfirmed();
+        
         // also checks that no other rival has been confirmed
         setConfirmedRival(store, edgeId);
 
-        // we also check the edge is pending in setConfirmed()
-        store.edges[edgeId].setConfirmed();
         store.edges[edgeId].totalTimeUnrivaledCache = type(uint64).max;
     }
 }
