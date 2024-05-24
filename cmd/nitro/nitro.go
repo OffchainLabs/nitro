@@ -453,7 +453,7 @@ func mainImpl() int {
 		if len(allowedWasmModuleRoots) > 0 {
 			moduleRootMatched := false
 			for _, root := range allowedWasmModuleRoots {
-				bytes, err := hex.DecodeString(root)
+				bytes, err := hex.DecodeString(strings.TrimPrefix(root, "0x"))
 				if err == nil {
 					if common.HexToHash(root) == common.BytesToHash(bytes) {
 						moduleRootMatched = true
