@@ -17,7 +17,6 @@ import (
 	challenge_testing "github.com/OffchainLabs/bold/testing"
 	stateprovider "github.com/OffchainLabs/bold/testing/mocks/state-provider"
 	"github.com/OffchainLabs/bold/testing/setup"
-	"github.com/OffchainLabs/bold/util"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -642,7 +641,7 @@ func TestUpgradingConfigMidChallenge(t *testing.T) {
 
 	// We check the config snapshot used for the one step proof is different than what
 	// is now onchain, as these values changed mid-challenge.
-	gotWasmModuleRoot, err := adminLogic.WasmModuleRoot(util.GetSafeCallOpts(&bind.CallOpts{}))
+	gotWasmModuleRoot, err := adminLogic.WasmModuleRoot(chain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{}))
 	require.NoError(t, err)
 	require.Equal(t, newWasmModuleRoot[:], gotWasmModuleRoot[:])
 	require.NotEqual(t, parentAssertionCreationInfo.WasmModuleRoot[:], gotWasmModuleRoot)

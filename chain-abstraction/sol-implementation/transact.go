@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/OffchainLabs/bold/containers"
-	"github.com/OffchainLabs/bold/util"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -135,7 +134,7 @@ func (a *AssertionChain) waitForTxToBeSafe(
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		latestSafeHeader, err := backend.HeaderByNumber(ctx, util.GetSafeBlockNumber())
+		latestSafeHeader, err := backend.HeaderByNumber(ctx, a.GetDesiredRpcHeadBlockNumber())
 		if err != nil {
 			return nil, err
 		}

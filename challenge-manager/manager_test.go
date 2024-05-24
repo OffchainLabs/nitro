@@ -19,7 +19,6 @@ import (
 	"github.com/OffchainLabs/bold/testing/mocks"
 	"github.com/OffchainLabs/bold/testing/setup"
 	customTime "github.com/OffchainLabs/bold/time"
-	"github.com/OffchainLabs/bold/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
@@ -171,7 +170,7 @@ func setupEdgeTrackersForBisection(
 	require.NoError(t, err)
 	managerBindings, err := challengeV2gen.NewEdgeChallengeManagerCaller(chalManager.Address(), createdData.Backend)
 	require.NoError(t, err)
-	numBigStepLevelsRaw, err := managerBindings.NUMBIGSTEPLEVEL(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}))
+	numBigStepLevelsRaw, err := managerBindings.NUMBIGSTEPLEVEL(createdData.Chains[0].GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
 	require.NoError(t, err)
 	numBigStepLevels := numBigStepLevelsRaw
 

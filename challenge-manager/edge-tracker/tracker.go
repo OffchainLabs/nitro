@@ -136,7 +136,7 @@ func New(
 	if err != nil {
 		return nil, err
 	}
-	tr.challengeConfirmer = newChallengeConfirmer(chainWatcher, chalManager, chain.Backend(), challengeManager.BlockTimes(), tr.validatorName)
+	tr.challengeConfirmer = newChallengeConfirmer(chainWatcher, chalManager, chain.Backend(), challengeManager.BlockTimes(), tr.validatorName, chain)
 	fsm, err := newEdgeTrackerFsm(
 		EdgeStarted,
 		tr.fsmOpts...,

@@ -23,7 +23,6 @@ import (
 	"github.com/OffchainLabs/bold/solgen/go/yulgen"
 	challenge_testing "github.com/OffchainLabs/bold/testing"
 	statemanager "github.com/OffchainLabs/bold/testing/mocks/state-provider"
-	"github.com/OffchainLabs/bold/util"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -321,7 +320,7 @@ func ChainsWithEdgeChallengeManager(opts ...Opt) (*ChainSetup, error) {
 		}
 		var challengeManagerAddr common.Address
 		challengeManagerAddr, err = assertionChainBinding.RollupUserLogicCaller.ChallengeManager(
-			util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}),
+			&bind.CallOpts{Context: ctx},
 		)
 		if err != nil {
 			return nil, err

@@ -15,7 +15,6 @@ import (
 	"github.com/OffchainLabs/bold/solgen/go/mocksgen"
 	prefixproofs "github.com/OffchainLabs/bold/state-commitments/prefix-proofs"
 	statemanager "github.com/OffchainLabs/bold/testing/mocks/state-provider"
-	"github.com/OffchainLabs/bold/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -133,7 +132,7 @@ func TestVerifyPrefixProof_GoSolidityEquivalence(t *testing.T) {
 
 	merkleTreeContract, _ := setupMerkleTreeContract(t)
 	err = merkleTreeContract.VerifyPrefixProof(
-		util.GetSafeCallOpts(&bind.CallOpts{}),
+		&bind.CallOpts{},
 		loCommit.Merkle,
 		big.NewInt(4),
 		hiCommit.Merkle,
@@ -203,7 +202,7 @@ func TestVerifyPrefixProofWithHeight7_GoSolidityEquivalence1(t *testing.T) {
 
 	merkleTreeContract, _ := setupMerkleTreeContract(t)
 	err = merkleTreeContract.VerifyPrefixProof(
-		util.GetSafeCallOpts(&bind.CallOpts{}),
+		&bind.CallOpts{},
 		loCommit.Merkle,
 		big.NewInt(4),
 		hiCommit.Merkle,
@@ -306,7 +305,7 @@ func FuzzPrefixProof_Verify(f *testing.F) {
 		f.Add(tc.PreRoot.String(), tc.PreSize, tc.PostRoot.String(), tc.PostSize, hexutil.Encode(preExp), hexutil.Encode(prefixProof))
 	}
 	merkleTreeContract, _ := setupMerkleTreeContract(f)
-	opts := util.GetSafeCallOpts(&bind.CallOpts{})
+	opts := &bind.CallOpts{}
 	f.Fuzz(func(
 		t *testing.T,
 		preRootF string,
@@ -415,7 +414,7 @@ func FuzzPrefixProof_MaximumAppendBetween_GoSolidityEquivalence(f *testing.F) {
 		f.Add(tc.pre, tc.post)
 	}
 	merkleTreeContract, _ := setupMerkleTreeContract(f)
-	opts := util.GetSafeCallOpts(&bind.CallOpts{})
+	opts := &bind.CallOpts{}
 	f.Fuzz(func(t *testing.T, pre, post uint64) {
 		gotGo, err1 := prefixproofs.MaximumAppendBetween(pre, post)
 		gotSol, err2 := merkleTreeContract.MaximumAppendBetween(opts, big.NewInt(int64(pre)), big.NewInt(int64(post)))
@@ -448,7 +447,7 @@ func FuzzPrefixProof_BitUtils_GoSolidityEquivalence(f *testing.F) {
 		f.Add(tc)
 	}
 	merkleTreeContract, _ := setupMerkleTreeContract(f)
-	opts := util.GetSafeCallOpts(&bind.CallOpts{})
+	opts := &bind.CallOpts{}
 	f.Fuzz(func(t *testing.T, x uint64) {
 		lsbSol, _ := merkleTreeContract.LeastSignificantBit(opts, big.NewInt(int64(x)))
 		lsbGo, _ := prefixproofs.LeastSignificantBit(x)
@@ -478,7 +477,7 @@ func runBitEquivalenceTest(
 	solFunc func(opts *bind.CallOpts, x *big.Int) (*big.Int, error),
 	goFunc func(x uint64) (uint64, error),
 ) {
-	opts := util.GetSafeCallOpts(&bind.CallOpts{})
+	opts := &bind.CallOpts{}
 	for _, tt := range []struct {
 		num        uint64
 		wantSolErr bool

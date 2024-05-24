@@ -18,7 +18,6 @@ import (
 	"github.com/OffchainLabs/bold/solgen/go/ospgen"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	commitments "github.com/OffchainLabs/bold/state-commitments/history"
-	"github.com/OffchainLabs/bold/util"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -75,7 +74,7 @@ func (e *specEdge) TimeUnrivaled(ctx context.Context) (uint64, error) {
 	if e.hasRival && e.timeUnrivaled.IsSome() {
 		return e.timeUnrivaled.Unwrap(), nil
 	}
-	timer, err := e.manager.caller.TimeUnrivaled(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}), e.id)
+	timer, err := e.manager.caller.TimeUnrivaled(e.manager.assertionChain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}), e.id)
 	if err != nil {
 		return 0, err
 	}
@@ -89,7 +88,7 @@ func (e *specEdge) HasRival(ctx context.Context) (bool, error) {
 	if e.hasRival {
 		return e.hasRival, nil
 	}
-	hasRival, err := e.manager.caller.HasRival(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}), e.id)
+	hasRival, err := e.manager.caller.HasRival(e.manager.assertionChain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}), e.id)
 	if err != nil {
 		return false, err
 	}
@@ -194,7 +193,7 @@ func (e *specEdge) HasLengthOneRival(ctx context.Context) (bool, error) {
 	if e.hasLengthOneRival {
 		return e.hasLengthOneRival, nil
 	}
-	ok, err := e.manager.caller.HasLengthOneRival(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}), e.id)
+	ok, err := e.manager.caller.HasLengthOneRival(e.manager.assertionChain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}), e.id)
 	if err != nil {
 		errS := err.Error()
 		switch {
@@ -352,7 +351,7 @@ func (e *specEdge) TopLevelClaimHeight(ctx context.Context) (protocol.OriginHeig
 		if ctx.Err() != nil {
 			return protocol.OriginHeights{}, ctx.Err()
 		}
-		rivalId, err := e.manager.caller.FirstRival(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}), originId)
+		rivalId, err := e.manager.caller.FirstRival(e.manager.assertionChain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}), originId)
 		if err != nil {
 			return protocol.OriginHeights{}, err
 		}
@@ -405,11 +404,11 @@ func NewSpecChallengeManager(
 	if err != nil {
 		return nil, err
 	}
-	numBigStepLevel, err := managerBinding.EdgeChallengeManagerCaller.NUMBIGSTEPLEVEL(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}))
+	numBigStepLevel, err := managerBinding.EdgeChallengeManagerCaller.NUMBIGSTEPLEVEL(assertionChain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
 	if err != nil {
 		return nil, err
 	}
-	challengePeriodBlocks, err := managerBinding.EdgeChallengeManagerCaller.ChallengePeriodBlocks(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}))
+	challengePeriodBlocks, err := managerBinding.EdgeChallengeManagerCaller.ChallengePeriodBlocks(assertionChain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
 	if err != nil {
 		return nil, err
 	}
@@ -431,21 +430,21 @@ func (cm *specChallengeManager) Address() common.Address {
 }
 
 func (cm *specChallengeManager) LayerZeroHeights(ctx context.Context) (*protocol.LayerZeroHeights, error) {
-	h, err := cm.caller.LAYERZEROBLOCKEDGEHEIGHT(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}))
+	h, err := cm.caller.LAYERZEROBLOCKEDGEHEIGHT(cm.assertionChain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
 	if err != nil {
 		return nil, err
 	}
 	if !h.IsUint64() {
 		return nil, errors.New("layer zero block edge height was not a uint64")
 	}
-	bs, err := cm.caller.LAYERZEROBIGSTEPEDGEHEIGHT(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}))
+	bs, err := cm.caller.LAYERZEROBIGSTEPEDGEHEIGHT(cm.assertionChain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
 	if err != nil {
 		return nil, err
 	}
 	if !bs.IsUint64() {
 		return nil, errors.New("layer zero big step edge height was not a uint64")
 	}
-	ss, err := cm.caller.LAYERZEROSMALLSTEPEDGEHEIGHT(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}))
+	ss, err := cm.caller.LAYERZEROSMALLSTEPEDGEHEIGHT(cm.assertionChain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
 	if err != nil {
 		return nil, err
 	}
@@ -464,7 +463,7 @@ func (cm *specChallengeManager) NumBigSteps(ctx context.Context) (uint8, error) 
 }
 
 func (cm *specChallengeManager) LevelZeroBlockEdgeHeight(ctx context.Context) (uint64, error) {
-	h, err := cm.caller.LAYERZEROBLOCKEDGEHEIGHT(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}))
+	h, err := cm.caller.LAYERZEROBLOCKEDGEHEIGHT(cm.assertionChain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
 	if err != nil {
 		return 0, err
 	}
@@ -511,7 +510,7 @@ func (cm *specChallengeManager) GetEdge(
 	ctx context.Context,
 	edgeId protocol.EdgeId,
 ) (option.Option[protocol.SpecEdge], error) {
-	edge, err := cm.caller.GetEdge(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}), edgeId.Hash)
+	edge, err := cm.caller.GetEdge(cm.assertionChain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}), edgeId.Hash)
 	if err != nil {
 		return option.None[protocol.SpecEdge](), err
 	}
@@ -539,7 +538,7 @@ func (cm *specChallengeManager) GetEdge(
 	if err != nil {
 		return option.Option[protocol.SpecEdge]{}, err
 	}
-	assertionHash, err := cm.caller.GetPrevAssertionHash(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}), edgeId.Hash)
+	assertionHash, err := cm.caller.GetPrevAssertionHash(cm.assertionChain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}), edgeId.Hash)
 	if err != nil {
 		return option.Option[protocol.SpecEdge]{}, err
 	}
@@ -557,7 +556,7 @@ func (cm *specChallengeManager) GetEdge(
 }
 
 func (e *specEdge) SafeHeadInheritedTimer(ctx context.Context) (protocol.InheritedTimer, error) {
-	edge, err := e.manager.caller.GetEdge(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}), e.id)
+	edge, err := e.manager.caller.GetEdge(e.manager.assertionChain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}), e.id)
 	if err != nil {
 		return 0, err
 	}
@@ -572,7 +571,7 @@ func (e *specEdge) SafeHeadInheritedTimer(ctx context.Context) (protocol.Inherit
 }
 
 func (e *specEdge) LatestInheritedTimer(ctx context.Context) (protocol.InheritedTimer, error) {
-	edge, err := e.manager.caller.GetEdge(&bind.CallOpts{Context: ctx}, e.id)
+	edge, err := e.manager.caller.GetEdge(e.manager.assertionChain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}), e.id)
 	if err != nil {
 		return 0, err
 	}
@@ -593,7 +592,7 @@ func (e *specEdge) LatestInheritedTimer(ctx context.Context) (protocol.Inherited
 func (e *specEdge) fetchEdge(
 	ctx context.Context,
 ) (challengeV2gen.ChallengeEdge, error) {
-	edge, err := e.manager.caller.GetEdge(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}), e.id)
+	edge, err := e.manager.caller.GetEdge(e.manager.assertionChain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}), e.id)
 	if err != nil {
 		return challengeV2gen.ChallengeEdge{}, err
 	}
@@ -625,7 +624,7 @@ func (cm *specChallengeManager) CalculateEdgeId(
 	endHistoryRoot common.Hash,
 ) (protocol.EdgeId, error) {
 	id, err := cm.caller.CalculateEdgeId(
-		util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}),
+		cm.assertionChain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}),
 		challengeLevel.Uint8(),
 		originId,
 		big.NewInt(int64(startHeight)),
@@ -756,7 +755,7 @@ func (cm *specChallengeManager) ConfirmEdgeByOneStepProof(
 	}
 
 	machineStep, _ := edge.Unwrap().StartCommitment()
-	ospEntryAddr, err := cm.caller.OneStepProofEntry(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}))
+	ospEntryAddr, err := cm.caller.OneStepProofEntry(cm.assertionChain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
 	if err != nil {
 		return err
 	}
@@ -764,7 +763,7 @@ func (cm *specChallengeManager) ConfirmEdgeByOneStepProof(
 	if err != nil {
 		return err
 	}
-	bridgeAddr, err := cm.assertionChain.rollup.Bridge(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}))
+	bridgeAddr, err := cm.assertionChain.rollup.Bridge(cm.assertionChain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
 	if err != nil {
 		return err
 	}
@@ -774,7 +773,7 @@ func (cm *specChallengeManager) ConfirmEdgeByOneStepProof(
 		InitialWasmModuleRoot: creationInfo.WasmModuleRoot,
 	}
 	result, err := ospBindings.ProveOneStep(
-		util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}),
+		cm.assertionChain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}),
 		execCtx,
 		big.NewInt(int64(machineStep)),
 		oneStepData.BeforeHash,
@@ -925,7 +924,7 @@ func (cm *specChallengeManager) AddBlockChallengeLevelZeroEdge(
 	if err != nil {
 		return nil, errors.Wrapf(err, "could not read parent assertion %#x creation info", prevId)
 	}
-	levelZeroBlockHeight, err := cm.caller.LAYERZEROBLOCKEDGEHEIGHT(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}))
+	levelZeroBlockHeight, err := cm.caller.LAYERZEROBLOCKEDGEHEIGHT(cm.assertionChain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
 	if err != nil {
 		return nil, errors.Wrap(err, "could not get level zero block edge height")
 	}

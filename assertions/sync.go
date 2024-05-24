@@ -11,7 +11,6 @@ import (
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	retry "github.com/OffchainLabs/bold/runtime"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
-	"github.com/OffchainLabs/bold/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	gethtypes "github.com/ethereum/go-ethereum/core/types"
@@ -54,7 +53,7 @@ func (m *Manager) syncAssertions(ctx context.Context) {
 		return
 	}
 	latestBlock, err := retry.UntilSucceeds(ctx, func() (*gethtypes.Header, error) {
-		return m.backend.HeaderByNumber(ctx, util.GetSafeBlockNumber())
+		return m.backend.HeaderByNumber(ctx, m.chain.GetDesiredRpcHeadBlockNumber())
 	})
 	if err != nil {
 		log.Error("Could not get header by number", "err", err)
@@ -91,7 +90,7 @@ func (m *Manager) syncAssertions(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			latestBlock, err := m.backend.HeaderByNumber(ctx, util.GetSafeBlockNumber())
+			latestBlock, err := m.backend.HeaderByNumber(ctx, m.chain.GetDesiredRpcHeadBlockNumber())
 			if err != nil {
 				log.Error("Could not get header by number", "err", err)
 				continue

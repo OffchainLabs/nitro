@@ -140,6 +140,8 @@ type AssertionChain interface {
 	ReadAssertionCreationInfo(
 		ctx context.Context, id AssertionHash,
 	) (*AssertionCreatedInfo, error)
+	GetCallOptsWithDesiredRpcHeadBlockNumber(opts *bind.CallOpts) *bind.CallOpts
+	GetDesiredRpcHeadBlockNumber() *big.Int
 
 	MinAssertionPeriodBlocks(ctx context.Context) (uint64, error)
 	AssertionUnrivaledBlocks(ctx context.Context, assertionHash AssertionHash) (uint64, error)
