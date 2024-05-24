@@ -20,10 +20,10 @@ func CreateStream(ctx context.Context, streamName string, client redis.Universal
 // StreamExists returns whether there are any consumer group for specified
 // redis stream.
 func StreamExists(ctx context.Context, streamName string, client redis.UniversalClient) bool {
-	groups, err := client.XInfoStream(ctx, streamName).Result()
+	got, err := client.Do(ctx, "XINFO", "STREAM", streamName).Result()
 	if err != nil {
 		log.Error("Reading redis streams", "error", err)
 		return false
 	}
-	return groups.Groups > 0
+	return got != nil
 }
