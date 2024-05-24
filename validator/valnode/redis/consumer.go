@@ -107,19 +107,20 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 			})
 		})
 	}
-
-	for {
-		select {
-		case <-readyStreams:
-			log.Trace("At least one stream is ready")
-			return // Don't block Start if at least one of the stream is ready.
-		case <-time.After(s.streamTimeout):
-			log.Error("Waiting for redis streams timed out")
-		case <-ctx_in.Done():
-			log.Info(("Context expired, failed to start"))
-			return
+	s.StopWaiter.LaunchThread(func(ctx context.Context) {
+		for {
+			select {
+			case <-readyStreams:
+				log.Trace("At least one stream is ready")
+				return // Don't block Start if at least one of the stream is ready.
+			case <-time.After(s.streamTimeout):
+				log.Error("Waiting for redis streams timed out")
+			case <-ctx.Done():
+				log.Info(("Context expired, failed to start"))
+				return
+			}
 		}
-	}
+	})
 }
 
 type ValidationServerConfig struct {
