@@ -49,7 +49,7 @@ func TestFindBatch(t *testing.T) {
 	rollupAddresses.Bridge = bridgeAddr
 	rollupAddresses.SequencerInbox = seqInboxAddr
 	l2Info := NewArbTestInfo(t, chainConfig.ChainID)
-	cachingConfig := gethexec.DefaultTestCachingConfig()
+	cachingConfig := gethexec.TestCachingConfig
 	consensus, _ := createL2Nodes(t, ctx, &cachingConfig, conf, chainConfig, l1Backend, l2Info, rollupAddresses, initMsg, nil, nil, fatalErrChan)
 	err := consensus.Start(ctx)
 	Require(t, err)

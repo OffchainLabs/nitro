@@ -96,12 +96,6 @@ var (
 	InvalidStateSchemeForArchive = errors.New("archive cannot be set when using path as the state-scheme")
 )
 
-func DefaultTestCachingConfig() CachingConfig {
-	c := DefaultCachingConfig
-	c.StateScheme = rawdb.PathScheme
-	return c
-}
-
 // TODO remove stack from parameters as it is no longer needed here
 func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core.CacheConfig {
 	baseConf := ethconfig.Defaults

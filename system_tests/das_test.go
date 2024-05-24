@@ -130,7 +130,7 @@ func TestDASRekey(t *testing.T) {
 		authorizeDASKeyset(t, ctx, pubkeyA, l1info, l1client)
 
 		// Setup L2 chain
-		cachingConfig := gethexec.DefaultTestCachingConfig()
+		cachingConfig := gethexec.TestCachingConfig
 		_, l2stackA, l2chainDb, l2arbDb, l2blockchain := createL2BlockChainWithStackConfig(t, l2info, nodeDir, chainConfig, initMessage, nil, &cachingConfig)
 		l2info.GenerateAccount("User2")
 
@@ -184,7 +184,7 @@ func TestDASRekey(t *testing.T) {
 	l2arbDb, err := l2stackA.OpenDatabaseWithExtraOptions("arbitrumdata", 0, 0, "arbitrumdata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdata"))
 	Require(t, err)
 
-	cachingConfig := gethexec.DefaultTestCachingConfig()
+	cachingConfig := gethexec.TestCachingConfig
 	cacheConfig := gethexec.DefaultCacheConfigFor(nil, &cachingConfig)
 	l2blockchain, err := gethexec.GetBlockChain(l2chainDb, cacheConfig, chainConfig, gethexec.ConfigDefaultTest().TxLookupLimit)
 	Require(t, err)
@@ -319,7 +319,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	Require(t, err)
 
 	// Setup L2 chain
-	cachingConfig := gethexec.DefaultTestCachingConfig()
+	cachingConfig := gethexec.TestCachingConfig
 	l2info, l2stackA, l2chainDb, l2arbDb, l2blockchain := createL2BlockChainWithStackConfig(t, nil, "", chainConfig, initMessage, nil, &cachingConfig)
 	l2info.GenerateAccount("User2")
 

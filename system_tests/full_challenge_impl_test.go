@@ -272,7 +272,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	conf.BatchPoster.Enable = false
 	conf.InboxReader.CheckDelay = time.Second
 
-	cachingConfig := gethexec.DefaultTestCachingConfig()
+	cachingConfig := gethexec.TestCachingConfig
 	var valStack *node.Node
 	var mockSpawn *mockSpawner
 	if useStubs {
