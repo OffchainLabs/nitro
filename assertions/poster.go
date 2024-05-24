@@ -14,7 +14,6 @@ import (
 	"github.com/OffchainLabs/bold/containers"
 	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
-	"github.com/OffchainLabs/bold/util"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/pkg/errors"
@@ -190,7 +189,7 @@ func (m *Manager) waitToPostIfNeeded(
 	ctx context.Context,
 	parentCreationInfo *protocol.AssertionCreatedInfo,
 ) error {
-	latestBlock, err := m.backend.HeaderByNumber(ctx, util.GetSafeBlockNumber())
+	latestBlock, err := m.backend.HeaderByNumber(ctx, m.chain.GetDesiredRpcHeadBlockNumber())
 	if err != nil {
 		return err
 	}

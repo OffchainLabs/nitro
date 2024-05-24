@@ -25,7 +25,6 @@ import (
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	retry "github.com/OffchainLabs/bold/runtime"
 	"github.com/OffchainLabs/bold/solgen/go/challengeV2gen"
-	"github.com/OffchainLabs/bold/util"
 	"github.com/OffchainLabs/bold/util/stopwaiter"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -244,7 +243,7 @@ func (w *Watcher) Start(ctx context.Context) {
 	for {
 		select {
 		case <-ticker.C:
-			latestBlock, err := w.backend.HeaderByNumber(ctx, util.GetSafeBlockNumber())
+			latestBlock, err := w.backend.HeaderByNumber(ctx, w.chain.GetDesiredRpcHeadBlockNumber())
 			if err != nil {
 				log.Error("Could not get latest header", "err", err)
 				continue
@@ -298,7 +297,7 @@ func (w *Watcher) Start(ctx context.Context) {
 
 // GetRoyalEdges returns all royal, tracked edges in the watcher by assertion hash.
 func (w *Watcher) GetRoyalEdges(ctx context.Context) (map[protocol.AssertionHash][]*api.JsonTrackedRoyalEdge, error) {
-	header, err := w.chain.Backend().HeaderByNumber(ctx, util.GetSafeBlockNumber())
+	header, err := w.chain.Backend().HeaderByNumber(ctx, w.chain.GetDesiredRpcHeadBlockNumber())
 	if err != nil {
 		return nil, err
 	}
@@ -398,7 +397,7 @@ func (w *Watcher) ComputeAncestors(
 			challengedAssertionHash,
 		)
 	}
-	blockHeader, err := w.chain.Backend().HeaderByNumber(ctx, util.GetSafeBlockNumber())
+	blockHeader, err := w.chain.Backend().HeaderByNumber(ctx, w.chain.GetDesiredRpcHeadBlockNumber())
 	if err != nil {
 		return nil, err
 	}
@@ -420,7 +419,7 @@ func (w *Watcher) PathWeightToClosestEssentialAncestor(
 			challengedAssertionHash,
 		)
 	}
-	blockHeader, err := w.chain.Backend().HeaderByNumber(ctx, util.GetSafeBlockNumber())
+	blockHeader, err := w.chain.Backend().HeaderByNumber(ctx, w.chain.GetDesiredRpcHeadBlockNumber())
 	if err != nil {
 		return 0, err
 	}
@@ -452,7 +451,7 @@ func (w *Watcher) ComputeRootInheritedTimer(
 			challengedAssertionHash,
 		)
 	}
-	blockHeader, err := w.chain.Backend().HeaderByNumber(ctx, util.GetSafeBlockNumber())
+	blockHeader, err := w.chain.Backend().HeaderByNumber(ctx, w.chain.GetDesiredRpcHeadBlockNumber())
 	if err != nil {
 		return 0, err
 	}
@@ -841,7 +840,7 @@ func (w *Watcher) confirmAssertionByChallengeWinner(ctx context.Context, edge pr
 		return
 	}
 	challengeGracePeriodBlocks, err := retry.UntilSucceeds(ctx, func() (uint64, error) {
-		return w.chain.RollupUserLogic().RollupUserLogicCaller.ChallengeGracePeriodBlocks(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}))
+		return w.chain.RollupUserLogic().RollupUserLogicCaller.ChallengeGracePeriodBlocks(w.chain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
 	})
 	if err != nil {
 		log.Error("Could not get challenge grace period blocks", "err", err)
@@ -931,7 +930,7 @@ func (w *Watcher) getStartEndBlockNum(ctx context.Context) (filterRange, error) 
 	}
 	firstBlock := latestConfirmed.CreatedAtBlock()
 	startBlock := firstBlock
-	header, err := w.backend.HeaderByNumber(ctx, util.GetSafeBlockNumber())
+	header, err := w.backend.HeaderByNumber(ctx, w.chain.GetDesiredRpcHeadBlockNumber())
 	if err != nil {
 		return filterRange{}, err
 	}

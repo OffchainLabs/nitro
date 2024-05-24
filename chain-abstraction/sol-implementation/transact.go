@@ -9,7 +9,6 @@ import (
 	"time"
 
 	"github.com/OffchainLabs/bold/containers"
-	"github.com/OffchainLabs/bold/util"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -25,14 +24,14 @@ type ChainCommitter interface {
 }
 
 type transactConfig struct {
-	waitForSafe bool
+	waitForDesiredBlockNum bool
 }
 
 type transactOpt func(tc *transactConfig)
 
 func withoutSafeWait() transactOpt {
 	return func(tc *transactConfig) {
-		tc.waitForSafe = false
+		tc.waitForDesiredBlockNum = false
 	}
 }
 
@@ -49,7 +48,7 @@ func (a *AssertionChain) transact(
 	configOpts ...transactOpt,
 ) (*types.Receipt, error) {
 	config := &transactConfig{
-		waitForSafe: true,
+		waitForDesiredBlockNum: true,
 	}
 	for _, o := range configOpts {
 		o(config)
@@ -98,7 +97,7 @@ func (a *AssertionChain) transact(
 		return nil, err
 	}
 
-	if config.waitForSafe {
+	if config.waitForDesiredBlockNum {
 		ctxWaitSafe, cancelWaitSafe := context.WithTimeout(ctx, time.Minute*20)
 		defer cancelWaitSafe()
 		receipt, err = a.waitForTxToBeSafe(ctxWaitSafe, backend, tx, receipt)
@@ -135,7 +134,7 @@ func (a *AssertionChain) waitForTxToBeSafe(
 		if ctx.Err() != nil {
 			return nil, ctx.Err()
 		}
-		latestSafeHeader, err := backend.HeaderByNumber(ctx, util.GetSafeBlockNumber())
+		latestSafeHeader, err := backend.HeaderByNumber(ctx, a.GetDesiredRpcHeadBlockNumber())
 		if err != nil {
 			return nil, err
 		}

@@ -7,7 +7,6 @@ import (
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	retry "github.com/OffchainLabs/bold/runtime"
-	"github.com/OffchainLabs/bold/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
@@ -28,6 +27,7 @@ type challengeConfirmer struct {
 	backend                     protocol.ChainBackend
 	validatorName               string
 	averageTimeForBlockCreation time.Duration
+	chain                       protocol.Protocol
 }
 
 // Defines a chain writer interface that is
@@ -63,6 +63,7 @@ func newChallengeConfirmer(
 	backend protocol.ChainBackend,
 	averageTimeForBlockCreation time.Duration,
 	validatorName string,
+	chain protocol.Protocol,
 ) *challengeConfirmer {
 	return &challengeConfirmer{
 		reader:                      challengeReader,
@@ -70,6 +71,7 @@ func newChallengeConfirmer(
 		validatorName:               validatorName,
 		averageTimeForBlockCreation: averageTimeForBlockCreation,
 		backend:                     backend,
+		chain:                       chain,
 	}
 }
 
@@ -290,7 +292,7 @@ func (cc *challengeConfirmer) waitForTxToBeSafe(
 		if ctx.Err() != nil {
 			return ctx.Err()
 		}
-		latestSafeHeader, err := backend.HeaderByNumber(ctx, util.GetSafeBlockNumber())
+		latestSafeHeader, err := backend.HeaderByNumber(ctx, cc.chain.GetDesiredRpcHeadBlockNumber())
 		if err != nil {
 			return err
 		}

@@ -21,7 +21,6 @@ import (
 	"github.com/OffchainLabs/bold/challenge-manager/types"
 	"github.com/OffchainLabs/bold/containers/threadsafe"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
-	"github.com/OffchainLabs/bold/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
@@ -156,16 +155,16 @@ func (m *Manager) Start(ctx context.Context) {
 	m.LaunchThread(m.updateLatestConfirmedMetrics)
 	m.LaunchThread(m.syncAssertions)
 	m.LaunchThread(m.queueCanonicalAssertionsForConfirmation)
-	m.LaunchThread(m.checkLatestSafeBlock)
+	m.LaunchThread(m.checkLatestDesiredBlock)
 }
 
-func (m *Manager) checkLatestSafeBlock(ctx context.Context) {
+func (m *Manager) checkLatestDesiredBlock(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
 			return
 		case <-time.After(time.Minute):
-			latestSafeBlock, err := m.backend.HeaderByNumber(ctx, util.GetSafeBlockNumber())
+			latestSafeBlock, err := m.backend.HeaderByNumber(ctx, m.chain.GetDesiredRpcHeadBlockNumber())
 			if err != nil {
 				log.Error("Error getting latest safe block", "err", err)
 				continue

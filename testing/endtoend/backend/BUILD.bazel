@@ -17,7 +17,6 @@ go_library(
         "//solgen/go/rollupgen",
         "//testing",
         "//testing/setup:setup_lib",
-        "//util",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_ethereum_go_ethereum//common/hexutil",
@@ -40,7 +39,6 @@ go_test(
     visibility = ["//testing/endtoend:__subpackages__"],
     deps = [
         "//runtime",
-        "//util",
         "@com_github_stretchr_testify//require",
     ],
 )

@@ -6,6 +6,8 @@ package mocks
 
 import (
 	"context"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"math/big"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/containers/option"
@@ -375,6 +377,17 @@ func (m *MockEdgeTracker) TrackEdge(ctx context.Context, edge protocol.SpecEdge)
 
 type MockProtocol struct {
 	mock.Mock
+}
+
+func (m *MockProtocol) GetCallOptsWithDesiredRpcHeadBlockNumber(opts *bind.CallOpts) *bind.CallOpts {
+	if opts == nil {
+		opts = &bind.CallOpts{}
+	}
+	return opts
+}
+
+func (m *MockProtocol) GetDesiredRpcHeadBlockNumber() *big.Int {
+	return nil
 }
 
 // Read-only methods.

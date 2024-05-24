@@ -10,7 +10,6 @@ import (
 	"github.com/OffchainLabs/bold/containers/option"
 	"github.com/OffchainLabs/bold/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
-	"github.com/OffchainLabs/bold/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/pkg/errors"
@@ -65,7 +64,7 @@ func (a *Assertion) HasSecondChild() (bool, error) {
 func (a *Assertion) inner() (*rollupgen.AssertionNode, error) {
 	var b [32]byte
 	copy(b[:], a.id.Bytes())
-	assertionNode, err := a.chain.userLogic.GetAssertion(util.GetSafeCallOpts(&bind.CallOpts{}), b)
+	assertionNode, err := a.chain.userLogic.GetAssertion(a.chain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{}), b)
 	if err != nil {
 		return nil, err
 	}
