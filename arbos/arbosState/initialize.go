@@ -84,14 +84,21 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 		log.Crit("failed to init empty statedb", "error", err)
 	}
 
+	// commit avoids keeping the entire state in memory while importing the state.
+	// At some time it was also used to avoid reprocessing the whole import in case of a crash.
 	commit := func() (common.Hash, error) {
 		root, err := statedb.Commit(chainConfig.ArbitrumChainParams.GenesisBlockNum, true)
 		if err != nil {
 			return common.Hash{}, err
 		}
-		err = stateDatabase.TrieDB().Commit(root, true)
-		if err != nil {
-			return common.Hash{}, err
+		// When using PathScheme TrieDB.Commit should only be called once.
+		// When using HashScheme it is called multiple times to avoid keeping
+		// the entire trie in memory.
+		if cacheConfig.StateScheme == rawdb.HashScheme {
+			err = stateDatabase.TrieDB().Commit(root, true)
+			if err != nil {
+				return common.Hash{}, err
+			}
 		}
 		statedb, err = state.New(root, stateDatabase, nil)
 		if err != nil {
@@ -189,7 +196,18 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 	if err := accountDataReader.Close(); err != nil {
 		return common.Hash{}, err
 	}
-	return commit()
+
+	root, err = commit()
+	if err != nil {
+		return common.Hash{}, err
+	}
+	if cacheConfig.StateScheme == rawdb.PathScheme {
+		err = stateDatabase.TrieDB().Commit(root, true)
+		if err != nil {
+			return common.Hash{}, err
+		}
+	}
+	return root, nil
 }
 
 func initializeRetryables(statedb *state.StateDB, rs *retryables.RetryableState, initData statetransfer.RetryableDataReader, currentTimestamp uint64) error {
