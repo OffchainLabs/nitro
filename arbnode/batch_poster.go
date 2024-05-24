@@ -156,6 +156,8 @@ type BatchPosterConfig struct {
 	L1BlockBoundBypass             time.Duration               `koanf:"l1-block-bound-bypass" reload:"hot"`
 	UseAccessLists                 bool                        `koanf:"use-access-lists" reload:"hot"`
 	GasEstimateBaseFeeMultipleBips arbmath.Bips                `koanf:"gas-estimate-base-fee-multiple-bips"`
+	ReorgResistanceMargin          time.Duration               `koanf:"reorg-resistance-margin" reload:"hot"`
+	IgnoreReorgResistanceMargin    bool                        `koanf:"ignore-reorg-resistance-margin" reload:"hot"`
 
 	gasRefunder  common.Address
 	l1BlockBound l1BlockBound
@@ -207,6 +209,8 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".l1-block-bound-bypass", DefaultBatchPosterConfig.L1BlockBoundBypass, "post batches even if not within the layer 1 future bounds if we're within this margin of the max delay")
 	f.Bool(prefix+".use-access-lists", DefaultBatchPosterConfig.UseAccessLists, "post batches with access lists to reduce gas usage (disabled for L3s)")
 	f.Uint64(prefix+".gas-estimate-base-fee-multiple-bips", uint64(DefaultBatchPosterConfig.GasEstimateBaseFeeMultipleBips), "for gas estimation, use this multiple of the basefee (measured in basis points) as the max fee per gas")
+	f.Duration(prefix+".reorg-resistance-margin", DefaultBatchPosterConfig.ReorgResistanceMargin, "do not post batch if its within this duration from max-delay")
+	f.Bool(prefix+".ignore-reorg-resistance-margin", DefaultBatchPosterConfig.IgnoreReorgResistanceMargin, "setting this to true will allow posting of batch even when it falls within the reorg-resistance-margin from max-delay, given the batch duration exceeds max-delay")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfig)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.ParentChainWallet.Pathname)
@@ -235,6 +239,8 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	UseAccessLists:                 true,
 	RedisLock:                      redislock.DefaultCfg,
 	GasEstimateBaseFeeMultipleBips: arbmath.OneInBips * 3 / 2,
+	ReorgResistanceMargin:          10 * time.Minute,
+	IgnoreReorgResistanceMargin:    false,
 }
 
 var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
@@ -1231,7 +1237,15 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		b.building.msgCount++
 	}
 
-	if !forcePostBatch || !b.building.haveUsefulMessage {
+	var disablePosting bool
+	batchDuration := time.Since(firstMsgTime)
+	if (config.ReorgResistanceMargin > 0 && config.ReorgResistanceMargin < config.MaxDelay) &&
+		(batchDuration >= config.MaxDelay-config.ReorgResistanceMargin) &&
+		(batchDuration <= config.MaxDelay || (batchDuration <= config.MaxDelay+config.ReorgResistanceMargin && !config.IgnoreReorgResistanceMargin)) {
+		disablePosting = true
+	}
+
+	if disablePosting || !forcePostBatch || !b.building.haveUsefulMessage {
 		// the batch isn't full yet and we've posted a batch recently
 		// don't post anything for now
 		return false, nil
