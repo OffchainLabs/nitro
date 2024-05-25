@@ -791,8 +791,9 @@ validationsLoop:
 		}
 		for _, moduleRoot := range wasmRoots {
 			if v.chosenValidator[moduleRoot] == nil {
-				v.possiblyFatal(fmt.Errorf("did not find spawner for moduleRoot :%v", moduleRoot))
-				continue
+				notFoundErr := fmt.Errorf("did not find spawner for moduleRoot :%v", moduleRoot)
+				v.possiblyFatal(notFoundErr)
+				return nil, notFoundErr
 			}
 			if v.chosenValidator[moduleRoot].Room() == 0 {
 				log.Trace("advanceValidations: no more room", "moduleRoot", moduleRoot)
@@ -1088,7 +1089,7 @@ func (v *BlockValidator) Initialize(ctx context.Context) error {
 	}
 	// First spawner is always RedisValidationClient if RedisStreams are enabled.
 	if v.redisValidator != nil {
-		err := v.redisValidator.Initialize(moduleRoots)
+		err := v.redisValidator.Initialize(ctx, moduleRoots)
 		if err != nil {
 			return err
 		}
@@ -1097,12 +1098,17 @@ func (v *BlockValidator) Initialize(ctx context.Context) error {
 	for _, root := range moduleRoots {
 		if v.redisValidator != nil && validator.SpawnerSupportsModule(v.redisValidator, root) {
 			v.chosenValidator[root] = v.redisValidator
+			log.Info("validator chosen", "WasmModuleRoot", root, "chosen", "redis")
 		} else {
 			for _, spawner := range v.execSpawners {
 				if validator.SpawnerSupportsModule(spawner, root) {
 					v.chosenValidator[root] = spawner
+					log.Info("validator chosen", "WasmModuleRoot", root, "chosen", spawner.Name())
 					break
 				}
+			}
+			if v.chosenValidator[root] == nil {
+				return fmt.Errorf("cannot validate WasmModuleRoot %v", root)
 			}
 		}
 	}
