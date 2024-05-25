@@ -91,6 +91,7 @@ type ClientStoreConfig struct {
 	SigningKey            string        `koanf:"signing-key"`
 	SigningWallet         string        `koanf:"signing-wallet"`
 	SigningWalletPassword string        `koanf:"signing-wallet-password"`
+	MaxStoreChunkBodySize int           `koanf:"max-store-chunk-body-size"`
 }
 
 func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
@@ -102,6 +103,7 @@ func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
 	f.String("signing-wallet", "", "wallet containing ecdsa key to sign the message with")
 	f.String("signing-wallet-password", genericconf.PASSWORD_NOT_SET, "password to unlock the wallet, if not specified the user is prompted for the password")
 	f.Duration("das-retention-period", 24*time.Hour, "The period which DASes are requested to retain the stored batches.")
+	f.Int("max-store-chunk-body-size", 512*1024, "The maximum HTTP POST body size for a chunked store request")
 
 	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {
@@ -150,7 +152,7 @@ func startClientStore(args []string) error {
 		}
 	}
 
-	client, err := das.NewDASRPCClient(config.URL, signer)
+	client, err := das.NewDASRPCClient(config.URL, signer, config.MaxStoreChunkBodySize)
 	if err != nil {
 		return err
 	}

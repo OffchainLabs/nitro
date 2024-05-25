@@ -99,9 +99,10 @@ func aggConfigForBackend(t *testing.T, backendConfig das.BackendConfig) das.Aggr
 	backendsJsonByte, err := json.Marshal([]das.BackendConfig{backendConfig})
 	Require(t, err)
 	return das.AggregatorConfig{
-		Enable:        true,
-		AssumedHonest: 1,
-		Backends:      string(backendsJsonByte),
+		Enable:                true,
+		AssumedHonest:         1,
+		Backends:              string(backendsJsonByte),
+		MaxStoreChunkBodySize: 512 * 1024,
 	}
 }
 

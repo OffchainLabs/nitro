@@ -94,6 +94,10 @@ func NewSignatureVerifierWithSeqInboxCaller(
 
 func (v *SignatureVerifier) verify(
 	ctx context.Context, message []byte, sig []byte, extraFields ...uint64) error {
+	if v.extraBpVerifier == nil && v.addrVerifier == nil {
+		return errors.New("no signature verification method configured")
+	}
+
 	var verified bool
 	if v.extraBpVerifier != nil {
 		verified = v.extraBpVerifier(message, sig, extraFields...)
@@ -104,15 +108,14 @@ func (v *SignatureVerifier) verify(
 		if err != nil {
 			return err
 		}
-		isBatchPosterOrSequencer, err := v.addrVerifier.IsBatchPosterOrSequencer(ctx, actualSigner)
+		verified, err = v.addrVerifier.IsBatchPosterOrSequencer(ctx, actualSigner)
 		if err != nil {
 			return err
 		}
-		if !isBatchPosterOrSequencer {
-			return errors.New("store request not properly signed")
-		}
 	}
-
+	if !verified {
+		return errors.New("request not properly signed")
+	}
 	return nil
 }
 

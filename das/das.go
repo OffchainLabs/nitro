@@ -65,6 +65,7 @@ var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
 	RequestTimeout:                5 * time.Second,
 	Enable:                        false,
 	RestAggregator:                DefaultRestfulClientAggregatorConfig,
+	RPCAggregator:                 DefaultAggregatorConfig,
 	ParentChainConnectionAttempts: 15,
 	PanicOnError:                  false,
 	IpfsStorage:                   DefaultIpfsStorageServiceConfig,

@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"net"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -30,7 +31,8 @@ var (
 	rpcStoreStoredBytesGauge  = metrics.NewRegisteredGauge("arb/das/rpc/store/bytes", nil)
 	rpcStoreDurationHistogram = metrics.NewRegisteredHistogram("arb/das/rpc/store/duration", nil, metrics.NewBoundedHistogramSample())
 
-	// TODO chunk store metrics
+	rpcSendChunkSuccessGauge = metrics.NewRegisteredGauge("arb/das/rpc/sendchunk/success", nil)
+	rpcSendChunkFailureGauge = metrics.NewRegisteredGauge("arb/das/rpc/sendchunk/failure", nil)
 )
 
 type DASRPCServer struct {
@@ -40,7 +42,7 @@ type DASRPCServer struct {
 
 	signatureVerifier *SignatureVerifier
 
-	batches batchBuilder
+	batches *batchBuilder
 }
 
 func StartDASRPCServer(ctx context.Context, addr string, portNum uint64, rpcServerTimeouts genericconf.HTTPServerTimeoutConfig, daReader DataAvailabilityServiceReader, daWriter DataAvailabilityServiceWriter, daHealthChecker DataAvailabilityServiceHealthChecker, signatureVerifier *SignatureVerifier) (*http.Server, error) {
@@ -56,11 +58,15 @@ func StartDASRPCServerOnListener(ctx context.Context, listener net.Listener, rpc
 		return nil, errors.New("No writer backend was configured for DAS RPC server. Has the BLS signing key been set up (--data-availability.key.key-dir or --data-availability.key.priv-key options)?")
 	}
 	rpcServer := rpc.NewServer()
+	if legacyDASStoreAPIOnly {
+		rpcServer.ApplyAPIFilter(map[string]bool{"das_store": true})
+	}
 	err := rpcServer.RegisterName("das", &DASRPCServer{
 		daReader:          daReader,
 		daWriter:          daWriter,
 		daHealthChecker:   daHealthChecker,
 		signatureVerifier: signatureVerifier,
+		batches:           newBatchBuilder(),
 	})
 	if err != nil {
 		return nil, err
@@ -139,22 +145,39 @@ type SendChunkResult struct {
 }
 
 type batch struct {
-	chunks                     [][]byte
-	expectedChunks, seenChunks uint64
-	timeout                    uint64
+	chunks                          [][]byte
+	expectedChunks, seenChunks      uint64
+	expectedChunkSize, expectedSize uint64
+	timeout                         uint64
+	startTime                       time.Time
 }
 
 const (
 	maxPendingBatches = 10
 )
 
+// exposed globals for test control
+var (
+	batchBuildingExpiry   = 1 * time.Minute
+	legacyDASStoreAPIOnly = false
+)
+
 type batchBuilder struct {
-	batches map[uint64]batch
+	mutex   sync.Mutex
+	batches map[uint64]*batch
 }
 
-func (b *batchBuilder) assign(nChunks, timeout uint64) (uint64, error) {
+func newBatchBuilder() *batchBuilder {
+	return &batchBuilder{
+		batches: make(map[uint64]*batch),
+	}
+}
+
+func (b *batchBuilder) assign(nChunks, timeout, chunkSize, totalSize uint64) (uint64, error) {
+	b.mutex.Lock()
+	defer b.mutex.Unlock()
 	if len(b.batches) >= maxPendingBatches {
-		return 0, fmt.Errorf("can't start new batch, already %d pending", b.batches)
+		return 0, fmt.Errorf("can't start new batch, already %d pending", len(b.batches))
 	}
 
 	id := rand.Uint64()
@@ -163,16 +186,31 @@ func (b *batchBuilder) assign(nChunks, timeout uint64) (uint64, error) {
 		return 0, fmt.Errorf("can't start new batch, try again")
 	}
 
-	b.batches[id] = batch{
-		chunks:         make([][]byte, nChunks),
-		expectedChunks: nChunks,
-		timeout:        timeout,
+	b.batches[id] = &batch{
+		chunks:            make([][]byte, nChunks),
+		expectedChunks:    nChunks,
+		expectedChunkSize: chunkSize,
+		expectedSize:      totalSize,
+		timeout:           timeout,
+		startTime:         time.Now(),
 	}
+	go func(id uint64) {
+		<-time.After(batchBuildingExpiry)
+		b.mutex.Lock()
+		// Batch will only exist if expiry was reached without it being complete.
+		if _, exists := b.batches[id]; exists {
+			rpcStoreFailureGauge.Inc(1)
+			delete(b.batches, id)
+		}
+		b.mutex.Unlock()
+	}(id)
 	return id, nil
 }
 
 func (b *batchBuilder) add(id, idx uint64, data []byte) error {
+	b.mutex.Lock()
 	batch, ok := b.batches[id]
+	b.mutex.Unlock()
 	if !ok {
 		return fmt.Errorf("unknown batch(%d)", id)
 	}
@@ -185,34 +223,50 @@ func (b *batchBuilder) add(id, idx uint64, data []byte) error {
 		return fmt.Errorf("batch(%d): chunk(%d) already added", id, idx)
 	}
 
-	// todo check chunk size
+	if batch.expectedChunkSize < uint64(len(data)) {
+		return fmt.Errorf("batch(%d): chunk(%d) greater than expected size %d, was %d", id, idx, batch.expectedChunkSize, len(data))
+	}
 
 	batch.chunks[idx] = data
 	batch.seenChunks++
 	return nil
 }
 
-func (b *batchBuilder) close(id uint64) ([]byte, uint64, error) {
+func (b *batchBuilder) close(id uint64) ([]byte, uint64, time.Time, error) {
+	b.mutex.Lock()
 	batch, ok := b.batches[id]
+	delete(b.batches, id)
+	b.mutex.Unlock()
 	if !ok {
-		return nil, 0, fmt.Errorf("unknown batch(%d)", id)
+		return nil, 0, time.Time{}, fmt.Errorf("unknown batch(%d)", id)
 	}
 
 	if batch.expectedChunks != batch.seenChunks {
-		return nil, 0, fmt.Errorf("incomplete batch(%d): got %d/%d chunks", id, batch.seenChunks, batch.expectedChunks)
+		return nil, 0, time.Time{}, fmt.Errorf("incomplete batch(%d): got %d/%d chunks", id, batch.seenChunks, batch.expectedChunks)
 	}
-
-	// todo check total size
 
 	var flattened []byte
 	for _, chunk := range batch.chunks {
 		flattened = append(flattened, chunk...)
 	}
-	return flattened, batch.timeout, nil
+
+	if batch.expectedSize != uint64(len(flattened)) {
+		return nil, 0, time.Time{}, fmt.Errorf("batch(%d) was not expected size %d, was %d", id, batch.expectedSize, len(flattened))
+	}
+
+	return flattened, batch.timeout, batch.startTime, nil
 }
 
 func (s *DASRPCServer) StartChunkedStore(ctx context.Context, timestamp, nChunks, chunkSize, totalSize, timeout hexutil.Uint64, sig hexutil.Bytes) (*StartChunkedStoreResult, error) {
-	if err := s.signatureVerifier.verify(ctx, []byte{}, sig, uint64(timestamp), uint64(nChunks), uint64(totalSize), uint64(timeout)); err != nil {
+	rpcStoreRequestGauge.Inc(1)
+	failed := true
+	defer func() {
+		if failed {
+			rpcStoreFailureGauge.Inc(1)
+		} // success gague will be incremented on successful commit
+	}()
+
+	if err := s.signatureVerifier.verify(ctx, []byte{}, sig, uint64(timestamp), uint64(nChunks), uint64(chunkSize), uint64(totalSize), uint64(timeout)); err != nil {
 		return nil, err
 	}
 
@@ -221,29 +275,38 @@ func (s *DASRPCServer) StartChunkedStore(ctx context.Context, timestamp, nChunks
 		return nil, errors.New("too much time has elapsed since request was signed")
 	}
 
-	id, err := s.batches.assign(uint64(nChunks), uint64(timeout))
+	id, err := s.batches.assign(uint64(nChunks), uint64(timeout), uint64(chunkSize), uint64(totalSize))
 	if err != nil {
 		return nil, err
 	}
 
+	failed = false
 	return &StartChunkedStoreResult{
 		BatchId: hexutil.Uint64(id),
 	}, nil
 
 }
 
-func (s *DASRPCServer) SendChunk(ctx context.Context, batchId, chunkId hexutil.Uint64, message hexutil.Bytes, sig hexutil.Bytes) (*SendChunkResult, error) {
+func (s *DASRPCServer) SendChunk(ctx context.Context, batchId, chunkId hexutil.Uint64, message hexutil.Bytes, sig hexutil.Bytes) error {
+	success := false
+	defer func() {
+		if success {
+			rpcSendChunkSuccessGauge.Inc(1)
+		} else {
+			rpcSendChunkFailureGauge.Inc(1)
+		}
+	}()
+
 	if err := s.signatureVerifier.verify(ctx, message, sig, uint64(batchId), uint64(chunkId)); err != nil {
-		return nil, err
+		return err
 	}
 
 	if err := s.batches.add(uint64(batchId), uint64(chunkId), message); err != nil {
-		return nil, err
+		return err
 	}
 
-	return &SendChunkResult{
-		Ok: hexutil.Uint64(1), // TODO probably not needed
-	}, nil
+	success = true
+	return nil
 }
 
 func (s *DASRPCServer) CommitChunkedStore(ctx context.Context, batchId hexutil.Uint64, sig hexutil.Bytes) (*StoreResult, error) {
@@ -251,15 +314,26 @@ func (s *DASRPCServer) CommitChunkedStore(ctx context.Context, batchId hexutil.U
 		return nil, err
 	}
 
-	message, timeout, err := s.batches.close(uint64(batchId))
+	message, timeout, startTime, err := s.batches.close(uint64(batchId))
 	if err != nil {
 		return nil, err
 	}
 
 	cert, err := s.daWriter.Store(ctx, message, timeout, nil)
+	success := false
+	defer func() {
+		if success {
+			rpcStoreSuccessGauge.Inc(1)
+		} else {
+			rpcStoreFailureGauge.Inc(1)
+		}
+		rpcStoreDurationHistogram.Update(time.Since(startTime).Nanoseconds())
+	}()
 	if err != nil {
 		return nil, err
 	}
+	rpcStoreStoredBytesGauge.Inc(int64(len(message)))
+	success = true
 	return &StoreResult{
 		KeysetHash:  cert.KeysetHash[:],
 		DataHash:    cert.DataHash[:],
@@ -268,9 +342,6 @@ func (s *DASRPCServer) CommitChunkedStore(ctx context.Context, batchId hexutil.U
 		Sig:         blsSignatures.SignatureToBytes(cert.Sig),
 		Version:     hexutil.Uint64(cert.Version),
 	}, nil
-
-	// TODO tracing, metrics, and timers
-
 }
 
 func (serv *DASRPCServer) HealthCheck(ctx context.Context) error {
