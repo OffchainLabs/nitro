@@ -24,8 +24,8 @@ mod prefixed_hex {
         D: Deserializer<'de>,
     {
         let s = String::deserialize(deserializer)?;
-        if s.starts_with("0x") {
-            hex::decode(&s[2..]).map_err(serde::de::Error::custom)
+        if let Some(s) = s.strip_prefix("0x") {
+            hex::decode(s).map_err(serde::de::Error::custom)
         } else {
             Err(serde::de::Error::custom("missing 0x prefix"))
         }
@@ -71,6 +71,6 @@ pub struct FileData {
 impl FileData {
     pub fn from_reader<R: BufRead>(mut reader: R) -> io::Result<Self> {
         let data = serde_json::from_reader(&mut reader)?;
-        return Ok(data);
+        Ok(data)
     }
 }

@@ -17,8 +17,7 @@ pub fn prepare_machine(preimages: PathBuf, machines: PathBuf) -> eyre::Result<Ma
     let preimages = data
         .preimages_b64
         .into_iter()
-        .map(|preimage| preimage.1.into_iter().map(|(k, v)| (k, v)))
-        .flatten()
+        .flat_map(|preimage| preimage.1.into_iter())
         .collect::<HashMap<Bytes32, Vec<u8>>>();
     let preimage_resolver = move |_: u64, _: PreimageType, hash: Bytes32| -> Option<CBytes> {
         preimages
