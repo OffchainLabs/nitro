@@ -55,7 +55,7 @@ func TestRPC(t *testing.T) {
 	testhelpers.RequireImpl(t, err)
 	localDas, err := NewSignAfterStoreDASWriterWithSeqInboxCaller(privKey, nil, storageService, "")
 	testhelpers.RequireImpl(t, err)
-	dasServer, err := StartDASRPCServerOnListener(ctx, lis, genericconf.HTTPServerTimeoutConfigDefault, storageService, localDas, storageService)
+	dasServer, err := StartDASRPCServerOnListener(ctx, lis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, storageService, localDas, storageService)
 	defer func() {
 		if err := dasServer.Shutdown(ctx); err != nil {
 			panic(err)
