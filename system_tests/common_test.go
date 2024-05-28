@@ -23,6 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/deploy"
@@ -44,6 +45,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -772,9 +774,12 @@ func createL2BlockChainWithStackConfig(
 	stack, err = node.New(stackConfig)
 	Require(t, err)
 
-	chainDb, err := stack.OpenDatabase("l2chaindata", 0, 0, "l2chaindata/", false)
+	chainData, err := stack.OpenDatabaseWithExtraOptions("l2chaindata", 0, 0, "l2chaindata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata"))
 	Require(t, err)
-	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "arbitrumdata/", false)
+	wasmData, err := stack.OpenDatabase("wasm", 0, 0, "wasm/", false)
+	Require(t, err)
+	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmData, 0)
+	arbDb, err := stack.OpenDatabaseWithExtraOptions("arbitrumdata", 0, 0, "arbitrumdata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdata"))
 	Require(t, err)
 
 	initReader := statetransfer.NewMemoryInitDataReader(&l2info.ArbInitData)
@@ -976,9 +981,13 @@ func Create2ndNodeWithConfig(
 	l2stack, err := node.New(stackConfig)
 	Require(t, err)
 
-	l2chainDb, err := l2stack.OpenDatabase("l2chaindata", 0, 0, "l2chaindata/", false)
+	l2chainData, err := l2stack.OpenDatabaseWithExtraOptions("l2chaindata", 0, 0, "l2chaindata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata"))
 	Require(t, err)
-	l2arbDb, err := l2stack.OpenDatabase("arbitrumdata", 0, 0, "arbitrumdata/", false)
+	wasmData, err := l2stack.OpenDatabase("wasm", 0, 0, "wasm/", false)
+	Require(t, err)
+	l2chainDb := rawdb.WrapDatabaseWithWasm(l2chainData, wasmData, 0)
+
+	l2arbDb, err := l2stack.OpenDatabaseWithExtraOptions("arbitrumdata", 0, 0, "arbitrumdata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdata"))
 	Require(t, err)
 	initReader := statetransfer.NewMemoryInitDataReader(l2InitData)
 
@@ -1120,7 +1129,7 @@ func setupConfigWithDAS(
 		Require(t, err)
 		restLis, err := net.Listen("tcp", "localhost:0")
 		Require(t, err)
-		_, err = das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, daReader, daWriter, daHealthChecker, signatureVerifier)
+		_, err = das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, daReader, daWriter, daHealthChecker, signatureVerifier)
 		Require(t, err)
 		_, err = das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, daReader, daHealthChecker)
 		Require(t, err)

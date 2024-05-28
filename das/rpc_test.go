@@ -64,11 +64,13 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool, sleepOnIteratio
 
 	testPrivateKey, err := crypto.GenerateKey()
 	testhelpers.RequireImpl(t, err)
+
 	signatureVerifier, err := NewSignatureVerifierWithSeqInboxCaller(nil, "0x"+hex.EncodeToString(crypto.FromECDSAPub(&testPrivateKey.PublicKey)))
 	testhelpers.RequireImpl(t, err)
 	signer := signature.DataSignerFromPrivateKey(testPrivateKey)
 
-	dasServer, err := StartDASRPCServerOnListener(ctx, lis, genericconf.HTTPServerTimeoutConfigDefault, storageService, localDas, storageService, signatureVerifier)
+	dasServer, err := StartDASRPCServerOnListener(ctx, lis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, storageService, localDas, storageService, signatureVerifier)
+
 	defer func() {
 		if err := dasServer.Shutdown(ctx); err != nil {
 			panic(err)
