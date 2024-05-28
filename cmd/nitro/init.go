@@ -193,7 +193,7 @@ func downloadInitInParts(ctx context.Context, initConfig *conf.InitConfig) (stri
 		}
 	}()
 	for {
-		url := fmt.Sprintf("%s.part%02d", initConfig.Url, part)
+		url := fmt.Sprintf("%s.part%d", initConfig.Url, part)
 		log.Info("Downloading database part", "url", url)
 		partFile, err := downloadFile(ctx, initConfig, url)
 		if errors.Is(err, notFoundError) {
@@ -213,7 +213,7 @@ func joinArchive(parts []string) (string, error) {
 	if len(parts) == 0 {
 		return "", fmt.Errorf("no database parts found")
 	}
-	archivePath := strings.TrimSuffix(parts[0], ".part00")
+	archivePath := strings.TrimSuffix(parts[0], ".part0")
 	archive, err := os.Create(archivePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to create archive: %w", err)

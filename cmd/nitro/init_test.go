@@ -81,7 +81,7 @@ func TestDownloadInitInParts(t *testing.T) {
 		checksumBytes := sha256.Sum256(partData)
 		checksum := hex.EncodeToString(checksumBytes[:])
 		// Write part file
-		partFile := fmt.Sprintf("%s/%s.part%02d", serverDir, archiveName, i)
+		partFile := fmt.Sprintf("%s/%s.part%d", serverDir, archiveName, i)
 		err := os.WriteFile(partFile, partData, filePerm)
 		Require(t, err, "failed to write part")
 		// Write checksum file
