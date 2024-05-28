@@ -9,7 +9,6 @@ import (
 	"time"
 
 	retry "github.com/OffchainLabs/bold/runtime"
-	"github.com/OffchainLabs/bold/util"
 	"github.com/stretchr/testify/require"
 )
 
@@ -46,7 +45,7 @@ func TestLocalAnvilStarts(t *testing.T) {
 	require.NoError(t, err)
 
 	// There should be at least 100 blocks
-	bn, err2 := a.Client().HeaderByNumber(ctx, util.GetSafeBlockNumber())
+	bn, err2 := a.Client().HeaderByNumber(ctx, nil)
 	if err2 != nil {
 		t.Fatal(err2)
 	}

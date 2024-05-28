@@ -8,9 +8,9 @@ package solimpl
 
 import (
 	"context"
+	"flag"
 	"fmt"
 	"math/big"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -21,12 +21,12 @@ import (
 	"github.com/OffchainLabs/bold/containers/threadsafe"
 	"github.com/OffchainLabs/bold/solgen/go/bridgegen"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
-	"github.com/OffchainLabs/bold/util"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/pkg/errors"
 )
 
@@ -36,7 +36,6 @@ var (
 	ErrAlreadyExists    = errors.New("item already exists on-chain")
 	ErrPrevDoesNotExist = errors.New("assertion predecessor does not exist")
 	ErrTooLate          = errors.New("too late to create assertion sibling")
-	srvlog              = log.New("service", "contract-bindings")
 )
 
 var assertionCreatedId common.Hash
@@ -51,7 +50,6 @@ func init() {
 		panic("RollupCore ABI missing AssertionCreated event")
 	}
 	assertionCreatedId = assertionCreatedEvent.ID
-	srvlog.SetHandler(log.StreamHandler(os.Stdout, log.LogfmtFormat()))
 }
 
 // ChainBackend to interact with the underlying blockchain.
@@ -140,6 +138,11 @@ type AssertionChain struct {
 	specChallengeManager                     protocol.SpecChallengeManager
 	averageTimeForBlockCreation              time.Duration
 	transactor                               Transactor
+
+	// rpcHeadBlockNumber is the block number of the latest block on the chain.
+	// It is set to rpc.FinalizedBlockNumber by default.
+	// WithRpcHeadBlockNumber can be used to set a different block number.
+	rpcHeadBlockNumber rpc.BlockNumber
 }
 
 type Opt func(*AssertionChain)
@@ -153,6 +156,12 @@ func WithTrackedContractBackend() Opt {
 func WithMetricsContractBackend() Opt {
 	return func(a *AssertionChain) {
 		a.backend = NewMetricsContractBackend(a.backend)
+	}
+}
+
+func WithRpcHeadBlockNumber(rpcHeadBlockNumber rpc.BlockNumber) Opt {
+	return func(a *AssertionChain) {
+		a.rpcHeadBlockNumber = rpcHeadBlockNumber
 	}
 }
 
@@ -178,6 +187,7 @@ func NewAssertionChain(
 		confirmedChallengesByParentAssertionHash: threadsafe.NewLruSet[protocol.AssertionHash](1000, threadsafe.LruSetWithMetric[protocol.AssertionHash]("confirmedChallengesByParentAssertionHash")),
 		averageTimeForBlockCreation:              time.Second * 12,
 		transactor:                               transactor,
+		rpcHeadBlockNumber:                       rpc.FinalizedBlockNumber,
 	}
 	for _, opt := range opts {
 		opt(chain)
@@ -221,7 +231,7 @@ func (a *AssertionChain) Backend() protocol.ChainBackend {
 func (a *AssertionChain) GetAssertion(ctx context.Context, assertionHash protocol.AssertionHash) (protocol.Assertion, error) {
 	var b [32]byte
 	copy(b[:], assertionHash.Bytes())
-	res, err := a.userLogic.GetAssertion(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}), b)
+	res, err := a.userLogic.GetAssertion(a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}), b)
 	if err != nil {
 		return nil, err
 	}
@@ -240,7 +250,7 @@ func (a *AssertionChain) GetAssertion(ctx context.Context, assertionHash protoco
 }
 
 func (a *AssertionChain) AssertionStatus(ctx context.Context, assertionHash protocol.AssertionHash) (protocol.AssertionStatus, error) {
-	res, err := a.rollup.GetAssertion(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}), assertionHash.Hash)
+	res, err := a.rollup.GetAssertion(a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}), assertionHash.Hash)
 	if err != nil {
 		return protocol.NoAssertion, err
 	}
@@ -248,7 +258,7 @@ func (a *AssertionChain) AssertionStatus(ctx context.Context, assertionHash prot
 }
 
 func (a *AssertionChain) LatestConfirmed(ctx context.Context) (protocol.Assertion, error) {
-	res, err := a.rollup.LatestConfirmed(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}))
+	res, err := a.rollup.LatestConfirmed(a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
 	if err != nil {
 		return nil, err
 	}
@@ -257,7 +267,7 @@ func (a *AssertionChain) LatestConfirmed(ctx context.Context) (protocol.Assertio
 
 // Returns true if the staker's address is currently staked in the assertion chain.
 func (a *AssertionChain) IsStaked(ctx context.Context) (bool, error) {
-	return a.rollup.IsStaked(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}), a.txOpts.From)
+	return a.rollup.IsStaked(a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}), a.txOpts.From)
 }
 
 // RollupAddress for the assertion chain.
@@ -308,7 +318,7 @@ func (a *AssertionChain) NewStakeOnNewAssertion(
 		ctx,
 		parentAssertionCreationInfo,
 		postState,
-		a.userLogic.RollupUserLogicTransactor.NewStakeOnNewAssertion0,
+		a.userLogic.RollupUserLogicTransactor.NewStakeOnNewAssertion7300201c,
 	)
 }
 
@@ -347,7 +357,7 @@ func (a *AssertionChain) createAndStakeOnAssertion(
 	if postState.GlobalState.Batch == 0 {
 		return nil, errors.New("assertion post state cannot have a batch count of 0, as only genesis can")
 	}
-	bridgeAddr, err := a.userLogic.Bridge(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}))
+	bridgeAddr, err := a.userLogic.Bridge(a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
 	if err != nil {
 		return nil, errors.Wrap(err, "could not retrieve bridge address for user rollup logic contract")
 	}
@@ -356,14 +366,14 @@ func (a *AssertionChain) createAndStakeOnAssertion(
 		return nil, errors.Wrapf(err, "could not initialize bridge at address %#x", bridgeAddr)
 	}
 	inboxBatchAcc, err := bridge.SequencerInboxAccs(
-		util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}),
+		a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}),
 		new(big.Int).SetUint64(postState.GlobalState.Batch-1),
 	)
 	if err != nil {
 		return nil, ErrBatchNotYetFound
 	}
 	computedHash, err := a.userLogic.RollupUserLogicCaller.ComputeAssertionHash(
-		util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}),
+		a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}),
 		parentAssertionCreationInfo.AssertionHash,
 		postState.AsSolidityStruct(),
 		inboxBatchAcc,
@@ -431,11 +441,11 @@ func (a *AssertionChain) createAndStakeOnAssertion(
 }
 
 func (a *AssertionChain) GenesisAssertionHash(ctx context.Context) (common.Hash, error) {
-	return a.userLogic.GenesisAssertionHash(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}))
+	return a.userLogic.GenesisAssertionHash(a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
 }
 
 func (a *AssertionChain) MinAssertionPeriodBlocks(ctx context.Context) (uint64, error) {
-	minPeriod, err := a.rollup.MinimumAssertionPeriod(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}))
+	minPeriod, err := a.rollup.MinimumAssertionPeriod(a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
 	if err != nil {
 		return 0, err
 	}
@@ -465,7 +475,7 @@ func TryConfirmingAssertion(
 	}
 	for {
 		var latestHeader *types.Header
-		latestHeader, err = chain.Backend().HeaderByNumber(ctx, util.GetSafeBlockNumber())
+		latestHeader, err = chain.Backend().HeaderByNumber(ctx, chain.GetDesiredRpcHeadBlockNumber())
 		if err != nil {
 			return false, err
 		}
@@ -478,9 +488,9 @@ func TryConfirmingAssertion(
 		if !confirmable {
 			blocksLeftForConfirmation := confirmableAfterBlock - latestHeader.Number.Uint64()
 			timeToWait := averageTimeForBlockCreation * time.Duration(blocksLeftForConfirmation)
-			srvlog.Info(
+			log.Info(
 				fmt.Sprintf(
-					"Assertion with has %s needs at least %d blocks before being confirmable, waiting for %s",
+					"Assertion with hash %s needs at least %d blocks before being confirmable, waiting for %s",
 					containers.Trunc(assertionHash.Bytes()),
 					blocksLeftForConfirmation,
 					timeToWait,
@@ -532,7 +542,7 @@ func (a *AssertionChain) ConfirmAssertionByChallengeWinner(
 ) error {
 	var b [32]byte
 	copy(b[:], assertionHash.Bytes())
-	node, err := a.userLogic.GetAssertion(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}), b)
+	node, err := a.userLogic.GetAssertion(a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}), b)
 	if err != nil {
 		return err
 	}
@@ -602,7 +612,7 @@ func (a *AssertionChain) SpecChallengeManager(ctx context.Context) (protocol.Spe
 func (a *AssertionChain) AssertionUnrivaledBlocks(ctx context.Context, assertionHash protocol.AssertionHash) (uint64, error) {
 	var b [32]byte
 	copy(b[:], assertionHash.Bytes())
-	wantNode, err := a.rollup.GetAssertion(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}), b)
+	wantNode, err := a.rollup.GetAssertion(a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}), b)
 	if err != nil {
 		return 0, err
 	}
@@ -627,7 +637,7 @@ func (a *AssertionChain) AssertionUnrivaledBlocks(ctx context.Context, assertion
 		return 0, err
 	}
 	copy(b[:], prevId.Bytes())
-	prevNode, err := a.rollup.GetAssertion(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}), b)
+	prevNode, err := a.rollup.GetAssertion(a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}), b)
 	if err != nil {
 		return 0, err
 	}
@@ -641,7 +651,7 @@ func (a *AssertionChain) AssertionUnrivaledBlocks(ctx context.Context, assertion
 	// If there is no second child, we simply return the number of blocks
 	// since the assertion was created and its parent.
 	if prevNode.SecondChildBlock == 0 {
-		latestHeader, err := a.backend.HeaderByNumber(ctx, util.GetSafeBlockNumber())
+		latestHeader, err := a.backend.HeaderByNumber(ctx, a.GetDesiredRpcHeadBlockNumber())
 		if err != nil {
 			return 0, err
 		}
@@ -715,7 +725,7 @@ func (a *AssertionChain) LatestCreatedAssertion(ctx context.Context) (protocol.A
 	createdAtBlock := latestConfirmed.CreatedAtBlock()
 	var query = ethereum.FilterQuery{
 		FromBlock: new(big.Int).SetUint64(createdAtBlock),
-		ToBlock:   util.GetSafeBlockNumber(),
+		ToBlock:   a.GetDesiredRpcHeadBlockNumber(),
 		Addresses: []common.Address{a.rollupAddr},
 		Topics:    [][]common.Hash{{assertionCreatedId}},
 	}
@@ -764,7 +774,7 @@ func (a *AssertionChain) LatestCreatedAssertionHashes(ctx context.Context) ([]pr
 	createdAtBlock := latestConfirmed.CreatedAtBlock()
 	var query = ethereum.FilterQuery{
 		FromBlock: new(big.Int).SetUint64(createdAtBlock),
-		ToBlock:   util.GetSafeBlockNumber(),
+		ToBlock:   a.GetDesiredRpcHeadBlockNumber(),
 		Addresses: []common.Address{a.rollupAddr},
 		Topics:    [][]common.Hash{{assertionCreatedId}},
 	}
@@ -803,7 +813,7 @@ func (a *AssertionChain) ReadAssertionCreationInfo(
 	var creationBlock uint64
 	var topics [][]common.Hash
 	if id == (protocol.AssertionHash{}) {
-		rollupDeploymentBlock, err := a.rollup.RollupDeploymentBlock(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}))
+		rollupDeploymentBlock, err := a.rollup.RollupDeploymentBlock(a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
 		if err != nil {
 			return nil, err
 		}
@@ -815,7 +825,7 @@ func (a *AssertionChain) ReadAssertionCreationInfo(
 	} else {
 		var b [32]byte
 		copy(b[:], id.Bytes())
-		node, err := a.rollup.GetAssertion(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}), b)
+		node, err := a.rollup.GetAssertion(a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}), b)
 		if err != nil {
 			return nil, err
 		}
@@ -891,4 +901,26 @@ func handleCreateAssertionError(err error, blockHash common.Hash) error {
 	default:
 		return err
 	}
+}
+
+func (a *AssertionChain) GetCallOptsWithDesiredRpcHeadBlockNumber(opts *bind.CallOpts) *bind.CallOpts {
+	if opts == nil {
+		opts = &bind.CallOpts{}
+	}
+	// If we are running tests, we want to use the latest block number since
+	// simulated backends only support the latest block number.
+	if flag.Lookup("test.v") != nil {
+		return opts
+	}
+	opts.BlockNumber = big.NewInt(int64(a.rpcHeadBlockNumber))
+	return opts
+}
+
+func (a *AssertionChain) GetDesiredRpcHeadBlockNumber() *big.Int {
+	// If we are running tests, we want to use the latest block number since
+	// simulated backends only support the latest block number.
+	if flag.Lookup("test.v") != nil {
+		return nil
+	}
+	return big.NewInt(int64(a.rpcHeadBlockNumber))
 }

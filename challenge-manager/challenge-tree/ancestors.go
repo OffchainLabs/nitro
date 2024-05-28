@@ -99,6 +99,38 @@ func (ht *RoyalChallengeTree) ComputeAncestors(
 	return ancestry, nil
 }
 
+// ClosestEssentialAncestor of a child edge. If the edge is a block challenge edge, this is the root of
+// the block challenge. Otherwise, it is the root of the subchallenge the edge is in.
+func (ht *RoyalChallengeTree) ClosestEssentialAncestor(
+	ctx context.Context, child protocol.ReadOnlyEdge,
+) (protocol.ReadOnlyEdge, error) {
+	// If the edge is already essential, return itself.
+	if child.ClaimId().IsSome() {
+		return child, nil
+	}
+	if child.GetChallengeLevel().IsBlockChallengeLevel() {
+		return ht.RoyalBlockChallengeRootEdge()
+	}
+	childOrigin := child.OriginId()
+	var claimedEdge protocol.SpecEdge
+	var ok bool
+	_ = ht.edges.ForEach(func(_ protocol.EdgeId, edge protocol.SpecEdge) error {
+		if edge.MutualId() == protocol.MutualId(childOrigin) {
+			claimedEdge = edge
+			ok = true
+		}
+		return nil
+	})
+	if !ok {
+		return nil, errors.New("no edge corresponding to origin id found")
+	}
+	isClaimedEdge, claimingEdge := ht.isClaimedEdge(ctx, claimedEdge)
+	if !isClaimedEdge {
+		return nil, errors.New("edge is not claimed")
+	}
+	return claimingEdge, nil
+}
+
 // Computes the list of ancestors in a challenge level from a root edge down
 // to a specified child edge within the same level. The edge we are querying must be
 // a child of this start edge for this function to succeed without error.

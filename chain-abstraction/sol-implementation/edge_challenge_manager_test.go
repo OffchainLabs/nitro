@@ -17,10 +17,8 @@ import (
 	challenge_testing "github.com/OffchainLabs/bold/testing"
 	stateprovider "github.com/OffchainLabs/bold/testing/mocks/state-provider"
 	"github.com/OffchainLabs/bold/testing/setup"
-	"github.com/OffchainLabs/bold/util"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 )
@@ -491,14 +489,10 @@ func TestEdgeChallengeManager_ConfirmByTime(t *testing.T) {
 		bisectionScenario.topLevelFork.Backend.Commit()
 	}
 
+	expectedNewTimer := uint64(200)
 	chalManager, err := bisectionScenario.topLevelFork.Chains[0].SpecChallengeManager(ctx)
 	require.NoError(t, err)
-	_, err = chalManager.MultiUpdateInheritedTimers(ctx, []protocol.ReadOnlyEdge{honestChildren1})
-	require.NoError(t, err)
-	_, err = chalManager.MultiUpdateInheritedTimers(ctx, []protocol.ReadOnlyEdge{honestChildren2})
-	require.NoError(t, err)
-	_, err = chalManager.MultiUpdateInheritedTimers(ctx, []protocol.ReadOnlyEdge{honestEdge})
-	require.NoError(t, err)
+	_, err = chalManager.MultiUpdateInheritedTimers(ctx, []protocol.ReadOnlyEdge{honestChildren1, honestChildren2, honestEdge}, expectedNewTimer)
 
 	_, err = honestEdge.ConfirmByTimer(ctx)
 	require.NoError(t, err)
@@ -563,7 +557,8 @@ func TestEdgeChallengeManager_ConfirmByTime_MoreComplexScenario(t *testing.T) {
 	t.Run("confirmed by timer", func(t *testing.T) {
 		chalManager, err := createdData.Chains[0].SpecChallengeManager(ctx)
 		require.NoError(t, err)
-		_, err = chalManager.MultiUpdateInheritedTimers(ctx, []protocol.ReadOnlyEdge{honestEdge})
+		expectedNewTimer := uint64(200)
+		_, err = chalManager.MultiUpdateInheritedTimers(ctx, []protocol.ReadOnlyEdge{honestEdge}, expectedNewTimer)
 		require.NoError(t, err)
 
 		_, err = honestEdge.ConfirmByTimer(ctx)
@@ -585,7 +580,7 @@ func upgradeWasmModuleRoot(
 	t *testing.T,
 	opts *bind.TransactOpts,
 	executor common.Address,
-	backend *backends.SimulatedBackend,
+	backend *setup.SimulatedBackendWrapper,
 	rollup common.Address,
 	wasmModuleRoot common.Hash,
 ) {
@@ -643,7 +638,7 @@ func TestUpgradingConfigMidChallenge(t *testing.T) {
 
 	// We check the config snapshot used for the one step proof is different than what
 	// is now onchain, as these values changed mid-challenge.
-	gotWasmModuleRoot, err := adminLogic.WasmModuleRoot(util.GetSafeCallOpts(&bind.CallOpts{}))
+	gotWasmModuleRoot, err := adminLogic.WasmModuleRoot(chain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{}))
 	require.NoError(t, err)
 	require.Equal(t, newWasmModuleRoot[:], gotWasmModuleRoot[:])
 	require.NotEqual(t, parentAssertionCreationInfo.WasmModuleRoot[:], gotWasmModuleRoot)

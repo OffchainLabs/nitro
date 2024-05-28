@@ -19,10 +19,8 @@ import (
 	challenge_testing "github.com/OffchainLabs/bold/testing"
 	statemanager "github.com/OffchainLabs/bold/testing/mocks/state-provider"
 	"github.com/OffchainLabs/bold/testing/setup"
-	"github.com/OffchainLabs/bold/util"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 )
@@ -44,7 +42,7 @@ func TestSkipsProcessingAssertionFromEvilFork(t *testing.T) {
 	bridgeBindings, err := mocksgen.NewBridgeStub(setup.Addrs.Bridge, setup.Backend)
 	require.NoError(t, err)
 
-	msgCount, err := bridgeBindings.SequencerMessageCount(util.GetSafeCallOpts(&bind.CallOpts{}))
+	msgCount, err := bridgeBindings.SequencerMessageCount(setup.Chains[0].GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{}))
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), msgCount.Uint64())
 
@@ -98,7 +96,6 @@ func TestSkipsProcessingAssertionFromEvilFork(t *testing.T) {
 		aliceStateManager,
 		setup.Addrs.Rollup,
 		challengemanager.WithMode(types.DefensiveMode),
-		challengemanager.WithEdgeTrackerWakeInterval(time.Hour),
 	)
 	require.NoError(t, err)
 	aliceChalManager.Start(ctx)
@@ -187,7 +184,7 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 	bridgeBindings, err := mocksgen.NewBridgeStub(setup.Addrs.Bridge, setup.Backend)
 	require.NoError(t, err)
 
-	msgCount, err := bridgeBindings.SequencerMessageCount(util.GetSafeCallOpts(&bind.CallOpts{}))
+	msgCount, err := bridgeBindings.SequencerMessageCount(setup.Chains[0].GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{}))
 	require.NoError(t, err)
 	require.Equal(t, uint64(1), msgCount.Uint64())
 
@@ -297,7 +294,6 @@ func TestComplexAssertionForkScenario(t *testing.T) {
 		charlieStateManager,
 		setup.Addrs.Rollup,
 		challengemanager.WithMode(types.DefensiveMode),
-		challengemanager.WithEdgeTrackerWakeInterval(time.Hour),
 	)
 	require.NoError(t, err)
 	chalManager.Start(ctx)
@@ -352,7 +348,7 @@ func enqueueSequencerMessageAsExecutor(
 	t *testing.T,
 	opts *bind.TransactOpts,
 	executor common.Address,
-	backend *backends.SimulatedBackend,
+	backend *setup.SimulatedBackendWrapper,
 	bridge common.Address,
 	msg seqMessage,
 ) {

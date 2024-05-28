@@ -19,7 +19,6 @@ import (
 	"github.com/OffchainLabs/bold/testing/mocks"
 	"github.com/OffchainLabs/bold/testing/setup"
 	customTime "github.com/OffchainLabs/bold/time"
-	"github.com/OffchainLabs/bold/util"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
@@ -134,7 +133,6 @@ func setupEdgeTrackersForBisection(
 		createdData.Addrs.Rollup,
 		WithName("alice"),
 		WithMode(types.MakeMode),
-		WithEdgeTrackerWakeInterval(100*time.Millisecond),
 	)
 	require.NoError(t, err)
 
@@ -145,11 +143,10 @@ func setupEdgeTrackersForBisection(
 		createdData.Addrs.Rollup,
 		WithName("bob"),
 		WithMode(types.MakeMode),
-		WithEdgeTrackerWakeInterval(100*time.Millisecond),
 	)
 	require.NoError(t, err)
 
-	honestEdge, _, _, err := honestValidator.addBlockChallengeLevelZeroEdge(ctx, createdData.Leaf1)
+	honestEdge, _, _, _, err := honestValidator.addBlockChallengeLevelZeroEdge(ctx, createdData.Leaf1)
 	require.NoError(t, err)
 
 	// If we specify an optional amount of blocks to delay the evil root edge creation by, do so
@@ -161,7 +158,7 @@ func setupEdgeTrackersForBisection(
 		}
 	}
 
-	evilEdge, _, _, err := evilValidator.addBlockChallengeLevelZeroEdge(ctx, createdData.Leaf2)
+	evilEdge, _, _, _, err := evilValidator.addBlockChallengeLevelZeroEdge(ctx, createdData.Leaf2)
 	require.NoError(t, err)
 
 	// Check unrivaled statuses.
@@ -173,11 +170,11 @@ func setupEdgeTrackersForBisection(
 	require.NoError(t, err)
 	managerBindings, err := challengeV2gen.NewEdgeChallengeManagerCaller(chalManager.Address(), createdData.Backend)
 	require.NoError(t, err)
-	numBigStepLevelsRaw, err := managerBindings.NUMBIGSTEPLEVEL(util.GetSafeCallOpts(&bind.CallOpts{Context: ctx}))
+	numBigStepLevelsRaw, err := managerBindings.NUMBIGSTEPLEVEL(createdData.Chains[0].GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
 	require.NoError(t, err)
 	numBigStepLevels := numBigStepLevelsRaw
 
-	honestWatcher, err := watcher.New(honestValidator.chain, honestValidator, honestValidator.stateManager, createdData.Backend, time.Second, numBigStepLevels, "alice", nil, honestValidator.assertionConfirmingInterval, honestValidator.averageTimeForBlockCreation)
+	honestWatcher, err := watcher.New(honestValidator.chain, honestValidator, honestValidator.stateManager, createdData.Backend, time.Second, numBigStepLevels, "alice", nil, honestValidator.assertionConfirmingInterval, honestValidator.averageTimeForBlockCreation, nil)
 	require.NoError(t, err)
 	honestValidator.watcher = honestWatcher
 	assertionInfo := &edgetracker.AssociatedAssertionMetadata{
@@ -198,7 +195,7 @@ func setupEdgeTrackersForBisection(
 	)
 	require.NoError(t, err)
 
-	evilWatcher, err := watcher.New(evilValidator.chain, evilValidator, evilValidator.stateManager, createdData.Backend, time.Second, numBigStepLevels, "alice", nil, evilValidator.assertionConfirmingInterval, evilValidator.averageTimeForBlockCreation)
+	evilWatcher, err := watcher.New(evilValidator.chain, evilValidator, evilValidator.stateManager, createdData.Backend, time.Second, numBigStepLevels, "alice", nil, evilValidator.assertionConfirmingInterval, evilValidator.averageTimeForBlockCreation, nil)
 	require.NoError(t, err)
 	evilValidator.watcher = evilWatcher
 	tracker2, err := edgetracker.New(
@@ -236,23 +233,7 @@ func setupValidator(t *testing.T) (*Manager, *mocks.MockProtocol, *mocks.MockSta
 	cfg, err := setup.ChainsWithEdgeChallengeManager(setup.WithMockOneStepProver())
 	require.NoError(t, err)
 	p.On("Backend").Return(cfg.Backend, nil)
-	v, err := New(context.Background(), p, s, cfg.Addrs.Rollup, WithMode(types.MakeMode), WithEdgeTrackerWakeInterval(100*time.Millisecond))
+	v, err := New(context.Background(), p, s, cfg.Addrs.Rollup, WithMode(types.MakeMode))
 	require.NoError(t, err)
 	return v, p, s
-}
-
-func TestNewRandomWakeupInterval(t *testing.T) {
-	t.Helper()
-	p := &mocks.MockProtocol{}
-	ctx := context.Background()
-	cm := &mocks.MockSpecChallengeManager{}
-	p.On("CurrentChallengeManager", ctx).Return(cm, nil)
-	p.On("SpecChallengeManager", ctx).Return(cm, nil)
-	cm.On("NumBigSteps", ctx).Return(uint8(1), nil)
-	cfg, err := setup.ChainsWithEdgeChallengeManager()
-	require.NoError(t, err)
-	p.On("Backend").Return(cfg.Backend, nil)
-	v, err := New(context.Background(), p, &mocks.MockStateManager{}, cfg.Addrs.Rollup, WithMode(types.MakeMode))
-	require.NoError(t, err)
-	require.NotEqual(t, 0, v.edgeTrackerWakeInterval.Milliseconds())
 }

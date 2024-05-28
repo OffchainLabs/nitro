@@ -13,6 +13,7 @@ go_library(
     deps = [
         "//chain-abstraction:protocol",
         "//containers",
+        "//containers/events",
         "//containers/fsm",
         "//containers/option",
         "//layer2-state-provider",
@@ -20,7 +21,6 @@ go_library(
         "//runtime",
         "//state-commitments/history",
         "//time",
-        "//util",
         "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_ethereum_go_ethereum//common",
         "@com_github_ethereum_go_ethereum//core/types",
