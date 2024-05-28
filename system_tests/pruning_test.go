@@ -65,7 +65,7 @@ func TestPruning(t *testing.T) {
 		stack, err := node.New(builder.l2StackConfig)
 		Require(t, err)
 		defer stack.Close()
-		chainDb, err := stack.OpenDatabase("l2chaindata", 0, 0, "l2chaindata/", false)
+		chainDb, err := stack.OpenDatabaseWithExtraOptions("l2chaindata", 0, 0, "l2chaindata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata"))
 		Require(t, err)
 		defer chainDb.Close()
 		chainDbEntriesBeforePruning := countStateEntries(chainDb)
@@ -89,7 +89,8 @@ func TestPruning(t *testing.T) {
 		initConfig := conf.InitConfigDefault
 		initConfig.Prune = "full"
 		coreCacheConfig := gethexec.DefaultCacheConfigFor(stack, &builder.execConfig.Caching)
-		err = pruning.PruneChainDb(ctx, chainDb, stack, &initConfig, coreCacheConfig, builder.L1.Client, *builder.L2.ConsensusNode.DeployInfo, false)
+		persistentConfig := conf.PersistentConfigDefault
+		err = pruning.PruneChainDb(ctx, chainDb, stack, &initConfig, coreCacheConfig, &persistentConfig, builder.L1.Client, *builder.L2.ConsensusNode.DeployInfo, false)
 		Require(t, err)
 
 		for _, key := range testKeys {
