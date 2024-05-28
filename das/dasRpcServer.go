@@ -11,6 +11,7 @@ import (
 	"net"
 	"net/http"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
@@ -150,7 +151,8 @@ type SendChunkResult struct {
 
 type batch struct {
 	chunks                          [][]byte
-	expectedChunks, seenChunks      uint64
+	expectedChunks                  uint64
+	seenChunks                      atomic.Int64
 	expectedChunkSize, expectedSize uint64
 	timeout                         uint64
 	startTime                       time.Time
@@ -232,7 +234,7 @@ func (b *batchBuilder) add(id, idx uint64, data []byte) error {
 	}
 
 	batch.chunks[idx] = data
-	batch.seenChunks++
+	batch.seenChunks.Add(1)
 	return nil
 }
 
@@ -245,8 +247,8 @@ func (b *batchBuilder) close(id uint64) ([]byte, uint64, time.Time, error) {
 		return nil, 0, time.Time{}, fmt.Errorf("unknown batch(%d)", id)
 	}
 
-	if batch.expectedChunks != batch.seenChunks {
-		return nil, 0, time.Time{}, fmt.Errorf("incomplete batch(%d): got %d/%d chunks", id, batch.seenChunks, batch.expectedChunks)
+	if batch.expectedChunks != uint64(batch.seenChunks.Load()) {
+		return nil, 0, time.Time{}, fmt.Errorf("incomplete batch(%d): got %d/%d chunks", id, batch.seenChunks.Load(), batch.expectedChunks)
 	}
 
 	var flattened []byte
