@@ -197,7 +197,7 @@ func downloadInitInParts(ctx context.Context, initConfig *conf.InitConfig) (stri
 		log.Info("Downloading database part", "url", url)
 		partFile, err := downloadFile(ctx, initConfig, url)
 		if errors.Is(err, notFoundError) {
-			log.Info("Part not found; concatenating archive into single file")
+			log.Info("Part not found; concatenating archive into single file", "numParts", len(parts))
 			break
 		} else if err != nil {
 			return "", err
@@ -229,7 +229,9 @@ func joinArchive(parts []string) (string, error) {
 		if err != nil {
 			return "", fmt.Errorf("failed to copy part file %s: %w", part, err)
 		}
+		log.Info("Joined database part into archive", "part", part)
 	}
+	log.Info("Successfully joined parts into archive", "archive", archivePath)
 	return archivePath, nil
 }
 
