@@ -146,7 +146,7 @@ func makeCelestiaBatch(t *testing.T, l2Node *arbnode.Node, celestiaDA *celestia.
 	}
 	seqNum := new(big.Int).Lsh(common.Big1, 256)
 	seqNum.Sub(seqNum, common.Big1)
-	tx, err := seqInbox.AddSequencerL2BatchFromOrigin0(sequencer, seqNum, message, big.NewInt(1), common.Address{}, big.NewInt(0), big.NewInt(0))
+	tx, err := seqInbox.AddSequencerL2BatchFromOrigin8f111f3c(sequencer, seqNum, message, big.NewInt(1), common.Address{}, big.NewInt(0), big.NewInt(0))
 	Require(t, err)
 	receipt, err := EnsureTxSucceeded(ctx, backend, tx)
 	Require(t, err)
