@@ -762,7 +762,10 @@ func FindBlockContainingBatchCount(ctx context.Context, bridgeAddress common.Add
 		return 0, err
 	}
 	high := parentChainAssertionBlock
-	low := high - 100
+	low := uint64(0)
+	if high > 100 {
+		low = high - 100
+	}
 	// Reduce high and low by 100 until lowNode.InboxMaxCount < batchCount
 	// This will give us a range (low to high) of blocks that contain the batch count.
 	for low > 0 {
@@ -772,7 +775,11 @@ func FindBlockContainingBatchCount(ctx context.Context, bridgeAddress common.Add
 		}
 		if lowCount.Uint64() > batchCount {
 			high = low
-			low = low - 100
+			if low > 100 {
+				low = low - 100
+			} else {
+				low = 0
+			}
 		} else {
 			break
 		}
