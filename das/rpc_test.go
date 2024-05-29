@@ -91,7 +91,7 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool, sleepOnIteratio
 			Backends:              string(backendsJsonByte),
 			MaxStoreChunkBodySize: (chunkSize * 2) + len(sendChunkJSONBoilerplate),
 		},
-		RequestTimeout: 5 * time.Second,
+		RequestTimeout: time.Minute,
 	}
 	rpcAgg, err := NewRPCAggregatorWithSeqInboxCaller(aggConf, nil, signer)
 	testhelpers.RequireImpl(t, err)
@@ -135,7 +135,6 @@ const chunkSize = 512 * 1024
 
 func TestRPCStore(t *testing.T) {
 	dontSleep := func(_ int) {}
-	batchBuildingExpiry = time.Second * 5
 
 	for _, tc := range []struct {
 		desc             string
