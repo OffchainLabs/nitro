@@ -148,7 +148,11 @@ func (a *SignerAPI) SignTransaction(ctx context.Context, req *externalsigner.Sig
 	if req == nil {
 		return nil, fmt.Errorf("nil request")
 	}
-	signedTx, err := a.SignerFn(a.Address, req.ToTransaction())
+	tx, err := req.ToTransaction()
+	if err != nil {
+		return nil, fmt.Errorf("converting transaction arguments into transaction: %w", err)
+	}
+	signedTx, err := a.SignerFn(a.Address, tx)
 	if err != nil {
 		return nil, fmt.Errorf("signing transaction: %w", err)
 	}

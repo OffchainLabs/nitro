@@ -1,6 +1,9 @@
 package externalsigner
 
 import (
+	"crypto/sha256"
+	"errors"
+	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -26,46 +29,167 @@ type SignTxArgs struct {
 	Proofs      []kzg4844.Proof      `json:"proofs"`
 }
 
-func (a *SignTxArgs) ToTransaction() *types.Transaction {
-	if !a.isEIP4844() {
-		return a.SendTxArgs.ToTransaction()
+// data retrieves the transaction calldata. Input field is preferred.
+func (args *SignTxArgs) data() []byte {
+	if args.Input != nil {
+		return *args.Input
 	}
-	to := common.Address{}
-	if a.To != nil {
-		to = a.To.Address()
+	if args.Data != nil {
+		return *args.Data
 	}
-	var input []byte
-	if a.Input != nil {
-		input = *a.Input
-	} else if a.Data != nil {
-		input = *a.Data
-	}
-	al := types.AccessList{}
-	if a.AccessList != nil {
-		al = *a.AccessList
-	}
-	return types.NewTx(&types.BlobTx{
-		To:         to,
-		Nonce:      uint64(a.SendTxArgs.Nonce),
-		Gas:        uint64(a.Gas),
-		GasFeeCap:  uint256.NewInt(a.MaxFeePerGas.ToInt().Uint64()),
-		GasTipCap:  uint256.NewInt(a.MaxPriorityFeePerGas.ToInt().Uint64()),
-		Value:      uint256.NewInt(a.Value.ToInt().Uint64()),
-		Data:       input,
-		AccessList: al,
-		BlobFeeCap: uint256.NewInt(a.BlobFeeCap.ToInt().Uint64()),
-		BlobHashes: a.BlobHashes,
-		Sidecar: &types.BlobTxSidecar{
-			Blobs:       a.Blobs,
-			Commitments: a.Commitments,
-			Proofs:      a.Proofs,
-		},
-		ChainID: uint256.NewInt(a.ChainID.ToInt().Uint64()),
-	})
+	return nil
 }
 
-func (a *SignTxArgs) isEIP4844() bool {
-	return a.BlobHashes != nil || a.BlobFeeCap != nil
+// ToTransaction converts the arguments to a transaction.
+func (args *SignTxArgs) ToTransaction() (*types.Transaction, error) {
+	// Add the To-field, if specified
+	var to *common.Address
+	if args.To != nil {
+		dstAddr := args.To.Address()
+		to = &dstAddr
+	}
+	if err := args.validateTxSidecar(); err != nil {
+		return nil, err
+	}
+	var data types.TxData
+	switch {
+	case args.BlobHashes != nil:
+		al := types.AccessList{}
+		if args.AccessList != nil {
+			al = *args.AccessList
+		}
+		data = &types.BlobTx{
+			To:         *to,
+			ChainID:    uint256.MustFromBig((*big.Int)(args.ChainID)),
+			Nonce:      uint64(args.Nonce),
+			Gas:        uint64(args.Gas),
+			GasFeeCap:  uint256.MustFromBig((*big.Int)(args.MaxFeePerGas)),
+			GasTipCap:  uint256.MustFromBig((*big.Int)(args.MaxPriorityFeePerGas)),
+			Value:      uint256.MustFromBig((*big.Int)(&args.Value)),
+			Data:       args.data(),
+			AccessList: al,
+			BlobHashes: args.BlobHashes,
+			BlobFeeCap: uint256.MustFromBig((*big.Int)(args.BlobFeeCap)),
+		}
+		if args.Blobs != nil {
+			data.(*types.BlobTx).Sidecar = &types.BlobTxSidecar{
+				Blobs:       args.Blobs,
+				Commitments: args.Commitments,
+				Proofs:      args.Proofs,
+			}
+		}
+
+	case args.MaxFeePerGas != nil:
+		al := types.AccessList{}
+		if args.AccessList != nil {
+			al = *args.AccessList
+		}
+		data = &types.DynamicFeeTx{
+			To:         to,
+			ChainID:    (*big.Int)(args.ChainID),
+			Nonce:      uint64(args.Nonce),
+			Gas:        uint64(args.Gas),
+			GasFeeCap:  (*big.Int)(args.MaxFeePerGas),
+			GasTipCap:  (*big.Int)(args.MaxPriorityFeePerGas),
+			Value:      (*big.Int)(&args.Value),
+			Data:       args.data(),
+			AccessList: al,
+		}
+	case args.AccessList != nil:
+		data = &types.AccessListTx{
+			To:         to,
+			ChainID:    (*big.Int)(args.ChainID),
+			Nonce:      uint64(args.Nonce),
+			Gas:        uint64(args.Gas),
+			GasPrice:   (*big.Int)(args.GasPrice),
+			Value:      (*big.Int)(&args.Value),
+			Data:       args.data(),
+			AccessList: *args.AccessList,
+		}
+	default:
+		data = &types.LegacyTx{
+			To:       to,
+			Nonce:    uint64(args.Nonce),
+			Gas:      uint64(args.Gas),
+			GasPrice: (*big.Int)(args.GasPrice),
+			Value:    (*big.Int)(&args.Value),
+			Data:     args.data(),
+		}
+	}
+
+	return types.NewTx(data), nil
+}
+
+// validateTxSidecar validates blob data, if present
+func (args *SignTxArgs) validateTxSidecar() error {
+	// No blobs, we're done.
+	if args.Blobs == nil {
+		return nil
+	}
+
+	n := len(args.Blobs)
+	// Assume user provides either only blobs (w/o hashes), or
+	// blobs together with commitments and proofs.
+	if args.Commitments == nil && args.Proofs != nil {
+		return errors.New(`blob proofs provided while commitments were not`)
+	} else if args.Commitments != nil && args.Proofs == nil {
+		return errors.New(`blob commitments provided while proofs were not`)
+	}
+
+	// len(blobs) == len(commitments) == len(proofs) == len(hashes)
+	if args.Commitments != nil && len(args.Commitments) != n {
+		return fmt.Errorf("number of blobs and commitments mismatch (have=%d, want=%d)", len(args.Commitments), n)
+	}
+	if args.Proofs != nil && len(args.Proofs) != n {
+		return fmt.Errorf("number of blobs and proofs mismatch (have=%d, want=%d)", len(args.Proofs), n)
+	}
+	if args.BlobHashes != nil && len(args.BlobHashes) != n {
+		return fmt.Errorf("number of blobs and hashes mismatch (have=%d, want=%d)", len(args.BlobHashes), n)
+	}
+
+	if args.Commitments == nil {
+		// Generate commitment and proof.
+		commitments := make([]kzg4844.Commitment, n)
+		proofs := make([]kzg4844.Proof, n)
+		for i, b := range args.Blobs {
+			c, err := kzg4844.BlobToCommitment(b)
+			if err != nil {
+				return fmt.Errorf("blobs[%d]: error computing commitment: %w", i, err)
+			}
+			commitments[i] = c
+			p, err := kzg4844.ComputeBlobProof(b, c)
+			if err != nil {
+				return fmt.Errorf("blobs[%d]: error computing proof: %w", i, err)
+			}
+			proofs[i] = p
+		}
+		args.Commitments = commitments
+		args.Proofs = proofs
+	} else {
+		for i, b := range args.Blobs {
+			b := b // avoid memeroy aliasing
+			if err := kzg4844.VerifyBlobProof(b, args.Commitments[i], args.Proofs[i]); err != nil {
+				return fmt.Errorf("failed to verify blob proof: %w", err)
+			}
+		}
+	}
+
+	hashes := make([]common.Hash, n)
+	hasher := sha256.New()
+	for i, c := range args.Commitments {
+		c := c // avoid memeroy aliasing
+		hashes[i] = kzg4844.CalcBlobHashV1(hasher, &c)
+	}
+	if args.BlobHashes != nil {
+		for i, h := range hashes {
+			if h != args.BlobHashes[i] {
+				return fmt.Errorf("blob hash verification failed (have=%s, want=%s)", args.BlobHashes[i], h)
+			}
+		}
+	} else {
+		args.BlobHashes = hashes
+	}
+	return nil
 }
 
 // TxToSignTxArgs converts transaction to SendTxArgs. This is needed for

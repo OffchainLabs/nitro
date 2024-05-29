@@ -285,7 +285,11 @@ func externalSigner(ctx context.Context, opts *ExternalSignerCfg) (signerFn, com
 			return nil, fmt.Errorf("unmarshaling signed transaction: %w", err)
 		}
 		hasher := types.LatestSignerForChainID(tx.ChainId())
-		if h := hasher.Hash(args.ToTransaction()); h != hasher.Hash(signedTx) {
+		want, err := args.ToTransaction()
+		if err != nil {
+			return nil, fmt.Errorf("converting sign transaction arguments to transaction: %v", err)
+		}
+		if h := hasher.Hash(want); h != hasher.Hash(signedTx) {
 			return nil, fmt.Errorf("transaction: %x from external signer differs from request: %x", hasher.Hash(signedTx), h)
 		}
 		return signedTx, nil

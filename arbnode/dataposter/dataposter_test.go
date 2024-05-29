@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/google/go-cmp/cmp"
@@ -89,7 +90,18 @@ var (
 				common.BigToHash(big.NewInt(2)),
 				common.BigToHash(big.NewInt(3)),
 			},
-			Sidecar: &types.BlobTxSidecar{},
+			Sidecar: &types.BlobTxSidecar{
+				Blobs: []kzg4844.Blob{
+					{0: 1},
+					{0: 3},
+				},
+				Commitments: []kzg4844.Commitment{
+					{0: 1},
+				},
+				Proofs: []kzg4844.Proof{
+					{0, 1},
+				},
+			},
 		},
 	)
 	dynamicFeeTx = types.NewTx(
@@ -147,7 +159,11 @@ func TestExternalSigner(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Error converting transaction to sendTxArgs: %v", err)
 				}
-				want, err := srv.SignerFn(addr, args.ToTransaction())
+				tx, err := args.ToTransaction()
+				if err != nil {
+					t.Fatalf("ToTransaction() unexpected error: %v", err)
+				}
+				want, err := srv.SignerFn(addr, tx)
 				if err != nil {
 					t.Fatalf("Error signing transaction: %v", err)
 				}

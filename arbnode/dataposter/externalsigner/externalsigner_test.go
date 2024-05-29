@@ -63,7 +63,10 @@ func TestToTranssaction(t *testing.T) {
 			if err != nil {
 				t.Fatalf("TxToSignTxArgs() unexpected error: %v", err)
 			}
-			got := signTxArgs.ToTransaction()
+			got, err := signTxArgs.ToTransaction()
+			if err != nil {
+				t.Fatalf("ToTransaction() unexpected error: %v", err)
+			}
 			hasher := types.LatestSignerForChainID(nil)
 			if h, g := hasher.Hash(tc.tx), hasher.Hash(got); h != g {
 				t.Errorf("ToTransaction() got hash: %v want: %v", g, h)
