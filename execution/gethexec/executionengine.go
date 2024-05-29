@@ -1,6 +1,9 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
+//go:build !wasm
+// +build !wasm
+
 package gethexec
 
 /*
@@ -28,6 +31,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -70,6 +74,12 @@ func NewExecutionEngine(bc *core.BlockChain) (*ExecutionEngine, error) {
 		resequenceChan:   make(chan []*arbostypes.MessageWithMetadata),
 		newBlockNotifier: make(chan struct{}, 1),
 	}, nil
+}
+
+func (n *ExecutionEngine) Initialize(rustCacheSize uint32) {
+	if rustCacheSize != 0 {
+		programs.ResizeWasmLruCache(rustCacheSize)
+	}
 }
 
 func (s *ExecutionEngine) SetRecorder(recorder *BlockRecorder) {
@@ -137,8 +147,9 @@ func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbost
 		return nil, nil
 	}
 
+	tag := s.bc.StateCache().WasmCacheTag()
 	// reorg Rust-side VM state
-	C.stylus_reorg_vm(C.uint64_t(blockNum))
+	C.stylus_reorg_vm(C.uint64_t(blockNum), C.uint32_t(tag))
 
 	err := s.bc.ReorgToOldBlock(targetBlock)
 	if err != nil {

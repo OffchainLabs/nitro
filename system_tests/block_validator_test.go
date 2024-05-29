@@ -72,8 +72,10 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 	redisURL := ""
 	if useRedisStreams {
 		redisURL = redisutil.CreateTestRedis(ctx, t)
-		validatorConfig.BlockValidator.RedisValidationClientConfig = redis.DefaultValidationClientConfig
+		validatorConfig.BlockValidator.RedisValidationClientConfig = redis.TestValidationClientConfig
 		validatorConfig.BlockValidator.RedisValidationClientConfig.RedisURL = redisURL
+	} else {
+		validatorConfig.BlockValidator.RedisValidationClientConfig = redis.ValidationClientConfig{}
 	}
 
 	AddDefaultValNode(t, ctx, validatorConfig, !arbitrator, redisURL)
