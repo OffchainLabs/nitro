@@ -275,7 +275,7 @@ func externalSigner(ctx context.Context, opts *ExternalSignerCfg) (signerFn, com
 		var data hexutil.Bytes
 		args, err := externalsigner.TxToSignTxArgs(addr, tx)
 		if err != nil {
-			return nil, fmt.Errorf("error converting transaction to sendTxArgs: %w", err)
+			return nil, fmt.Errorf("error converting transaction to signTxArgs: %w", err)
 		}
 		if err := client.CallContext(ctx, &data, opts.Method, args); err != nil {
 			return nil, fmt.Errorf("making signing request to external signer: %w", err)
@@ -287,7 +287,7 @@ func externalSigner(ctx context.Context, opts *ExternalSignerCfg) (signerFn, com
 		hasher := types.LatestSignerForChainID(tx.ChainId())
 		want, err := args.ToTransaction()
 		if err != nil {
-			return nil, fmt.Errorf("converting sign transaction arguments to transaction: %v", err)
+			return nil, fmt.Errorf("converting signTxArgs to transaction: %w", err)
 		}
 		if h := hasher.Hash(want); h != hasher.Hash(signedTx) {
 			return nil, fmt.Errorf("transaction: %x from external signer differs from request: %x", hasher.Hash(signedTx), h)
