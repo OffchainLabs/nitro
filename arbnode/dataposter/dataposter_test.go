@@ -74,8 +74,27 @@ func signerTestCfg(addr common.Address) (*ExternalSignerCfg, error) {
 	}, nil
 }
 
-var (
-	blobTx = types.NewTx(
+func blobCommitment(t *testing.T, b kzg4844.Blob) kzg4844.Commitment {
+	ret, err := kzg4844.BlobToCommitment(b)
+	if err != nil {
+		t.Fatalf("BlobToCommitment() unexpected error: %v", err)
+	}
+	return ret
+}
+
+func blobProof(t *testing.T, b kzg4844.Blob, c kzg4844.Commitment) kzg4844.Proof {
+	ret, err := kzg4844.ComputeBlobProof(b, c)
+	if err != nil {
+		t.Fatalf("BlobToCommitment() unexpected error: %v", err)
+	}
+	return ret
+}
+
+func blobTx(t *testing.T) *types.Transaction {
+
+	blobs := []kzg4844.Blob{{0, 1}, {0: 3}}
+	c0, c1 := blobCommitment(t, blobs[0]), blobCommitment(t, blobs[1])
+	return types.NewTx(
 		&types.BlobTx{
 			ChainID:   uint256.NewInt(1337),
 			Nonce:     13,
@@ -86,36 +105,32 @@ var (
 			Value:     uint256.NewInt(1),
 			Data:      []byte{0x01, 0x02, 0x03},
 			BlobHashes: []common.Hash{
-				common.BigToHash(big.NewInt(1)),
-				common.BigToHash(big.NewInt(2)),
-				common.BigToHash(big.NewInt(3)),
+				common.HexToHash("0x018884c82d215fb1d789c9282c557f9890dac382b02eb33943ab7ff7203cf633"),
+				common.HexToHash("0x013510e1c7368ac800fbd7c2c63369ac853348deece23e17dd1d918ac4ff65e0"),
 			},
 			Sidecar: &types.BlobTxSidecar{
-				Blobs: []kzg4844.Blob{
-					{0: 1},
-					{0: 3},
-				},
-				Commitments: []kzg4844.Commitment{
-					{0: 1},
-				},
+				Blobs:       blobs,
+				Commitments: []kzg4844.Commitment{c0, c1},
 				Proofs: []kzg4844.Proof{
-					{0, 1},
+					blobProof(t, blobs[0], c0),
+					blobProof(t, blobs[1], c1),
 				},
 			},
 		},
 	)
-	dynamicFeeTx = types.NewTx(
-		&types.DynamicFeeTx{
-			Nonce:     13,
-			GasTipCap: big.NewInt(1),
-			GasFeeCap: big.NewInt(1),
-			Gas:       3,
-			To:        nil,
-			Value:     big.NewInt(1),
-			Data:      []byte{0x01, 0x02, 0x03},
-		},
-	)
-)
+}
+
+func dynamicFeeTx() *types.Transaction {
+	return types.NewTx(&types.DynamicFeeTx{
+		Nonce:     13,
+		GasTipCap: big.NewInt(1),
+		GasFeeCap: big.NewInt(1),
+		Gas:       3,
+		To:        nil,
+		Value:     big.NewInt(1),
+		Data:      []byte{0x01, 0x02, 0x03},
+	})
+}
 
 func TestExternalSigner(t *testing.T) {
 	httpSrv, srv := externalsignertest.NewServer(t)
@@ -142,11 +157,11 @@ func TestExternalSigner(t *testing.T) {
 	}{
 		{
 			desc: "blob transaction",
-			tx:   blobTx,
+			tx:   blobTx(t),
 		},
 		{
 			desc: "dynamic fee transaction",
-			tx:   dynamicFeeTx,
+			tx:   dynamicFeeTx(),
 		},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
