@@ -729,37 +729,36 @@ func createNodeImpl(
 	}, nil
 }
 
-func FindBlockContainingBatch(ctx context.Context, rollupAddress common.Address, l1Client arbutil.L1Interface, parentChainAssertionBlock uint64, batch uint64) (uint64, error) {
-	callOpts := bind.CallOpts{Context: ctx}
-	rollup, err := staker.NewRollupWatcher(rollupAddress, l1Client, callOpts)
+func FindBlockContainingBatchCount(ctx context.Context, bridgeAddress common.Address, l1Client arbutil.L1Interface, parentChainAssertionBlock uint64, batchCount uint64) (uint64, error) {
+	bridge, err := bridgegen.NewIBridge(bridgeAddress, l1Client)
 	if err != nil {
 		return 0, err
 	}
 	high := parentChainAssertionBlock
-	low := high / 2
-	// Exponentially reduce high and low by a factor of 2 until lowNode.InboxMaxCount < batch
-	// This will give us a range (low to high) of blocks that contain the batch
+	low := high - 100
+	// Reduce high and low by 100 until lowNode.InboxMaxCount < batchCount
+	// This will give us a range (low to high) of blocks that contain the batch count.
 	for low > 0 {
-		lowNode, err := rollup.LookupNodeByBlockNumber(ctx, low)
+		lowCount, err := bridge.SequencerMessageCount(&bind.CallOpts{Context: ctx, BlockNumber: new(big.Int).SetUint64(low)})
 		if err != nil {
 			return 0, err
 		}
-		if lowNode.InboxMaxCount.Uint64() > batch {
+		if lowCount.Uint64() > batchCount {
 			high = low
-			low = low / 2
+			low = low - 100
 		} else {
 			break
 		}
 	}
-	// Then binary search between low and high to find the block containing the batch
+	// Then binary search between low and high to find the block containing the batch count.
 	for low < high {
 		mid := low + (high-low)/2
 
-		midNode, err := rollup.LookupNodeByBlockNumber(ctx, mid)
+		midCount, err := bridge.SequencerMessageCount(&bind.CallOpts{Context: ctx, BlockNumber: new(big.Int).SetUint64(mid)})
 		if err != nil {
 			return 0, err
 		}
-		if midNode.InboxMaxCount.Uint64() < batch {
+		if midCount.Uint64() < batchCount {
 			low = mid + 1
 		} else {
 			high = mid

@@ -11,8 +11,10 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
 
+	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/util"
 )
@@ -42,6 +44,100 @@ func TestSnapSync(t *testing.T) {
 	builder.L2Info.GenerateAccount("BackgroundUser")
 
 	// Create transactions till batch count is 10
+	createTransactionTillBatchCount(ctx, t, builder, 10)
+	// Wait for nodeB to sync up to the first node
+	waitForBlocksToCatchup(ctx, t, builder.L2.Client, nodeB.Client)
+
+	// Create a config with snap sync enabled and same database directory as the 2nd node
+	nodeConfig := createNodeConfigWithSnapSync(t, builder)
+	// Cleanup the message data of 2nd node, but keep the block state data.
+	// This is to simulate a snap sync environment where we’ve just gotten the block state but don’t have any messages.
+	err := os.RemoveAll(nodeB.ConsensusNode.Stack.ResolvePath("arbitrumdata"))
+	Require(t, err)
+
+	// Cleanup the 2nd node to release the database lock
+	cleanupB()
+	// New node with snap sync enabled, and the same database directory as the 2nd node but with no message data.
+	nodeC, cleanupC := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeB.ConsensusNode.Stack.Config(), nodeConfig: nodeConfig})
+	defer cleanupC()
+
+	// Create transactions till batch count is 20
+	createTransactionTillBatchCount(ctx, t, builder, 20)
+	// Wait for nodeB to sync up to the first node
+	waitForBatchCountToCatchup(t, builder.L2.ConsensusNode.InboxTracker, nodeC.ConsensusNode.InboxTracker)
+	// Once the node is synced up, check if the batch metadata is the same for the last batch
+	// This is to ensure that the snap sync worked correctly
+	count, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
+	Require(t, err)
+	metadata, err := builder.L2.ConsensusNode.InboxTracker.GetBatchMetadata(count - 1)
+	Require(t, err)
+	metadataNodeC, err := nodeC.ConsensusNode.InboxTracker.GetBatchMetadata(count - 1)
+	Require(t, err)
+	if metadata != metadataNodeC {
+		t.Error("Batch metadata mismatch")
+	}
+	finalMessageCount := uint64(metadata.MessageCount)
+	waitForBlockToCatchupToMessageCount(ctx, t, builder.L2.Client, finalMessageCount)
+	waitForBlockToCatchupToMessageCount(ctx, t, nodeC.Client, finalMessageCount)
+	// Fetching message count - 1 instead on the latest block number as the latest block number might not be
+	// present in the snap sync node since it does not have the sequencer feed.
+	header, err := builder.L2.Client.HeaderByNumber(ctx, big.NewInt(int64(finalMessageCount)-1))
+	Require(t, err)
+	headerNodeC, err := nodeC.Client.HeaderByNumber(ctx, big.NewInt(int64(finalMessageCount)-1))
+	Require(t, err)
+	// Once the node is synced up, check if the block hash is the same for the last block
+	// This is to ensure that the snap sync worked correctly
+	if header.Hash().Cmp(headerNodeC.Hash()) != 0 {
+		t.Error("Block hash mismatch")
+	}
+}
+
+func waitForBlockToCatchupToMessageCount(
+	ctx context.Context,
+	t *testing.T,
+	client *ethclient.Client,
+	finalMessageCount uint64,
+) {
+	for {
+		latestHeaderNodeC, err := client.HeaderByNumber(ctx, nil)
+		Require(t, err)
+		if latestHeaderNodeC.Number.Uint64() < uint64(finalMessageCount)-1 {
+			<-time.After(10 * time.Millisecond)
+		} else {
+			break
+		}
+	}
+}
+
+func waitForBlocksToCatchup(ctx context.Context, t *testing.T, clientA *ethclient.Client, clientB *ethclient.Client) {
+	for {
+		headerA, err := clientA.HeaderByNumber(ctx, nil)
+		Require(t, err)
+		headerB, err := clientB.HeaderByNumber(ctx, nil)
+		Require(t, err)
+		if headerA.Number.Cmp(headerB.Number) != 0 {
+			<-time.After(10 * time.Millisecond)
+		} else {
+			break
+		}
+	}
+}
+
+func waitForBatchCountToCatchup(t *testing.T, inboxTrackerA *arbnode.InboxTracker, inboxTrackerB *arbnode.InboxTracker) {
+	for {
+		countA, err := inboxTrackerA.GetBatchCount()
+		Require(t, err)
+		countB, err := inboxTrackerB.GetBatchCount()
+		Require(t, err)
+		if countA != countB {
+			<-time.After(10 * time.Millisecond)
+		} else {
+			break
+		}
+	}
+}
+
+func createTransactionTillBatchCount(ctx context.Context, t *testing.T, builder *NodeBuilder, finalCount uint64) {
 	for {
 		tx := builder.L2Info.PrepareTx("Faucet", "BackgroundUser", builder.L2Info.TransferGas, big.NewInt(1), nil)
 		err := builder.L2.Client.SendTransaction(ctx, tx)
@@ -50,24 +146,13 @@ func TestSnapSync(t *testing.T) {
 		Require(t, err)
 		count, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
 		Require(t, err)
-		if count > 10 {
+		if count > finalCount {
 			break
 		}
-
 	}
-	// Wait for nodeB to sync up to the first node
-	for {
-		header, err := builder.L2.Client.HeaderByNumber(ctx, nil)
-		Require(t, err)
-		headerNodeB, err := nodeB.Client.HeaderByNumber(ctx, nil)
-		Require(t, err)
-		if header.Number.Cmp(headerNodeB.Number) == 0 {
-			break
-		} else {
-			<-time.After(10 * time.Millisecond)
-		}
-	}
+}
 
+func createNodeConfigWithSnapSync(t *testing.T, builder *NodeBuilder) *arbnode.Config {
 	batchCount, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
 	Require(t, err)
 	// Last batch is batchCount - 1, so prev batch is batchCount - 2
@@ -83,80 +168,5 @@ func TestSnapSync(t *testing.T) {
 	nodeConfig.InboxReader.SnapSyncTest.DelayedCount = prevBatchMetaData.DelayedMessageCount - 1
 	nodeConfig.InboxReader.SnapSyncTest.PrevDelayedRead = prevMessage.DelayedMessagesRead
 	nodeConfig.InboxReader.SnapSyncTest.PrevBatchMessageCount = uint64(prevBatchMetaData.MessageCount)
-	// Cleanup the message data of 2nd node, but keep the block state data.
-	// This is to simulate a snap sync environment where we’ve just gotten the block state but don’t have any messages.
-	err = os.RemoveAll(nodeB.ConsensusNode.Stack.ResolvePath("arbitrumdata"))
-	Require(t, err)
-
-	// Cleanup the 2nd node to release the database lock
-	cleanupB()
-	// New node with snap sync enabled, and the same database directory as the 2nd node but with no message data.
-	nodeC, cleanupC := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeB.ConsensusNode.Stack.Config(), nodeConfig: nodeConfig})
-	defer cleanupC()
-
-	// Create transactions till batch count is 20
-	for {
-		tx := builder.L2Info.PrepareTx("Faucet", "BackgroundUser", builder.L2Info.TransferGas, big.NewInt(1), nil)
-		err := builder.L2.Client.SendTransaction(ctx, tx)
-		Require(t, err)
-		_, err = builder.L2.EnsureTxSucceeded(tx)
-		Require(t, err)
-		count, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
-		Require(t, err)
-		if count > 20 {
-			break
-		}
-	}
-	// Wait for nodeB to sync up to the first node
-	finalMessageCount := uint64(0)
-	for {
-		count, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
-		Require(t, err)
-		countNodeC, err := nodeC.ConsensusNode.InboxTracker.GetBatchCount()
-		Require(t, err)
-		if count != countNodeC {
-			<-time.After(10 * time.Millisecond)
-			continue
-		}
-		// Once the node is synced up, check if the batch metadata is the same for the last batch
-		// This is to ensure that the snap sync worked correctly
-		metadata, err := builder.L2.ConsensusNode.InboxTracker.GetBatchMetadata(count - 1)
-		Require(t, err)
-		metadataNodeC, err := nodeC.ConsensusNode.InboxTracker.GetBatchMetadata(countNodeC - 1)
-		Require(t, err)
-		if metadata != metadataNodeC {
-			t.Error("Batch metadata mismatch")
-		}
-		finalMessageCount = uint64(metadata.MessageCount)
-		break
-	}
-	for {
-		latestHeader, err := builder.L2.Client.HeaderByNumber(ctx, nil)
-		Require(t, err)
-		if latestHeader.Number.Uint64() < uint64(finalMessageCount)-1 {
-			<-time.After(10 * time.Millisecond)
-		} else {
-			break
-		}
-	}
-	for {
-		latestHeaderNodeC, err := nodeC.Client.HeaderByNumber(ctx, nil)
-		Require(t, err)
-		if latestHeaderNodeC.Number.Uint64() < uint64(finalMessageCount)-1 {
-			<-time.After(10 * time.Millisecond)
-		} else {
-			break
-		}
-	}
-	// Fetching message count - 1 instead on the latest block number as the latest block number might not be
-	// present in the snap sync node since it does not have the sequencer feed.
-	header, err := builder.L2.Client.HeaderByNumber(ctx, big.NewInt(int64(finalMessageCount)-1))
-	Require(t, err)
-	headerNodeC, err := nodeC.Client.HeaderByNumber(ctx, big.NewInt(int64(finalMessageCount)-1))
-	Require(t, err)
-	// Once the node is synced up, check if the block hash is the same for the last block
-	// This is to ensure that the snap sync worked correctly
-	if header.Hash().Cmp(headerNodeC.Hash()) != 0 {
-		t.Error("Block hash mismatch")
-	}
+	return nodeConfig
 }

@@ -65,6 +65,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 	if err != nil {
 		Fail(t, err)
 	}
+	execEngine.Initialize(gethexec.DefaultCachingConfig.StylusLRUCache)
 	execSeq := &execClientWrapper{execEngine, t}
 	inbox, err := NewTransactionStreamer(arbDb, bc.Config(), execSeq, nil, make(chan error, 1), transactionStreamerConfigFetcher)
 	if err != nil {

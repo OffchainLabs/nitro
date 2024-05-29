@@ -391,7 +391,7 @@ func (t *InboxTracker) GetDelayedMessageBytes(seqNum uint64) ([]byte, error) {
 
 func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardReorg bool) error {
 	var nextAcc common.Hash
-	firstBatchToKeep := uint64(0)
+	firstDelayedMsgToKeep := uint64(0)
 	if len(messages) == 0 {
 		return nil
 	}
@@ -400,19 +400,22 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 		return err
 	}
 	if t.snapSyncConfig.Enabled && pos < t.snapSyncConfig.DelayedCount {
-		firstBatchToKeep = t.snapSyncConfig.DelayedCount
-		if firstBatchToKeep > 0 {
-			firstBatchToKeep--
+		firstDelayedMsgToKeep = t.snapSyncConfig.DelayedCount
+		if firstDelayedMsgToKeep > 0 {
+			firstDelayedMsgToKeep--
 		}
-		for len(messages) > 0 {
+		for {
+			if len(messages) == 0 {
+				return nil
+			}
 			pos, err = messages[0].Message.Header.SeqNum()
 			if err != nil {
 				return err
 			}
-			if pos+1 == firstBatchToKeep {
+			if pos+1 == firstDelayedMsgToKeep {
 				nextAcc = messages[0].AfterInboxAcc()
 			}
-			if pos < firstBatchToKeep {
+			if pos < firstDelayedMsgToKeep {
 				messages = messages[1:]
 			} else {
 				break
@@ -421,11 +424,6 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 	}
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
-
-	pos, err = messages[0].Message.Header.SeqNum()
-	if err != nil {
-		return err
-	}
 
 	if !hardReorg {
 		// This math is safe to do as we know len(messages) > 0
@@ -440,7 +438,7 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 		}
 	}
 
-	if pos > firstBatchToKeep {
+	if pos > firstDelayedMsgToKeep {
 		var err error
 		nextAcc, err = t.GetDelayedAcc(pos - 1)
 		if err != nil {
@@ -639,7 +637,10 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L
 		if sequenceNumberToKeep > 0 {
 			sequenceNumberToKeep--
 		}
-		for len(batches) > 0 {
+		for {
+			if len(batches) == 0 {
+				return nil
+			}
 			if batches[0].SequenceNumber+1 == sequenceNumberToKeep {
 				nextAcc = batches[0].AfterInboxAcc
 				prevbatchmeta = BatchMetadata{

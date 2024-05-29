@@ -58,7 +58,7 @@ func NewMachineLocator(rootPath string) (*MachineLocator, error) {
 	for _, dir := range dirs {
 		fInfo, err := os.Stat(dir)
 		if err != nil {
-			log.Warn("Getting file info", "error", err)
+			log.Warn("Getting file info", "dir", dir, "error", err)
 			continue
 		}
 		if !fInfo.IsDir() {

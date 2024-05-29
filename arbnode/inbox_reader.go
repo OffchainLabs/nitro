@@ -136,17 +136,14 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 			snapSyncConfig := r.fetchSnapSyncParameters()
 			r.tracker.SetSnapSyncParameters(snapSyncConfig)
 			r.tracker.txStreamer.SetSnapSyncParameters(snapSyncConfig)
-			firstMessageToRead := snapSyncConfig.DelayedCount
-			if firstMessageToRead > snapSyncConfig.BatchCount {
-				firstMessageToRead = snapSyncConfig.BatchCount
-			}
-			if firstMessageToRead > 0 {
-				firstMessageToRead--
-			}
-			// Find the first block containing the first message to read
-			// Subtract 1 to get the block before the first message to read,
+			snapSyncBatchCount := snapSyncConfig.BatchCount
+			// Find the first block containing the batch count.
+			// Subtract 1 to get the block before the needed batch count,
 			// this is done to fetch previous batch metadata needed for snap sync.
-			block, err := FindBlockContainingBatch(ctxIn, r.rollupAddress, r.client, snapSyncConfig.ParentChainAssertionBlock, firstMessageToRead-1)
+			if snapSyncBatchCount > 0 {
+				snapSyncBatchCount--
+			}
+			block, err := FindBlockContainingBatchCount(ctxIn, r.rollupAddress, r.client, snapSyncConfig.ParentChainAssertionBlock, snapSyncBatchCount)
 			if err != nil {
 				return err
 			}
