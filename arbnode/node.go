@@ -568,8 +568,8 @@ func createNodeImpl(
 	firstMessageBlock := new(big.Int).SetUint64(deployInfo.DeployedAt)
 	if config.SnapSyncTest.Enabled {
 		batchCount := config.SnapSyncTest.BatchCount
-		// Find the first block containing the first message to read
-		// Subtract 1 to get the block before the first message to read,
+		// Find the first block containing the batch count.
+		// Subtract 1 to get the block before the needed batch count,
 		// this is done to fetch previous batch metadata needed for snap sync.
 		if batchCount > 0 {
 			batchCount--
