@@ -28,8 +28,6 @@ func blsPubToBase64(pubkey *blsSignatures.PublicKey) string {
 	return string(encodedPubkey)
 }
 
-type sleepOnIterationFn func(i int)
-
 func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 	// enableLogging()
 
