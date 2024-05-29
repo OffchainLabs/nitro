@@ -159,12 +159,12 @@ type batch struct {
 }
 
 const (
-	maxPendingBatches = 10
+	maxPendingBatches   = 10
+	batchBuildingExpiry = 1 * time.Minute
 )
 
-// exposed globals for test control
+// exposed global for test control
 var (
-	batchBuildingExpiry   = 1 * time.Minute
 	legacyDASStoreAPIOnly = false
 )
 

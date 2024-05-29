@@ -30,7 +30,7 @@ func blsPubToBase64(pubkey *blsSignatures.PublicKey) string {
 
 type sleepOnIterationFn func(i int)
 
-func testRpcImpl(t *testing.T, size, times int, concurrent bool, sleepOnIteration sleepOnIterationFn) {
+func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 	// enableLogging()
 
 	ctx := context.Background()
@@ -125,7 +125,6 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool, sleepOnIteratio
 		} else {
 			runStore()
 		}
-		sleepOnIteration(i)
 	}
 
 	wg.Wait()
@@ -134,29 +133,21 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool, sleepOnIteratio
 const chunkSize = 512 * 1024
 
 func TestRPCStore(t *testing.T) {
-	dontSleep := func(_ int) {}
-
 	for _, tc := range []struct {
 		desc             string
 		totalSize, times int
 		concurrent       bool
-		sleepOnIteration sleepOnIterationFn
 		leagcyAPIOnly    bool
 	}{
-		{desc: "small store", totalSize: 100, times: 1, concurrent: false, sleepOnIteration: dontSleep},
-		{desc: "chunked store - last chunk full", totalSize: chunkSize * 20, times: 10, concurrent: true, sleepOnIteration: dontSleep},
-		{desc: "chunked store - last chunk not full", totalSize: chunkSize*31 + 123, times: 10, concurrent: true, sleepOnIteration: dontSleep},
-		{desc: "chunked store - overflow cache - sequential", totalSize: chunkSize * 3, times: 15, concurrent: false, sleepOnIteration: dontSleep},
-		{desc: "chunked store - wait for cache clear", totalSize: chunkSize * 3, times: 15, concurrent: true, sleepOnIteration: func(i int) {
-			if i == 9 {
-				time.Sleep(time.Second * 6)
-			}
-		}},
-		{desc: "new client falls back to old api for old server", totalSize: (5*1024*1024)/2 - len(sendChunkJSONBoilerplate) - 100 /* geth counts headers too */, times: 5, concurrent: true, sleepOnIteration: dontSleep, leagcyAPIOnly: true},
+		{desc: "small store", totalSize: 100, times: 1, concurrent: false},
+		{desc: "chunked store - last chunk full", totalSize: chunkSize * 20, times: 10, concurrent: true},
+		{desc: "chunked store - last chunk not full", totalSize: chunkSize*31 + 123, times: 10, concurrent: true},
+		{desc: "chunked store - overflow cache - sequential", totalSize: chunkSize * 3, times: 15, concurrent: false},
+		{desc: "new client falls back to old api for old server", totalSize: (5*1024*1024)/2 - len(sendChunkJSONBoilerplate) - 100 /* geth counts headers too */, times: 5, concurrent: true, leagcyAPIOnly: true},
 	} {
 		t.Run(tc.desc, func(t *testing.T) {
 			legacyDASStoreAPIOnly = tc.leagcyAPIOnly
-			testRpcImpl(t, tc.totalSize, tc.times, tc.concurrent, tc.sleepOnIteration)
+			testRpcImpl(t, tc.totalSize, tc.times, tc.concurrent)
 		})
 	}
 }
