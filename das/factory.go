@@ -78,15 +78,6 @@ func CreatePersistentStorageService(
 		storageServices = append(storageServices, s)
 	}
 
-	if config.IpfsStorage.Enable {
-		s, err := NewIpfsStorageService(ctx, config.IpfsStorage)
-		if err != nil {
-			return nil, nil, err
-		}
-		lifecycleManager.Register(s)
-		storageServices = append(storageServices, s)
-	}
-
 	if len(storageServices) > 1 {
 		s, err := NewRedundantStorageService(ctx, storageServices)
 		if err != nil {
@@ -151,10 +142,6 @@ func CreateBatchPosterDAS(
 	if !config.RPCAggregator.Enable || !config.RestAggregator.Enable {
 		return nil, nil, nil, errors.New("--node.data-availability.rpc-aggregator.enable and rest-aggregator.enable must be set when running a Batch Poster in AnyTrust mode")
 	}
-
-	if config.IpfsStorage.Enable {
-		return nil, nil, nil, errors.New("--node.data-availability.ipfs-storage.enable may not be set when running a Nitro AnyTrust node in Batch Poster mode")
-	}
 	// Done checking config requirements
 
 	var daWriter DataAvailabilityServiceWriter
@@ -192,9 +179,8 @@ func CreateDAComponentsForDaserver(
 	// Check config requirements
 	if !config.LocalDBStorage.Enable &&
 		!config.LocalFileStorage.Enable &&
-		!config.S3Storage.Enable &&
-		!config.IpfsStorage.Enable {
-		return nil, nil, nil, nil, nil, errors.New("At least one of --data-availability.(local-db-storage|local-file-storage|s3-storage|ipfs-storage) must be enabled.")
+		!config.S3Storage.Enable {
+		return nil, nil, nil, nil, nil, errors.New("At least one of --data-availability.(local-db-storage|local-file-storage|s3-storage) must be enabled.")
 	}
 	// Done checking config requirements
 
@@ -315,48 +301,22 @@ func CreateDAReaderForNode(
 		return nil, nil, errors.New("node.data-availability.rpc-aggregator is only for Batch Poster mode")
 	}
 
-	if !config.RestAggregator.Enable && !config.IpfsStorage.Enable {
-		return nil, nil, fmt.Errorf("--node.data-availability.enable was set but neither of --node.data-availability.(rest-aggregator|ipfs-storage) were enabled. When running a Nitro Anytrust node in non-Batch Poster mode, some way to get the batch data is required.")
-	}
-
-	if config.RestAggregator.SyncToStorage.Eager {
-		return nil, nil, errors.New("--node.data-availability.rest-aggregator.sync-to-storage.eager can't be used with a Nitro node, only lazy syncing can be used.")
+	if !config.RestAggregator.Enable {
+		return nil, nil, fmt.Errorf("--node.data-availability.enable was set but not --node.data-availability.rest-aggregator. When running a Nitro Anytrust node in non-Batch Poster mode, some way to get the batch data is required.")
 	}
 	// Done checking config requirements
 
-	storageService, dasLifecycleManager, err := CreatePersistentStorageService(ctx, config, nil, nil)
-	if err != nil {
-		return nil, nil, err
-	}
-
+	var lifecycleManager LifecycleManager
 	var daReader DataAvailabilityServiceReader
 	if config.RestAggregator.Enable {
 		var restAgg *SimpleDASReaderAggregator
-		restAgg, err = NewRestfulClientAggregator(ctx, &config.RestAggregator)
+		restAgg, err := NewRestfulClientAggregator(ctx, &config.RestAggregator)
 		if err != nil {
 			return nil, nil, err
 		}
 		restAgg.Start(ctx)
-		dasLifecycleManager.Register(restAgg)
-
-		if storageService != nil {
-			syncConf := &config.RestAggregator.SyncToStorage
-			var retentionPeriodSeconds uint64
-			if uint64(syncConf.RetentionPeriod) == math.MaxUint64 {
-				retentionPeriodSeconds = math.MaxUint64
-			} else {
-				retentionPeriodSeconds = uint64(syncConf.RetentionPeriod.Seconds())
-			}
-
-			// This falls back to REST and updates the local IPFS repo if the data is found.
-			storageService = NewFallbackStorageService(storageService, restAgg, restAgg,
-				retentionPeriodSeconds, syncConf.IgnoreWriteErrors, true)
-			dasLifecycleManager.Register(storageService)
-
-			daReader = storageService
-		} else {
-			daReader = restAgg
-		}
+		lifecycleManager.Register(restAgg)
+		daReader = restAgg
 	}
 
 	if seqInboxAddress != nil {
@@ -370,5 +330,5 @@ func CreateDAReaderForNode(
 		}
 	}
 
-	return daReader, dasLifecycleManager, nil
+	return daReader, &lifecycleManager, nil
 }
