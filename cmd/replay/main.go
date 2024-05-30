@@ -203,8 +203,8 @@ func (dasReader *PreimageCelestiaReader) Read(ctx context.Context, blobPointer *
 	startColumn := blobPointer.Start % odsSize
 	endColumn := endIndexOds % odsSize
 
-	if startRow == endRow && startColumn >= endColumn {
-		log.Error("start and end row are the same, and startColumn >= endColumn", "startColumn", startColumn, "endColumn+1 ", endColumn+1)
+	if startRow == endRow && startColumn > endColumn {
+		log.Error("start and end row are the same, and startColumn >= endColumn", "startColumn", startColumn, "endColumn ", endColumn)
 		return []byte{}, nil, nil
 	}
 
