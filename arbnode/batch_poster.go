@@ -550,7 +550,7 @@ func (b *BatchPoster) pollForL1PriceData(ctx context.Context) {
 			blockGasLimitGauge.Update(int64(h.GasLimit))
 			suggestedTipCap, err := b.l1Reader.Client().SuggestGasTipCap(ctx)
 			if err != nil {
-				log.Error("unable to fetch suggestedTipCap from l1 client to update arb/batchposter/suggestedtipcap metric", "err", err)
+				log.Warn("unable to fetch suggestedTipCap from l1 client to update arb/batchposter/suggestedtipcap metric", "err", err)
 			} else {
 				suggestedTipCapGauge.Update(suggestedTipCap.Int64())
 			}
