@@ -36,7 +36,12 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
-	l2GasPrice := evm.Context.BaseFee
+	var l2GasPrice *big.Int
+	if evm.Context.BaseFeeCopy != nil {
+		l2GasPrice = evm.Context.BaseFeeCopy
+	} else {
+		l2GasPrice = evm.Context.BaseFee
+	}
 
 	// aggregators compress calldata, so we must estimate accordingly
 	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
@@ -69,7 +74,12 @@ func (con ArbGasInfo) _preVersion4_GetPricesInWeiWithAggregator(
 	if err != nil {
 		return nil, nil, nil, nil, nil, nil, err
 	}
-	l2GasPrice := evm.Context.BaseFee
+	var l2GasPrice *big.Int
+	if evm.Context.BaseFeeCopy != nil {
+		l2GasPrice = evm.Context.BaseFeeCopy
+	} else {
+		l2GasPrice = evm.Context.BaseFee
+	}
 
 	// aggregators compress calldata, so we must estimate accordingly
 	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
@@ -101,7 +111,12 @@ func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregato
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	l2GasPrice := evm.Context.BaseFee
+	var l2GasPrice *big.Int
+	if evm.Context.BaseFeeCopy != nil {
+		l2GasPrice = evm.Context.BaseFeeCopy
+	} else {
+		l2GasPrice = evm.Context.BaseFee
+	}
 
 	// aggregators compress calldata, so we must estimate accordingly
 	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
@@ -121,7 +136,12 @@ func (con ArbGasInfo) _preVersion4_GetPricesInArbGasWithAggregator(c ctx, evm me
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	l2GasPrice := evm.Context.BaseFee
+	var l2GasPrice *big.Int
+	if evm.Context.BaseFeeCopy != nil {
+		l2GasPrice = evm.Context.BaseFeeCopy
+	} else {
+		l2GasPrice = evm.Context.BaseFee
+	}
 
 	// aggregators compress calldata, so we must estimate accordingly
 	weiForL1Calldata := arbmath.BigMulByUint(l1GasPrice, params.TxDataNonZeroGasEIP2028)
