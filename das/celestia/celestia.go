@@ -337,7 +337,7 @@ func (c *CelestiaDA) Read(ctx context.Context, blobPointer *types.BlobPointer) (
 	startColumn := blobPointer.Start % odsSize
 	endColumn := endIndexOds % odsSize
 
-	if startRow == endRow && startColumn >= endColumn {
+	if startRow == endRow && startColumn > endColumn {
 		log.Error("start and end row are the same and startColumn >= endColumn", "startColumn", startColumn, "endColumn+1 ", endColumn+1)
 		return []byte{}, nil, nil
 	}
