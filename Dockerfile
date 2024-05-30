@@ -286,6 +286,8 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
 
 USER user
 
+FROM nitro-node as nitro-node-validator
+
 FROM nitro-node as nitro-node-dev
 USER root
 # Copy in latest WASM module root
