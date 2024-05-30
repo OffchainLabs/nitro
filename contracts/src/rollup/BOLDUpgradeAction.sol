@@ -205,6 +205,7 @@ contract BOLDUpgradeAction {
     uint64 public immutable CHALLENGE_GRACE_PERIOD_BLOCKS;
     address public immutable MINI_STAKE_AMOUNTS_STORAGE;
     bool public immutable IS_DELAY_BUFFERABLE;
+    uint256 public constant SECONDS_PER_SLOT = 12;
     // buffer config
     uint64 public immutable MAX;
     uint64 public immutable THRESHOLD;
@@ -458,6 +459,42 @@ contract BOLDUpgradeAction {
             ISequencerInbox(SEQ_INBOX).isDelayBufferable() == IS_DELAY_BUFFERABLE,
             "DelayBuffer: isDelayBufferable not set"
         );
+
+        (
+            uint256 delayBlocks,
+            uint256 futureBlocks,
+            uint256 delaySeconds,
+            uint256 futureSeconds
+        ) = ISequencerInbox(SEQ_INBOX).maxTimeVariation();
+
+        // Force inclusion now depends on block numbers and not timestamps.
+        // To ensure the force inclusion window is unchanged, we need to 
+        // update the delayBlocks if delaySeconds implies a larger delay.
+        uint256 implDelayBlocks = delaySeconds % SECONDS_PER_SLOT == 0 ? 
+            delaySeconds / SECONDS_PER_SLOT: 
+            delaySeconds / SECONDS_PER_SLOT + 1;
+
+        delayBlocks = implDelayBlocks > delayBlocks ? implDelayBlocks : delayBlocks;
+
+        ISequencerInbox(SEQ_INBOX).setMaxTimeVariation(ISequencerInbox.MaxTimeVariation({
+            delayBlocks: delayBlocks,
+            delaySeconds: delaySeconds,
+            futureBlocks: futureBlocks,
+            futureSeconds: futureSeconds
+        }));
+
+        // verify
+        (
+            uint256 _delayBlocks,
+            uint256 _futureBlocks,
+            uint256 _delaySeconds,
+            uint256 _futureSeconds
+        ) = ISequencerInbox(SEQ_INBOX).maxTimeVariation();
+        require(_delayBlocks == delayBlocks, "DelayBuffer: delayBlocks not set");
+        require(_delaySeconds == delaySeconds, "DelayBuffer: delaySeconds not set");
+        require(_futureBlocks == futureBlocks, "DelayBuffer: futureBlocks not set");
+        require(_futureSeconds == futureSeconds, "DelayBuffer: futureSeconds not set");
+
         ISequencerInbox(SEQ_INBOX).updateRollupAddress();
     }
 
