@@ -150,3 +150,12 @@ func ValidationInputFromJson(entry *InputJSON) (*validator.ValidationInput, erro
 	}
 	return valInput, nil
 }
+
+type GetLeavesWithStepSizeInput struct {
+	ModuleRoot        common.Hash
+	FromBatch         uint64
+	MachineStartIndex uint64
+	StepSize          uint64
+	NumDesiredLeaves  uint64
+	ValidationInput   *validator.ValidationInput
+}

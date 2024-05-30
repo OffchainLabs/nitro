@@ -14,6 +14,8 @@ import (
 	"github.com/offchainlabs/nitro/validator/server_jit"
 	"github.com/offchainlabs/nitro/validator/valnode/redis"
 	"github.com/spf13/pflag"
+
+	arbredis "github.com/offchainlabs/nitro/validator/server_arb/redis"
 )
 
 type WasmConfig struct {
@@ -35,12 +37,13 @@ var DefaultWasmConfig = WasmConfig{
 }
 
 type Config struct {
-	UseJit     bool                               `koanf:"use-jit"`
-	ApiAuth    bool                               `koanf:"api-auth"`
-	ApiPublic  bool                               `koanf:"api-public"`
-	Arbitrator server_arb.ArbitratorSpawnerConfig `koanf:"arbitrator" reload:"hot"`
-	Jit        server_jit.JitSpawnerConfig        `koanf:"jit" reload:"hot"`
-	Wasm       WasmConfig                         `koanf:"wasm"`
+	UseJit          bool                               `koanf:"use-jit"`
+	ApiAuth         bool                               `koanf:"api-auth"`
+	ApiPublic       bool                               `koanf:"api-public"`
+	Arbitrator      server_arb.ArbitratorSpawnerConfig `koanf:"arbitrator" reload:"hot"`
+	RedisExecRunner arbredis.ExecutionSpawnerConfig    `koanf:"redis-exec-runnner"`
+	Jit             server_jit.JitSpawnerConfig        `koanf:"jit" reload:"hot"`
+	Wasm            WasmConfig                         `koanf:"wasm"`
 }
 
 type ValidationConfigFetcher func() *Config
@@ -77,7 +80,8 @@ type ValidationNode struct {
 	arbSpawner *server_arb.ArbitratorSpawner
 	jitSpawner *server_jit.JitSpawner
 
-	redisConsumer *redis.ValidationServer
+	redisConsumer    *redis.ValidationServer
+	redisExecSpawner *arbredis.ExecutionSpawner
 }
 
 func EnsureValidationExposedViaAuthRPC(stackConf *node.Config) {
@@ -106,8 +110,18 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 	if err != nil {
 		return nil, err
 	}
-	var serverAPI *ExecServerAPI
-	var jitSpawner *server_jit.JitSpawner
+	var (
+		serverAPI    *ExecServerAPI
+		jitSpawner   *server_jit.JitSpawner
+		redisSpawner *arbredis.ExecutionSpawner
+	)
+	if config.RedisExecRunner.Enabled() {
+		es, err := arbredis.NewExecutionSpawner(&config.RedisExecRunner, arbSpawner)
+		if err != nil {
+			log.Error("creating redis execution spawner", "error", err)
+		}
+		redisSpawner = es
+	}
 	if config.UseJit {
 		jitConfigFetcher := func() *server_jit.JitSpawnerConfig { return &configFetcher().Jit }
 		var err error
@@ -115,9 +129,9 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 		if err != nil {
 			return nil, err
 		}
-		serverAPI = NewExecutionServerAPI(jitSpawner, arbSpawner, arbConfigFetcher)
+		serverAPI = NewExecutionServerAPI(jitSpawner, arbSpawner, redisSpawner, arbConfigFetcher)
 	} else {
-		serverAPI = NewExecutionServerAPI(arbSpawner, arbSpawner, arbConfigFetcher)
+		serverAPI = NewExecutionServerAPI(arbSpawner, arbSpawner, redisSpawner, arbConfigFetcher)
 	}
 	var redisConsumer *redis.ValidationServer
 	redisValidationConfig := arbConfigFetcher().RedisValidationServerConfig
@@ -136,7 +150,13 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 	}}
 	stack.RegisterAPIs(valAPIs)
 
-	return &ValidationNode{configFetcher, arbSpawner, jitSpawner, redisConsumer}, nil
+	return &ValidationNode{
+		config:           configFetcher,
+		arbSpawner:       arbSpawner,
+		jitSpawner:       jitSpawner,
+		redisConsumer:    redisConsumer,
+		redisExecSpawner: redisSpawner,
+	}, nil
 }
 
 func (v *ValidationNode) Start(ctx context.Context) error {

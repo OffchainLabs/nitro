@@ -174,7 +174,7 @@ func createMockValidationNode(t *testing.T, ctx context.Context, config *server_
 	}
 	configFetcher := func() *server_arb.ArbitratorSpawnerConfig { return config }
 	spawner := &mockSpawner{}
-	serverAPI := valnode.NewExecutionServerAPI(spawner, spawner, configFetcher)
+	serverAPI := valnode.NewExecutionServerAPI(spawner, spawner, nil, configFetcher)
 
 	valAPIs := []rpc.API{{
 		Namespace:     server_api.Namespace,
