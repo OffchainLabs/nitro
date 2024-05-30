@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"crypto/ecdsa"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -465,7 +466,21 @@ func mainImpl() int {
 		if len(allowedWasmModuleRoots) > 0 {
 			moduleRootMatched := false
 			for _, root := range allowedWasmModuleRoots {
-				if common.HexToHash(root) == moduleRoot {
+				bytes, err := hex.DecodeString(strings.TrimPrefix(root, "0x"))
+				if err == nil {
+					if common.HexToHash(root) == common.BytesToHash(bytes) {
+						moduleRootMatched = true
+						break
+					}
+					continue
+				}
+				locator, locatorErr := server_common.NewMachineLocator(root)
+				if locatorErr != nil {
+					log.Warn("allowed-wasm-module-roots: value not a hex nor valid path:", "value", root, "locatorErr", locatorErr, "decodeErr", err)
+					continue
+				}
+				path := locator.GetMachinePath(moduleRoot)
+				if _, err := os.Stat(path); err == nil {
 					moduleRootMatched = true
 					break
 				}
@@ -489,7 +504,7 @@ func mainImpl() int {
 		}
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching), l1Client, rollupAddrs)
+	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching), &nodeConfig.Persistent, l1Client, rollupAddrs)
 	if l2BlockChain != nil {
 		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
 	}
@@ -500,11 +515,30 @@ func mainImpl() int {
 		return 1
 	}
 
-	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "arbitrumdata/", false)
+	arbDb, err := stack.OpenDatabaseWithExtraOptions("arbitrumdata", 0, 0, "arbitrumdata/", false, nodeConfig.Persistent.Pebble.ExtraOptions("arbitrumdata"))
 	deferFuncs = append(deferFuncs, func() { closeDb(arbDb, "arbDb") })
 	if err != nil {
 		log.Error("failed to open database", "err", err)
 		return 1
+	}
+
+	fatalErrChan := make(chan error, 10)
+
+	var blocksReExecutor *blocksreexecutor.BlocksReExecutor
+	if nodeConfig.BlocksReExecutor.Enable && l2BlockChain != nil {
+		blocksReExecutor = blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, fatalErrChan)
+		if nodeConfig.Init.ThenQuit {
+			success := make(chan struct{})
+			blocksReExecutor.Start(ctx, success)
+			deferFuncs = append(deferFuncs, func() { blocksReExecutor.StopAndWait() })
+			select {
+			case err := <-fatalErrChan:
+				log.Error("shutting down due to fatal error", "err", err)
+				defer log.Error("shut down due to fatal error", "err", err)
+				return 1
+			case <-success:
+			}
+		}
 	}
 
 	if nodeConfig.Init.ThenQuit && nodeConfig.Init.ResetToMessage < 0 {
@@ -526,8 +560,6 @@ func mainImpl() int {
 		log.Error(fmt.Sprintf("data availability service usage for this chain is set to %v but --node.data-availability.enable is set to %v", l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee, nodeConfig.Node.DataAvailability.Enable))
 		return 1
 	}
-
-	fatalErrChan := make(chan error, 10)
 
 	var valNode *valnode.ValidationNode
 	if sameProcessValidationNodeEnabled {
@@ -657,9 +689,8 @@ func mainImpl() int {
 		// remove previous deferFuncs, StopAndWait closes database and blockchain.
 		deferFuncs = []func(){func() { currentNode.StopAndWait() }}
 	}
-	if nodeConfig.BlocksReExecutor.Enable && l2BlockChain != nil {
-		blocksReExecutor := blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, fatalErrChan)
-		blocksReExecutor.Start(ctx)
+	if blocksReExecutor != nil && !nodeConfig.Init.ThenQuit {
+		blocksReExecutor.Start(ctx, nil)
 		deferFuncs = append(deferFuncs, func() { blocksReExecutor.StopAndWait() })
 	}
 
