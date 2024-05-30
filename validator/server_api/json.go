@@ -71,7 +71,7 @@ func (i *InputJSON) WriteToFile() error {
 	if err != nil {
 		return err
 	}
-	if err = os.WriteFile(fmt.Sprintf("block_inputs_%d.json", i.Id), contents, 0644); err != nil {
+	if err = os.WriteFile(fmt.Sprintf("block_inputs_%d.json", i.Id), contents, 0600); err != nil {
 		return err
 	}
 	return nil

@@ -158,7 +158,11 @@ func (c *ExecutionClient) LatestWasmModuleRoot() containers.PromiseInterface[com
 
 func (c *ExecutionClient) WriteToFile(input *validator.ValidationInput, expOut validator.GoGlobalState, moduleRoot common.Hash) containers.PromiseInterface[struct{}] {
 	jsonInput := server_api.ValidationInputToJson(input)
-	jsonInput.WriteToFile()
+	if err := jsonInput.WriteToFile(); err != nil {
+		return stopwaiter.LaunchPromiseThread[struct{}](c, func(ctx context.Context) (struct{}, error) {
+			return struct{}{}, err
+		})
+	}
 	return stopwaiter.LaunchPromiseThread[struct{}](c, func(ctx context.Context) (struct{}, error) {
 		err := c.client.CallContext(ctx, nil, server_api.Namespace+"_writeToFile", jsonInput, expOut, moduleRoot)
 		return struct{}{}, err
