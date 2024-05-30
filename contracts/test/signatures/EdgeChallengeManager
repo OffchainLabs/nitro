@@ -20,14 +20,15 @@
   "getLayerZeroEndHeight(uint8)": "42e1aaa8",
   "getPrevAssertionHash(bytes32)": "5a48e0f4",
   "hasLengthOneRival(bytes32)": "54b64151",
+  "hasMadeLayerZeroRival(address,bytes32)": "655b42f3",
   "hasRival(bytes32)": "908517e9",
   "initialize(address,uint64,address,uint256,uint256,uint256,address,address,uint8,uint256[])": "1a72d54c",
-  "multiUpdateTimeCacheByChildren(bytes32[])": "eb82415c",
+  "multiUpdateTimeCacheByChildren(bytes32[],uint256)": "432bb78a",
   "oneStepProofEntry()": "48923bc5",
   "refundStake(bytes32)": "748926f3",
   "stakeAmounts(uint256)": "1c1b4f3a",
   "stakeToken()": "51ed6a30",
   "timeUnrivaled(bytes32)": "3e35f5e8",
-  "updateTimerCacheByChildren(bytes32)": "1e5a3553",
-  "updateTimerCacheByClaim(bytes32,bytes32)": "4056b2ce"
+  "updateTimerCacheByChildren(bytes32,uint256)": "edaab54a",
+  "updateTimerCacheByClaim(bytes32,bytes32,uint256)": "8826a370"
 }
