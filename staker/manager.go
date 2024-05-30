@@ -102,7 +102,6 @@ func NewManager(
 		challengemanager.WithAssertionPostingInterval(time.Duration(config.AssertionPostingIntervalSeconds)),
 		challengemanager.WithAssertionScanningInterval(time.Duration(config.AssertionScanningIntervalSeconds)),
 		challengemanager.WithAssertionConfirmingInterval(time.Duration(config.AssertionConfirmingIntervalSeconds)),
-		challengemanager.WithEdgeTrackerWakeInterval(time.Duration(config.EdgeTrackerWakeIntervalSeconds)),
 		challengemanager.WithAddress(txOpts.From),
 	)
 	if err != nil {

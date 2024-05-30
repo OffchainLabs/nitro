@@ -641,14 +641,12 @@ func createNodeImpl(
 		postingInterval := time.Second * time.Duration(config.Bold.AssertionPostingIntervalSeconds)
 		scanningInteval := time.Second * time.Duration(config.Bold.AssertionScanningIntervalSeconds)
 		confirmingInterval := time.Second * time.Duration(config.Bold.AssertionConfirmingIntervalSeconds)
-		edgeWakeInterval := time.Second * time.Duration(config.Bold.EdgeTrackerWakeIntervalSeconds)
 		opts := []challengemanager.Opt{
 			challengemanager.WithName(config.Bold.ValidatorName),
 			challengemanager.WithMode(modes.MakeMode), // TODO: Customize.
 			challengemanager.WithAssertionPostingInterval(postingInterval),
 			challengemanager.WithAssertionScanningInterval(scanningInteval),
 			challengemanager.WithAssertionConfirmingInterval(confirmingInterval),
-			challengemanager.WithEdgeTrackerWakeInterval(edgeWakeInterval),
 			challengemanager.WithAddress(txOptsValidator.From),
 		}
 		if config.Bold.API {
