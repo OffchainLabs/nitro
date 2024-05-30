@@ -17,7 +17,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.11.10
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.26.9
 	github.com/cavaliergopher/grab/v3 v3.0.1
-	github.com/celestiaorg/celestia-openrpc v0.3.1-0.20240214152243-eea73bdb149f
+	github.com/celestiaorg/celestia-openrpc v0.4.0-rc.1
 	github.com/celestiaorg/nmt v0.20.0
 	github.com/celestiaorg/rsmt2d v0.11.0
 	github.com/cockroachdb/pebble v0.0.0-20230928194634-aa077af62593
@@ -48,7 +48,7 @@ require (
 	golang.org/x/crypto v0.17.0
 	golang.org/x/sys v0.20.0
 	golang.org/x/term v0.15.0
-	golang.org/x/tools v0.15.0
+	golang.org/x/tools v0.16.0
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 )
 
@@ -252,11 +252,12 @@ require (
 	github.com/rcrowley/go-metrics v0.0.0-20201227073835-cf1acfcdf475 // indirect
 	github.com/rhnvrm/simples3 v0.6.1 // indirect
 	github.com/rivo/uniseg v0.4.3 // indirect
-	github.com/rogpeppe/go-internal v1.11.0 // indirect
+	github.com/rogpeppe/go-internal v1.12.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
 	github.com/samber/lo v1.36.0 // indirect
 	github.com/sasha-s/go-deadlock v0.3.1 // indirect
 	github.com/spaolacci/murmur3 v1.1.0 // indirect
+	github.com/stretchr/testify v1.9.0 // indirect
 	github.com/supranational/blst v0.3.11 // indirect
 	github.com/ucarion/urlpath v0.0.0-20200424170820-7ccc79b76bbb // indirect
 	github.com/urfave/cli/v2 v2.25.7 // indirect
@@ -289,9 +290,9 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.25.0 // indirect
 	go4.org v0.0.0-20230225012048-214862532bf5 // indirect
-	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa // indirect
+	golang.org/x/exp v0.0.0-20231206192017-f3f8817b8deb // indirect
 	golang.org/x/mod v0.14.0 // indirect
-	golang.org/x/net v0.18.0 // indirect
+	golang.org/x/net v0.19.0 // indirect
 	golang.org/x/sync v0.5.0 // indirect
 	golang.org/x/text v0.14.0 // indirect
 	golang.org/x/time v0.3.0 // indirect
@@ -301,7 +302,7 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20230920204549-e6e6cdab5c13 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20231009173412-8bfb1ae86b6c // indirect
 	google.golang.org/grpc v1.58.3 // indirect
-	google.golang.org/protobuf v1.31.0 // indirect
+	google.golang.org/protobuf v1.33.0 // indirect
 	gopkg.in/square/go-jose.v2 v2.5.1 // indirect
 	lukechampine.com/blake3 v1.2.1 // indirect
 	pgregory.net/rapid v0.5.5 // indirect
@@ -350,7 +351,6 @@ require (
 )
 
 replace (
-	github.com/celestiaorg/celestia-openrpc => github.com/Ferret-san/celestia-openrpc v0.3.1-0.20240214162835-bb3b93c214a5
 	github.com/gogo/protobuf => github.com/regen-network/protobuf v1.3.3-alpha.regen.1
 	github.com/tendermint/tendermint => github.com/celestiaorg/celestia-core v1.29.0-tm-v0.34.29
 )
