@@ -203,6 +203,9 @@ func messageFromTxes(header *arbostypes.L1IncomingMessageHeader, txes types.Tran
 			l2Message = append(l2Message, txBytes...)
 		}
 	}
+	if len(l2Message) > arbostypes.MaxL2MessageSize {
+		return nil, errors.New("l2message too long")
+	}
 	return &arbostypes.L1IncomingMessage{
 		Header: header,
 		L2msg:  l2Message,
