@@ -779,7 +779,6 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem, totalBlockSize int)
 		// This tx might still go through if previous txs fail.
 		// We'll include it in the output queue in case that happens.
 		outputQueueItems = append(outputQueueItems, queueItem)
-		totalBlockSize += queueItem.txSize
 	}
 	nonceFailureCacheSizeGauge.Update(int64(s.nonceFailures.Len()))
 	return outputQueueItems
