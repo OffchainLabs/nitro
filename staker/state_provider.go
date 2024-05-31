@@ -389,7 +389,7 @@ func (s *StateManager) CollectMachineHashes(
 	if err != nil {
 		return nil, err
 	}
-	execRun, err := s.validator.execSpawners[0].CreateBoldExecutionRun(cfg.WasmModuleRoot, uint64(cfg.StepSize), input).Await(ctx)
+	execRun, err := s.validator.execSpawners[0].CreateExecutionRun(cfg.WasmModuleRoot, input).Await(ctx)
 	if err != nil {
 		return nil, err
 	}

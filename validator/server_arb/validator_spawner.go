@@ -345,34 +345,6 @@ func (v *ArbitratorSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input
 	})
 }
 
-func (v *ArbitratorSpawner) CreateBoldExecutionRun(
-	wasmModuleRoot common.Hash, stepSize uint64, input *validator.ValidationInput,
-) containers.PromiseInterface[validator.ExecutionRun] {
-	getMachine := func(ctx context.Context, opts ...server_common.MachineLoaderOpt) (MachineInterface, error) {
-		// // Pass in step size.
-		// log.Info(fmt.Sprintf("Creating bold execution run closure with opts: %d", len(opts)))
-		// if len(opts) > 0 {
-		// 	v.machineLoader = NewArbMachineLoader(&DefaultArbitratorMachineConfig, v.locator)
-		// 	log.Info("Updated machine loader for re-cache")
-		// }
-		initialFrozenMachine, err := v.machineLoader.GetZeroStepMachine(ctx, wasmModuleRoot, opts...)
-		if err != nil {
-			return nil, err
-		}
-		machine := initialFrozenMachine.Clone()
-		err = v.loadEntryToMachine(ctx, input, machine)
-		if err != nil {
-			machine.Destroy()
-			return nil, err
-		}
-		return machine, nil
-	}
-	currentExecConfig := v.config().Execution
-	return stopwaiter.LaunchPromiseThread[validator.ExecutionRun](v, func(ctx context.Context) (validator.ExecutionRun, error) {
-		return NewExecutionRun(v.GetContext(), getMachine, &currentExecConfig)
-	})
-}
-
 func (v *ArbitratorSpawner) Stop() {
 	v.StopOnly()
 }
