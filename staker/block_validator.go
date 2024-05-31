@@ -92,8 +92,6 @@ type BlockValidator struct {
 
 type BlockValidatorConfig struct {
 	Enable                      bool                          `koanf:"enable"`
-	Evil                        bool                          `koanf:"evil"`
-	EvilInterceptDepositGwei    uint64                        `koanf:"evil-intercept-deposit-gwei"`
 	RedisValidationClientConfig redis.ValidationClientConfig  `koanf:"redis-validation-client-config"`
 	ValidationServer            rpcclient.ClientConfig        `koanf:"validation-server" reload:"hot"`
 	ValidationServerConfigs     []rpcclient.ClientConfig      `koanf:"validation-server-configs"`
@@ -147,8 +145,6 @@ type BlockValidatorConfigFetcher func() *BlockValidatorConfig
 
 func BlockValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block-by-block validation")
-	f.Bool(prefix+".evil", DefaultBlockValidatorConfig.Evil, "enable evil bold")
-	f.Uint64(prefix+".evil-intercept-deposit-gwei", DefaultBlockValidatorConfig.EvilInterceptDepositGwei, "bold evil intercept")
 	rpcclient.RPCClientAddOptions(prefix+".validation-server", f, &DefaultBlockValidatorConfig.ValidationServer)
 	redis.ValidationClientConfigAddOptions(prefix+".redis-validation-client-config", f)
 	f.String(prefix+".validation-server-configs-list", DefaultBlockValidatorConfig.ValidationServerConfigsList, "array of execution rpc configs given as a json string. time duration should be supplied in number indicating nanoseconds")
@@ -179,12 +175,10 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	FailureIsFatal:              true,
 	Dangerous:                   DefaultBlockValidatorDangerousConfig,
 	MemoryFreeLimit:             "default",
-	EvilInterceptDepositGwei:    1_000_000, // 1M gwei or 0.001 ETH
 }
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
 	Enable:                      false,
-	EvilInterceptDepositGwei:    1_000_000, // 1M gwei or 0.001 ETH
 	ValidationServer:            rpcclient.TestClientConfig,
 	ValidationServerConfigs:     []rpcclient.ClientConfig{rpcclient.TestClientConfig},
 	RedisValidationClientConfig: redis.TestValidationClientConfig,
@@ -1095,7 +1089,7 @@ func (v *BlockValidator) Initialize(ctx context.Context) error {
 	}
 	// First spawner is always RedisValidationClient if RedisStreams are enabled.
 	if v.redisValidator != nil {
-		err := v.redisValidator.Initialize(moduleRoots)
+		err := v.redisValidator.Initialize(ctx, moduleRoots)
 		if err != nil {
 			return err
 		}
