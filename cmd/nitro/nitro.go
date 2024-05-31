@@ -241,7 +241,7 @@ func mainImpl() int {
 	sequencerNeedsKey := (nodeConfig.Node.Sequencer && !nodeConfig.Node.Feed.Output.DisableSigning) ||
 		(nodeConfig.Node.BatchPoster.Enable && nodeConfig.Node.BatchPoster.DataPoster.ExternalSigner.URL == "")
 	validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract ||
-		((nodeConfig.Node.Staker.Enable || nodeConfig.Node.Bold.Enable) && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower") && nodeConfig.Node.Staker.DataPoster.ExternalSigner.URL == "")
+		(nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower") && nodeConfig.Node.Staker.DataPoster.ExternalSigner.URL == "")
 
 	l1Wallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 	defaultL1WalletConfig := conf.DefaultL1WalletConfig
@@ -257,29 +257,16 @@ func mainImpl() int {
 
 	if nodeConfig.Node.Staker.ParentChainWallet == defaultValidatorL1WalletConfig && nodeConfig.Node.BatchPoster.ParentChainWallet == defaultBatchPosterL1WalletConfig {
 		if sequencerNeedsKey || validatorNeedsKey || l1Wallet.OnlyCreateKey {
-			if nodeConfig.Node.BatchPoster.ParentChainWallet.PrivateKey != "" {
-				privKey, err := crypto.HexToECDSA(nodeConfig.Node.BatchPoster.ParentChainWallet.PrivateKey)
-				if err != nil {
-					log.Crit("Failed to parse bold validator private key", "err", err)
-				}
-				opts, err := bind.NewKeyedTransactorWithChainID(privKey, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
-				if err != nil {
-					log.Crit("Failed to create bold validator opts from private key", "err", err)
-				}
-				l1TransactionOptsBatchPoster = opts
-				l1TransactionOptsValidator = opts
-			} else {
-				l1TransactionOpts, dataSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
-				if err != nil {
-					flag.Usage()
-					log.Crit("error opening parent chain wallet", "path", l1Wallet.Pathname, "account", l1Wallet.Account, "err", err)
-				}
-				if l1Wallet.OnlyCreateKey {
-					return 0
-				}
-				l1TransactionOptsBatchPoster = l1TransactionOpts
-				l1TransactionOptsValidator = l1TransactionOpts
+			l1TransactionOpts, dataSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
+			if err != nil {
+				flag.Usage()
+				log.Crit("error opening parent chain wallet", "path", l1Wallet.Pathname, "account", l1Wallet.Account, "err", err)
 			}
+			if l1Wallet.OnlyCreateKey {
+				return 0
+			}
+			l1TransactionOptsBatchPoster = l1TransactionOpts
+			l1TransactionOptsValidator = l1TransactionOpts
 		}
 	} else {
 		if *l1Wallet != defaultL1WalletConfig {

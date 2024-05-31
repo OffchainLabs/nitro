@@ -4,18 +4,19 @@ package staker
 
 import (
 	"context"
+	"fmt"
 	"time"
 
 	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
 	challengemanager "github.com/OffchainLabs/bold/challenge-manager"
 	"github.com/OffchainLabs/bold/challenge-manager/types"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
-	"github.com/OffchainLabs/bold/solgen/go/challengeV2gen"
 	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 
+	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
@@ -30,82 +31,75 @@ func NewManager(
 	ctx context.Context,
 	rollupAddress common.Address,
 	txOpts *bind.TransactOpts,
-	callOpts bind.CallOpts,
 	client arbutil.L1Interface,
 	statelessBlockValidator *StatelessBlockValidator,
 	config *BoldConfig,
+	dataPoster *dataposter.DataPoster,
 ) (*challengemanager.Manager, error) {
-	userLogic, err := rollupgen.NewRollupUserLogic(
-		rollupAddress, client,
-	)
+	rollupBindings, err := rollupgen.NewRollupUserLogic(rollupAddress, client)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not create rollup bindings: %w", err)
 	}
-	challengeManagerAddr, err := userLogic.RollupUserLogicCaller.ChallengeManager(
-		&bind.CallOpts{Context: ctx},
-	)
+	chalManager, err := rollupBindings.ChallengeManager(&bind.CallOpts{})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not get challenge manager: %w", err)
 	}
-	chain, err := solimpl.NewAssertionChain(
-		ctx,
-		rollupAddress,
-		challengeManagerAddr,
-		txOpts,
-		client,
-		solimpl.NewChainBackendTransactor(client),
-	)
+	assertionChain, err := solimpl.NewAssertionChain(ctx, rollupAddress, chalManager, txOpts, client, solimpl.NewDataPosterTransactor(dataPoster))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not create assertion chain: %w", err)
 	}
-	managerBinding, err := challengeV2gen.NewEdgeChallengeManager(challengeManagerAddr, client)
-	if err != nil {
-		return nil, err
-	}
-	numBigStepLevel, err := managerBinding.NUMBIGSTEPLEVEL(&callOpts)
-	if err != nil {
-		return nil, err
-	}
-	challengeLeafHeights := make([]l2stateprovider.Height, numBigStepLevel+2)
-	for i := uint8(0); i <= numBigStepLevel+1; i++ {
-		leafHeight, err := managerBinding.GetLayerZeroEndHeight(&callOpts, i)
-		if err != nil {
-			return nil, err
-		}
-		challengeLeafHeights[i] = l2stateprovider.Height(leafHeight.Uint64())
-	}
-
+	blockChallengeLeafHeight := l2stateprovider.Height(config.BlockChallengeLeafHeight)
+	bigStepHeight := l2stateprovider.Height(config.BigStepLeafHeight)
+	smallStepHeight := l2stateprovider.Height(config.SmallStepLeafHeight)
 	stateManager, err := NewStateManager(
 		statelessBlockValidator,
 		config.MachineLeavesCachePath,
-		challengeLeafHeights,
+		[]l2stateprovider.Height{
+			blockChallengeLeafHeight,
+			bigStepHeight,
+			smallStepHeight,
+		},
 		config.ValidatorName,
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not create state manager: %w", err)
 	}
+	providerHeights := []l2stateprovider.Height{blockChallengeLeafHeight}
+	for i := uint64(0); i < config.NumBigSteps; i++ {
+		providerHeights = append(providerHeights, bigStepHeight)
+	}
+	providerHeights = append(providerHeights, smallStepHeight)
 	provider := l2stateprovider.NewHistoryCommitmentProvider(
 		stateManager,
 		stateManager,
 		stateManager,
-		challengeLeafHeights,
+		providerHeights,
 		stateManager,
 		nil,
 	)
-	manager, err := challengemanager.New(
-		ctx,
-		chain,
-		provider,
-		rollupAddress,
+	postingInterval := time.Second * time.Duration(config.AssertionPostingIntervalSeconds)
+	scanningInterval := time.Second * time.Duration(config.AssertionScanningIntervalSeconds)
+	confirmingInterval := time.Second * time.Duration(config.AssertionConfirmingIntervalSeconds)
+	opts := []challengemanager.Opt{
 		challengemanager.WithName(config.ValidatorName),
 		challengemanager.WithMode(BoldModes[config.Mode]),
-		challengemanager.WithAssertionPostingInterval(time.Duration(config.AssertionPostingIntervalSeconds)),
-		challengemanager.WithAssertionScanningInterval(time.Duration(config.AssertionScanningIntervalSeconds)),
-		challengemanager.WithAssertionConfirmingInterval(time.Duration(config.AssertionConfirmingIntervalSeconds)),
+		challengemanager.WithAssertionPostingInterval(postingInterval),
+		challengemanager.WithAssertionScanningInterval(scanningInterval),
+		challengemanager.WithAssertionConfirmingInterval(confirmingInterval),
 		challengemanager.WithAddress(txOpts.From),
+	}
+	if config.API {
+		opts = append(opts, challengemanager.WithAPIEnabled(fmt.Sprintf("%s:%d", config.APIHost, config.APIPort), config.APIDBPath))
+	}
+	manager, err := challengemanager.New(
+		ctx,
+		assertionChain,
+		provider,
+		assertionChain.RollupAddress(),
+		opts...,
 	)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not create challenge manager: %w", err)
 	}
 	provider.UpdateAPIDatabase(manager.Database())
 	return manager, nil

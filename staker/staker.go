@@ -138,6 +138,9 @@ func (c *L1ValidatorConfig) Validate() error {
 		return errors.New("invalid validator gas refunder address")
 	}
 	c.gasRefunder = common.HexToAddress(c.GasRefunderAddress)
+	if err = c.Bold.Validate(); err != nil {
+		return err
+	}
 	return nil
 }
 
@@ -541,7 +544,7 @@ func (s *Staker) checkAndSwitchToBoldStaker(ctx context.Context) (bool, error) {
 			if err != nil {
 				return false, err
 			}
-			boldManager, err := NewManager(ctx, rollupAddress, auth, *callOpts, s.client, s.statelessBlockValidator, &s.config.Bold)
+			boldManager, err := NewManager(ctx, rollupAddress, auth, s.client, s.statelessBlockValidator, &s.config.Bold, s.wallet.DataPoster())
 			if err != nil {
 				return false, err
 			}
