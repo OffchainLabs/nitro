@@ -120,9 +120,11 @@ const (
 )
 
 type BatchPosterConfig struct {
-	Enable                                  bool `koanf:"enable"`
+	Enable bool `koanf:"enable"`
+	// TODO (Diego) rework the 3 configs below once unified writer interface is in
 	DisableDasFallbackStoreDataOnChain      bool `koanf:"disable-das-fallback-store-data-on-chain" reload:"hot"`
 	DisableCelestiaFallbackStoreDataOnChain bool `koanf:"disable-celestia-fallback-store-data-on-chain" reload:"hot"`
+	DisableCelestiaFallbackStoreDataOnDAS   bool `koanf:"disable-celestia-fallback-store-data-on-das" reload:"hot"`
 	// Max batch size.
 	MaxSize int `koanf:"max-size" reload:"hot"`
 	// Maximum 4844 blob enabled batch size.
@@ -1199,7 +1201,22 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		return false, nil
 	}
 
+	if b.celestiaWriter != nil {
+		celestiaMsg, err := b.celestiaWriter.Store(ctx, sequencerMsg)
+		if err != nil {
+			if config.DisableCelestiaFallbackStoreDataOnChain && config.DisableCelestiaFallbackStoreDataOnDAS {
+				return false, errors.New("unable to post batch to Celestia and fallback storing data on chain and das is disabled")
+			}
+			log.Warn("Falling back to storing data on chain", "err", err)
+		} else {
+			sequencerMsg = celestiaMsg
+		}
+	}
+
 	if b.daWriter != nil {
+		if b.celestiaWriter != nil && config.DisableCelestiaFallbackStoreDataOnDAS {
+			return false, errors.New("found Celestia DA enabled and DAS, but fallbacks to DAS aredisabled")
+		}
 		if !b.redisLock.AttemptLock(ctx) {
 			return false, errAttemptLockFailed
 		}
@@ -1223,17 +1240,6 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		} else {
 			sequencerMsg = das.Serialize(cert)
 		}
-	} else if b.celestiaWriter != nil {
-		celestiaMsg, err := b.celestiaWriter.Store(ctx, sequencerMsg)
-		if err != nil {
-			if config.DisableCelestiaFallbackStoreDataOnChain {
-				return false, errors.New("unable to post batch to Celestia and fallback storing data on chain is disabled")
-			}
-			log.Warn("Falling back to storing data on chain", "err", err)
-		} else {
-			sequencerMsg = celestiaMsg
-		}
-
 	}
 
 	data, kzgBlobs, err := b.encodeAddBatch(new(big.Int).SetUint64(batchPosition.NextSeqNum), batchPosition.MessageCount, b.building.msgCount, sequencerMsg, b.building.segments.delayedMsg, b.building.use4844)

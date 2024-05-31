@@ -32,6 +32,7 @@ type DAConfig struct {
 	Rpc             string           `koanf:"rpc"`
 	NamespaceId     string           `koanf:"namespace-id"`
 	AuthToken       string           `koanf:"auth-token"`
+	NoopWriter      bool             `koanf:"noop-writer" reload:"hot"`
 	ValidatorConfig *ValidatorConfig `koanf:"validator-config"`
 }
 
@@ -146,6 +147,10 @@ func NewCelestiaDA(cfg *DAConfig, ethClient *ethclient.Client) (*CelestiaDA, err
 }
 
 func (c *CelestiaDA) Store(ctx context.Context, message []byte) ([]byte, error) {
+	if c.Cfg.NoopWriter {
+		log.Warn("NoopWriter enabled, falling back", "c.Cfg.NoopWriter", c.Cfg.NoopWriter)
+		return nil, errors.New("NoopWriter enabled")
+	}
 	// set a 5 minute timeout context on submissions
 	// if it takes longer than that to succesfully submit and verify a blob,
 	// then there's an issue with the connection to the celestia node
