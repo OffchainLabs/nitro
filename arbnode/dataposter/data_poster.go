@@ -33,7 +33,9 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/go-redis/redis/v8"
 	"github.com/holiman/uint256"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsigner"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -44,6 +46,8 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/spf13/pflag"
+
+	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
 )
 
 // Dataposter implements functionality to post transactions on the chain. It
@@ -136,32 +140,33 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 		useNoOpStorage = true
 		log.Info("Disabling data poster storage, as parent chain appears to be an Arbitrum chain without a mempool")
 	}
-	// encF := func() storage.EncoderDecoderInterface {
-	// 	if opts.Config().LegacyStorageEncoding {
-	// 		return &storage.LegacyEncoderDecoder{}
-	// 	}
-	// 	return &storage.EncoderDecoder{}
-	// }
-	// switch {
-	// case useNoOpStorage:
-	// queue = &noop.Storage{}
-	// case opts.RedisClient != nil:
-	// 	var err error
-	// 	queue, err = redisstorage.NewStorage(opts.RedisClient, opts.RedisKey, &cfg.RedisSigner, encF)
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-	// case cfg.UseDBStorage:
-	// storage := dbstorage.New(opts.Database, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
-	// // if cfg.Dangerous.ClearDBStorage {
-	// if err := storage.PruneAll(ctx); err != nil {
-	// 	return nil, err
-	// }
-	// // }
-	// queue = storage
-	// default:
-	queue := slice.NewStorage(func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
-	// }
+	encF := func() storage.EncoderDecoderInterface {
+		if opts.Config().LegacyStorageEncoding {
+			return &storage.LegacyEncoderDecoder{}
+		}
+		return &storage.EncoderDecoder{}
+	}
+	var queue QueueStorage
+	switch {
+	case useNoOpStorage:
+		queue = &noop.Storage{}
+	case opts.RedisClient != nil:
+		var err error
+		queue, err = redisstorage.NewStorage(opts.RedisClient, opts.RedisKey, &cfg.RedisSigner, encF)
+		if err != nil {
+			return nil, err
+		}
+	case cfg.UseDBStorage:
+		storage := dbstorage.New(opts.Database, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
+		if cfg.Dangerous.ClearDBStorage {
+			if err := storage.PruneAll(ctx); err != nil {
+				return nil, err
+			}
+		}
+		queue = storage
+	default:
+		queue = slice.NewStorage(func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
+	}
 	expression, err := govaluate.NewEvaluableExpression(cfg.MaxFeeCapFormula)
 	if err != nil {
 		return nil, fmt.Errorf("error creating govaluate evaluable expression for calculating maxFeeCap: %w", err)
@@ -375,8 +380,7 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64, thi
 }
 
 func (p *DataPoster) waitForL1Finality() bool {
-	// return p.config().WaitForL1Finality && !p.headerReader.IsParentChainArbitrum()
-	return false
+	return p.config().WaitForL1Finality && !p.headerReader.IsParentChainArbitrum()
 }
 
 // Requires the caller hold the mutex.
@@ -724,6 +728,7 @@ func (p *DataPoster) postTransaction(ctx context.Context, dataCreatedAt time.Tim
 	if err != nil {
 		return nil, err
 	}
+
 	var deprecatedData types.DynamicFeeTx
 	var inner types.TxData
 	replacementTimes := p.replacementTimes
@@ -783,7 +788,6 @@ func (p *DataPoster) postTransaction(ctx context.Context, dataCreatedAt time.Tim
 		return nil, fmt.Errorf("signing transaction: %w", err)
 	}
 	cumulativeWeight := lastCumulativeWeight + weight
-
 	queuedTx := storage.QueuedTransaction{
 		DeprecatedData:         deprecatedData,
 		FullTx:                 fullTx,
@@ -1299,11 +1303,11 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	ReplacementTimes:       "5m,10m,20m,30m,1h,2h,4h,6h,8h,12h,16h,18h,20h,22h",
 	BlobTxReplacementTimes: "5m,10m,30m,1h,4h,8h,16h,22h",
 	WaitForL1Finality:      true,
-	TargetPriceGwei:        120.,
-	UrgencyGwei:            10.,
+	TargetPriceGwei:        60.,
+	UrgencyGwei:            2.,
 	MaxMempoolTransactions: 18,
 	MaxMempoolWeight:       18,
-	MinTipCapGwei:          2,
+	MinTipCapGwei:          0.05,
 	MinBlobTxTipCapGwei:    1, // default geth minimum, and relays aren't likely to accept lower values given propagation time
 	MaxTipCapGwei:          5,
 	MaxBlobTxTipCapGwei:    1, // lower than normal because 4844 rbf is a minimum of a 2x
@@ -1323,8 +1327,8 @@ var DefaultDataPosterConfig = DataPosterConfig{
 var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
 	config := DefaultDataPosterConfig
 	// the validator cannot queue transactions
-	config.MaxMempoolTransactions = 18
-	config.MaxMempoolWeight = 18
+	config.MaxMempoolTransactions = 1
+	config.MaxMempoolWeight = 1
 	return config
 }()
 
@@ -1333,7 +1337,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	BlobTxReplacementTimes: "1s,10s,30s,5m",
 	RedisSigner:            signature.TestSimpleHmacConfig,
 	WaitForL1Finality:      false,
-	TargetPriceGwei:        120.,
+	TargetPriceGwei:        60.,
 	UrgencyGwei:            2.,
 	MaxMempoolTransactions: 18,
 	MaxMempoolWeight:       18,
@@ -1356,7 +1360,7 @@ var TestDataPosterConfig = DataPosterConfig{
 var TestDataPosterConfigForValidator = func() DataPosterConfig {
 	config := TestDataPosterConfig
 	// the validator cannot queue transactions
-	config.MaxMempoolTransactions = 18
-	config.MaxMempoolWeight = 18
+	config.MaxMempoolTransactions = 1
+	config.MaxMempoolWeight = 1
 	return config
 }()
