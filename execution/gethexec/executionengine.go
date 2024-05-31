@@ -17,7 +17,6 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"math/big"
 	"sync"
 	"testing"
 	"time"
@@ -64,38 +63,17 @@ type ExecutionEngine struct {
 
 	nextScheduledVersionCheck time.Time // protected by the createBlocksMutex
 
-	reorgSequencing            bool
-	evil                       bool
-	interceptDepositGweiAmount *big.Int
+	reorgSequencing bool
 
 	prefetchBlock bool
 }
 
-type Opt func(*ExecutionEngine)
-
-func WithEvilExecution() Opt {
-	return func(exec *ExecutionEngine) {
-		exec.evil = true
-	}
-}
-
-func WithInterceptDepositSize(depositGwei *big.Int) Opt {
-	return func(exec *ExecutionEngine) {
-		exec.interceptDepositGweiAmount = depositGwei
-	}
-}
-
-func NewExecutionEngine(bc *core.BlockChain, opts ...Opt) (*ExecutionEngine, error) {
-	exec := &ExecutionEngine{
-		bc:                         bc,
-		resequenceChan:             make(chan []*arbostypes.MessageWithMetadata),
-		newBlockNotifier:           make(chan struct{}, 1),
-		interceptDepositGweiAmount: arbos.DefaultEvilInterceptDepositGweiAmount,
-	}
-	for _, o := range opts {
-		o(exec)
-	}
-	return exec, nil
+func NewExecutionEngine(bc *core.BlockChain) (*ExecutionEngine, error) {
+	return &ExecutionEngine{
+		bc:               bc,
+		resequenceChan:   make(chan []*arbostypes.MessageWithMetadata),
+		newBlockNotifier: make(chan struct{}, 1),
+	}, nil
 }
 
 func (n *ExecutionEngine) Initialize(rustCacheSize uint32) {
@@ -255,6 +233,9 @@ func MessageFromTxes(header *arbostypes.L1IncomingMessageHeader, txes types.Tran
 			l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
 			l2Message = append(l2Message, txBytes...)
 		}
+	}
+	if len(l2Message) > arbostypes.MaxL2MessageSize {
+		return nil, errors.New("l2message too long")
 	}
 	return &arbostypes.L1IncomingMessage{
 		Header: header,
@@ -533,11 +514,6 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	statedb.StartPrefetcher("TransactionStreamer")
 	defer statedb.StopPrefetcher()
 
-	opts := make([]arbos.ProduceOpt, 0)
-	if s.evil {
-		opts = append(opts, arbos.WithEvilProduction())
-		opts = append(opts, arbos.WithInterceptDepositSize(s.interceptDepositGweiAmount))
-	}
 	batchFetcher := func(num uint64) ([]byte, error) {
 		data, _, err := s.consensus.FetchBatch(s.GetContext(), num)
 		return data, err
@@ -552,7 +528,6 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		s.bc.Config(),
 		batchFetcher,
 		isMsgForPrefetch,
-		opts...,
 	)
 
 	return block, statedb, receipts, err
