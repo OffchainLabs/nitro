@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math/big"
 	"reflect"
 	"sync/atomic"
 	"testing"
@@ -18,7 +17,6 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -41,8 +39,6 @@ func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 type Config struct {
-	Evil                      bool                             `koanf:"evil"`
-	EvilInterceptDepositGwei  uint64                           `koanf:"evil-intercept-deposit-gwei"`
 	ParentChainReader         headerreader.Config              `koanf:"parent-chain-reader" reload:"hot"`
 	Sequencer                 SequencerConfig                  `koanf:"sequencer" reload:"hot"`
 	RecordingDatabase         arbitrum.RecordingDatabaseConfig `koanf:"recording-database"`
@@ -83,8 +79,6 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	SequencerConfigAddOptions(prefix+".sequencer", f)
 	headerreader.AddOptions(prefix+".parent-chain-reader", f)
 	arbitrum.RecordingDatabaseConfigAddOptions(prefix+".recording-database", f)
-	f.Bool(prefix+".evil", ConfigDefault.Evil, "enable evil bold validation")
-	f.Uint64(prefix+".evil-intercept-deposit-gwei", ConfigDefault.EvilInterceptDepositGwei, "bold evil intercept deposit gwei")
 	f.String(prefix+".forwarding-target", ConfigDefault.ForwardingTarget, "transaction forwarding target URL, or \"null\" to disable forwarding (iff not sequencer)")
 	f.StringSlice(prefix+".secondary-forwarding-target", ConfigDefault.SecondaryForwardingTarget, "secondary transaction forwarding target URL")
 	AddOptionsForNodeForwarderConfig(prefix+".forwarder", f)
@@ -108,7 +102,6 @@ var ConfigDefault = Config{
 	Caching:                   DefaultCachingConfig,
 	Dangerous:                 DefaultDangerousConfig,
 	Forwarder:                 DefaultNodeForwarderConfig,
-	EvilInterceptDepositGwei:  1_000_000, // 1M gwei or 0.001 ETH.
 	EnablePrefetchBlock:       true,
 }
 
@@ -164,12 +157,7 @@ func CreateExecutionNode(
 	configFetcher ConfigFetcher,
 ) (*ExecutionNode, error) {
 	config := configFetcher()
-	opts := make([]Opt, 0)
-	if config.Evil {
-		opts = append(opts, WithEvilExecution())
-		opts = append(opts, WithInterceptDepositSize(new(big.Int).SetUint64(config.EvilInterceptDepositGwei*params.GWei)))
-	}
-	execEngine, err := NewExecutionEngine(l2BlockChain, opts...)
+	execEngine, err := NewExecutionEngine(l2BlockChain)
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
 	}
