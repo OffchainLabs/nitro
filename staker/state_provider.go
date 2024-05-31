@@ -41,7 +41,6 @@ var (
 
 type BoldConfig struct {
 	Enable                             bool   `koanf:"enable"`
-	Evil                               bool   `koanf:"evil"`
 	Mode                               string `koanf:"mode"`
 	BlockChallengeLeafHeight           uint64 `koanf:"block-challenge-leaf-height"`
 	BigStepLeafHeight                  uint64 `koanf:"big-step-leaf-height"`
@@ -61,7 +60,6 @@ type BoldConfig struct {
 
 var DefaultBoldConfig = BoldConfig{
 	Enable:                             false,
-	Evil:                               false,
 	Mode:                               "make-mode",
 	BlockChallengeLeafHeight:           1 << 5,
 	BigStepLeafHeight:                  1 << 8,
@@ -81,7 +79,6 @@ var DefaultBoldConfig = BoldConfig{
 
 func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBoldConfig.Enable, "enable bold challenge protocol")
-	f.Bool(prefix+".evil", DefaultBoldConfig.Evil, "enable evil bold validator")
 	f.String(prefix+".mode", DefaultBoldConfig.Mode, "define the bold validator staker strategy")
 	f.Uint64(prefix+".block-challenge-leaf-height", DefaultBoldConfig.BlockChallengeLeafHeight, "block challenge leaf height")
 	f.Uint64(prefix+".big-step-leaf-height", DefaultBoldConfig.BigStepLeafHeight, "big challenge leaf height")
