@@ -62,7 +62,7 @@ func NewExecutionSpawner(cfg *ExecutionSpawnerConfig, spawner validator.Executio
 	consumers := make(map[common.Hash]*pubsub.Consumer[*server_api.GetLeavesWithStepSizeInput, []common.Hash])
 	for _, hash := range cfg.ModuleRoots {
 		mr := common.HexToHash(hash)
-		c, err := pubsub.NewConsumer[*server_api.GetLeavesWithStepSizeInput, []common.Hash](redisClient, server_api.RedisStreamForRoot(mr), &cfg.ConsumerConfig)
+		c, err := pubsub.NewConsumer[*server_api.GetLeavesWithStepSizeInput, []common.Hash](redisClient, server_api.RedisBoldStreamForRoot(mr), &cfg.ConsumerConfig)
 		if err != nil {
 			return nil, fmt.Errorf("creating consumer for validation: %w", err)
 		}

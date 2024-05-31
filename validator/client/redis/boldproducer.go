@@ -66,7 +66,7 @@ func (c *BoldValidationClient) Initialize(moduleRoots []common.Hash) error {
 			continue
 		}
 		p, err := pubsub.NewProducer[*server_api.GetLeavesWithStepSizeInput, []common.Hash](
-			c.redisClient, server_api.RedisStreamForRoot(mr), &c.producerConfig)
+			c.redisClient, server_api.RedisBoldStreamForRoot(mr), &c.producerConfig)
 		if err != nil {
 			log.Warn("failed init redis for %v: %w", mr, err)
 			continue

@@ -47,6 +47,10 @@ func RedisStreamForRoot(moduleRoot common.Hash) string {
 	return fmt.Sprintf("stream:%s", moduleRoot.Hex())
 }
 
+func RedisBoldStreamForRoot(moduleRoot common.Hash) string {
+	return fmt.Sprintf("stream-bold:%s", moduleRoot.Hex())
+}
+
 type Request struct {
 	Input      *InputJSON
 	ModuleRoot common.Hash
