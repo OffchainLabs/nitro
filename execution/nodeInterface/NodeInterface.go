@@ -213,12 +213,11 @@ func (n NodeInterface) EstimateRetryableTicket(
 	}
 
 	// ArbitrumSubmitRetryableTx is unsigned so the following won't panic
-	msg, err := core.TransactionToMessage(types.NewTx(submitTx), types.NewArbitrumSigner(nil), nil)
+	msg, err := core.TransactionToMessage(types.NewTx(submitTx), types.NewArbitrumSigner(nil), nil, core.MessageGasEstimationMode)
 	if err != nil {
 		return err
 	}
 
-	msg.TxRunMode = core.MessageGasEstimationMode
 	*n.returnMessage.message = *msg
 	*n.returnMessage.changed = true
 	return nil

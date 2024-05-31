@@ -436,13 +436,13 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 	}
 
 	var poster common.Address
-	if p.msg.TxRunMode != core.MessageCommitMode {
+	if !p.msg.TxRunMode.ExecutedOnChain() {
 		poster = l1pricing.BatchPosterAddress
 	} else {
 		poster = p.evm.Context.Coinbase
 	}
 
-	if p.msg.TxRunMode == core.MessageCommitMode {
+	if p.msg.TxRunMode.ExecutedOnChain() {
 		p.msg.SkipL1Charging = false
 	}
 	if basefee.Sign() > 0 && !p.msg.SkipL1Charging {
@@ -509,7 +509,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 	if underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
 		inner, _ := underlyingTx.GetInner().(*types.ArbitrumRetryTx)
 		effectiveBaseFee := inner.GasFeeCap
-		if p.msg.TxRunMode == core.MessageCommitMode && !arbmath.BigEquals(effectiveBaseFee, p.evm.Context.BaseFee) {
+		if p.msg.TxRunMode.ExecutedOnChain() && !arbmath.BigEquals(effectiveBaseFee, p.evm.Context.BaseFee) {
 			log.Error(
 				"ArbitrumRetryTx GasFeeCap doesn't match basefee in commit mode",
 				"txHash", underlyingTx.Hash(),
