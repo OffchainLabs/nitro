@@ -24,6 +24,6 @@ func TestTimeout(t *testing.T) {
 	cancel()
 	time.Sleep(time.Second)
 	if !handler.WasLogged("Context done while waiting redis streams to be ready") {
-		t.Errorf("Waiting for redis streams timed out")
+		t.Error("Expected message about stream time-outs was not logged")
 	}
 }
