@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
+	"github.com/offchainlabs/nitro/das/avail"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -286,6 +287,8 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		if !foundDA {
 			if daprovider.IsDASMessageHeaderByte(batch.Data[40]) {
 				log.Error("No DAS Reader configured, but sequencer message found with DAS header")
+			} else if avail.IsAvailMessageHeaderByte(batch.Data[40]) {
+				return avail.ErrNoAvailReader
 			}
 		}
 	}

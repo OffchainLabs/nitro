@@ -12,8 +12,8 @@
 	url = https://github.com/google/brotli.git
 [submodule "contracts"]
 	path = contracts
-	url = https://github.com/OffchainLabs/nitro-contracts.git
-	branch = develop
+	url = https://github.com/availproject/nitro-contracts.git
+	branch = avail-develop-v2.3.1
 [submodule "arbitrator/wasm-testsuite/testsuite"]
 	path = arbitrator/wasm-testsuite/testsuite
 	url = https://github.com/WebAssembly/testsuite.git

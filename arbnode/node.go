@@ -34,6 +34,7 @@ import (
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/das/avail"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -88,6 +89,7 @@ type Config struct {
 	Staker              staker.L1ValidatorConfig    `koanf:"staker" reload:"hot"`
 	SeqCoordinator      SeqCoordinatorConfig        `koanf:"seq-coordinator"`
 	DataAvailability    das.DataAvailabilityConfig  `koanf:"data-availability"`
+	Avail               avail.DAConfig              `koanf:"avail"`
 	SyncMonitor         SyncMonitorConfig           `koanf:"sync-monitor"`
 	Dangerous           DangerousConfig             `koanf:"dangerous"`
 	TransactionStreamer TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
@@ -504,6 +506,8 @@ func createNodeImpl(
 	var daWriter das.DataAvailabilityServiceWriter
 	var daReader das.DataAvailabilityServiceReader
 	var dasLifecycleManager *das.LifecycleManager
+	var availDAWriter avail.AvailDAWriter
+	var availDAReader avail.AvailDAReader
 	if config.DataAvailability.Enable {
 		if config.BatchPoster.Enable {
 			daWriter, daReader, dasLifecycleManager, err = das.CreateBatchPosterDAS(ctx, &config.DataAvailability, dataSigner, l1client, deployInfo.SequencerInbox)
@@ -527,6 +531,13 @@ func createNodeImpl(
 		}
 	} else if l2Config.ArbitrumChainParams.DataAvailabilityCommittee {
 		return nil, errors.New("a data availability service is required for this chain, but it was not configured")
+	} else if config.Avail.Enable {
+		availService, err := avail.NewAvailDA(config.Avail, l1client)
+		if err != nil {
+			return nil, err
+		}
+		availDAWriter = availService
+		availDAReader = availService
 	}
 
 	// We support a nil txStreamer for the pruning code
@@ -539,6 +550,9 @@ func createNodeImpl(
 	}
 	if blobReader != nil {
 		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(blobReader))
+	}
+	if availDAReader != nil {
+		dapReaders = append(dapReaders, avail.NewReaderForAvailDA(availDAReader))
 	}
 	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, dapReaders)
 	if err != nil {
@@ -668,6 +682,8 @@ func createNodeImpl(
 		var dapWriter daprovider.Writer
 		if daWriter != nil {
 			dapWriter = daprovider.NewWriterForDAS(daWriter)
+		} else if availDAWriter != nil {
+			dapWriter = avail.NewWriterForAvailDA(availDAWriter)
 		}
 		batchPoster, err = NewBatchPoster(ctx, &BatchPosterOpts{
 			DataPosterDB:  rawdb.NewTable(arbDb, storage.BatchPosterPrefix),

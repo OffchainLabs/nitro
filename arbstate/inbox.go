@@ -21,6 +21,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
+	"github.com/offchainlabs/nitro/das/avail"
 	"github.com/offchainlabs/nitro/zeroheavy"
 )
 
@@ -107,6 +108,8 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 				log.Error("No DAS Reader configured, but sequencer message found with DAS header")
 			} else if daprovider.IsBlobHashesHeaderByte(payload[0]) {
 				return nil, daprovider.ErrNoBlobReader
+			} else if avail.IsAvailMessageHeaderByte(payload[0]) {
+				return nil, avail.ErrNoAvailReader
 			}
 		}
 	}
