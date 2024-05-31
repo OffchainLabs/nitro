@@ -1243,6 +1243,12 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	if (config.ReorgResistanceMargin > 0 && config.ReorgResistanceMargin < config.MaxDelay) &&
 		(batchDuration >= config.MaxDelay-config.ReorgResistanceMargin) &&
 		(batchDuration <= config.MaxDelay || (batchDuration <= config.MaxDelay+config.ReorgResistanceMargin && !config.IgnoreReorgResistanceMargin)) {
+		log.Error(
+			"disabling batch posting as batch duration falls within the reorg-resistance-margin from max-delay",
+			"batchDuration", batchDuration,
+			"reorgResistanceMargin", config.ReorgResistanceMargin,
+			"maxDelay", config.MaxDelay,
+		)
 		disablePosting = true
 	}
 
