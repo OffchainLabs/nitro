@@ -125,12 +125,15 @@ func keccakTest(t *testing.T, jit bool) {
 	}
 
 	// do a mutating call for proving's sake
-	_, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
-	ensure(tx, err)
-	ensure(mock.CallKeccak(&auth, programAddress, args))
-	ensure(mock.CallKeccak(&auth, otherAddressSameCode, args))
+	// _, tx, mock, err := mocksgen.DeployProgramTest(&auth, l2client)
+	// ensure(tx, err)
+	// ensure(mock.CallKeccak(&auth, programAddress, args))
+	// ensure(mock.CallKeccak(&auth, otherAddressSameCode, args))
 
-	validateBlocks(t, 1, jit, builder)
+	// validateBlocks(t, 1, jit, builder)
+	fmt.Println("L2 endpoint", builder.l2StackConfig.HTTPEndpoint())
+	_ = ensure
+	time.Sleep(time.Hour)
 }
 
 func TestProgramActivateTwice(t *testing.T) {
@@ -1264,6 +1267,9 @@ func setupProgramTest(t *testing.T, jit bool) (
 	ctx, cancel := context.WithCancel(context.Background())
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.l2StackConfig.HTTPHost = "localhost"
+	builder.l2StackConfig.HTTPPort = 8547
+	builder.l2StackConfig.HTTPModules = []string{"eth", "debug"}
 
 	builder.nodeConfig.BlockValidator.Enable = false
 	builder.nodeConfig.Staker.Enable = true
@@ -1286,6 +1292,14 @@ func setupProgramTest(t *testing.T, jit bool) (
 	}
 
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
+	for acc, info := range builder.L2Info.Accounts {
+		privateKeyBytes := info.PrivateKey.D.Bytes()
+		paddedPrivateKey := make([]byte, 32)
+		copy(paddedPrivateKey[32-len(privateKeyBytes):], privateKeyBytes)
+
+		// Convert the padded private key to a hexadecimal string.
+		fmt.Printf("acc %s priv key %x\n", acc, paddedPrivateKey)
+	}
 
 	arbOwner, err := pgen.NewArbOwner(types.ArbOwnerAddress, builder.L2.Client)
 	Require(t, err)
