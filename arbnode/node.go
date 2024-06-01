@@ -273,6 +273,7 @@ type Node struct {
 	BlockValidator          *staker.BlockValidator
 	StatelessBlockValidator *staker.StatelessBlockValidator
 	Staker                  *staker.Staker
+	BoldManager             *challengemanager.Manager
 	BroadcastServer         *broadcaster.Broadcaster
 	BroadcastClients        *broadcastclients.BroadcastClients
 	SeqCoordinator          *SeqCoordinator
@@ -584,6 +585,7 @@ func createNodeImpl(
 	}
 
 	var dp *dataposter.DataPoster
+	var boldManager *challengemanager.Manager
 	if config.Bold.Enable {
 		dp, err = StakerDataposter(
 			ctx,
@@ -652,7 +654,7 @@ func createNodeImpl(
 		if config.Bold.API {
 			opts = append(opts, challengemanager.WithAPIEnabled(fmt.Sprintf("%s:%d", config.Bold.APIHost, config.Bold.APIPort), config.Bold.APIDBPath))
 		}
-		manager, err := challengemanager.New(
+		boldManager, err = challengemanager.New(
 			ctx,
 			assertionChain,
 			provider,
@@ -662,8 +664,7 @@ func createNodeImpl(
 		if err != nil {
 			return nil, fmt.Errorf("could not create challenge manager: %w", err)
 		}
-		provider.UpdateAPIDatabase(manager.Database())
-		go manager.Start(ctx)
+		provider.UpdateAPIDatabase(boldManager.Database())
 	}
 
 	var blockValidator *staker.BlockValidator
@@ -804,6 +805,7 @@ func createNodeImpl(
 		BlockValidator:          blockValidator,
 		StatelessBlockValidator: statelessBlockValidator,
 		Staker:                  stakerObj,
+		BoldManager:             boldManager,
 		BroadcastServer:         broadcastServer,
 		BroadcastClients:        broadcastClients,
 		SeqCoordinator:          coordinator,
@@ -965,6 +967,9 @@ func (n *Node) Start(ctx context.Context) error {
 			return fmt.Errorf("error initializing staker: %w", err)
 		}
 	}
+	if n.BoldManager != nil {
+		n.BoldManager.Start(ctx)
+	}
 	if n.StatelessBlockValidator != nil {
 		err = n.StatelessBlockValidator.Start(ctx)
 		if err != nil {
@@ -1044,6 +1049,9 @@ func (n *Node) StopAndWait() {
 	}
 	if n.Staker != nil {
 		n.Staker.StopAndWait()
+	}
+	if n.BoldManager != nil {
+		n.BoldManager.StopAndWait()
 	}
 	if n.StatelessBlockValidator != nil {
 		n.StatelessBlockValidator.Stop()
