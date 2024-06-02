@@ -605,7 +605,8 @@ func createNodeImpl(
 		if err != nil {
 			return nil, fmt.Errorf("could not get challenge manager: %w", err)
 		}
-		assertionChain, err := solimpl.NewAssertionChain(ctx, deployInfo.Rollup, chalManager, txOptsValidator, l1client, solimpl.NewDataPosterTransactor(dp))
+
+		assertionChain, err := solimpl.NewAssertionChain(ctx, deployInfo.Rollup, chalManager, txOptsValidator, l1client, solimpl.NewDataPosterTransactor(dp), solimpl.WithRpcHeadBlockNumber(rpc.BlockNumber(config.Bold.RpcHeadBlockNumber)))
 		if err != nil {
 			return nil, fmt.Errorf("could not create assertion chain: %w", err)
 		}
