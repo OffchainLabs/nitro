@@ -4,8 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/go-redis/redis/v8"
@@ -201,6 +203,7 @@ func consume(ctx context.Context, t *testing.T, consumers []*Consumer[testReques
 }
 
 func TestRedisProduce(t *testing.T) {
+	log.SetDefault(log.NewLogger(log.NewTerminalHandlerWithLevel(os.Stderr, log.LevelTrace, true)))
 	t.Parallel()
 	for _, tc := range []struct {
 		name          string
@@ -212,7 +215,7 @@ func TestRedisProduce(t *testing.T) {
 		},
 		{
 			name:          "some consumers killed, others should take over their work",
-			killConsumers: false,
+			killConsumers: true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -229,6 +232,7 @@ func TestRedisProduce(t *testing.T) {
 				// Consumer messages in every third consumer but don't ack them to check
 				// that other consumers will claim ownership on those messages.
 				for i := 0; i < len(consumers); i += 3 {
+					consumers[i].Start(ctx)
 					if _, err := consumers[i].Consume(ctx); err != nil {
 						t.Errorf("Error consuming message: %v", err)
 					}
@@ -236,6 +240,7 @@ func TestRedisProduce(t *testing.T) {
 				}
 
 			}
+			time.Sleep(time.Second)
 			gotMessages, wantResponses := consume(ctx, t, consumers)
 			gotResponses, err := awaitResponses(ctx, promises)
 			if err != nil {
@@ -243,7 +248,7 @@ func TestRedisProduce(t *testing.T) {
 			}
 			producer.StopAndWait()
 			for _, c := range consumers {
-				c.StopWaiter.StopAndWait()
+				c.StopAndWait()
 			}
 			got, err := mergeValues(gotMessages)
 			if err != nil {
@@ -280,6 +285,7 @@ func TestRedisReproduceDisabled(t *testing.T) {
 	// Consumer messages in every third consumer but don't ack them to check
 	// that other consumers will claim ownership on those messages.
 	for i := 0; i < len(consumers); i += 3 {
+		consumers[i].Start(ctx)
 		if _, err := consumers[i].Consume(ctx); err != nil {
 			t.Errorf("Error consuming message: %v", err)
 		}

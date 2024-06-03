@@ -3,6 +3,12 @@ run-name: Arbitrator CI triggered from @${{ github.actor }} of ${{ github.head_r
 
 on:
   workflow_dispatch:
+    inputs:
+      enable_tmate:
+        type: boolean
+        description: 'Enable tmate'
+        required: false
+        default: false
   merge_group:
   pull_request:
     paths:
@@ -16,7 +22,7 @@ on:
 
 env:
   RUST_BACKTRACE: 1
-  RUSTFLAGS: -Dwarnings
+# RUSTFLAGS: -Dwarnings            # TODO: re-enable after wasmer upgrade
   WABT_VERSION: 1.0.32
 
 jobs:
@@ -24,6 +30,12 @@ jobs:
     name: Run Arbitrator tests
     runs-on: ubuntu-8
     steps:
+      - name: Setup tmate session
+        uses: mxschmitt/action-tmate@v3
+        if: ${{ github.event_name == 'workflow_dispatch' && inputs.enable_tmate }}
+        with:
+          detached: true
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -38,7 +50,7 @@ jobs:
       - name: Install go
         uses: actions/setup-go@v4
         with:
-          go-version: 1.20.x
+          go-version: 1.21.x
 
       - name: Install custom go-ethereum
         run: |
@@ -59,8 +71,16 @@ jobs:
       - name: Install rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
+          toolchain: "1.76"
           components: 'llvm-tools-preview, rustfmt, clippy'
+
+      - name: Install rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+        id: install-rust-nightly
+        with:
+          toolchain: "nightly-2024-02-04"
           targets: 'wasm32-wasi, wasm32-unknown-unknown'
+          components: 'rust-src, rustfmt, clippy'
 
       - name: Cache Rust intermediate build products
         uses: actions/cache@v3
@@ -136,16 +156,28 @@ jobs:
         run: echo "$HOME/wabt-prefix/bin" >> "$GITHUB_PATH"
 
       - name: Make arbitrator libraries
-        run: make -j wasm-ci-build
+        run: make -j wasm-ci-build STYLUS_NIGHTLY_VER="+nightly-2024-02-04"
 
       - name: Clippy check
         run: cargo clippy --all --manifest-path arbitrator/Cargo.toml -- -D warnings
 
       - name: Run rust tests
-        run: cargo test --all --manifest-path arbitrator/Cargo.toml
+        uses: actions-rs/cargo@v1
+        with:
+          command: test
+          args: -p arbutil -p prover -p jit -p stylus --release --manifest-path arbitrator/prover/Cargo.toml
 
       - name: Rustfmt
-        run: cargo fmt --all --manifest-path arbitrator/Cargo.toml -- --check
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: -p arbutil -p prover -p jit -p stylus --manifest-path arbitrator/Cargo.toml -- --check
+
+      - name: Rustfmt - langs/rust
+        uses: actions-rs/cargo@v1
+        with:
+          command: fmt
+          args: --all --manifest-path arbitrator/langs/rust/Cargo.toml -- --check
 
       - name: Make proofs from test cases
         run: make -j test-gen-proofs

@@ -10,9 +10,9 @@ import (
 	"math/big"
 	"time"
 
-	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/staker/txbuilder"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/validator"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -50,7 +50,6 @@ type L1Validator struct {
 	wallet         ValidatorWalletInterface
 	callOpts       bind.CallOpts
 
-	das                arbstate.DataAvailabilityReader
 	inboxTracker       InboxTrackerInterface
 	txStreamer         TransactionStreamerInterface
 	blockValidator     *BlockValidator
@@ -62,7 +61,6 @@ func NewL1Validator(
 	wallet ValidatorWalletInterface,
 	validatorUtilsAddress common.Address,
 	callOpts bind.CallOpts,
-	das arbstate.DataAvailabilityReader,
 	inboxTracker InboxTrackerInterface,
 	txStreamer TransactionStreamerInterface,
 	blockValidator *BlockValidator,
@@ -90,7 +88,6 @@ func NewL1Validator(
 		builder:        builder,
 		wallet:         wallet,
 		callOpts:       callOpts,
-		das:            das,
 		inboxTracker:   inboxTracker,
 		txStreamer:     txStreamer,
 		blockValidator: blockValidator,
@@ -191,12 +188,16 @@ func (v *L1Validator) resolveNextNode(ctx context.Context, info *StakerInfo, lat
 
 func (v *L1Validator) isRequiredStakeElevated(ctx context.Context) (bool, error) {
 	callOpts := v.getCallOpts(ctx)
-	requiredStake, err := v.rollup.CurrentRequiredStake(callOpts)
+	baseStake, err := v.rollup.BaseStake(callOpts)
 	if err != nil {
 		return false, err
 	}
-	baseStake, err := v.rollup.BaseStake(callOpts)
+	requiredStake, err := v.rollup.CurrentRequiredStake(callOpts)
 	if err != nil {
+		if headerreader.ExecutionRevertedRegexp.MatchString(err.Error()) {
+			log.Warn("execution reverted checking if required state is elevated; assuming elevated", "err", err)
+			return true, nil
+		}
 		return false, err
 	}
 	return requiredStake.Cmp(baseStake) > 0, nil

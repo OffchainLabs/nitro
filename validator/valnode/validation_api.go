@@ -1,3 +1,6 @@
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+
 package valnode
 
 import (
@@ -10,7 +13,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_api"
@@ -30,12 +32,16 @@ func (a *ValidationServerAPI) Room() int {
 }
 
 func (a *ValidationServerAPI) Validate(ctx context.Context, entry *server_api.InputJSON, moduleRoot common.Hash) (validator.GoGlobalState, error) {
-	valInput, err := ValidationInputFromJson(entry)
+	valInput, err := server_api.ValidationInputFromJson(entry)
 	if err != nil {
 		return validator.GoGlobalState{}, err
 	}
 	valRun := a.spawner.Launch(valInput, moduleRoot)
 	return valRun.Await(ctx)
+}
+
+func (a *ValidationServerAPI) WasmModuleRoots() ([]common.Hash, error) {
+	return a.spawner.WasmModuleRoots()
 }
 
 func NewValidationServerAPI(spawner validator.ValidationSpawner) *ValidationServerAPI {
@@ -70,7 +76,7 @@ func NewExecutionServerAPI(valSpawner validator.ValidationSpawner, execution val
 }
 
 func (a *ExecServerAPI) CreateExecutionRun(ctx context.Context, wasmModuleRoot common.Hash, jsonInput *server_api.InputJSON) (uint64, error) {
-	input, err := ValidationInputFromJson(jsonInput)
+	input, err := server_api.ValidationInputFromJson(jsonInput)
 	if err != nil {
 		return 0, err
 	}
@@ -108,7 +114,7 @@ func (a *ExecServerAPI) Start(ctx_in context.Context) {
 }
 
 func (a *ExecServerAPI) WriteToFile(ctx context.Context, jsonInput *server_api.InputJSON, expOut validator.GoGlobalState, moduleRoot common.Hash) error {
-	input, err := ValidationInputFromJson(jsonInput)
+	input, err := server_api.ValidationInputFromJson(jsonInput)
 	if err != nil {
 		return err
 	}
@@ -181,35 +187,4 @@ func (a *ExecServerAPI) CloseExec(execid uint64) {
 	}
 	run.run.Close()
 	delete(a.runs, execid)
-}
-
-func ValidationInputFromJson(entry *server_api.InputJSON) (*validator.ValidationInput, error) {
-	preimages := make(map[arbutil.PreimageType]map[common.Hash][]byte)
-	for ty, jsonPreimages := range entry.PreimagesB64 {
-		preimages[ty] = jsonPreimages.Map
-	}
-	valInput := &validator.ValidationInput{
-		Id:            entry.Id,
-		HasDelayedMsg: entry.HasDelayedMsg,
-		DelayedMsgNr:  entry.DelayedMsgNr,
-		StartState:    entry.StartState,
-		Preimages:     preimages,
-	}
-	delayed, err := base64.StdEncoding.DecodeString(entry.DelayedMsgB64)
-	if err != nil {
-		return nil, err
-	}
-	valInput.DelayedMsg = delayed
-	for _, binfo := range entry.BatchInfo {
-		data, err := base64.StdEncoding.DecodeString(binfo.DataB64)
-		if err != nil {
-			return nil, err
-		}
-		decInfo := validator.BatchInfo{
-			Number: binfo.Number,
-			Data:   data,
-		}
-		valInput.BatchInfo = append(valInput.BatchInfo, decInfo)
-	}
-	return valInput, nil
 }

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"os/signal"
@@ -30,10 +31,11 @@ import (
 )
 
 type DAServerConfig struct {
-	EnableRPC         bool                                `koanf:"enable-rpc"`
-	RPCAddr           string                              `koanf:"rpc-addr"`
-	RPCPort           uint64                              `koanf:"rpc-port"`
-	RPCServerTimeouts genericconf.HTTPServerTimeoutConfig `koanf:"rpc-server-timeouts"`
+	EnableRPC          bool                                `koanf:"enable-rpc"`
+	RPCAddr            string                              `koanf:"rpc-addr"`
+	RPCPort            uint64                              `koanf:"rpc-port"`
+	RPCServerTimeouts  genericconf.HTTPServerTimeoutConfig `koanf:"rpc-server-timeouts"`
+	RPCServerBodyLimit int                                 `koanf:"rpc-server-body-limit"`
 
 	EnableREST         bool                                `koanf:"enable-rest"`
 	RESTAddr           string                              `koanf:"rest-addr"`
@@ -43,7 +45,7 @@ type DAServerConfig struct {
 	DataAvailability das.DataAvailabilityConfig `koanf:"data-availability"`
 
 	Conf     genericconf.ConfConfig `koanf:"conf"`
-	LogLevel int                    `koanf:"log-level"`
+	LogLevel string                 `koanf:"log-level"`
 	LogType  string                 `koanf:"log-type"`
 
 	Metrics       bool                            `koanf:"metrics"`
@@ -57,13 +59,14 @@ var DefaultDAServerConfig = DAServerConfig{
 	RPCAddr:            "localhost",
 	RPCPort:            9876,
 	RPCServerTimeouts:  genericconf.HTTPServerTimeoutConfigDefault,
+	RPCServerBodyLimit: genericconf.HTTPServerBodyLimitDefault,
 	EnableREST:         false,
 	RESTAddr:           "localhost",
 	RESTPort:           9877,
 	RESTServerTimeouts: genericconf.HTTPServerTimeoutConfigDefault,
 	DataAvailability:   das.DefaultDataAvailabilityConfig,
 	Conf:               genericconf.ConfConfigDefault,
-	LogLevel:           int(log.LvlInfo),
+	LogLevel:           "INFO",
 	LogType:            "plaintext",
 	Metrics:            false,
 	MetricsServer:      genericconf.MetricsServerConfigDefault,
@@ -87,6 +90,7 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 	f.Bool("enable-rpc", DefaultDAServerConfig.EnableRPC, "enable the HTTP-RPC server listening on rpc-addr and rpc-port")
 	f.String("rpc-addr", DefaultDAServerConfig.RPCAddr, "HTTP-RPC server listening interface")
 	f.Uint64("rpc-port", DefaultDAServerConfig.RPCPort, "HTTP-RPC server listening port")
+	f.Int("rpc-server-body-limit", DefaultDAServerConfig.RPCServerBodyLimit, "HTTP-RPC server maximum request body size in bytes; the default (0) uses geth's 5MB limit")
 	genericconf.HTTPServerTimeoutConfigAddOptions("rpc-server-timeouts", f)
 
 	f.Bool("enable-rest", DefaultDAServerConfig.EnableREST, "enable the REST server listening on rest-addr and rest-port")
@@ -100,7 +104,7 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 	f.Bool("pprof", DefaultDAServerConfig.PProf, "enable pprof")
 	genericconf.PProfAddOptions("pprof-cfg", f)
 
-	f.Int("log-level", int(log.LvlInfo), "log level; 1: ERROR, 2: WARN, 3: INFO, 4: DEBUG, 5: TRACE")
+	f.String("log-level", DefaultDAServerConfig.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
 	f.String("log-type", DefaultDAServerConfig.LogType, "log type (plaintext or json)")
 
 	das.DataAvailabilityConfigAddDaserverOptions("data-availability", f)
@@ -182,14 +186,19 @@ func startup() error {
 		confighelpers.PrintErrorAndExit(errors.New("please specify at least one of --enable-rest or --enable-rpc"), printSampleUsage)
 	}
 
-	logFormat, err := genericconf.ParseLogType(serverConfig.LogType)
+	logLevel, err := genericconf.ToSlogLevel(serverConfig.LogLevel)
+	if err != nil {
+		confighelpers.PrintErrorAndExit(err, printSampleUsage)
+	}
+
+	handler, err := genericconf.HandlerFromLogType(serverConfig.LogType, io.Writer(os.Stderr))
 	if err != nil {
 		flag.Usage()
-		panic(fmt.Sprintf("Error parsing log type: %v", err))
+		return fmt.Errorf("error parsing log type when creating handler: %w", err)
 	}
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, logFormat))
-	glogger.Verbosity(log.Lvl(serverConfig.LogLevel))
-	log.Root().SetHandler(glogger)
+	glogger := log.NewGlogHandler(handler)
+	glogger.Verbosity(logLevel)
+	log.SetDefault(log.NewLogger(glogger))
 
 	if err := startMetrics(serverConfig); err != nil {
 		return err
@@ -244,7 +253,7 @@ func startup() error {
 	if serverConfig.EnableRPC {
 		log.Info("Starting HTTP-RPC server", "addr", serverConfig.RPCAddr, "port", serverConfig.RPCPort, "revision", vcsRevision, "vcs.time", vcsTime)
 
-		rpcServer, err = das.StartDASRPCServer(ctx, serverConfig.RPCAddr, serverConfig.RPCPort, serverConfig.RPCServerTimeouts, daReader, daWriter, daHealthChecker)
+		rpcServer, err = das.StartDASRPCServer(ctx, serverConfig.RPCAddr, serverConfig.RPCPort, serverConfig.RPCServerTimeouts, serverConfig.RPCServerBodyLimit, daReader, daWriter, daHealthChecker)
 		if err != nil {
 			return err
 		}

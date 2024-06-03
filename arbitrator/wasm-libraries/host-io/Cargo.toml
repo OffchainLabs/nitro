@@ -8,5 +8,5 @@ publish = false
 crate-type = ["cdylib"]
 
 [dependencies]
-go-abi = { path = "../go-abi" }
-arbutil = { path = "../../arbutil" }
+arbutil = { path = "../../arbutil/" }
+caller-env = { path = "../../caller-env/", default-features = false, features = ["static_caller"] }

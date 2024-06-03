@@ -22,7 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 
@@ -165,7 +165,7 @@ func startClientStore(args []string) error {
 	}
 
 	ctx := context.Background()
-	var cert *arbstate.DataAvailabilityCertificate
+	var cert *daprovider.DataAvailabilityCertificate
 
 	if config.RandomMessageSize > 0 {
 		message := make([]byte, config.RandomMessageSize)
@@ -184,7 +184,7 @@ func startClientStore(args []string) error {
 		return err
 	}
 
-	serializedCert := das.Serialize(cert)
+	serializedCert := daprovider.Serialize(cert)
 	fmt.Printf("Hex Encoded Cert: %s\n", hexutil.Encode(serializedCert))
 	fmt.Printf("Hex Encoded Data Hash: %s\n", hexutil.Encode(cert.DataHash[:]))
 

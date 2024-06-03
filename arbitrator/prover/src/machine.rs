@@ -1,27 +1,33 @@
-// Copyright 2021-2023, Offchain Labs, Inc.
+// Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
+#[cfg(feature = "native")]
+use crate::kzg::prove_kzg_preimage;
 use crate::{
-    binary::{parse, FloatInstruction, Local, NameCustomSection, WasmBinary},
+    binary::{
+        self, parse, ExportKind, ExportMap, FloatInstruction, Local, NameCustomSection, WasmBinary,
+    },
     host,
-    kzg::prove_kzg_preimage,
     memory::Memory,
     merkle::{Merkle, MerkleType},
+    programs::{config::CompileConfig, meter::MeteredMachine, ModuleMod, StylusData},
     reinterpret::{ReinterpretAsSigned, ReinterpretAsUnsigned},
-    utils::{file_bytes, Bytes32, CBytes, RemoteTableType},
+    utils::{file_bytes, CBytes, RemoteTableType},
     value::{ArbValueType, FunctionType, IntegerValType, ProgramCounter, Value},
     wavm::{
-        pack_cross_module_call, unpack_cross_module_call, wasm_to_wavm, FloatingPointImpls,
+        self, pack_cross_module_call, unpack_cross_module_call, wasm_to_wavm, FloatingPointImpls,
         IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
     },
 };
-use arbutil::{Color, PreimageType};
+use arbutil::{crypto, math, Bytes32, Color, DebugColor, PreimageType};
+use brotli::Dictionary;
+#[cfg(feature = "native")]
 use c_kzg::BYTES_PER_BLOB;
 use digest::Digest;
 use eyre::{bail, ensure, eyre, Result, WrapErr};
 use fnv::FnvHashMap as HashMap;
+use lazy_static::lazy_static;
 use num::{traits::PrimInt, Zero};
-use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use sha3::Keccak256;
@@ -31,12 +37,18 @@ use std::{
     convert::{TryFrom, TryInto},
     fmt::{self, Display},
     fs::File,
+    hash::Hash,
     io::{BufReader, BufWriter, Write},
     num::Wrapping,
+    ops::Add,
     path::{Path, PathBuf},
     sync::Arc,
 };
-use wasmparser::{DataKind, ElementItem, ElementKind, ExternalKind, Operator, TableType, TypeRef};
+use wasmer_types::FunctionIndex;
+use wasmparser::{DataKind, ElementItems, ElementKind, Operator, RefType, TableType};
+
+#[cfg(feature = "rayon")]
+use rayon::prelude::*;
 
 fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
     let mut h = Keccak256::new();
@@ -62,11 +74,11 @@ pub fn argument_data_to_inbox(argument_data: u64) -> Option<InboxIdentifier> {
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Function {
-    code: Vec<Instruction>,
-    ty: FunctionType,
+    pub code: Vec<Instruction>,
+    pub ty: FunctionType,
     #[serde(skip)]
     code_merkle: Merkle,
-    local_types: Vec<ArbValueType>,
+    pub local_types: Vec<ArbValueType>,
 }
 
 impl Function {
@@ -106,7 +118,7 @@ impl Function {
         // Insert missing proving argument data
         for inst in insts.iter_mut() {
             if inst.opcode == Opcode::CallIndirect {
-                let (table, ty) = crate::wavm::unpack_call_indirect(inst.argument_data);
+                let (table, ty) = wavm::unpack_call_indirect(inst.argument_data);
                 let ty = &module_types[usize::try_from(ty).unwrap()];
                 inst.proving_argument_data = Some(hash_call_indirect_data(table, ty));
             }
@@ -124,17 +136,36 @@ impl Function {
             u32::try_from(code.len()).is_ok(),
             "Function instruction count doesn't fit in a u32",
         );
-        let code_merkle = Merkle::new(
-            MerkleType::Instruction,
-            code.par_iter().map(|i| i.hash()).collect(),
-        );
-
-        Function {
+        let mut func = Function {
             code,
             ty,
-            code_merkle,
+            code_merkle: Merkle::default(), // TODO: make an option
             local_types,
-        }
+        };
+        func.set_code_merkle();
+        func
+    }
+
+    const CHUNK_SIZE: usize = 64;
+
+    fn set_code_merkle(&mut self) {
+        let code = &self.code;
+        let chunks = math::div_ceil::<64>(code.len());
+        let crunch = |x: usize| Instruction::hash(&code[64 * x..(64 * (x + 1)).min(code.len())]);
+
+        #[cfg(feature = "rayon")]
+        let code_hashes = (0..chunks).into_par_iter().map(crunch).collect();
+
+        #[cfg(not(feature = "rayon"))]
+        let code_hashes = (0..chunks).map(crunch).collect();
+
+        self.code_merkle = Merkle::new(MerkleType::Instruction, code_hashes);
+    }
+
+    fn serialize_body_for_proof(&self, pc: ProgramCounter) -> Vec<u8> {
+        let start = pc.inst() / 64 * 64;
+        let end = (start + 64).min(self.code.len());
+        Instruction::serialize_for_proof(&self.code[start..end])
     }
 
     fn hash(&self) -> Bytes32 {
@@ -187,9 +218,9 @@ impl StackFrame {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-struct TableElement {
+pub(crate) struct TableElement {
     func_ty: FunctionType,
-    val: Value,
+    pub val: Value,
 }
 
 impl Default for TableElement {
@@ -213,10 +244,10 @@ impl TableElement {
 
 #[serde_as]
 #[derive(Clone, Debug, Serialize, Deserialize)]
-struct Table {
+pub(crate) struct Table {
     #[serde(with = "RemoteTableType")]
-    ty: TableType,
-    elems: Vec<TableElement>,
+    pub ty: TableType,
+    pub elems: Vec<TableElement>,
     #[serde(skip)]
     elems_merkle: Merkle,
 }
@@ -246,82 +277,137 @@ struct AvailableImport {
     func: u32,
 }
 
+impl AvailableImport {
+    pub fn new(ty: FunctionType, module: u32, func: u32) -> Self {
+        Self { ty, module, func }
+    }
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
-struct Module {
-    globals: Vec<Value>,
-    memory: Memory,
-    tables: Vec<Table>,
+pub struct Module {
+    pub(crate) globals: Vec<Value>,
+    pub(crate) memory: Memory,
+    pub(crate) tables: Vec<Table>,
     #[serde(skip)]
-    tables_merkle: Merkle,
-    funcs: Arc<Vec<Function>>,
+    pub(crate) tables_merkle: Merkle,
+    pub(crate) funcs: Arc<Vec<Function>>,
     #[serde(skip)]
-    funcs_merkle: Arc<Merkle>,
-    types: Arc<Vec<FunctionType>>,
-    internals_offset: u32,
-    names: Arc<NameCustomSection>,
-    host_call_hooks: Arc<Vec<Option<(String, String)>>>,
-    start_function: Option<u32>,
-    func_types: Arc<Vec<FunctionType>>,
-    exports: Arc<HashMap<String, u32>>,
+    pub(crate) funcs_merkle: Arc<Merkle>,
+    pub(crate) types: Arc<Vec<FunctionType>>,
+    pub(crate) internals_offset: u32,
+    pub(crate) names: Arc<NameCustomSection>,
+    pub(crate) host_call_hooks: Arc<Vec<Option<(String, String)>>>,
+    pub(crate) start_function: Option<u32>,
+    pub(crate) func_types: Arc<Vec<FunctionType>>,
+    /// Old modules use this format.
+    /// TODO: remove this after the jump to stylus.
+    #[serde(alias = "exports")]
+    pub(crate) func_exports: Arc<HashMap<String, u32>>,
+    #[serde(default)]
+    pub(crate) all_exports: Arc<ExportMap>,
+    /// Used to make modules unique.
+    pub(crate) extra_hash: Arc<Bytes32>,
+}
+
+lazy_static! {
+    static ref USER_IMPORTS: HashMap<String, AvailableImport> = {
+        let mut imports = HashMap::default();
+
+        let forward = include_bytes!("../../../target/machines/latest/forward_stub.wasm");
+        let forward = binary::parse(forward, Path::new("forward")).unwrap();
+
+        for (name, &(export, kind)) in &forward.exports {
+            if kind == ExportKind::Func {
+                let ty = match forward.get_function(FunctionIndex::from_u32(export)) {
+                    Ok(ty) => ty,
+                    Err(error) => panic!("failed to read export {name}: {error:?}"),
+                };
+                let import = AvailableImport::new(ty, 1, export);
+                imports.insert(name.to_owned(), import);
+            }
+        }
+        imports
+    };
 }
 
 impl Module {
+    const FORWARDING_PREFIX: &'static str = "arbitrator_forward__";
+
     fn from_binary(
         bin: &WasmBinary,
         available_imports: &HashMap<String, AvailableImport>,
         floating_point_impls: &FloatingPointImpls,
         allow_hostapi: bool,
+        debug_funcs: bool,
+        stylus_data: Option<StylusData>,
     ) -> Result<Module> {
         let mut code = Vec::new();
         let mut func_type_idxs: Vec<u32> = Vec::new();
         let mut memory = Memory::default();
-        let mut exports = HashMap::default();
         let mut tables = Vec::new();
         let mut host_call_hooks = Vec::new();
+        let bin_name = &bin.names.module;
         for import in &bin.imports {
-            if let TypeRef::Func(ty) = import.ty {
-                let mut qualified_name = format!("{}__{}", import.module, import.name);
-                qualified_name = qualified_name.replace(&['/', '.'] as &[char], "_");
-                let have_ty = &bin.types[ty as usize];
-                let func;
-                if let Some(import) = available_imports.get(&qualified_name) {
-                    ensure!(
-                        &import.ty == have_ty,
-                        "Import has different function signature than host function. Expected {:?} but got {:?}",
-                        import.ty, have_ty,
-                    );
-                    let wavm = vec![
-                        Instruction::simple(Opcode::InitFrame),
-                        Instruction::with_data(
-                            Opcode::CrossModuleCall,
-                            pack_cross_module_call(import.module, import.func),
-                        ),
-                        Instruction::simple(Opcode::Return),
-                    ];
-                    func = Function::new_from_wavm(wavm, import.ty.clone(), Vec::new());
-                } else {
-                    func = host::get_impl(import.module, import.name)?;
-                    ensure!(
-                        &func.ty == have_ty,
-                        "Import has different function signature than host function. Expected {:?} but got {:?}",
-                        func.ty, have_ty,
-                    );
-                    ensure!(
-                        allow_hostapi,
-                        "Calling hostapi directly is not allowed. Function {}",
-                        import.name,
-                    );
-                }
-                func_type_idxs.push(ty);
-                code.push(func);
-                host_call_hooks.push(Some((import.module.into(), import.name.into())));
+            let module = import.module;
+            let have_ty = &bin.types[import.offset as usize];
+            let (forward, import_name) = match import.name.strip_prefix(Module::FORWARDING_PREFIX) {
+                Some(name) => (true, name),
+                None => (false, import.name),
+            };
+
+            let mut qualified_name = format!("{module}__{import_name}");
+            qualified_name = qualified_name.replace(&['/', '.', '-'] as &[char], "_");
+
+            let func = if let Some(import) = available_imports.get(&qualified_name) {
+                let call = match forward {
+                    true => Opcode::CrossModuleForward,
+                    false => Opcode::CrossModuleCall,
+                };
+                let wavm = vec![
+                    Instruction::simple(Opcode::InitFrame),
+                    Instruction::with_data(
+                        call,
+                        pack_cross_module_call(import.module, import.func),
+                    ),
+                    Instruction::simple(Opcode::Return),
+                ];
+                Function::new_from_wavm(wavm, import.ty.clone(), vec![])
+            } else if let Ok((hostio, debug)) = host::get_impl(import.module, import_name) {
+                ensure!(
+                    (debug && debug_funcs) || (!debug && allow_hostapi),
+                    "Host func {} in {} not enabled debug_funcs={debug_funcs} hostapi={allow_hostapi} debug={debug}",
+                    import_name.red(),
+                    import.module.red(),
+                );
+                hostio
             } else {
-                bail!("Unsupport import kind {:?}", import);
-            }
+                bail!(
+                    "No such import {} in {} for {}",
+                    import_name.red(),
+                    import.module.red(),
+                    bin_name.red()
+                )
+            };
+            ensure!(
+                &func.ty == have_ty,
+                "Import {} for {} has different function signature than export.\nexpected {} in {}\nbut have {}",
+                import_name.red(), bin_name.red(), func.ty.red(), module.red(), have_ty.red(),
+            );
+
+            func_type_idxs.push(import.offset);
+            code.push(func);
+            host_call_hooks.push(Some((import.module.into(), import_name.into())));
         }
         func_type_idxs.extend(bin.functions.iter());
 
-        let internals = host::new_internal_funcs();
+        let func_exports: HashMap<String, u32> = bin
+            .exports
+            .iter()
+            .filter(|(_, (_, kind))| kind == &ExportKind::Func)
+            .map(|(name, (offset, _))| (name.to_owned(), *offset))
+            .collect();
+
+        let internals = host::new_internal_funcs(stylus_data);
         let internals_offset = (code.len() + bin.codes.len()) as u32;
         let internals_types = internals.iter().map(|f| f.ty.clone());
 
@@ -348,6 +434,7 @@ impl Module {
                         &types,
                         func_type_idxs[idx],
                         internals_offset,
+                        bin_name,
                     )
                 },
                 func_ty.clone(),
@@ -376,8 +463,8 @@ impl Module {
             if initial > max_size {
                 bail!(
                     "Memory inits to a size larger than its max: {} vs {}",
-                    limits.initial,
-                    max_size
+                    limits.initial.red(),
+                    max_size.red()
                 );
             }
             let size = initial * page_size;
@@ -385,29 +472,12 @@ impl Module {
             memory = Memory::new(size as usize, max_size);
         }
 
-        let mut globals = vec![];
-        for global in &bin.globals {
-            let mut init = global.init_expr.get_operators_reader();
-
-            let value = match (init.read()?, init.read()?, init.eof()) {
-                (op, Operator::End, true) => crate::binary::op_as_const(op)?,
-                _ => bail!("Non-constant global initializer"),
-            };
-            globals.push(value);
-        }
-
-        for export in &bin.exports {
-            if let ExternalKind::Func = export.kind {
-                exports.insert(export.name.to_owned(), export.index);
-            }
-        }
-
         for data in &bin.datas {
             let (memory_index, mut init) = match data.kind {
                 DataKind::Active {
                     memory_index,
-                    init_expr,
-                } => (memory_index, init_expr.get_operators_reader()),
+                    offset_expr,
+                } => (memory_index, offset_expr.get_operators_reader()),
                 _ => continue,
             };
             ensure!(
@@ -417,7 +487,7 @@ impl Module {
 
             let offset = match (init.read()?, init.read()?, init.eof()) {
                 (Operator::I32Const { value }, Operator::End, true) => value as usize,
-                x => bail!("Non-constant element segment offset expression {:?}", x),
+                x => bail!("Non-constant element segment offset expression {x:?}"),
             };
             if !matches!(
                 offset.checked_add(data.data.len()),
@@ -425,14 +495,19 @@ impl Module {
             ) {
                 bail!(
                     "Out-of-bounds data memory init with offset {} and size {}",
-                    offset,
-                    data.data.len(),
+                    offset.red(),
+                    data.data.len().red(),
                 );
             }
-            memory.set_range(offset, data.data);
+            memory.set_range(offset, data.data)?;
         }
 
         for table in &bin.tables {
+            let element_type = table.element_type;
+            ensure!(
+                element_type == RefType::FUNCREF,
+                "unsupported table type {element_type}"
+            );
             tables.push(Table {
                 elems: vec![TableElement::default(); usize::try_from(table.initial).unwrap()],
                 ty: *table,
@@ -444,36 +519,27 @@ impl Module {
             let (t, mut init) = match elem.kind {
                 ElementKind::Active {
                     table_index,
-                    init_expr,
-                } => (table_index, init_expr.get_operators_reader()),
-                _ => continue,
+                    offset_expr,
+                } => (
+                    table_index.unwrap_or_default() as usize,
+                    offset_expr.get_operators_reader(),
+                ),
+                _ => continue, // we don't support the ops that use these
             };
             let offset = match (init.read()?, init.read()?, init.eof()) {
                 (Operator::I32Const { value }, Operator::End, true) => value as usize,
-                x => bail!("Non-constant element segment offset expression {:?}", x),
+                x => bail!("Non-constant element segment offset expression {x:?}"),
             };
-            let table = match tables.get_mut(t as usize) {
-                Some(t) => t,
-                None => bail!("Element segment for non-exsistent table {}", t),
+            let Some(table) = tables.get_mut(t) else {
+                bail!("Element segment for non-exsistent table {}", t.red())
             };
-            let expected_ty = table.ty.element_type;
-            ensure!(
-                expected_ty == elem.ty,
-                "Element type expected to be of table type {:?} but of type {:?}",
-                expected_ty,
-                elem.ty
-            );
 
             let mut contents = vec![];
-            let mut item_reader = elem.items.get_items_reader()?;
-            for _ in 0..item_reader.get_count() {
-                let item = item_reader.read()?;
-                let index = match item {
-                    ElementItem::Func(index) => index,
-                    ElementItem::Expr(_) => {
-                        bail!("Non-constant element initializers are not supported")
-                    }
-                };
+            let ElementItems::Functions(item_reader) = elem.items.clone() else {
+                bail!("Non-constant element initializers are not supported");
+            };
+            for func in item_reader.into_iter() {
+                let index = func?;
                 let func_ty = func_types[index as usize].clone();
                 contents.push(TableElement {
                     val: Value::FuncRef(index),
@@ -484,19 +550,22 @@ impl Module {
             let len = contents.len();
             ensure!(
                 offset.saturating_add(len) <= table.elems.len(),
-                "Out of bounds element segment at offset {} and length {} for table of length {}",
-                offset,
-                len,
+                "Out of bounds element segment at offset {offset} and length {len} for table of length {}",
                 table.elems.len(),
             );
             table.elems[offset..][..len].clone_from_slice(&contents);
         }
+        ensure!(
+            code.len() < (1usize << 31),
+            "Module function count must be under 2^31",
+        );
+        ensure!(!code.is_empty(), "Module has no code");
 
         let tables_hashes: Result<_, _> = tables.iter().map(Table::hash).collect();
 
         Ok(Module {
             memory,
-            globals,
+            globals: bin.globals.clone(),
             tables_merkle: Merkle::new(MerkleType::Table, tables_hashes?),
             tables,
             funcs_merkle: Arc::new(Merkle::new(
@@ -510,11 +579,39 @@ impl Module {
             host_call_hooks: Arc::new(host_call_hooks),
             start_function: bin.start,
             func_types: Arc::new(func_types),
-            exports: Arc::new(exports),
+            func_exports: Arc::new(func_exports),
+            all_exports: Arc::new(bin.exports.clone()),
+            extra_hash: Arc::new(crypto::keccak(&bin.extra_data).into()),
         })
     }
 
-    fn hash(&self) -> Bytes32 {
+    pub fn from_user_binary(
+        bin: &WasmBinary,
+        debug_funcs: bool,
+        stylus_data: Option<StylusData>,
+    ) -> Result<Module> {
+        Self::from_binary(
+            bin,
+            &USER_IMPORTS,
+            &HashMap::default(),
+            false,
+            debug_funcs,
+            stylus_data,
+        )
+    }
+
+    pub fn name(&self) -> &str {
+        &self.names.module
+    }
+
+    fn find_func(&self, name: &str) -> Result<u32> {
+        let Some(func) = self.func_exports.iter().find(|x| x.0 == name) else {
+            bail!("func {} not found in {}", name.red(), self.name().red())
+        };
+        Ok(*func.1)
+    }
+
+    pub fn hash(&self) -> Bytes32 {
         let mut h = Keccak256::new();
         h.update("Module:");
         h.update(
@@ -527,6 +624,7 @@ impl Module {
         h.update(self.memory.hash());
         h.update(self.tables_merkle.root());
         h.update(self.funcs_merkle.root());
+        h.update(*self.extra_hash);
         h.update(self.internals_offset.to_be_bytes());
         h.finalize().into()
     }
@@ -548,10 +646,130 @@ impl Module {
 
         data.extend(self.tables_merkle.root());
         data.extend(self.funcs_merkle.root());
-
+        data.extend(*self.extra_hash);
         data.extend(self.internals_offset.to_be_bytes());
-
         data
+    }
+
+    /// Serializes the `Module` into bytes that can be stored in the db.
+    /// The format employed is forward-compatible with future brotli dictionary and caching policies.
+    pub fn into_bytes(&self) -> Vec<u8> {
+        let data = bincode::serialize::<ModuleSerdeAll>(&self.into()).unwrap();
+        let header = vec![1 + Into::<u8>::into(Dictionary::Empty)];
+        brotli::compress_into(&data, header, 0, 22, Dictionary::Empty).expect("failed to compress")
+    }
+
+    /// Deserializes a `Module` from db bytes.
+    ///
+    /// # Safety
+    ///
+    /// The bytes must have been produced by `into_bytes` and represent a valid `Module`.
+    pub unsafe fn from_bytes(data: &[u8]) -> Self {
+        let module = if data[0] > 0 {
+            let dict = Dictionary::try_from(data[0] - 1).expect("unknown dictionary");
+            let data = brotli::decompress(&data[1..], dict).expect("failed to inflate");
+            bincode::deserialize::<ModuleSerdeAll>(&data)
+        } else {
+            bincode::deserialize::<ModuleSerdeAll>(&data[1..])
+        };
+        module.unwrap().into()
+    }
+}
+
+/// This type exists to provide a serde option for serializing all the fields of a `Module`.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+pub struct ModuleSerdeAll {
+    globals: Vec<Value>,
+    memory: Memory,
+    tables: Vec<Table>,
+    tables_merkle: Merkle,
+    funcs: Vec<FunctionSerdeAll>,
+    funcs_merkle: Arc<Merkle>,
+    types: Arc<Vec<FunctionType>>,
+    internals_offset: u32,
+    names: Arc<NameCustomSection>,
+    host_call_hooks: Arc<Vec<Option<(String, String)>>>,
+    start_function: Option<u32>,
+    func_types: Arc<Vec<FunctionType>>,
+    func_exports: Arc<HashMap<String, u32>>,
+    all_exports: Arc<ExportMap>,
+    extra_hash: Arc<Bytes32>,
+}
+
+impl From<ModuleSerdeAll> for Module {
+    fn from(module: ModuleSerdeAll) -> Self {
+        let funcs = module.funcs.into_iter().map(Function::from).collect();
+        Self {
+            globals: module.globals,
+            memory: module.memory,
+            tables: module.tables,
+            tables_merkle: module.tables_merkle,
+            funcs: Arc::new(funcs),
+            funcs_merkle: module.funcs_merkle,
+            types: module.types,
+            internals_offset: module.internals_offset,
+            names: module.names,
+            host_call_hooks: module.host_call_hooks,
+            start_function: module.start_function,
+            func_types: module.func_types,
+            func_exports: module.func_exports,
+            all_exports: module.all_exports,
+            extra_hash: module.extra_hash,
+        }
+    }
+}
+
+impl From<&Module> for ModuleSerdeAll {
+    fn from(module: &Module) -> Self {
+        let funcs = Vec::clone(&module.funcs);
+        Self {
+            globals: module.globals.clone(),
+            memory: module.memory.clone(),
+            tables: module.tables.clone(),
+            tables_merkle: module.tables_merkle.clone(),
+            funcs: funcs.into_iter().map(FunctionSerdeAll::from).collect(),
+            funcs_merkle: module.funcs_merkle.clone(),
+            types: module.types.clone(),
+            internals_offset: module.internals_offset,
+            names: module.names.clone(),
+            host_call_hooks: module.host_call_hooks.clone(),
+            start_function: module.start_function,
+            func_types: module.func_types.clone(),
+            func_exports: module.func_exports.clone(),
+            all_exports: module.all_exports.clone(),
+            extra_hash: module.extra_hash.clone(),
+        }
+    }
+}
+
+#[serde_as]
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct FunctionSerdeAll {
+    code: Vec<Instruction>,
+    ty: FunctionType,
+    code_merkle: Merkle,
+    local_types: Vec<ArbValueType>,
+}
+
+impl From<FunctionSerdeAll> for Function {
+    fn from(func: FunctionSerdeAll) -> Self {
+        Self {
+            code: func.code,
+            ty: func.ty,
+            code_merkle: func.code_merkle,
+            local_types: func.local_types,
+        }
+    }
+}
+
+impl From<Function> for FunctionSerdeAll {
+    fn from(func: Function) -> Self {
+        Self {
+            code: func.code,
+            ty: func.ty,
+            code_merkle: func.code_merkle,
+            local_types: func.local_types,
+        }
     }
 }
 
@@ -639,13 +857,39 @@ pub struct ModuleState<'a> {
     memory: Cow<'a, Memory>,
 }
 
+/// Represents if the machine can recover and where to jump back if so.
+#[derive(Clone, Copy, Debug, Serialize, Deserialize)]
+pub enum ThreadState {
+    /// Execution is in the main thread. Errors are fatal.
+    Main,
+    /// Execution is in a cothread. Errors recover to the associated pc with the main thread.
+    CoThread(ProgramCounter),
+}
+
+impl ThreadState {
+    fn is_cothread(&self) -> bool {
+        match self {
+            ThreadState::Main => false,
+            ThreadState::CoThread(_) => true,
+        }
+    }
+
+    fn serialize(&self) -> Bytes32 {
+        match self {
+            ThreadState::Main => Bytes32([0xff; 32]),
+            ThreadState::CoThread(pc) => (*pc).serialize(),
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct MachineState<'a> {
     steps: u64, // Not part of machine hash
+    thread_state: ThreadState,
     status: MachineStatus,
-    value_stack: Cow<'a, Vec<Value>>,
+    value_stacks: Cow<'a, Vec<Vec<Value>>>,
     internal_stack: Cow<'a, Vec<Value>>,
-    frame_stack: Cow<'a, Vec<StackFrame>>,
+    frame_stacks: Cow<'a, Vec<Vec<StackFrame>>>,
     modules: Vec<ModuleState<'a>>,
     global_state: GlobalState,
     pc: ProgramCounter,
@@ -677,6 +921,7 @@ impl PreimageResolverWrapper {
         }
     }
 
+    #[cfg(feature = "native")]
     pub fn get(&mut self, context: u64, ty: PreimageType, hash: Bytes32) -> Option<&[u8]> {
         // TODO: this is unnecessarily complicated by the rust borrow checker.
         // This will probably be simplifiable when Polonius is shipped.
@@ -692,6 +937,7 @@ impl PreimageResolverWrapper {
         }
     }
 
+    #[cfg(feature = "native")]
     pub fn get_const(&self, context: u64, ty: PreimageType, hash: Bytes32) -> Option<CBytes> {
         if let Some(resolved) = &self.last_resolved {
             if resolved.0 == hash {
@@ -705,10 +951,11 @@ impl PreimageResolverWrapper {
 #[derive(Clone, Debug)]
 pub struct Machine {
     steps: u64, // Not part of machine hash
+    thread_state: ThreadState,
     status: MachineStatus,
-    value_stack: Vec<Value>,
+    value_stacks: Vec<Vec<Value>>,
     internal_stack: Vec<Value>,
-    frame_stack: Vec<StackFrame>,
+    frame_stacks: Vec<Vec<StackFrame>>,
     modules: Vec<Module>,
     modules_merkle: Option<Merkle>,
     global_state: GlobalState,
@@ -717,35 +964,79 @@ pub struct Machine {
     inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
     first_too_far: u64, // Not part of machine hash
     preimage_resolver: PreimageResolverWrapper,
+    /// Linkable Stylus modules in compressed form. Not part of the machine hash.
+    stylus_modules: HashMap<Bytes32, Vec<u8>>,
     initial_hash: Bytes32,
     context: u64,
+    debug_info: bool, // Not part of machine hash
 }
 
-fn hash_stack<I, D>(stack: I, prefix: &str) -> Bytes32
+type FrameStackHash = Bytes32;
+type ValueStackHash = Bytes32;
+type MultiStackHash = Bytes32;
+type InterStackHash = Bytes32;
+
+pub(crate) fn hash_stack<I, D>(stack: I, prefix: &str) -> Bytes32
 where
     I: IntoIterator<Item = D>,
     D: AsRef<[u8]>,
 {
-    let mut hash = Bytes32::default();
-    for item in stack.into_iter() {
-        let mut h = Keccak256::new();
-        h.update(prefix);
-        h.update(item.as_ref());
-        h.update(hash);
-        hash = h.finalize().into();
-    }
-    hash
+    hash_stack_with_heights(stack, &[], prefix).0
 }
 
-fn hash_value_stack(stack: &[Value]) -> Bytes32 {
+/// Hashes a stack of n elements, returning the values at various heights along the way in O(n).
+fn hash_stack_with_heights<I, D>(
+    stack: I,
+    mut heights: &[usize],
+    prefix: &str,
+) -> (Bytes32, Vec<Bytes32>)
+where
+    I: IntoIterator<Item = D>,
+    D: AsRef<[u8]>,
+{
+    let mut parts = vec![];
+    let mut hash = Bytes32::default();
+    let mut count = 0;
+    for item in stack.into_iter() {
+        while heights.first() == Some(&count) {
+            parts.push(hash);
+            heights = &heights[1..];
+        }
+
+        hash = Keccak256::new()
+            .chain(prefix)
+            .chain(item.as_ref())
+            .chain(hash)
+            .finalize()
+            .into();
+
+        count += 1;
+    }
+    while !heights.is_empty() {
+        assert_eq!(heights[0], count);
+        parts.push(hash);
+        heights = &heights[1..];
+    }
+    (hash, parts)
+}
+
+fn hash_value_stack(stack: &[Value]) -> ValueStackHash {
     hash_stack(stack.iter().map(|v| v.hash()), "Value stack:")
 }
 
-fn hash_stack_frame_stack(frames: &[StackFrame]) -> Bytes32 {
+fn hash_stack_frame_stack(frames: &[StackFrame]) -> FrameStackHash {
     hash_stack(frames.iter().map(|f| f.hash()), "Stack frame stack:")
 }
 
+fn hash_multistack<T, F>(multistack: &[&[T]], stack_hasher: F) -> MultiStackHash
+where
+    F: Fn(&[T]) -> Bytes32,
+{
+    hash_stack(multistack.iter().map(|v| stack_hasher(v)), "cothread:")
+}
+
 #[must_use]
+#[cfg(feature = "native")]
 fn prove_window<T, F, D, G>(items: &[T], stack_hasher: F, encoder: G) -> Vec<u8>
 where
     F: Fn(&[T]) -> Bytes32,
@@ -766,6 +1057,7 @@ where
 }
 
 #[must_use]
+#[cfg(feature = "native")]
 fn prove_stack<T, F, D, G>(
     items: &[T],
     proving_depth: usize,
@@ -787,7 +1079,52 @@ where
     data
 }
 
+// prove_multistacks encodes proof for multistacks:
+// - Proof of first(main) if not cothread otherwise last
+// - Hash of first if cothread, otherwise last
+// - Recursive hash of the rest
+// If length is < 1, hash of last element is assumed 0xff..f, same for hash
+// of in-between stacks ([2nd..last)).
+// Accepts prover function so that it can work both for proving stack and window.
 #[must_use]
+#[cfg(feature = "native")]
+fn prove_multistack<T, F, MF>(
+    cothread: bool,
+    items: Vec<&[T]>,
+    stack_hasher: F,
+    multistack_hasher: MF,
+    prover: fn(&[T]) -> Vec<u8>,
+) -> Vec<u8>
+where
+    F: Fn(&[T]) -> Bytes32,
+    MF: Fn(&[&[T]], F) -> Bytes32,
+{
+    let mut data = Vec::with_capacity(33);
+
+    if cothread {
+        data.extend(prover(items.last().unwrap()));
+        data.extend(stack_hasher(items.first().unwrap()))
+    } else {
+        data.extend(prover(items.first().unwrap()));
+
+        let last_hash = if items.len() > 1 {
+            stack_hasher(items.last().unwrap())
+        } else {
+            Machine::NO_STACK_HASH
+        };
+        data.extend(last_hash);
+    }
+    let hash: Bytes32 = if items.len() > 2 {
+        multistack_hasher(&items[1..items.len() - 1], stack_hasher)
+    } else {
+        Bytes32::default()
+    };
+    data.extend(hash);
+    data
+}
+
+#[must_use]
+#[cfg(feature = "native")]
 fn exec_ibin_op<T>(a: T, b: T, op: IBinOpType) -> Option<T>
 where
     Wrapping<T>: ReinterpretAsSigned,
@@ -823,6 +1160,7 @@ where
 }
 
 #[must_use]
+#[cfg(feature = "native")]
 fn exec_iun_op<T>(a: T, op: IUnOpType) -> u32
 where
     T: PrimInt,
@@ -834,6 +1172,7 @@ where
     }
 }
 
+#[cfg(feature = "native")]
 fn exec_irel_op<T>(a: T, b: T, op: IRelOpType) -> Value
 where
     T: Ord,
@@ -855,6 +1194,7 @@ pub fn get_empty_preimage_resolver() -> PreimageResolver {
 
 impl Machine {
     pub const MAX_STEPS: u64 = 1 << 43;
+    pub const NO_STACK_HASH: Bytes32 = Bytes32([255_u8; 32]);
 
     pub fn from_paths(
         library_paths: &[PathBuf],
@@ -862,21 +1202,23 @@ impl Machine {
         language_support: bool,
         always_merkleize: bool,
         allow_hostapi_from_main: bool,
+        debug_funcs: bool,
+        debug_info: bool,
         global_state: GlobalState,
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimage_resolver: PreimageResolver,
     ) -> Result<Machine> {
         let bin_source = file_bytes(binary_path)?;
-        let bin = parse(&bin_source)
+        let bin = parse(&bin_source, binary_path)
             .wrap_err_with(|| format!("failed to validate WASM binary at {:?}", binary_path))?;
         let mut libraries = vec![];
         let mut lib_sources = vec![];
         for path in library_paths {
             let error_message = format!("failed to validate WASM binary at {:?}", path);
-            lib_sources.push((file_bytes(path)?, error_message));
+            lib_sources.push((file_bytes(path)?, path, error_message));
         }
-        for (source, error_message) in &lib_sources {
-            let library = parse(source).wrap_err_with(|| error_message.clone())?;
+        for (source, path, error_message) in &lib_sources {
+            let library = parse(source, path).wrap_err_with(|| error_message.clone())?;
             libraries.push(library);
         }
         Self::from_binaries(
@@ -885,10 +1227,76 @@ impl Machine {
             language_support,
             always_merkleize,
             allow_hostapi_from_main,
+            debug_funcs,
+            debug_info,
             global_state,
             inbox_contents,
             preimage_resolver,
+            None,
         )
+    }
+
+    /// Creates an instrumented user Machine from the wasm or wat at the given `path`.
+    #[cfg(feature = "native")]
+    pub fn from_user_path(path: &Path, compile: &CompileConfig) -> Result<Self> {
+        let data = std::fs::read(path)?;
+        let wasm = wasmer::wat2wasm(&data)?;
+        let mut bin = binary::parse(&wasm, Path::new("user"))?;
+        let stylus_data = bin.instrument(compile, &Bytes32::default())?;
+
+        let user_test = std::fs::read("../../target/machines/latest/user_test.wasm")?;
+        let user_test = parse(&user_test, Path::new("user_test"))?;
+        let wasi_stub = std::fs::read("../../target/machines/latest/wasi_stub.wasm")?;
+        let wasi_stub = parse(&wasi_stub, Path::new("wasi_stub"))?;
+        let soft_float = std::fs::read("../../target/machines/latest/soft-float.wasm")?;
+        let soft_float = parse(&soft_float, Path::new("soft-float"))?;
+
+        let mut machine = Self::from_binaries(
+            &[soft_float, wasi_stub, user_test],
+            bin,
+            false,
+            false,
+            false,
+            compile.debug.debug_funcs,
+            true,
+            GlobalState::default(),
+            HashMap::default(),
+            Arc::new(|_, _, _| panic!("tried to read preimage")),
+            Some(stylus_data),
+        )?;
+
+        let footprint: u32 = stylus_data.footprint.into();
+        machine.call_function("user_test", "set_pages", vec![footprint.into()])?;
+        Ok(machine)
+    }
+
+    /// Adds a user program to the machine's known set of wasms, compiling it into a link-able module.
+    /// Note that the module produced will need to be configured before execution via hostio calls.
+    pub fn add_program(
+        &mut self,
+        wasm: &[u8],
+        codehash: &Bytes32,
+        version: u16,
+        debug_funcs: bool,
+    ) -> Result<Bytes32> {
+        let mut bin = binary::parse(wasm, Path::new("user"))?;
+        let config = CompileConfig::version(version, debug_funcs);
+        let stylus_data = bin.instrument(&config, codehash)?;
+
+        // enable debug mode if debug funcs are available
+        if debug_funcs {
+            self.debug_info = true;
+        }
+
+        let module = Module::from_user_binary(&bin, debug_funcs, Some(stylus_data))?;
+        let hash = module.hash();
+        self.add_stylus_module(hash, module.into_bytes());
+        Ok(hash)
+    }
+
+    /// Adds a pre-built program to the machine's known set of wasms.
+    pub fn add_stylus_module(&mut self, hash: Bytes32, module: Vec<u8>) {
+        self.stylus_modules.insert(hash, module);
     }
 
     pub fn from_binaries(
@@ -897,9 +1305,12 @@ impl Machine {
         runtime_support: bool,
         always_merkleize: bool,
         allow_hostapi_from_main: bool,
+        debug_funcs: bool,
+        debug_info: bool,
         global_state: GlobalState,
         inbox_contents: HashMap<(InboxIdentifier, u64), Vec<u8>>,
         preimage_resolver: PreimageResolver,
+        stylus_data: Option<StylusData>,
     ) -> Result<Machine> {
         use ArbValueType::*;
 
@@ -907,40 +1318,49 @@ impl Machine {
         let mut modules = vec![Module::default()];
         let mut available_imports = HashMap::default();
         let mut floating_point_impls = HashMap::default();
+        let main_module_index = u32::try_from(modules.len() + libraries.len())?;
 
-        for export in &bin.exports {
-            if let ExternalKind::Func = export.kind {
-                if let Some(ty_idx) = usize::try_from(export.index)
-                    .unwrap()
-                    .checked_sub(bin.imports.len())
-                {
-                    let ty = bin.functions[ty_idx];
-                    let ty = &bin.types[usize::try_from(ty).unwrap()];
-                    let module = u32::try_from(modules.len() + libraries.len()).unwrap();
+        // make the main module's exports available to libraries
+        for (name, &(export, kind)) in &bin.exports {
+            if kind == ExportKind::Func {
+                let index: usize = export.try_into()?;
+                if let Some(index) = index.checked_sub(bin.imports.len()) {
+                    let ty: usize = bin.functions[index].try_into()?;
+                    let ty = bin.types[ty].clone();
                     available_imports.insert(
-                        format!("env__wavm_guest_call__{}", export.name),
-                        AvailableImport {
-                            ty: ty.clone(),
-                            module,
-                            func: export.index,
-                        },
+                        format!("env__wavm_guest_call__{name}"),
+                        AvailableImport::new(ty, main_module_index, export),
                     );
                 }
             }
         }
 
+        // collect all the library exports in advance so they can use each other's
+        for (index, lib) in libraries.iter().enumerate() {
+            let module = 1 + index as u32; // off by one due to the entry point
+            for (name, &(export, kind)) in &lib.exports {
+                if kind == ExportKind::Func {
+                    let ty = match lib.get_function(FunctionIndex::from_u32(export)) {
+                        Ok(ty) => ty,
+                        Err(error) => bail!("failed to read export {name}: {error}"),
+                    };
+                    let import = AvailableImport::new(ty, module, export);
+                    available_imports.insert(name.to_owned(), import);
+                }
+            }
+        }
+
         for lib in libraries {
-            let module = Module::from_binary(lib, &available_imports, &floating_point_impls, true)?;
-            for (name, &func) in &*module.exports {
+            let module = Module::from_binary(
+                lib,
+                &available_imports,
+                &floating_point_impls,
+                true,
+                debug_funcs,
+                None,
+            )?;
+            for (name, &func) in &*module.func_exports {
                 let ty = module.func_types[func as usize].clone();
-                available_imports.insert(
-                    name.clone(),
-                    AvailableImport {
-                        module: modules.len() as u32,
-                        func,
-                        ty: ty.clone(),
-                    },
-                );
                 if let Ok(op) = name.parse::<FloatInstruction>() {
                     let mut sig = op.signature();
                     // wavm codegen takes care of effecting this type change at callsites
@@ -953,10 +1373,10 @@ impl Machine {
                     }
                     ensure!(
                         ty == sig,
-                        "Wrong type for floating point impl {:?} expecting {:?} but got {:?}",
-                        name,
-                        sig,
-                        ty
+                        "Wrong type for floating point impl {} expecting {} but got {}",
+                        name.red(),
+                        sig.red(),
+                        ty.red()
                     );
                     floating_point_impls.insert(op, (modules.len() as u32, func));
                 }
@@ -964,13 +1384,15 @@ impl Machine {
             modules.push(module);
         }
 
-        // Shouldn't be necessary, but to safe, don't allow the main binary to import its own guest calls
+        // Shouldn't be necessary, but to be safe, don't allow the main binary to import its own guest calls
         available_imports.retain(|_, i| i.module as usize != modules.len());
         modules.push(Module::from_binary(
             &bin,
             &available_imports,
             &floating_point_impls,
             allow_hostapi_from_main,
+            debug_funcs,
+            stylus_data,
         )?);
 
         // Build the entrypoint module
@@ -1003,11 +1425,12 @@ impl Machine {
         }
         let main_module_idx = modules.len() - 1;
         let main_module = &modules[main_module_idx];
+        let main_exports = &main_module.func_exports;
 
         // Rust support
         let rust_fn = "__main_void";
-        if let Some(&f) = main_module.exports.get(rust_fn).filter(|_| runtime_support) {
-            let expected_type = FunctionType::new(vec![], vec![I32]);
+        if let Some(&f) = main_exports.get(rust_fn).filter(|_| runtime_support) {
+            let expected_type = FunctionType::new([], [I32]);
             ensure!(
                 main_module.func_types[f as usize] == expected_type,
                 "Main function doesn't match expected signature of [] -> [ret]",
@@ -1017,59 +1440,15 @@ impl Machine {
             entry!(HaltAndSetFinished);
         }
 
-        // Go support
-        if let Some(&f) = main_module.exports.get("run").filter(|_| runtime_support) {
-            let mut expected_type = FunctionType::default();
-            expected_type.inputs.push(I32); // argc
-            expected_type.inputs.push(I32); // argv
+        // Go/wasi support
+        if let Some(&f) = main_exports.get("_start").filter(|_| runtime_support) {
+            let expected_type = FunctionType::new([], []);
             ensure!(
                 main_module.func_types[f as usize] == expected_type,
-                "Run function doesn't match expected signature of [argc, argv]",
+                "Main function doesn't match expected signature of [] -> []",
             );
-            // Go's flags library panics if the argument list is empty.
-            // To pass in the program name argument, we need to put it in memory.
-            // The Go linker guarantees a section of memory starting at byte 4096 is available for this purpose.
-            // https://github.com/golang/go/blob/252324e879e32f948d885f787decf8af06f82be9/misc/wasm/wasm_exec.js#L520
-            // These memory stores also assume that the Go module's memory is large enough to begin with.
-            // That's also handled by the Go compiler. Go 1.17.5 in the compilation of the arbitrator go test case
-            // initializes its memory to 272 pages long (about 18MB), much larger than the required space.
-            let free_memory_base = 4096;
-            let name_str_ptr = free_memory_base;
-            let argv_ptr = name_str_ptr + 8;
-            ensure!(
-                main_module.internals_offset != 0,
-                "Main module doesn't have internals"
-            );
-            let main_module_idx = u32::try_from(main_module_idx).unwrap();
-            let main_module_store32 = main_module.internals_offset + 3;
-
-            // Write "js\0" to name_str_ptr, to match what the actual JS environment does
-            entry!(I32Const, name_str_ptr);
-            entry!(I32Const, 0x736a); // b"js\0"
-            entry!(@cross, main_module_idx, main_module_store32);
-            entry!(I32Const, name_str_ptr + 4);
-            entry!(I32Const, 0);
-            entry!(@cross, main_module_idx, main_module_store32);
-
-            // Write name_str_ptr to argv_ptr
-            entry!(I32Const, argv_ptr);
-            entry!(I32Const, name_str_ptr);
-            entry!(@cross, main_module_idx, main_module_store32);
-            entry!(I32Const, argv_ptr + 4);
-            entry!(I32Const, 0);
-            entry!(@cross, main_module_idx, main_module_store32);
-
-            // Launch main with an argument count of 1 and argv_ptr
-            entry!(I32Const, 1);
-            entry!(I32Const, argv_ptr);
-            entry!(@cross, main_module_idx, f);
-            if let Some(i) = available_imports.get("wavm__go_after_run") {
-                ensure!(
-                    i.ty == FunctionType::default(),
-                    "Resume function has non-empty function signature",
-                );
-                entry!(@cross, i.module, i.func);
-            }
+            entry!(@cross, u32::try_from(main_module_idx).unwrap(), f);
+            entry!(HaltAndSetFinished);
         }
 
         let entrypoint_types = vec![FunctionType::default()];
@@ -1102,10 +1481,12 @@ impl Machine {
             types: Arc::new(entrypoint_types),
             names: Arc::new(entrypoint_names),
             internals_offset: 0,
-            host_call_hooks: Arc::new(Vec::new()),
+            host_call_hooks: Default::default(),
             start_function: None,
             func_types: Arc::new(vec![FunctionType::default()]),
-            exports: Arc::new(HashMap::default()),
+            func_exports: Default::default(),
+            all_exports: Default::default(),
+            extra_hash: Default::default(),
         };
         modules[0] = entrypoint;
 
@@ -1148,10 +1529,11 @@ impl Machine {
 
         let mut mach = Machine {
             status: MachineStatus::Running,
+            thread_state: ThreadState::Main,
             steps: 0,
-            value_stack: vec![Value::RefNull, Value::I32(0), Value::I32(0)],
+            value_stacks: vec![vec![Value::RefNull, Value::I32(0), Value::I32(0)]],
             internal_stack: Vec::new(),
-            frame_stack: Vec::new(),
+            frame_stacks: vec![Vec::new()],
             modules,
             modules_merkle,
             global_state,
@@ -1160,17 +1542,24 @@ impl Machine {
             inbox_contents,
             first_too_far,
             preimage_resolver: PreimageResolverWrapper::new(preimage_resolver),
+            stylus_modules: HashMap::default(),
             initial_hash: Bytes32::default(),
             context: 0,
+            debug_info,
         };
         mach.initial_hash = mach.hash();
         Ok(mach)
     }
 
     pub fn new_from_wavm(wavm_binary: &Path) -> Result<Machine> {
-        let f = BufReader::new(File::open(wavm_binary)?);
-        let decompressor = brotli2::read::BrotliDecoder::new(f);
-        let mut modules: Vec<Module> = bincode::deserialize_from(decompressor)?;
+        let mut modules: Vec<Module> = {
+            let compressed = std::fs::read(wavm_binary)?;
+            let Ok(modules) = brotli::decompress(&compressed, Dictionary::Empty) else {
+                bail!("failed to decompress wavm binary");
+            };
+            bincode::deserialize(&modules)?
+        };
+
         for module in modules.iter_mut() {
             for table in module.tables.iter_mut() {
                 table.elems_merkle = Merkle::new(
@@ -1181,14 +1570,9 @@ impl Machine {
             let tables: Result<_> = module.tables.iter().map(Table::hash).collect();
             module.tables_merkle = Merkle::new(MerkleType::Table, tables?);
 
-            let funcs =
-                Arc::get_mut(&mut module.funcs).expect("Multiple copies of module functions");
-            for func in funcs.iter_mut() {
-                func.code_merkle = Merkle::new(
-                    MerkleType::Instruction,
-                    func.code.par_iter().map(|i| i.hash()).collect(),
-                );
-            }
+            let funcs = Arc::get_mut(&mut module.funcs).expect("Multiple copies of module funcs");
+            funcs.iter_mut().for_each(Function::set_code_merkle);
+
             module.funcs_merkle = Arc::new(Merkle::new(
                 MerkleType::Function,
                 module.funcs.iter().map(Function::hash).collect(),
@@ -1196,10 +1580,11 @@ impl Machine {
         }
         let mut mach = Machine {
             status: MachineStatus::Running,
+            thread_state: ThreadState::Main,
             steps: 0,
-            value_stack: vec![Value::RefNull, Value::I32(0), Value::I32(0)],
+            value_stacks: vec![vec![Value::RefNull, Value::I32(0), Value::I32(0)]],
             internal_stack: Vec::new(),
-            frame_stack: Vec::new(),
+            frame_stacks: vec![Vec::new()],
             modules,
             modules_merkle: None,
             global_state: Default::default(),
@@ -1208,8 +1593,10 @@ impl Machine {
             inbox_contents: Default::default(),
             first_too_far: 0,
             preimage_resolver: PreimageResolverWrapper::new(get_empty_preimage_resolver()),
+            stylus_modules: HashMap::default(),
             initial_hash: Bytes32::default(),
             context: 0,
+            debug_info: false,
         };
         mach.initial_hash = mach.hash();
         Ok(mach)
@@ -1220,12 +1607,14 @@ impl Machine {
             self.hash() == self.initial_hash,
             "serialize_binary can only be called on initial machine",
         );
-        let mut f = File::create(path)?;
-        let mut compressor = brotli2::write::BrotliEncoder::new(BufWriter::new(&mut f), 9);
-        bincode::serialize_into(&mut compressor, &self.modules)?;
-        compressor.flush()?;
-        drop(compressor);
-        f.sync_data()?;
+        let modules = bincode::serialize(&self.modules)?;
+        let window = brotli::DEFAULT_WINDOW_SIZE;
+        let Ok(output) = brotli::compress(&modules, 9, window, Dictionary::Empty) else {
+            bail!("failed to compress binary");
+        };
+
+        let mut file = File::create(path)?;
+        file.write_all(&output)?;
         Ok(())
     }
 
@@ -1242,10 +1631,11 @@ impl Machine {
             .collect();
         let state = MachineState {
             steps: self.steps,
+            thread_state: self.thread_state,
             status: self.status,
-            value_stack: Cow::Borrowed(&self.value_stack),
+            value_stacks: Cow::Borrowed(&self.value_stacks),
             internal_stack: Cow::Borrowed(&self.internal_stack),
-            frame_stack: Cow::Borrowed(&self.frame_stack),
+            frame_stacks: Cow::Borrowed(&self.frame_stacks),
             modules,
             global_state: self.global_state.clone(),
             pc: self.pc,
@@ -1279,9 +1669,9 @@ impl Machine {
         }
         self.steps = new_state.steps;
         self.status = new_state.status;
-        self.value_stack = new_state.value_stack.into_owned();
+        self.value_stacks = new_state.value_stacks.into_owned();
         self.internal_stack = new_state.internal_stack.into_owned();
-        self.frame_stack = new_state.frame_stack.into_owned();
+        self.frame_stacks = new_state.frame_stacks.into_owned();
         self.global_state = new_state.global_state;
         self.pc = new_state.pc;
         self.stdio_output = new_state.stdio_output.into_owned();
@@ -1305,37 +1695,154 @@ impl Machine {
         }
     }
 
-    pub fn jump_into_function(&mut self, func: &str, mut args: Vec<Value>) {
+    pub fn main_module_name(&self) -> String {
+        self.modules.last().expect("no module").name().to_owned()
+    }
+
+    pub fn main_module_memory(&self) -> &Memory {
+        &self.modules.last().expect("no module").memory
+    }
+
+    pub fn main_module_hash(&self) -> Bytes32 {
+        self.modules.last().expect("no module").hash()
+    }
+
+    /// finds the first module with the given name
+    pub fn find_module(&self, name: &str) -> Result<u32> {
+        let Some(module) = self.modules.iter().position(|m| m.name() == name) else {
+            let names: Vec<_> = self.modules.iter().map(|m| m.name()).collect();
+            let names = names.join(", ");
+            bail!("module {} not found among: {names}", name.red())
+        };
+        Ok(module as u32)
+    }
+
+    pub fn find_module_func(&self, module: &str, func: &str) -> Result<(u32, u32)> {
+        let qualified = format!("{module}__{func}");
+        let offset = self.find_module(module)?;
+        let module = &self.modules[offset as usize];
+        let func = module
+            .find_func(func)
+            .or_else(|_| module.find_func(&qualified))?;
+        Ok((offset, func))
+    }
+
+    pub fn jump_into_func(&mut self, module: u32, func: u32, mut args: Vec<Value>) -> Result<()> {
+        let Some(source_module) = self.modules.get(module as usize) else {
+            bail!("no module at offset {}", module.red())
+        };
+        let Some(source_func) = source_module.funcs.get(func as usize) else {
+            bail!(
+                "no func at offset {} in module {}",
+                func.red(),
+                source_module.name().red()
+            )
+        };
+        let ty = &source_func.ty;
+        if ty.inputs.len() != args.len() {
+            let name = source_module.names.functions.get(&func).unwrap();
+            bail!(
+                "func {} has type {} but received args {:?}",
+                name.red(),
+                ty.red(),
+                args.debug_red(),
+            )
+        }
+
         let frame_args = [Value::RefNull, Value::I32(0), Value::I32(0)];
         args.extend(frame_args);
-        self.value_stack = args;
+        self.value_stacks[0] = args;
 
-        let module = self.modules.last().expect("no module");
-        let export = module.exports.iter().find(|x| x.0 == func);
-        let export = export
-            .unwrap_or_else(|| panic!("func {} not found", func))
-            .1;
-
-        self.frame_stack.clear();
+        self.frame_stacks[0].clear();
         self.internal_stack.clear();
 
         self.pc = ProgramCounter {
-            module: (self.modules.len() - 1).try_into().unwrap(),
-            func: *export,
+            module,
+            func,
             inst: 0,
         };
         self.status = MachineStatus::Running;
         self.steps = 0;
+        Ok(())
     }
 
     pub fn get_final_result(&self) -> Result<Vec<Value>> {
-        if !self.frame_stack.is_empty() {
+        if self.thread_state.is_cothread() {
+            bail!("machine in cothread when expecting final result")
+        }
+        if !self.frame_stacks[0].is_empty() {
             bail!(
-                "machine has not successfully computed a final result {:?}",
-                self.status
+                "machine has not successfully computed a final result {}",
+                self.status.red()
             )
         }
-        Ok(self.value_stack.clone())
+        Ok(self.value_stacks[0].clone())
+    }
+
+    #[cfg(feature = "native")]
+    pub fn call_function(
+        &mut self,
+        module: &str,
+        func: &str,
+        args: Vec<Value>,
+    ) -> Result<Vec<Value>> {
+        let (module, func) = self.find_module_func(module, func)?;
+        self.jump_into_func(module, func, args)?;
+        self.step_n(Machine::MAX_STEPS)?;
+        self.get_final_result()
+    }
+
+    #[cfg(feature = "native")]
+    pub fn call_user_func(&mut self, func: &str, args: Vec<Value>, ink: u64) -> Result<Vec<Value>> {
+        self.set_ink(ink);
+        self.call_function("user", func, args)
+    }
+
+    /// Gets the *last* global with the given name, if one exists
+    /// Note: two globals may have the same name, so use carefully!
+    pub fn get_global(&self, name: &str) -> Result<Value> {
+        for module in self.modules.iter().rev() {
+            if let Some((global, ExportKind::Global)) = module.all_exports.get(name) {
+                return Ok(module.globals[*global as usize]);
+            }
+        }
+        bail!("global {} not found", name.red())
+    }
+
+    /// Sets the *last* global with the given name, if one exists
+    /// Note: two globals may have the same name, so use carefully!
+    pub fn set_global(&mut self, name: &str, value: Value) -> Result<()> {
+        for module in self.modules.iter_mut().rev() {
+            if let Some((global, ExportKind::Global)) = module.all_exports.get(name) {
+                module.globals[*global as usize] = value;
+                return Ok(());
+            }
+        }
+        bail!("global {} not found", name.red())
+    }
+
+    pub fn read_memory(&self, module: u32, ptr: u32, len: u32) -> Result<&[u8]> {
+        let Some(module) = &self.modules.get(module as usize) else {
+            bail!("no module at offset {}", module.red())
+        };
+        let memory = module.memory.get_range(ptr as usize, len as usize);
+        let error = || format!("failed memory read of {} bytes @ {}", len.red(), ptr.red());
+        memory.ok_or_else(|| eyre!(error()))
+    }
+
+    pub fn write_memory(&mut self, module: u32, ptr: u32, data: &[u8]) -> Result<()> {
+        let Some(module) = &mut self.modules.get_mut(module as usize) else {
+            bail!("no module at offset {}", module.red())
+        };
+        if let Err(err) = module.memory.set_range(ptr as usize, data) {
+            let msg = eyre!(
+                "failed to write {} bytes to memory @ {}",
+                data.len().red(),
+                ptr.red()
+            );
+            bail!(err.wrap_err(msg));
+        }
+        Ok(())
     }
 
     pub fn get_next_instruction(&self) -> Option<Instruction> {
@@ -1361,21 +1868,44 @@ impl Machine {
         Some(self.pc)
     }
 
+    #[cfg(feature = "native")]
     fn test_next_instruction(func: &Function, pc: &ProgramCounter) {
-        debug_assert!(func.code.len() > pc.inst.try_into().unwrap());
+        let inst: usize = pc.inst.try_into().unwrap();
+        debug_assert!(func.code.len() > inst);
     }
 
     pub fn get_steps(&self) -> u64 {
         self.steps
     }
 
+    #[cfg(feature = "native")]
     pub fn step_n(&mut self, n: u64) -> Result<()> {
         if self.is_halted() {
             return Ok(());
         }
+        let (mut value_stack, mut frame_stack) = match self.thread_state {
+            ThreadState::Main => (&mut self.value_stacks[0], &mut self.frame_stacks[0]),
+            ThreadState::CoThread(_) => (
+                self.value_stacks.last_mut().unwrap(),
+                self.frame_stacks.last_mut().unwrap(),
+            ),
+        };
         let mut module = &mut self.modules[self.pc.module()];
         let mut func = &module.funcs[self.pc.func()];
 
+        macro_rules! reset_refs {
+            () => {
+                (value_stack, frame_stack) = match self.thread_state {
+                    ThreadState::Main => (&mut self.value_stacks[0], &mut self.frame_stacks[0]),
+                    ThreadState::CoThread(_) => (
+                        self.value_stacks.last_mut().unwrap(),
+                        self.frame_stacks.last_mut().unwrap(),
+                    ),
+                };
+                module = &mut self.modules[self.pc.module()];
+                func = &module.funcs[self.pc.func()];
+            };
+        }
         macro_rules! flush_module {
             () => {
                 if let Some(merkle) = self.modules_merkle.as_mut() {
@@ -1384,8 +1914,31 @@ impl Machine {
             };
         }
         macro_rules! error {
-            () => {{
+            () => {
+                error!("")
+            };
+            ($format:expr $(, $message:expr)*) => {{
+                flush_module!();
+
+                if self.debug_info {
+                    println!("\n{} {}", "error on line".grey(), line!().pink());
+                    println!($format, $($message.pink()),*);
+                    println!("{}", "backtrace:".grey());
+                    self.print_backtrace(true);
+                }
+
+                if let ThreadState::CoThread(recovery_pc) = self.thread_state {
+                    self.thread_state = ThreadState::Main;
+                    self.pc = recovery_pc;
+                    reset_refs!();
+                    if self.debug_info {
+                        println!("\n{}", "switching to main thread".grey());
+                        println!("\n{} {:?}", "next opcode: ".grey(), func.code[self.pc.inst()]);
+                    }
+                    continue;
+                }
                 self.status = MachineStatus::Errored;
+                module = &mut self.modules[self.pc.module()];
                 break;
             }};
         }
@@ -1393,18 +1946,23 @@ impl Machine {
         for _ in 0..n {
             self.steps += 1;
             if self.steps == Self::MAX_STEPS {
-                error!();
+                println!("\n{}", "Machine out of steps".red());
+                self.status = MachineStatus::Errored;
+                self.print_backtrace(true);
+                module = &mut self.modules[self.pc.module()];
+                break;
             }
+
             let inst = func.code[self.pc.inst()];
             self.pc.inst += 1;
             match inst.opcode {
-                Opcode::Unreachable => error!(),
+                Opcode::Unreachable => error!("unreachable"),
                 Opcode::Nop => {}
                 Opcode::InitFrame => {
-                    let caller_module_internals = self.value_stack.pop().unwrap().assume_u32();
-                    let caller_module = self.value_stack.pop().unwrap().assume_u32();
-                    let return_ref = self.value_stack.pop().unwrap();
-                    self.frame_stack.push(StackFrame {
+                    let caller_module_internals = value_stack.pop().unwrap().assume_u32();
+                    let caller_module = value_stack.pop().unwrap().assume_u32();
+                    let return_ref = value_stack.pop().unwrap();
+                    frame_stack.push(StackFrame {
                         return_ref,
                         locals: func
                             .local_types
@@ -1421,15 +1979,15 @@ impl Machine {
                         .and_then(|h| h.as_ref())
                     {
                         if let Err(err) = Self::host_call_hook(
-                            &self.value_stack,
+                            value_stack,
                             module,
                             &mut self.stdio_output,
                             &hook.0,
                             &hook.1,
                         ) {
                             eprintln!(
-                                "Failed to process host call hook for host call {:?} {:?}: {}",
-                                hook.0, hook.1, err,
+                                "Failed to process host call hook for host call {:?} {:?}: {err}",
+                                hook.0, hook.1,
                             );
                         }
                     }
@@ -1439,14 +1997,14 @@ impl Machine {
                     Machine::test_next_instruction(func, &self.pc);
                 }
                 Opcode::ArbitraryJumpIf => {
-                    let x = self.value_stack.pop().unwrap();
+                    let x = value_stack.pop().unwrap();
                     if !x.is_i32_zero() {
                         self.pc.inst = inst.argument_data as u32;
                         Machine::test_next_instruction(func, &self.pc);
                     }
                 }
                 Opcode::Return => {
-                    let frame = self.frame_stack.pop().unwrap();
+                    let frame = frame_stack.pop().unwrap();
                     match frame.return_ref {
                         Value::RefNull => error!(),
                         Value::InternalRef(pc) => {
@@ -1464,34 +2022,56 @@ impl Machine {
                     }
                 }
                 Opcode::Call => {
-                    let current_frame = self.frame_stack.last().unwrap();
-                    self.value_stack.push(Value::InternalRef(self.pc));
-                    self.value_stack
-                        .push(Value::I32(current_frame.caller_module));
-                    self.value_stack
-                        .push(Value::I32(current_frame.caller_module_internals));
+                    let frame = frame_stack.last().unwrap();
+                    value_stack.push(Value::InternalRef(self.pc));
+                    value_stack.push(frame.caller_module.into());
+                    value_stack.push(frame.caller_module_internals.into());
                     self.pc.func = inst.argument_data as u32;
                     self.pc.inst = 0;
                     func = &module.funcs[self.pc.func()];
                 }
                 Opcode::CrossModuleCall => {
                     flush_module!();
-                    self.value_stack.push(Value::InternalRef(self.pc));
-                    self.value_stack.push(Value::I32(self.pc.module));
-                    self.value_stack.push(Value::I32(module.internals_offset));
+                    value_stack.push(Value::InternalRef(self.pc));
+                    value_stack.push(self.pc.module.into());
+                    value_stack.push(module.internals_offset.into());
                     let (call_module, call_func) = unpack_cross_module_call(inst.argument_data);
                     self.pc.module = call_module;
                     self.pc.func = call_func;
                     self.pc.inst = 0;
-                    module = &mut self.modules[self.pc.module()];
-                    func = &module.funcs[self.pc.func()];
+                    reset_refs!();
+                }
+                Opcode::CrossModuleForward => {
+                    flush_module!();
+                    let frame = frame_stack.last().unwrap();
+                    value_stack.push(Value::InternalRef(self.pc));
+                    value_stack.push(frame.caller_module.into());
+                    value_stack.push(frame.caller_module_internals.into());
+                    let (call_module, call_func) = unpack_cross_module_call(inst.argument_data);
+                    self.pc.module = call_module;
+                    self.pc.func = call_func;
+                    self.pc.inst = 0;
+                    reset_refs!();
+                }
+                Opcode::CrossModuleInternalCall => {
+                    flush_module!();
+                    let call_internal = inst.argument_data as u32;
+                    let call_module = value_stack.pop().unwrap().assume_u32();
+                    value_stack.push(Value::InternalRef(self.pc));
+                    value_stack.push(self.pc.module.into());
+                    value_stack.push(module.internals_offset.into());
+                    module = &mut self.modules[call_module as usize];
+                    self.pc.module = call_module;
+                    self.pc.func = module.internals_offset + call_internal;
+                    self.pc.inst = 0;
+                    reset_refs!();
                 }
                 Opcode::CallerModuleInternalCall => {
-                    self.value_stack.push(Value::InternalRef(self.pc));
-                    self.value_stack.push(Value::I32(self.pc.module));
-                    self.value_stack.push(Value::I32(module.internals_offset));
+                    value_stack.push(Value::InternalRef(self.pc));
+                    value_stack.push(self.pc.module.into());
+                    value_stack.push(module.internals_offset.into());
 
-                    let current_frame = self.frame_stack.last().unwrap();
+                    let current_frame = frame_stack.last().unwrap();
                     if current_frame.caller_module_internals > 0 {
                         let func_idx = u32::try_from(inst.argument_data)
                             .ok()
@@ -1501,8 +2081,7 @@ impl Machine {
                         self.pc.module = current_frame.caller_module;
                         self.pc.func = func_idx;
                         self.pc.inst = 0;
-                        module = &mut self.modules[self.pc.module()];
-                        func = &module.funcs[self.pc.func()];
+                        reset_refs!();
                     } else {
                         // The caller module has no internals
                         error!();
@@ -1510,7 +2089,7 @@ impl Machine {
                 }
                 Opcode::CallIndirect => {
                     let (table, ty) = crate::wavm::unpack_call_indirect(inst.argument_data);
-                    let idx = match self.value_stack.pop() {
+                    let idx = match value_stack.pop() {
                         Some(Value::I32(i)) => usize::try_from(i).unwrap(),
                         x => bail!(
                             "WASM validation failed: top of stack before call_indirect is {:?}",
@@ -1519,63 +2098,60 @@ impl Machine {
                     };
                     let ty = &module.types[usize::try_from(ty).unwrap()];
                     let elems = &module.tables[usize::try_from(table).unwrap()].elems;
-                    if let Some(elem) = elems.get(idx).filter(|e| &e.func_ty == ty) {
-                        match elem.val {
-                            Value::FuncRef(call_func) => {
-                                let current_frame = self.frame_stack.last().unwrap();
-                                self.value_stack.push(Value::InternalRef(self.pc));
-                                self.value_stack
-                                    .push(Value::I32(current_frame.caller_module));
-                                self.value_stack
-                                    .push(Value::I32(current_frame.caller_module_internals));
-                                self.pc.func = call_func;
-                                self.pc.inst = 0;
-                                func = &module.funcs[self.pc.func()];
-                            }
-                            Value::RefNull => error!(),
-                            v => bail!("invalid table element value {:?}", v),
+                    let Some(elem) = elems.get(idx).filter(|e| &e.func_ty == ty) else {
+                        error!()
+                    };
+                    match elem.val {
+                        Value::FuncRef(call_func) => {
+                            let frame = frame_stack.last().unwrap();
+                            value_stack.push(Value::InternalRef(self.pc));
+                            value_stack.push(frame.caller_module.into());
+                            value_stack.push(frame.caller_module_internals.into());
+                            self.pc.func = call_func;
+                            self.pc.inst = 0;
+                            func = &module.funcs[self.pc.func()];
                         }
-                    } else {
-                        error!();
+                        Value::RefNull => error!(),
+                        v => bail!("invalid table element value {:?}", v),
                     }
                 }
                 Opcode::LocalGet => {
-                    let val = self.frame_stack.last().unwrap().locals[inst.argument_data as usize];
-                    self.value_stack.push(val);
+                    let val = frame_stack.last().unwrap().locals[inst.argument_data as usize];
+                    value_stack.push(val);
                 }
                 Opcode::LocalSet => {
-                    let val = self.value_stack.pop().unwrap();
-                    self.frame_stack.last_mut().unwrap().locals[inst.argument_data as usize] = val;
+                    let val = value_stack.pop().unwrap();
+                    let locals = &mut frame_stack.last_mut().unwrap().locals;
+                    if locals.len() <= inst.argument_data as usize {
+                        error!("not enough locals")
+                    }
+                    locals[inst.argument_data as usize] = val;
                 }
                 Opcode::GlobalGet => {
-                    self.value_stack
-                        .push(module.globals[inst.argument_data as usize]);
+                    value_stack.push(module.globals[inst.argument_data as usize]);
                 }
                 Opcode::GlobalSet => {
-                    let val = self.value_stack.pop().unwrap();
+                    let val = value_stack.pop().unwrap();
                     module.globals[inst.argument_data as usize] = val;
                 }
                 Opcode::MemoryLoad { ty, bytes, signed } => {
-                    let base = match self.value_stack.pop() {
+                    let base = match value_stack.pop() {
                         Some(Value::I32(x)) => x,
                         x => bail!(
                             "WASM validation failed: top of stack before memory load is {:?}",
                             x,
                         ),
                     };
-                    if let Some(idx) = inst.argument_data.checked_add(base.into()) {
-                        let val = module.memory.get_value(idx, ty, bytes, signed);
-                        if let Some(val) = val {
-                            self.value_stack.push(val);
-                        } else {
-                            error!();
-                        }
-                    } else {
-                        error!();
-                    }
+                    let Some(index) = inst.argument_data.checked_add(base.into()) else {
+                        error!()
+                    };
+                    let Some(value) = module.memory.get_value(index, ty, bytes, signed) else {
+                        error!("failed to read offset {}", index)
+                    };
+                    value_stack.push(value);
                 }
                 Opcode::MemoryStore { ty: _, bytes } => {
-                    let val = match self.value_stack.pop() {
+                    let val = match value_stack.pop() {
                         Some(Value::I32(x)) => x.into(),
                         Some(Value::I64(x)) => x,
                         Some(Value::F32(x)) => x.to_bits().into(),
@@ -1585,53 +2161,50 @@ impl Machine {
                             x,
                         ),
                     };
-                    let base = match self.value_stack.pop() {
+                    let base = match value_stack.pop() {
                         Some(Value::I32(x)) => x,
                         x => bail!(
                             "WASM validation failed: attempted to memory store with index type {:?}",
                             x,
                         ),
                     };
-                    if let Some(idx) = inst.argument_data.checked_add(base.into()) {
-                        if !module.memory.store_value(idx, val, bytes) {
-                            error!();
-                        }
-                    } else {
+                    let Some(idx) = inst.argument_data.checked_add(base.into()) else {
+                        error!()
+                    };
+                    if !module.memory.store_value(idx, val, bytes) {
                         error!();
                     }
                 }
                 Opcode::I32Const => {
-                    self.value_stack.push(Value::I32(inst.argument_data as u32));
+                    value_stack.push(Value::I32(inst.argument_data as u32));
                 }
                 Opcode::I64Const => {
-                    self.value_stack.push(Value::I64(inst.argument_data));
+                    value_stack.push(Value::I64(inst.argument_data));
                 }
                 Opcode::F32Const => {
-                    self.value_stack
-                        .push(Value::F32(f32::from_bits(inst.argument_data as u32)));
+                    value_stack.push(f32::from_bits(inst.argument_data as u32).into());
                 }
                 Opcode::F64Const => {
-                    self.value_stack
-                        .push(Value::F64(f64::from_bits(inst.argument_data)));
+                    value_stack.push(f64::from_bits(inst.argument_data).into());
                 }
                 Opcode::I32Eqz => {
-                    let val = self.value_stack.pop().unwrap();
-                    self.value_stack.push(Value::I32(val.is_i32_zero() as u32));
+                    let val = value_stack.pop().unwrap();
+                    value_stack.push(Value::I32(val.is_i32_zero() as u32));
                 }
                 Opcode::I64Eqz => {
-                    let val = self.value_stack.pop().unwrap();
-                    self.value_stack.push(Value::I32(val.is_i64_zero() as u32));
+                    let val = value_stack.pop().unwrap();
+                    value_stack.push(Value::I32(val.is_i64_zero() as u32));
                 }
                 Opcode::IRelOp(t, op, signed) => {
-                    let vb = self.value_stack.pop();
-                    let va = self.value_stack.pop();
+                    let vb = value_stack.pop();
+                    let va = value_stack.pop();
                     match t {
                         IntegerValType::I32 => {
                             if let (Some(Value::I32(a)), Some(Value::I32(b))) = (va, vb) {
                                 if signed {
-                                    self.value_stack.push(exec_irel_op(a as i32, b as i32, op));
+                                    value_stack.push(exec_irel_op(a as i32, b as i32, op));
                                 } else {
-                                    self.value_stack.push(exec_irel_op(a, b, op));
+                                    value_stack.push(exec_irel_op(a, b, op));
                                 }
                             } else {
                                 bail!("WASM validation failed: wrong types for i32relop");
@@ -1640,9 +2213,9 @@ impl Machine {
                         IntegerValType::I64 => {
                             if let (Some(Value::I64(a)), Some(Value::I64(b))) = (va, vb) {
                                 if signed {
-                                    self.value_stack.push(exec_irel_op(a as i64, b as i64, op));
+                                    value_stack.push(exec_irel_op(a as i64, b as i64, op));
                                 } else {
-                                    self.value_stack.push(exec_irel_op(a, b, op));
+                                    value_stack.push(exec_irel_op(a, b, op));
                                 }
                             } else {
                                 bail!("WASM validation failed: wrong types for i64relop");
@@ -1651,26 +2224,26 @@ impl Machine {
                     }
                 }
                 Opcode::Drop => {
-                    self.value_stack.pop().unwrap();
+                    value_stack.pop().unwrap();
                 }
                 Opcode::Select => {
-                    let selector_zero = self.value_stack.pop().unwrap().is_i32_zero();
-                    let val2 = self.value_stack.pop().unwrap();
-                    let val1 = self.value_stack.pop().unwrap();
+                    let selector_zero = value_stack.pop().unwrap().is_i32_zero();
+                    let val2 = value_stack.pop().unwrap();
+                    let val1 = value_stack.pop().unwrap();
                     if selector_zero {
-                        self.value_stack.push(val2);
+                        value_stack.push(val2);
                     } else {
-                        self.value_stack.push(val1);
+                        value_stack.push(val1);
                     }
                 }
                 Opcode::MemorySize => {
                     let pages = u32::try_from(module.memory.size() / Memory::PAGE_SIZE)
                         .expect("Memory pages grew past a u32");
-                    self.value_stack.push(Value::I32(pages));
+                    value_stack.push(pages.into());
                 }
                 Opcode::MemoryGrow => {
                     let old_size = module.memory.size();
-                    let adding_pages = match self.value_stack.pop() {
+                    let adding_pages = match value_stack.pop() {
                         Some(Value::I32(x)) => x,
                         v => bail!("WASM validation failed: bad value for memory.grow {:?}", v),
                     };
@@ -1690,142 +2263,132 @@ impl Machine {
                         module.memory.resize(usize::try_from(new_size).unwrap());
                         // Push the old number of pages
                         let old_pages = u32::try_from(old_size / page_size).unwrap();
-                        self.value_stack.push(Value::I32(old_pages));
+                        value_stack.push(old_pages.into());
                     } else {
                         // Push -1
-                        self.value_stack.push(Value::I32(u32::MAX));
+                        value_stack.push(u32::MAX.into());
                     }
                 }
                 Opcode::IUnOp(w, op) => {
-                    let va = self.value_stack.pop();
+                    let va = value_stack.pop();
                     match w {
                         IntegerValType::I32 => {
-                            if let Some(Value::I32(a)) = va {
-                                self.value_stack.push(Value::I32(exec_iun_op(a, op)));
-                            } else {
+                            let Some(Value::I32(value)) = va else {
                                 bail!("WASM validation failed: wrong types for i32unop");
-                            }
+                            };
+                            value_stack.push(exec_iun_op(value, op).into());
                         }
                         IntegerValType::I64 => {
-                            if let Some(Value::I64(a)) = va {
-                                self.value_stack.push(Value::I64(exec_iun_op(a, op) as u64));
-                            } else {
+                            let Some(Value::I64(value)) = va else {
                                 bail!("WASM validation failed: wrong types for i64unop");
-                            }
+                            };
+                            value_stack.push(Value::I64(exec_iun_op(value, op) as u64));
                         }
                     }
                 }
                 Opcode::IBinOp(w, op) => {
-                    let vb = self.value_stack.pop();
-                    let va = self.value_stack.pop();
+                    let vb = value_stack.pop();
+                    let va = value_stack.pop();
                     match w {
                         IntegerValType::I32 => {
-                            if let (Some(Value::I32(a)), Some(Value::I32(b))) = (va, vb) {
-                                if op == IBinOpType::DivS
-                                    && (a as i32) == i32::MIN
-                                    && (b as i32) == -1
-                                {
-                                    error!();
-                                }
-                                let value = match exec_ibin_op(a, b, op) {
-                                    Some(value) => value,
-                                    None => error!(),
-                                };
-                                self.value_stack.push(Value::I32(value))
-                            } else {
-                                bail!("WASM validation failed: wrong types for i32binop");
+                            let (Some(Value::I32(a)), Some(Value::I32(b))) = (va, vb) else {
+                                bail!("WASM validation failed: wrong types for i32binop")
+                            };
+                            if op == IBinOpType::DivS && (a as i32) == i32::MIN && (b as i32) == -1
+                            {
+                                error!()
                             }
+                            let Some(value) = exec_ibin_op(a, b, op) else {
+                                error!()
+                            };
+                            value_stack.push(value.into());
                         }
                         IntegerValType::I64 => {
-                            if let (Some(Value::I64(a)), Some(Value::I64(b))) = (va, vb) {
-                                if op == IBinOpType::DivS
-                                    && (a as i64) == i64::MIN
-                                    && (b as i64) == -1
-                                {
-                                    error!();
-                                }
-                                let value = match exec_ibin_op(a, b, op) {
-                                    Some(value) => value,
-                                    None => error!(),
-                                };
-                                self.value_stack.push(Value::I64(value))
-                            } else {
-                                bail!("WASM validation failed: wrong types for i64binop");
+                            let (Some(Value::I64(a)), Some(Value::I64(b))) = (va, vb) else {
+                                bail!("WASM validation failed: wrong types for i64binop")
+                            };
+                            if op == IBinOpType::DivS && (a as i64) == i64::MIN && (b as i64) == -1
+                            {
+                                error!();
                             }
+                            let Some(value) = exec_ibin_op(a, b, op) else {
+                                error!()
+                            };
+                            value_stack.push(value.into());
                         }
                     }
                 }
                 Opcode::I32WrapI64 => {
-                    let x = match self.value_stack.pop() {
+                    let x = match value_stack.pop() {
                         Some(Value::I64(x)) => x,
                         v => bail!(
                             "WASM validation failed: wrong type for i32.wrapi64: {:?}",
                             v,
                         ),
                     };
-                    self.value_stack.push(Value::I32(x as u32));
+                    value_stack.push(Value::I32(x as u32));
                 }
                 Opcode::I64ExtendI32(signed) => {
-                    let x: u32 = self.value_stack.pop().unwrap().assume_u32();
+                    let x: u32 = value_stack.pop().unwrap().assume_u32();
                     let x64 = match signed {
                         true => x as i32 as i64 as u64,
                         false => x as u64,
                     };
-                    self.value_stack.push(Value::I64(x64));
+                    value_stack.push(x64.into());
                 }
                 Opcode::Reinterpret(dest, source) => {
-                    let val = match self.value_stack.pop() {
+                    let val = match value_stack.pop() {
                         Some(Value::I32(x)) if source == ArbValueType::I32 => {
                             assert_eq!(dest, ArbValueType::F32, "Unsupported reinterpret");
-                            Value::F32(f32::from_bits(x))
+                            f32::from_bits(x).into()
                         }
                         Some(Value::I64(x)) if source == ArbValueType::I64 => {
                             assert_eq!(dest, ArbValueType::F64, "Unsupported reinterpret");
-                            Value::F64(f64::from_bits(x))
+                            f64::from_bits(x).into()
                         }
                         Some(Value::F32(x)) if source == ArbValueType::F32 => {
                             assert_eq!(dest, ArbValueType::I32, "Unsupported reinterpret");
-                            Value::I32(x.to_bits())
+                            x.to_bits().into()
                         }
                         Some(Value::F64(x)) if source == ArbValueType::F64 => {
                             assert_eq!(dest, ArbValueType::I64, "Unsupported reinterpret");
-                            Value::I64(x.to_bits())
+                            x.to_bits().into()
                         }
                         v => bail!("bad reinterpret: val {:?} source {:?}", v, source),
                     };
-                    self.value_stack.push(val);
+                    value_stack.push(val);
                 }
                 Opcode::I32ExtendS(b) => {
-                    let mut x = self.value_stack.pop().unwrap().assume_u32();
+                    let mut x = value_stack.pop().unwrap().assume_u32();
                     let mask = (1u32 << b) - 1;
                     x &= mask;
                     if x & (1 << (b - 1)) != 0 {
                         x |= !mask;
                     }
-                    self.value_stack.push(Value::I32(x));
+                    value_stack.push(x.into());
                 }
                 Opcode::I64ExtendS(b) => {
-                    let mut x = self.value_stack.pop().unwrap().assume_u64();
+                    let mut x = value_stack.pop().unwrap().assume_u64();
                     let mask = (1u64 << b) - 1;
                     x &= mask;
                     if x & (1 << (b - 1)) != 0 {
                         x |= !mask;
                     }
-                    self.value_stack.push(Value::I64(x));
+                    value_stack.push(x.into());
                 }
                 Opcode::MoveFromStackToInternal => {
-                    self.internal_stack.push(self.value_stack.pop().unwrap());
+                    self.internal_stack.push(value_stack.pop().unwrap());
                 }
                 Opcode::MoveFromInternalToStack => {
-                    self.value_stack.push(self.internal_stack.pop().unwrap());
+                    value_stack.push(self.internal_stack.pop().unwrap());
                 }
                 Opcode::Dup => {
-                    let val = self.value_stack.last().cloned().unwrap();
-                    self.value_stack.push(val);
+                    let val = value_stack.last().cloned().unwrap();
+                    value_stack.push(val);
                 }
                 Opcode::GetGlobalStateBytes32 => {
-                    let ptr = self.value_stack.pop().unwrap().assume_u32();
-                    let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
+                    let ptr = value_stack.pop().unwrap().assume_u32();
+                    let idx = value_stack.pop().unwrap().assume_u32() as usize;
                     if idx >= self.global_state.bytes32_vals.len()
                         || !module
                             .memory
@@ -1835,8 +2398,8 @@ impl Machine {
                     }
                 }
                 Opcode::SetGlobalStateBytes32 => {
-                    let ptr = self.value_stack.pop().unwrap().assume_u32();
-                    let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
+                    let ptr = value_stack.pop().unwrap().assume_u32();
+                    let idx = value_stack.pop().unwrap().assume_u32() as usize;
                     if idx >= self.global_state.bytes32_vals.len() {
                         error!();
                     } else if let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) {
@@ -1846,17 +2409,16 @@ impl Machine {
                     }
                 }
                 Opcode::GetGlobalStateU64 => {
-                    let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
+                    let idx = value_stack.pop().unwrap().assume_u32() as usize;
                     if idx >= self.global_state.u64_vals.len() {
                         error!();
                     } else {
-                        self.value_stack
-                            .push(Value::I64(self.global_state.u64_vals[idx]));
+                        value_stack.push(self.global_state.u64_vals[idx].into());
                     }
                 }
                 Opcode::SetGlobalStateU64 => {
-                    let val = self.value_stack.pop().unwrap().assume_u64();
-                    let idx = self.value_stack.pop().unwrap().assume_u32() as usize;
+                    let val = value_stack.pop().unwrap().assume_u64();
+                    let idx = value_stack.pop().unwrap().assume_u32() as usize;
                     if idx >= self.global_state.u64_vals.len() {
                         error!();
                     } else {
@@ -1864,50 +2426,49 @@ impl Machine {
                     }
                 }
                 Opcode::ReadPreImage => {
-                    let offset = self.value_stack.pop().unwrap().assume_u32();
-                    let ptr = self.value_stack.pop().unwrap().assume_u32();
+                    let offset = value_stack.pop().unwrap().assume_u32();
+                    let ptr = value_stack.pop().unwrap().assume_u32();
                     let preimage_ty = PreimageType::try_from(u8::try_from(inst.argument_data)?)?;
                     // Preimage reads must be word aligned
                     if offset % 32 != 0 {
                         error!();
                     }
-                    if let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) {
-                        if let Some(preimage) =
-                            self.preimage_resolver.get(self.context, preimage_ty, hash)
-                        {
-                            if preimage_ty == PreimageType::EthVersionedHash
-                                && preimage.len() != BYTES_PER_BLOB
-                            {
-                                bail!(
-                                    "kzg hash {} preimage should be {} bytes long but is instead {}",
-                                    hash,
-                                    BYTES_PER_BLOB,
-                                    preimage.len(),
-                                );
-                            }
-                            let offset = usize::try_from(offset).unwrap();
-                            let len = std::cmp::min(32, preimage.len().saturating_sub(offset));
-                            let read = preimage.get(offset..(offset + len)).unwrap_or_default();
-                            let success = module.memory.store_slice_aligned(ptr.into(), read);
-                            assert!(success, "Failed to write to previously read memory");
-                            self.value_stack.push(Value::I32(len as u32));
-                        } else {
-                            eprintln!(
-                                "{} for hash {}",
-                                "Missing requested preimage".red(),
-                                hash.red(),
-                            );
-                            self.eprint_backtrace();
-                            bail!("missing requested preimage for hash {}", hash);
-                        }
-                    } else {
+
+                    let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) else {
                         error!();
+                    };
+                    let Some(preimage) =
+                        self.preimage_resolver.get(self.context, preimage_ty, hash)
+                    else {
+                        eprintln!(
+                            "{} for hash {}",
+                            "Missing requested preimage".red(),
+                            hash.red(),
+                        );
+                        self.print_backtrace(true);
+                        bail!("missing requested preimage for hash {}", hash);
+                    };
+                    if preimage_ty == PreimageType::EthVersionedHash
+                        && preimage.len() != BYTES_PER_BLOB
+                    {
+                        bail!(
+                            "kzg hash {} preimage should be {} bytes long but is instead {}",
+                            hash,
+                            BYTES_PER_BLOB,
+                            preimage.len(),
+                        );
                     }
+                    let offset = usize::try_from(offset).unwrap();
+                    let len = std::cmp::min(32, preimage.len().saturating_sub(offset));
+                    let read = preimage.get(offset..(offset + len)).unwrap_or_default();
+                    let success = module.memory.store_slice_aligned(ptr.into(), read);
+                    assert!(success, "Failed to write to previously read memory");
+                    value_stack.push(Value::I32(len as u32));
                 }
                 Opcode::ReadInboxMessage => {
-                    let offset = self.value_stack.pop().unwrap().assume_u32();
-                    let ptr = self.value_stack.pop().unwrap().assume_u32();
-                    let msg_num = self.value_stack.pop().unwrap().assume_u64();
+                    let offset = value_stack.pop().unwrap().assume_u32();
+                    let ptr = value_stack.pop().unwrap().assume_u32();
+                    let msg_num = value_stack.pop().unwrap().assume_u64();
                     let inbox_identifier =
                         argument_data_to_inbox(inst.argument_data).expect("Bad inbox indentifier");
                     if let Some(message) = self.inbox_contents.get(&(inbox_identifier, msg_num)) {
@@ -1918,7 +2479,7 @@ impl Machine {
                             let len = std::cmp::min(32, message.len().saturating_sub(offset));
                             let read = message.get(offset..(offset + len)).unwrap_or_default();
                             if module.memory.store_slice_aligned(ptr.into(), read) {
-                                self.value_stack.push(Value::I32(len as u32));
+                                value_stack.push(Value::I32(len as u32));
                             } else {
                                 error!();
                             }
@@ -1927,7 +2488,7 @@ impl Machine {
                         let delayed = inbox_identifier == InboxIdentifier::Delayed;
                         if msg_num < self.first_too_far || delayed {
                             eprintln!("{} {msg_num}", "Missing inbox message".red());
-                            self.eprint_backtrace();
+                            self.print_backtrace(true);
                             bail!(
                                 "missing inbox message {msg_num} of {}",
                                 self.first_too_far - 1
@@ -1937,25 +2498,80 @@ impl Machine {
                         break;
                     }
                 }
+                Opcode::LinkModule => {
+                    let ptr = value_stack.pop().unwrap().assume_u32();
+                    let Some(hash) = module.memory.load_32_byte_aligned(ptr.into()) else {
+                        error!("no hash for {}", ptr)
+                    };
+                    let Some(bytes) = self.stylus_modules.get(&hash) else {
+                        let modules = &self.stylus_modules;
+                        let keys: Vec<_> = modules.keys().take(16).map(hex::encode).collect();
+                        let dots = (modules.len() > 16).then_some("...").unwrap_or_default();
+                        bail!("no program for {hash} in {{{}{dots}}}", keys.join(", "))
+                    };
+                    flush_module!();
+
+                    // put the new module's offset on the stack
+                    let index = self.modules.len() as u32;
+                    value_stack.push(index.into());
+
+                    self.modules.push(unsafe { Module::from_bytes(bytes) });
+                    if let Some(cached) = &mut self.modules_merkle {
+                        cached.push_leaf(hash);
+                    }
+                    reset_refs!();
+                }
+                Opcode::UnlinkModule => {
+                    flush_module!();
+                    self.modules.pop();
+                    if let Some(cached) = &mut self.modules_merkle {
+                        cached.pop_leaf();
+                    }
+                    reset_refs!();
+                }
                 Opcode::HaltAndSetFinished => {
                     self.status = MachineStatus::Finished;
                     break;
+                }
+                Opcode::NewCoThread => {
+                    if self.thread_state.is_cothread() {
+                        error!("called NewCoThread from cothread")
+                    }
+                    self.value_stacks.push(Vec::new());
+                    self.frame_stacks.push(Vec::new());
+                    reset_refs!();
+                }
+                Opcode::PopCoThread => {
+                    if self.thread_state.is_cothread() {
+                        error!("called PopCoThread from cothread")
+                    }
+                    self.value_stacks.pop();
+                    self.frame_stacks.pop();
+                    reset_refs!();
+                }
+                Opcode::SwitchThread => {
+                    let next_recovery = match inst.argument_data {
+                        0 => ThreadState::Main,
+                        x => ThreadState::CoThread(self.pc.add((x - 1).try_into().unwrap())),
+                    };
+                    if next_recovery.is_cothread() == self.thread_state.is_cothread() {
+                        error!("SwitchThread doesn't switch")
+                    }
+                    self.thread_state = next_recovery;
+                    reset_refs!();
                 }
             }
         }
         flush_module!();
         if self.is_halted() && !self.stdio_output.is_empty() {
             // If we halted, print out any trailing output that didn't have a newline.
-            println!(
-                "{} {}",
-                "WASM says:".yellow(),
-                String::from_utf8_lossy(&self.stdio_output),
-            );
+            Self::say(String::from_utf8_lossy(&self.stdio_output));
             self.stdio_output.clear();
         }
         Ok(())
     }
 
+    #[cfg(feature = "native")]
     fn host_call_hook(
         value_stack: &[Value],
         module: &Module,
@@ -2019,10 +2635,7 @@ impl Machine {
                     stdio_output.extend_from_slice(read_bytes_segment!(data_ptr, data_size));
                 }
                 while let Some(mut idx) = stdio_output.iter().position(|&c| c == b'\n') {
-                    println!(
-                        "\x1b[33mWASM says:\x1b[0m {}",
-                        String::from_utf8_lossy(&stdio_output[..idx]),
-                    );
+                    Self::say(String::from_utf8_lossy(&stdio_output[..idx]));
                     if stdio_output.get(idx + 1) == Some(&b'\r') {
                         idx += 1;
                     }
@@ -2030,7 +2643,37 @@ impl Machine {
                 }
                 Ok(())
             }
+            ("console", "log_i32" | "log_i64" | "log_f32" | "log_f64")
+            | ("console", "tee_i32" | "tee_i64" | "tee_f32" | "tee_f64") => {
+                let value = value_stack.last().ok_or_else(|| eyre!("missing value"))?;
+                Self::say(value);
+                Ok(())
+            }
+            ("console", "log_txt") => {
+                let ptr = pull_arg!(1, I32);
+                let len = pull_arg!(0, I32);
+                let text = read_bytes_segment!(ptr, len);
+                match std::str::from_utf8(text) {
+                    Ok(text) => Self::say(text),
+                    Err(_) => Self::say(hex::encode(text)),
+                }
+                Ok(())
+            }
             _ => Ok(()),
+        }
+    }
+
+    pub fn say<D: Display>(text: D) {
+        println!("{} {text}", "WASM says:".yellow());
+    }
+
+    pub fn print_modules(&self) {
+        for module in &self.modules {
+            println!("{module}\n");
+        }
+        for module in self.stylus_modules.values() {
+            let module = unsafe { Module::from_bytes(module) };
+            println!("{module}\n");
         }
     }
 
@@ -2057,18 +2700,87 @@ impl Machine {
         self.get_modules_merkle().root()
     }
 
+    fn stack_hashes(&self) -> (FrameStackHash, ValueStackHash, InterStackHash) {
+        macro_rules! compute {
+            ($stack:expr, $prefix:expr) => {{
+                let frames = $stack.iter().map(|v| v.hash());
+                hash_stack(frames, concat!($prefix, " stack:"))
+            }};
+        }
+        // compute_multistack returns the hash of multistacks as follows:
+        // Keccak(
+        //      "multistack:"
+        //      + hash_stack(first_stack)
+        //      + hash_stack(last_stack)
+        //      + Keccak("cothread:" + 2nd_stack+Keccak("cothread:" + 3drd_stack + ...)
+        // )
+        macro_rules! compute_multistack {
+            ($field:expr, $stacks:expr, $prefix:expr, $hasher: expr) => {{
+                let first_elem = *$stacks.first().unwrap();
+                let first_hash = hash_stack(
+                    first_elem.iter().map(|v| v.hash()),
+                    concat!($prefix, " stack:"),
+                );
+
+                let last_hash = if $stacks.len() <= 1 {
+                    Machine::NO_STACK_HASH
+                } else {
+                    let last_elem = *$stacks.last().unwrap();
+                    hash_stack(
+                        last_elem.iter().map(|v| v.hash()),
+                        concat!($prefix, " stack:"),
+                    )
+                };
+
+                // Hash of stacks [2nd..last) or 0xfff...f if len <= 2.
+                let mut hash = if $stacks.len() <= 2 {
+                    Bytes32::default()
+                } else {
+                    hash_multistack(&$stacks[1..$stacks.len() - 1], $hasher)
+                };
+
+                hash = Keccak256::new()
+                    .chain("multistack:")
+                    .chain(first_hash)
+                    .chain(last_hash)
+                    .chain(hash)
+                    .finalize()
+                    .into();
+                hash
+            }};
+        }
+        let frame_stacks = compute_multistack!(
+            |x| x.frame_stack,
+            self.get_frame_stacks(),
+            "Stack frame",
+            hash_stack_frame_stack
+        );
+        let value_stacks = compute_multistack!(
+            |x| x.value_stack,
+            self.get_data_stacks(),
+            "Value",
+            hash_value_stack
+        );
+        let inter_stack = compute!(self.internal_stack, "Value");
+
+        (frame_stacks, value_stacks, inter_stack)
+    }
+
     pub fn hash(&self) -> Bytes32 {
         let mut h = Keccak256::new();
         match self.status {
             MachineStatus::Running => {
+                let (frame_stacks, value_stacks, inter_stack) = self.stack_hashes();
+
                 h.update(b"Machine running:");
-                h.update(hash_value_stack(&self.value_stack));
-                h.update(hash_value_stack(&self.internal_stack));
-                h.update(hash_stack_frame_stack(&self.frame_stack));
+                h.update(value_stacks);
+                h.update(inter_stack);
+                h.update(frame_stacks);
                 h.update(self.global_state.hash());
                 h.update(self.pc.module.to_be_bytes());
                 h.update(self.pc.func.to_be_bytes());
                 h.update(self.pc.inst.to_be_bytes());
+                h.update(self.thread_state.serialize());
                 h.update(self.get_modules_root());
             }
             MachineStatus::Finished => {
@@ -2085,53 +2797,74 @@ impl Machine {
         h.finalize().into()
     }
 
+    #[cfg(feature = "native")]
     pub fn serialize_proof(&self) -> Vec<u8> {
         // Could be variable, but not worth it yet
         const STACK_PROVING_DEPTH: usize = 3;
 
         let mut data = vec![self.status as u8];
 
-        data.extend(prove_stack(
-            &self.value_stack,
-            STACK_PROVING_DEPTH,
+        macro_rules! out {
+            ($bytes:expr) => {
+                data.extend($bytes);
+            };
+        }
+        macro_rules! fail {
+            ($format:expr $(,$message:expr)*) => {{
+                let text = format!($format, $($message.red()),*);
+                panic!("WASM validation failed: {text}");
+            }};
+        }
+        out!(prove_multistack(
+            self.thread_state.is_cothread(),
+            self.get_data_stacks(),
             hash_value_stack,
-            |v| v.serialize_for_proof(),
+            hash_multistack,
+            |stack| prove_stack(stack, STACK_PROVING_DEPTH, hash_value_stack, |v| v
+                .serialize_for_proof()),
         ));
 
-        data.extend(prove_stack(
+        out!(prove_stack(
             &self.internal_stack,
             1,
             hash_value_stack,
             |v| v.serialize_for_proof(),
         ));
 
-        data.extend(prove_window(
-            &self.frame_stack,
+        out!(prove_multistack(
+            self.thread_state.is_cothread(),
+            self.get_frame_stacks(),
             hash_stack_frame_stack,
-            StackFrame::serialize_for_proof,
+            hash_multistack,
+            |stack| prove_window(
+                stack,
+                hash_stack_frame_stack,
+                StackFrame::serialize_for_proof
+            ),
         ));
 
-        data.extend(self.global_state.hash());
+        out!(self.global_state.hash());
 
-        data.extend(self.pc.module.to_be_bytes());
-        data.extend(self.pc.func.to_be_bytes());
-        data.extend(self.pc.inst.to_be_bytes());
+        out!(self.pc.module.to_be_bytes());
+        out!(self.pc.func.to_be_bytes());
+        out!(self.pc.inst.to_be_bytes());
+
+        out!(self.thread_state.serialize());
+
         let mod_merkle = self.get_modules_merkle();
-        data.extend(mod_merkle.root());
+        out!(mod_merkle.root());
 
         // End machine serialization, serialize module
 
         let module = &self.modules[self.pc.module()];
         let mem_merkle = module.memory.merkelize();
-        data.extend(module.serialize_for_proof(&mem_merkle));
+        out!(module.serialize_for_proof(&mem_merkle));
 
         // Prove module is in modules merkle tree
 
-        data.extend(
-            mod_merkle
-                .prove(self.pc.module())
-                .expect("Failed to prove module"),
-        );
+        out!(mod_merkle
+            .prove(self.pc.module())
+            .expect("Failed to prove module"));
 
         if self.is_halted() {
             return data;
@@ -2140,59 +2873,49 @@ impl Machine {
         // Begin next instruction proof
 
         let func = &module.funcs[self.pc.func()];
-        data.extend(func.code[self.pc.inst()].serialize_for_proof());
-        data.extend(
-            func.code_merkle
-                .prove(self.pc.inst())
-                .expect("Failed to prove against code merkle"),
-        );
-        data.extend(
-            module
-                .funcs_merkle
-                .prove(self.pc.func())
-                .expect("Failed to prove against function merkle"),
-        );
+        out!(func.serialize_body_for_proof(self.pc));
+        out!(func
+            .code_merkle
+            .prove(self.pc.inst() / Function::CHUNK_SIZE)
+            .expect("Failed to prove against code merkle"));
+        out!(module
+            .funcs_merkle
+            .prove(self.pc.func())
+            .expect("Failed to prove against function merkle"));
 
         // End next instruction proof, begin instruction specific serialization
 
-        if let Some(next_inst) = func.code.get(self.pc.inst()) {
-            if matches!(
-                next_inst.opcode,
-                Opcode::GetGlobalStateBytes32
-                    | Opcode::SetGlobalStateBytes32
-                    | Opcode::GetGlobalStateU64
-                    | Opcode::SetGlobalStateU64
-            ) {
-                data.extend(self.global_state.serialize());
+        let Some(next_inst) = func.code.get(self.pc.inst()) else {
+            return data;
+        };
+
+        let op = next_inst.opcode;
+        let arg = next_inst.argument_data;
+        let value_stack = self.get_data_stack();
+        let frame_stack = self.get_frame_stack();
+
+        use Opcode::*;
+        match op {
+            GetGlobalStateU64 | SetGlobalStateU64 => {
+                out!(self.global_state.serialize());
             }
-            if matches!(next_inst.opcode, Opcode::LocalGet | Opcode::LocalSet) {
-                let locals = &self.frame_stack.last().unwrap().locals;
-                let idx = next_inst.argument_data as usize;
-                data.extend(locals[idx].serialize_for_proof());
-                let locals_merkle =
+            LocalGet | LocalSet => {
+                let locals = &frame_stack.last().unwrap().locals;
+                let idx = arg as usize;
+                out!(locals[idx].serialize_for_proof());
+                let merkle =
                     Merkle::new(MerkleType::Value, locals.iter().map(|v| v.hash()).collect());
-                data.extend(
-                    locals_merkle
-                        .prove(idx)
-                        .expect("Out of bounds local access"),
-                );
-            } else if matches!(next_inst.opcode, Opcode::GlobalGet | Opcode::GlobalSet) {
-                let idx = next_inst.argument_data as usize;
-                data.extend(module.globals[idx].serialize_for_proof());
-                let locals_merkle = Merkle::new(
-                    MerkleType::Value,
-                    module.globals.iter().map(|v| v.hash()).collect(),
-                );
-                data.extend(
-                    locals_merkle
-                        .prove(idx)
-                        .expect("Out of bounds global access"),
-                );
-            } else if matches!(
-                next_inst.opcode,
-                Opcode::MemoryLoad { .. } | Opcode::MemoryStore { .. },
-            ) {
-                let is_store = matches!(next_inst.opcode, Opcode::MemoryStore { .. });
+                out!(merkle.prove(idx).expect("Out of bounds local access"));
+            }
+            GlobalGet | GlobalSet => {
+                let idx = arg as usize;
+                out!(module.globals[idx].serialize_for_proof());
+                let globals_merkle = module.globals.iter().map(|v| v.hash()).collect();
+                let merkle = Merkle::new(MerkleType::Value, globals_merkle);
+                out!(merkle.prove(idx).expect("Out of bounds global access"));
+            }
+            MemoryLoad { .. } | MemoryStore { .. } => {
+                let is_store = matches!(op, MemoryStore { .. });
                 // this isn't really a bool -> int, it's determining an offset based on a bool
                 #[allow(clippy::bool_to_int_with_if)]
                 let stack_idx_offset = if is_store {
@@ -2201,24 +2924,21 @@ impl Machine {
                 } else {
                     0
                 };
-                let base = match self
-                    .value_stack
-                    .get(self.value_stack.len() - 1 - stack_idx_offset)
-                {
+                let base = match value_stack.get(value_stack.len() - 1 - stack_idx_offset) {
                     Some(Value::I32(x)) => *x,
-                    x => panic!("WASM validation failed: memory index type is {:?}", x),
+                    x => fail!("memory index type is {x:?}"),
                 };
                 if let Some(mut idx) = u64::from(base)
-                    .checked_add(next_inst.argument_data)
+                    .checked_add(arg)
                     .and_then(|x| usize::try_from(x).ok())
                 {
                     // Prove the leaf this index is in, and the next one, if they are within the memory's size.
                     idx /= Memory::LEAF_SIZE;
-                    data.extend(module.memory.get_leaf_data(idx));
-                    data.extend(mem_merkle.prove(idx).unwrap_or_default());
+                    out!(module.memory.get_leaf_data(idx));
+                    out!(mem_merkle.prove(idx).unwrap_or_default());
                     // Now prove the next leaf too, in case it's accessed.
                     let next_leaf_idx = idx.saturating_add(1);
-                    data.extend(module.memory.get_leaf_data(next_leaf_idx));
+                    out!(module.memory.get_leaf_data(next_leaf_idx));
                     let second_mem_merkle = if is_store {
                         // For stores, prove the second merkle against a state after the first leaf is set.
                         // This state also happens to have the second leaf set, but that's irrelevant.
@@ -2232,86 +2952,77 @@ impl Machine {
                     } else {
                         mem_merkle.into_owned()
                     };
-                    data.extend(second_mem_merkle.prove(next_leaf_idx).unwrap_or_default());
+                    out!(second_mem_merkle.prove(next_leaf_idx).unwrap_or_default());
                 }
-            } else if next_inst.opcode == Opcode::CallIndirect {
-                let (table, ty) = crate::wavm::unpack_call_indirect(next_inst.argument_data);
-                let idx = match self.value_stack.last() {
+            }
+            CallIndirect => {
+                let (table, ty) = crate::wavm::unpack_call_indirect(arg);
+                let idx = match value_stack.last() {
                     Some(Value::I32(i)) => *i,
-                    x => panic!(
-                        "WASM validation failed: top of stack before call_indirect is {:?}",
-                        x,
-                    ),
+                    x => fail!("top of stack before call_indirect is {x:?}"),
                 };
                 let ty = &module.types[usize::try_from(ty).unwrap()];
-                data.extend((table as u64).to_be_bytes());
-                data.extend(ty.hash());
+                out!((table as u64).to_be_bytes());
+                out!(ty.hash());
                 let table_usize = usize::try_from(table).unwrap();
                 let table = &module.tables[table_usize];
-                data.extend(
-                    table
-                        .serialize_for_proof()
-                        .expect("failed to serialize table"),
-                );
-                data.extend(
-                    module
-                        .tables_merkle
-                        .prove(table_usize)
-                        .expect("Failed to prove tables merkle"),
-                );
+                out!(table
+                    .serialize_for_proof()
+                    .expect("failed to serialize table"));
+                out!(module
+                    .tables_merkle
+                    .prove(table_usize)
+                    .expect("Failed to prove tables merkle"));
                 let idx_usize = usize::try_from(idx).unwrap();
                 if let Some(elem) = table.elems.get(idx_usize) {
-                    data.extend(elem.func_ty.hash());
-                    data.extend(elem.val.serialize_for_proof());
-                    data.extend(
-                        table
-                            .elems_merkle
-                            .prove(idx_usize)
-                            .expect("Failed to prove elements merkle"),
-                    );
+                    out!(elem.func_ty.hash());
+                    out!(elem.val.serialize_for_proof());
+                    out!(table
+                        .elems_merkle
+                        .prove(idx_usize)
+                        .expect("Failed to prove elements merkle"));
                 }
-            } else if matches!(
-                next_inst.opcode,
-                Opcode::GetGlobalStateBytes32 | Opcode::SetGlobalStateBytes32,
-            ) {
-                let ptr = self.value_stack.last().unwrap().assume_u32();
+            }
+            CrossModuleInternalCall => {
+                let module_idx = value_stack.last().unwrap().assume_u32() as usize;
+                let called_module = &self.modules[module_idx];
+                out!(called_module.serialize_for_proof(&called_module.memory.merkelize()));
+                out!(mod_merkle
+                    .prove(module_idx)
+                    .expect("Failed to prove module for CrossModuleInternalCall"));
+            }
+            GetGlobalStateBytes32 | SetGlobalStateBytes32 => {
+                out!(self.global_state.serialize());
+                let ptr = value_stack.last().unwrap().assume_u32();
                 if let Some(mut idx) = usize::try_from(ptr).ok().filter(|x| x % 32 == 0) {
                     // Prove the leaf this index is in
                     idx /= Memory::LEAF_SIZE;
-                    data.extend(module.memory.get_leaf_data(idx));
-                    data.extend(mem_merkle.prove(idx).unwrap_or_default());
+                    out!(module.memory.get_leaf_data(idx));
+                    out!(mem_merkle.prove(idx).unwrap_or_default());
                 }
-            } else if matches!(
-                next_inst.opcode,
-                Opcode::ReadPreImage | Opcode::ReadInboxMessage,
-            ) {
-                let offset = self.value_stack.last().unwrap().assume_u32();
-                let ptr = self
-                    .value_stack
-                    .get(self.value_stack.len() - 2)
-                    .unwrap()
-                    .assume_u32();
+            }
+            ReadPreImage | ReadInboxMessage => {
+                let offset = value_stack.last().unwrap().assume_u32();
+                let ptr = value_stack.get(value_stack.len() - 2).unwrap().assume_u32();
                 if let Some(mut idx) = usize::try_from(ptr).ok().filter(|x| x % 32 == 0) {
                     // Prove the leaf this index is in
                     idx /= Memory::LEAF_SIZE;
                     let prev_data = module.memory.get_leaf_data(idx);
-                    data.extend(prev_data);
-                    data.extend(mem_merkle.prove(idx).unwrap_or_default());
-                    if next_inst.opcode == Opcode::ReadPreImage {
+                    out!(prev_data);
+                    out!(mem_merkle.prove(idx).unwrap_or_default());
+                    if op == Opcode::ReadPreImage {
                         let hash = Bytes32(prev_data);
                         let preimage_ty = PreimageType::try_from(
                             u8::try_from(next_inst.argument_data)
                                 .expect("ReadPreImage argument data is out of range for a u8"),
                         )
                         .expect("Invalid preimage type in ReadPreImage argument data");
-                        let preimage =
-                            match self
-                                .preimage_resolver
+                        let Some(preimage) =
+                            self.preimage_resolver
                                 .get_const(self.context, preimage_ty, hash)
-                            {
-                                Some(b) => b,
-                                None => panic!("Missing requested preimage for hash {}", hash),
-                            };
+                        else {
+                            panic!("Missing requested preimage for hash {}", hash)
+                        };
                         data.push(0); // preimage proof type
                         match preimage_ty {
                             PreimageType::Keccak256 | PreimageType::Sha2_256 => {
@@ -2324,31 +3035,96 @@ impl Machine {
                             }
                         }
                     } else if next_inst.opcode == Opcode::ReadInboxMessage {
-                        let msg_idx = self
-                            .value_stack
-                            .get(self.value_stack.len() - 3)
-                            .unwrap()
-                            .assume_u64();
-                        let inbox_identifier = argument_data_to_inbox(next_inst.argument_data)
-                            .expect("Bad inbox indentifier");
+                        let msg_idx = value_stack.get(value_stack.len() - 3).unwrap().assume_u64();
+                        let inbox_identifier =
+                            argument_data_to_inbox(arg).expect("Bad inbox indentifier");
                         if let Some(msg_data) =
                             self.inbox_contents.get(&(inbox_identifier, msg_idx))
                         {
                             data.push(0); // inbox proof type
-                            data.extend(msg_data);
+                            out!(msg_data);
                         }
                     } else {
-                        panic!("Should never ever get here");
+                        unreachable!()
                     }
                 }
             }
-        }
+            LinkModule | UnlinkModule => {
+                if op == LinkModule {
+                    let leaf_index = match value_stack.last() {
+                        Some(Value::I32(x)) => *x as usize / Memory::LEAF_SIZE,
+                        x => fail!("module pointer has invalid type {x:?}"),
+                    };
+                    out!(module.memory.get_leaf_data(leaf_index));
+                    out!(mem_merkle.prove(leaf_index).unwrap_or_default());
+                }
 
+                // prove that our proposed leaf x has a leaf-like hash
+                let module = self.modules.last().unwrap();
+                out!(module.serialize_for_proof(&module.memory.merkelize()));
+
+                // prove that leaf x is under the root at position p
+                let leaf = self.modules.len() - 1;
+                out!((leaf as u32).to_be_bytes());
+                out!(mod_merkle.prove(leaf).unwrap());
+
+                // if needed, prove that x is the last module by proving that leaf p + 1 is 0
+                let balanced = math::is_power_of_2(leaf + 1);
+                if !balanced {
+                    out!(mod_merkle.prove_any(leaf + 1));
+                }
+            }
+            PopCoThread => {
+                macro_rules! prove_pop {
+                    ($multistack:expr, $hasher:expr) => {
+                        let len = $multistack.len();
+                        if (len > 2) {
+                            out!($hasher($multistack[len - 2]));
+                        } else {
+                            out!(Machine::NO_STACK_HASH);
+                        }
+                        if (len > 3) {
+                            out!(hash_multistack(&$multistack[1..len - 2], $hasher));
+                        } else {
+                            out!(Bytes32::default());
+                        }
+                    };
+                }
+                prove_pop!(self.get_data_stacks(), hash_value_stack);
+                prove_pop!(self.get_frame_stacks(), hash_stack_frame_stack);
+            }
+            _ => {}
+        }
         data
     }
 
     pub fn get_data_stack(&self) -> &[Value] {
-        &self.value_stack
+        match self.thread_state {
+            ThreadState::Main => &self.value_stacks[0],
+            ThreadState::CoThread(_) => self.value_stacks.last().unwrap(),
+        }
+    }
+
+    pub fn get_data_stacks(&self) -> Vec<&[Value]> {
+        self.value_stacks.iter().map(|v| v.as_slice()).collect()
+    }
+
+    fn get_frame_stack(&self) -> &[StackFrame] {
+        match self.thread_state {
+            ThreadState::Main => &self.frame_stacks[0],
+            ThreadState::CoThread(_) => self.frame_stacks.last().unwrap(),
+        }
+    }
+
+    fn get_frame_stacks(&self) -> Vec<&[StackFrame]> {
+        self.frame_stacks
+            .iter()
+            .map(|v: &Vec<_>| v.as_slice())
+            .collect()
+    }
+
+    pub fn get_internals_stack(&self) -> &[Value] {
+        &self.internal_stack
     }
 
     pub fn get_global_state(&self) -> GlobalState {
@@ -2378,35 +3154,43 @@ impl Machine {
         self.modules.get(module).map(|m| &*m.names)
     }
 
-    pub fn get_backtrace(&self) -> Vec<(String, String, usize)> {
-        let mut res = Vec::new();
-        let mut push_pc = |pc: ProgramCounter| {
+    pub fn print_backtrace(&self, stderr: bool) {
+        let print = |line: String| match stderr {
+            true => println!("{}", line),
+            false => eprintln!("{}", line),
+        };
+
+        let print_pc = |pc: ProgramCounter| {
             let names = &self.modules[pc.module()].names;
             let func = names
                 .functions
                 .get(&pc.func)
                 .cloned()
-                .unwrap_or_else(|| format!("{}", pc.func));
-            let mut module = names.module.clone();
-            if module.is_empty() {
-                module = format!("{}", pc.module);
-            }
-            res.push((module, func, pc.inst()));
+                .unwrap_or_else(|| pc.func.to_string());
+            let func = rustc_demangle::demangle(&func);
+            let module = match names.module.is_empty() {
+                true => pc.module.to_string(),
+                false => names.module.clone(),
+            };
+            let inst = format!("#{}", pc.inst);
+            print(format!(
+                "  {} {} {} {}",
+                module.grey(),
+                func.mint(),
+                "inst".grey(),
+                inst.blue(),
+            ));
         };
-        push_pc(self.pc);
-        for frame in self.frame_stack.iter().rev() {
+
+        print_pc(self.pc);
+        let frame_stack = self.get_frame_stack();
+        for frame in frame_stack.iter().rev().take(25) {
             if let Value::InternalRef(pc) = frame.return_ref {
-                push_pc(pc);
+                print_pc(pc);
             }
         }
-        res
-    }
-
-    pub fn eprint_backtrace(&self) {
-        eprintln!("Backtrace:");
-        for (module, func, pc) in self.get_backtrace() {
-            let func = rustc_demangle::demangle(&func);
-            eprintln!("  {} {} @ {}", module, func.mint(), pc.blue());
+        if frame_stack.len() > 25 {
+            print(format!("  ... and {} more", frame_stack.len() - 25).grey());
         }
     }
 }

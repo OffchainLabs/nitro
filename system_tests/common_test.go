@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbtest
@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"math/big"
 	"net"
 	"os"
@@ -19,7 +20,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
@@ -36,13 +37,18 @@ import (
 	"github.com/offchainlabs/nitro/validator/valnode"
 	rediscons "github.com/offchainlabs/nitro/validator/valnode/redis"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth"
 	"github.com/ethereum/go-ethereum/eth/catalyst"
 	"github.com/ethereum/go-ethereum/eth/downloader"
@@ -68,6 +74,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	"golang.org/x/exp/slog"
 )
 
 type info = *BlockchainTestInfo
@@ -184,6 +191,13 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 	b.l1StackConfig = createStackConfigForTest(b.dataDir)
 	b.l2StackConfig = createStackConfigForTest(b.dataDir)
 	b.execConfig = gethexec.ConfigDefaultTest()
+	return b
+}
+
+func (b *NodeBuilder) WithArbOSVersion(arbosVersion uint64) *NodeBuilder {
+	newChainConfig := *b.chainConfig
+	newChainConfig.ArbitrumChainParams.InitialArbOSVersion = arbosVersion
+	b.chainConfig = &newChainConfig
 	return b
 }
 
@@ -578,12 +592,8 @@ func StaticFetcherFrom[T any](t *testing.T, config *T) func() *T {
 }
 
 func configByValidationNode(clientConfig *arbnode.Config, valStack *node.Node) {
-	clientConfig.BlockValidator.ExecutionServerConfig.URL = valStack.WSEndpoint()
-	clientConfig.BlockValidator.ExecutionServerConfig.JWTSecret = ""
-	if len(clientConfig.BlockValidator.ValidationServerConfigs) != 0 {
-		clientConfig.BlockValidator.ValidationServerConfigs[0].URL = valStack.WSEndpoint()
-		clientConfig.BlockValidator.ValidationServerConfigs[0].JWTSecret = ""
-	}
+	clientConfig.BlockValidator.ValidationServerConfigs[0].URL = valStack.WSEndpoint()
+	clientConfig.BlockValidator.ValidationServerConfigs[0].JWTSecret = ""
 }
 
 func currentRootModule(t *testing.T) common.Hash {
@@ -635,7 +645,8 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 
 	nodeConf := ethconfig.Defaults
 	nodeConf.NetworkId = chainConfig.ChainID.Uint64()
-	l1Genesis := core.DeveloperGenesisBlock(15_000_000, l1info.GetAddress("Faucet"))
+	faucetAddr := l1info.GetAddress("Faucet")
+	l1Genesis := core.DeveloperGenesisBlock(15_000_000, &faucetAddr)
 	infoGenesis := l1info.GetGenesisAlloc()
 	for acct, info := range infoGenesis {
 		l1Genesis.Alloc[acct] = info
@@ -763,10 +774,12 @@ func createL2BlockChainWithStackConfig(
 	stack, err = node.New(stackConfig)
 	Require(t, err)
 
-	// TODO get pebble.ExtraOptions from conf.PersistentConfig when opening the DBs
-	chainDb, err := stack.OpenDatabaseWithExtraOptions("l2chaindata", 0, 0, "l2chaindata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions())
+	chainData, err := stack.OpenDatabaseWithExtraOptions("l2chaindata", 0, 0, "l2chaindata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata"))
 	Require(t, err)
-	arbDb, err := stack.OpenDatabaseWithExtraOptions("arbitrumdata", 0, 0, "arbitrumdata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions())
+	wasmData, err := stack.OpenDatabaseWithExtraOptions("wasm", 0, 0, "wasm/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("wasm"))
+	Require(t, err)
+	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmData, 0)
+	arbDb, err := stack.OpenDatabaseWithExtraOptions("arbitrumdata", 0, 0, "arbitrumdata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdata"))
 	Require(t, err)
 
 	initReader := statetransfer.NewMemoryInitDataReader(&l2info.ArbInitData)
@@ -968,10 +981,13 @@ func Create2ndNodeWithConfig(
 	l2stack, err := node.New(stackConfig)
 	Require(t, err)
 
-	// TODO get pebble.ExtraOptions from conf.PersistentConfig when opening the DBs
-	l2chainDb, err := l2stack.OpenDatabaseWithExtraOptions("l2chaindata", 0, 0, "l2chaindata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions())
+	l2chainData, err := l2stack.OpenDatabaseWithExtraOptions("l2chaindata", 0, 0, "l2chaindata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata"))
 	Require(t, err)
-	l2arbDb, err := l2stack.OpenDatabaseWithExtraOptions("arbitrumdata", 0, 0, "arbitrumdata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions())
+	wasmData, err := l2stack.OpenDatabaseWithExtraOptions("wasm", 0, 0, "wasm/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("wasm"))
+	Require(t, err)
+	l2chainDb := rawdb.WrapDatabaseWithWasm(l2chainData, wasmData, 0)
+
+	l2arbDb, err := l2stack.OpenDatabaseWithExtraOptions("arbitrumdata", 0, 0, "arbitrumdata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdata"))
 	Require(t, err)
 	initReader := statetransfer.NewMemoryInitDataReader(l2InitData)
 
@@ -1028,7 +1044,7 @@ func authorizeDASKeyset(
 	if dasSignerKey == nil {
 		return
 	}
-	keyset := &arbstate.DataAvailabilityKeyset{
+	keyset := &daprovider.DataAvailabilityKeyset{
 		AssumedHonest: 1,
 		PubKeys:       []blsSignatures.PublicKey{*dasSignerKey},
 	}
@@ -1112,7 +1128,7 @@ func setupConfigWithDAS(
 		Require(t, err)
 		restLis, err := net.Listen("tcp", "localhost:0")
 		Require(t, err)
-		_, err = das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, daReader, daWriter, daHealthChecker)
+		_, err = das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, daReader, daWriter, daHealthChecker)
 		Require(t, err)
 		_, err = das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, daReader, daHealthChecker)
 		Require(t, err)
@@ -1158,16 +1174,87 @@ func deploySimple(
 	return addr, simple
 }
 
+func deployContractInitCode(code []byte, revert bool) []byte {
+	// a small prelude to return the given contract code
+	last_opcode := vm.RETURN
+	if revert {
+		last_opcode = vm.REVERT
+	}
+	deploy := []byte{byte(vm.PUSH32)}
+	deploy = append(deploy, math.U256Bytes(big.NewInt(int64(len(code))))...)
+	deploy = append(deploy, byte(vm.DUP1))
+	deploy = append(deploy, byte(vm.PUSH1))
+	deploy = append(deploy, 42) // the prelude length
+	deploy = append(deploy, byte(vm.PUSH1))
+	deploy = append(deploy, 0)
+	deploy = append(deploy, byte(vm.CODECOPY))
+	deploy = append(deploy, byte(vm.PUSH1))
+	deploy = append(deploy, 0)
+	deploy = append(deploy, byte(last_opcode))
+	deploy = append(deploy, code...)
+	return deploy
+}
+
+func deployContract(
+	t *testing.T, ctx context.Context, auth bind.TransactOpts, client *ethclient.Client, code []byte,
+) common.Address {
+	deploy := deployContractInitCode(code, false)
+	basefee := arbmath.BigMulByFrac(GetBaseFee(t, client, ctx), 6, 5) // current*1.2
+	nonce, err := client.NonceAt(ctx, auth.From, nil)
+	Require(t, err)
+	gas, err := client.EstimateGas(ctx, ethereum.CallMsg{
+		From:      auth.From,
+		GasPrice:  basefee,
+		GasTipCap: auth.GasTipCap,
+		Value:     big.NewInt(0),
+		Data:      deploy,
+	})
+	Require(t, err)
+	tx := types.NewContractCreation(nonce, big.NewInt(0), gas, basefee, deploy)
+	tx, err = auth.Signer(auth.From, tx)
+	Require(t, err)
+	Require(t, client.SendTransaction(ctx, tx))
+	_, err = EnsureTxSucceeded(ctx, client, tx)
+	Require(t, err)
+	return crypto.CreateAddress(auth.From, nonce)
+}
+
+func sendContractCall(
+	t *testing.T, ctx context.Context, to common.Address, client *ethclient.Client, data []byte,
+) []byte {
+	t.Helper()
+	msg := ethereum.CallMsg{
+		To:    &to,
+		Value: big.NewInt(0),
+		Data:  data,
+	}
+	res, err := client.CallContract(ctx, msg, nil)
+	Require(t, err)
+	return res
+}
+
+func doUntil(t *testing.T, delay time.Duration, max int, lambda func() bool) {
+	t.Helper()
+	for i := 0; i < max; i++ {
+		if lambda() {
+			return
+		}
+		time.Sleep(delay)
+	}
+	Fatal(t, "failed to complete after ", delay*time.Duration(max))
+}
+
 func TestMain(m *testing.M) {
 	logLevelEnv := os.Getenv("TEST_LOGLEVEL")
 	if logLevelEnv != "" {
-		logLevel, err := strconv.ParseUint(logLevelEnv, 10, 32)
-		if err != nil || logLevel > uint64(log.LvlTrace) {
+		logLevel, err := strconv.ParseInt(logLevelEnv, 10, 32)
+		if err != nil || logLevel > int64(log.LevelCrit) {
 			log.Warn("TEST_LOGLEVEL exists but out of bound, ignoring", "logLevel", logLevelEnv, "max", log.LvlTrace)
 		}
-		glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
-		glogger.Verbosity(log.Lvl(logLevel))
-		log.Root().SetHandler(glogger)
+		glogger := log.NewGlogHandler(
+			log.NewTerminalHandler(io.Writer(os.Stderr), false))
+		glogger.Verbosity(slog.Level(logLevel))
+		log.SetDefault(log.NewLogger(glogger))
 	}
 	code := m.Run()
 	os.Exit(code)
@@ -1180,4 +1267,14 @@ func getExecNode(t *testing.T, node *arbnode.Node) *gethexec.ExecutionNode {
 		t.Fatal("failed to get exec node from arbnode")
 	}
 	return gethExec
+}
+
+func logParser[T any](t *testing.T, source string, name string) func(*types.Log) *T {
+	parser := util.NewLogParser[T](source, name)
+	return func(log *types.Log) *T {
+		t.Helper()
+		event, err := parser(log)
+		Require(t, err, "failed to parse log")
+		return event
+	}
 }
