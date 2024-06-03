@@ -16,3 +16,6 @@
 [submodule "nitro-testnode"]
 	path = nitro-testnode
 	url = https://github.com/OffchainLabs/nitro-testnode.git
+[submodule "contracts"]
+	path = contracts
+	url = https://github.com/availproject/nitro-contracts.git
