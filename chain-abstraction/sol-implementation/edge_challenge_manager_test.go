@@ -493,7 +493,7 @@ func TestEdgeChallengeManager_ConfirmByTime(t *testing.T) {
 	chalManager, err := bisectionScenario.topLevelFork.Chains[0].SpecChallengeManager(ctx)
 	require.NoError(t, err)
 	_, err = chalManager.MultiUpdateInheritedTimers(ctx, []protocol.ReadOnlyEdge{honestChildren1, honestChildren2, honestEdge}, expectedNewTimer)
-
+	require.NoError(t, err)
 	_, err = honestEdge.ConfirmByTimer(ctx)
 	require.NoError(t, err)
 	s0, err := honestEdge.Status(ctx)
