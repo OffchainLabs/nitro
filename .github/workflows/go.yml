@@ -72,7 +72,7 @@ jobs:
       - name: Install
         run: cd contracts && yarn install
 
-      - name: Build contracts
+      - name: Build solidity contracts
         run: yarn --cwd contracts build
 
       - name: Set up Go 1.x
@@ -81,19 +81,20 @@ jobs:
           go-version: 1.20.x
         id: go
 
-      # Foundry is required for end to end tests
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
           version: nightly
 
+      - name: Build yul contracts
+        run: yarn --cwd contracts build:forge:yul
+
       - name: Get dependencies
         run: |
           go get -v -t -d ./...
 
-      # TODO: Remove, temporary fix
-      # - name: AbiGen
-      #   run: go run ./solgen/main.go
+      - name: AbiGen
+        run: go run ./solgen/main.go
 
       - name: Build
         run: go build -v ./...
