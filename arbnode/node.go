@@ -12,6 +12,8 @@ import (
 	"strings"
 	"time"
 
+	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
+	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -573,94 +575,6 @@ func createNodeImpl(
 		statelessBlockValidator = nil
 	}
 
-<<<<<<< HEAD
-||||||| parent of 064b081e3 (Add config option to track specifi challenge with the specified parent assertion hashes)
-	var dp *dataposter.DataPoster
-	if config.Bold.Enable {
-		dp, err = StakerDataposter(
-			ctx,
-			rawdb.NewTable(arbDb, storage.StakerPrefix),
-			l1Reader,
-			txOptsValidator,
-			configFetcher,
-			syncMonitor,
-			parentChainID,
-		)
-		if err != nil {
-			return nil, err
-		}
-		rollupBindings, err := rollupgen.NewRollupUserLogic(deployInfo.Rollup, l1client)
-		if err != nil {
-			return nil, fmt.Errorf("could not create rollup bindings: %w", err)
-		}
-		chalManager, err := rollupBindings.ChallengeManager(&bind.CallOpts{})
-		if err != nil {
-			return nil, fmt.Errorf("could not get challenge manager: %w", err)
-		}
-		assertionChain, err := solimpl.NewAssertionChain(ctx, deployInfo.Rollup, chalManager, txOptsValidator, l1client, solimpl.NewDataPosterTransactor(dp))
-		if err != nil {
-			return nil, fmt.Errorf("could not create assertion chain: %w", err)
-		}
-		blockChallengeLeafHeight := l2stateprovider.Height(config.Bold.BlockChallengeLeafHeight)
-		bigStepHeight := l2stateprovider.Height(config.Bold.BigStepLeafHeight)
-		smallStepHeight := l2stateprovider.Height(config.Bold.SmallStepLeafHeight)
-		stateManager, err := staker.NewStateManager(
-			statelessBlockValidator,
-			config.Bold.MachineLeavesCachePath,
-			[]l2stateprovider.Height{
-				blockChallengeLeafHeight,
-				bigStepHeight,
-				smallStepHeight,
-			},
-			config.Bold.ValidatorName,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("could not create state manager: %w", err)
-		}
-		providerHeights := []l2stateprovider.Height{blockChallengeLeafHeight}
-		for i := uint64(0); i < config.Bold.NumBigSteps; i++ {
-			providerHeights = append(providerHeights, bigStepHeight)
-		}
-		providerHeights = append(providerHeights, smallStepHeight)
-		provider := l2stateprovider.NewHistoryCommitmentProvider(
-			stateManager,
-			stateManager,
-			stateManager,
-			providerHeights,
-			stateManager,
-			nil,
-		)
-		postingInterval := time.Second * time.Duration(config.Bold.AssertionPostingIntervalSeconds)
-		scanningInteval := time.Second * time.Duration(config.Bold.AssertionScanningIntervalSeconds)
-		confirmingInterval := time.Second * time.Duration(config.Bold.AssertionConfirmingIntervalSeconds)
-		edgeWakeInterval := time.Second * time.Duration(config.Bold.EdgeTrackerWakeIntervalSeconds)
-		opts := []challengemanager.Opt{
-			challengemanager.WithName(config.Bold.ValidatorName),
-			challengemanager.WithMode(modes.MakeMode), // TODO: Customize.
-			challengemanager.WithAssertionPostingInterval(postingInterval),
-			challengemanager.WithAssertionScanningInterval(scanningInteval),
-			challengemanager.WithAssertionConfirmingInterval(confirmingInterval),
-			challengemanager.WithEdgeTrackerWakeInterval(edgeWakeInterval),
-			challengemanager.WithAddress(txOptsValidator.From),
-		}
-		if config.Bold.API {
-			opts = append(opts, challengemanager.WithAPIEnabled(fmt.Sprintf("%s:%d", config.Bold.APIHost, config.Bold.APIPort), config.Bold.APIDBPath))
-		}
-		manager, err := challengemanager.New(
-			ctx,
-			assertionChain,
-			provider,
-			assertionChain.RollupAddress(),
-			opts...,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("could not create challenge manager: %w", err)
-		}
-		provider.UpdateAPIDatabase(manager.Database())
-		go manager.Start(ctx)
-	}
-
-=======
 	var dp *dataposter.DataPoster
 	if config.Bold.Enable {
 		dp, err = StakerDataposter(
@@ -747,7 +661,6 @@ func createNodeImpl(
 		go manager.Start(ctx)
 	}
 
->>>>>>> 064b081e3 (Add config option to track specifi challenge with the specified parent assertion hashes)
 	var blockValidator *staker.BlockValidator
 	if config.ValidatorRequired() {
 		blockValidator, err = staker.NewBlockValidator(
