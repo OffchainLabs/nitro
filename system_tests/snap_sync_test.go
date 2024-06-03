@@ -101,12 +101,15 @@ func waitForBlockToCatchupToMessageCount(
 	finalMessageCount uint64,
 ) {
 	for {
-		latestHeaderNodeC, err := client.HeaderByNumber(ctx, nil)
-		Require(t, err)
-		if latestHeaderNodeC.Number.Uint64() < uint64(finalMessageCount)-1 {
-			<-time.After(10 * time.Millisecond)
-		} else {
-			break
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(10 * time.Millisecond):
+			latestHeaderNodeC, err := client.HeaderByNumber(ctx, nil)
+			Require(t, err)
+			if latestHeaderNodeC.Number.Uint64() >= uint64(finalMessageCount)-1 {
+				return
+			}
 		}
 	}
 }
