@@ -67,7 +67,8 @@ FROM wasm-base as wasm-bin-builder
 
     # Use latest go1.21 version.
 RUN LATEST_GO=$(curl -s https://go.dev/dl/?mode=json | jq -r '[.[] | select(.version | startswith("go1.21"))] | .[0].version') && \
-    curl -L https://golang.org/dl/${LATEST_GO}.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
+    curl -L https://golang.org/dl/${LATEST_GO}.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf - && \
+    echo "Installed Go version: ${LATEST_GO}"
 
 COPY ./Makefile ./go.mod ./go.sum ./
 COPY ./arbcompress ./arbcompress
