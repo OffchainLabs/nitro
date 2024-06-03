@@ -10,10 +10,6 @@
 [submodule "brotli"]
 	path = brotli
 	url = https://github.com/google/brotli.git
-[submodule "contracts"]
-	path = contracts
-	url = https://github.com/OffchainLabs/nitro-contracts.git
-	branch = develop
 [submodule "arbitrator/wasm-testsuite/testsuite"]
 	path = arbitrator/wasm-testsuite/testsuite
 	url = https://github.com/WebAssembly/testsuite.git
