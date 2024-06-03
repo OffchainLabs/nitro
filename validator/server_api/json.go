@@ -5,7 +5,9 @@ package server_api
 
 import (
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -62,6 +64,17 @@ type InputJSON struct {
 	StartState    validator.GoGlobalState
 	UserWasms     map[common.Hash]UserWasmJson
 	DebugChain    bool
+}
+
+func (i *InputJSON) WriteToFile() error {
+	contents, err := json.MarshalIndent(i, "", "    ")
+	if err != nil {
+		return err
+	}
+	if err = os.WriteFile(fmt.Sprintf("block_inputs_%d.json", i.Id), contents, 0600); err != nil {
+		return err
+	}
+	return nil
 }
 
 type UserWasmJson struct {
