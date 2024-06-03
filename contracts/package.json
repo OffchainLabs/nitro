@@ -44,8 +44,7 @@
     "deploy-erc20-rollup": "hardhat run scripts/createERC20Rollup.ts",
     "script:bold-prepare": "hardhat run ./scripts/prepareBoldUpgrade.ts",
     "script:bold-populate-lookup": "hardhat run ./scripts/populateLookup.ts",
-    "script:bold-local-execute": "hardhat run ./scripts/testLocalExecuteBoldUpgrade.ts",
-    "script:bold-verify": "hardhat run ./scripts/testVerifyBoldUpgrade.ts"
+    "script:bold-local-execute": "hardhat run ./scripts/testLocalExecuteBoldUpgrade.ts"
   },
   "dependencies": {
     "@offchainlabs/upgrade-executor": "1.1.0-beta.0",

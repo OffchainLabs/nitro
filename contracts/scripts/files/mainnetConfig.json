@@ -6,7 +6,8 @@
     "sequencerInbox": "0x1c479675ad559DC151F6Ec7ed3FbF8ceE79582B6",
     "rollupEventInbox": "0x57Bd336d579A51938619271a7Cc137a46D0501B1",
     "outbox": "0x0B9857ae2D4A3DBe74ffE1d7DF045bb7F96E4840",
-    "inbox": "0x4Dbd4fc535Ac27206064B68FfCf827b0A60BAB3f"
+    "inbox": "0x4Dbd4fc535Ac27206064B68FfCf827b0A60BAB3f",
+    "upgradeExecutor": "0x3ffFbAdAF827559da092217e474760E2b2c3CeDd"
   },
   "proxyAdmins": {
     "outbox": "0x554723262467f125ac9e1cdfa9ce15cc53822dbd",
@@ -21,7 +22,14 @@
     "challengePeriodBlocks": 51600,
     "stakeToken": "0xc02aaa39b223fe8d0a0e5c4f27ead9083c756cc2",
     "stakeAmt": "100000000000000000000",
-    "miniStakeAmt": "2000000000000000000",
+    "miniStakeAmounts": [
+      "6000000000000000000",
+      "5000000000000000000",
+      "4000000000000000000",
+      "3000000000000000000",
+      "2000000000000000000",
+      "1000000000000000000" 
+    ],
     "chainId": 42161,
     "anyTrustFastConfirmer": "0x0000000000000000000000000000000000000000",
     "disableValidatorWhitelist": false,

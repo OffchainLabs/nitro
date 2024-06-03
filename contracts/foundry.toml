@@ -10,6 +10,7 @@ solc_version = '0.8.17'
 remappings = ['@openzeppelin/contracts-upgradeable/=node_modules/@openzeppelin/contracts-upgradeable/', 
               '@openzeppelin/contracts/=node_modules/@openzeppelin/contracts/', 
               '@offchainlabs/upgrade-executor/=node_modules/@offchainlabs/upgrade-executor/']
+fs_permissions = [{ access = "read", path = "./"}]
 
 [profile.yul]
 src = 'yul'

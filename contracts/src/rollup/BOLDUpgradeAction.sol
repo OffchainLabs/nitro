@@ -348,7 +348,7 @@ contract BOLDUpgradeAction {
         if (stakerCount > 50) {
             stakerCount = 50;
         }
-        for (uint64 i = 0; i < stakerCount; i++) {
+        for (uint64 i = 0; i < stakerCount;) {
             address stakerAddr = ROLLUP_READER.getStakerAddress(i);
             OldStaker memory staker = ROLLUP_READER.getStaker(stakerAddr);
             if (staker.isStaked && staker.currentChallenge == 0) {
@@ -356,6 +356,9 @@ contract BOLDUpgradeAction {
                 stakersToRefund[0] = stakerAddr;
 
                 IOldRollupAdmin(address(OLD_ROLLUP)).forceRefundStaker(stakersToRefund);
+                stakerCount -= 1;
+            } else {
+                i++;
             }
         }
 
