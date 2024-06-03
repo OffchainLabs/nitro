@@ -305,7 +305,7 @@ func SaturatingUSub[T Unsigned](a, b T) T {
 	return a - b
 }
 
-// SaturatingMul multiply two integers without over/underflow
+// SaturatingUMul multiply two integers without over/underflow
 func SaturatingUMul[T Unsigned](a, b T) T {
 	product := a * b
 	if b != 0 && product/b != a {
