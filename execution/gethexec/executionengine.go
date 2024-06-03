@@ -13,10 +13,15 @@ package gethexec
 */
 import "C"
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"os"
+	"path"
+	"runtime/pprof"
+	"runtime/trace"
 	"sync"
 	"testing"
 	"time"
@@ -27,6 +32,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/google/uuid"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -332,6 +338,44 @@ func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMess
 		hooks.TxErrors = nil
 		return s.sequenceTransactionsWithBlockMutex(header, txes, hooks)
 	})
+}
+
+// SequenceTransactionsWithProfiling runs SequenceTransactions with tracing and
+// CPU profiling enabled. If the block creation takes longer than 5 seconds, it
+// keeps both and prints out filenames in an error log line.
+func (s *ExecutionEngine) SequenceTransactionsWithProfiling(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
+	pprofBuf, traceBuf := bytes.NewBuffer(nil), bytes.NewBuffer(nil)
+	if err := pprof.StartCPUProfile(pprofBuf); err != nil {
+		log.Error("Starting CPU profiling", "error", err)
+	}
+	if err := trace.Start(traceBuf); err != nil {
+		log.Error("Starting tracing", "error", err)
+	}
+	start := time.Now()
+	res, err := s.SequenceTransactions(header, txes, hooks)
+	elapsed := time.Since(start)
+	pprof.StopCPUProfile()
+	trace.Stop()
+	if elapsed > 5*time.Second {
+		writeAndLog(pprofBuf, traceBuf)
+		return res, err
+	}
+	return res, err
+}
+
+func writeAndLog(pprof, trace *bytes.Buffer) {
+	id := uuid.NewString()
+	pprofFile := path.Join(os.TempDir(), id+".pprof")
+	if err := os.WriteFile(pprofFile, pprof.Bytes(), 0o600); err != nil {
+		log.Error("Creating temporary file for pprof", "fileName", pprofFile, "error", err)
+		return
+	}
+	traceFile := path.Join(os.TempDir(), id+".trace")
+	if err := os.WriteFile(traceFile, trace.Bytes(), 0o600); err != nil {
+		log.Error("Creating temporary file for trace", "fileName", traceFile, "error", err)
+		return
+	}
+	log.Info("Block creation took longer than 5 seconds, created pprof and trace files", "pprof", pprofFile, "traceFile", traceFile)
 }
 
 func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
