@@ -1372,4 +1372,22 @@ contract RollupTest is Test {
         bytes32 expectedHash = keccak256(abi.encodePacked(parentHash, astate.hash(), inboxAcc));
         assertEq(RollupLib.assertionHash(parentHash, astate, inboxAcc), expectedHash, "Unexpected hash");
     }
+
+    // do this last as it changes the base stake
+    function testBaseStake() public {
+        assertEq(adminRollup.baseStake(), BASE_STAKE, "Invalid before base stake");
+
+        // increase base stake amount
+        vm.startPrank(upgradeExecutorAddr);
+        adminRollup.setBaseStake(BASE_STAKE + 1);
+        assertEq(adminRollup.baseStake(), BASE_STAKE + 1, "Invalid after increase base stake");
+
+        // set it to be the same
+        vm.expectRevert("BASE_STAKE_MUST_BE_INCREASED");
+        adminRollup.setBaseStake(BASE_STAKE + 1);
+
+        // set it to be less
+        vm.expectRevert("BASE_STAKE_MUST_BE_INCREASED");
+        adminRollup.setBaseStake(BASE_STAKE);
+    }
 }

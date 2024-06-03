@@ -221,6 +221,14 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
      * @param newBaseStake minimum amount of stake required
      */
     function setBaseStake(uint256 newBaseStake) external override {
+        // we do not currently allow base stake to be reduced since as doing so might allow a malicious party
+        // to withdraw some (up to the difference between baseStake and newBaseStake) honest funds from this contract
+        // The sequence of events is as follows:
+        // 1. The malicious party creates a sibling assertion, stake size is currently S
+        // 2. The base stake is then reduced to S'
+        // 3. The malicious party uses a different address to create a child of the malicious assertion, using stake size S'
+        // 4. This allows the malicious party to withdraw the stake S, since assertions with children set the staker to "inactive"
+        require(newBaseStake > baseStake, "BASE_STAKE_MUST_BE_INCREASED");
         baseStake = newBaseStake;
         emit OwnerFunctionCalled(12);
     }
