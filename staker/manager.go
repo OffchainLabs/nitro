@@ -87,6 +87,7 @@ func NewManager(
 		challengemanager.WithAssertionScanningInterval(scanningInterval),
 		challengemanager.WithAssertionConfirmingInterval(confirmingInterval),
 		challengemanager.WithAddress(txOpts.From),
+		challengemanager.WithTrackChallengeParentAssertionHashes(config.TrackChallengeParentAssertionHashes),
 	}
 	if config.API {
 		opts = append(opts, challengemanager.WithAPIEnabled(fmt.Sprintf("%s:%d", config.APIHost, config.APIPort), config.APIDBPath))

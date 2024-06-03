@@ -40,41 +40,43 @@ var (
 )
 
 type BoldConfig struct {
-	Enable                             bool   `koanf:"enable"`
-	Mode                               string `koanf:"mode"`
-	BlockChallengeLeafHeight           uint64 `koanf:"block-challenge-leaf-height"`
-	BigStepLeafHeight                  uint64 `koanf:"big-step-leaf-height"`
-	SmallStepLeafHeight                uint64 `koanf:"small-step-leaf-height"`
-	NumBigSteps                        uint64 `koanf:"num-big-steps"`
-	ValidatorName                      string `koanf:"validator-name"`
-	MachineLeavesCachePath             string `koanf:"machine-leaves-cache-path"`
-	AssertionPostingIntervalSeconds    uint64 `koanf:"assertion-posting-interval-seconds"`
-	AssertionScanningIntervalSeconds   uint64 `koanf:"assertion-scanning-interval-seconds"`
-	AssertionConfirmingIntervalSeconds uint64 `koanf:"assertion-confirming-interval-seconds"`
-	EdgeTrackerWakeIntervalSeconds     uint64 `koanf:"edge-tracker-wake-interval-seconds"`
-	API                                bool   `koanf:"api"`
-	APIHost                            string `koanf:"api-host"`
-	APIPort                            uint16 `koanf:"api-port"`
-	APIDBPath                          string `koanf:"api-db-path"`
+	Enable                              bool     `koanf:"enable"`
+	Mode                                string   `koanf:"mode"`
+	BlockChallengeLeafHeight            uint64   `koanf:"block-challenge-leaf-height"`
+	BigStepLeafHeight                   uint64   `koanf:"big-step-leaf-height"`
+	SmallStepLeafHeight                 uint64   `koanf:"small-step-leaf-height"`
+	NumBigSteps                         uint64   `koanf:"num-big-steps"`
+	ValidatorName                       string   `koanf:"validator-name"`
+	MachineLeavesCachePath              string   `koanf:"machine-leaves-cache-path"`
+	AssertionPostingIntervalSeconds     uint64   `koanf:"assertion-posting-interval-seconds"`
+	AssertionScanningIntervalSeconds    uint64   `koanf:"assertion-scanning-interval-seconds"`
+	AssertionConfirmingIntervalSeconds  uint64   `koanf:"assertion-confirming-interval-seconds"`
+	EdgeTrackerWakeIntervalSeconds      uint64   `koanf:"edge-tracker-wake-interval-seconds"`
+	API                                 bool     `koanf:"api"`
+	APIHost                             string   `koanf:"api-host"`
+	APIPort                             uint16   `koanf:"api-port"`
+	APIDBPath                           string   `koanf:"api-db-path"`
+	TrackChallengeParentAssertionHashes []string `koanf:"track-challenge-parent-assertion-hashes"`
 }
 
 var DefaultBoldConfig = BoldConfig{
-	Enable:                             false,
-	Mode:                               "make-mode",
-	BlockChallengeLeafHeight:           1 << 5,
-	BigStepLeafHeight:                  1 << 8,
-	SmallStepLeafHeight:                1 << 10,
-	NumBigSteps:                        3,
-	ValidatorName:                      "default-validator",
-	MachineLeavesCachePath:             "/tmp/machine-leaves-cache",
-	AssertionPostingIntervalSeconds:    30,
-	AssertionScanningIntervalSeconds:   30,
-	AssertionConfirmingIntervalSeconds: 60,
-	EdgeTrackerWakeIntervalSeconds:     1,
-	API:                                false,
-	APIHost:                            "127.0.0.1",
-	APIPort:                            9393,
-	APIDBPath:                          "/tmp/bold-api-db",
+	Enable:                              false,
+	Mode:                                "make-mode",
+	BlockChallengeLeafHeight:            1 << 5,
+	BigStepLeafHeight:                   1 << 8,
+	SmallStepLeafHeight:                 1 << 10,
+	NumBigSteps:                         3,
+	ValidatorName:                       "default-validator",
+	MachineLeavesCachePath:              "/tmp/machine-leaves-cache",
+	AssertionPostingIntervalSeconds:     30,
+	AssertionScanningIntervalSeconds:    30,
+	AssertionConfirmingIntervalSeconds:  60,
+	EdgeTrackerWakeIntervalSeconds:      1,
+	API:                                 false,
+	APIHost:                             "127.0.0.1",
+	APIPort:                             9393,
+	APIDBPath:                           "/tmp/bold-api-db",
+	TrackChallengeParentAssertionHashes: []string{},
 }
 
 func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -94,6 +96,7 @@ func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".api-host", DefaultBoldConfig.APIHost, "bold api host")
 	f.Uint16(prefix+".api-port", DefaultBoldConfig.APIPort, "bold api port")
 	f.String(prefix+".api-db-path", DefaultBoldConfig.APIDBPath, "bold api db path")
+	f.StringSlice(prefix+".track-challenge-parent-assertion-hashes", DefaultBoldConfig.TrackChallengeParentAssertionHashes, "only track challenges/edges with these parent assertion hashes")
 }
 
 func (c *BoldConfig) Validate() error {
