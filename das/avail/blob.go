@@ -48,7 +48,7 @@ var arguments = abi.Arguments{
 func (b *BlobPointer) MarshalToBinary() ([]byte, error) {
 	packedData, err := arguments.PackValues([]interface{}{b.BlockHash, b.Sender, b.Nonce, b.DasTreeRootHash, b.MerkleProofInput})
 	if err != nil {
-		return []byte{}, fmt.Errorf("unable to covert the blobPointer into array of bytes and getting error:%v", err)
+		return []byte{}, fmt.Errorf("unable to covert the blobPointer into array of bytes and getting error:%w", err)
 	}
 
 	// Encoding at first the avail message header flag
@@ -64,12 +64,12 @@ func (b *BlobPointer) MarshalToBinary() ([]byte, error) {
 func (b *BlobPointer) UnmarshalFromBinary(data []byte) error {
 	unpackedData, err := arguments.UnpackValues(data)
 	if err != nil {
-		return fmt.Errorf("unable to covert the data bytes into blobPointer and getting error:%v", err)
+		return fmt.Errorf("unable to covert the data bytes into blobPointer and getting error:%w", err)
 	}
-	b.BlockHash = unpackedData[0].([32]uint8)
-	b.Sender = unpackedData[1].(string)
-	b.Nonce = unpackedData[2].(uint32)
-	b.DasTreeRootHash = unpackedData[3].([32]uint8)
-	b.MerkleProofInput = unpackedData[4].(MerkleProofInput)
+	b.BlockHash = unpackedData[0].([32]uint8)               //nolint:all
+	b.Sender = unpackedData[1].(string)                     //nolint:all
+	b.Nonce = unpackedData[2].(uint32)                      //nolint:all
+	b.DasTreeRootHash = unpackedData[3].([32]uint8)         //nolint:all
+	b.MerkleProofInput = unpackedData[4].(MerkleProofInput) //nolint:all
 	return nil
 }

@@ -101,7 +101,7 @@ func NewAvailDA(cfg DAConfig, l1Client arbutil.L1Interface) (*AvailDA, error) {
 		return nil, err
 	}
 
-	//Connect to L1 node thru web socket
+	// Connect to L1 node thru web socket
 	client, err := ethclient.Dial(cfg.ArbSepoliaRPC)
 	if err != nil {
 		return nil, err
@@ -134,17 +134,17 @@ func (a *AvailDA) Store(ctx context.Context, message []byte) ([]byte, error) {
 
 	finalizedblockHash, nonce, err := submitData(a, message)
 	if err != nil {
-		return nil, fmt.Errorf("cannot submit data to avail:%+v", err)
+		return nil, fmt.Errorf("cannot submit data to avail:%w", err)
 	}
 
 	header, err := a.api.RPC.Chain.GetHeader(finalizedblockHash)
 	if err != nil {
-		return nil, fmt.Errorf("cannot get header for finalized block:%+v", err)
+		return nil, fmt.Errorf("cannot get header for finalized block:%w", err)
 	}
 
 	err = a.vectorx.SubscribeForHeaderUpdate(int(header.Number), a.vectorXTimeout)
 	if err != nil {
-		return nil, fmt.Errorf("cannot get the event for header update on vectorx:%+v", err)
+		return nil, fmt.Errorf("cannot get the event for header update on vectorx:%w", err)
 	}
 
 	extrinsicIndex, err := GetExtrinsicIndex(a.api, finalizedblockHash, a.keyringPair.Address, nonce)
