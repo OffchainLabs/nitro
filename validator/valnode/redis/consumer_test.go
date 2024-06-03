@@ -16,14 +16,15 @@ func TestTimeout(t *testing.T) {
 	redisURL := redisutil.CreateTestRedis(ctx, t)
 	TestValidationServerConfig.RedisURL = redisURL
 	TestValidationServerConfig.ModuleRoots = []string{"0x123"}
+	TestValidationServerConfig.StreamTimeout = 100 * time.Millisecond
 	vs, err := NewValidationServer(&TestValidationServerConfig, nil)
 	if err != nil {
 		t.Fatalf("NewValidationSever() unexpected error: %v", err)
 	}
 	vs.Start(ctx)
-	cancel()
 	time.Sleep(time.Second)
-	if !handler.WasLogged("Context done while waiting redis streams to be ready") {
+	if !handler.WasLogged("Waiting for redis streams timed out") {
 		t.Error("Expected message about stream time-outs was not logged")
 	}
+	cancel()
 }
