@@ -432,6 +432,14 @@ func (m *Manager) StopAndWait() {
 }
 
 func (m *Manager) listenForBlockEvents(ctx context.Context) {
+	// If the chain watcher has not yet scraped and caught up all BOLD
+	// events up to the latest head, then we fire "block notification" events
+	// every second. This will help the tracked edges act fast if we are
+	// just starting up the validator or catching up to a challenge.
+	m.fastTickWhileCatchingUp(ctx)
+
+	// Then, once the watcher has reached the latest head, we
+	// fire off a block notifications events normally.
 	ch := make(chan *gethtypes.Header, 100)
 	sub, err := m.chain.Backend().SubscribeNewHead(ctx, ch)
 	if err != nil {
@@ -452,6 +460,22 @@ func (m *Manager) listenForBlockEvents(ctx context.Context) {
 		case <-sub.Err():
 		case <-ctx.Done():
 			return
+		}
+	}
+}
+
+func (m *Manager) fastTickWhileCatchingUp(ctx context.Context) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Second):
+			m.newBlockNotifier.Broadcast(ctx, nil)
+			if m.watcher.IsSynced() {
+				return
+			}
 		}
 	}
 }
