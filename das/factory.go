@@ -22,8 +22,6 @@ import (
 func CreatePersistentStorageService(
 	ctx context.Context,
 	config *DataAvailabilityConfig,
-	syncFromStorageServices *[]*IterableStorageService,
-	syncToStorageServices *[]StorageService,
 ) (StorageService, *LifecycleManager, error) {
 	storageServices := make([]StorageService, 0, 10)
 	var lifecycleManager LifecycleManager
@@ -31,14 +29,6 @@ func CreatePersistentStorageService(
 		s, err := NewDBStorageService(ctx, &config.LocalDBStorage)
 		if err != nil {
 			return nil, nil, err
-		}
-		if config.LocalDBStorage.SyncFromStorageService {
-			iterableStorageService := NewIterableStorageService(ConvertStorageServiceToIterationCompatibleStorageService(s))
-			*syncFromStorageServices = append(*syncFromStorageServices, iterableStorageService)
-			s = iterableStorageService
-		}
-		if config.LocalDBStorage.SyncToStorageService {
-			*syncToStorageServices = append(*syncToStorageServices, s)
 		}
 		lifecycleManager.Register(s)
 		storageServices = append(storageServices, s)
@@ -48,14 +38,6 @@ func CreatePersistentStorageService(
 		s, err := NewLocalFileStorageService(config.LocalFileStorage.DataDir)
 		if err != nil {
 			return nil, nil, err
-		}
-		if config.LocalFileStorage.SyncFromStorageService {
-			iterableStorageService := NewIterableStorageService(ConvertStorageServiceToIterationCompatibleStorageService(s))
-			*syncFromStorageServices = append(*syncFromStorageServices, iterableStorageService)
-			s = iterableStorageService
-		}
-		if config.LocalFileStorage.SyncToStorageService {
-			*syncToStorageServices = append(*syncToStorageServices, s)
 		}
 		lifecycleManager.Register(s)
 		storageServices = append(storageServices, s)
@@ -67,14 +49,6 @@ func CreatePersistentStorageService(
 			return nil, nil, err
 		}
 		lifecycleManager.Register(s)
-		if config.S3Storage.SyncFromStorageService {
-			iterableStorageService := NewIterableStorageService(ConvertStorageServiceToIterationCompatibleStorageService(s))
-			*syncFromStorageServices = append(*syncFromStorageServices, iterableStorageService)
-			s = iterableStorageService
-		}
-		if config.S3Storage.SyncToStorageService {
-			*syncToStorageServices = append(*syncToStorageServices, s)
-		}
 		storageServices = append(storageServices, s)
 	}
 
@@ -96,8 +70,6 @@ func WrapStorageWithCache(
 	ctx context.Context,
 	config *DataAvailabilityConfig,
 	storageService StorageService,
-	syncFromStorageServices *[]*IterableStorageService,
-	syncToStorageServices *[]StorageService,
 	lifecycleManager *LifecycleManager) (StorageService, error) {
 	if storageService == nil {
 		return nil, nil
@@ -110,14 +82,6 @@ func WrapStorageWithCache(
 		lifecycleManager.Register(storageService)
 		if err != nil {
 			return nil, err
-		}
-		if config.RedisCache.SyncFromStorageService {
-			iterableStorageService := NewIterableStorageService(ConvertStorageServiceToIterationCompatibleStorageService(storageService))
-			*syncFromStorageServices = append(*syncFromStorageServices, iterableStorageService)
-			storageService = iterableStorageService
-		}
-		if config.RedisCache.SyncToStorageService {
-			*syncToStorageServices = append(*syncToStorageServices, storageService)
 		}
 	}
 	if config.LocalCache.Enable {
@@ -184,14 +148,12 @@ func CreateDAComponentsForDaserver(
 	}
 	// Done checking config requirements
 
-	var syncFromStorageServices []*IterableStorageService
-	var syncToStorageServices []StorageService
-	storageService, dasLifecycleManager, err := CreatePersistentStorageService(ctx, config, &syncFromStorageServices, &syncToStorageServices)
+	storageService, dasLifecycleManager, err := CreatePersistentStorageService(ctx, config)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
 
-	storageService, err = WrapStorageWithCache(ctx, config, storageService, &syncFromStorageServices, &syncToStorageServices, dasLifecycleManager)
+	storageService, err = WrapStorageWithCache(ctx, config, storageService, dasLifecycleManager)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
@@ -269,11 +231,6 @@ func CreateDAComponentsForDaserver(
 		if err != nil {
 			return nil, nil, nil, nil, nil, err
 		}
-	}
-
-	if config.RegularSyncStorage.Enable && len(syncFromStorageServices) != 0 && len(syncToStorageServices) != 0 {
-		regularlySyncStorage := NewRegularlySyncStorage(syncFromStorageServices, syncToStorageServices, config.RegularSyncStorage)
-		regularlySyncStorage.Start(ctx)
 	}
 
 	if seqInboxAddress != nil {
