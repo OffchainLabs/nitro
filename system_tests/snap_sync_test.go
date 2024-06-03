@@ -93,7 +93,7 @@ func TestSnapSync(t *testing.T) {
 		t.Error("Block hash mismatch")
 	}
 	// This to ensure that the node did a snap sync and did not sync the batch before the snap sync batch.
-	_, err = nodeC.ConsensusNode.InboxTracker.GetBatchMetadata(nodeConfig.SnapSyncTest.BatchCount - 3)
+	_, err = nodeC.ConsensusNode.InboxTracker.GetBatchMetadata(nodeConfig.InboxReader.SnapSyncTest.BatchCount - 3)
 	if err == nil {
 		t.Error("Batch metadata should not be present for the batch before the snap sync batch")
 	}
