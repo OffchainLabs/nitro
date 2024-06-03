@@ -60,15 +60,15 @@ type Manager struct {
 	notifyOnNumberOfBlocks      uint64
 	// Optional list of challenges to track, keyed by challenged parent assertion hash. If nil,
 	// all challenges will be tracked.
-	challengesToTrack            []protocol.AssertionHash
-	assertionManager             *assertions.Manager
-	assertionPostingInterval     time.Duration
-	assertionScanningInterval    time.Duration
-	assertionConfirmingInterval  time.Duration
-	averageTimeForBlockCreation  time.Duration
-	mode                         types.Mode
-	maxDelaySeconds              int
-	claimedAssertionsInChallenge *threadsafe.LruSet[protocol.AssertionHash]
+	trackChallengeParentAssertionHashes []protocol.AssertionHash
+	assertionManager                    *assertions.Manager
+	assertionPostingInterval            time.Duration
+	assertionScanningInterval           time.Duration
+	assertionConfirmingInterval         time.Duration
+	averageTimeForBlockCreation         time.Duration
+	mode                                types.Mode
+	maxDelaySeconds                     int
+	claimedAssertionsInChallenge        *threadsafe.LruSet[protocol.AssertionHash]
 	// API
 	apiAddr   string
 	apiDBPath string
@@ -143,11 +143,11 @@ func WithRPCClient(client *rpc.Client) Opt {
 	}
 }
 
-func WithChallengesToTrack(parentAssertionHashes []string) Opt {
+func WithTrackChallengeParentAssertionHashes(trackChallengeParentAssertionHashes []string) Opt {
 	return func(val *Manager) {
-		val.challengesToTrack = make([]protocol.AssertionHash, len(parentAssertionHashes))
-		for i, hash := range parentAssertionHashes {
-			val.challengesToTrack[i] = protocol.AssertionHash{Hash: common.HexToHash(hash)}
+		val.trackChallengeParentAssertionHashes = make([]protocol.AssertionHash, len(trackChallengeParentAssertionHashes))
+		for i, hash := range trackChallengeParentAssertionHashes {
+			val.trackChallengeParentAssertionHashes[i] = protocol.AssertionHash{Hash: common.HexToHash(hash)}
 		}
 	}
 }
@@ -217,7 +217,7 @@ func New(
 		m.apiDB = apiDB
 	}
 
-	watcher, err := watcher.New(m.chain, m, m.stateManager, m.backend, m.chainWatcherInterval, numBigStepLevels, m.name, m.apiDB, m.assertionConfirmingInterval, m.averageTimeForBlockCreation, m.challengesToTrack)
+	watcher, err := watcher.New(m.chain, m, m.stateManager, m.backend, m.chainWatcherInterval, numBigStepLevels, m.name, m.apiDB, m.assertionConfirmingInterval, m.averageTimeForBlockCreation, m.trackChallengeParentAssertionHashes)
 	if err != nil {
 		return nil, err
 	}

@@ -21,10 +21,6 @@ import (
 // and starting a challenge transaction. If the challenge creation is successful, we add a leaf
 // with an associated history commitment to it and spawn a challenge tracker in the background.
 func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionHash) (bool, error) {
-	log.Info("Opening a challenge on an observed assertion",
-		"assertionHash", id.Hash,
-		"validatorName", m.name,
-	)
 	assertion, err := m.chain.GetAssertion(ctx, id)
 	if err != nil {
 		return false, errors.Wrapf(err, "could not get assertion to challenge with id %#x", id)
@@ -50,6 +46,10 @@ func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionH
 		log.Info("Challenge not in list of specified challenges to track, skipping", "assertionHash", id.Hash)
 		return false, nil
 	}
+	log.Info("Opening a challenge on an observed assertion",
+		"assertionHash", id.Hash,
+		"validatorName", m.name,
+	)
 	if alreadyExists {
 		log.Info("Challenge on assertion already exists, now tracking it locally", "assertionHash", id.Hash)
 		m.claimedAssertionsInChallenge.Insert(id)
@@ -96,7 +96,7 @@ func (m *Manager) addBlockChallengeLevelZeroEdge(
 	if err != nil {
 		return nil, false, nil, false, errors.Wrap(err, "could not get assertion creation info")
 	}
-	if !m.shouldTrackChallenge(protocol.AssertionHash{Hash: creationInfo.ParentAssertionHash}) {
+	if !m.allowTrackingEdgeWithChallengeParentAssertionHash(protocol.AssertionHash{Hash: creationInfo.ParentAssertionHash}) {
 		return nil, false, nil, false, nil
 	}
 	prevCreationInfo, err := m.chain.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: creationInfo.ParentAssertionHash})
@@ -183,11 +183,11 @@ func (m *Manager) addBlockChallengeLevelZeroEdge(
 	}, false, nil
 }
 
-func (m *Manager) shouldTrackChallenge(challengeParentAssertionHash protocol.AssertionHash) bool {
-	if len(m.challengesToTrack) == 0 {
+func (m *Manager) allowTrackingEdgeWithChallengeParentAssertionHash(challengeParentAssertionHash protocol.AssertionHash) bool {
+	if len(m.trackChallengeParentAssertionHashes) == 0 {
 		return true
 	}
-	for _, hash := range m.challengesToTrack {
+	for _, hash := range m.trackChallengeParentAssertionHashes {
 		if hash == challengeParentAssertionHash {
 			return true
 		}
