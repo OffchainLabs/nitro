@@ -37,7 +37,9 @@ func TestSnapSync(t *testing.T) {
 
 	// 2nd node without sequencer, syncs up to the first node.
 	// This node will be stopped in middle and arbitrumdata will be deleted.
-	nodeB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{})
+	testDir := t.TempDir()
+	nodeBStack := createStackConfigForTest(testDir)
+	nodeB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack})
 
 	builder.BridgeBalance(t, "Faucet", big.NewInt(1).Mul(big.NewInt(params.Ether), big.NewInt(10000)))
 
@@ -58,13 +60,13 @@ func TestSnapSync(t *testing.T) {
 	// Cleanup the 2nd node to release the database lock
 	cleanupB()
 	// New node with snap sync enabled, and the same database directory as the 2nd node but with no message data.
-	nodeC, cleanupC := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeB.ConsensusNode.Stack.Config(), nodeConfig: nodeConfig})
+	nodeC, cleanupC := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack, nodeConfig: nodeConfig})
 	defer cleanupC()
 
 	// Create transactions till batch count is 20
 	createTransactionTillBatchCount(ctx, t, builder, 20)
 	// Wait for nodeB to sync up to the first node
-	waitForBatchCountToCatchup(t, builder.L2.ConsensusNode.InboxTracker, nodeC.ConsensusNode.InboxTracker)
+	waitForBatchCountToCatchup(ctx, t, builder.L2.ConsensusNode.InboxTracker, nodeC.ConsensusNode.InboxTracker)
 	// Once the node is synced up, check if the batch metadata is the same for the last batch
 	// This is to ensure that the snap sync worked correctly
 	count, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
@@ -90,6 +92,11 @@ func TestSnapSync(t *testing.T) {
 	if header.Hash().Cmp(headerNodeC.Hash()) != 0 {
 		t.Error("Block hash mismatch")
 	}
+	// This to ensure that the node did a snap sync and did not sync the batch before the snap sync batch.
+	_, err = nodeC.ConsensusNode.InboxTracker.GetBatchMetadata(nodeConfig.SnapSyncTest.BatchCount - 3)
+	if err == nil {
+		t.Error("Batch metadata should not be present for the batch before the snap sync batch")
+	}
 }
 
 func waitForBlockToCatchupToMessageCount(
@@ -99,46 +106,57 @@ func waitForBlockToCatchupToMessageCount(
 	finalMessageCount uint64,
 ) {
 	for {
-		latestHeaderNodeC, err := client.HeaderByNumber(ctx, nil)
-		Require(t, err)
-		if latestHeaderNodeC.Number.Uint64() < uint64(finalMessageCount)-1 {
-			<-time.After(10 * time.Millisecond)
-		} else {
-			break
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(10 * time.Millisecond):
+			latestHeaderNodeC, err := client.HeaderByNumber(ctx, nil)
+			Require(t, err)
+			if latestHeaderNodeC.Number.Uint64() >= uint64(finalMessageCount)-1 {
+				return
+			}
 		}
 	}
 }
 
 func waitForBlocksToCatchup(ctx context.Context, t *testing.T, clientA *ethclient.Client, clientB *ethclient.Client) {
 	for {
-		headerA, err := clientA.HeaderByNumber(ctx, nil)
-		Require(t, err)
-		headerB, err := clientB.HeaderByNumber(ctx, nil)
-		Require(t, err)
-		if headerA.Number.Cmp(headerB.Number) != 0 {
-			<-time.After(10 * time.Millisecond)
-		} else {
-			break
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(10 * time.Millisecond):
+			headerA, err := clientA.HeaderByNumber(ctx, nil)
+			Require(t, err)
+			headerB, err := clientB.HeaderByNumber(ctx, nil)
+			Require(t, err)
+			if headerA.Number.Cmp(headerB.Number) == 0 {
+				return
+			}
 		}
 	}
 }
 
-func waitForBatchCountToCatchup(t *testing.T, inboxTrackerA *arbnode.InboxTracker, inboxTrackerB *arbnode.InboxTracker) {
+func waitForBatchCountToCatchup(ctx context.Context, t *testing.T, inboxTrackerA *arbnode.InboxTracker, inboxTrackerB *arbnode.InboxTracker) {
 	for {
-		countA, err := inboxTrackerA.GetBatchCount()
-		Require(t, err)
-		countB, err := inboxTrackerB.GetBatchCount()
-		Require(t, err)
-		if countA != countB {
-			<-time.After(10 * time.Millisecond)
-		} else {
-			break
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(10 * time.Millisecond):
+			countA, err := inboxTrackerA.GetBatchCount()
+			Require(t, err)
+			countB, err := inboxTrackerB.GetBatchCount()
+			Require(t, err)
+			if countA == countB {
+				return
+			}
 		}
+
 	}
 }
 
 func createTransactionTillBatchCount(ctx context.Context, t *testing.T, builder *NodeBuilder, finalCount uint64) {
 	for {
+		Require(t, ctx.Err())
 		tx := builder.L2Info.PrepareTx("Faucet", "BackgroundUser", builder.L2Info.TransferGas, big.NewInt(1), nil)
 		err := builder.L2.Client.SendTransaction(ctx, tx)
 		Require(t, err)
