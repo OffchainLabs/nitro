@@ -132,7 +132,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	NonceFailureCacheExpiry:      time.Second,
 	ExpectedSurplusSoftThreshold: "default",
 	ExpectedSurplusHardThreshold: "default",
-	EnableProfiling:              true,
+	EnableProfiling:              false,
 }
 
 var TestSequencerConfig = SequencerConfig{
