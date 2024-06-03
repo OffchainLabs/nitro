@@ -37,7 +37,7 @@ RUN . ~/.bashrc && NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-solidity
 
 FROM debian:bookworm-20231218 as wasm-base
 WORKDIR /workspace
-RUN apt-get update && apt-get install -y curl build-essential=12.9
+RUN apt-get update && apt-get install -y curl jq build-essential=12.9
 
 FROM wasm-base as wasm-libs-builder
 	# clang / lld used by soft-float wasm
