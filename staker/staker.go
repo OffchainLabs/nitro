@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -20,9 +21,11 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	flag "github.com/spf13/pflag"
 
+	protocol "github.com/OffchainLabs/bold/chain-abstraction"
+	"github.com/OffchainLabs/bold/solgen/go/bridgegen"
+	boldrollup "github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/bold/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker/txbuilder"
@@ -58,6 +61,20 @@ const (
 	// Make nodes: continually create new nodes, challenging bad assertions
 	MakeNodesStrategy
 )
+
+var assertionCreatedId common.Hash
+
+func init() {
+	rollupAbi, err := boldrollup.RollupCoreMetaData.GetAbi()
+	if err != nil {
+		panic(err)
+	}
+	assertionCreatedEvent, ok := rollupAbi.Events["AssertionCreated"]
+	if !ok {
+		panic("RollupCore ABI missing AssertionCreated event")
+	}
+	assertionCreatedId = assertionCreatedEvent.ID
+}
 
 type L1PostingStrategy struct {
 	HighGasThreshold   float64 `koanf:"high-gas-threshold"`
@@ -333,19 +350,20 @@ func NewStaker(
 }
 
 func (s *Staker) Initialize(ctx context.Context) error {
-	err := s.L1Validator.Initialize(ctx)
-	if err != nil {
-		return err
-	}
 	walletAddressOrZero := s.wallet.AddressOrZero()
 	if walletAddressOrZero != (common.Address{}) {
 		s.updateStakerBalanceMetric(ctx)
+	}
+	err := s.L1Validator.Initialize(ctx)
+	if err != nil {
+		return err
 	}
 	if s.blockValidator != nil && s.config.StartValidationFromStaked {
 		stakedInfoGlobalState, err := s.getStakedInfo(ctx, walletAddressOrZero)
 		if err != nil {
 			return err
 		}
+		fmt.Printf("Latest staked: %+v\n", stakedInfoGlobalState)
 		return s.blockValidator.InitAssumeValid(stakedInfoGlobalState)
 	}
 	return nil
@@ -354,8 +372,32 @@ func (s *Staker) Initialize(ctx context.Context) error {
 func (s *Staker) getStakedInfo(ctx context.Context, walletAddr common.Address) (validator.GoGlobalState, error) {
 	var zeroVal validator.GoGlobalState
 	if s.config.Bold.Enable {
-		// TODO: Fetch the latest staked assertion info.
-		return zeroVal, nil
+		rollupUserLogic, err := boldrollup.NewRollupUserLogic(s.rollupAddress, s.client)
+		if err != nil {
+			return zeroVal, err
+		}
+		latestStaked, err := rollupUserLogic.LatestStakedAssertion(s.getCallOpts(ctx), walletAddr)
+		if err != nil {
+			return zeroVal, err
+		}
+		if latestStaked == [32]byte{} {
+			latestConfirmed, err := rollupUserLogic.LatestConfirmed(&bind.CallOpts{Context: ctx})
+			if err != nil {
+				return zeroVal, err
+			}
+			latestStaked = latestConfirmed
+		}
+		assertion, err := s.readBoldAssertionCreationInfo(ctx, rollupUserLogic, latestStaked)
+		if err != nil {
+			return zeroVal, err
+		}
+		afterState := protocol.GoGlobalStateFromSolidity(assertion.AfterState.GlobalState)
+		return validator.GoGlobalState{
+			BlockHash:  afterState.BlockHash,
+			SendRoot:   afterState.SendRoot,
+			Batch:      afterState.Batch,
+			PosInBatch: afterState.PosInBatch,
+		}, nil
 	}
 	latestStaked, _, err := s.validatorUtils.LatestStaked(&s.baseCallOpts, s.rollupAddress, walletAddr)
 	if err != nil {
@@ -370,6 +412,73 @@ func (s *Staker) getStakedInfo(ctx context.Context, walletAddr common.Address) (
 		return zeroVal, err
 	}
 	return stakedInfo.AfterState().GlobalState, nil
+}
+
+// ReadAssertionCreationInfo for an assertion sequence number by looking up its creation
+// event from the rollup contracts.
+func (s *Staker) readBoldAssertionCreationInfo(
+	ctx context.Context,
+	rollup *boldrollup.RollupUserLogic,
+	assertionHash common.Hash,
+) (*protocol.AssertionCreatedInfo, error) {
+	var creationBlock uint64
+	var topics [][]common.Hash
+	if assertionHash == (common.Hash{}) {
+		rollupDeploymentBlock, err := rollup.RollupDeploymentBlock(&bind.CallOpts{Context: ctx})
+		if err != nil {
+			return nil, err
+		}
+		if !rollupDeploymentBlock.IsUint64() {
+			return nil, errors.New("rollup deployment block was not a uint64")
+		}
+		creationBlock = rollupDeploymentBlock.Uint64()
+		topics = [][]common.Hash{{assertionCreatedId}}
+	} else {
+		var b [32]byte
+		copy(b[:], assertionHash[:])
+		node, err := rollup.GetAssertion(&bind.CallOpts{Context: ctx}, b)
+		if err != nil {
+			return nil, err
+		}
+		creationBlock = node.CreatedAtBlock
+		topics = [][]common.Hash{{assertionCreatedId}, {assertionHash}}
+	}
+	var query = ethereum.FilterQuery{
+		FromBlock: new(big.Int).SetUint64(creationBlock),
+		ToBlock:   new(big.Int).SetUint64(creationBlock),
+		Addresses: []common.Address{s.rollupAddress},
+		Topics:    topics,
+	}
+	logs, err := s.client.FilterLogs(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	if len(logs) == 0 {
+		return nil, errors.New("no assertion creation logs found")
+	}
+	if len(logs) > 1 {
+		return nil, errors.New("found multiple instances of requested node")
+	}
+	ethLog := logs[0]
+	parsedLog, err := rollup.ParseAssertionCreated(ethLog)
+	if err != nil {
+		return nil, err
+	}
+	afterState := parsedLog.Assertion.AfterState
+	return &protocol.AssertionCreatedInfo{
+		ConfirmPeriodBlocks: parsedLog.ConfirmPeriodBlocks,
+		RequiredStake:       parsedLog.RequiredStake,
+		ParentAssertionHash: parsedLog.ParentAssertionHash,
+		BeforeState:         parsedLog.Assertion.BeforeState,
+		AfterState:          afterState,
+		InboxMaxCount:       parsedLog.InboxMaxCount,
+		AfterInboxBatchAcc:  parsedLog.AfterInboxBatchAcc,
+		AssertionHash:       parsedLog.AssertionHash,
+		WasmModuleRoot:      parsedLog.WasmModuleRoot,
+		ChallengeManager:    parsedLog.ChallengeManager,
+		TransactionHash:     ethLog.TxHash,
+		CreationBlock:       ethLog.BlockNumber,
+	}, nil
 }
 
 func (s *Staker) getLatestStakedState(ctx context.Context, staker common.Address) (uint64, arbutil.MessageIndex, *validator.GoGlobalState, error) {
@@ -432,6 +541,17 @@ func (s *Staker) Start(ctxIn context.Context) {
 	s.StopWaiter.Start(ctxIn, s)
 	backoff := time.Second
 	ephemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, "is ahead of on-chain nonce", 0)
+
+	switchedToBoldProtocol, err := s.checkAndSwitchToBoldStaker(ctxIn)
+	if err != nil {
+		log.Error("staker: error in checking switch to bold staker", "err", err)
+		// TODO: Determine a better path of action here.
+		return
+	}
+	if switchedToBoldProtocol {
+		s.StopAndWait()
+	}
+
 	s.CallIteratively(func(ctx context.Context) (returningWait time.Duration) {
 		defer func() {
 			panicErr := recover()
@@ -536,34 +656,44 @@ func (s *Staker) Start(ctxIn context.Context) {
 	})
 }
 
-func (s *Staker) checkAndSwitchToBoldStaker(ctx context.Context) (bool, error) {
-	switchedToBoldProtocol := false
-	if s.config.Bold.Enable {
-		callOpts := s.getCallOpts(ctx)
-		rollupAddress, err := s.bridge.Rollup(callOpts)
-		if err != nil {
-			return false, err
-		}
-		userLogic, err := rollupgen.NewRollupUserLogic(rollupAddress, s.client)
-		if err != nil {
-			return false, err
-		}
-		_, err = userLogic.ExtraChallengeTimeBlocks(callOpts)
-		if err != nil {
-			// Switch to Bold protocol since ExtraChallengeTimeBlocks does not exist in bold protocol.
-			auth, err := s.builder.Auth(ctx)
-			if err != nil {
-				return false, err
-			}
-			boldManager, err := NewManager(ctx, rollupAddress, auth, s.client, s.statelessBlockValidator, &s.config.Bold, s.wallet.DataPoster())
-			if err != nil {
-				return false, err
-			}
-			boldManager.Start(ctx)
-			switchedToBoldProtocol = true
-		}
+func (s *Staker) shouldUseBoldStaker(ctx context.Context) (bool, common.Address, error) {
+	var addr common.Address
+	if !s.config.Bold.Enable {
+		return false, addr, nil
 	}
-	return switchedToBoldProtocol, nil
+	callOpts := s.getCallOpts(ctx)
+	rollupAddress, err := s.bridge.Rollup(callOpts)
+	if err != nil {
+		return false, addr, err
+	}
+	userLogic, err := rollupgen.NewRollupUserLogic(rollupAddress, s.client)
+	if err != nil {
+		return false, addr, err
+	}
+	_, err = userLogic.ExtraChallengeTimeBlocks(callOpts)
+	// ExtraChallengeTimeBlocks does not exist in the the bold protocol.
+	return err != nil, rollupAddress, nil
+}
+
+func (s *Staker) checkAndSwitchToBoldStaker(ctx context.Context) (bool, error) {
+	shouldSwitch, rollupAddress, err := s.shouldUseBoldStaker(ctx)
+	if err != nil {
+		return false, err
+	}
+	if !shouldSwitch {
+		return false, nil
+	}
+	auth, err := s.builder.Auth(ctx)
+	if err != nil {
+		return false, err
+	}
+	fmt.Println("Starting the bold manager")
+	boldManager, err := NewManager(ctx, rollupAddress, auth, s.client, s.statelessBlockValidator, &s.config.Bold, s.wallet.DataPoster())
+	if err != nil {
+		return false, err
+	}
+	boldManager.Start(ctx)
+	return true, nil
 }
 
 func (s *Staker) IsWhitelisted(ctx context.Context) (bool, error) {
