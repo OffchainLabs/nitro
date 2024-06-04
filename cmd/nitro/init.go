@@ -5,10 +5,14 @@ package main
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
+	"net/http"
 	"os"
 	"runtime"
 	"strings"
@@ -40,6 +44,8 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
+var notFoundError = errors.New("file not found")
+
 func downloadInit(ctx context.Context, initConfig *conf.InitConfig) (string, error) {
 	if initConfig.Url == "" {
 		return "", nil
@@ -66,18 +72,30 @@ func downloadInit(ctx context.Context, initConfig *conf.InitConfig) (string, err
 		}
 		return initFile, nil
 	}
-	grabclient := grab.NewClient()
 	log.Info("Downloading initial database", "url", initConfig.Url)
-	fmt.Println()
+	path, err := downloadFile(ctx, initConfig, initConfig.Url)
+	if errors.Is(err, notFoundError) {
+		return downloadInitInParts(ctx, initConfig)
+	}
+	return path, err
+}
+
+func downloadFile(ctx context.Context, initConfig *conf.InitConfig, url string) (string, error) {
+	checksum, err := fetchChecksum(ctx, url+".sha256")
+	if err != nil {
+		return "", fmt.Errorf("error fetching checksum: %w", err)
+	}
+	grabclient := grab.NewClient()
 	printTicker := time.NewTicker(time.Second)
 	defer printTicker.Stop()
 	attempt := 0
 	for {
 		attempt++
-		req, err := grab.NewRequest(initConfig.DownloadPath, initConfig.Url)
+		req, err := grab.NewRequest(initConfig.DownloadPath, url)
 		if err != nil {
 			panic(err)
 		}
+		req.SetChecksum(sha256.New(), checksum, false)
 		resp := grabclient.Do(req.WithContext(ctx))
 		firstPrintTime := time.Now().Add(time.Second * 2)
 	updateLoop:
@@ -102,6 +120,9 @@ func downloadInit(ctx context.Context, initConfig *conf.InitConfig) (string, err
 				}
 			case <-resp.Done:
 				if err := resp.Err(); err != nil {
+					if resp.HTTPResponse.StatusCode == http.StatusNotFound {
+						return "", fmt.Errorf("file not found but checksum exists")
+					}
 					fmt.Printf("\n  attempt %d failed: %v\n", attempt, err)
 					break updateLoop
 				}
@@ -119,6 +140,99 @@ func downloadInit(ctx context.Context, initConfig *conf.InitConfig) (string, err
 		case <-time.After(initConfig.DownloadPoll):
 		}
 	}
+}
+
+// fetchChecksum performs a GET request to the specified URL using the provided context
+// and returns the checksum as a []byte
+func fetchChecksum(ctx context.Context, url string) ([]byte, error) {
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("error making GET request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusNotFound {
+		return nil, notFoundError
+	} else if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("unexpected status code: %v", resp.Status)
+	}
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading response body: %w", err)
+	}
+	checksumStr := strings.TrimSpace(string(body))
+	checksum, err := hex.DecodeString(checksumStr)
+	if err != nil {
+		return nil, fmt.Errorf("error decoding checksum: %w", err)
+	}
+	if len(checksum) != sha256.Size {
+		return nil, fmt.Errorf("invalid checksum length")
+	}
+	return checksum, nil
+}
+
+func downloadInitInParts(ctx context.Context, initConfig *conf.InitConfig) (string, error) {
+	log.Info("File not found; trying to download database in parts")
+	fileInfo, err := os.Stat(initConfig.DownloadPath)
+	if err != nil || !fileInfo.IsDir() {
+		return "", fmt.Errorf("download path must be a directory: %v", initConfig.DownloadPath)
+	}
+	part := 0
+	parts := []string{}
+	defer func() {
+		// remove all temporary files.
+		for _, part := range parts {
+			err := os.Remove(part)
+			if err != nil {
+				log.Warn("Failed to remove temporary file", "file", part)
+			}
+		}
+	}()
+	for {
+		url := fmt.Sprintf("%s.part%d", initConfig.Url, part)
+		log.Info("Downloading database part", "url", url)
+		partFile, err := downloadFile(ctx, initConfig, url)
+		if errors.Is(err, notFoundError) {
+			log.Info("Part not found; concatenating archive into single file", "numParts", len(parts))
+			break
+		} else if err != nil {
+			return "", err
+		}
+		parts = append(parts, partFile)
+		part++
+	}
+	return joinArchive(parts)
+}
+
+// joinArchive joins the archive parts into a single file and return its path.
+func joinArchive(parts []string) (string, error) {
+	if len(parts) == 0 {
+		return "", fmt.Errorf("no database parts found")
+	}
+	archivePath := strings.TrimSuffix(parts[0], ".part0")
+	archive, err := os.Create(archivePath)
+	if err != nil {
+		return "", fmt.Errorf("failed to create archive: %w", err)
+	}
+	defer archive.Close()
+	for _, part := range parts {
+		partFile, err := os.Open(part)
+		if err != nil {
+			return "", fmt.Errorf("failed to open part file %s: %w", part, err)
+		}
+		defer partFile.Close()
+		_, err = io.Copy(archive, partFile)
+		if err != nil {
+			return "", fmt.Errorf("failed to copy part file %s: %w", part, err)
+		}
+		log.Info("Joined database part into archive", "part", part)
+	}
+	log.Info("Successfully joined parts into archive", "archive", archivePath)
+	return archivePath, nil
 }
 
 func validateBlockChain(blockChain *core.BlockChain, chainConfig *params.ChainConfig) error {
@@ -182,7 +296,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				if err != nil {
 					return nil, nil, err
 				}
-				wasmDb, err := stack.OpenDatabase("wasm", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, "wasm/", false)
+				wasmDb, err := stack.OpenDatabaseWithExtraOptions("wasm", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, "wasm/", false, persistentConfig.Pebble.ExtraOptions("wasm"))
 				if err != nil {
 					return nil, nil, err
 				}
@@ -270,7 +384,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	if err != nil {
 		return nil, nil, err
 	}
-	wasmDb, err := stack.OpenDatabase("wasm", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, "wasm/", false)
+	wasmDb, err := stack.OpenDatabaseWithExtraOptions("wasm", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, "wasm/", false, persistentConfig.Pebble.ExtraOptions("wasm"))
 	if err != nil {
 		return nil, nil, err
 	}

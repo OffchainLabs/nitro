@@ -286,7 +286,7 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		effectiveBaseFee := evm.Context.BaseFee
 		usergas := p.msg.GasLimit
 
-		if p.msg.TxRunMode != core.MessageCommitMode && p.msg.GasFeeCap.BitLen() == 0 {
+		if !p.msg.TxRunMode.ExecutedOnChain() && p.msg.GasFeeCap.BitLen() == 0 {
 			// In gas estimation or eth_call mode, we permit a zero gas fee cap.
 			// This matches behavior with normal tx gas estimation and eth_call.
 			effectiveBaseFee = common.Big0
@@ -436,13 +436,13 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 	basefee := p.evm.Context.BaseFee
 
 	var poster common.Address
-	if p.msg.TxRunMode != core.MessageCommitMode {
+	if !p.msg.TxRunMode.ExecutedOnChain() {
 		poster = l1pricing.BatchPosterAddress
 	} else {
 		poster = p.evm.Context.Coinbase
 	}
 
-	if p.msg.TxRunMode == core.MessageCommitMode {
+	if p.msg.TxRunMode.ExecutedOnChain() {
 		p.msg.SkipL1Charging = false
 	}
 	if basefee.Sign() > 0 && !p.msg.SkipL1Charging {
@@ -509,7 +509,7 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 	if underlyingTx != nil && underlyingTx.Type() == types.ArbitrumRetryTxType {
 		inner, _ := underlyingTx.GetInner().(*types.ArbitrumRetryTx)
 		effectiveBaseFee := inner.GasFeeCap
-		if p.msg.TxRunMode == core.MessageCommitMode && !arbmath.BigEquals(effectiveBaseFee, p.evm.Context.BaseFee) {
+		if p.msg.TxRunMode.ExecutedOnChain() && !arbmath.BigEquals(effectiveBaseFee, p.evm.Context.BaseFee) {
 			log.Error(
 				"ArbitrumRetryTx GasFeeCap doesn't match basefee in commit mode",
 				"txHash", underlyingTx.Hash(),
@@ -659,7 +659,7 @@ func (p *TxProcessor) ScheduledTxes() types.Transactions {
 	effectiveBaseFee := p.evm.Context.BaseFee
 	chainID := p.evm.ChainConfig().ChainID
 
-	if p.msg.TxRunMode != core.MessageCommitMode && p.msg.GasFeeCap.BitLen() == 0 {
+	if !p.msg.TxRunMode.ExecutedOnChain() && p.msg.GasFeeCap.BitLen() == 0 {
 		// In gas estimation or eth_call mode, we permit a zero gas fee cap.
 		// This matches behavior with normal tx gas estimation and eth_call.
 		effectiveBaseFee = common.Big0
@@ -739,7 +739,7 @@ func (p *TxProcessor) GetPaidGasPrice() *big.Int {
 	version := p.state.ArbOSVersion()
 	if version != 9 {
 		gasPrice = p.evm.Context.BaseFee
-		if p.msg.TxRunMode != core.MessageCommitMode && p.msg.GasFeeCap.Sign() == 0 {
+		if !p.msg.TxRunMode.ExecutedOnChain() && p.msg.GasFeeCap.Sign() == 0 {
 			gasPrice = common.Big0
 		}
 	}
