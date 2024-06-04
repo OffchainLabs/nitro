@@ -53,7 +53,7 @@ type TransactionStreamer struct {
 	db             ethdb.Database
 	fatalErrChan   chan<- error
 	config         TransactionStreamerConfigFetcher
-	snapSyncConfig *SnapSyncConfig
+	snapSyncConfig SnapSyncConfig
 
 	insertionMutex     sync.Mutex // cannot be acquired while reorgMutex is held
 	reorgMutex         sync.RWMutex
@@ -107,7 +107,6 @@ func NewTransactionStreamer(
 	broadcastServer *broadcaster.Broadcaster,
 	fatalErrChan chan<- error,
 	config TransactionStreamerConfigFetcher,
-	snapSyncConfig *SnapSyncConfig,
 ) (*TransactionStreamer, error) {
 	streamer := &TransactionStreamer{
 		exec:               exec,
@@ -117,7 +116,6 @@ func NewTransactionStreamer(
 		broadcastServer:    broadcastServer,
 		fatalErrChan:       fatalErrChan,
 		config:             config,
-		snapSyncConfig:     snapSyncConfig,
 		cachedL1PriceData: &L1PriceData{
 			msgToL1PriceData: []L1PriceDataOfMsg{},
 		},
@@ -793,6 +791,10 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(pos arbutil.MessageIndex, m
 	defer s.insertionMutex.Unlock()
 
 	return s.addMessagesAndEndBatchImpl(pos, messagesAreConfirmed, messagesWithBlockHash, batch)
+}
+
+func (s *TransactionStreamer) SetSnapSyncParameters(config SnapSyncConfig) {
+	s.snapSyncConfig = config
 }
 
 func (s *TransactionStreamer) getPrevPrevDelayedRead(pos arbutil.MessageIndex) (uint64, error) {

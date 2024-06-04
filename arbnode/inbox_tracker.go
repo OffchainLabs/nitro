@@ -45,13 +45,12 @@ type InboxTracker struct {
 	batchMeta      *containers.LruCache[uint64, BatchMetadata]
 }
 
-func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapReaders []daprovider.Reader, snapSyncConfig SnapSyncConfig) (*InboxTracker, error) {
+func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapReaders []daprovider.Reader) (*InboxTracker, error) {
 	tracker := &InboxTracker{
-		db:             db,
-		txStreamer:     txStreamer,
-		dapReaders:     dapReaders,
-		batchMeta:      containers.NewLruCache[uint64, BatchMetadata](1000),
-		snapSyncConfig: snapSyncConfig,
+		db:         db,
+		txStreamer: txStreamer,
+		dapReaders: dapReaders,
+		batchMeta:  containers.NewLruCache[uint64, BatchMetadata](1000),
 	}
 	return tracker, nil
 }
@@ -223,6 +222,10 @@ func (t *InboxTracker) GetBatchCount() (uint64, error) {
 		return 0, err
 	}
 	return count, nil
+}
+
+func (t *InboxTracker) SetSnapSyncParameters(config SnapSyncConfig) {
+	t.snapSyncConfig = config
 }
 
 // err will return unexpected/internal errors
