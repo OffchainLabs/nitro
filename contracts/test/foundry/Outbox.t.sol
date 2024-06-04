@@ -29,13 +29,6 @@ contract OutboxTest is AbsOutboxTest {
         // fund bridge with some ether
         vm.deal(address(bridge), 100 ether);
 
-        // store root
-        vm.prank(rollup);
-        outbox.updateSendRoot(
-            0xc86f4eaf8efb31147795fb05564f8777abc3220d4caeb0227c6c69c115931dda,
-            0xc86f4eaf8efb31147795fb05564f8777abc3220d4caeb0227c6c69c115931dda
-        );
-
         // create msg receiver on L1
         L2ToL1Target target = new L2ToL1Target();
         target.setOutbox(address(outbox));
@@ -44,18 +37,33 @@ contract OutboxTest is AbsOutboxTest {
         uint256 bridgeBalanceBefore = address(bridge).balance;
         uint256 targetBalanceBefore = address(target).balance;
 
-        bytes32[] memory proof = new bytes32[](5);
-        proof[0] = bytes32(0x1216ff070e3c87b032d79b298a3e98009ddd13bf8479b843e225857ca5f950e7);
-        proof[1] = bytes32(0x2b5ee8f4bd7664ca0cf31d7ab86119b63f6ff07bb86dbd5af356d0087492f686);
-        proof[2] = bytes32(0x0aa797064e0f3768bbac0a02ce031c4f282441a9cd8c669086cf59a083add893);
-        proof[3] = bytes32(0xc7aac0aad5108a46ac9879f0b1870fd0cbc648406f733eb9d0b944a18c32f0f8);
-        proof[4] = bytes32(0x477ce2b0bc8035ae3052b7339c7496531229bd642bb1871d81618cf93a4d2d1a);
+        bytes32[] memory proof = new bytes32[](1);
+        proof[0] = bytes32(0);
 
         uint256 withdrawalAmount = 15 ether;
         bytes memory data = abi.encodeWithSignature("receiveHook()");
+
+        uint256 index = 1;
+        bytes32 itemHash = outbox.calculateItemHash({
+            l2Sender: user,
+            to: address(target),
+            l2Block: 300,
+            l1Block: 20,
+            l2Timestamp: 1234,
+            value: withdrawalAmount,
+            data: data
+        });
+        bytes32 root = outbox.calculateMerkleRoot(proof, index, itemHash);
+        // store root
+        vm.prank(rollup);
+        outbox.updateSendRoot(
+            root,
+            bytes32(uint256(1))
+        );
+
         outbox.executeTransaction({
             proof: proof,
-            index: 12,
+            index: index,
             l2Sender: user,
             to: address(target),
             l2Block: 300,
@@ -82,10 +90,23 @@ contract OutboxTest is AbsOutboxTest {
         /// check context was properly set during execution
         assertEq(uint256(target.l2Block()), 300, "Invalid l2Block");
         assertEq(uint256(target.timestamp()), 1234, "Invalid timestamp");
-        assertEq(uint256(target.outputId()), 12, "Invalid outputId");
+        assertEq(uint256(target.outputId()), index, "Invalid outputId");
         assertEq(target.sender(), user, "Invalid sender");
         assertEq(uint256(target.l1Block()), 20, "Invalid l1Block");
         assertEq(uint256(target.withdrawalAmount()), withdrawalAmount, "Invalid withdrawalAmount");
+
+        vm.expectRevert(abi.encodeWithSignature("AlreadySpent(uint256)", index));
+        outbox.executeTransaction({
+            proof: proof,
+            index: index,
+            l2Sender: user,
+            to: address(target),
+            l2Block: 300,
+            l1Block: 20,
+            l2Timestamp: 1234,
+            value: withdrawalAmount,
+            data: data
+        });
     }
 }
 
