@@ -8,6 +8,9 @@ import "../../rollup/IRollupLogic.sol";
 import "./IAbsBoldStakingPool.sol";
 
 interface IAssertionStakingPool is IAbsBoldStakingPool {
+    /// @notice Thrown when assertion id is empty
+    error EmptyAssertionId();
+
     /// @notice Create assertion. Callable only if required stake has been reached and assertion has not been asserted yet.
     function createAssertion(AssertionInputs calldata assertionInputs) external;
 

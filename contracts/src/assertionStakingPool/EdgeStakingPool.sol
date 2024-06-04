@@ -36,6 +36,9 @@ contract EdgeStakingPool is AbsBoldStakingPool, IEdgeStakingPool {
         address _challengeManager,
         bytes32 _edgeId
     ) AbsBoldStakingPool(address(EdgeChallengeManager(_challengeManager).stakeToken())) {
+        if (_edgeId == bytes32(0)) {
+            revert EmptyEdgeId();
+        }
         challengeManager = _challengeManager;
         edgeId = _edgeId;
     }

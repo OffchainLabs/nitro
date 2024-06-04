@@ -32,6 +32,9 @@ contract AssertionStakingPool is AbsBoldStakingPool, IAssertionStakingPool {
         address _rollup,
         bytes32 _assertionHash
     ) AbsBoldStakingPool(IRollupCore(_rollup).stakeToken()) {
+        if(_assertionHash == bytes32(0)) {
+            revert EmptyAssertionId();
+        }
         rollup = _rollup;
         assertionHash = _assertionHash;
     }

@@ -11,6 +11,9 @@ interface IEdgeStakingPool is IAbsBoldStakingPool {
     /// @notice The resulting edge does not match the expected edge
     error IncorrectEdgeId(bytes32 actual, bytes32 expected);
 
+    /// @notice Thrown when edge id is empty
+    error EmptyEdgeId();
+
     /// @notice Create the edge. Callable only if required stake has been reached and edge has not been created yet.
     function createEdge(CreateEdgeArgs calldata args) external;
 
