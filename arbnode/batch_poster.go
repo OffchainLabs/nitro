@@ -66,6 +66,8 @@ var (
 	blobGasLimitGauge             = metrics.NewRegisteredGauge("arb/batchposter/blobgas/limit", nil)
 	suggestedTipCapGauge          = metrics.NewRegisteredGauge("arb/batchposter/suggestedtipcap", nil)
 
+	batchPosterBacklogGauge = metrics.NewRegisteredGauge("arb/batchposter/backlog", nil)
+
 	usableBytesInBlob    = big.NewInt(int64(len(kzg4844.Blob{}) * 31 / 32))
 	blobTxBlobGasPerBlob = big.NewInt(params.BlobTxBlobGasPerBlob)
 )
@@ -1347,6 +1349,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		messagesPerBatch = 1
 	}
 	backlog := uint64(unpostedMessages) / messagesPerBatch
+	batchPosterBacklogGauge.Update(int64(backlog))
 	if backlog > 10 {
 		logLevel := log.Warn
 		if recentlyHitL1Bounds {
