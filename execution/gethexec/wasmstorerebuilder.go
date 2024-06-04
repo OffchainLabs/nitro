@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -57,7 +58,7 @@ func WriteToKeyValueStore[T any](store ethdb.KeyValueStore, key []byte, val T) e
 // It also stores a special value that is only set once when rebuilding commenced in RebuildingStartBlockHashKey as the block
 // time of the latest block when rebuilding was first called, this is used to avoid recomputing of assembly and module of
 // contracts that were created after rebuilding commenced since they would anyway already be added during sync.
-func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, l2Blockchain *core.BlockChain, position, rebuildingStartBlockHash common.Hash) {
+func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, l2Blockchain *core.BlockChain, position, rebuildingStartBlockHash common.Hash) error {
 	var err error
 	var stateDb *state.StateDB
 	latestHeader := l2Blockchain.CurrentBlock()
@@ -68,48 +69,46 @@ func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, l2Bloc
 		log.Info("error getting state at start block of rebuilding wasm store, attempting rebuilding with latest state", "err", err)
 		stateDb, err = l2Blockchain.StateAt(latestHeader.Root)
 		if err != nil {
-			log.Error("error getting state at latest block, aborting rebuilding", "err", err)
-			return
+			return fmt.Errorf("error getting state at latest block, aborting rebuilding: %w", err)
 		}
 	}
 	diskDb := stateDb.Database().DiskDB()
 	arbState, err := arbosState.OpenSystemArbosState(stateDb, nil, true)
 	if err != nil {
-		log.Error("error getting arbos state, aborting rebuilding", "err", err)
-		return
+		return fmt.Errorf("error getting arbos state, aborting rebuilding: %w", err)
 	}
 	programs := arbState.Programs()
 	iter := diskDb.NewIterator(rawdb.CodePrefix, position[:])
-	for count := 1; iter.Next(); count++ {
+	defer iter.Release()
+	lastStatusUpdate := time.Now()
+	for iter.Next() {
 		codeHashBytes := bytes.TrimPrefix(iter.Key(), rawdb.CodePrefix)
 		codeHash := common.BytesToHash(codeHashBytes)
 		code := iter.Value()
 		if state.IsStylusProgram(code) {
 			if err := programs.SaveActiveProgramToWasmStore(stateDb, codeHash, code, latestHeader.Time, l2Blockchain.Config().DebugMode(), rebuildingStartHeader.Time); err != nil {
-				log.Error("error while rebuilding of wasm store, aborting rebuilding", "err", err)
-				return
+				return fmt.Errorf("error while rebuilding of wasm store, aborting rebuilding: %w", err)
 			}
 		}
-		// After every fifty codeHash checks, update the rebuilding position
+		// After every one second of work, update the rebuilding position
 		// This also notifies user that we are working on rebuilding
-		if count%50 == 0 || ctx.Err() != nil {
+		if time.Since(lastStatusUpdate) >= time.Second || ctx.Err() != nil {
 			log.Info("Storing rebuilding status to disk", "codeHash", codeHash)
 			if err := WriteToKeyValueStore(wasmStore, RebuildingPositionKey, codeHash); err != nil {
-				log.Error("error updating codehash position in rebuilding of wasm store", "err", err)
-				return
+				return fmt.Errorf("error updating codehash position in rebuilding of wasm store: %w", err)
 			}
 			// If outer context is cancelled we should terminate rebuilding
 			// We attempted to write the latest checked codeHash to wasm store
 			if ctx.Err() != nil {
-				return
+				return ctx.Err()
 			}
+			lastStatusUpdate = time.Now()
 		}
 	}
-	iter.Release()
 	// Set rebuilding position to done indicating completion
 	if err := WriteToKeyValueStore(wasmStore, RebuildingPositionKey, RebuildingDone); err != nil {
-		log.Error("error updating codehash position in rebuilding of wasm store to done", "err", err)
-		return
+		return fmt.Errorf("error updating codehash position in rebuilding of wasm store to done: %w", err)
 	}
 	log.Info("Rebuilding of wasm store was successful")
+	return nil
 }

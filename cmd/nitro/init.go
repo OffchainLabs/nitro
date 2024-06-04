@@ -206,8 +206,10 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 					}
 				}
 				latestBlock := l2BlockChain.CurrentBlock()
-				if latestBlock.Number.Uint64() <= chainConfig.ArbitrumChainParams.GenesisBlockNum {
+				if latestBlock.Number.Uint64() <= chainConfig.ArbitrumChainParams.GenesisBlockNum ||
+					types.DeserializeHeaderExtraInformation(latestBlock).ArbOSFormatVersion < params.ArbosVersion_Stylus {
 					// If there is only genesis block or no blocks in the blockchain, set Rebuilding of wasm store to Done
+					// If Stylus upgrade hasn't yet happened, skipping rebuilding of wasm store
 					log.Info("setting rebuilding of wasm store to done")
 					if err = gethexec.WriteToKeyValueStore(wasmDb, gethexec.RebuildingPositionKey, gethexec.RebuildingDone); err != nil {
 						return nil, nil, fmt.Errorf("unable to set rebuilding status of wasm store to done: %w", err)
@@ -230,7 +232,9 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 							startBlockHash = latestBlock.Hash()
 						}
 						log.Info("starting or continuing rebuilding of wasm store", "codeHash", position, "startBlockHash", startBlockHash)
-						gethexec.RebuildWasmStore(ctx, wasmDb, l2BlockChain, position, startBlockHash)
+						if err := gethexec.RebuildWasmStore(ctx, wasmDb, l2BlockChain, position, startBlockHash); err != nil {
+							return nil, nil, fmt.Errorf("error rebuilding of wasm store: %w", err)
+						}
 					}
 				}
 				return chainDb, l2BlockChain, nil

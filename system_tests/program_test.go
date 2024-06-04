@@ -1634,7 +1634,7 @@ func TestWasmStoreRebuilding(t *testing.T) {
 
 	// Start rebuilding and wait for it to finish
 	log.Info("starting rebuilding of wasm store")
-	gethexec.RebuildWasmStore(ctx, wasmDbAfterDelete, bc, common.Hash{}, bc.CurrentBlock().Hash())
+	Require(t, gethexec.RebuildWasmStore(ctx, wasmDbAfterDelete, bc, common.Hash{}, bc.CurrentBlock().Hash()))
 
 	wasmDbAfterRebuild := getLatestStateWasmStore(bc)
 

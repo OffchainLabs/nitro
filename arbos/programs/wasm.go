@@ -99,9 +99,6 @@ func cacheProgram(db vm.StateDB, module common.Hash, program Program, params *St
 }
 func evictProgram(db vm.StateDB, module common.Hash, version uint16, debug bool, mode core.MessageRunMode, forever bool) {
 }
-func activateProgramInternal(db vm.StateDB, program common.Address, codehash common.Hash, wasm []byte, page_limit uint16, version uint16, debug bool, gasLeft *uint64) (*activationInfo, []byte, []byte, error) {
-	return nil, nil, nil, nil
-}
 
 //go:wasmimport programs new_program
 func newProgram(
