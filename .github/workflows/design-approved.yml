@@ -2,15 +2,16 @@ name: Design Approved Check
 
 on:
   pull_request:
+    branches: [ master ]
     types: [synchronize, opened, reopened, labeled, unlabeled]
 
 jobs:
   design-approved-check:
     if: ${{ !contains(github.event.*.labels.*.name, 'design-approved') }}
-    name: Prevent Merging
+    name: Design Approved Check
     runs-on: ubuntu-latest
     steps:
-      - name: Check for label
+      - name: Check for design-approved label
         run: |
           echo "Pull request is missing the 'design-approved' label"
           echo "This workflow fails so that the pull request cannot be merged"
