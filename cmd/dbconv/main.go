@@ -67,7 +67,7 @@ func main() {
 			select {
 			case <-ticker.C:
 				stats := conv.Stats()
-				fmt.Printf("Progress:\n\tprocessed entries: %v\n\tprocessed data (MB): %v\n\telapsed: %v\n\tcurrent:\tKe/s: %v\tMB/s: %v\n\taverage:\tKe/s: %v\tMB/s: %v\n", stats.Entries(), stats.Bytes()/1024/1024, stats.Elapsed(), stats.EntriesPerSecond()/1000, stats.BytesPerSecond()/1024/1024, stats.AverageEntriesPerSecond()/1000, stats.AverageBytesPerSecond()/1024/1024)
+				fmt.Printf("Progress:\n\tprocessed entries: %d\n\tprocessed data (MB): %d\n\telapsed: %v\n\tcurrent:\tKe/s: %.3f\tMB/s: %.3f\n\taverage:\tKe/s: %.3f\tMB/s: %.3f\n", stats.Entries(), stats.Bytes()/1024/1024, stats.Elapsed(), stats.EntriesPerSecond()/1000, stats.BytesPerSecond()/1024/1024, stats.AverageEntriesPerSecond()/1000, stats.AverageBytesPerSecond()/1024/1024)
 
 			case <-ctx.Done():
 				return
