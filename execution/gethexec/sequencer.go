@@ -111,6 +111,9 @@ func (c *SequencerConfig) Validate() error {
 	if c.expectedSurplusSoftThreshold < c.expectedSurplusHardThreshold {
 		return errors.New("expected-surplus-soft-threshold cannot be lower than expected-surplus-hard-threshold")
 	}
+	if c.MaxTxDataSize > arbostypes.MaxL2MessageSize-50000 {
+		return errors.New("max-tx-data-size too large for MaxL2MessageSize")
+	}
 	return nil
 }
 
