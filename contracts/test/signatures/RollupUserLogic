@@ -1,7 +1,7 @@
 {
   "VALIDATOR_AFK_BLOCKS()": "4ceccfe5",
   "_stakerMap(address)": "e8bd4922",
-  "addToDeposit(address,uint256)": "f3f0a03e",
+  "addToDeposit(address,address,uint256)": "685f5ecc",
   "amountStaked(address)": "ef40a670",
   "anyTrustFastConfirmer()": "55840a58",
   "baseStake()": "76e7e23b",
@@ -32,6 +32,7 @@
   "latestStakedAssertion(address)": "2abdd230",
   "loserStakeEscrow()": "f065de3f",
   "minimumAssertionPeriod()": "45e38b64",
+  "newStake(uint256,address)": "68129b14",
   "newStakeOnNewAssertion(uint256,((bytes32,bytes32,(bytes32,uint256,address,uint64,uint64)),((bytes32[2],uint64[2]),uint8,bytes32),((bytes32[2],uint64[2]),uint8,bytes32)),bytes32)": "7300201c",
   "newStakeOnNewAssertion(uint256,((bytes32,bytes32,(bytes32,uint256,address,uint64,uint64)),((bytes32[2],uint64[2]),uint8,bytes32),((bytes32[2],uint64[2]),uint8,bytes32)),bytes32,address)": "50f32f68",
   "outbox()": "ce11e6ab",
@@ -42,6 +43,7 @@
   "removeWhitelistAfterFork()": "c2c2e68e",
   "removeWhitelistAfterValidatorAfk()": "18baaab9",
   "returnOldDeposit()": "57ef4ab9",
+  "returnOldDepositFor(address)": "588c7a16",
   "rollupDeploymentBlock()": "1b1689e9",
   "rollupEventInbox()": "aa38a6e7",
   "sequencerInbox()": "ee35f327",
@@ -55,5 +57,6 @@
   "validatorWhitelistDisabled()": "12ab3d3b",
   "wasmModuleRoot()": "8ee1a126",
   "withdrawStakerFunds()": "61373919",
-  "withdrawableFunds(address)": "2f30cabd"
+  "withdrawableFunds(address)": "2f30cabd",
+  "withdrawalAddress(address)": "84728cd0"
 }

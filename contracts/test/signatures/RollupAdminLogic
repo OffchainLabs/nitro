@@ -64,5 +64,6 @@
   "validatorWalletCreator()": "bc45e0ae",
   "validatorWhitelistDisabled()": "12ab3d3b",
   "wasmModuleRoot()": "8ee1a126",
-  "withdrawableFunds(address)": "2f30cabd"
+  "withdrawableFunds(address)": "2f30cabd",
+  "withdrawalAddress(address)": "84728cd0"
 }

@@ -380,10 +380,131 @@ contract RollupTest is Test {
                 afterState: afterState
             }),
             expectedAssertionHash: expectedAssertionHash,
-            withdrawalAddress: validator1Withdrawal
+            _withdrawalAddress: validator1Withdrawal
         });
 
         return (expectedAssertionHash, afterState, inboxcount);
+    }
+
+    function testSuccessCreateAssertionUsingAddToDeposit() public returns (bytes32, AssertionState memory, uint64) {
+        uint64 inboxcount = uint64(_createNewBatch());
+        AssertionState memory beforeState;
+        beforeState.machineStatus = MachineStatus.FINISHED;
+        AssertionState memory afterState;
+        afterState.machineStatus = MachineStatus.FINISHED;
+        afterState.globalState.bytes32Vals[0] = FIRST_ASSERTION_BLOCKHASH; // blockhash
+        afterState.globalState.bytes32Vals[1] = FIRST_ASSERTION_SENDROOT; // sendroot
+        afterState.globalState.u64Vals[0] = 1; // inbox count
+        afterState.globalState.u64Vals[1] = 0; // pos in msg
+
+        bytes32 expectedAssertionHash = RollupLib.assertionHash({
+            parentAssertionHash: genesisHash,
+            afterState: afterState,
+            inboxAcc: userRollup.bridge().sequencerInboxAccs(0)
+        });
+
+        vm.prank(validator1);
+        userRollup.newStake(0, validator1Withdrawal);
+
+        address rando = address(98139098);
+        token.transfer(rando, BASE_STAKE);
+
+        vm.startPrank(rando);
+        token.approve(address(userRollup), BASE_STAKE);
+        userRollup.addToDeposit(validator1, validator1Withdrawal, BASE_STAKE);
+        vm.stopPrank();
+
+        vm.prank(validator1);
+        userRollup.stakeOnNewAssertion({
+            assertion: AssertionInputs({
+                beforeStateData: BeforeStateData({
+                    sequencerBatchAcc: bytes32(0),
+                    prevPrevAssertionHash: bytes32(0),
+                    configData: ConfigData({
+                        wasmModuleRoot: WASM_MODULE_ROOT,
+                        requiredStake: BASE_STAKE,
+                        challengeManager: address(challengeManager),
+                        confirmPeriodBlocks: CONFIRM_PERIOD_BLOCKS,
+                        nextInboxPosition: afterState.globalState.u64Vals[0]
+                    })
+                }),
+                beforeState: beforeState,
+                afterState: afterState
+            }),
+            expectedAssertionHash: expectedAssertionHash
+        });
+
+        return (expectedAssertionHash, afterState, inboxcount);
+    }
+
+    function testPartialDepositCanWithdraw() public {
+        IRollupCore.Staker memory emptyStaker;
+
+        vm.prank(validator1);
+        userRollup.newStake(10, validator1Withdrawal);
+
+        uint256 snapshot = vm.snapshot();
+
+        vm.prank(validator1);
+        userRollup.returnOldDeposit();
+
+        vm.prank(validator1Withdrawal);
+        userRollup.withdrawStakerFunds();
+
+        assertEq(token.balanceOf(validator1Withdrawal), 10);
+        assertEq(keccak256(abi.encode(userRollup.getStaker(validator1))), keccak256(abi.encode(emptyStaker)));
+
+        vm.revertTo(snapshot);
+
+        vm.startPrank(validator1Withdrawal);
+        userRollup.returnOldDepositFor(validator1);
+        userRollup.withdrawStakerFunds();
+        vm.stopPrank();
+
+        assertEq(token.balanceOf(validator1Withdrawal), 10);
+        assertEq(keccak256(abi.encode(userRollup.getStaker(validator1))), keccak256(abi.encode(emptyStaker)));
+    }
+
+    function testPartialDepositCannotMakeAssertion() public {
+        uint64 inboxcount = uint64(_createNewBatch());
+        AssertionState memory beforeState;
+        beforeState.machineStatus = MachineStatus.FINISHED;
+        AssertionState memory afterState;
+        afterState.machineStatus = MachineStatus.FINISHED;
+        afterState.globalState.bytes32Vals[0] = FIRST_ASSERTION_BLOCKHASH; // blockhash
+        afterState.globalState.bytes32Vals[1] = FIRST_ASSERTION_SENDROOT; // sendroot
+        afterState.globalState.u64Vals[0] = 1; // inbox count
+        afterState.globalState.u64Vals[1] = 0; // pos in msg
+
+        bytes32 expectedAssertionHash = RollupLib.assertionHash({
+            parentAssertionHash: genesisHash,
+            afterState: afterState,
+            inboxAcc: userRollup.bridge().sequencerInboxAccs(0)
+        });
+
+        vm.prank(validator1);
+        userRollup.newStake(BASE_STAKE - 1, validator1Withdrawal);
+
+        vm.prank(validator1);
+        vm.expectRevert("INSUFFICIENT_STAKE");
+        userRollup.stakeOnNewAssertion({
+            assertion: AssertionInputs({
+                beforeStateData: BeforeStateData({
+                    sequencerBatchAcc: bytes32(0),
+                    prevPrevAssertionHash: bytes32(0),
+                    configData: ConfigData({
+                        wasmModuleRoot: WASM_MODULE_ROOT,
+                        requiredStake: BASE_STAKE,
+                        challengeManager: address(challengeManager),
+                        confirmPeriodBlocks: CONFIRM_PERIOD_BLOCKS,
+                        nextInboxPosition: afterState.globalState.u64Vals[0]
+                    })
+                }),
+                beforeState: beforeState,
+                afterState: afterState
+            }),
+            expectedAssertionHash: expectedAssertionHash
+        });
     }
 
     function testSuccessGetStaker() public {
@@ -429,7 +550,7 @@ contract RollupTest is Test {
                 afterState: afterState
             }),
             expectedAssertionHash: expectedAssertionHash,
-            withdrawalAddress: validator1Withdrawal
+            _withdrawalAddress: validator1Withdrawal
         });
 
         return (expectedAssertionHash, afterState, inboxcount);
@@ -464,7 +585,7 @@ contract RollupTest is Test {
                 afterState: afterState
             }),
             expectedAssertionHash: bytes32(0),
-            withdrawalAddress: validator1Withdrawal
+            _withdrawalAddress: validator1Withdrawal
         });
 
         vm.prank(validator2);
@@ -487,7 +608,7 @@ contract RollupTest is Test {
                 afterState: afterState
             }),
             expectedAssertionHash: bytes32(0),
-            withdrawalAddress: validator2Withdrawal
+            _withdrawalAddress: validator2Withdrawal
         });
     }
 
@@ -527,7 +648,7 @@ contract RollupTest is Test {
                 afterState: afterState
             }),
             expectedAssertionHash: expectedAssertionHash,
-            withdrawalAddress: validator1Withdrawal
+            _withdrawalAddress: validator1Withdrawal
         });
 
         AssertionState memory afterState2;
@@ -627,7 +748,7 @@ contract RollupTest is Test {
                 afterState: afterState
             }),
             expectedAssertionHash: expectedAssertionHash,
-            withdrawalAddress: validator1Withdrawal
+            _withdrawalAddress: validator1Withdrawal
         });
 
         AssertionState memory afterState2;
@@ -670,7 +791,7 @@ contract RollupTest is Test {
                 afterState: afterState2
             }),
             expectedAssertionHash: expectedAssertionHash2,
-            withdrawalAddress: validator2Withdrawal
+            _withdrawalAddress: validator2Withdrawal
         });
 
         assertEq(userRollup.getAssertion(genesisHash).secondChildBlock, block.number);
@@ -723,7 +844,7 @@ contract RollupTest is Test {
                 afterState: afterState3
             }),
             expectedAssertionHash: expectedAssertionHash3,
-            withdrawalAddress: validator3Withdrawal
+            _withdrawalAddress: validator3Withdrawal
         });
     }
 
@@ -996,7 +1117,7 @@ contract RollupTest is Test {
             tokenAmount: BASE_STAKE,
             assertion: emptyAssertion,
             expectedAssertionHash: bytes32(0),
-            withdrawalAddress: validator2Withdrawal
+            _withdrawalAddress: validator2Withdrawal
         });
     }
 
@@ -1009,7 +1130,7 @@ contract RollupTest is Test {
             tokenAmount: BASE_STAKE,
             assertion: emptyAssertion,
             expectedAssertionHash: bytes32(0),
-            withdrawalAddress: address(0)
+            _withdrawalAddress: address(0)
         });
     }
 
@@ -1026,24 +1147,31 @@ contract RollupTest is Test {
         userRollup.reduceDeposit(1);
     }
 
+    function testAddToDepositWithdrawalAddressCheck() public {
+        testSuccessConfirmEdgeByTime();
+        vm.prank(validator1);
+        vm.expectRevert("WRONG_WITHDRAWAL_ADDRESS");
+        userRollup.addToDeposit(validator1, validator2Withdrawal, 1);
+    }
+
     function testSuccessAddToDeposit() public {
         testSuccessConfirmEdgeByTime();
         vm.prank(validator1);
-        userRollup.addToDeposit(validator1, 1);
+        userRollup.addToDeposit(validator1, validator1Withdrawal, 1);
     }
 
     function testRevertAddToDepositNotValidator() public {
         testSuccessConfirmEdgeByTime();
         vm.prank(sequencer);
         vm.expectRevert("NOT_VALIDATOR");
-        userRollup.addToDeposit(validator1, 1);
+        userRollup.addToDeposit(address(10043902309), address(92803809), 1);
     }
 
     function testRevertAddToDepositNotStaker() public {
         testSuccessConfirmEdgeByTime();
         vm.prank(validator1);
         vm.expectRevert("NOT_STAKED");
-        userRollup.addToDeposit(sequencer, 1);
+        userRollup.addToDeposit(address(this), validator2Withdrawal, 1);
     }
 
     function testSuccessCreateSecondAssertion() public returns (bytes32, bytes32, AssertionState memory, bytes32) {
@@ -1193,7 +1321,7 @@ contract RollupTest is Test {
                 tokenAmount: BASE_STAKE,
                 assertion: assertion,
                 expectedAssertionHash: expectedAssertionHash,
-                withdrawalAddress: validator1Withdrawal
+                _withdrawalAddress: validator1Withdrawal
             });
         }
 
