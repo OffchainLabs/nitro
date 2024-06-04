@@ -887,6 +887,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         onlyRollupOwner
     {
         _setMaxTimeVariation(maxTimeVariation_);
+        emit MaxTimeVariationSet(maxTimeVariation_);
         emit OwnerFunctionCalled(0);
     }
 
@@ -896,6 +897,7 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         onlyRollupOwnerOrBatchPosterManager
     {
         isBatchPoster[addr] = isBatchPoster_;
+        emit BatchPosterSet(addr, isBatchPoster_);
         emit OwnerFunctionCalled(1);
     }
 
@@ -935,18 +937,20 @@ contract SequencerInbox is DelegateCallAware, GasRefundEnabled, ISequencerInbox 
         onlyRollupOwnerOrBatchPosterManager
     {
         isSequencer[addr] = isSequencer_;
-        emit OwnerFunctionCalled(4); // Owner in this context can also be batch poster manager
+        emit SequencerSet(addr, isSequencer_);
+        emit OwnerFunctionCalled(4);
     }
 
     /// @inheritdoc ISequencerInbox
     function setBatchPosterManager(address newBatchPosterManager) external onlyRollupOwner {
         batchPosterManager = newBatchPosterManager;
+        emit BatchPosterManagerSet(newBatchPosterManager);
         emit OwnerFunctionCalled(5);
     }
 
     function setBufferConfig(BufferConfig memory bufferConfig_) external onlyRollupOwner {
         _setBufferConfig(bufferConfig_);
-        emit OwnerFunctionCalled(6);
+        emit BufferConfigSet(bufferConfig_);
     }
 
     function isValidKeysetHash(bytes32 ksHash) external view returns (bool) {

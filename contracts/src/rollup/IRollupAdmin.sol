@@ -11,7 +11,57 @@ import "../bridge/IOwnable.sol";
 import "./Config.sol";
 
 interface IRollupAdmin {
-    event OwnerFunctionCalled(uint256 indexed id);
+    /// @dev Outbox address was set
+    event OutboxSet(address outbox);
+
+    /// @dev Old outbox was removed
+    event OldOutboxRemoved(address outbox);
+
+    /// @dev Inbox was enabled or disabled
+    event DelayedInboxSet(address inbox, bool enabled);
+
+    /// @dev A list of validators was set
+    event ValidatorsSet(address[] validators, bool[] enabled);
+
+    /// @dev A new minimum assertion period was set
+    event MinimumAssertionPeriodSet(uint256 newPeriod);
+
+    /// @dev New confirm period blocks was set
+    event ConfirmPeriodBlocksSet(uint64 newConfirmPeriod);
+
+    /// @dev Base stake was set
+    event BaseStakeSet(uint256 newBaseStake);
+
+    /// @dev Stakers were force refunded
+    event StakersForceRefunded(address[] staker);
+
+    /// @dev An assertion was force created
+    event AssertionForceCreated(bytes32 indexed assertionHash);
+
+    /// @dev An assertion was force confirmed
+    event AssertionForceConfirmed(bytes32 indexed assertionHash);
+
+    /// @dev New loser stake escrow set
+    event LoserStakeEscrowSet(address newLoserStakerEscrow);
+
+    /// @dev New wasm module root was set
+    event WasmModuleRootSet(bytes32 newWasmModuleRoot);
+
+    /// @dev New sequencer inbox was set
+    event SequencerInboxSet(address newSequencerInbox);
+
+    /// @dev New inbox set
+    event InboxSet(address inbox);
+
+    /// @dev Validator whitelist was disabled or enabled
+    event ValidatorWhitelistDisabledSet(bool _validatorWhitelistDisabled);
+
+    /// @dev AnyTrust fast confirmer was set
+    event AnyTrustFastConfirmerSet(address anyTrustFastConfirmer);
+
+    /// @dev Challenge manager was set
+    event ChallengeManagerSet(address challengeManager);
+
 
     function initialize(Config calldata config, ContractDependencies calldata connectedContracts) external;
 

@@ -77,12 +77,6 @@ error CallNotAllowed();
 
 // Inbox Errors
 
-/// @dev The contract is paused, so cannot be paused
-error AlreadyPaused();
-
-/// @dev The contract is unpaused, so cannot be unpaused
-error AlreadyUnpaused();
-
 /// @dev The contract is paused
 error Paused();
 
