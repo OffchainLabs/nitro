@@ -372,6 +372,7 @@ func (s *Staker) Initialize(ctx context.Context) error {
 func (s *Staker) getStakedInfo(ctx context.Context, walletAddr common.Address) (validator.GoGlobalState, error) {
 	var zeroVal validator.GoGlobalState
 	if s.config.Bold.Enable {
+		fmt.Println("Initializing block validator from bold config")
 		rollupUserLogic, err := boldrollup.NewRollupUserLogic(s.rollupAddress, s.client)
 		if err != nil {
 			return zeroVal, err
