@@ -76,7 +76,7 @@ type SequencerConfig struct {
 	NonceFailureCacheExpiry      time.Duration   `koanf:"nonce-failure-cache-expiry" reload:"hot"`
 	ExpectedSurplusSoftThreshold string          `koanf:"expected-surplus-soft-threshold" reload:"hot"`
 	ExpectedSurplusHardThreshold string          `koanf:"expected-surplus-hard-threshold" reload:"hot"`
-	EnableProfiling              bool            `koanf:"enable-profiling"`
+	EnableProfiling              bool            `koanf:"enable-profiling" reload:"hot"`
 	expectedSurplusSoftThreshold int
 	expectedSurplusHardThreshold int
 }
@@ -332,7 +332,6 @@ type Sequencer struct {
 	expectedSurplusMutex   sync.RWMutex
 	expectedSurplus        int64
 	expectedSurplusUpdated bool
-	enableProfiling        bool
 }
 
 func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher) (*Sequencer, error) {
@@ -359,7 +358,6 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		l1Timestamp:     0,
 		pauseChan:       nil,
 		onForwarderSet:  make(chan struct{}, 1),
-		enableProfiling: config.EnableProfiling,
 	}
 	s.nonceFailures = &nonceFailureCache{
 		containers.NewLruCacheWithOnEvict(config.NonceCacheSize, s.onNonceFailureEvict),
@@ -929,7 +927,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		block *types.Block
 		err   error
 	)
-	if s.enableProfiling {
+	if s.config().EnableProfiling {
 		block, err = s.execEngine.SequenceTransactionsWithProfiling(header, txes, hooks)
 	} else {
 		block, err = s.execEngine.SequenceTransactions(header, txes, hooks)
