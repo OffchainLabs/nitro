@@ -135,7 +135,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	NonceFailureCacheExpiry:      time.Second,
 	ExpectedSurplusSoftThreshold: "default",
 	ExpectedSurplusHardThreshold: "default",
-	EnableProfiling:              true,
+	EnableProfiling:              false,
 }
 
 var TestSequencerConfig = SequencerConfig{
@@ -176,6 +176,7 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 type txQueueItem struct {
 	tx              *types.Transaction
+	txSize          int // size in bytes of the marshalled transaction
 	options         *arbitrum_types.ConditionalOptions
 	resultChan      chan<- error
 	returnedResult  bool
@@ -453,6 +454,11 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 		return types.ErrTxTypeNotSupported
 	}
 
+	txBytes, err := tx.MarshalBinary()
+	if err != nil {
+		return err
+	}
+
 	queueTimeout := s.config().QueueTimeout
 	queueCtx, cancelFunc := ctxWithTimeout(parentCtx, queueTimeout)
 	defer cancelFunc()
@@ -464,6 +470,7 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 	resultChan := make(chan error, 1)
 	queueItem := txQueueItem{
 		tx,
+		len(txBytes),
 		options,
 		resultChan,
 		false,
@@ -689,7 +696,8 @@ func (s *Sequencer) expireNonceFailures() *time.Timer {
 }
 
 // There's no guarantee that returned tx nonces will be correct
-func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
+func (s *Sequencer) precheckNonces(queueItems []txQueueItem, totalBlockSize int) []txQueueItem {
+	config := s.config()
 	bc := s.execEngine.bc
 	latestHeader := bc.CurrentBlock()
 	latestState, err := bc.StateAt(latestHeader.Root)
@@ -739,7 +747,13 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 				if err != nil {
 					revivingFailure.queueItem.returnResult(err)
 				} else {
-					nextQueueItem = &revivingFailure.queueItem
+					if arbmath.SaturatingAdd(totalBlockSize, queueItem.txSize) > config.MaxTxDataSize {
+						// This tx would be too large to add to this block
+						s.txRetryQueue.Push(queueItem)
+					} else {
+						nextQueueItem = &revivingFailure.queueItem
+						totalBlockSize += queueItem.txSize
+					}
 				}
 			}
 		} else if txNonce < stateNonce || txNonce > pendingNonce {
@@ -813,7 +827,7 @@ func writeAndLog(pprof, trace *bytes.Buffer) {
 
 func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	var queueItems []txQueueItem
-	var totalBatchSize int
+	var totalBlockSize int
 
 	defer func() {
 		panicErr := recover()
@@ -884,35 +898,45 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 			queueItem.returnResult(err)
 			continue
 		}
-		txBytes, err := queueItem.tx.MarshalBinary()
-		if err != nil {
-			queueItem.returnResult(err)
-			continue
-		}
-		if len(txBytes) > config.MaxTxDataSize {
+		if queueItem.txSize > config.MaxTxDataSize {
 			// This tx is too large
 			queueItem.returnResult(txpool.ErrOversizedData)
 			continue
 		}
-		if totalBatchSize+len(txBytes) > config.MaxTxDataSize {
+		if totalBlockSize+queueItem.txSize > config.MaxTxDataSize {
 			// This tx would be too large to add to this batch
 			s.txRetryQueue.Push(queueItem)
 			// End the batch here to put this tx in the next one
 			break
 		}
-		totalBatchSize += len(txBytes)
+		totalBlockSize += queueItem.txSize
 		queueItems = append(queueItems, queueItem)
 	}
 
 	s.nonceCache.Resize(config.NonceCacheSize) // Would probably be better in a config hook but this is basically free
 	s.nonceCache.BeginNewBlock()
-	queueItems = s.precheckNonces(queueItems)
+	queueItems = s.precheckNonces(queueItems, totalBlockSize)
 	txes := make([]*types.Transaction, len(queueItems))
 	hooks := s.makeSequencingHooks()
 	hooks.ConditionalOptionsForTx = make([]*arbitrum_types.ConditionalOptions, len(queueItems))
+	totalBlockSize = 0 // recompute the totalBlockSize to double check it
 	for i, queueItem := range queueItems {
 		txes[i] = queueItem.tx
+		totalBlockSize = arbmath.SaturatingAdd(totalBlockSize, queueItem.txSize)
 		hooks.ConditionalOptionsForTx[i] = queueItem.options
+	}
+
+	if totalBlockSize > config.MaxTxDataSize {
+		for _, queueItem := range queueItems {
+			s.txRetryQueue.Push(queueItem)
+		}
+		log.Error(
+			"put too many transactions in a block",
+			"numTxes", len(queueItems),
+			"totalBlockSize", totalBlockSize,
+			"maxTxDataSize", config.MaxTxDataSize,
+		)
+		return false
 	}
 
 	if s.handleInactive(ctx, queueItems) {
@@ -926,13 +950,16 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	s.L1BlockAndTimeMutex.Unlock()
 
 	if s.l1Reader != nil && (l1Block == 0 || math.Abs(float64(l1Timestamp)-float64(timestamp)) > config.MaxAcceptableTimestampDelta.Seconds()) {
+		for _, queueItem := range queueItems {
+			s.txRetryQueue.Push(queueItem)
+		}
 		log.Error(
 			"cannot sequence: unknown L1 block or L1 timestamp too far from local clock time",
 			"l1Block", l1Block,
 			"l1Timestamp", time.Unix(int64(l1Timestamp), 0),
 			"localTimestamp", time.Unix(int64(timestamp), 0),
 		)
-		return false
+		return true
 	}
 
 	header := &arbostypes.L1IncomingMessageHeader{
