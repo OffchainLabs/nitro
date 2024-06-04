@@ -1207,38 +1207,45 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			if config.DisableCelestiaFallbackStoreDataOnChain && config.DisableCelestiaFallbackStoreDataOnDAS {
 				return false, errors.New("unable to post batch to Celestia and fallback storing data on chain and das is disabled")
 			}
-			log.Warn("Falling back to storing data on chain", "err", err)
+			if config.DisableCelestiaFallbackStoreDataOnDAS {
+				log.Warn("Falling back to storing data on chain ", "err", err)
+			} else {
+				log.Warn("Falling back to storing data on DAC ", "err", err)
+
+			}
+
+			// We nest the anytrust logic here for now as using this fork liekly means your primary DA is Celestia
+			// and the Anytrust DAC is instead used as a fallback
+			if b.daWriter != nil {
+				if config.DisableCelestiaFallbackStoreDataOnDAS {
+					return false, errors.New("found Celestia DA enabled and DAS, but fallbacks to DAS are disabled")
+				}
+				if !b.redisLock.AttemptLock(ctx) {
+					return false, errAttemptLockFailed
+				}
+
+				gotNonce, gotMeta, err := b.dataPoster.GetNextNonceAndMeta(ctx)
+				if err != nil {
+					return false, err
+				}
+				if nonce != gotNonce || !bytes.Equal(batchPositionBytes, gotMeta) {
+					return false, fmt.Errorf("%w: nonce changed from %d to %d while creating batch", storage.ErrStorageRace, nonce, gotNonce)
+				}
+
+				cert, err := b.daWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{}) // b.daWriter will append signature if enabled
+				if errors.Is(err, das.BatchToDasFailed) {
+					if config.DisableDasFallbackStoreDataOnChain {
+						return false, errors.New("unable to batch to DAS and fallback storing data on chain is disabled")
+					}
+					log.Warn("Falling back to storing data on chain", "err", err)
+				} else if err != nil {
+					return false, err
+				} else {
+					sequencerMsg = das.Serialize(cert)
+				}
+			}
 		} else {
 			sequencerMsg = celestiaMsg
-		}
-	}
-
-	if b.daWriter != nil {
-		if b.celestiaWriter != nil && config.DisableCelestiaFallbackStoreDataOnDAS {
-			return false, errors.New("found Celestia DA enabled and DAS, but fallbacks to DAS aredisabled")
-		}
-		if !b.redisLock.AttemptLock(ctx) {
-			return false, errAttemptLockFailed
-		}
-
-		gotNonce, gotMeta, err := b.dataPoster.GetNextNonceAndMeta(ctx)
-		if err != nil {
-			return false, err
-		}
-		if nonce != gotNonce || !bytes.Equal(batchPositionBytes, gotMeta) {
-			return false, fmt.Errorf("%w: nonce changed from %d to %d while creating batch", storage.ErrStorageRace, nonce, gotNonce)
-		}
-
-		cert, err := b.daWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{}) // b.daWriter will append signature if enabled
-		if errors.Is(err, das.BatchToDasFailed) {
-			if config.DisableDasFallbackStoreDataOnChain {
-				return false, errors.New("unable to batch to DAS and fallback storing data on chain is disabled")
-			}
-			log.Warn("Falling back to storing data on chain", "err", err)
-		} else if err != nil {
-			return false, err
-		} else {
-			sequencerMsg = das.Serialize(cert)
 		}
 	}
 

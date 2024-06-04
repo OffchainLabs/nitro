@@ -319,15 +319,10 @@ func main() {
 		panic(fmt.Sprintf("Error opening state db: %v", err.Error()))
 	}
 
-	readMessage := func(arbChainParams params.ArbitrumChainParams) *arbostypes.MessageWithMetadata {
+	readMessage := func() *arbostypes.MessageWithMetadata {
 		var delayedMessagesRead uint64
 		if lastBlockHeader != nil {
 			delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
-		}
-
-		// TODO: consider removing this panic
-		if arbChainParams.DataAvailabilityCommittee && arbChainParams.CelestiaDA {
-			panic(fmt.Sprintf("Error Multiple DA providers enabled: DAC is %v and CelestiaDA is %v", arbChainParams.DataAvailabilityCommittee, arbChainParams.CelestiaDA))
 		}
 
 		backend := WavmInbox{}
@@ -394,7 +389,7 @@ func main() {
 		// need to add Celestia or just "ExternalDA" as an option to the ArbitrumChainParams
 		// for now we hard code Cthis to treu and hardcode Celestia in `readMessage`
 		// to test the integration
-		message := readMessage(chainConfig.ArbitrumChainParams)
+		message := readMessage()
 
 		chainContext := WavmChainContext{}
 		batchFetcher := func(batchNum uint64) ([]byte, error) {
@@ -408,7 +403,7 @@ func main() {
 	} else {
 		// Initialize ArbOS with this init message and create the genesis block.
 
-		message := readMessage(params.ArbitrumChainParams{})
+		message := readMessage()
 
 		initMessage, err := message.Message.ParseInitMessage()
 		if err != nil {

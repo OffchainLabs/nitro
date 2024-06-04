@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"strings"
 	"time"
 
 	"github.com/spf13/pflag"
@@ -28,19 +29,28 @@ import (
 
 type DAConfig struct {
 	Enable          bool             `koanf:"enable"`
-	GasPrice        float64          `koanf:"gas-price"`
-	Rpc             string           `koanf:"rpc"`
-	NamespaceId     string           `koanf:"namespace-id"`
-	AuthToken       string           `koanf:"auth-token"`
+	GasPrice        float64          `koanf:"gas-price" reload:"hot"`
+	GasMultiplier   float64          `koanf:"gas-multiplier" reload:"hot"`
+	Rpc             string           `koanf:"rpc" reload:"hot"`
+	NamespaceId     string           `koanf:"namespace-id" `
+	AuthToken       string           `koanf:"auth-token" reload:"hot"`
 	NoopWriter      bool             `koanf:"noop-writer" reload:"hot"`
 	ValidatorConfig *ValidatorConfig `koanf:"validator-config"`
 }
 
 type ValidatorConfig struct {
-	TendermintRPC  string `koanf:"tendermint-rpc"`
-	EthClient      string `koanf:"eth-rpc"`
+	TendermintRPC  string `koanf:"tendermint-rpc" reload:"hot"`
+	EthClient      string `koanf:"eth-rpc" reload:"hot"`
 	BlobstreamAddr string `koanf:"blobstream"`
 }
+
+var (
+	// ErrTxTimedout is the error message returned by the DA when mempool is congested
+	ErrTxTimedout = errors.New("timed out waiting for tx to be included in a block")
+
+	// ErrTxAlreadyInMempool is  the error message returned by the DA when tx is already in mempool
+	ErrTxAlreadyInMempool = errors.New("tx already in mempool")
+)
 
 // CelestiaMessageHeaderFlag indicates that this data is a Blob Pointer
 // which will be used to retrieve data from Celestia
@@ -162,42 +172,69 @@ func (c *CelestiaDA) Store(ctx context.Context, message []byte) ([]byte, error) 
 		return nil, err
 	}
 
-	commitment, err := blob.CreateCommitment(dataBlob)
-	if err != nil {
-		log.Warn("Error creating commitment", "err", err)
-		return nil, err
+	height := uint64(0)
+	submitted := false
+	// this will trigger node to use the default gas price from celestia app
+	gasPrice := -1.0
+	for !submitted {
+		height, err = c.Client.Blob.Submit(ctx, []*blob.Blob{dataBlob}, gasPrice)
+		if err != nil {
+			switch {
+			case strings.Contains(err.Error(), ErrTxTimedout.Error()), strings.Contains(err.Error(), ErrTxAlreadyInMempool.Error()):
+				log.Warn("Failed to submit blob, bumping gas price and retrying...", "err", err)
+				if gasPrice == -1.0 {
+					gasPrice = c.Cfg.GasPrice
+				} else {
+					gasPrice = gasPrice * c.Cfg.GasMultiplier
+				}
+				continue
+			default:
+				log.Warn("Blob Submission error", "err", err)
+				return nil, err
+			}
+		}
+
+		if height == 0 {
+			log.Warn("Unexpected height from blob response", "height", height)
+			return nil, errors.New("unexpected response code")
+		}
+
+		submitted = true
 	}
 
-	height, err := c.Client.Blob.Submit(ctx, []*blob.Blob{dataBlob}, openrpc.GasPrice(c.Cfg.GasPrice))
-	if err != nil {
-		log.Warn("Blob Submission error", "err", err)
-		return nil, err
-	}
-	if height == 0 {
-		log.Warn("Unexpected height from blob response", "height", height)
-		return nil, errors.New("unexpected response code")
-	}
-
-	proofs, err := c.Client.Blob.GetProof(ctx, height, *c.Namespace, commitment)
+	proofs, err := c.Client.Blob.GetProof(ctx, height, *c.Namespace, dataBlob.Commitment)
 	if err != nil {
 		log.Warn("Error retrieving proof", "err", err)
 		return nil, err
 	}
 
-	included, err := c.Client.Blob.Included(ctx, height, *c.Namespace, proofs, commitment)
+	proofRetries := 0
+	for proofs == nil {
+		log.Warn("Retrieved empty proof from GetProof, fetching again...", "proofRetries", proofRetries)
+		time.Sleep(time.Millisecond * 100)
+		proofs, err = c.Client.Blob.GetProof(ctx, height, *c.Namespace, dataBlob.Commitment)
+		if err != nil {
+			log.Warn("Error retrieving proof", "err", err)
+			return nil, err
+		}
+		proofRetries++
+	}
+
+	included, err := c.Client.Blob.Included(ctx, height, *c.Namespace, proofs, dataBlob.Commitment)
 	if err != nil || !included {
 		log.Warn("Error checking for inclusion", "err", err, "proof", proofs)
 		return nil, err
 	}
-	log.Info("Succesfully posted blob", "height", height, "commitment", hex.EncodeToString(commitment))
+	log.Info("Succesfully posted blob", "height", height, "commitment", hex.EncodeToString(dataBlob.Commitment))
 
 	// we fetch the blob so that we can get the correct start index in the square
-	blob, err := c.Client.Blob.Get(ctx, height, *c.Namespace, commitment)
+	dataBlob, err = c.Client.Blob.Get(ctx, height, *c.Namespace, dataBlob.Commitment)
 	if err != nil {
 		return nil, err
 	}
-	if blob.Index <= 0 {
-		log.Warn("Unexpected index from blob response", "index", blob.Index)
+
+	if dataBlob.Index() <= 0 {
+		log.Warn("Unexpected index from blob response", "index", dataBlob.Index())
 		return nil, errors.New("unexpected response code")
 	}
 
@@ -213,7 +250,7 @@ func (c *CelestiaDA) Store(ctx context.Context, message []byte) ([]byte, error) 
 	}
 
 	txCommitment, dataRoot := [32]byte{}, [32]byte{}
-	copy(txCommitment[:], commitment)
+	copy(txCommitment[:], dataBlob.Commitment)
 
 	copy(dataRoot[:], header.DataHash)
 
@@ -222,12 +259,12 @@ func (c *CelestiaDA) Store(ctx context.Context, message []byte) ([]byte, error) 
 	// ODS size
 	odsSize := squareSize / 2
 
-	blobIndex := uint64(blob.Index)
+	blobIndex := uint64(dataBlob.Index())
 	// startRow
 	startRow := blobIndex / squareSize
 	if odsSize*startRow > blobIndex {
 		// return an empty batch
-		return nil, fmt.Errorf("storing Celestia information, odsSize*startRow=%v was larger than blobIndex=%v", odsSize*startRow, blob.Index)
+		return nil, fmt.Errorf("storing Celestia information, odsSize*startRow=%v was larger than blobIndex=%v", odsSize*startRow, dataBlob.Index())
 	}
 	startIndexOds := blobIndex - odsSize*startRow
 	blobPointer := types.BlobPointer{
