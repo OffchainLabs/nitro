@@ -15,6 +15,7 @@
   "getSecondChildCreationBlock(bytes32)": "56bbc9e6",
   "getStaker(address)": "a23c44b1",
   "getStakerAddress(uint64)": "6ddd3744",
+  "getValidators()": "b7ab4db5",
   "inbox()": "fb0e722b",
   "isFirstChild(bytes32)": "30836228",
   "isPending(bytes32)": "e531d8c7",

@@ -5,6 +5,7 @@
 pragma solidity ^0.8.0;
 
 import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/utils/structs/EnumerableSetUpgradeable.sol";
 
 import "./Assertion.sol";
 import "./RollupLib.sol";
@@ -22,6 +23,7 @@ import "../libraries/ArbitrumChecker.sol";
 abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     using AssertionNodeLib for AssertionNode;
     using GlobalStateLib for GlobalState;
+    using EnumerableSetUpgradeable for EnumerableSetUpgradeable.AddressSet;
 
     // Rollup Config
     uint256 public chainId;
@@ -93,7 +95,7 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     address public stakeToken;
     uint256 public minimumAssertionPeriod;
 
-    mapping(address => bool) public isValidator;
+    EnumerableSetUpgradeable.AddressSet validators;
 
     bytes32 private _latestConfirmed;
     mapping(bytes32 => AssertionNode) private _assertions;
@@ -556,6 +558,14 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
 
     function isPending(bytes32 assertionHash) external view returns (bool) {
         return getAssertionStorage(assertionHash).status == AssertionStatus.Pending;
+    }
+
+    function getValidators() external view returns (address[] memory) {
+        return validators.values();
+    }
+
+    function isValidator(address validator) external view returns (bool) {
+        return validators.contains(validator);
     }
 
     /**

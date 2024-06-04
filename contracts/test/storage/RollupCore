@@ -19,14 +19,14 @@
 | loserStakeEscrow               | address                                       | 111  | 0      | 20    | src/rollup/RollupCore.sol:RollupCore |
 | stakeToken                     | address                                       | 112  | 0      | 20    | src/rollup/RollupCore.sol:RollupCore |
 | minimumAssertionPeriod         | uint256                                       | 113  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
-| isValidator                    | mapping(address => bool)                      | 114  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
-| _latestConfirmed               | bytes32                                       | 115  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
-| _assertions                    | mapping(bytes32 => struct AssertionNode)      | 116  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
-| _stakerList                    | address[]                                     | 117  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
-| _stakerMap                     | mapping(address => struct IRollupCore.Staker) | 118  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
-| _withdrawableFunds             | mapping(address => uint256)                   | 119  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
-| totalWithdrawableFunds         | uint256                                       | 120  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
-| rollupDeploymentBlock          | uint256                                       | 121  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
-| validatorWhitelistDisabled     | bool                                          | 122  | 0      | 1     | src/rollup/RollupCore.sol:RollupCore |
-| anyTrustFastConfirmer          | address                                       | 122  | 1      | 20    | src/rollup/RollupCore.sol:RollupCore |
-| _assertionCreatedAtArbSysBlock | mapping(bytes32 => uint256)                   | 123  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
+| validators                     | struct EnumerableSetUpgradeable.AddressSet    | 114  | 0      | 64    | src/rollup/RollupCore.sol:RollupCore |
+| _latestConfirmed               | bytes32                                       | 116  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
+| _assertions                    | mapping(bytes32 => struct AssertionNode)      | 117  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
+| _stakerList                    | address[]                                     | 118  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
+| _stakerMap                     | mapping(address => struct IRollupCore.Staker) | 119  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
+| _withdrawableFunds             | mapping(address => uint256)                   | 120  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
+| totalWithdrawableFunds         | uint256                                       | 121  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
+| rollupDeploymentBlock          | uint256                                       | 122  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
+| validatorWhitelistDisabled     | bool                                          | 123  | 0      | 1     | src/rollup/RollupCore.sol:RollupCore |
+| anyTrustFastConfirmer          | address                                       | 123  | 1      | 20    | src/rollup/RollupCore.sol:RollupCore |
+| _assertionCreatedAtArbSysBlock | mapping(bytes32 => uint256)                   | 124  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |

@@ -24,5 +24,6 @@ interface IAssertionChain {
     function isFirstChild(bytes32 assertionHash) external view returns (bool);
     function isPending(bytes32 assertionHash) external view returns (bool);
     function isValidator(address) external view returns (bool);
+    function getValidators() external view returns (address[] memory);
     function validatorWhitelistDisabled() external view returns (bool);
 }

@@ -19,14 +19,14 @@
 | loserStakeEscrow               | address                                       | 111  | 0      | 20    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
 | stakeToken                     | address                                       | 112  | 0      | 20    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
 | minimumAssertionPeriod         | uint256                                       | 113  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
-| isValidator                    | mapping(address => bool)                      | 114  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
-| _latestConfirmed               | bytes32                                       | 115  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
-| _assertions                    | mapping(bytes32 => struct AssertionNode)      | 116  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
-| _stakerList                    | address[]                                     | 117  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
-| _stakerMap                     | mapping(address => struct IRollupCore.Staker) | 118  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
-| _withdrawableFunds             | mapping(address => uint256)                   | 119  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
-| totalWithdrawableFunds         | uint256                                       | 120  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
-| rollupDeploymentBlock          | uint256                                       | 121  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
-| validatorWhitelistDisabled     | bool                                          | 122  | 0      | 1     | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
-| anyTrustFastConfirmer          | address                                       | 122  | 1      | 20    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
-| _assertionCreatedAtArbSysBlock | mapping(bytes32 => uint256)                   | 123  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| validators                     | struct EnumerableSetUpgradeable.AddressSet    | 114  | 0      | 64    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| _latestConfirmed               | bytes32                                       | 116  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| _assertions                    | mapping(bytes32 => struct AssertionNode)      | 117  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| _stakerList                    | address[]                                     | 118  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| _stakerMap                     | mapping(address => struct IRollupCore.Staker) | 119  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| _withdrawableFunds             | mapping(address => uint256)                   | 120  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| totalWithdrawableFunds         | uint256                                       | 121  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| rollupDeploymentBlock          | uint256                                       | 122  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| validatorWhitelistDisabled     | bool                                          | 123  | 0      | 1     | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| anyTrustFastConfirmer          | address                                       | 123  | 1      | 20    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| _assertionCreatedAtArbSysBlock | mapping(bytes32 => uint256)                   | 124  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |

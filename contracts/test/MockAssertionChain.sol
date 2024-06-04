@@ -163,4 +163,10 @@ contract MockAssertionChain is IAssertionChain {
     function setIsValidator(address user, bool x) external {
         isValidator[user] = x;
     }
+
+    function getValidators() external pure returns (address[] memory) {
+        address[] memory validators = new address[](1);
+        validators[0] = address(0);
+        return validators;
+    }
 }

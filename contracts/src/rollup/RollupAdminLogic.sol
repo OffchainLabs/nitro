@@ -14,6 +14,7 @@ import "@openzeppelin/contracts/proxy/beacon/UpgradeableBeacon.sol";
 
 contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeable {
     using AssertionStateLib for AssertionState;
+    using EnumerableSetUpgradeable for EnumerableSetUpgradeable.AddressSet;
 
     function initialize(Config calldata config, ContractDependencies calldata connectedContracts)
         external
@@ -185,7 +186,8 @@ contract RollupAdminLogic is RollupCore, IRollupAdmin, DoubleLogicUUPSUpgradeabl
         require(_validator.length == _val.length, "WRONG_LENGTH");
 
         for (uint256 i = 0; i < _validator.length; i++) {
-            isValidator[_validator[i]] = _val[i];
+            if (_val[i]) validators.add(_validator[i]);
+            else validators.remove(_validator[i]);
         }
 
         emit ValidatorsSet(_validator, _val);

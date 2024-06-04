@@ -18,6 +18,7 @@
   "getSecondChildCreationBlock(bytes32)": "56bbc9e6",
   "getStaker(address)": "a23c44b1",
   "getStakerAddress(uint64)": "6ddd3744",
+  "getValidators()": "b7ab4db5",
   "inbox()": "fb0e722b",
   "initialize((uint64,address,uint256,bytes32,address,address,uint256,string,uint256[],(uint256,uint256,uint256,uint256),uint256,uint256,uint256,((bytes32[2],uint64[2]),uint8,bytes32),uint256,address,uint8,uint64,(uint64,uint64,uint64)),(address,address,address,address,address,address,address,address,address))": "9e7e6aa7",
   "isFirstChild(bytes32)": "30836228",

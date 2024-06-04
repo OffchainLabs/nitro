@@ -16,9 +16,10 @@ contract RollupUserLogic is RollupCore, UUPSNotUpgradeable, IRollupUser {
     using AssertionNodeLib for AssertionNode;
     using GlobalStateLib for GlobalState;
     using SafeERC20 for IERC20;
+    using EnumerableSetUpgradeable for EnumerableSetUpgradeable.AddressSet;
 
     modifier onlyValidator() {
-        require(isValidator[msg.sender] || validatorWhitelistDisabled, "NOT_VALIDATOR");
+        require(validators.contains(msg.sender) || validatorWhitelistDisabled, "NOT_VALIDATOR");
         _;
     }
 
