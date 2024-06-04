@@ -356,7 +356,7 @@ func (s *ExecutionEngine) SequenceTransactionsWithProfiling(header *arbostypes.L
 	elapsed := time.Since(start)
 	pprof.StopCPUProfile()
 	trace.Stop()
-	if elapsed > 5*time.Second {
+	if elapsed > 2*time.Second {
 		writeAndLog(pprofBuf, traceBuf)
 		return res, err
 	}
