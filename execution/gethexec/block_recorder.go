@@ -153,7 +153,7 @@ func (r *BlockRecorder) RecordBlockCreation(
 		blockHash = block.Hash()
 	}
 
-	preimages, err := r.recordingDatabase.PreimagesFromRecording(chaincontext, recordingKV)
+	preimages, err := r.recordingDatabase.PreimagesFromRecording(chaincontext, recordingKV, recordingdb)
 	if err != nil {
 		return nil, err
 	}
