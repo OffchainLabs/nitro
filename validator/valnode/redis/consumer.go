@@ -70,7 +70,7 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 				}
 				select {
 				case <-ctx.Done():
-					log.Info("Context done", "error", ctx.Err().Error())
+					log.Info("Context done while checking redis stream existance", "error", ctx.Err().Error())
 					return
 				case <-time.After(time.Millisecond * 100):
 				}
@@ -79,7 +79,7 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 		s.StopWaiter.LaunchThread(func(ctx context.Context) {
 			select {
 			case <-ctx.Done():
-				log.Info("Context done", "error", ctx.Err().Error())
+				log.Info("Context done while waiting a redis stream to be ready", "error", ctx.Err().Error())
 				return
 			case <-ready: // Wait until the stream exists and start consuming iteratively.
 			}
@@ -116,7 +116,7 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 			case <-time.After(s.streamTimeout):
 				log.Error("Waiting for redis streams timed out")
 			case <-ctx.Done():
-				log.Info(("Context expired, failed to start"))
+				log.Info("Context done while waiting redis streams to be ready, failed to start")
 				return
 			}
 		}
