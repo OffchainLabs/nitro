@@ -22,8 +22,8 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/bold/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker/txbuilder"
 	"github.com/offchainlabs/nitro/util"
@@ -342,23 +342,34 @@ func (s *Staker) Initialize(ctx context.Context) error {
 		s.updateStakerBalanceMetric(ctx)
 	}
 	if s.blockValidator != nil && s.config.StartValidationFromStaked {
-		latestStaked, _, err := s.validatorUtils.LatestStaked(&s.baseCallOpts, s.rollupAddress, walletAddressOrZero)
+		stakedInfoGlobalState, err := s.getStakedInfo(ctx, walletAddressOrZero)
 		if err != nil {
 			return err
 		}
-		stakerLatestStakedNodeGauge.Update(int64(latestStaked))
-		if latestStaked == 0 {
-			return nil
-		}
-
-		stakedInfo, err := s.rollup.LookupNode(ctx, latestStaked)
-		if err != nil {
-			return err
-		}
-
-		return s.blockValidator.InitAssumeValid(stakedInfo.AfterState().GlobalState)
+		return s.blockValidator.InitAssumeValid(stakedInfoGlobalState)
 	}
 	return nil
+}
+
+func (s *Staker) getStakedInfo(ctx context.Context, walletAddr common.Address) (validator.GoGlobalState, error) {
+	var zeroVal validator.GoGlobalState
+	if s.config.Bold.Enable {
+		// TODO: Fetch the latest staked assertion info.
+		return zeroVal, nil
+	}
+	latestStaked, _, err := s.validatorUtils.LatestStaked(&s.baseCallOpts, s.rollupAddress, walletAddr)
+	if err != nil {
+		return zeroVal, err
+	}
+	stakerLatestStakedNodeGauge.Update(int64(latestStaked))
+	if latestStaked == 0 {
+		return zeroVal, nil
+	}
+	stakedInfo, err := s.rollup.LookupNode(ctx, latestStaked)
+	if err != nil {
+		return zeroVal, err
+	}
+	return stakedInfo.AfterState().GlobalState, nil
 }
 
 func (s *Staker) getLatestStakedState(ctx context.Context, staker common.Address) (uint64, arbutil.MessageIndex, *validator.GoGlobalState, error) {
