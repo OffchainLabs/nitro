@@ -3,51 +3,11 @@ package dbconv
 import (
 	"bytes"
 	"context"
-	"math/big"
-	"math/rand"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
-
-func TestMiddleKey(t *testing.T) {
-	triples := [][]byte{
-		{0}, {0, 0}, {0, 0},
-		{1}, {1, 1}, {1, 0, 128},
-		{1}, {1, 0}, {1, 0},
-		{1}, {2}, {1, 128},
-		{1}, {2, 1}, {1, 128, 128},
-		{0}, {255}, {127, 128},
-		{0}, {}, {127, 128},
-		{0, 0}, {}, {127, 255, 128},
-		{1, 1}, {2}, {1, 128, 128},
-	}
-	for i := 0; i < len(triples)-2; i += 3 {
-		start, end, expected := triples[i], triples[i+1], triples[i+2]
-		if mid := middleKey(start, end); !bytes.Equal(mid, expected) {
-			Fail(t, "Unexpected result for start:", start, "end:", end, "want:", expected, "have:", mid)
-		}
-	}
-
-	for i := int64(0); i < 1000-1; i++ {
-		for j := int64(0); j < 1000; j++ {
-			start := big.NewInt(i).Bytes()
-			end := big.NewInt(j).Bytes()
-			if bytes.Compare(start, end) > 0 {
-				start, end = end, start
-			}
-			middle := middleKey(start, end)
-			if bytes.Compare(middle, start) < 0 {
-				Fail(t, "middle < start, start:", start, "end:", end, "middle:", middle)
-			}
-			if bytes.Compare(middle, end) > 0 {
-				Fail(t, "middle > end, start:", start, "end:", end, "middle:", middle)
-			}
-		}
-	}
-
-}
 
 func TestConversion(t *testing.T) {
 	_ = testhelpers.InitTestLog(t, log.LvlTrace)
@@ -60,25 +20,13 @@ func TestConversion(t *testing.T) {
 	newDBConfig.DBEngine = "pebble"
 
 	func() {
-		oldDb, err := openDB(&oldDBConfig, false)
-		Require(t, err)
+		oldDb, err := openDB(&oldDBConfig, "", false)
 		defer oldDb.Close()
-		for i := 0; i < 0xfe; i++ {
-			data := []byte{byte(i)}
-			err = oldDb.Put(data, data)
-			Require(t, err)
-			for j := 0; j < 0xf; j++ {
-				data := []byte{byte(i), byte(j)}
-				err = oldDb.Put(data, data)
-				Require(t, err)
-			}
-		}
+		Require(t, err)
 		err = oldDb.Put([]byte{}, []byte{0xde, 0xed, 0xbe, 0xef})
 		Require(t, err)
-		for i := 0; i < 100000; i++ {
-			size := 1 + rand.Uint64()%100
-			randomBytes := testhelpers.RandomizeSlice(make([]byte, size))
-			err = oldDb.Put(randomBytes, []byte{byte(i)})
+		for i := 0; i < 20; i++ {
+			err = oldDb.Put([]byte{byte(i)}, []byte{byte(i + 1)})
 			Require(t, err)
 		}
 	}()
@@ -86,9 +34,7 @@ func TestConversion(t *testing.T) {
 	config := DefaultDBConvConfig
 	config.Src = oldDBConfig
 	config.Dst = newDBConfig
-	config.Threads = 16
-	config.IdealBatchSize = 512
-	config.MinBatchesBeforeFork = 3
+	config.IdealBatchSize = 5
 	conv := NewDBConverter(&config)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -96,10 +42,10 @@ func TestConversion(t *testing.T) {
 	Require(t, err)
 	conv.Close()
 
-	oldDb, err := openDB(&oldDBConfig, true)
+	oldDb, err := openDB(&oldDBConfig, "", true)
 	Require(t, err)
 	defer oldDb.Close()
-	newDb, err := openDB(&newDBConfig, true)
+	newDb, err := openDB(&newDBConfig, "", true)
 	Require(t, err)
 	defer newDb.Close()
 

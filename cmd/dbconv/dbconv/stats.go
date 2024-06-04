@@ -9,7 +9,6 @@ type Stats struct {
 	entries atomic.Int64
 	bytes   atomic.Int64
 	forks   atomic.Int64
-	threads atomic.Int64
 
 	startTimestamp       int64
 	prevEntires          int64
@@ -23,7 +22,6 @@ func (s *Stats) Reset() {
 	s.entries.Store(0)
 	s.bytes.Store(0)
 	s.forks.Store(0)
-	s.threads.Store(0)
 	s.startTimestamp = now
 	s.prevEntires = 0
 	s.prevBytes = 0
@@ -53,17 +51,6 @@ func (s *Stats) AddFork() {
 
 func (s *Stats) Forks() int64 {
 	return s.forks.Load()
-}
-
-func (s *Stats) AddThread() {
-	s.threads.Add(1)
-}
-func (s *Stats) DecThread() {
-	s.threads.Add(-1)
-}
-
-func (s *Stats) Threads() int64 {
-	return s.threads.Load()
 }
 
 func (s *Stats) Elapsed() time.Duration {

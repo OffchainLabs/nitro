@@ -40,9 +40,9 @@ func main() {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
 		return
 	}
-	err = genericconf.InitLog("plaintext", log.Lvl(config.LogLevel), &genericconf.FileLoggingConfig{Enable: false}, nil)
+	err = genericconf.InitLog(config.LogType, config.LogLevel, &genericconf.FileLoggingConfig{Enable: false}, nil)
 	if err != nil {
-		log.Error("Failed to init logging", "err", err)
+		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
 		return
 	}
 
@@ -67,7 +67,7 @@ func main() {
 			select {
 			case <-ticker.C:
 				stats := conv.Stats()
-				fmt.Printf("Progress:\n\tprocessed entries: %v\n\tprocessed data (MB): %v\n\telapsed: %v\n\tcurrent:\tKe/s: %v\tMB/s: %v\n\taverage:\tKe/s: %v\tMB/s: %v\n\tthreads: %v\tforks: %v\n", stats.Entries(), stats.Bytes()/1024/1024, stats.Elapsed(), stats.EntriesPerSecond()/1000, stats.BytesPerSecond()/1024/1024, stats.AverageEntriesPerSecond()/1000, stats.AverageBytesPerSecond()/1024/1024, stats.Threads(), stats.Forks())
+				fmt.Printf("Progress:\n\tprocessed entries: %v\n\tprocessed data (MB): %v\n\telapsed: %v\n\tcurrent:\tKe/s: %v\tMB/s: %v\n\taverage:\tKe/s: %v\tMB/s: %v\n", stats.Entries(), stats.Bytes()/1024/1024, stats.Elapsed(), stats.EntriesPerSecond()/1000, stats.BytesPerSecond()/1024/1024, stats.AverageEntriesPerSecond()/1000, stats.AverageBytesPerSecond()/1024/1024)
 
 			case <-ctx.Done():
 				return
