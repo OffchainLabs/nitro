@@ -1349,7 +1349,7 @@ contract EdgeChallengeManagerTest is Test {
     function testCanConfirmByClaim() public {
         EdgeInitData memory ei = deployAndInit();
 
-        (bytes32[] memory states1,, BisectionChildren[6] memory edges1,) = createBlockEdgesAndBisectToFork(
+        (bytes32[] memory states1,, BisectionChildren[6] memory edges1, BisectionChildren[6] memory edges2) = createBlockEdgesAndBisectToFork(
             CreateBlockEdgesBisectArgs(
                 ei.challengeManager,
                 ei.a1,
@@ -1386,6 +1386,12 @@ contract EdgeChallengeManagerTest is Test {
         vm.expectEmit(true, false, false, true);
         emit TimerCacheUpdated(edge1BigStepId, challengePeriodBlock);
         ei.challengeManager.updateTimerCacheByChildren(edge1BigStepId, challengePeriodBlock);
+
+        vm.expectRevert(abi.encodeWithSelector(EdgeClaimMismatch.selector, edges1[0].lowerChildId, bytes32(0)));
+        ei.challengeManager.updateTimerCacheByClaim(edges1[0].lowerChildId, edges1[0].lowerChildId, challengePeriodBlock);
+
+        vm.expectRevert(abi.encodeWithSelector(EdgeClaimMismatch.selector, edges2[0].lowerChildId, edges1[0].lowerChildId));
+        ei.challengeManager.updateTimerCacheByClaim(edges2[0].lowerChildId, edge1BigStepId, challengePeriodBlock);
 
         vm.expectEmit(true, false, false, true);
         emit TimerCacheUpdated(edges1[0].lowerChildId, challengePeriodBlock);

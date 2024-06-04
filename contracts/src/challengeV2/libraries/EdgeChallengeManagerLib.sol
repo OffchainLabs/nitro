@@ -708,6 +708,9 @@ library EdgeChallengeManagerLib {
         private
         view
     {
+        if (edgeId != store.edges[claimingEdgeId].claimId) {
+            revert EdgeClaimMismatch(edgeId, store.edges[claimingEdgeId].claimId);
+        }
         // we do some extra checks that edge being claimed is eligible to be claimed by the claiming edge
         // these shouldn't be necessary since it should be impossible to add layer zero edges that do not
         // satisfy the checks below, but we conduct these checks anyway for double safety

@@ -36,8 +36,6 @@ error NotPowerOfTwo(uint256 val);
 error InvalidEndHeight(uint256 actualHeight, uint256 expectedHeight);
 /// @dev The prefix proof is empty
 error EmptyPrefixProof();
-/// @dev The edge is not of type Block
-error EdgeTypeNotBlock(uint8 level);
 /// @dev The edge is not of type SmallStep
 error EdgeTypeNotSmallStep(uint8 level);
 /// @dev The first rival record is empty
@@ -56,10 +54,6 @@ error EdgeLevelInvalid(bytes32 edgeId1, bytes32 edgeId2, uint8 level1, uint8 lev
 error EdgeClaimMismatch(bytes32 edgeId, bytes32 claimingEdgeId);
 /// @dev The origin id is not equal to the mutual id
 error OriginIdMutualIdMismatch(bytes32 mutualId, bytes32 originId);
-/// @dev The edge does not have a valid ancestor link
-error EdgeNotAncestor(
-    bytes32 edgeId, bytes32 lowerChildId, bytes32 upperChildId, bytes32 ancestorEdgeId, bytes32 claimId
-);
 /// @dev The total number of blocks is not above the threshold
 error InsufficientConfirmationBlocks(uint256 totalBlocks, uint256 thresholdBlocks);
 /// @dev The edge is not of length one
