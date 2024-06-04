@@ -124,7 +124,7 @@ func ReadHotShotCommitment(h uint64) [32]byte {
 
 }
 
-func GetHotShotAvailability(l1Height uint64) bool {
+func IsHotShotLive(l1Height uint64) bool {
 	return true
 }
 

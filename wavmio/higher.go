@@ -62,8 +62,8 @@ func ReadHotShotCommitment(h uint64) (commitment [32]byte) {
 	return commitment
 }
 
-func GetHotShotAvailability(l1Height uint64) bool {
-	return getHotShotAvailability(l1Height) > 0
+func IsHotShotLive(l1Height uint64) bool {
+	return isHotShotLive(l1Height) > 0
 }
 
 func GetEspressoHeight() uint64 {

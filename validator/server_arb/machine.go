@@ -262,6 +262,26 @@ func (m *ArbitratorMachine) StepUntilReadHotShot(ctx context.Context) error {
 	return ctx.Err()
 }
 
+func (m *ArbitratorMachine) StepUntilIsHotShotLive(ctx context.Context) error {
+	defer runtime.KeepAlive(m)
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	if m.frozen {
+		return errors.New("machine frozen")
+	}
+
+	conditionByte, cancel := manageConditionByte(ctx)
+	defer cancel()
+
+	err := C.arbitrator_step_until_is_hotshot_live(m.ptr, conditionByte)
+	defer C.free(unsafe.Pointer(err))
+	if err != nil {
+		return errors.New(C.GoString(err))
+	}
+
+	return ctx.Err()
+}
+
 func (m *ArbitratorMachine) Hash() (hash common.Hash) {
 	defer runtime.KeepAlive(m)
 	m.mutex.Lock()
@@ -330,6 +350,27 @@ func (m *ArbitratorMachine) DeserializeAndReplaceState(path string) error {
 	} else {
 		return nil
 	}
+}
+
+func (m *ArbitratorMachine) AddHotShotLiveness(height uint64, liveness bool) error {
+	defer runtime.KeepAlive(m)
+	m.mutex.Lock()
+	defer m.mutex.Unlock()
+	if m.frozen {
+		return errors.New("machine frozen")
+	}
+
+	var livenessInt uint8
+	if liveness {
+		livenessInt = 1
+	} else {
+		livenessInt = 0
+	}
+	status := C.arbitrator_add_hotshot_liveness(m.ptr, C.uint64_t(height), C.uint8_t(livenessInt))
+	if status == 0 {
+		return nil
+	}
+	return errors.New("failed to add hotsho liveness")
 }
 
 func (m *ArbitratorMachine) AddHotShotCommitment(height uint64, commitment []byte) error {

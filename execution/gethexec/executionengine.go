@@ -343,6 +343,7 @@ func (s *ExecutionEngine) SequenceTransactionsEspresso(
 				log.Warn("Malformed tx is found")
 				continue
 			}
+			log.Info("!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!")
 			txes = append(txes, &out)
 		}
 

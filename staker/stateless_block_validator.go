@@ -49,13 +49,12 @@ type StatelessBlockValidator struct {
 
 	// This is a flag used to mock a wrong stateless block validator to
 	// test the functionalities of the staker. It is specifically used
-	// in espresso e2e test.
-	// If this is greater than 0, it means we are running this debug mode:
-	// - hotshot reader will read an all-zero commitment at this height
-	// - the end global state of a entry will change at this hotshot height
-	// In this way, a challenge will be created and the one-step proof should
-	// be the ReadHotShotCommitment
-	debugEspressoIncorrectHeight uint64
+	// in espresso e2e test. If this is greater than 0, it means we are running
+	// the debug mode. If the l2 height reaches to this, we will use the override
+	// function to override the validation input. In this way, we can make the staker
+	// issue a challenge and to test the OSP pipeline
+	debugEspressoIncorrectHeight   uint64
+	debugEspressoInputOverrideFunc func(input *validator.ValidationInput)
 }
 
 type BlockValidatorRegistrer interface {
@@ -148,9 +147,12 @@ type validationEntry struct {
 	UserWasms  state.UserWasms
 	DelayedMsg []byte
 
-	L1BlockHeight      uint64
-	HotShotCommitment  espressoTypes.Commitment
-	HotShotAvailablity bool
+	// If hotshot is down, this is the l1 height associated with the arbitrum original message.
+	// We use this to validate the hotshot liveness
+	// If hotshot is up, this is the l1 height indicating which l1 height is the `HotShotCommitment` from.
+	L1BlockHeight     uint64
+	HotShotCommitment espressoTypes.Commitment
+	IsHotShotLive     bool
 }
 
 func (e *validationEntry) ToInput() (*validator.ValidationInput, error) {
@@ -158,18 +160,18 @@ func (e *validationEntry) ToInput() (*validator.ValidationInput, error) {
 		return nil, errors.New("cannot create input from non-ready entry")
 	}
 	return &validator.ValidationInput{
-		Id:                  uint64(e.Pos),
-		HasDelayedMsg:       e.HasDelayedMsg,
-		DelayedMsgNr:        e.DelayedMsgNr,
-		Preimages:           e.Preimages,
-		UserWasms:           e.UserWasms,
-		BatchInfo:           e.BatchInfo,
-		DelayedMsg:          e.DelayedMsg,
-		StartState:          e.Start,
-		DebugChain:          e.ChainConfig.DebugMode(),
-		L1BlockHeight:       e.L1BlockHeight,
-		HotShotCommitment:   e.HotShotCommitment,
-		HotShotAvailability: e.HotShotAvailablity,
+		Id:                uint64(e.Pos),
+		HasDelayedMsg:     e.HasDelayedMsg,
+		DelayedMsgNr:      e.DelayedMsgNr,
+		Preimages:         e.Preimages,
+		UserWasms:         e.UserWasms,
+		BatchInfo:         e.BatchInfo,
+		DelayedMsg:        e.DelayedMsg,
+		StartState:        e.Start,
+		DebugChain:        e.ChainConfig.DebugMode(),
+		L1BlockHeight:     e.L1BlockHeight,
+		HotShotCommitment: e.HotShotCommitment,
+		HotShotLiveness:   e.IsHotShotLive,
 	}, nil
 }
 
@@ -183,7 +185,8 @@ func newValidationEntry(
 	prevDelayed uint64,
 	chainConfig *params.ChainConfig,
 	hotShotCommitment *espressoTypes.Commitment,
-	hotShotAvaiability bool,
+	isHotShotLive bool,
+	l1BlockHeight uint64,
 ) (*validationEntry, error) {
 	batchInfo := validator.BatchInfo{
 		Number:    start.Batch,
@@ -199,18 +202,18 @@ func newValidationEntry(
 		return nil, fmt.Errorf("illegal validation entry delayedMessage %d, previous %d", msg.DelayedMessagesRead, prevDelayed)
 	}
 	return &validationEntry{
-		Stage:              ReadyForRecord,
-		Pos:                pos,
-		Start:              start,
-		End:                end,
-		HasDelayedMsg:      hasDelayed,
-		DelayedMsgNr:       delayedNum,
-		msg:                msg,
-		BatchInfo:          []validator.BatchInfo{batchInfo},
-		ChainConfig:        chainConfig,
-		L1BlockHeight:      msg.Message.Header.BlockNumber,
-		HotShotCommitment:  *hotShotCommitment,
-		HotShotAvailablity: hotShotAvaiability,
+		Stage:             ReadyForRecord,
+		Pos:               pos,
+		Start:             start,
+		End:               end,
+		HasDelayedMsg:     hasDelayed,
+		DelayedMsgNr:      delayedNum,
+		msg:               msg,
+		BatchInfo:         []validator.BatchInfo{batchInfo},
+		ChainConfig:       chainConfig,
+		L1BlockHeight:     l1BlockHeight,
+		HotShotCommitment: *hotShotCommitment,
+		IsHotShotLive:     isHotShotLive,
 	}, nil
 }
 
@@ -390,24 +393,26 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 		return nil, err
 	}
 	var comm espressoTypes.Commitment
-	var hotShotAvaiability bool
+	var isHotShotLive bool
+	var l1BlockHeight uint64
 	if arbos.IsEspressoMsg(msg.Message) {
 		_, jst, err := arbos.ParseEspressoMsg(msg.Message)
 		if err != nil {
 			return nil, err
 		}
-		fetchedCommitment, err := v.lightClientReader.FetchMerkleRootAtL1Block(jst.BlockMerkleJustification.L1ProofHeight)
+		l1BlockHeight = jst.BlockMerkleJustification.L1ProofHeight
+		fetchedCommitment, err := v.lightClientReader.FetchMerkleRootAtL1Block(l1BlockHeight)
 		if err != nil {
 			log.Error("error fetching light client commitment", "L1ProofHeight", jst.BlockMerkleJustification.L1ProofHeight, "%v", err)
 			return nil, err
 		}
-		log.Error("commitment to append", "%v", fetchedCommitment)
 		comm = fetchedCommitment
-		hotShotAvaiability = true
+		isHotShotLive = true
 	} else if arbos.IsL2NonEspressoMsg(msg.Message) {
-		hotShotAvaiability = false
+		isHotShotLive = false
+		l1BlockHeight = msg.Message.Header.BlockNumber
 	}
-	entry, err := newValidationEntry(pos, start, end, msg, seqMsg, batchBlockHash, prevDelayed, v.streamer.ChainConfig(), &comm, hotShotAvaiability)
+	entry, err := newValidationEntry(pos, start, end, msg, seqMsg, batchBlockHash, prevDelayed, v.streamer.ChainConfig(), &comm, isHotShotLive, l1BlockHeight)
 	if err != nil {
 		return nil, err
 	}
@@ -500,13 +505,14 @@ func (v *StatelessBlockValidator) Stop() {
 }
 
 // This method should be only used in tests.
-func (s *StatelessBlockValidator) DebugEspresso_SetHotShotReader(reader lightclient.LightClientReaderInterface, t *testing.T) {
+func (s *StatelessBlockValidator) DebugEspresso_SetLightClientReader(reader lightclient.LightClientReaderInterface, t *testing.T) {
 	s.lightClientReader = reader
 }
 
 // This method should be only used in tests.
-func (s *StatelessBlockValidator) DebugEspresso_SetIncorrectHeight(h uint64, t *testing.T) {
+func (s *StatelessBlockValidator) DebugEspresso_SetTrigger(t *testing.T, h uint64, f func(*validator.ValidationInput)) {
 	s.debugEspressoIncorrectHeight = h
+	s.debugEspressoInputOverrideFunc = f
 }
 
 // This method is to create a conditional branch to help mocking a challenge.

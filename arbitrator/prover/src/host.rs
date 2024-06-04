@@ -77,7 +77,7 @@ pub enum Hostio {
     WavmReadEthVersionedHashPreimage,
     WavmReadInboxMessage,
     WavmReadHotShotCommitment,
-    WavmGetHotShotAvailability,
+    WavmIsHotShotLive,
     WavmReadDelayedInboxMessage,
     WavmHaltAndSetFinished,
     WavmLinkModule,
@@ -127,7 +127,7 @@ impl FromStr for Hostio {
             ("env", "wavm_read_inbox_message") => WavmReadInboxMessage,
             ("env", "wavm_read_delayed_inbox_message") => WavmReadDelayedInboxMessage,
             ("env", "wavm_read_hotshot_commitment") => WavmReadHotShotCommitment,
-            ("env", "wavm_get_hotshot_availability") => WavmGetHotShotAvailability,
+            ("env", "wavm_is_hotshot_live") => WavmIsHotShotLive,
             ("env", "wavm_halt_and_set_finished") => WavmHaltAndSetFinished,
             ("hostio", "wavm_link_module") => WavmLinkModule,
             ("hostio", "wavm_unlink_module") => WavmUnlinkModule,
@@ -191,7 +191,7 @@ impl Hostio {
             WavmReadDelayedInboxMessage      => func!([I64, I32, I32], [I32]),
             WavmHaltAndSetFinished           => func!(),
             WavmReadHotShotCommitment => func!([I32, I64]),
-            WavmGetHotShotAvailability => func!([I64], [I32]),
+            WavmIsHotShotLive => func!([I64], [I32]),
             WavmLinkModule              => func!([I32], [I32]),      // λ(module_hash) → module
             WavmUnlinkModule            => func!(),                  // λ()
             ProgramInkLeft              => func!([I32], [I64]),      // λ(module) → ink_left
@@ -297,9 +297,9 @@ impl Hostio {
                 opcode!(LocalGet, 1);
                 opcode!(ReadHotShotCommitment);
             }
-            WavmGetHotShotAvailability => {
+            WavmIsHotShotLive => {
                 opcode!(LocalGet, 0);
-                opcode!(GetHotShotAvailability);
+                opcode!(IsHotShotLive);
             }
             WavmReadEthVersionedHashPreimage => {
                 opcode!(LocalGet, 0);

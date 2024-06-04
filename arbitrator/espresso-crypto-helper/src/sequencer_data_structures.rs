@@ -6,13 +6,17 @@ use ark_ff::{BigInteger, PrimeField};
 use ark_serialize::{
     CanonicalDeserialize, CanonicalSerialize, Compress, Read, SerializationError, Valid, Validate,
 };
+use bytesize::ByteSize;
 use committable::{Commitment, Committable, RawCommitmentBuilder};
 use core::fmt;
 use derivative::Derivative;
 use derive_more::{Add, Display, From, Into, Sub};
 use digest::OutputSizeUser;
 use either::Either;
-use ethers_core::types::{Address, Signature, H256, U256};
+use ethers_core::{
+    types::{Address, Signature, H256, U256},
+    utils::{parse_units, ParseUnits},
+};
 use jf_primitives::{
     merkle_tree::{
         prelude::{LightWeightSHA3MerkleTree, Sha3Digest, Sha3Node},
@@ -30,14 +34,15 @@ use jf_primitives::{
 };
 use num_traits::PrimInt;
 use serde::{Deserialize, Serialize};
-use std::default::Default;
 use std::mem::size_of;
+use std::{default::Default, str::FromStr};
 use std::{marker::PhantomData, ops::Range};
 use tagged_base64::tagged;
 use trait_set::trait_set;
 use typenum::Unsigned;
 
 use crate::bytes::Bytes;
+use crate::utils::{impl_serde_from_string_or_integer, Err, FromStringOrInteger};
 
 trait_set! {
     pub trait TableWordTraits = CanonicalSerialize
@@ -470,8 +475,45 @@ impl<TableWord: TableWordTraits> Table<TableWord> for NameSpaceTable<TableWord> 
     }
 }
 
-#[derive(Default, Hash, Copy, Clone, Debug, Deserialize, Serialize, PartialEq, Eq, From, Into)]
+#[derive(Default, Hash, Copy, Clone, Debug, PartialEq, Eq, From, Into, Display)]
+#[display(fmt = "{_0}")]
+
 pub struct ChainId(U256);
+
+impl From<u64> for ChainId {
+    fn from(id: u64) -> Self {
+        Self(id.into())
+    }
+}
+
+impl FromStringOrInteger for ChainId {
+    type Binary = U256;
+    type Integer = u64;
+
+    fn from_binary(b: Self::Binary) -> Result<Self, Err> {
+        Ok(Self(b))
+    }
+
+    fn from_integer(i: Self::Integer) -> Result<Self, Err> {
+        Ok(i.into())
+    }
+
+    fn from_string(s: String) -> Result<Self, Err> {
+        if s.starts_with("0x") {
+            Ok(Self(U256::from_str(&s).unwrap()))
+        } else {
+            Ok(Self(U256::from_dec_str(&s).unwrap()))
+        }
+    }
+
+    fn to_binary(&self) -> Result<Self::Binary, Err> {
+        Ok(self.0)
+    }
+
+    fn to_string(&self) -> Result<String, Err> {
+        Ok(format!("{self}"))
+    }
+}
 
 macro_rules! impl_to_fixed_bytes {
     ($struct_name:ident, $type:ty) => {
@@ -485,11 +527,43 @@ macro_rules! impl_to_fixed_bytes {
     };
 }
 
+impl_serde_from_string_or_integer!(ChainId);
 impl_to_fixed_bytes!(ChainId, U256);
 
 impl From<u16> for ChainId {
     fn from(id: u16) -> Self {
         Self(id.into())
+    }
+}
+
+#[derive(Hash, Copy, Clone, Debug, Default, Display, PartialEq, Eq, From, Into)]
+#[display(fmt = "{_0}")]
+pub struct BlockSize(u64);
+
+impl_serde_from_string_or_integer!(BlockSize);
+
+impl FromStringOrInteger for BlockSize {
+    type Binary = u64;
+    type Integer = u64;
+
+    fn from_binary(b: Self::Binary) -> Result<Self, Err> {
+        Ok(Self(b))
+    }
+
+    fn from_integer(i: Self::Integer) -> Result<Self, Err> {
+        Ok(Self(i))
+    }
+
+    fn from_string(s: String) -> Result<Self, Err> {
+        Ok(BlockSize(s.parse::<ByteSize>().unwrap().0))
+    }
+
+    fn to_binary(&self) -> Result<Self::Binary, Err> {
+        Ok(self.0)
+    }
+
+    fn to_string(&self) -> Result<String, Err> {
+        Ok(format!("{self}"))
     }
 }
 
@@ -499,36 +573,11 @@ pub struct ChainConfig {
     /// Espresso chain ID
     chain_id: ChainId,
     /// Maximum size in bytes of a block
-    max_block_size: u64,
+    max_block_size: BlockSize,
     /// Minimum fee in WEI per byte of payload
     base_fee: FeeAmount,
-}
-
-impl Default for ChainConfig {
-    fn default() -> Self {
-        Self::new(
-            U256::from(35353), // arbitrarily chosen chain ID
-            10240,             // 10 kB max_block_size
-            0,                 // no fees
-        )
-    }
-}
-
-impl ChainConfig {
-    pub fn new(
-        chain_id: impl Into<ChainId>,
-        max_block_size: u64,
-        base_fee: impl Into<FeeAmount>,
-    ) -> Self {
-        Self {
-            chain_id: chain_id.into(),
-            max_block_size,
-            base_fee: base_fee.into(),
-        }
-    }
-    pub fn max_block_size(&self) -> u64 {
-        self.max_block_size
-    }
+    fee_contract: Option<Address>,
+    fee_recipient: FeeAccount,
 }
 
 impl Committable for ChainConfig {
@@ -537,11 +586,17 @@ impl Committable for ChainConfig {
     }
 
     fn commit(&self) -> Commitment<Self> {
-        committable::RawCommitmentBuilder::new(&Self::tag())
+        let comm = committable::RawCommitmentBuilder::new(&Self::tag())
             .fixed_size_field("chain_id", &self.chain_id.to_fixed_bytes())
-            .u64_field("max_block_size", self.max_block_size)
+            .u64_field("max_block_size", self.max_block_size.0)
             .fixed_size_field("base_fee", &self.base_fee.to_fixed_bytes())
-            .finalize()
+            .fixed_size_field("fee_recipient", &self.fee_recipient.to_fixed_bytes());
+        let comm = if let Some(addr) = self.fee_contract {
+            comm.u64_field("fee_contract", 1).fixed_size_bytes(&addr.0)
+        } else {
+            comm.u64_field("fee_contract", 0)
+        };
+        comm.finalize()
     }
 }
 
@@ -655,19 +710,50 @@ pub type FeeMerkleCommitment = <FeeMerkleTree as MerkleTreeScheme>::Commitment;
 /// Type alias for byte array of SHA256 digest length
 type Sha256Digest = [u8; <sha2::Sha256 as OutputSizeUser>::OutputSize::USIZE];
 
-#[derive(
-    Default, Hash, Copy, Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Add, Sub, From, Into,
-)]
-
+#[derive(Default, Hash, Copy, Clone, Debug, PartialEq, Eq, Add, Sub, From, Into, Display)]
+#[display(fmt = "{_0}")]
 pub struct FeeAmount(U256);
-impl FeeAmount {
-    /// Return array containing underlying bytes of inner `U256` type
-    fn to_fixed_bytes(self) -> [u8; 32] {
-        let mut bytes = [0u8; core::mem::size_of::<U256>()];
-        self.0.to_little_endian(&mut bytes);
-        bytes
+
+impl FromStringOrInteger for FeeAmount {
+    type Binary = U256;
+    type Integer = u64;
+
+    fn from_binary(b: Self::Binary) -> Result<Self, Err> {
+        Ok(Self(b))
+    }
+
+    fn from_integer(i: Self::Integer) -> Result<Self, Err> {
+        Ok(i.into())
+    }
+
+    fn from_string(s: String) -> Result<Self, Err> {
+        // For backwards compatibility, we have an ad hoc parser for WEI amounts represented as hex
+        // strings.
+        if let Some(s) = s.strip_prefix("0x") {
+            return Ok(Self(s.parse().unwrap()));
+        }
+
+        // Strip an optional non-numeric suffix, which will be interpreted as a unit.
+        let (base, unit) = s
+            .split_once(char::is_whitespace)
+            .unwrap_or((s.as_str(), "wei"));
+        match parse_units(base, unit).unwrap() {
+            ParseUnits::U256(n) => Ok(Self(n)),
+            ParseUnits::I256(_) => panic!("amount cannot be negative"),
+        }
+    }
+
+    fn to_binary(&self) -> Result<Self::Binary, Err> {
+        Ok(self.0)
+    }
+
+    fn to_string(&self) -> Result<String, Err> {
+        Ok(format!("{self}"))
     }
 }
+
+impl_serde_from_string_or_integer!(FeeAmount);
+impl_to_fixed_bytes!(FeeAmount, U256);
 
 impl From<u64> for FeeAmount {
     fn from(amt: u64) -> Self {
@@ -860,4 +946,20 @@ pub fn field_to_u256<F: PrimeField>(f: F) -> U256 {
         panic!("Shouldn't convert a >256-bit field to U256");
     }
     U256::from_little_endian(&f.into_bigint().to_bytes_le())
+}
+
+#[cfg(test)]
+mod tests {
+    use committable::Committable;
+
+    use super::Header;
+
+    #[test]
+    fn header_test() {
+        let header_str = include_str!("./mock_data/header.json");
+        let header = serde_json::from_str::<Header>(&header_str).unwrap();
+        // Copied from espresso sequencer reference test
+        let expected = "BLOCK~6Ol30XYkdKaNFXw0QAkcif18Lk8V8qkC4M81qTlwL707";
+        assert_eq!(header.commit().to_string(), expected);
+    }
 }

@@ -22,7 +22,10 @@ func TestEspressoParsing(t *testing.T) {
 	var mockProof = json.RawMessage(`{"NonExistence":{"ns_id":0}}`)
 	var mockChainConfig = &espressoTypes.ResolvableChainConfig{
 		ChainConfig: espressoTypes.EitherChainConfig{
-			Left: &espressoTypes.ChainConfig{ChainId: *espressoTypes.NewU256().SetUint64(0x8a19), MaxBlockSize: 10240, BaseFee: *espressoTypes.NewU256().SetUint64(0)},
+			Left: &espressoTypes.ChainConfig{
+				ChainId:      *espressoTypes.NewU256().SetUint64(0x8a19).ToDecimal(),
+				MaxBlockSize: *espressoTypes.NewU256().SetUint64(10240).ToDecimal(),
+				BaseFee:      *espressoTypes.NewU256().SetUint64(0).ToDecimal()},
 		},
 	}
 	mockCommitment, err := tagged_base64.New("payloadCommitment", []byte{1, 2, 3})

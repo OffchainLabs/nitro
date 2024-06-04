@@ -585,25 +585,28 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		return false, fmt.Errorf("illegal batch msg count %d pos %d batch %d", v.nextCreateBatchMsgCount, pos, endGS.Batch)
 	}
 	var comm espressoTypes.Commitment
-	var hotShotAvailability bool
+	var isHotShotLive bool
+	var l1BlockHeight uint64
 	if arbos.IsEspressoMsg(msg.Message) {
 		_, jst, err := arbos.ParseEspressoMsg(msg.Message)
 		if err != nil {
 			return false, err
 		}
-		fetchedCommitment, err := v.lightClientReader.FetchMerkleRootAtL1Block(jst.BlockMerkleJustification.L1ProofHeight)
+		l1BlockHeight = jst.BlockMerkleJustification.L1ProofHeight
+		fetchedCommitment, err := v.lightClientReader.FetchMerkleRootAtL1Block(l1BlockHeight)
 		if err != nil {
 			log.Error("error attempting to fetch block merkle root from the light client contract", "L1ProofHeight", jst.BlockMerkleJustification.L1ProofHeight)
 			return false, err
 		}
 		comm = fetchedCommitment
-		hotShotAvailability = true
+		isHotShotLive = true
 	} else if arbos.IsL2NonEspressoMsg(msg.Message) {
-		hotShotAvailability = false
+		isHotShotLive = false
+		l1BlockHeight = msg.Message.Header.BlockNumber
 	}
 	chainConfig := v.streamer.ChainConfig()
 	entry, err := newValidationEntry(
-		pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, v.nextCreateBatchBlockHash, v.nextCreatePrevDelayed, chainConfig, &comm, hotShotAvailability,
+		pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, v.nextCreateBatchBlockHash, v.nextCreatePrevDelayed, chainConfig, &comm, isHotShotLive, l1BlockHeight,
 	)
 	if err != nil {
 		return false, err

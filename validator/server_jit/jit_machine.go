@@ -157,7 +157,7 @@ func (machine *JitMachine) prove(
 		return state, err
 	}
 	var avail uint8
-	if entry.HotShotAvailability {
+	if entry.HotShotLiveness {
 		avail = 1
 	}
 	if err := writeUint8(avail); err != nil {

@@ -11,6 +11,7 @@ ark-ff = "0.4"
 ark-serialize = { version = "0.4", features = ["derive"] }
 ark-std = { version = "0.4", default-features = false }
 base64 = "0.22"
+bytesize = "1.3"
 derive_more = "0.99.17"
 digest = "0.10"
 ethers-core = "2.0.14"

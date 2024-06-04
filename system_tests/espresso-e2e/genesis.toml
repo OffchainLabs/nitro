@@ -1,0 +1,12 @@
+[stake_table]
+capacity = 10
+
+[chain_config]
+chain_id = 1337
+base_fee = '1 wei'
+max_block_size = '1mb'
+fee_recipient = '0x0000000000000000000000000000000000000000'
+fee_contract = '0x7dd3f2a3faef3b9f2364c335163244d3388feb83'
+
+[header]
+timestamp = "1970-01-01T00:00:00Z"

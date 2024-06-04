@@ -292,7 +292,8 @@ func main() {
 
 			hotshotHeader := jst.Header
 			height := hotshotHeader.Height
-			commitment := espressoTypes.Commitment(wavmio.ReadHotShotCommitment(height))
+			l1_height := jst.BlockMerkleJustification.L1ProofHeight
+			commitment := espressoTypes.Commitment(wavmio.ReadHotShotCommitment(l1_height))
 			validatedHeight := wavmio.GetEspressoHeight()
 			if validatedHeight == 0 {
 				// Validators can choose their own trusted starting point to start their validation.
@@ -314,7 +315,7 @@ func main() {
 			espressocrypto.VerifyMerkleProof(jst.BlockMerkleJustification.BlockMerkleProof.Proof, jsonHeader, *jst.BlockMerkleJustification.BlockMerkleComm, commitment)
 		} else if validatingEspressoLivenessFailure {
 			l1Block := message.Message.Header.BlockNumber
-			if wavmio.GetHotShotAvailability(l1Block) {
+			if wavmio.IsHotShotLive(l1Block) {
 				panic(fmt.Sprintf("getting the centralized message while hotshot is good, l1Height: %v", l1Block))
 			}
 		}

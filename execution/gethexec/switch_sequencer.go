@@ -10,7 +10,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -39,9 +38,9 @@ func NewSwitchSequencer(centralized *Sequencer, espresso *EspressoSequencer, l1c
 		return nil, err
 	}
 
-	var lightClient lightClient.LightClientReaderInterface
+	var lightclient lightClient.LightClientReaderInterface
 	if config.LightClientAddress != "" {
-		lightClient, err = arbos.NewMockLightClientReader(common.HexToAddress(config.LightClientAddress), l1client)
+		lightclient, err = lightClient.NewLightClientReader(common.HexToAddress(config.LightClientAddress), l1client)
 		if err != nil {
 			return nil, err
 		}
@@ -50,7 +49,7 @@ func NewSwitchSequencer(centralized *Sequencer, espresso *EspressoSequencer, l1c
 	return &SwitchSequencer{
 		centralized:         centralized,
 		espresso:            espresso,
-		lightClient:         lightClient,
+		lightClient:         lightclient,
 		mode:                SequencingMode_Espresso,
 		maxHotShotDriftTime: config.MaxHotShotDriftTime,
 		switchPollInterval:  config.SwitchPollInterval,
