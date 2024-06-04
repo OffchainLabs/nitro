@@ -41,11 +41,9 @@ type DataAvailabilityConfig struct {
 	LocalCache CacheConfig `koanf:"local-cache"`
 	RedisCache RedisConfig `koanf:"redis-cache"`
 
-	LocalDBStorage     LocalDBStorageConfig     `koanf:"local-db-storage"`
-	LocalFileStorage   LocalFileStorageConfig   `koanf:"local-file-storage"`
-	S3Storage          S3StorageServiceConfig   `koanf:"s3-storage"`
-	IpfsStorage        IpfsStorageServiceConfig `koanf:"ipfs-storage"`
-	RegularSyncStorage RegularSyncStorageConfig `koanf:"regular-sync-storage"`
+	LocalDBStorage   LocalDBStorageConfig   `koanf:"local-db-storage"`
+	LocalFileStorage LocalFileStorageConfig `koanf:"local-file-storage"`
+	S3Storage        S3StorageServiceConfig `koanf:"s3-storage"`
 
 	Key KeyConfig `koanf:"key"`
 
@@ -68,7 +66,6 @@ var DefaultDataAvailabilityConfig = DataAvailabilityConfig{
 	RPCAggregator:                 DefaultAggregatorConfig,
 	ParentChainConnectionAttempts: 15,
 	PanicOnError:                  false,
-	IpfsStorage:                   DefaultIpfsStorageServiceConfig,
 }
 
 func OptionalAddressFromString(s string) (*common.Address, error) {
@@ -115,7 +112,6 @@ func dataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet, r role) {
 		LocalDBStorageConfigAddOptions(prefix+".local-db-storage", f)
 		LocalFileStorageConfigAddOptions(prefix+".local-file-storage", f)
 		S3ConfigAddOptions(prefix+".s3-storage", f)
-		RegularSyncStorageConfigAddOptions(prefix+".regular-sync-storage", f)
 
 		// Key config for storage
 		KeyConfigAddOptions(prefix+".key", f)
@@ -129,7 +125,6 @@ func dataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet, r role) {
 	}
 
 	// Both the Nitro node and daserver can use these options.
-	IpfsStorageServiceConfigAddOptions(prefix+".ipfs-storage", f)
 	RestfulClientAggregatorConfigAddOptions(prefix+".rest-aggregator", f)
 
 	f.String(prefix+".parent-chain-node-url", DefaultDataAvailabilityConfig.ParentChainNodeURL, "URL for parent chain node, only used in standalone daserver; when running as part of a node that node's L1 configuration is used")

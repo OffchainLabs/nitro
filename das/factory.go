@@ -22,8 +22,6 @@ import (
 func CreatePersistentStorageService(
 	ctx context.Context,
 	config *DataAvailabilityConfig,
-	syncFromStorageServices *[]*IterableStorageService,
-	syncToStorageServices *[]StorageService,
 ) (StorageService, *LifecycleManager, error) {
 	storageServices := make([]StorageService, 0, 10)
 	var lifecycleManager LifecycleManager
@@ -31,14 +29,6 @@ func CreatePersistentStorageService(
 		s, err := NewDBStorageService(ctx, &config.LocalDBStorage)
 		if err != nil {
 			return nil, nil, err
-		}
-		if config.LocalDBStorage.SyncFromStorageService {
-			iterableStorageService := NewIterableStorageService(ConvertStorageServiceToIterationCompatibleStorageService(s))
-			*syncFromStorageServices = append(*syncFromStorageServices, iterableStorageService)
-			s = iterableStorageService
-		}
-		if config.LocalDBStorage.SyncToStorageService {
-			*syncToStorageServices = append(*syncToStorageServices, s)
 		}
 		lifecycleManager.Register(s)
 		storageServices = append(storageServices, s)
@@ -49,37 +39,12 @@ func CreatePersistentStorageService(
 		if err != nil {
 			return nil, nil, err
 		}
-		if config.LocalFileStorage.SyncFromStorageService {
-			iterableStorageService := NewIterableStorageService(ConvertStorageServiceToIterationCompatibleStorageService(s))
-			*syncFromStorageServices = append(*syncFromStorageServices, iterableStorageService)
-			s = iterableStorageService
-		}
-		if config.LocalFileStorage.SyncToStorageService {
-			*syncToStorageServices = append(*syncToStorageServices, s)
-		}
 		lifecycleManager.Register(s)
 		storageServices = append(storageServices, s)
 	}
 
 	if config.S3Storage.Enable {
 		s, err := NewS3StorageService(config.S3Storage)
-		if err != nil {
-			return nil, nil, err
-		}
-		lifecycleManager.Register(s)
-		if config.S3Storage.SyncFromStorageService {
-			iterableStorageService := NewIterableStorageService(ConvertStorageServiceToIterationCompatibleStorageService(s))
-			*syncFromStorageServices = append(*syncFromStorageServices, iterableStorageService)
-			s = iterableStorageService
-		}
-		if config.S3Storage.SyncToStorageService {
-			*syncToStorageServices = append(*syncToStorageServices, s)
-		}
-		storageServices = append(storageServices, s)
-	}
-
-	if config.IpfsStorage.Enable {
-		s, err := NewIpfsStorageService(ctx, config.IpfsStorage)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -105,8 +70,6 @@ func WrapStorageWithCache(
 	ctx context.Context,
 	config *DataAvailabilityConfig,
 	storageService StorageService,
-	syncFromStorageServices *[]*IterableStorageService,
-	syncToStorageServices *[]StorageService,
 	lifecycleManager *LifecycleManager) (StorageService, error) {
 	if storageService == nil {
 		return nil, nil
@@ -119,14 +82,6 @@ func WrapStorageWithCache(
 		lifecycleManager.Register(storageService)
 		if err != nil {
 			return nil, err
-		}
-		if config.RedisCache.SyncFromStorageService {
-			iterableStorageService := NewIterableStorageService(ConvertStorageServiceToIterationCompatibleStorageService(storageService))
-			*syncFromStorageServices = append(*syncFromStorageServices, iterableStorageService)
-			storageService = iterableStorageService
-		}
-		if config.RedisCache.SyncToStorageService {
-			*syncToStorageServices = append(*syncToStorageServices, storageService)
 		}
 	}
 	if config.LocalCache.Enable {
@@ -150,10 +105,6 @@ func CreateBatchPosterDAS(
 	// Check config requirements
 	if !config.RPCAggregator.Enable || !config.RestAggregator.Enable {
 		return nil, nil, nil, errors.New("--node.data-availability.rpc-aggregator.enable and rest-aggregator.enable must be set when running a Batch Poster in AnyTrust mode")
-	}
-
-	if config.IpfsStorage.Enable {
-		return nil, nil, nil, errors.New("--node.data-availability.ipfs-storage.enable may not be set when running a Nitro AnyTrust node in Batch Poster mode")
 	}
 	// Done checking config requirements
 
@@ -192,20 +143,17 @@ func CreateDAComponentsForDaserver(
 	// Check config requirements
 	if !config.LocalDBStorage.Enable &&
 		!config.LocalFileStorage.Enable &&
-		!config.S3Storage.Enable &&
-		!config.IpfsStorage.Enable {
-		return nil, nil, nil, nil, nil, errors.New("At least one of --data-availability.(local-db-storage|local-file-storage|s3-storage|ipfs-storage) must be enabled.")
+		!config.S3Storage.Enable {
+		return nil, nil, nil, nil, nil, errors.New("At least one of --data-availability.(local-db-storage|local-file-storage|s3-storage) must be enabled.")
 	}
 	// Done checking config requirements
 
-	var syncFromStorageServices []*IterableStorageService
-	var syncToStorageServices []StorageService
-	storageService, dasLifecycleManager, err := CreatePersistentStorageService(ctx, config, &syncFromStorageServices, &syncToStorageServices)
+	storageService, dasLifecycleManager, err := CreatePersistentStorageService(ctx, config)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
 
-	storageService, err = WrapStorageWithCache(ctx, config, storageService, &syncFromStorageServices, &syncToStorageServices, dasLifecycleManager)
+	storageService, err = WrapStorageWithCache(ctx, config, storageService, dasLifecycleManager)
 	if err != nil {
 		return nil, nil, nil, nil, nil, err
 	}
@@ -285,11 +233,6 @@ func CreateDAComponentsForDaserver(
 		}
 	}
 
-	if config.RegularSyncStorage.Enable && len(syncFromStorageServices) != 0 && len(syncToStorageServices) != 0 {
-		regularlySyncStorage := NewRegularlySyncStorage(syncFromStorageServices, syncToStorageServices, config.RegularSyncStorage)
-		regularlySyncStorage.Start(ctx)
-	}
-
 	if seqInboxAddress != nil {
 		daReader, err = NewChainFetchReader(daReader, (*l1Reader).Client(), *seqInboxAddress)
 		if err != nil {
@@ -315,48 +258,22 @@ func CreateDAReaderForNode(
 		return nil, nil, errors.New("node.data-availability.rpc-aggregator is only for Batch Poster mode")
 	}
 
-	if !config.RestAggregator.Enable && !config.IpfsStorage.Enable {
-		return nil, nil, fmt.Errorf("--node.data-availability.enable was set but neither of --node.data-availability.(rest-aggregator|ipfs-storage) were enabled. When running a Nitro Anytrust node in non-Batch Poster mode, some way to get the batch data is required.")
-	}
-
-	if config.RestAggregator.SyncToStorage.Eager {
-		return nil, nil, errors.New("--node.data-availability.rest-aggregator.sync-to-storage.eager can't be used with a Nitro node, only lazy syncing can be used.")
+	if !config.RestAggregator.Enable {
+		return nil, nil, fmt.Errorf("--node.data-availability.enable was set but not --node.data-availability.rest-aggregator. When running a Nitro Anytrust node in non-Batch Poster mode, some way to get the batch data is required.")
 	}
 	// Done checking config requirements
 
-	storageService, dasLifecycleManager, err := CreatePersistentStorageService(ctx, config, nil, nil)
-	if err != nil {
-		return nil, nil, err
-	}
-
+	var lifecycleManager LifecycleManager
 	var daReader DataAvailabilityServiceReader
 	if config.RestAggregator.Enable {
 		var restAgg *SimpleDASReaderAggregator
-		restAgg, err = NewRestfulClientAggregator(ctx, &config.RestAggregator)
+		restAgg, err := NewRestfulClientAggregator(ctx, &config.RestAggregator)
 		if err != nil {
 			return nil, nil, err
 		}
 		restAgg.Start(ctx)
-		dasLifecycleManager.Register(restAgg)
-
-		if storageService != nil {
-			syncConf := &config.RestAggregator.SyncToStorage
-			var retentionPeriodSeconds uint64
-			if uint64(syncConf.RetentionPeriod) == math.MaxUint64 {
-				retentionPeriodSeconds = math.MaxUint64
-			} else {
-				retentionPeriodSeconds = uint64(syncConf.RetentionPeriod.Seconds())
-			}
-
-			// This falls back to REST and updates the local IPFS repo if the data is found.
-			storageService = NewFallbackStorageService(storageService, restAgg, restAgg,
-				retentionPeriodSeconds, syncConf.IgnoreWriteErrors, true)
-			dasLifecycleManager.Register(storageService)
-
-			daReader = storageService
-		} else {
-			daReader = restAgg
-		}
+		lifecycleManager.Register(restAgg)
+		daReader = restAgg
 	}
 
 	if seqInboxAddress != nil {
@@ -370,5 +287,5 @@ func CreateDAReaderForNode(
 		}
 	}
 
-	return daReader, dasLifecycleManager, nil
+	return daReader, &lifecycleManager, nil
 }

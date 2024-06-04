@@ -61,9 +61,7 @@ func startLocalDASServer(
 		RequestTimeout:     5 * time.Second,
 	}
 
-	var syncFromStorageServices []*das.IterableStorageService
-	var syncToStorageServices []das.StorageService
-	storageService, lifecycleManager, err := das.CreatePersistentStorageService(ctx, &config, &syncFromStorageServices, &syncToStorageServices)
+	storageService, lifecycleManager, err := das.CreatePersistentStorageService(ctx, &config)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 
 	Require(t, err)

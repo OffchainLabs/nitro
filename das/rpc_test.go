@@ -52,9 +52,7 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 		RequestTimeout:     5 * time.Second,
 	}
 
-	var syncFromStorageServices []*IterableStorageService
-	var syncToStorageServices []StorageService
-	storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config, &syncFromStorageServices, &syncToStorageServices)
+	storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config)
 	testhelpers.RequireImpl(t, err)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	localDas, err := NewSignAfterStoreDASWriter(ctx, config, storageService)
