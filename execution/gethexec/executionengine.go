@@ -375,7 +375,7 @@ func writeAndLog(pprof, trace *bytes.Buffer) {
 		log.Error("Creating temporary file for trace", "fileName", traceFile, "error", err)
 		return
 	}
-	log.Info("Block creation took longer than 5 seconds, created pprof and trace files", "pprof", pprofFile, "traceFile", traceFile)
+	log.Info("Transactions sequencing took longer than 2 seconds, created pprof and trace files", "pprof", pprofFile, "traceFile", traceFile)
 }
 
 func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
