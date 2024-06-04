@@ -48,7 +48,7 @@ func TestDatabaseConversion(t *testing.T) {
 	t.Log("stopped first node")
 
 	instanceDir := filepath.Join(dataDir, builder.l2StackConfig.Name)
-	for _, dbname := range []string{"chaindb", "arbitrumdata"} {
+	for _, dbname := range []string{"l2chaindata", "arbitrumdata", "wasm"} {
 		err := os.Rename(filepath.Join(instanceDir, dbname), filepath.Join(instanceDir, fmt.Sprintf("%s_old", dbname)))
 		Require(t, err)
 		t.Log("converting:", dbname)
@@ -62,7 +62,6 @@ func TestDatabaseConversion(t *testing.T) {
 			convConfig := dbconv.DefaultDBConvConfig
 			convConfig.Src = oldDBConfig
 			convConfig.Dst = newDBConfig
-			convConfig.Threads = 32
 			conv := dbconv.NewDBConverter(&convConfig)
 			err := conv.Convert(ctx)
 			Require(t, err)
