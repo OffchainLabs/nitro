@@ -64,6 +64,9 @@ var (
 
 	// ErrTxAlreadyInMempool is  the error message returned by the DA when tx is already in mempool
 	ErrTxAlreadyInMempool = errors.New("tx already in mempool")
+
+	// ErrTxIncorrectAccountSequence is the error message returned by the DA when tx has incorrect sequence
+	ErrTxIncorrectAccountSequence = errors.New("incorrect account sequence")
 )
 
 // CelestiaMessageHeaderFlag indicates that this data is a Blob Pointer
@@ -196,7 +199,7 @@ func (c *CelestiaDA) Store(ctx context.Context, message []byte) ([]byte, error) 
 		height, err = c.Client.Blob.Submit(ctx, []*blob.Blob{dataBlob}, gasPrice)
 		if err != nil {
 			switch {
-			case strings.Contains(err.Error(), ErrTxTimedout.Error()), strings.Contains(err.Error(), ErrTxAlreadyInMempool.Error()):
+			case strings.Contains(err.Error(), ErrTxTimedout.Error()), strings.Contains(err.Error(), ErrTxAlreadyInMempool.Error()), strings.Contains(err.Error(), err.Error(), ErrTxIncorrectAccountSequence.Error()):
 				log.Warn("Failed to submit blob, bumping gas price and retrying...", "err", err)
 				if gasPrice == -1.0 {
 					gasPrice = c.Cfg.GasPrice
