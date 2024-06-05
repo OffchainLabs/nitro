@@ -1131,7 +1131,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 	}
 
 	s.CallIteratively(func(ctx context.Context) time.Duration {
-		nextBlock := time.Now().Add(config.MaxBlockSpeed)
+		nextBlock := time.Now().Add(s.config().MaxBlockSpeed)
 		if s.createBlock(ctx) {
 			// Note: this may return a negative duration, but timers are fine with that (they treat negative durations as 0).
 			return time.Until(nextBlock)
