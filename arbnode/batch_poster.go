@@ -1046,6 +1046,12 @@ const ethPosBlockTime = 12 * time.Second
 var errAttemptLockFailed = errors.New("failed to acquire lock; either another batch poster posted a batch or this node fell behind")
 
 func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (ret bool, err error) {
+	defer func() {
+		if err != nil {
+			batchPosterFailureCounter.Inc(1)
+		}
+	}()
+
 	if b.batchReverted.Load() {
 		return false, fmt.Errorf("batch was reverted, not posting any more batches")
 	}
@@ -1245,12 +1251,6 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (ret bool, er
 		// don't post anything for now
 		return false, nil
 	}
-
-	defer func() {
-		if err != nil {
-			batchPosterFailureCounter.Inc(1)
-		}
-	}()
 
 	sequencerMsg, err := b.building.segments.CloseAndGetBytes()
 	if err != nil {
