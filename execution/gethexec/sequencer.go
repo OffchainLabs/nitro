@@ -408,11 +408,12 @@ func ctxWithTimeout(ctx context.Context, timeout time.Duration) (context.Context
 }
 
 func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
+	config := s.config()
 	// Only try to acquire Rlock and check for hard threshold if l1reader is not nil
 	// And hard threshold was enabled, this prevents spamming of read locks when not needed
-	if s.l1Reader != nil && s.config().ExpectedSurplusHardThreshold != "default" {
+	if s.l1Reader != nil && config.ExpectedSurplusHardThreshold != "default" {
 		s.expectedSurplusMutex.RLock()
-		if s.expectedSurplusUpdated && s.expectedSurplus < int64(s.config().expectedSurplusHardThreshold) {
+		if s.expectedSurplusUpdated && s.expectedSurplus < int64(config.expectedSurplusHardThreshold) {
 			return errors.New("currently not accepting transactions due to expected surplus being below threshold")
 		}
 		s.expectedSurplusMutex.RUnlock()
@@ -451,7 +452,7 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 		return err
 	}
 
-	queueTimeout := s.config().QueueTimeout
+	queueTimeout := config.QueueTimeout
 	queueCtx, cancelFunc := ctxWithTimeout(parentCtx, queueTimeout)
 	defer cancelFunc()
 
@@ -930,7 +931,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		block *types.Block
 		err   error
 	)
-	if s.config().EnableProfiling {
+	if config.EnableProfiling {
 		block, err = s.execEngine.SequenceTransactionsWithProfiling(header, txes, hooks)
 	} else {
 		block, err = s.execEngine.SequenceTransactions(header, txes, hooks)
@@ -1066,16 +1067,17 @@ func (s *Sequencer) updateExpectedSurplus(ctx context.Context) (int64, error) {
 	unusedL1GasChargeGauge.Update(backlogL1GasCharged)
 	currentSurplusGauge.Update(surplus)
 	expectedSurplusGauge.Update(expectedSurplus)
-	if s.config().ExpectedSurplusSoftThreshold != "default" && expectedSurplus < int64(s.config().expectedSurplusSoftThreshold) {
-		log.Warn("expected surplus is below soft threshold", "value", expectedSurplus, "threshold", s.config().expectedSurplusSoftThreshold)
+	config := s.config()
+	if config.ExpectedSurplusSoftThreshold != "default" && expectedSurplus < int64(config.expectedSurplusSoftThreshold) {
+		log.Warn("expected surplus is below soft threshold", "value", expectedSurplus, "threshold", config.expectedSurplusSoftThreshold)
 	}
 	return expectedSurplus, nil
 }
 
 func (s *Sequencer) Start(ctxIn context.Context) error {
 	s.StopWaiter.Start(ctxIn, s)
-
-	if (s.config().ExpectedSurplusHardThreshold != "default" || s.config().ExpectedSurplusSoftThreshold != "default") && s.l1Reader == nil {
+	config := s.config()
+	if (config.ExpectedSurplusHardThreshold != "default" || config.ExpectedSurplusSoftThreshold != "default") && s.l1Reader == nil {
 		return errors.New("expected surplus soft/hard thresholds are enabled but l1Reader is nil")
 	}
 
@@ -1087,7 +1089,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 
 		expectedSurplus, err := s.updateExpectedSurplus(ctxIn)
 		if err != nil {
-			if s.config().ExpectedSurplusHardThreshold != "default" {
+			if config.ExpectedSurplusHardThreshold != "default" {
 				return fmt.Errorf("expected-surplus-hard-threshold is enabled but error fetching initial expected surplus value: %w", err)
 			}
 			log.Error("expected-surplus-soft-threshold is enabled but error fetching initial expected surplus value", "err", err)
@@ -1129,7 +1131,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 	}
 
 	s.CallIteratively(func(ctx context.Context) time.Duration {
-		nextBlock := time.Now().Add(s.config().MaxBlockSpeed)
+		nextBlock := time.Now().Add(config.MaxBlockSpeed)
 		if s.createBlock(ctx) {
 			// Note: this may return a negative duration, but timers are fine with that (they treat negative durations as 0).
 			return time.Until(nextBlock)
