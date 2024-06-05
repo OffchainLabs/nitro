@@ -16,7 +16,8 @@ import (
 )
 
 type BoldValidationClientConfig struct {
-	RedisURL string `koanf:"redis-url"`
+	RedisURL      string `koanf:"redis-url"`
+	CreateStreams bool   `koanf:"create-streams"`
 }
 
 func (c BoldValidationClientConfig) Enabled() bool {
@@ -24,15 +25,18 @@ func (c BoldValidationClientConfig) Enabled() bool {
 }
 
 var DefaultBoldValidationClientConfig = BoldValidationClientConfig{
-	RedisURL: "",
+	RedisURL:      "",
+	CreateStreams: true,
 }
 
 var TestBoldValidationClientConfig = BoldValidationClientConfig{
-	RedisURL: "",
+	RedisURL:      "",
+	CreateStreams: false,
 }
 
 func BoldValidationClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	pubsub.ProducerAddConfigAddOptions(prefix+".producer-config", f)
+	f.Bool(prefix+".create-streams", DefaultValidationClientConfig.CreateStreams, "create redis streams if it does not exist")
 }
 
 // BoldValidationClient implements bold validation client through redis streams.
@@ -43,6 +47,7 @@ type BoldValidationClient struct {
 	producerConfig pubsub.ProducerConfig
 	redisClient    redis.UniversalClient
 	moduleRoots    []common.Hash
+	createStreams  bool
 }
 
 func NewBoldValidationClient(cfg *BoldValidationClientConfig) (*BoldValidationClient, error) {
@@ -54,13 +59,19 @@ func NewBoldValidationClient(cfg *BoldValidationClientConfig) (*BoldValidationCl
 		return nil, err
 	}
 	return &BoldValidationClient{
-		producers:   make(map[common.Hash]*pubsub.Producer[*server_api.GetLeavesWithStepSizeInput, []common.Hash]),
-		redisClient: redisClient,
+		producers:     make(map[common.Hash]*pubsub.Producer[*server_api.GetLeavesWithStepSizeInput, []common.Hash]),
+		redisClient:   redisClient,
+		createStreams: cfg.CreateStreams,
 	}, nil
 }
 
-func (c *BoldValidationClient) Initialize(moduleRoots []common.Hash) error {
+func (c *BoldValidationClient) Initialize(ctx context.Context, moduleRoots []common.Hash) error {
 	for _, mr := range moduleRoots {
+		if c.createStreams {
+			if err := pubsub.CreateStream(ctx, server_api.RedisStreamForRoot(mr), c.redisClient); err != nil {
+				return fmt.Errorf("creating redis stream: %w", err)
+			}
+		}
 		if _, exists := c.producers[mr]; exists {
 			log.Warn("Producer already existsw for module root", "hash", mr)
 			continue
