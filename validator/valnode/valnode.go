@@ -41,7 +41,7 @@ type Config struct {
 	ApiAuth         bool                               `koanf:"api-auth"`
 	ApiPublic       bool                               `koanf:"api-public"`
 	Arbitrator      server_arb.ArbitratorSpawnerConfig `koanf:"arbitrator" reload:"hot"`
-	RedisExecRunner arbredis.ExecutionSpawnerConfig    `koanf:"redis-exec-runnner"`
+	RedisExecRunner arbredis.ExecutionSpawnerConfig    `koanf:"redis-exec-runner"`
 	Jit             server_jit.JitSpawnerConfig        `koanf:"jit" reload:"hot"`
 	Wasm            WasmConfig                         `koanf:"wasm"`
 }

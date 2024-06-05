@@ -205,7 +205,7 @@ func TestValidationServerAPI(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	_, validationDefault := createMockValidationNode(t, ctx, nil)
-	client := validatorclient.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), validationDefault)
+	client := validatorclient.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), nil, validationDefault)
 	err := client.Start(ctx)
 	Require(t, err)
 
@@ -282,7 +282,7 @@ func TestValidationClientRoom(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	mockSpawner, spawnerStack := createMockValidationNode(t, ctx, nil)
-	client := validatorclient.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), spawnerStack)
+	client := validatorclient.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), nil, spawnerStack)
 	err := client.Start(ctx)
 	Require(t, err)
 
@@ -369,10 +369,10 @@ func TestExecutionKeepAlive(t *testing.T) {
 	_, validationShortTO := createMockValidationNode(t, ctx, &shortTimeoutConfig)
 	configFetcher := StaticFetcherFrom(t, &rpcclient.TestClientConfig)
 
-	clientDefault := validatorclient.NewExecutionClient(configFetcher, validationDefault)
+	clientDefault := validatorclient.NewExecutionClient(configFetcher, nil, validationDefault)
 	err := clientDefault.Start(ctx)
 	Require(t, err)
-	clientShortTO := validatorclient.NewExecutionClient(configFetcher, validationShortTO)
+	clientShortTO := validatorclient.NewExecutionClient(configFetcher, nil, validationShortTO)
 	err = clientShortTO.Start(ctx)
 	Require(t, err)
 

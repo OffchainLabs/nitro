@@ -76,7 +76,10 @@ func NewExecutionSpawner(cfg *ExecutionSpawnerConfig, spawner validator.Executio
 
 func (s *ExecutionSpawner) Start(ctx_in context.Context) {
 	s.StopWaiter.Start(ctx_in, s)
-	s.spawner.Start(ctx_in)
+	if err := s.spawner.Start(ctx_in); err != nil {
+		log.Error("Starting spawner", "error", err)
+		return
+	}
 	for moduleRoot, c := range s.consumers {
 		c := c
 		c.Start(ctx_in)

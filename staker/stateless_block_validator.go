@@ -232,9 +232,8 @@ func NewStatelessBlockValidator(
 	stack *node.Node,
 ) (*StatelessBlockValidator, error) {
 	var (
-		executionSpawners  []validator.ExecutionSpawner
-		redisValClient     *redis.ValidationClient
-		redisBoldValClient *redis.BoldValidationClient
+		executionSpawners []validator.ExecutionSpawner
+		redisValClient    *redis.ValidationClient
 	)
 
 	if config().RedisValidationClientConfig.Enabled() {
@@ -244,18 +243,15 @@ func NewStatelessBlockValidator(
 			return nil, fmt.Errorf("creating new redis validation client: %w", err)
 		}
 	}
-	if config().RedisBoldValidationClientConfig.Enabled() {
-		var err error
-		redisBoldValClient, err = redis.NewBoldValidationClient(&config().RedisBoldValidationClientConfig)
-		if err != nil {
-			return nil, fmt.Errorf("creating new redis bold validation client: %w", err)
-		}
-	}
+
 	configs := config().ValidationServerConfigs
 	for i := range configs {
 		i := i
 		confFetcher := func() *rpcclient.ClientConfig { return &config().ValidationServerConfigs[i] }
-		executionSpawners = append(executionSpawners, validatorclient.NewExecutionClient(confFetcher, stack))
+		executionSpawners = append(executionSpawners, validatorclient.NewExecutionClient(confFetcher, nil, stack))
+		if i == 0 {
+			executionSpawners = append(executionSpawners, validatorclient.NewExecutionClient(confFetcher, &config().RedisBoldValidationClientConfig, stack))
+		}
 	}
 
 	if len(executionSpawners) == 0 {

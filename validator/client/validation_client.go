@@ -119,11 +119,11 @@ type ExecutionClient struct {
 	boldValClient *redis.BoldValidationClient
 }
 
-func NewExecutionClient(config rpcclient.ClientConfigFetcher, redisBoldValidationClientConfig redis.BoldValidationClientConfig, stack *node.Node) *ExecutionClient {
+func NewExecutionClient(config rpcclient.ClientConfigFetcher, redisBoldValidationClientConfig *redis.BoldValidationClientConfig, stack *node.Node) *ExecutionClient {
 	var boldClient *redis.BoldValidationClient
-	if redisBoldValidationClientConfig.Enabled() {
+	if redisBoldValidationClientConfig != nil && redisBoldValidationClientConfig.Enabled() {
 		var err error
-		boldClient, err = redis.NewBoldValidationClient(&redisBoldValidationClientConfig)
+		boldClient, err = redis.NewBoldValidationClient(redisBoldValidationClientConfig)
 		if err != nil {
 			log.Error("Creating new redis bold validation client", "error", err)
 		}
