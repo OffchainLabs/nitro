@@ -120,11 +120,12 @@ func TestDownloadInitInParts(t *testing.T) {
 
 func TestSetLatestSnapshotUrl(t *testing.T) {
 	const (
-		chain      = "arb1"
-		latestDate = "2024/21"
-		latestFile = "latest-archive.txt"
-		dirPerm    = 0700
-		filePerm   = 0600
+		chain        = "arb1"
+		snapshotKind = "archive"
+		latestDate   = "2024/21"
+		latestFile   = "latest-" + snapshotKind + ".txt"
+		dirPerm      = 0700
+		filePerm     = 0600
 	)
 
 	// Create latest file
@@ -141,8 +142,8 @@ func TestSetLatestSnapshotUrl(t *testing.T) {
 
 	// Set latest snapshot URL
 	initConfig := conf.InitConfigDefault
-	initConfig.Latest = true
-	initConfig.LatestMirror = addr
+	initConfig.Latest = snapshotKind
+	initConfig.LatestBase = addr
 	err = setLatestSnapshotUrl(ctx, &initConfig, chain)
 	Require(t, err)
 

@@ -246,23 +246,23 @@ func joinArchive(parts []string) (string, error) {
 
 // setLatestSnapshotUrl sets the Url in initConfig to the latest one available on the mirror.
 func setLatestSnapshotUrl(ctx context.Context, initConfig *conf.InitConfig, chain string) error {
-	if !initConfig.Latest {
+	if initConfig.Latest == "" {
 		return nil
 	}
 	if initConfig.Url != "" {
 		return fmt.Errorf("cannot set latest url if url is already set")
 	}
-	mirror, err := url.Parse(initConfig.LatestMirror)
+	baseUrl, err := url.Parse(initConfig.LatestBase)
 	if err != nil {
-		return fmt.Errorf("failed to parse latest mirror \"%s\": %w", initConfig.LatestMirror, err)
+		return fmt.Errorf("failed to parse latest mirror \"%s\": %w", initConfig.LatestBase, err)
 	}
-	latestDateUrl := mirror.JoinPath(chain, "latest-"+initConfig.LatestKind+".txt")
-	latestDateBytes, err := httpGet(ctx, latestDateUrl.String())
+	latestDateUrl := baseUrl.JoinPath(chain, "latest-"+initConfig.Latest+".txt").String()
+	latestDateBytes, err := httpGet(ctx, latestDateUrl)
 	if err != nil {
-		return fmt.Errorf("failed to get latest date: %w", err)
+		return fmt.Errorf("failed to get latest snapshot at \"%s\": %w", latestDateUrl, err)
 	}
 	latestDate := strings.TrimSpace(string(latestDateBytes))
-	initConfig.Url = mirror.JoinPath(chain, latestDate, initConfig.LatestKind+".tar").String()
+	initConfig.Url = baseUrl.JoinPath(chain, latestDate, initConfig.Latest+".tar").String()
 	log.Info("Set latest snapshot url", "url", initConfig.Url)
 	return nil
 }

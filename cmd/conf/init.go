@@ -12,9 +12,8 @@ import (
 type InitConfig struct {
 	Force                    bool          `koanf:"force"`
 	Url                      string        `koanf:"url"`
-	Latest                   bool          `koanf:"latest"`
-	LatestKind               string        `koanf:"latest-kind"`
-	LatestMirror             string        `koanf:"latest-mirror"`
+	Latest                   string        `koanf:"latest"`
+	LatestBase               string        `koanf:"latest-base"`
 	DownloadPath             string        `koanf:"download-path"`
 	DownloadPoll             time.Duration `koanf:"download-poll"`
 	DevInit                  bool          `koanf:"dev-init"`
@@ -33,9 +32,8 @@ type InitConfig struct {
 var InitConfigDefault = InitConfig{
 	Force:                    false,
 	Url:                      "",
-	Latest:                   false,
-	LatestKind:               acceptedSnapshotKinds[0],
-	LatestMirror:             "https://snapshot.arbitrum.foundation/",
+	Latest:                   "",
+	LatestBase:               "https://snapshot.arbitrum.foundation/",
 	DownloadPath:             "/tmp/",
 	DownloadPoll:             time.Minute,
 	DevInit:                  false,
@@ -54,9 +52,8 @@ var InitConfigDefault = InitConfig{
 func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".force", InitConfigDefault.Force, "if true: in case database exists init code will be reexecuted and genesis block compared to database")
 	f.String(prefix+".url", InitConfigDefault.Url, "url to download initialization data - will poll if download fails")
-	f.Bool(prefix+".latest", InitConfigDefault.Latest, "if true: search for the latest snapshot")
-	f.String(prefix+".latest-kind", InitConfigDefault.LatestKind, "snapshot kind when searching for the latest "+acceptedSnapshotKindsStr)
-	f.String(prefix+".latest-mirror", InitConfigDefault.LatestMirror, "base url used when searching for the latest")
+	f.String(prefix+".latest", InitConfigDefault.Latest, "if set, searches for the latest snapshot of the given kind "+acceptedSnapshotKindsStr)
+	f.String(prefix+".latest-base", InitConfigDefault.LatestBase, "base url used when searching for the latest")
 	f.String(prefix+".download-path", InitConfigDefault.DownloadPath, "path to save temp downloaded file")
 	f.Duration(prefix+".download-poll", InitConfigDefault.DownloadPoll, "how long to wait between polling attempts")
 	f.Bool(prefix+".dev-init", InitConfigDefault.DevInit, "init with dev data (1 account with balance) instead of file import")
@@ -76,14 +73,14 @@ func (c *InitConfig) Validate() error {
 	if c.Force && c.RecreateMissingStateFrom > 0 {
 		log.Warn("force init enabled, recreate-missing-state-from will have no effect")
 	}
-	if !isAcceptedSnapshotKind(c.LatestKind) {
-		return fmt.Errorf("invalid value for latest-kind option: \"%s\" %s", c.LatestKind, acceptedSnapshotKindsStr)
+	if c.Latest != "" && !isAcceptedSnapshotKind(c.Latest) {
+		return fmt.Errorf("invalid value for latest option: \"%s\" %s", c.Latest, acceptedSnapshotKindsStr)
 	}
 	return nil
 }
 
 var (
-	acceptedSnapshotKinds    = []string{"archive", "pruned"}
+	acceptedSnapshotKinds    = []string{"archive", "pruned", "genesis"}
 	acceptedSnapshotKindsStr = "(accepted values: \"" + strings.Join(acceptedSnapshotKinds, "\" | \"") + "\")"
 )
 
