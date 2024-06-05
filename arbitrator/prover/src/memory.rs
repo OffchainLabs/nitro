@@ -10,13 +10,7 @@ use digest::Digest;
 use eyre::{bail, ErrReport, Result};
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
-use std::{
-    borrow::Cow,
-    collections::HashSet,
-    convert::TryFrom,
-    ops::Deref,
-    sync::{Arc, Mutex},
-};
+use std::{borrow::Cow, collections::HashSet, convert::TryFrom, ops::Deref, sync::Mutex};
 
 #[cfg(feature = "counters")]
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -70,14 +64,14 @@ impl TryFrom<&wasmparser::MemoryType> for MemoryType {
     }
 }
 
-#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+#[derive(Debug, Default, Serialize, Deserialize)]
 pub struct Memory {
     buffer: Vec<u8>,
     #[serde(skip)]
     pub merkle: Option<Merkle>,
     pub max_size: u64,
     #[serde(skip)]
-    dirty_indices: Arc<Mutex<HashSet<usize>>>,
+    dirty_indices: Mutex<HashSet<usize>>,
 }
 
 fn hash_leaf(bytes: [u8; Memory::LEAF_SIZE]) -> Bytes32 {
@@ -116,6 +110,17 @@ impl PartialEq for Memory {
     }
 }
 
+impl Clone for Memory {
+    fn clone(&self) -> Self {
+        Memory {
+            buffer: self.buffer.clone(),
+            merkle: self.merkle.clone(),
+            max_size: self.max_size,
+            dirty_indices: Mutex::new(self.dirty_indices.lock().unwrap().clone()),
+        }
+    }
+}
+
 impl Memory {
     pub const LEAF_SIZE: usize = 32;
     /// Only used when initializing a memory to determine its size
@@ -129,7 +134,7 @@ impl Memory {
             buffer: vec![0u8; size],
             merkle: None,
             max_size,
-            dirty_indices: Arc::new(Mutex::new(HashSet::new())),
+            dirty_indices: Mutex::new(HashSet::new()),
         }
     }
 
