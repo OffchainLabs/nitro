@@ -700,6 +700,7 @@ func createNodeImpl(
 			TransactOpts:  txOptsBatchPoster,
 			DAPWriter:     dapWriter,
 			ParentChainID: parentChainID,
+			DAPReaders:    dapReaders,
 		})
 		if err != nil {
 			return nil, err
