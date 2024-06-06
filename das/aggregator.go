@@ -27,20 +27,23 @@ import (
 )
 
 type AggregatorConfig struct {
-	Enable        bool   `koanf:"enable"`
-	AssumedHonest int    `koanf:"assumed-honest"`
-	Backends      string `koanf:"backends"`
+	Enable                bool   `koanf:"enable"`
+	AssumedHonest         int    `koanf:"assumed-honest"`
+	Backends              string `koanf:"backends"`
+	MaxStoreChunkBodySize int    `koanf:"max-store-chunk-body-size"`
 }
 
 var DefaultAggregatorConfig = AggregatorConfig{
-	AssumedHonest: 0,
-	Backends:      "",
+	AssumedHonest:         0,
+	Backends:              "",
+	MaxStoreChunkBodySize: 512 * 1024,
 }
 
 func AggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultAggregatorConfig.Enable, "enable storage/retrieval of sequencer batch data from a list of RPC endpoints; this should only be used by the batch poster and not in combination with other DAS storage types")
+	f.Bool(prefix+".enable", DefaultAggregatorConfig.Enable, "enable storage of sequencer batch data from a list of RPC endpoints; this should only be used by the batch poster and not in combination with other DAS storage types")
 	f.Int(prefix+".assumed-honest", DefaultAggregatorConfig.AssumedHonest, "Number of assumed honest backends (H). If there are N backends, K=N+1-H valid responses are required to consider an Store request to be successful.")
 	f.String(prefix+".backends", DefaultAggregatorConfig.Backends, "JSON RPC backend configuration")
+	f.Int(prefix+".max-store-chunk-body-size", DefaultAggregatorConfig.MaxStoreChunkBodySize, "maximum HTTP POST body size to use for individual batch chunks, including JSON RPC overhead and an estimated overhead of 512B of headers")
 }
 
 type Aggregator struct {
@@ -165,7 +168,7 @@ type storeResponse struct {
 func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*daprovider.DataAvailabilityCertificate, error) {
 	log.Trace("das.Aggregator.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig))
 	if a.addrVerifier != nil {
-		actualSigner, err := DasRecoverSigner(message, timeout, sig)
+		actualSigner, err := DasRecoverSigner(message, sig, timeout)
 		if err != nil {
 			return nil, err
 		}

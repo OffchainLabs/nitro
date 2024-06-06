@@ -91,6 +91,7 @@ type ClientStoreConfig struct {
 	SigningKey            string        `koanf:"signing-key"`
 	SigningWallet         string        `koanf:"signing-wallet"`
 	SigningWalletPassword string        `koanf:"signing-wallet-password"`
+	MaxStoreChunkBodySize int           `koanf:"max-store-chunk-body-size"`
 }
 
 func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
@@ -102,6 +103,7 @@ func parseClientStoreConfig(args []string) (*ClientStoreConfig, error) {
 	f.String("signing-wallet", "", "wallet containing ecdsa key to sign the message with")
 	f.String("signing-wallet-password", genericconf.PASSWORD_NOT_SET, "password to unlock the wallet, if not specified the user is prompted for the password")
 	f.Duration("das-retention-period", 24*time.Hour, "The period which DASes are requested to retain the stored batches.")
+	f.Int("max-store-chunk-body-size", 512*1024, "The maximum HTTP POST body size for a chunked store request")
 
 	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {
@@ -121,12 +123,7 @@ func startClientStore(args []string) error {
 		return err
 	}
 
-	client, err := das.NewDASRPCClient(config.URL)
-	if err != nil {
-		return err
-	}
-
-	var dasClient das.DataAvailabilityServiceWriter = client
+	var signer signature.DataSignerFunc
 	if config.SigningKey != "" {
 		var privateKey *ecdsa.PrivateKey
 		if config.SigningKey[:2] == "0x" {
@@ -140,12 +137,7 @@ func startClientStore(args []string) error {
 				return err
 			}
 		}
-		signer := signature.DataSignerFromPrivateKey(privateKey)
-
-		dasClient, err = das.NewStoreSigningDAS(dasClient, signer)
-		if err != nil {
-			return err
-		}
+		signer = signature.DataSignerFromPrivateKey(privateKey)
 	} else if config.SigningWallet != "" {
 		walletConf := &genericconf.WalletConfig{
 			Pathname:      config.SigningWallet,
@@ -154,14 +146,15 @@ func startClientStore(args []string) error {
 			Account:       "",
 			OnlyCreateKey: false,
 		}
-		_, signer, err := util.OpenWallet("datool", walletConf, nil)
+		_, signer, err = util.OpenWallet("datool", walletConf, nil)
 		if err != nil {
 			return err
 		}
-		dasClient, err = das.NewStoreSigningDAS(dasClient, signer)
-		if err != nil {
-			return err
-		}
+	}
+
+	client, err := das.NewDASRPCClient(config.URL, signer, config.MaxStoreChunkBodySize)
+	if err != nil {
+		return err
 	}
 
 	ctx := context.Background()
@@ -173,9 +166,9 @@ func startClientStore(args []string) error {
 		if err != nil {
 			return err
 		}
-		cert, err = dasClient.Store(ctx, message, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{})
+		cert, err = client.Store(ctx, message, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{})
 	} else if len(config.Message) > 0 {
-		cert, err = dasClient.Store(ctx, []byte(config.Message), uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{})
+		cert, err = client.Store(ctx, []byte(config.Message), uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{})
 	} else {
 		return errors.New("--message or --random-message-size must be specified")
 	}
@@ -361,7 +354,7 @@ func dumpKeyset(args []string) error {
 		return err
 	}
 
-	services, err := das.ParseServices(config.Keyset)
+	services, err := das.ParseServices(config.Keyset, nil)
 	if err != nil {
 		return err
 	}
