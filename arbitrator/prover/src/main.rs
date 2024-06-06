@@ -263,10 +263,7 @@ fn main() -> Result<()> {
 
         if opts.proving_backoff {
             let mut extra_data = 0;
-            if matches!(
-                next_opcode,
-                Opcode::ReadInboxMessage | Opcode::ReadPreImage | Opcode::SwitchThread
-            ) {
+            if matches!(next_opcode, Opcode::ReadInboxMessage | Opcode::ReadPreImage) {
                 extra_data = next_inst.argument_data;
             }
             let count_entry = proving_backoff

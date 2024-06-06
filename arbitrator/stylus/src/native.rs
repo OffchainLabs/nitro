@@ -113,7 +113,6 @@ impl<D: DataReader, E: EvmApi<D>> NativeInstance<D, E> {
         version: u16,
         evm: E,
         evm_data: EvmData,
-        mut long_term_tag: u32,
         debug: bool,
     ) -> Result<Self> {
         let compile = CompileConfig::version(version, debug);
@@ -123,11 +122,10 @@ impl<D: DataReader, E: EvmApi<D>> NativeInstance<D, E> {
         if let Some((module, store)) = InitCache::get(module_hash, version, debug) {
             return Self::from_module(module, store, env);
         }
-        if !env.evm_data.cached {
-            long_term_tag = 0;
-        }
-        let (module, store) =
-            InitCache::insert(module_hash, module, version, long_term_tag, debug)?;
+        let (module, store) = match env.evm_data.cached {
+            true => InitCache::insert(module_hash, module, version, debug)?,
+            false => InitCache::insert_lru(module_hash, module, version, debug)?,
+        };
         Self::from_module(module, store, env)
     }
 

@@ -2,14 +2,6 @@
 ;; For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 (module
-    (import "vm_hooks" "storage_load_bytes32" (func $storage_load_bytes32 (param i32 i32)))
-
-    (func $storage_load (result i32)
-        i32.const 0
-        i32.const 32
-        call $storage_load_bytes32
-        i32.const 0
-    )
     (func $safe (result i32)
         i32.const 5
     )
@@ -41,11 +33,6 @@
         (i32.eq (local.get $args_len) (i32.const 3))
         (if
             (then (call $out_of_bounds) (return))
-        )
-
-        (i32.eq (local.get $args_len) (i32.const 32))
-        (if
-            (then (call $storage_load) (return))
         )
 
         unreachable

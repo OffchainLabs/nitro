@@ -21,7 +21,7 @@ macro_rules! cache {
 }
 
 pub struct InitCache {
-    long_term: HashMap<CacheKey, CacheItem>,
+    arbos: HashMap<CacheKey, CacheItem>,
     lru: LruCache<CacheKey, CacheItem>,
 }
 
@@ -59,22 +59,11 @@ impl CacheItem {
 }
 
 impl InitCache {
-    // current implementation only has one tag that stores to the long_term
-    // future implementations might have more, but 0 is a reserved tag
-    // that will never modify long_term state
-    const ARBOS_TAG: u32 = 1;
-
     fn new(size: usize) -> Self {
         Self {
-            long_term: HashMap::new(),
+            arbos: HashMap::new(),
             lru: LruCache::new(NonZeroUsize::new(size).unwrap()),
         }
-    }
-
-    pub fn set_lru_size(size: u32) {
-        cache!()
-            .lru
-            .resize(NonZeroUsize::new(size.try_into().unwrap()).unwrap())
     }
 
     /// Retrieves a cached value, updating items as necessary.
@@ -83,7 +72,7 @@ impl InitCache {
         let key = CacheKey::new(module_hash, version, debug);
 
         // See if the item is in the long term cache
-        if let Some(item) = cache.long_term.get(&key) {
+        if let Some(item) = cache.arbos.get(&key) {
             return Some(item.data());
         }
 
@@ -95,27 +84,18 @@ impl InitCache {
     }
 
     /// Inserts an item into the long term cache, cloning from the LRU cache if able.
-    /// If long_term_tag is 0 will only insert to LRU
     pub fn insert(
         module_hash: Bytes32,
         module: &[u8],
         version: u16,
-        long_term_tag: u32,
         debug: bool,
     ) -> Result<(Module, Store)> {
         let key = CacheKey::new(module_hash, version, debug);
 
         // if in LRU, add to ArbOS
         let mut cache = cache!();
-        if let Some(item) = cache.long_term.get(&key) {
-            return Ok(item.data());
-        }
         if let Some(item) = cache.lru.peek(&key).cloned() {
-            if long_term_tag == Self::ARBOS_TAG {
-                cache.long_term.insert(key, item.clone());
-            } else {
-                cache.lru.promote(&key)
-            }
+            cache.arbos.insert(key, item.clone());
             return Ok(item.data());
         }
         drop(cache);
@@ -125,34 +105,37 @@ impl InitCache {
 
         let item = CacheItem::new(module, engine);
         let data = item.data();
-        let mut cache = cache!();
-        if long_term_tag != Self::ARBOS_TAG {
-            cache.lru.put(key, item);
-        } else {
-            cache.long_term.insert(key, item);
-        }
+        cache!().arbos.insert(key, item);
         Ok(data)
     }
 
-    /// Evicts an item in the long-term cache.
-    pub fn evict(module_hash: Bytes32, version: u16, long_term_tag: u32, debug: bool) {
-        if long_term_tag != Self::ARBOS_TAG {
-            return;
-        }
+    /// Inserts an item into the short-lived LRU cache.
+    pub fn insert_lru(
+        module_hash: Bytes32,
+        module: &[u8],
+        version: u16,
+        debug: bool,
+    ) -> Result<(Module, Store)> {
+        let engine = CompileConfig::version(version, debug).engine();
+        let module = unsafe { Module::deserialize_unchecked(&engine, module)? };
+
         let key = CacheKey::new(module_hash, version, debug);
-        let mut cache = cache!();
-        if let Some(item) = cache.long_term.remove(&key) {
-            cache.lru.put(key, item);
-        }
+        let item = CacheItem::new(module, engine);
+        cache!().lru.put(key, item.clone());
+        Ok(item.data())
     }
 
-    pub fn clear_long_term(long_term_tag: u32) {
-        if long_term_tag != Self::ARBOS_TAG {
-            return;
-        }
+    /// Evicts an item in the long-term cache.
+    pub fn evict(module_hash: Bytes32, version: u16, debug: bool) {
+        let key = CacheKey::new(module_hash, version, debug);
+        cache!().arbos.remove(&key);
+    }
+
+    /// Modifies the cache for reorg, dropping the long-term cache.
+    pub fn reorg(_block: u64) {
         let mut cache = cache!();
         let cache = &mut *cache;
-        for (key, item) in cache.long_term.drain() {
+        for (key, item) in cache.arbos.drain() {
             cache.lru.put(key, item); // not all will fit, just a heuristic
         }
     }
