@@ -7,6 +7,7 @@
 | __gap                          | uint256[49]                                   | 52   | 0      | 1568  | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
 | chainId                        | uint256                                       | 101  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
 | confirmPeriodBlocks            | uint64                                        | 102  | 0      | 8     | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
+| validatorAfkBlocks             | uint64                                        | 102  | 8      | 8     | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
 | baseStake                      | uint256                                       | 103  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
 | wasmModuleRoot                 | bytes32                                       | 104  | 0      | 32    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |
 | challengeManager               | contract IEdgeChallengeManager                | 105  | 0      | 20    | src/rollup/RollupAdminLogic.sol:RollupAdminLogic |

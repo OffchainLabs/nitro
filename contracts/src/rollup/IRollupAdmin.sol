@@ -26,6 +26,9 @@ interface IRollupAdmin {
     /// @dev A new minimum assertion period was set
     event MinimumAssertionPeriodSet(uint256 newPeriod);
 
+    /// @dev A new validator afk blocks was set
+    event ValidatorAfkBlocksSet(uint256 newPeriod);
+
     /// @dev New confirm period blocks was set
     event ConfirmPeriodBlocksSet(uint64 newConfirmPeriod);
 
@@ -114,6 +117,17 @@ interface IRollupAdmin {
      * @param newPeriod new minimum period for assertions
      */
     function setMinimumAssertionPeriod(uint256 newPeriod) external;
+
+    /**
+     * @notice Set validator afk blocks for the rollup
+     * @param  newAfkBlocks new number of blocks before a validator is considered afk (0 to disable)
+     * @dev    ValidatorAfkBlocks is the number of blocks since the last confirmed 
+     *         assertion (or its first child) before the validator whitelist is removed.
+     *         It's important that this time is greater than the max amount of time it can take to
+     *         to confirm an assertion via the normal method. Therefore we need it to be greater
+     *         than max(2* confirmPeriod, 2 * challengePeriod) with some additional margin.
+     */
+    function setValidatorAfkBlocks(uint64 newAfkBlocks) external;
 
     /**
      * @notice Set number of blocks until a assertion is considered confirmed

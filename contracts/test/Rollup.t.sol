@@ -894,7 +894,28 @@ contract RollupTest is Test {
 
     function testSuccessRemoveWhitelistAfterValidatorAfk() public {
         (bytes32 assertionHash,,) = testSuccessConfirmUnchallengedAssertions();
-        vm.roll(userRollup.getAssertion(assertionHash).createdAtBlock + userRollup.VALIDATOR_AFK_BLOCKS() + 1);
+        vm.roll(userRollup.getAssertion(assertionHash).createdAtBlock + userRollup.validatorAfkBlocks() + 1);
+        userRollup.removeWhitelistAfterValidatorAfk();
+    }
+
+    function testSuccessSetValidatorAfk(uint32 x) public {
+        vm.assume(x > 0);
+        (bytes32 assertionHash,,) = testSuccessConfirmUnchallengedAssertions();
+        vm.prank(upgradeExecutorAddr);
+        adminRollup.setValidatorAfkBlocks(x);
+        vm.roll(userRollup.getAssertion(assertionHash).createdAtBlock + x);
+        vm.expectRevert("VALIDATOR_NOT_AFK");
+        userRollup.removeWhitelistAfterValidatorAfk();
+        vm.roll(block.number + 1);
+        userRollup.removeWhitelistAfterValidatorAfk();
+    }
+
+    function testSuccessValidatorAfkDisable() public {
+        (bytes32 assertionHash,,) = testSuccessConfirmUnchallengedAssertions();
+        vm.prank(upgradeExecutorAddr);
+        adminRollup.setValidatorAfkBlocks(0); // set 0 to disable
+        vm.roll(userRollup.getAssertion(assertionHash).createdAtBlock + 1);
+        vm.expectRevert("VALIDATOR_NOT_AFK");
         userRollup.removeWhitelistAfterValidatorAfk();
     }
 

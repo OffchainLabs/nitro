@@ -7,6 +7,7 @@
 | __gap                          | uint256[49]                                   | 52   | 0      | 1568  | src/rollup/RollupCore.sol:RollupCore |
 | chainId                        | uint256                                       | 101  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
 | confirmPeriodBlocks            | uint64                                        | 102  | 0      | 8     | src/rollup/RollupCore.sol:RollupCore |
+| validatorAfkBlocks             | uint64                                        | 102  | 8      | 8     | src/rollup/RollupCore.sol:RollupCore |
 | baseStake                      | uint256                                       | 103  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
 | wasmModuleRoot                 | bytes32                                       | 104  | 0      | 32    | src/rollup/RollupCore.sol:RollupCore |
 | challengeManager               | contract IEdgeChallengeManager                | 105  | 0      | 20    | src/rollup/RollupCore.sol:RollupCore |

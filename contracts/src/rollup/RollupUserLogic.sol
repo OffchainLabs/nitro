@@ -35,29 +35,17 @@ contract RollupUserLogic is RollupCore, UUPSNotUpgradeable, IRollupUser {
         return deployTimeChainId != block.chainid;
     }
 
-    /**
-     * @notice Number of blocks since the last confirmed assertion before the validator whitelist is removed
-     *         This is 28 days assuming a 12 seconds block time. Since it can take 14 days under normal
-     *         circumstances to confirm an assertion, this means that validators will have been inactive for
-     *         a further 14 days before the validator whitelist is removed.
-     *
-     *         It's important that this time is greater than the max amount of time it can take to
-     *         to confirm an assertion via the normal method. Therefore we need it to be greater
-     *         than max(2* confirmPeriod, 2 * challengePeriod). With some additional margin
-     *         It's expected that initially confirm and challenge periods are set to 1 week, so 4 weeks
-     *         should give a two weeks of margin before the validators are considered afk.
-     */
-    uint256 public constant VALIDATOR_AFK_BLOCKS = 201600;
-
     function _validatorIsAfk() internal view returns (bool) {
         AssertionNode memory latestConfirmedAssertion = getAssertionStorage(latestConfirmed());
+        uint256 _validatorAfkBlocks = validatorAfkBlocks; // cache and cast to uint256 to prevent overflow
+        if (_validatorAfkBlocks == 0) return false;
         if (latestConfirmedAssertion.createdAtBlock == 0) return false;
         // We consider the validator is gone if the last known assertion is older than VALIDATOR_AFK_BLOCKS
         // Which is either the latest confirmed assertion or the first child of the latest confirmed assertion
         if (latestConfirmedAssertion.firstChildBlock > 0) {
-            return latestConfirmedAssertion.firstChildBlock + VALIDATOR_AFK_BLOCKS < block.number;
+            return latestConfirmedAssertion.firstChildBlock + _validatorAfkBlocks < block.number;
         }
-        return latestConfirmedAssertion.createdAtBlock + VALIDATOR_AFK_BLOCKS < block.number;
+        return latestConfirmedAssertion.createdAtBlock + _validatorAfkBlocks < block.number;
     }
 
     function removeWhitelistAfterFork() external {

@@ -31,6 +31,8 @@ abstract contract RollupCore is IRollupCore, PausableUpgradeable {
     // These 4 config should be stored into the prev and not used directly
     // An assertion can be confirmed after confirmPeriodBlocks when it is unchallenged
     uint64 public confirmPeriodBlocks;
+    // The validator whitelist can be dropped permissionlessly once the last confirmed assertion or its first child is at least validatorAfkBlocks old
+    uint64 public validatorAfkBlocks;
 
     // ------------------------------
     // STAKING

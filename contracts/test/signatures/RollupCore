@@ -35,6 +35,7 @@
   "totalWithdrawableFunds()": "71ef232c",
   "validateAssertionHash(bytes32,((bytes32[2],uint64[2]),uint8,bytes32),bytes32,bytes32)": "e51019a6",
   "validateConfig(bytes32,(bytes32,uint256,address,uint64,uint64))": "04972af9",
+  "validatorAfkBlocks()": "e6b3082c",
   "validatorWalletCreator()": "bc45e0ae",
   "validatorWhitelistDisabled()": "12ab3d3b",
   "wasmModuleRoot()": "8ee1a126",
