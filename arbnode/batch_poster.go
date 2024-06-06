@@ -377,16 +377,17 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 	return b, nil
 }
 
-type dummyBlobReader struct {
+type simulatedBlobReader struct {
 	blobs []kzg4844.Blob
 }
 
-func (b *dummyBlobReader) GetBlobs(ctx context.Context, batchBlockHash common.Hash, versionedHashes []common.Hash) ([]kzg4844.Blob, error) {
+func (b *simulatedBlobReader) GetBlobs(ctx context.Context, batchBlockHash common.Hash, versionedHashes []common.Hash) ([]kzg4844.Blob, error) {
 	return b.blobs, nil
 }
-func (b *dummyBlobReader) Initialize(ctx context.Context) error { return nil }
 
-type testMuxBackend struct {
+func (b *simulatedBlobReader) Initialize(ctx context.Context) error { return nil }
+
+type simulatedMuxBackend struct {
 	batchSeqNum           uint64
 	positionWithinMessage uint64
 	seqMsg                []byte
@@ -395,16 +396,16 @@ type testMuxBackend struct {
 	delayedInbox          []*arbostypes.MessageWithMetadata
 }
 
-func (b *testMuxBackend) PeekSequencerInbox() ([]byte, common.Hash, error) {
+func (b *simulatedMuxBackend) PeekSequencerInbox() ([]byte, common.Hash, error) {
 	return b.seqMsg, common.Hash{}, nil
 }
 
-func (b *testMuxBackend) GetSequencerInboxPosition() uint64   { return b.batchSeqNum }
-func (b *testMuxBackend) AdvanceSequencerInbox()              {}
-func (b *testMuxBackend) GetPositionWithinMessage() uint64    { return b.positionWithinMessage }
-func (b *testMuxBackend) SetPositionWithinMessage(pos uint64) { b.positionWithinMessage = pos }
+func (b *simulatedMuxBackend) GetSequencerInboxPosition() uint64   { return b.batchSeqNum }
+func (b *simulatedMuxBackend) AdvanceSequencerInbox()              {}
+func (b *simulatedMuxBackend) GetPositionWithinMessage() uint64    { return b.positionWithinMessage }
+func (b *simulatedMuxBackend) SetPositionWithinMessage(pos uint64) { b.positionWithinMessage = pos }
 
-func (b *testMuxBackend) ReadDelayedInbox(seqNum uint64) (*arbostypes.L1IncomingMessage, error) {
+func (b *simulatedMuxBackend) ReadDelayedInbox(seqNum uint64) (*arbostypes.L1IncomingMessage, error) {
 	if b.delayedInboxPos < len(b.delayedInbox) {
 		b.delayedInboxPos++
 		return b.delayedInbox[b.delayedInboxPos-1].Message, nil
@@ -703,7 +704,7 @@ type buildingBatch struct {
 	msgCount          arbutil.MessageIndex
 	haveUsefulMessage bool
 	use4844           bool
-	muxBackend        *testMuxBackend
+	muxBackend        *simulatedMuxBackend
 }
 
 func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig, backlog uint64, use4844 bool) *batchSegments {
@@ -1144,7 +1145,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			use4844:       use4844,
 		}
 		if b.config().CheckBatchCorrectness {
-			b.building.muxBackend = &testMuxBackend{
+			b.building.muxBackend = &simulatedMuxBackend{
 				batchSeqNum: batchPosition.NextSeqNum,
 				allMsgs:     make(map[arbutil.MessageIndex]*arbostypes.MessageWithMetadata),
 			}
@@ -1353,7 +1354,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	if config.CheckBatchCorrectness {
 		dapReaders := b.dapReaders
 		if b.building.use4844 {
-			dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(&dummyBlobReader{kzgBlobs}))
+			dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(&simulatedBlobReader{kzgBlobs}))
 		}
 		seqMsg := binary.BigEndian.AppendUint64([]byte{}, l1BoundMinTimestamp)
 		seqMsg = binary.BigEndian.AppendUint64(seqMsg, l1BoundMaxTimestamp)
@@ -1362,18 +1363,18 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		seqMsg = binary.BigEndian.AppendUint64(seqMsg, b.building.segments.delayedMsg)
 		seqMsg = append(seqMsg, sequencerMsg...)
 		b.building.muxBackend.seqMsg = seqMsg
-		testMux := arbstate.NewInboxMultiplexer(b.building.muxBackend, batchPosition.DelayedMessageCount, dapReaders, daprovider.KeysetValidate)
+		simMux := arbstate.NewInboxMultiplexer(b.building.muxBackend, batchPosition.DelayedMessageCount, dapReaders, daprovider.KeysetValidate)
 		log.Info("Begin checking the correctness of batch against inbox multiplexer", "startMsgSeqNum", batchPosition.MessageCount, "endMsgSeqNum", b.building.msgCount-1)
 		for i := batchPosition.MessageCount; i < b.building.msgCount; i++ {
-			msg, err := testMux.Pop(ctx)
+			msg, err := simMux.Pop(ctx)
 			if err != nil {
-				return false, fmt.Errorf("error getting message from inbox multiplexer (Pop) when testing correctness of batch: %w", err)
+				return false, fmt.Errorf("error getting message from simulated inbox multiplexer (Pop) when testing correctness of batch: %w", err)
 			}
 			if msg.DelayedMessagesRead != b.building.muxBackend.allMsgs[i].DelayedMessagesRead {
-				return false, fmt.Errorf("when testing correctness of batch inbox multiplexer failed to produce from batch sequencerMsg, a correct delayedMessagesRead field for msg with seqNum: %d. Got: %d, Want: %d", i, msg.DelayedMessagesRead, b.building.muxBackend.allMsgs[i].DelayedMessagesRead)
+				return false, fmt.Errorf("simulated inbox multiplexer failed to produce correct delayedMessagesRead field for msg with seqNum: %d. Got: %d, Want: %d", i, msg.DelayedMessagesRead, b.building.muxBackend.allMsgs[i].DelayedMessagesRead)
 			}
 			if !msg.Message.Equals(b.building.muxBackend.allMsgs[i].Message) {
-				return false, fmt.Errorf("when testing correctness of batch inbox multiplexer failed to produce from batch sequencerMsg, a correct message field for msg with seqNum: %d", i)
+				return false, fmt.Errorf("simulated inbox multiplexer failed to produce correct message field for msg with seqNum: %d", i)
 			}
 		}
 		log.Info("Successfully checked that the batch produces correct messages when ran through inbox multiplexer")
