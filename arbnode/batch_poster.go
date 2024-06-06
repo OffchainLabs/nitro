@@ -413,9 +413,11 @@ func (b *testMuxBackend) GetPositionWithinMessage() uint64    { return b.positio
 func (b *testMuxBackend) SetPositionWithinMessage(pos uint64) { b.positionWithinMessage = pos }
 
 func (b *testMuxBackend) ReadDelayedInbox(seqNum uint64) (*arbostypes.L1IncomingMessage, error) {
-	ret := b.delayedInbox[b.delayedInboxPos].Message
-	b.delayedInboxPos++
-	return ret, nil
+	if b.delayedInboxPos < len(b.delayedInbox) {
+		b.delayedInboxPos++
+		return b.delayedInbox[b.delayedInboxPos-1].Message, nil
+	}
+	return nil, fmt.Errorf("error serving ReadDelayedInbox, all delayed messages were read. Requested delayed message position:%d, Total delayed messages: %d", b.delayedInboxPos, len(b.delayedInbox))
 }
 
 type AccessListOpts struct {
@@ -1376,10 +1378,10 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 				return false, fmt.Errorf("error getting message from inbox multiplexer (Pop) when testing correctness of batch: %w", err)
 			}
 			if msg.DelayedMessagesRead != b.building.muxBackend.allMsgs[i].DelayedMessagesRead {
-				return false, fmt.Errorf("inbox multiplexer failed to produce from batch sequencerMsg, a correct delayedMessagesRead field for msg with seqNum: %d. Got: %d, Want: %d", i, msg.DelayedMessagesRead, b.building.muxBackend.allMsgs[i].DelayedMessagesRead)
+				return false, fmt.Errorf("when testing correctness of batch inbox multiplexer failed to produce from batch sequencerMsg, a correct delayedMessagesRead field for msg with seqNum: %d. Got: %d, Want: %d", i, msg.DelayedMessagesRead, b.building.muxBackend.allMsgs[i].DelayedMessagesRead)
 			}
 			if !msg.Message.Equals(b.building.muxBackend.allMsgs[i].Message) {
-				return false, fmt.Errorf("inbox multiplexer failed to produce from batch sequencerMsg, a correct message field for msg with seqNum: %d", i)
+				return false, fmt.Errorf("when testing correctness of batch inbox multiplexer failed to produce from batch sequencerMsg, a correct message field for msg with seqNum: %d", i)
 			}
 		}
 		log.Info("Successfully checked that the batch produces correct messages when ran through inbox multiplexer")
