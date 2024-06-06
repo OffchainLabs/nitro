@@ -158,6 +158,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
 	MaintenanceConfigAddOptions(prefix+".maintenance", f)
+	celestia.CelestiaDAConfigAddOptions(prefix+".celestia-cfg", f)
 }
 
 var ConfigDefault = Config{
