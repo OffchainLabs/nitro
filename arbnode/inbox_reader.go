@@ -139,6 +139,9 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 			return err
 		}
 		if batchCount > 0 {
+			if r.tracker.snapSyncConfig.Enabled {
+				break
+			}
 			// Validate the init message matches our L2 blockchain
 			message, err := r.tracker.GetDelayedMessage(0)
 			if err != nil {

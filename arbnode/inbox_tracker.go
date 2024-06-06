@@ -34,22 +34,24 @@ var (
 )
 
 type InboxTracker struct {
-	db         ethdb.Database
-	txStreamer *TransactionStreamer
-	mutex      sync.Mutex
-	validator  *staker.BlockValidator
-	dapReaders []daprovider.Reader
+	db             ethdb.Database
+	txStreamer     *TransactionStreamer
+	mutex          sync.Mutex
+	validator      *staker.BlockValidator
+	dapReaders     []daprovider.Reader
+	snapSyncConfig SnapSyncConfig
 
 	batchMetaMutex sync.Mutex
 	batchMeta      *containers.LruCache[uint64, BatchMetadata]
 }
 
-func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapReaders []daprovider.Reader) (*InboxTracker, error) {
+func NewInboxTracker(db ethdb.Database, txStreamer *TransactionStreamer, dapReaders []daprovider.Reader, snapSyncConfig SnapSyncConfig) (*InboxTracker, error) {
 	tracker := &InboxTracker{
-		db:         db,
-		txStreamer: txStreamer,
-		dapReaders: dapReaders,
-		batchMeta:  containers.NewLruCache[uint64, BatchMetadata](1000),
+		db:             db,
+		txStreamer:     txStreamer,
+		dapReaders:     dapReaders,
+		batchMeta:      containers.NewLruCache[uint64, BatchMetadata](1000),
+		snapSyncConfig: snapSyncConfig,
 	}
 	return tracker, nil
 }
@@ -385,16 +387,40 @@ func (t *InboxTracker) GetDelayedMessageBytes(seqNum uint64) ([]byte, error) {
 }
 
 func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardReorg bool) error {
+	var nextAcc common.Hash
+	firstDelayedMsgToKeep := uint64(0)
 	if len(messages) == 0 {
 		return nil
 	}
-	t.mutex.Lock()
-	defer t.mutex.Unlock()
-
 	pos, err := messages[0].Message.Header.SeqNum()
 	if err != nil {
 		return err
 	}
+	if t.snapSyncConfig.Enabled && pos < t.snapSyncConfig.DelayedCount {
+		firstDelayedMsgToKeep = t.snapSyncConfig.DelayedCount
+		if firstDelayedMsgToKeep > 0 {
+			firstDelayedMsgToKeep--
+		}
+		for {
+			if len(messages) == 0 {
+				return nil
+			}
+			pos, err = messages[0].Message.Header.SeqNum()
+			if err != nil {
+				return err
+			}
+			if pos+1 == firstDelayedMsgToKeep {
+				nextAcc = messages[0].AfterInboxAcc()
+			}
+			if pos < firstDelayedMsgToKeep {
+				messages = messages[1:]
+			} else {
+				break
+			}
+		}
+	}
+	t.mutex.Lock()
+	defer t.mutex.Unlock()
 
 	if !hardReorg {
 		// This math is safe to do as we know len(messages) > 0
@@ -409,8 +435,7 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 		}
 	}
 
-	var nextAcc common.Hash
-	if pos > 0 {
+	if pos > firstDelayedMsgToKeep {
 		var err error
 		nextAcc, err = t.GetDelayedAcc(pos - 1)
 		if err != nil {
@@ -598,17 +623,44 @@ func (b *multiplexerBackend) ReadDelayedInbox(seqNum uint64) (*arbostypes.L1Inco
 var delayedMessagesMismatch = errors.New("sequencer batch delayed messages missing or different")
 
 func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client arbutil.L1Interface, batches []*SequencerInboxBatch) error {
+	var nextAcc common.Hash
+	var prevbatchmeta BatchMetadata
+	sequenceNumberToKeep := uint64(0)
 	if len(batches) == 0 {
 		return nil
+	}
+	if t.snapSyncConfig.Enabled && batches[0].SequenceNumber < t.snapSyncConfig.BatchCount {
+		sequenceNumberToKeep = t.snapSyncConfig.BatchCount
+		if sequenceNumberToKeep > 0 {
+			sequenceNumberToKeep--
+		}
+		for {
+			if len(batches) == 0 {
+				return nil
+			}
+			if batches[0].SequenceNumber+1 == sequenceNumberToKeep {
+				nextAcc = batches[0].AfterInboxAcc
+				prevbatchmeta = BatchMetadata{
+					Accumulator:         batches[0].AfterInboxAcc,
+					DelayedMessageCount: batches[0].AfterDelayedCount,
+					MessageCount:        arbutil.MessageIndex(t.snapSyncConfig.PrevBatchMessageCount),
+					ParentChainBlock:    batches[0].ParentChainBlockNumber,
+				}
+			}
+			if batches[0].SequenceNumber < sequenceNumberToKeep {
+				batches = batches[1:]
+			} else {
+				break
+			}
+		}
 	}
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 
 	pos := batches[0].SequenceNumber
 	startPos := pos
-	var nextAcc common.Hash
-	var prevbatchmeta BatchMetadata
-	if pos > 0 {
+
+	if pos > sequenceNumberToKeep {
 		var err error
 		prevbatchmeta, err = t.GetBatchMetadata(pos - 1)
 		nextAcc = prevbatchmeta.Accumulator
