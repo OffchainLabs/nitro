@@ -339,11 +339,11 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	// Check if database was misplaced in parent dir
 	const errorFmt = "database was not found in %s, but it was found in %s (have you placed the database in the wrong directory?)"
 	parentDir := filepath.Dir(stack.InstanceDir())
-	if dirExists(path.Join(parentDir, "arbitrumdata")) {
+	if dirExists(path.Join(parentDir, "l2chaindata")) {
 		return nil, nil, fmt.Errorf(errorFmt, stack.InstanceDir(), parentDir)
 	}
 	grandParentDir := filepath.Dir(parentDir)
-	if dirExists(path.Join(grandParentDir, "arbitrumdata")) {
+	if dirExists(path.Join(grandParentDir, "l2chaindata")) {
 		return nil, nil, fmt.Errorf(errorFmt, stack.InstanceDir(), grandParentDir)
 	}
 
