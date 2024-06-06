@@ -144,11 +144,12 @@ impl Memory {
 
     pub fn merkelize(&self) -> Cow<'_, Merkle> {
         if let Some(m) = &self.merkle {
-            for idx in self.dirty_indices.lock().unwrap().iter() {
+            let mut dirt = self.dirty_indices.lock().unwrap();
+            for idx in dirt.iter() {
                 let leaf_idx = idx / Self::LEAF_SIZE;
                 m.set(leaf_idx, hash_leaf(self.get_leaf_data(leaf_idx)));
             }
-            self.dirty_indices.lock().unwrap().clear();
+            dirt.clear();
             return Cow::Borrowed(m);
         }
         // Round the size up to 8 byte long leaves, then round up to the next power of two number of leaves
