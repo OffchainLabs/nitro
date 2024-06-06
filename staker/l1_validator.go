@@ -116,7 +116,6 @@ func (v *L1Validator) Initialize(ctx context.Context) error {
 }
 
 func (v *L1Validator) shouldUseBoldStaker(ctx context.Context) (bool, error) {
-	fmt.Println("Initializing L1 validator for BOLD")
 	callOpts := v.getCallOpts(ctx)
 	userLogic, err := rollupgen.NewRollupUserLogic(v.rollupAddress, v.client)
 	if err != nil {

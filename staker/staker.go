@@ -363,7 +363,6 @@ func (s *Staker) Initialize(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
-		fmt.Printf("Latest staked: %+v\n", stakedInfoGlobalState)
 		return s.blockValidator.InitAssumeValid(stakedInfoGlobalState)
 	}
 	return nil
@@ -372,7 +371,6 @@ func (s *Staker) Initialize(ctx context.Context) error {
 func (s *Staker) getStakedInfo(ctx context.Context, walletAddr common.Address) (validator.GoGlobalState, error) {
 	var zeroVal validator.GoGlobalState
 	if s.config.Bold.Enable {
-		fmt.Println("Initializing block validator from bold config")
 		rollupUserLogic, err := boldrollup.NewRollupUserLogic(s.rollupAddress, s.client)
 		if err != nil {
 			return zeroVal, err
@@ -580,7 +578,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 			log.Error("staker: error in checking switch to bold staker", "err", err)
 		}
 		if switchedToBoldProtocol {
-			s.StopAndWait()
+			s.StopOnly()
 		}
 		arbTx, err := s.Act(ctx)
 		if err == nil && arbTx != nil {
@@ -643,18 +641,6 @@ func (s *Staker) Start(ctxIn context.Context) {
 		}
 		return s.config.StakerInterval
 	})
-	s.CallIteratively(func(ctx context.Context) time.Duration {
-		// Using ctxIn instead of ctx since, ctxIn will be passed on to bold staker
-		// and ctx will be cancelled after the switch to bold staker.
-		switchedToBoldProtocol, err := s.checkAndSwitchToBoldStaker(ctxIn)
-		if err != nil {
-			log.Error("staker: error in checking switch to bold staker", "err", err)
-		}
-		if switchedToBoldProtocol {
-			s.StopAndWait()
-		}
-		return s.config.StakerInterval
-	})
 }
 
 func (s *Staker) shouldUseBoldStaker(ctx context.Context) (bool, common.Address, error) {
@@ -688,7 +674,6 @@ func (s *Staker) checkAndSwitchToBoldStaker(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	fmt.Println("Starting the bold manager")
 	boldManager, err := NewManager(ctx, rollupAddress, auth, s.client, s.statelessBlockValidator, &s.config.Bold, s.wallet.DataPoster())
 	if err != nil {
 		return false, err
