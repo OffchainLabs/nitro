@@ -93,6 +93,8 @@ type Config struct {
 	TransactionStreamer TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
 	Maintenance         MaintenanceConfig           `koanf:"maintenance" reload:"hot"`
 	ResourceMgmt        resourcemanager.Config      `koanf:"resource-mgmt" reload:"hot"`
+	// SnapSyncConfig is only used for testing purposes, these should not be configured in production.
+	SnapSyncTest SnapSyncConfig
 }
 
 func (c *Config) Validate() error {
@@ -175,6 +177,7 @@ var ConfigDefault = Config{
 	TransactionStreamer: DefaultTransactionStreamerConfig,
 	ResourceMgmt:        resourcemanager.DefaultConfig,
 	Maintenance:         DefaultMaintenanceConfig,
+	SnapSyncTest:        DefaultSnapSyncConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -271,6 +274,22 @@ type Node struct {
 	SyncMonitor             *SyncMonitor
 	configFetcher           ConfigFetcher
 	ctx                     context.Context
+}
+
+type SnapSyncConfig struct {
+	Enabled               bool
+	PrevBatchMessageCount uint64
+	PrevDelayedRead       uint64
+	BatchCount            uint64
+	DelayedCount          uint64
+}
+
+var DefaultSnapSyncConfig = SnapSyncConfig{
+	Enabled:               false,
+	PrevBatchMessageCount: 0,
+	BatchCount:            0,
+	DelayedCount:          0,
+	PrevDelayedRead:       0,
 }
 
 type ConfigFetcher interface {
@@ -410,7 +429,7 @@ func createNodeImpl(
 	}
 
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &configFetcher.Get().TransactionStreamer }
-	txStreamer, err := NewTransactionStreamer(arbDb, l2Config, exec, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher)
+	txStreamer, err := NewTransactionStreamer(arbDb, l2Config, exec, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher, &configFetcher.Get().SnapSyncTest)
 	if err != nil {
 		return nil, err
 	}
@@ -540,7 +559,7 @@ func createNodeImpl(
 	if blobReader != nil {
 		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(blobReader))
 	}
-	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, dapReaders)
+	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, dapReaders, config.SnapSyncTest)
 	if err != nil {
 		return nil, err
 	}

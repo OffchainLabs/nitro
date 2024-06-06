@@ -63,8 +63,8 @@ FROM scratch as wasm-libs-export
 COPY --from=wasm-libs-builder /workspace/ /
 
 FROM wasm-base as wasm-bin-builder
-    # pinned go version
-RUN curl -L https://golang.org/dl/go1.21.7.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
+# pinned go version
+RUN curl -L https://golang.org/dl/go1.21.10.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
 COPY ./Makefile ./go.mod ./go.sum ./
 COPY ./arbcompress ./arbcompress
 COPY ./arbos ./arbos
@@ -207,7 +207,7 @@ COPY ./scripts/download-machine.sh .
 #RUN ./download-machine.sh consensus-v20 0x8b104a2e80ac6165dc58b9048de12f301d70b02a0ab51396c22b4b4b802a16a4
 RUN ./download-machine.sh consensus-v30-rc.2 0xb0de9cb89e4d944ae6023a3b62276e54804c242fd8c4c2d8e6cc4450f5fa8b1b
 
-FROM golang:1.21-bookworm as node-builder
+FROM golang:1.21.10-bookworm as node-builder
 WORKDIR /workspace
 ARG version=""
 ARG datetime=""
