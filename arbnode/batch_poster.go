@@ -381,18 +381,10 @@ type dummyBlobReader struct {
 	blobs []kzg4844.Blob
 }
 
-func (b *dummyBlobReader) IsValidHeaderByte(headerByte byte) bool {
-	return daprovider.IsBlobHashesHeaderByte(headerByte)
+func (b *dummyBlobReader) GetBlobs(ctx context.Context, batchBlockHash common.Hash, versionedHashes []common.Hash) ([]kzg4844.Blob, error) {
+	return b.blobs, nil
 }
-
-func (b *dummyBlobReader) RecoverPayloadFromBatch(ctx context.Context, batchNum uint64, batchBlockHash common.Hash, sequencerMsg []byte, preimageRecorder daprovider.PreimageRecorder, validateSeqMsg bool) ([]byte, error) {
-	payload, err := blobs.DecodeBlobs(b.blobs)
-	if err != nil {
-		log.Warn("Failed to decode blobs, while running batch through inbox multiplexer", "err", err)
-		return nil, nil
-	}
-	return payload, nil
-}
+func (b *dummyBlobReader) Initialize(ctx context.Context) error { return nil }
 
 type testMuxBackend struct {
 	batchSeqNum           uint64
@@ -1361,7 +1353,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	if config.CheckBatchCorrectness {
 		dapReaders := b.dapReaders
 		if b.building.use4844 {
-			dapReaders = append(dapReaders, &dummyBlobReader{blobs: kzgBlobs})
+			dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(&dummyBlobReader{kzgBlobs}))
 		}
 		seqMsg := binary.BigEndian.AppendUint64([]byte{}, l1BoundMinTimestamp)
 		seqMsg = binary.BigEndian.AppendUint64(seqMsg, l1BoundMaxTimestamp)
