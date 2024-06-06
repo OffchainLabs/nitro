@@ -2,11 +2,9 @@ package server_common
 
 import (
 	"context"
-	"fmt"
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/util/containers"
 )
 
@@ -24,12 +22,12 @@ type MachineLoader[M any] struct {
 	mapMutex      sync.Mutex
 	machines      map[common.Hash]*MachineStatus[M]
 	locator       *MachineLocator
-	createMachine func(ctx context.Context, moduleRoot common.Hash, opts ...MachineLoaderOpt) (*M, error)
+	createMachine func(ctx context.Context, moduleRoot common.Hash) (*M, error)
 }
 
 func NewMachineLoader[M any](
 	locator *MachineLocator,
-	createMachine func(ctx context.Context, moduleRoot common.Hash, opts ...MachineLoaderOpt) (*M, error),
+	createMachine func(ctx context.Context, moduleRoot common.Hash) (*M, error),
 ) *MachineLoader[M] {
 	return &MachineLoader[M]{
 		machines:      make(map[common.Hash]*MachineStatus[M]),
@@ -38,23 +36,7 @@ func NewMachineLoader[M any](
 	}
 }
 
-type MachineLoaderCfg struct {
-	alwaysMerkleize bool
-}
-
-func (m *MachineLoaderCfg) ShouldAlwaysMerkleize() bool {
-	return m.alwaysMerkleize
-}
-
-type MachineLoaderOpt = func(cfg *MachineLoaderCfg)
-
-func WithAlwaysMerkleize() MachineLoaderOpt {
-	return func(cfg *MachineLoaderCfg) {
-		cfg.alwaysMerkleize = true
-	}
-}
-
-func (l *MachineLoader[M]) GetMachine(ctx context.Context, moduleRoot common.Hash, opts ...MachineLoaderOpt) (*M, error) {
+func (l *MachineLoader[M]) GetMachine(ctx context.Context, moduleRoot common.Hash) (*M, error) {
 	if moduleRoot == (common.Hash{}) {
 		moduleRoot = l.locator.LatestWasmModuleRoot()
 		if (moduleRoot == common.Hash{}) {
@@ -67,8 +49,7 @@ func (l *MachineLoader[M]) GetMachine(ctx context.Context, moduleRoot common.Has
 		status = newMachineStatus[M]()
 		l.machines[moduleRoot] = status
 		go func() {
-			log.Info(fmt.Sprintf("In machine loader, calling create machine with opts %d", len(opts)))
-			machine, err := l.createMachine(context.Background(), moduleRoot, opts...)
+			machine, err := l.createMachine(context.Background(), moduleRoot)
 			if err != nil {
 				status.ProduceError(err)
 				return

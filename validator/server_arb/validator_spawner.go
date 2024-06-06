@@ -326,8 +326,8 @@ func (v *ArbitratorSpawner) WriteToFile(input *validator.ValidationInput, expOut
 }
 
 func (v *ArbitratorSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
-	getMachine := func(ctx context.Context, opts ...server_common.MachineLoaderOpt) (MachineInterface, error) {
-		initialFrozenMachine, err := v.machineLoader.GetZeroStepMachine(ctx, wasmModuleRoot, opts...)
+	getMachine := func(ctx context.Context) (MachineInterface, error) {
+		initialFrozenMachine, err := v.machineLoader.GetZeroStepMachine(ctx, wasmModuleRoot)
 		if err != nil {
 			return nil, err
 		}

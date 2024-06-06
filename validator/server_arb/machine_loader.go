@@ -27,8 +27,8 @@ type ArbMachineLoader struct {
 }
 
 func NewArbMachineLoader(config *ArbitratorMachineConfig, locator *server_common.MachineLocator) *ArbMachineLoader {
-	createMachineFunc := func(ctx context.Context, moduleRoot common.Hash, opts ...server_common.MachineLoaderOpt) (*arbMachines, error) {
-		return createArbMachine(ctx, locator, config, moduleRoot, opts...)
+	createMachineFunc := func(ctx context.Context, moduleRoot common.Hash) (*arbMachines, error) {
+		return createArbMachine(ctx, locator, config, moduleRoot)
 	}
 	return &ArbMachineLoader{
 		MachineLoader: *server_common.NewMachineLoader[arbMachines](locator, createMachineFunc),
@@ -43,8 +43,8 @@ func (a *ArbMachineLoader) GetHostIoMachine(ctx context.Context, moduleRoot comm
 	return machines.hostIo, nil
 }
 
-func (a *ArbMachineLoader) GetZeroStepMachine(ctx context.Context, moduleRoot common.Hash, opts ...server_common.MachineLoaderOpt) (*ArbitratorMachine, error) {
-	machines, err := a.GetMachine(ctx, moduleRoot, opts...)
+func (a *ArbMachineLoader) GetZeroStepMachine(ctx context.Context, moduleRoot common.Hash) (*ArbitratorMachine, error) {
+	machines, err := a.GetMachine(ctx, moduleRoot)
 	if err != nil {
 		return nil, err
 	}

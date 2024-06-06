@@ -16,13 +16,12 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
-	"github.com/offchainlabs/nitro/validator/server_common"
 )
 
 type executionRun struct {
 	stopwaiter.StopWaiter
 	cache                *MachineCache
-	initialMachineGetter func(context.Context, ...server_common.MachineLoaderOpt) (MachineInterface, error)
+	initialMachineGetter func(context.Context) (MachineInterface, error)
 	config               *MachineCacheConfig
 	close                sync.Once
 }
@@ -31,7 +30,7 @@ type executionRun struct {
 // Note: machineCache may be nil, but if present, it must not have a restricted range.
 func NewExecutionRun(
 	ctxIn context.Context,
-	initialMachineGetter func(context.Context, ...server_common.MachineLoaderOpt) (MachineInterface, error),
+	initialMachineGetter func(context.Context) (MachineInterface, error),
 	config *MachineCacheConfig,
 ) (*executionRun, error) {
 	exec := &executionRun{}
@@ -66,11 +65,6 @@ func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*v
 
 func (e *executionRun) GetLeavesWithStepSize(fromBatch, machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[[]common.Hash] {
 	return stopwaiter.LaunchPromiseThread[[]common.Hash](e, func(ctx context.Context) ([]common.Hash, error) {
-		if stepSize == 1 {
-			e.cache = NewMachineCache(e.GetContext(), e.initialMachineGetter, e.config, server_common.WithAlwaysMerkleize())
-			log.Info("Enabling Merkleization of machines for faster hashing. However, advancing to start index might take a while...")
-		}
-		log.Info(fmt.Sprintf("Starting BOLD machine computation at index %d", machineStartIndex))
 		machine, err := e.cache.GetMachineAt(ctx, machineStartIndex)
 		if err != nil {
 			return nil, err
