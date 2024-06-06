@@ -141,23 +141,21 @@ type BatchPosterConfig struct {
 	// Batch post polling interval.
 	PollInterval time.Duration `koanf:"poll-interval" reload:"hot"`
 	// Batch posting error delay.
-	ErrorDelay                            time.Duration               `koanf:"error-delay" reload:"hot"`
-	CompressionLevel                      int                         `koanf:"compression-level" reload:"hot"`
-	DASRetentionPeriod                    time.Duration               `koanf:"das-retention-period" reload:"hot"`
-	GasRefunderAddress                    string                      `koanf:"gas-refunder-address" reload:"hot"`
-	DataPoster                            dataposter.DataPosterConfig `koanf:"data-poster" reload:"hot"`
-	RedisUrl                              string                      `koanf:"redis-url"`
-	RedisLock                             redislock.SimpleCfg         `koanf:"redis-lock" reload:"hot"`
-	ExtraBatchGas                         uint64                      `koanf:"extra-batch-gas" reload:"hot"`
-	Post4844Blobs                         bool                        `koanf:"post-4844-blobs" reload:"hot"`
-	IgnoreBlobPrice                       bool                        `koanf:"ignore-blob-price" reload:"hot"`
-	ParentChainWallet                     genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
-	L1BlockBound                          string                      `koanf:"l1-block-bound" reload:"hot"`
-	L1BlockBoundBypass                    time.Duration               `koanf:"l1-block-bound-bypass" reload:"hot"`
-	UseAccessLists                        bool                        `koanf:"use-access-lists" reload:"hot"`
-	GasEstimateBaseFeeMultipleBips        arbmath.Bips                `koanf:"gas-estimate-base-fee-multiple-bips"`
-	ReorgResistanceMargin                 time.Duration               `koanf:"reorg-resistance-margin" reload:"hot"`
-	PrioritizeMaxDelayOverReorgResistance bool                        `koanf:"prioritize-max-delay-over-reorg-resistance" reload:"hot"`
+	ErrorDelay                     time.Duration               `koanf:"error-delay" reload:"hot"`
+	CompressionLevel               int                         `koanf:"compression-level" reload:"hot"`
+	DASRetentionPeriod             time.Duration               `koanf:"das-retention-period" reload:"hot"`
+	GasRefunderAddress             string                      `koanf:"gas-refunder-address" reload:"hot"`
+	DataPoster                     dataposter.DataPosterConfig `koanf:"data-poster" reload:"hot"`
+	RedisUrl                       string                      `koanf:"redis-url"`
+	RedisLock                      redislock.SimpleCfg         `koanf:"redis-lock" reload:"hot"`
+	ExtraBatchGas                  uint64                      `koanf:"extra-batch-gas" reload:"hot"`
+	Post4844Blobs                  bool                        `koanf:"post-4844-blobs" reload:"hot"`
+	IgnoreBlobPrice                bool                        `koanf:"ignore-blob-price" reload:"hot"`
+	ParentChainWallet              genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
+	L1BlockBound                   string                      `koanf:"l1-block-bound" reload:"hot"`
+	L1BlockBoundBypass             time.Duration               `koanf:"l1-block-bound-bypass" reload:"hot"`
+	UseAccessLists                 bool                        `koanf:"use-access-lists" reload:"hot"`
+	GasEstimateBaseFeeMultipleBips arbmath.Bips                `koanf:"gas-estimate-base-fee-multiple-bips"`
 
 	gasRefunder  common.Address
 	l1BlockBound l1BlockBound
@@ -209,8 +207,6 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".l1-block-bound-bypass", DefaultBatchPosterConfig.L1BlockBoundBypass, "post batches even if not within the layer 1 future bounds if we're within this margin of the max delay")
 	f.Bool(prefix+".use-access-lists", DefaultBatchPosterConfig.UseAccessLists, "post batches with access lists to reduce gas usage (disabled for L3s)")
 	f.Uint64(prefix+".gas-estimate-base-fee-multiple-bips", uint64(DefaultBatchPosterConfig.GasEstimateBaseFeeMultipleBips), "for gas estimation, use this multiple of the basefee (measured in basis points) as the max fee per gas")
-	f.Duration(prefix+".reorg-resistance-margin", DefaultBatchPosterConfig.ReorgResistanceMargin, "do not post batch if its within this duration from max-delay")
-	f.Bool(prefix+".prioritize-max-delay-over-reorg-resistance", DefaultBatchPosterConfig.PrioritizeMaxDelayOverReorgResistance, "setting this to true will allow posting of batch even when it falls within the reorg-resistance-margin from max-delay, given the batch duration exceeds max-delay")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfig)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.ParentChainWallet.Pathname)
@@ -222,26 +218,24 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	// This default is overridden for L3 chains in applyChainParameters in cmd/nitro/nitro.go
 	MaxSize: 100000,
 	// Try to fill 3 blobs per batch
-	Max4844BatchSize:                      blobs.BlobEncodableData*(params.MaxBlobGasPerBlock/params.BlobTxBlobGasPerBlob)/2 - 2000,
-	PollInterval:                          time.Second * 10,
-	ErrorDelay:                            time.Second * 10,
-	MaxDelay:                              time.Hour,
-	WaitForMaxDelay:                       false,
-	CompressionLevel:                      brotli.BestCompression,
-	DASRetentionPeriod:                    time.Hour * 24 * 15,
-	GasRefunderAddress:                    "",
-	ExtraBatchGas:                         50_000,
-	Post4844Blobs:                         false,
-	IgnoreBlobPrice:                       false,
-	DataPoster:                            dataposter.DefaultDataPosterConfig,
-	ParentChainWallet:                     DefaultBatchPosterL1WalletConfig,
-	L1BlockBound:                          "",
-	L1BlockBoundBypass:                    time.Hour,
-	UseAccessLists:                        true,
-	RedisLock:                             redislock.DefaultCfg,
-	GasEstimateBaseFeeMultipleBips:        arbmath.OneInBips * 3 / 2,
-	ReorgResistanceMargin:                 10 * time.Minute,
-	PrioritizeMaxDelayOverReorgResistance: false,
+	Max4844BatchSize:               blobs.BlobEncodableData*(params.MaxBlobGasPerBlock/params.BlobTxBlobGasPerBlob)/2 - 2000,
+	PollInterval:                   time.Second * 10,
+	ErrorDelay:                     time.Second * 10,
+	MaxDelay:                       time.Hour,
+	WaitForMaxDelay:                false,
+	CompressionLevel:               brotli.BestCompression,
+	DASRetentionPeriod:             time.Hour * 24 * 15,
+	GasRefunderAddress:             "",
+	ExtraBatchGas:                  50_000,
+	Post4844Blobs:                  false,
+	IgnoreBlobPrice:                false,
+	DataPoster:                     dataposter.DefaultDataPosterConfig,
+	ParentChainWallet:              DefaultBatchPosterL1WalletConfig,
+	L1BlockBound:                   "",
+	L1BlockBoundBypass:             time.Hour,
+	UseAccessLists:                 true,
+	RedisLock:                      redislock.DefaultCfg,
+	GasEstimateBaseFeeMultipleBips: arbmath.OneInBips * 3 / 2,
 }
 
 var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
@@ -1238,23 +1232,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		b.building.msgCount++
 	}
 
-	var disablePosting bool
-	batchDuration := time.Since(firstMsgTime)
-	reorgResistanceMarginIsValid := config.ReorgResistanceMargin > 0 && config.ReorgResistanceMargin < config.MaxDelay
-	batchDurationLiesInLeftMargin := batchDuration >= config.MaxDelay-config.ReorgResistanceMargin && batchDuration < config.MaxDelay
-	batchDurationLiesInRightMargin := batchDuration <= config.MaxDelay+config.ReorgResistanceMargin && batchDuration >= config.MaxDelay
-	if reorgResistanceMarginIsValid &&
-		(batchDurationLiesInLeftMargin || (batchDurationLiesInRightMargin && !config.PrioritizeMaxDelayOverReorgResistance)) {
-		log.Error(
-			"disabling batch posting as batch duration falls within the reorg-resistance-margin from max-delay",
-			"batchDuration", batchDuration,
-			"reorgResistanceMargin", config.ReorgResistanceMargin,
-			"maxDelay", config.MaxDelay,
-		)
-		disablePosting = true
-	}
-
-	if disablePosting || !forcePostBatch || !b.building.haveUsefulMessage {
+	if !forcePostBatch || !b.building.haveUsefulMessage {
 		// the batch isn't full yet and we've posted a batch recently
 		// don't post anything for now
 		return false, nil
