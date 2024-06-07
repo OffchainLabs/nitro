@@ -4,11 +4,11 @@ import (
 	"context"
 )
 
-type DataAvailabilityWriter interface {
+type CelestiaWriter interface {
 	Store(context.Context, []byte) ([]byte, error)
 }
 
-type DataAvailabilityReader interface {
+type CelestiaReader interface {
 	Read(context.Context, *BlobPointer) ([]byte, *SquareData, error)
 	GetProof(ctx context.Context, msg []byte) ([]byte, error)
 }

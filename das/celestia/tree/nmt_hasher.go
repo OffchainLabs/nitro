@@ -5,12 +5,13 @@ import (
 	"hash"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/offchainlabs/nitro/arbutil"
 )
 
 // customHasher embeds hash.Hash and includes a map for the hash-to-preimage mapping
 type NmtPreimageHasher struct {
 	hash.Hash
-	record func(bytes32, []byte)
+	record func(bytes32, []byte, arbutil.PreimageType)
 	data   []byte
 }
 
@@ -19,7 +20,7 @@ type NmtPreimageHasher struct {
 func (h *NmtPreimageHasher) Sum(b []byte) []byte {
 	hashed := h.Hash.Sum(nil)
 	hashKey := common.BytesToHash(hashed)
-	h.record(hashKey, append([]byte(nil), h.data...))
+	h.record(hashKey, append([]byte(nil), h.data...), arbutil.Sha2_256PreimageType)
 	return h.Hash.Sum(b)
 }
 
@@ -34,7 +35,7 @@ func (h *NmtPreimageHasher) Reset() {
 	h.data = h.data[:0] // Reset the data slice to be empty, but keep the underlying array
 }
 
-func newNmtPreimageHasher(record func(bytes32, []byte)) hash.Hash {
+func newNmtPreimageHasher(record func(bytes32, []byte, arbutil.PreimageType)) hash.Hash {
 	return &NmtPreimageHasher{
 		Hash:   sha256.New(),
 		record: record,

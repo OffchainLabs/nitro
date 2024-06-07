@@ -4,17 +4,18 @@ import (
 	"math/bits"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/offchainlabs/nitro/arbutil"
 )
 
 type bytes32 = common.Hash
 
 // HashFromByteSlices computes a Merkle tree where the leaves are the byte slice,
 // in the provided order. It follows RFC-6962.
-func HashFromByteSlices(record func(bytes32, []byte), items [][]byte) []byte {
+func HashFromByteSlices(record func(bytes32, []byte, arbutil.PreimageType), items [][]byte) []byte {
 	switch len(items) {
 	case 0:
 		emptyHash := emptyHash()
-		record(common.BytesToHash(emptyHash), []byte{})
+		record(common.BytesToHash(emptyHash), []byte{}, arbutil.Sha2_256PreimageType)
 		return emptyHash
 	case 1:
 		return leafHash(record, items[0])

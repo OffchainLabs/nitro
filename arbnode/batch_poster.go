@@ -42,8 +42,6 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/das"
-	celestiaTypes "github.com/offchainlabs/nitro/das/celestia/types"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util"
@@ -101,7 +99,6 @@ type BatchPoster struct {
 	gasRefunderAddr    common.Address
 	building           *buildingBatch
 	dapWriter          daprovider.Writer
-	celestiaWriter     celestiaTypes.DataAvailabilityWriter
 	dataPoster         *dataposter.DataPoster
 	redisLock          *redislock.Simple
 	messagesPerBatch   *arbmath.MovingAverage[uint64]
@@ -284,8 +281,8 @@ type BatchPosterOpts struct {
 	Config        BatchPosterConfigFetcher
 	DeployInfo    *chaininfo.RollupAddresses
 	TransactOpts  *bind.TransactOpts
+	// Todo (change to support multiple writers)
 	DAPWriter     daprovider.Writer
-	CelestiaWriter celestiaTypes.DataAvailabilityWriter
 	ParentChainID *big.Int
 }
 
@@ -332,7 +329,6 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 		gasRefunderAddr:    opts.Config().gasRefunder,
 		bridgeAddr:         opts.DeployInfo.Bridge,
 		dapWriter:          opts.DAPWriter,
-		celestiaWriter:     opts.CelestiaWriter,
 		redisLock:          redisLock,
 	}
 	b.messagesPerBatch, err = arbmath.NewMovingAverage[uint64](20)
@@ -1255,39 +1251,21 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		return false, nil
 	}
 
-	if b.celestiaWriter != nil {
-		celestiaMsg, err := b.celestiaWriter.Store(ctx, sequencerMsg)
+	if b.dapWriter != nil {
+		if !b.redisLock.AttemptLock(ctx) {
+			return false, errAttemptLockFailed
+		}
+
+		gotNonce, gotMeta, err := b.dataPoster.GetNextNonceAndMeta(ctx)
 		if err != nil {
-			if config.DisableCelestiaFallbackStoreDataOnChain && config.DisableCelestiaFallbackStoreDataOnDAS {
-				return false, errors.New("unable to post batch to Celestia and fallback storing data on chain and das is disabled")
-			}
-			if config.DisableCelestiaFallbackStoreDataOnDAS {
-				log.Warn("Falling back to storing data on chain ", "err", err)
-			} else {
-				log.Warn("Falling back to storing data on DAC ", "err", err)
-
-			}
-
-			// We nest the anytrust logic here for now as using this fork liekly means your primary DA is Celestia
-			// and the Anytrust DAC is instead used as a fallback
-			if b.dapWriter != nil {
-				if !b.redisLock.AttemptLock(ctx) {
-					return false, errAttemptLockFailed
-				}
-
-				gotNonce, gotMeta, err := b.dataPoster.GetNextNonceAndMeta(ctx)
-				if err != nil {
-					return false, err
-				}
-				if nonce != gotNonce || !bytes.Equal(batchPositionBytes, gotMeta) {
-					return false, fmt.Errorf("%w: nonce changed from %d to %d while creating batch", storage.ErrStorageRace, nonce, gotNonce)
-				}
-				sequencerMsg, err = b.dapWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{}, config.DisableDapFallbackStoreDataOnChain)
-				if err != nil {
-					return false, err
-			}
-		} else {
-			sequencerMsg = celestiaMsg
+			return false, err
+		}
+		if nonce != gotNonce || !bytes.Equal(batchPositionBytes, gotMeta) {
+			return false, fmt.Errorf("%w: nonce changed from %d to %d while creating batch", storage.ErrStorageRace, nonce, gotNonce)
+		}
+		sequencerMsg, err = b.dapWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{}, config.DisableDapFallbackStoreDataOnChain)
+		if err != nil {
+			return false, err
 		}
 	}
 

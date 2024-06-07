@@ -527,8 +527,8 @@ func createNodeImpl(
 	var daWriter das.DataAvailabilityServiceWriter
 	var daReader das.DataAvailabilityServiceReader
 	var dasLifecycleManager *das.LifecycleManager
-	var celestiaReader celestiaTypes.DataAvailabilityReader
-	var celestiaWriter celestiaTypes.DataAvailabilityWriter
+	var celestiaReader celestiaTypes.CelestiaReader
+	var celestiaWriter celestiaTypes.CelestiaWriter
 	if config.DataAvailability.Enable {
 		if config.BatchPoster.Enable {
 			daWriter, daReader, dasLifecycleManager, err = das.CreateBatchPosterDAS(ctx, &config.DataAvailability, dataSigner, l1client, deployInfo.SequencerInbox)
@@ -554,6 +554,16 @@ func createNodeImpl(
 		return nil, errors.New("a data availability service is required for this chain, but it was not configured")
 	}
 
+	if config.Celestia.Enable {
+		celestiaService, err := celestia.NewCelestiaDA(&config.Celestia, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		celestiaReader = celestiaService
+		celestiaWriter = celestiaService
+	}
+
 	// We support a nil txStreamer for the pruning code
 	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee && daReader == nil {
 		return nil, errors.New("data availability service required but unconfigured")
@@ -564,6 +574,9 @@ func createNodeImpl(
 	}
 	if blobReader != nil {
 		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(blobReader))
+	}
+	if celestiaReader != nil {
+		dapReaders = append(dapReaders, celestiaTypes.NewReaderForCelestia(celestiaReader))
 	}
 	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, dapReaders, config.SnapSyncTest)
 	if err != nil {
@@ -694,6 +707,9 @@ func createNodeImpl(
 		var dapWriter daprovider.Writer
 		if daWriter != nil {
 			dapWriter = daprovider.NewWriterForDAS(daWriter)
+		}
+		if celestiaWriter != nil {
+			dapWriter = celestiaTypes.NewWriterForCelestia(celestiaWriter)
 		}
 		batchPoster, err = NewBatchPoster(ctx, &BatchPosterOpts{
 			DataPosterDB:  rawdb.NewTable(arbDb, storage.BatchPosterPrefix),

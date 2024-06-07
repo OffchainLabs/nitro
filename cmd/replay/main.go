@@ -334,9 +334,8 @@ func main() {
 		}
 		// TODO (Diego): Add daProviders = append(daProviders, arbstate.NewDAProviderCelestia(&PreimageCelestiaReader{}))
 		var dapReaders []daprovider.Reader
-		if dasReader != nil {
-			dapReaders = append(dapReaders, daprovider.NewReaderForDAS(dasReader))
-		}
+		dapReaders = append(dapReaders, daprovider.NewReaderForDAS(&PreimageDASReader{}))
+		dapReaders = append(dapReaders, celestiaTypes.NewReaderForCelestia(&PreimageCelestiaReader{}))
 		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(&BlobPreimageReader{}))
 		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode)
 		ctx := context.Background()

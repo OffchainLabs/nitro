@@ -69,18 +69,6 @@ var (
 	ErrTxIncorrectAccountSequence = errors.New("incorrect account sequence")
 )
 
-// CelestiaMessageHeaderFlag indicates that this data is a Blob Pointer
-// which will be used to retrieve data from Celestia
-const CelestiaMessageHeaderFlag byte = 0x63
-
-func hasBits(checking byte, bits byte) bool {
-	return (checking & bits) == bits
-}
-
-func IsCelestiaMessageHeaderByte(header byte) bool {
-	return hasBits(header, CelestiaMessageHeaderFlag)
-}
-
 type CelestiaDA struct {
 	Cfg       *DAConfig
 	Client    *openrpc.Client
@@ -106,6 +94,10 @@ func CelestiaDAConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".validator-config"+".eth-rpc", "", "L1 Websocket connection, only used for validation")
 	f.String(prefix+".validator-config"+".blobstream", "", "Blobstream address, only used for validation")
 }
+
+// CelestiaMessageHeaderFlag indicates that this data is a Blob Pointer
+// which will be used to retrieve data from Celestia
+const CelestiaMessageHeaderFlag byte = 0x63
 
 func NewCelestiaDA(cfg *DAConfig, ethClient *ethclient.Client) (*CelestiaDA, error) {
 	if cfg == nil {

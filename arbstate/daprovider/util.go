@@ -20,7 +20,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/blsSignatures"
-	celestiaTypes "github.com/offchainlabs/nitro/das/celestia/types"
 	"github.com/offchainlabs/nitro/das/dastree"
 )
 
@@ -60,10 +59,6 @@ func RecordPreimagesTo(preimages map[arbutil.PreimageType]map[common.Hash][]byte
 		}
 		preimages[ty][key] = value
 	}
-}
-
-type CelestiaDataAvailabilityReader interface {
-	celestiaTypes.DataAvailabilityReader
 }
 
 // DASMessageHeaderFlag indicates that this data is a certificate for the data availability service,

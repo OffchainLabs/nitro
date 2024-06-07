@@ -8,6 +8,7 @@ import (
 	"github.com/celestiaorg/nmt"
 	"github.com/celestiaorg/nmt/namespace"
 	"github.com/celestiaorg/rsmt2d"
+	"github.com/offchainlabs/nitro/arbutil"
 )
 
 // NMT Wrapper from celestia-app with support for populating a mapping of preimages
@@ -77,7 +78,7 @@ type Tree interface {
 // with an underlying NMT of namespace size `29` and with
 // `ignoreMaxNamespace=true`. axisIndex is the index of the row or column that
 // this tree is committing to. squareSize must be greater than zero.
-func NewErasuredNamespacedMerkleTree(record func(bytes32, []byte), squareSize uint64, axisIndex uint, options ...nmt.Option) ErasuredNamespacedMerkleTree {
+func NewErasuredNamespacedMerkleTree(record func(bytes32, []byte, arbutil.PreimageType), squareSize uint64, axisIndex uint, options ...nmt.Option) ErasuredNamespacedMerkleTree {
 	if squareSize == 0 {
 		panic("cannot create a ErasuredNamespacedMerkleTree of squareSize == 0")
 	}
@@ -88,7 +89,7 @@ func NewErasuredNamespacedMerkleTree(record func(bytes32, []byte), squareSize ui
 }
 
 type constructor struct {
-	record     func(bytes32, []byte)
+	record     func(bytes32, []byte, arbutil.PreimageType)
 	squareSize uint64
 	opts       []nmt.Option
 }
@@ -96,7 +97,7 @@ type constructor struct {
 // NewConstructor creates a tree constructor function as required by rsmt2d to
 // calculate the data root. It creates that tree using the
 // wrapper.ErasuredNamespacedMerkleTree.
-func NewConstructor(record func(bytes32, []byte), squareSize uint64, opts ...nmt.Option) rsmt2d.TreeConstructorFn {
+func NewConstructor(record func(bytes32, []byte, arbutil.PreimageType), squareSize uint64, opts ...nmt.Option) rsmt2d.TreeConstructorFn {
 	return constructor{
 		record:     record,
 		squareSize: squareSize,
