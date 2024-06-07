@@ -24,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/client/redis"
 
+	celestiaTypes "github.com/offchainlabs/nitro/das/celestia/types"
 	validatorclient "github.com/offchainlabs/nitro/validator/client"
 )
 
@@ -261,6 +262,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		}
 		e.DelayedMsg = delayedMsg
 	}
+
 	for _, batch := range e.BatchInfo {
 		if len(batch.Data) <= 40 {
 			continue
@@ -288,6 +290,17 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 				log.Error("No DAS Reader configured, but sequencer message found with DAS header")
 			}
 		}
+		if arbstate.IsCelestiaMessageHeaderByte(batch.Data[40]) {
+			if v.celestiaService == nil {
+				log.Warn("Celestia not configured, but sequencer message found with Celestia header")
+			} else {
+				_, err := arbstate.RecoverPayloadFromCelestiaBatch(ctx, batch.Number, batch.Data, v.celestiaService, e.Preimages)
+				if err != nil {
+					return err
+				}
+			}
+		}
+
 	}
 
 	e.msg = nil // no longer needed

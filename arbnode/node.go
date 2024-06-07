@@ -34,6 +34,8 @@ import (
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/das/celestia"
+	celestiaTypes "github.com/offchainlabs/nitro/das/celestia/types"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -95,6 +97,7 @@ type Config struct {
 	ResourceMgmt        resourcemanager.Config      `koanf:"resource-mgmt" reload:"hot"`
 	// SnapSyncConfig is only used for testing purposes, these should not be configured in production.
 	SnapSyncTest SnapSyncConfig
+	Celestia     celestia.DAConfig `koanf:"celestia-cfg"`
 }
 
 func (c *Config) Validate() error {
@@ -158,6 +161,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
 	MaintenanceConfigAddOptions(prefix+".maintenance", f)
+	celestia.CelestiaDAConfigAddOptions(prefix+".celestia-cfg", f)
 }
 
 var ConfigDefault = Config{
@@ -523,6 +527,8 @@ func createNodeImpl(
 	var daWriter das.DataAvailabilityServiceWriter
 	var daReader das.DataAvailabilityServiceReader
 	var dasLifecycleManager *das.LifecycleManager
+	var celestiaReader celestiaTypes.DataAvailabilityReader
+	var celestiaWriter celestiaTypes.DataAvailabilityWriter
 	if config.DataAvailability.Enable {
 		if config.BatchPoster.Enable {
 			daWriter, daReader, dasLifecycleManager, err = das.CreateBatchPosterDAS(ctx, &config.DataAvailability, dataSigner, l1client, deployInfo.SequencerInbox)
@@ -680,6 +686,7 @@ func createNodeImpl(
 
 	var batchPoster *BatchPoster
 	var delayedSequencer *DelayedSequencer
+	// TODO (Diego) Add celestia DA to daProviderss
 	if config.BatchPoster.Enable {
 		if txOptsBatchPoster == nil && config.BatchPoster.DataPoster.ExternalSigner.URL == "" {
 			return nil, errors.New("batchposter, but no TxOpts")

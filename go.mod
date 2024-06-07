@@ -17,11 +17,14 @@ require (
 	github.com/aws/aws-sdk-go-v2/feature/s3/manager v1.11.10
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.26.9
 	github.com/cavaliergopher/grab/v3 v3.0.1
+	github.com/celestiaorg/celestia-openrpc v0.4.1-0.20240603174346-256ddd020a0a
+	github.com/celestiaorg/nmt v0.20.0
+	github.com/celestiaorg/rsmt2d v0.11.0
 	github.com/cockroachdb/pebble v0.0.0-20230928194634-aa077af62593
 	github.com/codeclysm/extract/v3 v3.0.2
 	github.com/dgraph-io/badger/v4 v4.2.0
 	github.com/enescakir/emoji v1.0.0
-	github.com/ethereum/go-ethereum v1.10.26
+	github.com/ethereum/go-ethereum v1.13.10
 	github.com/fatih/structtag v1.2.0
 	github.com/gdamore/tcell/v2 v2.7.1
 	github.com/go-redis/redis/v8 v8.11.5
@@ -47,6 +50,7 @@ require (
 	golang.org/x/sys v0.18.0
 	golang.org/x/term v0.18.0
 	golang.org/x/tools v0.16.0
+	github.com/tendermint/tendermint v0.34.29
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 )
 
@@ -78,6 +82,7 @@ require (
 	github.com/cockroachdb/logtags v0.0.0-20211118104740-dabe8e521a4f // indirect
 	github.com/cockroachdb/redact v1.1.3 // indirect
 	github.com/cockroachdb/tokenbucket v0.0.0-20230807174530-cc333fc44b06 // indirect
+	github.com/cometbft/cometbft v0.37.2 // indirect
 	github.com/consensys/bavard v0.1.13 // indirect
 	github.com/consensys/gnark-crypto v0.12.1 // indirect
 	github.com/cpuguy83/go-md2man/v2 v2.0.2 // indirect
@@ -94,6 +99,7 @@ require (
 	github.com/ethereum/c-kzg-4844 v0.4.0 // indirect
 	github.com/fjl/memsize v0.0.2 // indirect
 	github.com/fsnotify/fsnotify v1.6.0 // indirect
+	github.com/gabriel-vasile/mimetype v1.4.1 // indirect
 	github.com/gammazero/deque v0.2.1 // indirect
 	github.com/gballet/go-libpcsclite v0.0.0-20190607065134-2772fd86a8ff // indirect
 	github.com/gballet/go-verkle v0.1.1-0.20231031103413-a67434b50f46 // indirect
@@ -164,4 +170,9 @@ require (
 	golang.org/x/time v0.3.0 // indirect
 	google.golang.org/protobuf v1.30.0 // indirect
 	rsc.io/tmplfunc v0.0.3 // indirect
+)
+
+replace (
+	github.com/gogo/protobuf => github.com/regen-network/protobuf v1.3.3-alpha.regen.1
+	github.com/tendermint/tendermint => github.com/celestiaorg/celestia-core v1.29.0-tm-v0.34.29
 )
