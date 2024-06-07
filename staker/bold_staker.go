@@ -23,6 +23,8 @@ import (
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
+	"github.com/offchainlabs/nitro/validator"
 )
 
 type BoldConfig struct {
@@ -96,10 +98,122 @@ func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.StringSlice(prefix+".track-challenge-parent-assertion-hashes", DefaultBoldConfig.TrackChallengeParentAssertionHashes, "only track challenges/edges with these parent assertion hashes")
 }
 
-// NewBOLDChallengeManager sets up a BOLD challenge manager implementation by providing it with
+type BOLDStaker struct {
+	stopwaiter.StopWaiter
+	chalManager        *challengemanager.Manager
+	blockValidator     *BlockValidator
+	rollupAddress      common.Address
+	client             bind.ContractBackend
+	lastWasmModuleRoot common.Hash
+	callOpts           bind.CallOpts
+	validatorConfig    L1ValidatorConfig
+	wallet             ValidatorWalletInterface
+}
+
+func newBOLDStaker(
+	ctx context.Context,
+	validatorConfig L1ValidatorConfig,
+	rollupAddress common.Address,
+	callOpts bind.CallOpts,
+	txOpts *bind.TransactOpts,
+	client arbutil.L1Interface,
+	blockValidator *BlockValidator,
+	statelessBlockValidator *StatelessBlockValidator,
+	config *BoldConfig,
+	dataPoster *dataposter.DataPoster,
+	wallet ValidatorWalletInterface,
+) (*BOLDStaker, error) {
+	manager, err := newBOLDChallengeManager(ctx, rollupAddress, txOpts, client, statelessBlockValidator, config, dataPoster)
+	if err != nil {
+		return nil, err
+	}
+	return &BOLDStaker{
+		chalManager:     manager,
+		blockValidator:  blockValidator,
+		rollupAddress:   rollupAddress,
+		client:          client,
+		callOpts:        callOpts,
+		validatorConfig: validatorConfig,
+		wallet:          wallet,
+	}, nil
+}
+
+func (b *BOLDStaker) Initialize(ctx context.Context) error {
+	if err := b.updateBlockValidatorModuleRoot(ctx); err != nil {
+		return err
+	}
+	walletAddressOrZero := b.wallet.AddressOrZero()
+	if b.blockValidator != nil && b.validatorConfig.StartValidationFromStaked {
+		rollupUserLogic, err := boldrollup.NewRollupUserLogic(b.rollupAddress, b.client)
+		if err != nil {
+			return err
+		}
+		latestStaked, err := rollupUserLogic.LatestStakedAssertion(b.getCallOpts(ctx), walletAddressOrZero)
+		if err != nil {
+			return err
+		}
+		if latestStaked == [32]byte{} {
+			latestConfirmed, err := rollupUserLogic.LatestConfirmed(&bind.CallOpts{Context: ctx})
+			if err != nil {
+				return err
+			}
+			latestStaked = latestConfirmed
+		}
+		assertion, err := readBoldAssertionCreationInfo(
+			ctx,
+			rollupUserLogic,
+			b.client,
+			b.rollupAddress,
+			latestStaked,
+		)
+		if err != nil {
+			return err
+		}
+		afterState := protocol.GoGlobalStateFromSolidity(assertion.AfterState.GlobalState)
+		return b.blockValidator.InitAssumeValid(validator.GoGlobalState(afterState))
+	}
+	return nil
+}
+
+func (b *BOLDStaker) Start(ctxIn context.Context) {
+	b.StopWaiter.Start(ctxIn, b)
+	b.chalManager.StopWaiter.Start(ctxIn, b)
+}
+
+func (b *BOLDStaker) updateBlockValidatorModuleRoot(ctx context.Context) error {
+	if b.blockValidator == nil {
+		return nil
+	}
+	boldRollup, err := boldrollup.NewRollupUserLogic(b.rollupAddress, b.client)
+	if err != nil {
+		return err
+	}
+	moduleRoot, err := boldRollup.WasmModuleRoot(b.getCallOpts(ctx))
+	if err != nil {
+		return err
+	}
+	if moduleRoot != b.lastWasmModuleRoot {
+		err := b.blockValidator.SetCurrentWasmModuleRoot(moduleRoot)
+		if err != nil {
+			return err
+		}
+		b.lastWasmModuleRoot = moduleRoot
+	} else if (moduleRoot == common.Hash{}) {
+		return errors.New("wasmModuleRoot in rollup is zero")
+	}
+	return nil
+}
+
+func (b *BOLDStaker) getCallOpts(ctx context.Context) *bind.CallOpts {
+	opts := b.callOpts
+	opts.Context = ctx
+	return &opts
+}
+
+// Sets up a BOLD challenge manager implementation by providing it with
 // its necessary dependencies and configuration. The challenge manager can then be started, as it
 // implements the StopWaiter pattern as part of the Nitro validator.
-func NewBOLDChallengeManager(
+func newBOLDChallengeManager(
 	ctx context.Context,
 	rollupAddress common.Address,
 	txOpts *bind.TransactOpts,
