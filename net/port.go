@@ -23,7 +23,7 @@ import (
 // of concerns.
 func FreeTCPPort() (int, error) {
 	// This works because the kernel will assign an unused port when ":0" is opened.
-	l, err := net.Listen("tcp", ":0")
+	l, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		return 0, err
 	}
