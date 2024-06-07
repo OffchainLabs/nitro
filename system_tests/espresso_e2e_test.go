@@ -32,10 +32,14 @@ import (
 )
 
 var workingDir = "./espresso-e2e"
-var lightClientAddress = "0x9f1ece352ce8d540738ccb38aa3fa3d44d00a259"
 
-// var hostIoAddress = "0xF34C2fac45527E55ED122f80a969e79A40547e6D"
-var hotShotUrl = "http://127.0.0.1:50000"
+// light client
+// var lightClientAddress = "0x60571c8f4b52954a24a5e7306d435e951528d963"
+
+// light client proxy
+var lightClientAddress = "0xb075b82c7a23e0994df4793422a1f03dbcf9136f"
+
+var hotShotUrl = "http://127.0.0.1:41000"
 
 var (
 	jitValidationPort = 54320
@@ -56,15 +60,7 @@ func runEspresso(t *testing.T, ctx context.Context) func() {
 	shutdown()
 	invocation := []string{"compose", "up", "-d", "--build"}
 	nodes := []string{
-		"orchestrator",
-		"espresso-sequencer0",
-		"espresso-sequencer1",
-		"commitment-task",
-		"state-relay-server",
-		"deploy-contracts",
-		"prover-service",
-		"permissionless-builder",
-		"fund-builder",
+		"espresso-dev-node",
 	}
 	invocation = append(invocation, nodes...)
 	procees := exec.Command("docker", invocation...)
@@ -345,7 +341,7 @@ func runNodes(ctx context.Context, t *testing.T) (*NodeBuilder, *TestClient, *Bl
 
 	// wait for the builder
 	err = waitForWith(t, ctx, 300*time.Second, 1*time.Second, func() bool {
-		out, err := exec.Command("curl", "http://localhost:41003/block_info/builderaddress", "-L").Output()
+		out, err := exec.Command("curl", "http://localhost:41000/availability/block/1", "-L").Output()
 		if err != nil {
 			log.Warn("retry to check the builder", "err", err)
 			return false
@@ -387,7 +383,7 @@ func TestEspressoE2E(t *testing.T) {
 
 	// wait for the latest hotshot block
 	err = waitFor(t, ctx, func() bool {
-		out, err := exec.Command("curl", "http://127.0.0.1:50000/status/block-height", "-L").Output()
+		out, err := exec.Command("curl", "http://127.0.0.1:41000/status/block-height", "-L").Output()
 		if err != nil {
 			return false
 		}
