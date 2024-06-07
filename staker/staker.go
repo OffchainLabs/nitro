@@ -74,6 +74,7 @@ func L1PostingStrategyAddOptions(prefix string, f *flag.FlagSet) {
 
 type L1ValidatorConfig struct {
 	Enable                    bool                        `koanf:"enable"`
+	BOLD                      BoldConfig                  `koanf:"bold"`
 	Strategy                  string                      `koanf:"strategy"`
 	StakerInterval            time.Duration               `koanf:"staker-interval"`
 	MakeAssertionInterval     time.Duration               `koanf:"make-assertion-interval"`
@@ -140,6 +141,7 @@ func (c *L1ValidatorConfig) Validate() error {
 
 var DefaultL1ValidatorConfig = L1ValidatorConfig{
 	Enable:                    true,
+	BOLD:                      DefaultBoldConfig,
 	Strategy:                  "Watchtower",
 	StakerInterval:            time.Minute,
 	MakeAssertionInterval:     time.Hour,
@@ -160,6 +162,7 @@ var DefaultL1ValidatorConfig = L1ValidatorConfig{
 
 var TestL1ValidatorConfig = L1ValidatorConfig{
 	Enable:                    true,
+	BOLD:                      DefaultBoldConfig,
 	Strategy:                  "Watchtower",
 	StakerInterval:            time.Millisecond * 10,
 	MakeAssertionInterval:     -time.Hour * 1000,
@@ -188,6 +191,7 @@ var DefaultValidatorL1WalletConfig = genericconf.WalletConfig{
 
 func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultL1ValidatorConfig.Enable, "enable validator")
+	BoldConfigAddOptions(prefix+".bold", f)
 	f.String(prefix+".strategy", DefaultL1ValidatorConfig.Strategy, "L1 validator strategy, either watchtower, defensive, stakeLatest, or makeNodes")
 	f.Duration(prefix+".staker-interval", DefaultL1ValidatorConfig.StakerInterval, "how often the L1 validator should check the status of the L1 rollup and maybe take action with its stake")
 	f.Duration(prefix+".make-assertion-interval", DefaultL1ValidatorConfig.MakeAssertionInterval, "if configured with the makeNodes strategy, how often to create new assertions (bypassed in case of a dispute)")
