@@ -20,7 +20,6 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	flag "github.com/spf13/pflag"
 
-	"github.com/OffchainLabs/bold/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -253,7 +252,6 @@ type Staker struct {
 	bringActiveUntilNode    uint64
 	inboxReader             InboxReaderInterface
 	statelessBlockValidator *StatelessBlockValidator
-	bridge                  *bridgegen.IBridge
 	fatalErr                chan<- error
 }
 
@@ -305,13 +303,6 @@ func NewStaker(
 	if config.StartValidationFromStaked && blockValidator != nil {
 		stakedNotifiers = append(stakedNotifiers, blockValidator)
 	}
-	var bridge *bridgegen.IBridge
-	if config.Bold.Enable {
-		bridge, err = bridgegen.NewIBridge(bridgeAddress, client)
-		if err != nil {
-			return nil, err
-		}
-	}
 	return &Staker{
 		L1Validator:             val,
 		l1Reader:                l1Reader,
@@ -323,22 +314,21 @@ func NewStaker(
 		lastActCalledBlock:      nil,
 		inboxReader:             statelessBlockValidator.inboxReader,
 		statelessBlockValidator: statelessBlockValidator,
-		bridge:                  bridge,
 		fatalErr:                fatalErr,
 	}, nil
 }
 
 func (s *Staker) Initialize(ctx context.Context) error {
-	walletAddressOrZero := s.wallet.AddressOrZero()
-	if walletAddressOrZero != (common.Address{}) {
-		s.updateStakerBalanceMetric(ctx)
-	}
 	err := s.L1Validator.Initialize(ctx)
 	if err != nil {
 		return err
 	}
+	walletAddressOrZero := s.wallet.AddressOrZero()
+	if walletAddressOrZero != (common.Address{}) {
+		s.updateStakerBalanceMetric(ctx)
+	}
 	if s.blockValidator != nil && s.config.StartValidationFromStaked {
-		latestStaked, _, err := s.validatorUtils.LatestStaked(&s.baseCallOpts, s.rollupAddress, *s.wallet.Address())
+		latestStaked, _, err := s.validatorUtils.LatestStaked(&s.baseCallOpts, s.rollupAddress, walletAddressOrZero)
 		if err != nil {
 			return err
 		}
@@ -346,10 +336,12 @@ func (s *Staker) Initialize(ctx context.Context) error {
 		if latestStaked == 0 {
 			return nil
 		}
+
 		stakedInfo, err := s.rollup.LookupNode(ctx, latestStaked)
 		if err != nil {
 			return err
 		}
+
 		return s.blockValidator.InitAssumeValid(stakedInfo.AfterState().GlobalState)
 	}
 	return nil
@@ -415,7 +407,6 @@ func (s *Staker) Start(ctxIn context.Context) {
 	s.StopWaiter.Start(ctxIn, s)
 	backoff := time.Second
 	ephemeralErrorHandler := util.NewEphemeralErrorHandler(10*time.Minute, "is ahead of on-chain nonce", 0)
-
 	s.CallIteratively(func(ctx context.Context) (returningWait time.Duration) {
 		defer func() {
 			panicErr := recover()
