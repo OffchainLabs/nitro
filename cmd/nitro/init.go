@@ -15,6 +15,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"runtime"
 	"strings"
 	"sync"
@@ -74,18 +75,21 @@ func downloadInit(ctx context.Context, initConfig *conf.InitConfig) (string, err
 		return initFile, nil
 	}
 	log.Info("Downloading initial database", "url", initConfig.Url)
-	path, err := downloadFile(ctx, initConfig, initConfig.Url)
-	if errors.Is(err, notFoundError) {
-		return downloadInitInParts(ctx, initConfig)
-	}
-	return path, err
-}
-
-func downloadFile(ctx context.Context, initConfig *conf.InitConfig, url string) (string, error) {
-	checksum, err := fetchChecksum(ctx, url+".sha256")
+	checksum, err := fetchChecksum(ctx, initConfig.Url+".sha256")
 	if err != nil {
+		if errors.Is(err, notFoundError) {
+			return downloadInitInParts(ctx, initConfig)
+		}
 		return "", fmt.Errorf("error fetching checksum: %w", err)
 	}
+	file, err := downloadFile(ctx, initConfig, initConfig.Url, checksum)
+	if err != nil && errors.Is(err, notFoundError) {
+		return "", fmt.Errorf("file not found but checksum exists")
+	}
+	return file, err
+}
+
+func downloadFile(ctx context.Context, initConfig *conf.InitConfig, url string, checksum []byte) (string, error) {
 	grabclient := grab.NewClient()
 	printTicker := time.NewTicker(time.Second)
 	defer printTicker.Stop()
@@ -122,7 +126,7 @@ func downloadFile(ctx context.Context, initConfig *conf.InitConfig, url string) 
 			case <-resp.Done:
 				if err := resp.Err(); err != nil {
 					if resp.HTTPResponse.StatusCode == http.StatusNotFound {
-						return "", fmt.Errorf("file not found but checksum exists")
+						return "", notFoundError
 					}
 					fmt.Printf("\n  attempt %d failed: %v\n", attempt, err)
 					break updateLoop
@@ -190,39 +194,62 @@ func downloadInitInParts(ctx context.Context, initConfig *conf.InitConfig) (stri
 	if err != nil || !fileInfo.IsDir() {
 		return "", fmt.Errorf("download path must be a directory: %v", initConfig.DownloadPath)
 	}
-	part := 0
-	parts := []string{}
+	url, err := url.Parse(initConfig.Url)
+	if err != nil {
+		return "", fmt.Errorf("failed to parse init url \"%s\": %w", initConfig.Url, err)
+	}
+
+	// Get parts from manifest file
+	manifest, err := httpGet(ctx, url.String()+".manifest.txt")
+	if err != nil {
+		return "", fmt.Errorf("failed to get manifest file: %w", err)
+	}
+	partNames := []string{}
+	checksums := [][]byte{}
+	lines := strings.Split(strings.TrimSpace(string(manifest)), "\n")
+	for _, line := range lines {
+		fields := strings.Fields(line)
+		if len(fields) != 2 {
+			return "", fmt.Errorf("manifest file in wrong format")
+		}
+		checksum, err := hex.DecodeString(fields[0])
+		if err != nil {
+			return "", fmt.Errorf("failed decoding checksum in manifest file: %w", err)
+		}
+		checksums = append(checksums, checksum)
+		partNames = append(partNames, fields[1])
+	}
+
+	partFiles := []string{}
 	defer func() {
 		// remove all temporary files.
-		for _, part := range parts {
+		for _, part := range partFiles {
 			err := os.Remove(part)
 			if err != nil {
 				log.Warn("Failed to remove temporary file", "file", part)
 			}
 		}
 	}()
-	for {
-		url := fmt.Sprintf("%s.part%d", initConfig.Url, part)
-		log.Info("Downloading database part", "url", url)
-		partFile, err := downloadFile(ctx, initConfig, url)
-		if errors.Is(err, notFoundError) {
-			log.Info("Part not found; concatenating archive into single file", "numParts", len(parts))
-			break
-		} else if err != nil {
-			return "", err
+
+	// Download parts
+	for i, partName := range partNames {
+		log.Info("Downloading database part", "part", partName)
+		partUrl := url.JoinPath("..", partName).String()
+		partFile, err := downloadFile(ctx, initConfig, partUrl, checksums[i])
+		if err != nil {
+			return "", fmt.Errorf("error downloading part \"%s\": %w", partName, err)
 		}
-		parts = append(parts, partFile)
-		part++
+		partFiles = append(partFiles, partFile)
 	}
-	return joinArchive(parts)
+	archivePath := path.Join(initConfig.DownloadPath, path.Base(url.Path))
+	return joinArchive(partFiles, archivePath)
 }
 
 // joinArchive joins the archive parts into a single file and return its path.
-func joinArchive(parts []string) (string, error) {
+func joinArchive(parts []string, archivePath string) (string, error) {
 	if len(parts) == 0 {
 		return "", fmt.Errorf("no database parts found")
 	}
-	archivePath := strings.TrimSuffix(parts[0], ".part0")
 	archive, err := os.Create(archivePath)
 	if err != nil {
 		return "", fmt.Errorf("failed to create archive: %w", err)

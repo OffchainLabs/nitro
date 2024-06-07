@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"testing"
 	"time"
@@ -76,20 +77,21 @@ func TestDownloadInitInParts(t *testing.T) {
 	// Create parts with random data
 	serverDir := t.TempDir()
 	data := testhelpers.RandomSlice(dataSize)
+	manifest := bytes.NewBuffer(nil)
 	for i := 0; i < numParts; i++ {
 		// Create part and checksum
 		partData := data[partSize*i : partSize*(i+1)]
+		partName := fmt.Sprintf("%s.part%d", archiveName, i)
 		checksumBytes := sha256.Sum256(partData)
 		checksum := hex.EncodeToString(checksumBytes[:])
+		fmt.Fprintf(manifest, "%s  %s\n", checksum, partName)
 		// Write part file
-		partFile := fmt.Sprintf("%s/%s.part%d", serverDir, archiveName, i)
-		err := os.WriteFile(partFile, partData, filePerm)
+		err := os.WriteFile(path.Join(serverDir, partName), partData, filePerm)
 		Require(t, err, "failed to write part")
-		// Write checksum file
-		checksumFile := partFile + ".sha256"
-		err = os.WriteFile(checksumFile, []byte(checksum), filePerm)
-		Require(t, err, "failed to write checksum")
 	}
+	manifestFile := fmt.Sprintf("%s/%s.manifest.txt", serverDir, archiveName)
+	err := os.WriteFile(manifestFile, manifest.Bytes(), filePerm)
+	Require(t, err, "failed to write manifest file")
 
 	// Start HTTP server
 	ctx, cancel := context.WithCancel(context.Background())
