@@ -6,6 +6,7 @@ import (
 	"crypto/x509"
 	"fmt"
 	"math/big"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -25,10 +26,7 @@ import (
 var (
 	dataPosterPath = "arbnode/dataposter"
 	selfPath       = filepath.Join(dataPosterPath, "externalsignertest")
-
-	SignerPort   = 1234
-	SignerURL    = fmt.Sprintf("https://localhost:%v", SignerPort)
-	SignerMethod = "test_signTransaction"
+	SignerMethod   = "test_signTransaction"
 )
 
 type CertAbsPaths struct {
@@ -36,6 +34,11 @@ type CertAbsPaths struct {
 	ServerKey  string
 	ClientCert string
 	ClientKey  string
+}
+
+type SignerServer struct {
+	*http.Server
+	*SignerAPI
 }
 
 func basePath() (string, error) {
@@ -71,7 +74,7 @@ func CertPaths() (*CertAbsPaths, error) {
 	}, nil
 }
 
-func NewServer(t *testing.T) (*http.Server, *SignerAPI) {
+func NewServer(t *testing.T) *SignerServer {
 	rpcServer := rpc.NewServer()
 	signer, address, err := setupAccount("/tmp/keystore")
 	if err != nil {
@@ -94,8 +97,14 @@ func NewServer(t *testing.T) (*http.Server, *SignerAPI) {
 	pool := x509.NewCertPool()
 	pool.AppendCertsFromPEM(clientCert)
 
+	ln, err := net.Listen("tcp", "localhost:0")
+	if err != nil {
+		t.Fatalf("Error creating listener: %v", err)
+	}
+	port := strings.Split(ln.Addr().String(), ":")[1]
+
 	httpServer := &http.Server{
-		Addr:              fmt.Sprintf(":%d", SignerPort),
+		Addr:              fmt.Sprintf(":%s", port),
 		Handler:           rpcServer,
 		ReadTimeout:       30 * time.Second,
 		ReadHeaderTimeout: 30 * time.Second,
@@ -114,7 +123,23 @@ func NewServer(t *testing.T) (*http.Server, *SignerAPI) {
 		}
 	})
 
-	return httpServer, s
+	return &SignerServer{httpServer, s}
+}
+
+func (s *SignerServer) URL() string {
+	port := strings.Split(s.Addr, ":")[1]
+	return fmt.Sprintf("https://localhost:%v", port)
+}
+
+func (s *SignerServer) Start() error {
+	cp, err := CertPaths()
+	if err != nil {
+		return err
+	}
+	if err := s.ListenAndServeTLS(cp.ServerCert, cp.ServerKey); err != nil {
+		return err
+	}
+	return nil
 }
 
 // setupAccount creates a new account in a given directory, unlocks it, creates
