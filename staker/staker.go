@@ -74,7 +74,6 @@ func L1PostingStrategyAddOptions(prefix string, f *flag.FlagSet) {
 
 type L1ValidatorConfig struct {
 	Enable                    bool                        `koanf:"enable"`
-	Bold                      BoldConfig                  `koanf:"bold"`
 	Strategy                  string                      `koanf:"strategy"`
 	StakerInterval            time.Duration               `koanf:"staker-interval"`
 	MakeAssertionInterval     time.Duration               `koanf:"make-assertion-interval"`
@@ -141,7 +140,6 @@ func (c *L1ValidatorConfig) Validate() error {
 
 var DefaultL1ValidatorConfig = L1ValidatorConfig{
 	Enable:                    true,
-	Bold:                      DefaultBoldConfig,
 	Strategy:                  "Watchtower",
 	StakerInterval:            time.Minute,
 	MakeAssertionInterval:     time.Hour,

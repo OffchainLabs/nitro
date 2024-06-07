@@ -57,6 +57,42 @@ func (c *ChallengeProtocolSwitcher) shouldUseBoldStaker(ctx context.Context) (bo
 }
 
 
+
+func (v *L1Validator) shouldUseBoldStaker(ctx context.Context) (bool, error) {
+	callOpts := v.getCallOpts(ctx)
+	userLogic, err := rollupgen.NewRollupUserLogic(v.rollupAddress, v.client)
+	if err != nil {
+		return false, err
+	}
+	_, err = userLogic.ExtraChallengeTimeBlocks(callOpts)
+	// ExtraChallengeTimeBlocks does not exist in the the bold protocol.
+	return err != nil, nil
+}
+
+func (v *L1Validator) updateBoldBlockValidatorModuleRoot(ctx context.Context) error {
+	if v.blockValidator == nil {
+		return nil
+	}
+	boldRollup, err := boldrollup.NewRollupUserLogic(v.rollupAddress, v.client)
+	if err != nil {
+		return err
+	}
+	moduleRoot, err := boldRollup.WasmModuleRoot(v.getCallOpts(ctx))
+	if err != nil {
+		return err
+	}
+	if moduleRoot != v.lastWasmModuleRoot {
+		err := v.blockValidator.SetCurrentWasmModuleRoot(moduleRoot)
+		if err != nil {
+			return err
+		}
+		v.lastWasmModuleRoot = moduleRoot
+	} else if (moduleRoot == common.Hash{}) {
+		return errors.New("wasmModuleRoot in rollup is zero")
+	}
+	return nil
+}
+
 func (s *Staker) getStakedInfo(ctx context.Context, walletAddr common.Address) (validator.GoGlobalState, error) {
 	var zeroVal validator.GoGlobalState
 	if s.config.Bold.Enable {

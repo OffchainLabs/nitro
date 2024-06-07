@@ -15,7 +15,6 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/validator"
 
-	boldrollup "github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -102,52 +101,10 @@ func (v *L1Validator) getCallOpts(ctx context.Context) *bind.CallOpts {
 }
 
 func (v *L1Validator) Initialize(ctx context.Context) error {
-	shouldUseBold, err := v.shouldUseBoldStaker(ctx)
-	if err != nil {
-		return err
-	}
-	if shouldUseBold {
-		return v.updateBoldBlockValidatorModuleRoot(ctx)
-	}
-	if err = v.rollup.Initialize(ctx); err != nil {
+	if err := v.rollup.Initialize(ctx); err != nil {
 		return err
 	}
 	return v.updateBlockValidatorModuleRoot(ctx)
-}
-
-func (v *L1Validator) shouldUseBoldStaker(ctx context.Context) (bool, error) {
-	callOpts := v.getCallOpts(ctx)
-	userLogic, err := rollupgen.NewRollupUserLogic(v.rollupAddress, v.client)
-	if err != nil {
-		return false, err
-	}
-	_, err = userLogic.ExtraChallengeTimeBlocks(callOpts)
-	// ExtraChallengeTimeBlocks does not exist in the the bold protocol.
-	return err != nil, nil
-}
-
-func (v *L1Validator) updateBoldBlockValidatorModuleRoot(ctx context.Context) error {
-	if v.blockValidator == nil {
-		return nil
-	}
-	boldRollup, err := boldrollup.NewRollupUserLogic(v.rollupAddress, v.client)
-	if err != nil {
-		return err
-	}
-	moduleRoot, err := boldRollup.WasmModuleRoot(v.getCallOpts(ctx))
-	if err != nil {
-		return err
-	}
-	if moduleRoot != v.lastWasmModuleRoot {
-		err := v.blockValidator.SetCurrentWasmModuleRoot(moduleRoot)
-		if err != nil {
-			return err
-		}
-		v.lastWasmModuleRoot = moduleRoot
-	} else if (moduleRoot == common.Hash{}) {
-		return errors.New("wasmModuleRoot in rollup is zero")
-	}
-	return nil
 }
 
 func (v *L1Validator) updateBlockValidatorModuleRoot(ctx context.Context) error {

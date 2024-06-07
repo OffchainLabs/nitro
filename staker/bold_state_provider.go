@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
-	flag "github.com/spf13/pflag"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/containers/option"
@@ -38,70 +37,6 @@ var executionNodeOfflineGauge = metrics.NewRegisteredGauge("arb/state_provider/e
 var (
 	ErrChainCatchingUp = errors.New("chain catching up")
 )
-
-type BoldConfig struct {
-	Enable bool   `koanf:"enable"`
-	Mode   string `koanf:"mode"`
-	// The height constants at each challenge level for the BOLD challenge manager.
-	BlockChallengeLeafHeight uint64 `koanf:"block-challenge-leaf-height"`
-	BigStepLeafHeight        uint64 `koanf:"big-step-leaf-height"`
-	SmallStepLeafHeight      uint64 `koanf:"small-step-leaf-height"`
-	// Number of big step challenges in the BOLD protocol.
-	NumBigSteps uint64 `koanf:"num-big-steps"`
-	// A name identifier for the validator for cosmetic purposes.
-	ValidatorName string `koanf:"validator-name"`
-	// Path to a filesystem directory that will cache machine hashes for BOLD.
-	MachineLeavesCachePath string `koanf:"machine-leaves-cache-path"`
-	// How often to post assertions onchain.
-	AssertionPostingIntervalSeconds uint64 `koanf:"assertion-posting-interval-seconds"`
-	// How often to scan for newly created assertions onchain.
-	AssertionScanningIntervalSeconds uint64 `koanf:"assertion-scanning-interval-seconds"`
-	// How often to confirm assertions onchain.
-	AssertionConfirmingIntervalSeconds  uint64   `koanf:"assertion-confirming-interval-seconds"`
-	API                                 bool     `koanf:"api"`
-	APIHost                             string   `koanf:"api-host"`
-	APIPort                             uint16   `koanf:"api-port"`
-	APIDBPath                           string   `koanf:"api-db-path"`
-	TrackChallengeParentAssertionHashes []string `koanf:"track-challenge-parent-assertion-hashes"`
-}
-
-var DefaultBoldConfig = BoldConfig{
-	Enable:                              false,
-	Mode:                                "make-mode",
-	BlockChallengeLeafHeight:            1 << 26,
-	BigStepLeafHeight:                   1 << 23,
-	SmallStepLeafHeight:                 1 << 19,
-	NumBigSteps:                         1,
-	ValidatorName:                       "default-validator",
-	MachineLeavesCachePath:              "/tmp/machine-leaves-cache",
-	AssertionPostingIntervalSeconds:     900, // Every 15 minutes.
-	AssertionScanningIntervalSeconds:    60,  // Every minute.
-	AssertionConfirmingIntervalSeconds:  60,  // Every minute.
-	API:                                 false,
-	APIHost:                             "127.0.0.1",
-	APIPort:                             9393,
-	APIDBPath:                           "/tmp/bold-api-db",
-	TrackChallengeParentAssertionHashes: []string{},
-}
-
-func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultBoldConfig.Enable, "enable bold challenge protocol")
-	f.String(prefix+".mode", DefaultBoldConfig.Mode, "define the bold validator staker strategy")
-	f.Uint64(prefix+".block-challenge-leaf-height", DefaultBoldConfig.BlockChallengeLeafHeight, "block challenge leaf height")
-	f.Uint64(prefix+".big-step-leaf-height", DefaultBoldConfig.BigStepLeafHeight, "big challenge leaf height")
-	f.Uint64(prefix+".small-step-leaf-height", DefaultBoldConfig.SmallStepLeafHeight, "small challenge leaf height")
-	f.Uint64(prefix+".num-big-steps", DefaultBoldConfig.NumBigSteps, "num big steps")
-	f.String(prefix+".validator-name", DefaultBoldConfig.ValidatorName, "name identifier for cosmetic purposes")
-	f.String(prefix+".machine-leaves-cache-path", DefaultBoldConfig.MachineLeavesCachePath, "path to machine cache")
-	f.Uint64(prefix+".assertion-posting-interval-seconds", DefaultBoldConfig.AssertionPostingIntervalSeconds, "assertion posting interval")
-	f.Uint64(prefix+".assertion-scanning-interval-seconds", DefaultBoldConfig.AssertionScanningIntervalSeconds, "scan assertion interval")
-	f.Uint64(prefix+".assertion-confirming-interval-seconds", DefaultBoldConfig.AssertionConfirmingIntervalSeconds, "confirm assertion interval")
-	f.Bool(prefix+".api", DefaultBoldConfig.API, "enable api")
-	f.String(prefix+".api-host", DefaultBoldConfig.APIHost, "bold api host")
-	f.Uint16(prefix+".api-port", DefaultBoldConfig.APIPort, "bold api port")
-	f.String(prefix+".api-db-path", DefaultBoldConfig.APIDBPath, "bold api db path")
-	f.StringSlice(prefix+".track-challenge-parent-assertion-hashes", DefaultBoldConfig.TrackChallengeParentAssertionHashes, "only track challenges/edges with these parent assertion hashes")
-}
 
 type BOLDStateProvider struct {
 	validator            *StatelessBlockValidator
