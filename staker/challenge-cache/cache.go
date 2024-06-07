@@ -1,27 +1,27 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 /*
-* Package challengecache stores validator state roots for L2 states within
-challenges in text files using a directory hierarchy structure for efficient lookup. Each file
-contains a list of state roots (32 byte hashes), concatenated together as bytes.
-Using this structure, we can namespace state roots by message number and big step challenge.
+* Package challengecache stores hashes required for making history commitments in Arbitrum BOLD.
+When a challenge begins, validators need to post Merkle commitments to a series of block hashes to
+narrow down their disagreement to a single block. Once a disagreement is reached, another BOLD challenge begins
+to narrow down within the execution of a block. This requires using the Arbitrator emulator to compute
+the intermediate hashes of executing the block as WASM opcodes. These hashes are expensive to compute, so we
+store them in a filesystem cache to avoid recomputing them and for hierarchical access.
+Each file contains a list of 32 byte hashes, concatenated together as bytes.
+Using this structure, we can namespace hashes by message number and by challenge level.
 
-Once a validator computes the set of machine state roots for a given challenge move the first time,
+Once a validator receives a full list of computed machine hashes for the first time from a validatio node,
 it will write the roots to this filesystem hierarchy for fast access next time these roots are needed.
 
-Use cases:
-- State roots for a big step challenge from message N to N+1
-- State roots 0 to M for a big step challenge from message N to N+1
-- State roots for a small step challenge from message N to N+1, and big step M to M+1
-- State roots 0 to P for a small step challenge from message N to N+1, and big step M to M+1
+Example:
+- Compute all the hashes for the execution of message num 70 with the required step size for the big step challenge level.
+- Compute all the hashes for the execution of individual steps for a small step challenge level from big step 100 to 101
 
 	  wavm-module-root-0xab/
 		message-num-70/
 			roots.txt
-			subchallenge-level-0-big-step-100/
+			subchallenge-level-1-big-step-100/
 				roots.txt
-				subchallenge-level-1-big-step-100/
-					roots.txt
 
 We namespace top-level block challenges by wavm module root. Then, we can retrieve
 the state roots for any data within a challenge or associated subchallenge based on the hierarchy above.
@@ -212,7 +212,7 @@ for a given filesystem challenge cache will look as follows:
 	  wavm-module-root-0xab/
 		message-num-70/
 			roots.txt
-			subchallenge-level-0-big-step-100/
+			subchallenge-level-1-big-step-100/
 				roots.txt
 */
 func determineFilePath(baseDir string, lookup *Key) (string, error) {
