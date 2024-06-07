@@ -4,15 +4,19 @@ package staker
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"math/big"
 	"time"
 
+	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
 	challengemanager "github.com/OffchainLabs/bold/challenge-manager"
 	boldtypes "github.com/OffchainLabs/bold/challenge-manager/types"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
-	"github.com/OffchainLabs/bold/solgen/go/rollupgen"
+	boldrollup "github.com/OffchainLabs/bold/solgen/go/rollupgen"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 
@@ -40,7 +44,7 @@ func NewBOLDChallengeManager(
 	dataPoster *dataposter.DataPoster,
 ) (*challengemanager.Manager, error) {
 	// Initializes the BOLD contract bindings and the assertion chain abstraction.
-	rollupBindings, err := rollupgen.NewRollupUserLogic(rollupAddress, client)
+	rollupBindings, err := boldrollup.NewRollupUserLogic(rollupAddress, client)
 	if err != nil {
 		return nil, fmt.Errorf("could not create rollup bindings: %w", err)
 	}
@@ -118,4 +122,73 @@ func NewBOLDChallengeManager(
 	}
 	provider.UpdateAPIDatabase(manager.Database())
 	return manager, nil
+}
+
+// Read the creation info for an assertion by looking up its creation
+// event from the rollup contracts.
+func readBoldAssertionCreationInfo(
+	ctx context.Context,
+	rollup *boldrollup.RollupUserLogic,
+	client bind.ContractFilterer,
+	rollupAddress common.Address,
+	assertionHash common.Hash,
+) (*protocol.AssertionCreatedInfo, error) {
+	var creationBlock uint64
+	var topics [][]common.Hash
+	if assertionHash == (common.Hash{}) {
+		rollupDeploymentBlock, err := rollup.RollupDeploymentBlock(&bind.CallOpts{Context: ctx})
+		if err != nil {
+			return nil, err
+		}
+		if !rollupDeploymentBlock.IsUint64() {
+			return nil, errors.New("rollup deployment block was not a uint64")
+		}
+		creationBlock = rollupDeploymentBlock.Uint64()
+		topics = [][]common.Hash{{assertionCreatedId}}
+	} else {
+		var b [32]byte
+		copy(b[:], assertionHash[:])
+		node, err := rollup.GetAssertion(&bind.CallOpts{Context: ctx}, b)
+		if err != nil {
+			return nil, err
+		}
+		creationBlock = node.CreatedAtBlock
+		topics = [][]common.Hash{{assertionCreatedId}, {assertionHash}}
+	}
+	var query = ethereum.FilterQuery{
+		FromBlock: new(big.Int).SetUint64(creationBlock),
+		ToBlock:   new(big.Int).SetUint64(creationBlock),
+		Addresses: []common.Address{rollupAddress},
+		Topics:    topics,
+	}
+	logs, err := client.FilterLogs(ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	if len(logs) == 0 {
+		return nil, errors.New("no assertion creation logs found")
+	}
+	if len(logs) > 1 {
+		return nil, errors.New("found multiple instances of requested node")
+	}
+	ethLog := logs[0]
+	parsedLog, err := rollup.ParseAssertionCreated(ethLog)
+	if err != nil {
+		return nil, err
+	}
+	afterState := parsedLog.Assertion.AfterState
+	return &protocol.AssertionCreatedInfo{
+		ConfirmPeriodBlocks: parsedLog.ConfirmPeriodBlocks,
+		RequiredStake:       parsedLog.RequiredStake,
+		ParentAssertionHash: parsedLog.ParentAssertionHash,
+		BeforeState:         parsedLog.Assertion.BeforeState,
+		AfterState:          afterState,
+		InboxMaxCount:       parsedLog.InboxMaxCount,
+		AfterInboxBatchAcc:  parsedLog.AfterInboxBatchAcc,
+		AssertionHash:       parsedLog.AssertionHash,
+		WasmModuleRoot:      parsedLog.WasmModuleRoot,
+		ChallengeManager:    parsedLog.ChallengeManager,
+		TransactionHash:     ethLog.TxHash,
+		CreationBlock:       ethLog.BlockNumber,
+	}, nil
 }

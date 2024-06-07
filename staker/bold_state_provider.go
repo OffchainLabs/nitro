@@ -103,10 +103,6 @@ func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.StringSlice(prefix+".track-challenge-parent-assertion-hashes", DefaultBoldConfig.TrackChallengeParentAssertionHashes, "only track challenges/edges with these parent assertion hashes")
 }
 
-func (c *BoldConfig) Validate() error {
-	return nil
-}
-
 type BOLDStateProvider struct {
 	validator            *StatelessBlockValidator
 	historyCache         challengecache.HistoryCommitmentCacher
