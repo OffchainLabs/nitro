@@ -26,7 +26,6 @@ func createArbMachine(ctx context.Context, locator *server_common.MachineLocator
 	binPath := filepath.Join(locator.GetMachinePath(moduleRoot), config.WavmBinaryPath)
 	cBinPath := C.CString(binPath)
 	defer C.free(unsafe.Pointer(cBinPath))
-
 	log.Info("creating nitro machine", "binpath", binPath)
 	baseMachine := C.arbitrator_load_wavm_binary(cBinPath)
 	if baseMachine == nil {

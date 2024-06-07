@@ -24,7 +24,6 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_arb"
-	"github.com/offchainlabs/nitro/validator/server_common"
 )
 
 func DeployOneStepProofEntry(t *testing.T, auth *bind.TransactOpts, client bind.ContractBackend) common.Address {
@@ -162,7 +161,7 @@ func runChallengeTest(
 	backend.Commit()
 
 	asserterRun, err := server_arb.NewExecutionRun(ctx,
-		func(context.Context, ...server_common.MachineLoaderOpt) (server_arb.MachineInterface, error) {
+		func(context.Context) (server_arb.MachineInterface, error) {
 			return asserterMachine, nil
 		},
 		&server_arb.DefaultMachineCacheConfig)
@@ -180,7 +179,7 @@ func runChallengeTest(
 	Require(t, err)
 
 	challengerRun, err := server_arb.NewExecutionRun(ctx,
-		func(context.Context, ...server_common.MachineLoaderOpt) (server_arb.MachineInterface, error) {
+		func(context.Context) (server_arb.MachineInterface, error) {
 			return challengerMachine, nil
 		},
 		&server_arb.DefaultMachineCacheConfig)

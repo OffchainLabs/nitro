@@ -29,6 +29,7 @@ func NewMachineLoader[M any](
 	locator *MachineLocator,
 	createMachine func(ctx context.Context, moduleRoot common.Hash) (*M, error),
 ) *MachineLoader[M] {
+
 	return &MachineLoader[M]{
 		machines:      make(map[common.Hash]*MachineStatus[M]),
 		locator:       locator,

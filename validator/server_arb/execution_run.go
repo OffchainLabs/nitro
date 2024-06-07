@@ -170,7 +170,7 @@ func (e *executionRun) intermediateGetStepAt(ctx context.Context, position uint6
 	if position == ^uint64(0) {
 		machine, err = e.cache.GetFinalMachine(ctx)
 	} else {
-		// todo cache last machina
+		// TODO(rauljordan): Cache last machine.
 		machine, err = e.cache.GetMachineAt(ctx, position)
 	}
 	if err != nil {
