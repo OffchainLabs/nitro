@@ -136,7 +136,7 @@ func (s *SignerServer) Start() error {
 	if err != nil {
 		return err
 	}
-	if err := s.ListenAndServeTLS(cp.ServerCert, cp.ServerKey); err != nil {
+	if err := s.ListenAndServeTLS(cp.ServerCert, cp.ServerKey); err != nil && err != http.ErrServerClosed {
 		return err
 	}
 	return nil
