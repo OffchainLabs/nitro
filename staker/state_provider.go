@@ -403,7 +403,7 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 	}
 	ctxCheckAlive, cancelCheckAlive := ctxWithCheckAlive(ctx, execRun)
 	defer cancelCheckAlive()
-	stepLeaves := execRun.GetLeavesWithStepSize(uint64(cfg.FromBatch), uint64(cfg.MachineStartIndex), uint64(cfg.StepSize), cfg.NumDesiredHashes)
+	stepLeaves := execRun.GetMachineHashesWithStepSize(uint64(cfg.FromBatch), uint64(cfg.MachineStartIndex), uint64(cfg.StepSize), cfg.NumDesiredHashes)
 	result, err := stepLeaves.Await(ctxCheckAlive)
 	if err != nil {
 		return nil, err

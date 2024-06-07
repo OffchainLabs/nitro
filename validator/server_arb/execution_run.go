@@ -63,7 +63,7 @@ func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*v
 	})
 }
 
-func (e *executionRun) GetLeavesWithStepSize(fromBatch, machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[[]common.Hash] {
+func (e *executionRun) GetMachineHashesWithStepSize(fromBatch, machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[[]common.Hash] {
 	return stopwaiter.LaunchPromiseThread[[]common.Hash](e, func(ctx context.Context) ([]common.Hash, error) {
 		machine, err := e.cache.GetMachineAt(ctx, machineStartIndex)
 		if err != nil {
