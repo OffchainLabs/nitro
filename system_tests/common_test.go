@@ -1120,15 +1120,16 @@ func setupConfigWithDAS(
 	var daReader das.DataAvailabilityServiceReader
 	var daWriter das.DataAvailabilityServiceWriter
 	var daHealthChecker das.DataAvailabilityServiceHealthChecker
+	var signatureVerifier *das.SignatureVerifier
 	if dasModeString != "onchain" {
-		daReader, daWriter, daHealthChecker, lifecycleManager, err = das.CreateDAComponentsForDaserver(ctx, dasConfig, nil, nil)
+		daReader, daWriter, signatureVerifier, daHealthChecker, lifecycleManager, err = das.CreateDAComponentsForDaserver(ctx, dasConfig, nil, nil)
 
 		Require(t, err)
 		rpcLis, err := net.Listen("tcp", "localhost:0")
 		Require(t, err)
 		restLis, err := net.Listen("tcp", "localhost:0")
 		Require(t, err)
-		_, err = das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, daReader, daWriter, daHealthChecker)
+		_, err = das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, daReader, daWriter, daHealthChecker, signatureVerifier)
 		Require(t, err)
 		_, err = das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, daReader, daHealthChecker)
 		Require(t, err)
