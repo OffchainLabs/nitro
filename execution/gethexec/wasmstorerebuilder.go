@@ -6,6 +6,7 @@ package gethexec
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -61,13 +63,29 @@ func WriteToKeyValueStore[T any](store ethdb.KeyValueStore, key []byte, val T) e
 func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, l2Blockchain *core.BlockChain, position, rebuildingStartBlockHash common.Hash) error {
 	var err error
 	var stateDb *state.StateDB
+	tryLiveStateFallBackStateAt := func(header *types.Header) (*state.StateDB, error) {
+		if header == nil {
+			return nil, errors.New("trying to get state for a nil header")
+		}
+		if header.Root != (common.Hash{}) {
+			if err := l2Blockchain.TrieDB().Reference(header.Root, common.Hash{}); err != nil {
+				return l2Blockchain.StateAt(header.Root)
+			}
+		}
+		liveState, err := state.New(header.Root, l2Blockchain.StateCache(), nil)
+		if err != nil {
+			log.Info("Failed to get live state during rebuilding wasm store, falling back to StateAt", "err", err)
+			return l2Blockchain.StateAt(header.Root)
+		}
+		return liveState, nil
+	}
 	latestHeader := l2Blockchain.CurrentBlock()
 	// Attempt to get state at the start block when rebuilding commenced, if not available (in case of non-archival nodes) use latest state
 	rebuildingStartHeader := l2Blockchain.GetHeaderByHash(rebuildingStartBlockHash)
-	stateDb, err = l2Blockchain.StateAt(rebuildingStartHeader.Root)
+	stateDb, err = tryLiveStateFallBackStateAt(rebuildingStartHeader)
 	if err != nil {
-		log.Info("error getting state at start block of rebuilding wasm store, attempting rebuilding with latest state", "err", err)
-		stateDb, err = l2Blockchain.StateAt(latestHeader.Root)
+		log.Info("Error getting state at start block of rebuilding wasm store, attempting rebuilding with latest state", "err", err)
+		stateDb, err = tryLiveStateFallBackStateAt(latestHeader)
 		if err != nil {
 			return fmt.Errorf("error getting state at latest block, aborting rebuilding: %w", err)
 		}
