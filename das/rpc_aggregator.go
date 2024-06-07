@@ -16,6 +16,7 @@ import (
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/metricsutil"
+	"github.com/offchainlabs/nitro/util/signature"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -27,31 +28,31 @@ type BackendConfig struct {
 	SignerMask          uint64 `json:"signermask"`
 }
 
-func NewRPCAggregator(ctx context.Context, config DataAvailabilityConfig) (*Aggregator, error) {
-	services, err := ParseServices(config.RPCAggregator)
+func NewRPCAggregator(ctx context.Context, config DataAvailabilityConfig, signer signature.DataSignerFunc) (*Aggregator, error) {
+	services, err := ParseServices(config.RPCAggregator, signer)
 	if err != nil {
 		return nil, err
 	}
 	return NewAggregator(ctx, config, services)
 }
 
-func NewRPCAggregatorWithL1Info(config DataAvailabilityConfig, l1client arbutil.L1Interface, seqInboxAddress common.Address) (*Aggregator, error) {
-	services, err := ParseServices(config.RPCAggregator)
+func NewRPCAggregatorWithL1Info(config DataAvailabilityConfig, l1client arbutil.L1Interface, seqInboxAddress common.Address, signer signature.DataSignerFunc) (*Aggregator, error) {
+	services, err := ParseServices(config.RPCAggregator, signer)
 	if err != nil {
 		return nil, err
 	}
 	return NewAggregatorWithL1Info(config, services, l1client, seqInboxAddress)
 }
 
-func NewRPCAggregatorWithSeqInboxCaller(config DataAvailabilityConfig, seqInboxCaller *bridgegen.SequencerInboxCaller) (*Aggregator, error) {
-	services, err := ParseServices(config.RPCAggregator)
+func NewRPCAggregatorWithSeqInboxCaller(config DataAvailabilityConfig, seqInboxCaller *bridgegen.SequencerInboxCaller, signer signature.DataSignerFunc) (*Aggregator, error) {
+	services, err := ParseServices(config.RPCAggregator, signer)
 	if err != nil {
 		return nil, err
 	}
 	return NewAggregatorWithSeqInboxCaller(config, services, seqInboxCaller)
 }
 
-func ParseServices(config AggregatorConfig) ([]ServiceDetails, error) {
+func ParseServices(config AggregatorConfig, signer signature.DataSignerFunc) ([]ServiceDetails, error) {
 	var cs []BackendConfig
 	err := json.Unmarshal([]byte(config.Backends), &cs)
 	if err != nil {
@@ -67,7 +68,7 @@ func ParseServices(config AggregatorConfig) ([]ServiceDetails, error) {
 		}
 		metricName := metricsutil.CanonicalizeMetricName(url.Hostname())
 
-		service, err := NewDASRPCClient(b.URL)
+		service, err := NewDASRPCClient(b.URL, signer, config.MaxStoreChunkBodySize)
 		if err != nil {
 			return nil, err
 		}
