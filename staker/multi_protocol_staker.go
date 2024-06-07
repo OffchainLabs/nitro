@@ -97,7 +97,7 @@ func (m *MultiProtocolStaker) Initialize(ctx context.Context) error {
 		boldStaker, err := newBOLDStaker(
 			ctx,
 			m.oldStaker.config,
-			m.boldStaker.rollupAddress,
+			m.oldStaker.rollupAddress,
 			*m.oldStaker.getCallOpts(ctx),
 			auth,
 			m.oldStaker.client,
