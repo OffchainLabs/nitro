@@ -27,10 +27,10 @@ import (
 )
 
 var (
-	_ l2stateprovider.ProofCollector          = (*StateManager)(nil)
-	_ l2stateprovider.L2MessageStateCollector = (*StateManager)(nil)
-	_ l2stateprovider.MachineHashCollector    = (*StateManager)(nil)
-	_ l2stateprovider.ExecutionProvider       = (*StateManager)(nil)
+	_ l2stateprovider.ProofCollector          = (*BOLDStateProvider)(nil)
+	_ l2stateprovider.L2MessageStateCollector = (*BOLDStateProvider)(nil)
+	_ l2stateprovider.MachineHashCollector    = (*BOLDStateProvider)(nil)
+	_ l2stateprovider.ExecutionProvider       = (*BOLDStateProvider)(nil)
 )
 
 var executionNodeOfflineGauge = metrics.NewRegisteredGauge("arb/state_provider/execution_node_offline", nil)
@@ -40,18 +40,24 @@ var (
 )
 
 type BoldConfig struct {
-	Enable                              bool     `koanf:"enable"`
-	Mode                                string   `koanf:"mode"`
-	BlockChallengeLeafHeight            uint64   `koanf:"block-challenge-leaf-height"`
-	BigStepLeafHeight                   uint64   `koanf:"big-step-leaf-height"`
-	SmallStepLeafHeight                 uint64   `koanf:"small-step-leaf-height"`
-	NumBigSteps                         uint64   `koanf:"num-big-steps"`
-	ValidatorName                       string   `koanf:"validator-name"`
-	MachineLeavesCachePath              string   `koanf:"machine-leaves-cache-path"`
-	AssertionPostingIntervalSeconds     uint64   `koanf:"assertion-posting-interval-seconds"`
-	AssertionScanningIntervalSeconds    uint64   `koanf:"assertion-scanning-interval-seconds"`
+	Enable bool   `koanf:"enable"`
+	Mode   string `koanf:"mode"`
+	// The height constants at each challenge level for the BOLD challenge manager.
+	BlockChallengeLeafHeight uint64 `koanf:"block-challenge-leaf-height"`
+	BigStepLeafHeight        uint64 `koanf:"big-step-leaf-height"`
+	SmallStepLeafHeight      uint64 `koanf:"small-step-leaf-height"`
+	// Number of big step challenges in the BOLD protocol.
+	NumBigSteps uint64 `koanf:"num-big-steps"`
+	// A name identifier for the validator for cosmetic purposes.
+	ValidatorName string `koanf:"validator-name"`
+	// Path to a filesystem directory that will cache machine hashes for BOLD.
+	MachineLeavesCachePath string `koanf:"machine-leaves-cache-path"`
+	// How often to post assertions onchain.
+	AssertionPostingIntervalSeconds uint64 `koanf:"assertion-posting-interval-seconds"`
+	// How often to scan for newly created assertions onchain.
+	AssertionScanningIntervalSeconds uint64 `koanf:"assertion-scanning-interval-seconds"`
+	// How often to confirm assertions onchain.
 	AssertionConfirmingIntervalSeconds  uint64   `koanf:"assertion-confirming-interval-seconds"`
-	EdgeTrackerWakeIntervalSeconds      uint64   `koanf:"edge-tracker-wake-interval-seconds"`
 	API                                 bool     `koanf:"api"`
 	APIHost                             string   `koanf:"api-host"`
 	APIPort                             uint16   `koanf:"api-port"`
@@ -62,16 +68,15 @@ type BoldConfig struct {
 var DefaultBoldConfig = BoldConfig{
 	Enable:                              false,
 	Mode:                                "make-mode",
-	BlockChallengeLeafHeight:            1 << 5,
-	BigStepLeafHeight:                   1 << 8,
-	SmallStepLeafHeight:                 1 << 10,
-	NumBigSteps:                         3,
+	BlockChallengeLeafHeight:            1 << 26,
+	BigStepLeafHeight:                   1 << 23,
+	SmallStepLeafHeight:                 1 << 19,
+	NumBigSteps:                         1,
 	ValidatorName:                       "default-validator",
 	MachineLeavesCachePath:              "/tmp/machine-leaves-cache",
-	AssertionPostingIntervalSeconds:     30,
-	AssertionScanningIntervalSeconds:    30,
-	AssertionConfirmingIntervalSeconds:  60,
-	EdgeTrackerWakeIntervalSeconds:      1,
+	AssertionPostingIntervalSeconds:     900, // Every 15 minutes.
+	AssertionScanningIntervalSeconds:    60,  // Every minute.
+	AssertionConfirmingIntervalSeconds:  60,  // Every minute.
 	API:                                 false,
 	APIHost:                             "127.0.0.1",
 	APIPort:                             9393,
@@ -91,7 +96,6 @@ func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".assertion-posting-interval-seconds", DefaultBoldConfig.AssertionPostingIntervalSeconds, "assertion posting interval")
 	f.Uint64(prefix+".assertion-scanning-interval-seconds", DefaultBoldConfig.AssertionScanningIntervalSeconds, "scan assertion interval")
 	f.Uint64(prefix+".assertion-confirming-interval-seconds", DefaultBoldConfig.AssertionConfirmingIntervalSeconds, "confirm assertion interval")
-	f.Uint64(prefix+".edge-tracker-wake-interval-seconds", DefaultBoldConfig.EdgeTrackerWakeIntervalSeconds, "edge act interval")
 	f.Bool(prefix+".api", DefaultBoldConfig.API, "enable api")
 	f.String(prefix+".api-host", DefaultBoldConfig.APIHost, "bold api host")
 	f.Uint16(prefix+".api-port", DefaultBoldConfig.APIPort, "bold api port")
@@ -103,7 +107,7 @@ func (c *BoldConfig) Validate() error {
 	return nil
 }
 
-type StateManager struct {
+type BOLDStateProvider struct {
 	validator            *StatelessBlockValidator
 	historyCache         challengecache.HistoryCommitmentCacher
 	challengeLeafHeights []l2stateprovider.Height
@@ -111,14 +115,14 @@ type StateManager struct {
 	sync.RWMutex
 }
 
-func NewStateManager(
+func NewBOLDStateProvider(
 	val *StatelessBlockValidator,
 	cacheBaseDir string,
 	challengeLeafHeights []l2stateprovider.Height,
 	validatorName string,
-) (*StateManager, error) {
+) (*BOLDStateProvider, error) {
 	historyCache := challengecache.New(cacheBaseDir)
-	sm := &StateManager{
+	sm := &BOLDStateProvider{
 		validator:            val,
 		historyCache:         historyCache,
 		challengeLeafHeights: challengeLeafHeights,
@@ -130,7 +134,7 @@ func NewStateManager(
 // Produces the L2 execution state to assert to after the previous assertion state.
 // Returns either the state at the batch count maxInboxCount or the state maxNumberOfBlocks after previousBlockHash,
 // whichever is an earlier state. If previousBlockHash is zero, this function simply returns the state at maxInboxCount.
-func (s *StateManager) ExecutionStateAfterPreviousState(
+func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 	ctx context.Context,
 	maxInboxCount uint64,
 	previousGlobalState *protocol.GoGlobalState,
@@ -199,7 +203,7 @@ func (s *StateManager) ExecutionStateAfterPreviousState(
 }
 
 // messageCountFromGlobalState returns the corresponding message count of a global state, assuming that gs is a valid global state.
-func (s *StateManager) messageCountFromGlobalState(ctx context.Context, gs protocol.GoGlobalState) (arbutil.MessageIndex, error) {
+func (s *BOLDStateProvider) messageCountFromGlobalState(_ context.Context, gs protocol.GoGlobalState) (arbutil.MessageIndex, error) {
 	// Start by getting the message count at the start of the batch
 	var batchMessageCount arbutil.MessageIndex
 	if batchMessageCount != 0 {
@@ -213,7 +217,7 @@ func (s *StateManager) messageCountFromGlobalState(ctx context.Context, gs proto
 	return batchMessageCount + arbutil.MessageIndex(gs.PosInBatch), nil
 }
 
-func (s *StateManager) StatesInBatchRange(
+func (s *BOLDStateProvider) StatesInBatchRange(
 	fromHeight,
 	toHeight l2stateprovider.Height,
 	fromBatch,
@@ -311,7 +315,7 @@ func machineHash(gs validator.GoGlobalState) common.Hash {
 	return crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
 }
 
-func (s *StateManager) findGlobalStateFromMessageCountAndBatch(count arbutil.MessageIndex, batchIndex l2stateprovider.Batch) (validator.GoGlobalState, error) {
+func (s *BOLDStateProvider) findGlobalStateFromMessageCountAndBatch(count arbutil.MessageIndex, batchIndex l2stateprovider.Batch) (validator.GoGlobalState, error) {
 	var prevBatchMsgCount arbutil.MessageIndex
 	var err error
 	if batchIndex > 0 {
@@ -338,7 +342,7 @@ func (s *StateManager) findGlobalStateFromMessageCountAndBatch(count arbutil.Mes
 // L2MessageStatesUpTo Computes a block history commitment from a start L2 message to an end L2 message index
 // and up to a required batch index. The hashes used for this commitment are the machine hashes
 // at each message number.
-func (s *StateManager) L2MessageStatesUpTo(
+func (s *BOLDStateProvider) L2MessageStatesUpTo(
 	_ context.Context,
 	fromHeight l2stateprovider.Height,
 	toHeight option.Option[l2stateprovider.Height],
@@ -360,7 +364,7 @@ func (s *StateManager) L2MessageStatesUpTo(
 }
 
 // CollectMachineHashes Collects a list of machine hashes at a message number based on some configuration parameters.
-func (s *StateManager) CollectMachineHashes(
+func (s *BOLDStateProvider) CollectMachineHashes(
 	ctx context.Context, cfg *l2stateprovider.HashCollectorConfig,
 ) ([]common.Hash, error) {
 	s.Lock()
@@ -392,6 +396,7 @@ func (s *StateManager) CollectMachineHashes(
 	if err != nil {
 		return nil, err
 	}
+	// TODO: Enable Redis streams.
 	execRun, err := s.validator.execSpawners[0].CreateExecutionRun(cfg.WasmModuleRoot, input).Await(ctx)
 	if err != nil {
 		return nil, err
@@ -451,7 +456,7 @@ func ctxWithCheckAlive(ctxIn context.Context, execRun validator.ExecutionRun) (c
 }
 
 // CollectProof Collects osp of at a message number and OpcodeIndex .
-func (s *StateManager) CollectProof(
+func (s *BOLDStateProvider) CollectProof(
 	ctx context.Context,
 	wasmModuleRoot common.Hash,
 	fromBatch l2stateprovider.Batch,

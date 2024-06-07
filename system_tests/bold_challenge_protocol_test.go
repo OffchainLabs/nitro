@@ -170,7 +170,7 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	err = statelessB.Start(newCtx)
 	Require(t, err)
 
-	stateManager, err := staker.NewStateManager(
+	stateManager, err := staker.NewBOLDStateProvider(
 		statelessA,
 		"/tmp/good",
 		[]l2stateprovider.Height{
@@ -184,7 +184,7 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	)
 	Require(t, err)
 
-	stateManagerB, err := staker.NewStateManager(
+	stateManagerB, err := staker.NewBOLDStateProvider(
 		statelessB,
 		"/tmp/evil",
 		[]l2stateprovider.Height{

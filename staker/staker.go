@@ -674,7 +674,7 @@ func (s *Staker) checkAndSwitchToBoldStaker(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	boldManager, err := NewManager(ctx, rollupAddress, auth, s.client, s.statelessBlockValidator, &s.config.Bold, s.wallet.DataPoster())
+	boldManager, err := NewBOLDChallengeManager(ctx, rollupAddress, auth, s.client, s.statelessBlockValidator, &s.config.Bold, s.wallet.DataPoster())
 	if err != nil {
 		return false, err
 	}
