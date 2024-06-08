@@ -13,6 +13,9 @@ import (
 	"path"
 	"path/filepath"
 	"regexp"
+	"strconv"
+	"strings"
+	"syscall"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -43,9 +46,12 @@ type LocalFileStorageService struct {
 
 	legacyLayout flatLayout
 	layout       trieLayout
+
+	// for testing only
+	enableLegacyLayout bool
 }
 
-func NewLocalFileStorageService(dataDir string) (StorageService, error) {
+func NewLocalFileStorageService(dataDir string) (*LocalFileStorageService, error) {
 	if unix.Access(dataDir, unix.W_OK|unix.R_OK) != nil {
 		return nil, fmt.Errorf("couldn't start LocalFileStorageService, directory '%s' must be readable and writeable", dataDir)
 	}
@@ -69,16 +75,29 @@ func (s *LocalFileStorageService) GetByHash(ctx context.Context, key common.Hash
 	return data, nil
 }
 
-func (s *LocalFileStorageService) Put(ctx context.Context, data []byte, timeout uint64) error {
-	logPut("das.LocalFileStorageService.Store", data, timeout, s)
-	fileName := EncodeStorageServiceKey(dastree.Hash(data))
-	finalPath := s.dataDir + "/" + fileName
+func (s *LocalFileStorageService) Put(ctx context.Context, data []byte, expiry uint64) error {
+	// TODO input validation on expiry
+	logPut("das.LocalFileStorageService.Store", data, expiry, s)
+	key := dastree.Hash(data)
+	var batchPath string
+	if !s.enableLegacyLayout {
+		batchPath = s.layout.batchPath(key)
+
+		if s.layout.expiryEnabled {
+			if err := createEmptyFile(s.layout.expiryPath(key, expiry)); err != nil {
+				return fmt.Errorf("Couldn't create by-expiry-path index entry: %w", err)
+			}
+		}
+	} else {
+		batchPath = s.legacyLayout.batchPath(key)
+	}
 
 	// Use a temp file and rename to achieve atomic writes.
-	f, err := os.CreateTemp(s.dataDir, fileName)
+	f, err := os.CreateTemp(path.Dir(batchPath), path.Base(batchPath))
 	if err != nil {
 		return err
 	}
+	defer f.Close()
 	err = f.Chmod(0o600)
 	if err != nil {
 		return err
@@ -87,13 +106,19 @@ func (s *LocalFileStorageService) Put(ctx context.Context, data []byte, timeout 
 	if err != nil {
 		return err
 	}
-	err = f.Close()
-	if err != nil {
-		return err
+
+	if s.enableLegacyLayout {
+		tv := syscall.Timeval{
+			Sec:  int64(expiry - uint64(s.legacyLayout.retention.Seconds())),
+			Usec: 0,
+		}
+		times := []syscall.Timeval{tv, tv}
+		if err = syscall.Utimes(f.Name(), times); err != nil {
+			return err
+		}
 	}
 
-	return os.Rename(f.Name(), finalPath)
-
+	return os.Rename(f.Name(), batchPath)
 }
 
 func (s *LocalFileStorageService) Sync(ctx context.Context) error {
@@ -150,16 +175,12 @@ func listDir(dir string) ([]string, error) {
 	defer d.Close()
 
 	// Read all the directory entries
-	files, err := d.Readdir(-1)
+	files, err := d.Readdirnames(-1)
 	if err != nil {
 		return nil, err
 	}
 
-	var fileNames []string
-	for _, file := range files {
-		fileNames = append(fileNames, file.Name())
-	}
-	return fileNames, nil
+	return files, nil
 }
 
 var hex64Regex = regexp.MustCompile(fmt.Sprintf("^[a-fA-F0-9]{%d}$", common.HashLength*2))
@@ -211,25 +232,26 @@ func createEmptyFile(new string) error {
 	return nil
 }
 
-func migrate(fl flatLayout, tl trieLayout) error {
+func migrate(fl *flatLayout, tl *trieLayout) error {
 	flIt, err := fl.iterateBatches()
 	if err != nil {
 		return err
 	}
 
-	if !tl.migrating {
-		return errors.New("LocalFileStorage already migrated to trieLayout")
+	if err = tl.startMigration(); err != nil {
+		return err
 	}
 
 	migrationStart := time.Now()
-
+	var migrated, skipped, removed int
 	err = func() error {
-		for batch, found, err := flIt.next(); found; batch, found, err = flIt.next() {
+		for batch, err := flIt.next(); err != io.EOF; batch, err = flIt.next() {
 			if err != nil {
 				return err
 			}
 
 			if tl.expiryEnabled && batch.expiry.Before(migrationStart) {
+				skipped++
 				continue // don't migrate expired batches
 			}
 
@@ -241,8 +263,11 @@ func migrate(fl flatLayout, tl trieLayout) error {
 
 			if tl.expiryEnabled {
 				expiryPath := tl.expiryPath(batch.key, uint64(batch.expiry.Unix()))
-				createEmptyFile(expiryPath)
+				if err = createEmptyFile(expiryPath); err != nil {
+					return err
+				}
 			}
+			migrated++
 		}
 
 		return tl.commitMigration()
@@ -251,20 +276,80 @@ func migrate(fl flatLayout, tl trieLayout) error {
 		return fmt.Errorf("error migrating local file store layout, retaining old layout: %w", err)
 	}
 
-	func() {
-		for batch, found, err := flIt.next(); found; batch, found, err = flIt.next() {
-			if err != nil {
-				log.Warn("local file store migration completed, but error cleaning up old layout, files from that layout are now orphaned", "error", err)
-				return
-			}
-			toRemove := fl.batchPath(batch.key)
-			err = os.Remove(toRemove)
-			if err != nil {
-				log.Warn("local file store migration completed, but error cleaning up file from old layout, file is now orphaned", "file", toRemove, "error", err)
-			}
+	flIt, err = fl.iterateBatches()
+	if err != nil {
+		return err
+	}
+	for batch, err := flIt.next(); err != io.EOF; batch, err = flIt.next() {
+		if err != nil {
+			log.Warn("local file store migration completed, but error cleaning up old layout, files from that layout are now orphaned", "error", err)
+			break
 		}
-	}()
+		toRemove := fl.batchPath(batch.key)
+		err = os.Remove(toRemove)
+		if err != nil {
+			log.Warn("local file store migration completed, but error cleaning up file from old layout, file is now orphaned", "file", toRemove, "error", err)
+		}
+		removed++
+	}
 
+	log.Info("Local file store legacy layout migration complete", "migratedFiles", migrated, "skippedExpiredFiles", skipped, "removedFiles", removed)
+
+	return nil
+}
+
+func prune(tl trieLayout, pruneTil time.Time) error {
+	it, err := tl.iterateBatchesByTimestamp(pruneTil)
+	if err != nil {
+		return err
+	}
+	pruned := 0
+	for file, err := it.next(); err != io.EOF; file, err = it.next() {
+		if err != nil {
+			return err
+		}
+		pathByTimestamp := path.Base(file)
+		key, err := DecodeStorageServiceKey(path.Base(pathByTimestamp))
+		if err != nil {
+			return err
+		}
+		pathByHash := tl.batchPath(key)
+		err = recursivelyDeleteUntil(pathByHash, byDataHash)
+		if err != nil {
+			if os.IsNotExist(err) {
+				log.Warn("Couldn't find batch to expire, it may have been previously deleted but its by-expiry-timestamp index entry still exists, trying to clean up the index next", "path", pathByHash, "indexPath", pathByTimestamp, "err", err)
+
+			} else {
+				log.Error("Couldn't prune expired batch, continuing trying to prune others", "path", pathByHash, "err", err)
+				continue
+			}
+
+		}
+		err = recursivelyDeleteUntil(pathByTimestamp, byExpiryTimestamp)
+		if err != nil {
+			log.Error("Couldn't prune expired batch expiry index entry, continuing trying to prune others", "path", pathByHash, "err", err)
+		}
+		pruned++
+	}
+	log.Info("local file store pruned expired batches", "count", pruned)
+	return nil
+}
+
+func recursivelyDeleteUntil(filePath, until string) error {
+	err := os.Remove(filePath)
+	if err != nil {
+		return err
+	}
+
+	for filePath = path.Dir(filePath); path.Base(filePath) != until; filePath = path.Dir(filePath) {
+		err = os.Remove(filePath)
+		if err != nil {
+			if !strings.Contains(err.Error(), "directory not empty") {
+				log.Warn("error cleaning up empty directory when pruning expired batches", "path", filePath, "err", err)
+			}
+			break
+		}
+	}
 	return nil
 }
 
@@ -297,6 +382,10 @@ func (l *flatLayout) batchPath(key common.Hash) string {
 	return filepath.Join(l.root, EncodeStorageServiceKey(key))
 }
 
+type layerFilter func(*[][]string, int) bool
+
+func noopFilter(*[][]string, int) bool { return true }
+
 func (l *flatLayout) iterateBatches() (*flatLayoutIterator, error) {
 	files, err := listDir(l.root)
 	if err != nil {
@@ -308,28 +397,30 @@ func (l *flatLayout) iterateBatches() (*flatLayoutIterator, error) {
 	}, nil
 }
 
-func (i *flatLayoutIterator) next() (batchIdentifier, bool, error) {
+func (i *flatLayoutIterator) next() (batchIdentifier, error) {
 	for len(i.files) > 0 {
 		var f string
 		f, i.files = i.files[0], i.files[1:]
-		path := filepath.Join(i.layout.root, f)
 		if !isStorageServiceKey(f) {
-			log.Warn("Incorrectly named batch file found, ignoring", "file", path)
 			continue
 		}
 		key, err := DecodeStorageServiceKey(f)
-
-		stat, err := os.Stat(f)
 		if err != nil {
-			return batchIdentifier{}, false, err
+			return batchIdentifier{}, err
+		}
+
+		fullPath := i.layout.batchPath(key)
+		stat, err := os.Stat(fullPath)
+		if err != nil {
+			return batchIdentifier{}, err
 		}
 
 		return batchIdentifier{
 			key:    key,
 			expiry: stat.ModTime().Add(i.layout.retention),
-		}, true, nil
+		}, nil
 	}
-	return batchIdentifier{}, false, nil
+	return batchIdentifier{}, io.EOF
 }
 
 const (
@@ -347,11 +438,10 @@ type trieLayout struct {
 }
 
 type trieLayoutIterator struct {
-	firstLevel  []string
-	secondLevel []string
-	files       []string
-
-	layout *trieLayout
+	levels  [][]string
+	filters []layerFilter
+	topDir  string
+	layout  *trieLayout
 }
 
 func (l *trieLayout) batchPath(key common.Hash) string {
@@ -367,7 +457,7 @@ func (l *trieLayout) batchPath(key common.Hash) string {
 	return filepath.Join(l.root, topDir, firstDir, secondDir, encodedKey)
 }
 
-func (l *trieLayout) expiryPath(key common.Hash, expiry uint64) pathParts {
+func (l *trieLayout) expiryPath(key common.Hash, expiry uint64) string {
 	encodedKey := EncodeStorageServiceKey(key)
 	firstDir := fmt.Sprintf("%d", expiry/expiryDivisor)
 	secondDir := fmt.Sprintf("%d", expiry%expiryDivisor)
@@ -383,6 +473,8 @@ func (l *trieLayout) expiryPath(key common.Hash, expiry uint64) pathParts {
 func (l *trieLayout) iterateBatches() (*trieLayoutIterator, error) {
 	var firstLevel, secondLevel, files []string
 	var err error
+
+	// TODO handle stray files that aren't dirs
 
 	firstLevel, err = listDir(filepath.Join(l.root, byDataHash))
 	if err != nil {
@@ -403,61 +495,185 @@ func (l *trieLayout) iterateBatches() (*trieLayoutIterator, error) {
 		}
 	}
 
+	storageKeyFilter := func(layers *[][]string, idx int) bool {
+		return isStorageServiceKey((*layers)[idx][0])
+	}
+
 	return &trieLayoutIterator{
-		firstLevel:  firstLevel,
-		secondLevel: secondLevel,
-		files:       files,
-		layout:      l,
+		levels:  [][]string{firstLevel, secondLevel, files},
+		filters: []layerFilter{noopFilter, noopFilter, storageKeyFilter},
+		topDir:  byDataHash,
+		layout:  l,
 	}, nil
 }
 
-func (i *trieLayout) commitMigration() error {
-	if !i.migrating {
+func (l *trieLayout) iterateBatchesByTimestamp(maxTimestamp time.Time) (*trieLayoutIterator, error) {
+	var firstLevel, secondLevel, files []string
+	var err error
+
+	firstLevel, err = listDir(filepath.Join(l.root, byExpiryTimestamp))
+	if err != nil {
+		return nil, err
+	}
+
+	if len(firstLevel) > 0 {
+		secondLevel, err = listDir(filepath.Join(l.root, byExpiryTimestamp, firstLevel[0]))
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	if len(secondLevel) > 0 {
+		files, err = listDir(filepath.Join(l.root, byExpiryTimestamp, firstLevel[0], secondLevel[0]))
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	beforeUpper := func(layers *[][]string, idx int) bool {
+		num, err := strconv.Atoi((*layers)[idx][0])
+		if err != nil {
+			return false
+		}
+		return int64(num) <= maxTimestamp.Unix()/expiryDivisor
+	}
+	beforeLower := func(layers *[][]string, idx int) bool {
+		num, err := strconv.Atoi((*layers)[idx-1][0] + (*layers)[idx][0])
+		if err != nil {
+			return false
+		}
+		return int64(num) <= maxTimestamp.Unix()
+	}
+	storageKeyFilter := func(layers *[][]string, idx int) bool {
+		return isStorageServiceKey((*layers)[idx][0])
+	}
+
+	return &trieLayoutIterator{
+		levels:  [][]string{firstLevel, secondLevel, files},
+		filters: []layerFilter{beforeUpper, beforeLower, storageKeyFilter},
+		topDir:  byExpiryTimestamp,
+		layout:  l,
+	}, nil
+}
+
+func (l *trieLayout) startMigration() error {
+	// TODO check for existing dirs
+	if !l.migrating {
+		return errors.New("Local file storage already migrated to trieLayout")
+	}
+
+	if err := os.MkdirAll(filepath.Join(l.root, byDataHash+migratingSuffix), 0o700); err != nil {
+		return err
+	}
+
+	if l.expiryEnabled {
+		if err := os.MkdirAll(filepath.Join(l.root, byExpiryTimestamp+migratingSuffix), 0o700); err != nil {
+			return err
+		}
+	}
+	return nil
+
+}
+
+func (l *trieLayout) commitMigration() error {
+	if !l.migrating {
 		return errors.New("already finished migration")
 	}
 
-	oldDir := filepath.Join(i.root, byDataHash+migratingSuffix)
-	newDir := filepath.Join(i.root, byDataHash)
+	removeSuffix := func(prefix string) error {
+		oldDir := filepath.Join(l.root, prefix+migratingSuffix)
+		newDir := filepath.Join(l.root, prefix)
 
-	if err := os.Rename(oldDir, newDir); err != nil {
-		return fmt.Errorf("couldn't rename \"%s\" to \"%s\": %w", oldDir, newDir, err)
+		if err := os.Rename(oldDir, newDir); err != nil {
+			return err // rename error already includes src and dst, no need to wrap
+		}
+		return nil
+	}
+
+	if err := removeSuffix(byDataHash); err != nil {
+		return err
+	}
+
+	if l.expiryEnabled {
+		if err := removeSuffix(byExpiryTimestamp); err != nil {
+			return err
+		}
 	}
 
 	syscall.Sync()
 	return nil
 }
 
-func (i *trieLayoutIterator) next() (string, bool, error) {
-	for len(i.firstLevel) > 0 {
-		for len(i.secondLevel) > 0 {
-			if len(i.files) > 0 {
-				var f string
-				f, i.files = i.files[0], i.files[1:]
-				return filepath.Join(i.layout.root, byDataHash, i.firstLevel[0], i.secondLevel[0], f), true, nil
-			}
-
-			if len(i.secondLevel) <= 1 {
-				return "", false, nil
-			}
-			i.secondLevel = i.secondLevel[1:]
-
-			files, err := listDir(filepath.Join(i.layout.root, byDataHash, i.firstLevel[0], i.secondLevel[0]))
-			if err != nil {
-				return "", false, err
-			}
-			i.files = files
-		}
-
-		if len(i.firstLevel) <= 1 {
-			return "", false, nil
-		}
-		i.firstLevel = i.firstLevel[1:]
-		secondLevel, err := listDir(filepath.Join(i.layout.root, byDataHash, i.firstLevel[0]))
-		if err != nil {
-			return "", false, err
-		}
-		i.secondLevel = secondLevel
+func (it *trieLayoutIterator) next() (string, error) {
+	isLeaf := func(idx int) bool {
+		return idx == len(it.levels)-1
 	}
 
-	return "", false, nil
+	makePathAtLevel := func(idx int) string {
+		pathComponents := make([]string, idx+3)
+		pathComponents[0] = it.layout.root
+		pathComponents[1] = it.topDir
+		for i := 0; i <= idx; i++ {
+			pathComponents[i+2] = it.levels[i][0]
+		}
+		return filepath.Join(pathComponents...)
+	}
+
+	var populateNextLevel func(idx int) error
+	populateNextLevel = func(idx int) error {
+		if isLeaf(idx) || len(it.levels[idx]) == 0 {
+			return nil
+		}
+		nextLevelEntries, err := listDir(makePathAtLevel(idx))
+		if err != nil {
+			return err
+		}
+		it.levels[idx+1] = nextLevelEntries
+		if len(nextLevelEntries) > 0 {
+			return populateNextLevel(idx + 1)
+		}
+		return nil
+	}
+
+	advanceWithinLevel := func(idx int) error {
+		if len(it.levels[idx]) > 1 {
+			it.levels[idx] = it.levels[idx][1:]
+		} else {
+			it.levels[idx] = nil
+		}
+
+		return populateNextLevel(idx)
+	}
+
+	for idx := 0; idx >= 0; {
+		if len(it.levels[idx]) == 0 {
+			idx--
+			continue
+		}
+
+		if !it.filters[idx](&it.levels, idx) {
+			if err := advanceWithinLevel(idx); err != nil {
+				return "", err
+			}
+			continue
+		}
+
+		if isLeaf(idx) {
+			path := makePathAtLevel(idx)
+			if err := advanceWithinLevel(idx); err != nil {
+				return "", err
+			}
+			return path, nil
+		}
+
+		if len(it.levels[idx+1]) > 0 {
+			idx++
+			continue
+		}
+
+		if err := advanceWithinLevel(idx); err != nil {
+			return "", err
+		}
+	}
+	return "", io.EOF
 }
