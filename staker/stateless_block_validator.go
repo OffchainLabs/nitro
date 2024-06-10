@@ -231,6 +231,25 @@ func NewStatelessBlockValidator(
 	}, nil
 }
 
+func (v *StatelessBlockValidator) readBatch(ctx context.Context, batchNum uint64) (bool, []byte, common.Hash, arbutil.MessageIndex, error) {
+	batchCount, err := v.inboxTracker.GetBatchCount()
+	if err != nil {
+		return false, nil, common.Hash{}, 0, err
+	}
+	if batchCount <= batchNum {
+		return false, nil, common.Hash{}, 0, nil
+	}
+	batchMsgCount, err := v.inboxTracker.GetBatchMessageCount(batchNum)
+	if err != nil {
+		return false, nil, common.Hash{}, 0, err
+	}
+	batch, batchBlockHash, err := v.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
+	if err != nil {
+		return false, nil, common.Hash{}, 0, err
+	}
+	return true, batch, batchBlockHash, batchMsgCount, nil
+}
+
 func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *validationEntry) error {
 	if e.Stage != ReadyForRecord {
 		return fmt.Errorf("validation entry should be ReadyForRecord, is: %v", e.Stage)
@@ -244,7 +263,27 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		if recording.BlockHash != e.End.BlockHash {
 			return fmt.Errorf("recording failed: pos %d, hash expected %v, got %v", e.Pos, e.End.BlockHash, recording.BlockHash)
 		}
-		e.BatchInfo = append(e.BatchInfo, recording.BatchInfo...)
+		// record any additional batch fetching
+		batchFetcher := func(batchNum uint64) ([]byte, error) {
+			found, data, hash, _, err := v.readBatch(ctx, batchNum)
+			if err != nil {
+				return nil, err
+			}
+			if !found {
+				return nil, errors.New("batch not found")
+			}
+			e.BatchInfo = append(e.BatchInfo, validator.BatchInfo{
+				Number:    batchNum,
+				BlockHash: hash,
+				Data:      data,
+			})
+			return data, nil
+		}
+		e.msg.Message.BatchGasCost = nil
+		err = e.msg.Message.FillInBatchGasCost(batchFetcher)
+		if err != nil {
+			return err
+		}
 
 		if recording.Preimages != nil {
 			e.Preimages[arbutil.Keccak256PreimageType] = recording.Preimages

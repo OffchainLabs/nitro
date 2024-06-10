@@ -9,7 +9,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/validator"
 )
 
 type MessageResult struct {
@@ -21,7 +20,6 @@ type RecordResult struct {
 	Pos       arbutil.MessageIndex
 	BlockHash common.Hash
 	Preimages map[common.Hash][]byte
-	BatchInfo []validator.BatchInfo
 	UserWasms state.UserWasms
 }
 
