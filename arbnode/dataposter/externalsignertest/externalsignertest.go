@@ -98,14 +98,13 @@ func NewServer(t *testing.T) *SignerServer {
 	pool := x509.NewCertPool()
 	pool.AppendCertsFromPEM(clientCert)
 
-	ln, err := net.Listen("tcp", "localhost:0")
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
 		t.Fatalf("Error creating listener: %v", err)
 	}
-	port := strings.Split(ln.Addr().String(), ":")[1]
 
 	httpServer := &http.Server{
-		Addr:              fmt.Sprintf(":%s", port),
+		Addr:              ln.Addr().String(),
 		Handler:           rpcServer,
 		ReadTimeout:       30 * time.Second,
 		ReadHeaderTimeout: 30 * time.Second,
@@ -128,8 +127,7 @@ func NewServer(t *testing.T) *SignerServer {
 }
 
 func (s *SignerServer) URL() string {
-	port := strings.Split(s.Addr, ":")[1]
-	return fmt.Sprintf("https://localhost:%v", port)
+	return fmt.Sprintf("https://%v", s.Addr)
 }
 
 func (s *SignerServer) Start() error {
