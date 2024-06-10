@@ -18,7 +18,6 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -1595,16 +1594,7 @@ func TestWasmStoreRebuilding(t *testing.T) {
 		Fatal(t, "got wrong value")
 	}
 
-	getLatestStateWasmStore := func(b *core.BlockChain) ethdb.KeyValueStore {
-		latestHeader := b.CurrentBlock()
-		latestState, err := b.StateAt(latestHeader.Root)
-		if err != nil {
-			Require(t, err)
-		}
-		return latestState.Database().WasmStore()
-	}
-
-	wasmDb := getLatestStateWasmStore(nodeB.ExecNode.Backend.ArbInterface().BlockChain())
+	wasmDb := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
 
 	storeMap, err := createMapFromDb(wasmDb)
 	Require(t, err)
@@ -1625,7 +1615,7 @@ func TestWasmStoreRebuilding(t *testing.T) {
 	nodeB, cleanupB = builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack})
 	bc := nodeB.ExecNode.Backend.ArbInterface().BlockChain()
 
-	wasmDbAfterDelete := getLatestStateWasmStore(bc)
+	wasmDbAfterDelete := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
 	storeMapAfterDelete, err := createMapFromDb(wasmDbAfterDelete)
 	Require(t, err)
 	if len(storeMapAfterDelete) != 0 {
@@ -1634,9 +1624,9 @@ func TestWasmStoreRebuilding(t *testing.T) {
 
 	// Start rebuilding and wait for it to finish
 	log.Info("starting rebuilding of wasm store")
-	Require(t, gethexec.RebuildWasmStore(ctx, wasmDbAfterDelete, bc, common.Hash{}, bc.CurrentBlock().Hash()))
+	Require(t, gethexec.RebuildWasmStore(ctx, wasmDbAfterDelete, nodeB.ExecNode.ChainDB, nodeB.ExecNode.ConfigFetcher().RPC.MaxRecreateStateDepth, bc, common.Hash{}, bc.CurrentBlock().Hash()))
 
-	wasmDbAfterRebuild := getLatestStateWasmStore(bc)
+	wasmDbAfterRebuild := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
 
 	// Before comparing, check if rebuilding was set to done and then delete the keys that are used to track rebuilding status
 	status, err := gethexec.ReadFromKeyValueStore[common.Hash](wasmDbAfterRebuild, gethexec.RebuildingPositionKey)
@@ -1665,10 +1655,4 @@ func TestWasmStoreRebuilding(t *testing.T) {
 	}
 
 	cleanupB()
-	dirContents, err = os.ReadDir(wasmPath)
-	Require(t, err)
-	if len(dirContents) == 0 {
-		Fatal(t, "not contents found before delete")
-	}
-	os.RemoveAll(wasmPath)
 }

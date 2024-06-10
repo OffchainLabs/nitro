@@ -346,7 +346,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 							startBlockHash = latestBlock.Hash()
 						}
 						log.Info("Starting or continuing rebuilding of wasm store", "codeHash", position, "startBlockHash", startBlockHash)
-						if err := gethexec.RebuildWasmStore(ctx, wasmDb, l2BlockChain, position, startBlockHash); err != nil {
+						if err := gethexec.RebuildWasmStore(ctx, wasmDb, chainDb, config.Execution.RPC.MaxRecreateStateDepth, l2BlockChain, position, startBlockHash); err != nil {
 							return nil, nil, fmt.Errorf("error rebuilding of wasm store: %w", err)
 						}
 					}

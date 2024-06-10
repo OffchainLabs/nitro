@@ -6,15 +6,14 @@ package gethexec
 import (
 	"bytes"
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
+	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -55,37 +54,21 @@ func WriteToKeyValueStore[T any](store ethdb.KeyValueStore, key []byte, val T) e
 // saving it to wasm store if it doesnt already exists. When errored it logs them and silently returns
 //
 // It stores the status of rebuilding to wasm store by updating the codehash (of the latest sucessfully checked contract) in
-// RebuildingPositionKey every 50 checks.
+// RebuildingPositionKey after every second of work.
 //
 // It also stores a special value that is only set once when rebuilding commenced in RebuildingStartBlockHashKey as the block
 // time of the latest block when rebuilding was first called, this is used to avoid recomputing of assembly and module of
 // contracts that were created after rebuilding commenced since they would anyway already be added during sync.
-func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, l2Blockchain *core.BlockChain, position, rebuildingStartBlockHash common.Hash) error {
+func RebuildWasmStore(ctx context.Context, wasmStore ethdb.KeyValueStore, chainDb ethdb.Database, maxRecreateStateDepth int64, l2Blockchain *core.BlockChain, position, rebuildingStartBlockHash common.Hash) error {
 	var err error
 	var stateDb *state.StateDB
-	tryLiveStateFallBackStateAt := func(header *types.Header) (*state.StateDB, error) {
-		if header == nil {
-			return nil, errors.New("trying to get state for a nil header")
-		}
-		if header.Root != (common.Hash{}) {
-			if err := l2Blockchain.TrieDB().Reference(header.Root, common.Hash{}); err != nil {
-				return l2Blockchain.StateAt(header.Root)
-			}
-		}
-		liveState, err := state.New(header.Root, l2Blockchain.StateCache(), nil)
-		if err != nil {
-			log.Info("Failed to get live state during rebuilding wasm store, falling back to StateAt", "err", err)
-			return l2Blockchain.StateAt(header.Root)
-		}
-		return liveState, nil
-	}
 	latestHeader := l2Blockchain.CurrentBlock()
 	// Attempt to get state at the start block when rebuilding commenced, if not available (in case of non-archival nodes) use latest state
 	rebuildingStartHeader := l2Blockchain.GetHeaderByHash(rebuildingStartBlockHash)
-	stateDb, err = tryLiveStateFallBackStateAt(rebuildingStartHeader)
+	stateDb, _, err = arbitrum.StateAndHeaderFromHeader(ctx, chainDb, l2Blockchain, maxRecreateStateDepth, rebuildingStartHeader, nil)
 	if err != nil {
 		log.Info("Error getting state at start block of rebuilding wasm store, attempting rebuilding with latest state", "err", err)
-		stateDb, err = tryLiveStateFallBackStateAt(latestHeader)
+		stateDb, _, err = arbitrum.StateAndHeaderFromHeader(ctx, chainDb, l2Blockchain, maxRecreateStateDepth, latestHeader, nil)
 		if err != nil {
 			return fmt.Errorf("error getting state at latest block, aborting rebuilding: %w", err)
 		}
