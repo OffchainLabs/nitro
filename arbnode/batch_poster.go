@@ -130,6 +130,9 @@ const (
 type BatchPosterConfig struct {
 	Enable                             bool `koanf:"enable"`
 	DisableDapFallbackStoreDataOnChain bool `koanf:"disable-dap-fallback-store-data-on-chain" reload:"hot"`
+	// TODO (Diego) rework the 3 configs below once unified writer interface is in
+	DisableCelestiaFallbackStoreDataOnChain bool `koanf:"disable-celestia-fallback-store-data-on-chain" reload:"hot"`
+	DisableCelestiaFallbackStoreDataOnDAS   bool `koanf:"disable-celestia-fallback-store-data-on-das" reload:"hot"`
 	// Max batch size.
 	MaxSize int `koanf:"max-size" reload:"hot"`
 	// Maximum 4844 blob enabled batch size.
@@ -278,6 +281,7 @@ type BatchPosterOpts struct {
 	Config        BatchPosterConfigFetcher
 	DeployInfo    *chaininfo.RollupAddresses
 	TransactOpts  *bind.TransactOpts
+	// Todo (change to support multiple writers)
 	DAPWriter     daprovider.Writer
 	ParentChainID *big.Int
 }

@@ -98,6 +98,10 @@ func (m *IncorrectMachine) ProveNextStep() []byte {
 	return m.inner.ProveNextStep()
 }
 
+func (m *IncorrectMachine) GetNextOpcode() uint16 {
+	return m.inner.GetNextOpcode()
+}
+
 func (m *IncorrectMachine) Freeze() {
 	m.inner.Freeze()
 }

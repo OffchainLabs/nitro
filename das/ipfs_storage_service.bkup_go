@@ -2,6 +2,10 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 // IPFS DAS backend.
+// Copyright 2022, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
+// IPFS DAS backend.
 // It takes advantage of IPFS' content addressing scheme to be able to directly retrieve
 // the batches from IPFS using their root hash from the L1 sequencer inbox contract.
 
@@ -20,9 +24,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
+	iface "github.com/ipfs/boxo/coreiface"
+	"github.com/ipfs/boxo/coreiface/options"
 	"github.com/ipfs/go-cid"
-	coreiface "github.com/ipfs/interface-go-ipfs-core"
-	"github.com/ipfs/interface-go-ipfs-core/options"
 	"github.com/ipfs/interface-go-ipfs-core/path"
 	"github.com/multiformats/go-multihash"
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
@@ -69,7 +73,7 @@ func IpfsStorageServiceConfigAddOptions(prefix string, f *flag.FlagSet) {
 type IpfsStorageService struct {
 	config     IpfsStorageServiceConfig
 	ipfsHelper *ipfshelper.IpfsHelper
-	ipfsApi    coreiface.CoreAPI
+	ipfsApi    iface.CoreAPI
 }
 
 func NewIpfsStorageService(ctx context.Context, config IpfsStorageServiceConfig) (*IpfsStorageService, error) {
