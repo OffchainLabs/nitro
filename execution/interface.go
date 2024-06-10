@@ -75,7 +75,6 @@ type FullExecutionClient interface {
 // not implemented in execution, used as input
 // BatchFetcher is required for any execution node
 type BatchFetcher interface {
-	FetchBatch(ctx context.Context, batchNum uint64) ([]byte, common.Hash, error)
 	FindInboxBatchContainingMessage(message arbutil.MessageIndex) (uint64, bool, error)
 	GetBatchParentChainBlock(seqNum uint64) (uint64, error)
 }

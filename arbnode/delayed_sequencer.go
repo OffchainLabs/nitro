@@ -26,6 +26,7 @@ type DelayedSequencer struct {
 	l1Reader                 *headerreader.HeaderReader
 	bridge                   *DelayedBridge
 	inbox                    *InboxTracker
+	reader                   *InboxReader
 	exec                     execution.ExecutionSequencer
 	coordinator              *SeqCoordinator
 	waitingForFinalizedBlock uint64
@@ -68,6 +69,7 @@ func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReade
 		l1Reader:    l1Reader,
 		bridge:      reader.DelayedBridge(),
 		inbox:       reader.Tracker(),
+		reader:      reader,
 		coordinator: coordinator,
 		exec:        exec,
 		config:      config,
@@ -165,6 +167,13 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 			}
 		}
 		lastDelayedAcc = acc
+		err = msg.FillInBatchGasCost(func(batchNum uint64) ([]byte, error) {
+			data, _, err := d.reader.GetSequencerMessageBytes(ctx, batchNum)
+			return data, err
+		})
+		if err != nil {
+			return err
+		}
 		messages = append(messages, msg)
 		pos++
 	}
