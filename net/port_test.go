@@ -1,23 +1,24 @@
 package net
 
 import (
+	"net"
 	"testing"
 )
 
-func TestFreeTCPPort(t *testing.T) {
-	aPort, err := FreeTCPPort()
+func TestFreeTCPPortListener(t *testing.T) {
+	aListener, err := FreeTCPPortListener()
 	if err != nil {
 		t.Fatal(err)
 	}
-	bPort, err := FreeTCPPort()
+	bListener, err := FreeTCPPortListener()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if aPort == bPort {
-		t.Errorf("FreeTCPPort() got same port: %v, %v", aPort, bPort)
+	if aListener.Addr().(*net.TCPAddr).Port == bListener.Addr().(*net.TCPAddr).Port {
+		t.Errorf("FreeTCPPortListener() got same port: %v, %v", aListener, bListener)
 	}
-	if aPort == 0 || bPort == 0 {
-		t.Errorf("FreeTCPPort() got port 0")
+	if aListener.Addr().(*net.TCPAddr).Port == 0 || bListener.Addr().(*net.TCPAddr).Port == 0 {
+		t.Errorf("FreeTCPPortListener() got port 0")
 	}
 }
 
@@ -26,12 +27,12 @@ func TestConcurrentFreeTCPPort(t *testing.T) {
 	errs := make(chan error, 100)
 	for i := 0; i < 100; i++ {
 		go func() {
-			port, err := FreeTCPPort()
+			l, err := FreeTCPPortListener()
 			if err != nil {
 				errs <- err
 				return
 			}
-			ports <- port
+			ports <- l.Addr().(*net.TCPAddr).Port
 		}()
 	}
 	seen := make(map[int]bool)
