@@ -22,6 +22,8 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsigner"
+
+	nnet "github.com/offchainlabs/nitro/net"
 )
 
 var (
@@ -40,6 +42,7 @@ type CertAbsPaths struct {
 type SignerServer struct {
 	*http.Server
 	*SignerAPI
+	l net.Listener
 }
 
 func basePath() (string, error) {
@@ -98,12 +101,9 @@ func NewServer(t *testing.T) *SignerServer {
 	pool := x509.NewCertPool()
 	pool.AppendCertsFromPEM(clientCert)
 
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	ln, err := nnet.FreeTCPPortListener()
 	if err != nil {
-		t.Fatalf("Error creating listener: %v", err)
-	}
-	if err := ln.Close(); err != nil {
-		t.Fatalf("Error closing the listener: %v", err)
+		t.Fatalf("Error getting a listener on a free TCP port: %v", err)
 	}
 
 	httpServer := &http.Server{
@@ -121,12 +121,16 @@ func NewServer(t *testing.T) *SignerServer {
 	}
 
 	t.Cleanup(func() {
-		if err := httpServer.Close(); err != nil {
+		if err := httpServer.Close(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			t.Fatalf("Error shutting down http server: %v", err)
+		}
+		// Explicitly close the listner in case the server was never started.
+		if err := ln.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			t.Fatalf("Error closing listener: %v", err)
 		}
 	})
 
-	return &SignerServer{httpServer, s}
+	return &SignerServer{httpServer, s, ln}
 }
 
 // URL returns the URL of the signer server.
@@ -143,7 +147,7 @@ func (s *SignerServer) Start() error {
 	if err != nil {
 		return err
 	}
-	if err := s.ListenAndServeTLS(cp.ServerCert, cp.ServerKey); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if err := s.ServeTLS(s.l, cp.ServerCert, cp.ServerKey); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return nil
