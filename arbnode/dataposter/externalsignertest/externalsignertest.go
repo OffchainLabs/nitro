@@ -102,6 +102,9 @@ func NewServer(t *testing.T) *SignerServer {
 	if err != nil {
 		t.Fatalf("Error creating listener: %v", err)
 	}
+	if err := ln.Close(); err != nil {
+		t.Fatalf("Error closing the listener: %v", err)
+	}
 
 	httpServer := &http.Server{
 		Addr:              ln.Addr().String(),
@@ -126,8 +129,13 @@ func NewServer(t *testing.T) *SignerServer {
 	return &SignerServer{httpServer, s}
 }
 
+// URL returns the URL of the signer server.
+//
+// Note: The server must return "localhost" for the hostname part of
+// the URL to match the expectations from the TLS certificate.
 func (s *SignerServer) URL() string {
-	return fmt.Sprintf("https://%v", s.Addr)
+	port := strings.Split(s.Addr, ":")[1]
+	return fmt.Sprintf("https://localhost:%s", port)
 }
 
 func (s *SignerServer) Start() error {
