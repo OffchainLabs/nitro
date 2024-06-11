@@ -354,6 +354,7 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context) (*arbnode.Node, *
 
 	stateManager, err := staker.NewBOLDStateProvider(
 		stateless,
+		l2node.BlockValidator,
 		"",
 		[]l2stateprovider.Height{
 			l2stateprovider.Height(blockChallengeLeafHeight),

@@ -39,6 +39,7 @@ var (
 )
 
 type BOLDStateProvider struct {
+	blockValidator       *BlockValidator
 	validator            *StatelessBlockValidator
 	historyCache         challengecache.HistoryCommitmentCacher
 	challengeLeafHeights []l2stateprovider.Height
@@ -48,6 +49,7 @@ type BOLDStateProvider struct {
 
 func NewBOLDStateProvider(
 	val *StatelessBlockValidator,
+	blockVal *BlockValidator,
 	cacheBaseDir string,
 	challengeLeafHeights []l2stateprovider.Height,
 	validatorName string,
@@ -55,6 +57,7 @@ func NewBOLDStateProvider(
 	historyCache := challengecache.New(cacheBaseDir)
 	sm := &BOLDStateProvider{
 		validator:            val,
+		blockValidator:       blockVal,
 		historyCache:         historyCache,
 		challengeLeafHeights: challengeLeafHeights,
 		validatorName:        validatorName,
@@ -65,6 +68,7 @@ func NewBOLDStateProvider(
 // Produces the L2 execution state to assert to after the previous assertion state.
 // Returns either the state at the batch count maxInboxCount or the state maxNumberOfBlocks after previousBlockHash,
 // whichever is an earlier state. If previousBlockHash is zero, this function simply returns the state at maxInboxCount.
+// TODO: Check the block validator has validated the execution state we are proposing.
 func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 	ctx context.Context,
 	maxInboxCount uint64,
@@ -95,6 +99,11 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 				return nil, err
 			}
 		}
+	}
+	// Should only propose an assertion that has been validated by the block validator.
+	latestValidatedMessageIndex := s.blockValidator.GetValidated()
+	if messageCount > latestValidatedMessageIndex {
+		return nil, l2stateprovider.ErrChainCatchingUp
 	}
 	globalState, err := s.findGlobalStateFromMessageCountAndBatch(messageCount, l2stateprovider.Batch(batchIndex))
 	if err != nil {

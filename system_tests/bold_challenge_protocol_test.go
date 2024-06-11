@@ -59,7 +59,7 @@ import (
 // 32 Mb of state roots in memory at once.
 var (
 	blockChallengeLeafHeight     = uint64(1 << 5) // 32
-	bigStepChallengeLeafHeight   = uint64(1 << 11)
+	bigStepChallengeLeafHeight   = uint64(1 << 10)
 	smallStepChallengeLeafHeight = uint64(1 << 10)
 )
 
@@ -172,6 +172,7 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 
 	stateManager, err := staker.NewBOLDStateProvider(
 		statelessA,
+		l2nodeA.BlockValidator,
 		"/tmp/good",
 		[]l2stateprovider.Height{
 			l2stateprovider.Height(blockChallengeLeafHeight),
@@ -186,6 +187,7 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 
 	stateManagerB, err := staker.NewBOLDStateProvider(
 		statelessB,
+		l2nodeB.BlockValidator,
 		"/tmp/evil",
 		[]l2stateprovider.Height{
 			l2stateprovider.Height(blockChallengeLeafHeight),
