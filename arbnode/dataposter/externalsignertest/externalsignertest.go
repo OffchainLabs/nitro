@@ -22,8 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsigner"
-
-	nnet "github.com/offchainlabs/nitro/net"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 var (
@@ -42,7 +41,7 @@ type CertAbsPaths struct {
 type SignerServer struct {
 	*http.Server
 	*SignerAPI
-	l net.Listener
+	listener net.Listener
 }
 
 func basePath() (string, error) {
@@ -101,7 +100,7 @@ func NewServer(t *testing.T) *SignerServer {
 	pool := x509.NewCertPool()
 	pool.AppendCertsFromPEM(clientCert)
 
-	ln, err := nnet.FreeTCPPortListener()
+	ln, err := testhelpers.FreeTCPPortListener()
 	if err != nil {
 		t.Fatalf("Error getting a listener on a free TCP port: %v", err)
 	}
@@ -147,7 +146,7 @@ func (s *SignerServer) Start() error {
 	if err != nil {
 		return err
 	}
-	if err := s.ServeTLS(s.l, cp.ServerCert, cp.ServerKey); err != nil && !errors.Is(err, http.ErrServerClosed) {
+	if err := s.ServeTLS(s.listener, cp.ServerCert, cp.ServerKey); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
 	return nil

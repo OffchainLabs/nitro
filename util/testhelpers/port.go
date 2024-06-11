@@ -1,5 +1,4 @@
-// Package net provides facilities for working with network connections.
-package net
+package testhelpers
 
 import (
 	"net"
