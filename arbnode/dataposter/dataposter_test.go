@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"net/http"
 	"testing"
 	"time"
 
@@ -14,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/google/go-cmp/cmp"
@@ -58,14 +58,14 @@ func TestParseReplacementTimes(t *testing.T) {
 	}
 }
 
-func signerTestCfg(addr common.Address) (*ExternalSignerCfg, error) {
+func signerTestCfg(addr common.Address, url string) (*ExternalSignerCfg, error) {
 	cp, err := externalsignertest.CertPaths()
 	if err != nil {
 		return nil, fmt.Errorf("getting certificates path: %w", err)
 	}
 	return &ExternalSignerCfg{
 		Address:          common.Bytes2Hex(addr.Bytes()),
-		URL:              externalsignertest.SignerURL,
+		URL:              url,
 		Method:           externalsignertest.SignerMethod,
 		RootCA:           cp.ServerCert,
 		ClientCert:       cp.ClientCert,
@@ -106,15 +106,14 @@ var (
 )
 
 func TestExternalSigner(t *testing.T) {
-	httpSrv, srv := externalsignertest.NewServer(t)
-	cert, key := "./testdata/localhost.crt", "./testdata/localhost.key"
+	srv := externalsignertest.NewServer(t)
 	go func() {
-		if err := httpSrv.ListenAndServeTLS(cert, key); err != nil && err != http.ErrServerClosed {
-			t.Errorf("ListenAndServeTLS() unexpected error:  %v", err)
+		if err := srv.Start(); err != nil {
+			log.Error("Failed to start external signer server:", err)
 			return
 		}
 	}()
-	signerCfg, err := signerTestCfg(srv.Address)
+	signerCfg, err := signerTestCfg(srv.Address, srv.URL())
 	if err != nil {
 		t.Fatalf("Error getting signer test config: %v", err)
 	}

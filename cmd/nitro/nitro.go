@@ -966,6 +966,7 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 	}
 	chainDefaults := map[string]interface{}{
 		"persistent.chain": chainInfo.ChainName,
+		"chain.name":       chainInfo.ChainName,
 		"chain.id":         chainInfo.ChainConfig.ChainID.Uint64(),
 		"parent-chain.id":  chainInfo.ParentChainId,
 	}
