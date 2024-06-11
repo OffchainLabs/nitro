@@ -192,7 +192,9 @@ func (m *MultiProtocolStaker) checkAndSwitchToBoldStaker(ctx context.Context) (b
 	if err != nil {
 		return false, err
 	}
-	boldStaker.Initialize(ctx)
+	if err = boldStaker.Initialize(ctx); err != nil {
+		return false, err
+	}
 	boldStaker.Start(ctx)
 	return true, nil
 }
