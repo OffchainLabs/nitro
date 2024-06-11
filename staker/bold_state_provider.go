@@ -39,7 +39,6 @@ var (
 )
 
 type BOLDStateProvider struct {
-	blockValidator       *BlockValidator
 	validator            *StatelessBlockValidator
 	historyCache         challengecache.HistoryCommitmentCacher
 	challengeLeafHeights []l2stateprovider.Height
@@ -49,7 +48,6 @@ type BOLDStateProvider struct {
 
 func NewBOLDStateProvider(
 	val *StatelessBlockValidator,
-	blockVal *BlockValidator,
 	cacheBaseDir string,
 	challengeLeafHeights []l2stateprovider.Height,
 	validatorName string,
@@ -57,7 +55,6 @@ func NewBOLDStateProvider(
 	historyCache := challengecache.New(cacheBaseDir)
 	sm := &BOLDStateProvider{
 		validator:            val,
-		blockValidator:       blockVal,
 		historyCache:         historyCache,
 		challengeLeafHeights: challengeLeafHeights,
 		validatorName:        validatorName,
@@ -100,11 +97,8 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 			}
 		}
 	}
-	// Should only propose an assertion that has been validated by the block validator.
-	latestValidatedMessageIndex := s.blockValidator.GetValidated()
-	if messageCount > latestValidatedMessageIndex {
-		return nil, l2stateprovider.ErrChainCatchingUp
-	}
+	// TODO: Should only propose an assertion that has been validated by the block validator.
+	// Is it safe to just use the stateless block validator here?
 	globalState, err := s.findGlobalStateFromMessageCountAndBatch(messageCount, l2stateprovider.Batch(batchIndex))
 	if err != nil {
 		return nil, err

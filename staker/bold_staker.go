@@ -117,19 +117,17 @@ func newBOLDStaker(
 	callOpts bind.CallOpts,
 	txOpts *bind.TransactOpts,
 	client arbutil.L1Interface,
-	blockValidator *BlockValidator,
 	statelessBlockValidator *StatelessBlockValidator,
 	config *BoldConfig,
 	dataPoster *dataposter.DataPoster,
 	wallet ValidatorWalletInterface,
 ) (*BOLDStaker, error) {
-	manager, err := newBOLDChallengeManager(ctx, rollupAddress, txOpts, client, blockValidator, statelessBlockValidator, config, dataPoster)
+	manager, err := newBOLDChallengeManager(ctx, rollupAddress, txOpts, client, statelessBlockValidator, config, dataPoster)
 	if err != nil {
 		return nil, err
 	}
 	return &BOLDStaker{
 		chalManager:     manager,
-		blockValidator:  blockValidator,
 		rollupAddress:   rollupAddress,
 		client:          client,
 		callOpts:        callOpts,
@@ -218,7 +216,6 @@ func newBOLDChallengeManager(
 	rollupAddress common.Address,
 	txOpts *bind.TransactOpts,
 	client arbutil.L1Interface,
-	blockValidator *BlockValidator,
 	statelessBlockValidator *StatelessBlockValidator,
 	config *BoldConfig,
 	dataPoster *dataposter.DataPoster,
@@ -244,7 +241,6 @@ func newBOLDChallengeManager(
 	// execution states for assertions, history commitments for machine execution, and one step proofs.
 	stateProvider, err := NewBOLDStateProvider(
 		statelessBlockValidator,
-		blockValidator,
 		config.MachineLeavesCachePath,
 		// Specify the height constants needed for the state provider.
 		// TODO: Fetch these from the smart contract instead.

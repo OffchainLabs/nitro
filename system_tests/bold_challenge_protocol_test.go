@@ -172,7 +172,6 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 
 	stateManager, err := staker.NewBOLDStateProvider(
 		statelessA,
-		l2nodeA.BlockValidator,
 		"/tmp/good",
 		[]l2stateprovider.Height{
 			l2stateprovider.Height(blockChallengeLeafHeight),
@@ -187,7 +186,6 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 
 	stateManagerB, err := staker.NewBOLDStateProvider(
 		statelessB,
-		l2nodeB.BlockValidator,
 		"/tmp/evil",
 		[]l2stateprovider.Height{
 			l2stateprovider.Height(blockChallengeLeafHeight),
