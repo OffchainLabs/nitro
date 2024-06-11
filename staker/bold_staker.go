@@ -175,7 +175,7 @@ func (b *BOLDStaker) Initialize(ctx context.Context) error {
 
 func (b *BOLDStaker) Start(ctxIn context.Context) {
 	b.StopWaiter.Start(ctxIn, b)
-	b.chalManager.StopWaiter.Start(ctxIn, b)
+	b.chalManager.Start(ctxIn)
 }
 
 func (b *BOLDStaker) updateBlockValidatorModuleRoot(ctx context.Context) error {
