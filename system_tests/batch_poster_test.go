@@ -8,7 +8,6 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math/big"
-	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -62,14 +61,14 @@ func addNewBatchPoster(ctx context.Context, t *testing.T, builder *NodeBuilder, 
 	}
 }
 
-func externalSignerTestCfg(addr common.Address) (*dataposter.ExternalSignerCfg, error) {
+func externalSignerTestCfg(addr common.Address, url string) (*dataposter.ExternalSignerCfg, error) {
 	cp, err := externalsignertest.CertPaths()
 	if err != nil {
 		return nil, fmt.Errorf("getting certificates path: %w", err)
 	}
 	return &dataposter.ExternalSignerCfg{
 		Address:          common.Bytes2Hex(addr.Bytes()),
-		URL:              externalsignertest.SignerURL,
+		URL:              url,
 		Method:           externalsignertest.SignerMethod,
 		RootCA:           cp.ServerCert,
 		ClientCert:       cp.ClientCert,
@@ -80,24 +79,13 @@ func externalSignerTestCfg(addr common.Address) (*dataposter.ExternalSignerCfg, 
 func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	httpSrv, srv := externalsignertest.NewServer(t)
-	cp, err := externalsignertest.CertPaths()
-	if err != nil {
-		t.Fatalf("Error getting cert paths: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := httpSrv.Shutdown(ctx); err != nil {
-			t.Fatalf("Error shutting down http server: %v", err)
-		}
-	})
+	srv := externalsignertest.NewServer(t)
 	go func() {
-		log.Debug("Server is listening on port 1234...")
-		if err := httpSrv.ListenAndServeTLS(cp.ServerCert, cp.ServerKey); err != nil && err != http.ErrServerClosed {
-			log.Debug("ListenAndServeTLS() failed", "error", err)
+		if err := srv.Start(); err != nil {
+			log.Error("Failed to start external signer server:", err)
 			return
 		}
 	}()
-
 	var redisUrl string
 	if useRedis {
 		redisUrl = redisutil.CreateTestRedis(ctx, t)
@@ -114,7 +102,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.nodeConfig.BatchPoster.Enable = false
 	builder.nodeConfig.BatchPoster.RedisUrl = redisUrl
-	signerCfg, err := externalSignerTestCfg(srv.Address)
+	signerCfg, err := externalSignerTestCfg(srv.Address, srv.URL())
 	if err != nil {
 		t.Fatalf("Error getting external signer config: %v", err)
 	}
