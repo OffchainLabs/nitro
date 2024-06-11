@@ -341,7 +341,7 @@ func runNodes(ctx context.Context, t *testing.T) (*NodeBuilder, *TestClient, *Bl
 
 	// wait for the builder
 	err = waitForWith(t, ctx, 300*time.Second, 1*time.Second, func() bool {
-		out, err := exec.Command("curl", "http://localhost:41000/availability/block/1", "-L").Output()
+		out, err := exec.Command("curl", "http://localhost:41000/availability/block/100", "-L").Output()
 		if err != nil {
 			log.Warn("retry to check the builder", "err", err)
 			return false
@@ -427,7 +427,7 @@ func TestEspressoE2E(t *testing.T) {
 		Require(t, err)
 		msgCnt = cnt
 		log.Info("waiting for message count", "cnt", msgCnt)
-		return msgCnt > 1
+		return msgCnt > 6
 	})
 	Require(t, err)
 

@@ -15,6 +15,10 @@ github.com/EspressoSystems/espresso-sequencer-go v0.0.17-0.20240531094034-0a7f8d
 github.com/EspressoSystems/espresso-sequencer-go v0.0.17-0.20240531094034-0a7f8d897b54/go.mod h1:BbU8N23RGl45QXSf/bYc8OQ8TG/vlMaPC1GU1acqKmc=
 github.com/EspressoSystems/espresso-sequencer-go v0.0.17 h1:rDuLHee6YWFRmdiwPxQK0cQL4xo89LjMaBaFn3v7HpQ=
 github.com/EspressoSystems/espresso-sequencer-go v0.0.17/go.mod h1:BbU8N23RGl45QXSf/bYc8OQ8TG/vlMaPC1GU1acqKmc=
+github.com/EspressoSystems/espresso-sequencer-go v0.0.18 h1:T2kEjdC8tLQWDeRTEJwd9Pr/JM0wjYCYXDhbkIZivoc=
+github.com/EspressoSystems/espresso-sequencer-go v0.0.18/go.mod h1:BbU8N23RGl45QXSf/bYc8OQ8TG/vlMaPC1GU1acqKmc=
+github.com/EspressoSystems/espresso-sequencer-go v0.0.19-0.20240611085836-ad88cf2450b3 h1:v1FV8D2bQQM6Wuc000FAjwz0a0K3jo4Z/S8e5onx+uI=
+github.com/EspressoSystems/espresso-sequencer-go v0.0.19-0.20240611085836-ad88cf2450b3/go.mod h1:BbU8N23RGl45QXSf/bYc8OQ8TG/vlMaPC1GU1acqKmc=
 github.com/Joker/hpp v1.0.0/go.mod h1:8x5n+M1Hp5hC0g8okX3sR3vFQwynaX/UgSOM9MeBKzY=
 github.com/Knetic/govaluate v3.0.1-0.20171022003610-9aa49832a739+incompatible h1:1G1pk05UrOh0NlF1oeaaix1x8XzrfjIDK47TY0Zehcw=
 github.com/Knetic/govaluate v3.0.1-0.20171022003610-9aa49832a739+incompatible/go.mod h1:r7JcOSlj0wfOMncg0iLm8Leh48TZaKVeNIfJntJ2wa0=
