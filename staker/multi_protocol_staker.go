@@ -117,6 +117,7 @@ func (m *MultiProtocolStaker) Initialize(ctx context.Context) error {
 }
 
 func (m *MultiProtocolStaker) Start(ctxIn context.Context) {
+	m.StopWaiter.Start(ctxIn, m)
 	if m.oldStaker.Strategy() != WatchtowerStrategy {
 		m.oldStaker.wallet.Start(ctxIn)
 	}
