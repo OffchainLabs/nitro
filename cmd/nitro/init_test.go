@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
@@ -114,6 +115,42 @@ func TestDownloadInitInParts(t *testing.T) {
 	Require(t, err, "failed to read temp dir")
 	if len(entries) != 1 {
 		t.Error("download function did not delete temp files")
+	}
+}
+
+func TestSetLatestSnapshotUrl(t *testing.T) {
+	const (
+		chain        = "arb1"
+		snapshotKind = "archive"
+		latestDate   = "2024/21"
+		latestFile   = "latest-" + snapshotKind + ".txt"
+		dirPerm      = 0700
+		filePerm     = 0600
+	)
+
+	// Create latest file
+	serverDir := t.TempDir()
+	err := os.Mkdir(filepath.Join(serverDir, chain), dirPerm)
+	Require(t, err)
+	err = os.WriteFile(filepath.Join(serverDir, chain, latestFile), []byte(latestDate), filePerm)
+	Require(t, err)
+
+	// Start HTTP server
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	addr := "http://" + startFileServer(t, ctx, serverDir)
+
+	// Set latest snapshot URL
+	initConfig := conf.InitConfigDefault
+	initConfig.Latest = snapshotKind
+	initConfig.LatestBase = addr
+	err = setLatestSnapshotUrl(ctx, &initConfig, chain)
+	Require(t, err)
+
+	// Check url
+	want := fmt.Sprintf("%s/%s/%s/archive.tar", addr, chain, latestDate)
+	if initConfig.Url != want {
+		t.Errorf("initConfig.Url = %s; want: %s", initConfig.Url, want)
 	}
 }
 
