@@ -712,11 +712,13 @@ func DeployOnTestL1(
 ) (*chaininfo.RollupAddresses, *arbostypes.ParsedInitMessage) {
 	l1info.GenerateAccount("RollupOwner")
 	l1info.GenerateAccount("Sequencer")
+	l1info.GenerateAccount("Validator")
 	l1info.GenerateAccount("User")
 
 	SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
 		l1info.PrepareTx("Faucet", "RollupOwner", 30000, big.NewInt(9223372036854775807), nil),
 		l1info.PrepareTx("Faucet", "Sequencer", 30000, big.NewInt(9223372036854775807), nil),
+		l1info.PrepareTx("Faucet", "Validator", 30000, big.NewInt(9223372036854775807), nil),
 		l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(9223372036854775807), nil)})
 
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
@@ -857,6 +859,12 @@ func createTestNodeWithL1(
 		execConfig.Sequencer.Enable = false
 	}
 
+	var validatorTxOptsPtr *bind.TransactOpts
+	if nodeConfig.Staker.Enable {
+		validatorTxOpts := l1info.GetDefaultTransactOpts("Validator", ctx)
+		validatorTxOptsPtr = &validatorTxOpts
+	}
+
 	AddDefaultValNode(t, ctx, nodeConfig, true, "")
 
 	Require(t, execConfig.Validate())
@@ -865,7 +873,7 @@ func createTestNodeWithL1(
 	Require(t, err)
 	currentNode, err = arbnode.CreateNode(
 		ctx, l2stack, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client,
-		addresses, sequencerTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, big.NewInt(1337), nil,
+		addresses, validatorTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, big.NewInt(1337), nil,
 	)
 	Require(t, err)
 
@@ -992,7 +1000,8 @@ func Create2ndNodeWithConfig(
 	initReader := statetransfer.NewMemoryInitDataReader(l2InitData)
 
 	dataSigner := signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("Sequencer").PrivateKey)
-	txOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
+	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
+	validatorTxOpts := l1info.GetDefaultTransactOpts("Validator", ctx)
 	firstExec := getExecNode(t, first)
 
 	chainConfig := firstExec.ArbInterface.BlockChain().Config()
@@ -1010,7 +1019,7 @@ func Create2ndNodeWithConfig(
 	currentExec, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, configFetcher)
 	Require(t, err)
 
-	currentNode, err := arbnode.CreateNode(ctx, l2stack, currentExec, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, first.DeployInfo, &txOpts, &txOpts, dataSigner, feedErrChan, big.NewInt(1337), nil)
+	currentNode, err := arbnode.CreateNode(ctx, l2stack, currentExec, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, first.DeployInfo, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil)
 	Require(t, err)
 
 	err = currentNode.Start(ctx)
