@@ -72,6 +72,10 @@ while [[ $# -gt 0 ]]; do
 			skip_existing=true
 			shift
 			;;
+		--help)
+			printUsage
+            exit 0
+			;;
         *)
 			printUsage
             exit 0
