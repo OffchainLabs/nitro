@@ -247,6 +247,10 @@ func (p Programs) CallProgram(
 
 func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
 	prefixedWasm := statedb.GetCode(program)
+	return getWasmFromContractCode(prefixedWasm)
+}
+
+func getWasmFromContractCode(prefixedWasm []byte) ([]byte, error) {
 	if prefixedWasm == nil {
 		return nil, ProgramNotWasmError()
 	}
