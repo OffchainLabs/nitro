@@ -704,12 +704,12 @@ func createNodeImpl(
 		if txOptsBatchPoster == nil && config.BatchPoster.DataPoster.ExternalSigner.URL == "" {
 			return nil, errors.New("batchposter, but no TxOpts")
 		}
-		var dapWriter daprovider.Writer
+		dapWriters := []daprovider.Writer{}
 		if daWriter != nil {
-			dapWriter = daprovider.NewWriterForDAS(daWriter)
+			dapWriters = append(dapWriters, daprovider.NewWriterForDAS(daWriter))
 		}
 		if celestiaWriter != nil {
-			dapWriter = celestiaTypes.NewWriterForCelestia(celestiaWriter)
+			dapWriters = append(dapWriters, celestiaTypes.NewWriterForCelestia(celestiaWriter))
 		}
 		batchPoster, err = NewBatchPoster(ctx, &BatchPosterOpts{
 			DataPosterDB:  rawdb.NewTable(arbDb, storage.BatchPosterPrefix),
@@ -721,7 +721,7 @@ func createNodeImpl(
 			Config:        func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster },
 			DeployInfo:    deployInfo,
 			TransactOpts:  txOptsBatchPoster,
-			DAPWriter:     dapWriter,
+			DAPWriters:    dapWriters,
 			ParentChainID: parentChainID,
 		})
 		if err != nil {
