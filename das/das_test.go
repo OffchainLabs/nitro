@@ -47,9 +47,7 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 		ParentChainNodeURL: "none",
 	}
 
-	var syncFromStorageServicesFirst []*IterableStorageService
-	var syncToStorageServicesFirst []StorageService
-	storageService, lifecycleManager, err := CreatePersistentStorageService(firstCtx, &config, &syncFromStorageServicesFirst, &syncToStorageServicesFirst)
+	storageService, lifecycleManager, err := CreatePersistentStorageService(firstCtx, &config)
 	Require(t, err)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	daWriter, err := NewSignAfterStoreDASWriter(firstCtx, config, storageService)
@@ -77,9 +75,7 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 	secondCtx, secondCancel := context.WithCancel(context.Background())
 	defer secondCancel()
 
-	var syncFromStorageServicesSecond []*IterableStorageService
-	var syncToStorageServicesSecond []StorageService
-	storageService2, lifecycleManager, err := CreatePersistentStorageService(secondCtx, &config, &syncFromStorageServicesSecond, &syncToStorageServicesSecond)
+	storageService2, lifecycleManager, err := CreatePersistentStorageService(secondCtx, &config)
 	Require(t, err)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	var daReader2 DataAvailabilityServiceReader = storageService2
@@ -140,9 +136,7 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 		ParentChainNodeURL: "none",
 	}
 
-	var syncFromStorageServices []*IterableStorageService
-	var syncToStorageServices []StorageService
-	storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config, &syncFromStorageServices, &syncToStorageServices)
+	storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config)
 	Require(t, err)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	daWriter, err := NewSignAfterStoreDASWriter(ctx, config, storageService)
