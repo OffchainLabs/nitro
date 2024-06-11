@@ -2,6 +2,7 @@ package staker
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/OffchainLabs/bold/solgen/go/bridgegen"
@@ -157,7 +158,7 @@ func (m *MultiProtocolStaker) isBoldActive(ctx context.Context) (bool, common.Ad
 	}
 	_, err = userLogic.ExtraChallengeTimeBlocks(callOpts)
 	// ExtraChallengeTimeBlocks does not exist in the the bold protocol.
-	return err != nil, rollupAddress, nil
+	return err != nil && strings.Contains(err.Error(), "execution reverted"), rollupAddress, nil
 }
 
 func (m *MultiProtocolStaker) checkAndSwitchToBoldStaker(ctx context.Context) (bool, error) {

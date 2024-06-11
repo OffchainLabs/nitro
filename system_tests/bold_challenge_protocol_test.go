@@ -1,6 +1,8 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+//go:build challengetest && !raced
+
 package arbtest
 
 import (
@@ -53,10 +55,6 @@ import (
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
-// One Arbitrum block had 1,849,212,947 total opcodes. The closest, higher power of two
-// is 2^31. So we if we make our small step heights 2^20, we need 2048 big steps
-// to cover the block. With 2^20, our small step history commitments will be approx
-// 32 Mb of state roots in memory at once.
 var (
 	blockChallengeLeafHeight     = uint64(1 << 5) // 32
 	bigStepChallengeLeafHeight   = uint64(1 << 10)
