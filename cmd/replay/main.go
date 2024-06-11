@@ -332,7 +332,6 @@ func main() {
 		if backend.GetPositionWithinMessage() > 0 {
 			keysetValidationMode = daprovider.KeysetDontValidate
 		}
-		// TODO (Diego): Add daProviders = append(daProviders, arbstate.NewDAProviderCelestia(&PreimageCelestiaReader{}))
 		var dapReaders []daprovider.Reader
 		dapReaders = append(dapReaders, daprovider.NewReaderForDAS(&PreimageDASReader{}))
 		dapReaders = append(dapReaders, celestiaTypes.NewReaderForCelestia(&PreimageCelestiaReader{}))

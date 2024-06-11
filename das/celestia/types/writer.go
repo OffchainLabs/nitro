@@ -2,6 +2,7 @@ package types
 
 import (
 	"context"
+	"errors"
 )
 
 func NewWriterForCelestia(celestiaWriter CelestiaWriter) *writerForCelestia {
@@ -13,5 +14,12 @@ type writerForCelestia struct {
 }
 
 func (c *writerForCelestia) Store(ctx context.Context, message []byte, timeout uint64, sig []byte, disableFallbackStoreDataOnChain bool) ([]byte, error) {
-	return c.celestiaWriter.Store(ctx, message)
+	msg, err := c.celestiaWriter.Store(ctx, message)
+	if err != nil {
+		if disableFallbackStoreDataOnChain {
+			return nil, errors.New("unable to batch to Celestia and fallback storing data on chain is disabled")
+		}
+	}
+
+	return msg, nil
 }

@@ -699,7 +699,7 @@ func createNodeImpl(
 
 	var batchPoster *BatchPoster
 	var delayedSequencer *DelayedSequencer
-	// TODO (Diego) Add celestia DA to daProviderss
+	// TODO (Diego) Enable multiple writers
 	if config.BatchPoster.Enable {
 		if txOptsBatchPoster == nil && config.BatchPoster.DataPoster.ExternalSigner.URL == "" {
 			return nil, errors.New("batchposter, but no TxOpts")

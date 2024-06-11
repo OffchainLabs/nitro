@@ -4,6 +4,7 @@
 package staker
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -18,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbutil"
+	celestiaTypes "github.com/offchainlabs/nitro/das/celestia/types"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -446,10 +448,10 @@ func (m *ChallengeManager) IssueOneStepProof(
 	if err != nil {
 		return nil, fmt.Errorf("error getting OSP from challenge %v backend at step %v: %w", m.challengeIndex, position, err)
 	}
-	// proof, err = m.getDAProof(ctx, proof)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("error getting DA Proof for OSP for challenge %v at step %v: %w", m.challengeIndex, position, err)
-	// }
+	proof, err = m.getDAProof(ctx, proof)
+	if err != nil {
+		return nil, fmt.Errorf("error getting DA Proof for OSP for challenge %v at step %v: %w", m.challengeIndex, position, err)
+	}
 
 	return m.challengeCore.con.OneStepProveExecution(
 		m.challengeCore.auth,
@@ -585,51 +587,56 @@ func (m *ChallengeManager) Act(ctx context.Context) (*types.Transaction, error) 
 	)
 }
 
-// TODO (Diego): Enable for ArbOS 30
-// func (m *ChallengeManager) getDAProof(ctx context.Context, proof []byte) ([]byte, error) {
-// 	// get the proof's opcode
-// 	opCodeBytes := proof[len(proof)-2:]
-// 	opCode := binary.BigEndian.Uint16(opCodeBytes)
-// 	// remove opcode bytes
-// 	proof = proof[:len(proof)-2]
-// 	if opCode == ReadInboxMessage {
-// 		messageType := proof[len(proof)-1]
-// 		// remove inbox message type byte
-// 		proof = proof[:len(proof)-1]
-// 		if messageType == 0x0 {
-// 			// Read the last 8 bytes as a uint64 to get our batch number
-// 			batchNumBytes := proof[len(proof)-8:]
-// 			batchNum := binary.BigEndian.Uint64(batchNumBytes)
-// 			batchData, _, err := m.validator.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
-// 			if err != nil {
-// 				log.Error("Couldn't get sequencer message bytes", "err", err)
-// 				return nil, err
-// 			}
+func (m *ChallengeManager) getDAProof(ctx context.Context, proof []byte) ([]byte, error) {
+	// get the proof's opcode
+	opCodeBytes := proof[len(proof)-2:]
+	opCode := binary.BigEndian.Uint16(opCodeBytes)
+	// remove opcode bytes
+	proof = proof[:len(proof)-2]
+	if opCode == ReadInboxMessage {
+		messageType := proof[len(proof)-1]
+		// remove inbox message type byte
+		proof = proof[:len(proof)-1]
+		if messageType == 0x0 {
+			// Read the last 8 bytes as a uint64 to get our batch number
+			batchNumBytes := proof[len(proof)-8:]
+			batchNum := binary.BigEndian.Uint64(batchNumBytes)
+			batchData, _, err := m.validator.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
+			if err != nil {
+				log.Error("Couldn't get sequencer message bytes", "err", err)
+				return nil, err
+			}
 
-// 			buf := bytes.NewBuffer(batchData[40:])
+			buf := bytes.NewBuffer(batchData[40:])
 
-// 			header, err := buf.ReadByte()
-// 			if err != nil {
-// 				log.Error("Couldn't deserialize Celestia header byte", "err", err)
-// 				return nil, nil
-// 			}
-// 			daProof := []byte{}
-// 			if celestiaTypes.IsCelestiaMessageHeaderByte(header) {
-// 				log.Info("Fetching da proof for Celestia", "batchNum", batchNum)
-// 				blobBytes := buf.Bytes()
+			header, err := buf.ReadByte()
+			if err != nil {
+				log.Error("Couldn't deserialize Celestia header byte", "err", err)
+				return nil, nil
+			}
+			daProof := []byte{}
+			if celestiaTypes.IsCelestiaMessageHeaderByte(header) {
+				log.Info("Fetching da proof for Celestia", "batchNum", batchNum)
+				blobBytes := buf.Bytes()
 
-// 				m.validator.dapReaders
-// 				daProof, err = m.validator.celestiaService.GetProof(ctx, blobBytes)
-// 				if err != nil {
-// 					return nil, err
-// 				}
-// 			}
+				var celestiaReader celestiaTypes.CelestiaReader
+				for _, dapReader := range m.validator.dapReaders {
+					switch reader := dapReader.(type) {
+					case celestiaTypes.CelestiaReader:
+						celestiaReader = reader
+					}
+				}
+				daProof, err = celestiaReader.GetProof(ctx, blobBytes)
+				if err != nil {
+					return nil, err
+				}
+			}
 
-// 			// remove batch number from proof
-// 			proof = proof[:len(proof)-8]
-// 			proof = append(proof, daProof...)
-// 		}
-// 	}
+			// remove batch number from proof
+			proof = proof[:len(proof)-8]
+			proof = append(proof, daProof...)
+		}
+	}
 
-// 	return proof, nil
-// }
+	return proof, nil
+}

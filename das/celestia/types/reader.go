@@ -35,6 +35,10 @@ func IsCelestiaMessageHeaderByte(header byte) bool {
 	return hasBits(header, CelestiaMessageHeaderFlag)
 }
 
+func (c *readerForCelestia) GetProof(ctx context.Context, msg []byte) ([]byte, error) {
+	return c.celestiaReader.GetProof(ctx, msg)
+}
+
 func (c *readerForCelestia) RecoverPayloadFromBatch(
 	ctx context.Context,
 	batchNum uint64,
