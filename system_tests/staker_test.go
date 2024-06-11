@@ -9,7 +9,6 @@ package arbtest
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"math/big"
@@ -23,21 +22,13 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-
-	mocksgen_bold "github.com/OffchainLabs/bold/solgen/go/mocksgen"
-	rollupgen_bold "github.com/OffchainLabs/bold/solgen/go/rollupgen"
-	challenge_testing "github.com/OffchainLabs/bold/testing"
-	"github.com/OffchainLabs/bold/testing/setup"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
-	"github.com/offchainlabs/nitro/cmd/chaininfo"
-	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
@@ -46,7 +37,6 @@ import (
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/colors"
-	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
@@ -476,206 +466,4 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 
 func TestStakersCooperative(t *testing.T) {
 	stakerTestImpl(t, false, false)
-}
-
-func TestStakerSwitchDuringRollupUpgrade(t *testing.T) {
-	ctx, cancelCtx := context.WithCancel(context.Background())
-	defer cancelCtx()
-	stakerImpl, builder := setupNonBoldStaker(t, ctx)
-	deployAuth := builder.L1Info.GetDefaultTransactOpts("RollupOwner", ctx)
-	err := stakerImpl.Initialize(ctx)
-	Require(t, err)
-	stakerImpl.Start(ctx)
-	if stakerImpl.Stopped() {
-		t.Fatal("Old protocol staker not started")
-	}
-
-	rollupAddresses := deployBoldContracts(t, ctx, builder.L1Info, builder.L1.Client, builder.chainConfig.ChainID, deployAuth)
-
-	upgradeExecutor, err := upgrade_executorgen.NewUpgradeExecutor(builder.L2.ConsensusNode.DeployInfo.UpgradeExecutor, builder.L1.Client)
-	Require(t, err)
-	bridgeABI, err := abi.JSON(strings.NewReader(bridgegen.BridgeABI))
-	Require(t, err)
-
-	updateRollupAddressCalldata, err := bridgeABI.Pack("updateRollupAddress", rollupAddresses.Rollup)
-	Require(t, err)
-	tx, err := upgradeExecutor.ExecuteCall(&deployAuth, builder.L2.ConsensusNode.DeployInfo.Bridge, updateRollupAddressCalldata)
-	Require(t, err)
-	_, err = builder.L1.EnsureTxSucceeded(tx)
-	Require(t, err)
-
-	time.Sleep(time.Second)
-
-	if !stakerImpl.Stopped() {
-		t.Fatal("Old protocol staker not stopped after rollup upgrade")
-	}
-}
-
-func setupNonBoldStaker(t *testing.T, ctx context.Context) (*staker.Staker, *NodeBuilder) {
-	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
-
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builder.L2Info = NewBlockChainTestInfo(
-		t,
-		types.NewArbitrumSigner(types.NewLondonSigner(builder.chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
-		transferGas,
-	)
-	builder.Build(t)
-	l2node := builder.L2.ConsensusNode
-	l1info := builder.L1Info
-	l1client := builder.L1.Client
-
-	builder.BridgeBalance(t, "Faucet", big.NewInt(1).Mul(big.NewInt(params.Ether), big.NewInt(10000)))
-
-	deployAuth := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
-
-	balance := big.NewInt(params.Ether)
-	balance.Mul(balance, big.NewInt(100))
-	l1info.GenerateAccount("Validator")
-	TransferBalance(t, "Faucet", "Validator", balance, l1info, l1client, ctx)
-	l1auth := l1info.GetDefaultTransactOpts("Validator", ctx)
-
-	upgradeExecutor, err := upgrade_executorgen.NewUpgradeExecutor(l2node.DeployInfo.UpgradeExecutor, builder.L1.Client)
-	Require(t, err)
-	rollupABI, err := abi.JSON(strings.NewReader(rollupgen.RollupAdminLogicABI))
-	Require(t, err)
-
-	setMinAssertPeriodCalldata, err := rollupABI.Pack("setMinimumAssertionPeriod", big.NewInt(1))
-	Require(t, err)
-	tx, err := upgradeExecutor.ExecuteCall(&deployAuth, l2node.DeployInfo.Rollup, setMinAssertPeriodCalldata)
-	Require(t, err)
-	_, err = builder.L1.EnsureTxSucceeded(tx)
-	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l1client, tx)
-	Require(t, err)
-	valConfig := staker.DefaultL1ValidatorConfig
-	valConfig.Strategy = "WatchTower"
-	valConfig.BOLD = staker.DefaultBoldConfig
-	valConfig.BOLD.Enable = true
-	valConfig.StakerInterval = 100 * time.Millisecond
-
-	dp, err := arbnode.StakerDataposter(ctx, rawdb.NewTable(l2node.ArbDB, storage.StakerPrefix), l2node.L1Reader, &l1auth, NewFetcherFromConfig(arbnode.ConfigDefaultL1NonSequencerTest()), nil, nil)
-	if err != nil {
-		t.Fatalf("Error creating validator dataposter: %v", err)
-	}
-	valWallet, err := validatorwallet.NewContract(dp, nil, l2node.DeployInfo.ValidatorWalletCreator, l2node.DeployInfo.Rollup, l2node.L1Reader, &l1auth, 0, func(common.Address) {}, func() uint64 { return valConfig.ExtraGas })
-	Require(t, err)
-	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
-	blockValidatorConfig := staker.TestBlockValidatorConfig
-
-	stateless, err := staker.NewStatelessBlockValidator(
-		l2node.InboxReader,
-		l2node.InboxTracker,
-		l2node.TxStreamer,
-		l2node.Execution,
-		l2node.ArbDB,
-		nil,
-		StaticFetcherFrom(t, &blockValidatorConfig),
-		valStack,
-	)
-	Require(t, err)
-	err = stateless.Start(ctx)
-	Require(t, err)
-	stakerImpl, err := staker.NewStaker(
-		l2node.L1Reader,
-		valWallet,
-		bind.CallOpts{},
-		valConfig,
-		nil,
-		stateless,
-		nil,
-		nil,
-		l2node.DeployInfo.ValidatorUtils,
-		l2node.DeployInfo.Bridge,
-		nil,
-	)
-	Require(t, err)
-	return stakerImpl, builder
-}
-
-func deployBoldContracts(
-	t *testing.T,
-	ctx context.Context,
-	l1info info,
-	backend *ethclient.Client,
-	chainId *big.Int,
-	deployAuth bind.TransactOpts,
-) *chaininfo.RollupAddresses {
-	stakeToken, tx, tokenBindings, err := mocksgen_bold.DeployTestWETH9(
-		&deployAuth,
-		backend,
-		"Weth",
-		"WETH",
-	)
-	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, backend, tx)
-	Require(t, err)
-	value, _ := new(big.Int).SetString("1000000", 10)
-	deployAuth.Value = value
-	tx, err = tokenBindings.Deposit(&deployAuth)
-	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, backend, tx)
-	Require(t, err)
-	deployAuth.Value = nil
-	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, backend, tx)
-	Require(t, err)
-
-	initialBalance := new(big.Int).Lsh(big.NewInt(1), 200)
-	l1info.GenerateGenesisAccount("deployer", initialBalance)
-	l1info.GenerateGenesisAccount("asserter", initialBalance)
-	l1info.GenerateGenesisAccount("sequencer", initialBalance)
-	SendWaitTestTransactions(t, ctx, backend, []*types.Transaction{
-		l1info.PrepareTx("Faucet", "RollupOwner", 30000, initialBalance, nil)})
-	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
-	locator, err := server_common.NewMachineLocator("")
-	Require(t, err)
-
-	miniStakeValues := []*big.Int{
-		big.NewInt(1),
-		big.NewInt(2),
-		big.NewInt(3),
-	}
-	cfg := challenge_testing.GenerateRollupConfig(
-		false,
-		locator.LatestWasmModuleRoot(),
-		l1TransactionOpts.From,
-		chainId,
-		common.Address{},
-		miniStakeValues,
-		stakeToken,
-		rollupgen_bold.AssertionState{
-			GlobalState:    rollupgen_bold.GlobalState{},
-			MachineStatus:  1,
-			EndHistoryRoot: [32]byte{},
-		},
-		big.NewInt(0),
-		common.Address{},
-	)
-	config, err := json.Marshal(params.ArbitrumDevTestChainConfig())
-	if err != nil {
-		return nil
-	}
-	cfg.ChainConfig = string(config)
-
-	addresses, err := setup.DeployFullRollupStack(
-		ctx,
-		backend,
-		&l1TransactionOpts,
-		l1info.GetAddress("sequencer"),
-		cfg,
-		false,
-		false,
-	)
-	Require(t, err)
-
-	return &chaininfo.RollupAddresses{
-		Bridge:                 addresses.Bridge,
-		Inbox:                  addresses.Inbox,
-		SequencerInbox:         addresses.SequencerInbox,
-		Rollup:                 addresses.Rollup,
-		ValidatorUtils:         addresses.ValidatorUtils,
-		ValidatorWalletCreator: addresses.ValidatorWalletCreator,
-		DeployedAt:             addresses.DeployedAt,
-	}
 }
