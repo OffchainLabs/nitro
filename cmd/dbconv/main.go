@@ -38,17 +38,17 @@ func main() {
 	config, err := parseDBConv(args)
 	if err != nil {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
-		return
+		os.Exit(1)
 	}
 	err = genericconf.InitLog(config.LogType, config.LogLevel, &genericconf.FileLoggingConfig{Enable: false}, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
-		return
+		os.Exit(1)
 	}
 
 	if err = config.Validate(); err != nil {
 		log.Error("Invalid config", "err", err)
-		return
+		os.Exit(1)
 	}
 
 	if config.Metrics {
@@ -79,7 +79,7 @@ func main() {
 		err = conv.Convert(ctx)
 		if err != nil {
 			log.Error("Conversion error", "err", err)
-			return
+			os.Exit(1)
 		}
 		stats := conv.Stats()
 		log.Info("Conversion finished.", "entries", stats.Entries(), "MB", stats.Bytes()/1024/1024, "avg Ke/s", stats.AverageEntriesPerSecond()/1000, "avg MB/s", stats.AverageBytesPerSecond()/1024/1024, "elapsed", stats.Elapsed())
@@ -90,7 +90,7 @@ func main() {
 		err = conv.CompactDestination()
 		if err != nil {
 			log.Error("Compaction error", "err", err)
-			return
+			os.Exit(1)
 		}
 	}
 
@@ -99,7 +99,7 @@ func main() {
 		err = conv.Verify(ctx)
 		if err != nil {
 			log.Error("Verification error", "err", err)
-			return
+			os.Exit(1)
 		}
 		stats := conv.Stats()
 		log.Info("Verification completed successfully.", "elapsed", stats.Elapsed())
