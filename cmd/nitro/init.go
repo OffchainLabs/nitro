@@ -351,7 +351,38 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 						return chainDb, l2BlockChain, fmt.Errorf("failed to recreate missing states: %w", err)
 					}
 				}
-
+				latestBlock := l2BlockChain.CurrentBlock()
+				if latestBlock == nil || latestBlock.Number.Uint64() <= chainConfig.ArbitrumChainParams.GenesisBlockNum ||
+					types.DeserializeHeaderExtraInformation(latestBlock).ArbOSFormatVersion < params.ArbosVersion_Stylus {
+					// If there is only genesis block or no blocks in the blockchain, set Rebuilding of wasm store to Done
+					// If Stylus upgrade hasn't yet happened, skipping rebuilding of wasm store
+					log.Info("Setting rebuilding of wasm store to done")
+					if err = gethexec.WriteToKeyValueStore(wasmDb, gethexec.RebuildingPositionKey, gethexec.RebuildingDone); err != nil {
+						return nil, nil, fmt.Errorf("unable to set rebuilding status of wasm store to done: %w", err)
+					}
+				} else {
+					position, err := gethexec.ReadFromKeyValueStore[common.Hash](wasmDb, gethexec.RebuildingPositionKey)
+					if err != nil {
+						log.Info("Unable to get codehash position in rebuilding of wasm store, its possible it isnt initialized yet, so initializing it and starting rebuilding", "err", err)
+						if err := gethexec.WriteToKeyValueStore(wasmDb, gethexec.RebuildingPositionKey, common.Hash{}); err != nil {
+							return nil, nil, fmt.Errorf("unable to initialize codehash position in rebuilding of wasm store to beginning: %w", err)
+						}
+					}
+					if position != gethexec.RebuildingDone {
+						startBlockHash, err := gethexec.ReadFromKeyValueStore[common.Hash](wasmDb, gethexec.RebuildingStartBlockHashKey)
+						if err != nil {
+							log.Info("Unable to get start block hash in rebuilding of wasm store, its possible it isnt initialized yet, so initializing it to latest block hash", "err", err)
+							if err := gethexec.WriteToKeyValueStore(wasmDb, gethexec.RebuildingStartBlockHashKey, latestBlock.Hash()); err != nil {
+								return nil, nil, fmt.Errorf("unable to initialize start block hash in rebuilding of wasm store to latest block hash: %w", err)
+							}
+							startBlockHash = latestBlock.Hash()
+						}
+						log.Info("Starting or continuing rebuilding of wasm store", "codeHash", position, "startBlockHash", startBlockHash)
+						if err := gethexec.RebuildWasmStore(ctx, wasmDb, chainDb, config.Execution.RPC.MaxRecreateStateDepth, l2BlockChain, position, startBlockHash); err != nil {
+							return nil, nil, fmt.Errorf("error rebuilding of wasm store: %w", err)
+						}
+					}
+				}
 				return chainDb, l2BlockChain, nil
 			}
 			readOnlyDb.Close()
@@ -394,6 +425,13 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		return nil, nil, err
 	}
 	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1)
+
+	// Rebuilding wasm store is not required when just starting out
+	err = gethexec.WriteToKeyValueStore(wasmDb, gethexec.RebuildingPositionKey, gethexec.RebuildingDone)
+	log.Info("Setting codehash position in rebuilding of wasm store to done")
+	if err != nil {
+		return nil, nil, fmt.Errorf("unable to set codehash position in rebuilding of wasm store to done: %w", err)
+	}
 
 	if config.Init.ImportFile != "" {
 		initDataReader, err = statetransfer.NewJsonInitDataReader(config.Init.ImportFile)
