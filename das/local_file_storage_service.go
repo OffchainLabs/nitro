@@ -23,48 +23,99 @@ import (
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	flag "github.com/spf13/pflag"
 	"golang.org/x/sys/unix"
 )
 
 type LocalFileStorageConfig struct {
-	Enable  bool   `koanf:"enable"`
-	DataDir string `koanf:"data-dir"`
+	Enable       bool          `koanf:"enable"`
+	DataDir      string        `koanf:"data-dir"`
+	EnableExpiry bool          `koanf:"enable-expiry"`
+	MaxRetention time.Duration `koanf:"max-retention"`
 }
 
 var DefaultLocalFileStorageConfig = LocalFileStorageConfig{
-	DataDir: "",
+	DataDir:      "",
+	MaxRetention: time.Hour * 24 * 21, // 6 days longer than the batch poster default
 }
 
 func LocalFileStorageConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultLocalFileStorageConfig.Enable, "enable storage/retrieval of sequencer batch data from a directory of files, one per batch")
 	f.String(prefix+".data-dir", DefaultLocalFileStorageConfig.DataDir, "local data directory")
+	f.Bool(prefix+".enable-expiry", DefaultLocalFileStorageConfig.EnableExpiry, "enable expiry of batches")
+	f.Duration(prefix+".max-retention", DefaultLocalFileStorageConfig.MaxRetention, "store requests with expiry times farther in the future than max-retention will be rejected")
 }
 
 type LocalFileStorageService struct {
-	dataDir string
+	config LocalFileStorageConfig
 
 	legacyLayout flatLayout
 	layout       trieLayout
 
 	// for testing only
 	enableLegacyLayout bool
+
+	stopWaiter stopwaiter.StopWaiterSafe
 }
 
-func NewLocalFileStorageService(dataDir string) (*LocalFileStorageService, error) {
-	if unix.Access(dataDir, unix.W_OK|unix.R_OK) != nil {
-		return nil, fmt.Errorf("couldn't start LocalFileStorageService, directory '%s' must be readable and writeable", dataDir)
+func NewLocalFileStorageService(config LocalFileStorageConfig) (*LocalFileStorageService, error) {
+	if unix.Access(config.DataDir, unix.W_OK|unix.R_OK) != nil {
+		return nil, fmt.Errorf("couldn't start LocalFileStorageService, directory '%s' must be readable and writeable", config.DataDir)
 	}
-	return &LocalFileStorageService{
-		dataDir:      dataDir,
-		legacyLayout: flatLayout{root: dataDir},
-		layout:       trieLayout{root: dataDir},
-	}, nil
+	s := &LocalFileStorageService{
+		config:       config,
+		legacyLayout: flatLayout{root: config.DataDir},
+		layout:       trieLayout{root: config.DataDir, expiryEnabled: config.EnableExpiry},
+	}
+	return s, nil
+}
+
+// Separate start function
+// Tests want to be able to avoid triggering the auto migration
+func (s *LocalFileStorageService) start(ctx context.Context) error {
+	migrated, err := s.layout.migrated()
+	if err != nil {
+		return err
+	}
+
+	if !migrated && !s.enableLegacyLayout {
+		if err = migrate(&s.legacyLayout, &s.layout); err != nil {
+			return err
+		}
+	}
+
+	if err := s.stopWaiter.Start(ctx, s); err != nil {
+		return err
+	}
+	if s.config.EnableExpiry && !s.enableLegacyLayout {
+		err = s.stopWaiter.CallIterativelySafe(func(ctx context.Context) time.Duration {
+			err = s.layout.prune(time.Now())
+			if err != nil {
+				log.Error("error pruning expired batches", "error", err)
+			}
+			return time.Minute * 5
+		})
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *LocalFileStorageService) Close(ctx context.Context) error {
+	return s.stopWaiter.StopAndWait()
 }
 
 func (s *LocalFileStorageService) GetByHash(ctx context.Context, key common.Hash) ([]byte, error) {
 	log.Trace("das.LocalFileStorageService.GetByHash", "key", pretty.PrettyHash(key), "this", s)
-	batchPath := s.legacyLayout.batchPath(key)
+	var batchPath string
+	if s.enableLegacyLayout {
+		batchPath = s.legacyLayout.batchPath(key)
+	} else {
+		batchPath = s.layout.batchPath(key)
+	}
+
 	data, err := os.ReadFile(batchPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -76,8 +127,11 @@ func (s *LocalFileStorageService) GetByHash(ctx context.Context, key common.Hash
 }
 
 func (s *LocalFileStorageService) Put(ctx context.Context, data []byte, expiry uint64) error {
-	// TODO input validation on expiry
 	logPut("das.LocalFileStorageService.Store", data, expiry, s)
+	if time.Unix(int64(expiry), 0).After(time.Now().Add(s.config.MaxRetention)) {
+		return errors.New("requested expiry time exceeds maximum allowed retention period")
+	}
+
 	key := dastree.Hash(data)
 	var batchPath string
 	if !s.enableLegacyLayout {
@@ -90,6 +144,11 @@ func (s *LocalFileStorageService) Put(ctx context.Context, data []byte, expiry u
 		}
 	} else {
 		batchPath = s.legacyLayout.batchPath(key)
+	}
+
+	err := os.MkdirAll(path.Dir(batchPath), 0o700)
+	if err != nil {
+		return fmt.Errorf("failed to create directory %s: %w", path.Dir(batchPath), err)
 	}
 
 	// Use a temp file and rename to achieve atomic writes.
@@ -125,16 +184,12 @@ func (s *LocalFileStorageService) Sync(ctx context.Context) error {
 	return nil
 }
 
-func (s *LocalFileStorageService) Close(ctx context.Context) error {
-	return nil
-}
-
 func (s *LocalFileStorageService) ExpirationPolicy(ctx context.Context) (daprovider.ExpirationPolicy, error) {
 	return daprovider.KeepForever, nil
 }
 
 func (s *LocalFileStorageService) String() string {
-	return "LocalFileStorageService(" + s.dataDir + ")"
+	return "LocalFileStorageService(" + s.config.DataDir + ")"
 }
 
 func (s *LocalFileStorageService) HealthCheck(ctx context.Context) error {
@@ -152,20 +207,6 @@ func (s *LocalFileStorageService) HealthCheck(ctx context.Context) error {
 	}
 	return nil
 }
-
-/*
-New layout
-   Access data by hash -> by-data-hash/1st octet/2nd octet/hash
-   Store data with hash and expiry
-   Iterate Unordered
-   Iterate by Time
-   Prune before
-
-
-Old layout
-   Access data by hash -> hash
-   Iterate unordered
-*/
 
 func listDir(dir string) ([]string, error) {
 	d, err := os.Open(dir)
@@ -238,14 +279,23 @@ func migrate(fl *flatLayout, tl *trieLayout) error {
 		return err
 	}
 
-	if err = tl.startMigration(); err != nil {
+	batch, err := flIt.next()
+	if errors.Is(err, io.EOF) {
+		log.Info("No batches in legacy layout detected, skipping migration.")
+		return nil
+	}
+	if err != nil {
 		return err
+	}
+
+	if startErr := tl.startMigration(); startErr != nil {
+		return startErr
 	}
 
 	migrationStart := time.Now()
 	var migrated, skipped, removed int
 	err = func() error {
-		for batch, err := flIt.next(); err != io.EOF; batch, err = flIt.next() {
+		for ; !errors.Is(err, io.EOF); batch, err = flIt.next() {
 			if err != nil {
 				return err
 			}
@@ -280,7 +330,7 @@ func migrate(fl *flatLayout, tl *trieLayout) error {
 	if err != nil {
 		return err
 	}
-	for batch, err := flIt.next(); err != io.EOF; batch, err = flIt.next() {
+	for batch, err := flIt.next(); !errors.Is(err, io.EOF); batch, err = flIt.next() {
 		if err != nil {
 			log.Warn("local file store migration completed, but error cleaning up old layout, files from that layout are now orphaned", "error", err)
 			break
@@ -298,13 +348,13 @@ func migrate(fl *flatLayout, tl *trieLayout) error {
 	return nil
 }
 
-func prune(tl trieLayout, pruneTil time.Time) error {
+func (tl *trieLayout) prune(pruneTil time.Time) error {
 	it, err := tl.iterateBatchesByTimestamp(pruneTil)
 	if err != nil {
 		return err
 	}
 	pruned := 0
-	for file, err := it.next(); err != io.EOF; file, err = it.next() {
+	for file, err := it.next(); !errors.Is(err, io.EOF); file, err = it.next() {
 		if err != nil {
 			return err
 		}
@@ -331,7 +381,9 @@ func prune(tl trieLayout, pruneTil time.Time) error {
 		}
 		pruned++
 	}
-	log.Info("local file store pruned expired batches", "count", pruned)
+	if pruned > 0 {
+		log.Info("local file store pruned expired batches", "count", pruned)
+	}
 	return nil
 }
 
@@ -353,18 +405,10 @@ func recursivelyDeleteUntil(filePath, until string) error {
 	return nil
 }
 
-type batchIterator interface {
-	next() (batchIdentifier, bool, error)
-}
-
 type batchIdentifier struct {
 	key    common.Hash
 	expiry time.Time
 }
-
-const (
-	defaultRetention = time.Hour * 24 * 7 * 3
-)
 
 type flatLayout struct {
 	root string
@@ -434,7 +478,9 @@ type trieLayout struct {
 	root          string
 	expiryEnabled bool
 
-	migrating bool // Is the trieLayout currently being migrated to
+	// Is the trieLayout currently being migrated to?
+	// Controls whether paths include the migratingSuffix.
+	migrating bool
 }
 
 type trieLayoutIterator struct {
@@ -556,11 +602,27 @@ func (l *trieLayout) iterateBatchesByTimestamp(maxTimestamp time.Time) (*trieLay
 	}, nil
 }
 
+func (l *trieLayout) migrated() (bool, error) {
+	info, err := os.Stat(filepath.Join(l.root, byDataHash))
+	if os.IsNotExist(err) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	return info.IsDir(), nil
+}
+
 func (l *trieLayout) startMigration() error {
-	// TODO check for existing dirs
-	if !l.migrating {
+	migrated, err := l.migrated()
+	if err != nil {
+		return err
+	}
+	if migrated {
 		return errors.New("Local file storage already migrated to trieLayout")
 	}
+
+	l.migrating = true
 
 	if err := os.MkdirAll(filepath.Join(l.root, byDataHash+migratingSuffix), 0o700); err != nil {
 		return err
