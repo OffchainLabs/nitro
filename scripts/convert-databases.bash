@@ -82,6 +82,12 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
+if $force && $skip_existing; then
+	echo Error: Cannot use both --force and --skipexisting
+	printUsage
+	exit 1
+fi
+
 if ! [ -e "$dbconv" ]; then
 	echo Error: Invalid dbconv binary path: "$dbconv" does not exist
 	exit 1
