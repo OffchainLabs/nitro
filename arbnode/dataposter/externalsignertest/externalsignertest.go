@@ -19,7 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsigner"
+	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 )
 
 var (
@@ -144,11 +144,15 @@ type SignerAPI struct {
 	Address  common.Address
 }
 
-func (a *SignerAPI) SignTransaction(ctx context.Context, req *externalsigner.SignTxArgs) (hexutil.Bytes, error) {
+func (a *SignerAPI) SignTransaction(ctx context.Context, req *apitypes.SendTxArgs) (hexutil.Bytes, error) {
 	if req == nil {
 		return nil, fmt.Errorf("nil request")
 	}
-	signedTx, err := a.SignerFn(a.Address, req.ToTransaction())
+	tx, err := req.ToTransaction()
+	if err != nil {
+		return nil, fmt.Errorf("converting send transaction arguments to transaction: %w", err)
+	}
+	signedTx, err := a.SignerFn(a.Address, tx)
 	if err != nil {
 		return nil, fmt.Errorf("signing transaction: %w", err)
 	}

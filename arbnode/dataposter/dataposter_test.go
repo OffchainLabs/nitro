@@ -18,7 +18,6 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/google/go-cmp/cmp"
 	"github.com/holiman/uint256"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsigner"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
@@ -143,11 +142,7 @@ func TestExternalSigner(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Error signing transaction with external signer: %v", err)
 				}
-				args, err := externalsigner.TxToSignTxArgs(addr, tc.tx)
-				if err != nil {
-					t.Fatalf("Error converting transaction to sendTxArgs: %v", err)
-				}
-				want, err := srv.SignerFn(addr, args.ToTransaction())
+				want, err := srv.SignerFn(addr, tc.tx)
 				if err != nil {
 					t.Fatalf("Error signing transaction: %v", err)
 				}
