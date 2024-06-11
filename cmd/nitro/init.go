@@ -13,6 +13,7 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"net/url"
 	"os"
 	"runtime"
 	"strings"
@@ -142,9 +143,8 @@ func downloadFile(ctx context.Context, initConfig *conf.InitConfig, url string) 
 	}
 }
 
-// fetchChecksum performs a GET request to the specified URL using the provided context
-// and returns the checksum as a []byte
-func fetchChecksum(ctx context.Context, url string) ([]byte, error) {
+// httpGet performs a GET request to the specified URL
+func httpGet(ctx context.Context, url string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating request: %w", err)
@@ -163,6 +163,15 @@ func fetchChecksum(ctx context.Context, url string) ([]byte, error) {
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("error reading response body: %w", err)
+	}
+	return body, nil
+}
+
+// fetchChecksum performs a GET request to the specified URL and returns the checksum
+func fetchChecksum(ctx context.Context, url string) ([]byte, error) {
+	body, err := httpGet(ctx, url)
+	if err != nil {
+		return nil, err
 	}
 	checksumStr := strings.TrimSpace(string(body))
 	checksum, err := hex.DecodeString(checksumStr)
@@ -233,6 +242,29 @@ func joinArchive(parts []string) (string, error) {
 	}
 	log.Info("Successfully joined parts into archive", "archive", archivePath)
 	return archivePath, nil
+}
+
+// setLatestSnapshotUrl sets the Url in initConfig to the latest one available on the mirror.
+func setLatestSnapshotUrl(ctx context.Context, initConfig *conf.InitConfig, chain string) error {
+	if initConfig.Latest == "" {
+		return nil
+	}
+	if initConfig.Url != "" {
+		return fmt.Errorf("cannot set latest url if url is already set")
+	}
+	baseUrl, err := url.Parse(initConfig.LatestBase)
+	if err != nil {
+		return fmt.Errorf("failed to parse latest mirror \"%s\": %w", initConfig.LatestBase, err)
+	}
+	latestDateUrl := baseUrl.JoinPath(chain, "latest-"+initConfig.Latest+".txt").String()
+	latestDateBytes, err := httpGet(ctx, latestDateUrl)
+	if err != nil {
+		return fmt.Errorf("failed to get latest snapshot at \"%s\": %w", latestDateUrl, err)
+	}
+	latestDate := strings.TrimSpace(string(latestDateBytes))
+	initConfig.Url = baseUrl.JoinPath(chain, latestDate, initConfig.Latest+".tar").String()
+	log.Info("Set latest snapshot url", "url", initConfig.Url)
+	return nil
 }
 
 func validateBlockChain(blockChain *core.BlockChain, chainConfig *params.ChainConfig) error {
@@ -324,6 +356,10 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 			}
 			readOnlyDb.Close()
 		}
+	}
+
+	if err := setLatestSnapshotUrl(ctx, &config.Init, config.Chain.Name); err != nil {
+		return nil, nil, err
 	}
 
 	initFile, err := downloadInit(ctx, &config.Init)
