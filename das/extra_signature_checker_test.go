@@ -65,10 +65,12 @@ func TestExtraSignatureCheck(t *testing.T) {
 	signer := signature.DataSignerFromPrivateKey(privateKey)
 
 	var da DataAvailabilityServiceWriter = &StubSignatureCheckDAS{keyDir}
-	da, err = NewStoreSigningDAS(da, signer)
-	Require(t, err)
 
-	_, err = da.Store(context.Background(), []byte("Hello world"), 1234, []byte{})
+	msg := []byte("Hello world")
+	timeout := uint64(1234)
+	sig, err := applyDasSigner(signer, msg, timeout)
+	Require(t, err)
+	_, err = da.Store(context.Background(), msg, timeout, sig)
 	Require(t, err)
 }
 
