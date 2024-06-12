@@ -80,31 +80,12 @@ func (m *MultiProtocolStaker) IsWhitelisted(ctx context.Context) (bool, error) {
 }
 
 func (m *MultiProtocolStaker) Initialize(ctx context.Context) error {
-	boldActive, _, err := m.isBoldActive(ctx)
+	boldActive, rollupAddress, err := m.isBoldActive(ctx)
 	if err != nil {
 		return err
 	}
 	if boldActive {
-		txBuilder, err := txbuilder.NewBuilder(m.oldStaker.wallet)
-		if err != nil {
-			return err
-		}
-		auth, err := txBuilder.Auth(ctx)
-		if err != nil {
-			return err
-		}
-		boldStaker, err := newBOLDStaker(
-			ctx,
-			m.oldStaker.config,
-			m.oldStaker.rollupAddress,
-			*m.oldStaker.getCallOpts(ctx),
-			auth,
-			m.oldStaker.client,
-			m.oldStaker.statelessBlockValidator,
-			&m.oldStaker.config.BOLD,
-			m.oldStaker.wallet.DataPoster(),
-			m.oldStaker.wallet,
-		)
+		boldStaker, err := m.setupBoldStaker(ctx, rollupAddress)
 		if err != nil {
 			return err
 		}
@@ -167,13 +148,28 @@ func (m *MultiProtocolStaker) checkAndSwitchToBoldStaker(ctx context.Context) (b
 	if !shouldSwitch {
 		return false, nil
 	}
-	txBuilder, err := txbuilder.NewBuilder(m.oldStaker.wallet)
+	boldStaker, err := m.setupBoldStaker(ctx, rollupAddress)
 	if err != nil {
 		return false, err
 	}
+	if err = boldStaker.Initialize(ctx); err != nil {
+		return false, err
+	}
+	boldStaker.Start(ctx)
+	return true, nil
+}
+
+func (m *MultiProtocolStaker) setupBoldStaker(
+	ctx context.Context,
+	rollupAddress common.Address,
+) (*BOLDStaker, error) {
+	txBuilder, err := txbuilder.NewBuilder(m.oldStaker.wallet)
+	if err != nil {
+		return nil, err
+	}
 	auth, err := txBuilder.Auth(ctx)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	boldStaker, err := newBOLDStaker(
 		ctx,
@@ -188,11 +184,7 @@ func (m *MultiProtocolStaker) checkAndSwitchToBoldStaker(ctx context.Context) (b
 		m.oldStaker.wallet,
 	)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
-	if err = boldStaker.Initialize(ctx); err != nil {
-		return false, err
-	}
-	boldStaker.Start(ctx)
-	return true, nil
+	return boldStaker, nil
 }
