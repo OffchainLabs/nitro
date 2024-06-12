@@ -15,6 +15,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -137,13 +138,9 @@ func (s *LocalFileStorageService) Put(ctx context.Context, data []byte, expiry u
 	key := dastree.Hash(data)
 	var batchPath string
 	if !s.enableLegacyLayout {
+		s.layout.writeMutex.Lock()
+		defer s.layout.writeMutex.Unlock()
 		batchPath = s.layout.batchPath(key)
-
-		if s.layout.expiryEnabled {
-			if err := createEmptyFile(s.layout.expiryPath(key, expiry)); err != nil {
-				return fmt.Errorf("Couldn't create by-expiry-path index entry: %w", err)
-			}
-		}
 	} else {
 		batchPath = s.legacyLayout.batchPath(key)
 	}
@@ -158,7 +155,15 @@ func (s *LocalFileStorageService) Put(ctx context.Context, data []byte, expiry u
 	if err != nil {
 		return err
 	}
-	defer f.Close()
+	renamed := false
+	defer func() {
+		_ = f.Close()
+		if !renamed {
+			if err := os.Remove(f.Name()); err != nil {
+				log.Error("Couldn't clean up temporary file", "file", f.Name())
+			}
+		}
+	}()
 	err = f.Chmod(0o600)
 	if err != nil {
 		return err
@@ -179,7 +184,25 @@ func (s *LocalFileStorageService) Put(ctx context.Context, data []byte, expiry u
 		}
 	}
 
-	return os.Rename(f.Name(), batchPath)
+	_, err = os.Stat(batchPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			if err = os.Rename(f.Name(), batchPath); err != nil {
+				return err
+			}
+			renamed = true
+		} else {
+			return err
+		}
+	}
+
+	if !s.enableLegacyLayout && s.layout.expiryEnabled {
+		if err := createHardLink(batchPath, s.layout.expiryPath(key, expiry)); err != nil {
+			return fmt.Errorf("couldn't create by-expiry-path index entry: %w", err)
+		}
+	}
+
+	return nil
 }
 
 func (s *LocalFileStorageService) Sync(ctx context.Context) error {
@@ -261,20 +284,22 @@ func copyFile(new, orig string) error {
 }
 
 // Creates an empty file, making any directories needed in the new file's path.
-func createEmptyFile(new string) error {
+func createHardLink(orig, new string) error {
 	err := os.MkdirAll(path.Dir(new), 0o700)
 	if err != nil {
-		return fmt.Errorf("failed to create directory %s: %w", path.Dir(new), err)
+		return err
 	}
 
-	file, err := os.OpenFile(new, os.O_CREATE|os.O_WRONLY, 0o600)
+	err = os.Link(orig, new)
 	if err != nil {
-		return fmt.Errorf("failed to create file %s: %w", new, err)
+		return err
 	}
-	file.Close()
 	return nil
 }
 
+// migrate converts a file store from flatLayout to trieLayout.
+// It is not thread safe and must be run before Put requests are served.
+// The expiry index is only created if expiry is enabled.
 func migrate(fl *flatLayout, tl *trieLayout) error {
 	flIt, err := fl.iterateBatches()
 	if err != nil {
@@ -304,6 +329,7 @@ func migrate(fl *flatLayout, tl *trieLayout) error {
 
 			if tl.expiryEnabled && batch.expiry.Before(migrationStart) {
 				skipped++
+				log.Debug("skipping expired batch during migration", "expiry", batch.expiry, "start", migrationStart)
 				continue // don't migrate expired batches
 			}
 
@@ -315,7 +341,7 @@ func migrate(fl *flatLayout, tl *trieLayout) error {
 
 			if tl.expiryEnabled {
 				expiryPath := tl.expiryPath(batch.key, uint64(batch.expiry.Unix()))
-				if err = createEmptyFile(expiryPath); err != nil {
+				if err = createHardLink(newPath, expiryPath); err != nil {
 					return err
 				}
 			}
@@ -351,37 +377,49 @@ func migrate(fl *flatLayout, tl *trieLayout) error {
 }
 
 func (tl *trieLayout) prune(pruneTil time.Time) error {
+	tl.writeMutex.Lock()
+	defer tl.writeMutex.Unlock()
 	it, err := tl.iterateBatchesByTimestamp(pruneTil)
 	if err != nil {
 		return err
 	}
 	pruned := 0
 	pruningStart := time.Now()
-	for file, err := it.next(); !errors.Is(err, io.EOF); file, err = it.next() {
+	for pathByTimestamp, err := it.next(); !errors.Is(err, io.EOF); pathByTimestamp, err = it.next() {
 		if err != nil {
 			return err
 		}
-		pathByTimestamp := path.Base(file)
 		key, err := DecodeStorageServiceKey(path.Base(pathByTimestamp))
 		if err != nil {
 			return err
 		}
-		pathByHash := tl.batchPath(key)
-		err = recursivelyDeleteUntil(pathByHash, byDataHash)
-		if err != nil {
-			if os.IsNotExist(err) {
-				log.Warn("Couldn't find batch to expire, it may have been previously deleted but its by-expiry-timestamp index entry still exists, trying to clean up the index next", "path", pathByHash, "indexPath", pathByTimestamp, "err", err)
-
-			} else {
-				log.Error("Couldn't prune expired batch, continuing trying to prune others", "path", pathByHash, "err", err)
-				continue
-			}
-
-		}
 		err = recursivelyDeleteUntil(pathByTimestamp, byExpiryTimestamp)
 		if err != nil {
-			log.Error("Couldn't prune expired batch expiry index entry, continuing trying to prune others", "path", pathByHash, "err", err)
+			log.Error("Couldn't prune expired batch expiry index entry, continuing trying to prune others", "path", pathByTimestamp, "err", err)
 		}
+
+		pathByHash := tl.batchPath(key)
+		info, err := os.Stat(pathByHash)
+		if err != nil {
+			if os.IsNotExist(err) {
+				log.Warn("Couldn't find batch to expire, it may have been previously deleted but its by-expiry-timestamp index entry still existed, deleting its index entry and continuing", "path", pathByHash, "indexPath", pathByTimestamp, "err", err)
+			} else {
+				log.Error("Couldn't prune expired batch, continuing trying to prune others", "path", pathByHash, "err", err)
+			}
+			continue
+		}
+		stat, ok := info.Sys().(*syscall.Stat_t)
+		if !ok {
+			log.Error("Couldn't convert file stats to Stat_t struct, possible OS or filesystem incompatibility, skipping pruning this batch", "file", pathByHash)
+			continue
+		}
+		if stat.Nlink == 1 {
+			err = recursivelyDeleteUntil(pathByHash, byDataHash)
+			if err != nil {
+
+			}
+		}
+
 		pruned++
 	}
 	if pruned > 0 {
@@ -477,6 +515,8 @@ const (
 	expiryDivisor     = 10_000
 )
 
+var expirySecondPartWidth = len(strconv.Itoa(expiryDivisor)) - 1
+
 type trieLayout struct {
 	root          string
 	expiryEnabled bool
@@ -484,6 +524,12 @@ type trieLayout struct {
 	// Is the trieLayout currently being migrated to?
 	// Controls whether paths include the migratingSuffix.
 	migrating bool
+
+	// Anything changing the layout (pruning, adding files) must go through
+	// this mutex.
+	// Pruning the entire history at statup of Arb Nova as of 2024-06-12 takes
+	// 5s on my laptop, so the overhead of pruning after startup should be neglibile.
+	writeMutex sync.Mutex
 }
 
 type trieLayoutIterator struct {
@@ -509,7 +555,7 @@ func (l *trieLayout) batchPath(key common.Hash) string {
 func (l *trieLayout) expiryPath(key common.Hash, expiry uint64) string {
 	encodedKey := EncodeStorageServiceKey(key)
 	firstDir := fmt.Sprintf("%d", expiry/expiryDivisor)
-	secondDir := fmt.Sprintf("%d", expiry%expiryDivisor)
+	secondDir := fmt.Sprintf("%0*d", expirySecondPartWidth, expiry%expiryDivisor)
 
 	topDir := byExpiryTimestamp
 	if l.migrating {
@@ -622,7 +668,7 @@ func (l *trieLayout) startMigration() error {
 		return err
 	}
 	if migrated {
-		return errors.New("Local file storage already migrated to trieLayout")
+		return errors.New("local file storage already migrated to trieLayout")
 	}
 
 	l.migrating = true
