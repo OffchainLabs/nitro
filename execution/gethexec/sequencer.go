@@ -87,6 +87,8 @@ type SequencerConfig struct {
 	StartHotShotBlock   uint64        `koanf:"start-hotshot-block"`
 	MaxHotShotDriftTime time.Duration `koanf:"max-hotshot-drift-time"`
 	SwitchPollInterval  time.Duration `koanf:"switch-poll-interval"`
+	// TODO: Wrtie this into the config chain
+	SwtichDelayThreshold uint64 `koanf:"switch-delay-threshold"`
 }
 
 func (c *SequencerConfig) Validate() error {

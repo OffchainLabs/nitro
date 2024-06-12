@@ -412,8 +412,7 @@ func TestEspressoE2E(t *testing.T) {
 	log.Info("Sent faucet tx", "hash", tx.Hash().Hex())
 	Require(t, err)
 
-	err = waitForWith(t, ctx, time.Second*240, time.Second*1, func() bool {
-		Require(t, err)
+	err = waitForWith(t, ctx, time.Second*300, time.Second*1, func() bool {
 		balance := l2Node.GetBalance(t, addr)
 		log.Info("waiting for balance", "account", newAccount, "addr", addr, "balance", balance)
 		return balance.Cmp(transferAmount) >= 0

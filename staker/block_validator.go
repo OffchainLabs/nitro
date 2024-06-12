@@ -17,6 +17,7 @@ import (
 	"time"
 
 	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
@@ -586,27 +587,27 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 	}
 	var comm espressoTypes.Commitment
 	var isHotShotLive bool
-	var l1BlockHeight uint64
+	var blockHeight uint64
 	if arbos.IsEspressoMsg(msg.Message) {
 		_, jst, err := arbos.ParseEspressoMsg(msg.Message)
 		if err != nil {
 			return false, err
 		}
-		l1BlockHeight = jst.BlockMerkleJustification.L1ProofHeight
-		fetchedCommitment, err := v.lightClientReader.FetchMerkleRootAtL1Block(l1BlockHeight)
+		blockHeight = jst.Header.Height
+		snapShot, err := v.lightClientReader.FetchMerkleRoot(blockHeight, &bind.CallOpts{})
 		if err != nil {
 			log.Error("error attempting to fetch block merkle root from the light client contract", "L1ProofHeight", jst.BlockMerkleJustification.L1ProofHeight)
 			return false, err
 		}
-		comm = fetchedCommitment
+		comm = snapShot.Root
 		isHotShotLive = true
 	} else if arbos.IsL2NonEspressoMsg(msg.Message) {
 		isHotShotLive = false
-		l1BlockHeight = msg.Message.Header.BlockNumber
+		blockHeight = msg.Message.Header.BlockNumber
 	}
 	chainConfig := v.streamer.ChainConfig()
 	entry, err := newValidationEntry(
-		pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, v.nextCreateBatchBlockHash, v.nextCreatePrevDelayed, chainConfig, &comm, isHotShotLive, l1BlockHeight,
+		pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, v.nextCreateBatchBlockHash, v.nextCreatePrevDelayed, chainConfig, &comm, isHotShotLive, blockHeight,
 	)
 	if err != nil {
 		return false, err

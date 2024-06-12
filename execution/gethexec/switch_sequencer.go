@@ -24,8 +24,9 @@ type SwitchSequencer struct {
 	centralized *Sequencer
 	espresso    *EspressoSequencer
 
-	switchPollInterval time.Duration
-	lightClient        lightClient.LightClientReaderInterface
+	switchPollInterval   time.Duration
+	swtichDelayThreshold uint64
+	lightClient          lightClient.LightClientReaderInterface
 
 	mode int
 }
@@ -46,11 +47,12 @@ func NewSwitchSequencer(centralized *Sequencer, espresso *EspressoSequencer, l1c
 	}
 
 	return &SwitchSequencer{
-		centralized:        centralized,
-		espresso:           espresso,
-		lightClient:        lightclient,
-		mode:               SequencingMode_Espresso,
-		switchPollInterval: config.SwitchPollInterval,
+		centralized:          centralized,
+		espresso:             espresso,
+		lightClient:          lightclient,
+		mode:                 SequencingMode_Espresso,
+		switchPollInterval:   config.SwitchPollInterval,
+		swtichDelayThreshold: config.SwtichDelayThreshold,
 	}, nil
 }
 
@@ -114,9 +116,11 @@ func (s *SwitchSequencer) Start(ctx context.Context) error {
 
 	if s.lightClient != nil {
 		s.CallIteratively(func(ctx context.Context) time.Duration {
-			espresso := s.lightClient.IsHotShotLive(s.maxHotShotDriftTime)
+			espresso, err := s.lightClient.IsHotShotLive(s.swtichDelayThreshold)
+			if err != nil {
+				return 0
+			}
 
-			var err error
 			if s.IsRunningEspressoMode() && !espresso {
 				err = s.SwitchToCentralized(ctx)
 			} else if !s.IsRunningEspressoMode() && espresso {
