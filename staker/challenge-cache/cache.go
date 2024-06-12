@@ -19,9 +19,9 @@ Example:
 
 	  wavm-module-root-0xab/
 		message-num-70/
-			roots.txt
+			hashes.bin
 			subchallenge-level-1-big-step-100/
-				roots.txt
+				hashes.bin
 
 We namespace top-level block challenges by wavm module root. Then, we can retrieve
 the state roots for any data within a challenge or associated subchallenge based on the hierarchy above.
@@ -48,12 +48,11 @@ var (
 	ErrNotFoundInCache   = errors.New("no found in challenge cache")
 	ErrFileAlreadyExists = errors.New("file already exists")
 	ErrNoStateRoots      = errors.New("no state roots being written")
-	stateRootsFileName   = "state-roots"
+	stateRootsFileName   = "hashes.bin"
 	wavmModuleRootPrefix = "wavm-module-root"
 	messageNumberPrefix  = "message-num"
 	bigStepPrefix        = "big-step"
 	challengeLevelPrefix = "subchallenge-level"
-	srvlog               = log.New("service", "bold-history-commit-cache")
 )
 
 // HistoryCommitmentCacher can retrieve history commitment state roots given lookup keys.
@@ -94,10 +93,10 @@ func (c *Cache) Get(
 		return nil, err
 	}
 	if _, err := os.Stat(fName); err != nil {
-		srvlog.Warn("Cache miss", "fileName", fName)
+		log.Warn("Cache miss", "fileName", fName)
 		return nil, ErrNotFoundInCache
 	}
-	srvlog.Debug("Cache hit", "fileName", fName)
+	log.Debug("Cache hit", "fileName", fName)
 	f, err := os.Open(fName)
 	if err != nil {
 		return nil, err
@@ -211,9 +210,9 @@ for a given filesystem challenge cache will look as follows:
 
 	  wavm-module-root-0xab/
 		message-num-70/
-			roots.txt
+			hashes.bin
 			subchallenge-level-1-big-step-100/
-				roots.txt
+				hashes.bin
 */
 func determineFilePath(baseDir string, lookup *Key) (string, error) {
 	key := make([]string, 0)
