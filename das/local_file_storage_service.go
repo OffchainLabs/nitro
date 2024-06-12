@@ -37,7 +37,7 @@ type LocalFileStorageConfig struct {
 
 var DefaultLocalFileStorageConfig = LocalFileStorageConfig{
 	DataDir:      "",
-	MaxRetention: time.Hour * 24 * 21, // 6 days longer than the batch poster default
+	MaxRetention: defaultStorageRetention,
 }
 
 func LocalFileStorageConfigAddOptions(prefix string, f *flag.FlagSet) {
