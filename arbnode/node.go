@@ -703,7 +703,7 @@ func createNodeImpl(
 
 		// Check if staker and batch poster are using the same address
 		if stakerAddr != (common.Address{}) && !strings.EqualFold(config.Staker.Strategy, "watchtower") && stakerAddr == batchPoster.dataPoster.Sender() {
-			return nil, fmt.Errorf("staker and batch poster the same data poster address: %v", stakerAddr)
+			return nil, fmt.Errorf("staker and batch poster are using the same address which is not allowed: %v", stakerAddr)
 		}
 	}
 
