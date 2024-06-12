@@ -266,9 +266,7 @@ func newApiClosures(
 	}
 	captureHostio := func(name string, args, outs []byte, startInk, endInk uint64) {
 		tracingInfo.Tracer.CaptureStylusHostio(name, args, outs, startInk, endInk)
-	}
-	recordGasOpcode := func() {
-		if tracingInfo != nil {
+		if name == "evm_gas_left" || name == "evm_ink_left" {
 			tracingInfo.Tracer.CaptureState(0, vm.GAS, 0, 0, scope, []byte{}, depth, nil)
 			tracingInfo.Tracer.CaptureState(0, vm.POP, 0, 0, scope, []byte{}, depth, nil)
 		}
@@ -320,12 +318,6 @@ func newApiClosures(
 			input = []byte{}
 			return data
 		}
-		takeGasLeft := func() uint64 {
-			defer func() {
-				recordGasOpcode()
-			}()
-			return takeU64()
-		}
 
 		switch req {
 		case GetBytes32:
@@ -333,7 +325,7 @@ func newApiClosures(
 			out, cost := getBytes32(key)
 			return out[:], nil, cost
 		case SetTrieSlots:
-			gasLeft := takeGasLeft()
+			gasLeft := takeU64()
 			gas := gasLeft
 			status := setTrieSlots(takeRest(), &gas)
 			return status.to_slice(), nil, gasLeft - gas
@@ -360,7 +352,7 @@ func newApiClosures(
 			}
 			contract := takeAddress()
 			value := takeU256()
-			gasLeft := takeGasLeft()
+			gasLeft := takeU64()
 			gasReq := takeU64()
 			calldata := takeRest()
 
@@ -371,7 +363,7 @@ func newApiClosures(
 			}
 			return []byte{statusByte}, ret, cost
 		case Create1, Create2:
-			gas := takeGasLeft()
+			gas := takeU64()
 			endowment := takeU256()
 			var salt *u256
 			if req == Create2 {
@@ -404,7 +396,7 @@ func newApiClosures(
 			return balance[:], nil, cost
 		case AccountCode:
 			address := takeAddress()
-			gas := takeGasLeft()
+			gas := takeU64()
 			code, cost := accountCode(address, gas)
 			return nil, code, cost
 		case AccountCodeHash:
