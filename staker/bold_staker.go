@@ -119,12 +119,13 @@ func newBOLDStaker(
 	callOpts bind.CallOpts,
 	txOpts *bind.TransactOpts,
 	client arbutil.L1Interface,
+	blockValidator *BlockValidator,
 	statelessBlockValidator *StatelessBlockValidator,
 	config *BoldConfig,
 	dataPoster *dataposter.DataPoster,
 	wallet ValidatorWalletInterface,
 ) (*BOLDStaker, error) {
-	manager, err := newBOLDChallengeManager(ctx, rollupAddress, txOpts, client, statelessBlockValidator, config, dataPoster)
+	manager, err := newBOLDChallengeManager(ctx, rollupAddress, txOpts, client, blockValidator, statelessBlockValidator, config, dataPoster)
 	if err != nil {
 		return nil, err
 	}
@@ -218,6 +219,7 @@ func newBOLDChallengeManager(
 	rollupAddress common.Address,
 	txOpts *bind.TransactOpts,
 	client arbutil.L1Interface,
+	blockValidator *BlockValidator,
 	statelessBlockValidator *StatelessBlockValidator,
 	config *BoldConfig,
 	dataPoster *dataposter.DataPoster,
@@ -242,6 +244,7 @@ func newBOLDChallengeManager(
 	// Sets up the state provider interface that BOLD will use to request data such as
 	// execution states for assertions, history commitments for machine execution, and one step proofs.
 	stateProvider, err := NewBOLDStateProvider(
+		blockValidator,
 		statelessBlockValidator,
 		config.MachineLeavesCachePath,
 		// Specify the height constants needed for the state provider.

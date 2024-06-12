@@ -39,7 +39,8 @@ var (
 )
 
 type BOLDStateProvider struct {
-	validator            *StatelessBlockValidator
+	validator            *BlockValidator
+	statelessValidator   *StatelessBlockValidator
 	historyCache         challengecache.HistoryCommitmentCacher
 	challengeLeafHeights []l2stateprovider.Height
 	validatorName        string
@@ -47,14 +48,16 @@ type BOLDStateProvider struct {
 }
 
 func NewBOLDStateProvider(
-	val *StatelessBlockValidator,
+	blockValidator *BlockValidator,
+	statelessValidator *StatelessBlockValidator,
 	cacheBaseDir string,
 	challengeLeafHeights []l2stateprovider.Height,
 	validatorName string,
 ) (*BOLDStateProvider, error) {
 	historyCache := challengecache.New(cacheBaseDir)
 	sm := &BOLDStateProvider{
-		validator:            val,
+		validator:            blockValidator,
+		statelessValidator:   statelessValidator,
 		historyCache:         historyCache,
 		challengeLeafHeights: challengeLeafHeights,
 		validatorName:        validatorName,
@@ -97,11 +100,17 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 			}
 		}
 	}
-	// TODO: Should only propose an assertion that has been validated by the block validator.
-	// Is it safe to just use the stateless block validator here?
 	globalState, err := s.findGlobalStateFromMessageCountAndBatch(messageCount, l2stateprovider.Batch(batchIndex))
 	if err != nil {
 		return nil, err
+	}
+	// If the state we are requested to produce is not yet validatd, we return ErrChainCatchingUp as an error.
+	lastValidatedGs, err := s.validator.ReadLastValidatedInfo()
+	if err != nil {
+		return nil, err
+	}
+	if lastValidatedGs.GlobalState.Batch < globalState.Batch {
+		return nil, fmt.Errorf("%w: batch count %d", l2stateprovider.ErrChainCatchingUp, maxInboxCount)
 	}
 	executionState := &protocol.ExecutionState{
 		GlobalState:   protocol.GoGlobalState(globalState),
@@ -322,7 +331,7 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 			return nil, err
 		}
 	}
-	entry, err := s.validator.CreateReadyValidationEntry(ctx, messageNum)
+	entry, err := s.statelessValidator.CreateReadyValidationEntry(ctx, messageNum)
 	if err != nil {
 		return nil, err
 	}
@@ -331,7 +340,7 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 		return nil, err
 	}
 	// TODO: Enable Redis streams.
-	execRun, err := s.validator.execSpawners[0].CreateExecutionRun(cfg.WasmModuleRoot, input).Await(ctx)
+	execRun, err := s.statelessValidator.execSpawners[0].CreateExecutionRun(cfg.WasmModuleRoot, input).Await(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -402,7 +411,7 @@ func (s *BOLDStateProvider) CollectProof(
 		return nil, err
 	}
 	messageNum := (prevBatchMsgCount + arbutil.MessageIndex(blockChallengeHeight))
-	entry, err := s.validator.CreateReadyValidationEntry(ctx, messageNum)
+	entry, err := s.statelessValidator.CreateReadyValidationEntry(ctx, messageNum)
 	if err != nil {
 		return nil, err
 	}
@@ -410,7 +419,7 @@ func (s *BOLDStateProvider) CollectProof(
 	if err != nil {
 		return nil, err
 	}
-	execRun, err := s.validator.execSpawners[0].CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
+	execRun, err := s.statelessValidator.execSpawners[0].CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -105,25 +105,26 @@ func (m *MultiProtocolStaker) Start(ctxIn context.Context) {
 	if m.boldStaker != nil {
 		log.Info("Starting BOLD staker")
 		m.boldStaker.Start(ctxIn)
+		m.StopOnly()
 	} else {
 		log.Info("Starting pre-BOLD staker")
 		m.oldStaker.Start(ctxIn)
-	}
-	stakerSwitchInterval := time.Second * time.Duration(m.oldStaker.config.BOLD.CheckStakerSwitchIntervalSeconds)
-	m.CallIteratively(func(ctx context.Context) time.Duration {
-		switchedToBoldProtocol, err := m.checkAndSwitchToBoldStaker(ctxIn)
-		if err != nil {
-			log.Error("staker: error in checking switch to bold staker", "err", err)
+		stakerSwitchInterval := time.Second * time.Duration(m.oldStaker.config.BOLD.CheckStakerSwitchIntervalSeconds)
+		m.CallIteratively(func(ctx context.Context) time.Duration {
+			switchedToBoldProtocol, err := m.checkAndSwitchToBoldStaker(ctxIn)
+			if err != nil {
+				log.Error("staker: error in checking switch to bold staker", "err", err)
+				return stakerSwitchInterval
+			}
+			if switchedToBoldProtocol {
+				log.Info("Detected BOLD protocol upgrade, stopping old staker and starting BOLD staker")
+				// Ready to stop the old staker.
+				m.oldStaker.StopOnly()
+				m.StopOnly()
+			}
 			return stakerSwitchInterval
-		}
-		if switchedToBoldProtocol {
-			log.Info("Detected BOLD protocol upgrade, stopping old staker and starting BOLD staker")
-			// Ready to stop the old staker.
-			m.oldStaker.StopOnly()
-			m.StopOnly()
-		}
-		return stakerSwitchInterval
-	})
+		})
+	}
 }
 
 func (m *MultiProtocolStaker) isBoldActive(ctx context.Context) (bool, common.Address, error) {
@@ -183,6 +184,7 @@ func (m *MultiProtocolStaker) setupBoldStaker(
 		*m.oldStaker.getCallOpts(ctx),
 		auth,
 		m.oldStaker.client,
+		m.oldStaker.blockValidator,
 		m.oldStaker.statelessBlockValidator,
 		&m.oldStaker.config.BOLD,
 		m.oldStaker.wallet.DataPoster(),
