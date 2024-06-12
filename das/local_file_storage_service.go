@@ -65,7 +65,7 @@ func NewLocalFileStorageService(config LocalFileStorageConfig) (*LocalFileStorag
 	}
 	s := &LocalFileStorageService{
 		config:       config,
-		legacyLayout: flatLayout{root: config.DataDir},
+		legacyLayout: flatLayout{root: config.DataDir, retention: config.MaxRetention},
 		layout:       trieLayout{root: config.DataDir, expiryEnabled: config.EnableExpiry},
 	}
 	return s, nil
@@ -128,8 +128,10 @@ func (s *LocalFileStorageService) GetByHash(ctx context.Context, key common.Hash
 
 func (s *LocalFileStorageService) Put(ctx context.Context, data []byte, expiry uint64) error {
 	logPut("das.LocalFileStorageService.Store", data, expiry, s)
-	if time.Unix(int64(expiry), 0).After(time.Now().Add(s.config.MaxRetention)) {
-		return errors.New("requested expiry time exceeds maximum allowed retention period")
+	expiryTime := time.Unix(int64(expiry), 0)
+	currentTimePlusRetention := time.Now().Add(s.config.MaxRetention)
+	if expiryTime.After(currentTimePlusRetention) {
+		return fmt.Errorf("requested expiry time (%v) exceeds current time plus maximum allowed retention period(%v)", expiryTime, currentTimePlusRetention)
 	}
 
 	key := dastree.Hash(data)
@@ -343,7 +345,7 @@ func migrate(fl *flatLayout, tl *trieLayout) error {
 		removed++
 	}
 
-	log.Info("Local file store legacy layout migration complete", "migratedFiles", migrated, "skippedExpiredFiles", skipped, "removedFiles", removed)
+	log.Info("Local file store legacy layout migration complete", "migratedFiles", migrated, "skippedExpiredFiles", skipped, "removedFiles", removed, "duration", time.Since(migrationStart))
 
 	return nil
 }
@@ -354,6 +356,7 @@ func (tl *trieLayout) prune(pruneTil time.Time) error {
 		return err
 	}
 	pruned := 0
+	pruningStart := time.Now()
 	for file, err := it.next(); !errors.Is(err, io.EOF); file, err = it.next() {
 		if err != nil {
 			return err
@@ -382,7 +385,7 @@ func (tl *trieLayout) prune(pruneTil time.Time) error {
 		pruned++
 	}
 	if pruned > 0 {
-		log.Info("local file store pruned expired batches", "count", pruned)
+		log.Info("local file store pruned expired batches", "count", pruned, "pruneTil", pruneTil, "duration", time.Since(pruningStart))
 	}
 	return nil
 }
@@ -663,6 +666,10 @@ func (l *trieLayout) commitMigration() error {
 	}
 
 	syscall.Sync()
+
+	// Done migrating
+	l.migrating = false
+
 	return nil
 }
 

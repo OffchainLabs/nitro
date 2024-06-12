@@ -39,7 +39,7 @@ func CreatePersistentStorageService(
 		if err != nil {
 			return nil, nil, err
 		}
-		s.start(ctx)
+		err = s.start(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
