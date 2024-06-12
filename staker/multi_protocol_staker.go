@@ -85,6 +85,7 @@ func (m *MultiProtocolStaker) Initialize(ctx context.Context) error {
 		return err
 	}
 	if boldActive {
+		log.Info("BOLD protocol is active, initializing BOLD staker")
 		boldStaker, err := m.setupBoldStaker(ctx, rollupAddress)
 		if err != nil {
 			return err
@@ -92,6 +93,7 @@ func (m *MultiProtocolStaker) Initialize(ctx context.Context) error {
 		m.boldStaker = boldStaker
 		return m.boldStaker.Initialize(ctx)
 	}
+	log.Info("BOLD protocol not detected on startup, using old staker until upgrade")
 	return m.oldStaker.Initialize(ctx)
 }
 
@@ -101,8 +103,10 @@ func (m *MultiProtocolStaker) Start(ctxIn context.Context) {
 		m.oldStaker.wallet.Start(ctxIn)
 	}
 	if m.boldStaker != nil {
+		log.Info("Starting BOLD staker")
 		m.boldStaker.Start(ctxIn)
 	} else {
+		log.Info("Starting pre-BOLD staker")
 		m.oldStaker.Start(ctxIn)
 	}
 	stakerSwitchInterval := time.Second * time.Duration(m.oldStaker.config.BOLD.CheckStakerSwitchIntervalSeconds)
@@ -113,6 +117,7 @@ func (m *MultiProtocolStaker) Start(ctxIn context.Context) {
 			return stakerSwitchInterval
 		}
 		if switchedToBoldProtocol {
+			log.Info("Detected BOLD protocol upgrade, stopping old staker and starting BOLD staker")
 			// Ready to stop the old staker.
 			m.oldStaker.StopOnly()
 			m.StopOnly()
