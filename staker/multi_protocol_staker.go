@@ -2,7 +2,6 @@ package staker
 
 import (
 	"context"
-	"strings"
 	"time"
 
 	"github.com/OffchainLabs/bold/solgen/go/bridgegen"
@@ -10,7 +9,6 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
-	oldrollupgen "github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker/txbuilder"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -152,13 +150,13 @@ func (m *MultiProtocolStaker) isBoldActive(ctx context.Context) (bool, common.Ad
 	if err != nil {
 		return false, addr, err
 	}
-	userLogic, err := oldrollupgen.NewRollupUserLogic(rollupAddress, m.oldStaker.client)
+	userLogic, err := boldrollup.NewRollupUserLogic(rollupAddress, m.oldStaker.client)
 	if err != nil {
 		return false, addr, err
 	}
-	_, err = userLogic.ExtraChallengeTimeBlocks(callOpts)
-	// ExtraChallengeTimeBlocks does not exist in the the bold protocol.
-	return err != nil && strings.Contains(err.Error(), "execution reverted"), rollupAddress, nil
+	_, err = userLogic.ChallengeGracePeriodBlocks(callOpts)
+	// ChallengeGracePeriodBlocks only exists in the BOLD rollup contracts.
+	return err == nil, rollupAddress, nil
 }
 
 func (m *MultiProtocolStaker) checkAndSwitchToBoldStaker(ctx context.Context) (bool, error) {
