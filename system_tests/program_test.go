@@ -24,10 +24,13 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	pgen "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -1535,4 +1538,121 @@ func TestWasmRecreate(t *testing.T) {
 	}
 	os.RemoveAll(wasmPath)
 
+}
+
+// createMapFromDb is used in verifying if wasm store rebuilding works
+func createMapFromDb(db ethdb.KeyValueStore) (map[string][]byte, error) {
+	iter := db.NewIterator(nil, nil)
+	defer iter.Release()
+
+	dataMap := make(map[string][]byte)
+
+	for iter.Next() {
+		key := iter.Key()
+		value := iter.Value()
+
+		dataMap[string(key)] = value
+	}
+
+	if err := iter.Error(); err != nil {
+		return nil, fmt.Errorf("iterator error: %w", err)
+	}
+
+	return dataMap, nil
+}
+
+func TestWasmStoreRebuilding(t *testing.T) {
+	builder, auth, cleanup := setupProgramTest(t, true)
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	storage := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
+
+	zero := common.Hash{}
+	val := common.HexToHash("0x121233445566")
+
+	// do an onchain call - store value
+	storeTx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, argsForStorageWrite(zero, val))
+	Require(t, l2client.SendTransaction(ctx, storeTx))
+	_, err := EnsureTxSucceeded(ctx, l2client, storeTx)
+	Require(t, err)
+
+	testDir := t.TempDir()
+	nodeBStack := createStackConfigForTest(testDir)
+	nodeB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack})
+
+	_, err = EnsureTxSucceeded(ctx, nodeB.Client, storeTx)
+	Require(t, err)
+
+	// make sure reading 2nd value succeeds from 2nd node
+	loadTx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, argsForStorageRead(zero))
+	result, err := arbutil.SendTxAsCall(ctx, nodeB.Client, loadTx, l2info.GetAddress("Owner"), nil, true)
+	Require(t, err)
+	if common.BytesToHash(result) != val {
+		Fatal(t, "got wrong value")
+	}
+
+	wasmDb := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+
+	storeMap, err := createMapFromDb(wasmDb)
+	Require(t, err)
+
+	// close nodeB
+	cleanupB()
+
+	// delete wasm dir of nodeB
+	wasmPath := filepath.Join(testDir, "system_tests.test", "wasm")
+	dirContents, err := os.ReadDir(wasmPath)
+	Require(t, err)
+	if len(dirContents) == 0 {
+		Fatal(t, "not contents found before delete")
+	}
+	os.RemoveAll(wasmPath)
+
+	// recreate nodeB - using same source dir (wasm deleted)
+	nodeB, cleanupB = builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack})
+	bc := nodeB.ExecNode.Backend.ArbInterface().BlockChain()
+
+	wasmDbAfterDelete := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	storeMapAfterDelete, err := createMapFromDb(wasmDbAfterDelete)
+	Require(t, err)
+	if len(storeMapAfterDelete) != 0 {
+		Fatal(t, "non-empty wasm store after it was previously deleted")
+	}
+
+	// Start rebuilding and wait for it to finish
+	log.Info("starting rebuilding of wasm store")
+	Require(t, gethexec.RebuildWasmStore(ctx, wasmDbAfterDelete, nodeB.ExecNode.ChainDB, nodeB.ExecNode.ConfigFetcher().RPC.MaxRecreateStateDepth, bc, common.Hash{}, bc.CurrentBlock().Hash()))
+
+	wasmDbAfterRebuild := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+
+	// Before comparing, check if rebuilding was set to done and then delete the keys that are used to track rebuilding status
+	status, err := gethexec.ReadFromKeyValueStore[common.Hash](wasmDbAfterRebuild, gethexec.RebuildingPositionKey)
+	Require(t, err)
+	if status != gethexec.RebuildingDone {
+		Fatal(t, "rebuilding was not set to done after successful completion")
+	}
+	Require(t, wasmDbAfterRebuild.Delete(gethexec.RebuildingPositionKey))
+	Require(t, wasmDbAfterRebuild.Delete(gethexec.RebuildingStartBlockHashKey))
+
+	rebuiltStoreMap, err := createMapFromDb(wasmDbAfterRebuild)
+	Require(t, err)
+
+	// Check if rebuilding worked
+	if len(storeMap) != len(rebuiltStoreMap) {
+		Fatal(t, "size mismatch while rebuilding wasm store:", "want", len(storeMap), "got", len(rebuiltStoreMap))
+	}
+	for key, value1 := range storeMap {
+		value2, exists := rebuiltStoreMap[key]
+		if !exists {
+			Fatal(t, "rebuilt wasm store doesn't have key from original")
+		}
+		if !bytes.Equal(value1, value2) {
+			Fatal(t, "rebuilt wasm store has incorrect value from original")
+		}
+	}
+
+	cleanupB()
 }
