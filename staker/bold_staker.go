@@ -51,6 +51,7 @@ type BoldConfig struct {
 	APIPort                             uint16   `koanf:"api-port"`
 	APIDBPath                           string   `koanf:"api-db-path"`
 	TrackChallengeParentAssertionHashes []string `koanf:"track-challenge-parent-assertion-hashes"`
+	CheckStakerSwitchIntervalSeconds    uint64   `koanf:"check-staker-switch-interval-seconds"`
 }
 
 var DefaultBoldConfig = BoldConfig{
@@ -70,6 +71,7 @@ var DefaultBoldConfig = BoldConfig{
 	APIPort:                             9393,
 	APIDBPath:                           "/tmp/bold-api-db",
 	TrackChallengeParentAssertionHashes: []string{},
+	CheckStakerSwitchIntervalSeconds:    60, // Every minute, check if the Nitro node staker should switch to using BOLD.
 }
 
 var BoldModes = map[string]boldtypes.Mode{
