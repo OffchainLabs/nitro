@@ -4,6 +4,7 @@
 package das
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -21,9 +22,11 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	flag "github.com/spf13/pflag"
 )
@@ -108,7 +111,9 @@ type l1SyncService struct {
 	lastBatchAcc   common.Hash
 }
 
-const nextBlockNoFilename = "nextBlockNumber"
+// The original syncing process had a bug, so the file was renamed to cause any mirrors
+// in the wild to re-sync from their configured starting block number.
+const nextBlockNoFilename = "nextBlockNumberV2"
 
 func readSyncStateOrDefault(syncDir string, dflt uint64) uint64 {
 	if syncDir == "" {
@@ -214,31 +219,45 @@ func (s *l1SyncService) processBatchDelivered(ctx context.Context, batchDelivere
 	binary.BigEndian.PutUint64(header[32:40], deliveredEvent.AfterDelayedMessagesRead.Uint64())
 
 	data = append(header, data...)
-	preimages := make(map[arbutil.PreimageType]map[common.Hash][]byte)
-	preimageRecorder := daprovider.RecordPreimagesTo(preimages)
-	if _, err = daprovider.RecoverPayloadFromDasBatch(ctx, deliveredEvent.BatchSequenceNumber.Uint64(), data, s.dataSource, preimageRecorder, true); err != nil {
+	var payload []byte
+	if payload, err = daprovider.RecoverPayloadFromDasBatch(ctx, deliveredEvent.BatchSequenceNumber.Uint64(), data, s.dataSource, nil, true); err != nil {
 		if errors.Is(err, daprovider.ErrSeqMsgValidation) {
 			log.Error(err.Error())
+			// TODO why is this just logged and not returned?
 		} else {
 			log.Error("recover payload failed", "txhash", batchDeliveredLog.TxHash, "data", data)
 			return err
 		}
 	}
-	for _, preimages := range preimages {
-		for hash, contents := range preimages {
-			var err error
-			if s.config.CheckAlreadyExists {
-				_, err = s.syncTo.GetByHash(ctx, hash)
-			}
-			if err == nil || errors.Is(err, ErrNotFound) {
-				if err := s.syncTo.Put(ctx, contents, storeUntil); err != nil {
+
+	if payload != nil {
+		var skip bool
+		if s.config.CheckAlreadyExists {
+			// The DA cert in the sequencer data may use the V0 style flat hash, but
+			// Put always uses the V1 style dastree Hash, so just check for the
+			// existence of the batch by dastree Hash.
+			dataHash := dastree.Hash(payload)
+			existingPayload, err := s.syncTo.GetByHash(ctx, dataHash)
+			if err != nil {
+				if !errors.Is(err, ErrNotFound) {
 					return err
 				}
+			} else if !bytes.Equal(existingPayload, payload) {
+				log.Error("mismatch between existing and retrieved data in l1SyncService", "existing", pretty.PrettyBytes(existingPayload), "retrieved", pretty.PrettyBytes(payload), "dataHash", dataHash)
+				return errors.New("mismatch between existing and retrived data in l1SyncService")
 			} else {
+				log.Info("l1SyncService skipping syncing existing data for", "dataHash", dataHash)
+				skip = true
+			}
+		}
+
+		if !skip {
+			if err := s.syncTo.Put(ctx, payload, storeUntil); err != nil {
 				return err
 			}
 		}
 	}
+
 	seqNumber := deliveredEvent.BatchSequenceNumber
 	if seqNumber == nil {
 		seqNumber = common.Big0
