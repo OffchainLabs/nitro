@@ -11,7 +11,7 @@ Each file contains a list of 32 byte hashes, concatenated together as bytes.
 Using this structure, we can namespace hashes by message number and by challenge level.
 
 Once a validator receives a full list of computed machine hashes for the first time from a validatio node,
-it will write the roots to this filesystem hierarchy for fast access next time these roots are needed.
+it will write the hashes to this filesystem hierarchy for fast access next time these hashes are needed.
 
 Example uses:
 - Obtain all the hashes for the execution of message num 70 to 71 for a given wavm module root.
@@ -24,7 +24,7 @@ Example uses:
 				hashes.bin
 
 We namespace top-level block challenges by wavm module root. Then, we can retrieve
-the state roots for any data within a challenge or associated subchallenge based on the hierarchy above.
+the hashes for any data within a challenge or associated subchallenge based on the hierarchy above.
 */
 
 package challengecache
@@ -45,8 +45,8 @@ import (
 var (
 	ErrNotFoundInCache    = errors.New("no found in challenge cache")
 	ErrFileAlreadyExists  = errors.New("file already exists")
-	ErrNoStateRoots       = errors.New("no state roots being written")
-	stateRootsFileName    = "hashes.bin"
+	ErrNoHashes           = errors.New("no hashes being written")
+	hashesFileName        = "hashes.bin"
 	wavmModuleRootPrefix  = "wavm-module-root"
 	rollupBlockHashPrefix = "rollup-block-hash"
 	messageNumberPrefix   = "message-num"
@@ -54,10 +54,10 @@ var (
 	challengeLevelPrefix  = "subchallenge-level"
 )
 
-// HistoryCommitmentCacher can retrieve history commitment state roots given lookup keys.
+// HistoryCommitmentCacher can retrieve history commitment hashes given lookup keys.
 type HistoryCommitmentCacher interface {
 	Get(lookup *Key, numToRead uint64) ([]common.Hash, error)
-	Put(lookup *Key, stateRoots []common.Hash) error
+	Put(lookup *Key, hashes []common.Hash) error
 }
 
 // Cache for history commitments on disk.
@@ -81,7 +81,7 @@ type Key struct {
 	StepHeights     []uint64
 }
 
-// Get a list of state roots from the cache up to a certain index. State roots are saved as files in the directory
+// Get a list of hashes from the cache from index 0 up to a certain index. Hashes are saved as files in the directory
 // hierarchy for the cache. If a file is not present, ErrNotFoundInCache
 // is returned.
 func (c *Cache) Get(
@@ -106,23 +106,23 @@ func (c *Cache) Get(
 			log.Error("Could not close file after reading", "err", err, "file", fName)
 		}
 	}()
-	return readStateRoots(f, numToRead)
+	return readHashes(f, numToRead)
 }
 
-// Put a list of state roots into the cache.
-// State roots are saved as files in a directory hierarchy for the cache.
-// This function first creates a temporary file, writes the state roots to it, and then renames the file
+// Put a list of hashes into the cache.
+// Hashes are saved as files in a directory hierarchy for the cache.
+// This function first creates a temporary file, writes the hashes to it, and then renames the file
 // to the final directory to ensure atomic writes.
-func (c *Cache) Put(lookup *Key, stateRoots []common.Hash) error {
-	// We should error if trying to put 0 state roots to disk.
-	if len(stateRoots) == 0 {
-		return ErrNoStateRoots
+func (c *Cache) Put(lookup *Key, hashes []common.Hash) error {
+	// We should error if trying to put 0 hashes to disk.
+	if len(hashes) == 0 {
+		return ErrNoHashes
 	}
 	fName, err := determineFilePath(c.baseDir, lookup)
 	if err != nil {
 		return err
 	}
-	// We create a tmp file to write our state roots to first. If writing fails,
+	// We create a tmp file to write our hashes to first. If writing fails,
 	// we don't want to leave a half-written file in our cache directory.
 	// Once writing succeeds, we rename in an atomic operation to the correct file name
 	// in the cache directory hierarchy.
@@ -141,7 +141,7 @@ func (c *Cache) Put(lookup *Key, stateRoots []common.Hash) error {
 			log.Error("Could not close file after writing", "err", err, "file", fName)
 		}
 	}()
-	if err := writeStateRoots(f, stateRoots); err != nil {
+	if err := writeHashes(f, hashes); err != nil {
 		return err
 	}
 	if err := os.MkdirAll(filepath.Dir(fName), os.ModePerm); err != nil {
@@ -155,9 +155,9 @@ func (c *Cache) Put(lookup *Key, stateRoots []common.Hash) error {
 }
 
 // Reads 32 bytes at a time from a reader up to a specified height. If none, then read all.
-func readStateRoots(r io.Reader, numToRead uint64) ([]common.Hash, error) {
+func readHashes(r io.Reader, numToRead uint64) ([]common.Hash, error) {
 	br := bufio.NewReader(r)
-	stateRoots := make([]common.Hash, 0)
+	hashes := make([]common.Hash, 0)
 	buf := make([]byte, 0, 32)
 	for totalRead := uint64(0); totalRead < numToRead; totalRead++ {
 		n, err := br.Read(buf[:cap(buf)])
@@ -172,27 +172,27 @@ func readStateRoots(r io.Reader, numToRead uint64) ([]common.Hash, error) {
 		if n != 32 {
 			return nil, fmt.Errorf("expected to read 32 bytes, got %d bytes", n)
 		}
-		stateRoots = append(stateRoots, common.BytesToHash(buf))
+		hashes = append(hashes, common.BytesToHash(buf))
 	}
-	if numToRead > uint64(len(stateRoots)) {
+	if numToRead > uint64(len(hashes)) {
 		return nil, fmt.Errorf(
-			"wanted to read %d roots, but only read %d state roots",
+			"wanted to read %d hashes, but only read %d hashes",
 			numToRead,
-			len(stateRoots),
+			len(hashes),
 		)
 	}
-	return stateRoots, nil
+	return hashes, nil
 }
 
-func writeStateRoots(w io.Writer, stateRoots []common.Hash) error {
-	for i, rt := range stateRoots {
+func writeHashes(w io.Writer, hashes []common.Hash) error {
+	for i, rt := range hashes {
 		n, err := w.Write(rt[:])
 		if err != nil {
 			return err
 		}
 		if n != len(rt) {
 			return fmt.Errorf(
-				"for state root %d, wrote %d bytes, expected to write %d bytes",
+				"for hash %d, wrote %d bytes, expected to write %d bytes",
 				i,
 				n,
 				len(rt),
@@ -229,7 +229,7 @@ func determineFilePath(baseDir string, lookup *Key) (string, error) {
 		)
 
 	}
-	key = append(key, stateRootsFileName)
+	key = append(key, hashesFileName)
 	return filepath.Join(baseDir, filepath.Join(key...)), nil
 }
 

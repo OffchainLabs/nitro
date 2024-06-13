@@ -38,8 +38,8 @@ func TestCache(t *testing.T) {
 			t.Fatal(err)
 		}
 	})
-	t.Run("Putting empty root fails", func(t *testing.T) {
-		if err := cache.Put(key, []common.Hash{}); !errors.Is(err, ErrNoStateRoots) {
+	t.Run("Putting empty hash fails", func(t *testing.T) {
+		if err := cache.Put(key, []common.Hash{}); !errors.Is(err, ErrNoHashes) {
 			t.Fatalf("Unexpected error: %v", err)
 		}
 	})
@@ -57,7 +57,7 @@ func TestCache(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(got) != len(want) {
-		t.Fatalf("Wrong number of roots. Expected %d, got %d", len(want), len(got))
+		t.Fatalf("Wrong number of hashes. Expected %d, got %d", len(want), len(got))
 	}
 	for i, rt := range got {
 		if rt != want[i] {
@@ -66,14 +66,14 @@ func TestCache(t *testing.T) {
 	}
 }
 
-func TestReadWriteStateRoots(t *testing.T) {
+func TestReadWriteStatehashes(t *testing.T) {
 	t.Run("read up to, but had empty reader", func(t *testing.T) {
 		b := bytes.NewBuffer([]byte{})
-		_, err := readStateRoots(b, 100)
+		_, err := readHashes(b, 100)
 		if err == nil {
 			t.Fatal("Wanted error")
 		}
-		if !strings.Contains(err.Error(), "only read 0 state roots") {
+		if !strings.Contains(err.Error(), "only read 0 state hashes") {
 			t.Fatal("Unexpected error")
 		}
 	})
@@ -81,18 +81,18 @@ func TestReadWriteStateRoots(t *testing.T) {
 		b := bytes.NewBuffer([]byte{})
 		want := common.BytesToHash([]byte("foo"))
 		b.Write(want.Bytes())
-		roots, err := readStateRoots(b, 1)
+		hashes, err := readHashes(b, 1)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(roots) == 0 {
-			t.Fatal("Got no roots")
+		if len(hashes) == 0 {
+			t.Fatal("Got no hashes")
 		}
-		if roots[0] != want {
-			t.Fatalf("Wrong root. Expected %#x, got %#x", want, roots[0])
+		if hashes[0] != want {
+			t.Fatalf("Wrong root. Expected %#x, got %#x", want, hashes[0])
 		}
 	})
-	t.Run("Three roots exist, want to read only two", func(t *testing.T) {
+	t.Run("Three hashes exist, want to read only two", func(t *testing.T) {
 		b := bytes.NewBuffer([]byte{})
 		foo := common.BytesToHash([]byte("foo"))
 		bar := common.BytesToHash([]byte("bar"))
@@ -100,28 +100,28 @@ func TestReadWriteStateRoots(t *testing.T) {
 		b.Write(foo.Bytes())
 		b.Write(bar.Bytes())
 		b.Write(baz.Bytes())
-		roots, err := readStateRoots(b, 2)
+		hashes, err := readHashes(b, 2)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if len(roots) != 2 {
-			t.Fatalf("Expected two roots, got %d", len(roots))
+		if len(hashes) != 2 {
+			t.Fatalf("Expected two hashes, got %d", len(hashes))
 		}
-		if roots[0] != foo {
-			t.Fatalf("Wrong root. Expected %#x, got %#x", foo, roots[0])
+		if hashes[0] != foo {
+			t.Fatalf("Wrong root. Expected %#x, got %#x", foo, hashes[0])
 		}
-		if roots[1] != bar {
-			t.Fatalf("Wrong root. Expected %#x, got %#x", bar, roots[1])
+		if hashes[1] != bar {
+			t.Fatalf("Wrong root. Expected %#x, got %#x", bar, hashes[1])
 		}
 	})
 	t.Run("Fails to write enough data to writer", func(t *testing.T) {
 		m := &mockWriter{wantErr: true}
-		err := writeStateRoots(m, []common.Hash{common.BytesToHash([]byte("foo"))})
+		err := writeHashes(m, []common.Hash{common.BytesToHash([]byte("foo"))})
 		if err == nil {
 			t.Fatal("Wanted error")
 		}
 		m = &mockWriter{wantErr: false, numWritten: 16}
-		err = writeStateRoots(m, []common.Hash{common.BytesToHash([]byte("foo"))})
+		err = writeHashes(m, []common.Hash{common.BytesToHash([]byte("foo"))})
 		if err == nil {
 			t.Fatal("Wanted error")
 		}
@@ -146,7 +146,7 @@ func (m *mockWriter) Write(_ []byte) (n int, err error) {
 type mockReader struct {
 	wantErr   bool
 	err       error
-	roots     []common.Hash
+	hashes    []common.Hash
 	readIdx   int
 	bytesRead int
 }
@@ -155,23 +155,23 @@ func (m *mockReader) Read(out []byte) (n int, err error) {
 	if m.wantErr {
 		return 0, m.err
 	}
-	if m.readIdx == len(m.roots) {
+	if m.readIdx == len(m.hashes) {
 		return 0, io.EOF
 	}
-	copy(out, m.roots[m.readIdx].Bytes())
+	copy(out, m.hashes[m.readIdx].Bytes())
 	m.readIdx++
 	return m.bytesRead, nil
 }
 
-func Test_readStateRoots(t *testing.T) {
+func Test_readHashes(t *testing.T) {
 	t.Run("Unexpected error", func(t *testing.T) {
 		want := []common.Hash{
 			common.BytesToHash([]byte("foo")),
 			common.BytesToHash([]byte("bar")),
 			common.BytesToHash([]byte("baz")),
 		}
-		m := &mockReader{wantErr: true, roots: want, err: errors.New("foo")}
-		_, err := readStateRoots(m, 1)
+		m := &mockReader{wantErr: true, hashes: want, err: errors.New("foo")}
+		_, err := readHashes(m, 1)
 		if err == nil {
 			t.Fatal(err)
 		}
@@ -185,8 +185,8 @@ func Test_readStateRoots(t *testing.T) {
 			common.BytesToHash([]byte("bar")),
 			common.BytesToHash([]byte("baz")),
 		}
-		m := &mockReader{wantErr: true, roots: want, err: io.EOF}
-		_, err := readStateRoots(m, 100)
+		m := &mockReader{wantErr: true, hashes: want, err: io.EOF}
+		_, err := readHashes(m, 100)
 		if err == nil {
 			t.Fatal(err)
 		}
@@ -200,8 +200,8 @@ func Test_readStateRoots(t *testing.T) {
 			common.BytesToHash([]byte("bar")),
 			common.BytesToHash([]byte("baz")),
 		}
-		m := &mockReader{wantErr: false, roots: want, bytesRead: 16}
-		_, err := readStateRoots(m, 2)
+		m := &mockReader{wantErr: false, hashes: want, bytesRead: 16}
+		_, err := readHashes(m, 2)
 		if err == nil {
 			t.Fatal(err)
 		}
@@ -215,13 +215,13 @@ func Test_readStateRoots(t *testing.T) {
 			common.BytesToHash([]byte("bar")),
 			common.BytesToHash([]byte("baz")),
 		}
-		m := &mockReader{wantErr: false, roots: want, bytesRead: 32}
-		got, err := readStateRoots(m, 3)
+		m := &mockReader{wantErr: false, hashes: want, bytesRead: 32}
+		got, err := readHashes(m, 3)
 		if err != nil {
 			t.Fatal(err)
 		}
 		if len(want) != len(got) {
-			t.Fatal("Wrong number of roots")
+			t.Fatal("Wrong number of hashes")
 		}
 		for i, rt := range got {
 			if rt != want[i] {
@@ -295,23 +295,23 @@ func BenchmarkCache_Read_32Mb(b *testing.B) {
 		MessageHeight:  0,
 		StepHeights:    []uint64{0},
 	}
-	numRoots := 1 << 20
-	roots := make([]common.Hash, numRoots)
-	for i := range roots {
-		roots[i] = common.BytesToHash([]byte(fmt.Sprintf("%d", i)))
+	numHashes := 1 << 20
+	hashes := make([]common.Hash, numHashes)
+	for i := range hashes {
+		hashes[i] = common.BytesToHash([]byte(fmt.Sprintf("%d", i)))
 	}
-	if err := cache.Put(key, roots); err != nil {
+	if err := cache.Put(key, hashes); err != nil {
 		b.Fatal(err)
 	}
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
 		readUpTo := uint64(1 << 20)
-		roots, err := cache.Get(key, readUpTo)
+		hashes, err := cache.Get(key, readUpTo)
 		if err != nil {
 			b.Fatal(err)
 		}
-		if len(roots) != numRoots {
-			b.Fatalf("Wrong number of roots. Expected %d, got %d", numRoots, len(roots))
+		if len(hashes) != numHashes {
+			b.Fatalf("Wrong number of hashes. Expected %d, got %d", hashes, len(hashes))
 		}
 	}
 }
