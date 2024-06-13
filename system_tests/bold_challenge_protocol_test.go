@@ -62,8 +62,6 @@ var (
 )
 
 func TestChallengeProtocolBOLD(t *testing.T) {
-	// t.Skip("Investigating flakiness when parallel with other challenge tests")
-	// t.Parallel()
 	Require(t, os.RemoveAll("/tmp/good"))
 	Require(t, os.RemoveAll("/tmp/evil"))
 	t.Cleanup(func() {
@@ -339,8 +337,6 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	totalBatchesBig, err := bridgeBinding.SequencerMessageCount(&bind.CallOpts{Context: ctx})
 	Require(t, err)
 	totalBatches := totalBatchesBig.Uint64()
-	totalMessageCount, err := l2nodeA.InboxTracker.GetBatchMessageCount(totalBatches - 1)
-	Require(t, err)
 
 	// Wait until the validators have validated the batches.
 	for {
@@ -348,32 +344,22 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 		if lastInfo == nil || err != nil {
 			continue
 		}
-		batchMsgCount, err := l2nodeA.InboxTracker.GetBatchMessageCount(lastInfo.GlobalState.Batch)
-		if err != nil {
-			continue
-		}
-		Require(t, err)
-		t.Log("lastValidatedMessageCount", batchMsgCount, "totalMessageCount", totalMessageCount)
-		if batchMsgCount >= totalMessageCount {
+		t.Log(lastInfo.GlobalState.Batch, totalBatches-1)
+		if lastInfo.GlobalState.Batch >= totalBatches-1 {
 			break
 		}
-		time.Sleep(time.Millisecond * 100)
+		time.Sleep(time.Millisecond * 200)
 	}
 	for {
 		lastInfo, err := blockValidatorB.ReadLastValidatedInfo()
 		if lastInfo == nil || err != nil {
 			continue
 		}
-		batchMsgCount, err := l2nodeB.InboxTracker.GetBatchMessageCount(lastInfo.GlobalState.Batch)
-		if err != nil {
-			continue
-		}
-		Require(t, err)
-		t.Log("lastValidatedMessageCount", batchMsgCount, "totalMessageCount", totalMessageCount)
-		if batchMsgCount >= totalMessageCount {
+		t.Log(lastInfo.GlobalState.Batch, totalBatches-1)
+		if lastInfo.GlobalState.Batch >= totalBatches-1 {
 			break
 		}
-		time.Sleep(time.Millisecond * 100)
+		time.Sleep(time.Millisecond * 200)
 	}
 
 	provider := l2stateprovider.NewHistoryCommitmentProvider(
