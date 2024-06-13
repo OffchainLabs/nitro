@@ -90,9 +90,9 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	ctx, cancelCtx = context.WithCancel(ctx)
 	defer cancelCtx()
 
-	// Every 12 seconds, send an L1 transaction to keep the chain moving.
+	// Every 3 seconds, send an L1 transaction to keep the chain moving.
 	go func() {
-		delay := time.Second * 12
+		delay := time.Second * 3
 		for {
 			select {
 			case <-ctx.Done():
@@ -119,14 +119,6 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	l2nodeConfig := arbnode.ConfigDefaultL1Test()
 	_, l2nodeB, _ := create2ndNodeWithConfigForBoldProtocol(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, l2nodeConfig, nil, stakeTokenAddr)
 	defer l2nodeB.StopAndWait()
-
-	// nodeAMessage, err := l2nodeA.Execution.HeadMessageNumber()
-	// Require(t, err)
-	// nodeBMessage, err := l2nodeB.Execution.HeadMessageNumber()
-	// Require(t, err)
-	// if nodeAMessage != nodeBMessage {
-	// 	Fatal(t, "node A L2 genesis hash", nodeAMessage, "!= node B L2 genesis hash", nodeBMessage)
-	// }
 
 	balance := big.NewInt(params.Ether)
 	balance.Mul(balance, big.NewInt(100))
@@ -405,7 +397,7 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 		challengemanager.WithName("honest"),
 		challengemanager.WithMode(modes.MakeMode),
 		challengemanager.WithAddress(l1info.GetDefaultTransactOpts("Asserter", ctx).From),
-		challengemanager.WithAssertionPostingInterval(time.Second*30),
+		challengemanager.WithAssertionPostingInterval(time.Second*3),
 		challengemanager.WithAssertionScanningInterval(time.Second),
 		challengemanager.WithAvgBlockCreationTime(time.Second),
 	)
@@ -419,7 +411,7 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 		challengemanager.WithName("evil"),
 		challengemanager.WithMode(modes.MakeMode),
 		challengemanager.WithAddress(l1info.GetDefaultTransactOpts("EvilAsserter", ctx).From),
-		challengemanager.WithAssertionPostingInterval(time.Second*30),
+		challengemanager.WithAssertionPostingInterval(time.Second*3),
 		challengemanager.WithAssertionScanningInterval(time.Second),
 		challengemanager.WithAvgBlockCreationTime(time.Second),
 	)
