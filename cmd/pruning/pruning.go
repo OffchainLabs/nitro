@@ -234,14 +234,14 @@ func findImportantRoots(ctx context.Context, chainDb ethdb.Database, stack *node
 
 func PruneChainDb(ctx context.Context, chainDb ethdb.Database, stack *node.Node, initConfig *conf.InitConfig, cacheConfig *core.CacheConfig, persistentConfig *conf.PersistentConfig, l1Client arbutil.L1Interface, rollupAddrs chaininfo.RollupAddresses, validatorRequired bool) error {
 	if initConfig.Prune == "" {
-		return pruner.RecoverPruning(stack.InstanceDir(), chainDb)
+		return pruner.RecoverPruning(stack.InstanceDir(), chainDb, initConfig.PruneThreads)
 	}
 	root, err := findImportantRoots(ctx, chainDb, stack, initConfig, cacheConfig, persistentConfig, l1Client, rollupAddrs, validatorRequired)
 	if err != nil {
 		return fmt.Errorf("failed to find root to retain for pruning: %w", err)
 	}
 
-	pruner, err := pruner.NewPruner(chainDb, pruner.Config{Datadir: stack.InstanceDir(), BloomSize: initConfig.PruneBloomSize})
+	pruner, err := pruner.NewPruner(chainDb, pruner.Config{Datadir: stack.InstanceDir(), BloomSize: initConfig.PruneBloomSize, Threads: initConfig.PruneThreads})
 	if err != nil {
 		return err
 	}
