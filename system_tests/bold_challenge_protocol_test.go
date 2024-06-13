@@ -62,8 +62,8 @@ var (
 )
 
 func TestChallengeProtocolBOLD(t *testing.T) {
-	t.Skip("Investigating flakiness when parallel with other challenge tests")
-	t.Parallel()
+	// t.Skip("Investigating flakiness when parallel with other challenge tests")
+	// t.Parallel()
 	Require(t, os.RemoveAll("/tmp/good"))
 	Require(t, os.RemoveAll("/tmp/evil"))
 	t.Cleanup(func() {
