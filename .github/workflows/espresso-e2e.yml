@@ -125,7 +125,7 @@ jobs:
         run: ./scripts/build-brotli.sh -l
 
       - name: Build
-        run: make build build-replay-env -j
+        run: make build test-go-deps -j
 
       - name: Install docker-compose
         uses: KengoTODA/actions-setup-docker-compose@v1.2.1
