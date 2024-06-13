@@ -63,6 +63,10 @@ func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*v
 	})
 }
 
+func machineFinishedHash(gs validator.GoGlobalState) common.Hash {
+	return crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
+}
+
 func (e *executionRun) GetMachineHashesWithStepSize(fromBatch, machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[[]common.Hash] {
 	return stopwaiter.LaunchPromiseThread[[]common.Hash](e, func(ctx context.Context) ([]common.Hash, error) {
 		machine, err := e.cache.GetMachineAt(ctx, machineStartIndex)
@@ -71,23 +75,22 @@ func (e *executionRun) GetMachineHashesWithStepSize(fromBatch, machineStartIndex
 		}
 		log.Debug(fmt.Sprintf("Advanced machine to index %d, beginning hash computation", machineStartIndex))
 		// If the machine is starting at index 0, we always want to start at the "Machine finished" global state status
-		// to align with the state roots that the inbox machine will produce.
-		var stateRoots []common.Hash
+		// to align with the machine hashes that the inbox machine will produce.
+		var machineHashes []common.Hash
 
 		if machineStartIndex == 0 {
 			gs := machine.GetGlobalState()
 			log.Debug(fmt.Sprintf("Start global state for machine index 0: %+v", gs), "fromBatch", fromBatch)
-			hash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
-			stateRoots = append(stateRoots, hash)
+			machineHashes = append(machineHashes, machineFinishedHash(gs))
 		} else {
 			// Otherwise, we simply append the machine hash at the specified start index.
-			stateRoots = append(stateRoots, machine.Hash())
+			machineHashes = append(machineHashes, machine.Hash())
 		}
-		startHash := stateRoots[0]
+		startHash := machineHashes[0]
 
-		// If we only want 1 state root, we can return early.
+		// If we only want 1 hash, we can return early.
 		if numDesiredLeaves == 1 {
-			return stateRoots, nil
+			return machineHashes, nil
 		}
 
 		logInterval := numDesiredLeaves / 20 // Log every 5% progress
@@ -122,25 +125,10 @@ func (e *executionRun) GetMachineHashesWithStepSize(fromBatch, machineStartIndex
 					"numDesiredLeaves", numDesiredLeaves,
 				)
 			}
-
-			// If the machine reached the finished state, we can break out of the loop and append to
-			// our state roots slice a finished machine hash.
-			machineStep := machine.GetStepCount()
-			if validator.MachineStatus(machine.Status()) == validator.MachineStatusFinished {
-				gs := machine.GetGlobalState()
-				hash := crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
-				stateRoots = append(stateRoots, hash)
+			machineHashes = append(machineHashes, machine.Hash())
+			if len(machineHashes) == int(numDesiredLeaves) {
 				break
 			}
-			// Otherwise, if the position and machine step mismatch and the machine is running, something went wrong.
-			if position != machineStep {
-				machineRunning := machine.IsRunning()
-				if machineRunning || machineStep > position {
-					return nil, fmt.Errorf("machine is in wrong position want: %d, got: %d", position, machineStep)
-				}
-			}
-			stateRoots = append(stateRoots, machine.Hash())
-
 		}
 		log.Info(
 			"Successfully finished computing the data needed for opening a subchallenge",
@@ -149,18 +137,10 @@ func (e *executionRun) GetMachineHashesWithStepSize(fromBatch, machineStartIndex
 			"startHash", startHash,
 			"machineStartIndex", machineStartIndex,
 			"numDesiredLeaves", numDesiredLeaves,
-			"finishedHash", stateRoots[len(stateRoots)-1],
+			"finishedHash", machineHashes[len(machineHashes)-1],
 			"finishedGlobalState", fmt.Sprintf("%+v", machine.GetGlobalState()),
 		)
-
-		// If the machine finished in less than the number of hashes we anticipate, we pad
-		// to the expected value by repeating the last machine hash until the state roots are the correct
-		// length.
-		lastStateRoot := stateRoots[len(stateRoots)-1]
-		for len(stateRoots) < int(numDesiredLeaves) {
-			stateRoots = append(stateRoots, lastStateRoot)
-		}
-		return stateRoots[:numDesiredLeaves], nil
+		return machineHashes, nil
 	})
 }
 
