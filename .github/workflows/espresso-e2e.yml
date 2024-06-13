@@ -76,6 +76,8 @@ jobs:
           profile: minimal
           toolchain: "stable"
           override: true
+          targets: 'wasm32-unknown-unknown, wasm32-wasi'
+
 
       - name: Install cbindgen
         run: cargo install cbindgen
@@ -123,6 +125,10 @@ jobs:
       - name: Build cbrotli-local
         if: steps.cache-cbrotli.outputs.cache-hit != 'true'
         run: ./scripts/build-brotli.sh -l
+
+      - name: Build cbrotli-wasm in docker
+        if: steps.cache-cbrotli.outputs.cache-hit != 'true'
+        run: ./scripts/build-brotli.sh -w -d
 
       - name: Build
         run: make build test-go-deps -j
