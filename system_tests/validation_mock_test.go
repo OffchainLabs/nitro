@@ -126,6 +126,11 @@ func (r *mockExecRun) GetStepAt(position uint64) containers.PromiseInterface[*va
 	}, nil)
 }
 
+func (r *mockExecRun) GetMachineHashesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves, fromBatch uint64) containers.PromiseInterface[[]common.Hash] {
+	// TODO: Add mock implementation for GetMachineHashesWithStepSize
+	return containers.NewReadyPromise[[]common.Hash](nil, nil)
+}
+
 func (r *mockExecRun) GetLastStep() containers.PromiseInterface[*validator.MachineStepResult] {
 	return r.GetStepAt(mockExecLastPos)
 }
