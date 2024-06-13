@@ -7,6 +7,7 @@ import {
 } from './common'
 import { deployBoldUpgrade } from './boldUpgradeFunctions'
 import dotenv from 'dotenv'
+import path from 'path'
 
 dotenv.config()
 
@@ -23,16 +24,20 @@ async function main() {
   }
   const wallet = new Wallet(l1PrivKey, l1Rpc)
 
-  const configLocation = process.env.CONFIG_LOCATION
-  if (!configLocation) {
-    throw new Error('CONFIG_LOCATION env variable not set')
+  const configNetworkName = process.env.CONFIG_NETWORK_NAME
+  if (!configNetworkName) {
+    throw new Error('CONFIG_NETWORK_NAME env variable not set')
   }
-  const config = await getConfig(configLocation, l1Rpc)
+  const config = await getConfig(configNetworkName, l1Rpc)
 
-  const deployedContractsLocation = process.env.DEPLOYED_CONTRACTS_LOCATION
-  if (!deployedContractsLocation) {
-    throw new Error('DEPLOYED_CONTRACTS_LOCATION env variable not set')
+  const deployedContractsDir = process.env.DEPLOYED_CONTRACTS_DIR
+  if (!deployedContractsDir) {
+    throw new Error('DEPLOYED_CONTRACTS_DIR env variable not set')
   }
+  const deployedContractsLocation = path.join(
+    deployedContractsDir,
+    configNetworkName + 'DeployedContracts.json'
+  )
 
   // if the deployed contracts exists then we load it and combine
   // if not, then we just use the newly created item

@@ -233,9 +233,6 @@ jobs:
           cache: "yarn"
           cache-dependency-path: "**/yarn.lock"
 
-      - name: Start anvil
-        run: anvil --fork-url ${{ secrets.L1_RPC }} &
-
       - name: Install packages
         run: yarn
 
@@ -246,11 +243,5 @@ jobs:
         run: |
           cp ./.env-sample ./.env
 
-      - name: Deploy bold dependencies
-        run: yarn script:bold-prepare
-
-      - name: Populate state hash lookup
-        run: yarn script:bold-populate-lookup
-
-      - name: Execute and verify bold upgrade
-        run: yarn script:bold-local-execute
+      - name: Test upgrade
+        run: L1_RPC=${{ secrets.L1_RPC }} yarn test:upgrade

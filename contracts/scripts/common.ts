@@ -1,6 +1,9 @@
 import { BigNumber, providers } from 'ethers'
 import { parseEther } from 'ethers/lib/utils'
 import fs from 'fs'
+
+import { configs } from './files/configs'
+
 export interface DeployedContracts {
   bridge: string
   seqInbox: string
@@ -19,7 +22,6 @@ export interface DeployedContracts {
   proverMath: string
   proverHostIo: string
   osp: string
-  newEdgeChallengeManager?: string
 }
 
 export const getJsonFile = (fileLocation: string) => {
@@ -27,11 +29,15 @@ export const getJsonFile = (fileLocation: string) => {
 }
 
 export const getConfig = async (
-  configLocation: string,
+  configName: string,
   l1Rpc: providers.Provider
 ): Promise<Config> => {
-  const config = getJsonFile(configLocation) as RawConfig
-  return await validateConfig(config, l1Rpc)
+  const config = configs[configName as keyof typeof configs]
+  if (!config) {
+    throw new Error('config not found')
+  }
+  await validateConfig(config, l1Rpc)
+  return config
 }
 
 export interface Config {
@@ -85,9 +91,9 @@ export type RawConfig = Omit<Config, 'settings'> & {
 }
 
 export const validateConfig = async (
-  config: RawConfig,
+  config: Config,
   l1Rpc: providers.Provider
-): Promise<Config> => {
+) => {
   // check all the config.contracts exist
   if ((await l1Rpc.getCode(config.contracts.l1Timelock)).length <= 2) {
     throw new Error('l1Timelock address is not a contract')
@@ -129,25 +135,25 @@ export const validateConfig = async (
   }
 
   // check all the settings exist
-  if (config.settings.confirmPeriodBlocks == 0) {
+  if (config.settings.confirmPeriodBlocks === 0) {
     throw new Error('confirmPeriodBlocks is 0')
   }
-  if (config.settings.stakeToken.length == 0) {
+  if (config.settings.stakeToken.length === 0) {
     throw new Error('stakeToken address is empty')
   }
-  if (config.settings.chainId == 0) {
+  if (config.settings.chainId === 0) {
     throw new Error('chainId is 0')
   }
-  if (config.settings.blockLeafSize == 0) {
+  if (config.settings.blockLeafSize === 0) {
     throw new Error('blockLeafSize is 0')
   }
-  if (config.settings.bigStepLeafSize == 0) {
+  if (config.settings.bigStepLeafSize === 0) {
     throw new Error('bigStepLeafSize is 0')
   }
-  if (config.settings.smallStepLeafSize == 0) {
+  if (config.settings.smallStepLeafSize === 0) {
     throw new Error('smallStepLeafSize is 0')
   }
-  if (config.settings.numBigStepLevel == 0) {
+  if (config.settings.numBigStepLevel === 0) {
     throw new Error('numBigStepLevel is 0')
   }
 
@@ -161,20 +167,8 @@ export const validateConfig = async (
   if (miniStakeAmounts.length !== config.settings.numBigStepLevel + 2) {
     throw new Error('miniStakeAmts length is not numBigStepLevel + 2')
   }
-  if (miniStakeAmounts.some((amt) => amt.lt(parseEther('0.1')))) {
-    throw new Error('miniStakeAmt is less than 0.1 eth')
-  }
 
-  if (config.validators.length == 0) {
+  if (config.validators.length === 0) {
     throw new Error('no validators')
-  }
-
-  return {
-    ...config,
-    settings: {
-      ...config.settings,
-      stakeAmt: stakeAmount,
-      miniStakeAmounts,
-    },
   }
 }
