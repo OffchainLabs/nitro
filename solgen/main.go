@@ -70,7 +70,7 @@ func main() {
 	}
 	root := filepath.Dir(filename)
 	parent := filepath.Dir(root)
-	filePaths, err := filepath.Glob(filepath.Join(parent, "contracts", "build", "contracts", "src", "*", "*", "*.json"))
+	filePaths, err := filepath.Glob(filepath.Join(parent, "contracts", "build", "contracts", "src", "*", "*.sol", "*.json"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func main() {
 		modInfo.addArtifact(artifact)
 	}
 
-	yulFilePaths, err := filepath.Glob(filepath.Join(parent, "contracts", "out", "yul", "*", "*.json"))
+	yulFilePaths, err := filepath.Glob(filepath.Join(parent, "contracts", "out", "*", "*.yul", "*.json"))
 	if err != nil {
 		log.Fatal(err)
 	}
