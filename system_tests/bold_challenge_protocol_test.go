@@ -144,6 +144,22 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	err = statelessA.Start(ctx)
 	Require(t, err)
 
+	_, valStackB := createTestValidationNode(t, ctx, &valCfg)
+
+	statelessB, err := staker.NewStatelessBlockValidator(
+		l2nodeB.InboxReader,
+		l2nodeB.InboxTracker,
+		l2nodeB.TxStreamer,
+		l2nodeB.Execution,
+		l2nodeB.ArbDB,
+		nil,
+		StaticFetcherFrom(t, &blockValidatorConfig),
+		valStackB,
+	)
+	Require(t, err)
+	err = statelessB.Start(ctx)
+	Require(t, err)
+
 	blockValidatorA, err := staker.NewBlockValidator(
 		statelessA,
 		l2nodeA.InboxTracker,
@@ -156,7 +172,7 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	Require(t, blockValidatorA.Start(ctx))
 
 	blockValidatorB, err := staker.NewBlockValidator(
-		statelessA,
+		statelessB,
 		l2nodeB.InboxTracker,
 		l2nodeB.TxStreamer,
 		StaticFetcherFrom(t, &blockValidatorConfig),
@@ -184,7 +200,7 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 
 	stateManagerB, err := staker.NewBOLDStateProvider(
 		blockValidatorB,
-		statelessA,
+		statelessB,
 		"/tmp/evil",
 		[]l2stateprovider.Height{
 			l2stateprovider.Height(blockChallengeLeafHeight),
