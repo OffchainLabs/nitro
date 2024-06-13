@@ -14,6 +14,8 @@ pub fn verify_namespace(
     ns_table_len: u64,
     txs_comm_ptr: GuestPtr,
     txs_comm_len: u64,
+    common_data_ptr: GuestPtr,
+    common_data_len: u64,
 ) -> MaybeEscape {
     let (mem, _exec) = env.jit_env();
 
@@ -21,6 +23,7 @@ pub fn verify_namespace(
     let payload_comm_bytes = mem.read_slice(payload_comm_ptr, payload_comm_len as usize);
     let ns_table_bytes = mem.read_slice(ns_table_ptr, ns_table_len as usize);
     let txs_comm_bytes = mem.read_slice(txs_comm_ptr, txs_comm_len as usize);
+    let common_data_bytes = mem.read_slice(common_data_ptr, common_data_len as usize);
 
     Ok(verify_namespace_helper(
         namespace,
@@ -28,6 +31,7 @@ pub fn verify_namespace(
         &payload_comm_bytes,
         &ns_table_bytes,
         &txs_comm_bytes,
+        &common_data_bytes,
     ))
 }
 

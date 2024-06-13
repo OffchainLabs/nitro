@@ -11,7 +11,7 @@ use ark_serialize::{CanonicalDeserialize, CanonicalSerialize};
 use committable::{Commitment, Committable};
 use ethers_core::types::U256;
 use full_payload::{NsProof, NsTable};
-use hotshot_types::VidCommitment;
+use hotshot_types::{VidCommitment, VidCommon};
 use jf_crhf::CRHF;
 use jf_merkle_tree::prelude::{
     MerkleCommitment, MerkleNode, MerkleProof, MerkleTreeScheme, Sha3Node,
@@ -107,16 +107,20 @@ pub fn verify_namespace_helper(
     commit_bytes: &[u8],
     ns_table_bytes: &[u8],
     tx_comm_bytes: &[u8],
+    common_data_bytes: &[u8],
 ) {
     let proof_str = std::str::from_utf8(proof_bytes).unwrap();
     let commit_str = std::str::from_utf8(commit_bytes).unwrap();
     let ns_table_str = std::str::from_utf8(ns_table_bytes).unwrap();
     let txn_comm_str = std::str::from_utf8(tx_comm_bytes).unwrap();
+    let common_data_str = std::str::from_utf8(common_data_bytes).unwrap();
+    let namespace: u32 = namespace.try_into().unwrap();
 
     let proof: NsProof = serde_json::from_str(proof_str).unwrap();
     let ns_table: NsTable = serde_json::from_str(ns_table_str).unwrap();
     let tagged = TaggedBase64::parse(&commit_str).unwrap();
     let commit: VidCommitment = tagged.try_into().unwrap();
+    let vid_common: VidCommon = serde_json::from_str(common_data_str).unwrap();
 
     let (txns, ns) = proof.verify(&ns_table, &commit, &vid_common).unwrap();
 
@@ -127,7 +131,7 @@ pub fn verify_namespace_helper(
 }
 
 // TODO: Use Commit trait: https://github.com/EspressoSystems/nitro-espresso-integration/issues/88
-fn hash_txns(namespace: u64, txns: &[Transaction]) -> String {
+fn hash_txns(namespace: u32, txns: &[Transaction]) -> String {
     let mut hasher = Sha256::new();
     hasher.update(namespace.to_le_bytes());
     for txn in txns {

@@ -80,8 +80,8 @@ func (s *EspressoSequencer) createBlock(ctx context.Context) (returnValue bool) 
 	if err != nil {
 		log.Error("Error fetching transactions", "err", err)
 		return false
-
 	}
+	common, err := s.hotShotState.client.FetchVidCommonByHeight(ctx, nextSeqBlockNum)
 
 	arbHeader := &arbostypes.L1IncomingMessageHeader{
 		Kind:        arbostypes.L1MessageType_L2Message,
@@ -93,8 +93,9 @@ func (s *EspressoSequencer) createBlock(ctx context.Context) (returnValue bool) 
 	}
 
 	jst := &arbostypes.EspressoBlockJustification{
-		Header: header,
-		Proof:  &arbTxns.Proof,
+		Header:    header,
+		VidCommon: common,
+		Proof:     &arbTxns.Proof,
 	}
 
 	_, err = s.execEngine.SequenceTransactionsEspresso(arbHeader, arbTxns.Transactions, jst)

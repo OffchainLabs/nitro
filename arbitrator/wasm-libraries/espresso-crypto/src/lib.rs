@@ -12,11 +12,14 @@ pub unsafe extern "C" fn espressocrypto__verifyNamespace(
     ns_table_len: u64,
     txs_comm_ptr: GuestPtr,
     txs_comm_len: u64,
+    common_data_ptr: GuestPtr,
+    common_data_len: u64,
 ) {
     let proof_bytes = STATIC_MEM.read_slice(proof_ptr, proof_len as usize);
     let payload_comm_bytes = STATIC_MEM.read_slice(payload_comm_ptr, payload_comm_len as usize);
     let tx_comm_bytes = STATIC_MEM.read_slice(txs_comm_ptr, txs_comm_len as usize);
     let ns_table_bytes = STATIC_MEM.read_slice(ns_table_ptr, ns_table_len as usize);
+    let common_data_bytes = STATIC_MEM.read_slice(common_data_ptr, common_data_len as usize);
 
     verify_namespace_helper(
         namespace,
@@ -24,6 +27,7 @@ pub unsafe extern "C" fn espressocrypto__verifyNamespace(
         &payload_comm_bytes,
         &ns_table_bytes,
         &tx_comm_bytes,
+        &common_data_bytes,
     )
 }
 
