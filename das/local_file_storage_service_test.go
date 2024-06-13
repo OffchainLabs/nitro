@@ -4,16 +4,68 @@
 package das
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
 	"testing"
 	"time"
+
+	"github.com/offchainlabs/nitro/das/dastree"
 )
+
+func getByHashAndCheck(t *testing.T, s *LocalFileStorageService, xs ...string) {
+	t.Helper()
+	ctx := context.Background()
+
+	for _, x := range xs {
+		actual, err := s.GetByHash(ctx, dastree.Hash([]byte(x)))
+		Require(t, err)
+		if !bytes.Equal([]byte(x), actual) {
+			Fail(t, "unexpected result")
+		}
+	}
+}
+
+func countEntries(t *testing.T, layout *trieLayout, expected int) {
+	t.Helper()
+
+	count := 0
+	trIt, err := layout.iterateBatches()
+	Require(t, err)
+	for _, err := trIt.next(); !errors.Is(err, io.EOF); _, err = trIt.next() {
+		Require(t, err)
+		count++
+	}
+	if count != expected {
+		Fail(t, "unexpected number of batches", "expected", expected, "was", count)
+	}
+}
+
+func countTimestampEntries(t *testing.T, layout *trieLayout, cutoff time.Time, expected int) {
+	t.Helper()
+	var count int
+	trIt, err := layout.iterateBatchesByTimestamp(cutoff)
+	Require(t, err)
+	for _, err := trIt.next(); !errors.Is(err, io.EOF); _, err = trIt.next() {
+		Require(t, err)
+		count++
+	}
+	if count != expected {
+		Fail(t, "unexpected count of entries when iterating by timestamp", "expected", expected, "was", count)
+	}
+}
+
+func pruneCountRemaining(t *testing.T, layout *trieLayout, pruneTil time.Time, expected int) {
+	t.Helper()
+	err := layout.prune(pruneTil)
+	Require(t, err)
+
+	countEntries(t, layout, expected)
+}
 
 func TestMigrationNoExpiry(t *testing.T) {
 	dir := t.TempDir()
-	t.Logf("temp dir: %s", dir)
 	ctx := context.Background()
 
 	config := LocalFileStorageConfig{
@@ -37,24 +89,18 @@ func TestMigrationNoExpiry(t *testing.T) {
 	err = s.Put(ctx, []byte("d"), now+10)
 	Require(t, err)
 
+	getByHashAndCheck(t, s, "a", "b", "c", "d")
+
 	err = migrate(&s.legacyLayout, &s.layout)
 	Require(t, err)
+	s.enableLegacyLayout = false
 
-	migrated := 0
-	trIt, err := s.layout.iterateBatches()
-	Require(t, err)
-	for _, err := trIt.next(); !errors.Is(err, io.EOF); _, err = trIt.next() {
-		Require(t, err)
-		migrated++
-	}
-	if migrated != 4 {
-		t.Fail()
-	}
+	countEntries(t, &s.layout, 4)
+	getByHashAndCheck(t, s, "a", "b", "c", "d")
 
-	//	byTimestampEntries := 0
-	trIt, err = s.layout.iterateBatchesByTimestamp(time.Unix(int64(now+10), 0))
+	_, err = s.layout.iterateBatchesByTimestamp(time.Unix(int64(now+10), 0))
 	if err == nil {
-		t.Fail()
+		Fail(t, "can't iterate by timestamp when expiry is disabled")
 	}
 }
 
@@ -66,55 +112,101 @@ func TestMigrationExpiry(t *testing.T) {
 		Enable:       true,
 		DataDir:      dir,
 		EnableExpiry: true,
-		MaxRetention: time.Hour * 24 * 30,
+		MaxRetention: time.Hour * 10,
 	}
 	s, err := NewLocalFileStorageService(config)
 	Require(t, err)
 	s.enableLegacyLayout = true
 
-	now := uint64(time.Now().Unix())
+	now := time.Now()
 
-	err = s.Put(ctx, []byte("a"), now-expiryDivisor*2)
+	// Use increments of expiry divisor in order to span multiple by-expiry-timestamp dirs
+	err = s.Put(ctx, []byte("a"), uint64(now.Add(-2*time.Second*expiryDivisor).Unix()))
 	Require(t, err)
-	err = s.Put(ctx, []byte("b"), now-expiryDivisor)
+	err = s.Put(ctx, []byte("b"), uint64(now.Add(-1*time.Second*expiryDivisor).Unix()))
 	Require(t, err)
-	err = s.Put(ctx, []byte("c"), now+expiryDivisor)
+	err = s.Put(ctx, []byte("c"), uint64(now.Add(time.Second*expiryDivisor).Unix()))
 	Require(t, err)
-	err = s.Put(ctx, []byte("d"), now+expiryDivisor)
+	err = s.Put(ctx, []byte("d"), uint64(now.Add(time.Second*expiryDivisor).Unix()))
 	Require(t, err)
-	err = s.Put(ctx, []byte("e"), now+expiryDivisor*2)
+	err = s.Put(ctx, []byte("e"), uint64(now.Add(2*time.Second*expiryDivisor).Unix()))
 	Require(t, err)
 
-	s.layout.expiryEnabled = true
+	getByHashAndCheck(t, s, "a", "b", "c", "d", "e")
+
 	err = migrate(&s.legacyLayout, &s.layout)
 	Require(t, err)
+	s.enableLegacyLayout = false
 
-	migrated := 0
-	trIt, err := s.layout.iterateBatches()
+	countEntries(t, &s.layout, 3)
+	getByHashAndCheck(t, s, "c", "d", "e")
+
+	afterNow := now.Add(time.Second)
+	countTimestampEntries(t, &s.layout, afterNow, 0) // They should have all been filtered out since they're after now
+	countTimestampEntries(t, &s.layout, afterNow.Add(time.Second*expiryDivisor), 2)
+	countTimestampEntries(t, &s.layout, afterNow.Add(2*time.Second*expiryDivisor), 3)
+
+	pruneCountRemaining(t, &s.layout, afterNow, 3)
+	getByHashAndCheck(t, s, "c", "d", "e")
+
+	pruneCountRemaining(t, &s.layout, afterNow.Add(time.Second*expiryDivisor), 1)
+	getByHashAndCheck(t, s, "e")
+
+	pruneCountRemaining(t, &s.layout, afterNow.Add(2*time.Second*expiryDivisor), 0)
+}
+
+func TestExpiryDuplicates(t *testing.T) {
+	dir := t.TempDir()
+	ctx := context.Background()
+
+	config := LocalFileStorageConfig{
+		Enable:       true,
+		DataDir:      dir,
+		EnableExpiry: true,
+		MaxRetention: time.Hour * 10,
+	}
+	s, err := NewLocalFileStorageService(config)
 	Require(t, err)
-	for _, err := trIt.next(); !errors.Is(err, io.EOF); _, err = trIt.next() {
-		Require(t, err)
-		migrated++
-	}
-	if migrated != 3 {
-		t.Fail()
-	}
 
-	countTimestampEntries := func(cutoff, expected uint64) {
-		var byTimestampEntries uint64
-		trIt, err = s.layout.iterateBatchesByTimestamp(time.Unix(int64(cutoff), 0))
-		Require(t, err)
-		for batch, err := trIt.next(); !errors.Is(err, io.EOF); batch, err = trIt.next() {
-			Require(t, err)
-			t.Logf("indexCreated %s", batch)
-			byTimestampEntries++
-		}
-		if byTimestampEntries != expected {
-			t.Fail()
-		}
-	}
+	now := time.Now()
 
-	countTimestampEntries(now, 0) // They should have all been filtered out since they're after now
-	countTimestampEntries(now+expiryDivisor, 2)
-	countTimestampEntries(now+expiryDivisor*2, 3)
+	// Use increments of expiry divisor in order to span multiple by-expiry-timestamp dirs
+	err = s.Put(ctx, []byte("a"), uint64(now.Add(-2*time.Second*expiryDivisor).Unix()))
+	Require(t, err)
+	err = s.Put(ctx, []byte("a"), uint64(now.Add(-1*time.Second*expiryDivisor).Unix()))
+	Require(t, err)
+	err = s.Put(ctx, []byte("a"), uint64(now.Add(time.Second*expiryDivisor).Unix()))
+	Require(t, err)
+	err = s.Put(ctx, []byte("d"), uint64(now.Add(time.Second*expiryDivisor).Unix()))
+	Require(t, err)
+	err = s.Put(ctx, []byte("e"), uint64(now.Add(2*time.Second*expiryDivisor).Unix()))
+	Require(t, err)
+	err = s.Put(ctx, []byte("f"), uint64(now.Add(3*time.Second*expiryDivisor).Unix()))
+	Require(t, err)
+
+	afterNow := now.Add(time.Second)
+	// "a" is duplicated
+	countEntries(t, &s.layout, 4)
+	// There should be a timestamp entry for each time "a" was added
+	countTimestampEntries(t, &s.layout, afterNow.Add(1000*time.Hour), 6)
+
+	// We've expired the first "a", but there are still 2 other timestamp entries for it
+	pruneCountRemaining(t, &s.layout, afterNow.Add(-2*time.Second*expiryDivisor), 4)
+	countTimestampEntries(t, &s.layout, afterNow.Add(1000*time.Hour), 5)
+
+	// We've expired the second "a", but there is still 1 other timestamp entry for it
+	pruneCountRemaining(t, &s.layout, afterNow.Add(-1*time.Second*expiryDivisor), 4)
+	countTimestampEntries(t, &s.layout, afterNow.Add(1000*time.Hour), 4)
+
+	// We've expired the third "a", and also "d"
+	pruneCountRemaining(t, &s.layout, afterNow.Add(time.Second*expiryDivisor), 2)
+	countTimestampEntries(t, &s.layout, afterNow.Add(1000*time.Hour), 2)
+
+	// We've expired the "e"
+	pruneCountRemaining(t, &s.layout, afterNow.Add(2*time.Second*expiryDivisor), 1)
+	countTimestampEntries(t, &s.layout, afterNow.Add(1000*time.Hour), 1)
+
+	// We've expired the "f"
+	pruneCountRemaining(t, &s.layout, afterNow.Add(3*time.Second*expiryDivisor), 0)
+	countTimestampEntries(t, &s.layout, afterNow.Add(1000*time.Hour), 0)
 }

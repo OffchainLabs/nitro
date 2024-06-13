@@ -173,6 +173,9 @@ func (s *LocalFileStorageService) Put(ctx context.Context, data []byte, expiry u
 		return err
 	}
 
+	// For testing only. When migrating we treat the expiry time of existing flat layout
+	// files to be the modification time + the max allowed retention. So when creating
+	// new flat layout files, set their modification time accordingly.
 	if s.enableLegacyLayout {
 		tv := syscall.Timeval{
 			Sec:  int64(expiry - uint64(s.legacyLayout.retention.Seconds())),
@@ -637,7 +640,7 @@ func (l *trieLayout) iterateBatchesByTimestamp(maxTimestamp time.Time) (*trieLay
 		if err != nil {
 			return false
 		}
-		return int64(num) <= maxTimestamp.Unix()
+		return int64(num) < maxTimestamp.Unix()
 	}
 	storageKeyFilter := func(layers *[][]string, idx int) bool {
 		return isStorageServiceKey((*layers)[idx][0])
