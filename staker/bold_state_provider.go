@@ -44,7 +44,16 @@ type BOLDStateProvider struct {
 	historyCache         challengecache.HistoryCommitmentCacher
 	challengeLeafHeights []l2stateprovider.Height
 	validatorName        string
+	checkBatchFinality   bool
 	sync.RWMutex
+}
+
+type BOLDStateProviderOpt = func(b *BOLDStateProvider)
+
+func WithoutFinalizedBatchChecks() BOLDStateProviderOpt {
+	return func(b *BOLDStateProvider) {
+		b.checkBatchFinality = false
+	}
 }
 
 func NewBOLDStateProvider(
@@ -53,16 +62,21 @@ func NewBOLDStateProvider(
 	cacheBaseDir string,
 	challengeLeafHeights []l2stateprovider.Height,
 	validatorName string,
+	opts ...BOLDStateProviderOpt,
 ) (*BOLDStateProvider, error) {
 	historyCache := challengecache.New(cacheBaseDir)
-	sm := &BOLDStateProvider{
+	sp := &BOLDStateProvider{
 		validator:            blockValidator,
 		statelessValidator:   statelessValidator,
 		historyCache:         historyCache,
 		challengeLeafHeights: challengeLeafHeights,
 		validatorName:        validatorName,
+		checkBatchFinality:   true,
 	}
-	return sm, nil
+	for _, o := range opts {
+		o(sp)
+	}
+	return sp, nil
 }
 
 // Produces the L2 execution state to assert to after the previous assertion state.
@@ -104,14 +118,15 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 	if err != nil {
 		return nil, err
 	}
-	// If the state we are requested to produce is not yet validatd, we return ErrChainCatchingUp as an error.
-	lastValidatedGs, err := s.validator.ReadLastValidatedInfo()
+	// If the state we are requested to produce is neither validated nor finalized, we return ErrChainCatchingUp as an error.
+	stateValidatedAndFinal, err := s.isStateValidatedAndFinal(ctx, globalState, messageCount)
 	if err != nil {
 		return nil, err
 	}
-	if lastValidatedGs.GlobalState.Batch < globalState.Batch {
+	if !stateValidatedAndFinal {
 		return nil, fmt.Errorf("%w: batch count %d", l2stateprovider.ErrChainCatchingUp, maxInboxCount)
 	}
+
 	executionState := &protocol.ExecutionState{
 		GlobalState:   protocol.GoGlobalState(globalState),
 		MachineStatus: protocol.MachineStatusFinished,
@@ -143,6 +158,25 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 	}
 	executionState.EndHistoryRoot = historyCommit.Merkle
 	return executionState, nil
+}
+
+func (s *BOLDStateProvider) isStateValidatedAndFinal(
+	ctx context.Context, gs validator.GoGlobalState, messageCount arbutil.MessageIndex,
+) (bool, error) {
+	lastValidatedGs, err := s.validator.ReadLastValidatedInfo()
+	if err != nil {
+		return false, err
+	}
+	stateValidated := gs.Batch <= lastValidatedGs.GlobalState.Batch
+	if !s.checkBatchFinality {
+		return stateValidated, nil
+	}
+	finalizedMessageCount, err := s.validator.inboxReader.GetFinalizedMsgCount(ctx)
+	if err != nil {
+		return false, err
+	}
+	messageCountFinalized := messageCount <= finalizedMessageCount
+	return messageCountFinalized && stateValidated, nil
 }
 
 // messageCountFromGlobalState returns the corresponding message count of a global state, assuming that gs is a valid global state.

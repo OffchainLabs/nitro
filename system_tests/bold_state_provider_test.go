@@ -1,7 +1,7 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 
-//go:build challengetest && !race
+//asdgo:build challengetest && !race
 
 package arbtest
 
@@ -11,6 +11,7 @@ import (
 	"math/big"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -39,7 +40,7 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
-	l2node, l1info, l2info, l1stack, l1client, stateManager := setupBoldStateProvider(t, ctx)
+	l2node, l1info, l2info, l1stack, l1client, stateManager, blockValidator := setupBoldStateProvider(t, ctx)
 	defer requireClose(t, l1stack)
 	defer l2node.StopAndWait()
 	l2info.GenerateAccount("Destination")
@@ -81,9 +82,20 @@ func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 
 	// Wait until the validator has validated the batches.
 	for {
-		if _, err := l2node.TxStreamer.ResultAtCount(totalMessageCount); err == nil {
+		lastInfo, err := blockValidator.ReadLastValidatedInfo()
+		if lastInfo == nil || err != nil {
+			continue
+		}
+		batchMsgCount, err := l2node.InboxTracker.GetBatchMessageCount(lastInfo.GlobalState.Batch)
+		if err != nil {
+			continue
+		}
+		Require(t, err)
+		t.Log("lastValidatedMessageCount", batchMsgCount, "totalMessageCount", totalMessageCount)
+		if batchMsgCount >= totalMessageCount {
 			break
 		}
+		time.Sleep(time.Millisecond * 100)
 	}
 
 	historyCommitter := l2stateprovider.NewHistoryCommitmentProvider(
@@ -137,7 +149,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
-	l2node, l1info, l2info, l1stack, l1client, stateManager := setupBoldStateProvider(t, ctx)
+	l2node, l1info, l2info, l1stack, l1client, stateManager, blockValidator := setupBoldStateProvider(t, ctx, staker.WithoutFinalizedBatchChecks())
 	defer requireClose(t, l1stack)
 	defer l2node.StopAndWait()
 	l2info.GenerateAccount("Destination")
@@ -178,9 +190,19 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 
 	// Wait until the validator has validated the batches.
 	for {
-		if _, err := l2node.TxStreamer.ResultAtCount(totalMessageCount); err == nil {
+		lastInfo, err := blockValidator.ReadLastValidatedInfo()
+		if lastInfo == nil || err != nil {
+			continue
+		}
+		batchMsgCount, err := l2node.InboxTracker.GetBatchMessageCount(lastInfo.GlobalState.Batch)
+		if err != nil {
+			continue
+		}
+		t.Log("lastValidatedMessageCount", batchMsgCount, "totalMessageCount", totalMessageCount)
+		if batchMsgCount >= totalMessageCount {
 			break
 		}
+		time.Sleep(time.Millisecond * 100)
 	}
 
 	maxBlocks := uint64(1 << 14)
@@ -320,7 +342,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 	})
 }
 
-func setupBoldStateProvider(t *testing.T, ctx context.Context) (*arbnode.Node, *BlockchainTestInfo, *BlockchainTestInfo, *node.Node, *ethclient.Client, *staker.BOLDStateProvider) {
+func setupBoldStateProvider(t *testing.T, ctx context.Context, opts ...staker.BOLDStateProviderOpt) (*arbnode.Node, *BlockchainTestInfo, *BlockchainTestInfo, *node.Node, *ethclient.Client, *staker.BOLDStateProvider, *staker.BlockValidator) {
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
 	l2chainConfig := params.ArbitrumDevTestChainConfig()
 	l2info := NewBlockChainTestInfo(
@@ -332,7 +354,7 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context) (*arbnode.Node, *
 	ownerBal.Mul(ownerBal, big.NewInt(1_000_000))
 	l2info.GenerateGenesisAccount("Owner", ownerBal)
 
-	_, l2node, _, _, l1info, _, l1client, l1stack, _, _ := createTestNodeOnL1ForBoldProtocol(t, ctx, true, nil, l2chainConfig, nil, l2info)
+	_, l2node, _, _, l1info, _, l1client, l1stack, _, _ := createTestNodeOnL1ForBoldProtocol(t, ctx, false, nil, l2chainConfig, nil, l2info)
 
 	valnode.TestValidationConfig.UseJit = false
 	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
@@ -349,10 +371,21 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context) (*arbnode.Node, *
 		valStack,
 	)
 	Require(t, err)
-	err = stateless.Start(ctx)
+	Require(t, stateless.Start(ctx))
+
+	blockValidator, err := staker.NewBlockValidator(
+		stateless,
+		l2node.InboxTracker,
+		l2node.TxStreamer,
+		StaticFetcherFrom(t, &blockValidatorConfig),
+		nil,
+	)
 	Require(t, err)
+	Require(t, blockValidator.Initialize(ctx))
+	Require(t, blockValidator.Start(ctx))
 
 	stateManager, err := staker.NewBOLDStateProvider(
+		blockValidator,
 		stateless,
 		"",
 		[]l2stateprovider.Height{
@@ -361,7 +394,10 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context) (*arbnode.Node, *
 			l2stateprovider.Height(smallStepChallengeLeafHeight),
 		},
 		"",
+		opts...,
 	)
 	Require(t, err)
-	return l2node, l1info, l2info, l1stack, l1client, stateManager
+
+	Require(t, l2node.Start(ctx))
+	return l2node, l1info, l2info, l1stack, l1client, stateManager, blockValidator
 }

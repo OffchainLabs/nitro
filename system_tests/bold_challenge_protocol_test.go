@@ -1,7 +1,7 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-//go:build challengetest && !raced
+//gasdo:build challengetest && !raced
 
 package arbtest
 
@@ -169,6 +169,7 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	Require(t, err)
 
 	stateManager, err := staker.NewBOLDStateProvider(
+		l2nodeA.BlockValidator,
 		statelessA,
 		"/tmp/good",
 		[]l2stateprovider.Height{
@@ -183,6 +184,7 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	Require(t, err)
 
 	stateManagerB, err := staker.NewBOLDStateProvider(
+		l2nodeB.BlockValidator,
 		statelessB,
 		"/tmp/evil",
 		[]l2stateprovider.Height{
@@ -551,8 +553,6 @@ func createTestNodeOnL1ForBoldProtocol(
 		nil, // Blob reader.
 	)
 	Require(t, err)
-
-	Require(t, currentNode.Start(ctx))
 
 	l2client = ClientForStack(t, l2stack)
 
