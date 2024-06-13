@@ -20,10 +20,8 @@ import (
 
 type executionRun struct {
 	stopwaiter.StopWaiter
-	cache                *MachineCache
-	initialMachineGetter func(context.Context) (MachineInterface, error)
-	config               *MachineCacheConfig
-	close                sync.Once
+	cache *MachineCache
+	close sync.Once
 }
 
 // NewExecutionChallengeBackend creates a backend with the given arguments.
@@ -35,8 +33,6 @@ func NewExecutionRun(
 ) (*executionRun, error) {
 	exec := &executionRun{}
 	exec.Start(ctxIn, exec)
-	exec.initialMachineGetter = initialMachineGetter
-	exec.config = config
 	exec.cache = NewMachineCache(exec.GetContext(), initialMachineGetter, config)
 	return exec, nil
 }
@@ -59,7 +55,32 @@ func (e *executionRun) PrepareRange(start uint64, end uint64) containers.Promise
 
 func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*validator.MachineStepResult] {
 	return stopwaiter.LaunchPromiseThread[*validator.MachineStepResult](e, func(ctx context.Context) (*validator.MachineStepResult, error) {
-		return e.intermediateGetStepAt(ctx, position)
+		var machine MachineInterface
+		var err error
+		if position == ^uint64(0) {
+			machine, err = e.cache.GetFinalMachine(ctx)
+		} else {
+			// TODO(rauljordan): Cache last machine.
+			machine, err = e.cache.GetMachineAt(ctx, position)
+		}
+		if err != nil {
+			return nil, err
+		}
+		machineStep := machine.GetStepCount()
+		if position != machineStep {
+			machineRunning := machine.IsRunning()
+			if machineRunning || machineStep > position {
+				return nil, fmt.Errorf("machine is in wrong position want: %d, got: %d", position, machine.GetStepCount())
+			}
+
+		}
+		result := &validator.MachineStepResult{
+			Position:    machineStep,
+			Status:      validator.MachineStatus(machine.Status()),
+			GlobalState: machine.GetGlobalState(),
+			Hash:        machine.Hash(),
+		}
+		return result, nil
 	})
 }
 
@@ -176,35 +197,6 @@ func (e *executionRun) machineHashesWithStepSize(
 	return machineHashes, nil
 }
 
-func (e *executionRun) intermediateGetStepAt(ctx context.Context, position uint64) (*validator.MachineStepResult, error) {
-	var machine MachineInterface
-	var err error
-	if position == ^uint64(0) {
-		machine, err = e.cache.GetFinalMachine(ctx)
-	} else {
-		// TODO(rauljordan): Cache last machine.
-		machine, err = e.cache.GetMachineAt(ctx, position)
-	}
-	if err != nil {
-		return nil, err
-	}
-	machineStep := machine.GetStepCount()
-	if position != machineStep {
-		machineRunning := machine.IsRunning()
-		if machineRunning || machineStep > position {
-			return nil, fmt.Errorf("machine is in wrong position want: %d, got: %d", position, machine.GetStepCount())
-		}
-
-	}
-	result := &validator.MachineStepResult{
-		Position:    machineStep,
-		Status:      validator.MachineStatus(machine.Status()),
-		GlobalState: machine.GetGlobalState(),
-		Hash:        machine.Hash(),
-	}
-	return result, nil
-}
-
 func (e *executionRun) GetProofAt(position uint64) containers.PromiseInterface[[]byte] {
 	return stopwaiter.LaunchPromiseThread[[]byte](e, func(ctx context.Context) ([]byte, error) {
 		machine, err := e.cache.GetMachineAt(ctx, position)
@@ -217,10 +209,6 @@ func (e *executionRun) GetProofAt(position uint64) containers.PromiseInterface[[
 
 func (e *executionRun) GetLastStep() containers.PromiseInterface[*validator.MachineStepResult] {
 	return e.GetStepAt(^uint64(0))
-}
-
-func (e *executionRun) CheckAlive(ctx context.Context) error {
-	return nil
 }
 
 func machineFinishedHash(gs validator.GoGlobalState) common.Hash {
