@@ -13,9 +13,9 @@ Using this structure, we can namespace hashes by message number and by challenge
 Once a validator receives a full list of computed machine hashes for the first time from a validatio node,
 it will write the roots to this filesystem hierarchy for fast access next time these roots are needed.
 
-Example:
-- Compute all the hashes for the execution of message num 70 with the required step size for the big step challenge level.
-- Compute all the hashes for the execution of individual steps for a small step challenge level from big step 100 to 101
+Example uses:
+- Obtain all the hashes for the execution of message num 70 to 71 for a given wavm module root.
+- Obtain all the hashes from step 100 to 101 at subchallenge level 1 for the execution of message num 70.
 
 	  wavm-module-root-0xab/
 		rollup-block-hash-0x12...-message-num-70/
@@ -43,14 +43,15 @@ import (
 )
 
 var (
-	ErrNotFoundInCache   = errors.New("no found in challenge cache")
-	ErrFileAlreadyExists = errors.New("file already exists")
-	ErrNoStateRoots      = errors.New("no state roots being written")
-	stateRootsFileName   = "hashes.bin"
-	wavmModuleRootPrefix = "wavm-module-root"
-	messageNumberPrefix  = "message-num"
-	bigStepPrefix        = "big-step"
-	challengeLevelPrefix = "subchallenge-level"
+	ErrNotFoundInCache    = errors.New("no found in challenge cache")
+	ErrFileAlreadyExists  = errors.New("file already exists")
+	ErrNoStateRoots       = errors.New("no state roots being written")
+	stateRootsFileName    = "hashes.bin"
+	wavmModuleRootPrefix  = "wavm-module-root"
+	rollupBlockHashPrefix = "rollup-block-hash"
+	messageNumberPrefix   = "message-num"
+	bigStepPrefix         = "big-step"
+	challengeLevelPrefix  = "subchallenge-level"
 )
 
 // HistoryCommitmentCacher can retrieve history commitment state roots given lookup keys.
@@ -74,9 +75,10 @@ func New(baseDir string) *Cache {
 // Key for cache lookups includes the wavm module root of a challenge, as well
 // as the heights for messages and big steps as needed.
 type Key struct {
-	WavmModuleRoot common.Hash
-	MessageHeight  uint64
-	StepHeights    []uint64
+	RollupBlockHash common.Hash
+	WavmModuleRoot  common.Hash
+	MessageHeight   uint64
+	StepHeights     []uint64
 }
 
 // Get a list of state roots from the cache up to a certain index. State roots are saved as files in the directory
@@ -215,7 +217,7 @@ for a given filesystem challenge cache will look as follows:
 func determineFilePath(baseDir string, lookup *Key) (string, error) {
 	key := make([]string, 0)
 	key = append(key, fmt.Sprintf("%s-%s", wavmModuleRootPrefix, lookup.WavmModuleRoot.Hex()))
-	key = append(key, fmt.Sprintf("%s-%d", messageNumberPrefix, lookup.MessageHeight))
+	key = append(key, fmt.Sprintf("%s-%s-%s-%d", rollupBlockHashPrefix, lookup.RollupBlockHash.Hex(), messageNumberPrefix, lookup.MessageHeight))
 	for challengeLevel, height := range lookup.StepHeights {
 		key = append(key, fmt.Sprintf(
 			"%s-%d-%s-%d",

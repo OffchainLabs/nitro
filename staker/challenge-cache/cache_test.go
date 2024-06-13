@@ -252,7 +252,7 @@ func Test_determineFilePath(t *testing.T) {
 					StepHeights:   []uint64{50},
 				},
 			},
-			want:    "wavm-module-root-0x0000000000000000000000000000000000000000000000000000000000000000/message-num-100/subchallenge-level-1-big-step-50/hashes.bin",
+			want:    "wavm-module-root-0x0000000000000000000000000000000000000000000000000000000000000000/rollup-block-hash-0x0000000000000000000000000000000000000000000000000000000000000000-message-num-100/subchallenge-level-1-big-step-50/hashes.bin",
 			wantErr: false,
 		},
 	}
