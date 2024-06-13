@@ -1,4 +1,4 @@
-// Copyright 2023, Offchain Labs, Inc.
+// Copyright 2023-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 /*
 * Package challengecache stores hashes required for making history commitments in Arbitrum BOLD.
@@ -18,7 +18,7 @@ Example:
 - Compute all the hashes for the execution of individual steps for a small step challenge level from big step 100 to 101
 
 	  wavm-module-root-0xab/
-		message-num-70/
+		rollup-block-hash-0x12...-message-num-70/
 			hashes.bin
 			subchallenge-level-1-big-step-100/
 				hashes.bin
@@ -207,7 +207,7 @@ for the data requested within the cache directory hierarchy. The folder structur
 for a given filesystem challenge cache will look as follows:
 
 	  wavm-module-root-0xab/
-		message-num-70/
+		rollup-block-hash-0x12...-message-num-70/
 			hashes.bin
 			subchallenge-level-1-big-step-100/
 				hashes.bin
