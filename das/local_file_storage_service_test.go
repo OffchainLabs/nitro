@@ -183,6 +183,9 @@ func TestExpiryDuplicates(t *testing.T) {
 	Require(t, err)
 	err = s.Put(ctx, []byte("f"), uint64(now.Add(3*time.Second*expiryDivisor).Unix()))
 	Require(t, err)
+	// Put the same entry and expiry again, should have no effect
+	err = s.Put(ctx, []byte("f"), uint64(now.Add(3*time.Second*expiryDivisor).Unix()))
+	Require(t, err)
 
 	afterNow := now.Add(time.Second)
 	// "a" is duplicated

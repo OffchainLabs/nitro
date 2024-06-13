@@ -286,18 +286,33 @@ func copyFile(new, orig string) error {
 	return nil
 }
 
-// Creates an empty file, making any directories needed in the new file's path.
+// Creates a hard link at new, to orig, making any directories needed in the new link's path.
 func createHardLink(orig, new string) error {
 	err := os.MkdirAll(path.Dir(new), 0o700)
 	if err != nil {
 		return err
 	}
 
-	err = os.Link(orig, new)
+	info, err := os.Stat(new)
 	if err != nil {
-		return err
+		if os.IsNotExist(err) {
+			err = os.Link(orig, new)
+			if err != nil {
+				return err
+			}
+			return nil
+		} else {
+			return err
+		}
 	}
-	return nil
+
+	// Hard link already exists
+	stat, ok := info.Sys().(*syscall.Stat_t)
+	if ok && stat.Nlink > 1 {
+		return nil
+	}
+
+	return fmt.Errorf("file exists but is not a hard link: %s", new)
 }
 
 // migrate converts a file store from flatLayout to trieLayout.
