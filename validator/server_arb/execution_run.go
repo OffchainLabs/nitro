@@ -60,7 +60,6 @@ func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*v
 		if position == ^uint64(0) {
 			machine, err = e.cache.GetFinalMachine(ctx)
 		} else {
-			// TODO(rauljordan): Cache last machine.
 			machine, err = e.cache.GetMachineAt(ctx, position)
 		}
 		if err != nil {
