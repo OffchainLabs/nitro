@@ -105,7 +105,6 @@
 //! transactions whose byte ranges overlap, though no "honestly-prepared"
 //! `tx_table` would do this.
 use crate::uint_bytes::{bytes_serde_impl, usize_from_bytes, usize_to_bytes};
-use crate::Transaction;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use std::ops::Range;
 
@@ -150,10 +149,6 @@ impl NumTxs {
             // Max number of tx table entries that could fit in the namespace payload
             byte_len.0.saturating_sub(NUM_TXS_BYTE_LEN) / TX_OFFSET_BYTE_LEN,
         ))
-    }
-
-    pub fn in_bounds(&self, index: &TxIndex) -> bool {
-        index.0 < self.0
     }
 }
 
@@ -383,53 +378,5 @@ impl Iterator for TxIter {
 
     fn next(&mut self) -> Option<Self::Item> {
         self.0.next().map(TxIndex)
-    }
-}
-
-/// Build an individual namespace payload one transaction at a time.
-///
-/// Use [`Self::append_tx`] to add each transaction. Use [`Self::into_bytes`]
-/// when you're done. The returned bytes include a well-formed tx table and all
-/// tx payloads.
-#[derive(Default)]
-pub struct NsPayloadBuilder {
-    tx_table_entries: Vec<u8>,
-    tx_bodies: Vec<u8>,
-}
-
-impl NsPayloadBuilder {
-    /// Add a transaction's payload to this namespace
-    pub fn append_tx(&mut self, tx: Transaction) {
-        self.tx_bodies.extend(tx.into_payload());
-        self.tx_table_entries
-            .extend(usize_to_bytes::<TX_OFFSET_BYTE_LEN>(self.tx_bodies.len()));
-    }
-
-    /// Serialize to bytes and consume self.
-    pub fn into_bytes(self) -> Vec<u8> {
-        let mut result = Vec::with_capacity(
-            NUM_TXS_BYTE_LEN + self.tx_table_entries.len() + self.tx_bodies.len(),
-        );
-        let num_txs = NumTxsUnchecked(self.tx_table_entries.len() / TX_OFFSET_BYTE_LEN);
-        result.extend(num_txs.to_payload_bytes());
-        result.extend(self.tx_table_entries);
-        result.extend(self.tx_bodies);
-        result
-    }
-
-    /// Byte length of a namespace with zero transactions.
-    ///
-    /// Currently this quantity equals the byte length of the tx table header.
-    pub const fn fixed_overhead_byte_len() -> usize {
-        NUM_TXS_BYTE_LEN
-    }
-
-    /// Byte length added to a namespace by a new transaction beyond that
-    /// transaction's payload byte length.
-    ///
-    /// Currently this quantity equals the byte length of a single tx table
-    /// entry.
-    pub const fn tx_overhead_byte_len() -> usize {
-        TX_OFFSET_BYTE_LEN
     }
 }

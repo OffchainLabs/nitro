@@ -111,19 +111,20 @@ pub fn verify_namespace_helper(
 ) {
     let proof_str = std::str::from_utf8(proof_bytes).unwrap();
     let commit_str = std::str::from_utf8(commit_bytes).unwrap();
-    let ns_table_str = std::str::from_utf8(ns_table_bytes).unwrap();
     let txn_comm_str = std::str::from_utf8(tx_comm_bytes).unwrap();
     let common_data_str = std::str::from_utf8(common_data_bytes).unwrap();
-    let namespace: u32 = namespace.try_into().unwrap();
 
     let proof: NsProof = serde_json::from_str(proof_str).unwrap();
-    let ns_table: NsTable = serde_json::from_str(ns_table_str).unwrap();
+    let ns_table: NsTable = NsTable {
+        bytes: ns_table_bytes.to_vec(),
+    };
     let tagged = TaggedBase64::parse(&commit_str).unwrap();
     let commit: VidCommitment = tagged.try_into().unwrap();
     let vid_common: VidCommon = serde_json::from_str(common_data_str).unwrap();
 
     let (txns, ns) = proof.verify(&ns_table, &commit, &vid_common).unwrap();
 
+    let namespace: u32 = namespace.try_into().unwrap();
     let txns_comm = hash_txns(namespace, &txns);
 
     assert!(ns == namespace.into());

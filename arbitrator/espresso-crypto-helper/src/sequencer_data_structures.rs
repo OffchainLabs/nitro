@@ -54,25 +54,13 @@ trait_set! {
 }
 
 pub struct Transaction {
-    namespace: NamespaceId,
+    pub namespace: NamespaceId,
     pub payload: Vec<u8>,
 }
 
 impl Transaction {
     pub fn new(namespace: NamespaceId, payload: Vec<u8>) -> Self {
         Self { namespace, payload }
-    }
-
-    pub fn namespace(&self) -> NamespaceId {
-        self.namespace
-    }
-
-    pub fn payload(&self) -> &[u8] {
-        &self.payload
-    }
-
-    pub fn into_payload(self) -> Vec<u8> {
-        self.payload
     }
 }
 

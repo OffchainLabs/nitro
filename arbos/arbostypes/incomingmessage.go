@@ -47,7 +47,7 @@ type BlockMerkleJustification struct {
 type EspressoBlockJustification struct {
 	Header                   espressoTypes.Header
 	Proof                    *espressoTypes.NamespaceProof
-	VidCommon                espressoTypes.VidCommon
+	VidCommon                *espressoTypes.VidCommon
 	BlockMerkleJustification *BlockMerkleJustification
 }
 

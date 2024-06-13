@@ -316,7 +316,7 @@ func main() {
 				if err != nil {
 					panic("unable to serialize header")
 				}
-				espressocrypto.VerifyNamespace(chainConfig.ChainID.Uint64(), *jst.Proof, *jst.Header.PayloadCommitment, *jst.Header.NsTable, txs, jst.VidCommon)
+				espressocrypto.VerifyNamespace(chainConfig.ChainID.Uint64(), *jst.Proof, *jst.Header.PayloadCommitment, *jst.Header.NsTable, txs, *jst.VidCommon)
 				espressocrypto.VerifyMerkleProof(jst.BlockMerkleJustification.BlockMerkleProof.Proof, jsonHeader, *jst.BlockMerkleJustification.BlockMerkleComm, commitment)
 			}
 

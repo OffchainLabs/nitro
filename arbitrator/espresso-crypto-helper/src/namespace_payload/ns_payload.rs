@@ -16,9 +16,6 @@ use serde::{Deserialize, Serialize};
 pub struct NsPayload([u8]);
 
 impl NsPayload {
-    pub fn from_bytes_slice(bytes: &[u8]) -> &NsPayload {
-        NsPayload::new_private(bytes)
-    }
     pub fn as_bytes_slice(&self) -> &[u8] {
         &self.0
     }
@@ -38,11 +35,6 @@ impl NsPayload {
         <R::Output as FromNsPayloadBytes<'a>>::from_payload_bytes(&self.0[range.ns_payload_range()])
     }
 
-    /// Iterator over all transactions in this namespace.
-    pub fn iter(&self) -> TxIter {
-        self.iter_from_num_txs(&self.read_num_txs())
-    }
-
     /// Return all transactions in this namespace. The namespace ID for each
     /// returned [`Transaction`] is set to `ns_id`.
     pub fn export_all_txs(&self, ns_id: &NamespaceId) -> Vec<Transaction> {
@@ -50,19 +42,6 @@ impl NsPayload {
         self.iter_from_num_txs(&num_txs)
             .map(|i| self.tx_from_num_txs(ns_id, &i, &num_txs))
             .collect()
-    }
-
-    /// Return a transaction from this namespace. Set its namespace ID to
-    /// `ns_id`.
-    ///
-    /// Return `None` if `index` is out of bounds.
-    pub fn export_tx(&self, ns_id: &NamespaceId, index: &TxIndex) -> Option<Transaction> {
-        let num_txs_unchecked = self.read_num_txs();
-        let num_txs = NumTxs::new(&num_txs_unchecked, &self.byte_len());
-        if !num_txs.in_bounds(index) {
-            return None; // error: tx index out of bounds
-        }
-        Some(self.tx_from_num_txs(ns_id, index, &num_txs_unchecked))
     }
 
     /// Private helper. (Could be pub if desired.)

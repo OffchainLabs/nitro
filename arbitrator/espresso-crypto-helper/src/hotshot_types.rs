@@ -28,7 +28,6 @@ pub type VidCommitment = <VidSchemeType as VidScheme>::Commit;
 pub type VidCommon = <VidSchemeType as VidScheme>::Common;
 
 pub struct VidSchemeType(Advz);
-pub const SRS_DEGREE: usize = 2u64.pow(20) as usize + 2;
 
 impl VidScheme for VidSchemeType {
     type Commit = <Advz as VidScheme>::Commit;

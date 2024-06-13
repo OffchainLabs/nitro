@@ -14,6 +14,7 @@ macro_rules! uint_bytes_impl {
                 ///
                 /// # Panics
                 /// If `n` cannot fit into `BYTE_LEN` bytes.
+                #[allow(dead_code)]
                 pub fn [<$T _to_bytes>]<const BYTE_LEN: usize>(n: $T) -> [u8; BYTE_LEN] {
                     if size_of::<$T>() > BYTE_LEN {
                         assert!(

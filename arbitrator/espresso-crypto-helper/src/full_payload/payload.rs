@@ -1,12 +1,8 @@
+use crate::full_payload::ns_table::NsTable;
 use crate::hotshot_types::{VidCommon, VidSchemeType};
-use crate::{
-    full_payload::ns_table::{NsIndex, NsTable},
-    namespace_payload::{Index, NsPayload, NsPayloadRange},
-    Transaction,
-};
 use jf_vid::VidScheme;
 use serde::{Deserialize, Serialize};
-use std::{fmt::Display, sync::Arc};
+use std::fmt::Display;
 
 /// Raw payload data for an entire block.
 ///
@@ -34,42 +30,6 @@ pub struct Payload {
     ns_payloads: Vec<u8>,
 
     ns_table: NsTable,
-}
-
-impl Payload {
-    pub fn encode(&self) -> Arc<[u8]> {
-        Arc::from(self.ns_payloads.as_ref())
-    }
-
-    pub fn ns_table(&self) -> &NsTable {
-        &self.ns_table
-    }
-
-    /// Like [`QueryablePayload::transaction_with_proof`] except without the
-    /// proof.
-    pub fn transaction(&self, index: &Index) -> Option<Transaction> {
-        let ns_id = self.ns_table.read_ns_id(index.ns())?;
-        let ns_payload = self.ns_payload(index.ns());
-        ns_payload.export_tx(&ns_id, index.tx())
-    }
-
-    // CRATE-VISIBLE HELPERS START HERE
-
-    pub fn read_ns_payload(&self, range: &NsPayloadRange) -> &NsPayload {
-        NsPayload::from_bytes_slice(&self.ns_payloads[range.as_block_range()])
-    }
-
-    /// Convenience wrapper for [`Self::read_ns_payload`].
-    ///
-    /// `index` is not checked. Use `self.ns_table().in_bounds()` as needed.
-    pub fn ns_payload(&self, index: &NsIndex) -> &NsPayload {
-        let ns_payload_range = self.ns_table().ns_range(index, &self.byte_len());
-        self.read_ns_payload(&ns_payload_range)
-    }
-
-    pub fn byte_len(&self) -> PayloadByteLen {
-        PayloadByteLen(self.ns_payloads.len())
-    }
 }
 
 impl Display for Payload {

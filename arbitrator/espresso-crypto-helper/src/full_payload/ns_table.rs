@@ -120,7 +120,7 @@ const NS_ID_BYTE_LEN: usize = 4;
 #[derive(Clone, Debug, Default, Deserialize, Eq, Hash, PartialEq, Serialize)]
 pub struct NsTable {
     #[serde(with = "base64_bytes")]
-    bytes: Vec<u8>,
+    pub bytes: Vec<u8>,
 }
 
 impl NsTable {
