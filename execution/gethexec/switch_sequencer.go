@@ -52,7 +52,7 @@ func NewSwitchSequencer(centralized *Sequencer, espresso *EspressoSequencer, l1c
 		lightClient:          lightclient,
 		mode:                 SequencingMode_Espresso,
 		switchPollInterval:   config.SwitchPollInterval,
-		swtichDelayThreshold: config.SwtichDelayThreshold,
+		swtichDelayThreshold: config.SwitchDelayThreshold,
 	}, nil
 }
 
