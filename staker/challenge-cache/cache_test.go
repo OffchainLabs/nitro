@@ -73,7 +73,7 @@ func TestReadWriteStatehashes(t *testing.T) {
 		if err == nil {
 			t.Fatal("Wanted error")
 		}
-		if !strings.Contains(err.Error(), "only read 0 state hashes") {
+		if !strings.Contains(err.Error(), "only read 0 hashes") {
 			t.Fatal("Unexpected error")
 		}
 	})
