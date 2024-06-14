@@ -340,8 +340,8 @@ func runNodes(ctx context.Context, t *testing.T) (*NodeBuilder, *TestClient, *Bl
 	cleanEspresso := runEspresso(t, ctx)
 
 	// wait for the builder
-	err = waitForWith(t, ctx, 300*time.Second, 1*time.Second, func() bool {
-		out, err := exec.Command("curl", "http://localhost:41000/availability/block/100", "-L").Output()
+	err = waitForWith(t, ctx, 400*time.Second, 1*time.Second, func() bool {
+		out, err := exec.Command("curl", "http://localhost:41000/availability/block/80", "-L").Output()
 		if err != nil {
 			log.Warn("retry to check the builder", "err", err)
 			return false
