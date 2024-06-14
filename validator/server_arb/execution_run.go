@@ -90,6 +90,9 @@ func (e *executionRun) GetMachineHashesWithStepSize(fromBatch, machineStartIndex
 			fromBatch:         fromBatch,
 			stepSize:          stepSize,
 			requiredNumHashes: numDesiredLeaves,
+			getMachineAtIndex: func(ctx context.Context, u uint64) (GlobalStateGetter, error) {
+				return e.cache.GetMachineAt(ctx, u)
+			},
 		})
 	})
 }
