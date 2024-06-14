@@ -19,6 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/validator"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -149,8 +150,8 @@ type validationEntry struct {
 
 	// If hotshot is down, this is the l1 height associated with the arbitrum original message.
 	// We use this to validate the hotshot liveness
-	// If hotshot is up, this is the l1 height indicating which l1 height is the `HotShotCommitment` from.
-	L1BlockHeight     uint64
+	// If hotshot is up, this is the hotshot height.
+	BlockHeight       uint64
 	HotShotCommitment espressoTypes.Commitment
 	IsHotShotLive     bool
 }
@@ -169,7 +170,7 @@ func (e *validationEntry) ToInput() (*validator.ValidationInput, error) {
 		DelayedMsg:        e.DelayedMsg,
 		StartState:        e.Start,
 		DebugChain:        e.ChainConfig.DebugMode(),
-		L1BlockHeight:     e.L1BlockHeight,
+		L1BlockHeight:     e.BlockHeight,
 		HotShotCommitment: e.HotShotCommitment,
 		HotShotLiveness:   e.IsHotShotLive,
 	}, nil
@@ -211,7 +212,7 @@ func newValidationEntry(
 		msg:               msg,
 		BatchInfo:         []validator.BatchInfo{batchInfo},
 		ChainConfig:       chainConfig,
-		L1BlockHeight:     l1BlockHeight,
+		BlockHeight:       l1BlockHeight,
 		HotShotCommitment: *hotShotCommitment,
 		IsHotShotLive:     isHotShotLive,
 	}, nil
@@ -394,25 +395,25 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 	}
 	var comm espressoTypes.Commitment
 	var isHotShotLive bool
-	var l1BlockHeight uint64
+	var blockHeight uint64
 	if arbos.IsEspressoMsg(msg.Message) {
 		_, jst, err := arbos.ParseEspressoMsg(msg.Message)
 		if err != nil {
 			return nil, err
 		}
-		l1BlockHeight = jst.BlockMerkleJustification.L1ProofHeight
-		fetchedCommitment, err := v.lightClientReader.FetchMerkleRootAtL1Block(l1BlockHeight)
+		blockHeight = jst.Header.Height
+		snapShot, err := v.lightClientReader.FetchMerkleRoot(blockHeight, &bind.CallOpts{})
 		if err != nil {
 			log.Error("error fetching light client commitment", "L1ProofHeight", jst.BlockMerkleJustification.L1ProofHeight, "%v", err)
 			return nil, err
 		}
-		comm = fetchedCommitment
+		comm = snapShot.Root
 		isHotShotLive = true
 	} else if arbos.IsL2NonEspressoMsg(msg.Message) {
 		isHotShotLive = false
-		l1BlockHeight = msg.Message.Header.BlockNumber
+		blockHeight = msg.Message.Header.BlockNumber
 	}
-	entry, err := newValidationEntry(pos, start, end, msg, seqMsg, batchBlockHash, prevDelayed, v.streamer.ChainConfig(), &comm, isHotShotLive, l1BlockHeight)
+	entry, err := newValidationEntry(pos, start, end, msg, seqMsg, batchBlockHash, prevDelayed, v.streamer.ChainConfig(), &comm, isHotShotLive, blockHeight)
 	if err != nil {
 		return nil, err
 	}

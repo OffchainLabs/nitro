@@ -292,8 +292,7 @@ func main() {
 
 			hotshotHeader := jst.Header
 			height := hotshotHeader.Height
-			l1_height := jst.BlockMerkleJustification.L1ProofHeight
-			commitment := espressoTypes.Commitment(wavmio.ReadHotShotCommitment(l1_height))
+			commitment := espressoTypes.Commitment(wavmio.ReadHotShotCommitment(height))
 			validatedHeight := wavmio.GetEspressoHeight()
 			if validatedHeight == 0 {
 				// Validators can choose their own trusted starting point to start their validation.
@@ -307,12 +306,20 @@ func main() {
 			if jst.BlockMerkleJustification == nil {
 				panic("block merkle justification missing")
 			}
-			jsonHeader, err := json.Marshal(hotshotHeader)
-			if err != nil {
-				panic("unable to serialize header")
+
+			if jst.Proof == nil && len(txs) != 0 {
+				panic("namespace proof missing")
 			}
-			espressocrypto.VerifyNamespace(chainConfig.ChainID.Uint64(), *jst.Proof, *jst.Header.PayloadCommitment, *jst.Header.NsTable, txs)
-			espressocrypto.VerifyMerkleProof(jst.BlockMerkleJustification.BlockMerkleProof.Proof, jsonHeader, *jst.BlockMerkleJustification.BlockMerkleComm, commitment)
+
+			if jst.Proof != nil {
+				jsonHeader, err := json.Marshal(hotshotHeader)
+				if err != nil {
+					panic("unable to serialize header")
+				}
+				espressocrypto.VerifyNamespace(chainConfig.ChainID.Uint64(), *jst.Proof, *jst.Header.PayloadCommitment, *jst.Header.NsTable, txs, *jst.VidCommon)
+				espressocrypto.VerifyMerkleProof(jst.BlockMerkleJustification.BlockMerkleProof.Proof, jsonHeader, *jst.BlockMerkleJustification.BlockMerkleComm, commitment)
+			}
+
 		} else if validatingEspressoLivenessFailure {
 			l1Block := message.Message.Header.BlockNumber
 			if wavmio.IsHotShotLive(l1Block) {

@@ -80,7 +80,6 @@ func (s *EspressoSequencer) createBlock(ctx context.Context) (returnValue bool) 
 	if err != nil {
 		log.Error("Error fetching transactions", "err", err)
 		return false
-
 	}
 
 	arbHeader := &arbostypes.L1IncomingMessageHeader{
@@ -93,8 +92,9 @@ func (s *EspressoSequencer) createBlock(ctx context.Context) (returnValue bool) 
 	}
 
 	jst := &arbostypes.EspressoBlockJustification{
-		Header: header,
-		Proof:  &arbTxns.Proof,
+		Header:    header,
+		VidCommon: &arbTxns.VidCommon,
+		Proof:     &arbTxns.Proof,
 	}
 
 	_, err = s.execEngine.SequenceTransactionsEspresso(arbHeader, arbTxns.Transactions, jst)

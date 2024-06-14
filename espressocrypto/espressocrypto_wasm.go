@@ -23,6 +23,8 @@ func verify_namespace(
 	ns_table_len uint64,
 	tx_comm_ptr unsafe.Pointer,
 	tx_comm_len uint64,
+	vid_comm_ptr unsafe.Pointer,
+	vid_comm_len uint64,
 )
 
 //go:wasmimport espressocrypto verifyMerkleProof
@@ -37,13 +39,14 @@ func verify_merkle_proof(
 	circuit_comm_len uint64,
 )
 
-func verifyNamespace(namespace uint64, proof []byte, block_comm []byte, ns_table []byte, tx_comm []byte) {
+func verifyNamespace(namespace uint64, proof []byte, block_comm []byte, ns_table []byte, tx_comm []byte, common_data []byte) {
 	verify_namespace(
 		namespace,
 		arbutil.SliceToUnsafePointer(proof), uint64(len(proof)),
 		arbutil.SliceToUnsafePointer(block_comm), uint64(len(block_comm)),
 		arbutil.SliceToUnsafePointer(ns_table), uint64(len(ns_table)),
 		arbutil.SliceToUnsafePointer(tx_comm), uint64(len(tx_comm)),
+		arbutil.SliceToUnsafePointer(common_data), uint64(len(common_data)),
 	)
 }
 

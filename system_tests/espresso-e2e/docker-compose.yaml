@@ -1,315 +1,37 @@
 version: '3.9'
 services:
-  deploy-contracts:
-    command: deploy --use-mock-contract --only hotshot,light-client
-    image: ghcr.io/espressosystems/espresso-sequencer/deploy:main
-    environment:
-      - ESPRESSO_SEQUENCER_ORCHESTRATOR_URL
-      - ESPRESSO_SEQUENCER_L1_PROVIDER
-      - ESPRESSO_SEQUENCER_STAKE_TABLE_CAPACITY
-      - ESPRESSO_SEQUENCER_ETH_MNEMONIC=$ESPRESSO_COMMITMENT_ETH_MNEMONIC
-      - ESPRESSO_DEPLOYER_ACCOUNT_INDEX
-      - RUST_LOG
-      - RUST_LOG_FORMAT
-      - ASYNC_STD_THREAD_COUNT
-    depends_on:
-      orchestrator:
-        condition: service_healthy
-      # Make sure this doesn't start until the other contracts have been deployed, since we use the same mnemonic.
-      deploy-sequencer-contracts:
-        condition: service_completed_successfully
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
-  deploy-sequencer-contracts:
-    image: ghcr.io/espressosystems/espresso-sequencer/deploy:main
-    command: deploy --only fee-contract
-    environment:
-      - ESPRESSO_SEQUENCER_L1_PROVIDER
-      - ESPRESSO_SEQUENCER_ETH_MNEMONIC=$ESPRESSO_COMMITMENT_ETH_MNEMONIC
-      - ESPRESSO_DEPLOYER_ACCOUNT_INDEX
-      - RUST_LOG
-      - RUST_LOG_FORMAT
-      - ASYNC_STD_THREAD_COUNT
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
-  fund-builder:
-    image: ghcr.io/espressosystems/espresso-sequencer/bridge:main
-    command: bridge deposit
-    environment:
-      - L1_PROVIDER=$ESPRESSO_SEQUENCER_L1_PROVIDER
-      - RUST_LOG=debug
-      - RUST_LOG_FORMAT
-      - ESPRESSO_PROVIDER=http://espresso-sequencer0:$ESPRESSO_SEQUENCER_API_PORT
-      - CONTRACT_ADDRESS=0x7dd3f2a3faef3b9f2364c335163244d3388feb83
-      - MNEMONIC=$ESPRESSO_BUILDER_ETH_MNEMONIC
-      - ACCOUNT_INDEX=$ESPRESSO_BUILDER_ETH_ACCOUNT_INDEX
-      - AMOUNT=1000000000000000000
-      - CONFIRMATIONS=1
-    depends_on:
-      deploy-sequencer-contracts:
-        condition: service_completed_successfully
-      espresso-sequencer0:
-        condition: service_healthy
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
-  orchestrator:
-    image: ghcr.io/espressosystems/espresso-sequencer/orchestrator:main
-    ports:
-      - "$ESPRESSO_ORCHESTRATOR_PORT:$ESPRESSO_ORCHESTRATOR_PORT"
-    environment:
-      - ESPRESSO_ORCHESTRATOR_BUILDER_URL=http://permissionless-builder:$ESPRESSO_BUILDER_SERVER_PORT
-      - ESPRESSO_ORCHESTRATOR_PORT
-      - ESPRESSO_ORCHESTRATOR_NUM_NODES
-      - ESPRESSO_ORCHESTRATOR_START_DELAY
-      - ESPRESSO_ORCHESTRATOR_NEXT_VIEW_TIMEOUT
-      - ESPRESSO_ORCHESTRATOR_BUILDER_TIMEOUT
-      - RUST_LOG
-      - RUST_LOG_FORMAT
-
-  permissionless-builder:
-    image: ghcr.io/espressosystems/espresso-sequencer/builder:main
-    ports:
-      - "$ESPRESSO_BUILDER_SERVER_PORT:$ESPRESSO_BUILDER_SERVER_PORT"
-    volumes:
-      - ./genesis.toml:/genesis/demo.toml
-    environment:
-      - ESPRESSO_BUILDER_GENESIS_FILE
-      - ESPRESSO_SEQUENCER_HOTSHOT_EVENT_STREAMING_API_URL=http://espresso-sequencer0:$ESPRESSO_SEQUENCER_HOTSHOT_EVENT_STREAMING_API_PORT
-      - ESPRESSO_SEQUENCER_STATE_PEERS=http://espresso-sequencer0:$ESPRESSO_SEQUENCER_API_PORT
-      - ESPRESSO_SEQUENCER_MAX_BLOCK_SIZE
-      - ESPRESSO_BUILDER_ETH_MNEMONIC
-      - ESPRESSO_BUILDER_ETH_ACCOUNT_INDEX
-      - ESPRESSO_BUILDER_L1_PROVIDER
-      - ESPRESSO_BUILDER_SERVER_PORT
-      - ESPRESSO_BUILDER_CHANNEL_CAPACITY
-      - ESPRESSO_BUILDER_BOOTSTRAPPED_VIEW
-      - ESPRESSO_BUILDER_WEBSERVER_RESPONSE_TIMEOUT_DURATION
-      - ESPRESSO_BUILDER_BUFFER_VIEW_NUM_COUNT
-      - ESPRESSO_BUILDER_INIT_NODE_COUNT
-      - ESPRESSO_SEQUENCER_BASE_FEE
-      - RUST_LOG
-      - RUST_LOG_FORMAT
-      - ASYNC_STD_THREAD_COUNT
-    depends_on:
-      fund-builder:
-        condition: service_completed_successfully
-
-
-  # We use KeyDB (a Redis variant) to maintain consistency between
-  # different parts of the CDN
-  keydb:
-    image: docker.io/eqalpha/keydb:latest
-    command: ["--requirepass", "changemeplease!!"]
-    healthcheck:
-      # Attempt to PING the database
-      test: keydb-cli --pass changemeplease!! --raw incr PING
-      interval: 5s
-      timeout: 4s
-      retries: 20
-
-  marshal-0:
-    environment:
-      - RUST_LOG
-      - ESPRESSO_CDN_SERVER_METRICS_PORT
-    image: ghcr.io/espressosystems/espresso-sequencer/cdn-marshal:main
-    command:
-      - cdn-marshal
-      - -d
-      - redis://:changemeplease!!@keydb:6379
-      - -b 
-      - $ESPRESSO_CDN_SERVER_PORT
-      - -m
-      - 0.0.0.0:$ESPRESSO_CDN_SERVER_METRICS_PORT
-    depends_on:
-      keydb:
-        condition: service_healthy
-
-  broker-0:
-    environment:
-      - RUST_LOG
-      - ESPRESSO_CDN_SERVER_METRICS_PORT
-    image: ghcr.io/espressosystems/espresso-sequencer/cdn-broker:main
-    command: 
-    - cdn-broker
-    - -d
-    - redis://:changemeplease!!@keydb:6379
-    - --public-advertise-endpoint
-    - broker-0:1738
-    - --private-advertise-endpoint
-    - broker-0:1739
-    - -m
-    - 0.0.0.0:$ESPRESSO_CDN_SERVER_METRICS_PORT
-    depends_on:
-      keydb:
-        condition: service_healthy
-
-  # A broker is the main message-routing unit of the CDN
-  broker-1:
-    environment:
-      - RUST_LOG
-      - ESPRESSO_CDN_SERVER_METRICS_PORT
-    image: ghcr.io/espressosystems/espresso-sequencer/cdn-broker:main
-    command: 
-    - cdn-broker
-    - -d
-    - redis://:changemeplease!!@keydb:6379
-    - --public-advertise-endpoint
-    - broker-1:1738
-    - --private-advertise-endpoint
-    - broker-1:1739
-    - -m
-    - 0.0.0.0:$ESPRESSO_CDN_SERVER_METRICS_PORT
-    depends_on:
-      keydb:
-        condition: service_healthy
-
-  espresso-sequencer0:
-    image: ghcr.io/espressosystems/espresso-sequencer/sequencer:main
+  espresso-dev-node:
+    image: ghcr.io/espressosystems/espresso-sequencer/espresso-dev-node:jh-dev-nodemusl
     ports:
       - "$ESPRESSO_SEQUENCER_API_PORT:$ESPRESSO_SEQUENCER_API_PORT"
-    volumes:
-      - ./genesis.toml:/genesis/demo.toml
-    # Run the API server (with options taken from the environment) and the optional submission API
-    command: sequencer -- storage-sql -- http -- query -- submit -- status -- state -- hotshot-events -- config -- explorer
+      - "$ESPRESSO_BUILDER_PORT:$ESPRESSO_BUILDER_PORT"
     environment:
-      - ESPRESSO_SEQUENCER_GENESIS_FILE
-      - ESPRESSO_SEQUENCER_ORCHESTRATOR_URL
-      - ESPRESSO_SEQUENCER_CDN_ENDPOINT
-      - ESPRESSO_SEQUENCER_API_PORT
-      - ESPRESSO_SEQUENCER_HOTSHOT_EVENT_STREAMING_API_PORT
-      - ESPRESSO_SEQUENCER_STORAGE_PATH
       - ESPRESSO_SEQUENCER_L1_PROVIDER
-      - ESPRESSO_SEQUENCER_L1_EVENTS_MAX_BLOCK_RANGE
-      - ESPRESSO_STATE_RELAY_SERVER_URL
-      - ESPRESSO_SEQUENCER_PRIVATE_STAKING_KEY=$ESPRESSO_DEMO_SEQUENCER_STAKING_PRIVATE_KEY_0
-      - ESPRESSO_SEQUENCER_POSTGRES_HOST=sequencer-db
-      - ESPRESSO_SEQUENCER_POSTGRES_USER=root
-      - ESPRESSO_SEQUENCER_POSTGRES_PASSWORD=password
-      - ESPRESSO_SEQUENCER_POSTGRES_DATABASE=sequencer
-      - ESPRESSO_SEQUENCER_PRIVATE_STATE_KEY=$ESPRESSO_DEMO_SEQUENCER_STATE_PRIVATE_KEY_0
-      - ESPRESSO_SEQUENCER_LIBP2P_BIND_ADDRESS=0.0.0.0:$ESPRESSO_DEMO_SEQUENCER_LIBP2P_PORT_0
-      - ESPRESSO_SEQUENCER_LIBP2P_ADVERTISE_ADDRESS=espresso-sequencer0:$ESPRESSO_DEMO_SEQUENCER_LIBP2P_PORT_0
-      - ESPRESSO_SEQUENCER_ETH_MNEMONIC=$ESPRESSO_COMMITMENT_ETH_MNEMONIC
-      - ESPRESSO_SEQUENCER_ETH_ACCOUNT_INDEX
-      - ESPRESSO_SEQUENCER_STAKE_TABLE_CAPACITY=10
-      - ESPRESSO_SEQUENCER_PREFUNDED_BUILDER_ACCOUNTS
-      - ESPRESSO_SEQUENCER_STATE_PEERS=http://espresso-sequencer1:$ESPRESSO_SEQUENCER_API_PORT
-      - ESPRESSO_SEQUENCER_MAX_BLOCK_SIZE
-      - ESPRESSO_SEQUENCER_BASE_FEE
-      - ESPRESSO_SEQUENCER_IS_DA=true
-      - RUST_LOG
+      - ESPRESSO_SEQUENCER_ETH_MNEMONIC
+      - ESPRESSO_DEPLOYER_ACCOUNT_INDEX
+      - ESPRESSO_SEQUENCER_API_PORT
+      - ESPRESSO_BUILDER_PORT
+      - ESPRESSO_SEQUENCER_POSTGRES_HOST
+      - ESPRESSO_SEQUENCER_POSTGRES_PORT
+      - ESPRESSO_SEQUENCER_POSTGRES_USER
+      - ESPRESSO_SEQUENCER_POSTGRES_PASSWORD
+      - ESPRESSO_SEQUENCER_POSTGRES_DATABASE
+      - RUST_LOG=info
       - RUST_LOG_FORMAT
     depends_on:
-      orchestrator:
-        condition: service_healthy
       sequencer-db:
         condition: service_healthy
-      state-relay-server:
-        condition: service_healthy
-      broker-0:
-        condition: service_healthy
-      broker-1:
-        condition: service_healthy
-      marshal-0:
-        condition: service_healthy
-      deploy-sequencer-contracts:
-        condition: service_completed_successfully
     extra_hosts:
       - "host.docker.internal:host-gateway"
-
-  espresso-sequencer1:
-    image: ghcr.io/espressosystems/espresso-sequencer/sequencer:main
-    ports:
-      - "$ESPRESSO_SEQUENCER1_API_PORT:$ESPRESSO_SEQUENCER_API_PORT"
-    volumes:
-      - ./genesis.toml:/genesis/demo.toml
-    # Run the API server (with options taken from the environment)
-    command: sequencer -- http
-    environment:
-      - ESPRESSO_SEQUENCER_GENESIS_FILE
-      - ESPRESSO_SEQUENCER_ORCHESTRATOR_URL
-      - ESPRESSO_SEQUENCER_CDN_ENDPOINT
-      - ESPRESSO_SEQUENCER_API_PORT
-      - ESPRESSO_SEQUENCER_HOTSHOT_EVENT_STREAMING_API_PORT
-      - ESPRESSO_SEQUENCER_STORAGE_PATH
-      - ESPRESSO_SEQUENCER_L1_PROVIDER
-      - ESPRESSO_SEQUENCER_L1_EVENTS_MAX_BLOCK_RANGE
-      - ESPRESSO_STATE_RELAY_SERVER_URL
-      - ESPRESSO_SEQUENCER_PRIVATE_STAKING_KEY=$ESPRESSO_DEMO_SEQUENCER_STAKING_PRIVATE_KEY_1
-      - ESPRESSO_SEQUENCER_PRIVATE_STATE_KEY=$ESPRESSO_DEMO_SEQUENCER_STATE_PRIVATE_KEY_1
-      - ESPRESSO_SEQUENCER_LIBP2P_BIND_ADDRESS=0.0.0.0:$ESPRESSO_DEMO_SEQUENCER_LIBP2P_PORT_1
-      - ESPRESSO_SEQUENCER_LIBP2P_ADVERTISE_ADDRESS=espresso-sequencer1:$ESPRESSO_DEMO_SEQUENCER_LIBP2P_PORT_1
-      - ESPRESSO_SEQUENCER_ETH_MNEMONIC=$ESPRESSO_COMMITMENT_ETH_MNEMONIC
-      - ESPRESSO_SEQUENCER_ETH_ACCOUNT_INDEX
-      - ESPRESSO_SEQUENCER_PREFUNDED_BUILDER_ACCOUNTS
-      - ESPRESSO_SEQUENCER_STAKE_TABLE_CAPACITY=10
-      - ESPRESSO_SEQUENCER_STATE_PEERS=http://espresso-sequencer0:$ESPRESSO_SEQUENCER_API_PORT
-      - ESPRESSO_SEQUENCER_MAX_BLOCK_SIZE
-      - ESPRESSO_SEQUENCER_BASE_FEE
-      - ESPRESSO_SEQUENCER_IS_DA=true
-      - RUST_LOG
-      - RUST_LOG_FORMAT
-    depends_on:
-      orchestrator:
-        condition: service_healthy
-      state-relay-server:
-        condition: service_healthy
-      broker-0:
-        condition: service_healthy
-      broker-1:
-        condition: service_healthy
-      marshal-0:
-        condition: service_healthy
-      deploy-sequencer-contracts:
-        condition: service_completed_successfully
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
-  commitment-task:
-    image: ghcr.io/espressosystems/espresso-sequencer/commitment-task:main
-    ports:
-      - "$ESPRESSO_COMMITMENT_TASK_PORT:$ESPRESSO_COMMITMENT_TASK_PORT"
-    environment:
-      - ESPRESSO_SEQUENCER_ETH_MNEMONIC=$ESPRESSO_COMMITMENT_ETH_MNEMONIC
-      - ESPRESSO_SEQUENCER_HOTSHOT_ACCOUNT_INDEX
-      - ESPRESSO_COMMITMENT_TASK_PORT
-      - ESPRESSO_SEQUENCER_URL
-      - ESPRESSO_SEQUENCER_L1_PROVIDER
-      - ESPRESSO_SEQUENCER_HOTSHOT_ADDRESS
-      - RUST_LOG
-      - RUST_LOG_FORMAT
-    depends_on:
-      espresso-sequencer0:
-        condition: service_healthy
-      deploy-contracts:
-        condition: service_completed_successfully
-
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
-
-  state-relay-server:
-    image: ghcr.io/espressosystems/espresso-sequencer/state-relay-server:main
-    ports:
-      - "$ESPRESSO_STATE_RELAY_SERVER_PORT:$ESPRESSO_STATE_RELAY_SERVER_PORT"
-    environment:
-      - ESPRESSO_STATE_RELAY_SERVER_PORT
-      - ESPRESSO_STATE_SIGNATURE_TOTAL_STAKE
-      - RUST_LOG
-      - RUST_LOG_FORMAT
-      - ASYNC_STD_THREAD_COUNT
-
   sequencer-db:
     image: postgres
     user: postgres
     ports:
-      - "$ESPRESSO_SEQUENCER_DB_PORT:5432"
+      - "$ESPRESSO_SEQUENCER_POSTGRES_PORT:$ESPRESSO_SEQUENCER_POSTGRES_PORT"
     environment:
-      - POSTGRES_PASSWORD=password
-      - POSTGRES_USER=root
-      - POSTGRES_DB=sequencer
+      - POSTGRES_PASSWORD=$ESPRESSO_SEQUENCER_POSTGRES_PASSWORD
+      - POSTGRES_USER=$ESPRESSO_SEQUENCER_POSTGRES_USER
+      - POSTGRES_DB=$ESPRESSO_SEQUENCER_POSTGRES_DATABASE
     healthcheck:
       # Postgres can be falsely "ready" once before running init scripts.
       # See https://github.com/docker-library/postgres/issues/146 for discussion.
@@ -317,31 +39,3 @@ services:
       interval: 5s
       timeout: 4s
       retries: 20
-
-  prover-service:
-    image: ghcr.io/espressosystems/espresso-sequencer/prover-service:main
-    ports:
-      - "$ESPRESSO_PROVER_SERVICE_PORT:$ESPRESSO_PROVER_SERVICE_PORT"
-    environment:
-      - ESPRESSO_STATE_RELAY_SERVER_URL
-      - ESPRESSO_SEQUENCER_ORCHESTRATOR_URL
-      - ESPRESSO_STATE_PROVER_UPDATE_INTERVAL
-      - ESPRESSO_SEQUENCER_L1_PROVIDER
-      - ESPRESSO_SEQUENCER_ETH_MNEMONIC=$ESPRESSO_COMMITMENT_ETH_MNEMONIC
-      - RAYON_NUM_THREADS=2
-      - ESPRESSO_SEQUENCER_LIGHTCLIENT_ADDRESS
-      - MNEMONIC=$ESPRESSO_SEQUENCER_ETH_MNEMONIC
-      - ESPRESSO_SEQUENCER_STAKE_TABLE_CAPACITY
-      - ESPRESSO_SEQUENCER_STATE_PROVER_ACCOUNT_INDEX
-      - RUST_LOG
-      - RUST_LOG_FORMAT
-      - ASYNC_STD_THREAD_COUNT
-    depends_on:
-      orchestrator:
-        condition: service_healthy
-      state-relay-server:
-        condition: service_healthy
-      deploy-contracts:
-        condition: service_completed_successfully
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
