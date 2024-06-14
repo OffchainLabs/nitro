@@ -191,7 +191,8 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 	b.dataDir = t.TempDir()
 	b.l1StackConfig = createStackConfigForTest(b.dataDir)
 	b.l2StackConfig = createStackConfigForTest(b.dataDir)
-	b.valnodeConfig = &valnode.TestValidationConfig
+	cp := valnode.TestValidationConfig
+	b.valnodeConfig = &cp
 	b.execConfig = gethexec.ConfigDefaultTest()
 	return b
 }
