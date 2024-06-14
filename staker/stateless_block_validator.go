@@ -4,9 +4,11 @@
 package staker
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"testing"
 
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
@@ -293,7 +295,17 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 			)
 			return fmt.Errorf("error while trying to read delayed msg for proving: %w", err)
 		}
-		e.DelayedMsg = delayedMsg
+		if v.config.Evil {
+			interceptGweiAmount := new(big.Int).SetUint64(v.config.EvilInterceptDepositGwei * params.GWei)
+			// Tweak the delayed message.
+			if bytes.Contains(delayedMsg, interceptGweiAmount.Bytes()) {
+				newValue := new(big.Int).Add(interceptGweiAmount, big.NewInt(params.GWei))
+				modified := bytes.Replace(delayedMsg, interceptGweiAmount.Bytes(), newValue.Bytes(), 1)
+				e.DelayedMsg = modified
+			}
+		} else {
+			e.DelayedMsg = delayedMsg
+		}
 	}
 	for _, batch := range e.BatchInfo {
 		if len(batch.Data) <= 40 {

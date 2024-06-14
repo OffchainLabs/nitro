@@ -137,6 +137,11 @@ func (r *BlockRecorder) RecordBlockCreation(
 		// Re-fetch the batch instead of using our cached cost,
 		// as the replay binary won't have the cache populated.
 		msg.Message.BatchGasCost = nil
+		opts := make([]arbos.ProduceOpt, 0)
+		if r.execEngine.evil {
+			opts = append(opts, arbos.WithEvilProduction())
+			opts = append(opts, arbos.WithInterceptDepositSize(r.execEngine.interceptDepositGweiAmount))
+		}
 		block, _, err := arbos.ProduceBlock(
 			msg.Message,
 			msg.DelayedMessagesRead,
@@ -146,6 +151,7 @@ func (r *BlockRecorder) RecordBlockCreation(
 			chainConfig,
 			batchFetcher,
 			false,
+			opts...,
 		)
 		if err != nil {
 			return nil, err

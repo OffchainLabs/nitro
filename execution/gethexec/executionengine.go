@@ -18,6 +18,7 @@ import (
 	"encoding/binary"
 	"errors"
 	"fmt"
+	"math/big"
 	"os"
 	"path"
 	"runtime/pprof"
@@ -71,15 +72,35 @@ type ExecutionEngine struct {
 
 	reorgSequencing bool
 
-	prefetchBlock bool
+	prefetchBlock              bool
+	evil                       bool
+	interceptDepositGweiAmount *big.Int
 }
 
-func NewExecutionEngine(bc *core.BlockChain) (*ExecutionEngine, error) {
-	return &ExecutionEngine{
+type Opt func(*ExecutionEngine)
+
+func WithEvilExecution() Opt {
+	return func(exec *ExecutionEngine) {
+		exec.evil = true
+	}
+}
+
+func WithInterceptDepositSize(depositGwei *big.Int) Opt {
+	return func(exec *ExecutionEngine) {
+		exec.interceptDepositGweiAmount = depositGwei
+	}
+}
+
+func NewExecutionEngine(bc *core.BlockChain, opts ...Opt) (*ExecutionEngine, error) {
+	ee := &ExecutionEngine{
 		bc:               bc,
 		resequenceChan:   make(chan []*arbostypes.MessageWithMetadata),
 		newBlockNotifier: make(chan struct{}, 1),
-	}, nil
+	}
+	for _, o := range opts {
+		o(ee)
+	}
+	return ee, nil
 }
 
 func (n *ExecutionEngine) Initialize(rustCacheSize uint32) {
@@ -563,6 +584,11 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		return data, err
 	}
 
+	opts := make([]arbos.ProduceOpt, 0)
+	if s.evil {
+		opts = append(opts, arbos.WithEvilProduction())
+		opts = append(opts, arbos.WithInterceptDepositSize(s.interceptDepositGweiAmount))
+	}
 	block, receipts, err := arbos.ProduceBlock(
 		msg.Message,
 		msg.DelayedMessagesRead,
@@ -572,6 +598,7 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		s.bc.Config(),
 		batchFetcher,
 		isMsgForPrefetch,
+		opts...,
 	)
 
 	return block, statedb, receipts, err

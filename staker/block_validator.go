@@ -104,6 +104,8 @@ type BlockValidatorConfig struct {
 	Dangerous                   BlockValidatorDangerousConfig `koanf:"dangerous"`
 	MemoryFreeLimit             string                        `koanf:"memory-free-limit" reload:"hot"`
 	ValidationServerConfigsList string                        `koanf:"validation-server-configs-list"`
+	Evil                        bool                          `koanf:"evil"`
+	EvilInterceptDepositGwei    uint64                        `koanf:"evil-intercept-deposit-gwei"`
 
 	memoryFreeLimit int
 }
@@ -155,6 +157,8 @@ func BlockValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".pending-upgrade-module-root", DefaultBlockValidatorConfig.PendingUpgradeModuleRoot, "pending upgrade wasm module root to additionally validate (hash, 'latest' or empty)")
 	f.Bool(prefix+".failure-is-fatal", DefaultBlockValidatorConfig.FailureIsFatal, "failing a validation is treated as a fatal error")
 	BlockValidatorDangerousConfigAddOptions(prefix+".dangerous", f)
+	f.Bool(prefix+".evil", DefaultBlockValidatorConfig.Evil, "enable evil bold")
+	f.Uint64(prefix+".evil-intercept-deposit-gwei", DefaultBlockValidatorConfig.EvilInterceptDepositGwei, "bold evil intercept")
 	f.String(prefix+".memory-free-limit", DefaultBlockValidatorConfig.MemoryFreeLimit, "minimum free-memory limit after reaching which the blockvalidator pauses validation. Enabled by default as 1GB, to disable provide empty string")
 }
 
@@ -175,6 +179,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	FailureIsFatal:              true,
 	Dangerous:                   DefaultBlockValidatorDangerousConfig,
 	MemoryFreeLimit:             "default",
+	EvilInterceptDepositGwei:    1_000_000,
 }
 
 var TestBlockValidatorConfig = BlockValidatorConfig{

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math/big"
 	"reflect"
 	"sync/atomic"
 	"testing"
@@ -17,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -50,6 +52,8 @@ type Config struct {
 	RPC                       arbitrum.Config                  `koanf:"rpc"`
 	TxLookupLimit             uint64                           `koanf:"tx-lookup-limit"`
 	Dangerous                 DangerousConfig                  `koanf:"dangerous"`
+	Evil                      bool                             `koanf:"evil"`
+	EvilInterceptDepositGwei  uint64                           `koanf:"evil-intercept-deposit-gwei"`
 	EnablePrefetchBlock       bool                             `koanf:"enable-prefetch-block"`
 	SyncMonitor               SyncMonitorConfig                `koanf:"sync-monitor"`
 
@@ -87,6 +91,8 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
 	DangerousConfigAddOptions(prefix+".dangerous", f)
+	f.Bool(prefix+".evil", ConfigDefault.Evil, "enable evil bold validation")
+	f.Uint64(prefix+".evil-intercept-deposit-gwei", ConfigDefault.EvilInterceptDepositGwei, "bold evil intercept deposit gwei")
 	f.Bool(prefix+".enable-prefetch-block", ConfigDefault.EnablePrefetchBlock, "enable prefetching of blocks")
 }
 
@@ -102,6 +108,7 @@ var ConfigDefault = Config{
 	Caching:                   DefaultCachingConfig,
 	Dangerous:                 DefaultDangerousConfig,
 	Forwarder:                 DefaultNodeForwarderConfig,
+	EvilInterceptDepositGwei:  1_000_000, // 1M gwei or 0.001 ETH.
 	EnablePrefetchBlock:       true,
 }
 
@@ -157,7 +164,12 @@ func CreateExecutionNode(
 	configFetcher ConfigFetcher,
 ) (*ExecutionNode, error) {
 	config := configFetcher()
-	execEngine, err := NewExecutionEngine(l2BlockChain)
+	opts := make([]Opt, 0)
+	if config.Evil {
+		opts = append(opts, WithEvilExecution())
+		opts = append(opts, WithInterceptDepositSize(new(big.Int).SetUint64(config.EvilInterceptDepositGwei*params.GWei)))
+	}
+	execEngine, err := NewExecutionEngine(l2BlockChain, opts...)
 	if config.EnablePrefetchBlock {
 		execEngine.EnablePrefetchBlock()
 	}
