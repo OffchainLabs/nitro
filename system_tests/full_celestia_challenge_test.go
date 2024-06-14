@@ -34,6 +34,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/das/celestia"
 	celestiaTypes "github.com/offchainlabs/nitro/das/celestia/types"
 	"github.com/offchainlabs/nitro/execution/gethexec"
@@ -51,12 +52,6 @@ func init() {
 		fmt.Println(http.ListenAndServe("localhost:6060", nil))
 	}()
 }
-
-// TODO:
-// Find a way to trigger the other two cases
-// add Fee stuff
-// Cleanup code
-// make release, preimage oracle, write up, send to Ottersec
 
 func DeployOneStepProofEntryCelestia(t *testing.T, ctx context.Context, auth *bind.TransactOpts, client *ethclient.Client) common.Address {
 	osp0, tx, _, err := ospgen.DeployOneStepProver0(auth, client)
@@ -122,7 +117,7 @@ func makeCelestiaBatch(t *testing.T, l2Node *arbnode.Node, celestiaDA *celestia.
 
 	header, err := buf.ReadByte()
 	Require(t, err)
-	if !celestia.IsCelestiaMessageHeaderByte(header) {
+	if !celestiaTypes.IsCelestiaMessageHeaderByte(header) {
 		err := errors.New("tried to deserialize a message that doesn't have the Celestia header")
 		Require(t, err)
 	}
@@ -166,9 +161,10 @@ func makeCelestiaBatch(t *testing.T, l2Node *arbnode.Node, celestiaDA *celestia.
 
 func RunCelestiaChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, challengeMsgIdx int64, undecided bool, counterFactual bool) {
 
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+	glogger := log.NewGlogHandler(
+		log.NewTerminalHandler(io.Writer(os.Stderr), false))
 	glogger.Verbosity(log.LvlInfo)
-	log.Root().SetHandler(glogger)
+	log.SetDefault(log.NewLogger(glogger))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -186,7 +182,6 @@ func RunCelestiaChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs boo
 	conf.BlockValidator.Enable = false
 	conf.BatchPoster.Enable = false
 	conf.InboxReader.CheckDelay = time.Second
-	chainConfig.ArbitrumChainParams.CelestiaDA = true
 
 	deployerTxOpts := l1Info.GetDefaultTransactOpts("deployer", ctx)
 	blobstream, tx, mockStreamWrapper, err := mocksgen.DeployMockstream(&deployerTxOpts, l1Backend)
@@ -222,7 +217,7 @@ func RunCelestiaChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs boo
 	} else {
 		_, valStack = createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
 	}
-	configByValidationNode(t, conf, valStack)
+	configByValidationNode(conf, valStack)
 
 	fatalErrChan := make(chan error, 10)
 	asserterRollupAddresses, initMessage := DeployOnTestL1(t, ctx, l1Info, l1Backend, chainConfig)
@@ -291,7 +286,7 @@ func RunCelestiaChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs boo
 	}
 	var wasmModuleRoot common.Hash
 	if useStubs {
-		wasmModuleRoot = mockWasmModuleRoot
+		wasmModuleRoot = mockWasmModuleRoots[0]
 	} else {
 		wasmModuleRoot = locator.LatestWasmModuleRoot()
 		if (wasmModuleRoot == common.Hash{}) {
@@ -343,7 +338,9 @@ func RunCelestiaChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs boo
 	// Add the L1 backend to Celestia DA
 	celestiaDa.Prover.EthClient = l1Backend
 
-	asserterValidator, err := staker.NewStatelessBlockValidator(asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, asserterExec.Recorder, asserterL2ArbDb, nil, nil, celestiaDa, StaticFetcherFrom(t, &conf.BlockValidator), valStack)
+	celestiaReader := celestiaTypes.NewReaderForCelestia(celestiaDa)
+
+	asserterValidator, err := staker.NewStatelessBlockValidator(asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, asserterExec.Recorder, asserterL2ArbDb, []daprovider.Reader{celestiaReader}, StaticFetcherFrom(t, &conf.BlockValidator), valStack)
 	if err != nil {
 		Fatal(t, err)
 	}
@@ -360,7 +357,7 @@ func RunCelestiaChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs boo
 	if err != nil {
 		Fatal(t, err)
 	}
-	challengerValidator, err := staker.NewStatelessBlockValidator(challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, challengerExec.Recorder, challengerL2ArbDb, nil, nil, celestiaDa, StaticFetcherFrom(t, &conf.BlockValidator), valStack)
+	challengerValidator, err := staker.NewStatelessBlockValidator(challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, challengerExec.Recorder, challengerL2ArbDb, []daprovider.Reader{celestiaReader}, StaticFetcherFrom(t, &conf.BlockValidator), valStack)
 	if err != nil {
 		Fatal(t, err)
 	}
