@@ -62,7 +62,7 @@ func tryMarshalUnmarshal(input *statetransfer.ArbosInitializationInfo, t *testin
 	initReader := statetransfer.NewMemoryInitDataReader(&initData)
 	chainConfig := params.ArbitrumDevTestChainConfig()
 
-	cacheConfig := core.DefaultCacheConfigWithScheme(rawdb.PathScheme)
+	cacheConfig := core.DefaultCacheConfigWithScheme(testhelpers.GetTestStateScheme())
 	stateroot, err := InitializeArbosInDatabase(raw, cacheConfig, initReader, chainConfig, arbostypes.TestInitMessage, 0, 0)
 	Require(t, err)
 
