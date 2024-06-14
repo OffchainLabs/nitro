@@ -281,7 +281,8 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	configByValidationNode(conf, valStack)
 
 	fatalErrChan := make(chan error, 10)
-	asserterRollupAddresses, initMessage := DeployOnTestL1(t, ctx, l1Info, l1Backend, chainConfig)
+	defaultWasmRootPath := ""
+	asserterRollupAddresses, initMessage := DeployOnTestL1(t, ctx, l1Info, l1Backend, chainConfig, defaultWasmRootPath)
 
 	deployerTxOpts := l1Info.GetDefaultTransactOpts("deployer", ctx)
 	sequencerTxOpts := l1Info.GetDefaultTransactOpts("sequencer", ctx)
