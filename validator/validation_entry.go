@@ -26,6 +26,6 @@ type ValidationInput struct {
 
 	L1BlockHeight uint64
 	// The validating hotshot commitment
-	HotShotCommitment   espressoTypes.Commitment
-	HotShotAvailability bool
+	HotShotCommitment espressoTypes.Commitment
+	HotShotLiveness   bool
 }

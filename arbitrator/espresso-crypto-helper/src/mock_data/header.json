@@ -1,0 +1,37 @@
+{
+    "block_merkle_tree_root": "MERKLE_COMM~AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAgAAAAAAAAAAAAAAAAAAAAQA",
+    "builder_commitment": "BUILDER_COMMITMENT~PfISPEAHYbCXqJ08RqlK74d9aSrtrZkKHdnoX7crymG5",
+    "builder_signature": {
+        "r": "0xca39647d5e159ebf62e0efd163ddb2b7946f437948e6c31accdb5360a9f2da17",
+        "s": "0x610e51dced89ede20e3dcc5e9e26fff580738e785371df53389f2f84dadbdb87",
+        "v": 28
+    },
+    "chain_config": {
+        "chain_config": {
+            "Left": {
+                "base_fee": "0",
+                "chain_id": "35353",
+                "fee_contract": "0x0000000000000000000000000000000000000000",
+                "fee_recipient": "0x0000000000000000000000000000000000000000",
+                "max_block_size": "10240"
+            }
+        }
+    },
+    "fee_info": {
+        "account": "0xf39fd6e51aad88f6f4ce6ab8827279cfffb92266",
+        "amount": "0"
+    },
+    "fee_merkle_tree_root": "MERKLE_COMM~AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAUAAAAAAAAAAAAAAAAAAAAKA",
+    "height": 42,
+    "l1_finalized": {
+        "hash": "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        "number": 123,
+        "timestamp": "0x456"
+    },
+    "l1_head": 124,
+    "ns_table": {
+        "bytes": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    },
+    "payload_commitment": "HASH~AazstQer_ho1SqgGT0r10_Gs0BnjfbPBHJdSO3HHbp29",
+    "timestamp": 789
+}

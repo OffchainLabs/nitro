@@ -229,6 +229,17 @@ pub unsafe extern "C" fn arbitrator_add_hotshot_commitment(
     }
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn arbitrator_add_hotshot_liveness(
+    mach: *mut Machine,
+    height: u64,
+    liveness: u8,
+) -> c_int {
+    let mach = &mut *mach;
+    mach.add_hotshot_liveness(height, liveness > 0);
+    0
+}
+
 /// Adds a user program to the machine's known set of wasms.
 #[no_mangle]
 pub unsafe extern "C" fn arbitrator_add_user_wasm(
@@ -257,6 +268,31 @@ pub unsafe extern "C" fn arbitrator_step_until_host_io(
                 return ptr::null_mut();
             }
             if mach.next_instruction_is_host_io() {
+                return ptr::null_mut();
+            }
+            match mach.step_n(1) {
+                Ok(()) => {}
+                Err(err) => return err_to_c_string(err),
+            }
+        }
+    }
+    ptr::null_mut()
+}
+
+#[no_mangle]
+#[cfg(feature = "native")]
+pub unsafe extern "C" fn arbitrator_step_until_is_hotshot_live(
+    mach: *mut Machine,
+    condition: *const u8,
+) -> *mut libc::c_char {
+    let mach = &mut *mach;
+    let condition = &*(condition as *const AtomicU8);
+    while condition.load(atomic::Ordering::Relaxed) == 0 {
+        for _ in 0..1_000_000 {
+            if mach.is_halted() {
+                return ptr::null_mut();
+            }
+            if mach.next_instruction_is_read_hotshot() {
                 return ptr::null_mut();
             }
             match mach.step_n(1) {

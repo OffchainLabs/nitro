@@ -810,7 +810,9 @@ func (s *TransactionStreamer) countDuplicateMessages(
 					}
 					dbMessageParsed.Message.BatchGasCost = batchGasCostBkup
 				}
-				if arbos.IsEspressoMsg(dbMessageParsed.Message) && !bytes.Equal(nextMessage.Message.L2msg, dbMessageParsed.Message.L2msg) {
+				if arbos.IsEspressoMsg(dbMessageParsed.Message) &&
+					arbos.IsEspressoMsg(nextMessage.Message) &&
+					!bytes.Equal(nextMessage.Message.L2msg, dbMessageParsed.Message.L2msg) {
 					// Check to see if the difference is the existence of block merkle proof in the new message,
 					// The batcher can append this on the fly (see AddEspressoBlockMerkleProof).
 					// If this is the case, update the database with the block merkle justification.
@@ -826,7 +828,7 @@ func (s *TransactionStreamer) countDuplicateMessages(
 					if oldJst.BlockMerkleJustification == nil && newJst.BlockMerkleJustification != nil {
 						duplicateMessage = true
 						if batch != nil {
-							log.Error("Writing new block justification to DB")
+							log.Info("Writing new block justification to DB")
 							if *batch == nil {
 								*batch = s.db.NewBatch()
 							}
@@ -876,26 +878,6 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	var lastDelayedRead uint64
 	var hasNewConfirmedMessages bool
 	var cacheClearLen int
-
-	// for i := 0; i < len(messages); i++ {
-	// In Espresso mode, we can get strange reorg behavior because the batcher manipulates the justification after sequencing.
-	// To get around this, we simply wipe the block merkle proof before adding a batch to the transaction streamer.
-	// The justification is only relevant for validation purposes so it shouldn't matter that we don't store the proof
-	// in the node's execution database.
-	// TODO: investigate whether modifying the RLP encoding would be the better approach
-	// 	if arbos.IsEspressoMsg(messages[i].Message) {
-	// 		txs, jst, err := arbos.ParseEspressoMsg(messages[i].Message)
-	// 		if err != nil {
-	// 			return err
-	// 		}
-	// 		jst.BlockMerkleJustification = nil
-	// 		newMsg, err := arbos.MessageFromEspresso(messages[i].Message.Header, txs, jst)
-	// 		if err != nil {
-	// 			return err
-	// 		}
-	// 		messages[i].Message = &newMsg
-	// 	}
-	// }
 
 	messagesAfterPos := messageStartPos + arbutil.MessageIndex(len(messages))
 	broadcastStartPos := arbutil.MessageIndex(atomic.LoadUint64(&s.broadcasterQueuedMessagesPos))

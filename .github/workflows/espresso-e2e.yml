@@ -55,35 +55,30 @@ jobs:
           sudo apt-get update && sudo apt-get install -y lld-14
           sudo ln -s /usr/bin/wasm-ld-14 /usr/local/bin/wasm-ld
 
-      - name: Install rust wasm32-unknown-unknown
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: "stable"
-          target: wasm32-unknown-unknown
-
-      - name: Install rust wasm32-wasi
-        uses: actions-rs/toolchain@v1
-        with:
-          profile: minimal
-          toolchain: "stable"
-          target: wasm32-wasi
-
       - name: Install rust stable
-        uses: actions-rs/toolchain@v1
-        id: install-rust
+        uses: dtolnay/rust-toolchain@stable
         with:
-          profile: minimal
-          toolchain: "stable"
-          override: true
-
-      - name: Install cbindgen
-        run: cargo install cbindgen
+          targets: 'wasm32-unknown-unknown, wasm32-wasi'
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
         with:
-          version: nightly
+          version: nightly-cafc2606a2187a42b236df4aa65f4e8cdfcea970
+
+      - name: Install rust nightly
+        uses: actions-rs/toolchain@v1
+        id: install-rust-nightly
+        with:
+          profile: minimal
+          toolchain: "nightly"
+
+      - name: Install rust wasm targets
+        run: rustup target add wasm32-wasi wasm32-unknown-unknown
+
+      - name: Install nightly wasm targets
+        run: |
+          rustup component add rust-src --toolchain nightly
+          rustup target add wasm32-unknown-unknown --toolchain nightly
 
       - name: Cache Build Products
         uses: actions/cache@v3
@@ -91,7 +86,7 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}-${{ matrix.test-mode }}
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-${{ matrix.test-mode }}
           restore-keys: ${{ runner.os }}-go-
 
       - name: Cache Rust Build Products
@@ -124,6 +119,10 @@ jobs:
         if: steps.cache-cbrotli.outputs.cache-hit != 'true'
         run: ./scripts/build-brotli.sh -l
 
+      - name: Build cbrotli-wasm in docker
+        if: steps.cache-cbrotli.outputs.cache-hit != 'true'
+        run: ./scripts/build-brotli.sh -w -d
+
       - name: Build
         run: make build build-replay-env -j
 
@@ -135,7 +134,7 @@ jobs:
       - name: Run E2E test
         run: |
           packages=`go list ./... | grep system_tests`
-          gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 -- -v -timeout 30m -p 1 ./... -run 'TestEspressoE2E'
+          gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 -- -v -timeout 35m -p 1 ./... -run 'TestEspressoE2E'
 
       - name: Run switch test
         run: |

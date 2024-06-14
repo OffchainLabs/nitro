@@ -836,11 +836,11 @@ func createTestNodeOnL1WithConfigImpl(
 	if l2info == nil {
 		l2info = NewArbTestInfo(t, chainConfig.ChainID)
 	}
-	var hotShotAddr common.Address
+	var lightClientAddr common.Address
 	if nodeConfig.BlockValidator.LightClientAddress != "" {
-		hotShotAddr = common.HexToAddress(nodeConfig.BlockValidator.LightClientAddress)
+		lightClientAddr = common.HexToAddress(nodeConfig.BlockValidator.LightClientAddress)
 	}
-	addresses, initMessage := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig, hotShotAddr)
+	addresses, initMessage := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig, lightClientAddr)
 	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, initMessage, l2StackConfig, &execConfig.Caching)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc

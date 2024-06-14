@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"math/big"
 
-	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind/backends"
@@ -134,7 +133,7 @@ func NewChallengeManager(
 		return nil, fmt.Errorf("error creating block challenge backend for challenge %v: %w", challengeIndex, err)
 	}
 	if val.debugEspressoIncorrectHeight > 0 {
-		backend.DebugEspresso_SetIncorrectHeight(val.debugEspressoIncorrectHeight)
+		backend.DebugEspresso_SetTrigger(val.debugEspressoIncorrectHeight, val.debugEspressoInputOverrideFunc)
 	}
 	return &ChallengeManager{
 		challengeCore: &challengeCore{
@@ -471,13 +470,12 @@ func (m *ChallengeManager) createExecutionBackend(ctx context.Context, step uint
 	if err != nil {
 		return fmt.Errorf("error creating validation entry for challenge %v msg %v for execution challenge: %w", m.challengeIndex, initialCount, err)
 	}
-	if m.blockChallengeBackend.EspressoDebugging(entry.End.HotShotHeight) {
-		entry.End.BlockHash = mockHash(entry.End.HotShotHeight)
-		entry.HotShotCommitment = espressoTypes.Commitment{}
-	}
 	input, err := entry.ToInput()
 	if err != nil {
 		return fmt.Errorf("error getting validation entry input of challenge %v msg %v: %w", m.challengeIndex, initialCount, err)
+	}
+	if m.blockChallengeBackend.EspressoDebugging(entry.End.HotShotHeight) {
+		m.blockChallengeBackend.debugEspressoInputOverrideFunc(input)
 	}
 	var prunedBatches []validator.BatchInfo
 	for _, batch := range input.BatchInfo {

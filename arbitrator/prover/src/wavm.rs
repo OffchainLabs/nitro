@@ -175,7 +175,7 @@ pub enum Opcode {
     /// Reads the HotShot commitment on the stack at an offset
     ReadHotShotCommitment,
     /// Gets the HotShot availability at a given L1 height
-    GetHotShotAvailability,
+    IsHotShotLive,
 }
 
 impl Opcode {
@@ -295,7 +295,7 @@ impl Opcode {
             Opcode::SwitchThread => 0x8032,
 
             Opcode::ReadHotShotCommitment => 0x9001,
-            Opcode::GetHotShotAvailability => 0x9002,
+            Opcode::IsHotShotLive => 0x9002,
         }
     }
 
@@ -309,7 +309,7 @@ impl Opcode {
                 | Opcode::ReadPreImage
                 | Opcode::ReadInboxMessage
                 | Opcode::ReadHotShotCommitment
-                | Opcode::GetHotShotAvailability
+                | Opcode::IsHotShotLive
         )
     }
 }

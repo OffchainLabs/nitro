@@ -28,7 +28,8 @@ type BlockChallengeBackend struct {
 	inboxTracker           InboxTrackerInterface
 	tooFarStartsAtPosition uint64
 
-	debugEspressoIncorrectHeight uint64
+	debugEspressoIncorrectHeight   uint64
+	debugEspressoInputOverrideFunc func(*validator.ValidationInput)
 }
 
 // Assert that BlockChallengeBackend implements ChallengeBackend
@@ -235,8 +236,9 @@ func (b *BlockChallengeBackend) IssueExecChallenge(
 }
 
 // This method should be only used in tests.
-func (b *BlockChallengeBackend) DebugEspresso_SetIncorrectHeight(h uint64) {
+func (b *BlockChallengeBackend) DebugEspresso_SetTrigger(h uint64, f func(*validator.ValidationInput)) {
 	b.debugEspressoIncorrectHeight = h
+	b.debugEspressoInputOverrideFunc = f
 }
 
 // This method is to create a conditional branch to help mocking a challenge.

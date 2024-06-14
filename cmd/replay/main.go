@@ -306,15 +306,23 @@ func main() {
 			if jst.BlockMerkleJustification == nil {
 				panic("block merkle justification missing")
 			}
-			jsonHeader, err := json.Marshal(hotshotHeader)
-			if err != nil {
-				panic("unable to serialize header")
+
+			if jst.Proof == nil && len(txs) != 0 {
+				panic("namespace proof missing")
 			}
-			espressocrypto.VerifyNamespace(chainConfig.ChainID.Uint64(), *jst.Proof, *jst.Header.PayloadCommitment, *jst.Header.NsTable, txs)
-			espressocrypto.VerifyMerkleProof(jst.BlockMerkleJustification.BlockMerkleProof.Proof, jsonHeader, *jst.BlockMerkleJustification.BlockMerkleComm, commitment)
+
+			if jst.Proof != nil {
+				jsonHeader, err := json.Marshal(hotshotHeader)
+				if err != nil {
+					panic("unable to serialize header")
+				}
+				espressocrypto.VerifyNamespace(chainConfig.ChainID.Uint64(), *jst.Proof, *jst.Header.PayloadCommitment, *jst.Header.NsTable, txs, *jst.VidCommon)
+				espressocrypto.VerifyMerkleProof(jst.BlockMerkleJustification.BlockMerkleProof.Proof, jsonHeader, *jst.BlockMerkleJustification.BlockMerkleComm, commitment)
+			}
+
 		} else if validatingEspressoLivenessFailure {
 			l1Block := message.Message.Header.BlockNumber
-			if wavmio.GetHotShotAvailability(l1Block) {
+			if wavmio.IsHotShotLive(l1Block) {
 				panic(fmt.Sprintf("getting the centralized message while hotshot is good, l1Height: %v", l1Block))
 			}
 		}

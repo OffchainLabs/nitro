@@ -73,7 +73,7 @@ func TestEspressoOsp(t *testing.T) {
 	comm, _ := big.NewInt(0).SetString(common.Hash(input.HotShotCommitment).String(), 0)
 	tx, err = hotShotConn.SetCommitment(
 		&deployerTxOpts,
-		big.NewInt(int64(0)).SetUint64(input.StartState.HotShotHeight+1),
+		big.NewInt(int64(0)).SetUint64(input.L1BlockHeight),
 		comm,
 	)
 	Require(t, err)
@@ -93,7 +93,10 @@ func TestEspressoOsp(t *testing.T) {
 		ospgen.ExecutionContext{
 			MaxInboxMessagesRead: big.NewInt(1),
 			Bridge:               rollup.Bridge,
-		}, big.NewInt(10), // has no effect on this test.
+		},
+		// Machine step has no effect on this test.
+		// In the contract validation, we didn't use the step
+		big.NewInt(10),
 		beforeHash,
 		proof,
 	)
@@ -106,5 +109,46 @@ func TestEspressoOsp(t *testing.T) {
 	log.Info("osp entry", "expected hash", expectedAfterHash, "actual", common.Hash(afterHash))
 	if expectedAfterHash != afterHash {
 		t.Fatal("read hotshot commitment op wrong")
+	}
+
+	// load another machine to test the IsHotShotLive Opcode
+	machine, err = server_arb.CreateTestArbMachine(ctx, locator, &input)
+	Require(t, err)
+	err = machine.StepUntilIsHotShotLive(ctx)
+	Require(t, err)
+	if !machine.IsRunning() {
+		t.Fatal("should be still running")
+	}
+
+	liveness := input.HotShotLiveness
+	tx, err = hotShotConn.SetAvailability(&deployerTxOpts,
+		big.NewInt(int64(0)).SetUint64(input.L1BlockHeight),
+		liveness,
+	)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, l1Backend, tx)
+	Require(t, err)
+
+	livenessProof := machine.ProveNextStep()
+	beforeHash = machine.Hash()
+	err = machine.Step(ctx, uint64(1))
+	Require(t, err)
+	expectedAfterHash = machine.Hash()
+	afterHash, err = ospEntry.ProveOneStep(
+		l1Info.GetDefaultCallOpts("deployer", ctx),
+		ospgen.ExecutionContext{
+			MaxInboxMessagesRead: big.NewInt(1),
+			Bridge:               rollup.Bridge,
+		},
+		// Machine step has no effect on this test.
+		// In the contract validation, we didn't use the step
+		big.NewInt(10),
+		beforeHash,
+		livenessProof,
+	)
+	Require(t, err)
+
+	if expectedAfterHash != afterHash {
+		t.Fatal("isHotShotLive op wrong")
 	}
 }

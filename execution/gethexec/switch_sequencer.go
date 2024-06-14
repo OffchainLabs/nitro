@@ -10,7 +10,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -25,9 +24,9 @@ type SwitchSequencer struct {
 	centralized *Sequencer
 	espresso    *EspressoSequencer
 
-	maxHotShotDriftTime time.Duration
-	switchPollInterval  time.Duration
-	lightClient         lightClient.LightClientReaderInterface
+	switchPollInterval   time.Duration
+	swtichDelayThreshold uint64
+	lightClient          lightClient.LightClientReaderInterface
 
 	mode int
 }
@@ -39,21 +38,21 @@ func NewSwitchSequencer(centralized *Sequencer, espresso *EspressoSequencer, l1c
 		return nil, err
 	}
 
-	var lightClient lightClient.LightClientReaderInterface
+	var lightclient lightClient.LightClientReaderInterface
 	if config.LightClientAddress != "" {
-		lightClient, err = arbos.NewMockLightClientReader(common.HexToAddress(config.LightClientAddress), l1client)
+		lightclient, err = lightClient.NewLightClientReader(common.HexToAddress(config.LightClientAddress), l1client)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	return &SwitchSequencer{
-		centralized:         centralized,
-		espresso:            espresso,
-		lightClient:         lightClient,
-		mode:                SequencingMode_Espresso,
-		maxHotShotDriftTime: config.MaxHotShotDriftTime,
-		switchPollInterval:  config.SwitchPollInterval,
+		centralized:          centralized,
+		espresso:             espresso,
+		lightClient:          lightclient,
+		mode:                 SequencingMode_Espresso,
+		switchPollInterval:   config.SwitchPollInterval,
+		swtichDelayThreshold: config.SwitchDelayThreshold,
 	}, nil
 }
 
@@ -117,9 +116,11 @@ func (s *SwitchSequencer) Start(ctx context.Context) error {
 
 	if s.lightClient != nil {
 		s.CallIteratively(func(ctx context.Context) time.Duration {
-			espresso := s.lightClient.IsHotShotAvailable(s.maxHotShotDriftTime)
+			espresso, err := s.lightClient.IsHotShotLive(s.swtichDelayThreshold)
+			if err != nil {
+				return 0
+			}
 
-			var err error
 			if s.IsRunningEspressoMode() && !espresso {
 				err = s.SwitchToCentralized(ctx)
 			} else if !s.IsRunningEspressoMode() && espresso {

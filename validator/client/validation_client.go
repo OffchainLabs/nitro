@@ -247,9 +247,9 @@ func ValidationInputToJson(entry *validator.ValidationInput) *server_api.InputJS
 		UserWasms:     make(map[common.Hash]server_api.UserWasmJson),
 		DebugChain:    entry.DebugChain,
 
-		L1BlockHeight:       entry.L1BlockHeight,
-		HotShotCommitment:   entry.HotShotCommitment,
-		HotShotAvailability: entry.HotShotAvailability,
+		L1BlockHeight:     entry.L1BlockHeight,
+		HotShotCommitment: entry.HotShotCommitment,
+		HotShotLiveness:   entry.HotShotLiveness,
 	}
 	for _, binfo := range entry.BatchInfo {
 		encData := base64.StdEncoding.EncodeToString(binfo.Data)

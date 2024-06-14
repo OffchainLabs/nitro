@@ -88,7 +88,7 @@ pub fn create(opts: &Opts, env: WasmEnv) -> (Instance, FunctionEnv<WasmEnv>, Sto
             },
             "resolveTypedPreimage" => func!(wavmio::resolve_typed_preimage),
             "readHotShotCommitment" => func!(wavmio::read_hotshot_commitment),
-            "getHotShotAvailability" => func!(wavmio::get_hotshot_availability),
+            "isHotShotLive" => func!(wavmio::is_hotshot_live),
         },
         "wasi_snapshot_preview1" => {
             "proc_exit" => func!(wasip1_stub::proc_exit),
@@ -193,7 +193,7 @@ pub type Inbox = BTreeMap<u64, Vec<u8>>;
 pub type Preimages = BTreeMap<PreimageType, BTreeMap<Bytes32, Vec<u8>>>;
 pub type ModuleAsm = Arc<[u8]>;
 pub type HotShotCommitmentMap = BTreeMap<u64, [u8; 32]>;
-pub type HotShotAvailabilityMap = BTreeMap<u64, bool>;
+pub type HotShotLivenessMap = BTreeMap<u64, bool>;
 
 #[derive(Default)]
 pub struct WasmEnv {
@@ -213,8 +213,8 @@ pub struct WasmEnv {
     pub sequencer_messages: Inbox,
     /// Mapping from batch positions to hotshot commitments
     pub hotshot_comm_map: HotShotCommitmentMap,
-    /// Mapping from l1 height to hotshot availabilities
-    pub hotshot_avail_map: HotShotAvailabilityMap,
+    /// Mapping from l1 height to hotshot liveness
+    pub hotshot_avail_map: HotShotLivenessMap,
     /// The delayed inbox's messages
     pub delayed_messages: Inbox,
     /// The purpose and connections of this process
