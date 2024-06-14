@@ -61,21 +61,19 @@ func startLocalDASServer(
 		RequestTimeout:     5 * time.Second,
 	}
 
-	var syncFromStorageServices []*das.IterableStorageService
-	var syncToStorageServices []das.StorageService
-	storageService, lifecycleManager, err := das.CreatePersistentStorageService(ctx, &config, &syncFromStorageServices, &syncToStorageServices)
+	storageService, lifecycleManager, err := das.CreatePersistentStorageService(ctx, &config)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 
 	Require(t, err)
 	seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(seqInboxAddress, l1client)
 	Require(t, err)
-	privKey, err := config.Key.BLSPrivKey()
+	daWriter, err := das.NewSignAfterStoreDASWriter(ctx, config, storageService)
 	Require(t, err)
-	daWriter, err := das.NewSignAfterStoreDASWriterWithSeqInboxCaller(privKey, seqInboxCaller, storageService, "")
+	signatureVerifier, err := das.NewSignatureVerifierWithSeqInboxCaller(seqInboxCaller, "")
 	Require(t, err)
 	rpcLis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
-	rpcServer, err := das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, storageService, daWriter, storageService)
+	rpcServer, err := das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, storageService, daWriter, storageService, signatureVerifier)
 	Require(t, err)
 	restLis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
@@ -100,9 +98,10 @@ func aggConfigForBackend(t *testing.T, backendConfig das.BackendConfig) das.Aggr
 	backendsJsonByte, err := json.Marshal([]das.BackendConfig{backendConfig})
 	Require(t, err)
 	return das.AggregatorConfig{
-		Enable:        true,
-		AssumedHonest: 1,
-		Backends:      string(backendsJsonByte),
+		Enable:                true,
+		AssumedHonest:         1,
+		Backends:              string(backendsJsonByte),
+		MaxStoreChunkBodySize: 512 * 1024,
 	}
 }
 
@@ -279,12 +278,12 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 		// L1NodeURL: normally we would have to set this but we are passing in the already constructed client and addresses to the factory
 	}
 
-	daReader, daWriter, daHealthChecker, lifecycleManager, err := das.CreateDAComponentsForDaserver(ctx, &serverConfig, l1Reader, &addresses.SequencerInbox)
+	daReader, daWriter, signatureVerifier, daHealthChecker, lifecycleManager, err := das.CreateDAComponentsForDaserver(ctx, &serverConfig, l1Reader, &addresses.SequencerInbox)
 	Require(t, err)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
 	rpcLis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)
-	_, err = das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, daReader, daWriter, daHealthChecker)
+	_, err = das.StartDASRPCServerOnListener(ctx, rpcLis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, daReader, daWriter, daHealthChecker, signatureVerifier)
 	Require(t, err)
 	restLis, err := net.Listen("tcp", "localhost:0")
 	Require(t, err)

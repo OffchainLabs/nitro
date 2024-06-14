@@ -37,8 +37,8 @@ func (con ArbGasInfo) GetPricesInWeiWithAggregator(
 		return nil, nil, nil, nil, nil, nil, err
 	}
 	var l2GasPrice *big.Int
-	if evm.Context.BaseFeeCopy != nil {
-		l2GasPrice = evm.Context.BaseFeeCopy
+	if evm.Context.BaseFeeInBlock != nil {
+		l2GasPrice = evm.Context.BaseFeeInBlock
 	} else {
 		l2GasPrice = evm.Context.BaseFee
 	}
@@ -75,8 +75,8 @@ func (con ArbGasInfo) _preVersion4_GetPricesInWeiWithAggregator(
 		return nil, nil, nil, nil, nil, nil, err
 	}
 	var l2GasPrice *big.Int
-	if evm.Context.BaseFeeCopy != nil {
-		l2GasPrice = evm.Context.BaseFeeCopy
+	if evm.Context.BaseFeeInBlock != nil {
+		l2GasPrice = evm.Context.BaseFeeInBlock
 	} else {
 		l2GasPrice = evm.Context.BaseFee
 	}
@@ -112,8 +112,8 @@ func (con ArbGasInfo) GetPricesInArbGasWithAggregator(c ctx, evm mech, aggregato
 		return nil, nil, nil, err
 	}
 	var l2GasPrice *big.Int
-	if evm.Context.BaseFeeCopy != nil {
-		l2GasPrice = evm.Context.BaseFeeCopy
+	if evm.Context.BaseFeeInBlock != nil {
+		l2GasPrice = evm.Context.BaseFeeInBlock
 	} else {
 		l2GasPrice = evm.Context.BaseFee
 	}
@@ -137,8 +137,8 @@ func (con ArbGasInfo) _preVersion4_GetPricesInArbGasWithAggregator(c ctx, evm me
 		return nil, nil, nil, err
 	}
 	var l2GasPrice *big.Int
-	if evm.Context.BaseFeeCopy != nil {
-		l2GasPrice = evm.Context.BaseFeeCopy
+	if evm.Context.BaseFeeInBlock != nil {
+		l2GasPrice = evm.Context.BaseFeeInBlock
 	} else {
 		l2GasPrice = evm.Context.BaseFee
 	}

@@ -429,8 +429,8 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 	var gasNeededToStartEVM uint64
 	tipReceipient, _ := p.state.NetworkFeeAccount()
 	var basefee *big.Int
-	if p.evm.Context.BaseFeeCopy != nil {
-		basefee = p.evm.Context.BaseFeeCopy
+	if p.evm.Context.BaseFeeInBlock != nil {
+		basefee = p.evm.Context.BaseFeeInBlock
 	} else {
 		basefee = p.evm.Context.BaseFee
 	}
@@ -595,8 +595,8 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 	}
 
 	var basefee *big.Int
-	if p.evm.Context.BaseFeeCopy != nil {
-		basefee = p.evm.Context.BaseFeeCopy
+	if p.evm.Context.BaseFeeInBlock != nil {
+		basefee = p.evm.Context.BaseFeeInBlock
 	} else {
 		basefee = p.evm.Context.BaseFee
 	}
