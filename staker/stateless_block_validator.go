@@ -302,6 +302,8 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 				newValue := new(big.Int).Add(interceptGweiAmount, big.NewInt(params.GWei))
 				modified := bytes.Replace(delayedMsg, interceptGweiAmount.Bytes(), newValue.Bytes(), 1)
 				e.DelayedMsg = modified
+			} else {
+				e.DelayedMsg = delayedMsg
 			}
 		} else {
 			e.DelayedMsg = delayedMsg
