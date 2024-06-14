@@ -60,6 +60,10 @@ func CachingConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".state-history", DefaultCachingConfig.StateHistory, "number of recent blocks to retain state history for (path state-scheme only)")
 }
 
+func getStateHistory(maxBlockSpeed time.Duration) uint64 {
+	return uint64(24 * time.Hour / maxBlockSpeed)
+}
+
 var DefaultCachingConfig = CachingConfig{
 	Archive:                            false,
 	BlockCount:                         128,
@@ -74,7 +78,7 @@ var DefaultCachingConfig = CachingConfig{
 	MaxAmountOfGasToSkipStateSaving:    0,
 	StylusLRUCache:                     256,
 	StateScheme:                        rawdb.HashScheme,
-	StateHistory:                       90000,
+	StateHistory:                       getStateHistory(DefaultSequencerConfig.MaxBlockSpeed),
 }
 
 var TestCachingConfig = CachingConfig{
