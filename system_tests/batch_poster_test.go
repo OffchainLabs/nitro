@@ -291,3 +291,75 @@ func TestBatchPosterKeepsUp(t *testing.T) {
 		fmt.Printf("backlog: %v message\n", haveMessages-postedMessages)
 	}
 }
+
+func testAllowPostingFirstBatchWhenSequencerMessageCountMismatch(t *testing.T, enabled bool) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// creates first node with batch poster disabled
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.nodeConfig.BatchPoster.Enable = false
+	cleanup := builder.Build(t)
+	defer cleanup()
+	testClientNonBatchPoster := builder.L2
+
+	// adds a batch to the sequencer inbox with a wrong next message count,
+	// should be 2 but it is set to 10
+	seqInbox, err := bridgegen.NewSequencerInbox(builder.L1Info.GetAddress("SequencerInbox"), builder.L1.Client)
+	Require(t, err)
+	seqOpts := builder.L1Info.GetDefaultTransactOpts("Sequencer", ctx)
+	tx, err := seqInbox.AddSequencerL2Batch(&seqOpts, big.NewInt(1), nil, big.NewInt(1), common.Address{}, big.NewInt(1), big.NewInt(10))
+	Require(t, err)
+	_, err = builder.L1.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// creates a batch poster
+	nodeConfigBatchPoster := arbnode.ConfigDefaultL1Test()
+	nodeConfigBatchPoster.BatchPoster.Dangerous.AllowPostingFirstBatchWhenSequencerMessageCountMismatch = enabled
+	testClientBatchPoster, cleanupBatchPoster := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfigBatchPoster})
+	defer cleanupBatchPoster()
+
+	// sends a transaction through the batch poster
+	accountName := "User2"
+	builder.L2Info.GenerateAccount(accountName)
+	tx = builder.L2Info.PrepareTx("Owner", accountName, builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	err = testClientBatchPoster.Client.SendTransaction(ctx, tx)
+	Require(t, err)
+	_, err = testClientBatchPoster.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	if enabled {
+		// if AllowPostingFirstBatchWhenSequencerMessageCountMismatch is enabled
+		// then the L2 transaction should be posted to L1, and the non batch
+		// poster node should be able to see it
+		_, err = WaitForTx(ctx, testClientNonBatchPoster.Client, tx.Hash(), time.Second*3)
+		Require(t, err)
+		l2balance, err := testClientNonBatchPoster.Client.BalanceAt(ctx, builder.L2Info.GetAddress(accountName), nil)
+		Require(t, err)
+		if l2balance.Cmp(big.NewInt(1e12)) != 0 {
+			t.Fatal("Unexpected balance:", l2balance)
+		}
+	} else {
+		// if AllowPostingFirstBatchWhenSequencerMessageCountMismatch is disabled
+		// then the L2 transaction should not be posted to L1, so the non
+		// batch poster will not be able to see it
+		_, err = WaitForTx(ctx, testClientNonBatchPoster.Client, tx.Hash(), time.Second*3)
+		if err == nil {
+			Fatal(t, "tx received by non batch poster node with AllowPostingFirstBatchWhenSequencerMessageCountMismatch disabled")
+		}
+		l2balance, err := testClientNonBatchPoster.Client.BalanceAt(ctx, builder.L2Info.GetAddress(accountName), nil)
+		Require(t, err)
+		if l2balance.Cmp(big.NewInt(0)) != 0 {
+			t.Fatal("Unexpected balance:", l2balance)
+		}
+	}
+}
+
+func TestAllowPostingFirstBatchWhenSequencerMessageCountMismatchEnabled(t *testing.T) {
+	testAllowPostingFirstBatchWhenSequencerMessageCountMismatch(t, true)
+}
+
+func TestAllowPostingFirstBatchWhenSequencerMessageCountMismatchDisabled(t *testing.T) {
+	testAllowPostingFirstBatchWhenSequencerMessageCountMismatch(t, false)
+}
