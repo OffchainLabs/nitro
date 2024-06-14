@@ -11,7 +11,7 @@ import (
 )
 
 // There are two CI steps, one to run tests using the path state scheme, and one to run tests using the hash state scheme.
-// An environment controls that behavior.
+// An environment variable controls that behavior.
 func GetTestStateScheme() string {
 	envTestStateScheme := os.Getenv("TEST_STATE_SCHEME")
 	stateScheme := rawdb.PathScheme
