@@ -688,6 +688,10 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
 
+	if p.config().DisableNewTx {
+		return nil, fmt.Errorf("posting new transaction is disabled")
+	}
+
 	var weight uint64 = 1
 	if len(kzgBlobs) > 0 {
 		weight = uint64(len(kzgBlobs))
@@ -1208,6 +1212,9 @@ type DataPosterConfig struct {
 	MaxFeeCapFormula       string            `koanf:"max-fee-cap-formula" reload:"hot"`
 	ElapsedTimeBase        time.Duration     `koanf:"elapsed-time-base" reload:"hot"`
 	ElapsedTimeImportance  float64           `koanf:"elapsed-time-importance" reload:"hot"`
+	// When set, dataposter will not post new batches, but will keep running to
+	// get existing batches confirmed.
+	DisableNewTx bool `koanf:"disable-new-tx" reload:"hot"`
 }
 
 type ExternalSignerCfg struct {
@@ -1269,6 +1276,7 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPost
 	signature.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
 	addDangerousOptions(prefix+".dangerous", f)
 	addExternalSignerOptions(prefix+".external-signer", f)
+	f.Bool(prefix+".disable-new-tx", defaultDataPosterConfig.DisableNewTx, "disable posting new transactions, data poster will still keep confirming existing batches")
 }
 
 func addDangerousOptions(prefix string, f *pflag.FlagSet) {
@@ -1308,6 +1316,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	MaxFeeCapFormula:       "((BacklogOfBatches * UrgencyGWei) ** 2) + ((ElapsedTime/ElapsedTimeBase) ** 2) * ElapsedTimeImportance + TargetPriceGWei",
 	ElapsedTimeBase:        10 * time.Minute,
 	ElapsedTimeImportance:  10,
+	DisableNewTx:           false,
 }
 
 var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
@@ -1341,6 +1350,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	MaxFeeCapFormula:       "((BacklogOfBatches * UrgencyGWei) ** 2) + ((ElapsedTime/ElapsedTimeBase) ** 2) * ElapsedTimeImportance + TargetPriceGWei",
 	ElapsedTimeBase:        10 * time.Minute,
 	ElapsedTimeImportance:  10,
+	DisableNewTx:           false,
 }
 
 var TestDataPosterConfigForValidator = func() DataPosterConfig {
