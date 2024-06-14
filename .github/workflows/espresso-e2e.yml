@@ -15,7 +15,9 @@ concurrency:
 jobs:
   test:
     name: Espresso E2E
-    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/catthehacker/ubuntu:js-22.04
+    runs-on: [self-hosted, X64]
 
     steps:
       - name: Checkout
@@ -44,6 +46,7 @@ jobs:
           node-version: '16'
           cache: 'yarn'
           cache-dependency-path: '**/yarn.lock'
+
       - name: Install go
         uses: actions/setup-go@v4
         with:
@@ -58,6 +61,9 @@ jobs:
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: 'wasm32-unknown-unknown, wasm32-wasi'
+
+      - name: Install cbindgen
+        run: cargo install cbindgen
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1

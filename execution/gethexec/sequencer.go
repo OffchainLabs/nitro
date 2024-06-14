@@ -80,12 +80,11 @@ type SequencerConfig struct {
 	expectedSurplusHardThreshold int
 
 	// Espresso specific flags
-	Espresso           bool   `koanf:"espresso"`
-	HotShotUrl         string `koanf:"hotshot-url"`
-	LightClientAddress string `koanf:"light-client-address"`
-	EspressoNamespace  uint64 `koanf:"espresso-namespace"`
-	StartHotShotBlock  uint64 `koanf:"start-hotshot-block"`
-	// MaxHotShotDriftTime time.Duration `koanf:"max-hotshot-drift-time"`
+	Espresso           bool          `koanf:"espresso"`
+	HotShotUrl         string        `koanf:"hotshot-url"`
+	LightClientAddress string        `koanf:"light-client-address"`
+	EspressoNamespace  uint64        `koanf:"espresso-namespace"`
+	StartHotShotBlock  uint64        `koanf:"start-hotshot-block"`
 	SwitchPollInterval time.Duration `koanf:"switch-poll-interval"`
 	// TODO: Wrtie this into the config chain
 	SwitchDelayThreshold uint64 `koanf:"switch-delay-threshold"`
@@ -176,7 +175,6 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".hotshot-url", DefaultSequencerConfig.HotShotUrl, "")
 	f.Uint64(prefix+".espresso-namespace", DefaultSequencerConfig.EspressoNamespace, "espresso namespace that corresponds the L2 chain")
 	f.Uint64(prefix+".start-hotshot-block", DefaultSequencerConfig.StartHotShotBlock, "the starting block number of hotshot")
-	// f.Duration(prefix+".max-hotshot-drift-time", DefaultSequencerConfig.MaxHotShotDriftTime, "maximum drift time of hotshot")
 	f.Duration(prefix+".switch-poll-interval", DefaultSequencerConfig.SwitchPollInterval, "the poll interval of checking the sequencer should be switched or not")
 	f.String(prefix+".expected-surplus-soft-threshold", DefaultSequencerConfig.ExpectedSurplusSoftThreshold, "if expected surplus is lower than this value, warnings are posted")
 	f.String(prefix+".expected-surplus-hard-threshold", DefaultSequencerConfig.ExpectedSurplusHardThreshold, "if expected surplus is lower than this value, new incoming transactions will be denied")
