@@ -95,11 +95,18 @@ func applyOverrideOverrides(f *flag.FlagSet, k *koanf.Koanf) error {
 func loadEnvironmentVariables(k *koanf.Koanf) error {
 	envPrefix := k.String("conf.env-prefix")
 	if len(envPrefix) != 0 {
-		return k.Load(env.Provider(envPrefix+"_", ".", func(s string) string {
+		return k.Load(env.ProviderWithValue(envPrefix+"_", ".", func(key string, v string) (string, interface{}) {
 			// FOO__BAR -> foo-bar to handle dash in config names
-			s = strings.ReplaceAll(strings.ToLower(
-				strings.TrimPrefix(s, envPrefix+"_")), "__", "-")
-			return strings.ReplaceAll(s, "_", ".")
+			key = strings.ReplaceAll(strings.ToLower(
+				strings.TrimPrefix(key, envPrefix+"_")), "__", "-")
+			key = strings.ReplaceAll(key, "_", ".")
+
+			// If there is a space in the value, split the value into a slice by the space.
+			if strings.Contains(v, ",") {
+				return key, strings.Split(v, ",")
+			}
+
+			return key, v
 		}), nil)
 	}
 
