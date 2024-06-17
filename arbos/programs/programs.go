@@ -400,7 +400,8 @@ func (p Programs) SetProgramCached(
 		return err
 	}
 	if cache {
-		code, err := db.GetCodeFromHash(codeHash)
+		// Not passing in an address is supported pre-Verkle, as in Blockchain's ContractCodeWithPrefix method.
+		code, err := db.Database().ContractCode(common.Address{}, codeHash)
 		if err != nil {
 			return err
 		}

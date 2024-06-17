@@ -64,7 +64,7 @@ func activateProgram(
 
 func activateProgramInternal(
 	db vm.StateDB,
-	program common.Address,
+	addressForLogging common.Address,
 	codehash common.Hash,
 	wasm []byte,
 	page_limit uint16,
@@ -94,7 +94,7 @@ func activateProgramInternal(
 	data, msg, err := status.toResult(output.intoBytes(), debug)
 	if err != nil {
 		if debug {
-			log.Warn("activation failed", "err", err, "msg", msg, "program", program)
+			log.Warn("activation failed", "err", err, "msg", msg, "program", addressForLogging)
 		}
 		if errors.Is(err, vm.ErrExecutionReverted) {
 			return nil, nil, nil, fmt.Errorf("%w: %s", ErrProgramActivation, msg)
@@ -117,29 +117,30 @@ func activateProgramInternal(
 	return info, asm, module, err
 }
 
-func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, address common.Address, code []byte, codeHash common.Hash, pagelimit uint16, time uint64, debugMode bool, program Program) ([]byte, error) {
+func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codeHash common.Hash, pagelimit uint16, time uint64, debugMode bool, program Program) ([]byte, error) {
 	localAsm, err := statedb.TryGetActivatedAsm(moduleHash)
 	if err == nil && len(localAsm) > 0 {
 		return localAsm, nil
 	}
 
+	// addressForLogging may be empty or may not correspond to the code, so we need to be careful to use the code passed in separately
 	wasm, err := getWasmFromContractCode(code)
 	if err != nil {
-		log.Error("Failed to reactivate program: getWasm", "address", address, "expected moduleHash", moduleHash, "err", err)
-		return nil, fmt.Errorf("failed to reactivate program address: %v err: %w", address, err)
+		log.Error("Failed to reactivate program: getWasm", "address", addressForLogging, "expected moduleHash", moduleHash, "err", err)
+		return nil, fmt.Errorf("failed to reactivate program address: %v err: %w", addressForLogging, err)
 	}
 
 	unlimitedGas := uint64(0xffffffffffff)
 	// we know program is activated, so it must be in correct version and not use too much memory
-	info, asm, module, err := activateProgramInternal(statedb, address, codeHash, wasm, pagelimit, program.version, debugMode, &unlimitedGas)
+	info, asm, module, err := activateProgramInternal(statedb, addressForLogging, codeHash, wasm, pagelimit, program.version, debugMode, &unlimitedGas)
 	if err != nil {
-		log.Error("failed to reactivate program", "address", address, "expected moduleHash", moduleHash, "err", err)
-		return nil, fmt.Errorf("failed to reactivate program address: %v err: %w", address, err)
+		log.Error("failed to reactivate program", "address", addressForLogging, "expected moduleHash", moduleHash, "err", err)
+		return nil, fmt.Errorf("failed to reactivate program address: %v err: %w", addressForLogging, err)
 	}
 
 	if info.moduleHash != moduleHash {
-		log.Error("failed to reactivate program", "address", address, "expected moduleHash", moduleHash, "got", info.moduleHash)
-		return nil, fmt.Errorf("failed to reactivate program. address: %v, expected ModuleHash: %v", address, moduleHash)
+		log.Error("failed to reactivate program", "address", addressForLogging, "expected moduleHash", moduleHash, "got", info.moduleHash)
+		return nil, fmt.Errorf("failed to reactivate program. address: %v, expected ModuleHash: %v", addressForLogging, moduleHash)
 	}
 
 	currentHoursSince := hoursSinceArbitrum(time)
@@ -149,7 +150,7 @@ func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, address common.Addr
 		batch := statedb.Database().WasmStore().NewBatch()
 		rawdb.WriteActivation(batch, moduleHash, asm, module)
 		if err := batch.Write(); err != nil {
-			log.Error("failed writing re-activation to state", "address", address, "err", err)
+			log.Error("failed writing re-activation to state", "address", addressForLogging, "err", err)
 		}
 	} else {
 		// program activated recently, possibly in this eth_call
