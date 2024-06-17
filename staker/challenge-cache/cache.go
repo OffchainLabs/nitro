@@ -36,7 +36,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
@@ -126,7 +125,10 @@ func (c *Cache) Put(lookup *Key, hashes []common.Hash) error {
 	// we don't want to leave a half-written file in our cache directory.
 	// Once writing succeeds, we rename in an atomic operation to the correct file name
 	// in the cache directory hierarchy.
-	tmp := os.TempDir()
+	tmp, err := os.MkdirTemp(c.baseDir, "tmpdir")
+	if err != nil {
+		return err
+	}
 	tmpFName := filepath.Join(tmp, fName)
 	dir := filepath.Dir(tmpFName)
 	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
@@ -151,14 +153,14 @@ func (c *Cache) Put(lookup *Key, hashes []common.Hash) error {
 	// into our cache directory. This is an atomic operation.
 	// For more information on this atomic write pattern, see:
 	// https://stackoverflow.com/questions/2333872/how-to-make-file-creation-an-atomic-operation
-	return Move(tmpFName /* old */, fName /* new */)
+	return os.Rename(tmpFName /*old */, fName /* new */)
 }
 
 // Reads 32 bytes at a time from a reader up to a specified height. If none, then read all.
 func readHashes(r io.Reader, numToRead uint64) ([]common.Hash, error) {
 	br := bufio.NewReader(r)
 	hashes := make([]common.Hash, 0)
-	buf := make([]byte, 0, 32)
+	buf := make([]byte, 0, common.HashLength)
 	for totalRead := uint64(0); totalRead < numToRead; totalRead++ {
 		n, err := br.Read(buf[:cap(buf)])
 		if err != nil {
@@ -169,8 +171,8 @@ func readHashes(r io.Reader, numToRead uint64) ([]common.Hash, error) {
 			return nil, err
 		}
 		buf = buf[:n]
-		if n != 32 {
-			return nil, fmt.Errorf("expected to read 32 bytes, got %d bytes", n)
+		if n != common.HashLength {
+			return nil, fmt.Errorf("expected to read %d bytes, got %d bytes", common.HashLength, n)
 		}
 		hashes = append(hashes, common.BytesToHash(buf))
 	}
@@ -185,8 +187,9 @@ func readHashes(r io.Reader, numToRead uint64) ([]common.Hash, error) {
 }
 
 func writeHashes(w io.Writer, hashes []common.Hash) error {
+	bw := bufio.NewWriter(w)
 	for i, rt := range hashes {
-		n, err := w.Write(rt[:])
+		n, err := bw.Write(rt[:])
 		if err != nil {
 			return err
 		}
@@ -199,7 +202,7 @@ func writeHashes(w io.Writer, hashes []common.Hash) error {
 			)
 		}
 	}
-	return nil
+	return bw.Flush()
 }
 
 /*
@@ -231,44 +234,4 @@ func determineFilePath(baseDir string, lookup *Key) (string, error) {
 	}
 	key = append(key, hashesFileName)
 	return filepath.Join(baseDir, filepath.Join(key...)), nil
-}
-
-// Move function that is robust against cross-device link errors. Credits to:
-// https://gist.github.com/var23rav/23ae5d0d4d830aff886c3c970b8f6c6b
-func Move(source, destination string) error {
-	err := os.Rename(source, destination)
-	if err != nil && strings.Contains(err.Error(), "cross-device link") {
-		return moveCrossDevice(source, destination)
-	}
-	return err
-}
-
-func moveCrossDevice(source, destination string) error {
-	src, err := os.Open(source)
-	if err != nil {
-		return err
-	}
-	dst, err := os.Create(destination)
-	if err != nil {
-		src.Close()
-		return err
-	}
-	_, err = io.Copy(dst, src)
-	src.Close()
-	dst.Close()
-	if err != nil {
-		return err
-	}
-	fi, err := os.Stat(source)
-	if err != nil {
-		os.Remove(destination)
-		return err
-	}
-	err = os.Chmod(destination, fi.Mode())
-	if err != nil {
-		os.Remove(destination)
-		return err
-	}
-	os.Remove(source)
-	return nil
 }

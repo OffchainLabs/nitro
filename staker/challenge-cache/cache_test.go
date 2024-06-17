@@ -125,7 +125,7 @@ func TestReadWriteStatehashes(t *testing.T) {
 		if err == nil {
 			t.Fatal("Wanted error")
 		}
-		if !strings.Contains(err.Error(), "expected to write 32 bytes") {
+		if !strings.Contains(err.Error(), "short write") {
 			t.Fatalf("Got wrong error kind: %v", err)
 		}
 	})
