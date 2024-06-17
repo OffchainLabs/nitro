@@ -3,9 +3,9 @@ package iostat
 import (
 	"bufio"
 	"context"
-	"errors"
 	"fmt"
 	"os/exec"
+	"runtime"
 	"strconv"
 	"strings"
 
@@ -13,52 +13,35 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 )
 
-type MetricsSpawner struct {
-	statReceiver chan DeviceStats
-	metrics      map[string]map[string]metrics.GaugeFloat64
-}
-
-func NewMetricsSpawner() *MetricsSpawner {
-	return &MetricsSpawner{
-		metrics:      make(map[string]map[string]metrics.GaugeFloat64),
-		statReceiver: make(chan DeviceStats),
+func RegisterAndPopulateMetrics(ctx context.Context, spawnInterval, maxDeviceCount int) {
+	deviceMetrics := make(map[string]map[string]metrics.GaugeFloat64)
+	statReceiver := make(chan DeviceStats)
+	if runtime.GOOS != "linux" {
+		log.Warn("Iostat command not supported disabling corresponding metrics")
+		return
 	}
-}
-
-func (m *MetricsSpawner) RegisterMetrics(ctx context.Context, spwanInterval int) error {
-	go Run(ctx, spwanInterval, m.statReceiver)
-	// Register metrics for a maximum of 5 devices (fail safe incase iostat command returns incorrect names indefinitely)
-	for i := 0; i < 5; i++ {
-		stat, ok := <-m.statReceiver
-		if !ok {
-			return errors.New("failed to register iostat metrics")
-		}
-		if _, ok := m.metrics[stat.DeviceName]; ok {
-			return nil
-		}
-		baseMetricName := fmt.Sprintf("isotat/%s/", stat.DeviceName)
-		m.metrics[stat.DeviceName] = make(map[string]metrics.GaugeFloat64)
-		m.metrics[stat.DeviceName]["readspersecond"] = metrics.NewRegisteredGaugeFloat64(baseMetricName+"readspersecond", nil)
-		m.metrics[stat.DeviceName]["writespersecond"] = metrics.NewRegisteredGaugeFloat64(baseMetricName+"writespersecond", nil)
-		m.metrics[stat.DeviceName]["await"] = metrics.NewRegisteredGaugeFloat64(baseMetricName+"await", nil)
-	}
-	return nil
-}
-
-func (m *MetricsSpawner) PopulateMetrics() {
+	go Run(ctx, spawnInterval, statReceiver)
 	for {
-		stat, ok := <-m.statReceiver
+		stat, ok := <-statReceiver
 		if !ok {
 			log.Info("Iostat statReceiver channel was closed due to error or command being completed")
 			return
 		}
-		if _, ok := m.metrics[stat.DeviceName]; !ok {
-			log.Warn("Unrecognized device name in output of iostat command", "deviceName", stat.DeviceName)
-			continue
+		if _, ok := deviceMetrics[stat.DeviceName]; !ok {
+			// Register metrics for a maximum of maxDeviceCount (fail safe incase iostat command returns incorrect names indefinitely)
+			if len(deviceMetrics) < maxDeviceCount {
+				baseMetricName := fmt.Sprintf("isotat/%s/", stat.DeviceName)
+				deviceMetrics[stat.DeviceName] = make(map[string]metrics.GaugeFloat64)
+				deviceMetrics[stat.DeviceName]["readspersecond"] = metrics.NewRegisteredGaugeFloat64(baseMetricName+"readspersecond", nil)
+				deviceMetrics[stat.DeviceName]["writespersecond"] = metrics.NewRegisteredGaugeFloat64(baseMetricName+"writespersecond", nil)
+				deviceMetrics[stat.DeviceName]["await"] = metrics.NewRegisteredGaugeFloat64(baseMetricName+"await", nil)
+			} else {
+				continue
+			}
 		}
-		m.metrics[stat.DeviceName]["readspersecond"].Update(stat.ReadsPerSecond)
-		m.metrics[stat.DeviceName]["writespersecond"].Update(stat.WritesPerSecond)
-		m.metrics[stat.DeviceName]["await"].Update(stat.Await)
+		deviceMetrics[stat.DeviceName]["readspersecond"].Update(stat.ReadsPerSecond)
+		deviceMetrics[stat.DeviceName]["writespersecond"].Update(stat.WritesPerSecond)
+		deviceMetrics[stat.DeviceName]["await"].Update(stat.Await)
 	}
 }
 
@@ -72,7 +55,7 @@ type DeviceStats struct {
 func Run(ctx context.Context, interval int, receiver chan DeviceStats) {
 	defer close(receiver)
 	// #nosec G204
-	cmd := exec.Command("iostat", "-dNxy", strconv.Itoa(interval))
+	cmd := exec.CommandContext(ctx, "iostat", "-dNxy", strconv.Itoa(interval))
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		log.Error("Failed to get stdout", "err", err)
@@ -85,10 +68,6 @@ func Run(ctx context.Context, interval int, receiver chan DeviceStats) {
 	var fields []string
 	scanner := bufio.NewScanner(stdout)
 	for scanner.Scan() {
-		if ctx.Err() != nil {
-			log.Error("Context error when running iostat metrics", "err", ctx.Err())
-			return
-		}
 		line := strings.TrimSpace(scanner.Text())
 		if strings.HasPrefix(line, "Device") {
 			fields = strings.Fields(line)
@@ -120,6 +99,9 @@ func Run(ctx context.Context, interval int, receiver chan DeviceStats) {
 			continue
 		}
 		receiver <- stat
+	}
+	if scanner.Err() != nil {
+		log.Error("Iostat scanner error", err, scanner.Err())
 	}
 	if err := cmd.Process.Kill(); err != nil {
 		log.Error("Failed to kill iostat process", "err", err)

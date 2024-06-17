@@ -406,12 +406,7 @@ func mainImpl() int {
 	}
 
 	if nodeConfig.Metrics {
-		iostatMetrics := iostat.NewMetricsSpawner()
-		if err := iostatMetrics.RegisterMetrics(ctx, 1); err != nil {
-			log.Error("Error registering iostat metrics, disabling them", "err", err)
-		} else {
-			go iostatMetrics.PopulateMetrics()
-		}
+		go iostat.RegisterAndPopulateMetrics(ctx, 1, 5)
 	}
 
 	var deferFuncs []func()
