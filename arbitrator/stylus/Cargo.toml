@@ -26,6 +26,7 @@ eyre = "0.6.5"
 rand = "0.8.5"
 fnv = "1.0.7"
 hex = "0.4.3"
+lru-mem = "0.3.0"
 
 [dev-dependencies]
 num-bigint = "0.4.4"
