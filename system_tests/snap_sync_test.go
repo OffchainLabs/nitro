@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
@@ -31,7 +30,7 @@ func TestSnapSync(t *testing.T) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	// TODO: check why snap sync is not working with path scheme.
 	// At least nodeB and nodeC should be able to use path scheme.
-	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
+	// builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 	builder.L2Info = NewBlockChainTestInfo(
 		t,
 		types.NewArbitrumSigner(types.NewLondonSigner(builder.chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
