@@ -92,6 +92,22 @@ func applyOverrideOverrides(f *flag.FlagSet, k *koanf.Koanf) error {
 	return nil
 }
 
+var envvarsToSplitOnComma map[string]any = map[string]any{
+	"allowed-wasm-module-roots":   struct{}{},
+	"module-roots":                struct{}{},
+	"url":                         struct{}{},
+	"secondary-url":               struct{}{},
+	"file":                        struct{}{},
+	"api":                         struct{}{},
+	"corsdomain":                  struct{}{},
+	"vhosts":                      struct{}{},
+	"origins":                     struct{}{},
+	"bootnodes":                   struct{}{},
+	"bootnodes-v5":                struct{}{},
+	"secondary-forwarding-target": struct{}{},
+	"allowed-addresses":           struct{}{},
+}
+
 func loadEnvironmentVariables(k *koanf.Koanf) error {
 	envPrefix := k.String("conf.env-prefix")
 	if len(envPrefix) != 0 {
@@ -101,9 +117,16 @@ func loadEnvironmentVariables(k *koanf.Koanf) error {
 				strings.TrimPrefix(key, envPrefix+"_")), "__", "-")
 			key = strings.ReplaceAll(key, "_", ".")
 
-			// If there is a space in the value, split the value into a slice by the space.
-			if strings.Contains(v, ",") {
-				return key, strings.Split(v, ",")
+			keyParts := strings.Split(key, ".")
+			if len(keyParts) > 0 {
+				if _, found := envvarsToSplitOnComma[keyParts[len(keyParts)-1]]; found {
+					// If there are commas in the value, split the value into a slice.
+					if strings.Contains(v, ",") {
+						return key, strings.Split(v, ",")
+
+					}
+				}
+
 			}
 
 			return key, v
