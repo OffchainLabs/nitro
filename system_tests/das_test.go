@@ -34,6 +34,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
+	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
 	"golang.org/x/exp/slog"
 )
@@ -115,8 +116,9 @@ func TestDASRekey(t *testing.T) {
 	l1info, l1client, _, l1stack := createTestL1BlockChain(t, nil)
 	defer requireClose(t, l1stack)
 	feedErrChan := make(chan error, 10)
-	defaultWasmRootPath := ""
-	addresses, initMessage := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig, defaultWasmRootPath)
+	locator, err := server_common.NewMachineLocator("")
+	Require(t, err)
+	addresses, initMessage := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig, locator.LatestWasmModuleRoot())
 
 	// Setup DAS servers
 	dasDataDir := t.TempDir()
@@ -164,7 +166,7 @@ func TestDASRekey(t *testing.T) {
 		nodeB.StopAndWait()
 	}
 
-	err := dasRpcServerA.Shutdown(ctx)
+	err = dasRpcServerA.Shutdown(ctx)
 	Require(t, err)
 	dasRpcServerB, pubkeyB, backendConfigB, _, _ := startLocalDASServer(t, ctx, dasDataDir, l1client, addresses.SequencerInbox)
 	defer func() {
@@ -252,8 +254,9 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	defer l1Reader.StopAndWait()
 
 	feedErrChan := make(chan error, 10)
-	defaultWasmRootPath := ""
-	addresses, initMessage := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig, defaultWasmRootPath)
+	locator, err := server_common.NewMachineLocator("")
+	Require(t, err)
+	addresses, initMessage := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig, locator.LatestWasmModuleRoot())
 
 	keyDir, fileDataDir, dbDataDir := t.TempDir(), t.TempDir(), t.TempDir()
 	pubkey, _, err := das.GenerateAndStoreKeys(keyDir)

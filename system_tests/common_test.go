@@ -717,7 +717,7 @@ func getInitMessage(ctx context.Context, t *testing.T, l1client client, addresse
 }
 
 func DeployOnTestL1(
-	t *testing.T, ctx context.Context, l1info info, l1client client, chainConfig *params.ChainConfig, wasmRootDir string,
+	t *testing.T, ctx context.Context, l1info info, l1client client, chainConfig *params.ChainConfig, wasmModuleRoot common.Hash,
 ) (*chaininfo.RollupAddresses, *arbostypes.ParsedInitMessage) {
 	l1info.GenerateAccount("RollupOwner")
 	l1info.GenerateAccount("Sequencer")
@@ -731,8 +731,6 @@ func DeployOnTestL1(
 		l1info.PrepareTx("Faucet", "User", 30000, big.NewInt(9223372036854775807), nil)})
 
 	l1TransactionOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
-	locator, err := server_common.NewMachineLocator(wasmRootDir)
-	Require(t, err)
 	serializedChainConfig, err := json.Marshal(chainConfig)
 	Require(t, err)
 
@@ -751,7 +749,7 @@ func DeployOnTestL1(
 		[]common.Address{l1info.GetAddress("Sequencer")},
 		l1info.GetAddress("RollupOwner"),
 		0,
-		arbnode.GenerateRollupConfig(false, locator.LatestWasmModuleRoot(), l1info.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
+		arbnode.GenerateRollupConfig(false, wasmModuleRoot, l1info.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
 		nativeToken,
 		maxDataSize,
 		false,
@@ -852,7 +850,9 @@ func createTestNodeWithL1(
 	if l2info == nil {
 		l2info = NewArbTestInfo(t, chainConfig.ChainID)
 	}
-	addresses, initMessage := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig, valnodeConfig.Wasm.RootPath)
+	locator, err := server_common.NewMachineLocator(valnodeConfig.Wasm.RootPath)
+	Require(t, err)
+	addresses, initMessage := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig, locator.LatestWasmModuleRoot())
 	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, initMessage, stackConfig, &execConfig.Caching)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
