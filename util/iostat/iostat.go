@@ -14,12 +14,12 @@ import (
 )
 
 func RegisterAndPopulateMetrics(ctx context.Context, spawnInterval, maxDeviceCount int) {
-	deviceMetrics := make(map[string]map[string]metrics.GaugeFloat64)
-	statReceiver := make(chan DeviceStats)
 	if runtime.GOOS != "linux" {
 		log.Warn("Iostat command not supported disabling corresponding metrics")
 		return
 	}
+	deviceMetrics := make(map[string]map[string]metrics.GaugeFloat64)
+	statReceiver := make(chan DeviceStats)
 	go Run(ctx, spawnInterval, statReceiver)
 	for {
 		stat, ok := <-statReceiver
