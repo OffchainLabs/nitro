@@ -343,6 +343,10 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.Messa
 				log.Info("not resequencing delayed message due to unexpected index", "expected", nextDelayedSeqNum, "found", delayedSeqNum)
 				continue
 			}
+			if header.Kind == arbostypes.L1MessageType_BatchPostingReport {
+				log.Debug("skipping L1MessageType_BatchPostingReport message", "header", header)
+				continue
+			}
 			_, err := s.sequenceDelayedMessageWithBlockMutex(msg.Message, delayedSeqNum)
 			if err != nil {
 				log.Error("failed to re-sequence old delayed message removed by reorg", "err", err)
