@@ -15,6 +15,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -316,6 +318,14 @@ func validateBlockChain(blockChain *core.BlockChain, chainConfig *params.ChainCo
 	return nil
 }
 
+func dirExists(path string) bool {
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return false
+	}
+	return info.IsDir()
+}
+
 func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig, persistentConfig *conf.PersistentConfig, l1Client arbutil.L1Interface, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
 	if !config.Init.Force {
 		if readOnlyDb, err := stack.OpenDatabaseWithFreezerWithExtraOptions("l2chaindata", 0, 0, "", "l2chaindata/", true, persistentConfig.Pebble.ExtraOptions("l2chaindata")); err == nil {
@@ -387,6 +397,36 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 			}
 			readOnlyDb.Close()
 		}
+	}
+
+	// Check if database was misplaced in parent dir
+	const errorFmt = "database was not found in %s, but it was found in %s (have you placed the database in the wrong directory?)"
+	parentDir := filepath.Dir(stack.InstanceDir())
+	if dirExists(path.Join(parentDir, "l2chaindata")) {
+		return nil, nil, fmt.Errorf(errorFmt, stack.InstanceDir(), parentDir)
+	}
+	grandParentDir := filepath.Dir(parentDir)
+	if dirExists(path.Join(grandParentDir, "l2chaindata")) {
+		return nil, nil, fmt.Errorf(errorFmt, stack.InstanceDir(), grandParentDir)
+	}
+
+	// Check if database directory is empty
+	entries, err := os.ReadDir(stack.InstanceDir())
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to open database dir %s: %w", stack.InstanceDir(), err)
+	}
+	unexpectedFiles := []string{}
+	for _, entry := range entries {
+		if entry.Name() != "LOCK" {
+			unexpectedFiles = append(unexpectedFiles, entry.Name())
+		}
+	}
+	if len(unexpectedFiles) > 0 {
+		if config.Init.Force {
+			return nil, nil, fmt.Errorf("trying to overwrite old database directory '%s' (delete the database directory and try again)", stack.InstanceDir())
+		}
+		firstThreeFilenames := strings.Join(unexpectedFiles[:min(len(unexpectedFiles), 3)], ", ")
+		return nil, nil, fmt.Errorf("found %d unexpected files in database directory, including: %s", len(unexpectedFiles), firstThreeFilenames)
 	}
 
 	if err := setLatestSnapshotUrl(ctx, &config.Init, config.Chain.Name); err != nil {
