@@ -93,19 +93,28 @@ func applyOverrideOverrides(f *flag.FlagSet, k *koanf.Koanf) error {
 }
 
 var envvarsToSplitOnComma map[string]any = map[string]any{
-	"allowed-wasm-module-roots":   struct{}{},
-	"module-roots":                struct{}{},
-	"url":                         struct{}{},
-	"secondary-url":               struct{}{},
-	"file":                        struct{}{},
-	"api":                         struct{}{},
-	"corsdomain":                  struct{}{},
-	"vhosts":                      struct{}{},
-	"origins":                     struct{}{},
-	"bootnodes":                   struct{}{},
-	"bootnodes-v5":                struct{}{},
-	"secondary-forwarding-target": struct{}{},
-	"allowed-addresses":           struct{}{},
+	"auth.api":                              struct{}{},
+	"auth.origins":                          struct{}{},
+	"chain.info-files":                      struct{}{},
+	"conf.file":                             struct{}{},
+	"execution.secondary-forwarding-target": struct{}{},
+	"graphql.corsdomain":                    struct{}{},
+	"graphql.vhosts":                        struct{}{},
+	"http.api":                              struct{}{},
+	"http.corsdomain":                       struct{}{},
+	"http.vhosts":                           struct{}{},
+	"node.data-availability.rest-aggregator.urls":                       struct{}{},
+	"node.feed.input.secondary-url":                                     struct{}{},
+	"node.feed.input.url":                                               struct{}{},
+	"node.feed.input.verify.allowed-addresses":                          struct{}{},
+	"node.seq-coordinator.signer.ecdsa.allowed-addresses":               struct{}{},
+	"p2p.bootnodes":                                                     struct{}{},
+	"p2p.bootnodes-v5":                                                  struct{}{},
+	"validation.api-auth":                                               struct{}{},
+	"validation.arbitrator.redis-validation-server-config.module-roots": struct{}{},
+	"validation.wasm.allowed-wasm-module-roots":                         struct{}{},
+	"ws.api":     struct{}{},
+	"ws.origins": struct{}{},
 }
 
 func loadEnvironmentVariables(k *koanf.Koanf) error {
@@ -117,16 +126,12 @@ func loadEnvironmentVariables(k *koanf.Koanf) error {
 				strings.TrimPrefix(key, envPrefix+"_")), "__", "-")
 			key = strings.ReplaceAll(key, "_", ".")
 
-			keyParts := strings.Split(key, ".")
-			if len(keyParts) > 0 {
-				if _, found := envvarsToSplitOnComma[keyParts[len(keyParts)-1]]; found {
-					// If there are commas in the value, split the value into a slice.
-					if strings.Contains(v, ",") {
-						return key, strings.Split(v, ",")
+			if _, found := envvarsToSplitOnComma[key]; found {
+				// If there are commas in the value, split the value into a slice.
+				if strings.Contains(v, ",") {
+					return key, strings.Split(v, ",")
 
-					}
 				}
-
 			}
 
 			return key, v
