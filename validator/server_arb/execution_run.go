@@ -152,7 +152,7 @@ func (e *executionRun) machineHashesWithStepSize(
 				"timeSinceStart", time.Since(start),
 				"stepSize", stepSize,
 				"startHash", startHash,
-				"machineStartIndex", machine,
+				"machineStartIndex", machineStartIndex,
 				"numDesiredLeaves", requiredNumHashes,
 			)
 		}
