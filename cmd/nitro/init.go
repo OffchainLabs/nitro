@@ -387,7 +387,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 					if err = gethexec.WriteToKeyValueStore(wasmDb, gethexec.RebuildingPositionKey, gethexec.RebuildingDone); err != nil {
 						return nil, nil, fmt.Errorf("unable to set rebuilding status of wasm store to done: %w", err)
 					}
-				} else {
+				} else if config.Init.RebuildLocalWasm {
 					position, err := gethexec.ReadFromKeyValueStore[common.Hash](wasmDb, gethexec.RebuildingPositionKey)
 					if err != nil {
 						log.Info("Unable to get codehash position in rebuilding of wasm store, its possible it isnt initialized yet, so initializing it and starting rebuilding", "err", err)
