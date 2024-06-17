@@ -83,60 +83,36 @@ func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*v
 	})
 }
 
-func (e *executionRun) GetMachineHashesWithStepSize(fromBatch, machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[[]common.Hash] {
+func (e *executionRun) GetMachineHashesWithStepSize(machineStartIndex, stepSize, requiredNumHashes uint64) containers.PromiseInterface[[]common.Hash] {
 	return stopwaiter.LaunchPromiseThread(e, func(ctx context.Context) ([]common.Hash, error) {
-		return e.machineHashesWithStepSize(ctx, machineHashesWithStepSizeArgs{
-			startIndex:        machineStartIndex,
-			fromBatch:         fromBatch,
-			stepSize:          stepSize,
-			requiredNumHashes: numDesiredLeaves,
-			getMachineAtIndex: func(ctx context.Context, u uint64) (GlobalStateGetter, error) {
-				return e.cache.GetMachineAt(ctx, u)
-			},
-		})
+		return e.machineHashesWithStepSize(ctx, machineStartIndex, stepSize, requiredNumHashes)
 	})
-}
-
-type GlobalStateGetter interface {
-	GetGlobalState() validator.GoGlobalState
-	HashStepper
-}
-
-type HashStepper interface {
-	Step(ctx context.Context, stepCount uint64) error
-	Hash() common.Hash
-}
-
-type machineHashesWithStepSizeArgs struct {
-	startIndex        uint64
-	fromBatch         uint64
-	stepSize          uint64
-	requiredNumHashes uint64
-	getMachineAtIndex func(context.Context, uint64) (GlobalStateGetter, error)
 }
 
 func (e *executionRun) machineHashesWithStepSize(
 	ctx context.Context,
-	args machineHashesWithStepSizeArgs,
+	machineStartIndex,
+	stepSize,
+	requiredNumHashes uint64,
 ) ([]common.Hash, error) {
-	if args.stepSize == 0 {
+	if stepSize == 0 {
 		return nil, fmt.Errorf("step size cannot be 0")
 	}
-	if args.requiredNumHashes == 0 {
+	if requiredNumHashes == 0 {
 		return nil, fmt.Errorf("required number of hashes cannot be 0")
 	}
-	machine, err := args.getMachineAtIndex(ctx, args.startIndex)
+	machine, err := e.cache.GetMachineAt(ctx, machineStartIndex)
 	if err != nil {
 		return nil, err
 	}
-	log.Debug(fmt.Sprintf("Advanced machine to index %d, beginning hash computation", args.startIndex))
+	log.Debug(fmt.Sprintf("Advanced machine to index %d, beginning hash computation", machineStartIndex))
 
 	// If the machine is starting at index 0, we always want to start at the "Machine finished" global state status
 	// to align with the machine hashes that the inbox machine will produce.
 	var machineHashes []common.Hash
-	if args.startIndex == 0 {
+	if machineStartIndex == 0 {
 		gs := machine.GetGlobalState()
-		log.Debug(fmt.Sprintf("Start global state for machine index 0: %+v", gs), "fromBatch", args.fromBatch)
+		log.Debug(fmt.Sprintf("Start global state for machine index 0: %+v", gs))
 		machineHashes = append(machineHashes, machineFinishedHash(gs))
 	} else {
 		// Otherwise, we simply append the machine hash at the specified start index.
@@ -145,54 +121,52 @@ func (e *executionRun) machineHashesWithStepSize(
 	startHash := machineHashes[0]
 
 	// If we only want 1 hash, we can return early.
-	if args.requiredNumHashes == 1 {
+	if requiredNumHashes == 1 {
 		return machineHashes, nil
 	}
 
-	logInterval := args.requiredNumHashes / 20 // Log every 5% progress
+	logInterval := requiredNumHashes / 20 // Log every 5% progress
 	if logInterval == 0 {
 		logInterval = 1
 	}
 
 	start := time.Now()
-	for numIterations := uint64(0); numIterations < args.requiredNumHashes; numIterations++ {
+	for numIterations := uint64(0); numIterations < requiredNumHashes; numIterations++ {
 		// The absolute program counter the machine should be in after stepping.
-		absoluteMachineIndex := args.startIndex + args.stepSize*(numIterations+1)
+		absoluteMachineIndex := machineStartIndex + stepSize*(numIterations+1)
 
 		// Advance the machine in step size increments.
-		if err := machine.Step(ctx, args.stepSize); err != nil {
+		if err := machine.Step(ctx, stepSize); err != nil {
 			return nil, fmt.Errorf("failed to step machine to position %d: %w", absoluteMachineIndex, err)
 		}
-		if numIterations%logInterval == 0 || numIterations == args.requiredNumHashes-1 {
-			progressPercent := (float64(numIterations+1) / float64(args.requiredNumHashes)) * 100
+		if numIterations%logInterval == 0 || numIterations == requiredNumHashes-1 {
+			progressPercent := (float64(numIterations+1) / float64(requiredNumHashes)) * 100
 			log.Info(
 				fmt.Sprintf(
 					"Computing BOLD subchallenge progress: %.2f%% - %d of %d hashes needed",
 					progressPercent,
 					numIterations+1,
-					args.requiredNumHashes,
+					requiredNumHashes,
 				),
-				"fromBatch", args.fromBatch,
-				"machinePosition", numIterations*args.stepSize+args.startIndex,
+				"machinePosition", numIterations*stepSize+machineStartIndex,
 				"timeSinceStart", time.Since(start),
-				"stepSize", args.stepSize,
+				"stepSize", stepSize,
 				"startHash", startHash,
-				"machineStartIndex", args.startIndex,
-				"numDesiredLeaves", args.requiredNumHashes,
+				"machineStartIndex", machine,
+				"numDesiredLeaves", requiredNumHashes,
 			)
 		}
 		machineHashes = append(machineHashes, machine.Hash())
-		if uint64(len(machineHashes)) == args.requiredNumHashes {
+		if uint64(len(machineHashes)) == requiredNumHashes {
 			break
 		}
 	}
 	log.Info(
 		"Successfully finished computing the data needed for opening a subchallenge",
-		"fromBatch", args.fromBatch,
-		"stepSize", args.stepSize,
+		"stepSize", stepSize,
 		"startHash", startHash,
-		"machineStartIndex", args.startIndex,
-		"numDesiredLeaves", args.requiredNumHashes,
+		"machineStartIndex", machineStartIndex,
+		"numDesiredLeaves", requiredNumHashes,
 		"finishedHash", machineHashes[len(machineHashes)-1],
 		"finishedGlobalState", fmt.Sprintf("%+v", machine.GetGlobalState()),
 	)

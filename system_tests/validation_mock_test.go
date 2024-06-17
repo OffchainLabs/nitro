@@ -127,7 +127,7 @@ func (r *mockExecRun) GetStepAt(position uint64) containers.PromiseInterface[*va
 	}, nil)
 }
 
-func (r *mockExecRun) GetMachineHashesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves, fromBatch uint64) containers.PromiseInterface[[]common.Hash] {
+func (r *mockExecRun) GetMachineHashesWithStepSize(machineStartIndex, stepSize, numRequiredHashes uint64) containers.PromiseInterface[[]common.Hash] {
 	return containers.NewReadyPromise[[]common.Hash](nil, nil)
 }
 
