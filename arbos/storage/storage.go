@@ -19,10 +19,12 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/ethereum/go-ethereum/trie/triedb/hashdb"
 	"github.com/ethereum/go-ethereum/trie/triedb/pathdb"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/env"
 )
 
 // Storage allows ArbOS to store data persistently in the Ethereum-compatible stateDB. This is represented in
@@ -85,7 +87,11 @@ func NewMemoryBacked(burner burn.Burner) *Storage {
 // Only used for testing.
 func NewMemoryBackedStateDB() vm.StateDB {
 	raw := rawdb.NewMemoryDatabase()
-	db := state.NewDatabaseWithConfig(raw, &trie.Config{Preimages: false, PathDB: pathdb.Defaults})
+	trieConfig := &trie.Config{Preimages: false, PathDB: pathdb.Defaults}
+	if env.GetTestStateScheme() == rawdb.HashScheme {
+		trieConfig = &trie.Config{Preimages: false, HashDB: hashdb.Defaults}
+	}
+	db := state.NewDatabaseWithConfig(raw, trieConfig)
 	statedb, err := state.New(common.Hash{}, db, nil)
 	if err != nil {
 		panic("failed to init empty statedb")

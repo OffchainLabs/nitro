@@ -17,6 +17,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util/env"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -62,7 +63,7 @@ func tryMarshalUnmarshal(input *statetransfer.ArbosInitializationInfo, t *testin
 	initReader := statetransfer.NewMemoryInitDataReader(&initData)
 	chainConfig := params.ArbitrumDevTestChainConfig()
 
-	cacheConfig := core.DefaultCacheConfigWithScheme(testhelpers.GetTestStateScheme())
+	cacheConfig := core.DefaultCacheConfigWithScheme(env.GetTestStateScheme())
 	stateroot, err := InitializeArbosInDatabase(raw, cacheConfig, initReader, chainConfig, arbostypes.TestInitMessage, 0, 0)
 	Require(t, err)
 

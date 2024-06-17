@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/ethereum/go-ethereum/trie/triedb/hashdb"
 	"github.com/ethereum/go-ethereum/trie/triedb/pathdb"
 
 	"github.com/offchainlabs/nitro/arbcompress"
@@ -31,6 +32,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/util/env"
 )
 
 // ArbosState contains ArbOS-related state. It is backed by ArbOS's storage in the persistent stateDB.
@@ -117,7 +119,11 @@ func OpenSystemArbosStateOrPanic(stateDB vm.StateDB, tracingInfo *util.TracingIn
 // NewArbosMemoryBackedArbOSState creates and initializes a memory-backed ArbOS state (for testing only)
 func NewArbosMemoryBackedArbOSState() (*ArbosState, *state.StateDB) {
 	raw := rawdb.NewMemoryDatabase()
-	db := state.NewDatabaseWithConfig(raw, &trie.Config{Preimages: false, PathDB: pathdb.Defaults})
+	trieConfig := &trie.Config{Preimages: false, PathDB: pathdb.Defaults}
+	if env.GetTestStateScheme() == rawdb.HashScheme {
+		trieConfig = &trie.Config{Preimages: false, HashDB: hashdb.Defaults}
+	}
+	db := state.NewDatabaseWithConfig(raw, trieConfig)
 	statedb, err := state.New(common.Hash{}, db, nil)
 	if err != nil {
 		log.Crit("failed to init empty statedb", "error", err)
