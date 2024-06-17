@@ -49,7 +49,7 @@ type BlockValidatorRegistrer interface {
 
 type InboxTrackerInterface interface {
 	BlockValidatorRegistrer
-	GetDelayedMessageBytes(uint64) ([]byte, error)
+	GetDelayedMessageBytes(context.Context, uint64) ([]byte, error)
 	GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error)
 	GetBatchAcc(seqNum uint64) (common.Hash, error)
 	GetBatchCount() (uint64, error)
@@ -291,7 +291,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		e.UserWasms = recording.UserWasms
 	}
 	if e.HasDelayedMsg {
-		delayedMsg, err := v.inboxTracker.GetDelayedMessageBytes(e.DelayedMsgNr)
+		delayedMsg, err := v.inboxTracker.GetDelayedMessageBytes(ctx, e.DelayedMsgNr)
 		if err != nil {
 			log.Error(
 				"error while trying to read delayed msg for proving",
