@@ -31,6 +31,7 @@ type InitConfig struct {
 	PruneTrieCleanCache      int           `koanf:"prune-trie-clean-cache"`
 	ResetToMessage           int64         `koanf:"reset-to-message"`
 	RecreateMissingStateFrom uint64        `koanf:"recreate-missing-state-from"`
+	RebuildLocalWasm         bool          `koanf:"rebuild-local-wasm"`
 }
 
 var InitConfigDefault = InitConfig{
@@ -53,6 +54,7 @@ var InitConfigDefault = InitConfig{
 	PruneTrieCleanCache:      gethexec.DefaultCachingConfig.TrieCleanCache,
 	ResetToMessage:           -1,
 	RecreateMissingStateFrom: 0, // 0 = disabled
+	RebuildLocalWasm:         true,
 }
 
 func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -75,6 +77,7 @@ func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".prune-trie-clean-cache", InitConfigDefault.PruneTrieCleanCache, "amount of memory in megabytes to cache unchanged state trie nodes with when traversing state database during pruning")
 	f.Int64(prefix+".reset-to-message", InitConfigDefault.ResetToMessage, "forces a reset to an old message height. Also set max-reorg-resequence-depth=0 to force re-reading messages")
 	f.Uint64(prefix+".recreate-missing-state-from", InitConfigDefault.RecreateMissingStateFrom, "block number to start recreating missing states from (0 = disabled)")
+	f.Bool(prefix+".rebuild-local-wasm", InitConfigDefault.RebuildLocalWasm, "rebuild local wasm database on boot if needed (otherwise-will be done lazily)")
 }
 
 func (c *InitConfig) Validate() error {
