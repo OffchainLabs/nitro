@@ -4,10 +4,8 @@
 package das
 
 import (
-	"bytes"
 	"context"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -22,11 +20,9 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
-	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	flag "github.com/spf13/pflag"
 )
@@ -59,7 +55,6 @@ func init() {
 }
 
 type SyncToStorageConfig struct {
-	CheckAlreadyExists       bool          `koanf:"check-already-exists"`
 	Eager                    bool          `koanf:"eager"`
 	EagerLowerBoundBlock     uint64        `koanf:"eager-lower-bound-block"`
 	RetentionPeriod          time.Duration `koanf:"retention-period"`
@@ -71,7 +66,6 @@ type SyncToStorageConfig struct {
 }
 
 var DefaultSyncToStorageConfig = SyncToStorageConfig{
-	CheckAlreadyExists:       true,
 	Eager:                    false,
 	EagerLowerBoundBlock:     0,
 	RetentionPeriod:          defaultStorageRetention,
@@ -83,7 +77,6 @@ var DefaultSyncToStorageConfig = SyncToStorageConfig{
 }
 
 func SyncToStorageConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".check-already-exists", DefaultSyncToStorageConfig.CheckAlreadyExists, "check if the data already exists in this DAS's storage. Must be disabled for fast sync with an IPFS backend")
 	f.Bool(prefix+".eager", DefaultSyncToStorageConfig.Eager, "eagerly sync batch data to this DAS's storage from the rest endpoints, using L1 as the index of batch data hashes; otherwise only sync lazily")
 	f.Uint64(prefix+".eager-lower-bound-block", DefaultSyncToStorageConfig.EagerLowerBoundBlock, "when eagerly syncing, start indexing forward from this L1 block. Only used if there is no sync state")
 	f.Uint64(prefix+".parent-chain-blocks-per-read", DefaultSyncToStorageConfig.ParentChainBlocksPerRead, "when eagerly syncing, max l1 blocks to read per poll")
@@ -221,40 +214,13 @@ func (s *l1SyncService) processBatchDelivered(ctx context.Context, batchDelivere
 	data = append(header, data...)
 	var payload []byte
 	if payload, err = daprovider.RecoverPayloadFromDasBatch(ctx, deliveredEvent.BatchSequenceNumber.Uint64(), data, s.dataSource, nil, true); err != nil {
-		if errors.Is(err, daprovider.ErrSeqMsgValidation) {
-			log.Error(err.Error())
-			// TODO why is this just logged and not returned?
-		} else {
-			log.Error("recover payload failed", "txhash", batchDeliveredLog.TxHash, "data", data)
-			return err
-		}
+		log.Error("recover payload failed", "txhash", batchDeliveredLog.TxHash, "data", data)
+		return err
 	}
 
 	if payload != nil {
-		var skip bool
-		if s.config.CheckAlreadyExists {
-			// The DA cert in the sequencer data may use the V0 style flat hash, but
-			// Put always uses the V1 style dastree Hash, so just check for the
-			// existence of the batch by dastree Hash.
-			dataHash := dastree.Hash(payload)
-			existingPayload, err := s.syncTo.GetByHash(ctx, dataHash)
-			if err != nil {
-				if !errors.Is(err, ErrNotFound) {
-					return err
-				}
-			} else if !bytes.Equal(existingPayload, payload) {
-				log.Error("mismatch between existing and retrieved data in l1SyncService", "existing", pretty.PrettyBytes(existingPayload), "retrieved", pretty.PrettyBytes(payload), "dataHash", dataHash)
-				return errors.New("mismatch between existing and retrived data in l1SyncService")
-			} else {
-				log.Info("l1SyncService skipping syncing existing data for", "dataHash", dataHash)
-				skip = true
-			}
-		}
-
-		if !skip {
-			if err := s.syncTo.Put(ctx, payload, storeUntil); err != nil {
-				return err
-			}
+		if err := s.syncTo.Put(ctx, payload, storeUntil); err != nil {
+			return err
 		}
 	}
 
