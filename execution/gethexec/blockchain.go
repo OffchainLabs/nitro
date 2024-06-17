@@ -23,7 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/statetransfer"
-	"github.com/offchainlabs/nitro/util/testhelpers"
+	"github.com/offchainlabs/nitro/util/env"
 )
 
 type CachingConfig struct {
@@ -94,7 +94,7 @@ var TestCachingConfig = CachingConfig{
 	MaxNumberOfBlocksToSkipStateSaving: 0,
 	MaxAmountOfGasToSkipStateSaving:    0,
 	StylusLRUCache:                     0,
-	StateScheme:                        testhelpers.GetTestStateScheme(),
+	StateScheme:                        env.GetTestStateScheme(),
 }
 
 var (

@@ -18,6 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/statetransfer"
 
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/env"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -54,7 +55,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 	arbDb := rawdb.NewMemoryDatabase()
 	initReader := statetransfer.NewMemoryInitDataReader(&initData)
 
-	cacheConfig := core.DefaultCacheConfigWithScheme(testhelpers.GetTestStateScheme())
+	cacheConfig := core.DefaultCacheConfigWithScheme(env.GetTestStateScheme())
 	bc, err := gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initReader, chainConfig, arbostypes.TestInitMessage, gethexec.ConfigDefaultTest().TxLookupLimit, 0)
 
 	if err != nil {
