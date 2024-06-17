@@ -351,10 +351,19 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 		return nil, fmt.Errorf("could not get batch message count at %d: %w", cfg.FromBatch, err)
 	}
 	messageNum := (prevBatchMsgCount + arbutil.MessageIndex(cfg.BlockChallengeHeight))
+	stepHeights := make([]uint64, len(cfg.StepHeights))
+	for i, h := range cfg.StepHeights {
+		stepHeights[i] = uint64(h)
+	}
+	globalState, err := s.findGlobalStateFromMessageCountAndBatch(prevBatchMsgCount, l2stateprovider.Batch((cfg.FromBatch - 1)))
+	if err != nil {
+		return nil, err
+	}
 	cacheKey := &challengecache.Key{
-		WavmModuleRoot: cfg.WasmModuleRoot,
-		MessageHeight:  protocol.Height(messageNum),
-		StepHeights:    cfg.StepHeights,
+		RollupBlockHash: globalState.BlockHash,
+		WavmModuleRoot:  cfg.WasmModuleRoot,
+		MessageHeight:   uint64(messageNum),
+		StepHeights:     stepHeights,
 	}
 	if s.historyCache != nil {
 		cachedRoots, err := s.historyCache.Get(cacheKey, cfg.NumDesiredHashes)
