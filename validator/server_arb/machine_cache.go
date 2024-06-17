@@ -124,7 +124,6 @@ func (c *MachineCache) lockBuild(ctx context.Context) error {
 		return ctx.Err()
 	case <-c.buildingLock:
 	}
-	fmt.Println("Got past the lock")
 	err := c.err
 	if err != nil {
 		c.buildingLock <- struct{}{}

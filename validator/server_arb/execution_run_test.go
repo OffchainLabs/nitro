@@ -37,10 +37,13 @@ func (m *mockMachine) Step(ctx context.Context, stepSize uint64) error {
 }
 
 func (m *mockMachine) CloneMachineInterface() MachineInterface {
-	return m
+	return &mockMachine{
+		gs:         validator.GoGlobalState{Batch: m.gs.Batch, PosInBatch: m.gs.PosInBatch},
+		totalSteps: m.totalSteps,
+	}
 }
 func (m *mockMachine) GetStepCount() uint64 {
-	return m.totalSteps
+	return 0
 }
 func (m *mockMachine) IsRunning() bool {
 	return m.gs.PosInBatch < m.totalSteps-1
@@ -187,8 +190,11 @@ func Test_machineHashesWithStep(t *testing.T) {
 			expectedHashes = append(expectedHashes, gs.Hash())
 		}
 		// The rest of the expected hashes should be the machine finished hash repeated.
-		for i := uint64(4); i < 10; i++ {
-			expectedHashes = append(expectedHashes, machineFinishedHash(mm.gs))
+		for len(expectedHashes) < 10 {
+			expectedHashes = append(expectedHashes, machineFinishedHash(validator.GoGlobalState{
+				Batch:      1,
+				PosInBatch: mm.totalSteps - 1,
+			}))
 		}
 		if len(hashes) != len(expectedHashes) {
 			t.Fatal("Wanted one hash")
