@@ -75,6 +75,13 @@ func downloadInit(ctx context.Context, initConfig *conf.InitConfig) (string, err
 		return initFile, nil
 	}
 	log.Info("Downloading initial database", "url", initConfig.Url)
+	if !initConfig.ValidateChecksum {
+		file, err := downloadFile(ctx, initConfig, initConfig.Url, nil)
+		if err != nil && errors.Is(err, notFoundError) {
+			return downloadInitInParts(ctx, initConfig)
+		}
+		return file, err
+	}
 	checksum, err := fetchChecksum(ctx, initConfig.Url+".sha256")
 	if err != nil {
 		if errors.Is(err, notFoundError) {
@@ -100,7 +107,10 @@ func downloadFile(ctx context.Context, initConfig *conf.InitConfig, url string, 
 		if err != nil {
 			panic(err)
 		}
-		req.SetChecksum(sha256.New(), checksum, false)
+		if checksum != nil {
+			const deleteOnError = true
+			req.SetChecksum(sha256.New(), checksum, deleteOnError)
+		}
 		resp := grabclient.Do(req.WithContext(ctx))
 		firstPrintTime := time.Now().Add(time.Second * 2)
 	updateLoop:
@@ -235,7 +245,11 @@ func downloadInitInParts(ctx context.Context, initConfig *conf.InitConfig) (stri
 	for i, partName := range partNames {
 		log.Info("Downloading database part", "part", partName)
 		partUrl := url.JoinPath("..", partName).String()
-		partFile, err := downloadFile(ctx, initConfig, partUrl, checksums[i])
+		var checksum []byte
+		if initConfig.ValidateChecksum {
+			checksum = checksums[i]
+		}
+		partFile, err := downloadFile(ctx, initConfig, partUrl, checksum)
 		if err != nil {
 			return "", fmt.Errorf("error downloading part \"%s\": %w", partName, err)
 		}
