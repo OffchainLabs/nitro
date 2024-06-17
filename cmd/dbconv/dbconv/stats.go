@@ -8,12 +8,11 @@ import (
 type Stats struct {
 	entries atomic.Int64
 	bytes   atomic.Int64
-	forks   atomic.Int64
 
 	startTimestamp       int64
-	prevEntires          int64
+	prevEntries          int64
 	prevBytes            int64
-	prevEntiresTimestamp int64
+	prevEntriesTimestamp int64
 	prevBytesTimestamp   int64
 }
 
@@ -21,11 +20,10 @@ func (s *Stats) Reset() {
 	now := time.Now().UnixNano()
 	s.entries.Store(0)
 	s.bytes.Store(0)
-	s.forks.Store(0)
 	s.startTimestamp = now
-	s.prevEntires = 0
+	s.prevEntries = 0
 	s.prevBytes = 0
-	s.prevEntiresTimestamp = now
+	s.prevEntriesTimestamp = now
 	s.prevBytesTimestamp = now
 }
 
@@ -45,14 +43,6 @@ func (s *Stats) Bytes() int64 {
 	return s.bytes.Load()
 }
 
-func (s *Stats) AddFork() {
-	s.forks.Add(1)
-}
-
-func (s *Stats) Forks() int64 {
-	return s.forks.Load()
-}
-
 func (s *Stats) Elapsed() time.Duration {
 	now := time.Now().UnixNano()
 	dt := now - s.startTimestamp
@@ -63,13 +53,13 @@ func (s *Stats) Elapsed() time.Duration {
 func (s *Stats) EntriesPerSecond() float64 {
 	now := time.Now().UnixNano()
 	current := s.Entries()
-	dt := now - s.prevEntiresTimestamp
+	dt := now - s.prevEntriesTimestamp
 	if dt == 0 {
 		dt = 1
 	}
-	de := current - s.prevEntires
-	s.prevEntires = current
-	s.prevEntiresTimestamp = now
+	de := current - s.prevEntries
+	s.prevEntries = current
+	s.prevEntriesTimestamp = now
 	return float64(de) * 1e9 / float64(dt)
 }
 

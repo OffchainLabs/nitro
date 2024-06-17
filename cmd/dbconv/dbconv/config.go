@@ -40,7 +40,7 @@ type DBConvConfig struct {
 	IdealBatchSize int                             `koanf:"ideal-batch-size"`
 	Convert        bool                            `koanf:"convert"`
 	Compact        bool                            `koanf:"compact"`
-	Verify         int                             `koanf:"verify"`
+	Verify         string                          `koanf:"verify"`
 	LogLevel       string                          `koanf:"log-level"`
 	LogType        string                          `koanf:"log-type"`
 	Metrics        bool                            `koanf:"metrics"`
@@ -51,7 +51,7 @@ var DefaultDBConvConfig = DBConvConfig{
 	IdealBatchSize: 100 * 1024 * 1024, // 100 MB
 	Convert:        false,
 	Compact:        false,
-	Verify:         0,
+	Verify:         "",
 	LogLevel:       "INFO",
 	LogType:        "plaintext",
 	Metrics:        false,
@@ -64,7 +64,7 @@ func DBConvConfigAddOptions(f *flag.FlagSet) {
 	f.Int("ideal-batch-size", DefaultDBConvConfig.IdealBatchSize, "ideal write batch size")
 	f.Bool("convert", DefaultDBConvConfig.Convert, "enables conversion step")
 	f.Bool("compact", DefaultDBConvConfig.Compact, "enables compaction step")
-	f.Int("verify", DefaultDBConvConfig.Verify, "enables verification step (0 = disabled, 1 = only keys, 2 = keys and values)")
+	f.String("verify", DefaultDBConvConfig.Verify, "enables verification step (\"\" = disabled, \"keys\" = only keys, \"full\" = keys and values)")
 	f.String("log-level", DefaultDBConvConfig.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
 	f.String("log-type", DefaultDBConvConfig.LogType, "log type (plaintext or json)")
 	f.Bool("metrics", DefaultDBConvConfig.Metrics, "enable metrics")
@@ -72,11 +72,14 @@ func DBConvConfigAddOptions(f *flag.FlagSet) {
 }
 
 func (c *DBConvConfig) Validate() error {
-	if c.Verify < 0 || c.Verify > 2 {
-		return fmt.Errorf("Invalid verify config value: %v", c.Verify)
+	if c.Verify != "keys" && c.Verify != "full" && c.Verify != "" {
+		return fmt.Errorf("Invalid verify mode: %v", c.Verify)
 	}
-	if !c.Convert && c.Verify == 0 && !c.Compact {
+	if !c.Convert && c.Verify == "" && !c.Compact {
 		return errors.New("nothing to be done, conversion, verification and compaction disabled")
+	}
+	if c.IdealBatchSize <= 0 {
+		return fmt.Errorf("Invalid ideal batch size: %d, has to be greater then 0", c.IdealBatchSize)
 	}
 	return nil
 }

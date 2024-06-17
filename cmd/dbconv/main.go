@@ -26,11 +26,21 @@ func parseDBConv(args []string) (*dbconv.DBConvConfig, error) {
 	if err := confighelpers.EndCommonParse(k, &config); err != nil {
 		return nil, err
 	}
-	return &config, nil
+	return &config, config.Validate()
 }
 
 func printSampleUsage(name string) {
 	fmt.Printf("Sample usage: %s --help \n\n", name)
+}
+
+func printProgress(conv *dbconv.DBConverter) {
+	stats := conv.Stats()
+	fmt.Printf("Progress:\n")
+	fmt.Printf("\tprocessed entries: %d\n", stats.Entries())
+	fmt.Printf("\tprocessed data (MB): %d\n", stats.Bytes()/1024/1024)
+	fmt.Printf("\telapsed:\t%v\n", stats.Elapsed())
+	fmt.Printf("\tcurrent:\t%.3e entries/s\t%.3f MB/s\n", stats.EntriesPerSecond()/1000, stats.BytesPerSecond()/1024/1024)
+	fmt.Printf("\taverage:\t%.3e entries/s\t%.3f MB/s\n", stats.AverageEntriesPerSecond()/1000, stats.AverageBytesPerSecond()/1024/1024)
 }
 
 func main() {
@@ -38,16 +48,11 @@ func main() {
 	config, err := parseDBConv(args)
 	if err != nil {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
-		os.Exit(1)
 	}
+
 	err = genericconf.InitLog(config.LogType, config.LogLevel, &genericconf.FileLoggingConfig{Enable: false}, nil)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error initializing logging: %v\n", err)
-		os.Exit(1)
-	}
-
-	if err = config.Validate(); err != nil {
-		log.Error("Invalid config", "err", err)
 		os.Exit(1)
 	}
 
@@ -66,9 +71,7 @@ func main() {
 		for {
 			select {
 			case <-ticker.C:
-				stats := conv.Stats()
-				fmt.Printf("Progress:\n\tprocessed entries: %d\n\tprocessed data (MB): %d\n\telapsed: %v\n\tcurrent:\tKe/s: %.3f\tMB/s: %.3f\n\taverage:\tKe/s: %.3f\tMB/s: %.3f\n", stats.Entries(), stats.Bytes()/1024/1024, stats.Elapsed(), stats.EntriesPerSecond()/1000, stats.BytesPerSecond()/1024/1024, stats.AverageEntriesPerSecond()/1000, stats.AverageBytesPerSecond()/1024/1024)
-
+				printProgress(conv)
 			case <-ctx.Done():
 				return
 			}
@@ -94,7 +97,7 @@ func main() {
 		}
 	}
 
-	if config.Verify > 0 {
+	if config.Verify != "" {
 		ticker.Reset(10 * time.Second)
 		err = conv.Verify(ctx)
 		if err != nil {

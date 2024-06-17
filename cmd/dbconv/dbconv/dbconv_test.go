@@ -1,7 +1,6 @@
 package dbconv
 
 import (
-	"bytes"
 	"context"
 	"testing"
 
@@ -35,43 +34,33 @@ func TestConversion(t *testing.T) {
 	config.Src = oldDBConfig
 	config.Dst = newDBConfig
 	config.IdealBatchSize = 5
+	config.Verify = "full"
 	conv := NewDBConverter(&config)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
 	err := conv.Convert(ctx)
 	Require(t, err)
-	conv.Close()
 
+	err = conv.Verify(ctx)
+	Require(t, err)
+
+	// check if new database doesn't have any extra keys
 	oldDb, err := openDB(&oldDBConfig, "", true)
 	Require(t, err)
 	defer oldDb.Close()
 	newDb, err := openDB(&newDBConfig, "", true)
 	Require(t, err)
 	defer newDb.Close()
-
-	func() {
-		it := oldDb.NewIterator(nil, nil)
-		defer it.Release()
-		for it.Next() {
-			if has, _ := newDb.Has(it.Key()); !has {
-				t.Log("Missing key in the converted db, key:", it.Key())
-			}
-			newValue, err := newDb.Get(it.Key())
-			Require(t, err)
-			if !bytes.Equal(newValue, it.Value()) {
-				Fail(t, "Value mismatch, old:", it.Value(), "new:", newValue)
-			}
+	it := newDb.NewIterator(nil, nil)
+	defer it.Release()
+	for it.Next() {
+		has, err := oldDb.Has(it.Key())
+		Require(t, err)
+		if !has {
+			Fail(t, "Unexpected key in the converted db, key:", it.Key())
 		}
-	}()
-	func() {
-		it := newDb.NewIterator(nil, nil)
-		defer it.Release()
-		for it.Next() {
-			if has, _ := oldDb.Has(it.Key()); !has {
-				Fail(t, "Unexpected key in the converted db, key:", it.Key())
-			}
-		}
-	}()
+	}
 }
 
 func Require(t *testing.T, err error, printables ...interface{}) {

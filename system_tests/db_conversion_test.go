@@ -44,7 +44,6 @@ func TestDatabaseConversion(t *testing.T) {
 	}
 	l2CleanupDone = true
 	builder.L2.cleanup()
-	bc := builder.L2.ExecNode.Backend.ArbInterface().BlockChain()
 	t.Log("stopped first node")
 
 	instanceDir := filepath.Join(dataDir, builder.l2StackConfig.Name)
@@ -52,20 +51,18 @@ func TestDatabaseConversion(t *testing.T) {
 		err := os.Rename(filepath.Join(instanceDir, dbname), filepath.Join(instanceDir, fmt.Sprintf("%s_old", dbname)))
 		Require(t, err)
 		t.Log("converting:", dbname)
-		func() {
-			oldDBConfig := dbconv.DBConfigDefault
-			oldDBConfig.Data = path.Join(instanceDir, fmt.Sprintf("%s_old", dbname))
-			oldDBConfig.DBEngine = "leveldb"
-			newDBConfig := dbconv.DBConfigDefault
-			newDBConfig.Data = path.Join(instanceDir, dbname)
-			newDBConfig.DBEngine = "pebble"
-			convConfig := dbconv.DefaultDBConvConfig
-			convConfig.Src = oldDBConfig
-			convConfig.Dst = newDBConfig
-			conv := dbconv.NewDBConverter(&convConfig)
-			err := conv.Convert(ctx)
-			Require(t, err)
-		}()
+		oldDBConfig := dbconv.DBConfigDefault
+		oldDBConfig.Data = path.Join(instanceDir, fmt.Sprintf("%s_old", dbname))
+		oldDBConfig.DBEngine = "leveldb"
+		newDBConfig := dbconv.DBConfigDefault
+		newDBConfig.Data = path.Join(instanceDir, dbname)
+		newDBConfig.DBEngine = "pebble"
+		convConfig := dbconv.DefaultDBConvConfig
+		convConfig.Src = oldDBConfig
+		convConfig.Dst = newDBConfig
+		conv := dbconv.NewDBConverter(&convConfig)
+		err = conv.Convert(ctx)
+		Require(t, err)
 	}
 
 	builder.l2StackConfig.DBEngine = "pebble"
@@ -79,7 +76,7 @@ func TestDatabaseConversion(t *testing.T) {
 	_, err = testClient.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	bc = testClient.ExecNode.Backend.ArbInterface().BlockChain()
+	bc := testClient.ExecNode.Backend.ArbInterface().BlockChain()
 	current := bc.CurrentBlock()
 	if current == nil {
 		Fatal(t, "failed to get current block header")

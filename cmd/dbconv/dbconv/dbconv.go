@@ -14,9 +14,6 @@ import (
 type DBConverter struct {
 	config *DBConvConfig
 	stats  Stats
-
-	src ethdb.Database
-	dst ethdb.Database
 }
 
 func NewDBConverter(config *DBConvConfig) *DBConverter {
@@ -27,9 +24,11 @@ func NewDBConverter(config *DBConvConfig) *DBConverter {
 
 func openDB(config *DBConfig, name string, readonly bool) (ethdb.Database, error) {
 	return rawdb.Open(rawdb.OpenOptions{
-		Type:               config.DBEngine,
-		Directory:          config.Data,
-		AncientsDirectory:  "", // don't open freezer
+		Type:      config.DBEngine,
+		Directory: config.Data,
+		// we don't open freezer, it doesn't need to be converted as it has format independent of db-engine
+		// note: user needs to handle copying/moving the ancient directory
+		AncientsDirectory:  "",
 		Namespace:          config.Namespace,
 		Cache:              config.Cache,
 		Handles:            config.Handles,
@@ -40,19 +39,21 @@ func openDB(config *DBConfig, name string, readonly bool) (ethdb.Database, error
 
 func (c *DBConverter) Convert(ctx context.Context) error {
 	var err error
-	defer c.Close()
-	c.src, err = openDB(&c.config.Src, "src", true)
+	src, err := openDB(&c.config.Src, "src", true)
 	if err != nil {
 		return err
 	}
-	c.dst, err = openDB(&c.config.Dst, "dst", false)
+	defer src.Close()
+	dst, err := openDB(&c.config.Dst, "dst", false)
 	if err != nil {
 		return err
 	}
+	defer dst.Close()
 	c.stats.Reset()
-	it := c.src.NewIterator(nil, nil)
+	log.Info("Converting database", "src", c.config.Src.Data, "dst", c.config.Dst.Data, "db-engine", c.config.Dst.DBEngine)
+	it := src.NewIterator(nil, nil)
 	defer it.Release()
-	batch := c.dst.NewBatch()
+	batch := dst.NewBatch()
 	entriesInBatch := 0
 	for it.Next() && ctx.Err() == nil {
 		if err = batch.Put(it.Key(), it.Value()); err != nil {
@@ -71,7 +72,9 @@ func (c *DBConverter) Convert(ctx context.Context) error {
 	}
 	if err = ctx.Err(); err == nil {
 		batchSize := batch.ValueSize()
-		err = batch.Write()
+		if err = batch.Write(); err != nil {
+			return err
+		}
 		c.stats.AddEntries(int64(entriesInBatch))
 		c.stats.AddBytes(int64(batchSize))
 	}
@@ -79,15 +82,14 @@ func (c *DBConverter) Convert(ctx context.Context) error {
 }
 
 func (c *DBConverter) CompactDestination() error {
-	var err error
-	c.dst, err = openDB(&c.config.Dst, "dst", false)
+	dst, err := openDB(&c.config.Dst, "dst", false)
 	if err != nil {
 		return err
 	}
-	defer c.dst.Close()
+	defer dst.Close()
 	start := time.Now()
-	log.Info("Compacting destination database", "data", c.config.Dst.Data)
-	if err := c.dst.Compact(nil, nil); err != nil {
+	log.Info("Compacting destination database", "dst", c.config.Dst.Data)
+	if err := dst.Compact(nil, nil); err != nil {
 		return err
 	}
 	log.Info("Compaction done", "elapsed", time.Since(start))
@@ -95,34 +97,40 @@ func (c *DBConverter) CompactDestination() error {
 }
 
 func (c *DBConverter) Verify(ctx context.Context) error {
-	if c.config.Verify == 1 {
+	if c.config.Verify == "keys" {
 		log.Info("Starting quick verification - verifying only keys existence")
-	} else {
+	} else if c.config.Verify == "full" {
 		log.Info("Starting full verification - verifying keys and values")
 	}
 	var err error
-	defer c.Close()
-	c.src, err = openDB(&c.config.Src, "src", true)
+	src, err := openDB(&c.config.Src, "src", true)
 	if err != nil {
 		return err
 	}
-	c.dst, err = openDB(&c.config.Dst, "dst", true)
+	defer src.Close()
+
+	dst, err := openDB(&c.config.Dst, "dst", true)
 	if err != nil {
 		return err
 	}
+	defer dst.Close()
 
 	c.stats.Reset()
-	it := c.src.NewIterator(nil, nil)
+	it := src.NewIterator(nil, nil)
 	defer it.Release()
 	for it.Next() && ctx.Err() == nil {
 		switch c.config.Verify {
-		case 1:
-			if has, err := c.dst.Has(it.Key()); !has {
-				return fmt.Errorf("Missing key in destination db, key: %v, err: %w", it.Key(), err)
+		case "keys":
+			has, err := dst.Has(it.Key())
+			if err != nil {
+				return fmt.Errorf("Failed to check key existence in destination db, key: %v, err: %w", it.Key(), err)
+			}
+			if !has {
+				return fmt.Errorf("Missing key in destination db, key: %v", it.Key())
 			}
 			c.stats.AddBytes(int64(len(it.Key())))
-		case 2:
-			dstValue, err := c.dst.Get(it.Key())
+		case "full":
+			dstValue, err := dst.Get(it.Key())
 			if err != nil {
 				return err
 			}
@@ -140,13 +148,4 @@ func (c *DBConverter) Verify(ctx context.Context) error {
 
 func (c *DBConverter) Stats() *Stats {
 	return &c.stats
-}
-
-func (c *DBConverter) Close() {
-	if c.src != nil {
-		c.src.Close()
-	}
-	if c.dst != nil {
-		c.dst.Close()
-	}
 }
