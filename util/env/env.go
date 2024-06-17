@@ -1,7 +1,7 @@
 // Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-package testhelpers
+package env
 
 import (
 	"os"
