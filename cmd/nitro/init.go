@@ -205,13 +205,13 @@ func downloadInitInParts(ctx context.Context, initConfig *conf.InitConfig) (stri
 	if err != nil || !fileInfo.IsDir() {
 		return "", fmt.Errorf("download path must be a directory: %v", initConfig.DownloadPath)
 	}
-	url, err := url.Parse(initConfig.Url)
+	archiveUrl, err := url.Parse(initConfig.Url)
 	if err != nil {
 		return "", fmt.Errorf("failed to parse init url \"%s\": %w", initConfig.Url, err)
 	}
 
 	// Get parts from manifest file
-	manifest, err := httpGet(ctx, url.String()+".manifest.txt")
+	manifest, err := httpGet(ctx, archiveUrl.String()+".manifest.txt")
 	if err != nil {
 		return "", fmt.Errorf("failed to get manifest file: %w", err)
 	}
@@ -245,7 +245,7 @@ func downloadInitInParts(ctx context.Context, initConfig *conf.InitConfig) (stri
 	// Download parts
 	for i, partName := range partNames {
 		log.Info("Downloading database part", "part", partName)
-		partUrl := url.JoinPath("..", partName).String()
+		partUrl := archiveUrl.JoinPath("..", partName).String()
 		var checksum []byte
 		if initConfig.ValidateChecksum {
 			checksum = checksums[i]
@@ -256,7 +256,7 @@ func downloadInitInParts(ctx context.Context, initConfig *conf.InitConfig) (stri
 		}
 		partFiles = append(partFiles, partFile)
 	}
-	archivePath := path.Join(initConfig.DownloadPath, path.Base(url.Path))
+	archivePath := path.Join(initConfig.DownloadPath, path.Base(archiveUrl.Path))
 	return joinArchive(partFiles, archivePath)
 }
 
