@@ -608,6 +608,7 @@ func createNodeImpl(
 
 	var stakerObj *staker.Staker
 	var messagePruner *MessagePruner
+	var stakerAddr common.Address
 
 	if config.Staker.Enable {
 		dp, err := StakerDataposter(
@@ -665,17 +666,14 @@ func createNodeImpl(
 		if err := wallet.Initialize(ctx); err != nil {
 			return nil, err
 		}
-		var validatorAddr string
-		if txOptsValidator != nil {
-			validatorAddr = txOptsValidator.From.String()
-		} else {
-			validatorAddr = config.Staker.DataPoster.ExternalSigner.Address
+		if dp != nil {
+			stakerAddr = dp.Sender()
 		}
 		whitelisted, err := stakerObj.IsWhitelisted(ctx)
 		if err != nil {
 			return nil, err
 		}
-		log.Info("running as validator", "txSender", validatorAddr, "actingAsWallet", wallet.Address(), "whitelisted", whitelisted, "strategy", config.Staker.Strategy)
+		log.Info("running as validator", "txSender", stakerAddr, "actingAsWallet", wallet.Address(), "whitelisted", whitelisted, "strategy", config.Staker.Strategy)
 	}
 
 	var batchPoster *BatchPoster
@@ -703,6 +701,11 @@ func createNodeImpl(
 		})
 		if err != nil {
 			return nil, err
+		}
+
+		// Check if staker and batch poster are using the same address
+		if stakerAddr != (common.Address{}) && !strings.EqualFold(config.Staker.Strategy, "watchtower") && stakerAddr == batchPoster.dataPoster.Sender() {
+			return nil, fmt.Errorf("staker and batch poster are using the same address which is not allowed: %v", stakerAddr)
 		}
 	}
 
