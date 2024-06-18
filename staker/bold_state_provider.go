@@ -64,7 +64,10 @@ func NewBOLDStateProvider(
 	validatorName string,
 	opts ...BOLDStateProviderOpt,
 ) (*BOLDStateProvider, error) {
-	historyCache := challengecache.New(cacheBaseDir)
+	historyCache, err := challengecache.New(cacheBaseDir)
+	if err != nil {
+		return nil, err
+	}
 	sp := &BOLDStateProvider{
 		validator:            blockValidator,
 		statelessValidator:   statelessValidator,
