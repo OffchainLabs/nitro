@@ -7,7 +7,12 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
+
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -55,7 +60,6 @@ func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*v
 		if position == ^uint64(0) {
 			machine, err = e.cache.GetFinalMachine(ctx)
 		} else {
-			// todo cache last machine
 			machine, err = e.cache.GetMachineAt(ctx, position)
 		}
 		if err != nil {
@@ -79,6 +83,96 @@ func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*v
 	})
 }
 
+func (e *executionRun) GetMachineHashesWithStepSize(machineStartIndex, stepSize, requiredNumHashes uint64) containers.PromiseInterface[[]common.Hash] {
+	return stopwaiter.LaunchPromiseThread(e, func(ctx context.Context) ([]common.Hash, error) {
+		return e.machineHashesWithStepSize(ctx, machineStartIndex, stepSize, requiredNumHashes)
+	})
+}
+
+func (e *executionRun) machineHashesWithStepSize(
+	ctx context.Context,
+	machineStartIndex,
+	stepSize,
+	requiredNumHashes uint64,
+) ([]common.Hash, error) {
+	if stepSize == 0 {
+		return nil, fmt.Errorf("step size cannot be 0")
+	}
+	if requiredNumHashes == 0 {
+		return nil, fmt.Errorf("required number of hashes cannot be 0")
+	}
+	machine, err := e.cache.GetMachineAt(ctx, machineStartIndex)
+	if err != nil {
+		return nil, err
+	}
+	log.Debug(fmt.Sprintf("Advanced machine to index %d, beginning hash computation", machineStartIndex))
+
+	// If the machine is starting at index 0, we always want to start at the "Machine finished" global state status
+	// to align with the machine hashes that the inbox machine will produce.
+	var machineHashes []common.Hash
+	if machineStartIndex == 0 {
+		gs := machine.GetGlobalState()
+		log.Debug(fmt.Sprintf("Start global state for machine index 0: %+v", gs))
+		machineHashes = append(machineHashes, machineFinishedHash(gs))
+	} else {
+		// Otherwise, we simply append the machine hash at the specified start index.
+		machineHashes = append(machineHashes, machine.Hash())
+	}
+	startHash := machineHashes[0]
+
+	// If we only want 1 hash, we can return early.
+	if requiredNumHashes == 1 {
+		return machineHashes, nil
+	}
+
+	logInterval := requiredNumHashes / 20 // Log every 5% progress
+	if logInterval == 0 {
+		logInterval = 1
+	}
+
+	start := time.Now()
+	for numIterations := uint64(0); numIterations < requiredNumHashes; numIterations++ {
+		// The absolute program counter the machine should be in after stepping.
+		absoluteMachineIndex := machineStartIndex + stepSize*(numIterations+1)
+
+		// Advance the machine in step size increments.
+		if err := machine.Step(ctx, stepSize); err != nil {
+			return nil, fmt.Errorf("failed to step machine to position %d: %w", absoluteMachineIndex, err)
+		}
+		if numIterations%logInterval == 0 || numIterations == requiredNumHashes-1 {
+			progressPercent := (float64(numIterations+1) / float64(requiredNumHashes)) * 100
+			log.Info(
+				fmt.Sprintf(
+					"Computing BOLD subchallenge progress: %.2f%% - %d of %d hashes needed",
+					progressPercent,
+					numIterations+1,
+					requiredNumHashes,
+				),
+				"machinePosition", numIterations*stepSize+machineStartIndex,
+				"timeSinceStart", time.Since(start),
+				"stepSize", stepSize,
+				"startHash", startHash,
+				"machineStartIndex", machineStartIndex,
+				"numDesiredLeaves", requiredNumHashes,
+			)
+		}
+		machineHashes = append(machineHashes, machine.Hash())
+		if uint64(len(machineHashes)) == requiredNumHashes {
+			break
+		}
+	}
+	log.Info(
+		"Successfully finished computing the data needed for opening a subchallenge",
+		"stepSize", stepSize,
+		"startHash", startHash,
+		"machineStartIndex", machineStartIndex,
+		"numDesiredLeaves", requiredNumHashes,
+		"finishedHash", machineHashes[len(machineHashes)-1],
+		"finishedGlobalState", fmt.Sprintf("%+v", machine.GetGlobalState()),
+	)
+	return machineHashes, nil
+}
+
 func (e *executionRun) GetProofAt(position uint64) containers.PromiseInterface[[]byte] {
 	return stopwaiter.LaunchPromiseThread[[]byte](e, func(ctx context.Context) ([]byte, error) {
 		machine, err := e.cache.GetMachineAt(ctx, position)
@@ -91,4 +185,8 @@ func (e *executionRun) GetProofAt(position uint64) containers.PromiseInterface[[
 
 func (e *executionRun) GetLastStep() containers.PromiseInterface[*validator.MachineStepResult] {
 	return e.GetStepAt(^uint64(0))
+}
+
+func machineFinishedHash(gs validator.GoGlobalState) common.Hash {
+	return crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
 }
