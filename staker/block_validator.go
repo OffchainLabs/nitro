@@ -17,7 +17,6 @@ import (
 	"time"
 
 	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
@@ -594,9 +593,9 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 			return false, err
 		}
 		blockHeight = jst.Header.Height
-		snapShot, err := v.lightClientReader.FetchMerkleRoot(blockHeight, &bind.CallOpts{})
+		snapShot, err := v.lightClientReader.FetchMerkleRoot(blockHeight, nil)
 		if err != nil {
-			log.Error("error attempting to fetch block merkle root from the light client contract", "L1ProofHeight", jst.BlockMerkleJustification.L1ProofHeight)
+			log.Error("error attempting to fetch block merkle root from the light client contract", "blockHeight", blockHeight)
 			return false, err
 		}
 		comm = snapShot.Root

@@ -19,7 +19,6 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/validator"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -170,7 +169,7 @@ func (e *validationEntry) ToInput() (*validator.ValidationInput, error) {
 		DelayedMsg:        e.DelayedMsg,
 		StartState:        e.Start,
 		DebugChain:        e.ChainConfig.DebugMode(),
-		L1BlockHeight:     e.BlockHeight,
+		BlockHeight:       e.BlockHeight,
 		HotShotCommitment: e.HotShotCommitment,
 		HotShotLiveness:   e.IsHotShotLive,
 	}, nil
@@ -402,9 +401,9 @@ func (v *StatelessBlockValidator) CreateReadyValidationEntry(ctx context.Context
 			return nil, err
 		}
 		blockHeight = jst.Header.Height
-		snapShot, err := v.lightClientReader.FetchMerkleRoot(blockHeight, &bind.CallOpts{})
+		snapShot, err := v.lightClientReader.FetchMerkleRoot(blockHeight, nil)
 		if err != nil {
-			log.Error("error fetching light client commitment", "L1ProofHeight", jst.BlockMerkleJustification.L1ProofHeight, "%v", err)
+			log.Error("error fetching light client commitment", "hotshot block height", blockHeight, "%v", err)
 			return nil, err
 		}
 		comm = snapShot.Root

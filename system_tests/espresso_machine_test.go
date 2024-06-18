@@ -42,8 +42,11 @@ func TestEspressoArbMachine(t *testing.T) {
 	err = machine.Step(ctx, 900000000)
 	Require(t, err)
 
-	if machine.IsErrored() || machine.IsRunning() {
+	if machine.IsRunning() {
 		panic("arb machine should finish all the steps")
+	}
+	if machine.IsErrored() {
+		panic("arb machine went wrong")
 	}
 }
 

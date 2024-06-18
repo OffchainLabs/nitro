@@ -24,7 +24,7 @@ type ValidationInput struct {
 	StartState    GoGlobalState
 	DebugChain    bool
 
-	L1BlockHeight uint64
+	BlockHeight uint64
 	// The validating hotshot commitment
 	HotShotCommitment espressoTypes.Commitment
 	HotShotLiveness   bool

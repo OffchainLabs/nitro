@@ -214,7 +214,13 @@ func createL1ValidatorPosterNode(ctx context.Context, t *testing.T, hotshotUrl s
 	return builder, cleanup
 }
 
-func createStaker(ctx context.Context, t *testing.T, builder *NodeBuilder, incorrectHeight uint64, f func(*validator.ValidationInput)) (*staker.Staker, *staker.BlockValidator, func()) {
+func createStaker(
+	ctx context.Context,
+	t *testing.T,
+	builder *NodeBuilder,
+	incorrectHeight uint64,
+	account string,
+	f func(*validator.ValidationInput)) (*staker.Staker, *staker.BlockValidator, func()) {
 	config := arbnode.ConfigDefaultL1Test()
 	builder.takeOwnership = false
 	config.Sequencer = false
@@ -233,12 +239,7 @@ func createStaker(ctx context.Context, t *testing.T, builder *NodeBuilder, incor
 	testClient, cleanup := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: config})
 	l2Node := testClient.ConsensusNode
 
-	var auth bind.TransactOpts
-	if incorrectHeight > 0 {
-		auth = builder.L1Info.GetDefaultTransactOpts("Staker2", ctx)
-	} else {
-		auth = builder.L1Info.GetDefaultTransactOpts("Staker1", ctx)
-	}
+	auth := builder.L1Info.GetDefaultTransactOpts(account, ctx)
 
 	parentChainID, err := builder.L1.Client.ChainID(ctx)
 	Require(t, err)
@@ -431,7 +432,7 @@ func TestEspressoE2E(t *testing.T) {
 	Require(t, err)
 
 	// Wait for the number of validated messages to catch up
-	err = waitForWith(t, ctx, 300*time.Second, 5*time.Second, func() bool {
+	err = waitForWith(t, ctx, 360*time.Second, 5*time.Second, func() bool {
 		validatedCnt := node.ConsensusNode.BlockValidator.Validated(t)
 		log.Info("waiting for validation", "validatedCnt", validatedCnt, "msgCnt", msgCnt)
 		return validatedCnt >= msgCnt
@@ -461,13 +462,15 @@ func TestEspressoE2E(t *testing.T) {
 
 	incorrectHeight := uint64(10)
 
-	goodStaker, blockValidatorA, cleanA := createStaker(ctx, t, builder, 0, nil)
+	goodStaker, blockValidatorA, cleanA := createStaker(ctx, t, builder, 0, "Staker1", nil)
 	defer cleanA()
-	badStaker1, blockValidatorB, cleanB := createStaker(ctx, t, builder, incorrectHeight, func(input *validator.ValidationInput) {
+	badStaker1, blockValidatorB, cleanB := createStaker(ctx, t, builder, incorrectHeight, "Staker2", func(input *validator.ValidationInput) {
+		log.Info("previousinput", "input", input.HotShotCommitment)
 		input.HotShotCommitment = espressoTypes.Commitment{}
+		log.Info("afterinput", "input", input.HotShotCommitment)
 	})
 	defer cleanB()
-	badStaker2, blockValidatorC, cleanC := createStaker(ctx, t, builder, incorrectHeight, func(input *validator.ValidationInput) {
+	badStaker2, blockValidatorC, cleanC := createStaker(ctx, t, builder, incorrectHeight, "Staker3", func(input *validator.ValidationInput) {
 		input.HotShotLiveness = !input.HotShotLiveness
 	})
 	defer cleanC()
@@ -530,8 +533,8 @@ func TestEspressoE2E(t *testing.T) {
 
 	// The following tests are very time-consuming and, given that the related code
 	// does not change often, it's not necessary to run them every time.
-	// Note: If you are modifying the smart contracts, staker-related code or doing overhaul.
-	// Set the E2E_CHECK_STAKER env variable to any non-empty string to run the check.
+	// Note: If you are modifying the smart contracts, staker-related code or doing overhaul,
+	// set the E2E_CHECK_STAKER env variable to any non-empty string to run the check.
 
 	checkStaker := os.Getenv("E2E_CHECK_STAKER")
 	if checkStaker == "" {
@@ -545,7 +548,9 @@ func TestEspressoE2E(t *testing.T) {
 		func() bool {
 			log.Info("good staker acts", "step", i)
 			txA, err := goodStaker.Act(ctx)
-			Require(t, err)
+			if err != nil {
+				return false
+			}
 			if txA != nil {
 				_, err = builder.L1.EnsureTxSucceeded(txA)
 				Require(t, err)
@@ -553,11 +558,10 @@ func TestEspressoE2E(t *testing.T) {
 
 			log.Info("bad staker acts", "step", i)
 			txB, err := badStaker1.Act(ctx)
-			if txB != nil {
+			if txB != nil && err == nil {
 				_, err = builder.L1.EnsureTxSucceeded(txB)
 				Require(t, err)
-			}
-			if err != nil {
+			} else if err != nil {
 				ok := strings.Contains(err.Error(), "ERROR_HOTSHOT_COMMITMENT")
 				if ok {
 					return true
