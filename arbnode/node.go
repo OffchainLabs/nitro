@@ -666,7 +666,9 @@ func createNodeImpl(
 		if err := wallet.Initialize(ctx); err != nil {
 			return nil, err
 		}
-		stakerAddr = dp.Sender()
+		if dp != nil {
+			stakerAddr = dp.Sender()
+		}
 		whitelisted, err := stakerObj.IsWhitelisted(ctx)
 		if err != nil {
 			return nil, err
