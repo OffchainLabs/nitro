@@ -213,6 +213,9 @@ func (s *LocalFileStorageService) Sync(ctx context.Context) error {
 }
 
 func (s *LocalFileStorageService) ExpirationPolicy(ctx context.Context) (daprovider.ExpirationPolicy, error) {
+	if s.config.EnableExpiry {
+		return daprovider.DiscardAfterDataTimeout, nil
+	}
 	return daprovider.KeepForever, nil
 }
 
