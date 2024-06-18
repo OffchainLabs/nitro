@@ -343,6 +343,41 @@ func (s *BOLDStateProvider) L2MessageStatesUpTo(
 	return items, nil
 }
 
+// CtxWithCheckAlive Creates a context with a check alive routine
+// that will cancel the context if the check alive routine fails.
+func ctxWithCheckAlive(ctxIn context.Context, execRun validator.ExecutionRun) (context.Context, context.CancelFunc) {
+	// Create a context that will cancel if the check alive routine fails.
+	// This is to ensure that we do not have the validator froze indefinitely if the execution run
+	// is no longer alive.
+	ctx, cancel := context.WithCancel(ctxIn)
+	// Create a context with cancel, so that we can cancel the check alive routine
+	// once the calling function returns.
+	ctxCheckAlive, cancelCheckAlive := context.WithCancel(ctxIn)
+	go func() {
+		// Call cancel so that the calling function is canceled if the check alive routine fails/returns.
+		defer cancel()
+		ticker := time.NewTicker(10 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctxCheckAlive.Done():
+				return
+			case <-ticker.C:
+				// Create a context with a timeout, so that the check alive routine does not run indefinitely.
+				ctxCheckAliveWithTimeout, cancelCheckAliveWithTimeout := context.WithTimeout(ctxCheckAlive, 5*time.Second)
+				err := execRun.CheckAlive(ctxCheckAliveWithTimeout)
+				if err != nil {
+					executionNodeOfflineGauge.Inc(1)
+					cancelCheckAliveWithTimeout()
+					return
+				}
+				cancelCheckAliveWithTimeout()
+			}
+		}
+	}()
+	return ctx, cancelCheckAlive
+}
+
 // CollectMachineHashes Collects a list of machine hashes at a message number based on some configuration parameters.
 func (s *BOLDStateProvider) CollectMachineHashes(
 	ctx context.Context, cfg *l2stateprovider.HashCollectorConfig,
@@ -409,41 +444,6 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 	return result, nil
 }
 
-// CtxWithCheckAlive Creates a context with a check alive routine
-// that will cancel the context if the check alive routine fails.
-func ctxWithCheckAlive(ctxIn context.Context, execRun validator.ExecutionRun) (context.Context, context.CancelFunc) {
-	// Create a context that will cancel if the check alive routine fails.
-	// This is to ensure that we do not have the validator froze indefinitely if the execution run
-	// is no longer alive.
-	ctx, cancel := context.WithCancel(ctxIn)
-	// Create a context with cancel, so that we can cancel the check alive routine
-	// once the calling function returns.
-	ctxCheckAlive, cancelCheckAlive := context.WithCancel(ctxIn)
-	go func() {
-		// Call cancel so that the calling function is canceled if the check alive routine fails/returns.
-		defer cancel()
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-ctxCheckAlive.Done():
-				return
-			case <-ticker.C:
-				// Create a context with a timeout, so that the check alive routine does not run indefinitely.
-				ctxCheckAliveWithTimeout, cancelCheckAliveWithTimeout := context.WithTimeout(ctxCheckAlive, 5*time.Second)
-				err := execRun.CheckAlive(ctxCheckAliveWithTimeout)
-				if err != nil {
-					executionNodeOfflineGauge.Inc(1)
-					cancelCheckAliveWithTimeout()
-					return
-				}
-				cancelCheckAliveWithTimeout()
-			}
-		}
-	}()
-	return ctx, cancelCheckAlive
-}
-
 // CollectProof Collects osp of at a message number and OpcodeIndex .
 func (s *BOLDStateProvider) CollectProof(
 	ctx context.Context,
@@ -473,4 +473,37 @@ func (s *BOLDStateProvider) CollectProof(
 	defer cancelCheckAlive()
 	oneStepProofPromise := execRun.GetProofAt(uint64(machineIndex))
 	return oneStepProofPromise.Await(ctxCheckAlive)
+}
+
+func FindBatchContainingMessageIndex(
+	tracker InboxTrackerInterface, pos arbutil.MessageIndex, high uint64,
+) (uint64, error) {
+	var low uint64
+	// Iteration preconditions:
+	// - high >= low
+	// - msgCount(low - 1) <= pos implies low <= target
+	// - msgCount(high) > pos implies high >= target
+	// Therefore, if low == high, then low == high == target
+	for high > low {
+		// Due to integer rounding, mid >= low && mid < high
+		mid := (low + high) / 2
+		count, err := tracker.GetBatchMessageCount(mid)
+		if err != nil {
+			return 0, err
+		}
+		if count < pos {
+			// Must narrow as mid >= low, therefore mid + 1 > low, therefore newLow > oldLow
+			// Keeps low precondition as msgCount(mid) < pos
+			low = mid + 1
+		} else if count == pos {
+			return mid + 1, nil
+		} else if count == pos+1 || mid == low { // implied: count > pos
+			return mid, nil
+		} else { // implied: count > pos + 1
+			// Must narrow as mid < high, therefore newHigh < lowHigh
+			// Keeps high precondition as msgCount(mid) > pos
+			high = mid
+		}
+	}
+	return low, nil
 }

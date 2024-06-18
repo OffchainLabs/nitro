@@ -34,5 +34,6 @@ type ExecutionRun interface {
 	GetLastStep() containers.PromiseInterface[*MachineStepResult]
 	GetProofAt(uint64) containers.PromiseInterface[[]byte]
 	PrepareRange(uint64, uint64) containers.PromiseInterface[struct{}]
+	CheckAlive(ctx context.Context) error
 	Close()
 }
