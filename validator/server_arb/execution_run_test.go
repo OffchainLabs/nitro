@@ -4,12 +4,11 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/validator"
 )
-
-var _ GlobalStateGetter = (*mockMachine)(nil)
 
 type mockMachine struct {
 	gs         validator.GoGlobalState
@@ -37,25 +36,48 @@ func (m *mockMachine) Step(ctx context.Context, stepSize uint64) error {
 	return nil
 }
 
+func (m *mockMachine) CloneMachineInterface() MachineInterface {
+	return &mockMachine{
+		gs:         validator.GoGlobalState{Batch: m.gs.Batch, PosInBatch: m.gs.PosInBatch},
+		totalSteps: m.totalSteps,
+	}
+}
+func (m *mockMachine) GetStepCount() uint64 {
+	return 0
+}
+func (m *mockMachine) IsRunning() bool {
+	return m.gs.PosInBatch < m.totalSteps-1
+}
+func (m *mockMachine) ValidForStep(uint64) bool {
+	return true
+}
+func (m *mockMachine) Status() uint8 {
+	if m.gs.PosInBatch == m.totalSteps-1 {
+		return uint8(validator.MachineStatusFinished)
+	}
+	return uint8(validator.MachineStatusRunning)
+}
+func (m *mockMachine) ProveNextStep() []byte {
+	return nil
+}
+func (m *mockMachine) Freeze()  {}
+func (m *mockMachine) Destroy() {}
+
 func Test_machineHashesWithStep(t *testing.T) {
 	mm := &mockMachine{}
 	e := &executionRun{}
 	ctx := context.Background()
 
-	machGetter := func(ctx context.Context, index uint64) (GlobalStateGetter, error) {
-		return mm, nil
-	}
 	t.Run("basic argument checks", func(t *testing.T) {
-		_, err := e.machineHashesWithStepSize(ctx, machineHashesWithStepSizeArgs{
-			stepSize: 0,
-		})
+		machStartIndex := uint64(0)
+		stepSize := uint64(0)
+		numRequiredHashes := uint64(0)
+		_, err := e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, numRequiredHashes)
 		if !strings.Contains(err.Error(), "step size cannot be 0") {
 			t.Fatal("Wrong error")
 		}
-		_, err = e.machineHashesWithStepSize(ctx, machineHashesWithStepSizeArgs{
-			stepSize:          1,
-			requiredNumHashes: 0,
-		})
+		stepSize = uint64(1)
+		_, err = e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, numRequiredHashes)
 		if !strings.Contains(err.Error(), "required number of hashes cannot be 0") {
 			t.Fatal("Wrong error")
 		}
@@ -64,13 +86,19 @@ func Test_machineHashesWithStep(t *testing.T) {
 		mm.gs = validator.GoGlobalState{
 			Batch: 1,
 		}
-		hashes, err := e.machineHashesWithStepSize(ctx, machineHashesWithStepSizeArgs{
-			fromBatch:         0,
-			stepSize:          1,
-			requiredNumHashes: 1,
-			startIndex:        0,
-			getMachineAtIndex: machGetter,
-		})
+		machStartIndex := uint64(0)
+		stepSize := uint64(1)
+		numRequiredHashes := uint64(1)
+		e.cache = &MachineCache{
+			buildingLock: make(chan struct{}, 1),
+			machines:     []MachineInterface{mm},
+			finalMachine: mm,
+		}
+		go func() {
+			<-time.After(time.Millisecond * 50)
+			e.cache.buildingLock <- struct{}{}
+		}()
+		hashes, err := e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, numRequiredHashes)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -89,14 +117,19 @@ func Test_machineHashesWithStep(t *testing.T) {
 		}
 		mm.gs = initialGs
 		mm.totalSteps = 20
+		machStartIndex := uint64(0)
 		stepSize := uint64(5)
-		hashes, err := e.machineHashesWithStepSize(ctx, machineHashesWithStepSizeArgs{
-			fromBatch:         1,
-			stepSize:          stepSize,
-			requiredNumHashes: 4,
-			startIndex:        0,
-			getMachineAtIndex: machGetter,
-		})
+		numRequiredHashes := uint64(4)
+		e.cache = &MachineCache{
+			buildingLock: make(chan struct{}, 1),
+			machines:     []MachineInterface{mm},
+			finalMachine: mm,
+		}
+		go func() {
+			<-time.After(time.Millisecond * 50)
+			e.cache.buildingLock <- struct{}{}
+		}()
+		hashes, err := e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, numRequiredHashes)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -128,14 +161,19 @@ func Test_machineHashesWithStep(t *testing.T) {
 		}
 		mm.gs = initialGs
 		mm.totalSteps = 20
+		machStartIndex := uint64(0)
 		stepSize := uint64(5)
-		hashes, err := e.machineHashesWithStepSize(ctx, machineHashesWithStepSizeArgs{
-			fromBatch:         1,
-			stepSize:          stepSize,
-			requiredNumHashes: 10,
-			startIndex:        0,
-			getMachineAtIndex: machGetter,
-		})
+		numRequiredHashes := uint64(10)
+		e.cache = &MachineCache{
+			buildingLock: make(chan struct{}, 1),
+			machines:     []MachineInterface{mm},
+			finalMachine: mm,
+		}
+		go func() {
+			<-time.After(time.Millisecond * 50)
+			e.cache.buildingLock <- struct{}{}
+		}()
+		hashes, err := e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, numRequiredHashes)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -152,8 +190,11 @@ func Test_machineHashesWithStep(t *testing.T) {
 			expectedHashes = append(expectedHashes, gs.Hash())
 		}
 		// The rest of the expected hashes should be the machine finished hash repeated.
-		for i := uint64(4); i < 10; i++ {
-			expectedHashes = append(expectedHashes, machineFinishedHash(mm.gs))
+		for len(expectedHashes) < 10 {
+			expectedHashes = append(expectedHashes, machineFinishedHash(validator.GoGlobalState{
+				Batch:      1,
+				PosInBatch: mm.totalSteps - 1,
+			}))
 		}
 		if len(hashes) != len(expectedHashes) {
 			t.Fatal("Wanted one hash")

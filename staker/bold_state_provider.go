@@ -64,7 +64,10 @@ func NewBOLDStateProvider(
 	validatorName string,
 	opts ...BOLDStateProviderOpt,
 ) (*BOLDStateProvider, error) {
-	historyCache := challengecache.New(cacheBaseDir)
+	historyCache, err := challengecache.New(cacheBaseDir)
+	if err != nil {
+		return nil, err
+	}
 	sp := &BOLDStateProvider{
 		validator:            blockValidator,
 		statelessValidator:   statelessValidator,
@@ -351,10 +354,19 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 		return nil, fmt.Errorf("could not get batch message count at %d: %w", cfg.FromBatch, err)
 	}
 	messageNum := (prevBatchMsgCount + arbutil.MessageIndex(cfg.BlockChallengeHeight))
+	stepHeights := make([]uint64, len(cfg.StepHeights))
+	for i, h := range cfg.StepHeights {
+		stepHeights[i] = uint64(h)
+	}
+	globalState, err := s.findGlobalStateFromMessageCountAndBatch(prevBatchMsgCount, l2stateprovider.Batch((cfg.FromBatch - 1)))
+	if err != nil {
+		return nil, err
+	}
 	cacheKey := &challengecache.Key{
-		WavmModuleRoot: cfg.WasmModuleRoot,
-		MessageHeight:  protocol.Height(messageNum),
-		StepHeights:    cfg.StepHeights,
+		RollupBlockHash: globalState.BlockHash,
+		WavmModuleRoot:  cfg.WasmModuleRoot,
+		MessageHeight:   uint64(messageNum),
+		StepHeights:     stepHeights,
 	}
 	if s.historyCache != nil {
 		cachedRoots, err := s.historyCache.Get(cacheKey, cfg.NumDesiredHashes)
@@ -380,7 +392,7 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 	}
 	ctxCheckAlive, cancelCheckAlive := ctxWithCheckAlive(ctx, execRun)
 	defer cancelCheckAlive()
-	stepLeaves := execRun.GetMachineHashesWithStepSize(uint64(cfg.FromBatch), uint64(cfg.MachineStartIndex), uint64(cfg.StepSize), cfg.NumDesiredHashes)
+	stepLeaves := execRun.GetMachineHashesWithStepSize(uint64(cfg.MachineStartIndex), uint64(cfg.StepSize), cfg.NumDesiredHashes)
 	result, err := stepLeaves.Await(ctxCheckAlive)
 	if err != nil {
 		return nil, err
