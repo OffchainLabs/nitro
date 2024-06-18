@@ -283,14 +283,9 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		}
 
 		balance := statedb.GetBalance(tx.From)
+		// evm.Context.BaseFee is already lowered to 0 when vm runs with NoBaseFee flag and 0 gas price
 		effectiveBaseFee := evm.Context.BaseFee
 		usergas := p.msg.GasLimit
-
-		if !p.msg.TxRunMode.ExecutedOnChain() && p.msg.GasFeeCap.BitLen() == 0 {
-			// In gas estimation or eth_call mode, we permit a zero gas fee cap.
-			// This matches behavior with normal tx gas estimation and eth_call.
-			effectiveBaseFee = common.Big0
-		}
 
 		maxGasCost := arbmath.BigMulByUint(tx.GasFeeCap, usergas)
 		maxFeePerGasTooLow := arbmath.BigLessThan(tx.GasFeeCap, effectiveBaseFee)
@@ -433,7 +428,12 @@ func (p *TxProcessor) GasChargingHook(gasRemaining *uint64) (common.Address, err
 
 	var gasNeededToStartEVM uint64
 	tipReceipient, _ := p.state.NetworkFeeAccount()
-	basefee := p.evm.Context.BaseFee
+	var basefee *big.Int
+	if p.evm.Context.BaseFeeInBlock != nil {
+		basefee = p.evm.Context.BaseFeeInBlock
+	} else {
+		basefee = p.evm.Context.BaseFee
+	}
 
 	var poster common.Address
 	if !p.msg.TxRunMode.ExecutedOnChain() {
@@ -594,7 +594,12 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 		return
 	}
 
-	basefee := p.evm.Context.BaseFee
+	var basefee *big.Int
+	if p.evm.Context.BaseFeeInBlock != nil {
+		basefee = p.evm.Context.BaseFeeInBlock
+	} else {
+		basefee = p.evm.Context.BaseFee
+	}
 	totalCost := arbmath.BigMul(basefee, arbmath.UintToBig(gasUsed)) // total cost = price of gas * gas burnt
 	computeCost := arbmath.BigSub(totalCost, p.PosterFee)            // total cost = network's compute + poster's L1 costs
 	if computeCost.Sign() < 0 {
@@ -656,14 +661,9 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 func (p *TxProcessor) ScheduledTxes() types.Transactions {
 	scheduled := types.Transactions{}
 	time := p.evm.Context.Time
+	// p.evm.Context.BaseFee is already lowered to 0 when vm runs with NoBaseFee flag and 0 gas price
 	effectiveBaseFee := p.evm.Context.BaseFee
 	chainID := p.evm.ChainConfig().ChainID
-
-	if !p.msg.TxRunMode.ExecutedOnChain() && p.msg.GasFeeCap.BitLen() == 0 {
-		// In gas estimation or eth_call mode, we permit a zero gas fee cap.
-		// This matches behavior with normal tx gas estimation and eth_call.
-		effectiveBaseFee = common.Big0
-	}
 
 	logs := p.evm.StateDB.GetCurrentTxLogs()
 	for _, log := range logs {
@@ -738,10 +738,8 @@ func (p *TxProcessor) GetPaidGasPrice() *big.Int {
 	gasPrice := p.evm.GasPrice
 	version := p.state.ArbOSVersion()
 	if version != 9 {
+		// p.evm.Context.BaseFee is already lowered to 0 when vm runs with NoBaseFee flag and 0 gas price
 		gasPrice = p.evm.Context.BaseFee
-		if !p.msg.TxRunMode.ExecutedOnChain() && p.msg.GasFeeCap.Sign() == 0 {
-			gasPrice = common.Big0
-		}
 	}
 	return gasPrice
 }
