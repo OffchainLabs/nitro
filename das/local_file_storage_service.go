@@ -437,14 +437,14 @@ func (tl *trieLayout) prune(pruneTil time.Time) error {
 		if stat.Nlink == 1 {
 			err = recursivelyDeleteUntil(pathByHash, byDataHash)
 			if err != nil {
-
+				return err
 			}
 		}
 
 		pruned++
 	}
 	if pruned > 0 {
-		log.Info("local file store pruned expired batches", "count", pruned, "pruneTil", pruneTil, "duration", time.Since(pruningStart))
+		log.Info("Local file store pruned expired batches", "count", pruned, "pruneTil", pruneTil, "duration", time.Since(pruningStart))
 	}
 	return nil
 }
