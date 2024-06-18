@@ -65,10 +65,15 @@ type Cache struct {
 }
 
 // New cache from a base directory path.
-func New(baseDir string) *Cache {
+func New(baseDir string) (*Cache, error) {
+	if _, err := os.Stat(baseDir); err != nil {
+		if err := os.MkdirAll(baseDir, os.ModePerm); err != nil {
+			return nil, fmt.Errorf("could not make base cache directory %s: %w", baseDir, err)
+		}
+	}
 	return &Cache{
 		baseDir: baseDir,
-	}
+	}, nil
 }
 
 // Key for cache lookups includes the wavm module root of a challenge, as well
