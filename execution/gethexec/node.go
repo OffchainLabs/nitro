@@ -277,8 +277,12 @@ func CreateExecutionNode(
 
 }
 
-func (n *ExecutionNode) GetL1GasPriceEstimate() (uint64, error) {
+func (n *ExecutionNode) GetL1GasPriceEstimate() uint64 {
 	return n.ExecEngine.GetL1GasPriceEstimate()
+}
+
+func (n *ExecutionNode) TrimCache(to arbutil.MessageIndex) {
+	n.ExecEngine.TrimCache(to)
 }
 
 func (n *ExecutionNode) Initialize(ctx context.Context) error {
