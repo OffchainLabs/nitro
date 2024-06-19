@@ -69,7 +69,6 @@ fn main() -> eyre::Result<()> {
                 MachineStatus::Errored => {
                     println!("Errored");
                     break;
-                    // bail!("Machine errored => position {}", machine.get_steps())
                 }
                 MachineStatus::TooFar => {
                     bail!("Machine too far => position {}", machine.get_steps())
