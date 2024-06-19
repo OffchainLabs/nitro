@@ -133,10 +133,6 @@ const (
 	BlockHashMismatchLogMsg = "BlockHash from feed doesn't match locally computed hash. Check feed source."
 )
 
-func (s *TransactionStreamer) CurrentEstimateOfL1GasPrice() uint64 {
-	return s.exec.GetL1GasPriceEstimate()
-}
-
 // Encodes a uint64 as bytes in a lexically sortable manner for database iteration.
 // Generally this is only used for database keys, which need sorted.
 // A shorter RLP encoding is usually used for database values.

@@ -681,7 +681,7 @@ func (s *ExecutionEngine) ResultAtPos(pos arbutil.MessageIndex) (*execution.Mess
 	return s.resultFromHeader(s.bc.GetHeaderByNumber(s.MessageIndexToBlockNumber(pos)))
 }
 
-func (s *ExecutionEngine) GetL1GasPriceEstimate() uint64 {
+func (s *ExecutionEngine) getL1GasPriceEstimate() uint64 {
 	bc := s.bc
 	latestHeader := bc.CurrentBlock()
 	latestState, err := bc.StateAt(latestHeader.Root)

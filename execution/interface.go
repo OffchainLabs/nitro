@@ -56,7 +56,6 @@ type ExecutionSequencer interface {
 	ForwardTo(url string) error
 	SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error
 	NextDelayedMessageNumber() (uint64, error)
-	GetL1GasPriceEstimate() uint64
 	TrimCache(to arbutil.MessageIndex)
 }
 
