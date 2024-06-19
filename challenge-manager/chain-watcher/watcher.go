@@ -251,7 +251,6 @@ func (w *Watcher) Start(ctx context.Context) {
 			toBlock := latestBlock.Number.Uint64()
 			if fromBlock == toBlock {
 				w.initialSyncCompleted.Store(true)
-				log.Info("BOLD chain event scraper caught up to latest block", "blockNum", toBlock)
 				continue
 			}
 			// Get a challenge manager instance and filterer.

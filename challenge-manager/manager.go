@@ -69,6 +69,7 @@ type Manager struct {
 	mode                                types.Mode
 	maxDelaySeconds                     int
 	claimedAssertionsInChallenge        *threadsafe.LruSet[protocol.AssertionHash]
+	headBlockSubscriptions              bool
 	// API
 	apiAddr   string
 	apiDBPath string
@@ -152,6 +153,12 @@ func WithTrackChallengeParentAssertionHashes(trackChallengeParentAssertionHashes
 	}
 }
 
+func WithHeadBlockSubscriptions() Opt {
+	return func(val *Manager) {
+		val.headBlockSubscriptions = true
+	}
+}
+
 // New sets up a challenge manager instance provided a protocol, state manager, and additional options.
 func New(
 	ctx context.Context,
@@ -177,6 +184,7 @@ func New(
 		assertionScanningInterval:    time.Minute,
 		assertionConfirmingInterval:  time.Second * 10,
 		averageTimeForBlockCreation:  time.Second * 12,
+		headBlockSubscriptions:       false,
 		claimedAssertionsInChallenge: threadsafe.NewLruSet[protocol.AssertionHash](1000, threadsafe.LruSetWithMetric[protocol.AssertionHash]("claimedAssertionsInChallenge")),
 	}
 	for _, o := range opts {
@@ -440,6 +448,14 @@ func (m *Manager) listenForBlockEvents(ctx context.Context) {
 
 	// Then, once the watcher has reached the latest head, we
 	// fire off a block notifications events normally.
+	if m.headBlockSubscriptions {
+		m.tickOnHeadBlockSubscriptions(ctx)
+	} else {
+		m.tickAtInterval(ctx)
+	}
+}
+
+func (m *Manager) tickOnHeadBlockSubscriptions(ctx context.Context) {
 	ch := make(chan *gethtypes.Header, 100)
 	sub, err := m.chain.Backend().SubscribeNewHead(ctx, ch)
 	if err != nil {
@@ -460,6 +476,19 @@ func (m *Manager) listenForBlockEvents(ctx context.Context) {
 		case <-sub.Err():
 		case <-ctx.Done():
 			return
+		}
+	}
+}
+
+func (m *Manager) tickAtInterval(ctx context.Context) {
+	ticker := time.NewTicker(time.Second * 12)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(time.Second):
+			m.newBlockNotifier.Broadcast(ctx, nil)
 		}
 	}
 }

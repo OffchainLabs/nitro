@@ -270,6 +270,7 @@ func runEndToEndTest(t *testing.T, cfg *e2eConfig) {
 		challengemanager.WithAssertionPostingInterval(cfg.timings.assertionPostingInterval),
 		challengemanager.WithAssertionScanningInterval(cfg.timings.assertionScanningInterval),
 		challengemanager.WithAssertionConfirmingInterval(cfg.timings.assertionConfirmationAttemptInterval),
+		challengemanager.WithHeadBlockSubscriptions(),
 	}
 
 	name := "honest"

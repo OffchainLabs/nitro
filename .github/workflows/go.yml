@@ -54,6 +54,7 @@ jobs:
         with:
           version: latest
           args: --timeout=10m
+          skip-pkg-cache: true
 
   build:
     name: Build and Test

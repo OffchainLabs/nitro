@@ -20,6 +20,10 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 )
 
+// ErrCachedTimeSufficient is an error received from the challenge manager smart contract
+// when attempting to update an edge's onchain cached timer to a value less than what it already has.
+var ErrCachedTimeSufficient = "CachedTimeSufficient"
+
 // ChainBackend to interact with the underlying blockchain.
 type ChainBackend interface {
 	bind.ContractBackend
