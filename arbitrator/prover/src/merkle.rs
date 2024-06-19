@@ -44,50 +44,26 @@ use zerohashes::ZERO_HASHES;
 use self::zerohashes::EMPTY_HASH;
 
 #[cfg(feature = "counters")]
-lazy_static! {
-    static ref NEW_COUNTERS: HashMap<&'static MerkleType, AtomicUsize> = {
-        let mut map = HashMap::new();
-        map.insert(&MerkleType::Empty, AtomicUsize::new(0));
-        map.insert(&MerkleType::Value, AtomicUsize::new(0));
-        map.insert(&MerkleType::Function, AtomicUsize::new(0));
-        map.insert(&MerkleType::Instruction, AtomicUsize::new(0));
-        map.insert(&MerkleType::Memory, AtomicUsize::new(0));
-        map.insert(&MerkleType::Table, AtomicUsize::new(0));
-        map.insert(&MerkleType::TableElement, AtomicUsize::new(0));
-        map.insert(&MerkleType::Module, AtomicUsize::new(0));
-        map
+macro_rules! init_counters {
+    ($name:ident) => {
+        lazy_static! {
+            static ref $name: HashMap<&'static MerkleType, AtomicUsize> = {
+                let mut map = HashMap::new();
+                $(map.insert(&MerkleType::$variant, AtomicUsize::new(0));)*
+                map
+            };
+        }
     };
 }
+
 #[cfg(feature = "counters")]
-lazy_static! {
-    static ref ROOT_COUNTERS: HashMap<&'static MerkleType, AtomicUsize> = {
-        let mut map = HashMap::new();
-        map.insert(&MerkleType::Empty, AtomicUsize::new(0));
-        map.insert(&MerkleType::Value, AtomicUsize::new(0));
-        map.insert(&MerkleType::Function, AtomicUsize::new(0));
-        map.insert(&MerkleType::Instruction, AtomicUsize::new(0));
-        map.insert(&MerkleType::Memory, AtomicUsize::new(0));
-        map.insert(&MerkleType::Table, AtomicUsize::new(0));
-        map.insert(&MerkleType::TableElement, AtomicUsize::new(0));
-        map.insert(&MerkleType::Module, AtomicUsize::new(0));
-        map
-    };
-}
+init_counters!(NEW_COUNTERS);
+
 #[cfg(feature = "counters")]
-lazy_static! {
-    static ref SET_COUNTERS: HashMap<&'static MerkleType, AtomicUsize> = {
-        let mut map = HashMap::new();
-        map.insert(&MerkleType::Empty, AtomicUsize::new(0));
-        map.insert(&MerkleType::Value, AtomicUsize::new(0));
-        map.insert(&MerkleType::Function, AtomicUsize::new(0));
-        map.insert(&MerkleType::Instruction, AtomicUsize::new(0));
-        map.insert(&MerkleType::Memory, AtomicUsize::new(0));
-        map.insert(&MerkleType::Table, AtomicUsize::new(0));
-        map.insert(&MerkleType::TableElement, AtomicUsize::new(0));
-        map.insert(&MerkleType::Module, AtomicUsize::new(0));
-        map
-    };
-}
+init_counters!(ROOT_COUNTERS);
+
+#[cfg(feature = "counters")]
+init_counters!(SET_COUNTERS);
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize, Sequence)]
 pub enum MerkleType {
@@ -213,7 +189,7 @@ fn new_layer(ty: MerkleType, layer: &Vec<Bytes32>, empty_hash: &'static Bytes32)
 
 #[inline]
 #[cfg(not(feature = "rayon"))]
-fn new_layer(ty: MerkleType, layer: &Vec<Bytes32>, empty_hash: &'static Bytes32) -> Vec<Bytes32> {
+fn new_layer(ty: MerkleType, layer: &[Bytes32], empty_hash: &'static Bytes32) -> Vec<Bytes32> {
     let new_layer = layer
         .chunks(2)
         .map(|chunk| hash_node(ty, chunk[0], chunk.get(1).unwrap_or(empty_hash)))
@@ -275,15 +251,23 @@ impl Merkle {
     }
 
     fn rehash(&self, layers: &mut Layers) {
+        // If nothing is dirty, then there's no need to rehash.
         if layers.dirt.is_empty() || layers.dirt[0].is_empty() {
             return;
         }
+        // Process dirty indices starting from layer 1 (layer 0 is the leaves).
         for layer_i in 1..layers.data.len() {
             let dirty_i = layer_i - 1;
-            let dirt = layers.dirt[dirty_i].clone();
+            // Consume this layer's dirty indices.
+            let dirt = std::mem::take(&mut layers.dirt[dirty_i]);
+            // It is important to process the dirty indices in order because
+            // when the leaves grown since the last rehash, the new parent is
+            // simply pused to the end of the layer's data.
             for idx in dirt.iter().sorted() {
                 let left_child_idx = idx << 1;
                 let right_child_idx = left_child_idx + 1;
+                // The left child is guaranteed to exist, but the right one
+                // might not if the number of child nodes is odd.
                 let left = layers.data[layer_i - 1][left_child_idx];
                 let right = layers.data[layer_i - 1]
                     .get(right_child_idx)
@@ -292,13 +276,14 @@ impl Merkle {
                 if *idx < layers.data[layer_i].len() {
                     layers.data[layer_i][*idx] = new_hash;
                 } else {
+                    // Push the new parent hash onto the end of the layer.
                     layers.data[layer_i].push(new_hash);
                 }
+                // Mark the node's parent as dirty unless it's the root.
                 if layer_i < layers.data.len() - 1 {
                     layers.dirt[dirty_i + 1].insert(idx >> 1);
                 }
             }
-            layers.dirt[dirty_i].clear();
         }
     }
 

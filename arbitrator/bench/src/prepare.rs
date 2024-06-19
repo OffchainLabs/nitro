@@ -36,7 +36,6 @@ pub fn prepare_machine(
     let preimage_resolver = Arc::new(Box::new(preimage_resolver));
 
     let binary_path = Path::new(&machines);
-    // println!("Creating machine from binary_path");
     let mut mach = Machine::new_from_wavm(binary_path, always_merkleize)?;
 
     let block_hash: [u8; 32] = data.start_state.block_hash.try_into().unwrap();
@@ -50,18 +49,13 @@ pub fn prepare_machine(
         u64_vals,
     };
 
-    //println!("Setting global state");
     mach.set_global_state(start_state);
-    // println!("After setting global state: {:?}", mach.get_global_state());
 
-    // println!("Setting preimage resolver");
     mach.set_preimage_resolver(preimage_resolver);
 
-    // println!("Adding sequencer inbox message");
     let identifier = argument_data_to_inbox(0).unwrap();
     mach.add_inbox_msg(identifier, data.batch_info.number, data.batch_info.data);
 
-    // println!("Adding delayed inbox message");
     let identifier = argument_data_to_inbox(1).unwrap();
     mach.add_inbox_msg(identifier, data.delayed_msg_nr, data.delayed_msg);
 
