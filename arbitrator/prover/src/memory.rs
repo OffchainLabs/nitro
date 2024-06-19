@@ -171,10 +171,9 @@ impl Memory {
         let size = leaf_hashes.len();
         let m = Merkle::new_advanced(MerkleType::Memory, leaf_hashes, Self::MEMORY_LAYERS);
         if size < leaves {
-            m.resize(leaves).expect(&format!(
-                "Couldn't resize merkle tree from {} to {}",
-                size, leaves
-            ));
+            m.resize(leaves).unwrap_or_else(|_| {
+                panic!("Couldn't resize merkle tree from {} to {}", size, leaves)
+            });
         }
         self.dirty_indices.lock().unwrap().clear();
         Cow::Owned(m)
@@ -349,11 +348,13 @@ impl Memory {
     pub fn resize(&mut self, new_size: usize) {
         self.buffer.resize(new_size, 0);
         if let Some(merkle) = self.merkle.take() {
-            merkle.resize(new_size).expect(&format!(
-                "Couldn't resize merkle tree from {} to {}",
-                merkle.len(),
-                new_size
-            ));
+            merkle.resize(new_size).unwrap_or_else(|_| {
+                panic!(
+                    "Couldn't resize merkle tree from {} to {}",
+                    merkle.len(),
+                    new_size
+                )
+            });
             self.merkle = Some(merkle);
         }
     }
