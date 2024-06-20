@@ -140,7 +140,6 @@ pub unsafe extern "C" fn stylus_activate(
     version: u16,
     debug: bool,
     output: *mut RustBytes,
-    asm_len: *mut usize,
     codehash: *const Bytes32,
     module_hash: *mut Bytes32,
     stylus_data: *mut StylusData,
@@ -152,18 +151,34 @@ pub unsafe extern "C" fn stylus_activate(
     let codehash = &*codehash;
     let gas = &mut *gas;
 
-    let (asm, module, info) =
-        match native::activate(wasm, codehash, version, page_limit, debug, gas) {
-            Ok(val) => val,
-            Err(err) => return output.write_err(err),
-        };
-    *asm_len = asm.len();
+    let (module, info) = match native::activate(wasm, codehash, version, page_limit, debug, gas) {
+        Ok(val) => val,
+        Err(err) => return output.write_err(err),
+    };
+
     *module_hash = module.hash();
     *stylus_data = info;
 
-    let mut data = asm;
-    data.extend(&*module.into_bytes());
-    output.write(data);
+    output.write(module.into_bytes());
+    UserOutcomeKind::Success
+}
+
+#[no_mangle]
+pub unsafe extern "C" fn stylus_compile(
+    wasm: GoSliceData,
+    version: u16,
+    debug: bool,
+    output: *mut RustBytes,
+) -> UserOutcomeKind {
+    let wasm = wasm.slice();
+    let output = &mut *output;
+
+    let asm = match native::compile(wasm, version, debug) {
+        Ok(val) => val,
+        Err(err) => return output.write_err(err),
+    };
+
+    output.write(asm);
     UserOutcomeKind::Success
 }
 
