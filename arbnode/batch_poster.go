@@ -392,7 +392,7 @@ type simulatedMuxBackend struct {
 	positionWithinMessage uint64
 	seqMsg                []byte
 	allMsgs               map[arbutil.MessageIndex]*arbostypes.MessageWithMetadata
-	delayedInboxPos       int
+	delayedInboxStart     uint64
 	delayedInbox          []*arbostypes.MessageWithMetadata
 }
 
@@ -406,11 +406,11 @@ func (b *simulatedMuxBackend) GetPositionWithinMessage() uint64    { return b.po
 func (b *simulatedMuxBackend) SetPositionWithinMessage(pos uint64) { b.positionWithinMessage = pos }
 
 func (b *simulatedMuxBackend) ReadDelayedInbox(seqNum uint64) (*arbostypes.L1IncomingMessage, error) {
-	if b.delayedInboxPos < len(b.delayedInbox) {
-		b.delayedInboxPos++
-		return b.delayedInbox[b.delayedInboxPos-1].Message, nil
+	pos := arbmath.SaturatingUSub(seqNum, b.delayedInboxStart)
+	if pos < uint64(len(b.delayedInbox)) {
+		return b.delayedInbox[pos].Message, nil
 	}
-	return nil, fmt.Errorf("error serving ReadDelayedInbox, all delayed messages were read. Requested delayed message position:%d, Total delayed messages: %d", b.delayedInboxPos, len(b.delayedInbox))
+	return nil, fmt.Errorf("error serving ReadDelayedInbox, all delayed messages were read. Requested delayed message position:%d, Total delayed messages: %d", pos, len(b.delayedInbox))
 }
 
 type AccessListOpts struct {
@@ -1363,6 +1363,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		seqMsg = binary.BigEndian.AppendUint64(seqMsg, b.building.segments.delayedMsg)
 		seqMsg = append(seqMsg, sequencerMsg...)
 		b.building.muxBackend.seqMsg = seqMsg
+		b.building.muxBackend.delayedInboxStart = batchPosition.DelayedMessageCount
 		simMux := arbstate.NewInboxMultiplexer(b.building.muxBackend, batchPosition.DelayedMessageCount, dapReaders, daprovider.KeysetValidate)
 		log.Info("Begin checking the correctness of batch against inbox multiplexer", "startMsgSeqNum", batchPosition.MessageCount, "endMsgSeqNum", b.building.msgCount-1)
 		for i := batchPosition.MessageCount; i < b.building.msgCount; i++ {
