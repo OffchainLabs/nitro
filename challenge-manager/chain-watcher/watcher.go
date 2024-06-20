@@ -919,7 +919,7 @@ type filterRange struct {
 // Gets the start and end block numbers for our filter queries, starting from the
 // latest confirmed assertion's block number up to the latest block number.
 func (w *Watcher) getStartEndBlockNum(ctx context.Context) (filterRange, error) {
-	latestConfirmed, err := w.chain.LatestConfirmed(ctx)
+	latestConfirmed, err := w.chain.LatestConfirmed(ctx, w.chain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
 	if err != nil {
 		return filterRange{}, err
 	}

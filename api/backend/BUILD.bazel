@@ -12,6 +12,7 @@ go_library(
         "//challenge-manager/chain-watcher",
         "//challenge-manager/edge-tracker",
         "//containers/option",
+        "@com_github_ethereum_go_ethereum//accounts/abi/bind",
         "@com_github_ethereum_go_ethereum//common",
     ],
 )

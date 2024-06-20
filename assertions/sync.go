@@ -20,7 +20,7 @@ import (
 
 func (m *Manager) syncAssertions(ctx context.Context) {
 	latestConfirmed, err := retry.UntilSucceeds(ctx, func() (protocol.Assertion, error) {
-		return m.chain.LatestConfirmed(ctx)
+		return m.chain.LatestConfirmed(ctx, m.chain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
 	})
 	if err != nil {
 		log.Error("Could not get latest confirmed assertion", "err", err)
@@ -520,7 +520,7 @@ func (m *Manager) saveAssertionToDB(ctx context.Context, creationInfo *protocol.
 	if err != nil {
 		return err
 	}
-	assertion, err := m.chain.GetAssertion(ctx, assertionHash)
+	assertion, err := m.chain.GetAssertion(ctx, &bind.CallOpts{Context: ctx}, assertionHash)
 	if err != nil {
 		return err
 	}

@@ -6,8 +6,9 @@ package mocks
 
 import (
 	"context"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"math/big"
+
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/containers/option"
@@ -413,8 +414,8 @@ func (m *MockProtocol) MinAssertionPeriodBlocks(ctx context.Context) (uint64, er
 	return args.Get(0).(uint64), args.Error(1)
 }
 
-func (m *MockProtocol) GetAssertion(ctx context.Context, id protocol.AssertionHash) (protocol.Assertion, error) {
-	args := m.Called(ctx, id)
+func (m *MockProtocol) GetAssertion(ctx context.Context, opts *bind.CallOpts, id protocol.AssertionHash) (protocol.Assertion, error) {
+	args := m.Called(ctx, opts, id)
 	return args.Get(0).(protocol.Assertion), args.Error(1)
 }
 func (m *MockProtocol) AssertionStatus(ctx context.Context, id protocol.AssertionHash) (protocol.AssertionStatus, error) {
@@ -442,8 +443,8 @@ func (m *MockProtocol) LatestCreatedAssertion(ctx context.Context) (protocol.Ass
 	return args.Get(0).(protocol.Assertion), args.Error(1)
 }
 
-func (m *MockProtocol) LatestConfirmed(ctx context.Context) (protocol.Assertion, error) {
-	args := m.Called(ctx)
+func (m *MockProtocol) LatestConfirmed(ctx context.Context, opts *bind.CallOpts) (protocol.Assertion, error) {
+	args := m.Called(ctx, opts)
 	return args.Get(0).(protocol.Assertion), args.Error(1)
 }
 

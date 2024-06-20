@@ -16,6 +16,7 @@ import (
 	watcher "github.com/OffchainLabs/bold/challenge-manager/chain-watcher"
 	edgetracker "github.com/OffchainLabs/bold/challenge-manager/edge-tracker"
 	"github.com/OffchainLabs/bold/containers/option"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 )
 
@@ -64,7 +65,7 @@ func (b *Backend) GetAssertions(ctx context.Context, opts ...db.AssertionOption)
 	}
 	if query.ShouldForceUpdate() {
 		for _, a := range assertions {
-			fetchedAssertion, err := b.chainDataFetcher.GetAssertion(ctx, protocol.AssertionHash{Hash: a.Hash})
+			fetchedAssertion, err := b.chainDataFetcher.GetAssertion(ctx, &bind.CallOpts{Context: ctx}, protocol.AssertionHash{Hash: a.Hash})
 			if err != nil {
 				return nil, err
 			}
@@ -274,7 +275,7 @@ func (b *Backend) GetTrackedRoyalEdges(ctx context.Context) ([]*api.JsonEdgesByC
 }
 
 func (b *Backend) LatestConfirmedAssertion(ctx context.Context) (*api.JsonAssertion, error) {
-	latestConfirmedAssertion, err := b.chainDataFetcher.LatestConfirmed(ctx)
+	latestConfirmedAssertion, err := b.chainDataFetcher.LatestConfirmed(ctx, &bind.CallOpts{Context: ctx})
 	if err != nil {
 		return nil, err
 	}
@@ -287,7 +288,7 @@ func (b *Backend) LatestConfirmedAssertion(ctx context.Context) (*api.JsonAssert
 	if err != nil {
 		return nil, err
 	}
-	fetchedAssertion, err := b.chainDataFetcher.GetAssertion(ctx, hash)
+	fetchedAssertion, err := b.chainDataFetcher.GetAssertion(ctx, &bind.CallOpts{Context: ctx}, hash)
 	if err != nil {
 		return nil, err
 	}

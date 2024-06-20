@@ -9,6 +9,7 @@ import (
 
 	"github.com/OffchainLabs/bold/containers/option"
 	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/log"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
@@ -21,7 +22,7 @@ import (
 // and starting a challenge transaction. If the challenge creation is successful, we add a leaf
 // with an associated history commitment to it and spawn a challenge tracker in the background.
 func (m *Manager) ChallengeAssertion(ctx context.Context, id protocol.AssertionHash) (bool, error) {
-	assertion, err := m.chain.GetAssertion(ctx, id)
+	assertion, err := m.chain.GetAssertion(ctx, &bind.CallOpts{Context: ctx}, id)
 	if err != nil {
 		return false, errors.Wrapf(err, "could not get assertion to challenge with id %#x", id)
 	}

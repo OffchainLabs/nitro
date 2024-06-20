@@ -11,7 +11,6 @@ import (
 	"flag"
 	"fmt"
 	"math/big"
-	"sort"
 	"strings"
 	"time"
 
@@ -228,10 +227,10 @@ func (a *AssertionChain) Backend() protocol.ChainBackend {
 	return a.backend
 }
 
-func (a *AssertionChain) GetAssertion(ctx context.Context, assertionHash protocol.AssertionHash) (protocol.Assertion, error) {
+func (a *AssertionChain) GetAssertion(ctx context.Context, opts *bind.CallOpts, assertionHash protocol.AssertionHash) (protocol.Assertion, error) {
 	var b [32]byte
 	copy(b[:], assertionHash.Bytes())
-	res, err := a.userLogic.GetAssertion(a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}), b)
+	res, err := a.userLogic.GetAssertion(opts, b)
 	if err != nil {
 		return nil, err
 	}
@@ -257,12 +256,12 @@ func (a *AssertionChain) AssertionStatus(ctx context.Context, assertionHash prot
 	return protocol.AssertionStatus(res.Status), nil
 }
 
-func (a *AssertionChain) LatestConfirmed(ctx context.Context) (protocol.Assertion, error) {
-	res, err := a.rollup.LatestConfirmed(a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
+func (a *AssertionChain) LatestConfirmed(ctx context.Context, opts *bind.CallOpts) (protocol.Assertion, error) {
+	res, err := a.rollup.LatestConfirmed(opts)
 	if err != nil {
 		return nil, err
 	}
-	return a.GetAssertion(ctx, protocol.AssertionHash{Hash: res})
+	return a.GetAssertion(ctx, opts, protocol.AssertionHash{Hash: res})
 }
 
 // Returns true if the staker's address is currently staked in the assertion chain.
@@ -293,7 +292,7 @@ func (a *AssertionChain) IsChallengeComplete(
 	if !parentIsConfirmed {
 		return false, nil
 	}
-	latestConfirmed, err := a.LatestConfirmed(ctx)
+	latestConfirmed, err := a.LatestConfirmed(ctx, a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
 	if err != nil {
 		return false, err
 	}
@@ -381,7 +380,8 @@ func (a *AssertionChain) createAndStakeOnAssertion(
 	if err != nil {
 		return nil, errors.Wrap(err, "could not compute assertion hash")
 	}
-	existingAssertion, err := a.GetAssertion(ctx, protocol.AssertionHash{Hash: computedHash})
+	// Check if the assertion already exists based on latest head, which means we should not make a mutating call.
+	existingAssertion, err := a.GetAssertion(ctx, &bind.CallOpts{Context: ctx}, protocol.AssertionHash{Hash: computedHash})
 	switch {
 	case err == nil:
 		return existingAssertion, nil
@@ -411,9 +411,10 @@ func (a *AssertionChain) createAndStakeOnAssertion(
 			computedHash,
 		)
 	})
+	opts := a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx})
 	if createErr := handleCreateAssertionError(err, postState.GlobalState.BlockHash); createErr != nil {
 		if strings.Contains(err.Error(), "already exists") {
-			assertionItem, err2 := a.GetAssertion(ctx, protocol.AssertionHash{Hash: computedHash})
+			assertionItem, err2 := a.GetAssertion(ctx, opts, protocol.AssertionHash{Hash: computedHash})
 			if err2 != nil {
 				return nil, err2
 			}
@@ -437,7 +438,7 @@ func (a *AssertionChain) createAndStakeOnAssertion(
 	if !found {
 		return nil, errors.New("could not find assertion created event in logs")
 	}
-	return a.GetAssertion(ctx, protocol.AssertionHash{Hash: assertionCreated.AssertionHash})
+	return a.GetAssertion(ctx, opts, protocol.AssertionHash{Hash: assertionCreated.AssertionHash})
 }
 
 func (a *AssertionChain) GenesisAssertionHash(ctx context.Context) (common.Hash, error) {
@@ -561,7 +562,7 @@ func (a *AssertionChain) ConfirmAssertionByChallengeWinner(
 	if err != nil {
 		return err
 	}
-	latestConfirmed, err := a.LatestConfirmed(ctx)
+	latestConfirmed, err := a.LatestConfirmed(ctx, &bind.CallOpts{Context: ctx})
 	if err != nil {
 		return err
 	}
@@ -712,97 +713,6 @@ func (a *AssertionChain) TopLevelClaimHeights(ctx context.Context, edgeId protoc
 	}
 	edge := edgeOpt.Unwrap()
 	return edge.TopLevelClaimHeight(ctx)
-}
-
-// LatestCreatedAssertion retrieves the latest assertion from the rollup contract by reading the
-// latest confirmed assertion and then querying the contract log events for all assertions created
-// since that block and returning the most recent one.
-func (a *AssertionChain) LatestCreatedAssertion(ctx context.Context) (protocol.Assertion, error) {
-	latestConfirmed, err := a.LatestConfirmed(ctx)
-	if err != nil {
-		return nil, err
-	}
-	createdAtBlock := latestConfirmed.CreatedAtBlock()
-	var query = ethereum.FilterQuery{
-		FromBlock: new(big.Int).SetUint64(createdAtBlock),
-		ToBlock:   a.GetDesiredRpcHeadBlockNumber(),
-		Addresses: []common.Address{a.rollupAddr},
-		Topics:    [][]common.Hash{{assertionCreatedId}},
-	}
-	logs, err := a.backend.FilterLogs(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-
-	// The logs are likely sorted by blockNumber, index, but we find the latest one, just in case,
-	// while ignoring any removed logs from a reorged event.
-	var latestBlockNumber uint64
-	var latestLogIndex uint
-	var latestLog *types.Log
-	for _, log := range logs {
-		l := log
-		if l.Removed {
-			continue
-		}
-		if l.BlockNumber > latestBlockNumber ||
-			(l.BlockNumber == latestBlockNumber && l.Index >= latestLogIndex) {
-			latestBlockNumber = l.BlockNumber
-			latestLogIndex = l.Index
-			latestLog = &l
-		}
-	}
-
-	if latestLog == nil {
-		return nil, errors.New("no assertion creation events found")
-	}
-
-	creationEvent, err := a.rollup.ParseAssertionCreated(*latestLog)
-	if err != nil {
-		return nil, err
-	}
-	return a.GetAssertion(ctx, protocol.AssertionHash{Hash: creationEvent.AssertionHash})
-}
-
-// LatestCreatedAssertionHashes retrieves the latest assertion hashes posted to the rollup contract
-// since the last confirmed assertion block. The results are ordered in ascending order by block
-// number, log index.
-func (a *AssertionChain) LatestCreatedAssertionHashes(ctx context.Context) ([]protocol.AssertionHash, error) {
-	latestConfirmed, err := a.LatestConfirmed(ctx)
-	if err != nil {
-		return nil, err
-	}
-	createdAtBlock := latestConfirmed.CreatedAtBlock()
-	var query = ethereum.FilterQuery{
-		FromBlock: new(big.Int).SetUint64(createdAtBlock),
-		ToBlock:   a.GetDesiredRpcHeadBlockNumber(),
-		Addresses: []common.Address{a.rollupAddr},
-		Topics:    [][]common.Hash{{assertionCreatedId}},
-	}
-	logs, err := a.backend.FilterLogs(ctx, query)
-	if err != nil {
-		return nil, err
-	}
-
-	sort.Slice(logs, func(i, j int) bool {
-		if logs[i].BlockNumber == logs[j].BlockNumber {
-			return logs[i].Index < logs[j].Index
-		}
-		return logs[i].BlockNumber < logs[j].BlockNumber
-	})
-
-	var assertionHashes []protocol.AssertionHash
-	for _, l := range logs {
-		if len(l.Topics) < 2 {
-			continue // Should never happen.
-		}
-		if l.Removed {
-			continue
-		}
-		// The first topic is the event id, the second is the indexed assertion hash.
-		assertionHashes = append(assertionHashes, protocol.AssertionHash{Hash: l.Topics[1]})
-	}
-
-	return assertionHashes, nil
 }
 
 // ReadAssertionCreationInfo for an assertion sequence number by looking up its creation
