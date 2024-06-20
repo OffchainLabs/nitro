@@ -212,13 +212,13 @@ func (b *NodeBuilder) Build(t *testing.T) func() {
 	if b.withL1 {
 		l1, l2 := NewTestClient(b.ctx), NewTestClient(b.ctx)
 		b.L2Info, l2.ConsensusNode, l2.Client, l2.Stack, b.L1Info, l1.L1Backend, l1.Client, l1.Stack =
-			createTestNodeWithL1(t, b.ctx, b.isSequencer, b.nodeConfig, b.execConfig, b.chainConfig, b.l2StackConfig, b.L2Info)
+			createTestNodeWithL1(t, b.ctx, b.isSequencer, b.nodeConfig, b.execConfig, b.chainConfig, b.l2StackConfig, b.L2Info, b.dataDir)
 		b.L1, b.L2 = l1, l2
 		b.L1.cleanup = func() { requireClose(t, b.L1.Stack) }
 	} else {
 		l2 := NewTestClient(b.ctx)
 		b.L2Info, l2.ConsensusNode, l2.Client =
-			createTestNode(t, b.ctx, b.L2Info, b.nodeConfig, b.execConfig, b.chainConfig, b.takeOwnership)
+			createTestNode(t, b.ctx, b.L2Info, b.nodeConfig, b.execConfig, b.chainConfig, b.takeOwnership, b.dataDir)
 		b.L2 = l2
 	}
 	b.L2.ExecNode = getExecNode(t, b.L2.ConsensusNode)
@@ -820,6 +820,7 @@ func createTestNodeWithL1(
 	chainConfig *params.ChainConfig,
 	stackConfig *node.Config,
 	l2info_in info,
+	dataDir string,
 ) (
 	l2info info, currentNode *arbnode.Node, l2client *ethclient.Client, l2stack *node.Node,
 	l1info info, l1backend *eth.Ethereum, l1client *ethclient.Client, l1stack *node.Node,
@@ -843,7 +844,7 @@ func createTestNodeWithL1(
 		l2info = NewArbTestInfo(t, chainConfig.ChainID)
 	}
 	addresses, initMessage := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig)
-	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, initMessage, stackConfig, &execConfig.Caching)
+	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, dataDir, chainConfig, initMessage, stackConfig, &execConfig.Caching)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	if isSequencer {
@@ -889,7 +890,7 @@ func createTestNodeWithL1(
 // L2 -Only. Enough for tests that needs no interface to L1
 // Requires precompiles.AllowDebugPrecompiles = true
 func createTestNode(
-	t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.Config, execConfig *gethexec.Config, chainConfig *params.ChainConfig, takeOwnership bool,
+	t *testing.T, ctx context.Context, l2Info *BlockchainTestInfo, nodeConfig *arbnode.Config, execConfig *gethexec.Config, chainConfig *params.ChainConfig, takeOwnership bool, dataDir string,
 ) (*BlockchainTestInfo, *arbnode.Node, *ethclient.Client) {
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL2Test()
@@ -902,7 +903,7 @@ func createTestNode(
 
 	AddDefaultValNode(t, ctx, nodeConfig, true, "")
 
-	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, l2Info, "", chainConfig, &execConfig.Caching)
+	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, l2Info, dataDir, chainConfig, &execConfig.Caching)
 
 	Require(t, execConfig.Validate())
 	execConfigFetcher := func() *gethexec.Config { return execConfig }
