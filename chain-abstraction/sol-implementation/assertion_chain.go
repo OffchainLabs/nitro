@@ -723,7 +723,7 @@ func (a *AssertionChain) ReadAssertionCreationInfo(
 	var creationBlock uint64
 	var topics [][]common.Hash
 	if id == (protocol.AssertionHash{}) {
-		rollupDeploymentBlock, err := a.rollup.RollupDeploymentBlock(a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
+		rollupDeploymentBlock, err := a.rollup.RollupDeploymentBlock(&bind.CallOpts{Context: ctx})
 		if err != nil {
 			return nil, err
 		}
@@ -735,7 +735,7 @@ func (a *AssertionChain) ReadAssertionCreationInfo(
 	} else {
 		var b [32]byte
 		copy(b[:], id.Bytes())
-		node, err := a.rollup.GetAssertion(a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}), b)
+		node, err := a.rollup.GetAssertion(&bind.CallOpts{Context: ctx}, b)
 		if err != nil {
 			return nil, err
 		}
