@@ -231,6 +231,38 @@ func (b *NodeBuilder) Build(t *testing.T) func() {
 	}
 }
 
+// L2 -Only. RestartL2Node shutdowns the existing l2 node and start it again using the same data dir.
+func (b *NodeBuilder) RestartL2Node(t *testing.T) {
+	if b.L2 == nil {
+		t.Fatalf("L2 was not created")
+	}
+	b.L2.cleanup()
+
+	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, b.L2Info, b.dataDir, b.chainConfig, &b.execConfig.Caching)
+
+	execConfigFetcher := func() *gethexec.Config { return b.execConfig }
+	execNode, err := gethexec.CreateExecutionNode(b.ctx, stack, chainDb, blockchain, nil, execConfigFetcher)
+	Require(t, err)
+
+	feedErrChan := make(chan error, 10)
+	currentNode, err := arbnode.CreateNode(b.ctx, stack, execNode, arbDb, NewFetcherFromConfig(b.nodeConfig), blockchain.Config(), nil, nil, nil, nil, nil, feedErrChan, big.NewInt(1337), nil)
+	Require(t, err)
+
+	Require(t, currentNode.Start(b.ctx))
+	client := ClientForStack(t, stack)
+
+	StartWatchChanErr(t, b.ctx, feedErrChan, currentNode)
+
+	l2 := NewTestClient(b.ctx)
+	l2.ConsensusNode = currentNode
+	l2.Client = client
+	l2.ExecNode = execNode
+	l2.cleanup = func() { b.L2.ConsensusNode.StopAndWait() }
+
+	b.L2 = l2
+	b.L2Info = l2info
+}
+
 func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*TestClient, func()) {
 	if b.L2 == nil {
 		t.Fatal("builder did not previously build a L2 Node")
