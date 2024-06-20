@@ -1241,11 +1241,10 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		b.building.msgCount++
 	}
 
-	var disablePosting bool
 	firstMsgTimeStamp := firstMsg.Message.Header.Timestamp
 	firstMsgBlockNumber := firstMsg.Message.Header.BlockNumber
-	batchNearL1BoundMinTimestamp := firstMsgTimeStamp >= l1BoundMinTimestamp && firstMsgTimeStamp <= l1BoundMinTimestamp+uint64(config.ReorgResistanceMargin/time.Second)
-	batchNearL1BoundMinBlockNumber := firstMsgBlockNumber >= l1BoundMinBlockNumber && firstMsgBlockNumber <= l1BoundMinBlockNumber+uint64(config.ReorgResistanceMargin/ethPosBlockTime)
+	batchNearL1BoundMinTimestamp := firstMsgTimeStamp <= l1BoundMinTimestamp+uint64(config.ReorgResistanceMargin/time.Second)
+	batchNearL1BoundMinBlockNumber := firstMsgBlockNumber <= l1BoundMinBlockNumber+uint64(config.ReorgResistanceMargin/ethPosBlockTime)
 	if config.ReorgResistanceMargin > 0 && (batchNearL1BoundMinTimestamp || batchNearL1BoundMinBlockNumber) {
 		log.Error(
 			"Disabling batch posting due to batch being within reorg resistance margin from layer 1 minimum block or timestamp bounds",
@@ -1255,10 +1254,10 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			"firstMsgBlockNumber", firstMsgBlockNumber,
 			"l1BoundMinBlockNumber", l1BoundMinBlockNumber,
 		)
-		disablePosting = true
+		return false, errors.New("batch is within reorg resistance margin from layer 1 minimum block or timestamp bounds")
 	}
 
-	if disablePosting || !forcePostBatch || !b.building.haveUsefulMessage {
+	if !forcePostBatch || !b.building.haveUsefulMessage {
 		// the batch isn't full yet and we've posted a batch recently
 		// don't post anything for now
 		return false, nil
