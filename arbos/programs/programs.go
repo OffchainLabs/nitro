@@ -153,7 +153,8 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runMode c
 	}
 	// replace the cached asm
 	if cached {
-		cacheProgram(statedb, info.moduleHash, programData, params, debugMode, time, runMode)
+		code := statedb.GetCode(address)
+		cacheProgram(statedb, info.moduleHash, programData, code, codeHash, params, debugMode, time, runMode)
 	}
 
 	return stylusVersion, codeHash, info.moduleHash, dataFee, false, p.setProgram(codeHash, programData)
@@ -210,7 +211,7 @@ func (p Programs) CallProgram(
 	statedb.AddStylusPages(program.footprint)
 	defer statedb.SetStylusPagesOpen(open)
 
-	localAsm, err := getLocalAsm(statedb, moduleHash, contract.Address(), params.PageLimit, evm.Context.Time, debugMode, program)
+	localAsm, err := getLocalAsm(statedb, moduleHash, contract.Address(), contract.Code, contract.CodeHash, params.PageLimit, evm.Context.Time, debugMode, program)
 	if err != nil {
 		log.Crit("failed to get local wasm for activated program", "program", contract.Address())
 		return nil, err
@@ -247,6 +248,10 @@ func (p Programs) CallProgram(
 
 func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
 	prefixedWasm := statedb.GetCode(program)
+	return getWasmFromContractCode(prefixedWasm)
+}
+
+func getWasmFromContractCode(prefixedWasm []byte) ([]byte, error) {
 	if prefixedWasm == nil {
 		return nil, ProgramNotWasmError()
 	}
@@ -395,7 +400,12 @@ func (p Programs) SetProgramCached(
 		return err
 	}
 	if cache {
-		cacheProgram(db, moduleHash, program, params, debug, time, runMode)
+		// Not passing in an address is supported pre-Verkle, as in Blockchain's ContractCodeWithPrefix method.
+		code, err := db.Database().ContractCode(common.Address{}, codeHash)
+		if err != nil {
+			return err
+		}
+		cacheProgram(db, moduleHash, program, code, codeHash, params, debug, time, runMode)
 	} else {
 		evictProgram(db, moduleHash, program.version, debug, runMode, expired)
 	}
