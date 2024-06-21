@@ -28,7 +28,7 @@ var DBConfigDefault = DBConfig{
 func DBConfigAddOptions(prefix string, f *flag.FlagSet, defaultNamespace string) {
 	f.String(prefix+".data", DBConfigDefault.Data, "directory of stored chain state")
 	f.String(prefix+".db-engine", DBConfigDefault.DBEngine, "backing database implementation to use ('leveldb' or 'pebble')")
-	f.Int(prefix+".handles", DBConfigDefault.Handles, "number of file descriptor handles to use for the database")
+	f.Int(prefix+".handles", DBConfigDefault.Handles, "number of files to be open simultaneously")
 	f.Int(prefix+".cache", DBConfigDefault.Cache, "the capacity(in megabytes) of the data caching")
 	f.String(prefix+".namespace", defaultNamespace, "metrics namespace")
 	conf.PebbleConfigAddOptions(prefix+".pebble", f)
