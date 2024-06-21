@@ -22,6 +22,11 @@ func (con ArbWasmCache) AllCacheManagers(c ctx, _ mech) ([]addr, error) {
 	return c.State.Programs().CacheManagers().AllMembers(65536)
 }
 
+// Deprecated, replaced with CacheProgram.
+func (con ArbWasmCache) CacheCodehash(c ctx, evm mech, codehash hash) error {
+	return con.setProgramCached(c, evm, common.Address{}, codehash, true)
+}
+
 // Caches all programs with a codehash equal to the given address. Caller must be a cache manager or chain owner.
 func (con ArbWasmCache) CacheProgram(c ctx, evm mech, address addr) error {
 	codehash, err := c.GetCodeHash(address)
