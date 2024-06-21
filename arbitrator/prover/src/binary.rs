@@ -616,7 +616,10 @@ impl<'a> WasmBinary<'a> {
         cached_init = cached_init.saturating_add(data_len.saturating_mul(75244) / 100_000);
         cached_init = cached_init.saturating_add(footprint as u64 * 5);
 
-        let mut init = cached_init;
+        let mut init: u64 = 0;
+        if compile.version == 1 {
+            init = cached_init; // in version 1 cached cost is part of call cost
+        }
         init = init.saturating_add(funcs.saturating_mul(8252) / 1000);
         init = init.saturating_add(type_len.saturating_mul(1059) / 1000);
         init = init.saturating_add(wasm_len.saturating_mul(1286) / 10_000);

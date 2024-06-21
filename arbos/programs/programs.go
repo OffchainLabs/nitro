@@ -194,9 +194,10 @@ func (p Programs) CallProgram(
 
 	// pay for program init
 	cached := program.cached || statedb.GetRecentWasms().Insert(codeHash, params.BlockCacheSize)
-	if cached {
+	if cached || params.Version > 1 { // in version 1 cached cost is part of called cost
 		callCost = am.SaturatingUAdd(callCost, program.cachedGas(params))
-	} else {
+	}
+	if !cached {
 		callCost = am.SaturatingUAdd(callCost, program.initGas(params))
 	}
 	if err := contract.BurnGas(callCost); err != nil {
