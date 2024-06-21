@@ -31,10 +31,10 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 	"github.com/go-redis/redis/v8"
 	"github.com/holiman/uint256"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsigner"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
@@ -255,6 +255,50 @@ func rpcClient(ctx context.Context, opts *ExternalSignerCfg) (*rpc.Client, error
 	)
 }
 
+// TxToSignTxArgs converts transaction to SendTxArgs. This is needed for
+// external signer to specify From field.
+func TxToSignTxArgs(addr common.Address, tx *types.Transaction) (*apitypes.SendTxArgs, error) {
+	var to *common.MixedcaseAddress
+	if tx.To() != nil {
+		to = new(common.MixedcaseAddress)
+		*to = common.NewMixedcaseAddress(*tx.To())
+	}
+	data := (hexutil.Bytes)(tx.Data())
+	val := (*hexutil.Big)(tx.Value())
+	if val == nil {
+		val = (*hexutil.Big)(big.NewInt(0))
+	}
+	al := tx.AccessList()
+	var (
+		blobs       []kzg4844.Blob
+		commitments []kzg4844.Commitment
+		proofs      []kzg4844.Proof
+	)
+	if tx.BlobTxSidecar() != nil {
+		blobs = tx.BlobTxSidecar().Blobs
+		commitments = tx.BlobTxSidecar().Commitments
+		proofs = tx.BlobTxSidecar().Proofs
+	}
+	return &apitypes.SendTxArgs{
+		From:                 common.NewMixedcaseAddress(addr),
+		To:                   to,
+		Gas:                  hexutil.Uint64(tx.Gas()),
+		GasPrice:             (*hexutil.Big)(tx.GasPrice()),
+		MaxFeePerGas:         (*hexutil.Big)(tx.GasFeeCap()),
+		MaxPriorityFeePerGas: (*hexutil.Big)(tx.GasTipCap()),
+		Value:                *val,
+		Nonce:                hexutil.Uint64(tx.Nonce()),
+		Data:                 &data,
+		AccessList:           &al,
+		ChainID:              (*hexutil.Big)(tx.ChainId()),
+		BlobFeeCap:           (*hexutil.Big)(tx.BlobGasFeeCap()),
+		BlobHashes:           tx.BlobHashes(),
+		Blobs:                blobs,
+		Commitments:          commitments,
+		Proofs:               proofs,
+	}, nil
+}
+
 // externalSigner returns signer function and ethereum address of the signer.
 // Returns an error if address isn't specified or if it can't connect to the
 // signer RPC server.
@@ -273,7 +317,7 @@ func externalSigner(ctx context.Context, opts *ExternalSignerCfg) (signerFn, com
 		// RLP encoded transaction object.
 		// https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_signtransaction
 		var data hexutil.Bytes
-		args, err := externalsigner.TxToSignTxArgs(addr, tx)
+		args, err := TxToSignTxArgs(addr, tx)
 		if err != nil {
 			return nil, fmt.Errorf("error converting transaction to sendTxArgs: %w", err)
 		}
@@ -285,7 +329,11 @@ func externalSigner(ctx context.Context, opts *ExternalSignerCfg) (signerFn, com
 			return nil, fmt.Errorf("unmarshaling signed transaction: %w", err)
 		}
 		hasher := types.LatestSignerForChainID(tx.ChainId())
-		if h := hasher.Hash(args.ToTransaction()); h != hasher.Hash(signedTx) {
+		gotTx, err := args.ToTransaction()
+		if err != nil {
+			return nil, fmt.Errorf("converting transaction arguments into transaction: %w", err)
+		}
+		if h := hasher.Hash(gotTx); h != hasher.Hash(signedTx) {
 			return nil, fmt.Errorf("transaction: %x from external signer differs from request: %x", hasher.Hash(signedTx), h)
 		}
 		return signedTx, nil
@@ -687,6 +735,10 @@ func (p *DataPoster) PostSimpleTransaction(ctx context.Context, nonce uint64, to
 func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, kzgBlobs []kzg4844.Blob, accessList types.AccessList) (*types.Transaction, error) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
+
+	if p.config().DisableNewTx {
+		return nil, fmt.Errorf("posting new transaction is disabled")
+	}
 
 	var weight uint64 = 1
 	if len(kzgBlobs) > 0 {
@@ -1208,6 +1260,9 @@ type DataPosterConfig struct {
 	MaxFeeCapFormula       string            `koanf:"max-fee-cap-formula" reload:"hot"`
 	ElapsedTimeBase        time.Duration     `koanf:"elapsed-time-base" reload:"hot"`
 	ElapsedTimeImportance  float64           `koanf:"elapsed-time-importance" reload:"hot"`
+	// When set, dataposter will not post new batches, but will keep running to
+	// get existing batches confirmed.
+	DisableNewTx bool `koanf:"disable-new-tx" reload:"hot"`
 }
 
 type ExternalSignerCfg struct {
@@ -1269,6 +1324,7 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPost
 	signature.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
 	addDangerousOptions(prefix+".dangerous", f)
 	addExternalSignerOptions(prefix+".external-signer", f)
+	f.Bool(prefix+".disable-new-tx", defaultDataPosterConfig.DisableNewTx, "disable posting new transactions, data poster will still keep confirming existing batches")
 }
 
 func addDangerousOptions(prefix string, f *pflag.FlagSet) {
@@ -1308,6 +1364,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	MaxFeeCapFormula:       "((BacklogOfBatches * UrgencyGWei) ** 2) + ((ElapsedTime/ElapsedTimeBase) ** 2) * ElapsedTimeImportance + TargetPriceGWei",
 	ElapsedTimeBase:        10 * time.Minute,
 	ElapsedTimeImportance:  10,
+	DisableNewTx:           false,
 }
 
 var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
@@ -1341,6 +1398,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	MaxFeeCapFormula:       "((BacklogOfBatches * UrgencyGWei) ** 2) + ((ElapsedTime/ElapsedTimeBase) ** 2) * ElapsedTimeImportance + TargetPriceGWei",
 	ElapsedTimeBase:        10 * time.Minute,
 	ElapsedTimeImportance:  10,
+	DisableNewTx:           false,
 }
 
 var TestDataPosterConfigForValidator = func() DataPosterConfig {
