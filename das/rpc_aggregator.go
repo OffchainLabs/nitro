@@ -25,7 +25,6 @@ import (
 type BackendConfig struct {
 	URL                 string `json:"url"`
 	PubKeyBase64Encoded string `json:"pubkey"`
-	SignerMask          uint64 `json:"signermask"`
 }
 
 func NewRPCAggregator(ctx context.Context, config DataAvailabilityConfig, signer signature.DataSignerFunc) (*Aggregator, error) {
@@ -61,7 +60,7 @@ func ParseServices(config AggregatorConfig, signer signature.DataSignerFunc) ([]
 
 	var services []ServiceDetails
 
-	for _, b := range cs {
+	for i, b := range cs {
 		url, err := url.Parse(b.URL)
 		if err != nil {
 			return nil, err
@@ -78,7 +77,7 @@ func ParseServices(config AggregatorConfig, signer signature.DataSignerFunc) ([]
 			return nil, err
 		}
 
-		d, err := NewServiceDetails(service, *pubKey, b.SignerMask, metricName)
+		d, err := NewServiceDetails(service, *pubKey, 1<<uint64(i), metricName)
 		if err != nil {
 			return nil, err
 		}

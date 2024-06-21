@@ -82,7 +82,6 @@ func startLocalDASServer(
 	beConfig := das.BackendConfig{
 		URL:                 "http://" + rpcLis.Addr().String(),
 		PubKeyBase64Encoded: blsPubToBase64(pubkey),
-		SignerMask:          1,
 	}
 	return rpcServer, pubkey, beConfig, restServer, "http://" + restLis.Addr().String()
 }
@@ -303,7 +302,6 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	beConfigA := das.BackendConfig{
 		URL:                 "http://" + rpcLis.Addr().String(),
 		PubKeyBase64Encoded: blsPubToBase64(pubkey),
-		SignerMask:          1,
 	}
 	l1NodeConfigA.DataAvailability.RPCAggregator = aggConfigForBackend(t, beConfigA)
 	l1NodeConfigA.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig

@@ -76,7 +76,6 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 	beConfig := BackendConfig{
 		URL:                 "http://" + lis.Addr().String(),
 		PubKeyBase64Encoded: blsPubToBase64(pubkey),
-		SignerMask:          1,
 	}
 
 	backendsJsonByte, err := json.Marshal([]BackendConfig{beConfig})
