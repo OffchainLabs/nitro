@@ -122,9 +122,9 @@ impl RustBytes {
     }
 }
 
-/// Instruments and "activates" a user wasm.
+/// "activates" a user wasm.
 ///
-/// The `output` is either the serialized asm & module pair or an error string.
+/// The `output` is either the module or an error string.
 /// Returns consensus info such as the module hash and footprint on success.
 ///
 /// Note that this operation costs gas and is limited by the amount supplied via the `gas` pointer.
@@ -163,6 +163,14 @@ pub unsafe extern "C" fn stylus_activate(
     UserOutcomeKind::Success
 }
 
+/// "compiles" a user wasm.
+///
+/// The `output` is either the asm or an error string.
+/// Returns consensus info such as the module hash and footprint on success.
+///
+/// # Safety
+///
+/// `output` must not be null.
 #[no_mangle]
 pub unsafe extern "C" fn stylus_compile(
     wasm: GoSliceData,
