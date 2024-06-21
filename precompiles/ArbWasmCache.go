@@ -22,7 +22,7 @@ func (con ArbWasmCache) AllCacheManagers(c ctx, _ mech) ([]addr, error) {
 	return c.State.Programs().CacheManagers().AllMembers(65536)
 }
 
-// Deprecated, replaced with CacheProgram.
+// Deprecated: replaced with CacheProgram.
 func (con ArbWasmCache) CacheCodehash(c ctx, evm mech, codehash hash) error {
 	return con.setProgramCached(c, evm, common.Address{}, codehash, true)
 }
