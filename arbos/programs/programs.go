@@ -13,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/params"
 	gethParams "github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/addressSet"
@@ -249,8 +248,8 @@ func (p Programs) CallProgram(
 func evmMemoryCost(size uint64) uint64 {
 	// It would take 100GB to overflow this calculation, so no need to worry about that
 	words := (size + 31) / 32
-	linearCost := words * params.MemoryGas
-	squareCost := (words * words) / params.QuadCoeffDiv
+	linearCost := words * gethParams.MemoryGas
+	squareCost := (words * words) / gethParams.QuadCoeffDiv
 	return linearCost + squareCost
 }
 
