@@ -318,6 +318,12 @@ func (state *ArbosState) UpgradeArbosVersion(
 		case 30:
 			programs.Initialize(state.backingStorage.OpenSubStorage(programsSubspace))
 
+		case 31:
+			params, err := state.Programs().Params()
+			ensure(err)
+			params.Version = 2
+			ensure(params.Save())
+
 		default:
 			return fmt.Errorf(
 				"the chain is upgrading to unsupported ArbOS version %v, %w",
