@@ -67,3 +67,7 @@ func TestProgramArbitratorActivateFails(t *testing.T) {
 func TestProgramArbitratorEarlyExit(t *testing.T) {
 	testEarlyExit(t, false)
 }
+
+func TestProgramArbitratorStylusUpgrade(t *testing.T) {
+	testStylusUpgrade(t, false)
+}
