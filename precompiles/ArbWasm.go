@@ -193,7 +193,7 @@ func (con ArbWasm) ProgramInitGas(c ctx, evm mech, program addr) (uint64, uint64
 	if err != nil {
 		return 0, 0, err
 	}
-	return c.State.Programs().ProgramInitGas(codehash, evm.Context.Time, params)
+	return c.State.Programs().ProgramInitGas(codehash, evm.Context.Time, params, c.State.ArbOSVersion())
 }
 
 // Gets the footprint of program at addr

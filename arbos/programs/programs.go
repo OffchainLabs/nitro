@@ -13,6 +13,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
+	gethparams "github.com/ethereum/go-ethereum/params"
+
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/addressSet"
 	"github.com/offchainlabs/nitro/arbos/storage"
@@ -162,6 +164,7 @@ func (p Programs) CallProgram(
 	tracingInfo *util.TracingInfo,
 	calldata []byte,
 	reentrant bool,
+	arbosVersion uint64,
 ) ([]byte, error) {
 	evm := interpreter.Evm()
 	contract := scope.Contract
@@ -194,10 +197,11 @@ func (p Programs) CallProgram(
 
 	// pay for program init
 	cached := program.cached || statedb.GetRecentWasms().Insert(codeHash, params.BlockCacheSize)
-	if cached {
+	if arbosVersion > gethparams.ArbosVersion_Stylus || cached {
 		callCost = am.SaturatingUAdd(callCost, program.cachedGas(params))
-	} else {
-		callCost = am.SaturatingUAdd(callCost, program.initGas(params))
+	}
+	if !cached {
+		callCost = am.SaturatingUAdd(callCost, program.initGas(params, arbosVersion))
 	}
 	if err := contract.BurnGas(callCost); err != nil {
 		return nil, err
@@ -410,9 +414,9 @@ func (p Programs) ProgramTimeLeft(codeHash common.Hash, time uint64, params *Sty
 	return am.SaturatingUSub(expirySeconds, age), nil
 }
 
-func (p Programs) ProgramInitGas(codeHash common.Hash, time uint64, params *StylusParams) (uint64, uint64, error) {
+func (p Programs) ProgramInitGas(codeHash common.Hash, time uint64, params *StylusParams, arbosVersion uint64) (uint64, uint64, error) {
 	program, err := p.getActiveProgram(codeHash, time, params)
-	return program.initGas(params), program.cachedGas(params), err
+	return program.initGas(params, arbosVersion), program.cachedGas(params), err
 }
 
 func (p Programs) ProgramMemoryFootprint(codeHash common.Hash, time uint64, params *StylusParams) (uint16, error) {
@@ -432,9 +436,14 @@ func (p Program) asmSize() uint32 {
 	return am.SaturatingUMul(p.asmEstimateKb.ToUint32(), 1024)
 }
 
-func (p Program) initGas(params *StylusParams) uint64 {
+func (p Program) initGas(params *StylusParams, arbosVersion uint64) uint64 {
 	base := uint64(params.MinInitGas) * MinInitGasUnits
-	dyno := am.SaturatingUMul(uint64(p.initCost), uint64(params.InitCostScalar)*CostScalarPercent)
+
+	initCost := uint64(p.initCost)
+	if arbosVersion > gethparams.ArbosVersion_Stylus && p.version == 1 {
+		initCost -= uint64(p.cachedCost)
+	}
+	dyno := am.SaturatingUMul(initCost, uint64(params.InitCostScalar)*CostScalarPercent)
 	return am.SaturatingUAdd(base, am.DivCeil(dyno, 100))
 }
 
