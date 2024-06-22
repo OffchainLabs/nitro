@@ -12,6 +12,8 @@ import (
 	"math/bits"
 	"net/url"
 
+	"github.com/knadh/koanf"
+	"github.com/knadh/koanf/providers/confmap"
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -23,8 +25,54 @@ import (
 )
 
 type BackendConfig struct {
-	URL                 string `json:"url"`
-	PubKeyBase64Encoded string `json:"pubkey"`
+	URL    string `koanf:"url" json:"url"`
+	Pubkey string `koanf:"pubkey" json:"pubkey"`
+}
+
+type BackendConfigList []BackendConfig
+
+func (l *BackendConfigList) String() string {
+	b, _ := json.Marshal(*l)
+	return string(b)
+}
+
+func (l *BackendConfigList) Set(value string) error {
+	return l.UnmarshalJSON([]byte(value))
+}
+
+func (l *BackendConfigList) UnmarshalJSON(data []byte) error {
+	var tmp []BackendConfig
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*l = tmp
+	return nil
+}
+
+func (l *BackendConfigList) Type() string {
+	return "backendConfigList"
+}
+
+func FixKeysetCLIParsing(path string, k *koanf.Koanf) error {
+	rawBackends := k.Get(path)
+	if bk, ok := rawBackends.(string); ok {
+		err := parsedBackendsConf.UnmarshalJSON([]byte(bk))
+		if err != nil {
+			return err
+		}
+
+		// Create a map with the parsed backend configurations
+		tempMap := map[string]interface{}{
+			path: parsedBackendsConf,
+		}
+
+		// Load the map into koanf
+		if err = k.Load(confmap.Provider(tempMap, "."), nil); err != nil {
+			return err
+		}
+
+	}
+	return nil
 }
 
 func NewRPCAggregator(ctx context.Context, config DataAvailabilityConfig, signer signature.DataSignerFunc) (*Aggregator, error) {
@@ -52,15 +100,9 @@ func NewRPCAggregatorWithSeqInboxCaller(config DataAvailabilityConfig, seqInboxC
 }
 
 func ParseServices(config AggregatorConfig, signer signature.DataSignerFunc) ([]ServiceDetails, error) {
-	var cs []BackendConfig
-	err := json.Unmarshal([]byte(config.Backends), &cs)
-	if err != nil {
-		return nil, err
-	}
-
 	var services []ServiceDetails
 
-	for i, b := range cs {
+	for i, b := range config.Backends {
 		url, err := url.Parse(b.URL)
 		if err != nil {
 			return nil, err
@@ -72,7 +114,7 @@ func ParseServices(config AggregatorConfig, signer signature.DataSignerFunc) ([]
 			return nil, err
 		}
 
-		pubKey, err := DecodeBase64BLSPublicKey([]byte(b.PubKeyBase64Encoded))
+		pubKey, err := DecodeBase64BLSPublicKey([]byte(b.Pubkey))
 		if err != nil {
 			return nil, err
 		}
