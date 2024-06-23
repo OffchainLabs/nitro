@@ -1248,7 +1248,7 @@ func TestProgramCacheManager(t *testing.T) {
 	// check ownership
 	assert(arbOwner.IsChainOwner(nil, ownerAuth.From))
 	ensure(arbWasmCache.EvictCodehash(&ownerAuth, codehash))
-	ensure(arbWasmCache.CacheCodehash(&ownerAuth, codehash))
+	ensure(arbWasmCache.CacheProgram(&ownerAuth, program))
 
 	// de-authorize manager
 	ensure(arbOwner.RemoveWasmCacheManager(&ownerAuth, manager))

@@ -194,6 +194,7 @@ func TestPrecompilesPerArbosVersion(t *testing.T) {
 		11: 4,
 		20: 8,
 		30: 38,
+		31: 1,
 	}
 
 	precompiles := Precompiles()

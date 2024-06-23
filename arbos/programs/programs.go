@@ -365,10 +365,13 @@ func (p Programs) ProgramCached(codeHash common.Hash) (bool, error) {
 }
 
 // Sets whether a program is cached. Errors if trying to cache an expired program.
+// `address` must be present if setting cache to true as of ArbOS 31,
+// and if `address` is present it must have the specified codeHash.
 func (p Programs) SetProgramCached(
 	emitEvent func() error,
 	db vm.StateDB,
 	codeHash common.Hash,
+	address common.Address,
 	cache bool,
 	time uint64,
 	params *StylusParams,
