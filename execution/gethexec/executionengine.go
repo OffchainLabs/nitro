@@ -523,7 +523,6 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	if err != nil {
 		return nil, err
 	}
-
 	s.cacheL1PriceDataOfMsg(pos, receipts, block)
 
 	return block, nil
@@ -824,6 +823,7 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 	if err != nil {
 		return nil, err
 	}
+	s.cacheL1PriceDataOfMsg(num, receipts, block)
 
 	if time.Now().After(s.nextScheduledVersionCheck) {
 		s.nextScheduledVersionCheck = time.Now().Add(time.Minute)
