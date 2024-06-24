@@ -23,7 +23,6 @@ import (
 )
 
 type Programs struct {
-	arbosVersion   uint64
 	backingStorage *storage.Storage
 	programs       *storage.Storage
 	moduleHashes   *storage.Storage
