@@ -74,12 +74,12 @@ func Test_machineHashesWithStep(t *testing.T) {
 		numRequiredHashes := uint64(0)
 		_, err := e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, numRequiredHashes)
 		if !strings.Contains(err.Error(), "step size cannot be 0") {
-			t.Fatal("Wrong error")
+			t.Error("Wrong error")
 		}
 		stepSize = uint64(1)
 		_, err = e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, numRequiredHashes)
 		if !strings.Contains(err.Error(), "required number of hashes cannot be 0") {
-			t.Fatal("Wrong error")
+			t.Error("Wrong error")
 		}
 	})
 	t.Run("machine at start index 0 hash is the finished state hash", func(t *testing.T) {
@@ -104,10 +104,10 @@ func Test_machineHashesWithStep(t *testing.T) {
 		}
 		expected := machineFinishedHash(mm.gs)
 		if len(hashes) != 1 {
-			t.Fatal("Wanted one hash")
+			t.Error("Wanted one hash")
 		}
 		if expected != hashes[0] {
-			t.Fatalf("Wanted %#x, got %#x", expected, hashes[0])
+			t.Errorf("Wanted %#x, got %#x", expected, hashes[0])
 		}
 	})
 	t.Run("can step in step size increments and collect hashes", func(t *testing.T) {
@@ -150,7 +150,7 @@ func Test_machineHashesWithStep(t *testing.T) {
 		}
 		for i := range hashes {
 			if expectedHashes[i] != hashes[i] {
-				t.Fatalf("Wanted at index %d, %#x, got %#x", i, expectedHashes[i], hashes[i])
+				t.Errorf("Wanted at index %d, %#x, got %#x", i, expectedHashes[i], hashes[i])
 			}
 		}
 	})
@@ -201,7 +201,7 @@ func Test_machineHashesWithStep(t *testing.T) {
 		}
 		for i := range hashes {
 			if expectedHashes[i] != hashes[i] {
-				t.Fatalf("Wanted at index %d, %#x, got %#x", i, expectedHashes[i], hashes[i])
+				t.Errorf("Wanted at index %d, %#x, got %#x", i, expectedHashes[i], hashes[i])
 			}
 		}
 	})
