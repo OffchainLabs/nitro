@@ -372,6 +372,12 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 		cachedRoots, err := s.historyCache.Get(cacheKey, cfg.NumDesiredHashes)
 		switch {
 		case err == nil:
+			log.Info(
+				"In collect machine hashes",
+				"cfg", fmt.Sprintf("%+v", cfg),
+				"firstHash", fmt.Sprintf("%#x", cachedRoots[0]),
+				"lastHash", fmt.Sprintf("%#x", cachedRoots[len(cachedRoots)-1]),
+			)
 			return cachedRoots, nil
 		case !errors.Is(err, challengecache.ErrNotFoundInCache):
 			return nil, err
@@ -465,6 +471,14 @@ func (s *BOLDStateProvider) CollectProof(
 	if err != nil {
 		return nil, err
 	}
+	log.Info(
+		"Getting machine OSP",
+		"fromBatch", fromBatch,
+		"prevBatchMsgCount", prevBatchMsgCount,
+		"blockChallengeHeight", blockChallengeHeight,
+		"messageNum", messageNum,
+		"startState", fmt.Sprintf("%+v", input.StartState),
+	)
 	execRun, err := s.statelessValidator.execSpawners[0].CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
 	if err != nil {
 		return nil, err
