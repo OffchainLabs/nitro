@@ -107,7 +107,10 @@ func (e *executionRun) machineHashesWithStepSize(
 	}
 	log.Debug(fmt.Sprintf("Advanced machine to index %d, beginning hash computation", machineStartIndex))
 
-	// A
+	// In BOLD, the hash of a machine at index 0 is a special hash that is computed as the
+	// `machineFinishedHash(gs)` where `gs` is the global state of the machine at index 0.
+	// This is so that the hash aligns with the start state of the claimed challenge edge
+	// at the level above, as required by the BOLD protocol.
 	var machineHashes []common.Hash
 	if machineStartIndex == 0 {
 		gs := machine.GetGlobalState()
@@ -157,6 +160,11 @@ func (e *executionRun) machineHashesWithStepSize(
 		}
 		machineHashes = append(machineHashes, machine.Hash())
 		if uint64(len(machineHashes)) == maxIterations {
+			log.Info("Reached the max number of iterations for the hashes needed to open a subchallenge")
+			break
+		}
+		if !machine.IsRunning() {
+			log.Info("Machine no longer running, exiting early from hash computation loop")
 			break
 		}
 	}
@@ -165,6 +173,7 @@ func (e *executionRun) machineHashesWithStepSize(
 		"stepSize", stepSize,
 		"startHash", startHash,
 		"machineStartIndex", machineStartIndex,
+		"numberOfHashesComputed", len(machineHashes),
 		"maxIterations", maxIterations,
 		"finishedHash", machineHashes[len(machineHashes)-1],
 		"finishedGlobalState", fmt.Sprintf("%+v", machine.GetGlobalState()),
