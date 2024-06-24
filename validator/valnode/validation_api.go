@@ -153,8 +153,8 @@ func (a *ExecServerAPI) GetMachineHashesWithStepSize(ctx context.Context, execid
 	if err != nil {
 		return nil, err
 	}
-	leavesInRange := run.GetMachineHashesWithStepSize(fromStep, stepSize, maxIterations)
-	res, err := leavesInRange.Await(ctx)
+	hashesInRange := run.GetMachineHashesWithStepSize(fromStep, stepSize, maxIterations)
+	res, err := hashesInRange.Await(ctx)
 	if err != nil {
 		return nil, err
 	}
