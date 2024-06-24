@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -24,6 +25,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -227,14 +229,10 @@ func TestStylusUpgrade(t *testing.T) {
 }
 
 func testStylusUpgrade(t *testing.T, jit bool) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-
-	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builder.WithArbOSVersion(30)
-
-	auth, cleanup := buildProgramTest(t, builder, jit)
+	builder, auth, cleanup := setupProgramTest(t, false, func(b *NodeBuilder) { b.WithArbOSVersion(params.ArbosVersion_Stylus) })
 	defer cleanup()
+
+	ctx := builder.ctx
 
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
@@ -1348,7 +1346,7 @@ func TestProgramCacheManager(t *testing.T) {
 	// check ownership
 	assert(arbOwner.IsChainOwner(nil, ownerAuth.From))
 	ensure(arbWasmCache.EvictCodehash(&ownerAuth, codehash))
-	ensure(arbWasmCache.CacheCodehash(&ownerAuth, codehash))
+	ensure(arbWasmCache.CacheProgram(&ownerAuth, program))
 
 	// de-authorize manager
 	ensure(arbOwner.RemoveWasmCacheManager(&ownerAuth, manager))
@@ -1358,26 +1356,81 @@ func TestProgramCacheManager(t *testing.T) {
 	assert(len(all) == 0, err)
 }
 
-func setupProgramTest(t *testing.T, jit bool) (
+func testReturnDataCost(t *testing.T, arbosVersion uint64) {
+	builder, auth, cleanup := setupProgramTest(t, false, func(b *NodeBuilder) { b.WithArbOSVersion(arbosVersion) })
+	ctx := builder.ctx
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	// use a consistent ink price
+	arbOwner, err := pgen.NewArbOwner(types.ArbOwnerAddress, l2client)
+	Require(t, err)
+	tx, err := arbOwner.SetInkPrice(&auth, 10000)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)
+	Require(t, err)
+
+	returnSize := big.NewInt(1024 * 1024) // 1MiB
+	returnSizeBytes := arbmath.U256Bytes(returnSize)
+
+	testCall := func(to common.Address) uint64 {
+		msg := ethereum.CallMsg{
+			To:             &to,
+			Data:           returnSizeBytes,
+			SkipL1Charging: true,
+		}
+		ret, err := l2client.CallContract(ctx, msg, nil)
+		Require(t, err)
+
+		if !arbmath.BigEquals(big.NewInt(int64(len(ret))), returnSize) {
+			Fatal(t, "unexpected return length", len(ret), "expected", returnSize)
+		}
+
+		gas, err := l2client.EstimateGas(ctx, msg)
+		Require(t, err)
+
+		return gas
+	}
+
+	stylusReturnSizeAddr := deployWasm(t, ctx, auth, l2client, watFile("return-size"))
+
+	stylusGas := testCall(stylusReturnSizeAddr)
+
+	// PUSH32 [returnSizeBytes]
+	evmBytecode := append([]byte{0x7F}, returnSizeBytes...)
+	// PUSH0 RETURN
+	evmBytecode = append(evmBytecode, 0x5F, 0xF3)
+	evmReturnSizeAddr := deployContract(t, ctx, auth, l2client, evmBytecode)
+
+	evmGas := testCall(evmReturnSizeAddr)
+
+	colors.PrintGrey(fmt.Sprintf("arbosVersion=%v stylusGas=%v evmGas=%v", arbosVersion, stylusGas, evmGas))
+	// a bit of gas difference is expected due to EVM PUSH32 and PUSH0 cost (in practice this is 5 gas)
+	similarGas := math.Abs(float64(stylusGas)-float64(evmGas)) <= 100
+	if arbosVersion >= params.ArbosVersion_StylusFixes {
+		if !similarGas {
+			Fatal(t, "unexpected gas difference for return data: stylus", stylusGas, ", evm", evmGas)
+		}
+	} else if similarGas {
+		Fatal(t, "gas unexpectedly similar for return data: stylus", stylusGas, ", evm", evmGas)
+	}
+}
+
+func TestReturnDataCost(t *testing.T) {
+	testReturnDataCost(t, params.ArbosVersion_Stylus)
+	testReturnDataCost(t, params.ArbosVersion_StylusFixes)
+}
+
+func setupProgramTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) (
 	*NodeBuilder, bind.TransactOpts, func(),
 ) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 
-	auth, builderCleanup := buildProgramTest(t, builder, jit)
-
-	cleanup := func() {
-		builderCleanup()
-		cancel()
+	for _, opt := range builderOpts {
+		opt(builder)
 	}
-	return builder, auth, cleanup
-}
-
-func buildProgramTest(t *testing.T, builder *NodeBuilder, jit bool) (
-	bind.TransactOpts, func(),
-) {
-	ctx := builder.ctx
 
 	builder.nodeConfig.BlockValidator.Enable = false
 	builder.nodeConfig.Staker.Enable = true
@@ -1393,6 +1446,11 @@ func buildProgramTest(t *testing.T, builder *NodeBuilder, jit bool) (
 	builder.execConfig.Sequencer.MaxRevertGasReject = 0
 
 	builderCleanup := builder.Build(t)
+
+	cleanup := func() {
+		builderCleanup()
+		cancel()
+	}
 
 	auth := builder.L2Info.GetDefaultTransactOpts("Owner", ctx)
 
@@ -1415,7 +1473,7 @@ func buildProgramTest(t *testing.T, builder *NodeBuilder, jit bool) (
 
 	ensure(arbDebug.BecomeChainOwner(&auth))
 	ensure(arbOwner.SetInkPrice(&auth, inkPrice))
-	return auth, builderCleanup
+	return builder, auth, cleanup
 }
 
 func readWasmFile(t *testing.T, file string) ([]byte, []byte) {

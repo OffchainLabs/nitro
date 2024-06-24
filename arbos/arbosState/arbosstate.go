@@ -74,8 +74,8 @@ func OpenArbosState(stateDB vm.StateDB, burner burn.Burner) (*ArbosState, error)
 	}
 	return &ArbosState{
 		arbosVersion,
-		30,
-		30,
+		31,
+		31,
 		backingStorage.OpenStorageBackedUint64(uint64(upgradeVersionOffset)),
 		backingStorage.OpenStorageBackedUint64(uint64(upgradeTimestampOffset)),
 		backingStorage.OpenStorageBackedAddress(uint64(networkFeeAccountOffset)),
