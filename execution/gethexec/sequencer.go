@@ -54,7 +54,6 @@ var (
 	successfulBlocksCounter                 = metrics.NewRegisteredCounter("arb/sequencer/block/successful", nil)
 	conditionalTxRejectedBySequencerCounter = metrics.NewRegisteredCounter("arb/sequencer/condtionaltx/rejected", nil)
 	conditionalTxAcceptedBySequencerCounter = metrics.NewRegisteredCounter("arb/sequencer/condtionaltx/accepted", nil)
-	l1GasPriceEstimateGauge                 = metrics.NewRegisteredGauge("arb/sequencer/l1gasprice/estimate", nil)
 	l1GasPriceGauge                         = metrics.NewRegisteredGauge("arb/sequencer/l1gasprice", nil)
 	callDataUnitsBacklogGauge               = metrics.NewRegisteredGauge("arb/sequencer/calldataunitsbacklog", nil)
 	unusedL1GasChargeGauge                  = metrics.NewRegisteredGauge("arb/sequencer/unusedl1gascharge", nil)
@@ -1059,16 +1058,11 @@ func (s *Sequencer) updateExpectedSurplus(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("error encountered getting l1 pricing surplus while updating expectedSurplus: %w", err)
 	}
-	l1GasPriceEstimate, err := s.execEngine.getL1GasPriceEstimate()
-	if err != nil {
-		return 0, fmt.Errorf("error encountered getting l1 gas price estimate while updating expectedSurplus: %w", err)
-	}
 	backlogL1GasCharged := int64(s.execEngine.backlogL1GasCharged())
 	backlogCallDataUnits := int64(s.execEngine.backlogCallDataUnits())
 	expectedSurplus := int64(surplus) + backlogL1GasCharged - backlogCallDataUnits*int64(l1GasPrice)
 	// update metrics
 	l1GasPriceGauge.Update(int64(l1GasPrice))
-	l1GasPriceEstimateGauge.Update(int64(l1GasPriceEstimate))
 	callDataUnitsBacklogGauge.Update(backlogCallDataUnits)
 	unusedL1GasChargeGauge.Update(backlogL1GasCharged)
 	currentSurplusGauge.Update(surplus)

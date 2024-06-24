@@ -46,6 +46,7 @@ import (
 )
 
 var (
+	l1GasPriceEstimateGauge    = metrics.NewRegisteredGauge("arb/l1gasprice/estimate", nil)
 	baseFeeGauge               = metrics.NewRegisteredGauge("arb/block/basefee", nil)
 	blockGasUsedHistogram      = metrics.NewRegisteredHistogram("arb/block/gasused", nil, metrics.NewBoundedHistogramSample())
 	txCountHistogram           = metrics.NewRegisteredHistogram("arb/block/transactions/count", nil, metrics.NewBoundedHistogramSample())
@@ -665,6 +666,7 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 	}
 	blockGasUsedHistogram.Update(int64(blockGasused))
 	gasUsedSinceStartupCounter.Inc(int64(blockGasused))
+	s.updateL1GasPriceEstimateMetric()
 	return nil
 }
 
@@ -683,22 +685,24 @@ func (s *ExecutionEngine) ResultAtPos(pos arbutil.MessageIndex) (*execution.Mess
 	return s.resultFromHeader(s.bc.GetHeaderByNumber(s.MessageIndexToBlockNumber(pos)))
 }
 
-func (s *ExecutionEngine) getL1GasPriceEstimate() (uint64, error) {
+func (s *ExecutionEngine) updateL1GasPriceEstimateMetric() {
 	bc := s.bc
 	latestHeader := bc.CurrentBlock()
 	latestState, err := bc.StateAt(latestHeader.Root)
 	if err != nil {
-		return 0, errors.New("error getting latest statedb while fetching l2 Estimate of L1 GasPrice")
+		log.Error("error getting latest statedb while fetching l2 Estimate of L1 GasPrice")
+		return
 	}
 	arbState, err := arbosState.OpenSystemArbosState(latestState, nil, true)
 	if err != nil {
-		return 0, errors.New("error opening system arbos state while fetching l2 Estimate of L1 GasPrice")
+		log.Error("error opening system arbos state while fetching l2 Estimate of L1 GasPrice")
+		return
 	}
 	l2EstimateL1GasPrice, err := arbState.L1PricingState().PricePerUnit()
 	if err != nil {
-		return 0, errors.New("error fetching l2 Estimate of L1 GasPrice")
+		log.Error("error fetching l2 Estimate of L1 GasPrice")
 	}
-	return l2EstimateL1GasPrice.Uint64(), nil
+	l1GasPriceEstimateGauge.Update(l2EstimateL1GasPrice.Int64())
 }
 
 func (s *ExecutionEngine) getL1PricingSurplus() (int64, error) {
