@@ -231,7 +231,7 @@ func (p Programs) CallProgram(
 		address = *contract.CodeAddr
 	}
 	ret, err := callProgram(address, moduleHash, scope, interpreter, tracingInfo, calldata, evmData, goParams, model)
-	if len(ret) > 0 && arbosVersion >= gethParams.ArbosVersion_Stylus {
+	if len(ret) > 0 && arbosVersion >= gethParams.ArbosVersion_StylusFixes {
 		// Ensure that return data costs as least as much as it would in the EVM.
 		evmCost := evmMemoryCost(uint64(len(ret)))
 		if startingGas < evmCost {
