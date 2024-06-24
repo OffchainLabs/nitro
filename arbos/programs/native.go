@@ -104,6 +104,7 @@ func activateProgramInternal(
 		goSlice(wasm),
 		u16(version),
 		cbool(debug),
+		goSlice([]byte{}),
 		output,
 	))
 

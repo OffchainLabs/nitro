@@ -18,6 +18,7 @@ use native::NativeInstance;
 use prover::programs::{prelude::*, StylusData};
 use run::RunProgram;
 use std::{marker::PhantomData, mem, ptr};
+use target_cache::{target_cache_get, target_cache_set};
 
 pub use brotli;
 pub use prover;
@@ -29,6 +30,7 @@ pub mod run;
 
 mod cache;
 mod evm_api;
+mod target_cache;
 mod util;
 
 #[cfg(test)]
@@ -176,17 +178,55 @@ pub unsafe extern "C" fn stylus_compile(
     wasm: GoSliceData,
     version: u16,
     debug: bool,
+    name: GoSliceData,
     output: *mut RustBytes,
 ) -> UserOutcomeKind {
     let wasm = wasm.slice();
     let output = &mut *output;
+    let name = String::from_utf8_unchecked(name.slice().to_vec());
+    let target = match target_cache_get(&name) {
+        Ok(val) => val,
+        Err(err) => return output.write_err(err),
+    };
 
-    let asm = match native::compile(wasm, version, debug) {
+    let asm = match native::compile(wasm, version, debug, target) {
         Ok(val) => val,
         Err(err) => return output.write_err(err),
     };
 
     output.write(asm);
+    UserOutcomeKind::Success
+}
+
+/// sets target index to a string
+///
+/// String format is: Triple+CpuFeature+CpuFeature..
+///
+/// # Safety
+///
+/// `output` must not be null.
+#[no_mangle]
+pub unsafe extern "C" fn stylus_target_set(
+    name: GoSliceData,
+    description: GoSliceData,
+    output: *mut RustBytes,
+    native: bool,
+) -> UserOutcomeKind {
+    let output = &mut *output;
+    let name = match String::from_utf8(name.slice().to_vec()) {
+        Ok(val) => val,
+        Err(err) => return output.write_err(err.into()),
+    };
+
+    let desc_str = match String::from_utf8(description.slice().to_vec()) {
+        Ok(val) => val,
+        Err(err) => return output.write_err(err.into()),
+    };
+
+    if let Err(err) = target_cache_set(name, desc_str, native) {
+        return output.write_err(err);
+    };
+
     UserOutcomeKind::Success
 }
 

@@ -23,6 +23,7 @@ macro_rules! cache {
 pub struct InitCache {
     long_term: HashMap<CacheKey, CacheItem>,
     lru: LruCache<CacheKey, CacheItem>,
+    target: Target,
 }
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
@@ -68,6 +69,7 @@ impl InitCache {
         Self {
             long_term: HashMap::new(),
             lru: LruCache::new(NonZeroUsize::new(size).unwrap()),
+            target: Target::default(),
         }
     }
 
@@ -75,6 +77,14 @@ impl InitCache {
         cache!()
             .lru
             .resize(NonZeroUsize::new(size.try_into().unwrap()).unwrap())
+    }
+
+    pub fn set_target(target: Target) {
+        cache!().target = target;
+    }
+
+    pub fn target() -> Target {
+        cache!().target.clone()
     }
 
     /// Retrieves a cached value, updating items as necessary.
@@ -118,9 +128,10 @@ impl InitCache {
             }
             return Ok(item.data());
         }
+        let target = cache.target.clone();
         drop(cache);
 
-        let engine = CompileConfig::version(version, debug).engine(Target::default());
+        let engine = CompileConfig::version(version, debug).engine(target);
         let module = unsafe { Module::deserialize_unchecked(&engine, module)? };
 
         let item = CacheItem::new(module, engine);

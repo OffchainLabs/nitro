@@ -16,7 +16,7 @@ use rand::prelude::*;
 use std::{collections::HashMap, path::Path, sync::Arc};
 use wasmer::{
     imports, wasmparser::Operator, CompilerConfig, Function, FunctionEnv, Imports, Instance,
-    Module, Store,
+    Module, Store, Target,
 };
 use wasmer_compiler_singlepass::Singlepass;
 
@@ -86,7 +86,14 @@ impl TestInstance {
         config: StylusConfig,
     ) -> Result<(Self, TestEvmApi)> {
         let (mut evm, evm_data) = TestEvmApi::new(compile.clone());
-        let native = Self::from_path(path, evm.clone(), evm_data, compile, config)?;
+        let native = Self::from_path(
+            path,
+            evm.clone(),
+            evm_data,
+            compile,
+            config,
+            Target::default(),
+        )?;
         let footprint = native.memory().ty(&native.store).minimum.0 as u16;
         evm.set_pages(footprint);
         Ok((native, evm))

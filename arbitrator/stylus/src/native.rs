@@ -96,9 +96,10 @@ impl<D: DataReader, E: EvmApi<D>> NativeInstance<D, E> {
         compile: CompileConfig,
         evm: E,
         evm_data: EvmData,
+        target: Target,
     ) -> Result<Self> {
         let env = WasmEnv::new(compile, None, evm, evm_data);
-        let store = env.compile.store(Target::default());
+        let store = env.compile.store(target);
         let module = unsafe { Module::deserialize_unchecked(&store, module)? };
         Self::from_module(module, store, env)
     }
@@ -137,9 +138,10 @@ impl<D: DataReader, E: EvmApi<D>> NativeInstance<D, E> {
         evm_data: EvmData,
         compile: &CompileConfig,
         config: StylusConfig,
+        target: Target,
     ) -> Result<Self> {
         let env = WasmEnv::new(compile.clone(), Some(config), evm_api, evm_data);
-        let store = env.compile.store(Target::default());
+        let store = env.compile.store(target);
         let wat_or_wasm = std::fs::read(path)?;
         let module = Module::new(&store, wat_or_wasm)?;
         Self::from_module(module, store, env)
@@ -448,9 +450,9 @@ pub fn activate(
     Ok((module, stylus_data))
 }
 
-pub fn compile(wasm: &[u8], version: u16, debug: bool) -> Result<Vec<u8>> {
+pub fn compile(wasm: &[u8], version: u16, debug: bool, target: Target) -> Result<Vec<u8>> {
     let compile = CompileConfig::version(version, debug);
-    let asm = match self::module(wasm, compile, Target::default()) {
+    let asm = match self::module(wasm, compile, target) {
         Ok(asm) => asm,
         Err(err) => util::panic_with_wasm(wasm, err),
     };
