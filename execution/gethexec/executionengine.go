@@ -91,14 +91,18 @@ type ExecutionEngine struct {
 	cachedL1PriceData *L1PriceData
 }
 
+func NewL1PriceData() *L1PriceData {
+	return &L1PriceData{
+		msgToL1PriceData: []L1PriceDataOfMsg{},
+	}
+}
+
 func NewExecutionEngine(bc *core.BlockChain) (*ExecutionEngine, error) {
 	return &ExecutionEngine{
-		bc:               bc,
-		resequenceChan:   make(chan []*arbostypes.MessageWithMetadata),
-		newBlockNotifier: make(chan struct{}, 1),
-		cachedL1PriceData: &L1PriceData{
-			msgToL1PriceData: []L1PriceDataOfMsg{},
-		},
+		bc:                bc,
+		resequenceChan:    make(chan []*arbostypes.MessageWithMetadata),
+		newBlockNotifier:  make(chan struct{}, 1),
+		cachedL1PriceData: NewL1PriceData(),
 	}, nil
 }
 
