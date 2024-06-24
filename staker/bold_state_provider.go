@@ -478,6 +478,7 @@ func (s *BOLDStateProvider) CollectProof(
 		"blockChallengeHeight", blockChallengeHeight,
 		"messageNum", messageNum,
 		"startState", fmt.Sprintf("%+v", input.StartState),
+		"machineIndex", machineIndex,
 	)
 	execRun, err := s.statelessValidator.execSpawners[0].CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
 	if err != nil {
