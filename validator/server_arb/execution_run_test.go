@@ -71,13 +71,13 @@ func Test_machineHashesWithStep(t *testing.T) {
 	t.Run("basic argument checks", func(t *testing.T) {
 		machStartIndex := uint64(0)
 		stepSize := uint64(0)
-		numRequiredHashes := uint64(0)
-		_, err := e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, numRequiredHashes)
+		maxIterations := uint64(0)
+		_, err := e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, maxIterations)
 		if !strings.Contains(err.Error(), "step size cannot be 0") {
 			t.Error("Wrong error")
 		}
 		stepSize = uint64(1)
-		_, err = e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, numRequiredHashes)
+		_, err = e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, maxIterations)
 		if !strings.Contains(err.Error(), "number of iterations cannot be 0") {
 			t.Error("Wrong error")
 		}
@@ -88,7 +88,7 @@ func Test_machineHashesWithStep(t *testing.T) {
 		}
 		machStartIndex := uint64(0)
 		stepSize := uint64(1)
-		numRequiredHashes := uint64(1)
+		maxIterations := uint64(1)
 		e.cache = &MachineCache{
 			buildingLock: make(chan struct{}, 1),
 			machines:     []MachineInterface{mm},
@@ -98,7 +98,7 @@ func Test_machineHashesWithStep(t *testing.T) {
 			<-time.After(time.Millisecond * 50)
 			e.cache.buildingLock <- struct{}{}
 		}()
-		hashes, err := e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, numRequiredHashes)
+		hashes, err := e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, maxIterations)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -119,7 +119,7 @@ func Test_machineHashesWithStep(t *testing.T) {
 		mm.totalSteps = 20
 		machStartIndex := uint64(0)
 		stepSize := uint64(5)
-		numRequiredHashes := uint64(4)
+		maxIterations := uint64(4)
 		e.cache = &MachineCache{
 			buildingLock: make(chan struct{}, 1),
 			machines:     []MachineInterface{mm},
@@ -129,7 +129,7 @@ func Test_machineHashesWithStep(t *testing.T) {
 			<-time.After(time.Millisecond * 50)
 			e.cache.buildingLock <- struct{}{}
 		}()
-		hashes, err := e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, numRequiredHashes)
+		hashes, err := e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, maxIterations)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -163,7 +163,7 @@ func Test_machineHashesWithStep(t *testing.T) {
 		mm.totalSteps = 20
 		machStartIndex := uint64(0)
 		stepSize := uint64(5)
-		numRequiredHashes := uint64(10)
+		maxIterations := uint64(10)
 		e.cache = &MachineCache{
 			buildingLock: make(chan struct{}, 1),
 			machines:     []MachineInterface{mm},
@@ -173,7 +173,7 @@ func Test_machineHashesWithStep(t *testing.T) {
 			<-time.After(time.Millisecond * 50)
 			e.cache.buildingLock <- struct{}{}
 		}()
-		hashes, err := e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, numRequiredHashes)
+		hashes, err := e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, maxIterations)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -193,7 +193,7 @@ func Test_machineHashesWithStep(t *testing.T) {
 			Batch:      1,
 			PosInBatch: mm.totalSteps - 1,
 		}))
-		if len(hashes) >= int(numRequiredHashes) {
+		if len(hashes) >= int(maxIterations) {
 			t.Fatal("Wanted fewer hashes than the max iterations")
 		}
 		for i := range hashes {
