@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
+	gethParams "github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/addressSet"
 	"github.com/offchainlabs/nitro/arbos/storage"
@@ -158,6 +159,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runMode c
 func (p Programs) CallProgram(
 	scope *vm.ScopeContext,
 	statedb vm.StateDB,
+	arbosVersion uint64,
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,
 	calldata []byte,
@@ -166,6 +168,7 @@ func (p Programs) CallProgram(
 	evm := interpreter.Evm()
 	contract := scope.Contract
 	codeHash := contract.CodeHash
+	startingGas := contract.Gas
 	debugMode := evm.ChainConfig().DebugMode()
 
 	params, err := p.Params()
@@ -227,7 +230,26 @@ func (p Programs) CallProgram(
 	if contract.CodeAddr != nil {
 		address = *contract.CodeAddr
 	}
-	return callProgram(address, moduleHash, scope, interpreter, tracingInfo, calldata, evmData, goParams, model)
+	ret, err := callProgram(address, moduleHash, scope, interpreter, tracingInfo, calldata, evmData, goParams, model)
+	if len(ret) > 0 && arbosVersion >= gethParams.ArbosVersion_StylusFixes {
+		// Ensure that return data costs as least as much as it would in the EVM.
+		evmCost := evmMemoryCost(uint64(len(ret)))
+		if startingGas < evmCost {
+			contract.Gas = 0
+			return nil, vm.ErrOutOfGas
+		}
+		maxGasToReturn := startingGas - evmCost
+		contract.Gas = am.MinInt(contract.Gas, maxGasToReturn)
+	}
+	return ret, err
+}
+
+func evmMemoryCost(size uint64) uint64 {
+	// It would take 100GB to overflow this calculation, so no need to worry about that
+	words := (size + 31) / 32
+	linearCost := words * gethParams.MemoryGas
+	squareCost := (words * words) / gethParams.QuadCoeffDiv
+	return linearCost + squareCost
 }
 
 func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
