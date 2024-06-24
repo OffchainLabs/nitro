@@ -248,7 +248,7 @@ func createL2Nodes(t *testing.T, ctx context.Context, conf *arbnode.Config, chai
 	return consensusNode, execNode
 }
 
-func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, challengeMsgIdx int64) {
+func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, challengeMsgIdx int64, wasmRootDir string) {
 	glogger := log.NewGlogHandler(
 		log.NewTerminalHandler(io.Writer(os.Stderr), false))
 	glogger.Verbosity(log.LvlInfo)
@@ -273,10 +273,12 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 
 	var valStack *node.Node
 	var mockSpawn *mockSpawner
+	valNodeConfig := &valnode.TestValidationConfig
+	valNodeConfig.Wasm.RootPath = wasmRootDir
 	if useStubs {
-		mockSpawn, valStack = createMockValidationNode(t, ctx, &valnode.TestValidationConfig.Arbitrator)
+		mockSpawn, valStack = createMockValidationNode(t, ctx, &valNodeConfig.Arbitrator)
 	} else {
-		_, valStack = createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
+		_, valStack = createTestValidationNode(t, ctx, valNodeConfig)
 	}
 	configByValidationNode(conf, valStack)
 

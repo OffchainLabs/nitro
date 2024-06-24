@@ -11,6 +11,7 @@ import (
 	"io"
 	"math/big"
 	"net"
+	"net/http"
 	"os"
 	"strconv"
 	"strings"
@@ -74,6 +75,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	"github.com/offchainlabs/nitro/util/testhelpers/github"
 	"golang.org/x/exp/slog"
 )
 
@@ -1298,4 +1300,32 @@ func logParser[T any](t *testing.T, source string, name string) func(*types.Log)
 		Require(t, err, "failed to parse log")
 		return event
 	}
+}
+
+func populateMachineDir(t *testing.T, cr *github.ConsensusRelease) string {
+	baseDir := t.TempDir()
+	machineDir := baseDir + "/machines"
+	err := os.Mkdir(machineDir, 0755)
+	Require(t, err)
+	err = os.Mkdir(machineDir+"/latest", 0755)
+	Require(t, err)
+	mrFile, err := os.Create(machineDir + "/latest/module-root.txt")
+	Require(t, err)
+	_, err = mrFile.WriteString(cr.WavmModuleRoot)
+	Require(t, err)
+	machResp, err := http.Get(cr.MachineWavmURL.String())
+	Require(t, err)
+	defer machResp.Body.Close()
+	machineFile, err := os.Create(machineDir + "/latest/machine.wavm.br")
+	Require(t, err)
+	_, err = io.Copy(machineFile, machResp.Body)
+	Require(t, err)
+	replayResp, err := http.Get(cr.ReplayWasmURL.String())
+	Require(t, err)
+	defer replayResp.Body.Close()
+	replayFile, err := os.Create(machineDir + "/latest/replay.wasm")
+	Require(t, err)
+	_, err = io.Copy(replayFile, replayResp.Body)
+	Require(t, err)
+	return machineDir
 }
