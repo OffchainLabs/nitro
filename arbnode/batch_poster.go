@@ -58,7 +58,6 @@ var (
 	baseFeeGauge                  = metrics.NewRegisteredGauge("arb/batchposter/basefee", nil)
 	blobFeeGauge                  = metrics.NewRegisteredGauge("arb/batchposter/blobfee", nil)
 	l1GasPriceGauge               = metrics.NewRegisteredGauge("arb/batchposter/l1gasprice", nil)
-	messageLengthGauge            = metrics.NewRegisteredGauge("arb/batchposter/messagelength", nil)
 	blockGasUsedGauge             = metrics.NewRegisteredGauge("arb/batchposter/blockgas/used", nil)
 	blockGasLimitGauge            = metrics.NewRegisteredGauge("arb/batchposter/blockgas/limit", nil)
 	blobGasUsedGauge              = metrics.NewRegisteredGauge("arb/batchposter/blobgas/used", nil)
@@ -1350,8 +1349,6 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		"totalSegments", len(b.building.segments.rawSegments),
 		"numBlobs", len(kzgBlobs),
 	)
-
-	messageLengthGauge.Update(int64(len(sequencerMsg)))
 
 	recentlyHitL1Bounds := time.Since(b.lastHitL1Bounds) < config.PollInterval*3
 	postedMessages := b.building.msgCount - batchPosition.MessageCount
