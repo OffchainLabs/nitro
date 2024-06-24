@@ -154,7 +154,7 @@ func Test_machineHashesWithStep(t *testing.T) {
 			}
 		}
 	})
-	t.Run("if finishes execution early, simply pads the remaining desired hashes with the machine finished hash", func(t *testing.T) {
+	t.Run("if finishes execution early, can return a smaller number of hashes than the expected max iterations", func(t *testing.T) {
 		initialGs := validator.GoGlobalState{
 			Batch:      1,
 			PosInBatch: 0,
@@ -189,15 +189,8 @@ func Test_machineHashesWithStep(t *testing.T) {
 			}
 			expectedHashes = append(expectedHashes, gs.Hash())
 		}
-		// The rest of the expected hashes should be the machine finished hash repeated.
-		for len(expectedHashes) < 10 {
-			expectedHashes = append(expectedHashes, machineFinishedHash(validator.GoGlobalState{
-				Batch:      1,
-				PosInBatch: mm.totalSteps - 1,
-			}))
-		}
-		if len(hashes) != len(expectedHashes) {
-			t.Fatal("Wanted one hash")
+		if len(hashes) >= int(numRequiredHashes) {
+			t.Fatal("Wanted fewer hashes than the max iterations")
 		}
 		for i := range hashes {
 			if expectedHashes[i] != hashes[i] {
