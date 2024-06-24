@@ -78,7 +78,7 @@ func Test_machineHashesWithStep(t *testing.T) {
 		}
 		stepSize = uint64(1)
 		_, err = e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, numRequiredHashes)
-		if !strings.Contains(err.Error(), "required number of hashes cannot be 0") {
+		if !strings.Contains(err.Error(), "number of iterations cannot be 0") {
 			t.Error("Wrong error")
 		}
 	})
@@ -189,6 +189,10 @@ func Test_machineHashesWithStep(t *testing.T) {
 			}
 			expectedHashes = append(expectedHashes, gs.Hash())
 		}
+		expectedHashes = append(expectedHashes, machineFinishedHash(validator.GoGlobalState{
+			Batch:      1,
+			PosInBatch: mm.totalSteps - 1,
+		}))
 		if len(hashes) >= int(numRequiredHashes) {
 			t.Fatal("Wanted fewer hashes than the max iterations")
 		}
