@@ -701,6 +701,7 @@ func (s *ExecutionEngine) updateL1GasPriceEstimateMetric() {
 	l2EstimateL1GasPrice, err := arbState.L1PricingState().PricePerUnit()
 	if err != nil {
 		log.Error("error fetching l2 Estimate of L1 GasPrice")
+		return
 	}
 	l1GasPriceEstimateGauge.Update(l2EstimateL1GasPrice.Int64())
 }
