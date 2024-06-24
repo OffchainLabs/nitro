@@ -61,11 +61,10 @@ type L1PriceDataOfMsg struct {
 }
 
 type L1PriceData struct {
-	mutex                       sync.RWMutex
-	startOfL1PriceDataCache     arbutil.MessageIndex
-	endOfL1PriceDataCache       arbutil.MessageIndex
-	msgToL1PriceData            []L1PriceDataOfMsg
-	currentEstimateOfL1GasPrice uint64
+	mutex                   sync.RWMutex
+	startOfL1PriceDataCache arbutil.MessageIndex
+	endOfL1PriceDataCache   arbutil.MessageIndex
+	msgToL1PriceData        []L1PriceDataOfMsg
 }
 
 type ExecutionEngine struct {
@@ -684,26 +683,22 @@ func (s *ExecutionEngine) ResultAtPos(pos arbutil.MessageIndex) (*execution.Mess
 	return s.resultFromHeader(s.bc.GetHeaderByNumber(s.MessageIndexToBlockNumber(pos)))
 }
 
-func (s *ExecutionEngine) getL1GasPriceEstimate() uint64 {
+func (s *ExecutionEngine) getL1GasPriceEstimate() (uint64, error) {
 	bc := s.bc
 	latestHeader := bc.CurrentBlock()
 	latestState, err := bc.StateAt(latestHeader.Root)
 	if err != nil {
-		log.Error("error getting latest statedb while fetching l2 Estimate of L1 GasPrice")
-		return s.cachedL1PriceData.currentEstimateOfL1GasPrice
+		return 0, errors.New("error getting latest statedb while fetching l2 Estimate of L1 GasPrice")
 	}
 	arbState, err := arbosState.OpenSystemArbosState(latestState, nil, true)
 	if err != nil {
-		log.Error("error opening system arbos state while fetching l2 Estimate of L1 GasPrice")
-		return s.cachedL1PriceData.currentEstimateOfL1GasPrice
+		return 0, errors.New("error opening system arbos state while fetching l2 Estimate of L1 GasPrice")
 	}
 	l2EstimateL1GasPrice, err := arbState.L1PricingState().PricePerUnit()
 	if err != nil {
-		log.Error("error fetching l2 Estimate of L1 GasPrice")
-		return s.cachedL1PriceData.currentEstimateOfL1GasPrice
+		return 0, errors.New("error fetching l2 Estimate of L1 GasPrice")
 	}
-	s.cachedL1PriceData.currentEstimateOfL1GasPrice = l2EstimateL1GasPrice.Uint64()
-	return s.cachedL1PriceData.currentEstimateOfL1GasPrice
+	return l2EstimateL1GasPrice.Uint64(), nil
 }
 
 func (s *ExecutionEngine) getL1PricingSurplus() (int64, error) {

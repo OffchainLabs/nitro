@@ -1059,13 +1059,16 @@ func (s *Sequencer) updateExpectedSurplus(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("error encountered getting l1 pricing surplus while updating expectedSurplus: %w", err)
 	}
+	l1GasPriceEstimate, err := s.execEngine.getL1GasPriceEstimate()
+	if err != nil {
+		return 0, fmt.Errorf("error encountered getting l1 gas price estimate while updating expectedSurplus: %w", err)
+	}
 	backlogL1GasCharged := int64(s.execEngine.backlogL1GasCharged())
 	backlogCallDataUnits := int64(s.execEngine.backlogCallDataUnits())
 	expectedSurplus := int64(surplus) + backlogL1GasCharged - backlogCallDataUnits*int64(l1GasPrice)
-	l1GasPriceEstimate := int64(s.execEngine.getL1GasPriceEstimate())
 	// update metrics
 	l1GasPriceGauge.Update(int64(l1GasPrice))
-	l1GasPriceEstimateGauge.Update(l1GasPriceEstimate)
+	l1GasPriceEstimateGauge.Update(int64(l1GasPriceEstimate))
 	callDataUnitsBacklogGauge.Update(backlogCallDataUnits)
 	unusedL1GasChargeGauge.Update(backlogL1GasCharged)
 	currentSurplusGauge.Update(surplus)
