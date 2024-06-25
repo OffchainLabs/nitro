@@ -137,51 +137,51 @@ fi
 
 convert_result=
 convert () {
-	srcdir=$(echo $src/$1 | tr -s /)
-	dstdir=$(echo $dst/$1 | tr -s /)
-	if ! [ -e $dstdir ]; then
-		echo "== Converting $1 db"
-		cmd="$dbconv --src.db-engine=leveldb --src.data $srcdir --dst.db-engine=pebble --dst.data $dstdir --convert --compact"
-		echo $cmd
-		$cmd
-		if [ $? -ne 0 ]; then
-			convert_result="FAILED"
-			return 1
-		fi
-		convert_result="converted"
-		return 0
-	else
-		if $skip_existing; then
-			echo "== Note: $dstdir directory already exists, skipping conversion (--skip-existing flag is set)"
-			convert_result="skipped"
-			return 0
-		else
-			convert_result="FAILED ($dstdir already exists)"
-			return 1
-		fi
-	fi
+    srcdir=$(echo $src/$1 | tr -s /)
+    dstdir=$(echo $dst/$1 | tr -s /)
+    if ! [ -e $dstdir ]; then
+        echo "== Converting $1 db"
+        cmd="$dbconv --src.db-engine=leveldb --src.data $srcdir --dst.db-engine=pebble --dst.data $dstdir --convert --compact"
+        echo $cmd
+        $cmd
+        if [ $? -ne 0 ]; then
+            convert_result="FAILED"
+            return 1
+        fi
+        convert_result="converted"
+        return 0
+    else
+        if $skip_existing; then
+            echo "== Note: $dstdir directory already exists, skipping conversion (--skip-existing flag is set)"
+            convert_result="skipped"
+            return 0
+        else
+            convert_result="FAILED ($dstdir already exists)"
+            return 1
+        fi
+    fi
 }
 
 convert "l2chaindata"
 res=$?
 l2chaindata_status=$convert_result
 if [ $res -ne 0 ]; then
-	printStatus
-	exit 1
+    printStatus
+    exit 1
 fi
 
 if ! [ -e $dst/l2chaindata/ancient ]; then
-	ancient_src=$(echo $src/l2chaindata/ancient | tr -s /)
-	ancient_dst=$(echo $dst/l2chaindata/ | tr -s /)
+    ancient_src=$(echo $src/l2chaindata/ancient | tr -s /)
+    ancient_dst=$(echo $dst/l2chaindata/ | tr -s /)
     echo "== Copying l2chaindata ancients"
-	cmd="cp -r $ancient_src $ancient_dst"
-	echo $cmd
-	$cmd
-	if [ $? -ne 0 ]; then
-		l2chaindata_ancient_status="FAILED (failed to copy)"
-		printStatus
-		exit 1
-	fi
+    cmd="cp -r $ancient_src $ancient_dst"
+    echo $cmd
+    $cmd
+    if [ $? -ne 0 ]; then
+        l2chaindata_ancient_status="FAILED (failed to copy)"
+        printStatus
+        exit 1
+    fi
     l2chaindata_ancient_status="copied"
 else
     if $skip_existing; then
@@ -198,31 +198,31 @@ convert "arbitrumdata"
 res=$?
 arbitrumdata_status=$convert_result
 if [ $res -ne 0 ]; then
-	printStatus
-	exit 1
+    printStatus
+    exit 1
 fi
 
 if [ -e $src/wasm ]; then
-	convert "wasm"
-	res=$?
-	wasm_status=$convert_result
-	if [ $res -ne 0 ]; then
-		printStatus
-		exit 1
-	fi
+    convert "wasm"
+    res=$?
+    wasm_status=$convert_result
+    if [ $res -ne 0 ]; then
+        printStatus
+        exit 1
+    fi
 else
     echo "== Note: Source directory does not contain wasm database."
     wasm_status="not found in source directory"
 fi
 
 if [ -e $src/classic-msg ]; then
-	convert "classic-msg"
-	res=$?
-	classicmsg_status=$convert_result
-	if [ $res -ne 0 ]; then
-		printStatus
-		exit 1
-	fi
+    convert "classic-msg"
+    res=$?
+    classicmsg_status=$convert_result
+    if [ $res -ne 0 ]; then
+        printStatus
+        exit 1
+    fi
 else
     echo "== Note: Source directory does not contain classic-msg database."
     classicmsg_status="not found in source directory"
