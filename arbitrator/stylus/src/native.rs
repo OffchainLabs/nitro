@@ -4,7 +4,7 @@
 use crate::{
     cache::InitCache,
     env::{MeterData, WasmEnv},
-    host, util,
+    host,
 };
 use arbutil::{
     evm::{

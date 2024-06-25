@@ -62,7 +62,7 @@ pub fn target_cache_set(name: String, description: String, native: bool) -> Resu
 }
 
 pub fn target_cache_get(name: &str) -> Result<Target> {
-    if name.len() == 0 {
+    if name.is_empty() {
         return Ok(InitCache::target());
     }
     TARGET_CACHE
