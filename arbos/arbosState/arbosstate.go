@@ -319,7 +319,10 @@ func (state *ArbosState) UpgradeArbosVersion(
 			programs.Initialize(state.backingStorage.OpenSubStorage(programsSubspace))
 
 		case 31:
-			// no state changes needed
+			params, err := state.Programs().Params()
+			ensure(err)
+			params.Version = 2
+			ensure(params.Save())
 
 		default:
 			return fmt.Errorf(

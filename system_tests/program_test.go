@@ -223,6 +223,102 @@ func testActivateTwice(t *testing.T, jit bool) {
 	validateBlocks(t, 7, jit, builder)
 }
 
+func TestStylusUpgrade(t *testing.T) {
+	t.Parallel()
+	testStylusUpgrade(t, true)
+}
+
+func testStylusUpgrade(t *testing.T, jit bool) {
+	builder, auth, cleanup := setupProgramTest(t, false, func(b *NodeBuilder) { b.WithArbOSVersion(params.ArbosVersion_Stylus) })
+	defer cleanup()
+
+	ctx := builder.ctx
+
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	arbOwner, err := pgen.NewArbOwner(types.ArbOwnerAddress, l2client)
+	Require(t, err)
+	ensure(arbOwner.SetInkPrice(&auth, 1))
+
+	wasm, _ := readWasmFile(t, rustFile("keccak"))
+	keccakAddr := deployContract(t, ctx, auth, l2client, wasm)
+
+	colors.PrintBlue("keccak program deployed to ", keccakAddr)
+
+	preimage := []byte("hello, you fool")
+
+	keccakArgs := []byte{0x01} // keccak the preimage once
+	keccakArgs = append(keccakArgs, preimage...)
+
+	checkFailWith := func(errMessage string) uint64 {
+		msg := ethereum.CallMsg{
+			To:   &keccakAddr,
+			Data: keccakArgs,
+		}
+		_, err = l2client.CallContract(ctx, msg, nil)
+		if err == nil || !strings.Contains(err.Error(), errMessage) {
+			Fatal(t, "call should have failed with "+errMessage, " got: "+err.Error())
+		}
+
+		// execute onchain for proving's sake
+		tx := l2info.PrepareTxTo("Owner", &keccakAddr, 1e9, nil, keccakArgs)
+		Require(t, l2client.SendTransaction(ctx, tx))
+		return EnsureTxFailed(t, ctx, l2client, tx).BlockNumber.Uint64()
+	}
+
+	checkSucceeds := func() uint64 {
+		msg := ethereum.CallMsg{
+			To:   &keccakAddr,
+			Data: keccakArgs,
+		}
+		_, err = l2client.CallContract(ctx, msg, nil)
+		if err != nil {
+			Fatal(t, err)
+		}
+
+		// execute onchain for proving's sake
+		tx := l2info.PrepareTxTo("Owner", &keccakAddr, 1e9, nil, keccakArgs)
+		Require(t, l2client.SendTransaction(ctx, tx))
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		if err != nil {
+			Fatal(t, err)
+		}
+		return receipt.BlockNumber.Uint64()
+	}
+
+	// Calling the contract pre-activation should fail.
+	blockFail1 := checkFailWith("ProgramNotActivated")
+
+	activateWasm(t, ctx, auth, l2client, keccakAddr, "keccak")
+
+	blockSuccess1 := checkSucceeds()
+
+	tx, err := arbOwner.ScheduleArbOSUpgrade(&auth, 31, 0)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// generate traffic to perform the upgrade
+	TransferBalance(t, "Owner", "Owner", big.NewInt(1), builder.L2Info, builder.L2.Client, ctx)
+
+	blockFail2 := checkFailWith("ProgramNeedsUpgrade")
+
+	activateWasm(t, ctx, auth, l2client, keccakAddr, "keccak")
+
+	blockSuccess2 := checkSucceeds()
+
+	validateBlockRange(t, []uint64{blockFail1, blockSuccess1, blockFail2, blockSuccess2}, jit, builder)
+}
+
 func TestProgramErrors(t *testing.T) {
 	t.Parallel()
 	errorTest(t, true)
