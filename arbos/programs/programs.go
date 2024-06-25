@@ -197,9 +197,10 @@ func (p Programs) CallProgram(
 
 	// pay for program init
 	cached := program.cached || statedb.GetRecentWasms().Insert(codeHash, params.BlockCacheSize)
-	if cached {
+	if cached || params.Version > 1 { // in version 1 cached cost is part of called cost
 		callCost = am.SaturatingUAdd(callCost, program.cachedGas(params))
-	} else {
+	}
+	if !cached {
 		callCost = am.SaturatingUAdd(callCost, program.initGas(params))
 	}
 	if err := contract.BurnGas(callCost); err != nil {
@@ -437,7 +438,12 @@ func (p Programs) ProgramTimeLeft(codeHash common.Hash, time uint64, params *Sty
 
 func (p Programs) ProgramInitGas(codeHash common.Hash, time uint64, params *StylusParams) (uint64, uint64, error) {
 	program, err := p.getActiveProgram(codeHash, time, params)
-	return program.initGas(params), program.cachedGas(params), err
+	cachedGas := program.cachedGas(params)
+	initGas := program.initGas(params)
+	if params.Version > 1 {
+		initGas += cachedGas
+	}
+	return initGas, cachedGas, err
 }
 
 func (p Programs) ProgramMemoryFootprint(codeHash common.Hash, time uint64, params *StylusParams) (uint16, error) {
