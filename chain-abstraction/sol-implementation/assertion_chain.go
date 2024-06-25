@@ -249,7 +249,7 @@ func (a *AssertionChain) GetAssertion(ctx context.Context, opts *bind.CallOpts, 
 }
 
 func (a *AssertionChain) AssertionStatus(ctx context.Context, assertionHash protocol.AssertionHash) (protocol.AssertionStatus, error) {
-	res, err := a.rollup.GetAssertion(a.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}), assertionHash.Hash)
+	res, err := a.rollup.GetAssertion(&bind.CallOpts{Context: ctx}, assertionHash.Hash)
 	if err != nil {
 		return protocol.NoAssertion, err
 	}
