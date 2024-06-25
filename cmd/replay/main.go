@@ -215,7 +215,7 @@ func main() {
 		}
 		var dapReaders []daprovider.Reader
 		if dasReader != nil {
-			dapReaders = append(dapReaders, daprovider.NewReaderForDAS(dasReader))
+			dapReaders = append(dapReaders, daprovider.NewReaderForDAS(dasReader, dasReader))
 		}
 		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(&BlobPreimageReader{}))
 		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode)
