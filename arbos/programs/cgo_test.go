@@ -11,3 +11,10 @@ func TestConstants(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestCompileArch(t *testing.T) {
+	err := testCompileArch()
+	if err != nil {
+		t.Fatal(err)
+	}
+}
