@@ -59,14 +59,14 @@ func main() {
 	prod := flag.Bool("prod", false, "Whether to configure the rollup for production or testing")
 
 	// Bold specific flags.
-	numBigSteps := flag.Uint("numBigSteps", 4, "Number of big steps in the rollup")
-	blockChallengeLeafHeight := flag.Uint64("blockChallengeLeafHeight", 1<<5, "block challenge edge leaf height")
-	bigStepLeafHeight := flag.Uint64("bigStepLeafHeight", 1<<8, "big step edge leaf height")
-	smallSteapLeafHeight := flag.Uint64("smallStepLeafHeight", 1<<11, "small step edge leaf height")
+	numBigSteps := flag.Uint("numBigSteps", 2, "Number of big steps in the rollup")
+	blockChallengeLeafHeight := flag.Uint64("blockChallengeLeafHeight", 1<<14, "block challenge edge leaf height")
+	bigStepLeafHeight := flag.Uint64("bigStepLeafHeight", 16384, "big step edge leaf height")
+	smallSteapLeafHeight := flag.Uint64("smallStepLeafHeight", 16384, "small step edge leaf height")
 	minimumAssertionPeriodBlocks := flag.Uint64("minimumAssertionPeriodBlocks", 1, "minimum number of blocks between assertions")
-	// Half a day of blocks as 12 seconds per block.
-	confirmPeriodBlocks := flag.Uint64("confirmPeriodBlocks", 3600, "challenge period")
-	challengeGracePeriodBlocks := flag.Uint64("challengeGracePeriodBlocks", 3, "challenge grace period in which security council can take action")
+	// One day of blocks at 12 seconds per block.
+	confirmPeriodBlocks := flag.Uint64("confirmPeriodBlocks", 7200, "challenge period")
+	challengeGracePeriodBlocks := flag.Uint64("challengeGracePeriodBlocks", 100, "challenge grace period in which security council can take action")
 	baseStake := flag.Uint64("baseStake", 1, "base-stake size")
 
 	flag.Parse()
@@ -255,6 +255,7 @@ func main() {
 			ParentChainIsArbitrum: &parentChainIsArbitrum,
 			ChainConfig:           &chainConfig,
 			RollupAddresses: &chaininfo.RollupAddresses{
+				UpgradeExecutor:        deployedAddresses.UpgradeExecutor,
 				Bridge:                 deployedAddresses.Bridge,
 				Inbox:                  deployedAddresses.Inbox,
 				SequencerInbox:         deployedAddresses.SequencerInbox,
