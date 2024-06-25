@@ -97,7 +97,7 @@ type Config struct {
 	ResourceMgmt        resourcemanager.Config      `koanf:"resource-mgmt" reload:"hot"`
 	// SnapSyncConfig is only used for testing purposes, these should not be configured in production.
 	SnapSyncTest SnapSyncConfig
-	Celestia     celestia.DAConfig `koanf:"celestia-cfg"`
+	Celestia     celestia.CelestiaConfig `koanf:"celestia-cfg"`
 }
 
 func (c *Config) Validate() error {
@@ -555,7 +555,7 @@ func createNodeImpl(
 	}
 
 	if config.Celestia.Enable {
-		celestiaService, err := celestia.NewCelestiaDA(&config.Celestia, nil)
+		celestiaService, err := celestia.NewCelestiaDASRPCClient(config.Celestia.URL)
 		if err != nil {
 			return nil, err
 		}

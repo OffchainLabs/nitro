@@ -95,7 +95,7 @@ func writeTxToCelestiaBatch(writer io.Writer, tx *types.Transaction) error {
 	return err
 }
 
-func makeCelestiaBatch(t *testing.T, l2Node *arbnode.Node, celestiaDA *celestia.CelestiaDA, undecided bool, counterfactual bool, mockStream *mocksgen.Mockstream, deployer *bind.TransactOpts, l2Info *BlockchainTestInfo, backend *ethclient.Client, sequencer *bind.TransactOpts, seqInbox *mocksgen.SequencerInboxStub, seqInboxAddr common.Address, modStep int64) {
+func makeCelestiaBatch(t *testing.T, l2Node *arbnode.Node, celestiaDA *celestia.CelestiaDASClient, undecided bool, counterfactual bool, mockStream *mocksgen.Mockstream, deployer *bind.TransactOpts, l2Info *BlockchainTestInfo, backend *ethclient.Client, sequencer *bind.TransactOpts, seqInbox *mocksgen.SequencerInboxStub, seqInboxAddr common.Address, modStep int64) {
 	ctx := context.Background()
 
 	batchBuffer := bytes.NewBuffer([]byte{})
