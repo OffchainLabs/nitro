@@ -302,7 +302,7 @@ contract EdgeChallengeManager is IEdgeChallengeManager, Initializable {
     uint8 public NUM_BIGSTEP_LEVEL;
 
     constructor() {
-        // _disableInitializers();
+        _disableInitializers();
     }
 
     /// @inheritdoc IEdgeChallengeManager
