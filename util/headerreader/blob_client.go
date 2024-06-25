@@ -229,10 +229,11 @@ func (b *BlobClient) blobSidecars(ctx context.Context, slot uint64, versionedHas
 		var found bool
 		for outputIdx = range versionedHashes {
 			if versionedHashes[outputIdx] == versionedHash {
-				found = true
 				if outputsFound[outputIdx] {
-					return nil, fmt.Errorf("found blob with versioned hash %v twice", versionedHash)
+					// Duplicate, skip this one
+					break
 				}
+				found = true
 				outputsFound[outputIdx] = true
 				break
 			}
