@@ -430,7 +430,6 @@ pub fn module(wasm: &[u8], compile: CompileConfig, target: Target) -> Result<Vec
         imports.define("console", "tee_f64", stub!(f64 <- |_: f64|));
         imports.define("debug", "null_host", stub!(||));
     }
-    Instance::new(&mut store, &module, &imports)?;
 
     let module = module.serialize()?;
     Ok(module.to_vec())
@@ -452,9 +451,5 @@ pub fn activate(
 
 pub fn compile(wasm: &[u8], version: u16, debug: bool, target: Target) -> Result<Vec<u8>> {
     let compile = CompileConfig::version(version, debug);
-    let asm = match self::module(wasm, compile, target) {
-        Ok(asm) => asm,
-        Err(err) => util::panic_with_wasm(wasm, err),
-    };
-    Ok(asm)
+    self::module(wasm, compile, target)
 }
