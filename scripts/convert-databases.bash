@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-set -e
-
 DEFAULT_DBCONV=/usr/local/bin/dbconv
 DEFAULT_SRC=/home/user/.arbitrum/arb1/nitro
 
@@ -11,11 +9,11 @@ dst=
 force=false
 skip_existing=false
 
-l2chaindata_status="unknown"
-l2chaindata_ancient_status="unknown"
-arbitrumdata_status="unknown"
-wasm_status="unknown"
-classicmsg_status="unknown"
+l2chaindata_status="n/a"
+l2chaindata_ancient_status="n/a"
+arbitrumdata_status="n/a"
+wasm_status="n/a"
+classicmsg_status="n/a"
 
 checkMissingValue () {
     if [[ $1 -eq 0 || $2 == -* ]]; then
@@ -137,28 +135,57 @@ if [ -e "$dst" ] && ! $skip_existing; then
     fi
 fi
 
-if ! [ -e $dst/l2chaindata ]; then
-    echo "== Converting l2chaindata db"
-    (set -x; $dbconv --src.db-engine="leveldb" --src.data $src/l2chaindata --dst.db-engine="pebble" --dst.data $dst/l2chaindata --convert --compact) || (l2chaindata_status="conversion failed"; printStatus; exit 1)
-    l2chaindata_status="converted"
-else
-    if $skip_existing; then
-        echo "== l2chaindata directory already exists, skipping conversion (--skip-existing flag is set)"
-        l2chaindata_status="skipped"
-    else
-        # unreachable, we already had to remove root directory
-        echo script error, reached unreachable
-        exit 1
-    fi
+convert_result=
+convert () {
+	srcdir=$(echo $src/$1 | tr -s /)
+	dstdir=$(echo $dst/$1 | tr -s /)
+	if ! [ -e $dstdir ]; then
+		echo "== Converting $1 db"
+		cmd="$dbconv --src.db-engine=leveldb --src.data $srcdir --dst.db-engine=pebble --dst.data $dstdir --convert --compact"
+		echo $cmd
+		$cmd
+		if [ $? -ne 0 ]; then
+			convert_result="FAILED"
+			return 1
+		fi
+		convert_result="converted"
+		return 0
+	else
+		if $skip_existing; then
+			echo "== Note: $dstdir directory already exists, skipping conversion (--skip-existing flag is set)"
+			convert_result="skipped"
+			return 0
+		else
+			convert_result="FAILED ($dstdir already exists)"
+			return 1
+		fi
+	fi
+}
+
+convert "l2chaindata"
+res=$?
+l2chaindata_status=$convert_result
+if [ $res -ne 0 ]; then
+	printStatus
+	exit 1
 fi
 
 if ! [ -e $dst/l2chaindata/ancient ]; then
+	ancient_src=$(echo $src/l2chaindata/ancient | tr -s /)
+	ancient_dst=$(echo $dst/l2chaindata/ | tr -s /)
     echo "== Copying l2chaindata ancients"
-    (set -x; cp -r $src/l2chaindata/ancient $dst/l2chaindata/) || (l2chaindata_ancient_status="failed to copy"; printStatus; exit 1)
+	cmd="cp -r $ancient_src $ancient_dst"
+	echo $cmd
+	$cmd
+	if [ $? -ne 0 ]; then
+		l2chaindata_ancient_status="FAILED (failed to copy)"
+		printStatus
+		exit 1
+	fi
     l2chaindata_ancient_status="copied"
 else
     if $skip_existing; then
-        echo "== l2chaindata/ancient directory already exists, skipping copy (--skip-existing flag is set)"
+        echo "== Note: l2chaindata/ancient directory already exists, skipping copy (--skip-existing flag is set)"
         l2chaindata_ancient_status="skipped"
     else
         # unreachable, we already had to remove root directory
@@ -167,56 +194,35 @@ else
     fi
 fi
 
-if ! [ -e $dst/arbitrumdata ]; then
-    echo "== Converting arbitrumdata db"
-    (set -x; $dbconv --src.db-engine="leveldb" --src.data $src/arbitrumdata --dst.db-engine="pebble" --dst.data $dst/arbitrumdata --convert --compact) || (arbitrumdata_status="conversion failed"; printStatus; exit 1)
-    arbitrumdata_status="converted"
-else
-    if $skip_existing; then
-        echo "== arbitrumdata directory already exists, skipping conversion (--skip-existing flag is set)"
-        arbitrumdata_status="skipped"
-    else
-        # unreachable, we already had to remove root directory
-        echo script error, reached unreachable
-        exit 1
-    fi
+convert "arbitrumdata"
+res=$?
+arbitrumdata_status=$convert_result
+if [ $res -ne 0 ]; then
+	printStatus
+	exit 1
 fi
 
 if [ -e $src/wasm ]; then
-    if ! [ -e $dst/wasm ]; then
-        echo "== Converting wasm db"
-        (set -x; $dbconv --src.db-engine="leveldb" --src.data $src/wasm --dst.db-engine="pebble" --dst.data $dst/wasm --convert --compact) || (wasm_status="conversion failed"; printStatus; exit 1)
-        wasm_status="converted"
-    else
-        if $skip_existing; then
-            echo "== wasm directory already exists, skipping conversion (--skip-existing flag is set)"
-            wasm_status="skipped"
-        else
-            # unreachable, we already had to remove root directory
-            echo script error, reached unreachable
-            exit 1
-        fi
-    fi
+	convert "wasm"
+	res=$?
+	wasm_status=$convert_result
+	if [ $res -ne 0 ]; then
+		printStatus
+		exit 1
+	fi
 else
     echo "== Note: Source directory does not contain wasm database."
     wasm_status="not found in source directory"
 fi
 
 if [ -e $src/classic-msg ]; then
-    if ! [ -e $dst/classic-msg ]; then
-        echo "== Converting classic-msg db"
-        (set -x; $dbconv --src.db-engine="leveldb" --src.data $src/classic-msg --dst.db-engine="pebble" --dst.data $dst/classic-msg --convert --compact) || (classicmsg_status="conversion failed"; printStatus; exit 1)
-        classicmsg_status="converted"
-    else
-        if $skip_existing; then
-            echo "== classic-msg directory already exists, skipping conversion (--skip-existing flag is set)"
-            classicmsg_status="skipped"
-        else
-            # unreachable, we already had to remove root directory
-            echo script error, reached unreachable
-            exit 1
-        fi
-    fi
+	convert "classic-msg"
+	res=$?
+	classicmsg_status=$convert_result
+	if [ $res -ne 0 ]; then
+		printStatus
+		exit 1
+	fi
 else
     echo "== Note: Source directory does not contain classic-msg database."
     classicmsg_status="not found in source directory"
