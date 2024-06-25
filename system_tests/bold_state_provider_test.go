@@ -1,7 +1,7 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/offchainlabs/bold/blob/main/LICENSE
 
-//go:build challengetest && !race
+//duild challengetest && !race
 
 package arbtest
 
@@ -14,15 +14,14 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi"
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/validator/valnode"
@@ -36,67 +35,65 @@ import (
 	mockmanager "github.com/OffchainLabs/bold/testing/mocks/state-provider"
 )
 
+func TestChallengeProtocolBOLD_LargeHistoryCommitmentRequest(t *testing.T) {
+	t.Parallel()
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	defer cancelCtx()
+
+	blockChallengeMaxHeight := uint64(1 << 26)
+	bigStepChallengeMaxHeight := uint64(1 << 23)
+	smallStepChallengeMaxHeight := uint64(1 << 19)
+	challengeMaxHeights := []l2stateprovider.Height{
+		l2stateprovider.Height(blockChallengeMaxHeight),
+		l2stateprovider.Height(bigStepChallengeMaxHeight),
+		l2stateprovider.Height(smallStepChallengeMaxHeight),
+	}
+	stateManager, l2node, l1stack := setupBOLDStateProviderTest(t, ctx, challengeMaxHeights)
+	defer requireClose(t, l1stack)
+	defer l2node.StopAndWait()
+
+	historyCommitter := l2stateprovider.NewHistoryCommitmentProvider(
+		stateManager,
+		stateManager,
+		stateManager,
+		challengeMaxHeights,
+		stateManager,
+		nil, // api db not needed.
+	)
+	// Make a request for all 1<<26 hashes in a block challenge.
+	request := &l2stateprovider.HistoryCommitmentRequest{
+		WasmModuleRoot:              common.Hash{},
+		FromBatch:                   2,
+		ToBatch:                     3,
+		UpperChallengeOriginHeights: []l2stateprovider.Height{},
+		FromHeight:                  0,
+		// By not specifying the up-to-height, we are requesting all 1<<26 hashes.
+		UpToHeight: option.None[l2stateprovider.Height](),
+	}
+	start := time.Now()
+	historyCommit, err := historyCommitter.HistoryCommitment(ctx, request)
+	Require(t, err)
+	t.Log("Time to make large history commitment request", time.Since(start))
+	if historyCommit.Height != blockChallengeMaxHeight {
+		Fatal(t, "wrong height", historyCommit.Height, "wanted", blockChallengeMaxHeight)
+	}
+}
+
 func TestChallengeProtocolBOLD_Bisections(t *testing.T) {
 	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
-	l2node, l1info, l2info, l1stack, l1client, stateManager, blockValidator := setupBoldStateProvider(t, ctx)
+	blockChallengeMaxHeight := uint64(1 << 26)
+	bigStepChallengeMaxHeight := uint64(1 << 23)
+	smallStepChallengeMaxHeight := uint64(1 << 19)
+	challengeMaxHeights := []l2stateprovider.Height{
+		l2stateprovider.Height(blockChallengeMaxHeight),
+		l2stateprovider.Height(bigStepChallengeMaxHeight),
+		l2stateprovider.Height(smallStepChallengeMaxHeight),
+	}
+	stateManager, l2node, l1stack := setupBOLDStateProviderTest(t, ctx, challengeMaxHeights)
 	defer requireClose(t, l1stack)
 	defer l2node.StopAndWait()
-	l2info.GenerateAccount("Destination")
-	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
-
-	seqInbox := l1info.GetAddress("SequencerInbox")
-	seqInboxBinding, err := bridgegen.NewSequencerInbox(seqInbox, l1client)
-	Require(t, err)
-
-	seqInboxABI, err := abi.JSON(strings.NewReader(bridgegen.SequencerInboxABI))
-	Require(t, err)
-
-	honestUpgradeExec, err := mocksgen.NewUpgradeExecutorMock(l1info.GetAddress("UpgradeExecutor"), l1client)
-	Require(t, err)
-	data, err := seqInboxABI.Pack(
-		"setIsBatchPoster",
-		sequencerTxOpts.From,
-		true,
-	)
-	Require(t, err)
-	honestRollupOwnerOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
-	_, err = honestUpgradeExec.ExecuteCall(&honestRollupOwnerOpts, seqInbox, data)
-	Require(t, err)
-
-	// We will make two batches, with 5 messages in each batch.
-	numMessagesPerBatch := int64(5)
-	divergeAt := int64(-1) // No divergence.
-	makeBoldBatch(t, l2node, l2info, l1client, &sequencerTxOpts, seqInboxBinding, seqInbox, numMessagesPerBatch, divergeAt)
-	numMessagesPerBatch = int64(10)
-	makeBoldBatch(t, l2node, l2info, l1client, &sequencerTxOpts, seqInboxBinding, seqInbox, numMessagesPerBatch, divergeAt)
-
-	bridgeBinding, err := bridgegen.NewBridge(l1info.GetAddress("Bridge"), l1client)
-	Require(t, err)
-	totalBatchesBig, err := bridgeBinding.SequencerMessageCount(&bind.CallOpts{Context: ctx})
-	Require(t, err)
-	totalBatches := totalBatchesBig.Uint64()
-	totalMessageCount, err := l2node.InboxTracker.GetBatchMessageCount(totalBatches - 1)
-	Require(t, err)
-
-	// Wait until the validator has validated the batches.
-	for {
-		lastInfo, err := blockValidator.ReadLastValidatedInfo()
-		if lastInfo == nil || err != nil {
-			continue
-		}
-		batchMsgCount, err := l2node.InboxTracker.GetBatchMessageCount(lastInfo.GlobalState.Batch)
-		if err != nil {
-			continue
-		}
-		Require(t, err)
-		t.Log("lastValidatedMessageCount", batchMsgCount, "totalMessageCount", totalMessageCount)
-		if batchMsgCount >= totalMessageCount {
-			break
-		}
-		time.Sleep(time.Millisecond * 100)
-	}
 
 	historyCommitter := l2stateprovider.NewHistoryCommitmentProvider(
 		stateManager,
@@ -149,63 +146,21 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
-	l2node, l1info, l2info, l1stack, l1client, stateManager, blockValidator := setupBoldStateProvider(t, ctx, staker.WithoutFinalizedBatchChecks())
+	blockChallengeMaxHeight := uint64(1 << 26)
+	bigStepChallengeMaxHeight := uint64(1 << 23)
+	smallStepChallengeMaxHeight := uint64(1 << 19)
+	challengeMaxHeights := []l2stateprovider.Height{
+		l2stateprovider.Height(blockChallengeMaxHeight),
+		l2stateprovider.Height(bigStepChallengeMaxHeight),
+		l2stateprovider.Height(smallStepChallengeMaxHeight),
+	}
+	stateManager, l2node, l1stack := setupBOLDStateProviderTest(t, ctx, challengeMaxHeights)
 	defer requireClose(t, l1stack)
 	defer l2node.StopAndWait()
-	l2info.GenerateAccount("Destination")
-	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
-
-	seqInbox := l1info.GetAddress("SequencerInbox")
-	seqInboxBinding, err := bridgegen.NewSequencerInbox(seqInbox, l1client)
-	Require(t, err)
-
-	seqInboxABI, err := abi.JSON(strings.NewReader(bridgegen.SequencerInboxABI))
-	Require(t, err)
-
-	honestUpgradeExec, err := mocksgen.NewUpgradeExecutorMock(l1info.GetAddress("UpgradeExecutor"), l1client)
-	Require(t, err)
-	data, err := seqInboxABI.Pack(
-		"setIsBatchPoster",
-		sequencerTxOpts.From,
-		true,
-	)
-	Require(t, err)
-	honestRollupOwnerOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
-	_, err = honestUpgradeExec.ExecuteCall(&honestRollupOwnerOpts, seqInbox, data)
-	Require(t, err)
-
-	// We will make two batches, with 5 messages in each batch.
-	numMessagesPerBatch := int64(5)
-	divergeAt := int64(-1) // No divergence.
-	makeBoldBatch(t, l2node, l2info, l1client, &sequencerTxOpts, seqInboxBinding, seqInbox, numMessagesPerBatch, divergeAt)
-	makeBoldBatch(t, l2node, l2info, l1client, &sequencerTxOpts, seqInboxBinding, seqInbox, numMessagesPerBatch, divergeAt)
-
-	bridgeBinding, err := bridgegen.NewBridge(l1info.GetAddress("Bridge"), l1client)
-	Require(t, err)
-	totalBatchesBig, err := bridgeBinding.SequencerMessageCount(&bind.CallOpts{Context: ctx})
-	Require(t, err)
-	totalBatches := totalBatchesBig.Uint64()
-	totalMessageCount, err := l2node.InboxTracker.GetBatchMessageCount(totalBatches - 1)
-	Require(t, err)
-
-	// Wait until the validator has validated the batches.
-	for {
-		lastInfo, err := blockValidator.ReadLastValidatedInfo()
-		if lastInfo == nil || err != nil {
-			continue
-		}
-		batchMsgCount, err := l2node.InboxTracker.GetBatchMessageCount(lastInfo.GlobalState.Batch)
-		if err != nil {
-			continue
-		}
-		t.Log("lastValidatedMessageCount", batchMsgCount, "totalMessageCount", totalMessageCount)
-		if batchMsgCount >= totalMessageCount {
-			break
-		}
-		time.Sleep(time.Millisecond * 100)
-	}
 
 	maxBlocks := uint64(1 << 14)
+	totalMessageCount := uint64(16)
+	totalBatches := uint64(3)
 
 	t.Run("StatesInBatchRange", func(t *testing.T) {
 		fromBatch := l2stateprovider.Batch(1)
@@ -229,7 +184,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 	})
 	t.Run("AgreesWithExecutionState", func(t *testing.T) {
 		// Non-zero position in batch should fail.
-		_, err = stateManager.ExecutionStateAfterPreviousState(
+		_, err := stateManager.ExecutionStateAfterPreviousState(
 			ctx,
 			0,
 			&protocol.GoGlobalState{
@@ -287,7 +242,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		}
 
 		// Check if we agree with the last posted batch to the inbox.
-		result, err := l2node.TxStreamer.ResultAtCount(totalMessageCount)
+		result, err := l2node.TxStreamer.ResultAtCount(arbutil.MessageIndex(totalMessageCount))
 		Require(t, err)
 		_ = result
 
@@ -324,7 +279,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 		}
 	})
 	t.Run("ExecutionStateAfterBatchCount", func(t *testing.T) {
-		_, err = stateManager.ExecutionStateAfterPreviousState(ctx, 0, &protocol.GoGlobalState{}, maxBlocks)
+		_, err := stateManager.ExecutionStateAfterPreviousState(ctx, 0, &protocol.GoGlobalState{}, maxBlocks)
 		if err == nil {
 			Fatal(t, "should have failed")
 		}
@@ -342,7 +297,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 	})
 }
 
-func setupBoldStateProvider(t *testing.T, ctx context.Context, opts ...staker.BOLDStateProviderOpt) (*arbnode.Node, *BlockchainTestInfo, *BlockchainTestInfo, *node.Node, *ethclient.Client, *staker.BOLDStateProvider, *staker.BlockValidator) {
+func setupBOLDStateProviderTest(t *testing.T, ctx context.Context, challengeMaxHeights []l2stateprovider.Height) (*staker.BOLDStateProvider, *arbnode.Node, *node.Node) {
 	var transferGas = util.NormalizeL2GasForL1GasInitial(800_000, params.GWei) // include room for aggregator L1 costs
 	l2chainConfig := params.ArbitrumDevTestChainConfig()
 	l2info := NewBlockChainTestInfo(
@@ -387,17 +342,50 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context, opts ...staker.BO
 	stateManager, err := staker.NewBOLDStateProvider(
 		blockValidator,
 		stateless,
+		"/tmp/bold-state-provider-test",
+		challengeMaxHeights,
 		"",
-		[]l2stateprovider.Height{
-			l2stateprovider.Height(blockChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(smallStepChallengeLeafHeight),
-		},
-		"",
-		opts...,
 	)
 	Require(t, err)
 
 	Require(t, l2node.Start(ctx))
-	return l2node, l1info, l2info, l1stack, l1client, stateManager, blockValidator
+	l2info.GenerateAccount("Destination")
+	sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
+
+	seqInbox := l1info.GetAddress("SequencerInbox")
+	seqInboxBinding, err := bridgegen.NewSequencerInbox(seqInbox, l1client)
+	Require(t, err)
+
+	seqInboxABI, err := abi.JSON(strings.NewReader(bridgegen.SequencerInboxABI))
+	Require(t, err)
+
+	honestUpgradeExec, err := mocksgen.NewUpgradeExecutorMock(l1info.GetAddress("UpgradeExecutor"), l1client)
+	Require(t, err)
+	data, err := seqInboxABI.Pack(
+		"setIsBatchPoster",
+		sequencerTxOpts.From,
+		true,
+	)
+	Require(t, err)
+	honestRollupOwnerOpts := l1info.GetDefaultTransactOpts("RollupOwner", ctx)
+	_, err = honestUpgradeExec.ExecuteCall(&honestRollupOwnerOpts, seqInbox, data)
+	Require(t, err)
+
+	// We will make two batches, with 5 messages in each batch.
+	numMessagesPerBatch := int64(5)
+	divergeAt := int64(-1) // No divergence.
+	makeBoldBatch(t, l2node, l2info, l1client, &sequencerTxOpts, seqInboxBinding, seqInbox, numMessagesPerBatch, divergeAt)
+	numMessagesPerBatch = int64(10)
+	makeBoldBatch(t, l2node, l2info, l1client, &sequencerTxOpts, seqInboxBinding, seqInbox, numMessagesPerBatch, divergeAt)
+	totalMessages := uint64(16) // 5 from batch 2 and 10 from batch 3 plus the init message from the start batch.
+
+	// Wait until the validator has validated the batches.
+	for {
+		if _, err := stateManager.ResultAtCount(arbutil.MessageIndex(totalMessages)); err != nil {
+			time.Sleep(time.Millisecond * 100)
+			continue
+		}
+		break
+	}
+	return stateManager, l2node, l1stack
 }

@@ -21,6 +21,7 @@ import (
 	"github.com/OffchainLabs/bold/state-commitments/history"
 
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution"
 	challengecache "github.com/offchainlabs/nitro/staker/challenge-cache"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -195,6 +196,10 @@ func (s *BOLDStateProvider) messageCountFromGlobalState(_ context.Context, gs pr
 	}
 	// Add on the PosInBatch
 	return batchMessageCount + arbutil.MessageIndex(gs.PosInBatch), nil
+}
+
+func (s *BOLDStateProvider) ResultAtCount(count arbutil.MessageIndex) (*execution.MessageResult, error) {
+	return s.validator.streamer.ResultAtCount(count)
 }
 
 func (s *BOLDStateProvider) StatesInBatchRange(
