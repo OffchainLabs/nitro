@@ -100,23 +100,17 @@ func activateProgramInternal(
 		return nil, nil, nil, err
 	}
 
-	status_asm := userStatus(C.stylus_compile(
+	status_asm := C.stylus_compile(
 		goSlice(wasm),
 		u16(version),
 		cbool(debug),
 		goSlice([]byte{}),
 		output,
-	))
+	)
 
-	asm, msg, err := status_asm.toResult(output.intoBytes(), debug)
-	if err != nil {
-		if debug {
-			log.Warn("activation failed", "err", err, "msg", msg, "program", addressForLogging)
-		}
-		if errors.Is(err, vm.ErrExecutionReverted) {
-			return nil, nil, nil, fmt.Errorf("%w: %s", ErrProgramActivation, msg)
-		}
-		return nil, nil, nil, err
+	asm := output.intoBytes()
+	if status_asm != 0 {
+		return nil, nil, nil, fmt.Errorf("%w: %s", ErrProgramActivation, string(asm))
 	}
 
 	hash := moduleHash.toHash()
