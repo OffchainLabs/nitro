@@ -87,7 +87,7 @@ func testCompileArch(store bool) error {
 		if err != nil {
 			return err
 		}
-		err = os.MkdirAll("../../target/testdata", 0644)
+		err = os.MkdirAll("../../target/testdata", 0755)
 		if err != nil {
 			return err
 		}
