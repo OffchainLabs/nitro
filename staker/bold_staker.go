@@ -132,6 +132,7 @@ func newBOLDStaker(
 	}
 	return &BOLDStaker{
 		chalManager:     manager,
+		blockValidator:  blockValidator,
 		rollupAddress:   rollupAddress,
 		client:          client,
 		callOpts:        callOpts,
