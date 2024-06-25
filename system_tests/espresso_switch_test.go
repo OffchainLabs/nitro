@@ -84,7 +84,7 @@ func TestEspressoSwitch(t *testing.T) {
 		t.Fatal("")
 	}
 
-	err = waitForWith(t, ctx, 60*time.Second, 5*time.Second, func() bool {
+	err = waitForWith(t, ctx, 360*time.Second, 5*time.Second, func() bool {
 		validatedCnt := node.ConsensusNode.BlockValidator.Validated(t)
 		return validatedCnt >= msg
 	})

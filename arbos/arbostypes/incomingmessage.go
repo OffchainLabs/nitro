@@ -40,8 +40,6 @@ type BlockMerkleJustification struct {
 	BlockMerkleProof *espressoTypes.HotShotBlockMerkleProof
 	// Block merkle commitment that corresponds to a valid light client snapshot.
 	BlockMerkleComm *espressoTypes.TaggedBase64
-	// The L1 height corresponding to the light client snapshot that this justification is valid for.
-	L1ProofHeight uint64
 }
 
 type EspressoBlockJustification struct {

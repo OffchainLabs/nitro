@@ -153,7 +153,7 @@ func (machine *JitMachine) prove(
 	if err := writeExact(entry.HotShotCommitment[:]); err != nil {
 		return state, err
 	}
-	if err := writeUint64(entry.L1BlockHeight); err != nil {
+	if err := writeUint64(entry.BlockHeight); err != nil {
 		return state, err
 	}
 	var avail uint8

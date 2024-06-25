@@ -474,7 +474,7 @@ func (m *ChallengeManager) createExecutionBackend(ctx context.Context, step uint
 	if err != nil {
 		return fmt.Errorf("error getting validation entry input of challenge %v msg %v: %w", m.challengeIndex, initialCount, err)
 	}
-	if m.blockChallengeBackend.EspressoDebugging(entry.End.HotShotHeight) {
+	if m.blockChallengeBackend.EspressoDebugging(entry.BlockHeight) {
 		m.blockChallengeBackend.debugEspressoInputOverrideFunc(input)
 	}
 	var prunedBatches []validator.BatchInfo

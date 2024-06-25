@@ -247,7 +247,7 @@ func ValidationInputToJson(entry *validator.ValidationInput) *server_api.InputJS
 		UserWasms:     make(map[common.Hash]server_api.UserWasmJson),
 		DebugChain:    entry.DebugChain,
 
-		L1BlockHeight:     entry.L1BlockHeight,
+		L1BlockHeight:     entry.BlockHeight,
 		HotShotCommitment: entry.HotShotCommitment,
 		HotShotLiveness:   entry.HotShotLiveness,
 	}

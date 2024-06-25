@@ -73,7 +73,7 @@ func TestEspressoOsp(t *testing.T) {
 	comm, _ := big.NewInt(0).SetString(common.Hash(input.HotShotCommitment).String(), 0)
 	tx, err = hotShotConn.SetCommitment(
 		&deployerTxOpts,
-		big.NewInt(int64(0)).SetUint64(input.L1BlockHeight),
+		big.NewInt(int64(0)).SetUint64(input.BlockHeight),
 		comm,
 	)
 	Require(t, err)
@@ -121,8 +121,8 @@ func TestEspressoOsp(t *testing.T) {
 	}
 
 	liveness := input.HotShotLiveness
-	tx, err = hotShotConn.SetAvailability(&deployerTxOpts,
-		big.NewInt(int64(0)).SetUint64(input.L1BlockHeight),
+	tx, err = hotShotConn.SetLiveness(&deployerTxOpts,
+		big.NewInt(int64(0)).SetUint64(input.BlockHeight),
 		liveness,
 	)
 	Require(t, err)
