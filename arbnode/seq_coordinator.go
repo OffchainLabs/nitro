@@ -617,16 +617,17 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		log.Warn("sequencer is not synced", detailsList...)
 	}
 
+	processedMessages, err := c.streamer.GetProcessedMessageCount()
+	if err != nil {
+		log.Warn("coordinator: failed to read processed message count", "err", err)
+		processedMessages = 0
+	}
+
 	// can take over as main sequencer?
 	if synced && localMsgCount >= remoteMsgCount && chosenSeq == c.config.Url() {
 		if c.sequencer == nil {
 			log.Error("myurl main sequencer, but no sequencer exists")
 			return c.noRedisError()
-		}
-		processedMessages, err := c.streamer.GetProcessedMessageCount()
-		if err != nil {
-			log.Warn("coordinator: failed to read processed message count", "err", err)
-			processedMessages = 0
 		}
 		if processedMessages >= localMsgCount {
 			// we're here because we don't currently hold the lock
@@ -663,8 +664,9 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 	}
 
 	// update wanting the lockout
+	// Sequencer should want lockout if and only if- its synced, not avoiding lockout and processedMessages is not lagging too much behind localMsgCount
 	var wantsLockoutErr error
-	if synced && !c.AvoidingLockout() {
+	if synced && !c.AvoidingLockout() && processedMessages+10 >= localMsgCount {
 		wantsLockoutErr = c.wantsLockoutUpdate(ctx)
 	} else {
 		wantsLockoutErr = c.wantsLockoutRelease(ctx)
