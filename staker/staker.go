@@ -90,6 +90,7 @@ type L1ValidatorConfig struct {
 	ExtraGas                  uint64                      `koanf:"extra-gas" reload:"hot"`
 	Dangerous                 DangerousConfig             `koanf:"dangerous"`
 	ParentChainWallet         genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
+	EnableFastConfirmation    bool                        `koanf:"enable-fast-confirmation"`
 
 	strategy    StakerStrategy
 	gasRefunder common.Address
@@ -156,6 +157,7 @@ var DefaultL1ValidatorConfig = L1ValidatorConfig{
 	ExtraGas:                  50000,
 	Dangerous:                 DefaultDangerousConfig,
 	ParentChainWallet:         DefaultValidatorL1WalletConfig,
+	EnableFastConfirmation:    false,
 }
 
 var TestL1ValidatorConfig = L1ValidatorConfig{
@@ -176,6 +178,7 @@ var TestL1ValidatorConfig = L1ValidatorConfig{
 	ExtraGas:                  50000,
 	Dangerous:                 DefaultDangerousConfig,
 	ParentChainWallet:         DefaultValidatorL1WalletConfig,
+	EnableFastConfirmation:    false,
 }
 
 var DefaultValidatorL1WalletConfig = genericconf.WalletConfig{
@@ -204,6 +207,7 @@ func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfigForValidator)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultL1ValidatorConfig.ParentChainWallet.Pathname)
+	f.Bool(prefix+".enable-fast-confirmation", DefaultL1ValidatorConfig.EnableFastConfirmation, "enable fast confirmation")
 }
 
 type DangerousConfig struct {
@@ -864,7 +868,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 			if err != nil {
 				return fmt.Errorf("error staking on new node: %w", err)
 			}
-			return nil
+			return s.tryFastConfirmation(ctx, action.assertion.AfterState.GlobalState.BlockHash, action.assertion.AfterState.GlobalState.SendRoot)
 		}
 
 		// If we have no stake yet, we'll put one down
@@ -886,7 +890,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 			return fmt.Errorf("error placing new stake on new node: %w", err)
 		}
 		info.StakeExists = true
-		return nil
+		return s.tryFastConfirmation(ctx, action.assertion.AfterState.GlobalState.BlockHash, action.assertion.AfterState.GlobalState.SendRoot)
 	case existingNodeAction:
 		info.LatestStakedNode = action.number
 		info.LatestStakedNodeHash = action.hash
@@ -914,7 +918,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 			if err != nil {
 				return fmt.Errorf("error staking on existing node: %w", err)
 			}
-			return nil
+			return s.tryFastConfirmationNodeNumber(ctx, action.number)
 		}
 
 		// If we have no stake yet, we'll put one down
@@ -935,12 +939,34 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 			return fmt.Errorf("error placing new stake on existing node: %w", err)
 		}
 		info.StakeExists = true
-		return nil
+		return s.tryFastConfirmationNodeNumber(ctx, action.number)
 	default:
 		panic("invalid action type")
 	}
 }
 
+func (s *Staker) tryFastConfirmationNodeNumber(ctx context.Context, number uint64) error {
+	if !s.config.EnableFastConfirmation {
+		return nil
+	}
+	nodeInfo, err := s.rollup.LookupNode(ctx, number)
+	if err != nil {
+		return err
+	}
+	return s.tryFastConfirmation(ctx, nodeInfo.AfterState().GlobalState.BlockHash, nodeInfo.AfterState().GlobalState.SendRoot)
+}
+
+func (s *Staker) tryFastConfirmation(ctx context.Context, blockHash common.Hash, sendRoot common.Hash) error {
+	if !s.config.EnableFastConfirmation {
+		return nil
+	}
+	auth, err := s.builder.Auth(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = s.rollup.FastConfirmNextNode(auth, blockHash, sendRoot)
+	return err
+}
 func (s *Staker) createConflict(ctx context.Context, info *StakerInfo) error {
 	if info.CurrentChallenge != nil {
 		return nil
