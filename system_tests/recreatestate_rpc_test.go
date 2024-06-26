@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -521,11 +522,22 @@ func TestGettingStateForRPCFullNode(t *testing.T) {
 	blockCountRequiredToFlushDirties := builder.execConfig.Caching.BlockCount
 	makeSomeTransfers(t, ctx, builder, blockCountRequiredToFlushDirties)
 
+	// force garbage callection to check if it won't break anything
+	runtime.GC()
+
 	exists = state.Exist(addr)
 	err = state.Error()
 	Require(t, err)
 	if !exists {
 		Fatal(t, "User2 address does not exist in the state")
+	}
+
+	// force garbage collection of StateDB object, what should cause the state finalizer to run
+	state = nil
+	runtime.GC()
+	_, err = bc.StateAt(header.Root)
+	if err == nil {
+		Fatal(t, "StateAndHeaderByNumber didn't failed as expected")
 	}
 }
 
