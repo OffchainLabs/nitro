@@ -384,8 +384,8 @@ func (p Programs) SetProgramCached(
 	}
 	expired := program.ageSeconds > am.DaysToSeconds(params.ExpiryDays)
 
-	if program.version == 0 && cache {
-		return ProgramNeedsUpgradeError(0, params.Version)
+	if program.version != params.Version && cache {
+		return ProgramNeedsUpgradeError(program.version, params.Version)
 	}
 	if expired && cache {
 		return ProgramExpiredError(program.ageSeconds)
