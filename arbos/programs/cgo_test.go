@@ -20,6 +20,11 @@ func TestConstants(t *testing.T) {
 	}
 }
 
+// normal test will not write anything to disk
+// to test cross-compilation:
+// * run test with TEST_COMPILE=STORE on one machine
+// * copy target/testdata to the other machine
+// * run test with TEST_COMPILE=LOAD on the other machine
 func TestCompileArch(t *testing.T) {
 	compile_env := os.Getenv("TEST_COMPILE")
 	if compile_env == "" {
