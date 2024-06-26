@@ -321,7 +321,7 @@ func (state *ArbosState) UpgradeArbosVersion(
 		case 31:
 			params, err := state.Programs().Params()
 			ensure(err)
-			params.Version = 2
+			ensure(params.UpgradeToVersion(2))
 			ensure(params.Save())
 
 		default:
