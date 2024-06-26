@@ -170,6 +170,9 @@ func (s *BOLDStateProvider) isStateValidatedAndFinal(
 	if err != nil {
 		return false, err
 	}
+	if lastValidatedGs == nil {
+		return false, ErrChainCatchingUp
+	}
 	stateValidated := gs.Batch <= lastValidatedGs.GlobalState.Batch
 	if !s.checkBatchFinality {
 		return stateValidated, nil
