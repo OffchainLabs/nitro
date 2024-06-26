@@ -731,7 +731,10 @@ func (s *ExecutionEngine) cacheL1PriceDataOfMsg(seqNum arbutil.MessageIndex, rec
 	if !blockBuiltUsingDelayedMessage {
 		// s.cachedL1PriceData tracks L1 price data for messages posted by Nitro,
 		// so delayed messages should not update cummulative values kept on it.
-		for i := 0; i < len(receipts); i++ {
+
+		// First transaction in every block is an Arbitrum internal transaction,
+		// so we skip it here.
+		for i := 1; i < len(receipts); i++ {
 			gasUsedForL1 += receipts[i].GasUsedForL1
 		}
 		for _, tx := range block.Transactions() {
