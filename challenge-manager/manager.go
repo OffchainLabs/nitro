@@ -69,6 +69,7 @@ type Manager struct {
 	mode                                types.Mode
 	maxDelaySeconds                     int
 	claimedAssertionsInChallenge        *threadsafe.LruSet[protocol.AssertionHash]
+	enableFastConfirmation              bool
 	headBlockSubscriptions              bool
 	// API
 	apiAddr   string
@@ -81,6 +82,13 @@ type Manager struct {
 func WithName(name string) Opt {
 	return func(val *Manager) {
 		val.name = name
+	}
+}
+
+// WithFastConfirmation enables fast confirmation of challenges.
+func WithFastConfirmation() Opt {
+	return func(val *Manager) {
+		val.enableFastConfirmation = true
 	}
 }
 
@@ -239,7 +247,10 @@ func New(
 		}
 		m.api = srv
 	}
-
+	assertionsOpts := make([]assertions.Opt, 0)
+	if m.enableFastConfirmation {
+		assertionsOpts = append(assertionsOpts, assertions.WithFastConfirmation())
+	}
 	assertionManager, err := assertions.NewManager(
 		m.chain,
 		m.stateManager,
@@ -254,6 +265,7 @@ func New(
 		m.assertionPostingInterval,
 		m.averageTimeForBlockCreation,
 		m.apiDB,
+		assertionsOpts...,
 	)
 	if err != nil {
 		return nil, err

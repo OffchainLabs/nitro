@@ -69,6 +69,7 @@ type Manager struct {
 	startPostingSignal          chan struct{}
 	layerZeroHeightsCache       *protocol.LayerZeroHeights
 	layerZeroHeightsCacheLock   sync.RWMutex
+	enableFastConfirmation      bool
 }
 
 type assertionChainData struct {
@@ -82,6 +83,12 @@ type Opt func(*Manager)
 func WithPostingDisabled() Opt {
 	return func(m *Manager) {
 		m.disablePosting = true
+	}
+}
+
+func WithFastConfirmation() Opt {
+	return func(m *Manager) {
+		m.enableFastConfirmation = true
 	}
 }
 

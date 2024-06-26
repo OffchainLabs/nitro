@@ -477,6 +477,14 @@ func (m *MockProtocol) ConfirmAssertionByChallengeWinner(
 	return args.Error(0)
 }
 
+func (m *MockProtocol) FastConfirmAssertion(
+	ctx context.Context,
+	assertionCreationInfo *protocol.AssertionCreatedInfo,
+) error {
+	args := m.Called(ctx, assertionCreationInfo)
+	return args.Error(0)
+}
+
 func (m *MockProtocol) IsStaked(ctx context.Context) (bool, error) {
 	args := m.Called(ctx)
 	return args.Get(0).(bool), args.Error(1)

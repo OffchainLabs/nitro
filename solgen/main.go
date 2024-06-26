@@ -74,7 +74,17 @@ func main() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	filePathsSafeSmartAccount, err := filepath.Glob(filepath.Join(parent, "safe-smart-account", "build", "artifacts", "contracts", "*", "*.sol", "*.json"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	filePathsSafeSmartAccountOuter, err := filepath.Glob(filepath.Join(parent, "safe-smart-account", "build", "artifacts", "contracts", "*.sol", "*.json"))
+	if err != nil {
+		log.Fatal(err)
+	}
 
+	filePaths = append(filePaths, filePathsSafeSmartAccount...)
+	filePaths = append(filePaths, filePathsSafeSmartAccountOuter...)
 	modules := make(map[string]*moduleInfo)
 
 	for _, path := range filePaths {

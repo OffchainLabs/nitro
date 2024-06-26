@@ -38,6 +38,16 @@ func (m *Manager) keepTryingAssertionConfirmation(ctx context.Context, assertion
 		log.Error("Could not get assertion creation info", "err", err)
 		return
 	}
+	if m.enableFastConfirmation {
+		err = m.chain.FastConfirmAssertion(ctx, creationInfo)
+		if err != nil {
+			log.Error("Could not fast confirm latest assertion", "err", err)
+			return
+		}
+		assertionConfirmedCounter.Inc(1)
+		log.Info("Fast Confirmed assertion", "assertionHash", creationInfo.AssertionHash)
+		return
+	}
 	prevCreationInfo, err := retry.UntilSucceeds(ctx, func() (*protocol.AssertionCreatedInfo, error) {
 		return m.chain.ReadAssertionCreationInfo(ctx, protocol.AssertionHash{Hash: creationInfo.ParentAssertionHash})
 	})

@@ -81,7 +81,7 @@ func (a *AssertionChain) transact(
 	}
 
 	// Now, we send the tx with the estimated gas.
-	opts.GasLimit = gas + 500000
+	opts.GasLimit = gas + uint64(defaultBaseGas)
 	tx, err = a.transactor.SendTransaction(ctx, fn, opts, gas)
 	if err != nil {
 		return nil, err
