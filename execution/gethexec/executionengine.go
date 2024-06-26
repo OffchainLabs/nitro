@@ -289,6 +289,7 @@ func (s *ExecutionEngine) sequencerWrapper(sequencerFunc func() (*types.Block, e
 	attempts := 0
 	for {
 		s.createBlocksMutex.Lock()
+		log.Info("locking block mutex, attempting to sequence transactions")
 		block, err := sequencerFunc()
 		s.createBlocksMutex.Unlock()
 		if !errors.Is(err, execution.ErrSequencerInsertLockTaken) {
@@ -334,6 +335,7 @@ func (s *ExecutionEngine) SequenceTransactionsEspresso(
 		if err != nil {
 			return nil, err
 		}
+		log.Info("Created espresso message", "header number", msg.Header.BlockNumber)
 
 		// Deserialize the transactions and ignore the malformed transactions
 		txes := types.Transactions{}
@@ -382,6 +384,7 @@ func (s *ExecutionEngine) SequenceTransactionsEspresso(
 				log.Warn(fmt.Sprintf("execute tx error: %v", err.Error()))
 			}
 		}
+		log.Info("Arbitrum block produced")
 		blockCalcTime := time.Since(startTime)
 
 		pos, err := s.BlockNumberToMessageIndex(lastBlockHeader.Number.Uint64() + 1)
@@ -399,6 +402,7 @@ func (s *ExecutionEngine) SequenceTransactionsEspresso(
 		}
 
 		err = s.consensus.WriteMessageFromSequencer(pos, msgWithMeta, *msgResult)
+		log.Info("Wrote sequencer message", "pos", pos)
 		if err != nil {
 			return nil, err
 		}
