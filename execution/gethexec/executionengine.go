@@ -523,7 +523,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	if err != nil {
 		return nil, err
 	}
-	s.cacheL1PriceDataOfMsg(pos, receipts, block)
+	s.cacheL1PriceDataOfMsg(pos, receipts, block, false)
 
 	return block, nil
 }
@@ -543,7 +543,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 
 	expectedDelayed := currentHeader.Nonce.Uint64()
 
-	lastMsg, err := s.BlockNumberToMessageIndex(currentHeader.Number.Uint64())
+	pos, err := s.BlockNumberToMessageIndex(currentHeader.Number.Uint64() + 1)
 	if err != nil {
 		return nil, err
 	}
@@ -569,7 +569,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		return nil, err
 	}
 
-	err = s.consensus.WriteMessageFromSequencer(lastMsg+1, messageWithMeta, *msgResult)
+	err = s.consensus.WriteMessageFromSequencer(pos, messageWithMeta, *msgResult)
 	if err != nil {
 		return nil, err
 	}
@@ -578,8 +578,9 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 	if err != nil {
 		return nil, err
 	}
+	s.cacheL1PriceDataOfMsg(pos, receipts, block, true)
 
-	log.Info("ExecutionEngine: Added DelayedMessages", "pos", lastMsg+1, "delayed", delayedSeqNum, "block-header", block.Header())
+	log.Info("ExecutionEngine: Added DelayedMessages", "pos", pos, "delayed", delayedSeqNum, "block-header", block.Header())
 
 	return block, nil
 }
@@ -724,16 +725,20 @@ func (s *ExecutionEngine) getL1PricingSurplus() (int64, error) {
 	return surplus.Int64(), nil
 }
 
-func (s *ExecutionEngine) cacheL1PriceDataOfMsg(seqNum arbutil.MessageIndex, receipts types.Receipts, block *types.Block) {
+func (s *ExecutionEngine) cacheL1PriceDataOfMsg(seqNum arbutil.MessageIndex, receipts types.Receipts, block *types.Block, blockBuiltUsingDelayedMessage bool) {
 	var gasUsedForL1 uint64
-	for i := 1; i < len(receipts); i++ {
-		gasUsedForL1 += receipts[i].GasUsedForL1
+	var callDataUnits uint64
+	if !blockBuiltUsingDelayedMessage {
+		// s.cachedL1PriceData tracks L1 price data for messages posted by Nitro,
+		// so delayed messages should not update cummulative values kept on it.
+		for i := 1; i < len(receipts); i++ {
+			gasUsedForL1 += receipts[i].GasUsedForL1
+		}
+		for _, tx := range block.Transactions() {
+			callDataUnits += tx.CalldataUnits
+		}
 	}
 	l1GasCharged := gasUsedForL1 * block.BaseFee().Uint64()
-	var callDataUnits uint64
-	for _, tx := range block.Transactions() {
-		callDataUnits += tx.CalldataUnits
-	}
 
 	s.cachedL1PriceData.mutex.Lock()
 	defer s.cachedL1PriceData.mutex.Unlock()
@@ -823,7 +828,7 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 	if err != nil {
 		return nil, err
 	}
-	s.cacheL1PriceDataOfMsg(num, receipts, block)
+	s.cacheL1PriceDataOfMsg(num, receipts, block, false)
 
 	if time.Now().After(s.nextScheduledVersionCheck) {
 		s.nextScheduledVersionCheck = time.Now().Add(time.Minute)
