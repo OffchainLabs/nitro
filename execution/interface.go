@@ -56,7 +56,7 @@ type ExecutionSequencer interface {
 	ForwardTo(url string) error
 	SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error
 	NextDelayedMessageNumber() (uint64, error)
-	TrimCache(to arbutil.MessageIndex)
+	MarkFeedStart(to arbutil.MessageIndex)
 }
 
 type FullExecutionClient interface {

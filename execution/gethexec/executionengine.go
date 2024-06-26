@@ -132,7 +132,7 @@ func (s *ExecutionEngine) backlogL1GasCharged() uint64 {
 		s.cachedL1PriceData.msgToL1PriceData[0].l1GasCharged)
 }
 
-func (s *ExecutionEngine) TrimCache(to arbutil.MessageIndex) {
+func (s *ExecutionEngine) MarkFeedStart(to arbutil.MessageIndex) {
 	s.cachedL1PriceData.mutex.Lock()
 	defer s.cachedL1PriceData.mutex.Unlock()
 

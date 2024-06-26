@@ -277,8 +277,8 @@ func CreateExecutionNode(
 
 }
 
-func (n *ExecutionNode) TrimCache(to arbutil.MessageIndex) {
-	n.ExecEngine.TrimCache(to)
+func (n *ExecutionNode) MarkFeedStart(to arbutil.MessageIndex) {
+	n.ExecEngine.MarkFeedStart(to)
 }
 
 func (n *ExecutionNode) Initialize(ctx context.Context) error {
