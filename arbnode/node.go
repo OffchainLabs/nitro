@@ -792,17 +792,6 @@ func CreateNode(
 	return currentNode, nil
 }
 
-func (n *Node) CacheL1PriceDataOfMsg(pos arbutil.MessageIndex, callDataUnits uint64, l1GasCharged uint64) {
-	n.TxStreamer.CacheL1PriceDataOfMsg(pos, callDataUnits, l1GasCharged)
-}
-
-func (n *Node) BacklogL1GasCharged() uint64 {
-	return n.TxStreamer.BacklogL1GasCharged()
-}
-func (n *Node) BacklogCallDataUnits() uint64 {
-	return n.TxStreamer.BacklogCallDataUnits()
-}
-
 func (n *Node) Start(ctx context.Context) error {
 	execClient, ok := n.Execution.(*gethexec.ExecutionNode)
 	if !ok {

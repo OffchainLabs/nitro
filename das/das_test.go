@@ -57,7 +57,7 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 
 	timeout := uint64(time.Now().Add(time.Hour * 24).Unix())
 	messageSaved := []byte("hello world")
-	cert, err := daWriter.Store(firstCtx, messageSaved, timeout, []byte{})
+	cert, err := daWriter.Store(firstCtx, messageSaved, timeout)
 	Require(t, err, "Error storing message")
 	if cert.Timeout != timeout {
 		Fail(t, fmt.Sprintf("Expected timeout of %d in cert, was %d", timeout, cert.Timeout))
@@ -147,7 +147,7 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 
 	messageSaved := []byte("hello world")
 	timeout := uint64(time.Now().Add(time.Hour * 24).Unix())
-	cert, err := daWriter.Store(ctx, messageSaved, timeout, []byte{})
+	cert, err := daWriter.Store(ctx, messageSaved, timeout)
 	Require(t, err, "Error storing message")
 	if cert.Timeout != timeout {
 		Fail(t, fmt.Sprintf("Expected timeout of %d in cert, was %d", timeout, cert.Timeout))
