@@ -32,8 +32,8 @@ WORKDIR /workspace
 COPY contracts/package.json contracts/yarn.lock contracts/
 RUN cd contracts && yarn install
 COPY contracts contracts/
-RUN cd safe-smart-account && npm i && npm run build
 COPY safe-smart-account safe-smart-account/
+RUN cd safe-smart-account && npm i && npm run build
 COPY Makefile .
 RUN . ~/.bashrc && NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-solidity
 
