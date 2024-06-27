@@ -166,9 +166,9 @@ func startClientStore(args []string) error {
 		if err != nil {
 			return err
 		}
-		cert, err = client.Store(ctx, message, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{})
+		cert, err = client.Store(ctx, message, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()))
 	} else if len(config.Message) > 0 {
-		cert, err = client.Store(ctx, []byte(config.Message), uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{})
+		cert, err = client.Store(ctx, []byte(config.Message), uint64(time.Now().Add(config.DASRetentionPeriod).Unix()))
 	} else {
 		return errors.New("--message or --random-message-size must be specified")
 	}

@@ -93,7 +93,7 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 	runStore := func() {
 		defer wg.Done()
 		msg := testhelpers.RandomizeSlice(make([]byte, size))
-		cert, err := rpcAgg.Store(ctx, msg, 0, nil)
+		cert, err := rpcAgg.Store(ctx, msg, 0)
 		testhelpers.RequireImpl(t, err)
 
 		retrievedMessage, err := storageService.GetByHash(ctx, cert.DataHash)
