@@ -559,6 +559,8 @@ func TestGettingState(t *testing.T) {
 	})
 }
 
+// regression test for issue caused by accessing block state that has just been committed to TrieDB but not yet referenced in core.BlockChain.writeBlockWithState (here called state of "recent" block)
+// before the corresponding fix, access to the recent block state caused premature garbage collection of the head block state
 func TestStateAndHeaderForRecentBlock(t *testing.T) {
 	threads := 32
 	ctx, cancel := context.WithCancel(context.Background())
@@ -597,15 +599,22 @@ func TestStateAndHeaderForRecentBlock(t *testing.T) {
 	}()
 	api := builder.L2.ExecNode.Backend.APIBackend()
 	db := builder.L2.ExecNode.Backend.ChainDb()
-	i := 1
+
+	recentBlock := 1
 	var mtx sync.RWMutex
 	var wgCallers sync.WaitGroup
 	for j := 0; j < threads && ctx.Err() == nil; j++ {
 		wgCallers.Add(1)
+		// each thread attempts to get state for a block that is just being created (here called recent):
+		// 1. Before state trie node is referenced in core.BlockChain.writeBlockWithState, block body is written to database with key prefix `b` followed by block number and then block hash (see: rawdb.blockBodyKey)
+		// 2. Each thread tries to read the block body entry to: a. extract recent block hash b. congest resource usage to slow down execution of core.BlockChain.writeBlockWithState
+		// 3. After extracting the hash from block body entry key, StateAndHeaderByNumberOfHash is called for the hash. It is expected that it will:
+		//		a. either fail with "ahead of current block" if we made it before StateDB commit
+		// 		b. or it will succeed if state was already commited - then the recentBlock is advanced
 		go func() {
 			defer wgCallers.Done()
 			mtx.RLock()
-			blockNumber := i
+			blockNumber := recentBlock
 			mtx.RUnlock()
 			for blockNumber < 300 && ctx.Err() == nil {
 				prefix := make([]byte, 8)
@@ -624,8 +633,8 @@ func TestStateAndHeaderForRecentBlock(t *testing.T) {
 						_, _, err := api.StateAndHeaderByNumberOrHash(ctx, rpc.BlockNumberOrHash{BlockHash: &blockHash})
 						if err == nil {
 							mtx.Lock()
-							if blockNumber == i {
-								i++
+							if blockNumber == recentBlock {
+								recentBlock++
 							}
 							mtx.Unlock()
 							break
@@ -645,7 +654,7 @@ func TestStateAndHeaderForRecentBlock(t *testing.T) {
 				}
 				it.Release()
 				mtx.RLock()
-				blockNumber = i
+				blockNumber = recentBlock
 				mtx.RUnlock()
 			}
 		}()
