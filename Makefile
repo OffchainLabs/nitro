@@ -494,11 +494,13 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	@touch $@
 
 .make/solidity: $(DEP_PREDICATE) contracts/src/*/*.sol .make/yarndeps $(ORDER_ONLY_PREDICATE) .make
+	(cd safe-smart-account && npm run build)
 	yarn --cwd contracts build
 	yarn --cwd contracts build:forge:yul
 	@touch $@
 
 .make/yarndeps: $(DEP_PREDICATE) contracts/package.json contracts/yarn.lock $(ORDER_ONLY_PREDICATE) .make
+	(cd safe-smart-account && npm i)
 	yarn --cwd contracts install
 	@touch $@
 
