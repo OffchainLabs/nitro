@@ -664,9 +664,9 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 	}
 
 	// update wanting the lockout
-	// Sequencer should want lockout if and only if- its synced, not avoiding lockout and processedMessages is not lagging too much behind localMsgCount
+	// Sequencer should want lockout if and only if- its synced, not avoiding lockout and execution processed every message that consensus had 1 second ago
 	var wantsLockoutErr error
-	if synced && !c.AvoidingLockout() && processedMessages+1 >= c.sync.SyncTargetMessageCount() {
+	if synced && !c.AvoidingLockout() && processedMessages >= c.sync.SyncTargetMessageCount() {
 		wantsLockoutErr = c.wantsLockoutUpdate(ctx)
 	} else {
 		wantsLockoutErr = c.wantsLockoutRelease(ctx)
