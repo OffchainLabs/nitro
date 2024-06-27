@@ -125,7 +125,7 @@ func (s *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, timeout
 		return nil, err
 	}
 
-	cert, err := s.daWriter.Store(ctx, message, uint64(timeout), nil)
+	cert, err := s.daWriter.Store(ctx, message, uint64(timeout))
 	if err != nil {
 		return nil, err
 	}
@@ -325,7 +325,7 @@ func (s *DASRPCServer) CommitChunkedStore(ctx context.Context, batchId hexutil.U
 		return nil, err
 	}
 
-	cert, err := s.daWriter.Store(ctx, message, timeout, nil)
+	cert, err := s.daWriter.Store(ctx, message, timeout)
 	success := false
 	defer func() {
 		if success {
