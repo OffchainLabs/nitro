@@ -424,6 +424,9 @@ func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*Tes
 			params.execConfig.RPC.MaxRecreateStateDepth = arbitrum.DefaultNonArchiveNodeMaxRecreateStateDepth
 		}
 	}
+	if b.nodeConfig.BatchPoster.Enable && params.nodeConfig.BatchPoster.Enable && params.nodeConfig.BatchPoster.RedisUrl == "" {
+		t.Fatal("The batch poster must use Redis when enabled for multiple nodes")
+	}
 
 	l2 := NewTestClient(b.ctx)
 	l2.Client, l2.ConsensusNode =
