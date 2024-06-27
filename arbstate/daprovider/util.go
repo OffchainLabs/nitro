@@ -35,7 +35,7 @@ type DASWriter interface {
 }
 
 type DASKeysetFetcher interface {
-	GetByHash(context.Context, common.Hash) ([]byte, error)
+	GetKeysetByHash(context.Context, common.Hash) ([]byte, error)
 }
 
 type BlobReader interface {
@@ -186,7 +186,7 @@ func RecoverPayloadFromDasBatch(
 		return preimage, nil
 	}
 
-	keysetPreimage, err := keysetFetcher.GetByHash(ctx, cert.KeysetHash)
+	keysetPreimage, err := keysetFetcher.GetKeysetByHash(ctx, cert.KeysetHash)
 	if err != nil {
 		log.Error("Couldn't get keyset", "err", err)
 		return nil, err

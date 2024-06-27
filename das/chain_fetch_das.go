@@ -59,8 +59,8 @@ func NewKeysetFetcherWithSeqInbox(seqInbox *bridgegen.SequencerInbox) (*KeysetFe
 	}, nil
 }
 
-func (c *KeysetFetcher) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
-	log.Trace("das.KeysetFetcher.GetByHash", "hash", pretty.PrettyHash(hash))
+func (c *KeysetFetcher) GetKeysetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
+	log.Trace("das.KeysetFetcher.GetKeysetByHash", "hash", pretty.PrettyHash(hash))
 	cache := &c.keysetCache
 	seqInboxCaller := c.seqInboxCaller
 	seqInboxFilterer := c.seqInboxFilterer
