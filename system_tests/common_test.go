@@ -188,8 +188,8 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 	b.L1Info = NewL1TestInfo(t)
 	b.L2Info = NewArbTestInfo(t, b.chainConfig.ChainID)
 	b.dataDir = t.TempDir()
-	b.l1StackConfig = createStackConfigForTest(b.dataDir)
-	b.l2StackConfig = createStackConfigForTest(b.dataDir)
+	b.l1StackConfig = testhelpers.CreateStackConfigForTest(b.dataDir)
+	b.l2StackConfig = testhelpers.CreateStackConfigForTest(b.dataDir)
 	b.execConfig = gethexec.ConfigDefaultTest()
 	return b
 }
@@ -505,23 +505,6 @@ func createTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client,
 	return createTestL1BlockChainWithConfig(t, l1info, nil)
 }
 
-func createStackConfigForTest(dataDir string) *node.Config {
-	stackConf := node.DefaultConfig
-	stackConf.DataDir = dataDir
-	stackConf.UseLightweightKDF = true
-	stackConf.WSPort = 0
-	stackConf.WSModules = append(stackConf.WSModules, "eth", "debug")
-	stackConf.HTTPPort = 0
-	stackConf.HTTPHost = ""
-	stackConf.HTTPModules = append(stackConf.HTTPModules, "eth", "debug")
-	stackConf.P2P.NoDiscovery = true
-	stackConf.P2P.NoDial = true
-	stackConf.P2P.ListenAddr = ""
-	stackConf.P2P.NAT = nil
-	stackConf.DBEngine = "leveldb" // TODO Try pebble again in future once iterator race condition issues are fixed
-	return &stackConf
-}
-
 func createRedisGroup(ctx context.Context, t *testing.T, streamName string, client redis.UniversalClient) {
 	t.Helper()
 	// Stream name and group name are the same.
@@ -633,7 +616,7 @@ func createTestL1BlockChainWithConfig(t *testing.T, l1info info, stackConfig *no
 		l1info = NewL1TestInfo(t)
 	}
 	if stackConfig == nil {
-		stackConfig = createStackConfigForTest(t.TempDir())
+		stackConfig = testhelpers.CreateStackConfigForTest(t.TempDir())
 	}
 	l1info.GenerateAccount("Faucet")
 
@@ -771,7 +754,7 @@ func createL2BlockChainWithStackConfig(
 	var stack *node.Node
 	var err error
 	if stackConfig == nil {
-		stackConfig = createStackConfigForTest(dataDir)
+		stackConfig = testhelpers.CreateStackConfigForTest(dataDir)
 	}
 	stack, err = node.New(stackConfig)
 	Require(t, err)
@@ -984,7 +967,7 @@ func Create2ndNodeWithConfig(
 	l1client := ethclient.NewClient(l1rpcClient)
 
 	if stackConfig == nil {
-		stackConfig = createStackConfigForTest(t.TempDir())
+		stackConfig = testhelpers.CreateStackConfigForTest(t.TempDir())
 	}
 	l2stack, err := node.New(stackConfig)
 	Require(t, err)

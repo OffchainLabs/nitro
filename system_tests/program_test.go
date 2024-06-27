@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -1267,7 +1268,9 @@ func setupProgramTest(t *testing.T, jit bool) (
 	ctx, cancel := context.WithCancel(context.Background())
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-
+	// setupProgramTest is being called by tests that validate blocks.
+	// By now validation only works with HashScheme set.
+	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 	builder.nodeConfig.BlockValidator.Enable = false
 	builder.nodeConfig.Staker.Enable = true
 	builder.nodeConfig.BatchPoster.Enable = true
@@ -1481,7 +1484,7 @@ func TestWasmRecreate(t *testing.T) {
 	Require(t, err)
 
 	testDir := t.TempDir()
-	nodeBStack := createStackConfigForTest(testDir)
+	nodeBStack := testhelpers.CreateStackConfigForTest(testDir)
 	nodeB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack})
 
 	_, err = EnsureTxSucceeded(ctx, nodeB.Client, storeTx)
@@ -1580,7 +1583,7 @@ func TestWasmStoreRebuilding(t *testing.T) {
 	Require(t, err)
 
 	testDir := t.TempDir()
-	nodeBStack := createStackConfigForTest(testDir)
+	nodeBStack := testhelpers.CreateStackConfigForTest(testDir)
 	nodeB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack})
 
 	_, err = EnsureTxSucceeded(ctx, nodeB.Client, storeTx)

@@ -34,6 +34,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 	"golang.org/x/exp/slog"
 )
 
@@ -130,7 +131,8 @@ func TestDASRekey(t *testing.T) {
 		authorizeDASKeyset(t, ctx, pubkeyA, l1info, l1client)
 
 		// Setup L2 chain
-		_, l2stackA, l2chainDb, l2arbDb, l2blockchain := createL2BlockChainWithStackConfig(t, l2info, nodeDir, chainConfig, initMessage, nil, nil)
+		cachingConfig := gethexec.TestCachingConfig
+		_, l2stackA, l2chainDb, l2arbDb, l2blockchain := createL2BlockChainWithStackConfig(t, l2info, nodeDir, chainConfig, initMessage, nil, &cachingConfig)
 		l2info.GenerateAccount("User2")
 
 		// Setup DAS config
@@ -173,7 +175,7 @@ func TestDASRekey(t *testing.T) {
 
 	// Restart the node on the new keyset against the new DAS server running on the same disk as the first with new keys
 
-	stackConfig := createStackConfigForTest(nodeDir)
+	stackConfig := testhelpers.CreateStackConfigForTest(nodeDir)
 	l2stackA, err := node.New(stackConfig)
 	Require(t, err)
 
@@ -183,7 +185,9 @@ func TestDASRekey(t *testing.T) {
 	l2arbDb, err := l2stackA.OpenDatabaseWithExtraOptions("arbitrumdata", 0, 0, "arbitrumdata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdata"))
 	Require(t, err)
 
-	l2blockchain, err := gethexec.GetBlockChain(l2chainDb, nil, chainConfig, gethexec.ConfigDefaultTest().TxLookupLimit)
+	cachingConfig := gethexec.TestCachingConfig
+	cacheConfig := gethexec.DefaultCacheConfigFor(nil, &cachingConfig)
+	l2blockchain, err := gethexec.GetBlockChain(l2chainDb, cacheConfig, chainConfig, gethexec.ConfigDefaultTest().TxLookupLimit)
 	Require(t, err)
 
 	execA, err := gethexec.CreateExecutionNode(ctx, l2stackA, l2chainDb, l2blockchain, l1client, gethexec.ConfigDefaultTest)
@@ -316,7 +320,8 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	Require(t, err)
 
 	// Setup L2 chain
-	l2info, l2stackA, l2chainDb, l2arbDb, l2blockchain := createL2BlockChainWithStackConfig(t, nil, "", chainConfig, initMessage, nil, nil)
+	cachingConfig := gethexec.TestCachingConfig
+	l2info, l2stackA, l2chainDb, l2arbDb, l2blockchain := createL2BlockChainWithStackConfig(t, nil, "", chainConfig, initMessage, nil, &cachingConfig)
 	l2info.GenerateAccount("User2")
 
 	execA, err := gethexec.CreateExecutionNode(ctx, l2stackA, l2chainDb, l2blockchain, l1client, gethexec.ConfigDefaultTest)

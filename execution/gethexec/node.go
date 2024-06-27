@@ -57,6 +57,9 @@ type Config struct {
 }
 
 func (c *Config) Validate() error {
+	if err := c.Caching.Validate(); err != nil {
+		return err
+	}
 	if err := c.Sequencer.Validate(); err != nil {
 		return err
 	}

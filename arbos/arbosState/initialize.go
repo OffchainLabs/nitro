@@ -9,12 +9,16 @@ import (
 	"sort"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
+	"github.com/ethereum/go-ethereum/trie/triedb/hashdb"
+	"github.com/ethereum/go-ethereum/trie/triedb/pathdb"
 	"github.com/holiman/uint256"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -51,21 +55,50 @@ func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint
 	return types.NewBlock(head, nil, nil, nil, trie.NewStackTrie(nil))
 }
 
-func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, timestamp uint64, accountsPerSync uint) (common.Hash, error) {
-	stateDatabase := state.NewDatabase(db)
+func TriedbConfig(c *core.CacheConfig) *trie.Config {
+	config := &trie.Config{Preimages: c.Preimages}
+	if c.StateScheme == rawdb.HashScheme {
+		config.HashDB = &hashdb.Config{
+			CleanCacheSize: c.TrieCleanLimit * 1024 * 1024,
+		}
+	}
+	if c.StateScheme == rawdb.PathScheme {
+		config.PathDB = &pathdb.Config{
+			StateHistory:   c.StateHistory,
+			CleanCacheSize: c.TrieCleanLimit * 1024 * 1024,
+			DirtyCacheSize: c.TrieDirtyLimit * 1024 * 1024,
+		}
+	}
+	return config
+}
+
+func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, timestamp uint64, accountsPerSync uint) (root common.Hash, err error) {
+	triedbConfig := TriedbConfig(cacheConfig)
+	triedbConfig.Preimages = false
+	stateDatabase := state.NewDatabaseWithConfig(db, triedbConfig)
+	defer func() {
+		err = stateDatabase.TrieDB().Close()
+	}()
 	statedb, err := state.New(common.Hash{}, stateDatabase, nil)
 	if err != nil {
 		log.Crit("failed to init empty statedb", "error", err)
 	}
 
+	// commit avoids keeping the entire state in memory while importing the state.
+	// At some time it was also used to avoid reprocessing the whole import in case of a crash.
 	commit := func() (common.Hash, error) {
 		root, err := statedb.Commit(chainConfig.ArbitrumChainParams.GenesisBlockNum, true)
 		if err != nil {
 			return common.Hash{}, err
 		}
-		err = stateDatabase.TrieDB().Commit(root, true)
-		if err != nil {
-			return common.Hash{}, err
+		// When using PathScheme TrieDB.Commit should only be called once.
+		// When using HashScheme it is called multiple times to avoid keeping
+		// the entire trie in memory.
+		if cacheConfig.StateScheme == rawdb.HashScheme {
+			err = stateDatabase.TrieDB().Commit(root, true)
+			if err != nil {
+				return common.Hash{}, err
+			}
 		}
 		statedb, err = state.New(root, stateDatabase, nil)
 		if err != nil {
@@ -163,7 +196,18 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 	if err := accountDataReader.Close(); err != nil {
 		return common.Hash{}, err
 	}
-	return commit()
+
+	root, err = commit()
+	if err != nil {
+		return common.Hash{}, err
+	}
+	if cacheConfig.StateScheme == rawdb.PathScheme {
+		err = stateDatabase.TrieDB().Commit(root, true)
+		if err != nil {
+			return common.Hash{}, err
+		}
+	}
+	return root, nil
 }
 
 func initializeRetryables(statedb *state.StateDB, rs *retryables.RetryableState, initData statetransfer.RetryableDataReader, currentTimestamp uint64) error {

@@ -101,6 +101,8 @@ func TestRecreateStateForRPCNoDepthLimit(t *testing.T) {
 	execConfig.Sequencer.MaxBlockSpeed = 0
 	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
 	execConfig.Caching.Archive = true
+	// By now Archive node should use HashScheme
+	execConfig.Caching.StateScheme = rawdb.HashScheme
 	execConfig.Caching.SnapshotCache = 0 // disable snapshots
 	// disable trie/Database.cleans cache, so as states removed from ChainDb won't be cached there
 	execConfig.Caching.TrieCleanCache = 0
@@ -137,6 +139,8 @@ func TestRecreateStateForRPCBigEnoughDepthLimit(t *testing.T) {
 	execConfig.Sequencer.MaxBlockSpeed = 0
 	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
 	execConfig.Caching.Archive = true
+	// By now Archive node should use HashScheme
+	execConfig.Caching.StateScheme = rawdb.HashScheme
 	// disable trie/Database.cleans cache, so as states removed from ChainDb won't be cached there
 	execConfig.Caching.TrieCleanCache = 0
 	execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 0
@@ -172,6 +176,8 @@ func TestRecreateStateForRPCDepthLimitExceeded(t *testing.T) {
 	execConfig.Sequencer.MaxBlockSpeed = 0
 	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
 	execConfig.Caching.Archive = true
+	// By now Archive node should use HashScheme
+	execConfig.Caching.StateScheme = rawdb.HashScheme
 	// disable trie/Database.cleans cache, so as states removed from ChainDb won't be cached there
 	execConfig.Caching.TrieCleanCache = 0
 	execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 0
@@ -207,6 +213,8 @@ func TestRecreateStateForRPCMissingBlockParent(t *testing.T) {
 	execConfig.Sequencer.MaxBlockSpeed = 0
 	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
 	execConfig.Caching.Archive = true
+	// By now Archive node should use HashScheme
+	execConfig.Caching.StateScheme = rawdb.HashScheme
 	// disable trie/Database.cleans cache, so as states removed from ChainDb won't be cached there
 	execConfig.Caching.TrieCleanCache = 0
 	execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 0
@@ -253,6 +261,8 @@ func TestRecreateStateForRPCBeyondGenesis(t *testing.T) {
 	execConfig.Sequencer.MaxBlockSpeed = 0
 	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
 	execConfig.Caching.Archive = true
+	// By now Archive node should use HashScheme
+	execConfig.Caching.StateScheme = rawdb.HashScheme
 	// disable trie/Database.cleans cache, so as states removed from ChainDb won't be cached there
 	execConfig.Caching.TrieCleanCache = 0
 	execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 0
@@ -289,6 +299,8 @@ func TestRecreateStateForRPCBlockNotFoundWhileRecreating(t *testing.T) {
 	execConfig.Sequencer.MaxBlockSpeed = 0
 	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
 	execConfig.Caching.Archive = true
+	// By now Archive node should use HashScheme
+	execConfig.Caching.StateScheme = rawdb.HashScheme
 	// disable trie/Database.cleans cache, so as states removed from ChainDb won't be cached there
 	execConfig.Caching.TrieCleanCache = 0
 
@@ -451,6 +463,8 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 func TestSkippingSavingStateAndRecreatingAfterRestart(t *testing.T) {
 	cacheConfig := gethexec.TestCachingConfig
 	cacheConfig.Archive = true
+	// By now Archive node should use HashScheme
+	cacheConfig.StateScheme = rawdb.HashScheme
 	cacheConfig.SnapshotCache = 0 // disable snapshots
 	cacheConfig.BlockAge = 0      // use only Caching.BlockCount to keep only last N blocks in dirties cache, no matter how new they are
 
@@ -534,6 +548,8 @@ func TestGettingStateForRPCHybridArchiveNode(t *testing.T) {
 	defer cancel()
 	execConfig := gethexec.ConfigDefaultTest()
 	execConfig.Caching.Archive = true
+	// By now Archive node should use HashScheme
+	execConfig.Caching.StateScheme = rawdb.HashScheme
 	execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 128
 	execConfig.Caching.BlockCount = 128
 	execConfig.Caching.SnapshotCache = 0 // disable snapshots
@@ -580,6 +596,8 @@ func TestStateAndHeaderForRecentBlock(t *testing.T) {
 	defer cancel()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.execConfig.Caching.Archive = true
+	// By now Archive node should use HashScheme
+	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 	builder.execConfig.RPC.MaxRecreateStateDepth = 0
 	cleanup := builder.Build(t)
 	defer cleanup()
