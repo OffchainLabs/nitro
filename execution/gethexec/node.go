@@ -417,3 +417,7 @@ func (n *ExecutionNode) MessageIndexToBlockNumber(messageNum arbutil.MessageInde
 func (n *ExecutionNode) Maintenance() error {
 	return n.ChainDB.Compact(nil, nil)
 }
+
+func (n *ExecutionNode) SyncProgressMap() map[string]interface{} {
+	return n.SyncMonitor.SyncProgressMap()
+}

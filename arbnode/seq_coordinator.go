@@ -39,7 +39,6 @@ type SeqCoordinator struct {
 
 	redisutil.RedisCoordinator
 
-	sync             *SyncMonitor
 	streamer         *TransactionStreamer
 	sequencer        execution.ExecutionSequencer
 	delayedSequencer *DelayedSequencer
@@ -150,7 +149,6 @@ func NewSeqCoordinator(
 	}
 	coordinator := &SeqCoordinator{
 		RedisCoordinator: *redisCoordinator,
-		sync:             sync,
 		streamer:         streamer,
 		sequencer:        sequencer,
 		config:           config,
@@ -607,9 +605,10 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		return c.noRedisError()
 	}
 
-	synced := c.sync.Synced()
+	// Sequencer should want lockout if and only if- its synced, not avoiding lockout and execution processed every message that consensus had 1 second ago
+	syncProgress := c.sequencer.SyncProgressMap()
+	synced := len(syncProgress) == 0
 	if !synced {
-		syncProgress := c.sync.FullSyncProgressMap()
 		var detailsList []interface{}
 		for key, value := range syncProgress {
 			detailsList = append(detailsList, key, value)
@@ -617,17 +616,16 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		log.Warn("sequencer is not synced", detailsList...)
 	}
 
-	processedMessages, err := c.streamer.GetProcessedMessageCount()
-	if err != nil {
-		log.Warn("coordinator: failed to read processed message count", "err", err)
-		processedMessages = 0
-	}
-
 	// can take over as main sequencer?
 	if synced && localMsgCount >= remoteMsgCount && chosenSeq == c.config.Url() {
 		if c.sequencer == nil {
 			log.Error("myurl main sequencer, but no sequencer exists")
 			return c.noRedisError()
+		}
+		processedMessages, err := c.streamer.GetProcessedMessageCount()
+		if err != nil {
+			log.Warn("coordinator: failed to read processed message count", "err", err)
+			processedMessages = 0
 		}
 		if processedMessages >= localMsgCount {
 			// we're here because we don't currently hold the lock
@@ -664,9 +662,8 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 	}
 
 	// update wanting the lockout
-	// Sequencer should want lockout if and only if- its synced, not avoiding lockout and execution processed every message that consensus had 1 second ago
 	var wantsLockoutErr error
-	if synced && !c.AvoidingLockout() && processedMessages >= c.sync.SyncTargetMessageCount() {
+	if synced && !c.AvoidingLockout() {
 		wantsLockoutErr = c.wantsLockoutUpdate(ctx)
 	} else {
 		wantsLockoutErr = c.wantsLockoutRelease(ctx)
@@ -851,7 +848,7 @@ func (c *SeqCoordinator) SeekLockout(ctx context.Context) {
 	defer c.wantsLockoutMutex.Unlock()
 	c.avoidLockout--
 	log.Info("seeking lockout", "myUrl", c.config.Url())
-	if c.sync.Synced() {
+	if len(c.sequencer.SyncProgressMap()) == 0 {
 		// Even if this errors we still internally marked ourselves as wanting the lockout
 		err := c.wantsLockoutUpdateWithMutex(ctx)
 		if err != nil {

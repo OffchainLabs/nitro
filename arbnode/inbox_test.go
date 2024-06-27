@@ -37,6 +37,10 @@ type execClientWrapper struct {
 func (w *execClientWrapper) Pause()                     { w.t.Error("not supported") }
 func (w *execClientWrapper) Activate()                  { w.t.Error("not supported") }
 func (w *execClientWrapper) ForwardTo(url string) error { w.t.Error("not supported"); return nil }
+func (w *execClientWrapper) SyncProgressMap() map[string]interface{} {
+	w.t.Error("not supported")
+	return nil
+}
 
 func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*gethexec.ExecutionEngine, *TransactionStreamer, ethdb.Database, *core.BlockChain) {
 	chainConfig := params.ArbitrumDevTestChainConfig()
