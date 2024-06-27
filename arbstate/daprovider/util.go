@@ -30,7 +30,7 @@ type DASReader interface {
 
 type DASWriter interface {
 	// Store requests that the message be stored until timeout (UTC time in unix epoch seconds).
-	Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*DataAvailabilityCertificate, error)
+	Store(ctx context.Context, message []byte, timeout uint64) (*DataAvailabilityCertificate, error)
 	fmt.Stringer
 }
 

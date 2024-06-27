@@ -22,7 +22,6 @@ import (
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
-	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
 
@@ -56,7 +55,6 @@ type Aggregator struct {
 	maxAllowedServiceStoreFailures int
 	keysetHash                     [32]byte
 	keysetBytes                    []byte
-	addrVerifier                   *contracts.AddressVerifier
 }
 
 type ServiceDetails struct {
@@ -124,11 +122,6 @@ func NewAggregatorWithSeqInboxCaller(
 		return nil, err
 	}
 
-	var addrVerifier *contracts.AddressVerifier
-	if seqInboxCaller != nil {
-		addrVerifier = contracts.NewAddressVerifier(seqInboxCaller)
-	}
-
 	return &Aggregator{
 		config:                         config.RPCAggregator,
 		services:                       services,
@@ -137,7 +130,6 @@ func NewAggregatorWithSeqInboxCaller(
 		maxAllowedServiceStoreFailures: config.RPCAggregator.AssumedHonest - 1,
 		keysetHash:                     keysetHash,
 		keysetBytes:                    keysetBytes,
-		addrVerifier:                   addrVerifier,
 	}, nil
 }
 
@@ -160,27 +152,8 @@ type storeResponse struct {
 //
 // If Store gets not enough successful responses by the time its context is canceled
 // (eg via TimeoutWrapper) then it also returns an error.
-//
-// If Sequencer Inbox contract details are provided when a das.Aggregator is
-// constructed, calls to Store(...) will try to verify the passed-in data's signature
-// is from the batch poster. If the contract details are not provided, then the
-// signature is not checked, which is useful for testing.
-func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*daprovider.DataAvailabilityCertificate, error) {
-	log.Trace("das.Aggregator.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig))
-	if a.addrVerifier != nil {
-		actualSigner, err := DasRecoverSigner(message, sig, timeout)
-		if err != nil {
-			return nil, err
-		}
-		isBatchPosterOrSequencer, err := a.addrVerifier.IsBatchPosterOrSequencer(ctx, actualSigner)
-		if err != nil {
-			return nil, err
-		}
-		if !isBatchPosterOrSequencer {
-			return nil, errors.New("store request not properly signed")
-		}
-	}
-
+func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) (*daprovider.DataAvailabilityCertificate, error) {
+	log.Trace("das.Aggregator.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0))
 	responses := make(chan storeResponse, len(a.services))
 
 	expectedHash := dastree.Hash(message)
@@ -195,7 +168,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 				metrics.GetOrRegisterCounter(metricBase+"/error/all/total", nil).Inc(1)
 			}
 
-			cert, err := d.service.Store(storeCtx, message, timeout, sig)
+			cert, err := d.service.Store(storeCtx, message, timeout)
 			if err != nil {
 				incFailureMetric()
 				if errors.Is(err, context.DeadlineExceeded) {
