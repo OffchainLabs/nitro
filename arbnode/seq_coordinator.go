@@ -607,9 +607,9 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		return c.noRedisError()
 	}
 
-	syncProgress := c.sync.SyncProgressMap()
-	synced := len(syncProgress) == 0
+	synced := c.sync.Synced()
 	if !synced {
+		syncProgress := c.sync.FullSyncProgressMap()
 		var detailsList []interface{}
 		for key, value := range syncProgress {
 			detailsList = append(detailsList, key, value)
@@ -666,7 +666,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 	// update wanting the lockout
 	// Sequencer should want lockout if and only if- its synced, not avoiding lockout and processedMessages is not lagging too much behind localMsgCount
 	var wantsLockoutErr error
-	if synced && !c.AvoidingLockout() && processedMessages+10 >= localMsgCount {
+	if synced && !c.AvoidingLockout() && processedMessages+1 >= c.sync.SyncTargetMessageCount() {
 		wantsLockoutErr = c.wantsLockoutUpdate(ctx)
 	} else {
 		wantsLockoutErr = c.wantsLockoutRelease(ctx)
