@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math/bits"
+	"sync/atomic"
 	"time"
 
 	flag "github.com/spf13/pflag"
@@ -23,6 +24,16 @@ import (
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/pretty"
+)
+
+const metricBase string = "arb/das/rpc/aggregator/store"
+
+var (
+	// This metric shows 1 if there was any error posting to the backends, until
+	// there was a Store that had no backend failures.
+	anyErrorGauge = metrics.GetOrRegisterGauge(metricBase+"/error/gauge", nil)
+
+// Other aggregator metrics are generated dynamically in the Store function.
 )
 
 type AggregatorConfig struct {
@@ -156,13 +167,22 @@ type storeResponse struct {
 // (eg via TimeoutWrapper) then it also returns an error.
 func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) (*daprovider.DataAvailabilityCertificate, error) {
 	log.Trace("das.Aggregator.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0))
+
+	allBackendsSucceeded := false
+	defer func() {
+		if allBackendsSucceeded {
+			anyErrorGauge.Update(0)
+		} else {
+			anyErrorGauge.Update(1)
+		}
+	}()
+
 	responses := make(chan storeResponse, len(a.services))
 
 	expectedHash := dastree.Hash(message)
 	for _, d := range a.services {
 		go func(ctx context.Context, d ServiceDetails) {
 			storeCtx, cancel := context.WithTimeout(ctx, a.requestTimeout)
-			const metricBase string = "arb/das/rpc/aggregator/store"
 			var metricWithServiceName = metricBase + "/" + d.metricName
 			defer cancel()
 			incFailureMetric := func() {
@@ -228,22 +248,22 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 		err            error
 	}
 
+	var storeFailures atomic.Int64
 	// Collect responses from backends.
 	certDetailsChan := make(chan certDetails)
 	go func() {
 		var pubKeys []blsSignatures.PublicKey
 		var sigs []blsSignatures.Signature
 		var aggSignersMask uint64
-		var storeFailures, successfullyStoredCount int
+		var successfullyStoredCount int
 		var returned bool
 		for i := 0; i < len(a.services); i++ {
-
 			select {
 			case <-ctx.Done():
 				break
 			case r := <-responses:
 				if r.err != nil {
-					storeFailures++
+					_ = storeFailures.Add(1)
 					log.Warn("das.Aggregator: Error from backend", "backend", r.details.service, "signerMask", r.details.signersMask, "err", r.err)
 				} else {
 					pubKeys = append(pubKeys, r.details.pubKey)
@@ -267,10 +287,10 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 					certDetailsChan <- cd
 					returned = true
 					if a.maxAllowedServiceStoreFailures > 0 && // Ignore the case where AssumedHonest = 1, probably a testnet
-						storeFailures+1 > a.maxAllowedServiceStoreFailures {
+						int(storeFailures.Load())+1 > a.maxAllowedServiceStoreFailures {
 						log.Error("das.Aggregator: storing the batch data succeeded to enough DAS commitee members to generate the Data Availability Cert, but if one more had failed then the cert would not have been able to be generated. Look for preceding logs with \"Error from backend\"")
 					}
-				} else if storeFailures > a.maxAllowedServiceStoreFailures {
+				} else if int(storeFailures.Load()) > a.maxAllowedServiceStoreFailures {
 					cd := certDetails{}
 					cd.err = fmt.Errorf("aggregator failed to store message to at least %d out of %d DASes (assuming %d are honest). %w", a.requiredServicesForStore, len(a.services), a.config.AssumedHonest, daprovider.ErrBatchToDasFailed)
 					certDetailsChan <- cd
@@ -304,6 +324,11 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 	if !verified {
 		return nil, fmt.Errorf("failed aggregate signature check. %w", daprovider.ErrBatchToDasFailed)
 	}
+
+	if storeFailures.Load() == 0 {
+		allBackendsSucceeded = true
+	}
+
 	return &aggCert, nil
 }
 

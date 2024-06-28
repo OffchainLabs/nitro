@@ -61,6 +61,7 @@ import (
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/iostat"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -403,6 +404,10 @@ func mainImpl() int {
 	if err := startMetrics(nodeConfig); err != nil {
 		log.Error("Error starting metrics", "error", err)
 		return 1
+	}
+
+	if nodeConfig.Metrics {
+		go iostat.RegisterAndPopulateMetrics(ctx, 1, 5)
 	}
 
 	var deferFuncs []func()
