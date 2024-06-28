@@ -122,35 +122,65 @@ func TestSetLatestSnapshotUrl(t *testing.T) {
 	const (
 		chain        = "arb1"
 		snapshotKind = "archive"
-		latestDate   = "2024/21"
 		latestFile   = "latest-" + snapshotKind + ".txt"
 		dirPerm      = 0700
 		filePerm     = 0600
 	)
 
-	// Create latest file
-	serverDir := t.TempDir()
-	err := os.Mkdir(filepath.Join(serverDir, chain), dirPerm)
-	Require(t, err)
-	err = os.WriteFile(filepath.Join(serverDir, chain, latestFile), []byte(latestDate), filePerm)
-	Require(t, err)
+	testCases := []struct {
+		name           string
+		latestContents string
+		wantUrl        func(string) string
+	}{
+		{
+			name:           "latest file with path",
+			latestContents: "/arb1/2024/21/archive.tar.gz",
+			wantUrl:        func(serverAddr string) string { return serverAddr + "/arb1/2024/21/archive.tar.gz" },
+		},
+		{
+			name:           "latest file with rootless path",
+			latestContents: "arb1/2024/21/archive.tar.gz",
+			wantUrl:        func(serverAddr string) string { return serverAddr + "/arb1/2024/21/archive.tar.gz" },
+		},
+		{
+			name:           "latest file with http url",
+			latestContents: "http://some.domain.com/arb1/2024/21/archive.tar.gz",
+			wantUrl:        func(serverAddr string) string { return "http://some.domain.com/arb1/2024/21/archive.tar.gz" },
+		},
+		{
+			name:           "latest file with https url",
+			latestContents: "https://some.domain.com/arb1/2024/21/archive.tar.gz",
+			wantUrl:        func(serverAddr string) string { return "https://some.domain.com/arb1/2024/21/archive.tar.gz" },
+		},
+	}
 
-	// Start HTTP server
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	addr := "http://" + startFileServer(t, ctx, serverDir)
+	for _, testCase := range testCases {
+		t.Log("running test case", testCase.name)
 
-	// Set latest snapshot URL
-	initConfig := conf.InitConfigDefault
-	initConfig.Latest = snapshotKind
-	initConfig.LatestBase = addr
-	err = setLatestSnapshotUrl(ctx, &initConfig, chain)
-	Require(t, err)
+		// Create latest file
+		serverDir := t.TempDir()
+		err := os.Mkdir(filepath.Join(serverDir, chain), dirPerm)
+		Require(t, err)
+		err = os.WriteFile(filepath.Join(serverDir, chain, latestFile), []byte(testCase.latestContents), filePerm)
+		Require(t, err)
 
-	// Check url
-	want := fmt.Sprintf("%s/%s/%s/archive.tar", addr, chain, latestDate)
-	if initConfig.Url != want {
-		t.Errorf("initConfig.Url = %s; want: %s", initConfig.Url, want)
+		// Start HTTP server
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		addr := "http://" + startFileServer(t, ctx, serverDir)
+
+		// Set latest snapshot URL
+		initConfig := conf.InitConfigDefault
+		initConfig.Latest = snapshotKind
+		initConfig.LatestBase = addr
+		err = setLatestSnapshotUrl(ctx, &initConfig, chain)
+		Require(t, err)
+
+		// Check url
+		want := testCase.wantUrl(addr)
+		if initConfig.Url != want {
+			t.Fatalf("initConfig.Url = %s; want: %s", initConfig.Url, want)
+		}
 	}
 }
 
