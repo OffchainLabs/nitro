@@ -616,8 +616,8 @@ func TestStateAndHeaderForRecentBlock(t *testing.T) {
 		// 1. Before state trie node is referenced in core.BlockChain.writeBlockWithState, block body is written to database with key prefix `b` followed by block number and then block hash (see: rawdb.blockBodyKey)
 		// 2. Each thread tries to read the block body entry to: a. extract recent block hash b. congest resource usage to slow down execution of core.BlockChain.writeBlockWithState
 		// 3. After extracting the hash from block body entry key, StateAndHeaderByNumberOfHash is called for the hash. It is expected that it will:
-		//		a. either fail with "ahead of current block" if we made it before StateDB commit
-		// 		b. or it will succeed if state was already commited - then the recentBlock is advanced
+		//		a. either fail with "ahead of current block" if we made it before rawdb.WriteCanonicalHash is called in core.BlockChain.writeHeadBlock, what is called after writeBlockWithState finishes,
+		// 		b. or it will succeed if the canonical hash was written for the block meaning that writeBlockWithState was fully executed (i.a. state root trie node correctly referenced) - then the recentBlock is advanced
 		go func() {
 			defer wgCallers.Done()
 			mtx.RLock()
