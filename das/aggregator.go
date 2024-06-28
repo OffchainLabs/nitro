@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math/bits"
+	"sync/atomic"
 	"time"
 
 	flag "github.com/spf13/pflag"
@@ -22,8 +23,17 @@ import (
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
-	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/pretty"
+)
+
+const metricBase string = "arb/das/rpc/aggregator/store"
+
+var (
+	// This metric shows 1 if there was any error posting to the backends, until
+	// there was a Store that had no backend failures.
+	anyErrorGauge = metrics.GetOrRegisterGauge(metricBase+"/error/gauge", nil)
+
+// Other aggregator metrics are generated dynamically in the Store function.
 )
 
 type AggregatorConfig struct {
@@ -56,7 +66,6 @@ type Aggregator struct {
 	maxAllowedServiceStoreFailures int
 	keysetHash                     [32]byte
 	keysetBytes                    []byte
-	addrVerifier                   *contracts.AddressVerifier
 }
 
 type ServiceDetails struct {
@@ -124,11 +133,6 @@ func NewAggregatorWithSeqInboxCaller(
 		return nil, err
 	}
 
-	var addrVerifier *contracts.AddressVerifier
-	if seqInboxCaller != nil {
-		addrVerifier = contracts.NewAddressVerifier(seqInboxCaller)
-	}
-
 	return &Aggregator{
 		config:                         config.RPCAggregator,
 		services:                       services,
@@ -137,7 +141,6 @@ func NewAggregatorWithSeqInboxCaller(
 		maxAllowedServiceStoreFailures: config.RPCAggregator.AssumedHonest - 1,
 		keysetHash:                     keysetHash,
 		keysetBytes:                    keysetBytes,
-		addrVerifier:                   addrVerifier,
 	}, nil
 }
 
@@ -160,26 +163,17 @@ type storeResponse struct {
 //
 // If Store gets not enough successful responses by the time its context is canceled
 // (eg via TimeoutWrapper) then it also returns an error.
-//
-// If Sequencer Inbox contract details are provided when a das.Aggregator is
-// constructed, calls to Store(...) will try to verify the passed-in data's signature
-// is from the batch poster. If the contract details are not provided, then the
-// signature is not checked, which is useful for testing.
-func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*daprovider.DataAvailabilityCertificate, error) {
-	log.Trace("das.Aggregator.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig))
-	if a.addrVerifier != nil {
-		actualSigner, err := DasRecoverSigner(message, sig, timeout)
-		if err != nil {
-			return nil, err
+func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) (*daprovider.DataAvailabilityCertificate, error) {
+	log.Trace("das.Aggregator.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0))
+
+	allBackendsSucceeded := false
+	defer func() {
+		if allBackendsSucceeded {
+			anyErrorGauge.Update(0)
+		} else {
+			anyErrorGauge.Update(1)
 		}
-		isBatchPosterOrSequencer, err := a.addrVerifier.IsBatchPosterOrSequencer(ctx, actualSigner)
-		if err != nil {
-			return nil, err
-		}
-		if !isBatchPosterOrSequencer {
-			return nil, errors.New("store request not properly signed")
-		}
-	}
+	}()
 
 	responses := make(chan storeResponse, len(a.services))
 
@@ -187,7 +181,6 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 	for _, d := range a.services {
 		go func(ctx context.Context, d ServiceDetails) {
 			storeCtx, cancel := context.WithTimeout(ctx, a.requestTimeout)
-			const metricBase string = "arb/das/rpc/aggregator/store"
 			var metricWithServiceName = metricBase + "/" + d.metricName
 			defer cancel()
 			incFailureMetric := func() {
@@ -195,7 +188,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 				metrics.GetOrRegisterCounter(metricBase+"/error/all/total", nil).Inc(1)
 			}
 
-			cert, err := d.service.Store(storeCtx, message, timeout, sig)
+			cert, err := d.service.Store(storeCtx, message, timeout)
 			if err != nil {
 				incFailureMetric()
 				if errors.Is(err, context.DeadlineExceeded) {
@@ -253,22 +246,22 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 		err            error
 	}
 
+	var storeFailures atomic.Int64
 	// Collect responses from backends.
 	certDetailsChan := make(chan certDetails)
 	go func() {
 		var pubKeys []blsSignatures.PublicKey
 		var sigs []blsSignatures.Signature
 		var aggSignersMask uint64
-		var storeFailures, successfullyStoredCount int
+		var successfullyStoredCount int
 		var returned bool
 		for i := 0; i < len(a.services); i++ {
-
 			select {
 			case <-ctx.Done():
 				break
 			case r := <-responses:
 				if r.err != nil {
-					storeFailures++
+					_ = storeFailures.Add(1)
 					log.Warn("das.Aggregator: Error from backend", "backend", r.details.service, "signerMask", r.details.signersMask, "err", r.err)
 				} else {
 					pubKeys = append(pubKeys, r.details.pubKey)
@@ -292,10 +285,10 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 					certDetailsChan <- cd
 					returned = true
 					if a.maxAllowedServiceStoreFailures > 0 && // Ignore the case where AssumedHonest = 1, probably a testnet
-						storeFailures+1 > a.maxAllowedServiceStoreFailures {
+						int(storeFailures.Load())+1 > a.maxAllowedServiceStoreFailures {
 						log.Error("das.Aggregator: storing the batch data succeeded to enough DAS commitee members to generate the Data Availability Cert, but if one more had failed then the cert would not have been able to be generated. Look for preceding logs with \"Error from backend\"")
 					}
-				} else if storeFailures > a.maxAllowedServiceStoreFailures {
+				} else if int(storeFailures.Load()) > a.maxAllowedServiceStoreFailures {
 					cd := certDetails{}
 					cd.err = fmt.Errorf("aggregator failed to store message to at least %d out of %d DASes (assuming %d are honest). %w", a.requiredServicesForStore, len(a.services), a.config.AssumedHonest, daprovider.ErrBatchToDasFailed)
 					certDetailsChan <- cd
@@ -329,6 +322,11 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 	if !verified {
 		return nil, fmt.Errorf("failed aggregate signature check. %w", daprovider.ErrBatchToDasFailed)
 	}
+
+	if storeFailures.Load() == 0 {
+		allBackendsSucceeded = true
+	}
+
 	return &aggCert, nil
 }
 
