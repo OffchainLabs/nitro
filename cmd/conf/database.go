@@ -32,7 +32,7 @@ var PersistentConfigDefault = PersistentConfig{
 	LogDir:       "",
 	Handles:      512,
 	Ancient:      "",
-	DBEngine:     "", // auto detect database type based on the db dir contents
+	DBEngine:     "", // auto-detect database type based on the db dir contents
 	Pebble:       PebbleConfigDefault,
 }
 
@@ -42,7 +42,7 @@ func PersistentConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".log-dir", PersistentConfigDefault.LogDir, "directory to store log file")
 	f.Int(prefix+".handles", PersistentConfigDefault.Handles, "number of file descriptor handles to use for the database")
 	f.String(prefix+".ancient", PersistentConfigDefault.Ancient, "directory of ancient where the chain freezer can be opened")
-	f.String(prefix+".db-engine", PersistentConfigDefault.DBEngine, "backing database implementation to use. If set to empty string the database type will be autodetected and if no pre-existing database is found it will default to creating new pebble database ('leveldb', 'pebble' or '' (empty string = auto-detect))")
+	f.String(prefix+".db-engine", PersistentConfigDefault.DBEngine, "backing database implementation to use. If set to empty string the database type will be autodetected and if no pre-existing database is found it will default to creating new pebble database ('leveldb', 'pebble' or '' = auto-detect)")
 	PebbleConfigAddOptions(prefix+".pebble", f)
 }
 
@@ -101,7 +101,7 @@ func (c *PersistentConfig) Validate() error {
 		return fmt.Errorf(`invalid .db-engine choice: %q, allowed "leveldb", "pebble" or ""`, c.DBEngine)
 	}
 	// if DBEngine == "" then we may end up opening pebble database, so we want to validate the Pebble config
-	// if pre-existing database base is leveldb backed, then user shouldn't change the Pebble config defaults => this check should also succeed
+	// if pre-existing database is leveldb backed, then user shouldn't change the Pebble config defaults => this check should also succeed
 	if c.DBEngine == "pebble" || c.DBEngine == "" {
 		if err := c.Pebble.Validate(); err != nil {
 			return err
