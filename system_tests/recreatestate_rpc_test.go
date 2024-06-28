@@ -327,6 +327,7 @@ func TestRecreateStateForRPCBlockNotFoundWhileRecreating(t *testing.T) {
 }
 
 func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig *gethexec.CachingConfig, txCount int) {
+	t.Parallel()
 	maxRecreateStateDepth := int64(30 * 1000 * 1000)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -455,20 +456,26 @@ func TestSkippingSavingStateAndRecreatingAfterRestart(t *testing.T) {
 	cacheConfig.SnapshotCache = 0 // disable snapshots
 	cacheConfig.BlockAge = 0      // use only Caching.BlockCount to keep only last N blocks in dirties cache, no matter how new they are
 
+	runTestCase := func(t *testing.T, cacheConfig gethexec.CachingConfig, txes int) {
+		t.Run(fmt.Sprintf("TestSkippingSavingStateAndRecreatingAfterRestart-skip-blocks-%d-skip-gas-%d-txes-%d", cacheConfig.MaxNumberOfBlocksToSkipStateSaving, cacheConfig.MaxAmountOfGasToSkipStateSaving, txes), func(t *testing.T) {
+			testSkippingSavingStateAndRecreatingAfterRestart(t, &cacheConfig, txes)
+		})
+	}
+
 	// test defaults
-	testSkippingSavingStateAndRecreatingAfterRestart(t, &cacheConfig, 512)
+	runTestCase(t, cacheConfig, 512)
 
 	cacheConfig.MaxNumberOfBlocksToSkipStateSaving = 127
 	cacheConfig.MaxAmountOfGasToSkipStateSaving = 0
-	testSkippingSavingStateAndRecreatingAfterRestart(t, &cacheConfig, 512)
+	runTestCase(t, cacheConfig, 512)
 
 	cacheConfig.MaxNumberOfBlocksToSkipStateSaving = 0
 	cacheConfig.MaxAmountOfGasToSkipStateSaving = 15 * 1000 * 1000
-	testSkippingSavingStateAndRecreatingAfterRestart(t, &cacheConfig, 512)
+	runTestCase(t, cacheConfig, 512)
 
 	cacheConfig.MaxNumberOfBlocksToSkipStateSaving = 127
 	cacheConfig.MaxAmountOfGasToSkipStateSaving = 15 * 1000 * 1000
-	testSkippingSavingStateAndRecreatingAfterRestart(t, &cacheConfig, 512)
+	runTestCase(t, cacheConfig, 512)
 
 	// lower number of blocks in triegc below 100 blocks, to be able to check for nonexistence in testSkippingSavingStateAndRecreatingAfterRestart (it doesn't check last BlockCount blocks as some of them may be persisted on node shutdown)
 	cacheConfig.BlockCount = 16
@@ -483,7 +490,7 @@ func TestSkippingSavingStateAndRecreatingAfterRestart(t *testing.T) {
 		for _, skipBlocks := range skipBlockValues[:len(skipBlockValues)-2] {
 			cacheConfig.MaxAmountOfGasToSkipStateSaving = skipGas
 			cacheConfig.MaxNumberOfBlocksToSkipStateSaving = uint32(skipBlocks)
-			testSkippingSavingStateAndRecreatingAfterRestart(t, &cacheConfig, 100)
+			runTestCase(t, cacheConfig, 100)
 		}
 	}
 }
