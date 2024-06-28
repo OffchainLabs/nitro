@@ -201,7 +201,7 @@ func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, nodeNum uint64, 
 		if err != nil {
 			return nil, err
 		}
-		logs = append(logs, segment)
+		logs = append(logs, segment...)
 		fromBlock = new(big.Int).Add(query.ToBlock, big.NewInt(1))
 	}
 	infos := make([]*NodeInfo, 0, len(logs))
