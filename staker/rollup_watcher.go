@@ -193,7 +193,7 @@ func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, nodeNum uint64, 
 	// break down the query to avoid eth_getLogs query limit
 	for toBlock.Cmp(fromBlock) > 0 {
 		query.FromBlock = fromBlock
-		query.ToBlock = new(big.Int).Add(fromBlock, big.NewInt(logQueryRange))
+		query.ToBlock = new(big.Int).Add(fromBlock, big.NewInt(int64(logQueryRange)))
 		if query.ToBlock.Cmp(toBlock) > 0 {
 			query.ToBlock = toBlock
 		}
