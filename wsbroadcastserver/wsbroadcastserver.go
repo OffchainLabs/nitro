@@ -317,6 +317,7 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 				}
 
 				if config.ConnectionLimits.Enable && !s.clientManager.connectionLimiter.IsAllowed(connectingIP) {
+					log.Error("Feed rate limit hit", "ip", connectingIP)
 					return nil, ws.RejectConnectionError(
 						ws.RejectionStatus(http.StatusTooManyRequests),
 						ws.RejectionReason("Too many open feed connections."),
