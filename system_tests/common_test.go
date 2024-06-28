@@ -86,6 +86,7 @@ type SecondNodeParams struct {
 	stackConfig *node.Config
 	dasConfig   *das.DataAvailabilityConfig
 	initData    *statetransfer.ArbosInitializationInfo
+	addresses   *chaininfo.RollupAddresses
 }
 
 type TestClient struct {
@@ -417,6 +418,9 @@ func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*Tes
 	if params.execConfig == nil {
 		params.execConfig = b.execConfig
 	}
+	if params.addresses == nil {
+		params.addresses = b.addresses
+	}
 	if params.execConfig.RPC.MaxRecreateStateDepth == arbitrum.UninitializedMaxRecreateStateDepth {
 		if params.execConfig.Caching.Archive {
 			params.execConfig.RPC.MaxRecreateStateDepth = arbitrum.DefaultArchiveNodeMaxRecreateStateDepth
@@ -430,7 +434,7 @@ func (b *NodeBuilder) Build2ndNode(t *testing.T, params *SecondNodeParams) (*Tes
 
 	l2 := NewTestClient(b.ctx)
 	l2.Client, l2.ConsensusNode =
-		Create2ndNodeWithConfig(t, b.ctx, b.L2.ConsensusNode, b.L1.Stack, b.L1Info, params.initData, params.nodeConfig, params.execConfig, params.stackConfig)
+		Create2ndNodeWithConfig(t, b.ctx, b.L2.ConsensusNode, b.L1.Stack, b.L1Info, params.initData, params.nodeConfig, params.execConfig, params.stackConfig, params.addresses, b.initMessage)
 	l2.ExecNode = getExecNode(t, l2.ConsensusNode)
 	l2.cleanup = func() { l2.ConsensusNode.StopAndWait() }
 	return l2, func() { l2.cleanup() }
@@ -1003,6 +1007,8 @@ func Create2ndNodeWithConfig(
 	nodeConfig *arbnode.Config,
 	execConfig *gethexec.Config,
 	stackConfig *node.Config,
+	addresses *chaininfo.RollupAddresses,
+	initMessage *arbostypes.ParsedInitMessage,
 ) (*ethclient.Client, *arbnode.Node) {
 	if nodeConfig == nil {
 		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
@@ -1036,7 +1042,6 @@ func Create2ndNodeWithConfig(
 	firstExec := getExecNode(t, first)
 
 	chainConfig := firstExec.ArbInterface.BlockChain().Config()
-	initMessage := getInitMessage(ctx, t, l1client, first.DeployInfo)
 
 	coreCacheConfig := gethexec.DefaultCacheConfigFor(l2stack, &execConfig.Caching)
 	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, coreCacheConfig, initReader, chainConfig, initMessage, gethexec.ConfigDefaultTest().TxLookupLimit, 0)
@@ -1050,7 +1055,7 @@ func Create2ndNodeWithConfig(
 	currentExec, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, configFetcher)
 	Require(t, err)
 
-	currentNode, err := arbnode.CreateNode(ctx, l2stack, currentExec, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, first.DeployInfo, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil)
+	currentNode, err := arbnode.CreateNode(ctx, l2stack, currentExec, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, addresses, &validatorTxOpts, &sequencerTxOpts, dataSigner, feedErrChan, big.NewInt(1337), nil)
 	Require(t, err)
 
 	err = currentNode.Start(ctx)

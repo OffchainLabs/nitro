@@ -25,17 +25,13 @@ import (
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
-	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/cmd/chaininfo"
-	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/solgen/go/yulgen"
 	"github.com/offchainlabs/nitro/staker"
-	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
@@ -238,16 +234,6 @@ func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *Blockcha
 	return bridgeAddr, seqInbox, seqInboxAddr
 }
 
-func createL2Nodes(t *testing.T, ctx context.Context, conf *arbnode.Config, chainConfig *params.ChainConfig, l1Client arbutil.L1Interface, l2info *BlockchainTestInfo, rollupAddresses *chaininfo.RollupAddresses, initMsg *arbostypes.ParsedInitMessage, txOpts *bind.TransactOpts, signer signature.DataSignerFunc, fatalErrChan chan error) (*arbnode.Node, *gethexec.ExecutionNode) {
-	_, stack, l2ChainDb, l2ArbDb, l2Blockchain := createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, initMsg, nil, nil)
-	execNode, err := gethexec.CreateExecutionNode(ctx, stack, l2ChainDb, l2Blockchain, l1Client, gethexec.ConfigDefaultTest)
-	Require(t, err)
-	consensusNode, err := arbnode.CreateNode(ctx, stack, execNode, l2ArbDb, NewFetcherFromConfig(conf), chainConfig, l1Client, rollupAddresses, txOpts, txOpts, signer, fatalErrChan, big.NewInt(1337), nil)
-	Require(t, err)
-
-	return consensusNode, execNode
-}
-
 func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, challengeMsgIdx int64) {
 	glogger := log.NewGlogHandler(
 		log.NewTerminalHandler(io.Writer(os.Stderr), false))
@@ -257,16 +243,16 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	initialBalance := new(big.Int).Lsh(big.NewInt(1), 200)
-	l1Info := NewL1TestInfo(t)
+	l1Info := builder.L1Info
 	l1Info.GenerateGenesisAccount("deployer", initialBalance)
 	l1Info.GenerateGenesisAccount("asserter", initialBalance)
 	l1Info.GenerateGenesisAccount("challenger", initialBalance)
 	l1Info.GenerateGenesisAccount("sequencer", initialBalance)
 
-	chainConfig := params.ArbitrumDevTestChainConfig()
-	l1Info, l1Backend, _, _ := createTestL1BlockChain(t, l1Info)
-	conf := arbnode.ConfigDefaultL1Test()
+	chainConfig := builder.chainConfig
+	conf := builder.nodeConfig
 	conf.BlockValidator.Enable = false
 	conf.BatchPoster.Enable = false
 	conf.InboxReader.CheckDelay = time.Second
@@ -280,8 +266,8 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	}
 	configByValidationNode(conf, valStack)
 
-	fatalErrChan := make(chan error, 10)
-	asserterRollupAddresses, initMessage := DeployOnTestL1(t, ctx, l1Info, l1Backend, chainConfig)
+	builder.BuildL1(t)
+	l1Backend := builder.L1.Client
 
 	deployerTxOpts := l1Info.GetDefaultTransactOpts("deployer", ctx)
 	sequencerTxOpts := l1Info.GetDefaultTransactOpts("sequencer", ctx)
@@ -291,20 +277,28 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	asserterBridgeAddr, asserterSeqInbox, asserterSeqInboxAddr := setupSequencerInboxStub(ctx, t, l1Info, l1Backend, chainConfig)
 	challengerBridgeAddr, challengerSeqInbox, challengerSeqInboxAddr := setupSequencerInboxStub(ctx, t, l1Info, l1Backend, chainConfig)
 
+	asserterRollupAddresses := builder.addresses
 	asserterRollupAddresses.Bridge = asserterBridgeAddr
 	asserterRollupAddresses.SequencerInbox = asserterSeqInboxAddr
-	asserterL2Info := NewArbTestInfo(t, chainConfig.ChainID)
-	asserterL2, asserterExec := createL2Nodes(t, ctx, conf, chainConfig, l1Backend, asserterL2Info, asserterRollupAddresses, initMessage, nil, nil, fatalErrChan)
-	err := asserterL2.Start(ctx)
-	Require(t, err)
 
-	challengerRollupAddresses := *asserterRollupAddresses
+	cleanup := builder.BuildL2WithL1(t)
+	defer cleanup()
+	asserterL2 := builder.L2.ConsensusNode
+	asserterL2Info := builder.L2Info
+	asserterExec := builder.L2.ExecNode
+
+	challengerRollupAddresses := *builder.addresses
 	challengerRollupAddresses.Bridge = challengerBridgeAddr
 	challengerRollupAddresses.SequencerInbox = challengerSeqInboxAddr
 	challengerL2Info := NewArbTestInfo(t, chainConfig.ChainID)
-	challengerL2, challengerExec := createL2Nodes(t, ctx, conf, chainConfig, l1Backend, challengerL2Info, &challengerRollupAddresses, initMessage, nil, nil, fatalErrChan)
-	err = challengerL2.Start(ctx)
-	Require(t, err)
+	challengerParams := SecondNodeParams{
+		addresses: &challengerRollupAddresses,
+		initData:  &challengerL2Info.ArbInitData,
+	}
+	challenger, challengerCleanup := builder.Build2ndNode(t, &challengerParams)
+	defer challengerCleanup()
+	challengerL2 := challenger.ConsensusNode
+	challengerExec := challenger.ExecNode
 
 	asserterL2Info.GenerateAccount("Destination")
 	challengerL2Info.SetFullAccountInfo("Destination", asserterL2Info.GetInfoWithPrivKey("Destination"))
