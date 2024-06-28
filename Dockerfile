@@ -263,7 +263,8 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y \
     ca-certificates \
-    wabt && \
+    wabt \
+    sysstat && \
     /usr/sbin/update-ca-certificates && \
     useradd -s /bin/bash user && \
     mkdir -p /home/user/l1keystore && \
