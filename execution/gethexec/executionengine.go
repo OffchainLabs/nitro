@@ -46,12 +46,27 @@ import (
 )
 
 var (
+	l1GasPriceEstimateGauge    = metrics.NewRegisteredGauge("arb/l1gasprice/estimate", nil)
 	baseFeeGauge               = metrics.NewRegisteredGauge("arb/block/basefee", nil)
 	blockGasUsedHistogram      = metrics.NewRegisteredHistogram("arb/block/gasused", nil, metrics.NewBoundedHistogramSample())
 	txCountHistogram           = metrics.NewRegisteredHistogram("arb/block/transactions/count", nil, metrics.NewBoundedHistogramSample())
 	txGasUsedHistogram         = metrics.NewRegisteredHistogram("arb/block/transactions/gasused", nil, metrics.NewBoundedHistogramSample())
 	gasUsedSinceStartupCounter = metrics.NewRegisteredCounter("arb/gas_used", nil)
 )
+
+type L1PriceDataOfMsg struct {
+	callDataUnits            uint64
+	cummulativeCallDataUnits uint64
+	l1GasCharged             uint64
+	cummulativeL1GasCharged  uint64
+}
+
+type L1PriceData struct {
+	mutex                   sync.RWMutex
+	startOfL1PriceDataCache arbutil.MessageIndex
+	endOfL1PriceDataCache   arbutil.MessageIndex
+	msgToL1PriceData        []L1PriceDataOfMsg
+}
 
 type ExecutionEngine struct {
 	stopwaiter.StopWaiter
@@ -72,17 +87,69 @@ type ExecutionEngine struct {
 	reorgSequencing bool
 
 	prefetchBlock bool
+
+	cachedL1PriceData *L1PriceData
+}
+
+func NewL1PriceData() *L1PriceData {
+	return &L1PriceData{
+		msgToL1PriceData: []L1PriceDataOfMsg{},
+	}
 }
 
 func NewExecutionEngine(bc *core.BlockChain) (*ExecutionEngine, error) {
 	return &ExecutionEngine{
-		bc:               bc,
-		resequenceChan:   make(chan []*arbostypes.MessageWithMetadata),
-		newBlockNotifier: make(chan struct{}, 1),
+		bc:                bc,
+		resequenceChan:    make(chan []*arbostypes.MessageWithMetadata),
+		newBlockNotifier:  make(chan struct{}, 1),
+		cachedL1PriceData: NewL1PriceData(),
 	}, nil
 }
 
-func (n *ExecutionEngine) Initialize(rustCacheSize uint32) {
+func (s *ExecutionEngine) backlogCallDataUnits() uint64 {
+	s.cachedL1PriceData.mutex.RLock()
+	defer s.cachedL1PriceData.mutex.RUnlock()
+
+	size := len(s.cachedL1PriceData.msgToL1PriceData)
+	if size == 0 {
+		return 0
+	}
+	return (s.cachedL1PriceData.msgToL1PriceData[size-1].cummulativeCallDataUnits -
+		s.cachedL1PriceData.msgToL1PriceData[0].cummulativeCallDataUnits +
+		s.cachedL1PriceData.msgToL1PriceData[0].callDataUnits)
+}
+
+func (s *ExecutionEngine) backlogL1GasCharged() uint64 {
+	s.cachedL1PriceData.mutex.RLock()
+	defer s.cachedL1PriceData.mutex.RUnlock()
+
+	size := len(s.cachedL1PriceData.msgToL1PriceData)
+	if size == 0 {
+		return 0
+	}
+	return (s.cachedL1PriceData.msgToL1PriceData[size-1].cummulativeL1GasCharged -
+		s.cachedL1PriceData.msgToL1PriceData[0].cummulativeL1GasCharged +
+		s.cachedL1PriceData.msgToL1PriceData[0].l1GasCharged)
+}
+
+func (s *ExecutionEngine) MarkFeedStart(to arbutil.MessageIndex) {
+	s.cachedL1PriceData.mutex.Lock()
+	defer s.cachedL1PriceData.mutex.Unlock()
+
+	if to < s.cachedL1PriceData.startOfL1PriceDataCache {
+		log.Info("trying to trim older cache which doesnt exist anymore")
+	} else if to >= s.cachedL1PriceData.endOfL1PriceDataCache {
+		s.cachedL1PriceData.startOfL1PriceDataCache = 0
+		s.cachedL1PriceData.endOfL1PriceDataCache = 0
+		s.cachedL1PriceData.msgToL1PriceData = []L1PriceDataOfMsg{}
+	} else {
+		newStart := to - s.cachedL1PriceData.startOfL1PriceDataCache + 1
+		s.cachedL1PriceData.msgToL1PriceData = s.cachedL1PriceData.msgToL1PriceData[newStart:]
+		s.cachedL1PriceData.startOfL1PriceDataCache = to + 1
+	}
+}
+
+func (s *ExecutionEngine) Initialize(rustCacheSize uint32) {
 	if rustCacheSize != 0 {
 		programs.ResizeWasmLruCache(rustCacheSize)
 	}
@@ -456,8 +523,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	if err != nil {
 		return nil, err
 	}
-
-	s.cacheL1PriceDataOfMsg(pos, receipts, block)
+	s.cacheL1PriceDataOfMsg(pos, receipts, block, false)
 
 	return block, nil
 }
@@ -477,7 +543,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 
 	expectedDelayed := currentHeader.Nonce.Uint64()
 
-	lastMsg, err := s.BlockNumberToMessageIndex(currentHeader.Number.Uint64())
+	pos, err := s.BlockNumberToMessageIndex(currentHeader.Number.Uint64() + 1)
 	if err != nil {
 		return nil, err
 	}
@@ -503,7 +569,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		return nil, err
 	}
 
-	err = s.consensus.WriteMessageFromSequencer(lastMsg+1, messageWithMeta, *msgResult)
+	err = s.consensus.WriteMessageFromSequencer(pos, messageWithMeta, *msgResult)
 	if err != nil {
 		return nil, err
 	}
@@ -512,8 +578,9 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 	if err != nil {
 		return nil, err
 	}
+	s.cacheL1PriceDataOfMsg(pos, receipts, block, true)
 
-	log.Info("ExecutionEngine: Added DelayedMessages", "pos", lastMsg+1, "delayed", delayedSeqNum, "block-header", block.Header())
+	log.Info("ExecutionEngine: Added DelayedMessages", "pos", pos, "delayed", delayedSeqNum, "block-header", block.Header())
 
 	return block, nil
 }
@@ -600,6 +667,7 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 	}
 	blockGasUsedHistogram.Update(int64(blockGasused))
 	gasUsedSinceStartupCounter.Inc(int64(blockGasused))
+	s.updateL1GasPriceEstimateMetric()
 	return nil
 }
 
@@ -618,22 +686,25 @@ func (s *ExecutionEngine) ResultAtPos(pos arbutil.MessageIndex) (*execution.Mess
 	return s.resultFromHeader(s.bc.GetHeaderByNumber(s.MessageIndexToBlockNumber(pos)))
 }
 
-func (s *ExecutionEngine) GetL1GasPriceEstimate() (uint64, error) {
+func (s *ExecutionEngine) updateL1GasPriceEstimateMetric() {
 	bc := s.bc
 	latestHeader := bc.CurrentBlock()
 	latestState, err := bc.StateAt(latestHeader.Root)
 	if err != nil {
-		return 0, errors.New("error getting latest statedb while fetching l2 Estimate of L1 GasPrice")
+		log.Error("error getting latest statedb while fetching l2 Estimate of L1 GasPrice")
+		return
 	}
 	arbState, err := arbosState.OpenSystemArbosState(latestState, nil, true)
 	if err != nil {
-		return 0, errors.New("error opening system arbos state while fetching l2 Estimate of L1 GasPrice")
+		log.Error("error opening system arbos state while fetching l2 Estimate of L1 GasPrice")
+		return
 	}
 	l2EstimateL1GasPrice, err := arbState.L1PricingState().PricePerUnit()
 	if err != nil {
-		return 0, errors.New("error fetching l2 Estimate of L1 GasPrice")
+		log.Error("error fetching l2 Estimate of L1 GasPrice")
+		return
 	}
-	return l2EstimateL1GasPrice.Uint64(), nil
+	l1GasPriceEstimateGauge.Update(l2EstimateL1GasPrice.Int64())
 }
 
 func (s *ExecutionEngine) getL1PricingSurplus() (int64, error) {
@@ -654,17 +725,65 @@ func (s *ExecutionEngine) getL1PricingSurplus() (int64, error) {
 	return surplus.Int64(), nil
 }
 
-func (s *ExecutionEngine) cacheL1PriceDataOfMsg(num arbutil.MessageIndex, receipts types.Receipts, block *types.Block) {
+func (s *ExecutionEngine) cacheL1PriceDataOfMsg(seqNum arbutil.MessageIndex, receipts types.Receipts, block *types.Block, blockBuiltUsingDelayedMessage bool) {
 	var gasUsedForL1 uint64
-	for i := 1; i < len(receipts); i++ {
-		gasUsedForL1 += receipts[i].GasUsedForL1
-	}
-	gasChargedForL1 := gasUsedForL1 * block.BaseFee().Uint64()
 	var callDataUnits uint64
-	for _, tx := range block.Transactions() {
-		callDataUnits += tx.CalldataUnits
+	if !blockBuiltUsingDelayedMessage {
+		// s.cachedL1PriceData tracks L1 price data for messages posted by Nitro,
+		// so delayed messages should not update cummulative values kept on it.
+
+		// First transaction in every block is an Arbitrum internal transaction,
+		// so we skip it here.
+		for i := 1; i < len(receipts); i++ {
+			gasUsedForL1 += receipts[i].GasUsedForL1
+		}
+		for _, tx := range block.Transactions() {
+			callDataUnits += tx.CalldataUnits
+		}
 	}
-	s.consensus.CacheL1PriceDataOfMsg(num, callDataUnits, gasChargedForL1)
+	l1GasCharged := gasUsedForL1 * block.BaseFee().Uint64()
+
+	s.cachedL1PriceData.mutex.Lock()
+	defer s.cachedL1PriceData.mutex.Unlock()
+
+	resetCache := func() {
+		s.cachedL1PriceData.startOfL1PriceDataCache = seqNum
+		s.cachedL1PriceData.endOfL1PriceDataCache = seqNum
+		s.cachedL1PriceData.msgToL1PriceData = []L1PriceDataOfMsg{{
+			callDataUnits:            callDataUnits,
+			cummulativeCallDataUnits: callDataUnits,
+			l1GasCharged:             l1GasCharged,
+			cummulativeL1GasCharged:  l1GasCharged,
+		}}
+	}
+	size := len(s.cachedL1PriceData.msgToL1PriceData)
+	if size == 0 ||
+		s.cachedL1PriceData.startOfL1PriceDataCache == 0 ||
+		s.cachedL1PriceData.endOfL1PriceDataCache == 0 ||
+		arbutil.MessageIndex(size) != s.cachedL1PriceData.endOfL1PriceDataCache-s.cachedL1PriceData.startOfL1PriceDataCache+1 {
+		resetCache()
+		return
+	}
+	if seqNum != s.cachedL1PriceData.endOfL1PriceDataCache+1 {
+		if seqNum > s.cachedL1PriceData.endOfL1PriceDataCache+1 {
+			log.Info("message position higher then current end of l1 price data cache, resetting cache to this message")
+			resetCache()
+		} else if seqNum < s.cachedL1PriceData.startOfL1PriceDataCache {
+			log.Info("message position lower than start of l1 price data cache, ignoring")
+		} else {
+			log.Info("message position already seen in l1 price data cache, ignoring")
+		}
+	} else {
+		cummulativeCallDataUnits := s.cachedL1PriceData.msgToL1PriceData[size-1].cummulativeCallDataUnits
+		cummulativeL1GasCharged := s.cachedL1PriceData.msgToL1PriceData[size-1].cummulativeL1GasCharged
+		s.cachedL1PriceData.msgToL1PriceData = append(s.cachedL1PriceData.msgToL1PriceData, L1PriceDataOfMsg{
+			callDataUnits:            callDataUnits,
+			cummulativeCallDataUnits: cummulativeCallDataUnits + callDataUnits,
+			l1GasCharged:             l1GasCharged,
+			cummulativeL1GasCharged:  cummulativeL1GasCharged + l1GasCharged,
+		})
+		s.cachedL1PriceData.endOfL1PriceDataCache = seqNum
+	}
 }
 
 // DigestMessage is used to create a block by executing msg against the latest state and storing it.
@@ -712,6 +831,7 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 	if err != nil {
 		return nil, err
 	}
+	s.cacheL1PriceDataOfMsg(num, receipts, block, false)
 
 	if time.Now().After(s.nextScheduledVersionCheck) {
 		s.nextScheduledVersionCheck = time.Now().Add(time.Minute)
