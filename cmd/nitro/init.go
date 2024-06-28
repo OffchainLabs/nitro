@@ -407,11 +407,9 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				return chainDb, l2BlockChain, nil
 			}
 			readOnlyDb.Close()
-		} else { // err != nil
+		} else if !isLeveldbNotExistError(err) && !isPebbleNotExistError(err) {
 			// we only want to continue if the error is pebble or leveldb not exist error
-			if !isLeveldbNotExistError(err) && !isPebbleNotExistError(err) {
-				return nil, nil, fmt.Errorf("Failed to open database: %w", err)
-			}
+			return nil, nil, fmt.Errorf("Failed to open database: %w", err)
 		}
 	}
 
