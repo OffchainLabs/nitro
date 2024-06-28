@@ -418,6 +418,10 @@ func (n *ExecutionNode) Maintenance() error {
 	return n.ChainDB.Compact(nil, nil)
 }
 
-func (n *ExecutionNode) SyncProgressMap() map[string]interface{} {
-	return n.SyncMonitor.SyncProgressMap()
+func (n *ExecutionNode) Synced() bool {
+	return n.SyncMonitor.Synced()
+}
+
+func (n *ExecutionNode) FullSyncProgressMap() map[string]interface{} {
+	return n.SyncMonitor.FullSyncProgressMap()
 }

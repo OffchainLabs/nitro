@@ -37,7 +37,8 @@ type execClientWrapper struct {
 func (w *execClientWrapper) Pause()                     { w.t.Error("not supported") }
 func (w *execClientWrapper) Activate()                  { w.t.Error("not supported") }
 func (w *execClientWrapper) ForwardTo(url string) error { w.t.Error("not supported"); return nil }
-func (w *execClientWrapper) SyncProgressMap() map[string]interface{} {
+func (w *execClientWrapper) Synced() bool               { w.t.Error("not supported"); return false }
+func (w *execClientWrapper) FullSyncProgressMap() map[string]interface{} {
 	w.t.Error("not supported")
 	return nil
 }
