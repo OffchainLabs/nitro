@@ -51,15 +51,9 @@ func TestDatabaseConversion(t *testing.T) {
 		err := os.Rename(filepath.Join(instanceDir, dbname), filepath.Join(instanceDir, fmt.Sprintf("%s_old", dbname)))
 		Require(t, err)
 		t.Log("converting:", dbname)
-		oldDBConfig := dbconv.DBConfigDefault
-		oldDBConfig.Data = path.Join(instanceDir, fmt.Sprintf("%s_old", dbname))
-		oldDBConfig.DBEngine = "leveldb"
-		newDBConfig := dbconv.DBConfigDefault
-		newDBConfig.Data = path.Join(instanceDir, dbname)
-		newDBConfig.DBEngine = "pebble"
 		convConfig := dbconv.DefaultDBConvConfig
-		convConfig.Src = oldDBConfig
-		convConfig.Dst = newDBConfig
+		convConfig.Src.Data = path.Join(instanceDir, fmt.Sprintf("%s_old", dbname))
+		convConfig.Dst.Data = path.Join(instanceDir, dbname)
 		conv := dbconv.NewDBConverter(&convConfig)
 		err = conv.Convert(ctx)
 		Require(t, err)

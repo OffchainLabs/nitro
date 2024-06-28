@@ -19,19 +19,28 @@ type DBConfig struct {
 	Pebble    conf.PebbleConfig `koanf:"pebble"`
 }
 
-var DBConfigDefault = DBConfig{
-	Handles: conf.PersistentConfigDefault.Handles,
-	Cache:   gethexec.DefaultCachingConfig.DatabaseCache,
-	Pebble:  conf.PebbleConfigDefault,
+var DBConfigDefaultDst = DBConfig{
+	DBEngine:  "pebble",
+	Handles:   conf.PersistentConfigDefault.Handles,
+	Cache:     gethexec.DefaultCachingConfig.DatabaseCache,
+	Namespace: "dstdb/",
+	Pebble:    conf.PebbleConfigDefault,
 }
 
-func DBConfigAddOptions(prefix string, f *flag.FlagSet, defaultNamespace string) {
-	f.String(prefix+".data", DBConfigDefault.Data, "directory of stored chain state")
-	f.String(prefix+".db-engine", DBConfigDefault.DBEngine, "backing database implementation to use ('leveldb' or 'pebble')")
-	f.Int(prefix+".handles", DBConfigDefault.Handles, "number of files to be open simultaneously")
-	f.Int(prefix+".cache", DBConfigDefault.Cache, "the capacity(in megabytes) of the data caching")
-	f.String(prefix+".namespace", defaultNamespace, "metrics namespace")
-	conf.PebbleConfigAddOptions(prefix+".pebble", f)
+var DBConfigDefaultSrc = DBConfig{
+	DBEngine:  "leveldb",
+	Handles:   conf.PersistentConfigDefault.Handles,
+	Cache:     gethexec.DefaultCachingConfig.DatabaseCache,
+	Namespace: "srcdb/",
+}
+
+func DBConfigAddOptions(prefix string, f *flag.FlagSet, defaultConfig *DBConfig) {
+	f.String(prefix+".data", defaultConfig.Data, "directory of stored chain state")
+	f.String(prefix+".db-engine", defaultConfig.DBEngine, "backing database implementation to use ('leveldb' or 'pebble')")
+	f.Int(prefix+".handles", defaultConfig.Handles, "number of files to be open simultaneously")
+	f.Int(prefix+".cache", defaultConfig.Cache, "the capacity(in megabytes) of the data caching")
+	f.String(prefix+".namespace", defaultConfig.Namespace, "metrics namespace")
+	conf.PebbleConfigAddOptions(prefix+".pebble", f, &defaultConfig.Pebble)
 }
 
 type DBConvConfig struct {
@@ -48,6 +57,8 @@ type DBConvConfig struct {
 }
 
 var DefaultDBConvConfig = DBConvConfig{
+	Src:            DBConfigDefaultSrc,
+	Dst:            DBConfigDefaultDst,
 	IdealBatchSize: 100 * 1024 * 1024, // 100 MB
 	Convert:        false,
 	Compact:        false,
@@ -59,8 +70,8 @@ var DefaultDBConvConfig = DBConvConfig{
 }
 
 func DBConvConfigAddOptions(f *flag.FlagSet) {
-	DBConfigAddOptions("src", f, "srcdb/")
-	DBConfigAddOptions("dst", f, "destdb/")
+	DBConfigAddOptions("src", f, &DefaultDBConvConfig.Src)
+	DBConfigAddOptions("dst", f, &DefaultDBConvConfig.Dst)
 	f.Int("ideal-batch-size", DefaultDBConvConfig.IdealBatchSize, "ideal write batch size")
 	f.Bool("convert", DefaultDBConvConfig.Convert, "enables conversion step")
 	f.Bool("compact", DefaultDBConvConfig.Compact, "enables compaction step")

@@ -10,13 +10,11 @@ import (
 
 func TestConversion(t *testing.T) {
 	_ = testhelpers.InitTestLog(t, log.LvlTrace)
-	oldDBConfig := DBConfigDefault
+	oldDBConfig := DBConfigDefaultSrc
 	oldDBConfig.Data = t.TempDir()
-	oldDBConfig.DBEngine = "leveldb"
 
-	newDBConfig := DBConfigDefault
+	newDBConfig := DBConfigDefaultDst
 	newDBConfig.Data = t.TempDir()
-	newDBConfig.DBEngine = "pebble"
 
 	func() {
 		oldDb, err := openDB(&oldDBConfig, "", false)
