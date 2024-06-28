@@ -27,7 +27,7 @@ func (s *Stats) Reset() {
 	s.prevBytesTimestamp = now
 }
 
-func (s *Stats) AddEntries(entries int64) {
+func (s *Stats) LogEntries(entries int64) {
 	s.entries.Add(entries)
 }
 
@@ -35,7 +35,7 @@ func (s *Stats) Entries() int64 {
 	return s.entries.Load()
 }
 
-func (s *Stats) AddBytes(bytes int64) {
+func (s *Stats) LogBytes(bytes int64) {
 	s.bytes.Add(bytes)
 }
 

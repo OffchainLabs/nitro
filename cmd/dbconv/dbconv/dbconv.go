@@ -64,8 +64,8 @@ func (c *DBConverter) Convert(ctx context.Context) error {
 			if err = batch.Write(); err != nil {
 				return err
 			}
-			c.stats.AddEntries(int64(entriesInBatch))
-			c.stats.AddBytes(int64(batchSize))
+			c.stats.LogEntries(int64(entriesInBatch))
+			c.stats.LogBytes(int64(batchSize))
 			batch.Reset()
 			entriesInBatch = 0
 		}
@@ -75,8 +75,8 @@ func (c *DBConverter) Convert(ctx context.Context) error {
 		if err = batch.Write(); err != nil {
 			return err
 		}
-		c.stats.AddEntries(int64(entriesInBatch))
-		c.stats.AddBytes(int64(batchSize))
+		c.stats.LogEntries(int64(entriesInBatch))
+		c.stats.LogBytes(int64(batchSize))
 	}
 	return err
 }
@@ -128,7 +128,7 @@ func (c *DBConverter) Verify(ctx context.Context) error {
 			if !has {
 				return fmt.Errorf("Missing key in destination db, key: %v", it.Key())
 			}
-			c.stats.AddBytes(int64(len(it.Key())))
+			c.stats.LogBytes(int64(len(it.Key())))
 		case "full":
 			dstValue, err := dst.Get(it.Key())
 			if err != nil {
@@ -137,11 +137,11 @@ func (c *DBConverter) Verify(ctx context.Context) error {
 			if !bytes.Equal(dstValue, it.Value()) {
 				return fmt.Errorf("Value mismatch for key: %v, src value: %v, dst value: %s", it.Key(), it.Value(), dstValue)
 			}
-			c.stats.AddBytes(int64(len(it.Key()) + len(dstValue)))
+			c.stats.LogBytes(int64(len(it.Key()) + len(dstValue)))
 		default:
 			return fmt.Errorf("Invalid verify config value: %v", c.config.Verify)
 		}
-		c.stats.AddEntries(1)
+		c.stats.LogEntries(1)
 	}
 	return ctx.Err()
 }
