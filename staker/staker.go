@@ -90,6 +90,7 @@ type L1ValidatorConfig struct {
 	ExtraGas                  uint64                      `koanf:"extra-gas" reload:"hot"`
 	Dangerous                 DangerousConfig             `koanf:"dangerous"`
 	ParentChainWallet         genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
+	LogQueryRange             uint64                      `koanf:"log-query-range" reload:"hot"`
 
 	strategy    StakerStrategy
 	gasRefunder common.Address
@@ -156,6 +157,7 @@ var DefaultL1ValidatorConfig = L1ValidatorConfig{
 	ExtraGas:                  50000,
 	Dangerous:                 DefaultDangerousConfig,
 	ParentChainWallet:         DefaultValidatorL1WalletConfig,
+	LogQueryRange:             999,
 }
 
 var TestL1ValidatorConfig = L1ValidatorConfig{
@@ -176,6 +178,7 @@ var TestL1ValidatorConfig = L1ValidatorConfig{
 	ExtraGas:                  50000,
 	Dangerous:                 DefaultDangerousConfig,
 	ParentChainWallet:         DefaultValidatorL1WalletConfig,
+	LogQueryRange:             999,
 }
 
 var DefaultValidatorL1WalletConfig = genericconf.WalletConfig{
@@ -201,6 +204,7 @@ func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".gas-refunder-address", DefaultL1ValidatorConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
 	f.String(prefix+".redis-url", DefaultL1ValidatorConfig.RedisUrl, "redis url for L1 validator")
 	f.Uint64(prefix+".extra-gas", DefaultL1ValidatorConfig.ExtraGas, "use this much more gas than estimation says is necessary to post transactions")
+	f.Uint64(prefix+".log-query-range", DefaultL1ValidatorConfig.LogQueryRange, "range ro query from eth_getLogs")
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfigForValidator)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultL1ValidatorConfig.ParentChainWallet.Pathname)
