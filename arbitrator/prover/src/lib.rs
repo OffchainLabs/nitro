@@ -9,7 +9,7 @@ mod host;
 mod kzg;
 pub mod machine;
 /// cbindgen:ignore
-mod memory;
+pub mod memory;
 pub mod merkle;
 mod print;
 pub mod programs;
@@ -101,8 +101,7 @@ unsafe fn arbitrator_load_machine_impl(
         &libraries,
         binary_path,
         true,
-        false,
-        false,
+        true,
         debug_chain,
         debug_chain,
         Default::default(),
@@ -117,7 +116,7 @@ unsafe fn arbitrator_load_machine_impl(
 pub unsafe extern "C" fn arbitrator_load_wavm_binary(binary_path: *const c_char) -> *mut Machine {
     let binary_path = cstr_to_string(binary_path);
     let binary_path = Path::new(&binary_path);
-    match Machine::new_from_wavm(binary_path, false) {
+    match Machine::new_from_wavm(binary_path) {
         Ok(mach) => Box::into_raw(Box::new(mach)),
         Err(err) => {
             eprintln!("Error loading binary: {err}");

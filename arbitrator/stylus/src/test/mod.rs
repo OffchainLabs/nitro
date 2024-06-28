@@ -150,7 +150,6 @@ fn new_test_machine(path: &str, compile: &CompileConfig) -> Result<Machine> {
         &[lib],
         bin,
         false,
-        false,
         true,
         compile.debug.debug_funcs,
         true,
