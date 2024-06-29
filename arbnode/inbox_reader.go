@@ -143,7 +143,11 @@ func (r *InboxReader) Start(ctxIn context.Context) error {
 				break
 			}
 			// Validate the init message matches our L2 blockchain
-			message, err := r.tracker.GetDelayedMessage(0)
+			ctx, err := r.StopWaiter.GetContextSafe()
+			if err != nil {
+				return err
+			}
+			message, err := r.tracker.GetDelayedMessage(ctx, 0)
 			if err != nil {
 				return err
 			}
@@ -226,7 +230,7 @@ func (r *InboxReader) CaughtUp() chan struct{} {
 
 func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 	readMode := r.config().ReadMode
-	from, err := r.getNextBlockToRead()
+	from, err := r.getNextBlockToRead(ctx)
 	if err != nil {
 		return err
 	}
@@ -584,7 +588,7 @@ func (r *InboxReader) getPrevBlockForReorg(from *big.Int) (*big.Int, error) {
 	return newFrom, nil
 }
 
-func (r *InboxReader) getNextBlockToRead() (*big.Int, error) {
+func (r *InboxReader) getNextBlockToRead(ctx context.Context) (*big.Int, error) {
 	delayedCount, err := r.tracker.GetDelayedCount()
 	if err != nil {
 		return nil, err
@@ -592,7 +596,7 @@ func (r *InboxReader) getNextBlockToRead() (*big.Int, error) {
 	if delayedCount == 0 {
 		return new(big.Int).Set(r.firstMessageBlock), nil
 	}
-	_, _, parentChainBlockNumber, err := r.tracker.GetDelayedMessageAccumulatorAndParentChainBlockNumber(delayedCount - 1)
+	_, _, parentChainBlockNumber, err := r.tracker.GetDelayedMessageAccumulatorAndParentChainBlockNumber(ctx, delayedCount-1)
 	if err != nil {
 		return nil, err
 	}
