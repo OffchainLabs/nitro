@@ -73,25 +73,23 @@ func activateProgramInternal(
 	gasLeft *uint64,
 ) (*activationInfo, []byte, []byte, error) {
 	output := &rustBytes{}
-	asmLen := usize(0)
 	moduleHash := &bytes32{}
 	stylusData := &C.StylusData{}
 	codeHash := hashToBytes32(codehash)
 
-	status := userStatus(C.stylus_activate(
+	status_mod := userStatus(C.stylus_activate(
 		goSlice(wasm),
 		u16(page_limit),
 		u16(version),
 		cbool(debug),
 		output,
-		&asmLen,
 		&codeHash,
 		moduleHash,
 		stylusData,
 		(*u64)(gasLeft),
 	))
 
-	data, msg, err := status.toResult(output.intoBytes(), debug)
+	module, msg, err := status_mod.toResult(output.intoBytes(), debug)
 	if err != nil {
 		if debug {
 			log.Warn("activation failed", "err", err, "msg", msg, "program", addressForLogging)
@@ -102,10 +100,20 @@ func activateProgramInternal(
 		return nil, nil, nil, err
 	}
 
+	status_asm := C.stylus_compile(
+		goSlice(wasm),
+		u16(version),
+		cbool(debug),
+		goSlice([]byte{}),
+		output,
+	)
+
+	asm := output.intoBytes()
+	if status_asm != 0 {
+		return nil, nil, nil, fmt.Errorf("%w: %s", ErrProgramActivation, string(asm))
+	}
+
 	hash := moduleHash.toHash()
-	split := int(asmLen)
-	asm := data[:split]
-	module := data[split:]
 
 	info := &activationInfo{
 		moduleHash:    hash,
