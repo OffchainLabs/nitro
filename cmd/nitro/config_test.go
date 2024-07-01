@@ -16,6 +16,7 @@ import (
 
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
+	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 
@@ -27,6 +28,8 @@ func TestEmptyCliConfig(t *testing.T) {
 	f := flag.NewFlagSet("", flag.ContinueOnError)
 	NodeConfigAddOptions(f)
 	k, err := confighelpers.BeginCommonParse(f, []string{})
+	Require(t, err)
+	err = das.FixKeysetCLIParsing("node.data-availability.rpc-aggregator.backends", k)
 	Require(t, err)
 	var emptyCliNodeConfig NodeConfig
 	err = confighelpers.EndCommonParse(k, &emptyCliNodeConfig)
@@ -57,7 +60,7 @@ func TestValidatorConfig(t *testing.T) {
 }
 
 func TestAggregatorConfig(t *testing.T) {
-	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.parent-chain-reader.enable=false --parent-chain.id 5 --chain.id 421613 --node.batch-poster.parent-chain-wallet.pathname /l1keystore --node.batch-poster.parent-chain-wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer --execution.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642 --node.data-availability.enable --node.data-availability.rpc-aggregator.backends {[\"url\":\"http://localhost:8547\",\"pubkey\":\"abc==\",\"signerMask\":0x1]}", " ")
+	args := strings.Split("--persistent.chain /tmp/data --init.dev-init --node.parent-chain-reader.enable=false --parent-chain.id 5 --chain.id 421613 --node.batch-poster.parent-chain-wallet.pathname /l1keystore --node.batch-poster.parent-chain-wallet.password passphrase --http.addr 0.0.0.0 --ws.addr 0.0.0.0 --node.sequencer --execution.sequencer.enable --node.feed.output.enable --node.feed.output.port 9642 --node.data-availability.enable --node.data-availability.rpc-aggregator.backends [{\"url\":\"http://localhost:8547\",\"pubkey\":\"abc==\"}]", " ")
 	_, _, err := ParseNode(context.Background(), args)
 	Require(t, err)
 }
