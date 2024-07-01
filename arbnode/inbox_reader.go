@@ -97,8 +97,8 @@ type InboxReader struct {
 	l1Reader       *headerreader.HeaderReader
 
 	// Atomic
-	lastSeenBatchCount uint64
-	lastReadBatchCount uint64
+	lastSeenBatchCount atomic.Uint64
+	lastReadBatchCount atomic.Uint64
 }
 
 func NewInboxReader(tracker *InboxTracker, client arbutil.L1Interface, l1Reader *headerreader.HeaderReader, firstMessageBlock *big.Int, delayedBridge *DelayedBridge, sequencerInbox *SequencerInbox, config InboxReaderConfigFetcher) (*InboxReader, error) {
@@ -240,7 +240,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 	seenBatchCountStored := uint64(math.MaxUint64)
 	storeSeenBatchCount := func() {
 		if seenBatchCountStored != seenBatchCount {
-			atomic.StoreUint64(&r.lastSeenBatchCount, seenBatchCount)
+			r.lastSeenBatchCount.Store(seenBatchCount)
 			seenBatchCountStored = seenBatchCount
 		}
 	}
@@ -394,7 +394,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 			// There's nothing to do
 			from = arbmath.BigAddByUint(currentHeight, 1)
 			blocksToFetch = config.DefaultBlocksToRead
-			atomic.StoreUint64(&r.lastReadBatchCount, checkingBatchCount)
+			r.lastReadBatchCount.Store(checkingBatchCount)
 			storeSeenBatchCount()
 			if !r.caughtUp && readMode == "latest" {
 				r.caughtUp = true
@@ -526,7 +526,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 				}
 				if len(sequencerBatches) > 0 {
 					readAnyBatches = true
-					atomic.StoreUint64(&r.lastReadBatchCount, sequencerBatches[len(sequencerBatches)-1].SequenceNumber+1)
+					r.lastReadBatchCount.Store(sequencerBatches[len(sequencerBatches)-1].SequenceNumber + 1)
 					storeSeenBatchCount()
 				}
 			}
@@ -553,7 +553,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 		}
 
 		if !readAnyBatches {
-			atomic.StoreUint64(&r.lastReadBatchCount, checkingBatchCount)
+			r.lastReadBatchCount.Store(checkingBatchCount)
 			storeSeenBatchCount()
 		}
 	}
@@ -625,7 +625,7 @@ func (r *InboxReader) GetSequencerMessageBytes(ctx context.Context, seqNum uint6
 }
 
 func (r *InboxReader) GetLastReadBatchCount() uint64 {
-	return atomic.LoadUint64(&r.lastReadBatchCount)
+	return r.lastReadBatchCount.Load()
 }
 
 // GetLastSeenBatchCount returns how many sequencer batches the inbox reader has read in from L1.
@@ -633,7 +633,7 @@ func (r *InboxReader) GetLastReadBatchCount() uint64 {
 // >0 - last batchcount seen in run() - only written after lastReadBatchCount updated
 // 0 - no batch seen, error
 func (r *InboxReader) GetLastSeenBatchCount() uint64 {
-	return atomic.LoadUint64(&r.lastSeenBatchCount)
+	return r.lastSeenBatchCount.Load()
 }
 
 func (r *InboxReader) GetDelayBlocks() uint64 {

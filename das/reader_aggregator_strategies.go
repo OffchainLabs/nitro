@@ -41,7 +41,7 @@ func (s *abstractAggregatorStrategy) update(readers []daprovider.DASReader, stat
 
 // Exponentially growing Explore Exploit Strategy
 type simpleExploreExploitStrategy struct {
-	iterations        uint32
+	iterations        atomic.Uint32
 	exploreIterations uint32
 	exploitIterations uint32
 
@@ -49,7 +49,7 @@ type simpleExploreExploitStrategy struct {
 }
 
 func (s *simpleExploreExploitStrategy) newInstance() aggregatorStrategyInstance {
-	iterations := atomic.AddUint32(&s.iterations, 1)
+	iterations := s.iterations.Add(1)
 
 	readerSets := make([][]daprovider.DASReader, 0)
 	s.RLock()

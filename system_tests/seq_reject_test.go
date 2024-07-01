@@ -54,7 +54,7 @@ func TestSequencerRejection(t *testing.T) {
 	}
 
 	wg := sync.WaitGroup{}
-	var stopBackground int32
+	var stopBackground atomic.Int32
 	for user := 0; user < 9; user++ {
 		user := user
 		name := fmt.Sprintf("User%v", user)
@@ -78,12 +78,12 @@ func TestSequencerRejection(t *testing.T) {
 				GasFeeCap: arbmath.BigMulByUint(builderSeq.L2Info.GasPrice, 100),
 				Value:     common.Big0,
 			}
-			for atomic.LoadInt32(&stopBackground) == 0 {
-				txData.Nonce = info.Nonce
+			for stopBackground.Load() == 0 {
+				txData.Nonce = info.Nonce.Load()
 				var expectedErr string
 				if user%3 == 0 {
 					txData.Data = noopId
-					info.Nonce += 1
+					info.Nonce.Add(1)
 				} else if user%3 == 1 {
 					txData.Data = revertId
 					expectedErr = "execution reverted: SOLIDITY_REVERTING"
@@ -116,7 +116,7 @@ func TestSequencerRejection(t *testing.T) {
 		}
 	}
 
-	atomic.StoreInt32(&stopBackground, 1)
+	stopBackground.Store(1)
 	wg.Wait()
 
 	header1, err := builderSeq.L2.Client.HeaderByNumber(ctx, nil)

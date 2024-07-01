@@ -112,7 +112,7 @@ type BatchPoster struct {
 	// This is an atomic variable that should only be accessed atomically.
 	// An estimate of the number of batches we want to post but haven't yet.
 	// This doesn't include batches which we don't want to post yet due to the L1 bounds.
-	backlog         uint64
+	backlog         atomic.Uint64
 	lastHitL1Bounds time.Time // The last time we wanted to post a message but hit the L1 bounds
 
 	batchReverted        atomic.Bool // indicates whether data poster batch was reverted
@@ -1083,7 +1083,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 				if config.IgnoreBlobPrice {
 					use4844 = true
 				} else {
-					backlog := atomic.LoadUint64(&b.backlog)
+					backlog := b.backlog.Load()
 					// Logic to prevent switching from non-4844 batches to 4844 batches too often,
 					// so that blocks can be filled efficiently. The geth txpool rejects txs for
 					// accounts that already have the other type of txs in the pool with
@@ -1411,7 +1411,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		// Setting the backlog to 0 here ensures that we don't lower compression as a result.
 		backlog = 0
 	}
-	atomic.StoreUint64(&b.backlog, backlog)
+	b.backlog.Store(backlog)
 	b.building = nil
 
 	// If we aren't queueing up transactions, wait for the receipt before moving on to the next batch.
@@ -1427,7 +1427,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 }
 
 func (b *BatchPoster) GetBacklogEstimate() uint64 {
-	return atomic.LoadUint64(&b.backlog)
+	return b.backlog.Load()
 }
 
 func (b *BatchPoster) Start(ctxIn context.Context) {

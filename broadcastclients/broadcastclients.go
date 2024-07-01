@@ -49,7 +49,7 @@ type BroadcastClients struct {
 	secondaryRouter *Router
 
 	// Use atomic access
-	connected int32
+	connected atomic.Int32
 }
 
 func NewBroadcastClients(
@@ -113,7 +113,7 @@ func NewBroadcastClients(
 }
 
 func (bcs *BroadcastClients) adjustCount(delta int32) {
-	connected := atomic.AddInt32(&bcs.connected, delta)
+	connected := bcs.connected.Add(delta)
 	if connected <= 0 {
 		log.Error("no connected feed")
 	}

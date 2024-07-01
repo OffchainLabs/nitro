@@ -46,10 +46,13 @@ func createTestNode(t *testing.T, ctx context.Context, stuckOrFailed int64) *nod
 	stack, err := node.New(&stackConf)
 	Require(t, err)
 
+	service := &testAPI{}
+	service.stuckCalls.Store(stuckOrFailed)
+	service.failedCalls.Store(stuckOrFailed)
 	testAPIs := []rpc.API{{
 		Namespace:     "test",
 		Version:       "1.0",
-		Service:       &testAPI{stuckOrFailed, stuckOrFailed},
+		Service:       service,
 		Public:        true,
 		Authenticated: false,
 	}}
@@ -67,12 +70,12 @@ func createTestNode(t *testing.T, ctx context.Context, stuckOrFailed int64) *nod
 }
 
 type testAPI struct {
-	stuckCalls  int64
-	failedCalls int64
+	stuckCalls  atomic.Int64
+	failedCalls atomic.Int64
 }
 
 func (t *testAPI) StuckAtFirst(ctx context.Context) error {
-	stuckRemaining := atomic.AddInt64(&t.stuckCalls, -1) + 1
+	stuckRemaining := t.stuckCalls.Add(-1) + 1
 	if stuckRemaining <= 0 {
 		return nil
 	}
@@ -81,7 +84,7 @@ func (t *testAPI) StuckAtFirst(ctx context.Context) error {
 }
 
 func (t *testAPI) FailAtFirst(ctx context.Context) error {
-	failedRemaining := atomic.AddInt64(&t.failedCalls, -1) + 1
+	failedRemaining := t.failedCalls.Add(-1) + 1
 	if failedRemaining <= 0 {
 		return nil
 	}

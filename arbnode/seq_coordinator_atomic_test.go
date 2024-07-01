@@ -21,21 +21,21 @@ import (
 const messagesPerRound = 20
 
 type CoordinatorTestData struct {
-	messageCount uint64
+	messageCount atomic.Uint64
 
 	sequencer []string
 	err       error
 	mutex     sync.Mutex
 
 	waitForCoords  sync.WaitGroup
-	testStartRound int32
+	testStartRound atomic.Int32
 }
 
 func coordinatorTestThread(ctx context.Context, coord *SeqCoordinator, data *CoordinatorTestData) {
 	nextRound := int32(0)
 	for {
 		sequenced := make([]bool, messagesPerRound)
-		for atomic.LoadInt32(&data.testStartRound) < nextRound {
+		for data.testStartRound.Load() < nextRound {
 			if ctx.Err() != nil {
 				return
 			}
@@ -44,7 +44,7 @@ func coordinatorTestThread(ctx context.Context, coord *SeqCoordinator, data *Coo
 		nextRound++
 		var execError error
 		for {
-			messageCount := atomic.LoadUint64(&data.messageCount)
+			messageCount := data.messageCount.Load()
 			if messageCount >= messagesPerRound {
 				break
 			}
@@ -53,7 +53,7 @@ func coordinatorTestThread(ctx context.Context, coord *SeqCoordinator, data *Coo
 			err := coord.acquireLockoutAndWriteMessage(ctx, asIndex, asIndex+1, &arbostypes.EmptyTestMessageWithMetadata)
 			if err == nil {
 				sequenced[messageCount] = true
-				atomic.StoreUint64(&data.messageCount, messageCount+1)
+				data.messageCount.Store(messageCount + 1)
 				randNr := rand.Intn(20)
 				if randNr > 15 {
 					execError = coord.chosenOneRelease(ctx)
@@ -105,9 +105,9 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 	coordConfig.Signer.Symmetric.Dangerous.DisableSignatureVerification = true
 	coordConfig.Signer.Symmetric.SigningKey = ""
 	testData := CoordinatorTestData{
-		testStartRound: -1,
-		sequencer:      make([]string, messagesPerRound),
+		sequencer: make([]string, messagesPerRound),
 	}
+	testData.testStartRound.Store(-1)
 	nullSigner, err := signature.NewSignVerify(&coordConfig.Signer, nil, nil)
 	Require(t, err)
 
@@ -134,12 +134,12 @@ func TestRedisSeqCoordinatorAtomic(t *testing.T) {
 
 	for round := int32(0); round < 10; round++ {
 		redisClient.Del(ctx, redisutil.CHOSENSEQ_KEY, redisutil.MSG_COUNT_KEY)
-		testData.messageCount = 0
+		testData.messageCount.Store(0)
 		for i := 0; i < messagesPerRound; i++ {
 			testData.sequencer[i] = ""
 		}
 		testData.waitForCoords.Add(NumOfThreads)
-		atomic.StoreInt32(&testData.testStartRound, round)
+		testData.testStartRound.Store(round)
 		testData.waitForCoords.Wait()
 		Require(t, testData.err)
 		seqList := ""
