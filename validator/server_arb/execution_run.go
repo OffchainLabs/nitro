@@ -187,14 +187,6 @@ func (e *executionRun) GetProofAt(position uint64) containers.PromiseInterface[[
 		if err != nil {
 			return nil, err
 		}
-		log.Info("Getting machine proof at position", "position", position)
-		log.Info(
-			"Machine start global state at OSP is",
-			"globalState",
-			fmt.Sprintf("%+v", machine.GetGlobalState()),
-			"machineHash",
-			fmt.Sprintf("%#x", machine.Hash()),
-		)
 		return machine.ProveNextStep(), nil
 	})
 }
