@@ -111,23 +111,21 @@ impl Memory {
         #[cfg(not(feature = "rayon"))]
         let leaf_hashes = self.buffer.chunks(Self::LEAF_SIZE);
 
-        let mut leaf_hashes: Vec<Bytes32> = leaf_hashes
+        let leaf_hashes: Vec<Bytes32> = leaf_hashes
             .map(|leaf| {
                 let mut full_leaf = [0u8; 32];
                 full_leaf[..leaf.len()].copy_from_slice(leaf);
                 hash_leaf(full_leaf)
             })
             .collect();
-        if leaf_hashes.len() < leaves {
-            let empty_hash = hash_leaf([0u8; 32]);
-            leaf_hashes.resize(leaves, empty_hash);
+        let size = leaf_hashes.len();
+        let m = Merkle::new_advanced(MerkleType::Memory, leaf_hashes, Self::MEMORY_LAYERS);
+        if size < leaves {
+            m.resize(leaves).unwrap_or_else(|_| {
+                panic!("Couldn't resize merkle tree from {} to {}", size, leaves)
+            });
         }
-        Cow::Owned(Merkle::new_advanced(
-            MerkleType::Memory,
-            leaf_hashes,
-            hash_leaf([0u8; 32]),
-            Self::MEMORY_LAYERS,
-        ))
+        Cow::Owned(m)
     }
 
     pub fn get_leaf_data(&self, leaf_idx: usize) -> [u8; Self::LEAF_SIZE] {
@@ -234,7 +232,7 @@ impl Memory {
         let buf = value.to_le_bytes();
         self.buffer[idx..end_idx].copy_from_slice(&buf[..bytes.into()]);
 
-        if let Some(mut merkle) = self.merkle.take() {
+        if let Some(merkle) = self.merkle.take() {
             let start_leaf = idx / Self::LEAF_SIZE;
             merkle.set(start_leaf, hash_leaf(self.get_leaf_data(start_leaf)));
             let end_leaf = (end_idx - 1) / Self::LEAF_SIZE;
@@ -262,11 +260,12 @@ impl Memory {
         let end_idx = end_idx as usize;
         self.buffer[idx..end_idx].copy_from_slice(value);
 
-        if let Some(mut merkle) = self.merkle.take() {
+        if let Some(merkle) = self.merkle.take() {
             let start_leaf = idx / Self::LEAF_SIZE;
             merkle.set(start_leaf, hash_leaf(self.get_leaf_data(start_leaf)));
             // No need for second merkle
             assert!(value.len() <= Self::LEAF_SIZE);
+            self.merkle = Some(merkle);
         }
 
         true
@@ -288,7 +287,7 @@ impl Memory {
     }
 
     pub fn get_range(&self, offset: usize, len: usize) -> Option<&[u8]> {
-        let end = offset.checked_add(len)?;
+        let end: usize = offset.checked_add(len)?;
         if end > self.buffer.len() {
             return None;
         }
@@ -309,18 +308,51 @@ impl Memory {
     }
 
     pub fn resize(&mut self, new_size: usize) {
-        let had_merkle_tree = self.merkle.is_some();
-        self.merkle = None;
         self.buffer.resize(new_size, 0);
-        if had_merkle_tree {
-            self.cache_merkle_tree();
+        if let Some(merkle) = self.merkle.take() {
+            merkle.resize(new_size).unwrap_or_else(|_| {
+                panic!(
+                    "Couldn't resize merkle tree from {} to {}",
+                    merkle.len(),
+                    new_size
+                )
+            });
+            self.merkle = Some(merkle);
         }
     }
 }
 
 #[cfg(test)]
 mod test {
+    use arbutil::Bytes32;
+
     use crate::memory::round_up_to_power_of_two;
+
+    use super::Memory;
+
+    #[test]
+    pub fn fixed_memory_hash() {
+        let module_memory_hash = Bytes32::from([
+            86u8, 177, 192, 60, 217, 123, 221, 153, 118, 79, 229, 122, 210, 48, 187, 104, 40, 84,
+            112, 63, 137, 86, 54, 2, 56, 118, 72, 158, 242, 225, 65, 80,
+        ]);
+        let memory = Memory::new(65536, 1);
+        assert_eq!(memory.hash(), module_memory_hash);
+    }
+
+    #[test]
+    pub fn empty_leaf_hash() {
+        let leaf = [0u8; 32];
+        let hash = super::hash_leaf(leaf);
+        print!("Bytes32::new_direct([");
+        for i in 0..32 {
+            print!("{}", hash[i]);
+            if i < 31 {
+                print!(", ");
+            }
+        }
+        print!("]);");
+    }
 
     #[test]
     pub fn test_round_up_power_of_two() {
