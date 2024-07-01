@@ -170,7 +170,6 @@ func ValidationInputFromJson(entry *InputJSON) (*validator.ValidationInput, erro
 
 type GetLeavesWithStepSizeInput struct {
 	ModuleRoot        common.Hash
-	FromBatch         uint64
 	MachineStartIndex uint64
 	StepSize          uint64
 	NumDesiredLeaves  uint64

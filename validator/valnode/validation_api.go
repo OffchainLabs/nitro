@@ -82,23 +82,6 @@ func NewExecutionServerAPI(
 	}
 }
 
-func (a *ExecServerAPI) CreateBoldExecutionRun(ctx context.Context, wasmModuleRoot common.Hash, stepSize uint64, jsonInput *server_api.InputJSON) (uint64, error) {
-	input, err := server_api.ValidationInputFromJson(jsonInput)
-	if err != nil {
-		return 0, err
-	}
-	execRun, err := a.execSpawner.CreateBoldExecutionRun(wasmModuleRoot, stepSize, input).Await(ctx)
-	if err != nil {
-		return 0, err
-	}
-	a.runIdLock.Lock()
-	defer a.runIdLock.Unlock()
-	newId := a.nextId
-	a.nextId++
-	a.runs[newId] = &execRunEntry{execRun, time.Now()}
-	return newId, nil
-}
-
 func (a *ExecServerAPI) CreateExecutionRun(ctx context.Context, wasmModuleRoot common.Hash, jsonInput *server_api.InputJSON) (uint64, error) {
 	input, err := server_api.ValidationInputFromJson(jsonInput)
 	if err != nil {
@@ -175,13 +158,13 @@ func (a *ExecServerAPI) GetStepAt(ctx context.Context, execid uint64, position u
 	return server_api.MachineStepResultToJson(res), nil
 }
 
-func (a *ExecServerAPI) GetLeavesWithStepSize(ctx context.Context, execid, fromBatch, fromStep, stepSize, numDesiredLeaves uint64) ([]common.Hash, error) {
+func (a *ExecServerAPI) GetMachineHashesWithStepSize(ctx context.Context, execid, fromStep, stepSize, maxIterations uint64) ([]common.Hash, error) {
 	run, err := a.getRun(execid)
 	if err != nil {
 		return nil, err
 	}
-	leavesInRange := run.GetLeavesWithStepSize(fromBatch, fromStep, stepSize, numDesiredLeaves)
-	res, err := leavesInRange.Await(ctx)
+	hashesInRange := run.GetMachineHashesWithStepSize(fromStep, stepSize, maxIterations)
+	res, err := hashesInRange.Await(ctx)
 	if err != nil {
 		return nil, err
 	}

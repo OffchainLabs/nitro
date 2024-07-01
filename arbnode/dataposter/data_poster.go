@@ -31,9 +31,11 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 	"github.com/go-redis/redis/v8"
 	"github.com/holiman/uint256"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsigner"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -44,6 +46,8 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/spf13/pflag"
+
+	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
 )
 
 // Dataposter implements functionality to post transactions on the chain. It
@@ -136,32 +140,33 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 		useNoOpStorage = true
 		log.Info("Disabling data poster storage, as parent chain appears to be an Arbitrum chain without a mempool")
 	}
-	// encF := func() storage.EncoderDecoderInterface {
-	// 	if opts.Config().LegacyStorageEncoding {
-	// 		return &storage.LegacyEncoderDecoder{}
-	// 	}
-	// 	return &storage.EncoderDecoder{}
-	// }
-	// switch {
-	// case useNoOpStorage:
-	// queue = &noop.Storage{}
-	// case opts.RedisClient != nil:
-	// 	var err error
-	// 	queue, err = redisstorage.NewStorage(opts.RedisClient, opts.RedisKey, &cfg.RedisSigner, encF)
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-	// case cfg.UseDBStorage:
-	// storage := dbstorage.New(opts.Database, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
-	// // if cfg.Dangerous.ClearDBStorage {
-	// if err := storage.PruneAll(ctx); err != nil {
-	// 	return nil, err
-	// }
-	// // }
-	// queue = storage
-	// default:
-	queue := slice.NewStorage(func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
-	// }
+	encF := func() storage.EncoderDecoderInterface {
+		if opts.Config().LegacyStorageEncoding {
+			return &storage.LegacyEncoderDecoder{}
+		}
+		return &storage.EncoderDecoder{}
+	}
+	var queue QueueStorage
+	switch {
+	case useNoOpStorage:
+		queue = &noop.Storage{}
+	case opts.RedisClient != nil:
+		var err error
+		queue, err = redisstorage.NewStorage(opts.RedisClient, opts.RedisKey, &cfg.RedisSigner, encF)
+		if err != nil {
+			return nil, err
+		}
+	case cfg.UseDBStorage:
+		storage := dbstorage.New(opts.Database, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
+		if cfg.Dangerous.ClearDBStorage {
+			if err := storage.PruneAll(ctx); err != nil {
+				return nil, err
+			}
+		}
+		queue = storage
+	default:
+		queue = slice.NewStorage(func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
+	}
 	expression, err := govaluate.NewEvaluableExpression(cfg.MaxFeeCapFormula)
 	if err != nil {
 		return nil, fmt.Errorf("error creating govaluate evaluable expression for calculating maxFeeCap: %w", err)
@@ -250,6 +255,50 @@ func rpcClient(ctx context.Context, opts *ExternalSignerCfg) (*rpc.Client, error
 	)
 }
 
+// TxToSignTxArgs converts transaction to SendTxArgs. This is needed for
+// external signer to specify From field.
+func TxToSignTxArgs(addr common.Address, tx *types.Transaction) (*apitypes.SendTxArgs, error) {
+	var to *common.MixedcaseAddress
+	if tx.To() != nil {
+		to = new(common.MixedcaseAddress)
+		*to = common.NewMixedcaseAddress(*tx.To())
+	}
+	data := (hexutil.Bytes)(tx.Data())
+	val := (*hexutil.Big)(tx.Value())
+	if val == nil {
+		val = (*hexutil.Big)(big.NewInt(0))
+	}
+	al := tx.AccessList()
+	var (
+		blobs       []kzg4844.Blob
+		commitments []kzg4844.Commitment
+		proofs      []kzg4844.Proof
+	)
+	if tx.BlobTxSidecar() != nil {
+		blobs = tx.BlobTxSidecar().Blobs
+		commitments = tx.BlobTxSidecar().Commitments
+		proofs = tx.BlobTxSidecar().Proofs
+	}
+	return &apitypes.SendTxArgs{
+		From:                 common.NewMixedcaseAddress(addr),
+		To:                   to,
+		Gas:                  hexutil.Uint64(tx.Gas()),
+		GasPrice:             (*hexutil.Big)(tx.GasPrice()),
+		MaxFeePerGas:         (*hexutil.Big)(tx.GasFeeCap()),
+		MaxPriorityFeePerGas: (*hexutil.Big)(tx.GasTipCap()),
+		Value:                *val,
+		Nonce:                hexutil.Uint64(tx.Nonce()),
+		Data:                 &data,
+		AccessList:           &al,
+		ChainID:              (*hexutil.Big)(tx.ChainId()),
+		BlobFeeCap:           (*hexutil.Big)(tx.BlobGasFeeCap()),
+		BlobHashes:           tx.BlobHashes(),
+		Blobs:                blobs,
+		Commitments:          commitments,
+		Proofs:               proofs,
+	}, nil
+}
+
 // externalSigner returns signer function and ethereum address of the signer.
 // Returns an error if address isn't specified or if it can't connect to the
 // signer RPC server.
@@ -268,7 +317,7 @@ func externalSigner(ctx context.Context, opts *ExternalSignerCfg) (signerFn, com
 		// RLP encoded transaction object.
 		// https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_signtransaction
 		var data hexutil.Bytes
-		args, err := externalsigner.TxToSignTxArgs(addr, tx)
+		args, err := TxToSignTxArgs(addr, tx)
 		if err != nil {
 			return nil, fmt.Errorf("error converting transaction to sendTxArgs: %w", err)
 		}
@@ -280,7 +329,11 @@ func externalSigner(ctx context.Context, opts *ExternalSignerCfg) (signerFn, com
 			return nil, fmt.Errorf("unmarshaling signed transaction: %w", err)
 		}
 		hasher := types.LatestSignerForChainID(tx.ChainId())
-		if h := hasher.Hash(args.ToTransaction()); h != hasher.Hash(signedTx) {
+		gotTx, err := args.ToTransaction()
+		if err != nil {
+			return nil, fmt.Errorf("converting transaction arguments into transaction: %w", err)
+		}
+		if h := hasher.Hash(gotTx); h != hasher.Hash(signedTx) {
 			return nil, fmt.Errorf("transaction: %x from external signer differs from request: %x", hasher.Hash(signedTx), h)
 		}
 		return signedTx, nil
@@ -375,8 +428,7 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64, thi
 }
 
 func (p *DataPoster) waitForL1Finality() bool {
-	// return p.config().WaitForL1Finality && !p.headerReader.IsParentChainArbitrum()
-	return false
+	return p.config().WaitForL1Finality && !p.headerReader.IsParentChainArbitrum()
 }
 
 // Requires the caller hold the mutex.
@@ -683,7 +735,7 @@ func (p *DataPoster) PostSimpleTransactionAutoNonce(ctx context.Context, to comm
 	if err != nil {
 		return nil, err
 	}
-	return p.postTransaction(ctx, time.Now(), nonce, nil, to, calldata, gasLimit, value, nil, nil)
+	return p.postTransactionWithMutex(ctx, time.Now(), nonce, nil, to, calldata, gasLimit, value, nil, nil)
 }
 
 func (p *DataPoster) PostSimpleTransaction(ctx context.Context, nonce uint64, to common.Address, calldata []byte, gasLimit uint64, value *big.Int) (*types.Transaction, error) {
@@ -693,10 +745,14 @@ func (p *DataPoster) PostSimpleTransaction(ctx context.Context, nonce uint64, to
 func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, kzgBlobs []kzg4844.Blob, accessList types.AccessList) (*types.Transaction, error) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
-	return p.postTransaction(ctx, dataCreatedAt, nonce, meta, to, calldata, gasLimit, value, kzgBlobs, accessList)
+	return p.postTransactionWithMutex(ctx, dataCreatedAt, nonce, meta, to, calldata, gasLimit, value, kzgBlobs, accessList)
 }
 
-func (p *DataPoster) postTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, kzgBlobs []kzg4844.Blob, accessList types.AccessList) (*types.Transaction, error) {
+func (p *DataPoster) postTransactionWithMutex(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, kzgBlobs []kzg4844.Blob, accessList types.AccessList) (*types.Transaction, error) {
+
+	if p.config().DisableNewTx {
+		return nil, fmt.Errorf("posting new transaction is disabled")
+	}
 
 	var weight uint64 = 1
 	if len(kzgBlobs) > 0 {
@@ -724,6 +780,7 @@ func (p *DataPoster) postTransaction(ctx context.Context, dataCreatedAt time.Tim
 	if err != nil {
 		return nil, err
 	}
+
 	var deprecatedData types.DynamicFeeTx
 	var inner types.TxData
 	replacementTimes := p.replacementTimes
@@ -783,7 +840,6 @@ func (p *DataPoster) postTransaction(ctx context.Context, dataCreatedAt time.Tim
 		return nil, fmt.Errorf("signing transaction: %w", err)
 	}
 	cumulativeWeight := lastCumulativeWeight + weight
-
 	queuedTx := storage.QueuedTransaction{
 		DeprecatedData:         deprecatedData,
 		FullTx:                 fullTx,
@@ -1218,6 +1274,9 @@ type DataPosterConfig struct {
 	MaxFeeCapFormula       string            `koanf:"max-fee-cap-formula" reload:"hot"`
 	ElapsedTimeBase        time.Duration     `koanf:"elapsed-time-base" reload:"hot"`
 	ElapsedTimeImportance  float64           `koanf:"elapsed-time-importance" reload:"hot"`
+	// When set, dataposter will not post new batches, but will keep running to
+	// get existing batches confirmed.
+	DisableNewTx bool `koanf:"disable-new-tx" reload:"hot"`
 }
 
 type ExternalSignerCfg struct {
@@ -1279,6 +1338,7 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPost
 	signature.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
 	addDangerousOptions(prefix+".dangerous", f)
 	addExternalSignerOptions(prefix+".external-signer", f)
+	f.Bool(prefix+".disable-new-tx", defaultDataPosterConfig.DisableNewTx, "disable posting new transactions, data poster will still keep confirming existing batches")
 }
 
 func addDangerousOptions(prefix string, f *pflag.FlagSet) {
@@ -1299,11 +1359,11 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	ReplacementTimes:       "5m,10m,20m,30m,1h,2h,4h,6h,8h,12h,16h,18h,20h,22h",
 	BlobTxReplacementTimes: "5m,10m,30m,1h,4h,8h,16h,22h",
 	WaitForL1Finality:      true,
-	TargetPriceGwei:        120.,
-	UrgencyGwei:            10.,
+	TargetPriceGwei:        60.,
+	UrgencyGwei:            2.,
 	MaxMempoolTransactions: 18,
 	MaxMempoolWeight:       18,
-	MinTipCapGwei:          2,
+	MinTipCapGwei:          0.05,
 	MinBlobTxTipCapGwei:    1, // default geth minimum, and relays aren't likely to accept lower values given propagation time
 	MaxTipCapGwei:          5,
 	MaxBlobTxTipCapGwei:    1, // lower than normal because 4844 rbf is a minimum of a 2x
@@ -1318,13 +1378,14 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	MaxFeeCapFormula:       "((BacklogOfBatches * UrgencyGWei) ** 2) + ((ElapsedTime/ElapsedTimeBase) ** 2) * ElapsedTimeImportance + TargetPriceGWei",
 	ElapsedTimeBase:        10 * time.Minute,
 	ElapsedTimeImportance:  10,
+	DisableNewTx:           false,
 }
 
 var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
 	config := DefaultDataPosterConfig
 	// the validator cannot queue transactions
-	config.MaxMempoolTransactions = 18
-	config.MaxMempoolWeight = 18
+	config.MaxMempoolTransactions = 1
+	config.MaxMempoolWeight = 1
 	return config
 }()
 
@@ -1333,7 +1394,7 @@ var TestDataPosterConfig = DataPosterConfig{
 	BlobTxReplacementTimes: "1s,10s,30s,5m",
 	RedisSigner:            signature.TestSimpleHmacConfig,
 	WaitForL1Finality:      false,
-	TargetPriceGwei:        120.,
+	TargetPriceGwei:        60.,
 	UrgencyGwei:            2.,
 	MaxMempoolTransactions: 18,
 	MaxMempoolWeight:       18,
@@ -1351,12 +1412,13 @@ var TestDataPosterConfig = DataPosterConfig{
 	MaxFeeCapFormula:       "((BacklogOfBatches * UrgencyGWei) ** 2) + ((ElapsedTime/ElapsedTimeBase) ** 2) * ElapsedTimeImportance + TargetPriceGWei",
 	ElapsedTimeBase:        10 * time.Minute,
 	ElapsedTimeImportance:  10,
+	DisableNewTx:           false,
 }
 
 var TestDataPosterConfigForValidator = func() DataPosterConfig {
 	config := TestDataPosterConfig
 	// the validator cannot queue transactions
-	config.MaxMempoolTransactions = 18
-	config.MaxMempoolWeight = 18
+	config.MaxMempoolTransactions = 1
+	config.MaxMempoolWeight = 1
 	return config
 }()

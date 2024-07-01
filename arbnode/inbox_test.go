@@ -37,6 +37,11 @@ type execClientWrapper struct {
 func (w *execClientWrapper) Pause()                     { w.t.Error("not supported") }
 func (w *execClientWrapper) Activate()                  { w.t.Error("not supported") }
 func (w *execClientWrapper) ForwardTo(url string) error { w.t.Error("not supported"); return nil }
+func (w *execClientWrapper) Synced() bool               { w.t.Error("not supported"); return false }
+func (w *execClientWrapper) FullSyncProgressMap() map[string]interface{} {
+	w.t.Error("not supported")
+	return nil
+}
 
 func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*gethexec.ExecutionEngine, *TransactionStreamer, ethdb.Database, *core.BlockChain) {
 	chainConfig := params.ArbitrumDevTestChainConfig()
@@ -67,7 +72,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 	}
 	execEngine.Initialize(gethexec.DefaultCachingConfig.StylusLRUCache)
 	execSeq := &execClientWrapper{execEngine, t}
-	inbox, err := NewTransactionStreamer(arbDb, bc.Config(), execSeq, nil, make(chan error, 1), transactionStreamerConfigFetcher)
+	inbox, err := NewTransactionStreamer(arbDb, bc.Config(), execSeq, nil, make(chan error, 1), transactionStreamerConfigFetcher, &DefaultSnapSyncConfig)
 	if err != nil {
 		Fail(t, err)
 	}

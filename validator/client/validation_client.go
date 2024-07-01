@@ -134,24 +134,6 @@ func NewExecutionClient(config rpcclient.ClientConfigFetcher, redisBoldValidatio
 	}
 }
 
-func (c *ExecutionClient) CreateBoldExecutionRun(wasmModuleRoot common.Hash, stepSize uint64, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
-	return stopwaiter.LaunchPromiseThread[validator.ExecutionRun](c, func(ctx context.Context) (validator.ExecutionRun, error) {
-		var res uint64
-		err := c.client.CallContext(ctx, &res, server_api.Namespace+"_createBoldExecutionRun", wasmModuleRoot, stepSize, server_api.ValidationInputToJson(input))
-		if err != nil {
-			return nil, err
-		}
-		run := &ExecutionClientRun{
-			client:         c,
-			id:             res,
-			wasmModuleRoot: wasmModuleRoot,
-			input:          input,
-		}
-		run.Start(c.GetContext()) // note: not this temporary thread's context!
-		return run, nil
-	})
-}
-
 func (c *ExecutionClient) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
 	return stopwaiter.LaunchPromiseThread[validator.ExecutionRun](c, func(ctx context.Context) (validator.ExecutionRun, error) {
 		var res uint64
@@ -232,20 +214,19 @@ func (r *ExecutionClientRun) GetStepAt(pos uint64) containers.PromiseInterface[*
 	})
 }
 
-func (r *ExecutionClientRun) GetLeavesWithStepSize(fromBatch, machineStartIndex, stepSize, numDesiredLeaves uint64) containers.PromiseInterface[[]common.Hash] {
+func (r *ExecutionClientRun) GetMachineHashesWithStepSize(machineStartIndex, stepSize, maxIterations uint64) containers.PromiseInterface[[]common.Hash] {
 	if r.client.boldValClient != nil {
 		return r.client.boldValClient.GetLeavesWithStepSize(&server_api.GetLeavesWithStepSizeInput{
 			ModuleRoot:        r.wasmModuleRoot,
-			FromBatch:         fromBatch,
 			MachineStartIndex: machineStartIndex,
 			StepSize:          stepSize,
-			NumDesiredLeaves:  numDesiredLeaves,
+			NumDesiredLeaves:  maxIterations,
 			ValidationInput:   r.input,
 		})
 	}
 	return stopwaiter.LaunchPromiseThread[[]common.Hash](r, func(ctx context.Context) ([]common.Hash, error) {
 		var resJson []common.Hash
-		err := r.client.client.CallContext(ctx, &resJson, server_api.Namespace+"_getLeavesWithStepSize", r.id, fromBatch, machineStartIndex, stepSize, numDesiredLeaves)
+		err := r.client.client.CallContext(ctx, &resJson, server_api.Namespace+"_getMachineHashesWithStepSize", r.id, machineStartIndex, stepSize, maxIterations)
 		if err != nil {
 			return nil, err
 		}

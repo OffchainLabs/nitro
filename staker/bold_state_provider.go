@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
-	flag "github.com/spf13/pflag"
 
 	protocol "github.com/OffchainLabs/bold/chain-abstraction"
 	"github.com/OffchainLabs/bold/containers/option"
@@ -27,10 +26,10 @@ import (
 )
 
 var (
-	_ l2stateprovider.ProofCollector          = (*StateManager)(nil)
-	_ l2stateprovider.L2MessageStateCollector = (*StateManager)(nil)
-	_ l2stateprovider.MachineHashCollector    = (*StateManager)(nil)
-	_ l2stateprovider.ExecutionProvider       = (*StateManager)(nil)
+	_ l2stateprovider.ProofCollector          = (*BOLDStateProvider)(nil)
+	_ l2stateprovider.L2MessageStateCollector = (*BOLDStateProvider)(nil)
+	_ l2stateprovider.MachineHashCollector    = (*BOLDStateProvider)(nil)
+	_ l2stateprovider.ExecutionProvider       = (*BOLDStateProvider)(nil)
 )
 
 var executionNodeOfflineGauge = metrics.NewRegisteredGauge("arb/state_provider/execution_node_offline", nil)
@@ -39,98 +38,55 @@ var (
 	ErrChainCatchingUp = errors.New("chain catching up")
 )
 
-type BoldConfig struct {
-	Enable                             bool   `koanf:"enable"`
-	Evil                               bool   `koanf:"evil"`
-	Mode                               string `koanf:"mode"`
-	BlockChallengeLeafHeight           uint64 `koanf:"block-challenge-leaf-height"`
-	BigStepLeafHeight                  uint64 `koanf:"big-step-leaf-height"`
-	SmallStepLeafHeight                uint64 `koanf:"small-step-leaf-height"`
-	NumBigSteps                        uint64 `koanf:"num-big-steps"`
-	ValidatorName                      string `koanf:"validator-name"`
-	MachineLeavesCachePath             string `koanf:"machine-leaves-cache-path"`
-	AssertionPostingIntervalSeconds    uint64 `koanf:"assertion-posting-interval-seconds"`
-	AssertionScanningIntervalSeconds   uint64 `koanf:"assertion-scanning-interval-seconds"`
-	AssertionConfirmingIntervalSeconds uint64 `koanf:"assertion-confirming-interval-seconds"`
-	EdgeTrackerWakeIntervalSeconds     uint64 `koanf:"edge-tracker-wake-interval-seconds"`
-	API                                bool   `koanf:"api"`
-	APIHost                            string `koanf:"api-host"`
-	APIPort                            uint16 `koanf:"api-port"`
-	APIDBPath                          string `koanf:"api-db-path"`
-}
-
-var DefaultBoldConfig = BoldConfig{
-	Enable:                             false,
-	Evil:                               false,
-	Mode:                               "make-mode",
-	BlockChallengeLeafHeight:           1 << 5,
-	BigStepLeafHeight:                  1 << 8,
-	SmallStepLeafHeight:                1 << 10,
-	NumBigSteps:                        3,
-	ValidatorName:                      "default-validator",
-	MachineLeavesCachePath:             "/tmp/machine-leaves-cache",
-	AssertionPostingIntervalSeconds:    30,
-	AssertionScanningIntervalSeconds:   30,
-	AssertionConfirmingIntervalSeconds: 60,
-	EdgeTrackerWakeIntervalSeconds:     1,
-	API:                                false,
-	APIHost:                            "127.0.0.1",
-	APIPort:                            9393,
-	APIDBPath:                          "/tmp/bold-api-db",
-}
-
-func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".enable", DefaultBoldConfig.Enable, "enable bold challenge protocol")
-	f.Bool(prefix+".evil", DefaultBoldConfig.Evil, "enable evil bold validator")
-	f.String(prefix+".mode", DefaultBoldConfig.Mode, "define the bold validator staker strategy")
-	f.Uint64(prefix+".block-challenge-leaf-height", DefaultBoldConfig.BlockChallengeLeafHeight, "block challenge leaf height")
-	f.Uint64(prefix+".big-step-leaf-height", DefaultBoldConfig.BigStepLeafHeight, "big challenge leaf height")
-	f.Uint64(prefix+".small-step-leaf-height", DefaultBoldConfig.SmallStepLeafHeight, "small challenge leaf height")
-	f.Uint64(prefix+".num-big-steps", DefaultBoldConfig.NumBigSteps, "num big steps")
-	f.String(prefix+".validator-name", DefaultBoldConfig.ValidatorName, "name identifier for cosmetic purposes")
-	f.String(prefix+".machine-leaves-cache-path", DefaultBoldConfig.MachineLeavesCachePath, "path to machine cache")
-	f.Uint64(prefix+".assertion-posting-interval-seconds", DefaultBoldConfig.AssertionPostingIntervalSeconds, "assertion posting interval")
-	f.Uint64(prefix+".assertion-scanning-interval-seconds", DefaultBoldConfig.AssertionScanningIntervalSeconds, "scan assertion interval")
-	f.Uint64(prefix+".assertion-confirming-interval-seconds", DefaultBoldConfig.AssertionConfirmingIntervalSeconds, "confirm assertion interval")
-	f.Uint64(prefix+".edge-tracker-wake-interval-seconds", DefaultBoldConfig.EdgeTrackerWakeIntervalSeconds, "edge act interval")
-	f.Bool(prefix+".api", DefaultBoldConfig.API, "enable api")
-	f.String(prefix+".api-host", DefaultBoldConfig.APIHost, "bold api host")
-	f.Uint16(prefix+".api-port", DefaultBoldConfig.APIPort, "bold api port")
-	f.String(prefix+".api-db-path", DefaultBoldConfig.APIDBPath, "bold api db path")
-}
-
-func (c *BoldConfig) Validate() error {
-	return nil
-}
-
-type StateManager struct {
-	validator            *StatelessBlockValidator
+type BOLDStateProvider struct {
+	validator            *BlockValidator
+	statelessValidator   *StatelessBlockValidator
 	historyCache         challengecache.HistoryCommitmentCacher
 	challengeLeafHeights []l2stateprovider.Height
 	validatorName        string
+	checkBatchFinality   bool
 	sync.RWMutex
 }
 
-func NewStateManager(
-	val *StatelessBlockValidator,
+type BOLDStateProviderOpt = func(b *BOLDStateProvider)
+
+func WithoutFinalizedBatchChecks() BOLDStateProviderOpt {
+	return func(b *BOLDStateProvider) {
+		b.checkBatchFinality = false
+	}
+}
+
+func NewBOLDStateProvider(
+	blockValidator *BlockValidator,
+	statelessValidator *StatelessBlockValidator,
 	cacheBaseDir string,
 	challengeLeafHeights []l2stateprovider.Height,
 	validatorName string,
-) (*StateManager, error) {
-	historyCache := challengecache.New(cacheBaseDir)
-	sm := &StateManager{
-		validator:            val,
+	opts ...BOLDStateProviderOpt,
+) (*BOLDStateProvider, error) {
+	historyCache, err := challengecache.New(cacheBaseDir)
+	if err != nil {
+		return nil, err
+	}
+	sp := &BOLDStateProvider{
+		validator:            blockValidator,
+		statelessValidator:   statelessValidator,
 		historyCache:         historyCache,
 		challengeLeafHeights: challengeLeafHeights,
 		validatorName:        validatorName,
+		checkBatchFinality:   true,
 	}
-	return sm, nil
+	for _, o := range opts {
+		o(sp)
+	}
+	return sp, nil
 }
 
 // Produces the L2 execution state to assert to after the previous assertion state.
 // Returns either the state at the batch count maxInboxCount or the state maxNumberOfBlocks after previousBlockHash,
 // whichever is an earlier state. If previousBlockHash is zero, this function simply returns the state at maxInboxCount.
-func (s *StateManager) ExecutionStateAfterPreviousState(
+// TODO: Check the block validator has validated the execution state we are proposing.
+func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 	ctx context.Context,
 	maxInboxCount uint64,
 	previousGlobalState *protocol.GoGlobalState,
@@ -165,6 +121,15 @@ func (s *StateManager) ExecutionStateAfterPreviousState(
 	if err != nil {
 		return nil, err
 	}
+	// If the state we are requested to produce is neither validated nor finalized, we return ErrChainCatchingUp as an error.
+	stateValidatedAndFinal, err := s.isStateValidatedAndFinal(ctx, globalState, messageCount)
+	if err != nil {
+		return nil, err
+	}
+	if !stateValidatedAndFinal {
+		return nil, fmt.Errorf("%w: batch count %d", l2stateprovider.ErrChainCatchingUp, maxInboxCount)
+	}
+
 	executionState := &protocol.ExecutionState{
 		GlobalState:   protocol.GoGlobalState(globalState),
 		MachineStatus: protocol.MachineStatusFinished,
@@ -198,8 +163,27 @@ func (s *StateManager) ExecutionStateAfterPreviousState(
 	return executionState, nil
 }
 
+func (s *BOLDStateProvider) isStateValidatedAndFinal(
+	ctx context.Context, gs validator.GoGlobalState, messageCount arbutil.MessageIndex,
+) (bool, error) {
+	lastValidatedGs, err := s.validator.ReadLastValidatedInfo()
+	if err != nil {
+		return false, err
+	}
+	stateValidated := gs.Batch <= lastValidatedGs.GlobalState.Batch
+	if !s.checkBatchFinality {
+		return stateValidated, nil
+	}
+	finalizedMessageCount, err := s.validator.inboxReader.GetFinalizedMsgCount(ctx)
+	if err != nil {
+		return false, err
+	}
+	messageCountFinalized := messageCount <= finalizedMessageCount
+	return messageCountFinalized && stateValidated, nil
+}
+
 // messageCountFromGlobalState returns the corresponding message count of a global state, assuming that gs is a valid global state.
-func (s *StateManager) messageCountFromGlobalState(ctx context.Context, gs protocol.GoGlobalState) (arbutil.MessageIndex, error) {
+func (s *BOLDStateProvider) messageCountFromGlobalState(_ context.Context, gs protocol.GoGlobalState) (arbutil.MessageIndex, error) {
 	// Start by getting the message count at the start of the batch
 	var batchMessageCount arbutil.MessageIndex
 	if batchMessageCount != 0 {
@@ -213,7 +197,7 @@ func (s *StateManager) messageCountFromGlobalState(ctx context.Context, gs proto
 	return batchMessageCount + arbutil.MessageIndex(gs.PosInBatch), nil
 }
 
-func (s *StateManager) StatesInBatchRange(
+func (s *BOLDStateProvider) StatesInBatchRange(
 	fromHeight,
 	toHeight l2stateprovider.Height,
 	fromBatch,
@@ -311,7 +295,7 @@ func machineHash(gs validator.GoGlobalState) common.Hash {
 	return crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
 }
 
-func (s *StateManager) findGlobalStateFromMessageCountAndBatch(count arbutil.MessageIndex, batchIndex l2stateprovider.Batch) (validator.GoGlobalState, error) {
+func (s *BOLDStateProvider) findGlobalStateFromMessageCountAndBatch(count arbutil.MessageIndex, batchIndex l2stateprovider.Batch) (validator.GoGlobalState, error) {
 	var prevBatchMsgCount arbutil.MessageIndex
 	var err error
 	if batchIndex > 0 {
@@ -338,7 +322,7 @@ func (s *StateManager) findGlobalStateFromMessageCountAndBatch(count arbutil.Mes
 // L2MessageStatesUpTo Computes a block history commitment from a start L2 message to an end L2 message index
 // and up to a required batch index. The hashes used for this commitment are the machine hashes
 // at each message number.
-func (s *StateManager) L2MessageStatesUpTo(
+func (s *BOLDStateProvider) L2MessageStatesUpTo(
 	_ context.Context,
 	fromHeight l2stateprovider.Height,
 	toHeight option.Option[l2stateprovider.Height],
@@ -360,7 +344,7 @@ func (s *StateManager) L2MessageStatesUpTo(
 }
 
 // CollectMachineHashes Collects a list of machine hashes at a message number based on some configuration parameters.
-func (s *StateManager) CollectMachineHashes(
+func (s *BOLDStateProvider) CollectMachineHashes(
 	ctx context.Context, cfg *l2stateprovider.HashCollectorConfig,
 ) ([]common.Hash, error) {
 	s.Lock()
@@ -370,21 +354,36 @@ func (s *StateManager) CollectMachineHashes(
 		return nil, fmt.Errorf("could not get batch message count at %d: %w", cfg.FromBatch, err)
 	}
 	messageNum := (prevBatchMsgCount + arbutil.MessageIndex(cfg.BlockChallengeHeight))
+	stepHeights := make([]uint64, len(cfg.StepHeights))
+	for i, h := range cfg.StepHeights {
+		stepHeights[i] = uint64(h)
+	}
+	globalState, err := s.findGlobalStateFromMessageCountAndBatch(prevBatchMsgCount, l2stateprovider.Batch((cfg.FromBatch - 1)))
+	if err != nil {
+		return nil, err
+	}
 	cacheKey := &challengecache.Key{
-		WavmModuleRoot: cfg.WasmModuleRoot,
-		MessageHeight:  protocol.Height(messageNum),
-		StepHeights:    cfg.StepHeights,
+		RollupBlockHash: globalState.BlockHash,
+		WavmModuleRoot:  cfg.WasmModuleRoot,
+		MessageHeight:   uint64(messageNum),
+		StepHeights:     stepHeights,
 	}
 	if s.historyCache != nil {
 		cachedRoots, err := s.historyCache.Get(cacheKey, cfg.NumDesiredHashes)
 		switch {
 		case err == nil:
+			log.Info(
+				"In collect machine hashes",
+				"cfg", fmt.Sprintf("%+v", cfg),
+				"firstHash", fmt.Sprintf("%#x", cachedRoots[0]),
+				"lastHash", fmt.Sprintf("%#x", cachedRoots[len(cachedRoots)-1]),
+			)
 			return cachedRoots, nil
 		case !errors.Is(err, challengecache.ErrNotFoundInCache):
 			return nil, err
 		}
 	}
-	entry, err := s.validator.CreateReadyValidationEntry(ctx, messageNum)
+	entry, err := s.statelessValidator.CreateReadyValidationEntry(ctx, messageNum)
 	if err != nil {
 		return nil, err
 	}
@@ -392,13 +391,14 @@ func (s *StateManager) CollectMachineHashes(
 	if err != nil {
 		return nil, err
 	}
-	execRun, err := s.validator.execSpawners[0].CreateBoldExecutionRun(cfg.WasmModuleRoot, uint64(cfg.StepSize), input).Await(ctx)
+	// TODO: Enable Redis streams.
+	execRun, err := s.statelessValidator.execSpawners[0].CreateExecutionRun(cfg.WasmModuleRoot, input).Await(ctx)
 	if err != nil {
 		return nil, err
 	}
 	ctxCheckAlive, cancelCheckAlive := ctxWithCheckAlive(ctx, execRun)
 	defer cancelCheckAlive()
-	stepLeaves := execRun.GetLeavesWithStepSize(uint64(cfg.FromBatch), uint64(cfg.MachineStartIndex), uint64(cfg.StepSize), cfg.NumDesiredHashes)
+	stepLeaves := execRun.GetMachineHashesWithStepSize(uint64(cfg.MachineStartIndex), uint64(cfg.StepSize), cfg.NumDesiredHashes)
 	result, err := stepLeaves.Await(ctxCheckAlive)
 	if err != nil {
 		return nil, err
@@ -451,7 +451,7 @@ func ctxWithCheckAlive(ctxIn context.Context, execRun validator.ExecutionRun) (c
 }
 
 // CollectProof Collects osp of at a message number and OpcodeIndex .
-func (s *StateManager) CollectProof(
+func (s *BOLDStateProvider) CollectProof(
 	ctx context.Context,
 	wasmModuleRoot common.Hash,
 	fromBatch l2stateprovider.Batch,
@@ -463,7 +463,7 @@ func (s *StateManager) CollectProof(
 		return nil, err
 	}
 	messageNum := (prevBatchMsgCount + arbutil.MessageIndex(blockChallengeHeight))
-	entry, err := s.validator.CreateReadyValidationEntry(ctx, messageNum)
+	entry, err := s.statelessValidator.CreateReadyValidationEntry(ctx, messageNum)
 	if err != nil {
 		return nil, err
 	}
@@ -471,7 +471,15 @@ func (s *StateManager) CollectProof(
 	if err != nil {
 		return nil, err
 	}
-	execRun, err := s.validator.execSpawners[0].CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
+	log.Info(
+		"Getting machine OSP",
+		"fromBatch", fromBatch,
+		"prevBatchMsgCount", prevBatchMsgCount,
+		"blockChallengeHeight", blockChallengeHeight,
+		"messageNum", messageNum,
+		"startState", fmt.Sprintf("%+v", input.StartState),
+	)
+	execRun, err := s.statelessValidator.execSpawners[0].CreateExecutionRun(wasmModuleRoot, input).Await(ctx)
 	if err != nil {
 		return nil, err
 	}

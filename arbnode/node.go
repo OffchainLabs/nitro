@@ -12,12 +12,8 @@ import (
 	"strings"
 	"time"
 
-	solimpl "github.com/OffchainLabs/bold/chain-abstraction/sol-implementation"
-	challengemanager "github.com/OffchainLabs/bold/challenge-manager"
 	flag "github.com/spf13/pflag"
 
-	modes "github.com/OffchainLabs/bold/challenge-manager/types"
-	l2stateprovider "github.com/OffchainLabs/bold/layer2-state-provider"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -97,7 +93,8 @@ type Config struct {
 	TransactionStreamer TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
 	Maintenance         MaintenanceConfig           `koanf:"maintenance" reload:"hot"`
 	ResourceMgmt        resourcemanager.Config      `koanf:"resource-mgmt" reload:"hot"`
-	Bold                staker.BoldConfig           `koanf:"bold" reload:"hot"`
+	// SnapSyncConfig is only used for testing purposes, these should not be configured in production.
+	SnapSyncTest SnapSyncConfig
 }
 
 func (c *Config) Validate() error {
@@ -132,9 +129,6 @@ func (c *Config) Validate() error {
 	if err := c.Staker.Validate(); err != nil {
 		return err
 	}
-	if err := c.Bold.Validate(); err != nil {
-		return err
-	}
 	return nil
 }
 
@@ -158,7 +152,6 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	staker.BlockValidatorConfigAddOptions(prefix+".block-validator", f)
 	broadcastclient.FeedConfigAddOptions(prefix+".feed", f, feedInputEnable, feedOutputEnable)
 	staker.L1ValidatorConfigAddOptions(prefix+".staker", f)
-	staker.BoldConfigAddOptions(prefix+".bold", f)
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
 	das.DataAvailabilityConfigAddNodeOptions(prefix+".data-availability", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
@@ -176,7 +169,6 @@ var ConfigDefault = Config{
 	MessagePruner:       DefaultMessagePrunerConfig,
 	BlockValidator:      staker.DefaultBlockValidatorConfig,
 	Feed:                broadcastclient.FeedConfigDefault,
-	Bold:                staker.DefaultBoldConfig,
 	Staker:              staker.DefaultL1ValidatorConfig,
 	SeqCoordinator:      DefaultSeqCoordinatorConfig,
 	DataAvailability:    das.DefaultDataAvailabilityConfig,
@@ -185,6 +177,7 @@ var ConfigDefault = Config{
 	TransactionStreamer: DefaultTransactionStreamerConfig,
 	ResourceMgmt:        resourcemanager.DefaultConfig,
 	Maintenance:         DefaultMaintenanceConfig,
+	SnapSyncTest:        DefaultSnapSyncConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -272,7 +265,7 @@ type Node struct {
 	MessagePruner           *MessagePruner
 	BlockValidator          *staker.BlockValidator
 	StatelessBlockValidator *staker.StatelessBlockValidator
-	Staker                  *staker.Staker
+	Staker                  *staker.MultiProtocolStaker
 	BroadcastServer         *broadcaster.Broadcaster
 	BroadcastClients        *broadcastclients.BroadcastClients
 	SeqCoordinator          *SeqCoordinator
@@ -281,6 +274,22 @@ type Node struct {
 	SyncMonitor             *SyncMonitor
 	configFetcher           ConfigFetcher
 	ctx                     context.Context
+}
+
+type SnapSyncConfig struct {
+	Enabled               bool
+	PrevBatchMessageCount uint64
+	PrevDelayedRead       uint64
+	BatchCount            uint64
+	DelayedCount          uint64
+}
+
+var DefaultSnapSyncConfig = SnapSyncConfig{
+	Enabled:               false,
+	PrevBatchMessageCount: 0,
+	BatchCount:            0,
+	DelayedCount:          0,
+	PrevDelayedRead:       0,
 }
 
 type ConfigFetcher interface {
@@ -420,7 +429,7 @@ func createNodeImpl(
 	}
 
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &configFetcher.Get().TransactionStreamer }
-	txStreamer, err := NewTransactionStreamer(arbDb, l2Config, exec, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher)
+	txStreamer, err := NewTransactionStreamer(arbDb, l2Config, exec, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher, &configFetcher.Get().SnapSyncTest)
 	if err != nil {
 		return nil, err
 	}
@@ -514,14 +523,15 @@ func createNodeImpl(
 	var daWriter das.DataAvailabilityServiceWriter
 	var daReader das.DataAvailabilityServiceReader
 	var dasLifecycleManager *das.LifecycleManager
+	var dasKeysetFetcher *das.KeysetFetcher
 	if config.DataAvailability.Enable {
 		if config.BatchPoster.Enable {
-			daWriter, daReader, dasLifecycleManager, err = das.CreateBatchPosterDAS(ctx, &config.DataAvailability, dataSigner, l1client, deployInfo.SequencerInbox)
+			daWriter, daReader, dasKeysetFetcher, dasLifecycleManager, err = das.CreateBatchPosterDAS(ctx, &config.DataAvailability, dataSigner, l1client, deployInfo.SequencerInbox)
 			if err != nil {
 				return nil, err
 			}
 		} else {
-			daReader, dasLifecycleManager, err = das.CreateDAReaderForNode(ctx, &config.DataAvailability, l1Reader, &deployInfo.SequencerInbox)
+			daReader, dasKeysetFetcher, dasLifecycleManager, err = das.CreateDAReaderForNode(ctx, &config.DataAvailability, l1Reader, &deployInfo.SequencerInbox)
 			if err != nil {
 				return nil, err
 			}
@@ -545,12 +555,12 @@ func createNodeImpl(
 	}
 	var dapReaders []daprovider.Reader
 	if daReader != nil {
-		dapReaders = append(dapReaders, daprovider.NewReaderForDAS(daReader))
+		dapReaders = append(dapReaders, daprovider.NewReaderForDAS(daReader, dasKeysetFetcher))
 	}
 	if blobReader != nil {
 		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(blobReader))
 	}
-	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, dapReaders)
+	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, dapReaders, config.SnapSyncTest)
 	if err != nil {
 		return nil, err
 	}
@@ -583,91 +593,6 @@ func createNodeImpl(
 		statelessBlockValidator = nil
 	}
 
-	var dp *dataposter.DataPoster
-	if config.Bold.Enable {
-		dp, err = StakerDataposter(
-			ctx,
-			rawdb.NewTable(arbDb, storage.StakerPrefix),
-			l1Reader,
-			txOptsValidator,
-			configFetcher,
-			syncMonitor,
-			parentChainID,
-		)
-		if err != nil {
-			return nil, err
-		}
-		rollupBindings, err := rollupgen.NewRollupUserLogic(deployInfo.Rollup, l1client)
-		if err != nil {
-			return nil, fmt.Errorf("could not create rollup bindings: %w", err)
-		}
-		chalManager, err := rollupBindings.ChallengeManager(&bind.CallOpts{})
-		if err != nil {
-			return nil, fmt.Errorf("could not get challenge manager: %w", err)
-		}
-		assertionChain, err := solimpl.NewAssertionChain(ctx, deployInfo.Rollup, chalManager, txOptsValidator, l1client, solimpl.NewDataPosterTransactor(dp))
-		if err != nil {
-			return nil, fmt.Errorf("could not create assertion chain: %w", err)
-		}
-		blockChallengeLeafHeight := l2stateprovider.Height(config.Bold.BlockChallengeLeafHeight)
-		bigStepHeight := l2stateprovider.Height(config.Bold.BigStepLeafHeight)
-		smallStepHeight := l2stateprovider.Height(config.Bold.SmallStepLeafHeight)
-		stateManager, err := staker.NewStateManager(
-			statelessBlockValidator,
-			config.Bold.MachineLeavesCachePath,
-			[]l2stateprovider.Height{
-				blockChallengeLeafHeight,
-				bigStepHeight,
-				smallStepHeight,
-			},
-			config.Bold.ValidatorName,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("could not create state manager: %w", err)
-		}
-		providerHeights := []l2stateprovider.Height{blockChallengeLeafHeight}
-		for i := uint64(0); i < config.Bold.NumBigSteps; i++ {
-			providerHeights = append(providerHeights, bigStepHeight)
-		}
-		providerHeights = append(providerHeights, smallStepHeight)
-		provider := l2stateprovider.NewHistoryCommitmentProvider(
-			stateManager,
-			stateManager,
-			stateManager,
-			providerHeights,
-			stateManager,
-			nil,
-		)
-		postingInterval := time.Second * time.Duration(config.Bold.AssertionPostingIntervalSeconds)
-		scanningInteval := time.Second * time.Duration(config.Bold.AssertionScanningIntervalSeconds)
-		confirmingInterval := time.Second * time.Duration(config.Bold.AssertionConfirmingIntervalSeconds)
-		edgeWakeInterval := time.Second * time.Duration(config.Bold.EdgeTrackerWakeIntervalSeconds)
-		opts := []challengemanager.Opt{
-			challengemanager.WithName(config.Bold.ValidatorName),
-			challengemanager.WithMode(modes.MakeMode), // TODO: Customize.
-			challengemanager.WithAssertionPostingInterval(postingInterval),
-			challengemanager.WithAssertionScanningInterval(scanningInteval),
-			challengemanager.WithAssertionConfirmingInterval(confirmingInterval),
-			challengemanager.WithEdgeTrackerWakeInterval(edgeWakeInterval),
-			challengemanager.WithAddress(txOptsValidator.From),
-		}
-		if config.Bold.API {
-			opts = append(opts, challengemanager.WithAPIEnabled(fmt.Sprintf("%s:%d", config.Bold.APIHost, config.Bold.APIPort), config.Bold.APIDBPath))
-		}
-		manager, err := challengemanager.New(
-			ctx,
-			assertionChain,
-			provider,
-			assertionChain.RollupAddress(),
-			opts...,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("could not create challenge manager: %w", err)
-		}
-		provider.UpdateAPIDatabase(manager.Database())
-		go manager.Start(ctx)
-	}
-
 	var blockValidator *staker.BlockValidator
 	if config.ValidatorRequired() {
 		blockValidator, err = staker.NewBlockValidator(
@@ -682,23 +607,22 @@ func createNodeImpl(
 		}
 	}
 
-	var stakerObj *staker.Staker
+	var stakerObj *staker.MultiProtocolStaker
 	var messagePruner *MessagePruner
+	var stakerAddr common.Address
 
 	if config.Staker.Enable {
-		if dp == nil {
-			dp, err = StakerDataposter(
-				ctx,
-				rawdb.NewTable(arbDb, storage.StakerPrefix),
-				l1Reader,
-				txOptsValidator,
-				configFetcher,
-				syncMonitor,
-				parentChainID,
-			)
-			if err != nil {
-				return nil, err
-			}
+		dp, err := StakerDataposter(
+			ctx,
+			rawdb.NewTable(arbDb, storage.StakerPrefix),
+			l1Reader,
+			txOptsValidator,
+			configFetcher,
+			syncMonitor,
+			parentChainID,
+		)
+		if err != nil {
+			return nil, err
 		}
 		getExtraGas := func() uint64 { return configFetcher.Get().Staker.ExtraGas }
 		// TODO: factor this out into separate helper, and split rest of node
@@ -736,24 +660,21 @@ func createNodeImpl(
 			confirmedNotifiers = append(confirmedNotifiers, messagePruner)
 		}
 
-		stakerObj, err = staker.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Staker, blockValidator, statelessBlockValidator, nil, confirmedNotifiers, deployInfo.ValidatorUtils, deployInfo.Bridge, fatalErrChan)
+		stakerObj, err = staker.NewMultiProtocolStaker(l1Reader, wallet, bind.CallOpts{}, config.Staker, blockValidator, statelessBlockValidator, nil, confirmedNotifiers, deployInfo.ValidatorUtils, deployInfo.Bridge, fatalErrChan)
 		if err != nil {
 			return nil, err
 		}
 		if err := wallet.Initialize(ctx); err != nil {
 			return nil, err
 		}
-		var validatorAddr string
-		if txOptsValidator != nil {
-			validatorAddr = txOptsValidator.From.String()
-		} else {
-			validatorAddr = config.Staker.DataPoster.ExternalSigner.Address
+		if dp != nil {
+			stakerAddr = dp.Sender()
 		}
 		whitelisted, err := stakerObj.IsWhitelisted(ctx)
 		if err != nil {
 			return nil, err
 		}
-		log.Info("running as validator", "txSender", validatorAddr, "actingAsWallet", wallet.Address(), "whitelisted", whitelisted, "strategy", config.Staker.Strategy)
+		log.Info("running as validator", "txSender", stakerAddr, "actingAsWallet", wallet.Address(), "whitelisted", whitelisted, "strategy", config.Staker.Strategy)
 	}
 
 	var batchPoster *BatchPoster
@@ -781,6 +702,11 @@ func createNodeImpl(
 		})
 		if err != nil {
 			return nil, err
+		}
+
+		// Check if staker and batch poster are using the same address
+		if stakerAddr != (common.Address{}) && !strings.EqualFold(config.Staker.Strategy, "watchtower") && stakerAddr == batchPoster.dataPoster.Sender() {
+			return nil, fmt.Errorf("staker and batch poster are using the same address which is not allowed: %v", stakerAddr)
 		}
 	}
 
@@ -865,17 +791,6 @@ func CreateNode(
 	stack.RegisterAPIs(apis)
 
 	return currentNode, nil
-}
-
-func (n *Node) CacheL1PriceDataOfMsg(pos arbutil.MessageIndex, callDataUnits uint64, l1GasCharged uint64) {
-	n.TxStreamer.CacheL1PriceDataOfMsg(pos, callDataUnits, l1GasCharged)
-}
-
-func (n *Node) BacklogL1GasCharged() uint64 {
-	return n.TxStreamer.BacklogL1GasCharged()
-}
-func (n *Node) BacklogCallDataUnits() uint64 {
-	return n.TxStreamer.BacklogCallDataUnits()
 }
 
 func (n *Node) Start(ctx context.Context) error {

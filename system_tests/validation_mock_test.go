@@ -96,10 +96,6 @@ func (s *mockSpawner) WriteToFile(input *validator.ValidationInput, expOut valid
 	return containers.NewReadyPromise[struct{}](struct{}{}, nil)
 }
 
-func (s *mockSpawner) CreateBoldExecutionRun(wasmModuleRoot common.Hash, stepSize uint64, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
-	return containers.NewReadyPromise[validator.ExecutionRun](nil, nil)
-}
-
 type mockValRun struct {
 	containers.Promise[validator.GoGlobalState]
 	root common.Hash
@@ -131,8 +127,7 @@ func (r *mockExecRun) GetStepAt(position uint64) containers.PromiseInterface[*va
 	}, nil)
 }
 
-func (r *mockExecRun) GetLeavesWithStepSize(machineStartIndex, stepSize, numDesiredLeaves, fromBatch uint64) containers.PromiseInterface[[]common.Hash] {
-	// TODO: Add mock implementation for GetLeavesWithStepSize
+func (r *mockExecRun) GetMachineHashesWithStepSize(machineStartIndex, stepSize, maxIterations uint64) containers.PromiseInterface[[]common.Hash] {
 	return containers.NewReadyPromise[[]common.Hash](nil, nil)
 }
 

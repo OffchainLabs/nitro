@@ -1551,7 +1551,7 @@ impl Machine {
         Ok(mach)
     }
 
-    pub fn new_from_wavm(wavm_binary: &Path, always_merkleize: bool) -> Result<Machine> {
+    pub fn new_from_wavm(wavm_binary: &Path) -> Result<Machine> {
         let mut modules: Vec<Module> = {
             let compressed = std::fs::read(wavm_binary)?;
             let Ok(modules) = brotli::decompress(&compressed, Dictionary::Empty) else {
@@ -1577,16 +1577,6 @@ impl Machine {
                 MerkleType::Function,
                 module.funcs.iter().map(Function::hash).collect(),
             ));
-            if always_merkleize {
-                module.memory.cache_merkle_tree();
-            }
-        }
-        let mut modules_merkle = None;
-        if always_merkleize {
-            modules_merkle = Some(Merkle::new(
-                MerkleType::Module,
-                modules.iter().map(Module::hash).collect(),
-            ));
         }
         let mut mach = Machine {
             status: MachineStatus::Running,
@@ -1596,7 +1586,7 @@ impl Machine {
             internal_stack: Vec::new(),
             frame_stacks: vec![Vec::new()],
             modules,
-            modules_merkle,
+            modules_merkle: None,
             global_state: Default::default(),
             pc: ProgramCounter::default(),
             stdio_output: Vec::new(),

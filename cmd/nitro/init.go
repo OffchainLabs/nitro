@@ -13,7 +13,10 @@ import (
 	"io"
 	"math/big"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"sync"
@@ -142,9 +145,8 @@ func downloadFile(ctx context.Context, initConfig *conf.InitConfig, url string) 
 	}
 }
 
-// fetchChecksum performs a GET request to the specified URL using the provided context
-// and returns the checksum as a []byte
-func fetchChecksum(ctx context.Context, url string) ([]byte, error) {
+// httpGet performs a GET request to the specified URL
+func httpGet(ctx context.Context, url string) ([]byte, error) {
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating request: %w", err)
@@ -163,6 +165,15 @@ func fetchChecksum(ctx context.Context, url string) ([]byte, error) {
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("error reading response body: %w", err)
+	}
+	return body, nil
+}
+
+// fetchChecksum performs a GET request to the specified URL and returns the checksum
+func fetchChecksum(ctx context.Context, url string) ([]byte, error) {
+	body, err := httpGet(ctx, url)
+	if err != nil {
+		return nil, err
 	}
 	checksumStr := strings.TrimSpace(string(body))
 	checksum, err := hex.DecodeString(checksumStr)
@@ -235,6 +246,29 @@ func joinArchive(parts []string) (string, error) {
 	return archivePath, nil
 }
 
+// setLatestSnapshotUrl sets the Url in initConfig to the latest one available on the mirror.
+func setLatestSnapshotUrl(ctx context.Context, initConfig *conf.InitConfig, chain string) error {
+	if initConfig.Latest == "" {
+		return nil
+	}
+	if initConfig.Url != "" {
+		return fmt.Errorf("cannot set latest url if url is already set")
+	}
+	baseUrl, err := url.Parse(initConfig.LatestBase)
+	if err != nil {
+		return fmt.Errorf("failed to parse latest mirror \"%s\": %w", initConfig.LatestBase, err)
+	}
+	latestDateUrl := baseUrl.JoinPath(chain, "latest-"+initConfig.Latest+".txt").String()
+	latestDateBytes, err := httpGet(ctx, latestDateUrl)
+	if err != nil {
+		return fmt.Errorf("failed to get latest snapshot at \"%s\": %w", latestDateUrl, err)
+	}
+	latestDate := strings.TrimSpace(string(latestDateBytes))
+	initConfig.Url = baseUrl.JoinPath(chain, latestDate, initConfig.Latest+".tar").String()
+	log.Info("Set latest snapshot url", "url", initConfig.Url)
+	return nil
+}
+
 func validateBlockChain(blockChain *core.BlockChain, chainConfig *params.ChainConfig) error {
 	statedb, err := blockChain.State()
 	if err != nil {
@@ -284,6 +318,14 @@ func validateBlockChain(blockChain *core.BlockChain, chainConfig *params.ChainCo
 	return nil
 }
 
+func dirExists(path string) bool {
+	info, err := os.Stat(path)
+	if os.IsNotExist(err) {
+		return false
+	}
+	return info.IsDir()
+}
+
 func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig, persistentConfig *conf.PersistentConfig, l1Client arbutil.L1Interface, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
 	if !config.Init.Force {
 		if readOnlyDb, err := stack.OpenDatabaseWithFreezerWithExtraOptions("l2chaindata", 0, 0, "", "l2chaindata/", true, persistentConfig.Pebble.ExtraOptions("l2chaindata")); err == nil {
@@ -319,11 +361,76 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 						return chainDb, l2BlockChain, fmt.Errorf("failed to recreate missing states: %w", err)
 					}
 				}
-
+				latestBlock := l2BlockChain.CurrentBlock()
+				if latestBlock == nil || latestBlock.Number.Uint64() <= chainConfig.ArbitrumChainParams.GenesisBlockNum ||
+					types.DeserializeHeaderExtraInformation(latestBlock).ArbOSFormatVersion < params.ArbosVersion_Stylus {
+					// If there is only genesis block or no blocks in the blockchain, set Rebuilding of wasm store to Done
+					// If Stylus upgrade hasn't yet happened, skipping rebuilding of wasm store
+					log.Info("Setting rebuilding of wasm store to done")
+					if err = gethexec.WriteToKeyValueStore(wasmDb, gethexec.RebuildingPositionKey, gethexec.RebuildingDone); err != nil {
+						return nil, nil, fmt.Errorf("unable to set rebuilding status of wasm store to done: %w", err)
+					}
+				} else if config.Init.RebuildLocalWasm {
+					position, err := gethexec.ReadFromKeyValueStore[common.Hash](wasmDb, gethexec.RebuildingPositionKey)
+					if err != nil {
+						log.Info("Unable to get codehash position in rebuilding of wasm store, its possible it isnt initialized yet, so initializing it and starting rebuilding", "err", err)
+						if err := gethexec.WriteToKeyValueStore(wasmDb, gethexec.RebuildingPositionKey, common.Hash{}); err != nil {
+							return nil, nil, fmt.Errorf("unable to initialize codehash position in rebuilding of wasm store to beginning: %w", err)
+						}
+					}
+					if position != gethexec.RebuildingDone {
+						startBlockHash, err := gethexec.ReadFromKeyValueStore[common.Hash](wasmDb, gethexec.RebuildingStartBlockHashKey)
+						if err != nil {
+							log.Info("Unable to get start block hash in rebuilding of wasm store, its possible it isnt initialized yet, so initializing it to latest block hash", "err", err)
+							if err := gethexec.WriteToKeyValueStore(wasmDb, gethexec.RebuildingStartBlockHashKey, latestBlock.Hash()); err != nil {
+								return nil, nil, fmt.Errorf("unable to initialize start block hash in rebuilding of wasm store to latest block hash: %w", err)
+							}
+							startBlockHash = latestBlock.Hash()
+						}
+						log.Info("Starting or continuing rebuilding of wasm store", "codeHash", position, "startBlockHash", startBlockHash)
+						if err := gethexec.RebuildWasmStore(ctx, wasmDb, chainDb, config.Execution.RPC.MaxRecreateStateDepth, l2BlockChain, position, startBlockHash); err != nil {
+							return nil, nil, fmt.Errorf("error rebuilding of wasm store: %w", err)
+						}
+					}
+				}
 				return chainDb, l2BlockChain, nil
 			}
 			readOnlyDb.Close()
 		}
+	}
+
+	// Check if database was misplaced in parent dir
+	const errorFmt = "database was not found in %s, but it was found in %s (have you placed the database in the wrong directory?)"
+	parentDir := filepath.Dir(stack.InstanceDir())
+	if dirExists(path.Join(parentDir, "l2chaindata")) {
+		return nil, nil, fmt.Errorf(errorFmt, stack.InstanceDir(), parentDir)
+	}
+	grandParentDir := filepath.Dir(parentDir)
+	if dirExists(path.Join(grandParentDir, "l2chaindata")) {
+		return nil, nil, fmt.Errorf(errorFmt, stack.InstanceDir(), grandParentDir)
+	}
+
+	// Check if database directory is empty
+	entries, err := os.ReadDir(stack.InstanceDir())
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to open database dir %s: %w", stack.InstanceDir(), err)
+	}
+	unexpectedFiles := []string{}
+	for _, entry := range entries {
+		if entry.Name() != "LOCK" {
+			unexpectedFiles = append(unexpectedFiles, entry.Name())
+		}
+	}
+	if len(unexpectedFiles) > 0 {
+		if config.Init.Force {
+			return nil, nil, fmt.Errorf("trying to overwrite old database directory '%s' (delete the database directory and try again)", stack.InstanceDir())
+		}
+		firstThreeFilenames := strings.Join(unexpectedFiles[:min(len(unexpectedFiles), 3)], ", ")
+		return nil, nil, fmt.Errorf("found %d unexpected files in database directory, including: %s", len(unexpectedFiles), firstThreeFilenames)
+	}
+
+	if err := setLatestSnapshotUrl(ctx, &config.Init, config.Chain.Name); err != nil {
+		return nil, nil, err
 	}
 
 	initFile, err := downloadInit(ctx, &config.Init)
@@ -358,6 +465,13 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		return nil, nil, err
 	}
 	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1)
+
+	// Rebuilding wasm store is not required when just starting out
+	err = gethexec.WriteToKeyValueStore(wasmDb, gethexec.RebuildingPositionKey, gethexec.RebuildingDone)
+	log.Info("Setting codehash position in rebuilding of wasm store to done")
+	if err != nil {
+		return nil, nil, fmt.Errorf("unable to set codehash position in rebuilding of wasm store to done: %w", err)
+	}
 
 	if config.Init.ImportFile != "" {
 		initDataReader, err = statetransfer.NewJsonInitDataReader(config.Init.ImportFile)

@@ -153,7 +153,7 @@ push: lint test-go .make/fmt
 all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
-build: $(patsubst %,$(output_root)/bin/%, nitro deploy bold-deploy relay daserver datool seq-coordinator-invalidate nitro-val seq-coordinator-manager)
+build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daserver datool seq-coordinator-invalidate nitro-val seq-coordinator-manager)
 	@printf $(done)
 
 build-node-deps: $(go_source) build-prover-header build-prover-lib build-jit .make/solgen .make/cbrotli-lib
@@ -162,6 +162,7 @@ test-go-deps: \
 	build-replay-env \
 	$(stylus_test_wasms) \
 	$(arbitrator_stylus_lib) \
+	$(arbitrator_generated_header) \
 	$(patsubst %,$(arbitrator_cases)/%.wasm, global-state read-inboxmsg-10 global-state-wrapper const)
 
 build-prover-header: $(arbitrator_generated_header)
@@ -247,9 +248,6 @@ $(output_root)/bin/nitro: $(DEP_PREDICATE) build-node-deps
 
 $(output_root)/bin/deploy: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/deploy"
-
-$(output_root)/bin/bold-deploy: $(DEP_PREDICATE) build-node-deps
-	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/bold-deploy"
 
 $(output_root)/bin/relay: $(DEP_PREDICATE) build-node-deps
 	go build $(GOLANG_PARAMS) -o $@ "$(CURDIR)/cmd/relay"

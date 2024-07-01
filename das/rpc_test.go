@@ -7,13 +7,16 @@ import (
 	"bytes"
 	"context"
 	"encoding/base64"
-	"encoding/json"
+	"encoding/hex"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -24,7 +27,9 @@ func blsPubToBase64(pubkey *blsSignatures.PublicKey) string {
 	return string(encodedPubkey)
 }
 
-func TestRPC(t *testing.T) {
+func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
+	// enableLogging()
+
 	ctx := context.Background()
 	lis, err := net.Listen("tcp", "localhost:0")
 	testhelpers.RequireImpl(t, err)
@@ -46,55 +51,96 @@ func TestRPC(t *testing.T) {
 		RequestTimeout:     5 * time.Second,
 	}
 
-	var syncFromStorageServices []*IterableStorageService
-	var syncToStorageServices []StorageService
-	storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config, &syncFromStorageServices, &syncToStorageServices)
+	storageService, lifecycleManager, err := CreatePersistentStorageService(ctx, &config)
 	testhelpers.RequireImpl(t, err)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
-	privKey, err := config.Key.BLSPrivKey()
+	localDas, err := NewSignAfterStoreDASWriter(ctx, config, storageService)
 	testhelpers.RequireImpl(t, err)
-	localDas, err := NewSignAfterStoreDASWriterWithSeqInboxCaller(privKey, nil, storageService, "")
+
+	testPrivateKey, err := crypto.GenerateKey()
 	testhelpers.RequireImpl(t, err)
-	dasServer, err := StartDASRPCServerOnListener(ctx, lis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, storageService, localDas, storageService)
+
+	signatureVerifier, err := NewSignatureVerifierWithSeqInboxCaller(nil, "0x"+hex.EncodeToString(crypto.FromECDSAPub(&testPrivateKey.PublicKey)))
+	testhelpers.RequireImpl(t, err)
+	signer := signature.DataSignerFromPrivateKey(testPrivateKey)
+
+	dasServer, err := StartDASRPCServerOnListener(ctx, lis, genericconf.HTTPServerTimeoutConfigDefault, genericconf.HTTPServerBodyLimitDefault, storageService, localDas, storageService, signatureVerifier)
+
 	defer func() {
 		if err := dasServer.Shutdown(ctx); err != nil {
 			panic(err)
 		}
 	}()
 	testhelpers.RequireImpl(t, err)
-	beConfig := BackendConfig{
-		URL:                 "http://" + lis.Addr().String(),
-		PubKeyBase64Encoded: blsPubToBase64(pubkey),
-		SignerMask:          1,
-	}
+	beConfigs := BackendConfigList{BackendConfig{
+		URL:    "http://" + lis.Addr().String(),
+		Pubkey: blsPubToBase64(pubkey),
+	}}
 
-	backendsJsonByte, err := json.Marshal([]BackendConfig{beConfig})
 	testhelpers.RequireImpl(t, err)
 	aggConf := DataAvailabilityConfig{
 		RPCAggregator: AggregatorConfig{
-			AssumedHonest: 1,
-			Backends:      string(backendsJsonByte),
+			AssumedHonest:         1,
+			Backends:              beConfigs,
+			MaxStoreChunkBodySize: (chunkSize * 2) + len(sendChunkJSONBoilerplate),
 		},
-		RequestTimeout: 5 * time.Second,
+		RequestTimeout: time.Minute,
 	}
-	rpcAgg, err := NewRPCAggregatorWithSeqInboxCaller(aggConf, nil)
+	rpcAgg, err := NewRPCAggregatorWithSeqInboxCaller(aggConf, nil, signer)
 	testhelpers.RequireImpl(t, err)
 
-	msg := testhelpers.RandomizeSlice(make([]byte, 100))
-	cert, err := rpcAgg.Store(ctx, msg, 0, nil)
-	testhelpers.RequireImpl(t, err)
+	var wg sync.WaitGroup
+	runStore := func() {
+		defer wg.Done()
+		msg := testhelpers.RandomizeSlice(make([]byte, size))
+		cert, err := rpcAgg.Store(ctx, msg, 0)
+		testhelpers.RequireImpl(t, err)
 
-	retrievedMessage, err := storageService.GetByHash(ctx, cert.DataHash)
-	testhelpers.RequireImpl(t, err)
+		retrievedMessage, err := storageService.GetByHash(ctx, cert.DataHash)
+		testhelpers.RequireImpl(t, err)
 
-	if !bytes.Equal(msg, retrievedMessage) {
-		testhelpers.FailImpl(t, "failed to retrieve correct message")
+		if !bytes.Equal(msg, retrievedMessage) {
+			testhelpers.FailImpl(t, "failed to retrieve correct message")
+		}
+
+		retrievedMessage, err = storageService.GetByHash(ctx, cert.DataHash)
+		testhelpers.RequireImpl(t, err)
+
+		if !bytes.Equal(msg, retrievedMessage) {
+			testhelpers.FailImpl(t, "failed to getByHash correct message")
+		}
 	}
 
-	retrievedMessage, err = storageService.GetByHash(ctx, cert.DataHash)
-	testhelpers.RequireImpl(t, err)
+	for i := 0; i < times; i++ {
+		wg.Add(1)
+		if concurrent {
+			go runStore()
+		} else {
+			runStore()
+		}
+	}
 
-	if !bytes.Equal(msg, retrievedMessage) {
-		testhelpers.FailImpl(t, "failed to getByHash correct message")
+	wg.Wait()
+}
+
+const chunkSize = 512 * 1024
+
+func TestRPCStore(t *testing.T) {
+	for _, tc := range []struct {
+		desc             string
+		totalSize, times int
+		concurrent       bool
+		leagcyAPIOnly    bool
+	}{
+		{desc: "small store", totalSize: 100, times: 1, concurrent: false},
+		{desc: "chunked store - last chunk full", totalSize: chunkSize * 20, times: 10, concurrent: true},
+		{desc: "chunked store - last chunk not full", totalSize: chunkSize*31 + 123, times: 10, concurrent: true},
+		{desc: "chunked store - overflow cache - sequential", totalSize: chunkSize * 3, times: 15, concurrent: false},
+		{desc: "new client falls back to old api for old server", totalSize: (5*1024*1024)/2 - len(sendChunkJSONBoilerplate) - 100 /* geth counts headers too */, times: 5, concurrent: true, leagcyAPIOnly: true},
+	} {
+		t.Run(tc.desc, func(t *testing.T) {
+			legacyDASStoreAPIOnly = tc.leagcyAPIOnly
+			testRpcImpl(t, tc.totalSize, tc.times, tc.concurrent)
+		})
 	}
 }

@@ -124,14 +124,13 @@ func (s *ExecutionSpawner) Start(ctx_in context.Context) {
 					// There's nothing in the queue.
 					return time.Second
 				}
-				run, err := s.spawner.CreateBoldExecutionRun(moduleRoot, req.Value.StepSize,
+				run, err := s.spawner.CreateExecutionRun(moduleRoot,
 					req.Value.ValidationInput).Await(ctx)
 				if err != nil {
 					log.Error("Creationg BOLD execution", "error", err)
 					return 0
 				}
-				hashes, err := run.GetLeavesWithStepSize(
-					req.Value.FromBatch,
+				hashes, err := run.GetMachineHashesWithStepSize(
 					req.Value.MachineStartIndex,
 					req.Value.StepSize,
 					req.Value.NumDesiredLeaves).Await(ctx)

@@ -13,11 +13,15 @@ package gethexec
 */
 import "C"
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"errors"
 	"fmt"
-	"math/big"
+	"os"
+	"path"
+	"runtime/pprof"
+	"runtime/trace"
 	"sync"
 	"testing"
 	"time"
@@ -28,6 +32,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/google/uuid"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -41,12 +46,27 @@ import (
 )
 
 var (
+	l1GasPriceEstimateGauge    = metrics.NewRegisteredGauge("arb/l1gasprice/estimate", nil)
 	baseFeeGauge               = metrics.NewRegisteredGauge("arb/block/basefee", nil)
 	blockGasUsedHistogram      = metrics.NewRegisteredHistogram("arb/block/gasused", nil, metrics.NewBoundedHistogramSample())
 	txCountHistogram           = metrics.NewRegisteredHistogram("arb/block/transactions/count", nil, metrics.NewBoundedHistogramSample())
 	txGasUsedHistogram         = metrics.NewRegisteredHistogram("arb/block/transactions/gasused", nil, metrics.NewBoundedHistogramSample())
 	gasUsedSinceStartupCounter = metrics.NewRegisteredCounter("arb/gas_used", nil)
 )
+
+type L1PriceDataOfMsg struct {
+	callDataUnits            uint64
+	cummulativeCallDataUnits uint64
+	l1GasCharged             uint64
+	cummulativeL1GasCharged  uint64
+}
+
+type L1PriceData struct {
+	mutex                   sync.RWMutex
+	startOfL1PriceDataCache arbutil.MessageIndex
+	endOfL1PriceDataCache   arbutil.MessageIndex
+	msgToL1PriceData        []L1PriceDataOfMsg
+}
 
 type ExecutionEngine struct {
 	stopwaiter.StopWaiter
@@ -64,41 +84,72 @@ type ExecutionEngine struct {
 
 	nextScheduledVersionCheck time.Time // protected by the createBlocksMutex
 
-	reorgSequencing            bool
-	evil                       bool
-	interceptDepositGweiAmount *big.Int
+	reorgSequencing bool
 
 	prefetchBlock bool
+
+	cachedL1PriceData *L1PriceData
 }
 
-type Opt func(*ExecutionEngine)
-
-func WithEvilExecution() Opt {
-	return func(exec *ExecutionEngine) {
-		exec.evil = true
+func NewL1PriceData() *L1PriceData {
+	return &L1PriceData{
+		msgToL1PriceData: []L1PriceDataOfMsg{},
 	}
 }
 
-func WithInterceptDepositSize(depositGwei *big.Int) Opt {
-	return func(exec *ExecutionEngine) {
-		exec.interceptDepositGweiAmount = depositGwei
+func NewExecutionEngine(bc *core.BlockChain) (*ExecutionEngine, error) {
+	return &ExecutionEngine{
+		bc:                bc,
+		resequenceChan:    make(chan []*arbostypes.MessageWithMetadata),
+		newBlockNotifier:  make(chan struct{}, 1),
+		cachedL1PriceData: NewL1PriceData(),
+	}, nil
+}
+
+func (s *ExecutionEngine) backlogCallDataUnits() uint64 {
+	s.cachedL1PriceData.mutex.RLock()
+	defer s.cachedL1PriceData.mutex.RUnlock()
+
+	size := len(s.cachedL1PriceData.msgToL1PriceData)
+	if size == 0 {
+		return 0
+	}
+	return (s.cachedL1PriceData.msgToL1PriceData[size-1].cummulativeCallDataUnits -
+		s.cachedL1PriceData.msgToL1PriceData[0].cummulativeCallDataUnits +
+		s.cachedL1PriceData.msgToL1PriceData[0].callDataUnits)
+}
+
+func (s *ExecutionEngine) backlogL1GasCharged() uint64 {
+	s.cachedL1PriceData.mutex.RLock()
+	defer s.cachedL1PriceData.mutex.RUnlock()
+
+	size := len(s.cachedL1PriceData.msgToL1PriceData)
+	if size == 0 {
+		return 0
+	}
+	return (s.cachedL1PriceData.msgToL1PriceData[size-1].cummulativeL1GasCharged -
+		s.cachedL1PriceData.msgToL1PriceData[0].cummulativeL1GasCharged +
+		s.cachedL1PriceData.msgToL1PriceData[0].l1GasCharged)
+}
+
+func (s *ExecutionEngine) MarkFeedStart(to arbutil.MessageIndex) {
+	s.cachedL1PriceData.mutex.Lock()
+	defer s.cachedL1PriceData.mutex.Unlock()
+
+	if to < s.cachedL1PriceData.startOfL1PriceDataCache {
+		log.Info("trying to trim older cache which doesnt exist anymore")
+	} else if to >= s.cachedL1PriceData.endOfL1PriceDataCache {
+		s.cachedL1PriceData.startOfL1PriceDataCache = 0
+		s.cachedL1PriceData.endOfL1PriceDataCache = 0
+		s.cachedL1PriceData.msgToL1PriceData = []L1PriceDataOfMsg{}
+	} else {
+		newStart := to - s.cachedL1PriceData.startOfL1PriceDataCache + 1
+		s.cachedL1PriceData.msgToL1PriceData = s.cachedL1PriceData.msgToL1PriceData[newStart:]
+		s.cachedL1PriceData.startOfL1PriceDataCache = to + 1
 	}
 }
 
-func NewExecutionEngine(bc *core.BlockChain, opts ...Opt) (*ExecutionEngine, error) {
-	exec := &ExecutionEngine{
-		bc:                         bc,
-		resequenceChan:             make(chan []*arbostypes.MessageWithMetadata),
-		newBlockNotifier:           make(chan struct{}, 1),
-		interceptDepositGweiAmount: arbos.DefaultEvilInterceptDepositGweiAmount,
-	}
-	for _, o := range opts {
-		o(exec)
-	}
-	return exec, nil
-}
-
-func (n *ExecutionEngine) Initialize(rustCacheSize uint32) {
+func (s *ExecutionEngine) Initialize(rustCacheSize uint32) {
 	if rustCacheSize != 0 {
 		programs.ResizeWasmLruCache(rustCacheSize)
 	}
@@ -356,6 +407,44 @@ func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMess
 	})
 }
 
+// SequenceTransactionsWithProfiling runs SequenceTransactions with tracing and
+// CPU profiling enabled. If the block creation takes longer than 2 seconds, it
+// keeps both and prints out filenames in an error log line.
+func (s *ExecutionEngine) SequenceTransactionsWithProfiling(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
+	pprofBuf, traceBuf := bytes.NewBuffer(nil), bytes.NewBuffer(nil)
+	if err := pprof.StartCPUProfile(pprofBuf); err != nil {
+		log.Error("Starting CPU profiling", "error", err)
+	}
+	if err := trace.Start(traceBuf); err != nil {
+		log.Error("Starting tracing", "error", err)
+	}
+	start := time.Now()
+	res, err := s.SequenceTransactions(header, txes, hooks)
+	elapsed := time.Since(start)
+	pprof.StopCPUProfile()
+	trace.Stop()
+	if elapsed > 2*time.Second {
+		writeAndLog(pprofBuf, traceBuf)
+		return res, err
+	}
+	return res, err
+}
+
+func writeAndLog(pprof, trace *bytes.Buffer) {
+	id := uuid.NewString()
+	pprofFile := path.Join(os.TempDir(), id+".pprof")
+	if err := os.WriteFile(pprofFile, pprof.Bytes(), 0o600); err != nil {
+		log.Error("Creating temporary file for pprof", "fileName", pprofFile, "error", err)
+		return
+	}
+	traceFile := path.Join(os.TempDir(), id+".trace")
+	if err := os.WriteFile(traceFile, trace.Bytes(), 0o600); err != nil {
+		log.Error("Creating temporary file for trace", "fileName", traceFile, "error", err)
+		return
+	}
+	log.Info("Transactions sequencing took longer than 2 seconds, created pprof and trace files", "pprof", pprofFile, "traceFile", traceFile)
+}
+
 func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.L1IncomingMessageHeader, txes types.Transactions, hooks *arbos.SequencingHooks) (*types.Block, error) {
 	lastBlockHeader, err := s.getCurrentHeader()
 	if err != nil {
@@ -434,8 +523,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	if err != nil {
 		return nil, err
 	}
-
-	s.cacheL1PriceDataOfMsg(pos, receipts, block)
+	s.cacheL1PriceDataOfMsg(pos, receipts, block, false)
 
 	return block, nil
 }
@@ -455,7 +543,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 
 	expectedDelayed := currentHeader.Nonce.Uint64()
 
-	lastMsg, err := s.BlockNumberToMessageIndex(currentHeader.Number.Uint64())
+	pos, err := s.BlockNumberToMessageIndex(currentHeader.Number.Uint64() + 1)
 	if err != nil {
 		return nil, err
 	}
@@ -481,7 +569,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		return nil, err
 	}
 
-	err = s.consensus.WriteMessageFromSequencer(lastMsg+1, messageWithMeta, *msgResult)
+	err = s.consensus.WriteMessageFromSequencer(pos, messageWithMeta, *msgResult)
 	if err != nil {
 		return nil, err
 	}
@@ -490,8 +578,9 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 	if err != nil {
 		return nil, err
 	}
+	s.cacheL1PriceDataOfMsg(pos, receipts, block, true)
 
-	log.Info("ExecutionEngine: Added DelayedMessages", "pos", lastMsg+1, "delayed", delayedSeqNum, "block-header", block.Header())
+	log.Info("ExecutionEngine: Added DelayedMessages", "pos", pos, "delayed", delayedSeqNum, "block-header", block.Header())
 
 	return block, nil
 }
@@ -536,11 +625,6 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	statedb.StartPrefetcher("TransactionStreamer")
 	defer statedb.StopPrefetcher()
 
-	opts := make([]arbos.ProduceOpt, 0)
-	if s.evil {
-		opts = append(opts, arbos.WithEvilProduction())
-		opts = append(opts, arbos.WithInterceptDepositSize(s.interceptDepositGweiAmount))
-	}
 	batchFetcher := func(num uint64) ([]byte, error) {
 		data, _, err := s.consensus.FetchBatch(s.GetContext(), num)
 		return data, err
@@ -555,7 +639,6 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		s.bc.Config(),
 		batchFetcher,
 		isMsgForPrefetch,
-		opts...,
 	)
 
 	return block, statedb, receipts, err
@@ -584,6 +667,7 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 	}
 	blockGasUsedHistogram.Update(int64(blockGasused))
 	gasUsedSinceStartupCounter.Inc(int64(blockGasused))
+	s.updateL1GasPriceEstimateMetric()
 	return nil
 }
 
@@ -602,22 +686,25 @@ func (s *ExecutionEngine) ResultAtPos(pos arbutil.MessageIndex) (*execution.Mess
 	return s.resultFromHeader(s.bc.GetHeaderByNumber(s.MessageIndexToBlockNumber(pos)))
 }
 
-func (s *ExecutionEngine) GetL1GasPriceEstimate() (uint64, error) {
+func (s *ExecutionEngine) updateL1GasPriceEstimateMetric() {
 	bc := s.bc
 	latestHeader := bc.CurrentBlock()
 	latestState, err := bc.StateAt(latestHeader.Root)
 	if err != nil {
-		return 0, errors.New("error getting latest statedb while fetching l2 Estimate of L1 GasPrice")
+		log.Error("error getting latest statedb while fetching l2 Estimate of L1 GasPrice")
+		return
 	}
 	arbState, err := arbosState.OpenSystemArbosState(latestState, nil, true)
 	if err != nil {
-		return 0, errors.New("error opening system arbos state while fetching l2 Estimate of L1 GasPrice")
+		log.Error("error opening system arbos state while fetching l2 Estimate of L1 GasPrice")
+		return
 	}
 	l2EstimateL1GasPrice, err := arbState.L1PricingState().PricePerUnit()
 	if err != nil {
-		return 0, errors.New("error fetching l2 Estimate of L1 GasPrice")
+		log.Error("error fetching l2 Estimate of L1 GasPrice")
+		return
 	}
-	return l2EstimateL1GasPrice.Uint64(), nil
+	l1GasPriceEstimateGauge.Update(l2EstimateL1GasPrice.Int64())
 }
 
 func (s *ExecutionEngine) getL1PricingSurplus() (int64, error) {
@@ -638,17 +725,65 @@ func (s *ExecutionEngine) getL1PricingSurplus() (int64, error) {
 	return surplus.Int64(), nil
 }
 
-func (s *ExecutionEngine) cacheL1PriceDataOfMsg(num arbutil.MessageIndex, receipts types.Receipts, block *types.Block) {
+func (s *ExecutionEngine) cacheL1PriceDataOfMsg(seqNum arbutil.MessageIndex, receipts types.Receipts, block *types.Block, blockBuiltUsingDelayedMessage bool) {
 	var gasUsedForL1 uint64
-	for i := 1; i < len(receipts); i++ {
-		gasUsedForL1 += receipts[i].GasUsedForL1
-	}
-	gasChargedForL1 := gasUsedForL1 * block.BaseFee().Uint64()
 	var callDataUnits uint64
-	for _, tx := range block.Transactions() {
-		callDataUnits += tx.CalldataUnits
+	if !blockBuiltUsingDelayedMessage {
+		// s.cachedL1PriceData tracks L1 price data for messages posted by Nitro,
+		// so delayed messages should not update cummulative values kept on it.
+
+		// First transaction in every block is an Arbitrum internal transaction,
+		// so we skip it here.
+		for i := 1; i < len(receipts); i++ {
+			gasUsedForL1 += receipts[i].GasUsedForL1
+		}
+		for _, tx := range block.Transactions() {
+			callDataUnits += tx.CalldataUnits
+		}
 	}
-	s.consensus.CacheL1PriceDataOfMsg(num, callDataUnits, gasChargedForL1)
+	l1GasCharged := gasUsedForL1 * block.BaseFee().Uint64()
+
+	s.cachedL1PriceData.mutex.Lock()
+	defer s.cachedL1PriceData.mutex.Unlock()
+
+	resetCache := func() {
+		s.cachedL1PriceData.startOfL1PriceDataCache = seqNum
+		s.cachedL1PriceData.endOfL1PriceDataCache = seqNum
+		s.cachedL1PriceData.msgToL1PriceData = []L1PriceDataOfMsg{{
+			callDataUnits:            callDataUnits,
+			cummulativeCallDataUnits: callDataUnits,
+			l1GasCharged:             l1GasCharged,
+			cummulativeL1GasCharged:  l1GasCharged,
+		}}
+	}
+	size := len(s.cachedL1PriceData.msgToL1PriceData)
+	if size == 0 ||
+		s.cachedL1PriceData.startOfL1PriceDataCache == 0 ||
+		s.cachedL1PriceData.endOfL1PriceDataCache == 0 ||
+		arbutil.MessageIndex(size) != s.cachedL1PriceData.endOfL1PriceDataCache-s.cachedL1PriceData.startOfL1PriceDataCache+1 {
+		resetCache()
+		return
+	}
+	if seqNum != s.cachedL1PriceData.endOfL1PriceDataCache+1 {
+		if seqNum > s.cachedL1PriceData.endOfL1PriceDataCache+1 {
+			log.Info("message position higher then current end of l1 price data cache, resetting cache to this message")
+			resetCache()
+		} else if seqNum < s.cachedL1PriceData.startOfL1PriceDataCache {
+			log.Info("message position lower than start of l1 price data cache, ignoring")
+		} else {
+			log.Info("message position already seen in l1 price data cache, ignoring")
+		}
+	} else {
+		cummulativeCallDataUnits := s.cachedL1PriceData.msgToL1PriceData[size-1].cummulativeCallDataUnits
+		cummulativeL1GasCharged := s.cachedL1PriceData.msgToL1PriceData[size-1].cummulativeL1GasCharged
+		s.cachedL1PriceData.msgToL1PriceData = append(s.cachedL1PriceData.msgToL1PriceData, L1PriceDataOfMsg{
+			callDataUnits:            callDataUnits,
+			cummulativeCallDataUnits: cummulativeCallDataUnits + callDataUnits,
+			l1GasCharged:             l1GasCharged,
+			cummulativeL1GasCharged:  cummulativeL1GasCharged + l1GasCharged,
+		})
+		s.cachedL1PriceData.endOfL1PriceDataCache = seqNum
+	}
 }
 
 // DigestMessage is used to create a block by executing msg against the latest state and storing it.
@@ -696,6 +831,7 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 	if err != nil {
 		return nil, err
 	}
+	s.cacheL1PriceDataOfMsg(num, receipts, block, false)
 
 	if time.Now().After(s.nextScheduledVersionCheck) {
 		s.nextScheduledVersionCheck = time.Now().Add(time.Minute)

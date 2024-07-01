@@ -1,7 +1,7 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-//asdgo:build challengetest && !race
+//go:build challengetest && !race
 
 package arbtest
 
@@ -55,18 +55,13 @@ import (
 	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
-// One Arbitrum block had 1,849,212,947 total opcodes. The closest, higher power of two
-// is 2^31. So we if we make our small step heights 2^20, we need 2048 big steps
-// to cover the block. With 2^20, our small step history commitments will be approx
-// 32 Mb of state roots in memory at once.
 var (
 	blockChallengeLeafHeight     = uint64(1 << 5) // 32
-	bigStepChallengeLeafHeight   = uint64(1 << 11)
+	bigStepChallengeLeafHeight   = uint64(1 << 10)
 	smallStepChallengeLeafHeight = uint64(1 << 10)
 )
 
 func TestChallengeProtocolBOLD(t *testing.T) {
-	t.Parallel()
 	Require(t, os.RemoveAll("/tmp/good"))
 	Require(t, os.RemoveAll("/tmp/evil"))
 	t.Cleanup(func() {
@@ -94,9 +89,9 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	ctx, cancelCtx = context.WithCancel(ctx)
 	defer cancelCtx()
 
-	// Every 12 seconds, send an L1 transaction to keep the chain moving.
+	// Every 3 seconds, send an L1 transaction to keep the chain moving.
 	go func() {
-		delay := time.Second * 12
+		delay := time.Second * 3
 		for {
 			select {
 			case <-ctx.Done():
@@ -124,14 +119,6 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	_, l2nodeB, _ := create2ndNodeWithConfigForBoldProtocol(t, ctx, l2nodeA, l1stack, l1info, &l2info.ArbInitData, l2nodeConfig, nil, stakeTokenAddr)
 	defer l2nodeB.StopAndWait()
 
-	nodeAMessage, err := l2nodeA.Execution.HeadMessageNumber()
-	Require(t, err)
-	nodeBMessage, err := l2nodeB.Execution.HeadMessageNumber()
-	Require(t, err)
-	if nodeAMessage != nodeBMessage {
-		Fatal(t, "node A L2 genesis hash", nodeAMessage, "!= node B L2 genesis hash", nodeBMessage)
-	}
-
 	balance := big.NewInt(params.Ether)
 	balance.Mul(balance, big.NewInt(100))
 	TransferBalance(t, "Faucet", "Asserter", balance, l1info, l1client, ctx)
@@ -156,6 +143,8 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	err = statelessA.Start(ctx)
 	Require(t, err)
 
+	_, valStackB := createTestValidationNode(t, ctx, &valCfg)
+
 	statelessB, err := staker.NewStatelessBlockValidator(
 		l2nodeB.InboxReader,
 		l2nodeB.InboxTracker,
@@ -164,15 +153,36 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 		l2nodeB.ArbDB,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
-		valStack,
+		valStackB,
 	)
 	Require(t, err)
-	newCtx, newCancel := context.WithCancel(context.Background())
-	defer newCancel()
-	err = statelessB.Start(newCtx)
+	err = statelessB.Start(ctx)
 	Require(t, err)
 
-	stateManager, err := staker.NewStateManager(
+	blockValidatorA, err := staker.NewBlockValidator(
+		statelessA,
+		l2nodeA.InboxTracker,
+		l2nodeA.TxStreamer,
+		StaticFetcherFrom(t, &blockValidatorConfig),
+		nil,
+	)
+	Require(t, err)
+	Require(t, blockValidatorA.Initialize(ctx))
+	Require(t, blockValidatorA.Start(ctx))
+
+	blockValidatorB, err := staker.NewBlockValidator(
+		statelessB,
+		l2nodeB.InboxTracker,
+		l2nodeB.TxStreamer,
+		StaticFetcherFrom(t, &blockValidatorConfig),
+		nil,
+	)
+	Require(t, err)
+	Require(t, blockValidatorB.Initialize(ctx))
+	Require(t, blockValidatorB.Start(ctx))
+
+	stateManager, err := staker.NewBOLDStateProvider(
+		blockValidatorA,
 		statelessA,
 		"/tmp/good",
 		[]l2stateprovider.Height{
@@ -183,10 +193,12 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 			l2stateprovider.Height(smallStepChallengeLeafHeight),
 		},
 		"good",
+		staker.WithoutFinalizedBatchChecks(),
 	)
 	Require(t, err)
 
-	stateManagerB, err := staker.NewStateManager(
+	stateManagerB, err := staker.NewBOLDStateProvider(
+		blockValidatorB,
 		statelessB,
 		"/tmp/evil",
 		[]l2stateprovider.Height{
@@ -197,8 +209,12 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 			l2stateprovider.Height(smallStepChallengeLeafHeight),
 		},
 		"evil",
+		staker.WithoutFinalizedBatchChecks(),
 	)
 	Require(t, err)
+
+	Require(t, l2nodeA.Start(ctx))
+	Require(t, l2nodeB.Start(ctx))
 
 	chalManagerAddr, err := assertionChain.SpecChallengeManager(ctx)
 	Require(t, err)
@@ -316,26 +332,34 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 		}
 	}
 
-	// Wait for the validator to validate the batches.
 	bridgeBinding, err := bridgegen.NewBridge(l1info.GetAddress("Bridge"), l1client)
 	Require(t, err)
 	totalBatchesBig, err := bridgeBinding.SequencerMessageCount(&bind.CallOpts{Context: ctx})
 	Require(t, err)
 	totalBatches := totalBatchesBig.Uint64()
-	totalMessageCount, err := l2nodeA.InboxTracker.GetBatchMessageCount(totalBatches - 1)
-	Require(t, err)
 
-	// Wait until the validator has validated the batches.
+	// Wait until the validators have validated the batches.
 	for {
-		_, err1 := l2nodeA.TxStreamer.ResultAtCount(totalMessageCount)
-		nodeAHasValidated := err1 == nil
-
-		_, err2 := l2nodeB.TxStreamer.ResultAtCount(totalMessageCount)
-		nodeBHasValidated := err2 == nil
-
-		if nodeAHasValidated && nodeBHasValidated {
+		lastInfo, err := blockValidatorA.ReadLastValidatedInfo()
+		if lastInfo == nil || err != nil {
+			continue
+		}
+		t.Log(lastInfo.GlobalState.Batch, totalBatches-1)
+		if lastInfo.GlobalState.Batch >= totalBatches-1 {
 			break
 		}
+		time.Sleep(time.Millisecond * 200)
+	}
+	for {
+		lastInfo, err := blockValidatorB.ReadLastValidatedInfo()
+		if lastInfo == nil || err != nil {
+			continue
+		}
+		t.Log(lastInfo.GlobalState.Batch, totalBatches-1)
+		if lastInfo.GlobalState.Batch >= totalBatches-1 {
+			break
+		}
+		time.Sleep(time.Millisecond * 200)
 	}
 
 	provider := l2stateprovider.NewHistoryCommitmentProvider(
@@ -376,9 +400,8 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 		challengemanager.WithName("honest"),
 		challengemanager.WithMode(modes.MakeMode),
 		challengemanager.WithAddress(l1info.GetDefaultTransactOpts("Asserter", ctx).From),
-		challengemanager.WithAssertionPostingInterval(time.Second*30),
+		challengemanager.WithAssertionPostingInterval(time.Second*3),
 		challengemanager.WithAssertionScanningInterval(time.Second),
-		challengemanager.WithEdgeTrackerWakeInterval(time.Second*2),
 		challengemanager.WithAvgBlockCreationTime(time.Second),
 	)
 	Require(t, err)
@@ -391,9 +414,8 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 		challengemanager.WithName("evil"),
 		challengemanager.WithMode(modes.MakeMode),
 		challengemanager.WithAddress(l1info.GetDefaultTransactOpts("EvilAsserter", ctx).From),
-		challengemanager.WithAssertionPostingInterval(time.Second*30),
+		challengemanager.WithAssertionPostingInterval(time.Second*3),
 		challengemanager.WithAssertionScanningInterval(time.Second),
-		challengemanager.WithEdgeTrackerWakeInterval(time.Second*2),
 		challengemanager.WithAvgBlockCreationTime(time.Second),
 	)
 	Require(t, err)
@@ -557,8 +579,6 @@ func createTestNodeOnL1ForBoldProtocol(
 		nil, // Blob reader.
 	)
 	Require(t, err)
-
-	Require(t, currentNode.Start(ctx))
 
 	l2client = ClientForStack(t, l2stack)
 
@@ -763,8 +783,6 @@ func create2ndNodeWithConfigForBoldProtocol(
 	l2node, err := arbnode.CreateNode(ctx, l2stack, execNode, l2arbDb, NewFetcherFromConfig(nodeConfig), l2blockchain.Config(), l1client, addresses, &txOpts, &txOpts, dataSigner, fatalErrChan, l1ChainId, nil /* blob reader */)
 	Require(t, err)
 
-	Require(t, l2node.Start(ctx))
-
 	l2client := ClientForStack(t, l2stack)
 
 	StartWatchChanErr(t, ctx, fatalErrChan, l2node)
@@ -825,7 +843,7 @@ func makeBoldBatch(
 
 	seqNum := new(big.Int).Lsh(common.Big1, 256)
 	seqNum.Sub(seqNum, common.Big1)
-	tx, err := seqInbox.AddSequencerL2BatchFromOrigin0(sequencer, seqNum, message, big.NewInt(1), common.Address{}, big.NewInt(0), big.NewInt(0))
+	tx, err := seqInbox.AddSequencerL2BatchFromOrigin8f111f3c(sequencer, seqNum, message, big.NewInt(1), common.Address{}, big.NewInt(0), big.NewInt(0))
 	Require(t, err)
 	receipt, err := EnsureTxSucceeded(ctx, backend, tx)
 	Require(t, err)
