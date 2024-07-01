@@ -148,6 +148,19 @@ func (a *ExecServerAPI) GetStepAt(ctx context.Context, execid uint64, position u
 	return server_api.MachineStepResultToJson(res), nil
 }
 
+func (a *ExecServerAPI) GetMachineHashesWithStepSize(ctx context.Context, execid, fromStep, stepSize, maxIterations uint64) ([]common.Hash, error) {
+	run, err := a.getRun(execid)
+	if err != nil {
+		return nil, err
+	}
+	hashesInRange := run.GetMachineHashesWithStepSize(fromStep, stepSize, maxIterations)
+	res, err := hashesInRange.Await(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return res, nil
+}
+
 func (a *ExecServerAPI) GetProofAt(ctx context.Context, execid uint64, position uint64) (string, error) {
 	run, err := a.getRun(execid)
 	if err != nil {
