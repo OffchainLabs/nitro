@@ -34,7 +34,10 @@ import (
 	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 	"github.com/go-redis/redis/v8"
 	"github.com/holiman/uint256"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
+	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -144,26 +147,26 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 	}
 	_ = encF
 	var queue QueueStorage
-	// switch {
-	// case useNoOpStorage:
-	queue = &noop.Storage{}
-	// case opts.RedisClient != nil:
-	// 	var err error
-	// 	queue, err = redisstorage.NewStorage(opts.RedisClient, opts.RedisKey, &cfg.RedisSigner, encF)
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-	// case cfg.UseDBStorage:
-	// 	storage := dbstorage.New(opts.Database, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
-	// 	if cfg.Dangerous.ClearDBStorage {
-	// 		if err := storage.PruneAll(ctx); err != nil {
-	// 			return nil, err
-	// 		}
-	// 	}
-	// 	queue = storage
-	// default:
-	// 	queue = slice.NewStorage(func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
-	// }
+	switch {
+	case useNoOpStorage:
+		queue = &noop.Storage{}
+	case opts.RedisClient != nil:
+		var err error
+		queue, err = redisstorage.NewStorage(opts.RedisClient, opts.RedisKey, &cfg.RedisSigner, encF)
+		if err != nil {
+			return nil, err
+		}
+	case cfg.UseDBStorage:
+		storage := dbstorage.New(opts.Database, func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
+		if cfg.Dangerous.ClearDBStorage {
+			if err := storage.PruneAll(ctx); err != nil {
+				return nil, err
+			}
+		}
+		queue = storage
+	default:
+		queue = slice.NewStorage(func() storage.EncoderDecoderInterface { return &storage.EncoderDecoder{} })
+	}
 	expression, err := govaluate.NewEvaluableExpression(cfg.MaxFeeCapFormula)
 	if err != nil {
 		return nil, fmt.Errorf("error creating govaluate evaluable expression for calculating maxFeeCap: %w", err)
