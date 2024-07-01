@@ -21,11 +21,11 @@ const test_release_frac = 5
 const test_delay = time.Millisecond
 const test_redisKey_prefix = "__TEMP_SimpleRedisLockTest__"
 
-func attemptLock(ctx context.Context, s *redislock.Simple, flag *int32, wg *sync.WaitGroup) {
+func attemptLock(ctx context.Context, s *redislock.Simple, flag *atomic.Int32, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for i := 0; i < test_attempts; i++ {
 		if s.AttemptLock(ctx) {
-			atomic.AddInt32(flag, 1)
+			flag.Add(1)
 		} else if rand.Intn(test_release_frac) == 0 {
 			s.Release(ctx)
 		}
@@ -76,7 +76,7 @@ func simpleRedisLockTest(t *testing.T, redisKeySuffix string, chosen int, backgo
 		<-time.After(time.Second)
 	}
 	wg := sync.WaitGroup{}
-	counters := make([]int32, test_threads)
+	counters := make([]atomic.Int32, test_threads)
 	for i, lock := range locks {
 		wg.Add(1)
 		go attemptLock(ctx, lock, &counters[i], &wg)
@@ -84,8 +84,8 @@ func simpleRedisLockTest(t *testing.T, redisKeySuffix string, chosen int, backgo
 	wg.Wait()
 	successful := -1
 	for i, counter := range counters {
-		if counter != 0 {
-			if counter != test_attempts {
+		if counter.Load() != 0 {
+			if counter.Load() != test_attempts {
 				t.Fatalf("counter %d value %d", i, counter)
 			}
 			if successful > 0 {

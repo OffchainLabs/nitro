@@ -25,8 +25,8 @@ func TestPromise(t *testing.T) {
 		t.Fatal("unexpected Promise.Current when ready")
 	}
 
-	cancelCalled := int64(0)
-	cancelFunc := func() { atomic.AddInt64(&cancelCalled, 1) }
+	var cancelCalled atomic.Int64{}
+	cancelFunc := func() { cancelCalled.Add(1) }
 
 	tempPromise = NewPromise[int](cancelFunc)
 	res, err = tempPromise.Current()
@@ -68,12 +68,12 @@ func TestPromise(t *testing.T) {
 		t.Fatal("unexpected Promise.Current 2nd time")
 	}
 
-	if atomic.LoadInt64(&cancelCalled) != 0 {
+	if cancelCalled.Load() != 0 {
 		t.Fatal("cancel called by await/current when it shouldn't be")
 	}
 
 	tempPromise.Cancel()
-	if atomic.LoadInt64(&cancelCalled) != 0 {
+	if cancelCalled.Load() != 0 {
 		t.Fatal("cancel called after error produced")
 	}
 
@@ -84,11 +84,11 @@ func TestPromise(t *testing.T) {
 	if res != 0 || !errors.Is(err, context.DeadlineExceeded) {
 		t.Fatal("unexpected Promise.Await with timeout")
 	}
-	if atomic.LoadInt64(&cancelCalled) != 1 {
+	if cancelCalled.Load() != 1 {
 		t.Fatal("cancel not called by await on timeout")
 	}
 	tempPromise.Cancel()
-	if atomic.LoadInt64(&cancelCalled) != 2 {
+	if cancelCalled.Load() != 2 {
 		t.Fatal("cancel not called by promise.Cancel")
 	}
 }

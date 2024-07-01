@@ -29,7 +29,7 @@ var simulatedChainID = big.NewInt(1337)
 type AccountInfo struct {
 	Address    common.Address
 	PrivateKey *ecdsa.PrivateKey
-	Nonce      uint64
+	Nonce      atomic.Uint64
 }
 
 type BlockchainTestInfo struct {
@@ -177,7 +177,7 @@ func (b *BlockchainTestInfo) GetDefaultTransactOpts(name string, ctx context.Con
 			if err != nil {
 				return nil, err
 			}
-			atomic.AddUint64(&info.Nonce, 1) // we don't set Nonce, but try to keep track..
+			info.Nonce.Add(1) // we don't set Nonce, but try to keep track..
 			return tx.WithSignature(b.Signer, signature)
 		},
 		GasMargin: 2000, // adjust by 20%
@@ -215,7 +215,7 @@ func (b *BlockchainTestInfo) PrepareTxTo(
 ) *types.Transaction {
 	b.T.Helper()
 	info := b.GetInfoWithPrivKey(from)
-	txNonce := atomic.AddUint64(&info.Nonce, 1) - 1
+	txNonce := info.Nonce.Add(1) - 1
 	if value == nil {
 		value = common.Big0
 	}

@@ -20,7 +20,7 @@ type Promise[R any] struct {
 	chanReady chan struct{}
 	result    R
 	err       error
-	produced  uint32
+	produced  atomic.Uint32
 	cancel    func()
 }
 
@@ -67,7 +67,7 @@ func (p *Promise[R]) Cancel() {
 }
 
 func (p *Promise[R]) ProduceErrorSafe(err error) error {
-	if !atomic.CompareAndSwapUint32(&p.produced, 0, 1) {
+	if !p.produced.CompareAndSwap(0, 1) {
 		return errors.New("cannot produce two values")
 	}
 	p.err = err
@@ -83,7 +83,7 @@ func (p *Promise[R]) ProduceError(err error) {
 }
 
 func (p *Promise[R]) ProduceSafe(value R) error {
-	if !atomic.CompareAndSwapUint32(&p.produced, 0, 1) {
+	if !p.produced.CompareAndSwap(0, 1) {
 		return errors.New("cannot produce two values")
 	}
 	p.result = value
