@@ -291,11 +291,10 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 	if errors.Is(err, ErrIncorrectFeedServerVersion) || errors.Is(err, ErrIncorrectChainId) {
 		return nil, err
 	}
-	if strings.Contains(err.Error(), wsbroadcastserver.ErrRateLimited.Error()) {
-		log.Error("Failed connecting to feed due to hitting rate limit", "Status", http.StatusTooManyRequests, "err", err)
-		return nil, err
-	}
 	if err != nil {
+		if strings.Contains(err.Error(), wsbroadcastserver.ErrRateLimited.Error()) {
+			log.Error("Failed connecting to feed due to hitting rate limit", "status", http.StatusTooManyRequests, "err", err)
+		}
 		return nil, fmt.Errorf("broadcast client unable to connect: %w", err)
 	}
 	if config.RequireChainId && !foundChainId {
