@@ -19,9 +19,7 @@ import (
 
 	"errors"
 
-	"github.com/cockroachdb/pebble"
 	flag "github.com/spf13/pflag"
-	"github.com/syndtr/goleveldb/leveldb"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -36,6 +34,7 @@ import (
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/sharedmetrics"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
@@ -420,10 +419,6 @@ func dbKey(prefix []byte, pos uint64) []byte {
 	return key
 }
 
-func isErrNotFound(err error) bool {
-	return errors.Is(err, leveldb.ErrNotFound) || errors.Is(err, pebble.ErrNotFound)
-}
-
 // Note: if changed to acquire the mutex, some internal users may need to be updated to a non-locking version.
 func (s *TransactionStreamer) GetMessage(seqNum arbutil.MessageIndex) (*arbostypes.MessageWithMetadata, error) {
 	key := dbKey(messagePrefix, uint64(seqNum))
@@ -459,7 +454,7 @@ func (s *TransactionStreamer) getMessageWithMetadataAndBlockHash(seqNum arbutil.
 			return nil, err
 		}
 		blockHash = blockHashDBVal.BlockHash
-	} else if !isErrNotFound(err) {
+	} else if !dbutil.IsErrNotFound(err) {
 		return nil, err
 	}
 
@@ -605,7 +600,7 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFe
 	if broadcastStartPos > 0 {
 		_, err := s.GetMessage(broadcastStartPos - 1)
 		if err != nil {
-			if !isErrNotFound(err) {
+			if !dbutil.IsErrNotFound(err) {
 				return err
 			}
 			// Message before current message doesn't exist in database, so don't add current messages yet
@@ -1073,7 +1068,7 @@ func (s *TransactionStreamer) ResultAtCount(count arbutil.MessageIndex) (*execut
 		if err == nil {
 			return &msgResult, nil
 		}
-	} else if !isErrNotFound(err) {
+	} else if !dbutil.IsErrNotFound(err) {
 		return nil, err
 	}
 
