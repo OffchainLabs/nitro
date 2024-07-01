@@ -8,12 +8,13 @@ src=$DEFAULT_SRC
 dst=
 force=false
 skip_existing=false
+clean="all"
 
-l2chaindata_status="n/a"
-l2chaindata_ancient_status="n/a"
-arbitrumdata_status="n/a"
-wasm_status="n/a"
-classicmsg_status="n/a"
+l2chaindata_status="not started"
+l2chaindata_ancient_status="not started"
+arbitrumdata_status="not started"
+wasm_status="not started"
+classicmsg_status="not started"
 
 checkMissingValue () {
     if [[ $1 -eq 0 || $2 == -* ]]; then
@@ -40,6 +41,42 @@ echo Usage: $0 \[OPTIONS..\]
     echo "--dst             destination directory"
     echo "--force           remove destination directory if it exists"
     echo "--skip-existing   skip convertion of databases which directories already exist in the destination directory"
+    echo "--clean           sets what should be removed in case of error, possible values:"
+    echo "                      \"all\"    - remove whole destination directory (default)"
+    echo "                      \"failed\" - remove database which conversion failed"
+    echo "                      \"none\"   - remove nothing, leave unfinished and potentially corrupted databases"
+}
+
+removeDir() {
+    cmd="rm -r $1"
+    echo $cmd
+    $cmd
+    return $?
+}
+
+removeDir
+
+cleanup() {
+    case $clean in
+        all)
+            echo "== Removing destination directory"
+            removeDir "$dst"
+            ;;
+        failed)
+            echo "== Note: removing only failed destination directory"
+            dstdir=$(echo $dst/$1 | tr -s /)
+            removeDir $dstdir
+            ;;
+        none)
+            echo "== Warning: not removing destination directories, the destination databases might be incomplete and/or corrupted!"
+            ;;
+        *)
+            # shouldn't happen
+            echo "Script error, invalid --clean flag value: $clean"
+            exit 1
+            ;;
+
+    esac
 }
 
 while [[ $# -gt 0 ]]; do
@@ -70,6 +107,12 @@ while [[ $# -gt 0 ]]; do
             skip_existing=true
             shift
             ;;
+        --clean)
+            shift
+            checkMissingValue $# "$1" "--clean"
+            clean=$1
+            shift
+            ;;
         --help)
             printUsage
             exit 0
@@ -82,6 +125,12 @@ done
 
 if $force && $skip_existing; then
     echo Error: Cannot use both --force and --skipexisting
+    printUsage
+    exit 1
+fi
+
+if [ $clean != "all" ] && [ $clean != "failed" ] && [ $clean != "none" ] ; then
+    echo Error: Invalid --clean value: $clean
     printUsage
     exit 1
 fi
@@ -121,13 +170,11 @@ fi
 
 if [ -e "$dst" ] && ! $skip_existing; then
     if $force; then
-        echo == Warning! Destination already exists, --force is set, this will remove all files under path: "$dst"
-        read -p "are you sure? [y/n]" -n 1 response
-        echo
-        if [[ $response == "y" ]] || [[ $response == "Y" ]]; then
-            (set -x; rm -r "$dst" || exit 1)
-        else
-            exit 0
+        echo == Warning! Destination already exists, --force is set, removing all files under path: "$dst"
+        removeDir "$dst"
+        if [ $? -ne 0 ]; then
+            echo Error: failed to remove "$dst"
+            exit 1
         fi
     else
         echo Error: invalid destination path: "$dst" already exists
@@ -145,6 +192,7 @@ convert () {
         echo $cmd
         $cmd
         if [ $? -ne 0 ]; then
+            cleanup $1
             convert_result="FAILED"
             return 1
         fi
@@ -179,6 +227,7 @@ if ! [ -e $dst/l2chaindata/ancient ]; then
     $cmd
     if [ $? -ne 0 ]; then
         l2chaindata_ancient_status="FAILED (failed to copy)"
+        cleanup "l2chaindata"
         printStatus
         exit 1
     fi
