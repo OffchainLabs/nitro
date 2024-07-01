@@ -374,6 +374,11 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 		}
 	}
 
+	pos := uint64(count) - 1
+	err = deleteStartingAt(s.db, batch, messageResultPrefix, uint64ToKey(pos))
+	if err != nil {
+		return err
+	}
 	err = deleteStartingAt(s.db, batch, blockHashInputFeedPrefix, uint64ToKey(uint64(count)))
 	if err != nil {
 		return err
@@ -381,6 +386,14 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 	err = deleteStartingAt(s.db, batch, messagePrefix, uint64ToKey(uint64(count)))
 	if err != nil {
 		return err
+	}
+
+	for i := 0; i < len(messagesResults); i++ {
+		pos := count + arbutil.MessageIndex(i) - 1
+		err = s.saveResult(pos, *messagesResults[i], batch)
+		if err != nil {
+			return err
+		}
 	}
 
 	return setMessageCount(batch, count)
@@ -1046,12 +1059,26 @@ func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages [
 	return nil
 }
 
-// TODO: eventually there will be a table maintained by txStreamer itself
 func (s *TransactionStreamer) ResultAtCount(count arbutil.MessageIndex) (*execution.MessageResult, error) {
 	if count == 0 {
 		return &execution.MessageResult{}, nil
 	}
-	return s.exec.ResultAtPos(count - 1)
+	pos := count - 1
+
+	key := dbKey(messageResultPrefix, uint64(pos))
+	data, err := s.db.Get(key)
+	if err == nil {
+		var msgResult execution.MessageResult
+		err = rlp.DecodeBytes(data, &msgResult)
+		if err == nil {
+			return &msgResult, nil
+		}
+	} else if !isErrNotFound(err) {
+		return nil, err
+	}
+
+	log.Warn("streamer: failed getting message result from db", "count", count, "err", err)
+	return s.exec.ResultAtPos(pos)
 }
 
 func (s *TransactionStreamer) checkResult(msgResult *execution.MessageResult, expectedBlockHash *common.Hash) {
@@ -1066,6 +1093,19 @@ func (s *TransactionStreamer) checkResult(msgResult *execution.MessageResult, ex
 		)
 		return
 	}
+}
+
+func (s *TransactionStreamer) saveResult(
+	pos arbutil.MessageIndex,
+	msgResult execution.MessageResult,
+	batch ethdb.Batch,
+) error {
+	msgResultBytes, err := rlp.EncodeToBytes(msgResult)
+	if err != nil {
+		return err
+	}
+	key := dbKey(messageResultPrefix, uint64(pos))
+	return batch.Put(key, msgResultBytes)
 }
 
 // exposed for testing
@@ -1119,6 +1159,18 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context, exec execution
 	}
 
 	s.checkResult(msgResult, msgAndBlockHash.BlockHash)
+
+	batch := s.db.NewBatch()
+	err = s.saveResult(pos, *msgResult, batch)
+	if err != nil {
+		log.Error("feedOneMsg failed to save result", "err", err)
+		return false
+	}
+	err = batch.Write()
+	if err != nil {
+		log.Error("feedOneMsg failed to save result", "err", err)
+		return false
+	}
 
 	msgWithBlockHash := arbostypes.MessageWithMetadataAndBlockHash{
 		MessageWithMeta: msgAndBlockHash.MessageWithMeta,
