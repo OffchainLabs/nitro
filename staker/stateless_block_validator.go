@@ -230,8 +230,10 @@ func NewStatelessBlockValidator(
 	config func() *BlockValidatorConfig,
 	stack *node.Node,
 ) (*StatelessBlockValidator, error) {
-	var executionSpawners []validator.ExecutionSpawner
-	var redisValClient *redis.ValidationClient
+	var (
+		executionSpawners []validator.ExecutionSpawner
+		redisValClient    *redis.ValidationClient
+	)
 
 	if config().RedisValidationClientConfig.Enabled() {
 		var err error
@@ -240,11 +242,15 @@ func NewStatelessBlockValidator(
 			return nil, fmt.Errorf("creating new redis validation client: %w", err)
 		}
 	}
+
 	configs := config().ValidationServerConfigs
 	for i := range configs {
 		i := i
 		confFetcher := func() *rpcclient.ClientConfig { return &config().ValidationServerConfigs[i] }
-		executionSpawners = append(executionSpawners, validatorclient.NewExecutionClient(confFetcher, stack))
+		executionSpawners = append(executionSpawners, validatorclient.NewExecutionClient(confFetcher, nil, stack))
+		if i == 0 {
+			executionSpawners = append(executionSpawners, validatorclient.NewExecutionClient(confFetcher, &config().RedisBoldValidationClientConfig, stack))
+		}
 	}
 
 	if len(executionSpawners) == 0 {
