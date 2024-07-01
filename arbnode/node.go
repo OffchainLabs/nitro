@@ -265,7 +265,7 @@ type Node struct {
 	MessagePruner           *MessagePruner
 	BlockValidator          *staker.BlockValidator
 	StatelessBlockValidator *staker.StatelessBlockValidator
-	Staker                  *staker.Staker
+	Staker                  *staker.MultiProtocolStaker
 	BroadcastServer         *broadcaster.Broadcaster
 	BroadcastClients        *broadcastclients.BroadcastClients
 	SeqCoordinator          *SeqCoordinator
@@ -607,7 +607,7 @@ func createNodeImpl(
 		}
 	}
 
-	var stakerObj *staker.Staker
+	var stakerObj *staker.MultiProtocolStaker
 	var messagePruner *MessagePruner
 	var stakerAddr common.Address
 
@@ -660,7 +660,7 @@ func createNodeImpl(
 			confirmedNotifiers = append(confirmedNotifiers, messagePruner)
 		}
 
-		stakerObj, err = staker.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Staker, blockValidator, statelessBlockValidator, nil, confirmedNotifiers, deployInfo.ValidatorUtils, fatalErrChan)
+		stakerObj, err = staker.NewMultiProtocolStaker(l1Reader, wallet, bind.CallOpts{}, config.Staker, blockValidator, statelessBlockValidator, nil, confirmedNotifiers, deployInfo.ValidatorUtils, deployInfo.Bridge, fatalErrChan)
 		if err != nil {
 			return nil, err
 		}

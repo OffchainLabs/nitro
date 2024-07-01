@@ -195,6 +195,10 @@ func (e *executionRun) GetLastStep() containers.PromiseInterface[*validator.Mach
 	return e.GetStepAt(^uint64(0))
 }
 
+func (e *executionRun) CheckAlive(ctx context.Context) error {
+	return nil
+}
+
 func machineFinishedHash(gs validator.GoGlobalState) common.Hash {
 	return crypto.Keccak256Hash([]byte("Machine finished:"), gs.Hash().Bytes())
 }
