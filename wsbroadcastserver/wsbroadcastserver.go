@@ -37,6 +37,7 @@ var (
 	HTTPHeaderChainId                 = textproto.CanonicalMIMEHeaderKey("Arbitrum-Chain-Id")
 	upgradeToWSTimer                  = metrics.NewRegisteredTimer("arb/feed/clients/upgrade/duration", nil)
 	startWithHeaderTimer              = metrics.NewRegisteredTimer("arb/feed/clients/start/duration", nil)
+	ErrRateLimited                    = errors.New("Too many open feed connections.")
 )
 
 const (
@@ -317,10 +318,9 @@ func (s *WSBroadcastServer) StartWithHeader(ctx context.Context, header ws.Hands
 				}
 
 				if config.ConnectionLimits.Enable && !s.clientManager.connectionLimiter.IsAllowed(connectingIP) {
-					log.Error("Feed rate limit hit", "ip", connectingIP)
 					return nil, ws.RejectConnectionError(
 						ws.RejectionStatus(http.StatusTooManyRequests),
-						ws.RejectionReason("Too many open feed connections."),
+						ws.RejectionReason(ErrRateLimited.Error()),
 					)
 				}
 
