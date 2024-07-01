@@ -54,8 +54,6 @@ removeDir() {
     return $?
 }
 
-removeDir
-
 cleanup() {
     case $clean in
         all)
