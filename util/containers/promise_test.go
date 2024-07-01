@@ -25,7 +25,7 @@ func TestPromise(t *testing.T) {
 		t.Fatal("unexpected Promise.Current when ready")
 	}
 
-	var cancelCalled atomic.Int64{}
+	var cancelCalled atomic.Int64
 	cancelFunc := func() { cancelCalled.Add(1) }
 
 	tempPromise = NewPromise[int](cancelFunc)

@@ -93,7 +93,6 @@ func (b *BlockchainTestInfo) GenerateAccount(name string) {
 	b.Accounts[name] = &AccountInfo{
 		PrivateKey: privateKey,
 		Address:    crypto.PubkeyToAddress(privateKey.PublicKey),
-		Nonce:      0,
 	}
 	log.Info("New Key ", "name", name, "Address", b.Accounts[name].Address)
 }
@@ -139,8 +138,11 @@ func (b *BlockchainTestInfo) SetContract(name string, address common.Address) {
 }
 
 func (b *BlockchainTestInfo) SetFullAccountInfo(name string, info *AccountInfo) {
-	infoCopy := *info
-	b.Accounts[name] = &infoCopy
+	b.Accounts[name] = &AccountInfo{
+		Address:    info.Address,
+		PrivateKey: info.PrivateKey,
+	}
+	b.Accounts[name].Nonce.Store(info.Nonce.Load())
 }
 
 func (b *BlockchainTestInfo) GetAddress(name string) common.Address {
