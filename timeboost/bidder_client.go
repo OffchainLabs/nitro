@@ -13,8 +13,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/secp256k1"
-	"github.com/ethereum/go-ethereum/ethclient/simulated"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/timeboost/bindings"
 	"github.com/pkg/errors"
 )
@@ -32,7 +32,7 @@ type BidderClient struct {
 	name                  string
 	signatureDomain       uint16
 	txOpts                *bind.TransactOpts
-	client                simulated.Client
+	client                arbutil.L1Interface
 	privKey               *ecdsa.PrivateKey
 	auctionContract       *bindings.ExpressLaneAuction
 	sequencer             sequencerConnection
@@ -51,7 +51,7 @@ func NewBidderClient(
 	ctx context.Context,
 	name string,
 	wallet *Wallet,
-	client simulated.Client,
+	client arbutil.L1Interface,
 	auctionContractAddress common.Address,
 	sequencer sequencerConnection,
 	auctionMaster auctionMasterConnection,

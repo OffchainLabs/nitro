@@ -8,7 +8,9 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/timeboost/bindings"
@@ -31,6 +33,7 @@ type expressLaneService struct {
 	sync.RWMutex
 	client           arbutil.L1Interface
 	control          expressLaneControl
+	reservedAddress  *common.Address
 	auctionContract  *bindings.ExpressLaneAuction
 	initialTimestamp time.Time
 	roundDuration    time.Duration
@@ -157,4 +160,22 @@ func (es *expressLaneService) isExpressLaneTx(sender common.Address) bool {
 	round := timeboost.CurrentRound(es.initialTimestamp, es.roundDuration)
 	log.Info("Current round", "round", round, "controller", es.control.controller, "sender", sender)
 	return round == es.control.round && sender == es.control.controller
+}
+
+func (es *expressLaneService) isOuterExpressLaneTx(to *common.Address) bool {
+	es.RLock()
+	defer es.RUnlock()
+	round := timeboost.CurrentRound(es.initialTimestamp, es.roundDuration)
+	log.Info("Current round", "round", round, "controller", es.control.controller, "to", to)
+	return round == es.control.round && to == es.reservedAddress
+}
+
+func unwrapTx(outerTx *types.Transaction) (*types.Transaction, error) {
+	encodedInnerTx := outerTx.Data()
+	var innerTx types.Transaction
+	err := rlp.DecodeBytes(encodedInnerTx, &innerTx)
+	if err != nil {
+		return nil, err
+	}
+	return &innerTx, nil
 }

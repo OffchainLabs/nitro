@@ -7,8 +7,8 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient/simulated"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/timeboost/bindings"
 	"github.com/pkg/errors"
 )
@@ -27,7 +27,7 @@ type AuctionMaster struct {
 	txOpts                                 *bind.TransactOpts
 	chainId                                *big.Int
 	signatureDomain                        uint16
-	client                                 simulated.Client
+	client                                 arbutil.L1Interface
 	auctionContract                        *bindings.ExpressLaneAuction
 	bidsReceiver                           chan *Bid
 	bidCache                               *bidCache
@@ -39,7 +39,7 @@ type AuctionMaster struct {
 func NewAuctionMaster(
 	txOpts *bind.TransactOpts,
 	chainId *big.Int,
-	client simulated.Client,
+	client arbutil.L1Interface,
 	auctionContract *bindings.ExpressLaneAuction,
 	opts ...AuctionMasterOpt,
 ) (*AuctionMaster, error) {

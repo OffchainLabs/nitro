@@ -77,8 +77,23 @@ type SequencerConfig struct {
 	ExpectedSurplusSoftThreshold string          `koanf:"expected-surplus-soft-threshold" reload:"hot"`
 	ExpectedSurplusHardThreshold string          `koanf:"expected-surplus-hard-threshold" reload:"hot"`
 	EnableProfiling              bool            `koanf:"enable-profiling" reload:"hot"`
+	Timeboost                    TimeboostConfig `koanf:"timeboost"`
 	expectedSurplusSoftThreshold int
 	expectedSurplusHardThreshold int
+}
+
+type TimeboostConfig struct {
+	Enable               bool          `koanf:"enable"`
+	AuctionMasterAddress string        `koanf:"auction-master-address"`
+	ERC20Address         string        `koanf:"erc20-address"`
+	ExpressLaneAdvantage time.Duration `koanf:"express-lane-advantage"`
+}
+
+var DefaultTimeboostConfig = TimeboostConfig{
+	Enable:               false,
+	AuctionMasterAddress: "",
+	ERC20Address:         "",
+	ExpressLaneAdvantage: time.Millisecond * 200,
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -130,6 +145,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	ExpectedSurplusSoftThreshold: "default",
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
+	Timeboost:                    DefaultTimeboostConfig,
 }
 
 var TestSequencerConfig = SequencerConfig{
@@ -148,6 +164,7 @@ var TestSequencerConfig = SequencerConfig{
 	ExpectedSurplusSoftThreshold: "default",
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
+	Timeboost:                    DefaultTimeboostConfig,
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -157,6 +174,8 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".max-acceptable-timestamp-delta", DefaultSequencerConfig.MaxAcceptableTimestampDelta, "maximum acceptable time difference between the local time and the latest L1 block's timestamp")
 	f.String(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
 	AddOptionsForSequencerForwarderConfig(prefix+".forwarder", f)
+	TimeboostAddOptions(prefix+".timeboost", f)
+
 	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
 	f.Duration(prefix+".queue-timeout", DefaultSequencerConfig.QueueTimeout, "maximum amount of time transaction can wait in queue")
 	f.Int(prefix+".nonce-cache-size", DefaultSequencerConfig.NonceCacheSize, "size of the tx sender nonce cache")
@@ -166,6 +185,12 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".expected-surplus-soft-threshold", DefaultSequencerConfig.ExpectedSurplusSoftThreshold, "if expected surplus is lower than this value, warnings are posted")
 	f.String(prefix+".expected-surplus-hard-threshold", DefaultSequencerConfig.ExpectedSurplusHardThreshold, "if expected surplus is lower than this value, new incoming transactions will be denied")
 	f.Bool(prefix+".enable-profiling", DefaultSequencerConfig.EnableProfiling, "enable CPU profiling and tracing")
+}
+
+func TimeboostAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultTimeboostConfig.Enable, "enable timeboost based on express lane auctions")
+	f.String(prefix+".auction-master-address", DefaultTimeboostConfig.AuctionMasterAddress, "address of the auction master contract")
+	f.String(prefix+".erc20-address", DefaultTimeboostConfig.ERC20Address, "address of the auction erc20")
 }
 
 type txQueueItem struct {
@@ -310,15 +335,16 @@ func (c nonceFailureCache) Add(err NonceError, queueItem txQueueItem) {
 type Sequencer struct {
 	stopwaiter.StopWaiter
 
-	execEngine      *ExecutionEngine
-	txQueue         chan txQueueItem
-	txRetryQueue    containers.Queue[txQueueItem]
-	l1Reader        *headerreader.HeaderReader
-	config          SequencerConfigFetcher
-	senderWhitelist map[common.Address]struct{}
-	nonceCache      *nonceCache
-	nonceFailures   *nonceFailureCache
-	onForwarderSet  chan struct{}
+	execEngine         *ExecutionEngine
+	txQueue            chan txQueueItem
+	txRetryQueue       containers.Queue[txQueueItem]
+	l1Reader           *headerreader.HeaderReader
+	config             SequencerConfigFetcher
+	senderWhitelist    map[common.Address]struct{}
+	nonceCache         *nonceCache
+	nonceFailures      *nonceFailureCache
+	expressLaneService *expressLaneService
+	onForwarderSet     chan struct{}
 
 	L1BlockAndTimeMutex sync.Mutex
 	l1BlockNumber       uint64
@@ -361,6 +387,18 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		pauseChan:       nil,
 		onForwarderSet:  make(chan struct{}, 1),
 	}
+	if config.Timeboost.Enable {
+		addr := common.HexToAddress(config.Timeboost.AuctionMasterAddress)
+		// TODO: Need to provide an L2 interface instead of an L1 interface.
+		els, err := newExpressLaneService(
+			l1Reader.Client(),
+			addr,
+		)
+		if err != nil {
+			return nil, err
+		}
+		s.expressLaneService = els
+	}
 	s.nonceFailures = &nonceFailureCache{
 		containers.NewLruCacheWithOnEvict(config.NonceCacheSize, s.onNonceFailureEvict),
 		func() time.Duration { return configFetcher().NonceFailureCacheExpiry },
@@ -368,6 +406,20 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 	s.Pause()
 	execEngine.EnableReorgSequencing()
 	return s, nil
+}
+
+func (s *Sequencer) ExpressLaneAuction() common.Address {
+	if s.expressLaneService == nil {
+		return common.Address{}
+	}
+	return common.HexToAddress(s.config().Timeboost.AuctionMasterAddress)
+}
+
+func (s *Sequencer) ExpressLaneERC20() common.Address {
+	if s.expressLaneService == nil {
+		return common.Address{}
+	}
+	return common.HexToAddress(s.config().Timeboost.ERC20Address)
 }
 
 func (s *Sequencer) onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure) {
@@ -444,6 +496,29 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 		// Should be unreachable for Arbitrum types due to UnmarshalBinary not accepting Arbitrum internal txs
 		// and we want to disallow BlobTxType since Arbitrum doesn't support EIP-4844 txs yet.
 		return types.ErrTxTypeNotSupported
+	}
+
+	// If timeboost is enabled, we check if the tx is an express lane tx, if so, we will
+	// process it right away into the queue. Otherwise, delay by a nominal amount.
+	if s.config().Timeboost.Enable {
+		signer := types.LatestSigner(s.execEngine.bc.Config())
+		sender, err := types.Sender(signer, tx)
+		if err != nil {
+			return err
+		}
+		// TODO: Do not delay if there isn't an express lane controller this round.
+		if !s.expressLaneService.isExpressLaneTx(sender) {
+			log.Info("Delaying non-express lane tx", "sender", sender)
+			time.Sleep(s.config().Timeboost.ExpressLaneAdvantage)
+		} else {
+			if s.expressLaneService.isOuterExpressLaneTx(tx.To()) {
+				tx, err = unwrapTx(tx)
+				if err != nil {
+					return err
+				}
+			}
+			log.Info("Processing express lane tx", "sender", sender)
+		}
 	}
 
 	txBytes, err := tx.MarshalBinary()
@@ -1127,7 +1202,10 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 				}
 			}
 		})
+	}
 
+	if s.config().Timeboost.Enable {
+		s.expressLaneService.Start(ctxIn)
 	}
 
 	s.CallIteratively(func(ctx context.Context) time.Duration {
