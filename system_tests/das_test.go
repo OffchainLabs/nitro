@@ -6,7 +6,6 @@ package arbtest
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"io"
 	"math/big"
 	"net"
@@ -82,9 +81,8 @@ func startLocalDASServer(
 	restServer, err := das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, storageService, storageService)
 	Require(t, err)
 	beConfig := das.BackendConfig{
-		URL:                 "http://" + rpcLis.Addr().String(),
-		PubKeyBase64Encoded: blsPubToBase64(pubkey),
-		SignerMask:          1,
+		URL:    "http://" + rpcLis.Addr().String(),
+		Pubkey: blsPubToBase64(pubkey),
 	}
 	return rpcServer, pubkey, beConfig, restServer, "http://" + restLis.Addr().String()
 }
@@ -97,12 +95,10 @@ func blsPubToBase64(pubkey *blsSignatures.PublicKey) string {
 }
 
 func aggConfigForBackend(t *testing.T, backendConfig das.BackendConfig) das.AggregatorConfig {
-	backendsJsonByte, err := json.Marshal([]das.BackendConfig{backendConfig})
-	Require(t, err)
 	return das.AggregatorConfig{
 		Enable:                true,
 		AssumedHonest:         1,
-		Backends:              string(backendsJsonByte),
+		Backends:              das.BackendConfigList{backendConfig},
 		MaxStoreChunkBodySize: 512 * 1024,
 	}
 }
@@ -308,9 +304,8 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 		RequestTimeout: 5 * time.Second,
 	}
 	beConfigA := das.BackendConfig{
-		URL:                 "http://" + rpcLis.Addr().String(),
-		PubKeyBase64Encoded: blsPubToBase64(pubkey),
-		SignerMask:          1,
+		URL:    "http://" + rpcLis.Addr().String(),
+		Pubkey: blsPubToBase64(pubkey),
 	}
 	l1NodeConfigA.DataAvailability.RPCAggregator = aggConfigForBackend(t, beConfigA)
 	l1NodeConfigA.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig

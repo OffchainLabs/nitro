@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math/bits"
+	"sync/atomic"
 	"time"
 
 	flag "github.com/spf13/pflag"
@@ -25,23 +26,35 @@ import (
 	"github.com/offchainlabs/nitro/util/pretty"
 )
 
+const metricBase string = "arb/das/rpc/aggregator/store"
+
+var (
+	// This metric shows 1 if there was any error posting to the backends, until
+	// there was a Store that had no backend failures.
+	anyErrorGauge = metrics.GetOrRegisterGauge(metricBase+"/error/gauge", nil)
+
+// Other aggregator metrics are generated dynamically in the Store function.
+)
+
 type AggregatorConfig struct {
-	Enable                bool   `koanf:"enable"`
-	AssumedHonest         int    `koanf:"assumed-honest"`
-	Backends              string `koanf:"backends"`
-	MaxStoreChunkBodySize int    `koanf:"max-store-chunk-body-size"`
+	Enable                bool              `koanf:"enable"`
+	AssumedHonest         int               `koanf:"assumed-honest"`
+	Backends              BackendConfigList `koanf:"backends"`
+	MaxStoreChunkBodySize int               `koanf:"max-store-chunk-body-size"`
 }
 
 var DefaultAggregatorConfig = AggregatorConfig{
 	AssumedHonest:         0,
-	Backends:              "",
+	Backends:              nil,
 	MaxStoreChunkBodySize: 512 * 1024,
 }
+
+var parsedBackendsConf BackendConfigList
 
 func AggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultAggregatorConfig.Enable, "enable storage of sequencer batch data from a list of RPC endpoints; this should only be used by the batch poster and not in combination with other DAS storage types")
 	f.Int(prefix+".assumed-honest", DefaultAggregatorConfig.AssumedHonest, "Number of assumed honest backends (H). If there are N backends, K=N+1-H valid responses are required to consider an Store request to be successful.")
-	f.String(prefix+".backends", DefaultAggregatorConfig.Backends, "JSON RPC backend configuration")
+	f.Var(&parsedBackendsConf, prefix+".backends", "JSON RPC backend configuration. This can be specified on the command line as a JSON array, eg: [{\"url\": \"...\", \"pubkey\": \"...\"},...], or as a JSON array in the config file.")
 	f.Int(prefix+".max-store-chunk-body-size", DefaultAggregatorConfig.MaxStoreChunkBodySize, "maximum HTTP POST body size to use for individual batch chunks, including JSON RPC overhead and an estimated overhead of 512B of headers")
 }
 
@@ -154,13 +167,22 @@ type storeResponse struct {
 // (eg via TimeoutWrapper) then it also returns an error.
 func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) (*daprovider.DataAvailabilityCertificate, error) {
 	log.Trace("das.Aggregator.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0))
+
+	allBackendsSucceeded := false
+	defer func() {
+		if allBackendsSucceeded {
+			anyErrorGauge.Update(0)
+		} else {
+			anyErrorGauge.Update(1)
+		}
+	}()
+
 	responses := make(chan storeResponse, len(a.services))
 
 	expectedHash := dastree.Hash(message)
 	for _, d := range a.services {
 		go func(ctx context.Context, d ServiceDetails) {
 			storeCtx, cancel := context.WithTimeout(ctx, a.requestTimeout)
-			const metricBase string = "arb/das/rpc/aggregator/store"
 			var metricWithServiceName = metricBase + "/" + d.metricName
 			defer cancel()
 			incFailureMetric := func() {
@@ -226,22 +248,22 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 		err            error
 	}
 
+	var storeFailures atomic.Int64
 	// Collect responses from backends.
 	certDetailsChan := make(chan certDetails)
 	go func() {
 		var pubKeys []blsSignatures.PublicKey
 		var sigs []blsSignatures.Signature
 		var aggSignersMask uint64
-		var storeFailures, successfullyStoredCount int
+		var successfullyStoredCount int
 		var returned bool
 		for i := 0; i < len(a.services); i++ {
-
 			select {
 			case <-ctx.Done():
 				break
 			case r := <-responses:
 				if r.err != nil {
-					storeFailures++
+					_ = storeFailures.Add(1)
 					log.Warn("das.Aggregator: Error from backend", "backend", r.details.service, "signerMask", r.details.signersMask, "err", r.err)
 				} else {
 					pubKeys = append(pubKeys, r.details.pubKey)
@@ -265,10 +287,10 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 					certDetailsChan <- cd
 					returned = true
 					if a.maxAllowedServiceStoreFailures > 0 && // Ignore the case where AssumedHonest = 1, probably a testnet
-						storeFailures+1 > a.maxAllowedServiceStoreFailures {
+						int(storeFailures.Load())+1 > a.maxAllowedServiceStoreFailures {
 						log.Error("das.Aggregator: storing the batch data succeeded to enough DAS commitee members to generate the Data Availability Cert, but if one more had failed then the cert would not have been able to be generated. Look for preceding logs with \"Error from backend\"")
 					}
-				} else if storeFailures > a.maxAllowedServiceStoreFailures {
+				} else if int(storeFailures.Load()) > a.maxAllowedServiceStoreFailures {
 					cd := certDetails{}
 					cd.err = fmt.Errorf("aggregator failed to store message to at least %d out of %d DASes (assuming %d are honest). %w", a.requiredServicesForStore, len(a.services), a.config.AssumedHonest, daprovider.ErrBatchToDasFailed)
 					certDetailsChan <- cd
@@ -302,6 +324,11 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 	if !verified {
 		return nil, fmt.Errorf("failed aggregate signature check. %w", daprovider.ErrBatchToDasFailed)
 	}
+
+	if storeFailures.Load() == 0 {
+		allBackendsSucceeded = true
+	}
+
 	return &aggCert, nil
 }
 

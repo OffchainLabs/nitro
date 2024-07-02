@@ -1157,9 +1157,8 @@ func setupConfigWithDAS(
 		Require(t, err)
 
 		beConfigA := das.BackendConfig{
-			URL:                 "http://" + rpcLis.Addr().String(),
-			PubKeyBase64Encoded: blsPubToBase64(dasSignerKey),
-			SignerMask:          1,
+			URL:    "http://" + rpcLis.Addr().String(),
+			Pubkey: blsPubToBase64(dasSignerKey),
 		}
 		l1NodeConfigA.DataAvailability.RPCAggregator = aggConfigForBackend(t, beConfigA)
 		l1NodeConfigA.DataAvailability.Enable = true
