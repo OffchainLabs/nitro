@@ -20,7 +20,7 @@ import (
 // / 		as this is an invalid state for the STF to reside in.
 // /
 func handleEspressoPreConditions(message *arbostypes.MessageWithMetadata, isEnabled bool) bool {
-	//calculate and cache all values needed to determine if the preconditions are met to enter the Espresso STF logic
+	// calculate and cache all values needed to determine if the preconditions are met to enter the Espresso STF logic
 	isNonEspressoMessage := arbos.IsL2NonEspressoMsg(message.Message)
 	isEspressoMessage := !isNonEspressoMessage
 	hotShotHeight := wavmio.GetEspressoHeight()
