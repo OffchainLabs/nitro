@@ -22,9 +22,10 @@ import (
 func handleEspressoPreConditions(message *arbostypes.MessageWithMetadata, isEnabled bool) bool {
 	//calculate and cache all values needed to determine if the preconditions are met to enter the Espresso STF logic
 	isNonEspressoMessage := arbos.IsL2NonEspressoMsg(message.Message)
+	isEspressoMessage := !isNonEspressoMessage
 	hotShotHeight := wavmio.GetEspressoHeight()
 	validatingEspressoLivenessFailure := isNonEspressoMessage && (isEnabled || hotShotHeight != 0)
-	validatingAgainstEspresso := !isNonEspressoMessage && isEnabled
+	validatingAgainstEspresso := isEspressoMessage && isEnabled
 
 	// If conditions are such that we have been working in espresso mode, but we are suddenly receiving non espresso messages, something wrong
 	// something incorrect has occured and we must panic
