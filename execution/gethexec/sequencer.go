@@ -498,26 +498,27 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 		return types.ErrTxTypeNotSupported
 	}
 
-	// If timeboost is enabled, we check if the tx is an express lane tx, if so, we will
-	// process it right away into the queue. Otherwise, delay by a nominal amount.
 	if s.config().Timeboost.Enable {
-		signer := types.LatestSigner(s.execEngine.bc.Config())
-		sender, err := types.Sender(signer, tx)
-		if err != nil {
-			return err
-		}
-		// TODO: Do not delay if there isn't an express lane controller this round.
-		if !s.expressLaneService.isExpressLaneTx(sender) {
-			log.Info("Delaying non-express lane tx", "sender", sender)
+		// Express lane transaction sequence is defined by the following spec:
+		// https://github.com/OffchainLabs/timeboost-design-docs/blob/main/research_spec.md
+		// The express lane transaction is defined by a transaction's `to` address matching a predefined chain's reserved address.
+		// The express lane transaction will follow verifications for round number, nonce, and sender's address.
+		// If all pass, the transaction will be sequenced right away.
+		// Non-express lane transactions will be delayed by ExpressLaneAdvantage.
+
+		if !s.expressLaneService.isExpressLaneTx(*tx.To()) {
+			log.Info("Delaying non-express lane tx", "hash", tx.Hash())
 			time.Sleep(s.config().Timeboost.ExpressLaneAdvantage)
 		} else {
-			if s.expressLaneService.isOuterExpressLaneTx(tx.To()) {
-				tx, err = unwrapTx(tx)
-				if err != nil {
-					return err
-				}
+			if err := s.expressLaneService.validateExpressLaneTx(tx); err != nil {
+				return fmt.Errorf("express lane validation failed: %w", err)
 			}
-			log.Info("Processing express lane tx", "sender", sender)
+			unwrappedTx, err := unwrapExpressLaneTx(tx)
+			if err != nil {
+				return fmt.Errorf("failed to unwrap express lane tx: %w", err)
+			}
+			tx = unwrappedTx
+			log.Info("Processing express lane tx", "hash", tx.Hash())
 		}
 	}
 

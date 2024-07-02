@@ -2,6 +2,7 @@ package gethexec
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 	"sync"
 	"time"
@@ -10,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/timeboost"
@@ -25,6 +27,7 @@ type expressLaneChecker interface {
 
 type expressLaneControl struct {
 	round      uint64
+	sequence   uint64
 	controller common.Address
 }
 
@@ -33,10 +36,11 @@ type expressLaneService struct {
 	sync.RWMutex
 	client           arbutil.L1Interface
 	control          expressLaneControl
-	reservedAddress  *common.Address
+	reservedAddress  common.Address
 	auctionContract  *bindings.ExpressLaneAuction
 	initialTimestamp time.Time
 	roundDuration    time.Duration
+	chainConfig      *params.ChainConfig
 }
 
 func newExpressLaneService(
@@ -142,6 +146,7 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 					es.Lock()
 					es.control.round = it.Event.WinnerRound.Uint64()
 					es.control.controller = it.Event.WinningBidder
+					es.control.sequence = 0 // Sequence resets 0 for the new round.
 					es.Unlock()
 				}
 				fromBlock = toBlock
@@ -154,28 +159,52 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 	})
 }
 
-func (es *expressLaneService) isExpressLaneTx(sender common.Address) bool {
+// A transaction is an express lane transaction if it is sent to a chain's predefined reserved address.
+func (es *expressLaneService) isExpressLaneTx(to common.Address) bool {
 	es.RLock()
 	defer es.RUnlock()
-	round := timeboost.CurrentRound(es.initialTimestamp, es.roundDuration)
-	log.Info("Current round", "round", round, "controller", es.control.controller, "sender", sender)
-	return round == es.control.round && sender == es.control.controller
+
+	return to == es.reservedAddress
 }
 
-func (es *expressLaneService) isOuterExpressLaneTx(to *common.Address) bool {
-	es.RLock()
-	defer es.RUnlock()
-	round := timeboost.CurrentRound(es.initialTimestamp, es.roundDuration)
-	log.Info("Current round", "round", round, "controller", es.control.controller, "to", to)
-	return round == es.control.round && to == es.reservedAddress
-}
+// An express lane transaction is valid if it satisfies the following conditions:
+// 1. The tx round expressed under `maxPriorityFeePerGas` equals the current round number.
+// 2. The tx sequence expressed under `nonce` equals the current round sequence.
+// 3. The tx sender equals the current round’s priority controller address.
+func (es *expressLaneService) validateExpressLaneTx(tx *types.Transaction) error {
+	es.Lock()
+	defer es.Unlock()
 
-func unwrapTx(outerTx *types.Transaction) (*types.Transaction, error) {
-	encodedInnerTx := outerTx.Data()
-	var innerTx types.Transaction
-	err := rlp.DecodeBytes(encodedInnerTx, &innerTx)
+	currentRound := timeboost.CurrentRound(es.initialTimestamp, es.roundDuration)
+	round := tx.GasTipCap().Uint64()
+	if round != currentRound {
+		return fmt.Errorf("express lane tx round %d does not match current round %d", round, currentRound)
+	}
+
+	sequence := tx.Nonce()
+	if sequence != es.control.sequence {
+		// TODO: Cache out-of-order sequenced express lane transactions and replay them once the gap is filled.
+		return fmt.Errorf("express lane tx sequence %d does not match current round sequence %d", sequence, es.control.sequence)
+	}
+	es.control.sequence++
+
+	signer := types.LatestSigner(es.chainConfig)
+	sender, err := types.Sender(signer, tx)
 	if err != nil {
-		return nil, err
+		return err
+	}
+	if sender != es.control.controller {
+		return fmt.Errorf("express lane tx sender %s does not match current round controller %s", sender, es.control.controller)
+	}
+	return nil
+}
+
+// unwrapExpressLaneTx extracts the inner "wrapped" transaction from the data field of an express lane transaction.
+func unwrapExpressLaneTx(tx *types.Transaction) (*types.Transaction, error) {
+	encodedInnerTx := tx.Data()
+	var innerTx types.Transaction
+	if err := rlp.DecodeBytes(encodedInnerTx, &innerTx); err != nil {
+		return nil, fmt.Errorf("failed to decode inner transaction: %w", err)
 	}
 	return &innerTx, nil
 }
