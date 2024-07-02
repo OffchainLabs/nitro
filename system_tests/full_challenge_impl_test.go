@@ -283,7 +283,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	configByValidationNode(conf, valStack)
 
 	fatalErrChan := make(chan error, 10)
-	locator, err := server_common.NewMachineLocator("")
+	locator, err := server_common.NewMachineLocator(wasmRootDir)
 	Require(t, err)
 	asserterRollupAddresses, initMessage := DeployOnTestL1(t, ctx, l1Info, l1Backend, chainConfig, locator.LatestWasmModuleRoot())
 
