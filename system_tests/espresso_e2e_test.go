@@ -537,7 +537,7 @@ func TestEspressoE2E(t *testing.T) {
 		// Wait for the switch to be totally finished
 		currMsg, err := node.ConsensusNode.TxStreamer.GetMessageCount()
 		Require(t, err)
-		validatedMsg := arbutil.MessageIndex(0)
+		var validatedMsg arbutil.MessageIndex
 		err = waitForWith(t, ctx, 6*time.Minute, 60*time.Second, func() bool {
 
 			validatedCnt := node.ConsensusNode.BlockValidator.Validated(t)
@@ -557,6 +557,17 @@ func TestEspressoE2E(t *testing.T) {
 		err = waitForWith(t, ctx, 3*time.Minute, 20*time.Second, func() bool {
 			validated := node.ConsensusNode.BlockValidator.Validated(t)
 			return validated >= validatedMsg
+		})
+		Require(t, err)
+
+		// Unfreeze the l1 height
+		err = lightclientmock.UnfreezeL1Height(t, builder.L1.Client, address, &txOpts)
+		Require(t, err)
+
+		// Check if the validated count is increasing
+		err = waitForWith(t, ctx, 3*time.Minute, 20*time.Second, func() bool {
+			validated := node.ConsensusNode.BlockValidator.Validated(t)
+			return validated >= validatedMsg+10
 		})
 		Require(t, err)
 
