@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"net"
 	"sync"
 	"testing"
@@ -73,18 +72,16 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 		}
 	}()
 	testhelpers.RequireImpl(t, err)
-	beConfig := BackendConfig{
-		URL:                 "http://" + lis.Addr().String(),
-		PubKeyBase64Encoded: blsPubToBase64(pubkey),
-		SignerMask:          1,
-	}
+	beConfigs := BackendConfigList{BackendConfig{
+		URL:    "http://" + lis.Addr().String(),
+		Pubkey: blsPubToBase64(pubkey),
+	}}
 
-	backendsJsonByte, err := json.Marshal([]BackendConfig{beConfig})
 	testhelpers.RequireImpl(t, err)
 	aggConf := DataAvailabilityConfig{
 		RPCAggregator: AggregatorConfig{
 			AssumedHonest:         1,
-			Backends:              string(backendsJsonByte),
+			Backends:              beConfigs,
 			MaxStoreChunkBodySize: (chunkSize * 2) + len(sendChunkJSONBoilerplate),
 		},
 		RequestTimeout: time.Minute,
@@ -96,7 +93,7 @@ func testRpcImpl(t *testing.T, size, times int, concurrent bool) {
 	runStore := func() {
 		defer wg.Done()
 		msg := testhelpers.RandomizeSlice(make([]byte, size))
-		cert, err := rpcAgg.Store(ctx, msg, 0, nil)
+		cert, err := rpcAgg.Store(ctx, msg, 0)
 		testhelpers.RequireImpl(t, err)
 
 		retrievedMessage, err := storageService.GetByHash(ctx, cert.DataHash)

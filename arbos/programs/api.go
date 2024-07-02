@@ -266,6 +266,10 @@ func newApiClosures(
 	}
 	captureHostio := func(name string, args, outs []byte, startInk, endInk uint64) {
 		tracingInfo.Tracer.CaptureStylusHostio(name, args, outs, startInk, endInk)
+		if name == "evm_gas_left" || name == "evm_ink_left" {
+			tracingInfo.Tracer.CaptureState(0, vm.GAS, 0, 0, scope, []byte{}, depth, nil)
+			tracingInfo.Tracer.CaptureState(0, vm.POP, 0, 0, scope, []byte{}, depth, nil)
+		}
 	}
 
 	return func(req RequestType, input []byte) ([]byte, []byte, uint64) {
