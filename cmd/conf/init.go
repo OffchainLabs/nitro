@@ -16,6 +16,7 @@ type InitConfig struct {
 	Url                      string        `koanf:"url"`
 	Latest                   string        `koanf:"latest"`
 	LatestBase               string        `koanf:"latest-base"`
+	ValidateChecksum         bool          `koanf:"validate-checksum"`
 	DownloadPath             string        `koanf:"download-path"`
 	DownloadPoll             time.Duration `koanf:"download-poll"`
 	DevInit                  bool          `koanf:"dev-init"`
@@ -39,6 +40,7 @@ var InitConfigDefault = InitConfig{
 	Url:                      "",
 	Latest:                   "",
 	LatestBase:               "https://snapshot.arbitrum.foundation/",
+	ValidateChecksum:         true,
 	DownloadPath:             "/tmp/",
 	DownloadPoll:             time.Minute,
 	DevInit:                  false,
@@ -62,6 +64,7 @@ func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".url", InitConfigDefault.Url, "url to download initialization data - will poll if download fails")
 	f.String(prefix+".latest", InitConfigDefault.Latest, "if set, searches for the latest snapshot of the given kind "+acceptedSnapshotKindsStr)
 	f.String(prefix+".latest-base", InitConfigDefault.LatestBase, "base url used when searching for the latest")
+	f.Bool(prefix+".validate-checksum", InitConfigDefault.ValidateChecksum, "if true: validate the checksum after downloading the snapshot")
 	f.String(prefix+".download-path", InitConfigDefault.DownloadPath, "path to save temp downloaded file")
 	f.Duration(prefix+".download-poll", InitConfigDefault.DownloadPoll, "how long to wait between polling attempts")
 	f.Bool(prefix+".dev-init", InitConfigDefault.DevInit, "init with dev data (1 account with balance) instead of file import")
