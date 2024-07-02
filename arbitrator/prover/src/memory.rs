@@ -310,13 +310,15 @@ impl Memory {
     pub fn resize(&mut self, new_size: usize) {
         self.buffer.resize(new_size, 0);
         if let Some(merkle) = self.merkle.take() {
-            merkle.resize(new_size).unwrap_or_else(|_| {
-                panic!(
-                    "Couldn't resize merkle tree from {} to {}",
-                    merkle.len(),
-                    new_size
-                )
-            });
+            merkle
+                .resize(new_size / Self::LEAF_SIZE)
+                .unwrap_or_else(|_| {
+                    panic!(
+                        "Couldn't resize merkle tree from {} to {}",
+                        merkle.len(),
+                        new_size
+                    )
+                });
             self.merkle = Some(merkle);
         }
     }
