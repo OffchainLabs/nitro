@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
-	"math"
 	"math/big"
 	"os"
 	"sync"
@@ -63,26 +62,29 @@ type SyncToStorageConfig struct {
 	IgnoreWriteErrors        bool          `koanf:"ignore-write-errors"`
 	ParentChainBlocksPerRead uint64        `koanf:"parent-chain-blocks-per-read"`
 	StateDir                 string        `koanf:"state-dir"`
+	SyncExpiredData          bool          `koanf:"sync-expired-data"`
 }
 
 var DefaultSyncToStorageConfig = SyncToStorageConfig{
 	Eager:                    false,
 	EagerLowerBoundBlock:     0,
-	RetentionPeriod:          time.Duration(math.MaxInt64),
+	RetentionPeriod:          defaultStorageRetention,
 	DelayOnError:             time.Second,
 	IgnoreWriteErrors:        true,
 	ParentChainBlocksPerRead: 100,
 	StateDir:                 "",
+	SyncExpiredData:          true,
 }
 
 func SyncToStorageConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".eager", DefaultSyncToStorageConfig.Eager, "eagerly sync batch data to this DAS's storage from the rest endpoints, using L1 as the index of batch data hashes; otherwise only sync lazily")
 	f.Uint64(prefix+".eager-lower-bound-block", DefaultSyncToStorageConfig.EagerLowerBoundBlock, "when eagerly syncing, start indexing forward from this L1 block. Only used if there is no sync state")
 	f.Uint64(prefix+".parent-chain-blocks-per-read", DefaultSyncToStorageConfig.ParentChainBlocksPerRead, "when eagerly syncing, max l1 blocks to read per poll")
-	f.Duration(prefix+".retention-period", DefaultSyncToStorageConfig.RetentionPeriod, "period to retain synced data (defaults to forever)")
+	f.Duration(prefix+".retention-period", DefaultSyncToStorageConfig.RetentionPeriod, "period to request storage to retain synced data")
 	f.Duration(prefix+".delay-on-error", DefaultSyncToStorageConfig.DelayOnError, "time to wait if encountered an error before retrying")
 	f.Bool(prefix+".ignore-write-errors", DefaultSyncToStorageConfig.IgnoreWriteErrors, "log only on failures to write when syncing; otherwise treat it as an error")
 	f.String(prefix+".state-dir", DefaultSyncToStorageConfig.StateDir, "directory to store the sync state in, ie the block number currently synced up to, so that we don't sync from scratch each time")
+	f.Bool(prefix+".sync-expired-data", DefaultSyncToStorageConfig.SyncExpiredData, "sync even data that is expired; needed for mirror configuration")
 }
 
 type l1SyncService struct {
@@ -191,7 +193,7 @@ func (s *l1SyncService) processBatchDelivered(ctx context.Context, batchDelivere
 	}
 	log.Info("BatchDelivered", "log", batchDeliveredLog, "event", deliveredEvent)
 	storeUntil := arbmath.SaturatingUAdd(deliveredEvent.TimeBounds.MaxTimestamp, uint64(s.config.RetentionPeriod.Seconds()))
-	if storeUntil < uint64(time.Now().Unix()) {
+	if !s.config.SyncExpiredData && storeUntil < uint64(time.Now().Unix()) {
 		// old batch - no need to store
 		return nil
 	}

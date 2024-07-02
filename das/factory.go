@@ -35,7 +35,11 @@ func CreatePersistentStorageService(
 	}
 
 	if config.LocalFileStorage.Enable {
-		s, err := NewLocalFileStorageService(config.LocalFileStorage.DataDir)
+		s, err := NewLocalFileStorageService(config.LocalFileStorage)
+		if err != nil {
+			return nil, nil, err
+		}
+		err = s.start(ctx)
 		if err != nil {
 			return nil, nil, err
 		}
