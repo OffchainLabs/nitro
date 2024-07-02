@@ -129,7 +129,8 @@ type blockHashDBValue struct {
 }
 
 const (
-	BlockHashMismatchLogMsg = "BlockHash from feed doesn't match locally computed hash. Check feed source."
+	BlockHashMismatchLogMsg    = "BlockHash from feed doesn't match locally computed hash. Check feed source."
+	FailedToGetMsgResultFromDB = "Streamer: failed getting message result from db"
 )
 
 // Encodes a uint64 as bytes in a lexically sortable manner for database iteration.
@@ -388,8 +389,8 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 	}
 
 	for i := 0; i < len(messagesResults); i++ {
-		pos := count + arbutil.MessageIndex(i) - 1
-		err = s.saveResult(pos, *messagesResults[i], batch)
+		pos := count + arbutil.MessageIndex(i)
+		err = s.storeResult(pos, *messagesResults[i], batch)
 		if err != nil {
 			return err
 		}
@@ -1072,7 +1073,7 @@ func (s *TransactionStreamer) ResultAtCount(count arbutil.MessageIndex) (*execut
 		return nil, err
 	}
 
-	log.Warn("streamer: failed getting message result from db", "count", count, "err", err)
+	log.Warn(FailedToGetMsgResultFromDB, "count", count, "err", err)
 	return s.exec.ResultAtPos(pos)
 }
 
@@ -1090,7 +1091,7 @@ func (s *TransactionStreamer) checkResult(msgResult *execution.MessageResult, ex
 	}
 }
 
-func (s *TransactionStreamer) saveResult(
+func (s *TransactionStreamer) storeResult(
 	pos arbutil.MessageIndex,
 	msgResult execution.MessageResult,
 	batch ethdb.Batch,
@@ -1156,14 +1157,14 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context, exec execution
 	s.checkResult(msgResult, msgAndBlockHash.BlockHash)
 
 	batch := s.db.NewBatch()
-	err = s.saveResult(pos, *msgResult, batch)
+	err = s.storeResult(pos, *msgResult, batch)
 	if err != nil {
-		log.Error("feedOneMsg failed to save result", "err", err)
+		log.Error("feedOneMsg failed to store result", "err", err)
 		return false
 	}
 	err = batch.Write()
 	if err != nil {
-		log.Error("feedOneMsg failed to save result", "err", err)
+		log.Error("feedOneMsg failed to store result", "err", err)
 		return false
 	}
 

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"reflect"
 	"testing"
 	"time"
 
@@ -17,9 +18,11 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster/backlog"
 	"github.com/offchainlabs/nitro/broadcaster/message"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/relay"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -144,8 +147,36 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	}
 }
 
+func comparesMsgResultFromConsensusAndExecution(
+	t *testing.T,
+	testClient *TestClient,
+	testScenario string,
+) *execution.MessageResult {
+	pos := 1
+	count := pos + 1
+
+	headMsgNum, err := testClient.ExecNode.HeadMessageNumber()
+	Require(t, err)
+	if headMsgNum != arbutil.MessageIndex(pos) {
+		t.Fatal("Unexpected head message number:", headMsgNum, "pos: ", pos, "testScenario:", testScenario)
+	}
+
+	resultExec, err := testClient.ExecNode.ResultAtPos(arbutil.MessageIndex(pos))
+	Require(t, err)
+	resultConsensus, err := testClient.ConsensusNode.TxStreamer.ResultAtCount(arbutil.MessageIndex(count))
+	Require(t, err)
+	if !reflect.DeepEqual(resultExec, resultConsensus) {
+		t.Fatal("resultExec", resultExec, "is different than resultConsensus", resultConsensus, "testScenario:", testScenario)
+	}
+
+	return resultExec
+}
+
 func testLyingSequencer(t *testing.T, dasModeStr string) {
 	t.Parallel()
+
+	logHandler := testhelpers.InitTestLog(t, log.LvlTrace)
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -224,7 +255,9 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 		t.Fatal("Unexpected balance:", l2balance)
 	}
 
-	// Send the real transaction to client A
+	fraudResult := comparesMsgResultFromConsensusAndExecution(t, testClientB, "fraud")
+
+	// Send the real transaction to client A, will cause a reorg on nodeB
 	err = l2clientA.SendTransaction(ctx, realTx)
 	if err != nil {
 		t.Fatal("error sending real transaction:", err)
@@ -254,6 +287,16 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	}
 	if l2balanceRealAcct.Cmp(big.NewInt(1e12)) != 0 {
 		t.Fatal("Unexpected balance of real account:", l2balanceRealAcct)
+	}
+
+	// Consensus should update message result stored in its database after a reorg
+	realResult := comparesMsgResultFromConsensusAndExecution(t, testClientB, "real")
+	// Checks that results changed
+	if reflect.DeepEqual(fraudResult, realResult) {
+		t.Fatal("realResult and fraudResult are equal")
+	}
+	if logHandler.WasLogged(arbnode.FailedToGetMsgResultFromDB) {
+		t.Fatal("Consensus relied on execution database to return the results")
 	}
 }
 
