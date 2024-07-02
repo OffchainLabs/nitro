@@ -4,6 +4,7 @@
 package util
 
 import (
+	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -45,6 +46,26 @@ func NewTracingInfo(evm *vm.EVM, from, to common.Address, scenario TracingScenar
 		Contract: vm.NewContract(addressHolder{to}, addressHolder{from}, uint256.NewInt(0), 0),
 		Depth:    evm.Depth(),
 	}
+}
+
+func (info *TracingInfo) RecordEmitLog(topics []common.Hash, data []byte) {
+	size := uint64(len(data))
+	var args []uint256.Int
+	args = append(args, *uint256.NewInt(0))
+	args = append(args, *uint256.NewInt(size))
+	for _, topic := range topics {
+		args = append(args, HashToUint256(topic))
+	}
+	memory := vm.NewMemory()
+	memory.Resize(size)
+	memory.Set(0, size, data)
+	scope := &vm.ScopeContext{
+		Memory:   memory,
+		Stack:    TracingStackFromArgs(args...),
+		Contract: info.Contract,
+	}
+	logType := fmt.Sprintf("LOG%d", len(topics))
+	info.Tracer.CaptureState(0, vm.StringToOp(logType), 0, 0, scope, []byte{}, info.Depth, nil)
 }
 
 func (info *TracingInfo) RecordStorageGet(key common.Hash) {

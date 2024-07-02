@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -641,10 +642,15 @@ func testReturnData(t *testing.T, jit bool) {
 
 func TestProgramLogs(t *testing.T) {
 	t.Parallel()
-	testLogs(t, true)
+	testLogs(t, true, false)
 }
 
-func testLogs(t *testing.T, jit bool) {
+func TestProgramLogsWithTracing(t *testing.T) {
+	t.Parallel()
+	testLogs(t, true, true)
+}
+
+func testLogs(t *testing.T, jit, tracing bool) {
 	builder, auth, cleanup := setupProgramTest(t, jit)
 	ctx := builder.ctx
 	l2info := builder.L2Info
@@ -653,6 +659,27 @@ func testLogs(t *testing.T, jit bool) {
 	logAddr := deployWasm(t, ctx, auth, l2client, rustFile("log"))
 	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 
+	type traceLog struct {
+		Address common.Address `json:"address"`
+		Topics  []common.Hash  `json:"topics"`
+		Data    hexutil.Bytes  `json:"data"`
+	}
+	traceTx := func(tx *types.Transaction) []traceLog {
+		type traceLogs struct {
+			Logs []traceLog `json:"logs"`
+		}
+		var trace traceLogs
+		traceConfig := map[string]interface{}{
+			"tracer": "callTracer",
+			"tracerConfig": map[string]interface{}{
+				"withLog": true,
+			},
+		}
+		rpc := l2client.Client()
+		err := rpc.CallContext(ctx, &trace, "debug_traceTransaction", tx.Hash(), traceConfig)
+		Require(t, err)
+		return trace.Logs
+	}
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
 		Require(t, err)
@@ -679,6 +706,20 @@ func testLogs(t *testing.T, jit bool) {
 			topics[j] = testhelpers.RandomHash()
 		}
 		data := randBytes(0, 48)
+		verifyLogTopicsAndData := func(logData []byte, logTopics []common.Hash) {
+			if !bytes.Equal(logData, data) {
+				Fatal(t, "data mismatch", logData, data)
+			}
+			if len(logTopics) != len(topics) {
+				Fatal(t, "topics mismatch", len(logTopics), len(topics))
+			}
+			for j := 0; j < i; j++ {
+				if logTopics[j] != topics[j] {
+					Fatal(t, "topic mismatch", logTopics, topics)
+				}
+			}
+		}
+
 		args := encode(topics, data)
 		tx := l2info.PrepareTxTo("Owner", &logAddr, 1e9, nil, args)
 		receipt := ensure(tx, l2client.SendTransaction(ctx, tx))
@@ -687,16 +728,14 @@ func testLogs(t *testing.T, jit bool) {
 			Fatal(t, "wrong number of logs", len(receipt.Logs))
 		}
 		log := receipt.Logs[0]
-		if !bytes.Equal(log.Data, data) {
-			Fatal(t, "data mismatch", log.Data, data)
-		}
-		if len(log.Topics) != len(topics) {
-			Fatal(t, "topics mismatch", len(log.Topics), len(topics))
-		}
-		for j := 0; j < i; j++ {
-			if log.Topics[j] != topics[j] {
-				Fatal(t, "topic mismatch", log.Topics, topics)
+		verifyLogTopicsAndData(log.Data, log.Topics)
+		if tracing {
+			logs := traceTx(tx)
+			if len(logs) != 1 {
+				Fatal(t, "wrong number of logs in trace", len(logs))
 			}
+			log := logs[0]
+			verifyLogTopicsAndData(log.Data, log.Topics)
 		}
 	}
 
