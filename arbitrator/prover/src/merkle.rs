@@ -204,7 +204,7 @@ fn new_layer(ty: MerkleType, layer: &[Bytes32], empty_hash: &'static Bytes32) ->
 
 impl Clone for Merkle {
     fn clone(&self) -> Self {
-        let leaves = self.layers.lock().data.get(0).cloned().unwrap_or_default();
+        let leaves = self.layers.lock().data.first().cloned().unwrap_or_default();
         Merkle::new_advanced(self.ty, leaves, self.min_depth)
     }
 }
