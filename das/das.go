@@ -45,6 +45,8 @@ type DataAvailabilityConfig struct {
 	LocalFileStorage LocalFileStorageConfig `koanf:"local-file-storage"`
 	S3Storage        S3StorageServiceConfig `koanf:"s3-storage"`
 
+	MigrateLocalDBToFileStorage bool `koanf:"migrate-local-db-to-file-storage"`
+
 	Key KeyConfig `koanf:"key"`
 
 	RPCAggregator  AggregatorConfig              `koanf:"rpc-aggregator"`
@@ -112,6 +114,7 @@ func dataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet, r role) {
 		LocalDBStorageConfigAddOptions(prefix+".local-db-storage", f)
 		LocalFileStorageConfigAddOptions(prefix+".local-file-storage", f)
 		S3ConfigAddOptions(prefix+".s3-storage", f)
+		f.Bool(prefix+".migrate-local-db-to-file-storage", DefaultDataAvailabilityConfig.MigrateLocalDBToFileStorage, "daserver will migrate all data on startup from local-db-storage to local-file-storage, then mark local-db-storage as unusable")
 
 		// Key config for storage
 		KeyConfigAddOptions(prefix+".key", f)
