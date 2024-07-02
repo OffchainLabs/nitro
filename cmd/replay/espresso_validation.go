@@ -8,7 +8,7 @@ import (
 	"github.com/offchainlabs/nitro/wavmio"
 )
 
-// / Perform Espresso
+// / Handle Espresso Pre Conditions
 // /
 // / Description: This function takes in the most recently recieved message (of type arbostypes.MessageWithMetadata),
 // /	 			  and a boolean from the ChainConfig
