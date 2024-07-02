@@ -51,6 +51,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
+	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -60,6 +61,7 @@ import (
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/iostat"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -402,6 +404,10 @@ func mainImpl() int {
 	if err := startMetrics(nodeConfig); err != nil {
 		log.Error("Error starting metrics", "error", err)
 		return 1
+	}
+
+	if nodeConfig.Metrics {
+		go iostat.RegisterAndPopulateMetrics(ctx, 1, 5)
 	}
 
 	var deferFuncs []func()
@@ -871,6 +877,10 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 
 	err = confighelpers.ApplyOverrides(f, k)
 	if err != nil {
+		return nil, nil, err
+	}
+
+	if err = das.FixKeysetCLIParsing("node.data-availability.rpc-aggregator.backends", k); err != nil {
 		return nil, nil, err
 	}
 

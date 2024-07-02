@@ -57,6 +57,8 @@ type ExecutionSequencer interface {
 	SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error
 	NextDelayedMessageNumber() (uint64, error)
 	MarkFeedStart(to arbutil.MessageIndex)
+	Synced() bool
+	FullSyncProgressMap() map[string]interface{}
 }
 
 type FullExecutionClient interface {

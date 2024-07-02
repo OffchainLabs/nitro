@@ -17,6 +17,7 @@ import (
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -326,6 +327,16 @@ func dirExists(path string) bool {
 	return info.IsDir()
 }
 
+var pebbleNotExistErrorRegex = regexp.MustCompile("pebble: database .* does not exist")
+
+func isPebbleNotExistError(err error) bool {
+	return pebbleNotExistErrorRegex.MatchString(err.Error())
+}
+
+func isLeveldbNotExistError(err error) bool {
+	return os.IsNotExist(err)
+}
+
 func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig, persistentConfig *conf.PersistentConfig, l1Client arbutil.L1Interface, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
 	if !config.Init.Force {
 		if readOnlyDb, err := stack.OpenDatabaseWithFreezerWithExtraOptions("l2chaindata", 0, 0, "", "l2chaindata/", true, persistentConfig.Pebble.ExtraOptions("l2chaindata")); err == nil {
@@ -396,6 +407,9 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				return chainDb, l2BlockChain, nil
 			}
 			readOnlyDb.Close()
+		} else if !isLeveldbNotExistError(err) && !isPebbleNotExistError(err) {
+			// we only want to continue if the error is pebble or leveldb not exist error
+			return nil, nil, fmt.Errorf("Failed to open database: %w", err)
 		}
 	}
 
