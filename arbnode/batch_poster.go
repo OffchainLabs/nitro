@@ -1143,6 +1143,8 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	var l1BoundMaxTimestamp uint64 = math.MaxUint64
 	var l1BoundMinBlockNumber uint64
 	var l1BoundMinTimestamp uint64
+	var l1BoundMinBlockNumberWithBypass uint64
+	var l1BoundMinTimestampWithBypass uint64
 	hasL1Bound := config.l1BlockBound != l1BlockBoundIgnore
 	if hasL1Bound {
 		var l1Bound *types.Header
@@ -1187,17 +1189,19 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		l1BoundMaxBlockNumber = arbmath.SaturatingUAdd(l1BoundBlockNumber, arbmath.BigToUintSaturating(maxTimeVariationFutureBlocks))
 		l1BoundMaxTimestamp = arbmath.SaturatingUAdd(l1Bound.Time, arbmath.BigToUintSaturating(maxTimeVariationFutureSeconds))
 
+		latestHeader, err := b.l1Reader.LastHeader(ctx)
+		if err != nil {
+			return false, err
+		}
+		latestBlockNumber := arbutil.ParentHeaderToL1BlockNumber(latestHeader)
+		l1BoundMinBlockNumber = arbmath.SaturatingUSub(latestBlockNumber, arbmath.BigToUintSaturating(maxTimeVariationDelayBlocks))
+		l1BoundMinTimestamp = arbmath.SaturatingUSub(latestHeader.Time, arbmath.BigToUintSaturating(maxTimeVariationDelaySeconds))
+
 		if config.L1BlockBoundBypass > 0 {
-			latestHeader, err := b.l1Reader.LastHeader(ctx)
-			if err != nil {
-				return false, err
-			}
-			latestBlockNumber := arbutil.ParentHeaderToL1BlockNumber(latestHeader)
 			blockNumberWithPadding := arbmath.SaturatingUAdd(latestBlockNumber, uint64(config.L1BlockBoundBypass/ethPosBlockTime))
 			timestampWithPadding := arbmath.SaturatingUAdd(latestHeader.Time, uint64(config.L1BlockBoundBypass/time.Second))
-
-			l1BoundMinBlockNumber = arbmath.SaturatingUSub(blockNumberWithPadding, arbmath.BigToUintSaturating(maxTimeVariationDelayBlocks))
-			l1BoundMinTimestamp = arbmath.SaturatingUSub(timestampWithPadding, arbmath.BigToUintSaturating(maxTimeVariationDelaySeconds))
+			l1BoundMinBlockNumberWithBypass = arbmath.SaturatingUSub(blockNumberWithPadding, arbmath.BigToUintSaturating(maxTimeVariationDelayBlocks))
+			l1BoundMinTimestampWithBypass = arbmath.SaturatingUSub(timestampWithPadding, arbmath.BigToUintSaturating(maxTimeVariationDelaySeconds))
 		}
 	}
 
@@ -1207,13 +1211,14 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			log.Error("error getting message from streamer", "error", err)
 			break
 		}
-		if msg.Message.Header.BlockNumber < l1BoundMinBlockNumber || msg.Message.Header.Timestamp < l1BoundMinTimestamp {
+		if msg.Message.Header.BlockNumber < l1BoundMinBlockNumberWithBypass || msg.Message.Header.Timestamp < l1BoundMinTimestampWithBypass {
 			log.Error(
 				"disabling L1 bound as batch posting message is close to the maximum delay",
 				"blockNumber", msg.Message.Header.BlockNumber,
-				"l1BoundMinBlockNumber", l1BoundMinBlockNumber,
+				"l1BoundMinBlockNumberWithBypass", l1BoundMinBlockNumberWithBypass,
 				"timestamp", msg.Message.Header.Timestamp,
-				"l1BoundMinTimestamp", l1BoundMinTimestamp,
+				"l1BoundMinTimestampWithBypass", l1BoundMinTimestampWithBypass,
+				"l1BlockBoundBypass", config.L1BlockBoundBypass,
 			)
 			l1BoundMaxBlockNumber = math.MaxUint64
 			l1BoundMaxTimestamp = math.MaxUint64
@@ -1249,20 +1254,22 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		b.building.msgCount++
 	}
 
-	firstMsgTimeStamp := firstMsg.Message.Header.Timestamp
-	firstMsgBlockNumber := firstMsg.Message.Header.BlockNumber
-	batchNearL1BoundMinTimestamp := firstMsgTimeStamp <= l1BoundMinTimestamp+uint64(config.ReorgResistanceMargin/time.Second)
-	batchNearL1BoundMinBlockNumber := firstMsgBlockNumber <= l1BoundMinBlockNumber+uint64(config.ReorgResistanceMargin/ethPosBlockTime)
-	if config.ReorgResistanceMargin > 0 && (batchNearL1BoundMinTimestamp || batchNearL1BoundMinBlockNumber) {
-		log.Error(
-			"Disabling batch posting due to batch being within reorg resistance margin from layer 1 minimum block or timestamp bounds",
-			"reorgResistanceMargin", config.ReorgResistanceMargin,
-			"firstMsgTimeStamp", firstMsgTimeStamp,
-			"l1BoundMinTimestamp", l1BoundMinTimestamp,
-			"firstMsgBlockNumber", firstMsgBlockNumber,
-			"l1BoundMinBlockNumber", l1BoundMinBlockNumber,
-		)
-		return false, errors.New("batch is within reorg resistance margin from layer 1 minimum block or timestamp bounds")
+	if hasL1Bound && config.ReorgResistanceMargin > 0 {
+		firstMsgBlockNumber := firstMsg.Message.Header.BlockNumber
+		firstMsgTimeStamp := firstMsg.Message.Header.Timestamp
+		batchNearL1BoundMinBlockNumber := firstMsgBlockNumber <= arbmath.SaturatingUAdd(l1BoundMinBlockNumber, uint64(config.ReorgResistanceMargin/ethPosBlockTime))
+		batchNearL1BoundMinTimestamp := firstMsgTimeStamp <= arbmath.SaturatingUAdd(l1BoundMinTimestamp, uint64(config.ReorgResistanceMargin/time.Second))
+		if batchNearL1BoundMinTimestamp || batchNearL1BoundMinBlockNumber {
+			log.Error(
+				"Disabling batch posting due to batch being within reorg resistance margin from layer 1 minimum block or timestamp bounds",
+				"reorgResistanceMargin", config.ReorgResistanceMargin,
+				"firstMsgTimeStamp", firstMsgTimeStamp,
+				"l1BoundMinTimestamp", l1BoundMinTimestamp,
+				"firstMsgBlockNumber", firstMsgBlockNumber,
+				"l1BoundMinBlockNumber", l1BoundMinBlockNumber,
+			)
+			return false, errors.New("batch is within reorg resistance margin from layer 1 minimum block or timestamp bounds")
+		}
 	}
 
 	if !forcePostBatch || !b.building.haveUsefulMessage {
