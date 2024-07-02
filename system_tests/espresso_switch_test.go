@@ -53,16 +53,11 @@ func TestEspressoSwitch(t *testing.T) {
 	})
 	Require(t, err)
 
-	// Make sure it is a totally new account
 	newAccount := "User10"
+	// It will panic if this is not a new account
 	l2Info.GenerateAccount(newAccount)
 	addr := l2Info.GetAddress(newAccount)
-	balance := l2Node.GetBalance(t, addr)
-	if balance.Cmp(big.NewInt(0)) > 0 {
-		Fatal(t, "empty account")
-	}
 
-	// Check if the tx is executed correctly
 	transferAmount := big.NewInt(1e16)
 	tx := l2Info.PrepareTx("Faucet", newAccount, 3e7, transferAmount, nil)
 	err = l2Node.Client.SendTransaction(ctx, tx)

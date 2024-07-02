@@ -116,18 +116,19 @@ func (s *SwitchSequencer) Start(ctx context.Context) error {
 
 	if s.lightClient != nil {
 		s.CallIteratively(func(ctx context.Context) time.Duration {
-			espresso, err := s.lightClient.IsHotShotLive(s.swtichDelayThreshold)
+			isLive, err := s.lightClient.IsHotShotLive(s.swtichDelayThreshold)
 			if err != nil {
-				return 0
+				return s.switchPollInterval
 			}
 
-			if s.IsRunningEspressoMode() && !espresso {
+			if s.IsRunningEspressoMode() && !isLive {
 				err = s.SwitchToCentralized(ctx)
-			} else if !s.IsRunningEspressoMode() && espresso {
+			} else if !s.IsRunningEspressoMode() && isLive {
 				err = s.SwitchToEspresso(ctx)
 			}
 
 			if err != nil {
+				log.Error("Error swithcing mode", "err", err)
 				return 0
 			}
 			return s.switchPollInterval

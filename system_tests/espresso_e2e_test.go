@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	lightclientmock "github.com/EspressoSystems/espresso-sequencer-go/light-client-mock"
 	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -33,13 +34,11 @@ import (
 
 var workingDir = "./espresso-e2e"
 
-// light client
-// var lightClientAddress = "0x60571c8f4b52954a24a5e7306d435e951528d963"
-
 // light client proxy
 var lightClientAddress = "0xb075b82c7a23e0994df4793422a1f03dbcf9136f"
 
 var hotShotUrl = "http://127.0.0.1:41000"
+var delayThreshold = 10
 
 var (
 	jitValidationPort = 54320
@@ -83,6 +82,9 @@ func createL2Node(ctx context.Context, t *testing.T, hotshot_url string, builder
 	nodeConfig.DelayedSequencer.Enable = true
 	nodeConfig.Sequencer = true
 	nodeConfig.Espresso = true
+	builder.execConfig.Sequencer.LightClientAddress = lightClientAddress
+	builder.execConfig.Sequencer.SwitchPollInterval = 10 * time.Second
+	builder.execConfig.Sequencer.SwitchDelayThreshold = uint64(delayThreshold)
 	builder.execConfig.Sequencer.Enable = true
 	builder.execConfig.Sequencer.Espresso = true
 	builder.execConfig.Sequencer.EspressoNamespace = builder.chainConfig.ChainID.Uint64()
@@ -355,9 +357,9 @@ func runNodes(ctx context.Context, t *testing.T) (*NodeBuilder, *TestClient, *Bl
 
 	return builder, l2Node, l2Info, func() {
 		cleanL2Node()
-		cleanEspresso()
 		cleanup()
 		cleanValNode()
+		cleanEspresso()
 	}
 }
 
@@ -397,27 +399,8 @@ func TestEspressoE2E(t *testing.T) {
 	})
 	Require(t, err)
 
-	// Make sure it is a totally new account
-	newAccount := "User10"
-	l2Info.GenerateAccount(newAccount)
-	addr := l2Info.GetAddress(newAccount)
-	balance := l2Node.GetBalance(t, addr)
-	if balance.Cmp(big.NewInt(0)) > 0 {
-		Fatal(t, "empty account")
-	}
-
 	// Check if the tx is executed correctly
-	transferAmount := big.NewInt(1e16)
-	tx := l2Info.PrepareTx("Faucet", newAccount, 3e7, transferAmount, nil)
-	err = l2Node.Client.SendTransaction(ctx, tx)
-	log.Info("Sent faucet tx", "hash", tx.Hash().Hex())
-	Require(t, err)
-
-	err = waitForWith(t, ctx, time.Second*300, time.Second*1, func() bool {
-		balance := l2Node.GetBalance(t, addr)
-		log.Info("waiting for balance", "account", newAccount, "addr", addr, "balance", balance)
-		return balance.Cmp(transferAmount) >= 0
-	})
+	err = checkTransferTxOnL2(t, ctx, l2Node, "User10", l2Info)
 	Require(t, err)
 
 	// Remember the number of messages
@@ -439,14 +422,9 @@ func TestEspressoE2E(t *testing.T) {
 	})
 	Require(t, err)
 
-	// Make sure it is a totally new account
 	newAccount2 := "User11"
 	l2Info.GenerateAccount(newAccount2)
 	addr2 := l2Info.GetAddress(newAccount2)
-	balance2 := l2Node.GetBalance(t, addr2)
-	if balance2.Cmp(big.NewInt(0)) > 0 {
-		Fatal(t, "empty account")
-	}
 
 	// Transfer via the delayed inbox
 	delayedTx := l2Info.PrepareTx("Owner", newAccount2, 3e7, transferAmount, nil)
@@ -519,9 +497,9 @@ func TestEspressoE2E(t *testing.T) {
 		}
 
 		i += 1
-		conflict1, err := validatorUtils.FindStakerConflict(&bind.CallOpts{}, builder.L2.ConsensusNode.DeployInfo.Rollup, goodOpts.From, badOpts1.From, big.NewInt(1024))
+		conflict1, err := validatorUtils.FindStakerConflict(nil, builder.L2.ConsensusNode.DeployInfo.Rollup, goodOpts.From, badOpts1.From, big.NewInt(1024))
 		Require(t, err)
-		conflict2, err := validatorUtils.FindStakerConflict(&bind.CallOpts{}, builder.L2.ConsensusNode.DeployInfo.Rollup, goodOpts.From, badOpts2.From, big.NewInt(1024))
+		conflict2, err := validatorUtils.FindStakerConflict(nil, builder.L2.ConsensusNode.DeployInfo.Rollup, goodOpts.From, badOpts2.From, big.NewInt(1024))
 		Require(t, err)
 		condition := staker.ConflictType(conflict1.Ty) == staker.CONFLICT_TYPE_FOUND && staker.ConflictType(conflict2.Ty) == staker.CONFLICT_TYPE_FOUND
 		if !condition {
@@ -538,6 +516,61 @@ func TestEspressoE2E(t *testing.T) {
 
 	checkStaker := os.Getenv("E2E_CHECK_STAKER")
 	if checkStaker == "" {
+		log.Info("Checking the escape hatch")
+		// Start to check the escape hatch
+		address := common.HexToAddress(lightClientAddress)
+
+		txOpts := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
+		// Freeze the l1 height
+		err := lightclientmock.FreezeL1Height(t, builder.L1.Client, address, &txOpts)
+		Require(t, err)
+
+		err = waitForWith(t, ctx, 1*time.Minute, 1*time.Second, func() bool {
+			isLive, err := lightclientmock.IsHotShotLive(t, builder.L1.Client, address, uint64(delayThreshold))
+			if err != nil {
+				return false
+			}
+			return !isLive
+		})
+		Require(t, err)
+
+		// Wait for the switch to be totally finished
+		currMsg, err := node.ConsensusNode.TxStreamer.GetMessageCount()
+		Require(t, err)
+		var validatedMsg arbutil.MessageIndex
+		err = waitForWith(t, ctx, 6*time.Minute, 60*time.Second, func() bool {
+
+			validatedCnt := node.ConsensusNode.BlockValidator.Validated(t)
+			if validatedCnt >= currMsg {
+				validatedMsg = validatedCnt
+				return true
+			}
+			return false
+		})
+		Require(t, err)
+
+		err = checkTransferTxOnL2(t, ctx, l2Node, "User12", l2Info)
+		Require(t, err)
+		err = checkTransferTxOnL2(t, ctx, l2Node, "User13", l2Info)
+		Require(t, err)
+
+		err = waitForWith(t, ctx, 3*time.Minute, 20*time.Second, func() bool {
+			validated := node.ConsensusNode.BlockValidator.Validated(t)
+			return validated >= validatedMsg
+		})
+		Require(t, err)
+
+		// Unfreeze the l1 height
+		err = lightclientmock.UnfreezeL1Height(t, builder.L1.Client, address, &txOpts)
+		Require(t, err)
+
+		// Check if the validated count is increasing
+		err = waitForWith(t, ctx, 3*time.Minute, 20*time.Second, func() bool {
+			validated := node.ConsensusNode.BlockValidator.Validated(t)
+			return validated >= validatedMsg+10
+		})
+		Require(t, err)
+
 		return
 	}
 	err = waitForWith(
@@ -575,4 +608,29 @@ func TestEspressoE2E(t *testing.T) {
 
 		})
 	Require(t, err)
+}
+
+func checkTransferTxOnL2(
+	t *testing.T,
+	ctx context.Context,
+	l2Node *TestClient,
+	account string,
+	l2Info *BlockchainTestInfo,
+) error {
+	l2Info.GenerateAccount(account)
+	transferAmount := big.NewInt(1e16)
+	tx := l2Info.PrepareTx("Faucet", account, 3e7, transferAmount, nil)
+
+	err := l2Node.Client.SendTransaction(ctx, tx)
+	if err != nil {
+		return err
+	}
+
+	addr := l2Info.GetAddress(account)
+
+	return waitForWith(t, ctx, time.Second*300, time.Second*1, func() bool {
+		balance := l2Node.GetBalance(t, addr)
+		log.Info("waiting for balance", "account", account, "addr", addr, "balance", balance)
+		return balance.Cmp(transferAmount) >= 0
+	})
 }
