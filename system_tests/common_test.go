@@ -28,6 +28,7 @@ import (
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/deploy"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/timeboost/bindings"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
@@ -850,6 +851,71 @@ func createTestNodeWithL1(
 		sequencerTxOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
 		sequencerTxOptsPtr = &sequencerTxOpts
 		dataSigner = signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("Sequencer").PrivateKey)
+
+		// Deploy the express lane auction contract and erc20 to the parent chain.
+		// TODO: This should be deployed to L2 instead.
+		// TODO: Move this somewhere better.
+		// Deploy the token as a mock erc20.
+		erc20Addr, tx, erc20, err := bindings.DeployMockERC20(&sequencerTxOpts, l1client)
+		Require(t, err)
+		if _, err = bind.WaitMined(ctx, l1client, tx); err != nil {
+			t.Fatal(err)
+		}
+		tx, err = erc20.Initialize(&sequencerTxOpts, "LANE", "LNE", 18)
+		Require(t, err)
+		if _, err = bind.WaitMined(ctx, l1client, tx); err != nil {
+			t.Fatal(err)
+		}
+
+		// Fund the auction master.
+		l1info.GenerateAccount("AuctionMaster")
+		TransferBalance(t, "Faucet", "AuctionMaster", arbmath.BigMulByUint(oneEth, 500), l1info, l1client, ctx)
+
+		// Mint some tokens to Alice and Bob.
+		l1info.GenerateAccount("Alice")
+		l1info.GenerateAccount("Bob")
+		TransferBalance(t, "Faucet", "Alice", arbmath.BigMulByUint(oneEth, 500), l1info, l1client, ctx)
+		TransferBalance(t, "Faucet", "Bob", arbmath.BigMulByUint(oneEth, 500), l1info, l1client, ctx)
+		aliceOpts := l1info.GetDefaultTransactOpts("Alice", ctx)
+		bobOpts := l1info.GetDefaultTransactOpts("Bob", ctx)
+		tx, err = erc20.Mint(&sequencerTxOpts, aliceOpts.From, big.NewInt(100))
+		Require(t, err)
+		if _, err = bind.WaitMined(ctx, l1client, tx); err != nil {
+			t.Fatal(err)
+		}
+		tx, err = erc20.Mint(&sequencerTxOpts, bobOpts.From, big.NewInt(100))
+		Require(t, err)
+		if _, err = bind.WaitMined(ctx, l1client, tx); err != nil {
+			t.Fatal(err)
+		}
+
+		expressLaneAddr := common.HexToAddress("0x2424242424242424242424242424242424242424")
+		bidReceiverAddr := common.HexToAddress("0x3424242424242424242424242424242424242424")
+		bidRoundSeconds := uint64(60)
+
+		// Calculate the number of seconds until the next minute
+		// and the next timestamp that is a multiple of a minute.
+		now := time.Now()
+		roundDuration := time.Minute
+		// Correctly calculate the remaining time until the next minute
+		waitTime := roundDuration - time.Duration(now.Second())*time.Second - time.Duration(now.Nanosecond())*time.Nanosecond
+		// Get the current Unix timestamp at the start of the minute
+		initialTimestamp := big.NewInt(now.Add(waitTime).Unix())
+
+		// Deploy the auction manager contract.
+		currReservePrice := big.NewInt(1)
+		minReservePrice := big.NewInt(1)
+		reservePriceSetter := sequencerTxOpts.From
+		auctionContractAddr, tx, _, err := bindings.DeployExpressLaneAuction(
+			&sequencerTxOpts, l1client, expressLaneAddr, reservePriceSetter, bidReceiverAddr, bidRoundSeconds, initialTimestamp, erc20Addr, currReservePrice, minReservePrice,
+		)
+		Require(t, err)
+		if _, err = bind.WaitMined(ctx, l1client, tx); err != nil {
+			t.Fatal(err)
+		}
+		t.Log("Deployed all the auction manager stuff", auctionContractAddr)
+		execConfig.Sequencer.Timeboost.AuctionMasterAddress = auctionContractAddr.Hex()
+		execConfig.Sequencer.Timeboost.ERC20Address = erc20Addr.Hex()
 	}
 
 	if !isSequencer {

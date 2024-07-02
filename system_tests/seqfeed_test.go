@@ -8,11 +8,14 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -22,6 +25,8 @@ import (
 	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/relay"
+	"github.com/offchainlabs/nitro/timeboost"
+	"github.com/offchainlabs/nitro/timeboost/bindings"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
@@ -86,6 +91,287 @@ func TestSequencerFeed(t *testing.T) {
 
 	if logHandler.WasLogged(arbnode.BlockHashMismatchLogMsg) {
 		t.Fatal("BlockHashMismatchLogMsg was logged unexpectedly")
+	}
+}
+
+func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builderSeq := NewNodeBuilder(ctx).DefaultConfig(t, true)
+
+	builderSeq.nodeConfig.Feed.Output = *newBroadcasterConfigTest()
+	builderSeq.execConfig.Sequencer.Enable = true
+	builderSeq.execConfig.Sequencer.Timeboost = gethexec.TimeboostConfig{
+		Enable:               true,
+		ExpressLaneAdvantage: time.Millisecond * 200,
+	}
+	cleanupSeq := builderSeq.Build(t)
+	defer cleanupSeq()
+	seqInfo, _, seqClient := builderSeq.L2Info, builderSeq.L2.ConsensusNode, builderSeq.L2.Client
+
+	auctionAddr := builderSeq.L2.ExecNode.Sequencer.ExpressLaneAuction()
+	erc20Addr := builderSeq.L2.ExecNode.Sequencer.ExpressLaneERC20()
+
+	// Seed the accounts on L2.
+	seqInfo.GenerateAccount("Alice")
+	tx := seqInfo.PrepareTx("Owner", "Alice", seqInfo.TransferGas, big.NewInt(1e18), nil)
+	Require(t, seqClient.SendTransaction(ctx, tx))
+	_, err := EnsureTxSucceeded(ctx, seqClient, tx)
+	Require(t, err)
+	seqInfo.GenerateAccount("Bob")
+	tx = seqInfo.PrepareTx("Owner", "Bob", seqInfo.TransferGas, big.NewInt(1e18), nil)
+	Require(t, seqClient.SendTransaction(ctx, tx))
+	_, err = EnsureTxSucceeded(ctx, seqClient, tx)
+	Require(t, err)
+	t.Logf("%+v and %+v", seqInfo.Accounts["Alice"], seqInfo.Accounts["Bob"])
+
+	auctionContract, err := bindings.NewExpressLaneAuction(auctionAddr, builderSeq.L1.Client)
+	Require(t, err)
+	_ = seqInfo
+	_ = seqClient
+	l1client := builderSeq.L1.Client
+
+	// We approve the spending of the erc20 for the auction master contract and bid receiver
+	// for both Alice and Bob.
+	bidReceiverAddr := common.HexToAddress("0x3424242424242424242424242424242424242424")
+	aliceOpts := builderSeq.L1Info.GetDefaultTransactOpts("Alice", ctx)
+	bobOpts := builderSeq.L1Info.GetDefaultTransactOpts("Bob", ctx)
+
+	maxUint256 := big.NewInt(1)
+	maxUint256.Lsh(maxUint256, 256).Sub(maxUint256, big.NewInt(1))
+	erc20, err := bindings.NewMockERC20(erc20Addr, builderSeq.L1.Client)
+	Require(t, err)
+
+	tx, err = erc20.Approve(
+		&aliceOpts, auctionAddr, maxUint256,
+	)
+	Require(t, err)
+	if _, err = bind.WaitMined(ctx, l1client, tx); err != nil {
+		t.Fatal(err)
+	}
+	tx, err = erc20.Approve(
+		&aliceOpts, bidReceiverAddr, maxUint256,
+	)
+	Require(t, err)
+	if _, err = bind.WaitMined(ctx, l1client, tx); err != nil {
+		t.Fatal(err)
+	}
+	tx, err = erc20.Approve(
+		&bobOpts, auctionAddr, maxUint256,
+	)
+	Require(t, err)
+	if _, err = bind.WaitMined(ctx, l1client, tx); err != nil {
+		t.Fatal(err)
+	}
+	tx, err = erc20.Approve(
+		&bobOpts, bidReceiverAddr, maxUint256,
+	)
+	Require(t, err)
+	if _, err = bind.WaitMined(ctx, l1client, tx); err != nil {
+		t.Fatal(err)
+	}
+
+	// Set up an auction master service that runs in the background in this test.
+	auctionMasterOpts := builderSeq.L1Info.GetDefaultTransactOpts("AuctionMaster", ctx)
+	chainId, err := l1client.ChainID(ctx)
+	Require(t, err)
+	auctionMaster, err := timeboost.NewAuctionMaster(&auctionMasterOpts, chainId, builderSeq.L1.Client, auctionContract)
+	Require(t, err)
+
+	go auctionMaster.Start(ctx)
+
+	// Set up a bidder client for Alice and Bob.
+	alicePriv := builderSeq.L1Info.Accounts["Alice"].PrivateKey
+	alice, err := timeboost.NewBidderClient(
+		ctx,
+		"alice",
+		&timeboost.Wallet{
+			TxOpts:  &aliceOpts,
+			PrivKey: alicePriv,
+		},
+		l1client,
+		auctionAddr,
+		nil,
+		auctionMaster,
+	)
+	Require(t, err)
+	go alice.Start(ctx)
+
+	bobPriv := builderSeq.L1Info.Accounts["Bob"].PrivateKey
+	bob, err := timeboost.NewBidderClient(
+		ctx,
+		"bob",
+		&timeboost.Wallet{
+			TxOpts:  &bobOpts,
+			PrivKey: bobPriv,
+		},
+		l1client,
+		auctionAddr,
+		nil,
+		auctionMaster,
+	)
+	Require(t, err)
+	go bob.Start(ctx)
+
+	// Wait until the initial round.
+	initialTime, err := auctionContract.InitialRoundTimestamp(&bind.CallOpts{})
+	Require(t, err)
+	timeToWait := time.Until(time.Unix(initialTime.Int64(), 0))
+	t.Log("Waiting until the initial round", timeToWait, time.Unix(initialTime.Int64(), 0))
+	<-time.After(timeToWait)
+
+	t.Log("Started auction master stack and bid clients")
+	Require(t, alice.Deposit(ctx, big.NewInt(5)))
+	Require(t, bob.Deposit(ctx, big.NewInt(5)))
+	t.Log("Alice and Bob are now deposited into the auction master contract, waiting for bidding round...")
+
+	// Wait until the next timeboost round + a few milliseconds.
+	now := time.Now()
+	roundDuration := time.Minute
+	waitTime := roundDuration - time.Duration(now.Second())*time.Second - time.Duration(now.Nanosecond())
+	time.Sleep(waitTime)
+	time.Sleep(time.Second * 5)
+
+	// We are now in the bidding round, both issue their bids. Bob will win.
+	t.Log("Alice and Bob now submitting their bids")
+	aliceBid, err := alice.Bid(ctx, big.NewInt(1))
+	Require(t, err)
+	bobBid, err := bob.Bid(ctx, big.NewInt(2))
+	Require(t, err)
+	t.Logf("Alice bid %+v", aliceBid)
+	t.Logf("Bob bid %+v", bobBid)
+
+	// Subscribe to auction resolutions and wait for Bob to win the auction.
+	winner, winnerRound := awaitAuctionResolved(t, ctx, l1client, auctionContract)
+
+	// Verify Bob owns the express lane this round.
+	if winner != bobOpts.From {
+		t.Fatal("Bob should have won the express lane auction")
+	}
+	t.Log("Bob won the express lane auction for upcoming round, now waiting for that round to start...")
+
+	// Wait until the round that Bob owns the express lane for.
+	now = time.Now()
+	waitTime = roundDuration - time.Duration(now.Second())*time.Second - time.Duration(now.Nanosecond())
+	time.Sleep(waitTime)
+
+	initialTimestamp, err := auctionContract.InitialRoundTimestamp(&bind.CallOpts{})
+	Require(t, err)
+	currRound := timeboost.CurrentRound(time.Unix(initialTimestamp.Int64(), 0), roundDuration)
+	t.Log("curr round", currRound)
+	if currRound != winnerRound {
+		now = time.Now()
+		waitTime = roundDuration - time.Duration(now.Second())*time.Second - time.Duration(now.Nanosecond())
+		t.Log("Not express lane round yet, waiting for next round", waitTime)
+		time.Sleep(waitTime)
+	}
+
+	current, err := auctionContract.ExpressLaneControllerByRound(&bind.CallOpts{}, new(big.Int).SetUint64(currRound))
+	Require(t, err)
+
+	if current != bobOpts.From {
+		t.Log("Current express lane round controller is not Bob", current, aliceOpts.From)
+	}
+
+	t.Log("Now submitting txs to sequencer")
+
+	// During the express lane around, Bob sends txs always 150ms later than Alice, but Alice's
+	// txs end up getting delayed by 200ms as she is not the express lane controller.
+	// In the end, Bob's txs should be ordered before Alice's during the round.
+
+	var wg sync.WaitGroup
+	wg.Add(2)
+	aliceTx := seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1e12), nil)
+	go func(w *sync.WaitGroup) {
+		defer w.Done()
+		err = seqClient.SendTransaction(ctx, aliceTx)
+		Require(t, err)
+	}(&wg)
+
+	bobTx := seqInfo.PrepareTx("Bob", "Owner", seqInfo.TransferGas, big.NewInt(1e12), nil)
+	go func(w *sync.WaitGroup) {
+		defer w.Done()
+		time.Sleep(time.Millisecond * 10)
+		err = seqClient.SendTransaction(ctx, bobTx)
+		Require(t, err)
+	}(&wg)
+	wg.Wait()
+
+	// After round is done, verify that Alice beats Bob in the final sequence.
+	aliceReceipt, err := seqClient.TransactionReceipt(ctx, aliceTx.Hash())
+	Require(t, err)
+	aliceBlock := aliceReceipt.BlockNumber.Uint64()
+	bobReceipt, err := seqClient.TransactionReceipt(ctx, bobTx.Hash())
+	Require(t, err)
+	bobBlock := bobReceipt.BlockNumber.Uint64()
+
+	if aliceBlock < bobBlock {
+		t.Fatal("Bob should have been sequenced before Alice with express lane")
+	} else if aliceBlock == bobBlock {
+		t.Log("Sequenced in same output block")
+		block, err := seqClient.BlockByNumber(ctx, new(big.Int).SetUint64(aliceBlock))
+		Require(t, err)
+		findTransactionIndex := func(transactions types.Transactions, txHash common.Hash) int {
+			for index, tx := range transactions {
+				if tx.Hash() == txHash {
+					return index
+				}
+			}
+			return -1
+		}
+		txes := block.Transactions()
+		indexA := findTransactionIndex(txes, aliceTx.Hash())
+		indexB := findTransactionIndex(txes, bobTx.Hash())
+		if indexA == -1 || indexB == -1 {
+			t.Fatal("Did not find txs in block")
+		}
+		if indexA < indexB {
+			t.Fatal("Bob should have been sequenced before Alice with express lane")
+		}
+	}
+}
+
+func awaitAuctionResolved(
+	t *testing.T,
+	ctx context.Context,
+	client *ethclient.Client,
+	contract *bindings.ExpressLaneAuction,
+) (common.Address, uint64) {
+	fromBlock, err := client.BlockNumber(ctx)
+	Require(t, err)
+	ticker := time.NewTicker(time.Millisecond * 100)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return common.Address{}, 0
+		case <-ticker.C:
+			latestBlock, err := client.HeaderByNumber(ctx, nil)
+			if err != nil {
+				t.Log("Could not get latest header", err)
+				continue
+			}
+			toBlock := latestBlock.Number.Uint64()
+			if fromBlock == toBlock {
+				continue
+			}
+			filterOpts := &bind.FilterOpts{
+				Context: ctx,
+				Start:   fromBlock,
+				End:     &toBlock,
+			}
+			it, err := contract.FilterAuctionResolved(filterOpts, nil, nil)
+			if err != nil {
+				t.Log("Could not filter auction resolutions", err)
+				continue
+			}
+			for it.Next() {
+				return it.Event.WinningBidder, it.Event.WinnerRound.Uint64()
+			}
+			fromBlock = toBlock
+		}
 	}
 }
 
