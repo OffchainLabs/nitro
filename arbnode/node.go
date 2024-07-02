@@ -95,9 +95,10 @@ type Config struct {
 	TransactionStreamer TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
 	Maintenance         MaintenanceConfig           `koanf:"maintenance" reload:"hot"`
 	ResourceMgmt        resourcemanager.Config      `koanf:"resource-mgmt" reload:"hot"`
+	Celestia            celestia.CelestiaConfig     `koanf:"celestia-cfg"`
+	DAPreference        []string                    `koanf:"da-preference"`
 	// SnapSyncConfig is only used for testing purposes, these should not be configured in production.
 	SnapSyncTest SnapSyncConfig
-	Celestia     celestia.CelestiaConfig `koanf:"celestia-cfg"`
 }
 
 func (c *Config) Validate() error {
@@ -699,17 +700,31 @@ func createNodeImpl(
 
 	var batchPoster *BatchPoster
 	var delayedSequencer *DelayedSequencer
-	// TODO (Diego) Enable multiple writers
 	if config.BatchPoster.Enable {
 		if txOptsBatchPoster == nil && config.BatchPoster.DataPoster.ExternalSigner.URL == "" {
 			return nil, errors.New("batchposter, but no TxOpts")
 		}
 		dapWriters := []daprovider.Writer{}
-		if daWriter != nil {
-			dapWriters = append(dapWriters, daprovider.NewWriterForDAS(daWriter))
-		}
-		if celestiaWriter != nil {
-			dapWriters = append(dapWriters, celestiaTypes.NewWriterForCelestia(celestiaWriter))
+		for _, providerName := range config.DAPreference {
+			nilWriter := false
+			switch strings.ToLower(providerName) {
+			case "anytrust":
+				if daWriter != nil {
+					dapWriters = append(dapWriters, daprovider.NewWriterForDAS(daWriter))
+				} else {
+					nilWriter = true
+				}
+			case "celestia":
+				if celestiaWriter != nil {
+					dapWriters = append(dapWriters, celestiaTypes.NewWriterForCelestia(celestiaWriter))
+				} else {
+					nilWriter = true
+				}
+			}
+
+			if nilWriter {
+				log.Error("encountered nil daWriter", "daWriter", providerName)
+			}
 		}
 		batchPoster, err = NewBatchPoster(ctx, &BatchPosterOpts{
 			DataPosterDB:  rawdb.NewTable(arbDb, storage.BatchPosterPrefix),

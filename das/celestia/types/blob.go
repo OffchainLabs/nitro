@@ -5,13 +5,14 @@ import (
 	"encoding/binary"
 )
 
+
 // BlobPointer contains the reference to the data blob on Celestia
 type BlobPointer struct {
-	BlockHeight  uint64
-	Start        uint64
-	SharesLength uint64
-	TxCommitment [32]byte
-	DataRoot     [32]byte
+	BlockHeight  uint64   `json:"block_height"`
+	Start        uint64   `json:"start"`
+	SharesLength uint64   `json:"shares_length"`
+	TxCommitment [32]byte `json:"tx_commitment"`
+	DataRoot     [32]byte `json:"data_root"`
 }
 
 // MarshalBinary encodes the BlobPointer to binary

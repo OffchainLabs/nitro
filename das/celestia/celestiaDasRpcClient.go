@@ -31,6 +31,7 @@ func CelestiaDAConfigAddOptions(prefix string, f *pflag.FlagSet) {
 func NewCelestiaDASRPCClient(target string) (*CelestiaDASClient, error) {
 	clnt, err := rpc.Dial(target)
 	if err != nil {
+		log.Error("Could not dial to Celestia DAS", "err", err)
 		return nil, err
 	}
 	return &CelestiaDASClient{

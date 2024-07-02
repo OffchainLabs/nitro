@@ -19,7 +19,8 @@ func (c *writerForCelestia) Store(ctx context.Context, message []byte, timeout u
 		if disableFallbackStoreDataOnChain {
 			return nil, errors.New("unable to batch to Celestia and fallback storing data on chain is disabled")
 		}
+		return nil, err
 	}
-
-	return msg, nil
+	message = msg
+	return message, nil
 }
