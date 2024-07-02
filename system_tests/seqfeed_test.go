@@ -133,7 +133,7 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	_ = seqClient
 	l1client := builderSeq.L1.Client
 
-	// We approve the spending of the erc20 for the auction master contract and bid receiver
+	// We approve the spending of the erc20 for the autonomous auction contract and bid receiver
 	// for both Alice and Bob.
 	bidReceiverAddr := common.HexToAddress("0x3424242424242424242424242424242424242424")
 	aliceOpts := builderSeq.L1Info.GetDefaultTransactOpts("Alice", ctx)
@@ -173,14 +173,14 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Set up an auction master service that runs in the background in this test.
-	auctionMasterOpts := builderSeq.L1Info.GetDefaultTransactOpts("AuctionMaster", ctx)
+	// Set up an autonomous auction contract service that runs in the background in this test.
+	auctionContractOpts := builderSeq.L1Info.GetDefaultTransactOpts("AuctionContract", ctx)
 	chainId, err := l1client.ChainID(ctx)
 	Require(t, err)
-	auctionMaster, err := timeboost.NewAuctionMaster(&auctionMasterOpts, chainId, builderSeq.L1.Client, auctionContract)
+	auctioneer, err := timeboost.NewAuctioneer(&auctionContractOpts, chainId, builderSeq.L1.Client, auctionContract)
 	Require(t, err)
 
-	go auctionMaster.Start(ctx)
+	go auctioneer.Start(ctx)
 
 	// Set up a bidder client for Alice and Bob.
 	alicePriv := builderSeq.L1Info.Accounts["Alice"].PrivateKey
@@ -194,7 +194,7 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 		l1client,
 		auctionAddr,
 		nil,
-		auctionMaster,
+		auctioneer,
 	)
 	Require(t, err)
 	go alice.Start(ctx)
@@ -210,7 +210,7 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 		l1client,
 		auctionAddr,
 		nil,
-		auctionMaster,
+		auctioneer,
 	)
 	Require(t, err)
 	go bob.Start(ctx)
@@ -225,7 +225,7 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	t.Log("Started auction master stack and bid clients")
 	Require(t, alice.Deposit(ctx, big.NewInt(5)))
 	Require(t, bob.Deposit(ctx, big.NewInt(5)))
-	t.Log("Alice and Bob are now deposited into the auction master contract, waiting for bidding round...")
+	t.Log("Alice and Bob are now deposited into the autonomous  auction contract, waiting for bidding round...")
 
 	// Wait until the next timeboost round + a few milliseconds.
 	now := time.Now()

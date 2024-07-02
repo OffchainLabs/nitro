@@ -35,7 +35,7 @@ type validatedBid struct {
 	Bid
 }
 
-func (am *AuctionMaster) newValidatedBid(bid *Bid) (*validatedBid, error) {
+func (am *Auctioneer) newValidatedBid(bid *Bid) (*validatedBid, error) {
 	// Check basic integrity.
 	if bid == nil {
 		return nil, errors.Wrap(ErrMalformedData, "nil bid")

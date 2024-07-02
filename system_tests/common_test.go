@@ -867,9 +867,9 @@ func createTestNodeWithL1(
 			t.Fatal(err)
 		}
 
-		// Fund the auction master.
-		l1info.GenerateAccount("AuctionMaster")
-		TransferBalance(t, "Faucet", "AuctionMaster", arbmath.BigMulByUint(oneEth, 500), l1info, l1client, ctx)
+		// Fund the auction contract.
+		l1info.GenerateAccount("AuctionContract")
+		TransferBalance(t, "Faucet", "AuctionContract", arbmath.BigMulByUint(oneEth, 500), l1info, l1client, ctx)
 
 		// Mint some tokens to Alice and Bob.
 		l1info.GenerateAccount("Alice")
@@ -914,7 +914,7 @@ func createTestNodeWithL1(
 			t.Fatal(err)
 		}
 		t.Log("Deployed all the auction manager stuff", auctionContractAddr)
-		execConfig.Sequencer.Timeboost.AuctionMasterAddress = auctionContractAddr.Hex()
+		execConfig.Sequencer.Timeboost.AuctionContractAddress = auctionContractAddr.Hex()
 		execConfig.Sequencer.Timeboost.ERC20Address = erc20Addr.Hex()
 	}
 

@@ -29,8 +29,8 @@ func TestCompleteAuctionSimulation(t *testing.T) {
 	// 	testSetup.accounts[2].txOpts, testSetup.chainId, testSetup.backend.Client(), testSetup.auctionContract,
 	// )
 	// require.NoError(t, err)
-	// alice.auctionMaster = am
-	// bob.auctionMaster = am
+	// alice.auctioneer = am
+	// bob.auctioneer = am
 
 	// TODO: Start auction master and randomly bid from different bidders in a round.
 	// Start the sequencer.

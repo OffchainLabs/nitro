@@ -17,12 +17,12 @@ func TestWinningBidderBecomesExpressLaneController(t *testing.T) {
 	// require.NoError(t, bob.Deposit(ctx, big.NewInt(5)))
 
 	// // Set up a new auction master instance that can validate bids.
-	// am, err := NewAuctionMaster(
+	// am, err := NewAuctioneer(
 	// 	testSetup.accounts[2].txOpts, testSetup.chainId, testSetup.backend.Client(), testSetup.auctionContract,
 	// )
 	// require.NoError(t, err)
-	// alice.auctionMaster = am
-	// bob.auctionMaster = am
+	// alice.auctioneer = am
+	// bob.auctioneer = am
 
 	// // Form two new bids for the round, with Alice being the bigger one.
 	// aliceBid, err := alice.Bid(ctx, big.NewInt(2))
@@ -52,11 +52,11 @@ func TestSubmitBid_OK(t *testing.T) {
 	// require.NoError(t, bc.Deposit(ctx, big.NewInt(5)))
 
 	// // Set up a new auction master instance that can validate bids.
-	// am, err := NewAuctionMaster(
+	// am, err := NewAuctioneer(
 	// 	testSetup.accounts[1].txOpts, testSetup.chainId, testSetup.backend.Client(), testSetup.auctionContract,
 	// )
 	// require.NoError(t, err)
-	// bc.auctionMaster = am
+	// bc.auctioneer = am
 
 	// // Form a new bid with an amount.
 	// newBid, err := bc.Bid(ctx, big.NewInt(5))
