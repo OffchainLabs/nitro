@@ -1,0 +1,15 @@
+name: Merge Checks
+
+on:
+  pull_request:
+    branches: [ master ]
+    types: [synchronize, opened, reopened, labeled, unlabeled]
+
+jobs:
+  submodule-pin-check:
+    name: Submodule Pin Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check all submodules are under origin/HEAD
+        run: git submodule foreach git merge-base --is-ancestor HEAD origin/HEAD
+
