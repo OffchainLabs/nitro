@@ -15,15 +15,15 @@ import (
 
 const defaultAuctionClosingSecondsBeforeRound = 15 // Before the start of the next round.
 
-type AuctionMasterOpt func(*AuctionMaster)
+type AuctioneerOpt func(*Auctioneer)
 
-func WithAuctionClosingSecondsBeforeRound(d time.Duration) AuctionMasterOpt {
-	return func(am *AuctionMaster) {
+func WithAuctionClosingSecondsBeforeRound(d time.Duration) AuctioneerOpt {
+	return func(am *Auctioneer) {
 		am.auctionClosingDurationBeforeRoundStart = d
 	}
 }
 
-type AuctionMaster struct {
+type Auctioneer struct {
 	txOpts                                 *bind.TransactOpts
 	chainId                                *big.Int
 	signatureDomain                        uint16
@@ -36,13 +36,13 @@ type AuctionMaster struct {
 	auctionClosingDurationBeforeRoundStart time.Duration
 }
 
-func NewAuctionMaster(
+func NewAuctioneer(
 	txOpts *bind.TransactOpts,
 	chainId *big.Int,
 	client arbutil.L1Interface,
 	auctionContract *bindings.ExpressLaneAuction,
-	opts ...AuctionMasterOpt,
-) (*AuctionMaster, error) {
+	opts ...AuctioneerOpt,
+) (*Auctioneer, error) {
 	initialRoundTimestamp, err := auctionContract.InitialRoundTimestamp(&bind.CallOpts{})
 	if err != nil {
 		return nil, err
@@ -55,7 +55,7 @@ func NewAuctionMaster(
 	if err != nil {
 		return nil, err
 	}
-	am := &AuctionMaster{
+	am := &Auctioneer{
 		txOpts:                                 txOpts,
 		chainId:                                chainId,
 		client:                                 client,
@@ -73,7 +73,7 @@ func NewAuctionMaster(
 	return am, nil
 }
 
-func (am *AuctionMaster) SubmitBid(ctx context.Context, b *Bid) error {
+func (am *Auctioneer) SubmitBid(ctx context.Context, b *Bid) error {
 	validated, err := am.newValidatedBid(b)
 	if err != nil {
 		return err
@@ -82,7 +82,7 @@ func (am *AuctionMaster) SubmitBid(ctx context.Context, b *Bid) error {
 	return nil
 }
 
-func (am *AuctionMaster) Start(ctx context.Context) {
+func (am *Auctioneer) Start(ctx context.Context) {
 	// Receive bids in the background.
 	go receiveAsync(ctx, am.bidsReceiver, am.SubmitBid)
 
@@ -105,10 +105,10 @@ func (am *AuctionMaster) Start(ctx context.Context) {
 	}
 }
 
-func (am *AuctionMaster) resolveAuctions(ctx context.Context) error {
+func (am *Auctioneer) resolveAuctions(ctx context.Context) error {
 	upcomingRound := CurrentRound(am.initialRoundTimestamp, am.roundDuration) + 1
 	// If we have no winner, then we can cancel the auction.
-	// Auction master can also subscribe to sequencer feed and
+	// Auctioneer can also subscribe to sequencer feed and
 	// close auction if sequencer is down.
 	result := am.bidCache.topTwoBids()
 	first := result.firstPlace
@@ -174,7 +174,7 @@ func (am *AuctionMaster) resolveAuctions(ctx context.Context) error {
 
 // TODO: Implement. If sequencer is down for some time, cancel the upcoming auction by calling
 // the cancel method on the smart contract.
-func (am *AuctionMaster) checkSequencerHealth(ctx context.Context) {
+func (am *Auctioneer) checkSequencerHealth(ctx context.Context) {
 
 }
 

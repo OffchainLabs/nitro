@@ -83,17 +83,17 @@ type SequencerConfig struct {
 }
 
 type TimeboostConfig struct {
-	Enable               bool          `koanf:"enable"`
-	AuctionMasterAddress string        `koanf:"auction-master-address"`
-	ERC20Address         string        `koanf:"erc20-address"`
-	ExpressLaneAdvantage time.Duration `koanf:"express-lane-advantage"`
+	Enable                 bool          `koanf:"enable"`
+	AuctionContractAddress string        `koanf:"auction-contract-address"`
+	ERC20Address           string        `koanf:"erc20-address"`
+	ExpressLaneAdvantage   time.Duration `koanf:"express-lane-advantage"`
 }
 
 var DefaultTimeboostConfig = TimeboostConfig{
-	Enable:               false,
-	AuctionMasterAddress: "",
-	ERC20Address:         "",
-	ExpressLaneAdvantage: time.Millisecond * 200,
+	Enable:                 false,
+	AuctionContractAddress: "",
+	ERC20Address:           "",
+	ExpressLaneAdvantage:   time.Millisecond * 200,
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -189,7 +189,7 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 func TimeboostAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultTimeboostConfig.Enable, "enable timeboost based on express lane auctions")
-	f.String(prefix+".auction-master-address", DefaultTimeboostConfig.AuctionMasterAddress, "address of the auction master contract")
+	f.String(prefix+".auction-contract-address", DefaultTimeboostConfig.AuctionContractAddress, "address of the autonomous auction contract")
 	f.String(prefix+".erc20-address", DefaultTimeboostConfig.ERC20Address, "address of the auction erc20")
 }
 
@@ -388,7 +388,7 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		onForwarderSet:  make(chan struct{}, 1),
 	}
 	if config.Timeboost.Enable {
-		addr := common.HexToAddress(config.Timeboost.AuctionMasterAddress)
+		addr := common.HexToAddress(config.Timeboost.AuctionContractAddress)
 		// TODO: Need to provide an L2 interface instead of an L1 interface.
 		els, err := newExpressLaneService(
 			l1Reader.Client(),
@@ -412,7 +412,7 @@ func (s *Sequencer) ExpressLaneAuction() common.Address {
 	if s.expressLaneService == nil {
 		return common.Address{}
 	}
-	return common.HexToAddress(s.config().Timeboost.AuctionMasterAddress)
+	return common.HexToAddress(s.config().Timeboost.AuctionContractAddress)
 }
 
 func (s *Sequencer) ExpressLaneERC20() common.Address {

@@ -23,7 +23,7 @@ type sequencerConnection interface {
 	SendExpressLaneTx(ctx context.Context, tx *types.Transaction) error
 }
 
-type auctionMasterConnection interface {
+type auctioneerConnection interface {
 	SubmitBid(ctx context.Context, bid *Bid) error
 }
 
@@ -36,7 +36,7 @@ type BidderClient struct {
 	privKey               *ecdsa.PrivateKey
 	auctionContract       *bindings.ExpressLaneAuction
 	sequencer             sequencerConnection
-	auctionMaster         auctionMasterConnection
+	auctioneer            auctioneerConnection
 	initialRoundTimestamp time.Time
 	roundDuration         time.Duration
 }
@@ -54,7 +54,7 @@ func NewBidderClient(
 	client arbutil.L1Interface,
 	auctionContractAddress common.Address,
 	sequencer sequencerConnection,
-	auctionMaster auctionMasterConnection,
+	auctioneer auctioneerConnection,
 ) (*BidderClient, error) {
 	chainId, err := client.ChainID(ctx)
 	if err != nil {
@@ -85,7 +85,7 @@ func NewBidderClient(
 		privKey:               wallet.PrivKey,
 		auctionContract:       auctionContract,
 		sequencer:             sequencer,
-		auctionMaster:         auctionMaster,
+		auctioneer:            auctioneer,
 		initialRoundTimestamp: time.Unix(initialRoundTimestamp.Int64(), 0),
 		roundDuration:         time.Duration(roundDurationSeconds) * time.Second,
 	}, nil
@@ -95,7 +95,7 @@ func (bd *BidderClient) Start(ctx context.Context) {
 	// Monitor for newly assigned express lane controllers, and if the client's address
 	// is the controller in order to send express lane txs.
 	go bd.monitorAuctionResolutions(ctx)
-	// Monitor for auction closures by the auction master.
+	// Monitor for auction closures by the autonomous auctioneer.
 	go bd.monitorAuctionCancelations(ctx)
 	// Monitor for express lane control delegations to take over if needed.
 	go bd.monitorExpressLaneDelegations(ctx)
@@ -240,7 +240,7 @@ func (bd *BidderClient) Bid(ctx context.Context, amount *big.Int) (*Bid, error) 
 	sig, prefixed := sign(packedBidBytes, bd.privKey)
 	newBid.signature = sig
 	_ = prefixed
-	if err = bd.auctionMaster.SubmitBid(ctx, newBid); err != nil {
+	if err = bd.auctioneer.SubmitBid(ctx, newBid); err != nil {
 		return nil, err
 	}
 	return newBid, nil
