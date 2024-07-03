@@ -11,6 +11,8 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 )
 
+var UnfinishedConversionCanaryKey = []byte("unfinished-conversion-canary-key")
+
 type DBConverter struct {
 	config *DBConvConfig
 	stats  Stats
@@ -23,7 +25,7 @@ func NewDBConverter(config *DBConvConfig) *DBConverter {
 }
 
 func openDB(config *DBConfig, name string, readonly bool) (ethdb.Database, error) {
-	return rawdb.Open(rawdb.OpenOptions{
+	db, err := rawdb.Open(rawdb.OpenOptions{
 		Type:      config.DBEngine,
 		Directory: config.Data,
 		// we don't open freezer, it doesn't need to be converted as it has format independent of db-engine
@@ -35,6 +37,20 @@ func openDB(config *DBConfig, name string, readonly bool) (ethdb.Database, error
 		ReadOnly:           readonly,
 		PebbleExtraOptions: config.Pebble.ExtraOptions(name),
 	})
+	if err != nil {
+		return nil, err
+	}
+	unfinished, err := db.Has(UnfinishedConversionCanaryKey)
+	if err != nil {
+		return nil, fmt.Errorf("Failed to check canary key existence: %w", err)
+	}
+	if unfinished {
+		if err := db.Close(); err != nil {
+			return nil, fmt.Errorf("Unfinished conversion canary key detected and failed to close: %w", err)
+		}
+		return nil, fmt.Errorf("Unfinished conversion canary key detected")
+	}
+	return db, nil
 }
 
 func (c *DBConverter) Convert(ctx context.Context) error {
@@ -51,6 +67,9 @@ func (c *DBConverter) Convert(ctx context.Context) error {
 	defer dst.Close()
 	c.stats.Reset()
 	log.Info("Converting database", "src", c.config.Src.Data, "dst", c.config.Dst.Data, "db-engine", c.config.Dst.DBEngine)
+	if err = dst.Put(UnfinishedConversionCanaryKey, []byte{1}); err != nil {
+		return err
+	}
 	it := src.NewIterator(nil, nil)
 	defer it.Release()
 	batch := dst.NewBatch()
@@ -77,6 +96,11 @@ func (c *DBConverter) Convert(ctx context.Context) error {
 		}
 		c.stats.LogEntries(int64(entriesInBatch))
 		c.stats.LogBytes(int64(batchSize))
+	}
+	if err == nil {
+		if err = dst.Delete(UnfinishedConversionCanaryKey); err != nil {
+			return err
+		}
 	}
 	return err
 }
