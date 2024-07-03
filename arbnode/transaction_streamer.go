@@ -374,8 +374,7 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 		}
 	}
 
-	pos := uint64(count) - 1
-	err = deleteStartingAt(s.db, batch, messageResultPrefix, uint64ToKey(pos))
+	err = deleteStartingAt(s.db, batch, messageResultPrefix, uint64ToKey(uint64(count)))
 	if err != nil {
 		return err
 	}
