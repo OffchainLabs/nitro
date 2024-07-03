@@ -1,6 +1,7 @@
 package timeboost
 
 import (
+	"math/big"
 	"testing"
 )
 
@@ -36,4 +37,44 @@ func TestCompleteAuctionSimulation(t *testing.T) {
 	// Start the sequencer.
 	// Have the winner of the express lane send txs if they detect they are the winner.
 	// Auction master will log any deposits that are made to the contract.
+}
+
+func TestFilterReservePrice(t *testing.T) {
+	a := &Auctioneer{
+		reservePrice: big.NewInt(100),
+	}
+	r := &auctionResult{
+		firstPlace: &validatedBid{
+			Bid: Bid{amount: big.NewInt(101)},
+		},
+		secondPlace: &validatedBid{
+			Bid: Bid{amount: big.NewInt(101)},
+		},
+	}
+	r1 := a.filterReservePrice(r)
+	if r1.firstPlace == nil {
+		t.Errorf("firstPlace should not be nil")
+	}
+	if r1.secondPlace == nil {
+		t.Errorf("secondPlace should not be nil")
+	}
+	r.firstPlace.Bid.amount = big.NewInt(99)
+	r.secondPlace.Bid.amount = big.NewInt(99)
+	r2 := a.filterReservePrice(r)
+	if r2.firstPlace != nil {
+		t.Errorf("firstPlace should be nil")
+	}
+	if r2.secondPlace != nil {
+		t.Errorf("secondPlace should be nil")
+	}
+
+	r.firstPlace = &validatedBid{Bid{amount: big.NewInt(101)}}
+	r.secondPlace = &validatedBid{Bid{amount: big.NewInt(99)}}
+	r2 = a.filterReservePrice(r)
+	if r1.firstPlace == nil {
+		t.Errorf("firstPlace should not be nil")
+	}
+	if r2.secondPlace != nil {
+		t.Errorf("secondPlace should be nil")
+	}
 }

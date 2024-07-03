@@ -34,6 +34,7 @@ type Auctioneer struct {
 	initialRoundTimestamp                  time.Time
 	roundDuration                          time.Duration
 	auctionClosingDurationBeforeRoundStart time.Duration
+	reservePrice                           *big.Int
 }
 
 func NewAuctioneer(
@@ -105,12 +106,25 @@ func (am *Auctioneer) Start(ctx context.Context) {
 	}
 }
 
+// filterReservePrice checks if the reserve price is met by the top two bids.
+// if either bid is below the reserve price, it is removed from auction result by setting to nil.
+func (am *Auctioneer) filterReservePrice(a *auctionResult) *auctionResult {
+	if a.firstPlace.amount.Cmp(am.reservePrice) < 0 {
+		a.firstPlace = nil
+	}
+	if a.secondPlace.amount.Cmp(am.reservePrice) < 0 {
+		a.secondPlace = nil
+	}
+	return a
+}
+
 func (am *Auctioneer) resolveAuctions(ctx context.Context) error {
 	upcomingRound := CurrentRound(am.initialRoundTimestamp, am.roundDuration) + 1
 	// If we have no winner, then we can cancel the auction.
 	// Auctioneer can also subscribe to sequencer feed and
 	// close auction if sequencer is down.
 	result := am.bidCache.topTwoBids()
+	result = am.filterReservePrice(result)
 	first := result.firstPlace
 	second := result.secondPlace
 	var tx *types.Transaction
