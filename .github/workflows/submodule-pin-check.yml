@@ -10,6 +10,9 @@ jobs:
     name: Submodule Pin Check
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Check all submodules are under origin/HEAD
         run: git submodule foreach git merge-base --is-ancestor HEAD origin/HEAD
 
