@@ -13,7 +13,7 @@ use gperftools::heap_profiler::HEAP_PROFILER;
 use prover::machine::MachineStatus;
 
 #[cfg(feature = "counters")]
-use prover::merkle;
+use prover::{machine, memory, merkle};
 
 #[derive(Parser, Debug)]
 #[command(author, version, about, long_about = None)]
@@ -25,26 +25,15 @@ struct Args {
     /// Path to a machine.wavm.br
     #[arg(short, long)]
     machine_path: PathBuf,
-
-    /// Should the memory tree always Merkleize
-    #[arg(short, long)]
-    always_merkleize: bool,
 }
 
 fn main() -> eyre::Result<()> {
     let args = Args::parse();
-    let step_sizes = [1, 1 << 10, 1 << 15, 1 << 20, 1 << 24];
-    if args.always_merkleize {
-        println!("Running benchmark with always merkleize feature on");
-    } else {
-        println!("Running benchmark with always merkleize feature off");
-    }
+    let step_sizes = [1, 1 << 10, 1 << 15, 1 << 20, 1 << 24, 1 << 26, 1 << 28];
+
+    println!("Running benchmark with always merkleize feature on");
     for step_size in step_sizes {
-        let mut machine = prepare_machine(
-            args.preimages_path.clone(),
-            args.machine_path.clone(),
-            args.always_merkleize,
-        )?;
+        let mut machine = prepare_machine(args.preimages_path.clone(), args.machine_path.clone())?;
         let _ = machine.hash();
         let mut hash_times = vec![];
         let mut step_times = vec![];
@@ -65,7 +54,11 @@ fn main() -> eyre::Result<()> {
             .unwrap();
 
         #[cfg(feature = "counters")]
-        merkle::reset_counters();
+        {
+            machine::reset_counters();
+            memory::reset_counters();
+            merkle::reset_counters();
+        }
         let total = std::time::Instant::now();
         loop {
             let start = std::time::Instant::now();
@@ -81,14 +74,16 @@ fn main() -> eyre::Result<()> {
                     bail!("Machine too far => position {}", machine.get_steps())
                 }
                 MachineStatus::Running => {}
-                MachineStatus::Finished => return Ok(()),
+                MachineStatus::Finished => {
+                    break;
+                }
             }
             let start = std::time::Instant::now();
             let _ = machine.hash();
             let hash_end_time = start.elapsed();
             hash_times.push(hash_end_time);
             num_iters += 1;
-            if num_iters == 100 {
+            if num_iters == 200 {
                 break;
             }
         }
@@ -101,7 +96,7 @@ fn main() -> eyre::Result<()> {
 
         let total_end_time = total.elapsed();
         println!(
-            "avg hash time {:>12?}, avg step time {:>12?}, step size {:>8}, num_iters {}, total time {:>12?}",
+            "avg hash time {:>11?}, avg step time {:>12?}, step size {:>9}, num_iters {:>3}, total time {:>12?}",
             average(&hash_times),
             average(&step_times),
             step_size,
@@ -109,7 +104,11 @@ fn main() -> eyre::Result<()> {
             total_end_time,
         );
         #[cfg(feature = "counters")]
-        merkle::print_counters();
+        {
+            machine::print_counters();
+            memory::print_counters();
+            merkle::print_counters();
+        }
     }
     Ok(())
 }

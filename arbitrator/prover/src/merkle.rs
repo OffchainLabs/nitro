@@ -65,6 +65,9 @@ init_counters!(ROOT_COUNTERS);
 #[cfg(feature = "counters")]
 init_counters!(SET_COUNTERS);
 
+#[cfg(feature = "counters")]
+init_counters!(RESIZE_COUNTERS);
+
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize, Sequence)]
 pub enum MerkleType {
     Empty,
@@ -90,11 +93,12 @@ pub fn print_counters() {
             continue;
         }
         println!(
-            "{} New: {}, Root: {}, Set: {}",
+            "{} New: {}, Root: {}, Set: {} Resize: {}",
             ty.get_prefix(),
             NEW_COUNTERS[&ty].load(Ordering::Relaxed),
             ROOT_COUNTERS[&ty].load(Ordering::Relaxed),
-            SET_COUNTERS[&ty].load(Ordering::Relaxed)
+            SET_COUNTERS[&ty].load(Ordering::Relaxed),
+            RESIZE_COUNTERS[&ty].load(Ordering::Relaxed),
         );
     }
 }
@@ -108,6 +112,7 @@ pub fn reset_counters() {
         NEW_COUNTERS[&ty].store(0, Ordering::Relaxed);
         ROOT_COUNTERS[&ty].store(0, Ordering::Relaxed);
         SET_COUNTERS[&ty].store(0, Ordering::Relaxed);
+        RESIZE_COUNTERS[&ty].store(0, Ordering::Relaxed);
     }
 }
 
@@ -380,6 +385,8 @@ impl Merkle {
     ///
     /// The extra space is filled with empty hashes.
     pub fn resize(&self, new_len: usize) -> Result<usize, String> {
+        #[cfg(feature = "counters")]
+        RESIZE_COUNTERS[&self.ty].fetch_add(1, Ordering::Relaxed);
         if new_len > self.capacity() {
             return Err(
                 "Cannot resize to a length greater than the capacity of the tree.".to_owned(),

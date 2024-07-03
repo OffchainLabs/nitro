@@ -9,24 +9,15 @@ use std::sync::Arc;
 
 use crate::parse_input::*;
 
-pub fn prepare_machine(
-    preimages: PathBuf,
-    machines: PathBuf,
-    always_merkleize: bool,
-) -> eyre::Result<Machine> {
+pub fn prepare_machine(preimages: PathBuf, machines: PathBuf) -> eyre::Result<Machine> {
     let file = File::open(preimages)?;
     let reader = BufReader::new(file);
 
     let data = FileData::from_reader(reader)?;
-    let item = data.items.first().unwrap().clone();
-    let preimages = item.preimages;
-    let preimages = preimages
+    let preimages = data
+        .preimages_b64
         .into_iter()
-        .map(|preimage| {
-            let hash: [u8; 32] = preimage.hash.try_into().unwrap();
-            let hash: Bytes32 = hash.into();
-            (hash, preimage.data)
-        })
+        .flat_map(|preimage| preimage.1.into_iter())
         .collect::<HashMap<Bytes32, Vec<u8>>>();
     let preimage_resolver = move |_: u64, _: PreimageType, hash: Bytes32| -> Option<CBytes> {
         preimages
@@ -36,7 +27,7 @@ pub fn prepare_machine(
     let preimage_resolver = Arc::new(Box::new(preimage_resolver));
 
     let binary_path = Path::new(&machines);
-    let mut mach = Machine::new_from_wavm(binary_path, always_merkleize)?;
+    let mut mach = Machine::new_from_wavm(binary_path)?;
 
     let block_hash: [u8; 32] = data.start_state.block_hash.try_into().unwrap();
     let block_hash: Bytes32 = block_hash.into();
@@ -54,10 +45,12 @@ pub fn prepare_machine(
     mach.set_preimage_resolver(preimage_resolver);
 
     let identifier = argument_data_to_inbox(0).unwrap();
-    mach.add_inbox_msg(identifier, data.batch_info.number, data.batch_info.data);
+    for batch_info in data.batch_info.iter() {
+        mach.add_inbox_msg(identifier, batch_info.number, batch_info.data_b64.clone());
+    }
 
     let identifier = argument_data_to_inbox(1).unwrap();
-    mach.add_inbox_msg(identifier, data.delayed_msg_nr, data.delayed_msg);
+    mach.add_inbox_msg(identifier, data.delayed_msg_nr, data.delayed_msg_b64);
 
     Ok(mach)
 }
