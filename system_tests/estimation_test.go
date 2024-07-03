@@ -352,5 +352,7 @@ func TestGasEstimationWithRPCGasLimit(t *testing.T) {
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{execConfig: execConfigB})
 	defer cleanupB()
 	_, err = testClientB.Client.EstimateGas(ctx, ethereum.CallMsg{To: &addr})
-	Require(t, err)
+	if err == nil {
+		Fatal(t, "EstimateGas passed with insufficient gas")
+	}
 }
