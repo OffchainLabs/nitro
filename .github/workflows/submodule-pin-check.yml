@@ -1,4 +1,4 @@
-name: Merge Checks
+name: Submodule Pin Check
 
 on:
   pull_request:
