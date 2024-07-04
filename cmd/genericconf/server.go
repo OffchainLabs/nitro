@@ -201,14 +201,14 @@ type P2PConfig struct {
 }
 
 func (p P2PConfig) Apply(stackConf *node.Config) {
-	stackConf.P2P.ListenAddr = p.ListenAddr
-	stackConf.P2P.NoDial = p.NoDial
-	stackConf.P2P.NoDiscovery = p.NoDiscovery
-	stackConf.P2P.MaxPeers = p.MaxPeers
-	stackConf.P2P.DiscoveryV5 = p.DiscoveryV5
-	stackConf.P2P.DiscoveryV4 = p.DiscoveryV4
-	stackConf.P2P.BootstrapNodes = parseBootnodes(p.Bootnodes)
-	stackConf.P2P.BootstrapNodesV5 = parseBootnodes(p.BootnodesV5)
+	stackConf.P2P.ListenAddr = P2PConfigDefault.ListenAddr
+	stackConf.P2P.NoDial = P2PConfigDefault.NoDial
+	stackConf.P2P.NoDiscovery = P2PConfigDefault.NoDiscovery
+	stackConf.P2P.MaxPeers = P2PConfigDefault.MaxPeers
+	stackConf.P2P.DiscoveryV5 = P2PConfigDefault.DiscoveryV5
+	stackConf.P2P.DiscoveryV4 = P2PConfigDefault.DiscoveryV4
+	stackConf.P2P.BootstrapNodes = parseBootnodes(P2PConfigDefault.Bootnodes)
+	stackConf.P2P.BootstrapNodesV5 = parseBootnodes(P2PConfigDefault.BootnodesV5)
 }
 
 func parseBootnodes(urls []string) []*enode.Node {
