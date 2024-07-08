@@ -9,7 +9,7 @@ go-ethereum/tests
 **/*.yml
 contracts/build
 contracts/cache/
-safe-smart-account/
+safe-smart-account/build/
 solgen/go
 **/node_modules
 
