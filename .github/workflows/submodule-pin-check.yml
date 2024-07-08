@@ -3,7 +3,7 @@ name: Submodule Pin Check
 on:
   pull_request:
     branches: [ master ]
-    types: [synchronize, opened, reopened, labeled, unlabeled]
+    types: [synchronize, opened, reopened]
 
 jobs:
   submodule-pin-check:
