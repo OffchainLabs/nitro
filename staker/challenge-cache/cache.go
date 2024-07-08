@@ -22,6 +22,19 @@ Example uses:
 			hashes.bin
 			subchallenge-level-1-big-step-100/
 				hashes.bin
+	  wavm-module-root-0xcd/
+		message-num-53-rollup-block-hash-0x11.../
+			hashes.bin
+			subchallenge-level-1-big-step-100/
+				hashes.bin
+		message-num-69-rollup-block-hash-0x11.../
+			hashes.bin
+			subchallenge-level-1-big-step-100/
+				hashes.bin
+		message-num-70-rollup-block-hash-0x11.../
+			hashes.bin
+			subchallenge-level-1-big-step-100/
+				hashes.bin
 
 We namespace top-level block challenges by wavm module root. Then, we can retrieve
 the hashes for any data within a challenge or associated subchallenge based on the hierarchy above.
@@ -37,6 +50,8 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
@@ -166,6 +181,44 @@ func (c *Cache) Put(lookup *Key, hashes []common.Hash) error {
 	// For more information on this atomic write pattern, see:
 	// https://stackoverflow.com/questions/2333872/how-to-make-file-creation-an-atomic-operation
 	return os.Rename(f.Name() /*old */, fName /* new */)
+}
+
+// Prune all entries in the cache with a message number <= a specified value.
+func (c *Cache) Prune(ctx context.Context, messageNumber uint64) error {
+	// Define a regex pattern to extract the message number
+	numPruned := 0
+	messageNumPattern := fmt.Sprintf(`%s-(\d+)-`, messageNumberPrefix)
+	pattern := regexp.MustCompile(messageNumPattern)
+	pathsToDelete := make([]string, 0)
+	if err := filepath.Walk(c.baseDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() {
+			matches := pattern.FindStringSubmatch(info.Name())
+			if len(matches) > 1 {
+				dirNameMessageNum, err := strconv.Atoi(matches[1])
+				if err != nil {
+					return err
+				}
+				// Delete the directory if the message number is <= the specified value.
+				if dirNameMessageNum <= int(messageNumber) {
+					pathsToDelete = append(pathsToDelete, path)
+				}
+			}
+		}
+		return nil
+	}); err != nil {
+		return err
+	}
+	for _, path := range pathsToDelete {
+		if err := os.RemoveAll(path); err != nil {
+			return fmt.Errorf("could not prune directory with path %s: %w", path, err)
+		}
+		numPruned += 1
+	}
+	log.Info("Pruned challenge cache", "numDirsPruned", numPruned, "messageNumber", messageNumPattern)
+	return nil
 }
 
 // Reads 32 bytes at a time from a reader up to a specified height. If none, then read all.
