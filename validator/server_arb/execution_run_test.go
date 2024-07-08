@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/validator"
@@ -64,40 +63,41 @@ func (m *mockMachine) Freeze()  {}
 func (m *mockMachine) Destroy() {}
 
 func Test_machineHashesWithStep(t *testing.T) {
-	mm := &mockMachine{}
-	e := &executionRun{}
-	ctx := context.Background()
-
 	t.Run("basic argument checks", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		e := &executionRun{}
 		machStartIndex := uint64(0)
 		stepSize := uint64(0)
 		maxIterations := uint64(0)
 		_, err := e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, maxIterations)
-		if !strings.Contains(err.Error(), "step size cannot be 0") {
+		if err == nil || !strings.Contains(err.Error(), "step size cannot be 0") {
 			t.Error("Wrong error")
 		}
 		stepSize = uint64(1)
 		_, err = e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, maxIterations)
-		if !strings.Contains(err.Error(), "number of iterations cannot be 0") {
+		if err == nil || !strings.Contains(err.Error(), "number of iterations cannot be 0") {
 			t.Error("Wrong error")
 		}
 	})
 	t.Run("machine at start index 0 hash is the finished state hash", func(t *testing.T) {
-		mm.gs = validator.GoGlobalState{
-			Batch: 1,
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		mm := &mockMachine{
+			gs: validator.GoGlobalState{
+				Batch: 1,
+			},
+			totalSteps: 20,
 		}
 		machStartIndex := uint64(0)
 		stepSize := uint64(1)
 		maxIterations := uint64(1)
-		e.cache = &MachineCache{
-			buildingLock: make(chan struct{}, 1),
-			machines:     []MachineInterface{mm},
-			finalMachine: mm,
+		e := &executionRun{
+			cache: NewMachineCache(ctx, func(_ context.Context) (MachineInterface, error) {
+				return mm, nil
+			}, &DefaultMachineCacheConfig),
 		}
-		go func() {
-			<-time.After(time.Millisecond * 50)
-			e.cache.buildingLock <- struct{}{}
-		}()
+
 		hashes, err := e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, maxIterations)
 		if err != nil {
 			t.Fatal(err)
@@ -111,24 +111,24 @@ func Test_machineHashesWithStep(t *testing.T) {
 		}
 	})
 	t.Run("can step in step size increments and collect hashes", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 		initialGs := validator.GoGlobalState{
 			Batch:      1,
 			PosInBatch: 0,
 		}
-		mm.gs = initialGs
-		mm.totalSteps = 20
+		mm := &mockMachine{
+			gs:         initialGs,
+			totalSteps: 20,
+		}
 		machStartIndex := uint64(0)
 		stepSize := uint64(5)
 		maxIterations := uint64(4)
-		e.cache = &MachineCache{
-			buildingLock: make(chan struct{}, 1),
-			machines:     []MachineInterface{mm},
-			finalMachine: mm,
+		e := &executionRun{
+			cache: NewMachineCache(ctx, func(_ context.Context) (MachineInterface, error) {
+				return mm, nil
+			}, &DefaultMachineCacheConfig),
 		}
-		go func() {
-			<-time.After(time.Millisecond * 50)
-			e.cache.buildingLock <- struct{}{}
-		}()
 		hashes, err := e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, maxIterations)
 		if err != nil {
 			t.Fatal(err)
@@ -155,24 +155,25 @@ func Test_machineHashesWithStep(t *testing.T) {
 		}
 	})
 	t.Run("if finishes execution early, can return a smaller number of hashes than the expected max iterations", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 		initialGs := validator.GoGlobalState{
 			Batch:      1,
 			PosInBatch: 0,
 		}
-		mm.gs = initialGs
-		mm.totalSteps = 20
+		mm := &mockMachine{
+			gs:         initialGs,
+			totalSteps: 20,
+		}
 		machStartIndex := uint64(0)
 		stepSize := uint64(5)
 		maxIterations := uint64(10)
-		e.cache = &MachineCache{
-			buildingLock: make(chan struct{}, 1),
-			machines:     []MachineInterface{mm},
-			finalMachine: mm,
+		e := &executionRun{
+			cache: NewMachineCache(ctx, func(_ context.Context) (MachineInterface, error) {
+				return mm, nil
+			}, &DefaultMachineCacheConfig),
 		}
-		go func() {
-			<-time.After(time.Millisecond * 50)
-			e.cache.buildingLock <- struct{}{}
-		}()
+
 		hashes, err := e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, maxIterations)
 		if err != nil {
 			t.Fatal(err)

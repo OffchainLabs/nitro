@@ -127,7 +127,17 @@ func (r *mockExecRun) GetStepAt(position uint64) containers.PromiseInterface[*va
 }
 
 func (r *mockExecRun) GetMachineHashesWithStepSize(machineStartIndex, stepSize, maxIterations uint64) containers.PromiseInterface[[]common.Hash] {
-	return containers.NewReadyPromise[[]common.Hash](nil, nil)
+	ctx := context.Background()
+	hashes := make([]common.Hash, 0)
+	for i := uint64(0); i < maxIterations; i++ {
+		absoluteMachineIndex := machineStartIndex + stepSize*(i+1)
+		stepResult, err := r.GetStepAt(absoluteMachineIndex).Await(ctx)
+		if err != nil {
+			return containers.NewReadyPromise[[]common.Hash](nil, err)
+		}
+		hashes = append(hashes, stepResult.Hash)
+	}
+	return containers.NewReadyPromise[[]common.Hash](hashes, nil)
 }
 
 func (r *mockExecRun) GetLastStep() containers.PromiseInterface[*validator.MachineStepResult] {
