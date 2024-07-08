@@ -201,7 +201,7 @@ func (c *Cache) Prune(ctx context.Context, messageNumber uint64) error {
 				if err != nil {
 					return err
 				}
-				// Delete the directory if the message number is <= the specified value.
+				// Collect the directory path if the message number is <= the specified value.
 				if dirNameMessageNum <= int(messageNumber) {
 					pathsToDelete = append(pathsToDelete, path)
 				}
@@ -211,6 +211,8 @@ func (c *Cache) Prune(ctx context.Context, messageNumber uint64) error {
 	}); err != nil {
 		return err
 	}
+	// We delete separately from collecting the paths, as deleting while walking
+	// a dir can cause issues with the filepath.Walk function.
 	for _, path := range pathsToDelete {
 		if err := os.RemoveAll(path); err != nil {
 			return fmt.Errorf("could not prune directory with path %s: %w", path, err)
