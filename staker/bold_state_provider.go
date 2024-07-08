@@ -104,12 +104,17 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 		return nil, err
 	}
 	if previousGlobalState != nil {
-		previousMessageCount, err := s.messageCountFromGlobalState(ctx, *previousGlobalState)
+		// TODO: Use safer sub here.
+		previousMessageCount, err := s.validator.inboxTracker.GetBatchMessageCount(previousGlobalState.Batch - 1)
 		if err != nil {
+			if strings.Contains(err.Error(), "not found") {
+				return nil, fmt.Errorf("%w: batch count %d", l2stateprovider.ErrChainCatchingUp, maxInboxCount)
+			}
 			return nil, err
 		}
+		messageDiffBetweenBatches := messageCount - previousMessageCount
 		maxMessageCount := previousMessageCount + arbutil.MessageIndex(maxNumberOfBlocks)
-		if messageCount > maxMessageCount {
+		if messageDiffBetweenBatches > maxMessageCount {
 			messageCount = maxMessageCount
 			batchIndex, err = FindBatchContainingMessageIndex(s.validator.inboxTracker, messageCount, maxInboxCount)
 			if err != nil {
