@@ -4,6 +4,7 @@ package challengecache
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -17,6 +18,7 @@ import (
 var _ HistoryCommitmentCacher = (*Cache)(nil)
 
 func TestCache(t *testing.T) {
+	ctx := context.Background()
 	basePath := t.TempDir()
 	if err := os.MkdirAll(basePath, os.ModePerm); err != nil {
 		t.Fatal(err)
@@ -28,6 +30,9 @@ func TestCache(t *testing.T) {
 	})
 	cache, err := New(basePath)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err = cache.Init(ctx); err != nil {
 		t.Fatal(err)
 	}
 	key := &Key{
@@ -255,7 +260,7 @@ func Test_determineFilePath(t *testing.T) {
 					StepHeights:   []uint64{50},
 				},
 			},
-			want:    "wavm-module-root-0x0000000000000000000000000000000000000000000000000000000000000000/rollup-block-hash-0x0000000000000000000000000000000000000000000000000000000000000000-message-num-100/subchallenge-level-1-big-step-50/hashes.bin",
+			want:    "wavm-module-root-0x0000000000000000000000000000000000000000000000000000000000000000/message-num-100-rollup-block-hash-0x0000000000000000000000000000000000000000000000000000000000000000/subchallenge-level-1-big-step-50/hashes.bin",
 			wantErr: false,
 		},
 	}
@@ -282,6 +287,7 @@ func Test_determineFilePath(t *testing.T) {
 }
 
 func BenchmarkCache_Read_32Mb(b *testing.B) {
+	ctx := context.Background()
 	b.StopTimer()
 	basePath := os.TempDir()
 	if err := os.MkdirAll(basePath, os.ModePerm); err != nil {
@@ -294,6 +300,9 @@ func BenchmarkCache_Read_32Mb(b *testing.B) {
 	})
 	cache, err := New(basePath)
 	if err != nil {
+		b.Fatal(err)
+	}
+	if err = cache.Init(ctx); err != nil {
 		b.Fatal(err)
 	}
 	key := &Key{
