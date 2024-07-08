@@ -97,10 +97,6 @@ var TestCachingConfig = CachingConfig{
 	StateScheme:                        env.GetTestStateScheme(),
 }
 
-var (
-	InvalidStateSchemeForArchive = errors.New("archive cannot be set when using path as the state-scheme")
-)
-
 // TODO remove stack from parameters as it is no longer needed here
 func DefaultCacheConfigFor(stack *node.Node, cachingConfig *CachingConfig) *core.CacheConfig {
 	baseConf := ethconfig.Defaults
@@ -131,7 +127,7 @@ func (c *CachingConfig) validateStateScheme() error {
 	case rawdb.HashScheme:
 	case rawdb.PathScheme:
 		if c.Archive {
-			return InvalidStateSchemeForArchive
+			return errors.New("archive cannot be set when using path as the state-scheme")
 		}
 	default:
 		return errors.New("Invalid StateScheme")

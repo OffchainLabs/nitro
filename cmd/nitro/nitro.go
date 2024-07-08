@@ -818,10 +818,6 @@ func (c *NodeConfig) CanReload(new *NodeConfig) error {
 	return err
 }
 
-var (
-	invalidCachingStateSchemeForValidator = errors.New("path cannot be used as execution.caching.state-scheme when validator is required")
-)
-
 func (c *NodeConfig) Validate() error {
 	if c.Init.RecreateMissingStateFrom > 0 && !c.Execution.Caching.Archive {
 		return errors.New("recreate-missing-state-from enabled for a non-archive node")
@@ -842,7 +838,7 @@ func (c *NodeConfig) Validate() error {
 		return err
 	}
 	if c.Node.ValidatorRequired() && (c.Execution.Caching.StateScheme == rawdb.PathScheme) {
-		return invalidCachingStateSchemeForValidator
+		return errors.New("path cannot be used as execution.caching.state-scheme when validator is required")
 	}
 	return c.Persistent.Validate()
 }
