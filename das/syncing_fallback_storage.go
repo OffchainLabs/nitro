@@ -88,9 +88,10 @@ func SyncToStorageConfigAddOptions(prefix string, f *flag.FlagSet) {
 type l1SyncService struct {
 	stopwaiter.StopWaiter
 
-	config     SyncToStorageConfig
-	syncTo     StorageService
-	dataSource daprovider.DASReader
+	config        SyncToStorageConfig
+	syncTo        StorageService
+	dataSource    daprovider.DASReader
+	keysetFetcher *KeysetFetcher
 
 	l1Reader      *headerreader.HeaderReader
 	inboxContract *bridgegen.SequencerInbox
@@ -165,8 +166,7 @@ func newl1SyncService(config *SyncToStorageConfig, syncTo StorageService, dataSo
 	if err != nil {
 		return nil, err
 	}
-	// make sure that as we sync, any Keysets missing from dataSource will fetched from the L1 chain
-	dataSource, err = NewChainFetchReader(dataSource, l1Client, inboxAddr)
+	keysetFetcher, err := NewKeysetFetcher(l1Client, inboxAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -174,6 +174,7 @@ func newl1SyncService(config *SyncToStorageConfig, syncTo StorageService, dataSo
 		config:         *config,
 		syncTo:         syncTo,
 		dataSource:     dataSource,
+		keysetFetcher:  keysetFetcher,
 		l1Reader:       l1Reader,
 		inboxContract:  inboxContract,
 		inboxAddr:      inboxAddr,
@@ -211,7 +212,7 @@ func (s *l1SyncService) processBatchDelivered(ctx context.Context, batchDelivere
 
 	data = append(header, data...)
 	var payload []byte
-	if payload, err = daprovider.RecoverPayloadFromDasBatch(ctx, deliveredEvent.BatchSequenceNumber.Uint64(), data, s.dataSource, nil, true); err != nil {
+	if payload, err = daprovider.RecoverPayloadFromDasBatch(ctx, deliveredEvent.BatchSequenceNumber.Uint64(), data, s.dataSource, s.keysetFetcher, nil, true); err != nil {
 		log.Error("recover payload failed", "txhash", batchDeliveredLog.TxHash, "data", data)
 		return err
 	}
