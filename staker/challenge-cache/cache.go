@@ -10,7 +10,7 @@ store them in a filesystem cache to avoid recomputing them and for hierarchical 
 Each file contains a list of 32 byte hashes, concatenated together as bytes.
 Using this structure, we can namespace hashes by message number and by challenge level.
 
-Once a validator receives a full list of computed machine hashes for the first time from a validatio node,
+Once a validator receives a full list of computed machine hashes for the first time from a validation node,
 it will write the hashes to this filesystem hierarchy for fast access next time these hashes are needed.
 
 Example uses:
@@ -18,7 +18,7 @@ Example uses:
 - Obtain all the hashes from step 100 to 101 at subchallenge level 1 for the execution of message num 70.
 
 	  wavm-module-root-0xab/
-		rollup-block-hash-0x12...-message-num-70/
+		message-num-70-rollup-block-hash-0x12.../
 			hashes.bin
 			subchallenge-level-1-big-step-100/
 				hashes.bin
@@ -31,6 +31,7 @@ package challengecache
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -42,7 +43,7 @@ import (
 )
 
 var (
-	ErrNotFoundInCache    = errors.New("no found in challenge cache")
+	ErrNotFoundInCache    = errors.New("not found in challenge cache")
 	ErrFileAlreadyExists  = errors.New("file already exists")
 	ErrNoHashes           = errors.New("no hashes being written")
 	hashesFileName        = "hashes.bin"
@@ -59,23 +60,6 @@ type HistoryCommitmentCacher interface {
 	Put(lookup *Key, hashes []common.Hash) error
 }
 
-// Cache for history commitments on disk.
-type Cache struct {
-	baseDir string
-}
-
-// New cache from a base directory path.
-func New(baseDir string) (*Cache, error) {
-	if _, err := os.Stat(baseDir); err != nil {
-		if err := os.MkdirAll(baseDir, os.ModePerm); err != nil {
-			return nil, fmt.Errorf("could not make base cache directory %s: %w", baseDir, err)
-		}
-	}
-	return &Cache{
-		baseDir: baseDir,
-	}, nil
-}
-
 // Key for cache lookups includes the wavm module root of a challenge, as well
 // as the heights for messages and big steps as needed.
 type Key struct {
@@ -83,6 +67,39 @@ type Key struct {
 	WavmModuleRoot  common.Hash
 	MessageHeight   uint64
 	StepHeights     []uint64
+}
+
+// Cache for history commitments on disk.
+type Cache struct {
+	baseDir       string
+	tempWritesDir string
+}
+
+// New cache from a base directory path.
+func New(baseDir string) (*Cache, error) {
+	return &Cache{
+		baseDir:       baseDir,
+		tempWritesDir: "",
+	}, nil
+}
+
+// Init a cache by verifying its base directory exists.
+func (c *Cache) Init(_ context.Context) error {
+	if _, err := os.Stat(c.baseDir); err != nil {
+		if err := os.MkdirAll(c.baseDir, os.ModePerm); err != nil {
+			return fmt.Errorf("could not make initialize challenge cache directory %s: %w", c.baseDir, err)
+		}
+	}
+	// We create a temp directory to write our hashes to first when putting to the cache.
+	// Once writing succeeds, we rename in an atomic operation to the correct file name
+	// in the cache directory hierarchy in the `Put` function. All of these temporary writes
+	// will occur in a subdir of the base directory called temp.
+	tempWritesDir, err := os.MkdirTemp(c.baseDir, "temp")
+	if err != nil {
+		return err
+	}
+	c.tempWritesDir = tempWritesDir
+	return nil
 }
 
 // Get a list of hashes from the cache from index 0 up to a certain index. Hashes are saved as files in the directory
@@ -122,24 +139,14 @@ func (c *Cache) Put(lookup *Key, hashes []common.Hash) error {
 	if len(hashes) == 0 {
 		return ErrNoHashes
 	}
+	if c.tempWritesDir == "" {
+		return fmt.Errorf("cache not initialized by calling .Init(ctx)")
+	}
 	fName, err := determineFilePath(c.baseDir, lookup)
 	if err != nil {
 		return err
 	}
-	// We create a tmp file to write our hashes to first. If writing fails,
-	// we don't want to leave a half-written file in our cache directory.
-	// Once writing succeeds, we rename in an atomic operation to the correct file name
-	// in the cache directory hierarchy.
-	tmp, err := os.MkdirTemp(c.baseDir, "tmpdir")
-	if err != nil {
-		return err
-	}
-	tmpFName := filepath.Join(tmp, fName)
-	dir := filepath.Dir(tmpFName)
-	if err := os.MkdirAll(dir, os.ModePerm); err != nil {
-		return fmt.Errorf("could not make tmp directory %s: %w", dir, err)
-	}
-	f, err := os.Create(tmpFName)
+	f, err := os.CreateTemp(c.tempWritesDir, fmt.Sprintf("%s-*", hashesFileName))
 	if err != nil {
 		return err
 	}
@@ -154,11 +161,11 @@ func (c *Cache) Put(lookup *Key, hashes []common.Hash) error {
 	if err := os.MkdirAll(filepath.Dir(fName), os.ModePerm); err != nil {
 		return fmt.Errorf("could not make file directory %s: %w", fName, err)
 	}
-	// If the file writing was successful, we rename the file from the tmp directory
+	// If the file writing was successful, we rename the file from the temp directory
 	// into our cache directory. This is an atomic operation.
 	// For more information on this atomic write pattern, see:
 	// https://stackoverflow.com/questions/2333872/how-to-make-file-creation-an-atomic-operation
-	return os.Rename(tmpFName /*old */, fName /* new */)
+	return os.Rename(f.Name() /*old */, fName /* new */)
 }
 
 // Reads 32 bytes at a time from a reader up to a specified height. If none, then read all.
@@ -217,7 +224,7 @@ for the data requested within the cache directory hierarchy. The folder structur
 for a given filesystem challenge cache will look as follows:
 
 	  wavm-module-root-0xab/
-		rollup-block-hash-0x12...-message-num-70/
+		message-num-70-rollup-block-hash-0x12.../
 			hashes.bin
 			subchallenge-level-1-big-step-100/
 				hashes.bin
@@ -225,7 +232,7 @@ for a given filesystem challenge cache will look as follows:
 func determineFilePath(baseDir string, lookup *Key) (string, error) {
 	key := make([]string, 0)
 	key = append(key, fmt.Sprintf("%s-%s", wavmModuleRootPrefix, lookup.WavmModuleRoot.Hex()))
-	key = append(key, fmt.Sprintf("%s-%s-%s-%d", rollupBlockHashPrefix, lookup.RollupBlockHash.Hex(), messageNumberPrefix, lookup.MessageHeight))
+	key = append(key, fmt.Sprintf("%s-%d-%s-%s", messageNumberPrefix, lookup.MessageHeight, rollupBlockHashPrefix, lookup.RollupBlockHash.Hex()))
 	for challengeLevel, height := range lookup.StepHeights {
 		key = append(key, fmt.Sprintf(
 			"%s-%d-%s-%d",
