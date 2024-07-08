@@ -19,6 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/solgen/go/node_interfacegen"
+	"github.com/offchainlabs/nitro/validator/server_common"
 )
 
 func TestFindBatch(t *testing.T) {
@@ -39,7 +40,9 @@ func TestFindBatch(t *testing.T) {
 
 	chainConfig := params.ArbitrumDevTestChainConfig()
 	fatalErrChan := make(chan error, 10)
-	rollupAddresses, initMsg := DeployOnTestL1(t, ctx, l1Info, l1Backend, chainConfig)
+	locator, err := server_common.NewMachineLocator("")
+	Require(t, err)
+	rollupAddresses, initMsg := DeployOnTestL1(t, ctx, l1Info, l1Backend, chainConfig, locator.LatestWasmModuleRoot())
 
 	bridgeAddr, seqInbox, seqInboxAddr := setupSequencerInboxStub(ctx, t, l1Info, l1Backend, chainConfig)
 
@@ -49,7 +52,7 @@ func TestFindBatch(t *testing.T) {
 	rollupAddresses.SequencerInbox = seqInboxAddr
 	l2Info := NewArbTestInfo(t, chainConfig.ChainID)
 	consensus, _ := createL2Nodes(t, ctx, conf, chainConfig, l1Backend, l2Info, rollupAddresses, initMsg, nil, nil, fatalErrChan)
-	err := consensus.Start(ctx)
+	err = consensus.Start(ctx)
 	Require(t, err)
 
 	l2Client := ClientForStack(t, consensus.Stack)
