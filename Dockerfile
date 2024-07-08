@@ -33,7 +33,7 @@ COPY contracts/package.json contracts/yarn.lock contracts/
 RUN cd contracts && yarn install
 COPY contracts contracts/
 COPY safe-smart-account safe-smart-account/
-RUN cd safe-smart-account && npm i && npm run build
+RUN cd safe-smart-account && npm i
 COPY Makefile .
 RUN . ~/.bashrc && NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-solidity
 
@@ -227,7 +227,7 @@ COPY . ./
 COPY --from=contracts-builder workspace/contracts/build/ contracts/build/
 COPY --from=contracts-builder workspace/contracts/out/ contracts/out/
 COPY --from=contracts-builder workspace/contracts/node_modules/@offchainlabs/upgrade-executor/build/contracts/src/UpgradeExecutor.sol/UpgradeExecutor.json contracts/node_modules/@offchainlabs/upgrade-executor/build/contracts/src/UpgradeExecutor.sol/
-COPY --from=contracts-builder workspace/safe-smart-account/build/ workspace/safe-smart-account/build/
+COPY --from=contracts-builder workspace/safe-smart-account/build/ safe-smart-account/build/
 COPY --from=contracts-builder workspace/.make/ .make/
 COPY --from=prover-header-export / target/
 COPY --from=brotli-library-export / target/
