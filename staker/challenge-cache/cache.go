@@ -22,19 +22,6 @@ Example uses:
 			hashes.bin
 			subchallenge-level-1-big-step-100/
 				hashes.bin
-	  wavm-module-root-0xcd/
-		message-num-53-rollup-block-hash-0x11.../
-			hashes.bin
-			subchallenge-level-1-big-step-100/
-				hashes.bin
-		message-num-69-rollup-block-hash-0x11.../
-			hashes.bin
-			subchallenge-level-1-big-step-100/
-				hashes.bin
-		message-num-70-rollup-block-hash-0x11.../
-			hashes.bin
-			subchallenge-level-1-big-step-100/
-				hashes.bin
 
 We namespace top-level block challenges by wavm module root. Then, we can retrieve
 the hashes for any data within a challenge or associated subchallenge based on the hierarchy above.
