@@ -108,3 +108,7 @@ func TestProgramLongCall(t *testing.T) {
 func TestProgramLongArbitratorCall(t *testing.T) {
 	testProgramResursiveCalls(t, fullRecurseTest(), false)
 }
+
+func TestProgramArbitratorStylusUpgrade(t *testing.T) {
+	testStylusUpgrade(t, false)
+}
