@@ -30,12 +30,16 @@ type Reader interface {
 
 // NewReaderForDAS is generally meant to be only used by nitro.
 // DA Providers should implement methods in the Reader interface independently
-func NewReaderForDAS(dasReader DASReader) *readerForDAS {
-	return &readerForDAS{dasReader: dasReader}
+func NewReaderForDAS(dasReader DASReader, keysetFetcher DASKeysetFetcher) *readerForDAS {
+	return &readerForDAS{
+		dasReader:     dasReader,
+		keysetFetcher: keysetFetcher,
+	}
 }
 
 type readerForDAS struct {
-	dasReader DASReader
+	dasReader     DASReader
+	keysetFetcher DASKeysetFetcher
 }
 
 func (d *readerForDAS) IsValidHeaderByte(headerByte byte) bool {
@@ -50,7 +54,7 @@ func (d *readerForDAS) RecoverPayloadFromBatch(
 	preimageRecorder PreimageRecorder,
 	validateSeqMsg bool,
 ) ([]byte, error) {
-	return RecoverPayloadFromDasBatch(ctx, batchNum, sequencerMsg, d.dasReader, preimageRecorder, validateSeqMsg)
+	return RecoverPayloadFromDasBatch(ctx, batchNum, sequencerMsg, d.dasReader, d.keysetFetcher, preimageRecorder, validateSeqMsg)
 }
 
 // NewReaderForBlobReader is generally meant to be only used by nitro.
