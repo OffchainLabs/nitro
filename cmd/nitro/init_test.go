@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/node"
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
@@ -122,35 +123,65 @@ func TestSetLatestSnapshotUrl(t *testing.T) {
 	const (
 		chain        = "arb1"
 		snapshotKind = "archive"
-		latestDate   = "2024/21"
 		latestFile   = "latest-" + snapshotKind + ".txt"
 		dirPerm      = 0700
 		filePerm     = 0600
 	)
 
-	// Create latest file
-	serverDir := t.TempDir()
-	err := os.Mkdir(filepath.Join(serverDir, chain), dirPerm)
-	Require(t, err)
-	err = os.WriteFile(filepath.Join(serverDir, chain, latestFile), []byte(latestDate), filePerm)
-	Require(t, err)
+	testCases := []struct {
+		name           string
+		latestContents string
+		wantUrl        func(string) string
+	}{
+		{
+			name:           "latest file with path",
+			latestContents: "/arb1/2024/21/archive.tar.gz",
+			wantUrl:        func(serverAddr string) string { return serverAddr + "/arb1/2024/21/archive.tar.gz" },
+		},
+		{
+			name:           "latest file with rootless path",
+			latestContents: "arb1/2024/21/archive.tar.gz",
+			wantUrl:        func(serverAddr string) string { return serverAddr + "/arb1/2024/21/archive.tar.gz" },
+		},
+		{
+			name:           "latest file with http url",
+			latestContents: "http://some.domain.com/arb1/2024/21/archive.tar.gz",
+			wantUrl:        func(serverAddr string) string { return "http://some.domain.com/arb1/2024/21/archive.tar.gz" },
+		},
+		{
+			name:           "latest file with https url",
+			latestContents: "https://some.domain.com/arb1/2024/21/archive.tar.gz",
+			wantUrl:        func(serverAddr string) string { return "https://some.domain.com/arb1/2024/21/archive.tar.gz" },
+		},
+	}
 
-	// Start HTTP server
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
-	addr := "http://" + startFileServer(t, ctx, serverDir)
+	for _, testCase := range testCases {
+		t.Log("running test case", testCase.name)
 
-	// Set latest snapshot URL
-	initConfig := conf.InitConfigDefault
-	initConfig.Latest = snapshotKind
-	initConfig.LatestBase = addr
-	err = setLatestSnapshotUrl(ctx, &initConfig, chain)
-	Require(t, err)
+		// Create latest file
+		serverDir := t.TempDir()
+		err := os.Mkdir(filepath.Join(serverDir, chain), dirPerm)
+		Require(t, err)
+		err = os.WriteFile(filepath.Join(serverDir, chain, latestFile), []byte(testCase.latestContents), filePerm)
+		Require(t, err)
 
-	// Check url
-	want := fmt.Sprintf("%s/%s/%s/archive.tar", addr, chain, latestDate)
-	if initConfig.Url != want {
-		t.Errorf("initConfig.Url = %s; want: %s", initConfig.Url, want)
+		// Start HTTP server
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		addr := "http://" + startFileServer(t, ctx, serverDir)
+
+		// Set latest snapshot URL
+		initConfig := conf.InitConfigDefault
+		initConfig.Latest = snapshotKind
+		initConfig.LatestBase = addr
+		err = setLatestSnapshotUrl(ctx, &initConfig, chain)
+		Require(t, err)
+
+		// Check url
+		want := testCase.wantUrl(addr)
+		if initConfig.Url != want {
+			t.Fatalf("initConfig.Url = %s; want: %s", initConfig.Url, want)
+		}
 	}
 }
 
@@ -176,4 +207,36 @@ func startFileServer(t *testing.T, ctx context.Context, dir string) string {
 		Require(t, err, "failed to shutdown server")
 	}()
 	return addr
+}
+
+func testIsNotExistError(t *testing.T, dbEngine string, isNotExist func(error) bool) {
+	stackConf := node.DefaultConfig
+	stackConf.DataDir = t.TempDir()
+	stackConf.DBEngine = dbEngine
+	stack, err := node.New(&stackConf)
+	if err != nil {
+		t.Fatalf("Failed to created test stack: %v", err)
+	}
+	defer stack.Close()
+	readonly := true
+	_, err = stack.OpenDatabaseWithExtraOptions("test", 16, 16, "", readonly, nil)
+	if err == nil {
+		t.Fatal("Opening non-existent database did not fail")
+	}
+	if !isNotExist(err) {
+		t.Fatalf("Failed to classify error as not exist error - internal implementation of OpenDatabaseWithExtraOptions might have changed, err: %v", err)
+	}
+	err = errors.New("some other error")
+	if isNotExist(err) {
+		t.Fatalf("Classified other error as not exist, err: %v", err)
+	}
+}
+
+func TestIsNotExistError(t *testing.T) {
+	t.Run("TestIsPebbleNotExistError", func(t *testing.T) {
+		testIsNotExistError(t, "pebble", isPebbleNotExistError)
+	})
+	t.Run("TestIsLeveldbNotExistError", func(t *testing.T) {
+		testIsNotExistError(t, "leveldb", isLeveldbNotExistError)
+	})
 }
