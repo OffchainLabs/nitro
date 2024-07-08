@@ -259,13 +259,18 @@ func setLatestSnapshotUrl(ctx context.Context, initConfig *conf.InitConfig, chai
 	if err != nil {
 		return fmt.Errorf("failed to parse latest mirror \"%s\": %w", initConfig.LatestBase, err)
 	}
-	latestDateUrl := baseUrl.JoinPath(chain, "latest-"+initConfig.Latest+".txt").String()
-	latestDateBytes, err := httpGet(ctx, latestDateUrl)
+	latestFileUrl := baseUrl.JoinPath(chain, "latest-"+initConfig.Latest+".txt").String()
+	latestFileBytes, err := httpGet(ctx, latestFileUrl)
 	if err != nil {
-		return fmt.Errorf("failed to get latest snapshot at \"%s\": %w", latestDateUrl, err)
+		return fmt.Errorf("failed to get latest file at \"%s\": %w", latestFileUrl, err)
 	}
-	latestDate := strings.TrimSpace(string(latestDateBytes))
-	initConfig.Url = baseUrl.JoinPath(chain, latestDate, initConfig.Latest+".tar").String()
+	latestFile := strings.TrimSpace(string(latestFileBytes))
+	containsScheme := regexp.MustCompile("https?://")
+	if containsScheme.MatchString(latestFile) {
+		initConfig.Url = latestFile
+	} else {
+		initConfig.Url = baseUrl.JoinPath(latestFile).String()
+	}
 	log.Info("Set latest snapshot url", "url", initConfig.Url)
 	return nil
 }
