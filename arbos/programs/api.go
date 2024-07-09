@@ -228,6 +228,9 @@ func newApiClosures(
 		return addr, res, cost, nil
 	}
 	emitLog := func(topics []common.Hash, data []byte) error {
+		if tracingInfo != nil {
+			tracingInfo.RecordEmitLog(topics, data)
+		}
 		if readOnly {
 			return vm.ErrWriteProtection
 		}
