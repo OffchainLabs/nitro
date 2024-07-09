@@ -162,8 +162,7 @@ impl CompileConfig {
 
         match version {
             0 => {}
-            1 => {
-                // TODO: settle on reasonable values for the v1 release
+            1 | 2 => {
                 config.bounds.heap_bound = Pages(128); // 8 mb
                 config.bounds.max_frame_size = 10 * 1024;
                 config.bounds.max_frame_contention = 4096;
