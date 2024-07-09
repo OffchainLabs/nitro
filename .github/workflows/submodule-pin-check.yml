@@ -13,8 +13,9 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
+          fetch-depth: 0
           submodules: recursive
 
-      - name: Check all submodules are under origin/HEAD
+      - name: Check all submodules are ancestors of origin/HEAD or configured branch
         run: ${{ github.workspace }}/.github/workflows/submodule-pin-check.sh
 
