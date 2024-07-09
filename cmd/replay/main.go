@@ -280,8 +280,7 @@ func main() {
 		}
 
 		// Handle the various pre-conditions and panics that can happen before we should enter the espresso logic in the validators STF
-		validatingAgainstEspresso := handleEspressoPreConditions(message, chainConfig.ArbitrumChainParams.EnableEspresso)
-
+		validatingAgainstEspresso, panicHandler := handleEspressoPreConditions(message, chainConfig.ArbitrumChainParams.EnableEspresso)
 		if validatingAgainstEspresso {
 			txs, jst, err := arbos.ParseEspressoMsg(message.Message)
 			if err != nil {
@@ -326,6 +325,9 @@ func main() {
 				espressocrypto.VerifyNamespace(chainConfig.ChainID.Uint64(), *jst.Proof, *jst.Header.PayloadCommitment, *jst.Header.NsTable, txs, *jst.VidCommon)
 			}
 
+		} else {
+			// Call the error case closure returned by handleEspressoPreconditions()
+			panicHandler()
 		}
 
 		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher, false)
