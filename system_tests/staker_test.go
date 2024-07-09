@@ -828,7 +828,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	}
 	valWalletB, err := validatorwallet.NewEOA(dpB, l2nodeB.DeployInfo.Rollup, l2nodeB.L1Reader.Client(), func() uint64 { return 0 })
 	Require(t, err)
-	valConfig.Strategy = "MakeNodes"
+	valConfig.Strategy = "stakelatest"
 	statelessB, err := staker.NewStatelessBlockValidator(
 		l2nodeB.InboxReader,
 		l2nodeB.InboxTracker,
