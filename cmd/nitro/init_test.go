@@ -13,7 +13,9 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -22,13 +24,47 @@ import (
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
-func TestDownloadInit(t *testing.T) {
-	const (
-		archiveName = "random_data.tar.gz"
-		dataSize    = 1024 * 1024
-		filePerm    = 0600
-	)
+const (
+	archiveName = "random_data.tar.gz"
+	numParts    = 3
+	partSize    = 1024 * 1024
+	dataSize    = numParts * partSize
+	filePerm    = 0600
+	dirPerm     = 0700
+)
 
+func TestDownloadInitWithoutChecksum(t *testing.T) {
+	// Create archive with random data
+	serverDir := t.TempDir()
+	data := testhelpers.RandomSlice(dataSize)
+
+	// Write archive file
+	archiveFile := fmt.Sprintf("%s/%s", serverDir, archiveName)
+	err := os.WriteFile(archiveFile, data, filePerm)
+	Require(t, err, "failed to write archive")
+
+	// Start HTTP server
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	addr := startFileServer(t, ctx, serverDir)
+
+	// Download file
+	initConfig := conf.InitConfigDefault
+	initConfig.Url = fmt.Sprintf("http://%s/%s", addr, archiveName)
+	initConfig.DownloadPath = t.TempDir()
+	initConfig.ValidateChecksum = false
+	receivedArchive, err := downloadInit(ctx, &initConfig)
+	Require(t, err, "failed to download")
+
+	// Check archive contents
+	receivedData, err := os.ReadFile(receivedArchive)
+	Require(t, err, "failed to read received archive")
+	if !bytes.Equal(receivedData, data) {
+		t.Error("downloaded archive is different from generated one")
+	}
+}
+
+func TestDownloadInitWithChecksum(t *testing.T) {
 	// Create archive with random data
 	serverDir := t.TempDir()
 	data := testhelpers.RandomSlice(dataSize)
@@ -65,32 +101,69 @@ func TestDownloadInit(t *testing.T) {
 	}
 }
 
-func TestDownloadInitInParts(t *testing.T) {
-	const (
-		archiveName = "random_data.tar.gz"
-		numParts    = 3
-		partSize    = 1024 * 1024
-		dataSize    = numParts * partSize
-		filePerm    = 0600
-	)
-
+func TestDownloadInitInPartsWithoutChecksum(t *testing.T) {
 	// Create parts with random data
 	serverDir := t.TempDir()
 	data := testhelpers.RandomSlice(dataSize)
+	manifest := bytes.NewBuffer(nil)
+	for i := 0; i < numParts; i++ {
+		partData := data[partSize*i : partSize*(i+1)]
+		partName := fmt.Sprintf("%s.part%d", archiveName, i)
+		fmt.Fprintf(manifest, "%s  %s\n", strings.Repeat("0", 64), partName)
+		err := os.WriteFile(path.Join(serverDir, partName), partData, filePerm)
+		Require(t, err, "failed to write part")
+	}
+	manifestFile := fmt.Sprintf("%s/%s.manifest.txt", serverDir, archiveName)
+	err := os.WriteFile(manifestFile, manifest.Bytes(), filePerm)
+	Require(t, err, "failed to write manifest file")
+
+	// Start HTTP server
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	addr := startFileServer(t, ctx, serverDir)
+
+	// Download file
+	initConfig := conf.InitConfigDefault
+	initConfig.Url = fmt.Sprintf("http://%s/%s", addr, archiveName)
+	initConfig.DownloadPath = t.TempDir()
+	initConfig.ValidateChecksum = false
+	receivedArchive, err := downloadInit(ctx, &initConfig)
+	Require(t, err, "failed to download")
+
+	// check database contents
+	receivedData, err := os.ReadFile(receivedArchive)
+	Require(t, err, "failed to read received archive")
+	if !bytes.Equal(receivedData, data) {
+		t.Error("downloaded archive is different from generated one")
+	}
+
+	// Check if the function deleted the temporary files
+	entries, err := os.ReadDir(initConfig.DownloadPath)
+	Require(t, err, "failed to read temp dir")
+	if len(entries) != 1 {
+		t.Error("download function did not delete temp files")
+	}
+}
+
+func TestDownloadInitInPartsWithChecksum(t *testing.T) {
+	// Create parts with random data
+	serverDir := t.TempDir()
+	data := testhelpers.RandomSlice(dataSize)
+	manifest := bytes.NewBuffer(nil)
 	for i := 0; i < numParts; i++ {
 		// Create part and checksum
 		partData := data[partSize*i : partSize*(i+1)]
+		partName := fmt.Sprintf("%s.part%d", archiveName, i)
 		checksumBytes := sha256.Sum256(partData)
 		checksum := hex.EncodeToString(checksumBytes[:])
+		fmt.Fprintf(manifest, "%s  %s\n", checksum, partName)
 		// Write part file
-		partFile := fmt.Sprintf("%s/%s.part%d", serverDir, archiveName, i)
-		err := os.WriteFile(partFile, partData, filePerm)
+		err := os.WriteFile(path.Join(serverDir, partName), partData, filePerm)
 		Require(t, err, "failed to write part")
-		// Write checksum file
-		checksumFile := partFile + ".sha256"
-		err = os.WriteFile(checksumFile, []byte(checksum), filePerm)
-		Require(t, err, "failed to write checksum")
 	}
+	manifestFile := fmt.Sprintf("%s/%s.manifest.txt", serverDir, archiveName)
+	err := os.WriteFile(manifestFile, manifest.Bytes(), filePerm)
+	Require(t, err, "failed to write manifest file")
 
 	// Start HTTP server
 	ctx, cancel := context.WithCancel(context.Background())
@@ -124,8 +197,6 @@ func TestSetLatestSnapshotUrl(t *testing.T) {
 		chain        = "arb1"
 		snapshotKind = "archive"
 		latestFile   = "latest-" + snapshotKind + ".txt"
-		dirPerm      = 0700
-		filePerm     = 0600
 	)
 
 	testCases := []struct {
@@ -239,4 +310,54 @@ func TestIsNotExistError(t *testing.T) {
 	t.Run("TestIsLeveldbNotExistError", func(t *testing.T) {
 		testIsNotExistError(t, "leveldb", isLeveldbNotExistError)
 	})
+}
+
+func TestEmptyDatabaseDir(t *testing.T) {
+	testCases := []struct {
+		name    string
+		files   []string
+		force   bool
+		wantErr string
+	}{
+		{
+			name: "succeed with empty dir",
+		},
+		{
+			name:  "succeed with expected files",
+			files: []string{"LOCK", "classic-msg", "l2chaindata"},
+		},
+		{
+			name:    "fail with unexpected files",
+			files:   []string{"LOCK", "a", "b", "c", "d"},
+			wantErr: "found 4 unexpected files in database directory, including: a, b, c",
+		},
+		{
+			name:    "fail with unexpected files when forcing",
+			files:   []string{"LOCK", "a", "b", "c", "d"},
+			force:   true,
+			wantErr: "trying to overwrite old database directory",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			for _, file := range tc.files {
+				const filePerm = 0600
+				err := os.WriteFile(path.Join(dir, file), []byte{1, 2, 3}, filePerm)
+				Require(t, err)
+			}
+			err := checkEmptyDatabaseDir(dir, tc.force)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Errorf("expected nil error, got %q", err)
+				}
+			} else {
+				if err == nil {
+					t.Error("expected error, got nil")
+				} else if !strings.Contains(err.Error(), tc.wantErr) {
+					t.Errorf("expected %q, got %q", tc.wantErr, err)
+				}
+			}
+		})
+	}
 }
