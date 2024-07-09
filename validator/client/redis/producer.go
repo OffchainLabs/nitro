@@ -23,6 +23,7 @@ type ValidationClientConfig struct {
 	Room           int32                 `koanf:"room"`
 	RedisURL       string                `koanf:"redis-url"`
 	ProducerConfig pubsub.ProducerConfig `koanf:"producer-config"`
+	CreateStreams  bool                  `koanf:"create-streams"`
 }
 
 func (c ValidationClientConfig) Enabled() bool {
@@ -34,6 +35,7 @@ var DefaultValidationClientConfig = ValidationClientConfig{
 	Room:           2,
 	RedisURL:       "",
 	ProducerConfig: pubsub.DefaultProducerConfig,
+	CreateStreams:  true,
 }
 
 var TestValidationClientConfig = ValidationClientConfig{
@@ -41,12 +43,15 @@ var TestValidationClientConfig = ValidationClientConfig{
 	Room:           2,
 	RedisURL:       "",
 	ProducerConfig: pubsub.TestProducerConfig,
+	CreateStreams:  false,
 }
 
 func ValidationClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".name", DefaultValidationClientConfig.Name, "validation client name")
 	f.Int32(prefix+".room", DefaultValidationClientConfig.Room, "validation client room")
+	f.String(prefix+".redis-url", DefaultValidationClientConfig.RedisURL, "redis url")
 	pubsub.ProducerAddConfigAddOptions(prefix+".producer-config", f)
+	f.Bool(prefix+".create-streams", DefaultValidationClientConfig.CreateStreams, "create redis streams if it does not exist")
 }
 
 // ValidationClient implements validation client through redis streams.
@@ -59,6 +64,7 @@ type ValidationClient struct {
 	producerConfig pubsub.ProducerConfig
 	redisClient    redis.UniversalClient
 	moduleRoots    []common.Hash
+	createStreams  bool
 }
 
 func NewValidationClient(cfg *ValidationClientConfig) (*ValidationClient, error) {
@@ -75,11 +81,17 @@ func NewValidationClient(cfg *ValidationClientConfig) (*ValidationClient, error)
 		producers:      make(map[common.Hash]*pubsub.Producer[*validator.ValidationInput, validator.GoGlobalState]),
 		producerConfig: cfg.ProducerConfig,
 		redisClient:    redisClient,
+		createStreams:  cfg.CreateStreams,
 	}, nil
 }
 
-func (c *ValidationClient) Initialize(moduleRoots []common.Hash) error {
+func (c *ValidationClient) Initialize(ctx context.Context, moduleRoots []common.Hash) error {
 	for _, mr := range moduleRoots {
+		if c.createStreams {
+			if err := pubsub.CreateStream(ctx, server_api.RedisStreamForRoot(mr), c.redisClient); err != nil {
+				return fmt.Errorf("creating redis stream: %w", err)
+			}
+		}
 		if _, exists := c.producers[mr]; exists {
 			log.Warn("Producer already existsw for module root", "hash", mr)
 			continue

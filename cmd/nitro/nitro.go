@@ -6,6 +6,7 @@ package main
 import (
 	"context"
 	"crypto/ecdsa"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -50,6 +51,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
+	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -59,6 +61,7 @@ import (
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/iostat"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -164,7 +167,7 @@ func mainImpl() int {
 	defer cancelFunc()
 
 	args := os.Args[1:]
-	nodeConfig, l1Wallet, l2DevWallet, err := ParseNode(ctx, args)
+	nodeConfig, l2DevWallet, err := ParseNode(ctx, args)
 	if err != nil {
 		confighelpers.PrintErrorAndExit(err, printSampleUsage)
 	}
@@ -231,7 +234,6 @@ func mainImpl() int {
 		log.Error("consensus and execution must agree if sequencing is enabled or not", "Execution.Sequencer.Enable", nodeConfig.Execution.Sequencer.Enable, "Node.Sequencer", nodeConfig.Node.Sequencer)
 	}
 
-	var l1TransactionOpts *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	var l1TransactionOptsValidator *bind.TransactOpts
 	var l1TransactionOptsBatchPoster *bind.TransactOpts
@@ -242,7 +244,6 @@ func mainImpl() int {
 	validatorNeedsKey := nodeConfig.Node.Staker.OnlyCreateWalletContract ||
 		(nodeConfig.Node.Staker.Enable && !strings.EqualFold(nodeConfig.Node.Staker.Strategy, "watchtower") && nodeConfig.Node.Staker.DataPoster.ExternalSigner.URL == "")
 
-	l1Wallet.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 	defaultL1WalletConfig := conf.DefaultL1WalletConfig
 	defaultL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 
@@ -254,42 +255,24 @@ func mainImpl() int {
 	defaultBatchPosterL1WalletConfig := arbnode.DefaultBatchPosterL1WalletConfig
 	defaultBatchPosterL1WalletConfig.ResolveDirectoryNames(nodeConfig.Persistent.Chain)
 
-	if nodeConfig.Node.Staker.ParentChainWallet == defaultValidatorL1WalletConfig && nodeConfig.Node.BatchPoster.ParentChainWallet == defaultBatchPosterL1WalletConfig {
-		if sequencerNeedsKey || validatorNeedsKey || l1Wallet.OnlyCreateKey {
-			l1TransactionOpts, dataSigner, err = util.OpenWallet("l1", l1Wallet, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
-			if err != nil {
-				flag.Usage()
-				log.Crit("error opening parent chain wallet", "path", l1Wallet.Pathname, "account", l1Wallet.Account, "err", err)
-			}
-			if l1Wallet.OnlyCreateKey {
-				return 0
-			}
-			l1TransactionOptsBatchPoster = l1TransactionOpts
-			l1TransactionOptsValidator = l1TransactionOpts
+	if sequencerNeedsKey || nodeConfig.Node.BatchPoster.ParentChainWallet.OnlyCreateKey {
+		l1TransactionOptsBatchPoster, dataSigner, err = util.OpenWallet("l1-batch-poster", &nodeConfig.Node.BatchPoster.ParentChainWallet, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
+		if err != nil {
+			flag.Usage()
+			log.Crit("error opening Batch poster parent chain wallet", "path", nodeConfig.Node.BatchPoster.ParentChainWallet.Pathname, "account", nodeConfig.Node.BatchPoster.ParentChainWallet.Account, "err", err)
 		}
-	} else {
-		if *l1Wallet != defaultL1WalletConfig {
-			log.Crit("--parent-chain.wallet cannot be set if either --node.staker.l1-wallet or --node.batch-poster.l1-wallet are set")
+		if nodeConfig.Node.BatchPoster.ParentChainWallet.OnlyCreateKey {
+			return 0
 		}
-		if sequencerNeedsKey || nodeConfig.Node.BatchPoster.ParentChainWallet.OnlyCreateKey {
-			l1TransactionOptsBatchPoster, dataSigner, err = util.OpenWallet("l1-batch-poster", &nodeConfig.Node.BatchPoster.ParentChainWallet, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
-			if err != nil {
-				flag.Usage()
-				log.Crit("error opening Batch poster parent chain wallet", "path", nodeConfig.Node.BatchPoster.ParentChainWallet.Pathname, "account", nodeConfig.Node.BatchPoster.ParentChainWallet.Account, "err", err)
-			}
-			if nodeConfig.Node.BatchPoster.ParentChainWallet.OnlyCreateKey {
-				return 0
-			}
+	}
+	if validatorNeedsKey || nodeConfig.Node.Staker.ParentChainWallet.OnlyCreateKey {
+		l1TransactionOptsValidator, _, err = util.OpenWallet("l1-validator", &nodeConfig.Node.Staker.ParentChainWallet, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
+		if err != nil {
+			flag.Usage()
+			log.Crit("error opening Validator parent chain wallet", "path", nodeConfig.Node.Staker.ParentChainWallet.Pathname, "account", nodeConfig.Node.Staker.ParentChainWallet.Account, "err", err)
 		}
-		if validatorNeedsKey || nodeConfig.Node.Staker.ParentChainWallet.OnlyCreateKey {
-			l1TransactionOptsValidator, _, err = util.OpenWallet("l1-validator", &nodeConfig.Node.Staker.ParentChainWallet, new(big.Int).SetUint64(nodeConfig.ParentChain.ID))
-			if err != nil {
-				flag.Usage()
-				log.Crit("error opening Validator parent chain wallet", "path", nodeConfig.Node.Staker.ParentChainWallet.Pathname, "account", nodeConfig.Node.Staker.ParentChainWallet.Account, "err", err)
-			}
-			if nodeConfig.Node.Staker.ParentChainWallet.OnlyCreateKey {
-				return 0
-			}
+		if nodeConfig.Node.Staker.ParentChainWallet.OnlyCreateKey {
+			return 0
 		}
 	}
 
@@ -317,7 +300,7 @@ func mainImpl() int {
 		}
 	}
 	liveNodeConfig := genericconf.NewLiveConfig[*NodeConfig](args, nodeConfig, func(ctx context.Context, args []string) (*NodeConfig, error) {
-		nodeConfig, _, _, err := ParseNode(ctx, args)
+		nodeConfig, _, err := ParseNode(ctx, args)
 		return nodeConfig, err
 	})
 
@@ -423,6 +406,10 @@ func mainImpl() int {
 		return 1
 	}
 
+	if nodeConfig.Metrics {
+		go iostat.RegisterAndPopulateMetrics(ctx, 1, 5)
+	}
+
 	var deferFuncs []func()
 	defer func() {
 		for i := range deferFuncs {
@@ -452,7 +439,21 @@ func mainImpl() int {
 		if len(allowedWasmModuleRoots) > 0 {
 			moduleRootMatched := false
 			for _, root := range allowedWasmModuleRoots {
-				if common.HexToHash(root) == moduleRoot {
+				bytes, err := hex.DecodeString(strings.TrimPrefix(root, "0x"))
+				if err == nil {
+					if common.HexToHash(root) == common.BytesToHash(bytes) {
+						moduleRootMatched = true
+						break
+					}
+					continue
+				}
+				locator, locatorErr := server_common.NewMachineLocator(root)
+				if locatorErr != nil {
+					log.Warn("allowed-wasm-module-roots: value not a hex nor valid path:", "value", root, "locatorErr", locatorErr, "decodeErr", err)
+					continue
+				}
+				path := locator.GetMachinePath(moduleRoot)
+				if _, err := os.Stat(path); err == nil {
 					moduleRootMatched = true
 					break
 				}
@@ -476,7 +477,7 @@ func mainImpl() int {
 		}
 	}
 
-	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching), l1Client, rollupAddrs)
+	chainDb, l2BlockChain, err := openInitializeChainDb(ctx, stack, nodeConfig, new(big.Int).SetUint64(nodeConfig.Chain.ID), gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching), &nodeConfig.Persistent, l1Client, rollupAddrs)
 	if l2BlockChain != nil {
 		deferFuncs = append(deferFuncs, func() { l2BlockChain.Stop() })
 	}
@@ -487,11 +488,31 @@ func mainImpl() int {
 		return 1
 	}
 
-	arbDb, err := stack.OpenDatabase("arbitrumdata", 0, 0, "arbitrumdata/", false)
+	arbDb, err := stack.OpenDatabaseWithExtraOptions("arbitrumdata", 0, 0, "arbitrumdata/", false, nodeConfig.Persistent.Pebble.ExtraOptions("arbitrumdata"))
 	deferFuncs = append(deferFuncs, func() { closeDb(arbDb, "arbDb") })
 	if err != nil {
 		log.Error("failed to open database", "err", err)
+		log.Error("database is corrupt; delete it and try again", "database-directory", stack.InstanceDir())
 		return 1
+	}
+
+	fatalErrChan := make(chan error, 10)
+
+	var blocksReExecutor *blocksreexecutor.BlocksReExecutor
+	if nodeConfig.BlocksReExecutor.Enable && l2BlockChain != nil {
+		blocksReExecutor = blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, fatalErrChan)
+		if nodeConfig.Init.ThenQuit {
+			success := make(chan struct{})
+			blocksReExecutor.Start(ctx, success)
+			deferFuncs = append(deferFuncs, func() { blocksReExecutor.StopAndWait() })
+			select {
+			case err := <-fatalErrChan:
+				log.Error("shutting down due to fatal error", "err", err)
+				defer log.Error("shut down due to fatal error", "err", err)
+				return 1
+			case <-success:
+			}
+		}
 	}
 
 	if nodeConfig.Init.ThenQuit && nodeConfig.Init.ResetToMessage < 0 {
@@ -513,8 +534,6 @@ func mainImpl() int {
 		log.Error(fmt.Sprintf("data availability service usage for this chain is set to %v but --node.data-availability.enable is set to %v", l2BlockChain.Config().ArbitrumChainParams.DataAvailabilityCommittee, nodeConfig.Node.DataAvailability.Enable))
 		return 1
 	}
-
-	fatalErrChan := make(chan error, 10)
 
 	var valNode *valnode.ValidationNode
 	if sameProcessValidationNodeEnabled {
@@ -644,9 +663,8 @@ func mainImpl() int {
 		// remove previous deferFuncs, StopAndWait closes database and blockchain.
 		deferFuncs = []func(){func() { currentNode.StopAndWait() }}
 	}
-	if nodeConfig.BlocksReExecutor.Enable && l2BlockChain != nil {
-		blocksReExecutor := blocksreexecutor.New(&nodeConfig.BlocksReExecutor, l2BlockChain, fatalErrChan)
-		blocksReExecutor.Start(ctx)
+	if blocksReExecutor != nil && !nodeConfig.Init.ThenQuit {
+		blocksReExecutor.Start(ctx, nil)
 		deferFuncs = append(deferFuncs, func() { blocksReExecutor.StopAndWait() })
 	}
 
@@ -767,7 +785,6 @@ func (c *NodeConfig) ResolveDirectoryNames() error {
 	if err != nil {
 		return err
 	}
-	c.ParentChain.ResolveDirectoryNames(c.Persistent.Chain)
 	c.Chain.ResolveDirectoryNames(c.Persistent.Chain)
 
 	return nil
@@ -837,14 +854,14 @@ func (c *NodeConfig) GetReloadInterval() time.Duration {
 	return c.Conf.ReloadInterval
 }
 
-func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.WalletConfig, *genericconf.WalletConfig, error) {
+func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.WalletConfig, error) {
 	f := flag.NewFlagSet("", flag.ContinueOnError)
 
 	NodeConfigAddOptions(f)
 
 	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	l2ChainId := k.Int64("chain.id")
@@ -855,17 +872,21 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	l2ChainInfoJson := k.String("chain.info-json")
 	err = applyChainParameters(ctx, k, uint64(l2ChainId), l2ChainName, l2ChainInfoFiles, l2ChainInfoJson, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	err = confighelpers.ApplyOverrides(f, k)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
+	}
+
+	if err = das.FixKeysetCLIParsing("node.data-availability.rpc-aggregator.backends", k); err != nil {
+		return nil, nil, err
 	}
 
 	var nodeConfig NodeConfig
 	if err := confighelpers.EndCommonParse(k, &nodeConfig); err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	// Don't print wallet passwords
@@ -877,23 +898,21 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 			"chain.dev-wallet.private-key":    "",
 		})
 		if err != nil {
-			return nil, nil, nil, err
+			return nil, nil, err
 		}
 	}
 
 	if nodeConfig.Persistent.Chain == "" {
-		return nil, nil, nil, errors.New("--persistent.chain not specified")
+		return nil, nil, errors.New("--persistent.chain not specified")
 	}
 
 	err = nodeConfig.ResolveDirectoryNames()
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 
 	// Don't pass around wallet contents with normal configuration
-	l1Wallet := nodeConfig.ParentChain.Wallet
 	l2DevWallet := nodeConfig.Chain.DevWallet
-	nodeConfig.ParentChain.Wallet = genericconf.WalletConfigDefault
 	nodeConfig.Chain.DevWallet = genericconf.WalletConfigDefault
 
 	if nodeConfig.Execution.Caching.Archive {
@@ -901,9 +920,9 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	}
 	err = nodeConfig.Validate()
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
-	return &nodeConfig, &l1Wallet, &l2DevWallet, nil
+	return &nodeConfig, &l2DevWallet, nil
 }
 
 func aggregateL2ChainInfoFiles(ctx context.Context, l2ChainInfoFiles []string, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) []string {
@@ -935,6 +954,7 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 	}
 	chainDefaults := map[string]interface{}{
 		"persistent.chain": chainInfo.ChainName,
+		"chain.name":       chainInfo.ChainName,
 		"chain.id":         chainInfo.ChainConfig.ChainID.Uint64(),
 		"parent-chain.id":  chainInfo.ParentChainId,
 	}

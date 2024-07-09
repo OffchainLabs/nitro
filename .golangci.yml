@@ -1,13 +1,12 @@
 # golangci-lint configuration
 
 run:
-  skip-dirs:
-    - go-ethereum
-    - fastcache
-
   timeout: 10m
 
 issues:
+  exclude-dirs:
+    - go-ethereum
+    - fastcache
   exclude-rules:
     - path: _test\.go
       linters:

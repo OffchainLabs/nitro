@@ -31,10 +31,11 @@ import (
 )
 
 type DAServerConfig struct {
-	EnableRPC         bool                                `koanf:"enable-rpc"`
-	RPCAddr           string                              `koanf:"rpc-addr"`
-	RPCPort           uint64                              `koanf:"rpc-port"`
-	RPCServerTimeouts genericconf.HTTPServerTimeoutConfig `koanf:"rpc-server-timeouts"`
+	EnableRPC          bool                                `koanf:"enable-rpc"`
+	RPCAddr            string                              `koanf:"rpc-addr"`
+	RPCPort            uint64                              `koanf:"rpc-port"`
+	RPCServerTimeouts  genericconf.HTTPServerTimeoutConfig `koanf:"rpc-server-timeouts"`
+	RPCServerBodyLimit int                                 `koanf:"rpc-server-body-limit"`
 
 	EnableREST         bool                                `koanf:"enable-rest"`
 	RESTAddr           string                              `koanf:"rest-addr"`
@@ -58,6 +59,7 @@ var DefaultDAServerConfig = DAServerConfig{
 	RPCAddr:            "localhost",
 	RPCPort:            9876,
 	RPCServerTimeouts:  genericconf.HTTPServerTimeoutConfigDefault,
+	RPCServerBodyLimit: genericconf.HTTPServerBodyLimitDefault,
 	EnableREST:         false,
 	RESTAddr:           "localhost",
 	RESTPort:           9877,
@@ -88,6 +90,7 @@ func parseDAServer(args []string) (*DAServerConfig, error) {
 	f.Bool("enable-rpc", DefaultDAServerConfig.EnableRPC, "enable the HTTP-RPC server listening on rpc-addr and rpc-port")
 	f.String("rpc-addr", DefaultDAServerConfig.RPCAddr, "HTTP-RPC server listening interface")
 	f.Uint64("rpc-port", DefaultDAServerConfig.RPCPort, "HTTP-RPC server listening port")
+	f.Int("rpc-server-body-limit", DefaultDAServerConfig.RPCServerBodyLimit, "HTTP-RPC server maximum request body size in bytes; the default (0) uses geth's 5MB limit")
 	genericconf.HTTPServerTimeoutConfigAddOptions("rpc-server-timeouts", f)
 
 	f.Bool("enable-rest", DefaultDAServerConfig.EnableREST, "enable the REST server listening on rest-addr and rest-port")
@@ -235,7 +238,7 @@ func startup() error {
 		return errors.New("sequencer-inbox-address must be set to a valid L1 URL and contract address, or 'none'")
 	}
 
-	daReader, daWriter, daHealthChecker, dasLifecycleManager, err := das.CreateDAComponentsForDaserver(ctx, &serverConfig.DataAvailability, l1Reader, seqInboxAddress)
+	daReader, daWriter, signatureVerifier, daHealthChecker, dasLifecycleManager, err := das.CreateDAComponentsForDaserver(ctx, &serverConfig.DataAvailability, l1Reader, seqInboxAddress)
 	if err != nil {
 		return err
 	}
@@ -250,7 +253,7 @@ func startup() error {
 	if serverConfig.EnableRPC {
 		log.Info("Starting HTTP-RPC server", "addr", serverConfig.RPCAddr, "port", serverConfig.RPCPort, "revision", vcsRevision, "vcs.time", vcsTime)
 
-		rpcServer, err = das.StartDASRPCServer(ctx, serverConfig.RPCAddr, serverConfig.RPCPort, serverConfig.RPCServerTimeouts, daReader, daWriter, daHealthChecker)
+		rpcServer, err = das.StartDASRPCServer(ctx, serverConfig.RPCAddr, serverConfig.RPCPort, serverConfig.RPCServerTimeouts, serverConfig.RPCServerBodyLimit, daReader, daWriter, daHealthChecker, signatureVerifier)
 		if err != nil {
 			return err
 		}

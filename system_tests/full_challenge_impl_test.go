@@ -248,7 +248,7 @@ func createL2Nodes(t *testing.T, ctx context.Context, conf *arbnode.Config, chai
 	return consensusNode, execNode
 }
 
-func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, challengeMsgIdx int64) {
+func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, challengeMsgIdx int64, wasmRootDir string) {
 	glogger := log.NewGlogHandler(
 		log.NewTerminalHandler(io.Writer(os.Stderr), false))
 	glogger.Verbosity(log.LvlInfo)
@@ -273,15 +273,19 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 
 	var valStack *node.Node
 	var mockSpawn *mockSpawner
+	valNodeConfig := &valnode.TestValidationConfig
+	valNodeConfig.Wasm.RootPath = wasmRootDir
 	if useStubs {
-		mockSpawn, valStack = createMockValidationNode(t, ctx, &valnode.TestValidationConfig.Arbitrator)
+		mockSpawn, valStack = createMockValidationNode(t, ctx, &valNodeConfig.Arbitrator)
 	} else {
-		_, valStack = createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
+		_, valStack = createTestValidationNode(t, ctx, valNodeConfig)
 	}
 	configByValidationNode(conf, valStack)
 
 	fatalErrChan := make(chan error, 10)
-	asserterRollupAddresses, initMessage := DeployOnTestL1(t, ctx, l1Info, l1Backend, chainConfig, common.Address{})
+	locator, err := server_common.NewMachineLocator(wasmRootDir)
+	Require(t, err)
+	asserterRollupAddresses, initMessage := DeployOnTestL1(t, ctx, l1Info, l1Backend, chainConfig, locator.LatestWasmModuleRoot(), common.Address{})
 
 	deployerTxOpts := l1Info.GetDefaultTransactOpts("deployer", ctx)
 	sequencerTxOpts := l1Info.GetDefaultTransactOpts("sequencer", ctx)
@@ -295,7 +299,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	asserterRollupAddresses.SequencerInbox = asserterSeqInboxAddr
 	asserterL2Info := NewArbTestInfo(t, chainConfig.ChainID)
 	asserterL2, asserterExec := createL2Nodes(t, ctx, conf, chainConfig, l1Backend, asserterL2Info, asserterRollupAddresses, initMessage, nil, nil, fatalErrChan)
-	err := asserterL2.Start(ctx)
+	err = asserterL2.Start(ctx)
 	Require(t, err)
 
 	challengerRollupAddresses := *asserterRollupAddresses
@@ -335,10 +339,6 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	}
 	ospEntry := DeployOneStepProofEntry(t, ctx, &deployerTxOpts, l1Backend, common.Address{})
 
-	locator, err := server_common.NewMachineLocator("")
-	if err != nil {
-		Fatal(t, err)
-	}
 	var wasmModuleRoot common.Hash
 	if useStubs {
 		wasmModuleRoot = mockWasmModuleRoots[0]

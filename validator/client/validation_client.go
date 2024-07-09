@@ -11,11 +11,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/validator"
 
 	"github.com/offchainlabs/nitro/util/containers"
-	"github.com/offchainlabs/nitro/util/jsonapi"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 
@@ -44,7 +42,7 @@ func NewValidationClient(config rpcclient.ClientConfigFetcher, stack *node.Node)
 func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
 	atomic.AddInt32(&c.room, -1)
 	promise := stopwaiter.LaunchPromiseThread[validator.GoGlobalState](c, func(ctx context.Context) (validator.GoGlobalState, error) {
-		input := ValidationInputToJson(entry)
+		input := server_api.ValidationInputToJson(entry)
 		var res validator.GoGlobalState
 		err := c.client.CallContext(ctx, &res, server_api.Namespace+"_validate", input, moduleRoot)
 		atomic.AddInt32(&c.room, 1)
@@ -104,10 +102,7 @@ func (c *ValidationClient) Stop() {
 }
 
 func (c *ValidationClient) Name() string {
-	if c.Started() {
-		return c.name
-	}
-	return "(not started)"
+	return c.name
 }
 
 func (c *ValidationClient) Room() int {
@@ -131,7 +126,7 @@ func NewExecutionClient(config rpcclient.ClientConfigFetcher, stack *node.Node) 
 func (c *ExecutionClient) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
 	return stopwaiter.LaunchPromiseThread[validator.ExecutionRun](c, func(ctx context.Context) (validator.ExecutionRun, error) {
 		var res uint64
-		err := c.client.CallContext(ctx, &res, server_api.Namespace+"_createExecutionRun", wasmModuleRoot, ValidationInputToJson(input))
+		err := c.client.CallContext(ctx, &res, server_api.Namespace+"_createExecutionRun", wasmModuleRoot, server_api.ValidationInputToJson(input))
 		if err != nil {
 			return nil, err
 		}
@@ -162,7 +157,12 @@ func (c *ExecutionClient) LatestWasmModuleRoot() containers.PromiseInterface[com
 }
 
 func (c *ExecutionClient) WriteToFile(input *validator.ValidationInput, expOut validator.GoGlobalState, moduleRoot common.Hash) containers.PromiseInterface[struct{}] {
-	jsonInput := ValidationInputToJson(input)
+	jsonInput := server_api.ValidationInputToJson(input)
+	if err := jsonInput.WriteToFile(); err != nil {
+		return stopwaiter.LaunchPromiseThread[struct{}](c, func(ctx context.Context) (struct{}, error) {
+			return struct{}{}, err
+		})
+	}
 	return stopwaiter.LaunchPromiseThread[struct{}](c, func(ctx context.Context) (struct{}, error) {
 		err := c.client.CallContext(ctx, nil, server_api.Namespace+"_writeToFile", jsonInput, expOut, moduleRoot)
 		return struct{}{}, err
@@ -230,37 +230,4 @@ func (r *ExecutionClientRun) Close() {
 			log.Warn("closing execution client run got error", "err", err, "client", r.client.Name(), "id", r.id)
 		}
 	})
-}
-
-func ValidationInputToJson(entry *validator.ValidationInput) *server_api.InputJSON {
-	jsonPreimagesMap := make(map[arbutil.PreimageType]*jsonapi.PreimagesMapJson)
-	for ty, preimages := range entry.Preimages {
-		jsonPreimagesMap[ty] = jsonapi.NewPreimagesMapJson(preimages)
-	}
-	res := &server_api.InputJSON{
-		Id:            entry.Id,
-		HasDelayedMsg: entry.HasDelayedMsg,
-		DelayedMsgNr:  entry.DelayedMsgNr,
-		DelayedMsgB64: base64.StdEncoding.EncodeToString(entry.DelayedMsg),
-		StartState:    entry.StartState,
-		PreimagesB64:  jsonPreimagesMap,
-		UserWasms:     make(map[common.Hash]server_api.UserWasmJson),
-		DebugChain:    entry.DebugChain,
-
-		L1BlockHeight:     entry.BlockHeight,
-		HotShotCommitment: entry.HotShotCommitment,
-		HotShotLiveness:   entry.HotShotLiveness,
-	}
-	for _, binfo := range entry.BatchInfo {
-		encData := base64.StdEncoding.EncodeToString(binfo.Data)
-		res.BatchInfo = append(res.BatchInfo, server_api.BatchInfoJson{Number: binfo.Number, DataB64: encData})
-	}
-	for moduleHash, info := range entry.UserWasms {
-		encWasm := server_api.UserWasmJson{
-			Asm:    base64.StdEncoding.EncodeToString(info.Asm),
-			Module: base64.StdEncoding.EncodeToString(info.Module),
-		}
-		res.UserWasms[moduleHash] = encWasm
-	}
-	return res
 }

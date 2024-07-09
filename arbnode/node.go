@@ -95,6 +95,8 @@ type Config struct {
 	TransactionStreamer TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
 	Maintenance         MaintenanceConfig           `koanf:"maintenance" reload:"hot"`
 	ResourceMgmt        resourcemanager.Config      `koanf:"resource-mgmt" reload:"hot"`
+	// SnapSyncConfig is only used for testing purposes, these should not be configured in production.
+	SnapSyncTest SnapSyncConfig
 }
 
 func (c *Config) Validate() error {
@@ -182,6 +184,7 @@ var ConfigDefault = Config{
 	TransactionStreamer: DefaultTransactionStreamerConfig,
 	ResourceMgmt:        resourcemanager.DefaultConfig,
 	Maintenance:         DefaultMaintenanceConfig,
+	SnapSyncTest:        DefaultSnapSyncConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -278,6 +281,22 @@ type Node struct {
 	SyncMonitor             *SyncMonitor
 	configFetcher           ConfigFetcher
 	ctx                     context.Context
+}
+
+type SnapSyncConfig struct {
+	Enabled               bool
+	PrevBatchMessageCount uint64
+	PrevDelayedRead       uint64
+	BatchCount            uint64
+	DelayedCount          uint64
+}
+
+var DefaultSnapSyncConfig = SnapSyncConfig{
+	Enabled:               false,
+	PrevBatchMessageCount: 0,
+	BatchCount:            0,
+	DelayedCount:          0,
+	PrevDelayedRead:       0,
 }
 
 type ConfigFetcher interface {
@@ -417,7 +436,7 @@ func createNodeImpl(
 	}
 
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &configFetcher.Get().TransactionStreamer }
-	txStreamer, err := NewTransactionStreamer(arbDb, l2Config, exec, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher)
+	txStreamer, err := NewTransactionStreamer(arbDb, l2Config, exec, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher, &configFetcher.Get().SnapSyncTest)
 	if err != nil {
 		return nil, err
 	}
@@ -511,14 +530,15 @@ func createNodeImpl(
 	var daWriter das.DataAvailabilityServiceWriter
 	var daReader das.DataAvailabilityServiceReader
 	var dasLifecycleManager *das.LifecycleManager
+	var dasKeysetFetcher *das.KeysetFetcher
 	if config.DataAvailability.Enable {
 		if config.BatchPoster.Enable {
-			daWriter, daReader, dasLifecycleManager, err = das.CreateBatchPosterDAS(ctx, &config.DataAvailability, dataSigner, l1client, deployInfo.SequencerInbox)
+			daWriter, daReader, dasKeysetFetcher, dasLifecycleManager, err = das.CreateBatchPosterDAS(ctx, &config.DataAvailability, dataSigner, l1client, deployInfo.SequencerInbox)
 			if err != nil {
 				return nil, err
 			}
 		} else {
-			daReader, dasLifecycleManager, err = das.CreateDAReaderForNode(ctx, &config.DataAvailability, l1Reader, &deployInfo.SequencerInbox)
+			daReader, dasKeysetFetcher, dasLifecycleManager, err = das.CreateDAReaderForNode(ctx, &config.DataAvailability, l1Reader, &deployInfo.SequencerInbox)
 			if err != nil {
 				return nil, err
 			}
@@ -542,12 +562,12 @@ func createNodeImpl(
 	}
 	var dapReaders []daprovider.Reader
 	if daReader != nil {
-		dapReaders = append(dapReaders, daprovider.NewReaderForDAS(daReader))
+		dapReaders = append(dapReaders, daprovider.NewReaderForDAS(daReader, dasKeysetFetcher))
 	}
 	if blobReader != nil {
 		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(blobReader))
 	}
-	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, dapReaders)
+	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, dapReaders, config.SnapSyncTest)
 	if err != nil {
 		return nil, err
 	}
@@ -605,6 +625,7 @@ func createNodeImpl(
 
 	var stakerObj *staker.Staker
 	var messagePruner *MessagePruner
+	var stakerAddr common.Address
 
 	if config.Staker.Enable {
 		dp, err := StakerDataposter(
@@ -662,17 +683,14 @@ func createNodeImpl(
 		if err := wallet.Initialize(ctx); err != nil {
 			return nil, err
 		}
-		var validatorAddr string
-		if txOptsValidator != nil {
-			validatorAddr = txOptsValidator.From.String()
-		} else {
-			validatorAddr = config.Staker.DataPoster.ExternalSigner.Address
+		if dp != nil {
+			stakerAddr = dp.Sender()
 		}
 		whitelisted, err := stakerObj.IsWhitelisted(ctx)
 		if err != nil {
 			return nil, err
 		}
-		log.Info("running as validator", "txSender", validatorAddr, "actingAsWallet", wallet.Address(), "whitelisted", whitelisted, "strategy", config.Staker.Strategy)
+		log.Info("running as validator", "txSender", stakerAddr, "actingAsWallet", wallet.Address(), "whitelisted", whitelisted, "strategy", config.Staker.Strategy)
 	}
 
 	var batchPoster *BatchPoster
@@ -700,6 +718,11 @@ func createNodeImpl(
 		})
 		if err != nil {
 			return nil, err
+		}
+
+		// Check if staker and batch poster are using the same address
+		if stakerAddr != (common.Address{}) && !strings.EqualFold(config.Staker.Strategy, "watchtower") && stakerAddr == batchPoster.dataPoster.Sender() {
+			return nil, fmt.Errorf("staker and batch poster are using the same address which is not allowed: %v", stakerAddr)
 		}
 	}
 
@@ -784,17 +807,6 @@ func CreateNode(
 	stack.RegisterAPIs(apis)
 
 	return currentNode, nil
-}
-
-func (n *Node) CacheL1PriceDataOfMsg(pos arbutil.MessageIndex, callDataUnits uint64, l1GasCharged uint64) {
-	n.TxStreamer.CacheL1PriceDataOfMsg(pos, callDataUnits, l1GasCharged)
-}
-
-func (n *Node) BacklogL1GasCharged() uint64 {
-	return n.TxStreamer.BacklogL1GasCharged()
-}
-func (n *Node) BacklogCallDataUnits() uint64 {
-	return n.TxStreamer.BacklogCallDataUnits()
 }
 
 func (n *Node) Start(ctx context.Context) error {

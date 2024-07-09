@@ -162,6 +162,7 @@ test-go-deps: \
 	build-replay-env \
 	$(stylus_test_wasms) \
 	$(arbitrator_stylus_lib) \
+	$(arbitrator_generated_header) \
 	$(patsubst %,$(arbitrator_cases)/%.wasm, global-state read-inboxmsg-10 global-state-wrapper const read-hotshot-10)
 
 build-prover-header: $(arbitrator_generated_header)
@@ -293,7 +294,7 @@ $(arbitrator_jit): $(DEP_PREDICATE) $(jit_files)
 $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm: $(arbitrator_cases)/rust/src/bin/%.rs $(arbitrator_cases)/rust/src/lib.rs
 	cargo build --manifest-path $(arbitrator_cases)/rust/Cargo.toml --release --target wasm32-wasi --bin $(patsubst $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm,%, $@)
 
-$(arbitrator_cases)/go/testcase.wasm: $(arbitrator_cases)/go/*.go
+$(arbitrator_cases)/go/testcase.wasm: $(arbitrator_cases)/go/*.go .make/solgen
 	cd $(arbitrator_cases)/go && GOOS=wasip1 GOARCH=wasm go build -o testcase.wasm
 
 $(arbitrator_generated_header): $(DEP_PREDICATE) $(stylus_files)
@@ -448,8 +449,12 @@ target/testdata/preimages.bin:
 contracts/test/prover/proofs/rust-%.json: $(arbitrator_cases)/rust/$(wasm32_wasi)/%.wasm $(prover_bin) $(arbitrator_wasm_libs) target/testdata/preimages.bin
 	$(prover_bin) $< $(arbitrator_wasm_lib_flags) -o $@ -b --allow-hostapi --require-success --inbox-add-stub-headers --inbox $(arbitrator_cases)/rust/data/msg0.bin --inbox $(arbitrator_cases)/rust/data/msg1.bin --delayed-inbox $(arbitrator_cases)/rust/data/msg0.bin --delayed-inbox $(arbitrator_cases)/rust/data/msg1.bin --preimages target/testdata/preimages.bin
 
-contracts/test/prover/proofs/go.json: $(arbitrator_cases)/go/testcase.wasm $(prover_bin) $(arbitrator_wasm_libs) target/testdata/preimages.bin $(arbitrator_tests_link_deps)
-	$(prover_bin) $< $(arbitrator_wasm_lib_flags) -o $@ -i 50000000 --require-success --preimages target/testdata/preimages.bin
+contracts/test/prover/proofs/go.json: $(arbitrator_cases)/go/testcase.wasm $(prover_bin) $(arbitrator_wasm_libs) target/testdata/preimages.bin $(arbitrator_tests_link_deps) $(arbitrator_cases)/user.wasm
+	$(prover_bin) $< $(arbitrator_wasm_lib_flags) -o $@ -b --require-success --preimages target/testdata/preimages.bin  --stylus-modules $(arbitrator_cases)/user.wasm
+
+# avoid testing user.wasm in onestepproofs. It can only run as stylus program.
+contracts/test/prover/proofs/user.json:
+	echo "[]" > $@
 
 # avoid testing read-inboxmsg-10 in onestepproofs. It's used for go challenge testing.
 contracts/test/prover/proofs/read-inboxmsg-10.json:
