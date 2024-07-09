@@ -25,8 +25,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/ethereum/go-ethereum/rpc"
-
 	"github.com/offchainlabs/nitro/arbutil"
 	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/contracts"
@@ -293,8 +291,8 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 		return nil, err
 	}
 	if err != nil {
-		var httpError rpc.HTTPError
-		if errors.As(err, &httpError) && httpError.StatusCode == 429 {
+		connectionRejectedError := &ws.ConnectionRejectedError{}
+		if errors.As(err, &connectionRejectedError) && connectionRejectedError.StatusCode() == 429 {
 			log.Error("rate limit exceeded, please run own local relay because too many nodes are connecting to feed from same IP address", "err", err)
 		}
 		return nil, fmt.Errorf("broadcast client unable to connect: %w", err)
