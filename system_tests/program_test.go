@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -26,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -222,6 +225,102 @@ func testActivateTwice(t *testing.T, jit bool) {
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 
 	validateBlocks(t, 7, jit, builder)
+}
+
+func TestStylusUpgrade(t *testing.T) {
+	t.Parallel()
+	testStylusUpgrade(t, true)
+}
+
+func testStylusUpgrade(t *testing.T, jit bool) {
+	builder, auth, cleanup := setupProgramTest(t, false, func(b *NodeBuilder) { b.WithArbOSVersion(params.ArbosVersion_Stylus) })
+	defer cleanup()
+
+	ctx := builder.ctx
+
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	arbOwner, err := pgen.NewArbOwner(types.ArbOwnerAddress, l2client)
+	Require(t, err)
+	ensure(arbOwner.SetInkPrice(&auth, 1))
+
+	wasm, _ := readWasmFile(t, rustFile("keccak"))
+	keccakAddr := deployContract(t, ctx, auth, l2client, wasm)
+
+	colors.PrintBlue("keccak program deployed to ", keccakAddr)
+
+	preimage := []byte("hello, you fool")
+
+	keccakArgs := []byte{0x01} // keccak the preimage once
+	keccakArgs = append(keccakArgs, preimage...)
+
+	checkFailWith := func(errMessage string) uint64 {
+		msg := ethereum.CallMsg{
+			To:   &keccakAddr,
+			Data: keccakArgs,
+		}
+		_, err = l2client.CallContract(ctx, msg, nil)
+		if err == nil || !strings.Contains(err.Error(), errMessage) {
+			Fatal(t, "call should have failed with "+errMessage, " got: "+err.Error())
+		}
+
+		// execute onchain for proving's sake
+		tx := l2info.PrepareTxTo("Owner", &keccakAddr, 1e9, nil, keccakArgs)
+		Require(t, l2client.SendTransaction(ctx, tx))
+		return EnsureTxFailed(t, ctx, l2client, tx).BlockNumber.Uint64()
+	}
+
+	checkSucceeds := func() uint64 {
+		msg := ethereum.CallMsg{
+			To:   &keccakAddr,
+			Data: keccakArgs,
+		}
+		_, err = l2client.CallContract(ctx, msg, nil)
+		if err != nil {
+			Fatal(t, err)
+		}
+
+		// execute onchain for proving's sake
+		tx := l2info.PrepareTxTo("Owner", &keccakAddr, 1e9, nil, keccakArgs)
+		Require(t, l2client.SendTransaction(ctx, tx))
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		if err != nil {
+			Fatal(t, err)
+		}
+		return receipt.BlockNumber.Uint64()
+	}
+
+	// Calling the contract pre-activation should fail.
+	blockFail1 := checkFailWith("ProgramNotActivated")
+
+	activateWasm(t, ctx, auth, l2client, keccakAddr, "keccak")
+
+	blockSuccess1 := checkSucceeds()
+
+	tx, err := arbOwner.ScheduleArbOSUpgrade(&auth, 31, 0)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// generate traffic to perform the upgrade
+	TransferBalance(t, "Owner", "Owner", big.NewInt(1), builder.L2Info, builder.L2.Client, ctx)
+
+	blockFail2 := checkFailWith("ProgramNeedsUpgrade")
+
+	activateWasm(t, ctx, auth, l2client, keccakAddr, "keccak")
+
+	blockSuccess2 := checkSucceeds()
+
+	validateBlockRange(t, []uint64{blockFail1, blockSuccess1, blockFail2, blockSuccess2}, jit, builder)
 }
 
 func TestProgramErrors(t *testing.T) {
@@ -641,10 +740,15 @@ func testReturnData(t *testing.T, jit bool) {
 
 func TestProgramLogs(t *testing.T) {
 	t.Parallel()
-	testLogs(t, true)
+	testLogs(t, true, false)
 }
 
-func testLogs(t *testing.T, jit bool) {
+func TestProgramLogsWithTracing(t *testing.T) {
+	t.Parallel()
+	testLogs(t, true, true)
+}
+
+func testLogs(t *testing.T, jit, tracing bool) {
 	builder, auth, cleanup := setupProgramTest(t, jit)
 	ctx := builder.ctx
 	l2info := builder.L2Info
@@ -653,6 +757,27 @@ func testLogs(t *testing.T, jit bool) {
 	logAddr := deployWasm(t, ctx, auth, l2client, rustFile("log"))
 	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 
+	type traceLog struct {
+		Address common.Address `json:"address"`
+		Topics  []common.Hash  `json:"topics"`
+		Data    hexutil.Bytes  `json:"data"`
+	}
+	traceTx := func(tx *types.Transaction) []traceLog {
+		type traceLogs struct {
+			Logs []traceLog `json:"logs"`
+		}
+		var trace traceLogs
+		traceConfig := map[string]interface{}{
+			"tracer": "callTracer",
+			"tracerConfig": map[string]interface{}{
+				"withLog": true,
+			},
+		}
+		rpc := l2client.Client()
+		err := rpc.CallContext(ctx, &trace, "debug_traceTransaction", tx.Hash(), traceConfig)
+		Require(t, err)
+		return trace.Logs
+	}
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
 		Require(t, err)
@@ -679,6 +804,20 @@ func testLogs(t *testing.T, jit bool) {
 			topics[j] = testhelpers.RandomHash()
 		}
 		data := randBytes(0, 48)
+		verifyLogTopicsAndData := func(logData []byte, logTopics []common.Hash) {
+			if !bytes.Equal(logData, data) {
+				Fatal(t, "data mismatch", logData, data)
+			}
+			if len(logTopics) != len(topics) {
+				Fatal(t, "topics mismatch", len(logTopics), len(topics))
+			}
+			for j := 0; j < i; j++ {
+				if logTopics[j] != topics[j] {
+					Fatal(t, "topic mismatch", logTopics, topics)
+				}
+			}
+		}
+
 		args := encode(topics, data)
 		tx := l2info.PrepareTxTo("Owner", &logAddr, 1e9, nil, args)
 		receipt := ensure(tx, l2client.SendTransaction(ctx, tx))
@@ -687,16 +826,14 @@ func testLogs(t *testing.T, jit bool) {
 			Fatal(t, "wrong number of logs", len(receipt.Logs))
 		}
 		log := receipt.Logs[0]
-		if !bytes.Equal(log.Data, data) {
-			Fatal(t, "data mismatch", log.Data, data)
-		}
-		if len(log.Topics) != len(topics) {
-			Fatal(t, "topics mismatch", len(log.Topics), len(topics))
-		}
-		for j := 0; j < i; j++ {
-			if log.Topics[j] != topics[j] {
-				Fatal(t, "topic mismatch", log.Topics, topics)
+		verifyLogTopicsAndData(log.Data, log.Topics)
+		if tracing {
+			logs := traceTx(tx)
+			if len(logs) != 1 {
+				Fatal(t, "wrong number of logs in trace", len(logs))
 			}
+			log := logs[0]
+			verifyLogTopicsAndData(log.Data, log.Topics)
 		}
 	}
 
@@ -1251,7 +1388,7 @@ func TestProgramCacheManager(t *testing.T) {
 	// check ownership
 	assert(arbOwner.IsChainOwner(nil, ownerAuth.From))
 	ensure(arbWasmCache.EvictCodehash(&ownerAuth, codehash))
-	ensure(arbWasmCache.CacheCodehash(&ownerAuth, codehash))
+	ensure(arbWasmCache.CacheProgram(&ownerAuth, program))
 
 	// de-authorize manager
 	ensure(arbOwner.RemoveWasmCacheManager(&ownerAuth, manager))
@@ -1261,12 +1398,81 @@ func TestProgramCacheManager(t *testing.T) {
 	assert(len(all) == 0, err)
 }
 
-func setupProgramTest(t *testing.T, jit bool) (
+func testReturnDataCost(t *testing.T, arbosVersion uint64) {
+	builder, auth, cleanup := setupProgramTest(t, false, func(b *NodeBuilder) { b.WithArbOSVersion(arbosVersion) })
+	ctx := builder.ctx
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	// use a consistent ink price
+	arbOwner, err := pgen.NewArbOwner(types.ArbOwnerAddress, l2client)
+	Require(t, err)
+	tx, err := arbOwner.SetInkPrice(&auth, 10000)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)
+	Require(t, err)
+
+	returnSize := big.NewInt(1024 * 1024) // 1MiB
+	returnSizeBytes := arbmath.U256Bytes(returnSize)
+
+	testCall := func(to common.Address) uint64 {
+		msg := ethereum.CallMsg{
+			To:             &to,
+			Data:           returnSizeBytes,
+			SkipL1Charging: true,
+		}
+		ret, err := l2client.CallContract(ctx, msg, nil)
+		Require(t, err)
+
+		if !arbmath.BigEquals(big.NewInt(int64(len(ret))), returnSize) {
+			Fatal(t, "unexpected return length", len(ret), "expected", returnSize)
+		}
+
+		gas, err := l2client.EstimateGas(ctx, msg)
+		Require(t, err)
+
+		return gas
+	}
+
+	stylusReturnSizeAddr := deployWasm(t, ctx, auth, l2client, watFile("return-size"))
+
+	stylusGas := testCall(stylusReturnSizeAddr)
+
+	// PUSH32 [returnSizeBytes]
+	evmBytecode := append([]byte{0x7F}, returnSizeBytes...)
+	// PUSH0 RETURN
+	evmBytecode = append(evmBytecode, 0x5F, 0xF3)
+	evmReturnSizeAddr := deployContract(t, ctx, auth, l2client, evmBytecode)
+
+	evmGas := testCall(evmReturnSizeAddr)
+
+	colors.PrintGrey(fmt.Sprintf("arbosVersion=%v stylusGas=%v evmGas=%v", arbosVersion, stylusGas, evmGas))
+	// a bit of gas difference is expected due to EVM PUSH32 and PUSH0 cost (in practice this is 5 gas)
+	similarGas := math.Abs(float64(stylusGas)-float64(evmGas)) <= 100
+	if arbosVersion >= params.ArbosVersion_StylusFixes {
+		if !similarGas {
+			Fatal(t, "unexpected gas difference for return data: stylus", stylusGas, ", evm", evmGas)
+		}
+	} else if similarGas {
+		Fatal(t, "gas unexpectedly similar for return data: stylus", stylusGas, ", evm", evmGas)
+	}
+}
+
+func TestReturnDataCost(t *testing.T) {
+	testReturnDataCost(t, params.ArbosVersion_Stylus)
+	testReturnDataCost(t, params.ArbosVersion_StylusFixes)
+}
+
+func setupProgramTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) (
 	*NodeBuilder, bind.TransactOpts, func(),
 ) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+
+	for _, opt := range builderOpts {
+		opt(builder)
+	}
 
 	builder.nodeConfig.BlockValidator.Enable = false
 	builder.nodeConfig.Staker.Enable = true
