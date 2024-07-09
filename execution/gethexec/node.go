@@ -38,6 +38,24 @@ func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int64(prefix+".reorg-to-block", DefaultDangerousConfig.ReorgToBlock, "DANGEROUS! forces a reorg to an old block height. To be used for testing only. -1 to disable")
 }
 
+type StylusTargetConfig struct {
+	Arm  string `koanf:"arm"`
+	X86  string `koanf:"x86"`
+	Host string `koanf:"host"`
+}
+
+var DefaultStylusTargetConfig = StylusTargetConfig{
+	Arm:  "arm64-linux-unknown+neon",
+	X86:  "x86_64-linux-unknown+sse4.2",
+	Host: "",
+}
+
+func StylusTargetConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.String(prefix+".arm", DefaultStylusTargetConfig.Arm, "stylus programs compilation target for 64-bit ARM system")
+	f.String(prefix+".x86", DefaultStylusTargetConfig.X86, "stylus programs compilation target for 64-bit x86 system")
+	f.String(prefix+".host", DefaultStylusTargetConfig.Host, "stylus programs compilation target for system other than 64-bit ARM or 64-bit x86")
+}
+
 type Config struct {
 	ParentChainReader         headerreader.Config              `koanf:"parent-chain-reader" reload:"hot"`
 	Sequencer                 SequencerConfig                  `koanf:"sequencer" reload:"hot"`
@@ -52,8 +70,8 @@ type Config struct {
 	Dangerous                 DangerousConfig                  `koanf:"dangerous"`
 	EnablePrefetchBlock       bool                             `koanf:"enable-prefetch-block"`
 	SyncMonitor               SyncMonitorConfig                `koanf:"sync-monitor"`
-
-	forwardingTarget string
+	StylusTarget              StylusTargetConfig               `koanf:"stylus-target"`
+	forwardingTarget          string
 }
 
 func (c *Config) Validate() error {
@@ -88,6 +106,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	f.Bool(prefix+".enable-prefetch-block", ConfigDefault.EnablePrefetchBlock, "enable prefetching of blocks")
+	StylusTargetConfigAddOptions(prefix+".stylus-target", f)
 }
 
 var ConfigDefault = Config{
