@@ -311,3 +311,53 @@ func TestIsNotExistError(t *testing.T) {
 		testIsNotExistError(t, "leveldb", isLeveldbNotExistError)
 	})
 }
+
+func TestEmptyDatabaseDir(t *testing.T) {
+	testCases := []struct {
+		name    string
+		files   []string
+		force   bool
+		wantErr string
+	}{
+		{
+			name: "succeed with empty dir",
+		},
+		{
+			name:  "succeed with expected files",
+			files: []string{"LOCK", "classic-msg", "l2chaindata"},
+		},
+		{
+			name:    "fail with unexpected files",
+			files:   []string{"LOCK", "a", "b", "c", "d"},
+			wantErr: "found 4 unexpected files in database directory, including: a, b, c",
+		},
+		{
+			name:    "fail with unexpected files when forcing",
+			files:   []string{"LOCK", "a", "b", "c", "d"},
+			force:   true,
+			wantErr: "trying to overwrite old database directory",
+		},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			for _, file := range tc.files {
+				const filePerm = 0600
+				err := os.WriteFile(path.Join(dir, file), []byte{1, 2, 3}, filePerm)
+				Require(t, err)
+			}
+			err := checkEmptyDatabaseDir(dir, tc.force)
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Errorf("expected nil error, got %q", err)
+				}
+			} else {
+				if err == nil {
+					t.Error("expected error, got nil")
+				} else if !strings.Contains(err.Error(), tc.wantErr) {
+					t.Errorf("expected %q, got %q", tc.wantErr, err)
+				}
+			}
+		})
+	}
+}

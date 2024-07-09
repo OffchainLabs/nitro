@@ -372,6 +372,30 @@ func dirExists(path string) bool {
 	return info.IsDir()
 }
 
+func checkEmptyDatabaseDir(dir string, force bool) error {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return fmt.Errorf("failed to open database dir %s: %w", dir, err)
+	}
+	unexpectedFiles := []string{}
+	allowedFiles := map[string]bool{
+		"LOCK": true, "classic-msg": true, "l2chaindata": true,
+	}
+	for _, entry := range entries {
+		if !allowedFiles[entry.Name()] {
+			unexpectedFiles = append(unexpectedFiles, entry.Name())
+		}
+	}
+	if len(unexpectedFiles) > 0 {
+		if force {
+			return fmt.Errorf("trying to overwrite old database directory '%s' (delete the database directory and try again)", dir)
+		}
+		firstThreeFilenames := strings.Join(unexpectedFiles[:min(len(unexpectedFiles), 3)], ", ")
+		return fmt.Errorf("found %d unexpected files in database directory, including: %s", len(unexpectedFiles), firstThreeFilenames)
+	}
+	return nil
+}
+
 var pebbleNotExistErrorRegex = regexp.MustCompile("pebble: database .* does not exist")
 
 func isPebbleNotExistError(err error) bool {
@@ -469,23 +493,8 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		return nil, nil, fmt.Errorf(errorFmt, stack.InstanceDir(), grandParentDir)
 	}
 
-	// Check if database directory is empty
-	entries, err := os.ReadDir(stack.InstanceDir())
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to open database dir %s: %w", stack.InstanceDir(), err)
-	}
-	unexpectedFiles := []string{}
-	for _, entry := range entries {
-		if entry.Name() != "LOCK" {
-			unexpectedFiles = append(unexpectedFiles, entry.Name())
-		}
-	}
-	if len(unexpectedFiles) > 0 {
-		if config.Init.Force {
-			return nil, nil, fmt.Errorf("trying to overwrite old database directory '%s' (delete the database directory and try again)", stack.InstanceDir())
-		}
-		firstThreeFilenames := strings.Join(unexpectedFiles[:min(len(unexpectedFiles), 3)], ", ")
-		return nil, nil, fmt.Errorf("found %d unexpected files in database directory, including: %s", len(unexpectedFiles), firstThreeFilenames)
+	if err := checkEmptyDatabaseDir(stack.InstanceDir(), config.Init.Force); err != nil {
+		return nil, nil, err
 	}
 
 	if err := setLatestSnapshotUrl(ctx, &config.Init, config.Chain.Name); err != nil {
