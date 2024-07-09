@@ -20,6 +20,7 @@ import (
 	"fmt"
 	"os"
 	"path"
+	"runtime"
 	"runtime/pprof"
 	"runtime/trace"
 	"sync"
@@ -149,10 +150,25 @@ func (s *ExecutionEngine) MarkFeedStart(to arbutil.MessageIndex) {
 	}
 }
 
-func (s *ExecutionEngine) Initialize(rustCacheSize uint32) {
+func (s *ExecutionEngine) Initialize(rustCacheSize uint32, targetConfig *StylusTargetConfig) error {
 	if rustCacheSize != 0 {
 		programs.ResizeWasmLruCache(rustCacheSize)
 	}
+	effectiveStylusTarget := targetConfig.Host
+	if runtime.GOOS == "linux" {
+		switch runtime.GOARCH {
+		case "arm":
+			effectiveStylusTarget = targetConfig.Arm
+		case "amd64":
+			effectiveStylusTarget = targetConfig.X86
+		}
+	}
+	// TODO what should we use for target name?
+	err := programs.SetTarget("native", effectiveStylusTarget, true)
+	if err != nil {
+		return fmt.Errorf("Failed to set stylus target: %w", err)
+	}
+	return nil
 }
 
 func (s *ExecutionEngine) SetRecorder(recorder *BlockRecorder) {

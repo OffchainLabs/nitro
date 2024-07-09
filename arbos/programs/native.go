@@ -268,6 +268,21 @@ func ResizeWasmLruCache(size uint32) {
 	C.stylus_cache_lru_resize(u32(size))
 }
 
+func SetTarget(name string, description string, native bool) error {
+	output := &rustBytes{}
+	status := userStatus(C.stylus_target_set(
+		goSlice([]byte(name)),
+		goSlice([]byte(description)),
+		output,
+		cbool(native),
+	))
+	if status != userSuccess {
+		msg := arbutil.ToStringOrHex(output.intoBytes())
+		return fmt.Errorf("stylus_target_set failed with status %v: %v", status, msg)
+	}
+	return nil
+}
+
 func (value bytes32) toHash() common.Hash {
 	hash := common.Hash{}
 	for index, b := range value.bytes {

@@ -47,7 +47,7 @@ type StylusTargetConfig struct {
 var DefaultStylusTargetConfig = StylusTargetConfig{
 	Arm:  "arm64-linux-unknown+neon",
 	X86:  "x86_64-linux-unknown+sse4.2",
-	Host: "",
+	Host: "aarch64-apple-darwin",
 }
 
 func StylusTargetConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -122,6 +122,7 @@ var ConfigDefault = Config{
 	Dangerous:                 DefaultDangerousConfig,
 	Forwarder:                 DefaultNodeForwarderConfig,
 	EnablePrefetchBlock:       true,
+	StylusTarget:              DefaultStylusTargetConfig,
 }
 
 func ConfigDefaultNonSequencerTest() *Config {
@@ -301,9 +302,13 @@ func (n *ExecutionNode) MarkFeedStart(to arbutil.MessageIndex) {
 }
 
 func (n *ExecutionNode) Initialize(ctx context.Context) error {
-	n.ExecEngine.Initialize(n.ConfigFetcher().Caching.StylusLRUCache)
+	config := n.ConfigFetcher()
+	err := n.ExecEngine.Initialize(config.Caching.StylusLRUCache, &config.StylusTarget)
+	if err != nil {
+		return fmt.Errorf("error initializing execution engine: %w", err)
+	}
 	n.ArbInterface.Initialize(n)
-	err := n.Backend.Start()
+	err = n.Backend.Start()
 	if err != nil {
 		return fmt.Errorf("error starting geth backend: %w", err)
 	}
