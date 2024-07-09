@@ -16,5 +16,5 @@ jobs:
           submodules: recursive
 
       - name: Check all submodules are under origin/HEAD
-        run: git submodule foreach git merge-base --is-ancestor HEAD origin/HEAD
+        run: ${{ github.workspace }}/.github/workflows/submodule-pin-check.sh
 
