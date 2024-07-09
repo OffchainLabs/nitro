@@ -937,7 +937,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 				s.bringActiveUntilNode = info.LatestStakedNode + 1
 			}
 			info.CanProgress = false
-			return nil
+			return s.tryFastConfirmation(ctx, action.assertion.AfterState.GlobalState.BlockHash, action.assertion.AfterState.GlobalState.SendRoot)
 		}
 
 		// Details are already logged with more details in generateNodeAction
@@ -992,7 +992,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 					hash: action.hash,
 				}
 			}
-			return nil
+			return s.tryFastConfirmationNodeNumber(ctx, action.number)
 		}
 		log.Info("staking on existing node", "node", action.number)
 		// We'll return early if we already havea stake
