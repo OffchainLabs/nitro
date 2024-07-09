@@ -35,14 +35,12 @@ func TestEspressoOsp(t *testing.T) {
 	_, err = EnsureTxSucceeded(ctx, l1Backend, tx)
 	Require(t, err)
 
-	rollup, _ := DeployOnTestL1(t, ctx, l1Info, l1Backend, chainConfig, hotshotAddr)
+	locator, err := server_common.NewMachineLocator("")
+	Require(t, err)
+	rollup, _ := DeployOnTestL1(t, ctx, l1Info, l1Backend, chainConfig, locator.LatestWasmModuleRoot(), hotshotAddr)
 
 	ospEntryAddr := common.HexToAddress("0xffd0c2C95214aa9980D7419bd87c260C80Ce2546")
 
-	locator, err := server_common.NewMachineLocator("")
-	if err != nil {
-		Fatal(t, err)
-	}
 	wasmModuleRoot := locator.LatestWasmModuleRoot()
 	if (wasmModuleRoot == common.Hash{}) {
 		Fatal(t, "latest machine not found")
