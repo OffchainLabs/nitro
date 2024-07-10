@@ -41,6 +41,9 @@ struct Opts {
     #[structopt(long)]
     /// print modules to the console
     print_modules: bool,
+    #[structopt(long)]
+    /// print modules to the console
+    print_wasmmoduleroot: bool,
     /// profile output instead of generting proofs
     #[structopt(short = "p", long)]
     profile_run: bool,
@@ -122,6 +125,18 @@ const DELAYED_HEADER_LEN: usize = 112; // also in test-case's host-io.rs & contr
 fn main() -> Result<()> {
     let opts = Opts::from_args();
 
+    if opts.print_wasmmoduleroot {
+        match Machine::new_from_wavm(&opts.binary) {
+            Ok(mach) => {
+                println!("0x{}", mach.get_modules_root());
+                return Ok(());
+            },
+            Err(err) => {
+                eprintln!("Error loading binary: {err}");
+                return Err(err.into());
+            }
+        }
+    }
     let mut inbox_contents = HashMap::default();
     let mut inbox_position = opts.inbox_position;
     let mut delayed_position = opts.delayed_inbox_position;
