@@ -28,6 +28,7 @@ jobs:
             if ! jq -e '.[] | select(.context == "Design Approved Check")' > /dev/null <<< "$resp"; then
               # Design not approved yet and no status exists
               # Keep it without a status to keep the green checkmark appearing
+              # Otherwise, the commit and PR's CI will appear to be indefinitely pending
               # Merging will still be blocked until the required status appears
               exit 0
             fi
