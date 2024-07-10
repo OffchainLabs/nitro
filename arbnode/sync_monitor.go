@@ -2,6 +2,7 @@ package arbnode
 
 import (
 	"context"
+	"errors"
 	"sync"
 	"time"
 
@@ -70,6 +71,13 @@ func (s *SyncMonitor) SyncTargetMessageCount() arbutil.MessageIndex {
 	s.syncTargetLock.Lock()
 	defer s.syncTargetLock.Unlock()
 	return s.syncTarget
+}
+
+func (s *SyncMonitor) GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
+	if s.inboxReader != nil && s.inboxReader.l1Reader != nil {
+		return s.inboxReader.GetFinalizedMsgCount(ctx)
+	}
+	return 0, errors.New("sync monitor's GetFinalizedMsgCount method is unsupported, try starting node with --parent-chain.connection.url")
 }
 
 func (s *SyncMonitor) maxMessageCount() (arbutil.MessageIndex, error) {
