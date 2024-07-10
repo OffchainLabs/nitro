@@ -327,7 +327,9 @@ func main() {
 
 		} else {
 			// Call the error case closure returned by handleEspressoPreconditions()
-			panicHandler()
+			if panicHandler != nil {
+				panicHandler()
+			}
 		}
 
 		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher, false)

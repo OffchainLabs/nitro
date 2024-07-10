@@ -42,8 +42,5 @@ func handleEspressoPreConditions(message *arbostypes.MessageWithMetadata, isEnab
 			panic("The messaged received by the STF is not an Espresso message, but the validator is running in Espresso mode")
 		}
 	}
-	panicCase := func() {
-		// This no-op allows us to cause no panic in the code that receives the result of this function while keeping the function signature consistent.
-	}
-	return validatingAgainstEspresso, panicCase
+	return validatingAgainstEspresso, nil // return nil for the panic handler such that it is a no-op in the caller if no errors need occur.
 }
