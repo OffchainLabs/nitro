@@ -3,6 +3,10 @@
 declare -Ar exceptions=(
 	[contracts]=origin/develop
 	[nitro-testnode]=origin/master
+
+	#TODO Rachel to check these are the intended branches.
+	[arbitrator/langs/c]=origin/vm-storage-cache
+	[arbitrator/tools/wasmer]=origin/adopt-v4.2.8
 )
 
 divergent=0
