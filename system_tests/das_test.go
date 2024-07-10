@@ -6,7 +6,6 @@ package arbtest
 import (
 	"context"
 	"encoding/base64"
-	"encoding/json"
 	"io"
 	"math/big"
 	"net"
@@ -34,6 +33,8 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/signature"
+	"github.com/offchainlabs/nitro/validator/server_common"
+	"github.com/offchainlabs/nitro/validator/valnode"
 	"golang.org/x/exp/slog"
 )
 
@@ -80,9 +81,8 @@ func startLocalDASServer(
 	restServer, err := das.NewRestfulDasServerOnListener(restLis, genericconf.HTTPServerTimeoutConfigDefault, storageService, storageService)
 	Require(t, err)
 	beConfig := das.BackendConfig{
-		URL:                 "http://" + rpcLis.Addr().String(),
-		PubKeyBase64Encoded: blsPubToBase64(pubkey),
-		SignerMask:          1,
+		URL:    "http://" + rpcLis.Addr().String(),
+		Pubkey: blsPubToBase64(pubkey),
 	}
 	return rpcServer, pubkey, beConfig, restServer, "http://" + restLis.Addr().String()
 }
@@ -95,12 +95,10 @@ func blsPubToBase64(pubkey *blsSignatures.PublicKey) string {
 }
 
 func aggConfigForBackend(t *testing.T, backendConfig das.BackendConfig) das.AggregatorConfig {
-	backendsJsonByte, err := json.Marshal([]das.BackendConfig{backendConfig})
-	Require(t, err)
 	return das.AggregatorConfig{
 		Enable:                true,
 		AssumedHonest:         1,
-		Backends:              string(backendsJsonByte),
+		Backends:              das.BackendConfigList{backendConfig},
 		MaxStoreChunkBodySize: 512 * 1024,
 	}
 }
@@ -114,7 +112,9 @@ func TestDASRekey(t *testing.T) {
 	l1info, l1client, _, l1stack := createTestL1BlockChain(t, nil)
 	defer requireClose(t, l1stack)
 	feedErrChan := make(chan error, 10)
-	addresses, initMessage := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig)
+	locator, err := server_common.NewMachineLocator("")
+	Require(t, err)
+	addresses, initMessage := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig, locator.LatestWasmModuleRoot())
 
 	// Setup DAS servers
 	dasDataDir := t.TempDir()
@@ -156,13 +156,13 @@ func TestDASRekey(t *testing.T) {
 
 		l1NodeConfigB.DataAvailability.ParentChainNodeURL = "none"
 
-		l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, l1NodeConfigB, nil, nil)
+		l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, l1NodeConfigB, nil, nil, &valnode.TestValidationConfig)
 		checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(1e12), l2clientB)
 		nodeA.StopAndWait()
 		nodeB.StopAndWait()
 	}
 
-	err := dasRpcServerA.Shutdown(ctx)
+	err = dasRpcServerA.Shutdown(ctx)
 	Require(t, err)
 	dasRpcServerB, pubkeyB, backendConfigB, _, _ := startLocalDASServer(t, ctx, dasDataDir, l1client, addresses.SequencerInbox)
 	defer func() {
@@ -195,7 +195,7 @@ func TestDASRekey(t *testing.T) {
 	Require(t, nodeA.Start(ctx))
 	l2clientA := ClientForStack(t, l2stackA)
 
-	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, l1NodeConfigB, nil, nil)
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, l1NodeConfigB, nil, nil, &valnode.TestValidationConfig)
 	checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(2e12), l2clientB)
 
 	nodeA.StopAndWait()
@@ -248,8 +248,11 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	Require(t, err)
 	l1Reader.Start(ctx)
 	defer l1Reader.StopAndWait()
+
 	feedErrChan := make(chan error, 10)
-	addresses, initMessage := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig)
+	locator, err := server_common.NewMachineLocator("")
+	Require(t, err)
+	addresses, initMessage := DeployOnTestL1(t, ctx, l1info, l1client, chainConfig, locator.LatestWasmModuleRoot())
 
 	keyDir, fileDataDir, dbDataDir := t.TempDir(), t.TempDir(), t.TempDir()
 	pubkey, _, err := das.GenerateAndStoreKeys(keyDir)
@@ -301,9 +304,8 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 		RequestTimeout: 5 * time.Second,
 	}
 	beConfigA := das.BackendConfig{
-		URL:                 "http://" + rpcLis.Addr().String(),
-		PubKeyBase64Encoded: blsPubToBase64(pubkey),
-		SignerMask:          1,
+		URL:    "http://" + rpcLis.Addr().String(),
+		Pubkey: blsPubToBase64(pubkey),
 	}
 	l1NodeConfigA.DataAvailability.RPCAggregator = aggConfigForBackend(t, beConfigA)
 	l1NodeConfigA.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
@@ -346,7 +348,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	l1NodeConfigB.DataAvailability.RestAggregator.Enable = true
 	l1NodeConfigB.DataAvailability.RestAggregator.Urls = []string{"http://" + restLis.Addr().String()}
 	l1NodeConfigB.DataAvailability.ParentChainNodeURL = "none"
-	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, l1NodeConfigB, nil, nil)
+	l2clientB, nodeB := Create2ndNodeWithConfig(t, ctx, nodeA, l1stack, l1info, &l2info.ArbInitData, l1NodeConfigB, nil, nil, &valnode.TestValidationConfig)
 
 	checkBatchPosting(t, ctx, l1client, l2clientA, l1info, l2info, big.NewInt(1e12), l2clientB)
 
