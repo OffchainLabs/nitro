@@ -6,7 +6,7 @@ PROVER=$2
 
 for machine in "$MACHINES_DIR"/*/ ; do
     if [ -d "$machine" ]; then
-        expectedWasmModuleRoot=$(basename "$machine")
+        expectedWasmModuleRoot=$(cat "$machine/module-root.txt")
         actualWasmModuleRoot=$(cd "$machine" && "$PROVER" machine.wavm.br --print-wasmmoduleroot)
         if [ "$expectedWasmModuleRoot" != "$actualWasmModuleRoot" ]; then
             echo "Error: Expected module root $expectedWasmModuleRoot but found $actualWasmModuleRoot in $machine"
