@@ -1,6 +1,7 @@
 name: Merge Checks
 
 on:
+  workflow_dispatch:
   pull_request:
     branches: [ master ]
     types: [synchronize, opened, reopened, labeled, unlabeled]
