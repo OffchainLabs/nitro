@@ -1668,20 +1668,12 @@ func formatTime(duration time.Duration) string {
 	return fmt.Sprintf("%.2f%s", span, units[unit])
 }
 
-func TestWasmRecreate(t *testing.T) {
-	builder, auth, cleanup := setupProgramTest(t, true)
+func testWasmRecreate(t *testing.T, builder *NodeBuilder, storeTx *types.Transaction, loadTx *types.Transaction, want []byte) {
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
-	defer cleanup()
-
-	storage := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
-
-	zero := common.Hash{}
-	val := common.HexToHash("0x121233445566")
 
 	// do an onchain call - store value
-	storeTx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, argsForStorageWrite(zero, val))
 	Require(t, l2client.SendTransaction(ctx, storeTx))
 	_, err := EnsureTxSucceeded(ctx, l2client, storeTx)
 	Require(t, err)
@@ -1694,11 +1686,10 @@ func TestWasmRecreate(t *testing.T) {
 	Require(t, err)
 
 	// make sure reading 2nd value succeeds from 2nd node
-	loadTx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, argsForStorageRead(zero))
 	result, err := arbutil.SendTxAsCall(ctx, nodeB.Client, loadTx, l2info.GetAddress("Owner"), nil, true)
 	Require(t, err)
-	if common.BytesToHash(result) != val {
-		Fatal(t, "got wrong value")
+	if !bytes.Equal(result, want) {
+		t.Fatalf("got wrong value, got %x, want %x", result, want)
 	}
 	// close nodeB
 	cleanupB()
@@ -1723,8 +1714,8 @@ func TestWasmRecreate(t *testing.T) {
 	// test nodeB - answers eth_call (requires reloading wasm)
 	result, err = arbutil.SendTxAsCall(ctx, nodeB.Client, loadTx, l2info.GetAddress("Owner"), nil, true)
 	Require(t, err)
-	if common.BytesToHash(result) != val {
-		Fatal(t, "got wrong value")
+	if !bytes.Equal(result, want) {
+		t.Fatalf("got wrong value, got %x, want %x", result, want)
 	}
 
 	// send new tx (requires wasm) and check nodeB sees it as well
@@ -1743,7 +1734,58 @@ func TestWasmRecreate(t *testing.T) {
 		Fatal(t, "not contents found before delete")
 	}
 	os.RemoveAll(wasmPath)
+}
 
+func TestWasmRecreate(t *testing.T) {
+	builder, auth, cleanup := setupProgramTest(t, true)
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	storage := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
+
+	zero := common.Hash{}
+	val := common.HexToHash("0x121233445566")
+
+	storeTx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, argsForStorageWrite(zero, val))
+	loadTx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, argsForStorageRead(zero))
+
+	testWasmRecreate(t, builder, storeTx, loadTx, val[:])
+}
+
+func TestWasmRecreateWithDelegatecall(t *testing.T) {
+	builder, auth, cleanup := setupProgramTest(t, true)
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	storage := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
+
+	zero := common.Hash{}
+	val := common.HexToHash("0x121233445566")
+
+	// deploy mock that contains the delegatecall method
+	mock, tx, _, err := mocksgen.DeployProgramTest(&auth, l2client)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+	mockAbi, err := mocksgen.ProgramTestMetaData.GetAbi()
+	Require(t, err)
+
+	data, err := mockAbi.Pack("delegatecallProgram", storage, argsForStorageWrite(zero, val))
+	Require(t, err)
+	storeTx := l2info.PrepareTxTo("Owner", &mock, l2info.TransferGas, nil, data)
+
+	data, err = mockAbi.Pack("delegatecallProgram", storage, argsForStorageRead(zero))
+	Require(t, err)
+	loadTx := l2info.PrepareTxTo("Owner", &mock, l2info.TransferGas, nil, data)
+
+	want, err := mockAbi.Methods["delegatecallProgram"].Outputs.Pack(val[:])
+	Require(t, err)
+
+	testWasmRecreate(t, builder, storeTx, loadTx, want)
 }
 
 // createMapFromDb is used in verifying if wasm store rebuilding works
