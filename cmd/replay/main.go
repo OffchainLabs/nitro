@@ -325,11 +325,9 @@ func main() {
 				espressocrypto.VerifyNamespace(chainConfig.ChainID.Uint64(), *jst.Proof, *jst.Header.PayloadCommitment, *jst.Header.NsTable, txs, *jst.VidCommon)
 			}
 
-		} else {
-			// Call the error case closure returned by handleEspressoPreconditions()
-			if panicHandler != nil {
-				panicHandler()
-			}
+		} else if panicHandler != nil {
+			// Call the error case closure returned by handleEspressoPreconditions() if it isn't nil
+			panicHandler()
 		}
 
 		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher, false)
