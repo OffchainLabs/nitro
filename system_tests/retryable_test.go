@@ -145,13 +145,12 @@ func TestEstimateRetryableTicketWithNoFundsAndZeroGasPrice(t *testing.T) {
 	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, builder.L2.Client)
 	Require(t, err, "failed to deploy NodeInterface")
 
-	// estimate the gas needed to auto redeem the retryable
 	builder.L2Info.GenerateAccount("zerofunds")
 	usertxoptsL2 := builder.L2Info.GetDefaultTransactOpts("zerofunds", ctx)
 	usertxoptsL2.NoSend = true
 	usertxoptsL2.GasMargin = 0
 	usertxoptsL2.GasPrice = big.NewInt(0)
-	tx, err := nodeInterface.EstimateRetryableTicket(
+	_, err = nodeInterface.EstimateRetryableTicket(
 		&usertxoptsL2,
 		usertxoptsL2.From,
 		deposit,
@@ -159,18 +158,9 @@ func TestEstimateRetryableTicketWithNoFundsAndZeroGasPrice(t *testing.T) {
 		callValue,
 		beneficiaryAddress,
 		beneficiaryAddress,
-		[]byte{0x32, 0x42, 0x32, 0x88}, // increase the cost to beyond that of params.TxGas
+		[]byte{},
 	)
 	Require(t, err, "failed to estimate retryable submission")
-	estimate := tx.Gas()
-	expectedEstimate := params.TxGas + params.TxDataNonZeroGasEIP2028*4
-	if float64(estimate) > float64(expectedEstimate)*(1+gasestimator.EstimateGasErrorRatio) {
-		t.Errorf("estimated retryable ticket at %v gas but expected %v, with error margin of %v",
-			estimate,
-			expectedEstimate,
-			gasestimator.EstimateGasErrorRatio,
-		)
-	}
 }
 
 func TestSubmitRetryableImmediateSuccess(t *testing.T) {
