@@ -166,7 +166,7 @@ func (r *RollupWatcher) LookupNode(ctx context.Context, number uint64) (*NodeInf
 	}, nil
 }
 
-func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, nodeNum uint64, logQueryRange uint64, nodeHash common.Hash) ([]*NodeInfo, error) {
+func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, nodeNum uint64, logQueryRangeSize uint64, nodeHash common.Hash) ([]*NodeInfo, error) {
 	node, err := r.RollupUserLogic.GetNode(r.getCallOpts(ctx), nodeNum)
 	if err != nil {
 		return nil, err
@@ -193,7 +193,7 @@ func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, nodeNum uint64, 
 	// break down the query to avoid eth_getLogs query limit
 	for toBlock.Cmp(fromBlock) > 0 {
 		query.FromBlock = fromBlock
-		query.ToBlock = new(big.Int).Add(fromBlock, big.NewInt(int64(logQueryRange)))
+		query.ToBlock = new(big.Int).Add(fromBlock, big.NewInt(int64(logQueryRangeSize)))
 		if query.ToBlock.Cmp(toBlock) > 0 {
 			query.ToBlock = toBlock
 		}
