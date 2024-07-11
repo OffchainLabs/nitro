@@ -98,10 +98,9 @@ func TestMigrationNoExpiry(t *testing.T) {
 	countEntries(t, &s.layout, 4)
 	getByHashAndCheck(t, s, "a", "b", "c", "d")
 
-	_, err = s.layout.iterateBatchesByTimestamp(time.Unix(int64(now+10), 0))
-	if err == nil {
-		Fail(t, "can't iterate by timestamp when expiry is disabled")
-	}
+	// Can still iterate by timestamp even if expiry disabled
+	countTimestampEntries(t, &s.layout, time.Unix(int64(now+11), 0), 4)
+
 }
 
 func TestMigrationExpiry(t *testing.T) {
