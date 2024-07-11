@@ -173,17 +173,16 @@ type txQueueItem struct {
 	txSize          int // size in bytes of the marshalled transaction
 	options         *arbitrum_types.ConditionalOptions
 	resultChan      chan<- error
-	returnedResult  bool
+	returnedResult  *atomic.Bool
 	ctx             context.Context
 	firstAppearance time.Time
 }
 
 func (i *txQueueItem) returnResult(err error) {
-	if i.returnedResult {
+	if i.returnedResult.Swap(true) {
 		log.Error("attempting to return result to already finished queue item", "err", err)
 		return
 	}
-	i.returnedResult = true
 	i.resultChan <- err
 	close(i.resultChan)
 }
@@ -466,7 +465,7 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 		len(txBytes),
 		options,
 		resultChan,
-		false,
+		&atomic.Bool{},
 		queueCtx,
 		time.Now(),
 	}
@@ -740,12 +739,12 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem, totalBlockSize int)
 				if err != nil {
 					revivingFailure.queueItem.returnResult(err)
 				} else {
-					if arbmath.SaturatingAdd(totalBlockSize, queueItem.txSize) > config.MaxTxDataSize {
+					if arbmath.SaturatingAdd(totalBlockSize, revivingFailure.queueItem.txSize) > config.MaxTxDataSize {
 						// This tx would be too large to add to this block
-						s.txRetryQueue.Push(queueItem)
+						s.txRetryQueue.Push(revivingFailure.queueItem)
 					} else {
 						nextQueueItem = &revivingFailure.queueItem
-						totalBlockSize += queueItem.txSize
+						totalBlockSize += revivingFailure.queueItem.txSize
 					}
 				}
 			}
@@ -790,7 +789,8 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 			log.Error("sequencer block creation panicked", "panic", panicErr, "backtrace", string(debug.Stack()))
 			// Return an internal error to any queue items we were trying to process
 			for _, item := range queueItems {
-				if !item.returnedResult {
+				// This can race, but that's alright, worst case is a log line in returnResult
+				if !item.returnedResult.Load() {
 					item.returnResult(sequencerInternalError)
 				}
 			}
@@ -1058,8 +1058,8 @@ func (s *Sequencer) updateExpectedSurplus(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("error encountered getting l1 pricing surplus while updating expectedSurplus: %w", err)
 	}
-	backlogL1GasCharged := int64(s.execEngine.consensus.BacklogL1GasCharged())
-	backlogCallDataUnits := int64(s.execEngine.consensus.BacklogCallDataUnits())
+	backlogL1GasCharged := int64(s.execEngine.backlogL1GasCharged())
+	backlogCallDataUnits := int64(s.execEngine.backlogCallDataUnits())
 	expectedSurplus := int64(surplus) + backlogL1GasCharged - backlogCallDataUnits*int64(l1GasPrice)
 	// update metrics
 	l1GasPriceGauge.Update(int64(l1GasPrice))

@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
+	gethParams "github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/addressSet"
 	"github.com/offchainlabs/nitro/arbos/storage"
@@ -153,7 +154,8 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runMode c
 	}
 	// replace the cached asm
 	if cached {
-		cacheProgram(statedb, info.moduleHash, programData, params, debugMode, time, runMode)
+		code := statedb.GetCode(address)
+		cacheProgram(statedb, info.moduleHash, programData, address, code, codeHash, params, debugMode, time, runMode)
 	}
 
 	return stylusVersion, codeHash, info.moduleHash, dataFee, false, p.setProgram(codeHash, programData)
@@ -162,6 +164,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runMode c
 func (p Programs) CallProgram(
 	scope *vm.ScopeContext,
 	statedb vm.StateDB,
+	arbosVersion uint64,
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,
 	calldata []byte,
@@ -171,6 +174,7 @@ func (p Programs) CallProgram(
 	evm := interpreter.Evm()
 	contract := scope.Contract
 	codeHash := contract.CodeHash
+	startingGas := contract.Gas
 	debugMode := evm.ChainConfig().DebugMode()
 
 	params, err := p.Params()
@@ -199,9 +203,10 @@ func (p Programs) CallProgram(
 
 	// pay for program init
 	cached := program.cached || statedb.GetRecentWasms().Insert(codeHash, params.BlockCacheSize)
-	if cached {
+	if cached || program.version > 1 { // in version 1 cached cost is part of init cost
 		callCost = am.SaturatingUAdd(callCost, program.cachedGas(params))
-	} else {
+	}
+	if !cached {
 		callCost = am.SaturatingUAdd(callCost, program.initGas(params))
 	}
 	if err := contract.BurnGas(callCost); err != nil {
@@ -210,7 +215,7 @@ func (p Programs) CallProgram(
 	statedb.AddStylusPages(program.footprint)
 	defer statedb.SetStylusPagesOpen(open)
 
-	localAsm, err := getLocalAsm(statedb, moduleHash, contract.Address(), params.PageLimit, evm.Context.Time, debugMode, program)
+	localAsm, err := getLocalAsm(statedb, moduleHash, contract.Address(), contract.Code, contract.CodeHash, params.PageLimit, evm.Context.Time, debugMode, program)
 	if err != nil {
 		log.Crit("failed to get local wasm for activated program", "program", contract.Address())
 		return nil, err
@@ -242,7 +247,26 @@ func (p Programs) CallProgram(
 	if runmode == core.MessageCommitMode {
 		arbos_tag = statedb.Database().WasmCacheTag()
 	}
-	return callProgram(address, moduleHash, localAsm, scope, interpreter, tracingInfo, calldata, evmData, goParams, model, arbos_tag)
+	ret, err := callProgram(address, moduleHash, localAsm, scope, interpreter, tracingInfo, calldata, evmData, goParams, model, arbos_tag)
+	if len(ret) > 0 && arbosVersion >= gethParams.ArbosVersion_StylusFixes {
+		// Ensure that return data costs as least as much as it would in the EVM.
+		evmCost := evmMemoryCost(uint64(len(ret)))
+		if startingGas < evmCost {
+			contract.Gas = 0
+			return nil, vm.ErrOutOfGas
+		}
+		maxGasToReturn := startingGas - evmCost
+		contract.Gas = am.MinInt(contract.Gas, maxGasToReturn)
+	}
+	return ret, err
+}
+
+func evmMemoryCost(size uint64) uint64 {
+	// It would take 100GB to overflow this calculation, so no need to worry about that
+	words := (size + 31) / 32
+	linearCost := words * gethParams.MemoryGas
+	squareCost := (words * words) / gethParams.QuadCoeffDiv
+	return linearCost + squareCost
 }
 
 func getWasm(statedb vm.StateDB, program common.Address) ([]byte, error) {
@@ -361,10 +385,13 @@ func (p Programs) ProgramCached(codeHash common.Hash) (bool, error) {
 }
 
 // Sets whether a program is cached. Errors if trying to cache an expired program.
+// `address` must be present if setting cache to true as of ArbOS 31,
+// and if `address` is present it must have the specified codeHash.
 func (p Programs) SetProgramCached(
 	emitEvent func() error,
 	db vm.StateDB,
 	codeHash common.Hash,
+	address common.Address,
 	cache bool,
 	time uint64,
 	params *StylusParams,
@@ -377,8 +404,8 @@ func (p Programs) SetProgramCached(
 	}
 	expired := program.ageSeconds > am.DaysToSeconds(params.ExpiryDays)
 
-	if program.version == 0 && cache {
-		return ProgramNeedsUpgradeError(0, params.Version)
+	if program.version != params.Version && cache {
+		return ProgramNeedsUpgradeError(program.version, params.Version)
 	}
 	if expired && cache {
 		return ProgramExpiredError(program.ageSeconds)
@@ -399,7 +426,12 @@ func (p Programs) SetProgramCached(
 		return err
 	}
 	if cache {
-		cacheProgram(db, moduleHash, program, params, debug, time, runMode)
+		// Not passing in an address is supported pre-Verkle, as in Blockchain's ContractCodeWithPrefix method.
+		code, err := db.Database().ContractCode(common.Address{}, codeHash)
+		if err != nil {
+			return err
+		}
+		cacheProgram(db, moduleHash, program, address, code, codeHash, params, debug, time, runMode)
 	} else {
 		evictProgram(db, moduleHash, program.version, debug, runMode, expired)
 	}
@@ -431,7 +463,12 @@ func (p Programs) ProgramTimeLeft(codeHash common.Hash, time uint64, params *Sty
 
 func (p Programs) ProgramInitGas(codeHash common.Hash, time uint64, params *StylusParams) (uint64, uint64, error) {
 	program, err := p.getActiveProgram(codeHash, time, params)
-	return program.initGas(params), program.cachedGas(params), err
+	cachedGas := program.cachedGas(params)
+	initGas := program.initGas(params)
+	if params.Version > 1 {
+		initGas += cachedGas
+	}
+	return initGas, cachedGas, err
 }
 
 func (p Programs) ProgramMemoryFootprint(codeHash common.Hash, time uint64, params *StylusParams) (uint16, error) {
