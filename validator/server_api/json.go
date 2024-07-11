@@ -66,7 +66,7 @@ type InputJSON struct {
 	UserWasms     map[common.Hash]UserWasmJson
 	DebugChain    bool
 
-	L1BlockHeight     uint64
+	BlockHeight       uint64
 	HotShotLiveness   bool
 	HotShotCommitment espressoTypes.Commitment
 }
@@ -106,6 +106,10 @@ func ValidationInputToJson(entry *validator.ValidationInput) *InputJSON {
 		PreimagesB64:  jsonPreimagesMap,
 		UserWasms:     make(map[common.Hash]UserWasmJson),
 		DebugChain:    entry.DebugChain,
+
+		HotShotCommitment: entry.HotShotCommitment,
+		HotShotLiveness:   entry.HotShotLiveness,
+		BlockHeight:       entry.BlockHeight,
 	}
 	for _, binfo := range entry.BatchInfo {
 		encData := base64.StdEncoding.EncodeToString(binfo.Data)
@@ -134,6 +138,10 @@ func ValidationInputFromJson(entry *InputJSON) (*validator.ValidationInput, erro
 		Preimages:     preimages,
 		UserWasms:     make(state.UserWasms),
 		DebugChain:    entry.DebugChain,
+
+		HotShotCommitment: entry.HotShotCommitment,
+		HotShotLiveness:   entry.HotShotLiveness,
+		BlockHeight:       entry.BlockHeight,
 	}
 	delayed, err := base64.StdEncoding.DecodeString(entry.DelayedMsgB64)
 	if err != nil {
