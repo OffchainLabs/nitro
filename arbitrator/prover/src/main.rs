@@ -130,7 +130,7 @@ fn main() -> Result<()> {
             Ok(mach) => {
                 println!("0x{}", mach.get_modules_root());
                 return Ok(());
-            },
+            }
             Err(err) => {
                 eprintln!("Error loading binary: {err}");
                 return Err(err);
