@@ -59,18 +59,16 @@ import (
 // DataPoster must be RLP serializable and deserializable
 type DataPoster struct {
 	stopwaiter.StopWaiter
-	headerReader           *headerreader.HeaderReader
-	client                 arbutil.L1Interface
-	auth                   *bind.TransactOpts
-	signer                 signerFn
-	config                 ConfigFetcher
-	usingNoOpStorage       bool
-	replacementTimes       []time.Duration
-	blobTxReplacementTimes []time.Duration
-	metadataRetriever      func(ctx context.Context, blockNum *big.Int) ([]byte, error)
-	extraBacklog           func() uint64
-	parentChainID          *big.Int
-	parentChainID256       *uint256.Int
+	headerReader      *headerreader.HeaderReader
+	client            arbutil.L1Interface
+	auth              *bind.TransactOpts
+	signer            signerFn
+	config            ConfigFetcher
+	usingNoOpStorage  bool
+	metadataRetriever func(ctx context.Context, blockNum *big.Int) ([]byte, error)
+	extraBacklog      func() uint64
+	parentChainID     *big.Int
+	parentChainID256  *uint256.Int
 
 	// These fields are protected by the mutex.
 	// TODO: factor out these fields into separate structure, since now one
@@ -92,27 +90,6 @@ type DataPoster struct {
 // This can be local or external, hence the context parameter.
 type signerFn func(context.Context, common.Address, *types.Transaction) (*types.Transaction, error)
 
-func parseReplacementTimes(val string) ([]time.Duration, error) {
-	var res []time.Duration
-	var lastReplacementTime time.Duration
-	for _, s := range strings.Split(val, ",") {
-		t, err := time.ParseDuration(s)
-		if err != nil {
-			return nil, fmt.Errorf("parsing durations: %w", err)
-		}
-		if t <= lastReplacementTime {
-			return nil, errors.New("replacement times must be increasing")
-		}
-		res = append(res, t)
-		lastReplacementTime = t
-	}
-	if len(res) == 0 {
-		log.Warn("Disabling replace-by-fee for data poster")
-	}
-	// To avoid special casing "don't replace again", replace in 10 years.
-	return append(res, time.Hour*24*365*10), nil
-}
-
 type DataPosterOpts struct {
 	Database          ethdb.Database
 	HeaderReader      *headerreader.HeaderReader
@@ -127,14 +104,6 @@ type DataPosterOpts struct {
 
 func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, error) {
 	cfg := opts.Config()
-	replacementTimes, err := parseReplacementTimes(cfg.ReplacementTimes)
-	if err != nil {
-		return nil, err
-	}
-	blobTxReplacementTimes, err := parseReplacementTimes(cfg.BlobTxReplacementTimes)
-	if err != nil {
-		return nil, err
-	}
 	useNoOpStorage := cfg.UseNoOpStorage
 	if opts.HeaderReader.IsParentChainArbitrum() && !cfg.UseNoOpStorage {
 		useNoOpStorage = true
@@ -178,16 +147,14 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 		signer: func(_ context.Context, addr common.Address, tx *types.Transaction) (*types.Transaction, error) {
 			return opts.Auth.Signer(addr, tx)
 		},
-		config:                 opts.Config,
-		usingNoOpStorage:       useNoOpStorage,
-		replacementTimes:       replacementTimes,
-		blobTxReplacementTimes: blobTxReplacementTimes,
-		metadataRetriever:      opts.MetadataRetriever,
-		queue:                  queue,
-		errorCount:             make(map[uint64]int),
-		maxFeeCapExpression:    expression,
-		extraBacklog:           opts.ExtraBacklog,
-		parentChainID:          opts.ParentChainID,
+		config:              opts.Config,
+		usingNoOpStorage:    useNoOpStorage,
+		metadataRetriever:   opts.MetadataRetriever,
+		queue:               queue,
+		errorCount:          make(map[uint64]int),
+		maxFeeCapExpression: expression,
+		extraBacklog:        opts.ExtraBacklog,
+		parentChainID:       opts.ParentChainID,
 	}
 	var overflow bool
 	dp.parentChainID256, overflow = uint256.FromBig(opts.ParentChainID)
@@ -769,9 +736,9 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 
 	var deprecatedData types.DynamicFeeTx
 	var inner types.TxData
-	replacementTimes := p.replacementTimes
+	replacementTimes := p.config().ReplacementTimes
 	if len(kzgBlobs) > 0 {
-		replacementTimes = p.blobTxReplacementTimes
+		replacementTimes = p.config().BlobTxReplacementTimes
 		value256, overflow := uint256.FromBig(value)
 		if overflow {
 			return nil, fmt.Errorf("blob transaction callvalue %v overflows uint256", value)
@@ -1014,9 +981,9 @@ func (p *DataPoster) replaceTx(ctx context.Context, prevTx *storage.QueuedTransa
 		return p.sendTx(ctx, prevTx, &newTx)
 	}
 
-	replacementTimes := p.replacementTimes
+	replacementTimes := p.config().ReplacementTimes
 	if len(prevTx.FullTx.BlobHashes()) > 0 {
-		replacementTimes = p.blobTxReplacementTimes
+		replacementTimes = p.config().BlobTxReplacementTimes
 	}
 
 	elapsed := time.Since(prevTx.Created)
@@ -1142,7 +1109,7 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 			log.Warn("failed to update tx poster nonce", "err", err)
 		}
 		now := time.Now()
-		nextCheck := now.Add(arbmath.MinInt(p.replacementTimes[0], p.blobTxReplacementTimes[0]))
+		nextCheck := now.Add(arbmath.MinInt(p.config().ReplacementTimes[0], p.config().BlobTxReplacementTimes[0]))
 		maxTxsToRbf := p.config().MaxMempoolTransactions
 		if maxTxsToRbf == 0 {
 			maxTxsToRbf = 512
@@ -1235,8 +1202,8 @@ type QueueStorage interface {
 
 type DataPosterConfig struct {
 	RedisSigner            signature.SimpleHmacConfig `koanf:"redis-signer"`
-	ReplacementTimes       string                     `koanf:"replacement-times"`
-	BlobTxReplacementTimes string                     `koanf:"blob-tx-replacement-times"`
+	ReplacementTimes       []time.Duration            `koanf:"replacement-times"`
+	BlobTxReplacementTimes []time.Duration            `koanf:"blob-tx-replacement-times"`
 	// This is forcibly disabled if the parent chain is an Arbitrum chain,
 	// so you should probably use DataPoster's waitForL1Finality method instead of reading this field directly.
 	WaitForL1Finality      bool              `koanf:"wait-for-l1-finality" reload:"hot"`
@@ -1297,8 +1264,8 @@ type DangerousConfig struct {
 type ConfigFetcher func() *DataPosterConfig
 
 func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPosterConfig DataPosterConfig) {
-	f.String(prefix+".replacement-times", defaultDataPosterConfig.ReplacementTimes, "comma-separated list of durations since first posting to attempt a replace-by-fee")
-	f.String(prefix+".blob-tx-replacement-times", defaultDataPosterConfig.BlobTxReplacementTimes, "comma-separated list of durations since first posting a blob transaction to attempt a replace-by-fee")
+	f.DurationSlice(prefix+".replacement-times", defaultDataPosterConfig.ReplacementTimes, "comma-separated list of durations since first posting to attempt a replace-by-fee")
+	f.DurationSlice(prefix+".blob-tx-replacement-times", defaultDataPosterConfig.BlobTxReplacementTimes, "comma-separated list of durations since first posting a blob transaction to attempt a replace-by-fee")
 	f.Bool(prefix+".wait-for-l1-finality", defaultDataPosterConfig.WaitForL1Finality, "only treat a transaction as confirmed after L1 finality has been achieved (recommended)")
 	f.Uint64(prefix+".max-mempool-transactions", defaultDataPosterConfig.MaxMempoolTransactions, "the maximum number of transactions to have queued in the mempool at once (0 = unlimited)")
 	f.Uint64(prefix+".max-mempool-weight", defaultDataPosterConfig.MaxMempoolWeight, "the maximum number of weight (weight = min(1, tx.blobs)) to have queued in the mempool at once (0 = unlimited)")
@@ -1342,8 +1309,8 @@ func addExternalSignerOptions(prefix string, f *pflag.FlagSet) {
 }
 
 var DefaultDataPosterConfig = DataPosterConfig{
-	ReplacementTimes:       "5m,10m,20m,30m,1h,2h,4h,6h,8h,12h,16h,18h,20h,22h",
-	BlobTxReplacementTimes: "5m,10m,30m,1h,4h,8h,16h,22h",
+	ReplacementTimes:       []time.Duration{5 * time.Minute, 10 * time.Minute, 20 * time.Minute, 30 * time.Minute, time.Hour, 2 * time.Hour, 4 * time.Hour, 6 * time.Hour, 8 * time.Hour, 12 * time.Hour, 16 * time.Hour, 18 * time.Hour, 20 * time.Hour, 22 * time.Hour},
+	BlobTxReplacementTimes: []time.Duration{5 * time.Minute, 10 * time.Minute, 30 * time.Minute, time.Hour, 4 * time.Hour, 8 * time.Hour, 16 * time.Hour, 22 * time.Hour},
 	WaitForL1Finality:      true,
 	TargetPriceGwei:        60.,
 	UrgencyGwei:            2.,
@@ -1376,8 +1343,8 @@ var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
 }()
 
 var TestDataPosterConfig = DataPosterConfig{
-	ReplacementTimes:       "1s,2s,5s,10s,20s,30s,1m,5m",
-	BlobTxReplacementTimes: "1s,10s,30s,5m",
+	ReplacementTimes:       []time.Duration{1 * time.Second, 2 * time.Second, 5 * time.Second, 10 * time.Second, 20 * time.Second, 30 * time.Second, time.Minute, 5 * time.Minute},
+	BlobTxReplacementTimes: []time.Duration{1 * time.Second, 10 * time.Second, 30 * time.Second, 5 * time.Minute},
 	RedisSigner:            signature.TestSimpleHmacConfig,
 	WaitForL1Finality:      false,
 	TargetPriceGwei:        60.,

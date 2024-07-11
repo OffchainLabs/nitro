@@ -11,7 +11,6 @@ import (
 	"math/big"
 	"runtime/debug"
 	"strconv"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -66,7 +65,7 @@ type SequencerConfig struct {
 	MaxBlockSpeed                time.Duration   `koanf:"max-block-speed" reload:"hot"`
 	MaxRevertGasReject           uint64          `koanf:"max-revert-gas-reject" reload:"hot"`
 	MaxAcceptableTimestampDelta  time.Duration   `koanf:"max-acceptable-timestamp-delta" reload:"hot"`
-	SenderWhitelist              string          `koanf:"sender-whitelist"`
+	SenderWhitelist              []string        `koanf:"sender-whitelist"`
 	Forwarder                    ForwarderConfig `koanf:"forwarder"`
 	QueueSize                    int             `koanf:"queue-size"`
 	QueueTimeout                 time.Duration   `koanf:"queue-timeout" reload:"hot"`
@@ -82,8 +81,7 @@ type SequencerConfig struct {
 }
 
 func (c *SequencerConfig) Validate() error {
-	entries := strings.Split(c.SenderWhitelist, ",")
-	for _, address := range entries {
+	for _, address := range c.SenderWhitelist {
 		if len(address) == 0 {
 			continue
 		}
@@ -137,7 +135,7 @@ var TestSequencerConfig = SequencerConfig{
 	MaxBlockSpeed:                time.Millisecond * 10,
 	MaxRevertGasReject:           params.TxGas + 10000,
 	MaxAcceptableTimestampDelta:  time.Hour,
-	SenderWhitelist:              "",
+	SenderWhitelist:              []string{},
 	Forwarder:                    DefaultTestForwarderConfig,
 	QueueSize:                    128,
 	QueueTimeout:                 time.Second * 5,
@@ -155,7 +153,7 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".max-block-speed", DefaultSequencerConfig.MaxBlockSpeed, "minimum delay between blocks (sets a maximum speed of block production)")
 	f.Uint64(prefix+".max-revert-gas-reject", DefaultSequencerConfig.MaxRevertGasReject, "maximum gas executed in a revert for the sequencer to reject the transaction instead of posting it (anti-DOS)")
 	f.Duration(prefix+".max-acceptable-timestamp-delta", DefaultSequencerConfig.MaxAcceptableTimestampDelta, "maximum acceptable time difference between the local time and the latest L1 block's timestamp")
-	f.String(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
+	f.StringSlice(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
 	AddOptionsForSequencerForwarderConfig(prefix+".forwarder", f)
 	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
 	f.Duration(prefix+".queue-timeout", DefaultSequencerConfig.QueueTimeout, "maximum amount of time transaction can wait in queue")
@@ -342,8 +340,7 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		return nil, err
 	}
 	senderWhitelist := make(map[common.Address]struct{})
-	entries := strings.Split(config.SenderWhitelist, ",")
-	for _, address := range entries {
+	for _, address := range config.SenderWhitelist {
 		if len(address) == 0 {
 			continue
 		}
