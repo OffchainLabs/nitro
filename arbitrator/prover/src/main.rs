@@ -133,7 +133,7 @@ fn main() -> Result<()> {
             },
             Err(err) => {
                 eprintln!("Error loading binary: {err}");
-                return Err(err.into());
+                return Err(err);
             }
         }
     }
