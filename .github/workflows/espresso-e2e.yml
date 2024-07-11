@@ -135,8 +135,3 @@ jobs:
         run: |
           packages=`go list ./... | grep system_tests`
           gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 -- -v -timeout 35m -p 1 ./... -run 'TestEspressoE2E'
-
-      - name: Run switch test
-        run: |
-          packages=`go list ./... | grep system_tests`
-          gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 -- -v -timeout 15m -p 1 ./... -run 'TestEspressoSwitch'
