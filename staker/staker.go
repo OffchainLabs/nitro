@@ -178,7 +178,7 @@ var TestL1ValidatorConfig = L1ValidatorConfig{
 	ExtraGas:                  50000,
 	Dangerous:                 DefaultDangerousConfig,
 	ParentChainWallet:         DefaultValidatorL1WalletConfig,
-	LogQueryBatchSize:         999,
+	LogQueryBatchSize:         0,
 }
 
 var DefaultValidatorL1WalletConfig = genericconf.WalletConfig{
