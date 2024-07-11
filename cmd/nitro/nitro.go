@@ -679,8 +679,6 @@ func mainImpl() int {
 			exitCode = 1
 		}
 		if nodeConfig.Init.ThenQuit {
-			close(sigint)
-
 			return exitCode
 		}
 	}
@@ -693,9 +691,6 @@ func mainImpl() int {
 	case <-sigint:
 		log.Info("shutting down because of sigint")
 	}
-
-	// cause future ctrl+c's to panic
-	close(sigint)
 
 	return exitCode
 }
