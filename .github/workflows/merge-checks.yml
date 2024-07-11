@@ -1,7 +1,7 @@
 name: Merge Checks
 
 on:
-  pull_request_target:
+  pull_request:
     branches: [ master ]
     types: [synchronize, opened, reopened, labeled, unlabeled]
 
@@ -17,7 +17,7 @@ jobs:
         run: |
           set -x pipefail
           status_state="pending"
-          if ${{ contains(github.event.*.labels.*.name, 'design-approved') }}; then
+          if ${{ contains(github.event.pull_request.labels.*.name, 'design-approved') && !contains(github.event.pull_request.labels.*.name, 'after-next-version') }}; then
             status_state="success"
           else
             resp="$(curl -sSL --fail-with-body \
