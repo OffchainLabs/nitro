@@ -131,7 +131,7 @@ func TestRetryableNoExist(t *testing.T) {
 	}
 }
 
-func TestEstimateRetryableTicketWithNoFundsAndZeroGas(t *testing.T) {
+func TestEstimateRetryableTicketWithNoFundsAndZeroGasPrice(t *testing.T) {
 	t.Parallel()
 	builder, _, _, ctx, teardown := retryableSetup(t)
 	defer teardown()
