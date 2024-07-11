@@ -815,7 +815,6 @@ validationsLoop:
 				v.possiblyFatal(errors.New("failed to set SendingValidation status"))
 			}
 			validatorPendingValidationsGauge.Inc(1)
-			defer validatorPendingValidationsGauge.Dec(1)
 			var runs []validator.ValidationRun
 			for _, moduleRoot := range wasmRoots {
 				run := v.chosenValidator[moduleRoot].Launch(input, moduleRoot)
@@ -826,6 +825,7 @@ validationsLoop:
 			validationStatus.Runs = runs
 			validationStatus.Cancel = cancel
 			v.LaunchUntrackedThread(func() {
+				defer validatorPendingValidationsGauge.Dec(1)
 				defer cancel()
 				replaced = validationStatus.replaceStatus(SendingValidation, ValidationSent)
 				if !replaced {

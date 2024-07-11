@@ -134,7 +134,9 @@ func testProgramResursiveCalls(t *testing.T, tests [][]multiCallRecurse, jit boo
 	// set-up validator
 	validatorConfig := arbnode.ConfigDefaultL1NonSequencerTest()
 	validatorConfig.BlockValidator.Enable = true
-	AddDefaultValNode(t, ctx, validatorConfig, jit, "")
+	emptyRedisURL := ""
+	defaultWasmRootPath := ""
+	AddDefaultValNode(t, ctx, validatorConfig, jit, emptyRedisURL, defaultWasmRootPath)
 	valClient, valCleanup := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: validatorConfig})
 	defer valCleanup()
 
