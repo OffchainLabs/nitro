@@ -4,8 +4,8 @@
 // these tests seems to consume too much memory with race detection
 // Test randomly fails with L1 gas price estimate should tend toward the basefee
 // so skipping locally, but running on CI
-//go:build !race && feestest
-// +build !race,feestest
+//go:build !race && cionly
+// +build !race,cionly
 
 package arbtest
 
