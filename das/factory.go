@@ -25,22 +25,36 @@ func CreatePersistentStorageService(
 ) (StorageService, *LifecycleManager, error) {
 	storageServices := make([]StorageService, 0, 10)
 	var lifecycleManager LifecycleManager
-	if config.LocalDBStorage.Enable {
-		s, err := NewDBStorageService(ctx, &config.LocalDBStorage)
+	var err error
+
+	var fs *LocalFileStorageService
+	if config.LocalFileStorage.Enable {
+		fs, err = NewLocalFileStorageService(config.LocalFileStorage)
 		if err != nil {
 			return nil, nil, err
 		}
-		lifecycleManager.Register(s)
-		storageServices = append(storageServices, s)
+		err = fs.start(ctx)
+		if err != nil {
+			return nil, nil, err
+		}
+		lifecycleManager.Register(fs)
+		storageServices = append(storageServices, fs)
 	}
 
-	if config.LocalFileStorage.Enable {
-		s, err := NewLocalFileStorageService(config.LocalFileStorage.DataDir)
+	if config.LocalDBStorage.Enable {
+		var s *DBStorageService
+		if config.MigrateLocalDBToFileStorage {
+			s, err = NewDBStorageService(ctx, &config.LocalDBStorage, fs)
+		} else {
+			s, err = NewDBStorageService(ctx, &config.LocalDBStorage, nil)
+		}
 		if err != nil {
 			return nil, nil, err
 		}
-		lifecycleManager.Register(s)
-		storageServices = append(storageServices, s)
+		if s != nil {
+			lifecycleManager.Register(s)
+			storageServices = append(storageServices, s)
+		}
 	}
 
 	if config.S3Storage.Enable {
@@ -63,6 +77,10 @@ func CreatePersistentStorageService(
 	if len(storageServices) == 1 {
 		return storageServices[0], &lifecycleManager, nil
 	}
+	if len(storageServices) == 0 {
+		return nil, nil, errors.New("No data-availability storage backend has been configured")
+	}
+
 	return nil, &lifecycleManager, nil
 }
 
@@ -97,37 +115,37 @@ func CreateBatchPosterDAS(
 	dataSigner signature.DataSignerFunc,
 	l1Reader arbutil.L1Interface,
 	sequencerInboxAddr common.Address,
-) (DataAvailabilityServiceWriter, DataAvailabilityServiceReader, *LifecycleManager, error) {
+) (DataAvailabilityServiceWriter, DataAvailabilityServiceReader, *KeysetFetcher, *LifecycleManager, error) {
 	if !config.Enable {
-		return nil, nil, nil, nil
+		return nil, nil, nil, nil, nil
 	}
 
 	// Check config requirements
 	if !config.RPCAggregator.Enable || !config.RestAggregator.Enable {
-		return nil, nil, nil, errors.New("--node.data-availability.rpc-aggregator.enable and rest-aggregator.enable must be set when running a Batch Poster in AnyTrust mode")
+		return nil, nil, nil, nil, errors.New("--node.data-availability.rpc-aggregator.enable and rest-aggregator.enable must be set when running a Batch Poster in AnyTrust mode")
 	}
 	// Done checking config requirements
 
 	var daWriter DataAvailabilityServiceWriter
 	daWriter, err := NewRPCAggregator(ctx, *config, dataSigner)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
 	restAgg, err := NewRestfulClientAggregator(ctx, &config.RestAggregator)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 	restAgg.Start(ctx)
 	var lifecycleManager LifecycleManager
 	lifecycleManager.Register(restAgg)
 	var daReader DataAvailabilityServiceReader = restAgg
-	daReader, err = NewChainFetchReader(daReader, l1Reader, sequencerInboxAddr)
+	keysetFetcher, err := NewKeysetFetcher(l1Reader, sequencerInboxAddr)
 	if err != nil {
-		return nil, nil, nil, err
+		return nil, nil, nil, nil, err
 	}
 
-	return daWriter, daReader, &lifecycleManager, nil
+	return daWriter, daReader, keysetFetcher, &lifecycleManager, nil
 }
 
 func CreateDAComponentsForDaserver(
@@ -233,13 +251,6 @@ func CreateDAComponentsForDaserver(
 		}
 	}
 
-	if seqInboxAddress != nil {
-		daReader, err = NewChainFetchReader(daReader, (*l1Reader).Client(), *seqInboxAddress)
-		if err != nil {
-			return nil, nil, nil, nil, nil, err
-		}
-	}
-
 	return daReader, daWriter, signatureVerifier, daHealthChecker, dasLifecycleManager, nil
 }
 
@@ -248,18 +259,18 @@ func CreateDAReaderForNode(
 	config *DataAvailabilityConfig,
 	l1Reader *headerreader.HeaderReader,
 	seqInboxAddress *common.Address,
-) (DataAvailabilityServiceReader, *LifecycleManager, error) {
+) (DataAvailabilityServiceReader, *KeysetFetcher, *LifecycleManager, error) {
 	if !config.Enable {
-		return nil, nil, nil
+		return nil, nil, nil, nil
 	}
 
 	// Check config requirements
 	if config.RPCAggregator.Enable {
-		return nil, nil, errors.New("node.data-availability.rpc-aggregator is only for Batch Poster mode")
+		return nil, nil, nil, errors.New("node.data-availability.rpc-aggregator is only for Batch Poster mode")
 	}
 
 	if !config.RestAggregator.Enable {
-		return nil, nil, fmt.Errorf("--node.data-availability.enable was set but not --node.data-availability.rest-aggregator. When running a Nitro Anytrust node in non-Batch Poster mode, some way to get the batch data is required.")
+		return nil, nil, nil, fmt.Errorf("--node.data-availability.enable was set but not --node.data-availability.rest-aggregator. When running a Nitro Anytrust node in non-Batch Poster mode, some way to get the batch data is required.")
 	}
 	// Done checking config requirements
 
@@ -269,23 +280,25 @@ func CreateDAReaderForNode(
 		var restAgg *SimpleDASReaderAggregator
 		restAgg, err := NewRestfulClientAggregator(ctx, &config.RestAggregator)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
 		restAgg.Start(ctx)
 		lifecycleManager.Register(restAgg)
 		daReader = restAgg
 	}
 
+	var keysetFetcher *KeysetFetcher
 	if seqInboxAddress != nil {
 		seqInbox, err := bridgegen.NewSequencerInbox(*seqInboxAddress, (*l1Reader).Client())
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
-		daReader, err = NewChainFetchReaderWithSeqInbox(daReader, seqInbox)
+		keysetFetcher, err = NewKeysetFetcherWithSeqInbox(seqInbox)
 		if err != nil {
-			return nil, nil, err
+			return nil, nil, nil, err
 		}
+
 	}
 
-	return daReader, &lifecycleManager, nil
+	return daReader, keysetFetcher, &lifecycleManager, nil
 }
