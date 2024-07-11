@@ -369,11 +369,6 @@ func mainImpl() int {
 		return 0
 	}
 
-	if nodeConfig.Execution.Caching.Archive && nodeConfig.Execution.TxLookupLimit != 0 {
-		log.Info("retaining ability to lookup full transaction history as archive mode is enabled")
-		nodeConfig.Execution.TxLookupLimit = 0
-	}
-
 	if err := resourcemanager.Init(&nodeConfig.Node.ResourceMgmt); err != nil {
 		flag.Usage()
 		log.Crit("Failed to start resource management module", "err", err)
@@ -914,6 +909,12 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	if nodeConfig.Execution.Caching.Archive {
 		nodeConfig.Node.MessagePruner.Enable = false
 	}
+
+	if nodeConfig.Execution.Caching.Archive && nodeConfig.Execution.TxLookupLimit != 0 {
+		log.Info("retaining ability to lookup full transaction history as archive mode is enabled")
+		nodeConfig.Execution.TxLookupLimit = 0
+	}
+
 	err = nodeConfig.Validate()
 	if err != nil {
 		return nil, nil, err
