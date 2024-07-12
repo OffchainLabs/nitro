@@ -35,6 +35,8 @@ var (
 	validatorValidValidationsCounter  = metrics.NewRegisteredCounter("arb/validator/validations/valid", nil)
 	validatorFailedValidationsCounter = metrics.NewRegisteredCounter("arb/validator/validations/failed", nil)
 	validatorMsgCountCurrentBatch     = metrics.NewRegisteredGauge("arb/validator/msg_count_current_batch", nil)
+	validatorMsgCountCreatedGauge     = metrics.NewRegisteredGauge("arb/validator/msg_count_created", nil)
+	validatorMsgCountRecordSentGauge  = metrics.NewRegisteredGauge("arb/validator/msg_count_record_sent", nil)
 	validatorMsgCountValidatedGauge   = metrics.NewRegisteredGauge("arb/validator/msg_count_validated", nil)
 )
 
@@ -288,8 +290,9 @@ func NewBlockValidator(
 	return ret, nil
 }
 
-func atomicStorePos(addr *uint64, val arbutil.MessageIndex) {
+func atomicStorePos(addr *uint64, val arbutil.MessageIndex, metr metrics.Gauge) {
 	atomic.StoreUint64(addr, uint64(val))
+	metr.Update(int64(val))
 }
 
 func atomicLoadPos(addr *uint64) arbutil.MessageIndex {
@@ -593,7 +596,7 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 	v.validations.Store(pos, status)
 	v.nextCreateStartGS = endGS
 	v.nextCreatePrevDelayed = msg.DelayedMessagesRead
-	atomicStorePos(&v.createdA, pos+1)
+	atomicStorePos(&v.createdA, pos+1, validatorMsgCountCreatedGauge)
 	log.Trace("create validation entry: created", "pos", pos)
 	return true, nil
 }
@@ -672,7 +675,7 @@ func (v *BlockValidator) sendNextRecordRequests(ctx context.Context) (bool, erro
 			return false, err
 		}
 		pos += 1
-		atomicStorePos(&v.recordSentA, pos)
+		atomicStorePos(&v.recordSentA, pos, validatorMsgCountRecordSentGauge)
 		log.Trace("next record request: sent", "pos", pos)
 	}
 
@@ -783,11 +786,10 @@ validationsLoop:
 				log.Error("failed writing new validated to database", "pos", pos, "err", err)
 			}
 			go v.recorder.MarkValid(pos, v.lastValidGS.BlockHash)
-			atomicStorePos(&v.validatedA, pos+1)
+			atomicStorePos(&v.validatedA, pos+1, validatorMsgCountValidatedGauge)
 			v.validations.Delete(pos)
 			nonBlockingTrigger(v.createNodesChan)
 			nonBlockingTrigger(v.sendRecordChan)
-			validatorMsgCountValidatedGauge.Update(int64(pos + 1))
 			if v.testingProgressMadeChan != nil {
 				nonBlockingTrigger(v.testingProgressMadeChan)
 			}
@@ -1227,9 +1229,9 @@ func (v *BlockValidator) checkValidatedGSCaughtUp() (bool, error) {
 	v.nextCreateBatchReread = true
 	v.nextCreateStartGS = v.lastValidGS
 	v.nextCreatePrevDelayed = msg.DelayedMessagesRead
-	atomicStorePos(&v.createdA, count)
-	atomicStorePos(&v.recordSentA, count)
-	atomicStorePos(&v.validatedA, count)
+	atomicStorePos(&v.createdA, count, validatorMsgCountCreatedGauge)
+	atomicStorePos(&v.recordSentA, count, validatorMsgCountRecordSentGauge)
+	atomicStorePos(&v.validatedA, count, validatorMsgCountValidatedGauge)
 	validatorMsgCountValidatedGauge.Update(int64(count))
 	v.chainCaughtUp = true
 	return true, nil

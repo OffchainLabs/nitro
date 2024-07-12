@@ -3,7 +3,6 @@ package pubsub
 import (
 	"context"
 
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/go-redis/redis/v8"
 )
 
@@ -22,7 +21,6 @@ func CreateStream(ctx context.Context, streamName string, client redis.Universal
 func StreamExists(ctx context.Context, streamName string, client redis.UniversalClient) bool {
 	got, err := client.Do(ctx, "XINFO", "STREAM", streamName).Result()
 	if err != nil {
-		log.Error("Reading redis streams", "error", err)
 		return false
 	}
 	return got != nil
