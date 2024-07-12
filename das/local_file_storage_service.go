@@ -199,7 +199,7 @@ func (s *LocalFileStorageService) Put(ctx context.Context, data []byte, expiry u
 		}
 	}
 
-	if !s.enableLegacyLayout && s.layout.expiryEnabled {
+	if !s.enableLegacyLayout {
 		if err := createHardLink(batchPath, s.layout.expiryPath(key, expiry)); err != nil {
 			return fmt.Errorf("couldn't create by-expiry-path index entry: %w", err)
 		}
@@ -360,11 +360,9 @@ func migrate(fl *flatLayout, tl *trieLayout) error {
 				return err
 			}
 
-			if tl.expiryEnabled {
-				expiryPath := tl.expiryPath(batch.key, uint64(batch.expiry.Unix()))
-				if err = createHardLink(newPath, expiryPath); err != nil {
-					return err
-				}
+			expiryPath := tl.expiryPath(batch.key, uint64(batch.expiry.Unix()))
+			if err = createHardLink(newPath, expiryPath); err != nil {
+				return err
 			}
 			migrated++
 		}
@@ -698,10 +696,8 @@ func (l *trieLayout) startMigration() error {
 		return err
 	}
 
-	if l.expiryEnabled {
-		if err := os.MkdirAll(filepath.Join(l.root, byExpiryTimestamp+migratingSuffix), 0o700); err != nil {
-			return err
-		}
+	if err := os.MkdirAll(filepath.Join(l.root, byExpiryTimestamp+migratingSuffix), 0o700); err != nil {
+		return err
 	}
 	return nil
 
@@ -726,10 +722,8 @@ func (l *trieLayout) commitMigration() error {
 		return err
 	}
 
-	if l.expiryEnabled {
-		if err := removeSuffix(byExpiryTimestamp); err != nil {
-			return err
-		}
+	if err := removeSuffix(byExpiryTimestamp); err != nil {
+		return err
 	}
 
 	syscall.Sync()
