@@ -5,6 +5,7 @@ package programs
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
@@ -28,6 +29,8 @@ const initialCachedCostScalar = 50  // scale costs 1:1 (100%)
 const initialExpiryDays = 365       // deactivate after 1 year.
 const initialKeepaliveDays = 31     // wait a month before allowing reactivation.
 const initialRecentCacheSize = 32   // cache the 32 most recent programs.
+
+const v2MinInitGas = 69 // charge 69 * 128 = 8832 gas (minCachedGas will also be charged in v2).
 
 const MinCachedGasUnits = 32 /// 32 gas for each unit
 const MinInitGasUnits = 128  // 128 gas for each unit
@@ -134,6 +137,18 @@ func (p *StylusParams) Save() error {
 		}
 		slot += 1
 	}
+	return nil
+}
+
+func (p *StylusParams) UpgradeToVersion(version uint16) error {
+	if version != 2 {
+		return fmt.Errorf("dest version not supported for upgrade")
+	}
+	if p.Version != 1 {
+		return fmt.Errorf("existing version not supported for upgrade")
+	}
+	p.Version = 2
+	p.MinInitGas = v2MinInitGas
 	return nil
 }
 

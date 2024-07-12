@@ -34,7 +34,6 @@ import (
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_common"
-	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
 func DeployOneStepProofEntry(t *testing.T, ctx context.Context, auth *bind.TransactOpts, client *ethclient.Client) common.Address {
@@ -234,7 +233,7 @@ func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *Blockcha
 	return bridgeAddr, seqInbox, seqInboxAddr
 }
 
-func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, challengeMsgIdx int64) {
+func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, challengeMsgIdx int64, wasmRootDir string) {
 	glogger := log.NewGlogHandler(
 		log.NewTerminalHandler(io.Writer(os.Stderr), false))
 	glogger.Verbosity(log.LvlInfo)
@@ -259,10 +258,11 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 
 	var valStack *node.Node
 	var mockSpawn *mockSpawner
+	builder.valnodeConfig.Wasm.RootPath = wasmRootDir
 	if useStubs {
-		mockSpawn, valStack = createMockValidationNode(t, ctx, &valnode.TestValidationConfig.Arbitrator)
+		mockSpawn, valStack = createMockValidationNode(t, ctx, &builder.valnodeConfig.Arbitrator)
 	} else {
-		_, valStack = createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
+		_, valStack = createTestValidationNode(t, ctx, builder.valnodeConfig)
 	}
 	configByValidationNode(conf, valStack)
 
@@ -329,14 +329,12 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	}
 	ospEntry := DeployOneStepProofEntry(t, ctx, &deployerTxOpts, l1Backend)
 
-	locator, err := server_common.NewMachineLocator("")
-	if err != nil {
-		Fatal(t, err)
-	}
 	var wasmModuleRoot common.Hash
 	if useStubs {
 		wasmModuleRoot = mockWasmModuleRoots[0]
 	} else {
+		locator, err := server_common.NewMachineLocator(wasmRootDir)
+		Require(t, err)
 		wasmModuleRoot = locator.LatestWasmModuleRoot()
 		if (wasmModuleRoot == common.Hash{}) {
 			Fatal(t, "latest machine not found")
