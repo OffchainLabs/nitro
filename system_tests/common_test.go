@@ -259,7 +259,7 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 
 func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 	if b.L1 == nil {
-		panic("must build L1 before building L2")
+		t.Fatal("must build L1 before building L2")
 	}
 	b.L2 = NewTestClient(b.ctx)
 
