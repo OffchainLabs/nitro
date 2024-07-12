@@ -91,14 +91,9 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 		if err != nil {
 			return common.Hash{}, err
 		}
-		// When using PathScheme TrieDB.Commit should only be called once.
-		// When using HashScheme it is called multiple times to avoid keeping
-		// the entire trie in memory.
-		if cacheConfig.StateScheme == rawdb.HashScheme {
-			err = stateDatabase.TrieDB().Commit(root, true)
-			if err != nil {
-				return common.Hash{}, err
-			}
+		err = stateDatabase.TrieDB().Commit(root, true)
+		if err != nil {
+			return common.Hash{}, err
 		}
 		statedb, err = state.New(root, stateDatabase, nil)
 		if err != nil {
@@ -196,18 +191,7 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 	if err := accountDataReader.Close(); err != nil {
 		return common.Hash{}, err
 	}
-
-	root, err = commit()
-	if err != nil {
-		return common.Hash{}, err
-	}
-	if cacheConfig.StateScheme == rawdb.PathScheme {
-		err = stateDatabase.TrieDB().Commit(root, true)
-		if err != nil {
-			return common.Hash{}, err
-		}
-	}
-	return root, nil
+	return commit()
 }
 
 func initializeRetryables(statedb *state.StateDB, rs *retryables.RetryableState, initData statetransfer.RetryableDataReader, currentTimestamp uint64) error {
