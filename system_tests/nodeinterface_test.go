@@ -41,7 +41,7 @@ func TestFindBatch(t *testing.T) {
 	builder.addresses.Bridge = bridgeAddr
 	builder.addresses.SequencerInbox = seqInboxAddr
 
-	cleanup := builder.BuildL2WithL1(t)
+	cleanup := builder.BuildL2OnL1(t)
 	defer cleanup()
 
 	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, builder.L2.Client)

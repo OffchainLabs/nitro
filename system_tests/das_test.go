@@ -122,7 +122,7 @@ func TestDASRekey(t *testing.T) {
 
 		// Setup L2 chain
 		builder.L2Info.GenerateAccount("User2")
-		builder.BuildL2WithL1(t)
+		builder.BuildL2OnL1(t)
 
 		// Setup second node
 		l1NodeConfigB.BlockValidator.Enable = false
@@ -154,7 +154,7 @@ func TestDASRekey(t *testing.T) {
 	// Restart the node on the new keyset against the new DAS server running on the same disk as the first with new keys
 	builder.nodeConfig.DataAvailability.RPCAggregator = aggConfigForBackend(t, backendConfigB)
 	builder.l2StackConfig = createStackConfigForTest(builder.dataDir)
-	cleanup := builder.BuildL2WithL1(t)
+	cleanup := builder.BuildL2OnL1(t)
 	defer cleanup()
 
 	nodeBParams := SecondNodeParams{
@@ -276,7 +276,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 	// Setup L2 chain
 	builder.L2Info = NewArbTestInfo(t, builder.chainConfig.ChainID)
 	builder.L2Info.GenerateAccount("User2")
-	cleanup := builder.BuildL2WithL1(t)
+	cleanup := builder.BuildL2OnL1(t)
 	defer cleanup()
 
 	// Create node to sync from chain

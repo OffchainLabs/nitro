@@ -281,7 +281,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	asserterRollupAddresses.Bridge = asserterBridgeAddr
 	asserterRollupAddresses.SequencerInbox = asserterSeqInboxAddr
 
-	cleanup := builder.BuildL2WithL1(t)
+	cleanup := builder.BuildL2OnL1(t)
 	defer cleanup()
 	asserterL2 := builder.L2.ConsensusNode
 	asserterL2Info := builder.L2Info

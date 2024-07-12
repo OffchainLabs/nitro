@@ -218,7 +218,7 @@ func (b *NodeBuilder) Build(t *testing.T) func() {
 	b.CheckConfig(t)
 	if b.withL1 {
 		b.BuildL1(t)
-		return b.BuildL2WithL1(t)
+		return b.BuildL2OnL1(t)
 	}
 	return b.BuildL2(t)
 }
@@ -257,7 +257,7 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 	b.L1.cleanup = func() { requireClose(t, b.L1.Stack) }
 }
 
-func (b *NodeBuilder) BuildL2WithL1(t *testing.T) func() {
+func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 	if b.L1 == nil {
 		panic("must build L1 before building L2")
 	}
