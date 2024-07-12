@@ -1762,30 +1762,18 @@ func TestWasmRecreateWithDelegatecall(t *testing.T) {
 	defer cleanup()
 
 	storage := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
+	multicall := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 
 	zero := common.Hash{}
 	val := common.HexToHash("0x121233445566")
 
-	// deploy mock that contains the delegatecall method
-	mock, tx, _, err := mocksgen.DeployProgramTest(&auth, l2client)
-	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l2client, tx)
-	Require(t, err)
-	mockAbi, err := mocksgen.ProgramTestMetaData.GetAbi()
-	Require(t, err)
+	data := argsForMulticall(vm.DELEGATECALL, storage, big.NewInt(0), argsForStorageWrite(zero, val))
+	storeTx := l2info.PrepareTxTo("Owner", &multicall, l2info.TransferGas, nil, data)
 
-	data, err := mockAbi.Pack("delegatecallProgram", storage, argsForStorageWrite(zero, val))
-	Require(t, err)
-	storeTx := l2info.PrepareTxTo("Owner", &mock, l2info.TransferGas, nil, data)
+	data = argsForMulticall(vm.DELEGATECALL, storage, big.NewInt(0), argsForStorageRead(zero))
+	loadTx := l2info.PrepareTxTo("Owner", &multicall, l2info.TransferGas, nil, data)
 
-	data, err = mockAbi.Pack("delegatecallProgram", storage, argsForStorageRead(zero))
-	Require(t, err)
-	loadTx := l2info.PrepareTxTo("Owner", &mock, l2info.TransferGas, nil, data)
-
-	want, err := mockAbi.Methods["delegatecallProgram"].Outputs.Pack(val[:])
-	Require(t, err)
-
-	testWasmRecreate(t, builder, storeTx, loadTx, want)
+	testWasmRecreate(t, builder, storeTx, loadTx, val[:])
 }
 
 // createMapFromDb is used in verifying if wasm store rebuilding works
