@@ -137,14 +137,27 @@ func newApiClosures(
 		startGas := am.SaturatingUSub(gasLeft, baseCost) * 63 / 64
 		gas := am.MinInt(startGas, gasReq)
 
-		// Tracing: emit the call (value transfer is done later in evm.Call)
-		if tracingInfo != nil {
-			tracingInfo.Tracer.CaptureState(0, opcode, startGas, baseCost+gas, scope, []byte{}, depth, nil)
-		}
-
 		// EVM rule: calls that pay get a stipend (opCall)
 		if value.Sign() != 0 {
 			gas = am.SaturatingUAdd(gas, params.CallStipend)
+		}
+
+		// Tracing: emit the call (value transfer is done later in evm.Call)
+		if tracingInfo != nil {
+			s := &vm.ScopeContext{
+				Memory: vm.NewMemory(),
+				Stack: util.TracingStackFromArgs(
+					*uint256.NewInt(gas),                          // gas
+					*uint256.NewInt(0).SetBytes(contract.Bytes()), // to address
+					*uint256.NewInt(0).SetBytes(value.Bytes()),    // call value
+					*uint256.NewInt(0),                            // memory offset
+					*uint256.NewInt(uint64(len(input))),           // memory length
+					*uint256.NewInt(0),                            // return offset
+					*uint256.NewInt(0),                            // return size
+				),
+				Contract: scope.Contract,
+			}
+			tracingInfo.Tracer.CaptureState(0, opcode, startGas, baseCost+gas, s, []byte{}, depth, nil)
 		}
 
 		var ret []byte
