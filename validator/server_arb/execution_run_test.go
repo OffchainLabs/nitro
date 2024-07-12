@@ -4,7 +4,6 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/validator"
@@ -64,72 +63,73 @@ func (m *mockMachine) Freeze()  {}
 func (m *mockMachine) Destroy() {}
 
 func Test_machineHashesWithStep(t *testing.T) {
-	mm := &mockMachine{}
-	e := &executionRun{}
-	ctx := context.Background()
-
 	t.Run("basic argument checks", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		e := &executionRun{}
 		machStartIndex := uint64(0)
 		stepSize := uint64(0)
-		numRequiredHashes := uint64(0)
-		_, err := e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, numRequiredHashes)
-		if !strings.Contains(err.Error(), "step size cannot be 0") {
-			t.Fatal("Wrong error")
+		maxIterations := uint64(0)
+		_, err := e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, maxIterations)
+		if err == nil || !strings.Contains(err.Error(), "step size cannot be 0") {
+			t.Error("Wrong error")
 		}
 		stepSize = uint64(1)
-		_, err = e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, numRequiredHashes)
-		if !strings.Contains(err.Error(), "required number of hashes cannot be 0") {
-			t.Fatal("Wrong error")
+		_, err = e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, maxIterations)
+		if err == nil || !strings.Contains(err.Error(), "number of iterations cannot be 0") {
+			t.Error("Wrong error")
 		}
 	})
 	t.Run("machine at start index 0 hash is the finished state hash", func(t *testing.T) {
-		mm.gs = validator.GoGlobalState{
-			Batch: 1,
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
+		mm := &mockMachine{
+			gs: validator.GoGlobalState{
+				Batch: 1,
+			},
+			totalSteps: 20,
 		}
 		machStartIndex := uint64(0)
 		stepSize := uint64(1)
-		numRequiredHashes := uint64(1)
-		e.cache = &MachineCache{
-			buildingLock: make(chan struct{}, 1),
-			machines:     []MachineInterface{mm},
-			finalMachine: mm,
+		maxIterations := uint64(1)
+		e := &executionRun{
+			cache: NewMachineCache(ctx, func(_ context.Context) (MachineInterface, error) {
+				return mm, nil
+			}, &DefaultMachineCacheConfig),
 		}
-		go func() {
-			<-time.After(time.Millisecond * 50)
-			e.cache.buildingLock <- struct{}{}
-		}()
-		hashes, err := e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, numRequiredHashes)
+
+		hashes, err := e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, maxIterations)
 		if err != nil {
 			t.Fatal(err)
 		}
 		expected := machineFinishedHash(mm.gs)
 		if len(hashes) != 1 {
-			t.Fatal("Wanted one hash")
+			t.Error("Wanted one hash")
 		}
 		if expected != hashes[0] {
-			t.Fatalf("Wanted %#x, got %#x", expected, hashes[0])
+			t.Errorf("Wanted %#x, got %#x", expected, hashes[0])
 		}
 	})
 	t.Run("can step in step size increments and collect hashes", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 		initialGs := validator.GoGlobalState{
 			Batch:      1,
 			PosInBatch: 0,
 		}
-		mm.gs = initialGs
-		mm.totalSteps = 20
+		mm := &mockMachine{
+			gs:         initialGs,
+			totalSteps: 20,
+		}
 		machStartIndex := uint64(0)
 		stepSize := uint64(5)
-		numRequiredHashes := uint64(4)
-		e.cache = &MachineCache{
-			buildingLock: make(chan struct{}, 1),
-			machines:     []MachineInterface{mm},
-			finalMachine: mm,
+		maxIterations := uint64(4)
+		e := &executionRun{
+			cache: NewMachineCache(ctx, func(_ context.Context) (MachineInterface, error) {
+				return mm, nil
+			}, &DefaultMachineCacheConfig),
 		}
-		go func() {
-			<-time.After(time.Millisecond * 50)
-			e.cache.buildingLock <- struct{}{}
-		}()
-		hashes, err := e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, numRequiredHashes)
+		hashes, err := e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, maxIterations)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -150,30 +150,31 @@ func Test_machineHashesWithStep(t *testing.T) {
 		}
 		for i := range hashes {
 			if expectedHashes[i] != hashes[i] {
-				t.Fatalf("Wanted at index %d, %#x, got %#x", i, expectedHashes[i], hashes[i])
+				t.Errorf("Wanted at index %d, %#x, got %#x", i, expectedHashes[i], hashes[i])
 			}
 		}
 	})
-	t.Run("if finishes execution early, simply pads the remaining desired hashes with the machine finished hash", func(t *testing.T) {
+	t.Run("if finishes execution early, can return a smaller number of hashes than the expected max iterations", func(t *testing.T) {
+		ctx, cancel := context.WithCancel(context.Background())
+		defer cancel()
 		initialGs := validator.GoGlobalState{
 			Batch:      1,
 			PosInBatch: 0,
 		}
-		mm.gs = initialGs
-		mm.totalSteps = 20
+		mm := &mockMachine{
+			gs:         initialGs,
+			totalSteps: 20,
+		}
 		machStartIndex := uint64(0)
 		stepSize := uint64(5)
-		numRequiredHashes := uint64(10)
-		e.cache = &MachineCache{
-			buildingLock: make(chan struct{}, 1),
-			machines:     []MachineInterface{mm},
-			finalMachine: mm,
+		maxIterations := uint64(10)
+		e := &executionRun{
+			cache: NewMachineCache(ctx, func(_ context.Context) (MachineInterface, error) {
+				return mm, nil
+			}, &DefaultMachineCacheConfig),
 		}
-		go func() {
-			<-time.After(time.Millisecond * 50)
-			e.cache.buildingLock <- struct{}{}
-		}()
-		hashes, err := e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, numRequiredHashes)
+
+		hashes, err := e.machineHashesWithStepSize(ctx, machStartIndex, stepSize, maxIterations)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -189,19 +190,16 @@ func Test_machineHashesWithStep(t *testing.T) {
 			}
 			expectedHashes = append(expectedHashes, gs.Hash())
 		}
-		// The rest of the expected hashes should be the machine finished hash repeated.
-		for len(expectedHashes) < 10 {
-			expectedHashes = append(expectedHashes, machineFinishedHash(validator.GoGlobalState{
-				Batch:      1,
-				PosInBatch: mm.totalSteps - 1,
-			}))
-		}
-		if len(hashes) != len(expectedHashes) {
-			t.Fatal("Wanted one hash")
+		expectedHashes = append(expectedHashes, machineFinishedHash(validator.GoGlobalState{
+			Batch:      1,
+			PosInBatch: mm.totalSteps - 1,
+		}))
+		if len(hashes) >= int(maxIterations) {
+			t.Fatal("Wanted fewer hashes than the max iterations")
 		}
 		for i := range hashes {
 			if expectedHashes[i] != hashes[i] {
-				t.Fatalf("Wanted at index %d, %#x, got %#x", i, expectedHashes[i], hashes[i])
+				t.Errorf("Wanted at index %d, %#x, got %#x", i, expectedHashes[i], hashes[i])
 			}
 		}
 	})

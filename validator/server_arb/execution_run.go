@@ -83,9 +83,9 @@ func (e *executionRun) GetStepAt(position uint64) containers.PromiseInterface[*v
 	})
 }
 
-func (e *executionRun) GetMachineHashesWithStepSize(machineStartIndex, stepSize, requiredNumHashes uint64) containers.PromiseInterface[[]common.Hash] {
+func (e *executionRun) GetMachineHashesWithStepSize(machineStartIndex, stepSize, maxIterations uint64) containers.PromiseInterface[[]common.Hash] {
 	return stopwaiter.LaunchPromiseThread(e, func(ctx context.Context) ([]common.Hash, error) {
-		return e.machineHashesWithStepSize(ctx, machineStartIndex, stepSize, requiredNumHashes)
+		return e.machineHashesWithStepSize(ctx, machineStartIndex, stepSize, maxIterations)
 	})
 }
 
@@ -93,13 +93,13 @@ func (e *executionRun) machineHashesWithStepSize(
 	ctx context.Context,
 	machineStartIndex,
 	stepSize,
-	requiredNumHashes uint64,
+	maxIterations uint64,
 ) ([]common.Hash, error) {
 	if stepSize == 0 {
 		return nil, fmt.Errorf("step size cannot be 0")
 	}
-	if requiredNumHashes == 0 {
-		return nil, fmt.Errorf("required number of hashes cannot be 0")
+	if maxIterations == 0 {
+		return nil, fmt.Errorf("max number of iterations cannot be 0")
 	}
 	machine, err := e.cache.GetMachineAt(ctx, machineStartIndex)
 	if err != nil {
@@ -107,8 +107,10 @@ func (e *executionRun) machineHashesWithStepSize(
 	}
 	log.Debug(fmt.Sprintf("Advanced machine to index %d, beginning hash computation", machineStartIndex))
 
-	// If the machine is starting at index 0, we always want to start at the "Machine finished" global state status
-	// to align with the machine hashes that the inbox machine will produce.
+	// In BOLD, the hash of a machine at index 0 is a special hash that is computed as the
+	// `machineFinishedHash(gs)` where `gs` is the global state of the machine at index 0.
+	// This is so that the hash aligns with the start state of the claimed challenge edge
+	// at the level above, as required by the BOLD protocol.
 	var machineHashes []common.Hash
 	if machineStartIndex == 0 {
 		gs := machine.GetGlobalState()
@@ -121,43 +123,48 @@ func (e *executionRun) machineHashesWithStepSize(
 	startHash := machineHashes[0]
 
 	// If we only want 1 hash, we can return early.
-	if requiredNumHashes == 1 {
+	if maxIterations == 1 {
 		return machineHashes, nil
 	}
 
-	logInterval := requiredNumHashes / 20 // Log every 5% progress
+	logInterval := maxIterations / 20 // Log every 5% progress
 	if logInterval == 0 {
 		logInterval = 1
 	}
 
 	start := time.Now()
-	for numIterations := uint64(0); numIterations < requiredNumHashes; numIterations++ {
+	for i := uint64(0); i < maxIterations; i++ {
 		// The absolute program counter the machine should be in after stepping.
-		absoluteMachineIndex := machineStartIndex + stepSize*(numIterations+1)
+		absoluteMachineIndex := machineStartIndex + stepSize*(i+1)
 
 		// Advance the machine in step size increments.
 		if err := machine.Step(ctx, stepSize); err != nil {
 			return nil, fmt.Errorf("failed to step machine to position %d: %w", absoluteMachineIndex, err)
 		}
-		if numIterations%logInterval == 0 || numIterations == requiredNumHashes-1 {
-			progressPercent := (float64(numIterations+1) / float64(requiredNumHashes)) * 100
+		if i%logInterval == 0 || i == maxIterations-1 {
+			progressPercent := (float64(i+1) / float64(maxIterations)) * 100
 			log.Info(
 				fmt.Sprintf(
-					"Computing BOLD subchallenge progress: %.2f%% - %d of %d hashes needed",
+					"Computing BOLD subchallenge progress: %.2f%% - %d of %d hashes",
 					progressPercent,
-					numIterations+1,
-					requiredNumHashes,
+					i+1,
+					maxIterations,
 				),
-				"machinePosition", numIterations*stepSize+machineStartIndex,
+				"machinePosition", i*stepSize+machineStartIndex,
 				"timeSinceStart", time.Since(start),
 				"stepSize", stepSize,
 				"startHash", startHash,
 				"machineStartIndex", machineStartIndex,
-				"numDesiredLeaves", requiredNumHashes,
+				"maxIterations", maxIterations,
 			)
 		}
 		machineHashes = append(machineHashes, machine.Hash())
-		if uint64(len(machineHashes)) == requiredNumHashes {
+		if uint64(len(machineHashes)) == maxIterations {
+			log.Info("Reached the max number of iterations for the hashes needed to open a subchallenge")
+			break
+		}
+		if !machine.IsRunning() {
+			log.Info("Machine no longer running, exiting early from hash computation loop")
 			break
 		}
 	}
@@ -166,7 +173,8 @@ func (e *executionRun) machineHashesWithStepSize(
 		"stepSize", stepSize,
 		"startHash", startHash,
 		"machineStartIndex", machineStartIndex,
-		"numDesiredLeaves", requiredNumHashes,
+		"numberOfHashesComputed", len(machineHashes),
+		"maxIterations", maxIterations,
 		"finishedHash", machineHashes[len(machineHashes)-1],
 		"finishedGlobalState", fmt.Sprintf("%+v", machine.GetGlobalState()),
 	)

@@ -36,6 +36,7 @@ import (
 	"github.com/holiman/uint256"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
+	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -46,8 +47,6 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/spf13/pflag"
-
-	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
 )
 
 // Dataposter implements functionality to post transactions on the chain. It
@@ -146,6 +145,7 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 		}
 		return &storage.EncoderDecoder{}
 	}
+	_ = encF
 	var queue QueueStorage
 	switch {
 	case useNoOpStorage:

@@ -58,8 +58,6 @@ var (
 	baseFeeGauge                  = metrics.NewRegisteredGauge("arb/batchposter/basefee", nil)
 	blobFeeGauge                  = metrics.NewRegisteredGauge("arb/batchposter/blobfee", nil)
 	l1GasPriceGauge               = metrics.NewRegisteredGauge("arb/batchposter/l1gasprice", nil)
-	l1GasPriceEstimateGauge       = metrics.NewRegisteredGauge("arb/batchposter/l1gasprice/estimate", nil)
-	latestBatchSurplusGauge       = metrics.NewRegisteredGauge("arb/batchposter/latestbatchsurplus", nil)
 	blockGasUsedGauge             = metrics.NewRegisteredGauge("arb/batchposter/blockgas/used", nil)
 	blockGasLimitGauge            = metrics.NewRegisteredGauge("arb/batchposter/blockgas/limit", nil)
 	blobGasUsedGauge              = metrics.NewRegisteredGauge("arb/batchposter/blobgas/used", nil)
@@ -170,6 +168,7 @@ type BatchPosterConfig struct {
 	UseAccessLists                 bool                        `koanf:"use-access-lists" reload:"hot"`
 	GasEstimateBaseFeeMultipleBips arbmath.Bips                `koanf:"gas-estimate-base-fee-multiple-bips"`
 	Dangerous                      BatchPosterDangerousConfig  `koanf:"dangerous"`
+	ReorgResistanceMargin          time.Duration               `koanf:"reorg-resistance-margin" reload:"hot"`
 
 	gasRefunder  common.Address
 	l1BlockBound l1BlockBound
@@ -221,6 +220,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".l1-block-bound-bypass", DefaultBatchPosterConfig.L1BlockBoundBypass, "post batches even if not within the layer 1 future bounds if we're within this margin of the max delay")
 	f.Bool(prefix+".use-access-lists", DefaultBatchPosterConfig.UseAccessLists, "post batches with access lists to reduce gas usage (disabled for L3s)")
 	f.Uint64(prefix+".gas-estimate-base-fee-multiple-bips", uint64(DefaultBatchPosterConfig.GasEstimateBaseFeeMultipleBips), "for gas estimation, use this multiple of the basefee (measured in basis points) as the max fee per gas")
+	f.Duration(prefix+".reorg-resistance-margin", DefaultBatchPosterConfig.ReorgResistanceMargin, "do not post batch if its within this duration from layer 1 minimum bounds. Requires l1-block-bound option not be set to \"ignore\"")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfig)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultBatchPosterConfig.ParentChainWallet.Pathname)
@@ -250,6 +250,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	UseAccessLists:                 true,
 	RedisLock:                      redislock.DefaultCfg,
 	GasEstimateBaseFeeMultipleBips: arbmath.OneInBips * 3 / 2,
+	ReorgResistanceMargin:          10 * time.Minute,
 }
 
 var DefaultBatchPosterL1WalletConfig = genericconf.WalletConfig{
@@ -568,9 +569,7 @@ func (b *BatchPoster) pollForL1PriceData(ctx context.Context) {
 			} else {
 				suggestedTipCapGauge.Update(suggestedTipCap.Int64())
 			}
-			l1GasPriceEstimate := b.streamer.CurrentEstimateOfL1GasPrice()
 			l1GasPriceGauge.Update(int64(l1GasPrice))
-			l1GasPriceEstimateGauge.Update(int64(l1GasPriceEstimate))
 		case <-ctx.Done():
 			return
 		}
@@ -1140,6 +1139,8 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	var l1BoundMaxTimestamp uint64 = math.MaxUint64
 	var l1BoundMinBlockNumber uint64
 	var l1BoundMinTimestamp uint64
+	var l1BoundMinBlockNumberWithBypass uint64
+	var l1BoundMinTimestampWithBypass uint64
 	hasL1Bound := config.l1BlockBound != l1BlockBoundIgnore
 	if hasL1Bound {
 		var l1Bound *types.Header
@@ -1184,17 +1185,19 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		l1BoundMaxBlockNumber = arbmath.SaturatingUAdd(l1BoundBlockNumber, arbmath.BigToUintSaturating(maxTimeVariationFutureBlocks))
 		l1BoundMaxTimestamp = arbmath.SaturatingUAdd(l1Bound.Time, arbmath.BigToUintSaturating(maxTimeVariationFutureSeconds))
 
+		latestHeader, err := b.l1Reader.LastHeader(ctx)
+		if err != nil {
+			return false, err
+		}
+		latestBlockNumber := arbutil.ParentHeaderToL1BlockNumber(latestHeader)
+		l1BoundMinBlockNumber = arbmath.SaturatingUSub(latestBlockNumber, arbmath.BigToUintSaturating(maxTimeVariationDelayBlocks))
+		l1BoundMinTimestamp = arbmath.SaturatingUSub(latestHeader.Time, arbmath.BigToUintSaturating(maxTimeVariationDelaySeconds))
+
 		if config.L1BlockBoundBypass > 0 {
-			latestHeader, err := b.l1Reader.LastHeader(ctx)
-			if err != nil {
-				return false, err
-			}
-			latestBlockNumber := arbutil.ParentHeaderToL1BlockNumber(latestHeader)
 			blockNumberWithPadding := arbmath.SaturatingUAdd(latestBlockNumber, uint64(config.L1BlockBoundBypass/ethPosBlockTime))
 			timestampWithPadding := arbmath.SaturatingUAdd(latestHeader.Time, uint64(config.L1BlockBoundBypass/time.Second))
-
-			l1BoundMinBlockNumber = arbmath.SaturatingUSub(blockNumberWithPadding, arbmath.BigToUintSaturating(maxTimeVariationDelayBlocks))
-			l1BoundMinTimestamp = arbmath.SaturatingUSub(timestampWithPadding, arbmath.BigToUintSaturating(maxTimeVariationDelaySeconds))
+			l1BoundMinBlockNumberWithBypass = arbmath.SaturatingUSub(blockNumberWithPadding, arbmath.BigToUintSaturating(maxTimeVariationDelayBlocks))
+			l1BoundMinTimestampWithBypass = arbmath.SaturatingUSub(timestampWithPadding, arbmath.BigToUintSaturating(maxTimeVariationDelaySeconds))
 		}
 	}
 
@@ -1204,13 +1207,14 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			log.Error("error getting message from streamer", "error", err)
 			break
 		}
-		if msg.Message.Header.BlockNumber < l1BoundMinBlockNumber || msg.Message.Header.Timestamp < l1BoundMinTimestamp {
+		if msg.Message.Header.BlockNumber < l1BoundMinBlockNumberWithBypass || msg.Message.Header.Timestamp < l1BoundMinTimestampWithBypass {
 			log.Error(
 				"disabling L1 bound as batch posting message is close to the maximum delay",
 				"blockNumber", msg.Message.Header.BlockNumber,
-				"l1BoundMinBlockNumber", l1BoundMinBlockNumber,
+				"l1BoundMinBlockNumberWithBypass", l1BoundMinBlockNumberWithBypass,
 				"timestamp", msg.Message.Header.Timestamp,
-				"l1BoundMinTimestamp", l1BoundMinTimestamp,
+				"l1BoundMinTimestampWithBypass", l1BoundMinTimestampWithBypass,
+				"l1BlockBoundBypass", config.L1BlockBoundBypass,
 			)
 			l1BoundMaxBlockNumber = math.MaxUint64
 			l1BoundMaxTimestamp = math.MaxUint64
@@ -1246,6 +1250,24 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		b.building.msgCount++
 	}
 
+	if hasL1Bound && config.ReorgResistanceMargin > 0 {
+		firstMsgBlockNumber := firstMsg.Message.Header.BlockNumber
+		firstMsgTimeStamp := firstMsg.Message.Header.Timestamp
+		batchNearL1BoundMinBlockNumber := firstMsgBlockNumber <= arbmath.SaturatingUAdd(l1BoundMinBlockNumber, uint64(config.ReorgResistanceMargin/ethPosBlockTime))
+		batchNearL1BoundMinTimestamp := firstMsgTimeStamp <= arbmath.SaturatingUAdd(l1BoundMinTimestamp, uint64(config.ReorgResistanceMargin/time.Second))
+		if batchNearL1BoundMinTimestamp || batchNearL1BoundMinBlockNumber {
+			log.Error(
+				"Disabling batch posting due to batch being within reorg resistance margin from layer 1 minimum block or timestamp bounds",
+				"reorgResistanceMargin", config.ReorgResistanceMargin,
+				"firstMsgTimeStamp", firstMsgTimeStamp,
+				"l1BoundMinTimestamp", l1BoundMinTimestamp,
+				"firstMsgBlockNumber", firstMsgBlockNumber,
+				"l1BoundMinBlockNumber", l1BoundMinBlockNumber,
+			)
+			return false, errors.New("batch is within reorg resistance margin from layer 1 minimum block or timestamp bounds")
+		}
+	}
+
 	if !forcePostBatch || !b.building.haveUsefulMessage {
 		// the batch isn't full yet and we've posted a batch recently
 		// don't post anything for now
@@ -1276,7 +1298,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			batchPosterDAFailureCounter.Inc(1)
 			return false, fmt.Errorf("%w: nonce changed from %d to %d while creating batch", storage.ErrStorageRace, nonce, gotNonce)
 		}
-		sequencerMsg, err = b.dapWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{}, config.DisableDapFallbackStoreDataOnChain)
+		sequencerMsg, err = b.dapWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), config.DisableDapFallbackStoreDataOnChain)
 		if err != nil {
 			batchPosterDAFailureCounter.Inc(1)
 			return false, err
@@ -1368,14 +1390,6 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		"totalSegments", len(b.building.segments.rawSegments),
 		"numBlobs", len(kzgBlobs),
 	)
-
-	surplus := arbmath.SaturatingMul(
-		arbmath.SaturatingSub(
-			l1GasPriceGauge.Snapshot().Value(),
-			l1GasPriceEstimateGauge.Snapshot().Value()),
-		int64(len(sequencerMsg)*16),
-	)
-	latestBatchSurplusGauge.Update(surplus)
 
 	recentlyHitL1Bounds := time.Since(b.lastHitL1Bounds) < config.PollInterval*3
 	postedMessages := b.building.msgCount - batchPosition.MessageCount

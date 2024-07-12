@@ -289,8 +289,8 @@ func CreateExecutionNode(
 
 }
 
-func (n *ExecutionNode) GetL1GasPriceEstimate() (uint64, error) {
-	return n.ExecEngine.GetL1GasPriceEstimate()
+func (n *ExecutionNode) MarkFeedStart(to arbutil.MessageIndex) {
+	n.ExecEngine.MarkFeedStart(to)
 }
 
 func (n *ExecutionNode) Initialize(ctx context.Context) error {
@@ -428,4 +428,12 @@ func (n *ExecutionNode) MessageIndexToBlockNumber(messageNum arbutil.MessageInde
 
 func (n *ExecutionNode) Maintenance() error {
 	return n.ChainDB.Compact(nil, nil)
+}
+
+func (n *ExecutionNode) Synced() bool {
+	return n.SyncMonitor.Synced()
+}
+
+func (n *ExecutionNode) FullSyncProgressMap() map[string]interface{} {
+	return n.SyncMonitor.FullSyncProgressMap()
 }
