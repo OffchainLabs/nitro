@@ -13,6 +13,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -69,7 +72,7 @@ var DefaultProducerConfig = ProducerConfig{
 }
 
 var TestProducerConfig = ProducerConfig{
-	EnableReproduce:      true,
+	EnableReproduce:      false,
 	CheckPendingInterval: 10 * time.Millisecond,
 	KeepAliveTimeout:     100 * time.Millisecond,
 	CheckResultInterval:  5 * time.Millisecond,
@@ -99,13 +102,13 @@ func NewProducer[Request any, Response any](client redis.UniversalClient, stream
 	}, nil
 }
 
-func (p *Producer[Request, Response]) errorPromisesFor(msgs []*Message[Request]) {
+func (p *Producer[Request, Response]) errorPromisesFor(msgIds []string) {
 	p.promisesLock.Lock()
 	defer p.promisesLock.Unlock()
-	for _, msg := range msgs {
-		if promise, found := p.promises[msg.ID]; found {
+	for _, msg := range msgIds {
+		if promise, found := p.promises[msg]; found {
 			promise.ProduceError(fmt.Errorf("internal error, consumer died while serving the request"))
-			delete(p.promises, msg.ID)
+			delete(p.promises, msg)
 		}
 	}
 }
@@ -113,20 +116,55 @@ func (p *Producer[Request, Response]) errorPromisesFor(msgs []*Message[Request])
 // checkAndReproduce reproduce pending messages that were sent to consumers
 // that are currently inactive.
 func (p *Producer[Request, Response]) checkAndReproduce(ctx context.Context) time.Duration {
-	msgs, err := p.checkPending(ctx)
+	staleIds, err := p.checkPending(ctx)
 	if err != nil {
 		log.Error("Checking pending messages", "error", err)
 		return p.cfg.CheckPendingInterval
 	}
-	if len(msgs) == 0 {
+	if len(staleIds) == 0 {
 		return p.cfg.CheckPendingInterval
 	}
-	if !p.cfg.EnableReproduce {
-		p.errorPromisesFor(msgs)
-		return p.cfg.CheckPendingInterval
+	if p.cfg.EnableReproduce {
+		err = p.reproduceIds(ctx, staleIds)
+		if err != nil {
+			log.Warn("filed reproducing messages", "err", err)
+		}
+	} else {
+		p.errorPromisesFor(staleIds)
 	}
+	return p.cfg.CheckPendingInterval
+}
+
+func (p *Producer[Request, Response]) reproduceIds(ctx context.Context, staleIds []string) error {
+	log.Info("Attempting to claim", "messages", staleIds)
+	claimedMsgs, err := p.client.XClaim(ctx, &redis.XClaimArgs{
+		Stream:   p.redisStream,
+		Group:    p.redisGroup,
+		Consumer: p.id,
+		MinIdle:  p.cfg.KeepAliveTimeout,
+		Messages: staleIds,
+	}).Result()
+	if err != nil {
+		return fmt.Errorf("claiming ownership on messages: %v, error: %w", staleIds, err)
+	}
+	var messages []*Message[Request]
+	for _, msg := range claimedMsgs {
+		data, ok := (msg.Values[messageKey]).(string)
+		if !ok {
+			return fmt.Errorf("casting request: %v to bytes", msg.Values[messageKey])
+		}
+		var req Request
+		if err := json.Unmarshal([]byte(data), &req); err != nil {
+			return fmt.Errorf("marshaling value: %v, error: %w", msg.Values[messageKey], err)
+		}
+		messages = append(messages, &Message[Request]{
+			ID:    msg.ID,
+			Value: req,
+		})
+	}
+
 	acked := make(map[string]Request)
-	for _, msg := range msgs {
+	for _, msg := range messages {
 		if _, err := p.client.XAck(ctx, p.redisStream, p.redisGroup, msg.ID).Result(); err != nil {
 			log.Error("ACKing message", "error", err)
 			continue
@@ -140,29 +178,81 @@ func (p *Producer[Request, Response]) checkAndReproduce(ctx context.Context) tim
 			log.Error("Re-inserting pending messages with inactive consumers", "error", err)
 		}
 	}
-	return p.cfg.CheckPendingInterval
+	return nil
+}
+
+func setMinIdInt(min *[2]uint64, id string) error {
+	idParts := strings.Split(id, "-")
+	if len(idParts) != 2 {
+		return errors.New("invalid i.d")
+	}
+	idTimeStamp, err := strconv.Atoi(idParts[0])
+	if err != nil {
+		return fmt.Errorf("invalid i.d ts: %w", err)
+	}
+	if uint64(idTimeStamp) > min[0] {
+		return nil
+	}
+	idSerial, err := strconv.Atoi(idParts[1])
+	if err != nil {
+		return fmt.Errorf("invalid i.d serial: %w", err)
+	}
+	if uint64(idTimeStamp) < min[0] {
+		min[0] = uint64(idTimeStamp)
+		min[1] = uint64(idSerial)
+		return nil
+	}
+	// idTimeStamp == min[0]
+	if uint64(idSerial) < min[1] {
+		min[1] = uint64(idSerial)
+	}
+	return nil
 }
 
 // checkResponses checks iteratively whether response for the promise is ready.
 func (p *Producer[Request, Response]) checkResponses(ctx context.Context) time.Duration {
+	minIdInt := [2]uint64{math.MaxUint64, math.MaxUint64}
 	p.promisesLock.Lock()
 	defer p.promisesLock.Unlock()
+	responded := 0
+	errored := 0
 	for id, promise := range p.promises {
+		if ctx.Err() != nil {
+			return 0
+		}
 		res, err := p.client.Get(ctx, id).Result()
 		if err != nil {
-			if errors.Is(err, redis.Nil) {
-				continue
+			errSetId := setMinIdInt(&minIdInt, id)
+			if errSetId != nil {
+				log.Error("error setting minId", "err", err)
+				return p.cfg.CheckResultInterval
 			}
-			log.Error("Error reading value in redis", "key", id, "error", err)
+			if !errors.Is(err, redis.Nil) {
+				log.Error("Error reading value in redis", "key", id, "error", err)
+			}
+			continue
 		}
 		var resp Response
 		if err := json.Unmarshal([]byte(res), &resp); err != nil {
+			promise.ProduceError(fmt.Errorf("error unmarshalling: %w", err))
 			log.Error("Error unmarshaling", "value", res, "error", err)
-			continue
+			errored++
+		} else {
+			promise.Produce(resp)
+			responded++
 		}
-		promise.Produce(resp)
 		delete(p.promises, id)
 	}
+	var trimmed int64
+	var trimErr error
+	minId := "+"
+	if minIdInt[0] < math.MaxUint64 {
+		minId = fmt.Sprintf("%d-%d", minIdInt[0], minIdInt[1])
+		trimmed, trimErr = p.client.XTrimMinID(ctx, p.redisStream, minId).Result()
+	} else {
+		trimmed, trimErr = p.client.XTrimMaxLen(ctx, p.redisStream, 0).Result()
+	}
+	log.Trace("trimming", "id", minId, "trimmed", trimmed, "responded", responded, "errored", errored, "trim-err", trimErr)
 	return p.cfg.CheckResultInterval
 }
 
@@ -184,6 +274,10 @@ func (p *Producer[Request, Response]) reproduce(ctx context.Context, value Reque
 	if err != nil {
 		return nil, fmt.Errorf("marshaling value: %w", err)
 	}
+	// catching the promiseLock before we sendXadd makes sure promise ids will
+	// be always ascending
+	p.promisesLock.Lock()
+	defer p.promisesLock.Unlock()
 	id, err := p.client.XAdd(ctx, &redis.XAddArgs{
 		Stream: p.redisStream,
 		Values: map[string]any{messageKey: val},
@@ -191,8 +285,6 @@ func (p *Producer[Request, Response]) reproduce(ctx context.Context, value Reque
 	if err != nil {
 		return nil, fmt.Errorf("adding values to redis: %w", err)
 	}
-	p.promisesLock.Lock()
-	defer p.promisesLock.Unlock()
 	promise := p.promises[oldKey]
 	if oldKey != "" && promise == nil {
 		// This will happen if the old consumer became inactive but then ack_d
@@ -232,7 +324,7 @@ func (p *Producer[Request, Response]) havePromiseFor(messageID string) bool {
 	return found
 }
 
-func (p *Producer[Request, Response]) checkPending(ctx context.Context) ([]*Message[Request], error) {
+func (p *Producer[Request, Response]) checkPending(ctx context.Context) ([]string, error) {
 	pendingMessages, err := p.client.XPendingExt(ctx, &redis.XPendingExtArgs{
 		Stream: p.redisStream,
 		Group:  p.redisGroup,
@@ -265,35 +357,5 @@ func (p *Producer[Request, Response]) checkPending(ctx context.Context) ([]*Mess
 		}
 		ids = append(ids, msg.ID)
 	}
-	if len(ids) == 0 {
-		log.Trace("There are no pending messages with inactive consumers")
-		return nil, nil
-	}
-	log.Info("Attempting to claim", "messages", ids)
-	claimedMsgs, err := p.client.XClaim(ctx, &redis.XClaimArgs{
-		Stream:   p.redisStream,
-		Group:    p.redisGroup,
-		Consumer: p.id,
-		MinIdle:  p.cfg.KeepAliveTimeout,
-		Messages: ids,
-	}).Result()
-	if err != nil {
-		return nil, fmt.Errorf("claiming ownership on messages: %v, error: %w", ids, err)
-	}
-	var res []*Message[Request]
-	for _, msg := range claimedMsgs {
-		data, ok := (msg.Values[messageKey]).(string)
-		if !ok {
-			return nil, fmt.Errorf("casting request: %v to bytes", msg.Values[messageKey])
-		}
-		var req Request
-		if err := json.Unmarshal([]byte(data), &req); err != nil {
-			return nil, fmt.Errorf("marshaling value: %v, error: %w", msg.Values[messageKey], err)
-		}
-		res = append(res, &Message[Request]{
-			ID:    msg.ID,
-			Value: req,
-		})
-	}
-	return res, nil
+	return ids, nil
 }
