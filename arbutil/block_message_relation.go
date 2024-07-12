@@ -3,19 +3,23 @@
 
 package arbutil
 
+// messages are 0-indexed
 type MessageIndex uint64
 
-func BlockNumberToMessageCount(blockNumber uint64, genesisBlockNumber uint64) MessageIndex {
-	return MessageIndex(blockNumber + 1 - genesisBlockNumber)
+// represents the number of messages
+type MessageCount uint64
+
+func BlockNumberToMessageCount(blockNumber uint64, genesisBlockNumber uint64) MessageCount {
+	return MessageCount(blockNumber + 1 - genesisBlockNumber)
 }
 
 // Block number must correspond to a message count, meaning it may not be less than -1
-func SignedBlockNumberToMessageCount(blockNumber int64, genesisBlockNumber uint64) MessageIndex {
+func SignedBlockNumberToMessageCount(blockNumber int64, genesisBlockNumber uint64) MessageCount {
 	// #nosec G115
-	return MessageIndex(uint64(blockNumber+1) - genesisBlockNumber)
+	return MessageCount(uint64(blockNumber+1) - genesisBlockNumber)
 }
 
-func MessageCountToBlockNumber(messageCount MessageIndex, genesisBlockNumber uint64) int64 {
+func MessageCountToBlockNumber(messageCount MessageCount, genesisBlockNumber uint64) int64 {
 	// #nosec G115
 	return int64(uint64(messageCount)+genesisBlockNumber) - 1
 }
