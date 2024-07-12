@@ -508,16 +508,16 @@ func (s *TransactionStreamer) getMessageWithMetadataAndBlockInfo(seqNum arbutil.
 
 // Note: if changed to acquire the mutex, some internal users may need to be updated to a non-locking version.
 func (s *TransactionStreamer) GetMessageCount() (arbutil.MessageIndex, error) {
-	posBytes, err := s.db.Get(messageCountKey)
+	countBytes, err := s.db.Get(messageCountKey)
 	if err != nil {
 		return 0, err
 	}
-	var pos uint64
-	err = rlp.DecodeBytes(posBytes, &pos)
+	var count uint64
+	err = rlp.DecodeBytes(countBytes, &count)
 	if err != nil {
 		return 0, err
 	}
-	return arbutil.MessageIndex(pos), nil
+	return arbutil.MessageIndex(count), nil
 }
 
 func (s *TransactionStreamer) GetProcessedMessageCount() (arbutil.MessageIndex, error) {
