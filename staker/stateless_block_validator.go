@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"testing"
 
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
@@ -462,8 +463,13 @@ func (v *StatelessBlockValidator) Start(ctx_in context.Context) error {
 			return fmt.Errorf("starting execution spawner: %w", err)
 		}
 	}
-	for _, spawner := range v.execSpawners {
+	for i, spawner := range v.execSpawners {
 		if err := spawner.Start(ctx_in); err != nil {
+			if u, parseErr := url.Parse(v.config.ValidationServerConfigs[i].URL); parseErr == nil {
+				if u.Scheme != "ws" && u.Scheme != "wss" {
+					return fmt.Errorf("validation server's url scheme is unsupported, it should either be ws or wss, url:%s err: %w", v.config.ValidationServerConfigs[i].URL, err)
+				}
+			}
 			return err
 		}
 	}
