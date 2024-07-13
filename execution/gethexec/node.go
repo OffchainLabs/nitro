@@ -107,6 +107,7 @@ var ConfigDefault = Config{
 
 func ConfigDefaultNonSequencerTest() *Config {
 	config := ConfigDefault
+	config.Caching = TestCachingConfig
 	config.ParentChainReader = headerreader.TestConfig
 	config.Sequencer.Enable = false
 	config.Forwarder = DefaultTestForwarderConfig
@@ -119,6 +120,7 @@ func ConfigDefaultNonSequencerTest() *Config {
 
 func ConfigDefaultTest() *Config {
 	config := ConfigDefault
+	config.Caching = TestCachingConfig
 	config.Sequencer = TestSequencerConfig
 	config.ParentChainReader = headerreader.TestConfig
 	config.ForwardingTarget = "null"
@@ -229,7 +231,7 @@ func CreateExecutionNode(
 	var classicOutbox *ClassicOutboxRetriever
 
 	if l2BlockChain.Config().ArbitrumChainParams.GenesisBlockNum > 0 {
-		classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "classicmsg/", true)
+		classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "classicmsg/", true) // TODO can we skip using ExtraOptions here?
 		if err != nil {
 			log.Warn("Classic Msg Database not found", "err", err)
 			classicOutbox = nil
@@ -288,11 +290,12 @@ func CreateExecutionNode(
 
 }
 
-func (n *ExecutionNode) GetL1GasPriceEstimate() (uint64, error) {
-	return n.ExecEngine.GetL1GasPriceEstimate()
+func (n *ExecutionNode) MarkFeedStart(to arbutil.MessageIndex) {
+	n.ExecEngine.MarkFeedStart(to)
 }
 
 func (n *ExecutionNode) Initialize(ctx context.Context) error {
+	n.ExecEngine.Initialize(n.ConfigFetcher().Caching.StylusLRUCache)
 	n.ArbInterface.Initialize(n)
 	err := n.Backend.Start()
 	if err != nil {
@@ -359,7 +362,7 @@ func (n *ExecutionNode) StopAndWait() {
 func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*execution.MessageResult, error) {
 	return n.ExecEngine.DigestMessage(num, msg, msgForPrefetch)
 }
-func (n *ExecutionNode) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadata, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
+func (n *ExecutionNode) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockHash, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
 	return n.ExecEngine.Reorg(count, newMessages, oldMessages)
 }
 func (n *ExecutionNode) HeadMessageNumber() (arbutil.MessageIndex, error) {
@@ -426,4 +429,12 @@ func (n *ExecutionNode) MessageIndexToBlockNumber(messageNum arbutil.MessageInde
 
 func (n *ExecutionNode) Maintenance() error {
 	return n.ChainDB.Compact(nil, nil)
+}
+
+func (n *ExecutionNode) Synced() bool {
+	return n.SyncMonitor.Synced()
+}
+
+func (n *ExecutionNode) FullSyncProgressMap() map[string]interface{} {
+	return n.SyncMonitor.FullSyncProgressMap()
 }

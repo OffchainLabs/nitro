@@ -4,10 +4,14 @@
 package server_api
 
 import (
+	"encoding/base64"
+	"encoding/json"
 	"fmt"
+	"os"
 
 	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/offchainlabs/nitro/arbutil"
 
 	"github.com/offchainlabs/nitro/util/jsonapi"
@@ -62,9 +66,20 @@ type InputJSON struct {
 	UserWasms     map[common.Hash]UserWasmJson
 	DebugChain    bool
 
-	L1BlockHeight     uint64
+	BlockHeight       uint64
 	HotShotLiveness   bool
 	HotShotCommitment espressoTypes.Commitment
+}
+
+func (i *InputJSON) WriteToFile() error {
+	contents, err := json.MarshalIndent(i, "", "    ")
+	if err != nil {
+		return err
+	}
+	if err = os.WriteFile(fmt.Sprintf("block_inputs_%d.json", i.Id), contents, 0600); err != nil {
+		return err
+	}
+	return nil
 }
 
 type UserWasmJson struct {
@@ -75,4 +90,89 @@ type UserWasmJson struct {
 type BatchInfoJson struct {
 	Number  uint64
 	DataB64 string
+}
+
+func ValidationInputToJson(entry *validator.ValidationInput) *InputJSON {
+	jsonPreimagesMap := make(map[arbutil.PreimageType]*jsonapi.PreimagesMapJson)
+	for ty, preimages := range entry.Preimages {
+		jsonPreimagesMap[ty] = jsonapi.NewPreimagesMapJson(preimages)
+	}
+	res := &InputJSON{
+		Id:            entry.Id,
+		HasDelayedMsg: entry.HasDelayedMsg,
+		DelayedMsgNr:  entry.DelayedMsgNr,
+		DelayedMsgB64: base64.StdEncoding.EncodeToString(entry.DelayedMsg),
+		StartState:    entry.StartState,
+		PreimagesB64:  jsonPreimagesMap,
+		UserWasms:     make(map[common.Hash]UserWasmJson),
+		DebugChain:    entry.DebugChain,
+
+		HotShotCommitment: entry.HotShotCommitment,
+		HotShotLiveness:   entry.HotShotLiveness,
+		BlockHeight:       entry.BlockHeight,
+	}
+	for _, binfo := range entry.BatchInfo {
+		encData := base64.StdEncoding.EncodeToString(binfo.Data)
+		res.BatchInfo = append(res.BatchInfo, BatchInfoJson{Number: binfo.Number, DataB64: encData})
+	}
+	for moduleHash, info := range entry.UserWasms {
+		encWasm := UserWasmJson{
+			Asm:    base64.StdEncoding.EncodeToString(info.Asm),
+			Module: base64.StdEncoding.EncodeToString(info.Module),
+		}
+		res.UserWasms[moduleHash] = encWasm
+	}
+	return res
+}
+
+func ValidationInputFromJson(entry *InputJSON) (*validator.ValidationInput, error) {
+	preimages := make(map[arbutil.PreimageType]map[common.Hash][]byte)
+	for ty, jsonPreimages := range entry.PreimagesB64 {
+		preimages[ty] = jsonPreimages.Map
+	}
+	valInput := &validator.ValidationInput{
+		Id:            entry.Id,
+		HasDelayedMsg: entry.HasDelayedMsg,
+		DelayedMsgNr:  entry.DelayedMsgNr,
+		StartState:    entry.StartState,
+		Preimages:     preimages,
+		UserWasms:     make(state.UserWasms),
+		DebugChain:    entry.DebugChain,
+
+		HotShotCommitment: entry.HotShotCommitment,
+		HotShotLiveness:   entry.HotShotLiveness,
+		BlockHeight:       entry.BlockHeight,
+	}
+	delayed, err := base64.StdEncoding.DecodeString(entry.DelayedMsgB64)
+	if err != nil {
+		return nil, err
+	}
+	valInput.DelayedMsg = delayed
+	for _, binfo := range entry.BatchInfo {
+		data, err := base64.StdEncoding.DecodeString(binfo.DataB64)
+		if err != nil {
+			return nil, err
+		}
+		decInfo := validator.BatchInfo{
+			Number: binfo.Number,
+			Data:   data,
+		}
+		valInput.BatchInfo = append(valInput.BatchInfo, decInfo)
+	}
+	for moduleHash, info := range entry.UserWasms {
+		asm, err := base64.StdEncoding.DecodeString(info.Asm)
+		if err != nil {
+			return nil, err
+		}
+		module, err := base64.StdEncoding.DecodeString(info.Module)
+		if err != nil {
+			return nil, err
+		}
+		decInfo := state.ActivatedWasm{
+			Asm:    asm,
+			Module: module,
+		}
+		valInput.UserWasms[moduleHash] = decInfo
+	}
+	return valInput, nil
 }

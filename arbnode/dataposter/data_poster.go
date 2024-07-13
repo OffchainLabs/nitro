@@ -31,10 +31,10 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/ethereum/go-ethereum/signer/core/apitypes"
 	"github.com/go-redis/redis/v8"
 	"github.com/holiman/uint256"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/dbstorage"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsigner"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/noop"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
@@ -217,6 +217,10 @@ func NewDataPoster(ctx context.Context, opts *DataPosterOpts) (*DataPoster, erro
 func rpcClient(ctx context.Context, opts *ExternalSignerCfg) (*rpc.Client, error) {
 	tlsCfg := &tls.Config{
 		MinVersion: tls.VersionTLS12,
+		// Dataposter verifies that signed transaction was signed by the account
+		// that it expects to be signed with. So signer is already authenticated
+		// on application level and does not need to rely on TLS for authentication.
+		InsecureSkipVerify: opts.InsecureSkipVerify, // #nosec G402
 	}
 
 	if opts.ClientCert != "" && opts.ClientPrivateKey != "" {
@@ -251,6 +255,50 @@ func rpcClient(ctx context.Context, opts *ExternalSignerCfg) (*rpc.Client, error
 	)
 }
 
+// TxToSignTxArgs converts transaction to SendTxArgs. This is needed for
+// external signer to specify From field.
+func TxToSignTxArgs(addr common.Address, tx *types.Transaction) (*apitypes.SendTxArgs, error) {
+	var to *common.MixedcaseAddress
+	if tx.To() != nil {
+		to = new(common.MixedcaseAddress)
+		*to = common.NewMixedcaseAddress(*tx.To())
+	}
+	data := (hexutil.Bytes)(tx.Data())
+	val := (*hexutil.Big)(tx.Value())
+	if val == nil {
+		val = (*hexutil.Big)(big.NewInt(0))
+	}
+	al := tx.AccessList()
+	var (
+		blobs       []kzg4844.Blob
+		commitments []kzg4844.Commitment
+		proofs      []kzg4844.Proof
+	)
+	if tx.BlobTxSidecar() != nil {
+		blobs = tx.BlobTxSidecar().Blobs
+		commitments = tx.BlobTxSidecar().Commitments
+		proofs = tx.BlobTxSidecar().Proofs
+	}
+	return &apitypes.SendTxArgs{
+		From:                 common.NewMixedcaseAddress(addr),
+		To:                   to,
+		Gas:                  hexutil.Uint64(tx.Gas()),
+		GasPrice:             (*hexutil.Big)(tx.GasPrice()),
+		MaxFeePerGas:         (*hexutil.Big)(tx.GasFeeCap()),
+		MaxPriorityFeePerGas: (*hexutil.Big)(tx.GasTipCap()),
+		Value:                *val,
+		Nonce:                hexutil.Uint64(tx.Nonce()),
+		Data:                 &data,
+		AccessList:           &al,
+		ChainID:              (*hexutil.Big)(tx.ChainId()),
+		BlobFeeCap:           (*hexutil.Big)(tx.BlobGasFeeCap()),
+		BlobHashes:           tx.BlobHashes(),
+		Blobs:                blobs,
+		Commitments:          commitments,
+		Proofs:               proofs,
+	}, nil
+}
+
 // externalSigner returns signer function and ethereum address of the signer.
 // Returns an error if address isn't specified or if it can't connect to the
 // signer RPC server.
@@ -269,7 +317,7 @@ func externalSigner(ctx context.Context, opts *ExternalSignerCfg) (signerFn, com
 		// RLP encoded transaction object.
 		// https://ethereum.org/en/developers/docs/apis/json-rpc/#eth_signtransaction
 		var data hexutil.Bytes
-		args, err := externalsigner.TxToSignTxArgs(addr, tx)
+		args, err := TxToSignTxArgs(addr, tx)
 		if err != nil {
 			return nil, fmt.Errorf("error converting transaction to sendTxArgs: %w", err)
 		}
@@ -281,7 +329,11 @@ func externalSigner(ctx context.Context, opts *ExternalSignerCfg) (signerFn, com
 			return nil, fmt.Errorf("unmarshaling signed transaction: %w", err)
 		}
 		hasher := types.LatestSignerForChainID(tx.ChainId())
-		if h := hasher.Hash(args.ToTransaction()); h != hasher.Hash(signedTx) {
+		gotTx, err := args.ToTransaction()
+		if err != nil {
+			return nil, fmt.Errorf("converting transaction arguments into transaction: %w", err)
+		}
+		if h := hasher.Hash(gotTx); h != hasher.Hash(signedTx) {
 			return nil, fmt.Errorf("transaction: %x from external signer differs from request: %x", hasher.Hash(signedTx), h)
 		}
 		return signedTx, nil
@@ -592,7 +644,7 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	targetBlobCost := arbmath.BigMulByUint(newBlobFeeCap, blobGasUsed)
 	targetNonBlobCost := arbmath.BigSub(targetMaxCost, targetBlobCost)
 	newBaseFeeCap := arbmath.BigDivByUint(targetNonBlobCost, gasLimit)
-	if lastTx != nil && numBlobs > 0 && arbmath.BigDivToBips(newBaseFeeCap, lastTx.GasFeeCap()) < minRbfIncrease {
+	if lastTx != nil && numBlobs > 0 && lastTx.GasFeeCap().Sign() > 0 && arbmath.BigDivToBips(newBaseFeeCap, lastTx.GasFeeCap()) < minRbfIncrease {
 		// Increase the non-blob fee cap to the minimum rbf increase
 		newBaseFeeCap = arbmath.BigMulByBips(lastTx.GasFeeCap(), minRbfIncrease)
 		newNonBlobCost := arbmath.BigMulByUint(newBaseFeeCap, gasLimit)
@@ -665,6 +717,14 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 		return lastTx.GasFeeCap(), lastTx.GasTipCap(), lastTx.BlobGasFeeCap(), nil
 	}
 
+	// Ensure we bid at least 1 wei to prevent division by zero
+	if newBaseFeeCap.Sign() == 0 {
+		newBaseFeeCap = big.NewInt(1)
+	}
+	if newBlobFeeCap.Sign() == 0 {
+		newBlobFeeCap = big.NewInt(1)
+	}
+
 	return newBaseFeeCap, newTipCap, newBlobFeeCap, nil
 }
 
@@ -675,6 +735,10 @@ func (p *DataPoster) PostSimpleTransaction(ctx context.Context, nonce uint64, to
 func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Time, nonce uint64, meta []byte, to common.Address, calldata []byte, gasLimit uint64, value *big.Int, kzgBlobs []kzg4844.Blob, accessList types.AccessList) (*types.Transaction, error) {
 	p.mutex.Lock()
 	defer p.mutex.Unlock()
+
+	if p.config().DisableNewTx {
+		return nil, fmt.Errorf("posting new transaction is disabled")
+	}
 
 	var weight uint64 = 1
 	if len(kzgBlobs) > 0 {
@@ -839,31 +903,31 @@ func (p *DataPoster) sendTx(ctx context.Context, prevTx *storage.QueuedTransacti
 	// different type with a lower nonce.
 	// If we decide not to send this tx yet, just leave it queued and with Sent set to false.
 	// The resending/repricing loop in DataPoster.Start will keep trying.
-	if !newTx.Sent && newTx.FullTx.Nonce() > 0 {
+	previouslySent := newTx.Sent || (prevTx != nil && prevTx.Sent) // if we've previously sent this nonce
+	if !previouslySent && newTx.FullTx.Nonce() > 0 {
 		precedingTx, err := p.queue.Get(ctx, arbmath.SaturatingUSub(newTx.FullTx.Nonce(), 1))
 		if err != nil {
 			return fmt.Errorf("couldn't get preceding tx in DataPoster to check if should send tx with nonce %d: %w", newTx.FullTx.Nonce(), err)
 		}
 		if precedingTx != nil { // precedingTx == nil -> the actual preceding tx was already confirmed
-			var latestBlockNumber, prevBlockNumber, reorgResistantNonce uint64
+			var latestBlockNumber, prevBlockNumber, reorgResistantTxCount uint64
 			if precedingTx.FullTx.Type() != newTx.FullTx.Type() || !precedingTx.Sent {
 				latestBlockNumber, err = p.client.BlockNumber(ctx)
 				if err != nil {
 					return fmt.Errorf("couldn't get block number in DataPoster to check if should send tx with nonce %d: %w", newTx.FullTx.Nonce(), err)
 				}
 				prevBlockNumber = arbmath.SaturatingUSub(latestBlockNumber, 1)
-				reorgResistantNonce, err = p.client.NonceAt(ctx, p.Sender(), new(big.Int).SetUint64(prevBlockNumber))
+				reorgResistantTxCount, err = p.client.NonceAt(ctx, p.Sender(), new(big.Int).SetUint64(prevBlockNumber))
 				if err != nil {
 					return fmt.Errorf("couldn't determine reorg resistant nonce in DataPoster to check if should send tx with nonce %d: %w", newTx.FullTx.Nonce(), err)
 				}
 
-				if precedingTx.FullTx.Nonce() > reorgResistantNonce {
-					log.Info("DataPoster is avoiding creating a mempool nonce gap (the tx remains queued and will be retried)", "nonce", newTx.FullTx.Nonce(), "prevType", precedingTx.FullTx.Type(), "type", newTx.FullTx.Type(), "prevSent", precedingTx.Sent)
+				if newTx.FullTx.Nonce() > reorgResistantTxCount {
+					log.Info("DataPoster is avoiding creating a mempool nonce gap (the tx remains queued and will be retried)", "nonce", newTx.FullTx.Nonce(), "prevType", precedingTx.FullTx.Type(), "type", newTx.FullTx.Type(), "prevSent", precedingTx.Sent, "latestBlockNumber", latestBlockNumber, "prevBlockNumber", prevBlockNumber, "reorgResistantTxCount", reorgResistantTxCount)
 					return nil
 				}
-			} else {
-				log.Info("DataPoster will send previously unsent batch tx", "nonce", newTx.FullTx.Nonce(), "prevType", precedingTx.FullTx.Type(), "type", newTx.FullTx.Type(), "prevSent", precedingTx.Sent, "latestBlockNumber", latestBlockNumber, "prevBlockNumber", prevBlockNumber, "reorgResistantNonce", reorgResistantNonce)
 			}
+			log.Debug("DataPoster will send previously unsent batch tx", "nonce", newTx.FullTx.Nonce(), "prevType", precedingTx.FullTx.Type(), "type", newTx.FullTx.Type(), "prevSent", precedingTx.Sent, "latestBlockNumber", latestBlockNumber, "prevBlockNumber", prevBlockNumber, "reorgResistantTxCount", reorgResistantTxCount)
 		}
 	}
 
@@ -934,8 +998,8 @@ func (p *DataPoster) replaceTx(ctx context.Context, prevTx *storage.QueuedTransa
 	}
 
 	newTx := *prevTx
-	if arbmath.BigDivToBips(newFeeCap, prevTx.FullTx.GasFeeCap()) < minRbfIncrease ||
-		(prevTx.FullTx.BlobGasFeeCap() != nil && arbmath.BigDivToBips(newBlobFeeCap, prevTx.FullTx.BlobGasFeeCap()) < minRbfIncrease) {
+	if (prevTx.FullTx.GasFeeCap().Sign() > 0 && arbmath.BigDivToBips(newFeeCap, prevTx.FullTx.GasFeeCap()) < minRbfIncrease) ||
+		(prevTx.FullTx.BlobGasFeeCap() != nil && prevTx.FullTx.BlobGasFeeCap().Sign() > 0 && arbmath.BigDivToBips(newBlobFeeCap, prevTx.FullTx.BlobGasFeeCap()) < minRbfIncrease) {
 		log.Debug(
 			"no need to replace by fee transaction",
 			"nonce", prevTx.FullTx.Nonce(),
@@ -1196,6 +1260,9 @@ type DataPosterConfig struct {
 	MaxFeeCapFormula       string            `koanf:"max-fee-cap-formula" reload:"hot"`
 	ElapsedTimeBase        time.Duration     `koanf:"elapsed-time-base" reload:"hot"`
 	ElapsedTimeImportance  float64           `koanf:"elapsed-time-importance" reload:"hot"`
+	// When set, dataposter will not post new batches, but will keep running to
+	// get existing batches confirmed.
+	DisableNewTx bool `koanf:"disable-new-tx" reload:"hot"`
 }
 
 type ExternalSignerCfg struct {
@@ -1215,6 +1282,8 @@ type ExternalSignerCfg struct {
 	// (Optional) Client certificate key for mtls.
 	// This is required when client-cert is set.
 	ClientPrivateKey string `koanf:"client-private-key"`
+	// TLS config option, when enabled skips certificate verification of external signer.
+	InsecureSkipVerify bool `koanf:"insecure-skip-verify"`
 }
 
 type DangerousConfig struct {
@@ -1255,6 +1324,7 @@ func DataPosterConfigAddOptions(prefix string, f *pflag.FlagSet, defaultDataPost
 	signature.SimpleHmacConfigAddOptions(prefix+".redis-signer", f)
 	addDangerousOptions(prefix+".dangerous", f)
 	addExternalSignerOptions(prefix+".external-signer", f)
+	f.Bool(prefix+".disable-new-tx", defaultDataPosterConfig.DisableNewTx, "disable posting new transactions, data poster will still keep confirming existing batches")
 }
 
 func addDangerousOptions(prefix string, f *pflag.FlagSet) {
@@ -1268,6 +1338,7 @@ func addExternalSignerOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".root-ca", DefaultDataPosterConfig.ExternalSigner.RootCA, "external signer root CA")
 	f.String(prefix+".client-cert", DefaultDataPosterConfig.ExternalSigner.ClientCert, "rpc client cert")
 	f.String(prefix+".client-private-key", DefaultDataPosterConfig.ExternalSigner.ClientPrivateKey, "rpc client private key")
+	f.Bool(prefix+".insecure-skip-verify", DefaultDataPosterConfig.ExternalSigner.InsecureSkipVerify, "skip TLS certificate verification")
 }
 
 var DefaultDataPosterConfig = DataPosterConfig{
@@ -1289,10 +1360,11 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	UseNoOpStorage:         false,
 	LegacyStorageEncoding:  false,
 	Dangerous:              DangerousConfig{ClearDBStorage: false},
-	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction"},
+	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction", InsecureSkipVerify: false},
 	MaxFeeCapFormula:       "((BacklogOfBatches * UrgencyGWei) ** 2) + ((ElapsedTime/ElapsedTimeBase) ** 2) * ElapsedTimeImportance + TargetPriceGWei",
 	ElapsedTimeBase:        10 * time.Minute,
 	ElapsedTimeImportance:  10,
+	DisableNewTx:           false,
 }
 
 var DefaultDataPosterConfigForValidator = func() DataPosterConfig {
@@ -1322,10 +1394,11 @@ var TestDataPosterConfig = DataPosterConfig{
 	UseDBStorage:           false,
 	UseNoOpStorage:         false,
 	LegacyStorageEncoding:  false,
-	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction"},
+	ExternalSigner:         ExternalSignerCfg{Method: "eth_signTransaction", InsecureSkipVerify: true},
 	MaxFeeCapFormula:       "((BacklogOfBatches * UrgencyGWei) ** 2) + ((ElapsedTime/ElapsedTimeBase) ** 2) * ElapsedTimeImportance + TargetPriceGWei",
 	ElapsedTimeBase:        10 * time.Minute,
 	ElapsedTimeImportance:  10,
+	DisableNewTx:           false,
 }
 
 var TestDataPosterConfigForValidator = func() DataPosterConfig {

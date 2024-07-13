@@ -6,7 +6,6 @@ package das
 import (
 	"context"
 	"encoding/binary"
-	"errors"
 	"fmt"
 	"math"
 	"math/big"
@@ -57,7 +56,6 @@ func init() {
 }
 
 type SyncToStorageConfig struct {
-	CheckAlreadyExists       bool          `koanf:"check-already-exists"`
 	Eager                    bool          `koanf:"eager"`
 	EagerLowerBoundBlock     uint64        `koanf:"eager-lower-bound-block"`
 	RetentionPeriod          time.Duration `koanf:"retention-period"`
@@ -68,7 +66,6 @@ type SyncToStorageConfig struct {
 }
 
 var DefaultSyncToStorageConfig = SyncToStorageConfig{
-	CheckAlreadyExists:       true,
 	Eager:                    false,
 	EagerLowerBoundBlock:     0,
 	RetentionPeriod:          time.Duration(math.MaxInt64),
@@ -79,7 +76,6 @@ var DefaultSyncToStorageConfig = SyncToStorageConfig{
 }
 
 func SyncToStorageConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Bool(prefix+".check-already-exists", DefaultSyncToStorageConfig.CheckAlreadyExists, "check if the data already exists in this DAS's storage. Must be disabled for fast sync with an IPFS backend")
 	f.Bool(prefix+".eager", DefaultSyncToStorageConfig.Eager, "eagerly sync batch data to this DAS's storage from the rest endpoints, using L1 as the index of batch data hashes; otherwise only sync lazily")
 	f.Uint64(prefix+".eager-lower-bound-block", DefaultSyncToStorageConfig.EagerLowerBoundBlock, "when eagerly syncing, start indexing forward from this L1 block. Only used if there is no sync state")
 	f.Uint64(prefix+".parent-chain-blocks-per-read", DefaultSyncToStorageConfig.ParentChainBlocksPerRead, "when eagerly syncing, max l1 blocks to read per poll")
@@ -92,9 +88,10 @@ func SyncToStorageConfigAddOptions(prefix string, f *flag.FlagSet) {
 type l1SyncService struct {
 	stopwaiter.StopWaiter
 
-	config     SyncToStorageConfig
-	syncTo     StorageService
-	dataSource daprovider.DASReader
+	config        SyncToStorageConfig
+	syncTo        StorageService
+	dataSource    daprovider.DASReader
+	keysetFetcher *KeysetFetcher
 
 	l1Reader      *headerreader.HeaderReader
 	inboxContract *bridgegen.SequencerInbox
@@ -106,7 +103,9 @@ type l1SyncService struct {
 	lastBatchAcc   common.Hash
 }
 
-const nextBlockNoFilename = "nextBlockNumber"
+// The original syncing process had a bug, so the file was renamed to cause any mirrors
+// in the wild to re-sync from their configured starting block number.
+const nextBlockNoFilename = "nextBlockNumberV2"
 
 func readSyncStateOrDefault(syncDir string, dflt uint64) uint64 {
 	if syncDir == "" {
@@ -167,8 +166,7 @@ func newl1SyncService(config *SyncToStorageConfig, syncTo StorageService, dataSo
 	if err != nil {
 		return nil, err
 	}
-	// make sure that as we sync, any Keysets missing from dataSource will fetched from the L1 chain
-	dataSource, err = NewChainFetchReader(dataSource, l1Client, inboxAddr)
+	keysetFetcher, err := NewKeysetFetcher(l1Client, inboxAddr)
 	if err != nil {
 		return nil, err
 	}
@@ -176,6 +174,7 @@ func newl1SyncService(config *SyncToStorageConfig, syncTo StorageService, dataSo
 		config:         *config,
 		syncTo:         syncTo,
 		dataSource:     dataSource,
+		keysetFetcher:  keysetFetcher,
 		l1Reader:       l1Reader,
 		inboxContract:  inboxContract,
 		inboxAddr:      inboxAddr,
@@ -212,31 +211,18 @@ func (s *l1SyncService) processBatchDelivered(ctx context.Context, batchDelivere
 	binary.BigEndian.PutUint64(header[32:40], deliveredEvent.AfterDelayedMessagesRead.Uint64())
 
 	data = append(header, data...)
-	preimages := make(map[arbutil.PreimageType]map[common.Hash][]byte)
-	preimageRecorder := daprovider.RecordPreimagesTo(preimages)
-	if _, err = daprovider.RecoverPayloadFromDasBatch(ctx, deliveredEvent.BatchSequenceNumber.Uint64(), data, s.dataSource, preimageRecorder, true); err != nil {
-		if errors.Is(err, daprovider.ErrSeqMsgValidation) {
-			log.Error(err.Error())
-		} else {
-			log.Error("recover payload failed", "txhash", batchDeliveredLog.TxHash, "data", data)
+	var payload []byte
+	if payload, err = daprovider.RecoverPayloadFromDasBatch(ctx, deliveredEvent.BatchSequenceNumber.Uint64(), data, s.dataSource, s.keysetFetcher, nil, true); err != nil {
+		log.Error("recover payload failed", "txhash", batchDeliveredLog.TxHash, "data", data)
+		return err
+	}
+
+	if payload != nil {
+		if err := s.syncTo.Put(ctx, payload, storeUntil); err != nil {
 			return err
 		}
 	}
-	for _, preimages := range preimages {
-		for hash, contents := range preimages {
-			var err error
-			if s.config.CheckAlreadyExists {
-				_, err = s.syncTo.GetByHash(ctx, hash)
-			}
-			if err == nil || errors.Is(err, ErrNotFound) {
-				if err := s.syncTo.Put(ctx, contents, storeUntil); err != nil {
-					return err
-				}
-			} else {
-				return err
-			}
-		}
-	}
+
 	seqNumber := deliveredEvent.BatchSequenceNumber
 	if seqNumber == nil {
 		seqNumber = common.Big0

@@ -32,7 +32,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [defaults, race, challenge, stylus]
+        test-mode: [defaults, race, challenge, stylus, long]
 
     steps:
       - name: Checkout
@@ -48,7 +48,7 @@ jobs:
       - name: Setup nodejs
         uses: actions/setup-node@v3
         with:
-          node-version: '16'
+          node-version: '18'
           cache: 'yarn'
           cache-dependency-path: '**/yarn.lock'
 
@@ -193,7 +193,15 @@ jobs:
         run: |
           skip_tests=`grep -vE '^\s*#|^\s*$' ci_skip_tests | sed 's/.*/^&$/g' | tr '\n' '|' | sed 's/|$//'`
           packages=`go list ./...`
-          stdbuf -oL gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 --no-color=false -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/...   -tags=stylustest -run=TestProgramArbitrator -skip "$skip_tests" > >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
+          stdbuf -oL gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 --no-color=false -- ./... -timeout 60m -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=8 -tags=stylustest -run="TestProgramArbitrator" -skip "$skip_tests"> >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
+
+      - name: run long stylus tests
+        if: matrix.test-mode == 'long'
+        shell: bash
+        run: |
+          skip_tests=`grep -vE '^\s*#|^\s*$' ci_skip_tests | sed 's/.*/^&$/g' | tr '\n' '|' | sed 's/|$//'`
+          packages=`go list ./...`
+          stdbuf -oL gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 --no-color=false -- ./... -timeout 60m -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -parallel=8 -tags=stylustest -run="TestProgramLong" -skip "$skip_tests"> >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
 
       - name: Archive detailed run log
         uses: actions/upload-artifact@v3

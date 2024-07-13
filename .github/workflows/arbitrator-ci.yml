@@ -64,14 +64,14 @@ jobs:
       - name: Setup nodejs
         uses: actions/setup-node@v3
         with:
-          node-version: '16'
+          node-version: '18'
           cache: 'yarn'
           cache-dependency-path: '**/yarn.lock'
 
       - name: Install rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: "1.75"
+          toolchain: "1.76"
           components: 'llvm-tools-preview, rustfmt, clippy'
 
       - name: Install rust nightly

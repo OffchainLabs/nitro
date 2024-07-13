@@ -146,17 +146,3 @@ func (s *SwitchSequencer) StopAndWait() {
 func (s *SwitchSequencer) Started() bool {
 	return s.getRunningSequencer().Started()
 }
-
-func (s *SwitchSequencer) SetMode(ctx context.Context, m bool) error {
-	if m {
-		return s.SwitchToEspresso(ctx)
-	} else {
-		return s.SwitchToCentralized(ctx)
-	}
-}
-
-func (s *Sequencer) SetMode(ctx context.Context, espresso bool) error  { return nil }
-func (s *EspressoSequencer) SetMode(ctx context.Context, m bool) error { return nil }
-func (s *RedisTxForwarder) SetMode(ctx context.Context, m bool) error  { return nil }
-func (s *TxDropper) SetMode(ctx context.Context, m bool) error         { return nil }
-func (s *TxForwarder) SetMode(ctx context.Context, m bool) error       { return nil }

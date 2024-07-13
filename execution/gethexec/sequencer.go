@@ -76,6 +76,7 @@ type SequencerConfig struct {
 	NonceFailureCacheExpiry      time.Duration   `koanf:"nonce-failure-cache-expiry" reload:"hot"`
 	ExpectedSurplusSoftThreshold string          `koanf:"expected-surplus-soft-threshold" reload:"hot"`
 	ExpectedSurplusHardThreshold string          `koanf:"expected-surplus-hard-threshold" reload:"hot"`
+	EnableProfiling              bool            `koanf:"enable-profiling" reload:"hot"`
 	expectedSurplusSoftThreshold int
 	expectedSurplusHardThreshold int
 
@@ -117,6 +118,9 @@ func (c *SequencerConfig) Validate() error {
 			return errors.New("expected-surplus-soft-threshold cannot be lower than expected-surplus-hard-threshold")
 		}
 	}
+	if c.MaxTxDataSize > arbostypes.MaxL2MessageSize-50000 {
+		return errors.New("max-tx-data-size too large for MaxL2MessageSize")
+	}
 	return nil
 }
 
@@ -138,6 +142,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	NonceFailureCacheExpiry:      time.Second,
 	ExpectedSurplusSoftThreshold: "default",
 	ExpectedSurplusHardThreshold: "default",
+	EnableProfiling:              false,
 }
 
 var TestSequencerConfig = SequencerConfig{
@@ -155,6 +160,7 @@ var TestSequencerConfig = SequencerConfig{
 	NonceFailureCacheExpiry:      time.Second,
 	ExpectedSurplusSoftThreshold: "default",
 	ExpectedSurplusHardThreshold: "default",
+	EnableProfiling:              false,
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -178,23 +184,24 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".switch-poll-interval", DefaultSequencerConfig.SwitchPollInterval, "the poll interval of checking the sequencer should be switched or not")
 	f.String(prefix+".expected-surplus-soft-threshold", DefaultSequencerConfig.ExpectedSurplusSoftThreshold, "if expected surplus is lower than this value, warnings are posted")
 	f.String(prefix+".expected-surplus-hard-threshold", DefaultSequencerConfig.ExpectedSurplusHardThreshold, "if expected surplus is lower than this value, new incoming transactions will be denied")
+	f.Bool(prefix+".enable-profiling", DefaultSequencerConfig.EnableProfiling, "enable CPU profiling and tracing")
 }
 
 type txQueueItem struct {
 	tx              *types.Transaction
+	txSize          int // size in bytes of the marshalled transaction
 	options         *arbitrum_types.ConditionalOptions
 	resultChan      chan<- error
-	returnedResult  bool
+	returnedResult  *atomic.Bool
 	ctx             context.Context
 	firstAppearance time.Time
 }
 
 func (i *txQueueItem) returnResult(err error) {
-	if i.returnedResult {
+	if i.returnedResult.Swap(true) {
 		log.Error("attempting to return result to already finished queue item", "err", err)
 		return
 	}
-	i.returnedResult = true
 	i.resultChan <- err
 	close(i.resultChan)
 }
@@ -419,11 +426,12 @@ func ctxWithTimeout(ctx context.Context, timeout time.Duration) (context.Context
 }
 
 func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
+	config := s.config()
 	// Only try to acquire Rlock and check for hard threshold if l1reader is not nil
 	// And hard threshold was enabled, this prevents spamming of read locks when not needed
-	if s.l1Reader != nil && s.config().ExpectedSurplusHardThreshold != "default" {
+	if s.l1Reader != nil && config.ExpectedSurplusHardThreshold != "default" {
 		s.expectedSurplusMutex.RLock()
-		if s.expectedSurplusUpdated && s.expectedSurplus < int64(s.config().expectedSurplusHardThreshold) {
+		if s.expectedSurplusUpdated && s.expectedSurplus < int64(config.expectedSurplusHardThreshold) {
 			return errors.New("currently not accepting transactions due to expected surplus being below threshold")
 		}
 		s.expectedSurplusMutex.RUnlock()
@@ -457,7 +465,12 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 		return types.ErrTxTypeNotSupported
 	}
 
-	queueTimeout := s.config().QueueTimeout
+	txBytes, err := tx.MarshalBinary()
+	if err != nil {
+		return err
+	}
+
+	queueTimeout := config.QueueTimeout
 	queueCtx, cancelFunc := ctxWithTimeout(parentCtx, queueTimeout)
 	defer cancelFunc()
 
@@ -468,9 +481,10 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 	resultChan := make(chan error, 1)
 	queueItem := txQueueItem{
 		tx,
+		len(txBytes),
 		options,
 		resultChan,
-		false,
+		&atomic.Bool{},
 		queueCtx,
 		time.Now(),
 	}
@@ -693,7 +707,8 @@ func (s *Sequencer) expireNonceFailures() *time.Timer {
 }
 
 // There's no guarantee that returned tx nonces will be correct
-func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
+func (s *Sequencer) precheckNonces(queueItems []txQueueItem, totalBlockSize int) []txQueueItem {
+	config := s.config()
 	bc := s.execEngine.bc
 	latestHeader := bc.CurrentBlock()
 	latestState, err := bc.StateAt(latestHeader.Root)
@@ -743,7 +758,13 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 				if err != nil {
 					revivingFailure.queueItem.returnResult(err)
 				} else {
-					nextQueueItem = &revivingFailure.queueItem
+					if arbmath.SaturatingAdd(totalBlockSize, revivingFailure.queueItem.txSize) > config.MaxTxDataSize {
+						// This tx would be too large to add to this block
+						s.txRetryQueue.Push(revivingFailure.queueItem)
+					} else {
+						nextQueueItem = &revivingFailure.queueItem
+						totalBlockSize += revivingFailure.queueItem.txSize
+					}
 				}
 			}
 		} else if txNonce < stateNonce || txNonce > pendingNonce {
@@ -779,7 +800,7 @@ func (s *Sequencer) precheckNonces(queueItems []txQueueItem) []txQueueItem {
 
 func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	var queueItems []txQueueItem
-	var totalBatchSize int
+	var totalBlockSize int
 
 	defer func() {
 		panicErr := recover()
@@ -787,7 +808,8 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 			log.Error("sequencer block creation panicked", "panic", panicErr, "backtrace", string(debug.Stack()))
 			// Return an internal error to any queue items we were trying to process
 			for _, item := range queueItems {
-				if !item.returnedResult {
+				// This can race, but that's alright, worst case is a log line in returnResult
+				if !item.returnedResult.Load() {
 					item.returnResult(sequencerInternalError)
 				}
 			}
@@ -850,35 +872,45 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 			queueItem.returnResult(err)
 			continue
 		}
-		txBytes, err := queueItem.tx.MarshalBinary()
-		if err != nil {
-			queueItem.returnResult(err)
-			continue
-		}
-		if len(txBytes) > config.MaxTxDataSize {
+		if queueItem.txSize > config.MaxTxDataSize {
 			// This tx is too large
 			queueItem.returnResult(txpool.ErrOversizedData)
 			continue
 		}
-		if totalBatchSize+len(txBytes) > config.MaxTxDataSize {
+		if totalBlockSize+queueItem.txSize > config.MaxTxDataSize {
 			// This tx would be too large to add to this batch
 			s.txRetryQueue.Push(queueItem)
 			// End the batch here to put this tx in the next one
 			break
 		}
-		totalBatchSize += len(txBytes)
+		totalBlockSize += queueItem.txSize
 		queueItems = append(queueItems, queueItem)
 	}
 
 	s.nonceCache.Resize(config.NonceCacheSize) // Would probably be better in a config hook but this is basically free
 	s.nonceCache.BeginNewBlock()
-	queueItems = s.precheckNonces(queueItems)
+	queueItems = s.precheckNonces(queueItems, totalBlockSize)
 	txes := make([]*types.Transaction, len(queueItems))
 	hooks := s.makeSequencingHooks()
 	hooks.ConditionalOptionsForTx = make([]*arbitrum_types.ConditionalOptions, len(queueItems))
+	totalBlockSize = 0 // recompute the totalBlockSize to double check it
 	for i, queueItem := range queueItems {
 		txes[i] = queueItem.tx
+		totalBlockSize = arbmath.SaturatingAdd(totalBlockSize, queueItem.txSize)
 		hooks.ConditionalOptionsForTx[i] = queueItem.options
+	}
+
+	if totalBlockSize > config.MaxTxDataSize {
+		for _, queueItem := range queueItems {
+			s.txRetryQueue.Push(queueItem)
+		}
+		log.Error(
+			"put too many transactions in a block",
+			"numTxes", len(queueItems),
+			"totalBlockSize", totalBlockSize,
+			"maxTxDataSize", config.MaxTxDataSize,
+		)
+		return false
 	}
 
 	if s.handleInactive(ctx, queueItems) {
@@ -892,13 +924,16 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	s.L1BlockAndTimeMutex.Unlock()
 
 	if s.l1Reader != nil && (l1Block == 0 || math.Abs(float64(l1Timestamp)-float64(timestamp)) > config.MaxAcceptableTimestampDelta.Seconds()) {
+		for _, queueItem := range queueItems {
+			s.txRetryQueue.Push(queueItem)
+		}
 		log.Error(
 			"cannot sequence: unknown L1 block or L1 timestamp too far from local clock time",
 			"l1Block", l1Block,
 			"l1Timestamp", time.Unix(int64(l1Timestamp), 0),
 			"localTimestamp", time.Unix(int64(timestamp), 0),
 		)
-		return false
+		return true
 	}
 
 	header := &arbostypes.L1IncomingMessageHeader{
@@ -911,7 +946,15 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	}
 
 	start := time.Now()
-	block, err := s.execEngine.SequenceTransactions(header, txes, hooks)
+	var (
+		block *types.Block
+		err   error
+	)
+	if config.EnableProfiling {
+		block, err = s.execEngine.SequenceTransactionsWithProfiling(header, txes, hooks)
+	} else {
+		block, err = s.execEngine.SequenceTransactions(header, txes, hooks)
+	}
 	elapsed := time.Since(start)
 	blockCreationTimer.Update(elapsed)
 	if elapsed >= time.Second*5 {
@@ -1034,8 +1077,8 @@ func (s *Sequencer) updateExpectedSurplus(ctx context.Context) (int64, error) {
 	if err != nil {
 		return 0, fmt.Errorf("error encountered getting l1 pricing surplus while updating expectedSurplus: %w", err)
 	}
-	backlogL1GasCharged := int64(s.execEngine.consensus.BacklogL1GasCharged())
-	backlogCallDataUnits := int64(s.execEngine.consensus.BacklogCallDataUnits())
+	backlogL1GasCharged := int64(s.execEngine.backlogL1GasCharged())
+	backlogCallDataUnits := int64(s.execEngine.backlogCallDataUnits())
 	expectedSurplus := int64(surplus) + backlogL1GasCharged - backlogCallDataUnits*int64(l1GasPrice)
 	// update metrics
 	l1GasPriceGauge.Update(int64(l1GasPrice))
@@ -1043,16 +1086,17 @@ func (s *Sequencer) updateExpectedSurplus(ctx context.Context) (int64, error) {
 	unusedL1GasChargeGauge.Update(backlogL1GasCharged)
 	currentSurplusGauge.Update(surplus)
 	expectedSurplusGauge.Update(expectedSurplus)
-	if s.config().ExpectedSurplusSoftThreshold != "default" && expectedSurplus < int64(s.config().expectedSurplusSoftThreshold) {
-		log.Warn("expected surplus is below soft threshold", "value", expectedSurplus, "threshold", s.config().expectedSurplusSoftThreshold)
+	config := s.config()
+	if config.ExpectedSurplusSoftThreshold != "default" && expectedSurplus < int64(config.expectedSurplusSoftThreshold) {
+		log.Warn("expected surplus is below soft threshold", "value", expectedSurplus, "threshold", config.expectedSurplusSoftThreshold)
 	}
 	return expectedSurplus, nil
 }
 
 func (s *Sequencer) Start(ctxIn context.Context) error {
 	s.StopWaiter.Start(ctxIn, s)
-
-	if (s.config().ExpectedSurplusHardThreshold != "default" || s.config().ExpectedSurplusSoftThreshold != "default") && s.l1Reader == nil {
+	config := s.config()
+	if (config.ExpectedSurplusHardThreshold != "default" || config.ExpectedSurplusSoftThreshold != "default") && s.l1Reader == nil {
 		return errors.New("expected surplus soft/hard thresholds are enabled but l1Reader is nil")
 	}
 
@@ -1064,7 +1108,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 
 		expectedSurplus, err := s.updateExpectedSurplus(ctxIn)
 		if err != nil {
-			if s.config().ExpectedSurplusHardThreshold != "default" {
+			if config.ExpectedSurplusHardThreshold != "default" {
 				return fmt.Errorf("expected-surplus-hard-threshold is enabled but error fetching initial expected surplus value: %w", err)
 			}
 			log.Error("expected-surplus-soft-threshold is enabled but error fetching initial expected surplus value", "err", err)
@@ -1107,8 +1151,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 
 	s.CallIteratively(func(ctx context.Context) time.Duration {
 		nextBlock := time.Now().Add(s.config().MaxBlockSpeed)
-		madeBlock := s.createBlock(ctx)
-		if madeBlock {
+		if s.createBlock(ctx) {
 			// Note: this may return a negative duration, but timers are fine with that (they treat negative durations as 0).
 			return time.Until(nextBlock)
 		}

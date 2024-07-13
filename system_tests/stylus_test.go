@@ -8,6 +8,8 @@ package arbtest
 
 import (
 	"testing"
+
+	"github.com/ethereum/go-ethereum/core/vm"
 )
 
 func TestProgramArbitratorKeccak(t *testing.T) {
@@ -66,4 +68,47 @@ func TestProgramArbitratorActivateFails(t *testing.T) {
 
 func TestProgramArbitratorEarlyExit(t *testing.T) {
 	testEarlyExit(t, false)
+}
+
+func fullRecurseTest() [][]multiCallRecurse {
+	result := make([][]multiCallRecurse, 0)
+	for _, op0 := range []vm.OpCode{vm.SSTORE, vm.SLOAD} {
+		for _, contract0 := range []string{"multicall-rust", "multicall-evm"} {
+			for _, op1 := range []vm.OpCode{vm.CALL, vm.STATICCALL, vm.DELEGATECALL} {
+				for _, contract1 := range []string{"multicall-rust", "multicall-rust-b", "multicall-evm"} {
+					for _, op2 := range []vm.OpCode{vm.CALL, vm.STATICCALL, vm.DELEGATECALL} {
+						for _, contract2 := range []string{"multicall-rust", "multicall-rust-b", "multicall-evm"} {
+							for _, op3 := range []vm.OpCode{vm.CALL, vm.STATICCALL, vm.DELEGATECALL} {
+								for _, contract3 := range []string{"multicall-rust", "multicall-rust-b", "multicall-evm"} {
+									recurse := make([]multiCallRecurse, 4)
+									recurse[0].opcode = op0
+									recurse[0].Name = contract0
+									recurse[1].opcode = op1
+									recurse[1].Name = contract1
+									recurse[2].opcode = op2
+									recurse[2].Name = contract2
+									recurse[3].opcode = op3
+									recurse[3].Name = contract3
+									result = append(result, recurse)
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	return result
+}
+
+func TestProgramLongCall(t *testing.T) {
+	testProgramResursiveCalls(t, fullRecurseTest(), true)
+}
+
+func TestProgramLongArbitratorCall(t *testing.T) {
+	testProgramResursiveCalls(t, fullRecurseTest(), false)
+}
+
+func TestProgramArbitratorStylusUpgrade(t *testing.T) {
+	testStylusUpgrade(t, false)
 }

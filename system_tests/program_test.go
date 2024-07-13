@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -24,10 +25,14 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/ethdb"
+	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	pgen "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -219,6 +224,102 @@ func testActivateTwice(t *testing.T, jit bool) {
 	ensure(tx, l2client.SendTransaction(ctx, tx))
 
 	validateBlocks(t, 7, jit, builder)
+}
+
+func TestStylusUpgrade(t *testing.T) {
+	t.Parallel()
+	testStylusUpgrade(t, true)
+}
+
+func testStylusUpgrade(t *testing.T, jit bool) {
+	builder, auth, cleanup := setupProgramTest(t, false, func(b *NodeBuilder) { b.WithArbOSVersion(params.ArbosVersion_Stylus) })
+	defer cleanup()
+
+	ctx := builder.ctx
+
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+
+	ensure := func(tx *types.Transaction, err error) *types.Receipt {
+		t.Helper()
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		return receipt
+	}
+
+	arbOwner, err := pgen.NewArbOwner(types.ArbOwnerAddress, l2client)
+	Require(t, err)
+	ensure(arbOwner.SetInkPrice(&auth, 1))
+
+	wasm, _ := readWasmFile(t, rustFile("keccak"))
+	keccakAddr := deployContract(t, ctx, auth, l2client, wasm)
+
+	colors.PrintBlue("keccak program deployed to ", keccakAddr)
+
+	preimage := []byte("hello, you fool")
+
+	keccakArgs := []byte{0x01} // keccak the preimage once
+	keccakArgs = append(keccakArgs, preimage...)
+
+	checkFailWith := func(errMessage string) uint64 {
+		msg := ethereum.CallMsg{
+			To:   &keccakAddr,
+			Data: keccakArgs,
+		}
+		_, err = l2client.CallContract(ctx, msg, nil)
+		if err == nil || !strings.Contains(err.Error(), errMessage) {
+			Fatal(t, "call should have failed with "+errMessage, " got: "+err.Error())
+		}
+
+		// execute onchain for proving's sake
+		tx := l2info.PrepareTxTo("Owner", &keccakAddr, 1e9, nil, keccakArgs)
+		Require(t, l2client.SendTransaction(ctx, tx))
+		return EnsureTxFailed(t, ctx, l2client, tx).BlockNumber.Uint64()
+	}
+
+	checkSucceeds := func() uint64 {
+		msg := ethereum.CallMsg{
+			To:   &keccakAddr,
+			Data: keccakArgs,
+		}
+		_, err = l2client.CallContract(ctx, msg, nil)
+		if err != nil {
+			Fatal(t, err)
+		}
+
+		// execute onchain for proving's sake
+		tx := l2info.PrepareTxTo("Owner", &keccakAddr, 1e9, nil, keccakArgs)
+		Require(t, l2client.SendTransaction(ctx, tx))
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		if err != nil {
+			Fatal(t, err)
+		}
+		return receipt.BlockNumber.Uint64()
+	}
+
+	// Calling the contract pre-activation should fail.
+	blockFail1 := checkFailWith("ProgramNotActivated")
+
+	activateWasm(t, ctx, auth, l2client, keccakAddr, "keccak")
+
+	blockSuccess1 := checkSucceeds()
+
+	tx, err := arbOwner.ScheduleArbOSUpgrade(&auth, 31, 0)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// generate traffic to perform the upgrade
+	TransferBalance(t, "Owner", "Owner", big.NewInt(1), builder.L2Info, builder.L2.Client, ctx)
+
+	blockFail2 := checkFailWith("ProgramNeedsUpgrade")
+
+	activateWasm(t, ctx, auth, l2client, keccakAddr, "keccak")
+
+	blockSuccess2 := checkSucceeds()
+
+	validateBlockRange(t, []uint64{blockFail1, blockSuccess1, blockFail2, blockSuccess2}, jit, builder)
 }
 
 func TestProgramErrors(t *testing.T) {
@@ -1248,7 +1349,7 @@ func TestProgramCacheManager(t *testing.T) {
 	// check ownership
 	assert(arbOwner.IsChainOwner(nil, ownerAuth.From))
 	ensure(arbWasmCache.EvictCodehash(&ownerAuth, codehash))
-	ensure(arbWasmCache.CacheCodehash(&ownerAuth, codehash))
+	ensure(arbWasmCache.CacheProgram(&ownerAuth, program))
 
 	// de-authorize manager
 	ensure(arbOwner.RemoveWasmCacheManager(&ownerAuth, manager))
@@ -1258,12 +1359,81 @@ func TestProgramCacheManager(t *testing.T) {
 	assert(len(all) == 0, err)
 }
 
-func setupProgramTest(t *testing.T, jit bool) (
+func testReturnDataCost(t *testing.T, arbosVersion uint64) {
+	builder, auth, cleanup := setupProgramTest(t, false, func(b *NodeBuilder) { b.WithArbOSVersion(arbosVersion) })
+	ctx := builder.ctx
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	// use a consistent ink price
+	arbOwner, err := pgen.NewArbOwner(types.ArbOwnerAddress, l2client)
+	Require(t, err)
+	tx, err := arbOwner.SetInkPrice(&auth, 10000)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, builder.L2.Client, tx)
+	Require(t, err)
+
+	returnSize := big.NewInt(1024 * 1024) // 1MiB
+	returnSizeBytes := arbmath.U256Bytes(returnSize)
+
+	testCall := func(to common.Address) uint64 {
+		msg := ethereum.CallMsg{
+			To:             &to,
+			Data:           returnSizeBytes,
+			SkipL1Charging: true,
+		}
+		ret, err := l2client.CallContract(ctx, msg, nil)
+		Require(t, err)
+
+		if !arbmath.BigEquals(big.NewInt(int64(len(ret))), returnSize) {
+			Fatal(t, "unexpected return length", len(ret), "expected", returnSize)
+		}
+
+		gas, err := l2client.EstimateGas(ctx, msg)
+		Require(t, err)
+
+		return gas
+	}
+
+	stylusReturnSizeAddr := deployWasm(t, ctx, auth, l2client, watFile("return-size"))
+
+	stylusGas := testCall(stylusReturnSizeAddr)
+
+	// PUSH32 [returnSizeBytes]
+	evmBytecode := append([]byte{0x7F}, returnSizeBytes...)
+	// PUSH0 RETURN
+	evmBytecode = append(evmBytecode, 0x5F, 0xF3)
+	evmReturnSizeAddr := deployContract(t, ctx, auth, l2client, evmBytecode)
+
+	evmGas := testCall(evmReturnSizeAddr)
+
+	colors.PrintGrey(fmt.Sprintf("arbosVersion=%v stylusGas=%v evmGas=%v", arbosVersion, stylusGas, evmGas))
+	// a bit of gas difference is expected due to EVM PUSH32 and PUSH0 cost (in practice this is 5 gas)
+	similarGas := math.Abs(float64(stylusGas)-float64(evmGas)) <= 100
+	if arbosVersion >= params.ArbosVersion_StylusFixes {
+		if !similarGas {
+			Fatal(t, "unexpected gas difference for return data: stylus", stylusGas, ", evm", evmGas)
+		}
+	} else if similarGas {
+		Fatal(t, "gas unexpectedly similar for return data: stylus", stylusGas, ", evm", evmGas)
+	}
+}
+
+func TestReturnDataCost(t *testing.T) {
+	testReturnDataCost(t, params.ArbosVersion_Stylus)
+	testReturnDataCost(t, params.ArbosVersion_StylusFixes)
+}
+
+func setupProgramTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder)) (
 	*NodeBuilder, bind.TransactOpts, func(),
 ) {
 	ctx, cancel := context.WithCancel(context.Background())
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+
+	for _, opt := range builderOpts {
+		opt(builder)
+	}
 
 	builder.nodeConfig.BlockValidator.Enable = false
 	builder.nodeConfig.Staker.Enable = true
@@ -1457,4 +1627,199 @@ func formatTime(duration time.Duration) string {
 		unit += 1
 	}
 	return fmt.Sprintf("%.2f%s", span, units[unit])
+}
+
+func TestWasmRecreate(t *testing.T) {
+	builder, auth, cleanup := setupProgramTest(t, true)
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	storage := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
+
+	zero := common.Hash{}
+	val := common.HexToHash("0x121233445566")
+
+	// do an onchain call - store value
+	storeTx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, argsForStorageWrite(zero, val))
+	Require(t, l2client.SendTransaction(ctx, storeTx))
+	_, err := EnsureTxSucceeded(ctx, l2client, storeTx)
+	Require(t, err)
+
+	testDir := t.TempDir()
+	nodeBStack := createStackConfigForTest(testDir)
+	nodeB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack})
+
+	_, err = EnsureTxSucceeded(ctx, nodeB.Client, storeTx)
+	Require(t, err)
+
+	// make sure reading 2nd value succeeds from 2nd node
+	loadTx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, argsForStorageRead(zero))
+	result, err := arbutil.SendTxAsCall(ctx, nodeB.Client, loadTx, l2info.GetAddress("Owner"), nil, true)
+	Require(t, err)
+	if common.BytesToHash(result) != val {
+		Fatal(t, "got wrong value")
+	}
+	// close nodeB
+	cleanupB()
+
+	// delete wasm dir of nodeB
+
+	wasmPath := filepath.Join(testDir, "system_tests.test", "wasm")
+	dirContents, err := os.ReadDir(wasmPath)
+	Require(t, err)
+	if len(dirContents) == 0 {
+		Fatal(t, "not contents found before delete")
+	}
+	os.RemoveAll(wasmPath)
+
+	// recreate nodeB - using same source dir (wasm deleted)
+	nodeB, cleanupB = builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack})
+
+	// test nodeB - sees existing transaction
+	_, err = EnsureTxSucceeded(ctx, nodeB.Client, storeTx)
+	Require(t, err)
+
+	// test nodeB - answers eth_call (requires reloading wasm)
+	result, err = arbutil.SendTxAsCall(ctx, nodeB.Client, loadTx, l2info.GetAddress("Owner"), nil, true)
+	Require(t, err)
+	if common.BytesToHash(result) != val {
+		Fatal(t, "got wrong value")
+	}
+
+	// send new tx (requires wasm) and check nodeB sees it as well
+	Require(t, l2client.SendTransaction(ctx, loadTx))
+
+	_, err = EnsureTxSucceeded(ctx, l2client, loadTx)
+	Require(t, err)
+
+	_, err = EnsureTxSucceeded(ctx, nodeB.Client, loadTx)
+	Require(t, err)
+
+	cleanupB()
+	dirContents, err = os.ReadDir(wasmPath)
+	Require(t, err)
+	if len(dirContents) == 0 {
+		Fatal(t, "not contents found before delete")
+	}
+	os.RemoveAll(wasmPath)
+
+}
+
+// createMapFromDb is used in verifying if wasm store rebuilding works
+func createMapFromDb(db ethdb.KeyValueStore) (map[string][]byte, error) {
+	iter := db.NewIterator(nil, nil)
+	defer iter.Release()
+
+	dataMap := make(map[string][]byte)
+
+	for iter.Next() {
+		key := iter.Key()
+		value := iter.Value()
+
+		dataMap[string(key)] = value
+	}
+
+	if err := iter.Error(); err != nil {
+		return nil, fmt.Errorf("iterator error: %w", err)
+	}
+
+	return dataMap, nil
+}
+
+func TestWasmStoreRebuilding(t *testing.T) {
+	builder, auth, cleanup := setupProgramTest(t, true)
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	storage := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
+
+	zero := common.Hash{}
+	val := common.HexToHash("0x121233445566")
+
+	// do an onchain call - store value
+	storeTx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, argsForStorageWrite(zero, val))
+	Require(t, l2client.SendTransaction(ctx, storeTx))
+	_, err := EnsureTxSucceeded(ctx, l2client, storeTx)
+	Require(t, err)
+
+	testDir := t.TempDir()
+	nodeBStack := createStackConfigForTest(testDir)
+	nodeB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack})
+
+	_, err = EnsureTxSucceeded(ctx, nodeB.Client, storeTx)
+	Require(t, err)
+
+	// make sure reading 2nd value succeeds from 2nd node
+	loadTx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, argsForStorageRead(zero))
+	result, err := arbutil.SendTxAsCall(ctx, nodeB.Client, loadTx, l2info.GetAddress("Owner"), nil, true)
+	Require(t, err)
+	if common.BytesToHash(result) != val {
+		Fatal(t, "got wrong value")
+	}
+
+	wasmDb := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+
+	storeMap, err := createMapFromDb(wasmDb)
+	Require(t, err)
+
+	// close nodeB
+	cleanupB()
+
+	// delete wasm dir of nodeB
+	wasmPath := filepath.Join(testDir, "system_tests.test", "wasm")
+	dirContents, err := os.ReadDir(wasmPath)
+	Require(t, err)
+	if len(dirContents) == 0 {
+		Fatal(t, "not contents found before delete")
+	}
+	os.RemoveAll(wasmPath)
+
+	// recreate nodeB - using same source dir (wasm deleted)
+	nodeB, cleanupB = builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack})
+	bc := nodeB.ExecNode.Backend.ArbInterface().BlockChain()
+
+	wasmDbAfterDelete := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+	storeMapAfterDelete, err := createMapFromDb(wasmDbAfterDelete)
+	Require(t, err)
+	if len(storeMapAfterDelete) != 0 {
+		Fatal(t, "non-empty wasm store after it was previously deleted")
+	}
+
+	// Start rebuilding and wait for it to finish
+	log.Info("starting rebuilding of wasm store")
+	Require(t, gethexec.RebuildWasmStore(ctx, wasmDbAfterDelete, nodeB.ExecNode.ChainDB, nodeB.ExecNode.ConfigFetcher().RPC.MaxRecreateStateDepth, bc, common.Hash{}, bc.CurrentBlock().Hash()))
+
+	wasmDbAfterRebuild := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
+
+	// Before comparing, check if rebuilding was set to done and then delete the keys that are used to track rebuilding status
+	status, err := gethexec.ReadFromKeyValueStore[common.Hash](wasmDbAfterRebuild, gethexec.RebuildingPositionKey)
+	Require(t, err)
+	if status != gethexec.RebuildingDone {
+		Fatal(t, "rebuilding was not set to done after successful completion")
+	}
+	Require(t, wasmDbAfterRebuild.Delete(gethexec.RebuildingPositionKey))
+	Require(t, wasmDbAfterRebuild.Delete(gethexec.RebuildingStartBlockHashKey))
+
+	rebuiltStoreMap, err := createMapFromDb(wasmDbAfterRebuild)
+	Require(t, err)
+
+	// Check if rebuilding worked
+	if len(storeMap) != len(rebuiltStoreMap) {
+		Fatal(t, "size mismatch while rebuilding wasm store:", "want", len(storeMap), "got", len(rebuiltStoreMap))
+	}
+	for key, value1 := range storeMap {
+		value2, exists := rebuiltStoreMap[key]
+		if !exists {
+			Fatal(t, "rebuilt wasm store doesn't have key from original")
+		}
+		if !bytes.Equal(value1, value2) {
+			Fatal(t, "rebuilt wasm store has incorrect value from original")
+		}
+	}
+
+	cleanupB()
 }
