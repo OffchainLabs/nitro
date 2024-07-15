@@ -242,10 +242,10 @@ func handleReqImpl(apiId usize, req_type u32, data *rustSlice, costPtr *u64, out
 
 // Caches a program in Rust. We write a record so that we can undo on revert.
 // For gas estimation and eth_call, we ignore permanent updates and rely on Rust's LRU.
-func cacheProgram(db vm.StateDB, module common.Hash, program Program, code []byte, codeHash common.Hash, params *StylusParams, debug bool, time uint64, runMode core.MessageRunMode) {
+func cacheProgram(db vm.StateDB, module common.Hash, program Program, addressForLogging common.Address, code []byte, codeHash common.Hash, params *StylusParams, debug bool, time uint64, runMode core.MessageRunMode) {
 	if runMode == core.MessageCommitMode {
 		// address is only used for logging
-		asm, err := getLocalAsm(db, module, common.Address{}, code, codeHash, params.PageLimit, time, debug, program)
+		asm, err := getLocalAsm(db, module, addressForLogging, code, codeHash, params.PageLimit, time, debug, program)
 		if err != nil {
 			panic("unable to recreate wasm")
 		}
