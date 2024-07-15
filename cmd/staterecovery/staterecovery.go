@@ -9,7 +9,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/trie"
+	"github.com/ethereum/go-ethereum/triedb"
 	"github.com/ethereum/go-ethereum/triedb/hashdb"
 )
 
@@ -32,7 +32,7 @@ func RecreateMissingStates(chainDb ethdb.Database, bc *core.BlockChain, cacheCon
 	}
 	hashConfig := *hashdb.Defaults
 	hashConfig.CleanCacheSize = cacheConfig.TrieCleanLimit * 1024 * 1024
-	trieConfig := &trie.Config{
+	trieConfig := &triedb.Config{
 		Preimages: false,
 		HashDB:    &hashConfig,
 	}
