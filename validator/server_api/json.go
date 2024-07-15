@@ -79,7 +79,7 @@ func (i *InputJSON) WriteToFile() error {
 
 type UserWasmJson struct {
 	Module string
-	Asm    string
+	Asm    map[string]string
 }
 
 type BatchInfoJson struct {
@@ -107,8 +107,12 @@ func ValidationInputToJson(entry *validator.ValidationInput) *InputJSON {
 		res.BatchInfo = append(res.BatchInfo, BatchInfoJson{Number: binfo.Number, DataB64: encData})
 	}
 	for moduleHash, info := range entry.UserWasms {
+		asmMap := make(map[string]string, len(info.Asm))
+		for target, asm := range info.Asm {
+			asmMap[target] = base64.StdEncoding.EncodeToString(asm)
+		}
 		encWasm := UserWasmJson{
-			Asm:    base64.StdEncoding.EncodeToString(info.Asm),
+			Asm:    asmMap,
 			Module: base64.StdEncoding.EncodeToString(info.Module),
 		}
 		res.UserWasms[moduleHash] = encWasm
@@ -147,16 +151,20 @@ func ValidationInputFromJson(entry *InputJSON) (*validator.ValidationInput, erro
 		valInput.BatchInfo = append(valInput.BatchInfo, decInfo)
 	}
 	for moduleHash, info := range entry.UserWasms {
-		asm, err := base64.StdEncoding.DecodeString(info.Asm)
-		if err != nil {
-			return nil, err
+		asmMap := make(map[string][]byte, len(info.Asm))
+		for target, asmString := range info.Asm {
+			asm, err := base64.StdEncoding.DecodeString(asmString)
+			if err != nil {
+				return nil, err
+			}
+			asmMap[target] = asm
 		}
 		module, err := base64.StdEncoding.DecodeString(info.Module)
 		if err != nil {
 			return nil, err
 		}
 		decInfo := state.ActivatedWasm{
-			Asm:    asm,
+			Asm:    asmMap,
 			Module: module,
 		}
 		valInput.UserWasms[moduleHash] = decInfo

@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"os"
 	"path"
-	"runtime"
 	"runtime/pprof"
 	"runtime/trace"
 	"sync"
@@ -28,6 +27,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
@@ -154,17 +154,17 @@ func (s *ExecutionEngine) Initialize(rustCacheSize uint32, targetConfig *StylusT
 	if rustCacheSize != 0 {
 		programs.ResizeWasmLruCache(rustCacheSize)
 	}
-	effectiveStylusTarget := targetConfig.Host
-	if runtime.GOOS == "linux" {
-		switch runtime.GOARCH {
-		case "arm":
-			effectiveStylusTarget = targetConfig.Arm
-		case "amd64":
-			effectiveStylusTarget = targetConfig.X86
-		}
+	var effectiveStylusTarget string
+	targetName := programs.LocalTargetName()
+	switch targetName {
+	case rawdb.TargetArm:
+		effectiveStylusTarget = targetConfig.Arm
+	case rawdb.TargetX86:
+		effectiveStylusTarget = targetConfig.X86
+	case rawdb.TargetHost:
+		effectiveStylusTarget = targetConfig.Host
 	}
-	// TODO what should we use for target name?
-	err := programs.SetTarget("native", effectiveStylusTarget, true)
+	err := programs.SetTarget(targetName, effectiveStylusTarget, true)
 	if err != nil {
 		return fmt.Errorf("Failed to set stylus target: %w", err)
 	}

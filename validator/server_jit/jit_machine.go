@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -220,7 +221,12 @@ func (machine *JitMachine) prove(
 		if err := writeExact(moduleHash[:]); err != nil {
 			return state, err
 		}
-		if err := writeBytes(info.Asm); err != nil {
+		targetName := programs.LocalTargetName()
+		asm, exists := info.Asm[targetName]
+		if !exists {
+			return state, fmt.Errorf("Missing asm for local target, target: %s", targetName)
+		}
+		if err := writeBytes(asm); err != nil {
 			return state, err
 		}
 	}
