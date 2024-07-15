@@ -186,25 +186,25 @@ func setMinIdInt(min *[2]uint64, id string) error {
 	if len(idParts) != 2 {
 		return errors.New("invalid i.d")
 	}
-	idTimeStamp, err := strconv.Atoi(idParts[0])
+	idTimeStamp, err := strconv.ParseUint(idParts[0], 10, 64)
 	if err != nil {
 		return fmt.Errorf("invalid i.d ts: %w", err)
 	}
-	if uint64(idTimeStamp) > min[0] {
+	if idTimeStamp > min[0] {
 		return nil
 	}
-	idSerial, err := strconv.Atoi(idParts[1])
+	idSerial, err := strconv.ParseUint(idParts[1], 10, 64)
 	if err != nil {
 		return fmt.Errorf("invalid i.d serial: %w", err)
 	}
-	if uint64(idTimeStamp) < min[0] {
-		min[0] = uint64(idTimeStamp)
-		min[1] = uint64(idSerial)
+	if idTimeStamp < min[0] {
+		min[0] = idTimeStamp
+		min[1] = idSerial
 		return nil
 	}
 	// idTimeStamp == min[0]
-	if uint64(idSerial) < min[1] {
-		min[1] = uint64(idSerial)
+	if idSerial < min[1] {
+		min[1] = idSerial
 	}
 	return nil
 }
