@@ -1009,7 +1009,7 @@ func testMemory(t *testing.T, jit bool) {
 	args := argsForMulticall(vm.CALL, memoryAddr, nil, []byte{126, 50})
 	args = multicallAppend(args, vm.CALL, memoryAddr, []byte{126, 80})
 
-	tx := l2info.PrepareTxTo("Owner", &multiAddr, 1e9, nil, args)
+	tx := l2info.PrepareTxTo("Owner", &multiAddr, 5e9, nil, args)
 	receipt := ensure(tx, l2client.SendTransaction(ctx, tx))
 	gasCost := receipt.GasUsedForL2()
 	memCost := model.GasCost(128, 0, 0) + model.GasCost(126, 2, 128)
@@ -1564,6 +1564,7 @@ func activateWasm(
 
 	timed(t, "activate "+name, func() {
 		auth.Value = oneEth
+		auth.GasLimit = 32000000 // skip gas estimation
 		tx, err := arbWasm.ActivateProgram(&auth, program)
 		Require(t, err)
 		_, err = EnsureTxSucceeded(ctx, l2client, tx)
