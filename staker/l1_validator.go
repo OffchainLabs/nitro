@@ -381,7 +381,7 @@ func (v *L1Validator) generateNodeAction(
 		return nil, false, nil
 	}
 
-	successorNodes, err := v.rollup.LookupNodeChildren(ctx, stakerInfo.LatestStakedNode, stakerInfo.LatestStakedNodeHash)
+	successorNodes, err := v.rollup.LookupNodeChildren(ctx, stakerInfo.LatestStakedNode, stakerConfig.LogQueryBatchSize, stakerInfo.LatestStakedNodeHash)
 	if err != nil {
 		return nil, false, fmt.Errorf("error looking up node %v (hash %v) children: %w", stakerInfo.LatestStakedNode, stakerInfo.LatestStakedNodeHash, err)
 	}

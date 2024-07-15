@@ -70,6 +70,9 @@ func mainImpl() int {
 	nodeConfig.WS.Apply(&stackConf)
 	nodeConfig.Auth.Apply(&stackConf)
 	nodeConfig.IPC.Apply(&stackConf)
+	stackConf.P2P.ListenAddr = ""
+	stackConf.P2P.NoDial = true
+	stackConf.P2P.NoDiscovery = true
 	vcsRevision, strippedRevision, vcsTime := confighelpers.GetVersion()
 	stackConf.Version = strippedRevision
 
