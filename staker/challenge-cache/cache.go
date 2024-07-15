@@ -177,7 +177,10 @@ func (c *Cache) Prune(ctx context.Context, messageNumber uint64) error {
 	messageNumPattern := fmt.Sprintf(`%s-(\d+)-`, messageNumberPrefix)
 	pattern := regexp.MustCompile(messageNumPattern)
 	pathsToDelete := make([]string, 0)
-	if err := filepath.Walk(c.baseDir, func(path string, info os.FileInfo, err error) error {
+	if err := filepath.WalkDir(c.baseDir, func(path string, info os.DirEntry, err error) error {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if err != nil {
 			return err
 		}
@@ -201,6 +204,9 @@ func (c *Cache) Prune(ctx context.Context, messageNumber uint64) error {
 	// We delete separately from collecting the paths, as deleting while walking
 	// a dir can cause issues with the filepath.Walk function.
 	for _, path := range pathsToDelete {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
 		if err := os.RemoveAll(path); err != nil {
 			return fmt.Errorf("could not prune directory with path %s: %w", path, err)
 		}
