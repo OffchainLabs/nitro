@@ -1,4 +1,4 @@
-FROM debian:bookworm-slim as brotli-wasm-builder
+FROM debian:bookworm-slim AS brotli-wasm-builder
 WORKDIR /workspace
 RUN apt-get update && \
     apt-get install -y cmake make git lbzip2 python3 xz-utils && \
@@ -10,10 +10,10 @@ COPY scripts/build-brotli.sh scripts/
 COPY brotli brotli
 RUN cd emsdk && . ./emsdk_env.sh && cd .. && ./scripts/build-brotli.sh -w -t /workspace/install/
 
-FROM scratch as brotli-wasm-export
+FROM scratch AS brotli-wasm-export
 COPY --from=brotli-wasm-builder /workspace/install/ /
 
-FROM debian:bookworm-slim as brotli-library-builder
+FROM debian:bookworm-slim AS brotli-library-builder
 WORKDIR /workspace
 COPY scripts/build-brotli.sh scripts/
 COPY brotli brotli
@@ -21,10 +21,10 @@ RUN apt-get update && \
     apt-get install -y cmake make gcc git && \
     ./scripts/build-brotli.sh -l -t /workspace/install/
 
-FROM scratch as brotli-library-export
+FROM scratch AS brotli-library-export
 COPY --from=brotli-library-builder /workspace/install/ /
 
-FROM node:18-bookworm-slim as contracts-builder
+FROM node:18-bookworm-slim AS contracts-builder
 RUN apt-get update && \
     apt-get install -y git python3 make g++ curl
 RUN curl -L https://foundry.paradigm.xyz | bash && . ~/.bashrc && ~/.foundry/bin/foundryup
@@ -35,11 +35,11 @@ COPY contracts contracts/
 COPY Makefile .
 RUN . ~/.bashrc && NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-solidity
 
-FROM debian:bookworm-20231218 as wasm-base
+FROM debian:bookworm-20231218 AS wasm-base
 WORKDIR /workspace
 RUN apt-get update && apt-get install -y curl build-essential=12.9
 
-FROM wasm-base as wasm-libs-builder
+FROM wasm-base AS wasm-libs-builder
 	# clang / lld used by soft-float wasm
 RUN apt-get update && \
     apt-get install -y clang=1:14.0-55.7~deb12u1 lld=1:14.0-55.7~deb12u1 wabt
@@ -59,10 +59,10 @@ COPY --from=brotli-wasm-export / target/
 RUN apt-get update && apt-get install -y cmake
 RUN . ~/.cargo/env && NITRO_BUILD_IGNORE_TIMESTAMPS=1 RUSTFLAGS='-C symbol-mangling-version=v0' make build-wasm-libs
 
-FROM scratch as wasm-libs-export
+FROM scratch AS wasm-libs-export
 COPY --from=wasm-libs-builder /workspace/ /
 
-FROM wasm-base as wasm-bin-builder
+FROM wasm-base AS wasm-bin-builder
 # pinned go version
 RUN curl -L https://golang.org/dl/go1.21.10.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
 COPY ./Makefile ./go.mod ./go.sum ./
@@ -91,7 +91,7 @@ COPY --from=contracts-builder workspace/contracts/node_modules/@offchainlabs/upg
 COPY --from=contracts-builder workspace/.make/ .make/
 RUN PATH="$PATH:/usr/local/go/bin" NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-wasm-bin
 
-FROM rust:1.75-slim-bookworm as prover-header-builder
+FROM rust:1.75-slim-bookworm AS prover-header-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
@@ -114,10 +114,10 @@ COPY brotli brotli
 RUN apt-get update && apt-get install -y cmake
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header
 
-FROM scratch as prover-header-export
+FROM scratch AS prover-header-export
 COPY --from=prover-header-builder /workspace/target/ /
 
-FROM rust:1.75-slim-bookworm as prover-builder
+FROM rust:1.75-slim-bookworm AS prover-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
@@ -164,10 +164,10 @@ RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-lib
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-bin
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-jit
 
-FROM scratch as prover-export
+FROM scratch AS prover-export
 COPY --from=prover-builder /workspace/target/ /
 
-FROM debian:bookworm-slim as module-root-calc
+FROM debian:bookworm-slim AS module-root-calc
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
@@ -189,7 +189,7 @@ COPY ./solgen ./solgen
 COPY ./contracts ./contracts
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-replay-env
 
-FROM debian:bookworm-slim as machine-versions
+FROM debian:bookworm-slim AS machine-versions
 RUN apt-get update && apt-get install -y unzip wget curl
 WORKDIR /workspace/machines
 # Download WAVM machines
@@ -213,8 +213,9 @@ COPY ./scripts/download-machine.sh .
 #RUN ./download-machine.sh consensus-v11.1 0x68e4fe5023f792d4ef584796c84d710303a5e12ea02d6e37e2b5e9c4332507c4
 #RUN ./download-machine.sh consensus-v20 0x8b104a2e80ac6165dc58b9048de12f301d70b02a0ab51396c22b4b4b802a16a4
 RUN ./download-machine.sh consensus-v30 0xb0de9cb89e4d944ae6023a3b62276e54804c242fd8c4c2d8e6cc4450f5fa8b1b && true
+RUN ./download-machine.sh consensus-v31 0x260f5fa5c3176a856893642e149cf128b5a8de9f828afec8d11184415dd8dc69
 
-FROM golang:1.21.10-bookworm as node-builder
+FROM golang:1.21.10-bookworm AS node-builder
 WORKDIR /workspace
 ARG version=""
 ARG datetime=""
@@ -241,17 +242,17 @@ RUN mkdir -p target/bin
 COPY .nitro-tag.txt /nitro-tag.txt
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build
 
-FROM node-builder as fuzz-builder
+FROM node-builder AS fuzz-builder
 RUN mkdir fuzzers/
 RUN ./scripts/fuzz.bash --build --binary-path /workspace/fuzzers/
 
-FROM debian:bookworm-slim as nitro-fuzzer
+FROM debian:bookworm-slim AS nitro-fuzzer
 COPY --from=fuzz-builder /workspace/fuzzers/*.fuzz /usr/local/bin/
 COPY ./scripts/fuzz.bash /usr/local/bin
 RUN mkdir /fuzzcache
 ENTRYPOINT [ "/usr/local/bin/fuzz.bash", "FuzzStateTransition", "--binary-path", "/usr/local/bin/", "--fuzzcache-path", "/fuzzcache" ]
 
-FROM debian:bookworm-slim as nitro-node-slim
+FROM debian:bookworm-slim AS nitro-node-slim
 WORKDIR /home/user
 COPY --from=node-builder /workspace/target/bin/nitro /usr/local/bin/
 COPY --from=node-builder /workspace/target/bin/relay /usr/local/bin/
@@ -279,9 +280,9 @@ USER user
 WORKDIR /home/user/
 ENTRYPOINT [ "/usr/local/bin/nitro" ]
 
-FROM offchainlabs/nitro-node:v2.3.4-rc.5-b4cc111 as nitro-legacy
+FROM offchainlabs/nitro-node:v2.3.4-rc.5-b4cc111 AS nitro-legacy
 
-FROM nitro-node-slim as nitro-node
+FROM nitro-node-slim AS nitro-node
 USER root
 COPY --from=prover-export /bin/jit                        /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/daserver  /usr/local/bin/
@@ -301,7 +302,7 @@ ENTRYPOINT [ "/usr/local/bin/nitro" , "--validation.wasm.allowed-wasm-module-roo
 
 USER user
 
-FROM nitro-node as nitro-node-validator
+FROM nitro-node AS nitro-node-validator
 USER root
 COPY --from=nitro-legacy /usr/local/bin/nitro-val /home/user/nitro-legacy/bin/nitro-val
 COPY --from=nitro-legacy /usr/local/bin/jit /home/user/nitro-legacy/bin/jit
@@ -313,7 +314,7 @@ COPY scripts/split-val-entry.sh /usr/local/bin
 ENTRYPOINT [ "/usr/local/bin/split-val-entry.sh" ]
 USER user
 
-FROM nitro-node-validator as nitro-node-dev
+FROM nitro-node-validator AS nitro-node-dev
 USER root
 # Copy in latest WASM module root
 RUN rm -f /home/user/target/machines/latest
@@ -337,5 +338,5 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
 
 USER user
 
-FROM nitro-node as nitro-node-default
+FROM nitro-node AS nitro-node-default
 # Just to ensure nitro-node-dist is default
