@@ -498,7 +498,6 @@ func BridgeBalance(
 		l2info.SetFullAccountInfo(account, &AccountInfo{
 			Address:    l1acct.Address,
 			PrivateKey: l1acct.PrivateKey,
-			Nonce:      0,
 		})
 	} else {
 		l2acct := l2info.GetInfoWithPrivKey(account)
