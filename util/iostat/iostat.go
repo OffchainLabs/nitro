@@ -31,7 +31,7 @@ func RegisterAndPopulateMetrics(ctx context.Context, spawnInterval, maxDeviceCou
 			// Register metrics for a maximum of maxDeviceCount (fail safe incase iostat command returns incorrect names indefinitely)
 			if len(deviceMetrics) < maxDeviceCount {
 				// Replace hyphens with underscores to avoid metric name issues
-				sanitizedDeviceName := strings.Replace(stat.DeviceName, "-", "_", -1)
+				sanitizedDeviceName := strings.ReplaceAll(stat.DeviceName, "-", "_")
 				baseMetricName := fmt.Sprintf("iostat/%s/", sanitizedDeviceName)
 				deviceMetrics[stat.DeviceName] = make(map[string]metrics.GaugeFloat64)
 				deviceMetrics[stat.DeviceName]["readspersecond"] = metrics.NewRegisteredGaugeFloat64(baseMetricName+"readspersecond", nil)
