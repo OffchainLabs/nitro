@@ -282,7 +282,8 @@ func (p *Producer[Request, Response]) reproduce(ctx context.Context, value Reque
 	if oldKey != "" && promise == nil {
 		// This will happen if the old consumer became inactive but then ack_d
 		// the message afterwards.
-		return nil, fmt.Errorf("error reproducing the message, could not find existing one")
+		// don't error
+		log.Warn("tried reproducing a message but it wasn't found - probably got response", "oldKey", oldKey)
 	}
 	if oldKey == "" || promise == nil {
 		pr := containers.NewPromise[Response](nil)
