@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 
@@ -118,6 +119,9 @@ func main() {
 		_, file := filepath.Split(path)
 		name := file[:len(file)-5]
 
+		if regexp.MustCompile(`^[0-9a-fA-F]+$`).MatchString(name) {
+			continue
+		}
 		data, err := os.ReadFile(path)
 		if err != nil {
 			log.Fatal("could not read", path, "for contract", name, err)
@@ -127,6 +131,7 @@ func main() {
 		if err := json.Unmarshal(data, &artifact); err != nil {
 			log.Fatal("failed to parse contract", name, err)
 		}
+		fmt.Printf("Contract name: %v\n", name)
 		yulModInfo.addArtifact(HardHatArtifact{
 			ContractName: name,
 			Abi:          artifact.Abi,

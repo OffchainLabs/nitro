@@ -6,6 +6,7 @@ package main
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
@@ -31,6 +32,8 @@ import (
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/das/celestia/tree"
+	celestiaTypes "github.com/offchainlabs/nitro/das/celestia/types"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/wavmio"
@@ -153,6 +156,126 @@ func (r *BlobPreimageReader) Initialize(ctx context.Context) error {
 	return nil
 }
 
+type PreimageCelestiaReader struct {
+}
+
+func (dasReader *PreimageCelestiaReader) Read(ctx context.Context, blobPointer *celestiaTypes.BlobPointer) ([]byte, *celestiaTypes.SquareData, error) {
+	oracle := func(hash common.Hash) ([]byte, error) {
+		return wavmio.ResolveTypedPreimage(arbutil.Sha2_256PreimageType, hash)
+	}
+
+	if blobPointer.SharesLength == 0 {
+		return nil, nil, fmt.Errorf("Error, shares length is %v", blobPointer.SharesLength)
+	}
+	// first, walk down the merkle tree
+	leaves, err := tree.MerkleTreeContent(oracle, common.BytesToHash(blobPointer.DataRoot[:]))
+	if err != nil {
+		log.Warn("Error revealing contents behind data root", "err", err)
+		return nil, nil, err
+	}
+
+	squareSize := uint64(len(leaves)) / 2
+	// split leaves in half to get row roots
+	rowRoots := leaves[:squareSize]
+	// We get the original data square size, wich is (size_of_the_extended_square / 2)
+	odsSize := squareSize / 2
+
+	startRow := blobPointer.Start / odsSize
+
+	if blobPointer.Start >= odsSize*odsSize {
+		// check that the square isn't just our share (very niche case, should only happens on local testing)
+		if blobPointer.Start != odsSize*odsSize && odsSize > 1 {
+			return nil, nil, fmt.Errorf("Error Start Index out of ODS bounds: index=%v odsSize=%v", blobPointer.Start, odsSize)
+		}
+	}
+
+	// adjusted_end_index = adjusted_start_index + length - 1
+	if blobPointer.Start+blobPointer.SharesLength < 1 {
+		return nil, nil, fmt.Errorf("Error getting number of shares in first row: index+length %v > 1", blobPointer.Start+blobPointer.SharesLength)
+	}
+	endIndexOds := blobPointer.Start + blobPointer.SharesLength - 1
+	if endIndexOds >= odsSize*odsSize {
+		// check that the square isn't just our share (very niche case, should only happens on local testing)
+		if endIndexOds != odsSize*odsSize && odsSize > 1 {
+			return nil, nil, fmt.Errorf("Error End Index out of ODS bounds: index=%v odsSize=%v", endIndexOds, odsSize)
+		}
+	}
+	endRow := endIndexOds / odsSize
+
+	if endRow >= odsSize || startRow >= odsSize {
+		return nil, nil, fmt.Errorf("Error rows out of bounds: startRow=%v endRow=%v odsSize=%v", startRow, endRow, odsSize)
+	}
+
+	startColumn := blobPointer.Start % odsSize
+	endColumn := endIndexOds % odsSize
+
+	if startRow == endRow && startColumn > endColumn {
+		log.Error("start and end row are the same, and startColumn >= endColumn", "startColumn", startColumn, "endColumn ", endColumn)
+		return []byte{}, nil, nil
+	}
+
+	// adjust the math in the CelestiaPayload function in the inbox
+
+	// we can take ods * ods -> end index in ods
+	// then we check that start index is in bounds, otherwise ignore -> return empty batch
+	// then we check that end index is in bounds, otherwise ignore
+
+	// get rows behind row root and shares for our blob
+	rows := [][][]byte{}
+	shares := [][]byte{}
+	for i := startRow; i <= endRow; i++ {
+		row, err := tree.NmtContent(oracle, rowRoots[i])
+		if err != nil {
+			return nil, nil, err
+		}
+		rows = append(rows, row)
+
+		odsRow := row[:odsSize]
+
+		// TODO explain the logic behind this branching
+		if startRow == endRow {
+			shares = append(shares, odsRow[startColumn:endColumn+1]...)
+			break
+		} else if i == startRow {
+			shares = append(shares, odsRow[startColumn:]...)
+		} else if i == endRow {
+			shares = append(shares, odsRow[:endColumn+1]...)
+		} else {
+			shares = append(shares, odsRow...)
+		}
+	}
+
+	data := []byte{}
+	if tree.NamespaceSize*2+1 > uint64(len(shares[0])) || tree.NamespaceSize*2+5 > uint64(len(shares[0])) {
+		return nil, nil, fmt.Errorf("Error getting sequence length on share of size %v", len(shares[0]))
+	}
+	sequenceLength := binary.BigEndian.Uint32(shares[0][tree.NamespaceSize*2+1 : tree.NamespaceSize*2+5])
+	for i, share := range shares {
+		// trim extra namespace
+		share := share[tree.NamespaceSize:]
+		if i == 0 {
+			data = append(data, share[tree.NamespaceSize+5:]...)
+			continue
+		}
+		data = append(data, share[tree.NamespaceSize+1:]...)
+	}
+
+	data = data[:sequenceLength]
+	squareData := celestiaTypes.SquareData{
+		RowRoots:    rowRoots,
+		ColumnRoots: leaves[squareSize:],
+		Rows:        rows,
+		SquareSize:  squareSize,
+		StartRow:    startRow,
+		EndRow:      endRow,
+	}
+	return data, &squareData, nil
+}
+
+func (dasReader *PreimageCelestiaReader) GetProof(ctx context.Context, msg []byte) ([]byte, error) {
+	return nil, nil
+}
+
 // To generate:
 // key, _ := crypto.HexToECDSA("0000000000000000000000000000000000000000000000000000000000000001")
 // sig, _ := crypto.Sign(make([]byte, 32), key)
@@ -203,17 +326,10 @@ func main() {
 		panic(fmt.Sprintf("Error opening state db: %v", err.Error()))
 	}
 
-	readMessage := func(dasEnabled bool) *arbostypes.MessageWithMetadata {
+	readMessage := func() *arbostypes.MessageWithMetadata {
 		var delayedMessagesRead uint64
 		if lastBlockHeader != nil {
 			delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
-		}
-		var dasReader daprovider.DASReader
-		var dasKeysetFetcher daprovider.DASKeysetFetcher
-		if dasEnabled {
-			// DAS batch and keysets are all together in the same preimage binary.
-			dasReader = &PreimageDASReader{}
-			dasKeysetFetcher = &PreimageDASReader{}
 		}
 		backend := WavmInbox{}
 		var keysetValidationMode = daprovider.KeysetPanicIfInvalid
@@ -221,9 +337,8 @@ func main() {
 			keysetValidationMode = daprovider.KeysetDontValidate
 		}
 		var dapReaders []daprovider.Reader
-		if dasReader != nil {
-			dapReaders = append(dapReaders, daprovider.NewReaderForDAS(dasReader, dasKeysetFetcher))
-		}
+		dapReaders = append(dapReaders, daprovider.NewReaderForDAS(&PreimageDASReader{}))
+		dapReaders = append(dapReaders, celestiaTypes.NewReaderForCelestia(&PreimageCelestiaReader{}))
 		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(&BlobPreimageReader{}))
 		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode)
 		ctx := context.Background()
@@ -277,7 +392,10 @@ func main() {
 			}
 		}
 
-		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee)
+		// need to add Celestia or just "ExternalDA" as an option to the ArbitrumChainParams
+		// for now we hard code Cthis to treu and hardcode Celestia in `readMessage`
+		// to test the integration
+		message := readMessage()
 
 		chainContext := WavmChainContext{}
 		batchFetcher := func(batchNum uint64) ([]byte, error) {
@@ -291,7 +409,7 @@ func main() {
 	} else {
 		// Initialize ArbOS with this init message and create the genesis block.
 
-		message := readMessage(false)
+		message := readMessage()
 
 		initMessage, err := message.Message.ParseInitMessage()
 		if err != nil {

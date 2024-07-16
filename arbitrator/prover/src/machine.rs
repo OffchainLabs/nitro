@@ -3043,6 +3043,13 @@ impl Machine {
                         {
                             data.push(0); // inbox proof type
                             out!(msg_data);
+                            match inbox_identifier {
+                                InboxIdentifier::Sequencer => {
+                                    out!(msg_idx.to_be_bytes());
+                                    data.push(0x0);
+                                }
+                                InboxIdentifier::Delayed => data.push(0x1),
+                            }
                         }
                     } else {
                         unreachable!()
