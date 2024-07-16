@@ -142,24 +142,19 @@ func (a *AvailDA) Store(ctx context.Context, message []byte) ([]byte, error) {
 		return nil, fmt.Errorf("cannot get header for finalized block:%w", err)
 	}
 
-	err = a.vectorx.SubscribeForHeaderUpdate(int(header.Number), a.vectorXTimeout)
-	if err != nil {
-		return nil, fmt.Errorf("cannot get the event for header update on vectorx:%w", err)
-	}
-
 	extrinsicIndex, err := GetExtrinsicIndex(a.api, finalizedblockHash, a.keyringPair.Address, nonce)
 	if err != nil {
 		return nil, err
 	}
 	log.Info("Finalized extrinsic", "extrinsicIndex", extrinsicIndex)
 
-	merkleProofInput, err := QueryMerkleProofInput(a.bridgeApiBaseURL, finalizedblockHash.Hex(), extrinsicIndex, a.bridgeApiTimeout)
+	blobProof, err := QueryBlobProof(a.api, extrinsicIndex, finalizedblockHash)
 	if err != nil {
 		return nil, err
 	}
 
 	// Creating BlobPointer to submit over settlement layer
-	blobPointer := BlobPointer{BlockHash: finalizedblockHash, Sender: a.keyringPair.Address, Nonce: uint32(nonce.Int64()), DasTreeRootHash: dastree.Hash(message), MerkleProofInput: merkleProofInput}
+	blobPointer := BlobPointer{BlockHeight: uint32(header.Number), ExtrinsicIndex: uint32(extrinsicIndex), DasTreeRootHash: dastree.Hash(message), BlobProof: blobProof}
 	log.Info("✅  Sucesfully included in block data to Avail", "BlobPointer:", blobPointer)
 	blobPointerData, err := blobPointer.MarshalToBinary()
 	if err != nil {
@@ -174,18 +169,22 @@ func (a *AvailDA) Read(ctx context.Context, blobPointer BlobPointer) ([]byte, er
 	log.Info("ℹ️ Requesting data from Avail", "BlobPointer", blobPointer)
 
 	// Intitializing variables
-	BlockHash := blobPointer.BlockHash
-	Address := blobPointer.Sender
-	Nonce := gsrpc_types.NewUCompactFromUInt(uint64(blobPointer.Nonce))
+	blockHeight := blobPointer.BlockHeight
+	extrinsicIndex := blobPointer.ExtrinsicIndex
 
-	// Fetching block based on block hash
-	avail_blk, err := a.api.RPC.Chain.GetBlock(BlockHash)
+	blockHash, err := a.api.RPC.Chain.GetBlockHash(uint64(blockHeight))
 	if err != nil {
-		return []byte{}, fmt.Errorf("❌ cannot get block for hash:%v and getting error:%w", BlockHash.Hex(), err)
+		log.Warn("⚠️ cannot get block hash", "error", err)
+		return nil, err
+	}
+	// Fetching block based on block hash
+	avail_blk, err := a.api.RPC.Chain.GetBlock(blockHash)
+	if err != nil {
+		return []byte{}, fmt.Errorf("❌ cannot get block for hash:%v and getting error:%w", blockHash.Hex(), err)
 	}
 
 	// Extracting the required extrinsic according to the reference
-	data, err := extractExtrinsic(Address, Nonce.Int64(), avail_blk)
+	data, err := extractExtrinsicData(avail_blk, extrinsicIndex)
 	if err != nil {
 		return nil, err
 	}

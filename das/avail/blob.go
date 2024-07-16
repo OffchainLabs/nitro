@@ -6,18 +6,16 @@ import (
 	"fmt"
 	"reflect"
 
-	gsrpc_types "github.com/centrifuge/go-substrate-rpc-client/v4/types"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
 )
 
 // BlobPointer contains the reference to the data blob on Avail
 type BlobPointer struct {
-	BlockHash        gsrpc_types.Hash // Hash for block on avail chain
-	Sender           string           // sender address to filter extrinsic out sepecifically for this address
-	Nonce            uint32           // nonce to filter specific extrinsic
-	DasTreeRootHash  common.Hash      // Das tree root hash created when preimage is stored on das tree
-	MerkleProofInput MerkleProofInput // Merkle proof of the blob submission
+	BlockHeight     uint32      // Block height for avail chain in which data in being included
+	ExtrinsicIndex  uint32      // extrinsic index in the block height
+	DasTreeRootHash common.Hash // Das tree root hash created when preimage is stored on das tree
+	BlobProof       BlobProof   // Blob proof of blob inclusion into avail finalised block
 }
 
 var byte32Type = abi.Type{T: abi.FixedBytesTy, Size: 32}
@@ -26,27 +24,27 @@ var stringType = abi.Type{T: abi.StringTy}
 var byte32ArrayType = abi.Type{T: abi.SliceTy, Elem: &abi.Type{T: abi.FixedBytesTy, Size: 32}}
 var uint64Type = abi.Type{Size: 64, T: abi.UintTy}
 var merkleProofInputType = abi.Type{T: abi.TupleTy, TupleType: reflect.TypeOf(MerkleProofInput{}), TupleElems: []*abi.Type{&byte32ArrayType, &byte32ArrayType, &byte32Type, &uint64Type, &byte32Type, &byte32Type, &byte32Type, &uint64Type}, TupleRawNames: []string{"dataRootProof", "leafProof", "rangeHash", "dataRootIndex", "blobRoot", "bridgeRoot", "leaf", "leafIndex"}}
-
+var blobProofType = abi.Type{T: abi.TupleTy, TupleType: reflect.TypeOf(BlobProof{}), TupleElems: []*abi.Type{&byte32Type, &byte32Type, &byte32Type, &byte32ArrayType, &uint32Type, &uint32Type, &byte32Type}, TupleRawNames: []string{"dataRoot", "blobRoot", "bridgeRoot", "leafProof", "numberOfLeaves", "leafIndex", "leaf"}}
 var arguments = abi.Arguments{
-	{Type: byte32Type}, {Type: stringType}, {Type: uint32Type}, {Type: byte32Type}, {Type: merkleProofInputType},
+	{Type: uint32Type}, {Type: uint32Type}, {Type: byte32Type}, {Type: blobProofType},
 }
 
 // MarshalBinary encodes the BlobPointer to binary
-// serialization format: AvailMessageHeaderFlag + BlockHash + Sender + Nonce + DasTreeRootHash + MerkleProofInput
+// serialization format: AvailMessageHeaderFlag + BlockHeight + ExtrinsicIndex + DasTreeRootHash + BlobProof
 //
-//	minimum size = 330 bytes
-//
-// -------------------------------------------------------------------------------------------------------------------------------------------------------------
-//
-// | 			1 byte 	  		  |   	  32 byte         |		 48 byte       |      8 byte       |		   32 byte	         |   minimum bytes size = 210   |
+//	minimum size = 274 bytes
 //
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 //
-// |<-- AvailMessageHeaderFlag -->|<----- BlockHash ----->|<----- Sender ----->|<----- Nonce ----->|<----- DasTreeRootHash ----->|<----- MerkleProofInput ----->|
+// | 			1 byte 	  		  |   	  32 byte         |		 32 byte       			 | 		      32 byte	       |   minimum bytes size = 176   |
+//
+// -------------------------------------------------------------------------------------------------------------------------------------------------------------
+//
+// |<-- AvailMessageHeaderFlag -->|<----- BlockHeight ----->|<----- ExtrinsicIndex ----->|<----- DasTreeRootHash ----->|<----- BlobProof ----->|
 //
 // -------------------------------------------------------------------------------------------------------------------------------------------------------------
 func (b *BlobPointer) MarshalToBinary() ([]byte, error) {
-	packedData, err := arguments.PackValues([]interface{}{b.BlockHash, b.Sender, b.Nonce, b.DasTreeRootHash, b.MerkleProofInput})
+	packedData, err := arguments.PackValues([]interface{}{b.BlockHeight, b.ExtrinsicIndex, b.DasTreeRootHash, b.BlobProof})
 	if err != nil {
 		return []byte{}, fmt.Errorf("unable to covert the blobPointer into array of bytes and getting error:%w", err)
 	}
@@ -66,10 +64,9 @@ func (b *BlobPointer) UnmarshalFromBinary(data []byte) error {
 	if err != nil {
 		return fmt.Errorf("unable to covert the data bytes into blobPointer and getting error:%w", err)
 	}
-	b.BlockHash = unpackedData[0].([32]uint8)               //nolint:all
-	b.Sender = unpackedData[1].(string)                     //nolint:all
-	b.Nonce = unpackedData[2].(uint32)                      //nolint:all
-	b.DasTreeRootHash = unpackedData[3].([32]uint8)         //nolint:all
-	b.MerkleProofInput = unpackedData[4].(MerkleProofInput) //nolint:all
+	b.BlockHeight = unpackedData[0].(uint32)        //nolint:all                    //nolint:all
+	b.ExtrinsicIndex = unpackedData[1].(uint32)     //nolint:all
+	b.DasTreeRootHash = unpackedData[2].([32]uint8) //nolint:all
+	b.BlobProof = unpackedData[3].(BlobProof)       //nolint:all
 	return nil
 }
