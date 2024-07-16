@@ -525,7 +525,7 @@ func (c *SeqCoordinator) deleteFinalizedMsgsFromRedis(ctx context.Context, final
 	prevFinalized, err := c.getRemoteFinalizedMsgCount(ctx)
 	if errors.Is(err, redis.Nil) {
 		var keys []string
-		for msg := finalized; ; msg-- {
+		for msg := finalized; msg > 0; msg-- {
 			exists, err := c.Client.Exists(ctx, redisutil.MessageKeyFor(msg), redisutil.MessageSigKeyFor(msg)).Result()
 			if exists == 0 || err != nil {
 				break
@@ -543,11 +543,11 @@ func (c *SeqCoordinator) deleteFinalizedMsgsFromRedis(ctx context.Context, final
 	} else if err != nil {
 		return fmt.Errorf("error getting finalizedMsgCount value from redis: %w", err)
 	}
-	remoteMsgCount, err := c.GetRemoteMsgCount()
+	remoteMsgCount, err := c.getRemoteMsgCountImpl(ctx, c.Client)
 	if err != nil {
 		return fmt.Errorf("cannot get remote message count: %w", err)
 	}
-	msgToDelete := min(finalized, remoteMsgCount)
+	msgToDelete := min(finalized, remoteMsgCount-1)
 	if prevFinalized < msgToDelete {
 		var keys []string
 		for msg := prevFinalized + 1; msg <= msgToDelete; msg++ {
@@ -604,7 +604,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 	var messages []arbostypes.MessageWithMetadata
 	msgToRead := localMsgCount
 	var msgReadErr error
-	for msgToRead < readUntil && localMsgCount >= remoteFinalizedMsgCount {
+	for msgToRead < readUntil && localMsgCount > remoteFinalizedMsgCount {
 		var resString string
 		resString, msgReadErr = c.Client.Get(ctx, redisutil.MessageKeyFor(msgToRead)).Result()
 		if msgReadErr != nil {
