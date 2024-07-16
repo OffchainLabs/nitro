@@ -182,11 +182,17 @@ func readHashes(r io.Reader, numToRead uint64) ([]common.Hash, error) {
 		hashes = append(hashes, common.BytesToHash(buf))
 	}
 	if numToRead > uint64(len(hashes)) {
-		return nil, fmt.Errorf(
-			"wanted to read %d hashes, but only read %d hashes",
-			numToRead,
-			len(hashes),
-		)
+		totalHashes := make([]common.Hash, 0, numToRead)
+		totalHashes = append(totalHashes, hashes...)
+		for len(totalHashes) < int(numToRead) {
+			totalHashes = append(totalHashes, totalHashes[len(totalHashes)-1])
+		}
+		return totalHashes, nil
+		// return nil, fmt.Errorf(
+		// 	"wanted to read %d hashes, but only read %d hashes",
+		// 	numToRead,
+		// 	len(hashes),
+		// )
 	}
 	return hashes, nil
 }
