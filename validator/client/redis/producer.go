@@ -61,13 +61,11 @@ func ValidationClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 type ValidationClient struct {
 	stopwaiter.StopWaiter
 	config *ValidationClientConfig
-	name   string
 	room   int32
 	// producers stores moduleRoot to producer mapping.
-	producers      map[common.Hash]*pubsub.Producer[*validator.ValidationInput, validator.GoGlobalState]
-	producerConfig pubsub.ProducerConfig
-	redisClient    redis.UniversalClient
-	moduleRoots    []common.Hash
+	producers   map[common.Hash]*pubsub.Producer[*validator.ValidationInput, validator.GoGlobalState]
+	redisClient redis.UniversalClient
+	moduleRoots []common.Hash
 }
 
 func NewValidationClient(cfg *ValidationClientConfig) (*ValidationClient, error) {
@@ -98,7 +96,7 @@ func (c *ValidationClient) Initialize(ctx context.Context, moduleRoots []common.
 			continue
 		}
 		p, err := pubsub.NewProducer[*validator.ValidationInput, validator.GoGlobalState](
-			c.redisClient, server_api.RedisStreamForRoot(c.config.StreamPrefix, mr), &c.producerConfig)
+			c.redisClient, server_api.RedisStreamForRoot(c.config.StreamPrefix, mr), &c.config.ProducerConfig)
 		if err != nil {
 			log.Warn("failed init redis for %v: %w", mr, err)
 			continue
@@ -146,10 +144,7 @@ func (c *ValidationClient) Stop() {
 }
 
 func (c *ValidationClient) Name() string {
-	if c.Started() {
-		return c.name
-	}
-	return "(not started)"
+	return c.config.Name
 }
 
 func (c *ValidationClient) Room() int {

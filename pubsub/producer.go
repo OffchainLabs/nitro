@@ -147,35 +147,24 @@ func (p *Producer[Request, Response]) reproduceIds(ctx context.Context, staleIds
 	if err != nil {
 		return fmt.Errorf("claiming ownership on messages: %v, error: %w", staleIds, err)
 	}
-	var messages []*Message[Request]
 	for _, msg := range claimedMsgs {
 		data, ok := (msg.Values[messageKey]).(string)
 		if !ok {
-			return fmt.Errorf("casting request: %v to bytes", msg.Values[messageKey])
+			log.Error("redis producer reproduce: message not string", "id", msg.ID, "value", msg.Values[messageKey])
+			continue
 		}
 		var req Request
 		if err := json.Unmarshal([]byte(data), &req); err != nil {
-			return fmt.Errorf("marshaling value: %v, error: %w", msg.Values[messageKey], err)
-		}
-		messages = append(messages, &Message[Request]{
-			ID:    msg.ID,
-			Value: req,
-		})
-	}
-
-	acked := make(map[string]Request)
-	for _, msg := range messages {
-		if _, err := p.client.XAck(ctx, p.redisStream, p.redisGroup, msg.ID).Result(); err != nil {
-			log.Error("ACKing message", "error", err)
+			log.Error("redis producer reproduce: message not a request", "id", msg.ID, "err", err, "value", msg.Values[messageKey])
 			continue
 		}
-		acked[msg.ID] = msg.Value
-	}
-	for k, v := range acked {
+		if _, err := p.client.XAck(ctx, p.redisStream, p.redisGroup, msg.ID).Result(); err != nil {
+			log.Error("redis producer reproduce: could not ACK", "id", msg.ID, "err", err)
+			continue
+		}
 		// Only re-insert messages that were removed the the pending list first.
-		_, err := p.reproduce(ctx, v, k)
-		if err != nil {
-			log.Error("Re-inserting pending messages with inactive consumers", "error", err)
+		if _, err := p.reproduce(ctx, req, msg.ID); err != nil {
+			log.Error("redis producer reproduce: error", "err", err)
 		}
 	}
 	return nil
@@ -184,18 +173,18 @@ func (p *Producer[Request, Response]) reproduceIds(ctx context.Context, staleIds
 func setMinIdInt(min *[2]uint64, id string) error {
 	idParts := strings.Split(id, "-")
 	if len(idParts) != 2 {
-		return errors.New("invalid i.d")
+		return fmt.Errorf("invalid i.d: %v", id)
 	}
 	idTimeStamp, err := strconv.ParseUint(idParts[0], 10, 64)
 	if err != nil {
-		return fmt.Errorf("invalid i.d ts: %w", err)
+		return fmt.Errorf("invalid i.d: %v err: %w", id, err)
 	}
 	if idTimeStamp > min[0] {
 		return nil
 	}
 	idSerial, err := strconv.ParseUint(idParts[1], 10, 64)
 	if err != nil {
-		return fmt.Errorf("invalid i.d serial: %w", err)
+		return fmt.Errorf("invalid i.d serial: %v err: %w", id, err)
 	}
 	if idTimeStamp < min[0] {
 		min[0] = idTimeStamp
@@ -324,6 +313,7 @@ func (p *Producer[Request, Response]) havePromiseFor(messageID string) bool {
 	return found
 }
 
+// returns ids of pending messages that's worker doesn't appear alive
 func (p *Producer[Request, Response]) checkPending(ctx context.Context) ([]string, error) {
 	pendingMessages, err := p.client.XPendingExt(ctx, &redis.XPendingExtArgs{
 		Stream: p.redisStream,
