@@ -51,7 +51,7 @@ type ClientConnection struct {
 	requestedSeqNum arbutil.MessageIndex
 	LastSentSeqNum  atomic.Uint64
 
-	lastHeardUnix int64
+	lastHeardUnix atomic.Int64
 	out           chan message
 	backlog       backlog.Backlog
 	registered    chan bool
@@ -74,7 +74,7 @@ func NewClientConnection(
 	delay time.Duration,
 	bklg backlog.Backlog,
 ) *ClientConnection {
-	return &ClientConnection{
+	clientConnection := &ClientConnection{
 		conn:            conn,
 		clientIp:        connectingIP,
 		desc:            desc,
@@ -82,7 +82,6 @@ func NewClientConnection(
 		Name:            fmt.Sprintf("%s@%s-%d", connectingIP, conn.RemoteAddr(), rand.Intn(10)),
 		clientAction:    clientAction,
 		requestedSeqNum: requestedSeqNum,
-		lastHeardUnix:   time.Now().Unix(),
 		out:             make(chan message, maxSendQueue),
 		compression:     compression,
 		flateReader:     NewFlateReader(),
@@ -91,6 +90,8 @@ func NewClientConnection(
 		registered:      make(chan bool, 1),
 		backlogSent:     false,
 	}
+	clientConnection.lastHeardUnix.Store(time.Now().Unix())
+	return clientConnection
 }
 
 func (cc *ClientConnection) Age() time.Duration {
@@ -287,7 +288,7 @@ func (cc *ClientConnection) RequestedSeqNum() arbutil.MessageIndex {
 }
 
 func (cc *ClientConnection) GetLastHeard() time.Time {
-	return time.Unix(atomic.LoadInt64(&cc.lastHeardUnix), 0)
+	return time.Unix(cc.lastHeardUnix.Load(), 0)
 }
 
 // Receive reads next message from client's underlying connection.
@@ -307,7 +308,7 @@ func (cc *ClientConnection) readRequest(ctx context.Context, timeout time.Durati
 	cc.ioMutex.Lock()
 	defer cc.ioMutex.Unlock()
 
-	atomic.StoreInt64(&cc.lastHeardUnix, time.Now().Unix())
+	cc.lastHeardUnix.Store(time.Now().Unix())
 
 	var data []byte
 	var opCode ws.OpCode
