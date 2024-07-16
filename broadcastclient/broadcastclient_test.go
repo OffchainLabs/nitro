@@ -268,7 +268,7 @@ func startMakeBroadcastClient(ctx context.Context, t *testing.T, clientConfig Co
 			}
 			timer.Stop()
 			if (!gotMsg && expectedCount > 0) || (gotMsg && expectedCount == 0) {
-				t.Errorf("Client %d expected %d meesages, got %d messages\n", index, expectedCount, messageCount)
+				t.Errorf("Client %d expected %d messages, got %d messages\n", index, expectedCount, messageCount)
 				return
 			}
 

@@ -74,7 +74,7 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 	// Stage 1: Extract the payload from any data availability header.
 	// It's important that multiple DAS strategies can't both be invoked in the same batch,
 	// as these headers are validated by the sequencer inbox and not other DASs.
-	// We try to extract payload from the first occuring valid DA reader in the dapReaders list
+	// We try to extract payload from the first occurring valid DA reader in the dapReaders list
 	if len(payload) > 0 {
 		foundDA := false
 		var err error

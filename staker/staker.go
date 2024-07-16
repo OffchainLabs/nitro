@@ -260,7 +260,7 @@ type ValidatorWalletInterface interface {
 	Initialize(context.Context) error
 	// Address must be able to be called concurrently with other functions
 	Address() *common.Address
-	// Address must be able to be called concurrently with other functions
+	// AddressOrZero must be able to be called concurrently with other functions
 	AddressOrZero() common.Address
 	TxSenderAddress() *common.Address
 	RollupAddress() common.Address
