@@ -61,7 +61,7 @@ func ValidationClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 type ValidationClient struct {
 	stopwaiter.StopWaiter
 	config *ValidationClientConfig
-	room   int32
+	room   atomic.Int32
 	// producers stores moduleRoot to producer mapping.
 	producers   map[common.Hash]*pubsub.Producer[*validator.ValidationInput, validator.GoGlobalState]
 	redisClient redis.UniversalClient
@@ -76,12 +76,13 @@ func NewValidationClient(cfg *ValidationClientConfig) (*ValidationClient, error)
 	if err != nil {
 		return nil, err
 	}
-	return &ValidationClient{
+	validationClient := &ValidationClient{
 		config:      cfg,
-		room:        cfg.Room,
 		producers:   make(map[common.Hash]*pubsub.Producer[*validator.ValidationInput, validator.GoGlobalState]),
 		redisClient: redisClient,
-	}, nil
+	}
+	validationClient.room.Store(cfg.Room)
+	return validationClient, nil
 }
 
 func (c *ValidationClient) Initialize(ctx context.Context, moduleRoots []common.Hash) error {
@@ -113,8 +114,8 @@ func (c *ValidationClient) WasmModuleRoots() ([]common.Hash, error) {
 }
 
 func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
-	atomic.AddInt32(&c.room, -1)
-	defer atomic.AddInt32(&c.room, 1)
+	c.room.Add(-1)
+	defer c.room.Add(1)
 	producer, found := c.producers[moduleRoot]
 	if !found {
 		errPromise := containers.NewReadyPromise(validator.GoGlobalState{}, fmt.Errorf("no validation is configured for wasm root %v", moduleRoot))
@@ -148,5 +149,5 @@ func (c *ValidationClient) Name() string {
 }
 
 func (c *ValidationClient) Room() int {
-	return int(atomic.LoadInt32(&c.room))
+	return int(c.room.Load())
 }

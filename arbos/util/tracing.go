@@ -56,11 +56,8 @@ func (info *TracingInfo) RecordEmitLog(topics []common.Hash, data []byte) {
 	for _, topic := range topics {
 		args = append(args, HashToUint256(topic)) // topic: 32-byte value. Max topics count is 4
 	}
-	memory := vm.NewMemory()
-	memory.Resize(size)
-	memory.Set(0, size, data)
 	scope := &vm.ScopeContext{
-		Memory:   memory,
+		Memory:   TracingMemoryFromBytes(data),
 		Stack:    TracingStackFromArgs(args...),
 		Contract: info.Contract,
 	}
