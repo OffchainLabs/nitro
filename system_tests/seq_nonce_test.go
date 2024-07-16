@@ -67,7 +67,7 @@ func TestSequencerNonceTooHigh(t *testing.T) {
 	cleanup := builder.Build(t)
 	defer cleanup()
 
-	builder.L2Info.GetInfoWithPrivKey("Owner").Nonce++
+	builder.L2Info.GetInfoWithPrivKey("Owner").Nonce.Add(1)
 
 	before := time.Now()
 	tx := builder.L2Info.PrepareTx("Owner", "Owner", builder.L2Info.TransferGas, common.Big0, nil)
@@ -97,21 +97,21 @@ func TestSequencerNonceTooHighQueueFull(t *testing.T) {
 	defer cleanup()
 
 	count := 15
-	var completed uint64
+	var completed atomic.Uint64
 	for i := 0; i < count; i++ {
-		builder.L2Info.GetInfoWithPrivKey("Owner").Nonce++
+		builder.L2Info.GetInfoWithPrivKey("Owner").Nonce.Add(1)
 		tx := builder.L2Info.PrepareTx("Owner", "Owner", builder.L2Info.TransferGas, common.Big0, nil)
 		go func() {
 			err := builder.L2.Client.SendTransaction(ctx, tx)
 			if err == nil {
 				Fatal(t, "No error when nonce was too high")
 			}
-			atomic.AddUint64(&completed, 1)
+			completed.Add(1)
 		}()
 	}
 
 	for wait := 9; wait >= 0; wait-- {
-		got := int(atomic.LoadUint64(&completed))
+		got := int(completed.Load())
 		expected := count - builder.execConfig.Sequencer.NonceFailureCacheSize
 		if got == expected {
 			break

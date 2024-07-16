@@ -20,6 +20,7 @@ import (
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/core/types"
 )
 
 var rollupInitializedID common.Hash
@@ -165,7 +166,7 @@ func (r *RollupWatcher) LookupNode(ctx context.Context, number uint64) (*NodeInf
 	}, nil
 }
 
-func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, nodeNum uint64, nodeHash common.Hash) ([]*NodeInfo, error) {
+func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, nodeNum uint64, logQueryRangeSize uint64, nodeHash common.Hash) ([]*NodeInfo, error) {
 	node, err := r.RollupUserLogic.GetNode(r.getCallOpts(ctx), nodeNum)
 	if err != nil {
 		return nil, err
@@ -180,17 +181,32 @@ func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, nodeNum uint64, 
 		Addresses: []common.Address{r.address},
 		Topics:    [][]common.Hash{{nodeCreatedID}, nil, {nodeHash}},
 	}
-	query.FromBlock, err = r.getNodeCreationBlock(ctx, nodeNum)
+	fromBlock, err := r.getNodeCreationBlock(ctx, nodeNum)
 	if err != nil {
 		return nil, err
 	}
-	query.ToBlock, err = r.getNodeCreationBlock(ctx, node.LatestChildNumber)
+	toBlock, err := r.getNodeCreationBlock(ctx, node.LatestChildNumber)
 	if err != nil {
 		return nil, err
 	}
-	logs, err := r.client.FilterLogs(ctx, query)
-	if err != nil {
-		return nil, err
+	var logs []types.Log
+	// break down the query to avoid eth_getLogs query limit
+	for toBlock.Cmp(fromBlock) > 0 {
+		query.FromBlock = fromBlock
+		if logQueryRangeSize == 0 {
+			query.ToBlock = toBlock
+		} else {
+			query.ToBlock = new(big.Int).Add(fromBlock, big.NewInt(int64(logQueryRangeSize)))
+		}
+		if query.ToBlock.Cmp(toBlock) > 0 {
+			query.ToBlock = toBlock
+		}
+		segment, err := r.client.FilterLogs(ctx, query)
+		if err != nil {
+			return nil, err
+		}
+		logs = append(logs, segment...)
+		fromBlock = new(big.Int).Add(query.ToBlock, big.NewInt(1))
 	}
 	infos := make([]*NodeInfo, 0, len(logs))
 	lastHash := nodeHash
