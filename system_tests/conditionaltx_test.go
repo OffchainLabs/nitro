@@ -58,7 +58,7 @@ func testConditionalTxThatShouldSucceed(t *testing.T, ctx context.Context, idx i
 func testConditionalTxThatShouldFail(t *testing.T, ctx context.Context, idx int, l2info info, rpcClient *rpc.Client, options *arbitrum_types.ConditionalOptions, expectedErrorCode int) {
 	t.Helper()
 	accountInfo := l2info.GetInfoWithPrivKey("Owner")
-	nonce := accountInfo.Nonce
+	nonce := accountInfo.Nonce.Load()
 	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
 	err := arbitrum.SendConditionalTransactionRPC(ctx, rpcClient, tx, options)
 	if err == nil {
@@ -77,7 +77,7 @@ func testConditionalTxThatShouldFail(t *testing.T, ctx context.Context, idx int,
 			Fatal(t, "unexpected error type, err:", err)
 		}
 	}
-	accountInfo.Nonce = nonce // revert nonce as the tx failed
+	accountInfo.Nonce.Store(nonce) // revert nonce as the tx failed
 }
 
 func getEmptyOptions(address common.Address) []*arbitrum_types.ConditionalOptions {
