@@ -62,6 +62,7 @@ type ProducerConfig struct {
 	KeepAliveTimeout time.Duration `koanf:"keepalive-timeout"`
 	// Interval duration for checking the result set by consumers.
 	CheckResultInterval time.Duration `koanf:"check-result-interval"`
+	CheckPendingItems   int64         `koanf:"check-pending-items"`
 }
 
 var DefaultProducerConfig = ProducerConfig{
@@ -69,6 +70,7 @@ var DefaultProducerConfig = ProducerConfig{
 	CheckPendingInterval: time.Second,
 	KeepAliveTimeout:     5 * time.Minute,
 	CheckResultInterval:  5 * time.Second,
+	CheckPendingItems:    256,
 }
 
 var TestProducerConfig = ProducerConfig{
@@ -76,6 +78,7 @@ var TestProducerConfig = ProducerConfig{
 	CheckPendingInterval: 10 * time.Millisecond,
 	KeepAliveTimeout:     100 * time.Millisecond,
 	CheckResultInterval:  5 * time.Millisecond,
+	CheckPendingItems:    256,
 }
 
 func ProducerAddConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -83,6 +86,7 @@ func ProducerAddConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".check-pending-interval", DefaultProducerConfig.CheckPendingInterval, "interval in which producer checks pending messages whether consumer processing them is inactive")
 	f.Duration(prefix+".check-result-interval", DefaultProducerConfig.CheckResultInterval, "interval in which producer checks pending messages whether consumer processing them is inactive")
 	f.Duration(prefix+".keepalive-timeout", DefaultProducerConfig.KeepAliveTimeout, "timeout after which consumer is considered inactive if heartbeat wasn't performed")
+	f.Int64(prefix+".check-pending-items", DefaultProducerConfig.CheckPendingItems, "items to screen during check-pending")
 }
 
 func NewProducer[Request any, Response any](client redis.UniversalClient, streamName string, cfg *ProducerConfig) (*Producer[Request, Response], error) {
@@ -320,7 +324,7 @@ func (p *Producer[Request, Response]) checkPending(ctx context.Context) ([]strin
 		Group:  p.redisGroup,
 		Start:  "-",
 		End:    "+",
-		Count:  100,
+		Count:  p.cfg.CheckPendingItems,
 	}).Result()
 
 	if err != nil && !errors.Is(err, redis.Nil) {
@@ -328,6 +332,9 @@ func (p *Producer[Request, Response]) checkPending(ctx context.Context) ([]strin
 	}
 	if len(pendingMessages) == 0 {
 		return nil, nil
+	}
+	if len(pendingMessages) >= int(p.cfg.CheckPendingItems) {
+		log.Warn("redis producer: many pending items found", "stream", p.redisStream, "check-pending-items", p.cfg.CheckPendingItems)
 	}
 	// IDs of the pending messages with inactive consumers.
 	var ids []string

@@ -63,6 +63,7 @@ func producerCfg() *ProducerConfig {
 		CheckPendingInterval: TestProducerConfig.CheckPendingInterval,
 		KeepAliveTimeout:     TestProducerConfig.KeepAliveTimeout,
 		CheckResultInterval:  TestProducerConfig.CheckResultInterval,
+		CheckPendingItems:    TestProducerConfig.CheckPendingItems,
 	}
 }
 
