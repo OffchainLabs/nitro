@@ -274,7 +274,7 @@ func stringToSliceDurationHookFunc(sep string) mapstructure.DecodeHookFunc {
 			return data, nil
 		}
 
-		raw := data.(string)
+		raw, _ := data.(string)
 		if raw == "" {
 			return []time.Duration{}, nil
 		}
