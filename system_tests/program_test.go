@@ -7,6 +7,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/binary"
+	"encoding/json"
 	"fmt"
 	"math"
 	"math/big"
@@ -958,12 +959,32 @@ func testMemory(t *testing.T, jit bool) {
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
+	l2rpc := l2client.Client()
+	defer l2rpc.Close()
 	defer cleanup()
+
+	trace := func(ctx context.Context, tx *types.Transaction) error {
+		var result json.RawMessage
+		err := l2rpc.CallContext(ctx, &result, "debug_traceTransaction", tx.Hash(), map[string]interface{}{"tracer": "callTracer"})
+		if err != nil {
+			return err
+		}
+		b, err := json.MarshalIndent(result, "", "\t")
+		if err != nil {
+			return err
+		}
+		colors.PrintPink(string(b), "\n")
+		return nil
+	}
 
 	ensure := func(tx *types.Transaction, err error) *types.Receipt {
 		t.Helper()
 		Require(t, err)
 		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		if err != nil {
+			trErr := trace(ctx, tx)
+			Require(t, trErr)
+		}
 		Require(t, err)
 		return receipt
 	}
