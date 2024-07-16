@@ -205,6 +205,7 @@ COPY ./scripts/download-machine.sh .
 #RUN ./download-machine.sh consensus-v11.1 0x68e4fe5023f792d4ef584796c84d710303a5e12ea02d6e37e2b5e9c4332507c4
 #RUN ./download-machine.sh consensus-v20 0x8b104a2e80ac6165dc58b9048de12f301d70b02a0ab51396c22b4b4b802a16a4
 RUN ./download-machine.sh consensus-v30 0xb0de9cb89e4d944ae6023a3b62276e54804c242fd8c4c2d8e6cc4450f5fa8b1b && true
+RUN ./download-machine.sh consensus-v31 0x260f5fa5c3176a856893642e149cf128b5a8de9f828afec8d11184415dd8dc69
 
 FROM golang:1.21.10-bookworm AS node-builder
 WORKDIR /workspace
@@ -249,7 +250,10 @@ COPY --from=node-builder /workspace/target/bin/nitro /usr/local/bin/
 COPY --from=node-builder /workspace/target/bin/relay /usr/local/bin/
 COPY --from=node-builder /workspace/target/bin/nitro-val /usr/local/bin/
 COPY --from=node-builder /workspace/target/bin/seq-coordinator-manager /usr/local/bin/
+COPY --from=node-builder /workspace/target/bin/prover /usr/local/bin/
 COPY --from=machine-versions /workspace/machines /home/user/target/machines
+COPY ./scripts/validate-wasm-module-root.sh .
+RUN ./validate-wasm-module-root.sh /home/user/target/machines /usr/local/bin/prover
 USER root
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
