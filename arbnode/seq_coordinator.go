@@ -39,7 +39,6 @@ type SeqCoordinator struct {
 
 	redisutil.RedisCoordinator
 
-	sync             *SyncMonitor
 	streamer         *TransactionStreamer
 	sequencer        execution.ExecutionSequencer
 	delayedSequencer *DelayedSequencer
@@ -49,7 +48,7 @@ type SeqCoordinator struct {
 	prevChosenSequencer  string
 	reportedWantsLockout bool
 
-	lockoutUntil int64 // atomic
+	lockoutUntil atomic.Int64 // atomic
 
 	wantsLockoutMutex sync.Mutex // manages access to acquireLockoutAndWriteMessage and generally the wants lockout key
 	avoidLockout      int        // If > 0, prevents acquiring the lockout but not extending the lockout if no alternative sequencer wants the lockout. Protected by chosenUpdateMutex.
@@ -150,7 +149,6 @@ func NewSeqCoordinator(
 	}
 	coordinator := &SeqCoordinator{
 		RedisCoordinator: *redisCoordinator,
-		sync:             sync,
 		streamer:         streamer,
 		sequencer:        sequencer,
 		config:           config,
@@ -193,14 +191,14 @@ func StandaloneSeqCoordinatorInvalidateMsgIndex(ctx context.Context, redisClient
 	return nil
 }
 
-func atomicTimeWrite(addr *int64, t time.Time) {
+func atomicTimeWrite(addr *atomic.Int64, t time.Time) {
 	asint64 := t.UnixMilli()
-	atomic.StoreInt64(addr, asint64)
+	addr.Store(asint64)
 }
 
 // notice: It is possible for two consecutive reads to get decreasing values. That shouldn't matter.
-func atomicTimeRead(addr *int64) time.Time {
-	asint64 := atomic.LoadInt64(addr)
+func atomicTimeRead(addr *atomic.Int64) time.Time {
+	asint64 := addr.Load()
 	return time.UnixMilli(asint64)
 }
 
@@ -607,9 +605,10 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		return c.noRedisError()
 	}
 
-	syncProgress := c.sync.SyncProgressMap()
-	synced := len(syncProgress) == 0
+	// Sequencer should want lockout if and only if- its synced, not avoiding lockout and execution processed every message that consensus had 1 second ago
+	synced := c.sequencer.Synced()
 	if !synced {
+		syncProgress := c.sequencer.FullSyncProgressMap()
 		var detailsList []interface{}
 		for key, value := range syncProgress {
 			detailsList = append(detailsList, key, value)
@@ -693,7 +692,7 @@ func (c *SeqCoordinator) DebugPrint() string {
 	return fmt.Sprint("Url:", c.config.Url(),
 		" prevChosenSequencer:", c.prevChosenSequencer,
 		" reportedWantsLockout:", c.reportedWantsLockout,
-		" lockoutUntil:", c.lockoutUntil,
+		" lockoutUntil:", c.lockoutUntil.Load(),
 		" redisErrors:", c.redisErrors)
 }
 
@@ -849,7 +848,7 @@ func (c *SeqCoordinator) SeekLockout(ctx context.Context) {
 	defer c.wantsLockoutMutex.Unlock()
 	c.avoidLockout--
 	log.Info("seeking lockout", "myUrl", c.config.Url())
-	if c.sync.Synced() {
+	if c.sequencer.Synced() {
 		// Even if this errors we still internally marked ourselves as wanting the lockout
 		err := c.wantsLockoutUpdateWithMutex(ctx)
 		if err != nil {

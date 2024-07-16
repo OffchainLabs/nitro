@@ -41,7 +41,7 @@ func TestProgramArbitratorReturnData(t *testing.T) {
 }
 
 func TestProgramArbitratorLogs(t *testing.T) {
-	testLogs(t, false)
+	testLogs(t, false, false)
 }
 
 func TestProgramArbitratorCreate(t *testing.T) {
@@ -107,4 +107,8 @@ func TestProgramLongCall(t *testing.T) {
 
 func TestProgramLongArbitratorCall(t *testing.T) {
 	testProgramResursiveCalls(t, fullRecurseTest(), false)
+}
+
+func TestProgramArbitratorStylusUpgrade(t *testing.T) {
+	testStylusUpgrade(t, false)
 }

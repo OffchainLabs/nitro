@@ -131,6 +131,38 @@ func TestRetryableNoExist(t *testing.T) {
 	}
 }
 
+func TestEstimateRetryableTicketWithNoFundsAndZeroGasPrice(t *testing.T) {
+	t.Parallel()
+	builder, _, _, ctx, teardown := retryableSetup(t)
+	defer teardown()
+
+	user2Address := builder.L2Info.GetAddress("User2")
+	beneficiaryAddress := builder.L2Info.GetAddress("Beneficiary")
+
+	deposit := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
+	callValue := big.NewInt(1e6)
+
+	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, builder.L2.Client)
+	Require(t, err, "failed to deploy NodeInterface")
+
+	builder.L2Info.GenerateAccount("zerofunds")
+	usertxoptsL2 := builder.L2Info.GetDefaultTransactOpts("zerofunds", ctx)
+	usertxoptsL2.NoSend = true
+	usertxoptsL2.GasMargin = 0
+	usertxoptsL2.GasPrice = big.NewInt(0)
+	_, err = nodeInterface.EstimateRetryableTicket(
+		&usertxoptsL2,
+		usertxoptsL2.From,
+		deposit,
+		user2Address,
+		callValue,
+		beneficiaryAddress,
+		beneficiaryAddress,
+		[]byte{},
+	)
+	Require(t, err, "failed to estimate retryable submission")
+}
+
 func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	t.Parallel()
 	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)

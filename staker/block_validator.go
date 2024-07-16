@@ -64,9 +64,9 @@ type BlockValidator struct {
 
 	// can be read (atomic.Load) by anyone holding reorg-read
 	// written (atomic.Set) by appropriate thread or (any way) holding reorg-write
-	createdA    uint64
-	recordSentA uint64
-	validatedA  uint64
+	createdA    atomic.Uint64
+	recordSentA atomic.Uint64
+	validatedA  atomic.Uint64
 	validations containers.SyncMap[arbutil.MessageIndex, *validationStatus]
 
 	config BlockValidatorConfigFetcher
@@ -208,19 +208,19 @@ const (
 )
 
 type validationStatus struct {
-	Status uint32                    // atomic: value is one of validationStatus*
+	Status atomic.Uint32             // atomic: value is one of validationStatus*
 	Cancel func()                    // non-atomic: only read/written to with reorg mutex
 	Entry  *validationEntry          // non-atomic: only read if Status >= validationStatusPrepared
 	Runs   []validator.ValidationRun // if status >= ValidationSent
 }
 
 func (s *validationStatus) getStatus() valStatusField {
-	uintStat := atomic.LoadUint32(&s.Status)
+	uintStat := s.Status.Load()
 	return valStatusField(uintStat)
 }
 
 func (s *validationStatus) replaceStatus(old, new valStatusField) bool {
-	return atomic.CompareAndSwapUint32(&s.Status, uint32(old), uint32(new))
+	return s.Status.CompareAndSwap(uint32(old), uint32(new))
 }
 
 func NewBlockValidator(
@@ -283,12 +283,12 @@ func NewBlockValidator(
 	return ret, nil
 }
 
-func atomicStorePos(addr *uint64, val arbutil.MessageIndex) {
-	atomic.StoreUint64(addr, uint64(val))
+func atomicStorePos(addr *atomic.Uint64, val arbutil.MessageIndex) {
+	addr.Store(uint64(val))
 }
 
-func atomicLoadPos(addr *uint64) arbutil.MessageIndex {
-	return arbutil.MessageIndex(atomic.LoadUint64(addr))
+func atomicLoadPos(addr *atomic.Uint64) arbutil.MessageIndex {
+	return arbutil.MessageIndex(addr.Load())
 }
 
 func (v *BlockValidator) created() arbutil.MessageIndex {
@@ -582,9 +582,9 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		return false, err
 	}
 	status := &validationStatus{
-		Status: uint32(Created),
-		Entry:  entry,
+		Entry: entry,
 	}
+	status.Status.Store(uint32(Created))
 	v.validations.Store(pos, status)
 	v.nextCreateStartGS = endGS
 	v.nextCreatePrevDelayed = msg.DelayedMessagesRead
@@ -815,7 +815,6 @@ validationsLoop:
 				v.possiblyFatal(errors.New("failed to set SendingValidation status"))
 			}
 			validatorPendingValidationsGauge.Inc(1)
-			defer validatorPendingValidationsGauge.Dec(1)
 			var runs []validator.ValidationRun
 			for _, moduleRoot := range wasmRoots {
 				run := v.chosenValidator[moduleRoot].Launch(input, moduleRoot)
@@ -826,6 +825,7 @@ validationsLoop:
 			validationStatus.Runs = runs
 			validationStatus.Cancel = cancel
 			v.LaunchUntrackedThread(func() {
+				defer validatorPendingValidationsGauge.Dec(1)
 				defer cancel()
 				replaced = validationStatus.replaceStatus(SendingValidation, ValidationSent)
 				if !replaced {
@@ -962,13 +962,13 @@ func (v *BlockValidator) UpdateLatestStaked(count arbutil.MessageIndex, globalSt
 		v.nextCreateStartGS = globalState
 		v.nextCreatePrevDelayed = msg.DelayedMessagesRead
 		v.nextCreateBatchReread = true
-		v.createdA = countUint64
+		v.createdA.Store(countUint64)
 	}
 	// under the reorg mutex we don't need atomic access
-	if v.recordSentA < countUint64 {
-		v.recordSentA = countUint64
+	if v.recordSentA.Load() < countUint64 {
+		v.recordSentA.Store(countUint64)
 	}
-	v.validatedA = countUint64
+	v.validatedA.Store(countUint64)
 	v.valLoopPos = count
 	validatorMsgCountValidatedGauge.Update(int64(countUint64))
 	err = v.writeLastValidated(globalState, nil) // we don't know which wasm roots were validated
@@ -1027,13 +1027,13 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 	v.nextCreatePrevDelayed = msg.DelayedMessagesRead
 	v.nextCreateBatchReread = true
 	countUint64 := uint64(count)
-	v.createdA = countUint64
+	v.createdA.Store(countUint64)
 	// under the reorg mutex we don't need atomic access
-	if v.recordSentA > countUint64 {
-		v.recordSentA = countUint64
+	if v.recordSentA.Load() > countUint64 {
+		v.recordSentA.Store(countUint64)
 	}
-	if v.validatedA > countUint64 {
-		v.validatedA = countUint64
+	if v.validatedA.Load() > countUint64 {
+		v.validatedA.Store(countUint64)
 		validatorMsgCountValidatedGauge.Update(int64(countUint64))
 		err := v.writeLastValidated(v.nextCreateStartGS, nil) // we don't know which wasm roots were validated
 		if err != nil {

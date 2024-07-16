@@ -523,14 +523,15 @@ func createNodeImpl(
 	var daWriter das.DataAvailabilityServiceWriter
 	var daReader das.DataAvailabilityServiceReader
 	var dasLifecycleManager *das.LifecycleManager
+	var dasKeysetFetcher *das.KeysetFetcher
 	if config.DataAvailability.Enable {
 		if config.BatchPoster.Enable {
-			daWriter, daReader, dasLifecycleManager, err = das.CreateBatchPosterDAS(ctx, &config.DataAvailability, dataSigner, l1client, deployInfo.SequencerInbox)
+			daWriter, daReader, dasKeysetFetcher, dasLifecycleManager, err = das.CreateBatchPosterDAS(ctx, &config.DataAvailability, dataSigner, l1client, deployInfo.SequencerInbox)
 			if err != nil {
 				return nil, err
 			}
 		} else {
-			daReader, dasLifecycleManager, err = das.CreateDAReaderForNode(ctx, &config.DataAvailability, l1Reader, &deployInfo.SequencerInbox)
+			daReader, dasKeysetFetcher, dasLifecycleManager, err = das.CreateDAReaderForNode(ctx, &config.DataAvailability, l1Reader, &deployInfo.SequencerInbox)
 			if err != nil {
 				return nil, err
 			}
@@ -554,7 +555,7 @@ func createNodeImpl(
 	}
 	var dapReaders []daprovider.Reader
 	if daReader != nil {
-		dapReaders = append(dapReaders, daprovider.NewReaderForDAS(daReader))
+		dapReaders = append(dapReaders, daprovider.NewReaderForDAS(daReader, dasKeysetFetcher))
 	}
 	if blobReader != nil {
 		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(blobReader))
@@ -791,17 +792,6 @@ func CreateNode(
 	stack.RegisterAPIs(apis)
 
 	return currentNode, nil
-}
-
-func (n *Node) CacheL1PriceDataOfMsg(pos arbutil.MessageIndex, callDataUnits uint64, l1GasCharged uint64) {
-	n.TxStreamer.CacheL1PriceDataOfMsg(pos, callDataUnits, l1GasCharged)
-}
-
-func (n *Node) BacklogL1GasCharged() uint64 {
-	return n.TxStreamer.BacklogL1GasCharged()
-}
-func (n *Node) BacklogCallDataUnits() uint64 {
-	return n.TxStreamer.BacklogCallDataUnits()
 }
 
 func (n *Node) Start(ctx context.Context) error {

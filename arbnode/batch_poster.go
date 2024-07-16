@@ -59,13 +59,19 @@ var (
 	baseFeeGauge                  = metrics.NewRegisteredGauge("arb/batchposter/basefee", nil)
 	blobFeeGauge                  = metrics.NewRegisteredGauge("arb/batchposter/blobfee", nil)
 	l1GasPriceGauge               = metrics.NewRegisteredGauge("arb/batchposter/l1gasprice", nil)
-	l1GasPriceEstimateGauge       = metrics.NewRegisteredGauge("arb/batchposter/l1gasprice/estimate", nil)
-	latestBatchSurplusGauge       = metrics.NewRegisteredGauge("arb/batchposter/latestbatchsurplus", nil)
 	blockGasUsedGauge             = metrics.NewRegisteredGauge("arb/batchposter/blockgas/used", nil)
 	blockGasLimitGauge            = metrics.NewRegisteredGauge("arb/batchposter/blockgas/limit", nil)
 	blobGasUsedGauge              = metrics.NewRegisteredGauge("arb/batchposter/blobgas/used", nil)
 	blobGasLimitGauge             = metrics.NewRegisteredGauge("arb/batchposter/blobgas/limit", nil)
 	suggestedTipCapGauge          = metrics.NewRegisteredGauge("arb/batchposter/suggestedtipcap", nil)
+
+	batchPosterEstimatedBatchBacklogGauge = metrics.NewRegisteredGauge("arb/batchposter/estimated_batch_backlog", nil)
+
+	batchPosterDALastSuccessfulActionGauge = metrics.NewRegisteredGauge("arb/batchPoster/action/da_last_success", nil)
+	batchPosterDASuccessCounter            = metrics.NewRegisteredCounter("arb/batchPoster/action/da_success", nil)
+	batchPosterDAFailureCounter            = metrics.NewRegisteredCounter("arb/batchPoster/action/da_failure", nil)
+
+	batchPosterFailureCounter = metrics.NewRegisteredCounter("arb/batchPoster/action/failure", nil)
 
 	usableBytesInBlob    = big.NewInt(int64(len(kzg4844.Blob{}) * 31 / 32))
 	blobTxBlobGasPerBlob = big.NewInt(params.BlobTxBlobGasPerBlob)
@@ -108,7 +114,7 @@ type BatchPoster struct {
 	// This is an atomic variable that should only be accessed atomically.
 	// An estimate of the number of batches we want to post but haven't yet.
 	// This doesn't include batches which we don't want to post yet due to the L1 bounds.
-	backlog         uint64
+	backlog         atomic.Uint64
 	lastHitL1Bounds time.Time // The last time we wanted to post a message but hit the L1 bounds
 
 	batchReverted        atomic.Bool // indicates whether data poster batch was reverted
@@ -164,6 +170,7 @@ type BatchPosterConfig struct {
 	UseAccessLists                 bool                        `koanf:"use-access-lists" reload:"hot"`
 	GasEstimateBaseFeeMultipleBips arbmath.Bips                `koanf:"gas-estimate-base-fee-multiple-bips"`
 	Dangerous                      BatchPosterDangerousConfig  `koanf:"dangerous"`
+	ReorgResistanceMargin          time.Duration               `koanf:"reorg-resistance-margin" reload:"hot"`
 	CheckBatchCorrectness          bool                        `koanf:"check-batch-correctness" reload:"hot"`
 
 	gasRefunder  common.Address
@@ -216,6 +223,7 @@ func BatchPosterConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".l1-block-bound-bypass", DefaultBatchPosterConfig.L1BlockBoundBypass, "post batches even if not within the layer 1 future bounds if we're within this margin of the max delay")
 	f.Bool(prefix+".use-access-lists", DefaultBatchPosterConfig.UseAccessLists, "post batches with access lists to reduce gas usage (disabled for L3s)")
 	f.Uint64(prefix+".gas-estimate-base-fee-multiple-bips", uint64(DefaultBatchPosterConfig.GasEstimateBaseFeeMultipleBips), "for gas estimation, use this multiple of the basefee (measured in basis points) as the max fee per gas")
+	f.Duration(prefix+".reorg-resistance-margin", DefaultBatchPosterConfig.ReorgResistanceMargin, "do not post batch if its within this duration from layer 1 minimum bounds. Requires l1-block-bound option not be set to \"ignore\"")
 	f.Bool(prefix+".check-batch-correctness", DefaultBatchPosterConfig.CheckBatchCorrectness, "setting this to true will run the batch against an inbox multiplexer and verifies that it produces the correct set of messages")
 	redislock.AddConfigOptions(prefix+".redis-lock", f)
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfig)
@@ -246,6 +254,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	UseAccessLists:                 true,
 	RedisLock:                      redislock.DefaultCfg,
 	GasEstimateBaseFeeMultipleBips: arbmath.OneInBips * 3 / 2,
+	ReorgResistanceMargin:          10 * time.Minute,
 	CheckBatchCorrectness:          true,
 }
 
@@ -604,9 +613,7 @@ func (b *BatchPoster) pollForL1PriceData(ctx context.Context) {
 			} else {
 				suggestedTipCapGauge.Update(suggestedTipCap.Int64())
 			}
-			l1GasPriceEstimate := b.streamer.CurrentEstimateOfL1GasPrice()
 			l1GasPriceGauge.Update(int64(l1GasPrice))
-			l1GasPriceEstimateGauge.Update(int64(l1GasPriceEstimate))
 		case <-ctx.Done():
 			return
 		}
@@ -1124,7 +1131,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 				if config.IgnoreBlobPrice {
 					use4844 = true
 				} else {
-					backlog := atomic.LoadUint64(&b.backlog)
+					backlog := b.backlog.Load()
 					// Logic to prevent switching from non-4844 batches to 4844 batches too often,
 					// so that blocks can be filled efficiently. The geth txpool rejects txs for
 					// accounts that already have the other type of txs in the pool with
@@ -1183,6 +1190,8 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	var l1BoundMaxTimestamp uint64 = math.MaxUint64
 	var l1BoundMinBlockNumber uint64
 	var l1BoundMinTimestamp uint64
+	var l1BoundMinBlockNumberWithBypass uint64
+	var l1BoundMinTimestampWithBypass uint64
 	hasL1Bound := config.l1BlockBound != l1BlockBoundIgnore
 	if hasL1Bound {
 		var l1Bound *types.Header
@@ -1227,17 +1236,19 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		l1BoundMaxBlockNumber = arbmath.SaturatingUAdd(l1BoundBlockNumber, arbmath.BigToUintSaturating(maxTimeVariationFutureBlocks))
 		l1BoundMaxTimestamp = arbmath.SaturatingUAdd(l1Bound.Time, arbmath.BigToUintSaturating(maxTimeVariationFutureSeconds))
 
+		latestHeader, err := b.l1Reader.LastHeader(ctx)
+		if err != nil {
+			return false, err
+		}
+		latestBlockNumber := arbutil.ParentHeaderToL1BlockNumber(latestHeader)
+		l1BoundMinBlockNumber = arbmath.SaturatingUSub(latestBlockNumber, arbmath.BigToUintSaturating(maxTimeVariationDelayBlocks))
+		l1BoundMinTimestamp = arbmath.SaturatingUSub(latestHeader.Time, arbmath.BigToUintSaturating(maxTimeVariationDelaySeconds))
+
 		if config.L1BlockBoundBypass > 0 {
-			latestHeader, err := b.l1Reader.LastHeader(ctx)
-			if err != nil {
-				return false, err
-			}
-			latestBlockNumber := arbutil.ParentHeaderToL1BlockNumber(latestHeader)
 			blockNumberWithPadding := arbmath.SaturatingUAdd(latestBlockNumber, uint64(config.L1BlockBoundBypass/ethPosBlockTime))
 			timestampWithPadding := arbmath.SaturatingUAdd(latestHeader.Time, uint64(config.L1BlockBoundBypass/time.Second))
-
-			l1BoundMinBlockNumber = arbmath.SaturatingUSub(blockNumberWithPadding, arbmath.BigToUintSaturating(maxTimeVariationDelayBlocks))
-			l1BoundMinTimestamp = arbmath.SaturatingUSub(timestampWithPadding, arbmath.BigToUintSaturating(maxTimeVariationDelaySeconds))
+			l1BoundMinBlockNumberWithBypass = arbmath.SaturatingUSub(blockNumberWithPadding, arbmath.BigToUintSaturating(maxTimeVariationDelayBlocks))
+			l1BoundMinTimestampWithBypass = arbmath.SaturatingUSub(timestampWithPadding, arbmath.BigToUintSaturating(maxTimeVariationDelaySeconds))
 		}
 	}
 
@@ -1247,13 +1258,14 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			log.Error("error getting message from streamer", "error", err)
 			break
 		}
-		if msg.Message.Header.BlockNumber < l1BoundMinBlockNumber || msg.Message.Header.Timestamp < l1BoundMinTimestamp {
+		if msg.Message.Header.BlockNumber < l1BoundMinBlockNumberWithBypass || msg.Message.Header.Timestamp < l1BoundMinTimestampWithBypass {
 			log.Error(
 				"disabling L1 bound as batch posting message is close to the maximum delay",
 				"blockNumber", msg.Message.Header.BlockNumber,
-				"l1BoundMinBlockNumber", l1BoundMinBlockNumber,
+				"l1BoundMinBlockNumberWithBypass", l1BoundMinBlockNumberWithBypass,
 				"timestamp", msg.Message.Header.Timestamp,
-				"l1BoundMinTimestamp", l1BoundMinTimestamp,
+				"l1BoundMinTimestampWithBypass", l1BoundMinTimestampWithBypass,
+				"l1BlockBoundBypass", config.L1BlockBoundBypass,
 			)
 			l1BoundMaxBlockNumber = math.MaxUint64
 			l1BoundMaxTimestamp = math.MaxUint64
@@ -1296,11 +1308,30 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		b.building.msgCount++
 	}
 
+	if hasL1Bound && config.ReorgResistanceMargin > 0 {
+		firstMsgBlockNumber := firstMsg.Message.Header.BlockNumber
+		firstMsgTimeStamp := firstMsg.Message.Header.Timestamp
+		batchNearL1BoundMinBlockNumber := firstMsgBlockNumber <= arbmath.SaturatingUAdd(l1BoundMinBlockNumber, uint64(config.ReorgResistanceMargin/ethPosBlockTime))
+		batchNearL1BoundMinTimestamp := firstMsgTimeStamp <= arbmath.SaturatingUAdd(l1BoundMinTimestamp, uint64(config.ReorgResistanceMargin/time.Second))
+		if batchNearL1BoundMinTimestamp || batchNearL1BoundMinBlockNumber {
+			log.Error(
+				"Disabling batch posting due to batch being within reorg resistance margin from layer 1 minimum block or timestamp bounds",
+				"reorgResistanceMargin", config.ReorgResistanceMargin,
+				"firstMsgTimeStamp", firstMsgTimeStamp,
+				"l1BoundMinTimestamp", l1BoundMinTimestamp,
+				"firstMsgBlockNumber", firstMsgBlockNumber,
+				"l1BoundMinBlockNumber", l1BoundMinBlockNumber,
+			)
+			return false, errors.New("batch is within reorg resistance margin from layer 1 minimum block or timestamp bounds")
+		}
+	}
+
 	if !forcePostBatch || !b.building.haveUsefulMessage {
 		// the batch isn't full yet and we've posted a batch recently
 		// don't post anything for now
 		return false, nil
 	}
+
 	sequencerMsg, err := b.building.segments.CloseAndGetBytes()
 	if err != nil {
 		return false, err
@@ -1318,15 +1349,21 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 
 		gotNonce, gotMeta, err := b.dataPoster.GetNextNonceAndMeta(ctx)
 		if err != nil {
+			batchPosterDAFailureCounter.Inc(1)
 			return false, err
 		}
 		if nonce != gotNonce || !bytes.Equal(batchPositionBytes, gotMeta) {
+			batchPosterDAFailureCounter.Inc(1)
 			return false, fmt.Errorf("%w: nonce changed from %d to %d while creating batch", storage.ErrStorageRace, nonce, gotNonce)
 		}
-		sequencerMsg, err = b.dapWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{}, config.DisableDapFallbackStoreDataOnChain)
+		sequencerMsg, err = b.dapWriter.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), config.DisableDapFallbackStoreDataOnChain)
 		if err != nil {
+			batchPosterDAFailureCounter.Inc(1)
 			return false, err
 		}
+
+		batchPosterDASuccessCounter.Inc(1)
+		batchPosterDALastSuccessfulActionGauge.Update(time.Now().Unix())
 	}
 
 	prevMessageCount := batchPosition.MessageCount
@@ -1443,14 +1480,6 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		"numBlobs", len(kzgBlobs),
 	)
 
-	surplus := arbmath.SaturatingMul(
-		arbmath.SaturatingSub(
-			l1GasPriceGauge.Snapshot().Value(),
-			l1GasPriceEstimateGauge.Snapshot().Value()),
-		int64(len(sequencerMsg)*16),
-	)
-	latestBatchSurplusGauge.Update(surplus)
-
 	recentlyHitL1Bounds := time.Since(b.lastHitL1Bounds) < config.PollInterval*3
 	postedMessages := b.building.msgCount - batchPosition.MessageCount
 	b.messagesPerBatch.Update(uint64(postedMessages))
@@ -1473,6 +1502,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		messagesPerBatch = 1
 	}
 	backlog := uint64(unpostedMessages) / messagesPerBatch
+	batchPosterEstimatedBatchBacklogGauge.Update(int64(backlog))
 	if backlog > 10 {
 		logLevel := log.Warn
 		if recentlyHitL1Bounds {
@@ -1496,7 +1526,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		// Setting the backlog to 0 here ensures that we don't lower compression as a result.
 		backlog = 0
 	}
-	atomic.StoreUint64(&b.backlog, backlog)
+	b.backlog.Store(backlog)
 	b.building = nil
 
 	// If we aren't queueing up transactions, wait for the receipt before moving on to the next batch.
@@ -1512,7 +1542,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 }
 
 func (b *BatchPoster) GetBacklogEstimate() uint64 {
-	return atomic.LoadUint64(&b.backlog)
+	return b.backlog.Load()
 }
 
 func (b *BatchPoster) Start(ctxIn context.Context) {
@@ -1585,6 +1615,7 @@ func (b *BatchPoster) Start(ctxIn context.Context) {
 			logLevel = normalGasEstimationFailedEphemeralErrorHandler.LogLevel(err, logLevel)
 			logLevel = accumulatorNotFoundEphemeralErrorHandler.LogLevel(err, logLevel)
 			logLevel("error posting batch", "err", err)
+			batchPosterFailureCounter.Inc(1)
 			return b.config().ErrorDelay
 		} else if posted {
 			return 0

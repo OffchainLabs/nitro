@@ -20,7 +20,7 @@ import (
 
 type DataAvailabilityServiceWriter interface {
 	// Store requests that the message be stored until timeout (UTC time in unix epoch seconds).
-	Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*daprovider.DataAvailabilityCertificate, error)
+	Store(ctx context.Context, message []byte, timeout uint64) (*daprovider.DataAvailabilityCertificate, error)
 	fmt.Stringer
 }
 
@@ -44,6 +44,8 @@ type DataAvailabilityConfig struct {
 	LocalDBStorage   LocalDBStorageConfig   `koanf:"local-db-storage"`
 	LocalFileStorage LocalFileStorageConfig `koanf:"local-file-storage"`
 	S3Storage        S3StorageServiceConfig `koanf:"s3-storage"`
+
+	MigrateLocalDBToFileStorage bool `koanf:"migrate-local-db-to-file-storage"`
 
 	Key KeyConfig `koanf:"key"`
 
@@ -112,6 +114,7 @@ func dataAvailabilityConfigAddOptions(prefix string, f *flag.FlagSet, r role) {
 		LocalDBStorageConfigAddOptions(prefix+".local-db-storage", f)
 		LocalFileStorageConfigAddOptions(prefix+".local-file-storage", f)
 		S3ConfigAddOptions(prefix+".s3-storage", f)
+		f.Bool(prefix+".migrate-local-db-to-file-storage", DefaultDataAvailabilityConfig.MigrateLocalDBToFileStorage, "daserver will migrate all data on startup from local-db-storage to local-file-storage, then mark local-db-storage as unusable")
 
 		// Key config for storage
 		KeyConfigAddOptions(prefix+".key", f)
