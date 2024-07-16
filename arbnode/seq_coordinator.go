@@ -487,7 +487,7 @@ func (c *SeqCoordinator) updateWithLockout(ctx context.Context, nextChosen strin
 	finalized, err := c.sync.GetFinalizedMsgCount(ctx)
 	if err != nil {
 		log.Warn("Error getting finalizedMessageCount from syncMonitor: %w", err)
-	} else if finalized != 0 {
+	} else if finalized == 0 {
 		log.Warn("SyncMonitor returned zero finalizedMessageCount")
 	} else if err := c.deleteFinalizedMsgsFromRedis(ctx, finalized); err != nil {
 		log.Warn("Coordinator failed to delete finalized messages from redis", "err", err)
@@ -525,7 +525,7 @@ func (c *SeqCoordinator) deleteFinalizedMsgsFromRedis(ctx context.Context, final
 	prevFinalized, err := c.getRemoteFinalizedMsgCount(ctx)
 	if errors.Is(err, redis.Nil) {
 		var keys []string
-		for msg := finalized; msg > 0; msg-- {
+		for msg := finalized - 1; msg > 0; msg-- {
 			exists, err := c.Client.Exists(ctx, redisutil.MessageKeyFor(msg), redisutil.MessageSigKeyFor(msg)).Result()
 			if exists == 0 || err != nil {
 				break
@@ -547,10 +547,10 @@ func (c *SeqCoordinator) deleteFinalizedMsgsFromRedis(ctx context.Context, final
 	if err != nil {
 		return fmt.Errorf("cannot get remote message count: %w", err)
 	}
-	msgToDelete := min(finalized, remoteMsgCount-1)
+	msgToDelete := min(finalized, remoteMsgCount)
 	if prevFinalized < msgToDelete {
 		var keys []string
-		for msg := prevFinalized + 1; msg <= msgToDelete; msg++ {
+		for msg := prevFinalized; msg < msgToDelete; msg++ {
 			keys = append(keys, redisutil.MessageKeyFor(msg), redisutil.MessageSigKeyFor(msg))
 		}
 		if err := c.Client.Del(ctx, keys...).Err(); err != nil {

@@ -213,10 +213,10 @@ func TestSeqCoordinatorDeletesFinalizedMessages(t *testing.T) {
 	Require(t, err)
 
 	// Check if messages and signatures were deleted successfully
-	exists, err = coordinator.Client.Exists(ctx, keys[:10]...).Result()
+	exists, err = coordinator.Client.Exists(ctx, keys[:8]...).Result()
 	Require(t, err)
 	if exists != 0 {
-		t.Fatal("finalized messages and signatures in range 1 to 5 were not deleted")
+		t.Fatal("finalized messages and signatures in range 1 to 4 were not deleted")
 	}
 
 	// Check if finalizedMsgCount was set to correct value
@@ -229,14 +229,21 @@ func TestSeqCoordinatorDeletesFinalizedMessages(t *testing.T) {
 	// Try deleting finalized messages when theres already a finalizedMsgCount
 	err = coordinator.deleteFinalizedMsgsFromRedis(ctx, 7)
 	Require(t, err)
-	exists, err = coordinator.Client.Exists(ctx, keys[10:14]...).Result()
+	exists, err = coordinator.Client.Exists(ctx, keys[8:12]...).Result()
 	Require(t, err)
 	if exists != 0 {
-		t.Fatal("finalized messages and signatures in range 6 to 7 were not deleted")
+		t.Fatal("finalized messages and signatures in range 5 to 6 were not deleted")
 	}
 	finalized, err = coordinator.getRemoteFinalizedMsgCount(ctx)
 	Require(t, err)
 	if finalized != 7 {
 		t.Fatalf("incorrect finalizedMsgCount, want: 7, have: %d", finalized)
+	}
+
+	// Check that non-finalized messages are still available in redis
+	exists, err = coordinator.Client.Exists(ctx, keys[12:]...).Result()
+	Require(t, err)
+	if exists != 8 {
+		t.Fatal("non-finalized messages and signatures in range 7 to 10 are not fully available")
 	}
 }
