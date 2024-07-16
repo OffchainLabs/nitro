@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -325,6 +326,7 @@ func TestRecreateStateForRPCBlockNotFoundWhileRecreating(t *testing.T) {
 }
 
 func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig *gethexec.CachingConfig, txCount int) {
+	t.Parallel()
 	maxRecreateStateDepth := int64(30 * 1000 * 1000)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -432,20 +434,26 @@ func TestSkippingSavingStateAndRecreatingAfterRestart(t *testing.T) {
 	cacheConfig.SnapshotCache = 0 // disable snapshots
 	cacheConfig.BlockAge = 0      // use only Caching.BlockCount to keep only last N blocks in dirties cache, no matter how new they are
 
+	runTestCase := func(t *testing.T, cacheConfig gethexec.CachingConfig, txes int) {
+		t.Run(fmt.Sprintf("TestSkippingSavingStateAndRecreatingAfterRestart-skip-blocks-%d-skip-gas-%d-txes-%d", cacheConfig.MaxNumberOfBlocksToSkipStateSaving, cacheConfig.MaxAmountOfGasToSkipStateSaving, txes), func(t *testing.T) {
+			testSkippingSavingStateAndRecreatingAfterRestart(t, &cacheConfig, txes)
+		})
+	}
+
 	// test defaults
-	testSkippingSavingStateAndRecreatingAfterRestart(t, &cacheConfig, 512)
+	runTestCase(t, cacheConfig, 512)
 
 	cacheConfig.MaxNumberOfBlocksToSkipStateSaving = 127
 	cacheConfig.MaxAmountOfGasToSkipStateSaving = 0
-	testSkippingSavingStateAndRecreatingAfterRestart(t, &cacheConfig, 512)
+	runTestCase(t, cacheConfig, 512)
 
 	cacheConfig.MaxNumberOfBlocksToSkipStateSaving = 0
 	cacheConfig.MaxAmountOfGasToSkipStateSaving = 15 * 1000 * 1000
-	testSkippingSavingStateAndRecreatingAfterRestart(t, &cacheConfig, 512)
+	runTestCase(t, cacheConfig, 512)
 
 	cacheConfig.MaxNumberOfBlocksToSkipStateSaving = 127
 	cacheConfig.MaxAmountOfGasToSkipStateSaving = 15 * 1000 * 1000
-	testSkippingSavingStateAndRecreatingAfterRestart(t, &cacheConfig, 512)
+	runTestCase(t, cacheConfig, 512)
 
 	// lower number of blocks in triegc below 100 blocks, to be able to check for nonexistence in testSkippingSavingStateAndRecreatingAfterRestart (it doesn't check last BlockCount blocks as some of them may be persisted on node shutdown)
 	cacheConfig.BlockCount = 16
@@ -460,21 +468,16 @@ func TestSkippingSavingStateAndRecreatingAfterRestart(t *testing.T) {
 		for _, skipBlocks := range skipBlockValues[:len(skipBlockValues)-2] {
 			cacheConfig.MaxAmountOfGasToSkipStateSaving = skipGas
 			cacheConfig.MaxNumberOfBlocksToSkipStateSaving = uint32(skipBlocks)
-			testSkippingSavingStateAndRecreatingAfterRestart(t, &cacheConfig, 100)
+			runTestCase(t, cacheConfig, 100)
 		}
 	}
 }
 
-func TestGettingStateForRPCFullNode(t *testing.T) {
+func testGettingState(t *testing.T, execConfig *gethexec.Config) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	execConfig := gethexec.ConfigDefaultTest()
-	execConfig.Caching.SnapshotCache = 0 // disable snapshots
-	execConfig.Caching.BlockAge = 0      // use only Caching.BlockCount to keep only last N blocks in dirties cache, no matter how new they are
-	execConfig.Sequencer.MaxBlockSpeed = 0
-	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
 	builder, cancelNode := prepareNodeWithHistory(t, ctx, execConfig, 16)
-	execNode, _ := builder.L2.ExecNode, builder.L2.Client
+	execNode := builder.L2.ExecNode
 	defer cancelNode()
 	bc := execNode.Backend.ArbInterface().BlockChain()
 	api := execNode.Backend.APIBackend()
@@ -499,18 +502,36 @@ func TestGettingStateForRPCFullNode(t *testing.T) {
 	blockCountRequiredToFlushDirties := builder.execConfig.Caching.BlockCount
 	makeSomeTransfers(t, ctx, builder, blockCountRequiredToFlushDirties)
 
+	// force garbage callection to check if it won't break anything
+	runtime.GC()
+
 	exists = state.Exist(addr)
 	err = state.Error()
 	Require(t, err)
 	if !exists {
 		Fatal(t, "User2 address does not exist in the state")
 	}
+
+	// force garbage collection of StateDB object, what should cause the state finalizer to run
+	state = nil
+	runtime.GC()
+	_, err = bc.StateAt(header.Root)
+	if err == nil {
+		Fatal(t, "StateAndHeaderByNumber didn't failed as expected")
+	}
 }
 
-func TestGettingStateForRPCHybridArchiveNode(t *testing.T) {
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+func TestGettingState(t *testing.T) {
 	execConfig := gethexec.ConfigDefaultTest()
+	execConfig.Caching.SnapshotCache = 0 // disable snapshots
+	execConfig.Caching.BlockAge = 0      // use only Caching.BlockCount to keep only last N blocks in dirties cache, no matter how new they are
+	execConfig.Sequencer.MaxBlockSpeed = 0
+	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
+	t.Run("TestGettingStateForRPCFullNode", func(t *testing.T) {
+		testGettingState(t, execConfig)
+	})
+
+	execConfig = gethexec.ConfigDefaultTest()
 	execConfig.Caching.Archive = true
 	execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 128
 	execConfig.Caching.BlockCount = 128
@@ -518,40 +539,13 @@ func TestGettingStateForRPCHybridArchiveNode(t *testing.T) {
 	execConfig.Caching.BlockAge = 0      // use only Caching.BlockCount to keep only last N blocks in dirties cache, no matter how new they are
 	execConfig.Sequencer.MaxBlockSpeed = 0
 	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
-	builder, cancelNode := prepareNodeWithHistory(t, ctx, execConfig, 16)
-	execNode, _ := builder.L2.ExecNode, builder.L2.Client
-	defer cancelNode()
-	bc := execNode.Backend.ArbInterface().BlockChain()
-	api := execNode.Backend.APIBackend()
-
-	header := bc.CurrentBlock()
-	if header == nil {
-		Fatal(t, "failed to get current block header")
-	}
-	state, _, err := api.StateAndHeaderByNumber(ctx, rpc.BlockNumber(header.Number.Uint64()))
-	Require(t, err)
-	addr := builder.L2Info.GetAddress("User2")
-	exists := state.Exist(addr)
-	err = state.Error()
-	Require(t, err)
-	if !exists {
-		Fatal(t, "User2 address does not exist in the state")
-	}
-	// Get the state again to avoid caching
-	state, _, err = api.StateAndHeaderByNumber(ctx, rpc.BlockNumber(header.Number.Uint64()))
-	Require(t, err)
-
-	blockCountRequiredToFlushDirties := builder.execConfig.Caching.BlockCount
-	makeSomeTransfers(t, ctx, builder, blockCountRequiredToFlushDirties)
-
-	exists = state.Exist(addr)
-	err = state.Error()
-	Require(t, err)
-	if !exists {
-		Fatal(t, "User2 address does not exist in the state")
-	}
+	t.Run("TestGettingStateForRPCSparseArchiveNode", func(t *testing.T) {
+		testGettingState(t, execConfig)
+	})
 }
 
+// regression test for issue caused by accessing block state that has just been committed to TrieDB but not yet referenced in core.BlockChain.writeBlockWithState (here called state of "recent" block)
+// before the corresponding fix, access to the recent block state caused premature garbage collection of the head block state
 func TestStateAndHeaderForRecentBlock(t *testing.T) {
 	threads := 32
 	ctx, cancel := context.WithCancel(context.Background())
@@ -590,15 +584,22 @@ func TestStateAndHeaderForRecentBlock(t *testing.T) {
 	}()
 	api := builder.L2.ExecNode.Backend.APIBackend()
 	db := builder.L2.ExecNode.Backend.ChainDb()
-	i := 1
+
+	recentBlock := 1
 	var mtx sync.RWMutex
 	var wgCallers sync.WaitGroup
 	for j := 0; j < threads && ctx.Err() == nil; j++ {
 		wgCallers.Add(1)
+		// each thread attempts to get state for a block that is just being created (here called recent):
+		// 1. Before state trie node is referenced in core.BlockChain.writeBlockWithState, block body is written to database with key prefix `b` followed by block number and then block hash (see: rawdb.blockBodyKey)
+		// 2. Each thread tries to read the block body entry to: a. extract recent block hash b. congest resource usage to slow down execution of core.BlockChain.writeBlockWithState
+		// 3. After extracting the hash from block body entry key, StateAndHeaderByNumberOfHash is called for the hash. It is expected that it will:
+		//		a. either fail with "ahead of current block" if we made it before rawdb.WriteCanonicalHash is called in core.BlockChain.writeHeadBlock, what is called after writeBlockWithState finishes,
+		// 		b. or it will succeed if the canonical hash was written for the block meaning that writeBlockWithState was fully executed (i.a. state root trie node correctly referenced) - then the recentBlock is advanced
 		go func() {
 			defer wgCallers.Done()
 			mtx.RLock()
-			blockNumber := i
+			blockNumber := recentBlock
 			mtx.RUnlock()
 			for blockNumber < 300 && ctx.Err() == nil {
 				prefix := make([]byte, 8)
@@ -617,8 +618,8 @@ func TestStateAndHeaderForRecentBlock(t *testing.T) {
 						_, _, err := api.StateAndHeaderByNumberOrHash(ctx, rpc.BlockNumberOrHash{BlockHash: &blockHash})
 						if err == nil {
 							mtx.Lock()
-							if blockNumber == i {
-								i++
+							if blockNumber == recentBlock {
+								recentBlock++
 							}
 							mtx.Unlock()
 							break
@@ -638,7 +639,7 @@ func TestStateAndHeaderForRecentBlock(t *testing.T) {
 				}
 				it.Release()
 				mtx.RLock()
-				blockNumber = i
+				blockNumber = recentBlock
 				mtx.RUnlock()
 			}
 		}()
