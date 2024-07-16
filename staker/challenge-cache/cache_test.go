@@ -4,6 +4,7 @@ package challengecache
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -17,17 +18,17 @@ import (
 var _ HistoryCommitmentCacher = (*Cache)(nil)
 
 func TestCache(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	basePath := t.TempDir()
 	if err := os.MkdirAll(basePath, os.ModePerm); err != nil {
 		t.Fatal(err)
 	}
-	t.Cleanup(func() {
-		if err := os.RemoveAll(basePath); err != nil {
-			t.Fatal(err)
-		}
-	})
 	cache, err := New(basePath)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err = cache.Init(ctx); err != nil {
 		t.Fatal(err)
 	}
 	key := &Key{
@@ -67,6 +68,144 @@ func TestCache(t *testing.T) {
 			t.Fatalf("Wrong root. Expected %#x, got %#x", want[i], rt)
 		}
 	}
+}
+
+func TestPrune(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	basePath := t.TempDir()
+	if err := os.MkdirAll(basePath, os.ModePerm); err != nil {
+		t.Fatal(err)
+	}
+	cache, err := New(basePath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err = cache.Init(ctx); err != nil {
+		t.Fatal(err)
+	}
+	key := &Key{
+		WavmModuleRoot: common.BytesToHash([]byte("foo")),
+		MessageHeight:  20,
+		StepHeights:    []uint64{0},
+	}
+	if _, err = cache.Get(key, 0); !errors.Is(err, ErrNotFoundInCache) {
+		t.Fatal(err)
+	}
+	t.Run("pruning non-existent dirs does nothing", func(t *testing.T) {
+		if err = cache.Prune(ctx, key.MessageHeight); err != nil {
+			t.Error(err)
+		}
+	})
+	t.Run("pruning single item", func(t *testing.T) {
+		want := []common.Hash{
+			common.BytesToHash([]byte("foo")),
+			common.BytesToHash([]byte("bar")),
+			common.BytesToHash([]byte("baz")),
+		}
+		err = cache.Put(key, want)
+		if err != nil {
+			t.Fatal(err)
+		}
+		items, err := cache.Get(key, 3)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(items) != len(want) {
+			t.Fatalf("Wrong number of hashes. Expected %d, got %d", len(want), len(items))
+		}
+		if err = cache.Prune(ctx, key.MessageHeight); err != nil {
+			t.Error(err)
+		}
+		if _, err = cache.Get(key, 3); !errors.Is(err, ErrNotFoundInCache) {
+			t.Error(err)
+		}
+	})
+	t.Run("does not prune items with message number > N", func(t *testing.T) {
+		want := []common.Hash{
+			common.BytesToHash([]byte("foo")),
+			common.BytesToHash([]byte("bar")),
+			common.BytesToHash([]byte("baz")),
+		}
+		key.MessageHeight = 30
+		err = cache.Put(key, want)
+		if err != nil {
+			t.Fatal(err)
+		}
+		items, err := cache.Get(key, 3)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(items) != len(want) {
+			t.Fatalf("Wrong number of hashes. Expected %d, got %d", len(want), len(items))
+		}
+		if err = cache.Prune(ctx, 20); err != nil {
+			t.Error(err)
+		}
+		items, err = cache.Get(key, 3)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(items) != len(want) {
+			t.Fatalf("Wrong number of hashes. Expected %d, got %d", len(want), len(items))
+		}
+	})
+	t.Run("prunes many items with message number <= N", func(t *testing.T) {
+		moduleRoots := []common.Hash{
+			common.BytesToHash([]byte("foo")),
+			common.BytesToHash([]byte("bar")),
+			common.BytesToHash([]byte("baz")),
+		}
+		totalMessages := 10
+		for _, root := range moduleRoots {
+			for i := 0; i < totalMessages; i++ {
+				hashes := []common.Hash{
+					common.BytesToHash([]byte("a")),
+					common.BytesToHash([]byte("b")),
+					common.BytesToHash([]byte("c")),
+				}
+				key = &Key{
+					WavmModuleRoot: root,
+					MessageHeight:  uint64(i),
+					StepHeights:    []uint64{0},
+				}
+				if err = cache.Put(key, hashes); err != nil {
+					t.Fatal(err)
+				}
+			}
+		}
+		if err = cache.Prune(ctx, 5); err != nil {
+			t.Error(err)
+		}
+		for _, root := range moduleRoots {
+			// Expect that we deleted all entries with message number <= 5
+			for i := 0; i <= 5; i++ {
+				key = &Key{
+					WavmModuleRoot: root,
+					MessageHeight:  uint64(i),
+					StepHeights:    []uint64{0},
+				}
+				if _, err = cache.Get(key, 3); !errors.Is(err, ErrNotFoundInCache) {
+					t.Error(err)
+				}
+			}
+			// But also expect that we kept all entries with message number > 5
+			for i := 6; i < totalMessages; i++ {
+				key = &Key{
+					WavmModuleRoot: root,
+					MessageHeight:  uint64(i),
+					StepHeights:    []uint64{0},
+				}
+				items, err := cache.Get(key, 3)
+				if err != nil {
+					t.Error(err)
+				}
+				if len(items) != 3 {
+					t.Fatalf("Wrong number of hashes. Expected %d, got %d", 3, len(items))
+				}
+			}
+		}
+	})
 }
 
 func TestReadWriteStatehashes(t *testing.T) {
@@ -255,7 +394,7 @@ func Test_determineFilePath(t *testing.T) {
 					StepHeights:   []uint64{50},
 				},
 			},
-			want:    "wavm-module-root-0x0000000000000000000000000000000000000000000000000000000000000000/rollup-block-hash-0x0000000000000000000000000000000000000000000000000000000000000000-message-num-100/subchallenge-level-1-big-step-50/hashes.bin",
+			want:    "wavm-module-root-0x0000000000000000000000000000000000000000000000000000000000000000/message-num-100-rollup-block-hash-0x0000000000000000000000000000000000000000000000000000000000000000/subchallenge-level-1-big-step-50/hashes.bin",
 			wantErr: false,
 		},
 	}
@@ -282,18 +421,18 @@ func Test_determineFilePath(t *testing.T) {
 }
 
 func BenchmarkCache_Read_32Mb(b *testing.B) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 	b.StopTimer()
 	basePath := os.TempDir()
 	if err := os.MkdirAll(basePath, os.ModePerm); err != nil {
 		b.Fatal(err)
 	}
-	b.Cleanup(func() {
-		if err := os.RemoveAll(basePath); err != nil {
-			b.Fatal(err)
-		}
-	})
 	cache, err := New(basePath)
 	if err != nil {
+		b.Fatal(err)
+	}
+	if err = cache.Init(ctx); err != nil {
 		b.Fatal(err)
 	}
 	key := &Key{
