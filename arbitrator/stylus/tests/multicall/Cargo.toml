@@ -7,7 +7,7 @@ edition = "2021"
 alloy-primitives = "0.3.1"
 alloy-sol-types = "0.3.1"
 mini-alloc = "0.4.2"
-stylus-sdk = { path = "../../../langs/rust/stylus-sdk", features = ["reentrant"] }
+stylus-sdk = { path = "../../../langs/rust/stylus-sdk", features = ["reentrant", "debug"] }
 hex = "0.4.3"
 wee_alloc = "0.4.5"
 

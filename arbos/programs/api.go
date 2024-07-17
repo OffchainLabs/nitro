@@ -5,6 +5,8 @@ package programs
 
 import (
 	"errors"
+	"fmt"
+	"runtime/debug"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -209,6 +211,7 @@ func newApiClosures(
 			baseCost = am.SaturatingUAdd(baseCost, keccakCost)
 		}
 		if gas < baseCost {
+			fmt.Printf("got out of gas at:\n%v\n", string(debug.Stack()))
 			return zeroAddr, nil, gas, vm.ErrOutOfGas
 		}
 		gas -= baseCost

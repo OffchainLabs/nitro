@@ -246,6 +246,10 @@ pub trait MeteredMachine {
     }
 
     fn out_of_ink<T>(&mut self) -> Result<T, OutOfInkError> {
+        println!(
+            "Got out of ink in rust at:\n{}",
+            std::backtrace::Backtrace::force_capture()
+        );
         self.set_meter(MachineMeter::Exhausted);
         Err(OutOfInkError)
     }

@@ -960,7 +960,6 @@ func testMemory(t *testing.T, jit bool) {
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
 	l2rpc := l2client.Client()
-	defer l2rpc.Close()
 	defer cleanup()
 
 	trace := func(ctx context.Context, tx *types.Transaction) error {
@@ -995,7 +994,7 @@ func testMemory(t *testing.T, jit bool) {
 	Require(t, err)
 
 	ensure(arbOwner.SetInkPrice(&auth, 1e4))
-	ensure(arbOwner.SetMaxTxGasLimit(&auth, 34000000))
+	ensure(arbOwner.SetMaxTxGasLimit(&auth, 1e9))
 
 	memoryAddr := deployWasm(t, ctx, auth, l2client, watFile("memory"))
 	multiAddr := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
@@ -1552,6 +1551,11 @@ func readWasmFile(t *testing.T, file string) ([]byte, []byte) {
 	Require(t, err)
 	wasm, err := arbcompress.Compress(wasmSource, arbcompress.LEVEL_WELL, randDict)
 	Require(t, err)
+
+	if name == "memory" {
+		colors.PrintGrey(fmt.Sprintf("memory randDict: %v", randDict))
+		colors.PrintGrey(fmt.Sprintf("memory wasmHash: %v", crypto.Keccak256Hash(wasm)))
+	}
 
 	toKb := func(data []byte) float64 { return float64(len(data)) / 1024.0 }
 	colors.PrintGrey(fmt.Sprintf("%v: len %.2fK vs %.2fK", name, toKb(wasm), toKb(wasmSource)))

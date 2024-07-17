@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"runtime/debug"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -210,6 +211,7 @@ func (p Programs) CallProgram(
 		callCost = am.SaturatingUAdd(callCost, program.initGas(params))
 	}
 	if err := contract.BurnGas(callCost); err != nil {
+		fmt.Printf("got out of gas at:\n%v\n", string(debug.Stack()))
 		return nil, err
 	}
 	statedb.AddStylusPages(program.footprint)
@@ -253,6 +255,7 @@ func (p Programs) CallProgram(
 		evmCost := evmMemoryCost(uint64(len(ret)))
 		if startingGas < evmCost {
 			contract.Gas = 0
+			fmt.Printf("got out of gas at:\n%v\n", string(debug.Stack()))
 			return nil, vm.ErrOutOfGas
 		}
 		maxGasToReturn := startingGas - evmCost
@@ -552,7 +555,7 @@ const (
 	userOutOfStack
 )
 
-func (status userStatus) toResult(data []byte, debug bool) ([]byte, string, error) {
+func (status userStatus) toResult(data []byte, _ bool) ([]byte, string, error) {
 	msg := arbutil.ToStringOrHex(data)
 	switch status {
 	case userSuccess:
@@ -562,6 +565,7 @@ func (status userStatus) toResult(data []byte, debug bool) ([]byte, string, erro
 	case userFailure:
 		return nil, msg, vm.ErrExecutionReverted
 	case userOutOfInk:
+		fmt.Printf("got out of gas at:\n%v\n", string(debug.Stack()))
 		return nil, "", vm.ErrOutOfGas
 	case userOutOfStack:
 		return nil, "", vm.ErrDepth

@@ -6,13 +6,12 @@
 extern crate alloc;
 
 use stylus_sdk::{
-    storage::{StorageCache, GlobalStorage},
     alloy_primitives::{Address, B256},
     alloy_sol_types::sol,
     call::RawCall,
-    console,
-    evm,
+    console, evm,
     prelude::*,
+    storage::{GlobalStorage, StorageCache},
 };
 
 use wee_alloc::WeeAlloc;
@@ -20,7 +19,7 @@ use wee_alloc::WeeAlloc;
 #[global_allocator]
 static ALLOC: WeeAlloc = WeeAlloc::INIT;
 
-sol!{
+sol! {
     event Called(address addr, uint8 count, bool success, bytes return_data);
     event Storage(bytes32 slot, bytes32 data, bool write);
 }
@@ -74,20 +73,31 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
                 Ok(return_data) => (true, return_data),
                 Err(revert_data) => {
                     if kind & 0x4 == 0 {
-                        return Err(revert_data)
+                        console!(
+                            "Contract {addr} errored with {} and kind matchhing 0x4",
+                            revert_data.len()
+                        );
+                        return Err(revert_data);
                     }
                     (false, vec![])
-                },
+                }
             };
-        
+
             if !return_data.is_empty() {
                 console!("Contract {addr} returned {} bytes", return_data.len());
+            } else {
+                console!("Contract {addr} returned no data");
             }
             if kind & 0x8 != 0 {
-                evm::log(Called { addr, count, success, return_data: return_data.clone() })
+                evm::log(Called {
+                    addr,
+                    count,
+                    success,
+                    return_data: return_data.clone(),
+                })
             }
             output.extend(return_data);
-        } else if kind & 0xf0 == 0x10  {
+        } else if kind & 0xf0 == 0x10 {
             // storage
             let slot = B256::try_from(&curr[..32]).unwrap();
             curr = &curr[32..];
@@ -99,7 +109,7 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
                 write = true;
                 unsafe { StorageCache::set_word(slot.into(), data.into()) };
                 StorageCache::flush();
-            } else if kind & 0x7 == 1{
+            } else if kind & 0x7 == 1 {
                 console!("reading slot");
                 write = false;
                 data = StorageCache::get_word(slot.into());
@@ -109,7 +119,11 @@ fn user_main(input: Vec<u8>) -> Result<Vec<u8>, Vec<u8>> {
             }
             if kind & 0x8 != 0 {
                 console!("slot: {}, data: {}, write {write}", slot, data);
-                evm::log(Storage { slot: slot.into(), data: data.into(), write })
+                evm::log(Storage {
+                    slot: slot.into(),
+                    data: data.into(),
+                    write,
+                })
             }
         } else {
             panic!("unknown action {kind}")
