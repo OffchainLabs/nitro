@@ -77,7 +77,7 @@ type RpcClient struct {
 	config    ClientConfigFetcher
 	client    *rpc.Client
 	autoStack *node.Node
-	logId     uint64
+	logId     atomic.Uint64
 }
 
 func NewRpcClient(config ClientConfigFetcher, stack *node.Node) *RpcClient {
@@ -154,7 +154,7 @@ func (c *RpcClient) CallContext(ctx_in context.Context, result interface{}, meth
 	if c.client == nil {
 		return errors.New("not connected")
 	}
-	logId := atomic.AddUint64(&c.logId, 1)
+	logId := c.logId.Add(1)
 	log.Trace("sending RPC request", "method", method, "logId", logId, "args", limitedArgumentsMarshal{int(c.config().ArgLogLimit), args})
 	var err error
 	for i := 0; i < int(c.config().Retries)+1; i++ {

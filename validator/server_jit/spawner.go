@@ -39,7 +39,7 @@ func JitSpawnerConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 type JitSpawner struct {
 	stopwaiter.StopWaiter
-	count         int32
+	count         atomic.Int32
 	locator       *server_common.MachineLocator
 	machineLoader *JitMachineLoader
 	config        JitSpawnerConfigFecher
@@ -91,9 +91,9 @@ func (s *JitSpawner) Name() string {
 }
 
 func (v *JitSpawner) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
-	atomic.AddInt32(&v.count, 1)
+	v.count.Add(1)
 	promise := stopwaiter.LaunchPromiseThread[validator.GoGlobalState](v, func(ctx context.Context) (validator.GoGlobalState, error) {
-		defer atomic.AddInt32(&v.count, -1)
+		defer v.count.Add(-1)
 		return v.execute(ctx, entry, moduleRoot)
 	})
 	return server_common.NewValRun(promise, moduleRoot)
