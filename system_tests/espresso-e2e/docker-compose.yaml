@@ -5,37 +5,15 @@ services:
     ports:
       - "$ESPRESSO_SEQUENCER_API_PORT:$ESPRESSO_SEQUENCER_API_PORT"
       - "$ESPRESSO_BUILDER_PORT:$ESPRESSO_BUILDER_PORT"
+      - "$ESPRESSO_DEV_NODE_PORT:$ESPRESSO_DEV_NODE_PORT"
     environment:
       - ESPRESSO_SEQUENCER_L1_PROVIDER
       - ESPRESSO_SEQUENCER_ETH_MNEMONIC
       - ESPRESSO_DEPLOYER_ACCOUNT_INDEX
       - ESPRESSO_SEQUENCER_API_PORT
       - ESPRESSO_BUILDER_PORT
-      - ESPRESSO_SEQUENCER_POSTGRES_HOST
-      - ESPRESSO_SEQUENCER_POSTGRES_PORT
-      - ESPRESSO_SEQUENCER_POSTGRES_USER
-      - ESPRESSO_SEQUENCER_POSTGRES_PASSWORD
-      - ESPRESSO_SEQUENCER_POSTGRES_DATABASE
+      - ESPRESSO_DEV_NODE_PORT
       - RUST_LOG=info
       - RUST_LOG_FORMAT
-    depends_on:
-      sequencer-db:
-        condition: service_healthy
     extra_hosts:
       - "host.docker.internal:host-gateway"
-  sequencer-db:
-    image: postgres
-    user: postgres
-    ports:
-      - "$ESPRESSO_SEQUENCER_POSTGRES_PORT:$ESPRESSO_SEQUENCER_POSTGRES_PORT"
-    environment:
-      - POSTGRES_PASSWORD=$ESPRESSO_SEQUENCER_POSTGRES_PASSWORD
-      - POSTGRES_USER=$ESPRESSO_SEQUENCER_POSTGRES_USER
-      - POSTGRES_DB=$ESPRESSO_SEQUENCER_POSTGRES_DATABASE
-    healthcheck:
-      # Postgres can be falsely "ready" once before running init scripts.
-      # See https://github.com/docker-library/postgres/issues/146 for discussion.
-      test: "pg_isready -U root && sleep 1 && pg_isready -U root"
-      interval: 5s
-      timeout: 4s
-      retries: 20
