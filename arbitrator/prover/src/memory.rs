@@ -370,8 +370,6 @@ pub mod testing {
 
 #[cfg(test)]
 mod test {
-    use core::hash;
-
     use arbutil::Bytes32;
 
     use crate::memory::round_up_to_power_of_two;
