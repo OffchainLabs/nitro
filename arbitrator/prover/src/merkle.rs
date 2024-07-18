@@ -532,7 +532,7 @@ fn emit_memory_zerohashes() {
     ])
     .clone();
     for _ in 0..64 {
-        print!("Bytes32::new_direct([");
+        print!("Bytes32([");
         for i in 0..32 {
             print!("{}", empty_node[i]);
             if i < 31 {

@@ -384,7 +384,7 @@ mod test {
     pub fn empty_leaf_hash() {
         let leaf = [0u8; 32];
         let hash = super::hash_leaf(leaf);
-        print!("Bytes32::new_direct([");
+        print!("Bytes32([");
         for i in 0..32 {
             print!("{}", hash[i]);
             if i < 31 {
