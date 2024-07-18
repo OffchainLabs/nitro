@@ -39,7 +39,7 @@ use rayon::prelude::*;
 
 mod zerohashes;
 
-use zerohashes::ZERO_HASHES;
+use self::zerohashes::ZERO_HASHES;
 
 use self::zerohashes::EMPTY_HASH;
 
@@ -514,62 +514,88 @@ fn resize_works() {
     assert_eq!(merkle.root(), expected);
 }
 
-#[test]
-fn correct_capacity() {
-    let merkle = Merkle::new(MerkleType::Value, vec![Bytes32::from([1; 32])]);
-    assert_eq!(merkle.capacity(), 1);
-    let merkle = Merkle::new_advanced(MerkleType::Memory, vec![Bytes32::from([1; 32])], 11);
-    assert_eq!(merkle.capacity(), 1024);
-}
+#[cfg(test)]
+mod test {
+    use super::*;
+    use crate::memory;
+    use arbutil::Bytes32;
+    use enum_iterator::all;
 
-#[test]
-#[ignore = "This is just used for generating the zero hashes for the memory merkle trees."]
-fn emit_memory_zerohashes() {
-    // The following code was generated from the empty_leaf_hash() test in the memory package.
-    let mut empty_node = Bytes32([
-        57, 29, 211, 154, 252, 227, 18, 99, 65, 126, 203, 166, 252, 232, 32, 3, 98, 194, 254, 186,
-        118, 14, 139, 192, 101, 156, 55, 194, 101, 11, 11, 168,
-    ])
-    .clone();
-    for _ in 0..64 {
-        print!("Bytes32([");
-        for i in 0..32 {
-            print!("{}", empty_node[i]);
-            if i < 31 {
-                print!(", ");
+    #[test]
+    fn correct_capacity() {
+        let merkle = Merkle::new(MerkleType::Value, vec![Bytes32::from([1; 32])]);
+        assert_eq!(merkle.capacity(), 1);
+        let merkle = Merkle::new_advanced(MerkleType::Memory, vec![Bytes32::from([1; 32])], 11);
+        assert_eq!(merkle.capacity(), 1024);
+    }
+
+    #[test]
+    #[ignore = "This is just used for generating the zero hashes for the memory merkle trees."]
+    fn emit_memory_zerohashes() {
+        // The following code was generated from the empty_leaf_hash() test in the memory package.
+        let mut empty_node = Bytes32([
+            57, 29, 211, 154, 252, 227, 18, 99, 65, 126, 203, 166, 252, 232, 32, 3, 98, 194, 254,
+            186, 118, 14, 139, 192, 101, 156, 55, 194, 101, 11, 11, 168,
+        ])
+        .clone();
+        for _ in 0..64 {
+            print!("Bytes32([");
+            for i in 0..32 {
+                print!("{}", empty_node[i]);
+                if i < 31 {
+                    print!(", ");
+                }
+            }
+            println!("]),");
+            empty_node = hash_node(MerkleType::Memory, empty_node, empty_node);
+        }
+    }
+
+    #[test]
+    fn clone_is_separate() {
+        let merkle = Merkle::new_advanced(MerkleType::Value, vec![Bytes32::from([1; 32])], 4);
+        let m2 = merkle.clone();
+        m2.resize(4).expect("resize failed");
+        m2.set(3, Bytes32::from([2; 32]));
+        assert_ne!(merkle, m2);
+    }
+
+    #[test]
+    fn serialization_roundtrip() {
+        let merkle = Merkle::new_advanced(MerkleType::Value, vec![Bytes32::from([1; 32])], 4);
+        merkle.resize(4).expect("resize failed");
+        merkle.set(3, Bytes32::from([2; 32]));
+        let serialized = bincode::serialize(&merkle).unwrap();
+        let deserialized: Merkle = bincode::deserialize(&serialized).unwrap();
+        assert_eq!(merkle, deserialized);
+    }
+
+    #[test]
+    #[should_panic(expected = "index out of bounds")]
+    fn set_with_bad_index_panics() {
+        let merkle = Merkle::new(
+            MerkleType::Value,
+            vec![Bytes32::default(), Bytes32::default()],
+        );
+        assert_eq!(merkle.capacity(), 2);
+        merkle.set(2, Bytes32::default());
+    }
+
+    #[test]
+    fn test_zero_hashes() {
+        for ty in all::<MerkleType>() {
+            if ty == MerkleType::Empty {
+                continue;
+            }
+            let mut empty_hash = Bytes32::from([0; 32]);
+            if ty == MerkleType::Memory {
+                empty_hash = memory::testing::empty_leaf_hash();
+            }
+            for layer in 0..64 {
+                // empty_hash_at is just a lookup, but empty_hash is calculated iteratively.
+                assert_eq!(empty_hash_at(ty, layer), &empty_hash);
+                empty_hash = hash_node(ty, &empty_hash, &empty_hash);
             }
         }
-        println!("]),");
-        empty_node = hash_node(MerkleType::Memory, empty_node, empty_node);
     }
-}
-
-#[test]
-fn clone_is_separate() {
-    let merkle = Merkle::new_advanced(MerkleType::Value, vec![Bytes32::from([1; 32])], 4);
-    let m2 = merkle.clone();
-    m2.resize(4).expect("resize failed");
-    m2.set(3, Bytes32::from([2; 32]));
-    assert_ne!(merkle, m2);
-}
-
-#[test]
-fn serialization_roundtrip() {
-    let merkle = Merkle::new_advanced(MerkleType::Value, vec![Bytes32::from([1; 32])], 4);
-    merkle.resize(4).expect("resize failed");
-    merkle.set(3, Bytes32::from([2; 32]));
-    let serialized = bincode::serialize(&merkle).unwrap();
-    let deserialized: Merkle = bincode::deserialize(&serialized).unwrap();
-    assert_eq!(merkle, deserialized);
-}
-
-#[test]
-#[should_panic(expected = "index out of bounds")]
-fn set_with_bad_index_panics() {
-    let merkle = Merkle::new(
-        MerkleType::Value,
-        vec![Bytes32::default(), Bytes32::default()],
-    );
-    assert_eq!(merkle.capacity(), 2);
-    merkle.set(2, Bytes32::default());
 }

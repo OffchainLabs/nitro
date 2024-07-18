@@ -359,11 +359,23 @@ impl Memory {
     }
 }
 
+pub mod testing {
+    use arbutil::Bytes32;
+
+    pub fn empty_leaf_hash() -> Bytes32 {
+        let leaf = [0u8; 32];
+        return super::hash_leaf(leaf);
+    }
+}
+
 #[cfg(test)]
 mod test {
+    use core::hash;
+
     use arbutil::Bytes32;
 
     use crate::memory::round_up_to_power_of_two;
+    use crate::memory::testing;
 
     use super::Memory;
 
@@ -379,8 +391,7 @@ mod test {
 
     #[test]
     pub fn empty_leaf_hash() {
-        let leaf = [0u8; 32];
-        let hash = super::hash_leaf(leaf);
+        let hash = testing::empty_leaf_hash();
         print!("Bytes32([");
         for i in 0..32 {
             print!("{}", hash[i]);
