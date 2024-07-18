@@ -13,7 +13,7 @@ wee_alloc = "0.4.5"
 
 [profile.release]
 codegen-units = 1
-strip = true
+debug = true
 lto = true
 panic = "abort"
 
