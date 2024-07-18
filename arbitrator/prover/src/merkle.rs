@@ -2,18 +2,15 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use arbutil::Bytes32;
+use bitvec::prelude::*;
 use core::panic;
 use digest::Digest;
 use enum_iterator::Sequence;
-use itertools::Itertools;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
 use std::cmp::max;
-use std::{
-    collections::HashSet,
-    convert::{TryFrom, TryInto},
-};
+use std::convert::{TryFrom, TryInto};
 
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
@@ -111,7 +108,7 @@ impl MerkleType {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct Layers {
     data: Vec<Vec<Bytes32>>,
-    dirty_leaf_parents: HashSet<usize>,
+    dirty_leaf_parents: BitVec,
 }
 
 /// A Merkle tree with a fixed number of layers
@@ -208,7 +205,7 @@ impl Merkle {
             min_depth
         };
         let mut layers: Vec<Vec<Bytes32>> = Vec::with_capacity(depth);
-        let dirty_leaf_parents = HashSet::with_capacity(hashes.len() / 2);
+        let dirty_leaf_parents = bitvec![0; hashes.len() + 1 >> 1];
         layers.push(hashes);
         while layers.last().unwrap().len() > 1 || layers.len() < min_depth {
             let layer = layers.last().unwrap();
@@ -233,15 +230,18 @@ impl Merkle {
         if layers.dirty_leaf_parents.is_empty() {
             return;
         }
-        // Consume the leaf parents dirty indices.
-        let mut dirt = std::mem::take(&mut layers.dirty_leaf_parents);
+        // Replace the dirty leaf parents with clean ones.
+        let mut dirt = std::mem::replace(
+            &mut layers.dirty_leaf_parents,
+            bitvec![0; (layers.data[0].len() + 1) >> 1],
+        );
         // Process dirty indices starting from layer 1 (layer 0 is the leaves).
         for layer_i in 1..layers.data.len() {
-            let mut new_dirt = HashSet::with_capacity(dirt.len() / 2);
+            let mut new_dirt = bitvec![0; dirt.len() + 1 >> 1];
             // It is important to process the dirty indices in order because
             // when the leaves grown since the last rehash, the new parent is
             // simply pused to the end of the layer's data.
-            for idx in dirt.iter().sorted() {
+            for idx in dirt.iter_ones() {
                 let left_child_idx = idx << 1;
                 let right_child_idx = left_child_idx + 1;
                 // The left child is guaranteed to exist, but the right one
@@ -251,16 +251,16 @@ impl Merkle {
                     .get(right_child_idx)
                     .unwrap_or(empty_hash_at(self.ty, layer_i - 1));
                 let new_hash = hash_node(self.ty, left, right);
-                if *idx < layers.data[layer_i].len() {
-                    layers.data[layer_i][*idx] = new_hash;
+                if idx < layers.data[layer_i].len() {
+                    layers.data[layer_i][idx] = new_hash;
                 } else {
                     // Push the new parent hash onto the end of the layer.
-                    assert_eq!(*idx, layers.data[layer_i].len());
+                    assert_eq!(idx, layers.data[layer_i].len());
                     layers.data[layer_i].push(new_hash);
                 }
                 // Mark the node's parent as dirty unless it's the root.
                 if layer_i < layers.data.len() - 1 {
-                    new_dirt.insert(idx >> 1);
+                    new_dirt.set(idx >> 1, true);
                 }
             }
             dirt = new_dirt;
@@ -359,7 +359,7 @@ impl Merkle {
             return;
         }
         layers.data[0][idx] = hash;
-        layers.dirty_leaf_parents.insert(idx >> 1);
+        layers.dirty_leaf_parents.set(idx >> 1, true);
     }
 
     /// Resizes the number of leaves the tree can hold.
@@ -374,14 +374,20 @@ impl Merkle {
             );
         }
         let mut layers = self.layers.lock();
+        let start = layers.data[0].len();
         let mut layer_size = new_len;
         for (layer_i, layer) in layers.data.iter_mut().enumerate() {
             layer.resize(layer_size, *empty_hash_at(self.ty, layer_i));
             layer_size = max(layer_size >> 1, 1);
         }
-        let start = layers.data[0].len();
         for i in start..new_len {
-            layers.dirty_leaf_parents.insert(i);
+            let parent_i = i >> 1;
+            assert!(parent_i <= layers.dirty_leaf_parents.len());
+            if parent_i == layers.dirty_leaf_parents.len() {
+                layers.dirty_leaf_parents.push(true);
+            } else if parent_i < layers.dirty_leaf_parents.len() {
+                layers.dirty_leaf_parents.set(parent_i, true);
+            }
         }
         Ok(layers.data[0].len())
     }
@@ -428,94 +434,95 @@ pub mod mutex_sedre {
     }
 }
 
-#[test]
-fn resize_works() {
-    let hashes = vec![
-        Bytes32::from([1; 32]),
-        Bytes32::from([2; 32]),
-        Bytes32::from([3; 32]),
-        Bytes32::from([4; 32]),
-        Bytes32::from([5; 32]),
-    ];
-    let mut expected = hash_node(
-        MerkleType::Value,
-        hash_node(
-            MerkleType::Value,
-            hash_node(
-                MerkleType::Value,
-                Bytes32::from([1; 32]),
-                Bytes32::from([2; 32]),
-            ),
-            hash_node(
-                MerkleType::Value,
-                Bytes32::from([3; 32]),
-                Bytes32::from([4; 32]),
-            ),
-        ),
-        hash_node(
-            MerkleType::Value,
-            hash_node(
-                MerkleType::Value,
-                Bytes32::from([5; 32]),
-                Bytes32::from([0; 32]),
-            ),
-            hash_node(
-                MerkleType::Value,
-                Bytes32::from([0; 32]),
-                Bytes32::from([0; 32]),
-            ),
-        ),
-    );
-    let merkle = Merkle::new(MerkleType::Value, hashes.clone());
-    assert_eq!(merkle.capacity(), 8);
-    assert_eq!(merkle.root(), expected);
-
-    let new_size = match merkle.resize(6) {
-        Ok(size) => size,
-        Err(e) => panic!("{}", e),
-    };
-    assert_eq!(new_size, 6);
-    assert_eq!(merkle.root(), expected);
-
-    merkle.set(5, Bytes32::from([6; 32]));
-    expected = hash_node(
-        MerkleType::Value,
-        hash_node(
-            MerkleType::Value,
-            hash_node(
-                MerkleType::Value,
-                Bytes32::from([1; 32]),
-                Bytes32::from([2; 32]),
-            ),
-            hash_node(
-                MerkleType::Value,
-                Bytes32::from([3; 32]),
-                Bytes32::from([4; 32]),
-            ),
-        ),
-        hash_node(
-            MerkleType::Value,
-            hash_node(
-                MerkleType::Value,
-                Bytes32::from([5; 32]),
-                Bytes32::from([6; 32]),
-            ),
-            hash_node(
-                MerkleType::Value,
-                Bytes32::from([0; 32]),
-                Bytes32::from([0; 32]),
-            ),
-        ),
-    );
-    assert_eq!(merkle.root(), expected);
-}
-
 #[cfg(test)]
 mod test {
     use super::*;
     use crate::memory;
     use arbutil::Bytes32;
+    use core::panic;
     use enum_iterator::all;
+
+    #[test]
+    fn resize_works() {
+        let hashes = vec![
+            Bytes32::from([1; 32]),
+            Bytes32::from([2; 32]),
+            Bytes32::from([3; 32]),
+            Bytes32::from([4; 32]),
+            Bytes32::from([5; 32]),
+        ];
+        let mut expected = hash_node(
+            MerkleType::Value,
+            hash_node(
+                MerkleType::Value,
+                hash_node(
+                    MerkleType::Value,
+                    Bytes32::from([1; 32]),
+                    Bytes32::from([2; 32]),
+                ),
+                hash_node(
+                    MerkleType::Value,
+                    Bytes32::from([3; 32]),
+                    Bytes32::from([4; 32]),
+                ),
+            ),
+            hash_node(
+                MerkleType::Value,
+                hash_node(
+                    MerkleType::Value,
+                    Bytes32::from([5; 32]),
+                    Bytes32::from([0; 32]),
+                ),
+                hash_node(
+                    MerkleType::Value,
+                    Bytes32::from([0; 32]),
+                    Bytes32::from([0; 32]),
+                ),
+            ),
+        );
+        let merkle = Merkle::new(MerkleType::Value, hashes.clone());
+        assert_eq!(merkle.capacity(), 8);
+        assert_eq!(merkle.root(), expected);
+
+        let new_size = match merkle.resize(6) {
+            Ok(size) => size,
+            Err(e) => panic!("{}", e),
+        };
+        assert_eq!(new_size, 6);
+        assert_eq!(merkle.root(), expected);
+
+        merkle.set(5, Bytes32::from([6; 32]));
+        expected = hash_node(
+            MerkleType::Value,
+            hash_node(
+                MerkleType::Value,
+                hash_node(
+                    MerkleType::Value,
+                    Bytes32::from([1; 32]),
+                    Bytes32::from([2; 32]),
+                ),
+                hash_node(
+                    MerkleType::Value,
+                    Bytes32::from([3; 32]),
+                    Bytes32::from([4; 32]),
+                ),
+            ),
+            hash_node(
+                MerkleType::Value,
+                hash_node(
+                    MerkleType::Value,
+                    Bytes32::from([5; 32]),
+                    Bytes32::from([6; 32]),
+                ),
+                hash_node(
+                    MerkleType::Value,
+                    Bytes32::from([0; 32]),
+                    Bytes32::from([0; 32]),
+                ),
+            ),
+        );
+        assert_eq!(merkle.root(), expected);
+    }
 
     #[test]
     fn correct_capacity() {
