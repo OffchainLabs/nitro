@@ -461,6 +461,8 @@ fn resize_works() {
         Err(e) => panic!("{}", e),
     };
     assert_eq!(new_size, 6);
+    assert_eq!(merkle.root(), expected);
+
     merkle.set(5, Bytes32::from([6; 32]));
     expected = hash_node(
         MerkleType::Value,
