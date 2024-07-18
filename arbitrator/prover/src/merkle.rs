@@ -160,7 +160,7 @@ const fn empty_hash_at(ty: MerkleType, layer_i: usize) -> &'static Bytes32 {
 
 #[inline]
 #[cfg(feature = "rayon")]
-fn new_layer(ty: MerkleType, layer: &Vec<Bytes32>, empty_hash: &'static Bytes32) -> Vec<Bytes32> {
+fn new_layer(ty: MerkleType, layer: &[Bytes32], empty_hash: &'static Bytes32) -> Vec<Bytes32> {
     let mut new_layer: Vec<Bytes32> = Vec::with_capacity(layer.len() >> 1);
     let chunks = layer.par_chunks(2);
     chunks
