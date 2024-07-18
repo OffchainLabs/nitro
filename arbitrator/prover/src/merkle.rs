@@ -258,6 +258,7 @@ impl Merkle {
                     layers.data[layer_i][*idx] = new_hash;
                 } else {
                     // Push the new parent hash onto the end of the layer.
+                    assert_eq!(*idx, layers.data[layer_i].len());
                     layers.data[layer_i].push(new_hash);
                 }
                 // Mark the node's parent as dirty unless it's the root.
