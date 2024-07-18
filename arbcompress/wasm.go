@@ -7,7 +7,7 @@
 package arbcompress
 
 import (
-	"fmt"
+	"errors"
 	"unsafe"
 
 	"github.com/offchainlabs/nitro/arbutil"
@@ -38,7 +38,7 @@ func Compress(input []byte, level uint32, dictionary Dictionary) ([]byte, error)
 		dictionary,
 	)
 	if status != brotliSuccess {
-		return nil, fmt.Errorf("failed compression")
+		return nil, errors.New("failed compression")
 	}
 	return outBuf[:outLen], nil
 }
@@ -58,7 +58,7 @@ func DecompressWithDictionary(input []byte, maxSize int, dictionary Dictionary) 
 		dictionary,
 	)
 	if status != brotliSuccess {
-		return nil, fmt.Errorf("failed decompression")
+		return nil, errors.New("failed decompression")
 	}
 	return outBuf[:outLen], nil
 }

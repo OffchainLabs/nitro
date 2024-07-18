@@ -189,7 +189,7 @@ func (b *batchBuilder) assign(nChunks, timeout, chunkSize, totalSize uint64) (ui
 	id := rand.Uint64()
 	_, ok := b.batches[id]
 	if ok {
-		return 0, fmt.Errorf("can't start new batch, try again")
+		return 0, errors.New("can't start new batch, try again")
 	}
 
 	b.batches[id] = &batch{

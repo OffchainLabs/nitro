@@ -737,7 +737,7 @@ func (p *DataPoster) PostTransaction(ctx context.Context, dataCreatedAt time.Tim
 	defer p.mutex.Unlock()
 
 	if p.config().DisableNewTx {
-		return nil, fmt.Errorf("posting new transaction is disabled")
+		return nil, errors.New("posting new transaction is disabled")
 	}
 
 	var weight uint64 = 1

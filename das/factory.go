@@ -6,7 +6,6 @@ package das
 import (
 	"context"
 	"errors"
-	"fmt"
 	"math"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -270,7 +269,7 @@ func CreateDAReaderForNode(
 	}
 
 	if !config.RestAggregator.Enable {
-		return nil, nil, nil, fmt.Errorf("--node.data-availability.enable was set but not --node.data-availability.rest-aggregator. When running a Nitro Anytrust node in non-Batch Poster mode, some way to get the batch data is required.")
+		return nil, nil, nil, errors.New("--node.data-availability.enable was set but not --node.data-availability.rest-aggregator. When running a Nitro Anytrust node in non-Batch Poster mode, some way to get the batch data is required.")
 	}
 	// Done checking config requirements
 

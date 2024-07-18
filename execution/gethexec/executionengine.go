@@ -673,7 +673,7 @@ func (s *ExecutionEngine) appendBlock(block *types.Block, statedb *state.StateDB
 
 func (s *ExecutionEngine) resultFromHeader(header *types.Header) (*execution.MessageResult, error) {
 	if header == nil {
-		return nil, fmt.Errorf("result not found")
+		return nil, errors.New("result not found")
 	}
 	info := types.DeserializeHeaderExtraInformation(header)
 	return &execution.MessageResult{

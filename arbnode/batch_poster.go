@@ -1052,7 +1052,7 @@ var errAttemptLockFailed = errors.New("failed to acquire lock; either another ba
 
 func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error) {
 	if b.batchReverted.Load() {
-		return false, fmt.Errorf("batch was reverted, not posting any more batches")
+		return false, errors.New("batch was reverted, not posting any more batches")
 	}
 	nonce, batchPositionBytes, err := b.dataPoster.GetNextNonceAndMeta(ctx)
 	if err != nil {

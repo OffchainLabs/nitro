@@ -274,7 +274,7 @@ func NewBlockValidator(
 			if config().MemoryFreeLimit == "default" {
 				log.Warn("Cgroups V1 or V2 is unsupported, memory-free-limit feature inside block-validator is disabled")
 			} else {
-				return nil, fmt.Errorf("failed to create MemoryFreeLimitChecker, Cgroups V1 or V2 is unsupported")
+				return nil, errors.New("failed to create MemoryFreeLimitChecker, Cgroups V1 or V2 is unsupported")
 			}
 		} else {
 			ret.MemoryFreeLimitChecker = limtchecker
@@ -901,7 +901,7 @@ func (v *BlockValidator) validGSIsNew(globalState validator.GoGlobalState) bool 
 // this accepts globalstate even if not caught up
 func (v *BlockValidator) InitAssumeValid(globalState validator.GoGlobalState) error {
 	if v.Started() {
-		return fmt.Errorf("cannot handle InitAssumeValid while running")
+		return errors.New("cannot handle InitAssumeValid while running")
 	}
 
 	// don't do anything if we already validated past that
@@ -1155,7 +1155,7 @@ func (v *BlockValidator) checkLegacyValid() error {
 	}
 	if result.BlockHash != v.legacyValidInfo.BlockHash {
 		log.Error("legacy validated blockHash does not fit chain", "info.BlockHash", v.legacyValidInfo.BlockHash, "chain", result.BlockHash, "count", msgCount)
-		return fmt.Errorf("legacy validated blockHash does not fit chain")
+		return errors.New("legacy validated blockHash does not fit chain")
 	}
 	validGS := validator.GoGlobalState{
 		BlockHash:  result.BlockHash,

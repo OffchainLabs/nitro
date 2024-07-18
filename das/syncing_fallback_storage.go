@@ -6,6 +6,7 @@ package das
 import (
 	"context"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -136,7 +137,7 @@ func readSyncStateOrDefault(syncDir string, dflt uint64) uint64 {
 
 func writeSyncState(syncDir string, blockNr uint64) error {
 	if syncDir == "" {
-		return fmt.Errorf("No sync-to-storage.state-dir has been configured")
+		return errors.New("No sync-to-storage.state-dir has been configured")
 	}
 
 	path := syncDir + "/" + nextBlockNoFilename

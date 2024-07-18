@@ -142,7 +142,7 @@ func (c *Cache) Put(lookup *Key, hashes []common.Hash) error {
 		return ErrNoHashes
 	}
 	if c.tempWritesDir == "" {
-		return fmt.Errorf("cache not initialized by calling .Init(ctx)")
+		return errors.New("cache not initialized by calling .Init(ctx)")
 	}
 	fName, err := determineFilePath(c.baseDir, lookup)
 	if err != nil {

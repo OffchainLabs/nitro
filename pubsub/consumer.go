@@ -55,7 +55,7 @@ type Message[Request any] struct {
 
 func NewConsumer[Request any, Response any](client redis.UniversalClient, streamName string, cfg *ConsumerConfig) (*Consumer[Request, Response], error) {
 	if streamName == "" {
-		return nil, fmt.Errorf("redis stream name cannot be empty")
+		return nil, errors.New("redis stream name cannot be empty")
 	}
 	return &Consumer[Request, Response]{
 		id:          uuid.NewString(),

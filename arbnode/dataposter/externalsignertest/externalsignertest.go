@@ -47,7 +47,7 @@ type SignerServer struct {
 func basePath() (string, error) {
 	_, file, _, ok := runtime.Caller(1)
 	if !ok {
-		return "", fmt.Errorf("error getting caller")
+		return "", errors.New("error getting caller")
 	}
 	idx := strings.Index(file, selfPath)
 	if idx == -1 {
@@ -181,7 +181,7 @@ type SignerAPI struct {
 
 func (a *SignerAPI) SignTransaction(ctx context.Context, req *apitypes.SendTxArgs) (hexutil.Bytes, error) {
 	if req == nil {
-		return nil, fmt.Errorf("nil request")
+		return nil, errors.New("nil request")
 	}
 	tx, err := req.ToTransaction()
 	if err != nil {

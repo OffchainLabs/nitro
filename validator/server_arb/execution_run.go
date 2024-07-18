@@ -5,6 +5,7 @@ package server_arb
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -96,10 +97,10 @@ func (e *executionRun) machineHashesWithStepSize(
 	maxIterations uint64,
 ) ([]common.Hash, error) {
 	if stepSize == 0 {
-		return nil, fmt.Errorf("step size cannot be 0")
+		return nil, errors.New("step size cannot be 0")
 	}
 	if maxIterations == 0 {
-		return nil, fmt.Errorf("max number of iterations cannot be 0")
+		return nil, errors.New("max number of iterations cannot be 0")
 	}
 	machine, err := e.cache.GetMachineAt(ctx, machineStartIndex)
 	if err != nil {

@@ -2,6 +2,7 @@ package redis
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -28,7 +29,7 @@ type ValidationServer struct {
 
 func NewValidationServer(cfg *ValidationServerConfig, spawner validator.ValidationSpawner) (*ValidationServer, error) {
 	if cfg.RedisURL == "" {
-		return nil, fmt.Errorf("redis url cannot be empty")
+		return nil, errors.New("redis url cannot be empty")
 	}
 	redisClient, err := redisutil.RedisClientFromURL(cfg.RedisURL)
 	if err != nil {

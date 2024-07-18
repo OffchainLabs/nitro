@@ -317,7 +317,7 @@ func (v *L1Validator) generateNodeAction(
 		if !wasmRootValid {
 			if !stakerConfig.Dangerous.IgnoreRollupWasmModuleRoot {
 				if len(valInfo.WasmRoots) == 0 {
-					return nil, false, fmt.Errorf("block validation is still pending")
+					return nil, false, errors.New("block validation is still pending")
 				}
 				return nil, false, fmt.Errorf(
 					"wasmroot doesn't match rollup : %v, valid: %v",

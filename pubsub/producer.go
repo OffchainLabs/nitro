@@ -84,10 +84,10 @@ func ProducerAddConfigAddOptions(prefix string, f *pflag.FlagSet) {
 
 func NewProducer[Request any, Response any](client redis.UniversalClient, streamName string, cfg *ProducerConfig) (*Producer[Request, Response], error) {
 	if client == nil {
-		return nil, fmt.Errorf("redis client cannot be nil")
+		return nil, errors.New("redis client cannot be nil")
 	}
 	if streamName == "" {
-		return nil, fmt.Errorf("stream name cannot be empty")
+		return nil, errors.New("stream name cannot be empty")
 	}
 	return &Producer[Request, Response]{
 		id:          uuid.NewString(),
@@ -104,7 +104,7 @@ func (p *Producer[Request, Response]) errorPromisesFor(msgs []*Message[Request])
 	defer p.promisesLock.Unlock()
 	for _, msg := range msgs {
 		if promise, found := p.promises[msg.ID]; found {
-			promise.ProduceError(fmt.Errorf("internal error, consumer died while serving the request"))
+			promise.ProduceError(errors.New("internal error, consumer died while serving the request"))
 			delete(p.promises, msg.ID)
 		}
 	}
@@ -197,7 +197,7 @@ func (p *Producer[Request, Response]) reproduce(ctx context.Context, value Reque
 	if oldKey != "" && promise == nil {
 		// This will happen if the old consumer became inactive but then ack_d
 		// the message afterwards.
-		return nil, fmt.Errorf("error reproducing the message, could not find existing one")
+		return nil, errors.New("error reproducing the message, could not find existing one")
 	}
 	if oldKey == "" || promise == nil {
 		pr := containers.NewPromise[Response](nil)

@@ -272,15 +272,15 @@ func saveBlobDataToDisk(rawData json.RawMessage, slot uint64, blobDirectory stri
 	filePath := path.Join(blobDirectory, fmt.Sprint(slot))
 	file, err := os.Create(filePath)
 	if err != nil {
-		return fmt.Errorf("could not create file to store fetched blobs")
+		return errors.New("could not create file to store fetched blobs")
 	}
 	full := fullResult[json.RawMessage]{Data: rawData}
 	fullbytes, err := json.Marshal(full)
 	if err != nil {
-		return fmt.Errorf("unable to marshal data into bytes while attempting to store fetched blobs")
+		return errors.New("unable to marshal data into bytes while attempting to store fetched blobs")
 	}
 	if _, err := file.Write(fullbytes); err != nil {
-		return fmt.Errorf("failed to write blob data to disk")
+		return errors.New("failed to write blob data to disk")
 	}
 	file.Close()
 	return nil

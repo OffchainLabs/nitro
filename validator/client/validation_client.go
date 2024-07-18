@@ -7,7 +7,6 @@ import (
 	"context"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"sync/atomic"
 	"time"
 
@@ -69,7 +68,7 @@ func (c *ValidationClient) Start(ctx_in context.Context) error {
 		return err
 	}
 	if len(moduleRoots) == 0 {
-		return fmt.Errorf("server reported no wasmModuleRoots")
+		return errors.New("server reported no wasmModuleRoots")
 	}
 	var room int
 	if err := c.client.CallContext(c.GetContext(), &room, server_api.Namespace+"_room"); err != nil {

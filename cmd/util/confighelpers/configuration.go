@@ -260,5 +260,5 @@ func DumpConfig(k *koanf.Koanf, extraOverrideFields map[string]interface{}) erro
 
 	fmt.Println(string(c))
 	os.Exit(0)
-	return fmt.Errorf("Unreachable")
+	return errors.New("Unreachable")
 }

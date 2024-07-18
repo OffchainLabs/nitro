@@ -5,7 +5,6 @@ package programs
 
 import (
 	"errors"
-	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
@@ -142,10 +141,10 @@ func (p *StylusParams) Save() error {
 
 func (p *StylusParams) UpgradeToVersion(version uint16) error {
 	if version != 2 {
-		return fmt.Errorf("dest version not supported for upgrade")
+		return errors.New("dest version not supported for upgrade")
 	}
 	if p.Version != 1 {
-		return fmt.Errorf("existing version not supported for upgrade")
+		return errors.New("existing version not supported for upgrade")
 	}
 	p.Version = 2
 	p.MinInitGas = v2MinInitGas

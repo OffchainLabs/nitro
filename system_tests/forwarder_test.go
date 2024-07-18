@@ -5,6 +5,7 @@ package arbtest
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -160,16 +161,16 @@ func testNodes(t *testing.T, n int) []string {
 // Errors out after timeout.
 func waitForSequencerLockout(ctx context.Context, node *arbnode.Node, duration time.Duration) error {
 	if node == nil {
-		return fmt.Errorf("node is nil")
+		return errors.New("node is nil")
 	}
 	if node.SeqCoordinator == nil {
-		return fmt.Errorf("sequence coordinator in the node is nil")
+		return errors.New("sequence coordinator in the node is nil")
 	}
 	// TODO: implement exponential backoff retry mechanism and use it instead.
 	for {
 		select {
 		case <-time.After(duration):
-			return fmt.Errorf("no sequencer was chosen")
+			return errors.New("no sequencer was chosen")
 		default:
 			if c, err := node.SeqCoordinator.CurrentChosenSequencer(ctx); err == nil && c != "" {
 				return nil
@@ -204,7 +205,7 @@ func tryWithTimeout(ctx context.Context, f func() error, duration time.Duration)
 	for {
 		select {
 		case <-time.After(duration):
-			return fmt.Errorf("timeout expired")
+			return errors.New("timeout expired")
 		default:
 			if err := f(); err == nil {
 				return nil

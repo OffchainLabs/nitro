@@ -489,7 +489,7 @@ func (m *ChallengeManager) createExecutionBackend(ctx context.Context, step uint
 		}
 	}
 	if execRun == nil {
-		return fmt.Errorf("did not find valid execution backend")
+		return errors.New("did not find valid execution backend")
 	}
 	backend, err := NewExecutionChallengeBackend(execRun)
 	if err != nil {

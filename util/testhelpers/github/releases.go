@@ -2,7 +2,7 @@ package github
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"net/url"
 	"regexp"
 	"strings"
@@ -44,7 +44,7 @@ func LatestConsensusRelease(ctx context.Context) (*ConsensusRelease, error) {
 		}
 	}
 	if found == nil {
-		return nil, fmt.Errorf("no consensus release found")
+		return nil, errors.New("no consensus release found")
 	}
 	return found, nil
 }
@@ -54,7 +54,7 @@ func fromRelease(release *github.RepositoryRelease) (*ConsensusRelease, error) {
 	// This is currently brittle because it relies on the release body format.
 	matches := wasmRootExp.FindStringSubmatch(release.GetBody())
 	if len(matches) != 2 {
-		return nil, fmt.Errorf("no WAVM module root found in release body")
+		return nil, errors.New("no WAVM module root found in release body")
 	}
 	wavmModuleRoot := matches[1]
 	var machineWavmURL url.URL

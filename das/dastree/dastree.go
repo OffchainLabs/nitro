@@ -5,6 +5,7 @@ package dastree
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -222,7 +223,7 @@ func Content(root bytes32, oracle func(bytes32) ([]byte, error)) ([]byte, error)
 
 	// Check the hash matches. Given the size data this should never fail but we'll check anyway
 	if Hash(preimage) != root {
-		return nil, fmt.Errorf("preimage not canonically hashed")
+		return nil, errors.New("preimage not canonically hashed")
 	}
 	return preimage, nil
 }
