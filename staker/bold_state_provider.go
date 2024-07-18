@@ -68,6 +68,9 @@ func NewBOLDStateProvider(
 	if err != nil {
 		return nil, err
 	}
+	if err = historyCache.Init(context.TODO()); err != nil {
+		return nil, err
+	}
 	sp := &BOLDStateProvider{
 		validator:            blockValidator,
 		statelessValidator:   statelessValidator,
