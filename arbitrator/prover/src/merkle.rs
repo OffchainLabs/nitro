@@ -304,8 +304,11 @@ impl Merkle {
 
     #[must_use]
     pub fn prove(&self, idx: usize) -> Option<Vec<u8>> {
-        if self.layers.lock().data.is_empty() || idx >= self.layers.lock().data[0].len() {
-            return None;
+        {
+            let layers = self.layers.lock();
+            if layers.data.is_empty() || idx >= layers.data[0].len() {
+                return None;
+            }
         }
         Some(self.prove_any(idx))
     }
