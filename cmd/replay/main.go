@@ -337,7 +337,7 @@ func main() {
 			keysetValidationMode = daprovider.KeysetDontValidate
 		}
 		var dapReaders []daprovider.Reader
-		dapReaders = append(dapReaders, daprovider.NewReaderForDAS(&PreimageDASReader{}))
+		dapReaders = append(dapReaders, daprovider.NewReaderForDAS(&PreimageDASReader{}, &PreimageDASReader{}))
 		dapReaders = append(dapReaders, celestiaTypes.NewReaderForCelestia(&PreimageCelestiaReader{}))
 		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(&BlobPreimageReader{}))
 		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode)

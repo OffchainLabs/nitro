@@ -1302,7 +1302,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		// attempt to store data using one of the dapWriters, if it fails and fallbacks are disabled, return a hard error
 		for _, writer := range b.dapWriters {
 
-			sequencerMsg, err = writer.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), []byte{}, config.DisableDapFallbackStoreDataOnChain)
+			sequencerMsg, err = writer.Store(ctx, sequencerMsg, uint64(time.Now().Add(config.DASRetentionPeriod).Unix()), config.DisableDapFallbackStoreDataOnChain)
 			if err != nil {
 				if config.DisableDapFallbackStoreDataOnChain {
 					log.Error("Error while attempting to post batch and on chain fallback is disabled", "error", err)

@@ -13,7 +13,7 @@ type writerForCelestia struct {
 	celestiaWriter CelestiaWriter
 }
 
-func (c *writerForCelestia) Store(ctx context.Context, message []byte, timeout uint64, sig []byte, disableFallbackStoreDataOnChain bool) ([]byte, error) {
+func (c *writerForCelestia) Store(ctx context.Context, message []byte, timeout uint64, disableFallbackStoreDataOnChain bool) ([]byte, error) {
 	msg, err := c.celestiaWriter.Store(ctx, message)
 	if err != nil {
 		if disableFallbackStoreDataOnChain {
