@@ -11,7 +11,7 @@ use eyre::{bail, ErrReport, Result};
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
-use std::{borrow::Cow, collections::HashSet, convert::TryFrom, ops::Deref};
+use std::{borrow::Cow, collections::HashSet, convert::TryFrom};
 
 #[cfg(feature = "counters")]
 use std::sync::atomic::{AtomicUsize, Ordering};
