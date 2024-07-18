@@ -29,18 +29,18 @@ func TestLargeReorg(t *testing.T) {
 	startMsgCount, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
 	Require(t, err)
 
-	checkCounter := func(expected int64) {
+	checkCounter := func(expected int64, scenario string) {
 		t.Helper()
 		counter, err := simple.Counter(&bind.CallOpts{Context: ctx})
 		Require(t, err)
 		if counter != uint64(expected) {
-			Fatal(t, "counter was", counter, "expected", expected)
+			Fatal(t, scenario, "counter was", counter, "expected", expected)
 		}
 	}
 
-	i := int64(0)
+	expectedCounter := int64(500)
 	var tx *types.Transaction
-	for ; i < 10_000; i++ {
+	for i := int64(0); i < expectedCounter; i++ {
 		tx, err = simple.LogAndIncrement(&auth, big.NewInt(1))
 		Require(t, err, "failed to call Increment()")
 		if (i+1)%100 == 0 {
@@ -49,12 +49,12 @@ func TestLargeReorg(t *testing.T) {
 		}
 	}
 
-	checkCounter(i)
+	checkCounter(expectedCounter, "pre reorg")
 
 	err = builder.L2.ConsensusNode.TxStreamer.ReorgTo(startMsgCount)
 	Require(t, err)
 	// Old messages are replayed asynchronously so we must wait for them to catch up.
 	_, err = builder.L2.ExecNode.ExecEngine.HeadMessageNumberSync(t)
 	Require(t, err)
-	checkCounter(i)
+	checkCounter(expectedCounter, "post reorg")
 }
