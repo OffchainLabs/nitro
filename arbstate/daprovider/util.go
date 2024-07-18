@@ -188,7 +188,7 @@ func RecoverPayloadFromDasBatch(
 
 	keysetPreimage, err := keysetFetcher.GetKeysetByHash(ctx, cert.KeysetHash)
 	if err != nil {
-		log.Error("Couldn't get keyset", "err", err)
+		log.Error("Couldn't get keyset", "err", err, "keysetHash", common.Bytes2Hex(cert.KeysetHash[:]))
 		return nil, err
 	}
 	if preimageRecorder != nil {

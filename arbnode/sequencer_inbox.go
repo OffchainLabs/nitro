@@ -232,7 +232,7 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 		seqNum := parsedLog.BatchSequenceNumber.Uint64()
 		if lastSeqNum != nil {
 			if seqNum != *lastSeqNum+1 {
-				return nil, fmt.Errorf("sequencer batches out of order; after batch %v got batch %v", lastSeqNum, seqNum)
+				return nil, fmt.Errorf("sequencer batches out of order; after batch %v got batch %v", *lastSeqNum, seqNum)
 			}
 		}
 		lastSeqNum = &seqNum
