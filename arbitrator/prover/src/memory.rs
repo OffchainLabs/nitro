@@ -100,16 +100,6 @@ fn div_round_up(num: usize, denom: usize) -> usize {
     res
 }
 
-impl PartialEq for Memory {
-    fn eq(&self, other: &Memory) -> bool {
-        self.buffer == other.buffer
-            && self.merkle == other.merkle
-            && self.max_size == other.max_size
-            && self.dirty_indices.lock().unwrap().deref()
-                == other.dirty_indices.lock().unwrap().deref()
-    }
-}
-
 impl Clone for Memory {
     fn clone(&self) -> Self {
         Memory {
