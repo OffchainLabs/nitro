@@ -72,7 +72,7 @@ pub struct Memory {
     pub merkle: Option<Merkle>,
     pub max_size: u64,
     #[serde(skip)]
-    dirty_indices: Mutex<HashSet<usize>>,
+    dirty_leaves: Mutex<HashSet<usize>>,
 }
 
 fn hash_leaf(bytes: [u8; Memory::LEAF_SIZE]) -> Bytes32 {
@@ -107,7 +107,7 @@ impl Clone for Memory {
             buffer: self.buffer.clone(),
             merkle: self.merkle.clone(),
             max_size: self.max_size,
-            dirty_indices: Mutex::new(self.dirty_indices.lock().clone()),
+            dirty_leaves: Mutex::new(self.dirty_leaves.lock().clone()),
         }
     }
 }
@@ -125,7 +125,7 @@ impl Memory {
             buffer: vec![0u8; size],
             merkle: None,
             max_size,
-            dirty_indices: Mutex::new(HashSet::new()),
+            dirty_leaves: Mutex::new(HashSet::new()),
         }
     }
 
@@ -135,12 +135,10 @@ impl Memory {
 
     pub fn merkelize(&self) -> Cow<'_, Merkle> {
         if let Some(m) = &self.merkle {
-            let mut dirt = self.dirty_indices.lock();
-            for idx in dirt.iter() {
-                let leaf_idx = idx / Self::LEAF_SIZE;
+            let mut dirt = self.dirty_leaves.lock();
+            for leaf_idx in dirt.drain() {
                 m.set(leaf_idx, hash_leaf(self.get_leaf_data(leaf_idx)));
             }
-            dirt.clear();
             return Cow::Borrowed(m);
         }
         // Round the size up to 8 byte long leaves, then round up to the next power of two number of leaves
@@ -166,7 +164,7 @@ impl Memory {
                 panic!("Couldn't resize merkle tree from {} to {}", size, leaves)
             });
         }
-        self.dirty_indices.lock().clear();
+        self.dirty_leaves.lock().clear();
         Cow::Owned(m)
     }
 
@@ -264,7 +262,11 @@ impl Memory {
     }
 
     #[must_use]
+    // Stores a value in memory, returns false if the value would overflow the buffer.
+    //
+    // bytes is the number of bytes to store. It must be <= 8.
     pub fn store_value(&mut self, idx: u64, value: u64, bytes: u8) -> bool {
+        assert!(bytes <= 8);
         let Some(end_idx) = idx.checked_add(bytes.into()) else {
             return false;
         };
@@ -275,14 +277,19 @@ impl Memory {
         let end_idx = end_idx as usize;
         let buf = value.to_le_bytes();
         self.buffer[idx..end_idx].copy_from_slice(&buf[..bytes.into()]);
-        self.dirty_indices.lock().insert(idx);
-        self.dirty_indices.lock().insert(end_idx - 1);
+        let mut dirty_leaves = self.dirty_leaves.lock();
+        dirty_leaves.insert(idx / Self::LEAF_SIZE);
+        dirty_leaves.insert((end_idx - 1) / Self::LEAF_SIZE);
 
         true
     }
 
     #[must_use]
+    // Stores a slice in memory, returns false if the value would overflow the buffer.
+    //
+    // The length of value <= 32.
     pub fn store_slice_aligned(&mut self, idx: u64, value: &[u8]) -> bool {
+        assert!(value.len() <= Self::LEAF_SIZE);
         if idx % Self::LEAF_SIZE as u64 != 0 {
             return false;
         }
@@ -295,7 +302,7 @@ impl Memory {
         let idx = idx as usize;
         let end_idx = end_idx as usize;
         self.buffer[idx..end_idx].copy_from_slice(value);
-        self.dirty_indices.lock().insert(idx);
+        self.dirty_leaves.lock().insert(idx / Self::LEAF_SIZE);
 
         true
     }
@@ -338,7 +345,7 @@ impl Memory {
 
     pub fn resize(&mut self, new_size: usize) {
         self.buffer.resize(new_size, 0);
-        if let Some(merkle) = self.merkle.take() {
+        if let Some(merkle) = &mut self.merkle {
             merkle
                 .resize(new_size / Self::LEAF_SIZE)
                 .unwrap_or_else(|_| {
@@ -348,7 +355,6 @@ impl Memory {
                         new_size
                     )
                 });
-            self.merkle = Some(merkle);
         }
     }
 }
