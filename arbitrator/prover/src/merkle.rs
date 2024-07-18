@@ -288,8 +288,7 @@ impl Merkle {
         if layers.data.is_empty() {
             return 0;
         }
-        let base: usize = 2;
-        base.pow((layers.data.len() - 1).try_into().unwrap())
+        1 << (layers.data.len() - 1)
     }
 
     // Returns the number of leaves in the tree.
