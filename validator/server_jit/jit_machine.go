@@ -12,6 +12,7 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"runtime"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -212,15 +213,18 @@ func (machine *JitMachine) prove(
 	}
 
 	// send user wasms
+	if entry.StylusArch != runtime.GOARCH {
+		return state, fmt.Errorf("bad stylus arch for validation input. got: %v, expected: %v", entry.StylusArch, runtime.GOARCH)
+	}
 	userWasms := entry.UserWasms
 	if err := writeUint32(uint32(len(userWasms))); err != nil {
 		return state, err
 	}
-	for moduleHash, info := range userWasms {
+	for moduleHash, program := range userWasms {
 		if err := writeExact(moduleHash[:]); err != nil {
 			return state, err
 		}
-		if err := writeBytes(info.Asm); err != nil {
+		if err := writeBytes(program); err != nil {
 			return state, err
 		}
 	}

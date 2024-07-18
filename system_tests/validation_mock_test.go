@@ -60,6 +60,10 @@ func (s *mockSpawner) WasmModuleRoots() ([]common.Hash, error) {
 	return mockWasmModuleRoots, nil
 }
 
+func (s *mockSpawner) StylusArch() string {
+	return "mock"
+}
+
 func (s *mockSpawner) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
 	run := &mockValRun{
 		Promise: containers.NewPromise[validator.GoGlobalState](nil),
