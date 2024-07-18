@@ -111,7 +111,7 @@ impl MerkleType {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 struct Layers {
     data: Vec<Vec<Bytes32>>,
-    dirt: Vec<HashSet<usize>>,
+    dirty_leaf_parents: HashSet<usize>,
 }
 
 /// A Merkle tree with a fixed number of layers
@@ -208,19 +208,18 @@ impl Merkle {
             min_depth
         };
         let mut layers: Vec<Vec<Bytes32>> = Vec::with_capacity(depth);
+        let dirty_leaf_parents = HashSet::with_capacity(hashes.len() / 2);
         layers.push(hashes);
-        let mut dirty_indices: Vec<HashSet<usize>> = Vec::with_capacity(depth);
         while layers.last().unwrap().len() > 1 || layers.len() < min_depth {
             let layer = layers.last().unwrap();
             let empty_hash = empty_hash_at(ty, layers.len() - 1);
 
             let new_layer = new_layer(ty, layer, empty_hash);
-            dirty_indices.push(HashSet::with_capacity(new_layer.len()));
             layers.push(new_layer);
         }
         let layers = Mutex::new(Layers {
             data: layers,
-            dirt: dirty_indices,
+            dirty_leaf_parents,
         });
         Merkle {
             ty,
@@ -231,14 +230,14 @@ impl Merkle {
 
     fn rehash(&self, layers: &mut Layers) {
         // If nothing is dirty, then there's no need to rehash.
-        if layers.dirt.is_empty() || layers.dirt[0].is_empty() {
+        if layers.dirty_leaf_parents.is_empty() {
             return;
         }
+        // Consume the leaf parents dirty indices.
+        let mut dirt = std::mem::take(&mut layers.dirty_leaf_parents);
         // Process dirty indices starting from layer 1 (layer 0 is the leaves).
         for layer_i in 1..layers.data.len() {
-            let dirty_i = layer_i - 1;
-            // Consume this layer's dirty indices.
-            let dirt = std::mem::take(&mut layers.dirt[dirty_i]);
+            let mut new_dirt = HashSet::with_capacity(dirt.len() / 2);
             // It is important to process the dirty indices in order because
             // when the leaves grown since the last rehash, the new parent is
             // simply pused to the end of the layer's data.
@@ -261,9 +260,10 @@ impl Merkle {
                 }
                 // Mark the node's parent as dirty unless it's the root.
                 if layer_i < layers.data.len() - 1 {
-                    layers.dirt[dirty_i + 1].insert(idx >> 1);
+                    new_dirt.insert(idx >> 1);
                 }
             }
+            dirt = new_dirt;
         }
     }
 
@@ -359,7 +359,7 @@ impl Merkle {
             return;
         }
         layers.data[0][idx] = hash;
-        layers.dirt[0].insert(idx >> 1);
+        layers.dirty_leaf_parents.insert(idx >> 1);
     }
 
     /// Resizes the number of leaves the tree can hold.
@@ -381,7 +381,7 @@ impl Merkle {
         }
         let start = layers.data[0].len();
         for i in start..new_len {
-            layers.dirt[0].insert(i);
+            layers.dirty_leaf_parents.insert(i);
         }
         Ok(layers.data[0].len())
     }
