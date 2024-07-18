@@ -263,7 +263,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	if useStubs {
 		mockSpawn, valStack = createMockValidationNode(t, ctx, &builder.valnodeConfig.Arbitrator)
 	} else {
-		// By now validation only works with HashScheme set
+		// For now validation only works with HashScheme set
 		builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 		_, valStack = createTestValidationNode(t, ctx, builder.valnodeConfig)
 	}

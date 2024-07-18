@@ -23,7 +23,7 @@ func TestDebugTraceCallForRecentBlock(t *testing.T) {
 	defer cancel()
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.execConfig.Caching.Archive = true
-	// By now Archive node should use HashScheme
+	// For now Archive node should use HashScheme
 	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 	cleanup := builder.Build(t)
 	defer cleanup()

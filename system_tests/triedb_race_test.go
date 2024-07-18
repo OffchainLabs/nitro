@@ -24,7 +24,7 @@ func TestTrieDBCommitRace(t *testing.T) {
 	builder.execConfig.Sequencer.MaxBlockSpeed = 0
 	builder.execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
 	builder.execConfig.Caching.Archive = true
-	// By now Archive node should use HashScheme
+	// For now Archive node should use HashScheme
 	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 	builder.execConfig.Caching.BlockCount = 127
 	builder.execConfig.Caching.BlockAge = 0
