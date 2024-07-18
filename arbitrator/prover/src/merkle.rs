@@ -202,8 +202,11 @@ impl Merkle {
         if hashes.is_empty() && min_depth == 0 {
             return Merkle::default();
         }
-        let mut depth = (hashes.len() as f64).log2().ceil() as usize;
-        depth = depth.max(min_depth);
+        let depth = if hashes.len() > 1 {
+            min_depth.max(((hashes.len() - 1).ilog2() + 1).try_into().unwrap())
+        } else {
+            min_depth
+        };
         let mut layers: Vec<Vec<Bytes32>> = Vec::with_capacity(depth);
         layers.push(hashes);
         let mut dirty_indices: Vec<HashSet<usize>> = Vec::with_capacity(depth);
@@ -500,8 +503,15 @@ mod test {
 
     #[test]
     fn correct_capacity() {
+        let merkle: Merkle = Merkle::new(MerkleType::Value, vec![]);
+        assert_eq!(merkle.capacity(), 0);
         let merkle = Merkle::new(MerkleType::Value, vec![Bytes32::from([1; 32])]);
         assert_eq!(merkle.capacity(), 1);
+        let merkle = Merkle::new(
+            MerkleType::Value,
+            vec![Bytes32::from([1; 32]), Bytes32::from([2; 32])],
+        );
+        assert_eq!(merkle.capacity(), 2);
         let merkle = Merkle::new_advanced(MerkleType::Memory, vec![Bytes32::from([1; 32])], 11);
         assert_eq!(merkle.capacity(), 1024);
     }
