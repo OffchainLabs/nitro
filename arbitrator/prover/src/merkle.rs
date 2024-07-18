@@ -238,9 +238,6 @@ impl Merkle {
         // Process dirty indices starting from layer 1 (layer 0 is the leaves).
         for layer_i in 1..layers.data.len() {
             let mut new_dirt = bitvec![0; dirt.len() + 1 >> 1];
-            // It is important to process the dirty indices in order because
-            // when the leaves grown since the last rehash, the new parent is
-            // simply pused to the end of the layer's data.
             for idx in dirt.iter_ones() {
                 let left_child_idx = idx << 1;
                 let right_child_idx = left_child_idx + 1;
