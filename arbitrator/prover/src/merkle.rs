@@ -390,6 +390,19 @@ impl Merkle {
 }
 
 impl PartialEq for Merkle {
+    // There are only three members of a Merkle, the type, the layers, and the min_depth.
+    //
+    // It should be obvious that only if the type and layers are equal, will the root hash
+    // be equal. So, it is sufficient to compare the root hash when checking equality.
+    //
+    // However, it is possible that the min_depth may differ between two merkle trees which
+    // have the same type and layers. The root hash will still be equal unless the min_depth
+    // is larger than the depth required to hold the data in the layers.
+    //
+    // For example, a Merkle tree with 5 leaves requires 3 layeers to hold the data. If the
+    // min_depth is 1 on one tree and 2 on another, the root has would still be equal
+    // because the same nodes are hashed together. However, the min_dpeth was 4, then,
+    // there would be 4 layers in that tree, and the root hash would be different.
     fn eq(&self, other: &Self) -> bool {
         self.root() == other.root()
     }
