@@ -20,6 +20,7 @@ import (
 
 type ValidationClientConfig struct {
 	Name           string                `koanf:"name"`
+	StreamPrefix   string                `koanf:"stream-prefix"`
 	Room           int32                 `koanf:"room"`
 	RedisURL       string                `koanf:"redis-url"`
 	ProducerConfig pubsub.ProducerConfig `koanf:"producer-config"`
@@ -42,6 +43,7 @@ var TestValidationClientConfig = ValidationClientConfig{
 	Name:           "test redis validation client",
 	Room:           2,
 	RedisURL:       "",
+	StreamPrefix:   "test-",
 	ProducerConfig: pubsub.TestProducerConfig,
 	CreateStreams:  false,
 }
@@ -50,6 +52,7 @@ func ValidationClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".name", DefaultValidationClientConfig.Name, "validation client name")
 	f.Int32(prefix+".room", DefaultValidationClientConfig.Room, "validation client room")
 	f.String(prefix+".redis-url", DefaultValidationClientConfig.RedisURL, "redis url")
+	f.String(prefix+".stream-prefix", DefaultValidationClientConfig.StreamPrefix, "prefix for stream name")
 	pubsub.ProducerAddConfigAddOptions(prefix+".producer-config", f)
 	f.Bool(prefix+".create-streams", DefaultValidationClientConfig.CreateStreams, "create redis streams if it does not exist")
 }
@@ -57,14 +60,12 @@ func ValidationClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 // ValidationClient implements validation client through redis streams.
 type ValidationClient struct {
 	stopwaiter.StopWaiter
-	name string
-	room atomic.Int32
+	config *ValidationClientConfig
+	room   atomic.Int32
 	// producers stores moduleRoot to producer mapping.
-	producers      map[common.Hash]*pubsub.Producer[*validator.ValidationInput, validator.GoGlobalState]
-	producerConfig pubsub.ProducerConfig
-	redisClient    redis.UniversalClient
-	moduleRoots    []common.Hash
-	createStreams  bool
+	producers   map[common.Hash]*pubsub.Producer[*validator.ValidationInput, validator.GoGlobalState]
+	redisClient redis.UniversalClient
+	moduleRoots []common.Hash
 }
 
 func NewValidationClient(cfg *ValidationClientConfig) (*ValidationClient, error) {
@@ -76,11 +77,9 @@ func NewValidationClient(cfg *ValidationClientConfig) (*ValidationClient, error)
 		return nil, err
 	}
 	validationClient := &ValidationClient{
-		name:           cfg.Name,
-		producers:      make(map[common.Hash]*pubsub.Producer[*validator.ValidationInput, validator.GoGlobalState]),
-		producerConfig: cfg.ProducerConfig,
-		redisClient:    redisClient,
-		createStreams:  cfg.CreateStreams,
+		config:      cfg,
+		producers:   make(map[common.Hash]*pubsub.Producer[*validator.ValidationInput, validator.GoGlobalState]),
+		redisClient: redisClient,
 	}
 	validationClient.room.Store(cfg.Room)
 	return validationClient, nil
@@ -88,8 +87,8 @@ func NewValidationClient(cfg *ValidationClientConfig) (*ValidationClient, error)
 
 func (c *ValidationClient) Initialize(ctx context.Context, moduleRoots []common.Hash) error {
 	for _, mr := range moduleRoots {
-		if c.createStreams {
-			if err := pubsub.CreateStream(ctx, server_api.RedisStreamForRoot(mr), c.redisClient); err != nil {
+		if c.config.CreateStreams {
+			if err := pubsub.CreateStream(ctx, server_api.RedisStreamForRoot(c.config.StreamPrefix, mr), c.redisClient); err != nil {
 				return fmt.Errorf("creating redis stream: %w", err)
 			}
 		}
@@ -98,7 +97,7 @@ func (c *ValidationClient) Initialize(ctx context.Context, moduleRoots []common.
 			continue
 		}
 		p, err := pubsub.NewProducer[*validator.ValidationInput, validator.GoGlobalState](
-			c.redisClient, server_api.RedisStreamForRoot(mr), &c.producerConfig)
+			c.redisClient, server_api.RedisStreamForRoot(c.config.StreamPrefix, mr), &c.config.ProducerConfig)
 		if err != nil {
 			log.Warn("failed init redis for %v: %w", mr, err)
 			continue
@@ -146,10 +145,7 @@ func (c *ValidationClient) Stop() {
 }
 
 func (c *ValidationClient) Name() string {
-	if c.Started() {
-		return c.name
-	}
-	return "(not started)"
+	return c.config.Name
 }
 
 func (c *ValidationClient) Room() int {
