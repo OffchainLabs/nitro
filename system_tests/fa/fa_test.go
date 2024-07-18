@@ -7,8 +7,7 @@ import (
 )
 
 func TestAliasing(t *testing.T) {
-	var err error
-	err = errors.New("test")
+	err := errors.New("test")
 	Require(t, err)
 }
 
