@@ -75,6 +75,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	"github.com/offchainlabs/nitro/util/testhelpers/env"
 	"github.com/offchainlabs/nitro/util/testhelpers/github"
 	"golang.org/x/exp/slog"
 )
@@ -151,6 +152,74 @@ func (tc *TestClient) EnsureTxSucceededWithTimeout(transaction *types.Transactio
 	return EnsureTxSucceededWithTimeout(tc.ctx, tc.Client, transaction, timeout)
 }
 
+var TestCachingConfig = gethexec.CachingConfig{
+	Archive:                            false,
+	BlockCount:                         128,
+	BlockAge:                           30 * time.Minute,
+	TrieTimeLimit:                      time.Hour,
+	TrieDirtyCache:                     1024,
+	TrieCleanCache:                     600,
+	SnapshotCache:                      400,
+	DatabaseCache:                      2048,
+	SnapshotRestoreGasLimit:            300_000_000_000,
+	MaxNumberOfBlocksToSkipStateSaving: 0,
+	MaxAmountOfGasToSkipStateSaving:    0,
+	StylusLRUCache:                     0,
+	StateScheme:                        env.GetTestStateScheme(),
+}
+
+var DefaultTestForwarderConfig = gethexec.ForwarderConfig{
+	ConnectionTimeout:     2 * time.Second,
+	IdleConnectionTimeout: 2 * time.Second,
+	MaxIdleConnections:    1,
+	RedisUrl:              "",
+	UpdateInterval:        time.Millisecond * 10,
+	RetryInterval:         time.Millisecond * 3,
+}
+
+var TestSequencerConfig = gethexec.SequencerConfig{
+	Enable:                       true,
+	MaxBlockSpeed:                time.Millisecond * 10,
+	MaxRevertGasReject:           params.TxGas + 10000,
+	MaxAcceptableTimestampDelta:  time.Hour,
+	SenderWhitelist:              "",
+	Forwarder:                    DefaultTestForwarderConfig,
+	QueueSize:                    128,
+	QueueTimeout:                 time.Second * 5,
+	NonceCacheSize:               4,
+	MaxTxDataSize:                95000,
+	NonceFailureCacheSize:        1024,
+	NonceFailureCacheExpiry:      time.Second,
+	ExpectedSurplusSoftThreshold: "default",
+	ExpectedSurplusHardThreshold: "default",
+	EnableProfiling:              false,
+}
+
+func ExecConfigDefaultNonSequencerTest() *gethexec.Config {
+	config := gethexec.ConfigDefault
+	config.Caching = TestCachingConfig
+	config.ParentChainReader = headerreader.TestConfig
+	config.Sequencer.Enable = false
+	config.Forwarder = DefaultTestForwarderConfig
+	config.ForwardingTarget = "null"
+
+	_ = config.Validate()
+
+	return &config
+}
+
+func ExecConfigDefaultTest() *gethexec.Config {
+	config := gethexec.ConfigDefault
+	config.Caching = TestCachingConfig
+	config.Sequencer = TestSequencerConfig
+	config.ParentChainReader = headerreader.TestConfig
+	config.ForwardingTarget = "null"
+
+	_ = config.Validate()
+
+	return &config
+}
+
 type NodeBuilder struct {
 	// NodeBuilder configuration
 	ctx           context.Context
@@ -198,7 +267,7 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 	b.l2StackConfig = testhelpers.CreateStackConfigForTest(b.dataDir)
 	cp := valnode.TestValidationConfig
 	b.valnodeConfig = &cp
-	b.execConfig = gethexec.ConfigDefaultTest()
+	b.execConfig = ExecConfigDefaultTest()
 	return b
 }
 
@@ -231,7 +300,7 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 		b.nodeConfig = arbnode.ConfigDefaultL1Test()
 	}
 	if b.execConfig == nil {
-		b.execConfig = gethexec.ConfigDefaultTest()
+		b.execConfig = ExecConfigDefaultTest()
 	}
 	if b.L1Info == nil {
 		b.L1Info = NewL1TestInfo(t)
@@ -955,7 +1024,7 @@ func createL2BlockChainWithStackConfig(
 	if cacheConfig != nil {
 		coreCacheConfig = gethexec.DefaultCacheConfigFor(stack, cacheConfig)
 	}
-	blockchain, err := gethexec.WriteOrTestBlockChain(chainDb, coreCacheConfig, initReader, chainConfig, initMessage, gethexec.ConfigDefaultTest().TxLookupLimit, 0)
+	blockchain, err := gethexec.WriteOrTestBlockChain(chainDb, coreCacheConfig, initReader, chainConfig, initMessage, ExecConfigDefaultTest().TxLookupLimit, 0)
 	Require(t, err)
 
 	return l2info, stack, chainDb, arbDb, blockchain
@@ -1008,7 +1077,7 @@ func Create2ndNodeWithConfig(
 		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
 	}
 	if execConfig == nil {
-		execConfig = gethexec.ConfigDefaultNonSequencerTest()
+		execConfig = ExecConfigDefaultNonSequencerTest()
 	}
 	feedErrChan := make(chan error, 10)
 	l1rpcClient := l1stack.Attach()
@@ -1038,7 +1107,7 @@ func Create2ndNodeWithConfig(
 	chainConfig := firstExec.ArbInterface.BlockChain().Config()
 
 	coreCacheConfig := gethexec.DefaultCacheConfigFor(l2stack, &execConfig.Caching)
-	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, coreCacheConfig, initReader, chainConfig, initMessage, gethexec.ConfigDefaultTest().TxLookupLimit, 0)
+	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, coreCacheConfig, initReader, chainConfig, initMessage, ExecConfigDefaultTest().TxLookupLimit, 0)
 	Require(t, err)
 
 	AddDefaultValNode(t, ctx, nodeConfig, true, "", valnodeConfig.Wasm.RootPath)

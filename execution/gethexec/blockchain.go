@@ -23,7 +23,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/statetransfer"
-	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
 
 type CachingConfig struct {
@@ -79,22 +78,6 @@ var DefaultCachingConfig = CachingConfig{
 	StylusLRUCache:                     256,
 	StateScheme:                        rawdb.HashScheme,
 	StateHistory:                       getStateHistory(DefaultSequencerConfig.MaxBlockSpeed),
-}
-
-var TestCachingConfig = CachingConfig{
-	Archive:                            false,
-	BlockCount:                         128,
-	BlockAge:                           30 * time.Minute,
-	TrieTimeLimit:                      time.Hour,
-	TrieDirtyCache:                     1024,
-	TrieCleanCache:                     600,
-	SnapshotCache:                      400,
-	DatabaseCache:                      2048,
-	SnapshotRestoreGasLimit:            300_000_000_000,
-	MaxNumberOfBlocksToSkipStateSaving: 0,
-	MaxAmountOfGasToSkipStateSaving:    0,
-	StylusLRUCache:                     0,
-	StateScheme:                        env.GetTestStateScheme(),
 }
 
 // TODO remove stack from parameters as it is no longer needed here

@@ -56,7 +56,7 @@ func TestRectreateMissingStates(t *testing.T) {
 		chainDb, err := stack.OpenDatabaseWithExtraOptions("l2chaindata", 0, 0, "l2chaindata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("l2chaindata"))
 		Require(t, err)
 		defer chainDb.Close()
-		cachingConfig := gethexec.TestCachingConfig
+		cachingConfig := TestCachingConfig
 		// For now Archive node should use HashScheme
 		cachingConfig.StateScheme = rawdb.HashScheme
 		cacheConfig := gethexec.DefaultCacheConfigFor(stack, &cachingConfig)

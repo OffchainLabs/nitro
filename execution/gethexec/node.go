@@ -108,31 +108,6 @@ var ConfigDefault = Config{
 	EnablePrefetchBlock:       true,
 }
 
-func ConfigDefaultNonSequencerTest() *Config {
-	config := ConfigDefault
-	config.Caching = TestCachingConfig
-	config.ParentChainReader = headerreader.TestConfig
-	config.Sequencer.Enable = false
-	config.Forwarder = DefaultTestForwarderConfig
-	config.ForwardingTarget = "null"
-
-	_ = config.Validate()
-
-	return &config
-}
-
-func ConfigDefaultTest() *Config {
-	config := ConfigDefault
-	config.Caching = TestCachingConfig
-	config.Sequencer = TestSequencerConfig
-	config.ParentChainReader = headerreader.TestConfig
-	config.ForwardingTarget = "null"
-
-	_ = config.Validate()
-
-	return &config
-}
-
 type ConfigFetcher func() *Config
 
 type ExecutionNode struct {
