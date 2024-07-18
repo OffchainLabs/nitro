@@ -7,7 +7,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"reflect"
 	"strings"
 	"time"
 
@@ -248,7 +247,6 @@ func EndCommonParse(k *koanf.Koanf, config interface{}) error {
 
 		// Default values
 		DecodeHook: mapstructure.ComposeDecodeHookFunc(
-			stringToSliceDurationHookFunc(","),
 			mapstructure.StringToTimeDurationHookFunc()),
 		Metadata:         nil,
 		Result:           config,
@@ -260,36 +258,6 @@ func EndCommonParse(k *koanf.Koanf, config interface{}) error {
 	}
 
 	return nil
-}
-
-func stringToSliceDurationHookFunc(sep string) mapstructure.DecodeHookFunc {
-	return func(
-		f reflect.Type,
-		t reflect.Type,
-		data interface{}) (interface{}, error) {
-		if f.Kind() != reflect.String {
-			return data, nil
-		}
-		if t != reflect.TypeOf([]time.Duration{}) {
-			return data, nil
-		}
-
-		raw, _ := data.(string)
-		if raw == "" {
-			return []time.Duration{}, nil
-		}
-		// raw[1:len(raw)-1] removes the '[' , ']' around the string
-		durationStrings := strings.Split(raw[1:len(raw)-1], sep)
-		var durations []time.Duration
-		for _, durationString := range durationStrings {
-			duration, err := time.ParseDuration(durationString)
-			if err != nil {
-				return nil, err
-			}
-			durations = append(durations, duration)
-		}
-		return durations, nil
-	}
 }
 
 func DumpConfig(k *koanf.Koanf, extraOverrideFields map[string]interface{}) error {
