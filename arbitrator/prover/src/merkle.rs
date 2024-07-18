@@ -2,33 +2,14 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 use arbutil::Bytes32;
-use digest::Digest;
-
-use enum_iterator::Sequence;
-
-use parking_lot::Mutex;
-
-#[cfg(feature = "counters")]
-use enum_iterator::all;
-use itertools::Itertools;
-
-use std::cmp::max;
-
-#[cfg(feature = "counters")]
-use std::sync::atomic::AtomicUsize;
-
-#[cfg(feature = "counters")]
-use std::sync::atomic::Ordering;
-
-#[cfg(feature = "counters")]
-use lazy_static::lazy_static;
-
-#[cfg(feature = "counters")]
-use std::collections::HashMap;
-
 use core::panic;
+use digest::Digest;
+use enum_iterator::Sequence;
+use itertools::Itertools;
+use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
+use std::cmp::max;
 use std::{
     collections::HashSet,
     convert::{TryFrom, TryInto},
@@ -38,10 +19,15 @@ use std::{
 use rayon::prelude::*;
 
 mod zerohashes;
-
-use self::zerohashes::ZERO_HASHES;
-
-use self::zerohashes::EMPTY_HASH;
+use self::zerohashes::{EMPTY_HASH, ZERO_HASHES};
+#[cfg(feature = "counters")]
+use {
+    enum_iterator::all,
+    itertools::Itertools,
+    lazy_static::lazy_static,
+    std::collections::HashMap,
+    std::sync::atomic::{AtomicUsize, Ordering},
+};
 
 #[cfg(feature = "counters")]
 macro_rules! init_counters {
