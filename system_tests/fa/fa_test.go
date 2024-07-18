@@ -1,17 +1,15 @@
 package fa_test
 
 import (
-	"errors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"testing"
 )
 
 func TestAliasing(t *testing.T) {
-	err := errors.New("test")
-	Require(t, err)
+	Fail(t, "fail")
 }
 
-func Require(t *testing.T, err error, text ...interface{}) {
+func Fail(t *testing.T, printables ...interface{}) {
 	t.Helper()
-	testhelpers.RequireImpl(t, err, text...)
+	testhelpers.FailImpl(t, printables...)
 }
