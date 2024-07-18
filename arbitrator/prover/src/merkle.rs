@@ -23,36 +23,27 @@ use self::zerohashes::{EMPTY_HASH, ZERO_HASHES};
 #[cfg(feature = "counters")]
 use {
     enum_iterator::all,
-    itertools::Itertools,
     lazy_static::lazy_static,
     std::collections::HashMap,
     std::sync::atomic::{AtomicUsize, Ordering},
 };
 
 #[cfg(feature = "counters")]
-macro_rules! init_counters {
-    ($name:ident) => {
-        lazy_static! {
-            static ref $name: HashMap<&'static MerkleType, AtomicUsize> = {
-                let mut map = HashMap::new();
-                $(map.insert(&MerkleType::$variant, AtomicUsize::new(0));)*
-                map
-            };
-        }
-    };
+fn create_counters_hashmap() -> HashMap<MerkleType, AtomicUsize> {
+    let mut map = HashMap::new();
+    for ty in all::<MerkleType>() {
+        map.insert(ty, AtomicUsize::new(0));
+    }
+    map
 }
 
 #[cfg(feature = "counters")]
-init_counters!(NEW_COUNTERS);
-
-#[cfg(feature = "counters")]
-init_counters!(ROOT_COUNTERS);
-
-#[cfg(feature = "counters")]
-init_counters!(SET_COUNTERS);
-
-#[cfg(feature = "counters")]
-init_counters!(RESIZE_COUNTERS);
+lazy_static! {
+    static ref NEW_COUNTERS: HashMap<MerkleType, AtomicUsize> = create_counters_hashmap();
+    static ref ROOT_COUNTERS: HashMap<MerkleType, AtomicUsize> = create_counters_hashmap();
+    static ref SET_COUNTERS: HashMap<MerkleType, AtomicUsize> = create_counters_hashmap();
+    static ref RESIZE_COUNTERS: HashMap<MerkleType, AtomicUsize> = create_counters_hashmap();
+}
 
 #[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, Serialize, Deserialize, Sequence)]
 pub enum MerkleType {
