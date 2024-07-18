@@ -210,15 +210,13 @@ impl Merkle {
         let mut layers: Vec<Vec<Bytes32>> = Vec::with_capacity(depth);
         layers.push(hashes);
         let mut dirty_indices: Vec<HashSet<usize>> = Vec::with_capacity(depth);
-        let mut layer_i = 0usize;
         while layers.last().unwrap().len() > 1 || layers.len() < min_depth {
             let layer = layers.last().unwrap();
-            let empty_hash = empty_hash_at(ty, layer_i);
+            let empty_hash = empty_hash_at(ty, layers.len() - 1);
 
             let new_layer = new_layer(ty, layer, empty_hash);
             dirty_indices.push(HashSet::with_capacity(new_layer.len()));
             layers.push(new_layer);
-            layer_i += 1;
         }
         let layers = Mutex::new(Layers {
             data: layers,
