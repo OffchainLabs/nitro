@@ -62,6 +62,7 @@ type ProducerConfig struct {
 	KeepAliveTimeout time.Duration `koanf:"keepalive-timeout"`
 	// Interval duration for checking the result set by consumers.
 	CheckResultInterval time.Duration `koanf:"check-result-interval"`
+	CheckPendingItems   int64         `koanf:"check-pending-items"`
 }
 
 var DefaultProducerConfig = ProducerConfig{
@@ -69,6 +70,7 @@ var DefaultProducerConfig = ProducerConfig{
 	CheckPendingInterval: time.Second,
 	KeepAliveTimeout:     5 * time.Minute,
 	CheckResultInterval:  5 * time.Second,
+	CheckPendingItems:    256,
 }
 
 var TestProducerConfig = ProducerConfig{
@@ -76,6 +78,7 @@ var TestProducerConfig = ProducerConfig{
 	CheckPendingInterval: 10 * time.Millisecond,
 	KeepAliveTimeout:     100 * time.Millisecond,
 	CheckResultInterval:  5 * time.Millisecond,
+	CheckPendingItems:    256,
 }
 
 func ProducerAddConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -83,6 +86,7 @@ func ProducerAddConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".check-pending-interval", DefaultProducerConfig.CheckPendingInterval, "interval in which producer checks pending messages whether consumer processing them is inactive")
 	f.Duration(prefix+".check-result-interval", DefaultProducerConfig.CheckResultInterval, "interval in which producer checks pending messages whether consumer processing them is inactive")
 	f.Duration(prefix+".keepalive-timeout", DefaultProducerConfig.KeepAliveTimeout, "timeout after which consumer is considered inactive if heartbeat wasn't performed")
+	f.Int64(prefix+".check-pending-items", DefaultProducerConfig.CheckPendingItems, "items to screen during check-pending")
 }
 
 func NewProducer[Request any, Response any](client redis.UniversalClient, streamName string, cfg *ProducerConfig) (*Producer[Request, Response], error) {
@@ -147,35 +151,24 @@ func (p *Producer[Request, Response]) reproduceIds(ctx context.Context, staleIds
 	if err != nil {
 		return fmt.Errorf("claiming ownership on messages: %v, error: %w", staleIds, err)
 	}
-	var messages []*Message[Request]
 	for _, msg := range claimedMsgs {
 		data, ok := (msg.Values[messageKey]).(string)
 		if !ok {
-			return fmt.Errorf("casting request: %v to bytes", msg.Values[messageKey])
+			log.Error("redis producer reproduce: message not string", "id", msg.ID, "value", msg.Values[messageKey])
+			continue
 		}
 		var req Request
 		if err := json.Unmarshal([]byte(data), &req); err != nil {
-			return fmt.Errorf("marshaling value: %v, error: %w", msg.Values[messageKey], err)
-		}
-		messages = append(messages, &Message[Request]{
-			ID:    msg.ID,
-			Value: req,
-		})
-	}
-
-	acked := make(map[string]Request)
-	for _, msg := range messages {
-		if _, err := p.client.XAck(ctx, p.redisStream, p.redisGroup, msg.ID).Result(); err != nil {
-			log.Error("ACKing message", "error", err)
+			log.Error("redis producer reproduce: message not a request", "id", msg.ID, "err", err, "value", msg.Values[messageKey])
 			continue
 		}
-		acked[msg.ID] = msg.Value
-	}
-	for k, v := range acked {
+		if _, err := p.client.XAck(ctx, p.redisStream, p.redisGroup, msg.ID).Result(); err != nil {
+			log.Error("redis producer reproduce: could not ACK", "id", msg.ID, "err", err)
+			continue
+		}
 		// Only re-insert messages that were removed the the pending list first.
-		_, err := p.reproduce(ctx, v, k)
-		if err != nil {
-			log.Error("Re-inserting pending messages with inactive consumers", "error", err)
+		if _, err := p.reproduce(ctx, req, msg.ID); err != nil {
+			log.Error("redis producer reproduce: error", "err", err)
 		}
 	}
 	return nil
@@ -184,18 +177,18 @@ func (p *Producer[Request, Response]) reproduceIds(ctx context.Context, staleIds
 func setMinIdInt(min *[2]uint64, id string) error {
 	idParts := strings.Split(id, "-")
 	if len(idParts) != 2 {
-		return errors.New("invalid i.d")
+		return fmt.Errorf("invalid i.d: %v", id)
 	}
 	idTimeStamp, err := strconv.ParseUint(idParts[0], 10, 64)
 	if err != nil {
-		return fmt.Errorf("invalid i.d ts: %w", err)
+		return fmt.Errorf("invalid i.d: %v err: %w", id, err)
 	}
 	if idTimeStamp > min[0] {
 		return nil
 	}
 	idSerial, err := strconv.ParseUint(idParts[1], 10, 64)
 	if err != nil {
-		return fmt.Errorf("invalid i.d serial: %w", err)
+		return fmt.Errorf("invalid i.d serial: %v err: %w", id, err)
 	}
 	if idTimeStamp < min[0] {
 		min[0] = idTimeStamp
@@ -289,7 +282,8 @@ func (p *Producer[Request, Response]) reproduce(ctx context.Context, value Reque
 	if oldKey != "" && promise == nil {
 		// This will happen if the old consumer became inactive but then ack_d
 		// the message afterwards.
-		return nil, fmt.Errorf("error reproducing the message, could not find existing one")
+		// don't error
+		log.Warn("tried reproducing a message but it wasn't found - probably got response", "oldKey", oldKey)
 	}
 	if oldKey == "" || promise == nil {
 		pr := containers.NewPromise[Response](nil)
@@ -324,13 +318,14 @@ func (p *Producer[Request, Response]) havePromiseFor(messageID string) bool {
 	return found
 }
 
+// returns ids of pending messages that's worker doesn't appear alive
 func (p *Producer[Request, Response]) checkPending(ctx context.Context) ([]string, error) {
 	pendingMessages, err := p.client.XPendingExt(ctx, &redis.XPendingExtArgs{
 		Stream: p.redisStream,
 		Group:  p.redisGroup,
 		Start:  "-",
 		End:    "+",
-		Count:  100,
+		Count:  p.cfg.CheckPendingItems,
 	}).Result()
 
 	if err != nil && !errors.Is(err, redis.Nil) {
@@ -338,6 +333,9 @@ func (p *Producer[Request, Response]) checkPending(ctx context.Context) ([]strin
 	}
 	if len(pendingMessages) == 0 {
 		return nil, nil
+	}
+	if len(pendingMessages) >= int(p.cfg.CheckPendingItems) {
+		log.Warn("redis producer: many pending items found", "stream", p.redisStream, "check-pending-items", p.cfg.CheckPendingItems)
 	}
 	// IDs of the pending messages with inactive consumers.
 	var ids []string

@@ -29,7 +29,7 @@ type ValidationClient struct {
 	stopwaiter.StopWaiter
 	client          *rpcclient.RpcClient
 	name            string
-	room            int32
+	room            atomic.Int32
 	wasmModuleRoots []common.Hash
 }
 
@@ -40,12 +40,12 @@ func NewValidationClient(config rpcclient.ClientConfigFetcher, stack *node.Node)
 }
 
 func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
-	atomic.AddInt32(&c.room, -1)
+	c.room.Add(-1)
 	promise := stopwaiter.LaunchPromiseThread[validator.GoGlobalState](c, func(ctx context.Context) (validator.GoGlobalState, error) {
 		input := server_api.ValidationInputToJson(entry)
 		var res validator.GoGlobalState
 		err := c.client.CallContext(ctx, &res, server_api.Namespace+"_validate", input, moduleRoot)
-		atomic.AddInt32(&c.room, 1)
+		c.room.Add(1)
 		return res, err
 	})
 	return server_common.NewValRun(promise, moduleRoot)
@@ -81,7 +81,7 @@ func (c *ValidationClient) Start(ctx_in context.Context) error {
 	} else {
 		log.Info("connected to validation server", "name", name, "room", room)
 	}
-	atomic.StoreInt32(&c.room, int32(room))
+	c.room.Store(int32(room))
 	c.wasmModuleRoots = moduleRoots
 	c.name = name
 	return nil
@@ -106,7 +106,7 @@ func (c *ValidationClient) Name() string {
 }
 
 func (c *ValidationClient) Room() int {
-	room32 := atomic.LoadInt32(&c.room)
+	room32 := c.room.Load()
 	if room32 < 0 {
 		return 0
 	}
