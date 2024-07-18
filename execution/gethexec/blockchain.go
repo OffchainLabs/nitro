@@ -23,7 +23,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/statetransfer"
-	"github.com/offchainlabs/nitro/util/env"
+	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
 
 type CachingConfig struct {

@@ -17,8 +17,8 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/statetransfer"
-	"github.com/offchainlabs/nitro/util/env"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
 
 func TestJsonMarshalUnmarshal(t *testing.T) {

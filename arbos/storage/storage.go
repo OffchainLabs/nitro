@@ -24,7 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
-	"github.com/offchainlabs/nitro/util/env"
+	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
 
 // Storage allows ArbOS to store data persistently in the Ethereum-compatible stateDB. This is represented in

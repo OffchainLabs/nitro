@@ -28,7 +28,7 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/statetransfer"
-	"github.com/offchainlabs/nitro/util/env"
+	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
 
 func BuildBlock(

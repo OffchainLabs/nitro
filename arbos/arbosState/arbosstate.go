@@ -32,7 +32,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/storage"
 	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/util/env"
+	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
 
 // ArbosState contains ArbOS-related state. It is backed by ArbOS's storage in the persistent stateDB.
