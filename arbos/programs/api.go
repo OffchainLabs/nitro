@@ -139,7 +139,7 @@ func newApiClosures(
 
 		// Tracing: emit the call (value transfer is done later in evm.Call)
 		if tracingInfo != nil {
-			tracingInfo.Tracer.CaptureState(0, opcode, startGas, baseCost+gas, scope, []byte{}, depth, nil)
+			tracingInfo.Tracer.OnOpcode(0, byte(opcode), startGas, baseCost+gas, scope, []byte{}, depth, nil)
 		}
 
 		// EVM rule: calls that pay get a stipend (opCall)
@@ -204,7 +204,7 @@ func newApiClosures(
 
 		// Tracing: emit the create
 		if tracingInfo != nil {
-			tracingInfo.Tracer.CaptureState(0, opcode, startGas, baseCost+gas, scope, []byte{}, depth, nil)
+			tracingInfo.Tracer.OnOpcode(0, byte(opcode), startGas, baseCost+gas, scope, []byte{}, depth, nil)
 		}
 
 		var res []byte
@@ -270,8 +270,8 @@ func newApiClosures(
 	captureHostio := func(name string, args, outs []byte, startInk, endInk uint64) {
 		tracingInfo.Tracer.CaptureStylusHostio(name, args, outs, startInk, endInk)
 		if name == "evm_gas_left" || name == "evm_ink_left" {
-			tracingInfo.Tracer.CaptureState(0, vm.GAS, 0, 0, scope, []byte{}, depth, nil)
-			tracingInfo.Tracer.CaptureState(0, vm.POP, 0, 0, scope, []byte{}, depth, nil)
+			tracingInfo.Tracer.OnOpcode(0, byte(vm.GAS), 0, 0, scope, []byte{}, depth, nil)
+			tracingInfo.Tracer.OnOpcode(0, byte(vm.POP), 0, 0, scope, []byte{}, depth, nil)
 		}
 	}
 

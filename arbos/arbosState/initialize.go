@@ -5,6 +5,7 @@ package arbosState
 
 import (
 	"errors"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"math/big"
 	"sort"
 
@@ -143,7 +144,7 @@ func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDat
 		if err != nil {
 			return common.Hash{}, err
 		}
-		statedb.SetBalance(account.Addr, uint256.MustFromBig(account.EthBalance))
+		statedb.SetBalance(account.Addr, uint256.MustFromBig(account.EthBalance), tracing.BalanceChangeUnspecified)
 		statedb.SetNonce(account.Addr, account.Nonce)
 		if account.ContractInfo != nil {
 			statedb.SetCode(account.Addr, account.ContractInfo.Code)
@@ -174,7 +175,7 @@ func initializeRetryables(statedb *state.StateDB, rs *retryables.RetryableState,
 			return err
 		}
 		if r.Timeout <= currentTimestamp {
-			statedb.AddBalance(r.Beneficiary, uint256.MustFromBig(r.Callvalue))
+			statedb.AddBalance(r.Beneficiary, uint256.MustFromBig(r.Callvalue), tracing.BalanceChangeUnspecified)
 			continue
 		}
 		retryablesList = append(retryablesList, r)
@@ -193,7 +194,7 @@ func initializeRetryables(statedb *state.StateDB, rs *retryables.RetryableState,
 			addr := r.To
 			to = &addr
 		}
-		statedb.AddBalance(retryables.RetryableEscrowAddress(r.Id), uint256.MustFromBig(r.Callvalue))
+		statedb.AddBalance(retryables.RetryableEscrowAddress(r.Id), uint256.MustFromBig(r.Callvalue), tracing.BalanceChangeUnspecified)
 		_, err := rs.CreateRetryable(r.Id, r.Timeout, r.From, to, r.Callvalue, r.Beneficiary, r.Calldata)
 		if err != nil {
 			return err

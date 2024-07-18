@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/base64"
 	"io"
+	"log/slog"
 	"math/big"
 	"net"
 	"net/http"
@@ -35,7 +36,6 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
-	"golang.org/x/exp/slog"
 )
 
 func startLocalDASServer(
