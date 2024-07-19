@@ -1,11 +1,18 @@
 package N
 
 import (
+	"math/rand"
 	"testing"
 )
 
-func TestAliasing(t *testing.T) {
+func TestAliasing1(t *testing.T) {
 	Fail(t, "fail")
+}
+
+func TestAliasing(t *testing.T) {
+	if rand.Int()%2 == 0 {
+		Fail(t, "fail")
+	}
 }
 
 func Fail(t *testing.T, printables ...interface{}) {
