@@ -504,3 +504,19 @@ func deploySafe(t *testing.T, l1 *TestClient, backend bind.ContractBackend, depl
 	Require(t, err)
 	return safeProxyAddress
 }
+
+func makeBackgroundTxs(ctx context.Context, builder *NodeBuilder) error {
+	for i := uint64(0); ctx.Err() == nil; i++ {
+		builder.L2Info.Accounts["BackgroundUser"].Nonce.Store(i)
+		tx := builder.L2Info.PrepareTx("BackgroundUser", "BackgroundUser", builder.L2Info.TransferGas, common.Big0, nil)
+		err := builder.L2.Client.SendTransaction(ctx, tx)
+		if err != nil {
+			return err
+		}
+		_, err = builder.L2.EnsureTxSucceeded(tx)
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
