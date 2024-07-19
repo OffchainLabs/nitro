@@ -145,13 +145,21 @@ jobs:
         if: matrix.test-mode == 'defaults'
         run: |
           packages=`go list ./...`
-          stdbuf -oL gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 --no-color=false -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -timeout 20m -tags=cionly > >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
+          for package in $packages; do
+            if !stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=1 --no-color=false -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -timeout 20m -tags=cionly > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
+              exit 1
+            fi
+          done
 
       - name: run tests with race detection
         if: matrix.test-mode == 'race'
         run: |
           packages=`go list ./...`
-          stdbuf -oL gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 --no-color=false -- ./... -race -timeout 30m > >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
+          for package in $packages; do
+            if !stdbuf -oL gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 --no-color=false -- ./... -race -timeout 30m > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
+              exit 1
+            fi
+          done
 
       - name: run redis tests
         if: matrix.test-mode == 'defaults'
@@ -161,19 +169,31 @@ jobs:
         if: matrix.test-mode == 'challenge'
         run: |
           packages=`go list ./...`
-          stdbuf -oL gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 --no-color=false -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -tags=challengetest -run=TestChallenge > >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
+          for package in $packages; do
+            if !stdbuf -oL gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 --no-color=false -- ./... -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -tags=challengetest -run=TestChallenge > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
+              exit 1
+            fi
+          done
 
       - name: run stylus tests
         if: matrix.test-mode == 'stylus'
         run: |
           packages=`go list ./...`
-          stdbuf -oL gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 --no-color=false -- ./... -timeout 60m -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -tags=stylustest -run="TestProgramArbitrator" > >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
+          for package in $packages; do
+            if !stdbuf -oL gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 --no-color=false -- ./... -timeout 60m -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -tags=stylustest -run="TestProgramArbitrator" > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
+              exit 1
+            fi
+          done
 
       - name: run long stylus tests
         if: matrix.test-mode == 'long'
         run: |
           packages=`go list ./...`
-          stdbuf -oL gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 --no-color=false -- ./... -timeout 60m -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -tags=stylustest -run="TestProgramLong" > >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
+          for package in $packages; do
+            if !stdbuf -oL gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 --no-color=false -- ./... -timeout 60m -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -tags=stylustest -run="TestProgramLong" > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
+              exit 1
+            fi
+          done
 
       - name: Archive detailed run log
         uses: actions/upload-artifact@v3
