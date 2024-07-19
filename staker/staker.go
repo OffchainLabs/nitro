@@ -96,6 +96,7 @@ type L1ValidatorConfig struct {
 	ParentChainWallet         genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
 	EnableFastConfirmation    bool                        `koanf:"enable-fast-confirmation"`
 	FastConfirmSafeAddress    string                      `koanf:"fast-confirm-safe-address"`
+	LogQueryBatchSize         uint64                      `koanf:"log-query-batch-size" reload:"hot"`
 
 	strategy    StakerStrategy
 	gasRefunder common.Address
@@ -164,6 +165,7 @@ var DefaultL1ValidatorConfig = L1ValidatorConfig{
 	ParentChainWallet:         DefaultValidatorL1WalletConfig,
 	EnableFastConfirmation:    false,
 	FastConfirmSafeAddress:    "",
+	LogQueryBatchSize:         0,
 }
 
 var TestL1ValidatorConfig = L1ValidatorConfig{
@@ -186,6 +188,7 @@ var TestL1ValidatorConfig = L1ValidatorConfig{
 	ParentChainWallet:         DefaultValidatorL1WalletConfig,
 	EnableFastConfirmation:    false,
 	FastConfirmSafeAddress:    "",
+	LogQueryBatchSize:         0,
 }
 
 var DefaultValidatorL1WalletConfig = genericconf.WalletConfig{
@@ -211,6 +214,7 @@ func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".gas-refunder-address", DefaultL1ValidatorConfig.GasRefunderAddress, "The gas refunder contract address (optional)")
 	f.String(prefix+".redis-url", DefaultL1ValidatorConfig.RedisUrl, "redis url for L1 validator")
 	f.Uint64(prefix+".extra-gas", DefaultL1ValidatorConfig.ExtraGas, "use this much more gas than estimation says is necessary to post transactions")
+	f.Uint64(prefix+".log-query-batch-size", DefaultL1ValidatorConfig.LogQueryBatchSize, "range ro query from eth_getLogs")
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfigForValidator)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultL1ValidatorConfig.ParentChainWallet.Pathname)

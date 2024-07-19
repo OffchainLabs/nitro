@@ -24,7 +24,7 @@ type executionRun struct {
 	close sync.Once
 }
 
-// NewExecutionChallengeBackend creates a backend with the given arguments.
+// NewExecutionRun creates a backend with the given arguments.
 // Note: machineCache may be nil, but if present, it must not have a restricted range.
 func NewExecutionRun(
 	ctxIn context.Context,

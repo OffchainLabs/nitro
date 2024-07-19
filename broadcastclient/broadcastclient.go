@@ -133,7 +133,7 @@ type BroadcastClient struct {
 	connMutex sync.Mutex
 	conn      net.Conn
 
-	retryCount int64
+	retryCount atomic.Int64
 
 	retrying                        bool
 	shuttingDown                    bool
@@ -435,7 +435,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 }
 
 func (bc *BroadcastClient) GetRetryCount() int64 {
-	return atomic.LoadInt64(&bc.retryCount)
+	return bc.retryCount.Load()
 }
 
 func (bc *BroadcastClient) isShuttingDown() bool {
@@ -458,7 +458,7 @@ func (bc *BroadcastClient) retryConnect(ctx context.Context) io.Reader {
 		case <-timer.C:
 		}
 
-		atomic.AddInt64(&bc.retryCount, 1)
+		bc.retryCount.Add(1)
 		earlyFrameData, err := bc.connect(ctx, bc.nextSeqNum)
 		if err == nil {
 			bc.retrying = false
