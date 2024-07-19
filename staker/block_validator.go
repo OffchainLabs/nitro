@@ -473,7 +473,7 @@ func (v *BlockValidator) sendRecord(s *validationStatus) error {
 
 //nolint:gosec
 func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoot common.Hash) error {
-	input, err := validationEntry.ToInput()
+	input, err := validationEntry.ToInput("wavm")
 	if err != nil {
 		return err
 	}
@@ -812,11 +812,6 @@ validationsLoop:
 			return nil, nil
 		}
 		if currentStatus == Prepared {
-			input, err := validationStatus.Entry.ToInput()
-			if err != nil && ctx.Err() == nil {
-				v.possiblyFatal(fmt.Errorf("%w: error preparing validation", err))
-				continue
-			}
 			replaced := validationStatus.replaceStatus(Prepared, SendingValidation)
 			if !replaced {
 				v.possiblyFatal(errors.New("failed to set SendingValidation status"))
@@ -824,6 +819,11 @@ validationsLoop:
 			validatorPendingValidationsGauge.Inc(1)
 			var runs []validator.ValidationRun
 			for _, moduleRoot := range wasmRoots {
+				input, err := validationStatus.Entry.ToInput(v.chosenValidator[moduleRoot].StylusArch())
+				if err != nil && ctx.Err() == nil {
+					v.possiblyFatal(fmt.Errorf("%w: error preparing validation", err))
+					continue
+				}
 				run := v.chosenValidator[moduleRoot].Launch(input, moduleRoot)
 				log.Trace("advanceValidations: launched", "pos", validationStatus.Entry.Pos, "moduleRoot", moduleRoot)
 				runs = append(runs, run)

@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"runtime"
 	"sync/atomic"
 	"time"
 
@@ -29,13 +30,16 @@ type ValidationClient struct {
 	stopwaiter.StopWaiter
 	client          *rpcclient.RpcClient
 	name            string
+	stylusArch      string
 	room            atomic.Int32
 	wasmModuleRoots []common.Hash
 }
 
 func NewValidationClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *ValidationClient {
 	return &ValidationClient{
-		client: rpcclient.NewRpcClient(config, stack),
+		client:     rpcclient.NewRpcClient(config, stack),
+		name:       "not started",
+		stylusArch: "not started",
 	}
 }
 
@@ -64,15 +68,22 @@ func (c *ValidationClient) Start(ctx_in context.Context) error {
 	if len(name) == 0 {
 		return errors.New("couldn't read name from server")
 	}
+	var stylusArch string
+	if err := c.client.CallContext(ctx, &stylusArch, server_api.Namespace+"_stylusArch"); err != nil {
+		return err
+	}
+	if stylusArch != "wavm" && stylusArch != runtime.GOARCH && stylusArch != "mock" {
+		return fmt.Errorf("unsupported stylus architecture: %v", stylusArch)
+	}
 	var moduleRoots []common.Hash
-	if err := c.client.CallContext(c.GetContext(), &moduleRoots, server_api.Namespace+"_wasmModuleRoots"); err != nil {
+	if err := c.client.CallContext(ctx, &moduleRoots, server_api.Namespace+"_wasmModuleRoots"); err != nil {
 		return err
 	}
 	if len(moduleRoots) == 0 {
 		return fmt.Errorf("server reported no wasmModuleRoots")
 	}
 	var room int
-	if err := c.client.CallContext(c.GetContext(), &room, server_api.Namespace+"_room"); err != nil {
+	if err := c.client.CallContext(ctx, &room, server_api.Namespace+"_room"); err != nil {
 		return err
 	}
 	if room < 2 {
@@ -84,6 +95,7 @@ func (c *ValidationClient) Start(ctx_in context.Context) error {
 	c.room.Store(int32(room))
 	c.wasmModuleRoots = moduleRoots
 	c.name = name
+	c.stylusArch = stylusArch
 	return nil
 }
 
@@ -92,6 +104,13 @@ func (c *ValidationClient) WasmModuleRoots() ([]common.Hash, error) {
 		return c.wasmModuleRoots, nil
 	}
 	return nil, errors.New("not started")
+}
+
+func (c *ValidationClient) StylusArch() string {
+	if c.Started() {
+		return c.stylusArch
+	}
+	return "not started"
 }
 
 func (c *ValidationClient) Stop() {

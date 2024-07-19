@@ -14,6 +14,7 @@ type ValidationSpawner interface {
 	Start(context.Context) error
 	Stop()
 	Name() string
+	StylusArch() string
 	Room() int
 }
 

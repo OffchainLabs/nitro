@@ -88,6 +88,10 @@ func (s *ArbitratorSpawner) WasmModuleRoots() ([]common.Hash, error) {
 	return s.locator.ModuleRoots(), nil
 }
 
+func (s *ArbitratorSpawner) StylusArch() string {
+	return "wavm"
+}
+
 func (s *ArbitratorSpawner) Name() string {
 	return "arbitrator"
 }
@@ -118,8 +122,11 @@ func (v *ArbitratorSpawner) loadEntryToMachine(ctx context.Context, entry *valid
 			return fmt.Errorf("error while trying to add sequencer msg for proving: %w", err)
 		}
 	}
-	for moduleHash, info := range entry.UserWasms {
-		err = mach.AddUserWasm(moduleHash, info.Module)
+	if entry.StylusArch != "wavm" {
+		return fmt.Errorf("bad stylus arch loaded to machine. Expected wavm. Got: %s", entry.StylusArch)
+	}
+	for moduleHash, module := range entry.UserWasms {
+		err = mach.AddUserWasm(moduleHash, module)
 		if err != nil {
 			log.Error(
 				"error adding user wasm for proving",

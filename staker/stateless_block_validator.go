@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math/big"
 	"net/url"
+	"runtime"
 	"testing"
 
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
@@ -170,21 +171,32 @@ type validationEntry struct {
 	DelayedMsg []byte
 }
 
-func (e *validationEntry) ToInput() (*validator.ValidationInput, error) {
+func (e *validationEntry) ToInput(stylusArch string) (*validator.ValidationInput, error) {
 	if e.Stage != Ready {
 		return nil, errors.New("cannot create input from non-ready entry")
 	}
-	return &validator.ValidationInput{
+	res := validator.ValidationInput{
 		Id:            uint64(e.Pos),
 		HasDelayedMsg: e.HasDelayedMsg,
 		DelayedMsgNr:  e.DelayedMsgNr,
 		Preimages:     e.Preimages,
-		UserWasms:     e.UserWasms,
+		StylusArch:    stylusArch,
+		UserWasms:     make(map[common.Hash][]byte, len(e.UserWasms)),
 		BatchInfo:     e.BatchInfo,
 		DelayedMsg:    e.DelayedMsg,
 		StartState:    e.Start,
 		DebugChain:    e.ChainConfig.DebugMode(),
-	}, nil
+	}
+	for hash, info := range e.UserWasms {
+		if stylusArch == "wavm" {
+			res.UserWasms[hash] = info.Module
+		} else if stylusArch == runtime.GOARCH {
+			res.UserWasms[hash] = info.Asm
+		} else {
+			return nil, fmt.Errorf("stylusArch not supported by block validator: %v", stylusArch)
+		}
+	}
+	return &res, nil
 }
 
 func newValidationEntry(
@@ -421,14 +433,14 @@ func (v *StatelessBlockValidator) ValidateResult(
 	if err != nil {
 		return false, nil, err
 	}
-	input, err := entry.ToInput()
-	if err != nil {
-		return false, nil, err
-	}
 	var run validator.ValidationRun
 	if !useExec {
 		if v.redisValidator != nil {
 			if validator.SpawnerSupportsModule(v.redisValidator, moduleRoot) {
+				input, err := entry.ToInput(v.redisValidator.StylusArch())
+				if err != nil {
+					return false, nil, err
+				}
 				run = v.redisValidator.Launch(input, moduleRoot)
 			}
 		}
@@ -436,6 +448,10 @@ func (v *StatelessBlockValidator) ValidateResult(
 	if run == nil {
 		for _, spawner := range v.execSpawners {
 			if validator.SpawnerSupportsModule(spawner, moduleRoot) {
+				input, err := entry.ToInput(spawner.StylusArch())
+				if err != nil {
+					return false, nil, err
+				}
 				run = spawner.Launch(input, moduleRoot)
 				break
 			}
