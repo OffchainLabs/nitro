@@ -162,9 +162,12 @@ func (f *FastConfirmSafe) checkApprovedHashAndExecTransaction(ctx context.Contex
 	var signatures []byte
 	approvedHashCount := uint64(0)
 	for _, owner := range f.owners {
+		if f.wallet.Address() == nil {
+			return errors.New("wallet address is nil")
+		}
 		var approved *big.Int
-		// No need check if fastConfirmApprover has approved the hash,
-		// since checkApprovedHashAndExecTransaction is called only after fastConfirmApprover has approved the hash.
+		// No need check if wallet has approved the hash,
+		// since checkApprovedHashAndExecTransaction is called only after wallet has approved the hash.
 		if *f.wallet.Address() == owner {
 			approved = common.Big1
 		} else {
