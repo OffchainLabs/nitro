@@ -29,8 +29,6 @@ func TestSnapSync(t *testing.T) {
 
 	// 1st node with sequencer, stays up all the time.
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	// TODO: check why snap sync is not working with path scheme.
-	// At least nodeB and nodeC should be able to use path scheme.
 	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 	builder.L2Info = NewBlockChainTestInfo(
 		t,

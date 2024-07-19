@@ -228,6 +228,14 @@ func GetBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, chainC
 }
 
 func WriteOrTestBlockChain(chainDb ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, txLookupLimit uint64, accountsPerSync uint) (*core.BlockChain, error) {
+	emptyBlockChain := rawdb.ReadHeadHeader(chainDb) == nil
+	if !emptyBlockChain && (cacheConfig.StateScheme == rawdb.PathScheme) {
+		// When using path scheme, and the stored state trie is not empty,
+		// WriteOrTestGenBlock is not able to recover EmptyRootHash state trie node.
+		// In that case Nitro doesn't test genblock, but just returns the BlockChain.
+		return GetBlockChain(chainDb, cacheConfig, chainConfig, txLookupLimit)
+	}
+
 	err := WriteOrTestGenblock(chainDb, cacheConfig, initData, chainConfig, initMessage, accountsPerSync)
 	if err != nil {
 		return nil, err
