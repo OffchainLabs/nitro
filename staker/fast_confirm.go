@@ -19,7 +19,6 @@ import (
 )
 
 type FastConfirmSafe struct {
-	rollupAddress             common.Address
 	safe                      *contractsgen.Safe
 	owners                    []common.Address
 	threshold                 uint64
@@ -28,26 +27,21 @@ type FastConfirmSafe struct {
 	wallet                    ValidatorWalletInterface
 	gasRefunder               common.Address
 	l1Reader                  *headerreader.HeaderReader
-	fastConfirmApprover       common.Address
 }
 
 func NewFastConfirmSafe(
 	callOpts bind.CallOpts,
-	rollupAddress common.Address,
 	fastConfirmSafeAddress common.Address,
 	builder *txbuilder.Builder,
 	wallet ValidatorWalletInterface,
 	gasRefunder common.Address,
 	l1Reader *headerreader.HeaderReader,
-	fastConfirmApprover common.Address,
 ) (*FastConfirmSafe, error) {
 	fastConfirmSafe := &FastConfirmSafe{
-		builder:             builder,
-		rollupAddress:       rollupAddress,
-		wallet:              wallet,
-		gasRefunder:         gasRefunder,
-		l1Reader:            l1Reader,
-		fastConfirmApprover: fastConfirmApprover,
+		builder:     builder,
+		wallet:      wallet,
+		gasRefunder: gasRefunder,
+		l1Reader:    l1Reader,
 	}
 	safe, err := contractsgen.NewSafe(fastConfirmSafeAddress, builder)
 	if err != nil {
@@ -81,32 +75,6 @@ func NewFastConfirmSafe(
 	return fastConfirmSafe, nil
 }
 
-func (s *Staker) tryFastConfirmationNodeNumber(ctx context.Context, number uint64) error {
-	if !s.config.EnableFastConfirmation {
-		return nil
-	}
-	nodeInfo, err := s.rollup.LookupNode(ctx, number)
-	if err != nil {
-		return err
-	}
-	return s.tryFastConfirmation(ctx, nodeInfo.AfterState().GlobalState.BlockHash, nodeInfo.AfterState().GlobalState.SendRoot)
-}
-
-func (s *Staker) tryFastConfirmation(ctx context.Context, blockHash common.Hash, sendRoot common.Hash) error {
-	if !s.config.EnableFastConfirmation {
-		return nil
-	}
-	if s.fastConfirmSafe != nil {
-		return s.fastConfirmSafe.tryFastConfirmation(ctx, blockHash, sendRoot)
-	}
-	auth, err := s.builder.Auth(ctx)
-	if err != nil {
-		return err
-	}
-	_, err = s.rollup.FastConfirmNextNode(auth, blockHash, sendRoot)
-	return err
-}
-
 func (f *FastConfirmSafe) tryFastConfirmation(ctx context.Context, blockHash common.Hash, sendRoot common.Hash) error {
 	fastConfirmCallData, err := f.createFastConfirmCalldata(blockHash, sendRoot)
 	if err != nil {
@@ -121,7 +89,7 @@ func (f *FastConfirmSafe) tryFastConfirmation(ctx context.Context, blockHash com
 	// Hash of the safe transaction.
 	safeTxHash, err := f.safe.GetTransactionHash(
 		callOpts,
-		f.rollupAddress,
+		f.wallet.RollupAddress(),
 		big.NewInt(0),
 		fastConfirmCallData,
 		0,
@@ -197,7 +165,7 @@ func (f *FastConfirmSafe) checkApprovedHashAndExecTransaction(ctx context.Contex
 		var approved *big.Int
 		// No need check if fastConfirmApprover has approved the hash,
 		// since checkApprovedHashAndExecTransaction is called only after fastConfirmApprover has approved the hash.
-		if f.fastConfirmApprover == owner {
+		if *f.wallet.Address() == owner {
 			approved = common.Big1
 		} else {
 			var err error
@@ -230,7 +198,7 @@ func (f *FastConfirmSafe) checkApprovedHashAndExecTransaction(ctx context.Contex
 		}
 		_, err = f.safe.ExecTransaction(
 			auth,
-			f.rollupAddress,
+			f.wallet.RollupAddress(),
 			big.NewInt(0),
 			fastConfirmCallData,
 			0,

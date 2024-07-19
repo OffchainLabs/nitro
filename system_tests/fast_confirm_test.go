@@ -319,7 +319,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	valConfig := staker.TestL1ValidatorConfig
 	valConfig.EnableFastConfirmation = true
 	valConfig.FastConfirmSafeAddress = safeAddress.String()
-	valConfig.FastConfirmApprover = valWalletAddrA.String()
+
 	parentChainID, err := builder.L1.Client.ChainID(ctx)
 	if err != nil {
 		t.Fatalf("Failed to get parent chain id: %v", err)
@@ -369,10 +369,8 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	)
 	Require(t, err)
 	err = stakerA.Initialize(ctx)
-	if stakerA.Strategy() != staker.WatchtowerStrategy {
-		err = valWalletA.Initialize(ctx)
-		Require(t, err)
-	}
+	Require(t, err)
+	err = valWalletA.Initialize(ctx)
 	Require(t, err)
 	cfg := arbnode.ConfigDefaultL1NonSequencerTest()
 	signerCfg, err := externalSignerTestCfg(srv.Address, srv.URL())
@@ -394,7 +392,6 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	valWalletB, err := validatorwallet.NewEOA(dpB, l2nodeB.DeployInfo.Rollup, l2nodeB.L1Reader.Client(), func() uint64 { return 0 })
 	Require(t, err)
 	valConfig.Strategy = "watchtower"
-	valConfig.FastConfirmApprover = srv.Address.String()
 	statelessB, err := staker.NewStatelessBlockValidator(
 		l2nodeB.InboxReader,
 		l2nodeB.InboxTracker,
@@ -423,10 +420,8 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	Require(t, err)
 	err = stakerB.Initialize(ctx)
 	Require(t, err)
-	if stakerB.Strategy() != staker.WatchtowerStrategy {
-		err = valWalletB.Initialize(ctx)
-		Require(t, err)
-	}
+	err = valWalletB.Initialize(ctx)
+	Require(t, err)
 
 	builder.L2Info.GenerateAccount("BackgroundUser")
 	tx = builder.L2Info.PrepareTx("Faucet", "BackgroundUser", builder.L2Info.TransferGas, balance, nil)
