@@ -1,3 +1,10 @@
+// Copyright 2023-2024, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
+
+// race detection makes things slow and miss timeouts
+//go:build !race
+// +build !race
+
 package arbtest
 
 import (
