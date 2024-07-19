@@ -23,8 +23,6 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
-        with:
-          submodules: true
 
       - name: Install dependencies
         run: sudo apt update && sudo apt install -y wabt gotestsum
