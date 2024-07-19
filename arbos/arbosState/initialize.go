@@ -77,7 +77,7 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 	triedbConfig.Preimages = false
 	stateDatabase := state.NewDatabaseWithConfig(db, triedbConfig)
 	defer func() {
-		err = stateDatabase.TrieDB().Close()
+		err = errors.Join(err, stateDatabase.TrieDB().Close())
 	}()
 	statedb, err := state.New(common.Hash{}, stateDatabase, nil)
 	if err != nil {
