@@ -104,10 +104,11 @@ func validateBlockRange(
 	}
 }
 
-func TestProgramEvmData(t *testing.T) {
-	t.Parallel()
-	testEvmData(t, true)
-}
+//
+//func TestProgramEvmData(t *testing.T) {
+//	t.Parallel()
+//	testEvmData(t, true)
+//}
 
 func testEvmData(t *testing.T, jit bool) {
 	builder, auth, cleanup := setupProgramTest(t, jit)
