@@ -32,18 +32,6 @@ jobs:
         with:
           go-version: 1.21.x
 
-      - name: Cache Build Products
-        uses: actions/cache@v3
-        with:
-          path: |
-            ~/go/pkg/mod
-            ~/.cache/go-build
-          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}-${{ matrix.test-mode }}
-          restore-keys: ${{ runner.os }}-go-
-
-      - name: Build
-        run: make build test-go-deps -j
-
       - name: Set environment variables
         run: |
           mkdir -p target/tmp/deadbeefbee
