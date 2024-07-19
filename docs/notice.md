@@ -1,1 +1,0 @@
-**Note**: Docs now live at https://github.com/OffchainLabs/nitro-docs

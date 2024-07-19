@@ -2,7 +2,7 @@ package N
 
 import (
 	"errors"
-	"github.com/offchainlabs/nitro/util/testhelpers"
+	"runtime/debug"
 	"testing"
 )
 
@@ -13,5 +13,16 @@ func TestEmptyCliConfig(t *testing.T) {
 
 func Require(t *testing.T, err error, text ...interface{}) {
 	t.Helper()
-	testhelpers.RequireImpl(t, err, text...)
+	RequireImpl(t, err, text...)
+}
+
+var Red = "\033[31;1m"
+var Clear = "\033[0;0m"
+
+func RequireImpl(t *testing.T, err error, printables ...interface{}) {
+	t.Helper()
+	if err != nil {
+		t.Log(string(debug.Stack()))
+		t.Fatal(Red, printables, err, Clear)
+	}
 }
