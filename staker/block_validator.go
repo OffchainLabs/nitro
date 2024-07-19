@@ -468,7 +468,7 @@ func (v *BlockValidator) sendRecord(s *validationStatus) error {
 
 //nolint:gosec
 func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoot common.Hash) error {
-	input, err := validationEntry.ToInput("wavm")
+	input, err := validationEntry.ToInput([]string{"wavm"})
 	if err != nil {
 		return err
 	}
@@ -814,7 +814,7 @@ validationsLoop:
 			validatorPendingValidationsGauge.Inc(1)
 			var runs []validator.ValidationRun
 			for _, moduleRoot := range wasmRoots {
-				input, err := validationStatus.Entry.ToInput(v.chosenValidator[moduleRoot].StylusArch())
+				input, err := validationStatus.Entry.ToInput(v.chosenValidator[moduleRoot].StylusArchs())
 				if err != nil && ctx.Err() == nil {
 					v.possiblyFatal(fmt.Errorf("%w: error preparing validation", err))
 					continue

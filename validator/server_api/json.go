@@ -62,8 +62,7 @@ type InputJSON struct {
 	BatchInfo     []BatchInfoJson
 	DelayedMsgB64 string
 	StartState    validator.GoGlobalState
-	StylusArch    string
-	UserWasms     map[common.Hash]string
+	UserWasms     map[string]map[common.Hash]string
 	DebugChain    bool
 }
 
@@ -95,20 +94,23 @@ func ValidationInputToJson(entry *validator.ValidationInput) *InputJSON {
 		DelayedMsgB64: base64.StdEncoding.EncodeToString(entry.DelayedMsg),
 		StartState:    entry.StartState,
 		PreimagesB64:  jsonPreimagesMap,
-		UserWasms:     make(map[common.Hash]string),
-		StylusArch:    entry.StylusArch,
+		UserWasms:     make(map[string]map[common.Hash]string),
 		DebugChain:    entry.DebugChain,
 	}
 	for _, binfo := range entry.BatchInfo {
 		encData := base64.StdEncoding.EncodeToString(binfo.Data)
 		res.BatchInfo = append(res.BatchInfo, BatchInfoJson{Number: binfo.Number, DataB64: encData})
 	}
-	for moduleHash, data := range entry.UserWasms {
-		compressed, err := arbcompress.CompressWell(data)
-		if err != nil {
-			entry.StylusArch = "compressError:" + err.Error()
+	for arch, wasms := range entry.UserWasms {
+		archWasms := make(map[common.Hash]string)
+		for moduleHash, data := range wasms {
+			compressed, err := arbcompress.CompressWell(data)
+			if err != nil {
+				continue
+			}
+			archWasms[moduleHash] = base64.StdEncoding.EncodeToString(compressed)
 		}
-		res.UserWasms[moduleHash] = base64.StdEncoding.EncodeToString(compressed)
+		res.UserWasms[arch] = archWasms
 	}
 	return res
 }
@@ -124,8 +126,7 @@ func ValidationInputFromJson(entry *InputJSON) (*validator.ValidationInput, erro
 		DelayedMsgNr:  entry.DelayedMsgNr,
 		StartState:    entry.StartState,
 		Preimages:     preimages,
-		StylusArch:    entry.StylusArch,
-		UserWasms:     make(map[common.Hash][]byte),
+		UserWasms:     make(map[string]map[common.Hash][]byte),
 		DebugChain:    entry.DebugChain,
 	}
 	delayed, err := base64.StdEncoding.DecodeString(entry.DelayedMsgB64)
@@ -144,16 +145,20 @@ func ValidationInputFromJson(entry *InputJSON) (*validator.ValidationInput, erro
 		}
 		valInput.BatchInfo = append(valInput.BatchInfo, decInfo)
 	}
-	for moduleHash, encoded := range entry.UserWasms {
-		decoded, err := base64.StdEncoding.DecodeString(encoded)
-		if err != nil {
-			return nil, err
+	for arch, wasms := range entry.UserWasms {
+		archWasms := make(map[common.Hash][]byte)
+		for moduleHash, encoded := range wasms {
+			decoded, err := base64.StdEncoding.DecodeString(encoded)
+			if err != nil {
+				return nil, err
+			}
+			uncompressed, err := arbcompress.Decompress(decoded, 30000000)
+			if err != nil {
+				return nil, err
+			}
+			archWasms[moduleHash] = uncompressed
 		}
-		uncompressed, err := arbcompress.Decompress(decoded, 30000000)
-		if err != nil {
-			return nil, err
-		}
-		valInput.UserWasms[moduleHash] = uncompressed
+		valInput.UserWasms[arch] = archWasms
 	}
 	return valInput, nil
 }

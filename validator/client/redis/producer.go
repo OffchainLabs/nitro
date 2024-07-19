@@ -23,7 +23,7 @@ type ValidationClientConfig struct {
 	StreamPrefix   string                `koanf:"stream-prefix"`
 	Room           int32                 `koanf:"room"`
 	RedisURL       string                `koanf:"redis-url"`
-	StylusArch     string                `koanf:"stylus-arch"`
+	StylusArchs    []string              `koanf:"stylus-archs"`
 	ProducerConfig pubsub.ProducerConfig `koanf:"producer-config"`
 	CreateStreams  bool                  `koanf:"create-streams"`
 }
@@ -36,7 +36,7 @@ var DefaultValidationClientConfig = ValidationClientConfig{
 	Name:           "redis validation client",
 	Room:           2,
 	RedisURL:       "",
-	StylusArch:     "wavm",
+	StylusArchs:    []string{"wavm"},
 	ProducerConfig: pubsub.DefaultProducerConfig,
 	CreateStreams:  true,
 }
@@ -46,7 +46,7 @@ var TestValidationClientConfig = ValidationClientConfig{
 	Room:           2,
 	RedisURL:       "",
 	StreamPrefix:   "test-",
-	StylusArch:     "wavm",
+	StylusArchs:    []string{"wavm"},
 	ProducerConfig: pubsub.TestProducerConfig,
 	CreateStreams:  false,
 }
@@ -56,7 +56,7 @@ func ValidationClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int32(prefix+".room", DefaultValidationClientConfig.Room, "validation client room")
 	f.String(prefix+".redis-url", DefaultValidationClientConfig.RedisURL, "redis url")
 	f.String(prefix+".stream-prefix", DefaultValidationClientConfig.StreamPrefix, "prefix for stream name")
-	f.String(prefix+".stylus-arch", DefaultValidationClientConfig.StylusArch, "arch for stylus workers")
+	f.StringSlice(prefix+".stylus-archs", DefaultValidationClientConfig.StylusArchs, "archs required for stylus workers")
 	pubsub.ProducerAddConfigAddOptions(prefix+".producer-config", f)
 	f.Bool(prefix+".create-streams", DefaultValidationClientConfig.CreateStreams, "create redis streams if it does not exist")
 }
@@ -152,8 +152,8 @@ func (c *ValidationClient) Name() string {
 	return c.config.Name
 }
 
-func (c *ValidationClient) StylusArch() string {
-	return c.config.StylusArch
+func (c *ValidationClient) StylusArchs() []string {
+	return c.config.StylusArchs
 }
 
 func (c *ValidationClient) Room() int {
