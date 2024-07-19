@@ -790,12 +790,12 @@ func AddDefaultValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Co
 	conf.Wasm.RootPath = wasmRootDir
 	// Enable redis streams when URL is specified
 	if redisURL != "" {
-		conf.Arbitrator.RedisValidationServerConfig = rediscons.DefaultValidationServerConfig
+		conf.Arbitrator.RedisValidationServerConfig = rediscons.TestValidationServerConfig
 		redisClient, err := redisutil.RedisClientFromURL(redisURL)
 		if err != nil {
 			t.Fatalf("Error creating redis coordinator: %v", err)
 		}
-		redisStream := server_api.RedisStreamForRoot(currentRootModule(t))
+		redisStream := server_api.RedisStreamForRoot(rediscons.TestValidationServerConfig.StreamPrefix, currentRootModule(t))
 		createRedisGroup(ctx, t, redisStream, redisClient)
 		conf.Arbitrator.RedisValidationServerConfig.RedisURL = redisURL
 		t.Cleanup(func() { destroyRedisGroup(ctx, t, redisStream, redisClient) })
