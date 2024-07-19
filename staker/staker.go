@@ -9,11 +9,9 @@ import (
 	"fmt"
 	"math/big"
 	"runtime/debug"
-	"sort"
 	"strings"
 	"time"
 
-	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -25,8 +23,6 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/solgen/go/contractsgen"
-	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker/txbuilder"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -96,6 +92,7 @@ type L1ValidatorConfig struct {
 	ParentChainWallet         genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
 	EnableFastConfirmation    bool                        `koanf:"enable-fast-confirmation"`
 	FastConfirmSafeAddress    string                      `koanf:"fast-confirm-safe-address"`
+	FastConfirmApprover       string                      `koanf:"fast-confirm-approver"`
 	LogQueryBatchSize         uint64                      `koanf:"log-query-batch-size" reload:"hot"`
 
 	strategy    StakerStrategy
@@ -165,6 +162,7 @@ var DefaultL1ValidatorConfig = L1ValidatorConfig{
 	ParentChainWallet:         DefaultValidatorL1WalletConfig,
 	EnableFastConfirmation:    false,
 	FastConfirmSafeAddress:    "",
+	FastConfirmApprover:       "",
 	LogQueryBatchSize:         0,
 }
 
@@ -188,6 +186,7 @@ var TestL1ValidatorConfig = L1ValidatorConfig{
 	ParentChainWallet:         DefaultValidatorL1WalletConfig,
 	EnableFastConfirmation:    false,
 	FastConfirmSafeAddress:    "",
+	FastConfirmApprover:       "",
 	LogQueryBatchSize:         0,
 }
 
@@ -220,6 +219,7 @@ func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultL1ValidatorConfig.ParentChainWallet.Pathname)
 	f.Bool(prefix+".enable-fast-confirmation", DefaultL1ValidatorConfig.EnableFastConfirmation, "enable fast confirmation")
 	f.String(prefix+".fast-confirm-safe-address", DefaultL1ValidatorConfig.FastConfirmSafeAddress, "safe address for fast confirmation")
+	f.String(prefix+".fast-confirm-approver", DefaultL1ValidatorConfig.FastConfirmApprover, "approver address for fast confirmation")
 }
 
 type DangerousConfig struct {
@@ -267,19 +267,6 @@ type Staker struct {
 	statelessBlockValidator *StatelessBlockValidator
 	fatalErr                chan<- error
 	fastConfirmSafe         *FastConfirmSafe
-}
-
-type FastConfirmSafe struct {
-	rollupAddress             common.Address
-	safe                      *contractsgen.Safe
-	owners                    []common.Address
-	approvedHashesOwners      map[common.Hash]map[common.Address]bool
-	threshold                 uint64
-	fastConfirmNextNodeMethod abi.Method
-	builder                   *txbuilder.Builder
-	wallet                    ValidatorWalletInterface
-	gasRefunder               common.Address
-	l1Reader                  *headerreader.HeaderReader
 }
 
 type ValidatorWalletInterface interface {
@@ -339,6 +326,7 @@ func NewStaker(
 			val.wallet,
 			config.gasRefunder,
 			l1Reader,
+			common.HexToAddress(config.FastConfirmApprover),
 		)
 		if err != nil {
 			return nil, err
@@ -358,55 +346,6 @@ func NewStaker(
 		fatalErr:                fatalErr,
 		fastConfirmSafe:         fastConfirmSafe,
 	}, nil
-}
-
-func NewFastConfirmSafe(
-	callOpts bind.CallOpts,
-	rollupAddress common.Address,
-	fastConfirmSafeAddress common.Address,
-	builder *txbuilder.Builder,
-	wallet ValidatorWalletInterface,
-	gasRefunder common.Address,
-	l1Reader *headerreader.HeaderReader,
-) (*FastConfirmSafe, error) {
-	fastConfirmSafe := &FastConfirmSafe{
-		builder:       builder,
-		rollupAddress: rollupAddress,
-		wallet:        wallet,
-		gasRefunder:   gasRefunder,
-		l1Reader:      l1Reader,
-	}
-	safe, err := contractsgen.NewSafe(fastConfirmSafeAddress, builder)
-	if err != nil {
-		return nil, err
-	}
-	fastConfirmSafe.safe = safe
-	owners, err := safe.GetOwners(&callOpts)
-	if err != nil {
-		return nil, err
-	}
-
-	// This is needed because safe contract needs owners to be sorted.
-	sort.Slice(owners, func(i, j int) bool {
-		return owners[i].Cmp(owners[j]) < 0
-	})
-	fastConfirmSafe.owners = owners
-	threshold, err := safe.GetThreshold(&callOpts)
-	if err != nil {
-		return nil, err
-	}
-	fastConfirmSafe.threshold = threshold.Uint64()
-	fastConfirmSafe.approvedHashesOwners = make(map[common.Hash]map[common.Address]bool)
-	rollupUserLogicAbi, err := rollupgen.RollupUserLogicMetaData.GetAbi()
-	if err != nil {
-		return nil, err
-	}
-	fastConfirmNextNodeMethod, ok := rollupUserLogicAbi.Methods["fastConfirmNextNode"]
-	if !ok {
-		return nil, errors.New("RollupUserLogic ABI missing fastConfirmNextNode method")
-	}
-	fastConfirmSafe.fastConfirmNextNodeMethod = fastConfirmNextNodeMethod
-	return fastConfirmSafe, nil
 }
 
 func (s *Staker) Initialize(ctx context.Context) error {
@@ -1036,166 +975,6 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 	}
 }
 
-func (s *Staker) tryFastConfirmationNodeNumber(ctx context.Context, number uint64) error {
-	if !s.config.EnableFastConfirmation {
-		return nil
-	}
-	nodeInfo, err := s.rollup.LookupNode(ctx, number)
-	if err != nil {
-		return err
-	}
-	return s.tryFastConfirmation(ctx, nodeInfo.AfterState().GlobalState.BlockHash, nodeInfo.AfterState().GlobalState.SendRoot)
-}
-
-func (s *Staker) tryFastConfirmation(ctx context.Context, blockHash common.Hash, sendRoot common.Hash) error {
-	if !s.config.EnableFastConfirmation {
-		return nil
-	}
-	if s.fastConfirmSafe != nil {
-		return s.fastConfirmSafe.tryFastConfirmation(ctx, blockHash, sendRoot)
-	}
-	auth, err := s.builder.Auth(ctx)
-	if err != nil {
-		return err
-	}
-	_, err = s.rollup.FastConfirmNextNode(auth, blockHash, sendRoot)
-	return err
-}
-
-func (f *FastConfirmSafe) tryFastConfirmation(ctx context.Context, blockHash common.Hash, sendRoot common.Hash) error {
-	fastConfirmCallData, err := f.createFastConfirmCalldata(blockHash, sendRoot)
-	if err != nil {
-		return err
-	}
-	callOpts := &bind.CallOpts{Context: ctx}
-	// Current nonce of the safe.
-	nonce, err := f.safe.Nonce(callOpts)
-	if err != nil {
-		return err
-	}
-	// Hash of the safe transaction.
-	safeTxHash, err := f.safe.GetTransactionHash(
-		callOpts,
-		f.rollupAddress,
-		big.NewInt(0),
-		fastConfirmCallData,
-		0,
-		big.NewInt(0),
-		big.NewInt(0),
-		big.NewInt(0),
-		common.Address{},
-		common.Address{},
-		nonce,
-	)
-	if err != nil {
-		return err
-	}
-	arbTx, err := f.wallet.ExecuteTransactions(ctx, f.builder, f.gasRefunder)
-	if err != nil {
-		return err
-	}
-	if arbTx != nil {
-		_, err = f.l1Reader.WaitForTxApproval(ctx, arbTx)
-		if err == nil {
-			log.Info("successfully executed staker transaction", "hash", arbTx.Hash())
-		} else {
-			return fmt.Errorf("error waiting for tx receipt: %w", err)
-		}
-	}
-	f.builder.ClearTransactions()
-	auth, err := f.builder.Auth(ctx)
-	if err != nil {
-		return err
-	}
-	_, err = f.safe.ApproveHash(auth, safeTxHash)
-	if err != nil {
-		return err
-	}
-	arbTx, err = f.wallet.ExecuteTransactions(ctx, f.builder, f.gasRefunder)
-	if err != nil {
-		return err
-	}
-	if arbTx != nil {
-		_, err = f.l1Reader.WaitForTxApproval(ctx, arbTx)
-		if err == nil {
-			log.Info("successfully executed staker transaction", "hash", arbTx.Hash())
-		} else {
-			return fmt.Errorf("error waiting for tx receipt: %w", err)
-		}
-	}
-	f.builder.ClearTransactions()
-	if _, ok := f.approvedHashesOwners[safeTxHash]; !ok {
-		f.approvedHashesOwners[safeTxHash] = make(map[common.Address]bool)
-	}
-	return f.checkApprovedHashAndExecTransaction(ctx, fastConfirmCallData, safeTxHash)
-}
-
-func (f *FastConfirmSafe) createFastConfirmCalldata(
-	blockHash common.Hash, sendRoot common.Hash,
-) ([]byte, error) {
-	calldata, err := f.fastConfirmNextNodeMethod.Inputs.Pack(
-		blockHash,
-		sendRoot,
-	)
-	if err != nil {
-		return nil, err
-	}
-	fullCalldata := append([]byte{}, f.fastConfirmNextNodeMethod.ID...)
-	fullCalldata = append(fullCalldata, calldata...)
-	return fullCalldata, nil
-}
-
-func (f *FastConfirmSafe) checkApprovedHashAndExecTransaction(ctx context.Context, fastConfirmCallData []byte, safeTxHash [32]byte) error {
-	var signatures []byte
-	for _, owner := range f.owners {
-		if _, ok := f.approvedHashesOwners[safeTxHash][owner]; !ok {
-			iter, err := f.safe.FilterApproveHash(&bind.FilterOpts{Context: ctx}, [][32]byte{safeTxHash}, []common.Address{owner})
-			if err != nil {
-				return err
-			}
-			for iter.Next() {
-				f.approvedHashesOwners[iter.Event.ApprovedHash][iter.Event.Owner] = true
-			}
-		}
-		// If the owner has approved the hash, we add the signature to the transaction.
-		// We add the signature in the format r, s, v.
-		// We set v to 1, as it is the only possible value for a approved hash.
-		// We set r to the owner's address.
-		// We set s to the empty hash.
-		// Refer to the Safe contract for more information.
-		if _, ok := f.approvedHashesOwners[safeTxHash][owner]; ok {
-			v := uint8(1)
-			r := common.BytesToHash(owner.Bytes())
-			s := common.Hash{}
-			signatures = append(signatures, r.Bytes()...)
-			signatures = append(signatures, s.Bytes()...)
-			signatures = append(signatures, v)
-		}
-	}
-	if uint64(len(f.approvedHashesOwners[safeTxHash])) >= f.threshold {
-		auth, err := f.builder.Auth(ctx)
-		if err != nil {
-			return err
-		}
-		_, err = f.safe.ExecTransaction(
-			auth,
-			f.rollupAddress,
-			big.NewInt(0),
-			fastConfirmCallData,
-			0,
-			big.NewInt(0),
-			big.NewInt(0),
-			big.NewInt(0),
-			common.Address{},
-			common.Address{},
-			signatures,
-		)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
 func (s *Staker) createConflict(ctx context.Context, info *StakerInfo) error {
 	if info.CurrentChallenge != nil {
 		return nil
