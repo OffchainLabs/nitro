@@ -183,7 +183,9 @@ func mainImpl() int {
 	if nodeConfig.WS.ExposeAll {
 		stackConf.WSModules = append(stackConf.WSModules, "personal")
 	}
-	nodeConfig.P2P.Apply(&stackConf)
+	stackConf.P2P.ListenAddr = ""
+	stackConf.P2P.NoDial = true
+	stackConf.P2P.NoDiscovery = true
 	vcsRevision, strippedRevision, vcsTime := confighelpers.GetVersion()
 	stackConf.Version = strippedRevision
 
@@ -680,8 +682,6 @@ func mainImpl() int {
 			exitCode = 1
 		}
 		if nodeConfig.Init.ThenQuit {
-			close(sigint)
-
 			return exitCode
 		}
 	}
@@ -694,9 +694,6 @@ func mainImpl() int {
 	case <-sigint:
 		log.Info("shutting down because of sigint")
 	}
-
-	// cause future ctrl+c's to panic
-	close(sigint)
 
 	return exitCode
 }
@@ -717,7 +714,6 @@ type NodeConfig struct {
 	IPC              genericconf.IPCConfig           `koanf:"ipc"`
 	Auth             genericconf.AuthRPCConfig       `koanf:"auth"`
 	GraphQL          genericconf.GraphQLConfig       `koanf:"graphql"`
-	P2P              genericconf.P2PConfig           `koanf:"p2p"`
 	Metrics          bool                            `koanf:"metrics"`
 	MetricsServer    genericconf.MetricsServerConfig `koanf:"metrics-server"`
 	PProf            bool                            `koanf:"pprof"`
@@ -743,7 +739,6 @@ var NodeConfigDefault = NodeConfig{
 	IPC:              genericconf.IPCConfigDefault,
 	Auth:             genericconf.AuthRPCConfigDefault,
 	GraphQL:          genericconf.GraphQLConfigDefault,
-	P2P:              genericconf.P2PConfigDefault,
 	Metrics:          false,
 	MetricsServer:    genericconf.MetricsServerConfigDefault,
 	Init:             conf.InitConfigDefault,
@@ -768,7 +763,6 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	genericconf.WSConfigAddOptions("ws", f)
 	genericconf.IPCConfigAddOptions("ipc", f)
 	genericconf.AuthRPCConfigAddOptions("auth", f)
-	genericconf.P2PConfigAddOptions("p2p", f)
 	genericconf.GraphQLConfigAddOptions("graphql", f)
 	f.Bool("metrics", NodeConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)

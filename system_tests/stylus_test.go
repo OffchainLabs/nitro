@@ -41,7 +41,7 @@ func TestProgramArbitratorReturnData(t *testing.T) {
 }
 
 func TestProgramArbitratorLogs(t *testing.T) {
-	testLogs(t, false)
+	testLogs(t, false, false)
 }
 
 func TestProgramArbitratorCreate(t *testing.T) {
