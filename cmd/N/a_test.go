@@ -1,28 +1,22 @@
 package N
 
 import (
-	"errors"
-	"runtime/debug"
 	"testing"
 )
 
-func TestEmptyCliConfig(t *testing.T) {
-	err := errors.New("please retry")
-	Require(t, err)
+func TestAliasing(t *testing.T) {
+	Fail(t, "fail")
 }
 
-func Require(t *testing.T, err error, text ...interface{}) {
+func Fail(t *testing.T, printables ...interface{}) {
 	t.Helper()
-	RequireImpl(t, err, text...)
+	FailImpl(t, printables...)
 }
 
 var Red = "\033[31;1m"
 var Clear = "\033[0;0m"
 
-func RequireImpl(t *testing.T, err error, printables ...interface{}) {
+func FailImpl(t *testing.T, printables ...interface{}) {
 	t.Helper()
-	if err != nil {
-		t.Log(string(debug.Stack()))
-		t.Fatal(Red, printables, err, Clear)
-	}
+	t.Fatal(Red, printables, Clear)
 }
