@@ -1,21 +1,29 @@
 package N
 
 import (
-	"math/rand"
+	"context"
 	"testing"
+	"time"
 )
 
 func TestAliasing1(t *testing.T) {
+	time.Sleep(5 * time.Second)
 	Fail(t, "fail")
 }
 
 func TestAliasing(t *testing.T) {
-	if rand.Int()%2 == 0 {
+	t.Parallel()
+
+	go func() {
+		ctx, _ := context.WithTimeout(context.Background(), 5*time.Second)
+		<-ctx.Done()
 		Fail(t, "fail")
-	}
+	}()
+	time.Sleep(5 * time.Second)
 }
 
 func Fail(t *testing.T, printables ...interface{}) {
+	t.Log(printables...)
 	t.Helper()
 	FailImpl(t, printables...)
 }
