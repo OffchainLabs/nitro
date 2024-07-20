@@ -126,7 +126,22 @@ func (f *FastConfirmSafe) tryFastConfirmation(ctx context.Context, blockHash com
 			return err
 		}
 	}
-	return f.checkApprovedHashAndExecTransaction(ctx, fastConfirmCallData, safeTxHash)
+	executedTx, err := f.checkApprovedHashAndExecTransaction(ctx, fastConfirmCallData, safeTxHash)
+	if err != nil {
+		return err
+	}
+	if executedTx {
+		return nil
+	}
+	// If the transaction was not executed, we need to flush the transactions (for approve hash) and try again.
+	// This is because the hash might have been approved by another wallet in the same block,
+	// which might have led to a race condition.
+	err = f.flushTransactions(ctx)
+	if err != nil {
+		return err
+	}
+	_, err = f.checkApprovedHashAndExecTransaction(ctx, fastConfirmCallData, safeTxHash)
+	return err
 }
 
 func (f *FastConfirmSafe) flushTransactions(ctx context.Context) error {
@@ -161,12 +176,12 @@ func (f *FastConfirmSafe) createFastConfirmCalldata(
 	return fullCalldata, nil
 }
 
-func (f *FastConfirmSafe) checkApprovedHashAndExecTransaction(ctx context.Context, fastConfirmCallData []byte, safeTxHash [32]byte) error {
+func (f *FastConfirmSafe) checkApprovedHashAndExecTransaction(ctx context.Context, fastConfirmCallData []byte, safeTxHash [32]byte) (bool, error) {
 	var signatures []byte
 	approvedHashCount := uint64(0)
 	for _, owner := range f.owners {
 		if f.wallet.Address() == nil {
-			return errors.New("wallet address is nil")
+			return false, errors.New("wallet address is nil")
 		}
 		var approved *big.Int
 		// No need check if wallet has approved the hash,
@@ -177,7 +192,7 @@ func (f *FastConfirmSafe) checkApprovedHashAndExecTransaction(ctx context.Contex
 			var err error
 			approved, err = f.safe.ApprovedHashes(&bind.CallOpts{Context: ctx}, owner, safeTxHash)
 			if err != nil {
-				return err
+				return false, err
 			}
 		}
 
@@ -200,7 +215,7 @@ func (f *FastConfirmSafe) checkApprovedHashAndExecTransaction(ctx context.Contex
 	if approvedHashCount >= f.threshold {
 		auth, err := f.builder.Auth(ctx)
 		if err != nil {
-			return err
+			return false, err
 		}
 		_, err = f.safe.ExecTransaction(
 			auth,
@@ -216,8 +231,9 @@ func (f *FastConfirmSafe) checkApprovedHashAndExecTransaction(ctx context.Contex
 			signatures,
 		)
 		if err != nil {
-			return err
+			return false, err
 		}
+		return true, nil
 	}
-	return nil
+	return false, nil
 }
