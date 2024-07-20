@@ -104,7 +104,7 @@ func ValidationInputToJson(entry *validator.ValidationInput) *InputJSON {
 	for arch, wasms := range entry.UserWasms {
 		archWasms := make(map[common.Hash]string)
 		for moduleHash, data := range wasms {
-			compressed, err := arbcompress.CompressWell(data)
+			compressed, err := arbcompress.CompressLevel(data, 1)
 			if err != nil {
 				continue
 			}
