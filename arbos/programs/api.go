@@ -70,9 +70,6 @@ func newApiClosures(
 	chainConfig := evm.ChainConfig()
 
 	getBytes32 := func(key common.Hash) (common.Hash, uint64) {
-		if tracingInfo != nil {
-			tracingInfo.RecordStorageGet(key)
-		}
 		cost := vm.WasmStateLoadCost(db, actingAddress, key)
 		return db.GetState(actingAddress, key), cost
 	}
@@ -82,9 +79,6 @@ func newApiClosures(
 			value := common.BytesToHash(data[32:64])
 			data = data[64:]
 
-			if tracingInfo != nil {
-				tracingInfo.RecordStorageSet(key, value)
-			}
 			if readOnly {
 				return WriteProtection
 			}
@@ -142,26 +136,6 @@ func newApiClosures(
 			gas = am.SaturatingUAdd(gas, params.CallStipend)
 		}
 
-		// Tracing: emit the call (value transfer is done later in evm.Call)
-		if tracingInfo != nil {
-			var args []uint256.Int
-			args = append(args, *uint256.NewInt(gas))                          // gas
-			args = append(args, *uint256.NewInt(0).SetBytes(contract.Bytes())) // to address
-			if opcode == vm.CALL {
-				args = append(args, *uint256.NewInt(0).SetBytes(value.Bytes())) // call value
-			}
-			args = append(args, *uint256.NewInt(0))                  // memory offset
-			args = append(args, *uint256.NewInt(uint64(len(input)))) // memory length
-			args = append(args, *uint256.NewInt(0))                  // return offset
-			args = append(args, *uint256.NewInt(0))                  // return size
-			s := &vm.ScopeContext{
-				Memory:   util.TracingMemoryFromBytes(input),
-				Stack:    util.TracingStackFromArgs(args...),
-				Contract: scope.Contract,
-			}
-			tracingInfo.Tracer.CaptureState(0, opcode, startGas, baseCost+gas, s, []byte{}, depth, nil)
-		}
-
 		var ret []byte
 		var returnGas uint64
 
@@ -217,11 +191,6 @@ func newApiClosures(
 		one64th := gas / 64
 		gas -= one64th
 
-		// Tracing: emit the create
-		if tracingInfo != nil {
-			tracingInfo.Tracer.CaptureState(0, opcode, startGas, baseCost+gas, scope, []byte{}, depth, nil)
-		}
-
 		var res []byte
 		var addr common.Address // zero on failure
 		var returnGas uint64
@@ -243,9 +212,6 @@ func newApiClosures(
 		return addr, res, cost, nil
 	}
 	emitLog := func(topics []common.Hash, data []byte) error {
-		if tracingInfo != nil {
-			tracingInfo.RecordEmitLog(topics, data)
-		}
 		if readOnly {
 			return vm.ErrWriteProtection
 		}
@@ -284,10 +250,7 @@ func newApiClosures(
 	}
 	captureHostio := func(name string, args, outs []byte, startInk, endInk uint64) {
 		tracingInfo.Tracer.CaptureStylusHostio(name, args, outs, startInk, endInk)
-		if name == "evm_gas_left" || name == "evm_ink_left" {
-			tracingInfo.Tracer.CaptureState(0, vm.GAS, 0, 0, scope, []byte{}, depth, nil)
-			tracingInfo.Tracer.CaptureState(0, vm.POP, 0, 0, scope, []byte{}, depth, nil)
-		}
+		tracingInfo.CaptureEVMTraceForHostio(name, args, outs, startInk, endInk, scope, depth)
 	}
 
 	return func(req RequestType, input []byte) ([]byte, []byte, uint64) {
