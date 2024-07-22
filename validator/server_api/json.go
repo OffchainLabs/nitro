@@ -45,8 +45,8 @@ func MachineStepResultFromJson(resultJson *MachineStepResultJson) (*validator.Ma
 	}, nil
 }
 
-func RedisStreamForRoot(moduleRoot common.Hash) string {
-	return fmt.Sprintf("stream:%s", moduleRoot.Hex())
+func RedisStreamForRoot(prefix string, moduleRoot common.Hash) string {
+	return fmt.Sprintf("%sstream:%s", prefix, moduleRoot.Hex())
 }
 
 type Request struct {
