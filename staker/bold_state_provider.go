@@ -398,7 +398,7 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 	if err != nil {
 		return nil, err
 	}
-	input, err := entry.ToInput("wavm")
+	input, err := entry.ToInput([]string{"wavm"})
 	if err != nil {
 		return nil, err
 	}
@@ -478,7 +478,7 @@ func (s *BOLDStateProvider) CollectProof(
 	if err != nil {
 		return nil, err
 	}
-	input, err := entry.ToInput("wavm")
+	input, err := entry.ToInput([]string{"wavm"})
 	if err != nil {
 		return nil, err
 	}
