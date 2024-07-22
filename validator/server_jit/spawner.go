@@ -71,8 +71,8 @@ func (v *JitSpawner) WasmModuleRoots() ([]common.Hash, error) {
 	return v.locator.ModuleRoots(), nil
 }
 
-func (v *JitSpawner) StylusArch() string {
-	return runtime.GOARCH
+func (v *JitSpawner) StylusArchs() []string {
+	return []string{runtime.GOARCH}
 }
 
 func (v *JitSpawner) execute(

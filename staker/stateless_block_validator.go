@@ -171,7 +171,7 @@ type validationEntry struct {
 	DelayedMsg []byte
 }
 
-func (e *validationEntry) ToInput(stylusArch string) (*validator.ValidationInput, error) {
+func (e *validationEntry) ToInput(stylusArchs []string) (*validator.ValidationInput, error) {
 	if e.Stage != Ready {
 		return nil, errors.New("cannot create input from non-ready entry")
 	}
@@ -180,20 +180,24 @@ func (e *validationEntry) ToInput(stylusArch string) (*validator.ValidationInput
 		HasDelayedMsg: e.HasDelayedMsg,
 		DelayedMsgNr:  e.DelayedMsgNr,
 		Preimages:     e.Preimages,
-		StylusArch:    stylusArch,
-		UserWasms:     make(map[common.Hash][]byte, len(e.UserWasms)),
+		UserWasms:     make(map[string]map[common.Hash][]byte, len(e.UserWasms)),
 		BatchInfo:     e.BatchInfo,
 		DelayedMsg:    e.DelayedMsg,
 		StartState:    e.Start,
 		DebugChain:    e.ChainConfig.DebugMode(),
 	}
+	for _, stylusArch := range stylusArchs {
+		res.UserWasms[stylusArch] = make(map[common.Hash][]byte)
+	}
 	for hash, info := range e.UserWasms {
-		if stylusArch == "wavm" {
-			res.UserWasms[hash] = info.Module
-		} else if stylusArch == runtime.GOARCH {
-			res.UserWasms[hash] = info.Asm
-		} else {
-			return nil, fmt.Errorf("stylusArch not supported by block validator: %v", stylusArch)
+		for _, stylusArch := range stylusArchs {
+			if stylusArch == "wavm" {
+				res.UserWasms[stylusArch][hash] = info.Module
+			} else if stylusArch == runtime.GOARCH {
+				res.UserWasms[stylusArch][hash] = info.Asm
+			} else {
+				return nil, fmt.Errorf("stylusArch not supported by block validator: %v", stylusArch)
+			}
 		}
 	}
 	return &res, nil
@@ -437,7 +441,7 @@ func (v *StatelessBlockValidator) ValidateResult(
 	if !useExec {
 		if v.redisValidator != nil {
 			if validator.SpawnerSupportsModule(v.redisValidator, moduleRoot) {
-				input, err := entry.ToInput(v.redisValidator.StylusArch())
+				input, err := entry.ToInput(v.redisValidator.StylusArchs())
 				if err != nil {
 					return false, nil, err
 				}
@@ -448,7 +452,7 @@ func (v *StatelessBlockValidator) ValidateResult(
 	if run == nil {
 		for _, spawner := range v.execSpawners {
 			if validator.SpawnerSupportsModule(spawner, moduleRoot) {
-				input, err := entry.ToInput(spawner.StylusArch())
+				input, err := entry.ToInput(spawner.StylusArchs())
 				if err != nil {
 					return false, nil, err
 				}
