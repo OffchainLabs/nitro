@@ -33,14 +33,14 @@ jobs:
   docker_build:
     strategy:
       matrix:
-        platform: [ linux/amd64, linux/arm64 ]
+        platform: [linux/amd64, linux/arm64]
         include:
           - platform: linux/amd64
             runs-on: X64
           - platform: linux/arm64
             runs-on: ARM64
 
-    runs-on: [ self-hosted, "${{ matrix.runs-on }}" ]
+    runs-on: [self-hosted, "${{ matrix.runs-on }}"]
 
     steps:
       # TODO We should be able to remove this but currently it's needed to avoid
@@ -73,7 +73,7 @@ jobs:
       - name: Build nitro-node image
         uses: ./.github/actions/docker-image
         with:
-          file: Dockerfile.espresso
+          file: Dockerfile
           images: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node
           target: nitro-node
           platforms: ${{ matrix.platform }}
@@ -82,7 +82,7 @@ jobs:
         uses: ./.github/actions/docker-image
         id: nitro-node-dev
         with:
-          file: Dockerfile.espresso
+          file: Dockerfile
           images: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node-dev
           target: nitro-node-dev
           platforms: ${{ matrix.platform }}
@@ -127,7 +127,7 @@ jobs:
       - docker_build
     strategy:
       matrix:
-        target: [ nitro-node, nitro-node-dev ]
+        target: [nitro-node, nitro-node-dev]
         include:
           - target: nitro-node
             image: ghcr.io/espressosystems/nitro-espresso-integration/nitro-node

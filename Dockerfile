@@ -49,7 +49,6 @@ COPY ./Makefile ./
 COPY arbitrator/Cargo.* arbitrator/
 COPY arbitrator/arbutil arbitrator/arbutil
 COPY arbitrator/espresso-crypto-helper arbitrator/espresso-crypto-helper
-COPY config/vid_srs.json config/vid_srs.json
 COPY arbitrator/brotli arbitrator/brotli
 COPY arbitrator/caller-env arbitrator/caller-env
 COPY arbitrator/prover arbitrator/prover
@@ -69,9 +68,9 @@ FROM wasm-base AS wasm-bin-builder
 RUN curl -L https://golang.org/dl/go1.21.10.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
 COPY ./Makefile ./go.mod ./go.sum ./
 COPY ./arbcompress ./arbcompress
-COPY ./espressocrypto ./espressocrypto
 COPY ./arbos ./arbos
 COPY ./arbstate ./arbstate
+COPY ./espressocrypto ./espressocrypto
 COPY ./arbutil ./arbutil
 COPY ./gethhook ./gethhook
 COPY ./blsSignatures ./blsSignatures
@@ -109,7 +108,6 @@ COPY arbitrator/prover arbitrator/prover
 COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
 COPY arbitrator/jit arbitrator/jit
 COPY arbitrator/espresso-crypto-helper arbitrator/espresso-crypto-helper
-COPY config/vid_srs.json config/vid_srs.json
 COPY arbitrator/stylus arbitrator/stylus
 COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
 COPY --from=brotli-wasm-export / target/
@@ -125,8 +123,7 @@ FROM rust:1.75-slim-bookworm AS prover-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
-    apt-get install -y make wget gpg software-properties-common zlib1g-dev libstdc++-12-dev wabt \
-    clang llvm-dev libclang-common-14-dev libpolly-14-dev
+    apt-get install -y make wget gpg software-properties-common zlib1g-dev libstdc++-12-dev wabt
 RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
     add-apt-repository 'deb http://apt.llvm.org/bookworm/ llvm-toolchain-bookworm-15 main' && \
     apt-get update && \
@@ -139,7 +136,6 @@ COPY arbitrator/caller-env arbitrator/caller-env
 COPY arbitrator/prover/Cargo.toml arbitrator/prover/
 COPY arbitrator/jit/Cargo.toml arbitrator/jit/
 COPY arbitrator/espresso-crypto-helper arbitrator/espresso-crypto-helper
-COPY config/vid_srs.json config/vid_srs.json
 COPY arbitrator/stylus/Cargo.toml arbitrator/stylus/
 COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
 COPY arbitrator/wasm-libraries/user-host-trait/Cargo.toml arbitrator/wasm-libraries/user-host-trait/Cargo.toml
@@ -214,6 +210,15 @@ COPY ./scripts/download-machine.sh .
 #RUN ./download-machine.sh consensus-v20 0x8b104a2e80ac6165dc58b9048de12f301d70b02a0ab51396c22b4b4b802a16a4
 RUN ./download-machine.sh consensus-v30 0xb0de9cb89e4d944ae6023a3b62276e54804c242fd8c4c2d8e6cc4450f5fa8b1b && true
 RUN ./download-machine.sh consensus-v31 0x260f5fa5c3176a856893642e149cf128b5a8de9f828afec8d11184415dd8dc69
+
+#Download Espresso WASM machine
+COPY ./scripts/download-machine-espresso.sh .
+#
+# To use a new wasm machine specify release tag from the page
+# https://github.com/EspressoSystems/nitro-espresso-integration/releases and the
+# corresponding module-root.
+#
+RUN ./download-machine-espresso.sh 20240711 0x5409e2c3aab6db3d6cea9603646d6cdf2ac6bc1b39325939ba81a498f88f334f
 
 FROM golang:1.21.10-bookworm AS node-builder
 WORKDIR /workspace
