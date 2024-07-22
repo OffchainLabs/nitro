@@ -68,6 +68,7 @@ type TransactionStreamerInterface interface {
 
 type InboxReaderInterface interface {
 	GetSequencerMessageBytes(ctx context.Context, seqNum uint64) ([]byte, common.Hash, error)
+	GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error)
 }
 
 type GlobalStatePosition struct {

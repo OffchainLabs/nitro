@@ -32,3 +32,6 @@
 [submodule "arbitrator/langs/bf"]
 	path = arbitrator/langs/bf
 	url = https://github.com/OffchainLabs/stylus-sdk-bf.git
+[submodule "bold"]
+	path = bold
+	url = https://github.com/OffchainLabs/bold.git
