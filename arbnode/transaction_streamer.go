@@ -1071,9 +1071,26 @@ func (s *TransactionStreamer) ResultAtCount(count arbutil.MessageIndex) (*execut
 	} else if !dbutil.IsErrNotFound(err) {
 		return nil, err
 	}
-
 	log.Info(FailedToGetMsgResultFromDB, "count", count, "err", err)
-	return s.exec.ResultAtPos(pos)
+
+	msgResult, err := s.exec.ResultAtPos(pos)
+	if err != nil {
+		return nil, err
+	}
+	// Stores result in Consensus DB in a best-effort manner
+	batch := s.db.NewBatch()
+	err = s.storeResult(pos, *msgResult, batch)
+	if err != nil {
+		log.Warn("Failed to store result at ResultAtCount", "err", err)
+		return msgResult, nil
+	}
+	err = batch.Write()
+	if err != nil {
+		log.Warn("Failed to store result at ResultAtCount", "err", err)
+		return msgResult, nil
+	}
+
+	return msgResult, nil
 }
 
 func (s *TransactionStreamer) checkResult(msgResult *execution.MessageResult, expectedBlockHash *common.Hash) {
