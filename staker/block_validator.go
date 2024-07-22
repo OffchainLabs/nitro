@@ -31,13 +31,18 @@ import (
 )
 
 var (
-	validatorPendingValidationsGauge  = metrics.NewRegisteredGauge("arb/validator/validations/pending", nil)
-	validatorValidValidationsCounter  = metrics.NewRegisteredCounter("arb/validator/validations/valid", nil)
-	validatorFailedValidationsCounter = metrics.NewRegisteredCounter("arb/validator/validations/failed", nil)
-	validatorMsgCountCurrentBatch     = metrics.NewRegisteredGauge("arb/validator/msg_count_current_batch", nil)
-	validatorMsgCountCreatedGauge     = metrics.NewRegisteredGauge("arb/validator/msg_count_created", nil)
-	validatorMsgCountRecordSentGauge  = metrics.NewRegisteredGauge("arb/validator/msg_count_record_sent", nil)
-	validatorMsgCountValidatedGauge   = metrics.NewRegisteredGauge("arb/validator/msg_count_validated", nil)
+	validatorPendingValidationsGauge    = metrics.NewRegisteredGauge("arb/validator/validations/pending", nil)
+	validatorValidValidationsCounter    = metrics.NewRegisteredCounter("arb/validator/validations/valid", nil)
+	validatorFailedValidationsCounter   = metrics.NewRegisteredCounter("arb/validator/validations/failed", nil)
+	validatorValidationWaitToRecordHist = metrics.NewRegisteredHistogram("arb/validator/validations/waitToRecord", nil, metrics.NewBoundedHistogramSample())
+	validatorValidationRecordingHist    = metrics.NewRegisteredHistogram("arb/validator/validations/recording", nil, metrics.NewBoundedHistogramSample())
+	validatorValidationWaitToLaunchHist = metrics.NewRegisteredHistogram("arb/validator/validations/waitToRun", nil, metrics.NewBoundedHistogramSample())
+	validatorValidationLaunchHist       = metrics.NewRegisteredHistogram("arb/validator/validations/waitToRun", nil, metrics.NewBoundedHistogramSample())
+	validatorValidationRunningHist      = metrics.NewRegisteredHistogram("arb/validator/validations/running", nil, metrics.NewBoundedHistogramSample())
+	validatorMsgCountCurrentBatch       = metrics.NewRegisteredGauge("arb/validator/msg_count_current_batch", nil)
+	validatorMsgCountCreatedGauge       = metrics.NewRegisteredGauge("arb/validator/msg_count_created", nil)
+	validatorMsgCountRecordSentGauge    = metrics.NewRegisteredGauge("arb/validator/msg_count_record_sent", nil)
+	validatorMsgCountValidatedGauge     = metrics.NewRegisteredGauge("arb/validator/msg_count_validated", nil)
 )
 
 type BlockValidator struct {
@@ -210,10 +215,11 @@ const (
 )
 
 type validationStatus struct {
-	Status atomic.Uint32             // atomic: value is one of validationStatus*
-	Cancel func()                    // non-atomic: only read/written to with reorg mutex
-	Entry  *validationEntry          // non-atomic: only read if Status >= validationStatusPrepared
-	Runs   []validator.ValidationRun // if status >= ValidationSent
+	Status  atomic.Uint32             // atomic: value is one of validationStatus*
+	Cancel  func()                    // non-atomic: only read/written to with reorg mutex
+	Entry   *validationEntry          // non-atomic: only read if Status >= validationStatusPrepared
+	Runs    []validator.ValidationRun // if status >= ValidationSent
+	tsMilli int64
 }
 
 func (s *validationStatus) getStatus() valStatusField {
@@ -223,6 +229,12 @@ func (s *validationStatus) getStatus() valStatusField {
 
 func (s *validationStatus) replaceStatus(old, new valStatusField) bool {
 	return s.Status.CompareAndSwap(uint32(old), uint32(new))
+}
+
+func (s *validationStatus) timeStampInterval() int64 {
+	start := s.tsMilli
+	s.tsMilli = time.Now().UnixMilli()
+	return s.tsMilli - start
 }
 
 func NewBlockValidator(
@@ -447,6 +459,8 @@ func (v *BlockValidator) sendRecord(s *validationStatus) error {
 	if !s.replaceStatus(Created, RecordSent) {
 		return fmt.Errorf("failed status check for send record. Status: %v", s.getStatus())
 	}
+
+	validatorValidationWaitToRecordHist.Update(s.timeStampInterval())
 	v.LaunchThread(func(ctx context.Context) {
 		err := v.ValidationEntryRecord(ctx, s.Entry)
 		if ctx.Err() != nil {
@@ -457,11 +471,11 @@ func (v *BlockValidator) sendRecord(s *validationStatus) error {
 			log.Error("Error while recording", "err", err, "status", s.getStatus())
 			return
 		}
+		validatorValidationRecordingHist.Update(s.timeStampInterval())
 		if !s.replaceStatus(RecordSent, Prepared) {
 			log.Error("Fault trying to update validation with recording", "entry", s.Entry, "status", s.getStatus())
 			return
 		}
-		nonBlockingTrigger(v.progressValidationsChan)
 	})
 	return nil
 }
@@ -585,7 +599,8 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		return false, err
 	}
 	status := &validationStatus{
-		Entry: entry,
+		Entry:   entry,
+		tsMilli: time.Now().UnixMilli(),
 	}
 	status.Status.Store(uint32(Created))
 	v.validations.Store(pos, status)
@@ -811,6 +826,7 @@ validationsLoop:
 			if !replaced {
 				v.possiblyFatal(errors.New("failed to set SendingValidation status"))
 			}
+			validatorValidationWaitToLaunchHist.Update(validationStatus.timeStampInterval())
 			validatorPendingValidationsGauge.Inc(1)
 			var runs []validator.ValidationRun
 			for _, moduleRoot := range wasmRoots {
@@ -823,12 +839,14 @@ validationsLoop:
 				log.Trace("advanceValidations: launched", "pos", validationStatus.Entry.Pos, "moduleRoot", moduleRoot)
 				runs = append(runs, run)
 			}
+			validatorValidationLaunchHist.Update(validationStatus.timeStampInterval())
 			validationCtx, cancel := context.WithCancel(ctx)
 			validationStatus.Runs = runs
 			validationStatus.Cancel = cancel
 			v.LaunchUntrackedThread(func() {
 				defer validatorPendingValidationsGauge.Dec(1)
 				defer cancel()
+				startTsMilli := validationStatus.tsMilli
 				replaced = validationStatus.replaceStatus(SendingValidation, ValidationSent)
 				if !replaced {
 					v.possiblyFatal(errors.New("failed to set status to ValidationSent"))
@@ -842,6 +860,7 @@ validationsLoop:
 						return
 					}
 				}
+				validatorValidationRunningHist.Update(time.Now().UnixMilli() - startTsMilli)
 				nonBlockingTrigger(v.progressValidationsChan)
 			})
 		}
