@@ -110,17 +110,21 @@ func (s *LocalFileStorageService) Close(ctx context.Context) error {
 
 func (s *LocalFileStorageService) GetByHash(ctx context.Context, key common.Hash) ([]byte, error) {
 	log.Trace("das.LocalFileStorageService.GetByHash", "key", pretty.PrettyHash(key), "this", s)
-	var batchPath string
-	if s.enableLegacyLayout {
-		batchPath = s.legacyLayout.batchPath(key)
-	} else {
-		batchPath = s.layout.batchPath(key)
-	}
+
+	legacyBatchPath := s.legacyLayout.batchPath(key)
+	batchPath := s.layout.batchPath(key)
 
 	data, err := os.ReadFile(batchPath)
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
-			return nil, ErrNotFound
+			data, err = os.ReadFile(legacyBatchPath)
+			if err != nil {
+				if errors.Is(err, os.ErrNotExist) {
+					return nil, ErrNotFound
+				}
+				return nil, err
+			}
+			return data, nil
 		}
 		return nil, err
 	}
