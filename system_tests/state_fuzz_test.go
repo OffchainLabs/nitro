@@ -151,7 +151,7 @@ func FuzzStateTransition(f *testing.F) {
 		if err != nil {
 			panic(err)
 		}
-		trieDBConfig := arbosState.TriedbConfig(cacheConfig)
+		trieDBConfig := cacheConfig.TriedbConfig()
 		statedb, err := state.New(stateRoot, state.NewDatabaseWithConfig(chainDb, trieDBConfig), nil)
 		if err != nil {
 			panic(err)
