@@ -779,7 +779,7 @@ func CreateNode(
 	}
 	if currentNode.StatelessBlockValidator != nil {
 		apis = append(apis, rpc.API{
-			Namespace: "arbvalidator",
+			Namespace: "arbdebug",
 			Version:   "1.0",
 			Service: &BlockValidatorDebugAPI{
 				val: currentNode.StatelessBlockValidator,
