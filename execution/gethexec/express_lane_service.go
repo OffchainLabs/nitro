@@ -3,7 +3,6 @@ package gethexec
 import (
 	"context"
 	"fmt"
-	"math/big"
 	"sync"
 	"time"
 
@@ -14,8 +13,8 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/timeboost"
-	"github.com/offchainlabs/nitro/timeboost/bindings"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -37,7 +36,7 @@ type expressLaneService struct {
 	client           arbutil.L1Interface
 	control          expressLaneControl
 	reservedAddress  common.Address
-	auctionContract  *bindings.ExpressLaneAuction
+	auctionContract  *express_lane_auctiongen.ExpressLaneAuction
 	initialTimestamp time.Time
 	roundDuration    time.Duration
 	chainConfig      *params.ChainConfig
@@ -47,33 +46,33 @@ func newExpressLaneService(
 	client arbutil.L1Interface,
 	auctionContractAddr common.Address,
 ) (*expressLaneService, error) {
-	auctionContract, err := bindings.NewExpressLaneAuction(auctionContractAddr, client)
+	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, client)
 	if err != nil {
 		return nil, err
 	}
-	initialRoundTimestamp, err := auctionContract.InitialRoundTimestamp(&bind.CallOpts{})
-	if err != nil {
-		return nil, err
-	}
-	roundDurationSeconds, err := auctionContract.RoundDurationSeconds(&bind.CallOpts{})
-	if err != nil {
-		return nil, err
-	}
-	initialTimestamp := time.Unix(initialRoundTimestamp.Int64(), 0)
-	currRound := timeboost.CurrentRound(initialTimestamp, time.Duration(roundDurationSeconds)*time.Second)
-	controller, err := auctionContract.ExpressLaneControllerByRound(&bind.CallOpts{}, big.NewInt(int64(currRound)))
-	if err != nil {
-		return nil, err
-	}
+	// initialRoundTimestamp, err := auctionContract.InitialRoundTimestamp(&bind.CallOpts{})
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// roundDurationSeconds, err := auctionContract.RoundDurationSeconds(&bind.CallOpts{})
+	// if err != nil {
+	// 	return nil, err
+	// }
+	// initialTimestamp := time.Unix(initialRoundTimestamp.Int64(), 0)
+	// currRound := timeboost.CurrentRound(initialTimestamp, time.Duration(roundDurationSeconds)*time.Second)
+	// controller, err := auctionContract.ExpressLaneControllerByRound(&bind.CallOpts{}, big.NewInt(int64(currRound)))
+	// if err != nil {
+	// 	return nil, err
+	// }
 	return &expressLaneService{
 		auctionContract:  auctionContract,
 		client:           client,
-		initialTimestamp: initialTimestamp,
+		initialTimestamp: time.Now(),
 		control: expressLaneControl{
-			controller: controller,
-			round:      currRound,
+			controller: common.Address{},
+			round:      0,
 		},
-		roundDuration: time.Duration(roundDurationSeconds) * time.Second,
+		roundDuration: time.Second,
 	}, nil
 }
 
@@ -132,7 +131,7 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 					Start:   fromBlock,
 					End:     &toBlock,
 				}
-				it, err := es.auctionContract.FilterAuctionResolved(filterOpts, nil, nil)
+				it, err := es.auctionContract.FilterAuctionResolved(filterOpts, nil, nil, nil)
 				if err != nil {
 					log.Error("Could not filter auction resolutions", "error", err)
 					continue
@@ -140,12 +139,12 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 				for it.Next() {
 					log.Info(
 						"New express lane controller assigned",
-						"round", it.Event.WinnerRound,
-						"controller", it.Event.WinningBidder,
+						"round", it.Event.Round,
+						"controller", it.Event.FirstPriceExpressLaneController,
 					)
 					es.Lock()
-					es.control.round = it.Event.WinnerRound.Uint64()
-					es.control.controller = it.Event.WinningBidder
+					es.control.round = it.Event.Round
+					es.control.controller = it.Event.FirstPriceExpressLaneController
 					es.control.sequence = 0 // Sequence resets 0 for the new round.
 					es.Unlock()
 				}

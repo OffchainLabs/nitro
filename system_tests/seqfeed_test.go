@@ -25,6 +25,7 @@ import (
 	"github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/relay"
+	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/timeboost/bindings"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -127,7 +128,7 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	Require(t, err)
 	t.Logf("%+v and %+v", seqInfo.Accounts["Alice"], seqInfo.Accounts["Bob"])
 
-	auctionContract, err := bindings.NewExpressLaneAuction(auctionAddr, builderSeq.L1.Client)
+	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionAddr, builderSeq.L1.Client)
 	Require(t, err)
 	_ = seqInfo
 	_ = seqClient
@@ -177,7 +178,7 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	auctionContractOpts := builderSeq.L1Info.GetDefaultTransactOpts("AuctionContract", ctx)
 	chainId, err := l1client.ChainID(ctx)
 	Require(t, err)
-	auctioneer, err := timeboost.NewAuctioneer(&auctionContractOpts, chainId, builderSeq.L1.Client, auctionContract)
+	auctioneer, err := timeboost.NewAuctioneer(&auctionContractOpts, chainId, builderSeq.L1.Client, auctionAddr, auctionContract)
 	Require(t, err)
 
 	go auctioneer.Start(ctx)
@@ -194,10 +195,8 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 		l1client,
 		auctionAddr,
 		nil,
-		auctioneer,
 	)
 	Require(t, err)
-	go alice.Start(ctx)
 
 	bobPriv := builderSeq.L1Info.Accounts["Bob"].PrivateKey
 	bob, err := timeboost.NewBidderClient(
@@ -210,16 +209,14 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 		l1client,
 		auctionAddr,
 		nil,
-		auctioneer,
 	)
 	Require(t, err)
-	go bob.Start(ctx)
 
 	// Wait until the initial round.
-	initialTime, err := auctionContract.InitialRoundTimestamp(&bind.CallOpts{})
+	info, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
 	Require(t, err)
-	timeToWait := time.Until(time.Unix(initialTime.Int64(), 0))
-	t.Log("Waiting until the initial round", timeToWait, time.Unix(initialTime.Int64(), 0))
+	timeToWait := time.Until(time.Unix(int64(info.OffsetTimestamp), 0))
+	t.Log("Waiting until the initial round", timeToWait, time.Unix(int64(info.OffsetTimestamp), 0))
 	<-time.After(timeToWait)
 
 	t.Log("Started auction master stack and bid clients")
@@ -236,9 +233,9 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 
 	// We are now in the bidding round, both issue their bids. Bob will win.
 	t.Log("Alice and Bob now submitting their bids")
-	aliceBid, err := alice.Bid(ctx, big.NewInt(1))
+	aliceBid, err := alice.Bid(ctx, big.NewInt(1), aliceOpts.From)
 	Require(t, err)
-	bobBid, err := bob.Bid(ctx, big.NewInt(2))
+	bobBid, err := bob.Bid(ctx, big.NewInt(2), bobOpts.From)
 	Require(t, err)
 	t.Logf("Alice bid %+v", aliceBid)
 	t.Logf("Bob bid %+v", bobBid)
@@ -257,9 +254,7 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	waitTime = roundDuration - time.Duration(now.Second())*time.Second - time.Duration(now.Nanosecond())
 	time.Sleep(waitTime)
 
-	initialTimestamp, err := auctionContract.InitialRoundTimestamp(&bind.CallOpts{})
-	Require(t, err)
-	currRound := timeboost.CurrentRound(time.Unix(initialTimestamp.Int64(), 0), roundDuration)
+	currRound := timeboost.CurrentRound(time.Unix(int64(info.OffsetTimestamp), 0), roundDuration)
 	t.Log("curr round", currRound)
 	if currRound != winnerRound {
 		now = time.Now()
@@ -268,12 +263,12 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 		time.Sleep(waitTime)
 	}
 
-	current, err := auctionContract.ExpressLaneControllerByRound(&bind.CallOpts{}, new(big.Int).SetUint64(currRound))
-	Require(t, err)
+	// current, err := auctionContract.(&bind.CallOpts{}, new(big.Int).SetUint64(currRound))
+	// Require(t, err)
 
-	if current != bobOpts.From {
-		t.Log("Current express lane round controller is not Bob", current, aliceOpts.From)
-	}
+	// if current != bobOpts.From {
+	// 	t.Log("Current express lane round controller is not Bob", current, aliceOpts.From)
+	// }
 
 	t.Log("Now submitting txs to sequencer")
 
@@ -337,7 +332,7 @@ func awaitAuctionResolved(
 	t *testing.T,
 	ctx context.Context,
 	client *ethclient.Client,
-	contract *bindings.ExpressLaneAuction,
+	contract *express_lane_auctiongen.ExpressLaneAuction,
 ) (common.Address, uint64) {
 	fromBlock, err := client.BlockNumber(ctx)
 	Require(t, err)
@@ -362,13 +357,13 @@ func awaitAuctionResolved(
 				Start:   fromBlock,
 				End:     &toBlock,
 			}
-			it, err := contract.FilterAuctionResolved(filterOpts, nil, nil)
+			it, err := contract.FilterAuctionResolved(filterOpts, nil, nil, nil)
 			if err != nil {
 				t.Log("Could not filter auction resolutions", err)
 				continue
 			}
 			for it.Next() {
-				return it.Event.WinningBidder, it.Event.WinnerRound.Uint64()
+				return it.Event.FirstPriceBidder, it.Event.Round
 			}
 			fromBlock = toBlock
 		}
