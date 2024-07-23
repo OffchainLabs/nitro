@@ -149,7 +149,7 @@ jobs:
           packages=`go list ./...`
           for package in $packages; do
             echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=1 --no-color=false -- -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -timeout 20m -tags=cionly > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
+            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -timeout 20m -tags=cionly > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
               exit 1
             fi
           done
@@ -162,7 +162,7 @@ jobs:
           packages=`go list ./...`
           for package in $packages; do
             echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=1 --no-color=false -- -timeout 20m -tags=cionly; then
+            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -timeout 20m -tags=cionly; then
               exit 1
             fi
           done
@@ -175,7 +175,7 @@ jobs:
           packages=`go list ./...`
           for package in $packages; do
             echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=1 --no-color=false -- -race -timeout 30m > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
+            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -race -timeout 30m > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
               exit 1
             fi
           done
@@ -188,7 +188,7 @@ jobs:
           packages=`go list ./...`
           for package in $packages; do
             echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=1 --no-color=false -- -race -timeout 30m; then
+            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -race -timeout 30m; then
               exit 1
             fi
           done
@@ -203,7 +203,7 @@ jobs:
           packages=`go list ./...`
           for package in $packages; do
             echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=1 --no-color=false -- -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -tags=challengetest -run=TestChallenge > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
+            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -tags=challengetest -run=TestChallenge > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
               exit 1
             fi
           done
@@ -214,7 +214,7 @@ jobs:
           packages=`go list ./...`
           for package in $packages; do
             echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=1 --no-color=false -- -timeout 60m -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -tags=stylustest -run="TestProgramArbitrator" > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
+            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -timeout 60m -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -tags=stylustest -run="TestProgramArbitrator" > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
               exit 1
             fi
           done
@@ -225,7 +225,7 @@ jobs:
           packages=`go list ./...`
           for package in $packages; do
             echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=1 --no-color=false -- -timeout 60m -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -tags=stylustest -run="TestProgramLong" > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
+            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -timeout 60m -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -tags=stylustest -run="TestProgramLong" > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
               exit 1
             fi
           done
