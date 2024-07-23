@@ -12,6 +12,7 @@ import (
 	"math/rand"
 	"os"
 	"regexp"
+	"runtime/debug"
 	"sync"
 	"testing"
 
@@ -24,6 +25,7 @@ import (
 func RequireImpl(t *testing.T, err error, printables ...interface{}) {
 	t.Helper()
 	if err != nil {
+		t.Log(string(debug.Stack()))
 		t.Fatal(colors.Red, printables, err, colors.Clear)
 	}
 }

@@ -62,7 +62,7 @@ type TransactionStreamer struct {
 	nextAllowedFeedReorgLog time.Time
 
 	broadcasterQueuedMessages            []arbostypes.MessageWithMetadataAndBlockHash
-	broadcasterQueuedMessagesPos         uint64
+	broadcasterQueuedMessagesPos         atomic.Uint64
 	broadcasterQueuedMessagesActiveReorg bool
 
 	coordinator     *SeqCoordinator
@@ -491,14 +491,14 @@ func (s *TransactionStreamer) AddMessages(pos arbutil.MessageIndex, messagesAreC
 }
 
 func (s *TransactionStreamer) FeedPendingMessageCount() arbutil.MessageIndex {
-	pos := atomic.LoadUint64(&s.broadcasterQueuedMessagesPos)
+	pos := s.broadcasterQueuedMessagesPos.Load()
 	if pos == 0 {
 		return 0
 	}
 
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
-	pos = atomic.LoadUint64(&s.broadcasterQueuedMessagesPos)
+	pos = s.broadcasterQueuedMessagesPos.Load()
 	if pos == 0 {
 		return 0
 	}
@@ -552,14 +552,14 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFe
 	if len(s.broadcasterQueuedMessages) == 0 || (feedReorg && !s.broadcasterQueuedMessagesActiveReorg) {
 		// Empty cache or feed different from database, save current feed messages until confirmed L1 messages catch up.
 		s.broadcasterQueuedMessages = messages
-		atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, uint64(broadcastStartPos))
+		s.broadcasterQueuedMessagesPos.Store(uint64(broadcastStartPos))
 		s.broadcasterQueuedMessagesActiveReorg = feedReorg
 	} else {
-		broadcasterQueuedMessagesPos := arbutil.MessageIndex(atomic.LoadUint64(&s.broadcasterQueuedMessagesPos))
+		broadcasterQueuedMessagesPos := arbutil.MessageIndex(s.broadcasterQueuedMessagesPos.Load())
 		if broadcasterQueuedMessagesPos >= broadcastStartPos {
 			// Feed messages older than cache
 			s.broadcasterQueuedMessages = messages
-			atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, uint64(broadcastStartPos))
+			s.broadcasterQueuedMessagesPos.Store(uint64(broadcastStartPos))
 			s.broadcasterQueuedMessagesActiveReorg = feedReorg
 		} else if broadcasterQueuedMessagesPos+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)) == broadcastStartPos {
 			// Feed messages can be added directly to end of cache
@@ -579,7 +579,7 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFe
 				)
 			}
 			s.broadcasterQueuedMessages = messages
-			atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, uint64(broadcastStartPos))
+			s.broadcasterQueuedMessagesPos.Store(uint64(broadcastStartPos))
 			s.broadcasterQueuedMessagesActiveReorg = feedReorg
 		}
 	}
@@ -795,7 +795,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	var cacheClearLen int
 
 	messagesAfterPos := messageStartPos + arbutil.MessageIndex(len(messages))
-	broadcastStartPos := arbutil.MessageIndex(atomic.LoadUint64(&s.broadcasterQueuedMessagesPos))
+	broadcastStartPos := arbutil.MessageIndex(s.broadcasterQueuedMessagesPos.Load())
 
 	if messagesAreConfirmed {
 		var duplicates int
@@ -903,10 +903,10 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 		// Check if new messages were added at the end of cache, if they were, then dont remove those particular messages
 		if len(s.broadcasterQueuedMessages) > cacheClearLen {
 			s.broadcasterQueuedMessages = s.broadcasterQueuedMessages[cacheClearLen:]
-			atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, uint64(broadcastStartPos)+uint64(cacheClearLen))
+			s.broadcasterQueuedMessagesPos.Store(uint64(broadcastStartPos) + uint64(cacheClearLen))
 		} else {
 			s.broadcasterQueuedMessages = s.broadcasterQueuedMessages[:0]
-			atomic.StoreUint64(&s.broadcasterQueuedMessagesPos, 0)
+			s.broadcasterQueuedMessagesPos.Store(0)
 		}
 		s.broadcasterQueuedMessagesActiveReorg = false
 	}

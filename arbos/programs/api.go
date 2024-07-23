@@ -147,6 +147,26 @@ func newApiClosures(
 			gas = am.SaturatingUAdd(gas, params.CallStipend)
 		}
 
+		// Tracing: emit the call (value transfer is done later in evm.Call)
+		if tracingInfo != nil {
+			var args []uint256.Int
+			args = append(args, *uint256.NewInt(gas))                          // gas
+			args = append(args, *uint256.NewInt(0).SetBytes(contract.Bytes())) // to address
+			if opcode == vm.CALL {
+				args = append(args, *uint256.NewInt(0).SetBytes(value.Bytes())) // call value
+			}
+			args = append(args, *uint256.NewInt(0))                  // memory offset
+			args = append(args, *uint256.NewInt(uint64(len(input)))) // memory length
+			args = append(args, *uint256.NewInt(0))                  // return offset
+			args = append(args, *uint256.NewInt(0))                  // return size
+			s := &vm.ScopeContext{
+				Memory:   util.TracingMemoryFromBytes(input),
+				Stack:    util.TracingStackFromArgs(args...),
+				Contract: scope.Contract,
+			}
+			tracingInfo.Tracer.CaptureState(0, opcode, startGas, baseCost+gas, s, []byte{}, depth, nil)
+		}
+
 		var ret []byte
 		var returnGas uint64
 
