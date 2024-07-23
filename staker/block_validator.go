@@ -36,8 +36,8 @@ var (
 	validatorFailedValidationsCounter   = metrics.NewRegisteredCounter("arb/validator/validations/failed", nil)
 	validatorValidationWaitToRecordHist = metrics.NewRegisteredHistogram("arb/validator/validations/waitToRecord", nil, metrics.NewBoundedHistogramSample())
 	validatorValidationRecordingHist    = metrics.NewRegisteredHistogram("arb/validator/validations/recording", nil, metrics.NewBoundedHistogramSample())
-	validatorValidationWaitToLaunchHist = metrics.NewRegisteredHistogram("arb/validator/validations/waitToRun", nil, metrics.NewBoundedHistogramSample())
-	validatorValidationLaunchHist       = metrics.NewRegisteredHistogram("arb/validator/validations/waitToRun", nil, metrics.NewBoundedHistogramSample())
+	validatorValidationWaitToLaunchHist = metrics.NewRegisteredHistogram("arb/validator/validations/waitToLaunch", nil, metrics.NewBoundedHistogramSample())
+	validatorValidationLaunchingHist    = metrics.NewRegisteredHistogram("arb/validator/validations/launching", nil, metrics.NewBoundedHistogramSample())
 	validatorValidationRunningHist      = metrics.NewRegisteredHistogram("arb/validator/validations/running", nil, metrics.NewBoundedHistogramSample())
 	validatorMsgCountCurrentBatch       = metrics.NewRegisteredGauge("arb/validator/msg_count_current_batch", nil)
 	validatorMsgCountCreatedGauge       = metrics.NewRegisteredGauge("arb/validator/msg_count_created", nil)
@@ -839,7 +839,7 @@ validationsLoop:
 				log.Trace("advanceValidations: launched", "pos", validationStatus.Entry.Pos, "moduleRoot", moduleRoot)
 				runs = append(runs, run)
 			}
-			validatorValidationLaunchHist.Update(validationStatus.timeStampInterval())
+			validatorValidationLaunchingHist.Update(validationStatus.timeStampInterval())
 			validationCtx, cancel := context.WithCancel(ctx)
 			validationStatus.Runs = runs
 			validationStatus.Cancel = cancel
