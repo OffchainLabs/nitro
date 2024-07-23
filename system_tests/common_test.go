@@ -164,12 +164,13 @@ type NodeBuilder struct {
 	L2Info        info
 
 	// L1, L2 Node parameters
-	dataDir       string
-	isSequencer   bool
-	takeOwnership bool
-	withL1        bool
-	addresses     *chaininfo.RollupAddresses
-	initMessage   *arbostypes.ParsedInitMessage
+	dataDir                     string
+	isSequencer                 bool
+	takeOwnership               bool
+	withL1                      bool
+	addresses                   *chaininfo.RollupAddresses
+	initMessage                 *arbostypes.ParsedInitMessage
+	withProdConfirmPeriodBlocks bool
 
 	// Created nodes
 	L1 *TestClient
@@ -206,6 +207,11 @@ func (b *NodeBuilder) WithArbOSVersion(arbosVersion uint64) *NodeBuilder {
 	newChainConfig := *b.chainConfig
 	newChainConfig.ArbitrumChainParams.InitialArbOSVersion = arbosVersion
 	b.chainConfig = &newChainConfig
+	return b
+}
+
+func (b *NodeBuilder) WithProdConfirmPeriodBlocks() *NodeBuilder {
+	b.withProdConfirmPeriodBlocks = true
 	return b
 }
 
@@ -253,7 +259,7 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 	b.L1Info, b.L1.Client, b.L1.L1Backend, b.L1.Stack = createTestL1BlockChain(t, b.L1Info)
 	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
-	b.addresses, b.initMessage = DeployOnTestL1(t, b.ctx, b.L1Info, b.L1.Client, b.chainConfig, locator.LatestWasmModuleRoot())
+	b.addresses, b.initMessage = DeployOnTestL1(t, b.ctx, b.L1Info, b.L1.Client, b.chainConfig, locator.LatestWasmModuleRoot(), b.withProdConfirmPeriodBlocks)
 	b.L1.cleanup = func() { requireClose(t, b.L1.Stack) }
 }
 
@@ -883,7 +889,7 @@ func getInitMessage(ctx context.Context, t *testing.T, l1client client, addresse
 }
 
 func DeployOnTestL1(
-	t *testing.T, ctx context.Context, l1info info, l1client client, chainConfig *params.ChainConfig, wasmModuleRoot common.Hash,
+	t *testing.T, ctx context.Context, l1info info, l1client client, chainConfig *params.ChainConfig, wasmModuleRoot common.Hash, prodConfirmPeriodBlocks bool,
 ) (*chaininfo.RollupAddresses, *arbostypes.ParsedInitMessage) {
 	l1info.GenerateAccount("RollupOwner")
 	l1info.GenerateAccount("Sequencer")
@@ -915,7 +921,7 @@ func DeployOnTestL1(
 		[]common.Address{l1info.GetAddress("Sequencer")},
 		l1info.GetAddress("RollupOwner"),
 		0,
-		arbnode.GenerateRollupConfig(false, wasmModuleRoot, l1info.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
+		arbnode.GenerateRollupConfig(prodConfirmPeriodBlocks, wasmModuleRoot, l1info.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
 		nativeToken,
 		maxDataSize,
 		false,
