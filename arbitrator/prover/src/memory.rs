@@ -364,7 +364,7 @@ pub mod testing {
 
     pub fn empty_leaf_hash() -> Bytes32 {
         let leaf = [0u8; 32];
-        return super::hash_leaf(leaf);
+        super::hash_leaf(leaf)
     }
 }
 

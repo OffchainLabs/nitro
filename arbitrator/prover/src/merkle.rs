@@ -205,7 +205,7 @@ impl Merkle {
             min_depth
         };
         let mut layers: Vec<Vec<Bytes32>> = Vec::with_capacity(depth);
-        let dirty_leaf_parents = bitvec![0; hashes.len() + 1 >> 1];
+        let dirty_leaf_parents = bitvec![0; (hashes.len() + 1) >> 1];
         layers.push(hashes);
         while layers.last().unwrap().len() > 1 || layers.len() < min_depth {
             let layer = layers.last().unwrap();
@@ -233,7 +233,7 @@ impl Merkle {
         let mut dirt = layers.dirty_leaf_parents.clone();
         // Process dirty indices starting from layer 1 (layer 0 is the leaves).
         for layer_i in 1..layers.data.len() {
-            let mut new_dirt = bitvec![0; dirt.len() + 1 >> 1];
+            let mut new_dirt = bitvec![0; (dirt.len() + 1) >> 1];
             for idx in dirt.iter_ones() {
                 let left_child_idx = idx << 1;
                 let right_child_idx = left_child_idx + 1;
