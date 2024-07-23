@@ -130,7 +130,7 @@ type blockHashDBValue struct {
 
 const (
 	BlockHashMismatchLogMsg    = "BlockHash from feed doesn't match locally computed hash. Check feed source."
-	FailedToGetMsgResultFromDB = "Streamer: failed getting message result from db"
+	FailedToGetMsgResultFromDB = "Reading message result remotely."
 )
 
 // Encodes a uint64 as bytes in a lexically sortable manner for database iteration.
@@ -1071,7 +1071,7 @@ func (s *TransactionStreamer) ResultAtCount(count arbutil.MessageIndex) (*execut
 	} else if !dbutil.IsErrNotFound(err) {
 		return nil, err
 	}
-	log.Info(FailedToGetMsgResultFromDB, "count", count, "err", err)
+	log.Info(FailedToGetMsgResultFromDB, "count", count)
 
 	msgResult, err := s.exec.ResultAtPos(pos)
 	if err != nil {
