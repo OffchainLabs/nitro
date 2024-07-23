@@ -141,8 +141,10 @@ jobs:
           echo "GOMEMLIMIT=6GiB" >> "$GITHUB_ENV"
           echo "GOGC=80" >> "$GITHUB_ENV"
 
-      - name: run tests without race detection
+      - name: run tests without race detection and path state scheme
         if: matrix.test-mode == 'defaults'
+        env:
+          TEST_STATE_SCHEME: path
         run: |
           packages=`go list ./...`
           for package in $packages; do
@@ -152,13 +154,41 @@ jobs:
             fi
           done
 
-      - name: run tests with race detection
+      - name: run tests without race detection and hash state scheme
+        if: matrix.test-mode == 'defaults'
+        env:
+          TEST_STATE_SCHEME: hash
+        run: |
+          packages=`go list ./...`
+          for package in $packages; do
+            echo running tests for $package
+            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=1 --no-color=false -- -timeout 20m -tags=cionly; then
+              exit 1
+            fi
+          done
+
+      - name: run tests with race detection and path state scheme
         if: matrix.test-mode == 'race'
+        env:
+          TEST_STATE_SCHEME: path
         run: |
           packages=`go list ./...`
           for package in $packages; do
             echo running tests for $package
             if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=1 --no-color=false -- -race -timeout 30m > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
+              exit 1
+            fi
+          done
+
+      - name: run tests with race detection and hash state scheme
+        if: matrix.test-mode == 'race'
+        env:
+          TEST_STATE_SCHEME: hash
+        run: |
+          packages=`go list ./...`
+          for package in $packages; do
+            echo running tests for $package
+            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=1 --no-color=false -- -race -timeout 30m; then
               exit 1
             fi
           done
@@ -214,4 +244,3 @@ jobs:
           files: ./coverage.txt,./coverage-redis.txt
           verbose: false
           token: ${{ secrets.CODECOV_TOKEN }}
-

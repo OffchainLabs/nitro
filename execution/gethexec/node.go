@@ -57,6 +57,9 @@ type Config struct {
 }
 
 func (c *Config) Validate() error {
+	if err := c.Caching.Validate(); err != nil {
+		return err
+	}
 	if err := c.Sequencer.Validate(); err != nil {
 		return err
 	}
@@ -103,31 +106,6 @@ var ConfigDefault = Config{
 	Dangerous:                 DefaultDangerousConfig,
 	Forwarder:                 DefaultNodeForwarderConfig,
 	EnablePrefetchBlock:       true,
-}
-
-func ConfigDefaultNonSequencerTest() *Config {
-	config := ConfigDefault
-	config.Caching = TestCachingConfig
-	config.ParentChainReader = headerreader.TestConfig
-	config.Sequencer.Enable = false
-	config.Forwarder = DefaultTestForwarderConfig
-	config.ForwardingTarget = "null"
-
-	_ = config.Validate()
-
-	return &config
-}
-
-func ConfigDefaultTest() *Config {
-	config := ConfigDefault
-	config.Caching = TestCachingConfig
-	config.Sequencer = TestSequencerConfig
-	config.ParentChainReader = headerreader.TestConfig
-	config.ForwardingTarget = "null"
-
-	_ = config.Validate()
-
-	return &config
 }
 
 type ConfigFetcher func() *Config
