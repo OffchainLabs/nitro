@@ -230,11 +230,7 @@ impl Merkle {
         if layers.dirty_leaf_parents.is_empty() {
             return;
         }
-        // Replace the dirty leaf parents with clean ones.
-        let mut dirt = std::mem::replace(
-            &mut layers.dirty_leaf_parents,
-            bitvec![0; (layers.data[0].len() + 1) >> 1],
-        );
+        let mut dirt = layers.dirty_leaf_parents.clone();
         // Process dirty indices starting from layer 1 (layer 0 is the leaves).
         for layer_i in 1..layers.data.len() {
             let mut new_dirt = bitvec![0; dirt.len() + 1 >> 1];
@@ -262,6 +258,7 @@ impl Merkle {
             }
             dirt = new_dirt;
         }
+        layers.dirty_leaf_parents.fill(false);
     }
 
     pub fn root(&self) -> Bytes32 {
@@ -377,7 +374,9 @@ impl Merkle {
             layer.resize(layer_size, *empty_hash_at(self.ty, layer_i));
             layer_size = max(layer_size >> 1, 1);
         }
+        // This will set one or no values depending on if the length was even or odd.
         layers.dirty_leaf_parents[(start >> 1)..].fill(true);
+        // This then resizes and marks the dirty leaf parents as dirty.
         layers.dirty_leaf_parents.resize(new_len >> 1, true);
         Ok(layers.data[0].len())
     }
@@ -398,7 +397,7 @@ impl PartialEq for Merkle {
     // because the same nodes are hashed together. However, the min_dpeth was 4, then,
     // there would be 4 layers in that tree, and the root hash would be different.
     fn eq(&self, other: &Self) -> bool {
-        self.root() == other.root()
+        self.root() == other.root() && self.ty == other.ty
     }
 }
 
