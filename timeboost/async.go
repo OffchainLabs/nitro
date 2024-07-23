@@ -10,6 +10,7 @@ func receiveAsync[T any](ctx context.Context, channel chan T, f func(context.Con
 	for {
 		select {
 		case item := <-channel:
+			// TODO: Potential goroutine blow-up here.
 			go func() {
 				if err := f(ctx, item); err != nil {
 					log.Error("Error processing item", "error", err)

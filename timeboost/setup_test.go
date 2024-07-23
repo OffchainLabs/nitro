@@ -12,22 +12,23 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient/simulated"
+	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/timeboost/bindings"
 	"github.com/stretchr/testify/require"
 )
 
 type auctionSetup struct {
-	chainId           *big.Int
-	auctionMasterAddr common.Address
-	auctionContract   *bindings.ExpressLaneAuction
-	erc20Addr         common.Address
-	erc20Contract     *bindings.MockERC20
-	initialTimestamp  time.Time
-	roundDuration     time.Duration
-	expressLaneAddr   common.Address
-	bidReceiverAddr   common.Address
-	accounts          []*testAccount
-	backend           *simulated.Backend
+	chainId                *big.Int
+	expressLaneAuctionAddr common.Address
+	expressLaneAuction     *express_lane_auctiongen.ExpressLaneAuction
+	erc20Addr              common.Address
+	erc20Contract          *bindings.MockERC20
+	initialTimestamp       time.Time
+	roundDuration          time.Duration
+	expressLaneAddr        common.Address
+	bidReceiverAddr        common.Address
+	accounts               []*testAccount
+	backend                *simulated.Backend
 }
 
 func setupAuctionTest(t *testing.T, ctx context.Context) *auctionSetup {
@@ -81,28 +82,38 @@ func setupAuctionTest(t *testing.T, ctx context.Context) *auctionSetup {
 	initialTimestamp := big.NewInt(now.Unix())
 
 	// Deploy the auction manager contract.
-	currReservePrice := big.NewInt(1)
-	minReservePrice := big.NewInt(1)
+	// currReservePrice := big.NewInt(1)
+	// minReservePrice := big.NewInt(1)
 	reservePriceSetter := opts.From
-	auctionContractAddr, tx, auctionContract, err := bindings.DeployExpressLaneAuction(
-		opts, backend.Client(), expressLaneAddr, reservePriceSetter, bidReceiverAddr, bidRoundSeconds, initialTimestamp, erc20Addr, currReservePrice, minReservePrice,
+	auctionContractAddr, tx, auctionContract, err := express_lane_auctiongen.DeployExpressLaneAuction(
+		opts, backend.Client(),
 	)
 	require.NoError(t, err)
 	if _, err = bind.WaitMined(ctx, backend.Client(), tx); err != nil {
 		t.Fatal(err)
 	}
+	tx, err = auctionContract.Initialize(opts, opts.From, bidReceiverAddr, erc20Addr, express_lane_auctiongen.RoundTimingInfo{
+		OffsetTimestamp:      initialTimestamp.Uint64(),
+		RoundDurationSeconds: bidRoundSeconds,
+	}, big.NewInt(0), opts.From, reservePriceSetter, reservePriceSetter, reservePriceSetter)
+	require.NoError(t, err)
+	if _, err = bind.WaitMined(ctx, backend.Client(), tx); err != nil {
+		t.Fatal(err)
+	}
+
+	// TODO: Set the reserve price here.
 	return &auctionSetup{
-		chainId:           chainId,
-		auctionMasterAddr: auctionContractAddr,
-		auctionContract:   auctionContract,
-		erc20Addr:         erc20Addr,
-		erc20Contract:     erc20,
-		initialTimestamp:  now,
-		roundDuration:     time.Minute,
-		expressLaneAddr:   expressLaneAddr,
-		bidReceiverAddr:   bidReceiverAddr,
-		accounts:          accs,
-		backend:           backend,
+		chainId:                chainId,
+		expressLaneAuctionAddr: auctionContractAddr,
+		expressLaneAuction:     auctionContract,
+		erc20Addr:              erc20Addr,
+		erc20Contract:          erc20,
+		initialTimestamp:       now,
+		roundDuration:          time.Minute,
+		expressLaneAddr:        expressLaneAddr,
+		bidReceiverAddr:        bidReceiverAddr,
+		accounts:               accs,
+		backend:                backend,
 	}
 }
 
@@ -115,8 +126,7 @@ func setupBidderClient(
 		&Wallet{TxOpts: account.txOpts, PrivKey: account.privKey},
 		// testSetup.backend.Client(),
 		nil,
-		testSetup.auctionMasterAddr,
-		nil,
+		testSetup.expressLaneAuctionAddr,
 		nil,
 	)
 	require.NoError(t, err)
@@ -125,7 +135,7 @@ func setupBidderClient(
 	maxUint256 := big.NewInt(1)
 	maxUint256.Lsh(maxUint256, 256).Sub(maxUint256, big.NewInt(1))
 	tx, err := testSetup.erc20Contract.Approve(
-		account.txOpts, testSetup.auctionMasterAddr, maxUint256,
+		account.txOpts, testSetup.expressLaneAuctionAddr, maxUint256,
 	)
 	require.NoError(t, err)
 	if _, err = bind.WaitMined(ctx, testSetup.backend.Client(), tx); err != nil {

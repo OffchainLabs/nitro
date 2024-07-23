@@ -299,7 +299,7 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	}(&wg)
 	wg.Wait()
 
-	// After round is done, verify that Alice beats Bob in the final sequence.
+	// After round is done, verify that Bob beats Alice in the final sequence.
 	aliceReceipt, err := seqClient.TransactionReceipt(ctx, aliceTx.Hash())
 	Require(t, err)
 	aliceBlock := aliceReceipt.BlockNumber.Uint64()

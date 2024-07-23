@@ -3,7 +3,6 @@ package timeboost
 import (
 	"bytes"
 	"crypto/ecdsa"
-	"encoding/binary"
 	"math/big"
 	"sync"
 
@@ -24,15 +23,25 @@ var (
 )
 
 type Bid struct {
-	chainId   uint64
-	address   common.Address
-	round     uint64
-	amount    *big.Int
-	signature []byte
+	chainId                uint64
+	expressLaneController  common.Address
+	bidder                 common.Address
+	auctionContractAddress common.Address
+	round                  uint64
+	amount                 *big.Int
+	signature              []byte
 }
 
 type validatedBid struct {
-	Bid
+	expressLaneController common.Address
+	amount                *big.Int
+	signature             []byte
+}
+
+func (am *Auctioneer) fetchReservePrice() *big.Int {
+	am.reservePriceLock.RLock()
+	defer am.reservePriceLock.RUnlock()
+	return new(big.Int).Set(am.reservePrice)
 }
 
 func (am *Auctioneer) newValidatedBid(bid *Bid) (*validatedBid, error) {
@@ -40,8 +49,11 @@ func (am *Auctioneer) newValidatedBid(bid *Bid) (*validatedBid, error) {
 	if bid == nil {
 		return nil, errors.Wrap(ErrMalformedData, "nil bid")
 	}
-	if bid.address == (common.Address{}) {
+	if bid.bidder == (common.Address{}) {
 		return nil, errors.Wrap(ErrMalformedData, "empty bidder address")
+	}
+	if bid.expressLaneController == (common.Address{}) {
+		return nil, errors.Wrap(ErrMalformedData, "empty express lane controller address")
 	}
 	// Verify chain id.
 	if new(big.Int).SetUint64(bid.chainId).Cmp(am.chainId) != 0 {
@@ -53,12 +65,18 @@ func (am *Auctioneer) newValidatedBid(bid *Bid) (*validatedBid, error) {
 		return nil, errors.Wrapf(ErrBadRoundNumber, "wanted %d, got %d", upcomingRound, bid.round)
 	}
 	// Check bid amount.
-	if bid.amount.Cmp(big.NewInt(0)) <= 0 {
-		return nil, errors.Wrap(ErrMalformedData, "expected a non-negative, non-zero bid amount")
+	reservePrice := am.fetchReservePrice()
+	if bid.amount.Cmp(reservePrice) == -1 {
+		return nil, errors.Wrap(ErrMalformedData, "expected bid to be at least of reserve price magnitude")
 	}
 	// Validate the signature.
+	// TODO: Validate the signature against the express lane controller address.
 	packedBidBytes, err := encodeBidValues(
-		am.signatureDomain, new(big.Int).SetUint64(bid.chainId), new(big.Int).SetUint64(bid.round), bid.amount,
+		new(big.Int).SetUint64(bid.chainId),
+		am.auctionContractAddr,
+		new(big.Int).SetUint64(bid.round),
+		bid.amount,
+		bid.expressLaneController,
 	)
 	if err != nil {
 		return nil, ErrMalformedData
@@ -80,7 +98,9 @@ func (am *Auctioneer) newValidatedBid(bid *Bid) (*validatedBid, error) {
 	// Validate if the user if a depositor in the contract and has enough balance for the bid.
 	// TODO: Retry some number of times if flakey connection.
 	// TODO: Validate reserve price against amount of bid.
-	depositBal, err := am.auctionContract.DepositBalance(&bind.CallOpts{}, bid.address)
+	// TODO: No need to do anything expensive if the bid coming is in invalid.
+	// Cache this if the received time of the bid is too soon. Include the arrival timestamp.
+	depositBal, err := am.auctionContract.BalanceOf(&bind.CallOpts{}, bid.bidder)
 	if err != nil {
 		return nil, err
 	}
@@ -90,24 +110,28 @@ func (am *Auctioneer) newValidatedBid(bid *Bid) (*validatedBid, error) {
 	if depositBal.Cmp(bid.amount) < 0 {
 		return nil, errors.Wrapf(ErrInsufficientBalance, "onchain balance %#x, bid amount %#x", depositBal, bid.amount)
 	}
-	return &validatedBid{*bid}, nil
+	return &validatedBid{
+		expressLaneController: bid.expressLaneController,
+		amount:                bid.amount,
+		signature:             bid.signature,
+	}, nil
 }
 
 type bidCache struct {
 	sync.RWMutex
-	latestBidBySender map[common.Address]*validatedBid
+	bidsByExpressLaneControllerAddr map[common.Address]*validatedBid
 }
 
 func newBidCache() *bidCache {
 	return &bidCache{
-		latestBidBySender: make(map[common.Address]*validatedBid),
+		bidsByExpressLaneControllerAddr: make(map[common.Address]*validatedBid),
 	}
 }
 
 func (bc *bidCache) add(bid *validatedBid) {
 	bc.Lock()
 	defer bc.Unlock()
-	bc.latestBidBySender[bid.address] = bid
+	bc.bidsByExpressLaneControllerAddr[bid.expressLaneController] = bid
 }
 
 // TwoTopBids returns the top two bids for the given chain ID and round
@@ -116,11 +140,19 @@ type auctionResult struct {
 	secondPlace *validatedBid
 }
 
+func (bc *bidCache) size() int {
+	bc.RLock()
+	defer bc.RUnlock()
+	return len(bc.bidsByExpressLaneControllerAddr)
+
+}
+
 func (bc *bidCache) topTwoBids() *auctionResult {
 	bc.RLock()
 	defer bc.RUnlock()
 	result := &auctionResult{}
-	for _, bid := range bc.latestBidBySender {
+	// TODO: Tiebreaker handle.
+	for _, bid := range bc.bidsByExpressLaneControllerAddr {
 		if result.firstPlace == nil || bid.amount.Cmp(result.firstPlace.amount) > 0 {
 			result.secondPlace = result.firstPlace
 			result.firstPlace = bid
@@ -146,19 +178,15 @@ func padBigInt(bi *big.Int) []byte {
 	return padded
 }
 
-func encodeBidValues(domainPrefix uint16, chainId, round, amount *big.Int) ([]byte, error) {
+func encodeBidValues(chainId *big.Int, auctionContractAddress common.Address, round, amount *big.Int, expressLaneController common.Address) ([]byte, error) {
 	buf := new(bytes.Buffer)
-
-	// Encode uint16 - occupies 2 bytes
-	err := binary.Write(buf, binary.BigEndian, domainPrefix)
-	if err != nil {
-		return nil, err
-	}
 
 	// Encode uint256 values - each occupies 32 bytes
 	buf.Write(padBigInt(chainId))
+	buf.Write(auctionContractAddress[:])
 	buf.Write(padBigInt(round))
 	buf.Write(padBigInt(amount))
+	buf.Write(expressLaneController[:])
 
 	return buf.Bytes(), nil
 }
