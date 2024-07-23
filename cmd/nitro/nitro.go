@@ -183,7 +183,9 @@ func mainImpl() int {
 	if nodeConfig.WS.ExposeAll {
 		stackConf.WSModules = append(stackConf.WSModules, "personal")
 	}
-	nodeConfig.P2P.Apply(&stackConf)
+	stackConf.P2P.ListenAddr = ""
+	stackConf.P2P.NoDial = true
+	stackConf.P2P.NoDiscovery = true
 	vcsRevision, strippedRevision, vcsTime := confighelpers.GetVersion()
 	stackConf.Version = strippedRevision
 
@@ -368,11 +370,6 @@ func mainImpl() int {
 		}
 		fmt.Printf("Created validator smart contract wallet at %s, remove --node.validator.only-create-wallet-contract and restart\n", addr.String())
 		return 0
-	}
-
-	if nodeConfig.Execution.Caching.Archive && nodeConfig.Execution.TxLookupLimit != 0 {
-		log.Info("retaining ability to lookup full transaction history as archive mode is enabled")
-		nodeConfig.Execution.TxLookupLimit = 0
 	}
 
 	if err := resourcemanager.Init(&nodeConfig.Node.ResourceMgmt); err != nil {
@@ -680,8 +677,6 @@ func mainImpl() int {
 			exitCode = 1
 		}
 		if nodeConfig.Init.ThenQuit {
-			close(sigint)
-
 			return exitCode
 		}
 	}
@@ -694,9 +689,6 @@ func mainImpl() int {
 	case <-sigint:
 		log.Info("shutting down because of sigint")
 	}
-
-	// cause future ctrl+c's to panic
-	close(sigint)
 
 	return exitCode
 }
@@ -717,7 +709,6 @@ type NodeConfig struct {
 	IPC              genericconf.IPCConfig           `koanf:"ipc"`
 	Auth             genericconf.AuthRPCConfig       `koanf:"auth"`
 	GraphQL          genericconf.GraphQLConfig       `koanf:"graphql"`
-	P2P              genericconf.P2PConfig           `koanf:"p2p"`
 	Metrics          bool                            `koanf:"metrics"`
 	MetricsServer    genericconf.MetricsServerConfig `koanf:"metrics-server"`
 	PProf            bool                            `koanf:"pprof"`
@@ -743,7 +734,6 @@ var NodeConfigDefault = NodeConfig{
 	IPC:              genericconf.IPCConfigDefault,
 	Auth:             genericconf.AuthRPCConfigDefault,
 	GraphQL:          genericconf.GraphQLConfigDefault,
-	P2P:              genericconf.P2PConfigDefault,
 	Metrics:          false,
 	MetricsServer:    genericconf.MetricsServerConfigDefault,
 	Init:             conf.InitConfigDefault,
@@ -768,7 +758,6 @@ func NodeConfigAddOptions(f *flag.FlagSet) {
 	genericconf.WSConfigAddOptions("ws", f)
 	genericconf.IPCConfigAddOptions("ipc", f)
 	genericconf.AuthRPCConfigAddOptions("auth", f)
-	genericconf.P2PConfigAddOptions("p2p", f)
 	genericconf.GraphQLConfigAddOptions("graphql", f)
 	f.Bool("metrics", NodeConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
@@ -918,6 +907,12 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	if nodeConfig.Execution.Caching.Archive {
 		nodeConfig.Node.MessagePruner.Enable = false
 	}
+
+	if nodeConfig.Execution.Caching.Archive && nodeConfig.Execution.TxLookupLimit != 0 {
+		log.Info("retaining ability to lookup full transaction history as archive mode is enabled")
+		nodeConfig.Execution.TxLookupLimit = 0
+	}
+
 	err = nodeConfig.Validate()
 	if err != nil {
 		return nil, nil, err

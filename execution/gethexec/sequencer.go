@@ -52,8 +52,8 @@ var (
 	nonceFailureCacheOverflowCounter        = metrics.NewRegisteredGauge("arb/sequencer/noncefailurecache/overflow", nil)
 	blockCreationTimer                      = metrics.NewRegisteredTimer("arb/sequencer/block/creation", nil)
 	successfulBlocksCounter                 = metrics.NewRegisteredCounter("arb/sequencer/block/successful", nil)
-	conditionalTxRejectedBySequencerCounter = metrics.NewRegisteredCounter("arb/sequencer/condtionaltx/rejected", nil)
-	conditionalTxAcceptedBySequencerCounter = metrics.NewRegisteredCounter("arb/sequencer/condtionaltx/accepted", nil)
+	conditionalTxRejectedBySequencerCounter = metrics.NewRegisteredCounter("arb/sequencer/conditionaltx/rejected", nil)
+	conditionalTxAcceptedBySequencerCounter = metrics.NewRegisteredCounter("arb/sequencer/conditionaltx/accepted", nil)
 	l1GasPriceGauge                         = metrics.NewRegisteredGauge("arb/sequencer/l1gasprice", nil)
 	callDataUnitsBacklogGauge               = metrics.NewRegisteredGauge("arb/sequencer/calldataunitsbacklog", nil)
 	unusedL1GasChargeGauge                  = metrics.NewRegisteredGauge("arb/sequencer/unusedl1gascharge", nil)
@@ -347,7 +347,7 @@ type Sequencer struct {
 	onForwarderSet     chan struct{}
 
 	L1BlockAndTimeMutex sync.Mutex
-	l1BlockNumber       uint64
+	l1BlockNumber       atomic.Uint64
 	l1Timestamp         uint64
 
 	// activeMutex manages pauseChan (pauses execution) and forwarder
@@ -382,7 +382,6 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		config:          configFetcher,
 		senderWhitelist: senderWhitelist,
 		nonceCache:      newNonceCache(config.NonceCacheSize),
-		l1BlockNumber:   0,
 		l1Timestamp:     0,
 		pauseChan:       nil,
 		onForwarderSet:  make(chan struct{}, 1),
@@ -976,7 +975,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 
 	timestamp := time.Now().Unix()
 	s.L1BlockAndTimeMutex.Lock()
-	l1Block := s.l1BlockNumber
+	l1Block := s.l1BlockNumber.Load()
 	l1Timestamp := s.l1Timestamp
 	s.L1BlockAndTimeMutex.Unlock()
 
@@ -1090,9 +1089,9 @@ func (s *Sequencer) updateLatestParentChainBlock(header *types.Header) {
 	defer s.L1BlockAndTimeMutex.Unlock()
 
 	l1BlockNumber := arbutil.ParentHeaderToL1BlockNumber(header)
-	if header.Time > s.l1Timestamp || (header.Time == s.l1Timestamp && l1BlockNumber > s.l1BlockNumber) {
+	if header.Time > s.l1Timestamp || (header.Time == s.l1Timestamp && l1BlockNumber > s.l1BlockNumber.Load()) {
 		s.l1Timestamp = header.Time
-		s.l1BlockNumber = l1BlockNumber
+		s.l1BlockNumber.Store(l1BlockNumber)
 	}
 }
 
@@ -1158,7 +1157,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 	}
 
 	if s.l1Reader != nil {
-		initialBlockNr := atomic.LoadUint64(&s.l1BlockNumber)
+		initialBlockNr := s.l1BlockNumber.Load()
 		if initialBlockNr == 0 {
 			return errors.New("sequencer not initialized")
 		}

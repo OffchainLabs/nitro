@@ -39,7 +39,13 @@ func TestSnapSync(t *testing.T) {
 	// This node will be stopped in middle and arbitrumdata will be deleted.
 	testDir := t.TempDir()
 	nodeBStack := createStackConfigForTest(testDir)
-	nodeB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack})
+	nodeBConfig := builder.nodeConfig
+	nodeBConfig.BatchPoster.Enable = false
+	nodeBParams := &SecondNodeParams{
+		stackConfig: nodeBStack,
+		nodeConfig:  nodeBConfig,
+	}
+	nodeB, cleanupB := builder.Build2ndNode(t, nodeBParams)
 
 	builder.BridgeBalance(t, "Faucet", big.NewInt(1).Mul(big.NewInt(params.Ether), big.NewInt(10000)))
 
