@@ -262,9 +262,9 @@ impl Memory {
     }
 
     #[must_use]
-    // Stores a value in memory, returns false if the value would overflow the buffer.
-    //
-    // bytes is the number of bytes to store. It must be <= 8.
+    /// Stores a value in memory, returns false if the value would overflow the buffer.
+    ///
+    /// bytes is the number of bytes to store. It must be <= 8.
     pub fn store_value(&mut self, idx: u64, value: u64, bytes: u8) -> bool {
         assert!(bytes <= 8);
         let Some(end_idx) = idx.checked_add(bytes.into()) else {
@@ -285,9 +285,9 @@ impl Memory {
     }
 
     #[must_use]
-    // Stores a slice in memory, returns false if the value would overflow the buffer.
-    //
-    // The length of value <= 32.
+    /// Stores a slice in memory, returns false if the value would overflow the buffer.
+    ///
+    /// The length of value <= 32.
     pub fn store_slice_aligned(&mut self, idx: u64, value: &[u8]) -> bool {
         assert!(value.len() <= Self::LEAF_SIZE);
         if idx % Self::LEAF_SIZE as u64 != 0 {

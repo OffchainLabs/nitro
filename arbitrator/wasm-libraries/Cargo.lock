@@ -120,6 +120,7 @@ checksum = "1bc2832c24239b0141d5674bb9174f9d68a8b5b3f2753311927c172ca46f7e9c"
 dependencies = [
  "funty",
  "radium",
+ "serde",
  "tap",
  "wyz",
 ]
@@ -885,6 +886,7 @@ version = "0.1.0"
 dependencies = [
  "arbutil",
  "bincode",
+ "bitvec",
  "brotli",
  "derivative",
  "digest 0.9.0",
