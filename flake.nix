@@ -136,6 +136,7 @@
                 yarn
 
                 python3
+                wget
 
                 # wasm
                 rust-cbindgen

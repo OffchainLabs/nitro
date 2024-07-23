@@ -14,8 +14,16 @@ set -euxo pipefail
 mkdir "$2"
 ln -sfT "$2" latest
 cd "$2"
-echo "$2" > module-root.txt
+
 url_base="https://github.com/EspressoSystems/nitro-espresso-integration/releases/download/$1"
+
+# Download the module root from the release page
+wget "$url_base/module-root.txt"
+
+# Check that the module root specified matches the release
+grep -q "$2" module-root.txt ||
+    (echo "Module root mismatch: specified $2 != release $(cat module-root.txt)" && exit 1)
+
 wget "$url_base/machine.wavm.br"
 
 status_code="$(curl -LI "$url_base/replay.wasm" -so /dev/null -w '%{http_code}')"
