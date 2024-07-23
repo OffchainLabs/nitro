@@ -29,6 +29,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/headerreader"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 	"golang.org/x/exp/slog"
 )
 
@@ -153,7 +154,7 @@ func TestDASRekey(t *testing.T) {
 
 	// Restart the node on the new keyset against the new DAS server running on the same disk as the first with new keys
 	builder.nodeConfig.DataAvailability.RPCAggregator = aggConfigForBackend(t, backendConfigB)
-	builder.l2StackConfig = createStackConfigForTest(builder.dataDir)
+	builder.l2StackConfig = testhelpers.CreateStackConfigForTest(builder.dataDir)
 	cleanup := builder.BuildL2OnL1(t)
 	defer cleanup()
 

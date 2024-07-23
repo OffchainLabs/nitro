@@ -114,6 +114,19 @@ func activateProgramInternal(
 	}
 	asmMap := map[string][]byte{target: asm}
 
+	status_asm := C.stylus_compile(
+		goSlice(wasm),
+		u16(version),
+		cbool(debug),
+		goSlice([]byte{}),
+		output,
+	)
+
+	asm := output.intoBytes()
+	if status_asm != 0 {
+		return nil, nil, nil, fmt.Errorf("%w: %s", ErrProgramActivation, string(asm))
+	}
+
 	hash := moduleHash.toHash()
 
 	info := &activationInfo{
