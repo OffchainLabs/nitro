@@ -377,15 +377,8 @@ impl Merkle {
             layer.resize(layer_size, *empty_hash_at(self.ty, layer_i));
             layer_size = max(layer_size >> 1, 1);
         }
-        for i in start..new_len {
-            let parent_i = i >> 1;
-            assert!(parent_i <= layers.dirty_leaf_parents.len());
-            if parent_i == layers.dirty_leaf_parents.len() {
-                layers.dirty_leaf_parents.push(true);
-            } else if parent_i < layers.dirty_leaf_parents.len() {
-                layers.dirty_leaf_parents.set(parent_i, true);
-            }
-        }
+        layers.dirty_leaf_parents[(start >> 1)..].fill(true);
+        layers.dirty_leaf_parents.resize(new_len >> 1, true);
         Ok(layers.data[0].len())
     }
 }
