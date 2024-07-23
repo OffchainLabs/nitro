@@ -42,7 +42,7 @@ import (
 
 func makeBackgroundTxs(ctx context.Context, builder *NodeBuilder) error {
 	for i := uint64(0); ctx.Err() == nil; i++ {
-		builder.L2Info.Accounts["BackgroundUser"].Nonce = i
+		builder.L2Info.Accounts["BackgroundUser"].Nonce.Store(i)
 		tx := builder.L2Info.PrepareTx("BackgroundUser", "BackgroundUser", builder.L2Info.TransferGas, common.Big0, nil)
 		err := builder.L2.Client.SendTransaction(ctx, tx)
 		if err != nil {
@@ -75,6 +75,9 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		types.NewArbitrumSigner(types.NewLondonSigner(builder.chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
 		transferGas,
 	)
+
+	// For now validation only works with HashScheme set
+	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 
 	builder.nodeConfig.BatchPoster.MaxDelay = -1000 * time.Hour
 	cleanupA := builder.Build(t)

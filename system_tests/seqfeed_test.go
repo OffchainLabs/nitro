@@ -192,7 +192,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	builder.L2Info.GenerateAccount("RealUser")
 
 	fraudTx := builder.L2Info.PrepareTx("Owner", "FraudUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
-	builder.L2Info.GetInfoWithPrivKey("Owner").Nonce -= 1 // Use same l2info object for different l2s
+	builder.L2Info.GetInfoWithPrivKey("Owner").Nonce.Add(^uint64(0)) // Use same l2info object for different l2s
 	realTx := builder.L2Info.PrepareTx("Owner", "RealUser", builder.L2Info.TransferGas, big.NewInt(1e12), nil)
 
 	for i := 0; i < 10; i++ {
@@ -333,7 +333,7 @@ func testBlockHashComparison(t *testing.T, blockHash *common.Hash, mustMismatch 
 	}
 	wsBroadcastServer.Broadcast(&broadcastMessage)
 
-	// By now, even though block hash mismatch, the transaction should still be processed
+	// For now, even though block hash mismatch, the transaction should still be processed
 	_, err = WaitForTx(ctx, testClient.Client, tx.Hash(), time.Second*15)
 	if err != nil {
 		t.Fatal("error waiting for tx:", err)

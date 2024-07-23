@@ -34,6 +34,10 @@ type DASWriter interface {
 	fmt.Stringer
 }
 
+type DASKeysetFetcher interface {
+	GetKeysetByHash(context.Context, common.Hash) ([]byte, error)
+}
+
 type BlobReader interface {
 	GetBlobs(
 		ctx context.Context,
@@ -138,6 +142,7 @@ func RecoverPayloadFromDasBatch(
 	batchNum uint64,
 	sequencerMsg []byte,
 	dasReader DASReader,
+	keysetFetcher DASKeysetFetcher,
 	preimageRecorder PreimageRecorder,
 	validateSeqMsg bool,
 ) ([]byte, error) {
@@ -181,9 +186,9 @@ func RecoverPayloadFromDasBatch(
 		return preimage, nil
 	}
 
-	keysetPreimage, err := getByHash(ctx, cert.KeysetHash)
+	keysetPreimage, err := keysetFetcher.GetKeysetByHash(ctx, cert.KeysetHash)
 	if err != nil {
-		log.Error("Couldn't get keyset", "err", err)
+		log.Error("Couldn't get keyset", "err", err, "keysetHash", common.Bytes2Hex(cert.KeysetHash[:]))
 		return nil, err
 	}
 	if preimageRecorder != nil {
