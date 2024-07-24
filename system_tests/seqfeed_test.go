@@ -194,7 +194,7 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 		},
 		l1client,
 		auctionAddr,
-		nil,
+		auctioneer,
 	)
 	Require(t, err)
 
@@ -208,7 +208,7 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 		},
 		l1client,
 		auctionAddr,
-		nil,
+		auctioneer,
 	)
 	Require(t, err)
 
