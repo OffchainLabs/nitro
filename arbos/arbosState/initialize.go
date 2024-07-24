@@ -10,6 +10,7 @@ import (
 	"sort"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -52,13 +53,20 @@ func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint
 	return types.NewBlock(head, nil, nil, nil, trie.NewStackTrie(nil))
 }
 
-func InitializeArbosInDatabase(db ethdb.Database, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, timestamp uint64, accountsPerSync uint) (common.Hash, error) {
-	stateDatabase := state.NewDatabase(db)
+func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, timestamp uint64, accountsPerSync uint) (root common.Hash, err error) {
+	triedbConfig := cacheConfig.TriedbConfig()
+	triedbConfig.Preimages = false
+	stateDatabase := state.NewDatabaseWithConfig(db, triedbConfig)
+	defer func() {
+		err = errors.Join(err, stateDatabase.TrieDB().Close())
+	}()
 	statedb, err := state.New(common.Hash{}, stateDatabase, nil)
 	if err != nil {
 		log.Crit("failed to init empty statedb", "error", err)
 	}
 
+	// commit avoids keeping the entire state in memory while importing the state.
+	// At some time it was also used to avoid reprocessing the whole import in case of a crash.
 	commit := func() (common.Hash, error) {
 		root, err := statedb.Commit(chainConfig.ArbitrumChainParams.GenesisBlockNum, true)
 		if err != nil {

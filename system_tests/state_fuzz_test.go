@@ -28,6 +28,7 @@ import (
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
 
 func BuildBlock(
@@ -137,8 +138,10 @@ func FuzzStateTransition(f *testing.F) {
 			ChainConfig:           chainConfig,
 			SerializedChainConfig: serializedChainConfig,
 		}
+		cacheConfig := core.DefaultCacheConfigWithScheme(env.GetTestStateScheme())
 		stateRoot, err := arbosState.InitializeArbosInDatabase(
 			chainDb,
+			cacheConfig,
 			statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{}),
 			chainConfig,
 			initMessage,
@@ -148,7 +151,8 @@ func FuzzStateTransition(f *testing.F) {
 		if err != nil {
 			panic(err)
 		}
-		statedb, err := state.New(stateRoot, state.NewDatabase(chainDb), nil)
+		trieDBConfig := cacheConfig.TriedbConfig()
+		statedb, err := state.New(stateRoot, state.NewDatabaseWithConfig(chainDb, trieDBConfig), nil)
 		if err != nil {
 			panic(err)
 		}
