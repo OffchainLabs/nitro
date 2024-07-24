@@ -19,12 +19,12 @@ import (
 
 type L1Interface interface {
 	bind.ContractBackend
+	bind.BlockHashContractCaller
 	ethereum.ChainReader
 	ethereum.ChainStateReader
 	ethereum.TransactionReader
 	TransactionSender(ctx context.Context, tx *types.Transaction, block common.Hash, index uint) (common.Address, error)
 	BlockNumber(ctx context.Context) (uint64, error)
-	CallContractAtHash(ctx context.Context, msg ethereum.CallMsg, blockHash common.Hash) ([]byte, error)
 	PendingCallContract(ctx context.Context, msg ethereum.CallMsg) ([]byte, error)
 	ChainID(ctx context.Context) (*big.Int, error)
 	Client() rpc.ClientInterface
