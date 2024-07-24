@@ -301,12 +301,6 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 		t.Fatal("Unexpected balance of real account:", l2balanceRealAcct)
 	}
 
-	// Consensus should update message result stored in its database after a reorg
-	realResult := compareAllMsgResultsFromConsensusAndExecution(t, testClientB, "real")
-	// Checks that results changed
-	if reflect.DeepEqual(fraudResult, realResult) {
-		t.Fatal("realResult and fraudResult are equal")
-	}
 	// Since NodeB is not a sequencer, it will produce blocks through Consensus.
 	// So it is expected that Consensus.ResultAtCount will not rely on Execution to retrieve results.
 	// However, since count 1 is related to genesis, and Execution is initialized through InitializeArbosInDatabase and not through Consensus,
@@ -323,6 +317,12 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	Require(t, err)
 	if logHandler.WasLogged(arbnode.FailedToGetMsgResultFromDB) {
 		t.Fatal("Consensus relied on execution database to return the result")
+	}
+	// Consensus should update message result stored in its database after a reorg
+	realResult := compareAllMsgResultsFromConsensusAndExecution(t, testClientB, "real")
+	// Checks that results changed
+	if reflect.DeepEqual(fraudResult, realResult) {
+		t.Fatal("realResult and fraudResult are equal")
 	}
 }
 
