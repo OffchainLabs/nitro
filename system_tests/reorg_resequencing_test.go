@@ -59,7 +59,7 @@ func TestReorgResequencing(t *testing.T) {
 
 	// Reorg of old messages is done in the background.
 	// As a strategy to avoid test flakiness, this sleep tries to ensure that the reorg is done before we continue.
-	time.Sleep(2 * time.Second)
+	time.Sleep(5 * time.Second)
 
 	verifyBalances("after empty reorg")
 	compareAllMsgResultsFromConsensusAndExecution(t, builder.L2, "after empty reorg")
@@ -89,7 +89,7 @@ func TestReorgResequencing(t *testing.T) {
 
 	accountsWithBalance = append(accountsWithBalance, "User4")
 
-	time.Sleep(2 * time.Second)
+	time.Sleep(5 * time.Second)
 	verifyBalances("after reorg with new deposit")
 	compareAllMsgResultsFromConsensusAndExecution(t, builder.L2, "after reorg with new deposit")
 
@@ -99,7 +99,7 @@ func TestReorgResequencing(t *testing.T) {
 	_, err = builder.L2.ExecNode.ExecEngine.HeadMessageNumberSync(t)
 	Require(t, err)
 
-	time.Sleep(2 * time.Second)
+	time.Sleep(5 * time.Second)
 	verifyBalances("after second empty reorg")
 	compareAllMsgResultsFromConsensusAndExecution(t, builder.L2, "after second empty reorg")
 }
