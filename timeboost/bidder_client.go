@@ -130,11 +130,11 @@ func (bd *BidderClient) Bid(
 }
 
 func sign(message []byte, key *ecdsa.PrivateKey) ([]byte, error) {
-	hash := crypto.Keccak256(message)
-	prefixed := crypto.Keccak256([]byte("\x19Ethereum Signed Message:\n32"), hash)
+	prefixed := crypto.Keccak256(append([]byte("\x19Ethereum Signed Message:\n112"), message...))
 	sig, err := secp256k1.Sign(prefixed, math.PaddedBigBytes(key.D, 32))
 	if err != nil {
 		return nil, err
 	}
+	sig[64] += 27
 	return sig, nil
 }

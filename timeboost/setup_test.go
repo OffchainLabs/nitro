@@ -37,7 +37,7 @@ func setupAuctionTest(t *testing.T, ctx context.Context) *auctionSetup {
 
 	// Advance the chain in the background at Arbitrum One's block time of 250ms.
 	go func() {
-		tick := time.NewTicker(time.Millisecond * 250)
+		tick := time.NewTicker(time.Second)
 		defer tick.Stop()
 		for {
 			select {

@@ -71,7 +71,6 @@ func (am *Auctioneer) newValidatedBid(bid *Bid) (*validatedBid, error) {
 		return nil, errors.Wrap(ErrMalformedData, "expected bid to be at least of reserve price magnitude")
 	}
 	// Validate the signature.
-	// TODO: Validate the signature against the express lane controller address.
 	packedBidBytes, err := encodeBidValues(
 		new(big.Int).SetUint64(bid.chainId),
 		am.auctionContractAddr,
@@ -82,17 +81,21 @@ func (am *Auctioneer) newValidatedBid(bid *Bid) (*validatedBid, error) {
 	if err != nil {
 		return nil, ErrMalformedData
 	}
-	// Ethereum signatures contain the recovery id at the last byte
 	if len(bid.signature) != 65 {
 		return nil, errors.Wrap(ErrMalformedData, "signature length is not 65")
 	}
 	// Recover the public key.
 	prefixed := crypto.Keccak256(append([]byte("\x19Ethereum Signed Message:\n112"), packedBidBytes...))
-	pubkey, err := crypto.SigToPub(prefixed, bid.signature)
+	sigItem := make([]byte, len(bid.signature))
+	copy(sigItem, bid.signature)
+	if sigItem[len(sigItem)-1] >= 27 {
+		sigItem[len(sigItem)-1] -= 27
+	}
+	pubkey, err := crypto.SigToPub(prefixed, sigItem)
 	if err != nil {
 		return nil, ErrMalformedData
 	}
-	if !verifySignature(pubkey, packedBidBytes, bid.signature) {
+	if !verifySignature(pubkey, packedBidBytes, sigItem) {
 		return nil, ErrWrongSignature
 	}
 	// Validate if the user if a depositor in the contract and has enough balance for the bid.

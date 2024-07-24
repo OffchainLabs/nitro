@@ -124,6 +124,7 @@ func (am *Auctioneer) resolveAuction(ctx context.Context) error {
 	// TODO: Retry a given number of times in case of flakey connection.
 	switch {
 	case hasBothBids:
+		fmt.Printf("First express lane controller: %#x\n", first.expressLaneController)
 		tx, err = am.auctionContract.ResolveMultiBidAuction(
 			am.txOpts,
 			express_lane_auctiongen.Bid{
