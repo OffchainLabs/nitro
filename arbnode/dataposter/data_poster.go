@@ -28,6 +28,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -48,6 +49,14 @@ import (
 	"github.com/spf13/pflag"
 
 	redisstorage "github.com/offchainlabs/nitro/arbnode/dataposter/redis"
+)
+
+var (
+	latestFinalizedNonceGauge     = metrics.NewRegisteredGauge("arb/dataposter/nonce/finalized", nil)
+	latestSoftConfirmedNonceGauge = metrics.NewRegisteredGauge("arb/dataposter/nonce/softconfirmed", nil)
+	latestUnconfirmedNonceGauge   = metrics.NewRegisteredGauge("arb/dataposter/nonce/unconfirmed", nil)
+	totalQueueLengthGauge         = metrics.NewRegisteredGauge("arb/dataposter/queue/length", nil)
+	totalQueueWeightGauge         = metrics.NewRegisteredGauge("arb/dataposter/queue/weight", nil)
 )
 
 // Dataposter implements functionality to post transactions on the chain. It
@@ -383,6 +392,7 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64, thi
 		if err != nil {
 			return fmt.Errorf("getting nonce of a dataposter sender: %w", err)
 		}
+		latestUnconfirmedNonceGauge.Update(int64(unconfirmedNonce))
 		if nextNonce >= cfg.MaxMempoolTransactions+unconfirmedNonce {
 			return fmt.Errorf("%w: transaction nonce: %d, unconfirmed nonce: %d, max mempool size: %d", ErrExceedsMaxMempoolSize, nextNonce, unconfirmedNonce, cfg.MaxMempoolTransactions)
 		}
@@ -394,6 +404,7 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64, thi
 		if err != nil {
 			return fmt.Errorf("getting nonce of a dataposter sender: %w", err)
 		}
+		latestUnconfirmedNonceGauge.Update(int64(unconfirmedNonce))
 		if unconfirmedNonce > nextNonce {
 			return fmt.Errorf("latest on-chain nonce %v is greater than to next nonce %v", unconfirmedNonce, nextNonce)
 		}
@@ -547,6 +558,7 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to get latest nonce %v blocks ago (block %v): %w", config.NonceRbfSoftConfs, softConfBlock, err)
 	}
+	latestSoftConfirmedNonceGauge.Update(int64(softConfNonce))
 
 	suggestedTip, err := p.client.SuggestGasTipCap(ctx)
 	if err != nil {
@@ -1073,6 +1085,7 @@ func (p *DataPoster) updateNonce(ctx context.Context) error {
 		}
 		return nil
 	}
+	latestFinalizedNonceGauge.Update(int64(nonce))
 	log.Info("Data poster transactions confirmed", "previousNonce", p.nonce, "newNonce", nonce, "previousL1Block", p.lastBlock, "newL1Block", header.Number)
 	if len(p.errorCount) > 0 {
 		for x := p.nonce; x < nonce; x++ {
@@ -1152,6 +1165,7 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 			log.Warn("Failed to get latest nonce", "err", err)
 			return minWait
 		}
+		latestUnconfirmedNonceGauge.Update(int64(unconfirmedNonce))
 		// We use unconfirmedNonce here to replace-by-fee transactions that aren't in a block,
 		// excluding those that are in an unconfirmed block. If a reorg occurs, we'll continue
 		// replacing them by fee.
@@ -1169,13 +1183,27 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 		if latestQueued != nil {
 			latestCumulativeWeight = latestQueued.CumulativeWeight()
 			latestNonce = latestQueued.FullTx.Nonce()
+
+			var confirmedWeight uint64
+			confirmedNonce := unconfirmedNonce - 1
+			confirmedMeta, err := p.queue.Get(ctx, confirmedNonce)
+			if err != nil {
+				log.Error("Failed to fetxh latest confirmed tx from queue", "err", err)
+				return minWait
+			}
+			if confirmedMeta != nil {
+				confirmedWeight = confirmedMeta.CumulativeWeight()
+			}
+			totalQueueWeightGauge.Update(int64(arbmath.SaturatingUSub(latestCumulativeWeight, confirmedWeight)))
+			totalQueueLengthGauge.Update(int64(arbmath.SaturatingUSub(latestNonce, confirmedNonce)))
 		}
+
 		for _, tx := range queueContents {
 			previouslyUnsent := !tx.Sent
 			sendAttempted := false
 			if now.After(tx.NextReplacement) {
-				nonceBacklog := arbmath.SaturatingUSub(latestNonce, tx.FullTx.Nonce())
 				weightBacklog := arbmath.SaturatingUSub(latestCumulativeWeight, tx.CumulativeWeight())
+				nonceBacklog := arbmath.SaturatingUSub(latestNonce, tx.FullTx.Nonce())
 				err := p.replaceTx(ctx, tx, arbmath.MaxInt(nonceBacklog, weightBacklog))
 				sendAttempted = true
 				p.maybeLogError(err, tx, "failed to replace-by-fee transaction")
