@@ -409,7 +409,7 @@ func isLeveldbNotExistError(err error) bool {
 func databaseIsEmpty(db ethdb.Database) bool {
 	it := db.NewIterator(nil, nil)
 	defer it.Release()
-	return it.Next()
+	return !it.Next()
 }
 
 // if db is not empty, validates if wasm database schema version matches current version
