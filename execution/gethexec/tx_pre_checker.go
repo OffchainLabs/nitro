@@ -221,3 +221,7 @@ func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transac
 	}
 	return c.TransactionPublisher.PublishTransaction(ctx, tx, options)
 }
+
+func (c *TxPreChecker) PublishExpressLaneTransaction(ctx context.Context, msg *arbitrum_types.ExpressLaneSubmission) error {
+	return nil
+}

@@ -110,7 +110,8 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	}
 	cleanupSeq := builderSeq.Build(t)
 	defer cleanupSeq()
-	seqInfo, _, seqClient := builderSeq.L2Info, builderSeq.L2.ConsensusNode, builderSeq.L2.Client
+	seqInfo, seqNode, seqClient := builderSeq.L2Info, builderSeq.L2.ConsensusNode, builderSeq.L2.Client
+	t.Logf("Sequencer endpoint %s", seqNode.Stack.HTTPEndpoint())
 
 	auctionAddr := builderSeq.L2.ExecNode.Sequencer.ExpressLaneAuction()
 	erc20Addr := builderSeq.L2.ExecNode.Sequencer.ExpressLaneERC20()
@@ -345,6 +346,7 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 			t.Fatal("Bob should have been sequenced before Alice with express lane")
 		}
 	}
+	time.Sleep(time.Hour)
 }
 
 func awaitAuctionResolved(

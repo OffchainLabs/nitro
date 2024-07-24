@@ -35,6 +35,20 @@ func (a *ArbAPI) CheckPublisherHealth(ctx context.Context) error {
 	return a.txPublisher.CheckHealth(ctx)
 }
 
+type ArbTimeboostAPI struct {
+	txPublisher TransactionPublisher
+}
+
+func NewArbTimeboostAPI(publisher TransactionPublisher) *ArbTimeboostAPI {
+	return &ArbTimeboostAPI{publisher}
+}
+
+func (a *ArbTimeboostAPI) SendExpressLaneTransaction(ctx context.Context, tx *types.Transaction) error {
+	fmt.Println("hit the endpoint")
+	return nil
+	// return a.txPublisher.PublishTransaction(ctx)
+}
+
 type ArbDebugAPI struct {
 	blockchain        *core.BlockChain
 	blockRangeBound   uint64

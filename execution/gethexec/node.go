@@ -234,6 +234,12 @@ func CreateExecutionNode(
 		Public:    false,
 	}}
 	apis = append(apis, rpc.API{
+		Namespace: "timeboost",
+		Version:   "1.0",
+		Service:   NewArbTimeboostAPI(txPublisher),
+		Public:    false,
+	})
+	apis = append(apis, rpc.API{
 		Namespace: "arbdebug",
 		Version:   "1.0",
 		Service: NewArbDebugAPI(

@@ -156,6 +156,10 @@ func (f *TxForwarder) PublishTransaction(inctx context.Context, tx *types.Transa
 	return errors.New("failed to publish transaction to any of the forwarding targets")
 }
 
+func (f *TxForwarder) PublishExpressLaneTransaction(ctx context.Context, msg *arbitrum_types.ExpressLaneSubmission) error {
+	return nil
+}
+
 const cacheUpstreamHealth = 2 * time.Second
 const maxHealthTimeout = 10 * time.Second
 
@@ -252,6 +256,10 @@ func (f *TxDropper) PublishTransaction(ctx context.Context, tx *types.Transactio
 	return txDropperErr
 }
 
+func (f *TxDropper) PublishExpressLaneTransaction(ctx context.Context, msg *arbitrum_types.ExpressLaneSubmission) error {
+	return txDropperErr
+}
+
 func (f *TxDropper) CheckHealth(ctx context.Context) error {
 	return txDropperErr
 }
@@ -293,6 +301,14 @@ func (f *RedisTxForwarder) PublishTransaction(ctx context.Context, tx *types.Tra
 		return ErrNoSequencer
 	}
 	return forwarder.PublishTransaction(ctx, tx, options)
+}
+
+func (f *RedisTxForwarder) PublishExpressLaneTransaction(ctx context.Context, msg *arbitrum_types.ExpressLaneSubmission) error {
+	forwarder := f.getForwarder()
+	if forwarder == nil {
+		return ErrNoSequencer
+	}
+	return forwarder.PublishExpressLaneTransaction(ctx, msg)
 }
 
 func (f *RedisTxForwarder) CheckHealth(ctx context.Context) error {
