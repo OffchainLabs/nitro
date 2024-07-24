@@ -11,7 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/pkg/errors"
 )
@@ -21,7 +20,7 @@ type AuctioneerOpt func(*Auctioneer)
 type Auctioneer struct {
 	txOpts                    *bind.TransactOpts
 	chainId                   *big.Int
-	client                    arbutil.L1Interface
+	client                    Client
 	auctionContract           *express_lane_auctiongen.ExpressLaneAuction
 	bidsReceiver              chan *Bid
 	bidCache                  *bidCache
@@ -37,7 +36,7 @@ type Auctioneer struct {
 func NewAuctioneer(
 	txOpts *bind.TransactOpts,
 	chainId *big.Int,
-	client arbutil.L1Interface,
+	client Client,
 	auctionContractAddr common.Address,
 	auctionContract *express_lane_auctiongen.ExpressLaneAuction,
 	opts ...AuctioneerOpt,
@@ -51,6 +50,10 @@ func NewAuctioneer(
 	auctionClosingDuration := time.Duration(roundTimingInfo.AuctionClosingSeconds) * time.Second
 	reserveSubmissionDuration := time.Duration(roundTimingInfo.ReserveSubmissionSeconds) * time.Second
 
+	minReservePrice, err := auctionContract.MinReservePrice(&bind.CallOpts{})
+	if err != nil {
+		return nil, err
+	}
 	am := &Auctioneer{
 		txOpts:                    txOpts,
 		chainId:                   chainId,
@@ -61,6 +64,7 @@ func NewAuctioneer(
 		initialRoundTimestamp:     initialTimestamp,
 		auctionContractAddr:       auctionContractAddr,
 		roundDuration:             roundDuration,
+		reservePrice:              minReservePrice,
 		auctionClosingDuration:    auctionClosingDuration,
 		reserveSubmissionDuration: reserveSubmissionDuration,
 	}

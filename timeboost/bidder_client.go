@@ -12,13 +12,18 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/secp256k1"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/pkg/errors"
 )
 
+type Client interface {
+	bind.ContractBackend
+	bind.DeployBackend
+	ChainID(ctx context.Context) (*big.Int, error)
+}
+
 type auctioneerConnection interface {
-	SubmitBid(ctx context.Context, bid *Bid) error
+	ReceiveBid(ctx context.Context, bid *Bid) error
 }
 
 type BidderClient struct {
@@ -26,7 +31,7 @@ type BidderClient struct {
 	name                   string
 	auctionContractAddress common.Address
 	txOpts                 *bind.TransactOpts
-	client                 arbutil.L1Interface
+	client                 Client
 	privKey                *ecdsa.PrivateKey
 	auctionContract        *express_lane_auctiongen.ExpressLaneAuction
 	auctioneer             auctioneerConnection
@@ -44,7 +49,7 @@ func NewBidderClient(
 	ctx context.Context,
 	name string,
 	wallet *Wallet,
-	client arbutil.L1Interface,
+	client Client,
 	auctionContractAddress common.Address,
 	auctioneer auctioneerConnection,
 ) (*BidderClient, error) {
@@ -118,7 +123,7 @@ func (bd *BidderClient) Bid(
 		return nil, err
 	}
 	newBid.signature = sig
-	if err = bd.auctioneer.SubmitBid(ctx, newBid); err != nil {
+	if err = bd.auctioneer.ReceiveBid(ctx, newBid); err != nil {
 		return nil, err
 	}
 	return newBid, nil

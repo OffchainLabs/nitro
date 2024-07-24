@@ -1,7 +1,11 @@
 package timeboost
 
 import (
+	"context"
+	"math/big"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 func TestWinningBidderBecomesExpressLaneController(t *testing.T) {
@@ -41,28 +45,27 @@ func TestWinningBidderBecomesExpressLaneController(t *testing.T) {
 	// require.Equal(t, alice.txOpts.From, controller)
 }
 
-func TestSubmitBid_OK(t *testing.T) {
-	// ctx, cancel := context.WithCancel(context.Background())
-	// defer cancel()
+func TestReceiveBid_OK(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	// testSetup := setupAuctionTest(t, ctx)
+	testSetup := setupAuctionTest(t, ctx)
 
-	// // Make a deposit as a bidder into the contract.
-	// bc := setupBidderClient(t, ctx, "alice", testSetup.accounts[0], testSetup)
-	// require.NoError(t, bc.Deposit(ctx, big.NewInt(5)))
+	// Set up a new auction master instance that can validate bids.
+	am, err := NewAuctioneer(
+		testSetup.accounts[1].txOpts, testSetup.chainId, testSetup.backend.Client(), testSetup.expressLaneAuctionAddr, testSetup.expressLaneAuction,
+	)
+	require.NoError(t, err)
 
-	// // Set up a new auction master instance that can validate bids.
-	// am, err := NewAuctioneer(
-	// 	testSetup.accounts[1].txOpts, testSetup.chainId, testSetup.backend.Client(), testSetup.auctionContract,
-	// )
-	// require.NoError(t, err)
-	// bc.auctioneer = am
+	// Make a deposit as a bidder into the contract.
+	bc := setupBidderClient(t, ctx, "alice", testSetup.accounts[0], testSetup, am)
+	require.NoError(t, bc.Deposit(ctx, big.NewInt(5)))
 
-	// // Form a new bid with an amount.
-	// newBid, err := bc.Bid(ctx, big.NewInt(5))
-	// require.NoError(t, err)
+	// Form a new bid with an amount.
+	newBid, err := bc.Bid(ctx, big.NewInt(5), testSetup.accounts[0].txOpts.From)
+	require.NoError(t, err)
 
-	// // Check the bid passes validation.
-	// _, err = am.newValidatedBid(newBid)
-	// require.NoError(t, err)
+	// Check the bid passes validation.
+	_, err = am.newValidatedBid(newBid)
+	require.NoError(t, err)
 }

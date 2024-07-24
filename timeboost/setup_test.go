@@ -26,7 +26,7 @@ type auctionSetup struct {
 	initialTimestamp       time.Time
 	roundDuration          time.Duration
 	expressLaneAddr        common.Address
-	bidReceiverAddr        common.Address
+	beneficiaryAddr        common.Address
 	accounts               []*testAccount
 	backend                *simulated.Backend
 }
@@ -34,9 +34,9 @@ type auctionSetup struct {
 func setupAuctionTest(t *testing.T, ctx context.Context) *auctionSetup {
 	accs, backend := setupAccounts(10)
 
-	// Advance the chain in the background
+	// Advance the chain in the background at Arbitrum One's block time of 250ms.
 	go func() {
-		tick := time.NewTicker(time.Second)
+		tick := time.NewTicker(time.Millisecond * 250)
 		defer tick.Stop()
 		for {
 			select {
@@ -72,19 +72,7 @@ func setupAuctionTest(t *testing.T, ctx context.Context) *auctionSetup {
 	require.NoError(t, err)
 	t.Log("Account seeded with ERC20 token balance =", bal.String())
 
-	expressLaneAddr := common.HexToAddress("0x2424242424242424242424242424242424242424")
-	bidReceiverAddr := common.HexToAddress("0x3424242424242424242424242424242424242424")
-	bidRoundSeconds := uint64(60)
-
-	// Calculate the number of seconds until the next minute
-	// and the next timestamp that is a multiple of a minute.
-	now := time.Now()
-	initialTimestamp := big.NewInt(now.Unix())
-
-	// Deploy the auction manager contract.
-	// currReservePrice := big.NewInt(1)
-	// minReservePrice := big.NewInt(1)
-	reservePriceSetter := opts.From
+	// Deploy the express lane auction contract.
 	auctionContractAddr, tx, auctionContract, err := express_lane_auctiongen.DeployExpressLaneAuction(
 		opts, backend.Client(),
 	)
@@ -92,16 +80,51 @@ func setupAuctionTest(t *testing.T, ctx context.Context) *auctionSetup {
 	if _, err = bind.WaitMined(ctx, backend.Client(), tx); err != nil {
 		t.Fatal(err)
 	}
-	tx, err = auctionContract.Initialize(opts, opts.From, bidReceiverAddr, erc20Addr, express_lane_auctiongen.RoundTimingInfo{
-		OffsetTimestamp:      initialTimestamp.Uint64(),
-		RoundDurationSeconds: bidRoundSeconds,
-	}, big.NewInt(0), opts.From, reservePriceSetter, reservePriceSetter, reservePriceSetter)
+
+	expressLaneAddr := common.HexToAddress("0x2424242424242424242424242424242424242424")
+
+	// Calculate the number of seconds until the next minute
+	// and the next timestamp that is a multiple of a minute.
+	now := time.Now()
+	roundDuration := time.Minute
+	waitTime := roundDuration - time.Duration(now.Second())*time.Second - time.Duration(now.Nanosecond())
+	initialTime := now.Add(waitTime)
+	initialTimestamp := big.NewInt(initialTime.Unix())
+	t.Logf("Initial timestamp: %v", initialTime)
+
+	// Deploy the auction manager contract.
+	auctioneer := opts.From
+	beneficiary := opts.From
+	biddingToken := erc20Addr
+	bidRoundSeconds := uint64(60)
+	auctionClosingSeconds := uint64(15)
+	reserveSubmissionSeconds := uint64(15)
+	minReservePrice := big.NewInt(1) // 1 wei.
+	roleAdmin := opts.From
+	minReservePriceSetter := opts.From
+	reservePriceSetter := opts.From
+	beneficiarySetter := opts.From
+	tx, err = auctionContract.Initialize(
+		opts,
+		auctioneer,
+		beneficiary,
+		biddingToken,
+		express_lane_auctiongen.RoundTimingInfo{
+			OffsetTimestamp:          initialTimestamp.Uint64(),
+			RoundDurationSeconds:     bidRoundSeconds,
+			AuctionClosingSeconds:    auctionClosingSeconds,
+			ReserveSubmissionSeconds: reserveSubmissionSeconds,
+		},
+		minReservePrice,
+		roleAdmin,
+		minReservePriceSetter,
+		reservePriceSetter,
+		beneficiarySetter,
+	)
 	require.NoError(t, err)
 	if _, err = bind.WaitMined(ctx, backend.Client(), tx); err != nil {
 		t.Fatal(err)
 	}
-
-	// TODO: Set the reserve price here.
 	return &auctionSetup{
 		chainId:                chainId,
 		expressLaneAuctionAddr: auctionContractAddr,
@@ -111,27 +134,26 @@ func setupAuctionTest(t *testing.T, ctx context.Context) *auctionSetup {
 		initialTimestamp:       now,
 		roundDuration:          time.Minute,
 		expressLaneAddr:        expressLaneAddr,
-		bidReceiverAddr:        bidReceiverAddr,
+		beneficiaryAddr:        beneficiary,
 		accounts:               accs,
 		backend:                backend,
 	}
 }
 
 func setupBidderClient(
-	t *testing.T, ctx context.Context, name string, account *testAccount, testSetup *auctionSetup,
+	t *testing.T, ctx context.Context, name string, account *testAccount, testSetup *auctionSetup, conn auctioneerConnection,
 ) *BidderClient {
 	bc, err := NewBidderClient(
 		ctx,
 		name,
 		&Wallet{TxOpts: account.txOpts, PrivKey: account.privKey},
-		// testSetup.backend.Client(),
-		nil,
+		testSetup.backend.Client(),
 		testSetup.expressLaneAuctionAddr,
-		nil,
+		conn,
 	)
 	require.NoError(t, err)
 
-	// Approve spending by the auction manager and bid receiver.
+	// Approve spending by the express lane auction contract and beneficiary.
 	maxUint256 := big.NewInt(1)
 	maxUint256.Lsh(maxUint256, 256).Sub(maxUint256, big.NewInt(1))
 	tx, err := testSetup.erc20Contract.Approve(
@@ -142,7 +164,7 @@ func setupBidderClient(
 		t.Fatal(err)
 	}
 	tx, err = testSetup.erc20Contract.Approve(
-		account.txOpts, testSetup.bidReceiverAddr, maxUint256,
+		account.txOpts, testSetup.beneficiaryAddr, maxUint256,
 	)
 	require.NoError(t, err)
 	if _, err = bind.WaitMined(ctx, testSetup.backend.Client(), tx); err != nil {
