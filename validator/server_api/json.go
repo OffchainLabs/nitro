@@ -158,7 +158,7 @@ func ValidationInputFromJson(entry *InputJSON) (*validator.ValidationInput, erro
 			for {
 				uncompressed, err = arbcompress.Decompress(decoded, maxSize)
 				if errors.Is(err, arbcompress.ErrOutputWontFit) {
-					if maxSize >= 128_000_000 {
+					if maxSize >= 512_000_000 {
 						return nil, errors.New("failed decompression: too large")
 					}
 					maxSize = maxSize * 4
