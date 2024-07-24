@@ -7,7 +7,6 @@ import (
 	"context"
 	"math/big"
 	"testing"
-	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
@@ -16,6 +15,14 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
+// This is a flaky test.
+// During a reorg:
+// - TransactionStreamer, holding insertionMutex lock, calls ExecutionEngine,
+// which then adds old messages to a channel, so they can be resequenced asynchronously by ExecutionEngine.
+// After that, and before releasing the lock, TransactionStreamer does more computations.
+// - Asynchronously, ExecutionEngine reads from this channel and calls TransactionStreamer,
+// which expects that insertionMutex is free in order to succeed. Which cause then this error:
+// 'failed to re-sequence old user message removed by reorg err="insert lock taken"'
 func TestReorgResequencing(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -57,10 +64,6 @@ func TestReorgResequencing(t *testing.T) {
 	_, err = builder.L2.ExecNode.ExecEngine.HeadMessageNumberSync(t)
 	Require(t, err)
 
-	// Reorg of old messages is done in the background.
-	// As a strategy to avoid test flakiness, this sleep tries to ensure that the reorg is done before we continue.
-	time.Sleep(5 * time.Second)
-
 	verifyBalances("after empty reorg")
 	compareAllMsgResultsFromConsensusAndExecution(t, builder.L2, "after empty reorg")
 
@@ -89,7 +92,6 @@ func TestReorgResequencing(t *testing.T) {
 
 	accountsWithBalance = append(accountsWithBalance, "User4")
 
-	time.Sleep(5 * time.Second)
 	verifyBalances("after reorg with new deposit")
 	compareAllMsgResultsFromConsensusAndExecution(t, builder.L2, "after reorg with new deposit")
 
@@ -99,7 +101,6 @@ func TestReorgResequencing(t *testing.T) {
 	_, err = builder.L2.ExecNode.ExecEngine.HeadMessageNumberSync(t)
 	Require(t, err)
 
-	time.Sleep(5 * time.Second)
 	verifyBalances("after second empty reorg")
 	compareAllMsgResultsFromConsensusAndExecution(t, builder.L2, "after second empty reorg")
 }
