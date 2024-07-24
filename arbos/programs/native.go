@@ -201,7 +201,6 @@ func callProgram(
 	}
 
 	if db, ok := db.(*state.StateDB); ok {
-		// TODO support validation nodes running on different architectures
 		db.RecordProgram(moduleHash)
 	}
 
