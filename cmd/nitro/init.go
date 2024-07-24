@@ -406,6 +406,26 @@ func isLeveldbNotExistError(err error) bool {
 	return os.IsNotExist(err)
 }
 
+func databaseIsEmpty(db ethdb.Database) bool {
+	it := db.NewIterator(nil, nil)
+	defer it.Release()
+	return it.Next()
+}
+
+// if db is not empty, validates if wasm database schema version matches current version
+// otherwise persists current version
+func validateWasmStoreSchemaVersion(db ethdb.Database) error {
+	if !databaseIsEmpty(db) {
+		version := rawdb.ReadWasmSchemaVersion(db)
+		if len(version) != 1 || version[0] != rawdb.WasmSchemaVersion {
+			return fmt.Errorf("Wasm database schema version doesn't match current version, current: %v, read from wasm database: %v", rawdb.WasmSchemaVersion, version)
+		}
+	} else {
+		rawdb.WriteWasmSchemaVersion(db)
+	}
+	return nil
+}
+
 func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig, persistentConfig *conf.PersistentConfig, l1Client arbutil.L1Interface, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
 	if !config.Init.Force {
 		if readOnlyDb, err := stack.OpenDatabaseWithFreezerWithExtraOptions("l2chaindata", 0, 0, config.Persistent.Ancient, "l2chaindata/", true, persistentConfig.Pebble.ExtraOptions("l2chaindata")); err == nil {
@@ -420,6 +440,10 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				}
 				wasmDb, err := stack.OpenDatabaseWithExtraOptions("wasm", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, "wasm/", false, persistentConfig.Pebble.ExtraOptions("wasm"))
 				if err != nil {
+					return nil, nil, err
+				}
+				if err := validateWasmStoreSchemaVersion(wasmDb); err != nil {
+					// TODO add option to rebuild wasmDb from scratch in case of version mismatch
 					return nil, nil, err
 				}
 				chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1)
@@ -534,6 +558,10 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	}
 	wasmDb, err := stack.OpenDatabaseWithExtraOptions("wasm", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, "wasm/", false, persistentConfig.Pebble.ExtraOptions("wasm"))
 	if err != nil {
+		return nil, nil, err
+	}
+	if err := validateWasmStoreSchemaVersion(wasmDb); err != nil {
+		// TODO remove pre-existing wasmdb here?
 		return nil, nil, err
 	}
 	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1)
