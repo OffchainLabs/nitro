@@ -18,7 +18,7 @@ func TestResolveAuction(t *testing.T) {
 
 	// Set up a new auction master instance that can validate bids.
 	am, err := NewAuctioneer(
-		testSetup.accounts[0].txOpts, testSetup.chainId, testSetup.backend.Client(), testSetup.expressLaneAuctionAddr, testSetup.expressLaneAuction,
+		testSetup.accounts[0].txOpts, []uint64{testSetup.chainId.Uint64()}, testSetup.backend.Client(), testSetup.expressLaneAuctionAddr, testSetup.expressLaneAuction,
 	)
 	require.NoError(t, err)
 
@@ -76,7 +76,7 @@ func TestReceiveBid_OK(t *testing.T) {
 
 	// Set up a new auction master instance that can validate bids.
 	am, err := NewAuctioneer(
-		testSetup.accounts[1].txOpts, testSetup.chainId, testSetup.backend.Client(), testSetup.expressLaneAuctionAddr, testSetup.expressLaneAuction,
+		testSetup.accounts[1].txOpts, []uint64{testSetup.chainId.Uint64()}, testSetup.backend.Client(), testSetup.expressLaneAuctionAddr, testSetup.expressLaneAuction,
 	)
 	require.NoError(t, err)
 

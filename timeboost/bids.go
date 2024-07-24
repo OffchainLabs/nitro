@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/ecdsa"
 	"encoding/binary"
+	"fmt"
 	"math/big"
 	"sync"
 
@@ -21,6 +22,7 @@ var (
 	ErrWrongSignature      = errors.New("wrong signature")
 	ErrBadRoundNumber      = errors.New("bad round number")
 	ErrInsufficientBalance = errors.New("insufficient balance")
+	ErrInsufficientBid     = errors.New("insufficient bid")
 )
 
 type Bid struct {
@@ -39,13 +41,13 @@ type validatedBid struct {
 	signature             []byte
 }
 
-func (am *Auctioneer) fetchReservePrice() *big.Int {
-	am.reservePriceLock.RLock()
-	defer am.reservePriceLock.RUnlock()
-	return new(big.Int).Set(am.reservePrice)
+func (a *Auctioneer) fetchReservePrice() *big.Int {
+	a.reservePriceLock.RLock()
+	defer a.reservePriceLock.RUnlock()
+	return new(big.Int).Set(a.reservePrice)
 }
 
-func (am *Auctioneer) newValidatedBid(bid *Bid) (*validatedBid, error) {
+func (a *Auctioneer) newValidatedBid(bid *Bid) (*validatedBid, error) {
 	// Check basic integrity.
 	if bid == nil {
 		return nil, errors.Wrap(ErrMalformedData, "nil bid")
@@ -56,24 +58,41 @@ func (am *Auctioneer) newValidatedBid(bid *Bid) (*validatedBid, error) {
 	if bid.ExpressLaneController == (common.Address{}) {
 		return nil, errors.Wrap(ErrMalformedData, "empty express lane controller address")
 	}
-	// Verify chain id.
-	if new(big.Int).SetUint64(bid.ChainId).Cmp(am.chainId) != 0 {
-		return nil, errors.Wrapf(ErrWrongChainId, "wanted %#x, got %#x", am.chainId, bid.ChainId)
+
+	// Check if the chain ID is valid.
+	chainIdOk := false
+	for _, id := range a.chainId {
+		if bid.ChainId == id {
+			chainIdOk = true
+			break
+		}
 	}
-	// Check if for upcoming round.
-	upcomingRound := CurrentRound(am.initialRoundTimestamp, am.roundDuration) + 1
+	if !chainIdOk {
+		return nil, errors.Wrapf(ErrWrongChainId, "can not aucution for chain id: %d", bid.ChainId)
+	}
+
+	// Check if the bid is intended for upcoming round.
+	upcomingRound := CurrentRound(a.initialRoundTimestamp, a.roundDuration) + 1
 	if bid.Round != upcomingRound {
 		return nil, errors.Wrapf(ErrBadRoundNumber, "wanted %d, got %d", upcomingRound, bid.Round)
 	}
-	// Check bid amount.
-	reservePrice := am.fetchReservePrice()
-	if bid.Amount.Cmp(reservePrice) == -1 {
-		return nil, errors.Wrap(ErrMalformedData, "expected bid to be at least of reserve price magnitude")
+
+	// Check if the auction is closed.
+	if d, closed := AuctionClosed(a.initialRoundTimestamp, a.roundDuration, a.auctionClosingDuration); closed {
+		return nil, fmt.Errorf("auction is closed, %d seconds into the round", d)
 	}
+
+	// Check bid is higher than reserve price.
+	reservePrice := a.fetchReservePrice()
+	if bid.Amount.Cmp(reservePrice) == -1 {
+		return nil, errors.Wrapf(ErrInsufficientBid, "reserve price %s, bid %s", reservePrice, bid.Amount)
+	}
+
 	// Validate the signature.
 	packedBidBytes, err := encodeBidValues(
+		a.domainValue,
 		new(big.Int).SetUint64(bid.ChainId),
-		am.auctionContractAddr,
+		bid.AuctionContractAddress,
 		bid.Round,
 		bid.Amount,
 		bid.ExpressLaneController,
@@ -103,7 +122,7 @@ func (am *Auctioneer) newValidatedBid(bid *Bid) (*validatedBid, error) {
 	// TODO: Validate reserve price against amount of bid.
 	// TODO: No need to do anything expensive if the bid coming is in invalid.
 	// Cache this if the received time of the bid is too soon. Include the arrival timestamp.
-	depositBal, err := am.auctionContract.BalanceOf(&bind.CallOpts{}, bid.Bidder)
+	depositBal, err := a.auctionContract.BalanceOf(&bind.CallOpts{}, bid.Bidder)
 	if err != nil {
 		return nil, err
 	}
@@ -180,10 +199,11 @@ func padBigInt(bi *big.Int) []byte {
 	return padded
 }
 
-func encodeBidValues(chainId *big.Int, auctionContractAddress common.Address, round uint64, amount *big.Int, expressLaneController common.Address) ([]byte, error) {
+func encodeBidValues(domainValue []byte, chainId *big.Int, auctionContractAddress common.Address, round uint64, amount *big.Int, expressLaneController common.Address) ([]byte, error) {
 	buf := new(bytes.Buffer)
 
 	// Encode uint256 values - each occupies 32 bytes
+	buf.Write(domainValue)
 	buf.Write(padBigInt(chainId))
 	buf.Write(auctionContractAddress[:])
 	roundBuf := make([]byte, 8)
