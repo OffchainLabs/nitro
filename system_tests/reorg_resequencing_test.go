@@ -21,7 +21,7 @@ import (
 // which then adds old messages to a channel, so they can be resequenced asynchronously by ExecutionEngine.
 // After that, and before releasing the lock, TransactionStreamer does more computations.
 // - Asynchronously, ExecutionEngine reads from this channel and calls TransactionStreamer,
-// which expects that insertionMutex is free in order to succeed. Which cause then this error:
+// which expects that insertionMutex is free in order to succeed. When that happens this error generated:
 // 'failed to re-sequence old user message removed by reorg err="insert lock taken"'
 func TestReorgResequencing(t *testing.T) {
 	t.Parallel()
