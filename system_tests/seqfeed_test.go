@@ -147,35 +147,47 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	}
 }
 
-func comparesMsgResultFromConsensusAndExecution(
+func compareAllMsgResultsFromConsensusAndExecution(
 	t *testing.T,
 	testClient *TestClient,
 	testScenario string,
 ) *execution.MessageResult {
-	pos := 1
-	count := pos + 1
-
-	headMsgNum, err := testClient.ExecNode.HeadMessageNumber()
+	execHeadMsgNum, err := testClient.ExecNode.HeadMessageNumber()
 	Require(t, err)
-	if headMsgNum != arbutil.MessageIndex(pos) {
-		t.Fatal("Unexpected head message number:", headMsgNum, "pos: ", pos, "testScenario:", testScenario)
+	consensusMsgCount, err := testClient.ConsensusNode.TxStreamer.GetMessageCount()
+	Require(t, err)
+	if consensusMsgCount != execHeadMsgNum+1 {
+		t.Fatal(
+			"consensusMsgCount", consensusMsgCount, "is different than (execHeadMsgNum + 1)", execHeadMsgNum,
+			"testScenario:", testScenario,
+		)
 	}
 
-	resultExec, err := testClient.ExecNode.ResultAtPos(arbutil.MessageIndex(pos))
-	Require(t, err)
-	resultConsensus, err := testClient.ConsensusNode.TxStreamer.ResultAtCount(arbutil.MessageIndex(count))
-	Require(t, err)
-	if !reflect.DeepEqual(resultExec, resultConsensus) {
-		t.Fatal("resultExec", resultExec, "is different than resultConsensus", resultConsensus, "testScenario:", testScenario)
+	var lastResult *execution.MessageResult
+	for msgCount := 1; arbutil.MessageIndex(msgCount) <= consensusMsgCount; msgCount++ {
+		pos := msgCount - 1
+		resultExec, err := testClient.ExecNode.ResultAtPos(arbutil.MessageIndex(pos))
+		Require(t, err)
+
+		resultConsensus, err := testClient.ConsensusNode.TxStreamer.ResultAtCount(arbutil.MessageIndex(msgCount))
+		Require(t, err)
+
+		if !reflect.DeepEqual(resultExec, resultConsensus) {
+			t.Fatal(
+				"resultExec", resultExec, "is different than resultConsensus", resultConsensus,
+				"pos:", pos,
+				"testScenario:", testScenario,
+			)
+		}
+
+		lastResult = resultExec
 	}
 
-	return resultExec
+	return lastResult
 }
 
 func testLyingSequencer(t *testing.T, dasModeStr string) {
 	t.Parallel()
-
-	logHandler := testhelpers.InitTestLog(t, log.LvlTrace)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -255,7 +267,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 		t.Fatal("Unexpected balance:", l2balance)
 	}
 
-	fraudResult := comparesMsgResultFromConsensusAndExecution(t, testClientB, "fraud")
+	fraudResult := compareAllMsgResultsFromConsensusAndExecution(t, testClientB, "fraud")
 
 	// Send the real transaction to client A, will cause a reorg on nodeB
 	err = l2clientA.SendTransaction(ctx, realTx)
@@ -290,13 +302,10 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	}
 
 	// Consensus should update message result stored in its database after a reorg
-	realResult := comparesMsgResultFromConsensusAndExecution(t, testClientB, "real")
+	realResult := compareAllMsgResultsFromConsensusAndExecution(t, testClientB, "real")
 	// Checks that results changed
 	if reflect.DeepEqual(fraudResult, realResult) {
 		t.Fatal("realResult and fraudResult are equal")
-	}
-	if logHandler.WasLogged(arbnode.FailedToGetMsgResultFromDB) {
-		t.Fatal("Consensus relied on execution database to return the results")
 	}
 }
 

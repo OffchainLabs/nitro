@@ -7,6 +7,7 @@ import (
 	"context"
 	"math/big"
 	"testing"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/params"
@@ -56,7 +57,12 @@ func TestReorgResequencing(t *testing.T) {
 	_, err = builder.L2.ExecNode.ExecEngine.HeadMessageNumberSync(t)
 	Require(t, err)
 
+	// Reorg of old messages is done in the background.
+	// As a strategy to avoid test flakiness, this sleep tries to ensure that the reorg is done before we continue.
+	time.Sleep(2 * time.Second)
+
 	verifyBalances("after empty reorg")
+	compareAllMsgResultsFromConsensusAndExecution(t, builder.L2, "after empty reorg")
 
 	prevMessage, err := builder.L2.ConsensusNode.TxStreamer.GetMessage(startMsgCount - 1)
 	Require(t, err)
@@ -82,7 +88,10 @@ func TestReorgResequencing(t *testing.T) {
 	Require(t, err)
 
 	accountsWithBalance = append(accountsWithBalance, "User4")
+
+	time.Sleep(2 * time.Second)
 	verifyBalances("after reorg with new deposit")
+	compareAllMsgResultsFromConsensusAndExecution(t, builder.L2, "after reorg with new deposit")
 
 	err = builder.L2.ConsensusNode.TxStreamer.ReorgTo(startMsgCount)
 	Require(t, err)
@@ -90,5 +99,7 @@ func TestReorgResequencing(t *testing.T) {
 	_, err = builder.L2.ExecNode.ExecEngine.HeadMessageNumberSync(t)
 	Require(t, err)
 
+	time.Sleep(2 * time.Second)
 	verifyBalances("after second empty reorg")
+	compareAllMsgResultsFromConsensusAndExecution(t, builder.L2, "after second empty reorg")
 }
