@@ -6,6 +6,7 @@ package server_api
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 
@@ -152,9 +153,21 @@ func ValidationInputFromJson(entry *InputJSON) (*validator.ValidationInput, erro
 			if err != nil {
 				return nil, err
 			}
-			uncompressed, err := arbcompress.Decompress(decoded, 30000000)
-			if err != nil {
-				return nil, err
+			maxSize := 2_000_000
+			var uncompressed []byte
+			for {
+				uncompressed, err = arbcompress.Decompress(decoded, maxSize)
+				if errors.Is(err, arbcompress.ErrOutputWontFit) {
+					if maxSize >= 128_000_000 {
+						return nil, errors.New("failed decompression: too large")
+					}
+					maxSize = maxSize * 4
+					continue
+				}
+				if err != nil {
+					return nil, err
+				}
+				break
 			}
 			archWasms[moduleHash] = uncompressed
 		}
