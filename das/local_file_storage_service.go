@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -132,6 +133,9 @@ func (s *LocalFileStorageService) GetByHash(ctx context.Context, key common.Hash
 }
 
 func (s *LocalFileStorageService) Put(ctx context.Context, data []byte, expiry uint64) error {
+	if s.layout.migrating.Load() {
+		return errors.New("LocalFileStorageService.Put attempted during layout migration. Batch poster will retry. Migration may take up to several minutes.")
+	}
 	logPut("das.LocalFileStorageService.Store", data, expiry, s)
 	expiryTime := time.Unix(int64(expiry), 0)
 	currentTimePlusRetention := time.Now().Add(s.config.MaxRetention)
@@ -228,6 +232,10 @@ func (s *LocalFileStorageService) String() string {
 }
 
 func (s *LocalFileStorageService) HealthCheck(ctx context.Context) error {
+	// Don't do deep health check when migrating layouts.
+	if s.layout.migrating.Load() {
+		return nil
+	}
 	testData := []byte("Test-Data")
 	// Store some data with an expiry time at the start of the epoch.
 	// If expiry is disabled it will only create an index entry for the
@@ -553,7 +561,7 @@ type trieLayout struct {
 
 	// Is the trieLayout currently being migrated to?
 	// Controls whether paths include the migratingSuffix.
-	migrating bool
+	migrating atomic.Bool
 
 	// Anything changing the layout (pruning, adding files) must go through
 	// this mutex.
@@ -575,7 +583,7 @@ func (l *trieLayout) batchPath(key common.Hash) string {
 	secondDir := encodedKey[2:4]
 
 	topDir := byDataHash
-	if l.migrating {
+	if l.migrating.Load() {
 		topDir = topDir + migratingSuffix
 	}
 
@@ -588,7 +596,7 @@ func (l *trieLayout) expiryPath(key common.Hash, expiry uint64) string {
 	secondDir := fmt.Sprintf("%0*d", expirySecondPartWidth, expiry%expiryDivisor)
 
 	topDir := byExpiryTimestamp
-	if l.migrating {
+	if l.migrating.Load() {
 		topDir = topDir + migratingSuffix
 	}
 
@@ -701,7 +709,7 @@ func (l *trieLayout) startMigration() error {
 		return errors.New("local file storage already migrated to trieLayout")
 	}
 
-	l.migrating = true
+	l.migrating.Store(true)
 
 	if err := os.MkdirAll(filepath.Join(l.root, byDataHash+migratingSuffix), 0o700); err != nil {
 		return err
@@ -715,7 +723,7 @@ func (l *trieLayout) startMigration() error {
 }
 
 func (l *trieLayout) commitMigration() error {
-	if !l.migrating {
+	if !l.migrating.Load() {
 		return errors.New("already finished migration")
 	}
 
@@ -740,7 +748,7 @@ func (l *trieLayout) commitMigration() error {
 	syscall.Sync()
 
 	// Done migrating
-	l.migrating = false
+	l.migrating.Store(false)
 
 	return nil
 }
