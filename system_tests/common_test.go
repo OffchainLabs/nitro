@@ -347,17 +347,17 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(proxyAddr, b.L1.Client)
 		Require(t, err)
 
-		auctioneer := sequencerTxOpts.From
-		beneficiary := sequencerTxOpts.From
+		auctioneer := b.L1Info.GetDefaultTransactOpts("AuctionContract", b.ctx).From
+		beneficiary := auctioneer
 		biddingToken := erc20Addr
 		bidRoundSeconds := uint64(60)
 		auctionClosingSeconds := uint64(15)
 		reserveSubmissionSeconds := uint64(15)
 		minReservePrice := big.NewInt(1) // 1 wei.
-		roleAdmin := sequencerTxOpts.From
-		minReservePriceSetter := sequencerTxOpts.From
-		reservePriceSetter := sequencerTxOpts.From
-		beneficiarySetter := sequencerTxOpts.From
+		roleAdmin := auctioneer
+		minReservePriceSetter := auctioneer
+		reservePriceSetter := auctioneer
+		beneficiarySetter := auctioneer
 		tx, err = auctionContract.Initialize(
 			&sequencerTxOpts,
 			auctioneer,
@@ -380,7 +380,7 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 			t.Fatal(err)
 		}
 		t.Log("Deployed all the auction manager stuff", auctionContractAddr)
-		b.execConfig.Sequencer.Timeboost.AuctionContractAddress = auctionContractAddr.Hex()
+		b.execConfig.Sequencer.Timeboost.AuctionContractAddress = proxyAddr.Hex()
 		b.execConfig.Sequencer.Timeboost.ERC20Address = erc20Addr.Hex()
 	} else {
 		b.nodeConfig.BatchPoster.Enable = false

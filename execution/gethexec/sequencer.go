@@ -392,6 +392,7 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		els, err := newExpressLaneService(
 			l1Reader.Client(),
 			addr,
+			s.execEngine.bc.Config(),
 		)
 		if err != nil {
 			return nil, err

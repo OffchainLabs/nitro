@@ -100,18 +100,18 @@ func (bd *BidderClient) Bid(
 	ctx context.Context, amount *big.Int, expressLaneController common.Address,
 ) (*Bid, error) {
 	newBid := &Bid{
-		chainId:                bd.chainId,
-		expressLaneController:  expressLaneController,
-		auctionContractAddress: bd.auctionContractAddress,
-		bidder:                 bd.txOpts.From,
-		round:                  CurrentRound(bd.initialRoundTimestamp, bd.roundDuration) + 1,
-		amount:                 amount,
-		signature:              nil,
+		ChainId:                bd.chainId,
+		ExpressLaneController:  expressLaneController,
+		AuctionContractAddress: bd.auctionContractAddress,
+		Bidder:                 bd.txOpts.From,
+		Round:                  CurrentRound(bd.initialRoundTimestamp, bd.roundDuration) + 1,
+		Amount:                 amount,
+		Signature:              nil,
 	}
 	packedBidBytes, err := encodeBidValues(
-		new(big.Int).SetUint64(newBid.chainId),
+		new(big.Int).SetUint64(newBid.ChainId),
 		bd.auctionContractAddress,
-		newBid.round,
+		newBid.Round,
 		amount,
 		expressLaneController,
 	)
@@ -122,7 +122,7 @@ func (bd *BidderClient) Bid(
 	if err != nil {
 		return nil, err
 	}
-	newBid.signature = sig
+	newBid.Signature = sig
 	if err = bd.auctioneer.ReceiveBid(ctx, newBid); err != nil {
 		return nil, err
 	}

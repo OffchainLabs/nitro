@@ -24,13 +24,13 @@ var (
 )
 
 type Bid struct {
-	chainId                uint64
-	expressLaneController  common.Address
-	bidder                 common.Address
-	auctionContractAddress common.Address
-	round                  uint64
-	amount                 *big.Int
-	signature              []byte
+	ChainId                uint64
+	ExpressLaneController  common.Address
+	Bidder                 common.Address
+	AuctionContractAddress common.Address
+	Round                  uint64
+	Amount                 *big.Int
+	Signature              []byte
 }
 
 type validatedBid struct {
@@ -50,44 +50,44 @@ func (am *Auctioneer) newValidatedBid(bid *Bid) (*validatedBid, error) {
 	if bid == nil {
 		return nil, errors.Wrap(ErrMalformedData, "nil bid")
 	}
-	if bid.bidder == (common.Address{}) {
+	if bid.Bidder == (common.Address{}) {
 		return nil, errors.Wrap(ErrMalformedData, "empty bidder address")
 	}
-	if bid.expressLaneController == (common.Address{}) {
+	if bid.ExpressLaneController == (common.Address{}) {
 		return nil, errors.Wrap(ErrMalformedData, "empty express lane controller address")
 	}
 	// Verify chain id.
-	if new(big.Int).SetUint64(bid.chainId).Cmp(am.chainId) != 0 {
-		return nil, errors.Wrapf(ErrWrongChainId, "wanted %#x, got %#x", am.chainId, bid.chainId)
+	if new(big.Int).SetUint64(bid.ChainId).Cmp(am.chainId) != 0 {
+		return nil, errors.Wrapf(ErrWrongChainId, "wanted %#x, got %#x", am.chainId, bid.ChainId)
 	}
 	// Check if for upcoming round.
 	upcomingRound := CurrentRound(am.initialRoundTimestamp, am.roundDuration) + 1
-	if bid.round != upcomingRound {
-		return nil, errors.Wrapf(ErrBadRoundNumber, "wanted %d, got %d", upcomingRound, bid.round)
+	if bid.Round != upcomingRound {
+		return nil, errors.Wrapf(ErrBadRoundNumber, "wanted %d, got %d", upcomingRound, bid.Round)
 	}
 	// Check bid amount.
 	reservePrice := am.fetchReservePrice()
-	if bid.amount.Cmp(reservePrice) == -1 {
+	if bid.Amount.Cmp(reservePrice) == -1 {
 		return nil, errors.Wrap(ErrMalformedData, "expected bid to be at least of reserve price magnitude")
 	}
 	// Validate the signature.
 	packedBidBytes, err := encodeBidValues(
-		new(big.Int).SetUint64(bid.chainId),
+		new(big.Int).SetUint64(bid.ChainId),
 		am.auctionContractAddr,
-		bid.round,
-		bid.amount,
-		bid.expressLaneController,
+		bid.Round,
+		bid.Amount,
+		bid.ExpressLaneController,
 	)
 	if err != nil {
 		return nil, ErrMalformedData
 	}
-	if len(bid.signature) != 65 {
+	if len(bid.Signature) != 65 {
 		return nil, errors.Wrap(ErrMalformedData, "signature length is not 65")
 	}
 	// Recover the public key.
 	prefixed := crypto.Keccak256(append([]byte("\x19Ethereum Signed Message:\n112"), packedBidBytes...))
-	sigItem := make([]byte, len(bid.signature))
-	copy(sigItem, bid.signature)
+	sigItem := make([]byte, len(bid.Signature))
+	copy(sigItem, bid.Signature)
 	if sigItem[len(sigItem)-1] >= 27 {
 		sigItem[len(sigItem)-1] -= 27
 	}
@@ -103,20 +103,20 @@ func (am *Auctioneer) newValidatedBid(bid *Bid) (*validatedBid, error) {
 	// TODO: Validate reserve price against amount of bid.
 	// TODO: No need to do anything expensive if the bid coming is in invalid.
 	// Cache this if the received time of the bid is too soon. Include the arrival timestamp.
-	depositBal, err := am.auctionContract.BalanceOf(&bind.CallOpts{}, bid.bidder)
+	depositBal, err := am.auctionContract.BalanceOf(&bind.CallOpts{}, bid.Bidder)
 	if err != nil {
 		return nil, err
 	}
 	if depositBal.Cmp(new(big.Int)) == 0 {
 		return nil, ErrNotDepositor
 	}
-	if depositBal.Cmp(bid.amount) < 0 {
-		return nil, errors.Wrapf(ErrInsufficientBalance, "onchain balance %#x, bid amount %#x", depositBal, bid.amount)
+	if depositBal.Cmp(bid.Amount) < 0 {
+		return nil, errors.Wrapf(ErrInsufficientBalance, "onchain balance %#x, bid amount %#x", depositBal, bid.Amount)
 	}
 	return &validatedBid{
-		expressLaneController: bid.expressLaneController,
-		amount:                bid.amount,
-		signature:             bid.signature,
+		expressLaneController: bid.ExpressLaneController,
+		amount:                bid.Amount,
+		signature:             bid.Signature,
 	}, nil
 }
 

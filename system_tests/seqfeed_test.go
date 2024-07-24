@@ -126,7 +126,7 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	Require(t, seqClient.SendTransaction(ctx, tx))
 	_, err = EnsureTxSucceeded(ctx, seqClient, tx)
 	Require(t, err)
-	t.Logf("%+v and %+v", seqInfo.Accounts["Alice"], seqInfo.Accounts["Bob"])
+	t.Logf("Alice %+v and Bob %+v", seqInfo.Accounts["Alice"], seqInfo.Accounts["Bob"])
 
 	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionAddr, builderSeq.L1.Client)
 	Require(t, err)
@@ -222,12 +222,12 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	t.Log("Started auction master stack and bid clients")
 	Require(t, alice.Deposit(ctx, big.NewInt(5)))
 	Require(t, bob.Deposit(ctx, big.NewInt(5)))
-	t.Log("Alice and Bob are now deposited into the autonomous  auction contract, waiting for bidding round...")
 
 	// Wait until the next timeboost round + a few milliseconds.
 	now := time.Now()
 	roundDuration := time.Minute
 	waitTime := roundDuration - time.Duration(now.Second())*time.Second - time.Duration(now.Nanosecond())
+	t.Logf("Alice and Bob are now deposited into the autonomous auction contract, waiting %v for bidding round...", waitTime)
 	time.Sleep(waitTime)
 	time.Sleep(time.Second * 5)
 
@@ -262,22 +262,31 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 		t.Log("Not express lane round yet, waiting for next round", waitTime)
 		time.Sleep(waitTime)
 	}
-
-	// current, err := auctionContract.(&bind.CallOpts{}, new(big.Int).SetUint64(currRound))
-	// Require(t, err)
-
-	// if current != bobOpts.From {
-	// 	t.Log("Current express lane round controller is not Bob", current, aliceOpts.From)
-	// }
+	filterOpts := &bind.FilterOpts{
+		Context: ctx,
+		Start:   0,
+		End:     nil,
+	}
+	it, err := auctionContract.FilterAuctionResolved(filterOpts, nil, nil, nil)
+	Require(t, err)
+	bobWon := false
+	for it.Next() {
+		if it.Event.FirstPriceBidder == bobOpts.From {
+			bobWon = true
+		}
+	}
+	if !bobWon {
+		t.Fatal("Bob should have won the auction")
+	}
 
 	t.Log("Now submitting txs to sequencer")
 
 	// During the express lane around, Bob sends txs always 150ms later than Alice, but Alice's
 	// txs end up getting delayed by 200ms as she is not the express lane controller.
 	// In the end, Bob's txs should be ordered before Alice's during the round.
-
 	var wg sync.WaitGroup
 	wg.Add(2)
+	expressLaneAddr := common.HexToAddress("0x2424242424242424242424242424242424242424")
 	aliceTx := seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1e12), nil)
 	go func(w *sync.WaitGroup) {
 		defer w.Done()
@@ -285,7 +294,17 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 		Require(t, err)
 	}(&wg)
 
-	bobTx := seqInfo.PrepareTx("Bob", "Owner", seqInfo.TransferGas, big.NewInt(1e12), nil)
+	bobBoostableTx := seqInfo.PrepareTx("Bob", "Owner", seqInfo.TransferGas, big.NewInt(1e12), nil)
+	bobBoostableTxData, err := bobBoostableTx.MarshalBinary()
+	Require(t, err)
+	t.Logf("Typed transaction inner is %#x", bobBoostableTxData)
+	txData := &types.DynamicFeeTx{
+		To:        &expressLaneAddr,
+		GasTipCap: new(big.Int).SetUint64(bobBid.Round),
+		Nonce:     0,
+		Data:      bobBoostableTxData,
+	}
+	bobTx := seqInfo.SignTxAs("Bob", txData)
 	go func(w *sync.WaitGroup) {
 		defer w.Done()
 		time.Sleep(time.Millisecond * 10)
@@ -298,7 +317,7 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	aliceReceipt, err := seqClient.TransactionReceipt(ctx, aliceTx.Hash())
 	Require(t, err)
 	aliceBlock := aliceReceipt.BlockNumber.Uint64()
-	bobReceipt, err := seqClient.TransactionReceipt(ctx, bobTx.Hash())
+	bobReceipt, err := seqClient.TransactionReceipt(ctx, bobBoostableTx.Hash())
 	Require(t, err)
 	bobBlock := bobReceipt.BlockNumber.Uint64()
 

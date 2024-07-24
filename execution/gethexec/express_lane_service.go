@@ -11,7 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/ethereum/go-ethereum/rlp"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/timeboost"
@@ -35,7 +34,7 @@ type expressLaneService struct {
 	sync.RWMutex
 	client           arbutil.L1Interface
 	control          expressLaneControl
-	reservedAddress  common.Address
+	expressLaneAddr  common.Address
 	auctionContract  *express_lane_auctiongen.ExpressLaneAuction
 	initialTimestamp time.Time
 	roundDuration    time.Duration
@@ -45,34 +44,29 @@ type expressLaneService struct {
 func newExpressLaneService(
 	client arbutil.L1Interface,
 	auctionContractAddr common.Address,
+	chainConfig *params.ChainConfig,
 ) (*expressLaneService, error) {
 	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, client)
 	if err != nil {
 		return nil, err
 	}
-	// initialRoundTimestamp, err := auctionContract.InitialRoundTimestamp(&bind.CallOpts{})
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// roundDurationSeconds, err := auctionContract.RoundDurationSeconds(&bind.CallOpts{})
-	// if err != nil {
-	// 	return nil, err
-	// }
-	// initialTimestamp := time.Unix(initialRoundTimestamp.Int64(), 0)
-	// currRound := timeboost.CurrentRound(initialTimestamp, time.Duration(roundDurationSeconds)*time.Second)
-	// controller, err := auctionContract.ExpressLaneControllerByRound(&bind.CallOpts{}, big.NewInt(int64(currRound)))
-	// if err != nil {
-	// 	return nil, err
-	// }
+	roundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
+	if err != nil {
+		return nil, err
+	}
+	initialTimestamp := time.Unix(int64(roundTimingInfo.OffsetTimestamp), 0)
+	roundDuration := time.Duration(roundTimingInfo.RoundDurationSeconds) * time.Second
 	return &expressLaneService{
 		auctionContract:  auctionContract,
 		client:           client,
-		initialTimestamp: time.Now(),
+		chainConfig:      chainConfig,
+		initialTimestamp: initialTimestamp,
 		control: expressLaneControl{
 			controller: common.Address{},
 			round:      0,
 		},
-		roundDuration: time.Second,
+		expressLaneAddr: common.HexToAddress("0x2424242424242424242424242424242424242424"),
+		roundDuration:   roundDuration,
 	}, nil
 }
 
@@ -163,7 +157,7 @@ func (es *expressLaneService) isExpressLaneTx(to common.Address) bool {
 	es.RLock()
 	defer es.RUnlock()
 
-	return to == es.reservedAddress
+	return to == es.expressLaneAddr
 }
 
 // An express lane transaction is valid if it satisfies the following conditions:
@@ -201,9 +195,10 @@ func (es *expressLaneService) validateExpressLaneTx(tx *types.Transaction) error
 // unwrapExpressLaneTx extracts the inner "wrapped" transaction from the data field of an express lane transaction.
 func unwrapExpressLaneTx(tx *types.Transaction) (*types.Transaction, error) {
 	encodedInnerTx := tx.Data()
-	var innerTx types.Transaction
-	if err := rlp.DecodeBytes(encodedInnerTx, &innerTx); err != nil {
+	fmt.Printf("Inner in decoding: %#x\n", encodedInnerTx)
+	innerTx := &types.Transaction{}
+	if err := innerTx.UnmarshalBinary(encodedInnerTx); err != nil {
 		return nil, fmt.Errorf("failed to decode inner transaction: %w", err)
 	}
-	return &innerTx, nil
+	return innerTx, nil
 }
