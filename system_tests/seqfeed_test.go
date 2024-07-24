@@ -307,6 +307,23 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	if reflect.DeepEqual(fraudResult, realResult) {
 		t.Fatal("realResult and fraudResult are equal")
 	}
+	// Since NodeB is not a sequencer, it will produce blocks through Consensus.
+	// So it is expected that Consensus.ResultAtCount will not rely on Execution to retrieve results.
+	// However, since count 1 is related to genesis, and Execution is initialized through InitializeArbosInDatabase and not through Consensus,
+	// first call to Consensus.ResultAtCount with count equals to 1 will fall back to Execution.
+	// Not necessarily the first call to Consensus.ResultAtCount with count equals to 1 will happen through compareMsgResultFromConsensusAndExecution,
+	// so we don't test this here.
+	consensusMsgCount, err := testClientB.ConsensusNode.TxStreamer.GetMessageCount()
+	Require(t, err)
+	if consensusMsgCount != 2 {
+		t.Fatal("consensusMsgCount is different than 2")
+	}
+	logHandler := testhelpers.InitTestLog(t, log.LvlTrace)
+	_, err = testClientB.ConsensusNode.TxStreamer.ResultAtCount(arbutil.MessageIndex(2))
+	Require(t, err)
+	if logHandler.WasLogged(arbnode.FailedToGetMsgResultFromDB) {
+		t.Fatal("Consensus relied on execution database to return the result")
+	}
 }
 
 func TestLyingSequencer(t *testing.T) {
