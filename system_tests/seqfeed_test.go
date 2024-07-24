@@ -178,7 +178,7 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	auctionContractOpts := builderSeq.L1Info.GetDefaultTransactOpts("AuctionContract", ctx)
 	chainId, err := l1client.ChainID(ctx)
 	Require(t, err)
-	auctioneer, err := timeboost.NewAuctioneer(&auctionContractOpts, chainId, builderSeq.L1.Client, auctionAddr, auctionContract)
+	auctioneer, err := timeboost.NewAuctioneer(&auctionContractOpts, []uint64{chainId.Uint64()}, builderSeq.L1.Client, auctionAddr, auctionContract)
 	Require(t, err)
 
 	go auctioneer.Start(ctx)

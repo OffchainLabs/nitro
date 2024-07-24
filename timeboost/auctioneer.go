@@ -13,13 +13,15 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/pkg/errors"
+	"golang.org/x/crypto/sha3"
 )
 
 type AuctioneerOpt func(*Auctioneer)
 
 type Auctioneer struct {
 	txOpts                    *bind.TransactOpts
-	chainId                   *big.Int
+	chainId                   []uint64 // Auctioneer could handle auctions on multiple chains.
+	domainValue               []byte
 	client                    Client
 	auctionContract           *express_lane_auctiongen.ExpressLaneAuction
 	bidsReceiver              chan *Bid
@@ -31,11 +33,13 @@ type Auctioneer struct {
 	auctionContractAddr       common.Address
 	reservePriceLock          sync.RWMutex
 	reservePrice              *big.Int
+	minReservePriceLock       sync.RWMutex
+	minReservePrice           *big.Int // TODO(Terence): Do we need to keep min reserve price? assuming contract will automatically update reserve price.
 }
 
 func NewAuctioneer(
 	txOpts *bind.TransactOpts,
-	chainId *big.Int,
+	chainId []uint64,
 	client Client,
 	auctionContractAddr common.Address,
 	auctionContract *express_lane_auctiongen.ExpressLaneAuction,
@@ -54,6 +58,15 @@ func NewAuctioneer(
 	if err != nil {
 		return nil, err
 	}
+	reservePrice, err := auctionContract.ReservePrice(&bind.CallOpts{})
+	if err != nil {
+		return nil, err
+	}
+
+	hash := sha3.NewLegacyKeccak256()
+	hash.Write([]byte("TIMEBOOST_BID"))
+	domainValue := hash.Sum(nil)
+
 	am := &Auctioneer{
 		txOpts:                    txOpts,
 		chainId:                   chainId,
@@ -64,9 +77,11 @@ func NewAuctioneer(
 		initialRoundTimestamp:     initialTimestamp,
 		auctionContractAddr:       auctionContractAddr,
 		roundDuration:             roundDuration,
-		reservePrice:              minReservePrice,
 		auctionClosingDuration:    auctionClosingDuration,
 		reserveSubmissionDuration: reserveSubmissionDuration,
+		reservePrice:              reservePrice,
+		minReservePrice:           minReservePrice,
+		domainValue:               domainValue,
 	}
 	for _, o := range opts {
 		o(am)
@@ -74,24 +89,24 @@ func NewAuctioneer(
 	return am, nil
 }
 
-func (am *Auctioneer) ReceiveBid(ctx context.Context, b *Bid) error {
-	validated, err := am.newValidatedBid(b)
+func (a *Auctioneer) ReceiveBid(ctx context.Context, b *Bid) error {
+	validated, err := a.newValidatedBid(b)
 	if err != nil {
 		return fmt.Errorf("could not validate bid: %v", err)
 	}
-	am.bidCache.add(validated)
+	a.bidCache.add(validated)
 	return nil
 }
 
-func (am *Auctioneer) Start(ctx context.Context) {
+func (a *Auctioneer) Start(ctx context.Context) {
 	// Receive bids in the background.
-	go receiveAsync(ctx, am.bidsReceiver, am.ReceiveBid)
+	go receiveAsync(ctx, a.bidsReceiver, a.ReceiveBid)
 
 	// Listen for sequencer health in the background and close upcoming auctions if so.
-	go am.checkSequencerHealth(ctx)
+	go a.checkSequencerHealth(ctx)
 
 	// Work on closing auctions.
-	ticker := newAuctionCloseTicker(am.roundDuration, am.auctionClosingDuration)
+	ticker := newAuctionCloseTicker(a.roundDuration, a.auctionClosingDuration)
 	go ticker.start()
 	for {
 		select {
@@ -99,20 +114,20 @@ func (am *Auctioneer) Start(ctx context.Context) {
 			log.Error("Context closed, autonomous auctioneer shutting down")
 			return
 		case auctionClosingTime := <-ticker.c:
-			log.Info("New auction closing time reached", "closingTime", auctionClosingTime, "totalBids", am.bidCache.size())
-			if err := am.resolveAuction(ctx); err != nil {
+			log.Info("New auction closing time reached", "closingTime", auctionClosingTime, "totalBids", a.bidCache.size())
+			if err := a.resolveAuction(ctx); err != nil {
 				log.Error("Could not resolve auction for round", "error", err)
 			}
 		}
 	}
 }
 
-func (am *Auctioneer) resolveAuction(ctx context.Context) error {
-	upcomingRound := CurrentRound(am.initialRoundTimestamp, am.roundDuration) + 1
+func (a *Auctioneer) resolveAuction(ctx context.Context) error {
+	upcomingRound := CurrentRound(a.initialRoundTimestamp, a.roundDuration) + 1
 	// If we have no winner, then we can cancel the auction.
 	// Auctioneer can also subscribe to sequencer feed and
 	// close auction if sequencer is down.
-	result := am.bidCache.topTwoBids()
+	result := a.bidCache.topTwoBids()
 	first := result.firstPlace
 	second := result.secondPlace
 	var tx *types.Transaction
@@ -124,9 +139,8 @@ func (am *Auctioneer) resolveAuction(ctx context.Context) error {
 	// TODO: Retry a given number of times in case of flakey connection.
 	switch {
 	case hasBothBids:
-		fmt.Printf("First express lane controller: %#x\n", first.expressLaneController)
-		tx, err = am.auctionContract.ResolveMultiBidAuction(
-			am.txOpts,
+		tx, err = a.auctionContract.ResolveMultiBidAuction(
+			a.txOpts,
 			express_lane_auctiongen.Bid{
 				ExpressLaneController: first.expressLaneController,
 				Amount:                first.amount,
@@ -141,8 +155,8 @@ func (am *Auctioneer) resolveAuction(ctx context.Context) error {
 		log.Info("Resolving auctions, received two bids", "round", upcomingRound)
 	case hasSingleBid:
 		log.Info("Resolving auctions, received single bids", "round", upcomingRound)
-		tx, err = am.auctionContract.ResolveSingleBidAuction(
-			am.txOpts,
+		tx, err = a.auctionContract.ResolveSingleBidAuction(
+			a.txOpts,
 			express_lane_auctiongen.Bid{
 				ExpressLaneController: first.expressLaneController,
 				Amount:                first.amount,
@@ -157,7 +171,7 @@ func (am *Auctioneer) resolveAuction(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	receipt, err := bind.WaitMined(ctx, am.client, tx)
+	receipt, err := bind.WaitMined(ctx, a.client, tx)
 	if err != nil {
 		return err
 	}
@@ -165,16 +179,21 @@ func (am *Auctioneer) resolveAuction(ctx context.Context) error {
 		return errors.New("deposit failed")
 	}
 	// Clear the bid cache.
-	am.bidCache = newBidCache()
+	a.bidCache = newBidCache()
 	return nil
 }
 
 // TODO: Implement. If sequencer is down for some time, cancel the upcoming auction by calling
 // the cancel method on the smart contract.
-func (am *Auctioneer) checkSequencerHealth(ctx context.Context) {
+func (a *Auctioneer) checkSequencerHealth(ctx context.Context) {
 
 }
 
 func CurrentRound(initialRoundTimestamp time.Time, roundDuration time.Duration) uint64 {
 	return uint64(time.Since(initialRoundTimestamp) / roundDuration)
+}
+
+func AuctionClosed(initialRoundTimestamp time.Time, roundDuration time.Duration, auctionClosingDuration time.Duration) (time.Duration, bool) {
+	d := time.Since(initialRoundTimestamp) % roundDuration
+	return d, d > auctionClosingDuration
 }
