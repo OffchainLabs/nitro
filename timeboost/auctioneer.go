@@ -100,14 +100,14 @@ func (am *Auctioneer) Start(ctx context.Context) {
 			return
 		case auctionClosingTime := <-ticker.c:
 			log.Info("New auction closing time reached", "closingTime", auctionClosingTime, "totalBids", am.bidCache.size())
-			if err := am.resolveAuctions(ctx); err != nil {
+			if err := am.resolveAuction(ctx); err != nil {
 				log.Error("Could not resolve auction for round", "error", err)
 			}
 		}
 	}
 }
 
-func (am *Auctioneer) resolveAuctions(ctx context.Context) error {
+func (am *Auctioneer) resolveAuction(ctx context.Context) error {
 	upcomingRound := CurrentRound(am.initialRoundTimestamp, am.roundDuration) + 1
 	// If we have no winner, then we can cancel the auction.
 	// Auctioneer can also subscribe to sequencer feed and

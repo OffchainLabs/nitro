@@ -111,7 +111,7 @@ func (bd *BidderClient) Bid(
 	packedBidBytes, err := encodeBidValues(
 		new(big.Int).SetUint64(newBid.chainId),
 		bd.auctionContractAddress,
-		new(big.Int).SetUint64(newBid.round),
+		newBid.round,
 		amount,
 		expressLaneController,
 	)

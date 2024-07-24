@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient/simulated"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
+	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/timeboost/bindings"
 	"github.com/stretchr/testify/require"
 )
@@ -73,13 +74,20 @@ func setupAuctionTest(t *testing.T, ctx context.Context) *auctionSetup {
 	t.Log("Account seeded with ERC20 token balance =", bal.String())
 
 	// Deploy the express lane auction contract.
-	auctionContractAddr, tx, auctionContract, err := express_lane_auctiongen.DeployExpressLaneAuction(
+	auctionContractAddr, tx, _, err := express_lane_auctiongen.DeployExpressLaneAuction(
 		opts, backend.Client(),
 	)
 	require.NoError(t, err)
 	if _, err = bind.WaitMined(ctx, backend.Client(), tx); err != nil {
 		t.Fatal(err)
 	}
+	proxyAddr, tx, _, err := mocksgen.DeploySimpleProxy(opts, backend.Client(), auctionContractAddr)
+	require.NoError(t, err)
+	if _, err = bind.WaitMined(ctx, backend.Client(), tx); err != nil {
+		t.Fatal(err)
+	}
+	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(proxyAddr, backend.Client())
+	require.NoError(t, err)
 
 	expressLaneAddr := common.HexToAddress("0x2424242424242424242424242424242424242424")
 
@@ -90,7 +98,7 @@ func setupAuctionTest(t *testing.T, ctx context.Context) *auctionSetup {
 	waitTime := roundDuration - time.Duration(now.Second())*time.Second - time.Duration(now.Nanosecond())
 	initialTime := now.Add(waitTime)
 	initialTimestamp := big.NewInt(initialTime.Unix())
-	t.Logf("Initial timestamp: %v", initialTime)
+	t.Logf("Initial timestamp for express lane auctions: %v", initialTime)
 
 	// Deploy the auction manager contract.
 	auctioneer := opts.From
@@ -127,7 +135,7 @@ func setupAuctionTest(t *testing.T, ctx context.Context) *auctionSetup {
 	}
 	return &auctionSetup{
 		chainId:                chainId,
-		expressLaneAuctionAddr: auctionContractAddr,
+		expressLaneAuctionAddr: proxyAddr,
 		expressLaneAuction:     auctionContract,
 		erc20Addr:              erc20Addr,
 		erc20Contract:          erc20,

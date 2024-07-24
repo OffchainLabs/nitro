@@ -3,6 +3,7 @@ package timeboost
 import (
 	"bytes"
 	"crypto/ecdsa"
+	"encoding/binary"
 	"math/big"
 	"sync"
 
@@ -74,7 +75,7 @@ func (am *Auctioneer) newValidatedBid(bid *Bid) (*validatedBid, error) {
 	packedBidBytes, err := encodeBidValues(
 		new(big.Int).SetUint64(bid.chainId),
 		am.auctionContractAddr,
-		new(big.Int).SetUint64(bid.round),
+		bid.round,
 		bid.amount,
 		bid.expressLaneController,
 	)
@@ -86,11 +87,10 @@ func (am *Auctioneer) newValidatedBid(bid *Bid) (*validatedBid, error) {
 		return nil, errors.Wrap(ErrMalformedData, "signature length is not 65")
 	}
 	// Recover the public key.
-	hash := crypto.Keccak256(packedBidBytes)
-	prefixed := crypto.Keccak256([]byte("\x19Ethereum Signed Message:\n32"), hash)
+	prefixed := crypto.Keccak256(append([]byte("\x19Ethereum Signed Message:\n112"), packedBidBytes...))
 	pubkey, err := crypto.SigToPub(prefixed, bid.signature)
 	if err != nil {
-		return nil, err
+		return nil, ErrMalformedData
 	}
 	if !verifySignature(pubkey, packedBidBytes, bid.signature) {
 		return nil, ErrWrongSignature
@@ -164,8 +164,7 @@ func (bc *bidCache) topTwoBids() *auctionResult {
 }
 
 func verifySignature(pubkey *ecdsa.PublicKey, message []byte, sig []byte) bool {
-	hash := crypto.Keccak256(message)
-	prefixed := crypto.Keccak256([]byte("\x19Ethereum Signed Message:\n32"), hash)
+	prefixed := crypto.Keccak256(append([]byte("\x19Ethereum Signed Message:\n112"), message...))
 
 	return secp256k1.VerifySignature(crypto.FromECDSAPub(pubkey), prefixed, sig[:len(sig)-1])
 }
@@ -178,13 +177,15 @@ func padBigInt(bi *big.Int) []byte {
 	return padded
 }
 
-func encodeBidValues(chainId *big.Int, auctionContractAddress common.Address, round, amount *big.Int, expressLaneController common.Address) ([]byte, error) {
+func encodeBidValues(chainId *big.Int, auctionContractAddress common.Address, round uint64, amount *big.Int, expressLaneController common.Address) ([]byte, error) {
 	buf := new(bytes.Buffer)
 
 	// Encode uint256 values - each occupies 32 bytes
 	buf.Write(padBigInt(chainId))
 	buf.Write(auctionContractAddress[:])
-	buf.Write(padBigInt(round))
+	roundBuf := make([]byte, 8)
+	binary.BigEndian.PutUint64(roundBuf, round)
+	buf.Write(roundBuf)
 	buf.Write(padBigInt(amount))
 	buf.Write(expressLaneController[:])
 
