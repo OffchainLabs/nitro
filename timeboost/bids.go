@@ -3,7 +3,9 @@ package timeboost
 import (
 	"bytes"
 	"crypto/ecdsa"
+	"crypto/sha256"
 	"encoding/binary"
+	"fmt"
 	"math/big"
 	"sync"
 
@@ -37,6 +39,11 @@ type validatedBid struct {
 	expressLaneController common.Address
 	amount                *big.Int
 	signature             []byte
+	// For tie breaking
+	chainId                uint64
+	auctionContractAddress common.Address
+	round                  uint64
+	bidder                 common.Address
 }
 
 type bidCache struct {
@@ -77,17 +84,48 @@ func (bc *bidCache) topTwoBids() *auctionResult {
 	result := &auctionResult{}
 
 	for _, bid := range bc.bidsByExpressLaneControllerAddr {
-		// If first place is empty or bid is higher than the current first place
-		if result.firstPlace == nil || bid.amount.Cmp(result.firstPlace.amount) > 0 {
+		if result.firstPlace == nil {
+			result.firstPlace = bid
+		} else if bid.amount.Cmp(result.firstPlace.amount) > 0 {
 			result.secondPlace = result.firstPlace
 			result.firstPlace = bid
+		} else if bid.amount.Cmp(result.firstPlace.amount) == 0 {
+			if hashBid(bid) > hashBid(result.firstPlace) {
+				result.secondPlace = result.firstPlace
+				result.firstPlace = bid
+			} else if result.secondPlace == nil || hashBid(bid) > hashBid(result.secondPlace) {
+				result.secondPlace = bid
+			}
 		} else if result.secondPlace == nil || bid.amount.Cmp(result.secondPlace.amount) > 0 {
-			// If second place is empty or bid is higher than current second place
 			result.secondPlace = bid
+		} else if bid.amount.Cmp(result.secondPlace.amount) == 0 {
+			if hashBid(bid) > hashBid(result.secondPlace) {
+				result.secondPlace = bid
+			}
 		}
 	}
 
 	return result
+}
+
+// hashBid hashes the bidder address concatenated with the respective byte-string representation of the bid using the Keccak256 hashing scheme.
+func hashBid(bid *validatedBid) string {
+	chainIdBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(chainIdBytes, bid.chainId)
+	roundBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(roundBytes, bid.round)
+
+	// Concatenate the bidder address and the byte representation of the bid
+	data := append(bid.bidder.Bytes(), chainIdBytes...)
+	data = append(data, bid.auctionContractAddress.Bytes()...)
+	data = append(data, roundBytes...)
+	data = append(data, bid.amount.Bytes()...)
+	data = append(data, bid.expressLaneController.Bytes()...)
+
+	hash := sha256.Sum256(data)
+
+	// Return the hash as a hexadecimal string
+	return fmt.Sprintf("%x", hash)
 }
 
 func verifySignature(pubkey *ecdsa.PublicKey, message []byte, sig []byte) bool {

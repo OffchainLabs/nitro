@@ -290,9 +290,13 @@ func (a *Auctioneer) validateBid(bid *Bid) (*validatedBid, error) {
 		return nil, errors.Wrapf(ErrInsufficientBalance, "onchain balance %#x, bid amount %#x", depositBal, bid.Amount)
 	}
 	return &validatedBid{
-		expressLaneController: bid.ExpressLaneController,
-		amount:                bid.Amount,
-		signature:             bid.Signature,
+		expressLaneController:  bid.ExpressLaneController,
+		amount:                 bid.Amount,
+		signature:              bid.Signature,
+		chainId:                bid.ChainId,
+		auctionContractAddress: bid.AuctionContractAddress,
+		round:                  bid.Round,
+		bidder:                 bid.Bidder,
 	}, nil
 }
 
