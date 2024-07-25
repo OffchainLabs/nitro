@@ -48,7 +48,7 @@ type SeqCoordinator struct {
 	prevChosenSequencer  string
 	reportedWantsLockout bool
 
-	lockoutUntil int64 // atomic
+	lockoutUntil atomic.Int64 // atomic
 
 	wantsLockoutMutex sync.Mutex // manages access to acquireLockoutAndWriteMessage and generally the wants lockout key
 	avoidLockout      int        // If > 0, prevents acquiring the lockout but not extending the lockout if no alternative sequencer wants the lockout. Protected by chosenUpdateMutex.
@@ -191,14 +191,14 @@ func StandaloneSeqCoordinatorInvalidateMsgIndex(ctx context.Context, redisClient
 	return nil
 }
 
-func atomicTimeWrite(addr *int64, t time.Time) {
+func atomicTimeWrite(addr *atomic.Int64, t time.Time) {
 	asint64 := t.UnixMilli()
-	atomic.StoreInt64(addr, asint64)
+	addr.Store(asint64)
 }
 
 // notice: It is possible for two consecutive reads to get decreasing values. That shouldn't matter.
-func atomicTimeRead(addr *int64) time.Time {
-	asint64 := atomic.LoadInt64(addr)
+func atomicTimeRead(addr *atomic.Int64) time.Time {
+	asint64 := addr.Load()
 	return time.UnixMilli(asint64)
 }
 
@@ -692,7 +692,7 @@ func (c *SeqCoordinator) DebugPrint() string {
 	return fmt.Sprint("Url:", c.config.Url(),
 		" prevChosenSequencer:", c.prevChosenSequencer,
 		" reportedWantsLockout:", c.reportedWantsLockout,
-		" lockoutUntil:", c.lockoutUntil,
+		" lockoutUntil:", c.lockoutUntil.Load(),
 		" redisErrors:", c.redisErrors)
 }
 

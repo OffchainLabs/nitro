@@ -30,6 +30,7 @@ type MessagePruner struct {
 	lastPruneDone                    time.Time
 	cachedPrunedMessages             uint64
 	cachedPrunedBlockHashesInputFeed uint64
+	cachedPrunedMessageResult        uint64
 	cachedPrunedDelayedMessages      uint64
 }
 
@@ -116,7 +117,15 @@ func (m *MessagePruner) prune(ctx context.Context, count arbutil.MessageIndex, g
 }
 
 func (m *MessagePruner) deleteOldMessagesFromDB(ctx context.Context, messageCount arbutil.MessageIndex, delayedMessageCount uint64) error {
-	prunedKeysRange, err := deleteFromLastPrunedUptoEndKey(ctx, m.transactionStreamer.db, blockHashInputFeedPrefix, &m.cachedPrunedBlockHashesInputFeed, uint64(messageCount))
+	prunedKeysRange, err := deleteFromLastPrunedUptoEndKey(ctx, m.transactionStreamer.db, messageResultPrefix, &m.cachedPrunedMessageResult, uint64(messageCount))
+	if err != nil {
+		return fmt.Errorf("error deleting message results: %w", err)
+	}
+	if len(prunedKeysRange) > 0 {
+		log.Info("Pruned message results:", "first pruned key", prunedKeysRange[0], "last pruned key", prunedKeysRange[len(prunedKeysRange)-1])
+	}
+
+	prunedKeysRange, err = deleteFromLastPrunedUptoEndKey(ctx, m.transactionStreamer.db, blockHashInputFeedPrefix, &m.cachedPrunedBlockHashesInputFeed, uint64(messageCount))
 	if err != nil {
 		return fmt.Errorf("error deleting expected block hashes: %w", err)
 	}
