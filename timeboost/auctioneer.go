@@ -14,15 +14,17 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/pkg/errors"
+	"golang.org/x/crypto/sha3"
 )
 
-// domainValue is the Keccak256 hash of the string "TIMEBOOST_BID".
-// This variable represents a fixed domain identifier used in the express lane auction.
-var domainValue = []byte{
-	0xc7, 0xf4, 0x5f, 0x6f, 0x1b, 0x1e, 0x1d, 0xfc,
-	0x22, 0xe1, 0xb9, 0xf6, 0x9c, 0xda, 0x8e, 0x4e,
-	0x86, 0xf4, 0x84, 0x81, 0xf0, 0xc5, 0xe0, 0x19,
-	0x7c, 0x3f, 0x09, 0x1b, 0x89, 0xe8, 0xeb, 0x12,
+// domainValue holds the Keccak256 hash of the string "TIMEBOOST_BID".
+// It is intended to be immutable after initialization.
+var domainValue []byte
+
+func init() {
+	hash := sha3.NewLegacyKeccak256()
+	hash.Write([]byte("TIMEBOOST_BID"))
+	domainValue = hash.Sum(nil)
 }
 
 type AuctioneerOpt func(*Auctioneer)
