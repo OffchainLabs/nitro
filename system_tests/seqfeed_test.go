@@ -333,7 +333,7 @@ func testBlockHashComparison(t *testing.T, blockHash *common.Hash, mustMismatch 
 	}
 	wsBroadcastServer.Broadcast(&broadcastMessage)
 
-	// By now, even though block hash mismatch, the transaction should still be processed
+	// For now, even though block hash mismatch, the transaction should still be processed
 	_, err = WaitForTx(ctx, testClient.Client, tx.Hash(), time.Second*15)
 	if err != nil {
 		t.Fatal("error waiting for tx:", err)

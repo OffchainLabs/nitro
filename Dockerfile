@@ -32,6 +32,8 @@ WORKDIR /workspace
 COPY contracts/package.json contracts/yarn.lock contracts/
 RUN cd contracts && yarn install
 COPY contracts contracts/
+COPY safe-smart-account safe-smart-account/
+RUN cd safe-smart-account && yarn install
 COPY Makefile .
 RUN . ~/.bashrc && NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-solidity
 
@@ -82,6 +84,7 @@ COPY ./wavmio ./wavmio
 COPY ./zeroheavy ./zeroheavy
 COPY ./contracts/src/precompiles/ ./contracts/src/precompiles/
 COPY ./contracts/package.json ./contracts/yarn.lock ./contracts/
+COPY ./safe-smart-account ./safe-smart-account
 COPY ./solgen/gen.go ./solgen/
 COPY ./fastcache ./fastcache
 COPY ./go-ethereum ./go-ethereum
@@ -100,6 +103,7 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
 COPY arbitrator/Cargo.* arbitrator/
 COPY ./Makefile ./
 COPY arbitrator/arbutil arbitrator/arbutil
+COPY arbitrator/bench arbitrator/bench
 COPY arbitrator/brotli arbitrator/brotli
 COPY arbitrator/caller-env arbitrator/caller-env
 COPY arbitrator/prover arbitrator/prover
@@ -128,9 +132,12 @@ RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
 COPY --from=brotli-library-export / target/
 COPY arbitrator/Cargo.* arbitrator/
 COPY arbitrator/arbutil arbitrator/arbutil
+COPY arbitrator/bench arbitrator/bench
 COPY arbitrator/brotli arbitrator/brotli
 COPY arbitrator/caller-env arbitrator/caller-env
 COPY arbitrator/prover/Cargo.toml arbitrator/prover/
+COPY arbitrator/prover/benches arbitrator/prover/benches
+COPY arbitrator/bench/Cargo.toml arbitrator/bench/
 COPY arbitrator/jit/Cargo.toml arbitrator/jit/
 COPY arbitrator/stylus/Cargo.toml arbitrator/stylus/
 COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
@@ -138,11 +145,15 @@ COPY arbitrator/wasm-libraries/user-host-trait/Cargo.toml arbitrator/wasm-librar
 RUN bash -c 'mkdir arbitrator/{prover,jit,stylus}/src arbitrator/wasm-libraries/user-host-trait/src'
 RUN echo "fn test() {}" > arbitrator/jit/src/lib.rs && \
     echo "fn test() {}" > arbitrator/prover/src/lib.rs && \
+    echo "fn test() {}" > arbitrator/bench/src/lib.rs && \
+    echo "fn test() {}" > arbitrator/prover/benches/merkle_bench.rs && \
     echo "fn test() {}" > arbitrator/stylus/src/lib.rs && \
     echo "fn test() {}" > arbitrator/wasm-libraries/user-host-trait/src/lib.rs && \
     cargo build --manifest-path arbitrator/Cargo.toml --release --lib && \
     rm arbitrator/prover/src/lib.rs arbitrator/jit/src/lib.rs arbitrator/stylus/src/lib.rs && \
-    rm arbitrator/wasm-libraries/user-host-trait/src/lib.rs
+    rm arbitrator/wasm-libraries/user-host-trait/src/lib.rs && \
+    rm arbitrator/prover/benches/merkle_bench.rs && \
+    rm arbitrator/bench/src/lib.rs
 COPY ./Makefile ./
 COPY arbitrator/prover arbitrator/prover
 COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
@@ -179,6 +190,7 @@ COPY ./Makefile ./
 COPY ./arbitrator ./arbitrator
 COPY ./solgen ./solgen
 COPY ./contracts ./contracts
+COPY ./safe-smart-account ./safe-smart-account
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-replay-env
 
 FROM debian:bookworm-slim AS machine-versions
@@ -226,6 +238,7 @@ COPY . ./
 COPY --from=contracts-builder workspace/contracts/build/ contracts/build/
 COPY --from=contracts-builder workspace/contracts/out/ contracts/out/
 COPY --from=contracts-builder workspace/contracts/node_modules/@offchainlabs/upgrade-executor/build/contracts/src/UpgradeExecutor.sol/UpgradeExecutor.json contracts/node_modules/@offchainlabs/upgrade-executor/build/contracts/src/UpgradeExecutor.sol/
+COPY --from=contracts-builder workspace/safe-smart-account/build/ safe-smart-account/build/
 COPY --from=contracts-builder workspace/.make/ .make/
 COPY --from=prover-header-export / target/
 COPY --from=brotli-library-export / target/

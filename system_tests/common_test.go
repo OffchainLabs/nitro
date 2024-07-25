@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/go-redis/redis/v8"
+	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
@@ -66,7 +67,6 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbutil"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -75,6 +75,7 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	"github.com/offchainlabs/nitro/util/testhelpers/env"
 	"github.com/offchainlabs/nitro/util/testhelpers/github"
 	"golang.org/x/exp/slog"
 )
@@ -151,6 +152,74 @@ func (tc *TestClient) EnsureTxSucceededWithTimeout(transaction *types.Transactio
 	return EnsureTxSucceededWithTimeout(tc.ctx, tc.Client, transaction, timeout)
 }
 
+var TestCachingConfig = gethexec.CachingConfig{
+	Archive:                            false,
+	BlockCount:                         128,
+	BlockAge:                           30 * time.Minute,
+	TrieTimeLimit:                      time.Hour,
+	TrieDirtyCache:                     1024,
+	TrieCleanCache:                     600,
+	SnapshotCache:                      400,
+	DatabaseCache:                      2048,
+	SnapshotRestoreGasLimit:            300_000_000_000,
+	MaxNumberOfBlocksToSkipStateSaving: 0,
+	MaxAmountOfGasToSkipStateSaving:    0,
+	StylusLRUCache:                     0,
+	StateScheme:                        env.GetTestStateScheme(),
+}
+
+var DefaultTestForwarderConfig = gethexec.ForwarderConfig{
+	ConnectionTimeout:     2 * time.Second,
+	IdleConnectionTimeout: 2 * time.Second,
+	MaxIdleConnections:    1,
+	RedisUrl:              "",
+	UpdateInterval:        time.Millisecond * 10,
+	RetryInterval:         time.Millisecond * 3,
+}
+
+var TestSequencerConfig = gethexec.SequencerConfig{
+	Enable:                       true,
+	MaxBlockSpeed:                time.Millisecond * 10,
+	MaxRevertGasReject:           params.TxGas + 10000,
+	MaxAcceptableTimestampDelta:  time.Hour,
+	SenderWhitelist:              "",
+	Forwarder:                    DefaultTestForwarderConfig,
+	QueueSize:                    128,
+	QueueTimeout:                 time.Second * 5,
+	NonceCacheSize:               4,
+	MaxTxDataSize:                95000,
+	NonceFailureCacheSize:        1024,
+	NonceFailureCacheExpiry:      time.Second,
+	ExpectedSurplusSoftThreshold: "default",
+	ExpectedSurplusHardThreshold: "default",
+	EnableProfiling:              false,
+}
+
+func ExecConfigDefaultNonSequencerTest() *gethexec.Config {
+	config := gethexec.ConfigDefault
+	config.Caching = TestCachingConfig
+	config.ParentChainReader = headerreader.TestConfig
+	config.Sequencer.Enable = false
+	config.Forwarder = DefaultTestForwarderConfig
+	config.ForwardingTarget = "null"
+
+	_ = config.Validate()
+
+	return &config
+}
+
+func ExecConfigDefaultTest() *gethexec.Config {
+	config := gethexec.ConfigDefault
+	config.Caching = TestCachingConfig
+	config.Sequencer = TestSequencerConfig
+	config.ParentChainReader = headerreader.TestConfig
+	config.ForwardingTarget = "null"
+
+	_ = config.Validate()
+
+	return &config
+}
+
 type NodeBuilder struct {
 	// NodeBuilder configuration
 	ctx           context.Context
@@ -164,12 +233,13 @@ type NodeBuilder struct {
 	L2Info        info
 
 	// L1, L2 Node parameters
-	dataDir       string
-	isSequencer   bool
-	takeOwnership bool
-	withL1        bool
-	addresses     *chaininfo.RollupAddresses
-	initMessage   *arbostypes.ParsedInitMessage
+	dataDir                     string
+	isSequencer                 bool
+	takeOwnership               bool
+	withL1                      bool
+	addresses                   *chaininfo.RollupAddresses
+	initMessage                 *arbostypes.ParsedInitMessage
+	withProdConfirmPeriodBlocks bool
 
 	// Created nodes
 	L1 *TestClient
@@ -194,11 +264,11 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 	b.L1Info = NewL1TestInfo(t)
 	b.L2Info = NewArbTestInfo(t, b.chainConfig.ChainID)
 	b.dataDir = t.TempDir()
-	b.l1StackConfig = createStackConfigForTest(b.dataDir)
-	b.l2StackConfig = createStackConfigForTest(b.dataDir)
+	b.l1StackConfig = testhelpers.CreateStackConfigForTest(b.dataDir)
+	b.l2StackConfig = testhelpers.CreateStackConfigForTest(b.dataDir)
 	cp := valnode.TestValidationConfig
 	b.valnodeConfig = &cp
-	b.execConfig = gethexec.ConfigDefaultTest()
+	b.execConfig = ExecConfigDefaultTest()
 	return b
 }
 
@@ -206,6 +276,11 @@ func (b *NodeBuilder) WithArbOSVersion(arbosVersion uint64) *NodeBuilder {
 	newChainConfig := *b.chainConfig
 	newChainConfig.ArbitrumChainParams.InitialArbOSVersion = arbosVersion
 	b.chainConfig = &newChainConfig
+	return b
+}
+
+func (b *NodeBuilder) WithProdConfirmPeriodBlocks() *NodeBuilder {
+	b.withProdConfirmPeriodBlocks = true
 	return b
 }
 
@@ -231,7 +306,7 @@ func (b *NodeBuilder) CheckConfig(t *testing.T) {
 		b.nodeConfig = arbnode.ConfigDefaultL1Test()
 	}
 	if b.execConfig == nil {
-		b.execConfig = gethexec.ConfigDefaultTest()
+		b.execConfig = ExecConfigDefaultTest()
 	}
 	if b.L1Info == nil {
 		b.L1Info = NewL1TestInfo(t)
@@ -253,7 +328,7 @@ func (b *NodeBuilder) BuildL1(t *testing.T) {
 	b.L1Info, b.L1.Client, b.L1.L1Backend, b.L1.Stack = createTestL1BlockChain(t, b.L1Info)
 	locator, err := server_common.NewMachineLocator(b.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
-	b.addresses, b.initMessage = DeployOnTestL1(t, b.ctx, b.L1Info, b.L1.Client, b.chainConfig, locator.LatestWasmModuleRoot())
+	b.addresses, b.initMessage = DeployOnTestL1(t, b.ctx, b.L1Info, b.L1.Client, b.chainConfig, locator.LatestWasmModuleRoot(), b.withProdConfirmPeriodBlocks)
 	b.L1.cleanup = func() { requireClose(t, b.L1.Stack) }
 }
 
@@ -681,23 +756,6 @@ func (c *staticNodeConfigFetcher) Started() bool {
 	return true
 }
 
-func createStackConfigForTest(dataDir string) *node.Config {
-	stackConf := node.DefaultConfig
-	stackConf.DataDir = dataDir
-	stackConf.UseLightweightKDF = true
-	stackConf.WSPort = 0
-	stackConf.WSModules = append(stackConf.WSModules, "eth", "debug")
-	stackConf.HTTPPort = 0
-	stackConf.HTTPHost = ""
-	stackConf.HTTPModules = append(stackConf.HTTPModules, "eth", "debug")
-	stackConf.P2P.NoDiscovery = true
-	stackConf.P2P.NoDial = true
-	stackConf.P2P.ListenAddr = ""
-	stackConf.P2P.NAT = nil
-	stackConf.DBEngine = "leveldb" // TODO Try pebble again in future once iterator race condition issues are fixed
-	return &stackConf
-}
-
 func createRedisGroup(ctx context.Context, t *testing.T, streamName string, client redis.UniversalClient) {
 	t.Helper()
 	// Stream name and group name are the same.
@@ -809,7 +867,7 @@ func createTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client,
 	if l1info == nil {
 		l1info = NewL1TestInfo(t)
 	}
-	stackConfig := createStackConfigForTest(t.TempDir())
+	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
 	l1info.GenerateAccount("Faucet")
 
 	chainConfig := params.ArbitrumDevTestChainConfig()
@@ -883,7 +941,7 @@ func getInitMessage(ctx context.Context, t *testing.T, l1client client, addresse
 }
 
 func DeployOnTestL1(
-	t *testing.T, ctx context.Context, l1info info, l1client client, chainConfig *params.ChainConfig, wasmModuleRoot common.Hash,
+	t *testing.T, ctx context.Context, l1info info, l1client client, chainConfig *params.ChainConfig, wasmModuleRoot common.Hash, prodConfirmPeriodBlocks bool,
 ) (*chaininfo.RollupAddresses, *arbostypes.ParsedInitMessage) {
 	l1info.GenerateAccount("RollupOwner")
 	l1info.GenerateAccount("Sequencer")
@@ -915,7 +973,7 @@ func DeployOnTestL1(
 		[]common.Address{l1info.GetAddress("Sequencer")},
 		l1info.GetAddress("RollupOwner"),
 		0,
-		arbnode.GenerateRollupConfig(false, wasmModuleRoot, l1info.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
+		arbnode.GenerateRollupConfig(prodConfirmPeriodBlocks, wasmModuleRoot, l1info.GetAddress("RollupOwner"), chainConfig, serializedChainConfig, common.Address{}),
 		nativeToken,
 		maxDataSize,
 		false,
@@ -944,7 +1002,7 @@ func createL2BlockChainWithStackConfig(
 	var stack *node.Node
 	var err error
 	if stackConfig == nil {
-		stackConfig = createStackConfigForTest(dataDir)
+		stackConfig = testhelpers.CreateStackConfigForTest(dataDir)
 	}
 	stack, err = node.New(stackConfig)
 	Require(t, err)
@@ -972,7 +1030,7 @@ func createL2BlockChainWithStackConfig(
 	if cacheConfig != nil {
 		coreCacheConfig = gethexec.DefaultCacheConfigFor(stack, cacheConfig)
 	}
-	blockchain, err := gethexec.WriteOrTestBlockChain(chainDb, coreCacheConfig, initReader, chainConfig, initMessage, gethexec.ConfigDefaultTest().TxLookupLimit, 0)
+	blockchain, err := gethexec.WriteOrTestBlockChain(chainDb, coreCacheConfig, initReader, chainConfig, initMessage, ExecConfigDefaultTest().TxLookupLimit, 0)
 	Require(t, err)
 
 	return l2info, stack, chainDb, arbDb, blockchain
@@ -1025,14 +1083,14 @@ func Create2ndNodeWithConfig(
 		nodeConfig = arbnode.ConfigDefaultL1NonSequencerTest()
 	}
 	if execConfig == nil {
-		execConfig = gethexec.ConfigDefaultNonSequencerTest()
+		execConfig = ExecConfigDefaultNonSequencerTest()
 	}
 	feedErrChan := make(chan error, 10)
 	l1rpcClient := l1stack.Attach()
 	l1client := ethclient.NewClient(l1rpcClient)
 
 	if stackConfig == nil {
-		stackConfig = createStackConfigForTest(t.TempDir())
+		stackConfig = testhelpers.CreateStackConfigForTest(t.TempDir())
 	}
 	l2stack, err := node.New(stackConfig)
 	Require(t, err)
@@ -1055,7 +1113,7 @@ func Create2ndNodeWithConfig(
 	chainConfig := firstExec.ArbInterface.BlockChain().Config()
 
 	coreCacheConfig := gethexec.DefaultCacheConfigFor(l2stack, &execConfig.Caching)
-	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, coreCacheConfig, initReader, chainConfig, initMessage, gethexec.ConfigDefaultTest().TxLookupLimit, 0)
+	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, coreCacheConfig, initReader, chainConfig, initMessage, ExecConfigDefaultTest().TxLookupLimit, 0)
 	Require(t, err)
 
 	AddDefaultValNode(t, ctx, nodeConfig, true, "", valnodeConfig.Wasm.RootPath)
