@@ -447,8 +447,8 @@ func dbKey(prefix []byte, pos uint64) []byte {
 }
 
 // Note: if changed to acquire the mutex, some internal users may need to be updated to a non-locking version.
-func (s *TransactionStreamer) GetMessage(seqNum arbutil.MessageIndex) (*arbostypes.MessageWithMetadata, error) {
-	key := dbKey(messagePrefix, uint64(seqNum))
+func (s *TransactionStreamer) GetMessage(msgIdx arbutil.MessageIndex) (*arbostypes.MessageWithMetadata, error) {
+	key := dbKey(messagePrefix, uint64(msgIdx))
 	data, err := s.db.Get(key)
 	if err != nil {
 		return nil, err
