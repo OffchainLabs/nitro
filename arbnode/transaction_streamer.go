@@ -1004,7 +1004,7 @@ func (s *TransactionStreamer) ExpectChosenSequencer() error {
 }
 
 func (s *TransactionStreamer) WriteMessageFromSequencer(
-	pos arbutil.MessageIndex,
+	msgIdx arbutil.MessageIndex,
 	msgWithMeta arbostypes.MessageWithMetadata,
 	msgResult execution.MessageResult,
 	blockMetadata common.BlockMetadata,
@@ -1017,17 +1017,20 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(
 	}
 	defer s.insertionMutex.Unlock()
 
-	msgCount, err := s.GetMessageCount()
-	if err != nil {
+	headMsgIdx, err := s.GetHeadMessageIndex()
+	nextHeadMsgIdx := headMsgIdx + 1
+	if errors.Is(err, ErrNoMessages) {
+		nextHeadMsgIdx = 0
+	} else if err != nil {
 		return err
 	}
 
-	if msgCount != pos {
-		return fmt.Errorf("wrong pos got %d expected %d", pos, msgCount)
+	if msgIdx != nextHeadMsgIdx {
+		return fmt.Errorf("wrong msgIdx got %d expected %d", msgIdx, nextHeadMsgIdx)
 	}
 
 	if s.coordinator != nil {
-		if err := s.coordinator.SequencingMessage(pos, &msgWithMeta, blockMetadata); err != nil {
+		if err := s.coordinator.SequencingMessage(msgIdx, &msgWithMeta, blockMetadata); err != nil {
 			return err
 		}
 	}
@@ -1038,13 +1041,13 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(
 		BlockMetadata:   blockMetadata,
 	}
 
-	if err := s.writeMessages(pos, []arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, nil); err != nil {
+	if err := s.writeMessages(msgIdx, []arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, nil); err != nil {
 		return err
 	}
-	if s.trackBlockMetadataFrom == 0 || pos < s.trackBlockMetadataFrom {
+	if s.trackBlockMetadataFrom == 0 || msgIdx < s.trackBlockMetadataFrom {
 		msgWithBlockInfo.BlockMetadata = nil
 	}
-	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, pos)
+	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, msgIdx)
 
 	return nil
 }
