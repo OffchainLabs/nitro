@@ -32,6 +32,8 @@ import (
 var (
 	inboxLatestBatchGauge        = metrics.NewRegisteredGauge("arb/inbox/latest/batch", nil)
 	inboxLatestBatchMessageGauge = metrics.NewRegisteredGauge("arb/inbox/latest/batch/message", nil)
+
+	invalidReorgMsgIndex = errors.New("invalid reorg message index")
 )
 
 type InboxTracker struct {
@@ -606,15 +608,19 @@ func (t *InboxTracker) setDelayedCountReorgAndWriteBatch(batch ethdb.Batch, firs
 	if err := t.deleteBatchMetadataStartingAt(batch, count); err != nil {
 		return err
 	}
-	var prevMesssageCount arbutil.MessageIndex
+	var prevMessageCount arbutil.MessageIndex
 	if count > 0 {
-		prevMesssageCount, err = t.GetBatchMessageCount(count - 1)
+		prevMessageCount, err = t.GetBatchMessageCount(count - 1)
 		if err != nil {
 			return err
 		}
 	}
 	// Writes batch
-	return t.txStreamer.ReorgToAndEndBatch(batch, prevMesssageCount)
+	if prevMessageCount == 0 {
+		return invalidReorgMsgIndex
+	}
+	prevHeadMsgIdx := prevMessageCount - 1
+	return t.txStreamer.ReorgToAndEndBatch(batch, prevHeadMsgIdx)
 }
 
 type multiplexerBackend struct {
@@ -936,5 +942,9 @@ func (t *InboxTracker) ReorgBatchesTo(count uint64) error {
 		return err
 	}
 	log.Info("InboxTracker", "SequencerBatchCount", count)
-	return t.txStreamer.ReorgToAndEndBatch(dbBatch, prevBatchMeta.MessageCount)
+	if prevBatchMeta.MessageCount == 0 {
+		return invalidReorgMsgIndex
+	}
+	prevBatchHeadMsgIdx := prevBatchMeta.MessageCount - 1
+	return t.txStreamer.ReorgToAndEndBatch(dbBatch, prevBatchHeadMsgIdx)
 }

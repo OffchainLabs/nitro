@@ -189,7 +189,10 @@ func TestTransactionStreamer(t *testing.T) {
 	for i := 1; i < 100; i++ {
 		if i%10 == 0 {
 			reorgTo := rand.Int() % len(blockStates)
-			err := inbox.ReorgTo(blockStates[reorgTo].numMessages)
+			if blockStates[reorgTo].numMessages == 0 {
+				Fail(t, "invalid reorg target")
+			}
+			err := inbox.ReorgTo(blockStates[reorgTo].numMessages - 1)
 			if err != nil {
 				Fail(t, err)
 			}

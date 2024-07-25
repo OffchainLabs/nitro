@@ -146,6 +146,10 @@ const (
 	FailedToGetMsgResultFromDB = "Reading message result remotely."
 )
 
+var (
+	ErrNoMessages = errors.New("No messages stored in the database.")
+)
+
 // Encodes a uint64 as bytes in a lexically sortable manner for database iteration.
 // Generally this is only used for database keys, which need sorted.
 // A shorter RLP encoding is usually used for database values.
@@ -206,14 +210,14 @@ func (s *TransactionStreamer) cleanupInconsistentState() error {
 	return nil
 }
 
-func (s *TransactionStreamer) ReorgTo(count arbutil.MessageIndex) error {
-	return s.ReorgToAndEndBatch(s.db.NewBatch(), count)
+func (s *TransactionStreamer) ReorgTo(newHeadMsgIdx arbutil.MessageIndex) error {
+	return s.ReorgToAndEndBatch(s.db.NewBatch(), newHeadMsgIdx)
 }
 
-func (s *TransactionStreamer) ReorgToAndEndBatch(batch ethdb.Batch, count arbutil.MessageIndex) error {
+func (s *TransactionStreamer) ReorgToAndEndBatch(batch ethdb.Batch, newHeadMsgIdx arbutil.MessageIndex) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
-	err := s.reorg(batch, count, nil)
+	err := s.reorg(batch, newHeadMsgIdx+1, nil)
 	if err != nil {
 		return err
 	}
@@ -518,6 +522,17 @@ func (s *TransactionStreamer) GetMessageCount() (arbutil.MessageIndex, error) {
 		return 0, err
 	}
 	return arbutil.MessageIndex(count), nil
+}
+
+func (s *TransactionStreamer) GetHeadMessageIndex() (arbutil.MessageIndex, error) {
+	msgCount, err := s.GetMessageCount()
+	if err != nil {
+		return 0, err
+	}
+	if msgCount == 0 {
+		return 0, ErrNoMessages
+	}
+	return msgCount - 1, nil
 }
 
 func (s *TransactionStreamer) GetProcessedMessageCount() (arbutil.MessageIndex, error) {
