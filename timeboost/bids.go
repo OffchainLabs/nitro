@@ -4,11 +4,9 @@ import (
 	"bytes"
 	"crypto/ecdsa"
 	"encoding/binary"
-	"fmt"
 	"math/big"
 	"sync"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/secp256k1"
@@ -41,104 +39,6 @@ type validatedBid struct {
 	signature             []byte
 }
 
-func (a *Auctioneer) fetchReservePrice() *big.Int {
-	a.reservePriceLock.RLock()
-	defer a.reservePriceLock.RUnlock()
-	return new(big.Int).Set(a.reservePrice)
-}
-
-func (a *Auctioneer) newValidatedBid(bid *Bid) (*validatedBid, error) {
-	// Check basic integrity.
-	if bid == nil {
-		return nil, errors.Wrap(ErrMalformedData, "nil bid")
-	}
-	if bid.Bidder == (common.Address{}) {
-		return nil, errors.Wrap(ErrMalformedData, "empty bidder address")
-	}
-	if bid.ExpressLaneController == (common.Address{}) {
-		return nil, errors.Wrap(ErrMalformedData, "empty express lane controller address")
-	}
-
-	// Check if the chain ID is valid.
-	chainIdOk := false
-	for _, id := range a.chainId {
-		if bid.ChainId == id {
-			chainIdOk = true
-			break
-		}
-	}
-	if !chainIdOk {
-		return nil, errors.Wrapf(ErrWrongChainId, "can not aucution for chain id: %d", bid.ChainId)
-	}
-
-	// Check if the bid is intended for upcoming round.
-	upcomingRound := CurrentRound(a.initialRoundTimestamp, a.roundDuration) + 1
-	if bid.Round != upcomingRound {
-		return nil, errors.Wrapf(ErrBadRoundNumber, "wanted %d, got %d", upcomingRound, bid.Round)
-	}
-
-	// Check if the auction is closed.
-	if d, closed := AuctionClosed(a.initialRoundTimestamp, a.roundDuration, a.auctionClosingDuration); closed {
-		return nil, fmt.Errorf("auction is closed, %d seconds into the round", d)
-	}
-
-	// Check bid is higher than reserve price.
-	reservePrice := a.fetchReservePrice()
-	if bid.Amount.Cmp(reservePrice) == -1 {
-		return nil, errors.Wrapf(ErrInsufficientBid, "reserve price %s, bid %s", reservePrice, bid.Amount)
-	}
-
-	// Validate the signature.
-	packedBidBytes, err := encodeBidValues(
-		a.domainValue,
-		new(big.Int).SetUint64(bid.ChainId),
-		bid.AuctionContractAddress,
-		bid.Round,
-		bid.Amount,
-		bid.ExpressLaneController,
-	)
-	if err != nil {
-		return nil, ErrMalformedData
-	}
-	if len(bid.Signature) != 65 {
-		return nil, errors.Wrap(ErrMalformedData, "signature length is not 65")
-	}
-	// Recover the public key.
-	prefixed := crypto.Keccak256(append([]byte("\x19Ethereum Signed Message:\n112"), packedBidBytes...))
-	sigItem := make([]byte, len(bid.Signature))
-	copy(sigItem, bid.Signature)
-	if sigItem[len(sigItem)-1] >= 27 {
-		sigItem[len(sigItem)-1] -= 27
-	}
-	pubkey, err := crypto.SigToPub(prefixed, sigItem)
-	if err != nil {
-		return nil, ErrMalformedData
-	}
-	if !verifySignature(pubkey, packedBidBytes, sigItem) {
-		return nil, ErrWrongSignature
-	}
-	// Validate if the user if a depositor in the contract and has enough balance for the bid.
-	// TODO: Retry some number of times if flakey connection.
-	// TODO: Validate reserve price against amount of bid.
-	// TODO: No need to do anything expensive if the bid coming is in invalid.
-	// Cache this if the received time of the bid is too soon. Include the arrival timestamp.
-	depositBal, err := a.auctionContract.BalanceOf(&bind.CallOpts{}, bid.Bidder)
-	if err != nil {
-		return nil, err
-	}
-	if depositBal.Cmp(new(big.Int)) == 0 {
-		return nil, ErrNotDepositor
-	}
-	if depositBal.Cmp(bid.Amount) < 0 {
-		return nil, errors.Wrapf(ErrInsufficientBalance, "onchain balance %#x, bid amount %#x", depositBal, bid.Amount)
-	}
-	return &validatedBid{
-		expressLaneController: bid.ExpressLaneController,
-		amount:                bid.Amount,
-		signature:             bid.Signature,
-	}, nil
-}
-
 type bidCache struct {
 	sync.RWMutex
 	bidsByExpressLaneControllerAddr map[common.Address]*validatedBid
@@ -169,19 +69,24 @@ func (bc *bidCache) size() int {
 
 }
 
+// topTwoBids returns the top two bids in the cache.
 func (bc *bidCache) topTwoBids() *auctionResult {
 	bc.RLock()
 	defer bc.RUnlock()
+
 	result := &auctionResult{}
-	// TODO: Tiebreaker handle.
+
 	for _, bid := range bc.bidsByExpressLaneControllerAddr {
+		// If first place is empty or bid is higher than the current first place
 		if result.firstPlace == nil || bid.amount.Cmp(result.firstPlace.amount) > 0 {
 			result.secondPlace = result.firstPlace
 			result.firstPlace = bid
 		} else if result.secondPlace == nil || bid.amount.Cmp(result.secondPlace.amount) > 0 {
+			// If second place is empty or bid is higher than current second place
 			result.secondPlace = bid
 		}
 	}
+
 	return result
 }
 

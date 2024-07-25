@@ -89,6 +89,6 @@ func TestReceiveBid_OK(t *testing.T) {
 	require.NoError(t, err)
 
 	// Check the bid passes validation.
-	_, err = am.newValidatedBid(newBid)
+	_, err = am.validateBid(newBid)
 	require.NoError(t, err)
 }

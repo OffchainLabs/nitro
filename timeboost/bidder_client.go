@@ -14,7 +14,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto/secp256k1"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/pkg/errors"
-	"golang.org/x/crypto/sha3"
 )
 
 type Client interface {
@@ -24,7 +23,7 @@ type Client interface {
 }
 
 type auctioneerConnection interface {
-	ReceiveBid(ctx context.Context, bid *Bid) error
+	receiveBid(ctx context.Context, bid *Bid) error
 }
 
 type BidderClient struct {
@@ -69,10 +68,6 @@ func NewBidderClient(
 	}
 	initialTimestamp := time.Unix(int64(roundTimingInfo.OffsetTimestamp), 0)
 	roundDuration := time.Duration(roundTimingInfo.RoundDurationSeconds) * time.Second
-
-	hash := sha3.NewLegacyKeccak256()
-	hash.Write([]byte("TIMEBOOST_BID"))
-	domainValue := hash.Sum(nil)
 
 	return &BidderClient{
 		chainId:                chainId.Uint64(),
@@ -132,7 +127,7 @@ func (bd *BidderClient) Bid(
 		return nil, err
 	}
 	newBid.Signature = sig
-	if err = bd.auctioneer.ReceiveBid(ctx, newBid); err != nil {
+	if err = bd.auctioneer.receiveBid(ctx, newBid); err != nil {
 		return nil, err
 	}
 	return newBid, nil

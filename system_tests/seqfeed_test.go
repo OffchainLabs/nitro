@@ -254,7 +254,7 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	waitTime = roundDuration - time.Duration(now.Second())*time.Second - time.Duration(now.Nanosecond())
 	time.Sleep(waitTime)
 
-	currRound := timeboost.CurrentRound(time.Unix(int64(info.OffsetTimestamp), 0), roundDuration)
+	currRound := timeboost.currentRound(time.Unix(int64(info.OffsetTimestamp), 0), roundDuration)
 	t.Log("curr round", currRound)
 	if currRound != winnerRound {
 		now = time.Now()
