@@ -62,6 +62,8 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 		builder.L1.TransferBalance(t, "Faucet", "Faucet", common.Big1, builder.L1Info)
 	}
 
+	compareAllMsgResultsFromConsensusAndExecution(t, builder.L2, "before reorg")
+
 	parentBlock := builder.L1.L1Backend.BlockChain().GetBlockByNumber(batchReceipt.BlockNumber.Uint64() - 1)
 	err = builder.L1.L1Backend.BlockChain().ReorgToOldBlock(parentBlock)
 	Require(t, err)
@@ -104,4 +106,6 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 	if l2Header.Hash() != l2Receipt.BlockHash {
 		Fatal(t, "L2 block hash changed")
 	}
+
+	compareAllMsgResultsFromConsensusAndExecution(t, builder.L2, "after reorg")
 }
