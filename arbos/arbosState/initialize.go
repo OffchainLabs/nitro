@@ -54,7 +54,11 @@ func MakeGenesisBlock(parentHash common.Hash, blockNumber uint64, timestamp uint
 }
 
 func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig, initData statetransfer.InitDataReader, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, timestamp uint64, accountsPerSync uint) (root common.Hash, err error) {
-	triedbConfig := cacheConfig.TriedbConfig()
+	number, err := initData.GetNextBlockNumber()
+	if err != nil {
+		return common.Hash{}, err
+	}
+	triedbConfig := cacheConfig.TriedbConfig(chainConfig.IsVerkle(new(big.Int).SetUint64(number), timestamp))
 	triedbConfig.Preimages = false
 	stateDatabase := state.NewDatabaseWithConfig(db, triedbConfig)
 	defer func() {

@@ -164,7 +164,7 @@ func newApiClosures(
 				Stack:    util.TracingStackFromArgs(args...),
 				Contract: scope.Contract,
 			}
-			tracingInfo.Tracer.CaptureState(0, opcode, startGas, baseCost+gas, s, []byte{}, depth, nil)
+			tracingInfo.Tracer.OnOpcode(0, byte(opcode), startGas, baseCost+gas, s, []byte{}, depth, nil)
 		}
 
 		var ret []byte
