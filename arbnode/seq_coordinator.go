@@ -38,6 +38,8 @@ type SeqCoordinator struct {
 	stopwaiter.StopWaiter
 
 	redisutil.RedisCoordinator
+	prevRedisCoordinator  *redisutil.RedisCoordinator
+	prevRedisMessageCount arbutil.MessageIndex
 
 	streamer         *TransactionStreamer
 	sequencer        execution.ExecutionSequencer
@@ -60,6 +62,7 @@ type SeqCoordinatorConfig struct {
 	Enable                bool          `koanf:"enable"`
 	ChosenHealthcheckAddr string        `koanf:"chosen-healthcheck-addr"`
 	RedisUrl              string        `koanf:"redis-url"`
+	NewRedisUrl           string        `koanf:"new-redis-url"`
 	LockoutDuration       time.Duration `koanf:"lockout-duration"`
 	LockoutSpare          time.Duration `koanf:"lockout-spare"`
 	SeqNumDuration        time.Duration `koanf:"seq-num-duration"`
@@ -84,6 +87,7 @@ func (c *SeqCoordinatorConfig) Url() string {
 func SeqCoordinatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultSeqCoordinatorConfig.Enable, "enable sequence coordinator")
 	f.String(prefix+".redis-url", DefaultSeqCoordinatorConfig.RedisUrl, "the Redis URL to coordinate via")
+	f.String(prefix+".new-redis-url", DefaultSeqCoordinatorConfig.NewRedisUrl, "switch to the new Redis URL to coordinate via")
 	f.String(prefix+".chosen-healthcheck-addr", DefaultSeqCoordinatorConfig.ChosenHealthcheckAddr, "if non-empty, launch an HTTP service binding to this address that returns status code 200 when chosen and 503 otherwise")
 	f.Duration(prefix+".lockout-duration", DefaultSeqCoordinatorConfig.LockoutDuration, "")
 	f.Duration(prefix+".lockout-spare", DefaultSeqCoordinatorConfig.LockoutSpare, "")
@@ -102,6 +106,7 @@ var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
 	Enable:                false,
 	ChosenHealthcheckAddr: "",
 	RedisUrl:              "",
+	NewRedisUrl:           "",
 	LockoutDuration:       time.Minute,
 	LockoutSpare:          30 * time.Second,
 	SeqNumDuration:        24 * time.Hour,
@@ -118,6 +123,7 @@ var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
 var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
 	Enable:            false,
 	RedisUrl:          "",
+	NewRedisUrl:       "",
 	LockoutDuration:   time.Second * 2,
 	LockoutSpare:      time.Millisecond * 10,
 	SeqNumDuration:    time.Minute * 10,
@@ -136,7 +142,6 @@ func NewSeqCoordinator(
 	bpvalidator *contracts.AddressVerifier,
 	streamer *TransactionStreamer,
 	sequencer execution.ExecutionSequencer,
-	sync *SyncMonitor,
 	config SeqCoordinatorConfig,
 ) (*SeqCoordinator, error) {
 	redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl)
@@ -522,12 +527,28 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		log.Error("cannot read message count", "err", err)
 		return c.config.UpdateInterval
 	}
+	// Cache the previous redis coordinator's message count
+	if c.prevRedisCoordinator != nil && c.prevRedisMessageCount == 0 {
+		prevRemoteMsgCount, err := c.getRemoteMsgCountImpl(ctx, c.prevRedisCoordinator.Client)
+		if err != nil {
+			log.Warn("cannot get remote message count", "err", err)
+			return c.retryAfterRedisError()
+		}
+		c.prevRedisMessageCount = prevRemoteMsgCount
+	}
 	remoteMsgCount, err := c.GetRemoteMsgCount()
 	if err != nil {
 		log.Warn("cannot get remote message count", "err", err)
 		return c.retryAfterRedisError()
 	}
 	readUntil := remoteMsgCount
+	client := c.Client
+	// If we have a previous redis coordinator,
+	// we can read from it until the local message count catches up to the prev coordinator's message count
+	if c.prevRedisMessageCount > localMsgCount {
+		readUntil = c.prevRedisMessageCount
+		client = c.prevRedisCoordinator.Client
+	}
 	if readUntil > localMsgCount+c.config.MsgPerPoll {
 		readUntil = localMsgCount + c.config.MsgPerPoll
 	}
@@ -536,7 +557,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 	var msgReadErr error
 	for msgToRead < readUntil {
 		var resString string
-		resString, msgReadErr = c.Client.Get(ctx, redisutil.MessageKeyFor(msgToRead)).Result()
+		resString, msgReadErr = client.Get(ctx, redisutil.MessageKeyFor(msgToRead)).Result()
 		if msgReadErr != nil {
 			log.Warn("coordinator failed reading message", "pos", msgToRead, "err", msgReadErr)
 			break
@@ -545,7 +566,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		var sigString string
 		var sigBytes []byte
 		sigSeparateKey := true
-		sigString, msgReadErr = c.Client.Get(ctx, redisutil.MessageSigKeyFor(msgToRead)).Result()
+		sigString, msgReadErr = client.Get(ctx, redisutil.MessageSigKeyFor(msgToRead)).Result()
 		if errors.Is(msgReadErr, redis.Nil) {
 			// no separate signature. Try reading old-style sig
 			if len(rsBytes) < 32 {
@@ -731,10 +752,47 @@ func (c *SeqCoordinator) launchHealthcheckServer(ctx context.Context) {
 
 func (c *SeqCoordinator) Start(ctxIn context.Context) {
 	c.StopWaiter.Start(ctxIn, c)
-	c.CallIteratively(c.update)
+	c.CallIteratively(c.chooseRedisAndUpdate)
 	if c.config.ChosenHealthcheckAddr != "" {
 		c.StopWaiter.LaunchThread(c.launchHealthcheckServer)
 	}
+}
+
+func (c *SeqCoordinator) chooseRedisAndUpdate(ctx context.Context) time.Duration {
+	// If we have a new redis coordinator, and we haven't switched to it yet, try to switch.
+	if c.config.NewRedisUrl != "" && c.prevRedisCoordinator == nil {
+		// If we fail to try to switch, we'll retry soon.
+		if err := c.trySwitchingRedis(ctx); err != nil {
+			log.Warn("error while trying to switch redis coordinator", "err", err)
+			return c.retryAfterRedisError()
+		}
+	}
+	return c.update(ctx)
+}
+
+func (c *SeqCoordinator) trySwitchingRedis(ctx context.Context) error {
+	current, err := c.Client.Get(ctx, redisutil.CHOSENSEQ_KEY).Result()
+	var wasEmpty bool
+	if errors.Is(err, redis.Nil) {
+		wasEmpty = true
+		err = nil
+	}
+	if err != nil {
+		log.Warn("failed to get current chosen sequencer", "err", err)
+		return err
+	}
+	// If the chosen key is set to switch, we need to switch to the new redis coordinator.
+	if !wasEmpty && (current == redisutil.SWITCHED_REDIS) {
+		newRedisCoordinator, err := redisutil.NewRedisCoordinator(c.config.NewRedisUrl)
+		if err != nil {
+			log.Warn("failed to create new redis coordinator", "err",
+				err, "newRedisUrl", c.config.NewRedisUrl)
+			return err
+		}
+		c.prevRedisCoordinator = &c.RedisCoordinator
+		c.RedisCoordinator = *newRedisCoordinator
+	}
+	return nil
 }
 
 // Calls check() every c.config.RetryInterval until it returns true, or the context times out.
