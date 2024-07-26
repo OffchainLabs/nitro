@@ -55,9 +55,7 @@ func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot c
 	return server_common.NewValRun(promise, moduleRoot)
 }
 
-func (c *ValidationClient) Start(ctx_in context.Context) error {
-	c.StopWaiter.Start(ctx_in, c)
-	ctx := c.GetContext()
+func (c *ValidationClient) Start(ctx context.Context) error {
 	if err := c.client.Start(ctx); err != nil {
 		return err
 	}
@@ -101,6 +99,7 @@ func (c *ValidationClient) Start(ctx_in context.Context) error {
 	c.wasmModuleRoots = moduleRoots
 	c.name = name
 	c.stylusArchs = stylusArchs
+	c.StopWaiter.Start(ctx, c)
 	return nil
 }
 
