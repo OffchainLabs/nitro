@@ -15,6 +15,14 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
+// This is a flaky test.
+// During a reorg:
+// - TransactionStreamer, holding insertionMutex lock, calls ExecutionEngine,
+// which then adds old messages to a channel, so they can be resequenced asynchronously by ExecutionEngine.
+// After that, and before releasing the lock, TransactionStreamer does more computations.
+// - Asynchronously, ExecutionEngine reads from this channel and calls TransactionStreamer,
+// which expects that insertionMutex is free in order to succeed. When that happens this error generated:
+// 'failed to re-sequence old user message removed by reorg err="insert lock taken"'
 func TestReorgResequencing(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
@@ -57,6 +65,7 @@ func TestReorgResequencing(t *testing.T) {
 	Require(t, err)
 
 	verifyBalances("after empty reorg")
+	compareAllMsgResultsFromConsensusAndExecution(t, builder.L2, "after empty reorg")
 
 	prevMessage, err := builder.L2.ConsensusNode.TxStreamer.GetMessage(startMsgCount - 1)
 	Require(t, err)
@@ -82,7 +91,9 @@ func TestReorgResequencing(t *testing.T) {
 	Require(t, err)
 
 	accountsWithBalance = append(accountsWithBalance, "User4")
+
 	verifyBalances("after reorg with new deposit")
+	compareAllMsgResultsFromConsensusAndExecution(t, builder.L2, "after reorg with new deposit")
 
 	err = builder.L2.ConsensusNode.TxStreamer.ReorgTo(startMsgCount)
 	Require(t, err)
@@ -91,4 +102,5 @@ func TestReorgResequencing(t *testing.T) {
 	Require(t, err)
 
 	verifyBalances("after second empty reorg")
+	compareAllMsgResultsFromConsensusAndExecution(t, builder.L2, "after second empty reorg")
 }

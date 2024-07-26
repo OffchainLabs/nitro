@@ -68,7 +68,7 @@ type SyncToStorageConfig struct {
 var DefaultSyncToStorageConfig = SyncToStorageConfig{
 	Eager:                    false,
 	EagerLowerBoundBlock:     0,
-	RetentionPeriod:          defaultStorageRetention,
+	RetentionPeriod:          daprovider.DefaultDASRetentionPeriod,
 	DelayOnError:             time.Second,
 	IgnoreWriteErrors:        true,
 	ParentChainBlocksPerRead: 100,
