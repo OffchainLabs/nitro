@@ -22,7 +22,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/execution/gethexec"
 
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
@@ -1043,7 +1042,7 @@ func elevateL2Basefee(t *testing.T, ctx context.Context, builder *NodeBuilder) {
 	_, err = precompilesgen.NewArbosTest(common.HexToAddress("0x69"), builder.L2.Client)
 	Require(t, err, "failed to deploy ArbosTest")
 
-	burnAmount := gethexec.ConfigDefaultTest().RPC.RPCGasCap
+	burnAmount := ExecConfigDefaultTest().RPC.RPCGasCap
 	burnTarget := uint64(5 * l2pricing.InitialSpeedLimitPerSecondV6 * l2pricing.InitialBacklogTolerance)
 	for i := uint64(0); i < (burnTarget+burnAmount)/burnAmount; i++ {
 		burnArbGas := arbosTestAbi.Methods["burnArbGas"]
