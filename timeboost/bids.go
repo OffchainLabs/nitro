@@ -142,14 +142,16 @@ func padBigInt(bi *big.Int) []byte {
 	return padded
 }
 
-func encodeBidValues(domainValue []byte, chainId *big.Int, auctionContractAddress common.Address, round uint64, amount *big.Int, expressLaneController common.Address) ([]byte, error) {
+func encodeBidValues(domainValue []byte, chainId uint64, auctionContractAddress common.Address, round uint64, amount *big.Int, expressLaneController common.Address) ([]byte, error) {
 	buf := new(bytes.Buffer)
 
 	// Encode uint256 values - each occupies 32 bytes
 	buf.Write(domainValue)
-	buf.Write(padBigInt(chainId))
-	buf.Write(auctionContractAddress[:])
 	roundBuf := make([]byte, 8)
+	binary.BigEndian.PutUint64(roundBuf, chainId)
+	buf.Write(roundBuf)
+	buf.Write(auctionContractAddress[:])
+	roundBuf = make([]byte, 8)
 	binary.BigEndian.PutUint64(roundBuf, round)
 	buf.Write(roundBuf)
 	buf.Write(padBigInt(amount))

@@ -2,7 +2,6 @@ package timeboost
 
 import (
 	"context"
-	"fmt"
 	"math/big"
 	"sync"
 	"time"
@@ -225,7 +224,7 @@ func (a *Auctioneer) validateBid(bid *Bid) (*validatedBid, error) {
 		}
 	}
 	if !chainIdOk {
-		return nil, errors.Wrapf(ErrWrongChainId, "can not aucution for chain id: %d", bid.ChainId)
+		return nil, errors.Wrapf(ErrWrongChainId, "can not auction for chain id: %d", bid.ChainId)
 	}
 
 	// Check if the bid is intended for upcoming round.
@@ -236,19 +235,19 @@ func (a *Auctioneer) validateBid(bid *Bid) (*validatedBid, error) {
 
 	// Check if the auction is closed.
 	if d, closed := auctionClosed(a.initialRoundTimestamp, a.roundDuration, a.auctionClosingDuration); closed {
-		return nil, fmt.Errorf("auction is closed, %d seconds into the round", d)
+		return nil, errors.Wrapf(ErrBadRoundNumber, "auction is closed, %s since closing", d)
 	}
 
 	// Check bid is higher than reserve price.
 	reservePrice := a.fetchReservePrice()
 	if bid.Amount.Cmp(reservePrice) == -1 {
-		return nil, errors.Wrapf(ErrInsufficientBid, "reserve price %s, bid %s", reservePrice, bid.Amount)
+		return nil, errors.Wrapf(ErrInsufficientBid, "reserve price %s, bid %s", reservePrice.String(), bid.Amount.String())
 	}
 
 	// Validate the signature.
 	packedBidBytes, err := encodeBidValues(
 		a.domainValue,
-		new(big.Int).SetUint64(bid.ChainId),
+		bid.ChainId,
 		bid.AuctionContractAddress,
 		bid.Round,
 		bid.Amount,
@@ -302,11 +301,17 @@ func (a *Auctioneer) validateBid(bid *Bid) (*validatedBid, error) {
 
 // CurrentRound returns the current round number.
 func CurrentRound(initialRoundTimestamp time.Time, roundDuration time.Duration) uint64 {
+	if roundDuration == 0 {
+		return 0
+	}
 	return uint64(time.Since(initialRoundTimestamp) / roundDuration)
 }
 
 // auctionClosed returns the time since auction was closed and whether the auction is closed.
 func auctionClosed(initialRoundTimestamp time.Time, roundDuration time.Duration, auctionClosingDuration time.Duration) (time.Duration, bool) {
+	if roundDuration == 0 {
+		return 0, true
+	}
 	d := time.Since(initialRoundTimestamp) % roundDuration
 	return d, d > auctionClosingDuration
 }

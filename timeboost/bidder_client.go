@@ -113,7 +113,7 @@ func (bd *BidderClient) Bid(
 	}
 	packedBidBytes, err := encodeBidValues(
 		bd.domainValue,
-		new(big.Int).SetUint64(newBid.ChainId),
+		newBid.ChainId,
 		bd.auctionContractAddress,
 		newBid.Round,
 		amount,
