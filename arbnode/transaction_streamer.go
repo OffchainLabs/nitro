@@ -1202,7 +1202,7 @@ func (s *TransactionStreamer) ResultAtCount(count arbutil.MessageIndex) (*execut
 	if s.Started() {
 		ctx = s.GetContext()
 	}
-	msgResult, err := s.exec.ResultAtPos(pos).Await(ctx)
+	msgResult, err := s.exec.ResultAtMessageIndex(pos).Await(ctx)
 	if err != nil {
 		return nil, err
 	}

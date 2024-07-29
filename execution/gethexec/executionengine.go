@@ -805,8 +805,8 @@ func (s *ExecutionEngine) resultFromHeader(header *types.Header) (*execution.Mes
 	}, nil
 }
 
-func (s *ExecutionEngine) ResultAtPos(pos arbutil.MessageIndex) (*execution.MessageResult, error) {
-	return s.resultFromHeader(s.bc.GetHeaderByNumber(s.MessageIndexToBlockNumber(pos)))
+func (s *ExecutionEngine) ResultAtMessageIndex(msgIdx arbutil.MessageIndex) (*execution.MessageResult, error) {
+	return s.resultFromHeader(s.bc.GetHeaderByNumber(s.MessageIndexToBlockNumber(msgIdx)))
 }
 
 func (s *ExecutionEngine) updateL1GasPriceEstimateMetric() {
