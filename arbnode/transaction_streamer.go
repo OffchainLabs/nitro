@@ -1129,19 +1129,19 @@ func (s *TransactionStreamer) broadcastMessages(
 
 // The mutex must be held, and pos must be the latest message count.
 // `batch` may be nil, which initializes a new batch. The batch is closed out in this function.
-func (s *TransactionStreamer) writeMessages(pos arbutil.MessageIndex, messages []arbostypes.MessageWithMetadataAndBlockInfo, batch ethdb.Batch) error {
+func (s *TransactionStreamer) writeMessages(firstMsgIdx arbutil.MessageIndex, messages []arbostypes.MessageWithMetadataAndBlockInfo, batch ethdb.Batch) error {
 	if batch == nil {
 		batch = s.db.NewBatch()
 	}
 	for i, msg := range messages {
 		// #nosec G115
-		err := s.writeMessage(pos+arbutil.MessageIndex(i), msg, batch)
+		err := s.writeMessage(firstMsgIdx+arbutil.MessageIndex(i), msg, batch)
 		if err != nil {
 			return err
 		}
 	}
 
-	err := setMessageCount(batch, pos+arbutil.MessageIndex(len(messages)))
+	err := setMessageCount(batch, firstMsgIdx+arbutil.MessageIndex(len(messages)))
 	if err != nil {
 		return err
 	}
