@@ -273,10 +273,7 @@ func (s *ExecutionEngine) GetBatchFetcher() execution.BatchFetcher {
 	return s.consensus
 }
 
-func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
-	if count == 0 {
-		return nil, errors.New("cannot reorg out genesis")
-	}
+func (s *ExecutionEngine) Reorg(newHeadMsgIdx arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
 	s.createBlocksMutex.Lock()
 	resequencing := false
 	defer func() {
@@ -286,7 +283,7 @@ func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbost
 			s.createBlocksMutex.Unlock()
 		}
 	}()
-	blockNum := s.MessageIndexToBlockNumber(count - 1)
+	blockNum := s.MessageIndexToBlockNumber(newHeadMsgIdx)
 	// We can safely cast blockNum to a uint64 as it comes from MessageCountToBlockNumber
 	targetBlock := s.bc.GetBlockByNumber(uint64(blockNum))
 	if targetBlock == nil {
@@ -316,7 +313,8 @@ func (s *ExecutionEngine) Reorg(count arbutil.MessageIndex, newMessages []arbost
 		if i < len(newMessages)-1 {
 			msgForPrefetch = &newMessages[i].MessageWithMeta
 		}
-		msgResult, err := s.digestMessageWithBlockMutex(count+arbutil.MessageIndex(i), &newMessages[i].MessageWithMeta, msgForPrefetch)
+		nextMsgIdx := newHeadMsgIdx + arbutil.MessageIndex(i+1)
+		msgResult, err := s.digestMessageWithBlockMutex(nextMsgIdx, &newMessages[i].MessageWithMeta, msgForPrefetch)
 		if err != nil {
 			return nil, err
 		}
