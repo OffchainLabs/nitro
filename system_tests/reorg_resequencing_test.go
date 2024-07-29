@@ -1,6 +1,9 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
+//go:build cionly
+// +build cionly
+
 package arbtest
 
 import (
@@ -17,11 +20,12 @@ import (
 
 // This is a flaky test.
 // During a reorg:
-// - TransactionStreamer, holding insertionMutex lock, calls ExecutionEngine,
-// which then adds old messages to a channel, so they can be resequenced asynchronously by ExecutionEngine.
+// 1. TransactionStreamer, holding insertionMutex lock, calls ExecutionEngine, which then adds old messages to a channel.
 // After that, and before releasing the lock, TransactionStreamer does more computations.
-// - Asynchronously, ExecutionEngine reads from this channel and calls TransactionStreamer,
-// which expects that insertionMutex is free in order to succeed. When that happens this error generated:
+// 2. Asynchronously, ExecutionEngine reads from this channel and calls TransactionStreamer,
+// which expects that insertionMutex is free in order to succeed.
+//
+// If step 1 is still executing when Execution calls TransactionStreamer in step 2 then this error happens:
 // 'failed to re-sequence old user message removed by reorg err="insert lock taken"'
 func TestReorgResequencing(t *testing.T) {
 	t.Parallel()
