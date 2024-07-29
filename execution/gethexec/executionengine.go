@@ -846,7 +846,7 @@ func (s *ExecutionEngine) getL1PricingSurplus() (int64, error) {
 	return surplus.Int64(), nil
 }
 
-func (s *ExecutionEngine) cacheL1PriceDataOfMsg(seqNum arbutil.MessageIndex, receipts types.Receipts, block *types.Block, blockBuiltUsingDelayedMessage bool) {
+func (s *ExecutionEngine) cacheL1PriceDataOfMsg(msgIdx arbutil.MessageIndex, receipts types.Receipts, block *types.Block, blockBuiltUsingDelayedMessage bool) {
 	var gasUsedForL1 uint64
 	var callDataUnits uint64
 	if !blockBuiltUsingDelayedMessage {
@@ -869,8 +869,8 @@ func (s *ExecutionEngine) cacheL1PriceDataOfMsg(seqNum arbutil.MessageIndex, rec
 	defer s.cachedL1PriceData.mutex.Unlock()
 
 	resetCache := func() {
-		s.cachedL1PriceData.startOfL1PriceDataCache = seqNum
-		s.cachedL1PriceData.endOfL1PriceDataCache = seqNum
+		s.cachedL1PriceData.startOfL1PriceDataCache = msgIdx
+		s.cachedL1PriceData.endOfL1PriceDataCache = msgIdx
 		s.cachedL1PriceData.msgToL1PriceData = []L1PriceDataOfMsg{{
 			callDataUnits:            callDataUnits,
 			cummulativeCallDataUnits: callDataUnits,
@@ -886,11 +886,11 @@ func (s *ExecutionEngine) cacheL1PriceDataOfMsg(seqNum arbutil.MessageIndex, rec
 		resetCache()
 		return
 	}
-	if seqNum != s.cachedL1PriceData.endOfL1PriceDataCache+1 {
-		if seqNum > s.cachedL1PriceData.endOfL1PriceDataCache+1 {
+	if msgIdx != s.cachedL1PriceData.endOfL1PriceDataCache+1 {
+		if msgIdx > s.cachedL1PriceData.endOfL1PriceDataCache+1 {
 			log.Info("message position higher then current end of l1 price data cache, resetting cache to this message")
 			resetCache()
-		} else if seqNum < s.cachedL1PriceData.startOfL1PriceDataCache {
+		} else if msgIdx < s.cachedL1PriceData.startOfL1PriceDataCache {
 			log.Info("message position lower than start of l1 price data cache, ignoring")
 		} else {
 			log.Info("message position already seen in l1 price data cache, ignoring")
@@ -904,7 +904,7 @@ func (s *ExecutionEngine) cacheL1PriceDataOfMsg(seqNum arbutil.MessageIndex, rec
 			l1GasCharged:             l1GasCharged,
 			cummulativeL1GasCharged:  cummulativeL1GasCharged + l1GasCharged,
 		})
-		s.cachedL1PriceData.endOfL1PriceDataCache = seqNum
+		s.cachedL1PriceData.endOfL1PriceDataCache = msgIdx
 	}
 }
 
