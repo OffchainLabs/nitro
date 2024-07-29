@@ -21,25 +21,25 @@ func TestAuctioneer_validateBid(t *testing.T) {
 		auctionClosed bool
 	}{
 		{
-			name:        "Nil bid",
+			name:        "nil bid",
 			bid:         nil,
 			expectedErr: ErrMalformedData,
 			errMsg:      "nil bid",
 		},
 		{
-			name:        "Empty bidder address",
+			name:        "empty bidder address",
 			bid:         &Bid{},
 			expectedErr: ErrMalformedData,
 			errMsg:      "empty bidder address",
 		},
 		{
-			name:        "Empty express lane controller address",
+			name:        "empty express lane controller address",
 			bid:         &Bid{Bidder: common.Address{'a'}},
 			expectedErr: ErrMalformedData,
 			errMsg:      "empty express lane controller address",
 		},
 		{
-			name: "Incorrect chain id",
+			name: "incorrect chain id",
 			bid: &Bid{
 				Bidder:                common.Address{'a'},
 				ExpressLaneController: common.Address{'b'},
@@ -48,7 +48,7 @@ func TestAuctioneer_validateBid(t *testing.T) {
 			errMsg:      "can not auction for chain id: 0",
 		},
 		{
-			name: "Incorrect round",
+			name: "incorrect round",
 			bid: &Bid{
 				Bidder:                common.Address{'a'},
 				ExpressLaneController: common.Address{'b'},
@@ -58,7 +58,7 @@ func TestAuctioneer_validateBid(t *testing.T) {
 			errMsg:      "wanted 1, got 0",
 		},
 		{
-			name: "Auction is closed",
+			name: "auction is closed",
 			bid: &Bid{
 				Bidder:                common.Address{'a'},
 				ExpressLaneController: common.Address{'b'},
@@ -70,7 +70,7 @@ func TestAuctioneer_validateBid(t *testing.T) {
 			auctionClosed: true,
 		},
 		{
-			name: "Lower than reserved price",
+			name: "lower than reserved price",
 			bid: &Bid{
 				Bidder:                common.Address{'a'},
 				ExpressLaneController: common.Address{'b'},

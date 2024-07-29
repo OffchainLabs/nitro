@@ -17,6 +17,9 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/p2p"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
@@ -182,7 +185,28 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	auctionContractOpts := builderSeq.L1Info.GetDefaultTransactOpts("AuctionContract", ctx)
 	chainId, err := l1client.ChainID(ctx)
 	Require(t, err)
-	auctioneer, err := timeboost.NewAuctioneer(&auctionContractOpts, []uint64{chainId.Uint64()}, builderSeq.L1.Client, auctionAddr, auctionContract)
+
+	// Set up the auctioneer RPC service.
+	stackConf := node.Config{
+		DataDir:             "", // ephemeral.
+		HTTPPort:            9372,
+		HTTPModules:         []string{timeboost.AuctioneerNamespace},
+		HTTPVirtualHosts:    []string{"localhost"},
+		HTTPTimeouts:        rpc.DefaultHTTPTimeouts,
+		WSPort:              9373,
+		WSModules:           []string{timeboost.AuctioneerNamespace},
+		GraphQLVirtualHosts: []string{"localhost"},
+		P2P: p2p.Config{
+			ListenAddr:  "",
+			NoDial:      true,
+			NoDiscovery: true,
+		},
+	}
+	stack, err := node.New(&stackConf)
+	Require(t, err)
+	auctioneer, err := timeboost.NewAuctioneer(
+		&auctionContractOpts, []uint64{chainId.Uint64()}, stack, builderSeq.L1.Client, auctionContract,
+	)
 	Require(t, err)
 
 	go auctioneer.Start(ctx)
@@ -258,7 +282,7 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	waitTime = roundDuration - time.Duration(now.Second())*time.Second - time.Duration(now.Nanosecond())
 	time.Sleep(waitTime)
 
-	currRound := timeboost.currentRound(time.Unix(int64(info.OffsetTimestamp), 0), roundDuration)
+	currRound := timeboost.CurrentRound(time.Unix(int64(info.OffsetTimestamp), 0), roundDuration)
 	t.Log("curr round", currRound)
 	if currRound != winnerRound {
 		now = time.Now()
@@ -285,12 +309,23 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 
 	t.Log("Now submitting txs to sequencer")
 
+	// Prepare a client that can submit txs to the sequencer via the express lane.
+	seqDial, err := rpc.Dial("http://localhost:9567")
+	Require(t, err)
+	expressLaneClient := timeboost.NewExpressLaneClient(
+		bobPriv,
+		chainId.Uint64(),
+		time.Unix(int64(info.OffsetTimestamp), 0),
+		roundDuration,
+		auctionAddr,
+		seqDial,
+	)
+
 	// During the express lane around, Bob sends txs always 150ms later than Alice, but Alice's
 	// txs end up getting delayed by 200ms as she is not the express lane controller.
 	// In the end, Bob's txs should be ordered before Alice's during the round.
 	var wg sync.WaitGroup
 	wg.Add(2)
-	expressLaneAddr := common.HexToAddress("0x2424242424242424242424242424242424242424")
 	aliceTx := seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1e12), nil)
 	go func(w *sync.WaitGroup) {
 		defer w.Done()
@@ -299,20 +334,11 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	}(&wg)
 
 	bobBoostableTx := seqInfo.PrepareTx("Bob", "Owner", seqInfo.TransferGas, big.NewInt(1e12), nil)
-	bobBoostableTxData, err := bobBoostableTx.MarshalBinary()
-	Require(t, err)
-	t.Logf("Typed transaction inner is %#x", bobBoostableTxData)
-	txData := &types.DynamicFeeTx{
-		To:        &expressLaneAddr,
-		GasTipCap: new(big.Int).SetUint64(bobBid.Round),
-		Nonce:     0,
-		Data:      bobBoostableTxData,
-	}
-	bobTx := seqInfo.SignTxAs("Bob", txData)
 	go func(w *sync.WaitGroup) {
 		defer w.Done()
 		time.Sleep(time.Millisecond * 10)
-		err = seqClient.SendTransaction(ctx, bobTx)
+		res := expressLaneClient.SendTransaction(ctx, bobBoostableTx)
+		_, err = res.Await(ctx)
 		Require(t, err)
 	}(&wg)
 	wg.Wait()
@@ -341,7 +367,7 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 		}
 		txes := block.Transactions()
 		indexA := findTransactionIndex(txes, aliceTx.Hash())
-		indexB := findTransactionIndex(txes, bobTx.Hash())
+		indexB := findTransactionIndex(txes, bobBoostableTx.Hash())
 		if indexA == -1 || indexB == -1 {
 			t.Fatal("Did not find txs in block")
 		}

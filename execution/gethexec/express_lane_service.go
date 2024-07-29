@@ -8,7 +8,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/secp256k1"
 	"github.com/ethereum/go-ethereum/log"
@@ -173,8 +172,6 @@ func (es *expressLaneService) validateExpressLaneTx(msg *timeboost.ExpressLaneSu
 	if msg.Round != currentRound {
 		return errors.Wrapf(timeboost.ErrBadRoundNumber, "express lane tx round %d does not match current round %d", msg.Round, currentRound)
 	}
-	es.Lock()
-	defer es.Unlock()
 	// Reconstruct the message being signed over and recover the sender address.
 	signingMessage, err := msg.ToMessageBytes()
 	if err != nil {
@@ -198,19 +195,10 @@ func (es *expressLaneService) validateExpressLaneTx(msg *timeboost.ExpressLaneSu
 		return timeboost.ErrWrongSignature
 	}
 	sender := crypto.PubkeyToAddress(*pubkey)
+	es.Lock()
+	defer es.Unlock()
 	if sender != es.control.controller {
 		return timeboost.ErrNotExpressLaneController
 	}
 	return nil
-}
-
-// unwrapExpressLaneTx extracts the inner "wrapped" transaction from the data field of an express lane transaction.
-func unwrapExpressLaneTx(tx *types.Transaction) (*types.Transaction, error) {
-	encodedInnerTx := tx.Data()
-	fmt.Printf("Inner in decoding: %#x\n", encodedInnerTx)
-	innerTx := &types.Transaction{}
-	if err := innerTx.UnmarshalBinary(encodedInnerTx); err != nil {
-		return nil, fmt.Errorf("failed to decode inner transaction: %w", err)
-	}
-	return innerTx, nil
 }

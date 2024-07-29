@@ -26,8 +26,26 @@ type ExpressLaneClient struct {
 	client                *rpc.Client
 }
 
-func (elc *ExpressLaneClient) SendTransaction(transaction *types.Transaction) containers.PromiseInterface[struct{}] {
-	return stopwaiter.LaunchPromiseThread[struct{}](elc, func(ctx context.Context) (struct{}, error) {
+func NewExpressLaneClient(
+	privKey *ecdsa.PrivateKey,
+	chainId uint64,
+	initialRoundTimestamp time.Time,
+	roundDuration time.Duration,
+	auctionContractAddr common.Address,
+	client *rpc.Client,
+) *ExpressLaneClient {
+	return &ExpressLaneClient{
+		privKey:               privKey,
+		chainId:               chainId,
+		initialRoundTimestamp: initialRoundTimestamp,
+		roundDuration:         roundDuration,
+		auctionContractAddr:   auctionContractAddr,
+		client:                client,
+	}
+}
+
+func (elc *ExpressLaneClient) SendTransaction(ctx context.Context, transaction *types.Transaction) containers.PromiseInterface[struct{}] {
+	return stopwaiter.LaunchPromiseThread(elc, func(ctx context.Context) (struct{}, error) {
 		msg := &ExpressLaneSubmission{
 			ChainId:                elc.chainId,
 			Round:                  CurrentRound(elc.initialRoundTimestamp, elc.roundDuration),
@@ -43,7 +61,7 @@ func (elc *ExpressLaneClient) SendTransaction(transaction *types.Transaction) co
 			return struct{}{}, err
 		}
 		msg.Signature = signature
-		err = elc.client.CallContext(ctx, nil, "timeboost_newExpressLaneSubmission", msg)
+		err = elc.client.CallContext(ctx, nil, "timeboost_sendExpressLaneTransaction", msg)
 		return struct{}{}, err
 	})
 }
