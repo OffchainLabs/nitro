@@ -921,17 +921,17 @@ func (s *ExecutionEngine) DigestMessage(msgIdx arbutil.MessageIndex, msg *arbost
 	return s.digestMessageWithBlockMutex(msgIdx, msg, msgForPrefetch)
 }
 
-func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*execution.MessageResult, error) {
+func (s *ExecutionEngine) digestMessageWithBlockMutex(msgIdxToDigest arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*execution.MessageResult, error) {
 	currentHeader, err := s.getCurrentHeader()
 	if err != nil {
 		return nil, err
 	}
-	curMsg, err := s.BlockNumberToMessageIndex(currentHeader.Number.Uint64())
+	curMsgIdx, err := s.BlockNumberToMessageIndex(currentHeader.Number.Uint64())
 	if err != nil {
 		return nil, err
 	}
-	if curMsg+1 != num {
-		return nil, fmt.Errorf("wrong message number in digest got %d expected %d", num, curMsg+1)
+	if curMsgIdx+1 != msgIdxToDigest {
+		return nil, fmt.Errorf("wrong message number in digest got %d expected %d", msgIdxToDigest, curMsgIdx+1)
 	}
 
 	startTime := time.Now()
@@ -955,7 +955,7 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 	if err != nil {
 		return nil, err
 	}
-	s.cacheL1PriceDataOfMsg(num, receipts, block, false)
+	s.cacheL1PriceDataOfMsg(msgIdxToDigest, receipts, block, false)
 
 	if time.Now().After(s.nextScheduledVersionCheck) {
 		s.nextScheduledVersionCheck = time.Now().Add(time.Minute)
@@ -993,7 +993,7 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 		}
 	}
 
-	sharedmetrics.UpdateSequenceNumberInBlockGauge(num)
+	sharedmetrics.UpdateSequenceNumberInBlockGauge(msgIdxToDigest)
 	s.latestBlockMutex.Lock()
 	s.latestBlock = block
 	s.latestBlockMutex.Unlock()
