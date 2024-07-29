@@ -155,19 +155,18 @@ func compareAllMsgResultsFromConsensusAndExecution(
 ) *execution.MessageResult {
 	execHeadMsgIdx, err := testClient.ExecNode.HeadMessageIndex().Await(context.Background())
 	Require(t, err)
-	consensusMsgCount, err := testClient.ConsensusNode.TxStreamer.GetMessageCount()
+	consensusHeadMsgIdx, err := testClient.ConsensusNode.TxStreamer.GetHeadMessageIndex()
 	Require(t, err)
-	if consensusMsgCount != execHeadMsgIdx+1 {
+	if consensusHeadMsgIdx != execHeadMsgIdx {
 		t.Fatal(
-			"consensusMsgCount", consensusMsgCount, "is different than (execHeadMsgIdx + 1)", execHeadMsgIdx,
+			"consensusHeadMsgIdx", consensusHeadMsgIdx, "is different than execHeadMsgIdx", execHeadMsgIdx,
 			"testScenario:", testScenario,
 		)
 	}
 
 	var lastResult *execution.MessageResult
-	for msgCount := arbutil.MessageIndex(1); msgCount <= consensusMsgCount; msgCount++ {
-		msgIdx := msgCount - 1
-		resultExec, err := testClient.ExecNode.ResultAtMessageIndex(msgIdx).Await(ctx)
+	for msgIdx := 0; arbutil.MessageIndex(msgIdx) <= consensusHeadMsgIdx; msgIdx++ {
+		resultExec, err := testClient.ExecNode.ResultAtMessageIndex(arbutil.MessageIndex(msgIdx)).Await(ctx)
 		Require(t, err)
 
 		resultConsensus, err := testClient.ConsensusNode.TxStreamer.ResultAtMessageIndex(arbutil.MessageIndex(msgIdx))
@@ -308,10 +307,10 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	// first call to Consensus.ResultAtMessageIndex with msgIdx equals to 0 will fall back to Execution.
 	// Not necessarily the first call to Consensus.ResultAtMessageIndex with msgIdx equals to 0 will happen through compareMsgResultFromConsensusAndExecution,
 	// so we don't test this here.
-	consensusMsgCount, err := testClientB.ConsensusNode.TxStreamer.GetMessageCount()
+	consensusHeadMsgIdx, err := testClientB.ConsensusNode.TxStreamer.GetHeadMessageIndex()
 	Require(t, err)
-	if consensusMsgCount != 2 {
-		t.Fatal("consensusMsgCount is different than 2")
+	if consensusHeadMsgIdx != 1 {
+		t.Fatal("consensusHeadMsgIdx is different than 1")
 	}
 	logHandler := testhelpers.InitTestLog(t, log.LvlTrace)
 	_, err = testClientB.ConsensusNode.TxStreamer.ResultAtMessageIndex(arbutil.MessageIndex(1))
