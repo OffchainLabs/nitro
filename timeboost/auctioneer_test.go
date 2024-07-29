@@ -3,6 +3,7 @@ package timeboost
 import (
 	"context"
 	"crypto/ecdsa"
+	"fmt"
 	"math/big"
 	"testing"
 	"time"
@@ -124,7 +125,7 @@ func TestAuctioneer_validateBid(t *testing.T) {
 }
 
 func buildSignature(privateKey *ecdsa.PrivateKey, data []byte) ([]byte, error) {
-	prefixedData := crypto.Keccak256(append([]byte("\x19Ethereum Signed Message:\n112"), data...))
+	prefixedData := crypto.Keccak256(append([]byte(fmt.Sprintf("\x19Ethereum Signed Message:\n%d", len(data))), data...))
 	signature, err := crypto.Sign(prefixedData, privateKey)
 	if err != nil {
 		return nil, err
