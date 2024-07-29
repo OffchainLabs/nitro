@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/sha3"
@@ -20,6 +21,8 @@ import (
 // domainValue holds the Keccak256 hash of the string "TIMEBOOST_BID".
 // It is intended to be immutable after initialization.
 var domainValue []byte
+
+const AuctioneerNamespace = "auctioneer"
 
 func init() {
 	hash := sha3.NewLegacyKeccak256()
@@ -49,22 +52,23 @@ type Auctioneer struct {
 }
 
 func EnsureValidationExposedViaAuthRPC(stackConf *node.Config) {
-	// found := false
-	// for _, module := range stackConf.AuthModules {
-	// 	if module == server_api.Namespace {
-	// 		found = true
-	// 		break
-	// 	}
-	// }
-	// if !found {
-	// 	stackConf.AuthModules = append(stackConf.AuthModules, server_api.Namespace)
-	// }
+	found := false
+	for _, module := range stackConf.AuthModules {
+		if module == AuctioneerNamespace {
+			found = true
+			break
+		}
+	}
+	if !found {
+		stackConf.AuthModules = append(stackConf.AuthModules, AuctioneerNamespace)
+	}
 }
 
 // NewAuctioneer creates a new autonomous auctioneer struct.
 func NewAuctioneer(
 	txOpts *bind.TransactOpts,
 	chainId []uint64,
+	stack *node.Node,
 	client Client,
 	auctionContract *express_lane_auctiongen.ExpressLaneAuction,
 	opts ...AuctioneerOpt,
@@ -82,18 +86,6 @@ func NewAuctioneer(
 	if err != nil {
 		return nil, err
 	}
-
-	node := &node.Node{}
-	_ = node
-	// valAPIs := []rpc.API{{
-	// 	Namespace:     server_api.Namespace,
-	// 	Version:       "1.0",
-	// 	Service:       serverAPI,
-	// 	Public:        config.ApiPublic,
-	// 	Authenticated: config.ApiAuth,
-	// }}
-	// stack.RegisterAPIs(valAPIs)
-
 	am := &Auctioneer{
 		txOpts:                    txOpts,
 		chainId:                   chainId,
@@ -111,6 +103,14 @@ func NewAuctioneer(
 	for _, o := range opts {
 		o(am)
 	}
+	auctioneerApi := &AuctioneerAPI{am}
+	valAPIs := []rpc.API{{
+		Namespace: AuctioneerNamespace,
+		Version:   "1.0",
+		Service:   auctioneerApi,
+		Public:    true,
+	}}
+	stack.RegisterAPIs(valAPIs)
 	return am, nil
 }
 
@@ -221,7 +221,6 @@ func (a *Auctioneer) checkSequencerHealth(ctx context.Context) {
 }
 
 // TODO(Terence): Set reserve price from the contract.
-
 func (a *Auctioneer) fetchReservePrice() *big.Int {
 	a.reservePriceLock.RLock()
 	defer a.reservePriceLock.RUnlock()
