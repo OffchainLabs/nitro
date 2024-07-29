@@ -591,7 +591,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		return nil, err
 	}
 
-	pos, err := s.BlockNumberToMessageIndex(lastBlockHeader.Number.Uint64() + 1)
+	msgIdx, err := s.BlockNumberToMessageIndex(lastBlockHeader.Number.Uint64() + 1)
 	if err != nil {
 		return nil, err
 	}
@@ -606,7 +606,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	}
 
 	blockMetadata := s.blockMetadataFromBlock(block, timeboostedTxs)
-	err = s.consensus.WriteMessageFromSequencer(pos, msgWithMeta, *msgResult, blockMetadata)
+	err = s.consensus.WriteMessageFromSequencer(msgIdx, msgWithMeta, *msgResult, blockMetadata)
 	if err != nil {
 		return nil, err
 	}
@@ -617,7 +617,7 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 	if err != nil {
 		return nil, err
 	}
-	s.cacheL1PriceDataOfMsg(pos, receipts, block, false)
+	s.cacheL1PriceDataOfMsg(msgIdx, receipts, block, false)
 
 	return block, nil
 }
@@ -655,7 +655,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 
 	expectedDelayed := currentHeader.Nonce.Uint64()
 
-	pos, err := s.BlockNumberToMessageIndex(currentHeader.Number.Uint64() + 1)
+	msgIdx, err := s.BlockNumberToMessageIndex(currentHeader.Number.Uint64() + 1)
 	if err != nil {
 		return nil, err
 	}
@@ -682,7 +682,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 		return nil, err
 	}
 
-	err = s.consensus.WriteMessageFromSequencer(pos, messageWithMeta, *msgResult, s.blockMetadataFromBlock(block, nil))
+	err = s.consensus.WriteMessageFromSequencer(msgIdx, messageWithMeta, *msgResult, s.blockMetadataFromBlock(block, nil))
 	if err != nil {
 		return nil, err
 	}
@@ -691,9 +691,9 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 	if err != nil {
 		return nil, err
 	}
-	s.cacheL1PriceDataOfMsg(pos, receipts, block, true)
+	s.cacheL1PriceDataOfMsg(msgIdx, receipts, block, true)
 
-	log.Info("ExecutionEngine: Added DelayedMessages", "pos", pos, "delayed", delayedSeqNum, "block-header", block.Header())
+	log.Info("ExecutionEngine: Added DelayedMessages", "msgIdx", msgIdx, "delayed", delayedSeqNum, "block-header", block.Header())
 
 	return block, nil
 }
