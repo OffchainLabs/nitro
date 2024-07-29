@@ -57,8 +57,13 @@ func BuildBlock(
 	batchFetcher := func(uint64) ([]byte, error) {
 		return seqBatch, nil
 	}
+	err = l1Message.FillInBatchGasCost(batchFetcher)
+	if err != nil {
+		return nil, err
+	}
+
 	block, _, err := arbos.ProduceBlock(
-		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher, false,
+		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, false,
 	)
 	return block, err
 }
