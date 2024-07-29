@@ -131,7 +131,7 @@ func hashBid(bid *validatedBid) string {
 }
 
 func verifySignature(pubkey *ecdsa.PublicKey, message []byte, sig []byte) bool {
-	prefixed := crypto.Keccak256(append([]byte("\x19Ethereum Signed Message:\n112"), message...))
+	prefixed := crypto.Keccak256(append([]byte(fmt.Sprintf("\x19Ethereum Signed Message:\n%d", len(message))), message...))
 
 	return secp256k1.VerifySignature(crypto.FromECDSAPub(pubkey), prefixed, sig[:len(sig)-1])
 }
@@ -149,11 +149,11 @@ func encodeBidValues(domainValue []byte, chainId uint64, auctionContractAddress 
 
 	// Encode uint256 values - each occupies 32 bytes
 	buf.Write(domainValue)
-	roundBuf := make([]byte, 8)
-	binary.BigEndian.PutUint64(roundBuf, chainId)
-	buf.Write(roundBuf)
+	chainIdBuf := make([]byte, 8)
+	binary.BigEndian.PutUint64(chainIdBuf, chainId)
+	buf.Write(chainIdBuf)
 	buf.Write(auctionContractAddress[:])
-	roundBuf = make([]byte, 8)
+	roundBuf := make([]byte, 8)
 	binary.BigEndian.PutUint64(roundBuf, round)
 	buf.Write(roundBuf)
 	buf.Write(padBigInt(amount))
