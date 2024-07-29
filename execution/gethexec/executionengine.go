@@ -915,12 +915,12 @@ func (s *ExecutionEngine) cacheL1PriceDataOfMsg(seqNum arbutil.MessageIndex, rec
 // in parallel, creates a block by executing msgForPrefetch (msg+1) against the latest state
 // but does not store the block.
 // This helps in filling the cache, so that the next block creation is faster.
-func (s *ExecutionEngine) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*execution.MessageResult, error) {
+func (s *ExecutionEngine) DigestMessage(msgIdx arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*execution.MessageResult, error) {
 	if !s.createBlocksMutex.TryLock() {
 		return nil, errors.New("createBlock mutex held")
 	}
 	defer s.createBlocksMutex.Unlock()
-	return s.digestMessageWithBlockMutex(num, msg, msgForPrefetch)
+	return s.digestMessageWithBlockMutex(msgIdx, msg, msgForPrefetch)
 }
 
 func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, msg *arbostypes.MessageWithMetadata, msgForPrefetch *arbostypes.MessageWithMetadata) (*execution.MessageResult, error) {
