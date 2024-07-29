@@ -1,5 +1,18 @@
 package timeboost
 
+import (
+	"context"
+	"fmt"
+	"math/big"
+	"testing"
+
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/p2p"
+	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/stretchr/testify/require"
+)
+
 // import (
 // 	"context"
 // 	"math/big"
@@ -69,30 +82,54 @@ package timeboost
 // 	require.True(t, aliceWon)
 // }
 
-// func TestReceiveBid_OK(t *testing.T) {
-// 	ctx, cancel := context.WithCancel(context.Background())
-// 	defer cancel()
+func TestReceiveBid_OK(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-// 	testSetup := setupAuctionTest(t, ctx)
+	testSetup := setupAuctionTest(t, ctx)
 
-// 	// Set up a new auction master instance that can validate bids.
-// 	am, err := NewAuctioneer(
-// 		testSetup.accounts[1].txOpts, []uint64{testSetup.chainId.Uint64()}, testSetup.backend.Client(), testSetup.expressLaneAuction,
-// 	)
-// 	require.NoError(t, err)
+	// Set up a new auction master instance that can validate bids.
+	// Set up the auctioneer RPC service.
+	stackConf := node.Config{
+		DataDir:             "", // ephemeral.
+		HTTPPort:            9372,
+		HTTPModules:         []string{AuctioneerNamespace},
+		HTTPVirtualHosts:    []string{"localhost"},
+		HTTPTimeouts:        rpc.DefaultHTTPTimeouts,
+		WSPort:              9373,
+		WSModules:           []string{AuctioneerNamespace},
+		GraphQLVirtualHosts: []string{"localhost"},
+		P2P: p2p.Config{
+			ListenAddr:  "",
+			NoDial:      true,
+			NoDiscovery: true,
+		},
+	}
+	stack, err := node.New(&stackConf)
+	require.NoError(t, err)
+	am, err := NewAuctioneer(
+		testSetup.accounts[1].txOpts, []uint64{testSetup.chainId.Uint64()}, stack, testSetup.backend.Client(), testSetup.expressLaneAuction,
+	)
+	require.NoError(t, err)
 
-// 	// Make a deposit as a bidder into the contract.
-// 	bc := setupBidderClient(t, ctx, "alice", testSetup.accounts[0], testSetup, am)
-// 	require.NoError(t, bc.Deposit(ctx, big.NewInt(5)))
+	// Make a deposit as a bidder into the contract.
+	bc := setupBidderClient(t, ctx, "alice", testSetup.accounts[0], testSetup, am)
+	require.NoError(t, bc.Deposit(ctx, big.NewInt(5)))
 
-// 	// Form a new bid with an amount.
-// 	newBid, err := bc.Bid(ctx, big.NewInt(5), testSetup.accounts[0].txOpts.From)
-// 	require.NoError(t, err)
+	// Form a new bid with an amount.
+	newBid, err := bc.Bid(ctx, big.NewInt(5), testSetup.accounts[0].txOpts.From)
+	require.NoError(t, err)
 
-// 	// Check the bid passes validation.
-// 	_, err = am.validateBid(newBid)
-// 	require.NoError(t, err)
-// }
+	rawBytes, err := testSetup.expressLaneAuction.GetBidBytes(&bind.CallOpts{}, newBid.Round, newBid.Amount, newBid.ExpressLaneController)
+	require.NoError(t, err)
+	fmt.Println("Onchain bytes")
+	fmt.Printf("%#x\n", rawBytes)
+
+	// Check the bid passes validation.
+	_, err = am.validateBid(newBid)
+	require.NoError(t, err)
+	t.Fatal(1)
+}
 
 // func TestTopTwoBids(t *testing.T) {
 // 	tests := []struct {
