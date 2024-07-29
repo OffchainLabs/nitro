@@ -78,7 +78,7 @@ func TestAuctioneer_validateBid(t *testing.T) {
 				Round:                 1,
 				Amount:                big.NewInt(1),
 			},
-			expectedErr: ErrInsufficientBid,
+			expectedErr: ErrReservePriceNotMet,
 			errMsg:      "reserve price 2, bid 1",
 		},
 		{

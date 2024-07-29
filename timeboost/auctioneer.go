@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/node"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/pkg/errors"
 	"golang.org/x/crypto/sha3"
@@ -47,6 +48,19 @@ type Auctioneer struct {
 	reservePrice              *big.Int
 }
 
+func EnsureValidationExposedViaAuthRPC(stackConf *node.Config) {
+	// found := false
+	// for _, module := range stackConf.AuthModules {
+	// 	if module == server_api.Namespace {
+	// 		found = true
+	// 		break
+	// 	}
+	// }
+	// if !found {
+	// 	stackConf.AuthModules = append(stackConf.AuthModules, server_api.Namespace)
+	// }
+}
+
 // NewAuctioneer creates a new autonomous auctioneer struct.
 func NewAuctioneer(
 	txOpts *bind.TransactOpts,
@@ -68,6 +82,17 @@ func NewAuctioneer(
 	if err != nil {
 		return nil, err
 	}
+
+	node := &node.Node{}
+	_ = node
+	// valAPIs := []rpc.API{{
+	// 	Namespace:     server_api.Namespace,
+	// 	Version:       "1.0",
+	// 	Service:       serverAPI,
+	// 	Public:        config.ApiPublic,
+	// 	Authenticated: config.ApiAuth,
+	// }}
+	// stack.RegisterAPIs(valAPIs)
 
 	am := &Auctioneer{
 		txOpts:                    txOpts,
@@ -93,7 +118,7 @@ func NewAuctioneer(
 func (a *Auctioneer) receiveBid(ctx context.Context, b *Bid) error {
 	vb, err := a.validateBid(b)
 	if err != nil {
-		return errors.Wrap(err, "could not validate bid")
+		return err
 	}
 	a.bidCache.add(vb)
 	return nil
@@ -241,7 +266,7 @@ func (a *Auctioneer) validateBid(bid *Bid) (*validatedBid, error) {
 	// Check bid is higher than reserve price.
 	reservePrice := a.fetchReservePrice()
 	if bid.Amount.Cmp(reservePrice) == -1 {
-		return nil, errors.Wrapf(ErrInsufficientBid, "reserve price %s, bid %s", reservePrice.String(), bid.Amount.String())
+		return nil, errors.Wrapf(ErrReservePriceNotMet, "reserve price %s, bid %s", reservePrice.String(), bid.Amount.String())
 	}
 
 	// Validate the signature.

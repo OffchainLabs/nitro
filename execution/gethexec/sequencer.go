@@ -18,6 +18,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -471,7 +472,7 @@ func WithExpressLane() TimeboostOpt {
 }
 
 func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
-	return s.publishTransactionImpl(parentCtx, tx, options, true)
+	return s.publishTransactionImpl(parentCtx, tx, options, true /* delay tx if express lane is active */)
 }
 
 func (s *Sequencer) publishTransactionImpl(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, delay bool) error {
@@ -564,11 +565,11 @@ func (s *Sequencer) publishTransactionImpl(parentCtx context.Context, tx *types.
 	}
 }
 
-func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *arbitrum_types.ExpressLaneSubmission) error {
+func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *timeboost.ExpressLaneSubmission) error {
 	if err := s.expressLaneService.validateExpressLaneTx(msg); err != nil {
 		return err
 	}
-	return s.publishTransactionImpl(ctx, msg.Transaction, nil, false)
+	return s.publishTransactionImpl(ctx, msg.Transaction, nil, false /* no delay, as this is an express lane tx */)
 }
 
 func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, sender common.Address, l1Info *arbos.L1Info) error {

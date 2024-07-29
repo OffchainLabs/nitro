@@ -16,13 +16,16 @@ import (
 )
 
 var (
-	ErrMalformedData       = errors.New("malformed bid data")
-	ErrNotDepositor        = errors.New("not a depositor")
-	ErrWrongChainId        = errors.New("wrong chain id")
-	ErrWrongSignature      = errors.New("wrong signature")
-	ErrBadRoundNumber      = errors.New("bad round number")
-	ErrInsufficientBalance = errors.New("insufficient balance")
-	ErrInsufficientBid     = errors.New("insufficient bid")
+	ErrMalformedData            = errors.New("MALFORMED_DATA")
+	ErrNotDepositor             = errors.New("NOT_DEPOSITOR")
+	ErrWrongChainId             = errors.New("WRONG_CHAIN_ID")
+	ErrWrongSignature           = errors.New("WRONG_SIGNATURE")
+	ErrBadRoundNumber           = errors.New("BAD_ROUND_NUMBER")
+	ErrInsufficientBalance      = errors.New("INSUFFICIENT_BALANCE")
+	ErrReservePriceNotMet       = errors.New("RESERVE_PRICE_NOT_MET")
+	ErrNoOnchainController      = errors.New("NO_ONCHAIN_CONTROLLER")
+	ErrWrongAuctionContract     = errors.New("WRONG_AUCTION_CONTRACT")
+	ErrNotExpressLaneController = errors.New("NOT_EXPRESS_LANE_CONTROLLER")
 )
 
 type Bid struct {
@@ -45,7 +48,6 @@ type validatedBid struct {
 	round                  uint64
 	bidder                 common.Address
 }
-
 type bidCache struct {
 	sync.RWMutex
 	bidsByExpressLaneControllerAddr map[common.Address]*validatedBid

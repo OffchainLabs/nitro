@@ -9,10 +9,11 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/offchainlabs/nitro/timeboost"
 )
 
 type TransactionPublisher interface {
-	PublishExpressLaneTransaction(ctx context.Context, msg *arbitrum_types.ExpressLaneSubmission) error
+	PublishExpressLaneTransaction(ctx context.Context, msg *timeboost.ExpressLaneSubmission) error
 	PublishTransaction(ctx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error
 	CheckHealth(ctx context.Context) error
 	Initialize(context.Context) error
@@ -42,8 +43,8 @@ func (a *ArbInterface) PublishTransaction(ctx context.Context, tx *types.Transac
 	return a.txPublisher.PublishTransaction(ctx, tx, options)
 }
 
-func (a *ArbInterface) PublishExpressLaneTransaction(ctx context.Context, msg *arbitrum_types.ExpressLaneSubmission) error {
-	return a.txPublisher.PublishExpressLaneTransaction(ctx, msg)
+func (a *ArbInterface) PublishExpressLaneTransaction(ctx context.Context, msg *timeboost.JsonExpressLaneSubmission) error {
+	return a.txPublisher.PublishExpressLaneTransaction(ctx, timeboost.JsonSubmissionToGo(msg))
 }
 
 // might be used before Initialize

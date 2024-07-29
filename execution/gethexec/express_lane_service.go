@@ -7,15 +7,17 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/crypto/secp256k1"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+	"github.com/pkg/errors"
 )
 
 type expressLaneControl struct {
@@ -27,13 +29,13 @@ type expressLaneControl struct {
 type expressLaneService struct {
 	stopwaiter.StopWaiter
 	sync.RWMutex
-	client           arbutil.L1Interface
-	control          expressLaneControl
-	expressLaneAddr  common.Address
-	auctionContract  *express_lane_auctiongen.ExpressLaneAuction
-	initialTimestamp time.Time
-	roundDuration    time.Duration
-	chainConfig      *params.ChainConfig
+	client              arbutil.L1Interface
+	control             expressLaneControl
+	auctionContractAddr common.Address
+	auctionContract     *express_lane_auctiongen.ExpressLaneAuction
+	initialTimestamp    time.Time
+	roundDuration       time.Duration
+	chainConfig         *params.ChainConfig
 }
 
 func newExpressLaneService(
@@ -60,8 +62,8 @@ func newExpressLaneService(
 			controller: common.Address{},
 			round:      0,
 		},
-		expressLaneAddr: common.HexToAddress("0x2424242424242424242424242424242424242424"),
-		roundDuration:   roundDuration,
+		auctionContractAddr: auctionContractAddr,
+		roundDuration:       roundDuration,
 	}, nil
 }
 
@@ -153,27 +155,52 @@ func (es *expressLaneService) currentRoundHasController() bool {
 	return es.control.controller != (common.Address{})
 }
 
-// An express lane transaction is valid if it satisfies the following conditions:
-// 1. The tx round expressed under `maxPriorityFeePerGas` equals the current round number.
-// 2. The tx sequence expressed under `nonce` equals the current round sequence.
-// 3. The tx sender equals the current round’s priority controller address.
-func (es *expressLaneService) validateExpressLaneTx(msg *arbitrum_types.ExpressLaneSubmission) error {
-	es.Lock()
-	defer es.Unlock()
-
+func (es *expressLaneService) validateExpressLaneTx(msg *timeboost.ExpressLaneSubmission) error {
+	if msg.Transaction == nil || msg.Signature == nil {
+		return timeboost.ErrMalformedData
+	}
+	if msg.AuctionContractAddress != es.auctionContractAddr {
+		return timeboost.ErrWrongAuctionContract
+	}
+	if !es.currentRoundHasController() {
+		return timeboost.ErrNoOnchainController
+	}
+	// TODO: Careful with chain id not being uint64.
+	if msg.ChainId != es.chainConfig.ChainID.Uint64() {
+		return errors.Wrapf(timeboost.ErrWrongChainId, "express lane tx chain ID %d does not match current chain ID %d", msg.ChainId, es.chainConfig.ChainID.Uint64())
+	}
 	currentRound := timeboost.CurrentRound(es.initialTimestamp, es.roundDuration)
 	if msg.Round != currentRound {
-		return fmt.Errorf("express lane tx round %d does not match current round %d", msg.Round, currentRound)
+		return errors.Wrapf(timeboost.ErrBadRoundNumber, "express lane tx round %d does not match current round %d", msg.Round, currentRound)
 	}
-	// TODO: recover the sender from the signature and message bytes that are being signed over.
-	// signer := types.LatestSigner(es.chainConfig)
-	// sender, err := types.Sender(signer, tx)
-	// if err != nil {
-	// 	return err
-	// }
-	// if sender != es.control.controller {
-	// 	return fmt.Errorf("express lane tx sender %s does not match current round controller %s", sender, es.control.controller)
-	// }
+	es.Lock()
+	defer es.Unlock()
+	// Reconstruct the message being signed over and recover the sender address.
+	signingMessage, err := msg.ToMessageBytes()
+	if err != nil {
+		return timeboost.ErrMalformedData
+	}
+	if len(msg.Signature) != 65 {
+		return errors.Wrap(timeboost.ErrMalformedData, "signature length is not 65")
+	}
+	// Recover the public key.
+	prefixed := crypto.Keccak256(append([]byte(fmt.Sprintf("\x19Ethereum Signed Message:\n%d", len(signingMessage))), signingMessage...))
+	sigItem := make([]byte, len(msg.Signature))
+	copy(sigItem, msg.Signature)
+	if sigItem[len(sigItem)-1] >= 27 {
+		sigItem[len(sigItem)-1] -= 27
+	}
+	pubkey, err := crypto.SigToPub(prefixed, sigItem)
+	if err != nil {
+		return timeboost.ErrMalformedData
+	}
+	if !secp256k1.VerifySignature(crypto.FromECDSAPub(pubkey), prefixed, sigItem[:len(sigItem)-1]) {
+		return timeboost.ErrWrongSignature
+	}
+	sender := crypto.PubkeyToAddress(*pubkey)
+	if sender != es.control.controller {
+		return timeboost.ErrNotExpressLaneController
+	}
 	return nil
 }
 

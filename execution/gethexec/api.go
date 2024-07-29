@@ -14,13 +14,13 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
-	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/retryables"
+	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -44,9 +44,8 @@ func NewArbTimeboostAPI(publisher TransactionPublisher) *ArbTimeboostAPI {
 	return &ArbTimeboostAPI{publisher}
 }
 
-func (a *ArbTimeboostAPI) SendExpressLaneTransaction(ctx context.Context, msg *arbitrum_types.ExpressLaneSubmission) error {
-	fmt.Println("hit the endpoint")
-	return a.txPublisher.PublishExpressLaneTransaction(ctx, msg)
+func (a *ArbTimeboostAPI) SendExpressLaneTransaction(ctx context.Context, msg *timeboost.JsonExpressLaneSubmission) error {
+	return a.txPublisher.PublishExpressLaneTransaction(ctx, timeboost.JsonSubmissionToGo(msg))
 }
 
 type ArbDebugAPI struct {

@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	flag "github.com/spf13/pflag"
@@ -222,6 +223,6 @@ func (c *TxPreChecker) PublishTransaction(ctx context.Context, tx *types.Transac
 	return c.TransactionPublisher.PublishTransaction(ctx, tx, options)
 }
 
-func (c *TxPreChecker) PublishExpressLaneTransaction(ctx context.Context, msg *arbitrum_types.ExpressLaneSubmission) error {
+func (c *TxPreChecker) PublishExpressLaneTransaction(ctx context.Context, msg *timeboost.ExpressLaneSubmission) error {
 	return nil
 }

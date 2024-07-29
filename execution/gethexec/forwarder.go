@@ -14,6 +14,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	flag "github.com/spf13/pflag"
@@ -156,7 +157,7 @@ func (f *TxForwarder) PublishTransaction(inctx context.Context, tx *types.Transa
 	return errors.New("failed to publish transaction to any of the forwarding targets")
 }
 
-func (f *TxForwarder) PublishExpressLaneTransaction(ctx context.Context, msg *arbitrum_types.ExpressLaneSubmission) error {
+func (f *TxForwarder) PublishExpressLaneTransaction(ctx context.Context, msg *timeboost.ExpressLaneSubmission) error {
 	return nil
 }
 
@@ -256,7 +257,7 @@ func (f *TxDropper) PublishTransaction(ctx context.Context, tx *types.Transactio
 	return txDropperErr
 }
 
-func (f *TxDropper) PublishExpressLaneTransaction(ctx context.Context, msg *arbitrum_types.ExpressLaneSubmission) error {
+func (f *TxDropper) PublishExpressLaneTransaction(ctx context.Context, msg *timeboost.JsonExpressLaneSubmission) error {
 	return txDropperErr
 }
 
@@ -303,7 +304,7 @@ func (f *RedisTxForwarder) PublishTransaction(ctx context.Context, tx *types.Tra
 	return forwarder.PublishTransaction(ctx, tx, options)
 }
 
-func (f *RedisTxForwarder) PublishExpressLaneTransaction(ctx context.Context, msg *arbitrum_types.ExpressLaneSubmission) error {
+func (f *RedisTxForwarder) PublishExpressLaneTransaction(ctx context.Context, msg *timeboost.ExpressLaneSubmission) error {
 	forwarder := f.getForwarder()
 	if forwarder == nil {
 		return ErrNoSequencer
