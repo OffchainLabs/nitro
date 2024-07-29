@@ -458,7 +458,23 @@ func ctxWithTimeout(ctx context.Context, timeout time.Duration) (context.Context
 	return context.WithTimeout(ctx, timeout)
 }
 
+type PublishTxConfig struct {
+	delayTransaction bool
+}
+
+type TimeboostOpt func(p *PublishTxConfig)
+
+func WithExpressLane() TimeboostOpt {
+	return func(p *PublishTxConfig) {
+		p.delayTransaction = false
+	}
+}
+
 func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
+	return s.publishTransactionImpl(parentCtx, tx, options, true)
+}
+
+func (s *Sequencer) publishTransactionImpl(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, delay bool) error {
 	config := s.config()
 	// Only try to acquire Rlock and check for hard threshold if l1reader is not nil
 	// And hard threshold was enabled, this prevents spamming of read locks when not needed
@@ -498,33 +514,15 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 		return types.ErrTxTypeNotSupported
 	}
 
-	if s.config().Timeboost.Enable {
-		// Express lane transaction sequence is defined by the following spec:
-		// https://github.com/OffchainLabs/timeboost-design-docs/blob/main/research_spec.md
-		// The express lane transaction is defined by a transaction's `to` address matching a predefined chain's reserved address.
-		// The express lane transaction will follow verifications for round number, nonce, and sender's address.
-		// If all pass, the transaction will be sequenced right away.
-		// Non-express lane transactions will be delayed by ExpressLaneAdvantage.
-
-		if !s.expressLaneService.isExpressLaneTx(*tx.To()) {
-			log.Info("Delaying non-express lane tx", "hash", tx.Hash())
-			time.Sleep(s.config().Timeboost.ExpressLaneAdvantage)
-		} else {
-			if err := s.expressLaneService.validateExpressLaneTx(tx); err != nil {
-				return fmt.Errorf("express lane validation failed: %w", err)
-			}
-			unwrappedTx, err := unwrapExpressLaneTx(tx)
-			if err != nil {
-				return fmt.Errorf("failed to unwrap express lane tx: %w", err)
-			}
-			tx = unwrappedTx
-			log.Info("Processing express lane tx", "hash", tx.Hash())
-		}
-	}
-
 	txBytes, err := tx.MarshalBinary()
 	if err != nil {
 		return err
+	}
+
+	if s.config().Timeboost.Enable {
+		if delay && s.expressLaneService.currentRoundHasController() {
+			time.Sleep(s.config().Timeboost.ExpressLaneAdvantage)
+		}
 	}
 
 	queueTimeout := config.QueueTimeout
@@ -567,7 +565,10 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 }
 
 func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *arbitrum_types.ExpressLaneSubmission) error {
-	return nil
+	if err := s.expressLaneService.validateExpressLaneTx(msg); err != nil {
+		return err
+	}
+	return s.publishTransactionImpl(ctx, msg.Transaction, nil, false)
 }
 
 func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, sender common.Address, l1Info *arbos.L1Info) error {

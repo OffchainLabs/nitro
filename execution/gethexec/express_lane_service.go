@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
@@ -16,12 +17,6 @@ import (
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
-
-var _ expressLaneChecker = &expressLaneService{}
-
-type expressLaneChecker interface {
-	isExpressLaneTx(sender common.Address) bool
-}
 
 type expressLaneControl struct {
 	round      uint64
@@ -152,43 +147,33 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 	})
 }
 
-// A transaction is an express lane transaction if it is sent to a chain's predefined reserved address.
-func (es *expressLaneService) isExpressLaneTx(to common.Address) bool {
-	es.RLock()
-	defer es.RUnlock()
-
-	return to == es.expressLaneAddr
+func (es *expressLaneService) currentRoundHasController() bool {
+	es.Lock()
+	defer es.Unlock()
+	return es.control.controller != (common.Address{})
 }
 
 // An express lane transaction is valid if it satisfies the following conditions:
 // 1. The tx round expressed under `maxPriorityFeePerGas` equals the current round number.
 // 2. The tx sequence expressed under `nonce` equals the current round sequence.
 // 3. The tx sender equals the current round’s priority controller address.
-func (es *expressLaneService) validateExpressLaneTx(tx *types.Transaction) error {
+func (es *expressLaneService) validateExpressLaneTx(msg *arbitrum_types.ExpressLaneSubmission) error {
 	es.Lock()
 	defer es.Unlock()
 
 	currentRound := timeboost.CurrentRound(es.initialTimestamp, es.roundDuration)
-	round := tx.GasTipCap().Uint64()
-	if round != currentRound {
-		return fmt.Errorf("express lane tx round %d does not match current round %d", round, currentRound)
+	if msg.Round != currentRound {
+		return fmt.Errorf("express lane tx round %d does not match current round %d", msg.Round, currentRound)
 	}
-
-	sequence := tx.Nonce()
-	if sequence != es.control.sequence {
-		// TODO: Cache out-of-order sequenced express lane transactions and replay them once the gap is filled.
-		return fmt.Errorf("express lane tx sequence %d does not match current round sequence %d", sequence, es.control.sequence)
-	}
-	es.control.sequence++
-
-	signer := types.LatestSigner(es.chainConfig)
-	sender, err := types.Sender(signer, tx)
-	if err != nil {
-		return err
-	}
-	if sender != es.control.controller {
-		return fmt.Errorf("express lane tx sender %s does not match current round controller %s", sender, es.control.controller)
-	}
+	// TODO: recover the sender from the signature and message bytes that are being signed over.
+	// signer := types.LatestSigner(es.chainConfig)
+	// sender, err := types.Sender(signer, tx)
+	// if err != nil {
+	// 	return err
+	// }
+	// if sender != es.control.controller {
+	// 	return fmt.Errorf("express lane tx sender %s does not match current round controller %s", sender, es.control.controller)
+	// }
 	return nil
 }
 

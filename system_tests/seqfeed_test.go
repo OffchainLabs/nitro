@@ -102,6 +102,9 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 
 	builderSeq := NewNodeBuilder(ctx).DefaultConfig(t, true)
 
+	builderSeq.l2StackConfig.HTTPHost = "localhost"
+	builderSeq.l2StackConfig.HTTPPort = 9567
+	builderSeq.l2StackConfig.HTTPModules = []string{"eth", "arb", "debug", "timeboost"}
 	builderSeq.nodeConfig.Feed.Output = *newBroadcasterConfigTest()
 	builderSeq.execConfig.Sequencer.Enable = true
 	builderSeq.execConfig.Sequencer.Timeboost = gethexec.TimeboostConfig{

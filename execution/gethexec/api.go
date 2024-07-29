@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/arbitrum"
+	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -43,10 +44,9 @@ func NewArbTimeboostAPI(publisher TransactionPublisher) *ArbTimeboostAPI {
 	return &ArbTimeboostAPI{publisher}
 }
 
-func (a *ArbTimeboostAPI) SendExpressLaneTransaction(ctx context.Context, tx *types.Transaction) error {
+func (a *ArbTimeboostAPI) SendExpressLaneTransaction(ctx context.Context, msg *arbitrum_types.ExpressLaneSubmission) error {
 	fmt.Println("hit the endpoint")
-	return nil
-	// return a.txPublisher.PublishTransaction(ctx)
+	return a.txPublisher.PublishExpressLaneTransaction(ctx, msg)
 }
 
 type ArbDebugAPI struct {
