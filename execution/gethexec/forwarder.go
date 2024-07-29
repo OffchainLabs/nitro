@@ -257,7 +257,7 @@ func (f *TxDropper) PublishTransaction(ctx context.Context, tx *types.Transactio
 	return txDropperErr
 }
 
-func (f *TxDropper) PublishExpressLaneTransaction(ctx context.Context, msg *timeboost.JsonExpressLaneSubmission) error {
+func (f *TxDropper) PublishExpressLaneTransaction(ctx context.Context, msg *timeboost.ExpressLaneSubmission) error {
 	return txDropperErr
 }
 
