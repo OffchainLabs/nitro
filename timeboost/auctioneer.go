@@ -2,6 +2,7 @@ package timeboost
 
 import (
 	"context"
+	"fmt"
 	"math/big"
 	"sync"
 	"time"
@@ -284,7 +285,7 @@ func (a *Auctioneer) validateBid(bid *Bid) (*validatedBid, error) {
 		return nil, errors.Wrap(ErrMalformedData, "signature length is not 65")
 	}
 	// Recover the public key.
-	prefixed := crypto.Keccak256(append([]byte("\x19Ethereum Signed Message:\n112"), packedBidBytes...))
+	prefixed := crypto.Keccak256(append([]byte(fmt.Sprintf("\x19Ethereum Signed Message:\n%d", len(packedBidBytes))), packedBidBytes...))
 	sigItem := make([]byte, len(bid.Signature))
 	copy(sigItem, bid.Signature)
 	if sigItem[len(sigItem)-1] >= 27 {
