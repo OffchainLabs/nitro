@@ -182,7 +182,7 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	auctionContractOpts := builderSeq.L1Info.GetDefaultTransactOpts("AuctionContract", ctx)
 	chainId, err := l1client.ChainID(ctx)
 	Require(t, err)
-	auctioneer, err := timeboost.NewAuctioneer(&auctionContractOpts, chainId, builderSeq.L1.Client, auctionAddr, auctionContract)
+	auctioneer, err := timeboost.NewAuctioneer(&auctionContractOpts, []uint64{chainId.Uint64()}, builderSeq.L1.Client, auctionAddr, auctionContract)
 	Require(t, err)
 
 	go auctioneer.Start(ctx)
@@ -258,7 +258,7 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	waitTime = roundDuration - time.Duration(now.Second())*time.Second - time.Duration(now.Nanosecond())
 	time.Sleep(waitTime)
 
-	currRound := timeboost.CurrentRound(time.Unix(int64(info.OffsetTimestamp), 0), roundDuration)
+	currRound := timeboost.currentRound(time.Unix(int64(info.OffsetTimestamp), 0), roundDuration)
 	t.Log("curr round", currRound)
 	if currRound != winnerRound {
 		now = time.Now()
