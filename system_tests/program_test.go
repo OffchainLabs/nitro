@@ -1899,7 +1899,7 @@ func waitForSequencer(t *testing.T, builder *NodeBuilder, block uint64) {
 		Require(t, err)
 		meta, err := builder.L2.ConsensusNode.InboxTracker.GetBatchMetadata(batchCount - 1)
 		Require(t, err)
-		msgExecuted, err := builder.L2.ExecNode.ExecEngine.HeadMessageNumber()
+		msgExecuted, err := builder.L2.ExecNode.ExecEngine.HeadMessageIndex()
 		Require(t, err)
 		return msgExecuted+1 >= arbutil.MessageIndex(msgCount) && meta.MessageCount >= arbutil.MessageIndex(msgCount)
 	})

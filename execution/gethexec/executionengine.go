@@ -340,7 +340,7 @@ func (s *ExecutionEngine) getCurrentHeader() (*types.Header, error) {
 	return currentBlock, nil
 }
 
-func (s *ExecutionEngine) HeadMessageNumber() (arbutil.MessageIndex, error) {
+func (s *ExecutionEngine) HeadMessageIndex() (arbutil.MessageIndex, error) {
 	currentHeader, err := s.getCurrentHeader()
 	if err != nil {
 		return 0, err
@@ -348,10 +348,10 @@ func (s *ExecutionEngine) HeadMessageNumber() (arbutil.MessageIndex, error) {
 	return s.BlockNumberToMessageIndex(currentHeader.Number.Uint64())
 }
 
-func (s *ExecutionEngine) HeadMessageNumberSync(t *testing.T) (arbutil.MessageIndex, error) {
+func (s *ExecutionEngine) HeadMessageIndexSync(t *testing.T) (arbutil.MessageIndex, error) {
 	s.createBlocksMutex.Lock()
 	defer s.createBlocksMutex.Unlock()
-	return s.HeadMessageNumber()
+	return s.HeadMessageIndex()
 }
 
 func (s *ExecutionEngine) NextDelayedMessageNumber() (uint64, error) {

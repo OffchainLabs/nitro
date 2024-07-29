@@ -421,8 +421,8 @@ func (n *ExecutionNode) DigestMessage(num arbutil.MessageIndex, msg *arbostypes.
 func (n *ExecutionNode) Reorg(count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) containers.PromiseInterface[[]*execution.MessageResult] {
 	return containers.NewReadyPromise(n.ExecEngine.Reorg(count, newMessages, oldMessages))
 }
-func (n *ExecutionNode) HeadMessageNumber() containers.PromiseInterface[arbutil.MessageIndex] {
-	return containers.NewReadyPromise(n.ExecEngine.HeadMessageNumber())
+func (n *ExecutionNode) HeadMessageIndex() containers.PromiseInterface[arbutil.MessageIndex] {
+	return containers.NewReadyPromise(n.ExecEngine.HeadMessageIndex())
 }
 func (n *ExecutionNode) NextDelayedMessageNumber() (uint64, error) {
 	return n.ExecEngine.NextDelayedMessageNumber()
