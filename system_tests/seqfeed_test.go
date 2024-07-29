@@ -170,7 +170,7 @@ func compareAllMsgResultsFromConsensusAndExecution(
 		resultExec, err := testClient.ExecNode.ResultAtMessageIndex(msgIdx).Await(ctx)
 		Require(t, err)
 
-		resultConsensus, err := testClient.ConsensusNode.TxStreamer.ResultAtCount(msgCount)
+		resultConsensus, err := testClient.ConsensusNode.TxStreamer.ResultAtMessageIndex(arbutil.MessageIndex(msgIdx))
 		Require(t, err)
 
 		if !reflect.DeepEqual(resultExec, resultConsensus) {
@@ -303,10 +303,10 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	}
 
 	// Since NodeB is not a sequencer, it will produce blocks through Consensus.
-	// So it is expected that Consensus.ResultAtCount will not rely on Execution to retrieve results.
-	// However, since count 1 is related to genesis, and Execution is initialized through InitializeArbosInDatabase and not through Consensus,
-	// first call to Consensus.ResultAtCount with count equals to 1 will fall back to Execution.
-	// Not necessarily the first call to Consensus.ResultAtCount with count equals to 1 will happen through compareMsgResultFromConsensusAndExecution,
+	// So it is expected that Consensus.ResultAtMessageIndex will not rely on Execution to retrieve results.
+	// However, since msgIdx 0 is related to genesis, and Execution is initialized through InitializeArbosInDatabase and not through Consensus,
+	// first call to Consensus.ResultAtMessageIndex with msgIdx equals to 0 will fall back to Execution.
+	// Not necessarily the first call to Consensus.ResultAtMessageIndex with msgIdx equals to 0 will happen through compareMsgResultFromConsensusAndExecution,
 	// so we don't test this here.
 	consensusMsgCount, err := testClientB.ConsensusNode.TxStreamer.GetMessageCount()
 	Require(t, err)
@@ -314,7 +314,7 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 		t.Fatal("consensusMsgCount is different than 2")
 	}
 	logHandler := testhelpers.InitTestLog(t, log.LvlTrace)
-	_, err = testClientB.ConsensusNode.TxStreamer.ResultAtCount(arbutil.MessageIndex(2))
+	_, err = testClientB.ConsensusNode.TxStreamer.ResultAtMessageIndex(arbutil.MessageIndex(1))
 	Require(t, err)
 	if logHandler.WasLogged(arbnode.FailedToGetMsgResultFromDB) {
 		t.Fatal("Consensus relied on execution database to return the result")

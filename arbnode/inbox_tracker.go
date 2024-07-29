@@ -303,7 +303,7 @@ func (t *InboxTracker) PopulateFeedBacklog(broadcastServer *broadcaster.Broadcas
 			return fmt.Errorf("error getting message %v: %w", seqNum, err)
 		}
 
-		msgResult, err := t.txStreamer.ResultAtCount(seqNum + 1)
+		msgResult, err := t.txStreamer.ResultAtMessageIndex(seqNum)
 		var blockHash *common.Hash
 		if err == nil {
 			blockHash = &msgResult.BlockHash
