@@ -1011,10 +1011,10 @@ func (s *ExecutionEngine) digestMessageWithBlockMutex(num arbutil.MessageIndex, 
 	return msgResult, nil
 }
 
-func (s *ExecutionEngine) ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error) {
-	block := s.bc.GetBlockByNumber(s.MessageIndexToBlockNumber(messageNum))
+func (s *ExecutionEngine) ArbOSVersionForMessageIndex(msgIdx arbutil.MessageIndex) (uint64, error) {
+	block := s.bc.GetBlockByNumber(s.MessageIndexToBlockNumber(msgIdx))
 	if block == nil {
-		return 0, fmt.Errorf("couldn't find block for message number %d", messageNum)
+		return 0, fmt.Errorf("couldn't find block for message index %d", msgIdx)
 	}
 	extra := types.DeserializeHeaderExtraInformation(block.Header())
 	return extra.ArbOSFormatVersion, nil
