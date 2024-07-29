@@ -474,8 +474,8 @@ func (s *TransactionStreamer) GetMessage(msgIdx arbutil.MessageIndex) (*arbostyp
 	return &message, nil
 }
 
-func (s *TransactionStreamer) getMessageWithMetadataAndBlockInfo(seqNum arbutil.MessageIndex) (*arbostypes.MessageWithMetadataAndBlockInfo, error) {
-	msg, err := s.GetMessage(seqNum)
+func (s *TransactionStreamer) getMessageWithMetadataAndBlockInfo(msgIdx arbutil.MessageIndex) (*arbostypes.MessageWithMetadataAndBlockInfo, error) {
+	msg, err := s.GetMessage(msgIdx)
 	if err != nil {
 		return nil, err
 	}
@@ -483,7 +483,7 @@ func (s *TransactionStreamer) getMessageWithMetadataAndBlockInfo(seqNum arbutil.
 	// Get block hash.
 	// To keep it backwards compatible, since it is possible that a message related
 	// to a sequence number exists in the database, but the block hash doesn't.
-	key := dbKey(blockHashInputFeedPrefix, uint64(seqNum))
+	key := dbKey(blockHashInputFeedPrefix, uint64(msgIdx))
 	var blockHash *common.Hash
 	data, err := s.db.Get(key)
 	if err == nil {
@@ -497,7 +497,7 @@ func (s *TransactionStreamer) getMessageWithMetadataAndBlockInfo(seqNum arbutil.
 		return nil, err
 	}
 
-	blockMetadata, err := s.BlockMetadataAtCount(seqNum + 1)
+	blockMetadata, err := s.BlockMetadataAtCount(msgIdx + 1)
 	if err != nil {
 		return nil, err
 	}
