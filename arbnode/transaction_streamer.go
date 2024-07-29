@@ -43,10 +43,10 @@ import (
 type TransactionStreamer struct {
 	stopwaiter.StopWaiter
 
-	chainConfig      *params.ChainConfig
-	exec             execution.ExecutionClient
-	execLastMsgCount arbutil.MessageIndex
-	validator        *staker.BlockValidator
+	chainConfig                                     *params.ChainConfig
+	exec                                            execution.ExecutionClient
+	consensusHeadMsgIdxDuringLastExecuteNextMsgCall *arbutil.MessageIndex
+	validator                                       *staker.BlockValidator
 
 	db             ethdb.Database
 	fatalErrChan   chan<- error
@@ -1269,57 +1269,63 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 		return false
 	}
 	defer s.reorgMutex.RUnlock()
-	prevMessageCount := s.execLastMsgCount
-	msgCount, err := s.GetMessageCount()
-	if err != nil {
-		log.Error("feedOneMsg failed to get message count", "err", err)
+
+	consensusHeadMsgIdxDuringLastExecuteNextMsgCall := s.consensusHeadMsgIdxDuringLastExecuteNextMsgCall
+	consensusHeadMsgIdx, err := s.GetHeadMessageIndex()
+	if errors.Is(err, ErrNoMessages) {
+		return false
+	} else if err != nil {
+		log.Error("ExecuteNextMsg failed to get consensus head msg index", "err", err)
 		return false
 	}
-	s.execLastMsgCount = msgCount
-	pos, err := s.exec.HeadMessageIndex().Await(ctx)
+	s.consensusHeadMsgIdxDuringLastExecuteNextMsgCall = &consensusHeadMsgIdx
+
+	execHeadMsgIdx, err := s.exec.HeadMessageIndex().Await(ctx)
 	if err != nil {
-		log.Error("feedOneMsg failed to get exec engine message count", "err", err)
+		log.Error("ExecuteNextMsg failed to get exec engine head message index", "err", err)
 		return false
 	}
-	pos++
-	if pos >= msgCount {
+
+	if execHeadMsgIdx >= consensusHeadMsgIdx {
 		return false
 	}
-	msgAndBlockInfo, err := s.getMessageWithMetadataAndBlockInfo(pos)
+	msgIdxToExecute := execHeadMsgIdx + 1
+
+	msgAndBlockInfo, err := s.getMessageWithMetadataAndBlockInfo(msgIdxToExecute)
 	if err != nil {
-		log.Error("feedOneMsg failed to readMessage", "err", err, "pos", pos)
+		log.Error("ExecuteNextMsg failed to readMessage", "err", err, "msgIdxToExecute", msgIdxToExecute)
 		return false
 	}
 	var msgForPrefetch *arbostypes.MessageWithMetadata
-	if pos+1 < msgCount {
-		msg, err := s.GetMessage(pos + 1)
+	if msgIdxToExecute+1 <= consensusHeadMsgIdx {
+		msg, err := s.GetMessage(msgIdxToExecute + 1)
 		if err != nil {
-			log.Error("feedOneMsg failed to readMessage", "err", err, "pos", pos+1)
+			log.Error("ExecuteNextMsg failed to readMessage", "err", err, "msgIdxToExecute+1", msgIdxToExecute+1)
 			return false
 		}
 		msgForPrefetch = msg
 	}
-	msgResult, err := s.exec.DigestMessage(pos, &msgAndBlockInfo.MessageWithMeta, msgForPrefetch).Await(ctx)
+	msgResult, err := s.exec.DigestMessage(msgIdxToExecute, &msgAndBlockInfo.MessageWithMeta, msgForPrefetch).Await(ctx)
 	if err != nil {
 		logger := log.Warn
-		if prevMessageCount < msgCount {
+		if (consensusHeadMsgIdxDuringLastExecuteNextMsgCall == nil) || (*consensusHeadMsgIdxDuringLastExecuteNextMsgCall < consensusHeadMsgIdx) {
 			logger = log.Debug
 		}
-		logger("feedOneMsg failed to send message to execEngine", "err", err, "pos", pos)
+		logger("ExecuteNextMsg failed to send message to execEngine", "err", err, "msgIdxToExecute", msgIdxToExecute)
 		return false
 	}
 
-	s.checkResult(pos, msgResult, msgAndBlockInfo)
+	s.checkResult(msgIdxToExecute, msgResult, msgAndBlockInfo)
 
 	batch := s.db.NewBatch()
-	err = s.storeResult(pos, *msgResult, batch)
+	err = s.storeResult(msgIdxToExecute, *msgResult, batch)
 	if err != nil {
-		log.Error("feedOneMsg failed to store result", "err", err)
+		log.Error("ExecuteNextMsg failed to store result", "err", err)
 		return false
 	}
 	err = batch.Write()
 	if err != nil {
-		log.Error("feedOneMsg failed to store result", "err", err)
+		log.Error("ExecuteNextMsg failed to store result", "err", err)
 		return false
 	}
 
@@ -1328,9 +1334,9 @@ func (s *TransactionStreamer) ExecuteNextMsg(ctx context.Context) bool {
 		BlockHash:       &msgResult.BlockHash,
 		BlockMetadata:   msgAndBlockInfo.BlockMetadata,
 	}
-	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, pos)
+	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockInfo{msgWithBlockInfo}, msgIdxToExecute)
 
-	return pos+1 < msgCount
+	return msgIdxToExecute+1 <= consensusHeadMsgIdx
 }
 
 func (s *TransactionStreamer) executeMessages(ctx context.Context, ignored struct{}) time.Duration {
