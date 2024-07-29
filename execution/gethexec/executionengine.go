@@ -712,8 +712,8 @@ func (s *ExecutionEngine) BlockNumberToMessageIndex(blockNum uint64) (arbutil.Me
 	return arbutil.MessageIndex(blockNum - genesis), nil
 }
 
-func (s *ExecutionEngine) MessageIndexToBlockNumber(messageNum arbutil.MessageIndex) uint64 {
-	return uint64(messageNum) + s.GetGenesisBlockNumber()
+func (s *ExecutionEngine) MessageIndexToBlockNumber(msgIdx arbutil.MessageIndex) uint64 {
+	return uint64(msgIdx) + s.GetGenesisBlockNumber()
 }
 
 // must hold createBlockMutex
