@@ -1068,9 +1068,9 @@ func (s *TransactionStreamer) PopulateFeedBacklog() error {
 	return s.inboxReader.tracker.PopulateFeedBacklog(s.broadcastServer)
 }
 
-func (s *TransactionStreamer) writeMessage(pos arbutil.MessageIndex, msg arbostypes.MessageWithMetadataAndBlockInfo, batch ethdb.Batch) error {
+func (s *TransactionStreamer) writeMessage(msgIdx arbutil.MessageIndex, msg arbostypes.MessageWithMetadataAndBlockInfo, batch ethdb.Batch) error {
 	// write message with metadata
-	key := dbKey(messagePrefix, uint64(pos))
+	key := dbKey(messagePrefix, uint64(msgIdx))
 	msgBytes, err := rlp.EncodeToBytes(msg.MessageWithMeta)
 	if err != nil {
 		return err
@@ -1083,7 +1083,7 @@ func (s *TransactionStreamer) writeMessage(pos arbutil.MessageIndex, msg arbosty
 	blockHashDBVal := blockHashDBValue{
 		BlockHash: msg.BlockHash,
 	}
-	key = dbKey(blockHashInputFeedPrefix, uint64(pos))
+	key = dbKey(blockHashInputFeedPrefix, uint64(msgIdx))
 	msgBytes, err = rlp.EncodeToBytes(blockHashDBVal)
 	if err != nil {
 		return err
@@ -1092,22 +1092,22 @@ func (s *TransactionStreamer) writeMessage(pos arbutil.MessageIndex, msg arbosty
 		return err
 	}
 
-	if s.trackBlockMetadataFrom != 0 && pos >= s.trackBlockMetadataFrom {
+	if s.trackBlockMetadataFrom != 0 && msgIdx >= s.trackBlockMetadataFrom {
 		if msg.BlockMetadata != nil {
 			// Only store non-nil BlockMetadata to db. In case of a reorg, we dont have to explicitly
 			// clear out BlockMetadata of the reorged message, since those messages will be handled by s.reorg()
 			// This also allows update of BatchGasCost in message without mistakenly erasing BlockMetadata
-			key = dbKey(blockMetadataInputFeedPrefix, uint64(pos))
+			key = dbKey(blockMetadataInputFeedPrefix, uint64(msgIdx))
 			return batch.Put(key, msg.BlockMetadata)
 		} else {
 			// Mark that blockMetadata is missing only if it isn't already present. This check prevents unnecessary marking
 			// when updating BatchGasCost or when adding messages from seq-coordinator redis that doesn't have block metadata
-			prevBlockMetadata, err := s.BlockMetadataAtCount(pos + 1)
+			prevBlockMetadata, err := s.BlockMetadataAtCount(msgIdx + 1)
 			if err != nil {
 				return err
 			}
 			if prevBlockMetadata == nil {
-				key = dbKey(missingBlockMetadataInputFeedPrefix, uint64(pos))
+				key = dbKey(missingBlockMetadataInputFeedPrefix, uint64(msgIdx))
 				return batch.Put(key, nil)
 			}
 		}
