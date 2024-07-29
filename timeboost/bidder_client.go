@@ -23,7 +23,7 @@ type Client interface {
 }
 
 type auctioneerConnection interface {
-	ReceiveBid(ctx context.Context, bid *Bid) error
+	receiveBid(ctx context.Context, bid *Bid) error
 }
 
 type BidderClient struct {
@@ -37,6 +37,7 @@ type BidderClient struct {
 	auctioneer             auctioneerConnection
 	initialRoundTimestamp  time.Time
 	roundDuration          time.Duration
+	domainValue            []byte
 }
 
 // TODO: Provide a safer option.
@@ -67,6 +68,7 @@ func NewBidderClient(
 	}
 	initialTimestamp := time.Unix(int64(roundTimingInfo.OffsetTimestamp), 0)
 	roundDuration := time.Duration(roundTimingInfo.RoundDurationSeconds) * time.Second
+
 	return &BidderClient{
 		chainId:                chainId.Uint64(),
 		name:                   name,
@@ -78,6 +80,7 @@ func NewBidderClient(
 		auctioneer:             auctioneer,
 		initialRoundTimestamp:  initialTimestamp,
 		roundDuration:          roundDuration,
+		domainValue:            domainValue,
 	}, nil
 }
 
@@ -109,7 +112,8 @@ func (bd *BidderClient) Bid(
 		Signature:              nil,
 	}
 	packedBidBytes, err := encodeBidValues(
-		new(big.Int).SetUint64(newBid.ChainId),
+		bd.domainValue,
+		newBid.ChainId,
 		bd.auctionContractAddress,
 		newBid.Round,
 		amount,
@@ -123,7 +127,7 @@ func (bd *BidderClient) Bid(
 		return nil, err
 	}
 	newBid.Signature = sig
-	if err = bd.auctioneer.ReceiveBid(ctx, newBid); err != nil {
+	if err = bd.auctioneer.receiveBid(ctx, newBid); err != nil {
 		return nil, err
 	}
 	return newBid, nil

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/stretchr/testify/require"
 )
 
@@ -18,7 +19,7 @@ func TestResolveAuction(t *testing.T) {
 
 	// Set up a new auction master instance that can validate bids.
 	am, err := NewAuctioneer(
-		testSetup.accounts[0].txOpts, testSetup.chainId, testSetup.backend.Client(), testSetup.expressLaneAuctionAddr, testSetup.expressLaneAuction,
+		testSetup.accounts[0].txOpts, []uint64{testSetup.chainId.Uint64()}, testSetup.backend.Client(), testSetup.expressLaneAuction,
 	)
 	require.NoError(t, err)
 
@@ -76,7 +77,7 @@ func TestReceiveBid_OK(t *testing.T) {
 
 	// Set up a new auction master instance that can validate bids.
 	am, err := NewAuctioneer(
-		testSetup.accounts[1].txOpts, testSetup.chainId, testSetup.backend.Client(), testSetup.expressLaneAuctionAddr, testSetup.expressLaneAuction,
+		testSetup.accounts[1].txOpts, []uint64{testSetup.chainId.Uint64()}, testSetup.backend.Client(), testSetup.expressLaneAuction,
 	)
 	require.NoError(t, err)
 
@@ -89,6 +90,130 @@ func TestReceiveBid_OK(t *testing.T) {
 	require.NoError(t, err)
 
 	// Check the bid passes validation.
-	_, err = am.newValidatedBid(newBid)
+	_, err = am.validateBid(newBid)
 	require.NoError(t, err)
+}
+
+func TestTopTwoBids(t *testing.T) {
+	tests := []struct {
+		name     string
+		bids     map[common.Address]*validatedBid
+		expected *auctionResult
+	}{
+		{
+			name: "Single Bid",
+			bids: map[common.Address]*validatedBid{
+				common.HexToAddress("0x1"): {amount: big.NewInt(100), expressLaneController: common.HexToAddress("0x1")},
+			},
+			expected: &auctionResult{
+				firstPlace:  &validatedBid{amount: big.NewInt(100), expressLaneController: common.HexToAddress("0x1")},
+				secondPlace: nil,
+			},
+		},
+		{
+			name: "Two Bids with Different Amounts",
+			bids: map[common.Address]*validatedBid{
+				common.HexToAddress("0x1"): {amount: big.NewInt(100), expressLaneController: common.HexToAddress("0x1")},
+				common.HexToAddress("0x2"): {amount: big.NewInt(200), expressLaneController: common.HexToAddress("0x2")},
+			},
+			expected: &auctionResult{
+				firstPlace:  &validatedBid{amount: big.NewInt(200), expressLaneController: common.HexToAddress("0x2")},
+				secondPlace: &validatedBid{amount: big.NewInt(100), expressLaneController: common.HexToAddress("0x1")},
+			},
+		},
+		{
+			name: "Two Bids with Same Amount and Different Hashes",
+			bids: map[common.Address]*validatedBid{
+				common.HexToAddress("0x1"): {amount: big.NewInt(100), chainId: 1, bidder: common.HexToAddress("0x1"), expressLaneController: common.HexToAddress("0x1")},
+				common.HexToAddress("0x2"): {amount: big.NewInt(100), chainId: 2, bidder: common.HexToAddress("0x2"), expressLaneController: common.HexToAddress("0x2")},
+			},
+			expected: &auctionResult{
+				firstPlace:  &validatedBid{amount: big.NewInt(100), chainId: 2, bidder: common.HexToAddress("0x2"), expressLaneController: common.HexToAddress("0x2")},
+				secondPlace: &validatedBid{amount: big.NewInt(100), chainId: 1, bidder: common.HexToAddress("0x1"), expressLaneController: common.HexToAddress("0x1")},
+			},
+		},
+		{
+			name: "More Than Two Bids, All Unique Amounts",
+			bids: map[common.Address]*validatedBid{
+				common.HexToAddress("0x1"): {amount: big.NewInt(300), expressLaneController: common.HexToAddress("0x1")},
+				common.HexToAddress("0x2"): {amount: big.NewInt(100), expressLaneController: common.HexToAddress("0x2")},
+				common.HexToAddress("0x3"): {amount: big.NewInt(200), expressLaneController: common.HexToAddress("0x3")},
+			},
+			expected: &auctionResult{
+				firstPlace:  &validatedBid{amount: big.NewInt(300), expressLaneController: common.HexToAddress("0x1")},
+				secondPlace: &validatedBid{amount: big.NewInt(200), expressLaneController: common.HexToAddress("0x3")},
+			},
+		},
+		{
+			name: "More Than Two Bids, Some with Same Amounts",
+			bids: map[common.Address]*validatedBid{
+				common.HexToAddress("0x1"): {amount: big.NewInt(300), expressLaneController: common.HexToAddress("0x1")},
+				common.HexToAddress("0x2"): {amount: big.NewInt(100), expressLaneController: common.HexToAddress("0x2")},
+				common.HexToAddress("0x3"): {amount: big.NewInt(200), expressLaneController: common.HexToAddress("0x3")},
+				common.HexToAddress("0x4"): {amount: big.NewInt(200), chainId: 1, bidder: common.HexToAddress("0x1"), expressLaneController: common.HexToAddress("0x4")},
+			},
+			expected: &auctionResult{
+				firstPlace:  &validatedBid{amount: big.NewInt(300), expressLaneController: common.HexToAddress("0x1")},
+				secondPlace: &validatedBid{amount: big.NewInt(200), chainId: 1, bidder: common.HexToAddress("0x1"), expressLaneController: common.HexToAddress("0x4")},
+			},
+		},
+		{
+			name: "More Than Two Bids, Tied for Second Place",
+			bids: map[common.Address]*validatedBid{
+				common.HexToAddress("0x1"): {amount: big.NewInt(300), expressLaneController: common.HexToAddress("0x1")},
+				common.HexToAddress("0x2"): {amount: big.NewInt(200), expressLaneController: common.HexToAddress("0x2")},
+				common.HexToAddress("0x3"): {amount: big.NewInt(200), chainId: 1, bidder: common.HexToAddress("0x1"), expressLaneController: common.HexToAddress("0x3")},
+			},
+			expected: &auctionResult{
+				firstPlace:  &validatedBid{amount: big.NewInt(300), expressLaneController: common.HexToAddress("0x1")},
+				secondPlace: &validatedBid{amount: big.NewInt(200), chainId: 1, bidder: common.HexToAddress("0x1"), expressLaneController: common.HexToAddress("0x3")},
+			},
+		},
+		{
+			name: "All Bids with the Same Amount",
+			bids: map[common.Address]*validatedBid{
+				common.HexToAddress("0x1"): {amount: big.NewInt(100), chainId: 1, bidder: common.HexToAddress("0x1"), expressLaneController: common.HexToAddress("0x1")},
+				common.HexToAddress("0x2"): {amount: big.NewInt(100), chainId: 2, bidder: common.HexToAddress("0x2"), expressLaneController: common.HexToAddress("0x2")},
+				common.HexToAddress("0x3"): {amount: big.NewInt(100), chainId: 3, bidder: common.HexToAddress("0x3"), expressLaneController: common.HexToAddress("0x3")},
+			},
+			expected: &auctionResult{
+				firstPlace:  &validatedBid{amount: big.NewInt(100), chainId: 3, bidder: common.HexToAddress("0x3"), expressLaneController: common.HexToAddress("0x3")},
+				secondPlace: &validatedBid{amount: big.NewInt(100), chainId: 2, bidder: common.HexToAddress("0x2"), expressLaneController: common.HexToAddress("0x2")},
+			},
+		},
+		{
+			name:     "No Bids",
+			bids:     nil,
+			expected: &auctionResult{firstPlace: nil, secondPlace: nil},
+		},
+		{
+			name: "Identical Bids",
+			bids: map[common.Address]*validatedBid{
+				common.HexToAddress("0x1"): {amount: big.NewInt(100), chainId: 1, bidder: common.HexToAddress("0x1"), expressLaneController: common.HexToAddress("0x1")},
+				common.HexToAddress("0x2"): {amount: big.NewInt(100), chainId: 1, bidder: common.HexToAddress("0x1"), expressLaneController: common.HexToAddress("0x2")},
+			},
+			expected: &auctionResult{
+				firstPlace:  &validatedBid{amount: big.NewInt(100), chainId: 1, bidder: common.HexToAddress("0x1"), expressLaneController: common.HexToAddress("0x1")},
+				secondPlace: &validatedBid{amount: big.NewInt(100), chainId: 1, bidder: common.HexToAddress("0x1"), expressLaneController: common.HexToAddress("0x2")},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			bc := &bidCache{
+				bidsByExpressLaneControllerAddr: tt.bids,
+			}
+			result := bc.topTwoBids()
+			if (result.firstPlace == nil) != (tt.expected.firstPlace == nil) || (result.secondPlace == nil) != (tt.expected.secondPlace == nil) {
+				t.Fatalf("expected firstPlace: %v, secondPlace: %v, got firstPlace: %v, secondPlace: %v", tt.expected.firstPlace, tt.expected.secondPlace, result.firstPlace, result.secondPlace)
+			}
+			if result.firstPlace != nil && result.firstPlace.amount.Cmp(tt.expected.firstPlace.amount) != 0 {
+				t.Errorf("expected firstPlace amount: %v, got: %v", tt.expected.firstPlace.amount, result.firstPlace.amount)
+			}
+			if result.secondPlace != nil && result.secondPlace.amount.Cmp(tt.expected.secondPlace.amount) != 0 {
+				t.Errorf("expected secondPlace amount: %v, got: %v", tt.expected.secondPlace.amount, result.secondPlace.amount)
+			}
+		})
+	}
 }

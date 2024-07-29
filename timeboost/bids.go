@@ -3,11 +3,12 @@ package timeboost
 import (
 	"bytes"
 	"crypto/ecdsa"
+	"crypto/sha256"
 	"encoding/binary"
+	"fmt"
 	"math/big"
 	"sync"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/secp256k1"
@@ -21,6 +22,7 @@ var (
 	ErrWrongSignature      = errors.New("wrong signature")
 	ErrBadRoundNumber      = errors.New("bad round number")
 	ErrInsufficientBalance = errors.New("insufficient balance")
+	ErrInsufficientBid     = errors.New("insufficient bid")
 )
 
 type Bid struct {
@@ -37,87 +39,11 @@ type validatedBid struct {
 	expressLaneController common.Address
 	amount                *big.Int
 	signature             []byte
-}
-
-func (am *Auctioneer) fetchReservePrice() *big.Int {
-	am.reservePriceLock.RLock()
-	defer am.reservePriceLock.RUnlock()
-	return new(big.Int).Set(am.reservePrice)
-}
-
-func (am *Auctioneer) newValidatedBid(bid *Bid) (*validatedBid, error) {
-	// Check basic integrity.
-	if bid == nil {
-		return nil, errors.Wrap(ErrMalformedData, "nil bid")
-	}
-	if bid.Bidder == (common.Address{}) {
-		return nil, errors.Wrap(ErrMalformedData, "empty bidder address")
-	}
-	if bid.ExpressLaneController == (common.Address{}) {
-		return nil, errors.Wrap(ErrMalformedData, "empty express lane controller address")
-	}
-	// Verify chain id.
-	if new(big.Int).SetUint64(bid.ChainId).Cmp(am.chainId) != 0 {
-		return nil, errors.Wrapf(ErrWrongChainId, "wanted %#x, got %#x", am.chainId, bid.ChainId)
-	}
-	// Check if for upcoming round.
-	upcomingRound := CurrentRound(am.initialRoundTimestamp, am.roundDuration) + 1
-	if bid.Round != upcomingRound {
-		return nil, errors.Wrapf(ErrBadRoundNumber, "wanted %d, got %d", upcomingRound, bid.Round)
-	}
-	// Check bid amount.
-	reservePrice := am.fetchReservePrice()
-	if bid.Amount.Cmp(reservePrice) == -1 {
-		return nil, errors.Wrap(ErrMalformedData, "expected bid to be at least of reserve price magnitude")
-	}
-	// Validate the signature.
-	packedBidBytes, err := encodeBidValues(
-		new(big.Int).SetUint64(bid.ChainId),
-		am.auctionContractAddr,
-		bid.Round,
-		bid.Amount,
-		bid.ExpressLaneController,
-	)
-	if err != nil {
-		return nil, ErrMalformedData
-	}
-	if len(bid.Signature) != 65 {
-		return nil, errors.Wrap(ErrMalformedData, "signature length is not 65")
-	}
-	// Recover the public key.
-	prefixed := crypto.Keccak256(append([]byte("\x19Ethereum Signed Message:\n112"), packedBidBytes...))
-	sigItem := make([]byte, len(bid.Signature))
-	copy(sigItem, bid.Signature)
-	if sigItem[len(sigItem)-1] >= 27 {
-		sigItem[len(sigItem)-1] -= 27
-	}
-	pubkey, err := crypto.SigToPub(prefixed, sigItem)
-	if err != nil {
-		return nil, ErrMalformedData
-	}
-	if !verifySignature(pubkey, packedBidBytes, sigItem) {
-		return nil, ErrWrongSignature
-	}
-	// Validate if the user if a depositor in the contract and has enough balance for the bid.
-	// TODO: Retry some number of times if flakey connection.
-	// TODO: Validate reserve price against amount of bid.
-	// TODO: No need to do anything expensive if the bid coming is in invalid.
-	// Cache this if the received time of the bid is too soon. Include the arrival timestamp.
-	depositBal, err := am.auctionContract.BalanceOf(&bind.CallOpts{}, bid.Bidder)
-	if err != nil {
-		return nil, err
-	}
-	if depositBal.Cmp(new(big.Int)) == 0 {
-		return nil, ErrNotDepositor
-	}
-	if depositBal.Cmp(bid.Amount) < 0 {
-		return nil, errors.Wrapf(ErrInsufficientBalance, "onchain balance %#x, bid amount %#x", depositBal, bid.Amount)
-	}
-	return &validatedBid{
-		expressLaneController: bid.ExpressLaneController,
-		amount:                bid.Amount,
-		signature:             bid.Signature,
-	}, nil
+	// For tie breaking
+	chainId                uint64
+	auctionContractAddress common.Address
+	round                  uint64
+	bidder                 common.Address
 }
 
 type bidCache struct {
@@ -150,20 +76,56 @@ func (bc *bidCache) size() int {
 
 }
 
+// topTwoBids returns the top two bids in the cache.
 func (bc *bidCache) topTwoBids() *auctionResult {
 	bc.RLock()
 	defer bc.RUnlock()
+
 	result := &auctionResult{}
-	// TODO: Tiebreaker handle.
+
 	for _, bid := range bc.bidsByExpressLaneControllerAddr {
-		if result.firstPlace == nil || bid.amount.Cmp(result.firstPlace.amount) > 0 {
+		if result.firstPlace == nil {
+			result.firstPlace = bid
+		} else if bid.amount.Cmp(result.firstPlace.amount) > 0 {
 			result.secondPlace = result.firstPlace
 			result.firstPlace = bid
+		} else if bid.amount.Cmp(result.firstPlace.amount) == 0 {
+			if hashBid(bid) > hashBid(result.firstPlace) {
+				result.secondPlace = result.firstPlace
+				result.firstPlace = bid
+			} else if result.secondPlace == nil || hashBid(bid) > hashBid(result.secondPlace) {
+				result.secondPlace = bid
+			}
 		} else if result.secondPlace == nil || bid.amount.Cmp(result.secondPlace.amount) > 0 {
 			result.secondPlace = bid
+		} else if bid.amount.Cmp(result.secondPlace.amount) == 0 {
+			if hashBid(bid) > hashBid(result.secondPlace) {
+				result.secondPlace = bid
+			}
 		}
 	}
+
 	return result
+}
+
+// hashBid hashes the bidder address concatenated with the respective byte-string representation of the bid using the Keccak256 hashing scheme.
+func hashBid(bid *validatedBid) string {
+	chainIdBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(chainIdBytes, bid.chainId)
+	roundBytes := make([]byte, 8)
+	binary.BigEndian.PutUint64(roundBytes, bid.round)
+
+	// Concatenate the bidder address and the byte representation of the bid
+	data := append(bid.bidder.Bytes(), chainIdBytes...)
+	data = append(data, bid.auctionContractAddress.Bytes()...)
+	data = append(data, roundBytes...)
+	data = append(data, bid.amount.Bytes()...)
+	data = append(data, bid.expressLaneController.Bytes()...)
+
+	hash := sha256.Sum256(data)
+
+	// Return the hash as a hexadecimal string
+	return fmt.Sprintf("%x", hash)
 }
 
 func verifySignature(pubkey *ecdsa.PublicKey, message []byte, sig []byte) bool {
@@ -180,13 +142,16 @@ func padBigInt(bi *big.Int) []byte {
 	return padded
 }
 
-func encodeBidValues(chainId *big.Int, auctionContractAddress common.Address, round uint64, amount *big.Int, expressLaneController common.Address) ([]byte, error) {
+func encodeBidValues(domainValue []byte, chainId uint64, auctionContractAddress common.Address, round uint64, amount *big.Int, expressLaneController common.Address) ([]byte, error) {
 	buf := new(bytes.Buffer)
 
 	// Encode uint256 values - each occupies 32 bytes
-	buf.Write(padBigInt(chainId))
-	buf.Write(auctionContractAddress[:])
+	buf.Write(domainValue)
 	roundBuf := make([]byte, 8)
+	binary.BigEndian.PutUint64(roundBuf, chainId)
+	buf.Write(roundBuf)
+	buf.Write(auctionContractAddress[:])
+	roundBuf = make([]byte, 8)
 	binary.BigEndian.PutUint64(roundBuf, round)
 	buf.Write(roundBuf)
 	buf.Write(padBigInt(amount))
