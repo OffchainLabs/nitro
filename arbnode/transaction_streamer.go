@@ -1018,15 +1018,15 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(
 	defer s.insertionMutex.Unlock()
 
 	headMsgIdx, err := s.GetHeadMessageIndex()
-	nextHeadMsgIdx := headMsgIdx + 1
+	expectedMsgIdx := headMsgIdx + 1
 	if errors.Is(err, ErrNoMessages) {
-		nextHeadMsgIdx = 0
+		expectedMsgIdx = 0
 	} else if err != nil {
 		return err
 	}
 
-	if msgIdx != nextHeadMsgIdx {
-		return fmt.Errorf("wrong msgIdx got %d expected %d", msgIdx, nextHeadMsgIdx)
+	if msgIdx != expectedMsgIdx {
+		return fmt.Errorf("wrong msgIdx got %d expected %d", msgIdx, expectedMsgIdx)
 	}
 
 	if s.coordinator != nil {
