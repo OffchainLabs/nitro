@@ -1117,13 +1117,13 @@ func (s *TransactionStreamer) writeMessage(msgIdx arbutil.MessageIndex, msg arbo
 
 func (s *TransactionStreamer) broadcastMessages(
 	msgs []arbostypes.MessageWithMetadataAndBlockInfo,
-	pos arbutil.MessageIndex,
+	firstMsgIdx arbutil.MessageIndex,
 ) {
 	if s.broadcastServer == nil {
 		return
 	}
-	if err := s.broadcastServer.BroadcastMessages(msgs, pos); err != nil {
-		log.Error("failed broadcasting messages", "pos", pos, "err", err)
+	if err := s.broadcastServer.BroadcastMessages(msgs, firstMsgIdx); err != nil {
+		log.Error("failed broadcasting messages", "firstMsgIdx", firstMsgIdx, "err", err)
 	}
 }
 
