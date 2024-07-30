@@ -284,7 +284,7 @@ func (s *ExecutionEngine) Reorg(newHeadMsgIdx arbutil.MessageIndex, newMessages 
 		}
 	}()
 	blockNum := s.MessageIndexToBlockNumber(newHeadMsgIdx)
-	// We can safely cast blockNum to a uint64 as it comes from MessageCountToBlockNumber
+	// We can safely cast blockNum to a uint64 as it comes from MessageIndexToBlockNumber
 	targetBlock := s.bc.GetBlockByNumber(uint64(blockNum))
 	if targetBlock == nil {
 		log.Warn("reorg target block not found", "block", blockNum)
