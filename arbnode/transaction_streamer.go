@@ -282,7 +282,7 @@ func deleteFromRange(ctx context.Context, db ethdb.Database, prefix []byte, star
 // The insertion mutex must be held. This acquires the reorg mutex.
 // Note: oldMessages will be empty if reorgHook is nil
 func (s *TransactionStreamer) reorg(batch ethdb.Batch, newHeadMsgIdx arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo) error {
-	lastDelayedSeqNum, err := s.getPrevPrevDelayedRead(newHeadMsgIdx + 1)
+	lastDelayedMsgIdx, err := s.getPrevPrevDelayedRead(newHeadMsgIdx + 1)
 	if err != nil {
 		return err
 	}
@@ -320,19 +320,19 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, newHeadMsgIdx arbutil.Mes
 
 		if header.RequestId != nil {
 			// This is a delayed message
-			delayedSeqNum := header.RequestId.Big().Uint64()
-			if delayedSeqNum+1 != oldMessage.DelayedMessagesRead {
+			delayedMsgIdx := header.RequestId.Big().Uint64()
+			if delayedMsgIdx+1 != oldMessage.DelayedMessagesRead {
 				log.Error("delayed message header RequestId doesn't match database DelayedMessagesRead", "header", oldMessage.Message.Header, "delayedMessagesRead", oldMessage.DelayedMessagesRead)
 				continue
 			}
-			if delayedSeqNum != lastDelayedSeqNum {
+			if delayedMsgIdx != lastDelayedMsgIdx {
 				// This is the wrong position for the delayed message
 				continue
 			}
 			if s.inboxReader != nil {
 				// this is a delayed message. Should be resequenced if all 3 agree:
 				// oldMessage, accumulator stored in tracker, and the message re-read from l1
-				expectedAcc, err := s.inboxReader.tracker.GetDelayedAcc(delayedSeqNum)
+				expectedAcc, err := s.inboxReader.tracker.GetDelayedAcc(delayedMsgIdx)
 				if err != nil {
 					if !strings.Contains(err.Error(), "not found") {
 						log.Error("reorg-resequence: failed to read expected accumulator", "err", err)
@@ -348,7 +348,7 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, newHeadMsgIdx arbutil.Mes
 				messageFound := false
 			delayedInBlockLoop:
 				for _, delayedFound := range delayedInBlock {
-					if delayedFound.Message.Header.RequestId.Big().Uint64() != delayedSeqNum {
+					if delayedFound.Message.Header.RequestId.Big().Uint64() != delayedMsgIdx {
 						continue delayedInBlockLoop
 					}
 					if expectedAcc == delayedFound.AfterInboxAcc() && delayedFound.Message.Equals(oldMessage.Message) {
@@ -360,7 +360,7 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, newHeadMsgIdx arbutil.Mes
 					continue
 				}
 			}
-			lastDelayedSeqNum++
+			lastDelayedMsgIdx++
 		}
 
 		oldMessages = append(oldMessages, oldMessage)
