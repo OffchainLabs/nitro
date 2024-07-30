@@ -62,7 +62,7 @@ func (s *Storage) Get(_ context.Context, index uint64) (*storage.QueuedTransacti
 	key := idxToKey(index)
 	value, err := s.db.Get(key)
 	if err != nil {
-		if errors.Is(err, leveldb.ErrNotFound) {
+		if isErrNotFound(err) {
 			return nil, nil
 		}
 		return nil, err
