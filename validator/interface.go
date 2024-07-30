@@ -13,6 +13,7 @@ type ValidationSpawner interface {
 	Start(context.Context) error
 	Stop()
 	Name() string
+	StylusArchs() []string
 	Room() int
 }
 
