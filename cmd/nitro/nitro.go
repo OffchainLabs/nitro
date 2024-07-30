@@ -38,21 +38,19 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/graphql"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/ethereum/go-ethereum/metrics/exp"
 	"github.com/ethereum/go-ethereum/node"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 	blocksreexecutor "github.com/offchainlabs/nitro/blocks_reexecutor"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
+	"github.com/offchainlabs/nitro/cmd/daprovider/das"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
-	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -138,28 +136,6 @@ func closeDb(db io.Closer, name string) {
 
 func main() {
 	os.Exit(mainImpl())
-}
-
-// Checks metrics and PProf flag, runs them if enabled.
-// Note: they are separate so one can enable/disable them as they wish, the only
-// requirement is that they can't run on the same address and port.
-func startMetrics(cfg *NodeConfig) error {
-	mAddr := fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port)
-	pAddr := fmt.Sprintf("%v:%v", cfg.PprofCfg.Addr, cfg.PprofCfg.Port)
-	if cfg.Metrics && !metrics.Enabled {
-		return fmt.Errorf("metrics must be enabled via command line by adding --metrics, json config has no effect")
-	}
-	if cfg.Metrics && cfg.PProf && mAddr == pAddr {
-		return fmt.Errorf("metrics and pprof cannot be enabled on the same address:port: %s", mAddr)
-	}
-	if cfg.Metrics {
-		go metrics.CollectProcessMetrics(cfg.MetricsServer.UpdateInterval)
-		exp.Setup(fmt.Sprintf("%v:%v", cfg.MetricsServer.Addr, cfg.MetricsServer.Port))
-	}
-	if cfg.PProf {
-		genericconf.StartPprof(pAddr)
-	}
-	return nil
 }
 
 // Returns the exit code
@@ -279,7 +255,7 @@ func mainImpl() int {
 		}
 	}
 
-	combinedL2ChainInfoFile := aggregateL2ChainInfoFiles(ctx, nodeConfig.Chain.InfoFiles, nodeConfig.Chain.InfoIpfsUrl, nodeConfig.Chain.InfoIpfsDownloadPath)
+	combinedL2ChainInfoFile := util.AggregateL2ChainInfoFiles(ctx, nodeConfig.Chain.InfoFiles, nodeConfig.Chain.InfoIpfsUrl, nodeConfig.Chain.InfoIpfsDownloadPath)
 
 	if nodeConfig.Node.Staker.Enable {
 		if !nodeConfig.Node.ParentChainReader.Enable {
@@ -399,7 +375,13 @@ func mainImpl() int {
 		}
 	}
 
-	if err := startMetrics(nodeConfig); err != nil {
+	err = util.StartMetricsAndPProf(&util.MetricsPProfOpts{
+		Metrics:       nodeConfig.Metrics,
+		MetricsServer: nodeConfig.MetricsServer,
+		PProf:         nodeConfig.PProf,
+		PprofCfg:      nodeConfig.PprofCfg,
+	})
+	if err != nil {
 		log.Error("Error starting metrics", "error", err)
 		return 1
 	}
@@ -924,19 +906,8 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	return &nodeConfig, &l2DevWallet, nil
 }
 
-func aggregateL2ChainInfoFiles(ctx context.Context, l2ChainInfoFiles []string, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) []string {
-	if l2ChainInfoIpfsUrl != "" {
-		l2ChainInfoIpfsFile, err := util.GetL2ChainInfoIpfsFile(ctx, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
-		if err != nil {
-			log.Error("error getting l2 chain info file from ipfs", "err", err)
-		}
-		l2ChainInfoFiles = append(l2ChainInfoFiles, l2ChainInfoIpfsFile)
-	}
-	return l2ChainInfoFiles
-}
-
 func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, chainName string, l2ChainInfoFiles []string, l2ChainInfoJson string, l2ChainInfoIpfsUrl string, l2ChainInfoIpfsDownloadPath string) error {
-	combinedL2ChainInfoFiles := aggregateL2ChainInfoFiles(ctx, l2ChainInfoFiles, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
+	combinedL2ChainInfoFiles := util.AggregateL2ChainInfoFiles(ctx, l2ChainInfoFiles, l2ChainInfoIpfsUrl, l2ChainInfoIpfsDownloadPath)
 	chainInfo, err := chaininfo.ProcessChainInfo(chainId, chainName, combinedL2ChainInfoFiles, l2ChainInfoJson)
 	if err != nil {
 		return err

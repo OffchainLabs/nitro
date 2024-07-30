@@ -9,9 +9,10 @@ import (
 	"fmt"
 	"net/url"
 	"runtime"
+	"strings"
 	"testing"
 
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
+	"github.com/offchainlabs/nitro/daprovider"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/state"
@@ -323,13 +324,13 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		}
 		foundDA := false
 		for _, dapReader := range v.dapReaders {
-			if dapReader != nil && dapReader.IsValidHeaderByte(batch.Data[40]) {
-				preimageRecorder := daprovider.RecordPreimagesTo(e.Preimages)
-				_, err := dapReader.RecoverPayloadFromBatch(ctx, batch.Number, batch.BlockHash, batch.Data, preimageRecorder, true)
+			if dapReader != nil && dapReader.IsValidHeaderByte(ctx, batch.Data[40]) {
+				var err error
+				_, e.Preimages, err = dapReader.RecoverPayloadFromBatch(ctx, batch.Number, batch.BlockHash, batch.Data, e.Preimages, true)
 				if err != nil {
 					// Matches the way keyset validation was done inside DAS readers i.e logging the error
 					//  But other daproviders might just want to return the error
-					if errors.Is(err, daprovider.ErrSeqMsgValidation) && daprovider.IsDASMessageHeaderByte(batch.Data[40]) {
+					if strings.Contains(err.Error(), daprovider.ErrSeqMsgValidation.Error()) && daprovider.IsDASMessageHeaderByte(batch.Data[40]) {
 						log.Error(err.Error())
 					} else {
 						return err

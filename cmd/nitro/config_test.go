@@ -14,9 +14,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/nitro/cmd/daprovider/das"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
-	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 

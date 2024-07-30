@@ -9,8 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
+	"os"
+	"path"
+	"path/filepath"
 	"strings"
-	"time"
 
 	flag "github.com/spf13/pflag"
 
@@ -27,13 +29,16 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcastclients"
 	"github.com/offchainlabs/nitro/broadcaster"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
-	"github.com/offchainlabs/nitro/das"
+	"github.com/offchainlabs/nitro/cmd/daprovider/das"
+	"github.com/offchainlabs/nitro/cmd/daprovider/dasserver"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/daprovider"
+	"github.com/offchainlabs/nitro/daprovider/daclient"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -88,6 +93,7 @@ type Config struct {
 	Staker              staker.L1ValidatorConfig    `koanf:"staker" reload:"hot"`
 	SeqCoordinator      SeqCoordinatorConfig        `koanf:"seq-coordinator"`
 	DataAvailability    das.DataAvailabilityConfig  `koanf:"data-availability"`
+	DAProvider          daclient.ClientConfig       `koanf:"da-provider" reload:"hot"`
 	SyncMonitor         SyncMonitorConfig           `koanf:"sync-monitor"`
 	Dangerous           DangerousConfig             `koanf:"dangerous"`
 	TransactionStreamer TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
@@ -154,6 +160,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 	staker.L1ValidatorConfigAddOptions(prefix+".staker", f)
 	SeqCoordinatorConfigAddOptions(prefix+".seq-coordinator", f)
 	das.DataAvailabilityConfigAddNodeOptions(prefix+".data-availability", f)
+	daclient.ClientConfigAddOptions(prefix+".da-provider", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	TransactionStreamerConfigAddOptions(prefix+".transaction-streamer", f)
@@ -172,6 +179,7 @@ var ConfigDefault = Config{
 	Staker:              staker.DefaultL1ValidatorConfig,
 	SeqCoordinator:      DefaultSeqCoordinatorConfig,
 	DataAvailability:    das.DefaultDataAvailabilityConfig,
+	DAProvider:          daclient.DefaultClientConfig,
 	SyncMonitor:         DefaultSyncMonitorConfig,
 	Dangerous:           DefaultDangerousConfig,
 	TransactionStreamer: DefaultTransactionStreamerConfig,
@@ -270,7 +278,7 @@ type Node struct {
 	BroadcastClients        *broadcastclients.BroadcastClients
 	SeqCoordinator          *SeqCoordinator
 	MaintenanceRunner       *MaintenanceRunner
-	DASLifecycleManager     *das.LifecycleManager
+	dasServerCloseFn        func()
 	SyncMonitor             *SyncMonitor
 	configFetcher           ConfigFetcher
 	ctx                     context.Context
@@ -501,7 +509,6 @@ func createNodeImpl(
 			BroadcastClients:        broadcastClients,
 			SeqCoordinator:          coordinator,
 			MaintenanceRunner:       maintenanceRunner,
-			DASLifecycleManager:     nil,
 			SyncMonitor:             syncMonitor,
 			configFetcher:           configFetcher,
 			ctx:                     ctx,
@@ -520,42 +527,68 @@ func createNodeImpl(
 		return nil, err
 	}
 
-	var daWriter das.DataAvailabilityServiceWriter
-	var daReader das.DataAvailabilityServiceReader
-	var dasLifecycleManager *das.LifecycleManager
-	var dasKeysetFetcher *das.KeysetFetcher
-	if config.DataAvailability.Enable {
-		if config.BatchPoster.Enable {
-			daWriter, daReader, dasKeysetFetcher, dasLifecycleManager, err = das.CreateBatchPosterDAS(ctx, &config.DataAvailability, dataSigner, l1client, deployInfo.SequencerInbox)
-			if err != nil {
-				return nil, err
+	if config.DAProvider.Enable && config.DataAvailability.Enable {
+		return nil, errors.New("da-provider and data-availability cannot be enabled together")
+	}
+
+	var daClient *daclient.Client
+	var withDAWriter bool
+	var dasServerCloseFn func()
+	if config.DAProvider.Enable {
+		daClient, err = daclient.NewClient(ctx, func() *rpcclient.ClientConfig { return &config.DAProvider.RPC })
+		if err != nil {
+			return nil, err
+		}
+		// Only allow dawriter if batchposter is enabled
+		withDAWriter = config.DAProvider.WithWriter && config.BatchPoster.Enable
+	} else if config.DataAvailability.Enable {
+		jwtPath := path.Join(filepath.Dir(stack.InstanceDir()), "dasserver-jwtsecret")
+		if err := genericconf.TryCreatingJWTSecret(jwtPath); err != nil {
+			return nil, fmt.Errorf("error writing ephemeral jwtsecret of dasserver to file: %w", err)
+		}
+		log.Info("Generated ephemeral JWT secret for dasserver", "jwtPath", jwtPath)
+		// JWTSecret is no longer needed, cleanup when returning
+		defer func() {
+			if err := os.Remove(jwtPath); err != nil {
+				log.Error("error deleting generated ephemeral JWT secret of dasserver", "jwtPath", jwtPath)
 			}
-		} else {
-			daReader, dasKeysetFetcher, dasLifecycleManager, err = das.CreateDAReaderForNode(ctx, &config.DataAvailability, l1Reader, &deployInfo.SequencerInbox)
-			if err != nil {
-				return nil, err
-			}
+		}()
+
+		serverConfig := dasserver.DefaultServerConfig
+		serverConfig.Port = 0 // Initializes server at a random available port
+		serverConfig.DataAvailability = config.DataAvailability
+		serverConfig.EnableDAWriter = config.BatchPoster.Enable
+		serverConfig.JWTSecret = jwtPath
+		withDAWriter = config.BatchPoster.Enable
+		dasServer, closeFn, err := dasserver.NewServer(ctx, &serverConfig, dataSigner, l1client, l1Reader, deployInfo.SequencerInbox)
+		if err != nil {
+			return nil, err
 		}
 
-		daReader = das.NewReaderTimeoutWrapper(daReader, config.DataAvailability.RequestTimeout)
-
-		if config.DataAvailability.PanicOnError {
-			if daWriter != nil {
-				daWriter = das.NewWriterPanicWrapper(daWriter)
+		clientConfig := rpcclient.DefaultClientConfig
+		clientConfig.URL = dasServer.Addr
+		clientConfig.JWTSecret = jwtPath
+		daClient, err = daclient.NewClient(ctx, func() *rpcclient.ClientConfig { return &clientConfig })
+		if err != nil {
+			return nil, err
+		}
+		dasServerCloseFn = func() {
+			_ = dasServer.Shutdown(ctx)
+			if closeFn != nil {
+				closeFn()
 			}
-			daReader = das.NewReaderPanicWrapper(daReader)
 		}
 	} else if l2Config.ArbitrumChainParams.DataAvailabilityCommittee {
 		return nil, errors.New("a data availability service is required for this chain, but it was not configured")
 	}
 
 	// We support a nil txStreamer for the pruning code
-	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee && daReader == nil {
+	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee && daClient == nil {
 		return nil, errors.New("data availability service required but unconfigured")
 	}
 	var dapReaders []daprovider.Reader
-	if daReader != nil {
-		dapReaders = append(dapReaders, daprovider.NewReaderForDAS(daReader, dasKeysetFetcher))
+	if daClient != nil {
+		dapReaders = append(dapReaders, daClient)
 	}
 	if blobReader != nil {
 		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(blobReader))
@@ -684,8 +717,8 @@ func createNodeImpl(
 			return nil, errors.New("batchposter, but no TxOpts")
 		}
 		var dapWriter daprovider.Writer
-		if daWriter != nil {
-			dapWriter = daprovider.NewWriterForDAS(daWriter)
+		if daClient != nil && withDAWriter {
+			dapWriter = daClient
 		}
 		batchPoster, err = NewBatchPoster(ctx, &BatchPosterOpts{
 			DataPosterDB:  rawdb.NewTable(arbDb, storage.BatchPosterPrefix),
@@ -736,7 +769,7 @@ func createNodeImpl(
 		BroadcastClients:        broadcastClients,
 		SeqCoordinator:          coordinator,
 		MaintenanceRunner:       maintenanceRunner,
-		DASLifecycleManager:     dasLifecycleManager,
+		dasServerCloseFn:        dasServerCloseFn,
 		SyncMonitor:             syncMonitor,
 		configFetcher:           configFetcher,
 		ctx:                     ctx,
@@ -979,8 +1012,8 @@ func (n *Node) StopAndWait() {
 		n.SeqCoordinator.StopAndWait()
 	}
 	n.SyncMonitor.StopAndWait()
-	if n.DASLifecycleManager != nil {
-		n.DASLifecycleManager.StopAndWaitUntil(2 * time.Second)
+	if n.dasServerCloseFn != nil {
+		n.dasServerCloseFn()
 	}
 	if n.Execution != nil {
 		n.Execution.StopAndWait()

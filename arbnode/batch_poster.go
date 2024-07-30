@@ -38,10 +38,11 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/redislock"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
+	"github.com/offchainlabs/nitro/cmd/daprovider/das/dasutil"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util"
@@ -238,7 +239,7 @@ var DefaultBatchPosterConfig = BatchPosterConfig{
 	MaxDelay:                       time.Hour,
 	WaitForMaxDelay:                false,
 	CompressionLevel:               brotli.BestCompression,
-	DASRetentionPeriod:             daprovider.DefaultDASRetentionPeriod,
+	DASRetentionPeriod:             dasutil.DefaultDASRetentionPeriod,
 	GasRefunderAddress:             "",
 	ExtraBatchGas:                  50_000,
 	Post4844Blobs:                  false,
@@ -270,7 +271,7 @@ var TestBatchPosterConfig = BatchPosterConfig{
 	MaxDelay:                       0,
 	WaitForMaxDelay:                false,
 	CompressionLevel:               2,
-	DASRetentionPeriod:             daprovider.DefaultDASRetentionPeriod,
+	DASRetentionPeriod:             dasutil.DefaultDASRetentionPeriod,
 	GasRefunderAddress:             "",
 	ExtraBatchGas:                  10_000,
 	Post4844Blobs:                  true,

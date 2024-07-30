@@ -28,10 +28,11 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbstate"
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
-	"github.com/offchainlabs/nitro/das/dastree"
+	"github.com/offchainlabs/nitro/cmd/daprovider/das/dastree"
+	"github.com/offchainlabs/nitro/cmd/daprovider/das/dasutil"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/gethhook"
 	"github.com/offchainlabs/nitro/wavmio"
 )
@@ -121,8 +122,8 @@ func (dasReader *PreimageDASReader) HealthCheck(ctx context.Context) error {
 	return nil
 }
 
-func (dasReader *PreimageDASReader) ExpirationPolicy(ctx context.Context) (daprovider.ExpirationPolicy, error) {
-	return daprovider.DiscardImmediately, nil
+func (dasReader *PreimageDASReader) ExpirationPolicy(ctx context.Context) (dasutil.ExpirationPolicy, error) {
+	return dasutil.DiscardImmediately, nil
 }
 
 type BlobPreimageReader struct {
@@ -215,8 +216,8 @@ func main() {
 		if lastBlockHeader != nil {
 			delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 		}
-		var dasReader daprovider.DASReader
-		var dasKeysetFetcher daprovider.DASKeysetFetcher
+		var dasReader dasutil.DASReader
+		var dasKeysetFetcher dasutil.DASKeysetFetcher
 		if dasEnabled {
 			// DAS batch and keysets are all together in the same preimage binary.
 			dasReader = &PreimageDASReader{}
@@ -229,7 +230,7 @@ func main() {
 		}
 		var dapReaders []daprovider.Reader
 		if dasReader != nil {
-			dapReaders = append(dapReaders, daprovider.NewReaderForDAS(dasReader, dasKeysetFetcher))
+			dapReaders = append(dapReaders, dasutil.NewReaderForDAS(dasReader, dasKeysetFetcher))
 		}
 		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(&BlobPreimageReader{}))
 		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode)
