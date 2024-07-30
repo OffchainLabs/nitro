@@ -70,6 +70,7 @@ type FullExecutionClient interface {
 	Maintenance() error
 
 	ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error)
+	BlockNumberToMessageIndex(blockNum uint64) (arbutil.MessageIndex, error)
 }
 
 // not implemented in execution, used as input

@@ -513,7 +513,7 @@ func mainImpl() int {
 		}
 	}
 
-	if nodeConfig.Init.ThenQuit && nodeConfig.Init.ResetToMessage < 0 {
+	if nodeConfig.Init.ThenQuit && !nodeConfig.Init.IsReorgRequested() {
 		return 0
 	}
 
@@ -669,29 +669,53 @@ func mainImpl() int {
 	sigint := make(chan os.Signal, 1)
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
-	exitCode := 0
-
-	if err == nil && nodeConfig.Init.ResetToMessage > 0 {
-		err = currentNode.TxStreamer.ReorgTo(arbutil.MessageIndex(nodeConfig.Init.ResetToMessage))
-		if err != nil {
-			fatalErrChan <- fmt.Errorf("error reseting message: %w", err)
-			exitCode = 1
+	if err == nil && nodeConfig.Init.IsReorgRequested() {
+		var batchCount uint64
+		if nodeConfig.Init.ReorgToBatch >= 0 {
+			batchCount = uint64(nodeConfig.Init.ReorgToBatch) + 1
+		} else {
+			var messageIndex arbutil.MessageIndex
+			if nodeConfig.Init.ReorgToMessageBatch >= 0 {
+				messageIndex = arbutil.MessageIndex(nodeConfig.Init.ReorgToMessageBatch)
+			} else {
+				messageIndex, err = currentNode.Execution.BlockNumberToMessageIndex(uint64(nodeConfig.Init.ReorgToBlockBatch))
+			}
+			// Reorg out the batch containing the next message
+			var missing bool
+			batchCount, missing, err = currentNode.InboxTracker.FindInboxBatchContainingMessage(messageIndex + 1)
+			if err == nil && missing {
+				err = fmt.Errorf("cannot reorg to unknown message index %v", messageIndex)
+			}
 		}
-		if nodeConfig.Init.ThenQuit {
-			return exitCode
+		if err == nil {
+			err = currentNode.InboxTracker.ReorgBatchesTo(batchCount)
+		}
+		if err != nil {
+			fatalErrChan <- fmt.Errorf("error reorging per init config: %w", err)
+		} else if nodeConfig.Init.ThenQuit {
+			return 0
 		}
 	}
 
+	err = nil
 	select {
-	case err := <-fatalErrChan:
+	case err = <-fatalErrChan:
+	case <-sigint:
+		// If there was both a sigint and a fatal error, we want to log the fatal error
+		select {
+		case err = <-fatalErrChan:
+		default:
+			log.Info("shutting down because of sigint")
+		}
+	}
+
+	if err != nil {
 		log.Error("shutting down due to fatal error", "err", err)
 		defer log.Error("shut down due to fatal error", "err", err)
-		exitCode = 1
-	case <-sigint:
-		log.Info("shutting down because of sigint")
+		return 1
 	}
 
-	return exitCode
+	return 0
 }
 
 type NodeConfig struct {

@@ -30,9 +30,11 @@ type InitConfig struct {
 	PruneBloomSize           uint64        `koanf:"prune-bloom-size"`
 	PruneThreads             int           `koanf:"prune-threads"`
 	PruneTrieCleanCache      int           `koanf:"prune-trie-clean-cache"`
-	ResetToMessage           int64         `koanf:"reset-to-message"`
 	RecreateMissingStateFrom uint64        `koanf:"recreate-missing-state-from"`
 	RebuildLocalWasm         bool          `koanf:"rebuild-local-wasm"`
+	ReorgToBatch             int64         `koanf:"reorg-to-batch"`
+	ReorgToMessageBatch      int64         `koanf:"reorg-to-message-batch"`
+	ReorgToBlockBatch        int64         `koanf:"reorg-to-block-batch"`
 }
 
 var InitConfigDefault = InitConfig{
@@ -54,9 +56,11 @@ var InitConfigDefault = InitConfig{
 	PruneBloomSize:           2048,
 	PruneThreads:             runtime.NumCPU(),
 	PruneTrieCleanCache:      gethexec.DefaultCachingConfig.TrieCleanCache,
-	ResetToMessage:           -1,
 	RecreateMissingStateFrom: 0, // 0 = disabled
 	RebuildLocalWasm:         true,
+	ReorgToBatch:             -1,
+	ReorgToMessageBatch:      -1,
+	ReorgToBlockBatch:        -1,
 }
 
 func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -78,9 +82,11 @@ func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".prune-bloom-size", InitConfigDefault.PruneBloomSize, "the amount of memory in megabytes to use for the pruning bloom filter (higher values prune better)")
 	f.Int(prefix+".prune-threads", InitConfigDefault.PruneThreads, "the number of threads to use when pruning")
 	f.Int(prefix+".prune-trie-clean-cache", InitConfigDefault.PruneTrieCleanCache, "amount of memory in megabytes to cache unchanged state trie nodes with when traversing state database during pruning")
-	f.Int64(prefix+".reset-to-message", InitConfigDefault.ResetToMessage, "forces a reset to an old message height. Also set max-reorg-resequence-depth=0 to force re-reading messages")
 	f.Uint64(prefix+".recreate-missing-state-from", InitConfigDefault.RecreateMissingStateFrom, "block number to start recreating missing states from (0 = disabled)")
 	f.Bool(prefix+".rebuild-local-wasm", InitConfigDefault.RebuildLocalWasm, "rebuild local wasm database on boot if needed (otherwise-will be done lazily)")
+	f.Int64(prefix+".reorg-to-batch", InitConfigDefault.ReorgToBatch, "rolls back the blockchain to a specified batch number")
+	f.Int64(prefix+".reorg-to-message-batch", InitConfigDefault.ReorgToMessageBatch, "rolls back the blockchain to the first batch at or before a given message index")
+	f.Int64(prefix+".reorg-to-block-batch", InitConfigDefault.ReorgToBlockBatch, "rolls back the blockchain to the first batch at or before a given block number")
 }
 
 func (c *InitConfig) Validate() error {
@@ -97,6 +103,10 @@ func (c *InitConfig) Validate() error {
 		return fmt.Errorf("invalid trie clean cache size: %d, has to be greater or equal 0", c.PruneTrieCleanCache)
 	}
 	return nil
+}
+
+func (c *InitConfig) IsReorgRequested() bool {
+	return c.ReorgToBatch >= 0 || c.ReorgToBlockBatch >= 0 || c.ReorgToMessageBatch >= 0
 }
 
 var (
