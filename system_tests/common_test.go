@@ -6,6 +6,7 @@ package arbtest
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"io"
@@ -618,6 +619,57 @@ func BridgeBalance(
 	}
 
 	return tx, res
+}
+
+func SendSignedTxesInBatchViaL1(
+	t *testing.T,
+	ctx context.Context,
+	l1info *BlockchainTestInfo,
+	l1client arbutil.L1Interface,
+	l2client arbutil.L1Interface,
+	delayedTxes types.Transactions,
+) types.Receipts {
+	delayedInboxContract, err := bridgegen.NewInbox(l1info.GetAddress("Inbox"), l1client)
+	Require(t, err)
+	usertxopts := l1info.GetDefaultTransactOpts("User", ctx)
+
+	wraped, err := l2MessageBatchDataFromTxes(delayedTxes)
+	Require(t, err)
+	l1tx, err := delayedInboxContract.SendL2Message(&usertxopts, wraped)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, l1client, l1tx)
+	Require(t, err)
+
+	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
+	for i := 0; i < 30; i++ {
+		SendWaitTestTransactions(t, ctx, l1client, []*types.Transaction{
+			l1info.PrepareTx("Faucet", "Faucet", 30000, big.NewInt(1e12), nil),
+		})
+	}
+	var receipts types.Receipts
+	for _, tx := range delayedTxes {
+		receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+		Require(t, err)
+		receipts = append(receipts, receipt)
+	}
+	return receipts
+}
+
+func l2MessageBatchDataFromTxes(txes types.Transactions) ([]byte, error) {
+	var l2Message []byte
+	l2Message = append(l2Message, arbos.L2MessageKind_Batch)
+	sizeBuf := make([]byte, 8)
+	for _, tx := range txes {
+		txBytes, err := tx.MarshalBinary()
+		if err != nil {
+			return nil, err
+		}
+		binary.BigEndian.PutUint64(sizeBuf, uint64(len(txBytes)+1))
+		l2Message = append(l2Message, sizeBuf...)
+		l2Message = append(l2Message, arbos.L2MessageKind_SignedTx)
+		l2Message = append(l2Message, txBytes...)
+	}
+	return l2Message, nil
 }
 
 func SendSignedTxViaL1(
