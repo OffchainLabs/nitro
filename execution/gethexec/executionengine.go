@@ -408,7 +408,7 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.Messa
 		return
 	}
 
-	nextDelayedSeqNum := lastBlockHeader.Nonce.Uint64()
+	nextDelayedMsgIdx := lastBlockHeader.Nonce.Uint64()
 
 	for _, msg := range messages {
 		// Check if the message is non-nil just to be safe
@@ -417,16 +417,16 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.Messa
 		}
 		header := msg.Message.Header
 		if header.RequestId != nil {
-			delayedSeqNum := header.RequestId.Big().Uint64()
-			if delayedSeqNum != nextDelayedSeqNum {
-				log.Info("not resequencing delayed message due to unexpected index", "expected", nextDelayedSeqNum, "found", delayedSeqNum)
+			delayedMsgIdx := header.RequestId.Big().Uint64()
+			if delayedMsgIdx != nextDelayedMsgIdx {
+				log.Info("not resequencing delayed message due to unexpected index", "expected", nextDelayedMsgIdx, "found", delayedMsgIdx)
 				continue
 			}
-			_, err := s.sequenceDelayedMessageWithBlockMutex(msg.Message, delayedSeqNum)
+			_, err := s.sequenceDelayedMessageWithBlockMutex(msg.Message, delayedMsgIdx)
 			if err != nil {
 				log.Error("failed to re-sequence old delayed message removed by reorg", "err", err)
 			}
-			nextDelayedSeqNum += 1
+			nextDelayedMsgIdx += 1
 			continue
 		}
 		if header.Kind != arbostypes.L1MessageType_L2Message || header.Poster != l1pricing.BatchPosterAddress {
@@ -640,33 +640,33 @@ func (s *ExecutionEngine) blockMetadataFromBlock(block *types.Block, timeboosted
 	return bits
 }
 
-func (s *ExecutionEngine) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error {
+func (s *ExecutionEngine) SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedMsgIdx uint64) error {
 	_, err := s.sequencerWrapper(func() (*types.Block, error) {
-		return s.sequenceDelayedMessageWithBlockMutex(message, delayedSeqNum)
+		return s.sequenceDelayedMessageWithBlockMutex(message, delayedMsgIdx)
 	})
 	return err
 }
 
-func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) (*types.Block, error) {
+func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostypes.L1IncomingMessage, delayedMsgIdx uint64) (*types.Block, error) {
 	currentHeader, err := s.getCurrentHeader()
 	if err != nil {
 		return nil, err
 	}
 
-	expectedDelayed := currentHeader.Nonce.Uint64()
+	expectedDelayedMsgIdx := currentHeader.Nonce.Uint64()
 
 	msgIdx, err := s.BlockNumberToMessageIndex(currentHeader.Number.Uint64() + 1)
 	if err != nil {
 		return nil, err
 	}
 
-	if expectedDelayed != delayedSeqNum {
-		return nil, fmt.Errorf("wrong delayed message sequenced got %d expected %d", delayedSeqNum, expectedDelayed)
+	if expectedDelayedMsgIdx != delayedMsgIdx {
+		return nil, fmt.Errorf("wrong delayed message sequenced got %d expected %d", delayedMsgIdx, expectedDelayedMsgIdx)
 	}
 
 	messageWithMeta := arbostypes.MessageWithMetadata{
 		Message:             message,
-		DelayedMessagesRead: delayedSeqNum + 1,
+		DelayedMessagesRead: delayedMsgIdx + 1,
 	}
 
 	startTime := time.Now()
@@ -693,7 +693,7 @@ func (s *ExecutionEngine) sequenceDelayedMessageWithBlockMutex(message *arbostyp
 	}
 	s.cacheL1PriceDataOfMsg(msgIdx, receipts, block, true)
 
-	log.Info("ExecutionEngine: Added DelayedMessages", "msgIdx", msgIdx, "delayed", delayedSeqNum, "block-header", block.Header())
+	log.Info("ExecutionEngine: Added DelayedMessages", "msgIdx", msgIdx, "delayedMsgIdx", delayedMsgIdx, "block-header", block.Header())
 
 	return block, nil
 }
