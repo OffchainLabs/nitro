@@ -7,14 +7,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/hex"
-	"errors"
 	"fmt"
 	"strconv"
 
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/util/dbutil"
-	"github.com/syndtr/goleveldb/leveldb"
 )
 
 // Storage implements db based storage for batch poster.
@@ -61,7 +59,7 @@ func (s *Storage) Get(_ context.Context, index uint64) (*storage.QueuedTransacti
 	key := idxToKey(index)
 	value, err := s.db.Get(key)
 	if err != nil {
-		if isErrNotFound(err) {
+		if dbutil.IsErrNotFound(err) {
 			return nil, nil
 		}
 		return nil, err
