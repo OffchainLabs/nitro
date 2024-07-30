@@ -553,18 +553,18 @@ func (s *TransactionStreamer) AddMessages(firstMsgIdx arbutil.MessageIndex, mess
 }
 
 func (s *TransactionStreamer) FeedPendingMessageCount() arbutil.MessageIndex {
-	pos := s.broadcasterQueuedMessagesFirstMsgIdx.Load()
-	if pos == 0 {
+	firstMsgIdx := s.broadcasterQueuedMessagesFirstMsgIdx.Load()
+	if firstMsgIdx == 0 {
 		return 0
 	}
 
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
-	pos = s.broadcasterQueuedMessagesFirstMsgIdx.Load()
-	if pos == 0 {
+	firstMsgIdx = s.broadcasterQueuedMessagesFirstMsgIdx.Load()
+	if firstMsgIdx == 0 {
 		return 0
 	}
-	return arbutil.MessageIndex(pos + uint64(len(s.broadcasterQueuedMessages)))
+	return arbutil.MessageIndex(firstMsgIdx + uint64(len(s.broadcasterQueuedMessages)))
 }
 
 func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFeedMessage) error {
