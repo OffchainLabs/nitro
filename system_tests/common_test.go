@@ -29,7 +29,6 @@ import (
 	"github.com/offchainlabs/nitro/das"
 	"github.com/offchainlabs/nitro/deploy"
 	"github.com/offchainlabs/nitro/execution/gethexec"
-	"github.com/offchainlabs/nitro/timeboost/bindings"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
@@ -71,7 +70,6 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	_ "github.com/offchainlabs/nitro/execution/nodeInterface"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
-	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
@@ -283,105 +281,6 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		sequencerTxOpts := b.L1Info.GetDefaultTransactOpts("Sequencer", b.ctx)
 		sequencerTxOptsPtr = &sequencerTxOpts
 		dataSigner = signature.DataSignerFromPrivateKey(b.L1Info.GetInfoWithPrivKey("Sequencer").PrivateKey)
-
-		// Deploy the express lane auction contract and erc20 to the parent chain.
-		// TODO: This should be deployed to L2 instead.
-		// TODO: Move this somewhere better.
-		// Deploy the token as a mock erc20.
-		erc20Addr, tx, erc20, err := bindings.DeployMockERC20(&sequencerTxOpts, b.L1.Client)
-		Require(t, err)
-		ctx, cancel := context.WithCancel(context.Background())
-		defer cancel()
-		if _, err = bind.WaitMined(ctx, b.L1.Client, tx); err != nil {
-			t.Fatal(err)
-		}
-		tx, err = erc20.Initialize(&sequencerTxOpts, "LANE", "LNE", 18)
-		Require(t, err)
-		if _, err = bind.WaitMined(ctx, b.L1.Client, tx); err != nil {
-			t.Fatal(err)
-		}
-
-		// Fund the auction contract.
-		b.L1Info.GenerateAccount("AuctionContract")
-		TransferBalance(t, "Faucet", "AuctionContract", arbmath.BigMulByUint(oneEth, 500), b.L1Info, b.L1.Client, ctx)
-
-		// Mint some tokens to Alice and Bob.
-		b.L1Info.GenerateAccount("Alice")
-		b.L1Info.GenerateAccount("Bob")
-		TransferBalance(t, "Faucet", "Alice", arbmath.BigMulByUint(oneEth, 500), b.L1Info, b.L1.Client, ctx)
-		TransferBalance(t, "Faucet", "Bob", arbmath.BigMulByUint(oneEth, 500), b.L1Info, b.L1.Client, ctx)
-		aliceOpts := b.L1Info.GetDefaultTransactOpts("Alice", ctx)
-		bobOpts := b.L1Info.GetDefaultTransactOpts("Bob", ctx)
-		tx, err = erc20.Mint(&sequencerTxOpts, aliceOpts.From, big.NewInt(100))
-		Require(t, err)
-		if _, err = bind.WaitMined(ctx, b.L1.Client, tx); err != nil {
-			t.Fatal(err)
-		}
-		tx, err = erc20.Mint(&sequencerTxOpts, bobOpts.From, big.NewInt(100))
-		Require(t, err)
-		if _, err = bind.WaitMined(ctx, b.L1.Client, tx); err != nil {
-			t.Fatal(err)
-		}
-
-		// Calculate the number of seconds until the next minute
-		// and the next timestamp that is a multiple of a minute.
-		now := time.Now()
-		roundDuration := time.Minute
-		// Correctly calculate the remaining time until the next minute
-		waitTime := roundDuration - time.Duration(now.Second())*time.Second - time.Duration(now.Nanosecond())*time.Nanosecond
-		// Get the current Unix timestamp at the start of the minute
-		initialTimestamp := big.NewInt(now.Add(waitTime).Unix())
-
-		// Deploy the auction manager contract.
-		auctionContractAddr, tx, _, err := express_lane_auctiongen.DeployExpressLaneAuction(&sequencerTxOpts, b.L1.Client)
-		Require(t, err)
-		if _, err = bind.WaitMined(ctx, b.L1.Client, tx); err != nil {
-			t.Fatal(err)
-		}
-
-		proxyAddr, tx, _, err := mocksgen.DeploySimpleProxy(&sequencerTxOpts, b.L1.Client, auctionContractAddr)
-		Require(t, err)
-		if _, err = bind.WaitMined(ctx, b.L1.Client, tx); err != nil {
-			t.Fatal(err)
-		}
-		auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(proxyAddr, b.L1.Client)
-		Require(t, err)
-
-		auctioneer := b.L1Info.GetDefaultTransactOpts("AuctionContract", b.ctx).From
-		beneficiary := auctioneer
-		biddingToken := erc20Addr
-		bidRoundSeconds := uint64(60)
-		auctionClosingSeconds := uint64(15)
-		reserveSubmissionSeconds := uint64(15)
-		minReservePrice := big.NewInt(1) // 1 wei.
-		roleAdmin := auctioneer
-		minReservePriceSetter := auctioneer
-		reservePriceSetter := auctioneer
-		beneficiarySetter := auctioneer
-		tx, err = auctionContract.Initialize(
-			&sequencerTxOpts,
-			auctioneer,
-			beneficiary,
-			biddingToken,
-			express_lane_auctiongen.RoundTimingInfo{
-				OffsetTimestamp:          initialTimestamp.Uint64(),
-				RoundDurationSeconds:     bidRoundSeconds,
-				AuctionClosingSeconds:    auctionClosingSeconds,
-				ReserveSubmissionSeconds: reserveSubmissionSeconds,
-			},
-			minReservePrice,
-			roleAdmin,
-			minReservePriceSetter,
-			reservePriceSetter,
-			beneficiarySetter,
-		)
-		Require(t, err)
-		if _, err = bind.WaitMined(ctx, b.L1.Client, tx); err != nil {
-			t.Fatal(err)
-		}
-		t.Log("Deployed all the auction manager stuff", auctionContractAddr)
-		b.execConfig.Sequencer.Timeboost.AuctionContractAddress = proxyAddr.Hex()
-		b.execConfig.Sequencer.Timeboost.ERC20Address = erc20Addr.Hex()
 	} else {
 		b.nodeConfig.BatchPoster.Enable = false
 		b.nodeConfig.Sequencer = false

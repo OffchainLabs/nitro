@@ -3,21 +3,36 @@ package gethexec
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/secp256k1"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/pkg/errors"
 )
+
+var auctionResolvedEvent common.Hash
+
+func init() {
+	auctionAbi, err := express_lane_auctiongen.ExpressLaneAuctionMetaData.GetAbi()
+	if err != nil {
+		panic(err)
+	}
+	auctionResolvedEventData, ok := auctionAbi.Events["AuctionResolved"]
+	if !ok {
+		panic("RollupCore ABI missing AssertionCreated event")
+	}
+	auctionResolvedEvent = auctionResolvedEventData.ID
+}
 
 type expressLaneControl struct {
 	round      uint64
@@ -28,41 +43,34 @@ type expressLaneControl struct {
 type expressLaneService struct {
 	stopwaiter.StopWaiter
 	sync.RWMutex
-	client              arbutil.L1Interface
 	control             expressLaneControl
 	auctionContractAddr common.Address
 	auctionContract     *express_lane_auctiongen.ExpressLaneAuction
 	initialTimestamp    time.Time
 	roundDuration       time.Duration
 	chainConfig         *params.ChainConfig
+	logs                chan []*types.Log
+	bc                  *core.BlockChain
 }
 
 func newExpressLaneService(
-	client arbutil.L1Interface,
 	auctionContractAddr common.Address,
-	chainConfig *params.ChainConfig,
+	initialRoundTimestamp uint64,
+	roundDuration time.Duration,
+	bc *core.BlockChain,
 ) (*expressLaneService, error) {
-	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, client)
-	if err != nil {
-		return nil, err
-	}
-	roundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
-	if err != nil {
-		return nil, err
-	}
-	initialTimestamp := time.Unix(int64(roundTimingInfo.OffsetTimestamp), 0)
-	roundDuration := time.Duration(roundTimingInfo.RoundDurationSeconds) * time.Second
+	chainConfig := bc.Config()
 	return &expressLaneService{
-		auctionContract:  auctionContract,
-		client:           client,
+		bc:               bc,
 		chainConfig:      chainConfig,
-		initialTimestamp: initialTimestamp,
+		initialTimestamp: time.Unix(int64(initialRoundTimestamp), 0),
 		control: expressLaneControl{
 			controller: common.Address{},
 			round:      0,
 		},
 		auctionContractAddr: auctionContractAddr,
 		roundDuration:       roundDuration,
+		logs:                make(chan []*types.Log, 10_000),
 	}, nil
 }
 
@@ -93,52 +101,22 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 	})
 	es.LaunchThread(func(ctx context.Context) {
 		log.Info("Monitoring express lane auction contract")
-		// Monitor for auction resolutions from the auction manager smart contract
-		// and set the express lane controller for the upcoming round accordingly.
-		latestBlock, err := es.client.HeaderByNumber(ctx, nil)
-		if err != nil {
-			log.Crit("Could not get latest header", "err", err)
-		}
-		fromBlock := latestBlock.Number.Uint64()
-		ticker := time.NewTicker(time.Millisecond * 250)
-		defer ticker.Stop()
+		sub := es.bc.SubscribeLogsEvent(es.logs)
+		defer sub.Unsubscribe()
 		for {
 			select {
+			case evs := <-es.logs:
+				for _, ev := range evs {
+					if ev.Address != es.auctionContractAddr {
+						continue
+					}
+					go es.processAuctionContractEvent(ctx, ev)
+				}
 			case <-ctx.Done():
 				return
-			case <-ticker.C:
-				latestBlock, err := es.client.HeaderByNumber(ctx, nil)
-				if err != nil {
-					log.Error("Could not get latest header", "err", err)
-					continue
-				}
-				toBlock := latestBlock.Number.Uint64()
-				if fromBlock == toBlock {
-					continue
-				}
-				filterOpts := &bind.FilterOpts{
-					Context: ctx,
-					Start:   fromBlock,
-					End:     &toBlock,
-				}
-				it, err := es.auctionContract.FilterAuctionResolved(filterOpts, nil, nil, nil)
-				if err != nil {
-					log.Error("Could not filter auction resolutions", "error", err)
-					continue
-				}
-				for it.Next() {
-					log.Info(
-						"New express lane controller assigned",
-						"round", it.Event.Round,
-						"controller", it.Event.FirstPriceExpressLaneController,
-					)
-					es.Lock()
-					es.control.round = it.Event.Round
-					es.control.controller = it.Event.FirstPriceExpressLaneController
-					es.control.sequence = 0 // Sequence resets 0 for the new round.
-					es.Unlock()
-				}
-				fromBlock = toBlock
+			case err := <-sub.Err():
+				log.Error("Subscriber failed", "err", err)
+				return
 			}
 		}
 	})
@@ -146,6 +124,27 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 		// Monitor for auction cancelations.
 		// TODO: Implement.
 	})
+}
+
+func (es *expressLaneService) processAuctionContractEvent(_ context.Context, rawLog *types.Log) {
+	if !slices.Contains(rawLog.Topics, auctionResolvedEvent) {
+		return
+	}
+	ev, err := es.auctionContract.ParseAuctionResolved(*rawLog)
+	if err != nil {
+		log.Error("Failed to parse AuctionResolved event", "err", err)
+		return
+	}
+	log.Info(
+		"New express lane controller assigned",
+		"round", ev.Round,
+		"controller", ev.FirstPriceExpressLaneController,
+	)
+	es.Lock()
+	es.control.round = ev.Round
+	es.control.controller = ev.FirstPriceExpressLaneController
+	es.control.sequence = 0 // Sequence resets 0 for the new round.
+	es.Unlock()
 }
 
 func (es *expressLaneService) currentRoundHasController() bool {

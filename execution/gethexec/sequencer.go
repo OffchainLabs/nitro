@@ -88,6 +88,8 @@ type TimeboostConfig struct {
 	AuctionContractAddress string        `koanf:"auction-contract-address"`
 	ERC20Address           string        `koanf:"erc20-address"`
 	ExpressLaneAdvantage   time.Duration `koanf:"express-lane-advantage"`
+	RoundDuration          time.Duration `koanf:"round-duration"`
+	InitialRoundTimestamp  uint64        `koanf:"initial-round-timestamp"`
 }
 
 var DefaultTimeboostConfig = TimeboostConfig{
@@ -95,6 +97,8 @@ var DefaultTimeboostConfig = TimeboostConfig{
 	AuctionContractAddress: "",
 	ERC20Address:           "",
 	ExpressLaneAdvantage:   time.Millisecond * 200,
+	RoundDuration:          time.Second,
+	InitialRoundTimestamp:  uint64(time.Unix(0, 0).Unix()),
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -192,6 +196,8 @@ func TimeboostAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultTimeboostConfig.Enable, "enable timeboost based on express lane auctions")
 	f.String(prefix+".auction-contract-address", DefaultTimeboostConfig.AuctionContractAddress, "address of the autonomous auction contract")
 	f.String(prefix+".erc20-address", DefaultTimeboostConfig.ERC20Address, "address of the auction erc20")
+	f.Uint64(prefix+".initial-round-timestamp", DefaultTimeboostConfig.InitialRoundTimestamp, "initial timestamp for auctions")
+	f.Duration(prefix+".round-duration", DefaultTimeboostConfig.RoundDuration, "round duration")
 }
 
 type txQueueItem struct {
@@ -387,19 +393,6 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 		pauseChan:       nil,
 		onForwarderSet:  make(chan struct{}, 1),
 	}
-	if config.Timeboost.Enable {
-		addr := common.HexToAddress(config.Timeboost.AuctionContractAddress)
-		// TODO: Need to provide an L2 interface instead of an L1 interface.
-		els, err := newExpressLaneService(
-			l1Reader.Client(),
-			addr,
-			s.execEngine.bc.Config(),
-		)
-		if err != nil {
-			return nil, err
-		}
-		s.expressLaneService = els
-	}
 	s.nonceFailures = &nonceFailureCache{
 		containers.NewLruCacheWithOnEvict(config.NonceCacheSize, s.onNonceFailureEvict),
 		func() time.Duration { return configFetcher().NonceFailureCacheExpiry },
@@ -407,20 +400,6 @@ func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderRead
 	s.Pause()
 	execEngine.EnableReorgSequencing()
 	return s, nil
-}
-
-func (s *Sequencer) ExpressLaneAuction() common.Address {
-	if s.expressLaneService == nil {
-		return common.Address{}
-	}
-	return common.HexToAddress(s.config().Timeboost.AuctionContractAddress)
-}
-
-func (s *Sequencer) ExpressLaneERC20() common.Address {
-	if s.expressLaneService == nil {
-		return common.Address{}
-	}
-	return common.HexToAddress(s.config().Timeboost.ERC20Address)
 }
 
 func (s *Sequencer) onNonceFailureEvict(_ addressAndNonce, failure *nonceFailure) {
@@ -457,18 +436,6 @@ func ctxWithTimeout(ctx context.Context, timeout time.Duration) (context.Context
 		return context.WithCancel(ctx)
 	}
 	return context.WithTimeout(ctx, timeout)
-}
-
-type PublishTxConfig struct {
-	delayTransaction bool
-}
-
-type TimeboostOpt func(p *PublishTxConfig)
-
-func WithExpressLane() TimeboostOpt {
-	return func(p *PublishTxConfig) {
-		p.delayTransaction = false
-	}
 }
 
 func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
@@ -520,7 +487,7 @@ func (s *Sequencer) publishTransactionImpl(parentCtx context.Context, tx *types.
 		return err
 	}
 
-	if s.config().Timeboost.Enable {
+	if s.config().Timeboost.Enable && s.expressLaneService != nil {
 		if delay && s.expressLaneService.currentRoundHasController() {
 			time.Sleep(s.config().Timeboost.ExpressLaneAdvantage)
 		}
@@ -566,6 +533,12 @@ func (s *Sequencer) publishTransactionImpl(parentCtx context.Context, tx *types.
 }
 
 func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *timeboost.ExpressLaneSubmission) error {
+	if !s.config().Timeboost.Enable {
+		return errors.New("timeboost not enabled")
+	}
+	if s.expressLaneService == nil {
+		return errors.New("express lane service not enabled")
+	}
 	if err := s.expressLaneService.validateExpressLaneTx(msg); err != nil {
 		return err
 	}
@@ -1211,10 +1184,6 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 		})
 	}
 
-	if s.config().Timeboost.Enable {
-		s.expressLaneService.Start(ctxIn)
-	}
-
 	s.CallIteratively(func(ctx context.Context) time.Duration {
 		nextBlock := time.Now().Add(s.config().MaxBlockSpeed)
 		if s.createBlock(ctx) {
@@ -1226,6 +1195,28 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 	})
 
 	return nil
+}
+
+// TODO: This is needed because there is no way to currently set the initial timestamp of the express lane service
+// without starting the sequencer. This is a temporary solution until we have a better way to handle this.
+func (s *Sequencer) StartExpressLaneService(
+	ctx context.Context, initialTimestamp uint64, auctionContractAddr common.Address,
+) {
+	if s.config().Timeboost.Enable {
+		return
+	}
+	els, err := newExpressLaneService(
+		auctionContractAddr,
+		initialTimestamp,
+		s.config().Timeboost.RoundDuration,
+		s.execEngine.bc,
+	)
+	if err != nil {
+		log.Error("Failed to start express lane service", "err", err)
+		return
+	}
+	s.expressLaneService = els
+	s.expressLaneService.Start(ctx)
 }
 
 func (s *Sequencer) StopAndWait() {
