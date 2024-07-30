@@ -1128,7 +1128,7 @@ func (s *TransactionStreamer) broadcastMessages(
 	}
 }
 
-// The mutex must be held, and pos must be the latest message count.
+// The mutex must be held, and firstMsgIdx must be the latest message count.
 // `batch` may be nil, which initializes a new batch. The batch is closed out in this function.
 func (s *TransactionStreamer) writeMessages(firstMsgIdx arbutil.MessageIndex, messages []arbostypes.MessageWithMetadataAndBlockInfo, batch ethdb.Batch) error {
 	if batch == nil {
