@@ -310,11 +310,13 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	t.Log("Now submitting txs to sequencer")
 
 	// Prepare a client that can submit txs to the sequencer via the express lane.
-	seqDial, err := rpc.Dial("http://localhost:9567")
+	seqDial, err := rpc.Dial(seqNode.Stack.HTTPEndpoint())
+	Require(t, err)
+	seqChainId, err := seqClient.ChainID(ctx)
 	Require(t, err)
 	expressLaneClient := timeboost.NewExpressLaneClient(
 		bobPriv,
-		chainId.Uint64(),
+		seqChainId.Uint64(),
 		time.Unix(int64(info.OffsetTimestamp), 0),
 		roundDuration,
 		auctionAddr,
@@ -342,8 +344,6 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 		Require(t, err)
 	}(&wg)
 	wg.Wait()
-
-	time.Sleep(time.Minute)
 
 	// After round is done, verify that Bob beats Alice in the final sequence.
 	aliceReceipt, err := seqClient.TransactionReceipt(ctx, aliceTx.Hash())
@@ -377,7 +377,6 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 			t.Fatal("Bob should have been sequenced before Alice with express lane")
 		}
 	}
-	time.Sleep(time.Hour)
 }
 
 func awaitAuctionResolved(
