@@ -5,33 +5,43 @@ package staker
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"regexp"
 	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	flag "github.com/spf13/pflag"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rlp"
+	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/client/redis"
+	"github.com/spf13/pflag"
 )
 
 var (
 	validatorPendingValidationsGauge  = metrics.NewRegisteredGauge("arb/validator/validations/pending", nil)
 	validatorValidValidationsCounter  = metrics.NewRegisteredCounter("arb/validator/validations/valid", nil)
 	validatorFailedValidationsCounter = metrics.NewRegisteredCounter("arb/validator/validations/failed", nil)
+	validatorProfileWaitToRecordHist  = metrics.NewRegisteredHistogram("arb/validator/profile/wait_to_record", nil, metrics.NewBoundedHistogramSample())
+	validatorProfileRecordingHist     = metrics.NewRegisteredHistogram("arb/validator/profile/recording", nil, metrics.NewBoundedHistogramSample())
+	validatorProfileWaitToLaunchHist  = metrics.NewRegisteredHistogram("arb/validator/profile/wait_to_launch", nil, metrics.NewBoundedHistogramSample())
+	validatorProfileLaunchingHist     = metrics.NewRegisteredHistogram("arb/validator/profile/launching", nil, metrics.NewBoundedHistogramSample())
+	validatorProfileRunningHist       = metrics.NewRegisteredHistogram("arb/validator/profile/running", nil, metrics.NewBoundedHistogramSample())
 	validatorMsgCountCurrentBatch     = metrics.NewRegisteredGauge("arb/validator/msg_count_current_batch", nil)
+	validatorMsgCountCreatedGauge     = metrics.NewRegisteredGauge("arb/validator/msg_count_created", nil)
+	validatorMsgCountRecordSentGauge  = metrics.NewRegisteredGauge("arb/validator/msg_count_record_sent", nil)
 	validatorMsgCountValidatedGauge   = metrics.NewRegisteredGauge("arb/validator/msg_count_validated", nil)
 )
 
@@ -44,11 +54,12 @@ type BlockValidator struct {
 	chainCaughtUp bool
 
 	// can only be accessed from creation thread or if holding reorg-write
-	nextCreateBatch         []byte
-	nextCreateBatchMsgCount arbutil.MessageIndex
-	nextCreateBatchReread   bool
-	nextCreateStartGS       validator.GoGlobalState
-	nextCreatePrevDelayed   uint64
+	nextCreateBatch          []byte
+	nextCreateBatchBlockHash common.Hash
+	nextCreateBatchMsgCount  arbutil.MessageIndex
+	nextCreateBatchReread    bool
+	nextCreateStartGS        validator.GoGlobalState
+	nextCreatePrevDelayed    uint64
 
 	// can only be accessed from from validation thread or if holding reorg-write
 	lastValidGS     validator.GoGlobalState
@@ -60,9 +71,9 @@ type BlockValidator struct {
 
 	// can be read (atomic.Load) by anyone holding reorg-read
 	// written (atomic.Set) by appropriate thread or (any way) holding reorg-write
-	createdA    uint64
-	recordSentA uint64
-	validatedA  uint64
+	createdA    atomic.Uint64
+	recordSentA atomic.Uint64
+	validatedA  atomic.Uint64
 	validations containers.SyncMap[arbutil.MessageIndex, *validationStatus]
 
 	config BlockValidatorConfigFetcher
@@ -71,26 +82,66 @@ type BlockValidator struct {
 	sendRecordChan          chan struct{}
 	progressValidationsChan chan struct{}
 
+	chosenValidator map[common.Hash]validator.ValidationSpawner
+
+	// wasmModuleRoot
+	moduleMutex           sync.Mutex
+	currentWasmModuleRoot common.Hash
+	pendingWasmModuleRoot common.Hash
+
 	// for testing only
 	testingProgressMadeChan chan struct{}
 
 	fatalErr chan<- error
+
+	MemoryFreeLimitChecker resourcemanager.LimitChecker
 }
 
 type BlockValidatorConfig struct {
-	Enable                   bool                          `koanf:"enable"`
-	ValidationServer         rpcclient.ClientConfig        `koanf:"validation-server" reload:"hot"`
-	ValidationPoll           time.Duration                 `koanf:"validation-poll" reload:"hot"`
-	PrerecordedBlocks        uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
-	ForwardBlocks            uint64                        `koanf:"forward-blocks" reload:"hot"`
-	CurrentModuleRoot        string                        `koanf:"current-module-root"`         // TODO(magic) requires reinitialization on hot reload
-	PendingUpgradeModuleRoot string                        `koanf:"pending-upgrade-module-root"` // TODO(magic) requires StatelessBlockValidator recreation on hot reload
-	FailureIsFatal           bool                          `koanf:"failure-is-fatal" reload:"hot"`
-	Dangerous                BlockValidatorDangerousConfig `koanf:"dangerous"`
+	Enable                      bool                          `koanf:"enable"`
+	RedisValidationClientConfig redis.ValidationClientConfig  `koanf:"redis-validation-client-config"`
+	ValidationServer            rpcclient.ClientConfig        `koanf:"validation-server" reload:"hot"`
+	ValidationServerConfigs     []rpcclient.ClientConfig      `koanf:"validation-server-configs"`
+	ValidationPoll              time.Duration                 `koanf:"validation-poll" reload:"hot"`
+	PrerecordedBlocks           uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
+	ForwardBlocks               uint64                        `koanf:"forward-blocks" reload:"hot"`
+	CurrentModuleRoot           string                        `koanf:"current-module-root"`         // TODO(magic) requires reinitialization on hot reload
+	PendingUpgradeModuleRoot    string                        `koanf:"pending-upgrade-module-root"` // TODO(magic) requires StatelessBlockValidator recreation on hot reload
+	FailureIsFatal              bool                          `koanf:"failure-is-fatal" reload:"hot"`
+	Dangerous                   BlockValidatorDangerousConfig `koanf:"dangerous"`
+	MemoryFreeLimit             string                        `koanf:"memory-free-limit" reload:"hot"`
+	ValidationServerConfigsList string                        `koanf:"validation-server-configs-list"`
+
+	memoryFreeLimit int
 }
 
 func (c *BlockValidatorConfig) Validate() error {
-	return c.ValidationServer.Validate()
+	if c.MemoryFreeLimit == "default" {
+		c.memoryFreeLimit = 1073741824 // 1GB
+	} else if c.MemoryFreeLimit != "" {
+		limit, err := resourcemanager.ParseMemLimit(c.MemoryFreeLimit)
+		if err != nil {
+			return fmt.Errorf("failed to parse block-validator config memory-free-limit string: %w", err)
+		}
+		c.memoryFreeLimit = limit
+	}
+	streamsEnabled := c.RedisValidationClientConfig.Enabled()
+	if len(c.ValidationServerConfigs) == 0 {
+		c.ValidationServerConfigs = []rpcclient.ClientConfig{c.ValidationServer}
+		if c.ValidationServerConfigsList != "default" {
+			var executionServersConfigs []rpcclient.ClientConfig
+			if err := json.Unmarshal([]byte(c.ValidationServerConfigsList), &executionServersConfigs); err != nil && !streamsEnabled {
+				return fmt.Errorf("failed to parse block-validator validation-server-configs-list string: %w", err)
+			}
+			c.ValidationServerConfigs = executionServersConfigs
+		}
+	}
+	for i := range c.ValidationServerConfigs {
+		if err := c.ValidationServerConfigs[i].Validate(); err != nil {
+			return fmt.Errorf("failed to validate one of the block-validator validation-server-configs. url: %s, err: %w", c.ValidationServerConfigs[i].URL, err)
+		}
+	}
+	return nil
 }
 
 type BlockValidatorDangerousConfig struct {
@@ -99,9 +150,11 @@ type BlockValidatorDangerousConfig struct {
 
 type BlockValidatorConfigFetcher func() *BlockValidatorConfig
 
-func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
+func BlockValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBlockValidatorConfig.Enable, "enable block-by-block validation")
 	rpcclient.RPCClientAddOptions(prefix+".validation-server", f, &DefaultBlockValidatorConfig.ValidationServer)
+	redis.ValidationClientConfigAddOptions(prefix+".redis-validation-client-config", f)
+	f.String(prefix+".validation-server-configs-list", DefaultBlockValidatorConfig.ValidationServerConfigsList, "array of execution rpc configs given as a json string. time duration should be supplied in number indicating nanoseconds")
 	f.Duration(prefix+".validation-poll", DefaultBlockValidatorConfig.ValidationPoll, "poll time to check validations")
 	f.Uint64(prefix+".forward-blocks", DefaultBlockValidatorConfig.ForwardBlocks, "prepare entries for up to that many blocks ahead of validation (small footprint)")
 	f.Uint64(prefix+".prerecorded-blocks", DefaultBlockValidatorConfig.PrerecordedBlocks, "record that many blocks ahead of validation (larger footprint)")
@@ -109,34 +162,41 @@ func BlockValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".pending-upgrade-module-root", DefaultBlockValidatorConfig.PendingUpgradeModuleRoot, "pending upgrade wasm module root to additionally validate (hash, 'latest' or empty)")
 	f.Bool(prefix+".failure-is-fatal", DefaultBlockValidatorConfig.FailureIsFatal, "failing a validation is treated as a fatal error")
 	BlockValidatorDangerousConfigAddOptions(prefix+".dangerous", f)
+	f.String(prefix+".memory-free-limit", DefaultBlockValidatorConfig.MemoryFreeLimit, "minimum free-memory limit after reaching which the blockvalidator pauses validation. Enabled by default as 1GB, to disable provide empty string")
 }
 
-func BlockValidatorDangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
+func BlockValidatorDangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".reset-block-validation", DefaultBlockValidatorDangerousConfig.ResetBlockValidation, "resets block-by-block validation, starting again at genesis")
 }
 
 var DefaultBlockValidatorConfig = BlockValidatorConfig{
-	Enable:                   false,
-	ValidationServer:         rpcclient.DefaultClientConfig,
-	ValidationPoll:           time.Second,
-	ForwardBlocks:            1024,
-	PrerecordedBlocks:        uint64(2 * runtime.NumCPU()),
-	CurrentModuleRoot:        "current",
-	PendingUpgradeModuleRoot: "latest",
-	FailureIsFatal:           true,
-	Dangerous:                DefaultBlockValidatorDangerousConfig,
+	Enable:                      false,
+	ValidationServerConfigsList: "default",
+	ValidationServer:            rpcclient.DefaultClientConfig,
+	RedisValidationClientConfig: redis.DefaultValidationClientConfig,
+	ValidationPoll:              time.Second,
+	ForwardBlocks:               1024,
+	PrerecordedBlocks:           uint64(2 * runtime.NumCPU()),
+	CurrentModuleRoot:           "current",
+	PendingUpgradeModuleRoot:    "latest",
+	FailureIsFatal:              true,
+	Dangerous:                   DefaultBlockValidatorDangerousConfig,
+	MemoryFreeLimit:             "default",
 }
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
-	Enable:                   false,
-	ValidationServer:         rpcclient.TestClientConfig,
-	ValidationPoll:           100 * time.Millisecond,
-	ForwardBlocks:            128,
-	PrerecordedBlocks:        uint64(2 * runtime.NumCPU()),
-	CurrentModuleRoot:        "latest",
-	PendingUpgradeModuleRoot: "latest",
-	FailureIsFatal:           true,
-	Dangerous:                DefaultBlockValidatorDangerousConfig,
+	Enable:                      false,
+	ValidationServer:            rpcclient.TestClientConfig,
+	ValidationServerConfigs:     []rpcclient.ClientConfig{rpcclient.TestClientConfig},
+	RedisValidationClientConfig: redis.TestValidationClientConfig,
+	ValidationPoll:              100 * time.Millisecond,
+	ForwardBlocks:               128,
+	PrerecordedBlocks:           uint64(2 * runtime.NumCPU()),
+	CurrentModuleRoot:           "latest",
+	PendingUpgradeModuleRoot:    "latest",
+	FailureIsFatal:              true,
+	Dangerous:                   DefaultBlockValidatorDangerousConfig,
+	MemoryFreeLimit:             "default",
 }
 
 var DefaultBlockValidatorDangerousConfig = BlockValidatorDangerousConfig{
@@ -155,19 +215,27 @@ const (
 )
 
 type validationStatus struct {
-	Status uint32                    // atomic: value is one of validationStatus*
-	Cancel func()                    // non-atomic: only read/written to with reorg mutex
-	Entry  *validationEntry          // non-atomic: only read if Status >= validationStatusPrepared
-	Runs   []validator.ValidationRun // if status >= ValidationSent
+	Status    atomic.Uint32             // atomic: value is one of validationStatus*
+	Cancel    func()                    // non-atomic: only read/written to with reorg mutex
+	Entry     *validationEntry          // non-atomic: only read if Status >= validationStatusPrepared
+	Runs      []validator.ValidationRun // if status >= ValidationSent
+	profileTS int64                     // time-stamp for profiling
 }
 
 func (s *validationStatus) getStatus() valStatusField {
-	uintStat := atomic.LoadUint32(&s.Status)
+	uintStat := s.Status.Load()
 	return valStatusField(uintStat)
 }
 
 func (s *validationStatus) replaceStatus(old, new valStatusField) bool {
-	return atomic.CompareAndSwapUint32(&s.Status, uint32(old), uint32(new))
+	return s.Status.CompareAndSwap(uint32(old), uint32(new))
+}
+
+// gets how many miliseconds last step took, and starts measuring a new step
+func (s *validationStatus) profileStep() int64 {
+	start := s.profileTS
+	s.profileTS = time.Now().UnixMilli()
+	return s.profileTS - start
 }
 
 func NewBlockValidator(
@@ -215,15 +283,28 @@ func NewBlockValidator(
 	}
 	streamer.SetBlockValidator(ret)
 	inbox.SetBlockValidator(ret)
+	if config().MemoryFreeLimit != "" {
+		limtchecker, err := resourcemanager.NewCgroupsMemoryLimitCheckerIfSupported(config().memoryFreeLimit)
+		if err != nil {
+			if config().MemoryFreeLimit == "default" {
+				log.Warn("Cgroups V1 or V2 is unsupported, memory-free-limit feature inside block-validator is disabled")
+			} else {
+				return nil, fmt.Errorf("failed to create MemoryFreeLimitChecker, Cgroups V1 or V2 is unsupported")
+			}
+		} else {
+			ret.MemoryFreeLimitChecker = limtchecker
+		}
+	}
 	return ret, nil
 }
 
-func atomicStorePos(addr *uint64, val arbutil.MessageIndex) {
-	atomic.StoreUint64(addr, uint64(val))
+func atomicStorePos(addr *atomic.Uint64, val arbutil.MessageIndex, metr metrics.Gauge) {
+	addr.Store(uint64(val))
+	metr.Update(int64(val))
 }
 
-func atomicLoadPos(addr *uint64) arbutil.MessageIndex {
-	return arbutil.MessageIndex(atomic.LoadUint64(addr))
+func atomicLoadPos(addr *atomic.Uint64) arbutil.MessageIndex {
+	return arbutil.MessageIndex(addr.Load())
 }
 
 func (v *BlockValidator) created() arbutil.MessageIndex {
@@ -263,6 +344,17 @@ func nonBlockingTrigger(channel chan struct{}) {
 	case channel <- struct{}{}:
 	default:
 	}
+}
+
+func (v *BlockValidator) GetModuleRootsToValidate() []common.Hash {
+	v.moduleMutex.Lock()
+	defer v.moduleMutex.Unlock()
+
+	validatingModuleRoots := []common.Hash{v.currentWasmModuleRoot}
+	if v.currentWasmModuleRoot != v.pendingWasmModuleRoot && v.pendingWasmModuleRoot != (common.Hash{}) {
+		validatingModuleRoots = append(validatingModuleRoots, v.pendingWasmModuleRoot)
+	}
+	return validatingModuleRoots
 }
 
 // called from NewBlockValidator, doesn't need to catch locks
@@ -368,6 +460,8 @@ func (v *BlockValidator) sendRecord(s *validationStatus) error {
 	if !s.replaceStatus(Created, RecordSent) {
 		return fmt.Errorf("failed status check for send record. Status: %v", s.getStatus())
 	}
+
+	validatorProfileWaitToRecordHist.Update(s.profileStep())
 	v.LaunchThread(func(ctx context.Context) {
 		err := v.ValidationEntryRecord(ctx, s.Entry)
 		if ctx.Err() != nil {
@@ -378,6 +472,7 @@ func (v *BlockValidator) sendRecord(s *validationStatus) error {
 			log.Error("Error while recording", "err", err, "status", s.getStatus())
 			return
 		}
+		validatorProfileRecordingHist.Update(s.profileStep())
 		if !s.replaceStatus(RecordSent, Prepared) {
 			log.Error("Fault trying to update validation with recording", "entry", s.Entry, "status", s.getStatus())
 			return
@@ -389,12 +484,17 @@ func (v *BlockValidator) sendRecord(s *validationStatus) error {
 
 //nolint:gosec
 func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoot common.Hash) error {
-	input, err := validationEntry.ToInput()
+	input, err := validationEntry.ToInput([]string{"wavm"})
 	if err != nil {
 		return err
 	}
-	_, err = v.execSpawner.WriteToFile(input, validationEntry.End, moduleRoot).Await(v.GetContext())
-	return err
+	for _, spawner := range v.execSpawners {
+		if validator.SpawnerSupportsModule(spawner, moduleRoot) {
+			_, err = spawner.WriteToFile(input, validationEntry.End, moduleRoot).Await(v.GetContext())
+			return err
+		}
+	}
+	return errors.New("did not find exec spawner for wasmModuleRoot")
 }
 
 func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
@@ -425,25 +525,6 @@ func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
 	)
 }
 
-func (v *BlockValidator) readBatch(ctx context.Context, batchNum uint64) (bool, []byte, arbutil.MessageIndex, error) {
-	batchCount, err := v.inboxTracker.GetBatchCount()
-	if err != nil {
-		return false, nil, 0, err
-	}
-	if batchCount <= batchNum {
-		return false, nil, 0, nil
-	}
-	batchMsgCount, err := v.inboxTracker.GetBatchMessageCount(batchNum)
-	if err != nil {
-		return false, nil, 0, err
-	}
-	batch, err := v.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
-	if err != nil {
-		return false, nil, 0, err
-	}
-	return true, batch, batchMsgCount, nil
-}
-
 func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, error) {
 	v.reorgMutex.RLock()
 	defer v.reorgMutex.RUnlock()
@@ -470,11 +551,12 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 	}
 	if v.nextCreateStartGS.PosInBatch == 0 || v.nextCreateBatchReread {
 		// new batch
-		found, batch, count, err := v.readBatch(ctx, v.nextCreateStartGS.Batch)
+		found, batch, batchBlockHash, count, err := v.readBatch(ctx, v.nextCreateStartGS.Batch)
 		if !found {
 			return false, err
 		}
 		v.nextCreateBatch = batch
+		v.nextCreateBatchBlockHash = batchBlockHash
 		v.nextCreateBatchMsgCount = count
 		validatorMsgCountCurrentBatch.Update(int64(count))
 		v.nextCreateBatchReread = false
@@ -492,18 +574,22 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 	} else {
 		return false, fmt.Errorf("illegal batch msg count %d pos %d batch %d", v.nextCreateBatchMsgCount, pos, endGS.Batch)
 	}
-	entry, err := newValidationEntry(pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, v.nextCreatePrevDelayed)
+	chainConfig := v.streamer.ChainConfig()
+	entry, err := newValidationEntry(
+		pos, v.nextCreateStartGS, endGS, msg, v.nextCreateBatch, v.nextCreateBatchBlockHash, v.nextCreatePrevDelayed, chainConfig,
+	)
 	if err != nil {
 		return false, err
 	}
 	status := &validationStatus{
-		Status: uint32(Created),
-		Entry:  entry,
+		Entry:     entry,
+		profileTS: time.Now().UnixMilli(),
 	}
+	status.Status.Store(uint32(Created))
 	v.validations.Store(pos, status)
 	v.nextCreateStartGS = endGS
 	v.nextCreatePrevDelayed = msg.DelayedMessagesRead
-	atomicStorePos(&v.createdA, pos+1)
+	atomicStorePos(&v.createdA, pos+1, validatorMsgCountCreatedGauge)
 	log.Trace("create validation entry: created", "pos", pos)
 	return true, nil
 }
@@ -520,7 +606,22 @@ func (v *BlockValidator) iterativeValidationEntryCreator(ctx context.Context, ig
 	return v.config().ValidationPoll
 }
 
+func (v *BlockValidator) isMemoryLimitExceeded() bool {
+	if v.MemoryFreeLimitChecker == nil {
+		return false
+	}
+	exceeded, err := v.MemoryFreeLimitChecker.IsLimitExceeded()
+	if err != nil {
+		log.Error("error checking if free-memory limit exceeded using MemoryFreeLimitChecker", "err", err)
+	}
+	return exceeded
+}
+
 func (v *BlockValidator) sendNextRecordRequests(ctx context.Context) (bool, error) {
+	if v.isMemoryLimitExceeded() {
+		log.Warn("sendNextRecordRequests: aborting due to running low on memory")
+		return false, nil
+	}
 	v.reorgMutex.RLock()
 	pos := v.recordSent()
 	created := v.created()
@@ -550,6 +651,10 @@ func (v *BlockValidator) sendNextRecordRequests(ctx context.Context) (bool, erro
 		return true, nil
 	}
 	for pos <= recordUntil {
+		if v.isMemoryLimitExceeded() {
+			log.Warn("sendNextRecordRequests: aborting due to running low on memory")
+			return false, nil
+		}
 		validationStatus, found := v.validations.Load(pos)
 		if !found {
 			return false, fmt.Errorf("not found entry for pos %d", pos)
@@ -563,7 +668,7 @@ func (v *BlockValidator) sendNextRecordRequests(ctx context.Context) (bool, erro
 			return false, err
 		}
 		pos += 1
-		atomicStorePos(&v.recordSentA, pos)
+		atomicStorePos(&v.recordSentA, pos, validatorMsgCountRecordSentGauge)
 		log.Trace("next record request: sent", "pos", pos)
 	}
 
@@ -617,16 +722,6 @@ func (v *BlockValidator) advanceValidations(ctx context.Context) (*arbutil.Messa
 	defer v.reorgMutex.RUnlock()
 
 	wasmRoots := v.GetModuleRootsToValidate()
-	room := 100 // even if there is more room then that it's fine
-	for _, spawner := range v.validationSpawners {
-		here := spawner.Room() / len(wasmRoots)
-		if here <= 0 {
-			room = 0
-		}
-		if here < room {
-			room = here
-		}
-	}
 	pos := v.validated() - 1 // to reverse the first +1 in the loop
 validationsLoop:
 	for {
@@ -684,46 +779,62 @@ validationsLoop:
 				log.Error("failed writing new validated to database", "pos", pos, "err", err)
 			}
 			go v.recorder.MarkValid(pos, v.lastValidGS.BlockHash)
-			atomicStorePos(&v.validatedA, pos+1)
+			atomicStorePos(&v.validatedA, pos+1, validatorMsgCountValidatedGauge)
 			v.validations.Delete(pos)
 			nonBlockingTrigger(v.createNodesChan)
 			nonBlockingTrigger(v.sendRecordChan)
-			validatorMsgCountValidatedGauge.Update(int64(pos + 1))
 			if v.testingProgressMadeChan != nil {
 				nonBlockingTrigger(v.testingProgressMadeChan)
 			}
 			log.Trace("result validated", "count", v.validated(), "blockHash", v.lastValidGS.BlockHash)
 			continue
 		}
-		if room == 0 {
-			log.Trace("advanceValidations: no more room", "pos", pos)
+		for _, moduleRoot := range wasmRoots {
+			spawner := v.chosenValidator[moduleRoot]
+			if spawner == nil {
+				notFoundErr := fmt.Errorf("did not find spawner for moduleRoot :%v", moduleRoot)
+				v.possiblyFatal(notFoundErr)
+				return nil, notFoundErr
+			}
+			if spawner.Room() == 0 {
+				log.Trace("advanceValidations: no more room", "moduleRoot", moduleRoot)
+				return nil, nil
+			}
+		}
+		if v.isMemoryLimitExceeded() {
+			log.Warn("advanceValidations: aborting due to running low on memory")
 			return nil, nil
 		}
 		if currentStatus == Prepared {
-			input, err := validationStatus.Entry.ToInput()
-			if err != nil && ctx.Err() == nil {
-				v.possiblyFatal(fmt.Errorf("%w: error preparing validation", err))
-				continue
-			}
 			replaced := validationStatus.replaceStatus(Prepared, SendingValidation)
 			if !replaced {
 				v.possiblyFatal(errors.New("failed to set SendingValidation status"))
 			}
+			validatorProfileWaitToLaunchHist.Update(validationStatus.profileStep())
 			validatorPendingValidationsGauge.Inc(1)
-			defer validatorPendingValidationsGauge.Dec(1)
 			var runs []validator.ValidationRun
 			for _, moduleRoot := range wasmRoots {
-				for i, spawner := range v.validationSpawners {
-					run := spawner.Launch(input, moduleRoot)
-					log.Trace("advanceValidations: launched", "pos", validationStatus.Entry.Pos, "moduleRoot", moduleRoot, "spawner", i)
-					runs = append(runs, run)
+				spawner := v.chosenValidator[moduleRoot]
+				input, err := validationStatus.Entry.ToInput(spawner.StylusArchs())
+				if err != nil && ctx.Err() == nil {
+					v.possiblyFatal(fmt.Errorf("%w: error preparing validation", err))
+					continue
 				}
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+				run := spawner.Launch(input, moduleRoot)
+				log.Trace("advanceValidations: launched", "pos", validationStatus.Entry.Pos, "moduleRoot", moduleRoot)
+				runs = append(runs, run)
 			}
+			validatorProfileLaunchingHist.Update(validationStatus.profileStep())
 			validationCtx, cancel := context.WithCancel(ctx)
 			validationStatus.Runs = runs
 			validationStatus.Cancel = cancel
 			v.LaunchUntrackedThread(func() {
+				defer validatorPendingValidationsGauge.Dec(1)
 				defer cancel()
+				startTsMilli := validationStatus.profileTS
 				replaced = validationStatus.replaceStatus(SendingValidation, ValidationSent)
 				if !replaced {
 					v.possiblyFatal(errors.New("failed to set status to ValidationSent"))
@@ -737,9 +848,9 @@ validationsLoop:
 						return
 					}
 				}
+				validatorProfileRunningHist.Update(time.Now().UnixMilli() - startTsMilli)
 				nonBlockingTrigger(v.progressValidationsChan)
 			})
-			room--
 		}
 	}
 }
@@ -860,13 +971,13 @@ func (v *BlockValidator) UpdateLatestStaked(count arbutil.MessageIndex, globalSt
 		v.nextCreateStartGS = globalState
 		v.nextCreatePrevDelayed = msg.DelayedMessagesRead
 		v.nextCreateBatchReread = true
-		v.createdA = countUint64
+		v.createdA.Store(countUint64)
 	}
 	// under the reorg mutex we don't need atomic access
-	if v.recordSentA < countUint64 {
-		v.recordSentA = countUint64
+	if v.recordSentA.Load() < countUint64 {
+		v.recordSentA.Store(countUint64)
 	}
-	v.validatedA = countUint64
+	v.validatedA.Store(countUint64)
 	v.valLoopPos = count
 	validatorMsgCountValidatedGauge.Update(int64(countUint64))
 	err = v.writeLastValidated(globalState, nil) // we don't know which wasm roots were validated
@@ -925,13 +1036,13 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 	v.nextCreatePrevDelayed = msg.DelayedMessagesRead
 	v.nextCreateBatchReread = true
 	countUint64 := uint64(count)
-	v.createdA = countUint64
+	v.createdA.Store(countUint64)
 	// under the reorg mutex we don't need atomic access
-	if v.recordSentA > countUint64 {
-		v.recordSentA = countUint64
+	if v.recordSentA.Load() > countUint64 {
+		v.recordSentA.Store(countUint64)
 	}
-	if v.validatedA > countUint64 {
-		v.validatedA = countUint64
+	if v.validatedA.Load() > countUint64 {
+		v.validatedA.Store(countUint64)
 		validatorMsgCountValidatedGauge.Update(int64(countUint64))
 		err := v.writeLastValidated(v.nextCreateStartGS, nil) // we don't know which wasm roots were validated
 		if err != nil {
@@ -945,10 +1056,11 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 // Initialize must be called after SetCurrentWasmModuleRoot sets the current one
 func (v *BlockValidator) Initialize(ctx context.Context) error {
 	config := v.config()
+
 	currentModuleRoot := config.CurrentModuleRoot
 	switch currentModuleRoot {
 	case "latest":
-		latest, err := v.execSpawner.LatestWasmModuleRoot().Await(ctx)
+		latest, err := v.GetLatestWasmModuleRoot(ctx)
 		if err != nil {
 			return err
 		}
@@ -963,7 +1075,52 @@ func (v *BlockValidator) Initialize(ctx context.Context) error {
 			return errors.New("current-module-root config value illegal")
 		}
 	}
+	pendingModuleRoot := config.PendingUpgradeModuleRoot
+	if pendingModuleRoot != "" {
+		if pendingModuleRoot == "latest" {
+			latest, err := v.GetLatestWasmModuleRoot(ctx)
+			if err != nil {
+				return err
+			}
+			v.pendingWasmModuleRoot = latest
+		} else {
+			valid, _ := regexp.MatchString("(0x)?[0-9a-fA-F]{64}", pendingModuleRoot)
+			v.pendingWasmModuleRoot = common.HexToHash(pendingModuleRoot)
+			if (!valid || v.pendingWasmModuleRoot == common.Hash{}) {
+				return errors.New("pending-upgrade-module-root config value illegal")
+			}
+		}
+	}
 	log.Info("BlockValidator initialized", "current", v.currentWasmModuleRoot, "pending", v.pendingWasmModuleRoot)
+	moduleRoots := []common.Hash{v.currentWasmModuleRoot}
+	if v.pendingWasmModuleRoot != v.currentWasmModuleRoot && v.pendingWasmModuleRoot != (common.Hash{}) {
+		moduleRoots = append(moduleRoots, v.pendingWasmModuleRoot)
+	}
+	// First spawner is always RedisValidationClient if RedisStreams are enabled.
+	if v.redisValidator != nil {
+		err := v.redisValidator.Initialize(ctx, moduleRoots)
+		if err != nil {
+			return err
+		}
+	}
+	v.chosenValidator = make(map[common.Hash]validator.ValidationSpawner)
+	for _, root := range moduleRoots {
+		if v.redisValidator != nil && validator.SpawnerSupportsModule(v.redisValidator, root) {
+			v.chosenValidator[root] = v.redisValidator
+			log.Info("validator chosen", "WasmModuleRoot", root, "chosen", "redis")
+		} else {
+			for _, spawner := range v.execSpawners {
+				if validator.SpawnerSupportsModule(spawner, root) {
+					v.chosenValidator[root] = spawner
+					log.Info("validator chosen", "WasmModuleRoot", root, "chosen", spawner.Name())
+					break
+				}
+			}
+			if v.chosenValidator[root] == nil {
+				return fmt.Errorf("cannot validate WasmModuleRoot %v", root)
+			}
+		}
+	}
 	return nil
 }
 
@@ -1074,9 +1231,9 @@ func (v *BlockValidator) checkValidatedGSCaughtUp() (bool, error) {
 	v.nextCreateBatchReread = true
 	v.nextCreateStartGS = v.lastValidGS
 	v.nextCreatePrevDelayed = msg.DelayedMessagesRead
-	atomicStorePos(&v.createdA, count)
-	atomicStorePos(&v.recordSentA, count)
-	atomicStorePos(&v.validatedA, count)
+	atomicStorePos(&v.createdA, count, validatorMsgCountCreatedGauge)
+	atomicStorePos(&v.recordSentA, count, validatorMsgCountRecordSentGauge)
+	atomicStorePos(&v.validatedA, count, validatorMsgCountValidatedGauge)
 	validatorMsgCountValidatedGauge.Update(int64(count))
 	v.chainCaughtUp = true
 	return true, nil
@@ -1148,4 +1305,10 @@ func (v *BlockValidator) WaitForPos(t *testing.T, ctx context.Context, pos arbut
 			lastLoop = true
 		}
 	}
+}
+
+func (v *BlockValidator) GetValidated() arbutil.MessageIndex {
+	v.reorgMutex.RLock()
+	defer v.reorgMutex.RUnlock()
+	return v.validated()
 }

@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -17,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/crypto/kzg4844"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/rlp"
@@ -26,6 +28,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/das/dastree"
@@ -62,11 +65,12 @@ func (c WavmChainContext) GetHeader(hash common.Hash, num uint64) *types.Header 
 
 type WavmInbox struct{}
 
-func (i WavmInbox) PeekSequencerInbox() ([]byte, error) {
+func (i WavmInbox) PeekSequencerInbox() ([]byte, common.Hash, error) {
 	pos := wavmio.GetInboxPosition()
 	res := wavmio.ReadInboxMessage(pos)
 	log.Info("PeekSequencerInbox", "pos", pos, "res[:8]", res[:8])
-	return res, nil
+	// Our BlobPreimageReader doesn't need the block hash
+	return res, common.Hash{}, nil
 }
 
 func (i WavmInbox) GetSequencerInboxPosition() uint64 {
@@ -109,12 +113,44 @@ func (dasReader *PreimageDASReader) GetByHash(ctx context.Context, hash common.H
 	return dastree.Content(hash, oracle)
 }
 
+func (dasReader *PreimageDASReader) GetKeysetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
+	return dasReader.GetByHash(ctx, hash)
+}
+
 func (dasReader *PreimageDASReader) HealthCheck(ctx context.Context) error {
 	return nil
 }
 
-func (dasReader *PreimageDASReader) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
-	return arbstate.DiscardImmediately, nil
+func (dasReader *PreimageDASReader) ExpirationPolicy(ctx context.Context) (daprovider.ExpirationPolicy, error) {
+	return daprovider.DiscardImmediately, nil
+}
+
+type BlobPreimageReader struct {
+}
+
+func (r *BlobPreimageReader) GetBlobs(
+	ctx context.Context,
+	batchBlockHash common.Hash,
+	versionedHashes []common.Hash,
+) ([]kzg4844.Blob, error) {
+	var blobs []kzg4844.Blob
+	for _, h := range versionedHashes {
+		var blob kzg4844.Blob
+		preimage, err := wavmio.ResolveTypedPreimage(arbutil.EthVersionedHashPreimageType, h)
+		if err != nil {
+			return nil, err
+		}
+		if len(preimage) != len(blob) {
+			return nil, fmt.Errorf("for blob %v got back preimage of length %v but expected blob length %v", h, len(preimage), len(blob))
+		}
+		copy(blob[:], preimage)
+		blobs = append(blobs, blob)
+	}
+	return blobs, nil
+}
+
+func (r *BlobPreimageReader) Initialize(ctx context.Context) error {
+	return nil
 }
 
 // To generate:
@@ -142,9 +178,10 @@ func main() {
 	wavmio.StubInit()
 	gethhook.RequireHookedGeth()
 
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
-	glogger.Verbosity(log.LvlError)
-	log.Root().SetHandler(glogger)
+	glogger := log.NewGlogHandler(
+		log.NewTerminalHandler(io.Writer(os.Stderr), false))
+	glogger.Verbosity(log.LevelError)
+	log.SetDefault(log.NewLogger(glogger))
 
 	populateEcdsaCaches()
 
@@ -166,27 +203,46 @@ func main() {
 		panic(fmt.Sprintf("Error opening state db: %v", err.Error()))
 	}
 
+	batchFetcher := func(batchNum uint64) ([]byte, error) {
+		currentBatch := wavmio.GetInboxPosition()
+		if batchNum > currentBatch {
+			return nil, fmt.Errorf("invalid batch fetch request %d, max %d", batchNum, currentBatch)
+		}
+		return wavmio.ReadInboxMessage(batchNum), nil
+	}
 	readMessage := func(dasEnabled bool) *arbostypes.MessageWithMetadata {
 		var delayedMessagesRead uint64
 		if lastBlockHeader != nil {
 			delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 		}
-		var dasReader arbstate.DataAvailabilityReader
+		var dasReader daprovider.DASReader
+		var dasKeysetFetcher daprovider.DASKeysetFetcher
 		if dasEnabled {
+			// DAS batch and keysets are all together in the same preimage binary.
 			dasReader = &PreimageDASReader{}
+			dasKeysetFetcher = &PreimageDASReader{}
 		}
 		backend := WavmInbox{}
-		var keysetValidationMode = arbstate.KeysetPanicIfInvalid
+		var keysetValidationMode = daprovider.KeysetPanicIfInvalid
 		if backend.GetPositionWithinMessage() > 0 {
-			keysetValidationMode = arbstate.KeysetDontValidate
+			keysetValidationMode = daprovider.KeysetDontValidate
 		}
-		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dasReader, keysetValidationMode)
+		var dapReaders []daprovider.Reader
+		if dasReader != nil {
+			dapReaders = append(dapReaders, daprovider.NewReaderForDAS(dasReader, dasKeysetFetcher))
+		}
+		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(&BlobPreimageReader{}))
+		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode)
 		ctx := context.Background()
 		message, err := inboxMultiplexer.Pop(ctx)
 		if err != nil {
 			panic(fmt.Sprintf("Error reading from inbox multiplexer: %v", err.Error()))
 		}
 
+		err = message.Message.FillInBatchGasCost(batchFetcher)
+		if err != nil {
+			message.Message = arbostypes.InvalidL1Message
+		}
 		return message
 	}
 
@@ -235,14 +291,10 @@ func main() {
 		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee)
 
 		chainContext := WavmChainContext{}
-		batchFetcher := func(batchNum uint64) ([]byte, error) {
-			return wavmio.ReadInboxMessage(batchNum), nil
-		}
-		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher)
+		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, false)
 		if err != nil {
 			panic(err)
 		}
-
 	} else {
 		// Initialize ArbOS with this init message and create the genesis block.
 

@@ -9,7 +9,9 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 )
 
 type multiplexerBackend struct {
@@ -19,11 +21,11 @@ type multiplexerBackend struct {
 	positionWithinMessage uint64
 }
 
-func (b *multiplexerBackend) PeekSequencerInbox() ([]byte, error) {
+func (b *multiplexerBackend) PeekSequencerInbox() ([]byte, common.Hash, error) {
 	if b.batchSeqNum != 0 {
-		return nil, errors.New("reading unknown sequencer batch")
+		return nil, common.Hash{}, errors.New("reading unknown sequencer batch")
 	}
-	return b.batch, nil
+	return b.batch, common.Hash{}, nil
 }
 
 func (b *multiplexerBackend) GetSequencerInboxPosition() uint64 {
@@ -66,7 +68,7 @@ func FuzzInboxMultiplexer(f *testing.F) {
 			delayedMessage:        delayedMsg,
 			positionWithinMessage: 0,
 		}
-		multiplexer := NewInboxMultiplexer(backend, 0, nil, KeysetValidate)
+		multiplexer := NewInboxMultiplexer(backend, 0, nil, daprovider.KeysetValidate)
 		_, err := multiplexer.Pop(context.TODO())
 		if err != nil {
 			panic(err)

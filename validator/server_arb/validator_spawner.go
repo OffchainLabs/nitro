@@ -11,13 +11,14 @@ import (
 	"sync/atomic"
 	"time"
 
-	flag "github.com/spf13/pflag"
+	"github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_common"
+	"github.com/offchainlabs/nitro/validator/valnode/redis"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
@@ -27,26 +28,29 @@ import (
 var arbitratorValidationSteps = metrics.NewRegisteredHistogram("arbitrator/validation/steps", nil, metrics.NewBoundedHistogramSample())
 
 type ArbitratorSpawnerConfig struct {
-	Workers             int                `koanf:"workers" reload:"hot"`
-	OutputPath          string             `koanf:"output-path" reload:"hot"`
-	Execution           MachineCacheConfig `koanf:"execution" reload:"hot"` // hot reloading for new executions only
-	ExecutionRunTimeout time.Duration      `koanf:"execution-run-timeout" reload:"hot"`
+	Workers                     int                          `koanf:"workers" reload:"hot"`
+	OutputPath                  string                       `koanf:"output-path" reload:"hot"`
+	Execution                   MachineCacheConfig           `koanf:"execution" reload:"hot"` // hot reloading for new executions only
+	ExecutionRunTimeout         time.Duration                `koanf:"execution-run-timeout" reload:"hot"`
+	RedisValidationServerConfig redis.ValidationServerConfig `koanf:"redis-validation-server-config"`
 }
 
 type ArbitratorSpawnerConfigFecher func() *ArbitratorSpawnerConfig
 
 var DefaultArbitratorSpawnerConfig = ArbitratorSpawnerConfig{
-	Workers:             0,
-	OutputPath:          "./target/output",
-	Execution:           DefaultMachineCacheConfig,
-	ExecutionRunTimeout: time.Minute * 15,
+	Workers:                     0,
+	OutputPath:                  "./target/output",
+	Execution:                   DefaultMachineCacheConfig,
+	ExecutionRunTimeout:         time.Minute * 15,
+	RedisValidationServerConfig: redis.DefaultValidationServerConfig,
 }
 
-func ArbitratorSpawnerConfigAddOptions(prefix string, f *flag.FlagSet) {
+func ArbitratorSpawnerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int(prefix+".workers", DefaultArbitratorSpawnerConfig.Workers, "number of concurrent validation threads")
 	f.Duration(prefix+".execution-run-timeout", DefaultArbitratorSpawnerConfig.ExecutionRunTimeout, "timeout before discarding execution run")
 	f.String(prefix+".output-path", DefaultArbitratorSpawnerConfig.OutputPath, "path to write machines to")
 	MachineCacheConfigConfigAddOptions(prefix+".execution", f)
+	redis.ValidationServerConfigAddOptions(prefix+".redis-validation-server-config", f)
 }
 
 func DefaultArbitratorSpawnerConfigFetcher() *ArbitratorSpawnerConfig {
@@ -55,7 +59,7 @@ func DefaultArbitratorSpawnerConfigFetcher() *ArbitratorSpawnerConfig {
 
 type ArbitratorSpawner struct {
 	stopwaiter.StopWaiter
-	count         int32
+	count         atomic.Int32
 	locator       *server_common.MachineLocator
 	machineLoader *ArbMachineLoader
 	config        ArbitratorSpawnerConfigFecher
@@ -78,6 +82,14 @@ func (s *ArbitratorSpawner) Start(ctx_in context.Context) error {
 
 func (s *ArbitratorSpawner) LatestWasmModuleRoot() containers.PromiseInterface[common.Hash] {
 	return containers.NewReadyPromise(s.locator.LatestWasmModuleRoot(), nil)
+}
+
+func (s *ArbitratorSpawner) WasmModuleRoots() ([]common.Hash, error) {
+	return s.locator.ModuleRoots(), nil
+}
+
+func (s *ArbitratorSpawner) StylusArchs() []string {
+	return []string{"wavm"}
 }
 
 func (s *ArbitratorSpawner) Name() string {
@@ -108,6 +120,23 @@ func (v *ArbitratorSpawner) loadEntryToMachine(ctx context.Context, entry *valid
 				"err", err, "seq", entry.StartState.Batch, "blockNr", entry.Id,
 			)
 			return fmt.Errorf("error while trying to add sequencer msg for proving: %w", err)
+		}
+	}
+	if len(entry.UserWasms["wavm"]) == 0 {
+		for stylusArch, wasms := range entry.UserWasms {
+			if len(wasms) > 0 {
+				return fmt.Errorf("bad stylus arch loaded to machine. Expected wavm. Got: %s", stylusArch)
+			}
+		}
+	}
+	for moduleHash, module := range entry.UserWasms["wavm"] {
+		err = mach.AddUserWasm(moduleHash, module)
+		if err != nil {
+			log.Error(
+				"error adding user wasm for proving",
+				"err", err, "moduleHash", moduleHash, "blockNr", entry.Id,
+			)
+			return fmt.Errorf("error adding user wasm for proving: %w", err)
 		}
 	}
 	if entry.HasDelayedMsg {
@@ -158,9 +187,9 @@ func (v *ArbitratorSpawner) execute(
 }
 
 func (v *ArbitratorSpawner) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
-	atomic.AddInt32(&v.count, 1)
+	v.count.Add(1)
 	promise := stopwaiter.LaunchPromiseThread[validator.GoGlobalState](v, func(ctx context.Context) (validator.GoGlobalState, error) {
-		defer atomic.AddInt32(&v.count, -1)
+		defer v.count.Add(-1)
 		return v.execute(ctx, entry, moduleRoot)
 	})
 	return server_common.NewValRun(promise, moduleRoot)

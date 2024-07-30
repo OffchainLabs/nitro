@@ -26,7 +26,9 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/statetransfer"
+	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
 
 func BuildBlock(
@@ -41,7 +43,7 @@ func BuildBlock(
 	if lastBlockHeader != nil {
 		delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 	}
-	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead, nil, arbstate.KeysetValidate)
+	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead, nil, daprovider.KeysetValidate)
 
 	ctx := context.Background()
 	message, err := inboxMultiplexer.Pop(ctx)
@@ -55,8 +57,13 @@ func BuildBlock(
 	batchFetcher := func(uint64) ([]byte, error) {
 		return seqBatch, nil
 	}
+	err = l1Message.FillInBatchGasCost(batchFetcher)
+	if err != nil {
+		return nil, err
+	}
+
 	block, _, err := arbos.ProduceBlock(
-		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher,
+		l1Message, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, false,
 	)
 	return block, err
 }
@@ -69,11 +76,11 @@ type inboxBackend struct {
 	delayedMessages       [][]byte
 }
 
-func (b *inboxBackend) PeekSequencerInbox() ([]byte, error) {
+func (b *inboxBackend) PeekSequencerInbox() ([]byte, common.Hash, error) {
 	if len(b.batches) == 0 {
-		return nil, errors.New("read past end of specified sequencer batches")
+		return nil, common.Hash{}, errors.New("read past end of specified sequencer batches")
 	}
-	return b.batches[0], nil
+	return b.batches[0], common.Hash{}, nil
 }
 
 func (b *inboxBackend) GetSequencerInboxPosition() uint64 {
@@ -121,6 +128,9 @@ func (c noopChainContext) GetHeader(common.Hash, uint64) *types.Header {
 
 func FuzzStateTransition(f *testing.F) {
 	f.Fuzz(func(t *testing.T, compressSeqMsg bool, seqMsg []byte, delayedMsg []byte) {
+		if len(seqMsg) > 0 && daprovider.IsL1AuthenticatedMessageHeaderByte(seqMsg[0]) {
+			return
+		}
 		chainDb := rawdb.NewMemoryDatabase()
 		chainConfig := params.ArbitrumRollupGoerliTestnetChainConfig()
 		serializedChainConfig, err := json.Marshal(chainConfig)
@@ -133,8 +143,10 @@ func FuzzStateTransition(f *testing.F) {
 			ChainConfig:           chainConfig,
 			SerializedChainConfig: serializedChainConfig,
 		}
+		cacheConfig := core.DefaultCacheConfigWithScheme(env.GetTestStateScheme())
 		stateRoot, err := arbosState.InitializeArbosInDatabase(
 			chainDb,
+			cacheConfig,
 			statetransfer.NewMemoryInitDataReader(&statetransfer.ArbosInitializationInfo{}),
 			chainConfig,
 			initMessage,
@@ -144,7 +156,8 @@ func FuzzStateTransition(f *testing.F) {
 		if err != nil {
 			panic(err)
 		}
-		statedb, err := state.New(stateRoot, state.NewDatabase(chainDb), nil)
+		trieDBConfig := cacheConfig.TriedbConfig()
+		statedb, err := state.New(stateRoot, state.NewDatabaseWithConfig(chainDb, trieDBConfig), nil)
 		if err != nil {
 			panic(err)
 		}
@@ -173,7 +186,7 @@ func FuzzStateTransition(f *testing.F) {
 		binary.BigEndian.PutUint64(seqBatch[24:32], ^uint64(0))
 		binary.BigEndian.PutUint64(seqBatch[32:40], uint64(len(delayedMessages)))
 		if compressSeqMsg {
-			seqBatch = append(seqBatch, arbstate.BrotliMessageHeaderByte)
+			seqBatch = append(seqBatch, daprovider.BrotliMessageHeaderByte)
 			seqMsgCompressed, err := arbcompress.CompressLevel(seqMsg, 0)
 			if err != nil {
 				panic(fmt.Sprintf("failed to compress sequencer message: %v", err))

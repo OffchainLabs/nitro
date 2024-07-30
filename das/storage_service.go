@@ -8,22 +8,25 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 )
 
 var ErrNotFound = errors.New("not found")
 
 type StorageService interface {
-	arbstate.DataAvailabilityReader
+	daprovider.DASReader
 	Put(ctx context.Context, data []byte, expirationTime uint64) error
 	Sync(ctx context.Context) error
 	Closer
 	fmt.Stringer
 	HealthCheck(ctx context.Context) error
 }
+
+const defaultStorageRetention = time.Hour * 24 * 21 // 6 days longer than the batch poster default
 
 func EncodeStorageServiceKey(key common.Hash) string {
 	return key.Hex()[2:]

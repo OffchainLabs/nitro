@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package arbos
@@ -14,7 +14,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 
 	"github.com/ethereum/go-ethereum/arbitrum_types"
@@ -23,9 +22,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/ethereum/go-ethereum/trie"
 )
@@ -40,7 +37,6 @@ var L2ToL1TransactionEventID common.Hash
 var L2ToL1TxEventID common.Hash
 var EmitReedeemScheduledEvent func(*vm.EVM, uint64, uint64, [32]byte, [32]byte, common.Address, *big.Int, *big.Int) error
 var EmitTicketCreatedEvent func(*vm.EVM, [32]byte) error
-var gasUsedSinceStartupCounter = metrics.NewRegisteredCounter("arb/gas_used", nil)
 
 // A helper struct that implements String() by marshalling to JSON.
 // This is useful for logging because it's lazy, so if the log level is too high to print the transaction,
@@ -147,25 +143,9 @@ func ProduceBlock(
 	statedb *state.StateDB,
 	chainContext core.ChainContext,
 	chainConfig *params.ChainConfig,
-	batchFetcher arbostypes.FallibleBatchFetcher,
+	isMsgForPrefetch bool,
 ) (*types.Block, types.Receipts, error) {
-	var batchFetchErr error
-	txes, err := ParseL2Transactions(message, chainConfig.ChainID, func(batchNum uint64, batchHash common.Hash) []byte {
-		data, err := batchFetcher(batchNum)
-		if err != nil {
-			batchFetchErr = err
-			return nil
-		}
-		dataHash := crypto.Keccak256Hash(data)
-		if dataHash != batchHash {
-			batchFetchErr = fmt.Errorf("expecting batch %v hash %v but got data with hash %v", batchNum, batchHash, dataHash)
-			return nil
-		}
-		return data
-	})
-	if batchFetchErr != nil {
-		return nil, nil, batchFetchErr
-	}
+	txes, err := ParseL2Transactions(message, chainConfig.ChainID)
 	if err != nil {
 		log.Warn("error parsing incoming message", "err", err)
 		txes = types.Transactions{}
@@ -173,7 +153,7 @@ func ProduceBlock(
 
 	hooks := NoopSequencingHooks()
 	return ProduceBlockAdvanced(
-		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks,
+		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks, isMsgForPrefetch,
 	)
 }
 
@@ -187,6 +167,7 @@ func ProduceBlockAdvanced(
 	chainContext core.ChainContext,
 	chainConfig *params.ChainConfig,
 	sequencingHooks *SequencingHooks,
+	isMsgForPrefetch bool,
 ) (*types.Block, types.Receipts, error) {
 
 	state, err := arbosState.OpenSystemArbosState(statedb, nil, true)
@@ -376,7 +357,9 @@ func ProduceBlockAdvanced(
 			if chainConfig.DebugMode() {
 				logLevel = log.Warn
 			}
-			logLevel("error applying transaction", "tx", printTxAsJson{tx}, "err", err)
+			if !isMsgForPrefetch {
+				logLevel("error applying transaction", "tx", printTxAsJson{tx}, "err", err)
+			}
 			if !hooks.DiscardInvalidTxsEarly {
 				// we'll still deduct a TxGas's worth from the block-local rate limiter even if the tx was invalid
 				blockGasLeft = arbmath.SaturatingUSub(blockGasLeft, params.TxGas)
@@ -397,7 +380,7 @@ func ProduceBlockAdvanced(
 		txGasUsed := header.GasUsed - preTxHeaderGasUsed
 
 		arbosVer := types.DeserializeHeaderExtraInformation(header).ArbOSFormatVersion
-		if arbosVer >= arbostypes.ArbosVersion_FixRedeemGas {
+		if arbosVer >= params.ArbosVersion_FixRedeemGas {
 			// subtract gas burned for future use
 			for _, scheduledTx := range result.ScheduledTxes {
 				switch inner := scheduledTx.GetInner().(type) {
@@ -442,16 +425,14 @@ func ProduceBlockAdvanced(
 				// L2->L1 withdrawals remove eth from the system
 				switch txLog.Topics[0] {
 				case L2ToL1TransactionEventID:
-					event := &precompilesgen.ArbSysL2ToL1Transaction{}
-					err := util.ParseL2ToL1TransactionLog(event, txLog)
+					event, err := util.ParseL2ToL1TransactionLog(txLog)
 					if err != nil {
 						log.Error("Failed to parse L2ToL1Transaction log", "err", err)
 					} else {
 						expectedBalanceDelta.Sub(expectedBalanceDelta, event.Callvalue)
 					}
 				case L2ToL1TxEventID:
-					event := &precompilesgen.ArbSysL2ToL1Tx{}
-					err := util.ParseL2ToL1TxLog(event, txLog)
+					event, err := util.ParseL2ToL1TxLog(txLog)
 					if err != nil {
 						log.Error("Failed to parse L2ToL1Tx log", "err", err)
 					} else {
@@ -462,10 +443,6 @@ func ProduceBlockAdvanced(
 		}
 
 		blockGasLeft = arbmath.SaturatingUSub(blockGasLeft, computeUsed)
-
-		// Add gas used since startup to prometheus metric.
-		gasUsed := arbmath.SaturatingUSub(receipt.GasUsed, receipt.GasUsedForL1)
-		gasUsedSinceStartupCounter.Inc(arbmath.SaturatingCast(gasUsed))
 
 		complete = append(complete, tx)
 		receipts = append(receipts, receipt)

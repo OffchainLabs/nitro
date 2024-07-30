@@ -23,6 +23,15 @@ type HardHatArtifact struct {
 	Bytecode     string        `json:"bytecode"`
 }
 
+type FoundryBytecode struct {
+	Object string `json:"object"`
+}
+
+type FoundryArtifact struct {
+	Abi      []interface{}   `json:"abi"`
+	Bytecode FoundryBytecode `json:"bytecode"`
+}
+
 type moduleInfo struct {
 	contractNames []string
 	abis          []string
@@ -59,10 +68,22 @@ func main() {
 	}
 	root := filepath.Dir(filename)
 	parent := filepath.Dir(root)
-	filePaths, err := filepath.Glob(filepath.Join(parent, "contracts", "build", "contracts", "src", "*", "*", "*.json"))
+	filePaths, err := filepath.Glob(filepath.Join(parent, "contracts", "build", "contracts", "src", "*", "*.sol", "*.json"))
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	filePathsSafeSmartAccount, err := filepath.Glob(filepath.Join(parent, "safe-smart-account", "build", "artifacts", "contracts", "*", "*.sol", "*.json"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	filePathsSafeSmartAccountOuter, err := filepath.Glob(filepath.Join(parent, "safe-smart-account", "build", "artifacts", "contracts", "*.sol", "*.json"))
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	filePaths = append(filePaths, filePathsSafeSmartAccount...)
+	filePaths = append(filePaths, filePathsSafeSmartAccountOuter...)
 
 	modules := make(map[string]*moduleInfo)
 
@@ -94,6 +115,35 @@ func main() {
 			modules[module] = modInfo
 		}
 		modInfo.addArtifact(artifact)
+	}
+
+	yulFilePaths, err := filepath.Glob(filepath.Join(parent, "contracts", "out", "*", "*.yul", "*.json"))
+	if err != nil {
+		log.Fatal(err)
+	}
+	yulModInfo := modules["yulgen"]
+	if yulModInfo == nil {
+		yulModInfo = &moduleInfo{}
+		modules["yulgen"] = yulModInfo
+	}
+	for _, path := range yulFilePaths {
+		_, file := filepath.Split(path)
+		name := file[:len(file)-5]
+
+		data, err := os.ReadFile(path)
+		if err != nil {
+			log.Fatal("could not read", path, "for contract", name, err)
+		}
+
+		artifact := FoundryArtifact{}
+		if err := json.Unmarshal(data, &artifact); err != nil {
+			log.Fatal("failed to parse contract", name, err)
+		}
+		yulModInfo.addArtifact(HardHatArtifact{
+			ContractName: name,
+			Abi:          artifact.Abi,
+			Bytecode:     artifact.Bytecode.Object,
+		})
 	}
 
 	// add upgrade executor module which is not compiled locally, but imported from 'nitro-contracts' depedencies

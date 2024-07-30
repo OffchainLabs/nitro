@@ -51,7 +51,7 @@ type ClientConnection struct {
 	requestedSeqNum arbutil.MessageIndex
 	LastSentSeqNum  atomic.Uint64
 
-	lastHeardUnix int64
+	lastHeardUnix atomic.Int64
 	out           chan message
 	backlog       backlog.Backlog
 	registered    chan bool
@@ -74,7 +74,7 @@ func NewClientConnection(
 	delay time.Duration,
 	bklg backlog.Backlog,
 ) *ClientConnection {
-	return &ClientConnection{
+	clientConnection := &ClientConnection{
 		conn:            conn,
 		clientIp:        connectingIP,
 		desc:            desc,
@@ -82,7 +82,6 @@ func NewClientConnection(
 		Name:            fmt.Sprintf("%s@%s-%d", connectingIP, conn.RemoteAddr(), rand.Intn(10)),
 		clientAction:    clientAction,
 		requestedSeqNum: requestedSeqNum,
-		lastHeardUnix:   time.Now().Unix(),
 		out:             make(chan message, maxSendQueue),
 		compression:     compression,
 		flateReader:     NewFlateReader(),
@@ -91,6 +90,8 @@ func NewClientConnection(
 		registered:      make(chan bool, 1),
 		backlogSent:     false,
 	}
+	clientConnection.lastHeardUnix.Store(time.Now().Unix())
+	return clientConnection
 }
 
 func (cc *ClientConnection) Age() time.Duration {
@@ -139,6 +140,9 @@ func (cc *ClientConnection) writeBacklog(ctx context.Context, segment backlog.Ba
 			if len(msgs) >= requestedIdx {
 				msgs = msgs[requestedIdx:]
 			}
+		}
+		if len(msgs) == 0 {
+			break
 		}
 		isFirstSegment = false
 		bm := &m.BroadcastMessage{
@@ -189,6 +193,7 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 			t := time.NewTimer(cc.delay)
 			select {
 			case <-ctx.Done():
+				t.Stop()
 				return
 			case <-t.C:
 			}
@@ -218,8 +223,10 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 		timer := time.NewTimer(5 * time.Second)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
 		case <-cc.registered:
+			timer.Stop()
 			log.Debug("ClientConnection registered with ClientManager", "client", cc.Name)
 		case <-timer.C:
 			log.Error("timed out waiting for ClientConnection to register with ClientManager", "client", cc.Name)
@@ -284,7 +291,7 @@ func (cc *ClientConnection) RequestedSeqNum() arbutil.MessageIndex {
 }
 
 func (cc *ClientConnection) GetLastHeard() time.Time {
-	return time.Unix(atomic.LoadInt64(&cc.lastHeardUnix), 0)
+	return time.Unix(cc.lastHeardUnix.Load(), 0)
 }
 
 // Receive reads next message from client's underlying connection.
@@ -299,12 +306,12 @@ func (cc *ClientConnection) Receive(ctx context.Context, timeout time.Duration) 
 	return msg, op, err
 }
 
-// readRequests reads json-rpc request from connection.
+// readRequest reads json-rpc request from connection.
 func (cc *ClientConnection) readRequest(ctx context.Context, timeout time.Duration) ([]byte, ws.OpCode, error) {
 	cc.ioMutex.Lock()
 	defer cc.ioMutex.Unlock()
 
-	atomic.StoreInt64(&cc.lastHeardUnix, time.Now().Unix())
+	cc.lastHeardUnix.Store(time.Now().Unix())
 
 	var data []byte
 	var opCode ws.OpCode

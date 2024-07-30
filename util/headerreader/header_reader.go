@@ -63,6 +63,7 @@ type Config struct {
 	Enable               bool            `koanf:"enable"`
 	PollOnly             bool            `koanf:"poll-only" reload:"hot"`
 	PollInterval         time.Duration   `koanf:"poll-interval" reload:"hot"`
+	PollTimeout          time.Duration   `koanf:"poll-timeout" reload:"hot"`
 	SubscribeErrInterval time.Duration   `koanf:"subscribe-err-interval" reload:"hot"`
 	TxTimeout            time.Duration   `koanf:"tx-timeout" reload:"hot"`
 	OldHeaderTimeout     time.Duration   `koanf:"old-header-timeout" reload:"hot"`
@@ -80,6 +81,7 @@ var DefaultConfig = Config{
 	Enable:               true,
 	PollOnly:             false,
 	PollInterval:         15 * time.Second,
+	PollTimeout:          5 * time.Second,
 	SubscribeErrInterval: 5 * time.Minute,
 	TxTimeout:            5 * time.Minute,
 	OldHeaderTimeout:     5 * time.Minute,
@@ -94,6 +96,7 @@ func AddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".poll-only", DefaultConfig.PollOnly, "do not attempt to subscribe to header events")
 	f.Bool(prefix+".use-finality-data", DefaultConfig.UseFinalityData, "use l1 data about finalized/safe blocks")
 	f.Duration(prefix+".poll-interval", DefaultConfig.PollInterval, "interval when polling endpoint")
+	f.Duration(prefix+".poll-timeout", DefaultConfig.PollTimeout, "timeout when polling endpoint")
 	f.Duration(prefix+".subscribe-err-interval", DefaultConfig.SubscribeErrInterval, "interval for subscribe error")
 	f.Duration(prefix+".tx-timeout", DefaultConfig.TxTimeout, "timeout when waiting for a transaction")
 	f.Duration(prefix+".old-header-timeout", DefaultConfig.OldHeaderTimeout, "warns if the latest l1 block is at least this old")
@@ -108,6 +111,7 @@ var TestConfig = Config{
 	Enable:           true,
 	PollOnly:         false,
 	PollInterval:     time.Millisecond * 10,
+	PollTimeout:      time.Second * 5,
 	TxTimeout:        time.Second * 5,
 	OldHeaderTimeout: 5 * time.Minute,
 	UseFinalityData:  false,
@@ -287,7 +291,9 @@ func (s *HeaderReader) broadcastLoop(ctx context.Context) {
 			s.possiblyBroadcast(h)
 			timer.Stop()
 		case <-timer.C:
-			h, err := s.client.HeaderByNumber(ctx, nil)
+			timedCtx, cancelFunc := context.WithTimeout(ctx, s.config().PollTimeout)
+			h, err := s.client.HeaderByNumber(timedCtx, nil)
+			cancelFunc()
 			if err != nil {
 				s.setError(fmt.Errorf("failed reading HeaderByNumber: %w", err))
 				if !errors.Is(err, context.Canceled) {
@@ -436,7 +442,7 @@ func (s *HeaderReader) LastPendingCallBlockNr() uint64 {
 
 var ErrBlockNumberNotSupported = errors.New("block number not supported")
 
-func headerIndicatesFinalitySupport(header *types.Header) bool {
+func HeaderIndicatesFinalitySupport(header *types.Header) bool {
 	if header.Difficulty.Sign() == 0 {
 		// This is an Ethereum PoS chain
 		return true
@@ -466,7 +472,7 @@ func (s *HeaderReader) getCached(ctx context.Context, c *cachedHeader) (*types.H
 	if HeadersEqual(currentHead, c.headWhenCached) {
 		return c.header, nil
 	}
-	if !s.config().UseFinalityData || !headerIndicatesFinalitySupport(currentHead) {
+	if !s.config().UseFinalityData || !HeaderIndicatesFinalitySupport(currentHead) {
 		return nil, ErrBlockNumberNotSupported
 	}
 	header, err := s.client.HeaderByNumber(ctx, c.rpcBlockNum)

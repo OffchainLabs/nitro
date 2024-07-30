@@ -2,57 +2,115 @@ package arbnode
 
 import (
 	"context"
-	"errors"
-	"sync/atomic"
+	"sync"
+	"time"
 
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	flag "github.com/spf13/pflag"
 )
 
 type SyncMonitor struct {
-	config      *SyncMonitorConfig
+	stopwaiter.StopWaiter
+	config      func() *SyncMonitorConfig
 	inboxReader *InboxReader
 	txStreamer  *TransactionStreamer
 	coordinator *SeqCoordinator
-	exec        execution.FullExecutionClient
 	initialized bool
+
+	syncTargetLock sync.Mutex
+	nextSyncTarget arbutil.MessageIndex
+	syncTarget     arbutil.MessageIndex
 }
 
-func NewSyncMonitor(config *SyncMonitorConfig) *SyncMonitor {
+func NewSyncMonitor(config func() *SyncMonitorConfig) *SyncMonitor {
 	return &SyncMonitor{
 		config: config,
 	}
 }
 
 type SyncMonitorConfig struct {
-	BlockBuildLag               uint64 `koanf:"block-build-lag"`
-	BlockBuildSequencerInboxLag uint64 `koanf:"block-build-sequencer-inbox-lag"`
-	CoordinatorMsgLag           uint64 `koanf:"coordinator-msg-lag"`
+	MsgLag time.Duration `koanf:"msg-lag"`
 }
 
 var DefaultSyncMonitorConfig = SyncMonitorConfig{
-	BlockBuildLag:               20,
-	BlockBuildSequencerInboxLag: 0,
-	CoordinatorMsgLag:           15,
+	MsgLag: time.Second,
+}
+
+var TestSyncMonitorConfig = SyncMonitorConfig{
+	MsgLag: time.Millisecond * 10,
 }
 
 func SyncMonitorConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Uint64(prefix+".block-build-lag", DefaultSyncMonitorConfig.BlockBuildLag, "allowed lag between messages read and blocks built")
-	f.Uint64(prefix+".block-build-sequencer-inbox-lag", DefaultSyncMonitorConfig.BlockBuildSequencerInboxLag, "allowed lag between messages read from sequencer inbox and blocks built")
-	f.Uint64(prefix+".coordinator-msg-lag", DefaultSyncMonitorConfig.CoordinatorMsgLag, "allowed lag between local and remote messages")
+	f.Duration(prefix+".msg-lag", DefaultSyncMonitorConfig.MsgLag, "allowed msg lag while still considered in sync")
 }
 
-func (s *SyncMonitor) Initialize(inboxReader *InboxReader, txStreamer *TransactionStreamer, coordinator *SeqCoordinator, exec execution.FullExecutionClient) {
+func (s *SyncMonitor) Initialize(inboxReader *InboxReader, txStreamer *TransactionStreamer, coordinator *SeqCoordinator) {
 	s.inboxReader = inboxReader
 	s.txStreamer = txStreamer
 	s.coordinator = coordinator
-	s.exec = exec
 	s.initialized = true
 }
 
-func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
-	syncing := false
+func (s *SyncMonitor) updateSyncTarget(ctx context.Context) time.Duration {
+	nextSyncTarget, err := s.maxMessageCount()
+	if err != nil {
+		log.Warn("failed readin max msg count", "err", err)
+		return s.config().MsgLag
+	}
+	s.syncTargetLock.Lock()
+	defer s.syncTargetLock.Unlock()
+	s.syncTarget = s.nextSyncTarget
+	s.nextSyncTarget = nextSyncTarget
+	return s.config().MsgLag
+}
+
+func (s *SyncMonitor) SyncTargetMessageCount() arbutil.MessageIndex {
+	s.syncTargetLock.Lock()
+	defer s.syncTargetLock.Unlock()
+	return s.syncTarget
+}
+
+func (s *SyncMonitor) maxMessageCount() (arbutil.MessageIndex, error) {
+	msgCount, err := s.txStreamer.GetMessageCount()
+	if err != nil {
+		return 0, err
+	}
+
+	pending := s.txStreamer.FeedPendingMessageCount()
+	if pending > msgCount {
+		msgCount = pending
+	}
+
+	if s.inboxReader != nil {
+		batchProcessed := s.inboxReader.GetLastReadBatchCount()
+
+		if batchProcessed > 0 {
+			batchMsgCount, err := s.inboxReader.Tracker().GetBatchMessageCount(batchProcessed - 1)
+			if err != nil {
+				return msgCount, err
+			}
+			if batchMsgCount > msgCount {
+				msgCount = batchMsgCount
+			}
+		}
+	}
+
+	if s.coordinator != nil {
+		coordinatorMessageCount, err := s.coordinator.GetRemoteMsgCount() //NOTE: this creates a remote call
+		if err != nil {
+			return msgCount, err
+		}
+		if coordinatorMessageCount > msgCount {
+			msgCount = coordinatorMessageCount
+		}
+	}
+
+	return msgCount, nil
+}
+
+func (s *SyncMonitor) FullSyncProgressMap() map[string]interface{} {
 	res := make(map[string]interface{})
 
 	if !s.initialized {
@@ -60,56 +118,30 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 		return res
 	}
 
-	broadcasterQueuedMessagesPos := atomic.LoadUint64(&(s.txStreamer.broadcasterQueuedMessagesPos))
-
-	if broadcasterQueuedMessagesPos != 0 { // unprocessed feed
-		syncing = true
-	}
-	res["broadcasterQueuedMessagesPos"] = broadcasterQueuedMessagesPos
-
-	builtMessageCount, err := s.exec.HeadMessageNumber()
-	if err != nil {
-		res["builtMessageCountError"] = err.Error()
-		syncing = true
-		builtMessageCount = 0
-	} else {
-		blockNum := s.exec.MessageIndexToBlockNumber(builtMessageCount)
-		res["blockNum"] = blockNum
-		builtMessageCount++
-		res["messageOfLastBlock"] = builtMessageCount
-	}
+	syncTarget := s.SyncTargetMessageCount()
+	res["syncTargetMsgCount"] = syncTarget
 
 	msgCount, err := s.txStreamer.GetMessageCount()
 	if err != nil {
 		res["msgCountError"] = err.Error()
-		syncing = true
-	} else {
-		res["msgCount"] = msgCount
-		if builtMessageCount+arbutil.MessageIndex(s.config.BlockBuildLag) < msgCount {
-			syncing = true
-		}
+		return res
 	}
+	res["msgCount"] = msgCount
+
+	res["feedPendingMessageCount"] = s.txStreamer.FeedPendingMessageCount()
 
 	if s.inboxReader != nil {
 		batchSeen := s.inboxReader.GetLastSeenBatchCount()
-		_, batchProcessed := s.inboxReader.GetLastReadBlockAndBatchCount()
-
-		if (batchSeen == 0) || // error or not yet read inbox
-			(batchProcessed < batchSeen) { // unprocessed inbox messages
-			syncing = true
-		}
 		res["batchSeen"] = batchSeen
+
+		batchProcessed := s.inboxReader.GetLastReadBatchCount()
 		res["batchProcessed"] = batchProcessed
 
-		processedMetadata, err := s.inboxReader.Tracker().GetBatchMetadata(batchProcessed - 1)
+		processedBatchMsgs, err := s.inboxReader.Tracker().GetBatchMessageCount(batchProcessed - 1)
 		if err != nil {
 			res["batchMetadataError"] = err.Error()
-			syncing = true
 		} else {
-			res["messageOfProcessedBatch"] = processedMetadata.MessageCount
-			if builtMessageCount+arbutil.MessageIndex(s.config.BlockBuildSequencerInboxLag) < processedMetadata.MessageCount {
-				syncing = true
-			}
+			res["messageOfProcessedBatch"] = processedBatchMsgs
 		}
 
 		l1reader := s.inboxReader.l1Reader
@@ -129,46 +161,55 @@ func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
 		coordinatorMessageCount, err := s.coordinator.GetRemoteMsgCount() //NOTE: this creates a remote call
 		if err != nil {
 			res["coordinatorMsgCountError"] = err.Error()
-			syncing = true
 		} else {
 			res["coordinatorMessageCount"] = coordinatorMessageCount
-			if msgCount+arbutil.MessageIndex(s.config.CoordinatorMsgLag) < coordinatorMessageCount {
-				syncing = true
-			}
 		}
-	}
-
-	if !syncing {
-		return make(map[string]interface{})
 	}
 
 	return res
 }
 
-func (s *SyncMonitor) SafeBlockNumber(ctx context.Context) (uint64, error) {
-	if s.inboxReader == nil || !s.initialized {
-		return 0, errors.New("not set up for safeblock")
+func (s *SyncMonitor) SyncProgressMap() map[string]interface{} {
+	if s.Synced() {
+		return make(map[string]interface{})
 	}
-	msg, err := s.inboxReader.GetSafeMsgCount(ctx)
-	if err != nil {
-		return 0, err
-	}
-	block := s.exec.MessageIndexToBlockNumber(msg - 1)
-	return block, nil
+
+	return s.FullSyncProgressMap()
 }
 
-func (s *SyncMonitor) FinalizedBlockNumber(ctx context.Context) (uint64, error) {
-	if s.inboxReader == nil || !s.initialized {
-		return 0, errors.New("not set up for safeblock")
-	}
-	msg, err := s.inboxReader.GetFinalizedMsgCount(ctx)
-	if err != nil {
-		return 0, err
-	}
-	block := s.exec.MessageIndexToBlockNumber(msg - 1)
-	return block, nil
+func (s *SyncMonitor) Start(ctx_in context.Context) {
+	s.StopWaiter.Start(ctx_in, s)
+	s.CallIteratively(s.updateSyncTarget)
 }
 
 func (s *SyncMonitor) Synced() bool {
-	return len(s.SyncProgressMap()) == 0
+	if !s.initialized {
+		return false
+	}
+	if !s.Started() {
+		return false
+	}
+	syncTarget := s.SyncTargetMessageCount()
+
+	msgCount, err := s.txStreamer.GetMessageCount()
+	if err != nil {
+		return false
+	}
+
+	if syncTarget > msgCount {
+		return false
+	}
+
+	if s.inboxReader != nil {
+		batchSeen := s.inboxReader.GetLastSeenBatchCount()
+		if batchSeen == 0 {
+			return false
+		}
+		batchProcessed := s.inboxReader.GetLastReadBatchCount()
+
+		if batchProcessed < batchSeen {
+			return false
+		}
+	}
+	return true
 }

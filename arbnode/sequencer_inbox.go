@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
@@ -33,6 +34,7 @@ const (
 	batchDataTxInput batchDataLocation = iota
 	batchDataSeparateEvent
 	batchDataNone
+	batchDataBlobHashes
 )
 
 func init() {
@@ -43,7 +45,7 @@ func init() {
 	}
 	batchDeliveredID = sequencerBridgeABI.Events["SequencerBatchDelivered"].ID
 	sequencerBatchDataABI = sequencerBridgeABI.Events[sequencerBatchDataEvent]
-	addSequencerL2BatchFromOriginCallABI = sequencerBridgeABI.Methods["addSequencerL2BatchFromOrigin"]
+	addSequencerL2BatchFromOriginCallABI = sequencerBridgeABI.Methods["addSequencerL2BatchFromOrigin0"]
 }
 
 type SequencerInbox struct {
@@ -102,7 +104,7 @@ type SequencerInboxBatch struct {
 	AfterInboxAcc          common.Hash
 	AfterDelayedAcc        common.Hash
 	AfterDelayedCount      uint64
-	TimeBounds             bridgegen.ISequencerInboxTimeBounds
+	TimeBounds             bridgegen.IBridgeTimeBounds
 	rawLog                 types.Log
 	dataLocation           batchDataLocation
 	bridgeAddress          common.Address
@@ -149,6 +151,19 @@ func (m *SequencerInboxBatch) getSequencerData(ctx context.Context, client arbut
 	case batchDataNone:
 		// No data when in a force inclusion batch
 		return nil, nil
+	case batchDataBlobHashes:
+		tx, err := arbutil.GetLogTransaction(ctx, client, m.rawLog)
+		if err != nil {
+			return nil, err
+		}
+		if len(tx.BlobHashes()) == 0 {
+			return nil, fmt.Errorf("blob batch transaction %v has no blobs", tx.Hash())
+		}
+		data := []byte{daprovider.BlobHashesHeaderFlag}
+		for _, h := range tx.BlobHashes() {
+			data = append(data, h[:]...)
+		}
+		return data, nil
 	default:
 		return nil, fmt.Errorf("batch has invalid data location %v", m.dataLocation)
 	}
@@ -217,7 +232,7 @@ func (i *SequencerInbox) LookupBatchesInRange(ctx context.Context, from, to *big
 		seqNum := parsedLog.BatchSequenceNumber.Uint64()
 		if lastSeqNum != nil {
 			if seqNum != *lastSeqNum+1 {
-				return nil, fmt.Errorf("sequencer batches out of order; after batch %v got batch %v", lastSeqNum, seqNum)
+				return nil, fmt.Errorf("sequencer batches out of order; after batch %v got batch %v", *lastSeqNum, seqNum)
 			}
 		}
 		lastSeqNum = &seqNum

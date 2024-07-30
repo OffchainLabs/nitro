@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/eth/gasestimator"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos"
@@ -21,7 +22,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbos/retryables"
 	"github.com/offchainlabs/nitro/arbos/util"
-	"github.com/offchainlabs/nitro/execution/gethexec"
 
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
@@ -31,7 +31,7 @@ import (
 	"github.com/offchainlabs/nitro/util/colors"
 )
 
-func retryableSetup(t *testing.T) (
+func retryableSetup(t *testing.T, modifyNodeConfig ...func(*NodeBuilder)) (
 	*NodeBuilder,
 	*bridgegen.Inbox,
 	func(*types.Receipt) *types.Transaction,
@@ -40,6 +40,9 @@ func retryableSetup(t *testing.T) (
 ) {
 	ctx, cancel := context.WithCancel(context.Background())
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	for _, f := range modifyNodeConfig {
+		f(builder)
+	}
 	builder.Build(t)
 
 	builder.L2Info.GenerateAccount("User2")
@@ -72,7 +75,7 @@ func retryableSetup(t *testing.T) (
 			if !msgTypes[message.Message.Header.Kind] {
 				continue
 			}
-			txs, err := arbos.ParseL2Transactions(message.Message, params.ArbitrumDevTestChainConfig().ChainID, nil)
+			txs, err := arbos.ParseL2Transactions(message.Message, params.ArbitrumDevTestChainConfig().ChainID)
 			Require(t, err)
 			for _, tx := range txs {
 				if txTypes[tx.Type()] {
@@ -121,9 +124,42 @@ func TestRetryableNoExist(t *testing.T) {
 	arbRetryableTx, err := precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), builder.L2.Client)
 	Require(t, err)
 	_, err = arbRetryableTx.GetTimeout(&bind.CallOpts{}, common.Hash{})
-	if err.Error() != "execution reverted: error NoTicketWithID()" {
+	// The first error is server side. The second error is client side ABI decoding.
+	if err.Error() != "execution reverted: error NoTicketWithID(): NoTicketWithID()" {
 		Fatal(t, "didn't get expected NoTicketWithID error")
 	}
+}
+
+func TestEstimateRetryableTicketWithNoFundsAndZeroGasPrice(t *testing.T) {
+	t.Parallel()
+	builder, _, _, ctx, teardown := retryableSetup(t)
+	defer teardown()
+
+	user2Address := builder.L2Info.GetAddress("User2")
+	beneficiaryAddress := builder.L2Info.GetAddress("Beneficiary")
+
+	deposit := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
+	callValue := big.NewInt(1e6)
+
+	nodeInterface, err := node_interfacegen.NewNodeInterface(types.NodeInterfaceAddress, builder.L2.Client)
+	Require(t, err, "failed to deploy NodeInterface")
+
+	builder.L2Info.GenerateAccount("zerofunds")
+	usertxoptsL2 := builder.L2Info.GetDefaultTransactOpts("zerofunds", ctx)
+	usertxoptsL2.NoSend = true
+	usertxoptsL2.GasMargin = 0
+	usertxoptsL2.GasPrice = big.NewInt(0)
+	_, err = nodeInterface.EstimateRetryableTicket(
+		&usertxoptsL2,
+		usertxoptsL2.From,
+		deposit,
+		user2Address,
+		callValue,
+		beneficiaryAddress,
+		beneficiaryAddress,
+		[]byte{},
+	)
+	Require(t, err, "failed to estimate retryable submission")
 }
 
 func TestSubmitRetryableImmediateSuccess(t *testing.T) {
@@ -156,7 +192,14 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	)
 	Require(t, err, "failed to estimate retryable submission")
 	estimate := tx.Gas()
-	colors.PrintBlue("estimate: ", estimate)
+	expectedEstimate := params.TxGas + params.TxDataNonZeroGasEIP2028*4
+	if float64(estimate) > float64(expectedEstimate)*(1+gasestimator.EstimateGasErrorRatio) {
+		t.Errorf("estimated retryable ticket at %v gas but expected %v, with error margin of %v",
+			estimate,
+			expectedEstimate,
+			gasestimator.EstimateGasErrorRatio,
+		)
+	}
 
 	// submit & auto redeem the retryable using the gas estimate
 	usertxoptsL1 := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
@@ -196,9 +239,11 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 	}
 }
 
-func TestSubmitRetryableEmptyEscrow(t *testing.T) {
+func testSubmitRetryableEmptyEscrow(t *testing.T, arbosVersion uint64) {
 	t.Parallel()
-	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
+	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t, func(builder *NodeBuilder) {
+		builder.WithArbOSVersion(arbosVersion)
+	})
 	defer teardown()
 
 	user2Address := builder.L2Info.GetAddress("User2")
@@ -269,12 +314,18 @@ func TestSubmitRetryableEmptyEscrow(t *testing.T) {
 	escrowAccount := retryables.RetryableEscrowAddress(l2Tx.Hash())
 	state, err := builder.L2.ExecNode.ArbInterface.BlockChain().State()
 	Require(t, err)
-	escrowCodeHash := state.GetCodeHash(escrowAccount)
-	if escrowCodeHash == (common.Hash{}) {
-		Fatal(t, "Escrow account deleted (or not created)")
-	} else if escrowCodeHash != types.EmptyCodeHash {
-		Fatal(t, "Escrow account has unexpected code hash", escrowCodeHash)
+	escrowExists := state.Exist(escrowAccount)
+	if escrowExists != (arbosVersion < 30) {
+		Fatal(t, "Escrow account existance", escrowExists, "doesn't correspond to ArbOS version", arbosVersion)
 	}
+}
+
+func TestSubmitRetryableEmptyEscrowArbOS20(t *testing.T) {
+	testSubmitRetryableEmptyEscrow(t, 20)
+}
+
+func TestSubmitRetryableEmptyEscrowArbOS30(t *testing.T) {
+	testSubmitRetryableEmptyEscrow(t, 30)
 }
 
 func TestSubmitRetryableFailThenRetry(t *testing.T) {
@@ -334,6 +385,12 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 	Require(t, err)
 	receipt, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
+
+	redemptionL2Gas := receipt.GasUsed - receipt.GasUsedForL1
+	var maxRedemptionL2Gas uint64 = 1_000_000
+	if redemptionL2Gas > maxRedemptionL2Gas {
+		t.Errorf("manual retryable redemption used %v gas, more than expected max %v gas", redemptionL2Gas, maxRedemptionL2Gas)
+	}
 
 	retryTxId := receipt.Logs[0].Topics[2]
 
@@ -553,7 +610,7 @@ func TestDepositETH(t *testing.T) {
 	txOpts := builder.L1Info.GetDefaultTransactOpts("Faucet", ctx)
 	txOpts.Value = big.NewInt(13)
 
-	l1tx, err := delayedInbox.DepositEth0(&txOpts)
+	l1tx, err := delayedInbox.DepositEth439370b1(&txOpts)
 	if err != nil {
 		t.Fatalf("DepositEth0() unexected error: %v", err)
 	}
@@ -873,25 +930,128 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 	}
 }
 
+func TestRetryableRedeemBlockGasUsage(t *testing.T) {
+	builder, delayedInbox, lookupL2Tx, ctx, teardown := retryableSetup(t)
+	defer teardown()
+	l2client := builder.L2.Client
+	l2info := builder.L2Info
+	l1client := builder.L1.Client
+	l1info := builder.L1Info
+
+	_, err := precompilesgen.NewArbosTest(common.HexToAddress("0x69"), l2client)
+	Require(t, err, "failed to deploy ArbosTest")
+	_, err = precompilesgen.NewArbRetryableTx(common.HexToAddress("6e"), l2client)
+	Require(t, err)
+
+	ownerTxOpts := l2info.GetDefaultTransactOpts("Owner", ctx)
+	simpleAddr, _ := deploySimple(t, ctx, ownerTxOpts, l2client)
+	simpleABI, err := mocksgen.SimpleMetaData.GetAbi()
+	Require(t, err)
+
+	beneficiaryAddress := l2info.GetAddress("Beneficiary")
+	deposit := arbmath.BigMul(big.NewInt(1e12), big.NewInt(1e12))
+	callValue := common.Big0
+	usertxoptsL1 := l1info.GetDefaultTransactOpts("Faucet", ctx)
+	usertxoptsL1.Value = deposit
+	l1tx, err := delayedInbox.CreateRetryableTicket(
+		&usertxoptsL1,
+		simpleAddr,
+		callValue,
+		big.NewInt(1e16),
+		beneficiaryAddress,
+		beneficiaryAddress,
+		// send enough L2 gas for intrinsic but not compute
+		big.NewInt(int64(params.TxGas+params.TxDataNonZeroGasEIP2028*4)),
+		big.NewInt(int64(l2pricing.InitialBaseFeeWei)*2),
+		simpleABI.Methods["incrementRedeem"].ID,
+	)
+	Require(t, err)
+	l1Receipt, err := EnsureTxSucceeded(ctx, l1client, l1tx)
+	Require(t, err)
+	if l1Receipt.Status != types.ReceiptStatusSuccessful {
+		Fatal(t, "l1Receipt indicated failure")
+	}
+	waitForL1DelayBlocks(t, ctx, builder)
+	submissionReceipt, err := EnsureTxSucceeded(ctx, l2client, lookupL2Tx(l1Receipt))
+	Require(t, err)
+	if len(submissionReceipt.Logs) != 2 {
+		Fatal(t, len(submissionReceipt.Logs))
+	}
+	ticketId := submissionReceipt.Logs[0].Topics[1]
+	firstRetryTxId := submissionReceipt.Logs[1].Topics[2]
+	// get receipt for the auto redeem, make sure it failed
+	autoRedeemReceipt, err := WaitForTx(ctx, l2client, firstRetryTxId, time.Second*5)
+	Require(t, err)
+	if autoRedeemReceipt.Status != types.ReceiptStatusFailed {
+		Fatal(t, "first retry tx shouldn't have succeeded")
+	}
+
+	redeemTx := func() *types.Transaction {
+		arbRetryableTxAbi, err := precompilesgen.ArbRetryableTxMetaData.GetAbi()
+		Require(t, err)
+		redeem := arbRetryableTxAbi.Methods["redeem"]
+		input, err := redeem.Inputs.Pack(ticketId)
+		Require(t, err)
+		data := append([]byte{}, redeem.ID...)
+		data = append(data, input...)
+		to := common.HexToAddress("6e")
+		gas := uint64(l2pricing.InitialPerBlockGasLimitV6)
+		return l2info.PrepareTxTo("Faucet", &to, gas, big.NewInt(0), data)
+	}()
+	burnTx := func() *types.Transaction {
+		burnAmount := uint64(20 * 1e6)
+		arbosTestAbi, err := precompilesgen.ArbosTestMetaData.GetAbi()
+		Require(t, err)
+		burnArbGas := arbosTestAbi.Methods["burnArbGas"]
+		input, err := burnArbGas.Inputs.Pack(arbmath.UintToBig(burnAmount - l2info.TransferGas))
+		Require(t, err)
+		data := append([]byte{}, burnArbGas.ID...)
+		data = append(data, input...)
+		to := common.HexToAddress("0x69")
+		return l2info.PrepareTxTo("Faucet", &to, burnAmount, big.NewInt(0), data)
+	}()
+	receipts := SendSignedTxesInBatchViaL1(t, ctx, l1info, l1client, l2client, types.Transactions{redeemTx, burnTx})
+	redeemReceipt, burnReceipt := receipts[0], receipts[1]
+	if len(redeemReceipt.Logs) != 1 {
+		Fatal(t, "Unexpected log count:", len(redeemReceipt.Logs))
+	}
+	retryTxId := redeemReceipt.Logs[0].Topics[2]
+
+	// check the receipt for the retry
+	retryReceipt, err := WaitForTx(ctx, l2client, retryTxId, time.Second*1)
+	Require(t, err)
+	if retryReceipt.Status != types.ReceiptStatusSuccessful {
+		Fatal(t, "retry failed")
+	}
+	t.Log("submission  - block:", submissionReceipt.BlockNumber, "txInd:", submissionReceipt.TransactionIndex)
+	t.Log("auto redeem - block:", autoRedeemReceipt.BlockNumber, "txInd:", autoRedeemReceipt.TransactionIndex)
+	t.Log("redeem      - block:", redeemReceipt.BlockNumber, "txInd:", redeemReceipt.TransactionIndex)
+	t.Log("retry       - block:", retryReceipt.BlockNumber, "txInd:", retryReceipt.TransactionIndex)
+	t.Log("burn        - block:", burnReceipt.BlockNumber, "txInd:", burnReceipt.TransactionIndex)
+	if !arbmath.BigEquals(burnReceipt.BlockNumber, redeemReceipt.BlockNumber) {
+		Fatal(t, "Failed to fit a tx to the same block as redeem and retry")
+	}
+}
+
 // elevateL2Basefee by burning gas exceeding speed limit
 func elevateL2Basefee(t *testing.T, ctx context.Context, builder *NodeBuilder) {
 	baseFeeBefore := builder.L2.GetBaseFee(t)
 	colors.PrintBlue("Elevating base fee...")
-	arbostestabi, err := precompilesgen.ArbosTestMetaData.GetAbi()
+	arbosTestAbi, err := precompilesgen.ArbosTestMetaData.GetAbi()
 	Require(t, err)
 	_, err = precompilesgen.NewArbosTest(common.HexToAddress("0x69"), builder.L2.Client)
 	Require(t, err, "failed to deploy ArbosTest")
 
-	burnAmount := gethexec.ConfigDefaultTest().RPC.RPCGasCap
+	burnAmount := ExecConfigDefaultTest().RPC.RPCGasCap
 	burnTarget := uint64(5 * l2pricing.InitialSpeedLimitPerSecondV6 * l2pricing.InitialBacklogTolerance)
 	for i := uint64(0); i < (burnTarget+burnAmount)/burnAmount; i++ {
-		burnArbGas := arbostestabi.Methods["burnArbGas"]
-		data, err := burnArbGas.Inputs.Pack(arbmath.UintToBig(burnAmount - builder.L2Info.TransferGas))
+		burnArbGas := arbosTestAbi.Methods["burnArbGas"]
+		input, err := burnArbGas.Inputs.Pack(arbmath.UintToBig(burnAmount - builder.L2Info.TransferGas))
 		Require(t, err)
-		input := append([]byte{}, burnArbGas.ID...)
-		input = append(input, data...)
+		data := append([]byte{}, burnArbGas.ID...)
+		data = append(data, input...)
 		to := common.HexToAddress("0x69")
-		tx := builder.L2Info.PrepareTxTo("Faucet", &to, burnAmount, big.NewInt(0), input)
+		tx := builder.L2Info.PrepareTxTo("Faucet", &to, burnAmount, big.NewInt(0), data)
 		Require(t, builder.L2.Client.SendTransaction(ctx, tx))
 		_, err = builder.L2.EnsureTxSucceeded(tx)
 		Require(t, err)

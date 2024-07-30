@@ -1,9 +1,36 @@
 [workspace]
 members = [
         "arbutil",
+        "bench",
+        "brotli",
+        "brotli/fuzz",
+        "caller-env",
         "prover",
+        "stylus",
         "jit",
 ]
+exclude = [
+        "stylus/tests/",
+        "tools/wasmer/",
+]
+resolver = "2"
+
+[workspace.package]
+authors = ["Offchain Labs"]
+edition = "2021"
+homepage = "https://arbitrum.io"
+license = "BSL"
+repository = "https://github.com/OffchainLabs/nitro.git"
+rust-version = "1.67"
+
+[workspace.dependencies]
+cfg-if = "1.0.0"
+lazy_static = "1.4.0"
+lru = "0.12.3"
+num_enum = { version = "0.7.2", default-features = false }
+ruint2 = "1.9.0"
+wasmparser = "0.121"
+wee_alloc = "0.4.2"
 
 [profile.release]
 debug = true

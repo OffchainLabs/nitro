@@ -46,6 +46,8 @@ var HTTPServerTimeoutConfigDefault = HTTPServerTimeoutConfig{
 	IdleTimeout:       120 * time.Second,
 }
 
+const HTTPServerBodyLimitDefault = 0 // Use default from go-ethereum
+
 func (c HTTPConfig) Apply(stackConf *node.Config) {
 	stackConf.HTTPHost = c.Addr
 	stackConf.HTTPPort = c.Port

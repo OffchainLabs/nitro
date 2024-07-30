@@ -8,13 +8,14 @@ import (
 
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func TestTrieDBCommitRace(t *testing.T) {
-	_ = testhelpers.InitTestLog(t, log.LvlError)
+	_ = testhelpers.InitTestLog(t, log.LevelError)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -23,6 +24,8 @@ func TestTrieDBCommitRace(t *testing.T) {
 	builder.execConfig.Sequencer.MaxBlockSpeed = 0
 	builder.execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
 	builder.execConfig.Caching.Archive = true
+	// For now Archive node should use HashScheme
+	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 	builder.execConfig.Caching.BlockCount = 127
 	builder.execConfig.Caching.BlockAge = 0
 	builder.execConfig.Caching.MaxNumberOfBlocksToSkipStateSaving = 127

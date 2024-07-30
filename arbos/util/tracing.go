@@ -4,6 +4,7 @@
 package util
 
 import (
+	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -42,9 +43,26 @@ func NewTracingInfo(evm *vm.EVM, from, to common.Address, scenario TracingScenar
 	return &TracingInfo{
 		Tracer:   evm.Config.Tracer,
 		Scenario: scenario,
-		Contract: vm.NewContract(addressHolder{to}, addressHolder{from}, big.NewInt(0), 0),
+		Contract: vm.NewContract(addressHolder{to}, addressHolder{from}, uint256.NewInt(0), 0),
 		Depth:    evm.Depth(),
 	}
+}
+
+func (info *TracingInfo) RecordEmitLog(topics []common.Hash, data []byte) {
+	size := uint64(len(data))
+	var args []uint256.Int
+	args = append(args, *uint256.NewInt(0))    // offset: byte offset in the memory in bytes
+	args = append(args, *uint256.NewInt(size)) // size: byte size to copy (length of data)
+	for _, topic := range topics {
+		args = append(args, HashToUint256(topic)) // topic: 32-byte value. Max topics count is 4
+	}
+	scope := &vm.ScopeContext{
+		Memory:   TracingMemoryFromBytes(data),
+		Stack:    TracingStackFromArgs(args...),
+		Contract: info.Contract,
+	}
+	logType := fmt.Sprintf("LOG%d", len(topics))
+	info.Tracer.CaptureState(0, vm.StringToOp(logType), 0, 0, scope, []byte{}, info.Depth, nil)
 }
 
 func (info *TracingInfo) RecordStorageGet(key common.Hash) {
@@ -79,7 +97,7 @@ func (info *TracingInfo) MockCall(input []byte, gas uint64, from, to common.Addr
 	tracer := info.Tracer
 	depth := info.Depth
 
-	contract := vm.NewContract(addressHolder{to}, addressHolder{from}, amount, gas)
+	contract := vm.NewContract(addressHolder{to}, addressHolder{from}, uint256.MustFromBig(amount), gas)
 
 	scope := &vm.ScopeContext{
 		Memory: TracingMemoryFromBytes(input),

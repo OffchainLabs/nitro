@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/math"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -28,9 +29,7 @@ func getStorageRootHash(t *testing.T, execNode *gethexec.ExecutionNode, address 
 	t.Helper()
 	statedb, err := execNode.Backend.ArbInterface().BlockChain().State()
 	Require(t, err)
-	trie, err := statedb.StorageTrie(address)
-	Require(t, err)
-	return trie.Hash()
+	return statedb.GetStorageRoot(address)
 }
 
 func getStorageSlotValue(t *testing.T, execNode *gethexec.ExecutionNode, address common.Address) map[common.Hash]common.Hash {
@@ -39,7 +38,7 @@ func getStorageSlotValue(t *testing.T, execNode *gethexec.ExecutionNode, address
 	Require(t, err)
 	slotValue := make(map[common.Hash]common.Hash)
 	Require(t, err)
-	err = statedb.ForEachStorage(address, func(key, value common.Hash) bool {
+	err = state.ForEachStorage(statedb, address, func(key, value common.Hash) bool {
 		slotValue[key] = value
 		return true
 	})
@@ -59,7 +58,7 @@ func testConditionalTxThatShouldSucceed(t *testing.T, ctx context.Context, idx i
 func testConditionalTxThatShouldFail(t *testing.T, ctx context.Context, idx int, l2info info, rpcClient *rpc.Client, options *arbitrum_types.ConditionalOptions, expectedErrorCode int) {
 	t.Helper()
 	accountInfo := l2info.GetInfoWithPrivKey("Owner")
-	nonce := accountInfo.Nonce
+	nonce := accountInfo.Nonce.Load()
 	tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, big.NewInt(1e12), nil)
 	err := arbitrum.SendConditionalTransactionRPC(ctx, rpcClient, tx, options)
 	if err == nil {
@@ -78,7 +77,7 @@ func testConditionalTxThatShouldFail(t *testing.T, ctx context.Context, idx int,
 			Fatal(t, "unexpected error type, err:", err)
 		}
 	}
-	accountInfo.Nonce = nonce // revert nonce as the tx failed
+	accountInfo.Nonce.Store(nonce) // revert nonce as the tx failed
 }
 
 func getEmptyOptions(address common.Address) []*arbitrum_types.ConditionalOptions {
@@ -102,7 +101,7 @@ func getOptions(address common.Address, rootHash common.Hash, slotValueMap map[c
 }
 
 func getFulfillableBlockTimeLimits(t *testing.T, blockNumber uint64, timestamp uint64) []*arbitrum_types.ConditionalOptions {
-	future := math.HexOrDecimal64(timestamp + 40)
+	future := math.HexOrDecimal64(timestamp + 70)
 	past := math.HexOrDecimal64(timestamp - 1)
 	futureBlockNumber := math.HexOrDecimal64(blockNumber + 1000)
 	currentBlockNumber := math.HexOrDecimal64(blockNumber)
@@ -203,6 +202,7 @@ func TestSendRawTransactionConditionalBasic(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.nodeConfig.DelayedSequencer.Enable = false
 	cleanup := builder.Build(t)
 	defer cleanup()
 

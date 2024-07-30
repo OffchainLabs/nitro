@@ -19,6 +19,7 @@ import (
 
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	"github.com/offchainlabs/nitro/util/testhelpers/env"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -37,6 +38,11 @@ type execClientWrapper struct {
 func (w *execClientWrapper) Pause()                     { w.t.Error("not supported") }
 func (w *execClientWrapper) Activate()                  { w.t.Error("not supported") }
 func (w *execClientWrapper) ForwardTo(url string) error { w.t.Error("not supported"); return nil }
+func (w *execClientWrapper) Synced() bool               { w.t.Error("not supported"); return false }
+func (w *execClientWrapper) FullSyncProgressMap() map[string]interface{} {
+	w.t.Error("not supported")
+	return nil
+}
 
 func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*gethexec.ExecutionEngine, *TransactionStreamer, ethdb.Database, *core.BlockChain) {
 	chainConfig := params.ArbitrumDevTestChainConfig()
@@ -54,7 +60,8 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 	arbDb := rawdb.NewMemoryDatabase()
 	initReader := statetransfer.NewMemoryInitDataReader(&initData)
 
-	bc, err := gethexec.WriteOrTestBlockChain(chainDb, nil, initReader, chainConfig, arbostypes.TestInitMessage, gethexec.ConfigDefaultTest().TxLookupLimit, 0)
+	cacheConfig := core.DefaultCacheConfigWithScheme(env.GetTestStateScheme())
+	bc, err := gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initReader, chainConfig, arbostypes.TestInitMessage, gethexec.ConfigDefault.TxLookupLimit, 0)
 
 	if err != nil {
 		Fail(t, err)
@@ -65,8 +72,9 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 	if err != nil {
 		Fail(t, err)
 	}
+	execEngine.Initialize(gethexec.DefaultCachingConfig.StylusLRUCache)
 	execSeq := &execClientWrapper{execEngine, t}
-	inbox, err := NewTransactionStreamer(arbDb, bc.Config(), execSeq, nil, make(chan error, 1), transactionStreamerConfigFetcher)
+	inbox, err := NewTransactionStreamer(arbDb, bc.Config(), execSeq, nil, make(chan error, 1), transactionStreamerConfigFetcher, &DefaultSnapSyncConfig)
 	if err != nil {
 		Fail(t, err)
 	}
@@ -144,12 +152,13 @@ func TestTransactionStreamer(t *testing.T) {
 				} else {
 					dest = state.accounts[rand.Int()%len(state.accounts)]
 				}
+				destHash := common.BytesToHash(dest.Bytes())
 				var gas uint64 = 100000
 				var l2Message []byte
 				l2Message = append(l2Message, arbos.L2MessageKind_ContractTx)
 				l2Message = append(l2Message, arbmath.Uint64ToU256Bytes(gas)...)
 				l2Message = append(l2Message, arbmath.Uint64ToU256Bytes(l2pricing.InitialBaseFeeWei)...)
-				l2Message = append(l2Message, dest.Hash().Bytes()...)
+				l2Message = append(l2Message, destHash.Bytes()...)
 				l2Message = append(l2Message, arbmath.U256Bytes(value)...)
 				var requestId common.Hash
 				binary.BigEndian.PutUint64(requestId.Bytes()[:8], uint64(i))
@@ -232,7 +241,7 @@ func TestTransactionStreamer(t *testing.T) {
 					Fail(t, "error getting block state", err)
 				}
 				haveBalance := state.GetBalance(acct)
-				if balance.Cmp(haveBalance) != 0 {
+				if balance.Cmp(haveBalance.ToBig()) != 0 {
 					t.Error("unexpected balance for account", acct, "; expected", balance, "got", haveBalance)
 				}
 			}

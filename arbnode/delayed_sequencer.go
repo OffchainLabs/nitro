@@ -26,6 +26,7 @@ type DelayedSequencer struct {
 	l1Reader                 *headerreader.HeaderReader
 	bridge                   *DelayedBridge
 	inbox                    *InboxTracker
+	reader                   *InboxReader
 	exec                     execution.ExecutionSequencer
 	coordinator              *SeqCoordinator
 	waitingForFinalizedBlock uint64
@@ -68,6 +69,7 @@ func NewDelayedSequencer(l1Reader *headerreader.HeaderReader, reader *InboxReade
 		l1Reader:    l1Reader,
 		bridge:      reader.DelayedBridge(),
 		inbox:       reader.Tracker(),
+		reader:      reader,
 		coordinator: coordinator,
 		exec:        exec,
 		config:      config,
@@ -100,16 +102,20 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 	}
 
 	var finalized uint64
-	if config.UseMergeFinality && lastBlockHeader.Difficulty.Sign() == 0 {
+	var finalizedHash common.Hash
+	if config.UseMergeFinality && headerreader.HeaderIndicatesFinalitySupport(lastBlockHeader) {
+		var header *types.Header
 		var err error
 		if config.RequireFullFinality {
-			finalized, err = d.l1Reader.LatestFinalizedBlockNr(ctx)
+			header, err = d.l1Reader.LatestFinalizedBlockHeader(ctx)
 		} else {
-			finalized, err = d.l1Reader.LatestSafeBlockNr(ctx)
+			header, err = d.l1Reader.LatestSafeBlockHeader(ctx)
 		}
 		if err != nil {
 			return err
 		}
+		finalized = header.Number.Uint64()
+		finalizedHash = header.Hash()
 	} else {
 		currentNum := lastBlockHeader.Number.Int64()
 		if currentNum < config.FinalizeDistance {
@@ -140,7 +146,7 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 	var lastDelayedAcc common.Hash
 	var messages []*arbostypes.L1IncomingMessage
 	for pos < dbDelayedCount {
-		msg, acc, parentChainBlockNumber, err := d.inbox.GetDelayedMessageAccumulatorAndParentChainBlockNumber(pos)
+		msg, acc, parentChainBlockNumber, err := d.inbox.GetDelayedMessageAccumulatorAndParentChainBlockNumber(ctx, pos)
 		if err != nil {
 			return err
 		}
@@ -161,13 +167,20 @@ func (d *DelayedSequencer) sequenceWithoutLockout(ctx context.Context, lastBlock
 			}
 		}
 		lastDelayedAcc = acc
+		err = msg.FillInBatchGasCost(func(batchNum uint64) ([]byte, error) {
+			data, _, err := d.reader.GetSequencerMessageBytes(ctx, batchNum)
+			return data, err
+		})
+		if err != nil {
+			return err
+		}
 		messages = append(messages, msg)
 		pos++
 	}
 
 	// Sequence the delayed messages, if any
 	if len(messages) > 0 {
-		delayedBridgeAcc, err := d.bridge.GetAccumulator(ctx, pos-1, new(big.Int).SetUint64(finalized))
+		delayedBridgeAcc, err := d.bridge.GetAccumulator(ctx, pos-1, new(big.Int).SetUint64(finalized), finalizedHash)
 		if err != nil {
 			return err
 		}

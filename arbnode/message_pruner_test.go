@@ -22,8 +22,9 @@ func TestMessagePrunerWithPruningEligibleMessagePresent(t *testing.T) {
 	Require(t, err)
 
 	checkDbKeys(t, messagesCount, transactionStreamerDb, messagePrefix)
+	checkDbKeys(t, messagesCount, transactionStreamerDb, blockHashInputFeedPrefix)
+	checkDbKeys(t, messagesCount, transactionStreamerDb, messageResultPrefix)
 	checkDbKeys(t, messagesCount, inboxTrackerDb, rlpDelayedMessagePrefix)
-
 }
 
 func TestMessagePrunerTwoHalves(t *testing.T) {
@@ -71,15 +72,19 @@ func TestMessagePrunerWithNoPruningEligibleMessagePresent(t *testing.T) {
 	Require(t, err)
 
 	checkDbKeys(t, uint64(messagesCount), transactionStreamerDb, messagePrefix)
+	checkDbKeys(t, uint64(messagesCount), transactionStreamerDb, blockHashInputFeedPrefix)
+	checkDbKeys(t, uint64(messagesCount), transactionStreamerDb, messageResultPrefix)
 	checkDbKeys(t, messagesCount, inboxTrackerDb, rlpDelayedMessagePrefix)
-
 }
 
 func setupDatabase(t *testing.T, messageCount, delayedMessageCount uint64) (ethdb.Database, ethdb.Database, *MessagePruner) {
-
 	transactionStreamerDb := rawdb.NewMemoryDatabase()
 	for i := uint64(0); i < uint64(messageCount); i++ {
 		err := transactionStreamerDb.Put(dbKey(messagePrefix, i), []byte{})
+		Require(t, err)
+		err = transactionStreamerDb.Put(dbKey(blockHashInputFeedPrefix, i), []byte{})
+		Require(t, err)
+		err = transactionStreamerDb.Put(dbKey(messageResultPrefix, i), []byte{})
 		Require(t, err)
 	}
 

@@ -1,5 +1,5 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
-// For license information, see https://github.com/nitro/blob/master/LICENSE
+// Copyright 2021-2023, Offchain Labs, Inc.
+// For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 package server_arb
 
@@ -22,9 +22,16 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/validator"
 )
+
+type u8 = C.uint8_t
+type u16 = C.uint16_t
+type u32 = C.uint32_t
+type u64 = C.uint64_t
+type usize = C.size_t
 
 type MachineInterface interface {
 	CloneMachineInterface() MachineInterface
@@ -52,7 +59,7 @@ type ArbitratorMachine struct {
 var _ MachineInterface = (*ArbitratorMachine)(nil)
 
 var preimageResolvers containers.SyncMap[int64, GoPreimageResolver]
-var lastPreimageResolverId int64 // atomic
+var lastPreimageResolverId atomic.Int64 // atomic
 
 // Any future calls to this machine will result in a panic
 func (m *ArbitratorMachine) Destroy() {
@@ -81,10 +88,11 @@ func machineFromPointer(ptr *C.struct_Machine) *ArbitratorMachine {
 	return mach
 }
 
-func LoadSimpleMachine(wasm string, libraries []string) (*ArbitratorMachine, error) {
+func LoadSimpleMachine(wasm string, libraries []string, debugChain bool) (*ArbitratorMachine, error) {
 	cWasm := C.CString(wasm)
 	cLibraries := CreateCStringList(libraries)
-	mach := C.arbitrator_load_machine(cWasm, cLibraries, C.long(len(libraries)))
+	debug := usize(arbmath.BoolToUint32(debugChain))
+	mach := C.arbitrator_load_machine(cWasm, cLibraries, C.long(len(libraries)), debug)
 	C.free(unsafe.Pointer(cWasm))
 	FreeCStringList(cLibraries, len(libraries))
 	if mach == nil {
@@ -171,8 +179,8 @@ func (m *ArbitratorMachine) ValidForStep(requestedStep uint64) bool {
 	}
 }
 
-func manageConditionByte(ctx context.Context) (*C.uint8_t, func()) {
-	var zero C.uint8_t
+func manageConditionByte(ctx context.Context) (*u8, func()) {
+	var zero u8
 	conditionByte := &zero
 
 	doneEarlyChan := make(chan struct{})
@@ -205,11 +213,10 @@ func (m *ArbitratorMachine) Step(ctx context.Context, count uint64) error {
 	conditionByte, cancel := manageConditionByte(ctx)
 	defer cancel()
 
-	err := C.arbitrator_step(m.ptr, C.uint64_t(count), conditionByte)
+	err := C.arbitrator_step(m.ptr, u64(count), conditionByte)
+	defer C.free(unsafe.Pointer(err))
 	if err != nil {
-		errString := C.GoString(err)
-		C.free(unsafe.Pointer(err))
-		return errors.New(errString)
+		return errors.New(C.GoString(err))
 	}
 
 	return ctx.Err()
@@ -226,7 +233,11 @@ func (m *ArbitratorMachine) StepUntilHostIo(ctx context.Context) error {
 	conditionByte, cancel := manageConditionByte(ctx)
 	defer cancel()
 
-	C.arbitrator_step_until_host_io(m.ptr, conditionByte)
+	err := C.arbitrator_step_until_host_io(m.ptr, conditionByte)
+	defer C.free(unsafe.Pointer(err))
+	if err != nil {
+		return errors.New(C.GoString(err))
+	}
 
 	return ctx.Err()
 }
@@ -252,6 +263,7 @@ func (m *ArbitratorMachine) GetModuleRoot() (hash common.Hash) {
 	}
 	return
 }
+
 func (m *ArbitratorMachine) ProveNextStep() []byte {
 	defer runtime.KeepAlive(m)
 	m.mutex.Lock()
@@ -309,7 +321,7 @@ func (m *ArbitratorMachine) AddSequencerInboxMessage(index uint64, data []byte) 
 		return errors.New("machine frozen")
 	}
 	cbyte := CreateCByteArray(data)
-	status := C.arbitrator_add_inbox_message(m.ptr, C.uint64_t(0), C.uint64_t(index), cbyte)
+	status := C.arbitrator_add_inbox_message(m.ptr, u64(0), u64(index), cbyte)
 	DestroyCByteArray(cbyte)
 	if status != 0 {
 		return errors.New("failed to add sequencer inbox message")
@@ -328,7 +340,7 @@ func (m *ArbitratorMachine) AddDelayedInboxMessage(index uint64, data []byte) er
 	}
 
 	cbyte := CreateCByteArray(data)
-	status := C.arbitrator_add_inbox_message(m.ptr, C.uint64_t(1), C.uint64_t(index), cbyte)
+	status := C.arbitrator_add_inbox_message(m.ptr, u64(1), u64(index), cbyte)
 	DestroyCByteArray(cbyte)
 	if status != 0 {
 		return errors.New("failed to add sequencer inbox message")
@@ -358,7 +370,7 @@ func preimageResolver(context C.size_t, ty C.uint8_t, ptr unsafe.Pointer) C.Reso
 		}
 	}
 	return C.ResolvedPreimage{
-		ptr: (*C.uint8_t)(C.CBytes(preimage)),
+		ptr: (*u8)(C.CBytes(preimage)),
 		len: (C.ptrdiff_t)(len(preimage)),
 	}
 }
@@ -370,10 +382,28 @@ func (m *ArbitratorMachine) SetPreimageResolver(resolver GoPreimageResolver) err
 	if m.frozen {
 		return errors.New("machine frozen")
 	}
-	id := atomic.AddInt64(&lastPreimageResolverId, 1)
+	id := lastPreimageResolverId.Add(1)
 	preimageResolvers.Store(id, resolver)
 	m.contextId = &id
 	runtime.SetFinalizer(m.contextId, freeContextId)
-	C.arbitrator_set_context(m.ptr, C.uint64_t(id))
+	C.arbitrator_set_context(m.ptr, u64(id))
+	return nil
+}
+
+func (m *ArbitratorMachine) AddUserWasm(moduleHash common.Hash, module []byte) error {
+	defer runtime.KeepAlive(m)
+	if m.frozen {
+		return errors.New("machine frozen")
+	}
+	hashBytes := [32]u8{}
+	for index, byte := range moduleHash.Bytes() {
+		hashBytes[index] = u8(byte)
+	}
+	C.arbitrator_add_user_wasm(
+		m.ptr,
+		(*u8)(arbutil.SliceToPointer(module)),
+		usize(len(module)),
+		&C.struct_Bytes32{hashBytes},
+	)
 	return nil
 }

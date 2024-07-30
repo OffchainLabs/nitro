@@ -4,11 +4,14 @@
 package precompiles
 
 import (
-	"bytes"
+	"fmt"
+	"io"
 	"math/big"
+	"os"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/core/state"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -35,16 +38,14 @@ func TestEvents(t *testing.T) {
 		}
 	}
 
-	zeroHash := crypto.Keccak256([]byte{0x00})
-	trueHash := common.Hash{}.Bytes()
-	falseHash := common.Hash{}.Bytes()
-	trueHash[31] = 0x01
+	zeroHash := crypto.Keccak256Hash([]byte{0x00})
+	falseHash := common.Hash{}
 
 	var data []byte
 	payload := [][]byte{
 		method.template.ID, // select the `Events` method
-		falseHash,          // set the flag to false
-		zeroHash,           // set the value to something known
+		falseHash.Bytes(),  // set the flag to false
+		zeroHash.Bytes(),   // set the value to something known
 	}
 	for _, bytes := range payload {
 		data = append(data, bytes...)
@@ -100,13 +101,13 @@ func TestEvents(t *testing.T) {
 	basicTopics := logs[0].Topics
 	mixedTopics := logs[1].Topics
 
-	if !bytes.Equal(basicTopics[1].Bytes(), zeroHash) || !bytes.Equal(mixedTopics[2].Bytes(), zeroHash) {
+	if basicTopics[1] != zeroHash || mixedTopics[2] != zeroHash {
 		Fail(t, "indexing a bytes32 didn't work")
 	}
-	if !bytes.Equal(mixedTopics[1].Bytes(), falseHash) {
+	if mixedTopics[1] != falseHash {
 		Fail(t, "indexing a bool didn't work")
 	}
-	if !bytes.Equal(mixedTopics[3].Bytes(), caller.Hash().Bytes()) {
+	if mixedTopics[3] != common.BytesToHash(caller.Bytes()) {
 		Fail(t, "indexing an address didn't work")
 	}
 
@@ -117,10 +118,10 @@ func TestEvents(t *testing.T) {
 		Fail(t, "failed to parse event logs", "\nprecompile:", cerr, "\nbasic:", berr, "\nmixed:", merr)
 	}
 
-	if basic.Flag != true || !bytes.Equal(basic.Value[:], zeroHash) {
+	if basic.Flag != true || basic.Value != zeroHash {
 		Fail(t, "event Basic's data isn't correct")
 	}
-	if mixed.Flag != false || mixed.Not != true || !bytes.Equal(mixed.Value[:], zeroHash) {
+	if mixed.Flag != false || mixed.Not != true || mixed.Value != zeroHash {
 		Fail(t, "event Mixed's data isn't correct")
 	}
 	if mixed.Conn != debugContractAddr || mixed.Caller != caller {
@@ -179,22 +180,39 @@ func TestEventCosts(t *testing.T) {
 	}
 }
 
-type FatalBurner struct {
-	t       *testing.T
-	count   uint64
-	gasLeft uint64
-}
+func TestPrecompilesPerArbosVersion(t *testing.T) {
+	// Set up a logger in case log.Crit is called by Precompiles()
+	glogger := log.NewGlogHandler(
+		log.NewTerminalHandler(io.Writer(os.Stderr), false))
+	glogger.Verbosity(log.LevelWarn)
+	log.SetDefault(log.NewLogger(glogger))
 
-func NewFatalBurner(t *testing.T, limit uint64) FatalBurner {
-	return FatalBurner{t, 0, limit}
-}
-
-func (burner FatalBurner) Burn(amount uint64) error {
-	burner.t.Helper()
-	burner.count += 1
-	if burner.gasLeft < amount {
-		Fail(burner.t, "out of gas after", burner.count, "burns")
+	expectedNewMethodsPerArbosVersion := map[uint64]int{
+		0:  89,
+		5:  3,
+		10: 2,
+		11: 4,
+		20: 8,
+		30: 38,
+		31: 1,
 	}
-	burner.gasLeft -= amount
-	return nil
+
+	precompiles := Precompiles()
+	newMethodsPerArbosVersion := make(map[uint64]int)
+	for _, precompile := range precompiles {
+		for _, method := range precompile.Precompile().methods {
+			version := arbmath.MaxInt(method.arbosVersion, precompile.Precompile().arbosVersion)
+			newMethodsPerArbosVersion[version]++
+		}
+	}
+
+	if len(expectedNewMethodsPerArbosVersion) != len(newMethodsPerArbosVersion) {
+		t.Errorf("expected %v ArbOS versions with new precompile methods but got %v", len(expectedNewMethodsPerArbosVersion), len(newMethodsPerArbosVersion))
+	}
+	for version, count := range newMethodsPerArbosVersion {
+		fmt.Printf("got %v version count %v\n", version, count)
+		if expectedNewMethodsPerArbosVersion[version] != count {
+			t.Errorf("expected %v new precompile methods for ArbOS version %v but got %v", expectedNewMethodsPerArbosVersion[version], version, count)
+		}
+	}
 }

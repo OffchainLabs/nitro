@@ -6,7 +6,6 @@ package validatorwallet
 import (
 	"context"
 	"fmt"
-	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
@@ -95,7 +94,7 @@ func (w *EOA) postTransaction(ctx context.Context, baseTx *types.Transaction) (*
 		return nil, err
 	}
 	gas := baseTx.Gas() + w.getExtraGas()
-	newTx, err := w.dataPoster.PostTransaction(ctx, time.Now(), nonce, nil, *baseTx.To(), baseTx.Data(), gas, baseTx.Value(), nil)
+	newTx, err := w.dataPoster.PostSimpleTransaction(ctx, nonce, *baseTx.To(), baseTx.Data(), gas, baseTx.Value())
 	if err != nil {
 		return nil, fmt.Errorf("post transaction: %w", err)
 	}

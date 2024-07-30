@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/params"
@@ -17,6 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
 
 func TestJsonMarshalUnmarshal(t *testing.T) {
@@ -60,10 +62,13 @@ func tryMarshalUnmarshal(input *statetransfer.ArbosInitializationInfo, t *testin
 
 	initReader := statetransfer.NewMemoryInitDataReader(&initData)
 	chainConfig := params.ArbitrumDevTestChainConfig()
-	stateroot, err := InitializeArbosInDatabase(raw, initReader, chainConfig, arbostypes.TestInitMessage, 0, 0)
+
+	cacheConfig := core.DefaultCacheConfigWithScheme(env.GetTestStateScheme())
+	stateroot, err := InitializeArbosInDatabase(raw, cacheConfig, initReader, chainConfig, arbostypes.TestInitMessage, 0, 0)
 	Require(t, err)
 
-	stateDb, err := state.New(stateroot, state.NewDatabase(raw), nil)
+	triedbConfig := cacheConfig.TriedbConfig()
+	stateDb, err := state.New(stateroot, state.NewDatabaseWithConfig(raw, triedbConfig), nil)
 	Require(t, err)
 
 	arbState, err := OpenArbosState(stateDb, &burn.SystemBurner{})
@@ -151,14 +156,14 @@ func checkAccounts(db *state.StateDB, arbState *ArbosState, accts []statetransfe
 		if db.GetNonce(addr) != acct.Nonce {
 			t.Fatal()
 		}
-		if db.GetBalance(addr).Cmp(acct.EthBalance) != 0 {
+		if db.GetBalance(addr).ToBig().Cmp(acct.EthBalance) != 0 {
 			t.Fatal()
 		}
 		if acct.ContractInfo != nil {
 			if !bytes.Equal(acct.ContractInfo.Code, db.GetCode(addr)) {
 				t.Fatal()
 			}
-			err := db.ForEachStorage(addr, func(key common.Hash, value common.Hash) bool {
+			err := state.ForEachStorage(db, addr, func(key common.Hash, value common.Hash) bool {
 				if key == (common.Hash{}) {
 					// Unfortunately, geth doesn't seem capable of giving us storage keys any more.
 					// Even with the triedb Preimages set to true, it doesn't record the necessary

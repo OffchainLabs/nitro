@@ -1,10 +1,6 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-// race detection makes things slow and miss timeouts
-//go:build !race
-// +build !race
-
 package arbtest
 
 import (
@@ -19,6 +15,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
@@ -31,14 +28,13 @@ import (
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
+	"github.com/offchainlabs/nitro/solgen/go/yulgen"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_common"
-	"github.com/offchainlabs/nitro/validator/valnode"
 )
 
 func DeployOneStepProofEntry(t *testing.T, ctx context.Context, auth *bind.TransactOpts, client *ethclient.Client) common.Address {
@@ -164,7 +160,7 @@ func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, b
 
 	seqNum := new(big.Int).Lsh(common.Big1, 256)
 	seqNum.Sub(seqNum, common.Big1)
-	tx, err := seqInbox.AddSequencerL2BatchFromOrigin0(sequencer, seqNum, message, big.NewInt(1), common.Address{}, big.NewInt(0), big.NewInt(0))
+	tx, err := seqInbox.AddSequencerL2BatchFromOrigin8f111f3c(sequencer, seqNum, message, big.NewInt(1), common.Address{}, big.NewInt(0), big.NewInt(0))
 	Require(t, err)
 	receipt, err := EnsureTxSucceeded(ctx, backend, tx)
 	Require(t, err)
@@ -183,6 +179,7 @@ func makeBatch(t *testing.T, l2Node *arbnode.Node, l2Info *BlockchainTestInfo, b
 }
 
 func confirmLatestBlock(ctx context.Context, t *testing.T, l1Info *BlockchainTestInfo, backend arbutil.L1Interface) {
+	t.Helper()
 	// With SimulatedBeacon running in on-demand block production mode, the
 	// finalized block is considered to be be the nearest multiple of 32 less
 	// than or equal to the block number.
@@ -199,6 +196,10 @@ func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *Blockcha
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
 	Require(t, err)
+	reader4844, tx, _, err := yulgen.DeployReader4844(&txOpts, l1Client)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
+	Require(t, err)
 	timeBounds := mocksgen.ISequencerInboxMaxTimeVariation{
 		DelayBlocks:   big.NewInt(10000),
 		FutureBlocks:  big.NewInt(10000),
@@ -212,6 +213,8 @@ func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *Blockcha
 		l1Info.GetAddress("sequencer"),
 		timeBounds,
 		big.NewInt(117964),
+		reader4844,
+		false,
 	)
 	Require(t, err)
 	_, err = EnsureTxSucceeded(ctx, l1Client, tx)
@@ -231,39 +234,43 @@ func setupSequencerInboxStub(ctx context.Context, t *testing.T, l1Info *Blockcha
 	return bridgeAddr, seqInbox, seqInboxAddr
 }
 
-func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, challengeMsgIdx int64) {
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, challengeMsgIdx int64, wasmRootDir string) {
+	glogger := log.NewGlogHandler(
+		log.NewTerminalHandler(io.Writer(os.Stderr), false))
 	glogger.Verbosity(log.LvlInfo)
-	log.Root().SetHandler(glogger)
+	log.SetDefault(log.NewLogger(glogger))
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	initialBalance := new(big.Int).Lsh(big.NewInt(1), 200)
-	l1Info := NewL1TestInfo(t)
+	l1Info := builder.L1Info
 	l1Info.GenerateGenesisAccount("deployer", initialBalance)
 	l1Info.GenerateGenesisAccount("asserter", initialBalance)
 	l1Info.GenerateGenesisAccount("challenger", initialBalance)
 	l1Info.GenerateGenesisAccount("sequencer", initialBalance)
 
-	chainConfig := params.ArbitrumDevTestChainConfig()
-	l1Info, l1Backend, _, _ := createTestL1BlockChain(t, l1Info)
-	conf := arbnode.ConfigDefaultL1Test()
+	chainConfig := builder.chainConfig
+	conf := builder.nodeConfig
 	conf.BlockValidator.Enable = false
 	conf.BatchPoster.Enable = false
 	conf.InboxReader.CheckDelay = time.Second
 
 	var valStack *node.Node
 	var mockSpawn *mockSpawner
+	builder.valnodeConfig.Wasm.RootPath = wasmRootDir
 	if useStubs {
-		mockSpawn, valStack = createMockValidationNode(t, ctx, &valnode.TestValidationConfig.Arbitrator)
+		mockSpawn, valStack = createMockValidationNode(t, ctx, &builder.valnodeConfig.Arbitrator)
 	} else {
-		_, valStack = createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
+		// For now validation only works with HashScheme set
+		builder.execConfig.Caching.StateScheme = rawdb.HashScheme
+		_, valStack = createTestValidationNode(t, ctx, builder.valnodeConfig)
 	}
-	configByValidationNode(t, conf, valStack)
+	configByValidationNode(conf, valStack)
 
-	fatalErrChan := make(chan error, 10)
-	asserterRollupAddresses, initMessage := DeployOnTestL1(t, ctx, l1Info, l1Backend, chainConfig)
+	builder.BuildL1(t)
+	l1Backend := builder.L1.Client
 
 	deployerTxOpts := l1Info.GetDefaultTransactOpts("deployer", ctx)
 	sequencerTxOpts := l1Info.GetDefaultTransactOpts("sequencer", ctx)
@@ -273,26 +280,28 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	asserterBridgeAddr, asserterSeqInbox, asserterSeqInboxAddr := setupSequencerInboxStub(ctx, t, l1Info, l1Backend, chainConfig)
 	challengerBridgeAddr, challengerSeqInbox, challengerSeqInboxAddr := setupSequencerInboxStub(ctx, t, l1Info, l1Backend, chainConfig)
 
-	asserterL2Info, asserterL2Stack, asserterL2ChainDb, asserterL2ArbDb, asserterL2Blockchain := createL2BlockChainWithStackConfig(t, nil, "", chainConfig, initMessage, nil, nil)
+	asserterRollupAddresses := builder.addresses
 	asserterRollupAddresses.Bridge = asserterBridgeAddr
 	asserterRollupAddresses.SequencerInbox = asserterSeqInboxAddr
-	asserterExec, err := gethexec.CreateExecutionNode(ctx, asserterL2Stack, asserterL2ChainDb, asserterL2Blockchain, l1Backend, gethexec.ConfigDefaultTest)
-	Require(t, err)
-	asserterL2, err := arbnode.CreateNode(ctx, asserterL2Stack, asserterExec, asserterL2ArbDb, NewFetcherFromConfig(conf), chainConfig, l1Backend, asserterRollupAddresses, nil, nil, nil, fatalErrChan)
-	Require(t, err)
-	err = asserterL2.Start(ctx)
-	Require(t, err)
 
-	challengerL2Info, challengerL2Stack, challengerL2ChainDb, challengerL2ArbDb, challengerL2Blockchain := createL2BlockChainWithStackConfig(t, nil, "", chainConfig, initMessage, nil, nil)
-	challengerRollupAddresses := *asserterRollupAddresses
+	cleanup := builder.BuildL2OnL1(t)
+	defer cleanup()
+	asserterL2 := builder.L2.ConsensusNode
+	asserterL2Info := builder.L2Info
+	asserterExec := builder.L2.ExecNode
+
+	challengerRollupAddresses := *builder.addresses
 	challengerRollupAddresses.Bridge = challengerBridgeAddr
 	challengerRollupAddresses.SequencerInbox = challengerSeqInboxAddr
-	challengerExec, err := gethexec.CreateExecutionNode(ctx, challengerL2Stack, challengerL2ChainDb, challengerL2Blockchain, l1Backend, gethexec.ConfigDefaultTest)
-	Require(t, err)
-	challengerL2, err := arbnode.CreateNode(ctx, challengerL2Stack, challengerExec, challengerL2ArbDb, NewFetcherFromConfig(conf), chainConfig, l1Backend, &challengerRollupAddresses, nil, nil, nil, fatalErrChan)
-	Require(t, err)
-	err = challengerL2.Start(ctx)
-	Require(t, err)
+	challengerL2Info := NewArbTestInfo(t, chainConfig.ChainID)
+	challengerParams := SecondNodeParams{
+		addresses: &challengerRollupAddresses,
+		initData:  &challengerL2Info.ArbInitData,
+	}
+	challenger, challengerCleanup := builder.Build2ndNode(t, &challengerParams)
+	defer challengerCleanup()
+	challengerL2 := challenger.ConsensusNode
+	challengerExec := challenger.ExecNode
 
 	asserterL2Info.GenerateAccount("Destination")
 	challengerL2Info.SetFullAccountInfo("Destination", asserterL2Info.GetInfoWithPrivKey("Destination"))
@@ -323,14 +332,12 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	}
 	ospEntry := DeployOneStepProofEntry(t, ctx, &deployerTxOpts, l1Backend)
 
-	locator, err := server_common.NewMachineLocator("")
-	if err != nil {
-		Fatal(t, err)
-	}
 	var wasmModuleRoot common.Hash
 	if useStubs {
-		wasmModuleRoot = mockWasmModuleRoot
+		wasmModuleRoot = mockWasmModuleRoots[0]
 	} else {
+		locator, err := server_common.NewMachineLocator(wasmRootDir)
+		Require(t, err)
 		wasmModuleRoot = locator.LatestWasmModuleRoot()
 		if (wasmModuleRoot == common.Hash{}) {
 			Fatal(t, "latest machine not found")
@@ -378,7 +385,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 
 	confirmLatestBlock(ctx, t, l1Info, l1Backend)
 
-	asserterValidator, err := staker.NewStatelessBlockValidator(asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, asserterExec.Recorder, asserterL2ArbDb, nil, StaticFetcherFrom(t, &conf.BlockValidator), valStack)
+	asserterValidator, err := staker.NewStatelessBlockValidator(asserterL2.InboxReader, asserterL2.InboxTracker, asserterL2.TxStreamer, asserterExec.Recorder, asserterL2.ArbDB, nil, StaticFetcherFrom(t, &conf.BlockValidator), valStack)
 	if err != nil {
 		Fatal(t, err)
 	}
@@ -395,7 +402,7 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	if err != nil {
 		Fatal(t, err)
 	}
-	challengerValidator, err := staker.NewStatelessBlockValidator(challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, challengerExec.Recorder, challengerL2ArbDb, nil, StaticFetcherFrom(t, &conf.BlockValidator), valStack)
+	challengerValidator, err := staker.NewStatelessBlockValidator(challengerL2.InboxReader, challengerL2.InboxTracker, challengerL2.TxStreamer, challengerExec.Recorder, challengerL2.ArbDB, nil, StaticFetcherFrom(t, &conf.BlockValidator), valStack)
 	if err != nil {
 		Fatal(t, err)
 	}
@@ -482,18 +489,4 @@ func RunChallengeTest(t *testing.T, asserterIsCorrect bool, useStubs bool, chall
 	}
 
 	Fatal(t, "challenge timed out without winner")
-}
-
-func TestMockChallengeManagerAsserterIncorrect(t *testing.T) {
-	t.Parallel()
-	for i := int64(1); i <= makeBatch_MsgsPerBatch*3; i++ {
-		RunChallengeTest(t, false, true, i)
-	}
-}
-
-func TestMockChallengeManagerAsserterCorrect(t *testing.T) {
-	t.Parallel()
-	for i := int64(1); i <= makeBatch_MsgsPerBatch*3; i++ {
-		RunChallengeTest(t, true, true, i)
-	}
 }

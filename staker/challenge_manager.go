@@ -467,7 +467,7 @@ func (m *ChallengeManager) createExecutionBackend(ctx context.Context, step uint
 	if err != nil {
 		return fmt.Errorf("error creating validation entry for challenge %v msg %v for execution challenge: %w", m.challengeIndex, initialCount, err)
 	}
-	input, err := entry.ToInput()
+	input, err := entry.ToInput([]string{"wavm"})
 	if err != nil {
 		return fmt.Errorf("error getting validation entry input of challenge %v msg %v: %w", m.challengeIndex, initialCount, err)
 	}
@@ -478,9 +478,18 @@ func (m *ChallengeManager) createExecutionBackend(ctx context.Context, step uint
 		}
 	}
 	input.BatchInfo = prunedBatches
-	execRun, err := m.validator.execSpawner.CreateExecutionRun(m.wasmModuleRoot, input).Await(ctx)
-	if err != nil {
-		return fmt.Errorf("error creating execution backend for msg %v: %w", initialCount, err)
+	var execRun validator.ExecutionRun
+	for _, spawner := range m.validator.execSpawners {
+		if validator.SpawnerSupportsModule(spawner, m.wasmModuleRoot) {
+			execRun, err = spawner.CreateExecutionRun(m.wasmModuleRoot, input).Await(ctx)
+			if err != nil {
+				return fmt.Errorf("error creating execution backend for msg %v: %w", initialCount, err)
+			}
+			break
+		}
+	}
+	if execRun == nil {
+		return fmt.Errorf("did not find valid execution backend")
 	}
 	backend, err := NewExecutionChallengeBackend(execRun)
 	if err != nil {

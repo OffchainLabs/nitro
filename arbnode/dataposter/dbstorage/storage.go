@@ -11,10 +11,9 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/cockroachdb/pebble"
 	"github.com/ethereum/go-ethereum/ethdb"
-	"github.com/ethereum/go-ethereum/ethdb/memorydb"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
+	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/syndtr/goleveldb/leveldb"
 )
 
@@ -56,6 +55,18 @@ func (s *Storage) FetchContents(_ context.Context, startingIndex uint64, maxResu
 		res = append(res, item)
 	}
 	return res, it.Error()
+}
+
+func (s *Storage) Get(_ context.Context, index uint64) (*storage.QueuedTransaction, error) {
+	key := idxToKey(index)
+	value, err := s.db.Get(key)
+	if err != nil {
+		if errors.Is(err, leveldb.ErrNotFound) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	return s.encDec().Decode(value)
 }
 
 func (s *Storage) lastItemIdx(context.Context) ([]byte, error) {
@@ -122,7 +133,7 @@ func (s *Storage) Prune(ctx context.Context, until uint64) error {
 func (s *Storage) valueAt(_ context.Context, key []byte) ([]byte, error) {
 	val, err := s.db.Get(key)
 	if err != nil {
-		if isErrNotFound(err) {
+		if dbutil.IsErrNotFound(err) {
 			return s.encDec().Encode((*storage.QueuedTransaction)(nil))
 		}
 		return nil, err
@@ -156,10 +167,10 @@ func (s *Storage) Put(ctx context.Context, index uint64, prev, new *storage.Queu
 		return fmt.Errorf("updating value at: %v: %w", key, err)
 	}
 	lastItemIdx, err := s.lastItemIdx(ctx)
-	if err != nil && !isErrNotFound(err) {
+	if err != nil && !dbutil.IsErrNotFound(err) {
 		return err
 	}
-	if isErrNotFound(err) {
+	if dbutil.IsErrNotFound(err) {
 		lastItemIdx = []byte{}
 	}
 	if cnt == 0 || bytes.Compare(key, lastItemIdx) > 0 {
@@ -176,7 +187,7 @@ func (s *Storage) Put(ctx context.Context, index uint64, prev, new *storage.Queu
 func (s *Storage) Length(context.Context) (int, error) {
 	val, err := s.db.Get(countKey)
 	if err != nil {
-		if isErrNotFound(err) {
+		if dbutil.IsErrNotFound(err) {
 			return 0, nil
 		}
 		return 0, err
@@ -186,8 +197,4 @@ func (s *Storage) Length(context.Context) (int, error) {
 
 func (s *Storage) IsPersistent() bool {
 	return true
-}
-
-func isErrNotFound(err error) bool {
-	return errors.Is(err, leveldb.ErrNotFound) || errors.Is(err, pebble.ErrNotFound) || errors.Is(err, memorydb.ErrMemorydbNotFound)
 }

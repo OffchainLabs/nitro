@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -21,6 +22,9 @@ import (
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_arb"
+	"github.com/offchainlabs/nitro/validator/valnode"
+
+	validatorclient "github.com/offchainlabs/nitro/validator/client"
 )
 
 type mockSpawner struct {
@@ -52,6 +56,14 @@ func globalstateToTestPreimages(gs validator.GoGlobalState) map[common.Hash][]by
 	return preimages
 }
 
+func (s *mockSpawner) WasmModuleRoots() ([]common.Hash, error) {
+	return mockWasmModuleRoots, nil
+}
+
+func (s *mockSpawner) StylusArchs() []string {
+	return []string{"mock"}
+}
+
 func (s *mockSpawner) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
 	run := &mockValRun{
 		Promise: containers.NewPromise[validator.GoGlobalState](nil),
@@ -62,12 +74,14 @@ func (s *mockSpawner) Launch(entry *validator.ValidationInput, moduleRoot common
 	return run
 }
 
-var mockWasmModuleRoot common.Hash = common.HexToHash("0xa5a5a5")
+var mockWasmModuleRoots []common.Hash = []common.Hash{common.HexToHash("0xa5a5a5"), common.HexToHash("0x1212")}
 
-func (s *mockSpawner) Start(context.Context) error { return nil }
-func (s *mockSpawner) Stop()                       {}
-func (s *mockSpawner) Name() string                { return "mock" }
-func (s *mockSpawner) Room() int                   { return 4 }
+func (s *mockSpawner) Start(context.Context) error {
+	return nil
+}
+func (s *mockSpawner) Stop()        {}
+func (s *mockSpawner) Name() string { return "mock" }
+func (s *mockSpawner) Room() int    { return 4 }
 
 func (s *mockSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
 	s.ExecSpawned = append(s.ExecSpawned, input.Id)
@@ -78,7 +92,7 @@ func (s *mockSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *vali
 }
 
 func (s *mockSpawner) LatestWasmModuleRoot() containers.PromiseInterface[common.Hash] {
-	return containers.NewReadyPromise[common.Hash](mockWasmModuleRoot, nil)
+	return containers.NewReadyPromise[common.Hash](mockWasmModuleRoots[0], nil)
 }
 
 func (s *mockSpawner) WriteToFile(input *validator.ValidationInput, expOut validator.GoGlobalState, moduleRoot common.Hash) containers.PromiseInterface[struct{}] {
@@ -116,6 +130,20 @@ func (r *mockExecRun) GetStepAt(position uint64) containers.PromiseInterface[*va
 	}, nil)
 }
 
+func (r *mockExecRun) GetMachineHashesWithStepSize(machineStartIndex, stepSize, maxIterations uint64) containers.PromiseInterface[[]common.Hash] {
+	ctx := context.Background()
+	hashes := make([]common.Hash, 0)
+	for i := uint64(0); i < maxIterations; i++ {
+		absoluteMachineIndex := machineStartIndex + stepSize*(i+1)
+		stepResult, err := r.GetStepAt(absoluteMachineIndex).Await(ctx)
+		if err != nil {
+			return containers.NewReadyPromise[[]common.Hash](nil, err)
+		}
+		hashes = append(hashes, stepResult.Hash)
+	}
+	return containers.NewReadyPromise[[]common.Hash](hashes, nil)
+}
+
 func (r *mockExecRun) GetLastStep() containers.PromiseInterface[*validator.MachineStepResult] {
 	return r.GetStepAt(mockExecLastPos)
 }
@@ -150,7 +178,7 @@ func createMockValidationNode(t *testing.T, ctx context.Context, config *server_
 	}
 	configFetcher := func() *server_arb.ArbitratorSpawnerConfig { return config }
 	spawner := &mockSpawner{}
-	serverAPI := server_api.NewExecutionServerAPI(spawner, spawner, configFetcher)
+	serverAPI := valnode.NewExecutionServerAPI(spawner, spawner, configFetcher)
 
 	valAPIs := []rpc.API{{
 		Namespace:     server_api.Namespace,
@@ -181,15 +209,26 @@ func TestValidationServerAPI(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	_, validationDefault := createMockValidationNode(t, ctx, nil)
-	client := server_api.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), validationDefault)
+	client := validatorclient.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), validationDefault)
 	err := client.Start(ctx)
 	Require(t, err)
 
 	wasmRoot, err := client.LatestWasmModuleRoot().Await(ctx)
 	Require(t, err)
 
-	if wasmRoot != mockWasmModuleRoot {
+	if wasmRoot != mockWasmModuleRoots[0] {
 		t.Error("unexpected mock wasmModuleRoot")
+	}
+
+	roots, err := client.WasmModuleRoots()
+	Require(t, err)
+	if len(roots) != len(mockWasmModuleRoots) {
+		Fatal(t, "wrong number of wasmModuleRoots", len(roots))
+	}
+	for i := range roots {
+		if roots[i] != mockWasmModuleRoots[i] {
+			Fatal(t, "unexpected root", roots[i], mockWasmModuleRoots[i])
+		}
 	}
 
 	hash1 := common.HexToHash("0x11223344556677889900aabbccddeeff")
@@ -247,7 +286,7 @@ func TestValidationClientRoom(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	mockSpawner, spawnerStack := createMockValidationNode(t, ctx, nil)
-	client := server_api.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), spawnerStack)
+	client := validatorclient.NewExecutionClient(StaticFetcherFrom(t, &rpcclient.TestClientConfig), spawnerStack)
 	err := client.Start(ctx)
 	Require(t, err)
 
@@ -334,10 +373,10 @@ func TestExecutionKeepAlive(t *testing.T) {
 	_, validationShortTO := createMockValidationNode(t, ctx, &shortTimeoutConfig)
 	configFetcher := StaticFetcherFrom(t, &rpcclient.TestClientConfig)
 
-	clientDefault := server_api.NewExecutionClient(configFetcher, validationDefault)
+	clientDefault := validatorclient.NewExecutionClient(configFetcher, validationDefault)
 	err := clientDefault.Start(ctx)
 	Require(t, err)
-	clientShortTO := server_api.NewExecutionClient(configFetcher, validationShortTO)
+	clientShortTO := validatorclient.NewExecutionClient(configFetcher, validationShortTO)
 	err = clientShortTO.Start(ctx)
 	Require(t, err)
 
@@ -389,6 +428,7 @@ func (m *mockBlockRecorder) RecordBlockCreation(
 		Pos:       pos,
 		BlockHash: res.BlockHash,
 		Preimages: globalstateToTestPreimages(globalState),
+		UserWasms: make(state.UserWasms),
 	}, nil
 }
 

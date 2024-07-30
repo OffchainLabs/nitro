@@ -2,8 +2,10 @@
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 // these tests seems to consume too much memory with race detection
-//go:build !race
-// +build !race
+// Test randomly fails with L1 gas price estimate should tend toward the basefee
+// so skipping locally, but running on CI
+//go:build !race && cionly
+// +build !race,cionly
 
 package arbtest
 
@@ -119,8 +121,6 @@ func TestSequencerFeePaid(t *testing.T) {
 }
 
 func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
-	t.Parallel()
-
 	_ = os.Mkdir("test-data", 0766)
 	path := filepath.Join("test-data", fmt.Sprintf("testSequencerPriceAdjustsFrom%v.csv", initialEstimate))
 
@@ -196,10 +196,11 @@ func testSequencerPriceAdjustsFrom(t *testing.T, initialEstimate uint64) {
 			surplus, err := arbGasInfo.GetL1PricingSurplus(callOpts)
 			Require(t, err)
 
-			colors.PrintGrey("ArbOS updated its L1 estimate")
-			colors.PrintGrey("    L1 base fee ", l1Header.BaseFee)
-			colors.PrintGrey("    L1 estimate ", lastEstimate, " ➤ ", estimatedL1FeePerUnit, " = ", actualL1FeePerUnit)
-			colors.PrintGrey("    Surplus ", surplus)
+			// Uncomment for model updates
+			// colors.PrintGrey("ArbOS updated its L1 estimate")
+			// colors.PrintGrey("    L1 base fee ", l1Header.BaseFee)
+			// colors.PrintGrey("    L1 estimate ", lastEstimate, " ➤ ", estimatedL1FeePerUnit, " = ", actualL1FeePerUnit)
+			// colors.PrintGrey("    Surplus ", surplus)
 			fmt.Fprintf(
 				f, "%v, %v, %v, %v, %v, %v\n", i, l1Header.BaseFee, lastEstimate,
 				estimatedL1FeePerUnit, actualL1FeePerUnit, surplus,

@@ -8,7 +8,6 @@ import (
 	"crypto/rand"
 	"fmt"
 	"math/big"
-	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -20,6 +19,8 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/arbnode/dataposter"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsignertest"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
 	"github.com/offchainlabs/nitro/util/redisutil"
@@ -60,23 +61,31 @@ func addNewBatchPoster(ctx context.Context, t *testing.T, builder *NodeBuilder, 
 	}
 }
 
+func externalSignerTestCfg(addr common.Address, url string) (*dataposter.ExternalSignerCfg, error) {
+	cp, err := externalsignertest.CertPaths()
+	if err != nil {
+		return nil, fmt.Errorf("getting certificates path: %w", err)
+	}
+	return &dataposter.ExternalSignerCfg{
+		Address:          common.Bytes2Hex(addr.Bytes()),
+		URL:              url,
+		Method:           externalsignertest.SignerMethod,
+		RootCA:           cp.ServerCert,
+		ClientCert:       cp.ClientCert,
+		ClientPrivateKey: cp.ClientKey,
+	}, nil
+}
+
 func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	httpSrv, srv := newServer(ctx, t)
-	t.Cleanup(func() {
-		if err := httpSrv.Shutdown(ctx); err != nil {
-			t.Fatalf("Error shutting down http server: %v", err)
-		}
-	})
+	srv := externalsignertest.NewServer(t)
 	go func() {
-		log.Debug("Server is listening on port 1234...")
-		if err := httpSrv.ListenAndServeTLS(signerServerCert, signerServerKey); err != nil && err != http.ErrServerClosed {
-			log.Debug("ListenAndServeTLS() failed", "error", err)
+		if err := srv.Start(); err != nil {
+			log.Error("Failed to start external signer server:", err)
 			return
 		}
 	}()
-
 	var redisUrl string
 	if useRedis {
 		redisUrl = redisutil.CreateTestRedis(ctx, t)
@@ -93,7 +102,11 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.nodeConfig.BatchPoster.Enable = false
 	builder.nodeConfig.BatchPoster.RedisUrl = redisUrl
-	builder.nodeConfig.BatchPoster.DataPoster.ExternalSigner = *externalSignerTestCfg(srv.address)
+	signerCfg, err := externalSignerTestCfg(srv.Address, srv.URL())
+	if err != nil {
+		t.Fatalf("Error getting external signer config: %v", err)
+	}
+	builder.nodeConfig.BatchPoster.DataPoster.ExternalSigner = *signerCfg
 
 	cleanup := builder.Build(t)
 	defer cleanup()
@@ -101,10 +114,10 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	defer cleanupB()
 	builder.L2Info.GenerateAccount("User2")
 
-	addNewBatchPoster(ctx, t, builder, srv.address)
+	addNewBatchPoster(ctx, t, builder, srv.Address)
 
 	builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
-		builder.L1Info.PrepareTxTo("Faucet", &srv.address, 30000, big.NewInt(1e18), nil)})
+		builder.L1Info.PrepareTxTo("Faucet", &srv.Address, 30000, big.NewInt(1e18), nil)})
 
 	var txs []*types.Transaction
 
@@ -128,20 +141,26 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	builder.nodeConfig.BatchPoster.MaxSize = len(firstTxData) * 2
 	startL1Block, err := builder.L1.Client.BlockNumber(ctx)
 	Require(t, err)
+	parentChainID, err := builder.L1.Client.ChainID(ctx)
+	if err != nil {
+		t.Fatalf("Failed to get parent chain id: %v", err)
+	}
 	for i := 0; i < parallelBatchPosters; i++ {
 		// Make a copy of the batch poster config so NewBatchPoster calling Validate() on it doesn't race
 		batchPosterConfig := builder.nodeConfig.BatchPoster
 		batchPoster, err := arbnode.NewBatchPoster(ctx,
 			&arbnode.BatchPosterOpts{
-				DataPosterDB: nil,
-				L1Reader:     builder.L2.ConsensusNode.L1Reader,
-				Inbox:        builder.L2.ConsensusNode.InboxTracker,
-				Streamer:     builder.L2.ConsensusNode.TxStreamer,
-				SyncMonitor:  builder.L2.ConsensusNode.SyncMonitor,
-				Config:       func() *arbnode.BatchPosterConfig { return &batchPosterConfig },
-				DeployInfo:   builder.L2.ConsensusNode.DeployInfo,
-				TransactOpts: &seqTxOpts,
-				DAWriter:     nil,
+				DataPosterDB:  nil,
+				L1Reader:      builder.L2.ConsensusNode.L1Reader,
+				Inbox:         builder.L2.ConsensusNode.InboxTracker,
+				Streamer:      builder.L2.ConsensusNode.TxStreamer,
+				VersionGetter: builder.L2.ExecNode,
+				SyncMonitor:   builder.L2.ConsensusNode.SyncMonitor,
+				Config:        func() *arbnode.BatchPosterConfig { return &batchPosterConfig },
+				DeployInfo:    builder.L2.ConsensusNode.DeployInfo,
+				TransactOpts:  &seqTxOpts,
+				DAPWriter:     nil,
+				ParentChainID: parentChainID,
 			},
 		)
 		Require(t, err)
@@ -150,7 +169,7 @@ func testBatchPosterParallel(t *testing.T, useRedis bool) {
 	}
 
 	lastTxHash := txs[len(txs)-1].Hash()
-	for i := 90; i > 0; i-- {
+	for i := 90; i >= 0; i-- {
 		builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
 			builder.L1Info.PrepareTx("Faucet", "User", 30000, big.NewInt(1e12), nil),
 		})
@@ -271,4 +290,76 @@ func TestBatchPosterKeepsUp(t *testing.T) {
 		fmt.Printf("batches posted: %v over %v (%.2f batches/second)\n", batches, duration, float64(batches)/(float64(duration)/float64(time.Second)))
 		fmt.Printf("backlog: %v message\n", haveMessages-postedMessages)
 	}
+}
+
+func testAllowPostingFirstBatchWhenSequencerMessageCountMismatch(t *testing.T, enabled bool) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	// creates first node with batch poster disabled
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.nodeConfig.BatchPoster.Enable = false
+	cleanup := builder.Build(t)
+	defer cleanup()
+	testClientNonBatchPoster := builder.L2
+
+	// adds a batch to the sequencer inbox with a wrong next message count,
+	// should be 2 but it is set to 10
+	seqInbox, err := bridgegen.NewSequencerInbox(builder.L1Info.GetAddress("SequencerInbox"), builder.L1.Client)
+	Require(t, err)
+	seqOpts := builder.L1Info.GetDefaultTransactOpts("Sequencer", ctx)
+	tx, err := seqInbox.AddSequencerL2Batch(&seqOpts, big.NewInt(1), nil, big.NewInt(1), common.Address{}, big.NewInt(1), big.NewInt(10))
+	Require(t, err)
+	_, err = builder.L1.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// creates a batch poster
+	nodeConfigBatchPoster := arbnode.ConfigDefaultL1Test()
+	nodeConfigBatchPoster.BatchPoster.Dangerous.AllowPostingFirstBatchWhenSequencerMessageCountMismatch = enabled
+	testClientBatchPoster, cleanupBatchPoster := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfigBatchPoster})
+	defer cleanupBatchPoster()
+
+	// sends a transaction through the batch poster
+	accountName := "User2"
+	builder.L2Info.GenerateAccount(accountName)
+	tx = builder.L2Info.PrepareTx("Owner", accountName, builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	err = testClientBatchPoster.Client.SendTransaction(ctx, tx)
+	Require(t, err)
+	_, err = testClientBatchPoster.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	if enabled {
+		// if AllowPostingFirstBatchWhenSequencerMessageCountMismatch is enabled
+		// then the L2 transaction should be posted to L1, and the non batch
+		// poster node should be able to see it
+		_, err = WaitForTx(ctx, testClientNonBatchPoster.Client, tx.Hash(), time.Second*3)
+		Require(t, err)
+		l2balance, err := testClientNonBatchPoster.Client.BalanceAt(ctx, builder.L2Info.GetAddress(accountName), nil)
+		Require(t, err)
+		if l2balance.Cmp(big.NewInt(1e12)) != 0 {
+			t.Fatal("Unexpected balance:", l2balance)
+		}
+	} else {
+		// if AllowPostingFirstBatchWhenSequencerMessageCountMismatch is disabled
+		// then the L2 transaction should not be posted to L1, so the non
+		// batch poster will not be able to see it
+		_, err = WaitForTx(ctx, testClientNonBatchPoster.Client, tx.Hash(), time.Second*3)
+		if err == nil {
+			Fatal(t, "tx received by non batch poster node with AllowPostingFirstBatchWhenSequencerMessageCountMismatch disabled")
+		}
+		l2balance, err := testClientNonBatchPoster.Client.BalanceAt(ctx, builder.L2Info.GetAddress(accountName), nil)
+		Require(t, err)
+		if l2balance.Cmp(big.NewInt(0)) != 0 {
+			t.Fatal("Unexpected balance:", l2balance)
+		}
+	}
+}
+
+func TestAllowPostingFirstBatchWhenSequencerMessageCountMismatchEnabled(t *testing.T) {
+	testAllowPostingFirstBatchWhenSequencerMessageCountMismatch(t, true)
+}
+
+func TestAllowPostingFirstBatchWhenSequencerMessageCountMismatchDisabled(t *testing.T) {
+	testAllowPostingFirstBatchWhenSequencerMessageCountMismatch(t, false)
 }

@@ -23,10 +23,10 @@ import (
 )
 
 var (
-	conditionalTxRejectedByTxPreCheckerCurrentStateCounter = metrics.NewRegisteredCounter("arb/txprechecker/condtionaltx/currentstate/rejected", nil)
-	conditionalTxAcceptedByTxPreCheckerCurrentStateCounter = metrics.NewRegisteredCounter("arb/txprechecker/condtionaltx/currentstate/accepted", nil)
-	conditionalTxRejectedByTxPreCheckerOldStateCounter     = metrics.NewRegisteredCounter("arb/txprechecker/condtionaltx/oldstate/rejected", nil)
-	conditionalTxAcceptedByTxPreCheckerOldStateCounter     = metrics.NewRegisteredCounter("arb/txprechecker/condtionaltx/oldstate/accepted", nil)
+	conditionalTxRejectedByTxPreCheckerCurrentStateCounter = metrics.NewRegisteredCounter("arb/txprechecker/conditionaltx/currentstate/rejected", nil)
+	conditionalTxAcceptedByTxPreCheckerCurrentStateCounter = metrics.NewRegisteredCounter("arb/txprechecker/conditionaltx/currentstate/accepted", nil)
+	conditionalTxRejectedByTxPreCheckerOldStateCounter     = metrics.NewRegisteredCounter("arb/txprechecker/conditionaltx/oldstate/rejected", nil)
+	conditionalTxAcceptedByTxPreCheckerOldStateCounter     = metrics.NewRegisteredCounter("arb/txprechecker/conditionaltx/oldstate/accepted", nil)
 )
 
 const TxPreCheckerStrictnessNone uint = 0
@@ -116,6 +116,11 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 	if tx.Gas() < params.TxGas {
 		return core.ErrIntrinsicGas
 	}
+	if tx.Type() >= types.ArbitrumDepositTxType || tx.Type() == types.BlobTxType {
+		// Should be unreachable for Arbitrum types due to UnmarshalBinary not accepting Arbitrum internal txs
+		// and we want to disallow BlobTxType since Arbitrum doesn't support EIP-4844 txs yet.
+		return types.ErrTxTypeNotSupported
+	}
 	sender, err := types.Sender(types.MakeSigner(chainConfig, header.Number, header.Time), tx)
 	if err != nil {
 		return err
@@ -182,7 +187,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 	}
 	balance := statedb.GetBalance(sender)
 	cost := tx.Cost()
-	if arbmath.BigLessThan(balance, cost) {
+	if arbmath.BigLessThan(balance.ToBig(), cost) {
 		return fmt.Errorf("%w: address %v have %v want %v", core.ErrInsufficientFunds, sender, balance, cost)
 	}
 	if config.Strictness >= TxPreCheckerStrictnessFullValidation && tx.Nonce() > stateNonce {

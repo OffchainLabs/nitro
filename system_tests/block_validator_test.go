@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 
@@ -26,6 +27,9 @@ import (
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/redisutil"
+	"github.com/offchainlabs/nitro/util/testhelpers/github"
+	"github.com/offchainlabs/nitro/validator/client/redis"
 )
 
 type workloadType uint
@@ -37,24 +41,36 @@ const (
 	upgradeArbOs
 )
 
-func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops int, workload workloadType, arbitrator bool) {
+type Options struct {
+	dasModeString   string
+	workloadLoops   int
+	workload        workloadType
+	arbitrator      bool
+	useRedisStreams bool
+	wasmRootDir     string
+}
+
+func testBlockValidatorSimple(t *testing.T, opts Options) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	chainConfig, l1NodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithDAS(t, ctx, dasModeString)
+	chainConfig, l1NodeConfigA, lifecycleManager, _, dasSignerKey := setupConfigWithDAS(t, ctx, opts.dasModeString)
 	defer lifecycleManager.StopAndWaitUntil(time.Second)
-	if workload == upgradeArbOs {
+	if opts.workload == upgradeArbOs {
 		chainConfig.ArbitrumChainParams.InitialArbOSVersion = 10
 	}
 
 	var delayEvery int
-	if workloadLoops > 1 {
+	if opts.workloadLoops > 1 {
 		l1NodeConfigA.BatchPoster.MaxDelay = time.Millisecond * 500
-		delayEvery = workloadLoops / 3
+		delayEvery = opts.workloadLoops / 3
 	}
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder = builder.WithWasmRootDir(opts.wasmRootDir)
+	// For now PathDB is not supported when using block validation
+	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 	builder.nodeConfig = l1NodeConfigA
 	builder.chainConfig = chainConfig
 	builder.L2Info = nil
@@ -67,7 +83,17 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 	validatorConfig.BlockValidator.Enable = true
 	validatorConfig.DataAvailability = l1NodeConfigA.DataAvailability
 	validatorConfig.DataAvailability.RPCAggregator.Enable = false
-	AddDefaultValNode(t, ctx, validatorConfig, !arbitrator)
+	redisURL := ""
+	if opts.useRedisStreams {
+		redisURL = redisutil.CreateTestRedis(ctx, t)
+		validatorConfig.BlockValidator.RedisValidationClientConfig = redis.TestValidationClientConfig
+		validatorConfig.BlockValidator.RedisValidationClientConfig.RedisURL = redisURL
+	} else {
+		validatorConfig.BlockValidator.RedisValidationClientConfig = redis.ValidationClientConfig{}
+	}
+
+	AddDefaultValNode(t, ctx, validatorConfig, !opts.arbitrator, redisURL, opts.wasmRootDir)
+
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: validatorConfig})
 	defer cleanupB()
 	builder.L2Info.GenerateAccount("User2")
@@ -75,17 +101,17 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 	perTransfer := big.NewInt(1e12)
 
 	var simple *mocksgen.Simple
-	if workload != upgradeArbOs {
-		for i := 0; i < workloadLoops; i++ {
+	if opts.workload != upgradeArbOs {
+		for i := 0; i < opts.workloadLoops; i++ {
 			var tx *types.Transaction
 
-			if workload == ethSend {
+			if opts.workload == ethSend {
 				tx = builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, perTransfer, nil)
 			} else {
 				var contractCode []byte
 				var gas uint64
 
-				if workload == smallContract {
+				if opts.workload == smallContract {
 					contractCode = []byte{byte(vm.PUSH0)}
 					contractCode = append(contractCode, byte(vm.PUSH0))
 					contractCode = append(contractCode, byte(vm.PUSH1))
@@ -93,6 +119,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 					contractCode = append(contractCode, byte(vm.PUSH0))
 					contractCode = append(contractCode, byte(vm.CODECOPY))
 					contractCode = append(contractCode, byte(vm.PUSH0))
+					contractCode = append(contractCode, byte(vm.BLOBHASH))
 					contractCode = append(contractCode, byte(vm.RETURN))
 					basefee := builder.L2.GetBaseFee(t)
 					var err error
@@ -117,7 +144,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 			err := builder.L2.Client.SendTransaction(ctx, tx)
 			Require(t, err)
 			_, err = builder.L2.EnsureTxSucceeded(tx)
-			if workload != depleteGas {
+			if opts.workload != depleteGas {
 				Require(t, err)
 			}
 			if delayEvery > 0 && i%delayEvery == (delayEvery-1) {
@@ -171,7 +198,7 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 		Require(t, err)
 	}
 
-	if workload != depleteGas {
+	if opts.workload != depleteGas {
 		delayedTx := builder.L2Info.PrepareTx("Owner", "User2", 30002, perTransfer, nil)
 		builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
 			WrapL2ForDelayed(t, delayedTx, builder.L1Info, "User", 100000),
@@ -190,11 +217,11 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 		Require(t, err)
 	}
 
-	if workload == ethSend {
+	if opts.workload == ethSend {
 		l2balance, err := testClientB.Client.BalanceAt(ctx, builder.L2Info.GetAddress("User2"), nil)
 		Require(t, err)
 
-		expectedBalance := new(big.Int).Mul(perTransfer, big.NewInt(int64(workloadLoops+1)))
+		expectedBalance := new(big.Int).Mul(perTransfer, big.NewInt(int64(opts.workloadLoops+1)))
 		if l2balance.Cmp(expectedBalance) != 0 {
 			Fatal(t, "Unexpected balance:", l2balance)
 		}
@@ -238,17 +265,65 @@ func testBlockValidatorSimple(t *testing.T, dasModeString string, workloadLoops 
 }
 
 func TestBlockValidatorSimpleOnchainUpgradeArbOs(t *testing.T) {
-	testBlockValidatorSimple(t, "onchain", 1, upgradeArbOs, true)
+	opts := Options{
+		dasModeString: "onchain",
+		workloadLoops: 1,
+		workload:      upgradeArbOs,
+		arbitrator:    true,
+	}
+	testBlockValidatorSimple(t, opts)
 }
 
 func TestBlockValidatorSimpleOnchain(t *testing.T) {
-	testBlockValidatorSimple(t, "onchain", 1, ethSend, true)
+	opts := Options{
+		dasModeString: "onchain",
+		workloadLoops: 1,
+		workload:      ethSend,
+		arbitrator:    true,
+	}
+	testBlockValidatorSimple(t, opts)
+}
+
+func TestBlockValidatorSimpleOnchainWithPublishedMachine(t *testing.T) {
+	cr, err := github.LatestConsensusRelease(context.Background())
+	Require(t, err)
+	machPath := populateMachineDir(t, cr)
+	opts := Options{
+		dasModeString: "onchain",
+		workloadLoops: 1,
+		workload:      ethSend,
+		arbitrator:    true,
+		wasmRootDir:   machPath,
+	}
+	testBlockValidatorSimple(t, opts)
+}
+
+func TestBlockValidatorSimpleOnchainWithRedisStreams(t *testing.T) {
+	opts := Options{
+		dasModeString:   "onchain",
+		workloadLoops:   1,
+		workload:        ethSend,
+		arbitrator:      true,
+		useRedisStreams: true,
+	}
+	testBlockValidatorSimple(t, opts)
 }
 
 func TestBlockValidatorSimpleLocalDAS(t *testing.T) {
-	testBlockValidatorSimple(t, "files", 1, ethSend, true)
+	opts := Options{
+		dasModeString: "files",
+		workloadLoops: 1,
+		workload:      ethSend,
+		arbitrator:    true,
+	}
+	testBlockValidatorSimple(t, opts)
 }
 
 func TestBlockValidatorSimpleJITOnchain(t *testing.T) {
-	testBlockValidatorSimple(t, "files", 8, smallContract, false)
+	opts := Options{
+		dasModeString: "files",
+		workloadLoops: 8,
+		workload:      smallContract,
+	}
+	testBlockValidatorSimple(t, opts)
 }

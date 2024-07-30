@@ -5,11 +5,13 @@ package genericconf
 
 import (
 	"errors"
+	"io"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	flag "github.com/spf13/pflag"
+	"golang.org/x/exp/slog"
 )
 
 type ConfConfig struct {
@@ -63,11 +65,11 @@ var DefaultS3Config = S3Config{
 	SecretKey: "",
 }
 
-func ParseLogType(logType string) (log.Format, error) {
+func HandlerFromLogType(logType string, output io.Writer) (slog.Handler, error) {
 	if logType == "plaintext" {
-		return log.TerminalFormat(false), nil
+		return log.NewTerminalHandler(output, false), nil
 	} else if logType == "json" {
-		return log.JSONFormat(), nil
+		return log.JSONHandler(output), nil
 	}
 	return nil, errors.New("invalid log type")
 }
@@ -121,6 +123,6 @@ func (c *RpcConfig) Apply(stackConf *node.Config) {
 }
 
 func RpcConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Int(prefix+".max-batch-response-size", DefaultRpcConfig.MaxBatchResponseSize, "the maximum response size for a JSON-RPC request measured in bytes (-1 means no limit)")
-	f.Int(prefix+".batch-request-limit", DefaultRpcConfig.BatchRequestLimit, "the maximum number of requests in a batch")
+	f.Int(prefix+".max-batch-response-size", DefaultRpcConfig.MaxBatchResponseSize, "the maximum response size for a JSON-RPC request measured in bytes (0 means no limit)")
+	f.Int(prefix+".batch-request-limit", DefaultRpcConfig.BatchRequestLimit, "the maximum number of requests in a batch (0 means no limit)")
 }

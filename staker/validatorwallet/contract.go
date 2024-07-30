@@ -10,7 +10,6 @@ import (
 	"math/big"
 	"strings"
 	"sync/atomic"
-	"time"
 
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
@@ -177,7 +176,7 @@ func (v *Contract) executeTransaction(ctx context.Context, tx *types.Transaction
 	if err != nil {
 		return nil, fmt.Errorf("getting gas for tx data: %w", err)
 	}
-	return v.dataPoster.PostTransaction(ctx, time.Now(), auth.Nonce.Uint64(), nil, *v.Address(), data, gas, auth.Value, nil)
+	return v.dataPoster.PostSimpleTransaction(ctx, auth.Nonce.Uint64(), *v.Address(), data, gas, auth.Value)
 }
 
 func (v *Contract) populateWallet(ctx context.Context, createIfMissing bool) error {
@@ -288,7 +287,7 @@ func (v *Contract) ExecuteTransactions(ctx context.Context, builder *txbuilder.B
 	if err != nil {
 		return nil, fmt.Errorf("getting gas for tx data: %w", err)
 	}
-	arbTx, err := v.dataPoster.PostTransaction(ctx, time.Now(), auth.Nonce.Uint64(), nil, *v.Address(), txData, gas, auth.Value, nil)
+	arbTx, err := v.dataPoster.PostSimpleTransaction(ctx, auth.Nonce.Uint64(), *v.Address(), txData, gas, auth.Value)
 	if err != nil {
 		return nil, err
 	}
@@ -308,6 +307,7 @@ func (v *Contract) estimateGas(ctx context.Context, value *big.Int, data []byte)
 	if err != nil {
 		return 0, fmt.Errorf("getting suggested gas tip cap: %w", err)
 	}
+	gasFeeCap.Add(gasFeeCap, gasTipCap)
 	g, err := v.l1Reader.Client().EstimateGas(
 		ctx,
 		ethereum.CallMsg{
@@ -338,7 +338,7 @@ func (v *Contract) TimeoutChallenges(ctx context.Context, challenges []uint64) (
 	if err != nil {
 		return nil, fmt.Errorf("getting gas for tx data: %w", err)
 	}
-	return v.dataPoster.PostTransaction(ctx, time.Now(), auth.Nonce.Uint64(), nil, *v.Address(), data, gas, auth.Value, nil)
+	return v.dataPoster.PostSimpleTransaction(ctx, auth.Nonce.Uint64(), *v.Address(), data, gas, auth.Value)
 }
 
 // gasForTxData returns auth.GasLimit if it's nonzero, otherwise returns estimate.
@@ -420,7 +420,7 @@ func GetValidatorWalletContract(
 		FromBlock: big.NewInt(fromBlock),
 		ToBlock:   nil,
 		Addresses: []common.Address{validatorWalletFactoryAddr},
-		Topics:    [][]common.Hash{{walletCreatedID}, nil, {transactAuth.From.Hash()}},
+		Topics:    [][]common.Hash{{walletCreatedID}, nil, {common.BytesToHash(transactAuth.From.Bytes())}},
 	}
 	logs, err := client.FilterLogs(ctx, query)
 	if err != nil {

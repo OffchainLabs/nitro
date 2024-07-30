@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package storage
@@ -6,6 +6,7 @@ package storage
 import (
 	"bytes"
 	"fmt"
+	"math"
 	"math/big"
 	"sync/atomic"
 
@@ -17,9 +18,13 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/triedb"
+	"github.com/ethereum/go-ethereum/triedb/hashdb"
+	"github.com/ethereum/go-ethereum/triedb/pathdb"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
 
 // Storage allows ArbOS to store data persistently in the Ethereum-compatible stateDB. This is represented in
@@ -52,6 +57,7 @@ type Storage struct {
 const StorageReadCost = params.SloadGasEIP2200
 const StorageWriteCost = params.SstoreSetGasEIP2200
 const StorageWriteZeroCost = params.SstoreResetGasEIP2200
+const StorageCodeHashCost = params.ColdAccountAccessCostEIP2929
 
 const storageKeyCacheSize = 1024
 
@@ -71,15 +77,21 @@ func NewGeth(statedb vm.StateDB, burner burn.Burner) *Storage {
 	}
 }
 
-// NewMemoryBacked uses Geth's memory-backed database to create an evm key-value store
+// NewMemoryBacked uses Geth's memory-backed database to create an evm key-value store.
+// Only used for testing.
 func NewMemoryBacked(burner burn.Burner) *Storage {
 	return NewGeth(NewMemoryBackedStateDB(), burner)
 }
 
 // NewMemoryBackedStateDB uses Geth's memory-backed database to create a statedb
+// Only used for testing.
 func NewMemoryBackedStateDB() vm.StateDB {
 	raw := rawdb.NewMemoryDatabase()
-	db := state.NewDatabase(raw)
+	trieConfig := &triedb.Config{Preimages: false, PathDB: pathdb.Defaults}
+	if env.GetTestStateScheme() == rawdb.HashScheme {
+		trieConfig = &triedb.Config{Preimages: false, HashDB: hashdb.Defaults}
+	}
+	db := state.NewDatabaseWithConfig(raw, trieConfig)
 	statedb, err := state.New(common.Hash{}, db, nil)
 	if err != nil {
 		panic("failed to init empty statedb")
@@ -119,7 +131,12 @@ func (s *Storage) Get(key common.Hash) (common.Hash, error) {
 	if info := s.burner.TracingInfo(); info != nil {
 		info.RecordStorageGet(key)
 	}
-	return s.db.GetState(s.account, s.mapAddress(key)), nil
+	return s.GetFree(key), nil
+}
+
+// Gets a storage slot for free. Dangerous due to DoS potential.
+func (s *Storage) GetFree(key common.Hash) common.Hash {
+	return s.db.GetState(s.account, s.mapAddress(key))
 }
 
 func (s *Storage) GetStorageSlot(key common.Hash) common.Hash {
@@ -139,6 +156,11 @@ func (s *Storage) GetUint64ByUint64(key uint64) (uint64, error) {
 	return s.GetUint64(util.UintToHash(key))
 }
 
+func (s *Storage) GetUint32(key common.Hash) (uint32, error) {
+	value, err := s.Get(key)
+	return uint32(value.Big().Uint64()), err
+}
+
 func (s *Storage) Set(key common.Hash, value common.Hash) error {
 	if s.burner.ReadOnly() {
 		log.Error("Read-only burner attempted to mutate state", "key", key, "value", value)
@@ -155,12 +177,24 @@ func (s *Storage) Set(key common.Hash, value common.Hash) error {
 	return nil
 }
 
+func (s *Storage) SetUint64(key common.Hash, value uint64) error {
+	return s.Set(key, util.UintToHash(value))
+}
+
 func (s *Storage) SetByUint64(key uint64, value common.Hash) error {
 	return s.Set(util.UintToHash(key), value)
 }
 
 func (s *Storage) SetUint64ByUint64(key uint64, value uint64) error {
 	return s.Set(util.UintToHash(key), util.UintToHash(value))
+}
+
+func (s *Storage) SetUint32(key common.Hash, value uint32) error {
+	return s.Set(key, util.UintToHash(uint64(value)))
+}
+
+func (s *Storage) SetByUint32(key uint32, value common.Hash) error {
+	return s.Set(util.UintToHash(uint64(key)), value)
 }
 
 func (s *Storage) Clear(key common.Hash) error {
@@ -278,6 +312,14 @@ func (s *Storage) ClearBytes() error {
 		}
 	}
 	return s.ClearByUint64(0)
+}
+
+func (s *Storage) GetCodeHash(address common.Address) (common.Hash, error) {
+	err := s.burner.Burn(StorageCodeHashCost)
+	if err != nil {
+		return common.Hash{}, err
+	}
+	return s.db.GetCodeHash(address), nil
 }
 
 func (s *Storage) Burner() burn.Burner {
@@ -401,6 +443,86 @@ func (sbu *StorageBackedBips) Get() (arbmath.Bips, error) {
 
 func (sbu *StorageBackedBips) Set(bips arbmath.Bips) error {
 	return sbu.backing.Set(int64(bips))
+}
+
+// StorageBackedUBips represents an unsigned number of basis points
+type StorageBackedUBips struct {
+	backing StorageBackedUint64
+}
+
+func (s *Storage) OpenStorageBackedUBips(offset uint64) StorageBackedUBips {
+	return StorageBackedUBips{StorageBackedUint64{s.NewSlot(offset)}}
+}
+
+func (sbu *StorageBackedUBips) Get() (arbmath.UBips, error) {
+	value, err := sbu.backing.Get()
+	return arbmath.UBips(value), err
+}
+
+func (sbu *StorageBackedUBips) Set(bips arbmath.UBips) error {
+	return sbu.backing.Set(bips.Uint64())
+}
+
+type StorageBackedUint16 struct {
+	StorageSlot
+}
+
+func (s *Storage) OpenStorageBackedUint16(offset uint64) StorageBackedUint16 {
+	return StorageBackedUint16{s.NewSlot(offset)}
+}
+
+func (sbu *StorageBackedUint16) Get() (uint16, error) {
+	raw, err := sbu.StorageSlot.Get()
+	big := raw.Big()
+	if !big.IsUint64() || big.Uint64() > math.MaxUint16 {
+		panic("expected uint16 compatible value in storage")
+	}
+	return uint16(big.Uint64()), err
+}
+
+func (sbu *StorageBackedUint16) Set(value uint16) error {
+	bigValue := new(big.Int).SetUint64(uint64(value))
+	return sbu.StorageSlot.Set(common.BigToHash(bigValue))
+}
+
+type StorageBackedUint24 struct {
+	StorageSlot
+}
+
+func (s *Storage) OpenStorageBackedUint24(offset uint64) StorageBackedUint24 {
+	return StorageBackedUint24{s.NewSlot(offset)}
+}
+
+func (sbu *StorageBackedUint24) Get() (arbmath.Uint24, error) {
+	raw, err := sbu.StorageSlot.Get()
+	value := arbmath.BigToUint24OrPanic(raw.Big())
+	return value, err
+}
+
+func (sbu *StorageBackedUint24) Set(value arbmath.Uint24) error {
+	return sbu.StorageSlot.Set(common.BigToHash(value.ToBig()))
+}
+
+type StorageBackedUint32 struct {
+	StorageSlot
+}
+
+func (s *Storage) OpenStorageBackedUint32(offset uint64) StorageBackedUint32 {
+	return StorageBackedUint32{s.NewSlot(offset)}
+}
+
+func (sbu *StorageBackedUint32) Get() (uint32, error) {
+	raw, err := sbu.StorageSlot.Get()
+	big := raw.Big()
+	if !big.IsUint64() || big.Uint64() > math.MaxUint32 {
+		panic("expected uint32 compatible value in storage")
+	}
+	return uint32(big.Uint64()), err
+}
+
+func (sbu *StorageBackedUint32) Set(value uint32) error {
+	bigValue := new(big.Int).SetUint64(uint64(value))
+	return sbu.StorageSlot.Set(common.BigToHash(bigValue))
 }
 
 type StorageBackedUint64 struct {

@@ -16,7 +16,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
-	"github.com/offchainlabs/nitro/validator"
 )
 
 // BlockRecorder uses a separate statedatabase from the blockchain.
@@ -120,22 +119,7 @@ func (r *BlockRecorder) RecordBlockCreation(
 	}
 
 	var blockHash common.Hash
-	var readBatchInfo []validator.BatchInfo
 	if msg != nil {
-		batchFetcher := func(batchNum uint64) ([]byte, error) {
-			data, err := r.execEngine.streamer.FetchBatch(batchNum)
-			if err != nil {
-				return nil, err
-			}
-			readBatchInfo = append(readBatchInfo, validator.BatchInfo{
-				Number: batchNum,
-				Data:   data,
-			})
-			return data, nil
-		}
-		// Re-fetch the batch instead of using our cached cost,
-		// as the replay binary won't have the cache populated.
-		msg.Message.BatchGasCost = nil
 		block, _, err := arbos.ProduceBlock(
 			msg.Message,
 			msg.DelayedMessagesRead,
@@ -143,7 +127,7 @@ func (r *BlockRecorder) RecordBlockCreation(
 			recordingdb,
 			chaincontext,
 			chainConfig,
-			batchFetcher,
+			false,
 		)
 		if err != nil {
 			return nil, err
@@ -170,7 +154,7 @@ func (r *BlockRecorder) RecordBlockCreation(
 		Pos:       pos,
 		BlockHash: blockHash,
 		Preimages: preimages,
-		BatchInfo: readBatchInfo,
+		UserWasms: recordingdb.UserWasms(),
 	}, err
 }
 

@@ -18,23 +18,28 @@ import (
 type JitSpawnerConfig struct {
 	Workers   int  `koanf:"workers" reload:"hot"`
 	Cranelift bool `koanf:"cranelift"`
+
+	// TODO: change WasmMemoryUsageLimit to a string and use resourcemanager.ParseMemLimit
+	WasmMemoryUsageLimit int `koanf:"wasm-memory-usage-limit"`
 }
 
 type JitSpawnerConfigFecher func() *JitSpawnerConfig
 
 var DefaultJitSpawnerConfig = JitSpawnerConfig{
-	Workers:   0,
-	Cranelift: true,
+	Workers:              0,
+	Cranelift:            true,
+	WasmMemoryUsageLimit: 4294967296, // 2^32 WASM memeory limit
 }
 
 func JitSpawnerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".workers", DefaultJitSpawnerConfig.Workers, "number of concurrent validation threads")
 	f.Bool(prefix+".cranelift", DefaultJitSpawnerConfig.Cranelift, "use Cranelift instead of LLVM when validating blocks using the jit-accelerated block validator")
+	f.Int(prefix+".wasm-memory-usage-limit", DefaultJitSpawnerConfig.WasmMemoryUsageLimit, "if memory used by a jit wasm exceeds this limit, a warning is logged")
 }
 
 type JitSpawner struct {
 	stopwaiter.StopWaiter
-	count         int32
+	count         atomic.Int32
 	locator       *server_common.MachineLocator
 	machineLoader *JitMachineLoader
 	config        JitSpawnerConfigFecher
@@ -44,6 +49,7 @@ func NewJitSpawner(locator *server_common.MachineLocator, config JitSpawnerConfi
 	// TODO - preload machines
 	machineConfig := DefaultJitMachineConfig
 	machineConfig.JitCranelift = config().Cranelift
+	machineConfig.WasmMemoryUsageLimit = config().WasmMemoryUsageLimit
 	loader, err := NewJitMachineLoader(&machineConfig, locator, fatalErrChan)
 	if err != nil {
 		return nil, err
@@ -59,6 +65,14 @@ func NewJitSpawner(locator *server_common.MachineLocator, config JitSpawnerConfi
 func (v *JitSpawner) Start(ctx_in context.Context) error {
 	v.StopWaiter.Start(ctx_in, v)
 	return nil
+}
+
+func (v *JitSpawner) WasmModuleRoots() ([]common.Hash, error) {
+	return v.locator.ModuleRoots(), nil
+}
+
+func (v *JitSpawner) StylusArchs() []string {
+	return []string{runtime.GOARCH}
 }
 
 func (v *JitSpawner) execute(
@@ -81,9 +95,9 @@ func (s *JitSpawner) Name() string {
 }
 
 func (v *JitSpawner) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
-	atomic.AddInt32(&v.count, 1)
+	v.count.Add(1)
 	promise := stopwaiter.LaunchPromiseThread[validator.GoGlobalState](v, func(ctx context.Context) (validator.GoGlobalState, error) {
-		defer atomic.AddInt32(&v.count, -1)
+		defer v.count.Add(-1)
 		return v.execute(ctx, entry, moduleRoot)
 	})
 	return server_common.NewValRun(promise, moduleRoot)

@@ -12,6 +12,8 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/eth/gasestimator"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
@@ -180,6 +182,22 @@ func TestDifficultyForArbOSTen(t *testing.T) {
 	}
 }
 
+func TestBlobBasefeeReverts(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	_, err := builder.L2.Client.CallContract(ctx, ethereum.CallMsg{
+		Data: []byte{byte(vm.BLOBBASEFEE)},
+	}, nil)
+	if err == nil {
+		t.Error("Expected BLOBBASEFEE to revert")
+	}
+}
+
 func TestComponentEstimate(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -268,7 +286,7 @@ func TestComponentEstimate(t *testing.T) {
 	l2Used := receipt.GasUsed - receipt.GasUsedForL1
 	colors.PrintMint("True ", receipt.GasUsed, " - ", receipt.GasUsedForL1, " = ", l2Used)
 
-	if l2Estimate != l2Used {
+	if float64(l2Estimate-l2Used) > float64(gasEstimateForL1+l2Used)*gasestimator.EstimateGasErrorRatio {
 		Fatal(t, l2Estimate, l2Used)
 	}
 }
@@ -305,4 +323,36 @@ func TestDisableL1Charging(t *testing.T) {
 
 	_, err = builder.L2.Client.CallContract(ctx, ethereum.CallMsg{To: &addr, Gas: gasWithoutL1Charging, SkipL1Charging: true}, nil)
 	Require(t, err)
+}
+
+func TestGasEstimationWithRPCGasLimit(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	execConfigA := builder.execConfig
+	execConfigA.RPC.RPCGasCap = params.TxGas
+	testClientA, cleanupA := builder.Build2ndNode(t, &SecondNodeParams{execConfig: execConfigA})
+	defer cleanupA()
+	addr := common.HexToAddress("0x12345678")
+	estimateGas, err := testClientA.Client.EstimateGas(ctx, ethereum.CallMsg{To: &addr})
+	Require(t, err)
+	if estimateGas <= params.TxGas {
+		Fatal(t, "Incorrect gas estimate")
+	}
+
+	_, err = testClientA.Client.CallContract(ctx, ethereum.CallMsg{To: &addr}, nil)
+	Require(t, err)
+
+	execConfigB := builder.execConfig
+	execConfigB.RPC.RPCGasCap = params.TxGas - 1
+	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{execConfig: execConfigB})
+	defer cleanupB()
+	_, err = testClientB.Client.EstimateGas(ctx, ethereum.CallMsg{To: &addr})
+	if err == nil {
+		Fatal(t, "EstimateGas passed with insufficient gas")
+	}
 }

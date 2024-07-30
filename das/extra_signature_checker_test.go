@@ -5,25 +5,19 @@ package das
 
 import (
 	"bytes"
-	"context"
 	"encoding/hex"
 	"errors"
 	"io/ioutil"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
-type StubSignatureCheckDAS struct {
-	keyDir string
-}
-
-func (s *StubSignatureCheckDAS) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
-	pubkeyEncoded, err := ioutil.ReadFile(s.keyDir + "/ecdsa.pub")
+func checkSig(keyDir string, message []byte, timeout uint64, sig []byte) (*daprovider.DataAvailabilityCertificate, error) {
+	pubkeyEncoded, err := ioutil.ReadFile(keyDir + "/ecdsa.pub")
 	if err != nil {
 		return nil, err
 	}
@@ -39,22 +33,6 @@ func (s *StubSignatureCheckDAS) Store(ctx context.Context, message []byte, timeo
 	return nil, nil
 }
 
-func (s *StubSignatureCheckDAS) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
-	return arbstate.KeepForever, nil
-}
-
-func (s *StubSignatureCheckDAS) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
-	return []byte{}, nil
-}
-
-func (s *StubSignatureCheckDAS) HealthCheck(ctx context.Context) error {
-	return nil
-}
-
-func (s *StubSignatureCheckDAS) String() string {
-	return "StubSignatureCheckDAS"
-}
-
 func TestExtraSignatureCheck(t *testing.T) {
 	keyDir := t.TempDir()
 	err := GenerateAndStoreECDSAKeys(keyDir)
@@ -64,11 +42,11 @@ func TestExtraSignatureCheck(t *testing.T) {
 	Require(t, err)
 	signer := signature.DataSignerFromPrivateKey(privateKey)
 
-	var da DataAvailabilityServiceWriter = &StubSignatureCheckDAS{keyDir}
-	da, err = NewStoreSigningDAS(da, signer)
+	msg := []byte("Hello world")
+	timeout := uint64(1234)
+	sig, err := applyDasSigner(signer, msg, timeout)
 	Require(t, err)
-
-	_, err = da.Store(context.Background(), []byte("Hello world"), 1234, []byte{})
+	_, err = checkSig(keyDir, msg, timeout, sig)
 	Require(t, err)
 }
 

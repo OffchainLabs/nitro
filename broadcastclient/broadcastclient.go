@@ -25,7 +25,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
-
 	"github.com/offchainlabs/nitro/arbutil"
 	m "github.com/offchainlabs/nitro/broadcaster/message"
 	"github.com/offchainlabs/nitro/util/contracts"
@@ -134,7 +133,7 @@ type BroadcastClient struct {
 	connMutex sync.Mutex
 	conn      net.Conn
 
-	retryCount int64
+	retryCount atomic.Int64
 
 	retrying                        bool
 	shuttingDown                    bool
@@ -191,7 +190,7 @@ func (bc *BroadcastClient) Start(ctxIn context.Context) {
 				errors.Is(err, ErrIncorrectChainId) ||
 				errors.Is(err, ErrMissingFeedServerVersion) ||
 				errors.Is(err, ErrIncorrectFeedServerVersion) {
-				bc.fatalErrChan <- err
+				bc.fatalErrChan <- fmt.Errorf("failed connecting to server feed due to %w", err)
 				return
 			}
 			if err == nil {
@@ -292,6 +291,10 @@ func (bc *BroadcastClient) connect(ctx context.Context, nextSeqNum arbutil.Messa
 		return nil, err
 	}
 	if err != nil {
+		connectionRejectedError := &ws.ConnectionRejectedError{}
+		if errors.As(err, &connectionRejectedError) && connectionRejectedError.StatusCode() == 429 {
+			log.Error("rate limit exceeded, please run own local relay because too many nodes are connecting to feed from same IP address", "err", err)
+		}
 		return nil, fmt.Errorf("broadcast client unable to connect: %w", err)
 	}
 	if config.RequireChainId && !foundChainId {
@@ -432,7 +435,7 @@ func (bc *BroadcastClient) startBackgroundReader(earlyFrameData io.Reader) {
 }
 
 func (bc *BroadcastClient) GetRetryCount() int64 {
-	return atomic.LoadInt64(&bc.retryCount)
+	return bc.retryCount.Load()
 }
 
 func (bc *BroadcastClient) isShuttingDown() bool {
@@ -455,7 +458,7 @@ func (bc *BroadcastClient) retryConnect(ctx context.Context) io.Reader {
 		case <-timer.C:
 		}
 
-		atomic.AddInt64(&bc.retryCount, 1)
+		bc.retryCount.Add(1)
 		earlyFrameData, err := bc.connect(ctx, bc.nextSeqNum)
 		if err == nil {
 			bc.retrying = false

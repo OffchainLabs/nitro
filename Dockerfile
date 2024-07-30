@@ -1,4 +1,4 @@
-FROM debian:bullseye-slim as brotli-wasm-builder
+FROM debian:bookworm-slim AS brotli-wasm-builder
 WORKDIR /workspace
 RUN apt-get update && \
     apt-get install -y cmake make git lbzip2 python3 xz-utils && \
@@ -10,10 +10,10 @@ COPY scripts/build-brotli.sh scripts/
 COPY brotli brotli
 RUN cd emsdk && . ./emsdk_env.sh && cd .. && ./scripts/build-brotli.sh -w -t /workspace/install/
 
-FROM scratch as brotli-wasm-export
+FROM scratch AS brotli-wasm-export
 COPY --from=brotli-wasm-builder /workspace/install/ /
 
-FROM debian:bullseye-slim as brotli-library-builder
+FROM debian:bookworm-slim AS brotli-library-builder
 WORKDIR /workspace
 COPY scripts/build-brotli.sh scripts/
 COPY brotli brotli
@@ -21,40 +21,52 @@ RUN apt-get update && \
     apt-get install -y cmake make gcc git && \
     ./scripts/build-brotli.sh -l -t /workspace/install/
 
-FROM scratch as brotli-library-export
+FROM scratch AS brotli-library-export
 COPY --from=brotli-library-builder /workspace/install/ /
 
-FROM node:16-bullseye-slim as contracts-builder
+FROM node:18-bookworm-slim AS contracts-builder
 RUN apt-get update && \
-    apt-get install -y git python3 make g++
+    apt-get install -y git python3 make g++ curl
+RUN curl -L https://foundry.paradigm.xyz | bash && . ~/.bashrc && ~/.foundry/bin/foundryup
 WORKDIR /workspace
 COPY contracts/package.json contracts/yarn.lock contracts/
 RUN cd contracts && yarn install
 COPY contracts contracts/
+COPY safe-smart-account safe-smart-account/
+RUN cd safe-smart-account && yarn install
 COPY Makefile .
-RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-solidity
+RUN . ~/.bashrc && NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-solidity
 
-FROM debian:bullseye-20211220 as wasm-base
+FROM debian:bookworm-20231218 AS wasm-base
 WORKDIR /workspace
 RUN apt-get update && apt-get install -y curl build-essential=12.9
 
-FROM wasm-base as wasm-libs-builder
+FROM wasm-base AS wasm-libs-builder
 	# clang / lld used by soft-float wasm
-RUN apt-get install -y clang=1:11.0-51+nmu5 lld=1:11.0-51+nmu5
-    # pinned rust 1.65.0
-RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.68.2 --target x86_64-unknown-linux-gnu wasm32-unknown-unknown wasm32-wasi
+RUN apt-get update && \
+    apt-get install -y clang=1:14.0-55.7~deb12u1 lld=1:14.0-55.7~deb12u1 wabt
+    # pinned rust 1.75.0
+RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y --default-toolchain 1.75.0 --target x86_64-unknown-linux-gnu wasm32-unknown-unknown wasm32-wasi
 COPY ./Makefile ./
+COPY arbitrator/Cargo.* arbitrator/
 COPY arbitrator/arbutil arbitrator/arbutil
+COPY arbitrator/brotli arbitrator/brotli
+COPY arbitrator/caller-env arbitrator/caller-env
+COPY arbitrator/prover arbitrator/prover
 COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
+COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
+COPY brotli brotli
+COPY scripts/build-brotli.sh scripts/
 COPY --from=brotli-wasm-export / target/
+RUN apt-get update && apt-get install -y cmake
 RUN . ~/.cargo/env && NITRO_BUILD_IGNORE_TIMESTAMPS=1 RUSTFLAGS='-C symbol-mangling-version=v0' make build-wasm-libs
 
-FROM scratch as wasm-libs-export
+FROM scratch AS wasm-libs-export
 COPY --from=wasm-libs-builder /workspace/ /
 
-FROM wasm-base as wasm-bin-builder
-    # pinned go version
-RUN curl -L https://golang.org/dl/go1.20.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
+FROM wasm-base AS wasm-bin-builder
+# pinned go version
+RUN curl -L https://golang.org/dl/go1.21.10.linux-`dpkg --print-architecture`.tar.gz | tar -C /usr/local -xzf -
 COPY ./Makefile ./go.mod ./go.sum ./
 COPY ./arbcompress ./arbcompress
 COPY ./arbos ./arbos
@@ -72,6 +84,7 @@ COPY ./wavmio ./wavmio
 COPY ./zeroheavy ./zeroheavy
 COPY ./contracts/src/precompiles/ ./contracts/src/precompiles/
 COPY ./contracts/package.json ./contracts/yarn.lock ./contracts/
+COPY ./safe-smart-account ./safe-smart-account
 COPY ./solgen/gen.go ./solgen/
 COPY ./fastcache ./fastcache
 COPY ./go-ethereum ./go-ethereum
@@ -81,53 +94,83 @@ COPY --from=contracts-builder workspace/contracts/node_modules/@offchainlabs/upg
 COPY --from=contracts-builder workspace/.make/ .make/
 RUN PATH="$PATH:/usr/local/go/bin" NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-wasm-bin
 
-FROM rust:1.68-slim-bullseye as prover-header-builder
+FROM rust:1.75-slim-bookworm AS prover-header-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
-    apt-get install -y make && \
+    apt-get install -y make clang wabt && \
     cargo install --force cbindgen
-COPY arbitrator/Cargo.* arbitrator/cbindgen.toml arbitrator/
+COPY arbitrator/Cargo.* arbitrator/
 COPY ./Makefile ./
 COPY arbitrator/arbutil arbitrator/arbutil
+COPY arbitrator/bench arbitrator/bench
+COPY arbitrator/brotli arbitrator/brotli
+COPY arbitrator/caller-env arbitrator/caller-env
 COPY arbitrator/prover arbitrator/prover
+COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
 COPY arbitrator/jit arbitrator/jit
+COPY arbitrator/stylus arbitrator/stylus
+COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
+COPY --from=brotli-wasm-export / target/
+COPY scripts/build-brotli.sh scripts/
+COPY brotli brotli
+RUN apt-get update && apt-get install -y cmake
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-header
 
-FROM scratch as prover-header-export
+FROM scratch AS prover-header-export
 COPY --from=prover-header-builder /workspace/target/ /
 
-FROM rust:1.68-slim-bullseye as prover-builder
+FROM rust:1.75-slim-bookworm AS prover-builder
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
-    apt-get install -y make wget gpg software-properties-common zlib1g-dev libstdc++-10-dev wabt
+    apt-get install -y make wget gpg software-properties-common zlib1g-dev libstdc++-12-dev wabt
 RUN wget -O - https://apt.llvm.org/llvm-snapshot.gpg.key | apt-key add - && \
-    add-apt-repository 'deb http://apt.llvm.org/bullseye/ llvm-toolchain-bullseye-12 main' && \
+    add-apt-repository 'deb http://apt.llvm.org/bookworm/ llvm-toolchain-bookworm-15 main' && \
     apt-get update && \
-    apt-get install -y llvm-12-dev libclang-common-12-dev
+    apt-get install -y llvm-15-dev libclang-common-15-dev
+COPY --from=brotli-library-export / target/
 COPY arbitrator/Cargo.* arbitrator/
 COPY arbitrator/arbutil arbitrator/arbutil
+COPY arbitrator/bench arbitrator/bench
+COPY arbitrator/brotli arbitrator/brotli
+COPY arbitrator/caller-env arbitrator/caller-env
 COPY arbitrator/prover/Cargo.toml arbitrator/prover/
+COPY arbitrator/prover/benches arbitrator/prover/benches
+COPY arbitrator/bench/Cargo.toml arbitrator/bench/
 COPY arbitrator/jit/Cargo.toml arbitrator/jit/
-RUN mkdir arbitrator/prover/src arbitrator/jit/src && \
-    echo "fn test() {}" > arbitrator/jit/src/lib.rs && \
+COPY arbitrator/stylus/Cargo.toml arbitrator/stylus/
+COPY arbitrator/tools/wasmer arbitrator/tools/wasmer
+COPY arbitrator/wasm-libraries/user-host-trait/Cargo.toml arbitrator/wasm-libraries/user-host-trait/Cargo.toml
+RUN bash -c 'mkdir arbitrator/{prover,jit,stylus}/src arbitrator/wasm-libraries/user-host-trait/src'
+RUN echo "fn test() {}" > arbitrator/jit/src/lib.rs && \
     echo "fn test() {}" > arbitrator/prover/src/lib.rs && \
+    echo "fn test() {}" > arbitrator/bench/src/lib.rs && \
+    echo "fn test() {}" > arbitrator/prover/benches/merkle_bench.rs && \
+    echo "fn test() {}" > arbitrator/stylus/src/lib.rs && \
+    echo "fn test() {}" > arbitrator/wasm-libraries/user-host-trait/src/lib.rs && \
     cargo build --manifest-path arbitrator/Cargo.toml --release --lib && \
-    rm arbitrator/jit/src/lib.rs
+    rm arbitrator/prover/src/lib.rs arbitrator/jit/src/lib.rs arbitrator/stylus/src/lib.rs && \
+    rm arbitrator/wasm-libraries/user-host-trait/src/lib.rs && \
+    rm arbitrator/prover/benches/merkle_bench.rs && \
+    rm arbitrator/bench/src/lib.rs
 COPY ./Makefile ./
 COPY arbitrator/prover arbitrator/prover
+COPY arbitrator/wasm-libraries arbitrator/wasm-libraries
 COPY arbitrator/jit arbitrator/jit
-COPY --from=brotli-library-export / target/
+COPY arbitrator/stylus arbitrator/stylus
+COPY --from=brotli-wasm-export / target/
+COPY scripts/build-brotli.sh scripts/
+COPY brotli brotli
 RUN touch -a -m arbitrator/prover/src/lib.rs
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-lib
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-prover-bin
-RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make CARGOFLAGS="--features=llvm" build-jit
+RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-jit
 
-FROM scratch as prover-export
+FROM scratch AS prover-export
 COPY --from=prover-builder /workspace/target/ /
 
-FROM debian:bullseye-slim as module-root-calc
+FROM debian:bookworm-slim AS module-root-calc
 WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
@@ -136,15 +179,21 @@ COPY --from=prover-export / target/
 COPY --from=wasm-bin-builder /workspace/target/ target/
 COPY --from=wasm-bin-builder /workspace/.make/ .make/
 COPY --from=wasm-libs-builder /workspace/target/ target/
+COPY --from=wasm-libs-builder /workspace/arbitrator/prover/ arbitrator/prover/
+COPY --from=wasm-libs-builder /workspace/arbitrator/tools/wasmer/ arbitrator/tools/wasmer/
 COPY --from=wasm-libs-builder /workspace/arbitrator/wasm-libraries/ arbitrator/wasm-libraries/
+COPY --from=wasm-libs-builder /workspace/arbitrator/arbutil arbitrator/arbutil
+COPY --from=wasm-libs-builder /workspace/arbitrator/brotli arbitrator/brotli
+COPY --from=wasm-libs-builder /workspace/arbitrator/caller-env arbitrator/caller-env
 COPY --from=wasm-libs-builder /workspace/.make/ .make/
 COPY ./Makefile ./
 COPY ./arbitrator ./arbitrator
 COPY ./solgen ./solgen
 COPY ./contracts ./contracts
+COPY ./safe-smart-account ./safe-smart-account
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build-replay-env
 
-FROM debian:bullseye-slim as machine-versions
+FROM debian:bookworm-slim AS machine-versions
 RUN apt-get update && apt-get install -y unzip wget curl
 WORKDIR /workspace/machines
 # Download WAVM machines
@@ -160,13 +209,17 @@ COPY ./scripts/download-machine.sh .
 #RUN ./download-machine.sh consensus-v7 0x53dd4b9a3d807a8cbb4d58fbfc6a0857c3846d46956848cae0a1cc7eca2bb5a8
 #RUN ./download-machine.sh consensus-v7.1 0x2b20e1490d1b06299b222f3239b0ae07e750d8f3b4dedd19f500a815c1548bbc
 #RUN ./download-machine.sh consensus-v9 0xd1842bfbe047322b3f3b3635b5fe62eb611557784d17ac1d2b1ce9c170af6544
-RUN ./download-machine.sh consensus-v10 0x6b94a7fc388fd8ef3def759297828dc311761e88d8179c7ee8d3887dc554f3c3
-RUN ./download-machine.sh consensus-v10.1 0xda4e3ad5e7feacb817c21c8d0220da7650fe9051ece68a3f0b1c5d38bbb27b21
-RUN ./download-machine.sh consensus-v10.2 0x0754e09320c381566cc0449904c377a52bd34a6b9404432e80afd573b67f7b17
-RUN ./download-machine.sh consensus-v10.3 0xf559b6d4fa869472dabce70fe1c15221bdda837533dfd891916836975b434dec
-RUN ./download-machine.sh consensus-v11 0xf4389b835497a910d7ba3ebfb77aa93da985634f3c052de1290360635be40c4a
+#RUN ./download-machine.sh consensus-v10 0x6b94a7fc388fd8ef3def759297828dc311761e88d8179c7ee8d3887dc554f3c3
+#RUN ./download-machine.sh consensus-v10.1 0xda4e3ad5e7feacb817c21c8d0220da7650fe9051ece68a3f0b1c5d38bbb27b21
+#RUN ./download-machine.sh consensus-v10.2 0x0754e09320c381566cc0449904c377a52bd34a6b9404432e80afd573b67f7b17
+#RUN ./download-machine.sh consensus-v10.3 0xf559b6d4fa869472dabce70fe1c15221bdda837533dfd891916836975b434dec
+#RUN ./download-machine.sh consensus-v11 0xf4389b835497a910d7ba3ebfb77aa93da985634f3c052de1290360635be40c4a
+#RUN ./download-machine.sh consensus-v11.1 0x68e4fe5023f792d4ef584796c84d710303a5e12ea02d6e37e2b5e9c4332507c4
+#RUN ./download-machine.sh consensus-v20 0x8b104a2e80ac6165dc58b9048de12f301d70b02a0ab51396c22b4b4b802a16a4
+RUN ./download-machine.sh consensus-v30 0xb0de9cb89e4d944ae6023a3b62276e54804c242fd8c4c2d8e6cc4450f5fa8b1b && true
+RUN ./download-machine.sh consensus-v31 0x260f5fa5c3176a856893642e149cf128b5a8de9f828afec8d11184415dd8dc69
 
-FROM golang:1.20-bullseye as node-builder
+FROM golang:1.21.10-bookworm AS node-builder
 WORKDIR /workspace
 ARG version=""
 ARG datetime=""
@@ -183,7 +236,9 @@ COPY fastcache/go.mod fastcache/go.sum fastcache/
 RUN go mod download
 COPY . ./
 COPY --from=contracts-builder workspace/contracts/build/ contracts/build/
+COPY --from=contracts-builder workspace/contracts/out/ contracts/out/
 COPY --from=contracts-builder workspace/contracts/node_modules/@offchainlabs/upgrade-executor/build/contracts/src/UpgradeExecutor.sol/UpgradeExecutor.json contracts/node_modules/@offchainlabs/upgrade-executor/build/contracts/src/UpgradeExecutor.sol/
+COPY --from=contracts-builder workspace/safe-smart-account/build/ safe-smart-account/build/
 COPY --from=contracts-builder workspace/.make/ .make/
 COPY --from=prover-header-export / target/
 COPY --from=brotli-library-export / target/
@@ -192,29 +247,33 @@ RUN mkdir -p target/bin
 COPY .nitro-tag.txt /nitro-tag.txt
 RUN NITRO_BUILD_IGNORE_TIMESTAMPS=1 make build
 
-FROM node-builder as fuzz-builder
+FROM node-builder AS fuzz-builder
 RUN mkdir fuzzers/
 RUN ./scripts/fuzz.bash --build --binary-path /workspace/fuzzers/
 
-FROM debian:bullseye-slim as nitro-fuzzer
+FROM debian:bookworm-slim AS nitro-fuzzer
 COPY --from=fuzz-builder /workspace/fuzzers/*.fuzz /usr/local/bin/
 COPY ./scripts/fuzz.bash /usr/local/bin
 RUN mkdir /fuzzcache
-ENTRYPOINT [ "/usr/local/bin/fuzz.bash", "--binary-path", "/usr/local/bin/", "--fuzzcache-path", "/fuzzcache" ]
+ENTRYPOINT [ "/usr/local/bin/fuzz.bash", "FuzzStateTransition", "--binary-path", "/usr/local/bin/", "--fuzzcache-path", "/fuzzcache" ]
 
-FROM debian:bullseye-slim as nitro-node-slim
+FROM debian:bookworm-slim AS nitro-node-slim
 WORKDIR /home/user
 COPY --from=node-builder /workspace/target/bin/nitro /usr/local/bin/
 COPY --from=node-builder /workspace/target/bin/relay /usr/local/bin/
 COPY --from=node-builder /workspace/target/bin/nitro-val /usr/local/bin/
 COPY --from=node-builder /workspace/target/bin/seq-coordinator-manager /usr/local/bin/
+COPY --from=node-builder /workspace/target/bin/prover /usr/local/bin/
 COPY --from=machine-versions /workspace/machines /home/user/target/machines
+COPY ./scripts/validate-wasm-module-root.sh .
+RUN ./validate-wasm-module-root.sh /home/user/target/machines /usr/local/bin/prover
 USER root
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y \
     ca-certificates \
-    wabt && \
+    wabt \
+    sysstat && \
     /usr/sbin/update-ca-certificates && \
     useradd -s /bin/bash user && \
     mkdir -p /home/user/l1keystore && \
@@ -229,11 +288,15 @@ USER user
 WORKDIR /home/user/
 ENTRYPOINT [ "/usr/local/bin/nitro" ]
 
-FROM nitro-node-slim as nitro-node
+FROM offchainlabs/nitro-node:v2.3.4-rc.5-b4cc111 AS nitro-legacy
+
+FROM nitro-node-slim AS nitro-node
 USER root
 COPY --from=prover-export /bin/jit                        /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/daserver  /usr/local/bin/
 COPY --from=node-builder  /workspace/target/bin/datool    /usr/local/bin/
+COPY --from=nitro-legacy /home/user/target/machines /home/user/nitro-legacy/machines
+RUN rm -rf /workspace/target/legacy-machines/latest
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y \
@@ -243,10 +306,23 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /usr/lib/python3.9/__pycache__/ /usr/lib/python3.9/*/__pycache__/ /var/log/* && \
     nitro --version
+ENTRYPOINT [ "/usr/local/bin/nitro" , "--validation.wasm.allowed-wasm-module-roots", "/home/user/nitro-legacy/machines,/home/user/target/machines"]
 
 USER user
 
-FROM nitro-node as nitro-node-dev
+FROM nitro-node AS nitro-node-validator
+USER root
+COPY --from=nitro-legacy /usr/local/bin/nitro-val /home/user/nitro-legacy/bin/nitro-val
+COPY --from=nitro-legacy /usr/local/bin/jit /home/user/nitro-legacy/bin/jit
+RUN export DEBIAN_FRONTEND=noninteractive && \
+    apt-get update && \
+    apt-get install -y xxd netcat-traditional && \
+    rm -rf /var/lib/apt/lists/* /usr/share/doc/* /var/cache/ldconfig/aux-cache /usr/lib/python3.9/__pycache__/ /usr/lib/python3.9/*/__pycache__/ /var/log/*
+COPY scripts/split-val-entry.sh /usr/local/bin
+ENTRYPOINT [ "/usr/local/bin/split-val-entry.sh" ]
+USER user
+
+FROM nitro-node-validator AS nitro-node-dev
 USER root
 # Copy in latest WASM module root
 RUN rm -f /home/user/target/machines/latest
@@ -270,5 +346,5 @@ RUN export DEBIAN_FRONTEND=noninteractive && \
 
 USER user
 
-FROM nitro-node as nitro-node-default
+FROM nitro-node AS nitro-node-default
 # Just to ensure nitro-node-dist is default

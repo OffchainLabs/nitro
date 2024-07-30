@@ -5,14 +5,15 @@ import (
 
 	"github.com/offchainlabs/nitro/validator"
 
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
-	flag "github.com/spf13/pflag"
-
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_arb"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/server_jit"
+	"github.com/offchainlabs/nitro/validator/valnode/redis"
+	"github.com/spf13/pflag"
 )
 
 type WasmConfig struct {
@@ -21,10 +22,10 @@ type WasmConfig struct {
 	AllowedWasmModuleRoots []string `koanf:"allowed-wasm-module-roots"`
 }
 
-func WasmConfigAddOptions(prefix string, f *flag.FlagSet) {
+func WasmConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".root-path", DefaultWasmConfig.RootPath, "path to machine folders, each containing wasm files (machine.wavm.br, replay.wasm)")
 	f.Bool(prefix+".enable-wasmroots-check", DefaultWasmConfig.EnableWasmrootsCheck, "enable check for compatibility of on-chain WASM module root with node")
-	f.StringSlice(prefix+".allowed-wasm-module-roots", DefaultWasmConfig.AllowedWasmModuleRoots, "list of WASM module roots to check if the on-chain WASM module root belongs to on node startup")
+	f.StringSlice(prefix+".allowed-wasm-module-roots", DefaultWasmConfig.AllowedWasmModuleRoots, "list of WASM module roots or mahcine base paths to match against on-chain WasmModuleRoot")
 }
 
 var DefaultWasmConfig = WasmConfig{
@@ -62,7 +63,7 @@ var TestValidationConfig = Config{
 	Wasm:       DefaultWasmConfig,
 }
 
-func ValidationConfigAddOptions(prefix string, f *flag.FlagSet) {
+func ValidationConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".use-jit", DefaultValidationConfig.UseJit, "use jit for validation")
 	f.Bool(prefix+".api-auth", DefaultValidationConfig.ApiAuth, "validate is an authenticated API")
 	f.Bool(prefix+".api-public", DefaultValidationConfig.ApiPublic, "validate is a public API")
@@ -75,6 +76,8 @@ type ValidationNode struct {
 	config     ValidationConfigFetcher
 	arbSpawner *server_arb.ArbitratorSpawner
 	jitSpawner *server_jit.JitSpawner
+
+	redisConsumer *redis.ValidationServer
 }
 
 func EnsureValidationExposedViaAuthRPC(stackConf *node.Config) {
@@ -103,7 +106,7 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 	if err != nil {
 		return nil, err
 	}
-	var serverAPI *server_api.ExecServerAPI
+	var serverAPI *ExecServerAPI
 	var jitSpawner *server_jit.JitSpawner
 	if config.UseJit {
 		jitConfigFetcher := func() *server_jit.JitSpawnerConfig { return &configFetcher().Jit }
@@ -112,9 +115,17 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 		if err != nil {
 			return nil, err
 		}
-		serverAPI = server_api.NewExecutionServerAPI(jitSpawner, arbSpawner, arbConfigFetcher)
+		serverAPI = NewExecutionServerAPI(jitSpawner, arbSpawner, arbConfigFetcher)
 	} else {
-		serverAPI = server_api.NewExecutionServerAPI(arbSpawner, arbSpawner, arbConfigFetcher)
+		serverAPI = NewExecutionServerAPI(arbSpawner, arbSpawner, arbConfigFetcher)
+	}
+	var redisConsumer *redis.ValidationServer
+	redisValidationConfig := arbConfigFetcher().RedisValidationServerConfig
+	if redisValidationConfig.Enabled() {
+		redisConsumer, err = redis.NewValidationServer(&redisValidationConfig, arbSpawner)
+		if err != nil {
+			log.Error("Creating new redis validation server", "error", err)
+		}
 	}
 	valAPIs := []rpc.API{{
 		Namespace:     server_api.Namespace,
@@ -125,7 +136,7 @@ func CreateValidationNode(configFetcher ValidationConfigFetcher, stack *node.Nod
 	}}
 	stack.RegisterAPIs(valAPIs)
 
-	return &ValidationNode{configFetcher, arbSpawner, jitSpawner}, nil
+	return &ValidationNode{configFetcher, arbSpawner, jitSpawner, redisConsumer}, nil
 }
 
 func (v *ValidationNode) Start(ctx context.Context) error {
@@ -136,6 +147,9 @@ func (v *ValidationNode) Start(ctx context.Context) error {
 		if err := v.jitSpawner.Start(ctx); err != nil {
 			return err
 		}
+	}
+	if v.redisConsumer != nil {
+		v.redisConsumer.Start(ctx)
 	}
 	return nil
 }

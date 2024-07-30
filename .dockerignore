@@ -9,6 +9,7 @@ go-ethereum/tests
 **/*.yml
 contracts/build
 contracts/cache/
+safe-smart-account/build/
 solgen/go
 **/node_modules
 
@@ -22,10 +23,21 @@ brotli/buildfiles/**/*
 nitro-testnode/**/*
 
 # Arbitrator ignores
+arbitrator/tools/module_roots
+arbitrator/tools/pricer
 
 # Rust outputs
 arbitrator/target/**/*
 arbitrator/target
+arbitrator/stylus/tests/*/target/
+arbitrator/wasm-testsuite/target/
+arbitrator/wasm-libraries/target/
+arbitrator/tools/wasmer/target/
+arbitrator/tools/wasm-tools/
+arbitrator/tools/pricers/
+arbitrator/tools/module_roots/
+arbitrator/langs/rust/target/
+arbitrator/langs/bf/target/
 
 # Compiled files
 **/*.o

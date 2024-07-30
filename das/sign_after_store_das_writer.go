@@ -6,7 +6,6 @@ package das
 import (
 	"bytes"
 	"context"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
@@ -15,14 +14,11 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common/hexutil"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/das/dastree"
-	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
-	"github.com/offchainlabs/nitro/util/contracts"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
 
@@ -67,22 +63,12 @@ func KeyConfigAddOptions(prefix string, f *flag.FlagSet) {
 //
 // 1) SignAfterStoreDASWriter.Store(...) assembles the returned hash into a
 // DataAvailabilityCertificate and signs it with its BLS private key.
-//
-// 2) If Sequencer Inbox contract details are provided when a SignAfterStoreDASWriter is
-// constructed, calls to Store(...) will try to verify the passed-in data's signature
-// is from the batch poster. If the contract details are not provided, then the
-// signature is not checked, which is useful for testing.
 type SignAfterStoreDASWriter struct {
 	privKey        blsSignatures.PrivateKey
 	pubKey         *blsSignatures.PublicKey
 	keysetHash     [32]byte
 	keysetBytes    []byte
 	storageService StorageService
-	addrVerifier   *contracts.AddressVerifier
-
-	// Extra batch poster verifier, for local installations to have their
-	// own way of testing Stores.
-	extraBpVerifier func(message []byte, timeout uint64, sig []byte) bool
 }
 
 func NewSignAfterStoreDASWriter(ctx context.Context, config DataAvailabilityConfig, storageService StorageService) (*SignAfterStoreDASWriter, error) {
@@ -90,40 +76,13 @@ func NewSignAfterStoreDASWriter(ctx context.Context, config DataAvailabilityConf
 	if err != nil {
 		return nil, err
 	}
-	if config.ParentChainNodeURL == "none" {
-		return NewSignAfterStoreDASWriterWithSeqInboxCaller(privKey, nil, storageService, config.ExtraSignatureCheckingPublicKey)
-	}
-	l1client, err := GetL1Client(ctx, config.ParentChainConnectionAttempts, config.ParentChainNodeURL)
-	if err != nil {
-		return nil, err
-	}
-	seqInboxAddress, err := OptionalAddressFromString(config.SequencerInboxAddress)
-	if err != nil {
-		return nil, err
-	}
-	if seqInboxAddress == nil {
-		return NewSignAfterStoreDASWriterWithSeqInboxCaller(privKey, nil, storageService, config.ExtraSignatureCheckingPublicKey)
-	}
 
-	seqInboxCaller, err := bridgegen.NewSequencerInboxCaller(*seqInboxAddress, l1client)
-	if err != nil {
-		return nil, err
-	}
-	return NewSignAfterStoreDASWriterWithSeqInboxCaller(privKey, seqInboxCaller, storageService, config.ExtraSignatureCheckingPublicKey)
-}
-
-func NewSignAfterStoreDASWriterWithSeqInboxCaller(
-	privKey blsSignatures.PrivateKey,
-	seqInboxCaller *bridgegen.SequencerInboxCaller,
-	storageService StorageService,
-	extraSignatureCheckingPublicKey string,
-) (*SignAfterStoreDASWriter, error) {
 	publicKey, err := blsSignatures.PublicKeyFromPrivateKey(privKey)
 	if err != nil {
 		return nil, err
 	}
 
-	keyset := &arbstate.DataAvailabilityKeyset{
+	keyset := &daprovider.DataAvailabilityKeyset{
 		AssumedHonest: 1,
 		PubKeys:       []blsSignatures.PublicKey{publicKey},
 	}
@@ -136,72 +95,18 @@ func NewSignAfterStoreDASWriterWithSeqInboxCaller(
 		return nil, err
 	}
 
-	var addrVerifier *contracts.AddressVerifier
-	if seqInboxCaller != nil {
-		addrVerifier = contracts.NewAddressVerifier(seqInboxCaller)
-	}
-
-	var extraBpVerifier func(message []byte, timeout uint64, sig []byte) bool
-	if extraSignatureCheckingPublicKey != "" {
-		var pubkey []byte
-		if extraSignatureCheckingPublicKey[:2] == "0x" {
-			pubkey, err = hex.DecodeString(extraSignatureCheckingPublicKey[2:])
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			pubkeyEncoded, err := os.ReadFile(extraSignatureCheckingPublicKey)
-			if err != nil {
-				return nil, err
-			}
-			pubkey, err = hex.DecodeString(string(pubkeyEncoded))
-			if err != nil {
-				return nil, err
-			}
-		}
-		extraBpVerifier = func(message []byte, timeout uint64, sig []byte) bool {
-			if len(sig) >= 64 {
-				return crypto.VerifySignature(pubkey, dasStoreHash(message, timeout), sig[:64])
-			}
-			return false
-		}
-	}
-
 	return &SignAfterStoreDASWriter{
-		privKey:         privKey,
-		pubKey:          &publicKey,
-		keysetHash:      ksHash,
-		keysetBytes:     ksBuf.Bytes(),
-		storageService:  storageService,
-		addrVerifier:    addrVerifier,
-		extraBpVerifier: extraBpVerifier,
+		privKey:        privKey,
+		pubKey:         &publicKey,
+		keysetHash:     ksHash,
+		keysetBytes:    ksBuf.Bytes(),
+		storageService: storageService,
 	}, nil
 }
 
-func (d *SignAfterStoreDASWriter) Store(
-	ctx context.Context, message []byte, timeout uint64, sig []byte,
-) (c *arbstate.DataAvailabilityCertificate, err error) {
-	log.Trace("das.SignAfterStoreDASWriter.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig), "this", d)
-	var verified bool
-	if d.extraBpVerifier != nil {
-		verified = d.extraBpVerifier(message, timeout, sig)
-	}
-
-	if !verified && d.addrVerifier != nil {
-		actualSigner, err := DasRecoverSigner(message, timeout, sig)
-		if err != nil {
-			return nil, err
-		}
-		isBatchPosterOrSequencer, err := d.addrVerifier.IsBatchPosterOrSequencer(ctx, actualSigner)
-		if err != nil {
-			return nil, err
-		}
-		if !isBatchPosterOrSequencer {
-			return nil, errors.New("store request not properly signed")
-		}
-	}
-
-	c = &arbstate.DataAvailabilityCertificate{
+func (d *SignAfterStoreDASWriter) Store(ctx context.Context, message []byte, timeout uint64) (c *daprovider.DataAvailabilityCertificate, err error) {
+	log.Trace("das.SignAfterStoreDASWriter.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "this", d)
+	c = &daprovider.DataAvailabilityCertificate{
 		Timeout:     timeout,
 		DataHash:    dastree.Hash(message),
 		Version:     1,

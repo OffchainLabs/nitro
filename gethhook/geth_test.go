@@ -110,7 +110,7 @@ func TestEthDepositMessage(t *testing.T) {
 
 	RunMessagesThroughAPI(t, [][]byte{serialized, serialized2}, statedb)
 
-	balanceAfter := statedb.GetBalance(addr)
+	balanceAfter := statedb.GetBalance(addr).ToBig()
 	if balanceAfter.Cmp(new(big.Int).Add(balance.Big(), balance2.Big())) != 0 {
 		Fail(t)
 	}
@@ -123,7 +123,7 @@ func RunMessagesThroughAPI(t *testing.T, msgs [][]byte, statedb *state.StateDB) 
 		if err != nil {
 			t.Error(err)
 		}
-		txes, err := arbos.ParseL2Transactions(msg, chainId, nil)
+		txes, err := arbos.ParseL2Transactions(msg, chainId)
 		if err != nil {
 			t.Error(err)
 		}

@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"math/rand"
 	"os"
 	"strconv"
@@ -15,10 +16,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/blsSignatures"
 
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/arbstate"
 )
 
 func TestDAS_BasicAggregationLocal(t *testing.T) {
@@ -53,7 +54,7 @@ func TestDAS_BasicAggregationLocal(t *testing.T) {
 	Require(t, err)
 
 	rawMsg := []byte("It's time for you to see the fnords.")
-	cert, err := aggregator.Store(ctx, rawMsg, 0, []byte{})
+	cert, err := aggregator.Store(ctx, rawMsg, 0)
 	Require(t, err, "Error storing message")
 
 	for _, storageService := range storageServices {
@@ -122,17 +123,17 @@ type WrapStore struct {
 	DataAvailabilityServiceWriter
 }
 
-func (w *WrapStore) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
+func (w *WrapStore) Store(ctx context.Context, message []byte, timeout uint64) (*daprovider.DataAvailabilityCertificate, error) {
 	switch w.injector.shouldFail() {
 	case success:
-		return w.DataAvailabilityServiceWriter.Store(ctx, message, timeout, sig)
+		return w.DataAvailabilityServiceWriter.Store(ctx, message, timeout)
 	case immediateError:
 		return nil, errors.New("expected Store failure")
 	case tooSlow:
 		<-ctx.Done()
 		return nil, ctx.Err()
 	case dataCorruption:
-		cert, err := w.DataAvailabilityServiceWriter.Store(ctx, message, timeout, sig)
+		cert, err := w.DataAvailabilityServiceWriter.Store(ctx, message, timeout)
 		if err != nil {
 			return nil, err
 		}
@@ -158,9 +159,10 @@ func min(a, b int) int {
 }
 
 func enableLogging() {
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
-	glogger.Verbosity(log.LvlTrace)
-	log.Root().SetHandler(glogger)
+	glogger := log.NewGlogHandler(
+		log.NewTerminalHandler(io.Writer(os.Stderr), false))
+	glogger.Verbosity(log.LevelTrace)
+	log.SetDefault(log.NewLogger(glogger))
 }
 
 func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
@@ -212,7 +214,7 @@ func testConfigurableStorageFailures(t *testing.T, shouldFailAggregation bool) {
 	Require(t, err)
 
 	rawMsg := []byte("It's time for you to see the fnords.")
-	cert, err := aggregator.Store(ctx, rawMsg, 0, []byte{})
+	cert, err := aggregator.Store(ctx, rawMsg, 0)
 	if !shouldFailAggregation {
 		Require(t, err, "Error storing message")
 	} else {

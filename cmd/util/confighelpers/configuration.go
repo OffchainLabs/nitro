@@ -92,14 +92,49 @@ func applyOverrideOverrides(f *flag.FlagSet, k *koanf.Koanf) error {
 	return nil
 }
 
+var envvarsToSplitOnComma map[string]any = map[string]any{
+	"auth.api":                              struct{}{},
+	"auth.origins":                          struct{}{},
+	"chain.info-files":                      struct{}{},
+	"conf.file":                             struct{}{},
+	"execution.secondary-forwarding-target": struct{}{},
+	"graphql.corsdomain":                    struct{}{},
+	"graphql.vhosts":                        struct{}{},
+	"http.api":                              struct{}{},
+	"http.corsdomain":                       struct{}{},
+	"http.vhosts":                           struct{}{},
+	"node.data-availability.rest-aggregator.urls":                       struct{}{},
+	"node.feed.input.secondary-url":                                     struct{}{},
+	"node.feed.input.url":                                               struct{}{},
+	"node.feed.input.verify.allowed-addresses":                          struct{}{},
+	"node.seq-coordinator.signer.ecdsa.allowed-addresses":               struct{}{},
+	"p2p.bootnodes":                                                     struct{}{},
+	"p2p.bootnodes-v5":                                                  struct{}{},
+	"validation.api-auth":                                               struct{}{},
+	"validation.arbitrator.redis-validation-server-config.module-roots": struct{}{},
+	"validation.wasm.allowed-wasm-module-roots":                         struct{}{},
+	"ws.api":     struct{}{},
+	"ws.origins": struct{}{},
+}
+
 func loadEnvironmentVariables(k *koanf.Koanf) error {
 	envPrefix := k.String("conf.env-prefix")
 	if len(envPrefix) != 0 {
-		return k.Load(env.Provider(envPrefix+"_", ".", func(s string) string {
+		return k.Load(env.ProviderWithValue(envPrefix+"_", ".", func(key string, v string) (string, interface{}) {
 			// FOO__BAR -> foo-bar to handle dash in config names
-			s = strings.ReplaceAll(strings.ToLower(
-				strings.TrimPrefix(s, envPrefix+"_")), "__", "-")
-			return strings.ReplaceAll(s, "_", ".")
+			key = strings.ReplaceAll(strings.ToLower(
+				strings.TrimPrefix(key, envPrefix+"_")), "__", "-")
+			key = strings.ReplaceAll(key, "_", ".")
+
+			if _, found := envvarsToSplitOnComma[key]; found {
+				// If there are commas in the value, split the value into a slice.
+				if strings.Contains(v, ",") {
+					return key, strings.Split(v, ",")
+
+				}
+			}
+
+			return key, v
 		}), nil)
 	}
 

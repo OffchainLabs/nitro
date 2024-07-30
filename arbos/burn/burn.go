@@ -13,6 +13,8 @@ import (
 type Burner interface {
 	Burn(amount uint64) error
 	Burned() uint64
+	GasLeft() *uint64 // `SystemBurner`s panic (no notion of GasLeft)
+	BurnOut() error
 	Restrict(err error)
 	HandleError(err error) error
 	ReadOnly() bool
@@ -39,6 +41,14 @@ func (burner *SystemBurner) Burn(amount uint64) error {
 
 func (burner *SystemBurner) Burned() uint64 {
 	return burner.gasBurnt
+}
+
+func (burner *SystemBurner) BurnOut() error {
+	panic("called BurnOut on a system burner")
+}
+
+func (burner *SystemBurner) GasLeft() *uint64 {
+	panic("called GasLeft on a system burner")
 }
 
 func (burner *SystemBurner) Restrict(err error) {

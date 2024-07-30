@@ -19,6 +19,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter/redis"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/slice"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
+	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -44,7 +45,7 @@ func newLevelDBStorage(t *testing.T, encF storage.EncoderDecoderF) *dbstorage.St
 
 func newPebbleDBStorage(t *testing.T, encF storage.EncoderDecoderF) *dbstorage.Storage {
 	t.Helper()
-	db, err := rawdb.NewPebbleDBDatabase(path.Join(t.TempDir(), "pebble.db"), 0, 0, "default", false)
+	db, err := rawdb.NewPebbleDBDatabase(path.Join(t.TempDir(), "pebble.db"), 0, 0, "default", false, true, conf.PersistentConfigDefault.Pebble.ExtraOptions("pebble"))
 	if err != nil {
 		t.Fatalf("NewPebbleDBDatabase() unexpected error: %v", err)
 	}
@@ -84,7 +85,7 @@ func valueOf(t *testing.T, i int) *storage.QueuedTransaction {
 			big.NewInt(int64(i)),
 			[]byte{byte(i)}),
 		Meta: meta,
-		Data: types.DynamicFeeTx{
+		DeprecatedData: types.DynamicFeeTx{
 			ChainID:    big.NewInt(int64(i)),
 			Nonce:      uint64(i),
 			GasTipCap:  big.NewInt(int64(i)),

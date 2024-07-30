@@ -27,7 +27,7 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 	Require(t, err)
 	seqOpts := builder.L1Info.GetDefaultTransactOpts("Sequencer", ctx)
 
-	tx, err := seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(1), nil, big.NewInt(1), common.Address{})
+	tx, err := seqInbox.AddSequencerL2BatchFromOrigin8f111f3c(&seqOpts, big.NewInt(1), nil, big.NewInt(1), common.Address{}, common.Big0, common.Big0)
 	Require(t, err)
 	batchReceipt, err := builder.L1.EnsureTxSucceeded(tx)
 	Require(t, err)
@@ -62,6 +62,8 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 		builder.L1.TransferBalance(t, "Faucet", "Faucet", common.Big1, builder.L1Info)
 	}
 
+	compareAllMsgResultsFromConsensusAndExecution(t, builder.L2, "before reorg")
+
 	parentBlock := builder.L1.L1Backend.BlockChain().GetBlockByNumber(batchReceipt.BlockNumber.Uint64() - 1)
 	err = builder.L1.L1Backend.BlockChain().ReorgToOldBlock(parentBlock)
 	Require(t, err)
@@ -69,7 +71,7 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 	// Produce a new l1Block so that the batch ends up in a different l1Block than before
 	builder.L1.TransferBalance(t, "User", "User", common.Big1, builder.L1Info)
 
-	tx, err = seqInbox.AddSequencerL2BatchFromOrigin(&seqOpts, big.NewInt(1), nil, big.NewInt(1), common.Address{})
+	tx, err = seqInbox.AddSequencerL2BatchFromOrigin8f111f3c(&seqOpts, big.NewInt(1), nil, big.NewInt(1), common.Address{}, common.Big0, common.Big0)
 	Require(t, err)
 	newBatchReceipt, err := builder.L1.EnsureTxSucceeded(tx)
 	Require(t, err)
@@ -95,7 +97,7 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 		time.Sleep(10 * time.Millisecond)
 	}
 
-	_, err = builder.L2.ConsensusNode.InboxReader.GetSequencerMessageBytes(ctx, 1)
+	_, _, err = builder.L2.ConsensusNode.InboxReader.GetSequencerMessageBytes(ctx, 1)
 	Require(t, err)
 
 	l2Header, err := builder.L2.Client.HeaderByNumber(ctx, l2Receipt.BlockNumber)
@@ -104,4 +106,6 @@ func TestMeaninglessBatchReorg(t *testing.T) {
 	if l2Header.Hash() != l2Receipt.BlockHash {
 		Fatal(t, "L2 block hash changed")
 	}
+
+	compareAllMsgResultsFromConsensusAndExecution(t, builder.L2, "after reorg")
 }
