@@ -123,8 +123,6 @@ func (bd *BidderClient) Bid(
 	if err != nil {
 		return nil, err
 	}
-	fmt.Println("Packed bid bytes locally")
-	fmt.Printf("%#x\n", packedBidBytes)
 	sig, err := sign(packedBidBytes, bd.privKey)
 	if err != nil {
 		return nil, err

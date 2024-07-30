@@ -149,9 +149,7 @@ func encodeBidValues(domainValue []byte, chainId uint64, auctionContractAddress 
 
 	// Encode uint256 values - each occupies 32 bytes
 	buf.Write(domainValue)
-	chainIdBuf := make([]byte, 8)
-	binary.BigEndian.PutUint64(chainIdBuf, chainId)
-	buf.Write(chainIdBuf)
+	buf.Write(padBigInt(new(big.Int).SetUint64(chainId)))
 	buf.Write(auctionContractAddress[:])
 	roundBuf := make([]byte, 8)
 	binary.BigEndian.PutUint64(roundBuf, round)

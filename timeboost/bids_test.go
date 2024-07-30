@@ -2,11 +2,9 @@ package timeboost
 
 import (
 	"context"
-	"fmt"
 	"math/big"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -120,15 +118,9 @@ func TestReceiveBid_OK(t *testing.T) {
 	newBid, err := bc.Bid(ctx, big.NewInt(5), testSetup.accounts[0].txOpts.From)
 	require.NoError(t, err)
 
-	rawBytes, err := testSetup.expressLaneAuction.GetBidBytes(&bind.CallOpts{}, newBid.Round, newBid.Amount, newBid.ExpressLaneController)
-	require.NoError(t, err)
-	fmt.Println("Onchain bytes")
-	fmt.Printf("%#x\n", rawBytes)
-
 	// Check the bid passes validation.
 	_, err = am.validateBid(newBid)
 	require.NoError(t, err)
-	t.Fatal(1)
 }
 
 // func TestTopTwoBids(t *testing.T) {

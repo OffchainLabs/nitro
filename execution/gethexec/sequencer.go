@@ -566,9 +566,12 @@ func (s *Sequencer) publishTransactionImpl(parentCtx context.Context, tx *types.
 }
 
 func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *timeboost.ExpressLaneSubmission) error {
+	log.Info("Got the express lane tx in sequencer")
 	if err := s.expressLaneService.validateExpressLaneTx(msg); err != nil {
+		log.Error("Express lane tx validation failed", "err", err)
 		return err
 	}
+	log.Info("Yay the tx verification passed in sequencer")
 	return s.publishTransactionImpl(ctx, msg.Transaction, nil, false /* no delay, as this is an express lane tx */)
 }
 

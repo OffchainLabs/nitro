@@ -320,6 +320,7 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 		auctionAddr,
 		seqDial,
 	)
+	expressLaneClient.StopWaiter.Start(ctx, expressLaneClient)
 
 	// During the express lane around, Bob sends txs always 150ms later than Alice, but Alice's
 	// txs end up getting delayed by 200ms as she is not the express lane controller.
@@ -337,11 +338,12 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	go func(w *sync.WaitGroup) {
 		defer w.Done()
 		time.Sleep(time.Millisecond * 10)
-		res := expressLaneClient.SendTransaction(ctx, bobBoostableTx)
-		_, err = res.Await(ctx)
+		err = expressLaneClient.SendTransaction(ctx, bobBoostableTx)
 		Require(t, err)
 	}(&wg)
 	wg.Wait()
+
+	time.Sleep(time.Minute)
 
 	// After round is done, verify that Bob beats Alice in the final sequence.
 	aliceReceipt, err := seqClient.TransactionReceipt(ctx, aliceTx.Hash())

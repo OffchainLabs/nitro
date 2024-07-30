@@ -6,6 +6,7 @@ import (
 	"encoding/binary"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 )
@@ -25,11 +26,12 @@ type JsonBid struct {
 }
 
 type JsonExpressLaneSubmission struct {
-	ChainId                uint64             `json:"chainId"`
-	Round                  uint64             `json:"round"`
-	AuctionContractAddress common.Address     `json:"auctionContractAddress"`
-	Transaction            *types.Transaction `json:"transaction"`
-	Signature              string             `json:"signature"`
+	ChainId                uint64                             `json:"chainId"`
+	Round                  uint64                             `json:"round"`
+	AuctionContractAddress common.Address                     `json:"auctionContractAddress"`
+	Transaction            *types.Transaction                 `json:"transaction"`
+	Options                *arbitrum_types.ConditionalOptions `json:"options"`
+	Signature              string                             `json:"signature"`
 }
 
 type ExpressLaneSubmission struct {
@@ -37,6 +39,7 @@ type ExpressLaneSubmission struct {
 	Round                  uint64
 	AuctionContractAddress common.Address
 	Transaction            *types.Transaction
+	Options                *arbitrum_types.ConditionalOptions `json:"options"`
 	Signature              []byte
 }
 
@@ -46,7 +49,19 @@ func JsonSubmissionToGo(submission *JsonExpressLaneSubmission) *ExpressLaneSubmi
 		Round:                  submission.Round,
 		AuctionContractAddress: submission.AuctionContractAddress,
 		Transaction:            submission.Transaction,
+		Options:                submission.Options,
 		Signature:              common.Hex2Bytes(submission.Signature),
+	}
+}
+
+func (els *ExpressLaneSubmission) ToJson() *JsonExpressLaneSubmission {
+	return &JsonExpressLaneSubmission{
+		ChainId:                els.ChainId,
+		Round:                  els.Round,
+		AuctionContractAddress: els.AuctionContractAddress,
+		Transaction:            els.Transaction,
+		Options:                els.Options,
+		Signature:              common.Bytes2Hex(els.Signature),
 	}
 }
 

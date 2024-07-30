@@ -157,8 +157,24 @@ func (f *TxForwarder) PublishTransaction(inctx context.Context, tx *types.Transa
 	return errors.New("failed to publish transaction to any of the forwarding targets")
 }
 
-func (f *TxForwarder) PublishExpressLaneTransaction(ctx context.Context, msg *timeboost.ExpressLaneSubmission) error {
-	return nil
+func (f *TxForwarder) PublishExpressLaneTransaction(inctx context.Context, msg *timeboost.ExpressLaneSubmission) error {
+	if !f.enabled.Load() {
+		return ErrNoSequencer
+	}
+	ctx, cancelFunc := f.ctxWithTimeout()
+	defer cancelFunc()
+	for pos, rpcClient := range f.rpcClients {
+		err := sendExpressLaneTransactionRPC(ctx, rpcClient, msg)
+		if err == nil || !f.tryNewForwarderErrors.MatchString(err.Error()) {
+			return err
+		}
+		log.Warn("error forwarding transaction to a backup target", "target", f.targets[pos], "err", err)
+	}
+	return errors.New("failed to publish transaction to any of the forwarding targets")
+}
+
+func sendExpressLaneTransactionRPC(ctx context.Context, rpcClient *rpc.Client, msg *timeboost.ExpressLaneSubmission) error {
+	return rpcClient.CallContext(ctx, nil, "timeboost_sendExpressLaneTransaction", msg.ToJson())
 }
 
 const cacheUpstreamHealth = 2 * time.Second

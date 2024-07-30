@@ -12,7 +12,6 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/secp256k1"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -44,26 +43,28 @@ func NewExpressLaneClient(
 	}
 }
 
-func (elc *ExpressLaneClient) SendTransaction(ctx context.Context, transaction *types.Transaction) containers.PromiseInterface[struct{}] {
-	return stopwaiter.LaunchPromiseThread(elc, func(ctx context.Context) (struct{}, error) {
-		msg := &ExpressLaneSubmission{
-			ChainId:                elc.chainId,
-			Round:                  CurrentRound(elc.initialRoundTimestamp, elc.roundDuration),
-			AuctionContractAddress: elc.auctionContractAddr,
-			Transaction:            transaction,
-		}
-		signingMsg, err := msg.ToMessageBytes()
-		if err != nil {
-			return struct{}{}, err
-		}
-		signature, err := signSubmission(signingMsg, elc.privKey)
-		if err != nil {
-			return struct{}{}, err
-		}
-		msg.Signature = signature
-		err = elc.client.CallContext(ctx, nil, "timeboost_sendExpressLaneTransaction", msg)
-		return struct{}{}, err
-	})
+func (elc *ExpressLaneClient) SendTransaction(ctx context.Context, transaction *types.Transaction) error {
+	// return stopwaiter.LaunchPromiseThread(elc, func(ctx context.Context) (struct{}, error) {
+	msg := &JsonExpressLaneSubmission{
+		ChainId:                elc.chainId,
+		Round:                  CurrentRound(elc.initialRoundTimestamp, elc.roundDuration),
+		AuctionContractAddress: elc.auctionContractAddr,
+		Transaction:            transaction,
+		Signature:              "00",
+	}
+	msgGo := JsonSubmissionToGo(msg)
+	signingMsg, err := msgGo.ToMessageBytes()
+	if err != nil {
+		return err
+	}
+	signature, err := signSubmission(signingMsg, elc.privKey)
+	if err != nil {
+		return err
+	}
+	msg.Signature = fmt.Sprintf("%x", signature)
+	fmt.Println("Right here before we send the express lane tx")
+	err = elc.client.CallContext(ctx, nil, "timeboost_sendExpressLaneTransaction", msg)
+	return err
 }
 
 func signSubmission(message []byte, key *ecdsa.PrivateKey) ([]byte, error) {
