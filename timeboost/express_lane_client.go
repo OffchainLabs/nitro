@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/ecdsa"
 	"fmt"
+	"math/big"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -18,7 +20,7 @@ import (
 type ExpressLaneClient struct {
 	stopwaiter.StopWaiter
 	privKey               *ecdsa.PrivateKey
-	chainId               uint64
+	chainId               *big.Int
 	initialRoundTimestamp time.Time
 	roundDuration         time.Duration
 	auctionContractAddr   common.Address
@@ -27,7 +29,7 @@ type ExpressLaneClient struct {
 
 func NewExpressLaneClient(
 	privKey *ecdsa.PrivateKey,
-	chainId uint64,
+	chainId *big.Int,
 	initialRoundTimestamp time.Time,
 	roundDuration time.Duration,
 	auctionContractAddr common.Address,
@@ -45,14 +47,21 @@ func NewExpressLaneClient(
 
 func (elc *ExpressLaneClient) SendTransaction(ctx context.Context, transaction *types.Transaction) error {
 	// return stopwaiter.LaunchPromiseThread(elc, func(ctx context.Context) (struct{}, error) {
-	msg := &JsonExpressLaneSubmission{
-		ChainId:                elc.chainId,
-		Round:                  CurrentRound(elc.initialRoundTimestamp, elc.roundDuration),
-		AuctionContractAddress: elc.auctionContractAddr,
-		Transaction:            transaction,
-		Signature:              "00",
+	encodedTx, err := transaction.MarshalBinary()
+	if err != nil {
+		return err
 	}
-	msgGo := JsonSubmissionToGo(msg)
+	msg := &JsonExpressLaneSubmission{
+		ChainId:                (*hexutil.Big)(elc.chainId),
+		Round:                  hexutil.Uint64(CurrentRound(elc.initialRoundTimestamp, elc.roundDuration)),
+		AuctionContractAddress: elc.auctionContractAddr,
+		Transaction:            encodedTx,
+		Signature:              hexutil.Bytes{},
+	}
+	msgGo, err := JsonSubmissionToGo(msg)
+	if err != nil {
+		return err
+	}
 	signingMsg, err := msgGo.ToMessageBytes()
 	if err != nil {
 		return err
@@ -61,8 +70,7 @@ func (elc *ExpressLaneClient) SendTransaction(ctx context.Context, transaction *
 	if err != nil {
 		return err
 	}
-	msg.Signature = fmt.Sprintf("%x", signature)
-	fmt.Println("Right here before we send the express lane tx")
+	msg.Signature = signature
 	err = elc.client.CallContext(ctx, nil, "timeboost_sendExpressLaneTransaction", msg)
 	return err
 }

@@ -163,9 +163,8 @@ func (es *expressLaneService) validateExpressLaneTx(msg *timeboost.ExpressLaneSu
 	if !es.currentRoundHasController() {
 		return timeboost.ErrNoOnchainController
 	}
-	// TODO: Careful with chain id not being uint64.
-	if msg.ChainId != es.chainConfig.ChainID.Uint64() {
-		return errors.Wrapf(timeboost.ErrWrongChainId, "express lane tx chain ID %d does not match current chain ID %d", msg.ChainId, es.chainConfig.ChainID.Uint64())
+	if msg.ChainId.Cmp(es.chainConfig.ChainID) != 0 {
+		return errors.Wrapf(timeboost.ErrWrongChainId, "express lane tx chain ID %d does not match current chain ID %d", msg.ChainId, es.chainConfig.ChainID)
 	}
 	currentRound := timeboost.CurrentRound(es.initialTimestamp, es.roundDuration)
 	if msg.Round != currentRound {

@@ -44,7 +44,11 @@ func (a *ArbInterface) PublishTransaction(ctx context.Context, tx *types.Transac
 }
 
 func (a *ArbInterface) PublishExpressLaneTransaction(ctx context.Context, msg *timeboost.JsonExpressLaneSubmission) error {
-	return a.txPublisher.PublishExpressLaneTransaction(ctx, timeboost.JsonSubmissionToGo(msg))
+	goMsg, err := timeboost.JsonSubmissionToGo(msg)
+	if err != nil {
+		return err
+	}
+	return a.txPublisher.PublishExpressLaneTransaction(ctx, goMsg)
 }
 
 // might be used before Initialize

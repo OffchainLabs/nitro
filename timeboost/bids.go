@@ -29,7 +29,7 @@ var (
 )
 
 type Bid struct {
-	ChainId                uint64
+	ChainId                *big.Int
 	ExpressLaneController  common.Address
 	Bidder                 common.Address
 	AuctionContractAddress common.Address
@@ -43,7 +43,7 @@ type validatedBid struct {
 	amount                *big.Int
 	signature             []byte
 	// For tie breaking
-	chainId                uint64
+	chainId                *big.Int
 	auctionContractAddress common.Address
 	round                  uint64
 	bidder                 common.Address
@@ -112,14 +112,11 @@ func (bc *bidCache) topTwoBids() *auctionResult {
 
 // hashBid hashes the bidder address concatenated with the respective byte-string representation of the bid using the Keccak256 hashing scheme.
 func hashBid(bid *validatedBid) string {
-	chainIdBytes := make([]byte, 8)
-	binary.BigEndian.PutUint64(chainIdBytes, bid.chainId)
+	// Concatenate the bidder address and the byte representation of the bid
+	data := append(bid.bidder.Bytes(), padBigInt(bid.chainId)...)
+	data = append(data, bid.auctionContractAddress.Bytes()...)
 	roundBytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(roundBytes, bid.round)
-
-	// Concatenate the bidder address and the byte representation of the bid
-	data := append(bid.bidder.Bytes(), chainIdBytes...)
-	data = append(data, bid.auctionContractAddress.Bytes()...)
 	data = append(data, roundBytes...)
 	data = append(data, bid.amount.Bytes()...)
 	data = append(data, bid.expressLaneController.Bytes()...)
@@ -144,12 +141,12 @@ func padBigInt(bi *big.Int) []byte {
 	return padded
 }
 
-func encodeBidValues(domainValue []byte, chainId uint64, auctionContractAddress common.Address, round uint64, amount *big.Int, expressLaneController common.Address) ([]byte, error) {
+func encodeBidValues(domainValue []byte, chainId *big.Int, auctionContractAddress common.Address, round uint64, amount *big.Int, expressLaneController common.Address) ([]byte, error) {
 	buf := new(bytes.Buffer)
 
 	// Encode uint256 values - each occupies 32 bytes
 	buf.Write(domainValue)
-	buf.Write(padBigInt(new(big.Int).SetUint64(chainId)))
+	buf.Write(padBigInt(chainId))
 	buf.Write(auctionContractAddress[:])
 	roundBuf := make([]byte, 8)
 	binary.BigEndian.PutUint64(roundBuf, round)

@@ -96,8 +96,8 @@ var DefaultTimeboostConfig = TimeboostConfig{
 	Enable:                 false,
 	AuctionContractAddress: "",
 	ERC20Address:           "",
-	ExpressLaneAdvantage:   time.Millisecond * 200,
-	RoundDuration:          time.Second,
+	ExpressLaneAdvantage:   time.Millisecond * 250,
+	RoundDuration:          time.Minute,
 	InitialRoundTimestamp:  uint64(time.Unix(0, 0).Unix()),
 }
 
@@ -1202,7 +1202,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 func (s *Sequencer) StartExpressLaneService(
 	ctx context.Context, initialTimestamp uint64, auctionContractAddr common.Address,
 ) {
-	if s.config().Timeboost.Enable {
+	if !s.config().Timeboost.Enable {
 		return
 	}
 	els, err := newExpressLaneService(

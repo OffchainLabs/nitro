@@ -45,7 +45,11 @@ func NewArbTimeboostAPI(publisher TransactionPublisher) *ArbTimeboostAPI {
 }
 
 func (a *ArbTimeboostAPI) SendExpressLaneTransaction(ctx context.Context, msg *timeboost.JsonExpressLaneSubmission) error {
-	return a.txPublisher.PublishExpressLaneTransaction(ctx, timeboost.JsonSubmissionToGo(msg))
+	goMsg, err := timeboost.JsonSubmissionToGo(msg)
+	if err != nil {
+		return err
+	}
+	return a.txPublisher.PublishExpressLaneTransaction(ctx, goMsg)
 }
 
 type ArbDebugAPI struct {

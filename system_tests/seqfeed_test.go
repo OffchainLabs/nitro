@@ -283,7 +283,7 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	stack, err := node.New(&stackConf)
 	Require(t, err)
 	auctioneer, err := timeboost.NewAuctioneer(
-		&auctionContractOpts, []uint64{chainId.Uint64()}, stack, seqClient, auctionContract,
+		&auctionContractOpts, []*big.Int{chainId}, stack, seqClient, auctionContract,
 	)
 	Require(t, err)
 
@@ -390,7 +390,7 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	Require(t, err)
 	expressLaneClient := timeboost.NewExpressLaneClient(
 		bobPriv,
-		chainId.Uint64(),
+		chainId,
 		time.Unix(int64(info.OffsetTimestamp), 0),
 		roundDuration,
 		proxyAddr,

@@ -38,7 +38,7 @@ type AuctioneerOpt func(*Auctioneer)
 // Spec: https://github.com/OffchainLabs/timeboost-design/tree/main
 type Auctioneer struct {
 	txOpts                    *bind.TransactOpts
-	chainId                   []uint64 // Auctioneer could handle auctions on multiple chains.
+	chainId                   []*big.Int // Auctioneer could handle auctions on multiple chains.
 	domainValue               []byte
 	client                    Client
 	auctionContract           *express_lane_auctiongen.ExpressLaneAuction
@@ -68,7 +68,7 @@ func EnsureValidationExposedViaAuthRPC(stackConf *node.Config) {
 // NewAuctioneer creates a new autonomous auctioneer struct.
 func NewAuctioneer(
 	txOpts *bind.TransactOpts,
-	chainId []uint64,
+	chainId []*big.Int,
 	stack *node.Node,
 	client Client,
 	auctionContract *express_lane_auctiongen.ExpressLaneAuction,
@@ -243,7 +243,7 @@ func (a *Auctioneer) validateBid(bid *Bid) (*validatedBid, error) {
 	// Check if the chain ID is valid.
 	chainIdOk := false
 	for _, id := range a.chainId {
-		if bid.ChainId == id {
+		if bid.ChainId.Cmp(id) == 0 {
 			chainIdOk = true
 			break
 		}

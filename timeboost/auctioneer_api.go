@@ -8,6 +8,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 )
 
@@ -16,26 +17,26 @@ type AuctioneerAPI struct {
 }
 
 type JsonBid struct {
-	ChainId                uint64         `json:"chainId"`
+	ChainId                *hexutil.Big   `json:"chainId"`
 	ExpressLaneController  common.Address `json:"expressLaneController"`
 	Bidder                 common.Address `json:"bidder"`
 	AuctionContractAddress common.Address `json:"auctionContractAddress"`
-	Round                  uint64         `json:"round"`
-	Amount                 *big.Int       `json:"amount"`
-	Signature              string         `json:"signature"`
+	Round                  hexutil.Uint64 `json:"round"`
+	Amount                 *hexutil.Big   `json:"amount"`
+	Signature              hexutil.Bytes  `json:"signature"`
 }
 
 type JsonExpressLaneSubmission struct {
-	ChainId                uint64                             `json:"chainId"`
-	Round                  uint64                             `json:"round"`
+	ChainId                *hexutil.Big                       `json:"chainId"`
+	Round                  hexutil.Uint64                     `json:"round"`
 	AuctionContractAddress common.Address                     `json:"auctionContractAddress"`
-	Transaction            *types.Transaction                 `json:"transaction"`
+	Transaction            hexutil.Bytes                      `json:"transaction"`
 	Options                *arbitrum_types.ConditionalOptions `json:"options"`
-	Signature              string                             `json:"signature"`
+	Signature              hexutil.Bytes                      `json:"signature"`
 }
 
 type ExpressLaneSubmission struct {
-	ChainId                uint64
+	ChainId                *big.Int
 	Round                  uint64
 	AuctionContractAddress common.Address
 	Transaction            *types.Transaction
@@ -43,26 +44,34 @@ type ExpressLaneSubmission struct {
 	Signature              []byte
 }
 
-func JsonSubmissionToGo(submission *JsonExpressLaneSubmission) *ExpressLaneSubmission {
-	return &ExpressLaneSubmission{
-		ChainId:                submission.ChainId,
-		Round:                  submission.Round,
-		AuctionContractAddress: submission.AuctionContractAddress,
-		Transaction:            submission.Transaction,
-		Options:                submission.Options,
-		Signature:              common.Hex2Bytes(submission.Signature),
+func JsonSubmissionToGo(submission *JsonExpressLaneSubmission) (*ExpressLaneSubmission, error) {
+	var tx *types.Transaction
+	if err := tx.UnmarshalBinary(submission.Transaction); err != nil {
+		return nil, err
 	}
+	return &ExpressLaneSubmission{
+		ChainId:                submission.ChainId.ToInt(),
+		Round:                  uint64(submission.Round),
+		AuctionContractAddress: submission.AuctionContractAddress,
+		Transaction:            tx,
+		Options:                submission.Options,
+		Signature:              submission.Signature,
+	}, nil
 }
 
-func (els *ExpressLaneSubmission) ToJson() *JsonExpressLaneSubmission {
-	return &JsonExpressLaneSubmission{
-		ChainId:                els.ChainId,
-		Round:                  els.Round,
-		AuctionContractAddress: els.AuctionContractAddress,
-		Transaction:            els.Transaction,
-		Options:                els.Options,
-		Signature:              common.Bytes2Hex(els.Signature),
+func (els *ExpressLaneSubmission) ToJson() (*JsonExpressLaneSubmission, error) {
+	encoded, err := els.Transaction.MarshalBinary()
+	if err != nil {
+		return nil, err
 	}
+	return &JsonExpressLaneSubmission{
+		ChainId:                (*hexutil.Big)(els.ChainId),
+		Round:                  hexutil.Uint64(els.Round),
+		AuctionContractAddress: els.AuctionContractAddress,
+		Transaction:            encoded,
+		Options:                els.Options,
+		Signature:              els.Signature,
+	}, nil
 }
 
 func (els *ExpressLaneSubmission) ToMessageBytes() ([]byte, error) {
@@ -76,18 +85,17 @@ func (els *ExpressLaneSubmission) ToMessageBytes() ([]byte, error) {
 }
 
 func encodeExpressLaneSubmission(
-	domainValue []byte, chainId uint64,
+	domainValue []byte,
+	chainId *big.Int,
 	auctionContractAddress common.Address,
 	round uint64,
 	tx *types.Transaction,
 ) ([]byte, error) {
 	buf := new(bytes.Buffer)
 	buf.Write(domainValue)
-	roundBuf := make([]byte, 8)
-	binary.BigEndian.PutUint64(roundBuf, chainId)
-	buf.Write(roundBuf)
+	buf.Write(padBigInt(chainId))
 	buf.Write(auctionContractAddress[:])
-	roundBuf = make([]byte, 8)
+	roundBuf := make([]byte, 8)
 	binary.BigEndian.PutUint64(roundBuf, round)
 	buf.Write(roundBuf)
 	rlpTx, err := tx.MarshalBinary()
@@ -100,12 +108,12 @@ func encodeExpressLaneSubmission(
 
 func (a *AuctioneerAPI) SubmitBid(ctx context.Context, bid *JsonBid) error {
 	return a.receiveBid(ctx, &Bid{
-		ChainId:                bid.ChainId,
+		ChainId:                bid.ChainId.ToInt(),
 		ExpressLaneController:  bid.ExpressLaneController,
 		Bidder:                 bid.Bidder,
 		AuctionContractAddress: bid.AuctionContractAddress,
-		Round:                  bid.Round,
-		Amount:                 bid.Amount,
-		Signature:              common.Hex2Bytes(bid.Signature),
+		Round:                  uint64(bid.Round),
+		Amount:                 bid.Amount.ToInt(),
+		Signature:              bid.Signature,
 	})
 }

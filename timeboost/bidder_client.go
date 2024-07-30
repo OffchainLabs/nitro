@@ -28,7 +28,7 @@ type auctioneerConnection interface {
 }
 
 type BidderClient struct {
-	chainId                uint64
+	chainId                *big.Int
 	name                   string
 	auctionContractAddress common.Address
 	txOpts                 *bind.TransactOpts
@@ -71,7 +71,7 @@ func NewBidderClient(
 	roundDuration := time.Duration(roundTimingInfo.RoundDurationSeconds) * time.Second
 
 	return &BidderClient{
-		chainId:                chainId.Uint64(),
+		chainId:                chainId,
 		name:                   name,
 		auctionContractAddress: auctionContractAddress,
 		client:                 client,

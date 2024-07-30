@@ -106,7 +106,7 @@ func TestReceiveBid_OK(t *testing.T) {
 	stack, err := node.New(&stackConf)
 	require.NoError(t, err)
 	am, err := NewAuctioneer(
-		testSetup.accounts[1].txOpts, []uint64{testSetup.chainId.Uint64()}, stack, testSetup.backend.Client(), testSetup.expressLaneAuction,
+		testSetup.accounts[1].txOpts, []*big.Int{testSetup.chainId}, stack, testSetup.backend.Client(), testSetup.expressLaneAuction,
 	)
 	require.NoError(t, err)
 

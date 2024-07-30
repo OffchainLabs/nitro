@@ -174,7 +174,11 @@ func (f *TxForwarder) PublishExpressLaneTransaction(inctx context.Context, msg *
 }
 
 func sendExpressLaneTransactionRPC(ctx context.Context, rpcClient *rpc.Client, msg *timeboost.ExpressLaneSubmission) error {
-	return rpcClient.CallContext(ctx, nil, "timeboost_sendExpressLaneTransaction", msg.ToJson())
+	jsonMsg, err := msg.ToJson()
+	if err != nil {
+		return err
+	}
+	return rpcClient.CallContext(ctx, nil, "timeboost_sendExpressLaneTransaction", jsonMsg)
 }
 
 const cacheUpstreamHealth = 2 * time.Second

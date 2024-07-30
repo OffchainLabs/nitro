@@ -53,7 +53,7 @@ func TestAuctioneer_validateBid(t *testing.T) {
 			bid: &Bid{
 				Bidder:                common.Address{'a'},
 				ExpressLaneController: common.Address{'b'},
-				ChainId:               1,
+				ChainId:               big.NewInt(1),
 			},
 			expectedErr: ErrBadRoundNumber,
 			errMsg:      "wanted 1, got 0",
@@ -63,7 +63,7 @@ func TestAuctioneer_validateBid(t *testing.T) {
 			bid: &Bid{
 				Bidder:                common.Address{'a'},
 				ExpressLaneController: common.Address{'b'},
-				ChainId:               1,
+				ChainId:               big.NewInt(1),
 				Round:                 1,
 			},
 			expectedErr:   ErrBadRoundNumber,
@@ -75,7 +75,7 @@ func TestAuctioneer_validateBid(t *testing.T) {
 			bid: &Bid{
 				Bidder:                common.Address{'a'},
 				ExpressLaneController: common.Address{'b'},
-				ChainId:               1,
+				ChainId:               big.NewInt(1),
 				Round:                 1,
 				Amount:                big.NewInt(1),
 			},
@@ -87,7 +87,7 @@ func TestAuctioneer_validateBid(t *testing.T) {
 			bid: &Bid{
 				Bidder:                common.Address{'a'},
 				ExpressLaneController: common.Address{'b'},
-				ChainId:               1,
+				ChainId:               big.NewInt(1),
 				Round:                 1,
 				Amount:                big.NewInt(3),
 				Signature:             []byte{'a'},
@@ -106,7 +106,7 @@ func TestAuctioneer_validateBid(t *testing.T) {
 
 	for _, tt := range tests {
 		a := Auctioneer{
-			chainId:                []uint64{1},
+			chainId:                []*big.Int{big.NewInt(1)},
 			initialRoundTimestamp:  time.Now().Add(-time.Second),
 			reservePrice:           big.NewInt(2),
 			roundDuration:          time.Minute,
@@ -145,7 +145,7 @@ func buildValidBid(t *testing.T) *Bid {
 		Bidder:                 bidderAddress,
 		ExpressLaneController:  common.Address{'b'},
 		AuctionContractAddress: common.Address{'c'},
-		ChainId:                1,
+		ChainId:                big.NewInt(1),
 		Round:                  1,
 		Amount:                 big.NewInt(3),
 		Signature:              []byte{'a'},
