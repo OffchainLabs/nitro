@@ -861,27 +861,27 @@ func (s *TransactionStreamer) logReorg(pos arbutil.MessageIndex, dbMsg *arbostyp
 
 }
 
-func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbostypes.MessageWithMetadataAndBlockInfo, batch ethdb.Batch) error {
+func (s *TransactionStreamer) addMessagesAndEndBatchImpl(firstMsgIdx arbutil.MessageIndex, messagesAreConfirmed bool, messages []arbostypes.MessageWithMetadataAndBlockInfo, batch ethdb.Batch) error {
 	var confirmedReorg bool
 	var oldMsg *arbostypes.MessageWithMetadata
 	var lastDelayedRead uint64
 	var hasNewConfirmedMessages bool
 	var cacheClearLen int
 
-	messagesAfterPos := messageStartPos + arbutil.MessageIndex(len(messages))
-	broadcastStartPos := arbutil.MessageIndex(s.broadcasterQueuedMessagesPos.Load())
+	headMsgIdxAfterInsert := firstMsgIdx + arbutil.MessageIndex(len(messages))
+	broadcastFirstMsgIdx := arbutil.MessageIndex(s.broadcasterQueuedMessagesPos.Load())
 
 	if messagesAreConfirmed {
-		var duplicates uint64
+		var numberOfDuplicates uint64
 		var err error
-		duplicates, confirmedReorg, oldMsg, err = s.countDuplicateMessages(messageStartPos, messages, &batch)
+		numberOfDuplicates, confirmedReorg, oldMsg, err = s.countDuplicateMessages(firstMsgIdx, messages, &batch)
 		if err != nil {
 			return err
 		}
-		if duplicates > 0 {
-			lastDelayedRead = messages[duplicates-1].MessageWithMeta.DelayedMessagesRead
-			messages = messages[duplicates:]
-			messageStartPos += arbutil.MessageIndex(duplicates)
+		if numberOfDuplicates > 0 {
+			lastDelayedRead = messages[numberOfDuplicates-1].MessageWithMeta.DelayedMessagesRead
+			messages = messages[numberOfDuplicates:]
+			firstMsgIdx += arbutil.MessageIndex(numberOfDuplicates)
 		}
 		if len(messages) > 0 {
 			hasNewConfirmedMessages = true
@@ -889,13 +889,13 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	}
 
 	clearQueueOnSuccess := false
-	if (s.broadcasterQueuedMessagesActiveReorg && messageStartPos <= broadcastStartPos) ||
-		(!s.broadcasterQueuedMessagesActiveReorg && broadcastStartPos <= messagesAfterPos) {
+	if (s.broadcasterQueuedMessagesActiveReorg && firstMsgIdx <= broadcastFirstMsgIdx) ||
+		(!s.broadcasterQueuedMessagesActiveReorg && broadcastFirstMsgIdx <= headMsgIdxAfterInsert) {
 		// Active broadcast reorg and L1 messages at or before start of broadcast messages
 		// Or no active broadcast reorg and broadcast messages start before or immediately after last L1 message
-		if messagesAfterPos >= broadcastStartPos {
+		if headMsgIdxAfterInsert >= broadcastFirstMsgIdx {
 			// #nosec G115
-			broadcastSliceIndex := int(messagesAfterPos - broadcastStartPos)
+			broadcastSliceIndex := int(headMsgIdxAfterInsert - broadcastFirstMsgIdx)
 			messagesOldLen := len(messages)
 			if broadcastSliceIndex < len(s.broadcasterQueuedMessages) {
 				// Some cached feed messages can be used
@@ -911,20 +911,20 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 
 	var feedReorg bool
 	if !hasNewConfirmedMessages {
-		var duplicates uint64
+		var numberOfDuplicates uint64
 		var err error
-		duplicates, feedReorg, oldMsg, err = s.countDuplicateMessages(messageStartPos, messages, nil)
+		numberOfDuplicates, feedReorg, oldMsg, err = s.countDuplicateMessages(firstMsgIdx, messages, nil)
 		if err != nil {
 			return err
 		}
-		if duplicates > 0 {
-			lastDelayedRead = messages[duplicates-1].MessageWithMeta.DelayedMessagesRead
-			messages = messages[duplicates:]
-			messageStartPos += arbutil.MessageIndex(duplicates)
+		if numberOfDuplicates > 0 {
+			lastDelayedRead = messages[numberOfDuplicates].MessageWithMeta.DelayedMessagesRead
+			messages = messages[numberOfDuplicates:]
+			firstMsgIdx += arbutil.MessageIndex(numberOfDuplicates)
 		}
 	}
 	if oldMsg != nil {
-		s.logReorg(messageStartPos, oldMsg, &messages[0].MessageWithMeta, confirmedReorg)
+		s.logReorg(firstMsgIdx, oldMsg, &messages[0].MessageWithMeta, confirmedReorg)
 	}
 
 	if feedReorg {
@@ -935,7 +935,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 
 	if lastDelayedRead == 0 {
 		var err error
-		lastDelayedRead, err = s.getPrevPrevDelayedRead(messageStartPos)
+		lastDelayedRead, err = s.getPrevPrevDelayedRead(firstMsgIdx)
 		if err != nil {
 			return err
 		}
@@ -944,23 +944,23 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	// Validate delayed message counts of remaining messages
 	for i, msg := range messages {
 		// #nosec G115
-		msgPos := messageStartPos + arbutil.MessageIndex(i)
+		msgIdx := firstMsgIdx + arbutil.MessageIndex(i)
 		diff := msg.MessageWithMeta.DelayedMessagesRead - lastDelayedRead
 		if diff != 0 && diff != 1 {
-			return fmt.Errorf("attempted to insert jump from %v delayed messages read to %v delayed messages read at message index %v", lastDelayedRead, msg.MessageWithMeta.DelayedMessagesRead, msgPos)
+			return fmt.Errorf("attempted to insert jump from %v delayed messages read to %v delayed messages read at message index %v", lastDelayedRead, msg.MessageWithMeta.DelayedMessagesRead, msgIdx)
 		}
 		lastDelayedRead = msg.MessageWithMeta.DelayedMessagesRead
 		if msg.MessageWithMeta.Message == nil {
-			return fmt.Errorf("attempted to insert nil message at position %v", msgPos)
+			return fmt.Errorf("attempted to insert nil message at index %v", msgIdx)
 		}
 	}
 
 	if confirmedReorg {
-		if messageStartPos == 0 {
+		if firstMsgIdx == 0 {
 			return invalidReorgMsgIndex
 		}
 		reorgBatch := s.db.NewBatch()
-		err := s.reorg(reorgBatch, messageStartPos-1, messages)
+		err := s.reorg(reorgBatch, firstMsgIdx-1, messages)
 		if err != nil {
 			return err
 		}
@@ -973,7 +973,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 		return endBatch(batch)
 	}
 
-	err := s.writeMessages(messageStartPos, messages, batch)
+	err := s.writeMessages(firstMsgIdx, messages, batch)
 	if err != nil {
 		return err
 	}
@@ -983,7 +983,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 		if len(s.broadcasterQueuedMessages) > cacheClearLen {
 			s.broadcasterQueuedMessages = s.broadcasterQueuedMessages[cacheClearLen:]
 			// #nosec G115
-			s.broadcasterQueuedMessagesPos.Store(uint64(broadcastStartPos) + uint64(cacheClearLen))
+			s.broadcasterQueuedMessagesPos.Store(uint64(broadcastFirstMsgIdx) + uint64(cacheClearLen))
 		} else {
 			s.broadcasterQueuedMessages = s.broadcasterQueuedMessages[:0]
 			s.broadcasterQueuedMessagesPos.Store(0)
