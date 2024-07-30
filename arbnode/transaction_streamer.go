@@ -749,15 +749,15 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(firstMsgIdx arbutil.Message
 	return s.addMessagesAndEndBatchImpl(firstMsgIdx, messagesAreConfirmed, messagesWithBlockInfo, batch)
 }
 
-func (s *TransactionStreamer) getPrevPrevDelayedRead(pos arbutil.MessageIndex) (uint64, error) {
-	if s.snapSyncConfig.Enabled && uint64(pos) == s.snapSyncConfig.PrevBatchMessageCount {
+func (s *TransactionStreamer) getPrevPrevDelayedRead(msgIdx arbutil.MessageIndex) (uint64, error) {
+	if s.snapSyncConfig.Enabled && uint64(msgIdx) == s.snapSyncConfig.PrevBatchMessageCount {
 		return s.snapSyncConfig.PrevDelayedRead, nil
 	}
 	var prevDelayedRead uint64
-	if pos > 0 {
-		prevMsg, err := s.GetMessage(pos - 1)
+	if msgIdx > 0 {
+		prevMsg, err := s.GetMessage(msgIdx - 1)
 		if err != nil {
-			return 0, fmt.Errorf("failed to get previous message for pos %d: %w", pos, err)
+			return 0, fmt.Errorf("failed to get previous message for msgIdx %d: %w", msgIdx, err)
 		}
 		prevDelayedRead = prevMsg.DelayedMessagesRead
 	}
