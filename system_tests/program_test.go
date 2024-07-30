@@ -1901,7 +1901,7 @@ func waitForSequencer(t *testing.T, builder *NodeBuilder, block uint64) {
 		Require(t, err)
 		msgExecuted, err := builder.L2.ExecNode.ExecEngine.HeadMessageIndex()
 		Require(t, err)
-		return msgExecuted+1 >= arbutil.MessageIndex(msgCount) && meta.MessageCount >= arbutil.MessageIndex(msgCount)
+		return msgExecuted+1 >= msgCount && meta.MessageCount >= msgCount
 	})
 }
 
