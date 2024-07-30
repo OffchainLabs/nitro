@@ -217,7 +217,7 @@ func (s *TransactionStreamer) ReorgTo(newHeadMsgIdx arbutil.MessageIndex) error 
 func (s *TransactionStreamer) ReorgToAndEndBatch(batch ethdb.Batch, newHeadMsgIdx arbutil.MessageIndex) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
-	err := s.reorg(batch, newHeadMsgIdx+1, nil)
+	err := s.reorg(batch, newHeadMsgIdx, nil)
 	if err != nil {
 		return err
 	}
@@ -281,36 +281,34 @@ func deleteFromRange(ctx context.Context, db ethdb.Database, prefix []byte, star
 
 // The insertion mutex must be held. This acquires the reorg mutex.
 // Note: oldMessages will be empty if reorgHook is nil
-func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo) error {
-	if count == 0 {
-		return errors.New("cannot reorg out init message")
-	}
-	lastDelayedSeqNum, err := s.getPrevPrevDelayedRead(count)
+func (s *TransactionStreamer) reorg(batch ethdb.Batch, newHeadMsgIdx arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo) error {
+	lastDelayedSeqNum, err := s.getPrevPrevDelayedRead(newHeadMsgIdx + 1)
 	if err != nil {
 		return err
 	}
 	var oldMessages []*arbostypes.MessageWithMetadata
 
-	targetMsgCount, err := s.GetMessageCount()
+	targetHeadMsgIndexAfterResequencing, err := s.GetHeadMessageIndex()
 	if err != nil {
 		return err
 	}
+
 	config := s.config()
 	// #nosec G115
-	maxResequenceMsgCount := count + arbutil.MessageIndex(config.MaxReorgResequenceDepth)
-	if config.MaxReorgResequenceDepth >= 0 && maxResequenceMsgCount < targetMsgCount {
+	maxNewHeadMsgIdxAfterResequencing := newHeadMsgIdx + arbutil.MessageIndex(config.MaxReorgResequenceDepth)
+	if config.MaxReorgResequenceDepth >= 0 && maxNewHeadMsgIdxAfterResequencing < targetHeadMsgIndexAfterResequencing {
 		log.Error(
 			"unable to re-sequence all old messages because there are too many",
-			"reorgingToCount", count,
-			"removingMessages", targetMsgCount-count,
+			"reorgingTo", newHeadMsgIdx,
+			"removingMessages", targetHeadMsgIndexAfterResequencing-newHeadMsgIdx,
 			"maxReorgResequenceDepth", config.MaxReorgResequenceDepth,
 		)
-		targetMsgCount = maxResequenceMsgCount
+		targetHeadMsgIndexAfterResequencing = maxNewHeadMsgIdxAfterResequencing
 	}
-	for i := count; i < targetMsgCount; i++ {
-		oldMessage, err := s.GetMessage(i)
+	for msgIdx := newHeadMsgIdx + 1; msgIdx <= targetHeadMsgIndexAfterResequencing; msgIdx++ {
+		oldMessage, err := s.GetMessage(msgIdx)
 		if err != nil {
-			log.Error("unable to lookup old message for re-sequencing", "position", i, "err", err)
+			log.Error("unable to lookup old message for re-sequencing", "msgIdx", msgIdx, "err", err)
 			break
 		}
 
@@ -371,7 +369,7 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 	s.reorgMutex.Lock()
 	defer s.reorgMutex.Unlock()
 
-	messagesResults, err := s.exec.Reorg(count-1, newMessages, oldMessages).Await(s.GetContext())
+	messagesResults, err := s.exec.Reorg(newHeadMsgIdx, newMessages, oldMessages).Await(s.GetContext())
 	if err != nil {
 		return err
 	}
@@ -383,46 +381,46 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 			BlockHash:       &messagesResults[i].BlockHash,
 		})
 	}
-	s.broadcastMessages(messagesWithComputedBlockHash, count)
+	s.broadcastMessages(messagesWithComputedBlockHash, newHeadMsgIdx+1)
 
 	if s.validator != nil {
-		err = s.validator.Reorg(s.GetContext(), count)
+		err = s.validator.Reorg(s.GetContext(), newHeadMsgIdx+1)
 		if err != nil {
 			return err
 		}
 	}
 
-	err = deleteStartingAt(s.db, batch, messageResultPrefix, uint64ToKey(uint64(count)))
+	err = deleteStartingAt(s.db, batch, messageResultPrefix, uint64ToKey(uint64(newHeadMsgIdx+1)))
 	if err != nil {
 		return err
 	}
-	err = deleteStartingAt(s.db, batch, blockHashInputFeedPrefix, uint64ToKey(uint64(count)))
+	err = deleteStartingAt(s.db, batch, blockHashInputFeedPrefix, uint64ToKey(uint64(newHeadMsgIdx+1)))
 	if err != nil {
 		return err
 	}
-	err = deleteStartingAt(s.db, batch, blockMetadataInputFeedPrefix, uint64ToKey(uint64(count)))
+	err = deleteStartingAt(s.db, batch, blockMetadataInputFeedPrefix, uint64ToKey(uint64(newHeadMsgIdx+1)))
 	if err != nil {
 		return err
 	}
-	err = deleteStartingAt(s.db, batch, missingBlockMetadataInputFeedPrefix, uint64ToKey(uint64(count)))
+	err = deleteStartingAt(s.db, batch, missingBlockMetadataInputFeedPrefix, uint64ToKey(uint64(newHeadMsgIdx+1)))
 	if err != nil {
 		return err
 	}
-	err = deleteStartingAt(s.db, batch, messagePrefix, uint64ToKey(uint64(count)))
+	err = deleteStartingAt(s.db, batch, messagePrefix, uint64ToKey(uint64(newHeadMsgIdx+1)))
 	if err != nil {
 		return err
 	}
 
 	for i := 0; i < len(messagesResults); i++ {
 		// #nosec G115
-		pos := count + arbutil.MessageIndex(i)
-		err = s.storeResult(pos, *messagesResults[i], batch)
+		msgIdx := newHeadMsgIdx + arbutil.MessageIndex(i+1)
+		err = s.storeResult(msgIdx, *messagesResults[i], batch)
 		if err != nil {
 			return err
 		}
 	}
 
-	return setMessageCount(batch, count)
+	return setMessageCount(batch, newHeadMsgIdx+1)
 }
 
 func setMessageCount(batch ethdb.KeyValueWriter, count arbutil.MessageIndex) error {
@@ -958,8 +956,11 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 	}
 
 	if confirmedReorg {
+		if messageStartPos == 0 {
+			return invalidReorgMsgIndex
+		}
 		reorgBatch := s.db.NewBatch()
-		err := s.reorg(reorgBatch, messageStartPos, messages)
+		err := s.reorg(reorgBatch, messageStartPos-1, messages)
 		if err != nil {
 			return err
 		}
