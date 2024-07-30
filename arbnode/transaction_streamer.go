@@ -729,12 +729,12 @@ func (s *TransactionStreamer) AddMessagesAndEndBatch(firstMsgIdx arbutil.Message
 			log.Warn("TransactionStreamer: failed to mark feed start", "firstMsgIdx", firstMsgIdx, "err", err)
 		}
 		s.reorgMutex.RLock()
-		dups, _, _, err := s.countDuplicateMessages(firstMsgIdx, messagesWithBlockInfo, nil)
+		numberOfDuplicates, _, _, err := s.countDuplicateMessages(firstMsgIdx, messagesWithBlockInfo, nil)
 		s.reorgMutex.RUnlock()
 		if err != nil {
 			return err
 		}
-		if dups == uint64(len(messages)) {
+		if numberOfDuplicates == uint64(len(messages)) {
 			return endBatch(batch)
 		}
 		// cant keep reorg lock when catching insertionMutex.
