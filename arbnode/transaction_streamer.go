@@ -60,7 +60,7 @@ type TransactionStreamer struct {
 	nextAllowedFeedReorgLog time.Time
 
 	broadcasterQueuedMessages            []arbostypes.MessageWithMetadataAndBlockInfo
-	broadcasterQueuedMessagesPos         atomic.Uint64
+	broadcasterQueuedMessagesFirstMsgIdx atomic.Uint64
 	broadcasterQueuedMessagesActiveReorg bool
 
 	coordinator     *SeqCoordinator
@@ -553,14 +553,14 @@ func (s *TransactionStreamer) AddMessages(firstMsgIdx arbutil.MessageIndex, mess
 }
 
 func (s *TransactionStreamer) FeedPendingMessageCount() arbutil.MessageIndex {
-	pos := s.broadcasterQueuedMessagesPos.Load()
+	pos := s.broadcasterQueuedMessagesFirstMsgIdx.Load()
 	if pos == 0 {
 		return 0
 	}
 
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
-	pos = s.broadcasterQueuedMessagesPos.Load()
+	pos = s.broadcasterQueuedMessagesFirstMsgIdx.Load()
 	if pos == 0 {
 		return 0
 	}
@@ -615,34 +615,34 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFe
 	if len(s.broadcasterQueuedMessages) == 0 || (feedReorg && !s.broadcasterQueuedMessagesActiveReorg) {
 		// Empty cache or feed different from database, save current feed messages until confirmed L1 messages catch up.
 		s.broadcasterQueuedMessages = messages
-		s.broadcasterQueuedMessagesPos.Store(uint64(broadcastStartPos))
+		s.broadcasterQueuedMessagesFirstMsgIdx.Store(uint64(broadcastStartPos))
 		s.broadcasterQueuedMessagesActiveReorg = feedReorg
 	} else {
-		broadcasterQueuedMessagesPos := arbutil.MessageIndex(s.broadcasterQueuedMessagesPos.Load())
-		if broadcasterQueuedMessagesPos >= broadcastStartPos {
+		broadcasterQueuedMessagesFirstMsgIdx := arbutil.MessageIndex(s.broadcasterQueuedMessagesFirstMsgIdx.Load())
+		if broadcasterQueuedMessagesFirstMsgIdx >= broadcastStartPos {
 			// Feed messages older than cache
 			s.broadcasterQueuedMessages = messages
-			s.broadcasterQueuedMessagesPos.Store(uint64(broadcastStartPos))
+			s.broadcasterQueuedMessagesFirstMsgIdx.Store(uint64(broadcastStartPos))
 			s.broadcasterQueuedMessagesActiveReorg = feedReorg
-		} else if broadcasterQueuedMessagesPos+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)) == broadcastStartPos {
+		} else if broadcasterQueuedMessagesFirstMsgIdx+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)) == broadcastStartPos {
 			// Feed messages can be added directly to end of cache
 			maxQueueSize := s.config().MaxBroadcasterQueueSize
 			if maxQueueSize == 0 || len(s.broadcasterQueuedMessages) <= maxQueueSize {
 				s.broadcasterQueuedMessages = append(s.broadcasterQueuedMessages, messages...)
 			}
-			broadcastStartPos = broadcasterQueuedMessagesPos
+			broadcastStartPos = broadcasterQueuedMessagesFirstMsgIdx
 			// Do not change existing reorg state
 		} else {
 			if len(s.broadcasterQueuedMessages) > 0 {
 				log.Warn(
 					"broadcaster queue jumped positions",
 					"queuedMessages", len(s.broadcasterQueuedMessages),
-					"expectedNextPos", broadcasterQueuedMessagesPos+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)),
+					"expectedNextPos", broadcasterQueuedMessagesFirstMsgIdx+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)),
 					"gotPos", broadcastStartPos,
 				)
 			}
 			s.broadcasterQueuedMessages = messages
-			s.broadcasterQueuedMessagesPos.Store(uint64(broadcastStartPos))
+			s.broadcasterQueuedMessagesFirstMsgIdx.Store(uint64(broadcastStartPos))
 			s.broadcasterQueuedMessagesActiveReorg = feedReorg
 		}
 	}
@@ -869,7 +869,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(firstMsgIdx arbutil.Mes
 	var cacheClearLen int
 
 	headMsgIdxAfterInsert := firstMsgIdx + arbutil.MessageIndex(len(messages))
-	broadcastFirstMsgIdx := arbutil.MessageIndex(s.broadcasterQueuedMessagesPos.Load())
+	broadcastFirstMsgIdx := arbutil.MessageIndex(s.broadcasterQueuedMessagesFirstMsgIdx.Load())
 
 	if messagesAreConfirmed {
 		var numberOfDuplicates uint64
@@ -983,10 +983,10 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(firstMsgIdx arbutil.Mes
 		if len(s.broadcasterQueuedMessages) > cacheClearLen {
 			s.broadcasterQueuedMessages = s.broadcasterQueuedMessages[cacheClearLen:]
 			// #nosec G115
-			s.broadcasterQueuedMessagesPos.Store(uint64(broadcastFirstMsgIdx) + uint64(cacheClearLen))
+			s.broadcasterQueuedMessagesFirstMsgIdx.Store(uint64(broadcastFirstMsgIdx) + uint64(cacheClearLen))
 		} else {
 			s.broadcasterQueuedMessages = s.broadcasterQueuedMessages[:0]
-			s.broadcasterQueuedMessagesPos.Store(0)
+			s.broadcasterQueuedMessagesFirstMsgIdx.Store(0)
 		}
 		s.broadcasterQueuedMessagesActiveReorg = false
 	}
