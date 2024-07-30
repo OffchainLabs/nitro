@@ -6,6 +6,7 @@ package daprovider
 import (
 	"context"
 	"errors"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
@@ -73,6 +74,8 @@ const BrotliMessageHeaderByte byte = 0
 
 // KnownHeaderBits is all header bits with known meaning to this nitro version
 const KnownHeaderBits byte = DASMessageHeaderFlag | TreeDASMessageHeaderFlag | L1AuthenticatedMessageHeaderFlag | ZeroheavyMessageHeaderFlag | BlobHashesHeaderFlag | BrotliMessageHeaderByte
+
+var DefaultDASRetentionPeriod time.Duration = time.Hour * 24 * 15
 
 // hasBits returns true if `checking` has all `bits`
 func hasBits(checking byte, bits byte) bool {
