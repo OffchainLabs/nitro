@@ -571,12 +571,12 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFe
 	if len(feedMessages) == 0 {
 		return nil
 	}
-	broadcastStartPos := feedMessages[0].SequenceNumber
+	broadcastFirstMsgIdx := feedMessages[0].SequenceNumber
 	var messages []arbostypes.MessageWithMetadataAndBlockInfo
-	broadcastAfterPos := broadcastStartPos
+	expectedMsgIdx := broadcastFirstMsgIdx
 	for _, feedMessage := range feedMessages {
-		if broadcastAfterPos != feedMessage.SequenceNumber {
-			return fmt.Errorf("invalid sequence number %v, expected %v", feedMessage.SequenceNumber, broadcastAfterPos)
+		if expectedMsgIdx != feedMessage.SequenceNumber {
+			return fmt.Errorf("invalid sequence number %v, expected %v", feedMessage.SequenceNumber, expectedMsgIdx)
 		}
 		if feedMessage.Message.Message == nil || feedMessage.Message.Message.Header == nil {
 			return fmt.Errorf("invalid feed message at sequence number %v", feedMessage.SequenceNumber)
@@ -587,7 +587,7 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFe
 			BlockMetadata:   feedMessage.BlockMetadata,
 		}
 		messages = append(messages, msgWithBlockInfo)
-		broadcastAfterPos++
+		expectedMsgIdx++
 	}
 
 	s.insertionMutex.Lock()
@@ -598,14 +598,14 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFe
 	// Skip any messages already in the database
 	// prevDelayedRead set to 0 because it's only used to compute the output prevDelayedRead which is not used here
 	// Messages from feed are not confirmed, so confirmedMessageCount is 0 and confirmedReorg can be ignored
-	dups, feedReorg, oldMsg, err := s.countDuplicateMessages(broadcastStartPos, messages, nil)
+	numberOfDuplicates, feedReorg, oldMsg, err := s.countDuplicateMessages(broadcastFirstMsgIdx, messages, nil)
 	if err != nil {
 		return err
 	}
-	messages = messages[dups:]
-	broadcastStartPos += arbutil.MessageIndex(dups)
+	messages = messages[numberOfDuplicates:]
+	broadcastFirstMsgIdx += arbutil.MessageIndex(numberOfDuplicates)
 	if oldMsg != nil {
-		s.logReorg(broadcastStartPos, oldMsg, &messages[0].MessageWithMeta, false)
+		s.logReorg(broadcastFirstMsgIdx, oldMsg, &messages[0].MessageWithMeta, false)
 	}
 	if len(messages) == 0 {
 		// No new messages received
@@ -615,34 +615,34 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFe
 	if len(s.broadcasterQueuedMessages) == 0 || (feedReorg && !s.broadcasterQueuedMessagesActiveReorg) {
 		// Empty cache or feed different from database, save current feed messages until confirmed L1 messages catch up.
 		s.broadcasterQueuedMessages = messages
-		s.broadcasterQueuedMessagesFirstMsgIdx.Store(uint64(broadcastStartPos))
+		s.broadcasterQueuedMessagesFirstMsgIdx.Store(uint64(broadcastFirstMsgIdx))
 		s.broadcasterQueuedMessagesActiveReorg = feedReorg
 	} else {
 		broadcasterQueuedMessagesFirstMsgIdx := arbutil.MessageIndex(s.broadcasterQueuedMessagesFirstMsgIdx.Load())
-		if broadcasterQueuedMessagesFirstMsgIdx >= broadcastStartPos {
+		if broadcasterQueuedMessagesFirstMsgIdx >= broadcastFirstMsgIdx {
 			// Feed messages older than cache
 			s.broadcasterQueuedMessages = messages
-			s.broadcasterQueuedMessagesFirstMsgIdx.Store(uint64(broadcastStartPos))
+			s.broadcasterQueuedMessagesFirstMsgIdx.Store(uint64(broadcastFirstMsgIdx))
 			s.broadcasterQueuedMessagesActiveReorg = feedReorg
-		} else if broadcasterQueuedMessagesFirstMsgIdx+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)) == broadcastStartPos {
+		} else if broadcasterQueuedMessagesFirstMsgIdx+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)) == broadcastFirstMsgIdx {
 			// Feed messages can be added directly to end of cache
 			maxQueueSize := s.config().MaxBroadcasterQueueSize
 			if maxQueueSize == 0 || len(s.broadcasterQueuedMessages) <= maxQueueSize {
 				s.broadcasterQueuedMessages = append(s.broadcasterQueuedMessages, messages...)
 			}
-			broadcastStartPos = broadcasterQueuedMessagesFirstMsgIdx
+			broadcastFirstMsgIdx = broadcasterQueuedMessagesFirstMsgIdx
 			// Do not change existing reorg state
 		} else {
 			if len(s.broadcasterQueuedMessages) > 0 {
 				log.Warn(
 					"broadcaster queue jumped positions",
 					"queuedMessages", len(s.broadcasterQueuedMessages),
-					"expectedNextPos", broadcasterQueuedMessagesFirstMsgIdx+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)),
-					"gotPos", broadcastStartPos,
+					"expectedNextIdx", broadcasterQueuedMessagesFirstMsgIdx+arbutil.MessageIndex(len(s.broadcasterQueuedMessages)),
+					"gotIdx", broadcastFirstMsgIdx,
 				)
 			}
 			s.broadcasterQueuedMessages = messages
-			s.broadcasterQueuedMessagesFirstMsgIdx.Store(uint64(broadcastStartPos))
+			s.broadcasterQueuedMessagesFirstMsgIdx.Store(uint64(broadcastFirstMsgIdx))
 			s.broadcasterQueuedMessagesActiveReorg = feedReorg
 		}
 	}
@@ -652,8 +652,8 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFe
 		return nil
 	}
 
-	if broadcastStartPos > 0 {
-		_, err := s.GetMessage(broadcastStartPos - 1)
+	if broadcastFirstMsgIdx > 0 {
+		_, err := s.GetMessage(broadcastFirstMsgIdx - 1)
 		if err != nil {
 			if !dbutil.IsErrNotFound(err) {
 				return err
@@ -663,7 +663,7 @@ func (s *TransactionStreamer) AddBroadcastMessages(feedMessages []*m.BroadcastFe
 		}
 	}
 
-	err = s.addMessagesAndEndBatchImpl(broadcastStartPos, false, nil, nil)
+	err = s.addMessagesAndEndBatchImpl(broadcastFirstMsgIdx, false, nil, nil)
 	if err != nil {
 		return fmt.Errorf("error adding pending broadcaster messages: %w", err)
 	}
