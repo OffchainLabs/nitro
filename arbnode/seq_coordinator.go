@@ -512,7 +512,12 @@ func (c *SeqCoordinator) updateWithLockout(ctx context.Context, nextChosen strin
 }
 
 func (c *SeqCoordinator) deleteFinalizedMsgsFromRedis(ctx context.Context, finalized arbutil.MessageIndex) error {
-	updateFinalizedMsgCount := func() error {
+	deleteMsgsAndUpdateFinalizedMsgCount := func(keys []string) error {
+		if len(keys) > 0 {
+			if err := c.Client.Del(ctx, keys...).Err(); err != nil {
+				return fmt.Errorf("error deleting finalized messages and their signatures from redis: %w", err)
+			}
+		}
 		finalizedBytes, err := c.msgCountToSignedBytes(finalized)
 		if err != nil {
 			return err
@@ -527,19 +532,17 @@ func (c *SeqCoordinator) deleteFinalizedMsgsFromRedis(ctx context.Context, final
 		var keys []string
 		for msg := finalized - 1; msg > 0; msg-- {
 			exists, err := c.Client.Exists(ctx, redisutil.MessageKeyFor(msg), redisutil.MessageSigKeyFor(msg)).Result()
-			if exists == 0 || err != nil {
+			if err != nil {
+				// If there is an error deleting finalized messages during init, we retry later either from this sequencer or from another
+				return err
+			}
+			if exists == 0 {
 				break
 			}
 			keys = append(keys, redisutil.MessageKeyFor(msg), redisutil.MessageSigKeyFor(msg))
 		}
-		// If there is an error deleting finalized messages during init, we retry later either from this sequencer or from another
-		if len(keys) > 0 {
-			log.Info("Initializing finalizedMsgCount and deleting finalized messages from redis", "finalizedMsgCount", finalized)
-			if err := c.Client.Del(ctx, keys...).Err(); err != nil {
-				return fmt.Errorf("error deleting finalized message and their signatures from redis during init of finalizedMsgCount: %w", err)
-			}
-		}
-		return updateFinalizedMsgCount()
+		log.Info("Initializing finalizedMsgCount and deleting finalized messages from redis", "finalizedMsgCount", finalized)
+		return deleteMsgsAndUpdateFinalizedMsgCount(keys)
 	} else if err != nil {
 		return fmt.Errorf("error getting finalizedMsgCount value from redis: %w", err)
 	}
@@ -553,10 +556,7 @@ func (c *SeqCoordinator) deleteFinalizedMsgsFromRedis(ctx context.Context, final
 		for msg := prevFinalized; msg < msgToDelete; msg++ {
 			keys = append(keys, redisutil.MessageKeyFor(msg), redisutil.MessageSigKeyFor(msg))
 		}
-		if err := c.Client.Del(ctx, keys...).Err(); err != nil {
-			return fmt.Errorf("error deleting finalized message and their signatures from redis: %w", err)
-		}
-		return updateFinalizedMsgCount()
+		return deleteMsgsAndUpdateFinalizedMsgCount(keys)
 	}
 	return nil
 }
