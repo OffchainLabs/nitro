@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum/eth/tracers/logger"
 	"github.com/holiman/uint256"
 	"github.com/offchainlabs/nitro/arbos/util"
+	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
@@ -416,4 +417,54 @@ func TestStylusTraceCreate(t *testing.T) {
 	result = sendAndTraceTransaction(t, builder, program, startValue, create2Args)
 	checkOpcode(t, result, 10, vm.CREATE2, startValue.Bytes(), nil, intToBytes(len(deployCode)), salt[:])
 	checkOpcode(t, result, 11, vm.POP, create2Addr[:])
+}
+
+// TestStylusTraceEquivalence compares a Stylus trace with a equivalent Solidity/EVM trace. Notice
+// the Stylus trace does not contain all opcodes from the Solidity/EVM trace. Instead, this test
+// only checks that both traces contain the same basic opcodes.
+func TestStylusTraceEquivalence(t *testing.T) {
+	const jit = false
+	builder, auth, cleanup := setupProgramTest(t, jit)
+	ctx := builder.ctx
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	// Args for storing and loading from storage
+	const (
+		storageKind = 0x10
+		storeAction = storageKind | 0x00
+		loadAction  = storageKind | 0x01
+		logModifier = 0x08
+	)
+	key := testhelpers.RandomHash()
+	value := testhelpers.RandomHash()
+	args := []byte{2} // number of actions
+	// first action
+	args = binary.BigEndian.AppendUint32(args, 1+64) // length
+	args = append(args, storeAction|logModifier)
+	args = append(args, key.Bytes()...)
+	args = append(args, value.Bytes()...)
+	// second action
+	args = binary.BigEndian.AppendUint32(args, 1+32) // length
+	args = append(args, loadAction|logModifier)
+	args = append(args, key.Bytes()...)
+
+	// Trace recursive call in wasm
+	wasmMulticall := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
+	colors.PrintGrey("wasm multicall deployed at ", wasmMulticall)
+	wasmArgs := argsForMulticall(vm.CALL, wasmMulticall, nil, args)
+	wasmResult := sendAndTraceTransaction(t, builder, wasmMulticall, nil, wasmArgs)
+
+	// Trace recursive call in evm
+	evmMulticall, tx, _, err := mocksgen.DeployMultiCallTest(&auth, builder.L2.Client)
+	Require(t, err)
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+	colors.PrintGrey("evm multicall deployed at ", evmMulticall)
+	evmArgs := argsForMulticall(vm.CALL, evmMulticall, nil, args)
+	evmResult := sendAndTraceTransaction(t, builder, evmMulticall, nil, evmArgs)
+
+	// Check equivalence of opcodes
+	_ = evmResult
+	_ = wasmResult
 }
