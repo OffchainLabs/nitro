@@ -952,9 +952,7 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(
 	if err := s.ExpectChosenSequencer(); err != nil {
 		return err
 	}
-	if !s.insertionMutex.TryLock() {
-		return execution.ErrSequencerInsertLockTaken
-	}
+	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
 
 	msgCount, err := s.GetMessageCount()
