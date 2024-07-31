@@ -4,6 +4,7 @@
 package arbtest
 
 import (
+	"bytes"
 	"encoding/binary"
 	"math/big"
 	"testing"
@@ -16,8 +17,29 @@ import (
 	"github.com/holiman/uint256"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
+
+var skipCheck = []byte("skip")
+
+func checkOpcode(t *testing.T, result logger.ExecutionResult, index int, wantOp vm.OpCode, wantStack ...[]byte) {
+	CheckEqual(t, wantOp.String(), result.StructLogs[index].Op)
+	CheckEqual(t, len(wantStack), len(*result.StructLogs[index].Stack))
+
+	// reverse stack to canonical order
+	for i, j := 0, len(wantStack)-1; i < j; i, j = i+1, j-1 {
+		wantStack[i], wantStack[j] = wantStack[j], wantStack[i]
+
+	}
+
+	for i, wantBytes := range wantStack {
+		if !bytes.Equal(wantBytes, skipCheck) {
+			wantVal := uint256.NewInt(0).SetBytes(wantBytes).Hex()
+			CheckEqual(t, wantVal, (*result.StructLogs[index].Stack)[i])
+		}
+	}
+}
 
 func sendAndTraceTransaction(
 	t *testing.T,
@@ -34,42 +56,22 @@ func sendAndTraceTransaction(
 	tx := l2info.PrepareTxTo("Owner", &program, l2info.TransferGas, value, data)
 	err := l2client.SendTransaction(ctx, tx)
 	Require(t, err)
-	_, err = EnsureTxSucceeded(ctx, l2client, tx)
-	Require(t, err)
 
 	var result logger.ExecutionResult
 	err = rpcClient.CallContext(ctx, &result, "debug_traceTransaction", tx.Hash(), nil)
 	Require(t, err, "failed to trace call")
 
+	colors.PrintGrey("Call trace:")
+	colors.PrintGrey("i\tdepth\topcode\tstack")
 	for i, log := range result.StructLogs {
 		if log.Stack == nil {
 			stack := []string{}
 			log.Stack = &stack
 		}
-		t.Log("Trace call: i =", i, "| OpCode =", log.Op, "| Stack =", *log.Stack)
+		colors.PrintGrey(i, "\t", log.Depth, "\t", log.Op, "\t", *log.Stack)
 	}
 
 	return result
-}
-
-func checkOpcode(t *testing.T, result logger.ExecutionResult, index int, wantOp vm.OpCode, wantStackSize int) {
-	CheckEqual(t, wantOp.String(), result.StructLogs[index].Op)
-	CheckEqual(t, wantStackSize, len(*result.StructLogs[index].Stack))
-}
-
-func checkOpcodeStack(t *testing.T, result logger.ExecutionResult, index int, wantOp vm.OpCode, wantStack ...[]byte) {
-	checkOpcode(t, result, index, wantOp, len(wantStack))
-
-	// reverse stack to canonical order
-	for i, j := 0, len(wantStack)-1; i < j; i, j = i+1, j-1 {
-		wantStack[i], wantStack[j] = wantStack[j], wantStack[i]
-
-	}
-
-	for i, wantBytes := range wantStack {
-		wantVal := uint256.NewInt(0).SetBytes(wantBytes).Hex()
-		CheckEqual(t, wantVal, (*result.StructLogs[index].Stack)[i])
-	}
 }
 
 func intToBytes(v int) []byte {
@@ -95,21 +97,21 @@ func TestStylusTraceStorage(t *testing.T) {
 
 	// storage_cache_bytes32
 	result := sendAndTraceTransaction(t, builder, program, nil, argsForStorageWrite(key, value))
-	checkOpcodeStack(t, result, 3, vm.SSTORE, key[:], value[:])
+	checkOpcode(t, result, 3, vm.SSTORE, key[:], value[:])
 
 	// storage_load_bytes32
 	result = sendAndTraceTransaction(t, builder, program, nil, argsForStorageRead(key))
-	checkOpcodeStack(t, result, 3, vm.SLOAD, key[:])
-	checkOpcodeStack(t, result, 4, vm.POP, value[:])
+	checkOpcode(t, result, 3, vm.SLOAD, key[:])
+	checkOpcode(t, result, 4, vm.POP, value[:])
 
 	// transient_store_bytes32
 	result = sendAndTraceTransaction(t, builder, program, nil, trans(argsForStorageWrite(key, value)))
-	checkOpcodeStack(t, result, 3, vm.TSTORE, key[:], value[:])
+	checkOpcode(t, result, 3, vm.TSTORE, key[:], value[:])
 
 	// transient_load_bytes32
 	result = sendAndTraceTransaction(t, builder, program, nil, trans(argsForStorageRead(key)))
-	checkOpcodeStack(t, result, 3, vm.TLOAD, key[:])
-	checkOpcodeStack(t, result, 4, vm.POP, nil)
+	checkOpcode(t, result, 3, vm.TLOAD, key[:])
+	checkOpcode(t, result, 4, vm.POP, nil)
 }
 
 func TestStylusTraceNativeKeccak(t *testing.T) {
@@ -127,8 +129,8 @@ func TestStylusTraceNativeKeccak(t *testing.T) {
 
 	// native_keccak256
 	result := sendAndTraceTransaction(t, builder, program, nil, args)
-	checkOpcodeStack(t, result, 3, vm.KECCAK256, nil, intToBytes(len(args)))
-	checkOpcodeStack(t, result, 4, vm.POP, hash[:])
+	checkOpcode(t, result, 3, vm.KECCAK256, nil, intToBytes(len(args)))
+	checkOpcode(t, result, 4, vm.POP, hash[:])
 }
 
 func TestStylusTraceMath(t *testing.T) {
@@ -153,38 +155,50 @@ func TestStylusTraceMath(t *testing.T) {
 	}
 
 	// math_mul_mod
-	checkOpcodeStack(t, result, 3, vm.MULMOD, value, unknown, ed25519)
-	checkOpcodeStack(t, result, 4, vm.POP, results[0])
+	checkOpcode(t, result, 3, vm.MULMOD, value, unknown, ed25519)
+	checkOpcode(t, result, 4, vm.POP, results[0])
 
 	// math_add_mod
-	checkOpcodeStack(t, result, 5, vm.ADDMOD, results[0], ed25519, unknown)
-	checkOpcodeStack(t, result, 6, vm.POP, results[1])
+	checkOpcode(t, result, 5, vm.ADDMOD, results[0], ed25519, unknown)
+	checkOpcode(t, result, 6, vm.POP, results[1])
 
 	// math_div
-	checkOpcodeStack(t, result, 7, vm.DIV, results[1], value[:8])
-	checkOpcodeStack(t, result, 8, vm.POP, results[2])
+	checkOpcode(t, result, 7, vm.DIV, results[1], value[:8])
+	checkOpcode(t, result, 8, vm.POP, results[2])
 
 	// math_pow
-	checkOpcodeStack(t, result, 9, vm.EXP, results[2], ed25519[24:32])
-	checkOpcodeStack(t, result, 10, vm.POP, results[3])
+	checkOpcode(t, result, 9, vm.EXP, results[2], ed25519[24:32])
+	checkOpcode(t, result, 10, vm.POP, results[3])
 
 	// math_mod
-	checkOpcodeStack(t, result, 11, vm.MOD, results[3], unknown[:8])
-	checkOpcodeStack(t, result, 12, vm.POP, results[4])
+	checkOpcode(t, result, 11, vm.MOD, results[3], unknown[:8])
+	checkOpcode(t, result, 12, vm.POP, results[4])
 }
 
-func TestStylusTraceExitEarly(t *testing.T) {
+func TestStylusTraceExit(t *testing.T) {
 	const jit = false
 	builder, auth, cleanup := setupProgramTest(t, jit)
 	ctx := builder.ctx
 	l2client := builder.L2.Client
 	defer cleanup()
 
-	program := deployWasm(t, ctx, auth, l2client, watFile("exit-early/exit-early"))
-	result := sendAndTraceTransaction(t, builder, program, nil, nil)
+	// normal exit with return value
+	program := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
+	key := testhelpers.RandomHash()
+	result := sendAndTraceTransaction(t, builder, program, nil, argsForStorageRead(key))
+	size := intToBytes(32)
+	checkOpcode(t, result, 5, vm.RETURN, nil, size)
 
-	// exit_early
-	checkOpcodeStack(t, result, 3, vm.RETURN, nil, nil)
+	// stop with exit early
+	program = deployWasm(t, ctx, auth, l2client, watFile("exit-early/exit-early"))
+	result = sendAndTraceTransaction(t, builder, program, nil, nil)
+	checkOpcode(t, result, 3, vm.STOP)
+
+	// revert
+	program = deployWasm(t, ctx, auth, l2client, watFile("exit-early/panic-after-write"))
+	result = sendAndTraceTransaction(t, builder, program, nil, nil)
+	size = intToBytes(len("execution reverted"))
+	checkOpcode(t, result, 3, vm.REVERT, nil, size)
 }
 
 func TestStylusTraceEvmData(t *testing.T) {
@@ -221,78 +235,78 @@ func TestStylusTraceEvmData(t *testing.T) {
 	owner := l2info.GetAddress("Owner")
 
 	// read_args
-	checkOpcodeStack(t, result, 2, vm.CALLDATACOPY, nil, nil, intToBytes(len(data)))
+	checkOpcode(t, result, 2, vm.CALLDATACOPY, nil, nil, intToBytes(len(data)))
 
 	// account_balance
-	checkOpcodeStack(t, result, 3, vm.BALANCE, fundedAddr[:])
-	checkOpcodeStack(t, result, 4, vm.POP, fundedBalance.Bytes())
+	checkOpcode(t, result, 3, vm.BALANCE, fundedAddr[:])
+	checkOpcode(t, result, 4, vm.POP, fundedBalance.Bytes())
 
 	// account_codehash
-	checkOpcodeStack(t, result, 9, vm.EXTCODEHASH, program[:])
-	checkOpcodeStack(t, result, 10, vm.POP, programCodehash)
+	checkOpcode(t, result, 9, vm.EXTCODEHASH, program[:])
+	checkOpcode(t, result, 10, vm.POP, programCodehash)
 
 	// account_code_size
-	checkOpcodeStack(t, result, 11, vm.EXTCODESIZE, program[:])
-	checkOpcodeStack(t, result, 12, vm.POP, intToBytes(len(programCode)))
+	checkOpcode(t, result, 11, vm.EXTCODESIZE, program[:])
+	checkOpcode(t, result, 12, vm.POP, intToBytes(len(programCode)))
 
 	// account_code
-	checkOpcodeStack(t, result, 13, vm.EXTCODECOPY, program[:], nil, nil, intToBytes(len(programCode)))
+	checkOpcode(t, result, 13, vm.EXTCODECOPY, program[:], nil, nil, intToBytes(len(programCode)))
 
 	// block_basefee
-	checkOpcodeStack(t, result, 26, vm.BASEFEE)
-	checkOpcode(t, result, 27, vm.POP, 1)
+	checkOpcode(t, result, 26, vm.BASEFEE)
+	checkOpcode(t, result, 27, vm.POP, skipCheck)
 
 	// chainid
-	checkOpcodeStack(t, result, 28, vm.CHAINID)
-	checkOpcodeStack(t, result, 29, vm.POP, intToBytes(412346))
+	checkOpcode(t, result, 28, vm.CHAINID)
+	checkOpcode(t, result, 29, vm.POP, intToBytes(412346))
 
 	// block_coinbase
-	checkOpcodeStack(t, result, 30, vm.COINBASE)
-	checkOpcode(t, result, 31, vm.POP, 1)
+	checkOpcode(t, result, 30, vm.COINBASE)
+	checkOpcode(t, result, 31, vm.POP, skipCheck)
 
 	// block_gas_limit
-	checkOpcodeStack(t, result, 32, vm.GASLIMIT)
-	checkOpcode(t, result, 33, vm.POP, 1)
+	checkOpcode(t, result, 32, vm.GASLIMIT)
+	checkOpcode(t, result, 33, vm.POP, skipCheck)
 
 	// block_timestamp
-	checkOpcodeStack(t, result, 34, vm.TIMESTAMP)
-	checkOpcode(t, result, 35, vm.POP, 1)
+	checkOpcode(t, result, 34, vm.TIMESTAMP)
+	checkOpcode(t, result, 35, vm.POP, skipCheck)
 
 	// contract_address
-	checkOpcodeStack(t, result, 36, vm.ADDRESS)
-	checkOpcodeStack(t, result, 37, vm.POP, program[:])
+	checkOpcode(t, result, 36, vm.ADDRESS)
+	checkOpcode(t, result, 37, vm.POP, program[:])
 
 	// msg_sender
-	checkOpcodeStack(t, result, 38, vm.CALLER)
-	checkOpcodeStack(t, result, 39, vm.POP, owner[:])
+	checkOpcode(t, result, 38, vm.CALLER)
+	checkOpcode(t, result, 39, vm.POP, owner[:])
 
 	// msg_value
-	checkOpcodeStack(t, result, 40, vm.CALLVALUE)
-	checkOpcodeStack(t, result, 41, vm.POP, nil)
+	checkOpcode(t, result, 40, vm.CALLVALUE)
+	checkOpcode(t, result, 41, vm.POP, nil)
 
 	// tx_origin
-	checkOpcodeStack(t, result, 42, vm.ORIGIN)
-	checkOpcodeStack(t, result, 43, vm.POP, owner[:])
+	checkOpcode(t, result, 42, vm.ORIGIN)
+	checkOpcode(t, result, 43, vm.POP, owner[:])
 
 	// tx_gas_price
-	checkOpcodeStack(t, result, 44, vm.GASPRICE)
-	checkOpcode(t, result, 45, vm.POP, 1)
+	checkOpcode(t, result, 44, vm.GASPRICE)
+	checkOpcode(t, result, 45, vm.POP, skipCheck)
 
 	// tx_ink_price
-	checkOpcodeStack(t, result, 46, vm.GASPRICE)
-	checkOpcode(t, result, 47, vm.POP, 1)
+	checkOpcode(t, result, 46, vm.GASPRICE)
+	checkOpcode(t, result, 47, vm.POP, skipCheck)
 
 	// block_number
-	checkOpcodeStack(t, result, 48, vm.NUMBER)
-	checkOpcode(t, result, 49, vm.POP, 1)
+	checkOpcode(t, result, 48, vm.NUMBER)
+	checkOpcode(t, result, 49, vm.POP, skipCheck)
 
 	// evm_gas_left
-	checkOpcodeStack(t, result, 50, vm.GAS)
-	checkOpcode(t, result, 51, vm.POP, 1)
+	checkOpcode(t, result, 50, vm.GAS)
+	checkOpcode(t, result, 51, vm.POP, skipCheck)
 
 	// evm_ink_left
-	checkOpcodeStack(t, result, 52, vm.GAS)
-	checkOpcode(t, result, 53, vm.POP, 1)
+	checkOpcode(t, result, 52, vm.GAS)
+	checkOpcode(t, result, 53, vm.POP, skipCheck)
 }
 
 func TestStylusTraceLog(t *testing.T) {
@@ -318,7 +332,7 @@ func TestStylusTraceLog(t *testing.T) {
 	result := sendAndTraceTransaction(t, builder, program, nil, args)
 
 	// emit_log
-	checkOpcodeStack(t, result, 3, vm.LOG4, expectedStack...)
+	checkOpcode(t, result, 3, vm.LOG4, expectedStack...)
 }
 
 func TestStylusTraceReturnDataSize(t *testing.T) {
@@ -333,8 +347,8 @@ func TestStylusTraceReturnDataSize(t *testing.T) {
 	result := sendAndTraceTransaction(t, builder, program, nil, args)
 
 	// return_data_size
-	checkOpcodeStack(t, result, 3, vm.RETURNDATASIZE)
-	checkOpcodeStack(t, result, 4, vm.POP, nil)
+	checkOpcode(t, result, 3, vm.RETURNDATASIZE)
+	checkOpcode(t, result, 4, vm.POP, nil)
 }
 
 func TestStylusTraceCall(t *testing.T) {
@@ -347,8 +361,8 @@ func TestStylusTraceCall(t *testing.T) {
 	storage := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
 	multicall := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
 	key := testhelpers.RandomHash()
+	gas := skipCheck
 	innerArgs := argsForStorageRead(key)
-	gas := common.Hex2Bytes("ffffffffffffffff")
 	argsLen := intToBytes(len(innerArgs))
 	returnLen := intToBytes(32)
 
@@ -358,17 +372,16 @@ func TestStylusTraceCall(t *testing.T) {
 	result := sendAndTraceTransaction(t, builder, multicall, nil, args)
 
 	// call_contract
-	checkOpcodeStack(t, result, 6, vm.CALL, gas, storage[:], nil, nil, argsLen, nil, nil)
-	checkOpcodeStack(t, result, 7, vm.POP, nil)
+	checkOpcode(t, result, 3, vm.CALL, gas, storage[:], nil, nil, argsLen, nil, nil)
 
 	// read_return_data
-	checkOpcodeStack(t, result, 8, vm.RETURNDATACOPY, nil, nil, returnLen)
+	checkOpcode(t, result, 8, vm.RETURNDATACOPY, nil, nil, returnLen)
 
 	// delegate_call_contract
-	checkOpcodeStack(t, result, 12, vm.DELEGATECALL, gas, storage[:], nil, argsLen, nil, nil)
+	checkOpcode(t, result, 9, vm.DELEGATECALL, gas, storage[:], nil, argsLen, nil, nil)
 
 	// static_call_contract
-	checkOpcodeStack(t, result, 18, vm.STATICCALL, gas, storage[:], nil, argsLen, nil, nil)
+	checkOpcode(t, result, 15, vm.STATICCALL, gas, storage[:], nil, argsLen, nil, nil)
 }
 
 func TestStylusTraceCreate(t *testing.T) {
@@ -392,8 +405,8 @@ func TestStylusTraceCreate(t *testing.T) {
 	create1Args = append(create1Args, common.BigToHash(startValue).Bytes()...)
 	create1Args = append(create1Args, deployCode...)
 	result := sendAndTraceTransaction(t, builder, program, startValue, create1Args)
-	checkOpcodeStack(t, result, 10, vm.CREATE, startValue.Bytes(), nil, intToBytes(len(deployCode)))
-	checkOpcodeStack(t, result, 11, vm.POP, create1Addr[:])
+	checkOpcode(t, result, 10, vm.CREATE, startValue.Bytes(), nil, intToBytes(len(deployCode)))
+	checkOpcode(t, result, 11, vm.POP, create1Addr[:])
 
 	// create2
 	create2Args := []byte{0x02}
@@ -401,6 +414,6 @@ func TestStylusTraceCreate(t *testing.T) {
 	create2Args = append(create2Args, salt[:]...)
 	create2Args = append(create2Args, deployCode...)
 	result = sendAndTraceTransaction(t, builder, program, startValue, create2Args)
-	checkOpcodeStack(t, result, 10, vm.CREATE2, startValue.Bytes(), nil, intToBytes(len(deployCode)), salt[:])
-	checkOpcodeStack(t, result, 11, vm.POP, create2Addr[:])
+	checkOpcode(t, result, 10, vm.CREATE2, startValue.Bytes(), nil, intToBytes(len(deployCode)), salt[:])
+	checkOpcode(t, result, 11, vm.POP, create2Addr[:])
 }

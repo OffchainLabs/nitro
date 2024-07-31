@@ -120,11 +120,7 @@ func (info *TracingInfo) MockCall(input []byte, gas uint64, from, to common.Addr
 	tracer.CaptureState(0, vm.POP, 0, 0, popScope, []byte{}, depth, nil)
 }
 
-func (info *TracingInfo) CaptureEVMTraceForHostio(name string, args, outs []byte, startInk, endInk uint64, scope *vm.ScopeContext, depth int) {
-	intToBytes := func(v int) []byte {
-		return binary.BigEndian.AppendUint64(nil, uint64(v))
-	}
-
+func (info *TracingInfo) CaptureEVMTraceForHostio(name string, args, outs []byte, startInk, endInk uint64) {
 	checkArgs := func(want int) bool {
 		if len(args) < want {
 			log.Warn("tracing: missing arguments bytes for hostio", "name", name, "want", want, "got", len(args))
@@ -155,41 +151,15 @@ func (info *TracingInfo) CaptureEVMTraceForHostio(name string, args, outs []byte
 			gas = endInk / inkToGas
 			cost = 0
 		}
-
-		stack := []uint256.Int{}
-		for _, value := range stackValues {
-			stack = append(stack, *uint256.NewInt(0).SetBytes(value))
-		}
-		scope := &vm.ScopeContext{
-			Memory:   TracingMemoryFromBytes(memory),
-			Stack:    TracingStackFromArgs(stack...),
-			Contract: scope.Contract,
-		}
-
-		info.Tracer.CaptureState(0, op, gas, cost, scope, []byte{}, depth, nil)
+		info.captureState(op, gas, cost, memory, stackValues...)
 	}
 
 	switch name {
 	case "read_args":
 		destOffset := []byte(nil)
 		offset := []byte(nil)
-		size := intToBytes(len(outs))
+		size := lenToBytes(outs)
 		capture(vm.CALLDATACOPY, outs, destOffset, offset, size)
-
-	case "exit_early":
-		if !checkArgs(4) {
-			return
-		}
-		status := binary.BigEndian.Uint32(args[:4])
-		var opcode vm.OpCode
-		if status == 0 {
-			opcode = vm.RETURN
-		} else {
-			opcode = vm.REVERT
-		}
-		offset := []byte(nil)
-		size := []byte(nil)
-		capture(opcode, nil, offset, size)
 
 	case "storage_load_bytes32":
 		if !checkArgs(32) || !checkOuts(32) {
@@ -228,43 +198,6 @@ func (info *TracingInfo) CaptureEVMTraceForHostio(name string, args, outs []byte
 		value := args[32:64]
 		capture(vm.TSTORE, nil, key, value)
 
-	case "call_contract":
-		if !checkArgs(20+8+32) || !checkOuts(4+1) {
-			return
-		}
-		address := args[:20]
-		gas := args[20:28]
-		value := args[28:60]
-		callArgs := args[60:]
-		argsOffset := []byte(nil)
-		argsSize := intToBytes(len(callArgs))
-		retOffset := []byte(nil)
-		retSize := []byte(nil)
-		status := outs[4:5]
-		capture(vm.CALL, callArgs, gas, address, value, argsOffset, argsSize, retOffset, retSize)
-		capture(vm.POP, callArgs, status)
-
-	case "delegate_call_contract", "static_call_contract":
-		if !checkArgs(20+8) || !checkOuts(4+1) {
-			return
-		}
-		address := args[:20]
-		gas := args[20:28]
-		callArgs := args[28:]
-		argsOffset := []byte(nil)
-		argsSize := intToBytes(len(callArgs))
-		retOffset := []byte(nil)
-		retSize := []byte(nil)
-		status := outs[4:5]
-		var opcode vm.OpCode
-		if name == "delegate_call_contract" {
-			opcode = vm.DELEGATECALL
-		} else {
-			opcode = vm.STATICCALL
-		}
-		capture(opcode, callArgs, gas, address, argsOffset, argsSize, retOffset, retSize)
-		capture(vm.POP, callArgs, status)
-
 	case "create1":
 		if !checkArgs(32) || !checkOuts(20) {
 			return
@@ -272,7 +205,7 @@ func (info *TracingInfo) CaptureEVMTraceForHostio(name string, args, outs []byte
 		value := args[:32]
 		code := args[32:]
 		offset := []byte(nil)
-		size := intToBytes(len(code))
+		size := lenToBytes(code)
 		address := outs[:20]
 		capture(vm.CREATE, code, value, offset, size)
 		capture(vm.POP, code, address)
@@ -285,7 +218,7 @@ func (info *TracingInfo) CaptureEVMTraceForHostio(name string, args, outs []byte
 		salt := args[32:64]
 		code := args[64:]
 		offset := []byte(nil)
-		size := intToBytes(len(code))
+		size := lenToBytes(code)
 		address := outs[:20]
 		capture(vm.CREATE2, code, value, offset, size, salt)
 		capture(vm.POP, code, address)
@@ -318,7 +251,7 @@ func (info *TracingInfo) CaptureEVMTraceForHostio(name string, args, outs []byte
 		}
 		data := args[dataOffset:]
 		offset := []byte(nil)
-		size := intToBytes(len(data))
+		size := lenToBytes(data)
 		opcode := vm.LOG0 + vm.OpCode(numTopics)
 		stack := [][]byte{offset, size}
 		for i := 0; i < numTopics; i++ {
@@ -501,7 +434,7 @@ func (info *TracingInfo) CaptureEVMTraceForHostio(name string, args, outs []byte
 			return
 		}
 		offset := []byte(nil)
-		size := intToBytes(len(args))
+		size := lenToBytes(args)
 		hash := outs[:32]
 		capture(vm.KECCAK256, args, offset, size)
 		capture(vm.POP, args, hash)
@@ -530,12 +463,73 @@ func (info *TracingInfo) CaptureEVMTraceForHostio(name string, args, outs []byte
 		capture(vm.ORIGIN, nil)
 		capture(vm.POP, nil, address)
 
-	case "user_entrypoint", "user_returned", "msg_reentrant", "write_result", "pay_for_memory_grow", "console_log_test", "console_log":
+	case "call_contract", "delegate_call_contract", "static_call_contract":
+		// The API receives the CaptureHostIO after the EVM call is done but we want to
+		// capture the opcde before it. So, we capture the state in CaptureStylusCall.
+
+	case "write_result", "exit_early":
+		// These calls are handled on CaptureStylusExit to also cover the normal exit case.
+
+	case "user_entrypoint", "user_returned", "msg_reentrant", "pay_for_memory_grow", "console_log_test", "console_log":
 		// No EVM counterpart
 
 	default:
 		log.Warn("unhandled hostio trace", "name", name)
 	}
+}
+
+func (info *TracingInfo) CaptureStylusCall(opCode vm.OpCode, contract common.Address, value *uint256.Int, input []byte, gas, startGas, baseCost uint64) {
+	var stack [][]byte
+	stack = append(stack, intToBytes(gas))  // gas
+	stack = append(stack, contract.Bytes()) // address
+	if opCode == vm.CALL {
+		stack = append(stack, value.Bytes()) // call value
+	}
+	stack = append(stack, []byte(nil))       // memory offset
+	stack = append(stack, lenToBytes(input)) // memory length
+	stack = append(stack, []byte(nil))       // return offset
+	stack = append(stack, []byte(nil))       // return size
+	info.captureState(opCode, startGas, baseCost+gas, input, stack...)
+}
+
+func (info *TracingInfo) CaptureStylusExit(status uint8, data []byte, err error, gas uint64) {
+	var opCode vm.OpCode
+	if status == 0 {
+		if len(data) == 0 {
+			info.captureState(vm.STOP, gas, 0, nil)
+			return
+		}
+		opCode = vm.RETURN
+	} else {
+		opCode = vm.REVERT
+		if data == nil {
+			data = []byte(err.Error())
+		}
+	}
+	offset := []byte(nil)
+	size := lenToBytes(data)
+	info.captureState(opCode, gas, 0, data, offset, size)
+}
+
+func (info *TracingInfo) captureState(op vm.OpCode, gas uint64, cost uint64, memory []byte, stackValues ...[]byte) {
+	stack := []uint256.Int{}
+	for _, value := range stackValues {
+		stack = append(stack, *uint256.NewInt(0).SetBytes(value))
+	}
+	scope := &vm.ScopeContext{
+		Memory:   TracingMemoryFromBytes(memory),
+		Stack:    TracingStackFromArgs(stack...),
+		Contract: info.Contract,
+	}
+	info.Tracer.CaptureState(0, op, gas, cost, scope, []byte{}, info.Depth, nil)
+}
+
+func lenToBytes(data []byte) []byte {
+	return intToBytes(uint64(len(data)))
+}
+
+func intToBytes(v uint64) []byte {
+	return binary.BigEndian.AppendUint64(nil, v)
 }
 
 func HashToUint256(hash common.Hash) uint256.Int {

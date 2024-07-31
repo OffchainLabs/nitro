@@ -206,6 +206,9 @@ func callProgram(
 	if status == userFailure && debug {
 		log.Warn("program failure", "err", err, "msg", msg, "program", address, "depth", depth)
 	}
+	if tracingInfo != nil {
+		tracingInfo.CaptureStylusExit(uint8(status), data, err, scope.Contract.Gas)
+	}
 	return data, err
 }
 

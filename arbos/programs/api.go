@@ -65,7 +65,6 @@ func newApiClosures(
 	actingAddress := contract.Address() // not necessarily WASM
 	readOnly := interpreter.ReadOnly()
 	evm := interpreter.Evm()
-	depth := evm.Depth()
 	db := evm.StateDB
 	chainConfig := evm.ChainConfig()
 
@@ -134,6 +133,11 @@ func newApiClosures(
 		// EVM rule: calls that pay get a stipend (opCall)
 		if value.Sign() != 0 {
 			gas = am.SaturatingUAdd(gas, params.CallStipend)
+		}
+
+		// Tracing: emit the call (value transfer is done later in evm.Call)
+		if tracingInfo != nil {
+			tracingInfo.CaptureStylusCall(opcode, contract, value, input, gas, startGas, baseCost)
 		}
 
 		var ret []byte
@@ -250,7 +254,7 @@ func newApiClosures(
 	}
 	captureHostio := func(name string, args, outs []byte, startInk, endInk uint64) {
 		tracingInfo.Tracer.CaptureStylusHostio(name, args, outs, startInk, endInk)
-		tracingInfo.CaptureEVMTraceForHostio(name, args, outs, startInk, endInk, scope, depth)
+		tracingInfo.CaptureEVMTraceForHostio(name, args, outs, startInk, endInk)
 	}
 
 	return func(req RequestType, input []byte) ([]byte, []byte, uint64) {
