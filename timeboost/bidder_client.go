@@ -107,7 +107,6 @@ func (bd *BidderClient) Bid(
 		ChainId:                bd.chainId,
 		ExpressLaneController:  expressLaneController,
 		AuctionContractAddress: bd.auctionContractAddress,
-		Bidder:                 bd.txOpts.From,
 		Round:                  CurrentRound(bd.initialRoundTimestamp, bd.roundDuration) + 1,
 		Amount:                 amount,
 		Signature:              nil,

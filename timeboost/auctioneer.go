@@ -233,9 +233,6 @@ func (a *Auctioneer) validateBid(bid *Bid) (*validatedBid, error) {
 	if bid == nil {
 		return nil, errors.Wrap(ErrMalformedData, "nil bid")
 	}
-	if bid.Bidder == (common.Address{}) {
-		return nil, errors.Wrap(ErrMalformedData, "empty bidder address")
-	}
 	if bid.ExpressLaneController == (common.Address{}) {
 		return nil, errors.Wrap(ErrMalformedData, "empty express lane controller address")
 	}
@@ -298,12 +295,13 @@ func (a *Auctioneer) validateBid(bid *Bid) (*validatedBid, error) {
 	if !verifySignature(pubkey, packedBidBytes, sigItem) {
 		return nil, ErrWrongSignature
 	}
+	bidder := crypto.PubkeyToAddress(*pubkey)
 	// Validate if the user if a depositor in the contract and has enough balance for the bid.
 	// TODO: Retry some number of times if flakey connection.
 	// TODO: Validate reserve price against amount of bid.
 	// TODO: No need to do anything expensive if the bid coming is in invalid.
 	// Cache this if the received time of the bid is too soon. Include the arrival timestamp.
-	depositBal, err := a.auctionContract.BalanceOf(&bind.CallOpts{}, bid.Bidder)
+	depositBal, err := a.auctionContract.BalanceOf(&bind.CallOpts{}, bidder)
 	if err != nil {
 		return nil, err
 	}
@@ -320,7 +318,7 @@ func (a *Auctioneer) validateBid(bid *Bid) (*validatedBid, error) {
 		chainId:                bid.ChainId,
 		auctionContractAddress: bid.AuctionContractAddress,
 		round:                  bid.Round,
-		bidder:                 bid.Bidder,
+		bidder:                 bidder,
 	}, nil
 }
 

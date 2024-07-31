@@ -19,7 +19,6 @@ type AuctioneerAPI struct {
 type JsonBid struct {
 	ChainId                *hexutil.Big   `json:"chainId"`
 	ExpressLaneController  common.Address `json:"expressLaneController"`
-	Bidder                 common.Address `json:"bidder"`
 	AuctionContractAddress common.Address `json:"auctionContractAddress"`
 	Round                  hexutil.Uint64 `json:"round"`
 	Amount                 *hexutil.Big   `json:"amount"`
@@ -45,7 +44,7 @@ type ExpressLaneSubmission struct {
 }
 
 func JsonSubmissionToGo(submission *JsonExpressLaneSubmission) (*ExpressLaneSubmission, error) {
-	var tx *types.Transaction
+	tx := &types.Transaction{}
 	if err := tx.UnmarshalBinary(submission.Transaction); err != nil {
 		return nil, err
 	}
@@ -110,7 +109,6 @@ func (a *AuctioneerAPI) SubmitBid(ctx context.Context, bid *JsonBid) error {
 	return a.receiveBid(ctx, &Bid{
 		ChainId:                bid.ChainId.ToInt(),
 		ExpressLaneController:  bid.ExpressLaneController,
-		Bidder:                 bid.Bidder,
 		AuctionContractAddress: bid.AuctionContractAddress,
 		Round:                  uint64(bid.Round),
 		Amount:                 bid.Amount.ToInt(),

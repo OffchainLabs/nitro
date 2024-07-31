@@ -33,9 +33,11 @@ import (
 	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -1197,23 +1199,22 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 	return nil
 }
 
-// TODO: This is needed because there is no way to currently set the initial timestamp of the express lane service
-// without starting the sequencer. This is a temporary solution until we have a better way to handle this.
-func (s *Sequencer) StartExpressLaneService(
-	ctx context.Context, initialTimestamp uint64, auctionContractAddr common.Address,
-) {
+func (s *Sequencer) StartExpressLane(ctx context.Context, auctionContractAddr common.Address) {
 	if !s.config().Timeboost.Enable {
-		return
+		log.Crit("Timeboost is not enabled, but StartExpressLane was called")
 	}
+	rpcClient, err := rpc.DialContext(ctx, "http://localhost:9567")
+	if err != nil {
+		log.Crit("Failed to connect to RPC client", "err", err)
+	}
+	seqClient := ethclient.NewClient(rpcClient)
 	els, err := newExpressLaneService(
 		auctionContractAddr,
-		initialTimestamp,
-		s.config().Timeboost.RoundDuration,
+		seqClient,
 		s.execEngine.bc,
 	)
 	if err != nil {
-		log.Error("Failed to start express lane service", "err", err)
-		return
+		log.Crit("Failed to create express lane service", "err", err)
 	}
 	s.expressLaneService = els
 	s.expressLaneService.Start(ctx)

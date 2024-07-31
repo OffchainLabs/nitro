@@ -164,6 +164,7 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	waitTime := roundDuration - time.Duration(now.Second())*time.Second - time.Duration(now.Nanosecond())*time.Nanosecond
 	// Get the current Unix timestamp at the start of the minute
 	initialTimestamp := big.NewInt(now.Add(waitTime).Unix())
+	initialTimestampUnix := time.Unix(initialTimestamp.Int64(), 0)
 
 	// Deploy the auction manager contract.
 	auctionContractAddr, tx, _, err := express_lane_auctiongen.DeployExpressLaneAuction(&ownerOpts, seqClient)
@@ -254,9 +255,7 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// We start the sequencer's express lane auction service.
-	builderSeq.L2.ExecNode.Sequencer.StartExpressLaneService(ctx, initialTimestamp.Uint64(), proxyAddr)
-
+	builderSeq.L2.ExecNode.Sequencer.StartExpressLane(ctx, proxyAddr)
 	t.Log("Started express lane service in sequencer")
 
 	// Set up an autonomous auction contract service that runs in the background in this test.
@@ -321,8 +320,8 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	// Wait until the initial round.
 	info, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
 	Require(t, err)
-	timeToWait := time.Until(time.Unix(int64(info.OffsetTimestamp), 0))
-	t.Log("Waiting until the initial round", timeToWait, time.Unix(int64(info.OffsetTimestamp), 0))
+	timeToWait := time.Until(initialTimestampUnix)
+	t.Logf("Waiting until the initial round %v and %v, current time %v", timeToWait, initialTimestampUnix, time.Now())
 	<-time.After(timeToWait)
 
 	t.Log("Started auction master stack and bid clients")
@@ -330,13 +329,15 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	Require(t, bob.Deposit(ctx, big.NewInt(5)))
 
 	// Wait until the next timeboost round + a few milliseconds.
+	now = time.Now()
 	waitTime = roundDuration - time.Duration(now.Second())*time.Second - time.Duration(now.Nanosecond())
-	t.Logf("Alice and Bob are now deposited into the autonomous auction contract, waiting %v for bidding round...", waitTime)
+	t.Logf("Alice and Bob are now deposited into the autonomous auction contract, waiting %v for bidding round..., timestamp %v", waitTime, time.Now())
 	time.Sleep(waitTime)
+	t.Logf("Reached the bidding round at %v", time.Now())
 	time.Sleep(time.Second * 5)
 
 	// We are now in the bidding round, both issue their bids. Bob will win.
-	t.Log("Alice and Bob now submitting their bids")
+	t.Logf("Alice and Bob now submitting their bids at %v", time.Now())
 	aliceBid, err := alice.Bid(ctx, big.NewInt(1), aliceOpts.From)
 	Require(t, err)
 	bobBid, err := bob.Bid(ctx, big.NewInt(2), bobOpts.From)

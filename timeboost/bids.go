@@ -31,7 +31,6 @@ var (
 type Bid struct {
 	ChainId                *big.Int
 	ExpressLaneController  common.Address
-	Bidder                 common.Address
 	AuctionContractAddress common.Address
 	Round                  uint64
 	Amount                 *big.Int
