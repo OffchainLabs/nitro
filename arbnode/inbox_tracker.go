@@ -404,7 +404,7 @@ func (t *InboxTracker) GetDelayedMessageBytes(ctx context.Context, seqNum uint64
 	return msg.Serialize()
 }
 
-func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardReorg bool) error {
+func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage) error {
 	var nextAcc common.Hash
 	firstDelayedMsgToKeep := uint64(0)
 	if len(messages) == 0 {
@@ -440,17 +440,15 @@ func (t *InboxTracker) AddDelayedMessages(messages []*DelayedInboxMessage, hardR
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 
-	if !hardReorg {
-		// This math is safe to do as we know len(messages) > 0
-		haveLastAcc, err := t.GetDelayedAcc(pos + uint64(len(messages)) - 1)
-		if err == nil {
-			if haveLastAcc == messages[len(messages)-1].AfterInboxAcc() {
-				// We already have these delayed messages
-				return nil
-			}
-		} else if !errors.Is(err, AccumulatorNotFoundErr) {
-			return err
+	// This math is safe to do as we know len(messages) > 0
+	haveLastAcc, err := t.GetDelayedAcc(pos + uint64(len(messages)) - 1)
+	if err == nil {
+		if haveLastAcc == messages[len(messages)-1].AfterInboxAcc() {
+			// We already have these delayed messages
+			return nil
 		}
+	} else if !errors.Is(err, AccumulatorNotFoundErr) {
+		return err
 	}
 
 	if pos > firstDelayedMsgToKeep {
@@ -852,7 +850,7 @@ func (t *InboxTracker) AddSequencerBatches(ctx context.Context, client *ethclien
 	return nil
 }
 
-func (t *InboxTracker) ReorgDelayedTo(count uint64, canReorgBatches bool) error {
+func (t *InboxTracker) ReorgDelayedTo(count uint64) error {
 	t.mutex.Lock()
 	defer t.mutex.Unlock()
 
@@ -867,7 +865,7 @@ func (t *InboxTracker) ReorgDelayedTo(count uint64, canReorgBatches bool) error 
 		return errors.New("attempted to reorg to future delayed count")
 	}
 
-	return t.setDelayedCountReorgAndWriteBatch(t.db.NewBatch(), count, canReorgBatches)
+	return t.setDelayedCountReorgAndWriteBatch(t.db.NewBatch(), count, false)
 }
 
 func (t *InboxTracker) ReorgBatchesTo(count uint64) error {

@@ -231,10 +231,6 @@ func mainImpl() int {
 		nodeConfig.Node.ParentChainReader.Enable = true
 	}
 
-	if nodeConfig.Execution.Sequencer.Enable && nodeConfig.Node.ParentChainReader.Enable && nodeConfig.Node.InboxReader.HardReorg {
-		flag.Usage()
-		log.Crit("hard reorgs cannot safely be enabled with sequencer mode enabled")
-	}
 	if nodeConfig.Execution.Sequencer.Enable != nodeConfig.Node.Sequencer {
 		log.Error("consensus and execution must agree if sequencing is enabled or not", "Execution.Sequencer.Enable", nodeConfig.Execution.Sequencer.Enable, "Node.Sequencer", nodeConfig.Node.Sequencer)
 	}

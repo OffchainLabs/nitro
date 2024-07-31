@@ -27,7 +27,6 @@ import (
 type InboxReaderConfig struct {
 	DelayBlocks         uint64        `koanf:"delay-blocks" reload:"hot"`
 	CheckDelay          time.Duration `koanf:"check-delay" reload:"hot"`
-	HardReorg           bool          `koanf:"hard-reorg" reload:"hot"`
 	MinBlocksToRead     uint64        `koanf:"min-blocks-to-read" reload:"hot"`
 	DefaultBlocksToRead uint64        `koanf:"default-blocks-to-read" reload:"hot"`
 	TargetMessagesRead  uint64        `koanf:"target-messages-read" reload:"hot"`
@@ -51,7 +50,6 @@ func (c *InboxReaderConfig) Validate() error {
 func InboxReaderConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".delay-blocks", DefaultInboxReaderConfig.DelayBlocks, "number of latest blocks to ignore to reduce reorgs")
 	f.Duration(prefix+".check-delay", DefaultInboxReaderConfig.CheckDelay, "the maximum time to wait between inbox checks (if not enough new blocks are found)")
-	f.Bool(prefix+".hard-reorg", DefaultInboxReaderConfig.HardReorg, "erase future transactions in addition to overwriting existing ones on reorg")
 	f.Uint64(prefix+".min-blocks-to-read", DefaultInboxReaderConfig.MinBlocksToRead, "the minimum number of blocks to read at once (when caught up lowers load on L1)")
 	f.Uint64(prefix+".default-blocks-to-read", DefaultInboxReaderConfig.DefaultBlocksToRead, "the default number of blocks to read at once (will vary based on traffic by default)")
 	f.Uint64(prefix+".target-messages-read", DefaultInboxReaderConfig.TargetMessagesRead, "if adjust-blocks-to-read is enabled, the target number of messages to read at once")
@@ -62,7 +60,6 @@ func InboxReaderConfigAddOptions(prefix string, f *flag.FlagSet) {
 var DefaultInboxReaderConfig = InboxReaderConfig{
 	DelayBlocks:         0,
 	CheckDelay:          time.Minute,
-	HardReorg:           false,
 	MinBlocksToRead:     1,
 	DefaultBlocksToRead: 100,
 	TargetMessagesRead:  500,
@@ -73,7 +70,6 @@ var DefaultInboxReaderConfig = InboxReaderConfig{
 var TestInboxReaderConfig = InboxReaderConfig{
 	DelayBlocks:         0,
 	CheckDelay:          time.Millisecond * 10,
-	HardReorg:           false,
 	MinBlocksToRead:     1,
 	DefaultBlocksToRead: 100,
 	TargetMessagesRead:  500,
@@ -338,7 +334,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 				missingDelayed = true
 			} else if ourLatestDelayedCount > checkingDelayedCount {
 				log.Info("backwards reorg of delayed messages", "from", ourLatestDelayedCount, "to", checkingDelayedCount)
-				err = r.tracker.ReorgDelayedTo(checkingDelayedCount, config.HardReorg)
+				err = r.tracker.ReorgDelayedTo(checkingDelayedCount)
 				if err != nil {
 					return err
 				}
@@ -373,11 +369,6 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 			if ourLatestBatchCount < checkingBatchCount {
 				checkingBatchCount = ourLatestBatchCount
 				missingSequencer = true
-			} else if ourLatestBatchCount > checkingBatchCount && config.HardReorg {
-				err = r.tracker.ReorgBatchesTo(checkingBatchCount)
-				if err != nil {
-					return err
-				}
 			}
 			if checkingBatchCount > 0 {
 				checkingBatchSeqNum := checkingBatchCount - 1
@@ -566,7 +557,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 }
 
 func (r *InboxReader) addMessages(ctx context.Context, sequencerBatches []*SequencerInboxBatch, delayedMessages []*DelayedInboxMessage) (bool, error) {
-	err := r.tracker.AddDelayedMessages(delayedMessages, r.config().HardReorg)
+	err := r.tracker.AddDelayedMessages(delayedMessages)
 	if err != nil {
 		return false, err
 	}
