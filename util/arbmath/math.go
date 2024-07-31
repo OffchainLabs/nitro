@@ -387,7 +387,7 @@ func DivCeil[T Unsigned](value, divisor T) T {
 
 // ApproxExpBasisPoints return the Maclaurin series approximation of e^x, where x is denominated in basis points.
 // The quartic polynomial will underestimate e^x by about 5% as x approaches 20000 bips.
-func ApproxExpBasisPoints(value Bips, degree uint64) Bips {
+func ApproxExpBasisPoints(value Bips, accuracy uint64) Bips {
 	input := value
 	negative := value < 0
 	if negative {
@@ -396,9 +396,9 @@ func ApproxExpBasisPoints(value Bips, degree uint64) Bips {
 	x := uint64(input)
 	bips := uint64(OneInBips)
 
-	res := bips + x/degree
-	for i := uint64(1); i < degree; i++ {
-		res = bips + SaturatingUMul(res, x)/((degree-i)*bips)
+	res := bips + x/accuracy
+	for i := uint64(1); i < accuracy; i++ {
+		res = bips + SaturatingUMul(res, x)/((accuracy-i)*bips)
 	}
 
 	if negative {
