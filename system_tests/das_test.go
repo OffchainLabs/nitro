@@ -89,7 +89,7 @@ func blsPubToBase64(pubkey *blsSignatures.PublicKey) string {
 	return string(encodedPubkey)
 }
 
-func aggConfigForBackend(t *testing.T, backendConfig das.BackendConfig) das.AggregatorConfig {
+func aggConfigForBackend(backendConfig das.BackendConfig) das.AggregatorConfig {
 	return das.AggregatorConfig{
 		Enable:                true,
 		AssumedHonest:         1,
@@ -115,7 +115,7 @@ func TestDASRekey(t *testing.T) {
 
 		// Setup DAS config
 		builder.nodeConfig.DataAvailability.Enable = true
-		builder.nodeConfig.DataAvailability.RPCAggregator = aggConfigForBackend(t, backendConfigA)
+		builder.nodeConfig.DataAvailability.RPCAggregator = aggConfigForBackend(backendConfigA)
 		builder.nodeConfig.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
 		builder.nodeConfig.DataAvailability.RestAggregator.Enable = true
 		builder.nodeConfig.DataAvailability.RestAggregator.Urls = []string{restServerUrlA}
@@ -153,7 +153,7 @@ func TestDASRekey(t *testing.T) {
 	authorizeDASKeyset(t, ctx, pubkeyB, builder.L1Info, builder.L1.Client)
 
 	// Restart the node on the new keyset against the new DAS server running on the same disk as the first with new keys
-	builder.nodeConfig.DataAvailability.RPCAggregator = aggConfigForBackend(t, backendConfigB)
+	builder.nodeConfig.DataAvailability.RPCAggregator = aggConfigForBackend(backendConfigB)
 	builder.l2StackConfig = testhelpers.CreateStackConfigForTest(builder.dataDir)
 	cleanup := builder.BuildL2OnL1(t)
 	defer cleanup()
@@ -268,7 +268,7 @@ func TestDASComplexConfigAndRestMirror(t *testing.T) {
 		URL:    "http://" + rpcLis.Addr().String(),
 		Pubkey: blsPubToBase64(pubkey),
 	}
-	builder.nodeConfig.DataAvailability.RPCAggregator = aggConfigForBackend(t, beConfigA)
+	builder.nodeConfig.DataAvailability.RPCAggregator = aggConfigForBackend(beConfigA)
 	builder.nodeConfig.DataAvailability.RestAggregator = das.DefaultRestfulClientAggregatorConfig
 	builder.nodeConfig.DataAvailability.RestAggregator.Enable = true
 	builder.nodeConfig.DataAvailability.RestAggregator.Urls = []string{"http://" + restLis.Addr().String()}
