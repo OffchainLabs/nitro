@@ -223,7 +223,7 @@ func TestSubmitRetryableImmediateSuccess(t *testing.T) {
 		Fatal(t, "l1Receipt indicated failure")
 	}
 
-	waitForL1DelayBlocks(t, ctx, builder)
+	waitForL1DelayBlocks(t, builder)
 
 	receipt, err := builder.L2.EnsureTxSucceeded(lookupL2Tx(l1Receipt))
 	Require(t, err)
@@ -295,7 +295,7 @@ func testSubmitRetryableEmptyEscrow(t *testing.T, arbosVersion uint64) {
 		Fatal(t, "l1Receipt indicated failure")
 	}
 
-	waitForL1DelayBlocks(t, ctx, builder)
+	waitForL1DelayBlocks(t, builder)
 
 	l2Tx := lookupL2Tx(l1Receipt)
 	receipt, err := builder.L2.EnsureTxSucceeded(l2Tx)
@@ -362,7 +362,7 @@ func TestSubmitRetryableFailThenRetry(t *testing.T) {
 		Fatal(t, "l1Receipt indicated failure")
 	}
 
-	waitForL1DelayBlocks(t, ctx, builder)
+	waitForL1DelayBlocks(t, builder)
 
 	receipt, err := builder.L2.EnsureTxSucceeded(lookupL2Tx(l1Receipt))
 	Require(t, err)
@@ -480,7 +480,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 		Fatal(t, "l1Receipt indicated failure")
 	}
 
-	waitForL1DelayBlocks(t, ctx, builder)
+	waitForL1DelayBlocks(t, builder)
 
 	submissionTxOuter := lookupL2Tx(l1Receipt)
 	submissionReceipt, err := builder.L2.EnsureTxSucceeded(submissionTxOuter)
@@ -586,7 +586,7 @@ func TestSubmissionGasCosts(t *testing.T) {
 	}
 }
 
-func waitForL1DelayBlocks(t *testing.T, ctx context.Context, builder *NodeBuilder) {
+func waitForL1DelayBlocks(t *testing.T, builder *NodeBuilder) {
 	// sending l1 messages creates l1 blocks.. make enough to get that delayed inbox message in
 	for i := 0; i < 30; i++ {
 		builder.L1.SendWaitTestTransactions(t, []*types.Transaction{
@@ -622,7 +622,7 @@ func TestDepositETH(t *testing.T) {
 	if l1Receipt.Status != types.ReceiptStatusSuccessful {
 		t.Errorf("Got transaction status: %v, want: %v", l1Receipt.Status, types.ReceiptStatusSuccessful)
 	}
-	waitForL1DelayBlocks(t, ctx, builder)
+	waitForL1DelayBlocks(t, builder)
 
 	l2Receipt, err := builder.L2.EnsureTxSucceeded(lookupL2Tx(l1Receipt))
 	if err != nil {
@@ -681,7 +681,7 @@ func TestArbitrumContractTx(t *testing.T) {
 	if receipt.Status != types.ReceiptStatusSuccessful {
 		t.Errorf("L1 transaction: %v has failed", l1tx.Hash())
 	}
-	waitForL1DelayBlocks(t, ctx, builder)
+	waitForL1DelayBlocks(t, builder)
 	_, err = builder.L2.EnsureTxSucceeded(lookupL2Tx(receipt))
 	if err != nil {
 		t.Fatalf("EnsureTxSucceeded(%v) unexpected error: %v", unsignedTx.Hash(), err)
@@ -750,7 +750,7 @@ func TestL1FundedUnsignedTransaction(t *testing.T) {
 	if receipt.Status != types.ReceiptStatusSuccessful {
 		t.Errorf("L1 transaction: %v has failed", l1tx.Hash())
 	}
-	waitForL1DelayBlocks(t, ctx, builder)
+	waitForL1DelayBlocks(t, builder)
 	receipt, err = builder.L2.EnsureTxSucceeded(unsignedTx)
 	if err != nil {
 		t.Fatalf("EnsureTxSucceeded(%v) unexpected error: %v", unsignedTx.Hash(), err)
@@ -802,7 +802,7 @@ func TestRetryableSubmissionAndRedeemFees(t *testing.T) {
 		Fatal(t, "l1Receipt indicated failure")
 	}
 
-	waitForL1DelayBlocks(t, ctx, builder)
+	waitForL1DelayBlocks(t, builder)
 
 	submissionTxOuter := lookupL2Tx(l1Receipt)
 	submissionReceipt, err := builder.L2.EnsureTxSucceeded(submissionTxOuter)
@@ -971,7 +971,7 @@ func TestRetryableRedeemBlockGasUsage(t *testing.T) {
 	if l1Receipt.Status != types.ReceiptStatusSuccessful {
 		Fatal(t, "l1Receipt indicated failure")
 	}
-	waitForL1DelayBlocks(t, ctx, builder)
+	waitForL1DelayBlocks(t, builder)
 	submissionReceipt, err := EnsureTxSucceeded(ctx, l2client, lookupL2Tx(l1Receipt))
 	Require(t, err)
 	if len(submissionReceipt.Logs) != 2 {
