@@ -1,9 +1,6 @@
 // Copyright 2021-2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-//go:build cionly
-// +build cionly
-
 package arbtest
 
 import (
@@ -18,7 +15,6 @@ import (
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
-// This is a flaky test.
 // During a reorg:
 // 1. TransactionStreamer, holding insertionMutex lock, calls ExecutionEngine, which then adds old messages to a channel.
 // After that, and before releasing the lock, TransactionStreamer does more computations.
