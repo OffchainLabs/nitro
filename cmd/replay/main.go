@@ -203,6 +203,13 @@ func main() {
 		panic(fmt.Sprintf("Error opening state db: %v", err.Error()))
 	}
 
+	batchFetcher := func(batchNum uint64) ([]byte, error) {
+		currentBatch := wavmio.GetInboxPosition()
+		if batchNum > currentBatch {
+			return nil, fmt.Errorf("invalid batch fetch request %d, max %d", batchNum, currentBatch)
+		}
+		return wavmio.ReadInboxMessage(batchNum), nil
+	}
 	readMessage := func(dasEnabled bool) *arbostypes.MessageWithMetadata {
 		var delayedMessagesRead uint64
 		if lastBlockHeader != nil {
@@ -232,6 +239,10 @@ func main() {
 			panic(fmt.Sprintf("Error reading from inbox multiplexer: %v", err.Error()))
 		}
 
+		err = message.Message.FillInBatchGasCost(batchFetcher)
+		if err != nil {
+			message.Message = arbostypes.InvalidL1Message
+		}
 		return message
 	}
 
@@ -280,14 +291,10 @@ func main() {
 		message := readMessage(chainConfig.ArbitrumChainParams.DataAvailabilityCommittee)
 
 		chainContext := WavmChainContext{}
-		batchFetcher := func(batchNum uint64) ([]byte, error) {
-			return wavmio.ReadInboxMessage(batchNum), nil
-		}
-		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, batchFetcher, false)
+		newBlock, _, err = arbos.ProduceBlock(message.Message, message.DelayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, false)
 		if err != nil {
 			panic(err)
 		}
-
 	} else {
 		// Initialize ArbOS with this init message and create the genesis block.
 

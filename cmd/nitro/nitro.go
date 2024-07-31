@@ -30,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/keystore"
 	"github.com/ethereum/go-ethereum/arbitrum"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	_ "github.com/ethereum/go-ethereum/eth/tracers/js"
@@ -839,6 +840,9 @@ func (c *NodeConfig) Validate() error {
 	}
 	if err := c.BlocksReExecutor.Validate(); err != nil {
 		return err
+	}
+	if c.Node.ValidatorRequired() && (c.Execution.Caching.StateScheme == rawdb.PathScheme) {
+		return errors.New("path cannot be used as execution.caching.state-scheme when validator is required")
 	}
 	return c.Persistent.Validate()
 }
