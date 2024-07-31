@@ -199,7 +199,7 @@ func user(suffix string, idx int) string {
 }
 
 // tryWithTimeout calls function f() repeatedly foruntil it succeeds.
-func tryWithTimeout(ctx context.Context, f func() error, duration time.Duration) error {
+func tryWithTimeout(f func() error, duration time.Duration) error {
 	for {
 		select {
 		case <-time.After(duration):
@@ -263,7 +263,7 @@ func TestRedisForwarder(t *testing.T) {
 		tx := builder.L2Info.PrepareTx(userA, userB, builder.L2Info.TransferGas, transferAmount, nil)
 
 		sendFunc := func() error { return forwardingClient.SendTransaction(ctx, tx) }
-		if err := tryWithTimeout(ctx, sendFunc, DefaultTestForwarderConfig.UpdateInterval*10); err != nil {
+		if err := tryWithTimeout(sendFunc, DefaultTestForwarderConfig.UpdateInterval*10); err != nil {
 			t.Fatalf("Client: %v, error sending transaction: %v", i, err)
 		}
 		_, err := EnsureTxSucceeded(ctx, seqClients[i], tx)
@@ -308,7 +308,7 @@ func TestRedisForwarderFallbackNoRedis(t *testing.T) {
 	builder.L2Info.GenerateAccount(user)
 	tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, transferAmount, nil)
 	sendFunc := func() error { return forwardingClient.SendTransaction(ctx, tx) }
-	err := tryWithTimeout(ctx, sendFunc, DefaultTestForwarderConfig.UpdateInterval*10)
+	err := tryWithTimeout(sendFunc, DefaultTestForwarderConfig.UpdateInterval*10)
 	Require(t, err)
 
 	_, err = builder.L2.EnsureTxSucceeded(tx)
