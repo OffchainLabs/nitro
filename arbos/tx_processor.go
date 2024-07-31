@@ -153,13 +153,17 @@ func (p *TxProcessor) StartTxHook() (endTxNow bool, gasUsed uint64, err error, r
 		}
 		evm.IncrementDepth() // fake a call
 		from := p.msg.From
-		tracer.OnEnter(evm.Depth(), byte(vm.CALL), from, *p.msg.To, p.msg.Data, p.msg.GasLimit, p.msg.Value)
+		if tracer.OnEnter != nil {
+			tracer.OnEnter(evm.Depth(), byte(vm.CALL), from, *p.msg.To, p.msg.Data, p.msg.GasLimit, p.msg.Value)
+		}
 
 		tracingInfo = util.NewTracingInfo(evm, from, *p.msg.To, util.TracingDuringEVM)
 		p.state = arbosState.OpenSystemArbosStateOrPanic(evm.StateDB, tracingInfo, false)
 
 		return func() {
-			tracer.OnExit(evm.Depth(), nil, p.state.Burner.Burned(), nil, false)
+			if tracer.OnExit != nil {
+				tracer.OnExit(evm.Depth(), nil, p.state.Burner.Burned(), nil, false)
+			}
 			evm.DecrementDepth() // fake the return to the first faked call
 
 			tracingInfo = util.NewTracingInfo(evm, from, *p.msg.To, util.TracingAfterEVM)

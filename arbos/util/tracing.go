@@ -63,7 +63,9 @@ func (info *TracingInfo) RecordEmitLog(topics []common.Hash, data []byte) {
 		Contract: info.Contract,
 	}
 	logType := fmt.Sprintf("LOG%d", len(topics))
-	info.Tracer.OnOpcode(0, byte(vm.StringToOp(logType)), 0, 0, scope, []byte{}, info.Depth, nil)
+	if info.Tracer.OnOpcode != nil {
+		info.Tracer.OnOpcode(0, byte(vm.StringToOp(logType)), 0, 0, scope, []byte{}, info.Depth, nil)
+	}
 }
 
 func (info *TracingInfo) RecordStorageGet(key common.Hash) {
@@ -74,7 +76,9 @@ func (info *TracingInfo) RecordStorageGet(key common.Hash) {
 			Stack:    TracingStackFromArgs(HashToUint256(key)),
 			Contract: info.Contract,
 		}
-		tracer.OnOpcode(0, byte(vm.SLOAD), 0, 0, scope, []byte{}, info.Depth, nil)
+		if tracer.OnOpcode != nil {
+			tracer.OnOpcode(0, byte(vm.SLOAD), 0, 0, scope, []byte{}, info.Depth, nil)
+		}
 	} else {
 		tracer.CaptureArbitrumStorageGet(key, info.Depth, info.Scenario == TracingBeforeEVM)
 	}
@@ -88,7 +92,9 @@ func (info *TracingInfo) RecordStorageSet(key, value common.Hash) {
 			Stack:    TracingStackFromArgs(HashToUint256(key), HashToUint256(value)),
 			Contract: info.Contract,
 		}
-		tracer.OnOpcode(0, byte(vm.SSTORE), 0, 0, scope, []byte{}, info.Depth, nil)
+		if tracer.OnOpcode != nil {
+			tracer.OnOpcode(0, byte(vm.SSTORE), 0, 0, scope, []byte{}, info.Depth, nil)
+		}
 	} else {
 		tracer.CaptureArbitrumStorageSet(key, value, info.Depth, info.Scenario == TracingBeforeEVM)
 	}
@@ -113,8 +119,12 @@ func (info *TracingInfo) MockCall(input []byte, gas uint64, from, to common.Addr
 		),
 		Contract: contract,
 	}
-	tracer.OnOpcode(0, byte(vm.CALL), 0, 0, scope, []byte{}, depth, nil)
-	tracer.OnEnter(depth, byte(vm.INVALID), from, to, input, 0, amount)
+	if tracer.OnOpcode != nil {
+		tracer.OnOpcode(0, byte(vm.CALL), 0, 0, scope, []byte{}, depth, nil)
+	}
+	if tracer.OnEnter != nil {
+		tracer.OnEnter(depth, byte(vm.CALL), from, to, input, gas, amount)
+	}
 
 	retScope := &vm.ScopeContext{
 		Memory: vm.NewMemory(),
@@ -124,8 +134,12 @@ func (info *TracingInfo) MockCall(input []byte, gas uint64, from, to common.Addr
 		),
 		Contract: contract,
 	}
-	tracer.OnOpcode(0, byte(vm.RETURN), 0, 0, retScope, []byte{}, depth+1, nil)
-	tracer.OnExit(depth+1, nil, 0, nil, false)
+	if tracer.OnOpcode != nil {
+		tracer.OnOpcode(0, byte(vm.RETURN), 0, 0, retScope, []byte{}, depth+1, nil)
+	}
+	if tracer.OnExit != nil {
+		tracer.OnExit(depth+1, nil, 0, nil, false)
+	}
 
 	popScope := &vm.ScopeContext{
 		Memory: vm.NewMemory(),
@@ -134,7 +148,9 @@ func (info *TracingInfo) MockCall(input []byte, gas uint64, from, to common.Addr
 		),
 		Contract: contract,
 	}
-	tracer.OnOpcode(0, byte(vm.POP), 0, 0, popScope, []byte{}, depth, nil)
+	if tracer.OnOpcode != nil {
+		tracer.OnOpcode(0, byte(vm.POP), 0, 0, popScope, []byte{}, depth, nil)
+	}
 }
 
 func HashToUint256(hash common.Hash) uint256.Int {
