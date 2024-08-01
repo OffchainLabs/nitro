@@ -78,7 +78,7 @@ jobs:
         uses: dtolnay/rust-toolchain@nightly
         id: install-rust-nightly
         with:
-          toolchain: 'nightly-2024-02-04'
+          toolchain: 'nightly'
           targets: 'wasm32-wasi, wasm32-unknown-unknown'
           components: 'rust-src, rustfmt, clippy'
 
@@ -156,7 +156,7 @@ jobs:
         run: echo "$HOME/wabt-prefix/bin" >> "$GITHUB_PATH"
 
       - name: Make arbitrator libraries
-        run: make -j wasm-ci-build STYLUS_NIGHTLY_VER="+nightly-2024-02-04"
+        run: make -j wasm-ci-build
 
       - name: Clippy check
         run: cargo clippy --all --manifest-path arbitrator/Cargo.toml -- -D warnings
