@@ -320,7 +320,7 @@ func NewStaker(
 		return nil, err
 	}
 	// Only use gnosis safe fast confirmation, if the safe address is different from the wallet address, else it's not a safe contract.
-	if fastConfirmer != (common.Address{}) && config.EnableFastConfirmation && wallet.AddressOrZero() != fastConfirmer {
+	if fastConfirmer != (common.Address{}) && config.EnableFastConfirmation && wallet.AddressOrZero() != (common.Address{}) && wallet.AddressOrZero() != fastConfirmer {
 		fastConfirmSafe, err = NewFastConfirmSafe(
 			callOpts,
 			fastConfirmer,
@@ -331,6 +331,13 @@ func NewStaker(
 		)
 		if err != nil {
 			return nil, err
+		}
+		isOwner, err := fastConfirmSafe.safe.IsOwner(&callOpts, wallet.AddressOrZero())
+		if err != nil {
+			return nil, err
+		}
+		if !isOwner {
+			log.Info("fast confirmer is not part of owners of safe", "fastConfirmer", fastConfirmer, "wallet", wallet.AddressOrZero())
 		}
 	}
 	return &Staker{

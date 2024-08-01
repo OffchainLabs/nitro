@@ -157,6 +157,8 @@ func TestFastConfirmation(t *testing.T) {
 	Require(t, err)
 	err = stateless.Start(ctx)
 	Require(t, err)
+	err = valWallet.Initialize(ctx)
+	Require(t, err)
 	stakerA, err := staker.NewStaker(
 		l2node.L1Reader,
 		valWallet,
@@ -171,10 +173,6 @@ func TestFastConfirmation(t *testing.T) {
 	)
 	Require(t, err)
 	err = stakerA.Initialize(ctx)
-	if stakerA.Strategy() != staker.WatchtowerStrategy {
-		err = valWallet.Initialize(ctx)
-		Require(t, err)
-	}
 	Require(t, err)
 	cfg := arbnode.ConfigDefaultL1NonSequencerTest()
 	signerCfg, err := externalSignerTestCfg(srv.Address, srv.URL())
