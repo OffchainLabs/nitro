@@ -604,7 +604,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 	var messages []arbostypes.MessageWithMetadata
 	msgToRead := localMsgCount
 	var msgReadErr error
-	for msgToRead < readUntil && localMsgCount > remoteFinalizedMsgCount {
+	for msgToRead < readUntil && localMsgCount >= remoteFinalizedMsgCount {
 		var resString string
 		resString, msgReadErr = c.Client.Get(ctx, redisutil.MessageKeyFor(msgToRead)).Result()
 		if msgReadErr != nil {
