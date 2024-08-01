@@ -70,13 +70,14 @@ jobs:
 
       - name: Install rust wasm targets
         run: |
-          echo 'STYLUS_NIGHTLY_VER=+nightly-2024-07-30' >> "$GITHUB_ENV"
           rustup target add wasm32-wasi wasm32-unknown-unknown
 
       - name: Install nightly wasm targets
         run: |
-          rustup component add rust-src --toolchain nightly
-          rustup target add wasm32-unknown-unknown --toolchain nightly
+          nightly_toolchain='nightly-2024-07-30'
+          echo 'STYLUS_NIGHTLY_VER=+'"$nightly_toolchain" >> "$GITHUB_ENV"
+          rustup component add rust-src --toolchain "$nightly_toolchain"
+          rustup target add wasm32-unknown-unknown --toolchain "$nightly_toolchain"
 
       - name: Cache Build Products
         uses: actions/cache@v3
