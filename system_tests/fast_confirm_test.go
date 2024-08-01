@@ -122,7 +122,6 @@ func TestFastConfirmation(t *testing.T) {
 	Require(t, err)
 
 	valConfig := staker.TestL1ValidatorConfig
-	valConfig.EnableFastConfirmation = true
 	parentChainID, err := builder.L1.Client.ChainID(ctx)
 	if err != nil {
 		t.Fatalf("Failed to get parent chain id: %v", err)
@@ -324,8 +323,6 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	Require(t, err)
 
 	valConfig := staker.TestL1ValidatorConfig
-	valConfig.EnableFastConfirmation = true
-	valConfig.FastConfirmSafeAddress = safeAddress.String()
 
 	parentChainID, err := builder.L1.Client.ChainID(ctx)
 	if err != nil {
