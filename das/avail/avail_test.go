@@ -47,6 +47,7 @@ func TestMarshallAndUnmarshalBlobPointer(t *testing.T) {
 		uint32(blockHeight),
 		uint32(extrinsicIndex),
 		common.HexToHash("97a3dacf2a1bfc09eb047e4194084b021fa949cb9b660e1f94d484c070e154f5"),
+		common.HexToHash("97a3dacf2a1bfc09eb047e4194084b021fa949cb9b660e1f94d484c070e154f5"),
 		blobProof,
 	}
 

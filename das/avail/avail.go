@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -146,7 +147,7 @@ func (a *AvailDA) Store(ctx context.Context, message []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	log.Info("Finalized extrinsic", "extrinsicIndex", extrinsicIndex)
+	log.Info("🏆  Data included in Avail's finalised block", "blockHash", finalizedblockHash, "extrinsicIndex", extrinsicIndex)
 
 	blobProof, err := QueryBlobProof(a.api, extrinsicIndex, finalizedblockHash)
 	if err != nil {
@@ -154,7 +155,7 @@ func (a *AvailDA) Store(ctx context.Context, message []byte) ([]byte, error) {
 	}
 
 	// Creating BlobPointer to submit over settlement layer
-	blobPointer := BlobPointer{BlockHeight: uint32(header.Number), ExtrinsicIndex: uint32(extrinsicIndex), DasTreeRootHash: dastree.Hash(message), BlobProof: blobProof}
+	blobPointer := BlobPointer{BlockHeight: uint32(header.Number), ExtrinsicIndex: uint32(extrinsicIndex), DasTreeRootHash: dastree.Hash(message), BlobDataKeccak265H: crypto.Keccak256Hash(message), BlobProof: blobProof}
 	log.Info("✅  Sucesfully included in block data to Avail", "BlobPointer:", blobPointer)
 	blobPointerData, err := blobPointer.MarshalToBinary()
 	if err != nil {
