@@ -105,6 +105,9 @@ func encodeExpressLaneSubmission(
 	return buf.Bytes(), nil
 }
 
+type AuctionResolutionSubmission struct {
+}
+
 func (a *AuctioneerAPI) SubmitBid(ctx context.Context, bid *JsonBid) error {
 	return a.receiveBid(ctx, &Bid{
 		ChainId:                bid.ChainId.ToInt(),

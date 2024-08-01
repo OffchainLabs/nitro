@@ -159,9 +159,8 @@ func (es *expressLaneService) currentRoundHasController() bool {
 	return es.control.controller != (common.Address{})
 }
 
-// TODO: Validate sequence numbers are correct.
 func (es *expressLaneService) validateExpressLaneTx(msg *timeboost.ExpressLaneSubmission) error {
-	if msg.Transaction == nil || msg.Signature == nil {
+	if msg == nil || msg.Transaction == nil || msg.Signature == nil {
 		return timeboost.ErrMalformedData
 	}
 	if msg.ChainId.Cmp(es.chainConfig.ChainID) != 0 {

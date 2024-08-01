@@ -32,7 +32,7 @@ type auctionSetup struct {
 	backend                *simulated.Backend
 }
 
-func setupAuctionTest(t *testing.T, ctx context.Context) *auctionSetup {
+func setupAuctionTest(t testing.TB, ctx context.Context) *auctionSetup {
 	accs, backend := setupAccounts(10)
 
 	// Advance the chain in the background at Arbitrum One's block time of 250ms.
@@ -149,7 +149,7 @@ func setupAuctionTest(t *testing.T, ctx context.Context) *auctionSetup {
 }
 
 func setupBidderClient(
-	t *testing.T, ctx context.Context, name string, account *testAccount, testSetup *auctionSetup, auctioneerEndpoint string,
+	t testing.TB, ctx context.Context, name string, account *testAccount, testSetup *auctionSetup, auctioneerEndpoint string,
 ) *BidderClient {
 	bc, err := NewBidderClient(
 		ctx,

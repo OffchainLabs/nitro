@@ -2,7 +2,9 @@ package timeboost
 
 import (
 	"context"
+	"fmt"
 	"math/big"
+	"net"
 	"testing"
 	"time"
 
@@ -213,17 +215,38 @@ func TestTopTwoBids(t *testing.T) {
 	}
 }
 
-func setupAuctioneer(t *testing.T, ctx context.Context, testSetup *auctionSetup) (*Auctioneer, string) {
+func BenchmarkBidValidation(b *testing.B) {
+	b.StopTimer()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	testSetup := setupAuctionTest(b, ctx)
+	am, endpoint := setupAuctioneer(b, ctx, testSetup)
+	bc := setupBidderClient(b, ctx, "alice", testSetup.accounts[0], testSetup, endpoint)
+	require.NoError(b, bc.Deposit(ctx, big.NewInt(5)))
+
+	// Form a valid bid.
+	newBid, err := bc.Bid(ctx, big.NewInt(5), testSetup.accounts[0].txOpts.From)
+	require.NoError(b, err)
+
+	b.StartTimer()
+	for i := 0; i < b.N; i++ {
+		am.validateBid(newBid)
+	}
+}
+
+func setupAuctioneer(t testing.TB, ctx context.Context, testSetup *auctionSetup) (*Auctioneer, string) {
 	// Set up a new auction master instance that can validate bids.
 	// Set up the auctioneer RPC service.
+	randHttp := getRandomPort(t)
 	stackConf := node.Config{
 		DataDir:             "", // ephemeral.
-		HTTPPort:            9372,
+		HTTPPort:            randHttp,
 		HTTPModules:         []string{AuctioneerNamespace},
 		HTTPHost:            "localhost",
 		HTTPVirtualHosts:    []string{"localhost"},
 		HTTPTimeouts:        rpc.DefaultHTTPTimeouts,
-		WSPort:              9373,
+		WSPort:              getRandomPort(t),
 		WSModules:           []string{AuctioneerNamespace},
 		WSHost:              "localhost",
 		GraphQLVirtualHosts: []string{"localhost"},
@@ -241,5 +264,12 @@ func setupAuctioneer(t *testing.T, ctx context.Context, testSetup *auctionSetup)
 	require.NoError(t, err)
 	go am.Start(ctx)
 	require.NoError(t, stack.Start())
-	return am, "http://localhost:9372"
+	return am, fmt.Sprintf("http://localhost:%d", randHttp)
+}
+
+func getRandomPort(t testing.TB) int {
+	listener, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	defer listener.Close()
+	return listener.Addr().(*net.TCPAddr).Port
 }
