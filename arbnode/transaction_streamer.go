@@ -268,14 +268,6 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 	if count == 0 {
 		return errors.New("cannot reorg out init message")
 	}
-
-	// If not started, use a background context.
-	// This can happening when reorging on startup using the init flag.
-	ctx := context.Background()
-	if s.Started() {
-		ctx = s.GetContext()
-	}
-
 	lastDelayedSeqNum, err := s.getPrevPrevDelayedRead(count)
 	if err != nil {
 		return err
@@ -332,7 +324,7 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 					continue
 				}
 				msgBlockNum := new(big.Int).SetUint64(oldMessage.Message.Header.BlockNumber)
-				delayedInBlock, err := s.delayedBridge.LookupMessagesInRange(ctx, msgBlockNum, msgBlockNum, nil)
+				delayedInBlock, err := s.delayedBridge.LookupMessagesInRange(s.GetContext(), msgBlockNum, msgBlockNum, nil)
 				if err != nil {
 					log.Error("reorg-resequence: failed to serialize old delayed message from database", "err", err)
 					continue
@@ -376,7 +368,7 @@ func (s *TransactionStreamer) reorg(batch ethdb.Batch, count arbutil.MessageInde
 	s.broadcastMessages(messagesWithComputedBlockHash, count)
 
 	if s.validator != nil {
-		err = s.validator.Reorg(ctx, count)
+		err = s.validator.Reorg(s.GetContext(), count)
 		if err != nil {
 			return err
 		}

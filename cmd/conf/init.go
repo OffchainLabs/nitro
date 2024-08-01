@@ -102,6 +102,15 @@ func (c *InitConfig) Validate() error {
 	if c.PruneTrieCleanCache < 0 {
 		return fmt.Errorf("invalid trie clean cache size: %d, has to be greater or equal 0", c.PruneTrieCleanCache)
 	}
+	numReorgOptionsSpecified := 0
+	for _, reorgOption := range []int64{c.ReorgToBatch, c.ReorgToMessageBatch, c.ReorgToBlockBatch} {
+		if reorgOption >= 0 {
+			numReorgOptionsSpecified++
+			if numReorgOptionsSpecified > 1 {
+				return fmt.Errorf("only one init reorg option can be specified")
+			}
+		}
+	}
 	return nil
 }
 
