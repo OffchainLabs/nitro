@@ -5,3 +5,6 @@ target = "wasm32-wasi"
 rustflags = [
   "-C", "target-cpu=mvp",
 ]
+
+[unstable]
+build-std = ["core", "panic_abort", "alloc", "std"]
