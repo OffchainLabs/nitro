@@ -102,7 +102,7 @@ impl MemAccess for JitMemAccess<'_> {
             self.view()
                 .read_uninit(ptr.into(), &mut data)
                 .expect("bad read");
-            mem::transmute(data)
+            mem::transmute::<Vec<MaybeUninit<u8>>, Vec<u8>>(data)
         }
     }
 
