@@ -50,7 +50,10 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 )
 
-require github.com/google/go-querystring v1.1.0 // indirect
+require (
+	github.com/google/btree v1.1.2 // indirect
+	github.com/google/go-querystring v1.1.0 // indirect
+)
 
 require (
 	github.com/DataDog/zstd v1.4.5 // indirect

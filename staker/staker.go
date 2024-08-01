@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/google/btree"
 	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
@@ -246,6 +247,11 @@ type LatestConfirmedNotifier interface {
 	UpdateLatestConfirmed(count arbutil.MessageIndex, globalState validator.GoGlobalState)
 }
 
+type validatedNode struct {
+	number uint64
+	hash   common.Hash
+}
+
 type Staker struct {
 	*L1Validator
 	stopwaiter.StopWaiter
@@ -258,6 +264,7 @@ type Staker struct {
 	highGasBlocksBuffer     *big.Int
 	lastActCalledBlock      *big.Int
 	inactiveLastCheckedNode *nodeAndHash
+	inactiveValidatedNodes  *btree.BTreeG[validatedNode]
 	bringActiveUntilNode    uint64
 	inboxReader             InboxReaderInterface
 	statelessBlockValidator *StatelessBlockValidator
@@ -326,6 +333,9 @@ func NewStaker(
 			return nil, err
 		}
 	}
+	inactiveValidatedNodes := btree.NewG(2, func(a, b validatedNode) bool {
+		return a.number < b.number || (a.number == b.number && a.hash.Cmp(b.hash) < 0)
+	})
 	return &Staker{
 		L1Validator:             val,
 		l1Reader:                l1Reader,
@@ -339,6 +349,7 @@ func NewStaker(
 		statelessBlockValidator: statelessBlockValidator,
 		fatalErr:                fatalErr,
 		fastConfirmSafe:         fastConfirmSafe,
+		inactiveValidatedNodes:  inactiveValidatedNodes,
 	}, nil
 }
 
@@ -683,43 +694,6 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		StakeExists:          rawInfo != nil,
 	}
 
-	if s.config.EnableFastConfirmation {
-		firstUnresolvedNode, err := s.rollup.FirstUnresolvedNode(callOpts)
-		if err != nil {
-			return nil, err
-		}
-		if latestStakedNodeNum >= firstUnresolvedNode {
-			lastHeader, err := s.l1Reader.LastHeader(ctx)
-			if err != nil {
-				return nil, err
-			}
-			// To check if a node is correct, we simply check if we're staked on it.
-			// Since we're staked on it or a later node, this will tell us if it's correct.
-			// To keep this call consistent with the GetNode call, we pin a specific parent chain block hash.
-			checkNodeCorrectCallOpts := s.getCallOpts(ctx)
-			checkNodeCorrectCallOpts.BlockHash = lastHeader.ParentHash
-			stakedOnNode, err := s.rollup.NodeHasStaker(checkNodeCorrectCallOpts, firstUnresolvedNode, walletAddressOrZero)
-			if err != nil {
-				return nil, err
-			}
-			if stakedOnNode {
-				nodeInfo, err := s.rollup.GetNode(checkNodeCorrectCallOpts, firstUnresolvedNode)
-				if err != nil {
-					return nil, err
-				}
-				err = s.tryFastConfirmationNodeNumber(ctx, firstUnresolvedNode, nodeInfo.NodeHash)
-				if err != nil {
-					return nil, err
-				}
-				if s.builder.BuildingTransactionCount() > 0 {
-					// Try to fast confirm previous nodes before working on new ones
-					log.Info("fast confirming previous node", "node", firstUnresolvedNode)
-					return s.wallet.ExecuteTransactions(ctx, s.builder, s.config.gasRefunder)
-				}
-			}
-		}
-	}
-
 	effectiveStrategy := s.config.strategy
 	nodesLinear, err := s.validatorUtils.AreUnresolvedNodesLinear(callOpts, s.rollupAddress)
 	if err != nil {
@@ -748,9 +722,66 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		info.LatestStakedNodeHash = s.inactiveLastCheckedNode.hash
 	}
 
+	if s.config.EnableFastConfirmation {
+		firstUnresolvedNode, err := s.rollup.FirstUnresolvedNode(callOpts)
+		if err != nil {
+			return nil, err
+		}
+		if info.LatestStakedNode >= firstUnresolvedNode {
+			lastHeader, err := s.l1Reader.LastHeader(ctx)
+			if err != nil {
+				return nil, err
+			}
+			// To check if a node is correct, we simply check if we're staked on it.
+			// Since we're staked on it or a later node, this will tell us if it's correct.
+			// To keep this call consistent with the GetNode call, we pin a specific parent chain block hash.
+			checkNodeCorrectCallOpts := s.getCallOpts(ctx)
+			checkNodeCorrectCallOpts.BlockHash = lastHeader.ParentHash
+			nodeInfo, err := s.rollup.GetNode(checkNodeCorrectCallOpts, firstUnresolvedNode)
+			if err != nil {
+				return nil, err
+			}
+			validatedNode, haveValidated := s.inactiveValidatedNodes.Get(validatedNode{
+				number: firstUnresolvedNode,
+				hash:   nodeInfo.NodeHash,
+			})
+			confirmedCorrect := haveValidated && validatedNode.hash == nodeInfo.NodeHash
+			if !confirmedCorrect {
+				stakedOnNode, err := s.rollup.NodeHasStaker(checkNodeCorrectCallOpts, firstUnresolvedNode, walletAddressOrZero)
+				if err != nil {
+					return nil, err
+				}
+				confirmedCorrect = stakedOnNode
+			}
+			if confirmedCorrect {
+				err = s.tryFastConfirmationNodeNumber(ctx, firstUnresolvedNode, nodeInfo.NodeHash)
+				if err != nil {
+					return nil, err
+				}
+				if s.builder.BuildingTransactionCount() > 0 {
+					// Try to fast confirm previous nodes before working on new ones
+					log.Info("fast confirming previous node", "node", firstUnresolvedNode)
+					return s.wallet.ExecuteTransactions(ctx, s.builder, s.config.gasRefunder)
+				}
+			}
+		}
+	}
+
 	latestConfirmedNode, err := s.rollup.LatestConfirmed(callOpts)
 	if err != nil {
 		return nil, fmt.Errorf("error getting latest confirmed node: %w", err)
+	}
+
+	// Clear s.inactiveValidatedNodes of any entries before or equal to latestConfirmedNode
+	for {
+		validatedNode, ok := s.inactiveValidatedNodes.Min()
+		if !ok {
+			break
+		}
+		if validatedNode.number > latestConfirmedNode {
+			break
+		}
+		s.inactiveValidatedNodes.DeleteMin()
 	}
 
 	requiredStakeElevated, err := s.isRequiredStakeElevated(ctx)
@@ -992,6 +1023,10 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 					id:   action.number,
 					hash: action.hash,
 				}
+				s.inactiveValidatedNodes.ReplaceOrInsert(validatedNode{
+					number: action.number,
+					hash:   action.hash,
+				})
 			}
 			return s.tryFastConfirmationNodeNumber(ctx, action.number, action.hash)
 		}
