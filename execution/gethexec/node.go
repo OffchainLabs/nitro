@@ -333,9 +333,6 @@ func (n *ExecutionNode) ResultAtPos(pos arbutil.MessageIndex) (*execution.Messag
 func (n *ExecutionNode) ArbOSVersionForMessageNumber(messageNum arbutil.MessageIndex) (uint64, error) {
 	return n.ExecEngine.ArbOSVersionForMessageNumber(messageNum)
 }
-func (n *ExecutionNode) BlockNumberToMessageIndex(blockNum uint64) (arbutil.MessageIndex, error) {
-	return n.ExecEngine.BlockNumberToMessageIndex(blockNum)
-}
 
 func (n *ExecutionNode) RecordBlockCreation(
 	ctx context.Context,

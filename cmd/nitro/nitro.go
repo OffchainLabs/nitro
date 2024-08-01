@@ -41,6 +41,7 @@ import (
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/metrics/exp"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/params"
 
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
@@ -670,26 +671,7 @@ func mainImpl() int {
 	signal.Notify(sigint, os.Interrupt, syscall.SIGTERM)
 
 	if err == nil && nodeConfig.Init.IsReorgRequested() {
-		var batchCount uint64
-		if nodeConfig.Init.ReorgToBatch >= 0 {
-			batchCount = uint64(nodeConfig.Init.ReorgToBatch) + 1
-		} else {
-			var messageIndex arbutil.MessageIndex
-			if nodeConfig.Init.ReorgToMessageBatch >= 0 {
-				messageIndex = arbutil.MessageIndex(nodeConfig.Init.ReorgToMessageBatch)
-			} else {
-				messageIndex, err = currentNode.Execution.BlockNumberToMessageIndex(uint64(nodeConfig.Init.ReorgToBlockBatch))
-			}
-			// Reorg out the batch containing the next message
-			var missing bool
-			batchCount, missing, err = currentNode.InboxTracker.FindInboxBatchContainingMessage(messageIndex + 1)
-			if err == nil && missing {
-				err = fmt.Errorf("cannot reorg to unknown message index %v", messageIndex)
-			}
-		}
-		if err == nil {
-			err = currentNode.InboxTracker.ReorgBatchesTo(batchCount)
-		}
+		err = initReorg(nodeConfig.Init, chainInfo.ChainConfig, currentNode.InboxTracker)
 		if err != nil {
 			fatalErrChan <- fmt.Errorf("error reorging per init config: %w", err)
 		} else if nodeConfig.Init.ThenQuit {
@@ -1025,6 +1007,39 @@ func applyChainParameters(ctx context.Context, k *koanf.Koanf, chainId uint64, c
 		return err
 	}
 	return nil
+}
+
+func initReorg(initConfig conf.InitConfig, chainConfig *params.ChainConfig, inboxTracker *arbnode.InboxTracker) error {
+	var batchCount uint64
+	if initConfig.ReorgToBatch >= 0 {
+		batchCount = uint64(initConfig.ReorgToBatch) + 1
+	} else {
+		var messageIndex arbutil.MessageIndex
+		if initConfig.ReorgToMessageBatch >= 0 {
+			messageIndex = arbutil.MessageIndex(initConfig.ReorgToMessageBatch)
+		} else if initConfig.ReorgToBlockBatch > 0 {
+			genesis := chainConfig.ArbitrumChainParams.GenesisBlockNum
+			blockNum := uint64(initConfig.ReorgToBlockBatch)
+			if blockNum < genesis {
+				return fmt.Errorf("ReorgToBlockBatch %d before genesis %d", blockNum, genesis)
+			}
+			messageIndex = arbutil.MessageIndex(blockNum - genesis)
+		} else {
+			log.Warn("Tried to do init reorg, but no init reorg options specified")
+			return nil
+		}
+		// Reorg out the batch containing the next message
+		var missing bool
+		var err error
+		batchCount, missing, err = inboxTracker.FindInboxBatchContainingMessage(messageIndex + 1)
+		if err != nil {
+			return err
+		}
+		if missing {
+			return fmt.Errorf("cannot reorg to unknown message index %v", messageIndex)
+		}
+	}
+	return inboxTracker.ReorgBatchesTo(batchCount)
 }
 
 type NodeConfigFetcher struct {
