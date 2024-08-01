@@ -71,14 +71,14 @@ jobs:
       - name: Install rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          toolchain: "1.76"
+          toolchain: 'stable'
           components: 'llvm-tools-preview, rustfmt, clippy'
 
       - name: Install rust nightly
         uses: dtolnay/rust-toolchain@nightly
         id: install-rust-nightly
         with:
-          toolchain: "nightly-2024-02-04"
+          toolchain: 'nightly-2024-02-04'
           targets: 'wasm32-wasi, wasm32-unknown-unknown'
           components: 'rust-src, rustfmt, clippy'
 
