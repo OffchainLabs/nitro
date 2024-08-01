@@ -1,0 +1,11 @@
+[target.wasm32-unknown-unknown]
+rustflags = [
+  "-C", "target-cpu=mvp",
+  "-C", "lto",
+]
+
+[target.wasm32-wasi]
+rustflags = [
+  "-C", "target-cpu=mvp",
+  "-C", "lto",
+]
