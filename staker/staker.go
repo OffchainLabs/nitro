@@ -319,6 +319,20 @@ func NewStaker(
 	if err != nil {
 		return nil, err
 	}
+	// Only use gnosis safe fast confirmation, if the safe address is different from the wallet address, else it's not a safe contract.
+	if fastConfirmer != (common.Address{}) && config.EnableFastConfirmation && wallet.AddressOrZero() != fastConfirmer {
+		fastConfirmSafe, err = NewFastConfirmSafe(
+			callOpts,
+			fastConfirmer,
+			val.builder,
+			wallet,
+			config.gasRefunder,
+			l1Reader,
+		)
+		if err != nil {
+			return nil, err
+		}
+	}
 	return &Staker{
 		L1Validator:             val,
 		l1Reader:                l1Reader,
@@ -380,23 +394,7 @@ func (s *Staker) tryFastConfirmation(ctx context.Context, blockHash common.Hash,
 	if s.fastConfirmer == (common.Address{}) || !s.config.EnableFastConfirmation {
 		return nil
 	}
-	// Only use gnosis safe fast confirmation, if the safe address is different from the wallet address, else it's not a safe contract.
-	if s.fastConfirmer != *s.wallet.Address() {
-		// If we don't have a fastConfirmSafe, create one
-		if s.fastConfirmSafe == nil {
-			fastConfirmSafe, err := NewFastConfirmSafe(
-				s.baseCallOpts,
-				s.fastConfirmer,
-				s.builder,
-				s.wallet,
-				s.config.gasRefunder,
-				s.l1Reader,
-			)
-			if err != nil {
-				return err
-			}
-			s.fastConfirmSafe = fastConfirmSafe
-		}
+	if s.fastConfirmSafe != nil {
 		return s.fastConfirmSafe.tryFastConfirmation(ctx, blockHash, sendRoot)
 	}
 	auth, err := s.builder.Auth(ctx)

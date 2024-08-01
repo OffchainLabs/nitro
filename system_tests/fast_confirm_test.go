@@ -359,6 +359,8 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	Require(t, err)
 	err = statelessA.Start(ctx)
 	Require(t, err)
+	err = valWalletA.Initialize(ctx)
+	Require(t, err)
 	stakerA, err := staker.NewStaker(
 		l2nodeA.L1Reader,
 		valWalletA,
@@ -373,8 +375,6 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	)
 	Require(t, err)
 	err = stakerA.Initialize(ctx)
-	Require(t, err)
-	err = valWalletA.Initialize(ctx)
 	Require(t, err)
 	cfg := arbnode.ConfigDefaultL1NonSequencerTest()
 	signerCfg, err := externalSignerTestCfg(srv.Address, srv.URL())
@@ -409,6 +409,8 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	Require(t, err)
 	err = statelessB.Start(ctx)
 	Require(t, err)
+	err = valWalletB.Initialize(ctx)
+	Require(t, err)
 	stakerB, err := staker.NewStaker(
 		l2nodeB.L1Reader,
 		valWalletB,
@@ -423,8 +425,6 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	)
 	Require(t, err)
 	err = stakerB.Initialize(ctx)
-	Require(t, err)
-	err = valWalletB.Initialize(ctx)
 	Require(t, err)
 
 	builder.L2Info.GenerateAccount("BackgroundUser")
