@@ -92,6 +92,7 @@ type L1ValidatorConfig struct {
 	Dangerous                 DangerousConfig             `koanf:"dangerous"`
 	ParentChainWallet         genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
 	LogQueryBatchSize         uint64                      `koanf:"log-query-batch-size" reload:"hot"`
+	EnableFastConfirmation    bool                        `koanf:"enable-fast-confirmation"`
 
 	strategy    StakerStrategy
 	gasRefunder common.Address
@@ -159,6 +160,7 @@ var DefaultL1ValidatorConfig = L1ValidatorConfig{
 	Dangerous:                 DefaultDangerousConfig,
 	ParentChainWallet:         DefaultValidatorL1WalletConfig,
 	LogQueryBatchSize:         0,
+	EnableFastConfirmation:    true,
 }
 
 var TestL1ValidatorConfig = L1ValidatorConfig{
@@ -180,6 +182,7 @@ var TestL1ValidatorConfig = L1ValidatorConfig{
 	Dangerous:                 DefaultDangerousConfig,
 	ParentChainWallet:         DefaultValidatorL1WalletConfig,
 	LogQueryBatchSize:         0,
+	EnableFastConfirmation:    true,
 }
 
 var DefaultValidatorL1WalletConfig = genericconf.WalletConfig{
@@ -209,6 +212,7 @@ func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	dataposter.DataPosterConfigAddOptions(prefix+".data-poster", f, dataposter.DefaultDataPosterConfigForValidator)
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultL1ValidatorConfig.ParentChainWallet.Pathname)
+	f.Bool(prefix+".enable-fast-confirmation", DefaultL1ValidatorConfig.EnableFastConfirmation, "enable fast confirmation")
 }
 
 type DangerousConfig struct {
@@ -362,7 +366,7 @@ func (s *Staker) Initialize(ctx context.Context) error {
 }
 
 func (s *Staker) tryFastConfirmationNodeNumber(ctx context.Context, number uint64) error {
-	if s.fastConfirmer == (common.Address{}) {
+	if s.fastConfirmer == (common.Address{}) || !s.config.EnableFastConfirmation {
 		return nil
 	}
 	nodeInfo, err := s.rollup.LookupNode(ctx, number)
@@ -373,7 +377,7 @@ func (s *Staker) tryFastConfirmationNodeNumber(ctx context.Context, number uint6
 }
 
 func (s *Staker) tryFastConfirmation(ctx context.Context, blockHash common.Hash, sendRoot common.Hash) error {
-	if s.fastConfirmer == (common.Address{}) {
+	if s.fastConfirmer == (common.Address{}) || !s.config.EnableFastConfirmation {
 		return nil
 	}
 	// Only use gnosis safe fast confirmation, if the safe address is different from the wallet address, else it's not a safe contract.
