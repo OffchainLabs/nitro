@@ -107,7 +107,7 @@ func (c *InitConfig) Validate() error {
 		if reorgOption >= 0 {
 			numReorgOptionsSpecified++
 			if numReorgOptionsSpecified > 1 {
-				return fmt.Errorf("only one init reorg option can be specified")
+				return fmt.Errorf("at most one init reorg option can be specified")
 			}
 		}
 	}
