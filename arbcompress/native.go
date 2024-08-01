@@ -12,7 +12,10 @@ package arbcompress
 #include "arbitrator.h"
 */
 import "C"
-import "fmt"
+import (
+	"errors"
+	"fmt"
+)
 
 type u8 = C.uint8_t
 type u32 = C.uint32_t
@@ -44,6 +47,8 @@ func Compress(input []byte, level uint32, dictionary Dictionary) ([]byte, error)
 	return output, nil
 }
 
+var ErrOutputWontFit = errors.New("output won't fit in maxsize")
+
 func Decompress(input []byte, maxSize int) ([]byte, error) {
 	return DecompressWithDictionary(input, maxSize, EmptyDictionary)
 }
@@ -54,6 +59,9 @@ func DecompressWithDictionary(input []byte, maxSize int, dictionary Dictionary) 
 	inbuf := sliceToBuffer(input)
 
 	status := C.brotli_decompress(inbuf, outbuf, C.Dictionary(dictionary))
+	if status == C.BrotliStatus_NeedsMoreOutput {
+		return nil, ErrOutputWontFit
+	}
 	if status != C.BrotliStatus_Success {
 		return nil, fmt.Errorf("failed decompression: %d", status)
 	}

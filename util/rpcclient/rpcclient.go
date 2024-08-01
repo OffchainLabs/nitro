@@ -44,6 +44,13 @@ func (c *ClientConfig) Validate() error {
 	return err
 }
 
+func (c *ClientConfig) UnmarshalJSON(data []byte) error {
+	// Use DefaultClientConfig for default values when unmarshalling JSON
+	*c = DefaultClientConfig
+	type clientConfigWithoutCustomUnmarshal ClientConfig
+	return json.Unmarshal(data, (*clientConfigWithoutCustomUnmarshal)(c))
+}
+
 type ClientConfigFetcher func() *ClientConfig
 
 var TestClientConfig = ClientConfig{

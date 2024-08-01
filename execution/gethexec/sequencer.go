@@ -132,24 +132,6 @@ var DefaultSequencerConfig = SequencerConfig{
 	EnableProfiling:              false,
 }
 
-var TestSequencerConfig = SequencerConfig{
-	Enable:                       true,
-	MaxBlockSpeed:                time.Millisecond * 10,
-	MaxRevertGasReject:           params.TxGas + 10000,
-	MaxAcceptableTimestampDelta:  time.Hour,
-	SenderWhitelist:              "",
-	Forwarder:                    DefaultTestForwarderConfig,
-	QueueSize:                    128,
-	QueueTimeout:                 time.Second * 5,
-	NonceCacheSize:               4,
-	MaxTxDataSize:                95000,
-	NonceFailureCacheSize:        1024,
-	NonceFailureCacheExpiry:      time.Second,
-	ExpectedSurplusSoftThreshold: "default",
-	ExpectedSurplusHardThreshold: "default",
-	EnableProfiling:              false,
-}
-
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultSequencerConfig.Enable, "act and post to l1 as sequencer")
 	f.Duration(prefix+".max-block-speed", DefaultSequencerConfig.MaxBlockSpeed, "minimum delay between blocks (sets a maximum speed of block production)")
