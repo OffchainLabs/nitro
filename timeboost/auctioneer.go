@@ -42,6 +42,7 @@ type Auctioneer struct {
 	domainValue               []byte
 	client                    Client
 	auctionContract           *express_lane_auctiongen.ExpressLaneAuction
+	auctionContractAddr       common.Address
 	bidsReceiver              chan *Bid
 	bidCache                  *bidCache
 	initialRoundTimestamp     time.Time
@@ -71,9 +72,13 @@ func NewAuctioneer(
 	chainId []*big.Int,
 	stack *node.Node,
 	client Client,
-	auctionContract *express_lane_auctiongen.ExpressLaneAuction,
+	auctionContractAddr common.Address,
 	opts ...AuctioneerOpt,
 ) (*Auctioneer, error) {
+	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, client)
+	if err != nil {
+		return nil, err
+	}
 	roundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
 	if err != nil {
 		return nil, err
@@ -92,6 +97,7 @@ func NewAuctioneer(
 		chainId:                   chainId,
 		client:                    client,
 		auctionContract:           auctionContract,
+		auctionContractAddr:       auctionContractAddr,
 		bidsReceiver:              make(chan *Bid, 10_000), // TODO(Terence): Is 10000 enough? Make this configurable?
 		bidCache:                  newBidCache(),
 		initialRoundTimestamp:     initialTimestamp,
@@ -233,8 +239,14 @@ func (a *Auctioneer) validateBid(bid *Bid) (*validatedBid, error) {
 	if bid == nil {
 		return nil, errors.Wrap(ErrMalformedData, "nil bid")
 	}
+	if bid.AuctionContractAddress != a.auctionContractAddr {
+		return nil, errors.Wrap(ErrMalformedData, "incorrect auction contract address")
+	}
 	if bid.ExpressLaneController == (common.Address{}) {
 		return nil, errors.Wrap(ErrMalformedData, "empty express lane controller address")
+	}
+	if bid.ChainId == nil {
+		return nil, errors.Wrap(ErrMalformedData, "empty chain id")
 	}
 
 	// Check if the chain ID is valid.

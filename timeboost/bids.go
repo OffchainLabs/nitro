@@ -10,6 +10,7 @@ import (
 	"sync"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/secp256k1"
 	"github.com/pkg/errors"
@@ -35,6 +36,17 @@ type Bid struct {
 	Round                  uint64
 	Amount                 *big.Int
 	Signature              []byte
+}
+
+func (b *Bid) ToJson() *JsonBid {
+	return &JsonBid{
+		ChainId:                (*hexutil.Big)(b.ChainId),
+		ExpressLaneController:  b.ExpressLaneController,
+		AuctionContractAddress: b.AuctionContractAddress,
+		Round:                  hexutil.Uint64(b.Round),
+		Amount:                 (*hexutil.Big)(b.Amount),
+		Signature:              b.Signature,
+	}
 }
 
 type validatedBid struct {

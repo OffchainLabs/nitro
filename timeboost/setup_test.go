@@ -149,7 +149,7 @@ func setupAuctionTest(t *testing.T, ctx context.Context) *auctionSetup {
 }
 
 func setupBidderClient(
-	t *testing.T, ctx context.Context, name string, account *testAccount, testSetup *auctionSetup, conn auctioneerConnection,
+	t *testing.T, ctx context.Context, name string, account *testAccount, testSetup *auctionSetup, auctioneerEndpoint string,
 ) *BidderClient {
 	bc, err := NewBidderClient(
 		ctx,
@@ -157,7 +157,7 @@ func setupBidderClient(
 		&Wallet{TxOpts: account.txOpts, PrivKey: account.privKey},
 		testSetup.backend.Client(),
 		testSetup.expressLaneAuctionAddr,
-		conn,
+		auctioneerEndpoint,
 	)
 	require.NoError(t, err)
 

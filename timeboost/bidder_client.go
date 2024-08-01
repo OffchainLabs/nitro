@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/secp256k1"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/pkg/errors"
 )
@@ -23,10 +24,6 @@ type Client interface {
 	ChainID(ctx context.Context) (*big.Int, error)
 }
 
-type auctioneerConnection interface {
-	receiveBid(ctx context.Context, bid *Bid) error
-}
-
 type BidderClient struct {
 	chainId                *big.Int
 	name                   string
@@ -35,7 +32,7 @@ type BidderClient struct {
 	client                 Client
 	privKey                *ecdsa.PrivateKey
 	auctionContract        *express_lane_auctiongen.ExpressLaneAuction
-	auctioneer             auctioneerConnection
+	auctioneerClient       *rpc.Client
 	initialRoundTimestamp  time.Time
 	roundDuration          time.Duration
 	domainValue            []byte
@@ -53,7 +50,7 @@ func NewBidderClient(
 	wallet *Wallet,
 	client Client,
 	auctionContractAddress common.Address,
-	auctioneer auctioneerConnection,
+	auctioneerEndpoint string,
 ) (*BidderClient, error) {
 	chainId, err := client.ChainID(ctx)
 	if err != nil {
@@ -70,6 +67,10 @@ func NewBidderClient(
 	initialTimestamp := time.Unix(int64(roundTimingInfo.OffsetTimestamp), 0)
 	roundDuration := time.Duration(roundTimingInfo.RoundDurationSeconds) * time.Second
 
+	auctioneerClient, err := rpc.DialContext(ctx, auctioneerEndpoint)
+	if err != nil {
+		return nil, err
+	}
 	return &BidderClient{
 		chainId:                chainId,
 		name:                   name,
@@ -78,7 +79,7 @@ func NewBidderClient(
 		txOpts:                 wallet.TxOpts,
 		privKey:                wallet.PrivKey,
 		auctionContract:        auctionContract,
-		auctioneer:             auctioneer,
+		auctioneerClient:       auctioneerClient,
 		initialRoundTimestamp:  initialTimestamp,
 		roundDuration:          roundDuration,
 		domainValue:            domainValue,
@@ -127,10 +128,15 @@ func (bd *BidderClient) Bid(
 		return nil, err
 	}
 	newBid.Signature = sig
-	if err = bd.auctioneer.receiveBid(ctx, newBid); err != nil {
+	if err = bd.submitBid(ctx, newBid); err != nil {
 		return nil, err
 	}
 	return newBid, nil
+}
+
+func (bd *BidderClient) submitBid(ctx context.Context, bid *Bid) error {
+	err := bd.auctioneerClient.CallContext(ctx, nil, "auctioneer_submitBid", bid.ToJson())
+	return err
 }
 
 func sign(message []byte, key *ecdsa.PrivateKey) ([]byte, error) {

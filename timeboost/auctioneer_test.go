@@ -28,21 +28,14 @@ func TestAuctioneer_validateBid(t *testing.T) {
 			errMsg:      "nil bid",
 		},
 		{
-			name:        "empty bidder address",
-			bid:         &Bid{},
-			expectedErr: ErrMalformedData,
-			errMsg:      "empty bidder address",
-		},
-		{
 			name:        "empty express lane controller address",
-			bid:         &Bid{Bidder: common.Address{'a'}},
+			bid:         &Bid{},
 			expectedErr: ErrMalformedData,
 			errMsg:      "empty express lane controller address",
 		},
 		{
 			name: "incorrect chain id",
 			bid: &Bid{
-				Bidder:                common.Address{'a'},
 				ExpressLaneController: common.Address{'b'},
 			},
 			expectedErr: ErrWrongChainId,
@@ -51,7 +44,6 @@ func TestAuctioneer_validateBid(t *testing.T) {
 		{
 			name: "incorrect round",
 			bid: &Bid{
-				Bidder:                common.Address{'a'},
 				ExpressLaneController: common.Address{'b'},
 				ChainId:               big.NewInt(1),
 			},
@@ -61,7 +53,6 @@ func TestAuctioneer_validateBid(t *testing.T) {
 		{
 			name: "auction is closed",
 			bid: &Bid{
-				Bidder:                common.Address{'a'},
 				ExpressLaneController: common.Address{'b'},
 				ChainId:               big.NewInt(1),
 				Round:                 1,
@@ -73,7 +64,6 @@ func TestAuctioneer_validateBid(t *testing.T) {
 		{
 			name: "lower than reserved price",
 			bid: &Bid{
-				Bidder:                common.Address{'a'},
 				ExpressLaneController: common.Address{'b'},
 				ChainId:               big.NewInt(1),
 				Round:                 1,
@@ -85,7 +75,6 @@ func TestAuctioneer_validateBid(t *testing.T) {
 		{
 			name: "incorrect signature",
 			bid: &Bid{
-				Bidder:                common.Address{'a'},
 				ExpressLaneController: common.Address{'b'},
 				ChainId:               big.NewInt(1),
 				Round:                 1,
@@ -136,13 +125,7 @@ func buildSignature(privateKey *ecdsa.PrivateKey, data []byte) ([]byte, error) {
 func buildValidBid(t *testing.T) *Bid {
 	privateKey, err := crypto.GenerateKey()
 	require.NoError(t, err)
-	publicKey := privateKey.Public()
-	publicKeyECDSA, ok := publicKey.(*ecdsa.PublicKey)
-	require.True(t, ok)
-	bidderAddress := crypto.PubkeyToAddress(*publicKeyECDSA)
-
 	b := &Bid{
-		Bidder:                 bidderAddress,
 		ExpressLaneController:  common.Address{'b'},
 		AuctionContractAddress: common.Address{'c'},
 		ChainId:                big.NewInt(1),
