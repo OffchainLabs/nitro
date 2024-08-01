@@ -248,16 +248,12 @@ outer:
 		case status := <-sub.Chan():
 			if status.IsInBlock {
 				log.Info("📥  Submit data extrinsic included in block", "blockHash", status.AsInBlock.Hex())
-			}
-			if status.IsFinalized {
+			} else if status.IsFinalized {
 				finalizedblockHash = status.AsFinalized
+				log.Info("📥  Submit data extrinsic included in finalized block", "blockHash", finalizedblockHash.Hex())
 				break outer
-			} else if status.IsDropped {
-				return gsrpc_types.Hash{}, gsrpc_types.UCompact{}, fmt.Errorf("❌ Extrinsic dropped")
-			} else if status.IsUsurped {
-				return gsrpc_types.Hash{}, gsrpc_types.UCompact{}, fmt.Errorf("❌ Extrinsic usurped")
 			} else if status.IsRetracted {
-				return gsrpc_types.Hash{}, gsrpc_types.UCompact{}, fmt.Errorf("❌ Extrinsic retracted")
+				log.Warn("AvailDA transaction got retracted from block", "blockHash", status.AsRetracted.Hex())
 			} else if status.IsInvalid {
 				return gsrpc_types.Hash{}, gsrpc_types.UCompact{}, fmt.Errorf("❌ Extrinsic invalid")
 			}
