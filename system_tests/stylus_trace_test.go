@@ -25,19 +25,16 @@ import (
 var skipCheck = []byte("skip")
 
 func checkOpcode(t *testing.T, result logger.ExecutionResult, index int, wantOp vm.OpCode, wantStack ...[]byte) {
-	CheckEqual(t, wantOp.String(), result.StructLogs[index].Op)
-	CheckEqual(t, len(wantStack), len(*result.StructLogs[index].Stack))
-
-	// reverse stack to canonical order
-	for i, j := 0, len(wantStack)-1; i < j; i, j = i+1, j-1 {
-		wantStack[i], wantStack[j] = wantStack[j], wantStack[i]
-
-	}
-
+	CheckEqual(t, wantOp.String(), result.StructLogs[index].Op, "wrong opcode")
 	for i, wantBytes := range wantStack {
 		if !bytes.Equal(wantBytes, skipCheck) {
 			wantVal := uint256.NewInt(0).SetBytes(wantBytes).Hex()
-			CheckEqual(t, wantVal, (*result.StructLogs[index].Stack)[i])
+			logStack := *result.StructLogs[index].Stack
+			// the stack is in reverse order in log
+			if i > len(logStack) {
+				Fatal(t, "missing values in log stack")
+			}
+			CheckEqual(t, wantVal, logStack[len(logStack)-1-i], "wrong stack for opcode", wantOp)
 		}
 	}
 }
@@ -70,6 +67,9 @@ func sendAndTraceTransaction(
 			log.Stack = &stack
 		}
 		colors.PrintGrey(i, "\t", log.Depth, "\t", log.Op, "\t", *log.Stack)
+		if i > 100 {
+			break
+		}
 	}
 
 	return result
@@ -464,7 +464,20 @@ func TestStylusTraceEquivalence(t *testing.T) {
 	evmArgs := argsForMulticall(vm.CALL, evmMulticall, nil, args)
 	evmResult := sendAndTraceTransaction(t, builder, evmMulticall, nil, evmArgs)
 
-	// Check equivalence of opcodes
-	_ = evmResult
-	_ = wasmResult
+	// For some opcodes in the wasmTrace, make sure there is an equivalent one in the evmTrace.
+	argsLen := intToBytes(len(args))
+	offset := skipCheck
+	checkOpcode(t, wasmResult, 3, vm.CALL, skipCheck, wasmMulticall[:], nil, offset, argsLen, offset, nil)
+	checkOpcode(t, evmResult, 3120, vm.CALL, skipCheck, evmMulticall[:], nil, offset, argsLen, offset, nil)
+
+	checkOpcode(t, wasmResult, 5, vm.SSTORE, key[:], value[:])
+	checkOpcode(t, evmResult, 3905, vm.SSTORE, key[:], value[:])
+
+	topic := common.Hex2Bytes("6ab08a9a891703dcd5859f8e8328215fef6d9f250e7d58267bee45aabaee2fa8")
+	logLen := intToBytes(0x60)
+	checkOpcode(t, wasmResult, 6, vm.LOG1, offset, logLen, topic)
+	checkOpcode(t, evmResult, 3944, vm.LOG1, offset, logLen, topic)
+
+	checkOpcode(t, wasmResult, 7, vm.SLOAD, key[:])
+	checkOpcode(t, evmResult, 4645, vm.SLOAD, key[:])
 }

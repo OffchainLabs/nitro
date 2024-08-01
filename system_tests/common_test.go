@@ -1118,9 +1118,10 @@ func Fatal(t *testing.T, printables ...interface{}) {
 	testhelpers.FailImpl(t, printables...)
 }
 
-func CheckEqual[T any](t *testing.T, want T, got T) {
+func CheckEqual[T any](t *testing.T, want T, got T, printables ...interface{}) {
+	t.Helper()
 	if !reflect.DeepEqual(want, got) {
-		Fatal(t, "wrong result, want ", want, ", got ", got)
+		testhelpers.FailImpl(t, "wrong result, want ", want, ", got ", got, printables)
 	}
 }
 
