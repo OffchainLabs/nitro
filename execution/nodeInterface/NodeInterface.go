@@ -516,10 +516,11 @@ func (n NodeInterface) GasEstimateL1Component(
 	args.Gas = (*hexutil.Uint64)(&randomGas)
 
 	// We set the run mode to eth_call mode here because we want an exact estimate, not a padded estimate
-	if err := args.CallDefaults(randomGas, evm.Context.BaseFee, evm.ChainConfig().ChainID); err != nil {
+	gasLimitNotSetByUser := args.Gas == nil
+	if err := args.CallDefaults(randomGas, evm.Context.BaseFee, evm.ChainConfig().ChainID, gasLimitNotSetByUser); err != nil {
 		return 0, nil, nil, err
 	}
-	msg := args.ToMessage(evm.Context.BaseFee, randomGas, n.header, evm.StateDB.(*state.StateDB), core.MessageEthcallMode)
+	msg := args.ToMessage(evm.Context.BaseFee, randomGas, n.header, evm.StateDB.(*state.StateDB), core.MessageEthcallMode, evm.ChainConfig().ChainID, gasLimitNotSetByUser)
 
 	pricing := c.State.L1PricingState()
 	l1BaseFeeEstimate, err := pricing.PricePerUnit()
@@ -572,10 +573,11 @@ func (n NodeInterface) GasEstimateComponents(
 	// Setting the gas currently doesn't affect the PosterDataCost,
 	// but we do it anyways for accuracy with potential future changes.
 	args.Gas = &totalRaw
-	if err := args.CallDefaults(gasCap, evm.Context.BaseFee, evm.ChainConfig().ChainID); err != nil {
+	gasLimitNotSetByUser := args.Gas == nil
+	if err := args.CallDefaults(gasCap, evm.Context.BaseFee, evm.ChainConfig().ChainID, gasLimitNotSetByUser); err != nil {
 		return 0, 0, nil, nil, err
 	}
-	msg := args.ToMessage(evm.Context.BaseFee, gasCap, n.header, evm.StateDB.(*state.StateDB), core.MessageGasEstimationMode)
+	msg := args.ToMessage(evm.Context.BaseFee, gasCap, n.header, evm.StateDB.(*state.StateDB), core.MessageGasEstimationMode, evm.ChainConfig().ChainID, gasLimitNotSetByUser)
 	brotliCompressionLevel, err := c.State.BrotliCompressionLevel()
 	if err != nil {
 		return 0, 0, nil, nil, fmt.Errorf("failed to get brotli compression level: %w", err)
