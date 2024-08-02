@@ -100,10 +100,206 @@ func TestSequencerFeed(t *testing.T) {
 	}
 }
 
-func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
+func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	_, seqClient, seqInfo, auctionContractAddr, cleanupSeq := setupExpressLaneAuction(t, ctx)
+	defer cleanupSeq()
+	chainId, err := seqClient.ChainID(ctx)
+	Require(t, err)
+
+	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, seqClient)
+	Require(t, err)
+	info, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
+	Require(t, err)
+	bobPriv := seqInfo.Accounts["Bob"].PrivateKey
+
+	// Prepare a client that can submit txs to the sequencer via the express lane.
+	seqDial, err := rpc.Dial("http://localhost:9567")
+	Require(t, err)
+	expressLaneClient := timeboost.NewExpressLaneClient(
+		bobPriv,
+		chainId,
+		time.Unix(int64(info.OffsetTimestamp), 0),
+		time.Duration(info.RoundDurationSeconds)*time.Second,
+		auctionContractAddr,
+		seqDial,
+	)
+	expressLaneClient.StopWaiter.Start(ctx, expressLaneClient)
+
+	// During the express lane around, Bob sends txs always 150ms later than Alice, but Alice's
+	// txs end up getting delayed by 200ms as she is not the express lane controller.
+	// In the end, Bob's txs should be ordered before Alice's during the round.
+	var wg sync.WaitGroup
+	wg.Add(2)
+	aliceTx := seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1e12), nil)
+	go func(w *sync.WaitGroup) {
+		defer w.Done()
+		err = seqClient.SendTransaction(ctx, aliceTx)
+		Require(t, err)
+	}(&wg)
+
+	bobBoostableTx := seqInfo.PrepareTx("Bob", "Owner", seqInfo.TransferGas, big.NewInt(1e12), nil)
+	go func(w *sync.WaitGroup) {
+		defer w.Done()
+		time.Sleep(time.Millisecond * 10)
+		err = expressLaneClient.SendTransaction(ctx, bobBoostableTx)
+		Require(t, err)
+	}(&wg)
+	wg.Wait()
+
+	// After round is done, verify that Bob beats Alice in the final sequence.
+	aliceReceipt, err := seqClient.TransactionReceipt(ctx, aliceTx.Hash())
+	Require(t, err)
+	aliceBlock := aliceReceipt.BlockNumber.Uint64()
+	bobReceipt, err := seqClient.TransactionReceipt(ctx, bobBoostableTx.Hash())
+	Require(t, err)
+	bobBlock := bobReceipt.BlockNumber.Uint64()
+
+	if aliceBlock < bobBlock {
+		t.Fatal("Bob should have been sequenced before Alice with express lane")
+	} else if aliceBlock == bobBlock {
+		t.Log("Sequenced in same output block")
+		block, err := seqClient.BlockByNumber(ctx, new(big.Int).SetUint64(aliceBlock))
+		Require(t, err)
+		findTransactionIndex := func(transactions types.Transactions, txHash common.Hash) int {
+			for index, tx := range transactions {
+				if tx.Hash() == txHash {
+					return index
+				}
+			}
+			return -1
+		}
+		txes := block.Transactions()
+		indexA := findTransactionIndex(txes, aliceTx.Hash())
+		indexB := findTransactionIndex(txes, bobBoostableTx.Hash())
+		if indexA == -1 || indexB == -1 {
+			t.Fatal("Did not find txs in block")
+		}
+		if indexA < indexB {
+			t.Fatal("Bob should have been sequenced before Alice with express lane")
+		}
+	}
+}
+
+func TestSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	_, seqClient, seqInfo, auctionContractAddr, cleanupSeq := setupExpressLaneAuction(t, ctx)
+	defer cleanupSeq()
+	chainId, err := seqClient.ChainID(ctx)
+	Require(t, err)
+
+	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, seqClient)
+	Require(t, err)
+	info, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
+	Require(t, err)
+	bobPriv := seqInfo.Accounts["Bob"].PrivateKey
+
+	// Prepare a client that can submit txs to the sequencer via the express lane.
+	seqDial, err := rpc.Dial("http://localhost:9567")
+	Require(t, err)
+	expressLaneClient := timeboost.NewExpressLaneClient(
+		bobPriv,
+		chainId,
+		time.Unix(int64(info.OffsetTimestamp), 0),
+		time.Duration(info.RoundDurationSeconds)*time.Second,
+		auctionContractAddr,
+		seqDial,
+	)
+	expressLaneClient.StopWaiter.Start(ctx, expressLaneClient)
+
+	// We first generate an account for Charlie and transfer some balance to him.
+	seqInfo.GenerateAccount("Charlie")
+	TransferBalance(t, "Owner", "Charlie", arbmath.BigMulByUint(oneEth, 500), seqInfo, seqClient, ctx)
+
+	// During the express lane, Bob sends txs that do not belong to him, but he is the express lane controller so they
+	// will go through the express lane.
+	// These tx payloads are sent with nonces out of order, and those with nonces too high should fail.
+	var wg sync.WaitGroup
+	wg.Add(2)
+	aliceTx := seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1e12), nil)
+	go func(w *sync.WaitGroup) {
+		defer w.Done()
+		err = seqClient.SendTransaction(ctx, aliceTx)
+		Require(t, err)
+	}(&wg)
+
+	ownerAddr := seqInfo.GetAddress("Owner")
+	txData := &types.DynamicFeeTx{
+		To:        &ownerAddr,
+		Gas:       seqInfo.TransferGas,
+		Value:     big.NewInt(1e12),
+		Nonce:     1,
+		GasFeeCap: aliceTx.GasFeeCap(),
+		Data:      nil,
+	}
+	charlie1 := seqInfo.SignTxAs("Charlie", txData)
+	txData = &types.DynamicFeeTx{
+		To:        &ownerAddr,
+		Gas:       seqInfo.TransferGas,
+		Value:     big.NewInt(1e12),
+		Nonce:     0,
+		GasFeeCap: aliceTx.GasFeeCap(),
+		Data:      nil,
+	}
+	charlie0 := seqInfo.SignTxAs("Charlie", txData)
+	var err2 error
+	go func(w *sync.WaitGroup) {
+		defer w.Done()
+		time.Sleep(time.Millisecond * 10)
+		// Send the express lane txs with nonces out of order
+		err2 = expressLaneClient.SendTransaction(ctx, charlie1)
+		err = expressLaneClient.SendTransaction(ctx, charlie0)
+		Require(t, err)
+	}(&wg)
+	wg.Wait()
+	if err2 == nil {
+		t.Fatal("Charlie should not be able to send tx with nonce 2")
+	}
+	// After round is done, verify that Charlie beats Alice in the final sequence, and that the emitted txs
+	// for Charlie are correct.
+	aliceReceipt, err := seqClient.TransactionReceipt(ctx, aliceTx.Hash())
+	Require(t, err)
+	aliceBlock := aliceReceipt.BlockNumber.Uint64()
+	charlieReceipt, err := seqClient.TransactionReceipt(ctx, charlie0.Hash())
+	Require(t, err)
+	charlieBlock := charlieReceipt.BlockNumber.Uint64()
+
+	if aliceBlock < charlieBlock {
+		t.Fatal("Charlie should have been sequenced before Alice with express lane")
+	} else if aliceBlock == charlieBlock {
+		t.Log("Sequenced in same output block")
+		block, err := seqClient.BlockByNumber(ctx, new(big.Int).SetUint64(aliceBlock))
+		Require(t, err)
+		findTransactionIndex := func(transactions types.Transactions, txHash common.Hash) int {
+			for index, tx := range transactions {
+				if tx.Hash() == txHash {
+					return index
+				}
+			}
+			return -1
+		}
+		txes := block.Transactions()
+		indexA := findTransactionIndex(txes, aliceTx.Hash())
+		indexB := findTransactionIndex(txes, charlie0.Hash())
+		if indexA == -1 || indexB == -1 {
+			t.Fatal("Did not find txs in block")
+		}
+		if indexA < indexB {
+			t.Fatal("Charlie should have been sequenced before Alice with express lane")
+		}
+	}
+}
+
+func setupExpressLaneAuction(
+	t *testing.T,
+	ctx context.Context,
+) (*arbnode.Node, *ethclient.Client, *BlockchainTestInfo, common.Address, func()) {
 
 	builderSeq := NewNodeBuilder(ctx).DefaultConfig(t, true)
 
@@ -114,10 +310,9 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	builderSeq.execConfig.Sequencer.Enable = true
 	builderSeq.execConfig.Sequencer.Timeboost = gethexec.TimeboostConfig{
 		Enable:               true,
-		ExpressLaneAdvantage: time.Millisecond * 200,
+		ExpressLaneAdvantage: time.Second * 5,
 	}
 	cleanupSeq := builderSeq.Build(t)
-	defer cleanupSeq()
 	seqInfo, seqNode, seqClient := builderSeq.L2Info, builderSeq.L2.ConsensusNode, builderSeq.L2.Client
 
 	// Set up the auction contracts on L2.
@@ -214,12 +409,6 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Log("Deployed all the auction manager stuff", auctionContractAddr)
-
-	// Seed the accounts on L2.
-	t.Logf("Alice %+v and Bob %+v", seqInfo.Accounts["Alice"], seqInfo.Accounts["Bob"])
-	_ = seqInfo
-	_ = seqClient
-
 	// We approve the spending of the erc20 for the autonomous auction contract and bid receiver
 	// for both Alice and Bob.
 	bidReceiverAddr := common.HexToAddress("0x2424242424242424242424242424242424242424")
@@ -267,9 +456,11 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	stackConf := node.Config{
 		DataDir:             "", // ephemeral.
 		HTTPPort:            9372,
+		HTTPHost:            "localhost",
 		HTTPModules:         []string{timeboost.AuctioneerNamespace},
 		HTTPVirtualHosts:    []string{"localhost"},
 		HTTPTimeouts:        rpc.DefaultHTTPTimeouts,
+		WSHost:              "localhost",
 		WSPort:              9373,
 		WSModules:           []string{timeboost.AuctioneerNamespace},
 		GraphQLVirtualHosts: []string{"localhost"},
@@ -282,11 +473,12 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	stack, err := node.New(&stackConf)
 	Require(t, err)
 	auctioneer, err := timeboost.NewAuctioneer(
-		&auctionContractOpts, []*big.Int{chainId}, stack, seqClient, auctionContract,
+		&auctionContractOpts, []*big.Int{chainId}, stack, seqClient, proxyAddr,
 	)
 	Require(t, err)
 
 	go auctioneer.Start(ctx)
+	Require(t, stack.Start())
 
 	// Set up a bidder client for Alice and Bob.
 	alicePriv := seqInfo.Accounts["Alice"].PrivateKey
@@ -299,7 +491,7 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 		},
 		seqClient,
 		proxyAddr,
-		auctioneer,
+		"http://localhost:9372",
 	)
 	Require(t, err)
 
@@ -313,7 +505,7 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 		},
 		seqClient,
 		proxyAddr,
-		auctioneer,
+		"http://localhost:9372",
 	)
 	Require(t, err)
 
@@ -383,75 +575,7 @@ func TestSequencerFeed_ExpressLaneAuction(t *testing.T) {
 	if !bobWon {
 		t.Fatal("Bob should have won the auction")
 	}
-
-	t.Log("Now submitting txs to sequencer")
-
-	// Prepare a client that can submit txs to the sequencer via the express lane.
-	seqDial, err := rpc.Dial(seqNode.Stack.HTTPEndpoint())
-	Require(t, err)
-	expressLaneClient := timeboost.NewExpressLaneClient(
-		bobPriv,
-		chainId,
-		time.Unix(int64(info.OffsetTimestamp), 0),
-		roundDuration,
-		proxyAddr,
-		seqDial,
-	)
-	expressLaneClient.StopWaiter.Start(ctx, expressLaneClient)
-
-	// During the express lane around, Bob sends txs always 150ms later than Alice, but Alice's
-	// txs end up getting delayed by 200ms as she is not the express lane controller.
-	// In the end, Bob's txs should be ordered before Alice's during the round.
-	var wg sync.WaitGroup
-	wg.Add(2)
-	aliceTx := seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1e12), nil)
-	go func(w *sync.WaitGroup) {
-		defer w.Done()
-		err = seqClient.SendTransaction(ctx, aliceTx)
-		Require(t, err)
-	}(&wg)
-
-	bobBoostableTx := seqInfo.PrepareTx("Bob", "Owner", seqInfo.TransferGas, big.NewInt(1e12), nil)
-	go func(w *sync.WaitGroup) {
-		defer w.Done()
-		time.Sleep(time.Millisecond * 10)
-		err = expressLaneClient.SendTransaction(ctx, bobBoostableTx)
-		Require(t, err)
-	}(&wg)
-	wg.Wait()
-
-	// After round is done, verify that Bob beats Alice in the final sequence.
-	aliceReceipt, err := seqClient.TransactionReceipt(ctx, aliceTx.Hash())
-	Require(t, err)
-	aliceBlock := aliceReceipt.BlockNumber.Uint64()
-	bobReceipt, err := seqClient.TransactionReceipt(ctx, bobBoostableTx.Hash())
-	Require(t, err)
-	bobBlock := bobReceipt.BlockNumber.Uint64()
-
-	if aliceBlock < bobBlock {
-		t.Fatal("Bob should have been sequenced before Alice with express lane")
-	} else if aliceBlock == bobBlock {
-		t.Log("Sequenced in same output block")
-		block, err := seqClient.BlockByNumber(ctx, new(big.Int).SetUint64(aliceBlock))
-		Require(t, err)
-		findTransactionIndex := func(transactions types.Transactions, txHash common.Hash) int {
-			for index, tx := range transactions {
-				if tx.Hash() == txHash {
-					return index
-				}
-			}
-			return -1
-		}
-		txes := block.Transactions()
-		indexA := findTransactionIndex(txes, aliceTx.Hash())
-		indexB := findTransactionIndex(txes, bobBoostableTx.Hash())
-		if indexA == -1 || indexB == -1 {
-			t.Fatal("Did not find txs in block")
-		}
-		if indexA < indexB {
-			t.Fatal("Bob should have been sequenced before Alice with express lane")
-		}
-	}
+	return seqNode, seqClient, seqInfo, proxyAddr, cleanupSeq
 }
 
 func awaitAuctionResolved(

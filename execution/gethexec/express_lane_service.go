@@ -224,7 +224,7 @@ func (es *expressLaneService) validateExpressLaneTx(msg *timeboost.ExpressLaneSu
 		return errors.Wrapf(timeboost.ErrWrongChainId, "express lane tx chain ID %d does not match current chain ID %d", msg.ChainId, es.chainConfig.ChainID)
 	}
 	if msg.AuctionContractAddress != es.auctionContractAddr {
-		return timeboost.ErrWrongAuctionContract
+		return errors.Wrapf(timeboost.ErrWrongAuctionContract, "msg auction contract address %s does not match sequencer auction contract address %s", msg.AuctionContractAddress, es.auctionContractAddr)
 	}
 	if !es.currentRoundHasController() {
 		return timeboost.ErrNoOnchainController

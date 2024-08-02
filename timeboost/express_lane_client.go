@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"fmt"
 	"math/big"
+	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -19,12 +20,14 @@ import (
 
 type ExpressLaneClient struct {
 	stopwaiter.StopWaiter
+	sync.Mutex
 	privKey               *ecdsa.PrivateKey
 	chainId               *big.Int
 	initialRoundTimestamp time.Time
 	roundDuration         time.Duration
 	auctionContractAddr   common.Address
 	client                *rpc.Client
+	sequence              uint64
 }
 
 func NewExpressLaneClient(
@@ -42,10 +45,13 @@ func NewExpressLaneClient(
 		roundDuration:         roundDuration,
 		auctionContractAddr:   auctionContractAddr,
 		client:                client,
+		sequence:              0,
 	}
 }
 
 func (elc *ExpressLaneClient) SendTransaction(ctx context.Context, transaction *types.Transaction) error {
+	elc.Lock()
+	defer elc.Unlock()
 	// return stopwaiter.LaunchPromiseThread(elc, func(ctx context.Context) (struct{}, error) {
 	encodedTx, err := transaction.MarshalBinary()
 	if err != nil {
@@ -56,6 +62,7 @@ func (elc *ExpressLaneClient) SendTransaction(ctx context.Context, transaction *
 		Round:                  hexutil.Uint64(CurrentRound(elc.initialRoundTimestamp, elc.roundDuration)),
 		AuctionContractAddress: elc.auctionContractAddr,
 		Transaction:            encodedTx,
+		Sequence:               hexutil.Uint64(elc.sequence),
 		Signature:              hexutil.Bytes{},
 	}
 	msgGo, err := JsonSubmissionToGo(msg)
@@ -71,8 +78,11 @@ func (elc *ExpressLaneClient) SendTransaction(ctx context.Context, transaction *
 		return err
 	}
 	msg.Signature = signature
-	err = elc.client.CallContext(ctx, nil, "timeboost_sendExpressLaneTransaction", msg)
-	return err
+	if err = elc.client.CallContext(ctx, nil, "timeboost_sendExpressLaneTransaction", msg); err != nil {
+		return err
+	}
+	elc.sequence += 1
+	return nil
 }
 
 func signSubmission(message []byte, key *ecdsa.PrivateKey) ([]byte, error) {

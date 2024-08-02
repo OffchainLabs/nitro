@@ -31,7 +31,8 @@ type JsonExpressLaneSubmission struct {
 	AuctionContractAddress common.Address                     `json:"auctionContractAddress"`
 	Transaction            hexutil.Bytes                      `json:"transaction"`
 	Options                *arbitrum_types.ConditionalOptions `json:"options"`
-	Signature              hexutil.Bytes                      `json:"signature"`
+	Sequence               hexutil.Uint64
+	Signature              hexutil.Bytes `json:"signature"`
 }
 
 type ExpressLaneSubmission struct {
@@ -55,6 +56,7 @@ func JsonSubmissionToGo(submission *JsonExpressLaneSubmission) (*ExpressLaneSubm
 		AuctionContractAddress: submission.AuctionContractAddress,
 		Transaction:            tx,
 		Options:                submission.Options,
+		Sequence:               uint64(submission.Sequence),
 		Signature:              submission.Signature,
 	}, nil
 }
@@ -70,6 +72,7 @@ func (els *ExpressLaneSubmission) ToJson() (*JsonExpressLaneSubmission, error) {
 		AuctionContractAddress: els.AuctionContractAddress,
 		Transaction:            encoded,
 		Options:                els.Options,
+		Sequence:               hexutil.Uint64(els.Sequence),
 		Signature:              els.Signature,
 	}, nil
 }
@@ -78,6 +81,7 @@ func (els *ExpressLaneSubmission) ToMessageBytes() ([]byte, error) {
 	return encodeExpressLaneSubmission(
 		domainValue,
 		els.ChainId,
+		els.Sequence,
 		els.AuctionContractAddress,
 		els.Round,
 		els.Transaction,
@@ -87,6 +91,7 @@ func (els *ExpressLaneSubmission) ToMessageBytes() ([]byte, error) {
 func encodeExpressLaneSubmission(
 	domainValue []byte,
 	chainId *big.Int,
+	sequence uint64,
 	auctionContractAddress common.Address,
 	round uint64,
 	tx *types.Transaction,
@@ -94,6 +99,9 @@ func encodeExpressLaneSubmission(
 	buf := new(bytes.Buffer)
 	buf.Write(domainValue)
 	buf.Write(padBigInt(chainId))
+	seqBuf := make([]byte, 8)
+	binary.BigEndian.PutUint64(seqBuf, sequence)
+	buf.Write(seqBuf)
 	buf.Write(auctionContractAddress[:])
 	roundBuf := make([]byte, 8)
 	binary.BigEndian.PutUint64(roundBuf, round)
