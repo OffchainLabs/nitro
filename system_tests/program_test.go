@@ -397,7 +397,6 @@ func storageTest(t *testing.T, jit bool) {
 }
 
 func TestProgramTransientStorage(t *testing.T) {
-	t.Parallel()
 	transientStorageTest(t, true)
 }
 

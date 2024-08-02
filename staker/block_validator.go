@@ -34,6 +34,11 @@ var (
 	validatorPendingValidationsGauge  = metrics.NewRegisteredGauge("arb/validator/validations/pending", nil)
 	validatorValidValidationsCounter  = metrics.NewRegisteredCounter("arb/validator/validations/valid", nil)
 	validatorFailedValidationsCounter = metrics.NewRegisteredCounter("arb/validator/validations/failed", nil)
+	validatorProfileWaitToRecordHist  = metrics.NewRegisteredHistogram("arb/validator/profile/wait_to_record", nil, metrics.NewBoundedHistogramSample())
+	validatorProfileRecordingHist     = metrics.NewRegisteredHistogram("arb/validator/profile/recording", nil, metrics.NewBoundedHistogramSample())
+	validatorProfileWaitToLaunchHist  = metrics.NewRegisteredHistogram("arb/validator/profile/wait_to_launch", nil, metrics.NewBoundedHistogramSample())
+	validatorProfileLaunchingHist     = metrics.NewRegisteredHistogram("arb/validator/profile/launching", nil, metrics.NewBoundedHistogramSample())
+	validatorProfileRunningHist       = metrics.NewRegisteredHistogram("arb/validator/profile/running", nil, metrics.NewBoundedHistogramSample())
 	validatorMsgCountCurrentBatch     = metrics.NewRegisteredGauge("arb/validator/msg_count_current_batch", nil)
 	validatorMsgCountCreatedGauge     = metrics.NewRegisteredGauge("arb/validator/msg_count_created", nil)
 	validatorMsgCountRecordSentGauge  = metrics.NewRegisteredGauge("arb/validator/msg_count_record_sent", nil)
@@ -210,10 +215,11 @@ const (
 )
 
 type validationStatus struct {
-	Status atomic.Uint32             // atomic: value is one of validationStatus*
-	Cancel func()                    // non-atomic: only read/written to with reorg mutex
-	Entry  *validationEntry          // non-atomic: only read if Status >= validationStatusPrepared
-	Runs   []validator.ValidationRun // if status >= ValidationSent
+	Status    atomic.Uint32             // atomic: value is one of validationStatus*
+	Cancel    func()                    // non-atomic: only read/written to with reorg mutex
+	Entry     *validationEntry          // non-atomic: only read if Status >= validationStatusPrepared
+	Runs      []validator.ValidationRun // if status >= ValidationSent
+	profileTS int64                     // time-stamp for profiling
 }
 
 func (s *validationStatus) getStatus() valStatusField {
@@ -223,6 +229,13 @@ func (s *validationStatus) getStatus() valStatusField {
 
 func (s *validationStatus) replaceStatus(old, new valStatusField) bool {
 	return s.Status.CompareAndSwap(uint32(old), uint32(new))
+}
+
+// gets how many miliseconds last step took, and starts measuring a new step
+func (s *validationStatus) profileStep() int64 {
+	start := s.profileTS
+	s.profileTS = time.Now().UnixMilli()
+	return s.profileTS - start
 }
 
 func NewBlockValidator(
@@ -447,6 +460,8 @@ func (v *BlockValidator) sendRecord(s *validationStatus) error {
 	if !s.replaceStatus(Created, RecordSent) {
 		return fmt.Errorf("failed status check for send record. Status: %v", s.getStatus())
 	}
+
+	validatorProfileWaitToRecordHist.Update(s.profileStep())
 	v.LaunchThread(func(ctx context.Context) {
 		err := v.ValidationEntryRecord(ctx, s.Entry)
 		if ctx.Err() != nil {
@@ -457,6 +472,7 @@ func (v *BlockValidator) sendRecord(s *validationStatus) error {
 			log.Error("Error while recording", "err", err, "status", s.getStatus())
 			return
 		}
+		validatorProfileRecordingHist.Update(s.profileStep())
 		if !s.replaceStatus(RecordSent, Prepared) {
 			log.Error("Fault trying to update validation with recording", "entry", s.Entry, "status", s.getStatus())
 			return
@@ -468,7 +484,7 @@ func (v *BlockValidator) sendRecord(s *validationStatus) error {
 
 //nolint:gosec
 func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoot common.Hash) error {
-	input, err := validationEntry.ToInput()
+	input, err := validationEntry.ToInput([]string{"wavm"})
 	if err != nil {
 		return err
 	}
@@ -507,25 +523,6 @@ func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
 		"unexpected wasmModuleRoot! cannot validate! found %v , current %v, pending %v",
 		hash, v.currentWasmModuleRoot, v.pendingWasmModuleRoot,
 	)
-}
-
-func (v *BlockValidator) readBatch(ctx context.Context, batchNum uint64) (bool, []byte, common.Hash, arbutil.MessageIndex, error) {
-	batchCount, err := v.inboxTracker.GetBatchCount()
-	if err != nil {
-		return false, nil, common.Hash{}, 0, err
-	}
-	if batchCount <= batchNum {
-		return false, nil, common.Hash{}, 0, nil
-	}
-	batchMsgCount, err := v.inboxTracker.GetBatchMessageCount(batchNum)
-	if err != nil {
-		return false, nil, common.Hash{}, 0, err
-	}
-	batch, batchBlockHash, err := v.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
-	if err != nil {
-		return false, nil, common.Hash{}, 0, err
-	}
-	return true, batch, batchBlockHash, batchMsgCount, nil
 }
 
 func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, error) {
@@ -585,7 +582,8 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		return false, err
 	}
 	status := &validationStatus{
-		Entry: entry,
+		Entry:     entry,
+		profileTS: time.Now().UnixMilli(),
 	}
 	status.Status.Store(uint32(Created))
 	v.validations.Store(pos, status)
@@ -792,12 +790,13 @@ validationsLoop:
 			continue
 		}
 		for _, moduleRoot := range wasmRoots {
-			if v.chosenValidator[moduleRoot] == nil {
+			spawner := v.chosenValidator[moduleRoot]
+			if spawner == nil {
 				notFoundErr := fmt.Errorf("did not find spawner for moduleRoot :%v", moduleRoot)
 				v.possiblyFatal(notFoundErr)
 				return nil, notFoundErr
 			}
-			if v.chosenValidator[moduleRoot].Room() == 0 {
+			if spawner.Room() == 0 {
 				log.Trace("advanceValidations: no more room", "moduleRoot", moduleRoot)
 				return nil, nil
 			}
@@ -807,28 +806,35 @@ validationsLoop:
 			return nil, nil
 		}
 		if currentStatus == Prepared {
-			input, err := validationStatus.Entry.ToInput()
-			if err != nil && ctx.Err() == nil {
-				v.possiblyFatal(fmt.Errorf("%w: error preparing validation", err))
-				continue
-			}
 			replaced := validationStatus.replaceStatus(Prepared, SendingValidation)
 			if !replaced {
 				v.possiblyFatal(errors.New("failed to set SendingValidation status"))
 			}
+			validatorProfileWaitToLaunchHist.Update(validationStatus.profileStep())
 			validatorPendingValidationsGauge.Inc(1)
 			var runs []validator.ValidationRun
 			for _, moduleRoot := range wasmRoots {
-				run := v.chosenValidator[moduleRoot].Launch(input, moduleRoot)
+				spawner := v.chosenValidator[moduleRoot]
+				input, err := validationStatus.Entry.ToInput(spawner.StylusArchs())
+				if err != nil && ctx.Err() == nil {
+					v.possiblyFatal(fmt.Errorf("%w: error preparing validation", err))
+					continue
+				}
+				if ctx.Err() != nil {
+					return nil, ctx.Err()
+				}
+				run := spawner.Launch(input, moduleRoot)
 				log.Trace("advanceValidations: launched", "pos", validationStatus.Entry.Pos, "moduleRoot", moduleRoot)
 				runs = append(runs, run)
 			}
+			validatorProfileLaunchingHist.Update(validationStatus.profileStep())
 			validationCtx, cancel := context.WithCancel(ctx)
 			validationStatus.Runs = runs
 			validationStatus.Cancel = cancel
 			v.LaunchUntrackedThread(func() {
 				defer validatorPendingValidationsGauge.Dec(1)
 				defer cancel()
+				startTsMilli := validationStatus.profileTS
 				replaced = validationStatus.replaceStatus(SendingValidation, ValidationSent)
 				if !replaced {
 					v.possiblyFatal(errors.New("failed to set status to ValidationSent"))
@@ -842,6 +848,7 @@ validationsLoop:
 						return
 					}
 				}
+				validatorProfileRunningHist.Update(time.Now().UnixMilli() - startTsMilli)
 				nonBlockingTrigger(v.progressValidationsChan)
 			})
 		}
