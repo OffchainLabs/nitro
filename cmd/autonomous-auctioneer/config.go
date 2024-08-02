@@ -66,7 +66,7 @@ var AuctioneerConfigDefault = AuctioneerConfig{
 	PprofCfg:      genericconf.PProfDefault,
 }
 
-func ValidationNodeConfigAddOptions(f *flag.FlagSet) {
+func AuctioneerConfigAddOptions(f *flag.FlagSet) {
 	genericconf.ConfConfigAddOptions("conf", f)
 	f.String("log-level", AuctioneerConfigDefault.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
 	f.String("log-type", AuctioneerConfigDefault.LogType, "log type (plaintext or json)")
@@ -135,8 +135,10 @@ var DefaultAuctioneerStackConfig = node.Config{
 	AuthPort:            node.DefaultAuthPort,
 	AuthVirtualHosts:    node.DefaultAuthVhosts,
 	HTTPModules:         []string{timeboost.AuctioneerNamespace},
+	HTTPHost:            "localhost",
 	HTTPVirtualHosts:    []string{"localhost"},
 	HTTPTimeouts:        rpc.DefaultHTTPTimeouts,
+	WSHost:              "localhost",
 	WSPort:              node.DefaultWSPort,
 	WSModules:           []string{timeboost.AuctioneerNamespace},
 	GraphQLVirtualHosts: []string{"localhost"},
