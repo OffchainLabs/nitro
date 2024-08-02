@@ -15,6 +15,7 @@ import (
 )
 
 func TestAuctioneer_validateBid(t *testing.T) {
+	setup := setupAuctionTest(t, context.Background())
 	tests := []struct {
 		name          string
 		bid           *Bid
@@ -32,21 +33,24 @@ func TestAuctioneer_validateBid(t *testing.T) {
 			name:        "empty express lane controller address",
 			bid:         &Bid{},
 			expectedErr: ErrMalformedData,
-			errMsg:      "empty express lane controller address",
+			errMsg:      "incorrect auction contract address",
 		},
 		{
 			name: "incorrect chain id",
 			bid: &Bid{
-				ExpressLaneController: common.Address{'b'},
+				ExpressLaneController:  common.Address{'b'},
+				AuctionContractAddress: setup.expressLaneAuctionAddr,
+				ChainId:                big.NewInt(50),
 			},
 			expectedErr: ErrWrongChainId,
-			errMsg:      "can not auction for chain id: 0",
+			errMsg:      "can not auction for chain id: 50",
 		},
 		{
 			name: "incorrect round",
 			bid: &Bid{
-				ExpressLaneController: common.Address{'b'},
-				ChainId:               big.NewInt(1),
+				ExpressLaneController:  common.Address{'b'},
+				AuctionContractAddress: setup.expressLaneAuctionAddr,
+				ChainId:                big.NewInt(1),
 			},
 			expectedErr: ErrBadRoundNumber,
 			errMsg:      "wanted 1, got 0",
@@ -54,9 +58,10 @@ func TestAuctioneer_validateBid(t *testing.T) {
 		{
 			name: "auction is closed",
 			bid: &Bid{
-				ExpressLaneController: common.Address{'b'},
-				ChainId:               big.NewInt(1),
-				Round:                 1,
+				ExpressLaneController:  common.Address{'b'},
+				AuctionContractAddress: setup.expressLaneAuctionAddr,
+				ChainId:                big.NewInt(1),
+				Round:                  1,
 			},
 			expectedErr:   ErrBadRoundNumber,
 			errMsg:        "auction is closed",
@@ -65,10 +70,11 @@ func TestAuctioneer_validateBid(t *testing.T) {
 		{
 			name: "lower than reserved price",
 			bid: &Bid{
-				ExpressLaneController: common.Address{'b'},
-				ChainId:               big.NewInt(1),
-				Round:                 1,
-				Amount:                big.NewInt(1),
+				ExpressLaneController:  common.Address{'b'},
+				AuctionContractAddress: setup.expressLaneAuctionAddr,
+				ChainId:                big.NewInt(1),
+				Round:                  1,
+				Amount:                 big.NewInt(1),
 			},
 			expectedErr: ErrReservePriceNotMet,
 			errMsg:      "reserve price 2, bid 1",
@@ -76,23 +82,22 @@ func TestAuctioneer_validateBid(t *testing.T) {
 		{
 			name: "incorrect signature",
 			bid: &Bid{
-				ExpressLaneController: common.Address{'b'},
-				ChainId:               big.NewInt(1),
-				Round:                 1,
-				Amount:                big.NewInt(3),
-				Signature:             []byte{'a'},
+				ExpressLaneController:  common.Address{'b'},
+				AuctionContractAddress: setup.expressLaneAuctionAddr,
+				ChainId:                big.NewInt(1),
+				Round:                  1,
+				Amount:                 big.NewInt(3),
+				Signature:              []byte{'a'},
 			},
 			expectedErr: ErrMalformedData,
 			errMsg:      "signature length is not 65",
 		},
 		{
 			name:        "not a depositor",
-			bid:         buildValidBid(t),
+			bid:         buildValidBid(t, setup.expressLaneAuctionAddr),
 			expectedErr: ErrNotDepositor,
 		},
 	}
-
-	setup := setupAuctionTest(t, context.Background())
 
 	for _, tt := range tests {
 		a := Auctioneer{
@@ -102,6 +107,7 @@ func TestAuctioneer_validateBid(t *testing.T) {
 			roundDuration:           time.Minute,
 			auctionClosingDuration:  45 * time.Second,
 			auctionContract:         setup.expressLaneAuction,
+			auctionContractAddr:     setup.expressLaneAuctionAddr,
 			bidsPerSenderInRound:    make(map[common.Address]uint8),
 			maxBidsPerSenderInRound: 5,
 		}
@@ -169,12 +175,12 @@ func buildSignature(privateKey *ecdsa.PrivateKey, data []byte) ([]byte, error) {
 	return signature, nil
 }
 
-func buildValidBid(t *testing.T) *Bid {
+func buildValidBid(t *testing.T, auctionContractAddr common.Address) *Bid {
 	privateKey, err := crypto.GenerateKey()
 	require.NoError(t, err)
 	b := &Bid{
 		ExpressLaneController:  common.Address{'b'},
-		AuctionContractAddress: common.Address{'c'},
+		AuctionContractAddress: auctionContractAddr,
 		ChainId:                big.NewInt(1),
 		Round:                  1,
 		Amount:                 big.NewInt(3),

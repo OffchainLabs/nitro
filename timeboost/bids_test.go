@@ -98,7 +98,7 @@ func TestTopTwoBids(t *testing.T) {
 		expected *auctionResult
 	}{
 		{
-			name: "Single Bid",
+			name: "single bid",
 			bids: map[common.Address]*validatedBid{
 				common.HexToAddress("0x1"): {amount: big.NewInt(100), chainId: big.NewInt(1), expressLaneController: common.HexToAddress("0x1")},
 			},
@@ -108,7 +108,7 @@ func TestTopTwoBids(t *testing.T) {
 			},
 		},
 		{
-			name: "Two Bids with Different Amounts",
+			name: "two bids with different amounts",
 			bids: map[common.Address]*validatedBid{
 				common.HexToAddress("0x1"): {amount: big.NewInt(100), chainId: big.NewInt(1), expressLaneController: common.HexToAddress("0x1")},
 				common.HexToAddress("0x2"): {amount: big.NewInt(200), chainId: big.NewInt(1), expressLaneController: common.HexToAddress("0x2")},
@@ -119,7 +119,7 @@ func TestTopTwoBids(t *testing.T) {
 			},
 		},
 		{
-			name: "Two Bids with Same Amount and Different Hashes",
+			name: "two bids same amount but different hashes",
 			bids: map[common.Address]*validatedBid{
 				common.HexToAddress("0x1"): {amount: big.NewInt(100), chainId: big.NewInt(1), bidder: common.HexToAddress("0x1"), expressLaneController: common.HexToAddress("0x1")},
 				common.HexToAddress("0x2"): {amount: big.NewInt(100), chainId: big.NewInt(2), bidder: common.HexToAddress("0x2"), expressLaneController: common.HexToAddress("0x2")},
@@ -130,7 +130,7 @@ func TestTopTwoBids(t *testing.T) {
 			},
 		},
 		{
-			name: "More Than Two Bids, All Unique Amounts",
+			name: "many bids but all same amount",
 			bids: map[common.Address]*validatedBid{
 				common.HexToAddress("0x1"): {amount: big.NewInt(300), chainId: big.NewInt(1), expressLaneController: common.HexToAddress("0x1")},
 				common.HexToAddress("0x2"): {amount: big.NewInt(100), chainId: big.NewInt(1), expressLaneController: common.HexToAddress("0x2")},
@@ -142,7 +142,7 @@ func TestTopTwoBids(t *testing.T) {
 			},
 		},
 		{
-			name: "More Than Two Bids, Some with Same Amounts",
+			name: "many bids with some tied and others with different amounts",
 			bids: map[common.Address]*validatedBid{
 				common.HexToAddress("0x1"): {amount: big.NewInt(300), chainId: big.NewInt(1), expressLaneController: common.HexToAddress("0x1")},
 				common.HexToAddress("0x2"): {amount: big.NewInt(100), chainId: big.NewInt(1), expressLaneController: common.HexToAddress("0x2")},
@@ -155,7 +155,7 @@ func TestTopTwoBids(t *testing.T) {
 			},
 		},
 		{
-			name: "More Than Two Bids, Tied for Second Place",
+			name: "many bids and tied for second place",
 			bids: map[common.Address]*validatedBid{
 				common.HexToAddress("0x1"): {amount: big.NewInt(300), chainId: big.NewInt(1), expressLaneController: common.HexToAddress("0x1")},
 				common.HexToAddress("0x2"): {amount: big.NewInt(200), chainId: big.NewInt(1), expressLaneController: common.HexToAddress("0x2")},
@@ -167,7 +167,7 @@ func TestTopTwoBids(t *testing.T) {
 			},
 		},
 		{
-			name: "All Bids with the Same Amount",
+			name: "all bids with the same amount",
 			bids: map[common.Address]*validatedBid{
 				common.HexToAddress("0x1"): {amount: big.NewInt(100), chainId: big.NewInt(1), bidder: common.HexToAddress("0x1"), expressLaneController: common.HexToAddress("0x1")},
 				common.HexToAddress("0x2"): {amount: big.NewInt(100), chainId: big.NewInt(2), bidder: common.HexToAddress("0x2"), expressLaneController: common.HexToAddress("0x2")},
@@ -179,12 +179,12 @@ func TestTopTwoBids(t *testing.T) {
 			},
 		},
 		{
-			name:     "No Bids",
+			name:     "no bids",
 			bids:     nil,
 			expected: &auctionResult{firstPlace: nil, secondPlace: nil},
 		},
 		{
-			name: "Identical Bids",
+			name: "identical bids",
 			bids: map[common.Address]*validatedBid{
 				common.HexToAddress("0x1"): {amount: big.NewInt(100), chainId: big.NewInt(1), bidder: common.HexToAddress("0x1"), expressLaneController: common.HexToAddress("0x1")},
 				common.HexToAddress("0x2"): {amount: big.NewInt(100), chainId: big.NewInt(1), bidder: common.HexToAddress("0x1"), expressLaneController: common.HexToAddress("0x2")},
