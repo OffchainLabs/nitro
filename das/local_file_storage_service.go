@@ -228,7 +228,7 @@ func (s *LocalFileStorageService) String() string {
 }
 
 func (s *LocalFileStorageService) HealthCheck(ctx context.Context) error {
-	testData := []byte("Test-Data")
+	testData := []byte("Test Data")
 	// Store some data with an expiry time at the start of the epoch.
 	// If expiry is disabled it will only create an index entry for the
 	// same timestamp each time the health check happens.
@@ -236,7 +236,7 @@ func (s *LocalFileStorageService) HealthCheck(ctx context.Context) error {
 	// runs. There is a slight chance of a race between pruning and the
 	// Put and Get calls, but systems using the HealthCheck will just retry
 	// and succeed the next time.
-	err := s.Put(ctx, testData /* start of epoch */, 0)
+	err := s.Put(ctx, testData, 0 /* start of epoch */)
 	if err != nil {
 		return err
 	}
@@ -737,6 +737,8 @@ func (l *trieLayout) commitMigration() error {
 		return err
 	}
 
+	// in OSX - syscall.Sync() returns an error, but in linux it does not.
+	// nolint:errcheck
 	syscall.Sync()
 
 	// Done migrating
