@@ -51,6 +51,9 @@ type Auctioneer struct {
 	reserveSubmissionDuration time.Duration
 	reservePriceLock          sync.RWMutex
 	reservePrice              *big.Int
+	sync.RWMutex
+	bidsPerSenderInRound    map[common.Address]uint8
+	maxBidsPerSenderInRound uint8
 }
 
 func EnsureValidationExposedViaAuthRPC(stackConf *node.Config) {
@@ -106,6 +109,8 @@ func NewAuctioneer(
 		reserveSubmissionDuration: reserveSubmissionDuration,
 		reservePrice:              reservePrice,
 		domainValue:               domainValue,
+		bidsPerSenderInRound:      make(map[common.Address]uint8),
+		maxBidsPerSenderInRound:   5, // 5 max bids per sender address in a round.
 	}
 	for _, o := range opts {
 		o(am)
@@ -123,7 +128,7 @@ func NewAuctioneer(
 
 // ReceiveBid validates and adds a bid to the bid cache.
 func (a *Auctioneer) receiveBid(ctx context.Context, b *Bid) error {
-	vb, err := a.validateBid(b)
+	vb, err := a.validateBid(b, a.auctionContract.BalanceOf, a.fetchReservePrice)
 	if err != nil {
 		return err
 	}
@@ -234,7 +239,11 @@ func (a *Auctioneer) fetchReservePrice() *big.Int {
 	return new(big.Int).Set(a.reservePrice)
 }
 
-func (a *Auctioneer) validateBid(bid *Bid) (*validatedBid, error) {
+func (a *Auctioneer) validateBid(
+	bid *Bid,
+	balanceCheckerFn func(opts *bind.CallOpts, addr common.Address) (*big.Int, error),
+	fetchReservePriceFn func() *big.Int,
+) (*validatedBid, error) {
 	// Check basic integrity.
 	if bid == nil {
 		return nil, errors.Wrap(ErrMalformedData, "nil bid")
@@ -273,7 +282,7 @@ func (a *Auctioneer) validateBid(bid *Bid) (*validatedBid, error) {
 	}
 
 	// Check bid is higher than reserve price.
-	reservePrice := a.fetchReservePrice()
+	reservePrice := fetchReservePriceFn()
 	if bid.Amount.Cmp(reservePrice) == -1 {
 		return nil, errors.Wrapf(ErrReservePriceNotMet, "reserve price %s, bid %s", reservePrice.String(), bid.Amount.String())
 	}
@@ -307,13 +316,21 @@ func (a *Auctioneer) validateBid(bid *Bid) (*validatedBid, error) {
 	if !verifySignature(pubkey, packedBidBytes, sigItem) {
 		return nil, ErrWrongSignature
 	}
+	// Check how many bids the bidder has sent in this round and cap according to a limit.
 	bidder := crypto.PubkeyToAddress(*pubkey)
-	// Validate if the user if a depositor in the contract and has enough balance for the bid.
-	// TODO: Retry some number of times if flakey connection.
-	// TODO: Validate reserve price against amount of bid.
-	// TODO: No need to do anything expensive if the bid coming is in invalid.
-	// Cache this if the received time of the bid is too soon. Include the arrival timestamp.
-	depositBal, err := a.auctionContract.BalanceOf(&bind.CallOpts{}, bidder)
+	a.Lock()
+	numBids, ok := a.bidsPerSenderInRound[bidder]
+	if !ok {
+		a.bidsPerSenderInRound[bidder] = 1
+	}
+	if numBids >= a.maxBidsPerSenderInRound {
+		a.Unlock()
+		return nil, errors.Wrapf(ErrTooManyBids, "bidder %s has already sent the maximum allowed bids = %d in this round", bidder.Hex(), numBids)
+	}
+	a.bidsPerSenderInRound[bidder]++
+	a.Unlock()
+
+	depositBal, err := balanceCheckerFn(&bind.CallOpts{}, bidder)
 	if err != nil {
 		return nil, err
 	}

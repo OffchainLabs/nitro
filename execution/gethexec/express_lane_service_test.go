@@ -11,6 +11,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/lru"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
@@ -34,23 +35,32 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 		es          *expressLaneService
 		sub         *timeboost.ExpressLaneSubmission
 		expectedErr error
-		controller  common.Address
+		control     expressLaneControl
 		valid       bool
 	}{
 		{
-			name:        "nil msg",
-			sub:         nil,
+			name: "nil msg",
+			sub:  nil,
+			es: &expressLaneService{
+				roundControl: lru.NewBasicLRU[uint64, *expressLaneControl](8),
+			},
 			expectedErr: timeboost.ErrMalformedData,
 		},
 		{
-			name:        "nil tx",
-			sub:         &timeboost.ExpressLaneSubmission{},
+			name: "nil tx",
+			sub:  &timeboost.ExpressLaneSubmission{},
+			es: &expressLaneService{
+				roundControl: lru.NewBasicLRU[uint64, *expressLaneControl](8),
+			},
 			expectedErr: timeboost.ErrMalformedData,
 		},
 		{
 			name: "nil sig",
 			sub: &timeboost.ExpressLaneSubmission{
 				Transaction: &types.Transaction{},
+			},
+			es: &expressLaneService{
+				roundControl: lru.NewBasicLRU[uint64, *expressLaneControl](8),
 			},
 			expectedErr: timeboost.ErrMalformedData,
 		},
@@ -60,6 +70,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
+				roundControl: lru.NewBasicLRU[uint64, *expressLaneControl](8),
 			},
 			sub: &timeboost.ExpressLaneSubmission{
 				ChainId:     big.NewInt(2),
@@ -75,6 +86,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
+				roundControl: lru.NewBasicLRU[uint64, *expressLaneControl](8),
 			},
 			sub: &timeboost.ExpressLaneSubmission{
 				ChainId:                big.NewInt(1),
@@ -91,6 +103,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
+				roundControl: lru.NewBasicLRU[uint64, *expressLaneControl](8),
 			},
 			sub: &timeboost.ExpressLaneSubmission{
 				ChainId:                big.NewInt(1),
@@ -109,9 +122,10 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
-				control: expressLaneControl{
-					controller: common.Address{'b'},
-				},
+				roundControl: lru.NewBasicLRU[uint64, *expressLaneControl](8),
+			},
+			control: expressLaneControl{
+				controller: common.Address{'b'},
 			},
 			sub: &timeboost.ExpressLaneSubmission{
 				ChainId:                big.NewInt(1),
@@ -120,7 +134,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 				Signature:              []byte{'b'},
 				Round:                  100,
 			},
-			expectedErr: timeboost.ErrBadRoundNumber,
+			expectedErr: timeboost.ErrNoOnchainController,
 		},
 		{
 			name: "malformed signature",
@@ -131,9 +145,10 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
-				control: expressLaneControl{
-					controller: common.Address{'b'},
-				},
+				roundControl: lru.NewBasicLRU[uint64, *expressLaneControl](8),
+			},
+			control: expressLaneControl{
+				controller: common.Address{'b'},
 			},
 			sub: &timeboost.ExpressLaneSubmission{
 				ChainId:                big.NewInt(1),
@@ -153,9 +168,10 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
-				control: expressLaneControl{
-					controller: common.Address{'b'},
-				},
+				roundControl: lru.NewBasicLRU[uint64, *expressLaneControl](8),
+			},
+			control: expressLaneControl{
+				controller: common.Address{'b'},
 			},
 			sub:         buildInvalidSignatureSubmission(t, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6")),
 			expectedErr: timeboost.ErrNotExpressLaneController,
@@ -169,9 +185,10 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
-				control: expressLaneControl{
-					controller: common.Address{'b'},
-				},
+				roundControl: lru.NewBasicLRU[uint64, *expressLaneControl](8),
+			},
+			control: expressLaneControl{
+				controller: common.Address{'b'},
 			},
 			sub:         buildValidSubmission(t, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), testPriv),
 			expectedErr: timeboost.ErrNotExpressLaneController,
@@ -185,9 +202,10 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 				chainConfig: &params.ChainConfig{
 					ChainID: big.NewInt(1),
 				},
-				control: expressLaneControl{
-					controller: crypto.PubkeyToAddress(testPriv.PublicKey),
-				},
+				roundControl: lru.NewBasicLRU[uint64, *expressLaneControl](8),
+			},
+			control: expressLaneControl{
+				controller: crypto.PubkeyToAddress(testPriv.PublicKey),
 			},
 			sub:   buildValidSubmission(t, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), testPriv),
 			valid: true,
@@ -196,6 +214,9 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			if tt.sub != nil {
+				tt.es.roundControl.Add(tt.sub.Round, &tt.control)
+			}
 			err := tt.es.validateExpressLaneTx(tt.sub)
 			if tt.valid {
 				require.NoError(t, err)
@@ -210,11 +231,12 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_nonceTooLow(t *testin
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	els := &expressLaneService{
-		control: expressLaneControl{
-			sequence: 1,
-		},
 		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
+		roundControl:             lru.NewBasicLRU[uint64, *expressLaneControl](8),
 	}
+	els.roundControl.Add(0, &expressLaneControl{
+		sequence: 1,
+	})
 	msg := &timeboost.ExpressLaneSubmission{
 		Sequence: 0,
 	}
@@ -229,11 +251,12 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_duplicateNonce(t *tes
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	els := &expressLaneService{
-		control: expressLaneControl{
-			sequence: 1,
-		},
+		roundControl:             lru.NewBasicLRU[uint64, *expressLaneControl](8),
 		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
 	}
+	els.roundControl.Add(0, &expressLaneControl{
+		sequence: 1,
+	})
 	msg := &timeboost.ExpressLaneSubmission{
 		Sequence: 2,
 	}
@@ -256,16 +279,18 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	els := &expressLaneService{
-		control: expressLaneControl{
-			sequence: 1,
-		},
+		roundControl:             lru.NewBasicLRU[uint64, *expressLaneControl](8),
 		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
 	}
+	els.roundControl.Add(0, &expressLaneControl{
+		sequence: 1,
+	})
 	numPublished := 0
 	publishedTxOrder := make([]uint64, 0)
+	control, _ := els.roundControl.Get(0)
 	publishFn := func(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, delay bool) error {
 		numPublished += 1
-		publishedTxOrder = append(publishedTxOrder, els.control.sequence)
+		publishedTxOrder = append(publishedTxOrder, control.sequence)
 		return nil
 	}
 	messages := []*timeboost.ExpressLaneSubmission{
@@ -298,19 +323,21 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	els := &expressLaneService{
-		control: expressLaneControl{
-			sequence: 1,
-		},
+		roundControl:             lru.NewBasicLRU[uint64, *expressLaneControl](8),
 		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
 	}
+	els.roundControl.Add(0, &expressLaneControl{
+		sequence: 1,
+	})
 	numPublished := 0
 	publishedTxOrder := make([]uint64, 0)
+	control, _ := els.roundControl.Get(0)
 	publishFn := func(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, delay bool) error {
 		if tx == nil {
 			return errors.New("oops, bad tx")
 		}
 		numPublished += 1
-		publishedTxOrder = append(publishedTxOrder, els.control.sequence)
+		publishedTxOrder = append(publishedTxOrder, control.sequence)
 		return nil
 	}
 	messages := []*timeboost.ExpressLaneSubmission{
@@ -352,13 +379,15 @@ func Benchmark_expressLaneService_validateExpressLaneTx(b *testing.B) {
 		auctionContractAddr: common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"),
 		initialTimestamp:    time.Now(),
 		roundDuration:       time.Minute,
+		roundControl:        lru.NewBasicLRU[uint64, *expressLaneControl](8),
 		chainConfig: &params.ChainConfig{
 			ChainID: big.NewInt(1),
 		},
-		control: expressLaneControl{
-			controller: addr,
-		},
 	}
+	es.roundControl.Add(0, &expressLaneControl{
+		sequence:   1,
+		controller: addr,
+	})
 	sub := buildValidSubmission(b, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), testPriv)
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/stretchr/testify/require"
@@ -95,22 +96,68 @@ func TestAuctioneer_validateBid(t *testing.T) {
 
 	for _, tt := range tests {
 		a := Auctioneer{
-			chainId:                []*big.Int{big.NewInt(1)},
-			initialRoundTimestamp:  time.Now().Add(-time.Second),
-			reservePrice:           big.NewInt(2),
-			roundDuration:          time.Minute,
-			auctionClosingDuration: 45 * time.Second,
-			auctionContract:        setup.expressLaneAuction,
+			chainId:                 []*big.Int{big.NewInt(1)},
+			initialRoundTimestamp:   time.Now().Add(-time.Second),
+			reservePrice:            big.NewInt(2),
+			roundDuration:           time.Minute,
+			auctionClosingDuration:  45 * time.Second,
+			auctionContract:         setup.expressLaneAuction,
+			bidsPerSenderInRound:    make(map[common.Address]uint8),
+			maxBidsPerSenderInRound: 5,
 		}
 		if tt.auctionClosed {
 			a.roundDuration = 0
 		}
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := a.validateBid(tt.bid)
+			_, err := a.validateBid(tt.bid, setup.expressLaneAuction.BalanceOf, a.fetchReservePrice)
 			require.ErrorIs(t, err, tt.expectedErr)
 			require.Contains(t, err.Error(), tt.errMsg)
 		})
 	}
+}
+
+func TestAuctioneer_validateBid_perRoundBidLimitReached(t *testing.T) {
+	balanceCheckerFn := func(_ *bind.CallOpts, _ common.Address) (*big.Int, error) {
+		return big.NewInt(10), nil
+	}
+	fetchReservePriceFn := func() *big.Int {
+		return big.NewInt(0)
+	}
+	auctionContractAddr := common.Address{'a'}
+	a := Auctioneer{
+		chainId:                 []*big.Int{big.NewInt(1)},
+		initialRoundTimestamp:   time.Now().Add(-time.Second),
+		reservePrice:            big.NewInt(2),
+		roundDuration:           time.Minute,
+		auctionClosingDuration:  45 * time.Second,
+		bidsPerSenderInRound:    make(map[common.Address]uint8),
+		maxBidsPerSenderInRound: 5,
+		auctionContractAddr:     auctionContractAddr,
+	}
+	privateKey, err := crypto.GenerateKey()
+	require.NoError(t, err)
+	bid := &Bid{
+		ExpressLaneController:  common.Address{'b'},
+		AuctionContractAddress: auctionContractAddr,
+		ChainId:                big.NewInt(1),
+		Round:                  1,
+		Amount:                 big.NewInt(3),
+		Signature:              []byte{'a'},
+	}
+	bidValues, err := encodeBidValues(domainValue, bid.ChainId, bid.AuctionContractAddress, bid.Round, bid.Amount, bid.ExpressLaneController)
+	require.NoError(t, err)
+
+	signature, err := buildSignature(privateKey, bidValues)
+	require.NoError(t, err)
+
+	bid.Signature = signature
+	for i := 0; i < int(a.maxBidsPerSenderInRound)-1; i++ {
+		_, err := a.validateBid(bid, balanceCheckerFn, fetchReservePriceFn)
+		require.NoError(t, err)
+	}
+	_, err = a.validateBid(bid, balanceCheckerFn, fetchReservePriceFn)
+	require.ErrorIs(t, err, ErrTooManyBids)
+
 }
 
 func buildSignature(privateKey *ecdsa.PrivateKey, data []byte) ([]byte, error) {

@@ -83,7 +83,7 @@ func TestReceiveBid_OK(t *testing.T) {
 	require.NoError(t, err)
 
 	// Check the bid passes validation.
-	_, err = am.validateBid(newBid)
+	_, err = am.validateBid(newBid, am.auctionContract.BalanceOf, am.fetchReservePrice)
 	require.NoError(t, err)
 
 	topTwoBids := am.bidCache.topTwoBids()
@@ -231,7 +231,7 @@ func BenchmarkBidValidation(b *testing.B) {
 
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
-		am.validateBid(newBid)
+		am.validateBid(newBid, am.auctionContract.BalanceOf, am.fetchReservePrice)
 	}
 }
 
