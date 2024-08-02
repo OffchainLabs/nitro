@@ -302,7 +302,8 @@ func SetTarget(name string, description string, native bool) error {
 	))
 	if status != userSuccess {
 		msg := arbutil.ToStringOrHex(output.intoBytes())
-		return fmt.Errorf("stylus_target_set failed with status %v: %v", status, msg)
+		log.Error("failed to set stylus compilation target", "status", status, "msg", msg)
+		return fmt.Errorf("failed to set stylus compilation target, status %v: %v", status, msg)
 	}
 	return nil
 }
