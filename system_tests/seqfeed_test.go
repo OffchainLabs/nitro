@@ -431,3 +431,62 @@ func TestBlockHashFeedMismatch(t *testing.T) {
 func TestBlockHashFeedNil(t *testing.T) {
 	testBlockHashComparison(t, nil, false)
 }
+
+func TestPopulateFeedBacklog(t *testing.T) {
+	logHandler := testhelpers.InitTestLog(t, log.LvlTrace)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.BuildL1(t)
+
+	userAccount := "User2"
+	builder.L2Info.GenerateAccount(userAccount)
+
+	// Guarantees that nodes will rely only on the feed to receive messages
+	builder.nodeConfig.BatchPoster.Enable = false
+	builder.BuildL2OnL1(t)
+
+	dataDir := builder.l2StackConfig.DataDir
+
+	// Sends a transaction
+	tx := builder.L2Info.PrepareTx("Owner", userAccount, builder.L2Info.TransferGas, big.NewInt(1e12), nil)
+	err := builder.L2.Client.SendTransaction(ctx, tx)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
+	// Shutdown node and starts a new one with same data dir and feed output enabled.
+	// The new node will populate the feedbacklog since already a message, related to the
+	// transaction previously sent, stored in disk.
+	builder.L2.cleanup()
+	builder.l2StackConfig.DataDir = dataDir
+	builder.nodeConfig.Feed.Output = *newBroadcasterConfigTest()
+	cleanup := builder.BuildL2OnL1(t)
+	defer cleanup()
+
+	// Creates a sink node, that will read from the feed output of the previous node.
+	nodeConfigSink := builder.nodeConfig
+	port := builder.L2.ConsensusNode.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
+	nodeConfigSink.Feed.Input = *newBroadcastClientConfigTest(port)
+	testClientSink, cleanupSink := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: nodeConfigSink})
+	defer cleanupSink()
+
+	// Waits for the transaction to be processed by the sink node.
+	_, err = WaitForTx(ctx, testClientSink.Client, tx.Hash(), time.Second*5)
+	if err != nil {
+		t.Fatal("error waiting for transaction to get to sink:", err)
+	}
+	balance, err := testClientSink.Client.BalanceAt(ctx, builder.L2Info.GetAddress(userAccount), nil)
+	if err != nil {
+		t.Fatal("error getting fraud balance:", err)
+	}
+	if balance.Cmp(big.NewInt(1e12)) != 0 {
+		t.Fatal("Unexpected balance:", balance)
+	}
+
+	if logHandler.WasLogged(arbnode.BlockHashMismatchLogMsg) {
+		t.Fatal("BlockHashMismatchLogMsg was logged unexpectedly")
+	}
+}
