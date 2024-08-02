@@ -1184,18 +1184,15 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 			latestCumulativeWeight = latestQueued.CumulativeWeight()
 			latestNonce = latestQueued.FullTx.Nonce()
 
-			var confirmedWeight uint64
 			confirmedNonce := unconfirmedNonce - 1
 			confirmedMeta, err := p.queue.Get(ctx, confirmedNonce)
-			if err != nil {
-				log.Error("Failed to fetxh latest confirmed tx from queue", "err", err)
-				return minWait
+			if err == nil && confirmedMeta != nil {
+				totalQueueWeightGauge.Update(int64(arbmath.SaturatingUSub(latestCumulativeWeight, confirmedMeta.CumulativeWeight())))
+				totalQueueLengthGauge.Update(int64(arbmath.SaturatingUSub(latestNonce, confirmedNonce)))
+			} else {
+				log.Error("Failed to fetch latest confirmed tx from queue", "err", err, "confirmedMeta", confirmedMeta)
 			}
-			if confirmedMeta != nil {
-				confirmedWeight = confirmedMeta.CumulativeWeight()
-			}
-			totalQueueWeightGauge.Update(int64(arbmath.SaturatingUSub(latestCumulativeWeight, confirmedWeight)))
-			totalQueueLengthGauge.Update(int64(arbmath.SaturatingUSub(latestNonce, confirmedNonce)))
+
 		}
 
 		for _, tx := range queueContents {
