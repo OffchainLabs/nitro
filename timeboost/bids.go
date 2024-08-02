@@ -27,6 +27,8 @@ var (
 	ErrNoOnchainController      = errors.New("NO_ONCHAIN_CONTROLLER")
 	ErrWrongAuctionContract     = errors.New("WRONG_AUCTION_CONTRACT")
 	ErrNotExpressLaneController = errors.New("NOT_EXPRESS_LANE_CONTROLLER")
+	ErrDuplicateSequenceNumber  = errors.New("SUBMISSION_NONCE_ALREADY_SEEN")
+	ErrSequenceNumberTooLow     = errors.New("SUBMISSION_NONCE_TOO_LOW")
 )
 
 type Bid struct {

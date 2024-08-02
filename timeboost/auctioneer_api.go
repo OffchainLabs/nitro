@@ -40,6 +40,7 @@ type ExpressLaneSubmission struct {
 	AuctionContractAddress common.Address
 	Transaction            *types.Transaction
 	Options                *arbitrum_types.ConditionalOptions `json:"options"`
+	Sequence               uint64
 	Signature              []byte
 }
 
@@ -103,9 +104,6 @@ func encodeExpressLaneSubmission(
 	}
 	buf.Write(rlpTx)
 	return buf.Bytes(), nil
-}
-
-type AuctionResolutionSubmission struct {
 }
 
 func (a *AuctioneerAPI) SubmitBid(ctx context.Context, bid *JsonBid) error {

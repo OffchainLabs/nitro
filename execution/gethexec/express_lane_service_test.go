@@ -1,12 +1,15 @@
 package gethexec
 
 import (
+	"context"
 	"crypto/ecdsa"
+	"errors"
 	"fmt"
 	"math/big"
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -15,10 +18,17 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
+var testPriv *ecdsa.PrivateKey
+
+func init() {
 	privKey, err := crypto.HexToECDSA("93be75cc4df7acbb636b6abe6de2c0446235ac1dc7da9f290a70d83f088b486d")
-	require.NoError(t, err)
-	addr := crypto.PubkeyToAddress(privKey.PublicKey)
+	if err != nil {
+		panic(err)
+	}
+	testPriv = privKey
+}
+
+func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 	tests := []struct {
 		name        string
 		es          *expressLaneService
@@ -163,7 +173,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 					controller: common.Address{'b'},
 				},
 			},
-			sub:         buildValidSubmission(t, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), privKey),
+			sub:         buildValidSubmission(t, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), testPriv),
 			expectedErr: timeboost.ErrNotExpressLaneController,
 		},
 		{
@@ -176,10 +186,10 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 					ChainID: big.NewInt(1),
 				},
 				control: expressLaneControl{
-					controller: addr,
+					controller: crypto.PubkeyToAddress(testPriv.PublicKey),
 				},
 			},
-			sub:   buildValidSubmission(t, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), privKey),
+			sub:   buildValidSubmission(t, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), testPriv),
 			valid: true,
 		},
 	}
@@ -196,11 +206,148 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 	}
 }
 
+func Test_expressLaneService_sequenceExpressLaneSubmission_nonceTooLow(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	els := &expressLaneService{
+		control: expressLaneControl{
+			sequence: 1,
+		},
+		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
+	}
+	msg := &timeboost.ExpressLaneSubmission{
+		Sequence: 0,
+	}
+	publishFn := func(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, delay bool) error {
+		return nil
+	}
+	err := els.sequenceExpressLaneSubmission(ctx, msg, publishFn)
+	require.ErrorIs(t, err, timeboost.ErrSequenceNumberTooLow)
+}
+
+func Test_expressLaneService_sequenceExpressLaneSubmission_duplicateNonce(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	els := &expressLaneService{
+		control: expressLaneControl{
+			sequence: 1,
+		},
+		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
+	}
+	msg := &timeboost.ExpressLaneSubmission{
+		Sequence: 2,
+	}
+	numPublished := 0
+	publishFn := func(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, delay bool) error {
+		numPublished += 1
+		return nil
+	}
+	err := els.sequenceExpressLaneSubmission(ctx, msg, publishFn)
+	require.NoError(t, err)
+	// Because the message is for a future sequence number, it
+	// should get queued, but not yet published.
+	require.Equal(t, 0, numPublished)
+	// Sending it again should give us an error.
+	err = els.sequenceExpressLaneSubmission(ctx, msg, publishFn)
+	require.ErrorIs(t, err, timeboost.ErrDuplicateSequenceNumber)
+}
+
+func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	els := &expressLaneService{
+		control: expressLaneControl{
+			sequence: 1,
+		},
+		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
+	}
+	numPublished := 0
+	publishedTxOrder := make([]uint64, 0)
+	publishFn := func(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, delay bool) error {
+		numPublished += 1
+		publishedTxOrder = append(publishedTxOrder, els.control.sequence)
+		return nil
+	}
+	messages := []*timeboost.ExpressLaneSubmission{
+		{
+			Sequence: 10,
+		},
+		{
+			Sequence: 5,
+		},
+		{
+			Sequence: 1,
+		},
+		{
+			Sequence: 4,
+		},
+		{
+			Sequence: 2,
+		},
+	}
+	for _, msg := range messages {
+		err := els.sequenceExpressLaneSubmission(ctx, msg, publishFn)
+		require.NoError(t, err)
+	}
+	// We should have only published 2, as we are missing sequence number 3.
+	require.Equal(t, 2, numPublished)
+	require.Equal(t, len(messages), len(els.messagesBySequenceNumber))
+}
+
+func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	els := &expressLaneService{
+		control: expressLaneControl{
+			sequence: 1,
+		},
+		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
+	}
+	numPublished := 0
+	publishedTxOrder := make([]uint64, 0)
+	publishFn := func(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, delay bool) error {
+		if tx == nil {
+			return errors.New("oops, bad tx")
+		}
+		numPublished += 1
+		publishedTxOrder = append(publishedTxOrder, els.control.sequence)
+		return nil
+	}
+	messages := []*timeboost.ExpressLaneSubmission{
+		{
+			Sequence:    1,
+			Transaction: &types.Transaction{},
+		},
+		{
+			Sequence:    3,
+			Transaction: &types.Transaction{},
+		},
+		{
+			Sequence:    2,
+			Transaction: nil,
+		},
+		{
+			Sequence:    2,
+			Transaction: &types.Transaction{},
+		},
+	}
+	for _, msg := range messages {
+		if msg.Transaction == nil {
+			err := els.sequenceExpressLaneSubmission(ctx, msg, publishFn)
+			require.ErrorContains(t, err, "oops, bad tx")
+		} else {
+			err := els.sequenceExpressLaneSubmission(ctx, msg, publishFn)
+			require.NoError(t, err)
+		}
+	}
+	// One tx out of the four should have failed, so we should have only published 3.
+	require.Equal(t, 3, numPublished)
+	require.Equal(t, []uint64{1, 2, 3}, publishedTxOrder)
+}
+
 func Benchmark_expressLaneService_validateExpressLaneTx(b *testing.B) {
 	b.StopTimer()
-	privKey, err := crypto.HexToECDSA("93be75cc4df7acbb636b6abe6de2c0446235ac1dc7da9f290a70d83f088b486d")
-	require.NoError(b, err)
-	addr := crypto.PubkeyToAddress(privKey.PublicKey)
+	addr := crypto.PubkeyToAddress(testPriv.PublicKey)
 	es := &expressLaneService{
 		auctionContractAddr: common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"),
 		initialTimestamp:    time.Now(),
@@ -212,7 +359,7 @@ func Benchmark_expressLaneService_validateExpressLaneTx(b *testing.B) {
 			controller: addr,
 		},
 	}
-	sub := buildValidSubmission(b, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), privKey)
+	sub := buildValidSubmission(b, common.HexToAddress("0x2Aef36410182881a4b13664a1E079762D7F716e6"), testPriv)
 	b.StartTimer()
 	for i := 0; i < b.N; i++ {
 		err := es.validateExpressLaneTx(sub)

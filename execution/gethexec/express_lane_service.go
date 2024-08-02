@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -30,14 +31,15 @@ type expressLaneControl struct {
 type expressLaneService struct {
 	stopwaiter.StopWaiter
 	sync.RWMutex
-	control             expressLaneControl
-	auctionContractAddr common.Address
-	initialTimestamp    time.Time
-	roundDuration       time.Duration
-	chainConfig         *params.ChainConfig
-	logs                chan []*types.Log
-	seqClient           *ethclient.Client
-	auctionContract     *express_lane_auctiongen.ExpressLaneAuction
+	control                  expressLaneControl
+	auctionContractAddr      common.Address
+	initialTimestamp         time.Time
+	roundDuration            time.Duration
+	chainConfig              *params.ChainConfig
+	logs                     chan []*types.Log
+	seqClient                *ethclient.Client
+	auctionContract          *express_lane_auctiongen.ExpressLaneAuction
+	messagesBySequenceNumber map[uint64]*timeboost.ExpressLaneSubmission
 }
 
 func newExpressLaneService(
@@ -64,10 +66,11 @@ func newExpressLaneService(
 			controller: common.Address{},
 			round:      0,
 		},
-		auctionContractAddr: auctionContractAddr,
-		roundDuration:       roundDuration,
-		seqClient:           sequencerClient,
-		logs:                make(chan []*types.Log, 10_000),
+		auctionContractAddr:      auctionContractAddr,
+		roundDuration:            roundDuration,
+		seqClient:                sequencerClient,
+		logs:                     make(chan []*types.Log, 10_000),
+		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
 	}, nil
 }
 
@@ -93,6 +96,10 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 					"round", round,
 					"timestamp", t,
 				)
+				es.Lock()
+				// Reset the sequence numbers map for the new round.
+				es.messagesBySequenceNumber = make(map[uint64]*timeboost.ExpressLaneSubmission)
+				es.Unlock()
 			}
 		}
 	})
@@ -137,6 +144,7 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 						"round", it.Event.Round,
 						"controller", it.Event.FirstPriceExpressLaneController,
 					)
+					// TODO: This is wrong because it ovewrites the upcoming round...
 					es.Lock()
 					es.control.round = it.Event.Round
 					es.control.controller = it.Event.FirstPriceExpressLaneController
@@ -157,6 +165,55 @@ func (es *expressLaneService) currentRoundHasController() bool {
 	es.Lock()
 	defer es.Unlock()
 	return es.control.controller != (common.Address{})
+}
+
+func (es *expressLaneService) sequenceExpressLaneSubmission(
+	ctx context.Context,
+	msg *timeboost.ExpressLaneSubmission,
+	publishTxFn func(
+		parentCtx context.Context,
+		tx *types.Transaction,
+		options *arbitrum_types.ConditionalOptions,
+		delay bool,
+	) error,
+) error {
+	es.Lock()
+	defer es.Unlock()
+	// Check if the submission nonce is too low.
+	if msg.Sequence < es.control.sequence {
+		return timeboost.ErrSequenceNumberTooLow
+	}
+	// Check if a duplicate submission exists already, and reject if so.
+	if _, exists := es.messagesBySequenceNumber[msg.Sequence]; exists {
+		return timeboost.ErrDuplicateSequenceNumber
+	}
+	// Log an informational warning if the message's sequence number is in the future.
+	if msg.Sequence > es.control.sequence {
+		log.Warn("Received express lane submission with future sequence number", "sequence", msg.Sequence)
+	}
+	// Put into the the sequence number map.
+	es.messagesBySequenceNumber[msg.Sequence] = msg
+
+	for {
+		// Get the next message in the sequence.
+		nextMsg, exists := es.messagesBySequenceNumber[es.control.sequence]
+		if !exists {
+			break
+		}
+		if err := publishTxFn(
+			ctx,
+			nextMsg.Transaction,
+			msg.Options,
+			false, /* no delay, as it should go through express lane */
+		); err != nil {
+			// If the tx failed, clear it from the sequence map.
+			delete(es.messagesBySequenceNumber, msg.Sequence)
+			return err
+		}
+		// Increase the global round sequence number.
+		es.control.sequence += 1
+	}
+	return nil
 }
 
 func (es *expressLaneService) validateExpressLaneTx(msg *timeboost.ExpressLaneSubmission) error {
