@@ -67,7 +67,6 @@ type Config struct {
 	Caching                   CachingConfig                    `koanf:"caching"`
 	RPC                       arbitrum.Config                  `koanf:"rpc"`
 	TxLookupLimit             uint64                           `koanf:"tx-lookup-limit"`
-	Dangerous                 DangerousConfig                  `koanf:"dangerous"`
 	EnablePrefetchBlock       bool                             `koanf:"enable-prefetch-block"`
 	SyncMonitor               SyncMonitorConfig                `koanf:"sync-monitor"`
 	StylusTarget              StylusTargetConfig               `koanf:"stylus-target"`
@@ -107,7 +106,6 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	CachingConfigAddOptions(prefix+".caching", f)
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
-	DangerousConfigAddOptions(prefix+".dangerous", f)
 	f.Bool(prefix+".enable-prefetch-block", ConfigDefault.EnablePrefetchBlock, "enable prefetching of blocks")
 	StylusTargetConfigAddOptions(prefix+".stylus-target", f)
 }
@@ -122,7 +120,6 @@ var ConfigDefault = Config{
 	TxPreChecker:              DefaultTxPreCheckerConfig,
 	TxLookupLimit:             126_230_400, // 1 year at 4 blocks per second
 	Caching:                   DefaultCachingConfig,
-	Dangerous:                 DefaultDangerousConfig,
 	Forwarder:                 DefaultNodeForwarderConfig,
 	EnablePrefetchBlock:       true,
 	StylusTarget:              DefaultStylusTargetConfig,

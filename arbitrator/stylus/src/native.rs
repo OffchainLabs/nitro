@@ -369,7 +369,7 @@ pub fn module(wasm: &[u8], compile: CompileConfig, target: Target) -> Result<Vec
             Function::new_typed(&mut store, $($types)+ -> f64 { panic!("incomplete import") })
         };
         ($($types:tt)+) => {
-            Function::new_typed(&mut store, $($types)+ panic!("incomplete import"))
+            Function::new_typed(&mut store, $($types)+ -> () { panic!("incomplete import") })
         };
     }
     let mut imports = imports! {
