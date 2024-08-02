@@ -443,7 +443,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 					return nil, nil, err
 				}
 				if err := validateWasmStoreSchemaVersion(wasmDb); err != nil {
-					// TODO add option to rebuild wasmDb from scratch in case of version mismatch
+					// TODO(stylus-target) add option to rebuild wasmDb from scratch in case of version mismatch
 					return nil, nil, err
 				}
 				chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1)
@@ -561,7 +561,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		return nil, nil, err
 	}
 	if err := validateWasmStoreSchemaVersion(wasmDb); err != nil {
-		// TODO remove pre-existing wasmdb here?
+		// TODO(stylus-target) remove pre-existing wasmdb here?
 		return nil, nil, err
 	}
 	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1)

@@ -10,6 +10,7 @@ import (
 	"os"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/offchainlabs/nitro/arbutil"
 
@@ -106,14 +107,16 @@ func ValidationInputToJson(entry *validator.ValidationInput) *InputJSON {
 		encData := base64.StdEncoding.EncodeToString(binfo.Data)
 		res.BatchInfo = append(res.BatchInfo, BatchInfoJson{Number: binfo.Number, DataB64: encData})
 	}
-	for moduleHash, info := range entry.UserWasms {
-		asmMap := make(map[string]string, len(info.Asm))
-		for target, asm := range info.Asm {
-			asmMap[target] = base64.StdEncoding.EncodeToString(asm)
+	for moduleHash, asmMap := range entry.UserWasms {
+		asmMapEncoded := make(map[string]string, len(asmMap))
+		for target, asm := range asmMap {
+			asmMapEncoded[target] = base64.StdEncoding.EncodeToString(asm)
 		}
+		// TODO
+		module := asmMapEncoded[rawdb.TargetWavm]
 		encWasm := UserWasmJson{
-			Asm:    asmMap,
-			Module: base64.StdEncoding.EncodeToString(info.Module),
+			Asm:    asmMapEncoded,
+			Module: module,
 		}
 		res.UserWasms[moduleHash] = encWasm
 	}
@@ -151,23 +154,21 @@ func ValidationInputFromJson(entry *InputJSON) (*validator.ValidationInput, erro
 		valInput.BatchInfo = append(valInput.BatchInfo, decInfo)
 	}
 	for moduleHash, info := range entry.UserWasms {
-		asmMap := make(map[string][]byte, len(info.Asm))
+		asmMapDecoded := make(map[string][]byte, len(info.Asm))
 		for target, asmString := range info.Asm {
 			asm, err := base64.StdEncoding.DecodeString(asmString)
 			if err != nil {
 				return nil, err
 			}
-			asmMap[target] = asm
+			asmMapDecoded[target] = asm
 		}
+		// TODO
 		module, err := base64.StdEncoding.DecodeString(info.Module)
 		if err != nil {
 			return nil, err
 		}
-		decInfo := state.ActivatedWasm{
-			Asm:    asmMap,
-			Module: module,
-		}
-		valInput.UserWasms[moduleHash] = decInfo
+		asmMapDecoded[rawdb.TargetWavm] = module
+		valInput.UserWasms[moduleHash] = asmMapDecoded
 	}
 	return valInput, nil
 }

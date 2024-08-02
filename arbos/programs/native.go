@@ -55,11 +55,11 @@ func activateProgram(
 	debug bool,
 	burner burn.Burner,
 ) (*activationInfo, error) {
-	info, asmMap, module, err := activateProgramInternal(db, program, codehash, wasm, page_limit, version, debug, burner.GasLeft())
+	info, asmMap, err := activateProgramInternal(db, program, codehash, wasm, page_limit, version, debug, burner.GasLeft())
 	if err != nil {
 		return nil, err
 	}
-	db.ActivateWasm(info.moduleHash, asmMap, module)
+	db.ActivateWasm(info.moduleHash, asmMap)
 	return info, nil
 }
 
@@ -72,7 +72,7 @@ func activateProgramInternal(
 	version uint16,
 	debug bool,
 	gasLeft *uint64,
-) (*activationInfo, map[string][]byte, []byte, error) {
+) (*activationInfo, map[string][]byte, error) {
 	output := &rustBytes{}
 	moduleHash := &bytes32{}
 	stylusData := &C.StylusData{}
@@ -96,9 +96,9 @@ func activateProgramInternal(
 			log.Warn("activation failed", "err", err, "msg", msg, "program", addressForLogging)
 		}
 		if errors.Is(err, vm.ErrExecutionReverted) {
-			return nil, nil, nil, fmt.Errorf("%w: %s", ErrProgramActivation, msg)
+			return nil, nil, fmt.Errorf("%w: %s", ErrProgramActivation, msg)
 		}
-		return nil, nil, nil, err
+		return nil, nil, err
 	}
 	target := LocalTargetName()
 	status_asm := C.stylus_compile(
@@ -110,9 +110,12 @@ func activateProgramInternal(
 	)
 	asm := output.intoBytes()
 	if status_asm != 0 {
-		return nil, nil, nil, fmt.Errorf("%w: %s", ErrProgramActivation, string(asm))
+		return nil, nil, fmt.Errorf("%w: %s", ErrProgramActivation, string(asm))
 	}
-	asmMap := map[string][]byte{target: asm}
+	asmMap := map[string][]byte{
+		rawdb.TargetWavm: module,
+		target:           asm,
+	}
 
 	hash := moduleHash.toHash()
 
@@ -123,7 +126,7 @@ func activateProgramInternal(
 		asmEstimate:   uint32(stylusData.asm_estimate),
 		footprint:     uint16(stylusData.footprint),
 	}
-	return info, asmMap, module, err
+	return info, asmMap, err
 }
 
 func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codeHash common.Hash, pagelimit uint16, time uint64, debugMode bool, program Program) ([]byte, error) {
@@ -142,7 +145,7 @@ func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging c
 
 	unlimitedGas := uint64(0xffffffffffff)
 	// we know program is activated, so it must be in correct version and not use too much memory
-	info, asmMap, module, err := activateProgramInternal(statedb, addressForLogging, codeHash, wasm, pagelimit, program.version, debugMode, &unlimitedGas)
+	info, asmMap, err := activateProgramInternal(statedb, addressForLogging, codeHash, wasm, pagelimit, program.version, debugMode, &unlimitedGas)
 	if err != nil {
 		log.Error("failed to reactivate program", "address", addressForLogging, "expected moduleHash", moduleHash, "err", err)
 		return nil, fmt.Errorf("failed to reactivate program address: %v err: %w", addressForLogging, err)
@@ -158,14 +161,14 @@ func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging c
 		// stylus program is active on-chain, and was activated in the past
 		// so we store it directly to database
 		batch := statedb.Database().WasmStore().NewBatch()
-		rawdb.WriteActivation(batch, moduleHash, asmMap, module)
+		rawdb.WriteActivation(batch, moduleHash, asmMap)
 		if err := batch.Write(); err != nil {
 			log.Error("failed writing re-activation to state", "address", addressForLogging, "err", err)
 		}
 	} else {
 		// program activated recently, possibly in this eth_call
 		// store it to statedb. It will be stored to database if statedb is commited
-		statedb.ActivateWasm(info.moduleHash, asmMap, module)
+		statedb.ActivateWasm(info.moduleHash, asmMap)
 	}
 	asm, exists := asmMap[localTarget]
 	if !exists {

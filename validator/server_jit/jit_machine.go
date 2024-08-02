@@ -217,12 +217,12 @@ func (machine *JitMachine) prove(
 	if err := writeUint32(uint32(len(userWasms))); err != nil {
 		return state, err
 	}
-	for moduleHash, info := range userWasms {
+	for moduleHash, asmMap := range userWasms {
 		if err := writeExact(moduleHash[:]); err != nil {
 			return state, err
 		}
 		targetName := programs.LocalTargetName()
-		asm, exists := info.Asm[targetName]
+		asm, exists := asmMap[targetName]
 		if !exists {
 			return state, fmt.Errorf("Missing asm for local target, target: %s", targetName)
 		}
