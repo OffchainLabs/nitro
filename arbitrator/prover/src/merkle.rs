@@ -377,7 +377,7 @@ impl Merkle {
         // This will set one or no values depending on if the length was even or odd.
         layers.dirty_leaf_parents[(start >> 1)..].fill(true);
         // This then resizes and marks the dirty leaf parents as dirty.
-        layers.dirty_leaf_parents.resize(new_len >> 1, true);
+        layers.dirty_leaf_parents.resize((new_len + 1) >> 1, true);
         Ok(layers.data[0].len())
     }
 }
@@ -526,6 +526,20 @@ mod test {
         assert_eq!(merkle.capacity(), 2);
         let merkle = Merkle::new_advanced(MerkleType::Memory, vec![Bytes32::from([1; 32])], 11);
         assert_eq!(merkle.capacity(), 1024);
+    }
+
+    #[test]
+    fn resize_and_set_odd() {
+        let merkle = Merkle::new_advanced(MerkleType::Value, vec![Bytes32::from([1; 32])], 20);
+        merkle.resize(9).expect("resize failed");
+        merkle.set(8, Bytes32::from([2; 32]));
+    }
+
+    #[test]
+    fn resize_and_set_even() {
+        let merkle = Merkle::new_advanced(MerkleType::Value, vec![Bytes32::from([1; 32])], 20);
+        merkle.resize(10).expect("resize failed");
+        merkle.set(9, Bytes32::from([2; 32]));
     }
 
     #[test]
