@@ -1,5 +1,10 @@
 package avail
 
+import (
+	"encoding/hex"
+	"fmt"
+)
+
 type BlobProof struct {
 	DataRoot [32]byte `json:"dataRoot"`
 	// blob root to check proof against, or reconstruct the data root
@@ -13,4 +18,27 @@ type BlobProof struct {
 	LeafIndex uint32 `json:"leafIndex"`
 	// leaf being proven
 	Leaf [32]byte `json:"leaf"`
+}
+
+// Method to convert BlobProof to string
+func (bp *BlobProof) String() string {
+	return fmt.Sprintf(
+		"DataRoot: %s,  BlobRoot: %s,  BridgeRoot: %s,  LeafProof: %s,  NumberOfLeaves: %d,  LeafIndex: %d,  Leaf: %s",
+		hex.EncodeToString(bp.DataRoot[:]),
+		hex.EncodeToString(bp.BlobRoot[:]),
+		hex.EncodeToString(bp.BridgeRoot[:]),
+		formatLeafProof(bp.LeafProof),
+		bp.NumberOfLeaves,
+		bp.LeafIndex,
+		hex.EncodeToString(bp.Leaf[:]),
+	)
+}
+
+// Helper function to format LeafProof
+func formatLeafProof(leafProof [][32]byte) string {
+	proofs := ""
+	for i, proof := range leafProof {
+		proofs += fmt.Sprintf("\n  [%d]: %s", i, hex.EncodeToString(proof[:]))
+	}
+	return proofs
 }

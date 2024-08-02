@@ -72,3 +72,15 @@ func (b *BlobPointer) UnmarshalFromBinary(data []byte) error {
 	b.BlobProof = unpackedData[4].(BlobProof)          //nolint:all
 	return nil
 }
+
+// Method to convert BlobPointer to string
+func (bp *BlobPointer) String() string {
+	return fmt.Sprintf(
+		"BlockHeight: %d,  ExtrinsicIndex: %d,  DasTreeRootHash: %s,  BlobDataKeccak265H: %s,  BlobProof: %s",
+		bp.BlockHeight,
+		bp.ExtrinsicIndex,
+		bp.DasTreeRootHash.Hex(),
+		bp.BlobDataKeccak265H.Hex(),
+		bp.BlobProof.String(),
+	)
+}

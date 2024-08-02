@@ -9,26 +9,25 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 )
 
+var dataProof DataProof = DataProof{
+	Roots: TxDataRoot{
+		DataRoot:   hexToHash("17a9a988843e9a384779474e486d2e911e62a8ddb3f605ec4a1c245c42dfecf8"),
+		BlobRoot:   hexToHash("7ba9b91957bb73f4284f93b65a3d7f0a53530cfb3a0fe53b1253ba0d1995248f"),
+		BridgeRoot: hexToHash("0000000000000000000000000000000000000000000000000000000000000000"),
+	},
+	Proof: []types.Hash{
+		hexToHash("5b7b99083c32347e2a2b6b5f54087ca93bd6a64471f774e1adb04aca57ef4d58"),
+		hexToHash("a0a3591c547a0443f34bfc1513fee5dc717d42ab6e8bdaf3597533fc95851ae9"),
+		hexToHash("8115d2411c2a53640c8801cc89e67d6fe49b30c14288094f85b408c1ff589b18"),
+	},
+	NumberOfLeaves: 8,
+	LeafIndex:      0,
+	Leaf:           hexToHash("b71373eb01c940a02447728c5708ae02b443e525b0a98ba42b143189fad2ab11"),
+}
+
 func TestMarshallAndUnmarshalBlobPointer(t *testing.T) {
 	extrinsicIndex := 1
 	blockHeight := 2024
-
-	dataProof := DataProof{
-		Roots: TxDataRoot{
-			DataRoot:   hexToHash("835f5ef98bd9d8cbb41b0786f3f4f7726d54500cb15fc0f4d607d47b419a9a09"),
-			BlobRoot:   hexToHash("532168c18a2b1e006ffd66c402a31fc61c82c62e7ec9bd983dc6b87e75f59479"),
-			BridgeRoot: hexToHash("0000000000000000000000000000000000000000000000000000000000000000"),
-		},
-		Proof: []types.Hash{
-			hexToHash("4d539f7068ca4f7848f6ff751382936de97c5f36f1119d02b8409b4d5ce908e4"),
-			hexToHash("ef44f2bb8a5ac9b38e1e67d7f5defc21afeb2015085de38e82888a2d8a60cfdb"),
-			hexToHash("fa1ebbc9251f163a9a4ef4418f4c80765c8fb9d7a709b77946bb846f597ff00a"),
-			hexToHash("ae1ecba2081478fa8eddeb64dfbe3e1f16f587bc02a29259796bea9256cf05ab"),
-		},
-		NumberOfLeaves: 16,
-		LeafIndex:      0,
-		Leaf:           hexToHash("b71373eb01c940a02447728c5708ae02b443e525b0a98ba42b143189fad2ab11"),
-	}
 
 	// Create ProofResponse
 	res := ProofResponse{
@@ -47,7 +46,7 @@ func TestMarshallAndUnmarshalBlobPointer(t *testing.T) {
 		uint32(blockHeight),
 		uint32(extrinsicIndex),
 		common.HexToHash("97a3dacf2a1bfc09eb047e4194084b021fa949cb9b660e1f94d484c070e154f5"),
-		common.HexToHash("97a3dacf2a1bfc09eb047e4194084b021fa949cb9b660e1f94d484c070e154f5"),
+		common.HexToHash("b71373eb01c940a02447728c5708ae02b443e525b0a98ba42b143189fad2ab11"),
 		blobProof,
 	}
 

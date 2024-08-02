@@ -1,6 +1,7 @@
 package avail
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	gsrpc "github.com/centrifuge/go-substrate-rpc-client/v4"
 	gsrpc_types "github.com/centrifuge/go-substrate-rpc-client/v4/types"
 	"github.com/centrifuge/go-substrate-rpc-client/v4/types/codec"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/vedhavyas/go-subkey"
 )
@@ -88,6 +90,17 @@ func QueryBlobProof(api *gsrpc.SubstrateAPI, transactionIndex int, blockHash gsr
 		leafProof = append(leafProof, byte32Array)
 	}
 	return BlobProof{DataRoot: res.DataProof.Roots.DataRoot, BlobRoot: res.DataProof.Roots.BlobRoot, BridgeRoot: res.DataProof.Roots.BridgeRoot, LeafProof: leafProof, NumberOfLeaves: res.DataProof.NumberOfLeaves, LeafIndex: res.DataProof.LeafIndex, Leaf: res.DataProof.Leaf}, nil
+}
+
+func ValidateBlobProof(bp BlobProof, hash common.Hash) bool {
+	if bp.Leaf != hash {
+		log.Warn("BlobProof is not matching with submitted blob data", "blobProof.leaf", hex.EncodeToString(bp.Leaf[:]), "blobHash", hash)
+		return false
+	}
+
+	// Need to add logic to verify merkle proof of inclusion
+
+	return true
 }
 
 type BridgeApiResponse struct {

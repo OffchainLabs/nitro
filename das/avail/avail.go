@@ -147,16 +147,24 @@ func (a *AvailDA) Store(ctx context.Context, message []byte) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	log.Info("🏆  Data included in Avail's finalised block", "blockHash", finalizedblockHash, "extrinsicIndex", extrinsicIndex)
+	log.Info("🏆  Data included in Avail's finalised block", "blockHash", finalizedblockHash.Hex(), "extrinsicIndex", extrinsicIndex)
 
 	blobProof, err := QueryBlobProof(a.api, extrinsicIndex, finalizedblockHash)
 	if err != nil {
 		return nil, err
 	}
 
+	// validation of blobProof in respect of submitted data
+	blobDataKeccak256H := crypto.Keccak256Hash(message)
+	if !ValidateBlobProof(blobProof, blobDataKeccak256H) {
+		err = fmt.Errorf("BlobProof is invalid")
+		log.Warn(err.Error(), "blobProof", blobProof.String())
+		return nil, err
+	}
+
 	// Creating BlobPointer to submit over settlement layer
-	blobPointer := BlobPointer{BlockHeight: uint32(header.Number), ExtrinsicIndex: uint32(extrinsicIndex), DasTreeRootHash: dastree.Hash(message), BlobDataKeccak265H: crypto.Keccak256Hash(message), BlobProof: blobProof}
-	log.Info("✅  Sucesfully included in block data to Avail", "BlobPointer:", blobPointer)
+	blobPointer := BlobPointer{BlockHeight: uint32(header.Number), ExtrinsicIndex: uint32(extrinsicIndex), DasTreeRootHash: dastree.Hash(message), BlobDataKeccak265H: blobDataKeccak256H, BlobProof: blobProof}
+	log.Info("✅  Sucesfully included in block data to Avail", "BlobPointer:", blobPointer.String())
 	blobPointerData, err := blobPointer.MarshalToBinary()
 	if err != nil {
 		log.Warn("⚠️ BlobPointer MashalBinary error", "err", err)
