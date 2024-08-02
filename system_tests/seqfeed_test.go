@@ -457,8 +457,8 @@ func TestPopulateFeedBacklog(t *testing.T) {
 	_, err = builder.L2.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	// Shutdown node and starts a new one with same data dir and feed output enabled.
-	// The new node will populate the feedbacklog since already a message, related to the
+	// Shutdown node and starts a new one with same data dir and output feed enabled.
+	// The new node will populate the feedbacklog since already has a message, related to the
 	// transaction previously sent, stored in disk.
 	builder.L2.cleanup()
 	builder.l2StackConfig.DataDir = dataDir
@@ -466,7 +466,7 @@ func TestPopulateFeedBacklog(t *testing.T) {
 	cleanup := builder.BuildL2OnL1(t)
 	defer cleanup()
 
-	// Creates a sink node, that will read from the feed output of the previous node.
+	// Creates a sink node that will read from the output feed of the previous node.
 	nodeConfigSink := builder.nodeConfig
 	port := builder.L2.ConsensusNode.BroadcastServer.ListenerAddr().(*net.TCPAddr).Port
 	nodeConfigSink.Feed.Input = *newBroadcastClientConfigTest(port)
