@@ -10,6 +10,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 
+	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -72,7 +73,7 @@ func (v *JitSpawner) WasmModuleRoots() ([]common.Hash, error) {
 }
 
 func (v *JitSpawner) StylusArchs() []string {
-	return []string{runtime.GOARCH}
+	return []string{programs.LocalTargetName()}
 }
 
 func (v *JitSpawner) execute(

@@ -8,10 +8,10 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"runtime"
 	"sync/atomic"
 	"time"
 
+	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/validator"
 
 	"github.com/offchainlabs/nitro/util/containers"
@@ -74,7 +74,7 @@ func (c *ValidationClient) Start(ctx context.Context) error {
 		return fmt.Errorf("could not read stylus archs from validation server")
 	}
 	for _, stylusArch := range stylusArchs {
-		if stylusArch != "wavm" && stylusArch != runtime.GOARCH && stylusArch != "mock" {
+		if stylusArch != "wavm" && stylusArch != programs.LocalTargetName() && stylusArch != "mock" {
 			return fmt.Errorf("unsupported stylus architecture: %v", stylusArch)
 		}
 	}
