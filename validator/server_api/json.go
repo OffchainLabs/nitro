@@ -78,11 +78,6 @@ func (i *InputJSON) WriteToFile() error {
 	return nil
 }
 
-type UserWasmJson struct {
-	Module string
-	Asm    map[string]string
-}
-
 type BatchInfoJson struct {
 	Number  uint64
 	DataB64 string
