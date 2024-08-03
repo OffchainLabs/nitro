@@ -157,7 +157,7 @@ func (e *validationEntry) ToInput(stylusArchs []string) (*validator.ValidationIn
 	localTarget := programs.LocalTargetName()
 	for hash, asmMap := range e.UserWasms {
 		for _, stylusArch := range stylusArchs {
-			if stylusArch != rawdb.TargetWavm || stylusArch != localTarget {
+			if stylusArch != rawdb.TargetWavm && stylusArch != localTarget {
 				return nil, fmt.Errorf("stylusArch not supported by block validator: %v", stylusArch)
 			}
 			if asm, exists := asmMap[stylusArch]; exists {
