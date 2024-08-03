@@ -282,7 +282,6 @@ func ResizeWasmLruCache(size uint32) {
 	C.stylus_cache_lru_resize(u32(size))
 }
 
-// TODO assign the target name constant at compile time?
 func LocalTargetName() string {
 	if runtime.GOOS == "linux" {
 		switch runtime.GOARCH {
