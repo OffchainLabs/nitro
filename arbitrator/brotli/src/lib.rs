@@ -192,7 +192,7 @@ pub fn compress_fixed<'a>(
         BrotliEncoderDestroyInstance(state);
 
         // SAFETY: brotli initialized this span of bytes
-        let output = mem::transmute(&output[..out_len]);
+        let output = mem::transmute::<&[MaybeUninit<u8>], &[u8]>(&output[..out_len]);
         Ok(output)
     }
 }
@@ -304,7 +304,7 @@ pub fn decompress_fixed<'a>(
         BrotliDecoderDestroyInstance(state);
 
         // SAFETY: brotli initialized this span of bytes
-        let output = mem::transmute(&output[..out_len]);
+        let output = mem::transmute::<&[MaybeUninit<u8>], &[u8]>(&output[..out_len]);
         Ok(output)
     }
 }
