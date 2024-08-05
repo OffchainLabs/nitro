@@ -3,6 +3,7 @@ target = "wasm32-unknown-unknown"
 
 [target.wasm32-unknown-unknown]
 rustflags = [
+  "-C", "target-cpu=mvp",
   "-C", "link-arg=-zstack-size=8192",
 #  "-C", "link-arg=--export=__heap_base",
 #  "-C", "link-arg=--export=__data_end",
