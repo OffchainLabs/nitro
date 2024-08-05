@@ -190,21 +190,6 @@ func (s *BOLDStateProvider) isStateValidatedAndFinal(
 	return messageCountFinalized && stateValidated, nil
 }
 
-// messageCountFromGlobalState returns the corresponding message count of a global state, assuming that gs is a valid global state.
-func (s *BOLDStateProvider) messageCountFromGlobalState(_ context.Context, gs protocol.GoGlobalState) (arbutil.MessageIndex, error) {
-	// Start by getting the message count at the start of the batch
-	var batchMessageCount arbutil.MessageIndex
-	if batchMessageCount != 0 {
-		var err error
-		batchMessageCount, err = s.validator.inboxTracker.GetBatchMessageCount(gs.Batch - 1)
-		if err != nil {
-			return 0, err
-		}
-	}
-	// Add on the PosInBatch
-	return batchMessageCount + arbutil.MessageIndex(gs.PosInBatch), nil
-}
-
 func (s *BOLDStateProvider) StatesInBatchRange(
 	fromHeight,
 	toHeight l2stateprovider.Height,
@@ -395,7 +380,7 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 	if err != nil {
 		return nil, err
 	}
-	input, err := entry.ToInput()
+	input, err := entry.ToInput([]string{"wavm"})
 	if err != nil {
 		return nil, err
 	}
@@ -475,7 +460,7 @@ func (s *BOLDStateProvider) CollectProof(
 	if err != nil {
 		return nil, err
 	}
-	input, err := entry.ToInput()
+	input, err := entry.ToInput([]string{"wavm"})
 	if err != nil {
 		return nil, err
 	}
