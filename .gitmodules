@@ -19,3 +19,15 @@
 [submodule "contracts"]
 	path = contracts
 	url = https://github.com/availproject/nitro-contracts.git
+[submodule "arbitrator/langs/rust"]
+	path = arbitrator/langs/rust
+	url = https://github.com/OffchainLabs/stylus-sdk-rs.git
+[submodule "arbitrator/langs/c"]
+	path = arbitrator/langs/c
+	url = https://github.com/OffchainLabs/stylus-sdk-c.git
+[submodule "arbitrator/langs/bf"]
+	path = arbitrator/langs/bf
+	url = https://github.com/OffchainLabs/stylus-sdk-bf.git
+[submodule "arbitrator/tools/wasmer"]
+	path = arbitrator/tools/wasmer
+	url = https://github.com/OffchainLabs/wasmer.git
