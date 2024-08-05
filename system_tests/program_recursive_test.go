@@ -31,7 +31,7 @@ func testProgramRecursiveCall(t *testing.T, builder *NodeBuilder, slotVals map[s
 	ctx := builder.ctx
 	slot := common.HexToHash("0x11223344556677889900aabbccddeeff")
 	val := common.Hash{}
-	args := []byte{}
+	var args []byte
 	if recurse[0].opcode == vm.SSTORE {
 		// send event from storage on sstore
 		val = rander.GetHash()
