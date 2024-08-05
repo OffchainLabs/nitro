@@ -44,6 +44,10 @@ func (a *ValidationServerAPI) WasmModuleRoots() ([]common.Hash, error) {
 	return a.spawner.WasmModuleRoots()
 }
 
+func (a *ValidationServerAPI) StylusArchs() ([]string, error) {
+	return a.spawner.StylusArchs(), nil
+}
+
 func NewValidationServerAPI(spawner validator.ValidationSpawner) *ValidationServerAPI {
 	return &ValidationServerAPI{spawner}
 }

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math/big"
 	"net"
+	"reflect"
 	"testing"
 	"time"
 
@@ -17,9 +18,11 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster/backlog"
 	"github.com/offchainlabs/nitro/broadcaster/message"
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/relay"
 	"github.com/offchainlabs/nitro/util/signature"
@@ -144,8 +147,48 @@ func TestRelayedSequencerFeed(t *testing.T) {
 	}
 }
 
+func compareAllMsgResultsFromConsensusAndExecution(
+	t *testing.T,
+	testClient *TestClient,
+	testScenario string,
+) *execution.MessageResult {
+	execHeadMsgNum, err := testClient.ExecNode.HeadMessageNumber()
+	Require(t, err)
+	consensusMsgCount, err := testClient.ConsensusNode.TxStreamer.GetMessageCount()
+	Require(t, err)
+	if consensusMsgCount != execHeadMsgNum+1 {
+		t.Fatal(
+			"consensusMsgCount", consensusMsgCount, "is different than (execHeadMsgNum + 1)", execHeadMsgNum,
+			"testScenario:", testScenario,
+		)
+	}
+
+	var lastResult *execution.MessageResult
+	for msgCount := 1; arbutil.MessageIndex(msgCount) <= consensusMsgCount; msgCount++ {
+		pos := msgCount - 1
+		resultExec, err := testClient.ExecNode.ResultAtPos(arbutil.MessageIndex(pos))
+		Require(t, err)
+
+		resultConsensus, err := testClient.ConsensusNode.TxStreamer.ResultAtCount(arbutil.MessageIndex(msgCount))
+		Require(t, err)
+
+		if !reflect.DeepEqual(resultExec, resultConsensus) {
+			t.Fatal(
+				"resultExec", resultExec, "is different than resultConsensus", resultConsensus,
+				"pos:", pos,
+				"testScenario:", testScenario,
+			)
+		}
+
+		lastResult = resultExec
+	}
+
+	return lastResult
+}
+
 func testLyingSequencer(t *testing.T, dasModeStr string) {
 	t.Parallel()
+
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
@@ -224,7 +267,9 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 		t.Fatal("Unexpected balance:", l2balance)
 	}
 
-	// Send the real transaction to client A
+	fraudResult := compareAllMsgResultsFromConsensusAndExecution(t, testClientB, "fraud")
+
+	// Send the real transaction to client A, will cause a reorg on nodeB
 	err = l2clientA.SendTransaction(ctx, realTx)
 	if err != nil {
 		t.Fatal("error sending real transaction:", err)
@@ -254,6 +299,30 @@ func testLyingSequencer(t *testing.T, dasModeStr string) {
 	}
 	if l2balanceRealAcct.Cmp(big.NewInt(1e12)) != 0 {
 		t.Fatal("Unexpected balance of real account:", l2balanceRealAcct)
+	}
+
+	// Since NodeB is not a sequencer, it will produce blocks through Consensus.
+	// So it is expected that Consensus.ResultAtCount will not rely on Execution to retrieve results.
+	// However, since count 1 is related to genesis, and Execution is initialized through InitializeArbosInDatabase and not through Consensus,
+	// first call to Consensus.ResultAtCount with count equals to 1 will fall back to Execution.
+	// Not necessarily the first call to Consensus.ResultAtCount with count equals to 1 will happen through compareMsgResultFromConsensusAndExecution,
+	// so we don't test this here.
+	consensusMsgCount, err := testClientB.ConsensusNode.TxStreamer.GetMessageCount()
+	Require(t, err)
+	if consensusMsgCount != 2 {
+		t.Fatal("consensusMsgCount is different than 2")
+	}
+	logHandler := testhelpers.InitTestLog(t, log.LvlTrace)
+	_, err = testClientB.ConsensusNode.TxStreamer.ResultAtCount(arbutil.MessageIndex(2))
+	Require(t, err)
+	if logHandler.WasLogged(arbnode.FailedToGetMsgResultFromDB) {
+		t.Fatal("Consensus relied on execution database to return the result")
+	}
+	// Consensus should update message result stored in its database after a reorg
+	realResult := compareAllMsgResultsFromConsensusAndExecution(t, testClientB, "real")
+	// Checks that results changed
+	if reflect.DeepEqual(fraudResult, realResult) {
+		t.Fatal("realResult and fraudResult are equal")
 	}
 }
 
@@ -333,7 +402,7 @@ func testBlockHashComparison(t *testing.T, blockHash *common.Hash, mustMismatch 
 	}
 	wsBroadcastServer.Broadcast(&broadcastMessage)
 
-	// By now, even though block hash mismatch, the transaction should still be processed
+	// For now, even though block hash mismatch, the transaction should still be processed
 	_, err = WaitForTx(ctx, testClient.Client, tx.Hash(), time.Second*15)
 	if err != nil {
 		t.Fatal("error waiting for tx:", err)

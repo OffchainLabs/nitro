@@ -32,6 +32,10 @@ use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
 use sha3::Keccak256;
 use smallvec::SmallVec;
+
+#[cfg(feature = "counters")]
+use std::sync::atomic::{AtomicUsize, Ordering};
+
 use std::{
     borrow::Cow,
     convert::{TryFrom, TryInto},
@@ -44,11 +48,28 @@ use std::{
     path::{Path, PathBuf},
     sync::Arc,
 };
+
 use wasmer_types::FunctionIndex;
 use wasmparser::{DataKind, ElementItems, ElementKind, Operator, RefType, TableType};
 
 #[cfg(feature = "rayon")]
 use rayon::prelude::*;
+
+#[cfg(feature = "counters")]
+static GET_MODULES_MERKLE_COUNTER: AtomicUsize = AtomicUsize::new(0);
+
+#[cfg(feature = "counters")]
+pub fn print_counters() {
+    println!(
+        "GET_MODULES_MERKLE_COUNTER: {}",
+        GET_MODULES_MERKLE_COUNTER.load(Ordering::Relaxed)
+    );
+}
+
+#[cfg(feature = "counters")]
+pub fn reset_counters() {
+    GET_MODULES_MERKLE_COUNTER.store(0, Ordering::Relaxed);
+}
 
 fn hash_call_indirect_data(table: u32, ty: &FunctionType) -> Bytes32 {
     let mut h = Keccak256::new();
@@ -1200,7 +1221,6 @@ impl Machine {
         library_paths: &[PathBuf],
         binary_path: &Path,
         language_support: bool,
-        always_merkleize: bool,
         allow_hostapi_from_main: bool,
         debug_funcs: bool,
         debug_info: bool,
@@ -1225,7 +1245,6 @@ impl Machine {
             &libraries,
             bin,
             language_support,
-            always_merkleize,
             allow_hostapi_from_main,
             debug_funcs,
             debug_info,
@@ -1255,8 +1274,7 @@ impl Machine {
             &[soft_float, wasi_stub, user_test],
             bin,
             false,
-            false,
-            false,
+            true,
             compile.debug.debug_funcs,
             true,
             GlobalState::default(),
@@ -1303,7 +1321,6 @@ impl Machine {
         libraries: &[WasmBinary<'_>],
         bin: WasmBinary<'_>,
         runtime_support: bool,
-        always_merkleize: bool,
         allow_hostapi_from_main: bool,
         debug_funcs: bool,
         debug_info: bool,
@@ -1506,18 +1523,12 @@ impl Machine {
 
             let tables_hashes: Result<_, _> = module.tables.iter().map(Table::hash).collect();
             module.tables_merkle = Merkle::new(MerkleType::Table, tables_hashes?);
-
-            if always_merkleize {
-                module.memory.cache_merkle_tree();
-            }
+            module.memory.cache_merkle_tree();
         }
-        let mut modules_merkle = None;
-        if always_merkleize {
-            modules_merkle = Some(Merkle::new(
-                MerkleType::Module,
-                modules.iter().map(Module::hash).collect(),
-            ));
-        }
+        let modules_merkle = Some(Merkle::new(
+            MerkleType::Module,
+            modules.iter().map(Module::hash).collect(),
+        ));
 
         // find the first inbox index that's out of bounds
         let first_too_far = inbox_contents
@@ -1577,7 +1588,12 @@ impl Machine {
                 MerkleType::Function,
                 module.funcs.iter().map(Function::hash).collect(),
             ));
+            module.memory.cache_merkle_tree();
         }
+        let modules_merkle = Some(Merkle::new(
+            MerkleType::Module,
+            modules.iter().map(Module::hash).collect(),
+        ));
         let mut mach = Machine {
             status: MachineStatus::Running,
             thread_state: ThreadState::Main,
@@ -1586,7 +1602,7 @@ impl Machine {
             internal_stack: Vec::new(),
             frame_stacks: vec![Vec::new()],
             modules,
-            modules_merkle: None,
+            modules_merkle,
             global_state: Default::default(),
             pc: ProgramCounter::default(),
             stdio_output: Vec::new(),
@@ -1709,7 +1725,11 @@ impl Machine {
 
     /// finds the first module with the given name
     pub fn find_module(&self, name: &str) -> Result<u32> {
-        let Some(module) = self.modules.iter().position(|m| m.name() == name) else {
+        let Some(module) = self
+            .modules
+            .iter()
+            .position(|m| m.name().trim_end_matches(".wasm") == name)
+        else {
             let names: Vec<_> = self.modules.iter().map(|m| m.name()).collect();
             let names = names.join(", ");
             bail!("module {} not found among: {names}", name.red())
@@ -1906,20 +1926,11 @@ impl Machine {
                 func = &module.funcs[self.pc.func()];
             };
         }
-        macro_rules! flush_module {
-            () => {
-                if let Some(merkle) = self.modules_merkle.as_mut() {
-                    merkle.set(self.pc.module(), module.hash());
-                }
-            };
-        }
         macro_rules! error {
             () => {
                 error!("")
             };
             ($format:expr $(, $message:expr)*) => {{
-                flush_module!();
-
                 if self.debug_info {
                     println!("\n{} {}", "error on line".grey(), line!().pink());
                     println!($format, $($message.pink()),*);
@@ -1938,7 +1949,6 @@ impl Machine {
                     continue;
                 }
                 self.status = MachineStatus::Errored;
-                module = &mut self.modules[self.pc.module()];
                 break;
             }};
         }
@@ -1949,7 +1959,6 @@ impl Machine {
                 println!("\n{}", "Machine out of steps".red());
                 self.status = MachineStatus::Errored;
                 self.print_backtrace(true);
-                module = &mut self.modules[self.pc.module()];
                 break;
             }
 
@@ -2009,9 +2018,6 @@ impl Machine {
                         Value::RefNull => error!(),
                         Value::InternalRef(pc) => {
                             let changing_module = pc.module != self.pc.module;
-                            if changing_module {
-                                flush_module!();
-                            }
                             self.pc = pc;
                             if changing_module {
                                 module = &mut self.modules[self.pc.module()];
@@ -2031,7 +2037,6 @@ impl Machine {
                     func = &module.funcs[self.pc.func()];
                 }
                 Opcode::CrossModuleCall => {
-                    flush_module!();
                     value_stack.push(Value::InternalRef(self.pc));
                     value_stack.push(self.pc.module.into());
                     value_stack.push(module.internals_offset.into());
@@ -2042,7 +2047,6 @@ impl Machine {
                     reset_refs!();
                 }
                 Opcode::CrossModuleForward => {
-                    flush_module!();
                     let frame = frame_stack.last().unwrap();
                     value_stack.push(Value::InternalRef(self.pc));
                     value_stack.push(frame.caller_module.into());
@@ -2054,7 +2058,6 @@ impl Machine {
                     reset_refs!();
                 }
                 Opcode::CrossModuleInternalCall => {
-                    flush_module!();
                     let call_internal = inst.argument_data as u32;
                     let call_module = value_stack.pop().unwrap().assume_u32();
                     value_stack.push(Value::InternalRef(self.pc));
@@ -2077,7 +2080,6 @@ impl Machine {
                             .ok()
                             .and_then(|o| current_frame.caller_module_internals.checked_add(o))
                             .expect("Internal call function index overflow");
-                        flush_module!();
                         self.pc.module = current_frame.caller_module;
                         self.pc.func = func_idx;
                         self.pc.inst = 0;
@@ -2509,7 +2511,6 @@ impl Machine {
                         let dots = (modules.len() > 16).then_some("...").unwrap_or_default();
                         bail!("no program for {hash} in {{{}{dots}}}", keys.join(", "))
                     };
-                    flush_module!();
 
                     // put the new module's offset on the stack
                     let index = self.modules.len() as u32;
@@ -2522,7 +2523,6 @@ impl Machine {
                     reset_refs!();
                 }
                 Opcode::UnlinkModule => {
-                    flush_module!();
                     self.modules.pop();
                     if let Some(cached) = &mut self.modules_merkle {
                         cached.pop_leaf();
@@ -2562,7 +2562,6 @@ impl Machine {
                 }
             }
         }
-        flush_module!();
         if self.is_halted() && !self.stdio_output.is_empty() {
             // If we halted, print out any trailing output that didn't have a newline.
             Self::say(String::from_utf8_lossy(&self.stdio_output));
@@ -2686,7 +2685,13 @@ impl Machine {
     }
 
     fn get_modules_merkle(&self) -> Cow<Merkle> {
+        #[cfg(feature = "counters")]
+        GET_MODULES_MERKLE_COUNTER.fetch_add(1, Ordering::Relaxed);
+
         if let Some(merkle) = &self.modules_merkle {
+            for (i, module) in self.modules.iter().enumerate() {
+                merkle.set(i, module.hash());
+            }
             Cow::Borrowed(merkle)
         } else {
             Cow::Owned(Merkle::new(
