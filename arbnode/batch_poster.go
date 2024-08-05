@@ -502,6 +502,11 @@ func (b *BatchPoster) addEspressoBlockMerkleProof(
 			return err
 		}
 
+		if jst.Header.Height == 0 {
+			// This means the header in the jst is still the dummy header.
+			return fmt.Errorf("this msg has not been included in hotshot %v", jst.Header.Height)
+		}
+
 		snapshot, err := b.lightClientReader.FetchMerkleRoot(jst.Header.Height, nil)
 		if err != nil {
 			return fmt.Errorf("could not get the merkle root at height %v", jst.Header.Height)
@@ -520,10 +525,18 @@ func (b *BatchPoster) addEspressoBlockMerkleProof(
 		if err != nil {
 			return fmt.Errorf("error fetching the block merkle proof for validated height %v and leaf height %v. Request failed with error %w", snapshot.Height, jst.Header.Height, err)
 		}
+		var newMsg arbostypes.L1IncomingMessage
 		jst.BlockMerkleJustification = &arbostypes.BlockMerkleJustification{BlockMerkleProof: &proof, BlockMerkleComm: nextHeader.BlockMerkleTreeRoot}
-		newMsg, err := arbos.MessageFromEspresso(msg.Message.Header, txs, jst)
-		if err != nil {
-			return err
+		if arbos.IsEspressoSovereignMsg(msg.Message) {
+			newMsg, err = arbos.MessageFromEspressoSovereignTx(txs[0], jst, msg.Message.Header)
+			if err != nil {
+				return err
+			}
+		} else {
+			newMsg, err = arbos.MessageFromEspresso(msg.Message.Header, txs, jst)
+			if err != nil {
+				return err
+			}
 		}
 		msg.Message = &newMsg
 	}

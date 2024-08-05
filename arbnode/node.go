@@ -79,7 +79,6 @@ func GenerateRollupConfig(prod bool, wasmModuleRoot common.Hash, rollupOwner com
 
 type Config struct {
 	Sequencer           bool                        `koanf:"sequencer"`
-	Espresso            bool                        `koanf:"espresso"`
 	ParentChainReader   headerreader.Config         `koanf:"parent-chain-reader" reload:"hot"`
 	InboxReader         InboxReaderConfig           `koanf:"inbox-reader" reload:"hot"`
 	DelayedSequencer    DelayedSequencerConfig      `koanf:"delayed-sequencer" reload:"hot"`
@@ -100,9 +99,6 @@ type Config struct {
 }
 
 func (c *Config) Validate() error {
-	if c.Espresso && !c.Sequencer {
-		return errors.New("cannot enable espresso without enabling sequencer")
-	}
 	if c.ParentChainReader.Enable && c.Sequencer && !c.DelayedSequencer.Enable {
 		log.Warn("delayed sequencer is not enabled, despite sequencer and l1 reader being enabled")
 	}
@@ -149,7 +145,6 @@ func (c *Config) ValidatorRequired() bool {
 
 func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feedOutputEnable bool) {
 	f.Bool(prefix+".sequencer", ConfigDefault.Sequencer, "enable sequencer")
-	f.Bool(prefix+".espresso", ConfigDefault.Espresso, "enable the espresso sequencer integration")
 	headerreader.AddOptions(prefix+".parent-chain-reader", f)
 	InboxReaderConfigAddOptions(prefix+".inbox-reader", f)
 	DelayedSequencerConfigAddOptions(prefix+".delayed-sequencer", f)
@@ -168,7 +163,6 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet, feedInputEnable bool, feed
 
 var ConfigDefault = Config{
 	Sequencer:           false,
-	Espresso:            false,
 	ParentChainReader:   headerreader.DefaultConfig,
 	InboxReader:         DefaultInboxReaderConfig,
 	DelayedSequencer:    DefaultDelayedSequencerConfig,
@@ -457,7 +451,7 @@ func createNodeImpl(
 		if err != nil {
 			return nil, err
 		}
-	} else if config.Sequencer && !config.Dangerous.NoSequencerCoordinator && !config.Espresso {
+	} else if config.Sequencer && !config.Dangerous.NoSequencerCoordinator {
 		return nil, errors.New("sequencer must be enabled with coordinator, unless dangerous.no-sequencer-coordinator set")
 	}
 	dbs := []ethdb.Database{arbDb}

@@ -7,12 +7,30 @@
 # To see how we use this file, please check .github/workflows/ci.yml
 TestChallengeManagerFullAsserterCorrect
 TestChallengeManagerFullAsserterIncorrect
-TestProgramArbitratorEvmData
-TestProgramEvmData
-TestRPCStore
 TestLiveNodeConfig
+TestProgramActivateTwice
+TestProgramArbitratorEvmData
+TestProgramCallSimple
+TestProgramEvmData
+TestProgramLogs
+TestProgramLogsWithTracing
+TestRPCStore
+TestProgramTransientStorage
+TestProgramCalls
+TestProgramMemory
+TestProgramErrors
+TestPeriodicReloadOfLiveNodeConfig
+TestProgramLongArbitratorCall
+TestProgramArbitratorCalls
+TestProgramLongCall
+TestProgramArbitratorActivateTwice
+TestProgramArbitratorMemory
+TestProgramArbitratorLogs
+TestProgramArbitratorTransientStorage
+TestProgramArbitratorErrors
 
 
 # These tests are specific to Espresso and we have a dedicated
 # CI workflow for them. See: .github/workflows/espresso-e2e.yml
 TestEspressoE2E
+TestSovereignSequencer

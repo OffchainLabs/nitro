@@ -81,12 +81,13 @@ type SequencerConfig struct {
 	expectedSurplusHardThreshold int
 
 	// Espresso specific flags
-	Espresso           bool          `koanf:"espresso"`
-	HotShotUrl         string        `koanf:"hotshot-url"`
-	LightClientAddress string        `koanf:"light-client-address"`
-	EspressoNamespace  uint64        `koanf:"espresso-namespace"`
-	StartHotShotBlock  uint64        `koanf:"start-hotshot-block"`
-	SwitchPollInterval time.Duration `koanf:"switch-poll-interval"`
+	Espresso                bool          `koanf:"espresso"`
+	EnableEspressoSovereign bool          `koanf:"enable-espresso-sovereign"`
+	HotShotUrl              string        `koanf:"hotshot-url"`
+	LightClientAddress      string        `koanf:"light-client-address"`
+	EspressoNamespace       uint64        `koanf:"espresso-namespace"`
+	StartHotShotBlock       uint64        `koanf:"start-hotshot-block"`
+	SwitchPollInterval      time.Duration `koanf:"switch-poll-interval"`
 	// TODO: Wrtie this into the config chain
 	SwitchDelayThreshold uint64 `koanf:"switch-delay-threshold"`
 }
@@ -143,6 +144,8 @@ var DefaultSequencerConfig = SequencerConfig{
 	ExpectedSurplusSoftThreshold: "default",
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
+
+	EnableEspressoSovereign: false,
 }
 
 var TestSequencerConfig = SequencerConfig{
@@ -161,6 +164,8 @@ var TestSequencerConfig = SequencerConfig{
 	ExpectedSurplusSoftThreshold: "default",
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
+
+	EnableEspressoSovereign: false,
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -185,6 +190,8 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".expected-surplus-soft-threshold", DefaultSequencerConfig.ExpectedSurplusSoftThreshold, "if expected surplus is lower than this value, warnings are posted")
 	f.String(prefix+".expected-surplus-hard-threshold", DefaultSequencerConfig.ExpectedSurplusHardThreshold, "if expected surplus is lower than this value, new incoming transactions will be denied")
 	f.Bool(prefix+".enable-profiling", DefaultSequencerConfig.EnableProfiling, "enable CPU profiling and tracing")
+
+	f.Bool(prefix+".enable-espresso-sovereign", DefaultSequencerConfig.EnableEspressoSovereign, "enable CPU profiling and tracing")
 }
 
 type txQueueItem struct {
@@ -951,9 +958,9 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		err   error
 	)
 	if config.EnableProfiling {
-		block, err = s.execEngine.SequenceTransactionsWithProfiling(header, txes, hooks)
+		block, err = s.execEngine.SequenceTransactionsWithProfiling(header, txes, hooks, config.EnableEspressoSovereign)
 	} else {
-		block, err = s.execEngine.SequenceTransactions(header, txes, hooks)
+		block, err = s.execEngine.SequenceTransactions(header, txes, hooks, config.EnableEspressoSovereign)
 	}
 	elapsed := time.Since(start)
 	blockCreationTimer.Update(elapsed)
