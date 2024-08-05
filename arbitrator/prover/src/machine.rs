@@ -1725,7 +1725,11 @@ impl Machine {
 
     /// finds the first module with the given name
     pub fn find_module(&self, name: &str) -> Result<u32> {
-        let Some(module) = self.modules.iter().position(|m| m.name() == name) else {
+        let Some(module) = self
+            .modules
+            .iter()
+            .position(|m| m.name().trim_end_matches(".wasm") == name)
+        else {
             let names: Vec<_> = self.modules.iter().map(|m| m.name()).collect();
             let names = names.join(", ");
             bail!("module {} not found among: {names}", name.red())
