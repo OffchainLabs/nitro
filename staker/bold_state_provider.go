@@ -116,7 +116,7 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 		maxMessageCount := previousMessageCount + arbutil.MessageIndex(maxNumberOfBlocks)
 		if messageDiffBetweenBatches > maxMessageCount {
 			messageCount = maxMessageCount
-			batchIndex, err = FindBatchContainingMessageIndex(s.validator.inboxTracker, messageCount, maxInboxCount)
+			batchIndex, _, err = s.validator.inboxTracker.FindInboxBatchContainingMessage(messageCount)
 			if err != nil {
 				return nil, err
 			}

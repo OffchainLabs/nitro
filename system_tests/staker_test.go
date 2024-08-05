@@ -216,7 +216,6 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		nil,
 		nil,
 		l2nodeA.DeployInfo.ValidatorUtils,
-		l2nodeA.DeployInfo.Bridge,
 		nil,
 	)
 	Require(t, err)
@@ -269,7 +268,6 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		nil,
 		nil,
 		l2nodeB.DeployInfo.ValidatorUtils,
-		l2nodeB.DeployInfo.Bridge,
 		nil,
 	)
 	Require(t, err)
@@ -291,7 +289,6 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		nil,
 		nil,
 		l2nodeA.DeployInfo.ValidatorUtils,
-		l2nodeA.DeployInfo.Bridge,
 		nil,
 	)
 	Require(t, err)

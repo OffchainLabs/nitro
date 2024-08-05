@@ -58,7 +58,6 @@ func NewMultiProtocolStaker(
 		stakedNotifiers,
 		confirmedNotifiers,
 		validatorUtilsAddress,
-		bridgeAddress,
 		fatalErr,
 	)
 	if err != nil {
@@ -76,7 +75,7 @@ func NewMultiProtocolStaker(
 }
 
 func (m *MultiProtocolStaker) IsWhitelisted(ctx context.Context) (bool, error) {
-	return false, nil
+	return m.oldStaker.IsWhitelisted(ctx)
 }
 
 func (m *MultiProtocolStaker) Initialize(ctx context.Context) error {
@@ -125,6 +124,14 @@ func (m *MultiProtocolStaker) Start(ctxIn context.Context) {
 			return stakerSwitchInterval
 		})
 	}
+}
+
+func (m *MultiProtocolStaker) StopAndWait() {
+	if m.boldStaker != nil {
+		m.boldStaker.StopAndWait()
+	}
+	m.oldStaker.StopAndWait()
+	m.StopWaiter.StopAndWait()
 }
 
 func (m *MultiProtocolStaker) isBoldActive(ctx context.Context) (bool, common.Address, error) {

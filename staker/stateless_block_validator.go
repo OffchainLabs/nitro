@@ -109,39 +109,6 @@ func GlobalStatePositionsAtCount(
 	return startPos, GlobalStatePosition{batch, posInBatch + 1}, nil
 }
 
-func FindBatchContainingMessageIndex(
-	tracker InboxTrackerInterface, pos arbutil.MessageIndex, high uint64,
-) (uint64, error) {
-	var low uint64
-	// Iteration preconditions:
-	// - high >= low
-	// - msgCount(low - 1) <= pos implies low <= target
-	// - msgCount(high) > pos implies high >= target
-	// Therefore, if low == high, then low == high == target
-	for high > low {
-		// Due to integer rounding, mid >= low && mid < high
-		mid := (low + high) / 2
-		count, err := tracker.GetBatchMessageCount(mid)
-		if err != nil {
-			return 0, err
-		}
-		if count < pos {
-			// Must narrow as mid >= low, therefore mid + 1 > low, therefore newLow > oldLow
-			// Keeps low precondition as msgCount(mid) < pos
-			low = mid + 1
-		} else if count == pos {
-			return mid + 1, nil
-		} else if count == pos+1 || mid == low { // implied: count > pos
-			return mid, nil
-		} else { // implied: count > pos + 1
-			// Must narrow as mid < high, therefore newHigh < lowHigh
-			// Keeps high precondition as msgCount(mid) > pos
-			high = mid
-		}
-	}
-	return low, nil
-}
-
 type ValidationEntryStage uint32
 
 const (

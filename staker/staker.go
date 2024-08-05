@@ -300,7 +300,6 @@ func NewStaker(
 	stakedNotifiers []LatestStakedNotifier,
 	confirmedNotifiers []LatestConfirmedNotifier,
 	validatorUtilsAddress common.Address,
-	bridgeAddress common.Address,
 	fatalErr chan<- error,
 ) (*Staker, error) {
 

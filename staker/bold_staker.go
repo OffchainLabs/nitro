@@ -183,6 +183,11 @@ func (b *BOLDStaker) Start(ctxIn context.Context) {
 	b.chalManager.Start(ctxIn)
 }
 
+func (b *BOLDStaker) StopAndWait() {
+	b.chalManager.StopAndWait()
+	b.StopWaiter.StopAndWait()
+}
+
 func (b *BOLDStaker) updateBlockValidatorModuleRoot(ctx context.Context) error {
 	if b.blockValidator == nil {
 		return nil
