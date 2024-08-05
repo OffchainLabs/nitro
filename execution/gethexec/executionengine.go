@@ -273,7 +273,7 @@ func (s *ExecutionEngine) GetBatchFetcher() execution.BatchFetcher {
 	return s.consensus
 }
 
-func (s *ExecutionEngine) Reorg(newHeadMsgIdx arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
+func (s *ExecutionEngine) Reorg(lastMsgIdxToKeep arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
 	s.createBlocksMutex.Lock()
 	resequencing := false
 	defer func() {
@@ -283,19 +283,19 @@ func (s *ExecutionEngine) Reorg(newHeadMsgIdx arbutil.MessageIndex, newMessages 
 			s.createBlocksMutex.Unlock()
 		}
 	}()
-	blockNum := s.MessageIndexToBlockNumber(newHeadMsgIdx)
-	// We can safely cast blockNum to a uint64 as it comes from MessageIndexToBlockNumber
-	targetBlock := s.bc.GetBlockByNumber(uint64(blockNum))
-	if targetBlock == nil {
-		log.Warn("reorg target block not found", "block", blockNum)
+	lastBlockNumToKeep := s.MessageIndexToBlockNumber(lastMsgIdxToKeep)
+	// We can safely cast lastBlockNumToKeep to a uint64 as it comes from MessageIndexToBlockNumber
+	lastBlockToKeep := s.bc.GetBlockByNumber(uint64(lastBlockNumToKeep))
+	if lastBlockToKeep == nil {
+		log.Warn("reorg target block not found", "block", lastBlockNumToKeep)
 		return nil, nil
 	}
 
 	tag := s.bc.StateCache().WasmCacheTag()
 	// reorg Rust-side VM state
-	C.stylus_reorg_vm(C.uint64_t(blockNum), C.uint32_t(tag))
+	C.stylus_reorg_vm(C.uint64_t(lastBlockNumToKeep), C.uint32_t(tag))
 
-	err := s.bc.ReorgToOldBlock(targetBlock)
+	err := s.bc.ReorgToOldBlock(lastBlockToKeep)
 	if err != nil {
 		return nil, err
 	}
@@ -313,7 +313,7 @@ func (s *ExecutionEngine) Reorg(newHeadMsgIdx arbutil.MessageIndex, newMessages 
 		if i < len(newMessages)-1 {
 			msgForPrefetch = &newMessages[i].MessageWithMeta
 		}
-		nextMsgIdx := newHeadMsgIdx + arbutil.MessageIndex(i+1)
+		nextMsgIdx := lastMsgIdxToKeep + arbutil.MessageIndex(i+1)
 		msgResult, err := s.digestMessageWithBlockMutex(nextMsgIdx, &newMessages[i].MessageWithMeta, msgForPrefetch)
 		if err != nil {
 			return nil, err
@@ -321,7 +321,7 @@ func (s *ExecutionEngine) Reorg(newHeadMsgIdx arbutil.MessageIndex, newMessages 
 		newMessagesResults = append(newMessagesResults, msgResult)
 	}
 	if s.recorder != nil {
-		s.recorder.ReorgTo(targetBlock.Header())
+		s.recorder.ReorgTo(lastBlockToKeep.Header())
 	}
 	if len(oldMessages) > 0 {
 		s.resequenceChan <- oldMessages
