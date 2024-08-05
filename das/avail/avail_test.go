@@ -1,41 +1,53 @@
 package avail
 
 import (
-	"fmt"
-	"net/url"
+	"encoding/hex"
+	"log"
 	"testing"
 
-	gsrpc_types "github.com/centrifuge/go-substrate-rpc-client/v4/types"
+	"github.com/centrifuge/go-substrate-rpc-client/v4/types"
 	"github.com/ethereum/go-ethereum/common"
 )
 
-func TestMarshallingAndUnmarshalingBlobPointer(t *testing.T) {
+var dataProof DataProof = DataProof{
+	Roots: TxDataRoot{
+		DataRoot:   hexToHash("17a9a988843e9a384779474e486d2e911e62a8ddb3f605ec4a1c245c42dfecf8"),
+		BlobRoot:   hexToHash("7ba9b91957bb73f4284f93b65a3d7f0a53530cfb3a0fe53b1253ba0d1995248f"),
+		BridgeRoot: hexToHash("0000000000000000000000000000000000000000000000000000000000000000"),
+	},
+	Proof: []types.Hash{
+		hexToHash("5b7b99083c32347e2a2b6b5f54087ca93bd6a64471f774e1adb04aca57ef4d58"),
+		hexToHash("a0a3591c547a0443f34bfc1513fee5dc717d42ab6e8bdaf3597533fc95851ae9"),
+		hexToHash("8115d2411c2a53640c8801cc89e67d6fe49b30c14288094f85b408c1ff589b18"),
+	},
+	NumberOfLeaves: 8,
+	LeafIndex:      0,
+	Leaf:           hexToHash("b71373eb01c940a02447728c5708ae02b443e525b0a98ba42b143189fad2ab11"),
+}
+
+func TestMarshallAndUnmarshalBlobPointer(t *testing.T) {
 	extrinsicIndex := 1
-	bridgeApiBaseURL := "https://hex-bridge-api.sandbox.avail.tools"
-	blockHashPath := "/eth/proof/" + "0x1672d81d105b9efb5689913ae3c608488419bc6e32a5f8cc7766d194e8865f30" //+ finalizedblockHash.Hex()
-	params := url.Values{}
-	params.Add("index", fmt.Sprint(extrinsicIndex))
+	blockHeight := 2024
 
-	u, _ := url.ParseRequestURI(bridgeApiBaseURL)
-	u.Path = blockHashPath
-	u.RawQuery = params.Encode()
-	urlStr := fmt.Sprintf("%v", u)
-	t.Log(urlStr)
-	// TODO: Add time difference between batch submission and querying merkle proof
-	bridgeApiResponse, err := queryForBridgeApiRespose(600, urlStr)
-	if err != nil {
-		t.Fatalf("Bridge Api request not successfull, err=%v", err)
+	// Create ProofResponse
+	res := ProofResponse{
+		DataProof: dataProof,
+		Message:   nil, // No message provided
 	}
-	t.Logf("%+v", bridgeApiResponse)
+	var leafProof [][32]byte
+	for _, hash := range res.DataProof.Proof {
+		var byte32Array [32]byte
+		copy(byte32Array[:], hash[:])
+		leafProof = append(leafProof, byte32Array)
+	}
+	blobProof := BlobProof{DataRoot: res.DataProof.Roots.DataRoot, BlobRoot: res.DataProof.Roots.BlobRoot, BridgeRoot: res.DataProof.Roots.BridgeRoot, LeafProof: leafProof, NumberOfLeaves: res.DataProof.NumberOfLeaves, LeafIndex: res.DataProof.LeafIndex, Leaf: res.DataProof.Leaf}
 
-	merkleProofInput := createMerkleProofInput(bridgeApiResponse)
-	t.Logf("%+v", merkleProofInput)
-
-	var blobPointer BlobPointer = BlobPointer{gsrpc_types.NewHash([]byte{245, 54, 19, 250, 6, 182, 183, 249, 220, 94, 76, 245, 242, 132, 154, 255, 201, 78, 25, 216, 169, 232, 153, 146, 7, 236, 224, 17, 117, 201, 136, 237}),
-		"5EFLq4DT8M2TpSqU3gYRf38SAn7x8Vsbiuhp72E9Ri3FQxn7",
-		100,
-		common.HexToHash("0xf53613fa06b6b7f9dc5e4cf5f2849affc94e19d8a9e8999207ece01175c988ed"),
-		merkleProofInput,
+	var blobPointer BlobPointer = BlobPointer{
+		uint32(blockHeight),
+		uint32(extrinsicIndex),
+		common.HexToHash("97a3dacf2a1bfc09eb047e4194084b021fa949cb9b660e1f94d484c070e154f5"),
+		common.HexToHash("b71373eb01c940a02447728c5708ae02b443e525b0a98ba42b143189fad2ab11"),
+		blobProof,
 	}
 
 	data, err := blobPointer.MarshalToBinary()
@@ -50,4 +62,13 @@ func TestMarshallingAndUnmarshalingBlobPointer(t *testing.T) {
 	}
 
 	t.Logf("%+v", newBlobPointer)
+}
+
+// Helper function to convert a hex string to a types.Hash
+func hexToHash(hexStr string) types.Hash {
+	bytes, err := hex.DecodeString(hexStr)
+	if err != nil {
+		log.Fatalf("Failed to decode hex string: %v", err)
+	}
+	return types.NewHash(bytes)
 }

@@ -1,6 +1,7 @@
 package avail
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -11,6 +12,7 @@ import (
 	gsrpc "github.com/centrifuge/go-substrate-rpc-client/v4"
 	gsrpc_types "github.com/centrifuge/go-substrate-rpc-client/v4/types"
 	"github.com/centrifuge/go-substrate-rpc-client/v4/types/codec"
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/vedhavyas/go-subkey"
 )
@@ -37,25 +39,68 @@ func GetExtrinsicIndex(api *gsrpc.SubstrateAPI, blockHash gsrpc_types.Hash, addr
 	return -1, fmt.Errorf("❌ unable to find any extrinsic in block %v, from address %v with nonce %v", blockHash, address, nonce)
 }
 
-func extractExtrinsic(address string, nonce int64, avail_blk *gsrpc_types.SignedBlock) ([]byte, error) {
-	for _, ext := range avail_blk.Block.Extrinsics {
-		// Extracting sender address for extrinsic
-		ext_Addr, err := subkey.SS58Address(ext.Signature.Signer.AsID.ToBytes(), 42)
-		if err != nil {
-			log.Error("❌ unable to get sender address from extrinsic", "err", err)
-		}
+func extractExtrinsicData(avail_blk *gsrpc_types.SignedBlock, extrinsicIndex uint32) ([]byte, error) {
 
-		if ext_Addr == address && ext.Signature.Nonce.Int64() == nonce {
-			args := ext.Method.Args
-			var data []byte
-			err = codec.Decode(args, &data)
-			if err != nil {
-				return []byte{}, fmt.Errorf("❌ unable to decode the extrinsic data by address: %v with nonce: %v", address, nonce)
-			}
-			return data, nil
-		}
+	ext := avail_blk.Block.Extrinsics[extrinsicIndex]
+	args := ext.Method.Args
+	var data []byte
+	err := codec.Decode(args, &data)
+	if err != nil {
+		return []byte{}, fmt.Errorf("❌ unable to decode the extrinsic data for extrinsic: %v", extrinsicIndex)
 	}
-	return nil, fmt.Errorf("❌ unable to find any extrinsic")
+	return data, nil
+}
+
+// ProofResponse struct represents the response from the queryDataProof2 RPC call
+type ProofResponse struct {
+	DataProof DataProof
+	Message   Message // Interface to capture different message types
+}
+
+type TxDataRoot struct {
+	DataRoot   gsrpc_types.Hash
+	BlobRoot   gsrpc_types.Hash
+	BridgeRoot gsrpc_types.Hash
+}
+
+// DataProof struct represents the data proof response
+type DataProof struct {
+	Roots          TxDataRoot
+	Proof          []gsrpc_types.Hash
+	NumberOfLeaves uint32 // Change to uint32 to match Rust u32
+	LeafIndex      uint32 // Change to uint32 to match Rust u32
+	Leaf           gsrpc_types.Hash
+}
+
+// Message interface represents the enum variants
+type Message interface {
+	isMessage()
+}
+
+func QueryBlobProof(api *gsrpc.SubstrateAPI, transactionIndex int, blockHash gsrpc_types.Hash) (BlobProof, error) {
+	var res ProofResponse
+	err := api.Client.Call(&res, "kate_queryDataProof", transactionIndex, blockHash)
+	if err != nil {
+		return BlobProof{}, err
+	}
+	var leafProof [][32]byte
+	for _, hash := range res.DataProof.Proof {
+		var byte32Array [32]byte
+		copy(byte32Array[:], hash[:])
+		leafProof = append(leafProof, byte32Array)
+	}
+	return BlobProof{DataRoot: res.DataProof.Roots.DataRoot, BlobRoot: res.DataProof.Roots.BlobRoot, BridgeRoot: res.DataProof.Roots.BridgeRoot, LeafProof: leafProof, NumberOfLeaves: res.DataProof.NumberOfLeaves, LeafIndex: res.DataProof.LeafIndex, Leaf: res.DataProof.Leaf}, nil
+}
+
+func ValidateBlobProof(bp BlobProof, hash common.Hash) bool {
+	if bp.Leaf != hash {
+		log.Warn("BlobProof is not matching with submitted blob data", "blobProof.leaf", hex.EncodeToString(bp.Leaf[:]), "blobHash", hash)
+		return false
+	}
+
+	// Need to add logic to verify merkle proof of inclusion
+
+	return true
 }
 
 type BridgeApiResponse struct {
