@@ -56,7 +56,7 @@ func (e Engine) FinalizeAndAssemble(chain consensus.ChainHeaderReader, header *t
 
 	e.Finalize(chain, header, state, body)
 
-	block := types.NewBlock(header, body.Transactions, nil, receipts, trie.NewStackTrie(nil))
+	block := types.NewBlock(header, &types.Body{Transactions: body.Transactions}, receipts, trie.NewStackTrie(nil))
 	return block, nil
 }
 
