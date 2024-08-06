@@ -193,6 +193,7 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 			t := time.NewTimer(cc.delay)
 			select {
 			case <-ctx.Done():
+				t.Stop()
 				return
 			case <-t.C:
 			}
@@ -222,8 +223,10 @@ func (cc *ClientConnection) Start(parentCtx context.Context) {
 		timer := time.NewTimer(5 * time.Second)
 		select {
 		case <-ctx.Done():
+			timer.Stop()
 			return
 		case <-cc.registered:
+			timer.Stop()
 			log.Debug("ClientConnection registered with ClientManager", "client", cc.Name)
 		case <-timer.C:
 			log.Error("timed out waiting for ClientConnection to register with ClientManager", "client", cc.Name)

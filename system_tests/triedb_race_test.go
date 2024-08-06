@@ -75,7 +75,7 @@ func TestTrieDBCommitRace(t *testing.T) {
 		for _, root := range roots {
 			err := bc.TrieDB().Dereference(root)
 			Require(t, err)
-			time.Sleep(1)
+			time.Sleep(time.Nanosecond)
 		}
 	}
 	close(quit)
