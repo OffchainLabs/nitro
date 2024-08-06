@@ -3,13 +3,16 @@ package timeboost
 import (
 	"context"
 	"fmt"
-	"math/big"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/util/redisutil"
@@ -34,17 +37,22 @@ func init() {
 	domainValue = hash.Sum(nil)
 }
 
+type AuctioneerServerConfigFetcher func() *AuctioneerServerConfig
+
 type AuctioneerServerConfig struct {
-	Enabled        bool                  `koanf:"enabled"`
+	Enable         bool                  `koanf:"enable"`
 	RedisURL       string                `koanf:"redis-url"`
 	ConsumerConfig pubsub.ConsumerConfig `koanf:"consumer-config"`
 	// Timeout on polling for existence of each redis stream.
-	StreamTimeout time.Duration `koanf:"stream-timeout"`
-	StreamPrefix  string        `koanf:"stream-prefix"`
+	StreamTimeout          time.Duration            `koanf:"stream-timeout"`
+	StreamPrefix           string                   `koanf:"stream-prefix"`
+	Wallet                 genericconf.WalletConfig `koanf:"wallet"`
+	SequencerEndpoint      string                   `koanf:"sequencer-endpoint"`
+	AuctionContractAddress string                   `koanf:"auction-contract-address"`
 }
 
 var DefaultAuctioneerServerConfig = AuctioneerServerConfig{
-	Enabled:        true,
+	Enable:         true,
 	RedisURL:       "",
 	StreamPrefix:   "",
 	ConsumerConfig: pubsub.DefaultConsumerConfig,
@@ -52,7 +60,7 @@ var DefaultAuctioneerServerConfig = AuctioneerServerConfig{
 }
 
 var TestAuctioneerServerConfig = AuctioneerServerConfig{
-	Enabled:        true,
+	Enable:         true,
 	RedisURL:       "",
 	StreamPrefix:   "test-",
 	ConsumerConfig: pubsub.TestConsumerConfig,
@@ -60,11 +68,14 @@ var TestAuctioneerServerConfig = AuctioneerServerConfig{
 }
 
 func AuctioneerConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".enabled", DefaultAuctioneerServerConfig.Enabled, "enable auctioneer server")
+	f.Bool(prefix+".enable", DefaultAuctioneerServerConfig.Enable, "enable auctioneer server")
 	pubsub.ConsumerConfigAddOptions(prefix+".consumer-config", f)
 	f.String(prefix+".redis-url", DefaultAuctioneerServerConfig.RedisURL, "url of redis server")
 	f.String(prefix+".stream-prefix", DefaultAuctioneerServerConfig.StreamPrefix, "prefix for stream name")
 	f.Duration(prefix+".stream-timeout", DefaultAuctioneerServerConfig.StreamTimeout, "Timeout on polling for existence of redis streams")
+	genericconf.WalletConfigAddOptions(prefix+".wallet", f, "wallet for auctioneer server")
+	f.String(prefix+".sequencer-endpoint", DefaultAuctioneerServerConfig.SequencerEndpoint, "sequencer RPC endpoint")
+	f.String(prefix+".auction-contract-address", DefaultAuctioneerServerConfig.SequencerEndpoint, "express lane auction contract address")
 }
 
 // AuctioneerServer is a struct that represents an autonomous auctioneer.
@@ -85,26 +96,33 @@ type AuctioneerServer struct {
 }
 
 // NewAuctioneerServer creates a new autonomous auctioneer struct.
-func NewAuctioneerServer(
-	txOpts *bind.TransactOpts,
-	chainId []*big.Int,
-	client Client,
-	auctionContractAddr common.Address,
-	redisURL string,
-	consumerCfg *pubsub.ConsumerConfig,
-) (*AuctioneerServer, error) {
-	if redisURL == "" {
+func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConfigFetcher) (*AuctioneerServer, error) {
+	cfg := configFetcher()
+	if cfg.RedisURL == "" {
 		return nil, fmt.Errorf("redis url cannot be empty")
 	}
-	redisClient, err := redisutil.RedisClientFromURL(redisURL)
+	if cfg.AuctionContractAddress == "" {
+		return nil, fmt.Errorf("auction contract address cannot be empty")
+	}
+	txOpts, _, err := util.OpenWallet("auctioneer-server", &cfg.Wallet, nil)
 	if err != nil {
 		return nil, err
 	}
-	c, err := pubsub.NewConsumer[*JsonValidatedBid, error](redisClient, validatedBidsRedisStream, consumerCfg)
+	auctionContractAddr := common.HexToAddress(cfg.AuctionContractAddress)
+	redisClient, err := redisutil.RedisClientFromURL(cfg.RedisURL)
+	if err != nil {
+		return nil, err
+	}
+	c, err := pubsub.NewConsumer[*JsonValidatedBid, error](redisClient, validatedBidsRedisStream, &cfg.ConsumerConfig)
 	if err != nil {
 		return nil, fmt.Errorf("creating consumer for validation: %w", err)
 	}
-	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, client)
+	client, err := rpc.DialContext(ctx, cfg.SequencerEndpoint)
+	if err != nil {
+		return nil, err
+	}
+	sequencerClient := ethclient.NewClient(client)
+	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, sequencerClient)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +135,7 @@ func NewAuctioneerServer(
 	roundDuration := time.Duration(roundTimingInfo.RoundDurationSeconds) * time.Second
 	return &AuctioneerServer{
 		txOpts:                 txOpts,
-		client:                 client,
+		client:                 sequencerClient,
 		consumer:               c,
 		auctionContract:        auctionContract,
 		auctionContractAddr:    auctionContractAddr,
@@ -128,6 +146,7 @@ func NewAuctioneerServer(
 		roundDuration:          roundDuration,
 	}, nil
 }
+
 func (a *AuctioneerServer) Start(ctx_in context.Context) {
 	a.StopWaiter.Start(ctx_in, a)
 	// Channel that consumer uses to indicate its readiness.

@@ -10,6 +10,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -22,37 +23,35 @@ import (
 	"github.com/spf13/pflag"
 )
 
+type BidValidatorConfigFetcher func() *BidValidatorConfig
+
 type BidValidatorConfig struct {
-	Enabled        bool                  `koanf:"enabled"`
+	Enable         bool                  `koanf:"enable"`
 	RedisURL       string                `koanf:"redis-url"`
-	ConsumerConfig pubsub.ConsumerConfig `koanf:"consumer-config"`
+	ProducerConfig pubsub.ProducerConfig `koanf:"producer-config"`
 	// Timeout on polling for existence of each redis stream.
-	StreamTimeout time.Duration `koanf:"stream-timeout"`
-	StreamPrefix  string        `koanf:"stream-prefix"`
+	SequencerEndpoint      string `koanf:"sequencer-endpoint"`
+	AuctionContractAddress string `koanf:"auction-contract-address"`
 }
 
 var DefaultBidValidatorConfig = BidValidatorConfig{
-	Enabled:        true,
+	Enable:         true,
 	RedisURL:       "",
-	StreamPrefix:   "",
-	ConsumerConfig: pubsub.DefaultConsumerConfig,
-	StreamTimeout:  10 * time.Minute,
+	ProducerConfig: pubsub.DefaultProducerConfig,
 }
 
 var TestBidValidatorConfig = BidValidatorConfig{
-	Enabled:        true,
+	Enable:         true,
 	RedisURL:       "",
-	StreamPrefix:   "test-",
-	ConsumerConfig: pubsub.TestConsumerConfig,
-	StreamTimeout:  time.Minute,
+	ProducerConfig: pubsub.TestProducerConfig,
 }
 
 func BidValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	f.Bool(prefix+".enabled", DefaultBidValidatorConfig.Enabled, "enable bid validator")
-	pubsub.ConsumerConfigAddOptions(prefix+".consumer-config", f)
+	f.Bool(prefix+".enable", DefaultBidValidatorConfig.Enable, "enable bid validator")
+	pubsub.ProducerAddConfigAddOptions(prefix+".producer-config", f)
 	f.String(prefix+".redis-url", DefaultBidValidatorConfig.RedisURL, "url of redis server")
-	f.String(prefix+".stream-prefix", DefaultBidValidatorConfig.StreamPrefix, "prefix for stream name")
-	f.Duration(prefix+".stream-timeout", DefaultBidValidatorConfig.StreamTimeout, "Timeout on polling for existence of redis streams")
+	f.String(prefix+".sequencer-endpoint", DefaultAuctioneerServerConfig.SequencerEndpoint, "sequencer RPC endpoint")
+	f.String(prefix+".auction-contract-address", DefaultAuctioneerServerConfig.SequencerEndpoint, "express lane auction contract address")
 }
 
 type BidValidator struct {
@@ -80,21 +79,29 @@ type BidValidator struct {
 }
 
 func NewBidValidator(
-	chainId []*big.Int,
+	ctx context.Context,
 	stack *node.Node,
-	client Client,
-	auctionContractAddr common.Address,
-	redisURL string,
-	producerCfg *pubsub.ProducerConfig,
+	configFetcher BidValidatorConfigFetcher,
 ) (*BidValidator, error) {
-	if redisURL == "" {
+	cfg := configFetcher()
+	if cfg.RedisURL == "" {
 		return nil, fmt.Errorf("redis url cannot be empty")
 	}
-	redisClient, err := redisutil.RedisClientFromURL(redisURL)
+	if cfg.AuctionContractAddress == "" {
+		return nil, fmt.Errorf("auction contract address cannot be empty")
+	}
+	auctionContractAddr := common.HexToAddress(cfg.AuctionContractAddress)
+	redisClient, err := redisutil.RedisClientFromURL(cfg.RedisURL)
 	if err != nil {
 		return nil, err
 	}
-	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, client)
+
+	client, err := rpc.DialContext(ctx, cfg.SequencerEndpoint)
+	if err != nil {
+		return nil, err
+	}
+	sequencerClient := ethclient.NewClient(client)
+	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, sequencerClient)
 	if err != nil {
 		return nil, err
 	}
@@ -111,9 +118,10 @@ func NewBidValidator(
 	if err != nil {
 		return nil, err
 	}
+	chainIds := []*big.Int{big.NewInt(1)}
 	bidValidator := &BidValidator{
-		chainId:                   chainId,
-		client:                    client,
+		chainId:                   chainIds,
+		client:                    sequencerClient,
 		redisClient:               redisClient,
 		stack:                     stack,
 		auctionContract:           auctionContract,
@@ -128,7 +136,7 @@ func NewBidValidator(
 		domainValue:               domainValue,
 		bidsPerSenderInRound:      make(map[common.Address]uint8),
 		maxBidsPerSenderInRound:   5, // 5 max bids per sender address in a round.
-		producerCfg:               producerCfg,
+		producerCfg:               &cfg.ProducerConfig,
 	}
 	api := &BidValidatorAPI{bidValidator}
 	valAPIs := []rpc.API{{

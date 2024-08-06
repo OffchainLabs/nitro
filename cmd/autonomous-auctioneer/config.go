@@ -17,22 +17,20 @@ import (
 )
 
 type AutonomousAuctioneerConfig struct {
-	AuctioneerServer  timeboost.AuctioneerServerConfig `koanf:"auctioneer-server"`
-	BidValidator      timeboost.BidValidatorConfig     `koanf:"bid-validator"`
-	Persistent        conf.PersistentConfig            `koanf:"persistent"`
-	Conf              genericconf.ConfConfig           `koanf:"conf" reload:"hot"`
-	LogLevel          string                           `koanf:"log-level" reload:"hot"`
-	LogType           string                           `koanf:"log-type" reload:"hot"`
-	FileLogging       genericconf.FileLoggingConfig    `koanf:"file-logging" reload:"hot"`
-	HTTP              genericconf.HTTPConfig           `koanf:"http"`
-	WS                genericconf.WSConfig             `koanf:"ws"`
-	IPC               genericconf.IPCConfig            `koanf:"ipc"`
-	Metrics           bool                             `koanf:"metrics"`
-	MetricsServer     genericconf.MetricsServerConfig  `koanf:"metrics-server"`
-	PProf             bool                             `koanf:"pprof"`
-	PprofCfg          genericconf.PProf                `koanf:"pprof-cfg"`
-	ParentChainWallet genericconf.WalletConfig         `koanf:"wallet"` // TODO: Move into auctioneer config.
-
+	AuctioneerServer timeboost.AuctioneerServerConfig `koanf:"auctioneer-server"`
+	BidValidator     timeboost.BidValidatorConfig     `koanf:"bid-validator"`
+	Persistent       conf.PersistentConfig            `koanf:"persistent"`
+	Conf             genericconf.ConfConfig           `koanf:"conf" reload:"hot"`
+	LogLevel         string                           `koanf:"log-level" reload:"hot"`
+	LogType          string                           `koanf:"log-type" reload:"hot"`
+	FileLogging      genericconf.FileLoggingConfig    `koanf:"file-logging" reload:"hot"`
+	HTTP             genericconf.HTTPConfig           `koanf:"http"`
+	WS               genericconf.WSConfig             `koanf:"ws"`
+	IPC              genericconf.IPCConfig            `koanf:"ipc"`
+	Metrics          bool                             `koanf:"metrics"`
+	MetricsServer    genericconf.MetricsServerConfig  `koanf:"metrics-server"`
+	PProf            bool                             `koanf:"pprof"`
+	PprofCfg         genericconf.PProf                `koanf:"pprof-cfg"`
 }
 
 var HTTPConfigDefault = genericconf.HTTPConfig{

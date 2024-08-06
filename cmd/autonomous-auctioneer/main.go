@@ -11,7 +11,6 @@ import (
 
 	flag "github.com/spf13/pflag"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/metrics/exp"
@@ -20,6 +19,10 @@ import (
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
 	"github.com/offchainlabs/nitro/timeboost"
 )
+
+func printSampleUsage(name string) {
+	fmt.Printf("Sample usage: %s --help \n", name)
+}
 
 func main() {
 	os.Exit(mainImpl())
@@ -54,7 +57,7 @@ func mainImpl() int {
 	args := os.Args[1:]
 	nodeConfig, err := parseAuctioneerArgs(ctx, args)
 	if err != nil {
-		// confighelpers.PrintErrorAndExit(err, printSampleUsage)
+		confighelpers.PrintErrorAndExit(err, printSampleUsage)
 		panic(err)
 	}
 	stackConf := DefaultAuctioneerStackConfig
@@ -105,62 +108,45 @@ func mainImpl() int {
 
 	timeboost.EnsureBidValidatorExposedViaRPC(&stackConf)
 
-	stack, err := node.New(&stackConf)
-	if err != nil {
-		flag.Usage()
-		log.Crit("failed to initialize geth stack", "err", err)
-	}
-
 	if err := startMetrics(nodeConfig); err != nil {
 		log.Error("Error starting metrics", "error", err)
 		return 1
 	}
 
 	fatalErrChan := make(chan error, 10)
-	log.Info("Running Arbitrum ", "revision", vcsRevision, "vcs.time", vcsTime)
-	// valNode, err := valnode.CreateValidationNode(
-	// 	func() *valnode.Config { return &liveNodeConfig.Get().Validation },
-	// 	stack,
-	// 	fatalErrChan,
-	// )
-	// if err != nil {
-	// 	log.Error("couldn't init validation node", "err", err)
-	// 	return 1
-	// }
 
-	// err = valNode.Start(ctx)
-	// if err != nil {
-	// 	log.Error("error starting validator node", "err", err)
-	// 	return 1
-	// }
-	err = stack.Start()
-	if err != nil {
-		fatalErrChan <- fmt.Errorf("error starting stack: %w", err)
+	if nodeConfig.AuctioneerServer.Enable && nodeConfig.BidValidator.Enable {
+		log.Crit("Both auctioneer and bid validator are enabled, only one can be enabled at a time")
+		return 1
 	}
-	defer stack.Close()
 
-	if nodeConfig.Mode == autonomousAuctioneerMode {
+	if nodeConfig.AuctioneerServer.Enable {
+		log.Info("Running Arbitrum express lane auctioneer", "revision", vcsRevision, "vcs.time", vcsTime)
 		auctioneer, err := timeboost.NewAuctioneerServer(
-			nil,
-			nil,
-			nil,
-			common.Address{},
-			"",
-			nil,
+			ctx,
+			func() *timeboost.AuctioneerServerConfig { return &liveNodeConfig.Get().AuctioneerServer },
 		)
 		if err != nil {
 			log.Error("Error creating new auctioneer", "error", err)
 			return 1
 		}
 		auctioneer.Start(ctx)
-	} else if nodeConfig.Mode == bidValidatorMode {
+	} else if nodeConfig.BidValidator.Enable {
+		log.Info("Running Arbitrum express lane bid validator", "revision", vcsRevision, "vcs.time", vcsTime)
+		stack, err := node.New(&stackConf)
+		if err != nil {
+			flag.Usage()
+			log.Crit("failed to initialize geth stack", "err", err)
+		}
+		err = stack.Start()
+		if err != nil {
+			fatalErrChan <- fmt.Errorf("error starting stack: %w", err)
+		}
+		defer stack.Close()
 		bidValidator, err := timeboost.NewBidValidator(
-			nil,
-			nil,
-			nil,
-			common.Address{},
-			"",
-			nil,
+			ctx,
+			stack,
+			func() *timeboost.BidValidatorConfig { return &liveNodeConfig.Get().BidValidator },
 		)
 		if err != nil {
 			log.Error("Error creating new auctioneer", "error", err)
@@ -171,9 +157,6 @@ func mainImpl() int {
 			return 1
 		}
 		bidValidator.Start(ctx)
-	} else {
-		log.Crit("Unknown mode, should be either autonomous-auctioneer or bid-validator", "mode", nodeConfig.Mode)
-
 	}
 
 	liveNodeConfig.Start(ctx)
