@@ -212,6 +212,10 @@ func (c *stubL1Client) CallContractAtHash(ctx context.Context, msg ethereum.Call
 	return []byte{}, nil
 }
 
+func (c *stubL1Client) CodeAtHash(ctx context.Context, address common.Address, blockHash common.Hash) ([]byte, error) {
+	return []byte{}, nil
+}
+
 func (c *stubL1Client) ChainID(ctx context.Context) (*big.Int, error) {
 	return nil, nil
 }

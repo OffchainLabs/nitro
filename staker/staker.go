@@ -18,6 +18,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/google/btree"
 	flag "github.com/spf13/pflag"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
@@ -246,6 +247,11 @@ type LatestConfirmedNotifier interface {
 	UpdateLatestConfirmed(count arbutil.MessageIndex, globalState validator.GoGlobalState)
 }
 
+type validatedNode struct {
+	number uint64
+	hash   common.Hash
+}
+
 type Staker struct {
 	*L1Validator
 	stopwaiter.StopWaiter
@@ -258,6 +264,7 @@ type Staker struct {
 	highGasBlocksBuffer     *big.Int
 	lastActCalledBlock      *big.Int
 	inactiveLastCheckedNode *nodeAndHash
+	inactiveValidatedNodes  *btree.BTreeG[validatedNode]
 	bringActiveUntilNode    uint64
 	inboxReader             InboxReaderInterface
 	statelessBlockValidator *StatelessBlockValidator
@@ -326,6 +333,9 @@ func NewStaker(
 			return nil, err
 		}
 	}
+	inactiveValidatedNodes := btree.NewG(2, func(a, b validatedNode) bool {
+		return a.number < b.number || (a.number == b.number && a.hash.Cmp(b.hash) < 0)
+	})
 	return &Staker{
 		L1Validator:             val,
 		l1Reader:                l1Reader,
@@ -339,6 +349,7 @@ func NewStaker(
 		statelessBlockValidator: statelessBlockValidator,
 		fatalErr:                fatalErr,
 		fastConfirmSafe:         fastConfirmSafe,
+		inactiveValidatedNodes:  inactiveValidatedNodes,
 	}, nil
 }
 
@@ -371,7 +382,7 @@ func (s *Staker) Initialize(ctx context.Context) error {
 	return nil
 }
 
-func (s *Staker) tryFastConfirmationNodeNumber(ctx context.Context, number uint64) error {
+func (s *Staker) tryFastConfirmationNodeNumber(ctx context.Context, number uint64, hash common.Hash) error {
 	if !s.config.EnableFastConfirmation {
 		return nil
 	}
@@ -379,21 +390,21 @@ func (s *Staker) tryFastConfirmationNodeNumber(ctx context.Context, number uint6
 	if err != nil {
 		return err
 	}
-	return s.tryFastConfirmation(ctx, nodeInfo.AfterState().GlobalState.BlockHash, nodeInfo.AfterState().GlobalState.SendRoot)
+	return s.tryFastConfirmation(ctx, nodeInfo.AfterState().GlobalState.BlockHash, nodeInfo.AfterState().GlobalState.SendRoot, hash)
 }
 
-func (s *Staker) tryFastConfirmation(ctx context.Context, blockHash common.Hash, sendRoot common.Hash) error {
+func (s *Staker) tryFastConfirmation(ctx context.Context, blockHash common.Hash, sendRoot common.Hash, nodeHash common.Hash) error {
 	if !s.config.EnableFastConfirmation {
 		return nil
 	}
 	if s.fastConfirmSafe != nil {
-		return s.fastConfirmSafe.tryFastConfirmation(ctx, blockHash, sendRoot)
+		return s.fastConfirmSafe.tryFastConfirmation(ctx, blockHash, sendRoot, nodeHash)
 	}
 	auth, err := s.builder.Auth(ctx)
 	if err != nil {
 		return err
 	}
-	_, err = s.rollup.FastConfirmNextNode(auth, blockHash, sendRoot)
+	_, err = s.rollup.FastConfirmNextNode(auth, blockHash, sendRoot, nodeHash)
 	return err
 }
 
@@ -711,9 +722,66 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		info.LatestStakedNodeHash = s.inactiveLastCheckedNode.hash
 	}
 
+	if s.config.EnableFastConfirmation {
+		firstUnresolvedNode, err := s.rollup.FirstUnresolvedNode(callOpts)
+		if err != nil {
+			return nil, err
+		}
+		if info.LatestStakedNode >= firstUnresolvedNode {
+			lastHeader, err := s.l1Reader.LastHeader(ctx)
+			if err != nil {
+				return nil, err
+			}
+			// To check if a node is correct, we simply check if we're staked on it.
+			// Since we're staked on it or a later node, this will tell us if it's correct.
+			// To keep this call consistent with the GetNode call, we pin a specific parent chain block hash.
+			checkNodeCorrectCallOpts := s.getCallOpts(ctx)
+			checkNodeCorrectCallOpts.BlockHash = lastHeader.ParentHash
+			nodeInfo, err := s.rollup.GetNode(checkNodeCorrectCallOpts, firstUnresolvedNode)
+			if err != nil {
+				return nil, err
+			}
+			validatedNode, haveValidated := s.inactiveValidatedNodes.Get(validatedNode{
+				number: firstUnresolvedNode,
+				hash:   nodeInfo.NodeHash,
+			})
+			confirmedCorrect := haveValidated && validatedNode.hash == nodeInfo.NodeHash
+			if !confirmedCorrect {
+				stakedOnNode, err := s.rollup.NodeHasStaker(checkNodeCorrectCallOpts, firstUnresolvedNode, walletAddressOrZero)
+				if err != nil {
+					return nil, err
+				}
+				confirmedCorrect = stakedOnNode
+			}
+			if confirmedCorrect {
+				err = s.tryFastConfirmationNodeNumber(ctx, firstUnresolvedNode, nodeInfo.NodeHash)
+				if err != nil {
+					return nil, err
+				}
+				if s.builder.BuildingTransactionCount() > 0 {
+					// Try to fast confirm previous nodes before working on new ones
+					log.Info("fast confirming previous node", "node", firstUnresolvedNode)
+					return s.wallet.ExecuteTransactions(ctx, s.builder, s.config.gasRefunder)
+				}
+			}
+		}
+	}
+
 	latestConfirmedNode, err := s.rollup.LatestConfirmed(callOpts)
 	if err != nil {
 		return nil, fmt.Errorf("error getting latest confirmed node: %w", err)
+	}
+
+	// Clear s.inactiveValidatedNodes of any entries before or equal to latestConfirmedNode
+	for {
+		validatedNode, ok := s.inactiveValidatedNodes.Min()
+		if !ok {
+			break
+		}
+		if validatedNode.number > latestConfirmedNode {
+			break
+		}
+		s.inactiveValidatedNodes.DeleteMin()
 	}
 
 	requiredStakeElevated, err := s.isRequiredStakeElevated(ctx)
@@ -900,7 +968,8 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 				s.bringActiveUntilNode = info.LatestStakedNode + 1
 			}
 			info.CanProgress = false
-			return s.tryFastConfirmation(ctx, action.assertion.AfterState.GlobalState.BlockHash, action.assertion.AfterState.GlobalState.SendRoot)
+			// We can't fast confirm a node that doesn't exist
+			return nil
 		}
 
 		// Details are already logged with more details in generateNodeAction
@@ -918,7 +987,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 			if err != nil {
 				return fmt.Errorf("error staking on new node: %w", err)
 			}
-			return s.tryFastConfirmation(ctx, action.assertion.AfterState.GlobalState.BlockHash, action.assertion.AfterState.GlobalState.SendRoot)
+			return s.tryFastConfirmation(ctx, action.assertion.AfterState.GlobalState.BlockHash, action.assertion.AfterState.GlobalState.SendRoot, action.hash)
 		}
 
 		// If we have no stake yet, we'll put one down
@@ -940,7 +1009,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 			return fmt.Errorf("error placing new stake on new node: %w", err)
 		}
 		info.StakeExists = true
-		return s.tryFastConfirmation(ctx, action.assertion.AfterState.GlobalState.BlockHash, action.assertion.AfterState.GlobalState.SendRoot)
+		return s.tryFastConfirmation(ctx, action.assertion.AfterState.GlobalState.BlockHash, action.assertion.AfterState.GlobalState.SendRoot, action.hash)
 	case existingNodeAction:
 		info.LatestStakedNode = action.number
 		info.LatestStakedNodeHash = action.hash
@@ -954,8 +1023,12 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 					id:   action.number,
 					hash: action.hash,
 				}
+				s.inactiveValidatedNodes.ReplaceOrInsert(validatedNode{
+					number: action.number,
+					hash:   action.hash,
+				})
 			}
-			return s.tryFastConfirmationNodeNumber(ctx, action.number)
+			return s.tryFastConfirmationNodeNumber(ctx, action.number, action.hash)
 		}
 		log.Info("staking on existing node", "node", action.number)
 		// We'll return early if we already havea stake
@@ -968,7 +1041,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 			if err != nil {
 				return fmt.Errorf("error staking on existing node: %w", err)
 			}
-			return s.tryFastConfirmationNodeNumber(ctx, action.number)
+			return s.tryFastConfirmationNodeNumber(ctx, action.number, action.hash)
 		}
 
 		// If we have no stake yet, we'll put one down
@@ -989,7 +1062,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 			return fmt.Errorf("error placing new stake on existing node: %w", err)
 		}
 		info.StakeExists = true
-		return s.tryFastConfirmationNodeNumber(ctx, action.number)
+		return s.tryFastConfirmationNodeNumber(ctx, action.number, action.hash)
 	default:
 		panic("invalid action type")
 	}
