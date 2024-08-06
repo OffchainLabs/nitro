@@ -96,7 +96,7 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 		return nil, errors.New("max inbox count cannot be zero")
 	}
 	batchIndex := maxInboxCount - 1
-	messageCount, err := s.validator.inboxTracker.GetBatchMessageCount(batchIndex)
+	messageCount, err := s.statelessValidator.inboxTracker.GetBatchMessageCount(batchIndex)
 	if err != nil {
 		if strings.Contains(err.Error(), "not found") {
 			return nil, fmt.Errorf("%w: batch count %d", l2stateprovider.ErrChainCatchingUp, maxInboxCount)
@@ -105,7 +105,7 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 	}
 	if previousGlobalState != nil {
 		// TODO: Use safer sub here.
-		previousMessageCount, err := s.validator.inboxTracker.GetBatchMessageCount(previousGlobalState.Batch - 1)
+		previousMessageCount, err := s.statelessValidator.inboxTracker.GetBatchMessageCount(previousGlobalState.Batch - 1)
 		if err != nil {
 			if strings.Contains(err.Error(), "not found") {
 				return nil, fmt.Errorf("%w: batch count %d", l2stateprovider.ErrChainCatchingUp, maxInboxCount)
@@ -116,7 +116,7 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 		maxMessageCount := previousMessageCount + arbutil.MessageIndex(maxNumberOfBlocks)
 		if messageDiffBetweenBatches > maxMessageCount {
 			messageCount = maxMessageCount
-			batchIndex, _, err = s.validator.inboxTracker.FindInboxBatchContainingMessage(messageCount)
+			batchIndex, _, err = s.statelessValidator.inboxTracker.FindInboxBatchContainingMessage(messageCount)
 			if err != nil {
 				return nil, err
 			}
@@ -171,6 +171,12 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 func (s *BOLDStateProvider) isStateValidatedAndFinal(
 	ctx context.Context, gs validator.GoGlobalState, messageCount arbutil.MessageIndex,
 ) (bool, error) {
+	if s.validator == nil {
+		// If we do not have a validator, we cannot check if the state is validated.
+		// So we assume it is validated and return true.
+		// This is a dangerous option, only users who are sure that the state is validated should use this option.
+		return true, nil
+	}
 	lastValidatedGs, err := s.validator.ReadLastValidatedInfo()
 	if err != nil {
 		return false, err
@@ -182,7 +188,7 @@ func (s *BOLDStateProvider) isStateValidatedAndFinal(
 	if !s.checkBatchFinality {
 		return stateValidated, nil
 	}
-	finalizedMessageCount, err := s.validator.inboxReader.GetFinalizedMsgCount(ctx)
+	finalizedMessageCount, err := s.statelessValidator.inboxReader.GetFinalizedMsgCount(ctx)
 	if err != nil {
 		return false, err
 	}
@@ -209,14 +215,14 @@ func (s *BOLDStateProvider) StatesInBatchRange(
 	var prevBatchMsgCount arbutil.MessageIndex
 	var err error
 	if fromBatch == 0 {
-		prevBatchMsgCount, err = s.validator.inboxTracker.GetBatchMessageCount(0)
+		prevBatchMsgCount, err = s.statelessValidator.inboxTracker.GetBatchMessageCount(0)
 	} else {
-		prevBatchMsgCount, err = s.validator.inboxTracker.GetBatchMessageCount(uint64(fromBatch) - 1)
+		prevBatchMsgCount, err = s.statelessValidator.inboxTracker.GetBatchMessageCount(uint64(fromBatch) - 1)
 	}
 	if err != nil {
 		return nil, nil, err
 	}
-	executionResult, err := s.validator.streamer.ResultAtCount(prevBatchMsgCount)
+	executionResult, err := s.statelessValidator.streamer.ResultAtCount(prevBatchMsgCount)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -232,7 +238,7 @@ func (s *BOLDStateProvider) StatesInBatchRange(
 	states = append(states, startState)
 
 	for batch := fromBatch; batch < toBatch; batch++ {
-		batchMessageCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(batch))
+		batchMessageCount, err := s.statelessValidator.inboxTracker.GetBatchMessageCount(uint64(batch))
 		if err != nil {
 			return nil, nil, err
 		}
@@ -242,7 +248,7 @@ func (s *BOLDStateProvider) StatesInBatchRange(
 		for i := uint64(0); i < uint64(messagesInBatch); i++ {
 			msgIndex := uint64(prevBatchMsgCount) + i
 			messageCount := msgIndex + 1
-			executionResult, err := s.validator.streamer.ResultAtCount(arbutil.MessageIndex(messageCount))
+			executionResult, err := s.statelessValidator.streamer.ResultAtCount(arbutil.MessageIndex(messageCount))
 			if err != nil {
 				return nil, nil, err
 			}
@@ -263,7 +269,7 @@ func (s *BOLDStateProvider) StatesInBatchRange(
 		}
 
 		// Fully consume the batch.
-		executionResult, err := s.validator.streamer.ResultAtCount(batchMessageCount)
+		executionResult, err := s.statelessValidator.streamer.ResultAtCount(batchMessageCount)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -292,7 +298,7 @@ func (s *BOLDStateProvider) findGlobalStateFromMessageCountAndBatch(count arbuti
 	var prevBatchMsgCount arbutil.MessageIndex
 	var err error
 	if batchIndex > 0 {
-		prevBatchMsgCount, err = s.validator.inboxTracker.GetBatchMessageCount(uint64(batchIndex) - 1)
+		prevBatchMsgCount, err = s.statelessValidator.inboxTracker.GetBatchMessageCount(uint64(batchIndex) - 1)
 		if err != nil {
 			return validator.GoGlobalState{}, err
 		}
@@ -300,7 +306,7 @@ func (s *BOLDStateProvider) findGlobalStateFromMessageCountAndBatch(count arbuti
 			return validator.GoGlobalState{}, errors.New("bad batch provided")
 		}
 	}
-	res, err := s.validator.streamer.ResultAtCount(count)
+	res, err := s.statelessValidator.streamer.ResultAtCount(count)
 	if err != nil {
 		return validator.GoGlobalState{}, fmt.Errorf("%s: could not check if we have result at count %d: %w", s.validatorName, count, err)
 	}
@@ -342,7 +348,7 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 ) ([]common.Hash, error) {
 	s.Lock()
 	defer s.Unlock()
-	prevBatchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(cfg.FromBatch - 1))
+	prevBatchMsgCount, err := s.statelessValidator.inboxTracker.GetBatchMessageCount(uint64(cfg.FromBatch - 1))
 	if err != nil {
 		return nil, fmt.Errorf("could not get batch message count at %d: %w", cfg.FromBatch, err)
 	}
@@ -451,7 +457,7 @@ func (s *BOLDStateProvider) CollectProof(
 	blockChallengeHeight l2stateprovider.Height,
 	machineIndex l2stateprovider.OpcodeIndex,
 ) ([]byte, error) {
-	prevBatchMsgCount, err := s.validator.inboxTracker.GetBatchMessageCount(uint64(fromBatch) - 1)
+	prevBatchMsgCount, err := s.statelessValidator.inboxTracker.GetBatchMessageCount(uint64(fromBatch) - 1)
 	if err != nil {
 		return nil, err
 	}
