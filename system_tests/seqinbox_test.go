@@ -139,7 +139,6 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
-	builder.nodeConfig.InboxReader.HardReorg = true
 	if validator {
 		builder.nodeConfig.BlockValidator.Enable = true
 	}
