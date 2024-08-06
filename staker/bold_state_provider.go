@@ -39,45 +39,30 @@ var (
 )
 
 type BOLDStateProvider struct {
-	validator            *BlockValidator
-	statelessValidator   *StatelessBlockValidator
-	historyCache         challengecache.HistoryCommitmentCacher
-	challengeLeafHeights []l2stateprovider.Height
-	validatorName        string
-	checkBatchFinality   bool
+	validator                *BlockValidator
+	statelessValidator       *StatelessBlockValidator
+	historyCache             challengecache.HistoryCommitmentCacher
+	blockChallengeLeafHeight l2stateprovider.Height
+	stateProviderConfig      *StateProviderConfig
 	sync.RWMutex
-}
-
-type BOLDStateProviderOpt = func(b *BOLDStateProvider)
-
-func WithoutFinalizedBatchChecks() BOLDStateProviderOpt {
-	return func(b *BOLDStateProvider) {
-		b.checkBatchFinality = false
-	}
 }
 
 func NewBOLDStateProvider(
 	blockValidator *BlockValidator,
 	statelessValidator *StatelessBlockValidator,
-	cacheBaseDir string,
-	challengeLeafHeights []l2stateprovider.Height,
-	validatorName string,
-	opts ...BOLDStateProviderOpt,
+	blockChallengeLeafHeight l2stateprovider.Height,
+	stateProviderConfig *StateProviderConfig,
 ) (*BOLDStateProvider, error) {
-	historyCache, err := challengecache.New(cacheBaseDir)
+	historyCache, err := challengecache.New(stateProviderConfig.MachineLeavesCachePath)
 	if err != nil {
 		return nil, err
 	}
 	sp := &BOLDStateProvider{
-		validator:            blockValidator,
-		statelessValidator:   statelessValidator,
-		historyCache:         historyCache,
-		challengeLeafHeights: challengeLeafHeights,
-		validatorName:        validatorName,
-		checkBatchFinality:   true,
-	}
-	for _, o := range opts {
-		o(sp)
+		validator:                blockValidator,
+		statelessValidator:       statelessValidator,
+		historyCache:             historyCache,
+		blockChallengeLeafHeight: blockChallengeLeafHeight,
+		stateProviderConfig:      stateProviderConfig,
 	}
 	return sp, nil
 }
@@ -174,7 +159,7 @@ func (s *BOLDStateProvider) isStateValidatedAndFinal(
 	if s.validator == nil {
 		// If we do not have a validator, we cannot check if the state is validated.
 		// So we assume it is validated and return true.
-		// This is a dangerous option, only users who are sure that the state is validated should use this option.
+		// This is a dangerous option, only users
 		return true, nil
 	}
 	lastValidatedGs, err := s.validator.ReadLastValidatedInfo()
@@ -185,7 +170,7 @@ func (s *BOLDStateProvider) isStateValidatedAndFinal(
 		return false, ErrChainCatchingUp
 	}
 	stateValidated := gs.Batch <= lastValidatedGs.GlobalState.Batch
-	if !s.checkBatchFinality {
+	if !s.stateProviderConfig.CheckBatchFinality {
 		return stateValidated, nil
 	}
 	finalizedMessageCount, err := s.statelessValidator.inboxReader.GetFinalizedMsgCount(ctx)
@@ -308,7 +293,7 @@ func (s *BOLDStateProvider) findGlobalStateFromMessageCountAndBatch(count arbuti
 	}
 	res, err := s.statelessValidator.streamer.ResultAtCount(count)
 	if err != nil {
-		return validator.GoGlobalState{}, fmt.Errorf("%s: could not check if we have result at count %d: %w", s.validatorName, count, err)
+		return validator.GoGlobalState{}, fmt.Errorf("%s: could not check if we have result at count %d: %w", s.stateProviderConfig.ValidatorName, count, err)
 	}
 	return validator.GoGlobalState{
 		BlockHash:  res.BlockHash,
@@ -332,8 +317,7 @@ func (s *BOLDStateProvider) L2MessageStatesUpTo(
 	if !toHeight.IsNone() {
 		to = toHeight.Unwrap()
 	} else {
-		blockChallengeLeafHeight := s.challengeLeafHeights[0]
-		to = blockChallengeLeafHeight
+		to = s.blockChallengeLeafHeight
 	}
 	items, _, err := s.StatesInBatchRange(fromHeight, to, fromBatch, toBatch)
 	if err != nil {

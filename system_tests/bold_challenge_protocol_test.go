@@ -185,32 +185,24 @@ func TestChallengeProtocolBOLD(t *testing.T) {
 	stateManager, err := staker.NewBOLDStateProvider(
 		blockValidatorA,
 		statelessA,
-		"/tmp/good",
-		[]l2stateprovider.Height{
-			l2stateprovider.Height(blockChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(smallStepChallengeLeafHeight),
+		l2stateprovider.Height(blockChallengeLeafHeight),
+		&staker.StateProviderConfig{
+			ValidatorName:          "good",
+			MachineLeavesCachePath: "/tmp/good",
+			CheckBatchFinality:     false,
 		},
-		"good",
-		staker.WithoutFinalizedBatchChecks(),
 	)
 	Require(t, err)
 
 	stateManagerB, err := staker.NewBOLDStateProvider(
 		blockValidatorB,
 		statelessB,
-		"/tmp/evil",
-		[]l2stateprovider.Height{
-			l2stateprovider.Height(blockChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(bigStepChallengeLeafHeight),
-			l2stateprovider.Height(smallStepChallengeLeafHeight),
+		l2stateprovider.Height(blockChallengeLeafHeight),
+		&staker.StateProviderConfig{
+			ValidatorName:          "evil",
+			MachineLeavesCachePath: "/tmp/evil",
+			CheckBatchFinality:     false,
 		},
-		"evil",
-		staker.WithoutFinalizedBatchChecks(),
 	)
 	Require(t, err)
 
