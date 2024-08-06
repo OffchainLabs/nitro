@@ -141,12 +141,14 @@ func newBOLDStaker(
 	}, nil
 }
 
+// Initialize Updates the block validator module root.
+// And updates the init state of the block validator if block validator has not started yet.
 func (b *BOLDStaker) Initialize(ctx context.Context) error {
 	if err := b.updateBlockValidatorModuleRoot(ctx); err != nil {
 		return err
 	}
 	walletAddressOrZero := b.wallet.AddressOrZero()
-	if b.blockValidator != nil && b.validatorConfig.StartValidationFromStaked {
+	if b.blockValidator != nil && b.validatorConfig.StartValidationFromStaked && !b.blockValidator.Started() {
 		rollupUserLogic, err := boldrollup.NewRollupUserLogic(b.rollupAddress, b.client)
 		if err != nil {
 			return err
