@@ -446,7 +446,7 @@ func createNodeImpl(
 	}
 
 	if config.SeqCoordinator.Enable {
-		coordinator, err = NewSeqCoordinator(dataSigner, bpVerifier, txStreamer, exec, syncMonitor, config.SeqCoordinator)
+		coordinator, err = NewSeqCoordinator(dataSigner, bpVerifier, txStreamer, exec, config.SeqCoordinator)
 		if err != nil {
 			return nil, err
 		}
