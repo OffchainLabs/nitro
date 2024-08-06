@@ -204,7 +204,11 @@ func callProgram(
 	}
 
 	if db, ok := db.(*state.StateDB); ok {
-		db.RecordProgram(moduleHash)
+		targetNames := []string{
+			rawdb.TargetWavm,
+			LocalTargetName(),
+		}
+		db.RecordProgram(targetNames, moduleHash)
 	}
 
 	evmApi := newApi(interpreter, tracingInfo, scope, memoryModel)
