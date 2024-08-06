@@ -4,18 +4,18 @@ import (
 	"context"
 	"fmt"
 	"math/big"
-	"sync"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
+	"github.com/offchainlabs/nitro/util/redisutil"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/pkg/errors"
+	"github.com/spf13/pflag"
 	"golang.org/x/crypto/sha3"
 )
 
@@ -23,7 +23,10 @@ import (
 // It is intended to be immutable after initialization.
 var domainValue []byte
 
-const AuctioneerNamespace = "auctioneer"
+const (
+	AuctioneerNamespace      = "auctioneer"
+	validatedBidsRedisStream = "validated_bid_stream"
+)
 
 func init() {
 	hash := sha3.NewLegacyKeccak256()
@@ -31,53 +34,76 @@ func init() {
 	domainValue = hash.Sum(nil)
 }
 
-type AuctioneerOpt func(*Auctioneer)
+type AuctioneerConfig struct {
+	RedisURL       string                `koanf:"redis-url"`
+	ConsumerConfig pubsub.ConsumerConfig `koanf:"consumer-config"`
+	// Timeout on polling for existence of each redis stream.
+	StreamTimeout time.Duration `koanf:"stream-timeout"`
+	StreamPrefix  string        `koanf:"stream-prefix"`
+}
+
+var DefaultAuctioneerConfig = AuctioneerConfig{
+	RedisURL:       "",
+	StreamPrefix:   "",
+	ConsumerConfig: pubsub.DefaultConsumerConfig,
+	StreamTimeout:  10 * time.Minute,
+}
+
+var TestAuctioneerConfig = AuctioneerConfig{
+	RedisURL:       "",
+	StreamPrefix:   "test-",
+	ConsumerConfig: pubsub.TestConsumerConfig,
+	StreamTimeout:  time.Minute,
+}
+
+func AuctioneerConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	pubsub.ConsumerConfigAddOptions(prefix+".consumer-config", f)
+	f.String(prefix+".redis-url", DefaultAuctioneerConfig.RedisURL, "url of redis server")
+	f.String(prefix+".stream-prefix", DefaultAuctioneerConfig.StreamPrefix, "prefix for stream name")
+	f.Duration(prefix+".stream-timeout", DefaultAuctioneerConfig.StreamTimeout, "Timeout on polling for existence of redis streams")
+}
+
+func (cfg *AuctioneerConfig) Enabled() bool {
+	return cfg.RedisURL != ""
+}
 
 // Auctioneer is a struct that represents an autonomous auctioneer.
 // It is responsible for receiving bids, validating them, and resolving auctions.
-// Spec: https://github.com/OffchainLabs/timeboost-design/tree/main
 type Auctioneer struct {
-	txOpts                    *bind.TransactOpts
-	chainId                   []*big.Int // Auctioneer could handle auctions on multiple chains.
-	domainValue               []byte
-	client                    Client
-	auctionContract           *express_lane_auctiongen.ExpressLaneAuction
-	auctionContractAddr       common.Address
-	bidsReceiver              chan *Bid
-	bidCache                  *bidCache
-	initialRoundTimestamp     time.Time
-	roundDuration             time.Duration
-	auctionClosingDuration    time.Duration
-	reserveSubmissionDuration time.Duration
-	reservePriceLock          sync.RWMutex
-	reservePrice              *big.Int
-	sync.RWMutex
-	bidsPerSenderInRound    map[common.Address]uint8
-	maxBidsPerSenderInRound uint8
-}
-
-func EnsureValidationExposedViaAuthRPC(stackConf *node.Config) {
-	found := false
-	for _, module := range stackConf.AuthModules {
-		if module == AuctioneerNamespace {
-			found = true
-			break
-		}
-	}
-	if !found {
-		stackConf.AuthModules = append(stackConf.AuthModules, AuctioneerNamespace)
-	}
+	stopwaiter.StopWaiter
+	consumer               *pubsub.Consumer[*JsonValidatedBid, error]
+	txOpts                 *bind.TransactOpts
+	client                 Client
+	auctionContract        *express_lane_auctiongen.ExpressLaneAuction
+	auctionContractAddr    common.Address
+	bidsReceiver           chan *JsonValidatedBid
+	bidCache               *bidCache
+	initialRoundTimestamp  time.Time
+	auctionClosingDuration time.Duration
+	roundDuration          time.Duration
+	streamTimeout          time.Duration
 }
 
 // NewAuctioneer creates a new autonomous auctioneer struct.
 func NewAuctioneer(
 	txOpts *bind.TransactOpts,
 	chainId []*big.Int,
-	stack *node.Node,
 	client Client,
 	auctionContractAddr common.Address,
-	opts ...AuctioneerOpt,
+	redisURL string,
+	consumerCfg *pubsub.ConsumerConfig,
 ) (*Auctioneer, error) {
+	if redisURL == "" {
+		return nil, fmt.Errorf("redis url cannot be empty")
+	}
+	redisClient, err := redisutil.RedisClientFromURL(redisURL)
+	if err != nil {
+		return nil, err
+	}
+	c, err := pubsub.NewConsumer[*JsonValidatedBid, error](redisClient, validatedBidsRedisStream, consumerCfg)
+	if err != nil {
+		return nil, fmt.Errorf("creating consumer for validation: %w", err)
+	}
 	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, client)
 	if err != nil {
 		return nil, err
@@ -86,84 +112,131 @@ func NewAuctioneer(
 	if err != nil {
 		return nil, err
 	}
+	auctionClosingDuration := time.Duration(roundTimingInfo.AuctionClosingSeconds) * time.Second
 	initialTimestamp := time.Unix(int64(roundTimingInfo.OffsetTimestamp), 0)
 	roundDuration := time.Duration(roundTimingInfo.RoundDurationSeconds) * time.Second
-	auctionClosingDuration := time.Duration(roundTimingInfo.AuctionClosingSeconds) * time.Second
-	reserveSubmissionDuration := time.Duration(roundTimingInfo.ReserveSubmissionSeconds) * time.Second
-
-	reservePrice, err := auctionContract.ReservePrice(&bind.CallOpts{})
-	if err != nil {
-		return nil, err
-	}
-	am := &Auctioneer{
-		txOpts:                    txOpts,
-		chainId:                   chainId,
-		client:                    client,
-		auctionContract:           auctionContract,
-		auctionContractAddr:       auctionContractAddr,
-		bidsReceiver:              make(chan *Bid, 10_000), // TODO(Terence): Is 10000 enough? Make this configurable?
-		bidCache:                  newBidCache(),
-		initialRoundTimestamp:     initialTimestamp,
-		roundDuration:             roundDuration,
-		auctionClosingDuration:    auctionClosingDuration,
-		reserveSubmissionDuration: reserveSubmissionDuration,
-		reservePrice:              reservePrice,
-		domainValue:               domainValue,
-		bidsPerSenderInRound:      make(map[common.Address]uint8),
-		maxBidsPerSenderInRound:   5, // 5 max bids per sender address in a round.
-	}
-	for _, o := range opts {
-		o(am)
-	}
-	auctioneerApi := &AuctioneerAPI{am}
-	valAPIs := []rpc.API{{
-		Namespace: AuctioneerNamespace,
-		Version:   "1.0",
-		Service:   auctioneerApi,
-		Public:    true,
-	}}
-	stack.RegisterAPIs(valAPIs)
-	return am, nil
+	return &Auctioneer{
+		txOpts:                 txOpts,
+		client:                 client,
+		consumer:               c,
+		auctionContract:        auctionContract,
+		auctionContractAddr:    auctionContractAddr,
+		bidsReceiver:           make(chan *JsonValidatedBid, 100_000), // TODO(Terence): Is 100k enough? Make this configurable?
+		bidCache:               newBidCache(),
+		initialRoundTimestamp:  initialTimestamp,
+		auctionClosingDuration: auctionClosingDuration,
+		roundDuration:          roundDuration,
+	}, nil
 }
-
-// ReceiveBid validates and adds a bid to the bid cache.
-func (a *Auctioneer) receiveBid(ctx context.Context, b *Bid) error {
-	vb, err := a.validateBid(b, a.auctionContract.BalanceOf, a.fetchReservePrice)
-	if err != nil {
-		return err
-	}
-	a.bidCache.add(vb)
-	return nil
-}
-
-// Start starts the autonomous auctioneer.
-func (a *Auctioneer) Start(ctx context.Context) {
-	// Receive bids in the background.
-	go receiveAsync(ctx, a.bidsReceiver, a.receiveBid)
-
-	// Listen for sequencer health in the background and close upcoming auctions if so.
-	go a.checkSequencerHealth(ctx)
-
-	// Work on closing auctions.
-	ticker := newAuctionCloseTicker(a.roundDuration, a.auctionClosingDuration)
-	go ticker.start()
-	for {
+func (a *Auctioneer) Start(ctx_in context.Context) {
+	a.StopWaiter.Start(ctx_in, a)
+	// Channel that consumer uses to indicate its readiness.
+	readyStream := make(chan struct{}, 1)
+	a.consumer.Start(ctx_in)
+	// Channel for single consumer, once readiness is indicated in this,
+	// consumer will start consuming iteratively.
+	ready := make(chan struct{}, 1)
+	a.StopWaiter.LaunchThread(func(ctx context.Context) {
+		for {
+			if pubsub.StreamExists(ctx, a.consumer.StreamName(), a.consumer.RedisClient()) {
+				ready <- struct{}{}
+				readyStream <- struct{}{}
+				return
+			}
+			select {
+			case <-ctx.Done():
+				log.Info("Context done while checking redis stream existance", "error", ctx.Err().Error())
+				return
+			case <-time.After(time.Millisecond * 100):
+			}
+		}
+	})
+	a.StopWaiter.LaunchThread(func(ctx context.Context) {
 		select {
 		case <-ctx.Done():
-			log.Error("Context closed, autonomous auctioneer shutting down")
+			log.Info("Context done while waiting a redis stream to be ready", "error", ctx.Err().Error())
 			return
-		case auctionClosingTime := <-ticker.c:
-			log.Info("New auction closing time reached", "closingTime", auctionClosingTime, "totalBids", a.bidCache.size())
-			if err := a.resolveAuction(ctx); err != nil {
-				log.Error("Could not resolve auction for round", "error", err)
-			}
-			// Clear the bid cache.
-			a.bidCache = newBidCache()
+		case <-ready: // Wait until the stream exists and start consuming iteratively.
 		}
-	}
+		log.Info("Stream exists, now attempting to consume data from it")
+		a.StopWaiter.CallIteratively(func(ctx context.Context) time.Duration {
+			req, err := a.consumer.Consume(ctx)
+			if err != nil {
+				log.Error("Consuming request", "error", err)
+				return 0
+			}
+			if req == nil {
+				// There's nothing in the queue.
+				return time.Second // TODO: Make this faster?
+			}
+			log.Info("Auctioneer received")
+			// Forward the message over a channel for processing elsewhere in
+			// another thread, so as to not block this consumption thread.
+			a.bidsReceiver <- req.Value
+
+			// We received the message, then we ack with a nil error.
+			if err := a.consumer.SetResult(ctx, req.ID, nil); err != nil {
+				log.Error("Error setting result for request", "id", req.ID, "result", nil, "error", err)
+				return 0
+			}
+			return 0
+		})
+	})
+	a.StopWaiter.LaunchThread(func(ctx context.Context) {
+		for {
+			select {
+			case <-readyStream:
+				log.Trace("At least one stream is ready")
+				return // Don't block Start if at least one of the stream is ready.
+			case <-time.After(a.streamTimeout):
+				log.Error("Waiting for redis streams timed out")
+				return
+			case <-ctx.Done():
+				log.Info("Context done while waiting redis streams to be ready, failed to start")
+				return
+			}
+		}
+	})
+	// TODO: Check sequencer health.
+	// a.StopWaiter.LaunchThread(func(ctx context.Context) {
+	// })
+
+	// Bid receiver thread.
+	a.StopWaiter.LaunchThread(func(ctx context.Context) {
+		for {
+			select {
+			case bid := <-a.bidsReceiver:
+				log.Info("Processed validated bid", "bidder", bid.Bidder, "amount", bid.Amount, "round", bid.Round)
+				a.bidCache.add(JsonValidatedBidToGo(bid))
+			case <-ctx.Done():
+				log.Info("Context done while waiting redis streams to be ready, failed to start")
+				return
+			}
+		}
+	})
+
+	// Auction resolution thread.
+	a.StopWaiter.LaunchThread(func(ctx context.Context) {
+		ticker := newAuctionCloseTicker(a.roundDuration, a.auctionClosingDuration)
+		go ticker.start()
+		for {
+			select {
+			case <-ctx.Done():
+				log.Error("Context closed, autonomous auctioneer shutting down")
+				return
+			case auctionClosingTime := <-ticker.c:
+				log.Info("New auction closing time reached", "closingTime", auctionClosingTime, "totalBids", a.bidCache.size())
+				if err := a.resolveAuction(ctx); err != nil {
+					log.Error("Could not resolve auction for round", "error", err)
+				}
+				// Clear the bid cache.
+				a.bidCache = newBidCache()
+			}
+		}
+	})
 }
 
-// resolveAuction resolves the auction by calling the smart contract with the top two bids.
+// Resolves the auction by calling the smart contract with the top two bids.
 func (a *Auctioneer) resolveAuction(ctx context.Context) error {
 	upcomingRound := CurrentRound(a.initialRoundTimestamp, a.roundDuration) + 1
 	result := a.bidCache.topTwoBids()
@@ -176,14 +249,14 @@ func (a *Auctioneer) resolveAuction(ctx context.Context) error {
 		tx, err = a.auctionContract.ResolveMultiBidAuction(
 			a.txOpts,
 			express_lane_auctiongen.Bid{
-				ExpressLaneController: first.expressLaneController,
-				Amount:                first.amount,
-				Signature:             first.signature,
+				ExpressLaneController: first.ExpressLaneController,
+				Amount:                first.Amount,
+				Signature:             first.Signature,
 			},
 			express_lane_auctiongen.Bid{
-				ExpressLaneController: second.expressLaneController,
-				Amount:                second.amount,
-				Signature:             second.signature,
+				ExpressLaneController: second.ExpressLaneController,
+				Amount:                second.Amount,
+				Signature:             second.Signature,
 			},
 		)
 		log.Info("Resolving auction with two bids", "round", upcomingRound)
@@ -192,9 +265,9 @@ func (a *Auctioneer) resolveAuction(ctx context.Context) error {
 		tx, err = a.auctionContract.ResolveSingleBidAuction(
 			a.txOpts,
 			express_lane_auctiongen.Bid{
-				ExpressLaneController: first.expressLaneController,
-				Amount:                first.amount,
-				Signature:             first.signature,
+				ExpressLaneController: first.ExpressLaneController,
+				Amount:                first.Amount,
+				Signature:             first.Signature,
 			},
 		)
 		log.Info("Resolving auction with single bid", "round", upcomingRound)
@@ -224,146 +297,4 @@ func (a *Auctioneer) resolveAuction(ctx context.Context) error {
 
 	log.Info("Auction resolved successfully", "txHash", tx.Hash().Hex())
 	return nil
-}
-
-// TODO: Implement. If sequencer is down for some time, cancel the upcoming auction by calling
-// the cancel method on the smart contract.
-func (a *Auctioneer) checkSequencerHealth(ctx context.Context) {
-
-}
-
-// TODO(Terence): Set reserve price from the contract.
-func (a *Auctioneer) fetchReservePrice() *big.Int {
-	a.reservePriceLock.RLock()
-	defer a.reservePriceLock.RUnlock()
-	return new(big.Int).Set(a.reservePrice)
-}
-
-func (a *Auctioneer) validateBid(
-	bid *Bid,
-	balanceCheckerFn func(opts *bind.CallOpts, addr common.Address) (*big.Int, error),
-	fetchReservePriceFn func() *big.Int,
-) (*validatedBid, error) {
-	// Check basic integrity.
-	if bid == nil {
-		return nil, errors.Wrap(ErrMalformedData, "nil bid")
-	}
-	if bid.AuctionContractAddress != a.auctionContractAddr {
-		return nil, errors.Wrap(ErrMalformedData, "incorrect auction contract address")
-	}
-	if bid.ExpressLaneController == (common.Address{}) {
-		return nil, errors.Wrap(ErrMalformedData, "empty express lane controller address")
-	}
-	if bid.ChainId == nil {
-		return nil, errors.Wrap(ErrMalformedData, "empty chain id")
-	}
-
-	// Check if the chain ID is valid.
-	chainIdOk := false
-	for _, id := range a.chainId {
-		if bid.ChainId.Cmp(id) == 0 {
-			chainIdOk = true
-			break
-		}
-	}
-	if !chainIdOk {
-		return nil, errors.Wrapf(ErrWrongChainId, "can not auction for chain id: %d", bid.ChainId)
-	}
-
-	// Check if the bid is intended for upcoming round.
-	upcomingRound := CurrentRound(a.initialRoundTimestamp, a.roundDuration) + 1
-	if bid.Round != upcomingRound {
-		return nil, errors.Wrapf(ErrBadRoundNumber, "wanted %d, got %d", upcomingRound, bid.Round)
-	}
-
-	// Check if the auction is closed.
-	if d, closed := auctionClosed(a.initialRoundTimestamp, a.roundDuration, a.auctionClosingDuration); closed {
-		return nil, errors.Wrapf(ErrBadRoundNumber, "auction is closed, %s since closing", d)
-	}
-
-	// Check bid is higher than reserve price.
-	reservePrice := fetchReservePriceFn()
-	if bid.Amount.Cmp(reservePrice) == -1 {
-		return nil, errors.Wrapf(ErrReservePriceNotMet, "reserve price %s, bid %s", reservePrice.String(), bid.Amount.String())
-	}
-
-	// Validate the signature.
-	packedBidBytes, err := encodeBidValues(
-		a.domainValue,
-		bid.ChainId,
-		bid.AuctionContractAddress,
-		bid.Round,
-		bid.Amount,
-		bid.ExpressLaneController,
-	)
-	if err != nil {
-		return nil, ErrMalformedData
-	}
-	if len(bid.Signature) != 65 {
-		return nil, errors.Wrap(ErrMalformedData, "signature length is not 65")
-	}
-	// Recover the public key.
-	prefixed := crypto.Keccak256(append([]byte(fmt.Sprintf("\x19Ethereum Signed Message:\n%d", len(packedBidBytes))), packedBidBytes...))
-	sigItem := make([]byte, len(bid.Signature))
-	copy(sigItem, bid.Signature)
-	if sigItem[len(sigItem)-1] >= 27 {
-		sigItem[len(sigItem)-1] -= 27
-	}
-	pubkey, err := crypto.SigToPub(prefixed, sigItem)
-	if err != nil {
-		return nil, ErrMalformedData
-	}
-	if !verifySignature(pubkey, packedBidBytes, sigItem) {
-		return nil, ErrWrongSignature
-	}
-	// Check how many bids the bidder has sent in this round and cap according to a limit.
-	bidder := crypto.PubkeyToAddress(*pubkey)
-	a.Lock()
-	numBids, ok := a.bidsPerSenderInRound[bidder]
-	if !ok {
-		a.bidsPerSenderInRound[bidder] = 1
-	}
-	if numBids >= a.maxBidsPerSenderInRound {
-		a.Unlock()
-		return nil, errors.Wrapf(ErrTooManyBids, "bidder %s has already sent the maximum allowed bids = %d in this round", bidder.Hex(), numBids)
-	}
-	a.bidsPerSenderInRound[bidder]++
-	a.Unlock()
-
-	depositBal, err := balanceCheckerFn(&bind.CallOpts{}, bidder)
-	if err != nil {
-		return nil, err
-	}
-	if depositBal.Cmp(new(big.Int)) == 0 {
-		return nil, ErrNotDepositor
-	}
-	if depositBal.Cmp(bid.Amount) < 0 {
-		return nil, errors.Wrapf(ErrInsufficientBalance, "onchain balance %#x, bid amount %#x", depositBal, bid.Amount)
-	}
-	return &validatedBid{
-		expressLaneController:  bid.ExpressLaneController,
-		amount:                 bid.Amount,
-		signature:              bid.Signature,
-		chainId:                bid.ChainId,
-		auctionContractAddress: bid.AuctionContractAddress,
-		round:                  bid.Round,
-		bidder:                 bidder,
-	}, nil
-}
-
-// CurrentRound returns the current round number.
-func CurrentRound(initialRoundTimestamp time.Time, roundDuration time.Duration) uint64 {
-	if roundDuration == 0 {
-		return 0
-	}
-	return uint64(time.Since(initialRoundTimestamp) / roundDuration)
-}
-
-// auctionClosed returns the time since auction was closed and whether the auction is closed.
-func auctionClosed(initialRoundTimestamp time.Time, roundDuration time.Duration, auctionClosingDuration time.Duration) (time.Duration, bool) {
-	if roundDuration == 0 {
-		return 0, true
-	}
-	d := time.Since(initialRoundTimestamp) % roundDuration
-	return d, d > auctionClosingDuration
 }

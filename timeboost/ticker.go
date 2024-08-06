@@ -44,3 +44,20 @@ func (t *auctionCloseTicker) start() {
 		}
 	}
 }
+
+// CurrentRound returns the current round number.
+func CurrentRound(initialRoundTimestamp time.Time, roundDuration time.Duration) uint64 {
+	if roundDuration == 0 {
+		return 0
+	}
+	return uint64(time.Since(initialRoundTimestamp) / roundDuration)
+}
+
+// auctionClosed returns the time since auction was closed and whether the auction is closed.
+func auctionClosed(initialRoundTimestamp time.Time, roundDuration time.Duration, auctionClosingDuration time.Duration) (time.Duration, bool) {
+	if roundDuration == 0 {
+		return 0, true
+	}
+	d := time.Since(initialRoundTimestamp) % roundDuration
+	return d, d > auctionClosingDuration
+}

@@ -2,198 +2,137 @@ package timeboost
 
 import (
 	"context"
-	"crypto/ecdsa"
-	"fmt"
 	"math/big"
+	"sync"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
-	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/p2p"
+	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/offchainlabs/nitro/pubsub"
+	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/stretchr/testify/require"
 )
 
-func TestAuctioneer_validateBid(t *testing.T) {
-	setup := setupAuctionTest(t, context.Background())
-	tests := []struct {
-		name          string
-		bid           *Bid
-		expectedErr   error
-		errMsg        string
-		auctionClosed bool
-	}{
-		{
-			name:        "nil bid",
-			bid:         nil,
-			expectedErr: ErrMalformedData,
-			errMsg:      "nil bid",
-		},
-		{
-			name:        "empty express lane controller address",
-			bid:         &Bid{},
-			expectedErr: ErrMalformedData,
-			errMsg:      "incorrect auction contract address",
-		},
-		{
-			name: "incorrect chain id",
-			bid: &Bid{
-				ExpressLaneController:  common.Address{'b'},
-				AuctionContractAddress: setup.expressLaneAuctionAddr,
-				ChainId:                big.NewInt(50),
-			},
-			expectedErr: ErrWrongChainId,
-			errMsg:      "can not auction for chain id: 50",
-		},
-		{
-			name: "incorrect round",
-			bid: &Bid{
-				ExpressLaneController:  common.Address{'b'},
-				AuctionContractAddress: setup.expressLaneAuctionAddr,
-				ChainId:                big.NewInt(1),
-			},
-			expectedErr: ErrBadRoundNumber,
-			errMsg:      "wanted 1, got 0",
-		},
-		{
-			name: "auction is closed",
-			bid: &Bid{
-				ExpressLaneController:  common.Address{'b'},
-				AuctionContractAddress: setup.expressLaneAuctionAddr,
-				ChainId:                big.NewInt(1),
-				Round:                  1,
-			},
-			expectedErr:   ErrBadRoundNumber,
-			errMsg:        "auction is closed",
-			auctionClosed: true,
-		},
-		{
-			name: "lower than reserved price",
-			bid: &Bid{
-				ExpressLaneController:  common.Address{'b'},
-				AuctionContractAddress: setup.expressLaneAuctionAddr,
-				ChainId:                big.NewInt(1),
-				Round:                  1,
-				Amount:                 big.NewInt(1),
-			},
-			expectedErr: ErrReservePriceNotMet,
-			errMsg:      "reserve price 2, bid 1",
-		},
-		{
-			name: "incorrect signature",
-			bid: &Bid{
-				ExpressLaneController:  common.Address{'b'},
-				AuctionContractAddress: setup.expressLaneAuctionAddr,
-				ChainId:                big.NewInt(1),
-				Round:                  1,
-				Amount:                 big.NewInt(3),
-				Signature:              []byte{'a'},
-			},
-			expectedErr: ErrMalformedData,
-			errMsg:      "signature length is not 65",
-		},
-		{
-			name:        "not a depositor",
-			bid:         buildValidBid(t, setup.expressLaneAuctionAddr),
-			expectedErr: ErrNotDepositor,
-		},
-	}
+func TestBidValidatorAuctioneerRedisStream(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	testSetup := setupAuctionTest(t, ctx)
+	redisURL := redisutil.CreateTestRedis(ctx, t)
 
-	for _, tt := range tests {
-		a := Auctioneer{
-			chainId:                 []*big.Int{big.NewInt(1)},
-			initialRoundTimestamp:   time.Now().Add(-time.Second),
-			reservePrice:            big.NewInt(2),
-			roundDuration:           time.Minute,
-			auctionClosingDuration:  45 * time.Second,
-			auctionContract:         setup.expressLaneAuction,
-			auctionContractAddr:     setup.expressLaneAuctionAddr,
-			bidsPerSenderInRound:    make(map[common.Address]uint8),
-			maxBidsPerSenderInRound: 5,
+	// Set up multiple bid validators that will receive bids via RPC using a bidder client.
+	// They inject their validated bids into a Redis stream that a single auctioneer instance
+	// will then consume.
+	numBidValidators := 3
+	bidValidators := make([]*BidValidator, numBidValidators)
+	chainIds := []*big.Int{testSetup.chainId}
+	for i := 0; i < numBidValidators; i++ {
+		randHttp := getRandomPort(t)
+		stackConf := node.Config{
+			DataDir:             "", // ephemeral.
+			HTTPPort:            randHttp,
+			HTTPModules:         []string{AuctioneerNamespace},
+			HTTPHost:            "localhost",
+			HTTPVirtualHosts:    []string{"localhost"},
+			HTTPTimeouts:        rpc.DefaultHTTPTimeouts,
+			WSPort:              getRandomPort(t),
+			WSModules:           []string{AuctioneerNamespace},
+			WSHost:              "localhost",
+			GraphQLVirtualHosts: []string{"localhost"},
+			P2P: p2p.Config{
+				ListenAddr:  "",
+				NoDial:      true,
+				NoDiscovery: true,
+			},
 		}
-		if tt.auctionClosed {
-			a.roundDuration = 0
-		}
-		t.Run(tt.name, func(t *testing.T) {
-			_, err := a.validateBid(tt.bid, setup.expressLaneAuction.BalanceOf, a.fetchReservePrice)
-			require.ErrorIs(t, err, tt.expectedErr)
-			require.Contains(t, err.Error(), tt.errMsg)
-		})
-	}
-}
-
-func TestAuctioneer_validateBid_perRoundBidLimitReached(t *testing.T) {
-	balanceCheckerFn := func(_ *bind.CallOpts, _ common.Address) (*big.Int, error) {
-		return big.NewInt(10), nil
-	}
-	fetchReservePriceFn := func() *big.Int {
-		return big.NewInt(0)
-	}
-	auctionContractAddr := common.Address{'a'}
-	a := Auctioneer{
-		chainId:                 []*big.Int{big.NewInt(1)},
-		initialRoundTimestamp:   time.Now().Add(-time.Second),
-		reservePrice:            big.NewInt(2),
-		roundDuration:           time.Minute,
-		auctionClosingDuration:  45 * time.Second,
-		bidsPerSenderInRound:    make(map[common.Address]uint8),
-		maxBidsPerSenderInRound: 5,
-		auctionContractAddr:     auctionContractAddr,
-	}
-	privateKey, err := crypto.GenerateKey()
-	require.NoError(t, err)
-	bid := &Bid{
-		ExpressLaneController:  common.Address{'b'},
-		AuctionContractAddress: auctionContractAddr,
-		ChainId:                big.NewInt(1),
-		Round:                  1,
-		Amount:                 big.NewInt(3),
-		Signature:              []byte{'a'},
-	}
-	bidValues, err := encodeBidValues(domainValue, bid.ChainId, bid.AuctionContractAddress, bid.Round, bid.Amount, bid.ExpressLaneController)
-	require.NoError(t, err)
-
-	signature, err := buildSignature(privateKey, bidValues)
-	require.NoError(t, err)
-
-	bid.Signature = signature
-	for i := 0; i < int(a.maxBidsPerSenderInRound)-1; i++ {
-		_, err := a.validateBid(bid, balanceCheckerFn, fetchReservePriceFn)
+		stack, err := node.New(&stackConf)
 		require.NoError(t, err)
+		bidValidator, err := NewBidValidator(
+			chainIds,
+			stack,
+			testSetup.backend.Client(),
+			testSetup.expressLaneAuctionAddr,
+			redisURL,
+			&pubsub.TestProducerConfig,
+		)
+		require.NoError(t, err)
+		require.NoError(t, bidValidator.Initialize(ctx))
+		bidValidator.Start(ctx)
+		bidValidators[i] = bidValidator
 	}
-	_, err = a.validateBid(bid, balanceCheckerFn, fetchReservePriceFn)
-	require.ErrorIs(t, err, ErrTooManyBids)
+	t.Log("Started multiple bid validators")
 
-}
+	// Set up a single auctioneer instance that can consume messages produced
+	// by the bid validator from a redis stream.
+	am, err := NewAuctioneer(
+		testSetup.accounts[0].txOpts,
+		chainIds,
+		testSetup.backend.Client(),
+		testSetup.expressLaneAuctionAddr,
+		redisURL,
+		&pubsub.TestConsumerConfig,
+	)
+	require.NoError(t, err)
+	am.Start(ctx)
+	t.Log("Started auctioneer")
 
-func buildSignature(privateKey *ecdsa.PrivateKey, data []byte) ([]byte, error) {
-	prefixedData := crypto.Keccak256(append([]byte(fmt.Sprintf("\x19Ethereum Signed Message:\n%d", len(data))), data...))
-	signature, err := crypto.Sign(prefixedData, privateKey)
-	if err != nil {
-		return nil, err
+	// Now, we set up bidder clients for Alice, Bob, and Charlie.
+	aliceAddr := testSetup.accounts[1].txOpts.From
+	bobAddr := testSetup.accounts[2].txOpts.From
+	charlieAddr := testSetup.accounts[3].txOpts.From
+	alice := setupBidderClient(t, ctx, "alice", testSetup.accounts[1], testSetup, bidValidators[0].stack.HTTPEndpoint())
+	bob := setupBidderClient(t, ctx, "bob", testSetup.accounts[2], testSetup, bidValidators[1].stack.HTTPEndpoint())
+	charlie := setupBidderClient(t, ctx, "charlie", testSetup.accounts[3], testSetup, bidValidators[2].stack.HTTPEndpoint())
+	require.NoError(t, alice.Deposit(ctx, big.NewInt(20)))
+	require.NoError(t, bob.Deposit(ctx, big.NewInt(20)))
+	require.NoError(t, charlie.Deposit(ctx, big.NewInt(20)))
+
+	info, err := alice.auctionContract.RoundTimingInfo(&bind.CallOpts{})
+	require.NoError(t, err)
+	timeToWait := time.Until(time.Unix(int64(info.OffsetTimestamp), 0))
+	t.Logf("Waiting for %v to start the bidding round, %v", timeToWait, time.Now())
+	<-time.After(timeToWait)
+	time.Sleep(time.Millisecond * 250) // Add 1/4 of a second of wait so that we are definitely within a round.
+
+	// Alice, Bob, and Charlie will submit bids to the three different bid validators.
+	var wg sync.WaitGroup
+	start := time.Now()
+	for i := 1; i <= 4; i++ {
+		wg.Add(3)
+		go func(w *sync.WaitGroup, ii int) {
+			defer w.Done()
+			alice.Bid(ctx, big.NewInt(int64(ii)), aliceAddr)
+		}(&wg, i)
+		go func(w *sync.WaitGroup, ii int) {
+			defer w.Done()
+			bob.Bid(ctx, big.NewInt(int64(ii)+1), bobAddr) // Bob bids 1 wei higher than Alice.
+		}(&wg, i)
+		go func(w *sync.WaitGroup, ii int) {
+			defer w.Done()
+			charlie.Bid(ctx, big.NewInt(int64(ii)+2), charlieAddr) // Charlie bids 2 wei higher than the Bob.
+		}(&wg, i)
 	}
-	return signature, nil
-}
+	wg.Wait()
+	// We expect that a final submission from each fails, as the bid limit is exceeded.
+	_, err = alice.Bid(ctx, big.NewInt(6), aliceAddr)
+	require.ErrorContains(t, err, ErrTooManyBids.Error())
+	_, err = bob.Bid(ctx, big.NewInt(7), bobAddr) // Bob bids 1 wei higher than Alice.
+	require.ErrorContains(t, err, ErrTooManyBids.Error())
+	_, err = charlie.Bid(ctx, big.NewInt(8), charlieAddr) // Charlie bids 2 wei higher than the Bob.
+	require.ErrorContains(t, err, ErrTooManyBids.Error())
 
-func buildValidBid(t *testing.T, auctionContractAddr common.Address) *Bid {
-	privateKey, err := crypto.GenerateKey()
-	require.NoError(t, err)
-	b := &Bid{
-		ExpressLaneController:  common.Address{'b'},
-		AuctionContractAddress: auctionContractAddr,
-		ChainId:                big.NewInt(1),
-		Round:                  1,
-		Amount:                 big.NewInt(3),
-		Signature:              []byte{'a'},
-	}
+	t.Log("Submitted bids", time.Now(), time.Since(start))
+	time.Sleep(time.Second * 15)
 
-	bidValues, err := encodeBidValues(domainValue, b.ChainId, b.AuctionContractAddress, b.Round, b.Amount, b.ExpressLaneController)
-	require.NoError(t, err)
-
-	signature, err := buildSignature(privateKey, bidValues)
-	require.NoError(t, err)
-
-	b.Signature = signature
-
-	return b
+	// We verify that the auctioneer has received bids from the single Redis stream.
+	// We also verify the top two bids are those we expect.
+	require.Equal(t, 3, len(am.bidCache.bidsByExpressLaneControllerAddr))
+	result := am.bidCache.topTwoBids()
+	require.Equal(t, result.firstPlace.Amount, big.NewInt(6))
+	require.Equal(t, result.firstPlace.Bidder, charlieAddr)
+	require.Equal(t, result.secondPlace.Amount, big.NewInt(5))
+	require.Equal(t, result.secondPlace.Bidder, bobAddr)
 }

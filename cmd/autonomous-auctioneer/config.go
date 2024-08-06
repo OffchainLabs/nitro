@@ -16,7 +16,14 @@ import (
 	flag "github.com/spf13/pflag"
 )
 
-type AuctioneerConfig struct {
+const (
+	bidValidatorMode         = "bid-validator"
+	autonomousAuctioneerMode = "autonomous-auctioneer"
+)
+
+type AutonomousAuctioneerConfig struct {
+	Mode          string                          `koanf:"mode"`
+	Persistent    conf.PersistentConfig           `koanf:"persistent"`
 	Conf          genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
 	LogLevel      string                          `koanf:"log-level" reload:"hot"`
 	LogType       string                          `koanf:"log-type" reload:"hot"`
@@ -53,8 +60,9 @@ var IPCConfigDefault = genericconf.IPCConfig{
 	Path: "",
 }
 
-var AuctioneerConfigDefault = AuctioneerConfig{
+var AutonomousAuctioneerConfigDefault = AutonomousAuctioneerConfig{
 	Conf:          genericconf.ConfConfigDefault,
+	Mode:          autonomousAuctioneerMode,
 	LogLevel:      "INFO",
 	LogType:       "plaintext",
 	HTTP:          HTTPConfigDefault,
@@ -63,32 +71,33 @@ var AuctioneerConfigDefault = AuctioneerConfig{
 	Metrics:       false,
 	MetricsServer: genericconf.MetricsServerConfigDefault,
 	PProf:         false,
+	Persistent:    conf.PersistentConfigDefault,
 	PprofCfg:      genericconf.PProfDefault,
 }
 
 func AuctioneerConfigAddOptions(f *flag.FlagSet) {
 	genericconf.ConfConfigAddOptions("conf", f)
-	f.String("log-level", AuctioneerConfigDefault.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
-	f.String("log-type", AuctioneerConfigDefault.LogType, "log type (plaintext or json)")
+	f.String("log-level", AutonomousAuctioneerConfigDefault.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
+	f.String("log-type", AutonomousAuctioneerConfigDefault.LogType, "log type (plaintext or json)")
 	genericconf.FileLoggingConfigAddOptions("file-logging", f)
 	conf.PersistentConfigAddOptions("persistent", f)
 	genericconf.HTTPConfigAddOptions("http", f)
 	genericconf.WSConfigAddOptions("ws", f)
 	genericconf.IPCConfigAddOptions("ipc", f)
 	genericconf.AuthRPCConfigAddOptions("auth", f)
-	f.Bool("metrics", AuctioneerConfigDefault.Metrics, "enable metrics")
+	f.Bool("metrics", AutonomousAuctioneerConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
-	f.Bool("pprof", AuctioneerConfigDefault.PProf, "enable pprof")
+	f.Bool("pprof", AutonomousAuctioneerConfigDefault.PProf, "enable pprof")
 	genericconf.PProfAddOptions("pprof-cfg", f)
 }
 
-func (c *AuctioneerConfig) ShallowClone() *AuctioneerConfig {
-	config := &AuctioneerConfig{}
+func (c *AutonomousAuctioneerConfig) ShallowClone() *AutonomousAuctioneerConfig {
+	config := &AutonomousAuctioneerConfig{}
 	*config = *c
 	return config
 }
 
-func (c *AuctioneerConfig) CanReload(new *AuctioneerConfig) error {
+func (c *AutonomousAuctioneerConfig) CanReload(new *AutonomousAuctioneerConfig) error {
 	var check func(node, other reflect.Value, path string)
 	var err error
 
@@ -120,11 +129,11 @@ func (c *AuctioneerConfig) CanReload(new *AuctioneerConfig) error {
 	return err
 }
 
-func (c *AuctioneerConfig) GetReloadInterval() time.Duration {
+func (c *AutonomousAuctioneerConfig) GetReloadInterval() time.Duration {
 	return c.Conf.ReloadInterval
 }
 
-func (c *AuctioneerConfig) Validate() error {
+func (c *AutonomousAuctioneerConfig) Validate() error {
 	return nil
 }
 

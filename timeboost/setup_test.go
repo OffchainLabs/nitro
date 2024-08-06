@@ -35,7 +35,6 @@ type auctionSetup struct {
 func setupAuctionTest(t testing.TB, ctx context.Context) *auctionSetup {
 	accs, backend := setupAccounts(10)
 
-	// Advance the chain in the background at Arbitrum One's block time of 250ms.
 	go func() {
 		tick := time.NewTicker(time.Second)
 		defer tick.Stop()
@@ -225,7 +224,7 @@ func mintTokens(ctx context.Context,
 	erc20 *bindings.MockERC20,
 ) {
 	for i := 0; i < len(accs); i++ {
-		tx, err := erc20.Mint(opts, accs[i].accountAddr, big.NewInt(10))
+		tx, err := erc20.Mint(opts, accs[i].accountAddr, big.NewInt(100))
 		if err != nil {
 			panic(err)
 		}
