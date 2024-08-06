@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/log"
 
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -103,6 +104,7 @@ func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 type BOLDStaker struct {
 	stopwaiter.StopWaiter
+	config             *BoldConfig
 	chalManager        *challengemanager.Manager
 	blockValidator     *BlockValidator
 	rollupAddress      common.Address
@@ -131,6 +133,7 @@ func newBOLDStaker(
 		return nil, err
 	}
 	return &BOLDStaker{
+		config:          config,
 		chalManager:     manager,
 		blockValidator:  blockValidator,
 		rollupAddress:   rollupAddress,
@@ -183,6 +186,13 @@ func (b *BOLDStaker) Initialize(ctx context.Context) error {
 func (b *BOLDStaker) Start(ctxIn context.Context) {
 	b.StopWaiter.Start(ctxIn, b)
 	b.chalManager.Start(ctxIn)
+	b.CallIteratively(func(ctx context.Context) time.Duration {
+		err := b.updateBlockValidatorModuleRoot(ctx)
+		if err != nil {
+			log.Warn("error updating latest wasm module root", "err", err)
+		}
+		return time.Duration(b.config.AssertionPostingIntervalSeconds)
+	})
 }
 
 func (b *BOLDStaker) StopAndWait() {
