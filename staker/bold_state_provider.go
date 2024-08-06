@@ -82,9 +82,9 @@ func NewBOLDStateProvider(
 	return sp, nil
 }
 
-// Produces the L2 execution state to assert to after the previous assertion state.
-// Returns either the state at the batch count maxInboxCount or the state maxNumberOfBlocks after previousBlockHash,
-// whichever is an earlier state. If previousBlockHash is zero, this function simply returns the state at maxInboxCount.
+// ExecutionStateAfterPreviousState Produces the L2 execution state for the next assertion.
+// Returns the state at maxInboxCount or maxNumberOfBlocks after the previous state, whichever is earlier.
+// If previousGlobalState is nil, defaults to returning the state at maxInboxCount.
 // TODO: Check the block validator has validated the execution state we are proposing.
 func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 	ctx context.Context,
