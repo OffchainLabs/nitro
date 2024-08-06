@@ -143,9 +143,6 @@ func (bv *BidValidator) Start(ctx_in context.Context) {
 		log.Crit("Bid validator not yet initialized by calling Initialize(ctx)")
 	}
 	bv.producer.Start(ctx_in)
-	if err := bv.stack.Start(); err != nil {
-		log.Crit("Failed to start bid validator", "error", err)
-	}
 }
 
 type BidValidatorAPI struct {

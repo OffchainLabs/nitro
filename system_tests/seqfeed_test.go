@@ -472,7 +472,7 @@ func setupExpressLaneAuction(
 	}
 	stack, err := node.New(&stackConf)
 	Require(t, err)
-	auctioneer, err := timeboost.NewAuctioneer(
+	auctioneer, err := timeboost.NewAuctioneerServer(
 		&auctionContractOpts, []*big.Int{chainId}, seqClient, proxyAddr, "", nil,
 	)
 	Require(t, err)

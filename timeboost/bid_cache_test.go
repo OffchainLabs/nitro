@@ -232,7 +232,7 @@ import (
 // 	}
 // }
 
-func setupAuctioneer(t testing.TB, ctx context.Context, testSetup *auctionSetup) (*Auctioneer, string) {
+func setupAuctioneer(t testing.TB, ctx context.Context, testSetup *auctionSetup) (*AuctioneerServer, string) {
 	// Set up a new auctioneer instance that can validate bids.
 	// Set up the auctioneer RPC service.
 	randHttp := getRandomPort(t)
@@ -255,7 +255,7 @@ func setupAuctioneer(t testing.TB, ctx context.Context, testSetup *auctionSetup)
 	}
 	stack, err := node.New(&stackConf)
 	require.NoError(t, err)
-	am, err := NewAuctioneer(
+	am, err := NewAuctioneerServer(
 		testSetup.accounts[0].txOpts, []*big.Int{testSetup.chainId}, testSetup.backend.Client(), testSetup.expressLaneAuctionAddr, "", nil,
 	)
 	require.NoError(t, err)

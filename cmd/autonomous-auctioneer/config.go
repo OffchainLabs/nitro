@@ -16,25 +16,21 @@ import (
 	flag "github.com/spf13/pflag"
 )
 
-const (
-	bidValidatorMode         = "bid-validator"
-	autonomousAuctioneerMode = "autonomous-auctioneer"
-)
-
 type AutonomousAuctioneerConfig struct {
-	Mode          string                          `koanf:"mode"`
-	Persistent    conf.PersistentConfig           `koanf:"persistent"`
-	Conf          genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
-	LogLevel      string                          `koanf:"log-level" reload:"hot"`
-	LogType       string                          `koanf:"log-type" reload:"hot"`
-	FileLogging   genericconf.FileLoggingConfig   `koanf:"file-logging" reload:"hot"`
-	HTTP          genericconf.HTTPConfig          `koanf:"http"`
-	WS            genericconf.WSConfig            `koanf:"ws"`
-	IPC           genericconf.IPCConfig           `koanf:"ipc"`
-	Metrics       bool                            `koanf:"metrics"`
-	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
-	PProf         bool                            `koanf:"pprof"`
-	PprofCfg      genericconf.PProf               `koanf:"pprof-cfg"`
+	Persistent        conf.PersistentConfig           `koanf:"persistent"`
+	Conf              genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
+	LogLevel          string                          `koanf:"log-level" reload:"hot"`
+	LogType           string                          `koanf:"log-type" reload:"hot"`
+	FileLogging       genericconf.FileLoggingConfig   `koanf:"file-logging" reload:"hot"`
+	HTTP              genericconf.HTTPConfig          `koanf:"http"`
+	WS                genericconf.WSConfig            `koanf:"ws"`
+	IPC               genericconf.IPCConfig           `koanf:"ipc"`
+	Metrics           bool                            `koanf:"metrics"`
+	MetricsServer     genericconf.MetricsServerConfig `koanf:"metrics-server"`
+	PProf             bool                            `koanf:"pprof"`
+	PprofCfg          genericconf.PProf               `koanf:"pprof-cfg"`
+	ParentChainWallet genericconf.WalletConfig        `koanf:"wallet"` // TODO: Move into auctioneer config.
+
 }
 
 var HTTPConfigDefault = genericconf.HTTPConfig{
@@ -62,7 +58,6 @@ var IPCConfigDefault = genericconf.IPCConfig{
 
 var AutonomousAuctioneerConfigDefault = AutonomousAuctioneerConfig{
 	Conf:          genericconf.ConfConfigDefault,
-	Mode:          autonomousAuctioneerMode,
 	LogLevel:      "INFO",
 	LogType:       "plaintext",
 	HTTP:          HTTPConfigDefault,

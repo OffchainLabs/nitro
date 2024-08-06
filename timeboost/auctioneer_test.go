@@ -67,7 +67,7 @@ func TestBidValidatorAuctioneerRedisStream(t *testing.T) {
 
 	// Set up a single auctioneer instance that can consume messages produced
 	// by the bid validator from a redis stream.
-	am, err := NewAuctioneer(
+	am, err := NewAuctioneerServer(
 		testSetup.accounts[0].txOpts,
 		chainIds,
 		testSetup.backend.Client(),

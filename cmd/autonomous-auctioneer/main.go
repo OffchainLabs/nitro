@@ -11,13 +11,14 @@ import (
 
 	flag "github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/metrics/exp"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
-	"github.com/offchainlabs/nitro/validator/valnode"
+	"github.com/offchainlabs/nitro/timeboost"
 )
 
 func main() {
@@ -96,15 +97,13 @@ func mainImpl() int {
 		stackConf.JWTSecret = filename
 	}
 
-	log.Info("Running Arbitrum nitro validation node", "revision", vcsRevision, "vcs.time", vcsTime)
-
 	liveNodeConfig := genericconf.NewLiveConfig[*AutonomousAuctioneerConfig](args, nodeConfig, parseAuctioneerArgs)
 	liveNodeConfig.SetOnReloadHook(func(oldCfg *AutonomousAuctioneerConfig, newCfg *AutonomousAuctioneerConfig) error {
 
 		return genericconf.InitLog(newCfg.LogType, newCfg.LogLevel, &newCfg.FileLogging, pathResolver(nodeConfig.Persistent.LogDir))
 	})
 
-	valnode.EnsureValidationExposedViaAuthRPC(&stackConf)
+	timeboost.EnsureBidValidatorExposedViaRPC(&stackConf)
 
 	stack, err := node.New(&stackConf)
 	if err != nil {
@@ -118,7 +117,7 @@ func mainImpl() int {
 	}
 
 	fatalErrChan := make(chan error, 10)
-
+	log.Info("Running Arbitrum ", "revision", vcsRevision, "vcs.time", vcsTime)
 	// valNode, err := valnode.CreateValidationNode(
 	// 	func() *valnode.Config { return &liveNodeConfig.Get().Validation },
 	// 	stack,
@@ -139,6 +138,43 @@ func mainImpl() int {
 		fatalErrChan <- fmt.Errorf("error starting stack: %w", err)
 	}
 	defer stack.Close()
+
+	if nodeConfig.Mode == autonomousAuctioneerMode {
+		auctioneer, err := timeboost.NewAuctioneerServer(
+			nil,
+			nil,
+			nil,
+			common.Address{},
+			"",
+			nil,
+		)
+		if err != nil {
+			log.Error("Error creating new auctioneer", "error", err)
+			return 1
+		}
+		auctioneer.Start(ctx)
+	} else if nodeConfig.Mode == bidValidatorMode {
+		bidValidator, err := timeboost.NewBidValidator(
+			nil,
+			nil,
+			nil,
+			common.Address{},
+			"",
+			nil,
+		)
+		if err != nil {
+			log.Error("Error creating new auctioneer", "error", err)
+			return 1
+		}
+		if err = bidValidator.Initialize(ctx); err != nil {
+			log.Error("error initializing bid validator", "err", err)
+			return 1
+		}
+		bidValidator.Start(ctx)
+	} else {
+		log.Crit("Unknown mode, should be either autonomous-auctioneer or bid-validator", "mode", nodeConfig.Mode)
+
+	}
 
 	liveNodeConfig.Start(ctx)
 	defer liveNodeConfig.StopAndWait()

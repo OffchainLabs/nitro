@@ -34,7 +34,7 @@ func init() {
 	domainValue = hash.Sum(nil)
 }
 
-type AuctioneerConfig struct {
+type AuctioneerServerConfig struct {
 	RedisURL       string                `koanf:"redis-url"`
 	ConsumerConfig pubsub.ConsumerConfig `koanf:"consumer-config"`
 	// Timeout on polling for existence of each redis stream.
@@ -42,14 +42,14 @@ type AuctioneerConfig struct {
 	StreamPrefix  string        `koanf:"stream-prefix"`
 }
 
-var DefaultAuctioneerConfig = AuctioneerConfig{
+var DefaultAuctioneerServerConfig = AuctioneerServerConfig{
 	RedisURL:       "",
 	StreamPrefix:   "",
 	ConsumerConfig: pubsub.DefaultConsumerConfig,
 	StreamTimeout:  10 * time.Minute,
 }
 
-var TestAuctioneerConfig = AuctioneerConfig{
+var TestAuctioneerServerConfig = AuctioneerServerConfig{
 	RedisURL:       "",
 	StreamPrefix:   "test-",
 	ConsumerConfig: pubsub.TestConsumerConfig,
@@ -58,18 +58,18 @@ var TestAuctioneerConfig = AuctioneerConfig{
 
 func AuctioneerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	pubsub.ConsumerConfigAddOptions(prefix+".consumer-config", f)
-	f.String(prefix+".redis-url", DefaultAuctioneerConfig.RedisURL, "url of redis server")
-	f.String(prefix+".stream-prefix", DefaultAuctioneerConfig.StreamPrefix, "prefix for stream name")
-	f.Duration(prefix+".stream-timeout", DefaultAuctioneerConfig.StreamTimeout, "Timeout on polling for existence of redis streams")
+	f.String(prefix+".redis-url", DefaultAuctioneerServerConfig.RedisURL, "url of redis server")
+	f.String(prefix+".stream-prefix", DefaultAuctioneerServerConfig.StreamPrefix, "prefix for stream name")
+	f.Duration(prefix+".stream-timeout", DefaultAuctioneerServerConfig.StreamTimeout, "Timeout on polling for existence of redis streams")
 }
 
-func (cfg *AuctioneerConfig) Enabled() bool {
+func (cfg *AuctioneerServerConfig) Enabled() bool {
 	return cfg.RedisURL != ""
 }
 
-// Auctioneer is a struct that represents an autonomous auctioneer.
+// AuctioneerServer is a struct that represents an autonomous auctioneer.
 // It is responsible for receiving bids, validating them, and resolving auctions.
-type Auctioneer struct {
+type AuctioneerServer struct {
 	stopwaiter.StopWaiter
 	consumer               *pubsub.Consumer[*JsonValidatedBid, error]
 	txOpts                 *bind.TransactOpts
@@ -84,15 +84,15 @@ type Auctioneer struct {
 	streamTimeout          time.Duration
 }
 
-// NewAuctioneer creates a new autonomous auctioneer struct.
-func NewAuctioneer(
+// NewAuctioneerServer creates a new autonomous auctioneer struct.
+func NewAuctioneerServer(
 	txOpts *bind.TransactOpts,
 	chainId []*big.Int,
 	client Client,
 	auctionContractAddr common.Address,
 	redisURL string,
 	consumerCfg *pubsub.ConsumerConfig,
-) (*Auctioneer, error) {
+) (*AuctioneerServer, error) {
 	if redisURL == "" {
 		return nil, fmt.Errorf("redis url cannot be empty")
 	}
@@ -115,7 +115,7 @@ func NewAuctioneer(
 	auctionClosingDuration := time.Duration(roundTimingInfo.AuctionClosingSeconds) * time.Second
 	initialTimestamp := time.Unix(int64(roundTimingInfo.OffsetTimestamp), 0)
 	roundDuration := time.Duration(roundTimingInfo.RoundDurationSeconds) * time.Second
-	return &Auctioneer{
+	return &AuctioneerServer{
 		txOpts:                 txOpts,
 		client:                 client,
 		consumer:               c,
@@ -128,7 +128,7 @@ func NewAuctioneer(
 		roundDuration:          roundDuration,
 	}, nil
 }
-func (a *Auctioneer) Start(ctx_in context.Context) {
+func (a *AuctioneerServer) Start(ctx_in context.Context) {
 	a.StopWaiter.Start(ctx_in, a)
 	// Channel that consumer uses to indicate its readiness.
 	readyStream := make(chan struct{}, 1)
@@ -237,7 +237,7 @@ func (a *Auctioneer) Start(ctx_in context.Context) {
 }
 
 // Resolves the auction by calling the smart contract with the top two bids.
-func (a *Auctioneer) resolveAuction(ctx context.Context) error {
+func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 	upcomingRound := CurrentRound(a.initialRoundTimestamp, a.roundDuration) + 1
 	result := a.bidCache.topTwoBids()
 	first := result.firstPlace
