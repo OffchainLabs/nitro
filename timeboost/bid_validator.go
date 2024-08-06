@@ -19,7 +19,41 @@ import (
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/pkg/errors"
+	"github.com/spf13/pflag"
 )
+
+type BidValidatorConfig struct {
+	Enabled        bool                  `koanf:"enabled"`
+	RedisURL       string                `koanf:"redis-url"`
+	ConsumerConfig pubsub.ConsumerConfig `koanf:"consumer-config"`
+	// Timeout on polling for existence of each redis stream.
+	StreamTimeout time.Duration `koanf:"stream-timeout"`
+	StreamPrefix  string        `koanf:"stream-prefix"`
+}
+
+var DefaultBidValidatorConfig = BidValidatorConfig{
+	Enabled:        true,
+	RedisURL:       "",
+	StreamPrefix:   "",
+	ConsumerConfig: pubsub.DefaultConsumerConfig,
+	StreamTimeout:  10 * time.Minute,
+}
+
+var TestBidValidatorConfig = BidValidatorConfig{
+	Enabled:        true,
+	RedisURL:       "",
+	StreamPrefix:   "test-",
+	ConsumerConfig: pubsub.TestConsumerConfig,
+	StreamTimeout:  time.Minute,
+}
+
+func BidValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Bool(prefix+".enabled", DefaultBidValidatorConfig.Enabled, "enable bid validator")
+	pubsub.ConsumerConfigAddOptions(prefix+".consumer-config", f)
+	f.String(prefix+".redis-url", DefaultBidValidatorConfig.RedisURL, "url of redis server")
+	f.String(prefix+".stream-prefix", DefaultBidValidatorConfig.StreamPrefix, "prefix for stream name")
+	f.Duration(prefix+".stream-timeout", DefaultBidValidatorConfig.StreamTimeout, "Timeout on polling for existence of redis streams")
+}
 
 type BidValidator struct {
 	stopwaiter.StopWaiter

@@ -35,6 +35,7 @@ func init() {
 }
 
 type AuctioneerServerConfig struct {
+	Enabled        bool                  `koanf:"enabled"`
 	RedisURL       string                `koanf:"redis-url"`
 	ConsumerConfig pubsub.ConsumerConfig `koanf:"consumer-config"`
 	// Timeout on polling for existence of each redis stream.
@@ -43,6 +44,7 @@ type AuctioneerServerConfig struct {
 }
 
 var DefaultAuctioneerServerConfig = AuctioneerServerConfig{
+	Enabled:        true,
 	RedisURL:       "",
 	StreamPrefix:   "",
 	ConsumerConfig: pubsub.DefaultConsumerConfig,
@@ -50,6 +52,7 @@ var DefaultAuctioneerServerConfig = AuctioneerServerConfig{
 }
 
 var TestAuctioneerServerConfig = AuctioneerServerConfig{
+	Enabled:        true,
 	RedisURL:       "",
 	StreamPrefix:   "test-",
 	ConsumerConfig: pubsub.TestConsumerConfig,
@@ -57,14 +60,11 @@ var TestAuctioneerServerConfig = AuctioneerServerConfig{
 }
 
 func AuctioneerConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	f.Bool(prefix+".enabled", DefaultAuctioneerServerConfig.Enabled, "enable auctioneer server")
 	pubsub.ConsumerConfigAddOptions(prefix+".consumer-config", f)
 	f.String(prefix+".redis-url", DefaultAuctioneerServerConfig.RedisURL, "url of redis server")
 	f.String(prefix+".stream-prefix", DefaultAuctioneerServerConfig.StreamPrefix, "prefix for stream name")
 	f.Duration(prefix+".stream-timeout", DefaultAuctioneerServerConfig.StreamTimeout, "Timeout on polling for existence of redis streams")
-}
-
-func (cfg *AuctioneerServerConfig) Enabled() bool {
-	return cfg.RedisURL != ""
 }
 
 // AuctioneerServer is a struct that represents an autonomous auctioneer.
