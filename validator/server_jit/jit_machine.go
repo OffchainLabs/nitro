@@ -12,12 +12,12 @@ import (
 	"net"
 	"os"
 	"os/exec"
-	"runtime"
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
+	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -212,13 +212,14 @@ func (machine *JitMachine) prove(
 		}
 	}
 
-	userWasms := entry.UserWasms[runtime.GOARCH]
+	localTarget := programs.LocalTargetName()
+	userWasms := entry.UserWasms[localTarget]
 
 	// if there are user wasms, but only for wrong architecture - error
 	if len(userWasms) == 0 {
 		for arch, userWasms := range entry.UserWasms {
 			if len(userWasms) != 0 {
-				return state, fmt.Errorf("bad stylus arch for validation input. got: %v, expected: %v", arch, runtime.GOARCH)
+				return state, fmt.Errorf("bad stylus arch for validation input. got: %v, expected: %v", arch, localTarget)
 			}
 		}
 	}
