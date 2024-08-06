@@ -7,8 +7,9 @@ package util
 import (
 	"errors"
 	"fmt"
-	"github.com/ethereum/go-ethereum/core/tracing"
 	"math/big"
+
+	"github.com/ethereum/go-ethereum/core/tracing"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -29,6 +30,34 @@ func TransferBalance(
 	if amount.Sign() < 0 {
 		panic(fmt.Sprintf("Tried to transfer negative amount %v from %v to %v", amount, from, to))
 	}
+	if tracer := evm.Config.Tracer; tracer != nil {
+		if evm.Depth() != 0 && scenario != TracingDuringEVM {
+			// A non-zero depth implies this transfer is occurring inside EVM execution
+			log.Error("Tracing scenario mismatch", "scenario", scenario, "depth", evm.Depth())
+			return errors.New("tracing scenario mismatch")
+		}
+
+		if scenario != TracingDuringEVM {
+			tracer.CaptureArbitrumTransfer(from, to, amount, scenario == TracingBeforeEVM, purpose)
+		} else {
+			fromCopy := from
+			toCopy := to
+			if fromCopy == nil {
+				fromCopy = &common.Address{}
+			}
+			if toCopy == nil {
+				toCopy = &common.Address{}
+			}
+
+			info := &TracingInfo{
+				Tracer:   evm.Config.Tracer,
+				Scenario: scenario,
+				Contract: vm.NewContract(addressHolder{*toCopy}, addressHolder{*fromCopy}, uint256.NewInt(0), 0),
+				Depth:    evm.Depth(),
+			}
+			info.MockCall([]byte{}, 0, *fromCopy, *toCopy, amount)
+		}
+	}
 	if from != nil {
 		balance := evm.StateDB.GetBalance(*from)
 		if arbmath.BigLessThan(balance.ToBig(), amount) {
@@ -42,33 +71,6 @@ func TransferBalance(
 	}
 	if to != nil {
 		evm.StateDB.AddBalance(*to, uint256.MustFromBig(amount), tracing.BalanceChangeTransfer)
-	}
-	if tracer := evm.Config.Tracer; tracer != nil {
-		if evm.Depth() != 0 && scenario != TracingDuringEVM {
-			// A non-zero depth implies this transfer is occurring inside EVM execution
-			log.Error("Tracing scenario mismatch", "scenario", scenario, "depth", evm.Depth())
-			return errors.New("tracing scenario mismatch")
-		}
-
-		if scenario != TracingDuringEVM {
-			tracer.CaptureArbitrumTransfer(from, to, amount, scenario == TracingBeforeEVM, purpose)
-			return nil
-		}
-
-		if from == nil {
-			from = &common.Address{}
-		}
-		if to == nil {
-			to = &common.Address{}
-		}
-
-		info := &TracingInfo{
-			Tracer:   evm.Config.Tracer,
-			Scenario: scenario,
-			Contract: vm.NewContract(addressHolder{*to}, addressHolder{*from}, uint256.NewInt(0), 0),
-			Depth:    evm.Depth(),
-		}
-		info.MockCall([]byte{}, 0, *from, *to, amount)
 	}
 	return nil
 }
