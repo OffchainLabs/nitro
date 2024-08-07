@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/offchainlabs/nitro/cmd/dbconv/dbconv"
@@ -20,7 +21,9 @@ func TestDatabaseConversion(t *testing.T) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.l2StackConfig.DBEngine = "leveldb"
 	builder.l2StackConfig.Name = "testl2"
-	builder.execConfig.Caching.Archive = true
+	if builder.execConfig.Caching.StateScheme == rawdb.HashScheme {
+		builder.execConfig.Caching.Archive = true
+	}
 	_ = builder.Build(t)
 	dataDir := builder.dataDir
 	l2CleanupDone := false
