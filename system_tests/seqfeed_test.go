@@ -26,13 +26,16 @@ import (
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcaster/backlog"
 	"github.com/offchainlabs/nitro/broadcaster/message"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/execution/gethexec"
+	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/relay"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/timeboost/bindings"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/wsbroadcastserver"
@@ -305,7 +308,7 @@ func setupExpressLaneAuction(
 
 	builderSeq.l2StackConfig.HTTPHost = "localhost"
 	builderSeq.l2StackConfig.HTTPPort = 9567
-	builderSeq.l2StackConfig.HTTPModules = []string{"eth", "arb", "debug", "timeboost"}
+	builderSeq.l2StackConfig.HTTPModules = []string{"eth", "arb", "debug", "timeboost", "auctioneer"}
 	builderSeq.nodeConfig.Feed.Output = *newBroadcasterConfigTest()
 	builderSeq.execConfig.Sequencer.Enable = true
 	builderSeq.execConfig.Sequencer.Timeboost = gethexec.TimeboostConfig{
@@ -444,13 +447,11 @@ func setupExpressLaneAuction(
 		t.Fatal(err)
 	}
 
-	builderSeq.L2.ExecNode.Sequencer.StartExpressLane(ctx, proxyAddr)
+	builderSeq.L2.ExecNode.Sequencer.StartExpressLane(ctx, proxyAddr, seqInfo.GetAddress("AuctionContract"))
 	t.Log("Started express lane service in sequencer")
 
 	// Set up an autonomous auction contract service that runs in the background in this test.
-	auctionContractOpts := seqInfo.GetDefaultTransactOpts("AuctionContract", ctx)
-	chainId, err := seqClient.ChainID(ctx)
-	Require(t, err)
+	redisURL := redisutil.CreateTestRedis(ctx, t)
 
 	// Set up the auctioneer RPC service.
 	stackConf := node.Config{
@@ -472,13 +473,41 @@ func setupExpressLaneAuction(
 	}
 	stack, err := node.New(&stackConf)
 	Require(t, err)
-	auctioneer, err := timeboost.NewAuctioneerServer(
-		&auctionContractOpts, []*big.Int{chainId}, seqClient, proxyAddr, "", nil,
+	cfg := &timeboost.BidValidatorConfig{
+		SequencerEndpoint:      "http://localhost:9567",
+		AuctionContractAddress: proxyAddr.Hex(),
+		RedisURL:               redisURL,
+		ProducerConfig:         pubsub.TestProducerConfig,
+	}
+	fetcher := func() *timeboost.BidValidatorConfig {
+		return cfg
+	}
+	bidValidator, err := timeboost.NewBidValidator(
+		ctx, stack, fetcher,
 	)
 	Require(t, err)
-
-	go auctioneer.Start(ctx)
 	Require(t, stack.Start())
+	Require(t, bidValidator.Initialize(ctx))
+	bidValidator.Start(ctx)
+
+	auctioneerCfg := &timeboost.AuctioneerServerConfig{
+		SequencerEndpoint:      "http://localhost:9567",
+		AuctionContractAddress: proxyAddr.Hex(),
+		RedisURL:               redisURL,
+		ConsumerConfig:         pubsub.TestConsumerConfig,
+		Wallet: genericconf.WalletConfig{
+			PrivateKey: fmt.Sprintf("00%x", seqInfo.Accounts["AuctionContract"].PrivateKey.D.Bytes()),
+		},
+	}
+	auctioneerFetcher := func() *timeboost.AuctioneerServerConfig {
+		return auctioneerCfg
+	}
+	am, err := timeboost.NewAuctioneerServer(
+		ctx,
+		auctioneerFetcher,
+	)
+	Require(t, err)
+	am.Start(ctx)
 
 	// Set up a bidder client for Alice and Bob.
 	alicePriv := seqInfo.Accounts["Alice"].PrivateKey

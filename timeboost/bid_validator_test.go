@@ -101,7 +101,7 @@ func TestBidValidator_validateBid(t *testing.T) {
 
 	for _, tt := range tests {
 		bv := BidValidator{
-			chainId:                 []*big.Int{big.NewInt(1)},
+			chainId:                 big.NewInt(1),
 			initialRoundTimestamp:   time.Now().Add(-time.Second),
 			reservePrice:            big.NewInt(2),
 			roundDuration:           time.Minute,
@@ -131,7 +131,7 @@ func TestBidValidator_validateBid_perRoundBidLimitReached(t *testing.T) {
 	}
 	auctionContractAddr := common.Address{'a'}
 	bv := BidValidator{
-		chainId:                 []*big.Int{big.NewInt(1)},
+		chainId:                 big.NewInt(1),
 		initialRoundTimestamp:   time.Now().Add(-time.Second),
 		reservePrice:            big.NewInt(2),
 		roundDuration:           time.Minute,

@@ -28,7 +28,6 @@ type BidValidatorConfigFetcher func() *BidValidatorConfig
 type BidValidatorConfig struct {
 	Enable         bool                  `koanf:"enable"`
 	RedisURL       string                `koanf:"redis-url"`
-	ChainIds       []string              `koanf:"chain-ids"`
 	ProducerConfig pubsub.ProducerConfig `koanf:"producer-config"`
 	// Timeout on polling for existence of each redis stream.
 	SequencerEndpoint      string `koanf:"sequencer-endpoint"`
@@ -51,7 +50,6 @@ func BidValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBidValidatorConfig.Enable, "enable bid validator")
 	pubsub.ProducerAddConfigAddOptions(prefix+".producer-config", f)
 	f.String(prefix+".redis-url", DefaultBidValidatorConfig.RedisURL, "url of redis server")
-	f.StringSlice(prefix+".chain-ids", DefaultBidValidatorConfig.ChainIds, "chain ids to support")
 	f.String(prefix+".sequencer-endpoint", DefaultAuctioneerServerConfig.SequencerEndpoint, "sequencer RPC endpoint")
 	f.String(prefix+".auction-contract-address", DefaultAuctioneerServerConfig.SequencerEndpoint, "express lane auction contract address")
 }
@@ -60,13 +58,13 @@ type BidValidator struct {
 	stopwaiter.StopWaiter
 	sync.RWMutex
 	reservePriceLock          sync.RWMutex
-	chainId                   []*big.Int // Auctioneer could handle auctions on multiple chains.
+	chainId                   *big.Int
 	stack                     *node.Node
 	producerCfg               *pubsub.ProducerConfig
 	producer                  *pubsub.Producer[*JsonValidatedBid, error]
 	redisClient               redis.UniversalClient
 	domainValue               []byte
-	client                    Client
+	client                    *ethclient.Client
 	auctionContract           *express_lane_auctiongen.ExpressLaneAuction
 	auctionContractAddr       common.Address
 	bidsReceiver              chan *Bid
@@ -92,17 +90,6 @@ func NewBidValidator(
 	if cfg.AuctionContractAddress == "" {
 		return nil, fmt.Errorf("auction contract address cannot be empty")
 	}
-	if len(cfg.ChainIds) == 0 {
-		return nil, fmt.Errorf("expected at least one chain id")
-	}
-	chainIds := make([]*big.Int, len(cfg.ChainIds))
-	for i, cidStr := range cfg.ChainIds {
-		id, ok := new(big.Int).SetString(cidStr, 10)
-		if !ok {
-			return nil, fmt.Errorf("could not parse chain id into big int base 10 %s", cidStr)
-		}
-		chainIds[i] = id
-	}
 	auctionContractAddr := common.HexToAddress(cfg.AuctionContractAddress)
 	redisClient, err := redisutil.RedisClientFromURL(cfg.RedisURL)
 	if err != nil {
@@ -114,6 +101,10 @@ func NewBidValidator(
 		return nil, err
 	}
 	sequencerClient := ethclient.NewClient(client)
+	chainId, err := sequencerClient.ChainID(ctx)
+	if err != nil {
+		return nil, err
+	}
 	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, sequencerClient)
 	if err != nil {
 		return nil, err
@@ -132,7 +123,7 @@ func NewBidValidator(
 		return nil, err
 	}
 	bidValidator := &BidValidator{
-		chainId:                   chainIds,
+		chainId:                   chainId,
 		client:                    sequencerClient,
 		redisClient:               redisClient,
 		stack:                     stack,
@@ -222,12 +213,10 @@ func (bv *BidValidatorAPI) SubmitBid(ctx context.Context, bid *JsonBid) error {
 		return err
 	}
 	log.Info("Validated bid", "bidder", validatedBid.Bidder.Hex(), "amount", validatedBid.Amount.String(), "round", validatedBid.Round, "elapsed", time.Since(start))
-	start = time.Now()
 	_, err = bv.producer.Produce(ctx, validatedBid)
 	if err != nil {
 		return err
 	}
-	log.Info("producer", "elapsed", time.Since(start))
 	return nil
 }
 
@@ -258,14 +247,7 @@ func (bv *BidValidator) validateBid(
 	}
 
 	// Check if the chain ID is valid.
-	chainIdOk := false
-	for _, id := range bv.chainId {
-		if bid.ChainId.Cmp(id) == 0 {
-			chainIdOk = true
-			break
-		}
-	}
-	if !chainIdOk {
+	if bid.ChainId.Cmp(bv.chainId) != 0 {
 		return nil, errors.Wrapf(ErrWrongChainId, "can not auction for chain id: %d", bid.ChainId)
 	}
 

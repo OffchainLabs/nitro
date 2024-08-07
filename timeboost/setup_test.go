@@ -159,7 +159,7 @@ func setupBidderClient(
 		ctx,
 		name,
 		&Wallet{TxOpts: account.txOpts, PrivKey: account.privKey},
-		testSetup.backend.Client(),
+		nil,
 		testSetup.expressLaneAuctionAddr,
 		auctioneerEndpoint,
 	)

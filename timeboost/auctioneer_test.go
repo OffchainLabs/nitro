@@ -51,7 +51,6 @@ func TestBidValidatorAuctioneerRedisStream(t *testing.T) {
 		stack, err := node.New(&stackConf)
 		require.NoError(t, err)
 		cfg := &BidValidatorConfig{
-			ChainIds:               []string{fmt.Sprintf("%d", testSetup.chainId.Uint64())},
 			SequencerEndpoint:      testSetup.endpoint,
 			AuctionContractAddress: testSetup.expressLaneAuctionAddr.Hex(),
 			RedisURL:               redisURL,

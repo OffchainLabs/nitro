@@ -12,15 +12,6 @@ type Database interface {
 	DeleteBids(round uint64)
 }
 
-type BidOption func(b *BidQuery)
-
-type BidQuery struct {
-	filters    []string
-	args       []interface{}
-	startRound int
-	endRound   int
-}
-
 type Db struct {
 	db *sqlx.DB
 }

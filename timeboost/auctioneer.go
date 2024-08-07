@@ -29,7 +29,7 @@ var domainValue []byte
 
 const (
 	AuctioneerNamespace      = "auctioneer"
-	validatedBidsRedisStream = "validated_bid_stream"
+	validatedBidsRedisStream = "validated_bids"
 )
 
 func init() {
@@ -85,6 +85,7 @@ type AuctioneerServer struct {
 	stopwaiter.StopWaiter
 	consumer               *pubsub.Consumer[*JsonValidatedBid, error]
 	txOpts                 *bind.TransactOpts
+	chainId                *big.Int
 	sequencerRpc           *rpc.Client
 	client                 *ethclient.Client
 	auctionContract        *express_lane_auctiongen.ExpressLaneAuction
@@ -106,10 +107,6 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 	if cfg.AuctionContractAddress == "" {
 		return nil, fmt.Errorf("auction contract address cannot be empty")
 	}
-	txOpts, _, err := util.OpenWallet("auctioneer-server", &cfg.Wallet, nil)
-	if err != nil {
-		return nil, err
-	}
 	auctionContractAddr := common.HexToAddress(cfg.AuctionContractAddress)
 	redisClient, err := redisutil.RedisClientFromURL(cfg.RedisURL)
 	if err != nil {
@@ -124,6 +121,14 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 		return nil, err
 	}
 	sequencerClient := ethclient.NewClient(client)
+	chainId, err := sequencerClient.ChainID(ctx)
+	if err != nil {
+		return nil, err
+	}
+	txOpts, _, err := util.OpenWallet("auctioneer-server", &cfg.Wallet, chainId)
+	if err != nil {
+		return nil, errors.Wrap(err, "opening wallet")
+	}
 	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, sequencerClient)
 	if err != nil {
 		return nil, err
@@ -138,6 +143,7 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 	return &AuctioneerServer{
 		txOpts:                 txOpts,
 		sequencerRpc:           client,
+		chainId:                chainId,
 		client:                 sequencerClient,
 		consumer:               c,
 		auctionContract:        auctionContract,
@@ -191,7 +197,6 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 				// There's nothing in the queue.
 				return time.Second // TODO: Make this faster?
 			}
-			log.Info("Auctioneer received")
 			// Forward the message over a channel for processing elsewhere in
 			// another thread, so as to not block this consumption thread.
 			a.bidsReceiver <- req.Value
@@ -228,7 +233,7 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 		for {
 			select {
 			case bid := <-a.bidsReceiver:
-				log.Info("Processed validated bid", "bidder", bid.Bidder, "amount", bid.Amount, "round", bid.Round)
+				log.Info("Consumed validated bid", "bidder", bid.Bidder, "amount", bid.Amount, "round", bid.Round)
 				a.bidCache.add(JsonValidatedBidToGo(bid))
 			case <-ctx.Done():
 				log.Info("Context done while waiting redis streams to be ready, failed to start")
@@ -328,10 +333,15 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 }
 
 func (a *AuctioneerServer) sendAuctionResolutionTransactionRPC(ctx context.Context, tx *types.Transaction) error {
-	return a.sequencerRpc.CallContext(ctx, nil, "timeboost_submitAuctionResolutionTransaction", tx)
+	// TODO: Retry a few times if fails.
+	return a.sequencerRpc.CallContext(ctx, nil, "auctioneer_submitAuctionResolutionTransaction", tx)
 }
 
 func copyTxOpts(opts *bind.TransactOpts) *bind.TransactOpts {
+	if opts == nil {
+		fmt.Println("nil opts")
+		return nil
+	}
 	copied := &bind.TransactOpts{
 		From:     opts.From,
 		Context:  opts.Context,

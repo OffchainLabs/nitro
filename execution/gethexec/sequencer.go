@@ -88,7 +88,6 @@ type SequencerConfig struct {
 type TimeboostConfig struct {
 	Enable               bool          `koanf:"enable"`
 	ExpressLaneAdvantage time.Duration `koanf:"express-lane-advantage"`
-	AuctioneerAddress    string        `koanf:"auctioneer-address"`
 }
 
 var DefaultTimeboostConfig = TimeboostConfig{
@@ -359,6 +358,7 @@ type Sequencer struct {
 	expectedSurplusMutex         sync.RWMutex
 	expectedSurplus              int64
 	expectedSurplusUpdated       bool
+	auctioneerAddr               common.Address
 	timeboostLock                sync.Mutex
 	timeboostAuctionResolutionTx *types.Transaction
 }
@@ -543,11 +543,8 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 	if !s.config().Timeboost.Enable {
 		return errors.New("timeboost not enabled")
 	}
-	if s.config().Timeboost.AuctioneerAddress == "" {
-		return errors.New("auctioneer address not set")
-	}
-	auctionerAddr := common.HexToAddress(s.config().Timeboost.AuctioneerAddress)
-	if auctionerAddr == (common.Address{}) {
+	auctioneerAddr := s.auctioneerAddr
+	if auctioneerAddr == (common.Address{}) {
 		return errors.New("invalid auctioneer address")
 	}
 	signer := types.LatestSigner(s.execEngine.bc.Config())
@@ -555,18 +552,20 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 	if err != nil {
 		return err
 	}
-	if sender != auctionerAddr {
-		return fmt.Errorf("sender %#x is not the auctioneer address %#x", sender, auctionerAddr)
+	if sender != auctioneerAddr {
+		return fmt.Errorf("sender %#x is not the auctioneer address %#x", sender, auctioneerAddr)
 	}
-	// TODO: Authenticate it is within the resolution window.
+	// TODO: Check it is within the resolution window.
 	s.timeboostLock.Lock()
-	defer s.timeboostLock.Unlock()
 	// Set it as a value that will be consumed first in `createBlock`
 	if s.timeboostAuctionResolutionTx != nil {
+		s.timeboostLock.Unlock()
 		return errors.New("auction resolution tx for round already received")
 	}
-	log.Info("Received auction resolution tx")
 	s.timeboostAuctionResolutionTx = tx
+	s.timeboostLock.Unlock()
+	log.Info("Creating auction resolution tx")
+	s.createBlock(ctx)
 	return nil
 }
 
@@ -1245,7 +1244,7 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 	return nil
 }
 
-func (s *Sequencer) StartExpressLane(ctx context.Context, auctionContractAddr common.Address) {
+func (s *Sequencer) StartExpressLane(ctx context.Context, auctionContractAddr common.Address, auctioneerAddr common.Address) {
 	if !s.config().Timeboost.Enable {
 		log.Crit("Timeboost is not enabled, but StartExpressLane was called")
 	}
@@ -1262,6 +1261,7 @@ func (s *Sequencer) StartExpressLane(ctx context.Context, auctionContractAddr co
 	if err != nil {
 		log.Crit("Failed to create express lane service", "err", err)
 	}
+	s.auctioneerAddr = auctioneerAddr
 	s.expressLaneService = els
 	s.expressLaneService.Start(ctx)
 }
