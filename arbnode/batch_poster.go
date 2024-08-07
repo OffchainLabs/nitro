@@ -502,9 +502,8 @@ func (b *BatchPoster) addEspressoBlockMerkleProof(
 			return err
 		}
 
-		if jst.Header.Height == 0 {
-			// This means the header in the jst is still the dummy header.
-			return fmt.Errorf("this msg has not been included in hotshot %v", jst.Header.Height)
+		if jst.Header == nil {
+			return fmt.Errorf("this msg has not been included in hotshot")
 		}
 
 		snapshot, err := b.lightClientReader.FetchMerkleRoot(jst.Header.Height, nil)

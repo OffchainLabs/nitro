@@ -289,9 +289,7 @@ func MessageFromTxes(header *arbostypes.L1IncomingMessageHeader, txes types.Tran
 		l2Message = append(l2Message, arbos.L2MessageKind_EspressoSovereignTx)
 		// Set a block justification placeholder here. That would help us easily parse
 		// our messages from `ParseEspressoMessage`.
-		jstBytes, err := arbos.GetEspressoJstBytes(&arbostypes.EspressoBlockJustification{
-			Header: espressoTypes.GetDummyHeader(),
-		})
+		jstBytes, err := arbos.GetEspressoJstBytes(&arbostypes.EspressoBlockJustification{})
 		if err != nil {
 			return nil, err
 		}
@@ -473,7 +471,7 @@ func (s *ExecutionEngine) SequenceTransactionsEspresso(
 			s.bc,
 			s.bc.Config(),
 			hooks,
-			&jst.Header,
+			jst.Header,
 			false,
 		)
 		if err != nil {

@@ -188,7 +188,7 @@ func ProduceBlock(
 			if err != nil {
 				return nil, nil, err
 			}
-			espressoHeader = &jst.Header
+			espressoHeader = jst.Header
 		}
 	}
 

@@ -33,7 +33,7 @@ func TestEspressoParsing(t *testing.T) {
 	root, err := tagged_base64.New("root", []byte{4, 5, 6})
 	Require(t, err)
 	expectJst := &arbostypes.EspressoBlockJustification{
-		Header: espressoTypes.Header{
+		Header: &espressoTypes.Header{
 			L1Head:              1,
 			ChainConfig:         mockChainConfig,
 			Timestamp:           2,

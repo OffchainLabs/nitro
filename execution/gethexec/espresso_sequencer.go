@@ -92,7 +92,7 @@ func (s *EspressoSequencer) createBlock(ctx context.Context) (returnValue bool) 
 	}
 
 	jst := &arbostypes.EspressoBlockJustification{
-		Header:    header,
+		Header:    &header,
 		VidCommon: &arbTxns.VidCommon,
 		Proof:     &arbTxns.Proof,
 	}
