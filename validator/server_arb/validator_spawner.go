@@ -17,6 +17,7 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
+	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode/redis"
 
@@ -187,6 +188,7 @@ func (v *ArbitratorSpawner) execute(
 }
 
 func (v *ArbitratorSpawner) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
+	println("LAUCHING ARBITRATOR VALIDATION")
 	v.count.Add(1)
 	promise := stopwaiter.LaunchPromiseThread[validator.GoGlobalState](v, func(ctx context.Context) (validator.GoGlobalState, error) {
 		defer v.count.Add(-1)
@@ -207,6 +209,10 @@ var launchTime = time.Now().Format("2006_01_02__15_04")
 
 //nolint:gosec
 func (v *ArbitratorSpawner) writeToFile(ctx context.Context, input *validator.ValidationInput, expOut validator.GoGlobalState, moduleRoot common.Hash) error {
+	jsonInput := server_api.ValidationInputToJson(input)
+	if err := jsonInput.WriteToFile(); err != nil {
+		return err
+	}
 	outDirPath := filepath.Join(v.locator.RootPath(), v.config().OutputPath, launchTime, fmt.Sprintf("block_%d", input.Id))
 	err := os.MkdirAll(outDirPath, 0755)
 	if err != nil {

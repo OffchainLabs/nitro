@@ -1,13 +1,13 @@
 use arbutil::{Bytes32, PreimageType};
-use prover::machine::{argument_data_to_inbox, GlobalState, Machine};
-use prover::utils::CBytes;
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::BufReader;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::machine::{argument_data_to_inbox, GlobalState, Machine, Module};
 use crate::parse_input::*;
+use crate::utils::CBytes;
 
 pub fn prepare_machine(preimages: PathBuf, machines: PathBuf) -> eyre::Result<Machine> {
     let file = File::open(preimages)?;
@@ -39,6 +39,20 @@ pub fn prepare_machine(preimages: PathBuf, machines: PathBuf) -> eyre::Result<Ma
         bytes32_vals,
         u64_vals,
     };
+
+    // Ignoring "architecture"
+    for (_, wasm) in data.user_wasms.iter() {
+        for (id, wasm) in wasm.iter() {
+            //mach.add_stylus_module(*id, wasm.clone());
+            // let mut hack = Vec::with_capacity(wasm.as_ref().len());
+            // hack.push(0x00);
+            // hack.extend(&wasm.as_ref()[1..]);
+            // mach.add_program(&hack, id, 1, true)
+            //     .expect("Failed to add program");
+            let module = unsafe { Module::from_bytes(&wasm) };
+            mach.add_stylus_module(*id, module.into_bytes());
+        }
+    }
 
     mach.set_global_state(start_state);
 

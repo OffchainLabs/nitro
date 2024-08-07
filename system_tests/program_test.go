@@ -368,7 +368,7 @@ func errorTest(t *testing.T, jit bool) {
 
 func TestProgramStorage(t *testing.T) {
 	t.Parallel()
-	storageTest(t, true)
+	storageTest(t, false)
 }
 
 func storageTest(t *testing.T, jit bool) {
@@ -390,10 +390,13 @@ func storageTest(t *testing.T, jit bool) {
 	key := testhelpers.RandomHash()
 	value := testhelpers.RandomHash()
 	tx := l2info.PrepareTxTo("Owner", &programAddress, l2info.TransferGas, nil, argsForStorageWrite(key, value))
-	ensure(tx, l2client.SendTransaction(ctx, tx))
+	receipt := ensure(tx, l2client.SendTransaction(ctx, tx))
+
 	assertStorageAt(t, ctx, l2client, programAddress, key, value)
 
 	validateBlocks(t, 2, jit, builder)
+	recordBlock(t, 2, builder)
+	recordBlock(t, receipt.BlockNumber.Uint64(), builder)
 }
 
 func TestProgramTransientStorage(t *testing.T) {
@@ -1143,6 +1146,7 @@ func testActivateFails(t *testing.T, jit bool) {
 	})
 
 	validateBlockRange(t, []uint64{blockToValidate}, jit, builder)
+	recordBlock(t, blockToValidate, builder)
 }
 
 func TestProgramSdkStorage(t *testing.T) {

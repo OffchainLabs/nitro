@@ -111,6 +111,9 @@ type BlockValidatorConfig struct {
 	Dangerous                   BlockValidatorDangerousConfig `koanf:"dangerous"`
 	MemoryFreeLimit             string                        `koanf:"memory-free-limit" reload:"hot"`
 	ValidationServerConfigsList string                        `koanf:"validation-server-configs-list"`
+	// The directory to which the BlockValidator will write the
+	// block_inputs_<id>.json files when WriteToFile() is called.
+	BlockInputsFilePath string `koanf:"block-inputs-file-path"`
 
 	memoryFreeLimit int
 }
@@ -163,6 +166,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".failure-is-fatal", DefaultBlockValidatorConfig.FailureIsFatal, "failing a validation is treated as a fatal error")
 	BlockValidatorDangerousConfigAddOptions(prefix+".dangerous", f)
 	f.String(prefix+".memory-free-limit", DefaultBlockValidatorConfig.MemoryFreeLimit, "minimum free-memory limit after reaching which the blockvalidator pauses validation. Enabled by default as 1GB, to disable provide empty string")
+	f.String(prefix+".block-inputs-file-path", DefaultBlockValidatorConfig.BlockInputsFilePath, "directory to write block validation inputs files")
 }
 
 func BlockValidatorDangerousConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -181,6 +185,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	PendingUpgradeModuleRoot:    "latest",
 	FailureIsFatal:              true,
 	Dangerous:                   DefaultBlockValidatorDangerousConfig,
+	BlockInputsFilePath:         "./target/validation_inputs",
 	MemoryFreeLimit:             "default",
 }
 
@@ -196,6 +201,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	PendingUpgradeModuleRoot:    "latest",
 	FailureIsFatal:              true,
 	Dangerous:                   DefaultBlockValidatorDangerousConfig,
+	BlockInputsFilePath:         "./target/validation_inputs",
 	MemoryFreeLimit:             "default",
 }
 

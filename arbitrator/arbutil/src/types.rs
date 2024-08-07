@@ -8,6 +8,7 @@ use std::{
     borrow::Borrow,
     fmt,
     ops::{Deref, DerefMut},
+    str::FromStr,
 };
 
 // These values must be kept in sync with `arbutil/preimage_type.go`,
@@ -80,6 +81,21 @@ impl From<usize> for Bytes32 {
         let mut b = [0u8; 32];
         b[(32 - (usize::BITS as usize / 8))..].copy_from_slice(&x.to_be_bytes());
         Self(b)
+    }
+}
+
+impl FromStr for Bytes32 {
+    type Err = hex::FromHexError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        let trimmed = match s.strip_prefix("0x") {
+            Some(t) => t,
+            None => s,
+        };
+        let bytes = hex::decode(trimmed)?;
+        let mut b = [0u8; 32];
+        b.copy_from_slice(&bytes);
+        Ok(Self(b))
     }
 }
 

@@ -463,6 +463,31 @@ func (v *StatelessBlockValidator) ValidateResult(
 	return true, &entry.End, nil
 }
 
+func (v *StatelessBlockValidator) RecordValidationInput(ctx context.Context, pos arbutil.MessageIndex, moduleRoot common.Hash) error {
+	entry, err := v.CreateReadyValidationEntry(ctx, pos)
+	if err != nil {
+		return err
+	}
+	found := false
+	for _, spawner := range v.execSpawners {
+		if validator.SpawnerSupportsModule(spawner, moduleRoot) {
+			found = true
+			input, err := entry.ToInput(spawner.StylusArchs())
+			if err != nil {
+				return err
+			}
+			_, err = spawner.WriteToFile(input, entry.End, moduleRoot).Await(ctx)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	if !found {
+		return fmt.Errorf("validation with WasmModuleRoot %v not supported by node", moduleRoot)
+	}
+	return nil
+}
+
 func (v *StatelessBlockValidator) OverrideRecorder(t *testing.T, recorder execution.ExecutionRecorder) {
 	v.recorder = recorder
 }
