@@ -130,16 +130,17 @@ func (bd *BidderClient) Bid(
 		return nil, err
 	}
 	newBid.Signature = sig
-	promise := bd.submitBid(ctx, newBid)
+	promise := bd.submitBid(newBid)
 	if _, err := promise.Await(ctx); err != nil {
 		return nil, err
 	}
 	return newBid, nil
 }
 
-func (bd *BidderClient) submitBid(ctx context.Context, bid *Bid) containers.PromiseInterface[struct{}] {
+func (bd *BidderClient) submitBid(bid *Bid) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread[struct{}](bd, func(ctx context.Context) (struct{}, error) {
 		err := bd.auctioneerClient.CallContext(ctx, nil, "auctioneer_submitBid", bid.ToJson())
+		fmt.Println(err)
 		return struct{}{}, err
 	})
 }

@@ -157,7 +157,7 @@ func TestBidValidator_validateBid_perRoundBidLimitReached(t *testing.T) {
 	require.NoError(t, err)
 
 	bid.Signature = signature
-	for i := 0; i < int(bv.maxBidsPerSenderInRound)-1; i++ {
+	for i := 0; i < int(bv.maxBidsPerSenderInRound); i++ {
 		_, err := bv.validateBid(bid, balanceCheckerFn, fetchReservePriceFn)
 		require.NoError(t, err)
 	}

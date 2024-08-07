@@ -13,8 +13,10 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethclient/simulated"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/timeboost/bindings"
@@ -155,11 +157,14 @@ func setupAuctionTest(t testing.TB, ctx context.Context) *auctionSetup {
 func setupBidderClient(
 	t testing.TB, ctx context.Context, name string, account *testAccount, testSetup *auctionSetup, auctioneerEndpoint string,
 ) *BidderClient {
+	rpcClient, err := rpc.Dial(testSetup.endpoint)
+	require.NoError(t, err)
+	client := ethclient.NewClient(rpcClient)
 	bc, err := NewBidderClient(
 		ctx,
 		name,
 		&Wallet{TxOpts: account.txOpts, PrivKey: account.privKey},
-		nil,
+		client,
 		testSetup.expressLaneAuctionAddr,
 		auctioneerEndpoint,
 	)
