@@ -4,14 +4,18 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"net/http"
+	"os"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/golang-jwt/jwt/v4"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/pubsub"
@@ -51,6 +55,7 @@ type AuctioneerServerConfig struct {
 	SequencerEndpoint      string                   `koanf:"sequencer-endpoint"`
 	AuctionContractAddress string                   `koanf:"auction-contract-address"`
 	DbDirectory            string                   `koanf:"db-directory"`
+	SequencerJWTPath       string                   `koanf:"sequencer-jwt-path"`
 }
 
 var DefaultAuctioneerServerConfig = AuctioneerServerConfig{
@@ -78,6 +83,7 @@ func AuctioneerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".stream-timeout", DefaultAuctioneerServerConfig.StreamTimeout, "Timeout on polling for existence of redis streams")
 	genericconf.WalletConfigAddOptions(prefix+".wallet", f, "wallet for auctioneer server")
 	f.String(prefix+".sequencer-endpoint", DefaultAuctioneerServerConfig.SequencerEndpoint, "sequencer RPC endpoint")
+	f.String(prefix+".sequencer-jwt-path", DefaultAuctioneerServerConfig.SequencerJWTPath, "sequencer jwt file path")
 	f.String(prefix+".auction-contract-address", DefaultAuctioneerServerConfig.SequencerEndpoint, "express lane auction contract address")
 }
 
@@ -113,6 +119,9 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 	if cfg.DbDirectory == "" {
 		return nil, errors.New("database directory is empty")
 	}
+	if cfg.SequencerJWTPath == "" {
+		return nil, errors.New("no sequencer jwt path specified")
+	}
 	database, err := NewDatabase(cfg.DbDirectory)
 	if err != nil {
 		return nil, err
@@ -126,7 +135,29 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 	if err != nil {
 		return nil, fmt.Errorf("creating consumer for validation: %w", err)
 	}
-	client, err := rpc.DialContext(ctx, cfg.SequencerEndpoint)
+	sequencerJwtStr, err := os.ReadFile(cfg.SequencerJWTPath)
+	if err != nil {
+		return nil, err
+	}
+	sequencerJwt, err := hexutil.Decode(string(sequencerJwtStr))
+	if err != nil {
+		return nil, err
+	}
+	client, err := rpc.DialOptions(ctx, cfg.SequencerEndpoint, rpc.WithHTTPAuth(func(h http.Header) error {
+		claims := jwt.MapClaims{
+			// Required claim for engine API auth. "iat" stands for issued at
+			// and it must be a unix timestamp that is +/- 5 seconds from the current
+			// timestamp at the moment the server verifies this value.
+			"iat": time.Now().Unix(),
+		}
+		token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
+		tokenString, err := token.SignedString(sequencerJwt)
+		if err != nil {
+			return errors.Wrap(err, "could not produce signed JWT token")
+		}
+		h.Set("Authorization", fmt.Sprintf("Bearer %s", tokenString))
+		return nil
+	}))
 	if err != nil {
 		return nil, err
 	}

@@ -4,6 +4,8 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -25,6 +27,7 @@ import (
 	"github.com/offchainlabs/nitro/timeboost/bindings"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/redisutil"
+	"github.com/stretchr/testify/require"
 )
 
 func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing.T) {
@@ -32,7 +35,14 @@ func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, seqClient, seqInfo, auctionContractAddr, cleanupSeq := setupExpressLaneAuction(t, ctx)
+	tmpDir, err := os.MkdirTemp("", "*")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, os.RemoveAll(tmpDir))
+	})
+	jwtSecretPath := filepath.Join(tmpDir, "sequencer.jwt")
+
+	_, seqClient, seqInfo, auctionContractAddr, cleanupSeq := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath)
 	defer cleanupSeq()
 	chainId, err := seqClient.ChainID(ctx)
 	Require(t, err)
@@ -116,7 +126,13 @@ func TestSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected(t *test
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	_, seqClient, seqInfo, auctionContractAddr, cleanupSeq := setupExpressLaneAuction(t, ctx)
+	tmpDir, err := os.MkdirTemp("", "*")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, os.RemoveAll(tmpDir))
+	})
+	jwtSecretPath := filepath.Join(tmpDir, "sequencer.jwt")
+	_, seqClient, seqInfo, auctionContractAddr, cleanupSeq := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath)
 	defer cleanupSeq()
 	chainId, err := seqClient.ChainID(ctx)
 	Require(t, err)
@@ -225,14 +241,19 @@ func TestSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected(t *test
 
 func setupExpressLaneAuction(
 	t *testing.T,
+	dbDirPath string,
 	ctx context.Context,
+	jwtSecretPath string,
 ) (*arbnode.Node, *ethclient.Client, *BlockchainTestInfo, common.Address, func()) {
 
 	builderSeq := NewNodeBuilder(ctx).DefaultConfig(t, true)
 
 	builderSeq.l2StackConfig.HTTPHost = "localhost"
 	builderSeq.l2StackConfig.HTTPPort = 9567
-	builderSeq.l2StackConfig.HTTPModules = []string{"eth", "arb", "debug", "timeboost", "auctioneer"}
+	builderSeq.l2StackConfig.HTTPModules = []string{"eth", "arb", "debug", "timeboost"}
+	builderSeq.l2StackConfig.AuthPort = 9568
+	builderSeq.l2StackConfig.AuthModules = []string{"eth", "arb", "debug", "timeboost", "auctioneer"}
+	builderSeq.l2StackConfig.JWTSecret = jwtSecretPath
 	builderSeq.nodeConfig.Feed.Output = *newBroadcasterConfigTest()
 	builderSeq.execConfig.Sequencer.Enable = true
 	builderSeq.execConfig.Sequencer.Timeboost = gethexec.TimeboostConfig{
@@ -415,10 +436,12 @@ func setupExpressLaneAuction(
 	bidValidator.Start(ctx)
 
 	auctioneerCfg := &timeboost.AuctioneerServerConfig{
-		SequencerEndpoint:      "http://localhost:9567",
+		SequencerEndpoint:      "http://localhost:9568",
 		AuctionContractAddress: proxyAddr.Hex(),
 		RedisURL:               redisURL,
 		ConsumerConfig:         pubsub.TestConsumerConfig,
+		SequencerJWTPath:       jwtSecretPath,
+		DbDirectory:            dbDirPath,
 		Wallet: genericconf.WalletConfig{
 			PrivateKey: fmt.Sprintf("00%x", seqInfo.Accounts["AuctionContract"].PrivateKey.D.Bytes()),
 		},
