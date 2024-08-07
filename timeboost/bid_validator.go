@@ -17,6 +17,7 @@ import (
 	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/pkg/errors"
@@ -184,6 +185,7 @@ func (bv *BidValidator) Initialize(ctx context.Context) error {
 }
 
 func (bv *BidValidator) Start(ctx_in context.Context) {
+	bv.StopWaiter.Start(ctx_in, bv)
 	if bv.producer == nil {
 		log.Crit("Bid validator not yet initialized by calling Initialize(ctx)")
 	}
@@ -194,30 +196,32 @@ type BidValidatorAPI struct {
 	*BidValidator
 }
 
-func (bv *BidValidatorAPI) SubmitBid(ctx context.Context, bid *JsonBid) error {
-	// Validate the received bid.
-	start := time.Now()
-	validatedBid, err := bv.validateBid(
-		&Bid{
-			ChainId:                bid.ChainId.ToInt(),
-			ExpressLaneController:  bid.ExpressLaneController,
-			AuctionContractAddress: bid.AuctionContractAddress,
-			Round:                  uint64(bid.Round),
-			Amount:                 bid.Amount.ToInt(),
-			Signature:              bid.Signature,
-		},
-		bv.auctionContract.BalanceOf,
-		bv.fetchReservePrice,
-	)
-	if err != nil {
-		return err
-	}
-	log.Info("Validated bid", "bidder", validatedBid.Bidder.Hex(), "amount", validatedBid.Amount.String(), "round", validatedBid.Round, "elapsed", time.Since(start))
-	_, err = bv.producer.Produce(ctx, validatedBid)
-	if err != nil {
-		return err
-	}
-	return nil
+func (bv *BidValidatorAPI) SubmitBid(ctx context.Context, bid *JsonBid) containers.PromiseInterface[struct{}] {
+	return stopwaiter.LaunchPromiseThread[struct{}](bv, func(ctx context.Context) (struct{}, error) {
+		// Validate the received bid.
+		start := time.Now()
+		validatedBid, err := bv.validateBid(
+			&Bid{
+				ChainId:                bid.ChainId.ToInt(),
+				ExpressLaneController:  bid.ExpressLaneController,
+				AuctionContractAddress: bid.AuctionContractAddress,
+				Round:                  uint64(bid.Round),
+				Amount:                 bid.Amount.ToInt(),
+				Signature:              bid.Signature,
+			},
+			bv.auctionContract.BalanceOf,
+			bv.fetchReservePrice,
+		)
+		if err != nil {
+			return struct{}{}, err
+		}
+		log.Info("Validated bid", "bidder", validatedBid.Bidder.Hex(), "amount", validatedBid.Amount.String(), "round", validatedBid.Round, "elapsed", time.Since(start))
+		_, err = bv.producer.Produce(ctx, validatedBid)
+		if err != nil {
+			return struct{}{}, err
+		}
+		return struct{}{}, err
+	})
 }
 
 // TODO(Terence): Set reserve price from the contract.

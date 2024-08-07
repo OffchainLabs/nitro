@@ -164,6 +164,7 @@ func setupBidderClient(
 		auctioneerEndpoint,
 	)
 	require.NoError(t, err)
+	bc.Start(ctx)
 
 	// Approve spending by the express lane auction contract and beneficiary.
 	maxUint256 := big.NewInt(1)

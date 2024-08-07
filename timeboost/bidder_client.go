@@ -16,10 +16,13 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
+	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/pkg/errors"
 )
 
 type BidderClient struct {
+	stopwaiter.StopWaiter
 	chainId                *big.Int
 	name                   string
 	auctionContractAddress common.Address
@@ -81,6 +84,10 @@ func NewBidderClient(
 	}, nil
 }
 
+func (bd *BidderClient) Start(ctx_in context.Context) {
+	bd.StopWaiter.Start(ctx_in, bd)
+}
+
 func (bd *BidderClient) Deposit(ctx context.Context, amount *big.Int) error {
 	tx, err := bd.auctionContract.Deposit(bd.txOpts, amount)
 	if err != nil {
@@ -123,15 +130,18 @@ func (bd *BidderClient) Bid(
 		return nil, err
 	}
 	newBid.Signature = sig
-	if err = bd.submitBid(ctx, newBid); err != nil {
+	promise := bd.submitBid(ctx, newBid)
+	if _, err := promise.Await(ctx); err != nil {
 		return nil, err
 	}
 	return newBid, nil
 }
 
-func (bd *BidderClient) submitBid(ctx context.Context, bid *Bid) error {
-	err := bd.auctioneerClient.CallContext(ctx, nil, "auctioneer_submitBid", bid.ToJson())
-	return err
+func (bd *BidderClient) submitBid(ctx context.Context, bid *Bid) containers.PromiseInterface[struct{}] {
+	return stopwaiter.LaunchPromiseThread[struct{}](bd, func(ctx context.Context) (struct{}, error) {
+		err := bd.auctioneerClient.CallContext(ctx, nil, "auctioneer_submitBid", bid.ToJson())
+		return struct{}{}, err
+	})
 }
 
 func sign(message []byte, key *ecdsa.PrivateKey) ([]byte, error) {

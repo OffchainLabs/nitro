@@ -54,7 +54,7 @@ func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing
 		auctionContractAddr,
 		seqDial,
 	)
-	expressLaneClient.StopWaiter.Start(ctx, expressLaneClient)
+	expressLaneClient.Start(ctx)
 
 	// During the express lane around, Bob sends txs always 150ms later than Alice, but Alice's
 	// txs end up getting delayed by 200ms as she is not the express lane controller.
@@ -138,7 +138,7 @@ func TestSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected(t *test
 		auctionContractAddr,
 		seqDial,
 	)
-	expressLaneClient.StopWaiter.Start(ctx, expressLaneClient)
+	expressLaneClient.Start(ctx)
 
 	// We first generate an account for Charlie and transfer some balance to him.
 	seqInfo.GenerateAccount("Charlie")
@@ -461,6 +461,9 @@ func setupExpressLaneAuction(
 		"http://localhost:9372",
 	)
 	Require(t, err)
+
+	alice.Start(ctx)
+	bob.Start(ctx)
 
 	// Wait until the initial round.
 	info, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})

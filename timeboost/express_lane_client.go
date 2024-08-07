@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/secp256k1"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 )
 
@@ -49,10 +50,13 @@ func NewExpressLaneClient(
 	}
 }
 
+func (elc *ExpressLaneClient) Start(ctxIn context.Context) {
+	elc.StopWaiter.Start(ctxIn, elc)
+}
+
 func (elc *ExpressLaneClient) SendTransaction(ctx context.Context, transaction *types.Transaction) error {
 	elc.Lock()
 	defer elc.Unlock()
-	// return stopwaiter.LaunchPromiseThread(elc, func(ctx context.Context) (struct{}, error) {
 	encodedTx, err := transaction.MarshalBinary()
 	if err != nil {
 		return err
@@ -78,11 +82,19 @@ func (elc *ExpressLaneClient) SendTransaction(ctx context.Context, transaction *
 		return err
 	}
 	msg.Signature = signature
-	if err = elc.client.CallContext(ctx, nil, "timeboost_sendExpressLaneTransaction", msg); err != nil {
+	promise := elc.sendExpressLaneRPC(ctx, msg)
+	if _, err := promise.Await(ctx); err != nil {
 		return err
 	}
 	elc.sequence += 1
 	return nil
+}
+
+func (elc *ExpressLaneClient) sendExpressLaneRPC(ctx context.Context, msg *JsonExpressLaneSubmission) containers.PromiseInterface[struct{}] {
+	return stopwaiter.LaunchPromiseThread[struct{}](elc, func(ctx context.Context) (struct{}, error) {
+		err := elc.client.CallContext(ctx, nil, "timeboost_sendExpressLaneTransaction", msg)
+		return struct{}{}, err
+	})
 }
 
 func signSubmission(message []byte, key *ecdsa.PrivateKey) ([]byte, error) {
