@@ -242,3 +242,20 @@ func (c *TxPreChecker) PublishExpressLaneTransaction(ctx context.Context, msg *t
 	}
 	return c.TransactionPublisher.PublishExpressLaneTransaction(ctx, msg)
 }
+
+func (c *TxPreChecker) PublishAuctionResolutionTransaction(ctx context.Context, tx *types.Transaction) error {
+	block := c.bc.CurrentBlock()
+	statedb, err := c.bc.StateAt(block.Root)
+	if err != nil {
+		return err
+	}
+	arbos, err := arbosState.OpenSystemArbosState(statedb, nil, true)
+	if err != nil {
+		return err
+	}
+	err = PreCheckTx(c.bc, c.bc.Config(), block, statedb, arbos, tx, nil, c.config())
+	if err != nil {
+		return err
+	}
+	return c.TransactionPublisher.PublishAuctionResolutionTransaction(ctx, tx)
+}

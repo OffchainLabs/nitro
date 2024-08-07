@@ -13,6 +13,7 @@ import (
 )
 
 type TransactionPublisher interface {
+	PublishAuctionResolutionTransaction(ctx context.Context, tx *types.Transaction) error
 	PublishExpressLaneTransaction(ctx context.Context, msg *timeboost.ExpressLaneSubmission) error
 	PublishTransaction(ctx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error
 	CheckHealth(ctx context.Context) error
@@ -49,6 +50,10 @@ func (a *ArbInterface) PublishExpressLaneTransaction(ctx context.Context, msg *t
 		return err
 	}
 	return a.txPublisher.PublishExpressLaneTransaction(ctx, goMsg)
+}
+
+func (a *ArbInterface) PublishAuctionResolutionTransaction(ctx context.Context, tx *types.Transaction) error {
+	return a.txPublisher.PublishAuctionResolutionTransaction(ctx, tx)
 }
 
 // might be used before Initialize

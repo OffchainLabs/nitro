@@ -3,6 +3,7 @@ package timeboost
 import (
 	"context"
 	"fmt"
+	"math/big"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -84,7 +85,8 @@ type AuctioneerServer struct {
 	stopwaiter.StopWaiter
 	consumer               *pubsub.Consumer[*JsonValidatedBid, error]
 	txOpts                 *bind.TransactOpts
-	client                 Client
+	sequencerRpc           *rpc.Client
+	client                 *ethclient.Client
 	auctionContract        *express_lane_auctiongen.ExpressLaneAuction
 	auctionContractAddr    common.Address
 	bidsReceiver           chan *JsonValidatedBid
@@ -135,6 +137,7 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 	roundDuration := time.Duration(roundTimingInfo.RoundDurationSeconds) * time.Second
 	return &AuctioneerServer{
 		txOpts:                 txOpts,
+		sequencerRpc:           client,
 		client:                 sequencerClient,
 		consumer:               c,
 		auctionContract:        auctionContract,
@@ -263,10 +266,12 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 	second := result.secondPlace
 	var tx *types.Transaction
 	var err error
+	opts := copyTxOpts(a.txOpts)
+	opts.NoSend = true
 	switch {
 	case first != nil && second != nil: // Both bids are present
 		tx, err = a.auctionContract.ResolveMultiBidAuction(
-			a.txOpts,
+			opts,
 			express_lane_auctiongen.Bid{
 				ExpressLaneController: first.ExpressLaneController,
 				Amount:                first.Amount,
@@ -282,7 +287,7 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 
 	case first != nil: // Single bid is present
 		tx, err = a.auctionContract.ResolveSingleBidAuction(
-			a.txOpts,
+			opts,
 			express_lane_auctiongen.Bid{
 				ExpressLaneController: first.ExpressLaneController,
 				Amount:                first.Amount,
@@ -295,9 +300,13 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 		log.Info("No bids received for auction resolution", "round", upcomingRound)
 		return nil
 	}
-
 	if err != nil {
 		log.Error("Error resolving auction", "error", err)
+		return err
+	}
+
+	if err = a.sendAuctionResolutionTransactionRPC(ctx, tx); err != nil {
+		log.Error("Error submitting auction resolution to privileged sequencer endpoint", "error", err)
 		return err
 	}
 
@@ -316,4 +325,35 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 
 	log.Info("Auction resolved successfully", "txHash", tx.Hash().Hex())
 	return nil
+}
+
+func (a *AuctioneerServer) sendAuctionResolutionTransactionRPC(ctx context.Context, tx *types.Transaction) error {
+	return a.sequencerRpc.CallContext(ctx, nil, "timeboost_submitAuctionResolutionTransaction", tx)
+}
+
+func copyTxOpts(opts *bind.TransactOpts) *bind.TransactOpts {
+	copied := &bind.TransactOpts{
+		From:     opts.From,
+		Context:  opts.Context,
+		NoSend:   opts.NoSend,
+		Signer:   opts.Signer,
+		GasLimit: opts.GasLimit,
+	}
+
+	if opts.Nonce != nil {
+		copied.Nonce = new(big.Int).Set(opts.Nonce)
+	}
+	if opts.Value != nil {
+		copied.Value = new(big.Int).Set(opts.Value)
+	}
+	if opts.GasPrice != nil {
+		copied.GasPrice = new(big.Int).Set(opts.GasPrice)
+	}
+	if opts.GasFeeCap != nil {
+		copied.GasFeeCap = new(big.Int).Set(opts.GasFeeCap)
+	}
+	if opts.GasTipCap != nil {
+		copied.GasTipCap = new(big.Int).Set(opts.GasTipCap)
+	}
+	return copied
 }

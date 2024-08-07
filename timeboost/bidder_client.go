@@ -13,23 +13,18 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/secp256k1"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/pkg/errors"
 )
-
-type Client interface {
-	bind.ContractBackend
-	bind.DeployBackend
-	ChainID(ctx context.Context) (*big.Int, error)
-}
 
 type BidderClient struct {
 	chainId                *big.Int
 	name                   string
 	auctionContractAddress common.Address
 	txOpts                 *bind.TransactOpts
-	client                 Client
+	client                 *ethclient.Client
 	privKey                *ecdsa.PrivateKey
 	auctionContract        *express_lane_auctiongen.ExpressLaneAuction
 	auctioneerClient       *rpc.Client
@@ -48,7 +43,7 @@ func NewBidderClient(
 	ctx context.Context,
 	name string,
 	wallet *Wallet,
-	client Client,
+	client *ethclient.Client,
 	auctionContractAddress common.Address,
 	auctioneerEndpoint string,
 ) (*BidderClient, error) {

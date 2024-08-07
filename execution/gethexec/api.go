@@ -36,6 +36,18 @@ func (a *ArbAPI) CheckPublisherHealth(ctx context.Context) error {
 	return a.txPublisher.CheckHealth(ctx)
 }
 
+type ArbTimeboostAuctioneerAPI struct {
+	txPublisher TransactionPublisher
+}
+
+func NewArbTimeboostAuctioneerAPI(publisher TransactionPublisher) *ArbTimeboostAuctioneerAPI {
+	return &ArbTimeboostAuctioneerAPI{publisher}
+}
+
+func (a *ArbTimeboostAuctioneerAPI) SubmitAuctionResolutionTransaction(ctx context.Context, tx *types.Transaction) error {
+	return a.txPublisher.PublishAuctionResolutionTransaction(ctx, tx)
+}
+
 type ArbTimeboostAPI struct {
 	txPublisher TransactionPublisher
 }

@@ -86,21 +86,14 @@ type SequencerConfig struct {
 }
 
 type TimeboostConfig struct {
-	Enable                 bool          `koanf:"enable"`
-	AuctionContractAddress string        `koanf:"auction-contract-address"`
-	ERC20Address           string        `koanf:"erc20-address"`
-	ExpressLaneAdvantage   time.Duration `koanf:"express-lane-advantage"`
-	RoundDuration          time.Duration `koanf:"round-duration"`
-	InitialRoundTimestamp  uint64        `koanf:"initial-round-timestamp"`
+	Enable               bool          `koanf:"enable"`
+	ExpressLaneAdvantage time.Duration `koanf:"express-lane-advantage"`
+	AuctioneerAddress    string        `koanf:"auctioneer-address"`
 }
 
 var DefaultTimeboostConfig = TimeboostConfig{
-	Enable:                 false,
-	AuctionContractAddress: "",
-	ERC20Address:           "",
-	ExpressLaneAdvantage:   time.Millisecond * 250,
-	RoundDuration:          time.Minute,
-	InitialRoundTimestamp:  uint64(time.Unix(0, 0).Unix()),
+	Enable:               false,
+	ExpressLaneAdvantage: time.Millisecond * 250,
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -196,10 +189,7 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 
 func TimeboostAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultTimeboostConfig.Enable, "enable timeboost based on express lane auctions")
-	f.String(prefix+".auction-contract-address", DefaultTimeboostConfig.AuctionContractAddress, "address of the autonomous auction contract")
-	f.String(prefix+".erc20-address", DefaultTimeboostConfig.ERC20Address, "address of the auction erc20")
-	f.Uint64(prefix+".initial-round-timestamp", DefaultTimeboostConfig.InitialRoundTimestamp, "initial timestamp for auctions")
-	f.Duration(prefix+".round-duration", DefaultTimeboostConfig.RoundDuration, "round duration")
+	f.Duration(prefix+".express-lane-advantage", DefaultTimeboostConfig.ExpressLaneAdvantage, "specify the express lane advantage")
 }
 
 type txQueueItem struct {
@@ -366,9 +356,11 @@ type Sequencer struct {
 	pauseChan   chan struct{}
 	forwarder   *TxForwarder
 
-	expectedSurplusMutex   sync.RWMutex
-	expectedSurplus        int64
-	expectedSurplusUpdated bool
+	expectedSurplusMutex         sync.RWMutex
+	expectedSurplus              int64
+	expectedSurplusUpdated       bool
+	timeboostLock                sync.Mutex
+	timeboostAuctionResolutionTx *types.Transaction
 }
 
 func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher) (*Sequencer, error) {
@@ -545,6 +537,37 @@ func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *time
 		return err
 	}
 	return s.expressLaneService.sequenceExpressLaneSubmission(ctx, msg, s.publishTransactionImpl)
+}
+
+func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx *types.Transaction) error {
+	if !s.config().Timeboost.Enable {
+		return errors.New("timeboost not enabled")
+	}
+	if s.config().Timeboost.AuctioneerAddress == "" {
+		return errors.New("auctioneer address not set")
+	}
+	auctionerAddr := common.HexToAddress(s.config().Timeboost.AuctioneerAddress)
+	if auctionerAddr == (common.Address{}) {
+		return errors.New("invalid auctioneer address")
+	}
+	signer := types.LatestSigner(s.execEngine.bc.Config())
+	sender, err := types.Sender(signer, tx)
+	if err != nil {
+		return err
+	}
+	if sender != auctionerAddr {
+		return fmt.Errorf("sender %#x is not the auctioneer address %#x", sender, auctionerAddr)
+	}
+	// TODO: Authenticate it is within the resolution window.
+	s.timeboostLock.Lock()
+	defer s.timeboostLock.Unlock()
+	// Set it as a value that will be consumed first in `createBlock`
+	if s.timeboostAuctionResolutionTx != nil {
+		return errors.New("auction resolution tx for round already received")
+	}
+	log.Info("Received auction resolution tx")
+	s.timeboostAuctionResolutionTx = tx
+	return nil
 }
 
 func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, sender common.Address, l1Info *arbos.L1Info) error {
@@ -927,6 +950,29 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 
 	s.nonceCache.Resize(config.NonceCacheSize) // Would probably be better in a config hook but this is basically free
 	s.nonceCache.BeginNewBlock()
+	if s.config().Timeboost.Enable {
+		s.timeboostLock.Lock()
+		if s.timeboostAuctionResolutionTx != nil {
+			txBytes, err := s.timeboostAuctionResolutionTx.MarshalBinary()
+			if err != nil {
+				s.timeboostLock.Unlock()
+				log.Error("Failed to marshal timeboost auction resolution tx", "err", err)
+				return false
+			}
+			queueItems = append([]txQueueItem{
+				{
+					tx:              s.timeboostAuctionResolutionTx,
+					txSize:          len(txBytes),
+					options:         nil,
+					resultChan:      make(chan error, 1),
+					returnedResult:  &atomic.Bool{},
+					ctx:             ctx,
+					firstAppearance: time.Now(),
+				},
+			}, queueItems...)
+		}
+		s.timeboostLock.Unlock()
+	}
 	queueItems = s.precheckNonces(queueItems, totalBlockSize)
 	txes := make([]*types.Transaction, len(queueItems))
 	hooks := s.makeSequencingHooks()

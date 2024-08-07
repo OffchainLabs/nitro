@@ -234,6 +234,13 @@ func CreateExecutionNode(
 		Public:    false,
 	}}
 	apis = append(apis, rpc.API{
+		Namespace: "auctioneer",
+		Version:   "1.0",
+		Service:   NewArbTimeboostAuctioneerAPI(txPublisher),
+		Public:    false,
+		// Authenticated: true, /* Only exposed via JWT Auth */
+	})
+	apis = append(apis, rpc.API{
 		Namespace: "timeboost",
 		Version:   "1.0",
 		Service:   NewArbTimeboostAPI(txPublisher),
