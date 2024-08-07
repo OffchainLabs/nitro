@@ -17,12 +17,13 @@ import (
 )
 
 type Bid struct {
-	ChainId                *big.Int
-	ExpressLaneController  common.Address
-	AuctionContractAddress common.Address
-	Round                  uint64
-	Amount                 *big.Int
-	Signature              []byte
+	Id                     uint64         `db:"Id"`
+	ChainId                *big.Int       `db:"ChainId"`
+	ExpressLaneController  common.Address `db:"ExpressLaneController"`
+	AuctionContractAddress common.Address `db:"AuctionContractAddress"`
+	Round                  uint64         `db:"Round"`
+	Amount                 *big.Int       `db:"Amount"`
+	Signature              []byte         `db:"Signature"`
 }
 
 func (b *Bid) ToJson() *JsonBid {

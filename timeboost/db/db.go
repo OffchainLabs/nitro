@@ -1,9 +1,13 @@
 package db
 
 import (
+	"fmt"
 	"os"
+	"strings"
+	"sync"
 
 	"github.com/jmoiron/sqlx"
+	_ "github.com/mattn/go-sqlite3"
 	"github.com/offchainlabs/nitro/timeboost"
 )
 
@@ -12,11 +16,13 @@ type Database interface {
 	DeleteBids(round uint64)
 }
 
-type Db struct {
-	db *sqlx.DB
+type SqliteDatabase struct {
+	sqlDB               *sqlx.DB
+	lock                sync.Mutex
+	currentTableVersion int
 }
 
-func NewDb(path string) (*Db, error) {
+func NewDatabase(path string) (*SqliteDatabase, error) {
 	//#nosec G304
 	if _, err := os.Stat(path); err != nil {
 		_, err = os.Create(path)
@@ -28,12 +34,80 @@ func NewDb(path string) (*Db, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &Db{
-		db: db,
+	err = dbInit(db, schemaList)
+	if err != nil {
+		return nil, err
+	}
+	return &SqliteDatabase{
+		sqlDB:               db,
+		currentTableVersion: -1,
 	}, nil
 }
 
-func (d *Db) InsertBids(bids []*timeboost.Bid) error {
+func dbInit(db *sqlx.DB, schemaList []string) error {
+	version, err := fetchVersion(db)
+	if err != nil {
+		return err
+	}
+	for index, schema := range schemaList {
+		// If the current version is less than the version of the schema, update the database
+		if index+1 > version {
+			err = executeSchema(db, schema, index+1)
+			if err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func fetchVersion(db *sqlx.DB) (int, error) {
+	flagValue := make([]int, 0)
+	// Fetch the current version of the database
+	err := db.Select(&flagValue, "SELECT FlagValue FROM Flags WHERE FlagName = 'CurrentVersion'")
+	if err != nil {
+		if !strings.Contains(err.Error(), "no such table") {
+			return 0, err
+		}
+		// If the table doesn't exist, create it
+		_, err = db.Exec(flagSetup)
+		if err != nil {
+			return 0, err
+		}
+		// Fetch the current version of the database
+		err = db.Select(&flagValue, "SELECT FlagValue FROM Flags WHERE FlagName = 'CurrentVersion'")
+		if err != nil {
+			return 0, err
+		}
+	}
+	if len(flagValue) > 0 {
+		return flagValue[0], nil
+	} else {
+		return 0, fmt.Errorf("no version found")
+	}
+}
+
+func executeSchema(db *sqlx.DB, schema string, version int) error {
+	// Begin a transaction, so that we update the version and execute the schema atomically
+	tx, err := db.Beginx()
+	if err != nil {
+		return err
+	}
+
+	// Execute the schema
+	_, err = tx.Exec(schema)
+	if err != nil {
+		return err
+	}
+	// Update the version of the database
+	_, err = tx.Exec(fmt.Sprintf("UPDATE Flags SET FlagValue = %d WHERE FlagName = 'CurrentVersion'", version))
+	if err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (d *SqliteDatabase) InsertBids(bids []*timeboost.Bid) error {
 	for _, b := range bids {
 		if err := d.InsertBid(b); err != nil {
 			return err
@@ -42,7 +116,9 @@ func (d *Db) InsertBids(bids []*timeboost.Bid) error {
 	return nil
 }
 
-func (d *Db) InsertBid(b *timeboost.Bid) error {
+func (d *SqliteDatabase) InsertBid(b *timeboost.Bid) error {
+	d.lock.Lock()
+	defer d.lock.Unlock()
 	query := `INSERT INTO Bids (
         ChainID, ExpressLaneController, AuctionContractAddress, Round, Amount, Signature
     ) VALUES (
@@ -56,15 +132,17 @@ func (d *Db) InsertBid(b *timeboost.Bid) error {
 		"Amount":                 b.Amount.String(),
 		"Signature":              b.Signature,
 	}
-	_, err := d.db.NamedExec(query, params)
+	_, err := d.sqlDB.NamedExec(query, params)
 	if err != nil {
 		return err
 	}
 	return nil
 }
 
-func (d *Db) DeleteBids(round uint64) error {
+func (d *SqliteDatabase) DeleteBids(round uint64) error {
+	d.lock.Lock()
+	defer d.lock.Unlock()
 	query := `DELETE FROM Bids WHERE Round < ?`
-	_, err := d.db.Exec(query, round)
+	_, err := d.sqlDB.Exec(query, round)
 	return err
 }
