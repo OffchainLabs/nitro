@@ -82,7 +82,7 @@ func (elc *ExpressLaneClient) SendTransaction(ctx context.Context, transaction *
 		return err
 	}
 	msg.Signature = signature
-	promise := elc.sendExpressLaneRPC(ctx, msg)
+	promise := elc.sendExpressLaneRPC(msg)
 	if _, err := promise.Await(ctx); err != nil {
 		return err
 	}
@@ -90,8 +90,8 @@ func (elc *ExpressLaneClient) SendTransaction(ctx context.Context, transaction *
 	return nil
 }
 
-func (elc *ExpressLaneClient) sendExpressLaneRPC(ctx context.Context, msg *JsonExpressLaneSubmission) containers.PromiseInterface[struct{}] {
-	return stopwaiter.LaunchPromiseThread[struct{}](elc, func(ctx context.Context) (struct{}, error) {
+func (elc *ExpressLaneClient) sendExpressLaneRPC(msg *JsonExpressLaneSubmission) containers.PromiseInterface[struct{}] {
+	return stopwaiter.LaunchPromiseThread(elc, func(ctx context.Context) (struct{}, error) {
 		err := elc.client.CallContext(ctx, nil, "timeboost_sendExpressLaneTransaction", msg)
 		return struct{}{}, err
 	})
