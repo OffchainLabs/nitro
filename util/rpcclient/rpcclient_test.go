@@ -2,13 +2,17 @@ package rpcclient
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"regexp"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -201,6 +205,21 @@ func TestIsAlreadyKnownError(t *testing.T) {
 		if got != testCase.expected {
 			t.Errorf("IsAlreadyKnownError(%q) = %v expected %v", testCase.input, got, testCase.expected)
 		}
+	}
+}
+
+func TestUnmarshalClientConfig(t *testing.T) {
+	exampleJson := `[{"jwtsecret":"/tmp/nitro-val.jwt","url":"http://127.0.0.10:52000"}, {"jwtsecret":"/tmp/nitro-val.jwt","url":"http://127.0.0.10:52001"}]`
+	var clientConfigs []ClientConfig
+	Require(t, json.Unmarshal([]byte(exampleJson), &clientConfigs))
+	expectedClientConfigs := []ClientConfig{DefaultClientConfig, DefaultClientConfig}
+	expectedClientConfigs[0].JWTSecret = "/tmp/nitro-val.jwt"
+	expectedClientConfigs[0].URL = "http://127.0.0.10:52000"
+	expectedClientConfigs[1].JWTSecret = "/tmp/nitro-val.jwt"
+	expectedClientConfigs[1].URL = "http://127.0.0.10:52001"
+	// Ensure the configs are equivalent to the expected configs, ignoring the retryErrors regexp as cmp can't compare it
+	if diff := cmp.Diff(expectedClientConfigs, clientConfigs, cmpopts.IgnoreTypes(&regexp.Regexp{})); diff != "" {
+		t.Errorf("unmarshalling example JSON unexpected diff:\n%s", diff)
 	}
 }
 

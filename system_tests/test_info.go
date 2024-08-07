@@ -16,7 +16,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
@@ -109,8 +108,8 @@ func (b *BlockchainTestInfo) GenerateGenesisAccount(name string, balance *big.In
 	})
 }
 
-func (b *BlockchainTestInfo) GetGenesisAlloc() core.GenesisAlloc {
-	alloc := make(core.GenesisAlloc)
+func (b *BlockchainTestInfo) GetGenesisAlloc() types.GenesisAlloc {
+	alloc := make(types.GenesisAlloc)
 	for _, info := range b.ArbInitData.Accounts {
 		var contractCode []byte
 		contractStorage := make(map[common.Hash]common.Hash)
@@ -120,7 +119,7 @@ func (b *BlockchainTestInfo) GetGenesisAlloc() core.GenesisAlloc {
 				contractStorage[k] = v
 			}
 		}
-		alloc[info.Addr] = core.GenesisAccount{
+		alloc[info.Addr] = types.Account{
 			Balance: new(big.Int).Set(info.EthBalance),
 			Nonce:   info.Nonce,
 			Code:    contractCode,

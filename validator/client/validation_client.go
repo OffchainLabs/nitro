@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"runtime"
 	"sync/atomic"
 	"time"
 
@@ -29,13 +30,16 @@ type ValidationClient struct {
 	stopwaiter.StopWaiter
 	client          *rpcclient.RpcClient
 	name            string
+	stylusArchs     []string
 	room            atomic.Int32
 	wasmModuleRoots []common.Hash
 }
 
 func NewValidationClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *ValidationClient {
 	return &ValidationClient{
-		client: rpcclient.NewRpcClient(config, stack),
+		client:      rpcclient.NewRpcClient(config, stack),
+		name:        "not started",
+		stylusArchs: []string{"not started"},
 	}
 }
 
@@ -51,9 +55,7 @@ func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot c
 	return server_common.NewValRun(promise, moduleRoot)
 }
 
-func (c *ValidationClient) Start(ctx_in context.Context) error {
-	c.StopWaiter.Start(ctx_in, c)
-	ctx := c.GetContext()
+func (c *ValidationClient) Start(ctx context.Context) error {
 	if err := c.client.Start(ctx); err != nil {
 		return err
 	}
@@ -64,15 +66,27 @@ func (c *ValidationClient) Start(ctx_in context.Context) error {
 	if len(name) == 0 {
 		return errors.New("couldn't read name from server")
 	}
+	var stylusArchs []string
+	if err := c.client.CallContext(ctx, &stylusArchs, server_api.Namespace+"_stylusArchs"); err != nil {
+		return err
+	}
+	if len(stylusArchs) == 0 {
+		return fmt.Errorf("could not read stylus archs from validation server")
+	}
+	for _, stylusArch := range stylusArchs {
+		if stylusArch != "wavm" && stylusArch != runtime.GOARCH && stylusArch != "mock" {
+			return fmt.Errorf("unsupported stylus architecture: %v", stylusArch)
+		}
+	}
 	var moduleRoots []common.Hash
-	if err := c.client.CallContext(c.GetContext(), &moduleRoots, server_api.Namespace+"_wasmModuleRoots"); err != nil {
+	if err := c.client.CallContext(ctx, &moduleRoots, server_api.Namespace+"_wasmModuleRoots"); err != nil {
 		return err
 	}
 	if len(moduleRoots) == 0 {
 		return fmt.Errorf("server reported no wasmModuleRoots")
 	}
 	var room int
-	if err := c.client.CallContext(c.GetContext(), &room, server_api.Namespace+"_room"); err != nil {
+	if err := c.client.CallContext(ctx, &room, server_api.Namespace+"_room"); err != nil {
 		return err
 	}
 	if room < 2 {
@@ -84,6 +98,8 @@ func (c *ValidationClient) Start(ctx_in context.Context) error {
 	c.room.Store(int32(room))
 	c.wasmModuleRoots = moduleRoots
 	c.name = name
+	c.stylusArchs = stylusArchs
+	c.StopWaiter.Start(ctx, c)
 	return nil
 }
 
@@ -92,6 +108,13 @@ func (c *ValidationClient) WasmModuleRoots() ([]common.Hash, error) {
 		return c.wasmModuleRoots, nil
 	}
 	return nil, errors.New("not started")
+}
+
+func (c *ValidationClient) StylusArchs() []string {
+	if c.Started() {
+		return c.stylusArchs
+	}
+	return []string{"not started"}
 }
 
 func (c *ValidationClient) Stop() {

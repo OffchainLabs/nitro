@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/params"
@@ -17,6 +18,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/util"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func TestSnapSync(t *testing.T) {
@@ -27,6 +29,7 @@ func TestSnapSync(t *testing.T) {
 
 	// 1st node with sequencer, stays up all the time.
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 	builder.L2Info = NewBlockChainTestInfo(
 		t,
 		types.NewArbitrumSigner(types.NewLondonSigner(builder.chainConfig.ChainID)), big.NewInt(l2pricing.InitialBaseFeeWei*2),
@@ -38,7 +41,7 @@ func TestSnapSync(t *testing.T) {
 	// 2nd node without sequencer, syncs up to the first node.
 	// This node will be stopped in middle and arbitrumdata will be deleted.
 	testDir := t.TempDir()
-	nodeBStack := createStackConfigForTest(testDir)
+	nodeBStack := testhelpers.CreateStackConfigForTest(testDir)
 	nodeBConfig := builder.nodeConfig
 	nodeBConfig.BatchPoster.Enable = false
 	nodeBParams := &SecondNodeParams{

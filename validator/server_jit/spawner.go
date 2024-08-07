@@ -71,6 +71,10 @@ func (v *JitSpawner) WasmModuleRoots() ([]common.Hash, error) {
 	return v.locator.ModuleRoots(), nil
 }
 
+func (v *JitSpawner) StylusArchs() []string {
+	return []string{runtime.GOARCH}
+}
+
 func (v *JitSpawner) execute(
 	ctx context.Context, entry *validator.ValidationInput, moduleRoot common.Hash,
 ) (validator.GoGlobalState, error) {

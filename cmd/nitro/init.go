@@ -423,6 +423,10 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 					return nil, nil, err
 				}
 				chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1)
+				_, err = rawdb.ParseStateScheme(cacheConfig.StateScheme, chainDb)
+				if err != nil {
+					return nil, nil, err
+				}
 				err = pruning.PruneChainDb(ctx, chainDb, stack, &config.Init, cacheConfig, persistentConfig, l1Client, rollupAddrs, config.Node.ValidatorRequired())
 				if err != nil {
 					return chainDb, nil, fmt.Errorf("error pruning: %w", err)
@@ -533,6 +537,10 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		return nil, nil, err
 	}
 	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1)
+	_, err = rawdb.ParseStateScheme(cacheConfig.StateScheme, chainDb)
+	if err != nil {
+		return nil, nil, err
+	}
 
 	// Rebuilding wasm store is not required when just starting out
 	err = gethexec.WriteToKeyValueStore(wasmDb, gethexec.RebuildingPositionKey, gethexec.RebuildingDone)
@@ -673,6 +681,10 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 			log.Warn("Created fake init message as L1Reader is disabled and serialized chain config from init message is not available", "json", string(serializedChainConfig))
 		}
 
+		emptyBlockChain := rawdb.ReadHeadHeader(chainDb) == nil
+		if !emptyBlockChain && (cacheConfig.StateScheme == rawdb.PathScheme) && config.Init.Force {
+			return chainDb, nil, errors.New("It is not possible to force init with non-empty blockchain when using path scheme")
+		}
 		l2BlockChain, err = gethexec.WriteOrTestBlockChain(chainDb, cacheConfig, initDataReader, chainConfig, parsedInitMessage, config.Execution.TxLookupLimit, config.Init.AccountsPerSync)
 		if err != nil {
 			return chainDb, nil, err

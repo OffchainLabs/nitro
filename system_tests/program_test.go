@@ -20,6 +20,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -396,7 +397,6 @@ func storageTest(t *testing.T, jit bool) {
 }
 
 func TestProgramTransientStorage(t *testing.T) {
-	t.Parallel()
 	transientStorageTest(t, true)
 }
 
@@ -1474,6 +1474,9 @@ func setupProgramTest(t *testing.T, jit bool, builderOpts ...func(*NodeBuilder))
 		opt(builder)
 	}
 
+	// setupProgramTest is being called by tests that validate blocks.
+	// For now validation only works with HashScheme set.
+	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 	builder.nodeConfig.BlockValidator.Enable = false
 	builder.nodeConfig.Staker.Enable = true
 	builder.nodeConfig.BatchPoster.Enable = true
@@ -1668,37 +1671,28 @@ func formatTime(duration time.Duration) string {
 	return fmt.Sprintf("%.2f%s", span, units[unit])
 }
 
-func TestWasmRecreate(t *testing.T) {
-	builder, auth, cleanup := setupProgramTest(t, true)
+func testWasmRecreate(t *testing.T, builder *NodeBuilder, storeTx *types.Transaction, loadTx *types.Transaction, want []byte) {
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
-	defer cleanup()
-
-	storage := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
-
-	zero := common.Hash{}
-	val := common.HexToHash("0x121233445566")
 
 	// do an onchain call - store value
-	storeTx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, argsForStorageWrite(zero, val))
 	Require(t, l2client.SendTransaction(ctx, storeTx))
 	_, err := EnsureTxSucceeded(ctx, l2client, storeTx)
 	Require(t, err)
 
 	testDir := t.TempDir()
-	nodeBStack := createStackConfigForTest(testDir)
+	nodeBStack := testhelpers.CreateStackConfigForTest(testDir)
 	nodeB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack})
 
 	_, err = EnsureTxSucceeded(ctx, nodeB.Client, storeTx)
 	Require(t, err)
 
 	// make sure reading 2nd value succeeds from 2nd node
-	loadTx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, argsForStorageRead(zero))
 	result, err := arbutil.SendTxAsCall(ctx, nodeB.Client, loadTx, l2info.GetAddress("Owner"), nil, true)
 	Require(t, err)
-	if common.BytesToHash(result) != val {
-		Fatal(t, "got wrong value")
+	if !bytes.Equal(result, want) {
+		t.Fatalf("got wrong value, got %x, want %x", result, want)
 	}
 	// close nodeB
 	cleanupB()
@@ -1723,8 +1717,8 @@ func TestWasmRecreate(t *testing.T) {
 	// test nodeB - answers eth_call (requires reloading wasm)
 	result, err = arbutil.SendTxAsCall(ctx, nodeB.Client, loadTx, l2info.GetAddress("Owner"), nil, true)
 	Require(t, err)
-	if common.BytesToHash(result) != val {
-		Fatal(t, "got wrong value")
+	if !bytes.Equal(result, want) {
+		t.Fatalf("got wrong value, got %x, want %x", result, want)
 	}
 
 	// send new tx (requires wasm) and check nodeB sees it as well
@@ -1743,7 +1737,46 @@ func TestWasmRecreate(t *testing.T) {
 		Fatal(t, "not contents found before delete")
 	}
 	os.RemoveAll(wasmPath)
+}
 
+func TestWasmRecreate(t *testing.T) {
+	builder, auth, cleanup := setupProgramTest(t, true)
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	storage := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
+
+	zero := common.Hash{}
+	val := common.HexToHash("0x121233445566")
+
+	storeTx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, argsForStorageWrite(zero, val))
+	loadTx := l2info.PrepareTxTo("Owner", &storage, l2info.TransferGas, nil, argsForStorageRead(zero))
+
+	testWasmRecreate(t, builder, storeTx, loadTx, val[:])
+}
+
+func TestWasmRecreateWithDelegatecall(t *testing.T) {
+	builder, auth, cleanup := setupProgramTest(t, true)
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	storage := deployWasm(t, ctx, auth, l2client, rustFile("storage"))
+	multicall := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
+
+	zero := common.Hash{}
+	val := common.HexToHash("0x121233445566")
+
+	data := argsForMulticall(vm.DELEGATECALL, storage, big.NewInt(0), argsForStorageWrite(zero, val))
+	storeTx := l2info.PrepareTxTo("Owner", &multicall, l2info.TransferGas, nil, data)
+
+	data = argsForMulticall(vm.DELEGATECALL, storage, big.NewInt(0), argsForStorageRead(zero))
+	loadTx := l2info.PrepareTxTo("Owner", &multicall, l2info.TransferGas, nil, data)
+
+	testWasmRecreate(t, builder, storeTx, loadTx, val[:])
 }
 
 // createMapFromDb is used in verifying if wasm store rebuilding works
@@ -1786,7 +1819,7 @@ func TestWasmStoreRebuilding(t *testing.T) {
 	Require(t, err)
 
 	testDir := t.TempDir()
-	nodeBStack := createStackConfigForTest(testDir)
+	nodeBStack := testhelpers.CreateStackConfigForTest(testDir)
 	nodeB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: nodeBStack})
 
 	_, err = EnsureTxSucceeded(ctx, nodeB.Client, storeTx)
