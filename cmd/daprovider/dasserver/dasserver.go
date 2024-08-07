@@ -137,9 +137,9 @@ func NewServer(ctx context.Context, config *ServerConfig, dataSigner signature.D
 		IdleTimeout:       config.ServerTimeouts.IdleTimeout,
 	}
 	go func() {
-		err := srv.Serve(listener)
-		if err != nil {
-			return
+		if err := srv.Serve(listener); err != nil &&
+			!errors.Is(err, http.ErrServerClosed) {
+			log.Error("das-server's Serve method returned a non http.ErrServerClosed error", "err", err)
 		}
 	}()
 
@@ -164,7 +164,7 @@ func (s *Server) RecoverPayloadFromBatch(
 	batchNum hexutil.Uint64,
 	batchBlockHash common.Hash,
 	sequencerMsg hexutil.Bytes,
-	preimages map[arbutil.PreimageType]map[common.Hash][]byte,
+	preimages daprovider.PreimagesMap,
 	validateSeqMsg bool,
 ) (*daclient.RecoverPayloadFromBatchResult, error) {
 	payload, preimages, err := s.reader.RecoverPayloadFromBatch(ctx, uint64(batchNum), batchBlockHash, sequencerMsg, preimages, validateSeqMsg)

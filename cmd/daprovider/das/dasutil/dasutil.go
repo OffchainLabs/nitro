@@ -58,9 +58,9 @@ func (d *readerForDAS) RecoverPayloadFromBatch(
 	batchNum uint64,
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
-	preimages map[arbutil.PreimageType]map[common.Hash][]byte,
+	preimages daprovider.PreimagesMap,
 	validateSeqMsg bool,
-) ([]byte, map[arbutil.PreimageType]map[common.Hash][]byte, error) {
+) ([]byte, daprovider.PreimagesMap, error) {
 	return RecoverPayloadFromDasBatch(ctx, batchNum, sequencerMsg, d.dasReader, d.keysetFetcher, preimages, validateSeqMsg)
 }
 
@@ -110,9 +110,9 @@ func RecoverPayloadFromDasBatch(
 	sequencerMsg []byte,
 	dasReader DASReader,
 	keysetFetcher DASKeysetFetcher,
-	preimages map[arbutil.PreimageType]map[common.Hash][]byte,
+	preimages daprovider.PreimagesMap,
 	validateSeqMsg bool,
-) ([]byte, map[arbutil.PreimageType]map[common.Hash][]byte, error) {
+) ([]byte, daprovider.PreimagesMap, error) {
 	var preimageRecorder daprovider.PreimageRecorder
 	if preimages != nil {
 		preimageRecorder = daprovider.RecordPreimagesTo(preimages)

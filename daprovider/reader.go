@@ -23,9 +23,9 @@ type Reader interface {
 		batchNum uint64,
 		batchBlockHash common.Hash,
 		sequencerMsg []byte,
-		preimages map[arbutil.PreimageType]map[common.Hash][]byte,
+		preimages PreimagesMap,
 		validateSeqMsg bool,
-	) ([]byte, map[arbutil.PreimageType]map[common.Hash][]byte, error)
+	) ([]byte, PreimagesMap, error)
 }
 
 // NewReaderForBlobReader is generally meant to be only used by nitro.
@@ -47,9 +47,9 @@ func (b *readerForBlobReader) RecoverPayloadFromBatch(
 	batchNum uint64,
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
-	preimages map[arbutil.PreimageType]map[common.Hash][]byte,
+	preimages PreimagesMap,
 	validateSeqMsg bool,
-) ([]byte, map[arbutil.PreimageType]map[common.Hash][]byte, error) {
+) ([]byte, PreimagesMap, error) {
 	blobHashes := sequencerMsg[41:]
 	if len(blobHashes)%len(common.Hash{}) != 0 {
 		return nil, nil, ErrInvalidBlobDataFormat

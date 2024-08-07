@@ -131,7 +131,7 @@ type validationEntry struct {
 	// Has batch when created - others could be added on record
 	BatchInfo []validator.BatchInfo
 	// Valid since Ready
-	Preimages  map[arbutil.PreimageType]map[common.Hash][]byte
+	Preimages  daprovider.PreimagesMap
 	UserWasms  state.UserWasms
 	DelayedMsg []byte
 }
@@ -271,7 +271,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 	if e.Stage != ReadyForRecord {
 		return fmt.Errorf("validation entry should be ReadyForRecord, is: %v", e.Stage)
 	}
-	e.Preimages = make(map[arbutil.PreimageType]map[common.Hash][]byte)
+	e.Preimages = make(daprovider.PreimagesMap)
 	if e.Pos != 0 {
 		recording, err := v.recorder.RecordBlockCreation(ctx, e.Pos, e.msg)
 		if err != nil {
@@ -326,7 +326,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		for _, dapReader := range v.dapReaders {
 			if dapReader != nil && dapReader.IsValidHeaderByte(ctx, batch.Data[40]) {
 				var err error
-				var preimages map[arbutil.PreimageType]map[common.Hash][]byte
+				var preimages daprovider.PreimagesMap
 				_, preimages, err = dapReader.RecoverPayloadFromBatch(ctx, batch.Number, batch.BlockHash, batch.Data, e.Preimages, true)
 				if err != nil {
 					// Matches the way keyset validation was done inside DAS readers i.e logging the error

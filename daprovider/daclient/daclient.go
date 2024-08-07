@@ -7,7 +7,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/spf13/pflag"
 )
@@ -63,8 +63,8 @@ func (c *Client) IsValidHeaderByte(ctx context.Context, headerByte byte) bool {
 
 // RecoverPayloadFromBatchResult is the result struct that data availability providers should use to respond with underlying payload and updated preimages map to a RecoverPayloadFromBatch fetch request
 type RecoverPayloadFromBatchResult struct {
-	Payload   hexutil.Bytes                                   `json:"payload,omitempty"`
-	Preimages map[arbutil.PreimageType]map[common.Hash][]byte `json:"preimages,omitempty"`
+	Payload   hexutil.Bytes           `json:"payload,omitempty"`
+	Preimages daprovider.PreimagesMap `json:"preimages,omitempty"`
 }
 
 func (c *Client) RecoverPayloadFromBatch(
@@ -72,9 +72,9 @@ func (c *Client) RecoverPayloadFromBatch(
 	batchNum uint64,
 	batchBlockHash common.Hash,
 	sequencerMsg []byte,
-	preimages map[arbutil.PreimageType]map[common.Hash][]byte,
+	preimages daprovider.PreimagesMap,
 	validateSeqMsg bool,
-) ([]byte, map[arbutil.PreimageType]map[common.Hash][]byte, error) {
+) ([]byte, daprovider.PreimagesMap, error) {
 	var recoverPayloadFromBatchResult RecoverPayloadFromBatchResult
 	if err := c.CallContext(ctx, &recoverPayloadFromBatchResult, "daprovider_recoverPayloadFromBatch", hexutil.Uint64(batchNum), batchBlockHash, hexutil.Bytes(sequencerMsg), preimages, validateSeqMsg); err != nil {
 		return nil, nil, fmt.Errorf("error returned from daprovider_recoverPayloadFromBatch rpc method, err: %w", err)

@@ -2,7 +2,7 @@ package validator
 
 import (
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/daprovider"
 )
 
 type BatchInfo struct {
@@ -15,7 +15,7 @@ type ValidationInput struct {
 	Id            uint64
 	HasDelayedMsg bool
 	DelayedMsgNr  uint64
-	Preimages     map[arbutil.PreimageType]map[common.Hash][]byte
+	Preimages     daprovider.PreimagesMap
 	UserWasms     map[string]map[common.Hash][]byte
 	BatchInfo     []BatchInfo
 	DelayedMsg    []byte
