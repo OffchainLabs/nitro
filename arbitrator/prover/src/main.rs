@@ -344,6 +344,13 @@ fn main() -> Result<()> {
         });
     }
 
+    println!(
+        "End GlobalState:\n  BlockHash: {:?}\n  SendRoot: {:?}\n  Batch: {}\n  PosInBatch: {}",
+        mach.get_global_state().bytes32_vals[0],
+        mach.get_global_state().bytes32_vals[1],
+        mach.get_global_state().u64_vals[0],
+        mach.get_global_state().u64_vals[1]
+    );
     println!("End machine status: {:?}", mach.get_status());
     println!("End machine hash: {}", mach.hash());
     println!("End machine stack: {:?}", mach.get_data_stack());
