@@ -78,8 +78,11 @@ func NewFastConfirmSafe(
 	return fastConfirmSafe, nil
 }
 
-func (f *FastConfirmSafe) tryFastConfirmation(ctx context.Context, blockHash common.Hash, sendRoot common.Hash) error {
-	fastConfirmCallData, err := f.createFastConfirmCalldata(blockHash, sendRoot)
+func (f *FastConfirmSafe) tryFastConfirmation(ctx context.Context, blockHash common.Hash, sendRoot common.Hash, nodeHash common.Hash) error {
+	if f.wallet.Address() == nil {
+		return errors.New("fast confirmation requires a wallet which is not setup")
+	}
+	fastConfirmCallData, err := f.createFastConfirmCalldata(blockHash, sendRoot, nodeHash)
 	if err != nil {
 		return err
 	}
@@ -112,6 +115,16 @@ func (f *FastConfirmSafe) tryFastConfirmation(ctx context.Context, blockHash com
 			return err
 		}
 	}
+
+	alreadyApproved, err := f.safe.ApprovedHashes(&bind.CallOpts{Context: ctx}, *f.wallet.Address(), safeTxHash)
+	if err != nil {
+		return err
+	}
+	if alreadyApproved.Cmp(common.Big1) == 0 {
+		_, err = f.checkApprovedHashAndExecTransaction(ctx, fastConfirmCallData, safeTxHash)
+		return err
+	}
+
 	auth, err := f.builder.Auth(ctx)
 	if err != nil {
 		return err
@@ -162,11 +175,12 @@ func (f *FastConfirmSafe) flushTransactions(ctx context.Context) error {
 }
 
 func (f *FastConfirmSafe) createFastConfirmCalldata(
-	blockHash common.Hash, sendRoot common.Hash,
+	blockHash common.Hash, sendRoot common.Hash, nodeHash common.Hash,
 ) ([]byte, error) {
 	calldata, err := f.fastConfirmNextNodeMethod.Inputs.Pack(
 		blockHash,
 		sendRoot,
+		nodeHash,
 	)
 	if err != nil {
 		return nil, err
@@ -177,12 +191,12 @@ func (f *FastConfirmSafe) createFastConfirmCalldata(
 }
 
 func (f *FastConfirmSafe) checkApprovedHashAndExecTransaction(ctx context.Context, fastConfirmCallData []byte, safeTxHash [32]byte) (bool, error) {
+	if f.wallet.Address() == nil {
+		return false, errors.New("wallet address is nil")
+	}
 	var signatures []byte
 	approvedHashCount := uint64(0)
 	for _, owner := range f.owners {
-		if f.wallet.Address() == nil {
-			return false, errors.New("wallet address is nil")
-		}
 		var approved *big.Int
 		// No need check if wallet has approved the hash,
 		// since checkApprovedHashAndExecTransaction is called only after wallet has approved the hash.

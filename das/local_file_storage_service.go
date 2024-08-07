@@ -737,6 +737,8 @@ func (l *trieLayout) commitMigration() error {
 		return err
 	}
 
+	// in OSX - syscall.Sync() returns an error, but in linux it does not.
+	// nolint:errcheck
 	syscall.Sync()
 
 	// Done migrating
