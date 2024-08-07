@@ -50,6 +50,10 @@ func RedisStreamForRoot(prefix string, moduleRoot common.Hash) string {
 	return fmt.Sprintf("%sstream:%s", prefix, moduleRoot.Hex())
 }
 
+func RedisBoldStreamForRoot(moduleRoot common.Hash) string {
+	return fmt.Sprintf("stream-bold:%s", moduleRoot.Hex())
+}
+
 type Request struct {
 	Input      *InputJSON
 	ModuleRoot common.Hash
@@ -174,4 +178,12 @@ func ValidationInputFromJson(entry *InputJSON) (*validator.ValidationInput, erro
 		valInput.UserWasms[arch] = archWasms
 	}
 	return valInput, nil
+}
+
+type GetLeavesWithStepSizeInput struct {
+	ModuleRoot        common.Hash
+	MachineStartIndex uint64
+	StepSize          uint64
+	NumDesiredLeaves  uint64
+	ValidationInput   *validator.ValidationInput
 }
