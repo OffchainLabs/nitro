@@ -17,6 +17,7 @@ import (
 	boldrollup "github.com/OffchainLabs/bold/solgen/go/rollupgen"
 	flag "github.com/spf13/pflag"
 
+	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
