@@ -1,4 +1,4 @@
-package db
+package timeboost
 
 var (
 	flagSetup = `
@@ -12,6 +12,7 @@ INSERT INTO Flags (FlagName, FlagValue) VALUES ('CurrentVersion', 0);
 CREATE TABLE IF NOT EXISTS Bids (
     Id INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT,
     ChainId TEXT NOT NULL,
+    Bidder TEXT NOT NULL,
     ExpressLaneController TEXT NOT NULL,
     AuctionContractAddress TEXT NOT NULL,
     Round INTEGER NOT NULL,

@@ -307,10 +307,8 @@ func (bv *BidValidator) validateBid(
 	if !ok {
 		bv.bidsPerSenderInRound[bidder] = 1
 	}
-	fmt.Println(numBids)
 	if numBids > bv.maxBidsPerSenderInRound {
 		bv.Unlock()
-		fmt.Println("Reached limit")
 		return nil, errors.Wrapf(ErrTooManyBids, "bidder %s has already sent the maximum allowed bids = %d in this round", bidder.Hex(), numBids)
 	}
 	bv.bidsPerSenderInRound[bidder]++

@@ -50,6 +50,7 @@ type AuctioneerServerConfig struct {
 	Wallet                 genericconf.WalletConfig `koanf:"wallet"`
 	SequencerEndpoint      string                   `koanf:"sequencer-endpoint"`
 	AuctionContractAddress string                   `koanf:"auction-contract-address"`
+	DbDirectory            string                   `koanf:"db-directory"`
 }
 
 var DefaultAuctioneerServerConfig = AuctioneerServerConfig{
@@ -73,6 +74,7 @@ func AuctioneerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	pubsub.ConsumerConfigAddOptions(prefix+".consumer-config", f)
 	f.String(prefix+".redis-url", DefaultAuctioneerServerConfig.RedisURL, "url of redis server")
 	f.String(prefix+".stream-prefix", DefaultAuctioneerServerConfig.StreamPrefix, "prefix for stream name")
+	f.String(prefix+".db-directory", DefaultAuctioneerServerConfig.DbDirectory, "path to database directory for persisting validated bids in a sqlite file")
 	f.Duration(prefix+".stream-timeout", DefaultAuctioneerServerConfig.StreamTimeout, "Timeout on polling for existence of redis streams")
 	genericconf.WalletConfigAddOptions(prefix+".wallet", f, "wallet for auctioneer server")
 	f.String(prefix+".sequencer-endpoint", DefaultAuctioneerServerConfig.SequencerEndpoint, "sequencer RPC endpoint")
@@ -96,6 +98,7 @@ type AuctioneerServer struct {
 	auctionClosingDuration time.Duration
 	roundDuration          time.Duration
 	streamTimeout          time.Duration
+	database               *SqliteDatabase
 }
 
 // NewAuctioneerServer creates a new autonomous auctioneer struct.
@@ -106,6 +109,13 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 	}
 	if cfg.AuctionContractAddress == "" {
 		return nil, fmt.Errorf("auction contract address cannot be empty")
+	}
+	if cfg.DbDirectory == "" {
+		return nil, errors.New("database directory is empty")
+	}
+	database, err := NewDatabase(cfg.DbDirectory)
+	if err != nil {
+		return nil, err
 	}
 	auctionContractAddr := common.HexToAddress(cfg.AuctionContractAddress)
 	redisClient, err := redisutil.RedisClientFromURL(cfg.RedisURL)
@@ -145,6 +155,7 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 		sequencerRpc:           client,
 		chainId:                chainId,
 		client:                 sequencerClient,
+		database:               database,
 		consumer:               c,
 		auctionContract:        auctionContract,
 		auctionContractAddr:    auctionContractAddr,
@@ -235,6 +246,8 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 			case bid := <-a.bidsReceiver:
 				log.Info("Consumed validated bid", "bidder", bid.Bidder, "amount", bid.Amount, "round", bid.Round)
 				a.bidCache.add(JsonValidatedBidToGo(bid))
+				// Persist the validated bid to the database as a non-blocking operation.
+				go a.persistValidatedBid(bid)
 			case <-ctx.Done():
 				log.Info("Context done while waiting redis streams to be ready, failed to start")
 				return
@@ -335,6 +348,12 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 func (a *AuctioneerServer) sendAuctionResolutionTransactionRPC(ctx context.Context, tx *types.Transaction) error {
 	// TODO: Retry a few times if fails.
 	return a.sequencerRpc.CallContext(ctx, nil, "auctioneer_submitAuctionResolutionTransaction", tx)
+}
+
+func (a *AuctioneerServer) persistValidatedBid(bid *JsonValidatedBid) {
+	if err := a.database.InsertBid(JsonValidatedBidToGo(bid)); err != nil {
+		log.Error("Could not persist validated bid to database", "err", err, "bidder", bid.Bidder, "amount", bid.Amount.String())
+	}
 }
 
 func copyTxOpts(opts *bind.TransactOpts) *bind.TransactOpts {

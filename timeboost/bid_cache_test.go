@@ -1,90 +1,23 @@
 package timeboost
 
 import (
+	"context"
+	"fmt"
 	"math/big"
 	"net"
 	"testing"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/p2p"
+	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/offchainlabs/nitro/pubsub"
+	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/stretchr/testify/require"
 )
 
-// func TestResolveAuction(t *testing.T) {
-// 	ctx, cancel := context.WithCancel(context.Background())
-// 	defer cancel()
-
-// 	testSetup := setupAuctionTest(t, ctx)
-// 	am, endpoint := setupAuctioneer(t, ctx, testSetup)
-
-// 	// Set up two different bidders.
-// 	alice := setupBidderClient(t, ctx, "alice", testSetup.accounts[0], testSetup, endpoint)
-// 	bob := setupBidderClient(t, ctx, "bob", testSetup.accounts[1], testSetup, endpoint)
-// 	require.NoError(t, alice.Deposit(ctx, big.NewInt(5)))
-// 	require.NoError(t, bob.Deposit(ctx, big.NewInt(5)))
-
-// 	// Wait until the initial round.
-// 	info, err := alice.auctionContract.RoundTimingInfo(&bind.CallOpts{})
-// 	require.NoError(t, err)
-// 	timeToWait := time.Until(time.Unix(int64(info.OffsetTimestamp), 0))
-// 	<-time.After(timeToWait)
-// 	time.Sleep(time.Second) // Add a second of wait so that we are within a round.
-
-// 	// Form two new bids for the round, with Alice being the bigger one.
-// 	_, err = alice.Bid(ctx, big.NewInt(2), alice.txOpts.From)
-// 	require.NoError(t, err)
-// 	_, err = bob.Bid(ctx, big.NewInt(1), bob.txOpts.From)
-// 	require.NoError(t, err)
-
-// 	// Attempt to resolve the auction before it is closed and receive an error.
-// 	require.ErrorContains(t, am.resolveAuction(ctx), "AuctionNotClosed")
-
-// 	// Await resolution.
-// 	t.Log(time.Now())
-// 	ticker := newAuctionCloseTicker(am.roundDuration, am.auctionClosingDuration)
-// 	go ticker.start()
-// 	<-ticker.c
-// 	require.NoError(t, am.resolveAuction(ctx))
-
-// 	filterOpts := &bind.FilterOpts{
-// 		Context: ctx,
-// 		Start:   0,
-// 		End:     nil,
-// 	}
-// 	it, err := am.auctionContract.FilterAuctionResolved(filterOpts, nil, nil, nil)
-// 	require.NoError(t, err)
-// 	aliceWon := false
-// 	for it.Next() {
-// 		// Expect Alice to have become the next express lane controller.
-// 		if it.Event.FirstPriceBidder == alice.txOpts.From {
-// 			aliceWon = true
-// 		}
-// 	}
-// 	require.True(t, aliceWon)
-// }
-
-// func TestReceiveBid_OK(t *testing.T) {
-// 	ctx, cancel := context.WithCancel(context.Background())
-// 	defer cancel()
-
-// 	testSetup := setupAuctionTest(t, ctx)
-// 	am, endpoint := setupAuctioneer(t, ctx, testSetup)
-// 	bc := setupBidderClient(t, ctx, "alice", testSetup.accounts[0], testSetup, endpoint)
-// 	require.NoError(t, bc.Deposit(ctx, big.NewInt(5)))
-
-// 	// Form a new bid with an amount.
-// 	newBid, err := bc.Bid(ctx, big.NewInt(5), testSetup.accounts[0].txOpts.From)
-// 	require.NoError(t, err)
-
-// 	// Check the bid passes validation.
-// 	_, err = am.validateBid(newBid, am.auctionContract.BalanceOf, am.fetchReservePrice)
-// 	require.NoError(t, err)
-
-// 	topTwoBids := am.bidCache.topTwoBids()
-// 	require.True(t, topTwoBids.secondPlace == nil)
-// 	require.True(t, topTwoBids.firstPlace.expressLaneController == newBid.ExpressLaneController)
-// }
-
 func TestTopTwoBids(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name     string
 		bids     map[common.Address]*ValidatedBid
@@ -208,57 +141,67 @@ func TestTopTwoBids(t *testing.T) {
 	}
 }
 
-// func BenchmarkBidValidation(b *testing.B) {
-// 	b.StopTimer()
-// 	ctx, cancel := context.WithCancel(context.Background())
-// 	defer cancel()
+func BenchmarkBidValidation(b *testing.B) {
+	b.StopTimer()
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	redisURL := redisutil.CreateTestRedis(ctx, b)
+	testSetup := setupAuctionTest(b, ctx)
+	bv, endpoint := setupBidValidator(b, ctx, redisURL, testSetup)
+	bc := setupBidderClient(b, ctx, "alice", testSetup.accounts[0], testSetup, endpoint)
+	require.NoError(b, bc.Deposit(ctx, big.NewInt(5)))
 
-// 	testSetup := setupAuctionTest(b, ctx)
-// 	am, endpoint := setupAuctioneer(b, ctx, testSetup)
-// 	bc := setupBidderClient(b, ctx, "alice", testSetup.accounts[0], testSetup, endpoint)
-// 	require.NoError(b, bc.Deposit(ctx, big.NewInt(5)))
+	// Form a valid bid.
+	newBid, err := bc.Bid(ctx, big.NewInt(5), testSetup.accounts[0].txOpts.From)
+	require.NoError(b, err)
 
-// 	// Form a valid bid.
-// 	newBid, err := bc.Bid(ctx, big.NewInt(5), testSetup.accounts[0].txOpts.From)
-// 	require.NoError(b, err)
+	b.StartTimer()
+	for i := 0; i < b.N; i++ {
+		bv.validateBid(newBid, bv.auctionContract.BalanceOf, bv.fetchReservePrice)
+	}
+}
 
-// 	b.StartTimer()
-// 	for i := 0; i < b.N; i++ {
-// 		am.validateBid(newBid, am.auctionContract.BalanceOf, am.fetchReservePrice)
-// 	}
-// }
-
-// func setupAuctioneer(t testing.TB, ctx context.Context, testSetup *auctionSetup) (*AuctioneerServer, string) {
-// 	// Set up a new auctioneer instance that can validate bids.
-// 	// Set up the auctioneer RPC service.
-// 	randHttp := getRandomPort(t)
-// 	stackConf := node.Config{
-// 		DataDir:             "", // ephemeral.
-// 		HTTPPort:            randHttp,
-// 		HTTPModules:         []string{AuctioneerNamespace},
-// 		HTTPHost:            "localhost",
-// 		HTTPVirtualHosts:    []string{"localhost"},
-// 		HTTPTimeouts:        rpc.DefaultHTTPTimeouts,
-// 		WSPort:              getRandomPort(t),
-// 		WSModules:           []string{AuctioneerNamespace},
-// 		WSHost:              "localhost",
-// 		GraphQLVirtualHosts: []string{"localhost"},
-// 		P2P: p2p.Config{
-// 			ListenAddr:  "",
-// 			NoDial:      true,
-// 			NoDiscovery: true,
-// 		},
-// 	}
-// 	stack, err := node.New(&stackConf)
-// 	require.NoError(t, err)
-// 	am, err := NewAuctioneerServer(
-// 		testSetup.accounts[0].txOpts, []*big.Int{testSetup.chainId}, testSetup.backend.Client(), testSetup.expressLaneAuctionAddr, "", nil,
-// 	)
-// 	require.NoError(t, err)
-// 	go am.Start(ctx)
-// 	require.NoError(t, stack.Start())
-// 	return am, fmt.Sprintf("http://localhost:%d", randHttp)
-// }
+func setupBidValidator(t testing.TB, ctx context.Context, redisURL string, testSetup *auctionSetup) (*BidValidator, string) {
+	randHttp := getRandomPort(t)
+	stackConf := node.Config{
+		DataDir:             "", // ephemeral.
+		HTTPPort:            randHttp,
+		HTTPModules:         []string{AuctioneerNamespace},
+		HTTPHost:            "localhost",
+		HTTPVirtualHosts:    []string{"localhost"},
+		HTTPTimeouts:        rpc.DefaultHTTPTimeouts,
+		WSPort:              getRandomPort(t),
+		WSModules:           []string{AuctioneerNamespace},
+		WSHost:              "localhost",
+		GraphQLVirtualHosts: []string{"localhost"},
+		P2P: p2p.Config{
+			ListenAddr:  "",
+			NoDial:      true,
+			NoDiscovery: true,
+		},
+	}
+	stack, err := node.New(&stackConf)
+	require.NoError(t, err)
+	cfg := &BidValidatorConfig{
+		SequencerEndpoint:      testSetup.endpoint,
+		AuctionContractAddress: testSetup.expressLaneAuctionAddr.Hex(),
+		RedisURL:               redisURL,
+		ProducerConfig:         pubsub.TestProducerConfig,
+	}
+	fetcher := func() *BidValidatorConfig {
+		return cfg
+	}
+	bidValidator, err := NewBidValidator(
+		ctx,
+		stack,
+		fetcher,
+	)
+	require.NoError(t, err)
+	require.NoError(t, bidValidator.Initialize(ctx))
+	require.NoError(t, stack.Start())
+	bidValidator.Start(ctx)
+	return bidValidator, fmt.Sprintf("http://localhost:%d", randHttp)
+}
 
 func getRandomPort(t testing.TB) int {
 	listener, err := net.Listen("tcp", "localhost:0")

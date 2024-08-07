@@ -1,20 +1,18 @@
-package db
+package timeboost
 
 import (
 	"fmt"
+	"io/fs"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
 	"github.com/jmoiron/sqlx"
 	_ "github.com/mattn/go-sqlite3"
-	"github.com/offchainlabs/nitro/timeboost"
 )
 
-type Database interface {
-	SaveBids(bids []*timeboost.Bid) error
-	DeleteBids(round uint64)
-}
+const sqliteFileName = "validated_bids.db?_journal_mode=WAL"
 
 type SqliteDatabase struct {
 	sqlDB               *sqlx.DB
@@ -25,12 +23,12 @@ type SqliteDatabase struct {
 func NewDatabase(path string) (*SqliteDatabase, error) {
 	//#nosec G304
 	if _, err := os.Stat(path); err != nil {
-		_, err = os.Create(path)
-		if err != nil {
+		if err = os.MkdirAll(path, fs.ModeDir); err != nil {
 			return nil, err
 		}
 	}
-	db, err := sqlx.Open("sqlite3", path)
+	filePath := filepath.Join(path, sqliteFileName)
+	db, err := sqlx.Open("sqlite3", filePath)
 	if err != nil {
 		return nil, err
 	}
@@ -107,25 +105,17 @@ func executeSchema(db *sqlx.DB, schema string, version int) error {
 	return tx.Commit()
 }
 
-func (d *SqliteDatabase) InsertBids(bids []*timeboost.Bid) error {
-	for _, b := range bids {
-		if err := d.InsertBid(b); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (d *SqliteDatabase) InsertBid(b *timeboost.Bid) error {
+func (d *SqliteDatabase) InsertBid(b *ValidatedBid) error {
 	d.lock.Lock()
 	defer d.lock.Unlock()
 	query := `INSERT INTO Bids (
-        ChainID, ExpressLaneController, AuctionContractAddress, Round, Amount, Signature
+        ChainID, Bidder, ExpressLaneController, AuctionContractAddress, Round, Amount, Signature
     ) VALUES (
-        :ChainID, :ExpressLaneController, :AuctionContractAddress, :Round, :Amount, :Signature
+        :ChainID, :Bidder, :ExpressLaneController, :AuctionContractAddress, :Round, :Amount, :Signature
     )`
 	params := map[string]interface{}{
 		"ChainID":                b.ChainId.String(),
+		"Bidder":                 b.Bidder.Hex(),
 		"ExpressLaneController":  b.ExpressLaneController.Hex(),
 		"AuctionContractAddress": b.AuctionContractAddress.Hex(),
 		"Round":                  b.Round,

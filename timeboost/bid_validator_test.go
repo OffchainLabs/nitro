@@ -15,6 +15,7 @@ import (
 )
 
 func TestBidValidator_validateBid(t *testing.T) {
+	t.Parallel()
 	setup := setupAuctionTest(t, context.Background())
 	tests := []struct {
 		name          string
@@ -123,6 +124,7 @@ func TestBidValidator_validateBid(t *testing.T) {
 }
 
 func TestBidValidator_validateBid_perRoundBidLimitReached(t *testing.T) {
+	t.Parallel()
 	balanceCheckerFn := func(_ *bind.CallOpts, _ common.Address) (*big.Int, error) {
 		return big.NewInt(10), nil
 	}

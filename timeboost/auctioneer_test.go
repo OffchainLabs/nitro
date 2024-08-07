@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/big"
+	"os"
 	"testing"
 	"time"
 
@@ -23,6 +24,11 @@ func TestBidValidatorAuctioneerRedisStream(t *testing.T) {
 	defer cancel()
 	testSetup := setupAuctionTest(t, ctx)
 	redisURL := redisutil.CreateTestRedis(ctx, t)
+	tmpDir, err := os.MkdirTemp("", "*")
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		require.NoError(t, os.RemoveAll(tmpDir))
+	})
 
 	// Set up multiple bid validators that will receive bids via RPC using a bidder client.
 	// They inject their validated bids into a Redis stream that a single auctioneer instance
@@ -79,6 +85,7 @@ func TestBidValidatorAuctioneerRedisStream(t *testing.T) {
 		AuctionContractAddress: testSetup.expressLaneAuctionAddr.Hex(),
 		RedisURL:               redisURL,
 		ConsumerConfig:         pubsub.TestConsumerConfig,
+		DbDirectory:            tmpDir,
 		Wallet: genericconf.WalletConfig{
 			PrivateKey: fmt.Sprintf("%x", testSetup.accounts[0].privKey.D.Bytes()),
 		},

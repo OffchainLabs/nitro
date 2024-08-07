@@ -1,40 +1,39 @@
-package db
+package timeboost
 
 import (
 	"math/big"
 	"os"
-	"path/filepath"
 	"testing"
 
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/jmoiron/sqlx"
-	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-type DatabaseBid struct {
-	Id                     uint64 `db:"Id"`
-	ChainId                string `db:"ChainId"`
-	ExpressLaneController  string `db:"ExpressLaneController"`
-	AuctionContractAddress string `db:"AuctionContractAddress"`
-	Round                  uint64 `db:"Round"`
-	Amount                 string `db:"Amount"`
-	Signature              string `db:"Signature"`
-}
-
 func TestInsertAndFetchBids(t *testing.T) {
+	t.Parallel()
+	type DatabaseBid struct {
+		Id                     uint64 `db:"Id"`
+		ChainId                string `db:"ChainId"`
+		Bidder                 string `db:"Bidder"`
+		ExpressLaneController  string `db:"ExpressLaneController"`
+		AuctionContractAddress string `db:"AuctionContractAddress"`
+		Round                  uint64 `db:"Round"`
+		Amount                 string `db:"Amount"`
+		Signature              string `db:"Signature"`
+	}
+
 	tmpDir, err := os.MkdirTemp("", "*")
 	require.NoError(t, err)
 	t.Cleanup(func() {
 		require.NoError(t, os.RemoveAll(tmpDir))
 	})
-	tmpFile := filepath.Join(tmpDir, "database.sql?_journal_mode=WAL")
-	db, err := NewDatabase(tmpFile)
+	db, err := NewDatabase(tmpDir)
 	require.NoError(t, err)
 
-	bids := []*timeboost.Bid{
+	bids := []*ValidatedBid{
 		{
 			ChainId:                big.NewInt(1),
 			ExpressLaneController:  common.HexToAddress("0x0000000000000000000000000000000000000001"),
@@ -52,7 +51,9 @@ func TestInsertAndFetchBids(t *testing.T) {
 			Signature:              []byte("signature2"),
 		},
 	}
-	require.NoError(t, db.InsertBids(bids))
+	for _, bid := range bids {
+		require.NoError(t, db.InsertBid(bid))
+	}
 	gotBids := make([]*DatabaseBid, 2)
 	err = db.sqlDB.Select(&gotBids, "SELECT * FROM Bids ORDER BY Id")
 	require.NoError(t, err)
@@ -61,6 +62,7 @@ func TestInsertAndFetchBids(t *testing.T) {
 }
 
 func TestInsertBids(t *testing.T) {
+	t.Parallel()
 	db, mock, err := sqlmock.New()
 	assert.NoError(t, err)
 	defer db.Close()
@@ -69,7 +71,7 @@ func TestInsertBids(t *testing.T) {
 
 	d := &SqliteDatabase{sqlDB: sqlxDB, currentTableVersion: -1}
 
-	bids := []*timeboost.Bid{
+	bids := []*ValidatedBid{
 		{
 			ChainId:                big.NewInt(1),
 			ExpressLaneController:  common.HexToAddress("0x0000000000000000000000000000000000000001"),
@@ -99,14 +101,17 @@ func TestInsertBids(t *testing.T) {
 		).WillReturnResult(sqlmock.NewResult(1, 1))
 	}
 
-	err = d.InsertBids(bids)
-	assert.NoError(t, err)
+	for _, bid := range bids {
+		err = d.InsertBid(bid)
+		assert.NoError(t, err)
+	}
 
 	err = mock.ExpectationsWereMet()
 	assert.NoError(t, err)
 }
 
 func TestDeleteBidsLowerThanRound(t *testing.T) {
+	t.Parallel()
 	db, mock, err := sqlmock.New()
 	assert.NoError(t, err)
 	defer db.Close()
