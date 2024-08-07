@@ -111,12 +111,12 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 	if err != nil {
 		return nil, err
 	}
-	// If the state we are requested to produce is neither validated nor finalized, we return ErrChainCatchingUp as an error.
-	stateValidatedAndFinal, err := s.isStateValidatedAndFinal(ctx, globalState, messageCount)
+	// If the state we are requested to produce is neither validated nor past threshold, we return ErrChainCatchingUp as an error.
+	stateValidatedAndMessageCountPastThreshold, err := s.isStateValidatedAndMessageCountPastThreshold(ctx, globalState, messageCount)
 	if err != nil {
 		return nil, err
 	}
-	if !stateValidatedAndFinal {
+	if !stateValidatedAndMessageCountPastThreshold {
 		return nil, fmt.Errorf("%w: batch count %d", l2stateprovider.ErrChainCatchingUp, maxInboxCount)
 	}
 
@@ -153,7 +153,7 @@ func (s *BOLDStateProvider) ExecutionStateAfterPreviousState(
 	return executionState, nil
 }
 
-func (s *BOLDStateProvider) isStateValidatedAndFinal(
+func (s *BOLDStateProvider) isStateValidatedAndMessageCountPastThreshold(
 	ctx context.Context, gs validator.GoGlobalState, messageCount arbutil.MessageIndex,
 ) (bool, error) {
 	if s.validator == nil {
