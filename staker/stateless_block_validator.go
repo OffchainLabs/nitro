@@ -472,7 +472,8 @@ func (v *StatelessBlockValidator) RecordValidationInput(ctx context.Context, pos
 	for _, spawner := range v.execSpawners {
 		if validator.SpawnerSupportsModule(spawner, moduleRoot) {
 			found = true
-			input, err := entry.ToInput(spawner.StylusArchs())
+			// Hardcoded to use wavm so that it can be read by the prover.
+			input, err := entry.ToInput([]string{"wavm"})
 			if err != nil {
 				return err
 			}

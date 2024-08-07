@@ -368,7 +368,7 @@ func errorTest(t *testing.T, jit bool) {
 
 func TestProgramStorage(t *testing.T) {
 	t.Parallel()
-	storageTest(t, false)
+	storageTest(t, true)
 }
 
 func storageTest(t *testing.T, jit bool) {

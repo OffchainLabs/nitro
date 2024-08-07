@@ -1,5 +1,5 @@
 use arbutil::Bytes32;
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_json;
 use serde_with::base64::Base64;
 use serde_with::As;
@@ -9,15 +9,14 @@ use std::{
     io::{self, BufRead},
 };
 
+/// prefixed_hex deserializes hex strings which are prefixed with `0x`
+///
+/// The default hex deserializer does not support prefixed hex strings.
+///
+/// It is an error to use this deserializer on a string that does not
+/// begin with `0x`.
 mod prefixed_hex {
-    use serde::{self, Deserialize, Deserializer, Serializer};
-
-    pub fn serialize<S>(bytes: &Vec<u8>, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(&format!("0x{}", hex::encode(bytes)))
-    }
+    use serde::{self, Deserialize, Deserializer};
 
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Vec<u8>, D::Error>
     where
@@ -32,23 +31,25 @@ mod prefixed_hex {
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
-pub struct PreimageMap(HashMap<Bytes32, Vec<u8>>);
-
 #[derive(Debug)]
-pub struct UserWasm {
-    data: Vec<u8>,
-}
+pub struct UserWasm(Vec<u8>);
 
+/// UserWasm is a wrapper around Vec<u8>
+///
+/// It is useful for decompressing a brotli-compressed wasm module.
+///
+/// Note: The wrapped Vec<u8> is already Base64 decoded before
+/// from(Vec<u8>) is called by serde.
 impl UserWasm {
+    /// as_vec returns the decompressed wasm module as a Vec<u8>
     pub fn as_vec(&self) -> Vec<u8> {
-        self.data.clone()
+        self.0.clone()
     }
 }
 
 impl AsRef<[u8]> for UserWasm {
     fn as_ref(&self) -> &[u8] {
-        &self.data
+        &self.0
     }
 }
 
@@ -56,11 +57,11 @@ impl AsRef<[u8]> for UserWasm {
 impl From<Vec<u8>> for UserWasm {
     fn from(data: Vec<u8>) -> Self {
         let decompressed = brotli::decompress(&data, brotli::Dictionary::Empty).unwrap();
-        Self { data: decompressed }
+        Self(decompressed)
     }
 }
 
-#[derive(Debug, Clone, Deserialize, Serialize)]
+#[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct BatchInfo {
     pub number: u64,
@@ -68,7 +69,7 @@ pub struct BatchInfo {
     pub data_b64: Vec<u8>,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct StartState {
     #[serde(with = "prefixed_hex")]
@@ -79,6 +80,14 @@ pub struct StartState {
     pub pos_in_batch: u64,
 }
 
+/// FileData is the deserialized form of the input JSON file.
+///
+/// The go JSON library in json.go uses some custom serialization and
+/// compression logic that needs to be reversed when deserializing the
+/// JSON in rust.
+///
+/// Note: It is important to change this file whenever the go JSON
+/// serialization changes.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct FileData {
@@ -92,7 +101,7 @@ pub struct FileData {
     pub delayed_msg_b64: Vec<u8>,
     pub start_state: StartState,
     #[serde(with = "As::<HashMap<DisplayFromStr, HashMap<DisplayFromStr, Base64>>>")]
-    pub user_wasms: HashMap<String, HashMap<Bytes32, Vec<u8>>>,
+    pub user_wasms: HashMap<String, HashMap<Bytes32, UserWasm>>,
 }
 
 impl FileData {
