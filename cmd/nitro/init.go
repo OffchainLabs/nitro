@@ -414,7 +414,7 @@ func databaseIsEmpty(db ethdb.Database) bool {
 
 // if db is not empty, validates if wasm database schema version matches current version
 // otherwise persists current version
-func validateWasmStoreSchemaVersion(db ethdb.Database) error {
+func validateOrWriteWasmStoreSchemaVersion(db ethdb.Database) error {
 	if !databaseIsEmpty(db) {
 		version := rawdb.ReadWasmSchemaVersion(db)
 		if len(version) != 1 || version[0] != rawdb.WasmSchemaVersion {
@@ -442,8 +442,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				if err != nil {
 					return nil, nil, err
 				}
-				if err := validateWasmStoreSchemaVersion(wasmDb); err != nil {
-					// TODO(stylus-target) add option to rebuild wasmDb from scratch in case of version mismatch
+				if err := validateOrWriteWasmStoreSchemaVersion(wasmDb); err != nil {
 					return nil, nil, err
 				}
 				chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1)
@@ -560,8 +559,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := validateWasmStoreSchemaVersion(wasmDb); err != nil {
-		// TODO(stylus-target) remove pre-existing wasmdb here?
+	if err := validateOrWriteWasmStoreSchemaVersion(wasmDb); err != nil {
 		return nil, nil, err
 	}
 	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1)
