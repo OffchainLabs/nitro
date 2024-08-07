@@ -361,10 +361,8 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 	Require(t, err)
 
 	l2info.GenerateAccount("User2")
-	var txs []*types.Transaction
 	for i := genesis; i < uint64(txCount)+genesis; i++ {
 		tx := l2info.PrepareTx("Owner", "User2", l2info.TransferGas, common.Big1, nil)
-		txs = append(txs, tx)
 		err := client.SendTransaction(ctx, tx)
 		Require(t, err)
 		receipt, err := EnsureTxSucceeded(ctx, client, tx)

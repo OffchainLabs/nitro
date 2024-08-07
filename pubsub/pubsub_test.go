@@ -284,6 +284,8 @@ func TestRedisProduce(t *testing.T) {
 			if cnt := producer.promisesLen(); cnt != 0 {
 				t.Errorf("Producer still has %d unfullfilled promises", cnt)
 			}
+			// Trigger a trim
+			producer.checkResponses(ctx)
 			msgs, err := redisClient.XRange(ctx, streamName, "-", "+").Result()
 			if err != nil {
 				t.Errorf("XRange failed: %v", err)
