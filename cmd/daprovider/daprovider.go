@@ -12,9 +12,7 @@ import (
 	koanfjson "github.com/knadh/koanf/parsers/json"
 	flag "github.com/spf13/pflag"
 
-	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/daprovider/das"
@@ -155,34 +153,31 @@ func startup() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	var l1Client *ethclient.Client
-	var l1Reader *headerreader.HeaderReader
-	if config.DASServer.DataAvailability.ParentChainNodeURL != "" && config.DASServer.DataAvailability.ParentChainNodeURL != "none" {
-		l1Client, err = das.GetL1Client(ctx, config.DASServer.DataAvailability.ParentChainConnectionAttempts, config.DASServer.DataAvailability.ParentChainNodeURL)
-		if err != nil {
-			return err
-		}
-		arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1Client)
-		l1Reader, err = headerreader.New(ctx, l1Client, func() *headerreader.Config { return &headerreader.DefaultConfig }, arbSys) // TODO: config
-		if err != nil {
-			return err
-		}
+	if config.DASServer.DataAvailability.ParentChainNodeURL == "" || config.DASServer.DataAvailability.ParentChainNodeURL == "none" {
+		return errors.New("--das-server.data-availability.parent-chain-node-url is a required to start a das-server")
 	}
 
-	var seqInboxAddress common.Address
-	if config.DASServer.DataAvailability.SequencerInboxAddress == "none" {
-		seqInboxAddress = common.Address{}
-	} else if len(config.DASServer.DataAvailability.SequencerInboxAddress) > 0 {
-		seqInboxAddr, err := das.OptionalAddressFromString(config.DASServer.DataAvailability.SequencerInboxAddress)
-		if err != nil {
-			return err
-		}
-		if seqInboxAddr == nil {
-			return errors.New("must provide das-server.data-availability.sequencer-inbox-address set to a valid contract address or 'none'")
-		}
-		seqInboxAddress = *seqInboxAddr
-	} else {
-		return errors.New("sequencer-inbox-address must be set to a valid L1 URL and contract address, or 'none'")
+	if config.DASServer.DataAvailability.SequencerInboxAddress == "" || config.DASServer.DataAvailability.SequencerInboxAddress == "none" {
+		return errors.New("sequencer-inbox-address must be set to a valid L1 URL and contract address")
+	}
+
+	l1Client, err := das.GetL1Client(ctx, config.DASServer.DataAvailability.ParentChainConnectionAttempts, config.DASServer.DataAvailability.ParentChainNodeURL)
+	if err != nil {
+		return err
+	}
+
+	arbSys, _ := precompilesgen.NewArbSys(types.ArbSysAddress, l1Client)
+	l1Reader, err := headerreader.New(ctx, l1Client, func() *headerreader.Config { return &headerreader.DefaultConfig }, arbSys)
+	if err != nil {
+		return err
+	}
+
+	seqInboxAddr, err := das.OptionalAddressFromString(config.DASServer.DataAvailability.SequencerInboxAddress)
+	if err != nil {
+		return err
+	}
+	if seqInboxAddr == nil {
+		return errors.New("must provide --das-server.data-availability.sequencer-inbox-address set to a valid contract address or 'none'")
 	}
 
 	var dataSigner signature.DataSignerFunc
@@ -196,7 +191,8 @@ func startup() error {
 		}
 	}
 
-	dasServer, closeFn, err := dasserver.NewServer(ctx, &config.DASServer, dataSigner, l1Client, l1Reader, seqInboxAddress)
+	log.Info("Starting json rpc server", "addr", config.DASServer.Addr, "port", config.DASServer.Port)
+	dasServer, closeFn, err := dasserver.NewServer(ctx, &config.DASServer, dataSigner, l1Client, l1Reader, *seqInboxAddr)
 	if err != nil {
 		return err
 	}
