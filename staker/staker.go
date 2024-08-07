@@ -344,7 +344,11 @@ func NewStaker(
 			return nil, err
 		}
 		if !isOwner {
-			log.Info("fast confirmer is not part of owners of safe", "fastConfirmer", fastConfirmer, "wallet", wallet.AddressOrZero())
+			// If the wallet is not an owner of the safe, we can't use it for fast confirmation
+			// So disable fast confirmation.
+			fastConfirmer = common.Address{}
+			fastConfirmSafe = nil
+			log.Info("Staker wallet address is not part of owners of safe so cannot use it for fast confirmation", "fastConfirmer", fastConfirmer, "wallet", wallet.AddressOrZero())
 		}
 	}
 	inactiveValidatedNodes := btree.NewG(2, func(a, b validatedNode) bool {
