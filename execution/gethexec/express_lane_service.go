@@ -96,10 +96,6 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 				es.Lock()
 				// Reset the sequence numbers map for the new round.
 				es.messagesBySequenceNumber = make(map[uint64]*timeboost.ExpressLaneSubmission)
-				es.roundControl.Add(round, &expressLaneControl{
-					controller: common.Address{},
-					sequence:   0,
-				})
 				es.Unlock()
 			}
 		}

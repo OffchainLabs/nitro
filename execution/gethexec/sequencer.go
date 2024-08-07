@@ -555,6 +555,10 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 	if sender != auctioneerAddr {
 		return fmt.Errorf("sender %#x is not the auctioneer address %#x", sender, auctioneerAddr)
 	}
+	txBytes, err := tx.MarshalBinary()
+	if err != nil {
+		return err
+	}
 	// TODO: Check it is within the resolution window.
 	s.timeboostLock.Lock()
 	// Set it as a value that will be consumed first in `createBlock`
@@ -565,6 +569,15 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 	s.timeboostAuctionResolutionTx = tx
 	s.timeboostLock.Unlock()
 	log.Info("Creating auction resolution tx")
+	s.txQueue <- txQueueItem{
+		tx:              tx,
+		txSize:          len(txBytes),
+		options:         nil,
+		resultChan:      make(chan error, 1),
+		returnedResult:  &atomic.Bool{},
+		ctx:             ctx,
+		firstAppearance: time.Now(),
+	}
 	s.createBlock(ctx)
 	return nil
 }
