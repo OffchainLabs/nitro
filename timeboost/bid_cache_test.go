@@ -1,15 +1,9 @@
 package timeboost
 
 import (
-	"context"
-	"fmt"
-	"math/big"
 	"net"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/p2p"
-	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/stretchr/testify/require"
 )
 
@@ -232,37 +226,37 @@ import (
 // 	}
 // }
 
-func setupAuctioneer(t testing.TB, ctx context.Context, testSetup *auctionSetup) (*AuctioneerServer, string) {
-	// Set up a new auctioneer instance that can validate bids.
-	// Set up the auctioneer RPC service.
-	randHttp := getRandomPort(t)
-	stackConf := node.Config{
-		DataDir:             "", // ephemeral.
-		HTTPPort:            randHttp,
-		HTTPModules:         []string{AuctioneerNamespace},
-		HTTPHost:            "localhost",
-		HTTPVirtualHosts:    []string{"localhost"},
-		HTTPTimeouts:        rpc.DefaultHTTPTimeouts,
-		WSPort:              getRandomPort(t),
-		WSModules:           []string{AuctioneerNamespace},
-		WSHost:              "localhost",
-		GraphQLVirtualHosts: []string{"localhost"},
-		P2P: p2p.Config{
-			ListenAddr:  "",
-			NoDial:      true,
-			NoDiscovery: true,
-		},
-	}
-	stack, err := node.New(&stackConf)
-	require.NoError(t, err)
-	am, err := NewAuctioneerServer(
-		testSetup.accounts[0].txOpts, []*big.Int{testSetup.chainId}, testSetup.backend.Client(), testSetup.expressLaneAuctionAddr, "", nil,
-	)
-	require.NoError(t, err)
-	go am.Start(ctx)
-	require.NoError(t, stack.Start())
-	return am, fmt.Sprintf("http://localhost:%d", randHttp)
-}
+// func setupAuctioneer(t testing.TB, ctx context.Context, testSetup *auctionSetup) (*AuctioneerServer, string) {
+// 	// Set up a new auctioneer instance that can validate bids.
+// 	// Set up the auctioneer RPC service.
+// 	randHttp := getRandomPort(t)
+// 	stackConf := node.Config{
+// 		DataDir:             "", // ephemeral.
+// 		HTTPPort:            randHttp,
+// 		HTTPModules:         []string{AuctioneerNamespace},
+// 		HTTPHost:            "localhost",
+// 		HTTPVirtualHosts:    []string{"localhost"},
+// 		HTTPTimeouts:        rpc.DefaultHTTPTimeouts,
+// 		WSPort:              getRandomPort(t),
+// 		WSModules:           []string{AuctioneerNamespace},
+// 		WSHost:              "localhost",
+// 		GraphQLVirtualHosts: []string{"localhost"},
+// 		P2P: p2p.Config{
+// 			ListenAddr:  "",
+// 			NoDial:      true,
+// 			NoDiscovery: true,
+// 		},
+// 	}
+// 	stack, err := node.New(&stackConf)
+// 	require.NoError(t, err)
+// 	am, err := NewAuctioneerServer(
+// 		testSetup.accounts[0].txOpts, []*big.Int{testSetup.chainId}, testSetup.backend.Client(), testSetup.expressLaneAuctionAddr, "", nil,
+// 	)
+// 	require.NoError(t, err)
+// 	go am.Start(ctx)
+// 	require.NoError(t, stack.Start())
+// 	return am, fmt.Sprintf("http://localhost:%d", randHttp)
+// }
 
 func getRandomPort(t testing.TB) int {
 	listener, err := net.Listen("tcp", "localhost:0")

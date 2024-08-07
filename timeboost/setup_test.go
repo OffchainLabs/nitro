@@ -3,6 +3,7 @@ package timeboost
 import (
 	"context"
 	"crypto/ecdsa"
+	"fmt"
 	"math/big"
 	"testing"
 	"time"
@@ -11,7 +12,9 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/eth/ethconfig"
 	"github.com/ethereum/go-ethereum/ethclient/simulated"
+	"github.com/ethereum/go-ethereum/node"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/timeboost/bindings"
@@ -30,10 +33,11 @@ type auctionSetup struct {
 	beneficiaryAddr        common.Address
 	accounts               []*testAccount
 	backend                *simulated.Backend
+	endpoint               string
 }
 
 func setupAuctionTest(t testing.TB, ctx context.Context) *auctionSetup {
-	accs, backend := setupAccounts(10)
+	accs, backend, endpoint := setupAccounts(t, 10)
 
 	go func() {
 		tick := time.NewTicker(time.Second)
@@ -144,6 +148,7 @@ func setupAuctionTest(t testing.TB, ctx context.Context) *auctionSetup {
 		beneficiaryAddr:        beneficiary,
 		accounts:               accs,
 		backend:                backend,
+		endpoint:               endpoint,
 	}
 }
 
@@ -186,7 +191,7 @@ type testAccount struct {
 	txOpts      *bind.TransactOpts
 }
 
-func setupAccounts(numAccounts uint64) ([]*testAccount, *simulated.Backend) {
+func setupAccounts(t testing.TB, numAccounts uint64) ([]*testAccount, *simulated.Backend, string) {
 	genesis := make(core.GenesisAlloc)
 	gasLimit := uint64(100000000)
 
@@ -213,8 +218,14 @@ func setupAccounts(numAccounts uint64) ([]*testAccount, *simulated.Backend) {
 			privKey:     privKey,
 		}
 	}
-	backend := simulated.NewBackend(genesis, simulated.WithBlockGasLimit(gasLimit))
-	return accs, backend
+	randPort := getRandomPort(t)
+	withRPC := func(n *node.Config, _ *ethconfig.Config) {
+		n.HTTPHost = "localhost"
+		n.HTTPPort = randPort
+		n.HTTPModules = []string{"eth", "net", "web3", "debug", "personal"}
+	}
+	backend := simulated.NewBackend(genesis, simulated.WithBlockGasLimit(gasLimit), withRPC)
+	return accs, backend, fmt.Sprintf("http://localhost:%d", randPort)
 }
 
 func mintTokens(ctx context.Context,

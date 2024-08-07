@@ -28,6 +28,7 @@ type BidValidatorConfigFetcher func() *BidValidatorConfig
 type BidValidatorConfig struct {
 	Enable         bool                  `koanf:"enable"`
 	RedisURL       string                `koanf:"redis-url"`
+	ChainIds       []string              `koanf:"chain-ids"`
 	ProducerConfig pubsub.ProducerConfig `koanf:"producer-config"`
 	// Timeout on polling for existence of each redis stream.
 	SequencerEndpoint      string `koanf:"sequencer-endpoint"`
@@ -50,6 +51,7 @@ func BidValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBidValidatorConfig.Enable, "enable bid validator")
 	pubsub.ProducerAddConfigAddOptions(prefix+".producer-config", f)
 	f.String(prefix+".redis-url", DefaultBidValidatorConfig.RedisURL, "url of redis server")
+	f.StringSlice(prefix+".chain-ids", DefaultBidValidatorConfig.ChainIds, "chain ids to support")
 	f.String(prefix+".sequencer-endpoint", DefaultAuctioneerServerConfig.SequencerEndpoint, "sequencer RPC endpoint")
 	f.String(prefix+".auction-contract-address", DefaultAuctioneerServerConfig.SequencerEndpoint, "express lane auction contract address")
 }
@@ -90,6 +92,17 @@ func NewBidValidator(
 	if cfg.AuctionContractAddress == "" {
 		return nil, fmt.Errorf("auction contract address cannot be empty")
 	}
+	if len(cfg.ChainIds) == 0 {
+		return nil, fmt.Errorf("expected at least one chain id")
+	}
+	chainIds := make([]*big.Int, len(cfg.ChainIds))
+	for i, cidStr := range cfg.ChainIds {
+		id, ok := new(big.Int).SetString(cidStr, 10)
+		if !ok {
+			return nil, fmt.Errorf("could not parse chain id into big int base 10 %s", cidStr)
+		}
+		chainIds[i] = id
+	}
 	auctionContractAddr := common.HexToAddress(cfg.AuctionContractAddress)
 	redisClient, err := redisutil.RedisClientFromURL(cfg.RedisURL)
 	if err != nil {
@@ -118,7 +131,6 @@ func NewBidValidator(
 	if err != nil {
 		return nil, err
 	}
-	chainIds := []*big.Int{big.NewInt(1)}
 	bidValidator := &BidValidator{
 		chainId:                   chainIds,
 		client:                    sequencerClient,
@@ -310,7 +322,7 @@ func (bv *BidValidator) validateBid(
 	if !ok {
 		bv.bidsPerSenderInRound[bidder] = 1
 	}
-	if numBids >= bv.maxBidsPerSenderInRound {
+	if numBids > bv.maxBidsPerSenderInRound {
 		bv.Unlock()
 		return nil, errors.Wrapf(ErrTooManyBids, "bidder %s has already sent the maximum allowed bids = %d in this round", bidder.Hex(), numBids)
 	}
