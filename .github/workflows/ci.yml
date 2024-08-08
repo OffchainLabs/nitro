@@ -56,17 +56,19 @@ jobs:
       - name: Install rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
-          targets: 'wasm32-unknown-unknown, wasm32-wasi'
+          toolchain: 'stable'
+          components: 'llvm-tools-preview, rustfmt, clippy'
+
+      - name: Install rust nightly
+        uses: dtolnay/rust-toolchain@nightly
+        id: install-rust-nightly
+        with:
+          toolchain: 'nightly'
+          targets: 'wasm32-wasi, wasm32-unknown-unknown'
+          components: 'rust-src, rustfmt, clippy'
 
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
-
-      - name: Install rust nightly
-        uses: actions-rs/toolchain@v1
-        id: install-rust-nightly
-        with:
-          profile: minimal
-          toolchain: "nightly"
 
       - name: Install rust wasm targets
         run: rustup target add wasm32-wasi wasm32-unknown-unknown

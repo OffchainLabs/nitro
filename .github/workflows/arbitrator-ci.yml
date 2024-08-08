@@ -162,22 +162,13 @@ jobs:
         run: cargo clippy --all --manifest-path arbitrator/Cargo.toml -- -D warnings
 
       - name: Run rust tests
-        uses: actions-rs/cargo@v1
-        with:
-          command: test
-          args: -p arbutil -p prover -p jit -p stylus --release --manifest-path arbitrator/prover/Cargo.toml
+        run: cargo test -p arbutil -p prover -p jit -p stylus --release --manifest-path arbitrator/prover/Cargo.toml
 
       - name: Rustfmt
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: -p arbutil -p prover -p jit -p stylus --manifest-path arbitrator/Cargo.toml -- --check
+        run: cargo fmt -p arbutil -p prover -p jit -p stylus --manifest-path arbitrator/Cargo.toml -- --check
 
       - name: Rustfmt - langs/rust
-        uses: actions-rs/cargo@v1
-        with:
-          command: fmt
-          args: --all --manifest-path arbitrator/langs/rust/Cargo.toml -- --check
+        args: cargo fmt --all --manifest-path arbitrator/langs/rust/Cargo.toml -- --check
 
       - name: Make proofs from test cases
         run: make -j test-gen-proofs
