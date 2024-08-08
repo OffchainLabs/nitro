@@ -148,7 +148,7 @@ func BenchmarkBidValidation(b *testing.B) {
 	redisURL := redisutil.CreateTestRedis(ctx, b)
 	testSetup := setupAuctionTest(b, ctx)
 	bv, endpoint := setupBidValidator(b, ctx, redisURL, testSetup)
-	bc := setupBidderClient(b, ctx, "alice", testSetup.accounts[0], testSetup, endpoint)
+	bc := setupBidderClient(b, ctx, testSetup.accounts[0], testSetup, endpoint)
 	require.NoError(b, bc.Deposit(ctx, big.NewInt(5)))
 
 	// Form a valid bid.

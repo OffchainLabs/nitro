@@ -2,33 +2,59 @@ package timeboost
 
 import (
 	"context"
-	"crypto/ecdsa"
 	"fmt"
 	"math/big"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/crypto/secp256k1"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/util/containers"
+	"github.com/offchainlabs/nitro/util/signature"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/pkg/errors"
+	"github.com/spf13/pflag"
 )
+
+type BidderClientConfigFetcher func() *BidderClientConfig
+
+type BidderClientConfig struct {
+	Wallet                 genericconf.WalletConfig `koanf:"wallet"`
+	ArbitrumNodeEndpoint   string                   `koanf:"arbitrum-node-endpoint"`
+	BidValidatorEndpoint   string                   `koanf:"bid-validator-endpoint"`
+	AuctionContractAddress string                   `koanf:"auction-contract-address"`
+}
+
+var DefaultBidderClientConfig = BidderClientConfig{
+	ArbitrumNodeEndpoint: "http://localhost:9567",
+	BidValidatorEndpoint: "http://localhost:9372",
+}
+
+var TestBidderClientConfig = BidderClientConfig{
+	ArbitrumNodeEndpoint: "http://localhost:9567",
+	BidValidatorEndpoint: "http://localhost:9372",
+}
+
+func BidderClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
+	genericconf.WalletConfigAddOptions(prefix+".wallet", f, "wallet for auctioneer server")
+	f.String(prefix+".arbitrum-node-endpoint", DefaultBidderClientConfig.ArbitrumNodeEndpoint, "arbitrum node RPC http endpoint")
+	f.String(prefix+".bid-validator-endpoint", DefaultBidderClientConfig.BidValidatorEndpoint, "bid validator http endpoint")
+	f.String(prefix+".auction-contract-address", DefaultBidderClientConfig.AuctionContractAddress, "express lane auction contract address")
+}
 
 type BidderClient struct {
 	stopwaiter.StopWaiter
 	chainId                *big.Int
-	name                   string
 	auctionContractAddress common.Address
 	txOpts                 *bind.TransactOpts
 	client                 *ethclient.Client
-	privKey                *ecdsa.PrivateKey
+	signer                 signature.DataSignerFunc
 	auctionContract        *express_lane_auctiongen.ExpressLaneAuction
 	auctioneerClient       *rpc.Client
 	initialRoundTimestamp  time.Time
@@ -36,48 +62,53 @@ type BidderClient struct {
 	domainValue            []byte
 }
 
-// TODO: Provide a safer option.
-type Wallet struct {
-	TxOpts  *bind.TransactOpts
-	PrivKey *ecdsa.PrivateKey
-}
-
 func NewBidderClient(
 	ctx context.Context,
-	name string,
-	wallet *Wallet,
-	client *ethclient.Client,
-	auctionContractAddress common.Address,
-	auctioneerEndpoint string,
+	configFetcher BidderClientConfigFetcher,
 ) (*BidderClient, error) {
-	chainId, err := client.ChainID(ctx)
+	cfg := configFetcher()
+	if cfg.AuctionContractAddress == "" {
+		return nil, fmt.Errorf("auction contract address cannot be empty")
+	}
+	auctionContractAddr := common.HexToAddress(cfg.AuctionContractAddress)
+	client, err := rpc.DialContext(ctx, cfg.ArbitrumNodeEndpoint)
 	if err != nil {
 		return nil, err
 	}
-	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddress, client)
+	arbClient := ethclient.NewClient(client)
+	chainId, err := arbClient.ChainID(ctx)
 	if err != nil {
 		return nil, err
 	}
-	roundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
+	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, arbClient)
+	if err != nil {
+		return nil, err
+	}
+	roundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{
+		Context: ctx,
+	})
 	if err != nil {
 		return nil, err
 	}
 	initialTimestamp := time.Unix(int64(roundTimingInfo.OffsetTimestamp), 0)
 	roundDuration := time.Duration(roundTimingInfo.RoundDurationSeconds) * time.Second
+	txOpts, signer, err := util.OpenWallet("bidder-client", &cfg.Wallet, chainId)
+	if err != nil {
+		return nil, errors.Wrap(err, "opening wallet")
+	}
 
-	auctioneerClient, err := rpc.DialContext(ctx, auctioneerEndpoint)
+	bidValidatorClient, err := rpc.DialContext(ctx, cfg.BidValidatorEndpoint)
 	if err != nil {
 		return nil, err
 	}
 	return &BidderClient{
 		chainId:                chainId,
-		name:                   name,
-		auctionContractAddress: auctionContractAddress,
-		client:                 client,
-		txOpts:                 wallet.TxOpts,
-		privKey:                wallet.PrivKey,
+		auctionContractAddress: auctionContractAddr,
+		client:                 arbClient,
+		txOpts:                 txOpts,
+		signer:                 signer,
 		auctionContract:        auctionContract,
-		auctioneerClient:       auctioneerClient,
+		auctioneerClient:       bidValidatorClient,
 		initialRoundTimestamp:  initialTimestamp,
 		roundDuration:          roundDuration,
 		domainValue:            domainValue,
@@ -114,10 +145,11 @@ func (bd *BidderClient) Bid(
 		Amount:                 amount,
 		Signature:              nil,
 	}
-	sig, err := sign(newBid.ToMessageBytes(), bd.privKey)
+	sig, err := bd.signer(buildEthereumSignedMessage(newBid.ToMessageBytes()))
 	if err != nil {
 		return nil, err
 	}
+	sig[64] += 27
 	newBid.Signature = sig
 	promise := bd.submitBid(newBid)
 	if _, err := promise.Await(ctx); err != nil {
@@ -133,12 +165,6 @@ func (bd *BidderClient) submitBid(bid *Bid) containers.PromiseInterface[struct{}
 	})
 }
 
-func sign(message []byte, key *ecdsa.PrivateKey) ([]byte, error) {
-	prefixed := crypto.Keccak256(append([]byte(fmt.Sprintf("\x19Ethereum Signed Message:\n%d", len(message))), message...))
-	sig, err := secp256k1.Sign(prefixed, math.PaddedBigBytes(key.D, 32))
-	if err != nil {
-		return nil, err
-	}
-	sig[64] += 27
-	return sig, nil
+func buildEthereumSignedMessage(msg []byte) []byte {
+	return crypto.Keccak256(append([]byte(fmt.Sprintf("\x19Ethereum Signed Message:\n%d", len(msg))), msg...))
 }

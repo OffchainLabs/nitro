@@ -112,9 +112,9 @@ func TestBidValidatorAuctioneerRedisStream(t *testing.T) {
 	aliceAddr := testSetup.accounts[1].txOpts.From
 	bobAddr := testSetup.accounts[2].txOpts.From
 	charlieAddr := testSetup.accounts[3].txOpts.From
-	alice := setupBidderClient(t, ctx, "alice", testSetup.accounts[1], testSetup, bidValidators[0].stack.HTTPEndpoint())
-	bob := setupBidderClient(t, ctx, "bob", testSetup.accounts[2], testSetup, bidValidators[1].stack.HTTPEndpoint())
-	charlie := setupBidderClient(t, ctx, "charlie", testSetup.accounts[3], testSetup, bidValidators[2].stack.HTTPEndpoint())
+	alice := setupBidderClient(t, ctx, testSetup.accounts[1], testSetup, bidValidators[0].stack.HTTPEndpoint())
+	bob := setupBidderClient(t, ctx, testSetup.accounts[2], testSetup, bidValidators[1].stack.HTTPEndpoint())
+	charlie := setupBidderClient(t, ctx, testSetup.accounts[3], testSetup, bidValidators[2].stack.HTTPEndpoint())
 	require.NoError(t, alice.Deposit(ctx, big.NewInt(20)))
 	require.NoError(t, bob.Deposit(ctx, big.NewInt(20)))
 	require.NoError(t, charlie.Deposit(ctx, big.NewInt(20)))

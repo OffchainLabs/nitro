@@ -13,10 +13,9 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/eth/ethconfig"
-	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/ethclient/simulated"
 	"github.com/ethereum/go-ethereum/node"
-	"github.com/ethereum/go-ethereum/rpc"
+	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/solgen/go/express_lane_auctiongen"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
 	"github.com/offchainlabs/nitro/timeboost/bindings"
@@ -156,18 +155,21 @@ func setupAuctionTest(t testing.TB, ctx context.Context) *auctionSetup {
 }
 
 func setupBidderClient(
-	t testing.TB, ctx context.Context, name string, account *testAccount, testSetup *auctionSetup, auctioneerEndpoint string,
+	t testing.TB, ctx context.Context, account *testAccount, testSetup *auctionSetup, bidValidatorEndpoint string,
 ) *BidderClient {
-	rpcClient, err := rpc.Dial(testSetup.endpoint)
-	require.NoError(t, err)
-	client := ethclient.NewClient(rpcClient)
+	cfgFetcher := func() *BidderClientConfig {
+		return &BidderClientConfig{
+			AuctionContractAddress: testSetup.expressLaneAuctionAddr.Hex(),
+			BidValidatorEndpoint:   bidValidatorEndpoint,
+			ArbitrumNodeEndpoint:   testSetup.endpoint,
+			Wallet: genericconf.WalletConfig{
+				PrivateKey: fmt.Sprintf("00%x", account.privKey.D.Bytes()),
+			},
+		}
+	}
 	bc, err := NewBidderClient(
 		ctx,
-		name,
-		&Wallet{TxOpts: account.txOpts, PrivKey: account.privKey},
-		client,
-		testSetup.expressLaneAuctionAddr,
-		auctioneerEndpoint,
+		cfgFetcher,
 	)
 	require.NoError(t, err)
 	bc.Start(ctx)
