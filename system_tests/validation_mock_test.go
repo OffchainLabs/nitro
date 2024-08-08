@@ -15,6 +15,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/offchainlabs/nitro/daprovider"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -37,7 +38,7 @@ var sendRootKey = common.HexToHash("0x55667788")
 var batchNumKey = common.HexToHash("0x99aabbcc")
 var posInBatchKey = common.HexToHash("0xddeeff")
 
-func globalstateFromTestPreimages(preimages map[arbutil.PreimageType]map[common.Hash][]byte) validator.GoGlobalState {
+func globalstateFromTestPreimages(preimages daprovider.PreimagesMap) validator.GoGlobalState {
 	keccakPreimages := preimages[arbutil.Keccak256PreimageType]
 	return validator.GoGlobalState{
 		Batch:      new(big.Int).SetBytes(keccakPreimages[batchNumKey]).Uint64(),
@@ -249,7 +250,7 @@ func TestValidationServerAPI(t *testing.T) {
 
 	valInput := validator.ValidationInput{
 		StartState: startState,
-		Preimages: map[arbutil.PreimageType]map[common.Hash][]byte{
+		Preimages: daprovider.PreimagesMap{
 			arbutil.Keccak256PreimageType: globalstateToTestPreimages(endState),
 		},
 	}
@@ -315,7 +316,7 @@ func TestValidationClientRoom(t *testing.T) {
 
 	valInput := validator.ValidationInput{
 		StartState: startState,
-		Preimages: map[arbutil.PreimageType]map[common.Hash][]byte{
+		Preimages: daprovider.PreimagesMap{
 			arbutil.Keccak256PreimageType: globalstateToTestPreimages(endState),
 		},
 	}
