@@ -1077,7 +1077,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		}
 		var use4844 bool
 		config := b.config()
-		if config.Post4844Blobs && b.dapWriter == nil && latestHeader.ExcessBlobGas != nil && latestHeader.BlobGasUsed != nil {
+		if config.Post4844Blobs && b.dapWriter == nil && latestHeader.ExcessBlobGas != nil && *latestHeader.ExcessBlobGas != 0 && latestHeader.BlobGasUsed != nil && *latestHeader.BlobGasUsed != 0 {
 			arbOSVersion, err := b.arbOSVersionGetter.ArbOSVersionForMessageNumber(arbutil.MessageIndex(arbmath.SaturatingUSub(uint64(batchPosition.MessageCount), 1)))
 			if err != nil {
 				return false, err

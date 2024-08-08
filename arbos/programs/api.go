@@ -137,6 +137,11 @@ func newApiClosures(
 		startGas := am.SaturatingUSub(gasLeft, baseCost) * 63 / 64
 		gas := am.MinInt(startGas, gasReq)
 
+		// Tracing: emit the call (value transfer is done later in evm.Call)
+		if tracingInfo != nil && tracingInfo.Tracer.OnOpcode != nil {
+			tracingInfo.Tracer.OnOpcode(0, byte(opcode), startGas, baseCost+gas, scope, []byte{}, depth, nil)
+		}
+
 		// EVM rule: calls that pay get a stipend (opCall)
 		if value.Sign() != 0 {
 			gas = am.SaturatingUAdd(gas, params.CallStipend)
@@ -159,7 +164,9 @@ func newApiClosures(
 				Stack:    util.TracingStackFromArgs(args...),
 				Contract: scope.Contract,
 			}
-			tracingInfo.Tracer.CaptureState(0, opcode, startGas, baseCost+gas, s, []byte{}, depth, nil)
+			if tracingInfo.Tracer.OnOpcode != nil {
+				tracingInfo.Tracer.OnOpcode(0, byte(opcode), startGas, baseCost+gas, s, []byte{}, depth, nil)
+			}
 		}
 
 		var ret []byte
@@ -218,8 +225,8 @@ func newApiClosures(
 		gas -= one64th
 
 		// Tracing: emit the create
-		if tracingInfo != nil {
-			tracingInfo.Tracer.CaptureState(0, opcode, startGas, baseCost+gas, scope, []byte{}, depth, nil)
+		if tracingInfo != nil && tracingInfo.Tracer.OnOpcode != nil {
+			tracingInfo.Tracer.OnOpcode(0, byte(opcode), startGas, baseCost+gas, scope, []byte{}, depth, nil)
 		}
 
 		var res []byte
@@ -284,9 +291,9 @@ func newApiClosures(
 	}
 	captureHostio := func(name string, args, outs []byte, startInk, endInk uint64) {
 		tracingInfo.Tracer.CaptureStylusHostio(name, args, outs, startInk, endInk)
-		if name == "evm_gas_left" || name == "evm_ink_left" {
-			tracingInfo.Tracer.CaptureState(0, vm.GAS, 0, 0, scope, []byte{}, depth, nil)
-			tracingInfo.Tracer.CaptureState(0, vm.POP, 0, 0, scope, []byte{}, depth, nil)
+		if (name == "evm_gas_left" || name == "evm_ink_left") && tracingInfo.Tracer.OnOpcode != nil {
+			tracingInfo.Tracer.OnOpcode(0, byte(vm.GAS), 0, 0, scope, []byte{}, depth, nil)
+			tracingInfo.Tracer.OnOpcode(0, byte(vm.POP), 0, 0, scope, []byte{}, depth, nil)
 		}
 	}
 

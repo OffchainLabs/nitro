@@ -7,6 +7,7 @@ package util
 import (
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -33,14 +34,14 @@ func TransferBalance(
 		if arbmath.BigLessThan(balance.ToBig(), amount) {
 			return fmt.Errorf("%w: addr %v have %v want %v", vm.ErrInsufficientBalance, *from, balance, amount)
 		}
-		evm.StateDB.SubBalance(*from, uint256.MustFromBig(amount))
+		evm.StateDB.SubBalance(*from, uint256.MustFromBig(amount), tracing.BalanceChangeTransfer)
 		if evm.Context.ArbOSVersion >= 30 {
 			// ensure the from account is "touched" for EIP-161
-			evm.StateDB.AddBalance(*from, &uint256.Int{})
+			evm.StateDB.AddBalance(*from, &uint256.Int{}, tracing.BalanceChangeTransfer)
 		}
 	}
 	if to != nil {
-		evm.StateDB.AddBalance(*to, uint256.MustFromBig(amount))
+		evm.StateDB.AddBalance(*to, uint256.MustFromBig(amount), tracing.BalanceChangeTransfer)
 	}
 	if tracer := evm.Config.Tracer; tracer != nil {
 		if evm.Depth() != 0 && scenario != TracingDuringEVM {
@@ -50,7 +51,7 @@ func TransferBalance(
 		}
 
 		if scenario != TracingDuringEVM {
-			tracer.CaptureArbitrumTransfer(evm, from, to, amount, scenario == TracingBeforeEVM, purpose)
+			tracer.CaptureArbitrumTransfer(from, to, amount, scenario == TracingBeforeEVM, purpose)
 			return nil
 		}
 

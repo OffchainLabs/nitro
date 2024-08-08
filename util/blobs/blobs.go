@@ -116,7 +116,7 @@ func ComputeCommitmentsAndHashes(blobs []kzg4844.Blob) ([]kzg4844.Commitment, []
 
 	for i := range blobs {
 		var err error
-		commitments[i], err = kzg4844.BlobToCommitment(blobs[i])
+		commitments[i], err = kzg4844.BlobToCommitment(&blobs[i])
 		if err != nil {
 			return nil, nil, err
 		}
@@ -133,7 +133,7 @@ func ComputeBlobProofs(blobs []kzg4844.Blob, commitments []kzg4844.Commitment) (
 	proofs := make([]kzg4844.Proof, len(blobs))
 	for i := range blobs {
 		var err error
-		proofs[i], err = kzg4844.ComputeBlobProof(blobs[i], commitments[i])
+		proofs[i], err = kzg4844.ComputeBlobProof(&blobs[i], commitments[i])
 		if err != nil {
 			return nil, err
 		}

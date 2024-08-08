@@ -247,7 +247,7 @@ func (b *BlobClient) blobSidecars(ctx context.Context, slot uint64, versionedHas
 		var proof kzg4844.Proof
 		copy(proof[:], blobItem.KzgProof)
 
-		err = kzg4844.VerifyBlobProof(output[outputIdx], commitment, proof)
+		err = kzg4844.VerifyBlobProof(&output[outputIdx], commitment, proof)
 		if err != nil {
 			return nil, fmt.Errorf("failed to verify blob proof for blob at slot(%d) at index(%d), blob(%s)", slot, blobItem.Index, pretty.FirstFewChars(blobItem.Blob.String()))
 		}

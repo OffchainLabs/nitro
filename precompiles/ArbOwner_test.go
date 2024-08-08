@@ -6,6 +6,7 @@ package precompiles
 import (
 	"bytes"
 	"encoding/json"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"math/big"
 	"testing"
 
@@ -114,7 +115,7 @@ func TestArbOwner(t *testing.T) {
 		Fail(t, avail)
 	}
 	deposited := big.NewInt(1000000)
-	evm.StateDB.AddBalance(l1pricing.L1PricerFundsPoolAddress, uint256.MustFromBig(deposited))
+	evm.StateDB.AddBalance(l1pricing.L1PricerFundsPoolAddress, uint256.MustFromBig(deposited), tracing.BalanceChangeUnspecified)
 	avail, err = gasInfo.GetL1FeesAvailable(callCtx, evm)
 	Require(t, err)
 	if avail.Sign() != 0 {
