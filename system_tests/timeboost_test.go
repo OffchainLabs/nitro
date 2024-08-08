@@ -71,14 +71,31 @@ func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing
 	// In the end, Bob's txs should be ordered before Alice's during the round.
 	var wg sync.WaitGroup
 	wg.Add(2)
-	aliceTx := seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1e12), nil)
+	ownerAddr := seqInfo.GetAddress("Owner")
+	aliceData := &types.DynamicFeeTx{
+		To:        &ownerAddr,
+		Gas:       seqInfo.TransferGas,
+		GasFeeCap: new(big.Int).Set(seqInfo.GasPrice),
+		Value:     big.NewInt(1e12),
+		Nonce:     3,
+		Data:      nil,
+	}
+	aliceTx := seqInfo.SignTxAs("Alice", aliceData)
 	go func(w *sync.WaitGroup) {
 		defer w.Done()
 		err = seqClient.SendTransaction(ctx, aliceTx)
 		Require(t, err)
 	}(&wg)
 
-	bobBoostableTx := seqInfo.PrepareTx("Bob", "Owner", seqInfo.TransferGas, big.NewInt(1e12), nil)
+	bobData := &types.DynamicFeeTx{
+		To:        &ownerAddr,
+		Gas:       seqInfo.TransferGas,
+		GasFeeCap: new(big.Int).Set(seqInfo.GasPrice),
+		Value:     big.NewInt(1e12),
+		Nonce:     3,
+		Data:      nil,
+	}
+	bobBoostableTx := seqInfo.SignTxAs("Bob", bobData)
 	go func(w *sync.WaitGroup) {
 		defer w.Done()
 		time.Sleep(time.Millisecond * 10)
@@ -165,14 +182,22 @@ func TestSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected(t *test
 	// These tx payloads are sent with nonces out of order, and those with nonces too high should fail.
 	var wg sync.WaitGroup
 	wg.Add(2)
-	aliceTx := seqInfo.PrepareTx("Alice", "Owner", seqInfo.TransferGas, big.NewInt(1e12), nil)
+	ownerAddr := seqInfo.GetAddress("Owner")
+	aliceData := &types.DynamicFeeTx{
+		To:        &ownerAddr,
+		Gas:       seqInfo.TransferGas,
+		GasFeeCap: new(big.Int).Set(seqInfo.GasPrice),
+		Value:     big.NewInt(1e12),
+		Nonce:     3,
+		Data:      nil,
+	}
+	aliceTx := seqInfo.SignTxAs("Alice", aliceData)
 	go func(w *sync.WaitGroup) {
 		defer w.Done()
 		err = seqClient.SendTransaction(ctx, aliceTx)
 		Require(t, err)
 	}(&wg)
 
-	ownerAddr := seqInfo.GetAddress("Owner")
 	txData := &types.DynamicFeeTx{
 		To:        &ownerAddr,
 		Gas:       seqInfo.TransferGas,
