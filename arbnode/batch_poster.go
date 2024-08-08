@@ -171,7 +171,7 @@ type BatchPosterConfig struct {
 	GasEstimateBaseFeeMultipleBips arbmath.Bips                `koanf:"gas-estimate-base-fee-multiple-bips"`
 	Dangerous                      BatchPosterDangerousConfig  `koanf:"dangerous"`
 	ReorgResistanceMargin          time.Duration               `koanf:"reorg-resistance-margin" reload:"hot"`
-	CheckBatchCorrectness          bool                        `koanf:"check-batch-correctness" reload:"hot"`
+	CheckBatchCorrectness          bool                        `koanf:"check-batch-correctness"`
 
 	gasRefunder  common.Address
 	l1BlockBound l1BlockBound
@@ -1437,6 +1437,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		seqMsg = append(seqMsg, sequencerMsg...)
 		b.building.muxBackend.seqMsg = seqMsg
 		b.building.muxBackend.delayedInboxStart = batchPosition.DelayedMessageCount
+		b.building.muxBackend.SetPositionWithinMessage(0)
 		simMux := arbstate.NewInboxMultiplexer(b.building.muxBackend, batchPosition.DelayedMessageCount, dapReaders, daprovider.KeysetValidate)
 		log.Info("Begin checking the correctness of batch against inbox multiplexer", "startMsgSeqNum", batchPosition.MessageCount, "endMsgSeqNum", b.building.msgCount-1)
 		for i := batchPosition.MessageCount; i < b.building.msgCount; i++ {
@@ -1445,13 +1446,15 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 				return false, fmt.Errorf("error getting message from simulated inbox multiplexer (Pop) when testing correctness of batch: %w", err)
 			}
 			if msg.DelayedMessagesRead != b.building.muxBackend.allMsgs[i].DelayedMessagesRead {
+				b.building = nil
 				return false, fmt.Errorf("simulated inbox multiplexer failed to produce correct delayedMessagesRead field for msg with seqNum: %d. Got: %d, Want: %d", i, msg.DelayedMessagesRead, b.building.muxBackend.allMsgs[i].DelayedMessagesRead)
 			}
 			if !msg.Message.Equals(b.building.muxBackend.allMsgs[i].Message) {
+				b.building = nil
 				return false, fmt.Errorf("simulated inbox multiplexer failed to produce correct message field for msg with seqNum: %d", i)
 			}
 		}
-		log.Info("Successfully checked that the batch produces correct messages when ran through inbox multiplexer")
+		log.Debug("Successfully checked that the batch produces correct messages when ran through inbox multiplexer", "sequenceNumber", batchPosition.NextSeqNum)
 	}
 
 	tx, err := b.dataPoster.PostTransaction(ctx,
