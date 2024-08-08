@@ -389,7 +389,6 @@ func (a *AuctioneerServer) persistValidatedBid(bid *JsonValidatedBid) {
 
 func copyTxOpts(opts *bind.TransactOpts) *bind.TransactOpts {
 	if opts == nil {
-		fmt.Println("nil opts")
 		return nil
 	}
 	copied := &bind.TransactOpts{

@@ -140,7 +140,6 @@ func (bd *BidderClient) Bid(
 func (bd *BidderClient) submitBid(bid *Bid) containers.PromiseInterface[struct{}] {
 	return stopwaiter.LaunchPromiseThread[struct{}](bd, func(ctx context.Context) (struct{}, error) {
 		err := bd.auctioneerClient.CallContext(ctx, nil, "auctioneer_submitBid", bid.ToJson())
-		fmt.Println(err)
 		return struct{}{}, err
 	})
 }

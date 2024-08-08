@@ -332,25 +332,26 @@ func setupExpressLaneAuction(
 	reserveSubmissionSeconds := uint64(15)
 	minReservePrice := big.NewInt(1) // 1 wei.
 	roleAdmin := auctioneerAddr
-	minReservePriceSetter := auctioneerAddr
-	reservePriceSetter := auctioneerAddr
-	beneficiarySetter := auctioneerAddr
 	tx, err = auctionContract.Initialize(
 		&ownerOpts,
-		auctioneerAddr,
-		beneficiary,
-		biddingToken,
-		express_lane_auctiongen.RoundTimingInfo{
-			OffsetTimestamp:          initialTimestamp.Uint64(),
-			RoundDurationSeconds:     bidRoundSeconds,
-			AuctionClosingSeconds:    auctionClosingSeconds,
-			ReserveSubmissionSeconds: reserveSubmissionSeconds,
+		express_lane_auctiongen.InitArgs{
+			Auctioneer:   auctioneerAddr,
+			BiddingToken: biddingToken,
+			Beneficiary:  beneficiary,
+			RoundTimingInfo: express_lane_auctiongen.RoundTimingInfo{
+				OffsetTimestamp:          initialTimestamp.Uint64(),
+				RoundDurationSeconds:     bidRoundSeconds,
+				AuctionClosingSeconds:    auctionClosingSeconds,
+				ReserveSubmissionSeconds: reserveSubmissionSeconds,
+			},
+			MinReservePrice:       minReservePrice,
+			AuctioneerAdmin:       roleAdmin,
+			MinReservePriceSetter: roleAdmin,
+			ReservePriceSetter:    roleAdmin,
+			BeneficiarySetter:     roleAdmin,
+			RoundTimingSetter:     roleAdmin,
+			MasterAdmin:           roleAdmin,
 		},
-		minReservePrice,
-		roleAdmin,
-		minReservePriceSetter,
-		reservePriceSetter,
-		beneficiarySetter,
 	)
 	Require(t, err)
 	if _, err = bind.WaitMined(ctx, seqClient, tx); err != nil {

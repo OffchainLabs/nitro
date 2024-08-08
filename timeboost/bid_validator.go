@@ -196,8 +196,6 @@ type BidValidatorAPI struct {
 }
 
 func (bv *BidValidatorAPI) SubmitBid(ctx context.Context, bid *JsonBid) error {
-	// return stopwaiter.LaunchPromiseThread[struct{}](bv, func(ctx context.Context) (struct{}, error) {
-	// Validate the received bid.
 	start := time.Now()
 	validatedBid, err := bv.validateBid(
 		&Bid{
@@ -220,7 +218,6 @@ func (bv *BidValidatorAPI) SubmitBid(ctx context.Context, bid *JsonBid) error {
 		return err
 	}
 	return nil
-	// })
 }
 
 // TODO(Terence): Set reserve price from the contract.
