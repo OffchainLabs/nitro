@@ -233,7 +233,7 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 			}
 			if req == nil {
 				// There's nothing in the queue.
-				return time.Millisecond * 250 // TODO: Make this faster?
+				return time.Millisecond * 250
 			}
 			// Forward the message over a channel for processing elsewhere in
 			// another thread, so as to not block this consumption thread.

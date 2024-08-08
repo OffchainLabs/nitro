@@ -163,7 +163,7 @@ func setupBidderClient(
 			BidValidatorEndpoint:   bidValidatorEndpoint,
 			ArbitrumNodeEndpoint:   testSetup.endpoint,
 			Wallet: genericconf.WalletConfig{
-				PrivateKey: fmt.Sprintf("00%x", account.privKey.D.Bytes()),
+				PrivateKey: fmt.Sprintf("%x", account.privKey.D.Bytes()),
 			},
 		}
 	}
