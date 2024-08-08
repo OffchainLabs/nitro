@@ -404,7 +404,7 @@ func (s *Staker) tryFastConfirmation(ctx context.Context, blockHash common.Hash,
 	if err != nil {
 		return err
 	}
-	_, err = s.rollup.FastConfirmNextNode(auth, blockHash, sendRoot, nodeHash)
+	_, err = s.rollup.FastConfirmNextNode(auth, blockHash, sendRoot)
 	return err
 }
 
