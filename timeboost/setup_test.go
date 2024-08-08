@@ -114,25 +114,26 @@ func setupAuctionTest(t testing.TB, ctx context.Context) *auctionSetup {
 	reserveSubmissionSeconds := uint64(15)
 	minReservePrice := big.NewInt(1) // 1 wei.
 	roleAdmin := opts.From
-	minReservePriceSetter := opts.From
-	reservePriceSetter := opts.From
-	beneficiarySetter := opts.From
 	tx, err = auctionContract.Initialize(
 		opts,
-		auctioneer,
-		beneficiary,
-		biddingToken,
-		express_lane_auctiongen.RoundTimingInfo{
-			OffsetTimestamp:          initialTimestamp.Uint64(),
-			RoundDurationSeconds:     bidRoundSeconds,
-			AuctionClosingSeconds:    auctionClosingSeconds,
-			ReserveSubmissionSeconds: reserveSubmissionSeconds,
+		express_lane_auctiongen.InitArgs{
+			Auctioneer:   auctioneer,
+			BiddingToken: biddingToken,
+			Beneficiary:  beneficiary,
+			RoundTimingInfo: express_lane_auctiongen.RoundTimingInfo{
+				OffsetTimestamp:          initialTimestamp.Uint64(),
+				RoundDurationSeconds:     bidRoundSeconds,
+				AuctionClosingSeconds:    auctionClosingSeconds,
+				ReserveSubmissionSeconds: reserveSubmissionSeconds,
+			},
+			MinReservePrice:       minReservePrice,
+			AuctioneerAdmin:       roleAdmin,
+			MinReservePriceSetter: roleAdmin,
+			ReservePriceSetter:    roleAdmin,
+			BeneficiarySetter:     roleAdmin,
+			RoundTimingSetter:     roleAdmin,
+			MasterAdmin:           roleAdmin,
 		},
-		minReservePrice,
-		roleAdmin,
-		minReservePriceSetter,
-		reservePriceSetter,
-		beneficiarySetter,
 	)
 	require.NoError(t, err)
 	if _, err = bind.WaitMined(ctx, backend.Client(), tx); err != nil {

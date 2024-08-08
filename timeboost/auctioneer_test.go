@@ -5,10 +5,13 @@ import (
 	"fmt"
 	"math/big"
 	"os"
+	"path/filepath"
 	"testing"
 	"time"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -29,6 +32,9 @@ func TestBidValidatorAuctioneerRedisStream(t *testing.T) {
 	t.Cleanup(func() {
 		require.NoError(t, os.RemoveAll(tmpDir))
 	})
+	jwtFilePath := filepath.Join(tmpDir, "jwt.key")
+	jwtSecret := common.BytesToHash([]byte("jwt"))
+	require.NoError(t, os.WriteFile(jwtFilePath, []byte(hexutil.Encode(jwtSecret[:])), 0644))
 
 	// Set up multiple bid validators that will receive bids via RPC using a bidder client.
 	// They inject their validated bids into a Redis stream that a single auctioneer instance
@@ -82,6 +88,7 @@ func TestBidValidatorAuctioneerRedisStream(t *testing.T) {
 	// by the bid validators from a redis stream.
 	cfg := &AuctioneerServerConfig{
 		SequencerEndpoint:      testSetup.endpoint,
+		SequencerJWTPath:       jwtFilePath,
 		AuctionContractAddress: testSetup.expressLaneAuctionAddr.Hex(),
 		RedisURL:               redisURL,
 		ConsumerConfig:         pubsub.TestConsumerConfig,
