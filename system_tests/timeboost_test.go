@@ -460,30 +460,36 @@ func setupExpressLaneAuction(
 
 	// Set up a bidder client for Alice and Bob.
 	alicePriv := seqInfo.Accounts["Alice"].PrivateKey
+	cfgFetcherAlice := func() *timeboost.BidderClientConfig {
+		return &timeboost.BidderClientConfig{
+			AuctionContractAddress: proxyAddr.Hex(),
+			BidValidatorEndpoint:   "http://localhost:9372",
+			ArbitrumNodeEndpoint:   "http://localhost:9567",
+			Wallet: genericconf.WalletConfig{
+				PrivateKey: fmt.Sprintf("00%x", alicePriv.D.Bytes()),
+			},
+		}
+	}
 	alice, err := timeboost.NewBidderClient(
 		ctx,
-		"alice",
-		&timeboost.Wallet{
-			TxOpts:  &aliceOpts,
-			PrivKey: alicePriv,
-		},
-		seqClient,
-		proxyAddr,
-		"http://localhost:9372",
+		cfgFetcherAlice,
 	)
 	Require(t, err)
 
 	bobPriv := seqInfo.Accounts["Bob"].PrivateKey
+	cfgFetcherBob := func() *timeboost.BidderClientConfig {
+		return &timeboost.BidderClientConfig{
+			AuctionContractAddress: proxyAddr.Hex(),
+			BidValidatorEndpoint:   "http://localhost:9372",
+			ArbitrumNodeEndpoint:   "http://localhost:9567",
+			Wallet: genericconf.WalletConfig{
+				PrivateKey: fmt.Sprintf("00%x", bobPriv.D.Bytes()),
+			},
+		}
+	}
 	bob, err := timeboost.NewBidderClient(
 		ctx,
-		"bob",
-		&timeboost.Wallet{
-			TxOpts:  &bobOpts,
-			PrivKey: bobPriv,
-		},
-		seqClient,
-		proxyAddr,
-		"http://localhost:9372",
+		cfgFetcherBob,
 	)
 	Require(t, err)
 
