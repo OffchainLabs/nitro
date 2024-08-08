@@ -146,6 +146,10 @@ jobs:
           username: ${{ github.repository_owner  }}
           password: ${{ secrets.GITHUB_TOKEN  }}
 
+      - name: Remove digests dir
+        run: |
+          rm -rf "${{ runner.temp }}/digests"
+
       - name: Download digests
         uses: actions/download-artifact@v3
         with:
@@ -161,6 +165,15 @@ jobs:
       - name: Create manifest list and push
         working-directory: "${{ runner.temp }}/digests"
         run: |
+          # Count the number of files in the directory
+          file_count=$(find . -type f | wc -l)
+
+          if [ "$file_count" -ne 2 ]; then
+            echo "Should have exactly 2 digests to combine, something went wrong"
+            ls -lah
+            exit 1
+          fi
+
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ matrix.image }}@sha256:%s ' *)
       - name: Inspect image
