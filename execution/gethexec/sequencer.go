@@ -86,13 +86,15 @@ type SequencerConfig struct {
 }
 
 type TimeboostConfig struct {
-	Enable               bool          `koanf:"enable"`
-	ExpressLaneAdvantage time.Duration `koanf:"express-lane-advantage"`
+	Enable                bool          `koanf:"enable"`
+	ExpressLaneAdvantage  time.Duration `koanf:"express-lane-advantage"`
+	SequencerHTTPEndpoint string        `koanf:"sequencer-http-endpoint"`
 }
 
 var DefaultTimeboostConfig = TimeboostConfig{
-	Enable:               false,
-	ExpressLaneAdvantage: time.Millisecond * 250,
+	Enable:                false,
+	ExpressLaneAdvantage:  time.Millisecond * 250,
+	SequencerHTTPEndpoint: "http://localhost:9567",
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -189,6 +191,7 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 func TimeboostAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultTimeboostConfig.Enable, "enable timeboost based on express lane auctions")
 	f.Duration(prefix+".express-lane-advantage", DefaultTimeboostConfig.ExpressLaneAdvantage, "specify the express lane advantage")
+	f.String(prefix+".sequencer-http-endpoint", DefaultTimeboostConfig.SequencerHTTPEndpoint, "this sequencer's http endpoint")
 }
 
 type txQueueItem struct {
@@ -1264,9 +1267,9 @@ func (s *Sequencer) StartExpressLane(ctx context.Context, auctionContractAddr co
 	if !s.config().Timeboost.Enable {
 		log.Crit("Timeboost is not enabled, but StartExpressLane was called")
 	}
-	rpcClient, err := rpc.DialContext(ctx, "http://localhost:9567")
+	rpcClient, err := rpc.DialContext(ctx, s.config().Timeboost.SequencerHTTPEndpoint)
 	if err != nil {
-		log.Crit("Failed to connect to RPC client", "err", err)
+		log.Crit("Failed to connect to sequencer RPC client", "err", err)
 	}
 	seqClient := ethclient.NewClient(rpcClient)
 	els, err := newExpressLaneService(

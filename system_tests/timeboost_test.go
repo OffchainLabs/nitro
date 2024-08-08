@@ -257,8 +257,9 @@ func setupExpressLaneAuction(
 	builderSeq.nodeConfig.Feed.Output = *newBroadcasterConfigTest()
 	builderSeq.execConfig.Sequencer.Enable = true
 	builderSeq.execConfig.Sequencer.Timeboost = gethexec.TimeboostConfig{
-		Enable:               true,
-		ExpressLaneAdvantage: time.Second * 5,
+		Enable:                true,
+		ExpressLaneAdvantage:  time.Second * 5,
+		SequencerHTTPEndpoint: "http://localhost:9567",
 	}
 	cleanupSeq := builderSeq.Build(t)
 	seqInfo, seqNode, seqClient := builderSeq.L2Info, builderSeq.L2.ConsensusNode, builderSeq.L2.Client
