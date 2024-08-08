@@ -95,7 +95,7 @@ func (s *mockSpawner) LatestWasmModuleRoot() containers.PromiseInterface[common.
 	return containers.NewReadyPromise[common.Hash](mockWasmModuleRoots[0], nil)
 }
 
-func (s *mockSpawner) WriteToFile(input *validator.ValidationInput, expOut validator.GoGlobalState, moduleRoot common.Hash) containers.PromiseInterface[struct{}] {
+func (s *mockSpawner) WriteToFile(input *validator.ValidationInput, moduleRoot common.Hash) containers.PromiseInterface[struct{}] {
 	return containers.NewReadyPromise[struct{}](struct{}{}, nil)
 }
 

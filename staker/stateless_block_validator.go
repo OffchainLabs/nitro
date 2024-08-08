@@ -477,7 +477,7 @@ func (v *StatelessBlockValidator) RecordValidationInput(ctx context.Context, pos
 			if err != nil {
 				return err
 			}
-			_, err = spawner.WriteToFile(input, entry.End, moduleRoot).Await(ctx)
+			_, err = spawner.WriteToFile(input, moduleRoot).Await(ctx)
 			if err != nil {
 				return err
 			}

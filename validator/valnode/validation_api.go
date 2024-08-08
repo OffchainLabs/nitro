@@ -117,12 +117,12 @@ func (a *ExecServerAPI) Start(ctx_in context.Context) {
 	a.CallIteratively(a.removeOldRuns)
 }
 
-func (a *ExecServerAPI) WriteToFile(ctx context.Context, jsonInput *server_api.InputJSON, expOut validator.GoGlobalState, moduleRoot common.Hash) error {
+func (a *ExecServerAPI) WriteToFile(ctx context.Context, jsonInput *server_api.InputJSON, moduleRoot common.Hash) error {
 	input, err := server_api.ValidationInputFromJson(jsonInput)
 	if err != nil {
 		return err
 	}
-	_, err = a.execSpawner.WriteToFile(input, expOut, moduleRoot).Await(ctx)
+	_, err = a.execSpawner.WriteToFile(input, moduleRoot).Await(ctx)
 	return err
 }
 

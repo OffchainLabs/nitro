@@ -496,7 +496,7 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoo
 	}
 	for _, spawner := range v.execSpawners {
 		if validator.SpawnerSupportsModule(spawner, moduleRoot) {
-			_, err = spawner.WriteToFile(input, validationEntry.End, moduleRoot).Await(v.GetContext())
+			_, err = spawner.WriteToFile(input, moduleRoot).Await(v.GetContext())
 			return err
 		}
 	}
