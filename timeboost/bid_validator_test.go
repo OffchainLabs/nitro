@@ -152,10 +152,7 @@ func TestBidValidator_validateBid_perRoundBidLimitReached(t *testing.T) {
 		Amount:                 big.NewInt(3),
 		Signature:              []byte{'a'},
 	}
-	bidValues, err := encodeBidValues(domainValue, bid.ChainId, bid.AuctionContractAddress, bid.Round, bid.Amount, bid.ExpressLaneController)
-	require.NoError(t, err)
-
-	signature, err := buildSignature(privateKey, bidValues)
+	signature, err := buildSignature(privateKey, bid.ToMessageBytes())
 	require.NoError(t, err)
 
 	bid.Signature = signature
@@ -180,7 +177,7 @@ func buildSignature(privateKey *ecdsa.PrivateKey, data []byte) ([]byte, error) {
 func buildValidBid(t *testing.T, auctionContractAddr common.Address) *Bid {
 	privateKey, err := crypto.GenerateKey()
 	require.NoError(t, err)
-	b := &Bid{
+	bid := &Bid{
 		ExpressLaneController:  common.Address{'b'},
 		AuctionContractAddress: auctionContractAddr,
 		ChainId:                big.NewInt(1),
@@ -189,13 +186,10 @@ func buildValidBid(t *testing.T, auctionContractAddr common.Address) *Bid {
 		Signature:              []byte{'a'},
 	}
 
-	bidValues, err := encodeBidValues(domainValue, b.ChainId, b.AuctionContractAddress, b.Round, b.Amount, b.ExpressLaneController)
+	signature, err := buildSignature(privateKey, bid.ToMessageBytes())
 	require.NoError(t, err)
 
-	signature, err := buildSignature(privateKey, bidValues)
-	require.NoError(t, err)
+	bid.Signature = signature
 
-	b.Signature = signature
-
-	return b
+	return bid
 }

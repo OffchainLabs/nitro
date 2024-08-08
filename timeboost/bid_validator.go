@@ -48,8 +48,8 @@ var TestBidValidatorConfig = BidValidatorConfig{
 
 func BidValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultBidValidatorConfig.Enable, "enable bid validator")
-	pubsub.ProducerAddConfigAddOptions(prefix+".producer-config", f)
 	f.String(prefix+".redis-url", DefaultBidValidatorConfig.RedisURL, "url of redis server")
+	pubsub.ProducerAddConfigAddOptions(prefix+".producer-config", f)
 	f.String(prefix+".sequencer-endpoint", DefaultAuctioneerServerConfig.SequencerEndpoint, "sequencer RPC endpoint")
 	f.String(prefix+".auction-contract-address", DefaultAuctioneerServerConfig.SequencerEndpoint, "express lane auction contract address")
 }
@@ -269,17 +269,7 @@ func (bv *BidValidator) validateBid(
 	}
 
 	// Validate the signature.
-	packedBidBytes, err := encodeBidValues(
-		domainValue,
-		bid.ChainId,
-		bid.AuctionContractAddress,
-		bid.Round,
-		bid.Amount,
-		bid.ExpressLaneController,
-	)
-	if err != nil {
-		return nil, ErrMalformedData
-	}
+	packedBidBytes := bid.ToMessageBytes()
 	if len(bid.Signature) != 65 {
 		return nil, errors.Wrap(ErrMalformedData, "signature length is not 65")
 	}

@@ -50,18 +50,16 @@ type AuctioneerServerConfig struct {
 	ConsumerConfig pubsub.ConsumerConfig `koanf:"consumer-config"`
 	// Timeout on polling for existence of each redis stream.
 	StreamTimeout          time.Duration            `koanf:"stream-timeout"`
-	StreamPrefix           string                   `koanf:"stream-prefix"`
 	Wallet                 genericconf.WalletConfig `koanf:"wallet"`
 	SequencerEndpoint      string                   `koanf:"sequencer-endpoint"`
+	SequencerJWTPath       string                   `koanf:"sequencer-jwt-path"`
 	AuctionContractAddress string                   `koanf:"auction-contract-address"`
 	DbDirectory            string                   `koanf:"db-directory"`
-	SequencerJWTPath       string                   `koanf:"sequencer-jwt-path"`
 }
 
 var DefaultAuctioneerServerConfig = AuctioneerServerConfig{
 	Enable:         true,
 	RedisURL:       "",
-	StreamPrefix:   "",
 	ConsumerConfig: pubsub.DefaultConsumerConfig,
 	StreamTimeout:  10 * time.Minute,
 }
@@ -69,22 +67,20 @@ var DefaultAuctioneerServerConfig = AuctioneerServerConfig{
 var TestAuctioneerServerConfig = AuctioneerServerConfig{
 	Enable:         true,
 	RedisURL:       "",
-	StreamPrefix:   "test-",
 	ConsumerConfig: pubsub.TestConsumerConfig,
 	StreamTimeout:  time.Minute,
 }
 
-func AuctioneerConfigAddOptions(prefix string, f *pflag.FlagSet) {
+func AuctioneerServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultAuctioneerServerConfig.Enable, "enable auctioneer server")
-	pubsub.ConsumerConfigAddOptions(prefix+".consumer-config", f)
 	f.String(prefix+".redis-url", DefaultAuctioneerServerConfig.RedisURL, "url of redis server")
-	f.String(prefix+".stream-prefix", DefaultAuctioneerServerConfig.StreamPrefix, "prefix for stream name")
-	f.String(prefix+".db-directory", DefaultAuctioneerServerConfig.DbDirectory, "path to database directory for persisting validated bids in a sqlite file")
+	pubsub.ConsumerConfigAddOptions(prefix+".consumer-config", f)
 	f.Duration(prefix+".stream-timeout", DefaultAuctioneerServerConfig.StreamTimeout, "Timeout on polling for existence of redis streams")
 	genericconf.WalletConfigAddOptions(prefix+".wallet", f, "wallet for auctioneer server")
 	f.String(prefix+".sequencer-endpoint", DefaultAuctioneerServerConfig.SequencerEndpoint, "sequencer RPC endpoint")
 	f.String(prefix+".sequencer-jwt-path", DefaultAuctioneerServerConfig.SequencerJWTPath, "sequencer jwt file path")
 	f.String(prefix+".auction-contract-address", DefaultAuctioneerServerConfig.SequencerEndpoint, "express lane auction contract address")
+	f.String(prefix+".db-directory", DefaultAuctioneerServerConfig.DbDirectory, "path to database directory for persisting validated bids in a sqlite file")
 }
 
 // AuctioneerServer is a struct that represents an autonomous auctioneer.
@@ -145,7 +141,7 @@ func NewAuctioneerServer(ctx context.Context, configFetcher AuctioneerServerConf
 	}
 	client, err := rpc.DialOptions(ctx, cfg.SequencerEndpoint, rpc.WithHTTPAuth(func(h http.Header) error {
 		claims := jwt.MapClaims{
-			// Required claim for engine API auth. "iat" stands for issued at
+			// Required claim for Ethereum RPC API auth. "iat" stands for issued at
 			// and it must be a unix timestamp that is +/- 5 seconds from the current
 			// timestamp at the moment the server verifies this value.
 			"iat": time.Now().Unix(),
@@ -237,7 +233,7 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 			}
 			if req == nil {
 				// There's nothing in the queue.
-				return time.Second // TODO: Make this faster?
+				return time.Millisecond * 250 // TODO: Make this faster?
 			}
 			// Forward the message over a channel for processing elsewhere in
 			// another thread, so as to not block this consumption thread.
@@ -266,9 +262,6 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 			}
 		}
 	})
-	// TODO: Check sequencer health.
-	// a.StopWaiter.LaunchThread(func(ctx context.Context) {
-	// })
 
 	// Bid receiver thread.
 	a.StopWaiter.LaunchThread(func(ctx context.Context) {

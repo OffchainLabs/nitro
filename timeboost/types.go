@@ -37,6 +37,21 @@ func (b *Bid) ToJson() *JsonBid {
 	}
 }
 
+func (b *Bid) ToMessageBytes() []byte {
+	buf := new(bytes.Buffer)
+	// Encode uint256 values - each occupies 32 bytes
+	buf.Write(domainValue)
+	buf.Write(padBigInt(b.ChainId))
+	buf.Write(b.AuctionContractAddress[:])
+	roundBuf := make([]byte, 8)
+	binary.BigEndian.PutUint64(roundBuf, b.Round)
+	buf.Write(roundBuf)
+	buf.Write(padBigInt(b.Amount))
+	buf.Write(b.ExpressLaneController[:])
+
+	return buf.Bytes()
+}
+
 type JsonBid struct {
 	ChainId                *hexutil.Big   `json:"chainId"`
 	ExpressLaneController  common.Address `json:"expressLaneController"`
@@ -159,35 +174,17 @@ func (els *ExpressLaneSubmission) ToJson() (*JsonExpressLaneSubmission, error) {
 }
 
 func (els *ExpressLaneSubmission) ToMessageBytes() ([]byte, error) {
-	return encodeExpressLaneSubmission(
-		domainValue,
-		els.ChainId,
-		els.Sequence,
-		els.AuctionContractAddress,
-		els.Round,
-		els.Transaction,
-	)
-}
-
-func encodeExpressLaneSubmission(
-	domainValue []byte,
-	chainId *big.Int,
-	sequence uint64,
-	auctionContractAddress common.Address,
-	round uint64,
-	tx *types.Transaction,
-) ([]byte, error) {
 	buf := new(bytes.Buffer)
 	buf.Write(domainValue)
-	buf.Write(padBigInt(chainId))
+	buf.Write(padBigInt(els.ChainId))
 	seqBuf := make([]byte, 8)
-	binary.BigEndian.PutUint64(seqBuf, sequence)
+	binary.BigEndian.PutUint64(seqBuf, els.Sequence)
 	buf.Write(seqBuf)
-	buf.Write(auctionContractAddress[:])
+	buf.Write(els.AuctionContractAddress[:])
 	roundBuf := make([]byte, 8)
-	binary.BigEndian.PutUint64(roundBuf, round)
+	binary.BigEndian.PutUint64(roundBuf, els.Round)
 	buf.Write(roundBuf)
-	rlpTx, err := tx.MarshalBinary()
+	rlpTx, err := els.Transaction.MarshalBinary()
 	if err != nil {
 		return nil, err
 	}
@@ -206,20 +203,4 @@ func padBigInt(bi *big.Int) []byte {
 	padded := make([]byte, 32-len(bb), 32)
 	padded = append(padded, bb...)
 	return padded
-}
-
-func encodeBidValues(domainValue []byte, chainId *big.Int, auctionContractAddress common.Address, round uint64, amount *big.Int, expressLaneController common.Address) ([]byte, error) {
-	buf := new(bytes.Buffer)
-
-	// Encode uint256 values - each occupies 32 bytes
-	buf.Write(domainValue)
-	buf.Write(padBigInt(chainId))
-	buf.Write(auctionContractAddress[:])
-	roundBuf := make([]byte, 8)
-	binary.BigEndian.PutUint64(roundBuf, round)
-	buf.Write(roundBuf)
-	buf.Write(padBigInt(amount))
-	buf.Write(expressLaneController[:])
-
-	return buf.Bytes(), nil
 }

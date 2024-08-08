@@ -182,7 +182,7 @@ func mainImpl() int {
 func parseAuctioneerArgs(ctx context.Context, args []string) (*AutonomousAuctioneerConfig, error) {
 	f := flag.NewFlagSet("", flag.ContinueOnError)
 
-	// ValidationNodeConfigAddOptions(f)
+	AuctioneerConfigAddOptions(f)
 
 	k, err := confighelpers.BeginCommonParse(f, args)
 	if err != nil {

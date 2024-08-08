@@ -114,18 +114,7 @@ func (bd *BidderClient) Bid(
 		Amount:                 amount,
 		Signature:              nil,
 	}
-	packedBidBytes, err := encodeBidValues(
-		bd.domainValue,
-		newBid.ChainId,
-		bd.auctionContractAddress,
-		newBid.Round,
-		amount,
-		expressLaneController,
-	)
-	if err != nil {
-		return nil, err
-	}
-	sig, err := sign(packedBidBytes, bd.privKey)
+	sig, err := sign(newBid.ToMessageBytes(), bd.privKey)
 	if err != nil {
 		return nil, err
 	}
