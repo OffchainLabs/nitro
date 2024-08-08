@@ -83,7 +83,7 @@ jobs:
           components: 'rust-src, rustfmt, clippy'
 
       - name: Set STYLUS_NIGHTLY_VER environment variable
-          echo "STYLUS_NIGHTLY_VER=$(rustup toolchain list | grep '^nightly' | head -n1 | cut -d' ' -f1)" >> "$GITHUB_ENV"
+        run: echo "STYLUS_NIGHTLY_VER=$(rustup toolchain list | grep '^nightly' | head -n1 | cut -d' ' -f1)" >> "$GITHUB_ENV"
 
       - name: Cache Rust intermediate build products
         uses: actions/cache@v3
