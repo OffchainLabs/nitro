@@ -399,7 +399,7 @@ func (n NodeInterface) ConstructOutboxProof(c ctx, evm mech, size, leaf uint64) 
 
 	if !balanced {
 		// This tree isn't balanced, so we'll need to use the partials to recover the missing info.
-		// To do this, we'll walk the boundry of what's known, computing hashes along the way
+		// To do this, we'll walk the boundary of what's known, computing hashes along the way
 
 		step := *minPartialPlace
 		step.Leaf += 1 << step.Level // we start on the min partial's zero-hash sibling

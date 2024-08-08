@@ -113,7 +113,7 @@ func EnsureTxFailedWithTimeout(t *testing.T, ctx context.Context, client arbutil
 	receipt, err := WaitForTx(ctx, client, tx.Hash(), timeout)
 	Require(t, err)
 	if receipt.Status != types.ReceiptStatusFailed {
-		Fatal(t, "unexpected succeess")
+		Fatal(t, "unexpected success")
 	}
 	return receipt
 }

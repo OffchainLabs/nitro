@@ -350,7 +350,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 				AfterDelayedMessagesRead: 1,
 			})
 			if diff := diffAccessList(accessed, *wantAL); diff != "" {
-				t.Errorf("Access list mistmatch:\n%s\n", diff)
+				t.Errorf("Access list mismatch:\n%s\n", diff)
 			}
 			if i%5 == 0 {
 				tx, err = seqInbox.AddSequencerL2Batch(&seqOpts, big.NewInt(int64(len(blockStates))), batchData, big.NewInt(1), gasRefunderAddr, big.NewInt(0), big.NewInt(0))
