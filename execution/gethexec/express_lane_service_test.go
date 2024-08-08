@@ -372,6 +372,59 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.
 	require.Equal(t, []uint64{1, 2, 3}, publishedTxOrder)
 }
 
+func TestIsWithinAuctionCloseWindow(t *testing.T) {
+	initialTimestamp := time.Date(2024, 8, 8, 15, 0, 0, 0, time.UTC)
+	roundDuration := 1 * time.Minute
+	auctionClosing := 15 * time.Second
+
+	es := &expressLaneService{
+		initialTimestamp:      initialTimestamp,
+		roundDuration:         roundDuration,
+		auctionClosingSeconds: auctionClosing,
+	}
+
+	tests := []struct {
+		name         string
+		arrivalTime  time.Time
+		expectedBool bool
+	}{
+		{
+			name:         "Right before auction close window",
+			arrivalTime:  initialTimestamp.Add(44 * time.Second), // 16 seconds left to the next round
+			expectedBool: false,
+		},
+		{
+			name:         "On the edge of auction close window",
+			arrivalTime:  initialTimestamp.Add(45 * time.Second), // Exactly 15 seconds left to the next round
+			expectedBool: true,
+		},
+		{
+			name:         "Outside auction close window",
+			arrivalTime:  initialTimestamp.Add(30 * time.Second), // 30 seconds left to the next round
+			expectedBool: false,
+		},
+		{
+			name:         "Exactly at the next round",
+			arrivalTime:  initialTimestamp.Add(time.Minute), // At the start of the next round
+			expectedBool: false,
+		},
+		{
+			name:         "Just before the start of the next round",
+			arrivalTime:  initialTimestamp.Add(time.Minute - 1*time.Second), // 1 second left to the next round
+			expectedBool: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual := es.isWithinAuctionCloseWindow(tt.arrivalTime)
+			if actual != tt.expectedBool {
+				t.Errorf("isWithinAuctionCloseWindow(%v) = %v; want %v", tt.arrivalTime, actual, tt.expectedBool)
+			}
+		})
+	}
+}
+
 func Benchmark_expressLaneService_validateExpressLaneTx(b *testing.B) {
 	b.StopTimer()
 	addr := crypto.PubkeyToAddress(testPriv.PublicKey)

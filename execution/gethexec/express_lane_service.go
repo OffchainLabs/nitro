@@ -34,6 +34,7 @@ type expressLaneService struct {
 	auctionContractAddr      common.Address
 	initialTimestamp         time.Time
 	roundDuration            time.Duration
+	auctionClosingSeconds    time.Duration
 	chainConfig              *params.ChainConfig
 	logs                     chan []*types.Log
 	seqClient                *ethclient.Client
@@ -58,10 +59,12 @@ func newExpressLaneService(
 	}
 	initialTimestamp := time.Unix(int64(roundTimingInfo.OffsetTimestamp), 0)
 	roundDuration := time.Duration(roundTimingInfo.RoundDurationSeconds) * time.Second
+	auctionClosingSeconds := time.Duration(roundTimingInfo.AuctionClosingSeconds) * time.Second
 	return &expressLaneService{
 		auctionContract:          auctionContract,
 		chainConfig:              chainConfig,
 		initialTimestamp:         initialTimestamp,
+		auctionClosingSeconds:    auctionClosingSeconds,
 		roundControl:             lru.NewBasicLRU[uint64, *expressLaneControl](8), // Keep 8 rounds cached.
 		auctionContractAddr:      auctionContractAddr,
 		roundDuration:            roundDuration,
@@ -157,6 +160,17 @@ func (es *expressLaneService) currentRoundHasController() bool {
 		return false
 	}
 	return control.controller != (common.Address{})
+}
+
+func (es *expressLaneService) isWithinAuctionCloseWindow(arrivalTime time.Time) bool {
+	// Calculate the next round start time
+	elapsedTime := arrivalTime.Sub(es.initialTimestamp)
+	elapsedRounds := elapsedTime / es.roundDuration
+	nextRoundStart := es.initialTimestamp.Add((elapsedRounds + 1) * es.roundDuration)
+	// Calculate the time to the next round
+	timeToNextRound := nextRoundStart.Sub(arrivalTime)
+	// Check if the arrival timestamp is within AUCTION_CLOSING_DURATION of TIME_TO_NEXT_ROUND
+	return timeToNextRound <= es.auctionClosingSeconds
 }
 
 func (es *expressLaneService) sequenceExpressLaneSubmission(

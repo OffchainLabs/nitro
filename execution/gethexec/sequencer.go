@@ -543,6 +543,7 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 	if !s.config().Timeboost.Enable {
 		return errors.New("timeboost not enabled")
 	}
+	arrivalTime := time.Now()
 	auctioneerAddr := s.auctioneerAddr
 	if auctioneerAddr == (common.Address{}) {
 		return errors.New("invalid auctioneer address")
@@ -555,11 +556,13 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 	if sender != auctioneerAddr {
 		return fmt.Errorf("sender %#x is not the auctioneer address %#x", sender, auctioneerAddr)
 	}
+	if !s.expressLaneService.isWithinAuctionCloseWindow(arrivalTime) {
+		return fmt.Errorf("transaction arrival time not within auction closure window: %v", arrivalTime)
+	}
 	txBytes, err := tx.MarshalBinary()
 	if err != nil {
 		return err
 	}
-	// TODO: Check it is within the resolution window.
 	s.timeboostLock.Lock()
 	// Set it as a value that will be consumed first in `createBlock`
 	if s.timeboostAuctionResolutionTx != nil {
@@ -568,7 +571,7 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 	}
 	s.timeboostAuctionResolutionTx = tx
 	s.timeboostLock.Unlock()
-	log.Info("Creating auction resolution tx")
+	log.Info("Prioritizing auction resolution transaction from auctioneer", "txHash", tx.Hash().Hex())
 	s.txQueue <- txQueueItem{
 		tx:              tx,
 		txSize:          len(txBytes),
