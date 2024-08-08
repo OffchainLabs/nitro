@@ -273,7 +273,11 @@ func (s *ExecutionEngine) GetBatchFetcher() execution.BatchFetcher {
 	return s.consensus
 }
 
-func (s *ExecutionEngine) Reorg(lastMsgIdxToKeep arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
+func (s *ExecutionEngine) Reorg(msgIdxOfFirstMsgToAdd arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo, oldMessages []*arbostypes.MessageWithMetadata) ([]*execution.MessageResult, error) {
+	if msgIdxOfFirstMsgToAdd == 0 {
+		return nil, errors.New("cannot reorg out genesis")
+	}
+
 	s.createBlocksMutex.Lock()
 	resequencing := false
 	defer func() {
@@ -283,7 +287,7 @@ func (s *ExecutionEngine) Reorg(lastMsgIdxToKeep arbutil.MessageIndex, newMessag
 			s.createBlocksMutex.Unlock()
 		}
 	}()
-	lastBlockNumToKeep := s.MessageIndexToBlockNumber(lastMsgIdxToKeep)
+	lastBlockNumToKeep := s.MessageIndexToBlockNumber(msgIdxOfFirstMsgToAdd - 1)
 	// We can safely cast lastBlockNumToKeep to a uint64 as it comes from MessageIndexToBlockNumber
 	lastBlockToKeep := s.bc.GetBlockByNumber(uint64(lastBlockNumToKeep))
 	if lastBlockToKeep == nil {
@@ -313,7 +317,7 @@ func (s *ExecutionEngine) Reorg(lastMsgIdxToKeep arbutil.MessageIndex, newMessag
 		if i < len(newMessages)-1 {
 			msgForPrefetch = &newMessages[i].MessageWithMeta
 		}
-		nextMsgIdx := lastMsgIdxToKeep + arbutil.MessageIndex(i+1)
+		nextMsgIdx := msgIdxOfFirstMsgToAdd + arbutil.MessageIndex(i)
 		msgResult, err := s.digestMessageWithBlockMutex(nextMsgIdx, &newMessages[i].MessageWithMeta, msgForPrefetch)
 		if err != nil {
 			return nil, err
