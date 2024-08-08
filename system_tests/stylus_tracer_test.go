@@ -123,7 +123,8 @@ func TestStylusTracer(t *testing.T) {
 		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
-			tx := l2info.PrepareTxTo("Owner", &testCase.contract, l2info.TransferGas, nil, testCase.args)
+			to := testCase.contract
+			tx := l2info.PrepareTxTo("Owner", &to, l2info.TransferGas, nil, testCase.args)
 			err := l2client.SendTransaction(ctx, tx)
 			Require(t, err, "send transaction")
 
