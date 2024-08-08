@@ -606,7 +606,7 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 	remoteFinalizedMsgCount, err := c.getRemoteFinalizedMsgCount(ctx)
 	if err != nil {
 		loglevel := log.Error
-		if err == redis.Nil {
+		if errors.Is(err, redis.Nil) {
 			loglevel = log.Debug
 		}
 		loglevel("Cannot get remote finalized message count, might encounter failed to read message warnings later", "err", err)
