@@ -199,15 +199,15 @@ test-go: .make/test-go
 	@printf $(done)
 
 test-go-challenge: test-go-deps
-	go test -v -timeout 120m ./system_tests/... -run TestChallenge -tags challengetest
+	gotestsum --format short-verbose --no-color=false -- -timeout 120m ./system_tests/... -run TestChallenge -tags challengetest
 	@printf $(done)
 
 test-go-stylus: test-go-deps
-	go test -v -timeout 120m ./system_tests/... -run TestProgramArbitrator -tags stylustest
+	gotestsum --format short-verbose --no-color=false -- -timeout 120m ./system_tests/... -run TestProgramArbitrator -tags stylustest
 	@printf $(done)
 
 test-go-redis: test-go-deps
-	TEST_REDIS=redis://localhost:6379/0 go test -p 1 -run TestRedis ./system_tests/... ./arbnode/...
+	TEST_REDIS=redis://localhost:6379/0 gotestsum --format short-verbose --no-color=false -- -p 1 -run TestRedis ./system_tests/... ./arbnode/...
 	@printf $(done)
 
 test-gen-proofs: \
@@ -215,6 +215,21 @@ test-gen-proofs: \
 	$(patsubst $(arbitrator_cases)/%.wat,contracts/test/prover/proofs/%.json, $(arbitrator_tests_wat)) \
 	$(patsubst $(arbitrator_cases)/rust/src/bin/%.rs,contracts/test/prover/proofs/rust-%.json, $(arbitrator_tests_rust)) \
 	contracts/test/prover/proofs/go.json
+	@printf $(done)
+
+test-rust: .make/test-rust
+	@printf $(done)
+
+
+# Runs the fastest and most reliable and high-value tests.
+tests: test-go test-rust
+	@printf $(done)
+
+# Runs all tests, including slow and unreliable tests.
+#  Currently, NOT including:
+#  - test-go-redis (These testts require additional setup and are not as reliable)
+tests-all: tests test-go-challenge test-go-stylus test-gen-proofs
+	@printf $(done)
 
 wasm-ci-build: $(arbitrator_wasm_libs) $(arbitrator_test_wasms) $(stylus_test_wasms) $(output_latest)/user_test.wasm
 	@printf $(done)
@@ -490,6 +505,10 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	gotestsum --format short-verbose --no-color=false
 	@touch $@
 
+.make/test-rust: $(DEP_PREDICATE) wasm-ci-build $(ORDER_ONLY_PREDICATE) .make
+	cargo test --manifest-path arbitrator/Cargo.toml --release
+	@touch $@
+
 .make/solgen: $(DEP_PREDICATE) solgen/gen.go .make/solidity $(ORDER_ONLY_PREDICATE) .make
 	mkdir -p solgen/go/
 	go run solgen/gen.go
@@ -537,4 +556,26 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 
 always:              # use this to force other rules to always build
 .DELETE_ON_ERROR:    # causes a failure to delete its target
-.PHONY: push all build build-node-deps test-go-deps build-prover-header build-prover-lib build-prover-bin build-jit build-replay-env build-solidity build-wasm-libs contracts format fmt lint stylus-benchmarks test-go test-gen-proofs push clean docker
+.PHONY: all
+.PHONY: build
+.PHONY: build-jit
+.PHONY: build-node-deps
+.PHONY: build-prover-bin
+.PHONY: build-prover-header
+.PHONY: build-prover-lib
+.PHONY: build-replay-env
+.PHONY: build-solidity
+.PHONY: build-wasm-libs
+.PHONY: clean
+.PHONY: contracts
+.PHONY: docker
+.PHONY: fmt
+.PHONY: format
+.PHONY: lint
+.PHONY: stylus-benchmarks
+.PHONY: test-gen-proofs
+.PHONY: test-go
+.PHONY: test-go-deps
+.PHONY: test-rust
+.PHONY: tests
+.PHONY: tests-all
