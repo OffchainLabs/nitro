@@ -217,7 +217,7 @@ func (s *TransactionStreamer) ReorgTo(newHeadMsgIdx arbutil.MessageIndex) error 
 func (s *TransactionStreamer) ReorgToAndEndBatch(batch ethdb.Batch, newHeadMsgIdx arbutil.MessageIndex) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
-	err := s.reorg(batch, newHeadMsgIdx, nil)
+	err := s.addMessagesAndReorg(batch, newHeadMsgIdx, nil)
 	if err != nil {
 		return err
 	}
@@ -281,7 +281,7 @@ func deleteFromRange(ctx context.Context, db ethdb.Database, prefix []byte, star
 
 // The insertion mutex must be held. This acquires the reorg mutex.
 // Note: oldMessages will be empty if reorgHook is nil
-func (s *TransactionStreamer) reorg(batch ethdb.Batch, lastMsgIdxToKeep arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo) error {
+func (s *TransactionStreamer) addMessagesAndReorg(batch ethdb.Batch, lastMsgIdxToKeep arbutil.MessageIndex, newMessages []arbostypes.MessageWithMetadataAndBlockInfo) error {
 	lastDelayedMsgIdx, err := s.getPrevPrevDelayedRead(lastMsgIdxToKeep + 1)
 	if err != nil {
 		return err
@@ -963,7 +963,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(firstMsgIdx arbutil.Mes
 			return invalidReorgMsgIndex
 		}
 		reorgBatch := s.db.NewBatch()
-		err := s.reorg(reorgBatch, firstMsgIdx-1, messages)
+		err := s.addMessagesAndReorg(reorgBatch, firstMsgIdx-1, messages)
 		if err != nil {
 			return err
 		}
