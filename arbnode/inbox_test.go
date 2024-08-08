@@ -192,7 +192,7 @@ func TestTransactionStreamer(t *testing.T) {
 			if blockStates[reorgTo].numMessages == 0 {
 				Fail(t, "invalid reorg target")
 			}
-			err := inbox.ReorgTo(blockStates[reorgTo].numMessages - 1)
+			err := inbox.ReorgAt(blockStates[reorgTo].numMessages)
 			if err != nil {
 				Fail(t, err)
 			}

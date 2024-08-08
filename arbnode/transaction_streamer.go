@@ -210,14 +210,14 @@ func (s *TransactionStreamer) cleanupInconsistentState() error {
 	return nil
 }
 
-func (s *TransactionStreamer) ReorgTo(newHeadMsgIdx arbutil.MessageIndex) error {
-	return s.ReorgToAndEndBatch(s.db.NewBatch(), newHeadMsgIdx)
+func (s *TransactionStreamer) ReorgAt(firstMsgIdxToReorg arbutil.MessageIndex) error {
+	return s.ReorgAtAndEndBatch(s.db.NewBatch(), firstMsgIdxToReorg)
 }
 
-func (s *TransactionStreamer) ReorgToAndEndBatch(batch ethdb.Batch, newHeadMsgIdx arbutil.MessageIndex) error {
+func (s *TransactionStreamer) ReorgAtAndEndBatch(batch ethdb.Batch, firstMsgIdxToReorg arbutil.MessageIndex) error {
 	s.insertionMutex.Lock()
 	defer s.insertionMutex.Unlock()
-	err := s.addMessagesAndReorg(batch, newHeadMsgIdx+1, nil)
+	err := s.addMessagesAndReorg(batch, firstMsgIdxToReorg, nil)
 	if err != nil {
 		return err
 	}

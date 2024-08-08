@@ -62,7 +62,7 @@ func TestReorgResequencing(t *testing.T) {
 	}
 	verifyBalances("before reorg")
 
-	err = builder.L2.ConsensusNode.TxStreamer.ReorgTo(startHeadMsgIdx)
+	err = builder.L2.ConsensusNode.TxStreamer.ReorgAt(startHeadMsgIdx + 1)
 	Require(t, err)
 
 	_, err = builder.L2.ExecNode.ExecEngine.HeadMessageIndexSync(t)
@@ -100,7 +100,7 @@ func TestReorgResequencing(t *testing.T) {
 	verifyBalances("after reorg with new deposit")
 	compareAllMsgResultsFromConsensusAndExecution(t, ctx, builder.L2, "after reorg with new deposit")
 
-	err = builder.L2.ConsensusNode.TxStreamer.ReorgTo(startHeadMsgIdx)
+	err = builder.L2.ConsensusNode.TxStreamer.ReorgAt(startHeadMsgIdx + 1)
 	Require(t, err)
 
 	_, err = builder.L2.ExecNode.ExecEngine.HeadMessageIndexSync(t)
