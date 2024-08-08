@@ -16,7 +16,7 @@ func TestSequencerWhitelist(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
-	builder.execConfig.Sequencer.SenderWhitelist = GetTestAddressForAccountName(t, "Owner").String() + "," + GetTestAddressForAccountName(t, "User").String()
+	builder.execConfig.Sequencer.SenderWhitelist = []string{GetTestAddressForAccountName(t, "Owner").String(), GetTestAddressForAccountName(t, "User").String()}
 	cleanup := builder.Build(t)
 	defer cleanup()
 
