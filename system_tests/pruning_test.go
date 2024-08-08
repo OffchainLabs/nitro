@@ -35,6 +35,8 @@ func TestPruning(t *testing.T) {
 	defer cancel()
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	// PathScheme prunes the state trie by itself, so only HashScheme should be tested
+	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 	_ = builder.Build(t)
 	l2cleanupDone := false
 	defer func() {

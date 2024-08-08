@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
@@ -33,6 +34,8 @@ type DASWriter interface {
 	Store(ctx context.Context, message []byte, timeout uint64) (*DataAvailabilityCertificate, error)
 	fmt.Stringer
 }
+
+var DefaultDASRetentionPeriod time.Duration = time.Hour * 24 * 15
 
 type DASKeysetFetcher interface {
 	GetKeysetByHash(context.Context, common.Hash) ([]byte, error)
