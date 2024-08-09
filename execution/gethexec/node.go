@@ -35,7 +35,7 @@ type StylusTargetConfig struct {
 var DefaultStylusTargetConfig = StylusTargetConfig{
 	Arm:  "arm64-linux-unknown+neon",
 	X86:  "x86_64-linux-unknown+sse4.2",
-	Host: "aarch64-apple-darwin",
+	Host: "",
 }
 
 func StylusTargetConfigAddOptions(prefix string, f *flag.FlagSet) {
