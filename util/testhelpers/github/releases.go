@@ -4,10 +4,12 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 
 	"github.com/google/go-github/v62/github"
+	"golang.org/x/oauth2"
 )
 
 var wasmRootExp = regexp.MustCompile(`\*\*WAVM Module Root\*\*: (0x[a-f0-9]{64})`)
@@ -18,9 +20,19 @@ type ConsensusRelease struct {
 	ReplayWasmURL  url.URL
 }
 
+func getAuthGitClient(ctx context.Context) *github.Client {
+	token := os.Getenv("GITHUB_TOKEN")
+	if token == "" {
+		panic("check if env variable is read correctly")
+		return github.NewClient(nil)
+	}
+	tokenSource := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
+	return github.NewClient(oauth2.NewClient(ctx, tokenSource))
+}
+
 // NitroReleases returns the most recent 50 releases of the Nitro repository.
 func NitroReleases(ctx context.Context) ([]*github.RepositoryRelease, error) {
-	client := github.NewClient(nil)
+	client := getAuthGitClient(ctx)
 	opts := &github.ListOptions{
 		PerPage: 50,
 	}
