@@ -429,25 +429,12 @@ func TestStylusOpcodeTraceEquivalence(t *testing.T) {
 	l2client := builder.L2.Client
 	defer cleanup()
 
-	// Args for storing and loading from storage
-	const (
-		storageKind = 0x10
-		storeAction = storageKind | 0x00
-		loadAction  = storageKind | 0x01
-		logModifier = 0x08
-	)
 	key := testhelpers.RandomHash()
 	value := testhelpers.RandomHash()
-	args := []byte{2} // number of actions
-	// first action (we have to load first; otherwise, stylus optimize-out the load after a store)
-	args = binary.BigEndian.AppendUint32(args, 1+32) // length
-	args = append(args, loadAction|logModifier)
-	args = append(args, key.Bytes()...)
-	// second action
-	args = binary.BigEndian.AppendUint32(args, 1+64) // length
-	args = append(args, storeAction|logModifier)
-	args = append(args, key.Bytes()...)
-	args = append(args, value.Bytes()...)
+	args := multicallEmptyArgs()
+	// We have to load first; otherwise, Stylus optimize-out the load after a store.
+	args = multicallAppendLoad(args, key, true)
+	args = multicallAppendStore(args, key, value, true)
 
 	// Trace recursive call in wasm
 	wasmMulticall := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
