@@ -9,12 +9,12 @@ use crate::{
 };
 use eyre::Result;
 use prover::programs::{prelude::*, start::StartMover};
-use wasmer::{imports, Function};
+use wasmer::{imports, Function, Target};
 
 #[test]
 fn test_bulk_memory() -> Result<()> {
     let (compile, config, ink) = test_configs();
-    let mut store = compile.store();
+    let mut store = compile.store(Target::default());
     let filename = "../prover/test-cases/bulk-memory.wat";
     let imports = imports! {
         "env" => {
