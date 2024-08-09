@@ -79,7 +79,7 @@ func intToBytes(v int) []byte {
 	return binary.BigEndian.AppendUint64(nil, uint64(v))
 }
 
-func TestStylusTraceStorage(t *testing.T) {
+func TestStylusOpcodeTraceStorage(t *testing.T) {
 	const jit = false
 	builder, auth, cleanup := setupProgramTest(t, jit)
 	ctx := builder.ctx
@@ -115,7 +115,7 @@ func TestStylusTraceStorage(t *testing.T) {
 	checkOpcode(t, result, 4, vm.POP, nil)
 }
 
-func TestStylusTraceNativeKeccak(t *testing.T) {
+func TestStylusOpcodeTraceNativeKeccak(t *testing.T) {
 	const jit = false
 	builder, auth, cleanup := setupProgramTest(t, jit)
 	ctx := builder.ctx
@@ -134,7 +134,7 @@ func TestStylusTraceNativeKeccak(t *testing.T) {
 	checkOpcode(t, result, 4, vm.POP, hash[:])
 }
 
-func TestStylusTraceMath(t *testing.T) {
+func TestStylusOpcodeTraceMath(t *testing.T) {
 	const jit = false
 	builder, auth, cleanup := setupProgramTest(t, jit)
 	ctx := builder.ctx
@@ -176,7 +176,7 @@ func TestStylusTraceMath(t *testing.T) {
 	checkOpcode(t, result, 12, vm.POP, results[4])
 }
 
-func TestStylusTraceExit(t *testing.T) {
+func TestStylusOpcodeTraceExit(t *testing.T) {
 	const jit = false
 	builder, auth, cleanup := setupProgramTest(t, jit)
 	ctx := builder.ctx
@@ -202,7 +202,7 @@ func TestStylusTraceExit(t *testing.T) {
 	checkOpcode(t, result, 3, vm.REVERT, nil, size)
 }
 
-func TestStylusTraceEvmData(t *testing.T) {
+func TestStylusOpcodeTraceEvmData(t *testing.T) {
 	const jit = false
 	builder, auth, cleanup := setupProgramTest(t, jit)
 	ctx := builder.ctx
@@ -310,7 +310,7 @@ func TestStylusTraceEvmData(t *testing.T) {
 	checkOpcode(t, result, 53, vm.POP, skipCheck)
 }
 
-func TestStylusTraceLog(t *testing.T) {
+func TestStylusOpcodeTraceLog(t *testing.T) {
 	const jit = false
 	builder, auth, cleanup := setupProgramTest(t, jit)
 	ctx := builder.ctx
@@ -336,7 +336,7 @@ func TestStylusTraceLog(t *testing.T) {
 	checkOpcode(t, result, 3, vm.LOG4, expectedStack...)
 }
 
-func TestStylusTraceReturnDataSize(t *testing.T) {
+func TestStylusOpcodeTraceReturnDataSize(t *testing.T) {
 	const jit = false
 	builder, auth, cleanup := setupProgramTest(t, jit)
 	ctx := builder.ctx
@@ -352,7 +352,7 @@ func TestStylusTraceReturnDataSize(t *testing.T) {
 	checkOpcode(t, result, 4, vm.POP, nil)
 }
 
-func TestStylusTraceCall(t *testing.T) {
+func TestStylusOpcodeTraceCall(t *testing.T) {
 	const jit = false
 	builder, auth, cleanup := setupProgramTest(t, jit)
 	ctx := builder.ctx
@@ -385,7 +385,7 @@ func TestStylusTraceCall(t *testing.T) {
 	checkOpcode(t, result, 15, vm.STATICCALL, gas, storage[:], nil, argsLen, nil, nil)
 }
 
-func TestStylusTraceCreate(t *testing.T) {
+func TestStylusOpcodeTraceCreate(t *testing.T) {
 	const jit = false
 	builder, auth, cleanup := setupProgramTest(t, jit)
 	ctx := builder.ctx
@@ -419,10 +419,10 @@ func TestStylusTraceCreate(t *testing.T) {
 	checkOpcode(t, result, 11, vm.POP, create2Addr[:])
 }
 
-// TestStylusTraceEquivalence compares a Stylus trace with a equivalent Solidity/EVM trace. Notice
+// TestStylusOpcodeTraceEquivalence compares a Stylus trace with a equivalent Solidity/EVM trace. Notice
 // the Stylus trace does not contain all opcodes from the Solidity/EVM trace. Instead, this test
 // only checks that both traces contain the same basic opcodes.
-func TestStylusTraceEquivalence(t *testing.T) {
+func TestStylusOpcodeTraceEquivalence(t *testing.T) {
 	const jit = false
 	builder, auth, cleanup := setupProgramTest(t, jit)
 	ctx := builder.ctx
@@ -439,15 +439,15 @@ func TestStylusTraceEquivalence(t *testing.T) {
 	key := testhelpers.RandomHash()
 	value := testhelpers.RandomHash()
 	args := []byte{2} // number of actions
-	// first action
+	// first action (we have to load first; otherwise, stylus optimize-out the load after a store)
+	args = binary.BigEndian.AppendUint32(args, 1+32) // length
+	args = append(args, loadAction|logModifier)
+	args = append(args, key.Bytes()...)
+	// second action
 	args = binary.BigEndian.AppendUint32(args, 1+64) // length
 	args = append(args, storeAction|logModifier)
 	args = append(args, key.Bytes()...)
 	args = append(args, value.Bytes()...)
-	// second action
-	args = binary.BigEndian.AppendUint32(args, 1+32) // length
-	args = append(args, loadAction|logModifier)
-	args = append(args, key.Bytes()...)
 
 	// Trace recursive call in wasm
 	wasmMulticall := deployWasm(t, ctx, auth, l2client, rustFile("multicall"))
@@ -470,14 +470,14 @@ func TestStylusTraceEquivalence(t *testing.T) {
 	checkOpcode(t, wasmResult, 3, vm.CALL, skipCheck, wasmMulticall[:], nil, offset, argsLen, offset, nil)
 	checkOpcode(t, evmResult, 3120, vm.CALL, skipCheck, evmMulticall[:], nil, offset, argsLen, offset, nil)
 
-	checkOpcode(t, wasmResult, 5, vm.SSTORE, key[:], value[:])
-	checkOpcode(t, evmResult, 3905, vm.SSTORE, key[:], value[:])
+	checkOpcode(t, wasmResult, 5, vm.SLOAD, key[:])
+	checkOpcode(t, evmResult, 3853, vm.SLOAD, key[:])
 
 	topic := common.Hex2Bytes("6ab08a9a891703dcd5859f8e8328215fef6d9f250e7d58267bee45aabaee2fa8")
 	logLen := intToBytes(0x60)
-	checkOpcode(t, wasmResult, 6, vm.LOG1, offset, logLen, topic)
-	checkOpcode(t, evmResult, 3944, vm.LOG1, offset, logLen, topic)
+	checkOpcode(t, wasmResult, 7, vm.LOG1, offset, logLen, topic)
+	checkOpcode(t, evmResult, 3970, vm.LOG1, offset, logLen, topic)
 
-	checkOpcode(t, wasmResult, 7, vm.SLOAD, key[:])
-	checkOpcode(t, evmResult, 4645, vm.SLOAD, key[:])
+	checkOpcode(t, wasmResult, 8, vm.SSTORE, key[:], value[:])
+	checkOpcode(t, evmResult, 4723, vm.SSTORE, key[:], value[:])
 }

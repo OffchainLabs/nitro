@@ -22,10 +22,11 @@ const (
 )
 
 type TracingInfo struct {
-	Tracer   vm.EVMLogger
-	Scenario TracingScenario
-	Contract *vm.Contract
-	Depth    int
+	Tracer       vm.EVMLogger
+	Scenario     TracingScenario
+	Contract     *vm.Contract
+	Depth        int
+	storageCache *storageCache
 }
 
 // holds an address to satisfy core/vm's ContractRef() interface
@@ -42,10 +43,11 @@ func NewTracingInfo(evm *vm.EVM, from, to common.Address, scenario TracingScenar
 		return nil
 	}
 	return &TracingInfo{
-		Tracer:   evm.Config.Tracer,
-		Scenario: scenario,
-		Contract: vm.NewContract(addressHolder{to}, addressHolder{from}, uint256.NewInt(0), 0),
-		Depth:    evm.Depth(),
+		Tracer:       evm.Config.Tracer,
+		Scenario:     scenario,
+		Contract:     vm.NewContract(addressHolder{to}, addressHolder{from}, uint256.NewInt(0), 0),
+		Depth:        evm.Depth(),
+		storageCache: newStorageCache(),
 	}
 }
 
@@ -167,8 +169,10 @@ func (info *TracingInfo) CaptureEVMTraceForHostio(name string, args, outs []byte
 		}
 		key := args[:32]
 		value := outs[:32]
-		capture(vm.SLOAD, nil, key)
-		capture(vm.POP, nil, value)
+		if info.storageCache.Load(common.Hash(key), common.Hash(value)) {
+			capture(vm.SLOAD, nil, key)
+			capture(vm.POP, nil, value)
+		}
 
 	case "storage_cache_bytes32":
 		if !checkArgs(32 + 32) {
@@ -176,10 +180,19 @@ func (info *TracingInfo) CaptureEVMTraceForHostio(name string, args, outs []byte
 		}
 		key := args[:32]
 		value := args[32:64]
-		capture(vm.SSTORE, nil, key, value)
+		info.storageCache.Store(common.Hash(key), common.Hash(value))
 
 	case "storage_flush_cache":
-		// SSTORE is handled above by storage_cache_bytes32
+		if !checkArgs(1) {
+			return
+		}
+		toClear := args[0] != 0
+		for _, store := range info.storageCache.Flush() {
+			capture(vm.SSTORE, nil, store.Key.Bytes(), store.Value.Bytes())
+		}
+		if toClear {
+			info.storageCache.Clear()
+		}
 
 	case "transient_load_bytes32":
 		if !checkArgs(32) || !checkOuts(32) {
