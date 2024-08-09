@@ -26,18 +26,6 @@ import (
 	flag "github.com/spf13/pflag"
 )
 
-type DangerousConfig struct {
-	ReorgToBlock int64 `koanf:"reorg-to-block"`
-}
-
-var DefaultDangerousConfig = DangerousConfig{
-	ReorgToBlock: -1,
-}
-
-func DangerousConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Int64(prefix+".reorg-to-block", DefaultDangerousConfig.ReorgToBlock, "DANGEROUS! forces a reorg to an old block height. To be used for testing only. -1 to disable")
-}
-
 type StylusTargetConfig struct {
 	Arm  string `koanf:"arm"`
 	X86  string `koanf:"x86"`
