@@ -22,6 +22,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/server_common"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 )
@@ -74,7 +75,7 @@ func (c *ValidationClient) Start(ctx context.Context) error {
 		return fmt.Errorf("could not read stylus archs from validation server")
 	}
 	for _, stylusArch := range stylusArchs {
-		if stylusArch != "wavm" && stylusArch != programs.LocalTargetName() && stylusArch != "mock" {
+		if stylusArch != rawdb.TargetWavm && stylusArch != programs.LocalTargetName() && stylusArch != "mock" {
 			return fmt.Errorf("unsupported stylus architecture: %v", stylusArch)
 		}
 	}
