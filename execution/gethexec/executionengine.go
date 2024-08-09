@@ -157,10 +157,10 @@ func (s *ExecutionEngine) Initialize(rustCacheSize uint32, targetConfig *StylusT
 	var effectiveStylusTarget string
 	targetName := programs.LocalTargetName()
 	switch targetName {
-	case rawdb.TargetArm:
-		effectiveStylusTarget = targetConfig.Arm
-	case rawdb.TargetX86:
-		effectiveStylusTarget = targetConfig.X86
+	case rawdb.TargetArm64:
+		effectiveStylusTarget = targetConfig.Arm64
+	case rawdb.TargetAmd64:
+		effectiveStylusTarget = targetConfig.Amd64
 	case rawdb.TargetHost:
 		effectiveStylusTarget = targetConfig.Host
 	}

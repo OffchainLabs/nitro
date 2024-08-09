@@ -28,20 +28,20 @@ import (
 )
 
 type StylusTargetConfig struct {
-	Arm  string `koanf:"arm"`
-	X86  string `koanf:"x86"`
-	Host string `koanf:"host"`
+	Arm64 string `koanf:"arm64"`
+	Amd64 string `koanf:"amd64"`
+	Host  string `koanf:"host"`
 }
 
 var DefaultStylusTargetConfig = StylusTargetConfig{
-	Arm:  programs.DefaultTargetDescriptionArm,
-	X86:  programs.DefaultTargetDescriptionX86,
-	Host: "",
+	Arm64: programs.DefaultTargetDescriptionArm,
+	Amd64: programs.DefaultTargetDescriptionX86,
+	Host:  "",
 }
 
 func StylusTargetConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".arm", DefaultStylusTargetConfig.Arm, "stylus programs compilation target for 64-bit ARM linux")
-	f.String(prefix+".x86", DefaultStylusTargetConfig.X86, "stylus programs compilation target for 64-bit x86 linux")
+	f.String(prefix+".arm64", DefaultStylusTargetConfig.Arm64, "stylus programs compilation target for 64-bit arm64 linux")
+	f.String(prefix+".amd64", DefaultStylusTargetConfig.Amd64, "stylus programs compilation target for 64-bit amd64 linux")
 	f.String(prefix+".host", DefaultStylusTargetConfig.Host, "stylus programs compilation target for system other than 64-bit ARM or 64-bit x86")
 }
 

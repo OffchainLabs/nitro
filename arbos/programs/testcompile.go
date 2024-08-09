@@ -32,11 +32,11 @@ import (
 func testCompileArch(store bool) error {
 
 	localTarget := LocalTargetName()
-	nativeArm64 := localTarget == rawdb.TargetArm
-	nativeAmd64 := localTarget == rawdb.TargetX86
+	nativeArm64 := localTarget == rawdb.TargetArm64
+	nativeAmd64 := localTarget == rawdb.TargetAmd64
 
-	arm64CompileName := []byte(rawdb.TargetArm)
-	amd64CompileName := []byte(rawdb.TargetX86)
+	arm64CompileName := []byte(rawdb.TargetArm64)
+	amd64CompileName := []byte(rawdb.TargetAmd64)
 
 	arm64TargetString := []byte(DefaultTargetDescriptionArm)
 	amd64TargetString := []byte(DefaultTargetDescriptionX86)
@@ -170,10 +170,10 @@ func testCompileArch(store bool) error {
 func testCompileLoad() error {
 	filePath := "../../target/testdata/host.bin"
 	localTarget := LocalTargetName()
-	if localTarget == rawdb.TargetArm {
+	if localTarget == rawdb.TargetArm64 {
 		filePath = "../../target/testdata/arm64.bin"
 	}
-	if localTarget == rawdb.TargetX86 {
+	if localTarget == rawdb.TargetAmd64 {
 		filePath = "../../target/testdata/amd64.bin"
 	}
 

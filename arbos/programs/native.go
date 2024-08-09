@@ -290,9 +290,9 @@ func LocalTargetName() string {
 	if runtime.GOOS == "linux" {
 		switch runtime.GOARCH {
 		case "arm64":
-			return rawdb.TargetArm
+			return rawdb.TargetArm64
 		case "amd64":
-			return rawdb.TargetX86
+			return rawdb.TargetAmd64
 		}
 	}
 	return rawdb.TargetHost
