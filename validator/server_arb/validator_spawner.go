@@ -21,6 +21,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/valnode/redis"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 )
@@ -89,7 +90,7 @@ func (s *ArbitratorSpawner) WasmModuleRoots() ([]common.Hash, error) {
 }
 
 func (s *ArbitratorSpawner) StylusArchs() []string {
-	return []string{"wavm"}
+	return []string{rawdb.TargetWavm}
 }
 
 func (s *ArbitratorSpawner) Name() string {
@@ -122,14 +123,14 @@ func (v *ArbitratorSpawner) loadEntryToMachine(ctx context.Context, entry *valid
 			return fmt.Errorf("error while trying to add sequencer msg for proving: %w", err)
 		}
 	}
-	if len(entry.UserWasms["wavm"]) == 0 {
+	if len(entry.UserWasms[rawdb.TargetWavm]) == 0 {
 		for stylusArch, wasms := range entry.UserWasms {
 			if len(wasms) > 0 {
 				return fmt.Errorf("bad stylus arch loaded to machine. Expected wavm. Got: %s", stylusArch)
 			}
 		}
 	}
-	for moduleHash, module := range entry.UserWasms["wavm"] {
+	for moduleHash, module := range entry.UserWasms[rawdb.TargetWavm] {
 		err = mach.AddUserWasm(moduleHash, module)
 		if err != nil {
 			log.Error(

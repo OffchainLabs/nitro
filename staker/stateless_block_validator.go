@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
-	"runtime"
 	"testing"
 
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
@@ -153,12 +152,10 @@ func (e *validationEntry) ToInput(stylusArchs []string) (*validator.ValidationIn
 	for _, stylusArch := range stylusArchs {
 		res.UserWasms[stylusArch] = make(map[common.Hash][]byte)
 	}
-	for hash, info := range e.UserWasms {
+	for hash, asmMap := range e.UserWasms {
 		for _, stylusArch := range stylusArchs {
-			if stylusArch == "wavm" {
-				res.UserWasms[stylusArch][hash] = info.Module
-			} else if stylusArch == runtime.GOARCH {
-				res.UserWasms[stylusArch][hash] = info.Asm
+			if asm, exists := asmMap[stylusArch]; exists {
+				res.UserWasms[stylusArch][hash] = asm
 			} else {
 				return nil, fmt.Errorf("stylusArch not supported by block validator: %v", stylusArch)
 			}

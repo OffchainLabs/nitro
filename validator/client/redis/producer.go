@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/pubsub"
@@ -36,7 +37,7 @@ var DefaultValidationClientConfig = ValidationClientConfig{
 	Name:           "redis validation client",
 	Room:           2,
 	RedisURL:       "",
-	StylusArchs:    []string{"wavm"},
+	StylusArchs:    []string{rawdb.TargetWavm},
 	ProducerConfig: pubsub.DefaultProducerConfig,
 	CreateStreams:  true,
 }
@@ -46,7 +47,7 @@ var TestValidationClientConfig = ValidationClientConfig{
 	Room:           2,
 	RedisURL:       "",
 	StreamPrefix:   "test-",
-	StylusArchs:    []string{"wavm"},
+	StylusArchs:    []string{rawdb.TargetWavm},
 	ProducerConfig: pubsub.TestProducerConfig,
 	CreateStreams:  false,
 }
