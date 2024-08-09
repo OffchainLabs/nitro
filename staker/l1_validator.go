@@ -101,8 +101,7 @@ func (v *L1Validator) getCallOpts(ctx context.Context) *bind.CallOpts {
 }
 
 func (v *L1Validator) Initialize(ctx context.Context) error {
-	err := v.rollup.Initialize(ctx)
-	if err != nil {
+	if err := v.rollup.Initialize(ctx); err != nil {
 		return err
 	}
 	return v.updateBlockValidatorModuleRoot(ctx)

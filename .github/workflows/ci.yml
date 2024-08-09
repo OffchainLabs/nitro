@@ -20,7 +20,7 @@ jobs:
       redis:
         image: redis
         ports:
-            - 6379:6379
+          - 6379:6379
 
     strategy:
       fail-fast: false
@@ -201,7 +201,7 @@ jobs:
           packages=`go list ./...`
           for package in $packages; do
             echo running tests for $package
-            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -tags=challengetest -run=TestChallenge > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
+            if ! stdbuf -oL gotestsum --format short-verbose --packages="$package" --rerun-fails=2 --no-color=false -- -timeout 60m -coverprofile=coverage.txt -covermode=atomic -coverpkg=./...,./go-ethereum/... -tags=challengetest -run=TestChallenge > >(stdbuf -oL tee -a full.log | grep -vE "INFO|seal"); then
               exit 1
             fi
           done
