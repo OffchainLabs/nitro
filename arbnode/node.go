@@ -277,19 +277,21 @@ type Node struct {
 }
 
 type SnapSyncConfig struct {
-	Enabled               bool
-	PrevBatchMessageCount uint64
-	PrevDelayedRead       uint64
-	BatchCount            uint64
-	DelayedCount          uint64
+	Enabled                   bool
+	PrevBatchMessageCount     uint64
+	PrevDelayedRead           uint64
+	BatchCount                uint64
+	DelayedCount              uint64
+	ParentChainAssertionBlock uint64
 }
 
 var DefaultSnapSyncConfig = SnapSyncConfig{
-	Enabled:               false,
-	PrevBatchMessageCount: 0,
-	BatchCount:            0,
-	DelayedCount:          0,
-	PrevDelayedRead:       0,
+	Enabled:                   false,
+	PrevBatchMessageCount:     0,
+	PrevDelayedRead:           0,
+	BatchCount:                0,
+	DelayedCount:              0,
+	ParentChainAssertionBlock: 0,
 }
 
 type ConfigFetcher interface {
@@ -564,7 +566,22 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
-	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, new(big.Int).SetUint64(deployInfo.DeployedAt), delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &configFetcher.Get().InboxReader })
+	firstMessageBlock := new(big.Int).SetUint64(deployInfo.DeployedAt)
+	if config.SnapSyncTest.Enabled {
+		batchCount := config.SnapSyncTest.BatchCount
+		// Find the first block containing the batch count.
+		// Subtract 1 to get the block before the needed batch count,
+		// this is done to fetch previous batch metadata needed for snap sync.
+		if batchCount > 0 {
+			batchCount--
+		}
+		block, err := FindBlockContainingBatchCount(ctx, deployInfo.Bridge, l1client, config.SnapSyncTest.ParentChainAssertionBlock, batchCount)
+		if err != nil {
+			return nil, err
+		}
+		firstMessageBlock.SetUint64(block)
+	}
+	inboxReader, err := NewInboxReader(inboxTracker, l1client, l1Reader, firstMessageBlock, delayedBridge, sequencerInbox, func() *InboxReaderConfig { return &configFetcher.Get().InboxReader })
 	if err != nil {
 		return nil, err
 	}
@@ -742,6 +759,51 @@ func createNodeImpl(
 		configFetcher:           configFetcher,
 		ctx:                     ctx,
 	}, nil
+}
+
+func FindBlockContainingBatchCount(ctx context.Context, bridgeAddress common.Address, l1Client arbutil.L1Interface, parentChainAssertionBlock uint64, batchCount uint64) (uint64, error) {
+	bridge, err := bridgegen.NewIBridge(bridgeAddress, l1Client)
+	if err != nil {
+		return 0, err
+	}
+	high := parentChainAssertionBlock
+	low := uint64(0)
+	if high > 100 {
+		low = high - 100
+	}
+	// Reduce high and low by 100 until lowNode.InboxMaxCount < batchCount
+	// This will give us a range (low to high) of blocks that contain the batch count.
+	for low > 0 {
+		lowCount, err := bridge.SequencerMessageCount(&bind.CallOpts{Context: ctx, BlockNumber: new(big.Int).SetUint64(low)})
+		if err != nil {
+			return 0, err
+		}
+		if lowCount.Uint64() > batchCount {
+			high = low
+			if low > 100 {
+				low = low - 100
+			} else {
+				low = 0
+			}
+		} else {
+			break
+		}
+	}
+	// Then binary search between low and high to find the block containing the batch count.
+	for low < high {
+		mid := low + (high-low)/2
+
+		midCount, err := bridge.SequencerMessageCount(&bind.CallOpts{Context: ctx, BlockNumber: new(big.Int).SetUint64(mid)})
+		if err != nil {
+			return 0, err
+		}
+		if midCount.Uint64() < batchCount {
+			low = mid + 1
+		} else {
+			high = mid
+		}
+	}
+	return low, nil
 }
 
 func (n *Node) OnConfigReload(_ *Config, _ *Config) error {
