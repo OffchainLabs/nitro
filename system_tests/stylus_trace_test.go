@@ -480,4 +480,13 @@ func TestStylusOpcodeTraceEquivalence(t *testing.T) {
 
 	checkOpcode(t, wasmResult, 8, vm.SSTORE, key[:], value[:])
 	checkOpcode(t, evmResult, 4723, vm.SSTORE, key[:], value[:])
+
+	// inner return
+	returnLen := intToBytes(0x20)
+	checkOpcode(t, wasmResult, 10, vm.RETURN, offset, returnLen)
+	checkOpcode(t, evmResult, 4828, vm.RETURN, offset, returnLen)
+
+	// outer return
+	checkOpcode(t, wasmResult, 12, vm.RETURN, offset, returnLen)
+	checkOpcode(t, evmResult, 5078, vm.RETURN, offset, returnLen)
 }
