@@ -40,8 +40,8 @@ var DefaultStylusTargetConfig = StylusTargetConfig{
 }
 
 func StylusTargetConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.String(prefix+".arm64", DefaultStylusTargetConfig.Arm64, "stylus programs compilation target for 64-bit arm64 linux")
-	f.String(prefix+".amd64", DefaultStylusTargetConfig.Amd64, "stylus programs compilation target for 64-bit amd64 linux")
+	f.String(prefix+".arm64", DefaultStylusTargetConfig.Arm64, "stylus programs compilation target for arm64 linux")
+	f.String(prefix+".amd64", DefaultStylusTargetConfig.Amd64, "stylus programs compilation target for amd64 linux")
 	f.String(prefix+".host", DefaultStylusTargetConfig.Host, "stylus programs compilation target for system other than 64-bit ARM or 64-bit x86")
 }
 
