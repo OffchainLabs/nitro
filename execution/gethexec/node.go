@@ -19,6 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
@@ -33,8 +34,8 @@ type StylusTargetConfig struct {
 }
 
 var DefaultStylusTargetConfig = StylusTargetConfig{
-	Arm:  "arm64-linux-unknown+neon",
-	X86:  "x86_64-linux-unknown+sse4.2",
+	Arm:  programs.DefaultTargetDescriptionArm,
+	X86:  programs.DefaultTargetDescriptionX86,
 	Host: "",
 }
 

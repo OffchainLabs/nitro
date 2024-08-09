@@ -298,6 +298,9 @@ func LocalTargetName() string {
 	return rawdb.TargetHost
 }
 
+const DefaultTargetDescriptionArm = "arm64-linux-unknown+neon"
+const DefaultTargetDescriptionX86 = "x86_64-linux-unknown+sse4.2"
+
 func SetTarget(name string, description string, native bool) error {
 	output := &rustBytes{}
 	status := userStatus(C.stylus_target_set(

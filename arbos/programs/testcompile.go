@@ -25,27 +25,21 @@ import (
 	"os"
 	"runtime"
 
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/wasmerio/wasmer-go/wasmer"
 )
 
-func isNativeArm() bool {
-	return runtime.GOOS == "linux" && runtime.GOARCH == "arm64"
-}
-
-func isNativeX86() bool {
-	return runtime.GOOS == "linux" && runtime.GOARCH == "amd64"
-}
-
 func testCompileArch(store bool) error {
 
-	nativeArm64 := isNativeArm()
-	nativeAmd64 := isNativeX86()
+	localTarget := LocalTargetName()
+	nativeArm64 := localTarget == rawdb.TargetArm
+	nativeAmd64 := localTarget == rawdb.TargetX86
 
-	arm64CompileName := []byte("arm64")
-	amd64CompileName := []byte("amd64")
+	arm64CompileName := []byte(rawdb.TargetArm)
+	amd64CompileName := []byte(rawdb.TargetX86)
 
-	arm64TargetString := []byte("arm64-linux-unknown+neon")
-	amd64TargetString := []byte("x86_64-linux-unknown+sse4.2")
+	arm64TargetString := []byte(DefaultTargetDescriptionArm)
+	amd64TargetString := []byte(DefaultTargetDescriptionX86)
 
 	output := &rustBytes{}
 
@@ -175,10 +169,11 @@ func testCompileArch(store bool) error {
 
 func testCompileLoad() error {
 	filePath := "../../target/testdata/host.bin"
-	if isNativeArm() {
+	localTarget := LocalTargetName()
+	if localTarget == rawdb.TargetArm {
 		filePath = "../../target/testdata/arm64.bin"
 	}
-	if isNativeX86() {
+	if localTarget == rawdb.TargetX86 {
 		filePath = "../../target/testdata/amd64.bin"
 	}
 
