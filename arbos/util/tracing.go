@@ -142,15 +142,14 @@ func (info *TracingInfo) CaptureEVMTraceForHostio(name string, args, outs []byte
 	firstOpcode := true
 	capture := func(op vm.OpCode, memory []byte, stackValues ...[]byte) {
 		const inkToGas = 10000
-		var gas, cost uint64
+		gas := endInk / inkToGas
+		var cost uint64
 		if firstOpcode {
-			gas = startInk / inkToGas
 			cost = (startInk - endInk) / inkToGas
 			firstOpcode = false
 		} else {
 			// When capturing multiple opcodes, usually the first one is the relevant
 			// action and the following ones just pop the result values from the stack.
-			gas = endInk / inkToGas
 			cost = 0
 		}
 		info.captureState(op, gas, cost, memory, stackValues...)
