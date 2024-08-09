@@ -14,6 +14,9 @@ lazy_static! {
 }
 
 fn target_from_string(input: String) -> Result<Target> {
+    if input.is_empty() {
+        return Ok(Target::default());
+    }
     let mut parts = input.split('+');
 
     let Some(triple_string) = parts.next() else {
