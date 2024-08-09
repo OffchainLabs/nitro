@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/ethereum/go-ethereum/rpc"
@@ -19,6 +20,17 @@ import (
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/signature"
+)
+
+var (
+	rpcClientStoreRequestGauge      = metrics.NewRegisteredGauge("arb/das/rpcclient/store/requests", nil)
+	rpcClientStoreSuccessGauge      = metrics.NewRegisteredGauge("arb/das/rpcclient/store/success", nil)
+	rpcClientStoreFailureGauge      = metrics.NewRegisteredGauge("arb/das/rpcclient/store/failure", nil)
+	rpcClientStoreStoredBytesGauge  = metrics.NewRegisteredGauge("arb/das/rpcclient/store/bytes", nil)
+	rpcClientStoreDurationHistogram = metrics.NewRegisteredHistogram("arb/das/rpcclient/store/duration", nil, metrics.NewBoundedHistogramSample())
+
+	rpcClientSendChunkSuccessGauge = metrics.NewRegisteredGauge("arb/das/rpcclient/sendchunk/success", nil)
+	rpcClientSendChunkFailureGauge = metrics.NewRegisteredGauge("arb/das/rpcclient/sendchunk/failure", nil)
 )
 
 type DASRPCClient struct { // implements DataAvailabilityService
@@ -58,7 +70,19 @@ func NewDASRPCClient(target string, signer signature.DataSignerFunc, maxStoreChu
 }
 
 func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64) (*daprovider.DataAvailabilityCertificate, error) {
-	timestamp := uint64(time.Now().Unix())
+	rpcClientStoreRequestGauge.Inc(1)
+	start := time.Now()
+	success := false
+	defer func() {
+		if success {
+			rpcClientStoreSuccessGauge.Inc(1)
+		} else {
+			rpcClientStoreFailureGauge.Inc(1)
+		}
+		rpcClientStoreDurationHistogram.Update(time.Since(start).Nanoseconds())
+	}()
+
+	timestamp := uint64(start.Unix())
 	nChunks := uint64(len(message)) / c.chunkSize
 	lastChunkSize := uint64(len(message)) % c.chunkSize
 	if lastChunkSize > 0 {
@@ -115,6 +139,9 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 		return nil, err
 	}
 
+	rpcClientStoreStoredBytesGauge.Inc(int64(len(message)))
+	success = true
+
 	return &daprovider.DataAvailabilityCertificate{
 		DataHash:    common.BytesToHash(storeResult.DataHash),
 		Timeout:     uint64(storeResult.Timeout),
@@ -132,8 +159,10 @@ func (c *DASRPCClient) sendChunk(ctx context.Context, batchId, i uint64, chunk [
 	}
 
 	if err := c.clnt.CallContext(ctx, nil, "das_sendChunk", hexutil.Uint64(batchId), hexutil.Uint64(i), hexutil.Bytes(chunk), hexutil.Bytes(chunkReqSig)); err != nil {
+		rpcClientSendChunkFailureGauge.Inc(1)
 		return err
 	}
+	rpcClientSendChunkSuccessGauge.Inc(1)
 	return nil
 }
 
