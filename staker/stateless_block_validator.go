@@ -13,14 +13,12 @@ import (
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
-	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -154,14 +152,12 @@ func (e *validationEntry) ToInput(stylusArchs []string) (*validator.ValidationIn
 	for _, stylusArch := range stylusArchs {
 		res.UserWasms[stylusArch] = make(map[common.Hash][]byte)
 	}
-	localTarget := programs.LocalTargetName()
 	for hash, asmMap := range e.UserWasms {
 		for _, stylusArch := range stylusArchs {
-			if stylusArch != rawdb.TargetWavm && stylusArch != localTarget {
-				return nil, fmt.Errorf("stylusArch not supported by block validator: %v", stylusArch)
-			}
 			if asm, exists := asmMap[stylusArch]; exists {
 				res.UserWasms[stylusArch][hash] = asm
+			} else {
+				return nil, fmt.Errorf("assembly for stylusArch not found in the validation entry, block validator might not support the architecture: %v", stylusArch)
 			}
 		}
 	}
