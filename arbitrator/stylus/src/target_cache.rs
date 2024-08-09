@@ -16,11 +16,11 @@ lazy_static! {
 fn target_from_string(input: String) -> Result<Target> {
     let mut parts = input.split('+');
 
-    let Some(trip_sting) = parts.next() else {
+    let Some(triple_string) = parts.next() else {
         return Err(eyre!("no architecture"));
     };
 
-    let trip = match Triple::from_str(trip_sting) {
+    let triple = match Triple::from_str(triple_string) {
         Ok(val) => val,
         Err(e) => return Err(eyre!(e)),
     };
@@ -30,7 +30,7 @@ fn target_from_string(input: String) -> Result<Target> {
         features.insert(CpuFeature::from_str(flag)?);
     }
 
-    Ok(Target::new(trip, features))
+    Ok(Target::new(triple, features))
 }
 
 pub fn target_cache_set(name: String, description: String, native: bool) -> Result<()> {
