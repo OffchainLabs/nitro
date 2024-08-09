@@ -58,7 +58,8 @@ type Config struct {
 	EnablePrefetchBlock       bool                             `koanf:"enable-prefetch-block"`
 	SyncMonitor               SyncMonitorConfig                `koanf:"sync-monitor"`
 	StylusTarget              StylusTargetConfig               `koanf:"stylus-target"`
-	forwardingTarget          string
+
+	forwardingTarget string
 }
 
 func (c *Config) Validate() error {
