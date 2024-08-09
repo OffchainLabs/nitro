@@ -157,7 +157,7 @@ func (e *validationEntry) ToInput(stylusArchs []string) (*validator.ValidationIn
 			if asm, exists := asmMap[stylusArch]; exists {
 				res.UserWasms[stylusArch][hash] = asm
 			} else {
-				return nil, fmt.Errorf("assembly for stylusArch not found in the validation entry, block validator might not support the architecture: %v", stylusArch)
+				return nil, fmt.Errorf("stylusArch not supported by block validator: %v", stylusArch)
 			}
 		}
 	}
