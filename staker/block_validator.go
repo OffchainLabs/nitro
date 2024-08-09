@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"regexp"
 	"runtime"
 	"sync"
@@ -139,6 +140,16 @@ func (c *BlockValidatorConfig) Validate() error {
 	for i := range c.ValidationServerConfigs {
 		if err := c.ValidationServerConfigs[i].Validate(); err != nil {
 			return fmt.Errorf("failed to validate one of the block-validator validation-server-configs. url: %s, err: %w", c.ValidationServerConfigs[i].URL, err)
+		}
+		serverUrl := c.ValidationServerConfigs[i].URL
+		if serverUrl != "self" && serverUrl != "self-auth" {
+			u, err := url.Parse(serverUrl)
+			if err != nil {
+				return fmt.Errorf("failed parsing validation server's url:%s err: %w", serverUrl, err)
+			}
+			if u.Scheme != "ws" && u.Scheme != "wss" {
+				return fmt.Errorf("validation server's url scheme is unsupported, it should either be ws or wss, url:%s", serverUrl)
+			}
 		}
 	}
 	return nil
