@@ -13,12 +13,13 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
-const CHOSENSEQ_KEY string = "coordinator.chosen"                 // Never overwritten. Expires or released only
-const MSG_COUNT_KEY string = "coordinator.msgCount"               // Only written by sequencer holding CHOSEN key
-const PRIORITIES_KEY string = "coordinator.priorities"            // Read only
-const WANTS_LOCKOUT_KEY_PREFIX string = "coordinator.liveliness." // Per server. Only written by self
-const MESSAGE_KEY_PREFIX string = "coordinator.msg."              // Per Message. Only written by sequencer holding CHOSEN
-const SIGNATURE_KEY_PREFIX string = "coordinator.msg.sig."        // Per Message. Only written by sequencer holding CHOSEN
+const CHOSENSEQ_KEY string = "coordinator.chosen"                      // Never overwritten. Expires or released only
+const MSG_COUNT_KEY string = "coordinator.msgCount"                    // Only written by sequencer holding CHOSEN key
+const FINALIZED_MSG_COUNT_KEY string = "coordinator.finalizedMsgCount" // Only written by sequencer holding CHOSEN key
+const PRIORITIES_KEY string = "coordinator.priorities"                 // Read only
+const WANTS_LOCKOUT_KEY_PREFIX string = "coordinator.liveliness."      // Per server. Only written by self
+const MESSAGE_KEY_PREFIX string = "coordinator.msg."                   // Per Message. Only written by sequencer holding CHOSEN
+const SIGNATURE_KEY_PREFIX string = "coordinator.msg.sig."             // Per Message. Only written by sequencer holding CHOSEN
 const WANTS_LOCKOUT_VAL string = "OK"
 const INVALID_VAL string = "INVALID"
 const INVALID_URL string = "<?INVALID-URL?>"
