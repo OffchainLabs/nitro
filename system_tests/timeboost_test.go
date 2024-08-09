@@ -2,6 +2,7 @@ package arbtest
 
 import (
 	"context"
+	"crypto/ecdsa"
 	"fmt"
 	"math/big"
 	"os"
@@ -12,7 +13,11 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/common/hexutil"
+	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/ethereum/go-ethereum/crypto/secp256k1"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
@@ -26,7 +31,9 @@ import (
 	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/timeboost/bindings"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/redisutil"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/stretchr/testify/require"
 )
 
@@ -56,7 +63,7 @@ func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing
 	// Prepare a client that can submit txs to the sequencer via the express lane.
 	seqDial, err := rpc.Dial("http://localhost:9567")
 	Require(t, err)
-	expressLaneClient := timeboost.NewExpressLaneClient(
+	expressLaneClient := newExpressLaneClient(
 		bobPriv,
 		chainId,
 		time.Unix(int64(info.OffsetTimestamp), 0),
@@ -163,7 +170,7 @@ func TestSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected(t *test
 	// Prepare a client that can submit txs to the sequencer via the express lane.
 	seqDial, err := rpc.Dial("http://localhost:9567")
 	Require(t, err)
-	expressLaneClient := timeboost.NewExpressLaneClient(
+	expressLaneClient := newExpressLaneClient(
 		bobPriv,
 		chainId,
 		time.Unix(int64(info.OffsetTimestamp), 0),
@@ -630,4 +637,92 @@ func awaitAuctionResolved(
 			fromBlock = toBlock
 		}
 	}
+}
+
+type expressLaneClient struct {
+	stopwaiter.StopWaiter
+	sync.Mutex
+	privKey               *ecdsa.PrivateKey
+	chainId               *big.Int
+	initialRoundTimestamp time.Time
+	roundDuration         time.Duration
+	auctionContractAddr   common.Address
+	client                *rpc.Client
+	sequence              uint64
+}
+
+func newExpressLaneClient(
+	privKey *ecdsa.PrivateKey,
+	chainId *big.Int,
+	initialRoundTimestamp time.Time,
+	roundDuration time.Duration,
+	auctionContractAddr common.Address,
+	client *rpc.Client,
+) *expressLaneClient {
+	return &expressLaneClient{
+		privKey:               privKey,
+		chainId:               chainId,
+		initialRoundTimestamp: initialRoundTimestamp,
+		roundDuration:         roundDuration,
+		auctionContractAddr:   auctionContractAddr,
+		client:                client,
+		sequence:              0,
+	}
+}
+
+func (elc *expressLaneClient) Start(ctxIn context.Context) {
+	elc.StopWaiter.Start(ctxIn, elc)
+}
+
+func (elc *expressLaneClient) SendTransaction(ctx context.Context, transaction *types.Transaction) error {
+	elc.Lock()
+	defer elc.Unlock()
+	encodedTx, err := transaction.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	msg := &timeboost.JsonExpressLaneSubmission{
+		ChainId:                (*hexutil.Big)(elc.chainId),
+		Round:                  hexutil.Uint64(timeboost.CurrentRound(elc.initialRoundTimestamp, elc.roundDuration)),
+		AuctionContractAddress: elc.auctionContractAddr,
+		Transaction:            encodedTx,
+		Sequence:               hexutil.Uint64(elc.sequence),
+		Signature:              hexutil.Bytes{},
+	}
+	msgGo, err := timeboost.JsonSubmissionToGo(msg)
+	if err != nil {
+		return err
+	}
+	signingMsg, err := msgGo.ToMessageBytes()
+	if err != nil {
+		return err
+	}
+	signature, err := signSubmission(signingMsg, elc.privKey)
+	if err != nil {
+		return err
+	}
+	msg.Signature = signature
+	promise := elc.sendExpressLaneRPC(msg)
+	if _, err := promise.Await(ctx); err != nil {
+		return err
+	}
+	elc.sequence += 1
+	return nil
+}
+
+func (elc *expressLaneClient) sendExpressLaneRPC(msg *timeboost.JsonExpressLaneSubmission) containers.PromiseInterface[struct{}] {
+	return stopwaiter.LaunchPromiseThread(elc, func(ctx context.Context) (struct{}, error) {
+		err := elc.client.CallContext(ctx, nil, "timeboost_sendExpressLaneTransaction", msg)
+		return struct{}{}, err
+	})
+}
+
+func signSubmission(message []byte, key *ecdsa.PrivateKey) ([]byte, error) {
+	prefixed := crypto.Keccak256(append([]byte(fmt.Sprintf("\x19Ethereum Signed Message:\n%d", len(message))), message...))
+	sig, err := secp256k1.Sign(prefixed, math.PaddedBigBytes(key.D, 32))
+	if err != nil {
+		return nil, err
+	}
+	sig[64] += 27
+	return sig, nil
 }
