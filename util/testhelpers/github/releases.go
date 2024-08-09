@@ -23,8 +23,7 @@ type ConsensusRelease struct {
 func getAuthGitClient(ctx context.Context) *github.Client {
 	token := os.Getenv("GITHUB_TOKEN")
 	if token == "" {
-		panic("check if env variable is read correctly")
-		// return github.NewClient(nil)
+		return github.NewClient(nil)
 	}
 	tokenSource := oauth2.StaticTokenSource(&oauth2.Token{AccessToken: token})
 	return github.NewClient(oauth2.NewClient(ctx, tokenSource))
