@@ -43,7 +43,7 @@ type TxPreCheckerConfig struct {
 type TxPreCheckerConfigFetcher func() *TxPreCheckerConfig
 
 var DefaultTxPreCheckerConfig = TxPreCheckerConfig{
-	Strictness:             TxPreCheckerStrictnessNone,
+	Strictness:             TxPreCheckerStrictnessLikelyCompatible,
 	RequiredStateAge:       2,
 	RequiredStateMaxBlocks: 4,
 }
