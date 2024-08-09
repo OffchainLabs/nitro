@@ -44,9 +44,11 @@ func TestStylusTracer(t *testing.T) {
 	Require(t, err, "ensure evm multicall deployment")
 
 	// Args for tests
-	key := testhelpers.RandomHash().Bytes()
-	value := testhelpers.RandomHash().Bytes()
-	loadStoreArgs := storeLoadMulticallArgs(key, value)
+	key := testhelpers.RandomHash()
+	value := testhelpers.RandomHash()
+	loadStoreArgs := multicallEmptyArgs()
+	loadStoreArgs = multicallAppendLoad(loadStoreArgs, key, false)
+	loadStoreArgs = multicallAppendStore(loadStoreArgs, key, value, false)
 	callArgs := argsForMulticall(vm.CALL, stylusMulticall, nil, []byte{0})
 	evmCall := argsForMulticall(vm.CALL, evmMulticall, nil, []byte{0})
 
@@ -64,11 +66,11 @@ func TestStylusTracer(t *testing.T) {
 				{Name: "user_entrypoint", Args: intToBe32(len(loadStoreArgs)), Outs: []byte{}},
 				{Name: "pay_for_memory_grow", Args: []byte{0x00, 0x01}, Outs: []byte{}},
 				{Name: "read_args", Args: []byte{}, Outs: loadStoreArgs},
-				{Name: "storage_cache_bytes32", Args: append(key, value...), Outs: []byte{}},
+				{Name: "storage_cache_bytes32", Args: append(key.Bytes(), value.Bytes()...), Outs: []byte{}},
 				{Name: "storage_flush_cache", Args: []byte{0x00}, Outs: []byte{}},
-				{Name: "storage_load_bytes32", Args: key, Outs: value},
+				{Name: "storage_load_bytes32", Args: key.Bytes(), Outs: value.Bytes()},
 				{Name: "storage_flush_cache", Args: []byte{0x00}, Outs: []byte{}},
-				{Name: "write_result", Args: value, Outs: []byte{}},
+				{Name: "write_result", Args: value.Bytes(), Outs: []byte{}},
 				{Name: "user_returned", Args: []byte{}, Outs: intToBe32(0)},
 			},
 		},
@@ -141,26 +143,6 @@ func TestStylusTracer(t *testing.T) {
 			}
 		})
 	}
-}
-
-func storeLoadMulticallArgs(key, value []byte) []byte {
-	// Args for storing and loading from storage
-	const (
-		storageKind = 0x10
-		storeAction = storageKind | 0x00
-		loadAction  = storageKind | 0x01
-	)
-	args := []byte{2} // number of actions
-	// first action
-	args = binary.BigEndian.AppendUint32(args, 1+64) // length
-	args = append(args, storeAction)
-	args = append(args, key...)
-	args = append(args, value...)
-	// second action
-	args = binary.BigEndian.AppendUint32(args, 1+32) // length
-	args = append(args, loadAction)
-	args = append(args, key...)
-	return args
 }
 
 func intToBe32(v int) []byte {
