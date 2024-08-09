@@ -1617,6 +1617,35 @@ func multicallAppend(calls []byte, opcode vm.OpCode, address common.Address, inn
 	return calls
 }
 
+func multicallEmptyArgs() []byte {
+	return []byte{0} // number of actions
+}
+
+func multicallAppendStore(args []byte, key, value common.Hash, emitLog bool) []byte {
+	var action byte = 0x10
+	if emitLog {
+		action |= 0x08
+	}
+	args[0] += 1
+	args = binary.BigEndian.AppendUint32(args, 1+64) // length
+	args = append(args, action)
+	args = append(args, key.Bytes()...)
+	args = append(args, value.Bytes()...)
+	return args
+}
+
+func multicallAppendLoad(args []byte, key common.Hash, emitLog bool) []byte {
+	var action byte = 0x11
+	if emitLog {
+		action |= 0x08
+	}
+	args[0] += 1
+	args = binary.BigEndian.AppendUint32(args, 1+32) // length
+	args = append(args, action)
+	args = append(args, key.Bytes()...)
+	return args
+}
+
 func assertStorageAt(
 	t *testing.T, ctx context.Context, l2client *ethclient.Client, contract common.Address, key, value common.Hash,
 ) {

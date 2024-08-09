@@ -534,7 +534,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     fn return_data_size(&mut self) -> Result<u32, Self::Err> {
         self.buy_ink(HOSTIO_INK)?;
         let len = *self.evm_return_data_len();
-        trace!("return_data_size", self, be!(len), &[], len)
+        trace!("return_data_size", self, &[], be!(len), len)
     }
 
     /// Emits an EVM log with the given number of topics and data, the first bytes of which should
@@ -629,7 +629,8 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
         self.buy_gas(gas_cost)?;
 
         let code = code.slice();
-        trace!("account_code_size", self, address, &[], code.len() as u32)
+        let len = code.len() as u32;
+        trace!("account_code_size", self, address, be!(len), len)
     }
 
     /// Gets the code hash of the account at the given address. The semantics are equivalent
@@ -735,7 +736,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     fn evm_gas_left(&mut self) -> Result<u64, Self::Err> {
         self.buy_ink(HOSTIO_INK)?;
         let gas = self.gas_left()?;
-        trace!("evm_gas_left", self, be!(gas), &[], gas)
+        trace!("evm_gas_left", self, &[], be!(gas), gas)
     }
 
     /// Gets the amount of ink remaining after paying for the cost of this hostio. The semantics
@@ -747,7 +748,7 @@ pub trait UserHost<DR: DataReader>: GasMeteredMachine {
     fn evm_ink_left(&mut self) -> Result<u64, Self::Err> {
         self.buy_ink(HOSTIO_INK)?;
         let ink = self.ink_ready()?;
-        trace!("evm_ink_left", self, be!(ink), &[], ink)
+        trace!("evm_ink_left", self, &[], be!(ink), ink)
     }
 
     /// Computes `value ÷ exponent` using 256-bit math, writing the result to the first.
