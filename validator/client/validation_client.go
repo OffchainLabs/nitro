@@ -67,16 +67,17 @@ func (c *ValidationClient) Start(ctx context.Context) error {
 		return errors.New("couldn't read name from server")
 	}
 	var stylusArchs []string
-	if err := c.client.CallContext(ctx, &stylusArchs, server_api.Namespace+"_stylusArchs"); err != nil {
-		return err
-	}
-	if len(stylusArchs) == 0 {
-		return fmt.Errorf("could not read stylus archs from validation server")
-	}
-	for _, stylusArch := range stylusArchs {
-		if stylusArch != "wavm" && stylusArch != runtime.GOARCH && stylusArch != "mock" {
-			return fmt.Errorf("unsupported stylus architecture: %v", stylusArch)
+	if err := c.client.CallContext(ctx, &stylusArchs, server_api.Namespace+"_stylusArchs"); err == nil {
+		if len(stylusArchs) == 0 {
+			return fmt.Errorf("could not read stylus archs from validation server")
 		}
+		for _, stylusArch := range stylusArchs {
+			if stylusArch != "wavm" && stylusArch != runtime.GOARCH && stylusArch != "mock" {
+				return fmt.Errorf("unsupported stylus architecture: %v", stylusArch)
+			}
+		}
+	} else {
+		stylusArchs = []string{"pre-stylus"} // validation does not support stylus
 	}
 	var moduleRoots []common.Hash
 	if err := c.client.CallContext(ctx, &moduleRoots, server_api.Namespace+"_wasmModuleRoots"); err != nil {
