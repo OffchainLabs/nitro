@@ -32,7 +32,7 @@ func TestMarshallAndUnmarshalBlobPointer(t *testing.T) {
 	// Create ProofResponse
 	res := ProofResponse{
 		DataProof: dataProof,
-		Message:   nil, // No message provided
+		Message:   nil, // nolint No message provided
 	}
 	var leafProof [][32]byte
 	for _, hash := range res.DataProof.Proof {

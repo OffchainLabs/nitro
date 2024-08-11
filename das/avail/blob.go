@@ -21,10 +21,10 @@ type BlobPointer struct {
 
 var byte32Type = abi.Type{T: abi.FixedBytesTy, Size: 32}
 var uint32Type = abi.Type{Size: 32, T: abi.UintTy}
-var stringType = abi.Type{T: abi.StringTy}
+var stringType = abi.Type{T: abi.StringTy} //nolint
 var byte32ArrayType = abi.Type{T: abi.SliceTy, Elem: &abi.Type{T: abi.FixedBytesTy, Size: 32}}
-var uint64Type = abi.Type{Size: 64, T: abi.UintTy}
-var merkleProofInputType = abi.Type{T: abi.TupleTy, TupleType: reflect.TypeOf(MerkleProofInput{}), TupleElems: []*abi.Type{&byte32ArrayType, &byte32ArrayType, &byte32Type, &uint64Type, &byte32Type, &byte32Type, &byte32Type, &uint64Type}, TupleRawNames: []string{"dataRootProof", "leafProof", "rangeHash", "dataRootIndex", "blobRoot", "bridgeRoot", "leaf", "leafIndex"}}
+var uint64Type = abi.Type{Size: 64, T: abi.UintTy}                                                                                                                                                                                                                                                                                                                                // nolint
+var merkleProofInputType = abi.Type{T: abi.TupleTy, TupleType: reflect.TypeOf(MerkleProofInput{}), TupleElems: []*abi.Type{&byte32ArrayType, &byte32ArrayType, &byte32Type, &uint64Type, &byte32Type, &byte32Type, &byte32Type, &uint64Type}, TupleRawNames: []string{"dataRootProof", "leafProof", "rangeHash", "dataRootIndex", "blobRoot", "bridgeRoot", "leaf", "leafIndex"}} // nolint
 var blobProofType = abi.Type{T: abi.TupleTy, TupleType: reflect.TypeOf(BlobProof{}), TupleElems: []*abi.Type{&byte32Type, &byte32Type, &byte32Type, &byte32ArrayType, &uint32Type, &uint32Type, &byte32Type}, TupleRawNames: []string{"dataRoot", "blobRoot", "bridgeRoot", "leafProof", "numberOfLeaves", "leafIndex", "leaf"}}
 var arguments = abi.Arguments{
 	{Type: uint32Type}, {Type: uint32Type}, {Type: byte32Type}, {Type: byte32Type}, {Type: blobProofType},
