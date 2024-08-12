@@ -35,8 +35,8 @@ func (c ValidationClientConfig) Enabled() bool {
 
 func (c ValidationClientConfig) Validate() error {
 	for _, arch := range c.StylusArchs {
-		if _, err := rawdb.TargetFromString(arch); err != nil {
-			return fmt.Errorf("Unsupported stylus arch: %v", arch)
+		if !rawdb.TargetFromString(arch).IsValid() {
+			return fmt.Errorf("Invalid stylus arch: %v", arch)
 		}
 	}
 	return nil
@@ -165,8 +165,7 @@ func (c *ValidationClient) Name() string {
 func (c *ValidationClient) StylusArchs() []rawdb.Target {
 	stylusArchs := make([]rawdb.Target, 0, len(c.config.StylusArchs))
 	for _, arch := range c.config.StylusArchs {
-		// we are ignoring error here, as StylusArchs should have been validated in Validate
-		target, _ := rawdb.TargetFromString(arch)
+		target := rawdb.TargetFromString(arch)
 		stylusArchs = append(stylusArchs, target)
 	}
 	return stylusArchs
