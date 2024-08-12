@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
@@ -34,6 +35,13 @@ var domainValue []byte
 const (
 	AuctioneerNamespace      = "auctioneer"
 	validatedBidsRedisStream = "validated_bids"
+)
+
+var (
+	receivedBidsCounter  = metrics.NewRegisteredCounter("arb/auctioneer/bids/received", nil)
+	validatedBidsCounter = metrics.NewRegisteredCounter("arb/auctioneer/bids/validated", nil)
+	FirstBidValueGauge   = metrics.NewRegisteredGauge("arb/auctioneer/bids/firstbidvalue", nil)
+	SecondBidValueGauge  = metrics.NewRegisteredGauge("arb/auctioneer/bids/secondbidvalue", nil)
 )
 
 func init() {
@@ -325,6 +333,8 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 				Signature:             second.Signature,
 			},
 		)
+		FirstBidValueGauge.Update(int64(first.Amount.Int64()))
+		SecondBidValueGauge.Update(int64(second.Amount.Int64()))
 		log.Info("Resolving auction with two bids", "round", upcomingRound)
 
 	case first != nil: // Single bid is present
@@ -336,6 +346,7 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 				Signature:             first.Signature,
 			},
 		)
+		FirstBidValueGauge.Update(int64(first.Amount.Int64()))
 		log.Info("Resolving auction with single bid", "round", upcomingRound)
 
 	case second == nil: // No bids received

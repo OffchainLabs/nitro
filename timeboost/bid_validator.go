@@ -197,6 +197,7 @@ type BidValidatorAPI struct {
 
 func (bv *BidValidatorAPI) SubmitBid(ctx context.Context, bid *JsonBid) error {
 	start := time.Now()
+	receivedBidsCounter.Inc(1)
 	validatedBid, err := bv.validateBid(
 		&Bid{
 			ChainId:                bid.ChainId.ToInt(),
@@ -212,6 +213,7 @@ func (bv *BidValidatorAPI) SubmitBid(ctx context.Context, bid *JsonBid) error {
 	if err != nil {
 		return err
 	}
+	validatedBidsCounter.Inc(1)
 	log.Info("Validated bid", "bidder", validatedBid.Bidder.Hex(), "amount", validatedBid.Amount.String(), "round", validatedBid.Round, "elapsed", time.Since(start))
 	_, err = bv.producer.Produce(ctx, validatedBid)
 	if err != nil {
