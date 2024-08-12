@@ -142,7 +142,7 @@ func (c *BlockValidatorConfig) Validate() error {
 			return fmt.Errorf("failed to validate one of the block-validator validation-server-configs. url: %s, err: %w", c.ValidationServerConfigs[i].URL, err)
 		}
 		serverUrl := c.ValidationServerConfigs[i].URL
-		if serverUrl != "self" && serverUrl != "self-auth" {
+		if len(serverUrl) > 0 && serverUrl != "self" && serverUrl != "self-auth" {
 			u, err := url.Parse(serverUrl)
 			if err != nil {
 				return fmt.Errorf("failed parsing validation server's url:%s err: %w", serverUrl, err)
