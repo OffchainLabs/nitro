@@ -35,7 +35,7 @@ func (c ValidationClientConfig) Enabled() bool {
 
 func (c ValidationClientConfig) Validate() error {
 	for _, arch := range c.StylusArchs {
-		if !rawdb.TargetFromString(arch).IsValid() {
+		if !rawdb.Target(arch).IsValid() {
 			return fmt.Errorf("Invalid stylus arch: %v", arch)
 		}
 	}
@@ -46,7 +46,7 @@ var DefaultValidationClientConfig = ValidationClientConfig{
 	Name:           "redis validation client",
 	Room:           2,
 	RedisURL:       "",
-	StylusArchs:    []string{rawdb.TargetWavm.ToString()},
+	StylusArchs:    []string{string(rawdb.TargetWavm)},
 	ProducerConfig: pubsub.DefaultProducerConfig,
 	CreateStreams:  true,
 }
@@ -56,7 +56,7 @@ var TestValidationClientConfig = ValidationClientConfig{
 	Room:           2,
 	RedisURL:       "",
 	StreamPrefix:   "test-",
-	StylusArchs:    []string{rawdb.TargetWavm.ToString()},
+	StylusArchs:    []string{string(rawdb.TargetWavm)},
 	ProducerConfig: pubsub.TestProducerConfig,
 	CreateStreams:  false,
 }
@@ -165,8 +165,7 @@ func (c *ValidationClient) Name() string {
 func (c *ValidationClient) StylusArchs() []rawdb.Target {
 	stylusArchs := make([]rawdb.Target, 0, len(c.config.StylusArchs))
 	for _, arch := range c.config.StylusArchs {
-		target := rawdb.TargetFromString(arch)
-		stylusArchs = append(stylusArchs, target)
+		stylusArchs = append(stylusArchs, rawdb.Target(arch))
 	}
 	return stylusArchs
 }
