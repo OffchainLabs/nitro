@@ -364,7 +364,7 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		validatorTxOptsPtr = &validatorTxOpts
 	}
 
-	AddDefaultValNode(t, b.ctx, b.nodeConfig, true, "", b.valnodeConfig.Wasm.RootPath)
+	AddValNodeIfNeeded(t, b.ctx, b.nodeConfig, true, "", b.valnodeConfig.Wasm.RootPath)
 
 	Require(t, b.execConfig.Validate())
 	execConfig := b.execConfig
@@ -400,7 +400,7 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	b.L2 = NewTestClient(b.ctx)
 
-	AddDefaultValNode(t, b.ctx, b.nodeConfig, true, "", b.valnodeConfig.Wasm.RootPath)
+	AddValNodeIfNeeded(t, b.ctx, b.nodeConfig, true, "", b.valnodeConfig.Wasm.RootPath)
 
 	var chainDb ethdb.Database
 	var arbDb ethdb.Database
@@ -891,10 +891,14 @@ func currentRootModule(t *testing.T) common.Hash {
 	return locator.LatestWasmModuleRoot()
 }
 
-func AddDefaultValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool, redisURL string, wasmRootDir string) {
-	if !nodeConfig.ValidatorRequired() {
+func AddValNodeIfNeeded(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool, redisURL string, wasmRootDir string) {
+	if !nodeConfig.ValidatorRequired() || nodeConfig.BlockValidator.ValidationServerConfigs[0].URL != "" {
 		return
 	}
+	AddValNode(t, ctx, nodeConfig, useJit, redisURL, wasmRootDir)
+}
+
+func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool, redisURL string, wasmRootDir string) {
 	conf := valnode.TestValidationConfig
 	conf.UseJit = useJit
 	conf.Wasm.RootPath = wasmRootDir
@@ -1168,7 +1172,7 @@ func Create2ndNodeWithConfig(
 	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, coreCacheConfig, initReader, chainConfig, initMessage, ExecConfigDefaultTest().TxLookupLimit, 0)
 	Require(t, err)
 
-	AddDefaultValNode(t, ctx, nodeConfig, true, "", valnodeConfig.Wasm.RootPath)
+	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", valnodeConfig.Wasm.RootPath)
 
 	Require(t, execConfig.Validate())
 	Require(t, nodeConfig.Validate())

@@ -47,7 +47,7 @@ func LatestConsensusRelease(ctx context.Context) (*ConsensusRelease, error) {
 	}
 	var found *ConsensusRelease
 	for _, release := range releases {
-		if strings.HasPrefix(release.GetTagName(), "consensus") {
+		if strings.HasPrefix(release.GetTagName(), "consensus") && !release.GetPrerelease() {
 			if found, err = fromRelease(release); err != nil {
 				return nil, err
 			}
