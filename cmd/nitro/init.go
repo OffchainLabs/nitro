@@ -416,7 +416,14 @@ func databaseIsEmpty(db ethdb.Database) bool {
 // otherwise persists current version
 func validateOrWriteWasmStoreSchemaVersion(db ethdb.Database) error {
 	if !databaseIsEmpty(db) {
-		version := rawdb.ReadWasmSchemaVersion(db)
+		version, err := rawdb.ReadWasmSchemaVersion(db)
+		if err != nil {
+			if isLeveldbNotExistError(err) || isPebbleNotExistError(err) {
+				version = []byte{0}
+			} else {
+				return fmt.Errorf("Failed to retrieve wasm schema version: %w", err)
+			}
+		}
 		if len(version) != 1 || version[0] > rawdb.WasmSchemaVersion {
 			return fmt.Errorf("Unsupported wasm database schema version, current version: %v, read from wasm database: %v", rawdb.WasmSchemaVersion, version)
 		}
