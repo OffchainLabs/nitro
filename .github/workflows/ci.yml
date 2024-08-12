@@ -138,6 +138,7 @@ jobs:
           echo "TMPDIR=$(pwd)/target/tmp/deadbeefbee" >> "$GITHUB_ENV"
           echo "GOMEMLIMIT=6GiB" >> "$GITHUB_ENV"
           echo "GOGC=80" >> "$GITHUB_ENV"
+          echo "GITHUB_TOKEN=${{ secrets.GITHUB_TOKEN }}" >> "$GITHUB_ENV"
 
       - name: run tests without race detection and path state scheme
         if: matrix.test-mode == 'defaults'
