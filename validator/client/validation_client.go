@@ -31,7 +31,7 @@ type ValidationClient struct {
 	stopwaiter.StopWaiter
 	client          *rpcclient.RpcClient
 	name            string
-	stylusArchs     []string
+	stylusArchs     []rawdb.Target
 	room            atomic.Int32
 	wasmModuleRoots []common.Hash
 }
@@ -40,7 +40,7 @@ func NewValidationClient(config rpcclient.ClientConfigFetcher, stack *node.Node)
 	return &ValidationClient{
 		client:      rpcclient.NewRpcClient(config, stack),
 		name:        "not started",
-		stylusArchs: []string{"not started"},
+		stylusArchs: []rawdb.Target{"not started"},
 	}
 }
 
@@ -67,7 +67,7 @@ func (c *ValidationClient) Start(ctx context.Context) error {
 	if len(name) == 0 {
 		return errors.New("couldn't read name from server")
 	}
-	var stylusArchs []string
+	var stylusArchs []rawdb.Target
 	if err := c.client.CallContext(ctx, &stylusArchs, server_api.Namespace+"_stylusArchs"); err != nil {
 		return err
 	}
@@ -75,7 +75,7 @@ func (c *ValidationClient) Start(ctx context.Context) error {
 		return fmt.Errorf("could not read stylus archs from validation server")
 	}
 	for _, stylusArch := range stylusArchs {
-		if stylusArch != rawdb.TargetWavm && stylusArch != programs.LocalTargetName() && stylusArch != "mock" {
+		if stylusArch != rawdb.TargetWavm && stylusArch != programs.LocalTarget() && stylusArch != "mock" {
 			return fmt.Errorf("unsupported stylus architecture: %v", stylusArch)
 		}
 	}
@@ -111,11 +111,11 @@ func (c *ValidationClient) WasmModuleRoots() ([]common.Hash, error) {
 	return nil, errors.New("not started")
 }
 
-func (c *ValidationClient) StylusArchs() []string {
+func (c *ValidationClient) StylusArchs() []rawdb.Target {
 	if c.Started() {
 		return c.stylusArchs
 	}
-	return []string{"not started"}
+	return []rawdb.Target{"not started"}
 }
 
 func (c *ValidationClient) Stop() {

@@ -31,7 +31,7 @@ import (
 
 func testCompileArch(store bool) error {
 
-	localTarget := LocalTargetName()
+	localTarget := LocalTarget()
 	nativeArm64 := localTarget == rawdb.TargetArm64
 	nativeAmd64 := localTarget == rawdb.TargetAmd64
 
@@ -169,7 +169,7 @@ func testCompileArch(store bool) error {
 
 func testCompileLoad() error {
 	filePath := "../../target/testdata/host.bin"
-	localTarget := LocalTargetName()
+	localTarget := LocalTarget()
 	if localTarget == rawdb.TargetArm64 {
 		filePath = "../../target/testdata/arm64.bin"
 	}

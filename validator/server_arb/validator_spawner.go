@@ -89,8 +89,8 @@ func (s *ArbitratorSpawner) WasmModuleRoots() ([]common.Hash, error) {
 	return s.locator.ModuleRoots(), nil
 }
 
-func (s *ArbitratorSpawner) StylusArchs() []string {
-	return []string{rawdb.TargetWavm}
+func (s *ArbitratorSpawner) StylusArchs() []rawdb.Target {
+	return []rawdb.Target{rawdb.TargetWavm}
 }
 
 func (s *ArbitratorSpawner) Name() string {

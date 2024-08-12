@@ -155,8 +155,8 @@ func (s *ExecutionEngine) Initialize(rustCacheSize uint32, targetConfig *StylusT
 		programs.ResizeWasmLruCache(rustCacheSize)
 	}
 	var effectiveStylusTarget string
-	targetName := programs.LocalTargetName()
-	switch targetName {
+	target := programs.LocalTarget()
+	switch target {
 	case rawdb.TargetArm64:
 		effectiveStylusTarget = targetConfig.Arm64
 	case rawdb.TargetAmd64:
@@ -164,7 +164,7 @@ func (s *ExecutionEngine) Initialize(rustCacheSize uint32, targetConfig *StylusT
 	case rawdb.TargetHost:
 		effectiveStylusTarget = targetConfig.Host
 	}
-	err := programs.SetTarget(targetName, effectiveStylusTarget, true)
+	err := programs.SetTarget(target, effectiveStylusTarget, true)
 	if err != nil {
 		return fmt.Errorf("Failed to set stylus target: %w", err)
 	}

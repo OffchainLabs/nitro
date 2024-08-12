@@ -13,6 +13,7 @@ import (
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
@@ -134,7 +135,7 @@ type validationEntry struct {
 	DelayedMsg []byte
 }
 
-func (e *validationEntry) ToInput(stylusArchs []string) (*validator.ValidationInput, error) {
+func (e *validationEntry) ToInput(stylusArchs []rawdb.Target) (*validator.ValidationInput, error) {
 	if e.Stage != Ready {
 		return nil, errors.New("cannot create input from non-ready entry")
 	}
@@ -143,7 +144,7 @@ func (e *validationEntry) ToInput(stylusArchs []string) (*validator.ValidationIn
 		HasDelayedMsg: e.HasDelayedMsg,
 		DelayedMsgNr:  e.DelayedMsgNr,
 		Preimages:     e.Preimages,
-		UserWasms:     make(map[string]map[common.Hash][]byte, len(e.UserWasms)),
+		UserWasms:     make(map[rawdb.Target]map[common.Hash][]byte, len(e.UserWasms)),
 		BatchInfo:     e.BatchInfo,
 		DelayedMsg:    e.DelayedMsg,
 		StartState:    e.Start,

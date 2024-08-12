@@ -9,6 +9,7 @@ import (
 	flag "github.com/spf13/pflag"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
@@ -72,8 +73,8 @@ func (v *JitSpawner) WasmModuleRoots() ([]common.Hash, error) {
 	return v.locator.ModuleRoots(), nil
 }
 
-func (v *JitSpawner) StylusArchs() []string {
-	return []string{programs.LocalTargetName()}
+func (v *JitSpawner) StylusArchs() []rawdb.Target {
+	return []rawdb.Target{programs.LocalTarget()}
 }
 
 func (v *JitSpawner) execute(

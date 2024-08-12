@@ -212,7 +212,7 @@ func (machine *JitMachine) prove(
 		}
 	}
 
-	localTarget := programs.LocalTargetName()
+	localTarget := programs.LocalTarget()
 	userWasms := entry.UserWasms[localTarget]
 
 	// if there are user wasms, but only for wrong architecture - error

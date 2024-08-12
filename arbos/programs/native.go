@@ -72,7 +72,7 @@ func activateProgramInternal(
 	version uint16,
 	debug bool,
 	gasLeft *uint64,
-) (*activationInfo, map[string][]byte, error) {
+) (*activationInfo, map[rawdb.Target][]byte, error) {
 	output := &rustBytes{}
 	moduleHash := &bytes32{}
 	stylusData := &C.StylusData{}
@@ -100,7 +100,7 @@ func activateProgramInternal(
 		}
 		return nil, nil, err
 	}
-	target := LocalTargetName()
+	target := LocalTarget()
 	status_asm := C.stylus_compile(
 		goSlice(wasm),
 		u16(version),
@@ -112,7 +112,7 @@ func activateProgramInternal(
 	if status_asm != 0 {
 		return nil, nil, fmt.Errorf("%w: %s", ErrProgramActivation, string(asm))
 	}
-	asmMap := map[string][]byte{
+	asmMap := map[rawdb.Target][]byte{
 		rawdb.TargetWavm: module,
 		target:           asm,
 	}
@@ -130,7 +130,7 @@ func activateProgramInternal(
 }
 
 func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codeHash common.Hash, pagelimit uint16, time uint64, debugMode bool, program Program) ([]byte, error) {
-	localTarget := LocalTargetName()
+	localTarget := LocalTarget()
 	localAsm, err := statedb.TryGetActivatedAsm(localTarget, moduleHash)
 	if err == nil && len(localAsm) > 0 {
 		return localAsm, nil
@@ -172,7 +172,7 @@ func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging c
 	}
 	asm, exists := asmMap[localTarget]
 	if !exists {
-		var availableTargets []string
+		var availableTargets []rawdb.Target
 		for target := range asmMap {
 			availableTargets = append(availableTargets, target)
 		}
@@ -204,11 +204,11 @@ func callProgram(
 	}
 
 	if db, ok := db.(*state.StateDB); ok {
-		targetNames := []string{
+		targets := []rawdb.Target{
 			rawdb.TargetWavm,
-			LocalTargetName(),
+			LocalTarget(),
 		}
-		db.RecordProgram(targetNames, moduleHash)
+		db.RecordProgram(targets, moduleHash)
 	}
 
 	evmApi := newApi(interpreter, tracingInfo, scope, memoryModel)
@@ -268,7 +268,7 @@ func evictProgram(db vm.StateDB, module common.Hash, version uint16, debug bool,
 		tag := db.Database().WasmCacheTag()
 		state.EvictWasmRust(module, version, tag, debug)
 		if !forever {
-			db.RecordEvictWasm(state.EvictWasm{ModuleHash: module, Version: version, Tag: tag, Debug: debug})
+			db.RecordEvictWasm(state.EvictWasm{Target: LocalTarget(), ModuleHash: module, Version: version, Tag: tag, Debug: debug})
 		}
 	}
 }
@@ -286,7 +286,7 @@ func ResizeWasmLruCache(size uint32) {
 	C.stylus_cache_lru_resize(u32(size))
 }
 
-func LocalTargetName() string {
+func LocalTarget() rawdb.Target {
 	if runtime.GOOS == "linux" {
 		switch runtime.GOARCH {
 		case "arm64":
@@ -301,7 +301,7 @@ func LocalTargetName() string {
 const DefaultTargetDescriptionArm = "arm64-linux-unknown+neon"
 const DefaultTargetDescriptionX86 = "x86_64-linux-unknown+sse4.2"
 
-func SetTarget(name string, description string, native bool) error {
+func SetTarget(name rawdb.Target, description string, native bool) error {
 	output := &rustBytes{}
 	status := userStatus(C.stylus_target_set(
 		goSlice([]byte(name)),

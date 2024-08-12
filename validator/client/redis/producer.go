@@ -37,7 +37,7 @@ var DefaultValidationClientConfig = ValidationClientConfig{
 	Name:           "redis validation client",
 	Room:           2,
 	RedisURL:       "",
-	StylusArchs:    []string{rawdb.TargetWavm},
+	StylusArchs:    []string{string(rawdb.TargetWavm)},
 	ProducerConfig: pubsub.DefaultProducerConfig,
 	CreateStreams:  true,
 }
@@ -47,7 +47,7 @@ var TestValidationClientConfig = ValidationClientConfig{
 	Room:           2,
 	RedisURL:       "",
 	StreamPrefix:   "test-",
-	StylusArchs:    []string{rawdb.TargetWavm},
+	StylusArchs:    []string{string(rawdb.TargetWavm)},
 	ProducerConfig: pubsub.TestProducerConfig,
 	CreateStreams:  false,
 }
@@ -153,8 +153,12 @@ func (c *ValidationClient) Name() string {
 	return c.config.Name
 }
 
-func (c *ValidationClient) StylusArchs() []string {
-	return c.config.StylusArchs
+func (c *ValidationClient) StylusArchs() []rawdb.Target {
+	stylusArchs := make([]rawdb.Target, 0, len(c.config.StylusArchs))
+	for _, arch := range c.config.StylusArchs {
+		stylusArchs = append(stylusArchs, rawdb.Target(arch))
+	}
+	return stylusArchs
 }
 
 func (c *ValidationClient) Room() int {
