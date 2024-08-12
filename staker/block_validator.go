@@ -126,6 +126,9 @@ func (c *BlockValidatorConfig) Validate() error {
 		}
 		c.memoryFreeLimit = limit
 	}
+	if err := c.RedisValidationClientConfig.Validate(); err != nil {
+		return fmt.Errorf("failed to validate redis validation client config: %w", err)
+	}
 	streamsEnabled := c.RedisValidationClientConfig.Enabled()
 	if len(c.ValidationServerConfigs) == 0 {
 		c.ValidationServerConfigs = []rpcclient.ClientConfig{c.ValidationServer}
