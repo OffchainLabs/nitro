@@ -412,9 +412,47 @@ func databaseIsEmpty(db ethdb.Database) bool {
 	return !it.Next()
 }
 
+// removes all entries with keys prefixed with prefixes and of length used in initial version of wasm store schema
+func purgeVersion0WasmStoreEntries(db ethdb.Database) error {
+	prefixes, keyLength := rawdb.DeprecatedKeysV0()
+	batch := db.NewBatch()
+	for _, prefix := range prefixes {
+		it := db.NewIterator(prefix, nil)
+		defer it.Release()
+		for it.Next() {
+			key := it.Key()
+			if len(key) != keyLength {
+				log.Warn("Found key with deprecated prefix but not matching length, skipping removal.", "key", key)
+				continue
+			}
+			if err := batch.Delete(key); err != nil {
+				return fmt.Errorf("Failed to remove key %v : %w", key, err)
+			}
+
+			// Recreate the iterator after every batch commit in order
+			// to allow the underlying compactor to delete the entries.
+			if batch.ValueSize() >= ethdb.IdealBatchSize {
+				if err := batch.Write(); err != nil {
+					return fmt.Errorf("Failed to write batch: %w", err)
+				}
+				batch.Reset()
+				it.Release()
+				it = db.NewIterator(prefix, key)
+			}
+		}
+	}
+	if batch.ValueSize() > 0 {
+		if err := batch.Write(); err != nil {
+			return fmt.Errorf("Failed to write batch: %w", err)
+		}
+		batch.Reset()
+	}
+	return nil
+}
+
 // if db is not empty, validates if wasm database schema version matches current version
 // otherwise persists current version
-func validateOrWriteWasmStoreSchemaVersion(db ethdb.Database) error {
+func validateOrUpgradeWasmStoreSchemaVersion(db ethdb.Database) error {
 	if !databaseIsEmpty(db) {
 		version, err := rawdb.ReadWasmSchemaVersion(db)
 		if err != nil {
@@ -427,9 +465,16 @@ func validateOrWriteWasmStoreSchemaVersion(db ethdb.Database) error {
 		if len(version) != 1 || version[0] > rawdb.WasmSchemaVersion {
 			return fmt.Errorf("Unsupported wasm database schema version, current version: %v, read from wasm database: %v", rawdb.WasmSchemaVersion, version)
 		}
-	} else {
-		rawdb.WriteWasmSchemaVersion(db)
+		// special step for upgrading from version 0 - remove all entries added in version 0
+		if version[0] == 0 {
+			log.Warn("Detected wasm store schema version 0 - removing all old wasm store entries")
+			if err := purgeVersion0WasmStoreEntries(db); err != nil {
+				return fmt.Errorf("Failed to purge wasm store version 0 entries: %w", err)
+			}
+			log.Info("Wasm store schama version 0 entries successfully removed.")
+		}
 	}
+	rawdb.WriteWasmSchemaVersion(db)
 	return nil
 }
 
@@ -449,7 +494,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				if err != nil {
 					return nil, nil, err
 				}
-				if err := validateOrWriteWasmStoreSchemaVersion(wasmDb); err != nil {
+				if err := validateOrUpgradeWasmStoreSchemaVersion(wasmDb); err != nil {
 					return nil, nil, err
 				}
 				chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1)
@@ -566,7 +611,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	if err != nil {
 		return nil, nil, err
 	}
-	if err := validateOrWriteWasmStoreSchemaVersion(wasmDb); err != nil {
+	if err := validateOrUpgradeWasmStoreSchemaVersion(wasmDb); err != nil {
 		return nil, nil, err
 	}
 	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1)

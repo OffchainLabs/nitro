@@ -22,6 +22,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/offchainlabs/nitro/arbnode"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
@@ -292,7 +293,7 @@ func testIsNotExistError(t *testing.T, dbEngine string, isNotExist func(error) b
 	stackConf.DBEngine = dbEngine
 	stack, err := node.New(&stackConf)
 	if err != nil {
-		t.Fatalf("Failed to created test stack: %v", err)
+		t.Fatalf("Failed to create test stack: %v", err)
 	}
 	defer stack.Close()
 	readonly := true
@@ -435,4 +436,102 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 	if !strings.Contains(err.Error(), "incompatible state scheme, stored: path, provided: hash") {
 		t.Fatalf("Failed to detect incompatible state scheme")
 	}
+}
+
+func writeKeys(t *testing.T, db ethdb.Database, keys [][]byte) {
+	t.Helper()
+	batch := db.NewBatch()
+	for _, key := range keys {
+		err := batch.Put(key, []byte("some data"))
+		if err != nil {
+			t.Fatal("Internal test error - failed to insert key:", err)
+		}
+	}
+	err := batch.Write()
+	if err != nil {
+		t.Fatal("Internal test error - failed to write batch:", err)
+	}
+	batch.Reset()
+}
+
+func checkKeys(t *testing.T, db ethdb.Database, keys [][]byte, shouldExist bool) {
+	t.Helper()
+	for _, key := range keys {
+		has, err := db.Has(key)
+		if err != nil {
+			t.Fatal("Failed to check key existence, key: ", key)
+		}
+		if shouldExist && !has {
+			t.Fatal("Key not found:", key)
+		}
+		if !shouldExist && has {
+			t.Fatal("Key found:", key, "k3:", string(key[:3]), "len", len(key))
+		}
+	}
+}
+
+func TestPurgeVersion0WasmStoreEntries(t *testing.T) {
+	stackConf := node.DefaultConfig
+	stackConf.DataDir = t.TempDir()
+	stack, err := node.New(&stackConf)
+	if err != nil {
+		t.Fatalf("Failed to create test stack: %v", err)
+	}
+	defer stack.Close()
+	db, err := stack.OpenDatabaseWithExtraOptions("wasm", NodeConfigDefault.Execution.Caching.DatabaseCache, NodeConfigDefault.Persistent.Handles, "wasm/", false, nil)
+	if err != nil {
+		t.Fatalf("Failed to open test db: %v", err)
+	}
+	var version0Keys [][]byte
+	for i := 0; i < 20; i++ {
+		version0Keys = append(version0Keys,
+			append([]byte{0x00, 'w', 'a'}, testhelpers.RandomSlice(32)...))
+		version0Keys = append(version0Keys,
+			append([]byte{0x00, 'w', 'm'}, testhelpers.RandomSlice(32)...))
+	}
+	var collidedKeys [][]byte
+	for i := 0; i < 5; i++ {
+		collidedKeys = append(collidedKeys,
+			append([]byte{0x00, 'w', 'a'}, testhelpers.RandomSlice(31)...))
+		collidedKeys = append(collidedKeys,
+			append([]byte{0x00, 'w', 'm'}, testhelpers.RandomSlice(31)...))
+		collidedKeys = append(collidedKeys,
+			append([]byte{0x00, 'w', 'a'}, testhelpers.RandomSlice(33)...))
+		collidedKeys = append(collidedKeys,
+			append([]byte{0x00, 'w', 'm'}, testhelpers.RandomSlice(33)...))
+	}
+	var otherKeys [][]byte
+	for i := 0x00; i <= 0xff; i++ {
+		if byte(i) == 'a' || byte(i) == 'm' {
+			continue
+		}
+		otherKeys = append(otherKeys,
+			append([]byte{0x00, 'w', byte(i)}, testhelpers.RandomSlice(32)...))
+		otherKeys = append(otherKeys,
+			append([]byte{0x00, 'w', byte(i)}, testhelpers.RandomSlice(32)...))
+	}
+	for i := 0; i < 10; i++ {
+		var randomSlice []byte
+		var j int
+		for j = 0; j < 10; j++ {
+			randomSlice = testhelpers.RandomSlice(testhelpers.RandomUint64(1, 40))
+			if len(randomSlice) >= 3 && !bytes.Equal(randomSlice[:3], []byte{0x00, 'w', 'm'}) && !bytes.Equal(randomSlice[:3], []byte{0x00, 'w', 'm'}) {
+				break
+			}
+		}
+		if j == 10 {
+			t.Fatal("Internal test error - failed to generate random key")
+		}
+		otherKeys = append(otherKeys, randomSlice)
+	}
+	writeKeys(t, db, version0Keys)
+	writeKeys(t, db, collidedKeys)
+	writeKeys(t, db, otherKeys)
+	checkKeys(t, db, version0Keys, true)
+	checkKeys(t, db, collidedKeys, true)
+	checkKeys(t, db, otherKeys, true)
+	purgeVersion0WasmStoreEntries(db)
+	checkKeys(t, db, version0Keys, false)
+	checkKeys(t, db, collidedKeys, true)
+	checkKeys(t, db, otherKeys, true)
 }
