@@ -68,6 +68,7 @@ func mainImpl() int {
 	stackConf := DefaultValidationNodeStackConfig
 	stackConf.DataDir = "" // ephemeral
 	stackConf.HTTPBodyLimit = math.MaxInt
+	stackConf.WSReadLimit = math.MinInt64
 	nodeConfig.HTTP.Apply(&stackConf)
 	nodeConfig.WS.Apply(&stackConf)
 	nodeConfig.Auth.Apply(&stackConf)
