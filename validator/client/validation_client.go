@@ -69,7 +69,8 @@ func (c *ValidationClient) Start(ctx context.Context) error {
 	}
 	var stylusArchs []string
 	if err := c.client.CallContext(ctx, &stylusArchs, server_api.Namespace+"_stylusArchs"); err != nil {
-		rpcError, ok := err.(rpc.Error)
+		var rpcError rpc.Error
+		ok := errors.As(err, &rpcError)
 		if !ok || rpcError.ErrorCode() != -32601 {
 			return fmt.Errorf("could not read stylus arch from server: %w", err)
 		}
