@@ -530,7 +530,10 @@ func TestPurgeVersion0WasmStoreEntries(t *testing.T) {
 	checkKeys(t, db, version0Keys, true)
 	checkKeys(t, db, collidedKeys, true)
 	checkKeys(t, db, otherKeys, true)
-	purgeVersion0WasmStoreEntries(db)
+	err = purgeVersion0WasmStoreEntries(db)
+	if err != nil {
+		t.Fatal("Failed to purge version 0 keys, err:", err)
+	}
 	checkKeys(t, db, version0Keys, false)
 	checkKeys(t, db, collidedKeys, true)
 	checkKeys(t, db, otherKeys, true)
