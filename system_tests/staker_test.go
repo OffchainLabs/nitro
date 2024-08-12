@@ -475,3 +475,29 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 func TestStakersCooperative(t *testing.T) {
 	stakerTestImpl(t, false, false)
 }
+
+func TestGetValidatorWalletContractWithoutDataPoster(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancelCtx := context.WithCancel(context.Background())
+	defer cancelCtx()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	balance := big.NewInt(params.Ether)
+	balance.Mul(balance, big.NewInt(100))
+	builder.L1Info.GenerateAccount("ValidatorA")
+	builder.L1.TransferBalance(t, "Faucet", "ValidatorA", balance, builder.L1Info)
+	l1auth := builder.L1Info.GetDefaultTransactOpts("ValidatorA", ctx)
+
+	valWalletAddrAPtr, err := validatorwallet.GetValidatorWalletContract(ctx, builder.L2.ConsensusNode.DeployInfo.ValidatorWalletCreator, 0, &l1auth, builder.L2.ConsensusNode.L1Reader, true, nil)
+	Require(t, err)
+	valWalletAddrA := *valWalletAddrAPtr
+	valWalletAddrCheck, err := validatorwallet.GetValidatorWalletContract(ctx, builder.L2.ConsensusNode.DeployInfo.ValidatorWalletCreator, 0, &l1auth, builder.L2.ConsensusNode.L1Reader, true, nil)
+	Require(t, err)
+	if valWalletAddrA == *valWalletAddrCheck {
+		Require(t, err, "didn't cache validator wallet address", valWalletAddrA.String(), "vs", valWalletAddrCheck.String())
+	}
+}
