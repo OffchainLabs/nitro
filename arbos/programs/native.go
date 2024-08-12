@@ -304,7 +304,7 @@ const DefaultTargetDescriptionX86 = "x86_64-linux-unknown+sse4.2"
 func SetTarget(name rawdb.Target, description string, native bool) error {
 	output := &rustBytes{}
 	status := userStatus(C.stylus_target_set(
-		goSlice([]byte(name)),
+		goSlice([]byte(name.ToString())),
 		goSlice([]byte(description)),
 		output,
 		cbool(native),
