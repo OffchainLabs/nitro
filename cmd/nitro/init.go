@@ -418,7 +418,7 @@ func validateOrWriteWasmStoreSchemaVersion(db ethdb.Database) error {
 	if !databaseIsEmpty(db) {
 		version := rawdb.ReadWasmSchemaVersion(db)
 		if len(version) != 1 || version[0] > rawdb.WasmSchemaVersion {
-			return fmt.Errorf("Wasm database schema version doesn't match current version, current: %v, read from wasm database: %v", rawdb.WasmSchemaVersion, version)
+			return fmt.Errorf("Unsupported wasm database schema version, current version: %v, read from wasm database: %v", rawdb.WasmSchemaVersion, version)
 		}
 	} else {
 		rawdb.WriteWasmSchemaVersion(db)
