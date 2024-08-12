@@ -33,21 +33,23 @@ type Server struct {
 }
 
 type ServerConfig struct {
-	Addr             string                              `koanf:"addr"`
-	Port             uint64                              `koanf:"port"`
-	JWTSecret        string                              `koanf:"jwtsecret"`
-	EnableDAWriter   bool                                `koanf:"enable-da-writer"`
-	DataAvailability das.DataAvailabilityConfig          `koanf:"data-availability"`
-	ServerTimeouts   genericconf.HTTPServerTimeoutConfig `koanf:"server-timeouts"`
+	Addr               string                              `koanf:"addr"`
+	Port               uint64                              `koanf:"port"`
+	JWTSecret          string                              `koanf:"jwtsecret"`
+	EnableDAWriter     bool                                `koanf:"enable-da-writer"`
+	DataAvailability   das.DataAvailabilityConfig          `koanf:"data-availability"`
+	ServerTimeouts     genericconf.HTTPServerTimeoutConfig `koanf:"server-timeouts"`
+	RPCServerBodyLimit int                                 `koanf:"rpc-server-body-limit"`
 }
 
 var DefaultServerConfig = ServerConfig{
-	Addr:             "localhost",
-	Port:             9880,
-	JWTSecret:        "",
-	EnableDAWriter:   false,
-	DataAvailability: das.DefaultDataAvailabilityConfig,
-	ServerTimeouts:   genericconf.HTTPServerTimeoutConfigDefault,
+	Addr:               "localhost",
+	Port:               9880,
+	JWTSecret:          "",
+	EnableDAWriter:     false,
+	DataAvailability:   das.DefaultDataAvailabilityConfig,
+	ServerTimeouts:     genericconf.HTTPServerTimeoutConfigDefault,
+	RPCServerBodyLimit: genericconf.HTTPServerBodyLimitDefault,
 }
 
 func ServerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -55,6 +57,7 @@ func ServerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".port", DefaultServerConfig.Port, "JSON rpc server listening port")
 	f.String(prefix+".jwtsecret", DefaultServerConfig.JWTSecret, "path to file with jwtsecret for validation")
 	f.Bool(prefix+".enable-da-writer", DefaultServerConfig.EnableDAWriter, "implies if the das server supports daprovider's writer interface")
+	f.Int("rpc-server-body-limit", DefaultServerConfig.RPCServerBodyLimit, "HTTP-RPC server maximum request body size in bytes; the default (0) uses geth's 5MB limit")
 	das.DataAvailabilityConfigAddNodeOptions(prefix+".data-availability", f)
 	genericconf.HTTPServerTimeoutConfigAddOptions(prefix+".server-timeouts", f)
 }
@@ -104,9 +107,16 @@ func NewServer(ctx context.Context, config *ServerConfig, dataSigner signature.D
 	}
 
 	rpcServer := rpc.NewServer()
+	if config.RPCServerBodyLimit > 0 {
+		rpcServer.SetHTTPBodyLimit(config.RPCServerBodyLimit)
+	}
+	var writer daprovider.Writer
+	if daWriter != nil {
+		writer = dasutil.NewWriterForDAS(daWriter)
+	}
 	server := &Server{
 		reader: dasutil.NewReaderForDAS(daReader, dasKeysetFetcher),
-		writer: dasutil.NewWriterForDAS(daWriter),
+		writer: writer,
 	}
 	if err = rpcServer.RegisterName("daprovider", server); err != nil {
 		return nil, nil, err

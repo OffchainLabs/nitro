@@ -717,7 +717,10 @@ func createNodeImpl(
 			return nil, errors.New("batchposter, but no TxOpts")
 		}
 		var dapWriter daprovider.Writer
-		if daClient != nil && withDAWriter {
+		if withDAWriter {
+			if !config.BatchPoster.CheckBatchCorrectness {
+				return nil, errors.New("when da-provider is used by batch-poster for posting, check-batch-correctness needs to be enabled")
+			}
 			dapWriter = daClient
 		}
 		batchPoster, err = NewBatchPoster(ctx, &BatchPosterOpts{

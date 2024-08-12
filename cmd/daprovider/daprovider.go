@@ -153,6 +153,10 @@ func startup() error {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
+	if !config.DASServer.DataAvailability.Enable {
+		return errors.New("--das-server.data-availability.enable is a required to start a das-server")
+	}
+
 	if config.DASServer.DataAvailability.ParentChainNodeURL == "" || config.DASServer.DataAvailability.ParentChainNodeURL == "none" {
 		return errors.New("--das-server.data-availability.parent-chain-node-url is a required to start a das-server")
 	}
