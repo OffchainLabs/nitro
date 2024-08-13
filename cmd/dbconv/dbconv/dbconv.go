@@ -3,6 +3,7 @@ package dbconv
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -11,7 +12,18 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 )
 
-var UnfinishedConversionCanaryKey = []byte("unfinished-conversion-canary-key")
+var unfinishedConversionCanaryKey = []byte("unfinished-conversion-canary-key")
+
+func UnfinishedConversionCheck(db ethdb.KeyValueStore) error {
+	unfinished, err := db.Has(unfinishedConversionCanaryKey)
+	if err != nil {
+		return fmt.Errorf("Failed to check UnfinishedConversionCanaryKey existence: %w", err)
+	}
+	if unfinished {
+		return errors.New("Unfinished conversion canary key detected")
+	}
+	return nil
+}
 
 type DBConverter struct {
 	config *DBConvConfig
@@ -40,16 +52,13 @@ func openDB(config *DBConfig, name string, readonly bool) (ethdb.Database, error
 	if err != nil {
 		return nil, err
 	}
-	unfinished, err := db.Has(UnfinishedConversionCanaryKey)
-	if err != nil {
-		return nil, fmt.Errorf("Failed to check canary key existence: %w", err)
-	}
-	if unfinished {
-		if err := db.Close(); err != nil {
-			return nil, fmt.Errorf("Unfinished conversion canary key detected and failed to close: %w", err)
+	if err := UnfinishedConversionCheck(db); err != nil {
+		if closeErr := db.Close(); closeErr != nil {
+			err = errors.Join(err, closeErr)
 		}
-		return nil, fmt.Errorf("Unfinished conversion canary key detected")
+		return nil, err
 	}
+
 	return db, nil
 }
 
@@ -67,7 +76,7 @@ func (c *DBConverter) Convert(ctx context.Context) error {
 	defer dst.Close()
 	c.stats.Reset()
 	log.Info("Converting database", "src", c.config.Src.Data, "dst", c.config.Dst.Data, "db-engine", c.config.Dst.DBEngine)
-	if err = dst.Put(UnfinishedConversionCanaryKey, []byte{1}); err != nil {
+	if err = dst.Put(unfinishedConversionCanaryKey, []byte{1}); err != nil {
 		return err
 	}
 	it := src.NewIterator(nil, nil)
@@ -98,7 +107,7 @@ func (c *DBConverter) Convert(ctx context.Context) error {
 		c.stats.LogBytes(int64(batchSize))
 	}
 	if err == nil {
-		if err = dst.Delete(UnfinishedConversionCanaryKey); err != nil {
+		if err = dst.Delete(unfinishedConversionCanaryKey); err != nil {
 			return err
 		}
 	}

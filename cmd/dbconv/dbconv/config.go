@@ -6,7 +6,6 @@ import (
 
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
-	"github.com/offchainlabs/nitro/execution/gethexec"
 	flag "github.com/spf13/pflag"
 )
 
@@ -22,7 +21,7 @@ type DBConfig struct {
 var DBConfigDefaultDst = DBConfig{
 	DBEngine:  "pebble",
 	Handles:   conf.PersistentConfigDefault.Handles,
-	Cache:     gethexec.DefaultCachingConfig.DatabaseCache,
+	Cache:     2048, // 2048 MB
 	Namespace: "dstdb/",
 	Pebble:    conf.PebbleConfigDefault,
 }
@@ -30,7 +29,7 @@ var DBConfigDefaultDst = DBConfig{
 var DBConfigDefaultSrc = DBConfig{
 	DBEngine:  "leveldb",
 	Handles:   conf.PersistentConfigDefault.Handles,
-	Cache:     gethexec.DefaultCachingConfig.DatabaseCache,
+	Cache:     2048, // 2048 MB
 	Namespace: "srcdb/",
 }
 
