@@ -8,7 +8,7 @@ src=$DEFAULT_SRC
 dst=
 force=false
 skip_existing=false
-clean="all"
+clean="failed"
 
 l2chaindata_status="not started"
 l2chaindata_ancient_status="not started"
@@ -42,9 +42,9 @@ echo Usage: $0 \[OPTIONS..\]
     echo "--force           remove destination directory if it exists"
     echo "--skip-existing   skip convertion of databases which directories already exist in the destination directory"
     echo "--clean           sets what should be removed in case of error, possible values:"
-    echo "                      \"all\"    - remove whole destination directory (default)"
-    echo "                      \"failed\" - remove database which conversion failed"
+	echo "                      \"failed\" - remove database which conversion failed (default)"
     echo "                      \"none\"   - remove nothing, leave unfinished and potentially corrupted databases"
+    echo "                      \"all\"    - remove whole destination directory"
 }
 
 removeDir() {
