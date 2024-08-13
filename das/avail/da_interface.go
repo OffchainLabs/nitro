@@ -59,14 +59,14 @@ func (a *readerForAvailDA) RecoverPayloadFromBatch(ctx context.Context,
 		return nil, err
 	}
 
-	log.Info("Attempting to fetch data for", "batchNum", batchNum, "availBlockHash", blobPointer.BlockHash)
+	log.Info("Attempting to fetch data for", "batchNum", batchNum, "availBlockHeight", blobPointer.BlockHeight)
 	payload, err := a.availDAReader.Read(ctx, blobPointer)
 	if err != nil {
 		log.Error("Failed to resolve blob pointer from avail", "err", err)
 		return nil, err
 	}
 
-	log.Info("Succesfully fetched payload from Avail", "batchNum", batchNum, "availBlockHash", blobPointer.BlockHash)
+	log.Info("Succesfully fetched payload from Avail", "batchNum", batchNum, "availBlockHeight", blobPointer.BlockHeight)
 
 	log.Info("Recording Sha256 preimage for Avail data")
 
@@ -88,7 +88,6 @@ func NewWriterForAvailDA(availDAWriter AvailDAWriter) *witerForAvailDA {
 func (a *witerForAvailDA) Store(ctx context.Context,
 	message []byte,
 	timeout uint64,
-	sig []byte,
 	disableFallbackStoreDataOnChain bool,
 ) ([]byte, error) {
 	return a.availDAWriter.Store(ctx, message)
