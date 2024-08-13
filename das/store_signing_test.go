@@ -25,7 +25,7 @@ func TestStoreSigning(t *testing.T) {
 	sig, err := applyDasSigner(signer, weirdMessage, timeout)
 	Require(t, err)
 
-	recoveredAddr, err := DasRecoverSigner(weirdMessage, timeout, sig)
+	recoveredAddr, err := DasRecoverSigner(weirdMessage, sig, timeout)
 	Require(t, err)
 
 	if recoveredAddr != addr {

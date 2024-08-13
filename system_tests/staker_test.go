@@ -12,7 +12,6 @@ import (
 	"errors"
 	"fmt"
 	"math/big"
-	"net/http"
 	"strings"
 	"testing"
 	"time"
@@ -61,20 +60,10 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
-	httpSrv, srv := externalsignertest.NewServer(t)
-	cp, err := externalsignertest.CertPaths()
-	if err != nil {
-		t.Fatalf("Error getting cert paths: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := httpSrv.Shutdown(ctx); err != nil {
-			t.Fatalf("Error shutting down http server: %v", err)
-		}
-	})
+	srv := externalsignertest.NewServer(t)
 	go func() {
-		log.Debug("Server is listening on port 1234...")
-		if err := httpSrv.ListenAndServeTLS(cp.ServerCert, cp.ServerKey); err != nil && err != http.ErrServerClosed {
-			log.Debug("ListenAndServeTLS() failed", "error", err)
+		if err := srv.Start(); err != nil {
+			log.Error("Failed to start external signer server:", err)
 			return
 		}
 	}()
@@ -234,7 +223,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	}
 	Require(t, err)
 	cfg := arbnode.ConfigDefaultL1NonSequencerTest()
-	signerCfg, err := externalSignerTestCfg(srv.Address)
+	signerCfg, err := externalSignerTestCfg(srv.Address, srv.URL())
 	if err != nil {
 		t.Fatalf("Error getting external signer config: %v", err)
 	}

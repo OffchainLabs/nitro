@@ -56,7 +56,9 @@ type ExecutionSequencer interface {
 	ForwardTo(url string) error
 	SequenceDelayedMessage(message *arbostypes.L1IncomingMessage, delayedSeqNum uint64) error
 	NextDelayedMessageNumber() (uint64, error)
-	GetL1GasPriceEstimate() (uint64, error)
+	MarkFeedStart(to arbutil.MessageIndex)
+	Synced() bool
+	FullSyncProgressMap() map[string]interface{}
 }
 
 type FullExecutionClient interface {
@@ -94,9 +96,6 @@ type ConsensusInfo interface {
 type ConsensusSequencer interface {
 	WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult MessageResult) error
 	ExpectChosenSequencer() error
-	CacheL1PriceDataOfMsg(pos arbutil.MessageIndex, callDataUnits uint64, l1GasCharged uint64)
-	BacklogL1GasCharged() uint64
-	BacklogCallDataUnits() uint64
 }
 
 type FullConsensusClient interface {

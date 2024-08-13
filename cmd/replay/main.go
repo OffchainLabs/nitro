@@ -114,6 +114,10 @@ func (dasReader *PreimageDASReader) GetByHash(ctx context.Context, hash common.H
 	return dastree.Content(hash, oracle)
 }
 
+func (dasReader *PreimageDASReader) GetKeysetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
+	return dasReader.GetByHash(ctx, hash)
+}
+
 func (dasReader *PreimageDASReader) HealthCheck(ctx context.Context) error {
 	return nil
 }
@@ -217,8 +221,11 @@ func main() {
 			delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 		}
 		var dasReader daprovider.DASReader
+		var dasKeysetFetcher daprovider.DASKeysetFetcher
 		if dasEnabled {
+			// DAS batch and keysets are all together in the same preimage binary.
 			dasReader = &PreimageDASReader{}
+			dasKeysetFetcher = &PreimageDASReader{}
 		}
 		var availDAReader avail.AvailDAReader
 		if availDAEnabled {
@@ -231,7 +238,7 @@ func main() {
 		}
 		var dapReaders []daprovider.Reader
 		if dasReader != nil {
-			dapReaders = append(dapReaders, daprovider.NewReaderForDAS(dasReader))
+			dapReaders = append(dapReaders, daprovider.NewReaderForDAS(dasReader, dasKeysetFetcher))
 		}
 		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(&BlobPreimageReader{}))
 		if availDAReader != nil {

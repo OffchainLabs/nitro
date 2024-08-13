@@ -4,8 +4,10 @@ import (
 	"context"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"math/big"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -19,16 +21,14 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsigner"
+	"github.com/ethereum/go-ethereum/signer/core/apitypes"
+	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 var (
 	dataPosterPath = "arbnode/dataposter"
 	selfPath       = filepath.Join(dataPosterPath, "externalsignertest")
-
-	SignerPort   = 1234
-	SignerURL    = fmt.Sprintf("https://localhost:%v", SignerPort)
-	SignerMethod = "test_signTransaction"
+	SignerMethod   = "test_signTransaction"
 )
 
 type CertAbsPaths struct {
@@ -36,6 +36,12 @@ type CertAbsPaths struct {
 	ServerKey  string
 	ClientCert string
 	ClientKey  string
+}
+
+type SignerServer struct {
+	*http.Server
+	*SignerAPI
+	listener net.Listener
 }
 
 func basePath() (string, error) {
@@ -71,7 +77,7 @@ func CertPaths() (*CertAbsPaths, error) {
 	}, nil
 }
 
-func NewServer(t *testing.T) (*http.Server, *SignerAPI) {
+func NewServer(t *testing.T) *SignerServer {
 	rpcServer := rpc.NewServer()
 	signer, address, err := setupAccount("/tmp/keystore")
 	if err != nil {
@@ -94,8 +100,13 @@ func NewServer(t *testing.T) (*http.Server, *SignerAPI) {
 	pool := x509.NewCertPool()
 	pool.AppendCertsFromPEM(clientCert)
 
+	ln, err := testhelpers.FreeTCPPortListener()
+	if err != nil {
+		t.Fatalf("Error getting a listener on a free TCP port: %v", err)
+	}
+
 	httpServer := &http.Server{
-		Addr:              fmt.Sprintf(":%d", SignerPort),
+		Addr:              ln.Addr().String(),
 		Handler:           rpcServer,
 		ReadTimeout:       30 * time.Second,
 		ReadHeaderTimeout: 30 * time.Second,
@@ -109,12 +120,36 @@ func NewServer(t *testing.T) (*http.Server, *SignerAPI) {
 	}
 
 	t.Cleanup(func() {
-		if err := httpServer.Close(); err != nil {
+		if err := httpServer.Close(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 			t.Fatalf("Error shutting down http server: %v", err)
+		}
+		// Explicitly close the listner in case the server was never started.
+		if err := ln.Close(); err != nil && !errors.Is(err, net.ErrClosed) {
+			t.Fatalf("Error closing listener: %v", err)
 		}
 	})
 
-	return httpServer, s
+	return &SignerServer{httpServer, s, ln}
+}
+
+// URL returns the URL of the signer server.
+//
+// Note: The server must return "localhost" for the hostname part of
+// the URL to match the expectations from the TLS certificate.
+func (s *SignerServer) URL() string {
+	port := strings.Split(s.Addr, ":")[1]
+	return fmt.Sprintf("https://localhost:%s", port)
+}
+
+func (s *SignerServer) Start() error {
+	cp, err := CertPaths()
+	if err != nil {
+		return err
+	}
+	if err := s.ServeTLS(s.listener, cp.ServerCert, cp.ServerKey); err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return err
+	}
+	return nil
 }
 
 // setupAccount creates a new account in a given directory, unlocks it, creates
@@ -144,11 +179,15 @@ type SignerAPI struct {
 	Address  common.Address
 }
 
-func (a *SignerAPI) SignTransaction(ctx context.Context, req *externalsigner.SignTxArgs) (hexutil.Bytes, error) {
+func (a *SignerAPI) SignTransaction(ctx context.Context, req *apitypes.SendTxArgs) (hexutil.Bytes, error) {
 	if req == nil {
 		return nil, fmt.Errorf("nil request")
 	}
-	signedTx, err := a.SignerFn(a.Address, req.ToTransaction())
+	tx, err := req.ToTransaction()
+	if err != nil {
+		return nil, fmt.Errorf("converting send transaction arguments to transaction: %w", err)
+	}
+	signedTx, err := a.SignerFn(a.Address, tx)
 	if err != nil {
 		return nil, fmt.Errorf("signing transaction: %w", err)
 	}

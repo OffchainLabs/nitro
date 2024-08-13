@@ -49,6 +49,7 @@ var TestValidationClientConfig = ValidationClientConfig{
 func ValidationClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".name", DefaultValidationClientConfig.Name, "validation client name")
 	f.Int32(prefix+".room", DefaultValidationClientConfig.Room, "validation client room")
+	f.String(prefix+".redis-url", DefaultValidationClientConfig.RedisURL, "redis url")
 	pubsub.ProducerAddConfigAddOptions(prefix+".producer-config", f)
 	f.Bool(prefix+".create-streams", DefaultValidationClientConfig.CreateStreams, "create redis streams if it does not exist")
 }
