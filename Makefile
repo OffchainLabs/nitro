@@ -147,18 +147,23 @@ stylus_benchmarks = $(wildcard $(stylus_dir)/*.toml $(stylus_dir)/src/*.rs) $(st
 
 # user targets
 
+.PHONY: push
 push: lint test-go .make/fmt
 	@printf "%bdone building %s%b\n" $(color_pink) $$(expr $$(echo $? | wc -w) - 1) $(color_reset)
 	@printf "%bready for push!%b\n" $(color_pink) $(color_reset)
 
+.PHONY: all
 all: build build-replay-env test-gen-proofs
 	@touch .make/all
 
+.PHONY: build
 build: $(patsubst %,$(output_root)/bin/%, nitro deploy relay daserver datool seq-coordinator-invalidate nitro-val seq-coordinator-manager dbconv)
 	@printf $(done)
 
+.PHONY: build-node-deps
 build-node-deps: $(go_source) build-prover-header build-prover-lib build-jit .make/solgen .make/cbrotli-lib
 
+.PHONY: test-go-deps
 test-go-deps: \
 	build-replay-env \
 	$(stylus_test_wasms) \
@@ -166,59 +171,95 @@ test-go-deps: \
 	$(arbitrator_generated_header) \
 	$(patsubst %,$(arbitrator_cases)/%.wasm, global-state read-inboxmsg-10 global-state-wrapper const)
 
+.PHONY: build-prover-header
 build-prover-header: $(arbitrator_generated_header)
 
+.PHONY: build-prover-lib
 build-prover-lib: $(arbitrator_stylus_lib)
 
+.PHONY: build-prover-bin
 build-prover-bin: $(prover_bin)
 
+.PHONY: build-jit
 build-jit: $(arbitrator_jit)
 
+.PHONY: build-replay-env
 build-replay-env: $(prover_bin) $(arbitrator_jit) $(arbitrator_wasm_libs) $(replay_wasm) $(output_latest)/machine.wavm.br
 
+.PHONY: build-wasm-libs
 build-wasm-libs: $(arbitrator_wasm_libs)
 
+.PHONY: build-wasm-bin
 build-wasm-bin: $(replay_wasm)
 
+.PHONY: build-solidity
 build-solidity: .make/solidity
 
+.PHONY: contracts
 contracts: .make/solgen
 	@printf $(done)
 
+.PHONY: format fmt
 format fmt: .make/fmt
 	@printf $(done)
 
+.PHONY: lint
 lint: .make/lint
 	@printf $(done)
 
+.PHONY: stylus-benchmarks
 stylus-benchmarks: $(stylus_benchmarks)
 	cargo test --manifest-path $< --release --features benchmark benchmark_ -- --nocapture
 	@printf $(done)
 
+.PHONY: test-go
 test-go: .make/test-go
 	@printf $(done)
 
+.PHONY: test-go-challenge
 test-go-challenge: test-go-deps
-	go test -v -timeout 120m ./system_tests/... -run TestChallenge -tags challengetest
+	gotestsum --format short-verbose --no-color=false -- -timeout 120m ./system_tests/... -run TestChallenge -tags challengetest
 	@printf $(done)
 
+.PHONY: test-go-stylus
 test-go-stylus: test-go-deps
-	go test -v -timeout 120m ./system_tests/... -run TestProgramArbitrator -tags stylustest
+	gotestsum --format short-verbose --no-color=false -- -timeout 120m ./system_tests/... -run TestProgramArbitrator -tags stylustest
 	@printf $(done)
 
+.PHONY: test-go-redis
 test-go-redis: test-go-deps
-	TEST_REDIS=redis://localhost:6379/0 go test -p 1 -run TestRedis ./system_tests/... ./arbnode/...
+	TEST_REDIS=redis://localhost:6379/0 gotestsum --format short-verbose --no-color=false -- -p 1 -run TestRedis ./system_tests/... ./arbnode/...
 	@printf $(done)
 
+.PHONY: test-gen-proofs
 test-gen-proofs: \
         $(arbitrator_test_wasms) \
 	$(patsubst $(arbitrator_cases)/%.wat,contracts/test/prover/proofs/%.json, $(arbitrator_tests_wat)) \
 	$(patsubst $(arbitrator_cases)/rust/src/bin/%.rs,contracts/test/prover/proofs/rust-%.json, $(arbitrator_tests_rust)) \
 	contracts/test/prover/proofs/go.json
+	@printf $(done)
 
+.PHONY: test-rust
+test-rust: .make/test-rust
+	@printf $(done)
+
+# Runs the fastest and most reliable and high-value tests.
+.PHONY: tests
+tests: test-go test-rust
+	@printf $(done)
+
+# Runs all tests, including slow and unreliable tests.
+#  Currently, NOT including:
+#  - test-go-redis (These testts require additional setup and are not as reliable)
+.PHONY: tests-all
+tests-all: tests test-go-challenge test-go-stylus test-gen-proofs
+	@printf $(done)
+
+.PHONY: wasm-ci-build
 wasm-ci-build: $(arbitrator_wasm_libs) $(arbitrator_test_wasms) $(stylus_test_wasms) $(output_latest)/user_test.wasm
 	@printf $(done)
 
+.PHONY: clean
 clean:
 	go clean -testcache
 	rm -rf $(arbitrator_cases)/rust/target
@@ -237,6 +278,7 @@ clean:
 	@rm -rf contracts/build contracts/cache solgen/go/
 	@rm -f .make/*
 
+.PHONY: docker
 docker:
 	docker build -t nitro-node-slim --target nitro-node-slim .
 	docker build -t nitro-node --target nitro-node .
@@ -493,6 +535,10 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 	gotestsum --format short-verbose --no-color=false
 	@touch $@
 
+.make/test-rust: $(DEP_PREDICATE) wasm-ci-build $(ORDER_ONLY_PREDICATE) .make
+	cargo test --manifest-path arbitrator/Cargo.toml --release
+	@touch $@
+
 .make/solgen: $(DEP_PREDICATE) solgen/gen.go .make/solidity $(ORDER_ONLY_PREDICATE) .make
 	mkdir -p solgen/go/
 	go run solgen/gen.go
@@ -540,4 +586,3 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 
 always:              # use this to force other rules to always build
 .DELETE_ON_ERROR:    # causes a failure to delete its target
-.PHONY: push all build build-node-deps test-go-deps build-prover-header build-prover-lib build-prover-bin build-jit build-replay-env build-solidity build-wasm-libs contracts format fmt lint stylus-benchmarks test-go test-gen-proofs push clean docker
