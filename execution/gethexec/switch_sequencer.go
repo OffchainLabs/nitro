@@ -25,7 +25,7 @@ type SwitchSequencer struct {
 	espresso    *EspressoSequencer
 
 	switchPollInterval   time.Duration
-	swtichDelayThreshold uint64
+	switchDelayThreshold uint64
 	lightClient          lightClient.LightClientReaderInterface
 
 	mode int
@@ -52,7 +52,7 @@ func NewSwitchSequencer(centralized *Sequencer, espresso *EspressoSequencer, l1c
 		lightClient:          lightclient,
 		mode:                 SequencingMode_Espresso,
 		switchPollInterval:   config.SwitchPollInterval,
-		swtichDelayThreshold: config.SwitchDelayThreshold,
+		switchDelayThreshold: config.SwitchDelayThreshold,
 	}, nil
 }
 
@@ -64,7 +64,7 @@ func (s *SwitchSequencer) SwitchToEspresso(ctx context.Context) error {
 	if s.IsRunningEspressoMode() {
 		return nil
 	}
-	log.Info("Switching to espresso sequencer", "max hotshot drift time", s.maxHotShotDriftTime)
+	log.Info("Switching to espresso sequencer", "switchDelayThreshold", s.switchDelayThreshold)
 
 	s.mode = SequencingMode_Espresso
 
@@ -77,7 +77,7 @@ func (s *SwitchSequencer) SwitchToCentralized(ctx context.Context) error {
 		return nil
 	}
 	s.mode = SequencingMode_Centralized
-	log.Warn("Switching to centrialized sequencer", "max hotshot drift time", s.maxHotShotDriftTime)
+	log.Warn("Switching to centrialized sequencer", "switchDelayThreshold", s.switchDelayThreshold)
 
 	s.espresso.StopAndWait()
 	return s.centralized.Start(ctx)
@@ -116,7 +116,7 @@ func (s *SwitchSequencer) Start(ctx context.Context) error {
 
 	if s.lightClient != nil {
 		s.CallIteratively(func(ctx context.Context) time.Duration {
-			isLive, err := s.lightClient.IsHotShotLive(s.swtichDelayThreshold)
+			isLive, err := s.lightClient.IsHotShotLive(s.switchDelayThreshold)
 			if err != nil {
 				return s.switchPollInterval
 			}
@@ -128,7 +128,7 @@ func (s *SwitchSequencer) Start(ctx context.Context) error {
 			}
 
 			if err != nil {
-				log.Error("Error swithcing mode", "err", err)
+				log.Error("Error switching mode", "err", err)
 				return 0
 			}
 			return s.switchPollInterval
