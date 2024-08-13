@@ -61,7 +61,7 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
-	httpSrv, srv := externalsignertest.NewServer(ctx, t)
+	httpSrv, srv := externalsignertest.NewServer(t)
 	cp, err := externalsignertest.CertPaths()
 	if err != nil {
 		t.Fatalf("Error getting cert paths: %v", err)
@@ -208,8 +208,6 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		execNodeA,
 		l2nodeA.ArbDB,
 		nil,
-		nil,
-		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,
 	)
@@ -261,8 +259,6 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		l2nodeB.TxStreamer,
 		execNodeB,
 		l2nodeB.ArbDB,
-		nil,
-		nil,
 		nil,
 		StaticFetcherFrom(t, &blockValidatorConfig),
 		valStack,

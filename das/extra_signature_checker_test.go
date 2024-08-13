@@ -14,7 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
 
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
@@ -22,7 +22,7 @@ type StubSignatureCheckDAS struct {
 	keyDir string
 }
 
-func (s *StubSignatureCheckDAS) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
+func (s *StubSignatureCheckDAS) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*daprovider.DataAvailabilityCertificate, error) {
 	pubkeyEncoded, err := ioutil.ReadFile(s.keyDir + "/ecdsa.pub")
 	if err != nil {
 		return nil, err
@@ -39,8 +39,8 @@ func (s *StubSignatureCheckDAS) Store(ctx context.Context, message []byte, timeo
 	return nil, nil
 }
 
-func (s *StubSignatureCheckDAS) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
-	return arbstate.KeepForever, nil
+func (s *StubSignatureCheckDAS) ExpirationPolicy(ctx context.Context) (daprovider.ExpirationPolicy, error) {
+	return daprovider.KeepForever, nil
 }
 
 func (s *StubSignatureCheckDAS) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {

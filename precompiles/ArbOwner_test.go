@@ -14,6 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/holiman/uint256"
 
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/burn"
@@ -113,7 +114,7 @@ func TestArbOwner(t *testing.T) {
 		Fail(t, avail)
 	}
 	deposited := big.NewInt(1000000)
-	evm.StateDB.AddBalance(l1pricing.L1PricerFundsPoolAddress, deposited)
+	evm.StateDB.AddBalance(l1pricing.L1PricerFundsPoolAddress, uint256.MustFromBig(deposited))
 	avail, err = gasInfo.GetL1FeesAvailable(callCtx, evm)
 	Require(t, err)
 	if avail.Sign() != 0 {

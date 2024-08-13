@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package util
@@ -15,14 +15,15 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	pgen "github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 var AddressAliasOffset *big.Int
 var InverseAddressAliasOffset *big.Int
-var ParseRedeemScheduledLog func(interface{}, *types.Log) error
-var ParseL2ToL1TransactionLog func(interface{}, *types.Log) error
-var ParseL2ToL1TxLog func(interface{}, *types.Log) error
+var ParseRedeemScheduledLog func(*types.Log) (*pgen.ArbRetryableTxRedeemScheduled, error)
+var ParseL2ToL1TransactionLog func(*types.Log) (*pgen.ArbSysL2ToL1Transaction, error)
+var ParseL2ToL1TxLog func(*types.Log) (*pgen.ArbSysL2ToL1Tx, error)
 var PackInternalTxDataStartBlock func(...interface{}) ([]byte, error)
 var UnpackInternalTxDataStartBlock func([]byte) (map[string]interface{}, error)
 var PackInternalTxDataBatchPostingReport func(...interface{}) ([]byte, error)
@@ -37,63 +38,64 @@ func init() {
 	AddressAliasOffset = offset
 	InverseAddressAliasOffset = arbmath.BigSub(new(big.Int).Lsh(big.NewInt(1), 160), AddressAliasOffset)
 
-	// Create a mechanism for parsing event logs
-	logParser := func(source string, name string) func(interface{}, *types.Log) error {
-		precompile, err := abi.JSON(strings.NewReader(source))
-		if err != nil {
-			panic(fmt.Sprintf("failed to parse ABI for %s: %s", name, err))
-		}
-		inputs := precompile.Events[name].Inputs
-		indexed := abi.Arguments{}
-		for _, input := range inputs {
-			if input.Indexed {
-				indexed = append(indexed, input)
-			}
-		}
-
-		return func(event interface{}, log *types.Log) error {
-			unpacked, err := inputs.Unpack(log.Data)
-			if err != nil {
-				return err
-			}
-			if err := inputs.Copy(event, unpacked); err != nil {
-				return err
-			}
-			return abi.ParseTopics(event, indexed, log.Topics[1:])
-		}
-	}
-
-	// Create a mechanism for packing and unpacking calls
-	callParser := func(source string, name string) (func(...interface{}) ([]byte, error), func([]byte) (map[string]interface{}, error)) {
-		contract, err := abi.JSON(strings.NewReader(source))
-		if err != nil {
-			panic(fmt.Sprintf("failed to parse ABI for %s: %s", name, err))
-		}
-		method, ok := contract.Methods[name]
-		if !ok {
-			panic(fmt.Sprintf("method %v does not exist", name))
-		}
-		pack := func(args ...interface{}) ([]byte, error) {
-			return contract.Pack(name, args...)
-		}
-		unpack := func(data []byte) (map[string]interface{}, error) {
-			if len(data) < 4 {
-				return nil, errors.New("data not long enough")
-			}
-			args := make(map[string]interface{})
-			return args, method.Inputs.UnpackIntoMap(args, data[4:])
-		}
-		return pack, unpack
-	}
-
-	ParseRedeemScheduledLog = logParser(precompilesgen.ArbRetryableTxABI, "RedeemScheduled")
-	ParseL2ToL1TxLog = logParser(precompilesgen.ArbSysABI, "L2ToL1Tx")
-	ParseL2ToL1TransactionLog = logParser(precompilesgen.ArbSysABI, "L2ToL1Transaction")
+	ParseRedeemScheduledLog = NewLogParser[pgen.ArbRetryableTxRedeemScheduled](pgen.ArbRetryableTxABI, "RedeemScheduled")
+	ParseL2ToL1TxLog = NewLogParser[pgen.ArbSysL2ToL1Tx](pgen.ArbSysABI, "L2ToL1Tx")
+	ParseL2ToL1TransactionLog = NewLogParser[pgen.ArbSysL2ToL1Transaction](pgen.ArbSysABI, "L2ToL1Transaction")
 
 	acts := precompilesgen.ArbosActsABI
-	PackInternalTxDataStartBlock, UnpackInternalTxDataStartBlock = callParser(acts, "startBlock")
-	PackInternalTxDataBatchPostingReport, UnpackInternalTxDataBatchPostingReport = callParser(acts, "batchPostingReport")
-	PackArbRetryableTxRedeem, _ = callParser(precompilesgen.ArbRetryableTxABI, "redeem")
+	PackInternalTxDataStartBlock, UnpackInternalTxDataStartBlock = NewCallParser(acts, "startBlock")
+	PackInternalTxDataBatchPostingReport, UnpackInternalTxDataBatchPostingReport = NewCallParser(acts, "batchPostingReport")
+	PackArbRetryableTxRedeem, _ = NewCallParser(precompilesgen.ArbRetryableTxABI, "redeem")
+}
+
+// Create a mechanism for packing and unpacking calls
+func NewCallParser(source string, name string) (func(...interface{}) ([]byte, error), func([]byte) (map[string]interface{}, error)) {
+	contract, err := abi.JSON(strings.NewReader(source))
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse ABI for %s: %s", name, err))
+	}
+	method, ok := contract.Methods[name]
+	if !ok {
+		panic(fmt.Sprintf("method %v does not exist", name))
+	}
+	pack := func(args ...interface{}) ([]byte, error) {
+		return contract.Pack(name, args...)
+	}
+	unpack := func(data []byte) (map[string]interface{}, error) {
+		if len(data) < 4 {
+			return nil, errors.New("data not long enough")
+		}
+		args := make(map[string]interface{})
+		return args, method.Inputs.UnpackIntoMap(args, data[4:])
+	}
+	return pack, unpack
+}
+
+// Create a mechanism for parsing event logs
+func NewLogParser[T any](source string, name string) func(*types.Log) (*T, error) {
+	precompile, err := abi.JSON(strings.NewReader(source))
+	if err != nil {
+		panic(fmt.Sprintf("failed to parse ABI for %s: %s", name, err))
+	}
+	inputs := precompile.Events[name].Inputs
+	indexed := abi.Arguments{}
+	for _, input := range inputs {
+		if input.Indexed {
+			indexed = append(indexed, input)
+		}
+	}
+	return func(log *types.Log) (*T, error) {
+		unpacked, err := inputs.Unpack(log.Data)
+		if err != nil {
+			return nil, err
+		}
+		var event T
+		if err := inputs.Copy(&event, unpacked); err != nil {
+			return nil, err
+		}
+		err = abi.ParseTopics(&event, indexed, log.Topics[1:])
+		return &event, err
+	}
 }
 
 func AddressToHash(address common.Address) common.Hash {
@@ -196,7 +198,7 @@ func UintToHash(val uint64) common.Hash {
 }
 
 func HashPlusInt(x common.Hash, y int64) common.Hash {
-	return common.BigToHash(new(big.Int).Add(x.Big(), big.NewInt(y))) //BUGBUG: BigToHash(x) converts abs(x) to a Hash
+	return common.BigToHash(new(big.Int).Add(x.Big(), big.NewInt(y))) // BUGBUG: BigToHash(x) converts abs(x) to a Hash
 }
 
 func RemapL1Address(l1Addr common.Address) common.Address {

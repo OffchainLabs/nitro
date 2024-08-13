@@ -20,11 +20,12 @@ type ParentChainConfig struct {
 }
 
 var L1ConnectionConfigDefault = rpcclient.ClientConfig{
-	URL:            "",
-	Retries:        2,
-	Timeout:        time.Minute,
-	ConnectionWait: time.Minute,
-	ArgLogLimit:    2048,
+	URL:                       "",
+	Retries:                   2,
+	Timeout:                   time.Minute,
+	ConnectionWait:            time.Minute,
+	ArgLogLimit:               2048,
+	WebsocketMessageSizeLimit: 256 * 1024 * 1024,
 }
 
 var L1ConfigDefault = ParentChainConfig{

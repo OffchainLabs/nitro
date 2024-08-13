@@ -26,7 +26,8 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbnode/dataposter/storage"
 	"github.com/offchainlabs/nitro/arbnode/resourcemanager"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/broadcastclient"
 	"github.com/offchainlabs/nitro/broadcastclients"
@@ -94,6 +95,8 @@ type Config struct {
 	TransactionStreamer TransactionStreamerConfig   `koanf:"transaction-streamer" reload:"hot"`
 	Maintenance         MaintenanceConfig           `koanf:"maintenance" reload:"hot"`
 	ResourceMgmt        resourcemanager.Config      `koanf:"resource-mgmt" reload:"hot"`
+	// SnapSyncConfig is only used for testing purposes, these should not be configured in production.
+	SnapSyncTest SnapSyncConfig
 }
 
 func (c *Config) Validate() error {
@@ -176,6 +179,7 @@ var ConfigDefault = Config{
 	TransactionStreamer: DefaultTransactionStreamerConfig,
 	ResourceMgmt:        resourcemanager.DefaultConfig,
 	Maintenance:         DefaultMaintenanceConfig,
+	SnapSyncTest:        DefaultSnapSyncConfig,
 }
 
 func ConfigDefaultL1Test() *Config {
@@ -198,6 +202,7 @@ func ConfigDefaultL1NonSequencerTest() *Config {
 	config.BatchPoster.Enable = false
 	config.SeqCoordinator.Enable = false
 	config.BlockValidator = staker.TestBlockValidatorConfig
+	config.SyncMonitor = TestSyncMonitorConfig
 	config.Staker = staker.TestL1ValidatorConfig
 	config.Staker.Enable = false
 	config.BlockValidator.ValidationServerConfigs = []rpcclient.ClientConfig{{URL: ""}}
@@ -215,6 +220,7 @@ func ConfigDefaultL2Test() *Config {
 	config.SeqCoordinator.Signer.ECDSA.AcceptSequencer = false
 	config.SeqCoordinator.Signer.ECDSA.Dangerous.AcceptMissing = true
 	config.Staker = staker.TestL1ValidatorConfig
+	config.SyncMonitor = TestSyncMonitorConfig
 	config.Staker.Enable = false
 	config.BlockValidator.ValidationServerConfigs = []rpcclient.ClientConfig{{URL: ""}}
 	config.TransactionStreamer = DefaultTransactionStreamerConfig
@@ -253,7 +259,7 @@ type Node struct {
 	L1Reader                *headerreader.HeaderReader
 	TxStreamer              *TransactionStreamer
 	DeployInfo              *chaininfo.RollupAddresses
-	BlobReader              arbstate.BlobReader
+	BlobReader              daprovider.BlobReader
 	InboxReader             *InboxReader
 	InboxTracker            *InboxTracker
 	DelayedSequencer        *DelayedSequencer
@@ -267,10 +273,25 @@ type Node struct {
 	SeqCoordinator          *SeqCoordinator
 	MaintenanceRunner       *MaintenanceRunner
 	DASLifecycleManager     *das.LifecycleManager
-	ClassicOutboxRetriever  *ClassicOutboxRetriever
 	SyncMonitor             *SyncMonitor
 	configFetcher           ConfigFetcher
 	ctx                     context.Context
+}
+
+type SnapSyncConfig struct {
+	Enabled               bool
+	PrevBatchMessageCount uint64
+	PrevDelayedRead       uint64
+	BatchCount            uint64
+	DelayedCount          uint64
+}
+
+var DefaultSnapSyncConfig = SnapSyncConfig{
+	Enabled:               false,
+	PrevBatchMessageCount: 0,
+	BatchCount:            0,
+	DelayedCount:          0,
+	PrevDelayedRead:       0,
 }
 
 type ConfigFetcher interface {
@@ -372,7 +393,7 @@ func createNodeImpl(
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
 	parentChainID *big.Int,
-	blobReader arbstate.BlobReader,
+	blobReader daprovider.BlobReader,
 ) (*Node, error) {
 	config := configFetcher.Get()
 
@@ -383,17 +404,10 @@ func createNodeImpl(
 
 	l2ChainId := l2Config.ChainID.Uint64()
 
-	syncMonitor := NewSyncMonitor(&config.SyncMonitor)
-	var classicOutbox *ClassicOutboxRetriever
-	classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "", true)
-	if err != nil {
-		if l2Config.ArbitrumChainParams.GenesisBlockNum > 0 {
-			log.Warn("Classic Msg Database not found", "err", err)
-		}
-		classicOutbox = nil
-	} else {
-		classicOutbox = NewClassicOutboxRetriever(classicMsgDb)
+	syncConfigFetcher := func() *SyncMonitorConfig {
+		return &configFetcher.Get().SyncMonitor
 	}
+	syncMonitor := NewSyncMonitor(syncConfigFetcher)
 
 	var l1Reader *headerreader.HeaderReader
 	if config.ParentChainReader.Enable {
@@ -417,7 +431,7 @@ func createNodeImpl(
 	}
 
 	transactionStreamerConfigFetcher := func() *TransactionStreamerConfig { return &configFetcher.Get().TransactionStreamer }
-	txStreamer, err := NewTransactionStreamer(arbDb, l2Config, exec, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher)
+	txStreamer, err := NewTransactionStreamer(arbDb, l2Config, exec, broadcastServer, fatalErrChan, transactionStreamerConfigFetcher, &configFetcher.Get().SnapSyncTest)
 	if err != nil {
 		return nil, err
 	}
@@ -490,7 +504,6 @@ func createNodeImpl(
 			SeqCoordinator:          coordinator,
 			MaintenanceRunner:       maintenanceRunner,
 			DASLifecycleManager:     nil,
-			ClassicOutboxRetriever:  classicOutbox,
 			SyncMonitor:             syncMonitor,
 			configFetcher:           configFetcher,
 			ctx:                     ctx,
@@ -512,8 +525,8 @@ func createNodeImpl(
 	var daWriter das.DataAvailabilityServiceWriter
 	var daReader das.DataAvailabilityServiceReader
 	var dasLifecycleManager *das.LifecycleManager
-	var availDAWriter avail.DataAvailabilityWriter
-	var availDAReader avail.DataAvailabilityReader
+	var availDAWriter avail.AvailDAWriter
+	var availDAReader avail.AvailDAReader
 	if config.DataAvailability.Enable {
 		if config.BatchPoster.Enable {
 			daWriter, daReader, dasLifecycleManager, err = das.CreateBatchPosterDAS(ctx, &config.DataAvailability, dataSigner, l1client, deployInfo.SequencerInbox)
@@ -546,7 +559,21 @@ func createNodeImpl(
 		availDAReader = availService
 	}
 
-	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, daReader, availDAReader, blobReader)
+	// We support a nil txStreamer for the pruning code
+	if txStreamer != nil && txStreamer.chainConfig.ArbitrumChainParams.DataAvailabilityCommittee && daReader == nil {
+		return nil, errors.New("data availability service required but unconfigured")
+	}
+	var dapReaders []daprovider.Reader
+	if daReader != nil {
+		dapReaders = append(dapReaders, daprovider.NewReaderForDAS(daReader))
+	}
+	if blobReader != nil {
+		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(blobReader))
+	}
+	if availDAReader != nil {
+		dapReaders = append(dapReaders, avail.NewReaderForAvailDA(availDAReader))
+	}
+	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, dapReaders, config.SnapSyncTest)
 	if err != nil {
 		return nil, err
 	}
@@ -557,16 +584,14 @@ func createNodeImpl(
 	txStreamer.SetInboxReaders(inboxReader, delayedBridge)
 
 	var statelessBlockValidator *staker.StatelessBlockValidator
-	if config.BlockValidator.ValidationServerConfigs[0].URL != "" {
+	if config.BlockValidator.RedisValidationClientConfig.Enabled() || config.BlockValidator.ValidationServerConfigs[0].URL != "" {
 		statelessBlockValidator, err = staker.NewStatelessBlockValidator(
 			inboxReader,
 			inboxTracker,
 			txStreamer,
 			exec,
 			rawdb.NewTable(arbDb, storage.BlockValidatorPrefix),
-			daReader,
-			availDAReader,
-			blobReader,
+			dapReaders,
 			func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
 			stack,
 		)
@@ -673,6 +698,12 @@ func createNodeImpl(
 		if txOptsBatchPoster == nil && config.BatchPoster.DataPoster.ExternalSigner.URL == "" {
 			return nil, errors.New("batchposter, but no TxOpts")
 		}
+		var dapWriter daprovider.Writer
+		if daWriter != nil {
+			dapWriter = daprovider.NewWriterForDAS(daWriter)
+		} else if availDAWriter != nil {
+			dapWriter = avail.NewWriterForAvailDA(availDAWriter)
+		}
 		batchPoster, err = NewBatchPoster(ctx, &BatchPosterOpts{
 			DataPosterDB:  rawdb.NewTable(arbDb, storage.BatchPosterPrefix),
 			L1Reader:      l1Reader,
@@ -683,8 +714,7 @@ func createNodeImpl(
 			Config:        func() *BatchPosterConfig { return &configFetcher.Get().BatchPoster },
 			DeployInfo:    deployInfo,
 			TransactOpts:  txOptsBatchPoster,
-			DAWriter:      daWriter,
-			AvailDAWriter: availDAWriter,
+			DAPWriter:     dapWriter,
 			ParentChainID: parentChainID,
 		})
 		if err != nil {
@@ -719,7 +749,6 @@ func createNodeImpl(
 		SeqCoordinator:          coordinator,
 		MaintenanceRunner:       maintenanceRunner,
 		DASLifecycleManager:     dasLifecycleManager,
-		ClassicOutboxRetriever:  classicOutbox,
 		SyncMonitor:             syncMonitor,
 		configFetcher:           configFetcher,
 		ctx:                     ctx,
@@ -745,7 +774,7 @@ func CreateNode(
 	dataSigner signature.DataSignerFunc,
 	fatalErrChan chan error,
 	parentChainID *big.Int,
-	blobReader arbstate.BlobReader,
+	blobReader daprovider.BlobReader,
 ) (*Node, error) {
 	currentNode, err := createNodeImpl(ctx, stack, exec, arbDb, configFetcher, l2Config, l1client, deployInfo, txOptsValidator, txOptsBatchPoster, dataSigner, fatalErrChan, parentChainID, blobReader)
 	if err != nil {
@@ -776,21 +805,35 @@ func CreateNode(
 	return currentNode, nil
 }
 
+func (n *Node) CacheL1PriceDataOfMsg(pos arbutil.MessageIndex, callDataUnits uint64, l1GasCharged uint64) {
+	n.TxStreamer.CacheL1PriceDataOfMsg(pos, callDataUnits, l1GasCharged)
+}
+
+func (n *Node) BacklogL1GasCharged() uint64 {
+	return n.TxStreamer.BacklogL1GasCharged()
+}
+func (n *Node) BacklogCallDataUnits() uint64 {
+	return n.TxStreamer.BacklogCallDataUnits()
+}
+
 func (n *Node) Start(ctx context.Context) error {
 	execClient, ok := n.Execution.(*gethexec.ExecutionNode)
 	if !ok {
 		execClient = nil
 	}
 	if execClient != nil {
-		err := execClient.Initialize(ctx, n, n.SyncMonitor)
+		err := execClient.Initialize(ctx)
 		if err != nil {
 			return fmt.Errorf("error initializing exec client: %w", err)
 		}
 	}
-	n.SyncMonitor.Initialize(n.InboxReader, n.TxStreamer, n.SeqCoordinator, n.Execution)
+	n.SyncMonitor.Initialize(n.InboxReader, n.TxStreamer, n.SeqCoordinator)
 	err := n.Stack.Start()
 	if err != nil {
 		return fmt.Errorf("error starting geth stack: %w", err)
+	}
+	if execClient != nil {
+		execClient.SetConsensusClient(n)
 	}
 	err = n.Execution.Start(ctx)
 	if err != nil {
@@ -904,6 +947,7 @@ func (n *Node) Start(ctx context.Context) error {
 	if n.configFetcher != nil {
 		n.configFetcher.Start(ctx)
 	}
+	n.SyncMonitor.Start(ctx)
 	return nil
 }
 
@@ -957,6 +1001,7 @@ func (n *Node) StopAndWait() {
 		// Just stops the redis client (most other stuff was stopped earlier)
 		n.SeqCoordinator.StopAndWait()
 	}
+	n.SyncMonitor.StopAndWait()
 	if n.DASLifecycleManager != nil {
 		n.DASLifecycleManager.StopAndWaitUntil(2 * time.Second)
 	}
@@ -966,4 +1011,52 @@ func (n *Node) StopAndWait() {
 	if err := n.Stack.Close(); err != nil {
 		log.Error("error on stack close", "err", err)
 	}
+}
+
+func (n *Node) FetchBatch(ctx context.Context, batchNum uint64) ([]byte, common.Hash, error) {
+	return n.InboxReader.GetSequencerMessageBytes(ctx, batchNum)
+}
+
+func (n *Node) FindInboxBatchContainingMessage(message arbutil.MessageIndex) (uint64, bool, error) {
+	return n.InboxTracker.FindInboxBatchContainingMessage(message)
+}
+
+func (n *Node) GetBatchParentChainBlock(seqNum uint64) (uint64, error) {
+	return n.InboxTracker.GetBatchParentChainBlock(seqNum)
+}
+
+func (n *Node) FullSyncProgressMap() map[string]interface{} {
+	return n.SyncMonitor.FullSyncProgressMap()
+}
+
+func (n *Node) Synced() bool {
+	return n.SyncMonitor.Synced()
+}
+
+func (n *Node) SyncTargetMessageCount() arbutil.MessageIndex {
+	return n.SyncMonitor.SyncTargetMessageCount()
+}
+
+// TODO: switch from pulling to pushing safe/finalized
+func (n *Node) GetSafeMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
+	return n.InboxReader.GetSafeMsgCount(ctx)
+}
+
+func (n *Node) GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
+	return n.InboxReader.GetFinalizedMsgCount(ctx)
+}
+
+func (n *Node) WriteMessageFromSequencer(pos arbutil.MessageIndex, msgWithMeta arbostypes.MessageWithMetadata, msgResult execution.MessageResult) error {
+	return n.TxStreamer.WriteMessageFromSequencer(pos, msgWithMeta, msgResult)
+}
+
+func (n *Node) ExpectChosenSequencer() error {
+	return n.TxStreamer.ExpectChosenSequencer()
+}
+
+func (n *Node) ValidatedMessageCount() (arbutil.MessageIndex, error) {
+	if n.BlockValidator == nil {
+		return 0, errors.New("validator not set up")
+	}
+	return n.BlockValidator.GetValidated(), nil
 }

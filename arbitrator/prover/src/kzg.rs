@@ -1,7 +1,7 @@
 // Copyright 2022-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::utils::Bytes32;
+use arbutil::Bytes32;
 use c_kzg::{
     KzgSettings, BYTES_PER_BLOB, BYTES_PER_G1_POINT, BYTES_PER_G2_POINT, FIELD_ELEMENTS_PER_BLOB,
 };

@@ -27,13 +27,16 @@ var DefaultJitMachineConfig = JitMachineConfig{
 func getJitPath() (string, error) {
 	var jitBinary string
 	executable, err := os.Executable()
+	println("executable: ", executable)
 	if err == nil {
-		if strings.Contains(filepath.Base(executable), "test") {
+		if strings.Contains(filepath.Base(executable), "test") || strings.Contains(filepath.Dir(executable), "system_tests") {
 			_, thisfile, _, _ := runtime.Caller(0)
 			projectDir := filepath.Dir(filepath.Dir(filepath.Dir(thisfile)))
+			println("projectDir: ", projectDir)
 			jitBinary = filepath.Join(projectDir, "target", "bin", "jit")
 		} else {
 			jitBinary = filepath.Join(filepath.Dir(executable), "jit")
+			println("inside else: ", jitBinary)
 		}
 		_, err = os.Stat(jitBinary)
 	}

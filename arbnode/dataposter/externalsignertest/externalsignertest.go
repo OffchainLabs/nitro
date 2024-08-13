@@ -19,7 +19,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/rpc"
-	"github.com/ethereum/go-ethereum/signer/core/apitypes"
+	"github.com/offchainlabs/nitro/arbnode/dataposter/externalsigner"
 )
 
 var (
@@ -71,13 +71,14 @@ func CertPaths() (*CertAbsPaths, error) {
 	}, nil
 }
 
-func NewServer(ctx context.Context, t *testing.T) (*http.Server, *SignerAPI) {
+func NewServer(t *testing.T) (*http.Server, *SignerAPI) {
 	rpcServer := rpc.NewServer()
 	signer, address, err := setupAccount("/tmp/keystore")
 	if err != nil {
 		t.Fatalf("Error setting up account: %v", err)
 	}
 	t.Cleanup(func() { os.RemoveAll("/tmp/keystore") })
+
 	s := &SignerAPI{SignerFn: signer, Address: address}
 	if err := rpcServer.RegisterName("test", s); err != nil {
 		t.Fatalf("Failed to register EthSigningAPI, error: %v", err)
@@ -106,6 +107,12 @@ func NewServer(ctx context.Context, t *testing.T) (*http.Server, *SignerAPI) {
 			ClientCAs:  pool,
 		},
 	}
+
+	t.Cleanup(func() {
+		if err := httpServer.Close(); err != nil {
+			t.Fatalf("Error shutting down http server: %v", err)
+		}
+	})
 
 	return httpServer, s
 }
@@ -137,7 +144,7 @@ type SignerAPI struct {
 	Address  common.Address
 }
 
-func (a *SignerAPI) SignTransaction(ctx context.Context, req *apitypes.SendTxArgs) (hexutil.Bytes, error) {
+func (a *SignerAPI) SignTransaction(ctx context.Context, req *externalsigner.SignTxArgs) (hexutil.Bytes, error) {
 	if req == nil {
 		return nil, fmt.Errorf("nil request")
 	}

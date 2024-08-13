@@ -1,0 +1,19 @@
+[package]
+name = "create"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+stylus-sdk = { path = "../../../langs/rust/stylus-sdk" }
+hex = "0.4.3"
+
+[profile.release]
+codegen-units = 1
+strip = true
+lto = true
+panic = "abort"
+
+# uncomment to optimize for size
+#   opt-level = "z"
+
+[workspace]

@@ -302,7 +302,7 @@ func (cc *ClientConnection) Receive(ctx context.Context, timeout time.Duration) 
 	return msg, op, err
 }
 
-// readRequests reads json-rpc request from connection.
+// readRequest reads json-rpc request from connection.
 func (cc *ClientConnection) readRequest(ctx context.Context, timeout time.Duration) ([]byte, ws.OpCode, error) {
 	cc.ioMutex.Lock()
 	defer cc.ioMutex.Unlock()

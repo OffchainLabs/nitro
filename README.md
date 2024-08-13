@@ -43,7 +43,7 @@ Arbitrum One successfully migrated from the Classic Arbitrum stack onto Nitro on
 
 ## License
 
-Nitro is currently licensed under a [Business Source License](./LICENSE), similar to our friends at Uniswap and Aave, with an "Additional Use Grant" to ensure that everyone can have full comfort using and running nodes on all public Arbitrum chains.
+Nitro is currently licensed under a [Business Source License](./LICENSE.md), similar to our friends at Uniswap and Aave, with an "Additional Use Grant" to ensure that everyone can have full comfort using and running nodes on all public Arbitrum chains.
 
 The Additional Use Grant also permits the deployment of the Nitro software, in a permissionless fashion and without cost, as a new blockchain provided that the chain settles to either Arbitrum One or Arbitrum Nova. 
 

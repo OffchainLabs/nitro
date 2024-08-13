@@ -5,6 +5,7 @@ package arbnode
 
 var (
 	messagePrefix                []byte = []byte("m") // maps a message sequence number to a message
+	blockHashInputFeedPrefix     []byte = []byte("b") // maps a message sequence number to a block hash received through the input feed
 	legacyDelayedMessagePrefix   []byte = []byte("d") // maps a delayed sequence number to an accumulator and a message as serialized on L1
 	rlpDelayedMessagePrefix      []byte = []byte("e") // maps a delayed sequence number to an accumulator and an RLP encoded message
 	parentChainBlockNumberPrefix []byte = []byte("p") // maps a delayed sequence number to a parent chain block number

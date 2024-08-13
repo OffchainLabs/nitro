@@ -48,12 +48,17 @@ func (con ArbDebug) EventsView(c ctx, evm mech) error {
 }
 
 func (con ArbDebug) CustomRevert(c ctx, number uint64) error {
-	return con.CustomError(number, "This spider family wards off bugs: /\\oo/\\ //\\(oo)/\\ /\\oo/\\", true)
+	return con.CustomError(number, "This spider family wards off bugs: /\\oo/\\ //\\(oo)//\\ /\\oo/\\", true)
 }
 
 // Caller becomes a chain owner
 func (con ArbDebug) BecomeChainOwner(c ctx, evm mech) error {
 	return c.State.ChainOwners().Add(c.caller)
+}
+
+// Halts the chain by panicking in the STF
+func (con ArbDebug) Panic(c ctx, evm mech) error {
+	panic("called ArbDebug's debug-only Panic method")
 }
 
 func (con ArbDebug) LegacyError(c ctx) error {

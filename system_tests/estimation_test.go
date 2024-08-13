@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/eth/gasestimator"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
@@ -285,7 +286,7 @@ func TestComponentEstimate(t *testing.T) {
 	l2Used := receipt.GasUsed - receipt.GasUsedForL1
 	colors.PrintMint("True ", receipt.GasUsed, " - ", receipt.GasUsedForL1, " = ", l2Used)
 
-	if l2Estimate != l2Used {
+	if float64(l2Estimate-l2Used) > float64(gasEstimateForL1+l2Used)*gasestimator.EstimateGasErrorRatio {
 		Fatal(t, l2Estimate, l2Used)
 	}
 }

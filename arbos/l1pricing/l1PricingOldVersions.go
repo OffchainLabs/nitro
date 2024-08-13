@@ -4,12 +4,13 @@
 package l1pricing
 
 import (
+	"math"
+	"math/big"
+
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/offchainlabs/nitro/arbos/util"
 	am "github.com/offchainlabs/nitro/util/arbmath"
-	"math"
-	"math/big"
 )
 
 func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
@@ -105,8 +106,8 @@ func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
 	// pay rewards, as much as possible
 	paymentForRewards := am.BigMulByUint(am.UintToBig(perUnitReward), unitsAllocated)
 	availableFunds := statedb.GetBalance(L1PricerFundsPoolAddress)
-	if am.BigLessThan(availableFunds, paymentForRewards) {
-		paymentForRewards = availableFunds
+	if am.BigLessThan(availableFunds.ToBig(), paymentForRewards) {
+		paymentForRewards = availableFunds.ToBig()
 	}
 	fundsDueForRewards = am.BigSub(fundsDueForRewards, paymentForRewards)
 	if err := ps.SetFundsDueForRewards(fundsDueForRewards); err != nil {
@@ -130,8 +131,8 @@ func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
 		return err
 	}
 	balanceToTransfer := balanceDueToPoster
-	if am.BigLessThan(availableFunds, balanceToTransfer) {
-		balanceToTransfer = availableFunds
+	if am.BigLessThan(availableFunds.ToBig(), balanceToTransfer) {
+		balanceToTransfer = availableFunds.ToBig()
 	}
 	if balanceToTransfer.Sign() > 0 {
 		addrToPay, err := posterState.PayTo()
@@ -166,7 +167,7 @@ func (ps *L1PricingState) _preversion10_UpdateForBatchPosterSpending(
 		if err != nil {
 			return err
 		}
-		surplus := am.BigSub(statedb.GetBalance(L1PricerFundsPoolAddress), am.BigAdd(totalFundsDue, fundsDueForRewards))
+		surplus := am.BigSub(statedb.GetBalance(L1PricerFundsPoolAddress).ToBig(), am.BigAdd(totalFundsDue, fundsDueForRewards))
 
 		inertia, err := ps.Inertia()
 		if err != nil {
@@ -230,7 +231,7 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 	if err != nil {
 		return err
 	}
-	oldSurplus := am.BigSub(statedb.GetBalance(L1PricerFundsPoolAddress), am.BigAdd(totalFundsDue, fundsDueForRewards))
+	oldSurplus := am.BigSub(statedb.GetBalance(L1PricerFundsPoolAddress).ToBig(), am.BigAdd(totalFundsDue, fundsDueForRewards))
 
 	// compute allocation fraction -- will allocate updateTimeDelta/timeDelta fraction of units and funds to this update
 	lastUpdateTime, err := ps.LastUpdateTime()
@@ -280,7 +281,7 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 
 	// allocate funds to this update
 	collectedSinceUpdate := statedb.GetBalance(L1PricerFundsPoolAddress)
-	availableFunds := am.BigDivByUint(am.BigMulByUint(collectedSinceUpdate, allocationNumerator), allocationDenominator)
+	availableFunds := am.BigDivByUint(am.BigMulByUint(collectedSinceUpdate.ToBig(), allocationNumerator), allocationDenominator)
 
 	// pay rewards, as much as possible
 	paymentForRewards := am.BigMulByUint(am.UintToBig(perUnitReward), unitsAllocated)
@@ -356,7 +357,7 @@ func (ps *L1PricingState) _preVersion2_UpdateForBatchPosterSpending(
 		if err != nil {
 			return err
 		}
-		surplus := am.BigSub(statedb.GetBalance(L1PricerFundsPoolAddress), am.BigAdd(totalFundsDue, fundsDueForRewards))
+		surplus := am.BigSub(statedb.GetBalance(L1PricerFundsPoolAddress).ToBig(), am.BigAdd(totalFundsDue, fundsDueForRewards))
 
 		inertia, err := ps.Inertia()
 		if err != nil {

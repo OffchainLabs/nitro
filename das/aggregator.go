@@ -17,7 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/das/dastree"
@@ -36,8 +36,6 @@ var DefaultAggregatorConfig = AggregatorConfig{
 	AssumedHonest: 0,
 	Backends:      "",
 }
-
-var BatchToDasFailed = errors.New("unable to batch to DAS")
 
 func AggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultAggregatorConfig.Enable, "enable storage/retrieval of sequencer batch data from a list of RPC endpoints; this should only be used by the batch poster and not in combination with other DAS storage types")
@@ -164,7 +162,7 @@ type storeResponse struct {
 // constructed, calls to Store(...) will try to verify the passed-in data's signature
 // is from the batch poster. If the contract details are not provided, then the
 // signature is not checked, which is useful for testing.
-func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
+func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*daprovider.DataAvailabilityCertificate, error) {
 	log.Trace("das.Aggregator.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig))
 	if a.addrVerifier != nil {
 		actualSigner, err := DasRecoverSigner(message, timeout, sig)
@@ -243,7 +241,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 		}(ctx, d)
 	}
 
-	var aggCert arbstate.DataAvailabilityCertificate
+	var aggCert daprovider.DataAvailabilityCertificate
 
 	type certDetails struct {
 		pubKeys        []blsSignatures.PublicKey
@@ -296,7 +294,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 					}
 				} else if storeFailures > a.maxAllowedServiceStoreFailures {
 					cd := certDetails{}
-					cd.err = fmt.Errorf("aggregator failed to store message to at least %d out of %d DASes (assuming %d are honest). %w", a.requiredServicesForStore, len(a.services), a.config.AssumedHonest, BatchToDasFailed)
+					cd.err = fmt.Errorf("aggregator failed to store message to at least %d out of %d DASes (assuming %d are honest). %w", a.requiredServicesForStore, len(a.services), a.config.AssumedHonest, daprovider.ErrBatchToDasFailed)
 					certDetailsChan <- cd
 					returned = true
 				}
@@ -323,10 +321,10 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64, 
 	verified, err := blsSignatures.VerifySignature(aggCert.Sig, aggCert.SerializeSignableFields(), aggPubKey)
 	if err != nil {
 		//nolint:errorlint
-		return nil, fmt.Errorf("%s. %w", err.Error(), BatchToDasFailed)
+		return nil, fmt.Errorf("%s. %w", err.Error(), daprovider.ErrBatchToDasFailed)
 	}
 	if !verified {
-		return nil, fmt.Errorf("failed aggregate signature check. %w", BatchToDasFailed)
+		return nil, fmt.Errorf("failed aggregate signature check. %w", daprovider.ErrBatchToDasFailed)
 	}
 	return &aggCert, nil
 }

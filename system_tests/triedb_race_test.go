@@ -14,7 +14,7 @@ import (
 )
 
 func TestTrieDBCommitRace(t *testing.T) {
-	_ = testhelpers.InitTestLog(t, log.LvlError)
+	_ = testhelpers.InitTestLog(t, log.LevelError)
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 

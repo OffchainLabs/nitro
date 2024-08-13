@@ -105,7 +105,7 @@ func testReceiveMessages(t *testing.T, clientCompression bool, serverCompression
 
 	go func() {
 		for i := 0; i < messageCount; i++ {
-			Require(t, b.BroadcastSingle(arbostypes.TestMessageWithMetadataAndRequestId, arbutil.MessageIndex(i)))
+			Require(t, b.BroadcastSingle(arbostypes.TestMessageWithMetadataAndRequestId, arbutil.MessageIndex(i), nil))
 		}
 	}()
 
@@ -156,7 +156,7 @@ func TestInvalidSignature(t *testing.T) {
 
 	go func() {
 		for i := 0; i < messageCount; i++ {
-			Require(t, b.BroadcastSingle(arbostypes.TestMessageWithMetadataAndRequestId, arbutil.MessageIndex(i)))
+			Require(t, b.BroadcastSingle(arbostypes.TestMessageWithMetadataAndRequestId, arbutil.MessageIndex(i), nil))
 		}
 	}()
 
@@ -316,7 +316,7 @@ func TestServerClientDisconnect(t *testing.T) {
 	broadcastClient.Start(ctx)
 
 	t.Log("broadcasting seq 0 message")
-	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 0))
+	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 0, nil))
 
 	// Wait for client to receive batch to ensure it is connected
 	timer := time.NewTimer(5 * time.Second)
@@ -387,7 +387,7 @@ func TestBroadcastClientConfirmedMessage(t *testing.T) {
 	broadcastClient.Start(ctx)
 
 	t.Log("broadcasting seq 0 message")
-	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 0))
+	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 0, nil))
 
 	// Wait for client to receive batch to ensure it is connected
 	timer := time.NewTimer(5 * time.Second)
@@ -724,8 +724,8 @@ func TestBroadcasterSendsCachedMessagesOnClientConnect(t *testing.T) {
 	Require(t, b.Start(ctx))
 	defer b.StopAndWait()
 
-	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 0))
-	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 1))
+	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 0, nil))
+	Require(t, b.BroadcastSingle(arbostypes.EmptyTestMessageWithMetadata, 1, nil))
 
 	var wg sync.WaitGroup
 	for i := 0; i < 2; i++ {

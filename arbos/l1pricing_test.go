@@ -11,6 +11,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/math"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/holiman/uint256"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/l1pricing"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -171,7 +172,7 @@ func _testL1PricingFundsDue(t *testing.T, testParams *l1PricingTest, expectedRes
 	// create some fake collection
 	balanceAdded := big.NewInt(int64(testParams.fundsCollectedPerSecond * 3))
 	unitsAdded := testParams.unitsPerSecond * 3
-	evm.StateDB.AddBalance(l1pricing.L1PricerFundsPoolAddress, balanceAdded)
+	evm.StateDB.AddBalance(l1pricing.L1PricerFundsPoolAddress, uint256.MustFromBig(balanceAdded))
 	err = l1p.SetL1FeesAvailable(balanceAdded)
 	Require(t, err)
 	err = l1p.SetUnitsSinceUpdate(unitsAdded)
@@ -187,7 +188,7 @@ func _testL1PricingFundsDue(t *testing.T, testParams *l1PricingTest, expectedRes
 	)
 	Require(t, err)
 	rewardRecipientBalance := evm.StateDB.GetBalance(rewardAddress)
-	if !arbmath.BigEquals(rewardRecipientBalance, expectedResults.rewardRecipientBalance) {
+	if !arbmath.BigEquals(rewardRecipientBalance.ToBig(), expectedResults.rewardRecipientBalance) {
 		Fail(t, rewardRecipientBalance, expectedResults.rewardRecipientBalance)
 	}
 	unitsRemaining, err := l1p.UnitsSinceUpdate()
@@ -196,16 +197,16 @@ func _testL1PricingFundsDue(t *testing.T, testParams *l1PricingTest, expectedRes
 		Fail(t, unitsRemaining, expectedResults.unitsRemaining)
 	}
 	fundsReceived := evm.StateDB.GetBalance(firstPayTo)
-	if !arbmath.BigEquals(fundsReceived, expectedResults.fundsReceived) {
+	if !arbmath.BigEquals(fundsReceived.ToBig(), expectedResults.fundsReceived) {
 		Fail(t, fundsReceived, expectedResults.fundsReceived)
 	}
 	fundsStillHeld := evm.StateDB.GetBalance(l1pricing.L1PricerFundsPoolAddress)
-	if !arbmath.BigEquals(fundsStillHeld, expectedResults.fundsStillHeld) {
+	if !arbmath.BigEquals(fundsStillHeld.ToBig(), expectedResults.fundsStillHeld) {
 		Fail(t, fundsStillHeld, expectedResults.fundsStillHeld)
 	}
 	fundsAvail, err := l1p.L1FeesAvailable()
 	Require(t, err)
-	if fundsStillHeld.Cmp(fundsAvail) != 0 {
+	if fundsStillHeld.ToBig().Cmp(fundsAvail) != 0 {
 		Fail(t, fundsStillHeld, fundsAvail)
 	}
 }

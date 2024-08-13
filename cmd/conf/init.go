@@ -45,7 +45,7 @@ var InitConfigDefault = InitConfig{
 
 func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Bool(prefix+".force", InitConfigDefault.Force, "if true: in case database exists init code will be reexecuted and genesis block compared to database")
-	f.String(prefix+".url", InitConfigDefault.Url, "url to download initializtion data - will poll if download fails")
+	f.String(prefix+".url", InitConfigDefault.Url, "url to download initialization data - will poll if download fails")
 	f.String(prefix+".download-path", InitConfigDefault.DownloadPath, "path to save temp downloaded file")
 	f.Duration(prefix+".download-poll", InitConfigDefault.DownloadPoll, "how long to wait between polling attempts")
 	f.Bool(prefix+".dev-init", InitConfigDefault.DevInit, "init with dev data (1 account with balance) instead of file import")
