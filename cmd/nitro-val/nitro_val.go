@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"math"
 	_ "net/http/pprof" // #nosec G108
 	"os"
 	"os/signal"
@@ -66,6 +67,8 @@ func mainImpl() int {
 	}
 	stackConf := DefaultValidationNodeStackConfig
 	stackConf.DataDir = "" // ephemeral
+	stackConf.HTTPBodyLimit = math.MaxInt
+	stackConf.WSReadLimit = math.MaxInt64
 	nodeConfig.HTTP.Apply(&stackConf)
 	nodeConfig.WS.Apply(&stackConf)
 	nodeConfig.Auth.Apply(&stackConf)
