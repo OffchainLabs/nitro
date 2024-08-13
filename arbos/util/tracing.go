@@ -482,7 +482,7 @@ func (info *TracingInfo) CaptureEVMTraceForHostio(name string, args, outs []byte
 	case "write_result", "exit_early":
 		// These calls are handled on CaptureStylusExit to also cover the normal exit case.
 
-	case "user_entrypoint", "user_returned", "msg_reentrant", "pay_for_memory_grow", "console_log_test", "console_log":
+	case "user_entrypoint", "user_returned", "msg_reentrant", "pay_for_memory_grow", "console_log_text", "console_log":
 		// No EVM counterpart
 
 	default:
