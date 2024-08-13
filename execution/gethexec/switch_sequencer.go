@@ -64,7 +64,7 @@ func (s *SwitchSequencer) SwitchToEspresso(ctx context.Context) error {
 	if s.IsRunningEspressoMode() {
 		return nil
 	}
-	log.Info("Switching to espresso sequencer")
+	log.Info("Switching to espresso sequencer", "max hotshot drift time", s.maxHotShotDriftTime)
 
 	s.mode = SequencingMode_Espresso
 
@@ -77,7 +77,7 @@ func (s *SwitchSequencer) SwitchToCentralized(ctx context.Context) error {
 		return nil
 	}
 	s.mode = SequencingMode_Centralized
-	log.Info("Switching to centrialized sequencer")
+	log.Warn("Switching to centrialized sequencer", "max hotshot drift time", s.maxHotShotDriftTime)
 
 	s.espresso.StopAndWait()
 	return s.centralized.Start(ctx)
