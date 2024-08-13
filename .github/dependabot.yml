@@ -1,0 +1,9 @@
+version: 2
+updates:
+  # Make PRs to update the nitro-testnode submodule
+  - package-ecosystem: "gitsubmodule"
+    directory: "/"
+    allow:
+      - dependency-name: "nitro-testnode"
+    schedule:
+      interval: "daily"
