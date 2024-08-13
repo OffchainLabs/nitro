@@ -5,5 +5,6 @@ updates:
     directory: "/"
     allow:
       - dependency-name: "nitro-testnode"
+      - dependency-name: "contracts"
     schedule:
       interval: "daily"
