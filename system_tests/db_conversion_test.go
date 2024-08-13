@@ -21,6 +21,7 @@ func TestDatabaseConversion(t *testing.T) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.l2StackConfig.DBEngine = "leveldb"
 	builder.l2StackConfig.Name = "testl2"
+	// currently only HashScheme supports archive mode
 	if builder.execConfig.Caching.StateScheme == rawdb.HashScheme {
 		builder.execConfig.Caching.Archive = true
 	}
@@ -78,9 +79,15 @@ func TestDatabaseConversion(t *testing.T) {
 	if current == nil {
 		Fatal(t, "failed to get current block header")
 	}
+
 	triedb := bc.StateCache().TrieDB()
 	visited := 0
-	for i := uint64(0); i <= current.Number.Uint64(); i++ {
+	i := uint64(0)
+	// don't query historical blocks when PathSchem is used
+	if builder.execConfig.Caching.StateScheme == rawdb.PathScheme {
+		i = current.Number.Uint64()
+	}
+	for ; i <= current.Number.Uint64(); i++ {
 		header := bc.GetHeaderByNumber(i)
 		_, err := bc.StateAt(header.Root)
 		Require(t, err)
