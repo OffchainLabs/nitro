@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/trie"
 	"github.com/offchainlabs/nitro/cmd/dbconv/dbconv"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 func TestDatabaseConversion(t *testing.T) {
@@ -25,14 +26,13 @@ func TestDatabaseConversion(t *testing.T) {
 	if builder.execConfig.Caching.StateScheme == rawdb.HashScheme {
 		builder.execConfig.Caching.Archive = true
 	}
-	_ = builder.Build(t)
+	cleanup := builder.Build(t)
 	dataDir := builder.dataDir
-	l2CleanupDone := false
+	cleanupDone := false
 	defer func() { // TODO we should be able to call cleanup twice, rn it gets stuck then
-		if !l2CleanupDone {
-			builder.L2.cleanup()
+		if !cleanupDone {
+			cleanup()
 		}
-		builder.L1.cleanup()
 	}()
 	builder.L2Info.GenerateAccount("User2")
 	var txs []*types.Transaction
@@ -46,8 +46,13 @@ func TestDatabaseConversion(t *testing.T) {
 		_, err := builder.L2.EnsureTxSucceeded(tx)
 		Require(t, err)
 	}
-	l2CleanupDone = true
-	builder.L2.cleanup()
+	block, err := builder.L2.Client.BlockByNumber(ctx, nil)
+	Require(t, err)
+	user2Balance := builder.L2.GetBalance(t, builder.L2Info.GetAddress("User2"))
+	ownerBalance := builder.L2.GetBalance(t, builder.L2Info.GetAddress("Owner"))
+
+	cleanup()
+	cleanupDone = true
 	t.Log("stopped first node")
 
 	instanceDir := filepath.Join(dataDir, builder.l2StackConfig.Name)
@@ -64,22 +69,31 @@ func TestDatabaseConversion(t *testing.T) {
 	}
 
 	builder.l2StackConfig.DBEngine = "pebble"
-	testClient, cleanup := builder.Build2ndNode(t, &SecondNodeParams{stackConfig: builder.l2StackConfig})
-	defer cleanup()
+	builder.nodeConfig.ParentChainReader.Enable = false
+	builder.withL1 = false
+	builder.L2.cleanup = func() {}
+	builder.RestartL2Node(t)
+	t.Log("restarted the node")
 
-	t.Log("sending test tx")
-	tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, common.Big1, nil)
-	err := testClient.Client.SendTransaction(ctx, tx)
+	blockAfterRestart, err := builder.L2.Client.BlockByNumber(ctx, nil)
 	Require(t, err)
-	_, err = testClient.EnsureTxSucceeded(tx)
-	Require(t, err)
+	user2BalanceAfterRestart := builder.L2.GetBalance(t, builder.L2Info.GetAddress("User2"))
+	ownerBalanceAfterRestart := builder.L2.GetBalance(t, builder.L2Info.GetAddress("Owner"))
+	if block.Hash() != blockAfterRestart.Hash() {
+		t.Fatal("block hash mismatch")
+	}
+	if !arbmath.BigEquals(user2Balance, user2BalanceAfterRestart) {
+		t.Fatal("unexpected User2 balance, have:", user2BalanceAfterRestart, "want:", user2Balance)
+	}
+	if !arbmath.BigEquals(ownerBalance, ownerBalanceAfterRestart) {
+		t.Fatal("unexpected Owner balance, have:", ownerBalanceAfterRestart, "want:", ownerBalance)
+	}
 
-	bc := testClient.ExecNode.Backend.ArbInterface().BlockChain()
+	bc := builder.L2.ExecNode.Backend.ArbInterface().BlockChain()
 	current := bc.CurrentBlock()
 	if current == nil {
 		Fatal(t, "failed to get current block header")
 	}
-
 	triedb := bc.StateCache().TrieDB()
 	visited := 0
 	i := uint64(0)
@@ -101,4 +115,11 @@ func TestDatabaseConversion(t *testing.T) {
 		Require(t, it.Error())
 	}
 	t.Log("visited nodes:", visited)
+
+	tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, common.Big1, nil)
+	err = builder.L2.Client.SendTransaction(ctx, tx)
+	Require(t, err)
+	_, err = builder.L2.EnsureTxSucceeded(tx)
+	Require(t, err)
+
 }
