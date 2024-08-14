@@ -33,7 +33,7 @@ type FastConfirmSafe struct {
 }
 
 func NewFastConfirmSafe(
-	callOpts bind.CallOpts,
+	callOpts *bind.CallOpts,
 	fastConfirmSafeAddress common.Address,
 	builder *txbuilder.Builder,
 	wallet ValidatorWalletInterface,
@@ -51,7 +51,7 @@ func NewFastConfirmSafe(
 		return nil, err
 	}
 	fastConfirmSafe.safe = safe
-	owners, err := safe.GetOwners(&callOpts)
+	owners, err := safe.GetOwners(callOpts)
 	if err != nil {
 		return nil, err
 	}
@@ -61,7 +61,7 @@ func NewFastConfirmSafe(
 		return owners[i].Cmp(owners[j]) < 0
 	})
 	fastConfirmSafe.owners = owners
-	threshold, err := safe.GetThreshold(&callOpts)
+	threshold, err := safe.GetThreshold(callOpts)
 	if err != nil {
 		return nil, err
 	}
