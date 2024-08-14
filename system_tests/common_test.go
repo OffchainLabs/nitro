@@ -166,7 +166,7 @@ var TestCachingConfig = gethexec.CachingConfig{
 	SnapshotRestoreGasLimit:            300_000_000_000,
 	MaxNumberOfBlocksToSkipStateSaving: 0,
 	MaxAmountOfGasToSkipStateSaving:    0,
-	StylusLRUCache:                     0,
+	StylusLRUCacheSize:                 0,
 	StateScheme:                        env.GetTestStateScheme(),
 }
 
