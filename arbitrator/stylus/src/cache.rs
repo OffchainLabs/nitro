@@ -4,16 +4,16 @@
 use arbutil::Bytes32;
 use eyre::Result;
 use lazy_static::lazy_static;
-use lru::LruCache;
+use lru_mem::{HeapSize, LruCache};
 use parking_lot::Mutex;
 use prover::programs::config::CompileConfig;
-use std::{collections::HashMap, num::NonZeroUsize};
+use std::collections::HashMap;
 use wasmer::{Engine, Module, Store};
 
 use crate::target_cache::target_native;
 
 lazy_static! {
-    static ref INIT_CACHE: Mutex<InitCache> = Mutex::new(InitCache::new(256));
+    static ref INIT_CACHE: Mutex<InitCache> = Mutex::new(InitCache::new(256 * 100_000));
 }
 
 macro_rules! cache {
@@ -44,6 +44,12 @@ impl CacheKey {
     }
 }
 
+impl HeapSize for CacheKey {
+    fn heap_size(&self) -> usize {
+        0
+    }
+}
+
 #[derive(Clone)]
 struct CacheItem {
     module: Module,
@@ -60,6 +66,13 @@ impl CacheItem {
     }
 }
 
+impl HeapSize for CacheItem {
+    // TODO: implement heap_size
+    fn heap_size(&self) -> usize {
+        100_000
+    }
+}
+
 impl InitCache {
     // current implementation only has one tag that stores to the long_term
     // future implementations might have more, but 0 is a reserved tag
@@ -69,14 +82,15 @@ impl InitCache {
     fn new(size: usize) -> Self {
         Self {
             long_term: HashMap::new(),
-            lru: LruCache::new(NonZeroUsize::new(size).unwrap()),
+            lru: LruCache::new(size),
         }
     }
 
+    // TODO: Check if needs to shrink capacity
     pub fn set_lru_size(size: u32) {
         cache!()
             .lru
-            .resize(NonZeroUsize::new(size.try_into().unwrap()).unwrap())
+            .set_max_size(size.try_into().unwrap())
     }
 
     /// Retrieves a cached value, updating items as necessary.
@@ -116,7 +130,7 @@ impl InitCache {
             if long_term_tag == Self::ARBOS_TAG {
                 cache.long_term.insert(key, item.clone());
             } else {
-                cache.lru.promote(&key)
+                cache.lru.touch(&key)
             }
             return Ok(item.data());
         }
@@ -129,7 +143,8 @@ impl InitCache {
         let data = item.data();
         let mut cache = cache!();
         if long_term_tag != Self::ARBOS_TAG {
-            cache.lru.put(key, item);
+            // TODO: handle result
+            let _ = cache.lru.insert(key, item);
         } else {
             cache.long_term.insert(key, item);
         }
@@ -144,7 +159,8 @@ impl InitCache {
         let key = CacheKey::new(module_hash, version, debug);
         let mut cache = cache!();
         if let Some(item) = cache.long_term.remove(&key) {
-            cache.lru.put(key, item);
+            // TODO: handle result
+            let _ = cache.lru.insert(key, item);
         }
     }
 
@@ -155,7 +171,8 @@ impl InitCache {
         let mut cache = cache!();
         let cache = &mut *cache;
         for (key, item) in cache.long_term.drain() {
-            cache.lru.put(key, item); // not all will fit, just a heuristic
+            // TODO: handle result
+            let _ = cache.lru.insert(key, item); // not all will fit, just a heuristic
         }
     }
 }

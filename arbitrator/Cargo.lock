@@ -1343,6 +1343,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "lru-mem"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "cf5c8c26d903a41c80d4cc171940a57a4d1bc51139ebd6aad87e2f9ae3774780"
+dependencies = [
+ "hashbrown 0.14.5",
+]
+
+[[package]]
 name = "mach"
 version = "0.3.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2277,6 +2286,7 @@ dependencies = [
  "lazy_static",
  "libc",
  "lru",
+ "lru-mem",
  "num-bigint",
  "parking_lot",
  "prover",
