@@ -128,6 +128,8 @@ type BOLDStaker struct {
 	callOpts           bind.CallOpts
 	validatorConfig    L1ValidatorConfig
 	wallet             ValidatorWalletInterface
+	stakedNotifiers    []LatestStakedNotifier
+	confirmedNotifiers []LatestConfirmedNotifier
 }
 
 func newBOLDStaker(
@@ -142,20 +144,24 @@ func newBOLDStaker(
 	config *BoldConfig,
 	dataPoster *dataposter.DataPoster,
 	wallet ValidatorWalletInterface,
+	stakedNotifiers []LatestStakedNotifier,
+	confirmedNotifiers []LatestConfirmedNotifier,
 ) (*BOLDStaker, error) {
 	manager, err := newBOLDChallengeManager(ctx, rollupAddress, txOpts, client, blockValidator, statelessBlockValidator, config, dataPoster)
 	if err != nil {
 		return nil, err
 	}
 	return &BOLDStaker{
-		config:          config,
-		chalManager:     manager,
-		blockValidator:  blockValidator,
-		rollupAddress:   rollupAddress,
-		client:          client,
-		callOpts:        callOpts,
-		validatorConfig: validatorConfig,
-		wallet:          wallet,
+		config:             config,
+		chalManager:        manager,
+		blockValidator:     blockValidator,
+		rollupAddress:      rollupAddress,
+		client:             client,
+		callOpts:           callOpts,
+		validatorConfig:    validatorConfig,
+		wallet:             wallet,
+		stakedNotifiers:    stakedNotifiers,
+		confirmedNotifiers: confirmedNotifiers,
 	}, nil
 }
 
@@ -206,8 +212,71 @@ func (b *BOLDStaker) Start(ctxIn context.Context) {
 		if err != nil {
 			log.Warn("error updating latest wasm module root", "err", err)
 		}
+		agreedMsgCount, agreedGlobalState, err := b.getLatestState(ctx, false)
+		if err != nil {
+			log.Error("staker: error checking latest agreed", "err", err)
+		}
+
+		if agreedGlobalState != nil {
+			for _, notifier := range b.stakedNotifiers {
+				notifier.UpdateLatestStaked(agreedMsgCount, *agreedGlobalState)
+			}
+		}
+		confirmedMsgCount, confirmedGlobalState, err := b.getLatestState(ctx, true)
+		if err != nil {
+			log.Error("staker: error checking latest confirmed", "err", err)
+		}
+
+		if confirmedGlobalState != nil {
+			for _, notifier := range b.confirmedNotifiers {
+				notifier.UpdateLatestConfirmed(confirmedMsgCount, *confirmedGlobalState)
+			}
+		}
 		return time.Duration(b.config.AssertionPostingIntervalSeconds)
 	})
+}
+
+func (b *BOLDStaker) getLatestState(ctx context.Context, confirmed bool) (arbutil.MessageIndex, *validator.GoGlobalState, error) {
+	var globalState protocol.GoGlobalState
+	var err error
+	if confirmed {
+		globalState, err = b.chalManager.LatestConfirmedState(ctx)
+	} else {
+		globalState, err = b.chalManager.LatestAgreedState(ctx)
+	}
+	var assertionType string
+	if confirmed {
+		assertionType = "confirmed"
+	} else {
+		assertionType = "agreed"
+	}
+	if err != nil {
+		return 0, nil, fmt.Errorf("error getting latest %s: %w", assertionType, err)
+	}
+	caughtUp, count, err := GlobalStateToMsgCount(b.blockValidator.inboxTracker, b.blockValidator.streamer, validator.GoGlobalState(globalState))
+	if err != nil {
+		if errors.Is(err, ErrGlobalStateNotInChain) {
+			return 0, nil, fmt.Errorf("latest %s assertion of %v not yet in our node: %w", assertionType, globalState, err)
+		}
+		return 0, nil, fmt.Errorf("error getting message count: %w", err)
+	}
+
+	if !caughtUp {
+		log.Info(fmt.Sprintf("latest %s assertion not yet in our node", assertionType), "state", globalState)
+		return 0, nil, nil
+	}
+
+	processedCount, err := b.blockValidator.streamer.GetProcessedMessageCount()
+	if err != nil {
+		return 0, nil, err
+	}
+
+	if processedCount < count {
+		log.Info("execution catching up to rollup", "rollupCount", count, "processedCount", processedCount)
+		return 0, nil, nil
+	}
+
+	return count, (*validator.GoGlobalState)(&globalState), nil
 }
 
 func (b *BOLDStaker) StopAndWait() {

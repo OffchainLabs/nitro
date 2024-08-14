@@ -197,6 +197,8 @@ func (m *MultiProtocolStaker) setupBoldStaker(
 		&m.oldStaker.config.BOLD,
 		m.oldStaker.wallet.DataPoster(),
 		m.oldStaker.wallet,
+		m.oldStaker.stakedNotifiers,
+		m.oldStaker.confirmedNotifiers,
 	)
 	if err != nil {
 		return nil, err
