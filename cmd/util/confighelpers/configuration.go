@@ -214,18 +214,17 @@ func devFlagArgs() []string {
 }
 
 func BeginCommonParse(f *flag.FlagSet, args []string) (*koanf.Koanf, error) {
+	var expandedArgs []string
 	for _, arg := range args {
 		if arg == "--version" || arg == "-v" {
 			return nil, ErrVersion
 		} else if arg == "--dev" {
-			if len(args) > 1 {
-				return nil, fmt.Errorf("when passing --dev, no other arguments are allowed. --dev silently replaces all other arguments. got: %v", args)
-			}
-			args = devFlagArgs()
-			break
+			expandedArgs = append(expandedArgs, devFlagArgs()...)
+		} else {
+			expandedArgs = append(expandedArgs, arg)
 		}
 	}
-	if err := f.Parse(args); err != nil {
+	if err := f.Parse(expandedArgs); err != nil {
 		return nil, err
 	}
 
