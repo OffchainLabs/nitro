@@ -10,20 +10,8 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/util/dbutil"
 )
-
-var unfinishedConversionCanaryKey = []byte("unfinished-conversion-canary-key")
-
-func UnfinishedConversionCheck(db ethdb.KeyValueStore) error {
-	unfinished, err := db.Has(unfinishedConversionCanaryKey)
-	if err != nil {
-		return fmt.Errorf("Failed to check UnfinishedConversionCanaryKey existence: %w", err)
-	}
-	if unfinished {
-		return errors.New("Unfinished conversion canary key detected")
-	}
-	return nil
-}
 
 type DBConverter struct {
 	config *DBConvConfig
@@ -52,7 +40,7 @@ func openDB(config *DBConfig, name string, readonly bool) (ethdb.Database, error
 	if err != nil {
 		return nil, err
 	}
-	if err := UnfinishedConversionCheck(db); err != nil {
+	if err := dbutil.UnfinishedConversionCheck(db); err != nil {
 		if closeErr := db.Close(); closeErr != nil {
 			err = errors.Join(err, closeErr)
 		}
@@ -76,7 +64,7 @@ func (c *DBConverter) Convert(ctx context.Context) error {
 	defer dst.Close()
 	c.stats.Reset()
 	log.Info("Converting database", "src", c.config.Src.Data, "dst", c.config.Dst.Data, "db-engine", c.config.Dst.DBEngine)
-	if err = dst.Put(unfinishedConversionCanaryKey, []byte{1}); err != nil {
+	if err = dbutil.PutUnfinishedConversionCanary(dst); err != nil {
 		return err
 	}
 	it := src.NewIterator(nil, nil)
@@ -107,7 +95,7 @@ func (c *DBConverter) Convert(ctx context.Context) error {
 		c.stats.LogBytes(int64(batchSize))
 	}
 	if err == nil {
-		if err = dst.Delete(unfinishedConversionCanaryKey); err != nil {
+		if err = dbutil.DeleteUnfinishedConversionCanary(dst); err != nil {
 			return err
 		}
 	}

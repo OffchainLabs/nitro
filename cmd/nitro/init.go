@@ -40,7 +40,6 @@ import (
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
-	"github.com/offchainlabs/nitro/cmd/dbconv/dbconv"
 	"github.com/offchainlabs/nitro/cmd/ipfshelper"
 	"github.com/offchainlabs/nitro/cmd/pruning"
 	"github.com/offchainlabs/nitro/cmd/staterecovery"
@@ -410,14 +409,14 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				if err != nil {
 					return nil, nil, err
 				}
-				if err := dbconv.UnfinishedConversionCheck(chainData); err != nil {
+				if err := dbutil.UnfinishedConversionCheck(chainData); err != nil {
 					return nil, nil, fmt.Errorf("l2chaindata unfinished database conversion check error: %w", err)
 				}
 				wasmDb, err := stack.OpenDatabaseWithExtraOptions("wasm", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, "wasm/", false, persistentConfig.Pebble.ExtraOptions("wasm"))
 				if err != nil {
 					return nil, nil, err
 				}
-				if err := dbconv.UnfinishedConversionCheck(wasmDb); err != nil {
+				if err := dbutil.UnfinishedConversionCheck(wasmDb); err != nil {
 					return nil, nil, fmt.Errorf("wasm unfinished database conversion check error: %w", err)
 				}
 				chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1)

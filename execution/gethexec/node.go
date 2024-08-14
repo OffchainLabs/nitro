@@ -20,7 +20,6 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/arbutil"
-	"github.com/offchainlabs/nitro/cmd/dbconv/dbconv"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 	"github.com/offchainlabs/nitro/util/dbutil"
@@ -190,7 +189,7 @@ func CreateExecutionNode(
 		} else if err != nil {
 			return nil, fmt.Errorf("Failed to open classic-msg database: %w", err)
 		} else {
-			if err := dbconv.UnfinishedConversionCheck(classicMsgDb); err != nil {
+			if err := dbutil.UnfinishedConversionCheck(classicMsgDb); err != nil {
 				return nil, fmt.Errorf("classic-msg unfinished database conversion check error: %w", err)
 			}
 			classicOutbox = NewClassicOutboxRetriever(classicMsgDb)

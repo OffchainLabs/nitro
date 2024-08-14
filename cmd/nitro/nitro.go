@@ -50,7 +50,6 @@ import (
 	blocksreexecutor "github.com/offchainlabs/nitro/blocks_reexecutor"
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
-	"github.com/offchainlabs/nitro/cmd/dbconv/dbconv"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/cmd/util"
 	"github.com/offchainlabs/nitro/cmd/util/confighelpers"
@@ -63,6 +62,7 @@ import (
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/colors"
+	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/iostat"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -495,7 +495,7 @@ func mainImpl() int {
 		log.Error("database is corrupt; delete it and try again", "database-directory", stack.InstanceDir())
 		return 1
 	}
-	if err := dbconv.UnfinishedConversionCheck(arbDb); err != nil {
+	if err := dbutil.UnfinishedConversionCheck(arbDb); err != nil {
 		log.Error("arbitrumdata unfinished conversion check error", "err", err)
 		return 1
 	}
