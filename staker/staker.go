@@ -423,7 +423,7 @@ func (s *Staker) setupFastConfirmation(ctx context.Context) error {
 		// Unknown while loading the safe contract.
 		return fmt.Errorf("loading fast confirm safe: %w", err)
 	}
-	// Fast confirmer address is a safe contract.
+	// Fast confirmer address implements getOwners() and is probably a safe.
 	isOwner, err := fastConfirmSafe.safe.IsOwner(callOpts, walletAddress)
 	if err != nil {
 		return fmt.Errorf("checking if wallet is owner of safe: %w", err)
