@@ -1017,23 +1017,18 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(
 		MessageWithMeta: msgWithMeta,
 		BlockHash:       &msgResult.BlockHash,
 	}
-	batch := s.db.NewBatch()
-	if err := s.writeMessages(pos, []arbostypes.MessageWithMetadataAndBlockHash{msgWithBlockHash}, batch); err != nil {
+	if err := s.writeMessages(pos, []arbostypes.MessageWithMetadataAndBlockHash{msgWithBlockHash}, s.db.NewBatch()); err != nil {
 		return err
 	}
 
 	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockHash{msgWithBlockHash}, pos)
 	s.espressoTxnsStateInsertionMutex.Lock()
 	defer s.espressoTxnsStateInsertionMutex.Unlock()
-	err = s.SubmitEspressoTransactionPos(pos, batch)
+	err = s.SubmitEspressoTransactionPos(pos, s.db.NewBatch())
 	if err != nil {
 		return err
 	}
-	err = batch.Write()
-	if err != nil {
-		return err
 
-	}
 	return nil
 }
 
@@ -1409,6 +1404,11 @@ func (s *TransactionStreamer) SubmitEspressoTransactionPos(pos arbutil.MessageIn
 	err = s.setEspressoPendingTxnsPos(batch, pendingTxnsPos)
 	if err != nil {
 		log.Error("failed to set the pending txns", "err", err)
+		return err
+	}
+
+	err = batch.Write()
+	if err != nil {
 		return err
 	}
 
