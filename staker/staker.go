@@ -123,7 +123,7 @@ func (c *L1ValidatorConfig) ValidatorRequired() bool {
 	if c.Dangerous.WithoutBlockValidator {
 		return false
 	}
-	if c.strategy == WatchtowerStrategy {
+	if c.strategy == WatchtowerStrategy && !c.EnableFastConfirmation {
 		return false
 	}
 	return true
@@ -161,7 +161,7 @@ var DefaultL1ValidatorConfig = L1ValidatorConfig{
 	Dangerous:                 DefaultDangerousConfig,
 	ParentChainWallet:         DefaultValidatorL1WalletConfig,
 	LogQueryBatchSize:         0,
-	EnableFastConfirmation:    true,
+	EnableFastConfirmation:    false,
 }
 
 var TestL1ValidatorConfig = L1ValidatorConfig{
@@ -183,7 +183,7 @@ var TestL1ValidatorConfig = L1ValidatorConfig{
 	Dangerous:                 DefaultDangerousConfig,
 	ParentChainWallet:         DefaultValidatorL1WalletConfig,
 	LogQueryBatchSize:         0,
-	EnableFastConfirmation:    true,
+	EnableFastConfirmation:    false,
 }
 
 var DefaultValidatorL1WalletConfig = genericconf.WalletConfig{
@@ -369,8 +369,11 @@ func (s *Staker) Initialize(ctx context.Context) error {
 // based on the config, the wallet address, and the on-chain rollup designated fast confirmer.
 // Before this function, both variables should be their default (i.e. fast confirmation is disabled).
 func (s *Staker) setupFastConfirmation(ctx context.Context) error {
-	if !s.config.EnableFastConfirmation || s.wallet.Address() == nil {
+	if !s.config.EnableFastConfirmation {
 		return nil
+	}
+	if s.wallet.Address() == nil {
+		return errors.New("fast confirmation requires wallet setup")
 	}
 	walletAddress := *s.wallet.Address()
 	client := s.l1Reader.Client()
@@ -381,10 +384,6 @@ func (s *Staker) setupFastConfirmation(ctx context.Context) error {
 	callOpts := s.getCallOpts(ctx)
 	fastConfirmer, err := rollup.AnyTrustFastConfirmer(callOpts)
 	if err != nil {
-		if headerreader.ExecutionRevertedRegexp.MatchString(err.Error()) {
-			log.Debug("Rollup contract does not support fast confirmation", "rollup", s.rollupAddress, "err", err)
-			return nil
-		}
 		return fmt.Errorf("getting rollup fast confirmer address: %w", err)
 	}
 	if fastConfirmer == walletAddress {
@@ -393,17 +392,7 @@ func (s *Staker) setupFastConfirmation(ctx context.Context) error {
 		return nil
 	} else if fastConfirmer == (common.Address{}) {
 		// No fast confirmer enabled
-		return nil
-	}
-	// Only use gnosis safe fast confirmation, if the safe address is different from the wallet address, else it's not a safe contract.
-	codeAt, err := client.CodeAt(context.Background(), fastConfirmer, nil)
-	if err != nil {
-		return fmt.Errorf("getting code at fast confirmer address: %w", err)
-	}
-	if len(codeAt) == 0 {
-		// The fast confirmer address is an EOA address, but it does not match the wallet address so cannot enable fast confirmation.
-		log.Info("Fast confirmer address is an EOA address which does not match the wallet address so cannot enable fast confirmation", "fastConfirmer", fastConfirmer, "wallet", walletAddress)
-		return nil
+		return errors.New("fast confirmation enabled in config, but no fast confirmer set in rollup contract")
 	}
 	// The fast confirmer address is a contract address, not sure if it's a safe contract yet.
 	fastConfirmSafe, err := NewFastConfirmSafe(
@@ -415,11 +404,6 @@ func (s *Staker) setupFastConfirmation(ctx context.Context) error {
 		s.l1Reader,
 	)
 	if err != nil {
-		if headerreader.ExecutionRevertedRegexp.MatchString(err.Error()) {
-			// If the safe is not a safe contract, we can't use it for fast confirmation
-			log.Warn("Fast confirmer address is not a safe contract so cannot enable fast confirmation", "fastConfirmer", fastConfirmer, "wallet", walletAddress, "err", err)
-			return nil
-		}
 		// Unknown while loading the safe contract.
 		return fmt.Errorf("loading fast confirm safe: %w", err)
 	}
@@ -429,10 +413,7 @@ func (s *Staker) setupFastConfirmation(ctx context.Context) error {
 		return fmt.Errorf("checking if wallet is owner of safe: %w", err)
 	}
 	if !isOwner {
-		// If the wallet is not an owner of the safe, we can't use it for fast confirmation
-		// So disable fast confirmation.
-		log.Info("Staker wallet address is not part of owners of safe so cannot use it for fast confirmation", "fastConfirmer", fastConfirmer, "wallet", walletAddress)
-		return nil
+		return fmt.Errorf("staker wallet address %v is not an owner of the fast confirm safe %v", walletAddress, fastConfirmer)
 	}
 	s.enableFastConfirmation = true
 	s.fastConfirmSafe = fastConfirmSafe
