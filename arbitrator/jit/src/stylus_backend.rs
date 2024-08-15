@@ -23,7 +23,7 @@ use std::{
     },
     thread::JoinHandle,
 };
-use stylus::{native::NativeInstance, run::RunProgram};
+use stylus::{native::NativeInstance, run::RunProgram, cache::InitCache};
 use wasmer::Target;
 
 struct MessageToCothread {
@@ -150,7 +150,7 @@ pub fn exec_wasm(
             compile.clone(),
             evm_api,
             evm_data,
-            Target::default(),
+            InitCache::target(),
         )
     }?;
 

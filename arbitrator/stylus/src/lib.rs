@@ -23,12 +23,12 @@ use target_cache::{target_cache_get, target_cache_set};
 pub use brotli;
 pub use prover;
 
+pub mod cache;
 pub mod env;
 pub mod host;
 pub mod native;
 pub mod run;
 
-mod cache;
 mod evm_api;
 mod target_cache;
 mod util;
