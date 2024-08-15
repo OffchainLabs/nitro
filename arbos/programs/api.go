@@ -4,8 +4,6 @@
 package programs
 
 import (
-	"errors"
-
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
@@ -235,7 +233,10 @@ func newApiClosures(
 		if suberr != nil {
 			addr = zeroAddr
 		}
-		if !errors.Is(vm.ErrExecutionReverted, suberr) {
+		// This matches geth behavior of doing an exact error comparison instead of errors.Is
+		// See e.g. EVM's create method or the opCreate function for references of how geth checks this
+		//nolint:errorlint
+		if suberr != vm.ErrExecutionReverted {
 			res = nil // returnData is only provided in the revert case (opCreate)
 		}
 		interpreter.SetReturnData(res)
