@@ -417,13 +417,17 @@ func databaseIsEmpty(db ethdb.Database) bool {
 func purgeVersion0WasmStoreEntries(db ethdb.Database) error {
 	prefixes, keyLength := rawdb.DeprecatedKeysV0()
 	batch := db.NewBatch()
+	notMatchingLengthKeyLogged := false
 	for _, prefix := range prefixes {
 		it := db.NewIterator(prefix, nil)
 		defer it.Release()
 		for it.Next() {
 			key := it.Key()
 			if len(key) != keyLength {
-				log.Warn("Found key with deprecated prefix but not matching length, skipping removal.", "key", key)
+				if !notMatchingLengthKeyLogged {
+					log.Warn("Found key with deprecated prefix but not matching length, skipping removal. (this warning is logged only once)", "key", key)
+					notMatchingLengthKeyLogged = true
+				}
 				continue
 			}
 			if err := batch.Delete(key); err != nil {
