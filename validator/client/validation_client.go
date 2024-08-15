@@ -75,13 +75,13 @@ func (c *ValidationClient) Start(ctx context.Context) error {
 		if !ok || rpcError.ErrorCode() != -32601 {
 			return fmt.Errorf("could not read stylus arch from server: %w", err)
 		}
-		stylusArchs = []rawdb.Target{"pre-stylus"} // validation does not support stylus
-	}
-	if len(stylusArchs) == 0 {
+		// validation does not support stylus, leaving stylusArchs empty
+	} else if len(stylusArchs) == 0 {
 		return fmt.Errorf("could not read stylus archs from validation server")
 	}
+
 	for _, stylusArch := range stylusArchs {
-		if stylusArch != rawdb.TargetWavm && stylusArch != programs.LocalTarget() && stylusArch != "pre-stylus" && stylusArch != "mock" {
+		if stylusArch != rawdb.TargetWavm && stylusArch != programs.LocalTarget() && stylusArch != "mock" {
 			return fmt.Errorf("unsupported stylus architecture: %v", stylusArch)
 		}
 	}

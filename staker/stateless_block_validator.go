@@ -149,6 +149,9 @@ func (e *validationEntry) ToInput(stylusArchs []rawdb.Target) (*validator.Valida
 		StartState:    e.Start,
 		DebugChain:    e.ChainConfig.DebugMode(),
 	}
+	if len(stylusArchs) == 0 && len(e.UserWasms) > 0 {
+		return nil, fmt.Errorf("stylus support is required")
+	}
 	for _, stylusArch := range stylusArchs {
 		res.UserWasms[stylusArch] = make(map[common.Hash][]byte)
 	}
