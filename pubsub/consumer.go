@@ -23,12 +23,12 @@ type ConsumerConfig struct {
 
 var DefaultConsumerConfig = ConsumerConfig{
 	ResponseEntryTimeout: time.Hour,
-	IdletimeToAutoclaim:  30 * time.Minute,
+	IdletimeToAutoclaim:  5 * time.Minute,
 }
 
 var TestConsumerConfig = ConsumerConfig{
 	ResponseEntryTimeout: time.Minute,
-	IdletimeToAutoclaim:  time.Second,
+	IdletimeToAutoclaim:  30 * time.Millisecond,
 }
 
 func ConsumerConfigAddOptions(prefix string, f *pflag.FlagSet) {
@@ -149,7 +149,7 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 			case <-ctx.Done():
 				log.Info("Context done while claiming message to indicate hearbeat", "error", ctx.Err().Error())
 				return
-			case <-time.After(c.cfg.IdletimeToAutoclaim / 3):
+			case <-time.After(c.cfg.IdletimeToAutoclaim / 10):
 			}
 		}
 	})
@@ -177,6 +177,9 @@ func (c *Consumer[Request, Response]) SetResult(ctx context.Context, id string, 
 	if _, err := c.client.XAck(ctx, c.redisStream, c.redisGroup, messageID).Result(); err != nil {
 		return fmt.Errorf("acking message: %v, error: %w", messageID, err)
 	}
-	close(c.ackNotifiers[messageID])
+	if ackNotifier, found := c.ackNotifiers[messageID]; found {
+		close(ackNotifier)
+		delete(c.ackNotifiers, messageID)
+	}
 	return nil
 }
