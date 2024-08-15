@@ -46,6 +46,7 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/dbutil"
 )
 
 var notFoundError = errors.New("file not found")
@@ -456,7 +457,7 @@ func validateOrUpgradeWasmStoreSchemaVersion(db ethdb.Database) error {
 	if !databaseIsEmpty(db) {
 		version, err := rawdb.ReadWasmSchemaVersion(db)
 		if err != nil {
-			if isLeveldbNotExistError(err) || isPebbleNotExistError(err) {
+			if dbutil.IsErrNotFound(err) {
 				version = []byte{0}
 			} else {
 				return fmt.Errorf("Failed to retrieve wasm schema version: %w", err)
