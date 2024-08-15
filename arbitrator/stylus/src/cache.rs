@@ -13,7 +13,7 @@ use wasmer::{Engine, Module, Store};
 use crate::target_cache::target_native;
 
 lazy_static! {
-    static ref INIT_CACHE: Mutex<InitCache> = Mutex::new(InitCache::new(256 * 100_000));
+    static ref INIT_CACHE: Mutex<InitCache> = Mutex::new(InitCache::new(256 * 10 * 1024));
 }
 
 macro_rules! cache {
@@ -54,11 +54,12 @@ impl HeapSize for CacheKey {
 struct CacheItem {
     module: Module,
     engine: Engine,
+    asm_size_estimate: u32,
 }
 
 impl CacheItem {
-    fn new(module: Module, engine: Engine) -> Self {
-        Self { module, engine }
+    fn new(module: Module, engine: Engine, asm_size_estimate: u32) -> Self {
+        Self { module, engine, asm_size_estimate }
     }
 
     fn data(&self) -> (Module, Store) {
@@ -67,9 +68,8 @@ impl CacheItem {
 }
 
 impl HeapSize for CacheItem {
-    // TODO: implement heap_size
     fn heap_size(&self) -> usize {
-        100_000
+        return self.asm_size_estimate.try_into().unwrap();
     }
 }
 
@@ -115,6 +115,7 @@ impl InitCache {
     pub fn insert(
         module_hash: Bytes32,
         module: &[u8],
+        asm_size_estimate: u32,
         version: u16,
         long_term_tag: u32,
         debug: bool,
@@ -139,7 +140,7 @@ impl InitCache {
         let engine = CompileConfig::version(version, debug).engine(target_native());
         let module = unsafe { Module::deserialize_unchecked(&engine, module)? };
 
-        let item = CacheItem::new(module, engine);
+        let item = CacheItem::new(module, engine, asm_size_estimate);
         let data = item.data();
         let mut cache = cache!();
         if long_term_tag != Self::ARBOS_TAG {

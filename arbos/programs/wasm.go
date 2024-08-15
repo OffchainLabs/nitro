@@ -97,7 +97,7 @@ func activateProgram(
 // stub any non-consensus, Rust-side caching updates
 func cacheProgram(db vm.StateDB, module common.Hash, program Program, addressForLogging common.Address, code []byte, codeHash common.Hash, params *StylusParams, debug bool, time uint64, runMode core.MessageRunMode) {
 }
-func evictProgram(db vm.StateDB, module common.Hash, version uint16, debug bool, mode core.MessageRunMode, forever bool) {
+func evictProgram(db vm.StateDB, module common.Hash, asmSizeEstimate uint32, version uint16, debug bool, mode core.MessageRunMode, forever bool) {
 }
 
 //go:wasmimport programs new_program
@@ -136,6 +136,7 @@ func callProgram(
 	address common.Address,
 	moduleHash common.Hash,
 	_localAsm []byte,
+	_asmSizeEstimate uint32,
 	scope *vm.ScopeContext,
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,
