@@ -183,7 +183,10 @@ pub unsafe extern "C" fn stylus_compile(
 ) -> UserOutcomeKind {
     let wasm = wasm.slice();
     let output = &mut *output;
-    let name = String::from_utf8_unchecked(name.slice().to_vec());
+    let name = match String::from_utf8(name.slice().to_vec()) {
+        Ok(val) => val,
+        Err(err) => return output.write_err(err.into()),
+    };
     let target = match target_cache_get(&name) {
         Ok(val) => val,
         Err(err) => return output.write_err(err),
