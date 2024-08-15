@@ -48,9 +48,9 @@ echo Usage: $0 \[OPTIONS..\]
 }
 
 removeDir() {
-    cmd="rm -r $1"
+    cmd="rm -r \"$1\""
     echo $cmd
-    $cmd
+    eval $cmd
     return $?
 }
 
@@ -63,7 +63,7 @@ cleanup() {
         failed)
             echo "== Note: removing only failed destination directory"
             dstdir=$(echo $dst/$1 | tr -s /)
-            removeDir $dstdir
+            removeDir "$dstdir"
             ;;
         none)
             echo "== Warning: not removing destination directories, the destination databases might be incomplete and/or corrupted!"
@@ -149,14 +149,15 @@ if ! [ -d "$src" ]; then
     exit 1
 fi
 
-src=$(realpath $src)
+src=$(realpath "$src")
+#src=$(printf %q "$src")
 
 if ! [ -d "$src"/l2chaindata ]; then
     echo Error: Invalid source directory: \""$src"/l2chaindata\" is missing
     exit 1
 fi
 
-if ! [ -d $src/l2chaindata/ancient ]; then
+if ! [ -d "$src"/l2chaindata/ancient ]; then
     echo Error: Invalid source directory: \""$src"/l2chaindata/ancient\" is missing
     exit 1
 fi
@@ -186,9 +187,9 @@ convert () {
     dstdir=$(echo $dst/$1 | tr -s /)
     if ! [ -e $dstdir ]; then
         echo "== Converting $1 db"
-        cmd="$dbconv --src.db-engine=leveldb --src.data $srcdir --dst.db-engine=pebble --dst.data $dstdir --convert --compact"
+        cmd="$dbconv --src.db-engine=leveldb --src.data \"$srcdir\" --dst.db-engine=pebble --dst.data \"$dstdir\" --convert --compact"
         echo $cmd
-        $cmd
+        eval $cmd
         if [ $? -ne 0 ]; then
             cleanup $1
             convert_result="FAILED"
@@ -216,13 +217,13 @@ if [ $res -ne 0 ]; then
     exit 1
 fi
 
-if ! [ -e $dst/l2chaindata/ancient ]; then
-    ancient_src=$(echo $src/l2chaindata/ancient | tr -s /)
-    ancient_dst=$(echo $dst/l2chaindata/ | tr -s /)
+if ! [ -e "$dst"/l2chaindata/ancient ]; then
+    ancient_src=$(echo "$src"/l2chaindata/ancient | tr -s /)
+    ancient_dst=$(echo "$dst"/l2chaindata/ | tr -s /)
     echo "== Copying l2chaindata ancients"
-    cmd="cp -r $ancient_src $ancient_dst"
+    cmd="cp -r \"$ancient_src\" \"$ancient_dst\""
     echo $cmd
-    $cmd
+    eval $cmd
     if [ $? -ne 0 ]; then
         l2chaindata_ancient_status="FAILED (failed to copy)"
         cleanup "l2chaindata"
