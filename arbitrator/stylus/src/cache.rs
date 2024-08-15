@@ -73,6 +73,18 @@ impl HeapSize for CacheItem {
     }
 }
 
+#[repr(C)]
+pub struct CacheContainerMetrics {
+    pub size_bytes: u32,
+    pub size_entries: u32,
+}
+
+#[repr(C)]
+pub struct CacheMetrics {
+    pub lru: CacheContainerMetrics,
+    pub long_term: CacheContainerMetrics,
+}
+
 impl InitCache {
     // current implementation only has one tag that stores to the long_term
     // future implementations might have more, but 0 is a reserved tag
@@ -174,6 +186,20 @@ impl InitCache {
         for (key, item) in cache.long_term.drain() {
             // TODO: handle result
             let _ = cache.lru.insert(key, item); // not all will fit, just a heuristic
+        }
+    }
+
+    pub fn get_metrics() -> CacheMetrics {
+        let cache = cache!();
+        return CacheMetrics {
+            lru: CacheContainerMetrics {
+                size_bytes: cache.lru.current_size().try_into().unwrap(),
+                size_entries: cache.lru.len().try_into().unwrap(),
+            },
+            long_term: CacheContainerMetrics {
+                size_bytes: 0, // not tracked at this moment
+                size_entries: cache.long_term.len().try_into().unwrap(),
+            },
         }
     }
 }

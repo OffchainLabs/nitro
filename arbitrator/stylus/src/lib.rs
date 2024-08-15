@@ -11,7 +11,7 @@ use arbutil::{
     format::DebugBytes,
     Bytes32,
 };
-use cache::InitCache;
+use cache::{InitCache, CacheMetrics};
 use evm_api::NativeRequestHandler;
 use eyre::ErrReport;
 use native::NativeInstance;
@@ -356,4 +356,10 @@ pub unsafe extern "C" fn stylus_drop_vec(vec: RustBytes) {
     if !vec.ptr.is_null() {
         mem::drop(vec.into_vec())
     }
+}
+
+/// Gets cache metrics.
+#[no_mangle]
+pub extern "C" fn stylus_get_cache_metrics() -> CacheMetrics {
+    InitCache::get_metrics()
 }

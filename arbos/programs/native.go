@@ -29,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -44,6 +45,13 @@ type bytes20 = C.Bytes20
 type bytes32 = C.Bytes32
 type rustBytes = C.RustBytes
 type rustSlice = C.RustSlice
+
+var (
+	stylusCacheLRUSizeBytesGauge   = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/size/bytes", nil)
+	stylusCacheLRUSizeEntriesGauge = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/size/entries", nil)
+
+	stylusCacheLongTermSizeEntriesGauge = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/longterm/size/entries", nil)
+)
 
 func activateProgram(
 	db vm.StateDB,
@@ -259,6 +267,15 @@ func callProgram(
 		tracingInfo.CaptureStylusExit(uint8(status), data, err, scope.Contract.Gas)
 	}
 	return data, err
+}
+
+func getMetrics() {
+	metrics := C.stylus_get_cache_metrics()
+
+	stylusCacheLRUSizeBytesGauge.Update(int64(metrics.lru.size_bytes))
+	stylusCacheLRUSizeEntriesGauge.Update(int64(metrics.lru.size_entries))
+
+	stylusCacheLongTermSizeEntriesGauge.Update(int64(metrics.lru.size_entries))
 }
 
 //export handleReqImpl
