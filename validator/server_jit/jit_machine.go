@@ -15,9 +15,9 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
-	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/validator"
 )
@@ -212,7 +212,7 @@ func (machine *JitMachine) prove(
 		}
 	}
 
-	localTarget := programs.LocalTarget()
+	localTarget := rawdb.LocalTarget()
 	userWasms := entry.UserWasms[localTarget]
 
 	// if there are user wasms, but only for wrong architecture - error

@@ -11,7 +11,6 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/validator"
 
 	"github.com/offchainlabs/nitro/util/containers"
@@ -81,7 +80,7 @@ func (c *ValidationClient) Start(ctx context.Context) error {
 	}
 
 	for _, stylusArch := range stylusArchs {
-		if stylusArch != rawdb.TargetWavm && stylusArch != programs.LocalTarget() && stylusArch != "mock" {
+		if stylusArch != rawdb.TargetWavm && stylusArch != rawdb.LocalTarget() && stylusArch != "mock" {
 			return fmt.Errorf("unsupported stylus architecture: %v", stylusArch)
 		}
 	}

@@ -21,7 +21,6 @@ import "C"
 import (
 	"errors"
 	"fmt"
-	"runtime"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -100,7 +99,7 @@ func activateProgramInternal(
 		}
 		return nil, nil, err
 	}
-	target := LocalTarget()
+	target := rawdb.LocalTarget()
 	status_asm := C.stylus_compile(
 		goSlice(wasm),
 		u16(version),
@@ -130,7 +129,7 @@ func activateProgramInternal(
 }
 
 func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codeHash common.Hash, pagelimit uint16, time uint64, debugMode bool, program Program) ([]byte, error) {
-	localTarget := LocalTarget()
+	localTarget := rawdb.LocalTarget()
 	localAsm, err := statedb.TryGetActivatedAsm(localTarget, moduleHash)
 	if err == nil && len(localAsm) > 0 {
 		return localAsm, nil
@@ -206,7 +205,7 @@ func callProgram(
 	if db, ok := db.(*state.StateDB); ok {
 		targets := []rawdb.Target{
 			rawdb.TargetWavm,
-			LocalTarget(),
+			rawdb.LocalTarget(),
 		}
 		db.RecordProgram(targets, moduleHash)
 	}
@@ -268,7 +267,7 @@ func evictProgram(db vm.StateDB, module common.Hash, version uint16, debug bool,
 		tag := db.Database().WasmCacheTag()
 		state.EvictWasmRust(module, version, tag, debug)
 		if !forever {
-			db.RecordEvictWasm(state.EvictWasm{Target: LocalTarget(), ModuleHash: module, Version: version, Tag: tag, Debug: debug})
+			db.RecordEvictWasm(state.EvictWasm{ModuleHash: module, Version: version, Tag: tag, Debug: debug})
 		}
 	}
 }
@@ -284,18 +283,6 @@ func init() {
 
 func ResizeWasmLruCache(size uint32) {
 	C.stylus_cache_lru_resize(u32(size))
-}
-
-func LocalTarget() rawdb.Target {
-	if runtime.GOOS == "linux" {
-		switch runtime.GOARCH {
-		case "arm64":
-			return rawdb.TargetArm64
-		case "amd64":
-			return rawdb.TargetAmd64
-		}
-	}
-	return rawdb.TargetHost
 }
 
 const DefaultTargetDescriptionArm = "arm64-linux-unknown+neon"

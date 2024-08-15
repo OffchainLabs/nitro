@@ -155,7 +155,7 @@ func (s *ExecutionEngine) Initialize(rustCacheSize uint32, targetConfig *StylusT
 		programs.ResizeWasmLruCache(rustCacheSize)
 	}
 	var effectiveStylusTarget string
-	target := programs.LocalTarget()
+	target := rawdb.LocalTarget()
 	switch target {
 	case rawdb.TargetArm64:
 		effectiveStylusTarget = targetConfig.Arm64

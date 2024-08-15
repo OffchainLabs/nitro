@@ -11,7 +11,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 
-	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_common"
@@ -74,7 +73,7 @@ func (v *JitSpawner) WasmModuleRoots() ([]common.Hash, error) {
 }
 
 func (v *JitSpawner) StylusArchs() []rawdb.Target {
-	return []rawdb.Target{programs.LocalTarget()}
+	return []rawdb.Target{rawdb.LocalTarget()}
 }
 
 func (v *JitSpawner) execute(
