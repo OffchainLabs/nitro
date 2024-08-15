@@ -24,7 +24,6 @@ require (
 	github.com/ethereum/go-ethereum v1.10.26
 	github.com/fatih/structtag v1.2.0
 	github.com/gdamore/tcell/v2 v2.7.1
-	github.com/go-redis/redis/v8 v8.11.5
 	github.com/gobwas/httphead v0.1.0
 	github.com/gobwas/ws v1.2.1
 	github.com/gobwas/ws-examples v0.0.0-20190625122829-a9e8908d9484
@@ -38,6 +37,7 @@ require (
 	github.com/mitchellh/mapstructure v1.4.1
 	github.com/pkg/errors v0.9.1
 	github.com/r3labs/diff/v3 v3.0.1
+	github.com/redis/go-redis/v9 v9.6.1
 	github.com/rivo/tview v0.0.0-20240307173318-e804876934a1
 	github.com/spf13/pflag v1.0.5
 	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
@@ -51,7 +51,11 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 )
 
-require github.com/google/go-querystring v1.1.0 // indirect
+require (
+	github.com/google/go-querystring v1.1.0 // indirect
+	github.com/onsi/ginkgo v1.16.5 // indirect
+	github.com/onsi/gomega v1.18.1 // indirect
+)
 
 require (
 	github.com/DataDog/zstd v1.4.5 // indirect

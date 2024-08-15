@@ -2,11 +2,16 @@ package pubsub
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/go-redis/redis/v8"
+	"github.com/redis/go-redis/v9"
 )
+
+const UNIQUEID_MSGID_MAP_KEY string = ".msgId" // Is used to map unique identifier to msgId of the message consisting request in the stream
+
+func MessageKeyFor(streamName, id string) string { return fmt.Sprintf("%s.%s", streamName, id) }
 
 // CreateStream tries to create stream with given name, if it already exists
 // does not return an error.

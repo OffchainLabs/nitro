@@ -2,6 +2,9 @@ package pubsub
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -10,11 +13,11 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/go-redis/redis/v8"
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/uuid"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/redisutil"
+	"github.com/redis/go-redis/v9"
 )
 
 var (
@@ -23,7 +26,18 @@ var (
 )
 
 type testRequest struct {
-	Request string
+	Request  string
+	SelfHash string // Is a unique identifier which can be used to compare any two validationInputs
+}
+
+// SetSelfHash should be only called once. In the context of redis streams- by the producer
+func (t *testRequest) SetSelfHash() {
+	jsonData, err := json.Marshal(t)
+	if err != nil {
+		return
+	}
+	hash := sha256.Sum256(jsonData)
+	t.SelfHash = hex.EncodeToString(hash[:])
 }
 
 type testResponse struct {
@@ -45,36 +59,21 @@ func destroyRedisGroup(ctx context.Context, t *testing.T, streamName string, cli
 	}
 }
 
-type configOpt interface {
-	apply(consCfg *ConsumerConfig, prodCfg *ProducerConfig)
-}
-
-type withReproduce struct {
-	reproduce bool
-}
-
-func (e *withReproduce) apply(_ *ConsumerConfig, prodCfg *ProducerConfig) {
-	prodCfg.EnableReproduce = e.reproduce
-}
-
 func producerCfg() *ProducerConfig {
 	return &ProducerConfig{
-		EnableReproduce:      TestProducerConfig.EnableReproduce,
-		CheckPendingInterval: TestProducerConfig.CheckPendingInterval,
-		KeepAliveTimeout:     TestProducerConfig.KeepAliveTimeout,
 		CheckResultInterval:  TestProducerConfig.CheckResultInterval,
-		CheckPendingItems:    TestProducerConfig.CheckPendingItems,
+		ResponseEntryTimeout: TestProducerConfig.ResponseEntryTimeout,
 	}
 }
 
 func consumerCfg() *ConsumerConfig {
 	return &ConsumerConfig{
 		ResponseEntryTimeout: TestConsumerConfig.ResponseEntryTimeout,
-		KeepAliveTimeout:     TestConsumerConfig.KeepAliveTimeout,
+		IdletimeToAutoclaim:  TestConsumerConfig.IdletimeToAutoclaim,
 	}
 }
 
-func newProducerConsumers(ctx context.Context, t *testing.T, opts ...configOpt) (redis.UniversalClient, string, *Producer[testRequest, testResponse], []*Consumer[testRequest, testResponse]) {
+func newProducerConsumers(ctx context.Context, t *testing.T) (redis.UniversalClient, string, *Producer[testRequest, testResponse], []*Consumer[testRequest, testResponse]) {
 	t.Helper()
 	redisClient, err := redisutil.RedisClientFromURL(redisutil.CreateTestRedis(ctx, t))
 	if err != nil {
@@ -82,9 +81,7 @@ func newProducerConsumers(ctx context.Context, t *testing.T, opts ...configOpt) 
 	}
 	prodCfg, consCfg := producerCfg(), consumerCfg()
 	streamName := fmt.Sprintf("stream:%s", uuid.NewString())
-	for _, o := range opts {
-		o.apply(consCfg, prodCfg)
-	}
+
 	producer, err := NewProducer[testRequest, testResponse](redisClient, streamName, prodCfg)
 	if err != nil {
 		t.Fatalf("Error creating new producer: %v", err)
@@ -102,13 +99,6 @@ func newProducerConsumers(ctx context.Context, t *testing.T, opts ...configOpt) 
 	t.Cleanup(func() {
 		ctx := context.Background()
 		destroyRedisGroup(ctx, t, streamName, producer.client)
-		var keys []string
-		for _, c := range consumers {
-			keys = append(keys, c.heartBeatKey())
-		}
-		if _, err := producer.client.Del(ctx, keys...).Result(); err != nil {
-			log.Debug("Error deleting heartbeat keys", "error", err)
-		}
 	})
 	return redisClient, streamName, producer, consumers
 }
@@ -125,10 +115,13 @@ func msgForIndex(idx int) string {
 	return fmt.Sprintf("msg: %d", idx)
 }
 
-func wantMessages(n int) []string {
+func wantMessages(n int, group string, withDuplicates bool) []string {
 	var ret []string
 	for i := 0; i < n; i++ {
-		ret = append(ret, msgForIndex(i))
+		ret = append(ret, group+msgForIndex(i))
+		if withDuplicates && i%3 == 0 {
+			ret = append(ret, msgForIndex(i))
+		}
 	}
 	sort.Strings(ret)
 	return ret
@@ -143,10 +136,14 @@ func flatten(responses [][]string) []string {
 	return ret
 }
 
-func produceMessages(ctx context.Context, msgs []string, producer *Producer[testRequest, testResponse]) ([]*containers.Promise[testResponse], error) {
+func produceMessages(ctx context.Context, msgs []string, producer *Producer[testRequest, testResponse], useUniqueIdentifier bool) ([]*containers.Promise[testResponse], error) {
 	var promises []*containers.Promise[testResponse]
-	for i := 0; i < messagesCount; i++ {
-		promise, err := producer.Produce(ctx, testRequest{Request: msgs[i]})
+	for i := 0; i < len(msgs); i++ {
+		req := testRequest{Request: msgs[i]}
+		if useUniqueIdentifier {
+			req.SetSelfHash()
+		}
+		promise, err := producer.Produce(ctx, req.SelfHash, req)
 		if err != nil {
 			return nil, err
 		}
@@ -198,7 +195,7 @@ func consume(ctx context.Context, t *testing.T, consumers []*Consumer[testReques
 					}
 					gotMessages[idx][res.ID] = res.Value.Request
 					resp := fmt.Sprintf("result for: %v", res.ID)
-					if err := c.SetResult(ctx, res.ID, testResponse{Response: resp}); err != nil {
+					if err := c.SetResult(ctx, res.Value.SelfHash, res.ID, testResponse{Response: resp}); err != nil {
 						t.Errorf("Error setting a result: %v", err)
 					}
 					wantResponses[idx] = append(wantResponses[idx], resp)
@@ -208,40 +205,86 @@ func consume(ctx context.Context, t *testing.T, consumers []*Consumer[testReques
 	return wantResponses
 }
 
-func TestRedisProduce(t *testing.T) {
+func TestRedisProduceComplex(t *testing.T) {
 	log.SetDefault(log.NewLogger(log.NewTerminalHandlerWithLevel(os.Stderr, log.LevelTrace, true)))
 	t.Parallel()
 	for _, tc := range []struct {
-		name          string
-		killConsumers bool
-		autoRecover   bool
+		name           string
+		entries1Count  int
+		entries2Count  int
+		numProducers   int
+		withDuplicates bool // If this is set, then every fourth entry (while generation) of each entries list is equal
+		killConsumers  bool
 	}{
 		{
-			name:          "all consumers are active",
-			killConsumers: false,
-			autoRecover:   false,
+			name:          "one producer, all consumers are active",
+			entries1Count: messagesCount,
+			numProducers:  1,
 		},
 		{
-			name:          "some consumers killed, others should take over their work",
+			name:          "one producer, some consumers killed, others should take over their work",
+			entries1Count: messagesCount,
+			numProducers:  1,
 			killConsumers: true,
-			autoRecover:   true,
 		},
 		{
-			name:          "some consumers killed, should return failure",
-			killConsumers: true,
-			autoRecover:   false,
+			name:          "two producers, all consumers are active, all unique entries",
+			entries1Count: 20,
+			entries2Count: 20,
+			numProducers:  2,
+		},
+		{
+			name:           "two producers, all consumers are active, some duplicate entries",
+			entries1Count:  20,
+			entries2Count:  20,
+			numProducers:   2,
+			withDuplicates: true,
+		},
+		{
+			name:           "two producers, some consumers killed, others should take over their work, some duplicate entries, unequal number of requests from producers",
+			entries1Count:  messagesCount,
+			entries2Count:  2 * messagesCount,
+			numProducers:   2,
+			withDuplicates: true,
+			killConsumers:  true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(context.Background())
 			defer cancel()
-			redisClient, streamName, producer, consumers := newProducerConsumers(ctx, t, &withReproduce{tc.autoRecover})
-			producer.Start(ctx)
-			wantMsgs := wantMessages(messagesCount)
-			promises, err := produceMessages(ctx, wantMsgs, producer)
-			if err != nil {
-				t.Fatalf("Error producing messages: %v", err)
+
+			var producers []*Producer[testRequest, testResponse]
+			redisClient, streamName, producer, consumers := newProducerConsumers(ctx, t)
+			producers = append(producers, producer)
+			if tc.numProducers == 2 {
+				producer, err := NewProducer[testRequest, testResponse](redisClient, streamName, producerCfg())
+				if err != nil {
+					t.Fatalf("Error creating second producer: %v", err)
+				}
+				producers = append(producers, producer)
 			}
+
+			for _, producer := range producers {
+				producer.Start(ctx)
+			}
+
+			var entries [][]string
+			if tc.numProducers == 2 {
+				entries = append(entries, wantMessages(tc.entries1Count, "1.", tc.withDuplicates))
+				entries = append(entries, wantMessages(tc.entries2Count, "2.", tc.withDuplicates))
+			} else {
+				entries = append(entries, wantMessages(tc.entries1Count, "", tc.withDuplicates))
+			}
+
+			var promises [][]*containers.Promise[testResponse]
+			for i := 0; i < tc.numProducers; i++ {
+				prs, err := produceMessages(ctx, entries[i], producers[i], tc.numProducers == 2)
+				if err != nil {
+					t.Fatalf("Error producing messages from producer%d: %v", i, err)
+				}
+				promises = append(promises, prs)
+			}
+
 			gotMessages := messagesMaps(len(consumers))
 			if tc.killConsumers {
 				// Consumer messages in every third consumer but don't ack them to check
@@ -252,40 +295,66 @@ func TestRedisProduce(t *testing.T) {
 					if err != nil {
 						t.Errorf("Error consuming message: %v", err)
 					}
-					if !tc.autoRecover {
-						gotMessages[i][req.ID] = req.Value.Request
+					if req == nil {
+						t.Error("Didn't consume any message")
 					}
 					consumers[i].StopAndWait()
 				}
 
 			}
+
 			time.Sleep(time.Second)
 			wantResponses := consume(ctx, t, consumers, gotMessages)
-			gotResponses, errIndexes := awaitResponses(ctx, promises)
-			if len(errIndexes) != 0 && tc.autoRecover {
-				t.Fatalf("Error awaiting responses: %v", errIndexes)
+
+			var gotResponses []string
+			for i := 0; i < tc.numProducers; i++ {
+				grs, errIndexes := awaitResponses(ctx, promises[i])
+				if len(errIndexes) != 0 {
+					t.Fatalf("Error awaiting responses from promises%d: %v", i, errIndexes)
+				}
+				gotResponses = append(gotResponses, grs...)
 			}
-			producer.StopAndWait()
+
 			for _, c := range consumers {
 				c.StopAndWait()
 			}
+
 			got, err := mergeValues(gotMessages)
 			if err != nil {
 				t.Fatalf("mergeMaps() unexpected error: %v", err)
 			}
+
+			var combinedEntries []string
+			for i := 0; i < tc.numProducers; i++ {
+				combinedEntries = append(combinedEntries, entries[i]...)
+			}
+			wantMsgs := removeDuplicates(combinedEntries)
 			if diff := cmp.Diff(wantMsgs, got); diff != "" {
 				t.Errorf("Unexpected diff (-want +got):\n%s\n", diff)
 			}
+
+			// Consumers are not supposed to get duplicate requests
+			gotResponses = removeDuplicates(gotResponses)
 			wantResp := flatten(wantResponses)
-			sort.Strings(gotResponses)
 			if diff := cmp.Diff(wantResp, gotResponses); diff != "" {
 				t.Errorf("Unexpected diff in responses:\n%s\n", diff)
 			}
-			if cnt := producer.promisesLen(); cnt != 0 {
-				t.Errorf("Producer still has %d unfullfilled promises", cnt)
+
+			// Check each producers all promises were responded to
+			for i := 0; i < tc.numProducers; i++ {
+				if cnt := producers[i].promisesLen(); cnt != 0 {
+					t.Errorf("Producer%d still has %d unfullfilled promises", i, cnt)
+				}
 			}
+
 			// Trigger a trim
-			producer.checkResponses(ctx)
+			time.Sleep(time.Second)
+			for i := 0; i < tc.numProducers; i++ {
+				producers[i].checkResponses(ctx)
+				producers[i].StopAndWait()
+			}
+
+			// Check that no messages remain in the stream
 			msgs, err := redisClient.XRange(ctx, streamName, "-", "+").Result()
 			if err != nil {
 				t.Errorf("XRange failed: %v", err)
@@ -295,6 +364,19 @@ func TestRedisProduce(t *testing.T) {
 			}
 		})
 	}
+}
+
+func removeDuplicates(list []string) []string {
+	capture := map[string]bool{}
+	var ret []string
+	for _, elem := range list {
+		if _, found := capture[elem]; !found {
+			ret = append(ret, elem)
+			capture[elem] = true
+		}
+	}
+	sort.Strings(ret)
+	return ret
 }
 
 // mergeValues merges maps from the slice and returns their values.

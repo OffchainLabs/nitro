@@ -99,7 +99,7 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 					log.Error("Error validating", "request value", req.Value, "error", err)
 					return 0
 				}
-				if err := c.SetResult(ctx, req.ID, res); err != nil {
+				if err := c.SetResult(ctx, req.Value.SelfHash, req.ID, res); err != nil {
 					log.Error("Error setting result for request", "id", req.ID, "result", res, "error", err)
 					return 0
 				}

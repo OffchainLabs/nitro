@@ -8,44 +8,44 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/go-redis/redis/v8"
 	"github.com/google/uuid"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
+	"github.com/redis/go-redis/v9"
 	"github.com/spf13/pflag"
 )
 
 type ConsumerConfig struct {
 	// Timeout of result entry in Redis.
 	ResponseEntryTimeout time.Duration `koanf:"response-entry-timeout"`
-	// Duration after which consumer is considered to be dead if heartbeat
-	// is not updated.
-	KeepAliveTimeout time.Duration `koanf:"keepalive-timeout"`
+	// Minimum idle time after which messages will be autoclaimed
+	IdletimeToAutoclaim time.Duration `koanf:"Idletime-to-autoclaim"`
 }
 
 var DefaultConsumerConfig = ConsumerConfig{
 	ResponseEntryTimeout: time.Hour,
-	KeepAliveTimeout:     5 * time.Minute,
+	IdletimeToAutoclaim:  30 * time.Minute,
 }
 
 var TestConsumerConfig = ConsumerConfig{
 	ResponseEntryTimeout: time.Minute,
-	KeepAliveTimeout:     30 * time.Millisecond,
+	IdletimeToAutoclaim:  time.Second,
 }
 
 func ConsumerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".response-entry-timeout", DefaultConsumerConfig.ResponseEntryTimeout, "timeout for response entry")
-	f.Duration(prefix+".keepalive-timeout", DefaultConsumerConfig.KeepAliveTimeout, "timeout after which consumer is considered inactive if heartbeat wasn't performed")
+	f.Duration(prefix+".Idletime-to-autoclaim", DefaultConsumerConfig.IdletimeToAutoclaim, "After a message spends this amount of time in PEL (Pending Entries List i.e claimed by another consumer but not Acknowledged) it will be allowed to be autoclaimed by other consumers")
 }
 
 // Consumer implements a consumer for redis stream provides heartbeat to
 // indicate it is alive.
 type Consumer[Request any, Response any] struct {
 	stopwaiter.StopWaiter
-	id          string
-	client      redis.UniversalClient
-	redisStream string
-	redisGroup  string
-	cfg         *ConsumerConfig
+	id           string
+	client       redis.UniversalClient
+	redisStream  string
+	redisGroup   string
+	cfg          *ConsumerConfig
+	ackNotifiers map[string]chan struct{}
 }
 
 type Message[Request any] struct {
@@ -58,32 +58,22 @@ func NewConsumer[Request any, Response any](client redis.UniversalClient, stream
 		return nil, fmt.Errorf("redis stream name cannot be empty")
 	}
 	return &Consumer[Request, Response]{
-		id:          uuid.NewString(),
-		client:      client,
-		redisStream: streamName,
-		redisGroup:  streamName, // There is 1-1 mapping of redis stream and consumer group.
-		cfg:         cfg,
+		id:           uuid.NewString(),
+		client:       client,
+		redisStream:  streamName,
+		redisGroup:   streamName, // There is 1-1 mapping of redis stream and consumer group.
+		cfg:          cfg,
+		ackNotifiers: make(map[string]chan struct{}),
 	}, nil
 }
 
 // Start starts the consumer to iteratively perform heartbeat in configured intervals.
 func (c *Consumer[Request, Response]) Start(ctx context.Context) {
 	c.StopWaiter.Start(ctx, c)
-	c.StopWaiter.CallIteratively(
-		func(ctx context.Context) time.Duration {
-			c.heartBeat(ctx)
-			return c.cfg.KeepAliveTimeout / 10
-		},
-	)
 }
 
 func (c *Consumer[Request, Response]) StopAndWait() {
 	c.StopWaiter.StopAndWait()
-	c.deleteHeartBeat(c.GetParentContext())
-}
-
-func heartBeatKey(id string) string {
-	return fmt.Sprintf("consumer:%s:heartbeat", id)
 }
 
 func (c *Consumer[Request, Response]) RedisClient() redis.UniversalClient {
@@ -94,55 +84,44 @@ func (c *Consumer[Request, Response]) StreamName() string {
 	return c.redisStream
 }
 
-func (c *Consumer[Request, Response]) heartBeatKey() string {
-	return heartBeatKey(c.id)
-}
-
-// deleteHeartBeat deletes the heartbeat to indicate it is being shut down.
-func (c *Consumer[Request, Response]) deleteHeartBeat(ctx context.Context) {
-	if err := c.client.Del(ctx, c.heartBeatKey()).Err(); err != nil {
-		l := log.Info
-		if ctx.Err() != nil {
-			l = log.Error
-		}
-		l("Deleting heardbeat", "consumer", c.id, "error", err)
-	}
-}
-
-// heartBeat updates the heartBeat key indicating aliveness.
-func (c *Consumer[Request, Response]) heartBeat(ctx context.Context) {
-	if err := c.client.Set(ctx, c.heartBeatKey(), time.Now().UnixMilli(), 2*c.cfg.KeepAliveTimeout).Err(); err != nil {
-		l := log.Info
-		if ctx.Err() != nil {
-			l = log.Error
-		}
-		l("Updating heardbeat", "consumer", c.id, "error", err)
-	}
-}
-
 // Consumer first checks it there exists pending message that is claimed by
 // unresponsive consumer, if not then reads from the stream.
 func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Request], error) {
-	res, err := c.client.XReadGroup(ctx, &redis.XReadGroupArgs{
+	// First try to XAUTOCLAIM, this prioritizes processing PEL messages
+	// that have been waiting for more than IdletimeToAutoclaim duration
+	messages, _, err := c.client.XAutoClaim(ctx, &redis.XAutoClaimArgs{
 		Group:    c.redisGroup,
 		Consumer: c.id,
-		// Receive only messages that were never delivered to any other consumer,
-		// that is, only new messages.
-		Streams: []string{c.redisStream, ">"},
-		Count:   1,
-		Block:   time.Millisecond, // 0 seems to block the read instead of immediately returning
+		MinIdle:  c.cfg.IdletimeToAutoclaim, // Minimum idle time for messages to claim (in milliseconds)
+		Stream:   c.redisStream,
+		Start:    "0",
+		Count:    1, // Limit the number of messages to claim
 	}).Result()
-	if errors.Is(err, redis.Nil) {
-		return nil, nil
+	if len(messages) != 1 || err != nil {
+		// Fallback to reading new messages
+		res, err := c.client.XReadGroup(ctx, &redis.XReadGroupArgs{
+			Group:    c.redisGroup,
+			Consumer: c.id,
+			// Receive only messages that were never delivered to any other consumer,
+			// that is, only new messages.
+			Streams: []string{c.redisStream, ">"},
+			Count:   1,
+			Block:   time.Millisecond, // 0 seems to block the read instead of immediately returning
+		}).Result()
+		if errors.Is(err, redis.Nil) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("reading message for consumer: %q: %w", c.id, err)
+		}
+		if len(res) != 1 || len(res[0].Messages) != 1 {
+			return nil, fmt.Errorf("redis returned entries: %+v, for querying single message", res)
+		}
+		messages = res[0].Messages
 	}
-	if err != nil {
-		return nil, fmt.Errorf("reading message for consumer: %q: %w", c.id, err)
-	}
-	if len(res) != 1 || len(res[0].Messages) != 1 {
-		return nil, fmt.Errorf("redis returned entries: %+v, for querying single message", res)
-	}
+
 	var (
-		value    = res[0].Messages[0].Values[messageKey]
+		value    = messages[0].Values[messageKey]
 		data, ok = (value).(string)
 	)
 	if !ok {
@@ -152,24 +131,52 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 	if err := json.Unmarshal([]byte(data), &req); err != nil {
 		return nil, fmt.Errorf("unmarshaling value: %v, error: %w", value, err)
 	}
-	log.Debug("Redis stream consuming", "consumer_id", c.id, "message_id", res[0].Messages[0].ID)
+	ackNotifier := make(chan struct{})
+	c.StopWaiter.LaunchThread(func(ctx context.Context) {
+		for {
+			if err := c.client.XClaim(ctx, &redis.XClaimArgs{
+				Stream:   c.redisStream,
+				Group:    c.redisGroup,
+				Consumer: c.id,
+				MinIdle:  0,
+				Messages: []string{messages[0].ID},
+			}).Err(); err != nil {
+				log.Error("error claiming message, it might be possible that other consumers might pick this request", "msgID", messages[0].ID)
+			}
+			select {
+			case <-ackNotifier:
+				return
+			case <-ctx.Done():
+				log.Info("Context done while claiming message to indicate hearbeat", "error", ctx.Err().Error())
+				return
+			case <-time.After(c.cfg.IdletimeToAutoclaim / 3):
+			}
+		}
+	})
+	c.ackNotifiers[messages[0].ID] = ackNotifier
+	log.Debug("Redis stream consuming", "consumer_id", c.id, "message_id", messages[0].ID)
 	return &Message[Request]{
-		ID:    res[0].Messages[0].ID,
+		ID:    messages[0].ID,
 		Value: req,
 	}, nil
 }
 
-func (c *Consumer[Request, Response]) SetResult(ctx context.Context, messageID string, result Response) error {
+func (c *Consumer[Request, Response]) SetResult(ctx context.Context, id string, messageID string, result Response) error {
+	if id == "" {
+		log.Info("Request doesn't have a unique identifier (SelfHash field is not set), defaulting to using redis stream messageId", "msgId", messageID)
+		id = messageID
+	}
 	resp, err := json.Marshal(result)
 	if err != nil {
 		return fmt.Errorf("marshaling result: %w", err)
 	}
-	acquired, err := c.client.SetNX(ctx, messageID, resp, c.cfg.ResponseEntryTimeout).Result()
+	acquired, err := c.client.SetNX(ctx, MessageKeyFor(c.StreamName(), id), resp, c.cfg.ResponseEntryTimeout).Result()
 	if err != nil || !acquired {
-		return fmt.Errorf("setting result for  message: %v, error: %w", messageID, err)
+		return fmt.Errorf("setting result for message with message-id in stream: %v, unique request identifier: %v, error: %w", messageID, id, err)
 	}
 	if _, err := c.client.XAck(ctx, c.redisStream, c.redisGroup, messageID).Result(); err != nil {
 		return fmt.Errorf("acking message: %v, error: %w", messageID, err)
 	}
+	close(c.ackNotifiers[messageID])
 	return nil
 }

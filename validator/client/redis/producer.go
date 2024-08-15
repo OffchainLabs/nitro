@@ -7,7 +7,6 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/redisutil"
@@ -15,6 +14,7 @@ import (
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_common"
+	"github.com/redis/go-redis/v9"
 	"github.com/spf13/pflag"
 )
 
@@ -125,7 +125,8 @@ func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot c
 		errPromise := containers.NewReadyPromise(validator.GoGlobalState{}, fmt.Errorf("no validation is configured for wasm root %v", moduleRoot))
 		return server_common.NewValRun(errPromise, moduleRoot)
 	}
-	promise, err := producer.Produce(c.GetContext(), entry)
+	entry.SetSelfHash()
+	promise, err := producer.Produce(c.GetContext(), entry.SelfHash, entry)
 	if err != nil {
 		errPromise := containers.NewReadyPromise(validator.GoGlobalState{}, fmt.Errorf("error producing input: %w", err))
 		return server_common.NewValRun(errPromise, moduleRoot)
