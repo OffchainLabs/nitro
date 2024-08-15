@@ -433,11 +433,11 @@ func purgeVersion0WasmStoreEntries(db ethdb.Database) error {
 			// Recreate the iterator after every batch commit in order
 			// to allow the underlying compactor to delete the entries.
 			if batch.ValueSize() >= ethdb.IdealBatchSize {
+				it.Release()
 				if err := batch.Write(); err != nil {
 					return fmt.Errorf("Failed to write batch: %w", err)
 				}
 				batch.Reset()
-				it.Release()
 				it = db.NewIterator(prefix, key)
 			}
 		}
