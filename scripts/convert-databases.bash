@@ -150,7 +150,6 @@ if ! [ -d "$src" ]; then
 fi
 
 src=$(realpath "$src")
-#src=$(printf %q "$src")
 
 if ! [ -d "$src"/l2chaindata ]; then
     echo Error: Invalid source directory: \""$src"/l2chaindata\" is missing
