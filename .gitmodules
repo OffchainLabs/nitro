@@ -13,7 +13,7 @@
 [submodule "contracts"]
 	path = contracts
 	url = https://github.com/availproject/nitro-contracts.git
-	branch = avail-develop-v2.3.1
+	branch = avail-nitro-contracts-v2-upstream-v2.0.0
 [submodule "arbitrator/wasm-testsuite/testsuite"]
 	path = arbitrator/wasm-testsuite/testsuite
 	url = https://github.com/WebAssembly/testsuite.git

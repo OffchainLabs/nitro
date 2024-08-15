@@ -726,7 +726,7 @@ func (l *trieLayout) commitMigration() error {
 		return err
 	}
 
-	syscall.Sync()
+	syscall.Sync() //nolint
 
 	// Done migrating
 	l.migrating = false
