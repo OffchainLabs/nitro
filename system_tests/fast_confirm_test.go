@@ -68,10 +68,6 @@ func TestFastConfirmation(t *testing.T) {
 	l2node := builder.L2.ConsensusNode
 	execNode := builder.L2.ExecNode
 
-	config := arbnode.ConfigDefaultL1Test()
-	config.Sequencer = false
-	config.DelayedSequencer.Enable = false
-	config.BatchPoster.Enable = false
 	builder.execConfig.Sequencer.Enable = false
 
 	builder.BridgeBalance(t, "Faucet", big.NewInt(1).Mul(big.NewInt(params.Ether), big.NewInt(10000)))
@@ -158,6 +154,8 @@ func TestFastConfirmation(t *testing.T) {
 	Require(t, err)
 	err = stateless.Start(ctx)
 	Require(t, err)
+	err = valWallet.Initialize(ctx)
+	Require(t, err)
 	stakerA, err := staker.NewStaker(
 		l2node.L1Reader,
 		valWallet,
@@ -172,10 +170,6 @@ func TestFastConfirmation(t *testing.T) {
 	)
 	Require(t, err)
 	err = stakerA.Initialize(ctx)
-	if stakerA.Strategy() != staker.WatchtowerStrategy {
-		err = valWallet.Initialize(ctx)
-		Require(t, err)
-	}
 	Require(t, err)
 	cfg := arbnode.ConfigDefaultL1NonSequencerTest()
 	signerCfg, err := externalSignerTestCfg(srv.Address, srv.URL())
@@ -325,7 +319,6 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 
 	valConfig := staker.TestL1ValidatorConfig
 	valConfig.EnableFastConfirmation = true
-	valConfig.FastConfirmSafeAddress = safeAddress.String()
 
 	parentChainID, err := builder.L1.Client.ChainID(ctx)
 	if err != nil {
@@ -362,6 +355,8 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	Require(t, err)
 	err = statelessA.Start(ctx)
 	Require(t, err)
+	err = valWalletA.Initialize(ctx)
+	Require(t, err)
 	stakerA, err := staker.NewStaker(
 		l2nodeA.L1Reader,
 		valWalletA,
@@ -376,8 +371,6 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	)
 	Require(t, err)
 	err = stakerA.Initialize(ctx)
-	Require(t, err)
-	err = valWalletA.Initialize(ctx)
 	Require(t, err)
 	cfg := arbnode.ConfigDefaultL1NonSequencerTest()
 	signerCfg, err := externalSignerTestCfg(srv.Address, srv.URL())
@@ -412,6 +405,8 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	Require(t, err)
 	err = statelessB.Start(ctx)
 	Require(t, err)
+	err = valWalletB.Initialize(ctx)
+	Require(t, err)
 	stakerB, err := staker.NewStaker(
 		l2nodeB.L1Reader,
 		valWalletB,
@@ -426,8 +421,6 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	)
 	Require(t, err)
 	err = stakerB.Initialize(ctx)
-	Require(t, err)
-	err = valWalletB.Initialize(ctx)
 	Require(t, err)
 
 	builder.L2Info.GenerateAccount("BackgroundUser")
