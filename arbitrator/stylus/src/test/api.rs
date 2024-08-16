@@ -114,7 +114,7 @@ impl EvmApi<VecReader> for TestEvmApi {
         let mut native = unsafe {
             let contracts = self.contracts.lock();
             let module = contracts.get(&contract).unwrap();
-            TestInstance::deserialize(module, compile, self.clone(), evm_data, Target::default())
+            TestInstance::deserialize(module, compile, self.clone(), evm_data)
                 .unwrap()
         };
 
