@@ -136,7 +136,7 @@ func testProgramResursiveCalls(t *testing.T, tests [][]multiCallRecurse, jit boo
 	validatorConfig.BlockValidator.Enable = true
 	emptyRedisURL := ""
 	defaultWasmRootPath := ""
-	AddDefaultValNode(t, ctx, validatorConfig, jit, emptyRedisURL, defaultWasmRootPath)
+	AddValNode(t, ctx, validatorConfig, jit, emptyRedisURL, defaultWasmRootPath)
 	valClient, valCleanup := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: validatorConfig})
 	defer valCleanup()
 
