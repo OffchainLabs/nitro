@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -1119,6 +1120,13 @@ func Require(t *testing.T, err error, text ...interface{}) {
 func Fatal(t *testing.T, printables ...interface{}) {
 	t.Helper()
 	testhelpers.FailImpl(t, printables...)
+}
+
+func CheckEqual[T any](t *testing.T, want T, got T, printables ...interface{}) {
+	t.Helper()
+	if !reflect.DeepEqual(want, got) {
+		testhelpers.FailImpl(t, "wrong result, want ", want, ", got ", got, printables)
+	}
 }
 
 func Create2ndNodeWithConfig(

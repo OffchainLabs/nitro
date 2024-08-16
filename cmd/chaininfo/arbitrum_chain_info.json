@@ -164,7 +164,7 @@
         "EnableArbOS": true,
         "AllowDebugPrecompiles": true,
         "DataAvailabilityCommittee": false,
-        "InitialArbOSVersion": 11,
+        "InitialArbOSVersion": 31,
         "InitialChainOwner": "0x0000000000000000000000000000000000000000",
         "GenesisBlockNum": 0
       }
@@ -196,7 +196,7 @@
         "EnableArbOS": true,
         "AllowDebugPrecompiles": true,
         "DataAvailabilityCommittee": true,
-        "InitialArbOSVersion": 11,
+        "InitialArbOSVersion": 31,
         "InitialChainOwner": "0x0000000000000000000000000000000000000000",
         "GenesisBlockNum": 0
       }
