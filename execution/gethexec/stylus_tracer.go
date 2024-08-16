@@ -5,7 +5,9 @@ package gethexec
 
 import (
 	"encoding/json"
+	"fmt"
 	"math/big"
+	"strings"
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
@@ -87,6 +89,14 @@ func (t *stylusTracer) CaptureStylusHostio(name string, args, outs []byte, start
 			t.Stop(err)
 			return
 		}
+		if !strings.HasPrefix(last.Name, "evm_") || last.Name[4:] != info.Name {
+			t.Stop(fmt.Errorf("trace inconsistency for %v: last opcode is %v", info.Name, last.Name))
+			return
+		}
+		if last.Steps == nil {
+			t.Stop(fmt.Errorf("trace inconsistency for %v: nil steps", info.Name))
+			return
+		}
 		info.Address = last.Address
 		info.Steps = last.Steps
 	}
@@ -97,8 +107,28 @@ func (t *stylusTracer) CaptureEnter(typ vm.OpCode, from common.Address, to commo
 	if t.interrupt.Load() {
 		return
 	}
+
+	// This function adds the prefix evm_ because it assumes the opcode came from the EVM.
+	// If the opcode comes from WASM, the CaptureStylusHostio function will remove the evm prefix.
+	var name string
+	switch typ {
+	case vm.CALL:
+		name = "evm_call_contract"
+	case vm.DELEGATECALL:
+		name = "evm_delegate_call_contract"
+	case vm.STATICCALL:
+		name = "evm_static_call_contract"
+	case vm.CREATE:
+		name = "evm_create1"
+	case vm.CREATE2:
+		name = "evm_create2"
+	case vm.SELFDESTRUCT:
+		name = "evm_self_destruct"
+	}
+
 	inner := stack.NewStack[HostioTraceInfo]()
 	info := HostioTraceInfo{
+		Name:    name,
 		Address: &to,
 		Steps:   inner,
 	}
@@ -121,6 +151,9 @@ func (t *stylusTracer) CaptureExit(output []byte, gasUsed uint64, _ error) {
 func (t *stylusTracer) GetResult() (json.RawMessage, error) {
 	if t.reason != nil {
 		return nil, t.reason
+	}
+	if t.open == nil {
+		return nil, fmt.Errorf("trace is nil")
 	}
 	msg, err := json.Marshal(t.open)
 	if err != nil {
