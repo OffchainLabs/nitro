@@ -35,6 +35,8 @@ fn target_from_string(input: String) -> Result<Target> {
     Ok(Target::new(triple, features))
 }
 
+/// Populates `TARGET_CACHE` inserting target specified by `description` under `name` key.
+/// Additionally, if `native` is set it sets `TARGET_NATIVE` to the specified target.
 pub fn target_cache_set(name: String, description: String, native: bool) -> Result<()> {
     let target = target_from_string(description)?;
 
