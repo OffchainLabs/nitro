@@ -202,6 +202,9 @@ pub unsafe extern "C" fn stylus_compile(
 }
 
 #[no_mangle]
+/// # Safety
+///
+/// `output` must not be null.
 pub unsafe extern "C" fn wat_to_wasm(
     wat: GoSliceData,
     output: *mut RustBytes,
