@@ -415,7 +415,7 @@ func databaseIsEmpty(db ethdb.Database) bool {
 
 // removes all entries with keys prefixed with prefixes and of length used in initial version of wasm store schema
 func purgeVersion0WasmStoreEntries(db ethdb.Database) error {
-	prefixes, keyLength := rawdb.DeprecatedKeysV0()
+	prefixes, keyLength := rawdb.DeprecatedPrefixesV0()
 	batch := db.NewBatch()
 	notMatchingLengthKeyLogged := false
 	for _, prefix := range prefixes {
