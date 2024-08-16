@@ -24,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/arbnode/dataposter"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/cmd/genericconf"
+	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/staker/txbuilder"
 	"github.com/offchainlabs/nitro/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
@@ -91,9 +92,8 @@ type L1ValidatorConfig struct {
 	ExtraGas                  uint64                      `koanf:"extra-gas" reload:"hot"`
 	Dangerous                 DangerousConfig             `koanf:"dangerous"`
 	ParentChainWallet         genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
-	EnableFastConfirmation    bool                        `koanf:"enable-fast-confirmation"`
-	FastConfirmSafeAddress    string                      `koanf:"fast-confirm-safe-address"`
 	LogQueryBatchSize         uint64                      `koanf:"log-query-batch-size" reload:"hot"`
+	EnableFastConfirmation    bool                        `koanf:"enable-fast-confirmation"`
 
 	strategy    StakerStrategy
 	gasRefunder common.Address
@@ -123,7 +123,7 @@ func (c *L1ValidatorConfig) ValidatorRequired() bool {
 	if c.Dangerous.WithoutBlockValidator {
 		return false
 	}
-	if c.strategy == WatchtowerStrategy {
+	if c.strategy == WatchtowerStrategy && !c.EnableFastConfirmation {
 		return false
 	}
 	return true
@@ -160,9 +160,8 @@ var DefaultL1ValidatorConfig = L1ValidatorConfig{
 	ExtraGas:                  50000,
 	Dangerous:                 DefaultDangerousConfig,
 	ParentChainWallet:         DefaultValidatorL1WalletConfig,
-	EnableFastConfirmation:    false,
-	FastConfirmSafeAddress:    "",
 	LogQueryBatchSize:         0,
+	EnableFastConfirmation:    false,
 }
 
 var TestL1ValidatorConfig = L1ValidatorConfig{
@@ -183,9 +182,8 @@ var TestL1ValidatorConfig = L1ValidatorConfig{
 	ExtraGas:                  50000,
 	Dangerous:                 DefaultDangerousConfig,
 	ParentChainWallet:         DefaultValidatorL1WalletConfig,
-	EnableFastConfirmation:    false,
-	FastConfirmSafeAddress:    "",
 	LogQueryBatchSize:         0,
+	EnableFastConfirmation:    false,
 }
 
 var DefaultValidatorL1WalletConfig = genericconf.WalletConfig{
@@ -216,7 +214,6 @@ func L1ValidatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	DangerousConfigAddOptions(prefix+".dangerous", f)
 	genericconf.WalletConfigAddOptions(prefix+".parent-chain-wallet", f, DefaultL1ValidatorConfig.ParentChainWallet.Pathname)
 	f.Bool(prefix+".enable-fast-confirmation", DefaultL1ValidatorConfig.EnableFastConfirmation, "enable fast confirmation")
-	f.String(prefix+".fast-confirm-safe-address", DefaultL1ValidatorConfig.FastConfirmSafeAddress, "safe address for fast confirmation")
 }
 
 type DangerousConfig struct {
@@ -269,6 +266,7 @@ type Staker struct {
 	inboxReader             InboxReaderInterface
 	statelessBlockValidator *StatelessBlockValidator
 	fatalErr                chan<- error
+	enableFastConfirmation  bool
 	fastConfirmSafe         *FastConfirmSafe
 }
 
@@ -319,20 +317,6 @@ func NewStaker(
 	if config.StartValidationFromStaked && blockValidator != nil {
 		stakedNotifiers = append(stakedNotifiers, blockValidator)
 	}
-	var fastConfirmSafe *FastConfirmSafe
-	if config.EnableFastConfirmation && config.FastConfirmSafeAddress != "" {
-		fastConfirmSafe, err = NewFastConfirmSafe(
-			callOpts,
-			common.HexToAddress(config.FastConfirmSafeAddress),
-			val.builder,
-			wallet,
-			config.gasRefunder,
-			l1Reader,
-		)
-		if err != nil {
-			return nil, err
-		}
-	}
 	inactiveValidatedNodes := btree.NewG(2, func(a, b validatedNode) bool {
 		return a.number < b.number || (a.number == b.number && a.hash.Cmp(b.hash) < 0)
 	})
@@ -348,7 +332,6 @@ func NewStaker(
 		inboxReader:             statelessBlockValidator.inboxReader,
 		statelessBlockValidator: statelessBlockValidator,
 		fatalErr:                fatalErr,
-		fastConfirmSafe:         fastConfirmSafe,
 		inactiveValidatedNodes:  inactiveValidatedNodes,
 	}, nil
 }
@@ -379,11 +362,66 @@ func (s *Staker) Initialize(ctx context.Context) error {
 
 		return s.blockValidator.InitAssumeValid(stakedInfo.AfterState().GlobalState)
 	}
+	return s.setupFastConfirmation(ctx)
+}
+
+// setupFastConfirmation sets the enableFastConfirmation and fastConfirmSafe variables of staker
+// based on the config, the wallet address, and the on-chain rollup designated fast confirmer.
+// Before this function, both variables should be their default (i.e. fast confirmation is disabled).
+func (s *Staker) setupFastConfirmation(ctx context.Context) error {
+	if !s.config.EnableFastConfirmation {
+		return nil
+	}
+	if s.wallet.Address() == nil {
+		return errors.New("fast confirmation requires wallet setup")
+	}
+	walletAddress := *s.wallet.Address()
+	client := s.l1Reader.Client()
+	rollup, err := rollupgen.NewRollupUserLogic(s.rollupAddress, client)
+	if err != nil {
+		return err
+	}
+	callOpts := s.getCallOpts(ctx)
+	fastConfirmer, err := rollup.AnyTrustFastConfirmer(callOpts)
+	if err != nil {
+		return fmt.Errorf("getting rollup fast confirmer address: %w", err)
+	}
+	if fastConfirmer == walletAddress {
+		// We can directly fast confirm nodes
+		s.enableFastConfirmation = true
+		return nil
+	} else if fastConfirmer == (common.Address{}) {
+		// No fast confirmer enabled
+		return errors.New("fast confirmation enabled in config, but no fast confirmer set in rollup contract")
+	}
+	// The fast confirmer address is a contract address, not sure if it's a safe contract yet.
+	fastConfirmSafe, err := NewFastConfirmSafe(
+		callOpts,
+		fastConfirmer,
+		s.builder,
+		s.wallet,
+		s.config.gasRefunder,
+		s.l1Reader,
+	)
+	if err != nil {
+		// Unknown while loading the safe contract.
+		return fmt.Errorf("loading fast confirm safe: %w", err)
+	}
+	// Fast confirmer address implements getOwners() and is probably a safe.
+	isOwner, err := fastConfirmSafe.safe.IsOwner(callOpts, walletAddress)
+	if err != nil {
+		return fmt.Errorf("checking if wallet is owner of safe: %w", err)
+	}
+	if !isOwner {
+		return fmt.Errorf("staker wallet address %v is not an owner of the fast confirm safe %v", walletAddress, fastConfirmer)
+	}
+	s.enableFastConfirmation = true
+	s.fastConfirmSafe = fastConfirmSafe
 	return nil
 }
 
 func (s *Staker) tryFastConfirmationNodeNumber(ctx context.Context, number uint64, hash common.Hash) error {
-	if !s.config.EnableFastConfirmation {
+	if !s.enableFastConfirmation {
 		return nil
 	}
 	nodeInfo, err := s.rollup.LookupNode(ctx, number)
@@ -394,7 +432,7 @@ func (s *Staker) tryFastConfirmationNodeNumber(ctx context.Context, number uint6
 }
 
 func (s *Staker) tryFastConfirmation(ctx context.Context, blockHash common.Hash, sendRoot common.Hash, nodeHash common.Hash) error {
-	if !s.config.EnableFastConfirmation {
+	if !s.enableFastConfirmation {
 		return nil
 	}
 	if s.fastConfirmSafe != nil {
