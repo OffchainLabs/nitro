@@ -638,6 +638,38 @@ func mainImpl() int {
 			}
 		}
 	}
+
+	// Before starting the node, wait until the transaction that deployed rollup is finalized
+	if nodeConfig.Node.ParentChainReader.Enable && rollupAddrs.DeployedAt > 0 {
+		currentFinalized, err := l1Reader.LatestFinalizedBlockNr(ctx)
+		if err != nil && errors.Is(err, headerreader.ErrBlockNumberNotSupported) {
+			log.Info("Finality not supported by parent chain, disabling the check to verify if rollup deployment tx was finalized", "err", err)
+		} else {
+			newHeaders, unsubscribe := l1Reader.Subscribe(false)
+			retriesOnError := 10
+			for currentFinalized < rollupAddrs.DeployedAt && retriesOnError > 0 {
+				select {
+				case <-newHeaders:
+					if finalized, err := l1Reader.LatestFinalizedBlockNr(ctx); err != nil {
+						if errors.Is(err, headerreader.ErrBlockNumberNotSupported) {
+							log.Error("Finality support was removed from parent chain mid way, disabling the check to verify if the rollup deployment tx was finalized", "err", err)
+							retriesOnError = 0 // Break out of for loop as well
+							break
+						}
+						log.Error("Error getting latestFinalizedBlockNr from l1Reader", "err", err)
+						retriesOnError--
+					} else {
+						currentFinalized = finalized
+					}
+				case <-ctx.Done():
+					log.Error("Context done while checking if the rollup deployment tx was finalized")
+					return 1
+				}
+			}
+			unsubscribe()
+		}
+	}
+
 	gqlConf := nodeConfig.GraphQL
 	if gqlConf.Enable {
 		if err := graphql.New(stack, execNode.Backend.APIBackend(), execNode.FilterSystem, gqlConf.CORSDomain, gqlConf.VHosts); err != nil {
