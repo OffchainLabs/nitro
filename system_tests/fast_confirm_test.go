@@ -68,10 +68,6 @@ func TestFastConfirmation(t *testing.T) {
 	l2node := builder.L2.ConsensusNode
 	execNode := builder.L2.ExecNode
 
-	config := arbnode.ConfigDefaultL1Test()
-	config.Sequencer = false
-	config.DelayedSequencer.Enable = false
-	config.BatchPoster.Enable = false
 	builder.execConfig.Sequencer.Enable = false
 
 	builder.BridgeBalance(t, "Faucet", big.NewInt(1).Mul(big.NewInt(params.Ether), big.NewInt(10000)))
@@ -122,6 +118,7 @@ func TestFastConfirmation(t *testing.T) {
 	Require(t, err)
 
 	valConfig := staker.TestL1ValidatorConfig
+	valConfig.EnableFastConfirmation = true
 	parentChainID, err := builder.L1.Client.ChainID(ctx)
 	if err != nil {
 		t.Fatalf("Failed to get parent chain id: %v", err)
@@ -321,6 +318,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	Require(t, err)
 
 	valConfig := staker.TestL1ValidatorConfig
+	valConfig.EnableFastConfirmation = true
 
 	parentChainID, err := builder.L1.Client.ChainID(ctx)
 	if err != nil {
