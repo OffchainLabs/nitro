@@ -201,6 +201,20 @@ pub unsafe extern "C" fn stylus_compile(
     UserOutcomeKind::Success
 }
 
+#[no_mangle]
+pub unsafe extern "C" fn wat_to_wasm(
+    wat: GoSliceData,
+    output: *mut RustBytes,
+) -> UserOutcomeKind {
+    let output = &mut *output;
+    let wasm = match wasmer::wat2wasm(wat.slice()) {
+        Ok(val) => val,
+        Err(err) => return output.write_err(err.into()),
+    };
+    output.write(wasm.into_owned());
+    UserOutcomeKind::Success
+}
+
 /// sets target index to a string
 ///
 /// String format is: Triple+CpuFeature+CpuFeature..

@@ -26,8 +26,19 @@ import (
 	"runtime"
 
 	"github.com/ethereum/go-ethereum/core/rawdb"
-	"github.com/wasmerio/wasmer-go/wasmer"
 )
+
+func Wat2Wasm(wat []byte) ([]byte, error) {
+	output := &rustBytes{}
+
+	status := C.wat_to_wasm(goSlice(wat), output)
+
+	if status != 0 {
+		return nil, fmt.Errorf("failed reading wat file: %v", string(output.intoBytes()))
+	}
+
+	return output.intoBytes(), nil
+}
 
 func testCompileArch(store bool) error {
 
@@ -71,7 +82,7 @@ func testCompileArch(store bool) error {
 		return fmt.Errorf("failed reading stylus contract: %w", err)
 	}
 
-	wasm, err := wasmer.Wat2Wasm(string(source))
+	wasm, err := Wat2Wasm(source)
 	if err != nil {
 		return err
 	}
