@@ -205,10 +205,7 @@ pub unsafe extern "C" fn stylus_compile(
 /// # Safety
 ///
 /// `output` must not be null.
-pub unsafe extern "C" fn wat_to_wasm(
-    wat: GoSliceData,
-    output: *mut RustBytes,
-) -> UserOutcomeKind {
+pub unsafe extern "C" fn wat_to_wasm(wat: GoSliceData, output: *mut RustBytes) -> UserOutcomeKind {
     let output = &mut *output;
     let wasm = match wasmer::wat2wasm(wat.slice()) {
         Ok(val) => val,
