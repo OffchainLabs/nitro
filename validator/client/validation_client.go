@@ -24,6 +24,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/rpc"
 )
 
 type ValidationClient struct {
@@ -68,14 +69,20 @@ func (c *ValidationClient) Start(ctx context.Context) error {
 	}
 	var stylusArchs []string
 	if err := c.client.CallContext(ctx, &stylusArchs, server_api.Namespace+"_stylusArchs"); err != nil {
-		return err
-	}
-	if len(stylusArchs) == 0 {
-		return fmt.Errorf("could not read stylus archs from validation server")
-	}
-	for _, stylusArch := range stylusArchs {
-		if stylusArch != "wavm" && stylusArch != runtime.GOARCH && stylusArch != "mock" {
-			return fmt.Errorf("unsupported stylus architecture: %v", stylusArch)
+		var rpcError rpc.Error
+		ok := errors.As(err, &rpcError)
+		if !ok || rpcError.ErrorCode() != -32601 {
+			return fmt.Errorf("could not read stylus arch from server: %w", err)
+		}
+		stylusArchs = []string{"pre-stylus"} // validation does not support stylus
+	} else {
+		if len(stylusArchs) == 0 {
+			return fmt.Errorf("could not read stylus archs from validation server")
+		}
+		for _, stylusArch := range stylusArchs {
+			if stylusArch != "wavm" && stylusArch != runtime.GOARCH && stylusArch != "mock" {
+				return fmt.Errorf("unsupported stylus architecture: %v", stylusArch)
+			}
 		}
 	}
 	var moduleRoots []common.Hash
