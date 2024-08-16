@@ -30,13 +30,30 @@ type stylusTracer struct {
 
 // HostioTraceInfo contains the captured HostIO log returned by stylusTracer.
 type HostioTraceInfo struct {
-	Name     string                        `json:"name"`
-	Args     hexutil.Bytes                 `json:"args"`
-	Outs     hexutil.Bytes                 `json:"outs"`
-	StartInk uint64                        `json:"startInk"`
-	EndInk   uint64                        `json:"endInk"`
-	Address  *common.Address               `json:"address,omitempty"`
-	Steps    *stack.Stack[HostioTraceInfo] `json:"steps,omitempty"`
+	// Name of the HostIO.
+	Name string `json:"name"`
+
+	// Arguments of the HostIO encoded as binary.
+	// For details about the encoding check the HostIO implemenation on
+	// arbitrator/wasm-libraries/user-host-trait.
+	Args hexutil.Bytes `json:"args"`
+
+	// Outputs of the HostIO encoded as binary.
+	// For details about the encoding check the HostIO implemenation on
+	// arbitrator/wasm-libraries/user-host-trait.
+	Outs hexutil.Bytes `json:"outs"`
+
+	// Amount of Ink before executing the HostIO.
+	StartInk uint64 `json:"startInk"`
+
+	// Amount of Ink after executing the HostIO.
+	EndInk uint64 `json:"endInk"`
+
+	// For *call HostIOs, the address of the called contract.
+	Address *common.Address `json:"address,omitempty"`
+
+	// For *call HostIOs, the steps performed by the called contract.
+	Steps *stack.Stack[HostioTraceInfo] `json:"steps,omitempty"`
 }
 
 // nestsHostios contains the hostios with nested calls.
