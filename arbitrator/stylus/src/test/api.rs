@@ -114,8 +114,7 @@ impl EvmApi<VecReader> for TestEvmApi {
         let mut native = unsafe {
             let contracts = self.contracts.lock();
             let module = contracts.get(&contract).unwrap();
-            TestInstance::deserialize(module, compile, self.clone(), evm_data)
-                .unwrap()
+            TestInstance::deserialize(module, compile, self.clone(), evm_data).unwrap()
         };
 
         let ink = config.pricing.gas_to_ink(gas);
