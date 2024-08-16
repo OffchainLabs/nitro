@@ -271,6 +271,7 @@ func callProgram(
 
 func getMetrics() {
 	metrics := C.stylus_get_cache_metrics()
+	log.Error("CacheMetrics", "metrics", metrics)
 
 	stylusCacheLRUSizeBytesGauge.Update(int64(metrics.lru.size_bytes))
 	stylusCacheLRUSizeEntriesGauge.Update(int64(metrics.lru.size_entries))

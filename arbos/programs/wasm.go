@@ -152,6 +152,8 @@ func callProgram(
 	return retData, err
 }
 
+func getMetrics() {}
+
 func CallProgramLoop(
 	moduleHash common.Hash,
 	calldata []byte,
