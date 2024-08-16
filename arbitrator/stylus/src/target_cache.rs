@@ -7,10 +7,9 @@ use parking_lot::RwLock;
 use std::{collections::HashMap, str::FromStr};
 use wasmer_types::{CpuFeature, Target, Triple};
 
-use crate::cache::InitCache;
-
 lazy_static! {
     static ref TARGET_CACHE: RwLock<HashMap<String, Target>> = RwLock::new(HashMap::new());
+    static ref TARGET_NATIVE: RwLock<Target> = RwLock::new(Target::default());
 }
 
 fn target_from_string(input: String) -> Result<Target> {
@@ -56,7 +55,7 @@ pub fn target_cache_set(name: String, description: String, native: bool) -> Resu
             }
             return Err(eyre!(err_message));
         }
-        InitCache::set_target(target.clone())
+        *TARGET_NATIVE.write() = target.clone();
     }
 
     TARGET_CACHE.write().insert(name, target);
@@ -64,9 +63,13 @@ pub fn target_cache_set(name: String, description: String, native: bool) -> Resu
     Ok(())
 }
 
+pub fn target_native() -> Target {
+    TARGET_NATIVE.read().clone()
+}
+
 pub fn target_cache_get(name: &str) -> Result<Target> {
     if name.is_empty() {
-        return Ok(InitCache::target());
+        return Ok(TARGET_NATIVE.read().clone());
     }
     TARGET_CACHE
         .read()

@@ -144,15 +144,8 @@ pub fn exec_wasm(
 
     let evm_api = EvmApiRequestor::new(cothread);
 
-    let mut instance = unsafe {
-        NativeInstance::deserialize(
-            &module,
-            compile.clone(),
-            evm_api,
-            evm_data,
-            Target::default(),
-        )
-    }?;
+    let mut instance =
+        unsafe { NativeInstance::deserialize(&module, compile.clone(), evm_api, evm_data) }?;
 
     let thread = thread::spawn(move || {
         let outcome = instance.run_main(&calldata, config, ink);

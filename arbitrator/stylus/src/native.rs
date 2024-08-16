@@ -38,6 +38,8 @@ use wasmer::{
 };
 use wasmer_vm::VMExtern;
 
+use crate::target_cache::target_native;
+
 #[derive(Debug)]
 pub struct NativeInstance<D: DataReader, E: EvmApi<D>> {
     pub instance: Instance,
@@ -96,10 +98,9 @@ impl<D: DataReader, E: EvmApi<D>> NativeInstance<D, E> {
         compile: CompileConfig,
         evm: E,
         evm_data: EvmData,
-        target: Target,
     ) -> Result<Self> {
         let env = WasmEnv::new(compile, None, evm, evm_data);
-        let store = env.compile.store(target);
+        let store = env.compile.store(target_native());
         let module = unsafe { Module::deserialize_unchecked(&store, module)? };
         Self::from_module(module, store, env)
     }

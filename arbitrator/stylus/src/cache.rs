@@ -8,7 +8,9 @@ use lru::LruCache;
 use parking_lot::Mutex;
 use prover::programs::config::CompileConfig;
 use std::{collections::HashMap, num::NonZeroUsize};
-use wasmer::{Engine, Module, Store, Target};
+use wasmer::{Engine, Module, Store};
+
+use crate::target_cache::target_native;
 
 lazy_static! {
     static ref INIT_CACHE: Mutex<InitCache> = Mutex::new(InitCache::new(256));
@@ -23,7 +25,6 @@ macro_rules! cache {
 pub struct InitCache {
     long_term: HashMap<CacheKey, CacheItem>,
     lru: LruCache<CacheKey, CacheItem>,
-    target: Target,
 }
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
@@ -69,7 +70,6 @@ impl InitCache {
         Self {
             long_term: HashMap::new(),
             lru: LruCache::new(NonZeroUsize::new(size).unwrap()),
-            target: Target::default(),
         }
     }
 
@@ -77,14 +77,6 @@ impl InitCache {
         cache!()
             .lru
             .resize(NonZeroUsize::new(size.try_into().unwrap()).unwrap())
-    }
-
-    pub fn set_target(target: Target) {
-        cache!().target = target;
-    }
-
-    pub fn target() -> Target {
-        cache!().target.clone()
     }
 
     /// Retrieves a cached value, updating items as necessary.
@@ -128,10 +120,9 @@ impl InitCache {
             }
             return Ok(item.data());
         }
-        let target = cache.target.clone();
         drop(cache);
 
-        let engine = CompileConfig::version(version, debug).engine(target);
+        let engine = CompileConfig::version(version, debug).engine(target_native());
         let module = unsafe { Module::deserialize_unchecked(&engine, module)? };
 
         let item = CacheItem::new(module, engine);
