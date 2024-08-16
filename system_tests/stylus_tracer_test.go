@@ -150,6 +150,9 @@ func intToBe32(v int) []byte {
 	return binary.BigEndian.AppendUint32(nil, uint32(v))
 }
 
+// clearInk removes the start and end ink values from the trace so we can compare them.
+// In Arbitrum, the gas used by the transaction varies depending on the L1 fees, so the trace
+// returns different gas values and we can't hardcode them.
 func clearInk(trace []gethexec.HostioTraceInfo) {
 	for i := range trace {
 		trace[i].StartInk = 0
