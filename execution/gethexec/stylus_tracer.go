@@ -12,7 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/tracers"
-	"github.com/ethereum/go-ethereum/log"
+	"github.com/offchainlabs/nitro/util/stack"
 )
 
 func init() {
@@ -22,21 +22,21 @@ func init() {
 // stylusTracer captures Stylus HostIOs and returns them in a structured format to be used in Cargo
 // Stylus Replay.
 type stylusTracer struct {
-	open      *[]HostioTraceInfo
-	stack     []*[]HostioTraceInfo
+	open      *stack.Stack[HostioTraceInfo]
+	stack     *stack.Stack[*stack.Stack[HostioTraceInfo]]
 	interrupt atomic.Bool
 	reason    error
 }
 
 // HostioTraceInfo contains the captured HostIO log returned by stylusTracer.
 type HostioTraceInfo struct {
-	Name     string             `json:"name"`
-	Args     hexutil.Bytes      `json:"args"`
-	Outs     hexutil.Bytes      `json:"outs"`
-	StartInk uint64             `json:"startInk"`
-	EndInk   uint64             `json:"endInk"`
-	Address  *common.Address    `json:"address,omitempty"`
-	Steps    *[]HostioTraceInfo `json:"steps,omitempty"`
+	Name     string                        `json:"name"`
+	Args     hexutil.Bytes                 `json:"args"`
+	Outs     hexutil.Bytes                 `json:"outs"`
+	StartInk uint64                        `json:"startInk"`
+	EndInk   uint64                        `json:"endInk"`
+	Address  *common.Address               `json:"address,omitempty"`
+	Steps    *stack.Stack[HostioTraceInfo] `json:"steps,omitempty"`
 }
 
 // nestsHostios contains the hostios with nested calls.
@@ -47,9 +47,9 @@ var nestsHostios = map[string]bool{
 }
 
 func newStylusTracer(ctx *tracers.Context, _ json.RawMessage) (tracers.Tracer, error) {
-	var open []HostioTraceInfo
 	return &stylusTracer{
-		open: &open,
+		open:  stack.NewStack[HostioTraceInfo](),
+		stack: stack.NewStack[*stack.Stack[HostioTraceInfo]](),
 	}, nil
 }
 
@@ -65,32 +65,40 @@ func (t *stylusTracer) CaptureStylusHostio(name string, args, outs []byte, start
 		EndInk:   endInk,
 	}
 	if nestsHostios[name] {
-		last := pop(t.open)
+		last, err := t.open.Pop()
+		if err != nil {
+			t.Stop(err)
+			return
+		}
 		info.Address = last.Address
 		info.Steps = last.Steps
 	}
-	*t.open = append(*t.open, info)
+	t.open.Push(info)
 }
 
 func (t *stylusTracer) CaptureEnter(typ vm.OpCode, from common.Address, to common.Address, input []byte, gas uint64, value *big.Int) {
 	if t.interrupt.Load() {
 		return
 	}
-	inner := []HostioTraceInfo{}
+	inner := stack.NewStack[HostioTraceInfo]()
 	info := HostioTraceInfo{
 		Address: &to,
-		Steps:   &inner,
+		Steps:   inner,
 	}
-	*t.open = append(*t.open, info)
-	t.stack = append(t.stack, t.open) // save where we were
-	t.open = &inner
+	t.open.Push(info)
+	t.stack.Push(t.open)
+	t.open = inner
 }
 
-func (t *stylusTracer) CaptureExit(output []byte, gasUsed uint64, err error) {
+func (t *stylusTracer) CaptureExit(output []byte, gasUsed uint64, _ error) {
 	if t.interrupt.Load() {
 		return
 	}
-	t.open = pop(&t.stack)
+	var err error
+	t.open, err = t.stack.Pop()
+	if err != nil {
+		t.Stop(err)
+	}
 }
 
 func (t *stylusTracer) GetResult() (json.RawMessage, error) {
@@ -107,18 +115,6 @@ func (t *stylusTracer) GetResult() (json.RawMessage, error) {
 func (t *stylusTracer) Stop(err error) {
 	t.reason = err
 	t.interrupt.Store(true)
-}
-
-func pop[T any](stack *[]T) T {
-	if len(*stack) == 0 {
-		log.Warn("stylusTracer: trying to pop empty stack")
-		var zeroVal T
-		return zeroVal
-	}
-	i := len(*stack) - 1
-	val := (*stack)[i]
-	*stack = (*stack)[:i]
-	return val
 }
 
 // Unimplemented EVMLogger interface methods

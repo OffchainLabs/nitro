@@ -12,6 +12,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
+	"github.com/offchainlabs/nitro/util/stack"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
@@ -88,14 +89,14 @@ func TestStylusTracer(t *testing.T) {
 					Args:    append(stylusMulticall.Bytes(), common.Hex2Bytes("ffffffffffffffff000000000000000000000000000000000000000000000000000000000000000000")...),
 					Outs:    common.Hex2Bytes("0000000000"),
 					Address: &stylusMulticall,
-					Steps: &[]gethexec.HostioTraceInfo{
+					Steps: (*stack.Stack[gethexec.HostioTraceInfo])(&[]gethexec.HostioTraceInfo{
 						{Name: "user_entrypoint", Args: intToBe32(1), Outs: []byte{}},
 						{Name: "pay_for_memory_grow", Args: []byte{0x00, 0x01}, Outs: []byte{}},
 						{Name: "read_args", Args: []byte{}, Outs: []byte{0x00}},
 						{Name: "storage_flush_cache", Args: []byte{0x00}, Outs: []byte{}},
 						{Name: "write_result", Args: []byte{}, Outs: []byte{}},
 						{Name: "user_returned", Args: []byte{}, Outs: intToBe32(0)},
-					},
+					}),
 				},
 				{Name: "storage_flush_cache", Args: []byte{0x00}, Outs: []byte{}},
 				{Name: "write_result", Args: []byte{}, Outs: []byte{}},
@@ -116,7 +117,7 @@ func TestStylusTracer(t *testing.T) {
 					Args:    append(evmMulticall.Bytes(), common.Hex2Bytes("ffffffffffffffff000000000000000000000000000000000000000000000000000000000000000000")...),
 					Outs:    common.Hex2Bytes("0000000000"),
 					Address: &evmMulticall,
-					Steps:   &[]gethexec.HostioTraceInfo{},
+					Steps:   stack.NewStack[gethexec.HostioTraceInfo](),
 				},
 				{Name: "storage_flush_cache", Args: []byte{0x00}, Outs: []byte{}},
 				{Name: "write_result", Args: []byte{}, Outs: []byte{}},
