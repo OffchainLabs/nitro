@@ -84,7 +84,7 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 			case <-ready: // Wait until the stream exists and start consuming iteratively.
 			}
 			s.StopWaiter.CallIteratively(func(ctx context.Context) time.Duration {
-				req, err := c.Consume(ctx)
+				req, ackNotifier, err := c.Consume(ctx)
 				if err != nil {
 					log.Error("Consuming request", "error", err)
 					return 0
@@ -97,9 +97,13 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 				res, err := valRun.Await(ctx)
 				if err != nil {
 					log.Error("Error validating", "request value", req.Value, "error", err)
+					close(ackNotifier)
 					return 0
 				}
-				if err := c.SetResult(ctx, req.Value.SelfHash, req.ID, res); err != nil {
+				err = c.SetResult(ctx, req.Value.SelfHash, req.ID, res)
+				// Even in error we close ackNotifier as there's no retry mechanism here and closing it will alow other consumers to autoclaim
+				close(ackNotifier)
+				if err != nil {
 					log.Error("Error setting result for request", "id", req.ID, "result", res, "error", err)
 					return 0
 				}

@@ -182,7 +182,7 @@ func consume(ctx context.Context, t *testing.T, consumers []*Consumer[testReques
 			func(ctx context.Context) {
 				for {
 
-					res, err := c.Consume(ctx)
+					res, ackNotifier, err := c.Consume(ctx)
 					if err != nil {
 						if !errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, context.Canceled) {
 							t.Errorf("Consume() unexpected error: %v", err)
@@ -198,6 +198,7 @@ func consume(ctx context.Context, t *testing.T, consumers []*Consumer[testReques
 					if err := c.SetResult(ctx, res.Value.SelfHash, res.ID, testResponse{Response: resp}); err != nil {
 						t.Errorf("Error setting a result: %v", err)
 					}
+					close(ackNotifier)
 					wantResponses[idx] = append(wantResponses[idx], resp)
 				}
 			})
@@ -291,13 +292,14 @@ func TestRedisProduceComplex(t *testing.T) {
 				// that other consumers will claim ownership on those messages.
 				for i := 0; i < len(consumers); i += 3 {
 					consumers[i].Start(ctx)
-					req, err := consumers[i].Consume(ctx)
+					req, _, err := consumers[i].Consume(ctx)
 					if err != nil {
 						t.Errorf("Error consuming message: %v", err)
 					}
 					if req == nil {
 						t.Error("Didn't consume any message")
 					}
+					// Kills the actnotifier hence allowing XAUTOCLAIM
 					consumers[i].StopAndWait()
 				}
 

@@ -1,10 +1,10 @@
 package validator
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
+	"fmt"
 
+	"github.com/cespare/xxhash/v2"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/arbutil"
 )
@@ -35,6 +35,5 @@ func (v *ValidationInput) SetSelfHash() {
 	if err != nil {
 		return
 	}
-	hash := sha256.Sum256(jsonData)
-	v.SelfHash = hex.EncodeToString(hash[:])
+	v.SelfHash = fmt.Sprintf("%d", xxhash.Sum64(jsonData))
 }

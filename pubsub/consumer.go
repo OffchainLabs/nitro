@@ -40,12 +40,11 @@ func ConsumerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 // indicate it is alive.
 type Consumer[Request any, Response any] struct {
 	stopwaiter.StopWaiter
-	id           string
-	client       redis.UniversalClient
-	redisStream  string
-	redisGroup   string
-	cfg          *ConsumerConfig
-	ackNotifiers map[string]chan struct{}
+	id          string
+	client      redis.UniversalClient
+	redisStream string
+	redisGroup  string
+	cfg         *ConsumerConfig
 }
 
 type Message[Request any] struct {
@@ -58,12 +57,11 @@ func NewConsumer[Request any, Response any](client redis.UniversalClient, stream
 		return nil, fmt.Errorf("redis stream name cannot be empty")
 	}
 	return &Consumer[Request, Response]{
-		id:           uuid.NewString(),
-		client:       client,
-		redisStream:  streamName,
-		redisGroup:   streamName, // There is 1-1 mapping of redis stream and consumer group.
-		cfg:          cfg,
-		ackNotifiers: make(map[string]chan struct{}),
+		id:          uuid.NewString(),
+		client:      client,
+		redisStream: streamName,
+		redisGroup:  streamName, // There is 1-1 mapping of redis stream and consumer group.
+		cfg:         cfg,
 	}, nil
 }
 
@@ -86,7 +84,7 @@ func (c *Consumer[Request, Response]) StreamName() string {
 
 // Consumer first checks it there exists pending message that is claimed by
 // unresponsive consumer, if not then reads from the stream.
-func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Request], error) {
+func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Request], chan struct{}, error) {
 	// First try to XAUTOCLAIM, this prioritizes processing PEL messages
 	// that have been waiting for more than IdletimeToAutoclaim duration
 	messages, _, err := c.client.XAutoClaim(ctx, &redis.XAutoClaimArgs{
@@ -109,13 +107,13 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 			Block:   time.Millisecond, // 0 seems to block the read instead of immediately returning
 		}).Result()
 		if errors.Is(err, redis.Nil) {
-			return nil, nil
+			return nil, nil, nil
 		}
 		if err != nil {
-			return nil, fmt.Errorf("reading message for consumer: %q: %w", c.id, err)
+			return nil, nil, fmt.Errorf("reading message for consumer: %q: %w", c.id, err)
 		}
 		if len(res) != 1 || len(res[0].Messages) != 1 {
-			return nil, fmt.Errorf("redis returned entries: %+v, for querying single message", res)
+			return nil, nil, fmt.Errorf("redis returned entries: %+v, for querying single message", res)
 		}
 		messages = res[0].Messages
 	}
@@ -125,11 +123,11 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 		data, ok = (value).(string)
 	)
 	if !ok {
-		return nil, fmt.Errorf("casting request to string: %w", err)
+		return nil, nil, fmt.Errorf("casting request to string: %w", err)
 	}
 	var req Request
 	if err := json.Unmarshal([]byte(data), &req); err != nil {
-		return nil, fmt.Errorf("unmarshaling value: %v, error: %w", value, err)
+		return nil, nil, fmt.Errorf("unmarshaling value: %v, error: %w", value, err)
 	}
 	ackNotifier := make(chan struct{})
 	c.StopWaiter.LaunchThread(func(ctx context.Context) {
@@ -153,12 +151,11 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 			}
 		}
 	})
-	c.ackNotifiers[messages[0].ID] = ackNotifier
 	log.Debug("Redis stream consuming", "consumer_id", c.id, "message_id", messages[0].ID)
 	return &Message[Request]{
 		ID:    messages[0].ID,
 		Value: req,
-	}, nil
+	}, ackNotifier, nil
 }
 
 func (c *Consumer[Request, Response]) SetResult(ctx context.Context, id string, messageID string, result Response) error {
@@ -176,10 +173,6 @@ func (c *Consumer[Request, Response]) SetResult(ctx context.Context, id string, 
 	}
 	if _, err := c.client.XAck(ctx, c.redisStream, c.redisGroup, messageID).Result(); err != nil {
 		return fmt.Errorf("acking message: %v, error: %w", messageID, err)
-	}
-	if ackNotifier, found := c.ackNotifiers[messageID]; found {
-		close(ackNotifier)
-		delete(c.ackNotifiers, messageID)
 	}
 	return nil
 }
