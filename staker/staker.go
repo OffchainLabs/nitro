@@ -87,12 +87,12 @@ type L1ValidatorConfig struct {
 	StartValidationFromStaked bool                        `koanf:"start-validation-from-staked"`
 	ContractWalletAddress     string                      `koanf:"contract-wallet-address"`
 	GasRefunderAddress        string                      `koanf:"gas-refunder-address"`
-	DataPoster                dataposter.DataPosterConfig `koanf:"data-poster" reload:"hot"`
+	DataPoster                dataposter.DataPosterConfig `koanf:"data-poster"`
 	RedisUrl                  string                      `koanf:"redis-url"`
-	ExtraGas                  uint64                      `koanf:"extra-gas" reload:"hot"`
+	ExtraGas                  uint64                      `koanf:"extra-gas"`
 	Dangerous                 DangerousConfig             `koanf:"dangerous"`
 	ParentChainWallet         genericconf.WalletConfig    `koanf:"parent-chain-wallet"`
-	LogQueryBatchSize         uint64                      `koanf:"log-query-batch-size" reload:"hot"`
+	LogQueryBatchSize         uint64                      `koanf:"log-query-batch-size"`
 	EnableFastConfirmation    bool                        `koanf:"enable-fast-confirmation"`
 
 	strategy    StakerStrategy

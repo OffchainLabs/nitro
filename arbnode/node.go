@@ -85,7 +85,7 @@ type Config struct {
 	MessagePruner       MessagePrunerConfig         `koanf:"message-pruner" reload:"hot"`
 	BlockValidator      staker.BlockValidatorConfig `koanf:"block-validator" reload:"hot"`
 	Feed                broadcastclient.FeedConfig  `koanf:"feed" reload:"hot"`
-	Staker              staker.L1ValidatorConfig    `koanf:"staker" reload:"hot"`
+	Staker              staker.L1ValidatorConfig    `koanf:"staker"`
 	SeqCoordinator      SeqCoordinatorConfig        `koanf:"seq-coordinator"`
 	DataAvailability    das.DataAvailabilityConfig  `koanf:"data-availability"`
 	SyncMonitor         SyncMonitorConfig           `koanf:"sync-monitor"`
