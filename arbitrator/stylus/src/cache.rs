@@ -70,15 +70,9 @@ impl WeightScale<CacheKey, CacheItem> for CustomWeightScale {
 }
 
 #[repr(C)]
-pub struct CacheContainerMetrics {
-    pub size_bytes: u32,
-    pub size_entries: u32,
-}
-
-#[repr(C)]
-pub struct CacheMetrics {
-    pub lru: CacheContainerMetrics,
-    pub long_term: CacheContainerMetrics,
+pub struct LruCacheMetrics {
+    pub size: u64,
+    pub count: u64,
 }
 
 impl InitCache {
@@ -185,17 +179,11 @@ impl InitCache {
         }
     }
 
-    pub fn get_metrics() -> CacheMetrics {
+    pub fn get_lru_metrics() -> LruCacheMetrics {
         let cache = cache!();
-        return CacheMetrics {
-            lru: CacheContainerMetrics {
-                size_bytes: cache.lru.weight().try_into().unwrap(),
-                size_entries: cache.lru.len().try_into().unwrap(),
-            },
-            long_term: CacheContainerMetrics {
-                size_bytes: 0, // not tracked at this moment
-                size_entries: cache.long_term.len().try_into().unwrap(),
-            },
+        return LruCacheMetrics{
+            size: cache.lru.weight().try_into().unwrap(),
+            count: cache.lru.len().try_into().unwrap(),
         }
     }
 }

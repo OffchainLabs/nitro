@@ -47,10 +47,8 @@ type rustBytes = C.RustBytes
 type rustSlice = C.RustSlice
 
 var (
-	stylusCacheLRUSizeBytesGauge   = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/size/bytes", nil)
-	stylusCacheLRUSizeEntriesGauge = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/size/entries", nil)
-
-	stylusCacheLongTermSizeEntriesGauge = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/longterm/size/entries", nil)
+	stylusLRUCacheSizeKbGauge    = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/size_kilobytes", nil)
+	stylusLRUCacheSizeCountGauge = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/count", nil)
 )
 
 func activateProgram(
@@ -270,13 +268,10 @@ func callProgram(
 }
 
 func getMetrics() {
-	metrics := C.stylus_get_cache_metrics()
-	log.Error("CacheMetrics", "metrics", metrics)
+	metrics := C.stylus_get_lru_cache_metrics()
 
-	stylusCacheLRUSizeBytesGauge.Update(int64(metrics.lru.size_bytes))
-	stylusCacheLRUSizeEntriesGauge.Update(int64(metrics.lru.size_entries))
-
-	stylusCacheLongTermSizeEntriesGauge.Update(int64(metrics.lru.size_entries))
+	stylusLRUCacheSizeKbGauge.Update(int64(metrics.size))
+	stylusLRUCacheSizeCountGauge.Update(int64(metrics.count))
 }
 
 //export handleReqImpl
