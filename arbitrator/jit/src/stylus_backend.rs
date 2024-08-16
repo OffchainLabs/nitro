@@ -24,7 +24,6 @@ use std::{
     thread::JoinHandle,
 };
 use stylus::{native::NativeInstance, run::RunProgram};
-use wasmer::Target;
 
 struct MessageToCothread {
     result: Vec<u8>,
