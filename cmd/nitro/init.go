@@ -495,12 +495,18 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				if err != nil {
 					return nil, nil, err
 				}
+				if err := dbutil.UnfinishedConversionCheck(chainData); err != nil {
+					return nil, nil, fmt.Errorf("l2chaindata unfinished database conversion check error: %w", err)
+				}
 				wasmDb, err := stack.OpenDatabaseWithExtraOptions("wasm", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, "wasm/", false, persistentConfig.Pebble.ExtraOptions("wasm"))
 				if err != nil {
 					return nil, nil, err
 				}
 				if err := validateOrUpgradeWasmStoreSchemaVersion(wasmDb); err != nil {
 					return nil, nil, err
+				}
+				if err := dbutil.UnfinishedConversionCheck(wasmDb); err != nil {
+					return nil, nil, fmt.Errorf("wasm unfinished database conversion check error: %w", err)
 				}
 				chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1)
 				_, err = rawdb.ParseStateScheme(cacheConfig.StateScheme, chainDb)
@@ -560,8 +566,8 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				return chainDb, l2BlockChain, nil
 			}
 			readOnlyDb.Close()
-		} else if !isLeveldbNotExistError(err) && !isPebbleNotExistError(err) {
-			// we only want to continue if the error is pebble or leveldb not exist error
+		} else if !dbutil.IsNotExistError(err) {
+			// we only want to continue if the database does not exist
 			return nil, nil, fmt.Errorf("Failed to open database: %w", err)
 		}
 	}
