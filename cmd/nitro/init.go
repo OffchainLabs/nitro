@@ -397,16 +397,6 @@ func checkEmptyDatabaseDir(dir string, force bool) error {
 	return nil
 }
 
-var pebbleNotExistErrorRegex = regexp.MustCompile("pebble: database .* does not exist")
-
-func isPebbleNotExistError(err error) bool {
-	return pebbleNotExistErrorRegex.MatchString(err.Error())
-}
-
-func isLeveldbNotExistError(err error) bool {
-	return os.IsNotExist(err)
-}
-
 func databaseIsEmpty(db ethdb.Database) bool {
 	it := db.NewIterator(nil, nil)
 	defer it.Release()
