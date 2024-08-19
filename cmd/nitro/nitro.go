@@ -62,6 +62,7 @@ import (
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/colors"
+	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/iostat"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -236,6 +237,10 @@ func mainImpl() int {
 	}
 	if nodeConfig.Execution.Sequencer.Enable != nodeConfig.Node.Sequencer {
 		log.Error("consensus and execution must agree if sequencing is enabled or not", "Execution.Sequencer.Enable", nodeConfig.Execution.Sequencer.Enable, "Node.Sequencer", nodeConfig.Node.Sequencer)
+	}
+	if nodeConfig.Node.SeqCoordinator.Enable && !nodeConfig.Node.ParentChainReader.Enable {
+		log.Error("Sequencer coordinator must be enabled with parent chain reader, try starting node with --parent-chain.connection.url")
+		return 1
 	}
 
 	var dataSigner signature.DataSignerFunc
@@ -492,6 +497,10 @@ func mainImpl() int {
 	if err != nil {
 		log.Error("failed to open database", "err", err)
 		log.Error("database is corrupt; delete it and try again", "database-directory", stack.InstanceDir())
+		return 1
+	}
+	if err := dbutil.UnfinishedConversionCheck(arbDb); err != nil {
+		log.Error("arbitrumdata unfinished conversion check error", "err", err)
 		return 1
 	}
 
