@@ -65,7 +65,13 @@ impl CacheItem {
 struct CustomWeightScale;
 impl WeightScale<CacheKey, CacheItem> for CustomWeightScale {
     fn weight(&self, _key: &CacheKey, val: &CacheItem) -> usize {
-        val.asm_size_estimate_kb.try_into().unwrap()
+        let mut w = val.asm_size_estimate_kb.try_into().unwrap();
+        if w > 0 {
+            // clru defines the weight of an entry as the number returned by this function plus one.
+            // Therefore, we need to subtract one from the weight to get the actual weight of the entry.
+            w -= 1;
+        }
+        return w;
     }
 }
 
