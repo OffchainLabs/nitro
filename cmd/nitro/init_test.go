@@ -207,6 +207,7 @@ func TestSetLatestSnapshotUrl(t *testing.T) {
 
 	testCases := []struct {
 		name           string
+		chain          string
 		latestContents string
 		wantUrl        func(string) string
 	}{
@@ -230,6 +231,12 @@ func TestSetLatestSnapshotUrl(t *testing.T) {
 			latestContents: "https://some.domain.com/arb1/2024/21/archive.tar.gz",
 			wantUrl:        func(serverAddr string) string { return "https://some.domain.com/arb1/2024/21/archive.tar.gz" },
 		},
+		{
+			name:           "chain and contents with upper case",
+			chain:          "ARB1",
+			latestContents: "ARB1/2024/21/ARCHIVE.TAR.GZ",
+			wantUrl:        func(serverAddr string) string { return serverAddr + "/arb1/2024/21/archive.tar.gz" },
+		},
 	}
 
 	for _, testCase := range testCases {
@@ -237,6 +244,7 @@ func TestSetLatestSnapshotUrl(t *testing.T) {
 
 		// Create latest file
 		serverDir := t.TempDir()
+
 		err := os.Mkdir(filepath.Join(serverDir, chain), dirPerm)
 		Require(t, err)
 		err = os.WriteFile(filepath.Join(serverDir, chain, latestFile), []byte(testCase.latestContents), filePerm)
@@ -251,7 +259,11 @@ func TestSetLatestSnapshotUrl(t *testing.T) {
 		initConfig := conf.InitConfigDefault
 		initConfig.Latest = snapshotKind
 		initConfig.LatestBase = addr
-		err = setLatestSnapshotUrl(ctx, &initConfig, chain)
+		configChain := testCase.chain
+		if configChain == "" {
+			configChain = chain
+		}
+		err = setLatestSnapshotUrl(ctx, &initConfig, configChain)
 		Require(t, err)
 
 		// Check url
