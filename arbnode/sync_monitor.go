@@ -72,6 +72,13 @@ func (s *SyncMonitor) SyncTargetMessageCount() arbutil.MessageIndex {
 	return s.syncTarget
 }
 
+func (s *SyncMonitor) GetFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
+	if s.inboxReader != nil && s.inboxReader.l1Reader != nil {
+		return s.inboxReader.GetFinalizedMsgCount(ctx)
+	}
+	return 0, nil
+}
+
 func (s *SyncMonitor) maxMessageCount() (arbutil.MessageIndex, error) {
 	msgCount, err := s.txStreamer.GetMessageCount()
 	if err != nil {
