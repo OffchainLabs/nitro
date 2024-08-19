@@ -41,7 +41,6 @@ import (
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/validator/valnode"
-	"github.com/wasmerio/wasmer-go/wasmer"
 )
 
 var oneEth = arbmath.UintToBig(1e18)
@@ -1530,7 +1529,7 @@ func readWasmFile(t *testing.T, file string) ([]byte, []byte) {
 	// chose a random dictionary for testing, but keep the same files consistent
 	randDict := arbcompress.Dictionary((len(file) + len(t.Name())) % 2)
 
-	wasmSource, err := wasmer.Wat2Wasm(string(source))
+	wasmSource, err := programs.Wat2Wasm(source)
 	Require(t, err)
 	wasm, err := arbcompress.Compress(wasmSource, arbcompress.LEVEL_WELL, randDict)
 	Require(t, err)
