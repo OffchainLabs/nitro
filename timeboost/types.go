@@ -3,7 +3,6 @@ package timeboost
 import (
 	"bytes"
 	"crypto/ecdsa"
-	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 	"math/big"
@@ -14,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/crypto/secp256k1"
+	"golang.org/x/crypto/sha3"
 )
 
 type Bid struct {
@@ -72,19 +72,45 @@ type ValidatedBid struct {
 	Bidder                 common.Address
 }
 
+// Hash returns the following solidity implementation:
+//
+//	uint256(keccak256(abi.encodePacked(bidder, bidBytes)))
 func (v *ValidatedBid) Hash() string {
-	// Concatenate the bidder address and the byte representation of the bid
-	data := append(v.Bidder.Bytes(), padBigInt(v.ChainId)...)
-	data = append(data, v.AuctionContractAddress.Bytes()...)
+	bidBytes := v.BidBytes()
+	bidder := v.Bidder.Bytes()
+
+	concatenatedBytes := append(bidder, bidBytes...)
+
+	// Compute Keccak-256 hash
+	hash := sha3.NewLegacyKeccak256()
+	hash.Write(concatenatedBytes)
+	hashedBytes := hash.Sum(nil)
+
+	// Convert the hash to a big integer (uint256 equivalent)
+	hashInt := new(big.Int).SetBytes(hashedBytes)
+
+	// Return the hexadecimal representation of the hash
+	return hexutil.EncodeBig(hashInt)
+}
+
+// BidBytes returns the byte representation equivalent to the Solidity implementation of
+//
+//	abi.encodePacked(BID_DOMAIN, block.chainid, address(this), _round, _amount, _expressLaneController)
+func (v *ValidatedBid) BidBytes() []byte {
+	var buffer bytes.Buffer
+
+	buffer.Write(domainValue)
+	buffer.Write(v.ChainId.Bytes())
+	buffer.Write(v.AuctionContractAddress.Bytes())
+
 	roundBytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(roundBytes, v.Round)
-	data = append(data, roundBytes...)
-	data = append(data, v.Amount.Bytes()...)
-	data = append(data, v.ExpressLaneController.Bytes()...)
+	buffer.Write(roundBytes)
 
-	hash := sha256.Sum256(data)
-	// Return the hash as a hexadecimal string
-	return fmt.Sprintf("%x", hash)
+	buffer.Write(v.Amount.Bytes())
+	buffer.Write(v.ExpressLaneController.Bytes())
+
+	return buffer.Bytes()
 }
 
 func (v *ValidatedBid) ToJson() *JsonValidatedBid {
