@@ -342,7 +342,6 @@ type Sequencer struct {
 	expectedSurplus                   int64
 	expectedSurplusUpdated            bool
 	auctioneerAddr                    common.Address
-	timeboostLock                     sync.Mutex
 	timeboostAuctionResolutionTxQueue containers.Queue[txQueueItem]
 }
 

@@ -34,7 +34,7 @@ type expressLaneService struct {
 	auctionContractAddr      common.Address
 	initialTimestamp         time.Time
 	roundDuration            time.Duration
-	auctionClosingSeconds    time.Duration
+	auctionClosing           time.Duration
 	chainConfig              *params.ChainConfig
 	logs                     chan []*types.Log
 	seqClient                *ethclient.Client
@@ -59,12 +59,12 @@ func newExpressLaneService(
 	}
 	initialTimestamp := time.Unix(int64(roundTimingInfo.OffsetTimestamp), 0)
 	roundDuration := time.Duration(roundTimingInfo.RoundDurationSeconds) * time.Second
-	auctionClosingSeconds := time.Duration(roundTimingInfo.AuctionClosingSeconds) * time.Second
+	auctionClosingDuration := time.Duration(roundTimingInfo.AuctionClosingSeconds) * time.Second
 	return &expressLaneService{
 		auctionContract:          auctionContract,
 		chainConfig:              chainConfig,
 		initialTimestamp:         initialTimestamp,
-		auctionClosingSeconds:    auctionClosingSeconds,
+		auctionClosing:           auctionClosingDuration,
 		roundControl:             lru.NewBasicLRU[uint64, *expressLaneControl](8), // Keep 8 rounds cached.
 		auctionContractAddr:      auctionContractAddr,
 		roundDuration:            roundDuration,
@@ -104,6 +104,39 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 		}
 	})
 	es.LaunchThread(func(ctx context.Context) {
+		// 	rollupAbi, err := express_lane_auctiongen.ExpressLaneAuctionMetaData.GetAbi()
+		// 	if err != nil {
+		// 		panic(err)
+		// 	}
+		// 	rawEv := rollupAbi.Events["AuctionResolved"]
+		// 	express_lane_auctiongen.ExpressLaneAuctionAuctionResolved
+		// 	rollupAbi, err := rollupgen.RollupCoreMetaData.GetAbi()
+		// event := new(ExpressLaneAuctionAuctionResolved)
+		// if err := _ExpressLaneAuction.contract.UnpackLog(event, "AuctionResolved", log); err != nil {
+		// 	return nil, err
+		// }
+		// event.Raw = log
+		// UnpackLog(out interface{}, event string, log types.Log) error {
+		// 	// Anonymous events are not supported.
+		// 	if len(log.Topics) == 0 {
+		// 		return errNoEventSignature
+		// 	}
+		// 	if log.Topics[0] != c.abi.Events[event].ID {
+		// 		return errEventSignatureMismatch
+		// 	}
+		// 	if len(log.Data) > 0 {
+		// 		if err := c.abi.UnpackIntoInterface(out, event, log.Data); err != nil {
+		// 			return err
+		// 		}
+		// 	}
+		// 	var indexed abi.Arguments
+		// 	for _, arg := range c.abi.Events[event].Inputs {
+		// 		if arg.Indexed {
+		// 			indexed = append(indexed, arg)
+		// 		}
+		// 	}
+		// 	return abi.ParseTopics(out, indexed, log.Topics[1:])
+		// }
 		log.Info("Monitoring express lane auction contract")
 		// Monitor for auction resolutions from the auction manager smart contract
 		// and set the express lane controller for the upcoming round accordingly.
@@ -170,7 +203,7 @@ func (es *expressLaneService) isWithinAuctionCloseWindow(arrivalTime time.Time) 
 	// Calculate the time to the next round
 	timeToNextRound := nextRoundStart.Sub(arrivalTime)
 	// Check if the arrival timestamp is within AUCTION_CLOSING_DURATION of TIME_TO_NEXT_ROUND
-	return timeToNextRound <= es.auctionClosingSeconds
+	return timeToNextRound <= es.auctionClosing
 }
 
 func (es *expressLaneService) sequenceExpressLaneSubmission(
