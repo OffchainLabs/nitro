@@ -4,12 +4,10 @@ import (
 	"context"
 	"testing"
 
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 )
 
 func TestConversion(t *testing.T) {
-	_ = testhelpers.InitTestLog(t, log.LvlTrace)
 	oldDBConfig := DBConfigDefaultSrc
 	oldDBConfig.Data = t.TempDir()
 
