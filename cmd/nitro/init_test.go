@@ -29,6 +29,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/conf"
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
 
 const (
@@ -505,4 +506,39 @@ func TestPurgeVersion0WasmStoreEntries(t *testing.T) {
 	checkKeys(t, db, version0Keys, false)
 	checkKeys(t, db, collidedKeys, true)
 	checkKeys(t, db, otherKeys, true)
+}
+
+func TestOpenInitializeChainDbEmptyInit(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
+	stack, err := node.New(stackConfig)
+	defer stack.Close()
+	Require(t, err)
+
+	nodeConfig := NodeConfigDefault
+	nodeConfig.Execution.Caching.StateScheme = env.GetTestStateScheme()
+	nodeConfig.Chain.ID = 42161
+	nodeConfig.Node = *arbnode.ConfigDefaultL2Test()
+	nodeConfig.Init.Empty = true
+
+	l1Client := ethclient.NewClient(stack.Attach())
+
+	chainDb, blockchain, err := openInitializeChainDb(
+		ctx,
+		stack,
+		&nodeConfig,
+		new(big.Int).SetUint64(nodeConfig.Chain.ID),
+		gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching),
+		&nodeConfig.Persistent,
+		l1Client,
+		chaininfo.RollupAddresses{},
+	)
+	Require(t, err)
+	blockchain.Stop()
+	err = chainDb.Close()
+	Require(t, err)
 }
