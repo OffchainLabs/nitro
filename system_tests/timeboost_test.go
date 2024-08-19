@@ -121,26 +121,9 @@ func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing
 	bobBlock := bobReceipt.BlockNumber.Uint64()
 
 	if aliceBlock < bobBlock {
-		t.Fatal("Bob should have been sequenced before Alice with express lane")
+		t.Fatal("Alice's tx should not have been sequenced before Bob's in different blocks")
 	} else if aliceBlock == bobBlock {
-		t.Log("Sequenced in same output block")
-		block, err := seqClient.BlockByNumber(ctx, new(big.Int).SetUint64(aliceBlock))
-		Require(t, err)
-		findTransactionIndex := func(transactions types.Transactions, txHash common.Hash) int {
-			for index, tx := range transactions {
-				if tx.Hash() == txHash {
-					return index
-				}
-			}
-			return -1
-		}
-		txes := block.Transactions()
-		indexA := findTransactionIndex(txes, aliceTx.Hash())
-		indexB := findTransactionIndex(txes, bobBoostableTx.Hash())
-		if indexA == -1 || indexB == -1 {
-			t.Fatal("Did not find txs in block")
-		}
-		if indexA < indexB {
+		if aliceReceipt.TransactionIndex < bobReceipt.TransactionIndex {
 			t.Fatal("Bob should have been sequenced before Alice with express lane")
 		}
 	}
@@ -247,26 +230,9 @@ func TestSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected(t *test
 	charlieBlock := charlieReceipt.BlockNumber.Uint64()
 
 	if aliceBlock < charlieBlock {
-		t.Fatal("Charlie should have been sequenced before Alice with express lane")
+		t.Fatal("Alice's tx should not have been sequenced before Charlie's in different blocks")
 	} else if aliceBlock == charlieBlock {
-		t.Log("Sequenced in same output block")
-		block, err := seqClient.BlockByNumber(ctx, new(big.Int).SetUint64(aliceBlock))
-		Require(t, err)
-		findTransactionIndex := func(transactions types.Transactions, txHash common.Hash) int {
-			for index, tx := range transactions {
-				if tx.Hash() == txHash {
-					return index
-				}
-			}
-			return -1
-		}
-		txes := block.Transactions()
-		indexA := findTransactionIndex(txes, aliceTx.Hash())
-		indexB := findTransactionIndex(txes, charlie0.Hash())
-		if indexA == -1 || indexB == -1 {
-			t.Fatal("Did not find txs in block")
-		}
-		if indexA < indexB {
+		if aliceReceipt.TransactionIndex < charlieReceipt.TransactionIndex {
 			t.Fatal("Charlie should have been sequenced before Alice with express lane")
 		}
 	}

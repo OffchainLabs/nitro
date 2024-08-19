@@ -338,12 +338,12 @@ type Sequencer struct {
 	pauseChan   chan struct{}
 	forwarder   *TxForwarder
 
-	expectedSurplusMutex         sync.RWMutex
-	expectedSurplus              int64
-	expectedSurplusUpdated       bool
-	auctioneerAddr               common.Address
-	timeboostLock                sync.Mutex
-	timeboostAuctionResolutionTx *types.Transaction
+	expectedSurplusMutex              sync.RWMutex
+	expectedSurplus                   int64
+	expectedSurplusUpdated            bool
+	auctioneerAddr                    common.Address
+	timeboostLock                     sync.Mutex
+	timeboostAuctionResolutionTxQueue containers.Queue[txQueueItem]
 }
 
 func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher) (*Sequencer, error) {
@@ -551,16 +551,8 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 	if err != nil {
 		return err
 	}
-	s.timeboostLock.Lock()
-	// Set it as a value that will be consumed first in `createBlock`
-	if s.timeboostAuctionResolutionTx != nil {
-		s.timeboostLock.Unlock()
-		return errors.New("auction resolution tx for round already received")
-	}
-	s.timeboostAuctionResolutionTx = tx
-	s.timeboostLock.Unlock()
 	log.Info("Prioritizing auction resolution transaction from auctioneer", "txHash", tx.Hash().Hex())
-	s.txQueue <- txQueueItem{
+	s.timeboostAuctionResolutionTxQueue.Push(txQueueItem{
 		tx:              tx,
 		txSize:          len(txBytes),
 		options:         nil,
@@ -568,8 +560,7 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 		returnedResult:  &atomic.Bool{},
 		ctx:             ctx,
 		firstAppearance: time.Now(),
-	}
-	s.createBlock(ctx)
+	})
 	return nil
 }
 
@@ -897,7 +888,9 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 
 	for {
 		var queueItem txQueueItem
-		if s.txRetryQueue.Len() > 0 {
+		if s.timeboostAuctionResolutionTxQueue.Len() > 0 {
+			queueItem = s.txRetryQueue.Pop()
+		} else if s.txRetryQueue.Len() > 0 {
 			queueItem = s.txRetryQueue.Pop()
 		} else if len(queueItems) == 0 {
 			var nextNonceExpiryChan <-chan time.Time
@@ -953,29 +946,6 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 
 	s.nonceCache.Resize(config.NonceCacheSize) // Would probably be better in a config hook but this is basically free
 	s.nonceCache.BeginNewBlock()
-	if s.config().Timeboost.Enable {
-		s.timeboostLock.Lock()
-		if s.timeboostAuctionResolutionTx != nil {
-			txBytes, err := s.timeboostAuctionResolutionTx.MarshalBinary()
-			if err != nil {
-				s.timeboostLock.Unlock()
-				log.Error("Failed to marshal timeboost auction resolution tx", "err", err)
-				return false
-			}
-			queueItems = append([]txQueueItem{
-				{
-					tx:              s.timeboostAuctionResolutionTx,
-					txSize:          len(txBytes),
-					options:         nil,
-					resultChan:      make(chan error, 1),
-					returnedResult:  &atomic.Bool{},
-					ctx:             ctx,
-					firstAppearance: time.Now(),
-				},
-			}, queueItems...)
-		}
-		s.timeboostLock.Unlock()
-	}
 	queueItems = s.precheckNonces(queueItems, totalBlockSize)
 	txes := make([]*types.Transaction, len(queueItems))
 	hooks := s.makeSequencingHooks()
