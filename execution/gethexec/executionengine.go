@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
@@ -149,10 +150,25 @@ func (s *ExecutionEngine) MarkFeedStart(to arbutil.MessageIndex) {
 	}
 }
 
-func (s *ExecutionEngine) Initialize(rustCacheSize uint32) {
+func (s *ExecutionEngine) Initialize(rustCacheSize uint32, targetConfig *StylusTargetConfig) error {
 	if rustCacheSize != 0 {
 		programs.ResizeWasmLruCache(rustCacheSize)
 	}
+	var effectiveStylusTarget string
+	target := rawdb.LocalTarget()
+	switch target {
+	case rawdb.TargetArm64:
+		effectiveStylusTarget = targetConfig.Arm64
+	case rawdb.TargetAmd64:
+		effectiveStylusTarget = targetConfig.Amd64
+	case rawdb.TargetHost:
+		effectiveStylusTarget = targetConfig.Host
+	}
+	err := programs.SetTarget(target, effectiveStylusTarget, true)
+	if err != nil {
+		return fmt.Errorf("Failed to set stylus target: %w", err)
+	}
+	return nil
 }
 
 func (s *ExecutionEngine) SetRecorder(recorder *BlockRecorder) {
