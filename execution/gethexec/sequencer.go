@@ -530,6 +530,12 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 	if auctioneerAddr == (common.Address{}) {
 		return errors.New("invalid auctioneer address")
 	}
+	if tx.To() == nil {
+		return errors.New("transaction has no recipient")
+	}
+	if *tx.To() != s.expressLaneService.auctionContractAddr {
+		return errors.New("transaction recipient is not the auction contract")
+	}
 	signer := types.LatestSigner(s.execEngine.bc.Config())
 	sender, err := types.Sender(signer, tx)
 	if err != nil {

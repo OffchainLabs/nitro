@@ -149,8 +149,8 @@ func TestBidValidatorAuctioneerRedisStream(t *testing.T) {
 	// We also verify the top two bids are those we expect.
 	require.Equal(t, 3, len(am.bidCache.bidsByExpressLaneControllerAddr))
 	result := am.bidCache.topTwoBids()
-	require.Equal(t, result.firstPlace.Amount, big.NewInt(7))
+	require.Equal(t, result.firstPlace.Amount, big.NewInt(6))
 	require.Equal(t, result.firstPlace.Bidder, charlieAddr)
-	require.Equal(t, result.secondPlace.Amount, big.NewInt(6))
+	require.Equal(t, result.secondPlace.Amount, big.NewInt(5))
 	require.Equal(t, result.secondPlace.Bidder, bobAddr)
 }

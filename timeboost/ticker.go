@@ -23,14 +23,14 @@ func newAuctionCloseTicker(roundDuration, auctionClosingDuration time.Duration) 
 func (t *auctionCloseTicker) start() {
 	for {
 		now := time.Now()
-		// Calculate the start of the next minute
-		startOfNextMinute := now.Truncate(time.Minute).Add(time.Minute)
-		// Subtract 15 seconds to get the tick time
-		nextTickTime := startOfNextMinute.Add(-15 * time.Second)
+		// Calculate the start of the next round
+		startOfNextMinute := now.Truncate(t.roundDuration).Add(t.roundDuration)
+		// Subtract AUCTION_CLOSING_SECONDS seconds to get the tick time
+		nextTickTime := startOfNextMinute.Add(-t.auctionClosingDuration)
 		// Ensure we are not setting a past tick time
 		if nextTickTime.Before(now) {
 			// If the calculated tick time is in the past, move to the next interval
-			nextTickTime = nextTickTime.Add(time.Minute)
+			nextTickTime = nextTickTime.Add(t.roundDuration)
 		}
 		// Calculate how long to wait until the next tick
 		waitTime := nextTickTime.Sub(now)
