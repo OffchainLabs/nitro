@@ -53,7 +53,7 @@ func CurrentRound(initialRoundTimestamp time.Time, roundDuration time.Duration) 
 	return uint64(time.Since(initialRoundTimestamp) / roundDuration)
 }
 
-// auctionClosed returns the time since auction was closed and whether the auction is closed.
+// auctionClosed returns the time into the current round and whether the auction for this round is closed.
 func auctionClosed(initialRoundTimestamp time.Time, roundDuration time.Duration, auctionClosingDuration time.Duration) (time.Duration, bool) {
 	if roundDuration == 0 {
 		return 0, true
