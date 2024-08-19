@@ -298,6 +298,10 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 				return
 			case auctionClosingTime := <-ticker.c:
 				log.Info("New auction closing time reached", "closingTime", auctionClosingTime, "totalBids", a.bidCache.size())
+				// Wait for a second, just to give some leeway for latency of bids received last minute.
+				// Process any remaining bids that may exist in the bids receiver channel before we close
+				// within this remaining second.
+				a.processRemainingBidsBeforeResolution(ctx, time.Second)
 				if err := a.resolveAuction(ctx); err != nil {
 					log.Error("Could not resolve auction for round", "error", err)
 				}
@@ -306,6 +310,22 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 			}
 		}
 	})
+}
+
+func (a *AuctioneerServer) processRemainingBidsBeforeResolution(ctx context.Context, timeoutDuration time.Duration) {
+	timeout, cancel := context.WithTimeout(ctx, timeoutDuration)
+	defer cancel()
+	for {
+		select {
+		case <-timeout.Done():
+			return
+		case bid := <-a.bidsReceiver:
+			log.Info("Consumed validated bid", "bidder", bid.Bidder, "amount", bid.Amount, "round", bid.Round)
+			a.bidCache.add(JsonValidatedBidToGo(bid))
+			// Persist the validated bid to the database as a non-blocking operation.
+			go a.persistValidatedBid(bid)
+		}
+	}
 }
 
 // Resolves the auction by calling the smart contract with the top two bids.
