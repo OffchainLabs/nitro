@@ -30,6 +30,7 @@ require (
 	github.com/gobwas/ws v1.2.1
 	github.com/gobwas/ws-examples v0.0.0-20190625122829-a9e8908d9484
 	github.com/golang-jwt/jwt v3.2.2+incompatible
+	github.com/google/btree v1.1.2
 	github.com/google/go-cmp v0.6.0
 	github.com/google/uuid v1.3.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
@@ -45,7 +46,6 @@ require (
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.8.4
 	github.com/syndtr/goleveldb v1.0.1-0.20210819022825-2ae1ddf74ef7
-	github.com/wasmerio/wasmer-go v1.0.4
 	github.com/wealdtech/go-merkletree v1.0.0
 	golang.org/x/crypto v0.21.0
 	golang.org/x/exp v0.0.0-20231110203233-9a3e6036ecaa
@@ -56,10 +56,7 @@ require (
 	gopkg.in/natefinch/lumberjack.v2 v2.0.0
 )
 
-require (
-	github.com/google/btree v1.1.2 // indirect
-	github.com/google/go-querystring v1.1.0 // indirect
-)
+require github.com/google/go-querystring v1.1.0 // indirect
 
 require (
 	github.com/DataDog/zstd v1.4.5 // indirect
@@ -172,6 +169,7 @@ require (
 	go.opencensus.io v0.22.5 // indirect
 	golang.org/x/mod v0.14.0 // indirect
 	golang.org/x/net v0.23.0 // indirect
+	golang.org/x/oauth2 v0.22.0
 	golang.org/x/sync v0.5.0
 	golang.org/x/text v0.14.0 // indirect
 	golang.org/x/time v0.3.0 // indirect

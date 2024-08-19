@@ -14,6 +14,7 @@ use eyre::Result;
 use parking_lot::Mutex;
 use prover::programs::{memory::MemoryModel, prelude::*};
 use std::{collections::HashMap, sync::Arc};
+use wasmer::Target;
 
 use super::TestInstance;
 
@@ -53,7 +54,7 @@ impl TestEvmApi {
     pub fn deploy(&mut self, address: Bytes20, config: StylusConfig, name: &str) -> Result<()> {
         let file = format!("tests/{name}/target/wasm32-unknown-unknown/release/{name}.wasm");
         let wasm = std::fs::read(file)?;
-        let module = native::module(&wasm, self.compile.clone())?;
+        let module = native::module(&wasm, self.compile.clone(), Target::default())?;
         self.contracts.lock().insert(address, module);
         self.configs.lock().insert(address, config);
         Ok(())

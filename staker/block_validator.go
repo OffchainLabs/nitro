@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"regexp"
 	"runtime"
 	"sync"
@@ -16,6 +17,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -125,6 +127,9 @@ func (c *BlockValidatorConfig) Validate() error {
 		}
 		c.memoryFreeLimit = limit
 	}
+	if err := c.RedisValidationClientConfig.Validate(); err != nil {
+		return fmt.Errorf("failed to validate redis validation client config: %w", err)
+	}
 	streamsEnabled := c.RedisValidationClientConfig.Enabled()
 	if len(c.ValidationServerConfigs) == 0 {
 		c.ValidationServerConfigs = []rpcclient.ClientConfig{c.ValidationServer}
@@ -139,6 +144,16 @@ func (c *BlockValidatorConfig) Validate() error {
 	for i := range c.ValidationServerConfigs {
 		if err := c.ValidationServerConfigs[i].Validate(); err != nil {
 			return fmt.Errorf("failed to validate one of the block-validator validation-server-configs. url: %s, err: %w", c.ValidationServerConfigs[i].URL, err)
+		}
+		serverUrl := c.ValidationServerConfigs[i].URL
+		if len(serverUrl) > 0 && serverUrl != "self" && serverUrl != "self-auth" {
+			u, err := url.Parse(serverUrl)
+			if err != nil {
+				return fmt.Errorf("failed parsing validation server's url:%s err: %w", serverUrl, err)
+			}
+			if u.Scheme != "ws" && u.Scheme != "wss" {
+				return fmt.Errorf("validation server's url scheme is unsupported, it should either be ws or wss, url:%s", serverUrl)
+			}
 		}
 	}
 	return nil
@@ -484,7 +499,7 @@ func (v *BlockValidator) sendRecord(s *validationStatus) error {
 
 //nolint:gosec
 func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoot common.Hash) error {
-	input, err := validationEntry.ToInput([]string{"wavm"})
+	input, err := validationEntry.ToInput([]rawdb.Target{rawdb.TargetWavm})
 	if err != nil {
 		return err
 	}
