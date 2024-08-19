@@ -217,7 +217,7 @@ func callProgram(
 	address common.Address,
 	moduleHash common.Hash,
 	localAsm []byte,
-	asmSizeEstimate uint32,
+	asmSizeEstimateKb uint32,
 	scope *vm.ScopeContext,
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,
@@ -245,7 +245,7 @@ func callProgram(
 	output := &rustBytes{}
 	status := userStatus(C.stylus_call(
 		goSlice(localAsm),
-		u32(asmSizeEstimate),
+		u32(asmSizeEstimateKb),
 		goSlice(calldata),
 		stylusParams.encode(),
 		evmApi.cNative,
@@ -270,7 +270,7 @@ func callProgram(
 func getMetrics() {
 	metrics := C.stylus_get_lru_cache_metrics()
 
-	stylusLRUCacheSizeKbGauge.Update(int64(metrics.size))
+	stylusLRUCacheSizeKbGauge.Update(int64(metrics.size_kb))
 	stylusLRUCacheSizeCountGauge.Update(int64(metrics.count))
 }
 
@@ -302,27 +302,27 @@ func cacheProgram(db vm.StateDB, module common.Hash, program Program, addressFor
 
 // Evicts a program in Rust. We write a record so that we can undo on revert, unless we don't need to (e.g. expired)
 // For gas estimation and eth_call, we ignore permanent updates and rely on Rust's LRU.
-func evictProgram(db vm.StateDB, module common.Hash, asmSizeEstimate uint32, version uint16, debug bool, runMode core.MessageRunMode, forever bool) {
+func evictProgram(db vm.StateDB, module common.Hash, asmSizeEstimateKb uint32, version uint16, debug bool, runMode core.MessageRunMode, forever bool) {
 	if runMode == core.MessageCommitMode {
 		tag := db.Database().WasmCacheTag()
 		state.EvictWasmRust(module, version, tag, debug)
 		if !forever {
-			db.RecordEvictWasm(state.EvictWasm{ModuleHash: module, Version: version, Tag: tag, Debug: debug, AsmSizeEstimate: asmSizeEstimate})
+			db.RecordEvictWasm(state.EvictWasm{ModuleHash: module, Version: version, Tag: tag, Debug: debug, AsmSizeEstimateKb: asmSizeEstimateKb})
 		}
 	}
 }
 
 func init() {
-	state.CacheWasmRust = func(asm []byte, moduleHash common.Hash, asmSizeEstimate uint32, version uint16, tag uint32, debug bool) {
-		C.stylus_cache_module(goSlice(asm), hashToBytes32(moduleHash), u32(asmSizeEstimate), u16(version), u32(tag), cbool(debug))
+	state.CacheWasmRust = func(asm []byte, moduleHash common.Hash, asmSizeEstimateKb uint32, version uint16, tag uint32, debug bool) {
+		C.stylus_cache_module(goSlice(asm), hashToBytes32(moduleHash), u32(asmSizeEstimateKb), u16(version), u32(tag), cbool(debug))
 	}
 	state.EvictWasmRust = func(moduleHash common.Hash, version uint16, tag uint32, debug bool) {
 		C.stylus_evict_module(hashToBytes32(moduleHash), u16(version), u32(tag), cbool(debug))
 	}
 }
 
-func ResizeWasmLruCache(size uint32) {
-	C.stylus_cache_lru_resize(u32(size))
+func ResizeWasmLruCache(sizeKb uint32) {
+	C.stylus_cache_lru_resize(u32(sizeKb))
 }
 
 const DefaultTargetDescriptionArm = "arm64-linux-unknown+neon"

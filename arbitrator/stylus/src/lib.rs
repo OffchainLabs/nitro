@@ -304,8 +304,8 @@ pub unsafe extern "C" fn stylus_call(
 
 /// resize lru
 #[no_mangle]
-pub extern "C" fn stylus_cache_lru_resize(size: u32) {
-    InitCache::set_lru_size(size);
+pub extern "C" fn stylus_cache_lru_resize(size_kb: u32) {
+    InitCache::set_lru_size(size_kb);
 }
 
 /// Caches an activated user program.

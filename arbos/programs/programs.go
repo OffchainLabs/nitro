@@ -253,7 +253,7 @@ func (p Programs) CallProgram(
 	if runmode == core.MessageCommitMode {
 		arbos_tag = statedb.Database().WasmCacheTag()
 	}
-	ret, err := callProgram(address, moduleHash, localAsm, program.asmSize(), scope, interpreter, tracingInfo, calldata, evmData, goParams, model, arbos_tag)
+	ret, err := callProgram(address, moduleHash, localAsm, program.asmEstimateKb.ToUint32(), scope, interpreter, tracingInfo, calldata, evmData, goParams, model, arbos_tag)
 	if len(ret) > 0 && arbosVersion >= gethParams.ArbosVersion_StylusFixes {
 		// Ensure that return data costs as least as much as it would in the EVM.
 		evmCost := evmMemoryCost(uint64(len(ret)))

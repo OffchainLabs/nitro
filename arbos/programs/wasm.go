@@ -136,7 +136,7 @@ func callProgram(
 	address common.Address,
 	moduleHash common.Hash,
 	_localAsm []byte,
-	_asmSizeEstimate uint32,
+	_asmSizeEstimateKb uint32,
 	scope *vm.ScopeContext,
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,

@@ -49,12 +49,12 @@ impl CacheKey {
 struct CacheItem {
     module: Module,
     engine: Engine,
-    asm_size_estimate: u32,
+    asm_size_estimate_kb: u32,
 }
 
 impl CacheItem {
-    fn new(module: Module, engine: Engine, asm_size_estimate: u32) -> Self {
-        Self { module, engine, asm_size_estimate }
+    fn new(module: Module, engine: Engine, asm_size_estimate_kb: u32) -> Self {
+        Self { module, engine, asm_size_estimate_kb }
     }
 
     fn data(&self) -> (Module, Store) {
@@ -65,13 +65,13 @@ impl CacheItem {
 struct CustomWeightScale;
 impl WeightScale<CacheKey, CacheItem> for CustomWeightScale {
     fn weight(&self, _key: &CacheKey, val: &CacheItem) -> usize {
-        val.asm_size_estimate.try_into().unwrap()
+        val.asm_size_estimate_kb.try_into().unwrap()
     }
 }
 
 #[repr(C)]
 pub struct LruCacheMetrics {
-    pub size: u64,
+    pub size_kb: u64,
     pub count: u64,
 }
 
@@ -88,10 +88,10 @@ impl InitCache {
         }
     }
 
-    pub fn set_lru_size(size: u32) {
+    pub fn set_lru_size(size_kb: u32) {
         cache!()
             .lru
-            .resize(NonZeroUsize::new(size.try_into().unwrap()).unwrap())
+            .resize(NonZeroUsize::new(size_kb.try_into().unwrap()).unwrap())
     }
 
     /// Retrieves a cached value, updating items as necessary.
@@ -116,7 +116,7 @@ impl InitCache {
     pub fn insert(
         module_hash: Bytes32,
         module: &[u8],
-        asm_size_estimate: u32,
+        asm_size_estimate_kb: u32,
         version: u16,
         long_term_tag: u32,
         debug: bool,
@@ -142,7 +142,7 @@ impl InitCache {
         let engine = CompileConfig::version(version, debug).engine(target_native());
         let module = unsafe { Module::deserialize_unchecked(&engine, module)? };
 
-        let item = CacheItem::new(module, engine, asm_size_estimate);
+        let item = CacheItem::new(module, engine, asm_size_estimate_kb);
         let data = item.data();
         let mut cache = cache!();
         if long_term_tag != Self::ARBOS_TAG {
@@ -182,7 +182,7 @@ impl InitCache {
     pub fn get_lru_metrics() -> LruCacheMetrics {
         let cache = cache!();
         return LruCacheMetrics{
-            size: cache.lru.weight().try_into().unwrap(),
+            size_kb: cache.lru.weight().try_into().unwrap(),
             count: cache.lru.len().try_into().unwrap(),
         }
     }
