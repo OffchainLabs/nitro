@@ -59,5 +59,5 @@ func auctionClosed(initialRoundTimestamp time.Time, roundDuration time.Duration,
 		return 0, true
 	}
 	d := time.Since(initialRoundTimestamp) % roundDuration
-	return d, d > auctionClosingDuration
+	return d, d >= roundDuration-auctionClosingDuration
 }
