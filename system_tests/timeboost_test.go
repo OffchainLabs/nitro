@@ -5,6 +5,7 @@ import (
 	"crypto/ecdsa"
 	"fmt"
 	"math/big"
+	"net"
 	"os"
 	"path/filepath"
 	"sync"
@@ -49,7 +50,7 @@ func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing
 	})
 	jwtSecretPath := filepath.Join(tmpDir, "sequencer.jwt")
 
-	_, seqClient, seqInfo, auctionContractAddr, cleanupSeq := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath)
+	seq, seqClient, seqInfo, auctionContractAddr, cleanupSeq := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath)
 	defer cleanupSeq()
 	chainId, err := seqClient.ChainID(ctx)
 	Require(t, err)
@@ -61,7 +62,7 @@ func TestSequencerFeed_ExpressLaneAuction_ExpressLaneTxsHaveAdvantage(t *testing
 	bobPriv := seqInfo.Accounts["Bob"].PrivateKey
 
 	// Prepare a client that can submit txs to the sequencer via the express lane.
-	seqDial, err := rpc.Dial("http://localhost:9567")
+	seqDial, err := rpc.Dial(seq.Stack.HTTPEndpoint())
 	Require(t, err)
 	expressLaneClient := newExpressLaneClient(
 		bobPriv,
@@ -156,7 +157,7 @@ func TestSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected(t *test
 		require.NoError(t, os.RemoveAll(tmpDir))
 	})
 	jwtSecretPath := filepath.Join(tmpDir, "sequencer.jwt")
-	_, seqClient, seqInfo, auctionContractAddr, cleanupSeq := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath)
+	seq, seqClient, seqInfo, auctionContractAddr, cleanupSeq := setupExpressLaneAuction(t, tmpDir, ctx, jwtSecretPath)
 	defer cleanupSeq()
 	chainId, err := seqClient.ChainID(ctx)
 	Require(t, err)
@@ -168,7 +169,7 @@ func TestSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected(t *test
 	bobPriv := seqInfo.Accounts["Bob"].PrivateKey
 
 	// Prepare a client that can submit txs to the sequencer via the express lane.
-	seqDial, err := rpc.Dial("http://localhost:9567")
+	seqDial, err := rpc.Dial(seq.Stack.HTTPEndpoint())
 	Require(t, err)
 	expressLaneClient := newExpressLaneClient(
 		bobPriv,
@@ -280,10 +281,12 @@ func setupExpressLaneAuction(
 
 	builderSeq := NewNodeBuilder(ctx).DefaultConfig(t, true)
 
+	seqPort := getRandomPort(t)
+	seqAuthPort := getRandomPort(t)
 	builderSeq.l2StackConfig.HTTPHost = "localhost"
-	builderSeq.l2StackConfig.HTTPPort = 9567
+	builderSeq.l2StackConfig.HTTPPort = seqPort
 	builderSeq.l2StackConfig.HTTPModules = []string{"eth", "arb", "debug", "timeboost"}
-	builderSeq.l2StackConfig.AuthPort = 9568
+	builderSeq.l2StackConfig.AuthPort = seqAuthPort
 	builderSeq.l2StackConfig.AuthModules = []string{"eth", "arb", "debug", "timeboost", "auctioneer"}
 	builderSeq.l2StackConfig.JWTSecret = jwtSecretPath
 	builderSeq.nodeConfig.Feed.Output = *newBroadcasterConfigTest()
@@ -291,7 +294,7 @@ func setupExpressLaneAuction(
 	builderSeq.execConfig.Sequencer.Timeboost = gethexec.TimeboostConfig{
 		Enable:                true,
 		ExpressLaneAdvantage:  time.Second * 5,
-		SequencerHTTPEndpoint: "http://localhost:9567",
+		SequencerHTTPEndpoint: fmt.Sprintf("http://localhost:%d", seqPort),
 	}
 	cleanupSeq := builderSeq.Build(t)
 	seqInfo, seqNode, seqClient := builderSeq.L2Info, builderSeq.L2.ConsensusNode, builderSeq.L2.Client
@@ -433,15 +436,17 @@ func setupExpressLaneAuction(
 	redisURL := redisutil.CreateTestRedis(ctx, t)
 
 	// Set up the auctioneer RPC service.
+	bidValidatorPort := getRandomPort(t)
+	bidValidatorWsPort := getRandomPort(t)
 	stackConf := node.Config{
 		DataDir:             "", // ephemeral.
-		HTTPPort:            9372,
+		HTTPPort:            bidValidatorPort,
 		HTTPHost:            "localhost",
 		HTTPModules:         []string{timeboost.AuctioneerNamespace},
 		HTTPVirtualHosts:    []string{"localhost"},
 		HTTPTimeouts:        rpc.DefaultHTTPTimeouts,
 		WSHost:              "localhost",
-		WSPort:              9373,
+		WSPort:              bidValidatorWsPort,
 		WSModules:           []string{timeboost.AuctioneerNamespace},
 		GraphQLVirtualHosts: []string{"localhost"},
 		P2P: p2p.Config{
@@ -453,7 +458,7 @@ func setupExpressLaneAuction(
 	stack, err := node.New(&stackConf)
 	Require(t, err)
 	cfg := &timeboost.BidValidatorConfig{
-		SequencerEndpoint:      "http://localhost:9567",
+		SequencerEndpoint:      fmt.Sprintf("http://localhost:%d", seqPort),
 		AuctionContractAddress: proxyAddr.Hex(),
 		RedisURL:               redisURL,
 		ProducerConfig:         pubsub.TestProducerConfig,
@@ -470,7 +475,7 @@ func setupExpressLaneAuction(
 	bidValidator.Start(ctx)
 
 	auctioneerCfg := &timeboost.AuctioneerServerConfig{
-		SequencerEndpoint:      "http://localhost:9568",
+		SequencerEndpoint:      fmt.Sprintf("http://localhost:%d", seqAuthPort),
 		AuctionContractAddress: proxyAddr.Hex(),
 		RedisURL:               redisURL,
 		ConsumerConfig:         pubsub.TestConsumerConfig,
@@ -495,8 +500,8 @@ func setupExpressLaneAuction(
 	cfgFetcherAlice := func() *timeboost.BidderClientConfig {
 		return &timeboost.BidderClientConfig{
 			AuctionContractAddress: proxyAddr.Hex(),
-			BidValidatorEndpoint:   "http://localhost:9372",
-			ArbitrumNodeEndpoint:   "http://localhost:9567",
+			BidValidatorEndpoint:   fmt.Sprintf("http://localhost:%d", bidValidatorPort),
+			ArbitrumNodeEndpoint:   fmt.Sprintf("http://localhost:%d", seqPort),
 			Wallet: genericconf.WalletConfig{
 				PrivateKey: fmt.Sprintf("00%x", alicePriv.D.Bytes()),
 			},
@@ -512,8 +517,8 @@ func setupExpressLaneAuction(
 	cfgFetcherBob := func() *timeboost.BidderClientConfig {
 		return &timeboost.BidderClientConfig{
 			AuctionContractAddress: proxyAddr.Hex(),
-			BidValidatorEndpoint:   "http://localhost:9372",
-			ArbitrumNodeEndpoint:   "http://localhost:9567",
+			BidValidatorEndpoint:   fmt.Sprintf("http://localhost:%d", bidValidatorPort),
+			ArbitrumNodeEndpoint:   fmt.Sprintf("http://localhost:%d", seqPort),
 			Wallet: genericconf.WalletConfig{
 				PrivateKey: fmt.Sprintf("00%x", bobPriv.D.Bytes()),
 			},
@@ -725,4 +730,11 @@ func signSubmission(message []byte, key *ecdsa.PrivateKey) ([]byte, error) {
 	}
 	sig[64] += 27
 	return sig, nil
+}
+
+func getRandomPort(t testing.TB) int {
+	listener, err := net.Listen("tcp", "localhost:0")
+	require.NoError(t, err)
+	defer listener.Close()
+	return listener.Addr().(*net.TCPAddr).Port
 }
