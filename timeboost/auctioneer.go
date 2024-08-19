@@ -360,7 +360,7 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 		return err
 	}
 
-	if err = a.sendAuctionResolutionTransactionRPC(ctx, tx); err != nil {
+	if err = a.retrySendAuctionResolutionTx(ctx, tx); err != nil {
 		log.Error("Error submitting auction resolution to privileged sequencer endpoint", "error", err)
 		return err
 	}
@@ -382,9 +382,36 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 	return nil
 }
 
-func (a *AuctioneerServer) sendAuctionResolutionTransactionRPC(ctx context.Context, tx *types.Transaction) error {
-	// TODO: Retry a few times if fails.
-	return a.sequencerRpc.CallContext(ctx, nil, "auctioneer_submitAuctionResolutionTransaction", tx)
+// retrySendAuctionResolutionTx attempts to send the auction resolution transaction to the
+// sequencer endpoint. If the transaction submission fails, it retries the
+// submission at regular intervals until the end of the current round or until the context
+// is canceled or times out. The function returns an error if all attempts fail.
+func (a *AuctioneerServer) retrySendAuctionResolutionTx(ctx context.Context, tx *types.Transaction) error {
+	var err error
+
+	currentRound := CurrentRound(a.initialRoundTimestamp, a.roundDuration)
+	roundEndTime := a.initialRoundTimestamp.Add(time.Duration(currentRound) * a.roundDuration)
+	retryInterval := 1 * time.Second
+
+	for {
+		if err = a.sequencerRpc.CallContext(ctx, nil, "auctioneer_submitAuctionResolutionTransaction", tx); err == nil {
+			return nil
+		}
+
+		log.Error("Error submitting auction resolution to privileged sequencer endpoint", "error", err)
+
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		if time.Now().After(roundEndTime) {
+			break
+		}
+
+		time.Sleep(retryInterval)
+	}
+
+	return errors.New("failed to submit auction resolution after multiple attempts")
 }
 
 func (a *AuctioneerServer) persistValidatedBid(bid *JsonValidatedBid) {
