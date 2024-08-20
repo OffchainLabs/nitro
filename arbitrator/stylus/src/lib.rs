@@ -363,3 +363,10 @@ pub unsafe extern "C" fn stylus_drop_vec(vec: RustBytes) {
 pub extern "C" fn stylus_get_lru_cache_metrics() -> LruCacheMetrics {
     InitCache::get_lru_metrics()
 }
+
+/// Clears lru cache.
+/// Only used for testing purposes.
+#[no_mangle]
+pub extern "C" fn stylus_clear_lru_cache() {
+    InitCache::clear_lru_cache()
+}

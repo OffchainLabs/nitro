@@ -267,7 +267,8 @@ func callProgram(
 	return data, err
 }
 
-func getMetrics() {
+// exposes for testing
+func GetMetrics() {
 	metrics := C.stylus_get_lru_cache_metrics()
 
 	stylusLRUCacheSizeKbGauge.Update(int64(metrics.size_kb))
@@ -323,6 +324,26 @@ func init() {
 
 func ResizeWasmLruCache(sizeKb uint32) {
 	C.stylus_cache_lru_resize(u32(sizeKb))
+}
+
+// exported for testing
+type WasmLruCacheMetrics struct {
+	SizeKb uint64
+	Count  uint64
+}
+
+// exported for testing
+func GetWasmLruCacheMetrics() *WasmLruCacheMetrics {
+	metrics := C.stylus_get_lru_cache_metrics()
+	return &WasmLruCacheMetrics{
+		SizeKb: uint64(metrics.size_kb),
+		Count:  uint64(metrics.count),
+	}
+}
+
+// exported for testing
+func ClearWasmLruCache() {
+	C.stylus_clear_lru_cache()
 }
 
 const DefaultTargetDescriptionArm = "arm64-linux-unknown+neon"

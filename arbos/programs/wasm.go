@@ -152,7 +152,7 @@ func callProgram(
 	return retData, err
 }
 
-func getMetrics() {}
+func GetMetrics() {}
 
 func CallProgramLoop(
 	moduleHash common.Hash,

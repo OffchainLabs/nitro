@@ -30,6 +30,7 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/google/go-cmp/cmp"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -2005,5 +2006,86 @@ func checkWasmStoreContent(t *testing.T, wasmDb ethdb.KeyValueStore, targets []s
 				_ = rawdb.ReadActivatedAsm(wasmDb, wasmTarget, module)
 			}()
 		}
+	}
+}
+
+func TestWasmLruCache(t *testing.T) {
+	builder, auth, cleanup := setupProgramTest(t, true)
+	ctx := builder.ctx
+	l2info := builder.L2Info
+	l2client := builder.L2.Client
+	defer cleanup()
+
+	builder.L2.ExecNode.ExecEngine.ClearWasmLruCache()
+	lruMetrics := builder.L2.ExecNode.ExecEngine.GetWasmLruCacheMetrics()
+	expectedLruMetrics := &programs.WasmLruCacheMetrics{}
+	if diff := cmp.Diff(lruMetrics, expectedLruMetrics); diff != "" {
+		t.Fatalf("lru cache metrics different than expected: %s", diff)
+	}
+
+	lruCacheSize := uint32(500)
+	builder.L2.ExecNode.ExecEngine.ResizeWasmLruCache(lruCacheSize)
+
+	// fallible wasm program will not be cached since its size is greater than lruCacheSize
+	fallibleAsmEstimateSizeKb := uint64(551)
+	fallibleProgramAddress := deployWasm(t, ctx, auth, l2client, rustFile("fallible"))
+	tx := l2info.PrepareTxTo("Owner", &fallibleProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	Require(t, l2client.SendTransaction(ctx, tx))
+	_, err := EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+	lruMetrics = builder.L2.ExecNode.ExecEngine.GetWasmLruCacheMetrics()
+	expectedLruMetrics = &programs.WasmLruCacheMetrics{}
+	if diff := cmp.Diff(lruMetrics, expectedLruMetrics); diff != "" {
+		t.Fatalf("lru cache metrics different than expected: %s", diff)
+	}
+
+	// resize lru cache
+	lruCacheSize = uint32(1500)
+	builder.L2.ExecNode.ExecEngine.ResizeWasmLruCache(lruCacheSize)
+
+	// fallible wasm program will be cached
+	tx = l2info.PrepareTxTo("Owner", &fallibleProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	Require(t, l2client.SendTransaction(ctx, tx))
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+	lruMetrics = builder.L2.ExecNode.ExecEngine.GetWasmLruCacheMetrics()
+	expectedLruMetrics = &programs.WasmLruCacheMetrics{
+		SizeKb: fallibleAsmEstimateSizeKb,
+		Count:  1,
+	}
+	if diff := cmp.Diff(lruMetrics, expectedLruMetrics); diff != "" {
+		t.Fatalf("lru cache metrics different than expected: %s", diff)
+	}
+
+	// keccak wasm program will be cached
+	keccakAsmEstimateSizeKb := uint64(583)
+	keccakProgramAddress := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
+	tx = l2info.PrepareTxTo("Owner", &keccakProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	Require(t, l2client.SendTransaction(ctx, tx))
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+	lruMetrics = builder.L2.ExecNode.ExecEngine.GetWasmLruCacheMetrics()
+	expectedLruMetrics = &programs.WasmLruCacheMetrics{
+		SizeKb: fallibleAsmEstimateSizeKb + keccakAsmEstimateSizeKb,
+		Count:  2,
+	}
+	if diff := cmp.Diff(lruMetrics, expectedLruMetrics); diff != "" {
+		t.Fatalf("lru cache metrics different than expected: %s", diff)
+	}
+
+	// math wasm program will be cached, but since (fallible + keccak + math) > lruCacheSize, fallible will be evicted
+	mathAsmEstimateSizeKb := uint64(560)
+	mathProgramAddress := deployWasm(t, ctx, auth, l2client, rustFile("math"))
+	tx = l2info.PrepareTxTo("Owner", &mathProgramAddress, l2info.TransferGas, nil, []byte{0x01})
+	Require(t, l2client.SendTransaction(ctx, tx))
+	_, err = EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err)
+	lruMetrics = builder.L2.ExecNode.ExecEngine.GetWasmLruCacheMetrics()
+	expectedLruMetrics = &programs.WasmLruCacheMetrics{
+		SizeKb: keccakAsmEstimateSizeKb + mathAsmEstimateSizeKb,
+		Count:  2,
+	}
+	if diff := cmp.Diff(lruMetrics, expectedLruMetrics); diff != "" {
+		t.Fatalf("lru cache metrics different than expected: %s", diff)
 	}
 }

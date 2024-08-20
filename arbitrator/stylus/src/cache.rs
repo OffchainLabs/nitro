@@ -194,9 +194,15 @@ impl InitCache {
 
     pub fn get_lru_metrics() -> LruCacheMetrics {
         let cache = cache!();
+        let count = cache.lru.len();
         return LruCacheMetrics{
-            size_kb: cache.lru.weight().try_into().unwrap(),
-            count: cache.lru.len().try_into().unwrap(),
+            size_kb: (cache.lru.weight() + count).try_into().unwrap(),
+            count: count.try_into().unwrap(),
         }
+    }
+
+    // only used for testing
+    pub fn clear_lru_cache() {
+        cache!().lru.clear();
     }
 }
