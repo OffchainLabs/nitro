@@ -14,7 +14,7 @@ use std::hash::RandomState;
 use crate::target_cache::target_native;
 
 lazy_static! {
-    static ref INIT_CACHE: Mutex<InitCache> = Mutex::new(InitCache::new(256 * 10 * 1024));
+    static ref INIT_CACHE: Mutex<InitCache> = Mutex::new(InitCache::new(256 * 1024));
 }
 
 macro_rules! cache {

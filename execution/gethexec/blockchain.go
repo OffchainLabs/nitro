@@ -75,7 +75,7 @@ var DefaultCachingConfig = CachingConfig{
 	SnapshotRestoreGasLimit:            300_000_000_000,
 	MaxNumberOfBlocksToSkipStateSaving: 0,
 	MaxAmountOfGasToSkipStateSaving:    0,
-	StylusLRUCacheSizeMb:               10,
+	StylusLRUCacheSizeMb:               256,
 	StateScheme:                        rawdb.HashScheme,
 	StateHistory:                       getStateHistory(DefaultSequencerConfig.MaxBlockSpeed),
 }
