@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/go-redis/redis/v8"
 	"github.com/offchainlabs/nitro/pubsub"
@@ -32,11 +33,20 @@ func (c ValidationClientConfig) Enabled() bool {
 	return c.RedisURL != ""
 }
 
+func (c ValidationClientConfig) Validate() error {
+	for _, arch := range c.StylusArchs {
+		if !rawdb.Target(arch).IsValid() {
+			return fmt.Errorf("Invalid stylus arch: %v", arch)
+		}
+	}
+	return nil
+}
+
 var DefaultValidationClientConfig = ValidationClientConfig{
 	Name:           "redis validation client",
 	Room:           2,
 	RedisURL:       "",
-	StylusArchs:    []string{"wavm"},
+	StylusArchs:    []string{string(rawdb.TargetWavm)},
 	ProducerConfig: pubsub.DefaultProducerConfig,
 	CreateStreams:  true,
 }
@@ -46,7 +56,7 @@ var TestValidationClientConfig = ValidationClientConfig{
 	Room:           2,
 	RedisURL:       "",
 	StreamPrefix:   "test-",
-	StylusArchs:    []string{"wavm"},
+	StylusArchs:    []string{string(rawdb.TargetWavm)},
 	ProducerConfig: pubsub.TestProducerConfig,
 	CreateStreams:  false,
 }
@@ -152,8 +162,12 @@ func (c *ValidationClient) Name() string {
 	return c.config.Name
 }
 
-func (c *ValidationClient) StylusArchs() []string {
-	return c.config.StylusArchs
+func (c *ValidationClient) StylusArchs() []rawdb.Target {
+	stylusArchs := make([]rawdb.Target, 0, len(c.config.StylusArchs))
+	for _, arch := range c.config.StylusArchs {
+		stylusArchs = append(stylusArchs, rawdb.Target(arch))
+	}
+	return stylusArchs
 }
 
 func (c *ValidationClient) Room() int {
