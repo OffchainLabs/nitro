@@ -1143,7 +1143,7 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 		}
 		latestQueued, err := p.queue.FetchLast(ctx)
 		if err != nil {
-			log.Error("Failed to fetch lastest queued tx", "err", err)
+			log.Error("Failed to fetch last queued tx", "err", err)
 			return minWait
 		}
 		var latestCumulativeWeight, latestNonce uint64
@@ -1157,40 +1157,33 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 				totalQueueWeightGauge.Update(int64(arbmath.SaturatingUSub(latestCumulativeWeight, confirmedMeta.CumulativeWeight())))
 				totalQueueLengthGauge.Update(int64(arbmath.SaturatingUSub(latestNonce, confirmedNonce)))
 			} else {
-				log.Error("Failed to fetch latest confirmed tx from queue", "err", err, "confirmedMeta", confirmedMeta)
+				log.Error("Failed to fetch latest confirmed tx from queue", "confirmedNonce", confirmedNonce, "err", err, "confirmedMeta", confirmedMeta)
 			}
 
 		}
 
 		for _, tx := range queueContents {
-			previouslyUnsent := !tx.Sent
-			sendAttempted := false
 			if now.After(tx.NextReplacement) {
 				weightBacklog := arbmath.SaturatingUSub(latestCumulativeWeight, tx.CumulativeWeight())
 				nonceBacklog := arbmath.SaturatingUSub(latestNonce, tx.FullTx.Nonce())
 				err := p.replaceTx(ctx, tx, arbmath.MaxInt(nonceBacklog, weightBacklog))
-				sendAttempted = true
 				p.maybeLogError(err, tx, "failed to replace-by-fee transaction")
+			} else {
+				err := p.sendTx(ctx, tx, tx)
+				p.maybeLogError(err, tx, "failed to re-send transaction")
+			}
+			tx, err = p.queue.Get(ctx, tx.FullTx.Nonce())
+			if err != nil {
+				log.Error("Failed to fetch tx from queue to check updated status", "nonce", tx.FullTx.Nonce(), "err", err)
+				return minWait
 			}
 			if nextCheck.After(tx.NextReplacement) {
 				nextCheck = tx.NextReplacement
 			}
-			if !sendAttempted && previouslyUnsent {
-				err := p.sendTx(ctx, tx, tx)
-				sendAttempted = true
-				p.maybeLogError(err, tx, "failed to re-send transaction")
-				if err != nil {
-					nextSend := time.Now().Add(time.Minute)
-					if nextCheck.After(nextSend) {
-						nextCheck = nextSend
-					}
-				}
-			}
-			if previouslyUnsent && sendAttempted {
-				// Don't try to send more than 1 unsent transaction, to play nicely with parent chain mempools.
-				// Transactions will be unsent if there was some error when originally sending them,
-				// or if transaction type changes and the prior tx is not yet reorg resistant.
-				break
+			if !tx.Sent {
+				// We can't progress any further if we failed to send this tx
+				// Retry sending this tx soon
+				return minWait
 			}
 		}
 		wait := time.Until(nextCheck)

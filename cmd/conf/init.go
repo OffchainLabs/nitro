@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/spf13/pflag"
 )
 
@@ -55,7 +54,7 @@ var InitConfigDefault = InitConfig{
 	Prune:                    "",
 	PruneBloomSize:           2048,
 	PruneThreads:             runtime.NumCPU(),
-	PruneTrieCleanCache:      gethexec.DefaultCachingConfig.TrieCleanCache,
+	PruneTrieCleanCache:      600,
 	RecreateMissingStateFrom: 0, // 0 = disabled
 	RebuildLocalWasm:         true,
 	ReorgToBatch:             -1,
