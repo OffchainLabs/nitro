@@ -103,39 +103,6 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 		}
 	})
 	es.LaunchThread(func(ctx context.Context) {
-		// 	rollupAbi, err := express_lane_auctiongen.ExpressLaneAuctionMetaData.GetAbi()
-		// 	if err != nil {
-		// 		panic(err)
-		// 	}
-		// 	rawEv := rollupAbi.Events["AuctionResolved"]
-		// 	express_lane_auctiongen.ExpressLaneAuctionAuctionResolved
-		// 	rollupAbi, err := rollupgen.RollupCoreMetaData.GetAbi()
-		// event := new(ExpressLaneAuctionAuctionResolved)
-		// if err := _ExpressLaneAuction.contract.UnpackLog(event, "AuctionResolved", log); err != nil {
-		// 	return nil, err
-		// }
-		// event.Raw = log
-		// UnpackLog(out interface{}, event string, log types.Log) error {
-		// 	// Anonymous events are not supported.
-		// 	if len(log.Topics) == 0 {
-		// 		return errNoEventSignature
-		// 	}
-		// 	if log.Topics[0] != c.abi.Events[event].ID {
-		// 		return errEventSignatureMismatch
-		// 	}
-		// 	if len(log.Data) > 0 {
-		// 		if err := c.abi.UnpackIntoInterface(out, event, log.Data); err != nil {
-		// 			return err
-		// 		}
-		// 	}
-		// 	var indexed abi.Arguments
-		// 	for _, arg := range c.abi.Events[event].Inputs {
-		// 		if arg.Indexed {
-		// 			indexed = append(indexed, arg)
-		// 		}
-		// 	}
-		// 	return abi.ParseTopics(out, indexed, log.Topics[1:])
-		// }
 		log.Info("Monitoring express lane auction contract")
 		// Monitor for auction resolutions from the auction manager smart contract
 		// and set the express lane controller for the upcoming round accordingly.
