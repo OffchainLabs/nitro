@@ -1336,7 +1336,7 @@ var DefaultDataPosterConfig = DataPosterConfig{
 	MaxMempoolWeight:       18,
 	MinTipCapGwei:          0.05,
 	MinBlobTxTipCapGwei:    1, // default geth minimum, and relays aren't likely to accept lower values given propagation time
-	MaxTipCapGwei:          5,
+	MaxTipCapGwei:          1.2,
 	MaxBlobTxTipCapGwei:    1, // lower than normal because 4844 rbf is a minimum of a 2x
 	MaxFeeBidMultipleBips:  arbmath.OneInBips * 10,
 	NonceRbfSoftConfs:      1,

@@ -660,7 +660,7 @@ func createNodeImpl(
 			confirmedNotifiers = append(confirmedNotifiers, messagePruner)
 		}
 
-		stakerObj, err = staker.NewStaker(l1Reader, wallet, bind.CallOpts{}, config.Staker, blockValidator, statelessBlockValidator, nil, confirmedNotifiers, deployInfo.ValidatorUtils, fatalErrChan)
+		stakerObj, err = staker.NewStaker(l1Reader, wallet, bind.CallOpts{}, func() *staker.L1ValidatorConfig { return &configFetcher.Get().Staker }, blockValidator, statelessBlockValidator, nil, confirmedNotifiers, deployInfo.ValidatorUtils, fatalErrChan)
 		if err != nil {
 			return nil, err
 		}
