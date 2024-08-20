@@ -239,6 +239,12 @@ impl InitCache {
 
     // only used for testing
     pub fn clear_lru_cache() {
-        cache!().lru.clear();
+        let mut cache = cache!();
+        cache.lru.clear();
+        cache.lru_counters = LruCounters {
+            hits: 0,
+            misses: 0,
+            does_not_fit: 0,
+        };
     }
 }
