@@ -301,6 +301,7 @@ func setLatestSnapshotUrl(ctx context.Context, initConfig *conf.InitConfig, chai
 		return fmt.Errorf("failed to parse latest mirror \"%s\": %w", initConfig.LatestBase, err)
 	}
 	latestFileUrl := baseUrl.JoinPath(chain, "latest-"+initConfig.Latest+".txt").String()
+	latestFileUrl = strings.ToLower(latestFileUrl)
 	latestFileBytes, err := httpGet(ctx, latestFileUrl)
 	if err != nil {
 		return fmt.Errorf("failed to get latest file at \"%s\": %w", latestFileUrl, err)
@@ -312,6 +313,7 @@ func setLatestSnapshotUrl(ctx context.Context, initConfig *conf.InitConfig, chai
 	} else {
 		initConfig.Url = baseUrl.JoinPath(latestFile).String()
 	}
+	initConfig.Url = strings.ToLower(initConfig.Url)
 	log.Info("Set latest snapshot url", "url", initConfig.Url)
 	return nil
 }
