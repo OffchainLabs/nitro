@@ -112,7 +112,7 @@ impl<D: DataReader, E: EvmApi<D>> NativeInstance<D, E> {
     /// `module` must represent a valid module.
     pub unsafe fn deserialize_cached(
         module: &[u8],
-        asm_size_estimate: u32,
+        asm_size_estimate_kb: u32,
         version: u16,
         evm: E,
         evm_data: EvmData,
@@ -130,7 +130,7 @@ impl<D: DataReader, E: EvmApi<D>> NativeInstance<D, E> {
             long_term_tag = 0;
         }
         let (module, store) =
-            InitCache::insert(module_hash, module, asm_size_estimate, version, long_term_tag, debug)?;
+            InitCache::insert(module_hash, module, asm_size_estimate_kb, version, long_term_tag, debug)?;
         Self::from_module(module, store, env)
     }
 
