@@ -181,17 +181,17 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".max-tx-data-size", DefaultSequencerConfig.MaxTxDataSize, "maximum transaction size the sequencer will accept")
 	f.Int(prefix+".nonce-failure-cache-size", DefaultSequencerConfig.NonceFailureCacheSize, "number of transactions with too high of a nonce to keep in memory while waiting for their predecessor")
 	f.Duration(prefix+".nonce-failure-cache-expiry", DefaultSequencerConfig.NonceFailureCacheExpiry, "maximum amount of time to wait for a predecessor before rejecting a tx with nonce too high")
-	f.Bool(prefix+".espresso", DefaultSequencerConfig.Espresso, "if true, transactions will be fetched from the espresso sequencer network")
-
-	f.String(prefix+".hotshot-url", DefaultSequencerConfig.HotShotUrl, "")
-	f.Uint64(prefix+".espresso-namespace", DefaultSequencerConfig.EspressoNamespace, "espresso namespace that corresponds the L2 chain")
-	f.Uint64(prefix+".start-hotshot-block", DefaultSequencerConfig.StartHotShotBlock, "the starting block number of hotshot")
-	f.Duration(prefix+".switch-poll-interval", DefaultSequencerConfig.SwitchPollInterval, "the poll interval of checking the sequencer should be switched or not")
 	f.String(prefix+".expected-surplus-soft-threshold", DefaultSequencerConfig.ExpectedSurplusSoftThreshold, "if expected surplus is lower than this value, warnings are posted")
 	f.String(prefix+".expected-surplus-hard-threshold", DefaultSequencerConfig.ExpectedSurplusHardThreshold, "if expected surplus is lower than this value, new incoming transactions will be denied")
 	f.Bool(prefix+".enable-profiling", DefaultSequencerConfig.EnableProfiling, "enable CPU profiling and tracing")
 
-	f.Bool(prefix+".enable-espresso-sovereign", DefaultSequencerConfig.EnableEspressoSovereign, "enable CPU profiling and tracing")
+	// Espresso specific flags
+	f.Bool(prefix+".espresso", DefaultSequencerConfig.Espresso, "enable the Espresso integration")
+	f.String(prefix+".hotshot-url", DefaultSequencerConfig.HotShotUrl, "URL to the hotshot query service of an Espresso node")
+	f.Uint64(prefix+".espresso-namespace", DefaultSequencerConfig.EspressoNamespace, "Espresso namespace that corresponds to this Nitro chain")
+	f.Uint64(prefix+".start-hotshot-block", DefaultSequencerConfig.StartHotShotBlock, "the Espresso block number when the Nitro chain is created")
+	f.Duration(prefix+".switch-poll-interval", DefaultSequencerConfig.SwitchPollInterval, "Espresso escape hatch polling interval to check for HotShot liveness")
+	f.Bool(prefix+".enable-espresso-sovereign", DefaultSequencerConfig.EnableEspressoSovereign, "enable sovereign sequencer mode for the Espresso integration")
 }
 
 type txQueueItem struct {
