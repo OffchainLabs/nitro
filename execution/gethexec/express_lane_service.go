@@ -3,10 +3,11 @@ package gethexec
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sync"
 	"time"
 
-	"github.com/ethereum/go-ethereum/accounts/abi/bind"
+	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/lru"
@@ -34,40 +35,36 @@ type expressLaneService struct {
 	initialTimestamp         time.Time
 	roundDuration            time.Duration
 	auctionClosing           time.Duration
+	bc                       *core.BlockChain
 	chainConfig              *params.ChainConfig
 	logs                     chan []*types.Log
 	seqClient                *ethclient.Client
-	auctionContract          *express_lane_auctiongen.ExpressLaneAuction
 	roundControl             lru.BasicLRU[uint64, *expressLaneControl]
 	messagesBySequenceNumber map[uint64]*timeboost.ExpressLaneSubmission
+	auctionAbi               *abi.ABI
 }
 
 func newExpressLaneService(
 	auctionContractAddr common.Address,
-	sequencerClient *ethclient.Client,
 	bc *core.BlockChain,
+	roundDuration time.Duration,
+	initialTimestamp time.Time,
+	auctionClosingDuration time.Duration,
 ) (*expressLaneService, error) {
 	chainConfig := bc.Config()
-	auctionContract, err := express_lane_auctiongen.NewExpressLaneAuction(auctionContractAddr, sequencerClient)
+	eabi, err := express_lane_auctiongen.ExpressLaneAuctionMetaData.GetAbi()
 	if err != nil {
 		return nil, err
 	}
-	roundTimingInfo, err := auctionContract.RoundTimingInfo(&bind.CallOpts{})
-	if err != nil {
-		return nil, err
-	}
-	initialTimestamp := time.Unix(int64(roundTimingInfo.OffsetTimestamp), 0)
-	roundDuration := time.Duration(roundTimingInfo.RoundDurationSeconds) * time.Second
-	auctionClosingDuration := time.Duration(roundTimingInfo.AuctionClosingSeconds) * time.Second
 	return &expressLaneService{
-		auctionContract:          auctionContract,
+		auctionAbi:               eabi,
 		chainConfig:              chainConfig,
+		bc:                       bc,
 		initialTimestamp:         initialTimestamp,
 		auctionClosing:           auctionClosingDuration,
 		roundControl:             lru.NewBasicLRU[uint64, *expressLaneControl](8), // Keep 8 rounds cached.
 		auctionContractAddr:      auctionContractAddr,
 		roundDuration:            roundDuration,
-		seqClient:                sequencerClient,
 		logs:                     make(chan []*types.Log, 10_000),
 		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
 	}, nil
@@ -103,88 +100,54 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 		}
 	})
 	es.LaunchThread(func(ctx context.Context) {
-		// 	rollupAbi, err := express_lane_auctiongen.ExpressLaneAuctionMetaData.GetAbi()
-		// 	if err != nil {
-		// 		panic(err)
-		// 	}
-		// 	rawEv := rollupAbi.Events["AuctionResolved"]
-		// 	express_lane_auctiongen.ExpressLaneAuctionAuctionResolved
-		// 	rollupAbi, err := rollupgen.RollupCoreMetaData.GetAbi()
-		// event := new(ExpressLaneAuctionAuctionResolved)
-		// if err := _ExpressLaneAuction.contract.UnpackLog(event, "AuctionResolved", log); err != nil {
-		// 	return nil, err
-		// }
-		// event.Raw = log
-		// UnpackLog(out interface{}, event string, log types.Log) error {
-		// 	// Anonymous events are not supported.
-		// 	if len(log.Topics) == 0 {
-		// 		return errNoEventSignature
-		// 	}
-		// 	if log.Topics[0] != c.abi.Events[event].ID {
-		// 		return errEventSignatureMismatch
-		// 	}
-		// 	if len(log.Data) > 0 {
-		// 		if err := c.abi.UnpackIntoInterface(out, event, log.Data); err != nil {
-		// 			return err
-		// 		}
-		// 	}
-		// 	var indexed abi.Arguments
-		// 	for _, arg := range c.abi.Events[event].Inputs {
-		// 		if arg.Indexed {
-		// 			indexed = append(indexed, arg)
-		// 		}
-		// 	}
-		// 	return abi.ParseTopics(out, indexed, log.Topics[1:])
-		// }
-		log.Info("Monitoring express lane auction contract")
-		// Monitor for auction resolutions from the auction manager smart contract
-		// and set the express lane controller for the upcoming round accordingly.
-		latestBlock, err := es.seqClient.HeaderByNumber(ctx, nil)
-		if err != nil {
-			// TODO: Should not be a crit.
-			log.Crit("Could not get latest header", "err", err)
-		}
-		fromBlock := latestBlock.Number.Uint64()
+		log.Info("Monitoring express lane auction contract", "contract", es.auctionContractAddr)
+		logs := make(chan []*types.Log)
+		sub := es.bc.SubscribeLogsEvent(logs)
+		defer sub.Unsubscribe()
 		for {
 			select {
 			case <-ctx.Done():
+				log.Info("Closed log processing context")
 				return
-			case <-time.After(time.Millisecond * 250):
-				latestBlock, err := es.seqClient.HeaderByNumber(ctx, nil)
-				if err != nil {
-					log.Crit("Could not get latest header", "err", err)
-				}
-				toBlock := latestBlock.Number.Uint64()
-				if fromBlock == toBlock {
-					continue
-				}
-				filterOpts := &bind.FilterOpts{
-					Context: ctx,
-					Start:   fromBlock,
-					End:     &toBlock,
-				}
-				it, err := es.auctionContract.FilterAuctionResolved(filterOpts, nil, nil, nil)
-				if err != nil {
-					log.Error("Could not filter auction resolutions", "error", err)
-					continue
-				}
-				for it.Next() {
-					log.Info(
-						"New express lane controller assigned",
-						"round", it.Event.Round,
-						"controller", it.Event.FirstPriceExpressLaneController,
-					)
-					es.Lock()
-					es.roundControl.Add(it.Event.Round, &expressLaneControl{
-						controller: it.Event.FirstPriceExpressLaneController,
-						sequence:   0,
-					})
-					es.Unlock()
-				}
-				fromBlock = toBlock
+			case logs := <-es.logs:
+				go es.processLogs(ctx, logs)
 			}
 		}
 	})
+}
+
+func (es *expressLaneService) processLogs(ctx context.Context, logs []*types.Log) {
+	resolvedTopic := es.auctionAbi.Events["AuctionResolved"].ID
+	for _, lg := range logs {
+		if ctx.Err() != nil {
+			log.Error("Context is done, stopping log processing")
+			return
+		}
+		if lg.Address != es.auctionContractAddr || lg.Removed {
+			log.Info("Skipping log that is not targeting auction contract")
+			continue
+		}
+		if !slices.Contains(lg.Topics, resolvedTopic) {
+			log.Info("Skipping log that does not contain topic")
+			continue
+		}
+		auctionResolvedLog := new(express_lane_auctiongen.ExpressLaneAuctionAuctionResolved)
+		if err := unpackLog(auctionResolvedLog, "AuctionResolved", *lg, es.auctionAbi); err != nil {
+			log.Error("Could not unpack log", "error", err)
+			continue
+		}
+		log.Info(
+			"New express lane controller assigned",
+			"round", auctionResolvedLog.Round,
+			"controller", auctionResolvedLog.FirstPriceExpressLaneController,
+		)
+		es.Lock()
+		es.roundControl.Add(auctionResolvedLog.Round, &expressLaneControl{
+			controller: auctionResolvedLog.FirstPriceExpressLaneController,
+			sequence:   0,
+		})
+		es.Unlock()
+	}
 }
 
 func (es *expressLaneService) currentRoundHasController() bool {
@@ -310,4 +273,25 @@ func (es *expressLaneService) validateExpressLaneTx(msg *timeboost.ExpressLaneSu
 		return timeboost.ErrNotExpressLaneController
 	}
 	return nil
+}
+
+func unpackLog(out any, event string, log types.Log, eabi *abi.ABI) error {
+	if len(log.Topics) == 0 {
+		return errors.New("no topics")
+	}
+	if log.Topics[0] != eabi.Events[event].ID {
+		return errors.New("wrong topic")
+	}
+	if len(log.Data) > 0 {
+		if err := eabi.UnpackIntoInterface(out, event, log.Data); err != nil {
+			return err
+		}
+	}
+	var indexed abi.Arguments
+	for _, arg := range eabi.Events[event].Inputs {
+		if arg.Indexed {
+			indexed = append(indexed, arg)
+		}
+	}
+	return abi.ParseTopics(out, indexed, log.Topics[1:])
 }

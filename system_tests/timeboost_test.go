@@ -411,7 +411,7 @@ func setupExpressLaneAuction(
 		t.Fatal(err)
 	}
 
-	builderSeq.L2.ExecNode.Sequencer.StartExpressLane(ctx, proxyAddr, seqInfo.GetAddress("AuctionContract"))
+	builderSeq.L2.ExecNode.Sequencer.StartExpressLane(ctx, proxyAddr, seqInfo.GetAddress("AuctionContract"), roundDuration, initialTimestampUnix, time.Duration(auctionClosingSeconds)*time.Second)
 	t.Log("Started express lane service in sequencer")
 
 	// Set up an autonomous auction contract service that runs in the background in this test.
