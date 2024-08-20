@@ -473,7 +473,7 @@ func (v *StatelessBlockValidator) RecordValidationInput(ctx context.Context, pos
 		if validator.SpawnerSupportsModule(spawner, moduleRoot) {
 			found = true
 			// Hardcoded to use wavm so that it can be read by the prover.
-			input, err := entry.ToInput([]string{"wavm"})
+			input, err := entry.ToInput([]rawdb.Target{rawdb.TargetWavm})
 			if err != nil {
 				return err
 			}
