@@ -71,7 +71,7 @@ var DefaultDBConvConfig = DBConvConfig{
 func DBConvConfigAddOptions(f *flag.FlagSet) {
 	DBConfigAddOptions("src", f, &DefaultDBConvConfig.Src)
 	DBConfigAddOptions("dst", f, &DefaultDBConvConfig.Dst)
-	f.Int("ideal-batch-size", DefaultDBConvConfig.IdealBatchSize, "ideal write batch size")
+	f.Int("ideal-batch-size", DefaultDBConvConfig.IdealBatchSize, "ideal write batch size in bytes")
 	f.Bool("convert", DefaultDBConvConfig.Convert, "enables conversion step")
 	f.Bool("compact", DefaultDBConvConfig.Compact, "enables compaction step")
 	f.String("verify", DefaultDBConvConfig.Verify, "enables verification step (\"\" = disabled, \"keys\" = only keys, \"full\" = keys and values)")
