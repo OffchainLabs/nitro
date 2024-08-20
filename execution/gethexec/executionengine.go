@@ -978,6 +978,7 @@ func (s *ExecutionEngine) Start(ctx_in context.Context) {
 			}
 		}
 	})
+	// periodically update stylus lru cache metrics
 	s.LaunchThread(func(ctx context.Context) {
 		for {
 			select {
