@@ -67,8 +67,8 @@ impl WeightScale<CacheKey, CacheItem> for CustomWeightScale {
     fn weight(&self, _key: &CacheKey, val: &CacheItem) -> usize {
         let mut w = val.asm_size_estimate_kb.try_into().unwrap();
         if w > 0 {
-            // clru defines the weight of an entry as the number returned by this function plus one.
-            // Therefore, we need to subtract one from the weight to get the actual weight of the entry.
+            // clru defines that each entry consumes (weight + 1) of the cache capacity.
+            // Since we only want to use the weight as the size of the entry, we need to subtract 1.
             w -= 1;
         }
         return w;
@@ -196,6 +196,7 @@ impl InitCache {
         let cache = cache!();
         let count = cache.lru.len();
         return LruCacheMetrics{
+            // add 1 to each entry to account that we subtracted 1 in the weight calculation
             size_kb: (cache.lru.weight() + count).try_into().unwrap(),
             count: count.try_into().unwrap(),
         }
