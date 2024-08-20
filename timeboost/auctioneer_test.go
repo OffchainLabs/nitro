@@ -2,6 +2,7 @@ package timeboost
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"os"
@@ -153,4 +154,68 @@ func TestBidValidatorAuctioneerRedisStream(t *testing.T) {
 	require.Equal(t, result.firstPlace.Bidder, charlieAddr)
 	require.Equal(t, result.secondPlace.Amount, big.NewInt(5))
 	require.Equal(t, result.secondPlace.Bidder, bobAddr)
+}
+
+func TestRetryUntil(t *testing.T) {
+	t.Run("Success", func(t *testing.T) {
+		var currentAttempt int
+		successAfter := 3
+		retryInterval := 100 * time.Millisecond
+		endTime := time.Now().Add(500 * time.Millisecond)
+
+		err := retryUntil(context.Background(), mockOperation(successAfter, &currentAttempt), retryInterval, endTime)
+		if err != nil {
+			t.Errorf("expected success, got error: %v", err)
+		}
+		if currentAttempt != successAfter {
+			t.Errorf("expected %d attempts, got %d", successAfter, currentAttempt)
+		}
+	})
+
+	t.Run("Timeout", func(t *testing.T) {
+		var currentAttempt int
+		successAfter := 5
+		retryInterval := 100 * time.Millisecond
+		endTime := time.Now().Add(300 * time.Millisecond)
+
+		err := retryUntil(context.Background(), mockOperation(successAfter, &currentAttempt), retryInterval, endTime)
+		if err == nil {
+			t.Errorf("expected timeout error, got success")
+		}
+		if currentAttempt == successAfter {
+			t.Errorf("expected failure, but operation succeeded")
+		}
+	})
+
+	t.Run("ContextCancel", func(t *testing.T) {
+		var currentAttempt int
+		successAfter := 5
+		retryInterval := 100 * time.Millisecond
+		endTime := time.Now().Add(500 * time.Millisecond)
+
+		ctx, cancel := context.WithCancel(context.Background())
+		go func() {
+			time.Sleep(200 * time.Millisecond)
+			cancel()
+		}()
+
+		err := retryUntil(ctx, mockOperation(successAfter, &currentAttempt), retryInterval, endTime)
+		if err == nil {
+			t.Errorf("expected context cancellation error, got success")
+		}
+		if currentAttempt >= successAfter {
+			t.Errorf("expected failure due to context cancellation, but operation succeeded")
+		}
+	})
+}
+
+// Mock operation function to simulate different scenarios
+func mockOperation(successAfter int, currentAttempt *int) func() error {
+	return func() error {
+		*currentAttempt++
+		if *currentAttempt >= successAfter {
+			return nil
+		}
+		return errors.New("operation failed")
+	}
 }
