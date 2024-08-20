@@ -319,12 +319,12 @@ pub extern "C" fn stylus_cache_lru_resize(size_kb: u32) {
 pub unsafe extern "C" fn stylus_cache_module(
     module: GoSliceData,
     module_hash: Bytes32,
-    asm_size_estimate: u32,
+    asm_size_estimate_kb: u32,
     version: u16,
     arbos_tag: u32,
     debug: bool,
 ) {
-    if let Err(error) = InitCache::insert(module_hash, module.slice(), asm_size_estimate, version, arbos_tag, debug) {
+    if let Err(error) = InitCache::insert(module_hash, module.slice(), asm_size_estimate_kb, version, arbos_tag, debug) {
         panic!("tried to cache invalid asm!: {error}");
     }
 }
