@@ -290,9 +290,6 @@ func (bv *BidValidator) validateBid(
 	if err != nil {
 		return nil, ErrMalformedData
 	}
-	if !verifySignature(pubkey, packedBidBytes, sigItem) {
-		return nil, ErrWrongSignature
-	}
 	// Check how many bids the bidder has sent in this round and cap according to a limit.
 	bidder := crypto.PubkeyToAddress(*pubkey)
 	bv.Lock()

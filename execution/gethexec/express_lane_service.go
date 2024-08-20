@@ -13,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/crypto/secp256k1"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
@@ -299,9 +298,6 @@ func (es *expressLaneService) validateExpressLaneTx(msg *timeboost.ExpressLaneSu
 	pubkey, err := crypto.SigToPub(prefixed, sigItem)
 	if err != nil {
 		return timeboost.ErrMalformedData
-	}
-	if !secp256k1.VerifySignature(crypto.FromECDSAPub(pubkey), prefixed, sigItem[:len(sigItem)-1]) {
-		return timeboost.ErrWrongSignature
 	}
 	sender := crypto.PubkeyToAddress(*pubkey)
 	es.RLock()

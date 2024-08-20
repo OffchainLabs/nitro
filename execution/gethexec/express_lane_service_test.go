@@ -378,9 +378,9 @@ func TestIsWithinAuctionCloseWindow(t *testing.T) {
 	auctionClosing := 15 * time.Second
 
 	es := &expressLaneService{
-		initialTimestamp:      initialTimestamp,
-		roundDuration:         roundDuration,
-		auctionClosingSeconds: auctionClosing,
+		initialTimestamp: initialTimestamp,
+		roundDuration:    roundDuration,
+		auctionClosing:   auctionClosing,
 	}
 
 	tests := []struct {

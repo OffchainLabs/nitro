@@ -2,9 +2,7 @@ package timeboost
 
 import (
 	"bytes"
-	"crypto/ecdsa"
 	"encoding/binary"
-	"fmt"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/arbitrum_types"
@@ -12,7 +10,6 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto"
-	"github.com/ethereum/go-ethereum/crypto/secp256k1"
 )
 
 type Bid struct {
@@ -204,11 +201,6 @@ func (els *ExpressLaneSubmission) ToMessageBytes() ([]byte, error) {
 	}
 	buf.Write(rlpTx)
 	return buf.Bytes(), nil
-}
-
-func verifySignature(pubkey *ecdsa.PublicKey, message []byte, sig []byte) bool {
-	prefixed := crypto.Keccak256(append([]byte(fmt.Sprintf("\x19Ethereum Signed Message:\n%d", len(message))), message...))
-	return secp256k1.VerifySignature(crypto.FromECDSAPub(pubkey), prefixed, sig[:len(sig)-1])
 }
 
 // Helper function to pad a big integer to 32 bytes
