@@ -228,7 +228,9 @@ impl InitCache {
             does_not_fit: cache.lru_counters.does_not_fit,
         };
 
-        // empty counters
+        // Empty counters.
+        // go side, which is the only consumer of this function besides tests,
+        // will read those counters and increment its own prometheus counters with them.
         cache.lru_counters = LruCounters {
             hits: 0,
             misses: 0,
