@@ -30,7 +30,6 @@ import (
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
-	"github.com/google/go-cmp/cmp"
 	"github.com/offchainlabs/nitro/arbcompress"
 	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -2018,9 +2017,11 @@ func TestWasmLruCache(t *testing.T) {
 
 	builder.L2.ExecNode.ExecEngine.ClearWasmLruCache()
 	lruMetrics := builder.L2.ExecNode.ExecEngine.GetWasmLruCacheMetrics()
-	expectedLruMetrics := &programs.WasmLruCacheMetrics{}
-	if diff := cmp.Diff(lruMetrics, expectedLruMetrics); diff != "" {
-		t.Fatalf("lru cache metrics different than expected: %s", diff)
+	if lruMetrics.Count != 0 {
+		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 0, lruMetrics.Count)
+	}
+	if lruMetrics.SizeKb != 0 {
+		t.Fatalf("lruMetrics.SizeKb, expected: %v, actual: %v", 0, lruMetrics.SizeKb)
 	}
 
 	lruCacheSize := uint32(500)
@@ -2034,9 +2035,11 @@ func TestWasmLruCache(t *testing.T) {
 	_, err := EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 	lruMetrics = builder.L2.ExecNode.ExecEngine.GetWasmLruCacheMetrics()
-	expectedLruMetrics = &programs.WasmLruCacheMetrics{}
-	if diff := cmp.Diff(lruMetrics, expectedLruMetrics); diff != "" {
-		t.Fatalf("lru cache metrics different than expected: %s", diff)
+	if lruMetrics.Count != 0 {
+		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 0, lruMetrics.Count)
+	}
+	if lruMetrics.SizeKb != 0 {
+		t.Fatalf("lruMetrics.SizeKb, expected: %v, actual: %v", 0, lruMetrics.SizeKb)
 	}
 
 	// resize lru cache
@@ -2049,12 +2052,11 @@ func TestWasmLruCache(t *testing.T) {
 	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 	lruMetrics = builder.L2.ExecNode.ExecEngine.GetWasmLruCacheMetrics()
-	expectedLruMetrics = &programs.WasmLruCacheMetrics{
-		SizeKb: fallibleAsmEstimateSizeKb,
-		Count:  1,
+	if lruMetrics.Count != 1 {
+		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 1, lruMetrics.Count)
 	}
-	if diff := cmp.Diff(lruMetrics, expectedLruMetrics); diff != "" {
-		t.Fatalf("lru cache metrics different than expected: %s", diff)
+	if lruMetrics.SizeKb != fallibleAsmEstimateSizeKb {
+		t.Fatalf("lruMetrics.SizeKb, expected: %v, actual: %v", fallibleAsmEstimateSizeKb, lruMetrics.SizeKb)
 	}
 
 	// keccak wasm program will be cached
@@ -2065,12 +2067,11 @@ func TestWasmLruCache(t *testing.T) {
 	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 	lruMetrics = builder.L2.ExecNode.ExecEngine.GetWasmLruCacheMetrics()
-	expectedLruMetrics = &programs.WasmLruCacheMetrics{
-		SizeKb: fallibleAsmEstimateSizeKb + keccakAsmEstimateSizeKb,
-		Count:  2,
+	if lruMetrics.Count != 2 {
+		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 2, lruMetrics.Count)
 	}
-	if diff := cmp.Diff(lruMetrics, expectedLruMetrics); diff != "" {
-		t.Fatalf("lru cache metrics different than expected: %s", diff)
+	if lruMetrics.SizeKb != fallibleAsmEstimateSizeKb+keccakAsmEstimateSizeKb {
+		t.Fatalf("lruMetrics.SizeKb, expected: %v, actual: %v", fallibleAsmEstimateSizeKb+keccakAsmEstimateSizeKb, lruMetrics.SizeKb)
 	}
 
 	// math wasm program will be cached, but since (fallible + keccak + math) > lruCacheSize, fallible will be evicted
@@ -2081,11 +2082,10 @@ func TestWasmLruCache(t *testing.T) {
 	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
 	lruMetrics = builder.L2.ExecNode.ExecEngine.GetWasmLruCacheMetrics()
-	expectedLruMetrics = &programs.WasmLruCacheMetrics{
-		SizeKb: keccakAsmEstimateSizeKb + mathAsmEstimateSizeKb,
-		Count:  2,
+	if lruMetrics.Count != 2 {
+		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 2, lruMetrics.Count)
 	}
-	if diff := cmp.Diff(lruMetrics, expectedLruMetrics); diff != "" {
-		t.Fatalf("lru cache metrics different than expected: %s", diff)
+	if lruMetrics.SizeKb != keccakAsmEstimateSizeKb+mathAsmEstimateSizeKb {
+		t.Fatalf("lruMetrics.SizeKb, expected: %v, actual: %v", keccakAsmEstimateSizeKb+mathAsmEstimateSizeKb, lruMetrics.SizeKb)
 	}
 }
