@@ -9,7 +9,7 @@ package programs
 // This file exists because cgo isn't allowed in tests
 
 /*
-#cgo CFLAGS: -g -Wall -I../../target/include/
+#cgo CFLAGS: -g -I../../target/include/
 #include "arbitrator.h"
 
 typedef uint16_t u16;
@@ -244,6 +244,7 @@ func testCompileLoad() error {
 
 	status := userStatus(C.stylus_call(
 		goSlice(localAsm),
+		u32(1),
 		goSlice(calldata),
 		progParams.encode(),
 		reqHandler,
