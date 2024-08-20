@@ -2074,7 +2074,7 @@ func TestWasmLruCache(t *testing.T) {
 		t.Fatalf("lruMetrics.SizeKb, expected: %v, actual: %v", fallibleAsmEstimateSizeKb+keccakAsmEstimateSizeKb, lruMetrics.SizeKb)
 	}
 
-	// math wasm program will be cached, but since (fallible + keccak + math) > lruCacheSize, fallible will be evicted
+	// math wasm program will be cached, but fallible will be evicted since (fallible + keccak + math) > lruCacheSize
 	mathAsmEstimateSizeKb := uint64(560)
 	mathProgramAddress := deployWasm(t, ctx, auth, l2client, rustFile("math"))
 	tx = l2info.PrepareTxTo("Owner", &mathProgramAddress, l2info.TransferGas, nil, []byte{0x01})
