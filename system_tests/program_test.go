@@ -41,7 +41,6 @@ import (
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/validator/valnode"
-	"github.com/wasmerio/wasmer-go/wasmer"
 )
 
 var oneEth = arbmath.UintToBig(1e18)
@@ -1530,7 +1529,7 @@ func readWasmFile(t *testing.T, file string) ([]byte, []byte) {
 	// chose a random dictionary for testing, but keep the same files consistent
 	randDict := arbcompress.Dictionary((len(file) + len(t.Name())) % 2)
 
-	wasmSource, err := wasmer.Wat2Wasm(string(source))
+	wasmSource, err := programs.Wat2Wasm(source)
 	Require(t, err)
 	wasm, err := arbcompress.Compress(wasmSource, arbcompress.LEVEL_WELL, randDict)
 	Require(t, err)
@@ -1615,6 +1614,35 @@ func multicallAppend(calls []byte, opcode vm.OpCode, address common.Address, inn
 	calls[0] += 1 // add another call
 	calls = append(calls, argsForMulticall(opcode, address, nil, inner)[1:]...)
 	return calls
+}
+
+func multicallEmptyArgs() []byte {
+	return []byte{0} // number of actions
+}
+
+func multicallAppendStore(args []byte, key, value common.Hash, emitLog bool) []byte {
+	var action byte = 0x10
+	if emitLog {
+		action |= 0x08
+	}
+	args[0] += 1
+	args = binary.BigEndian.AppendUint32(args, 1+64) // length
+	args = append(args, action)
+	args = append(args, key.Bytes()...)
+	args = append(args, value.Bytes()...)
+	return args
+}
+
+func multicallAppendLoad(args []byte, key common.Hash, emitLog bool) []byte {
+	var action byte = 0x11
+	if emitLog {
+		action |= 0x08
+	}
+	args[0] += 1
+	args = binary.BigEndian.AppendUint32(args, 1+32) // length
+	args = append(args, action)
+	args = append(args, key.Bytes()...)
+	return args
 }
 
 func assertStorageAt(

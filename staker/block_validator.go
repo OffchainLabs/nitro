@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -125,6 +126,9 @@ func (c *BlockValidatorConfig) Validate() error {
 			return fmt.Errorf("failed to parse block-validator config memory-free-limit string: %w", err)
 		}
 		c.memoryFreeLimit = limit
+	}
+	if err := c.RedisValidationClientConfig.Validate(); err != nil {
+		return fmt.Errorf("failed to validate redis validation client config: %w", err)
 	}
 	streamsEnabled := c.RedisValidationClientConfig.Enabled()
 	if len(c.ValidationServerConfigs) == 0 {
@@ -495,7 +499,7 @@ func (v *BlockValidator) sendRecord(s *validationStatus) error {
 
 //nolint:gosec
 func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoot common.Hash) error {
-	input, err := validationEntry.ToInput([]string{"wavm"})
+	input, err := validationEntry.ToInput([]rawdb.Target{rawdb.TargetWavm})
 	if err != nil {
 		return err
 	}

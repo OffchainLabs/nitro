@@ -53,7 +53,7 @@ func NewFastConfirmSafe(
 	fastConfirmSafe.safe = safe
 	owners, err := safe.GetOwners(callOpts)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("calling getOwners: %w", err)
 	}
 
 	// This is needed because safe contract needs owners to be sorted.
@@ -63,7 +63,7 @@ func NewFastConfirmSafe(
 	fastConfirmSafe.owners = owners
 	threshold, err := safe.GetThreshold(callOpts)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("calling getThreshold: %w", err)
 	}
 	fastConfirmSafe.threshold = threshold.Uint64()
 	rollupUserLogicAbi, err := rollupgen.RollupUserLogicMetaData.GetAbi()
