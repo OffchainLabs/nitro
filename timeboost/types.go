@@ -68,14 +68,15 @@ type ValidatedBid struct {
 	Bidder                 common.Address
 }
 
-// Hash returns the following solidity implementation:
+// BigIntHash returns the hash of the bidder and bidBytes in the form of a big.Int.
+// The hash is equivalent to the following Solidity implementation:
 //
 //	uint256(keccak256(abi.encodePacked(bidder, bidBytes)))
-func (v *ValidatedBid) Hash() string {
+func (v *ValidatedBid) BigIntHash() *big.Int {
 	bidBytes := v.BidBytes()
 	bidder := v.Bidder.Bytes()
 
-	return crypto.Keccak256Hash(bidder, bidBytes).String()
+	return new(big.Int).SetBytes(crypto.Keccak256Hash(bidder, bidBytes).Bytes())
 }
 
 // BidBytes returns the byte representation equivalent to the Solidity implementation of
