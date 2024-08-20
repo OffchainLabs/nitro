@@ -264,7 +264,7 @@ func (p Programs) CallProgram(
 		maxGasToReturn := startingGas - evmCost
 		contract.Gas = am.MinInt(contract.Gas, maxGasToReturn)
 	}
-	GetMetrics()
+	GetWasmLruCacheMetrics()
 	return ret, err
 }
 

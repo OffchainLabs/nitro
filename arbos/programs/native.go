@@ -267,14 +267,6 @@ func callProgram(
 	return data, err
 }
 
-// exposes for testing
-func GetMetrics() {
-	metrics := C.stylus_get_lru_cache_metrics()
-
-	stylusLRUCacheSizeKbGauge.Update(int64(metrics.size_kb))
-	stylusLRUCacheSizeCountGauge.Update(int64(metrics.count))
-}
-
 //export handleReqImpl
 func handleReqImpl(apiId usize, req_type u32, data *rustSlice, costPtr *u64, out_response *C.GoSliceData, out_raw_data *C.GoSliceData) {
 	api := getApi(apiId)
@@ -335,6 +327,10 @@ type WasmLruCacheMetrics struct {
 // exported for testing
 func GetWasmLruCacheMetrics() *WasmLruCacheMetrics {
 	metrics := C.stylus_get_lru_cache_metrics()
+
+	stylusLRUCacheSizeKbGauge.Update(int64(metrics.size_kb))
+	stylusLRUCacheSizeCountGauge.Update(int64(metrics.count))
+
 	return &WasmLruCacheMetrics{
 		SizeKb: uint64(metrics.size_kb),
 		Count:  uint64(metrics.count),

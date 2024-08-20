@@ -152,7 +152,7 @@ func callProgram(
 	return retData, err
 }
 
-func GetMetrics() {}
+func GetWasmLruCacheMetrics() {}
 
 func CallProgramLoop(
 	moduleHash common.Hash,
