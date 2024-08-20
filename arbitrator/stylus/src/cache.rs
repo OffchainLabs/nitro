@@ -228,7 +228,7 @@ impl InitCache {
             does_not_fit: 0,
         };
 
-        return metrics
+        metrics
     }
 
     // only used for testing
