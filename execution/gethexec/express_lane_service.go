@@ -204,7 +204,7 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 	if msg.Sequence > control.sequence {
 		log.Warn("Received express lane submission with future sequence number", "sequence", msg.Sequence)
 	}
-	// Put into the the sequence number map.
+	// Put into the sequence number map.
 	es.messagesBySequenceNumber[msg.Sequence] = msg
 
 	for {
