@@ -323,8 +323,8 @@ func ResizeWasmLruCache(sizeKb uint32) {
 
 // exported for testing
 type WasmLruCacheMetrics struct {
-	SizeKb uint64
-	Count  uint64
+	SizeKb uint32
+	Count  uint32
 }
 
 // exported for testing
@@ -338,8 +338,8 @@ func GetWasmLruCacheMetrics() *WasmLruCacheMetrics {
 	stylusLRUCacheSizeDoesNotFitCounter.Inc(int64(metrics.does_not_fit))
 
 	return &WasmLruCacheMetrics{
-		SizeKb: uint64(metrics.size_kb),
-		Count:  uint64(metrics.count),
+		SizeKb: uint32(metrics.size_kb),
+		Count:  uint32(metrics.count),
 	}
 }
 

@@ -2028,7 +2028,7 @@ func TestWasmLruCache(t *testing.T) {
 	builder.L2.ExecNode.ExecEngine.ResizeWasmLruCache(lruCacheSize)
 
 	// fallible wasm program will not be cached since its size is greater than lruCacheSize
-	fallibleAsmEstimateSizeKb := uint64(551)
+	fallibleAsmEstimateSizeKb := uint32(551)
 	fallibleProgramAddress := deployWasm(t, ctx, auth, l2client, rustFile("fallible"))
 	tx := l2info.PrepareTxTo("Owner", &fallibleProgramAddress, l2info.TransferGas, nil, []byte{0x01})
 	Require(t, l2client.SendTransaction(ctx, tx))
@@ -2060,7 +2060,7 @@ func TestWasmLruCache(t *testing.T) {
 	}
 
 	// keccak wasm program will be cached
-	keccakAsmEstimateSizeKb := uint64(583)
+	keccakAsmEstimateSizeKb := uint32(583)
 	keccakProgramAddress := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
 	tx = l2info.PrepareTxTo("Owner", &keccakProgramAddress, l2info.TransferGas, nil, []byte{0x01})
 	Require(t, l2client.SendTransaction(ctx, tx))
@@ -2075,7 +2075,7 @@ func TestWasmLruCache(t *testing.T) {
 	}
 
 	// math wasm program will be cached, but fallible will be evicted since (fallible + keccak + math) > lruCacheSize
-	mathAsmEstimateSizeKb := uint64(560)
+	mathAsmEstimateSizeKb := uint32(560)
 	mathProgramAddress := deployWasm(t, ctx, auth, l2client, rustFile("math"))
 	tx = l2info.PrepareTxTo("Owner", &mathProgramAddress, l2info.TransferGas, nil, []byte{0x01})
 	Require(t, l2client.SendTransaction(ctx, tx))

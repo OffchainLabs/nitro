@@ -24,9 +24,9 @@ macro_rules! cache {
 }
 
 pub struct LruCounters {
-    pub hits: u64,
-    pub misses: u64,
-    pub does_not_fit: u64,
+    pub hits: u32,
+    pub misses: u32,
+    pub does_not_fit: u32,
 }
 
 pub struct InitCache {
@@ -84,11 +84,11 @@ impl WeightScale<CacheKey, CacheItem> for CustomWeightScale {
 
 #[repr(C)]
 pub struct LruCacheMetrics {
-    pub size_kb: u64,
-    pub count: u64,
-    pub hits: u64,
-    pub misses: u64,
-    pub does_not_fit: u64,
+    pub size_kb: u32,
+    pub count: u32,
+    pub hits: u32,
+    pub misses: u32,
+    pub does_not_fit: u32,
 }
 
 impl InitCache {
