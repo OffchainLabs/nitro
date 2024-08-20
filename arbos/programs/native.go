@@ -47,8 +47,11 @@ type rustBytes = C.RustBytes
 type rustSlice = C.RustSlice
 
 var (
-	stylusLRUCacheSizeKbGauge    = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/size_kilobytes", nil)
-	stylusLRUCacheSizeCountGauge = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/count", nil)
+	stylusLRUCacheSizeKbGauge           = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/size_kilobytes", nil)
+	stylusLRUCacheSizeCountGauge        = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/count", nil)
+	stylusLRUCacheSizeHitsCounter       = metrics.NewRegisteredCounter("arb/arbos/stylus/cache/lru/hits", nil)
+	stylusLRUCacheSizeMissesCounter     = metrics.NewRegisteredCounter("arb/arbos/stylus/cache/lru/misses", nil)
+	stylusLRUCacheSizeDoesNotFitCounter = metrics.NewRegisteredCounter("arb/arbos/stylus/cache/lru/does_not_fit", nil)
 )
 
 func activateProgram(
@@ -320,8 +323,11 @@ func ResizeWasmLruCache(sizeKb uint32) {
 
 // exported for testing
 type WasmLruCacheMetrics struct {
-	SizeKb uint64
-	Count  uint64
+	SizeKb     uint64
+	Count      uint64
+	Hits       uint64
+	Misses     uint64
+	DoesNotFit uint64
 }
 
 // exported for testing
@@ -330,10 +336,16 @@ func GetWasmLruCacheMetrics() *WasmLruCacheMetrics {
 
 	stylusLRUCacheSizeKbGauge.Update(int64(metrics.size_kb))
 	stylusLRUCacheSizeCountGauge.Update(int64(metrics.count))
+	stylusLRUCacheSizeHitsCounter.Inc(int64(metrics.hits))
+	stylusLRUCacheSizeMissesCounter.Inc(int64(metrics.misses))
+	stylusLRUCacheSizeDoesNotFitCounter.Inc(int64(metrics.does_not_fit))
 
 	return &WasmLruCacheMetrics{
-		SizeKb: uint64(metrics.size_kb),
-		Count:  uint64(metrics.count),
+		SizeKb:     uint64(metrics.size_kb),
+		Count:      uint64(metrics.count),
+		Hits:       uint64(metrics.hits),
+		Misses:     uint64(metrics.misses),
+		DoesNotFit: uint64(metrics.does_not_fit),
 	}
 }
 

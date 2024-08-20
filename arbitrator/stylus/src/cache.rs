@@ -23,9 +23,16 @@ macro_rules! cache {
     };
 }
 
+pub struct LruCounters {
+    pub hits: u64,
+    pub misses: u64,
+    pub does_not_fit: u64,
+}
+
 pub struct InitCache {
     long_term: HashMap<CacheKey, CacheItem>,
     lru: CLruCache<CacheKey, CacheItem, RandomState, CustomWeightScale>,
+    lru_counters: LruCounters,
 }
 
 #[derive(Clone, Copy, Hash, PartialEq, Eq)]
@@ -79,6 +86,9 @@ impl WeightScale<CacheKey, CacheItem> for CustomWeightScale {
 pub struct LruCacheMetrics {
     pub size_kb: u64,
     pub count: u64,
+    pub hits: u64,
+    pub misses: u64,
+    pub does_not_fit: u64,
 }
 
 impl InitCache {
@@ -91,6 +101,11 @@ impl InitCache {
         Self {
             long_term: HashMap::new(),
             lru: CLruCache::with_config(CLruCacheConfig::new(NonZeroUsize::new(size).unwrap()).with_scale(CustomWeightScale)),
+            lru_counters: LruCounters {
+                hits: 0,
+                misses: 0,
+                does_not_fit: 0,
+            },
         }
     }
 
@@ -112,8 +127,11 @@ impl InitCache {
 
         // See if the item is in the LRU cache, promoting if so
         if let Some(item) = cache.lru.get(&key) {
-            return Some(item.data());
+            let data = item.data();
+            cache.lru_counters.hits += 1;
+            return Some(data);
         }
+        cache.lru_counters.misses += 1;
         None
     }
 
@@ -153,7 +171,10 @@ impl InitCache {
         let mut cache = cache!();
         if long_term_tag != Self::ARBOS_TAG {
             match cache.lru.put_with_weight(key, item) {
-                Err(_) => println!("Failed to insert into LRU cache, item too large"),
+                Err(_) => {
+                    cache.lru_counters.does_not_fit += 1;
+                    println!("Failed to insert into LRU cache, item too large");
+                }
                 Ok(_) => (),
             };
         } else {
@@ -193,13 +214,27 @@ impl InitCache {
     }
 
     pub fn get_lru_metrics() -> LruCacheMetrics {
-        let cache = cache!();
+        let mut cache = cache!();
+
         let count = cache.lru.len();
-        return LruCacheMetrics{
+        let metrics = LruCacheMetrics{
             // add 1 to each entry to account that we subtracted 1 in the weight calculation
             size_kb: (cache.lru.weight() + count).try_into().unwrap(),
             count: count.try_into().unwrap(),
-        }
+
+            hits: cache.lru_counters.hits,
+            misses: cache.lru_counters.misses,
+            does_not_fit: cache.lru_counters.does_not_fit,
+        };
+
+        // empty counters
+        cache.lru_counters = LruCounters {
+            hits: 0,
+            misses: 0,
+            does_not_fit: 0,
+        };
+
+        return metrics
     }
 
     // only used for testing
