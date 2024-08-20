@@ -265,6 +265,22 @@ func setupExpressLaneAuction(
 	cleanupSeq := builderSeq.Build(t)
 	seqInfo, seqNode, seqClient := builderSeq.L2Info, builderSeq.L2.ConsensusNode, builderSeq.L2.Client
 
+	// Send an L2 tx in the background every two seconds to keep the chain moving.
+	go func() {
+		tick := time.NewTicker(time.Second * 2)
+		defer tick.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-tick.C:
+				tx := seqInfo.PrepareTx("Owner", "Owner", seqInfo.TransferGas, big.NewInt(1), nil)
+				err := seqClient.SendTransaction(ctx, tx)
+				t.Log("Failed to send test tx", err)
+			}
+		}
+	}()
+
 	// Set up the auction contracts on L2.
 	// Deploy the express lane auction contract and erc20 to the parent chain.
 	ownerOpts := seqInfo.GetDefaultTransactOpts("Owner", ctx)

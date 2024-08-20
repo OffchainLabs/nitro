@@ -260,8 +260,13 @@ func (bv *BidValidator) validateBid(
 	}
 
 	// Check if the auction is closed.
-	if d, closed := auctionClosed(bv.initialRoundTimestamp, bv.roundDuration, bv.auctionClosingDuration); closed {
-		return nil, errors.Wrapf(ErrBadRoundNumber, "auction is closed, %s since closing", d)
+	if isAuctionRoundClosed(
+		time.Now(),
+		bv.initialRoundTimestamp,
+		bv.roundDuration,
+		bv.auctionClosingDuration,
+	) {
+		return nil, errors.Wrap(ErrBadRoundNumber, "auction is closed")
 	}
 
 	// Check bid is higher than reserve price.

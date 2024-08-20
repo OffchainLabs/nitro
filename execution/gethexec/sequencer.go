@@ -557,7 +557,7 @@ func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx 
 		options:         nil,
 		resultChan:      make(chan error, 1),
 		returnedResult:  &atomic.Bool{},
-		ctx:             ctx,
+		ctx:             context.TODO(),
 		firstAppearance: time.Now(),
 	})
 	return nil
@@ -888,7 +888,8 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 	for {
 		var queueItem txQueueItem
 		if s.timeboostAuctionResolutionTxQueue.Len() > 0 {
-			queueItem = s.txRetryQueue.Pop()
+			queueItem = s.timeboostAuctionResolutionTxQueue.Pop()
+			fmt.Println("Popped the auction resolution tx")
 		} else if s.txRetryQueue.Len() > 0 {
 			queueItem = s.txRetryQueue.Pop()
 		} else if len(queueItems) == 0 {

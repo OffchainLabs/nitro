@@ -142,45 +142,49 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 		// and set the express lane controller for the upcoming round accordingly.
 		latestBlock, err := es.seqClient.HeaderByNumber(ctx, nil)
 		if err != nil {
+			// TODO: Should not be a crit.
 			log.Crit("Could not get latest header", "err", err)
 		}
 		fromBlock := latestBlock.Number.Uint64()
-		duration := time.Millisecond * 250
-		es.CallIteratively(func(ctx context.Context) time.Duration {
-			latestBlock, err := es.seqClient.HeaderByNumber(ctx, nil)
-			if err != nil {
-				log.Error("Could not get latest header", "err", err)
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-time.After(time.Millisecond * 250):
+				latestBlock, err := es.seqClient.HeaderByNumber(ctx, nil)
+				if err != nil {
+					log.Crit("Could not get latest header", "err", err)
+				}
+				toBlock := latestBlock.Number.Uint64()
+				if fromBlock == toBlock {
+					continue
+				}
+				filterOpts := &bind.FilterOpts{
+					Context: ctx,
+					Start:   fromBlock,
+					End:     &toBlock,
+				}
+				it, err := es.auctionContract.FilterAuctionResolved(filterOpts, nil, nil, nil)
+				if err != nil {
+					log.Error("Could not filter auction resolutions", "error", err)
+					continue
+				}
+				for it.Next() {
+					log.Info(
+						"New express lane controller assigned",
+						"round", it.Event.Round,
+						"controller", it.Event.FirstPriceExpressLaneController,
+					)
+					es.Lock()
+					es.roundControl.Add(it.Event.Round, &expressLaneControl{
+						controller: it.Event.FirstPriceExpressLaneController,
+						sequence:   0,
+					})
+					es.Unlock()
+				}
+				fromBlock = toBlock
 			}
-			toBlock := latestBlock.Number.Uint64()
-			if fromBlock == toBlock {
-				return duration
-			}
-			filterOpts := &bind.FilterOpts{
-				Context: ctx,
-				Start:   fromBlock,
-				End:     &toBlock,
-			}
-			it, err := es.auctionContract.FilterAuctionResolved(filterOpts, nil, nil, nil)
-			if err != nil {
-				log.Error("Could not filter auction resolutions", "error", err)
-				return duration
-			}
-			for it.Next() {
-				log.Info(
-					"New express lane controller assigned",
-					"round", it.Event.Round,
-					"controller", it.Event.FirstPriceExpressLaneController,
-				)
-				es.Lock()
-				es.roundControl.Add(it.Event.Round, &expressLaneControl{
-					controller: it.Event.FirstPriceExpressLaneController,
-					sequence:   0,
-				})
-				es.Unlock()
-			}
-			fromBlock = toBlock
-			return duration
-		})
+		}
 	})
 }
 

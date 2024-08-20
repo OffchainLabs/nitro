@@ -298,8 +298,8 @@ func (a *AuctioneerServer) Start(ctx_in context.Context) {
 				return
 			case auctionClosingTime := <-ticker.c:
 				log.Info("New auction closing time reached", "closingTime", auctionClosingTime, "totalBids", a.bidCache.size())
-				// Wait for a second, just to give some leeway for latency of bids received last minute.
-				time.Sleep(time.Second)
+				// Wait for two seconds, just to give some leeway for latency of bids received last minute.
+				time.Sleep(2 * time.Second)
 				if err := a.resolveAuction(ctx); err != nil {
 					log.Error("Could not resolve auction for round", "error", err)
 				}
@@ -364,13 +364,11 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 		log.Error("Error submitting auction resolution to privileged sequencer endpoint", "error", err)
 		return err
 	}
-
 	receipt, err := bind.WaitMined(ctx, a.client, tx)
 	if err != nil {
 		log.Error("Error waiting for transaction to be mined", "error", err)
 		return err
 	}
-
 	if tx == nil || receipt == nil || receipt.Status != types.ReceiptStatusSuccessful {
 		if tx != nil {
 			log.Error("Transaction failed or did not finalize successfully", "txHash", tx.Hash().Hex())

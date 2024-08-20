@@ -53,11 +53,25 @@ func CurrentRound(initialRoundTimestamp time.Time, roundDuration time.Duration) 
 	return uint64(time.Since(initialRoundTimestamp) / roundDuration)
 }
 
-// auctionClosed returns the time into the current round and whether the auction for this round is closed.
-func auctionClosed(initialRoundTimestamp time.Time, roundDuration time.Duration, auctionClosingDuration time.Duration) (time.Duration, bool) {
-	if roundDuration == 0 {
-		return 0, true
+func isAuctionRoundClosed(
+	timestamp time.Time,
+	initialTimestamp time.Time,
+	roundDuration time.Duration,
+	auctionClosingDuration time.Duration,
+) bool {
+	if timestamp.Before(initialTimestamp) {
+		return false
 	}
-	d := time.Since(initialRoundTimestamp) % roundDuration
-	return d, d >= roundDuration-auctionClosingDuration
+	timeInRound := timeIntoRound(timestamp, initialTimestamp, roundDuration)
+	return time.Duration(timeInRound)*time.Second >= roundDuration-auctionClosingDuration
+}
+
+func timeIntoRound(
+	timestamp time.Time,
+	initialTimestamp time.Time,
+	roundDuration time.Duration,
+) uint64 {
+	secondsSinceOffset := uint64(timestamp.Sub(initialTimestamp).Seconds())
+	roundDurationSeconds := uint64(roundDuration.Seconds())
+	return secondsSinceOffset % roundDurationSeconds
 }
