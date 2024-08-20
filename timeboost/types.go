@@ -3,7 +3,6 @@ package timeboost
 import (
 	"bytes"
 	"crypto/ecdsa"
-	"crypto/sha256"
 	"encoding/binary"
 	"fmt"
 	"math/big"
@@ -72,19 +71,34 @@ type ValidatedBid struct {
 	Bidder                 common.Address
 }
 
+// Hash returns the following solidity implementation:
+//
+//	uint256(keccak256(abi.encodePacked(bidder, bidBytes)))
 func (v *ValidatedBid) Hash() string {
-	// Concatenate the bidder address and the byte representation of the bid
-	data := append(v.Bidder.Bytes(), padBigInt(v.ChainId)...)
-	data = append(data, v.AuctionContractAddress.Bytes()...)
+	bidBytes := v.BidBytes()
+	bidder := v.Bidder.Bytes()
+
+	return crypto.Keccak256Hash(bidder, bidBytes).String()
+}
+
+// BidBytes returns the byte representation equivalent to the Solidity implementation of
+//
+//	abi.encodePacked(BID_DOMAIN, block.chainid, address(this), _round, _amount, _expressLaneController)
+func (v *ValidatedBid) BidBytes() []byte {
+	var buffer bytes.Buffer
+
+	buffer.Write(domainValue)
+	buffer.Write(v.ChainId.Bytes())
+	buffer.Write(v.AuctionContractAddress.Bytes())
+
 	roundBytes := make([]byte, 8)
 	binary.BigEndian.PutUint64(roundBytes, v.Round)
-	data = append(data, roundBytes...)
-	data = append(data, v.Amount.Bytes()...)
-	data = append(data, v.ExpressLaneController.Bytes()...)
+	buffer.Write(roundBytes)
 
-	hash := sha256.Sum256(data)
-	// Return the hash as a hexadecimal string
-	return fmt.Sprintf("%x", hash)
+	buffer.Write(v.Amount.Bytes())
+	buffer.Write(v.ExpressLaneController.Bytes())
+
+	return buffer.Bytes()
 }
 
 func (v *ValidatedBid) ToJson() *JsonValidatedBid {

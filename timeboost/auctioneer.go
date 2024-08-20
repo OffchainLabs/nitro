@@ -360,29 +360,53 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 		return err
 	}
 
-	if err = a.sendAuctionResolutionTransactionRPC(ctx, tx); err != nil {
+	if err = a.retrySendAuctionResolutionTx(ctx, tx); err != nil {
 		log.Error("Error submitting auction resolution to privileged sequencer endpoint", "error", err)
 		return err
-	}
-	receipt, err := bind.WaitMined(ctx, a.client, tx)
-	if err != nil {
-		log.Error("Error waiting for transaction to be mined", "error", err)
-		return err
-	}
-	if tx == nil || receipt == nil || receipt.Status != types.ReceiptStatusSuccessful {
-		if tx != nil {
-			log.Error("Transaction failed or did not finalize successfully", "txHash", tx.Hash().Hex())
-		}
-		return errors.New("transaction failed or did not finalize successfully")
 	}
 
 	log.Info("Auction resolved successfully", "txHash", tx.Hash().Hex())
 	return nil
 }
 
-func (a *AuctioneerServer) sendAuctionResolutionTransactionRPC(ctx context.Context, tx *types.Transaction) error {
-	// TODO: Retry a few times if fails.
-	return a.sequencerRpc.CallContext(ctx, nil, "auctioneer_submitAuctionResolutionTransaction", tx)
+// retrySendAuctionResolutionTx attempts to send the auction resolution transaction to the
+// sequencer endpoint. If the transaction submission fails, it retries the
+// submission at regular intervals until the end of the current round or until the context
+// is canceled or times out. The function returns an error if all attempts fail.
+func (a *AuctioneerServer) retrySendAuctionResolutionTx(ctx context.Context, tx *types.Transaction) error {
+	var err error
+
+	currentRound := CurrentRound(a.initialRoundTimestamp, a.roundDuration)
+	roundEndTime := a.initialRoundTimestamp.Add(time.Duration(currentRound) * a.roundDuration)
+	retryInterval := 1 * time.Second
+
+	for {
+		// Attempt to send the transaction
+		if err = a.sequencerRpc.CallContext(ctx, nil, "auctioneer_submitAuctionResolutionTransaction", tx); err == nil {
+			// Wait for the transaction to be mined
+			receipt, err := bind.WaitMined(ctx, a.client, tx)
+			if err != nil || tx == nil || receipt == nil || receipt.Status != types.ReceiptStatusSuccessful {
+				log.Error("Transaction failed or did not finalize successfully", "txHash", tx.Hash().Hex(), "error", err)
+				err = errors.New("transaction failed or did not finalize successfully")
+			} else {
+				return nil // Transaction was successful
+			}
+		} else {
+			log.Error("Error submitting auction resolution to privileged sequencer endpoint", "error", err)
+		}
+
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+
+		if time.Now().After(roundEndTime) {
+			break
+		}
+
+		time.Sleep(retryInterval)
+	}
+
+	return errors.New("failed to submit auction resolution after multiple attempts")
 }
 
 func (a *AuctioneerServer) persistValidatedBid(bid *JsonValidatedBid) {
