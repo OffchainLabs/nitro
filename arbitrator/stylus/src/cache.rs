@@ -166,12 +166,9 @@ impl InitCache {
         let data = item.data();
         let mut cache = cache!();
         if long_term_tag != Self::ARBOS_TAG {
-            match cache.lru.put_with_weight(key, item) {
-                Err(_) => {
-                    cache.lru_counters.does_not_fit += 1;
-                    println!("Failed to insert into LRU cache, item too large");
-                }
-                Ok(_) => (),
+            if let Err(_) = cache.lru.put_with_weight(key, item) {
+                cache.lru_counters.does_not_fit += 1;
+                println!("Failed to insert into LRU cache, item too large");
             };
         } else {
             cache.long_term.insert(key, item);
@@ -187,10 +184,9 @@ impl InitCache {
         let key = CacheKey::new(module_hash, version, debug);
         let mut cache = cache!();
         if let Some(item) = cache.long_term.remove(&key) {
-            match cache.lru.put_with_weight(key, item) {
-                Err(_) => println!("Failed to insert into LRU cache, item too large"),
-                Ok(_) => (),
-            };
+            if let Err(_) = cache.lru.put_with_weight(key, item) {
+                println!("Failed to insert into LRU cache, item too large");
+            }
         }
     }
 
@@ -202,10 +198,9 @@ impl InitCache {
         let cache = &mut *cache;
         for (key, item) in cache.long_term.drain() {
             // not all will fit, just a heuristic
-            match cache.lru.put_with_weight(key, item) {
-                Err(_) => println!("Failed to insert into LRU cache, item too large"),
-                Ok(_) => (),
-            };
+            if let Err(_) = cache.lru.put_with_weight(key, item) {
+                println!("Failed to insert into LRU cache, item too large");
+            }
         }
     }
 
