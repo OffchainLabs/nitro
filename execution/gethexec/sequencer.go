@@ -889,7 +889,7 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 		var queueItem txQueueItem
 		if s.timeboostAuctionResolutionTxQueue.Len() > 0 {
 			queueItem = s.timeboostAuctionResolutionTxQueue.Pop()
-			fmt.Println("Popped the auction resolution tx")
+			log.Info("Popped the auction resolution tx", queueItem.tx.Hash())
 		} else if s.txRetryQueue.Len() > 0 {
 			queueItem = s.txRetryQueue.Pop()
 		} else if len(queueItems) == 0 {
