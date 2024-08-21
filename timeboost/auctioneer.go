@@ -1,3 +1,6 @@
+// Copyright 2024-2025, Offchain Labs, Inc.
+// For license information, see https://github.com/nitro/blob/master/LICENSE
+
 package timeboost
 
 import (
@@ -87,7 +90,7 @@ func AuctioneerServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	genericconf.WalletConfigAddOptions(prefix+".wallet", f, "wallet for auctioneer server")
 	f.String(prefix+".sequencer-endpoint", DefaultAuctioneerServerConfig.SequencerEndpoint, "sequencer RPC endpoint")
 	f.String(prefix+".sequencer-jwt-path", DefaultAuctioneerServerConfig.SequencerJWTPath, "sequencer jwt file path")
-	f.String(prefix+".auction-contract-address", DefaultAuctioneerServerConfig.SequencerEndpoint, "express lane auction contract address")
+	f.String(prefix+".auction-contract-address", DefaultAuctioneerServerConfig.AuctionContractAddress, "express lane auction contract address")
 	f.String(prefix+".db-directory", DefaultAuctioneerServerConfig.DbDirectory, "path to database directory for persisting validated bids in a sqlite file")
 }
 

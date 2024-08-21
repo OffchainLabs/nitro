@@ -51,7 +51,7 @@ func BidValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".redis-url", DefaultBidValidatorConfig.RedisURL, "url of redis server")
 	pubsub.ProducerAddConfigAddOptions(prefix+".producer-config", f)
 	f.String(prefix+".sequencer-endpoint", DefaultAuctioneerServerConfig.SequencerEndpoint, "sequencer RPC endpoint")
-	f.String(prefix+".auction-contract-address", DefaultAuctioneerServerConfig.SequencerEndpoint, "express lane auction contract address")
+	f.String(prefix+".auction-contract-address", DefaultAuctioneerServerConfig.AuctionContractAddress, "express lane auction contract address")
 }
 
 type BidValidator struct {
