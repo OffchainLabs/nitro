@@ -324,7 +324,14 @@ pub unsafe extern "C" fn stylus_cache_module(
     arbos_tag: u32,
     debug: bool,
 ) {
-    if let Err(error) = InitCache::insert(module_hash, module.slice(), asm_size_estimate_kb, version, arbos_tag, debug) {
+    if let Err(error) = InitCache::insert(
+        module_hash,
+        module.slice(),
+        asm_size_estimate_kb,
+        version,
+        arbos_tag,
+        debug,
+    ) {
         panic!("tried to cache invalid asm!: {error}");
     }
 }

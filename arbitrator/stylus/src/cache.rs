@@ -2,14 +2,14 @@
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
 use arbutil::Bytes32;
+use clru::{CLruCache, CLruCacheConfig, WeightScale};
 use eyre::Result;
 use lazy_static::lazy_static;
-use clru::{CLruCache, CLruCacheConfig, WeightScale};
 use parking_lot::Mutex;
 use prover::programs::config::CompileConfig;
+use std::hash::RandomState;
 use std::{collections::HashMap, num::NonZeroUsize};
 use wasmer::{Engine, Module, Store};
-use std::hash::RandomState;
 
 use crate::target_cache::target_native;
 
@@ -61,7 +61,11 @@ struct CacheItem {
 
 impl CacheItem {
     fn new(module: Module, engine: Engine, asm_size_estimate_kb: u32) -> Self {
-        Self { module, engine, asm_size_estimate_kb }
+        Self {
+            module,
+            engine,
+            asm_size_estimate_kb,
+        }
     }
 
     fn data(&self) -> (Module, Store) {
@@ -74,7 +78,10 @@ impl WeightScale<CacheKey, CacheItem> for CustomWeightScale {
     fn weight(&self, _key: &CacheKey, val: &CacheItem) -> usize {
         // clru defines that each entry consumes (weight + 1) of the cache capacity.
         // We subtract 1 since we only want to use the weight as the size of the entry.
-        val.asm_size_estimate_kb.saturating_sub(1).try_into().unwrap()
+        val.asm_size_estimate_kb
+            .saturating_sub(1)
+            .try_into()
+            .unwrap()
     }
 }
 
@@ -98,7 +105,10 @@ impl InitCache {
     fn new(size: usize) -> Self {
         Self {
             long_term: HashMap::new(),
-            lru: CLruCache::with_config(CLruCacheConfig::new(NonZeroUsize::new(size).unwrap()).with_scale(CustomWeightScale)),
+            lru: CLruCache::with_config(
+                CLruCacheConfig::new(NonZeroUsize::new(size).unwrap())
+                    .with_scale(CustomWeightScale),
+            ),
             lru_counters: LruCounters {
                 hits: 0,
                 misses: 0,
@@ -210,7 +220,7 @@ impl InitCache {
         let mut cache = cache!();
 
         let count = cache.lru.len();
-        let metrics = LruCacheMetrics{
+        let metrics = LruCacheMetrics {
             // add 1 to each entry to account that we subtracted 1 in the weight calculation
             size_kb: (cache.lru.weight() + count).try_into().unwrap(),
 
