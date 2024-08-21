@@ -10,6 +10,7 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/staker/txbuilder"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -349,9 +350,12 @@ func (v *L1Validator) generateNodeAction(
 				return nil, false, errors.New("batch not found on L1")
 			}
 		}
-		execResult, err := v.txStreamer.ResultAtCount(validatedCount)
-		if err != nil {
-			return nil, false, err
+		execResult := &execution.MessageResult{}
+		if validatedCount > 0 {
+			execResult, err = v.txStreamer.ResultAtMessageIndex(validatedCount - 1)
+			if err != nil {
+				return nil, false, err
+			}
 		}
 		_, gsPos, err := GlobalStatePositionsAtCount(v.inboxTracker, validatedCount, batchNum)
 		if err != nil {
