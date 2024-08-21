@@ -244,7 +244,6 @@ func testCompileLoad() error {
 
 	status := userStatus(C.stylus_call(
 		goSlice(localAsm),
-		u32(1),
 		goSlice(calldata),
 		progParams.encode(),
 		reqHandler,

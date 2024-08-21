@@ -47,7 +47,7 @@ type rustBytes = C.RustBytes
 type rustSlice = C.RustSlice
 
 var (
-	stylusLRUCacheSizeKbGauge           = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/size_kilobytes", nil)
+	stylusLRUCacheSizeBytesGauge        = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/size_bytes", nil)
 	stylusLRUCacheSizeCountGauge        = metrics.NewRegisteredGauge("arb/arbos/stylus/cache/lru/count", nil)
 	stylusLRUCacheSizeHitsCounter       = metrics.NewRegisteredCounter("arb/arbos/stylus/cache/lru/hits", nil)
 	stylusLRUCacheSizeMissesCounter     = metrics.NewRegisteredCounter("arb/arbos/stylus/cache/lru/misses", nil)
@@ -220,7 +220,6 @@ func callProgram(
 	address common.Address,
 	moduleHash common.Hash,
 	localAsm []byte,
-	asmSizeEstimateKb uint32,
 	scope *vm.ScopeContext,
 	interpreter *vm.EVMInterpreter,
 	tracingInfo *util.TracingInfo,
@@ -248,7 +247,6 @@ func callProgram(
 	output := &rustBytes{}
 	status := userStatus(C.stylus_call(
 		goSlice(localAsm),
-		u32(asmSizeEstimateKb),
 		goSlice(calldata),
 		stylusParams.encode(),
 		evmApi.cNative,
@@ -291,55 +289,55 @@ func cacheProgram(db vm.StateDB, module common.Hash, program Program, addressFor
 			panic("unable to recreate wasm")
 		}
 		tag := db.Database().WasmCacheTag()
-		state.CacheWasmRust(asm, module, program.asmSize(), program.version, tag, debug)
+		state.CacheWasmRust(asm, module, program.version, tag, debug)
 		db.RecordCacheWasm(state.CacheWasm{ModuleHash: module, Version: program.version, Tag: tag, Debug: debug})
 	}
 }
 
 // Evicts a program in Rust. We write a record so that we can undo on revert, unless we don't need to (e.g. expired)
 // For gas estimation and eth_call, we ignore permanent updates and rely on Rust's LRU.
-func evictProgram(db vm.StateDB, module common.Hash, asmSizeEstimateKb uint32, version uint16, debug bool, runMode core.MessageRunMode, forever bool) {
+func evictProgram(db vm.StateDB, module common.Hash, version uint16, debug bool, runMode core.MessageRunMode, forever bool) {
 	if runMode == core.MessageCommitMode {
 		tag := db.Database().WasmCacheTag()
 		state.EvictWasmRust(module, version, tag, debug)
 		if !forever {
-			db.RecordEvictWasm(state.EvictWasm{ModuleHash: module, Version: version, Tag: tag, Debug: debug, AsmSizeEstimateKb: asmSizeEstimateKb})
+			db.RecordEvictWasm(state.EvictWasm{ModuleHash: module, Version: version, Tag: tag, Debug: debug})
 		}
 	}
 }
 
 func init() {
-	state.CacheWasmRust = func(asm []byte, moduleHash common.Hash, asmSizeEstimateKb uint32, version uint16, tag uint32, debug bool) {
-		C.stylus_cache_module(goSlice(asm), hashToBytes32(moduleHash), u32(asmSizeEstimateKb), u16(version), u32(tag), cbool(debug))
+	state.CacheWasmRust = func(asm []byte, moduleHash common.Hash, version uint16, tag uint32, debug bool) {
+		C.stylus_cache_module(goSlice(asm), hashToBytes32(moduleHash), u16(version), u32(tag), cbool(debug))
 	}
 	state.EvictWasmRust = func(moduleHash common.Hash, version uint16, tag uint32, debug bool) {
 		C.stylus_evict_module(hashToBytes32(moduleHash), u16(version), u32(tag), cbool(debug))
 	}
 }
 
-func ResizeWasmLruCache(sizeKb uint32) {
-	C.stylus_cache_lru_resize(u32(sizeKb))
+func ResizeWasmLruCache(sizeBytes uint64) {
+	C.stylus_cache_lru_resize(u64(sizeBytes))
 }
 
 // exported for testing
 type WasmLruCacheMetrics struct {
-	SizeKb uint32
-	Count  uint32
+	SizeBytes uint64
+	Count     uint32
 }
 
 // exported for testing
 func GetWasmLruCacheMetrics() *WasmLruCacheMetrics {
 	metrics := C.stylus_get_lru_cache_metrics()
 
-	stylusLRUCacheSizeKbGauge.Update(int64(metrics.size_kb))
+	stylusLRUCacheSizeBytesGauge.Update(int64(metrics.size_bytes))
 	stylusLRUCacheSizeCountGauge.Update(int64(metrics.count))
 	stylusLRUCacheSizeHitsCounter.Inc(int64(metrics.hits))
 	stylusLRUCacheSizeMissesCounter.Inc(int64(metrics.misses))
 	stylusLRUCacheSizeDoesNotFitCounter.Inc(int64(metrics.does_not_fit))
 
 	return &WasmLruCacheMetrics{
-		SizeKb: uint32(metrics.size_kb),
-		Count:  uint32(metrics.count),
+		SizeBytes: uint64(metrics.size_bytes),
+		Count:     uint32(metrics.count),
 	}
 }
 

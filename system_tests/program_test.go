@@ -2020,15 +2020,15 @@ func TestWasmLruCache(t *testing.T) {
 	if lruMetrics.Count != 0 {
 		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 0, lruMetrics.Count)
 	}
-	if lruMetrics.SizeKb != 0 {
-		t.Fatalf("lruMetrics.SizeKb, expected: %v, actual: %v", 0, lruMetrics.SizeKb)
+	if lruMetrics.SizeBytes != 0 {
+		t.Fatalf("lruMetrics.SizeBytes, expected: %v, actual: %v", 0, lruMetrics.SizeBytes)
 	}
 
-	lruCacheSize := uint32(500)
+	lruCacheSize := uint64(100_000)
 	builder.L2.ExecNode.ExecEngine.ResizeWasmLruCache(lruCacheSize)
 
 	// fallible wasm program will not be cached since its size is greater than lruCacheSize
-	fallibleAsmEstimateSizeKb := uint32(551)
+	fallibleAsmEstimateSizeBytes := uint64(118_624)
 	fallibleProgramAddress := deployWasm(t, ctx, auth, l2client, rustFile("fallible"))
 	tx := l2info.PrepareTxTo("Owner", &fallibleProgramAddress, l2info.TransferGas, nil, []byte{0x01})
 	Require(t, l2client.SendTransaction(ctx, tx))
@@ -2038,12 +2038,12 @@ func TestWasmLruCache(t *testing.T) {
 	if lruMetrics.Count != 0 {
 		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 0, lruMetrics.Count)
 	}
-	if lruMetrics.SizeKb != 0 {
-		t.Fatalf("lruMetrics.SizeKb, expected: %v, actual: %v", 0, lruMetrics.SizeKb)
+	if lruMetrics.SizeBytes != 0 {
+		t.Fatalf("lruMetrics.SizeBytes, expected: %v, actual: %v", 0, lruMetrics.SizeBytes)
 	}
 
 	// resize lru cache
-	lruCacheSize = uint32(1500)
+	lruCacheSize = uint64(350_000)
 	builder.L2.ExecNode.ExecEngine.ResizeWasmLruCache(lruCacheSize)
 
 	// fallible wasm program will be cached
@@ -2055,12 +2055,12 @@ func TestWasmLruCache(t *testing.T) {
 	if lruMetrics.Count != 1 {
 		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 1, lruMetrics.Count)
 	}
-	if lruMetrics.SizeKb != fallibleAsmEstimateSizeKb {
-		t.Fatalf("lruMetrics.SizeKb, expected: %v, actual: %v", fallibleAsmEstimateSizeKb, lruMetrics.SizeKb)
+	if lruMetrics.SizeBytes != fallibleAsmEstimateSizeBytes {
+		t.Fatalf("lruMetrics.SizeBytes, expected: %v, actual: %v", fallibleAsmEstimateSizeBytes, lruMetrics.SizeBytes)
 	}
 
 	// keccak wasm program will be cached
-	keccakAsmEstimateSizeKb := uint32(583)
+	keccakAsmEstimateSizeBytes := uint64(175_496)
 	keccakProgramAddress := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
 	tx = l2info.PrepareTxTo("Owner", &keccakProgramAddress, l2info.TransferGas, nil, []byte{0x01})
 	Require(t, l2client.SendTransaction(ctx, tx))
@@ -2070,12 +2070,12 @@ func TestWasmLruCache(t *testing.T) {
 	if lruMetrics.Count != 2 {
 		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 2, lruMetrics.Count)
 	}
-	if lruMetrics.SizeKb != fallibleAsmEstimateSizeKb+keccakAsmEstimateSizeKb {
-		t.Fatalf("lruMetrics.SizeKb, expected: %v, actual: %v", fallibleAsmEstimateSizeKb+keccakAsmEstimateSizeKb, lruMetrics.SizeKb)
+	if lruMetrics.SizeBytes != fallibleAsmEstimateSizeBytes+keccakAsmEstimateSizeBytes {
+		t.Fatalf("lruMetrics.SizeBytes, expected: %v, actual: %v", fallibleAsmEstimateSizeBytes+keccakAsmEstimateSizeBytes, lruMetrics.SizeBytes)
 	}
 
 	// math wasm program will be cached, but fallible will be evicted since (fallible + keccak + math) > lruCacheSize
-	mathAsmEstimateSizeKb := uint32(560)
+	mathAsmEstimateSizeBytes := uint64(131_672)
 	mathProgramAddress := deployWasm(t, ctx, auth, l2client, rustFile("math"))
 	tx = l2info.PrepareTxTo("Owner", &mathProgramAddress, l2info.TransferGas, nil, []byte{0x01})
 	Require(t, l2client.SendTransaction(ctx, tx))
@@ -2085,7 +2085,7 @@ func TestWasmLruCache(t *testing.T) {
 	if lruMetrics.Count != 2 {
 		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 2, lruMetrics.Count)
 	}
-	if lruMetrics.SizeKb != keccakAsmEstimateSizeKb+mathAsmEstimateSizeKb {
-		t.Fatalf("lruMetrics.SizeKb, expected: %v, actual: %v", keccakAsmEstimateSizeKb+mathAsmEstimateSizeKb, lruMetrics.SizeKb)
+	if lruMetrics.SizeBytes != keccakAsmEstimateSizeBytes+mathAsmEstimateSizeBytes {
+		t.Fatalf("lruMetrics.SizeBytes, expected: %v, actual: %v", keccakAsmEstimateSizeBytes+mathAsmEstimateSizeBytes, lruMetrics.SizeBytes)
 	}
 }

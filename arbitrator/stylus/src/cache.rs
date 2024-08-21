@@ -14,7 +14,7 @@ use wasmer::{Engine, Module, Store};
 use crate::target_cache::target_native;
 
 lazy_static! {
-    static ref INIT_CACHE: Mutex<InitCache> = Mutex::new(InitCache::new(256 * 1024));
+    static ref INIT_CACHE: Mutex<InitCache> = Mutex::new(InitCache::new(256 * 1024 * 1024));
 }
 
 macro_rules! cache {
@@ -56,15 +56,15 @@ impl CacheKey {
 struct CacheItem {
     module: Module,
     engine: Engine,
-    asm_size_estimate_kb: u32,
+    asm_size_estimate_bytes: usize,
 }
 
 impl CacheItem {
-    fn new(module: Module, engine: Engine, asm_size_estimate_kb: u32) -> Self {
+    fn new(module: Module, engine: Engine, asm_size_estimate_bytes: usize) -> Self {
         Self {
             module,
             engine,
-            asm_size_estimate_kb,
+            asm_size_estimate_bytes,
         }
     }
 
@@ -78,16 +78,13 @@ impl WeightScale<CacheKey, CacheItem> for CustomWeightScale {
     fn weight(&self, _key: &CacheKey, val: &CacheItem) -> usize {
         // clru defines that each entry consumes (weight + 1) of the cache capacity.
         // We subtract 1 since we only want to use the weight as the size of the entry.
-        val.asm_size_estimate_kb
-            .saturating_sub(1)
-            .try_into()
-            .unwrap()
+        val.asm_size_estimate_bytes.saturating_sub(1)
     }
 }
 
 #[repr(C)]
 pub struct LruCacheMetrics {
-    pub size_kb: u32,
+    pub size_bytes: u64,
     pub count: u32,
     pub hits: u32,
     pub misses: u32,
@@ -102,11 +99,11 @@ impl InitCache {
 
     const DOES_NOT_FIT_MSG: &'static str = "Failed to insert into LRU cache, item too large";
 
-    fn new(size: usize) -> Self {
+    fn new(size_bytes: usize) -> Self {
         Self {
             long_term: HashMap::new(),
             lru: CLruCache::with_config(
-                CLruCacheConfig::new(NonZeroUsize::new(size).unwrap())
+                CLruCacheConfig::new(NonZeroUsize::new(size_bytes).unwrap())
                     .with_scale(CustomWeightScale),
             ),
             lru_counters: LruCounters {
@@ -117,10 +114,10 @@ impl InitCache {
         }
     }
 
-    pub fn set_lru_size(size_kb: u32) {
+    pub fn set_lru_size(size_bytes: u64) {
         cache!()
             .lru
-            .resize(NonZeroUsize::new(size_kb.try_into().unwrap()).unwrap())
+            .resize(NonZeroUsize::new(size_bytes.try_into().unwrap()).unwrap())
     }
 
     /// Retrieves a cached value, updating items as necessary.
@@ -148,7 +145,6 @@ impl InitCache {
     pub fn insert(
         module_hash: Bytes32,
         module: &[u8],
-        asm_size_estimate_kb: u32,
         version: u16,
         long_term_tag: u32,
         debug: bool,
@@ -173,8 +169,9 @@ impl InitCache {
 
         let engine = CompileConfig::version(version, debug).engine(target_native());
         let module = unsafe { Module::deserialize_unchecked(&engine, module)? };
+        let asm_size_estimate_bytes = module.serialize()?.len();
 
-        let item = CacheItem::new(module, engine, asm_size_estimate_kb);
+        let item = CacheItem::new(module, engine, asm_size_estimate_bytes);
         let data = item.data();
         let mut cache = cache!();
         if long_term_tag != Self::ARBOS_TAG {
@@ -222,7 +219,7 @@ impl InitCache {
         let count = cache.lru.len();
         let metrics = LruCacheMetrics {
             // add 1 to each entry to account that we subtracted 1 in the weight calculation
-            size_kb: (cache.lru.weight() + count).try_into().unwrap(),
+            size_bytes: (cache.lru.weight() + count).try_into().unwrap(),
 
             count: count.try_into().unwrap(),
 

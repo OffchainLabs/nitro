@@ -128,12 +128,7 @@ func (p Programs) ActivateProgram(evm *vm.EVM, address common.Address, runMode c
 			return 0, codeHash, common.Hash{}, nil, true, err
 		}
 
-		program, err := p.getActiveProgram(codeHash, time, params)
-		if err != nil {
-			return 0, codeHash, common.Hash{}, nil, true, err
-		}
-
-		evictProgram(statedb, oldModuleHash, program.asmSize(), currentVersion, debugMode, runMode, expired)
+		evictProgram(statedb, oldModuleHash, currentVersion, debugMode, runMode, expired)
 	}
 	if err := p.moduleHashes.Set(codeHash, info.moduleHash); err != nil {
 		return 0, codeHash, common.Hash{}, nil, true, err
@@ -253,7 +248,7 @@ func (p Programs) CallProgram(
 	if runmode == core.MessageCommitMode {
 		arbos_tag = statedb.Database().WasmCacheTag()
 	}
-	ret, err := callProgram(address, moduleHash, localAsm, program.asmEstimateKb.ToUint32(), scope, interpreter, tracingInfo, calldata, evmData, goParams, model, arbos_tag)
+	ret, err := callProgram(address, moduleHash, localAsm, scope, interpreter, tracingInfo, calldata, evmData, goParams, model, arbos_tag)
 	if len(ret) > 0 && arbosVersion >= gethParams.ArbosVersion_StylusFixes {
 		// Ensure that return data costs as least as much as it would in the EVM.
 		evmCost := evmMemoryCost(uint64(len(ret)))
@@ -439,7 +434,7 @@ func (p Programs) SetProgramCached(
 		}
 		cacheProgram(db, moduleHash, program, address, code, codeHash, params, debug, time, runMode)
 	} else {
-		evictProgram(db, moduleHash, program.asmSize(), program.version, debug, runMode, expired)
+		evictProgram(db, moduleHash, program.version, debug, runMode, expired)
 	}
 	program.cached = cache
 	return p.setProgram(codeHash, program)

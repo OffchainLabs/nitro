@@ -256,7 +256,6 @@ pub unsafe extern "C" fn stylus_target_set(
 #[no_mangle]
 pub unsafe extern "C" fn stylus_call(
     module: GoSliceData,
-    asm_size_estimate_kb: u32,
     calldata: GoSliceData,
     config: StylusConfig,
     req_handler: NativeRequestHandler,
@@ -277,7 +276,6 @@ pub unsafe extern "C" fn stylus_call(
     let instance = unsafe {
         NativeInstance::deserialize_cached(
             module,
-            asm_size_estimate_kb,
             config.version,
             evm_api,
             evm_data,
@@ -304,8 +302,8 @@ pub unsafe extern "C" fn stylus_call(
 
 /// resize lru
 #[no_mangle]
-pub extern "C" fn stylus_cache_lru_resize(size_kb: u32) {
-    InitCache::set_lru_size(size_kb);
+pub extern "C" fn stylus_cache_lru_resize(size_bytes: u64) {
+    InitCache::set_lru_size(size_bytes);
 }
 
 /// Caches an activated user program.
@@ -319,7 +317,6 @@ pub extern "C" fn stylus_cache_lru_resize(size_kb: u32) {
 pub unsafe extern "C" fn stylus_cache_module(
     module: GoSliceData,
     module_hash: Bytes32,
-    asm_size_estimate_kb: u32,
     version: u16,
     arbos_tag: u32,
     debug: bool,
@@ -327,7 +324,6 @@ pub unsafe extern "C" fn stylus_cache_module(
     if let Err(error) = InitCache::insert(
         module_hash,
         module.slice(),
-        asm_size_estimate_kb,
         version,
         arbos_tag,
         debug,
