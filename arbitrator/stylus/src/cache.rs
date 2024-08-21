@@ -114,10 +114,10 @@ impl InitCache {
         }
     }
 
-    pub fn set_lru_size(size_bytes: u64) {
+    pub fn set_lru_capacity(capacity_bytes: u64) {
         cache!()
             .lru
-            .resize(NonZeroUsize::new(size_bytes.try_into().unwrap()).unwrap())
+            .resize(NonZeroUsize::new(capacity_bytes.try_into().unwrap()).unwrap())
     }
 
     /// Retrieves a cached value, updating items as necessary.

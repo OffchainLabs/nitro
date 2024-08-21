@@ -74,7 +74,7 @@ func NewTransactionStreamerForTest(t *testing.T, ownerAddress common.Address) (*
 	}
 	stylusTargetConfig := &gethexec.DefaultStylusTargetConfig
 	Require(t, stylusTargetConfig.Validate()) // pre-processes config (i.a. parses wasmTargets)
-	if err := execEngine.Initialize(gethexec.DefaultCachingConfig.StylusLRUCacheSize, &gethexec.DefaultStylusTargetConfig); err != nil {
+	if err := execEngine.Initialize(gethexec.DefaultCachingConfig.StylusLRUCacheCapacity, &gethexec.DefaultStylusTargetConfig); err != nil {
 		Fail(t, err)
 	}
 	execSeq := &execClientWrapper{execEngine, t}

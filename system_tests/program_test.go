@@ -2024,8 +2024,8 @@ func TestWasmLruCache(t *testing.T) {
 		t.Fatalf("lruMetrics.SizeBytes, expected: %v, actual: %v", 0, lruMetrics.SizeBytes)
 	}
 
-	lruCacheSize := uint64(100_000)
-	builder.L2.ExecNode.ExecEngine.ResizeWasmLruCache(lruCacheSize)
+	lruCacheCapacity := uint64(100_000)
+	builder.L2.ExecNode.ExecEngine.SetWasmLruCacheCapacity(lruCacheCapacity)
 
 	// fallible wasm program will not be cached since its size is greater than lruCacheSize
 	fallibleAsmEstimateSizeBytes := uint64(118_624)
@@ -2042,9 +2042,9 @@ func TestWasmLruCache(t *testing.T) {
 		t.Fatalf("lruMetrics.SizeBytes, expected: %v, actual: %v", 0, lruMetrics.SizeBytes)
 	}
 
-	// resize lru cache
-	lruCacheSize = uint64(350_000)
-	builder.L2.ExecNode.ExecEngine.ResizeWasmLruCache(lruCacheSize)
+	// set new  lru cache capacity
+	lruCacheCapacity = uint64(350_000)
+	builder.L2.ExecNode.ExecEngine.SetWasmLruCacheCapacity(lruCacheCapacity)
 
 	// fallible wasm program will be cached
 	tx = l2info.PrepareTxTo("Owner", &fallibleProgramAddress, l2info.TransferGas, nil, []byte{0x01})

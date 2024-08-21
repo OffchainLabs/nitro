@@ -300,10 +300,10 @@ pub unsafe extern "C" fn stylus_call(
     status
 }
 
-/// resize lru
+/// set lru cache capacity
 #[no_mangle]
-pub extern "C" fn stylus_cache_lru_resize(size_bytes: u64) {
-    InitCache::set_lru_size(size_bytes);
+pub extern "C" fn stylus_set_cache_lru_capacity(capacity_bytes: u64) {
+    InitCache::set_lru_capacity(capacity_bytes);
 }
 
 /// Caches an activated user program.

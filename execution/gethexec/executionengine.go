@@ -182,9 +182,9 @@ func populateStylusTargetCache(targetConfig *StylusTargetConfig) error {
 	return nil
 }
 
-func (s *ExecutionEngine) Initialize(rustCacheSizeMb uint32, targetConfig *StylusTargetConfig) error {
-	if rustCacheSizeMb != 0 {
-		s.ResizeWasmLruCache(arbmath.SaturatingUMul(uint64(rustCacheSizeMb), 1024*1024))
+func (s *ExecutionEngine) Initialize(rustCacheCapacityMb uint32, targetConfig *StylusTargetConfig) error {
+	if rustCacheCapacityMb != 0 {
+		s.SetWasmLruCacheCapacity(arbmath.SaturatingUMul(uint64(rustCacheCapacityMb), 1024*1024))
 	}
 	if err := populateStylusTargetCache(targetConfig); err != nil {
 		return fmt.Errorf("error populating stylus target cache: %w", err)
@@ -193,8 +193,8 @@ func (s *ExecutionEngine) Initialize(rustCacheSizeMb uint32, targetConfig *Stylu
 }
 
 // exported for testing
-func (s *ExecutionEngine) ResizeWasmLruCache(sizeBytes uint64) {
-	programs.ResizeWasmLruCache(sizeBytes)
+func (s *ExecutionEngine) SetWasmLruCacheCapacity(capacityBytes uint64) {
+	programs.SetWasmLruCacheCapacity(capacityBytes)
 }
 
 // exported for testing

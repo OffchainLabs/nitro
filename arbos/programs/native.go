@@ -315,8 +315,8 @@ func init() {
 	}
 }
 
-func ResizeWasmLruCache(sizeBytes uint64) {
-	C.stylus_cache_lru_resize(u64(sizeBytes))
+func SetWasmLruCacheCapacity(capacityBytes uint64) {
+	C.stylus_set_cache_lru_capacity(u64(capacityBytes))
 }
 
 // exported for testing
