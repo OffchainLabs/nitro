@@ -57,7 +57,6 @@ func BidValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 type BidValidator struct {
 	stopwaiter.StopWaiter
 	sync.RWMutex
-	reservePriceLock          sync.RWMutex
 	chainId                   *big.Int
 	stack                     *node.Node
 	producerCfg               *pubsub.ProducerConfig
@@ -73,6 +72,7 @@ type BidValidator struct {
 	roundDuration             time.Duration
 	auctionClosingDuration    time.Duration
 	reserveSubmissionDuration time.Duration
+	reservePriceLock          sync.RWMutex
 	reservePrice              *big.Int
 	bidsPerSenderInRound      map[common.Address]uint8
 	maxBidsPerSenderInRound   uint8
@@ -189,6 +189,33 @@ func (bv *BidValidator) Start(ctx_in context.Context) {
 		log.Crit("Bid validator not yet initialized by calling Initialize(ctx)")
 	}
 	bv.producer.Start(ctx_in)
+
+	// Set reserve price thread.
+	bv.StopWaiter.LaunchThread(func(ctx context.Context) {
+		ticker := newAuctionCloseTicker(bv.roundDuration, bv.auctionClosingDuration+bv.reserveSubmissionDuration)
+		go ticker.start()
+		for {
+			select {
+			case <-ctx.Done():
+				log.Error("Context closed, autonomous auctioneer shutting down")
+				return
+			case _ = <-ticker.c:
+				rp, err := bv.auctionContract.ReservePrice(&bind.CallOpts{})
+				if err != nil {
+					log.Error("Could not get reserve price", "error", err)
+					continue
+				}
+
+				currentReservePrice := bv.fetchReservePrice()
+				if currentReservePrice.Cmp(rp) == 0 {
+					continue
+				}
+
+				log.Info("Reserve price updated", "old", currentReservePrice.String(), "new", rp.String())
+				bv.setReservePrice(rp)
+			}
+		}
+	})
 }
 
 type BidValidatorAPI struct {
@@ -208,7 +235,6 @@ func (bv *BidValidatorAPI) SubmitBid(ctx context.Context, bid *JsonBid) error {
 			Signature:              bid.Signature,
 		},
 		bv.auctionContract.BalanceOf,
-		bv.fetchReservePrice,
 	)
 	if err != nil {
 		return err
@@ -222,18 +248,21 @@ func (bv *BidValidatorAPI) SubmitBid(ctx context.Context, bid *JsonBid) error {
 	return nil
 }
 
-// TODO(Terence): Set reserve price from the contract.
+func (bv *BidValidator) setReservePrice(p *big.Int) {
+	bv.reservePriceLock.Lock()
+	defer bv.reservePriceLock.Unlock()
+	bv.reservePrice = p
+}
+
 func (bv *BidValidator) fetchReservePrice() *big.Int {
 	bv.reservePriceLock.RLock()
 	defer bv.reservePriceLock.RUnlock()
-	return new(big.Int).Set(bv.reservePrice)
+	return bv.reservePrice
 }
 
 func (bv *BidValidator) validateBid(
 	bid *Bid,
-	balanceCheckerFn func(opts *bind.CallOpts, addr common.Address) (*big.Int, error),
-	fetchReservePriceFn func() *big.Int,
-) (*JsonValidatedBid, error) {
+	balanceCheckerFn func(opts *bind.CallOpts, account common.Address) (*big.Int, error)) (*JsonValidatedBid, error) {
 	// Check basic integrity.
 	if bid == nil {
 		return nil, errors.Wrap(ErrMalformedData, "nil bid")
@@ -270,9 +299,8 @@ func (bv *BidValidator) validateBid(
 	}
 
 	// Check bid is higher than reserve price.
-	reservePrice := fetchReservePriceFn()
-	if bid.Amount.Cmp(reservePrice) == -1 {
-		return nil, errors.Wrapf(ErrReservePriceNotMet, "reserve price %s, bid %s", reservePrice.String(), bid.Amount.String())
+	if bid.Amount.Cmp(bv.reservePrice) == -1 {
+		return nil, errors.Wrapf(ErrReservePriceNotMet, "reserve price %s, bid %s", bv.reservePrice.String(), bid.Amount.String())
 	}
 
 	// Validate the signature.
