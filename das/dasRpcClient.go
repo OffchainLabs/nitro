@@ -6,6 +6,7 @@ package das
 import (
 	"context"
 	"fmt"
+	"net/url"
 	"strings"
 	"time"
 
@@ -18,26 +19,32 @@ import (
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/blsSignatures"
+	"github.com/offchainlabs/nitro/util/metricsutil"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/signature"
 )
 
-var (
-	rpcClientStoreRequestGauge      = metrics.NewRegisteredGauge("arb/das/rpcclient/store/requests", nil)
-	rpcClientStoreSuccessGauge      = metrics.NewRegisteredGauge("arb/das/rpcclient/store/success", nil)
-	rpcClientStoreFailureGauge      = metrics.NewRegisteredGauge("arb/das/rpcclient/store/failure", nil)
-	rpcClientStoreStoredBytesGauge  = metrics.NewRegisteredGauge("arb/das/rpcclient/store/bytes", nil)
-	rpcClientStoreDurationHistogram = metrics.NewRegisteredHistogram("arb/das/rpcclient/store/duration", nil, metrics.NewBoundedHistogramSample())
+const (
+	clientMetricBase = "arb/das/rpcclient"
+)
 
-	rpcClientSendChunkSuccessGauge = metrics.NewRegisteredGauge("arb/das/rpcclient/sendchunk/success", nil)
-	rpcClientSendChunkFailureGauge = metrics.NewRegisteredGauge("arb/das/rpcclient/sendchunk/failure", nil)
+var (
+	rpcClientStoreRequestGauge      = metrics.NewRegisteredGauge(clientMetricBase+"/store/requests", nil)
+	rpcClientStoreSuccessGauge      = metrics.NewRegisteredGauge(clientMetricBase+"/store/success", nil)
+	rpcClientStoreFailureGauge      = metrics.NewRegisteredGauge(clientMetricBase+"/store/failure", nil)
+	rpcClientStoreStoredBytesGauge  = metrics.NewRegisteredGauge(clientMetricBase+"/store/bytes", nil)
+	rpcClientStoreDurationHistogram = metrics.NewRegisteredHistogram(clientMetricBase+"/store/duration", nil, metrics.NewBoundedHistogramSample())
+
+	rpcClientSendChunkSuccessGauge = metrics.NewRegisteredGauge(clientMetricBase+"/sendchunk/success", nil)
+	rpcClientSendChunkFailureGauge = metrics.NewRegisteredGauge(clientMetricBase+"/sendchunk/failure", nil)
 )
 
 type DASRPCClient struct { // implements DataAvailabilityService
-	clnt      *rpc.Client
-	url       string
-	signer    signature.DataSignerFunc
-	chunkSize uint64
+	clnt       *rpc.Client
+	url        string
+	signer     signature.DataSignerFunc
+	chunkSize  uint64
+	metricName string
 }
 
 func nilSigner(_ []byte) ([]byte, error) {
@@ -61,11 +68,17 @@ func NewDASRPCClient(target string, signer signature.DataSignerFunc, maxStoreChu
 		return nil, fmt.Errorf("max-store-chunk-body-size %d doesn't leave enough room for chunk payload", maxStoreChunkBodySize)
 	}
 
+	url, err := url.Parse(target)
+	if err != nil {
+		return nil, err
+	}
+
 	return &DASRPCClient{
-		clnt:      clnt,
-		url:       target,
-		signer:    signer,
-		chunkSize: uint64(chunkSize),
+		clnt:       clnt,
+		url:        target,
+		signer:     signer,
+		chunkSize:  uint64(chunkSize),
+		metricName: metricsutil.CanonicalizeMetricName(url.Hostname()),
 	}, nil
 }
 
@@ -73,12 +86,20 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 	rpcClientStoreRequestGauge.Inc(1)
 	start := time.Now()
 	success := false
+	legacyStoreUsed := false
 	defer func() {
 		if success {
 			rpcClientStoreSuccessGauge.Inc(1)
 		} else {
 			rpcClientStoreFailureGauge.Inc(1)
 		}
+
+		if legacyStoreUsed {
+			metrics.GetOrRegisterCounter(clientMetricBase+"/"+c.metricName+"/"+"legacystore/total", nil).Inc(1)
+		} else {
+			metrics.GetOrRegisterCounter(clientMetricBase+"/"+c.metricName+"/"+"chunkedstore/total", nil).Inc(1)
+		}
+
 		rpcClientStoreDurationHistogram.Update(time.Since(start).Nanoseconds())
 	}()
 
@@ -100,6 +121,7 @@ func (c *DASRPCClient) Store(ctx context.Context, message []byte, timeout uint64
 	var startChunkedStoreResult StartChunkedStoreResult
 	if err := c.clnt.CallContext(ctx, &startChunkedStoreResult, "das_startChunkedStore", hexutil.Uint64(timestamp), hexutil.Uint64(nChunks), hexutil.Uint64(c.chunkSize), hexutil.Uint64(totalSize), hexutil.Uint64(timeout), hexutil.Bytes(startReqSig)); err != nil {
 		if strings.Contains(err.Error(), "the method das_startChunkedStore does not exist") {
+			legacyStoreUsed = true
 			return c.legacyStore(ctx, message, timeout)
 		}
 		return nil, err
