@@ -168,7 +168,7 @@ impl InitCache {
         let data = item.data();
         let mut cache = cache!();
         if long_term_tag != Self::ARBOS_TAG {
-            if let Err(_) = cache.lru.put_with_weight(key, item) {
+            if cache.lru.put_with_weight(key, item).is_err() {
                 cache.lru_counters.does_not_fit += 1;
                 println!("{}", Self::DOES_NOT_FIT_MSG);
             };
@@ -186,7 +186,7 @@ impl InitCache {
         let key = CacheKey::new(module_hash, version, debug);
         let mut cache = cache!();
         if let Some(item) = cache.long_term.remove(&key) {
-            if let Err(_) = cache.lru.put_with_weight(key, item) {
+            if cache.lru.put_with_weight(key, item).is_err() {
                 println!("{}", Self::DOES_NOT_FIT_MSG);
             }
         }
@@ -200,7 +200,7 @@ impl InitCache {
         let cache = &mut *cache;
         for (key, item) in cache.long_term.drain() {
             // not all will fit, just a heuristic
-            if let Err(_) = cache.lru.put_with_weight(key, item) {
+            if cache.lru.put_with_weight(key, item).is_err() {
                 println!("{}", Self::DOES_NOT_FIT_MSG);
             }
         }
