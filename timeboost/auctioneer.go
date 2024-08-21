@@ -338,8 +338,8 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 				Signature:             second.Signature,
 			},
 		)
-		FirstBidValueGauge.Update(int64(first.Amount.Int64()))
-		SecondBidValueGauge.Update(int64(second.Amount.Int64()))
+		FirstBidValueGauge.Update(first.Amount.Int64())
+		SecondBidValueGauge.Update(second.Amount.Int64())
 		log.Info("Resolving auction with two bids", "round", upcomingRound)
 
 	case first != nil: // Single bid is present
@@ -351,7 +351,7 @@ func (a *AuctioneerServer) resolveAuction(ctx context.Context) error {
 				Signature:             first.Signature,
 			},
 		)
-		FirstBidValueGauge.Update(int64(first.Amount.Int64()))
+		FirstBidValueGauge.Update(first.Amount.Int64())
 		log.Info("Resolving auction with single bid", "round", upcomingRound)
 
 	case second == nil: // No bids received
