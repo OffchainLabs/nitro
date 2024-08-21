@@ -20,7 +20,7 @@ func PercentToBips(percentage int64) Bips {
 }
 
 func BigToBips(natural *big.Int) Bips {
-	return Bips(natural.Uint64())
+	return Bips(natural.Int64())
 }
 
 func BigMulByBips(value *big.Int, bips Bips) *big.Int {
@@ -51,5 +51,5 @@ func (bips Bips) Uint64() uint64 {
 func BigDivToBips(dividend, divisor *big.Int) Bips {
 	value := BigMulByInt(dividend, int64(OneInBips))
 	value.Div(value, divisor)
-	return Bips(BigToUintSaturating(value))
+	return Bips(BigToIntSaturating(value))
 }

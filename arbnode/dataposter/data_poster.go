@@ -359,6 +359,7 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64, thi
 		if err != nil {
 			return fmt.Errorf("getting nonce of a dataposter sender: %w", err)
 		}
+		// #nosec G115
 		latestUnconfirmedNonceGauge.Update(int64(unconfirmedNonce))
 		if nextNonce >= cfg.MaxMempoolTransactions+unconfirmedNonce {
 			return fmt.Errorf("%w: transaction nonce: %d, unconfirmed nonce: %d, max mempool size: %d", ErrExceedsMaxMempoolSize, nextNonce, unconfirmedNonce, cfg.MaxMempoolTransactions)
@@ -371,6 +372,7 @@ func (p *DataPoster) canPostWithNonce(ctx context.Context, nextNonce uint64, thi
 		if err != nil {
 			return fmt.Errorf("getting nonce of a dataposter sender: %w", err)
 		}
+		// #nosec G115
 		latestUnconfirmedNonceGauge.Update(int64(unconfirmedNonce))
 		if unconfirmedNonce > nextNonce {
 			return fmt.Errorf("latest on-chain nonce %v is greater than to next nonce %v", unconfirmedNonce, nextNonce)
@@ -525,6 +527,7 @@ func (p *DataPoster) feeAndTipCaps(ctx context.Context, nonce uint64, gasLimit u
 	if err != nil {
 		return nil, nil, nil, fmt.Errorf("failed to get latest nonce %v blocks ago (block %v): %w", config.NonceRbfSoftConfs, softConfBlock, err)
 	}
+	// #nosec G115
 	latestSoftConfirmedNonceGauge.Update(int64(softConfNonce))
 
 	suggestedTip, err := p.client.SuggestGasTipCap(ctx)
@@ -1052,6 +1055,7 @@ func (p *DataPoster) updateNonce(ctx context.Context) error {
 		}
 		return nil
 	}
+	// #nosec G115
 	latestFinalizedNonceGauge.Update(int64(nonce))
 	log.Info("Data poster transactions confirmed", "previousNonce", p.nonce, "newNonce", nonce, "previousL1Block", p.lastBlock, "newL1Block", header.Number)
 	if len(p.errorCount) > 0 {
@@ -1132,6 +1136,7 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 			log.Warn("Failed to get latest nonce", "err", err)
 			return minWait
 		}
+		// #nosec G115
 		latestUnconfirmedNonceGauge.Update(int64(unconfirmedNonce))
 		// We use unconfirmedNonce here to replace-by-fee transactions that aren't in a block,
 		// excluding those that are in an unconfirmed block. If a reorg occurs, we'll continue
@@ -1154,7 +1159,9 @@ func (p *DataPoster) Start(ctxIn context.Context) {
 			confirmedNonce := unconfirmedNonce - 1
 			confirmedMeta, err := p.queue.Get(ctx, confirmedNonce)
 			if err == nil && confirmedMeta != nil {
+				// #nosec G115
 				totalQueueWeightGauge.Update(int64(arbmath.SaturatingUSub(latestCumulativeWeight, confirmedMeta.CumulativeWeight())))
+				// #nosec G115
 				totalQueueLengthGauge.Update(int64(arbmath.SaturatingUSub(latestNonce, confirmedNonce)))
 			} else {
 				log.Error("Failed to fetch latest confirmed tx from queue", "confirmedNonce", confirmedNonce, "err", err, "confirmedMeta", confirmedMeta)

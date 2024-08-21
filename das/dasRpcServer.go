@@ -108,6 +108,7 @@ type StoreResult struct {
 }
 
 func (s *DASRPCServer) Store(ctx context.Context, message hexutil.Bytes, timeout hexutil.Uint64, sig hexutil.Bytes) (*StoreResult, error) {
+	// #nosec G115
 	log.Trace("dasRpc.DASRPCServer.Store", "message", pretty.FirstFewBytes(message), "message length", len(message), "timeout", time.Unix(int64(timeout), 0), "sig", pretty.FirstFewBytes(sig), "this", s)
 	rpcStoreRequestGauge.Inc(1)
 	start := time.Now()
@@ -277,6 +278,7 @@ func (s *DASRPCServer) StartChunkedStore(ctx context.Context, timestamp, nChunks
 	}
 
 	// Prevent replay of old messages
+	// #nosec G115
 	if time.Since(time.Unix(int64(timestamp), 0)).Abs() > time.Minute {
 		return nil, errors.New("too much time has elapsed since request was signed")
 	}

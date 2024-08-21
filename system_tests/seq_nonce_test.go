@@ -111,6 +111,7 @@ func TestSequencerNonceTooHighQueueFull(t *testing.T) {
 	}
 
 	for wait := 9; wait >= 0; wait-- {
+		// #nosec G115
 		got := int(completed.Load())
 		expected := count - builder.execConfig.Sequencer.NonceFailureCacheSize
 		if got == expected {
