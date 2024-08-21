@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -183,7 +184,7 @@ var TestSequencerConfig = gethexec.SequencerConfig{
 	MaxBlockSpeed:                time.Millisecond * 10,
 	MaxRevertGasReject:           params.TxGas + 10000,
 	MaxAcceptableTimestampDelta:  time.Hour,
-	SenderWhitelist:              "",
+	SenderWhitelist:              []string{},
 	Forwarder:                    DefaultTestForwarderConfig,
 	QueueSize:                    128,
 	QueueTimeout:                 time.Second * 5,
@@ -203,6 +204,7 @@ func ExecConfigDefaultNonSequencerTest() *gethexec.Config {
 	config.Sequencer.Enable = false
 	config.Forwarder = DefaultTestForwarderConfig
 	config.ForwardingTarget = "null"
+	config.TxPreChecker.Strictness = gethexec.TxPreCheckerStrictnessNone
 
 	_ = config.Validate()
 
@@ -215,6 +217,7 @@ func ExecConfigDefaultTest() *gethexec.Config {
 	config.Sequencer = TestSequencerConfig
 	config.ParentChainReader = headerreader.TestConfig
 	config.ForwardingTarget = "null"
+	config.TxPreChecker.Strictness = gethexec.TxPreCheckerStrictnessNone
 
 	_ = config.Validate()
 
@@ -364,7 +367,7 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 		validatorTxOptsPtr = &validatorTxOpts
 	}
 
-	AddDefaultValNode(t, b.ctx, b.nodeConfig, true, "", b.valnodeConfig.Wasm.RootPath)
+	AddValNodeIfNeeded(t, b.ctx, b.nodeConfig, true, "", b.valnodeConfig.Wasm.RootPath)
 
 	Require(t, b.execConfig.Validate())
 	execConfig := b.execConfig
@@ -400,7 +403,7 @@ func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
 func (b *NodeBuilder) BuildL2(t *testing.T) func() {
 	b.L2 = NewTestClient(b.ctx)
 
-	AddDefaultValNode(t, b.ctx, b.nodeConfig, true, "", b.valnodeConfig.Wasm.RootPath)
+	AddValNodeIfNeeded(t, b.ctx, b.nodeConfig, true, "", b.valnodeConfig.Wasm.RootPath)
 
 	var chainDb ethdb.Database
 	var arbDb ethdb.Database
@@ -457,7 +460,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	}
 	b.L2.cleanup()
 
-	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, b.L2Info, b.dataDir, b.chainConfig, &b.execConfig.Caching)
+	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChainWithStackConfig(t, b.L2Info, b.dataDir, b.chainConfig, b.initMessage, b.l2StackConfig, &b.execConfig.Caching)
 
 	execConfigFetcher := func() *gethexec.Config { return b.execConfig }
 	execNode, err := gethexec.CreateExecutionNode(b.ctx, stack, chainDb, blockchain, nil, execConfigFetcher)
@@ -891,10 +894,14 @@ func currentRootModule(t *testing.T) common.Hash {
 	return locator.LatestWasmModuleRoot()
 }
 
-func AddDefaultValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool, redisURL string, wasmRootDir string) {
-	if !nodeConfig.ValidatorRequired() {
+func AddValNodeIfNeeded(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool, redisURL string, wasmRootDir string) {
+	if !nodeConfig.ValidatorRequired() || nodeConfig.BlockValidator.ValidationServerConfigs[0].URL != "" {
 		return
 	}
+	AddValNode(t, ctx, nodeConfig, useJit, redisURL, wasmRootDir)
+}
+
+func AddValNode(t *testing.T, ctx context.Context, nodeConfig *arbnode.Config, useJit bool, redisURL string, wasmRootDir string) {
 	conf := valnode.TestValidationConfig
 	conf.UseJit = useJit
 	conf.Wasm.RootPath = wasmRootDir
@@ -1117,6 +1124,13 @@ func Fatal(t *testing.T, printables ...interface{}) {
 	testhelpers.FailImpl(t, printables...)
 }
 
+func CheckEqual[T any](t *testing.T, want T, got T, printables ...interface{}) {
+	t.Helper()
+	if !reflect.DeepEqual(want, got) {
+		testhelpers.FailImpl(t, "wrong result, want ", want, ", got ", got, printables)
+	}
+}
+
 func Create2ndNodeWithConfig(
 	t *testing.T,
 	ctx context.Context,
@@ -1168,7 +1182,7 @@ func Create2ndNodeWithConfig(
 	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, coreCacheConfig, initReader, chainConfig, initMessage, ExecConfigDefaultTest().TxLookupLimit, 0)
 	Require(t, err)
 
-	AddDefaultValNode(t, ctx, nodeConfig, true, "", valnodeConfig.Wasm.RootPath)
+	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", valnodeConfig.Wasm.RootPath)
 
 	Require(t, execConfig.Validate())
 	Require(t, nodeConfig.Validate())

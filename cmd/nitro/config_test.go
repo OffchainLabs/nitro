@@ -95,11 +95,11 @@ func TestReloads(t *testing.T) {
 			hot := node.Type().Field(i).Tag.Get("reload") == "hot"
 			dot := path + "." + node.Type().Field(i).Name
 			if hot && cold {
-				t.Fatalf(fmt.Sprintf(
+				t.Fatalf(
 					"Option %v%v%v is reloadable but %v%v%v is not",
 					colors.Red, dot, colors.Clear,
 					colors.Red, path, colors.Clear,
-				))
+				)
 			}
 			if hot {
 				colors.PrintBlue(dot)

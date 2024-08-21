@@ -46,6 +46,7 @@ import (
 	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/dbutil"
 )
 
 var notFoundError = errors.New("file not found")
@@ -300,6 +301,7 @@ func setLatestSnapshotUrl(ctx context.Context, initConfig *conf.InitConfig, chai
 		return fmt.Errorf("failed to parse latest mirror \"%s\": %w", initConfig.LatestBase, err)
 	}
 	latestFileUrl := baseUrl.JoinPath(chain, "latest-"+initConfig.Latest+".txt").String()
+	latestFileUrl = strings.ToLower(latestFileUrl)
 	latestFileBytes, err := httpGet(ctx, latestFileUrl)
 	if err != nil {
 		return fmt.Errorf("failed to get latest file at \"%s\": %w", latestFileUrl, err)
@@ -311,6 +313,7 @@ func setLatestSnapshotUrl(ctx context.Context, initConfig *conf.InitConfig, chai
 	} else {
 		initConfig.Url = baseUrl.JoinPath(latestFile).String()
 	}
+	initConfig.Url = strings.ToLower(initConfig.Url)
 	log.Info("Set latest snapshot url", "url", initConfig.Url)
 	return nil
 }
@@ -396,14 +399,80 @@ func checkEmptyDatabaseDir(dir string, force bool) error {
 	return nil
 }
 
-var pebbleNotExistErrorRegex = regexp.MustCompile("pebble: database .* does not exist")
-
-func isPebbleNotExistError(err error) bool {
-	return pebbleNotExistErrorRegex.MatchString(err.Error())
+func databaseIsEmpty(db ethdb.Database) bool {
+	it := db.NewIterator(nil, nil)
+	defer it.Release()
+	return !it.Next()
 }
 
-func isLeveldbNotExistError(err error) bool {
-	return os.IsNotExist(err)
+// removes all entries with keys prefixed with prefixes and of length used in initial version of wasm store schema
+func purgeVersion0WasmStoreEntries(db ethdb.Database) error {
+	prefixes, keyLength := rawdb.DeprecatedPrefixesV0()
+	batch := db.NewBatch()
+	notMatchingLengthKeyLogged := false
+	for _, prefix := range prefixes {
+		it := db.NewIterator(prefix, nil)
+		defer it.Release()
+		for it.Next() {
+			key := it.Key()
+			if len(key) != keyLength {
+				if !notMatchingLengthKeyLogged {
+					log.Warn("Found key with deprecated prefix but not matching length, skipping removal. (this warning is logged only once)", "key", key)
+					notMatchingLengthKeyLogged = true
+				}
+				continue
+			}
+			if err := batch.Delete(key); err != nil {
+				return fmt.Errorf("Failed to remove key %v : %w", key, err)
+			}
+
+			// Recreate the iterator after every batch commit in order
+			// to allow the underlying compactor to delete the entries.
+			if batch.ValueSize() >= ethdb.IdealBatchSize {
+				if err := batch.Write(); err != nil {
+					return fmt.Errorf("Failed to write batch: %w", err)
+				}
+				batch.Reset()
+				it.Release()
+				it = db.NewIterator(prefix, key)
+			}
+		}
+	}
+	if batch.ValueSize() > 0 {
+		if err := batch.Write(); err != nil {
+			return fmt.Errorf("Failed to write batch: %w", err)
+		}
+		batch.Reset()
+	}
+	return nil
+}
+
+// if db is not empty, validates if wasm database schema version matches current version
+// otherwise persists current version
+func validateOrUpgradeWasmStoreSchemaVersion(db ethdb.Database) error {
+	if !databaseIsEmpty(db) {
+		version, err := rawdb.ReadWasmSchemaVersion(db)
+		if err != nil {
+			if dbutil.IsErrNotFound(err) {
+				version = []byte{0}
+			} else {
+				return fmt.Errorf("Failed to retrieve wasm schema version: %w", err)
+			}
+		}
+		if len(version) != 1 || version[0] > rawdb.WasmSchemaVersion {
+			return fmt.Errorf("Unsupported wasm database schema version, current version: %v, read from wasm database: %v", rawdb.WasmSchemaVersion, version)
+		}
+		// special step for upgrading from version 0 - remove all entries added in version 0
+		if version[0] == 0 {
+			log.Warn("Detected wasm store schema version 0 - removing all old wasm store entries")
+			if err := purgeVersion0WasmStoreEntries(db); err != nil {
+				return fmt.Errorf("Failed to purge wasm store version 0 entries: %w", err)
+			}
+			log.Info("Wasm store schama version 0 entries successfully removed.")
+		}
+	}
+	rawdb.WriteWasmSchemaVersion(db)
+	return nil
 }
 
 func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeConfig, chainId *big.Int, cacheConfig *core.CacheConfig, persistentConfig *conf.PersistentConfig, l1Client arbutil.L1Interface, rollupAddrs chaininfo.RollupAddresses) (ethdb.Database, *core.BlockChain, error) {
@@ -418,9 +487,18 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				if err != nil {
 					return nil, nil, err
 				}
+				if err := dbutil.UnfinishedConversionCheck(chainData); err != nil {
+					return nil, nil, fmt.Errorf("l2chaindata unfinished database conversion check error: %w", err)
+				}
 				wasmDb, err := stack.OpenDatabaseWithExtraOptions("wasm", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, "wasm/", false, persistentConfig.Pebble.ExtraOptions("wasm"))
 				if err != nil {
 					return nil, nil, err
+				}
+				if err := validateOrUpgradeWasmStoreSchemaVersion(wasmDb); err != nil {
+					return nil, nil, err
+				}
+				if err := dbutil.UnfinishedConversionCheck(wasmDb); err != nil {
+					return nil, nil, fmt.Errorf("wasm unfinished database conversion check error: %w", err)
 				}
 				chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1)
 				_, err = rawdb.ParseStateScheme(cacheConfig.StateScheme, chainDb)
@@ -480,8 +558,8 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 				return chainDb, l2BlockChain, nil
 			}
 			readOnlyDb.Close()
-		} else if !isLeveldbNotExistError(err) && !isPebbleNotExistError(err) {
-			// we only want to continue if the error is pebble or leveldb not exist error
+		} else if !dbutil.IsNotExistError(err) {
+			// we only want to continue if the database does not exist
 			return nil, nil, fmt.Errorf("Failed to open database: %w", err)
 		}
 	}
@@ -534,6 +612,9 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	}
 	wasmDb, err := stack.OpenDatabaseWithExtraOptions("wasm", config.Execution.Caching.DatabaseCache, config.Persistent.Handles, "wasm/", false, persistentConfig.Pebble.ExtraOptions("wasm"))
 	if err != nil {
+		return nil, nil, err
+	}
+	if err := validateOrUpgradeWasmStoreSchemaVersion(wasmDb); err != nil {
 		return nil, nil, err
 	}
 	chainDb := rawdb.WrapDatabaseWithWasm(chainData, wasmDb, 1)

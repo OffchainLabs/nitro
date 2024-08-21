@@ -133,11 +133,7 @@ pub struct ProgramCounter {
     pub inst: u32,
 }
 
-#[cfg(not(any(
-    target_pointer_width = "32",
-    target_pointer_width = "64",
-    target_pointer_width = "128"
-)))]
+#[cfg(not(any(target_pointer_width = "32", target_pointer_width = "64",)))]
 compile_error!("Architectures with less than a 32 bit pointer width are not supported");
 
 impl ProgramCounter {

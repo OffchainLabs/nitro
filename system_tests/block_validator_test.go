@@ -92,7 +92,7 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 		validatorConfig.BlockValidator.RedisValidationClientConfig = redis.ValidationClientConfig{}
 	}
 
-	AddDefaultValNode(t, ctx, validatorConfig, !opts.arbitrator, redisURL, opts.wasmRootDir)
+	AddValNode(t, ctx, validatorConfig, !opts.arbitrator, redisURL, opts.wasmRootDir)
 
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: validatorConfig})
 	defer cleanupB()
