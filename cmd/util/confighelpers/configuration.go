@@ -13,7 +13,6 @@ import (
 
 	"github.com/knadh/koanf"
 	"github.com/knadh/koanf/parsers/json"
-	koanfjson "github.com/knadh/koanf/parsers/json"
 	"github.com/knadh/koanf/providers/confmap"
 	"github.com/knadh/koanf/providers/env"
 	"github.com/knadh/koanf/providers/file"
@@ -215,15 +214,17 @@ func devFlagArgs() []string {
 }
 
 func BeginCommonParse(f *flag.FlagSet, args []string) (*koanf.Koanf, error) {
+	var expandedArgs []string
 	for _, arg := range args {
 		if arg == "--version" || arg == "-v" {
 			return nil, ErrVersion
 		} else if arg == "--dev" {
-			args = devFlagArgs()
-			break
+			expandedArgs = append(expandedArgs, devFlagArgs()...)
+		} else {
+			expandedArgs = append(expandedArgs, arg)
 		}
 	}
-	if err := f.Parse(args); err != nil {
+	if err := f.Parse(expandedArgs); err != nil {
 		return nil, err
 	}
 
@@ -305,7 +306,7 @@ func DumpConfig(k *koanf.Koanf, extraOverrideFields map[string]interface{}) erro
 		return fmt.Errorf("error removing extra parameters before dump: %w", err)
 	}
 
-	c, err := k.Marshal(koanfjson.Parser())
+	c, err := k.Marshal(json.Parser())
 	if err != nil {
 		return fmt.Errorf("unable to marshal config file to JSON: %w", err)
 	}
