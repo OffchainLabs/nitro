@@ -1,7 +1,7 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::color::Color;
+use crate::color::{Color, GREY, MINT, RED, YELLOW};
 use std::{
     fmt::{Debug, Display},
     time::Duration,
@@ -9,8 +9,6 @@ use std::{
 
 #[must_use]
 pub fn time(span: Duration) -> String {
-    use crate::color::{MINT, RED, YELLOW};
-
     let mut span = span.as_nanos() as f64;
     let mut unit = 0;
     let units = [
@@ -25,6 +23,54 @@ pub fn time(span: Duration) -> String {
         unit += 1;
     }
     format!("{:6}", format!("{:.1}{}", span, units[unit])).color(colors[unit])
+}
+
+#[must_use]
+pub fn gas(gas: u64) -> String {
+    let mut gas = gas as f64;
+    let mut unit = 0;
+    let units = vec!["", "k", "m", "b"];
+    let scale = [1000., 1000., 1000.];
+    let colors = [MINT, MINT, YELLOW, RED];
+    while gas >= scale[unit] && unit < scale.len() {
+        gas /= scale[unit];
+        unit += 1;
+    }
+    format!("{:6}", format!("{:.1}{}", gas, units[unit])).color(colors[unit])
+}
+
+#[must_use]
+pub fn wei(wei: u64) -> String {
+    let mut value = wei as f64;
+    let mut unit = 0;
+    let units = [
+        "wei", "kwei", "mwei", "gwei", "szabo", "finney", "Ξ", "kΞ", "mΞ", "gΞ", "tΞ",
+    ];
+    let scale = [
+        1000., 1000., 1000., 1000., 1000., 1000., 1000., 1000., 1000., 1000., 1000.,
+    ];
+    let colors = [
+        MINT, MINT, MINT, MINT, MINT, MINT, YELLOW, YELLOW, RED, RED, RED, RED,
+    ];
+    while value >= scale[unit] && unit < scale.len() {
+        value /= scale[unit];
+        unit += 1;
+    }
+    format!("{:6}", format!("{:.1}{}", value, units[unit])).color(colors[unit])
+}
+
+#[must_use]
+pub fn bytes(bytes: usize) -> String {
+    let mut space = bytes as f64;
+    let mut unit = 0;
+    let units = vec!["", "kb", "mb", "gb"];
+    let scale = [1024., 1024., 1024.];
+    let colors = [GREY, GREY, RED];
+    while space >= scale[unit] && unit < scale.len() {
+        space /= scale[unit];
+        unit += 1;
+    }
+    format!("{:6}", format!("{:.1}{}", space, units[unit])).color(colors[unit])
 }
 
 #[must_use]
