@@ -42,7 +42,7 @@ func (s *Storage) FetchContents(_ context.Context, startingIndex uint64, maxResu
 	var res []*storage.QueuedTransaction
 	it := s.db.NewIterator([]byte(""), idxToKey(startingIndex))
 	defer it.Release()
-	for i := 0; i < int(maxResults); i++ {
+	for i := uint64(0); i < maxResults; i++ {
 		if !it.Next() {
 			break
 		}

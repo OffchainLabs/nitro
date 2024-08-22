@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"time"
@@ -172,7 +173,8 @@ func (dbs *DBStorageService) Put(ctx context.Context, data []byte, timeout uint6
 
 	return dbs.db.Update(func(txn *badger.Txn) error {
 		e := badger.NewEntry(dastree.HashBytes(data), data)
-		if dbs.discardAfterTimeout {
+		if dbs.discardAfterTimeout && timeout <= math.MaxInt64 {
+			// #nosec G115
 			e = e.WithTTL(time.Until(time.Unix(int64(timeout), 0)))
 		}
 		return txn.SetEntry(e)

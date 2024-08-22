@@ -33,8 +33,8 @@ func validateBacklog(t *testing.T, b *backlog, count, start, end uint64, lookupK
 		}
 	}
 
-	expLen := len(lookupKeys)
-	actualLen := int(b.Count())
+	expLen := uint64(len(lookupKeys))
+	actualLen := b.Count()
 	if expLen != actualLen {
 		t.Errorf("expected length of lookupByIndex map (%d) does not equal actual length (%d)", expLen, actualLen)
 	}
