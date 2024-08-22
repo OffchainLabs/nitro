@@ -371,7 +371,7 @@ pub extern "C" fn stylus_clear_lru_cache() {
 /// Gets asm estimate size.
 /// Only used for testing purposes.
 #[no_mangle]
-pub unsafe extern "C" fn stylus_get_asm_size_estimate_bytes(
+pub extern "C" fn stylus_get_asm_size_estimate_bytes(
     module: GoSliceData,
     version: u16,
     debug: bool,
