@@ -352,6 +352,7 @@ func (s *Staker) Initialize(ctx context.Context) error {
 		if err != nil {
 			return err
 		}
+		// #nosec G115
 		stakerLatestStakedNodeGauge.Update(int64(latestStaked))
 		if latestStaked == 0 {
 			return nil
@@ -570,6 +571,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 		if err != nil && ctx.Err() == nil {
 			log.Error("staker: error checking latest staked", "err", err)
 		}
+		// #nosec G115
 		stakerLatestStakedNodeGauge.Update(int64(staked))
 		if stakedGlobalState != nil {
 			for _, notifier := range s.stakedNotifiers {
@@ -585,6 +587,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 				log.Error("staker: error checking latest confirmed", "err", err)
 			}
 		}
+		// #nosec G115
 		stakerLatestConfirmedNodeGauge.Update(int64(confirmed))
 		if confirmedGlobalState != nil {
 			for _, notifier := range s.confirmedNotifiers {
@@ -726,6 +729,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error getting latest staked node of own wallet %v: %w", walletAddressOrZero, err)
 	}
+	// #nosec G115
 	stakerLatestStakedNodeGauge.Update(int64(latestStakedNodeNum))
 	if rawInfo != nil {
 		rawInfo.LatestStakedNode = latestStakedNodeNum

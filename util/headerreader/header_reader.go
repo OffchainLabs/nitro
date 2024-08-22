@@ -340,6 +340,7 @@ func (s *HeaderReader) logIfHeaderIsOld() {
 	if storedHeader == nil {
 		return
 	}
+	// #nosec G115
 	l1Timetamp := time.Unix(int64(storedHeader.Time), 0)
 	headerTime := time.Since(l1Timetamp)
 	if headerTime >= s.config().OldHeaderTimeout {

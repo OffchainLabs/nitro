@@ -60,13 +60,13 @@ func parsePreimageBytes(path string) {
 		if read != len(lenBuf) {
 			panic(fmt.Sprintf("missing bytes reading len got %d", read))
 		}
-		fieldSize := int(binary.LittleEndian.Uint64(lenBuf))
+		fieldSize := binary.LittleEndian.Uint64(lenBuf)
 		dataBuf := make([]byte, fieldSize)
 		read, err = file.Read(dataBuf)
 		if err != nil {
 			panic(err)
 		}
-		if read != fieldSize {
+		if uint64(read) != fieldSize {
 			panic("missing bytes reading data")
 		}
 		hash := crypto.Keccak256Hash(dataBuf)
@@ -125,7 +125,7 @@ func ReadInboxMessage(msgNum uint64) []byte {
 }
 
 func ReadDelayedInboxMessage(seqNum uint64) []byte {
-	if seqNum < delayedMsgFirstPos || (int(seqNum-delayedMsgFirstPos) > len(delayedMsgs)) {
+	if seqNum < delayedMsgFirstPos || (seqNum-delayedMsgFirstPos > uint64(len(delayedMsgs))) {
 		panic(fmt.Sprintf("trying to read bad delayed msg %d", seqNum))
 	}
 	return delayedMsgs[seqNum-delayedMsgFirstPos]
