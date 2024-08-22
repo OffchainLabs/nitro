@@ -160,7 +160,7 @@ func largeBacklogRelayTestImpl(t *testing.T, numClients, backlogSize, l2MsgSize 
 			connected++
 		}
 	}
-	if int32(connected) != int32(numClients) {
+	if connected != numClients {
 		t.Fail()
 	}
 	log.Info("number of clients connected", "expected", numClients, "got", connected)
