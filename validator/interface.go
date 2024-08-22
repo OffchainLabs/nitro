@@ -27,7 +27,6 @@ type ExecutionSpawner interface {
 	ValidationSpawner
 	CreateExecutionRun(wasmModuleRoot common.Hash, input *ValidationInput) containers.PromiseInterface[ExecutionRun]
 	LatestWasmModuleRoot() containers.PromiseInterface[common.Hash]
-	WriteToFile(input *ValidationInput, moduleRoot common.Hash) containers.PromiseInterface[struct{}]
 }
 
 type ExecutionRun interface {

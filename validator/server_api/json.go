@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -68,12 +69,31 @@ type InputJSON struct {
 	DebugChain    bool
 }
 
-func (i *InputJSON) WriteToFile() error {
+// WriteToFile writes the InputJSON to a file in JSON format.
+//
+// The path to the file is determined in part by the slug parameter so
+// callers can provide a recognizable name to differentiate various
+// contexts in which the InputJSON is being written.
+//
+// The file is created at a path
+//
+//	$HOME/.arbuitrum/validation-inputs/<slug>/<YYYMMDD_HHMMSS>/block_inputs_<id>.json
+func (i *InputJSON) WriteToFile(slug string) error {
+	homeDir, err := os.UserHomeDir()
+	if err != nil {
+		return err
+	}
+	t := time.Now()
+	tStr := t.Format("20060102_150405")
+	dir := fmt.Sprintf("%s/.arbitrum/validation-inputs/%s/%s", homeDir, slug, tStr)
+	if err = os.MkdirAll(dir, 0700); err != nil {
+		return err
+	}
 	contents, err := json.MarshalIndent(i, "", "    ")
 	if err != nil {
 		return err
 	}
-	if err = os.WriteFile(fmt.Sprintf("block_inputs_%d.json", i.Id), contents, 0600); err != nil {
+	if err = os.WriteFile(fmt.Sprintf("%s/block_inputs_%d.json", dir, i.Id), contents, 0600); err != nil {
 		return err
 	}
 	return nil

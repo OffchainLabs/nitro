@@ -104,19 +104,6 @@ func validateBlockRange(
 	}
 }
 
-// recordBlock writes a json file with all of the data needed to validate a block.
-//
-// This can be used as an input to the arbitrator prover to validate a block.
-func recordBlock(t *testing.T, block uint64, builder *NodeBuilder) {
-	t.Helper()
-	ctx := builder.ctx
-	wasmModuleRoot := currentRootModule(t)
-	inboxPos := arbutil.MessageIndex(block)
-	if err := builder.L2.ConsensusNode.StatelessBlockValidator.RecordValidationInput(ctx, inboxPos, wasmModuleRoot); err != nil {
-		Fatal(t, "failed to record block", block, err)
-	}
-}
-
 func TestProgramEvmData(t *testing.T) {
 	t.Parallel()
 	testEvmData(t, true)

@@ -186,14 +186,6 @@ func (c *ExecutionClient) LatestWasmModuleRoot() containers.PromiseInterface[com
 	})
 }
 
-func (c *ExecutionClient) WriteToFile(input *validator.ValidationInput, moduleRoot common.Hash) containers.PromiseInterface[struct{}] {
-	jsonInput := server_api.ValidationInputToJson(input)
-	return stopwaiter.LaunchPromiseThread[struct{}](c, func(ctx context.Context) (struct{}, error) {
-		err := c.client.CallContext(ctx, nil, server_api.Namespace+"_writeToFile", jsonInput, moduleRoot)
-		return struct{}{}, err
-	})
-}
-
 func (r *ExecutionClientRun) SendKeepAlive(ctx context.Context) time.Duration {
 	err := r.client.client.CallContext(ctx, nil, server_api.Namespace+"_execKeepAlive", r.id)
 	if err != nil {

@@ -1459,6 +1459,23 @@ func logParser[T any](t *testing.T, source string, name string) func(*types.Log)
 	}
 }
 
+// recordBlock writes a json file with all of the data needed to validate a block.
+//
+// This can be used as an input to the arbitrator prover to validate a block.
+func recordBlock(t *testing.T, block uint64, builder *NodeBuilder) {
+	t.Helper()
+	ctx := builder.ctx
+	wasmModuleRoot := currentRootModule(t)
+	inboxPos := arbutil.MessageIndex(block)
+	inputJson, err := builder.L2.ConsensusNode.StatelessBlockValidator.ValidationInputsAt(ctx, inboxPos, wasmModuleRoot)
+	if err != nil {
+		Fatal(t, "failed to get validation inputs", block, err)
+	}
+	if err := inputJson.WriteToFile(t.Name()); err != nil {
+		Fatal(t, "failed to write validation inputs", block, err)
+	}
+}
+
 func populateMachineDir(t *testing.T, cr *github.ConsensusRelease) string {
 	baseDir := t.TempDir()
 	machineDir := baseDir + "/machines"

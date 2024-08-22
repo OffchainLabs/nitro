@@ -24,6 +24,7 @@ import (
 	"github.com/offchainlabs/nitro/util/rpcclient"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/client/redis"
+	"github.com/offchainlabs/nitro/validator/server_api"
 
 	validatorclient "github.com/offchainlabs/nitro/validator/client"
 )
@@ -463,30 +464,16 @@ func (v *StatelessBlockValidator) ValidateResult(
 	return true, &entry.End, nil
 }
 
-func (v *StatelessBlockValidator) RecordValidationInput(ctx context.Context, pos arbutil.MessageIndex, moduleRoot common.Hash) error {
+func (v *StatelessBlockValidator) ValidationInputsAt(ctx context.Context, pos arbutil.MessageIndex, moduleRoot common.Hash) (server_api.InputJSON, error) {
 	entry, err := v.CreateReadyValidationEntry(ctx, pos)
 	if err != nil {
-		return err
+		return server_api.InputJSON{}, err
 	}
-	found := false
-	for _, spawner := range v.execSpawners {
-		if validator.SpawnerSupportsModule(spawner, moduleRoot) {
-			found = true
-			// Hardcoded to use wavm so that it can be read by the prover.
-			input, err := entry.ToInput([]rawdb.Target{rawdb.TargetWavm})
-			if err != nil {
-				return err
-			}
-			_, err = spawner.WriteToFile(input, moduleRoot).Await(ctx)
-			if err != nil {
-				return err
-			}
-		}
+	input, err := entry.ToInput([]rawdb.Target{rawdb.TargetWavm})
+	if err != nil {
+		return server_api.InputJSON{}, err
 	}
-	if !found {
-		return fmt.Errorf("validation with WasmModuleRoot %v not supported by node", moduleRoot)
-	}
-	return nil
+	return *server_api.ValidationInputToJson(input), nil
 }
 
 func (v *StatelessBlockValidator) OverrideRecorder(t *testing.T, recorder execution.ExecutionRecorder) {

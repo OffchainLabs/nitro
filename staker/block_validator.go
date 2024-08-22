@@ -29,6 +29,7 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/client/redis"
+	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/spf13/pflag"
 )
 
@@ -504,18 +505,16 @@ func (v *BlockValidator) sendRecord(s *validationStatus) error {
 }
 
 //nolint:gosec
-func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoot common.Hash) error {
+func (v *BlockValidator) writeToFile(validationEntry *validationEntry) error {
 	input, err := validationEntry.ToInput([]rawdb.Target{rawdb.TargetWavm})
 	if err != nil {
 		return err
 	}
-	for _, spawner := range v.execSpawners {
-		if validator.SpawnerSupportsModule(spawner, moduleRoot) {
-			_, err = spawner.WriteToFile(input, moduleRoot).Await(v.GetContext())
-			return err
-		}
+	inputJson := server_api.ValidationInputToJson(input)
+	if err := inputJson.WriteToFile("BlockValidator"); err != nil {
+		return err
 	}
-	return errors.New("did not find exec spawner for wasmModuleRoot")
+	return nil
 }
 
 func (v *BlockValidator) SetCurrentWasmModuleRoot(hash common.Hash) error {
@@ -783,7 +782,7 @@ validationsLoop:
 				runEnd, err := run.Current()
 				if err == nil && runEnd != validationStatus.Entry.End {
 					err = fmt.Errorf("validation failed: expected %v got %v", validationStatus.Entry.End, runEnd)
-					writeErr := v.writeToFile(validationStatus.Entry, run.WasmModuleRoot())
+					writeErr := v.writeToFile(validationStatus.Entry)
 					if writeErr != nil {
 						log.Warn("failed to write debug results file", "err", writeErr)
 					}

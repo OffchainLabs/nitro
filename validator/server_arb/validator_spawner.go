@@ -14,7 +14,6 @@ import (
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
-	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode/redis"
 
@@ -201,21 +200,6 @@ func (v *ArbitratorSpawner) Room() int {
 		avail = runtime.NumCPU()
 	}
 	return avail
-}
-
-func (v *ArbitratorSpawner) writeToFile(_ context.Context, input *validator.ValidationInput, _ common.Hash) error {
-	jsonInput := server_api.ValidationInputToJson(input)
-	if err := jsonInput.WriteToFile(); err != nil {
-		return err
-	}
-	return nil
-}
-
-func (v *ArbitratorSpawner) WriteToFile(input *validator.ValidationInput, moduleRoot common.Hash) containers.PromiseInterface[struct{}] {
-	return stopwaiter.LaunchPromiseThread[struct{}](v, func(ctx context.Context) (struct{}, error) {
-		err := v.writeToFile(ctx, input, moduleRoot)
-		return struct{}{}, err
-	})
 }
 
 func (v *ArbitratorSpawner) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
