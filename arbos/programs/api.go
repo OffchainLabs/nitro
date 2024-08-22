@@ -63,7 +63,6 @@ func newApiClosures(
 	actingAddress := contract.Address() // not necessarily WASM
 	readOnly := interpreter.ReadOnly()
 	evm := interpreter.Evm()
-	depth := evm.Depth()
 	db := evm.StateDB
 	chainConfig := evm.ChainConfig()
 
@@ -129,11 +128,6 @@ func newApiClosures(
 		startGas := am.SaturatingUSub(gasLeft, baseCost) * 63 / 64
 		gas := am.MinInt(startGas, gasReq)
 
-		// Tracing: emit the call (value transfer is done later in evm.Call)
-		if tracingInfo != nil && tracingInfo.Tracer.OnOpcode != nil {
-			tracingInfo.Tracer.OnOpcode(0, byte(opcode), startGas, baseCost+gas, scope, []byte{}, depth, nil)
-		}
-
 		// EVM rule: calls that pay get a stipend (opCall)
 		if value.Sign() != 0 {
 			gas = am.SaturatingUAdd(gas, params.CallStipend)
@@ -198,11 +192,6 @@ func newApiClosures(
 		// apply the 63/64ths rule
 		one64th := gas / 64
 		gas -= one64th
-
-		// Tracing: emit the create
-		if tracingInfo != nil && tracingInfo.Tracer.OnOpcode != nil {
-			tracingInfo.Tracer.OnOpcode(0, byte(opcode), startGas, baseCost+gas, scope, []byte{}, depth, nil)
-		}
 
 		var res []byte
 		var addr common.Address // zero on failure
