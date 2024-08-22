@@ -515,6 +515,7 @@ func createNodeImpl(
 	if err != nil {
 		return nil, err
 	}
+	// #nosec G115
 	sequencerInbox, err := NewSequencerInbox(l1client, deployInfo.SequencerInbox, int64(deployInfo.DeployedAt))
 	if err != nil {
 		return nil, err
@@ -639,6 +640,7 @@ func createNodeImpl(
 					tmpAddress := common.HexToAddress(config.Staker.ContractWalletAddress)
 					existingWalletAddress = &tmpAddress
 				}
+				// #nosec G115
 				wallet, err = validatorwallet.NewContract(dp, existingWalletAddress, deployInfo.ValidatorWalletCreator, deployInfo.Rollup, l1Reader, txOptsValidator, int64(deployInfo.DeployedAt), func(common.Address) {}, getExtraGas)
 				if err != nil {
 					return nil, err

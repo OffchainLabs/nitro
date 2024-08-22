@@ -162,7 +162,7 @@ func (con *ArbSys) SendTxToL1(c ctx, evm mech, value huge, destination addr, cal
 		}
 	}
 
-	leafNum := big.NewInt(int64(size - 1))
+	leafNum := new(big.Int).SetUint64(size - 1)
 
 	var blockTime big.Int
 	blockTime.SetUint64(evm.Context.Time)
@@ -199,7 +199,7 @@ func (con ArbSys) SendMerkleTreeState(c ctx, evm mech) (huge, bytes32, []bytes32
 	for i, par := range rawPartials {
 		partials[i] = par
 	}
-	return big.NewInt(int64(size)), rootHash, partials, nil
+	return new(big.Int).SetUint64(size), rootHash, partials, nil
 }
 
 // WithdrawEth send paid eth to the destination on L1

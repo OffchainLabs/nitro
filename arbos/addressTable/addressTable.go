@@ -118,6 +118,7 @@ func (atab *AddressTable) Decompress(buf []byte) (common.Address, uint64, error)
 		if !exists {
 			return common.Address{}, 0, errors.New("invalid index in compressed address")
 		}
+		// #nosec G115
 		numBytesRead := uint64(rd.Size() - int64(rd.Len()))
 		return addr, numBytesRead, nil
 	}
