@@ -8,13 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"github.com/ethereum/go-ethereum/core/tracing"
+	"github.com/offchainlabs/nitro/util/arbmath"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/holiman/uint256"
-	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 // TransferBalance represents a balance change occurring aside from a call.
@@ -28,20 +28,6 @@ func TransferBalance(
 ) error {
 	if amount.Sign() < 0 {
 		panic(fmt.Sprintf("Tried to transfer negative amount %v from %v to %v", amount, from, to))
-	}
-	if from != nil {
-		balance := evm.StateDB.GetBalance(*from)
-		if arbmath.BigLessThan(balance.ToBig(), amount) {
-			return fmt.Errorf("%w: addr %v have %v want %v", vm.ErrInsufficientBalance, *from, balance, amount)
-		}
-		evm.StateDB.SubBalance(*from, uint256.MustFromBig(amount), tracing.BalanceChangeTransfer)
-		if evm.Context.ArbOSVersion >= 30 {
-			// ensure the from account is "touched" for EIP-161
-			evm.StateDB.AddBalance(*from, &uint256.Int{}, tracing.BalanceChangeTransfer)
-		}
-	}
-	if to != nil {
-		evm.StateDB.AddBalance(*to, uint256.MustFromBig(amount), tracing.BalanceChangeTransfer)
 	}
 	if tracer := evm.Config.Tracer; tracer != nil {
 		if evm.Depth() != 0 && scenario != TracingDuringEVM {
@@ -69,6 +55,20 @@ func TransferBalance(
 			Depth:    evm.Depth(),
 		}
 		info.MockCall([]byte{}, 0, *from, *to, amount)
+	}
+	if from != nil {
+		balance := evm.StateDB.GetBalance(*from)
+		if arbmath.BigLessThan(balance.ToBig(), amount) {
+			return fmt.Errorf("%w: addr %v have %v want %v", vm.ErrInsufficientBalance, *from, balance, amount)
+		}
+		evm.StateDB.SubBalance(*from, uint256.MustFromBig(amount), tracing.BalanceChangeTransfer)
+		if evm.Context.ArbOSVersion >= 30 {
+			// ensure the from account is "touched" for EIP-161
+			evm.StateDB.AddBalance(*from, &uint256.Int{}, tracing.BalanceChangeTransfer)
+		}
+	}
+	if to != nil {
+		evm.StateDB.AddBalance(*to, uint256.MustFromBig(amount), tracing.BalanceChangeTransfer)
 	}
 	return nil
 }
