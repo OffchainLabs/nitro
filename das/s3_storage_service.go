@@ -110,7 +110,7 @@ func (s3s *S3StorageService) Put(ctx context.Context, value []byte, timeout uint
 		Bucket: aws.String(s3s.bucket),
 		Key:    aws.String(s3s.objectPrefix + EncodeStorageServiceKey(dastree.Hash(value))),
 		Body:   bytes.NewReader(value)}
-	if !s3s.discardAfterTimeout {
+	if s3s.discardAfterTimeout {
 		expires := time.Unix(int64(timeout), 0)
 		putObjectInput.Expires = &expires
 	}
