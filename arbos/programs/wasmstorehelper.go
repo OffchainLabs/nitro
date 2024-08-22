@@ -12,7 +12,6 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
-	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 )
 
@@ -44,8 +43,9 @@ func (p Programs) SaveActiveProgramToWasmStore(statedb *state.StateDB, codeHash 
 		return err
 	}
 
+	targets := statedb.Database().WasmTargets()
 	// If already in wasm store then return early
-	_, err = statedb.TryGetActivatedAsmMap([]ethdb.WasmTarget{rawdb.TargetWavm, rawdb.LocalTarget()}, moduleHash)
+	_, err = statedb.TryGetActivatedAsmMap(targets, moduleHash)
 	if err == nil {
 		return nil
 	}
