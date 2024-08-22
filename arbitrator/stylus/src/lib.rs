@@ -11,7 +11,7 @@ use arbutil::{
     format::DebugBytes,
     Bytes32,
 };
-use cache::{InitCache, LruCacheMetrics};
+use cache::{deserialize_module, InitCache, LruCacheMetrics};
 use evm_api::NativeRequestHandler;
 use eyre::ErrReport;
 use native::NativeInstance;
@@ -321,13 +321,7 @@ pub unsafe extern "C" fn stylus_cache_module(
     arbos_tag: u32,
     debug: bool,
 ) {
-    if let Err(error) = InitCache::insert(
-        module_hash,
-        module.slice(),
-        version,
-        arbos_tag,
-        debug,
-    ) {
+    if let Err(error) = InitCache::insert(module_hash, module.slice(), version, arbos_tag, debug) {
         panic!("tried to cache invalid asm!: {error}");
     }
 }
@@ -372,4 +366,18 @@ pub extern "C" fn stylus_get_lru_cache_metrics() -> LruCacheMetrics {
 #[no_mangle]
 pub extern "C" fn stylus_clear_lru_cache() {
     InitCache::clear_lru_cache()
+}
+
+/// Gets asm estimate size.
+/// Only used for testing purposes.
+#[no_mangle]
+pub unsafe extern "C" fn stylus_get_asm_size_estimate_bytes(
+    module: GoSliceData,
+    version: u16,
+    debug: bool,
+) -> u64 {
+    match deserialize_module(module.slice(), version, debug) {
+        Err(error) => panic!("tried to get invalid asm!: {error}"),
+        Ok((_, _, asm_size_estimate_bytes)) => asm_size_estimate_bytes.try_into().unwrap(),
+    }
 }

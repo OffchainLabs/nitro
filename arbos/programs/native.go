@@ -346,6 +346,11 @@ func ClearWasmLruCache() {
 	C.stylus_clear_lru_cache()
 }
 
+// exported for testing
+func GetAsmSizeEstimateBytes(module []byte, version uint16, debug bool) uint64 {
+	return uint64(C.stylus_get_asm_size_estimate_bytes(goSlice(module), u16(version), cbool(debug)))
+}
+
 const DefaultTargetDescriptionArm = "arm64-linux-unknown+neon"
 const DefaultTargetDescriptionX86 = "x86_64-linux-unknown+sse4.2+lzcnt+bmi"
 

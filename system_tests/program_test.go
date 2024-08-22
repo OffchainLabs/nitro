@@ -2008,12 +2008,64 @@ func checkWasmStoreContent(t *testing.T, wasmDb ethdb.KeyValueStore, targets []s
 	}
 }
 
+func deployWasmAndGetSizeEstimateBytes(
+	t *testing.T,
+	builder *NodeBuilder,
+	auth bind.TransactOpts,
+	wasmName string,
+) (common.Address, uint64) {
+	ctx := builder.ctx
+	l2client := builder.L2.Client
+
+	wasm, _ := readWasmFile(t, rustFile(wasmName))
+	arbWasm, err := pgen.NewArbWasm(types.ArbWasmAddress, l2client)
+	Require(t, err, ", wasmName:", wasmName)
+
+	programAddress := deployContract(t, ctx, auth, l2client, wasm)
+	tx, err := arbWasm.ActivateProgram(&auth, programAddress)
+	Require(t, err, ", wasmName:", wasmName)
+	receipt, err := EnsureTxSucceeded(ctx, l2client, tx)
+	Require(t, err, ", wasmName:", wasmName)
+
+	if len(receipt.Logs) != 1 {
+		Fatal(t, "expected 1 log while activating, got ", len(receipt.Logs), ", wasmName:", wasmName)
+	}
+	log, err := arbWasm.ParseProgramActivated(*receipt.Logs[0])
+	Require(t, err, ", wasmName:", wasmName)
+
+	statedb, err := builder.L2.ExecNode.Backend.ArbInterface().BlockChain().State()
+	Require(t, err, ", wasmName:", wasmName)
+
+	module, err := statedb.TryGetActivatedAsm(rawdb.LocalTarget(), log.ModuleHash)
+	Require(t, err, ", wasmName:", wasmName)
+
+	asmSizeEstimateBytes := programs.GetAsmSizeEstimateBytes(module, log.Version, true)
+	if asmSizeEstimateBytes == 0 {
+		// just a sanity check
+		Fatal(t, "asmSizeEstimateBytes is 0, wasmName:", wasmName)
+	}
+	return programAddress, asmSizeEstimateBytes
+}
+
 func TestWasmLruCache(t *testing.T) {
 	builder, auth, cleanup := setupProgramTest(t, true)
 	ctx := builder.ctx
 	l2info := builder.L2Info
 	l2client := builder.L2.Client
 	defer cleanup()
+
+	auth.GasLimit = 32000000
+	auth.Value = oneEth
+
+	fallibleProgramAddress, fallibleAsmSizeEstimateBytes := deployWasmAndGetSizeEstimateBytes(t, builder, auth, "fallible")
+	keccakProgramAddress, keccakAsmSizeEstimateBytes := deployWasmAndGetSizeEstimateBytes(t, builder, auth, "keccak")
+	mathProgramAddress, mathAsmSizeEstimateBytes := deployWasmAndGetSizeEstimateBytes(t, builder, auth, "math")
+	t.Log(
+		"asmSizeEstimateBytes, ",
+		"fallible:", fallibleAsmSizeEstimateBytes,
+		"keccak:", keccakAsmSizeEstimateBytes,
+		"math:", mathAsmSizeEstimateBytes,
+	)
 
 	builder.L2.ExecNode.ExecEngine.ClearWasmLruCache()
 	lruMetrics := builder.L2.ExecNode.ExecEngine.GetWasmLruCacheMetrics()
@@ -2024,12 +2076,8 @@ func TestWasmLruCache(t *testing.T) {
 		t.Fatalf("lruMetrics.SizeBytes, expected: %v, actual: %v", 0, lruMetrics.SizeBytes)
 	}
 
-	lruCacheCapacity := uint64(100_000)
-	builder.L2.ExecNode.ExecEngine.SetWasmLruCacheCapacity(lruCacheCapacity)
-
-	// fallible wasm program will not be cached since its size is greater than lruCacheSize
-	fallibleAsmEstimateSizeBytes := uint64(118_624)
-	fallibleProgramAddress := deployWasm(t, ctx, auth, l2client, rustFile("fallible"))
+	builder.L2.ExecNode.ExecEngine.SetWasmLruCacheCapacity(fallibleAsmSizeEstimateBytes - 1)
+	// fallible wasm program will not be cached since its size is greater than lru cache capacity
 	tx := l2info.PrepareTxTo("Owner", &fallibleProgramAddress, l2info.TransferGas, nil, []byte{0x01})
 	Require(t, l2client.SendTransaction(ctx, tx))
 	_, err := EnsureTxSucceeded(ctx, l2client, tx)
@@ -2042,10 +2090,9 @@ func TestWasmLruCache(t *testing.T) {
 		t.Fatalf("lruMetrics.SizeBytes, expected: %v, actual: %v", 0, lruMetrics.SizeBytes)
 	}
 
-	// set new  lru cache capacity
-	lruCacheCapacity = uint64(350_000)
-	builder.L2.ExecNode.ExecEngine.SetWasmLruCacheCapacity(lruCacheCapacity)
-
+	builder.L2.ExecNode.ExecEngine.SetWasmLruCacheCapacity(
+		fallibleAsmSizeEstimateBytes + keccakAsmSizeEstimateBytes + mathAsmSizeEstimateBytes - 1,
+	)
 	// fallible wasm program will be cached
 	tx = l2info.PrepareTxTo("Owner", &fallibleProgramAddress, l2info.TransferGas, nil, []byte{0x01})
 	Require(t, l2client.SendTransaction(ctx, tx))
@@ -2055,13 +2102,11 @@ func TestWasmLruCache(t *testing.T) {
 	if lruMetrics.Count != 1 {
 		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 1, lruMetrics.Count)
 	}
-	if lruMetrics.SizeBytes != fallibleAsmEstimateSizeBytes {
-		t.Fatalf("lruMetrics.SizeBytes, expected: %v, actual: %v", fallibleAsmEstimateSizeBytes, lruMetrics.SizeBytes)
+	if lruMetrics.SizeBytes != fallibleAsmSizeEstimateBytes {
+		t.Fatalf("lruMetrics.SizeBytes, expected: %v, actual: %v", fallibleAsmSizeEstimateBytes, lruMetrics.SizeBytes)
 	}
 
 	// keccak wasm program will be cached
-	keccakAsmEstimateSizeBytes := uint64(175_496)
-	keccakProgramAddress := deployWasm(t, ctx, auth, l2client, rustFile("keccak"))
 	tx = l2info.PrepareTxTo("Owner", &keccakProgramAddress, l2info.TransferGas, nil, []byte{0x01})
 	Require(t, l2client.SendTransaction(ctx, tx))
 	_, err = EnsureTxSucceeded(ctx, l2client, tx)
@@ -2070,13 +2115,11 @@ func TestWasmLruCache(t *testing.T) {
 	if lruMetrics.Count != 2 {
 		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 2, lruMetrics.Count)
 	}
-	if lruMetrics.SizeBytes != fallibleAsmEstimateSizeBytes+keccakAsmEstimateSizeBytes {
-		t.Fatalf("lruMetrics.SizeBytes, expected: %v, actual: %v", fallibleAsmEstimateSizeBytes+keccakAsmEstimateSizeBytes, lruMetrics.SizeBytes)
+	if lruMetrics.SizeBytes != fallibleAsmSizeEstimateBytes+keccakAsmSizeEstimateBytes {
+		t.Fatalf("lruMetrics.SizeBytes, expected: %v, actual: %v", fallibleAsmSizeEstimateBytes+keccakAsmSizeEstimateBytes, lruMetrics.SizeBytes)
 	}
 
-	// math wasm program will be cached, but fallible will be evicted since (fallible + keccak + math) > lruCacheSize
-	mathAsmEstimateSizeBytes := uint64(131_672)
-	mathProgramAddress := deployWasm(t, ctx, auth, l2client, rustFile("math"))
+	// math wasm program will be cached, but fallible will be evicted since (fallible + keccak + math) > lruCacheCapacity
 	tx = l2info.PrepareTxTo("Owner", &mathProgramAddress, l2info.TransferGas, nil, []byte{0x01})
 	Require(t, l2client.SendTransaction(ctx, tx))
 	_, err = EnsureTxSucceeded(ctx, l2client, tx)
@@ -2085,7 +2128,7 @@ func TestWasmLruCache(t *testing.T) {
 	if lruMetrics.Count != 2 {
 		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 2, lruMetrics.Count)
 	}
-	if lruMetrics.SizeBytes != keccakAsmEstimateSizeBytes+mathAsmEstimateSizeBytes {
-		t.Fatalf("lruMetrics.SizeBytes, expected: %v, actual: %v", keccakAsmEstimateSizeBytes+mathAsmEstimateSizeBytes, lruMetrics.SizeBytes)
+	if lruMetrics.SizeBytes != keccakAsmSizeEstimateBytes+mathAsmSizeEstimateBytes {
+		t.Fatalf("lruMetrics.SizeBytes, expected: %v, actual: %v", keccakAsmSizeEstimateBytes+mathAsmSizeEstimateBytes, lruMetrics.SizeBytes)
 	}
 }

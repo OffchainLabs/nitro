@@ -91,6 +91,17 @@ pub struct LruCacheMetrics {
     pub does_not_fit: u32,
 }
 
+pub fn deserialize_module(
+    module: &[u8],
+    version: u16,
+    debug: bool,
+) -> Result<(Module, Engine, usize)> {
+    let engine = CompileConfig::version(version, debug).engine(target_native());
+    let module = unsafe { Module::deserialize_unchecked(&engine, module)? };
+    let asm_size_estimate_bytes = module.serialize()?.len();
+    Ok((module, engine, asm_size_estimate_bytes))
+}
+
 impl InitCache {
     // current implementation only has one tag that stores to the long_term
     // future implementations might have more, but 0 is a reserved tag
@@ -167,9 +178,7 @@ impl InitCache {
         }
         drop(cache);
 
-        let engine = CompileConfig::version(version, debug).engine(target_native());
-        let module = unsafe { Module::deserialize_unchecked(&engine, module)? };
-        let asm_size_estimate_bytes = module.serialize()?.len();
+        let (module, engine, asm_size_estimate_bytes) = deserialize_module(module, version, debug)?;
 
         let item = CacheItem::new(module, engine, asm_size_estimate_bytes);
         let data = item.data();
