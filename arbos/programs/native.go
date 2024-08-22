@@ -100,25 +100,50 @@ func activateProgramInternal(
 		}
 		return nil, nil, err
 	}
-	target := rawdb.LocalTarget()
-	status_asm := C.stylus_compile(
-		goSlice(wasm),
-		u16(version),
-		cbool(debug),
-		goSlice([]byte(target)),
-		output,
-	)
-	asm := output.intoBytes()
-	if status_asm != 0 {
-		return nil, nil, fmt.Errorf("%w: %s", ErrProgramActivation, string(asm))
+	targets := db.Database().WasmTargets()
+	type result struct {
+		target ethdb.WasmTarget
+		asm    []byte
+		err    error
 	}
-	asmMap := map[ethdb.WasmTarget][]byte{
-		rawdb.TargetWavm: module,
-		target:           asm,
+	results := make(chan result, len(targets))
+	for _, target := range targets {
+		if target == rawdb.TargetWavm {
+			results <- result{target, module, nil}
+		} else {
+			target := target
+			go func() {
+				output := &rustBytes{}
+				status_asm := C.stylus_compile(
+					goSlice(wasm),
+					u16(version),
+					cbool(debug),
+					goSlice([]byte(target)),
+					output,
+				)
+				asm := output.intoBytes()
+				if status_asm != 0 {
+					results <- result{target, nil, fmt.Errorf("%w: %s", ErrProgramActivation, string(asm))}
+					return
+				}
+				results <- result{target, asm, nil}
+			}()
+		}
+	}
+	asmMap := make(map[ethdb.WasmTarget][]byte, len(targets))
+	for range targets {
+		res := <-results
+		if res.err != nil {
+			err = errors.Join(res.err, err)
+		} else {
+			asmMap[res.target] = res.asm
+		}
+	}
+	if err != nil {
+		return nil, nil, fmt.Errorf("compilation failed for one or more targets: %w", err)
 	}
 
 	hash := moduleHash.toHash()
-
 	info := &activationInfo{
 		moduleHash:    hash,
 		initGas:       uint16(stylusData.init_cost),
@@ -204,11 +229,7 @@ func callProgram(
 	}
 
 	if db, ok := db.(*state.StateDB); ok {
-		targets := []ethdb.WasmTarget{
-			rawdb.TargetWavm,
-			rawdb.LocalTarget(),
-		}
-		db.RecordProgram(targets, moduleHash)
+		db.RecordProgram(moduleHash)
 	}
 
 	evmApi := newApi(interpreter, tracingInfo, scope, memoryModel)
