@@ -85,7 +85,7 @@ func main() {
 			os.Exit(1)
 		}
 		stats := conv.Stats()
-		log.Info("Conversion finished.", "entries", stats.Entries(), "MB", stats.Bytes()/1024/1024, "avg Ke/s", stats.AverageEntriesPerSecond()/1000, "avg MB/s", stats.AverageBytesPerSecond()/1024/1024, "elapsed", stats.Elapsed())
+		log.Info("Conversion finished.", "entries", stats.Entries(), "MB", stats.Bytes()/1024/1024, "avg entries/s", fmt.Sprintf("%.3e", stats.AverageEntriesPerSecond()/1000), "avg MB/s", stats.AverageBytesPerSecond()/1024/1024, "elapsed", stats.Elapsed())
 	}
 
 	if config.Compact {
