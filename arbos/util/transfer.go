@@ -7,14 +7,14 @@ package util
 import (
 	"errors"
 	"fmt"
-	"github.com/ethereum/go-ethereum/core/tracing"
-	"github.com/offchainlabs/nitro/util/arbmath"
 	"math/big"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/tracing"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/holiman/uint256"
+	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
 // TransferBalance represents a balance change occurring aside from a call.
@@ -38,23 +38,24 @@ func TransferBalance(
 
 		if scenario != TracingDuringEVM {
 			tracer.CaptureArbitrumTransfer(from, to, amount, scenario == TracingBeforeEVM, purpose)
-			return nil
-		}
+		} else {
+			fromCopy := from
+			toCopy := to
+			if fromCopy == nil {
+				fromCopy = &common.Address{}
+			}
+			if toCopy == nil {
+				toCopy = &common.Address{}
+			}
 
-		if from == nil {
-			from = &common.Address{}
+			info := &TracingInfo{
+				Tracer:   evm.Config.Tracer,
+				Scenario: scenario,
+				Contract: vm.NewContract(addressHolder{*toCopy}, addressHolder{*fromCopy}, uint256.NewInt(0), 0),
+				Depth:    evm.Depth(),
+			}
+			info.MockCall([]byte{}, 0, *fromCopy, *toCopy, amount)
 		}
-		if to == nil {
-			to = &common.Address{}
-		}
-
-		info := &TracingInfo{
-			Tracer:   evm.Config.Tracer,
-			Scenario: scenario,
-			Contract: vm.NewContract(addressHolder{*to}, addressHolder{*from}, uint256.NewInt(0), 0),
-			Depth:    evm.Depth(),
-		}
-		info.MockCall([]byte{}, 0, *from, *to, amount)
 	}
 	if from != nil {
 		balance := evm.StateDB.GetBalance(*from)
