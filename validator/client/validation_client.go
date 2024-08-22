@@ -102,6 +102,7 @@ func (c *ValidationClient) Start(ctx context.Context) error {
 	} else {
 		log.Info("connected to validation server", "name", name, "room", room)
 	}
+	// #nosec G115
 	c.room.Store(int32(room))
 	c.wasmModuleRoots = moduleRoots
 	c.name = name
