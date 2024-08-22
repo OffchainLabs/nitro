@@ -52,8 +52,18 @@ func NewTracingInfo(evm *vm.EVM, from, to common.Address, scenario TracingScenar
 	}
 }
 
-func (info *TracingInfo) RecordStorageGet(key common.Hash) {
+func (info *TracingInfo) RecordStorageGet(key, mappedKey common.Hash) {
 	tracer := info.Tracer
+	// RecordStorageGet is only called from arbos storage object, meaning the SLOAD opcode tracing in the scenario TracingDuringEVM
+	// has no impact at all as the caller address (scope.Contract) and the key being passed dont associate with each other, instead
+	// the key corresponds to types.ArbosStateAddress. For this exact reason, when RecordStorageGet is called from inside arbos storage,
+	// other tracers should implement their own CaptureArbitrumStorageGet functions irrespective of tracing scenario to remove dependency
+	// on opcode tracing.
+	// ...
+	// Since CaptureArbitrumStorageGet is only implemented for prestateTracer there's no harm in calling it along with opcode tracing
+	// during TracingDuringEVM scenario (as prestate tracer fails to record any meaningful change due to the reason given above),
+	// prestateTracer now supports in removing opcode tracing from this function but other tracers don't, and that should be changed
+	tracer.CaptureArbitrumStorageGet(info.Contract.Address(), key, mappedKey, info.Depth, info.Scenario == TracingBeforeEVM)
 	if info.Scenario == TracingDuringEVM {
 		scope := &vm.ScopeContext{
 			Memory:   vm.NewMemory(),
@@ -63,13 +73,21 @@ func (info *TracingInfo) RecordStorageGet(key common.Hash) {
 		if tracer.OnOpcode != nil {
 			tracer.OnOpcode(0, byte(vm.SLOAD), 0, 0, scope, []byte{}, info.Depth, nil)
 		}
-	} else {
-		tracer.CaptureArbitrumStorageGet(key, info.Depth, info.Scenario == TracingBeforeEVM)
 	}
 }
 
-func (info *TracingInfo) RecordStorageSet(key, value common.Hash) {
+func (info *TracingInfo) RecordStorageSet(key, mappedKey, value common.Hash) {
 	tracer := info.Tracer
+	// RecordStorageSet is only called from arbos storage object, meaning the SSTORE opcode tracing in the scenario TracingDuringEVM
+	// has no impact at all as the caller address (scope.Contract) and the key being passed dont associate with each other, instead
+	// the key corresponds to types.ArbosStateAddress. For this exact reason, as RecordStorageSet is called from inside arbos storage,
+	// other tracers should implement their own CaptureArbitrumStorageSet functions irrespective of tracing scenario to remove dependency
+	// on opcode tracing.
+	// ...
+	// Since CaptureArbitrumStorageSet is only implemented for prestateTracer there's no harm in calling it along with opcode tracing
+	// during TracingDuringEVM scenario (as prestate tracer fails to record any meaningful change due to the reason given above),
+	// prestateTracer now supports in removing opcode tracing from this function but other tracers don't, and that should be changed
+	tracer.CaptureArbitrumStorageSet(info.Contract.Address(), key, mappedKey, value, info.Depth, info.Scenario == TracingBeforeEVM)
 	if info.Scenario == TracingDuringEVM {
 		scope := &vm.ScopeContext{
 			Memory:   vm.NewMemory(),
@@ -79,8 +97,6 @@ func (info *TracingInfo) RecordStorageSet(key, value common.Hash) {
 		if tracer.OnOpcode != nil {
 			tracer.OnOpcode(0, byte(vm.SSTORE), 0, 0, scope, []byte{}, info.Depth, nil)
 		}
-	} else {
-		tracer.CaptureArbitrumStorageSet(key, value, info.Depth, info.Scenario == TracingBeforeEVM)
 	}
 }
 
