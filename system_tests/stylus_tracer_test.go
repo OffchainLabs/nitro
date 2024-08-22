@@ -167,6 +167,7 @@ func TestStylusTracer(t *testing.T) {
 }
 
 func intToBe32(v int) []byte {
+	// #nosec G115
 	return binary.BigEndian.AppendUint32(nil, uint32(v))
 }
 
