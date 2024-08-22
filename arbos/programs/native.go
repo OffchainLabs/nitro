@@ -27,6 +27,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/vm"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
@@ -71,7 +72,7 @@ func activateProgramInternal(
 	version uint16,
 	debug bool,
 	gasLeft *uint64,
-) (*activationInfo, map[rawdb.Target][]byte, error) {
+) (*activationInfo, map[ethdb.WasmTarget][]byte, error) {
 	output := &rustBytes{}
 	moduleHash := &bytes32{}
 	stylusData := &C.StylusData{}
@@ -111,7 +112,7 @@ func activateProgramInternal(
 	if status_asm != 0 {
 		return nil, nil, fmt.Errorf("%w: %s", ErrProgramActivation, string(asm))
 	}
-	asmMap := map[rawdb.Target][]byte{
+	asmMap := map[ethdb.WasmTarget][]byte{
 		rawdb.TargetWavm: module,
 		target:           asm,
 	}
@@ -171,7 +172,7 @@ func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging c
 	}
 	asm, exists := asmMap[localTarget]
 	if !exists {
-		var availableTargets []rawdb.Target
+		var availableTargets []ethdb.WasmTarget
 		for target := range asmMap {
 			availableTargets = append(availableTargets, target)
 		}
@@ -203,7 +204,7 @@ func callProgram(
 	}
 
 	if db, ok := db.(*state.StateDB); ok {
-		targets := []rawdb.Target{
+		targets := []ethdb.WasmTarget{
 			rawdb.TargetWavm,
 			rawdb.LocalTarget(),
 		}
@@ -291,7 +292,7 @@ func ResizeWasmLruCache(size uint32) {
 const DefaultTargetDescriptionArm = "arm64-linux-unknown+neon"
 const DefaultTargetDescriptionX86 = "x86_64-linux-unknown+sse4.2"
 
-func SetTarget(name rawdb.Target, description string, native bool) error {
+func SetTarget(name ethdb.WasmTarget, description string, native bool) error {
 	output := &rustBytes{}
 	status := userStatus(C.stylus_target_set(
 		goSlice([]byte(name)),
