@@ -325,7 +325,6 @@ type WasmLruCacheMetrics struct {
 	Count     uint32
 }
 
-// exported for testing
 func GetWasmLruCacheMetrics() *WasmLruCacheMetrics {
 	metrics := C.stylus_get_lru_cache_metrics()
 
@@ -341,12 +340,12 @@ func GetWasmLruCacheMetrics() *WasmLruCacheMetrics {
 	}
 }
 
-// exported for testing
+// Used for testing
 func ClearWasmLruCache() {
 	C.stylus_clear_lru_cache()
 }
 
-// exported for testing
+// Used for testing
 func GetAsmSizeEstimateBytes(module []byte, version uint16, debug bool) uint64 {
 	return uint64(C.stylus_get_asm_size_estimate_bytes(goSlice(module), u16(version), cbool(debug)))
 }

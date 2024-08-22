@@ -2040,8 +2040,8 @@ func deployWasmAndGetSizeEstimateBytes(
 	Require(t, err, ", wasmName:", wasmName)
 
 	asmSizeEstimateBytes := programs.GetAsmSizeEstimateBytes(module, log.Version, true)
+	// just a sanity check
 	if asmSizeEstimateBytes == 0 {
-		// just a sanity check
 		Fatal(t, "asmSizeEstimateBytes is 0, wasmName:", wasmName)
 	}
 	return programAddress, asmSizeEstimateBytes
@@ -2067,8 +2067,8 @@ func TestWasmLruCache(t *testing.T) {
 		"math:", mathAsmSizeEstimateBytes,
 	)
 
-	builder.L2.ExecNode.ExecEngine.ClearWasmLruCache()
-	lruMetrics := builder.L2.ExecNode.ExecEngine.GetWasmLruCacheMetrics()
+	programs.ClearWasmLruCache()
+	lruMetrics := programs.GetWasmLruCacheMetrics()
 	if lruMetrics.Count != 0 {
 		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 0, lruMetrics.Count)
 	}
@@ -2076,13 +2076,13 @@ func TestWasmLruCache(t *testing.T) {
 		t.Fatalf("lruMetrics.SizeBytes, expected: %v, actual: %v", 0, lruMetrics.SizeBytes)
 	}
 
-	builder.L2.ExecNode.ExecEngine.SetWasmLruCacheCapacity(fallibleAsmSizeEstimateBytes - 1)
+	programs.SetWasmLruCacheCapacity(fallibleAsmSizeEstimateBytes - 1)
 	// fallible wasm program will not be cached since its size is greater than lru cache capacity
 	tx := l2info.PrepareTxTo("Owner", &fallibleProgramAddress, l2info.TransferGas, nil, []byte{0x01})
 	Require(t, l2client.SendTransaction(ctx, tx))
 	_, err := EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
-	lruMetrics = builder.L2.ExecNode.ExecEngine.GetWasmLruCacheMetrics()
+	lruMetrics = programs.GetWasmLruCacheMetrics()
 	if lruMetrics.Count != 0 {
 		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 0, lruMetrics.Count)
 	}
@@ -2090,7 +2090,7 @@ func TestWasmLruCache(t *testing.T) {
 		t.Fatalf("lruMetrics.SizeBytes, expected: %v, actual: %v", 0, lruMetrics.SizeBytes)
 	}
 
-	builder.L2.ExecNode.ExecEngine.SetWasmLruCacheCapacity(
+	programs.SetWasmLruCacheCapacity(
 		fallibleAsmSizeEstimateBytes + keccakAsmSizeEstimateBytes + mathAsmSizeEstimateBytes - 1,
 	)
 	// fallible wasm program will be cached
@@ -2098,7 +2098,7 @@ func TestWasmLruCache(t *testing.T) {
 	Require(t, l2client.SendTransaction(ctx, tx))
 	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
-	lruMetrics = builder.L2.ExecNode.ExecEngine.GetWasmLruCacheMetrics()
+	lruMetrics = programs.GetWasmLruCacheMetrics()
 	if lruMetrics.Count != 1 {
 		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 1, lruMetrics.Count)
 	}
@@ -2111,7 +2111,7 @@ func TestWasmLruCache(t *testing.T) {
 	Require(t, l2client.SendTransaction(ctx, tx))
 	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
-	lruMetrics = builder.L2.ExecNode.ExecEngine.GetWasmLruCacheMetrics()
+	lruMetrics = programs.GetWasmLruCacheMetrics()
 	if lruMetrics.Count != 2 {
 		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 2, lruMetrics.Count)
 	}
@@ -2124,7 +2124,7 @@ func TestWasmLruCache(t *testing.T) {
 	Require(t, l2client.SendTransaction(ctx, tx))
 	_, err = EnsureTxSucceeded(ctx, l2client, tx)
 	Require(t, err)
-	lruMetrics = builder.L2.ExecNode.ExecEngine.GetWasmLruCacheMetrics()
+	lruMetrics = programs.GetWasmLruCacheMetrics()
 	if lruMetrics.Count != 2 {
 		t.Fatalf("lruMetrics.Count, expected: %v, actual: %v", 2, lruMetrics.Count)
 	}
