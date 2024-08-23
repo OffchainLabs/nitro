@@ -26,6 +26,9 @@ use wasmparser::{
     Payload, TableType, TypeRef, ValType, Validator, WasmFeatures,
 };
 
+#[cfg(feature = "rayon")]
+use rayon::prelude::*;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum FloatType {
     F32,
@@ -540,7 +543,7 @@ impl<'a> WasmBinary<'a> {
             count.update_module(self)?;
         }
 
-        for (index, code) in self.codes.iter_mut().enumerate() {
+        let process = |(index, code): (usize, &mut Code)| -> Result<()> {
             let index = LocalFunctionIndex::from_u32(index as u32);
             let locals: Vec<ValType> = code.locals.iter().map(|x| x.value.into()).collect();
 
@@ -575,7 +578,14 @@ impl<'a> WasmBinary<'a> {
             }
 
             code.expr = build;
-        }
+            Ok(())
+        };
+
+        #[cfg(feature = "rayon")]
+        self.codes.par_iter_mut().enumerate().try_for_each(process)?;
+
+        #[cfg(not(feature = "rayon"))]
+        self.codes.iter_mut().enumerate().try_for_each(process)?;
 
         let wasm = self.wasm.take().unwrap();
         self.extra_data.extend(*codehash);
