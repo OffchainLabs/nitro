@@ -1,0 +1,26 @@
+
+[package]
+name = "activate"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+affinity.workspace = true
+arbitrary.workspace = true
+arbutil.workspace = true
+bincode.workspace = true
+brotli2.workspace = true
+eyre.workspace = true
+hex.workspace = true
+prover.workspace = true
+rand.workspace = true
+rayon.workspace = true
+serde.workspace = true
+structopt.workspace = true
+stylus.workspace = true
+wasmer.workspace = true
+#wasm-smith.workspace = true
+#wasmprinter.workspace = true
+
+[profile.release]
+debug = true
