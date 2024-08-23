@@ -180,7 +180,10 @@ func (v *ArbitratorSpawner) execute(
 		}
 		steps += count
 	}
+
+	// #nosec G115
 	arbitratorValidationSteps.Update(int64(mach.GetStepCount()))
+
 	if mach.IsErrored() {
 		log.Error("machine entered errored state during attempted validation", "block", entry.Id)
 		return validator.GoGlobalState{}, errors.New("machine entered errored state during attempted validation")

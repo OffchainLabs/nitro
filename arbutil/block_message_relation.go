@@ -15,5 +15,6 @@ func SignedBlockNumberToMessageCount(blockNumber int64, genesisBlockNumber uint6
 }
 
 func MessageCountToBlockNumber(messageCount MessageIndex, genesisBlockNumber uint64) int64 {
+	// #nosec G115
 	return int64(uint64(messageCount)+genesisBlockNumber) - 1
 }

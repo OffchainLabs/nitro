@@ -35,6 +35,7 @@ func TestMath(t *testing.T) {
 		input := rand.Uint64() / 256
 		approx := ApproxSquareRoot(input)
 		correct := math.Sqrt(float64(input))
+		// #nosec G115
 		diff := int(approx) - int(correct)
 		if diff < -1 || diff > 1 {
 			Fail(t, "sqrt approximation off by too much", diff, input, approx, correct)
@@ -46,6 +47,7 @@ func TestMath(t *testing.T) {
 		input := uint64(i)
 		approx := ApproxSquareRoot(input)
 		correct := math.Sqrt(float64(input))
+		// #nosec G115
 		diff := int(approx) - int(correct)
 		if diff < 0 || diff > 1 {
 			Fail(t, "sqrt approximation off by too much", diff, input, approx, correct)
@@ -57,6 +59,7 @@ func TestMath(t *testing.T) {
 		input := uint64(1 << i)
 		approx := ApproxSquareRoot(input)
 		correct := math.Sqrt(float64(input))
+		// #nosec G115
 		diff := int(approx) - int(correct)
 		if diff != 0 {
 			Fail(t, "incorrect", "2^", i, diff, approx, correct)

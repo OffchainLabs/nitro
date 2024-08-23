@@ -315,6 +315,7 @@ func NewBlockValidator(
 
 func atomicStorePos(addr *atomic.Uint64, val arbutil.MessageIndex, metr metrics.Gauge) {
 	addr.Store(uint64(val))
+	// #nosec G115
 	metr.Update(int64(val))
 }
 
@@ -573,6 +574,7 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		v.nextCreateBatch = batch
 		v.nextCreateBatchBlockHash = batchBlockHash
 		v.nextCreateBatchMsgCount = count
+		// #nosec G115
 		validatorMsgCountCurrentBatch.Update(int64(count))
 		v.nextCreateBatchReread = false
 	}
@@ -723,6 +725,7 @@ func (v *BlockValidator) iterativeValidationPrint(ctx context.Context) time.Dura
 	if err != nil {
 		printedCount = -1
 	} else {
+		// #nosec G115
 		printedCount = int64(batchMsgs) + int64(validated.GlobalState.PosInBatch)
 	}
 	log.Info("validated execution", "messageCount", printedCount, "globalstate", validated.GlobalState, "WasmRoots", validated.WasmRoots)
@@ -992,8 +995,10 @@ func (v *BlockValidator) UpdateLatestStaked(count arbutil.MessageIndex, globalSt
 	if v.recordSentA.Load() < countUint64 {
 		v.recordSentA.Store(countUint64)
 	}
+	// #nosec G115
 	v.validatedA.Store(countUint64)
 	v.valLoopPos = count
+	// #nosec G115
 	validatorMsgCountValidatedGauge.Update(int64(countUint64))
 	err = v.writeLastValidated(globalState, nil) // we don't know which wasm roots were validated
 	if err != nil {
@@ -1058,6 +1063,7 @@ func (v *BlockValidator) Reorg(ctx context.Context, count arbutil.MessageIndex) 
 	}
 	if v.validatedA.Load() > countUint64 {
 		v.validatedA.Store(countUint64)
+		// #nosec G115
 		validatorMsgCountValidatedGauge.Update(int64(countUint64))
 		err := v.writeLastValidated(v.nextCreateStartGS, nil) // we don't know which wasm roots were validated
 		if err != nil {
@@ -1249,6 +1255,7 @@ func (v *BlockValidator) checkValidatedGSCaughtUp() (bool, error) {
 	atomicStorePos(&v.createdA, count, validatorMsgCountCreatedGauge)
 	atomicStorePos(&v.recordSentA, count, validatorMsgCountRecordSentGauge)
 	atomicStorePos(&v.validatedA, count, validatorMsgCountValidatedGauge)
+	// #nosec G115
 	validatorMsgCountValidatedGauge.Update(int64(count))
 	v.chainCaughtUp = true
 	return true, nil

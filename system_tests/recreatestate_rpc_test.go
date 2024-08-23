@@ -132,6 +132,7 @@ func TestRecreateStateForRPCNoDepthLimit(t *testing.T) {
 func TestRecreateStateForRPCBigEnoughDepthLimit(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+	// #nosec G115
 	depthGasLimit := int64(256 * util.NormalizeL2GasForL1GasInitial(800_000, params.GWei))
 	execConfig := ExecConfigDefaultTest(t)
 	execConfig.RPC.MaxRecreateStateDepth = depthGasLimit
@@ -407,6 +408,7 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 			gas = 0
 			blocks = 0
 		} else {
+			// #nosec G115
 			if int(i) >= int(lastBlock)-int(cacheConfig.BlockCount) {
 				// skipping nonexistence check - the state might have been saved on node shutdown
 				continue
@@ -471,6 +473,7 @@ func TestSkippingSavingStateAndRecreatingAfterRestart(t *testing.T) {
 	for _, skipGas := range skipGasValues {
 		for _, skipBlocks := range skipBlockValues[:len(skipBlockValues)-2] {
 			cacheConfig.MaxAmountOfGasToSkipStateSaving = skipGas
+			// #nosec G115
 			cacheConfig.MaxNumberOfBlocksToSkipStateSaving = uint32(skipBlocks)
 			testSkippingSavingStateAndRecreatingAfterRestart(t, &cacheConfig, 100)
 		}
@@ -495,6 +498,7 @@ func TestGettingStateForRPCFullNode(t *testing.T) {
 	if header == nil {
 		Fatal(t, "failed to get current block header")
 	}
+	// #nosec G115
 	state, _, err := api.StateAndHeaderByNumber(ctx, rpc.BlockNumber(header.Number.Uint64()))
 	Require(t, err)
 	addr := builder.L2Info.GetAddress("User2")
@@ -505,6 +509,7 @@ func TestGettingStateForRPCFullNode(t *testing.T) {
 		Fatal(t, "User2 address does not exist in the state")
 	}
 	// Get the state again to avoid caching
+	// #nosec G115
 	state, _, err = api.StateAndHeaderByNumber(ctx, rpc.BlockNumber(header.Number.Uint64()))
 	Require(t, err)
 
@@ -542,6 +547,7 @@ func TestGettingStateForRPCHybridArchiveNode(t *testing.T) {
 	if header == nil {
 		Fatal(t, "failed to get current block header")
 	}
+	// #nosec G115
 	state, _, err := api.StateAndHeaderByNumber(ctx, rpc.BlockNumber(header.Number.Uint64()))
 	Require(t, err)
 	addr := builder.L2Info.GetAddress("User2")
@@ -552,6 +558,7 @@ func TestGettingStateForRPCHybridArchiveNode(t *testing.T) {
 		Fatal(t, "User2 address does not exist in the state")
 	}
 	// Get the state again to avoid caching
+	// #nosec G115
 	state, _, err = api.StateAndHeaderByNumber(ctx, rpc.BlockNumber(header.Number.Uint64()))
 	Require(t, err)
 

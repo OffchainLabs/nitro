@@ -219,6 +219,6 @@ func (b *BlockChallengeBackend) IssueExecChallenge(
 		},
 		machineStatuses,
 		globalStateHashes,
-		big.NewInt(int64(numsteps)),
+		new(big.Int).SetUint64(numsteps),
 	)
 }

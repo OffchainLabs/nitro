@@ -295,7 +295,7 @@ func (m *ChallengeManager) bisect(ctx context.Context, backend ChallengeBackend,
 	if newChallengeLength < bisectionDegree {
 		bisectionDegree = newChallengeLength
 	}
-	newSegments := make([][32]byte, int(bisectionDegree+1))
+	newSegments := make([][32]byte, bisectionDegree+1)
 	position := startSegmentPosition
 	normalSegmentLength := newChallengeLength / bisectionDegree
 	for i := range newSegments {
