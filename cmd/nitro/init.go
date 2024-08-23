@@ -602,6 +602,17 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		if err != nil {
 			return nil, nil, fmt.Errorf("couln't extract init archive '%v' err:%w", initFile, err)
 		}
+		wasmDb := path.Join(stack.InstanceDir(), "wasm")
+		if dirExists(wasmDb) && !config.Init.ExtractWasm {
+			// By default, remove the wasm DB because it contains native executables.
+			// Hence, it is a security concern when downloading a snapshot from a
+			// untrusted source.
+			err := os.RemoveAll(wasmDb)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to remove extracted wasm database: %w", err)
+			}
+			log.Debug("init: removed wasm database")
+		}
 	}
 
 	var initDataReader statetransfer.InitDataReader = nil
