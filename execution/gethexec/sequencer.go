@@ -92,7 +92,7 @@ type TimeboostConfig struct {
 
 var DefaultTimeboostConfig = TimeboostConfig{
 	Enable:                false,
-	ExpressLaneAdvantage:  time.Millisecond * 250,
+	ExpressLaneAdvantage:  time.Millisecond * 200,
 	SequencerHTTPEndpoint: "http://localhost:9567",
 }
 
