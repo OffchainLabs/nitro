@@ -135,7 +135,7 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 				}
 				it, err := es.auctionContract.FilterAuctionResolved(filterOpts, nil, nil, nil)
 				if err != nil {
-					log.Error("Could not filter auction resolutions", "error", err)
+					log.Error("Could not filter auction resolutions event", "error", err)
 					continue
 				}
 				for it.Next() {
@@ -147,6 +147,34 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 					es.Lock()
 					es.roundControl.Add(it.Event.Round, &expressLaneControl{
 						controller: it.Event.FirstPriceExpressLaneController,
+						sequence:   0,
+					})
+					es.Unlock()
+				}
+				setExpressLaneIterator, err := es.auctionContract.FilterSetExpressLaneController(filterOpts, nil, nil, nil)
+				if err != nil {
+					log.Error("Could not filter express lane controller transfer event", "error", err)
+					continue
+				}
+				for setExpressLaneIterator.Next() {
+					round := setExpressLaneIterator.Event.Round
+					es.RLock()
+					roundInfo, ok := es.roundControl.Get(round)
+					es.RUnlock()
+					if !ok {
+						continue
+					}
+					newController := setExpressLaneIterator.Event.NewExpressLaneController
+					if roundInfo.controller != newController {
+						log.Warn("New express lane controller did not match previous controller",
+							"round", round,
+							"previous", setExpressLaneIterator.Event.PreviousExpressLaneController,
+							"new", setExpressLaneIterator.Event.NewExpressLaneController)
+						continue
+					}
+					es.Lock()
+					es.roundControl.Add(it.Event.Round, &expressLaneControl{
+						controller: newController,
 						sequence:   0,
 					})
 					es.Unlock()
