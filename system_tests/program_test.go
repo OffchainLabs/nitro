@@ -394,6 +394,9 @@ func storageTest(t *testing.T, jit bool) {
 	assertStorageAt(t, ctx, l2client, programAddress, key, value)
 
 	validateBlocks(t, 2, jit, builder)
+	// Without this sleep, this test fails in the "-race" CI builds complaining that
+	// the block has not been seen in L1 yet.
+	time.Sleep(10 * time.Second)
 	// Captures a block_input_<id>.json file for the block that included the
 	// storage write transaction.
 	recordBlock(t, receipt.BlockNumber.Uint64(), builder)
