@@ -20,6 +20,9 @@
 [submodule "arbitrator/tools/wasmer"]
 	path = arbitrator/tools/wasmer
 	url = https://github.com/OffchainLabs/wasmer.git
+[submodule "arbitrator/tools/wasm-tools"]
+	path = arbitrator/tools/wasm-tools
+	url = https://github.com/OffchainLabs/wasm-tools.git
 [submodule "nitro-testnode"]
 	path = nitro-testnode
 	url = https://github.com/OffchainLabs/nitro-testnode.git

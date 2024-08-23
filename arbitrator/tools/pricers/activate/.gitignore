@@ -1,0 +1,7 @@
+**.csv
+**.svg
+perf.**
+
+data/
+cases/
+fuzz/crash.wat

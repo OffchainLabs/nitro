@@ -1,0 +1,31 @@
+[package]
+name = "runtime"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+affinity = { workspace = true, optional = true }
+arbitrary.workspace = true
+structopt.workspace = true
+humantime = "2.1.0"
+thiserror = "1.0.33"
+brotli2.workspace = true
+eyre.workspace = true
+rand.workspace = true
+wabt = "0.10.0"
+num = "0.4.0"
+wat = "1.0.56"
+hex = "0.4.3"
+arbutil.workspace = true
+prover.workspace = true
+stylus = { path = "../../../stylus" }
+wasmer.workspace = true
+wasmer-compiler-singlepass = { path = "../../wasmer/lib/compiler-singlepass", default-features = false, features = ["std", "unwind", "avx"] }
+wasmer-vm = { path = "../../wasmer/lib/vm/" }
+wasm-smith.workspace = true
+wasmprinter.workspace = true
+
+
+[features]
+default = []
+affinity = [ "dep:affinity" ]

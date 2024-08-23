@@ -1,0 +1,13 @@
+[package]
+name = "hfuzz"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+honggfuzz = "0.5"
+arbutil.path = "../../../../arbutil"
+activate.path = ".."
+eyre = "0.6.5"
+
+#[workspace]
+#members = ["."]

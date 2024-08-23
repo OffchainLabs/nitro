@@ -1,0 +1,22 @@
+[workspace]
+members = ["activate", "activate/hfuzz", "benchmarks", "runtime"]
+resolver = "2"
+
+[workspace.dependencies]
+affinity = "0.1.2"
+arbitrary = "1.1.6"
+bincode = "1.3.3"
+brotli2 = "0.3.2"
+eyre = "0.6.5"
+hex = "0.4.3"
+serde = "1.0.193"
+structopt = "0.3.23"
+rand = "0.8.5"
+rayon = "1.5.1"
+
+arbutil = { path = "../../arbutil" }
+prover = { path = "../../prover" }
+stylus = { path = "../../stylus" }
+wasmer = { path = "../wasmer/lib/api" }
+wasm-smith = { path = "../wasm-tools/crates/wasm-smith" }
+wasmprinter = { path = "../wasm-tools/crates/wasmprinter" }
