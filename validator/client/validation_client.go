@@ -81,7 +81,7 @@ func (c *ValidationClient) Start(ctx context.Context) error {
 			return fmt.Errorf("could not read stylus archs from validation server")
 		}
 		for _, stylusArch := range stylusArchs {
-			if stylusArch != rawdb.TargetWavm && stylusArch != rawdb.LocalTarget() && stylusArch != "mock" {
+			if !rawdb.IsSupportedWasmTarget(ethdb.WasmTarget(stylusArch)) && stylusArch != "mock" {
 				return fmt.Errorf("unsupported stylus architecture: %v", stylusArch)
 			}
 		}
