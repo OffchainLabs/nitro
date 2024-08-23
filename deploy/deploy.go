@@ -13,6 +13,7 @@ import (
 	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/solgen/go/challengegen"
+	"github.com/offchainlabs/nitro/solgen/go/data_availabilitygen"
 	"github.com/offchainlabs/nitro/solgen/go/ospgen"
 	"github.com/offchainlabs/nitro/solgen/go/rollupgen"
 	"github.com/offchainlabs/nitro/solgen/go/upgrade_executorgen"
@@ -39,6 +40,12 @@ func deployBridgeCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 	err = andTxSucceeded(ctx, l1Reader, tx, err)
 	if err != nil {
 		return common.Address{}, fmt.Errorf("bridge deploy error: %w", err)
+	}
+
+	daBridgeTemplate, tx, _, err := data_availabilitygen.DeployAvailDABridge(auth, client)
+	err = andTxSucceeded(ctx, l1Reader, tx, err)
+	if err != nil {
+		return common.Address{}, fmt.Errorf("dabridge deploy error: %w", err)
 	}
 
 	reader4844, tx, _, err := yulgen.DeployReader4844(auth, client)
@@ -76,6 +83,7 @@ func deployBridgeCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 		Inbox:            inboxTemplate,
 		RollupEventInbox: rollupEventBridgeTemplate,
 		Outbox:           outboxTemplate,
+		Dabridge:         daBridgeTemplate,
 	}
 
 	/// deploy ERC20 based templates
@@ -109,6 +117,7 @@ func deployBridgeCreator(ctx context.Context, l1Reader *headerreader.HeaderReade
 		Inbox:            erc20InboxTemplate,
 		RollupEventInbox: erc20RollupEventBridgeTemplate,
 		Outbox:           erc20OutboxTemplate,
+		Dabridge:         daBridgeTemplate,
 	}
 
 	bridgeCreatorAddr, tx, _, err := rollupgen.DeployBridgeCreator(auth, client, ethBasedTemplates, erc20BasedTemplates)
