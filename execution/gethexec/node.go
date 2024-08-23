@@ -30,10 +30,10 @@ import (
 )
 
 type StylusTargetConfig struct {
-	Arm64 string   `koanf:"arm64"`
-	Amd64 string   `koanf:"amd64"`
-	Host  string   `koanf:"host"`
-	Archs []string `koanf:"archs"`
+	Arm64      string   `koanf:"arm64"`
+	Amd64      string   `koanf:"amd64"`
+	Host       string   `koanf:"host"`
+	ExtraArchs []string `koanf:"extra-archs"`
 
 	wasmTargets []ethdb.WasmTarget
 }
@@ -44,47 +44,40 @@ func (c *StylusTargetConfig) WasmTargets() []ethdb.WasmTarget {
 
 func (c *StylusTargetConfig) Validate() error {
 	localTarget := rawdb.LocalTarget()
-	var nativeFound bool
-	targets := make([]ethdb.WasmTarget, 0, len(c.Archs))
-	for _, arch := range c.Archs {
+	targets := make([]ethdb.WasmTarget, 0, len(c.ExtraArchs))
+	targetsSet := make(map[ethdb.WasmTarget]struct{}, len(c.ExtraArchs)+1)
+	for _, arch := range c.ExtraArchs {
 		target := ethdb.WasmTarget(arch)
 		if !rawdb.IsSupportedWasmTarget(target) {
 			return fmt.Errorf("unsupported architecture: %v, possible values: %s, %s, %s, %s", arch, rawdb.TargetWavm, rawdb.TargetArm64, rawdb.TargetAmd64, rawdb.TargetHost)
 		}
-		var alreadyInList bool
-		for _, t := range targets {
-			if target == t {
-				alreadyInList = true
-				break
-			}
+		if _, duplicate := targetsSet[target]; !duplicate {
+			targets = append(targets, target)
+			targetsSet[target] = struct{}{}
 		}
-		if alreadyInList {
-			continue
-		}
-		if target == localTarget {
-			nativeFound = true
-		}
-		targets = append(targets, target)
 	}
-	if !nativeFound {
-		return fmt.Errorf("native target not found in archs list, native target: %v, archs: %v", localTarget, c.Archs)
+	if _, has := targetsSet[rawdb.TargetWavm]; !has {
+		return fmt.Errorf("%s target not found in archs list, archs: %v", rawdb.TargetWavm, c.ExtraArchs)
+	}
+	if _, has := targetsSet[localTarget]; !has {
+		targets = append(targets, localTarget)
 	}
 	c.wasmTargets = targets
 	return nil
 }
 
 var DefaultStylusTargetConfig = StylusTargetConfig{
-	Arm64: programs.DefaultTargetDescriptionArm,
-	Amd64: programs.DefaultTargetDescriptionX86,
-	Host:  "",
-	Archs: []string{string(rawdb.TargetWavm), string(rawdb.LocalTarget())},
+	Arm64:      programs.DefaultTargetDescriptionArm,
+	Amd64:      programs.DefaultTargetDescriptionX86,
+	Host:       "",
+	ExtraArchs: []string{string(rawdb.TargetWavm)},
 }
 
 func StylusTargetConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".arm64", DefaultStylusTargetConfig.Arm64, "stylus programs compilation target for arm64 linux")
 	f.String(prefix+".amd64", DefaultStylusTargetConfig.Amd64, "stylus programs compilation target for amd64 linux")
 	f.String(prefix+".host", DefaultStylusTargetConfig.Host, "stylus programs compilation target for system other than 64-bit ARM or 64-bit x86")
-	f.StringSlice(prefix+".archs", DefaultStylusTargetConfig.Archs, fmt.Sprintf("Comma separated architectures list to compile stylus program to and cache in wasm store (available targets: %s, %s, %s, %s)", rawdb.TargetWavm, rawdb.TargetArm64, rawdb.TargetAmd64, rawdb.TargetHost))
+	f.StringSlice(prefix+".extra-archs", DefaultStylusTargetConfig.ExtraArchs, fmt.Sprintf("Comma separated list of extra architectures to cross-compile stylus program to and cache in wasm store (additionally to local target). Currently must include at least %s. (supported targets: %s, %s, %s, %s)", rawdb.TargetWavm, rawdb.TargetWavm, rawdb.TargetArm64, rawdb.TargetAmd64, rawdb.TargetHost))
 }
 
 type Config struct {
