@@ -13,6 +13,7 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -142,25 +143,28 @@ func (a *AvailDA) Store(ctx context.Context, message []byte) ([]byte, error) {
 		return nil, fmt.Errorf("cannot get header for finalized block:%w", err)
 	}
 
-	err = a.vectorx.SubscribeForHeaderUpdate(int(header.Number), a.vectorXTimeout)
-	if err != nil {
-		return nil, fmt.Errorf("cannot get the event for header update on vectorx:%w", err)
-	}
-
 	extrinsicIndex, err := GetExtrinsicIndex(a.api, finalizedblockHash, a.keyringPair.Address, nonce)
 	if err != nil {
 		return nil, err
 	}
-	log.Info("Finalized extrinsic", "extrinsicIndex", extrinsicIndex)
+	log.Info("🏆  Data included in Avail's finalised block", "blockHash", finalizedblockHash.Hex(), "extrinsicIndex", extrinsicIndex)
 
-	merkleProofInput, err := QueryMerkleProofInput(a.bridgeApiBaseURL, finalizedblockHash.Hex(), extrinsicIndex, a.bridgeApiTimeout)
+	blobProof, err := QueryBlobProof(a.api, extrinsicIndex, finalizedblockHash)
 	if err != nil {
 		return nil, err
 	}
 
+	// validation of blobProof in respect of submitted data
+	blobDataKeccak256H := crypto.Keccak256Hash(message)
+	if !ValidateBlobProof(blobProof, blobDataKeccak256H) {
+		err = fmt.Errorf("BlobProof is invalid")
+		log.Warn(err.Error(), "blobProof", blobProof.String())
+		return nil, err
+	}
+
 	// Creating BlobPointer to submit over settlement layer
-	blobPointer := BlobPointer{BlockHash: finalizedblockHash, Sender: a.keyringPair.Address, Nonce: uint32(nonce.Int64()), DasTreeRootHash: dastree.Hash(message), MerkleProofInput: merkleProofInput}
-	log.Info("✅  Sucesfully included in block data to Avail", "BlobPointer:", blobPointer)
+	blobPointer := BlobPointer{BlockHeight: uint32(header.Number), ExtrinsicIndex: uint32(extrinsicIndex), DasTreeRootHash: dastree.Hash(message), BlobDataKeccak265H: blobDataKeccak256H, BlobProof: blobProof}
+	log.Info("✅  Sucesfully included in block data to Avail", "BlobPointer:", blobPointer.String())
 	blobPointerData, err := blobPointer.MarshalToBinary()
 	if err != nil {
 		log.Warn("⚠️ BlobPointer MashalBinary error", "err", err)
@@ -174,18 +178,22 @@ func (a *AvailDA) Read(ctx context.Context, blobPointer BlobPointer) ([]byte, er
 	log.Info("ℹ️ Requesting data from Avail", "BlobPointer", blobPointer)
 
 	// Intitializing variables
-	BlockHash := blobPointer.BlockHash
-	Address := blobPointer.Sender
-	Nonce := gsrpc_types.NewUCompactFromUInt(uint64(blobPointer.Nonce))
+	blockHeight := blobPointer.BlockHeight
+	extrinsicIndex := blobPointer.ExtrinsicIndex
 
-	// Fetching block based on block hash
-	avail_blk, err := a.api.RPC.Chain.GetBlock(BlockHash)
+	blockHash, err := a.api.RPC.Chain.GetBlockHash(uint64(blockHeight))
 	if err != nil {
-		return []byte{}, fmt.Errorf("❌ cannot get block for hash:%v and getting error:%w", BlockHash.Hex(), err)
+		log.Warn("⚠️ cannot get block hash", "error", err)
+		return nil, err
+	}
+	// Fetching block based on block hash
+	avail_blk, err := a.api.RPC.Chain.GetBlock(blockHash)
+	if err != nil {
+		return []byte{}, fmt.Errorf("❌ cannot get block for hash:%v and getting error:%w", blockHash.Hex(), err)
 	}
 
 	// Extracting the required extrinsic according to the reference
-	data, err := extractExtrinsic(Address, Nonce.Int64(), avail_blk)
+	data, err := extractExtrinsicData(avail_blk, extrinsicIndex)
 	if err != nil {
 		return nil, err
 	}
@@ -248,16 +256,12 @@ outer:
 		case status := <-sub.Chan():
 			if status.IsInBlock {
 				log.Info("📥  Submit data extrinsic included in block", "blockHash", status.AsInBlock.Hex())
-			}
-			if status.IsFinalized {
+			} else if status.IsFinalized {
 				finalizedblockHash = status.AsFinalized
+				log.Info("📥  Submit data extrinsic included in finalized block", "blockHash", finalizedblockHash.Hex())
 				break outer
-			} else if status.IsDropped {
-				return gsrpc_types.Hash{}, gsrpc_types.UCompact{}, fmt.Errorf("❌ Extrinsic dropped")
-			} else if status.IsUsurped {
-				return gsrpc_types.Hash{}, gsrpc_types.UCompact{}, fmt.Errorf("❌ Extrinsic usurped")
 			} else if status.IsRetracted {
-				return gsrpc_types.Hash{}, gsrpc_types.UCompact{}, fmt.Errorf("❌ Extrinsic retracted")
+				log.Warn("AvailDA transaction got retracted from block", "blockHash", status.AsRetracted.Hex())
 			} else if status.IsInvalid {
 				return gsrpc_types.Hash{}, gsrpc_types.UCompact{}, fmt.Errorf("❌ Extrinsic invalid")
 			}

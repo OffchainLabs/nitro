@@ -50,6 +50,19 @@ func (v *VectorX) SubscribeForHeaderUpdate(finalizedBlockNumber int, t time.Dura
 	}
 	defer sub.Unsubscribe()
 
+	// Keep the connection alive with a ping mechanism
+	ticker := time.NewTicker(10 * time.Minute)
+	defer ticker.Stop()
+	go func(t *time.Ticker) {
+		for range t.C {
+			// Send a dummy request to keep the connection alive
+			_, err := v.Client.BlockNumber(context.Background())
+			if err != nil {
+				log.Warn("Failed to send ping to keep the connection alive for vectorx events", "err", err)
+			}
+		}
+	}(ticker)
+
 	log.Info("🎧  Listening for vectorx HeadUpdate event with", "blockNumber", finalizedBlockNumber)
 	timeout := time.After(t * time.Second)
 	// Loop to process incoming events
