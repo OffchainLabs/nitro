@@ -10,7 +10,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/util/pretty"
 )
 
@@ -121,7 +121,7 @@ func (r *RedundantStorageService) Close(ctx context.Context) error {
 	return anyError
 }
 
-func (r *RedundantStorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+func (r *RedundantStorageService) ExpirationPolicy(ctx context.Context) (daprovider.ExpirationPolicy, error) {
 	// If at least one inner service has KeepForever,
 	// then whole redundant service can serve after timeout.
 
@@ -132,20 +132,20 @@ func (r *RedundantStorageService) ExpirationPolicy(ctx context.Context) (arbstat
 	// If no inner service has KeepForever, DiscardAfterArchiveTimeout,
 	// but at least one inner service has DiscardAfterDataTimeout,
 	// then whole redundant service can serve till data timeout.
-	var res arbstate.ExpirationPolicy = -1
+	var res daprovider.ExpirationPolicy = -1
 	for _, serv := range r.innerServices {
 		expirationPolicy, err := serv.ExpirationPolicy(ctx)
 		if err != nil {
 			return -1, err
 		}
 		switch expirationPolicy {
-		case arbstate.KeepForever:
-			return arbstate.KeepForever, nil
-		case arbstate.DiscardAfterArchiveTimeout:
-			res = arbstate.DiscardAfterArchiveTimeout
-		case arbstate.DiscardAfterDataTimeout:
-			if res != arbstate.DiscardAfterArchiveTimeout {
-				res = arbstate.DiscardAfterDataTimeout
+		case daprovider.KeepForever:
+			return daprovider.KeepForever, nil
+		case daprovider.DiscardAfterArchiveTimeout:
+			res = daprovider.DiscardAfterArchiveTimeout
+		case daprovider.DiscardAfterDataTimeout:
+			if res != daprovider.DiscardAfterArchiveTimeout {
+				res = daprovider.DiscardAfterDataTimeout
 			}
 		}
 	}

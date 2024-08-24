@@ -1,10 +1,14 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package testhelpers
 
 import (
-	"crypto/rand"
+	"context"
+	crypto "crypto/rand"
+	"io"
+	"math/big"
+	"math/rand"
 	"os"
 	"regexp"
 	"sync"
@@ -13,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/util/colors"
+	"golang.org/x/exp/slog"
 )
 
 // Fail a test should an error occur
@@ -29,11 +34,21 @@ func FailImpl(t *testing.T, printables ...interface{}) {
 }
 
 func RandomizeSlice(slice []byte) []byte {
-	_, err := rand.Read(slice)
+	_, err := crypto.Read(slice)
 	if err != nil {
 		panic(err)
 	}
 	return slice
+}
+
+func RandomSlice(size uint64) []byte {
+	return RandomizeSlice(make([]byte, size))
+}
+
+func RandomHash() common.Hash {
+	var hash common.Hash
+	RandomizeSlice(hash[:])
+	return hash
 }
 
 func RandomAddress() common.Address {
@@ -42,20 +57,48 @@ func RandomAddress() common.Address {
 	return address
 }
 
-type LogHandler struct {
-	mutex         sync.Mutex
-	t             *testing.T
-	records       []log.Record
-	streamHandler log.Handler
+func RandomCallValue(limit int64) *big.Int {
+	return big.NewInt(rand.Int63n(limit))
 }
 
-func (h *LogHandler) Log(record *log.Record) error {
-	if err := h.streamHandler.Log(record); err != nil {
+// Computes a psuedo-random uint64 on the interval [min, max]
+func RandomUint32(min, max uint32) uint32 {
+	return uint32(RandomUint64(uint64(min), uint64(max)))
+}
+
+// Computes a psuedo-random uint64 on the interval [min, max]
+func RandomUint64(min, max uint64) uint64 {
+	return uint64(rand.Uint64()%(max-min+1) + min)
+}
+
+func RandomBool() bool {
+	return rand.Int31n(2) == 0
+}
+
+type LogHandler struct {
+	mutex           sync.Mutex
+	t               *testing.T
+	records         []slog.Record
+	terminalHandler *log.TerminalHandler
+}
+
+func (h *LogHandler) Enabled(_ context.Context, level slog.Level) bool {
+	return h.terminalHandler.Enabled(context.Background(), level)
+}
+func (h *LogHandler) WithGroup(name string) slog.Handler {
+	return h.terminalHandler.WithGroup(name)
+}
+func (h *LogHandler) WithAttrs(attrs []slog.Attr) slog.Handler {
+	return h.terminalHandler.WithAttrs(attrs)
+}
+
+func (h *LogHandler) Handle(_ context.Context, record slog.Record) error {
+	if err := h.terminalHandler.Handle(context.Background(), record); err != nil {
 		return err
 	}
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
-	h.records = append(h.records, *record)
+	h.records = append(h.records, record)
 	return nil
 }
 
@@ -65,7 +108,7 @@ func (h *LogHandler) WasLogged(pattern string) bool {
 	h.mutex.Lock()
 	defer h.mutex.Unlock()
 	for _, record := range h.records {
-		if re.MatchString(record.Msg) {
+		if re.MatchString(record.Message) {
 			return true
 		}
 	}
@@ -74,16 +117,16 @@ func (h *LogHandler) WasLogged(pattern string) bool {
 
 func newLogHandler(t *testing.T) *LogHandler {
 	return &LogHandler{
-		t:             t,
-		records:       make([]log.Record, 0),
-		streamHandler: log.StreamHandler(os.Stderr, log.TerminalFormat(false)),
+		t:               t,
+		records:         make([]slog.Record, 0),
+		terminalHandler: log.NewTerminalHandler(io.Writer(os.Stderr), false),
 	}
 }
 
-func InitTestLog(t *testing.T, level log.Lvl) *LogHandler {
+func InitTestLog(t *testing.T, level slog.Level) *LogHandler {
 	handler := newLogHandler(t)
 	glogger := log.NewGlogHandler(handler)
 	glogger.Verbosity(level)
-	log.Root().SetHandler(glogger)
+	log.SetDefault(log.NewLogger(glogger))
 	return handler
 }

@@ -15,22 +15,21 @@ import (
 type ParentChainConfig struct {
 	ID         uint64                        `koanf:"id"`
 	Connection rpcclient.ClientConfig        `koanf:"connection" reload:"hot"`
-	Wallet     genericconf.WalletConfig      `koanf:"wallet"`
 	BlobClient headerreader.BlobClientConfig `koanf:"blob-client"`
 }
 
 var L1ConnectionConfigDefault = rpcclient.ClientConfig{
-	URL:            "",
-	Retries:        2,
-	Timeout:        time.Minute,
-	ConnectionWait: time.Minute,
-	ArgLogLimit:    2048,
+	URL:                       "",
+	Retries:                   2,
+	Timeout:                   time.Minute,
+	ConnectionWait:            time.Minute,
+	ArgLogLimit:               2048,
+	WebsocketMessageSizeLimit: 256 * 1024 * 1024,
 }
 
 var L1ConfigDefault = ParentChainConfig{
 	ID:         0,
 	Connection: L1ConnectionConfigDefault,
-	Wallet:     DefaultL1WalletConfig,
 	BlobClient: headerreader.DefaultBlobClientConfig,
 }
 
@@ -45,12 +44,7 @@ var DefaultL1WalletConfig = genericconf.WalletConfig{
 func L1ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".id", L1ConfigDefault.ID, "if set other than 0, will be used to validate database and L1 connection")
 	rpcclient.RPCClientAddOptions(prefix+".connection", f, &L1ConfigDefault.Connection)
-	genericconf.WalletConfigAddOptions(prefix+".wallet", f, L1ConfigDefault.Wallet.Pathname)
 	headerreader.BlobClientAddOptions(prefix+".blob-client", f)
-}
-
-func (c *ParentChainConfig) ResolveDirectoryNames(chain string) {
-	c.Wallet.ResolveDirectoryNames(chain)
 }
 
 func (c *ParentChainConfig) Validate() error {

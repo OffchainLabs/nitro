@@ -12,6 +12,7 @@ import (
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/holiman/uint256"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -29,13 +30,17 @@ func TransferBalance(
 	}
 	if from != nil {
 		balance := evm.StateDB.GetBalance(*from)
-		if arbmath.BigLessThan(balance, amount) {
+		if arbmath.BigLessThan(balance.ToBig(), amount) {
 			return fmt.Errorf("%w: addr %v have %v want %v", vm.ErrInsufficientBalance, *from, balance, amount)
 		}
-		evm.StateDB.SubBalance(*from, amount)
+		evm.StateDB.SubBalance(*from, uint256.MustFromBig(amount))
+		if evm.Context.ArbOSVersion >= 30 {
+			// ensure the from account is "touched" for EIP-161
+			evm.StateDB.AddBalance(*from, &uint256.Int{})
+		}
 	}
 	if to != nil {
-		evm.StateDB.AddBalance(*to, amount)
+		evm.StateDB.AddBalance(*to, uint256.MustFromBig(amount))
 	}
 	if tracer := evm.Config.Tracer; tracer != nil {
 		if evm.Depth() != 0 && scenario != TracingDuringEVM {
@@ -59,7 +64,7 @@ func TransferBalance(
 		info := &TracingInfo{
 			Tracer:   evm.Config.Tracer,
 			Scenario: scenario,
-			Contract: vm.NewContract(addressHolder{*to}, addressHolder{*from}, big.NewInt(0), 0),
+			Contract: vm.NewContract(addressHolder{*to}, addressHolder{*from}, uint256.NewInt(0), 0),
 			Depth:    evm.Depth(),
 		}
 		info.MockCall([]byte{}, 0, *from, *to, amount)

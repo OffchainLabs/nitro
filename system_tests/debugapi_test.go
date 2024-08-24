@@ -2,15 +2,15 @@ package arbtest
 
 import (
 	"context"
-	"github.com/ethereum/go-ethereum/eth/tracers"
+	"encoding/json"
 	"testing"
 
-	"encoding/json"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/eth"
+	"github.com/ethereum/go-ethereum/eth/tracers"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
 )
@@ -34,7 +34,7 @@ func TestDebugAPI(t *testing.T) {
 	err = l2rpc.CallContext(ctx, &badBlocks, "debug_getBadBlocks")
 	Require(t, err)
 
-	var dumpIt state.IteratorDump
+	var dumpIt state.Dump
 	err = l2rpc.CallContext(ctx, &dumpIt, "debug_accountRange", rpc.LatestBlockNumber, hexutil.Bytes{}, 10, true, true, false)
 	Require(t, err)
 	err = l2rpc.CallContext(ctx, &dumpIt, "debug_accountRange", rpc.PendingBlockNumber, hexutil.Bytes{}, 10, true, true, false)

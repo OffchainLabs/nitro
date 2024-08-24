@@ -3,10 +3,11 @@
 
 #![cfg(test)]
 
+use eyre::Result;
 use wasmer::{imports, Instance, Module, Store, Value};
 
 #[test]
-fn test_crate() -> eyre::Result<()> {
+fn test_crate() -> Result<()> {
     // Adapted from https://docs.rs/wasmer/3.1.0/wasmer/index.html
 
     let source = std::fs::read("programs/pure/main.wat")?;

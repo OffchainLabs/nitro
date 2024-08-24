@@ -307,6 +307,7 @@ func (v *Contract) estimateGas(ctx context.Context, value *big.Int, data []byte)
 	if err != nil {
 		return 0, fmt.Errorf("getting suggested gas tip cap: %w", err)
 	}
+	gasFeeCap.Add(gasFeeCap, gasTipCap)
 	g, err := v.l1Reader.Client().EstimateGas(
 		ctx,
 		ethereum.CallMsg{

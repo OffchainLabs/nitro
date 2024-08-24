@@ -195,6 +195,23 @@ func (ps *L1PricingState) SetUnitsSinceUpdate(units uint64) error {
 	return ps.unitsSinceUpdate.Set(units)
 }
 
+func (ps *L1PricingState) GetL1PricingSurplus() (*big.Int, error) {
+	fundsDueForRefunds, err := ps.BatchPosterTable().TotalFundsDue()
+	if err != nil {
+		return nil, err
+	}
+	fundsDueForRewards, err := ps.FundsDueForRewards()
+	if err != nil {
+		return nil, err
+	}
+	haveFunds, err := ps.L1FeesAvailable()
+	if err != nil {
+		return nil, err
+	}
+	needFunds := arbmath.BigAdd(fundsDueForRefunds, fundsDueForRewards)
+	return arbmath.BigSub(haveFunds, needFunds), nil
+}
+
 func (ps *L1PricingState) LastSurplus() (*big.Int, error) {
 	return ps.lastSurplus.Get()
 }

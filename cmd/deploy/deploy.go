@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"math/big"
 	"os"
 	"strings"
@@ -30,9 +31,10 @@ import (
 )
 
 func main() {
-	glogger := log.NewGlogHandler(log.StreamHandler(os.Stderr, log.TerminalFormat(false)))
+	glogger := log.NewGlogHandler(
+		log.NewTerminalHandler(io.Writer(os.Stderr), false))
 	glogger.Verbosity(log.LvlDebug)
-	log.Root().SetHandler(glogger)
+	log.SetDefault(log.NewLogger(glogger))
 	log.Info("deploying rollup")
 
 	ctx := context.Background()

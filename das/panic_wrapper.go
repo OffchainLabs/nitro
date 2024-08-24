@@ -10,7 +10,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 )
 
 type WriterPanicWrapper struct {
@@ -26,8 +26,8 @@ func (w *WriterPanicWrapper) String() string {
 	return fmt.Sprintf("WriterPanicWrapper{%v}", w.DataAvailabilityServiceWriter)
 }
 
-func (w *WriterPanicWrapper) Store(ctx context.Context, message []byte, timeout uint64, sig []byte) (*arbstate.DataAvailabilityCertificate, error) {
-	cert, err := w.DataAvailabilityServiceWriter.Store(ctx, message, timeout, sig)
+func (w *WriterPanicWrapper) Store(ctx context.Context, message []byte, timeout uint64) (*daprovider.DataAvailabilityCertificate, error) {
+	cert, err := w.DataAvailabilityServiceWriter.Store(ctx, message, timeout)
 	if err != nil {
 		panic(fmt.Sprintf("panic wrapper Store: %v", err))
 	}

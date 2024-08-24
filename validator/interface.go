@@ -9,6 +9,7 @@ import (
 
 type ValidationSpawner interface {
 	Launch(entry *ValidationInput, moduleRoot common.Hash) ValidationRun
+	WasmModuleRoots() ([]common.Hash, error)
 	Start(context.Context) error
 	Stop()
 	Name() string
@@ -29,6 +30,7 @@ type ExecutionSpawner interface {
 
 type ExecutionRun interface {
 	GetStepAt(uint64) containers.PromiseInterface[*MachineStepResult]
+	GetMachineHashesWithStepSize(machineStartIndex, stepSize, maxIterations uint64) containers.PromiseInterface[[]common.Hash]
 	GetLastStep() containers.PromiseInterface[*MachineStepResult]
 	GetProofAt(uint64) containers.PromiseInterface[[]byte]
 	PrepareRange(uint64, uint64) containers.PromiseInterface[struct{}]

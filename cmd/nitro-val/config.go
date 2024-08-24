@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
+
 	"reflect"
 	"time"
 
-	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/p2p"
 	"github.com/ethereum/go-ethereum/p2p/nat"
@@ -20,14 +20,13 @@ import (
 type ValidationNodeConfig struct {
 	Conf          genericconf.ConfConfig          `koanf:"conf" reload:"hot"`
 	Validation    valnode.Config                  `koanf:"validation" reload:"hot"`
-	LogLevel      int                             `koanf:"log-level" reload:"hot"`
+	LogLevel      string                          `koanf:"log-level" reload:"hot"`
 	LogType       string                          `koanf:"log-type" reload:"hot"`
 	FileLogging   genericconf.FileLoggingConfig   `koanf:"file-logging" reload:"hot"`
 	Persistent    conf.PersistentConfig           `koanf:"persistent"`
 	HTTP          genericconf.HTTPConfig          `koanf:"http"`
 	WS            genericconf.WSConfig            `koanf:"ws"`
 	IPC           genericconf.IPCConfig           `koanf:"ipc"`
-	P2P           genericconf.P2PConfig           `koanf:"p2p"`
 	Auth          genericconf.AuthRPCConfig       `koanf:"auth"`
 	Metrics       bool                            `koanf:"metrics"`
 	MetricsServer genericconf.MetricsServerConfig `koanf:"metrics-server"`
@@ -61,13 +60,12 @@ var IPCConfigDefault = genericconf.IPCConfig{
 
 var ValidationNodeConfigDefault = ValidationNodeConfig{
 	Conf:          genericconf.ConfConfigDefault,
-	LogLevel:      int(log.LvlInfo),
+	LogLevel:      "INFO",
 	LogType:       "plaintext",
 	Persistent:    conf.PersistentConfigDefault,
 	HTTP:          HTTPConfigDefault,
 	WS:            WSConfigDefault,
 	IPC:           IPCConfigDefault,
-	P2P:           genericconf.P2PConfigDefault,
 	Auth:          genericconf.AuthRPCConfigDefault,
 	Metrics:       false,
 	MetricsServer: genericconf.MetricsServerConfigDefault,
@@ -79,7 +77,7 @@ var ValidationNodeConfigDefault = ValidationNodeConfig{
 func ValidationNodeConfigAddOptions(f *flag.FlagSet) {
 	genericconf.ConfConfigAddOptions("conf", f)
 	valnode.ValidationConfigAddOptions("validation", f)
-	f.Int("log-level", ValidationNodeConfigDefault.LogLevel, "log level")
+	f.String("log-level", ValidationNodeConfigDefault.LogLevel, "log level, valid values are CRIT, ERROR, WARN, INFO, DEBUG, TRACE")
 	f.String("log-type", ValidationNodeConfigDefault.LogType, "log type (plaintext or json)")
 	genericconf.FileLoggingConfigAddOptions("file-logging", f)
 	conf.PersistentConfigAddOptions("persistent", f)
@@ -87,7 +85,6 @@ func ValidationNodeConfigAddOptions(f *flag.FlagSet) {
 	genericconf.WSConfigAddOptions("ws", f)
 	genericconf.IPCConfigAddOptions("ipc", f)
 	genericconf.AuthRPCConfigAddOptions("auth", f)
-	genericconf.P2PConfigAddOptions("p2p", f)
 	f.Bool("metrics", ValidationNodeConfigDefault.Metrics, "enable metrics")
 	genericconf.MetricsServerAddOptions("metrics-server", f)
 	f.Bool("pprof", ValidationNodeConfigDefault.PProf, "enable pprof")

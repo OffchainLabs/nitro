@@ -13,7 +13,7 @@ import (
 	"golang.org/x/crypto/sha3"
 
 	"github.com/go-redis/redis/v8"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
 	"github.com/offchainlabs/nitro/util/redisutil"
@@ -24,12 +24,10 @@ import (
 )
 
 type RedisConfig struct {
-	Enable                 bool          `koanf:"enable"`
-	Url                    string        `koanf:"url"`
-	Expiration             time.Duration `koanf:"expiration"`
-	KeyConfig              string        `koanf:"key-config"`
-	SyncFromStorageService bool          `koanf:"sync-from-storage-service"`
-	SyncToStorageService   bool          `koanf:"sync-to-storage-service"`
+	Enable     bool          `koanf:"enable"`
+	Url        string        `koanf:"url"`
+	Expiration time.Duration `koanf:"expiration"`
+	KeyConfig  string        `koanf:"key-config"`
 }
 
 var DefaultRedisConfig = RedisConfig{
@@ -43,8 +41,6 @@ func RedisConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".url", DefaultRedisConfig.Url, "Redis url")
 	f.Duration(prefix+".expiration", DefaultRedisConfig.Expiration, "Redis expiration")
 	f.String(prefix+".key-config", DefaultRedisConfig.KeyConfig, "Redis key config")
-	f.Bool(prefix+".sync-from-storage-service", DefaultRedisConfig.SyncFromStorageService, "enable Redis to be used as a source for regular sync storage")
-	f.Bool(prefix+".sync-to-storage-service", DefaultRedisConfig.SyncToStorageService, "enable Redis to be used as a sink for regular sync storage")
 }
 
 type RedisStorageService struct {
@@ -139,17 +135,6 @@ func (rs *RedisStorageService) Put(ctx context.Context, value []byte, timeout ui
 	return err
 }
 
-func (rs *RedisStorageService) putKeyValue(ctx context.Context, key common.Hash, value []byte) error {
-	// Expiration is set to zero here, since we want to keep the index inserted for iterable storage forever.
-	err := rs.client.Set(
-		ctx, string(key.Bytes()), rs.signMessage(value), 0,
-	).Err()
-	if err != nil {
-		log.Error("das.RedisStorageService.putKeyValue", "err", err)
-	}
-	return err
-}
-
 func (rs *RedisStorageService) Sync(ctx context.Context) error {
 	return rs.baseStorageService.Sync(ctx)
 }
@@ -162,7 +147,7 @@ func (rs *RedisStorageService) Close(ctx context.Context) error {
 	return rs.baseStorageService.Close(ctx)
 }
 
-func (rs *RedisStorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+func (rs *RedisStorageService) ExpirationPolicy(ctx context.Context) (daprovider.ExpirationPolicy, error) {
 	return rs.baseStorageService.ExpirationPolicy(ctx)
 }
 

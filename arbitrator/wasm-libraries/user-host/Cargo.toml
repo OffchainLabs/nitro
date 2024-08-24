@@ -1,0 +1,17 @@
+[package]
+name = "user-host"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+arbutil = { path = "../../arbutil/" }
+caller-env = { path = "../../caller-env/", features = ["static_caller"] }
+prover = { path = "../../prover/", default-features = false }
+user-host-trait = { path = "../user-host-trait" }
+wasmer-types = { path = "../../tools/wasmer/lib/types" }
+eyre = "0.6.5"
+fnv = "1.0.7"
+hex = "0.4.3"

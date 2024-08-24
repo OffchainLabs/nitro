@@ -9,6 +9,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/crypto"
+	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/arbmath"
 )
 
@@ -26,7 +27,7 @@ type node struct {
 // RecordHash chunks the preimage into 64kB bins and generates a recursive hash tree,
 // calling the caller-supplied record function for each hash/preimage pair created in
 // building the tree structure.
-func RecordHash(record func(bytes32, []byte), preimage ...[]byte) bytes32 {
+func RecordHash(record func(bytes32, []byte, arbutil.PreimageType), preimage ...[]byte) bytes32 {
 	// Algorithm
 	//  1. split the preimage into 64kB bins and double hash them to produce the tree's leaves
 	//  2. repeatedly hash pairs and their combined length, bubbling up any odd-one's out, to form the root
@@ -48,7 +49,7 @@ func RecordHash(record func(bytes32, []byte), preimage ...[]byte) bytes32 {
 
 	keccord := func(value []byte) bytes32 {
 		hash := crypto.Keccak256Hash(value)
-		record(hash, value)
+		record(hash, value, arbutil.Keccak256PreimageType)
 		return hash
 	}
 	prepend := func(before byte, slice []byte) []byte {
@@ -94,7 +95,7 @@ func RecordHash(record func(bytes32, []byte), preimage ...[]byte) bytes32 {
 
 func Hash(preimage ...[]byte) bytes32 {
 	// Merkelizes without recording anything. All but the validator's DAS will call this
-	return RecordHash(func(bytes32, []byte) {}, preimage...)
+	return RecordHash(func(bytes32, []byte, arbutil.PreimageType) {}, preimage...)
 }
 
 func HashBytes(preimage ...[]byte) []byte {

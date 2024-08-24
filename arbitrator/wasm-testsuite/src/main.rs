@@ -1,9 +1,9 @@
 // Copyright 2022, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use eyre::bail;
+use arbutil::Color;
+use eyre::{bail, ErrReport};
 use prover::{
-    console::Color,
     machine,
     machine::{GlobalState, Machine, MachineStatus, ProofInfo},
     value::Value,
@@ -11,6 +11,7 @@ use prover::{
 use serde::{Deserialize, Serialize};
 use std::{
     collections::{HashMap, HashSet},
+    convert::TryInto,
     fs::File,
     io::BufReader,
     path::PathBuf,
@@ -54,6 +55,7 @@ enum Command {
     },
     AssertInvalid {},
     AssertUninstantiable {},
+    Register {},
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -67,7 +69,7 @@ enum Action {
 struct TextValue {
     #[serde(rename = "type")]
     ty: TextValueType,
-    value: String,
+    value: TextValueData,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
@@ -77,52 +79,74 @@ enum TextValueType {
     I64,
     F32,
     F64,
+    V128,
+    Funcref,
+    Externref,
 }
 
-impl Into<Value> for TextValue {
-    fn into(self) -> Value {
-        match self.ty {
-            TextValueType::I32 => {
-                let value = self.value.parse().expect("not an i32");
+#[derive(Clone, Debug, Serialize, Deserialize)]
+#[serde(untagged)]
+enum TextValueData {
+    String(String),
+    Array(Vec<String>),
+}
+
+impl TryInto<Value> for TextValue {
+    type Error = ErrReport;
+
+    fn try_into(self) -> eyre::Result<Value> {
+        let TextValueData::String(value) = self.value else {
+            bail!("array-expressed values not supported");
+        };
+
+        use TextValueType::*;
+        Ok(match self.ty {
+            I32 => {
+                let value = value.parse().expect("not an i32");
                 Value::I32(value)
             }
-            TextValueType::I64 => {
-                let value = self.value.parse().expect("not an i64");
+            I64 => {
+                let value = value.parse().expect("not an i64");
                 Value::I64(value)
             }
-            TextValueType::F32 => {
-                if self.value.contains("nan") {
-                    return Value::F32(f32::NAN);
+            F32 => {
+                if value.contains("nan") {
+                    return Ok(Value::F32(f32::NAN));
                 }
-                let message = format!("{} not the bit representation of an f32", self.value);
-                let bits: u32 = self.value.parse().expect(&message);
+                let message = format!("{} not the bit representation of an f32", value);
+                let bits: u32 = value.parse().expect(&message);
                 Value::F32(f32::from_bits(bits))
             }
-            TextValueType::F64 => {
-                if self.value.contains("nan") {
-                    return Value::F64(f64::NAN);
+            F64 => {
+                if value.contains("nan") {
+                    return Ok(Value::F64(f64::NAN));
                 }
-                let message = format!("{} not the bit representation of an f64", self.value);
-                let bits: u64 = self.value.parse().expect(&message);
+                let message = format!("{} not the bit representation of an f64", value);
+                let bits: u64 = value.parse().expect(&message);
                 Value::F64(f64::from_bits(bits))
             }
-        }
+            x @ (V128 | Funcref | Externref) => bail!("not supported {:?}", x),
+        })
     }
 }
 
 impl PartialEq<Value> for TextValue {
     fn eq(&self, other: &Value) -> bool {
-        if &Into::<Value>::into(self.clone()) == other {
+        if &TryInto::<Value>::try_into(self.clone()).unwrap() == other {
             return true;
         }
 
+        let TextValueData::String(text_value) = &self.value else {
+            panic!("array-expressed values not supported");
+        };
+
         match self.ty {
             TextValueType::F32 => match other {
-                Value::F32(value) => value.is_nan() && self.value.contains("nan"),
+                Value::F32(value) => value.is_nan() && text_value.contains("nan"),
                 _ => false,
             },
             TextValueType::F64 => match other {
-                Value::F64(value) => value.is_nan() && self.value.contains("nan"),
+                Value::F64(value) => value.is_nan() && text_value.contains("nan"),
                 _ => false,
             },
             _ => false,
@@ -166,13 +190,33 @@ fn main() -> eyre::Result<()> {
     do_not_prove.insert(PathBuf::from("float_exprs.json"));
     let export_proofs = !do_not_prove.contains(&opts.json);
     if !export_proofs {
-        println!("{}", Color::grey("skipping OSP proof generation"));
+        println!("{}", "skipping OSP proof generation".grey());
+    }
+
+    fn setup<'a>(
+        machine: &'a mut Option<Machine>,
+        func: &str,
+        args: Vec<Value>,
+        file: &str,
+    ) -> &'a mut Machine {
+        let Some(machine) = machine.as_mut() else {
+            panic!("no machine {} {}", file.red(), func.red())
+        };
+        let main = machine.main_module_name();
+        let (module, func) = machine.find_module_func(&main, func).unwrap();
+        machine.jump_into_func(module, func, args);
+        machine
+    }
+
+    fn to_values(text: Vec<TextValue>) -> eyre::Result<Vec<Value>> {
+        text.into_iter().map(TryInto::try_into).collect()
     }
 
     let mut wasmfile = String::new();
     let mut machine = None;
     let mut subtest = 0;
     let mut skip = false;
+    let mut has_skipped = false;
 
     macro_rules! run {
         ($machine:expr, $bound:expr, $path:expr, $prove:expr) => {{
@@ -199,7 +243,7 @@ fn main() -> eyre::Result<()> {
                     leap *= leap + 1;
                     if leap > 6 {
                         let message = format!("backing off {} {} {}", leap, count, $bound);
-                        println!("{}", Color::grey(message));
+                        println!("{}", message.grey());
                         $machine.stop_merkle_caching();
                     }
                 }
@@ -219,7 +263,7 @@ fn main() -> eyre::Result<()> {
                 Action::Invoke { field, args } => (field, args),
                 Action::Get { .. } => {
                     // get() is only used in the export test, which we don't support
-                    println!("skipping unsupported action {}", Color::red("get"));
+                    println!("skipping unsupported action {}", "get".red());
                     continue;
                 }
             }
@@ -234,30 +278,33 @@ fn main() -> eyre::Result<()> {
         };
     }
 
-    for (index, command) in case.commands.into_iter().enumerate() {
+    'next: for (index, command) in case.commands.into_iter().enumerate() {
+        // each iteration represets a test case
+
         macro_rules! test_success {
             ($func:expr, $args:expr, $expected:expr) => {
-                let args: Vec<_> = $args.into_iter().map(Into::into).collect();
+                let args = match to_values($args) {
+                    Ok(args) => args,
+                    Err(_) => continue, // TODO: can't use let-else due to rust fmt bug
+                };
                 if skip {
-                    println!("skipping {}", Color::red($func));
+                    if !has_skipped {
+                        println!("skipping {}", $func.red());
+                    }
                     subtest += 1;
+                    has_skipped = true;
                     continue;
                 }
 
-                let machine = machine.as_mut().expect("no machine");
-                machine.jump_into_function(&$func, args.clone());
+                let machine = setup(&mut machine, &$func, args.clone(), &wasmfile);
                 machine.start_merkle_caching();
                 run!(machine, 10_000_000, outname!(), true);
 
                 let output = match machine.get_final_result() {
                     Ok(output) => output,
                     Err(error) => {
-                        let expected: Vec<Value> = $expected.into_iter().map(Into::into).collect();
-                        println!(
-                            "Divergence in func {} of test {}",
-                            Color::red($func),
-                            Color::red(index),
-                        );
+                        let expected = to_values($expected)?;
+                        println!("Divergence in func {} of test {}", $func.red(), index.red());
                         pretty_print_values("Args    ", args);
                         pretty_print_values("Expected", expected);
                         println!();
@@ -266,19 +313,15 @@ fn main() -> eyre::Result<()> {
                 };
 
                 if $expected != output {
-                    let expected: Vec<Value> = $expected.into_iter().map(Into::into).collect();
-                    println!(
-                        "Divergence in func {} of test {}",
-                        Color::red($func),
-                        Color::red(index),
-                    );
+                    let expected = to_values($expected)?;
+                    println!("Divergence in func {} of test {}", $func.red(), index.red());
                     pretty_print_values("Args    ", args);
                     pretty_print_values("Expected", expected);
                     pretty_print_values("Observed", output);
                     println!();
                     bail!(
                         "Failure in test {}",
-                        Color::red(format!("{} #{}", wasmfile, subtest))
+                        format!("{} #{}", wasmfile, subtest).red()
                     )
                 }
                 subtest += 1;
@@ -306,21 +349,20 @@ fn main() -> eyre::Result<()> {
                     let error = error.root_cause().to_string();
                     skip = true;
 
-                    if error.contains("Module has no code") {
-                        // We don't support metadata-only modules that have no code
-                        continue;
-                    }
-                    if error.contains("Unsupported import") {
-                        // We don't support the import test's functions
-                        continue;
-                    }
-                    if error.contains("multiple tables") {
-                        // We don't support the reference-type extension
-                        continue;
-                    }
-                    if error.contains("bulk memory") {
-                        // We don't support the bulk-memory extension
-                        continue;
+                    let skippables = vec![
+                        "module has no code", // we don't support metadata-only modules that have no code
+                        "no such import",     // we don't support imports
+                        "unsupported import", // we don't support imports
+                        "reference types",    // we don't support the reference-type extension
+                        "multiple tables",    // we don't support the reference-type extension
+                        "bulk memory",        // we don't support the bulk-memory extension
+                        "simd support",       // we don't support the SIMD extension
+                    ];
+
+                    for skippable in skippables {
+                        if error.to_lowercase().contains(skippable) {
+                            continue 'next;
+                        }
                     }
                     bail!("Unexpected error parsing module {}: {}", wasmfile, error)
                 }
@@ -344,22 +386,17 @@ fn main() -> eyre::Result<()> {
             }
             Command::AssertTrap { action } => {
                 let (func, args) = action!(action);
-                let args: Vec<_> = args.into_iter().map(Into::into).collect();
-                let test = Color::red(format!("{} #{}", wasmfile, subtest));
+                let args = to_values(args)?;
+                let test = format!("{} #{}", wasmfile, subtest).red();
 
-                let machine = machine.as_mut().unwrap();
-                machine.jump_into_function(&func, args.clone());
+                let machine = setup(&mut machine, &func, args.clone(), &wasmfile);
                 run!(machine, 1000, outname!(), true);
 
                 if machine.get_status() == MachineStatus::Running {
                     bail!("machine failed to trap in test {}", test)
                 }
                 if let Ok(output) = machine.get_final_result() {
-                    println!(
-                        "Divergence in func {} of test {}",
-                        Color::red(func),
-                        Color::red(index),
-                    );
+                    println!("Divergence in func {} of test {}", func.red(), index.red());
                     pretty_print_values("Args  ", args);
                     pretty_print_values("Output", output);
                     println!();
@@ -369,11 +406,10 @@ fn main() -> eyre::Result<()> {
             }
             Command::AssertExhaustion { action } => {
                 let (func, args) = action!(action);
-                let args: Vec<_> = args.into_iter().map(Into::into).collect();
-                let test = Color::red(format!("{} #{}", wasmfile, subtest));
+                let args = to_values(args)?;
+                let test = format!("{} #{}", wasmfile, subtest).red();
 
-                let machine = machine.as_mut().unwrap();
-                machine.jump_into_function(&func, args.clone());
+                let machine = setup(&mut machine, &func, args.clone(), &wasmfile);
                 run!(machine, 100_000, outname!(), false); // this is proportional to the amount of RAM
 
                 if machine.get_status() != MachineStatus::Running {
@@ -402,8 +438,8 @@ fn main() -> eyre::Result<()> {
 
     println!(
         "{} {}",
-        Color::grey("done in"),
-        Color::pink(format!("{}ms", start_time.elapsed().as_millis()))
+        "done in".grey(),
+        format!("{}ms", start_time.elapsed().as_millis()).pink()
     );
     Ok(())
 }

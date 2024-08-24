@@ -96,7 +96,7 @@ func (con *ArbSys) MyCallersAddressWithoutAliasing(c ctx, evm mech) (addr, error
 	address := addr{}
 
 	if evm.Depth() > 1 {
-		address = c.txProcessor.Callers[evm.Depth()-2]
+		address = c.txProcessor.Contracts[evm.Depth()-2].Caller()
 	}
 
 	aliased, err := con.WasMyCallersAddressAliased(c, evm)
@@ -209,5 +209,5 @@ func (con ArbSys) WithdrawEth(c ctx, evm mech, value huge, destination addr) (hu
 
 func (con ArbSys) isTopLevel(c ctx, evm mech) bool {
 	depth := evm.Depth()
-	return depth < 2 || evm.Origin == c.txProcessor.Callers[depth-2]
+	return depth < 2 || evm.Origin == c.txProcessor.Contracts[depth-2].Caller()
 }

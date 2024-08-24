@@ -110,7 +110,7 @@ func TestEthDepositMessage(t *testing.T) {
 
 	RunMessagesThroughAPI(t, [][]byte{serialized, serialized2}, statedb)
 
-	balanceAfter := statedb.GetBalance(addr)
+	balanceAfter := statedb.GetBalance(addr).ToBig()
 	if balanceAfter.Cmp(new(big.Int).Add(balance.Big(), balance2.Big())) != 0 {
 		Fail(t)
 	}

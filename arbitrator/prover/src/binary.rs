@@ -1,9 +1,17 @@
-// Copyright 2021-2023, Offchain Labs, Inc.
+// Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/OffchainLabs/nitro/blob/master/LICENSE
 
-use crate::value::{ArbValueType, FunctionType, IntegerValType, Value as LirValue};
-use eyre::{bail, ensure, Result};
-use fnv::FnvHashMap as HashMap;
+use crate::{
+    programs::{
+        config::CompileConfig, counter::Counter, depth::DepthChecker, dynamic::DynamicMeter,
+        heap::HeapBound, meter::Meter, start::StartMover, FuncMiddleware, Middleware, ModuleMod,
+        StylusData, STYLUS_ENTRY_POINT,
+    },
+    value::{ArbValueType, FunctionType, IntegerValType, Value},
+};
+use arbutil::{math::SaturatingSum, Bytes32, Color, DebugColor};
+use eyre::{bail, ensure, eyre, Result, WrapErr};
+use fnv::{FnvHashMap as HashMap, FnvHashSet as HashSet};
 use nom::{
     branch::alt,
     bytes::complete::tag,
@@ -11,10 +19,11 @@ use nom::{
     sequence::{preceded, tuple},
 };
 use serde::{Deserialize, Serialize};
-use std::{convert::TryInto, hash::Hash, str::FromStr};
+use std::{convert::TryInto, fmt::Debug, hash::Hash, mem, path::Path, str::FromStr};
+use wasmer_types::{entity::EntityRef, ExportIndex, FunctionIndex, LocalFunctionIndex};
 use wasmparser::{
-    Data, Element, Export, Global, Import, MemoryType, Name, NameSectionReader, Naming, Operator,
-    Parser, Payload, TableType, TypeDef,
+    Data, Element, ExternalKind, MemoryType, Name, NameSectionReader, Naming, Operator, Parser,
+    Payload, TableType, TypeRef, ValType, Validator, WasmFeatures,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -70,22 +79,16 @@ pub enum FloatInstruction {
 impl FloatInstruction {
     pub fn signature(&self) -> FunctionType {
         match *self {
-            FloatInstruction::UnOp(t, _) => FunctionType::new(vec![t.into()], vec![t.into()]),
-            FloatInstruction::BinOp(t, _) => FunctionType::new(vec![t.into(); 2], vec![t.into()]),
-            FloatInstruction::RelOp(t, _) => {
-                FunctionType::new(vec![t.into(); 2], vec![ArbValueType::I32])
-            }
-            FloatInstruction::TruncIntOp(i, f, ..) => {
-                FunctionType::new(vec![f.into()], vec![i.into()])
-            }
-            FloatInstruction::ConvertIntOp(f, i, _) => {
-                FunctionType::new(vec![i.into()], vec![f.into()])
-            }
+            FloatInstruction::UnOp(t, _) => FunctionType::new([t.into()], [t.into()]),
+            FloatInstruction::BinOp(t, _) => FunctionType::new([t.into(); 2], [t.into()]),
+            FloatInstruction::RelOp(t, _) => FunctionType::new([t.into(); 2], [ArbValueType::I32]),
+            FloatInstruction::TruncIntOp(i, f, ..) => FunctionType::new([f.into()], [i.into()]),
+            FloatInstruction::ConvertIntOp(f, i, _) => FunctionType::new([i.into()], [f.into()]),
             FloatInstruction::F32DemoteF64 => {
-                FunctionType::new(vec![ArbValueType::F64], vec![ArbValueType::F32])
+                FunctionType::new([ArbValueType::F64], [ArbValueType::F32])
             }
             FloatInstruction::F64PromoteF32 => {
-                FunctionType::new(vec![ArbValueType::F32], vec![ArbValueType::F64])
+                FunctionType::new([ArbValueType::F32], [ArbValueType::F64])
             }
         }
     }
@@ -202,13 +205,55 @@ impl FromStr for FloatInstruction {
     }
 }
 
-pub fn op_as_const(op: Operator) -> Result<LirValue> {
+pub fn op_as_const(op: Operator) -> Result<Value> {
     match op {
-        Operator::I32Const { value } => Ok(LirValue::I32(value as u32)),
-        Operator::I64Const { value } => Ok(LirValue::I64(value as u64)),
-        Operator::F32Const { value } => Ok(LirValue::F32(f32::from_bits(value.bits()))),
-        Operator::F64Const { value } => Ok(LirValue::F64(f64::from_bits(value.bits()))),
+        Operator::I32Const { value } => Ok(Value::I32(value as u32)),
+        Operator::I64Const { value } => Ok(Value::I64(value as u64)),
+        Operator::F32Const { value } => Ok(Value::F32(f32::from_bits(value.bits()))),
+        Operator::F64Const { value } => Ok(Value::F64(f64::from_bits(value.bits()))),
         _ => bail!("Opcode is not a constant"),
+    }
+}
+
+#[derive(Clone, Debug, Default)]
+pub struct FuncImport<'a> {
+    pub offset: u32,
+    pub module: &'a str,
+    pub name: &'a str,
+}
+
+/// This enum primarily exists because wasmer's ExternalKind doesn't impl these derived functions
+#[derive(Clone, Copy, Debug, Hash, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ExportKind {
+    Func,
+    Table,
+    Memory,
+    Global,
+    Tag,
+}
+
+impl From<ExternalKind> for ExportKind {
+    fn from(kind: ExternalKind) -> Self {
+        use ExternalKind as E;
+        match kind {
+            E::Func => Self::Func,
+            E::Table => Self::Table,
+            E::Memory => Self::Memory,
+            E::Global => Self::Global,
+            E::Tag => Self::Tag,
+        }
+    }
+}
+
+impl From<ExportIndex> for ExportKind {
+    fn from(value: ExportIndex) -> Self {
+        use ExportIndex as E;
+        match value {
+            E::Function(_) => Self::Func,
+            E::Table(_) => Self::Table,
+            E::Memory(_) => Self::Memory,
+            E::Global(_) => Self::Global,
+        }
     }
 }
 
@@ -230,24 +275,31 @@ pub struct NameCustomSection {
     pub functions: HashMap<u32, String>,
 }
 
+pub type ExportMap = HashMap<String, (u32, ExportKind)>;
+
 #[derive(Clone, Default)]
 pub struct WasmBinary<'a> {
     pub types: Vec<FunctionType>,
-    pub imports: Vec<Import<'a>>,
+    pub imports: Vec<FuncImport<'a>>,
+    /// Maps *local* function indices to global type signatures.
     pub functions: Vec<u32>,
     pub tables: Vec<TableType>,
     pub memories: Vec<MemoryType>,
-    pub globals: Vec<Global<'a>>,
-    pub exports: Vec<Export<'a>>,
+    pub globals: Vec<Value>,
+    pub exports: ExportMap,
     pub start: Option<u32>,
     pub elements: Vec<Element<'a>>,
     pub codes: Vec<Code<'a>>,
     pub datas: Vec<Data<'a>>,
     pub names: NameCustomSection,
+    /// The source wasm, if known.
+    pub wasm: Option<&'a [u8]>,
+    /// Consensus data used to make module hashes unique.
+    pub extra_data: Vec<u8>,
 }
 
-pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
-    let features = wasmparser::WasmFeatures {
+pub fn parse<'a>(input: &'a [u8], path: &'_ Path) -> Result<WasmBinary<'a>> {
+    let features = WasmFeatures {
         mutable_global: true,
         saturating_float_to_int: true,
         sign_extension: true,
@@ -258,42 +310,49 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
         relaxed_simd: false,
         threads: false,
         tail_call: false,
-        deterministic_only: false,
+        floats: true,
         multi_memory: false,
         exceptions: false,
         memory64: false,
         extended_const: false,
         component_model: false,
+        function_references: false,
+        memory_control: false,
+        gc: false,
+        component_model_values: false,
+        component_model_nested_names: false,
     };
-    wasmparser::Validator::new_with_features(features).validate_all(input)?;
+    Validator::new_with_features(features)
+        .validate_all(input)
+        .wrap_err_with(|| eyre!("failed to validate {}", path.to_string_lossy().red()))?;
+
+    let mut binary = WasmBinary {
+        wasm: Some(input),
+        ..Default::default()
+    };
     let sections: Vec<_> = Parser::new(0).parse_all(input).collect::<Result<_, _>>()?;
 
-    let mut binary = WasmBinary::default();
-
-    for mut section in sections {
+    for section in sections {
         use Payload::*;
 
         macro_rules! process {
             ($dest:expr, $source:expr) => {{
-                for _ in 0..$source.get_count() {
-                    let item = $source.read()?;
-                    $dest.push(item.into())
+                for item in $source.into_iter() {
+                    $dest.push(item?.into())
                 }
             }};
         }
 
-        match &mut section {
+        match section {
             TypeSection(type_section) => {
-                for _ in 0..type_section.get_count() {
-                    let TypeDef::Func(ty) = type_section.read()?;
-                    binary.types.push(ty.try_into()?);
+                for func in type_section.into_iter_err_on_gc_types() {
+                    binary.types.push(func?.try_into()?);
                 }
             }
             CodeSectionEntry(codes) => {
                 let mut code = Code::default();
                 let mut locals = codes.get_locals_reader()?;
                 let mut ops = codes.get_operators_reader()?;
-
                 let mut index = 0;
 
                 for _ in 0..locals.get_count() {
@@ -312,35 +371,70 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
 
                 binary.codes.push(code);
             }
-            ImportSection(imports) => process!(binary.imports, imports),
+            GlobalSection(globals) => {
+                for global in globals {
+                    let mut init = global?.init_expr.get_operators_reader();
+
+                    let value = match (init.read()?, init.read()?, init.eof()) {
+                        (op, Operator::End, true) => op_as_const(op)?,
+                        _ => bail!("Non-constant global initializer"),
+                    };
+                    binary.globals.push(value);
+                }
+            }
+            ImportSection(imports) => {
+                for import in imports {
+                    let import = import?;
+                    let TypeRef::Func(offset) = import.ty else {
+                        bail!("unsupported import kind {:?}", import)
+                    };
+                    let import = FuncImport {
+                        offset,
+                        module: import.module,
+                        name: import.name,
+                    };
+                    binary.imports.push(import);
+                }
+            }
+            ExportSection(exports) => {
+                use ExternalKind as E;
+                for export in exports {
+                    let export = export?;
+                    let name = export.name.to_owned();
+                    let kind = export.kind;
+                    if let E::Func = kind {
+                        let index = export.index;
+                        let name = || name.clone();
+                        binary.names.functions.entry(index).or_insert_with(name);
+                    }
+                    binary.exports.insert(name, (export.index, kind.into()));
+                }
+            }
             FunctionSection(functions) => process!(binary.functions, functions),
-            TableSection(tables) => process!(binary.tables, tables),
+            TableSection(tables) => {
+                for table in tables {
+                    binary.tables.push(table?.ty);
+                }
+            }
             MemorySection(memories) => process!(binary.memories, memories),
-            GlobalSection(globals) => process!(binary.globals, globals),
-            ExportSection(exports) => process!(binary.exports, exports),
-            StartSection { func, .. } => binary.start = Some(*func),
+            StartSection { func, .. } => binary.start = Some(func),
             ElementSection(elements) => process!(binary.elements, elements),
             DataSection(datas) => process!(binary.datas, datas),
             CodeSectionStart { .. } => {}
-            CustomSection {
-                name,
-                data_offset,
-                data,
-                ..
-            } => {
-                if *name != "name" {
+            CustomSection(reader) => {
+                if reader.name() != "name" {
                     continue;
                 }
 
-                let mut name_reader = NameSectionReader::new(data, *data_offset)?;
+                // CHECK: maybe reader.data_offset()
+                let name_reader = NameSectionReader::new(reader.data(), 0);
 
-                while !name_reader.eof() {
-                    match name_reader.read()? {
-                        Name::Module(name) => binary.names.module = name.get_name()?.to_owned(),
+                for name in name_reader {
+                    match name? {
+                        Name::Module { name, .. } => binary.names.module = name.to_owned(),
                         Name::Function(namemap) => {
-                            let mut map_reader = namemap.get_map()?;
-                            for _ in 0..map_reader.get_count() {
-                                let Naming { index, name } = map_reader.read()?;
+                            for naming in namemap {
+                                let Naming { index, name } = naming?;
                                 binary.names.functions.insert(index, name.to_owned());
                             }
                         }
@@ -348,12 +442,284 @@ pub fn parse(input: &[u8]) -> eyre::Result<WasmBinary<'_>> {
                     }
                 }
             }
-            Version { num, .. } => ensure!(*num == 1, "wasm format version not supported {}", num),
-            UnknownSection { id, .. } => bail!("unsupported unknown section type {}", id),
-            End(_offset) => {}
+            Version { num, .. } => ensure!(num == 1, "wasm format version not supported {num}"),
+            UnknownSection { id, .. } => bail!("unsupported unknown section type {id}"),
+            End(_) => {}
             x => bail!("unsupported section type {:?}", x),
         }
     }
 
+    // reject the module if it imports the same func with inconsistent signatures
+    let mut imports = HashMap::default();
+    for import in &binary.imports {
+        let offset = import.offset;
+        let module = import.module;
+        let name = import.name;
+
+        let key = (module, name);
+        if let Some(prior) = imports.insert(key, offset) {
+            if prior != offset {
+                let name = name.debug_red();
+                bail!("inconsistent imports for {} {name}", module.red());
+            }
+        }
+    }
+
+    // reject the module if it re-exports an import with the same name
+    let mut exports = HashSet::default();
+    for export in binary.exports.keys() {
+        let export = export.rsplit("__").take(1);
+        exports.extend(export);
+    }
+    for import in &binary.imports {
+        let name = import.name;
+        if exports.contains(name) {
+            bail!("binary exports an import with the same name {}", name.red());
+        }
+    }
+
+    // reject the module if it imports or exports reserved symbols
+    let reserved = |x: &&str| x.starts_with("stylus");
+    if let Some(name) = exports.into_iter().find(reserved) {
+        bail!("binary exports reserved symbol {}", name.red())
+    }
+    if let Some(name) = binary.imports.iter().map(|x| x.name).find(reserved) {
+        bail!("binary imports reserved symbol {}", name.red())
+    }
+
+    // if no module name was given, make a best-effort guess with the file path
+    if binary.names.module.is_empty() {
+        binary.names.module = match path.file_name() {
+            Some(os_str) => os_str.to_string_lossy().into(),
+            None => path.to_string_lossy().into(),
+        };
+    }
     Ok(binary)
+}
+
+impl<'a> Debug for WasmBinary<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WasmBinary")
+            .field("types", &self.types)
+            .field("imports", &self.imports)
+            .field("functions", &self.functions)
+            .field("tables", &self.tables)
+            .field("memories", &self.memories)
+            .field("globals", &self.globals)
+            .field("exports", &self.exports)
+            .field("start", &self.start)
+            .field("elements", &format!("<{} elements>", self.elements.len()))
+            .field("codes", &self.codes)
+            .field("datas", &self.datas)
+            .field("names", &self.names)
+            .finish()
+    }
+}
+
+impl<'a> WasmBinary<'a> {
+    /// Instruments a user wasm, producing a version bounded via configurable instrumentation.
+    pub fn instrument(
+        &mut self,
+        compile: &CompileConfig,
+        codehash: &Bytes32,
+    ) -> Result<StylusData> {
+        let start = StartMover::new(compile.debug.debug_info);
+        let meter = Meter::new(&compile.pricing);
+        let dygas = DynamicMeter::new(&compile.pricing);
+        let depth = DepthChecker::new(compile.bounds);
+        let bound = HeapBound::new(compile.bounds);
+
+        start.update_module(self)?;
+        meter.update_module(self)?;
+        dygas.update_module(self)?;
+        depth.update_module(self)?;
+        bound.update_module(self)?;
+
+        let count = compile.debug.count_ops.then(Counter::new);
+        if let Some(count) = &count {
+            count.update_module(self)?;
+        }
+
+        for (index, code) in self.codes.iter_mut().enumerate() {
+            let index = LocalFunctionIndex::from_u32(index as u32);
+            let locals: Vec<ValType> = code.locals.iter().map(|x| x.value.into()).collect();
+
+            let mut build = mem::take(&mut code.expr);
+            let mut input = Vec::with_capacity(build.len());
+
+            /// this macro exists since middlewares aren't sized (can't use a vec without boxes)
+            macro_rules! apply {
+                ($middleware:expr) => {
+                    let mut mid = Middleware::<WasmBinary>::instrument(&$middleware, index)?;
+                    mid.locals_info(&locals);
+
+                    mem::swap(&mut build, &mut input);
+
+                    for op in input.drain(..) {
+                        mid.feed(op, &mut build)
+                            .wrap_err_with(|| format!("{} failure", mid.name()))?
+                    }
+                };
+            }
+
+            // add the instrumentation in the order of application
+            // note: this must be consistent with native execution
+            apply!(start);
+            apply!(meter);
+            apply!(dygas);
+            apply!(depth);
+            apply!(bound);
+
+            if let Some(count) = &count {
+                apply!(*count);
+            }
+
+            code.expr = build;
+        }
+
+        let wasm = self.wasm.take().unwrap();
+        self.extra_data.extend(*codehash);
+        self.extra_data.extend(compile.version.to_be_bytes());
+
+        // 4GB maximum implies `footprint` fits in a u16
+        let footprint = self.memory_info()?.min.0 as u16;
+
+        // check the entrypoint
+        let ty = FunctionType::new([ArbValueType::I32], [ArbValueType::I32]);
+        let user_main = self.check_func(STYLUS_ENTRY_POINT, ty)?;
+
+        // predict costs
+        let funcs = self.codes.len() as u64;
+        let globals = self.globals.len() as u64;
+        let wasm_len = wasm.len() as u64;
+
+        let data_len: u64 = self.datas.iter().map(|x| x.range.len() as u64).sum();
+        let elem_len: u64 = self.elements.iter().map(|x| x.range.len() as u64).sum();
+        let data_len = data_len + elem_len;
+
+        let mut type_len = 0;
+        for index in &self.functions {
+            let ty = &self.types[*index as usize];
+            type_len += (ty.inputs.len() + ty.outputs.len()) as u64;
+        }
+
+        let mut asm_estimate: u64 = 512000;
+        asm_estimate = asm_estimate.saturating_add(funcs.saturating_mul(996829) / 1000);
+        asm_estimate = asm_estimate.saturating_add(type_len.saturating_mul(11416) / 1000);
+        asm_estimate = asm_estimate.saturating_add(wasm_len.saturating_mul(62628) / 10000);
+
+        let mut cached_init: u64 = 0;
+        cached_init = cached_init.saturating_add(funcs.saturating_mul(13420) / 100_000);
+        cached_init = cached_init.saturating_add(type_len.saturating_mul(89) / 100_000);
+        cached_init = cached_init.saturating_add(wasm_len.saturating_mul(122) / 100_000);
+        cached_init = cached_init.saturating_add(globals.saturating_mul(1628) / 1000);
+        cached_init = cached_init.saturating_add(data_len.saturating_mul(75244) / 100_000);
+        cached_init = cached_init.saturating_add(footprint as u64 * 5);
+
+        let mut init: u64 = 0;
+        if compile.version == 1 {
+            init = cached_init; // in version 1 cached cost is part of init cost
+        }
+        init = init.saturating_add(funcs.saturating_mul(8252) / 1000);
+        init = init.saturating_add(type_len.saturating_mul(1059) / 1000);
+        init = init.saturating_add(wasm_len.saturating_mul(1286) / 10_000);
+
+        let [ink_left, ink_status] = meter.globals();
+        let depth_left = depth.globals();
+        Ok(StylusData {
+            ink_left: ink_left.as_u32(),
+            ink_status: ink_status.as_u32(),
+            depth_left: depth_left.as_u32(),
+            init_cost: init.try_into().wrap_err("init cost too high")?,
+            cached_init_cost: cached_init.try_into().wrap_err("cached cost too high")?,
+            asm_estimate: asm_estimate.try_into().wrap_err("asm estimate too large")?,
+            footprint,
+            user_main,
+        })
+    }
+
+    /// Parses and instruments a user wasm
+    pub fn parse_user(
+        wasm: &'a [u8],
+        page_limit: u16,
+        compile: &CompileConfig,
+        codehash: &Bytes32,
+    ) -> Result<(WasmBinary<'a>, StylusData)> {
+        let mut bin = parse(wasm, Path::new("user"))?;
+        let stylus_data = bin.instrument(compile, codehash)?;
+
+        let Some(memory) = bin.memories.first() else {
+            bail!("missing memory with export name \"memory\"")
+        };
+        let pages = memory.initial;
+
+        // ensure the wasm fits within the remaining amount of memory
+        if pages > page_limit.into() {
+            let limit = page_limit.red();
+            bail!("memory exceeds limit: {} > {limit}", pages.red());
+        }
+
+        // not strictly necessary, but anti-DoS limits and extra checks in case of bugs
+        macro_rules! limit {
+            ($limit:expr, $count:expr, $name:expr) => {
+                if $count > $limit {
+                    bail!("too many wasm {}: {} > {}", $name, $count, $limit);
+                }
+            };
+        }
+        limit!(1, bin.memories.len(), "memories");
+        limit!(128, bin.datas.len(), "datas");
+        limit!(128, bin.elements.len(), "elements");
+        limit!(1024, bin.exports.len(), "exports");
+        limit!(4096, bin.codes.len(), "functions");
+        limit!(32768, bin.globals.len(), "globals");
+        for code in &bin.codes {
+            limit!(348, code.locals.len(), "locals");
+            limit!(65536, code.expr.len(), "opcodes in func body");
+        }
+
+        let table_entries = bin.tables.iter().map(|x| x.initial).saturating_sum();
+        limit!(4096, table_entries, "table entries");
+
+        let elem_entries = bin.elements.iter().map(|x| x.range.len()).saturating_sum();
+        limit!(4096, elem_entries, "element entries");
+
+        let max_len = 512;
+        macro_rules! too_long {
+            ($name:expr, $len:expr) => {
+                bail!(
+                    "wasm {} too long: {} > {}",
+                    $name.red(),
+                    $len.red(),
+                    max_len.red()
+                )
+            };
+        }
+        if let Some((name, _)) = bin.exports.iter().find(|(name, _)| name.len() > max_len) {
+            too_long!("name", name.len())
+        }
+        if bin.names.module.len() > max_len {
+            too_long!("module name", bin.names.module.len())
+        }
+        if bin.start.is_some() {
+            bail!("wasm start functions not allowed");
+        }
+        Ok((bin, stylus_data))
+    }
+
+    /// Ensures a func exists and has the right type.
+    fn check_func(&self, name: &str, ty: FunctionType) -> Result<u32> {
+        let Some(&(func, kind)) = self.exports.get(name) else {
+            bail!("missing export with name {}", name.red());
+        };
+        if kind != ExportKind::Func {
+            let kind = kind.debug_red();
+            bail!("export {} must be a function but is a {kind}", name.red());
+        }
+        let func_ty = self.get_function(FunctionIndex::new(func.try_into()?))?;
+        if func_ty != ty {
+            bail!("wrong type for {}: {}", name.red(), func_ty.red());
+        }
+        Ok(func)
+    }
 }

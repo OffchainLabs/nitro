@@ -37,8 +37,7 @@ type Context struct {
 
 func (c *Context) Burn(amount uint64) error {
 	if c.gasLeft < amount {
-		c.gasLeft = 0
-		return vm.ErrOutOfGas
+		return c.BurnOut()
 	}
 	c.gasLeft -= amount
 	return nil
@@ -47,6 +46,15 @@ func (c *Context) Burn(amount uint64) error {
 //nolint:unused
 func (c *Context) Burned() uint64 {
 	return c.gasSupplied - c.gasLeft
+}
+
+func (c *Context) BurnOut() error {
+	c.gasLeft = 0
+	return vm.ErrOutOfGas
+}
+
+func (c *Context) GasLeft() *uint64 {
+	return &c.gasLeft
 }
 
 func (c *Context) Restrict(err error) {
@@ -63,6 +71,10 @@ func (c *Context) ReadOnly() bool {
 
 func (c *Context) TracingInfo() *util.TracingInfo {
 	return c.tracingInfo
+}
+
+func (c *Context) GetCodeHash(address common.Address) (common.Hash, error) {
+	return c.State.BackingStorage().GetCodeHash(address)
 }
 
 func testContext(caller addr, evm mech) *Context {

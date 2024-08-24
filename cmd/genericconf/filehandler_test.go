@@ -72,9 +72,10 @@ func testFileHandler(t *testing.T, testCompressed bool) {
 	config.MaxSize = 1
 	config.Compress = testCompressed
 	config.File = testFile
-	fileHandler := globalFileHandlerFactory.newHandler(log.JSONFormat(), &config, testFile)
-	defer func() { testhelpers.RequireImpl(t, globalFileHandlerFactory.close()) }()
-	log.Root().SetHandler(fileHandler)
+	handler, err := HandlerFromLogType("json", globalFileLoggerFactory.newFileWriter(&config, testFile))
+	defer func() { testhelpers.RequireImpl(t, globalFileLoggerFactory.close()) }()
+	testhelpers.RequireImpl(t, err)
+	log.SetDefault(log.NewLogger(handler))
 	expected := []string{"dead", "beef", "ate", "bad", "beef"}
 	for _, e := range expected {
 		log.Warn(e)

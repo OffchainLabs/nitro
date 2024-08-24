@@ -13,10 +13,12 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/util/blobs"
 	"github.com/offchainlabs/nitro/util/jsonapi"
@@ -26,10 +28,11 @@ import (
 )
 
 type BlobClient struct {
-	ec            arbutil.L1Interface
-	beaconUrl     *url.URL
-	httpClient    *http.Client
-	authorization string
+	ec                 arbutil.L1Interface
+	beaconUrl          *url.URL
+	secondaryBeaconUrl *url.URL
+	httpClient         *http.Client
+	authorization      string
 
 	// Filled in in Initialize()
 	genesisTime    uint64
@@ -40,19 +43,22 @@ type BlobClient struct {
 }
 
 type BlobClientConfig struct {
-	BeaconUrl     string `koanf:"beacon-url"`
-	BlobDirectory string `koanf:"blob-directory"`
-	Authorization string `koanf:"authorization"`
+	BeaconUrl          string `koanf:"beacon-url"`
+	SecondaryBeaconUrl string `koanf:"secondary-beacon-url"`
+	BlobDirectory      string `koanf:"blob-directory"`
+	Authorization      string `koanf:"authorization"`
 }
 
 var DefaultBlobClientConfig = BlobClientConfig{
-	BeaconUrl:     "",
-	BlobDirectory: "",
-	Authorization: "",
+	BeaconUrl:          "",
+	SecondaryBeaconUrl: "",
+	BlobDirectory:      "",
+	Authorization:      "",
 }
 
 func BlobClientAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".beacon-url", DefaultBlobClientConfig.BeaconUrl, "Beacon Chain RPC URL to use for fetching blobs (normally on port 3500)")
+	f.String(prefix+".secondary-beacon-url", DefaultBlobClientConfig.SecondaryBeaconUrl, "Backup beacon Chain RPC URL to use for fetching blobs (normally on port 3500) when unable to fetch from primary")
 	f.String(prefix+".blob-directory", DefaultBlobClientConfig.BlobDirectory, "Full path of the directory to save fetched blobs")
 	f.String(prefix+".authorization", DefaultBlobClientConfig.Authorization, "Value to send with the HTTP Authorization: header for Beacon REST requests, must include both scheme and scheme parameters")
 }
@@ -61,6 +67,12 @@ func NewBlobClient(config BlobClientConfig, ec arbutil.L1Interface) (*BlobClient
 	beaconUrl, err := url.Parse(config.BeaconUrl)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse beacon chain URL: %w", err)
+	}
+	var secondaryBeaconUrl *url.URL
+	if config.SecondaryBeaconUrl != "" {
+		if secondaryBeaconUrl, err = url.Parse(config.BeaconUrl); err != nil {
+			return nil, fmt.Errorf("failed to parse secondary beacon chain URL: %w", err)
+		}
 	}
 	if config.BlobDirectory != "" {
 		if _, err = os.Stat(config.BlobDirectory); err != nil {
@@ -74,11 +86,12 @@ func NewBlobClient(config BlobClientConfig, ec arbutil.L1Interface) (*BlobClient
 		}
 	}
 	return &BlobClient{
-		ec:            ec,
-		beaconUrl:     beaconUrl,
-		authorization: config.Authorization,
-		httpClient:    &http.Client{},
-		blobDirectory: config.BlobDirectory,
+		ec:                 ec,
+		beaconUrl:          beaconUrl,
+		secondaryBeaconUrl: secondaryBeaconUrl,
+		authorization:      config.Authorization,
+		httpClient:         &http.Client{},
+		blobDirectory:      config.BlobDirectory,
 	}, nil
 }
 
@@ -91,22 +104,43 @@ func beaconRequest[T interface{}](b *BlobClient, ctx context.Context, beaconPath
 
 	var empty T
 
-	// not really a deep copy, but copies the Path part we care about
-	url := *b.beaconUrl
-	url.Path = path.Join(url.Path, beaconPath)
-
-	req, err := http.NewRequestWithContext(ctx, "GET", url.String(), http.NoBody)
-	if err != nil {
-		return empty, err
+	fetchData := func(url url.URL) (*http.Response, error) {
+		url.Path = path.Join(url.Path, beaconPath)
+		req, err := http.NewRequestWithContext(ctx, "GET", url.String(), http.NoBody)
+		if err != nil {
+			return nil, err
+		}
+		if b.authorization != "" {
+			req.Header.Set("Authorization", b.authorization)
+		}
+		resp, err := b.httpClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		if resp.StatusCode != http.StatusOK {
+			body, _ := io.ReadAll(resp.Body)
+			bodyStr := string(body)
+			log.Debug("beacon request returned response with non 200 OK status", "status", resp.Status, "body", bodyStr)
+			if len(bodyStr) > 100 {
+				return nil, fmt.Errorf("response returned with status %s, want 200 OK. body: %s ", resp.Status, bodyStr[len(bodyStr)-trailingCharsOfResponse:])
+			} else {
+				return nil, fmt.Errorf("response returned with status %s, want 200 OK. body: %s", resp.Status, bodyStr)
+			}
+		}
+		return resp, nil
 	}
 
-	if b.authorization != "" {
-		req.Header.Set("Authorization", b.authorization)
-	}
-
-	resp, err := b.httpClient.Do(req)
-	if err != nil {
-		return empty, err
+	var resp *http.Response
+	var err error
+	if resp, err = fetchData(*b.beaconUrl); err != nil {
+		if b.secondaryBeaconUrl != nil {
+			log.Info("error fetching blob data from primary beacon URL, switching to secondary beacon URL", "err", err)
+			if resp, err = fetchData(*b.secondaryBeaconUrl); err != nil {
+				return empty, fmt.Errorf("error fetching blob data from secondary beacon URL: %w", err)
+			}
+		} else {
+			return empty, err
+		}
 	}
 	defer resp.Body.Close()
 
@@ -133,7 +167,11 @@ func (b *BlobClient) GetBlobs(ctx context.Context, blockHash common.Hash, versio
 		return nil, errors.New("BlobClient hasn't been initialized")
 	}
 	slot := (header.Time - b.genesisTime) / b.secondsPerSlot
-	return b.blobSidecars(ctx, slot, versionedHashes)
+	blobs, err := b.blobSidecars(ctx, slot, versionedHashes)
+	if err != nil {
+		return nil, fmt.Errorf("error fetching blobs in %d l1 block: %w", header.Number, err)
+	}
+	return blobs, nil
 }
 
 type blobResponseItem struct {
@@ -147,14 +185,28 @@ type blobResponseItem struct {
 	KzgProof        hexutil.Bytes        `json:"kzg_proof"`
 }
 
+const trailingCharsOfResponse = 25
+
 func (b *BlobClient) blobSidecars(ctx context.Context, slot uint64, versionedHashes []common.Hash) ([]kzg4844.Blob, error) {
 	rawData, err := beaconRequest[json.RawMessage](b, ctx, fmt.Sprintf("/eth/v1/beacon/blob_sidecars/%d", slot))
-	if err != nil {
-		return nil, fmt.Errorf("error calling beacon client in blobSidecars: %w", err)
+	if err != nil || len(rawData) == 0 {
+		// blobs are pruned after 4096 epochs (1 epoch = 32 slots), we determine if the requested slot were to be pruned by a non-archive endpoint
+		roughAgeOfSlot := uint64(time.Now().Unix()) - (b.genesisTime + slot*b.secondsPerSlot)
+		if roughAgeOfSlot > b.secondsPerSlot*32*4096 {
+			return nil, fmt.Errorf("beacon client in blobSidecars got error or empty response fetching older blobs in slot: %d, an archive endpoint is required, please refer to https://docs.arbitrum.io/run-arbitrum-node/l1-ethereum-beacon-chain-rpc-providers, err: %w", slot, err)
+		} else {
+			return nil, fmt.Errorf("beacon client in blobSidecars got error or empty response fetching non-expired blobs in slot: %d, if using a prysm endpoint, try --enable-experimental-backfill flag, err: %w", slot, err)
+		}
 	}
 	var response []blobResponseItem
 	if err := json.Unmarshal(rawData, &response); err != nil {
-		return nil, fmt.Errorf("error unmarshalling raw data into array of blobResponseItem in blobSidecars: %w", err)
+		rawDataStr := string(rawData)
+		log.Debug("response from beacon URL cannot be unmarshalled into array of blobResponseItem in blobSidecars", "slot", slot, "responseLength", len(rawDataStr), "response", rawDataStr)
+		if len(rawDataStr) > 100 {
+			return nil, fmt.Errorf("error unmarshalling response from beacon URL into array of blobResponseItem in blobSidecars: %w. Trailing %d characters of the response: %s", err, trailingCharsOfResponse, rawDataStr[len(rawDataStr)-trailingCharsOfResponse:])
+		} else {
+			return nil, fmt.Errorf("error unmarshalling response from beacon URL into array of blobResponseItem in blobSidecars: %w. Response: %s", err, rawDataStr)
+		}
 	}
 
 	if len(response) < len(versionedHashes) {
@@ -177,10 +229,11 @@ func (b *BlobClient) blobSidecars(ctx context.Context, slot uint64, versionedHas
 		var found bool
 		for outputIdx = range versionedHashes {
 			if versionedHashes[outputIdx] == versionedHash {
-				found = true
 				if outputsFound[outputIdx] {
-					return nil, fmt.Errorf("found blob with versioned hash %v twice", versionedHash)
+					// Duplicate, skip this one
+					break
 				}
+				found = true
 				outputsFound[outputIdx] = true
 				break
 			}

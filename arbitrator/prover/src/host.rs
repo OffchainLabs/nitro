@@ -1,22 +1,24 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-#![allow(clippy::vec_init_then_push)]
+#![allow(clippy::vec_init_then_push, clippy::redundant_closure)]
 
 use crate::{
     binary, host,
     machine::{Function, InboxIdentifier},
+    programs::StylusData,
     utils,
     value::{ArbValueType, FunctionType},
     wavm::{wasm_to_wavm, Instruction, Opcode},
 };
-use arbutil::{Color, PreimageType};
+use arbutil::{evm::user::UserOutcomeKind, Color, PreimageType};
 use eyre::{bail, ErrReport, Result};
 use lazy_static::lazy_static;
-use std::{collections::HashMap, str::FromStr};
+use num_derive::FromPrimitive;
+use std::{collections::HashMap, path::Path, str::FromStr};
 
 /// Represents the internal hostio functions a module may have.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, Debug, FromPrimitive)]
 #[repr(u64)]
 pub enum InternalFunc {
     WavmCallerLoad8,
@@ -25,17 +27,38 @@ pub enum InternalFunc {
     WavmCallerStore32,
     MemoryFill,
     MemoryCopy,
+    UserInkLeft,
+    UserInkStatus,
+    UserSetInk,
+    UserStackLeft,
+    UserSetStack,
+    UserMemorySize,
+    CallMain,
 }
 
 impl InternalFunc {
     pub fn ty(&self) -> FunctionType {
         use ArbValueType::*;
         use InternalFunc::*;
-        match self {
-            WavmCallerLoad8 | WavmCallerLoad32 => FunctionType::new(vec![I32], vec![I32]),
-            WavmCallerStore8 | WavmCallerStore32 => FunctionType::new(vec![I32, I32], vec![]),
-            MemoryFill | MemoryCopy => FunctionType::new(vec![I32, I32, I32], vec![]),
+        macro_rules! func {
+            ([$($args:expr),*], [$($outs:expr),*]) => {
+                FunctionType::new(vec![$($args),*], vec![$($outs),*])
+            };
         }
+        #[rustfmt::skip]
+        let ty = match self {
+            WavmCallerLoad8  | WavmCallerLoad32  => func!([I32], [I32]),
+            WavmCallerStore8 | WavmCallerStore32 => func!([I32, I32], []),
+            MemoryFill       | MemoryCopy        => func!([I32, I32, I32], []),
+            UserInkLeft    => func!([], [I64]),      // λ() → ink_left
+            UserInkStatus  => func!([], [I32]),      // λ() → ink_status
+            UserSetInk     => func!([I64, I32], []), // λ(ink_left, ink_status)
+            UserStackLeft  => func!([], [I32]),      // λ() → stack_left
+            UserSetStack   => func!([I32], []),      // λ(stack_left)
+            UserMemorySize => func!([], [I32]),      // λ() → memory_size
+            CallMain       => func!([I32], [I32]),   // λ(args_len) → status
+        };
+        ty
     }
 }
 
@@ -55,6 +78,29 @@ pub enum Hostio {
     WavmReadInboxMessage,
     WavmReadDelayedInboxMessage,
     WavmHaltAndSetFinished,
+    WavmLinkModule,
+    WavmUnlinkModule,
+    ProgramInkLeft,
+    ProgramInkStatus,
+    ProgramSetInk,
+    ProgramStackLeft,
+    ProgramSetStack,
+    ProgramMemorySize,
+    ProgramCallMain,
+    ProgramRequest,
+    ProgramContinue,
+    ConsoleLogTxt,
+    ConsoleLogI32,
+    ConsoleLogI64,
+    ConsoleLogF32,
+    ConsoleLogF64,
+    ConsoleTeeI32,
+    ConsoleTeeI64,
+    ConsoleTeeF32,
+    ConsoleTeeF64,
+    UserInkLeft,
+    UserInkStatus,
+    UserSetInk,
 }
 
 impl FromStr for Hostio {
@@ -79,6 +125,29 @@ impl FromStr for Hostio {
             ("env", "wavm_read_inbox_message") => WavmReadInboxMessage,
             ("env", "wavm_read_delayed_inbox_message") => WavmReadDelayedInboxMessage,
             ("env", "wavm_halt_and_set_finished") => WavmHaltAndSetFinished,
+            ("hostio", "wavm_link_module") => WavmLinkModule,
+            ("hostio", "wavm_unlink_module") => WavmUnlinkModule,
+            ("hostio", "program_ink_left") => ProgramInkLeft,
+            ("hostio", "program_ink_status") => ProgramInkStatus,
+            ("hostio", "program_set_ink") => ProgramSetInk,
+            ("hostio", "program_stack_left") => ProgramStackLeft,
+            ("hostio", "program_set_stack") => ProgramSetStack,
+            ("hostio", "program_memory_size") => ProgramMemorySize,
+            ("hostio", "program_call_main") => ProgramCallMain,
+            ("hostio", "program_request") => ProgramRequest,
+            ("hostio", "program_continue") => ProgramContinue,
+            ("hostio", "user_ink_left") => UserInkLeft,
+            ("hostio", "user_ink_status") => UserInkStatus,
+            ("hostio", "user_set_ink") => UserSetInk,
+            ("console", "log_txt") => ConsoleLogTxt,
+            ("console", "log_i32") => ConsoleLogI32,
+            ("console", "log_i64") => ConsoleLogI64,
+            ("console", "log_f32") => ConsoleLogF32,
+            ("console", "log_f64") => ConsoleLogF64,
+            ("console", "tee_i32") => ConsoleTeeI32,
+            ("console", "tee_i64") => ConsoleTeeI64,
+            ("console", "tee_f32") => ConsoleTeeF32,
+            ("console", "tee_f64") => ConsoleTeeF64,
             _ => bail!("no such hostio {} in {}", name.red(), module.red()),
         })
     }
@@ -117,11 +186,34 @@ impl Hostio {
             WavmReadInboxMessage             => func!([I64, I32, I32], [I32]),
             WavmReadDelayedInboxMessage      => func!([I64, I32, I32], [I32]),
             WavmHaltAndSetFinished           => func!(),
+            WavmLinkModule              => func!([I32], [I32]),      // λ(module_hash) → module
+            WavmUnlinkModule            => func!(),                  // λ()
+            ProgramInkLeft              => func!([I32], [I64]),      // λ(module) → ink_left
+            ProgramInkStatus            => func!([I32], [I32]),      // λ(module) → ink_status
+            ProgramSetInk               => func!([I32, I64]),        // λ(module, ink_left)
+            ProgramStackLeft            => func!([I32], [I32]),      // λ(module) → stack_left
+            ProgramSetStack             => func!([I32, I32]),        // λ(module, stack_left)
+            ProgramMemorySize           => func!([I32], [I32]),      // λ(module) → memory_size
+            ProgramCallMain             => func!([I32, I32], [I32]), // λ(module, args_len) → status
+            ProgramRequest              => func!([I32], [I32]),      // λ(status) → response
+            ProgramContinue             => func!([I32], [I32]), // λ(response) → status
+            ConsoleLogTxt               => func!([I32, I32]),        // λ(text, len)
+            ConsoleLogI32               => func!([I32]),             // λ(value)
+            ConsoleLogI64               => func!([I64]),             // λ(value)
+            ConsoleLogF32               => func!([F32]),             // λ(value)
+            ConsoleLogF64               => func!([F64]),             // λ(value)
+            ConsoleTeeI32               => func!([I32], [I32]),      // λ(value) → value
+            ConsoleTeeI64               => func!([I64], [I64]),      // λ(value) → value
+            ConsoleTeeF32               => func!([F32], [F32]),      // λ(value) → value
+            ConsoleTeeF64               => func!([F64], [F64]),      // λ(value) → value
+            UserInkLeft                 => InternalFunc::UserInkLeft.ty(),
+            UserInkStatus               => InternalFunc::UserInkStatus.ty(),
+            UserSetInk                  => InternalFunc::UserSetInk.ty(),
         };
         ty
     }
 
-    pub fn body(&self) -> Vec<Instruction> {
+    pub fn body(&self, _prior: usize) -> Vec<Instruction> {
         let mut body = vec![];
 
         macro_rules! opcode {
@@ -132,27 +224,38 @@ impl Hostio {
                 body.push(Instruction::with_data($opcode, $value as u64))
             };
         }
+        macro_rules! cross_internal {
+            ($func:ident) => {
+                opcode!(LocalGet, 0); // module
+                opcode!(CrossModuleInternalCall, InternalFunc::$func); // consumes module
+            };
+        }
+        macro_rules! intern {
+            ($func:ident) => {
+                opcode!(CallerModuleInternalCall, InternalFunc::$func);
+            };
+        }
 
         use Hostio::*;
         use Opcode::*;
         match self {
             WavmCallerLoad8 => {
                 opcode!(LocalGet, 0);
-                opcode!(CallerModuleInternalCall, InternalFunc::WavmCallerLoad8);
+                intern!(WavmCallerLoad8);
             }
             WavmCallerLoad32 => {
                 opcode!(LocalGet, 0);
-                opcode!(CallerModuleInternalCall, InternalFunc::WavmCallerLoad32);
+                intern!(WavmCallerLoad32);
             }
             WavmCallerStore8 => {
                 opcode!(LocalGet, 0);
                 opcode!(LocalGet, 1);
-                opcode!(CallerModuleInternalCall, InternalFunc::WavmCallerStore8);
+                intern!(WavmCallerStore8);
             }
             WavmCallerStore32 => {
                 opcode!(LocalGet, 0);
                 opcode!(LocalGet, 1);
-                opcode!(CallerModuleInternalCall, InternalFunc::WavmCallerStore32);
+                intern!(WavmCallerStore32);
             }
             WavmGetGlobalStateBytes32 => {
                 opcode!(LocalGet, 0);
@@ -203,37 +306,134 @@ impl Hostio {
             WavmHaltAndSetFinished => {
                 opcode!(HaltAndSetFinished);
             }
+            WavmLinkModule => {
+                // λ(module_hash) → module
+                opcode!(LocalGet, 0);
+                opcode!(LinkModule);
+                opcode!(NewCoThread);
+            }
+            WavmUnlinkModule => {
+                // λ()
+                opcode!(UnlinkModule);
+                opcode!(PopCoThread);
+            }
+            ProgramInkLeft => {
+                // λ(module) → ink_left
+                cross_internal!(UserInkLeft);
+            }
+            ProgramInkStatus => {
+                // λ(module) → ink_status
+                cross_internal!(UserInkStatus);
+            }
+            ProgramSetInk => {
+                // λ(module, ink_left)
+                opcode!(LocalGet, 1); // ink_left
+                opcode!(I32Const, 0); // ink_status
+                cross_internal!(UserSetInk);
+            }
+            ProgramStackLeft => {
+                // λ(module) → stack_left
+                cross_internal!(UserStackLeft);
+            }
+            ProgramSetStack => {
+                // λ(module, stack_left)
+                opcode!(LocalGet, 1); // stack_left
+                cross_internal!(UserSetStack);
+            }
+            ProgramMemorySize => {
+                // λ(module) → memory_size
+                cross_internal!(UserMemorySize);
+            }
+            ProgramCallMain => {
+                // caller sees: λ(module, args_len) → status
+                opcode!(LocalGet, 1); // args_len
+                opcode!(LocalGet, 0); // module
+                opcode!(MoveFromStackToInternal);
+                opcode!(MoveFromStackToInternal);
+                opcode!(SwitchThread, 8);
+                opcode!(MoveFromInternalToStack);
+                opcode!(MoveFromInternalToStack);
+                opcode!(CrossModuleInternalCall, InternalFunc::CallMain); // consumes module
+                opcode!(MoveFromStackToInternal);
+                opcode!(SwitchThread, 0);
+                opcode!(MoveFromInternalToStack);
+                opcode!(Return);
+
+                // jumps here if errored while in thread 1
+                opcode!(I32Const, UserOutcomeKind::Failure as u32)
+            }
+            ProgramContinue => {
+                // caller sees: λ(return_data) → status (returns to caller of ProgramRequest)
+                // code returns return_data to caller of ProgramRequest
+                opcode!(LocalGet, 0); // return_data
+                opcode!(MoveFromStackToInternal);
+                opcode!(SwitchThread, 3);
+                opcode!(MoveFromInternalToStack);
+                opcode!(Return);
+
+                // jumps here if errored while in cothread
+                opcode!(I32Const, UserOutcomeKind::Failure as u32)
+            }
+            ProgramRequest => {
+                // caller sees: λ(status) → response
+                // code returns status of either ProgramContinue or ProgramCallMain
+                opcode!(LocalGet, 0); // return_data
+                opcode!(MoveFromStackToInternal);
+                opcode!(SwitchThread, 0);
+                opcode!(MoveFromInternalToStack);
+            }
+            UserInkLeft => {
+                // λ() → ink_left
+                intern!(UserInkLeft);
+            }
+            UserInkStatus => {
+                // λ() → ink_status
+                intern!(UserInkStatus);
+            }
+            UserSetInk => {
+                // λ(ink_left, ink_status)
+                opcode!(LocalGet, 0);
+                opcode!(LocalGet, 1);
+                intern!(UserSetInk);
+            }
+            ConsoleLogTxt | ConsoleLogI32 | ConsoleLogI64 | ConsoleLogF32 | ConsoleLogF64 => {}
+            ConsoleTeeI32 | ConsoleTeeI64 | ConsoleTeeF32 | ConsoleTeeF64 => {
+                opcode!(LocalGet, 0);
+            }
         }
         body
     }
 }
 
-pub fn get_impl(module: &str, name: &str) -> Result<Function> {
+pub fn get_impl(module: &str, name: &str) -> Result<(Function, bool)> {
     let hostio: Hostio = format!("{module}__{name}").parse()?;
 
     let append = |code: &mut Vec<Instruction>| {
-        code.extend(hostio.body());
+        let len = code.len();
+        code.extend(hostio.body(len));
         Ok(())
     };
-    Function::new(&[], append, hostio.ty(), &[])
+
+    let debug = module == "console" || module == "debug";
+    Function::new(&[], append, hostio.ty(), &[]).map(|x| (x, debug))
 }
 
 /// Adds internal functions to a module.
 /// Note: the order of the functions must match that of the `InternalFunc` enum
-pub fn new_internal_funcs() -> Vec<Function> {
+pub fn new_internal_funcs(stylus_data: Option<StylusData>) -> Vec<Function> {
     use ArbValueType::*;
     use InternalFunc::*;
     use Opcode::*;
 
-    fn code_func(code: Vec<Instruction>, ty: FunctionType) -> Function {
+    fn code_func(code: &[Instruction], func: InternalFunc) -> Function {
         let mut wavm = vec![Instruction::simple(InitFrame)];
         wavm.extend(code);
         wavm.push(Instruction::simple(Return));
-        Function::new_from_wavm(wavm, ty, vec![])
+        Function::new_from_wavm(wavm, func.ty(), vec![])
     }
 
     fn op_func(opcode: Opcode, func: InternalFunc) -> Function {
-        code_func(vec![Instruction::simple(opcode)], func.ty())
+        code_func(&[Instruction::simple(opcode)], func)
     }
 
     let mut funcs = vec![];
@@ -266,6 +466,30 @@ pub fn new_internal_funcs() -> Vec<Function> {
     let [memory_fill, memory_copy] = (*BULK_MEMORY_FUNCS).clone();
     add_func(memory_fill, MemoryFill);
     add_func(memory_copy, MemoryCopy);
+
+    let mut add_func = |code: &[_], internal| add_func(code_func(code, internal), internal);
+
+    if let Some(info) = stylus_data {
+        let (gas, status, depth) = info.global_offsets();
+        let main = info.user_main.into();
+        let inst = |op, data| Instruction::with_data(op, data);
+
+        add_func(&[inst(GlobalGet, gas)], UserInkLeft);
+        add_func(&[inst(GlobalGet, status)], UserInkStatus);
+        add_func(&[inst(GlobalSet, status), inst(GlobalSet, gas)], UserSetInk);
+        add_func(&[inst(GlobalGet, depth)], UserStackLeft);
+        add_func(&[inst(GlobalSet, depth)], UserSetStack);
+        add_func(&[inst(MemorySize, 0)], UserMemorySize);
+        add_func(
+            &[
+                inst(Call, main),
+                // force return value to boolean
+                Instruction::simple(I32Eqz),
+                Instruction::simple(I32Eqz),
+            ],
+            CallMain,
+        );
+    }
     funcs
 }
 
@@ -275,7 +499,7 @@ lazy_static! {
 
         let data = include_bytes!("bulk_memory.wat");
         let wasm = wat::parse_bytes(data).expect("failed to parse bulk_memory.wat");
-        let bin = binary::parse(&wasm).expect("failed to parse bulk_memory.wasm");
+        let bin = binary::parse(&wasm, Path::new("internal")).expect("failed to parse bulk_memory.wasm");
         let types = [MemoryFill.ty(), MemoryCopy.ty()];
         let names = ["memory_fill", "memory_copy"];
 
@@ -296,6 +520,7 @@ lazy_static! {
                     &[ty.clone()],      // only type needed is the func itself
                     0,                  // -----------------------------------
                     0,                  // impls don't use other internals
+                    &bin.names.module,
                 ),
                 ty.clone(),
                 &[] // impls don't make calls

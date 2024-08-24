@@ -12,72 +12,114 @@ import (
 	"math/bits"
 	"net/url"
 
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/knadh/koanf"
+	"github.com/knadh/koanf/providers/confmap"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/blsSignatures"
 	"github.com/offchainlabs/nitro/solgen/go/bridgegen"
 	"github.com/offchainlabs/nitro/util/metricsutil"
+	"github.com/offchainlabs/nitro/util/signature"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
 type BackendConfig struct {
-	URL                 string `json:"url"`
-	PubKeyBase64Encoded string `json:"pubkey"`
-	SignerMask          uint64 `json:"signermask"`
+	URL    string `koanf:"url" json:"url"`
+	Pubkey string `koanf:"pubkey" json:"pubkey"`
 }
 
-func NewRPCAggregator(ctx context.Context, config DataAvailabilityConfig) (*Aggregator, error) {
-	services, err := ParseServices(config.RPCAggregator)
+type BackendConfigList []BackendConfig
+
+func (l *BackendConfigList) String() string {
+	b, _ := json.Marshal(*l)
+	return string(b)
+}
+
+func (l *BackendConfigList) Set(value string) error {
+	return l.UnmarshalJSON([]byte(value))
+}
+
+func (l *BackendConfigList) UnmarshalJSON(data []byte) error {
+	var tmp []BackendConfig
+	if err := json.Unmarshal(data, &tmp); err != nil {
+		return err
+	}
+	*l = tmp
+	return nil
+}
+
+func (l *BackendConfigList) Type() string {
+	return "backendConfigList"
+}
+
+func FixKeysetCLIParsing(path string, k *koanf.Koanf) error {
+	rawBackends := k.Get(path)
+	if bk, ok := rawBackends.(string); ok {
+		err := parsedBackendsConf.UnmarshalJSON([]byte(bk))
+		if err != nil {
+			return err
+		}
+
+		// Create a map with the parsed backend configurations
+		tempMap := map[string]interface{}{
+			path: parsedBackendsConf,
+		}
+
+		// Load the map into koanf
+		if err = k.Load(confmap.Provider(tempMap, "."), nil); err != nil {
+			return err
+		}
+
+	}
+	return nil
+}
+
+func NewRPCAggregator(ctx context.Context, config DataAvailabilityConfig, signer signature.DataSignerFunc) (*Aggregator, error) {
+	services, err := ParseServices(config.RPCAggregator, signer)
 	if err != nil {
 		return nil, err
 	}
 	return NewAggregator(ctx, config, services)
 }
 
-func NewRPCAggregatorWithL1Info(config DataAvailabilityConfig, l1client arbutil.L1Interface, seqInboxAddress common.Address) (*Aggregator, error) {
-	services, err := ParseServices(config.RPCAggregator)
+func NewRPCAggregatorWithL1Info(config DataAvailabilityConfig, l1client arbutil.L1Interface, seqInboxAddress common.Address, signer signature.DataSignerFunc) (*Aggregator, error) {
+	services, err := ParseServices(config.RPCAggregator, signer)
 	if err != nil {
 		return nil, err
 	}
 	return NewAggregatorWithL1Info(config, services, l1client, seqInboxAddress)
 }
 
-func NewRPCAggregatorWithSeqInboxCaller(config DataAvailabilityConfig, seqInboxCaller *bridgegen.SequencerInboxCaller) (*Aggregator, error) {
-	services, err := ParseServices(config.RPCAggregator)
+func NewRPCAggregatorWithSeqInboxCaller(config DataAvailabilityConfig, seqInboxCaller *bridgegen.SequencerInboxCaller, signer signature.DataSignerFunc) (*Aggregator, error) {
+	services, err := ParseServices(config.RPCAggregator, signer)
 	if err != nil {
 		return nil, err
 	}
 	return NewAggregatorWithSeqInboxCaller(config, services, seqInboxCaller)
 }
 
-func ParseServices(config AggregatorConfig) ([]ServiceDetails, error) {
-	var cs []BackendConfig
-	err := json.Unmarshal([]byte(config.Backends), &cs)
-	if err != nil {
-		return nil, err
-	}
-
+func ParseServices(config AggregatorConfig, signer signature.DataSignerFunc) ([]ServiceDetails, error) {
 	var services []ServiceDetails
 
-	for _, b := range cs {
+	for i, b := range config.Backends {
 		url, err := url.Parse(b.URL)
 		if err != nil {
 			return nil, err
 		}
 		metricName := metricsutil.CanonicalizeMetricName(url.Hostname())
 
-		service, err := NewDASRPCClient(b.URL)
+		service, err := NewDASRPCClient(b.URL, signer, config.MaxStoreChunkBodySize)
 		if err != nil {
 			return nil, err
 		}
 
-		pubKey, err := DecodeBase64BLSPublicKey([]byte(b.PubKeyBase64Encoded))
+		pubKey, err := DecodeBase64BLSPublicKey([]byte(b.Pubkey))
 		if err != nil {
 			return nil, err
 		}
 
-		d, err := NewServiceDetails(service, *pubKey, b.SignerMask, metricName)
+		d, err := NewServiceDetails(service, *pubKey, 1<<uint64(i), metricName)
 		if err != nil {
 			return nil, err
 		}
@@ -102,7 +144,7 @@ func KeysetHashFromServices(services []ServiceDetails, assumedHonest uint64) ([3
 		return [32]byte{}, nil, errors.New("at least two signers share a mask")
 	}
 
-	keyset := &arbstate.DataAvailabilityKeyset{
+	keyset := &daprovider.DataAvailabilityKeyset{
 		AssumedHonest: uint64(assumedHonest),
 		PubKeys:       pubKeys,
 	}

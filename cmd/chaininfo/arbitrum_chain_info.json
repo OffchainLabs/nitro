@@ -247,5 +247,54 @@
       "validator-wallet-creator": "0x894fC71fA0A666352824EC954B401573C861D664",
       "deployed-at": 4139226
     }
+  },
+  {
+    "chain-id": 23011913,
+    "parent-chain-id": 421614,
+    "chain-name": "stylus-testnet",
+    "sequencer-url": "https://stylus-testnet-sequencer.arbitrum.io/rpc",
+    "feed-url": "wss://stylus-testnet.arbitrum.io/feed",
+    "chain-config":
+    {
+      "chainId": 23011913,
+      "homesteadBlock": 0,
+      "daoForkBlock": null,
+      "daoForkSupport": true,
+      "eip150Block": 0,
+      "eip150Hash": "0x0000000000000000000000000000000000000000000000000000000000000000",
+      "eip155Block": 0,
+      "eip158Block": 0,
+      "byzantiumBlock": 0,
+      "constantinopleBlock": 0,
+      "petersburgBlock": 0,
+      "istanbulBlock": 0,
+      "muirGlacierBlock": 0,
+      "berlinBlock": 0,
+      "londonBlock": 0,
+      "clique":
+      {
+        "period": 0,
+        "epoch": 0
+      },
+      "arbitrum":
+      {
+        "EnableArbOS": true,
+        "AllowDebugPrecompiles": false,
+        "DataAvailabilityCommittee": false,
+        "InitialArbOSVersion": 10,
+        "InitialChainOwner": "0x35c8d15334Eaf0e4b82417Fe10e28deEa0c5C32B",
+        "GenesisBlockNum": 0
+      }
+    },
+    "rollup":
+    {
+      "bridge": "0x35aa95ac4747D928E2Cd42FE4461F6D9d1826346",
+      "inbox": "0xe1e3b1CBaCC870cb6e5F4Bdf246feB6eB5cD351B",
+      "sequencer-inbox": "0x00A0F15b79d1D3e5991929FaAbCF2AA65623530c",
+      "rollup": "0x94db9E36d9336cD6F9FfcAd399dDa6Cc05299898",
+      "validator-utils": "0x8aB661AAC7693F60DF34464B6f964d3C3977e2D3",
+      "validator-wallet-creator": "0x6065949AC7D6e86Ce9EAC2089C6b68B0b7077ED6",
+      "deployed-at": 1847
+    }
   }
 ]

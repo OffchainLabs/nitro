@@ -15,7 +15,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/manager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/offchainlabs/nitro/arbstate"
+	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
 
@@ -34,15 +34,13 @@ type S3Downloader interface {
 }
 
 type S3StorageServiceConfig struct {
-	Enable                 bool   `koanf:"enable"`
-	AccessKey              string `koanf:"access-key"`
-	Bucket                 string `koanf:"bucket"`
-	ObjectPrefix           string `koanf:"object-prefix"`
-	Region                 string `koanf:"region"`
-	SecretKey              string `koanf:"secret-key"`
-	DiscardAfterTimeout    bool   `koanf:"discard-after-timeout"`
-	SyncFromStorageService bool   `koanf:"sync-from-storage-service"`
-	SyncToStorageService   bool   `koanf:"sync-to-storage-service"`
+	Enable              bool   `koanf:"enable"`
+	AccessKey           string `koanf:"access-key"`
+	Bucket              string `koanf:"bucket"`
+	ObjectPrefix        string `koanf:"object-prefix"`
+	Region              string `koanf:"region"`
+	SecretKey           string `koanf:"secret-key"`
+	DiscardAfterTimeout bool   `koanf:"discard-after-timeout"`
 }
 
 var DefaultS3StorageServiceConfig = S3StorageServiceConfig{}
@@ -55,8 +53,6 @@ func S3ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".region", DefaultS3StorageServiceConfig.Region, "S3 region")
 	f.String(prefix+".secret-key", DefaultS3StorageServiceConfig.SecretKey, "S3 secret key")
 	f.Bool(prefix+".discard-after-timeout", DefaultS3StorageServiceConfig.DiscardAfterTimeout, "discard data after its expiry timeout")
-	f.Bool(prefix+".sync-from-storage-service", DefaultRedisConfig.SyncFromStorageService, "enable s3 to be used as a source for regular sync storage")
-	f.Bool(prefix+".sync-to-storage-service", DefaultRedisConfig.SyncToStorageService, "enable s3 to be used as a sink for regular sync storage")
 }
 
 type S3StorageService struct {
@@ -125,18 +121,6 @@ func (s3s *S3StorageService) Put(ctx context.Context, value []byte, timeout uint
 	return err
 }
 
-func (s3s *S3StorageService) putKeyValue(ctx context.Context, key common.Hash, value []byte) error {
-	putObjectInput := s3.PutObjectInput{
-		Bucket: aws.String(s3s.bucket),
-		Key:    aws.String(s3s.objectPrefix + EncodeStorageServiceKey(key)),
-		Body:   bytes.NewReader(value)}
-	_, err := s3s.uploader.Upload(ctx, &putObjectInput)
-	if err != nil {
-		log.Error("das.S3StorageService.Store", "err", err)
-	}
-	return err
-}
-
 func (s3s *S3StorageService) Sync(ctx context.Context) error {
 	return nil
 }
@@ -145,11 +129,11 @@ func (s3s *S3StorageService) Close(ctx context.Context) error {
 	return nil
 }
 
-func (s3s *S3StorageService) ExpirationPolicy(ctx context.Context) (arbstate.ExpirationPolicy, error) {
+func (s3s *S3StorageService) ExpirationPolicy(ctx context.Context) (daprovider.ExpirationPolicy, error) {
 	if s3s.discardAfterTimeout {
-		return arbstate.DiscardAfterDataTimeout, nil
+		return daprovider.DiscardAfterDataTimeout, nil
 	}
-	return arbstate.KeepForever, nil
+	return daprovider.KeepForever, nil
 }
 
 func (s3s *S3StorageService) String() string {

@@ -1,13 +1,16 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-use crate::utils::Bytes32;
+use arbutil::Bytes32;
 use digest::Digest;
-use rayon::prelude::*;
+use serde::{Deserialize, Serialize};
 use sha3::Keccak256;
 use std::convert::TryFrom;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg(feature = "rayon")]
+use rayon::prelude::*;
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum MerkleType {
     Empty,
     Value,
@@ -40,11 +43,12 @@ impl MerkleType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub struct Merkle {
     ty: MerkleType,
     layers: Vec<Vec<Bytes32>>,
     empty_layers: Vec<Bytes32>,
+    min_depth: usize,
 }
 
 fn hash_node(ty: MerkleType, a: Bytes32, b: Bytes32) -> Bytes32 {
@@ -73,13 +77,15 @@ impl Merkle {
         let mut empty_layers = vec![empty_hash];
         while layers.last().unwrap().len() > 1 || layers.len() < min_depth {
             let empty_layer = *empty_layers.last().unwrap();
-            let new_layer = layers
-                .last()
-                .unwrap()
-                .par_chunks(2)
-                .map(|window| {
-                    hash_node(ty, window[0], window.get(1).cloned().unwrap_or(empty_layer))
-                })
+
+            #[cfg(feature = "rayon")]
+            let new_layer = layers.last().unwrap().par_chunks(2);
+
+            #[cfg(not(feature = "rayon"))]
+            let new_layer = layers.last().unwrap().chunks(2);
+
+            let new_layer = new_layer
+                .map(|chunk| hash_node(ty, chunk[0], chunk.get(1).cloned().unwrap_or(empty_layer)))
                 .collect();
             empty_layers.push(hash_node(ty, empty_layer, empty_layer));
             layers.push(new_layer);
@@ -88,6 +94,7 @@ impl Merkle {
             ty,
             layers,
             empty_layers,
+            min_depth,
         }
     }
 
@@ -109,10 +116,16 @@ impl Merkle {
     }
 
     #[must_use]
-    pub fn prove(&self, mut idx: usize) -> Option<Vec<u8>> {
+    pub fn prove(&self, idx: usize) -> Option<Vec<u8>> {
         if idx >= self.leaves().len() {
             return None;
         }
+        Some(self.prove_any(idx))
+    }
+
+    /// creates a merkle proof regardless of if the leaf has content
+    #[must_use]
+    pub fn prove_any(&self, mut idx: usize) -> Vec<u8> {
         let mut proof = vec![u8::try_from(self.layers.len() - 1).unwrap()];
         for (layer_i, layer) in self.layers.iter().enumerate() {
             if layer_i == self.layers.len() - 1 {
@@ -127,7 +140,25 @@ impl Merkle {
             );
             idx >>= 1;
         }
-        Some(proof)
+        proof
+    }
+
+    /// Adds a new leaf to the merkle
+    /// Currently O(n) in the number of leaves (could be log(n))
+    pub fn push_leaf(&mut self, leaf: Bytes32) {
+        let mut leaves = self.layers.swap_remove(0);
+        leaves.push(leaf);
+        let empty = self.empty_layers[0];
+        *self = Self::new_advanced(self.ty, leaves, empty, self.min_depth);
+    }
+
+    /// Removes the rightmost leaf from the merkle
+    /// Currently O(n) in the number of leaves (could be log(n))
+    pub fn pop_leaf(&mut self) {
+        let mut leaves = self.layers.swap_remove(0);
+        leaves.pop();
+        let empty = self.empty_layers[0];
+        *self = Self::new_advanced(self.ty, leaves, empty, self.min_depth);
     }
 
     pub fn set(&mut self, mut idx: usize, hash: Bytes32) {

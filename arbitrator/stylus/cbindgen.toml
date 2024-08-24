@@ -1,0 +1,13 @@
+language = "C"
+include_guard = "arbitrator_bindings"
+
+[parse]
+parse_deps = true
+include = ["arbutil", "prover", "brotli"]
+extra_bindings = ["arbutil", "prover", "brotli"]
+
+[enum]
+prefix_with_name = true
+
+[export]
+include = ["EvmApiMethod", "EvmApiStatus"]

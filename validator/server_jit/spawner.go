@@ -67,6 +67,10 @@ func (v *JitSpawner) Start(ctx_in context.Context) error {
 	return nil
 }
 
+func (v *JitSpawner) WasmModuleRoots() ([]common.Hash, error) {
+	return v.locator.ModuleRoots(), nil
+}
+
 func (v *JitSpawner) execute(
 	ctx context.Context, entry *validator.ValidationInput, moduleRoot common.Hash,
 ) (validator.GoGlobalState, error) {
