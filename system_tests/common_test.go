@@ -293,6 +293,11 @@ func (b *NodeBuilder) WithWasmRootDir(wasmRootDir string) *NodeBuilder {
 	return b
 }
 
+func (b *NodeBuilder) WithExtraArchs(targets []string) *NodeBuilder {
+	b.execConfig.StylusTarget.ExtraArchs = targets
+	return b
+}
+
 func (b *NodeBuilder) Build(t *testing.T) func() {
 	b.CheckConfig(t)
 	if b.withL1 {
