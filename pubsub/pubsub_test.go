@@ -26,8 +26,9 @@ var (
 )
 
 type testRequest struct {
-	Request  string
-	SelfHash string // Is a unique identifier which can be used to compare any two validationInputs
+	Request   string
+	IsInvalid bool
+	SelfHash  string // Is a unique identifier which can be used to compare any two validationInputs
 }
 
 // SetSelfHash should be only called once. In the context of redis streams- by the producer
@@ -63,6 +64,7 @@ func producerCfg() *ProducerConfig {
 	return &ProducerConfig{
 		CheckResultInterval:  TestProducerConfig.CheckResultInterval,
 		ResponseEntryTimeout: TestProducerConfig.ResponseEntryTimeout,
+		RequestTimeout:       TestProducerConfig.RequestTimeout,
 	}
 }
 
@@ -136,10 +138,13 @@ func flatten(responses [][]string) []string {
 	return ret
 }
 
-func produceMessages(ctx context.Context, msgs []string, producer *Producer[testRequest, testResponse], useUniqueIdentifier bool) ([]*containers.Promise[testResponse], error) {
+func produceMessages(ctx context.Context, msgs []string, producer *Producer[testRequest, testResponse], useUniqueIdentifier, withInvalidEntries bool) ([]*containers.Promise[testResponse], error) {
 	var promises []*containers.Promise[testResponse]
 	for i := 0; i < len(msgs); i++ {
 		req := testRequest{Request: msgs[i]}
+		if withInvalidEntries && i%50 == 0 {
+			req.IsInvalid = true
+		}
 		if useUniqueIdentifier {
 			req.SetSelfHash()
 		}
@@ -194,12 +199,14 @@ func consume(ctx context.Context, t *testing.T, consumers []*Consumer[testReques
 						continue
 					}
 					gotMessages[idx][res.ID] = res.Value.Request
-					resp := fmt.Sprintf("result for: %v", res.ID)
-					if err := c.SetResult(ctx, res.Value.SelfHash, res.ID, testResponse{Response: resp}); err != nil {
-						t.Errorf("Error setting a result: %v", err)
+					if !res.Value.IsInvalid {
+						resp := fmt.Sprintf("result for: %v", res.ID)
+						if err := c.SetResult(ctx, res.Value.SelfHash, res.ID, testResponse{Response: resp}); err != nil {
+							t.Errorf("Error setting a result: %v", err)
+						}
+						wantResponses[idx] = append(wantResponses[idx], resp)
 					}
 					close(ackNotifier)
-					wantResponses[idx] = append(wantResponses[idx], resp)
 				}
 			})
 	}
@@ -210,44 +217,49 @@ func TestRedisProduceComplex(t *testing.T) {
 	log.SetDefault(log.NewLogger(log.NewTerminalHandlerWithLevel(os.Stderr, log.LevelTrace, true)))
 	t.Parallel()
 	for _, tc := range []struct {
-		name           string
-		entries1Count  int
-		entries2Count  int
-		numProducers   int
-		withDuplicates bool // If this is set, then every fourth entry (while generation) of each entries list is equal
-		killConsumers  bool
+		name               string
+		entriesCount       []int
+		numProducers       int
+		withDuplicates     bool // If this is set, then every fourth entry (while generation) of each entries list is equal
+		killConsumers      bool
+		withInvalidEntries bool // If this is set, then every 50th entry is invalid (requests that can't be solved by any consumer)
 	}{
 		{
-			name:          "one producer, all consumers are active",
-			entries1Count: messagesCount,
-			numProducers:  1,
+			name:         "one producer, all consumers are active",
+			entriesCount: []int{messagesCount},
+			numProducers: 1,
 		},
 		{
 			name:          "one producer, some consumers killed, others should take over their work",
-			entries1Count: messagesCount,
+			entriesCount:  []int{messagesCount},
 			numProducers:  1,
 			killConsumers: true,
 		},
 		{
-			name:          "two producers, all consumers are active, all unique entries",
-			entries1Count: 20,
-			entries2Count: 20,
-			numProducers:  2,
+			name:         "two producers, all consumers are active, all unique entries",
+			entriesCount: []int{20, 20},
+			numProducers: 2,
 		},
 		{
 			name:           "two producers, all consumers are active, some duplicate entries",
-			entries1Count:  20,
-			entries2Count:  20,
+			entriesCount:   []int{20, 20},
 			numProducers:   2,
 			withDuplicates: true,
 		},
 		{
 			name:           "two producers, some consumers killed, others should take over their work, some duplicate entries, unequal number of requests from producers",
-			entries1Count:  messagesCount,
-			entries2Count:  2 * messagesCount,
+			entriesCount:   []int{messagesCount, 2 * messagesCount},
 			numProducers:   2,
 			withDuplicates: true,
 			killConsumers:  true,
+		},
+		{
+			name:               "two producers, some consumers killed, others should take over their work, some duplicate entries, some invalid entries, unequal number of requests from producers",
+			entriesCount:       []int{messagesCount, 2 * messagesCount},
+			numProducers:       2,
+			withDuplicates:     true,
+			killConsumers:      true,
+			withInvalidEntries: true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -271,15 +283,15 @@ func TestRedisProduceComplex(t *testing.T) {
 
 			var entries [][]string
 			if tc.numProducers == 2 {
-				entries = append(entries, wantMessages(tc.entries1Count, "1.", tc.withDuplicates))
-				entries = append(entries, wantMessages(tc.entries2Count, "2.", tc.withDuplicates))
+				entries = append(entries, wantMessages(tc.entriesCount[0], "1.", tc.withDuplicates))
+				entries = append(entries, wantMessages(tc.entriesCount[1], "2.", tc.withDuplicates))
 			} else {
-				entries = append(entries, wantMessages(tc.entries1Count, "", tc.withDuplicates))
+				entries = append(entries, wantMessages(tc.entriesCount[0], "", tc.withDuplicates))
 			}
 
 			var promises [][]*containers.Promise[testResponse]
 			for i := 0; i < tc.numProducers; i++ {
-				prs, err := produceMessages(ctx, entries[i], producers[i], tc.numProducers == 2)
+				prs, err := produceMessages(ctx, entries[i], producers[i], tc.numProducers == 2, tc.withInvalidEntries)
 				if err != nil {
 					t.Fatalf("Error producing messages from producer%d: %v", i, err)
 				}
@@ -311,8 +323,17 @@ func TestRedisProduceComplex(t *testing.T) {
 			var gotResponses []string
 			for i := 0; i < tc.numProducers; i++ {
 				grs, errIndexes := awaitResponses(ctx, promises[i])
-				if len(errIndexes) != 0 {
-					t.Fatalf("Error awaiting responses from promises%d: %v", i, errIndexes)
+				if tc.withInvalidEntries {
+					if errIndexes[len(errIndexes)-1]+50 <= len(entries[i]) {
+						t.Fatalf("Unexpected number of invalid requests while awaiting responses")
+					}
+					for j, idx := range errIndexes {
+						if idx != j*50 {
+							t.Fatalf("Invalid request' index mismatch want: %d got %d", j*50, idx)
+						}
+					}
+				} else if len(errIndexes) != 0 {
+					t.Fatalf("Error awaiting responses from promises %d: %v", i, errIndexes)
 				}
 				gotResponses = append(gotResponses, grs...)
 			}
@@ -325,6 +346,7 @@ func TestRedisProduceComplex(t *testing.T) {
 			if err != nil {
 				t.Fatalf("mergeMaps() unexpected error: %v", err)
 			}
+			got = removeDuplicates(got)
 
 			var combinedEntries []string
 			for i := 0; i < tc.numProducers; i++ {
@@ -384,14 +406,9 @@ func removeDuplicates(list []string) []string {
 // mergeValues merges maps from the slice and returns their values.
 // Returns and error if there exists duplicate key.
 func mergeValues(messages []map[string]string) ([]string, error) {
-	res := make(map[string]any)
 	var ret []string
 	for _, m := range messages {
-		for k, v := range m {
-			if _, found := res[k]; found {
-				return nil, fmt.Errorf("duplicate key: %v", k)
-			}
-			res[k] = v
+		for _, v := range m {
 			ret = append(ret, v)
 		}
 	}

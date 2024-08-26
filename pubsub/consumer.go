@@ -18,7 +18,7 @@ type ConsumerConfig struct {
 	// Timeout of result entry in Redis.
 	ResponseEntryTimeout time.Duration `koanf:"response-entry-timeout"`
 	// Minimum idle time after which messages will be autoclaimed
-	IdletimeToAutoclaim time.Duration `koanf:"Idletime-to-autoclaim"`
+	IdletimeToAutoclaim time.Duration `koanf:"idletime-to-autoclaim"`
 }
 
 var DefaultConsumerConfig = ConsumerConfig{
@@ -33,7 +33,7 @@ var TestConsumerConfig = ConsumerConfig{
 
 func ConsumerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Duration(prefix+".response-entry-timeout", DefaultConsumerConfig.ResponseEntryTimeout, "timeout for response entry")
-	f.Duration(prefix+".Idletime-to-autoclaim", DefaultConsumerConfig.IdletimeToAutoclaim, "After a message spends this amount of time in PEL (Pending Entries List i.e claimed by another consumer but not Acknowledged) it will be allowed to be autoclaimed by other consumers")
+	f.Duration(prefix+".idletime-to-autoclaim", DefaultConsumerConfig.IdletimeToAutoclaim, "After a message spends this amount of time in PEL (Pending Entries List i.e claimed by another consumer but not Acknowledged) it will be allowed to be autoclaimed by other consumers")
 }
 
 // Consumer implements a consumer for redis stream provides heartbeat to
@@ -93,9 +93,12 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 		MinIdle:  c.cfg.IdletimeToAutoclaim, // Minimum idle time for messages to claim (in milliseconds)
 		Stream:   c.redisStream,
 		Start:    "0",
-		Count:    1, // Limit the number of messages to claim
+		Count:    5, // Try looking for 50 entries in PEL, this assumes there are a maximum of 50 consumers in this redisGroup
 	}).Result()
-	if len(messages) != 1 || err != nil {
+	if len(messages) == 0 || err != nil {
+		if err != nil {
+			log.Error("error from xautoclaim", "err", err)
+		}
 		// Fallback to reading new messages
 		res, err := c.client.XReadGroup(ctx, &redis.XReadGroupArgs{
 			Group:    c.redisGroup,
@@ -132,7 +135,9 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 	ackNotifier := make(chan struct{})
 	c.StopWaiter.LaunchThread(func(ctx context.Context) {
 		for {
-			if err := c.client.XClaim(ctx, &redis.XClaimArgs{
+			// Use XClaimJustID so that we would have clear difference between invalid requests that are claimed multiple times due to xautoclaim and
+			// valid requests that are just being claimed in regular intervals to indicate heartbeat
+			if err := c.client.XClaimJustID(ctx, &redis.XClaimArgs{
 				Stream:   c.redisStream,
 				Group:    c.redisGroup,
 				Consumer: c.id,
@@ -173,6 +178,9 @@ func (c *Consumer[Request, Response]) SetResult(ctx context.Context, id string, 
 	}
 	if _, err := c.client.XAck(ctx, c.redisStream, c.redisGroup, messageID).Result(); err != nil {
 		return fmt.Errorf("acking message: %v, error: %w", messageID, err)
+	}
+	if _, err := c.client.XDel(ctx, c.redisStream, messageID).Result(); err != nil {
+		return fmt.Errorf("deleting message: %v, error: %w", messageID, err)
 	}
 	return nil
 }
