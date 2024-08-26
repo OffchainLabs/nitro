@@ -5,6 +5,7 @@ package gethexec
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math/big"
 	"strings"
@@ -14,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/tracers"
+	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/util/containers"
 )
 
@@ -152,9 +154,22 @@ func (t *stylusTracer) GetResult() (json.RawMessage, error) {
 	if t.reason != nil {
 		return nil, t.reason
 	}
+
+	var internalErr error
 	if t.open == nil {
-		return nil, fmt.Errorf("trace is nil")
+		internalErr = errors.Join(internalErr, fmt.Errorf("tracer.open is nil"))
 	}
+	if t.stack == nil {
+		internalErr = errors.Join(internalErr, fmt.Errorf("tracer.stack is nil"))
+	}
+	if !t.stack.Empty() {
+		internalErr = errors.Join(internalErr, fmt.Errorf("tracer.stack should be empty, but has %d values", t.stack.Len()))
+	}
+	if internalErr != nil {
+		log.Error("stylusTracer: internal error when generating a trace", "error", internalErr)
+		return nil, fmt.Errorf("internal error: %w", internalErr)
+	}
+
 	msg, err := json.Marshal(t.open)
 	if err != nil {
 		return nil, err
