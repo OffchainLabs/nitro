@@ -76,7 +76,7 @@ func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.String(prefix+".dev-init-address", InitConfigDefault.DevInitAddress, "Address of dev-account. Leave empty to use the dev-wallet.")
 	f.Uint64(prefix+".dev-init-blocknum", InitConfigDefault.DevInitBlockNum, "Number of preinit blocks. Must exist in ancient database.")
 	f.Bool(prefix+".empty", InitConfigDefault.Empty, "init with empty state")
-	f.Bool(prefix+".import-wasm", InitConfigDefault.ImportWasm, "if set, extract the wasm directory when downloading a database (this can be security concern because it contains native executables)")
+	f.Bool(prefix+".import-wasm", InitConfigDefault.ImportWasm, "if set, import the wasm directory when downloading a database (contains executable code - only use with highly trusted source)")
 	f.Bool(prefix+".then-quit", InitConfigDefault.ThenQuit, "quit after init is done")
 	f.String(prefix+".import-file", InitConfigDefault.ImportFile, "path for json data to import")
 	f.Uint(prefix+".accounts-per-sync", InitConfigDefault.AccountsPerSync, "during init - sync database every X accounts. Lower value for low-memory systems. 0 disables.")
