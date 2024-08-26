@@ -6,7 +6,7 @@ use rand_chacha::ChaCha8Rng;
 use wasm_benchmarks::*;
 
 const DEPTH: usize = 2;
-const OPS: usize = 1000;
+const OPS: usize = 100;
 
 fn main() {
     let mut rng = ChaCha8Rng::seed_from_u64(0);
