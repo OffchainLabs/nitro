@@ -48,7 +48,10 @@ enum Command {
     Activate,
 
     #[structopt(name = "benchmark")]
-    Benchmark,
+    Benchmark {
+        #[structopt(long, default_value = "")]
+        target: String,
+    },
 
     #[structopt(name = "fees")]
     Fees,
@@ -69,7 +72,7 @@ fn main() -> Result<()> {
 
     match opts.cmd {
         Command::Activate => activate::activate(Target::default()),
-        Command::Benchmark => benchmark::benchmark(),
+        Command::Benchmark{target} => benchmark::benchmark(target),
         Command::Fees => fees::fees(),
     }
 }

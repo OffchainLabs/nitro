@@ -11,8 +11,9 @@ use prover::{
 use std::fs;
 use wabt::wat2wasm;
 use wasmer::Target;
+use stylus::target_cache::target_from_string;
 
-pub fn benchmark() -> Result<()> {
+pub fn benchmark(target :String) -> Result<()> {
     
     #[cfg(feature = "affinity")]
     {
@@ -21,62 +22,65 @@ pub fn benchmark() -> Result<()> {
         println!("Affinity {}: {core:?}", std::process::id());
     }
     
-    let add64 = excute("i64-add", 20_000, 0., 200.)?;
-    let add32 = excute("i32-add", 30_000, 0., 200.)?;
-    excute("i64-mul", 20_000, 0., 550.)?;
-    excute("i32-mul", 30_000, 0., 550.)?;
-    excute("i64-div", 10_000, add64, 2900.)?;
-    excute("i32-div", 15_000, add32, 2500.)?;
-    excute("i64-load", 10_000, add64, 2750.)?;
-    excute("i32-load", 10_000, add32, 2200.)?;
-    excute("i64-store", 12_000, 0., 3100.)?;
-    excute("i32-store", 12_000, 0., 2400.)?;
+    let target=target_from_string(target)?;
 
-    excute("i64-xor", 20_000, 0., 200.)?;
-    excute("i32-xor", 30_000, 0., 200.)?;
-    let eq64 = excute("i64-eq", 20_000, 0., 760.)?;
-    let _q32 = excute("i32-eq", 30_000, 0., 570.)?;
+    let add64 = excute("i64-add", 20_000, 0., &target)?;
+    let add32 = excute("i32-add", 30_000, 0., &target)?;
+    excute("i64-mul", 20_000, 0., &target)?;
+    excute("i32-mul", 30_000, 0., &target)?;
+    excute("i64-div", 10_000, add64, &target)?;
+    excute("i32-div", 15_000, add32, &target)?;
+    excute("i64-load", 10_000, add64, &target)?;
+    excute("i32-load", 10_000, add32, &target)?;
+    excute("i64-store", 12_000, 0., &target)?;
+    excute("i32-store", 12_000, 0., &target)?;
 
-    excute("i64-clz", 20_000, 0., 750.)?;
-    excute("i32-clz", 20_000, 0., 750.)?;
-    excute("i64-popcnt", 20_000, 0., 750.)?;
-    excute("i32-popcnt", 30_000, 0., 500.)?;
-    excute("select", 10_000, 0., 4000.)?;
+    excute("i64-xor", 20_000, 0., &target)?;
+    excute("i32-xor", 30_000, 0., &target)?;
+    let eq64 = excute("i64-eq", 20_000, 0., &target)?;
+    let _q32 = excute("i32-eq", 30_000, 0., &target)?;
 
-    excute("global-get", 10_000, add64, 300.)?;
-    let global = excute("global-set", 6_000, 0., 990.)?;
+    excute("i64-clz", 20_000, 0., &target)?;
+    excute("i32-clz", 20_000, 0., &target)?;
+    excute("i64-popcnt", 20_000, 0., &target)?;
+    excute("i32-popcnt", 30_000, 0., &target)?;
+    excute("select", 10_000, 0., &target)?;
 
-    let get = excute("local-get", 10_000, 0., 200.)?;
-    let set = excute("local-set", 10_000, 0., 375.)?;
-    let scramble = excute("local-scramble", 5_000, add64 + 2. * get + 2. * set, 0.)?;
-    let locomotion = excute("local-locomotion", 2048, get + set, 0.)?;
+    excute("global-get", 10_000, add64, &target)?;
+    let global = excute("global-set", 6_000, 0., &target)?;
+
+    let get = excute("local-get", 10_000, 0., &target)?;
+    let set = excute("local-set", 10_000, 0., &target)?;
+    let scramble = excute("local-scramble", 5_000, add64 + 2. * get + 2. * set, &target)?;
+    excute("local-locomotion", 2048, get + set, &target)?;
     assert!(scramble < 0.);
     //assert!(locomotion < 0.);
 
-    excute("call", 512, global, 13750.)?;
-    excute("call-indirect", 512, global, 13610.)?;
+    excute("call", 512, global, &target)?;
+    excute("call-indirect", 512, global, &target)?;
     excute(
         "call-indirect-recursive",
         250 * 100,
         125.5 * get + global / 250.,
-        13610., // wrong
+        &target,
     )?;
-    excute("br-table", 100, (50. / 2.) * global + add32, 2400.)?;
+    excute("br-table", 100, (50. / 2.) * global + add32, &target)?;
     excute(
         "if",
         300,
         get + add64 + eq64 + 0.4 * (2. * get + add64 + set),
-        2400.,
+        &target,
     )?;
 
-    excute("memory-size", 20_000, add32, 13500.)?;
+    excute("memory-size", 20_000, add32, &target)?;
 
-    excute("ink-check", 140, 0., 2695.)?;
+    excute("ink-check", 140, 0., &target)?;
 
     Ok(())
 }
 
-fn excute(file: &str, count: usize, discount: f64, _curr: f64) -> Result<f64> {
+fn excute(file: &str, count: usize, discount: f64, target: &Target) -> Result<f64> {
+    
     print!("executing {file}..");
     let wasm = fs::read(format!("../benchmarks/wasm-benchmarks/{file}.wat"))?;
     let wasm = wat2wasm(&wasm)?;
@@ -86,23 +90,23 @@ fn excute(file: &str, count: usize, discount: f64, _curr: f64) -> Result<f64> {
     let len = wasm.len() as f64 / 1024. / 128.;
     if len < 1. || len > 2. {
         //bail!("wasm wrong size: {}", len);
-        println!("wrong size: {len}");
+        println!(" wrong size: {len}");
     } else {
         println!("")
     }
 
-    let mut compile = CompileConfig::version(1, true);
+    let mut compile = CompileConfig::version(2, true);
     compile.debug.count_ops = true;
 
     // ensure the wasm passes onchain instrumentation
     WasmBinary::parse_user(&wasm, 128, &compile, &Bytes32::default())?;
-    _ = Runtime::new(&wasm, compile, Target::default())?;
+    _ = Runtime::new(&wasm, compile.clone(), Target::default())?;
 
     let trials = 8;
     let mut op_min: f64 = f64::MAX;
 
     for _ in 0..trials {
-        let mut runtime = Runtime::new_simple(&wasm)?;
+        let mut runtime = Runtime::new_simple(&wasm, target.clone())?;
 
         let start = runtime.get_start()?;
 
@@ -122,7 +126,7 @@ fn excute(file: &str, count: usize, discount: f64, _curr: f64) -> Result<f64> {
         let sync = 2.;
         let block_time = 1e9 / sync;
         let speed_limit = 7e6 * 10_000.;
-        let cost = fudge * speed_limit * op / block_time;
+        let cost = (fudge * speed_limit * op / block_time).max(0.);
 
         println!(
             "{file:25}: {}\t=>\t{}",
