@@ -14,7 +14,7 @@ import (
 	"github.com/ethereum/go-ethereum/common/hexutil"
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/eth/tracers"
-	"github.com/offchainlabs/nitro/util/stack"
+	"github.com/offchainlabs/nitro/util/containers"
 )
 
 func init() {
@@ -24,8 +24,8 @@ func init() {
 // stylusTracer captures Stylus HostIOs and returns them in a structured format to be used in Cargo
 // Stylus Replay.
 type stylusTracer struct {
-	open      *stack.Stack[HostioTraceInfo]
-	stack     *stack.Stack[*stack.Stack[HostioTraceInfo]]
+	open      *containers.Stack[HostioTraceInfo]
+	stack     *containers.Stack[*containers.Stack[HostioTraceInfo]]
 	interrupt atomic.Bool
 	reason    error
 }
@@ -55,7 +55,7 @@ type HostioTraceInfo struct {
 	Address *common.Address `json:"address,omitempty"`
 
 	// For *call HostIOs, the steps performed by the called contract.
-	Steps *stack.Stack[HostioTraceInfo] `json:"steps,omitempty"`
+	Steps *containers.Stack[HostioTraceInfo] `json:"steps,omitempty"`
 }
 
 // nestsHostios contains the hostios with nested calls.
@@ -67,8 +67,8 @@ var nestsHostios = map[string]bool{
 
 func newStylusTracer(ctx *tracers.Context, _ json.RawMessage) (tracers.Tracer, error) {
 	return &stylusTracer{
-		open:  stack.NewStack[HostioTraceInfo](),
-		stack: stack.NewStack[*stack.Stack[HostioTraceInfo]](),
+		open:  containers.NewStack[HostioTraceInfo](),
+		stack: containers.NewStack[*containers.Stack[HostioTraceInfo]](),
 	}, nil
 }
 
@@ -126,7 +126,7 @@ func (t *stylusTracer) CaptureEnter(typ vm.OpCode, from common.Address, to commo
 		name = "evm_self_destruct"
 	}
 
-	inner := stack.NewStack[HostioTraceInfo]()
+	inner := containers.NewStack[HostioTraceInfo]()
 	info := HostioTraceInfo{
 		Name:    name,
 		Address: &to,
