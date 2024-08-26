@@ -76,8 +76,8 @@ pub fn benchmark() -> Result<()> {
     Ok(())
 }
 
-fn excute(file: &str, count: usize, discount: f64, curr: f64) -> Result<f64> {
-    println!("executing {file}");
+fn excute(file: &str, count: usize, discount: f64, _curr: f64) -> Result<f64> {
+    print!("executing {file}..");
     let wasm = fs::read(format!("../benchmarks/wasm-benchmarks/{file}.wat"))?;
     let wasm = wat2wasm(&wasm)?;
     wasm::validate(&wasm)?;
@@ -87,6 +87,8 @@ fn excute(file: &str, count: usize, discount: f64, curr: f64) -> Result<f64> {
     if len < 1. || len > 2. {
         //bail!("wasm wrong size: {}", len);
         println!("wrong size: {len}");
+    } else {
+        println!("")
     }
 
     let mut compile = CompileConfig::version(1, true);
@@ -98,7 +100,6 @@ fn excute(file: &str, count: usize, discount: f64, curr: f64) -> Result<f64> {
 
     let trials = 8;
     let mut op_min: f64 = f64::MAX;
-    let mut new_max: f64 = 0.;
 
     for _ in 0..trials {
         let mut runtime = Runtime::new_simple(&wasm)?;
@@ -117,27 +118,17 @@ fn excute(file: &str, count: usize, discount: f64, curr: f64) -> Result<f64> {
         let op = (time.as_nanos() as f64 / count as f64) - discount;
         op_min = op_min.min(op);
 
-        let old = op / 11.39 * 10_000.;
-
         let fudge = 2.;
         let sync = 2.;
         let block_time = 1e9 / sync;
         let speed_limit = 7e6 * 10_000.;
-        let new = fudge * speed_limit * op / block_time;
-        new_max = new_max.max(new);
-
-        let better = 100. * (new - curr) / curr;
+        let cost = fudge * speed_limit * op / block_time;
 
         println!(
-            "{} => {file}\tis {:.5} {:4} => {:4} ({:.1}% vs {curr})",
+            "{file:25}: {}\t=>\t{}",
             format::time(time),
-            op,
-            old.ceil(),
-            new.ceil(),
-            better,
+            cost.ceil(),
         );
     }
-
-    println!("{file}: {}", new_max.ceil());
     Ok(op_min)
 }
