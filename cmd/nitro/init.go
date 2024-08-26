@@ -611,7 +611,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 			return nil, nil, fmt.Errorf("couln't extract init archive '%v' err:%w", initFile, err)
 		}
 		wasmDb := path.Join(stack.InstanceDir(), "wasm")
-		if dirExists(wasmDb) && !config.Init.ExtractWasm {
+		if dirExists(wasmDb) && !config.Init.ImportWasm {
 			// By default, remove the wasm DB because it contains native executables.
 			// Hence, it is a security concern when downloading a snapshot from a
 			// untrusted source.
