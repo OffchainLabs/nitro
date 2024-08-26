@@ -162,10 +162,11 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 					roundInfo, ok := es.roundControl.Get(round)
 					es.RUnlock()
 					if !ok {
+						log.Warn("Could not find round info for express lane controller transfer event", "round", round)
 						continue
 					}
-					newController := setExpressLaneIterator.Event.NewExpressLaneController
-					if roundInfo.controller != newController {
+					prevController := setExpressLaneIterator.Event.PreviousExpressLaneController
+					if roundInfo.controller != prevController {
 						log.Warn("New express lane controller did not match previous controller",
 							"round", round,
 							"previous", setExpressLaneIterator.Event.PreviousExpressLaneController,
@@ -173,6 +174,7 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 						continue
 					}
 					es.Lock()
+					newController := setExpressLaneIterator.Event.NewExpressLaneController
 					es.roundControl.Add(it.Event.Round, &expressLaneControl{
 						controller: newController,
 						sequence:   0,
