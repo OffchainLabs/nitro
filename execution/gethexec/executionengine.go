@@ -150,10 +150,7 @@ func (s *ExecutionEngine) MarkFeedStart(to arbutil.MessageIndex) {
 	}
 }
 
-func (s *ExecutionEngine) Initialize(rustCacheSize uint32, targetConfig *StylusTargetConfig) error {
-	if rustCacheSize != 0 {
-		programs.ResizeWasmLruCache(rustCacheSize)
-	}
+func populateStylusTargetCache(targetConfig *StylusTargetConfig) error {
 	var effectiveStylusTarget string
 	target := rawdb.LocalTarget()
 	switch target {
@@ -167,6 +164,16 @@ func (s *ExecutionEngine) Initialize(rustCacheSize uint32, targetConfig *StylusT
 	err := programs.SetTarget(target, effectiveStylusTarget, true)
 	if err != nil {
 		return fmt.Errorf("Failed to set stylus target: %w", err)
+	}
+	return nil
+}
+
+func (s *ExecutionEngine) Initialize(rustCacheSize uint32, targetConfig *StylusTargetConfig) error {
+	if rustCacheSize != 0 {
+		programs.ResizeWasmLruCache(rustCacheSize)
+	}
+	if err := populateStylusTargetCache(targetConfig); err != nil {
+		return err
 	}
 	return nil
 }
