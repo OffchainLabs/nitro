@@ -150,11 +150,7 @@ func (s *ExecutionEngine) MarkFeedStart(to arbutil.MessageIndex) {
 	}
 }
 
-func (s *ExecutionEngine) Initialize(rustCacheSize uint32, targetConfig *StylusTargetConfig) error {
-	if rustCacheSize != 0 {
-		programs.ResizeWasmLruCache(rustCacheSize)
-	}
-
+func populateStylusTargetCache(targetConfig *StylusTargetConfig) error {
 	localTarget := rawdb.LocalTarget()
 	targets := targetConfig.WasmTargets()
 	var nativeSet bool
@@ -178,7 +174,16 @@ func (s *ExecutionEngine) Initialize(rustCacheSize uint32, targetConfig *StylusT
 	if !nativeSet {
 		return fmt.Errorf("local target %v missing in list of archs %v", localTarget, targets)
 	}
+	return nil
+}
 
+func (s *ExecutionEngine) Initialize(rustCacheSize uint32, targetConfig *StylusTargetConfig) error {
+	if rustCacheSize != 0 {
+		programs.ResizeWasmLruCache(rustCacheSize)
+	}
+	if err := populateStylusTargetCache(targetConfig); err != nil {
+		return fmt.Errorf("error populating stylus target cache: %w", err)
+	}
 	return nil
 }
 
