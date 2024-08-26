@@ -674,6 +674,7 @@ func mainImpl() int {
 						retriesOnError--
 					} else {
 						currentFinalized = finalized
+						log.Debug("Finalized block number updated", "finalized", finalized)
 					}
 				case <-ctx.Done():
 					log.Error("Context done while checking if the rollup deployment tx was finalized")
