@@ -64,7 +64,7 @@ func producerCfg() *ProducerConfig {
 	return &ProducerConfig{
 		CheckResultInterval:  TestProducerConfig.CheckResultInterval,
 		ResponseEntryTimeout: TestProducerConfig.ResponseEntryTimeout,
-		RequestTimeout:       TestProducerConfig.RequestTimeout,
+		RequestTimeout:       2 * time.Second,
 	}
 }
 

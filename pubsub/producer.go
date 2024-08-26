@@ -70,7 +70,7 @@ var DefaultProducerConfig = ProducerConfig{
 var TestProducerConfig = ProducerConfig{
 	CheckResultInterval:  5 * time.Millisecond,
 	ResponseEntryTimeout: time.Minute,
-	RequestTimeout:       2 * time.Second,
+	RequestTimeout:       time.Minute,
 }
 
 func ProducerAddConfigAddOptions(prefix string, f *pflag.FlagSet) {
