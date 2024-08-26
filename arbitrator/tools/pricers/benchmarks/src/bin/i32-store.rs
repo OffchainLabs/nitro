@@ -2,7 +2,7 @@ use rand::{distributions::Uniform, Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use wasm_benchmarks::*;
 
-const PAGES: usize = 128;
+const PAGES: usize = 2;
 const OPS: usize = 12_000;
 
 fn main() {

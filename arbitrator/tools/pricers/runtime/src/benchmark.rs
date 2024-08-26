@@ -38,7 +38,7 @@ pub fn benchmark() -> Result<()> {
     let _q32 = excute("i32-eq", 30_000, 0., 570.)?;
 
     excute("i64-clz", 20_000, 0., 750.)?;
-    excute("i32-clz", 30_000, 0., 750.)?;
+    excute("i32-clz", 20_000, 0., 750.)?;
     excute("i64-popcnt", 20_000, 0., 750.)?;
     excute("i32-popcnt", 30_000, 0., 500.)?;
     excute("select", 10_000, 0., 4000.)?;
@@ -46,32 +46,33 @@ pub fn benchmark() -> Result<()> {
     excute("global-get", 10_000, add64, 300.)?;
     let global = excute("global-set", 6_000, 0., 990.)?;
 
-    excute("ink-check", 7_000, 0., 2695.)?;
-
     let get = excute("local-get", 10_000, 0., 200.)?;
     let set = excute("local-set", 10_000, 0., 375.)?;
-    let scramble = excute("local-scramble", 10_000, add64 + 2. * get + 2. * set, 0.)?;
-    let locomotion = excute("local-locomotion", 4096, get + set, 0.)?;
+    let scramble = excute("local-scramble", 5_000, add64 + 2. * get + 2. * set, 0.)?;
+    let locomotion = excute("local-locomotion", 2048, get + set, 0.)?;
     assert!(scramble < 0.);
     //assert!(locomotion < 0.);
 
-    excute("call", 10_000, global, 13750.)?;
-    excute("call-indirect", 10_000, global, 13610.)?;
+    excute("call", 512, global, 13750.)?;
+    excute("call-indirect", 512, global, 13610.)?;
     excute(
         "call-indirect-recursive",
         250 * 100,
         125.5 * get + global / 250.,
         13610., // wrong
     )?;
-    excute("br-table", 1000, (50. / 2.) * global + add32, 2400.)?;
+    excute("br-table", 100, (50. / 2.) * global + add32, 2400.)?;
     excute(
         "if",
-        8_000,
+        300,
         get + add64 + eq64 + 0.4 * (2. * get + add64 + set),
         2400.,
     )?;
 
-    excute("memory-size", 50_000, add32, 13500.)?;
+    excute("memory-size", 20_000, add32, 13500.)?;
+
+    excute("ink-check", 140, 0., 2695.)?;
+
     Ok(())
 }
 

@@ -5,8 +5,8 @@ use rand::{distributions::Uniform, Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use wasm_benchmarks::*;
 
-const LOCALS: usize = 4096;
-const STACK: usize = 4096;
+const LOCALS: usize = 300;
+const STACK: usize = 2048;
 const REPETITIONS: usize = 2;
 
 fn main() {

@@ -5,7 +5,7 @@ use rand::{distributions::Uniform, Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use wasm_benchmarks::*;
 
-const LOCALS: usize = 4095;
+const LOCALS: usize = 300;
 const SETS: usize = 10_000;
 
 fn main() {

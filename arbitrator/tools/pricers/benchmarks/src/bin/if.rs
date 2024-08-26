@@ -2,8 +2,8 @@ use rand::{distributions::Uniform, Rng, SeedableRng};
 use rand_chacha::ChaCha8Rng;
 use wasm_benchmarks::*;
 
-const LOCALS: usize = 4_000;
-const ITERS: usize = 8_000;
+const LOCALS: usize = 300;
+const ITERS: usize = 300;
 
 fn main() {
     let mut rng = ChaCha8Rng::seed_from_u64(0);
