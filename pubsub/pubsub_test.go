@@ -342,11 +342,14 @@ func TestRedisProduceComplex(t *testing.T) {
 				c.StopAndWait()
 			}
 
-			got, err := mergeValues(gotMessages)
+			got, err := mergeValues(gotMessages, tc.withInvalidEntries)
 			if err != nil {
 				t.Fatalf("mergeMaps() unexpected error: %v", err)
 			}
-			got = removeDuplicates(got)
+			// Only when there are invalid entries got will have duplicates
+			if tc.withInvalidEntries {
+				got = removeDuplicates(got)
+			}
 
 			var combinedEntries []string
 			for i := 0; i < tc.numProducers; i++ {
@@ -405,10 +408,15 @@ func removeDuplicates(list []string) []string {
 
 // mergeValues merges maps from the slice and returns their values.
 // Returns and error if there exists duplicate key.
-func mergeValues(messages []map[string]string) ([]string, error) {
+func mergeValues(messages []map[string]string, withInvalidEntries bool) ([]string, error) {
+	res := make(map[string]any)
 	var ret []string
 	for _, m := range messages {
-		for _, v := range m {
+		for k, v := range m {
+			if _, found := res[k]; found && !withInvalidEntries {
+				return nil, fmt.Errorf("duplicate key: %v", k)
+			}
+			res[k] = v
 			ret = append(ret, v)
 		}
 	}
