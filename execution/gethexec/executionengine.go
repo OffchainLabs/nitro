@@ -173,7 +173,7 @@ func (s *ExecutionEngine) Initialize(rustCacheSize uint32, targetConfig *StylusT
 		programs.ResizeWasmLruCache(rustCacheSize)
 	}
 	if err := populateStylusTargetCache(targetConfig); err != nil {
-		return err
+		return fmt.Errorf("error populating stylus target cache: %w", err)
 	}
 	return nil
 }
