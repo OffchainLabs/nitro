@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   submodule-pin-check:
-    name: Submodule Pin Check
+    name: Check Submodule Pin
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
