@@ -17,8 +17,7 @@ use prover::programs::{
 use std::{fmt::Debug, sync::Arc, time::Duration};
 use stylus::env::MeterData;
 use wasmer::{
-    imports, AsStoreMut, CompilerConfig, Function, FunctionEnv, Imports, Instance, Module, Store,
-    TypedFunction, Value, Target
+    imports, AsStoreMut, CompilerConfig, sys::EngineBuilder, Function, FunctionEnv, Imports, Instance, Module, Store, Target, TypedFunction, Value
 };
 use wasmer_compiler_singlepass::Singlepass;
 use wasmer_vm::VMExtern;
@@ -59,7 +58,7 @@ impl Runtime {
         })
     }
 
-    pub fn new_simple(wasm: &[u8]) -> Result<Self> {
+    pub fn new_simple(wasm: &[u8], target: Target) -> Result<Self> {
         let mut compiler = Singlepass::new();
         compiler.canonicalize_nans(true);
         compiler.enable_verifier();
@@ -67,7 +66,8 @@ impl Runtime {
         let start = MiddlewareWrapper::new(StartMover::new(true));
         compiler.push_middleware(Arc::new(start));
 
-        let mut store = Store::new(compiler);
+        let mut store = Store::new(EngineBuilder::new(compiler).set_target(Some(target)));
+        //let mut store = Store::new(compiler);
 
         let (env, imports) = Self::new_env(&mut store);
         let module = Module::new(&store, wasm)?;

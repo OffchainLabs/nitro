@@ -30,7 +30,7 @@ pub mod run;
 
 mod cache;
 mod evm_api;
-mod target_cache;
+pub mod target_cache;
 mod util;
 
 #[cfg(test)]

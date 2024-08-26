@@ -12,7 +12,7 @@ lazy_static! {
     static ref TARGET_NATIVE: RwLock<Target> = RwLock::new(Target::default());
 }
 
-fn target_from_string(input: String) -> Result<Target> {
+pub fn target_from_string(input: String) -> Result<Target> {
     if input.is_empty() {
         return Ok(Target::default());
     }
