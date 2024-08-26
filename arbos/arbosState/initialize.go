@@ -6,10 +6,12 @@ package arbosState
 import (
 	"errors"
 	"math/big"
+	"regexp"
 	"sort"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/ethdb"
@@ -64,6 +66,8 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 		log.Crit("failed to init empty statedb", "error", err)
 	}
 
+	noStateTrieChangesToCommitError := regexp.MustCompile("^triedb layer .+ is disk layer$")
+
 	// commit avoids keeping the entire state in memory while importing the state.
 	// At some time it was also used to avoid reprocessing the whole import in case of a crash.
 	commit := func() (common.Hash, error) {
@@ -73,7 +77,11 @@ func InitializeArbosInDatabase(db ethdb.Database, cacheConfig *core.CacheConfig,
 		}
 		err = stateDatabase.TrieDB().Commit(root, true)
 		if err != nil {
-			return common.Hash{}, err
+			// pathdb returns an error when there are no state trie changes to commit and we try to commit.
+			// This checks if the error is the expected one and ignores it.
+			if (cacheConfig.StateScheme != rawdb.PathScheme) || !noStateTrieChangesToCommitError.MatchString(err.Error()) {
+				return common.Hash{}, err
+			}
 		}
 		statedb, err = state.New(root, stateDatabase, nil)
 		if err != nil {

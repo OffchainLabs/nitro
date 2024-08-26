@@ -196,7 +196,7 @@ func (r *RollupWatcher) LookupNodeChildren(ctx context.Context, nodeNum uint64, 
 		if logQueryRangeSize == 0 {
 			query.ToBlock = toBlock
 		} else {
-			query.ToBlock = new(big.Int).Add(fromBlock, big.NewInt(int64(logQueryRangeSize)))
+			query.ToBlock = new(big.Int).Add(fromBlock, new(big.Int).SetUint64(logQueryRangeSize))
 		}
 		if query.ToBlock.Cmp(toBlock) > 0 {
 			query.ToBlock = toBlock

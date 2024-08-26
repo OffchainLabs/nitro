@@ -204,6 +204,7 @@ func ExecConfigDefaultNonSequencerTest() *gethexec.Config {
 	config.Sequencer.Enable = false
 	config.Forwarder = DefaultTestForwarderConfig
 	config.ForwardingTarget = "null"
+	config.TxPreChecker.Strictness = gethexec.TxPreCheckerStrictnessNone
 
 	_ = config.Validate()
 
@@ -216,6 +217,7 @@ func ExecConfigDefaultTest() *gethexec.Config {
 	config.Sequencer = TestSequencerConfig
 	config.ParentChainReader = headerreader.TestConfig
 	config.ForwardingTarget = "null"
+	config.TxPreChecker.Strictness = gethexec.TxPreCheckerStrictnessNone
 
 	_ = config.Validate()
 

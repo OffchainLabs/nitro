@@ -246,7 +246,7 @@ func (r *inboxMultiplexer) IsCachedSegementLast() bool {
 	if r.delayedMessagesRead < seqMsg.afterDelayedMessages {
 		return false
 	}
-	for segmentNum := int(r.cachedSegmentNum) + 1; segmentNum < len(seqMsg.segments); segmentNum++ {
+	for segmentNum := r.cachedSegmentNum + 1; segmentNum < uint64(len(seqMsg.segments)); segmentNum++ {
 		segment := seqMsg.segments[segmentNum]
 		if len(segment) == 0 {
 			continue
@@ -276,7 +276,7 @@ func (r *inboxMultiplexer) getNextMsg() (*arbostypes.MessageWithMetadata, error)
 		if segmentNum >= uint64(len(seqMsg.segments)) {
 			break
 		}
-		segment = seqMsg.segments[int(segmentNum)]
+		segment = seqMsg.segments[segmentNum]
 		if len(segment) == 0 {
 			segmentNum++
 			continue
@@ -322,7 +322,7 @@ func (r *inboxMultiplexer) getNextMsg() (*arbostypes.MessageWithMetadata, error)
 		log.Warn("reading virtual delayed message segment", "delayedMessagesRead", r.delayedMessagesRead, "afterDelayedMessages", seqMsg.afterDelayedMessages)
 		segment = []byte{BatchSegmentKindDelayedMessages}
 	} else {
-		segment = seqMsg.segments[int(segmentNum)]
+		segment = seqMsg.segments[segmentNum]
 	}
 	if len(segment) == 0 {
 		log.Error("empty sequencer message segment", "sequence", r.cachedSegmentNum, "segmentNum", segmentNum)

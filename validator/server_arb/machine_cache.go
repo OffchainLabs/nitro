@@ -239,6 +239,7 @@ func (c *MachineCache) getClosestMachine(stepCount uint64) (int, MachineInterfac
 	if c.machineStepInterval == 0 || stepsFromStart > c.machineStepInterval*uint64(len(c.machines)-1) {
 		index = len(c.machines) - 1
 	} else {
+		// #nosec G115
 		index = int(stepsFromStart / c.machineStepInterval)
 	}
 	return index, c.machines[index]
