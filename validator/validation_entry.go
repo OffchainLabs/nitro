@@ -6,6 +6,7 @@ import (
 
 	"github.com/cespare/xxhash/v2"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/offchainlabs/nitro/arbutil"
 )
 
@@ -20,7 +21,7 @@ type ValidationInput struct {
 	HasDelayedMsg bool
 	DelayedMsgNr  uint64
 	Preimages     map[arbutil.PreimageType]map[common.Hash][]byte
-	UserWasms     map[string]map[common.Hash][]byte
+	UserWasms     map[rawdb.Target]map[common.Hash][]byte
 	BatchInfo     []BatchInfo
 	DelayedMsg    []byte
 	StartState    GoGlobalState

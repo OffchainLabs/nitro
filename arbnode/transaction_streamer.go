@@ -840,6 +840,7 @@ func (s *TransactionStreamer) addMessagesAndEndBatchImpl(messageStartPos arbutil
 		// Active broadcast reorg and L1 messages at or before start of broadcast messages
 		// Or no active broadcast reorg and broadcast messages start before or immediately after last L1 message
 		if messagesAfterPos >= broadcastStartPos {
+			// #nosec G115
 			broadcastSliceIndex := int(messagesAfterPos - broadcastStartPos)
 			messagesOldLen := len(messages)
 			if broadcastSliceIndex < len(s.broadcasterQueuedMessages) {

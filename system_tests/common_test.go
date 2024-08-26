@@ -14,6 +14,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"reflect"
 	"strconv"
 	"strings"
 	"testing"
@@ -203,6 +204,7 @@ func ExecConfigDefaultNonSequencerTest() *gethexec.Config {
 	config.Sequencer.Enable = false
 	config.Forwarder = DefaultTestForwarderConfig
 	config.ForwardingTarget = "null"
+	config.TxPreChecker.Strictness = gethexec.TxPreCheckerStrictnessNone
 
 	_ = config.Validate()
 
@@ -215,6 +217,7 @@ func ExecConfigDefaultTest() *gethexec.Config {
 	config.Sequencer = TestSequencerConfig
 	config.ParentChainReader = headerreader.TestConfig
 	config.ForwardingTarget = "null"
+	config.TxPreChecker.Strictness = gethexec.TxPreCheckerStrictnessNone
 
 	_ = config.Validate()
 
@@ -457,7 +460,7 @@ func (b *NodeBuilder) RestartL2Node(t *testing.T) {
 	}
 	b.L2.cleanup()
 
-	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChain(t, b.L2Info, b.dataDir, b.chainConfig, &b.execConfig.Caching)
+	l2info, stack, chainDb, arbDb, blockchain := createL2BlockChainWithStackConfig(t, b.L2Info, b.dataDir, b.chainConfig, b.initMessage, b.l2StackConfig, &b.execConfig.Caching)
 
 	execConfigFetcher := func() *gethexec.Config { return b.execConfig }
 	execNode, err := gethexec.CreateExecutionNode(b.ctx, stack, chainDb, blockchain, nil, execConfigFetcher)
@@ -1119,6 +1122,13 @@ func Require(t *testing.T, err error, text ...interface{}) {
 func Fatal(t *testing.T, printables ...interface{}) {
 	t.Helper()
 	testhelpers.FailImpl(t, printables...)
+}
+
+func CheckEqual[T any](t *testing.T, want T, got T, printables ...interface{}) {
+	t.Helper()
+	if !reflect.DeepEqual(want, got) {
+		testhelpers.FailImpl(t, "wrong result, want ", want, ", got ", got, printables)
+	}
 }
 
 func Create2ndNodeWithConfig(

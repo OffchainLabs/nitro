@@ -62,6 +62,7 @@ import (
 	"github.com/offchainlabs/nitro/staker"
 	"github.com/offchainlabs/nitro/staker/validatorwallet"
 	"github.com/offchainlabs/nitro/util/colors"
+	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/iostat"
 	"github.com/offchainlabs/nitro/util/rpcclient"
@@ -237,6 +238,10 @@ func mainImpl() int {
 	if nodeConfig.Execution.Sequencer.Enable != nodeConfig.Node.Sequencer {
 		log.Error("consensus and execution must agree if sequencing is enabled or not", "Execution.Sequencer.Enable", nodeConfig.Execution.Sequencer.Enable, "Node.Sequencer", nodeConfig.Node.Sequencer)
 	}
+	if nodeConfig.Node.SeqCoordinator.Enable && !nodeConfig.Node.ParentChainReader.Enable {
+		log.Error("Sequencer coordinator must be enabled with parent chain reader, try starting node with --parent-chain.connection.url")
+		return 1
+	}
 
 	var dataSigner signature.DataSignerFunc
 	var l1TransactionOptsValidator *bind.TransactOpts
@@ -366,6 +371,7 @@ func mainImpl() int {
 		if err != nil {
 			log.Crit("error getting rollup addresses config", "err", err)
 		}
+		// #nosec G115
 		addr, err := validatorwallet.GetValidatorWalletContract(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOptsValidator, l1Reader, true)
 		if err != nil {
 			log.Crit("error creating validator wallet contract", "error", err, "address", l1TransactionOptsValidator.From.Hex())
@@ -494,6 +500,10 @@ func mainImpl() int {
 		log.Error("database is corrupt; delete it and try again", "database-directory", stack.InstanceDir())
 		return 1
 	}
+	if err := dbutil.UnfinishedConversionCheck(arbDb); err != nil {
+		log.Error("arbitrumdata unfinished conversion check error", "err", err)
+		return 1
+	}
 
 	fatalErrChan := make(chan error, 10)
 
@@ -573,7 +583,7 @@ func mainImpl() int {
 		l1TransactionOptsBatchPoster,
 		dataSigner,
 		fatalErrChan,
-		big.NewInt(int64(nodeConfig.ParentChain.ID)),
+		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
 		blobReader,
 	)
 	if err != nil {
@@ -891,10 +901,12 @@ func ParseNode(ctx context.Context, args []string) (*NodeConfig, *genericconf.Wa
 	// Don't print wallet passwords
 	if nodeConfig.Conf.Dump {
 		err = confighelpers.DumpConfig(k, map[string]interface{}{
-			"parent-chain.wallet.password":    "",
-			"parent-chain.wallet.private-key": "",
-			"chain.dev-wallet.password":       "",
-			"chain.dev-wallet.private-key":    "",
+			"node.batch-poster.parent-chain-wallet.password":    "",
+			"node.batch-poster.parent-chain-wallet.private-key": "",
+			"node.staker.parent-chain-wallet.password":          "",
+			"node.staker.parent-chain-wallet.private-key":       "",
+			"chain.dev-wallet.password":                         "",
+			"chain.dev-wallet.private-key":                      "",
 		})
 		if err != nil {
 			return nil, nil, err
