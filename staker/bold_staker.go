@@ -38,17 +38,17 @@ type BoldConfig struct {
 	// Number of big step challenges in the BOLD protocol.
 	NumBigSteps uint64 `koanf:"num-big-steps"`
 	// How often to post assertions onchain.
-	AssertionPostingIntervalSeconds uint64 `koanf:"assertion-posting-interval-seconds"`
+	AssertionPostingInterval time.Duration `koanf:"assertion-posting-interval"`
 	// How often to scan for newly created assertions onchain.
-	AssertionScanningIntervalSeconds uint64 `koanf:"assertion-scanning-interval-seconds"`
+	AssertionScanningInterval time.Duration `koanf:"assertion-scanning-interval"`
 	// How often to confirm assertions onchain.
-	AssertionConfirmingIntervalSeconds  uint64              `koanf:"assertion-confirming-interval-seconds"`
+	AssertionConfirmingInterval         time.Duration       `koanf:"assertion-confirming-interval"`
 	API                                 bool                `koanf:"api"`
 	APIHost                             string              `koanf:"api-host"`
 	APIPort                             uint16              `koanf:"api-port"`
 	APIDBPath                           string              `koanf:"api-db-path"`
 	TrackChallengeParentAssertionHashes []string            `koanf:"track-challenge-parent-assertion-hashes"`
-	CheckStakerSwitchIntervalSeconds    uint64              `koanf:"check-staker-switch-interval-seconds"`
+	CheckStakerSwitchInterval           time.Duration       `koanf:"check-staker-switch-interval"`
 	StateProviderConfig                 StateProviderConfig `koanf:"state-provider-config"`
 }
 
@@ -73,15 +73,15 @@ var DefaultBoldConfig = BoldConfig{
 	BigStepLeafHeight:                   1 << 23,
 	SmallStepLeafHeight:                 1 << 19,
 	NumBigSteps:                         1,
-	AssertionPostingIntervalSeconds:     900, // Every 15 minutes.
-	AssertionScanningIntervalSeconds:    60,  // Every minute.
-	AssertionConfirmingIntervalSeconds:  60,  // Every minute.
+	AssertionPostingInterval:            time.Minute * 15,
+	AssertionScanningInterval:           time.Minute,
+	AssertionConfirmingInterval:         time.Minute,
 	API:                                 false,
 	APIHost:                             "127.0.0.1",
 	APIPort:                             9393,
 	APIDBPath:                           "/tmp/bold-api-db",
 	TrackChallengeParentAssertionHashes: []string{},
-	CheckStakerSwitchIntervalSeconds:    60, // Every minute, check if the Nitro node staker should switch to using BOLD.
+	CheckStakerSwitchInterval:           time.Minute, // Every minute, check if the Nitro node staker should switch to using BOLD.
 	StateProviderConfig:                 DefaultStateProviderConfig,
 }
 
@@ -99,10 +99,10 @@ func BoldConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Uint64(prefix+".big-step-leaf-height", DefaultBoldConfig.BigStepLeafHeight, "big challenge leaf height")
 	f.Uint64(prefix+".small-step-leaf-height", DefaultBoldConfig.SmallStepLeafHeight, "small challenge leaf height")
 	f.Uint64(prefix+".num-big-steps", DefaultBoldConfig.NumBigSteps, "num big steps")
-	f.Uint64(prefix+".assertion-posting-interval-seconds", DefaultBoldConfig.AssertionPostingIntervalSeconds, "assertion posting interval")
-	f.Uint64(prefix+".assertion-scanning-interval-seconds", DefaultBoldConfig.AssertionScanningIntervalSeconds, "scan assertion interval")
-	f.Uint64(prefix+".assertion-confirming-interval-seconds", DefaultBoldConfig.AssertionConfirmingIntervalSeconds, "confirm assertion interval")
-	f.Uint64(prefix+".check-staker-switch-interval-seconds", DefaultBoldConfig.CheckStakerSwitchIntervalSeconds, "how often to check if staker can switch to bold")
+	f.Duration(prefix+".assertion-posting-interval", DefaultBoldConfig.AssertionPostingInterval, "assertion posting interval")
+	f.Duration(prefix+".assertion-scanning-interval", DefaultBoldConfig.AssertionScanningInterval, "scan assertion interval")
+	f.Duration(prefix+".assertion-confirming-interval", DefaultBoldConfig.AssertionConfirmingInterval, "confirm assertion interval")
+	f.Duration(prefix+".check-staker-switch-interval", DefaultBoldConfig.CheckStakerSwitchInterval, "how often to check if staker can switch to bold")
 	f.Bool(prefix+".api", DefaultBoldConfig.API, "enable api")
 	f.String(prefix+".api-host", DefaultBoldConfig.APIHost, "bold api host")
 	f.Uint16(prefix+".api-port", DefaultBoldConfig.APIPort, "bold api port")
@@ -232,7 +232,7 @@ func (b *BOLDStaker) Start(ctxIn context.Context) {
 				notifier.UpdateLatestConfirmed(confirmedMsgCount, *confirmedGlobalState)
 			}
 		}
-		return time.Duration(b.config.AssertionPostingIntervalSeconds)
+		return b.config.AssertionPostingInterval
 	})
 }
 
@@ -371,11 +371,11 @@ func newBOLDChallengeManager(
 		nil, // Nil API database for the history commitment provider, as it will be provided later. TODO: Improve this dependency injection.
 	)
 	// The interval at which the challenge manager will attempt to post assertions.
-	postingInterval := time.Second * time.Duration(config.AssertionPostingIntervalSeconds)
+	postingInterval := config.AssertionPostingInterval
 	// The interval at which the manager will scan for newly created assertions onchain.
-	scanningInterval := time.Second * time.Duration(config.AssertionScanningIntervalSeconds)
+	scanningInterval := config.AssertionScanningInterval
 	// The interval at which the manager will attempt to confirm assertions.
-	confirmingInterval := time.Second * time.Duration(config.AssertionConfirmingIntervalSeconds)
+	confirmingInterval := config.AssertionConfirmingInterval
 	opts := []challengemanager.Opt{
 		challengemanager.WithName(config.StateProviderConfig.ValidatorName),
 		challengemanager.WithMode(BoldModes[config.Mode]),

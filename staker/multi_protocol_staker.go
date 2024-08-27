@@ -108,7 +108,7 @@ func (m *MultiProtocolStaker) Start(ctxIn context.Context) {
 	} else {
 		log.Info("Starting pre-BOLD staker")
 		m.oldStaker.Start(ctxIn)
-		stakerSwitchInterval := time.Second * time.Duration(m.oldStaker.config().BOLD.CheckStakerSwitchIntervalSeconds)
+		stakerSwitchInterval := m.oldStaker.config().BOLD.CheckStakerSwitchInterval
 		m.CallIteratively(func(ctx context.Context) time.Duration {
 			switchedToBoldProtocol, err := m.checkAndSwitchToBoldStaker(ctxIn)
 			if err != nil {
