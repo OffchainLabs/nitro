@@ -14,9 +14,9 @@ import (
 	"sync"
 
 	"github.com/ethereum/go-ethereum/log"
+	iface "github.com/ipfs/boxo/coreiface"
+	"github.com/ipfs/boxo/coreiface/options"
 	"github.com/ipfs/go-libipfs/files"
-	coreiface "github.com/ipfs/interface-go-ipfs-core"
-	"github.com/ipfs/interface-go-ipfs-core/options"
 	"github.com/ipfs/interface-go-ipfs-core/path"
 	"github.com/ipfs/kubo/config"
 	"github.com/ipfs/kubo/core"
@@ -33,7 +33,7 @@ import (
 const DefaultIpfsProfiles = ""
 
 type IpfsHelper struct {
-	api      coreiface.CoreAPI
+	api      iface.CoreAPI
 	node     *core.IpfsNode
 	cfg      *config.Config
 	repoPath string
@@ -276,6 +276,6 @@ func CanBeIpfsPath(pathString string) bool {
 }
 
 // TODO break abstraction for now til we figure out what fns are needed
-func (h *IpfsHelper) GetAPI() coreiface.CoreAPI {
+func (h *IpfsHelper) GetAPI() iface.CoreAPI {
 	return h.api
 }
