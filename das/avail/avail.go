@@ -163,7 +163,7 @@ func (a *AvailDA) Store(ctx context.Context, message []byte) ([]byte, error) {
 	}
 
 	// Creating BlobPointer to submit over settlement layer
-	blobPointer := BlobPointer{BlockHeight: uint32(header.Number), ExtrinsicIndex: uint32(extrinsicIndex), DasTreeRootHash: dastree.Hash(message), BlobDataKeccak265H: blobDataKeccak256H, BlobProof: blobProof}
+	blobPointer := BlobPointer{Version: BLOBPOINTER_VERSION2, BlockHeight: uint32(header.Number), ExtrinsicIndex: uint32(extrinsicIndex), DasTreeRootHash: dastree.Hash(message), BlobDataKeccak265H: blobDataKeccak256H, BlobProof: blobProof}
 	log.Info("✅  Sucesfully included in block data to Avail", "BlobPointer:", blobPointer.String())
 	blobPointerData, err := blobPointer.MarshalToBinary()
 	if err != nil {
