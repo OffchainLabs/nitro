@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/cavaliergopher/grab/v3"
-	extract "github.com/codeclysm/extract/v3"
+	"github.com/codeclysm/extract/v3"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -405,6 +405,34 @@ func databaseIsEmpty(db ethdb.Database) bool {
 	return !it.Next()
 }
 
+func extractSnapshot(archive string, location string, importWasm bool) error {
+	isWasmDB := regexp.MustCompile("^(./)?wasm")
+	reader, err := os.Open(archive)
+	if err != nil {
+		return fmt.Errorf("couln't open init '%v' archive: %w", archive, err)
+	}
+	stat, err := reader.Stat()
+	if err != nil {
+		return err
+	}
+	log.Info("extracting downloaded init archive", "size", fmt.Sprintf("%dMB", stat.Size()/1024/1024))
+	var rename extract.Renamer
+	if !importWasm {
+		rename = func(path string) string {
+			path = strings.ToLower(path)
+			if isWasmDB.MatchString(path) {
+				return "" // do not extract wasm files
+			}
+			return path
+		}
+	}
+	err = extract.Archive(context.Background(), reader, location, rename)
+	if err != nil {
+		return fmt.Errorf("couln't extract init archive '%v' err: %w", archive, err)
+	}
+	return nil
+}
+
 // removes all entries with keys prefixed with prefixes and of length used in initial version of wasm store schema
 func purgeVersion0WasmStoreEntries(db ethdb.Database) error {
 	prefixes, keyLength := rawdb.DeprecatedPrefixesV0()
@@ -597,32 +625,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	}
 
 	if initFile != "" {
-		reader, err := os.Open(initFile)
-		if err != nil {
-			return nil, nil, fmt.Errorf("couln't open init '%v' archive: %w", initFile, err)
-		}
-		stat, err := reader.Stat()
-		if err != nil {
-			return nil, nil, err
-		}
-		log.Info("extracting downloaded init archive", "size", fmt.Sprintf("%dMB", stat.Size()/1024/1024))
-		err = extract.Archive(context.Background(), reader, stack.InstanceDir(), nil)
-		if err != nil {
-			err = fmt.Errorf("couln't extract init archive '%v' err:%w", initFile, err)
-		}
-		wasmDb := path.Join(stack.InstanceDir(), "wasm")
-		if dirExists(wasmDb) && !config.Init.ImportWasm {
-			// By default, remove the wasm DB because it contains native executables.
-			// Hence, it is a security concern when downloading a snapshot from a
-			// untrusted source.
-			removeErr := os.RemoveAll(wasmDb)
-			if removeErr != nil {
-				err = errors.Join(err, fmt.Errorf("failed to remove extracted wasm database: %w", removeErr))
-			} else {
-				log.Debug("init: removed wasm database")
-			}
-		}
-		if err != nil {
+		if err := extractSnapshot(initFile, stack.InstanceDir(), config.Init.ImportWasm); err != nil {
 			return nil, nil, err
 		}
 	}
