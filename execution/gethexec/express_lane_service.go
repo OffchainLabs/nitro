@@ -6,6 +6,7 @@ package gethexec
 import (
 	"context"
 	"fmt"
+	"math"
 	"sync"
 	"time"
 
@@ -43,6 +44,7 @@ type expressLaneService struct {
 	auctionContract          *express_lane_auctiongen.ExpressLaneAuction
 	roundControl             lru.BasicLRU[uint64, *expressLaneControl]
 	messagesBySequenceNumber map[uint64]*timeboost.ExpressLaneSubmission
+	maxMessagesPerQueue      int
 }
 
 func newExpressLaneService(
@@ -73,6 +75,7 @@ func newExpressLaneService(
 		seqClient:                sequencerClient,
 		logs:                     make(chan []*types.Log, 10_000),
 		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
+		maxMessagesPerQueue:      10,
 	}, nil
 }
 
@@ -180,6 +183,7 @@ func (es *expressLaneService) Start(ctxIn context.Context) {
 						sequence:   0,
 					})
 					es.Unlock()
+					es.messagesBySequenceNumber = make(map[uint64]*timeboost.ExpressLaneSubmission) // clear message queue for the new controller.
 				}
 				fromBlock = toBlock
 			}
@@ -232,6 +236,17 @@ func (es *expressLaneService) sequenceExpressLaneSubmission(
 	// Check if a duplicate submission exists already, and reject if so.
 	if _, exists := es.messagesBySequenceNumber[msg.Sequence]; exists {
 		return timeboost.ErrDuplicateSequenceNumber
+	}
+	// Check if the submission has exceeded pending queue.
+	if len(es.messagesBySequenceNumber) >= es.maxMessagesPerQueue {
+		lowest := uint64(math.MaxUint64)
+		for _, m := range es.messagesBySequenceNumber {
+			if m.Sequence < lowest {
+				lowest = m.Sequence
+			}
+		}
+		log.Warn("Express lane submission queue is full", "lowest_sequence", lowest)
+		return errors.Wrapf(timeboost.ErrPendingQueueFull, "express lane submission queue is full >= %d", es.maxMessagesPerQueue)
 	}
 	// Log an informational warning if the message's sequence number is in the future.
 	if msg.Sequence > control.sequence {

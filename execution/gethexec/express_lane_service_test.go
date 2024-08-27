@@ -256,6 +256,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_duplicateNonce(t *tes
 	els := &expressLaneService{
 		roundControl:             lru.NewBasicLRU[uint64, *expressLaneControl](8),
 		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
+		maxMessagesPerQueue:      10,
 	}
 	els.roundControl.Add(0, &expressLaneControl{
 		sequence: 1,
@@ -284,6 +285,7 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	els := &expressLaneService{
 		roundControl:             lru.NewBasicLRU[uint64, *expressLaneControl](8),
 		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
+		maxMessagesPerQueue:      10,
 	}
 	els.roundControl.Add(0, &expressLaneControl{
 		sequence: 1,
@@ -322,12 +324,48 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	require.Equal(t, len(messages), len(els.messagesBySequenceNumber))
 }
 
+func Test_expressLaneService_sequenceExpressLaneSubmission_FullQueue(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	els := &expressLaneService{
+		roundControl:             lru.NewBasicLRU[uint64, *expressLaneControl](8),
+		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
+		maxMessagesPerQueue:      10,
+	}
+	els.roundControl.Add(0, &expressLaneControl{
+		sequence: 1,
+	})
+	numPublished := 0
+	publishedTxOrder := make([]uint64, 0)
+	control, _ := els.roundControl.Get(0)
+	publishFn := func(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, delay bool) error {
+		numPublished += 1
+		publishedTxOrder = append(publishedTxOrder, control.sequence)
+		return nil
+	}
+	messages := make([]*timeboost.ExpressLaneSubmission, 10)
+	for i := 0; i < 10; i++ {
+		messages[i] = &timeboost.ExpressLaneSubmission{
+			Sequence: uint64(i + 1),
+		}
+	}
+	for _, msg := range messages {
+		err := els.sequenceExpressLaneSubmission(ctx, msg, publishFn)
+		require.NoError(t, err)
+	}
+	err := els.sequenceExpressLaneSubmission(ctx, &timeboost.ExpressLaneSubmission{
+		Sequence: 100,
+	}, publishFn)
+	require.ErrorIs(t, err, timeboost.ErrPendingQueueFull)
+}
+
 func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	els := &expressLaneService{
 		roundControl:             lru.NewBasicLRU[uint64, *expressLaneControl](8),
 		messagesBySequenceNumber: make(map[uint64]*timeboost.ExpressLaneSubmission),
+		maxMessagesPerQueue:      10,
 	}
 	els.roundControl.Add(0, &expressLaneControl{
 		sequence: 1,
