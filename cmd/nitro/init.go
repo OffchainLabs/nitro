@@ -419,8 +419,7 @@ func extractSnapshot(archive string, location string, importWasm bool) error {
 	var rename extract.Renamer
 	if !importWasm {
 		rename = func(path string) string {
-			path = strings.ToLower(path)
-			if isWasmDB.MatchString(path) {
+			if isWasmDB.MatchString(strings.ToLower(path)) {
 				return "" // do not extract wasm files
 			}
 			return path
