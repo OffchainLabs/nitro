@@ -214,10 +214,8 @@ func NewStatelessBlockValidator(
 	config func() *BlockValidatorConfig,
 	stack *node.Node,
 ) (*StatelessBlockValidator, error) {
-	var (
-		executionSpawners []validator.ExecutionSpawner
-		redisValClient    *redis.ValidationClient
-	)
+	var executionSpawners []validator.ExecutionSpawner
+	var redisValClient *redis.ValidationClient
 
 	if config().RedisValidationClientConfig.Enabled() {
 		var err error
@@ -226,7 +224,6 @@ func NewStatelessBlockValidator(
 			return nil, fmt.Errorf("creating new redis validation client: %w", err)
 		}
 	}
-
 	configs := config().ValidationServerConfigs
 	for i := range configs {
 		i := i
