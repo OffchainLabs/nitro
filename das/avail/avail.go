@@ -261,7 +261,7 @@ outer:
 				log.Info("📥  Submit data extrinsic included in finalized block", "blockHash", finalizedblockHash.Hex())
 				break outer
 			} else if status.IsRetracted {
-				log.Warn("AvailDA transaction got retracted from block", "blockHash", status.AsRetracted.Hex())
+				log.Warn("✂️  AvailDA transaction got retracted from block", "blockHash", status.AsRetracted.Hex())
 			} else if status.IsInvalid {
 				return gsrpc_types.Hash{}, gsrpc_types.UCompact{}, fmt.Errorf("❌ Extrinsic invalid")
 			}
