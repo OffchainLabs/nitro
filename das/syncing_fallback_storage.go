@@ -68,7 +68,7 @@ type SyncToStorageConfig struct {
 var DefaultSyncToStorageConfig = SyncToStorageConfig{
 	Eager:                    false,
 	EagerLowerBoundBlock:     0,
-	RetentionPeriod:          defaultStorageRetention,
+	RetentionPeriod:          daprovider.DefaultDASRetentionPeriod,
 	DelayOnError:             time.Second,
 	IgnoreWriteErrors:        true,
 	ParentChainBlocksPerRead: 100,
@@ -105,9 +105,9 @@ type l1SyncService struct {
 	lastBatchAcc   common.Hash
 }
 
-// The original syncing process had a bug, so the file was renamed to cause any mirrors
-// in the wild to re-sync from their configured starting block number.
-const nextBlockNoFilename = "nextBlockNumberV2"
+// The filename has been updated when we have discovered bugs that may have impacted
+// syncing, to cause mirrors to re-sync.
+const nextBlockNoFilename = "nextBlockNumberV3"
 
 func readSyncStateOrDefault(syncDir string, dflt uint64) uint64 {
 	if syncDir == "" {

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/node"
@@ -58,6 +59,10 @@ func globalstateToTestPreimages(gs validator.GoGlobalState) map[common.Hash][]by
 
 func (s *mockSpawner) WasmModuleRoots() ([]common.Hash, error) {
 	return mockWasmModuleRoots, nil
+}
+
+func (s *mockSpawner) StylusArchs() []rawdb.Target {
+	return []rawdb.Target{"mock"}
 }
 
 func (s *mockSpawner) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {

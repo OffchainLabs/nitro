@@ -18,9 +18,13 @@ import (
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/triedb"
+	"github.com/ethereum/go-ethereum/triedb/hashdb"
+	"github.com/ethereum/go-ethereum/triedb/pathdb"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
+	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
 
 // Storage allows ArbOS to store data persistently in the Ethereum-compatible stateDB. This is represented in
@@ -73,15 +77,21 @@ func NewGeth(statedb vm.StateDB, burner burn.Burner) *Storage {
 	}
 }
 
-// NewMemoryBacked uses Geth's memory-backed database to create an evm key-value store
+// NewMemoryBacked uses Geth's memory-backed database to create an evm key-value store.
+// Only used for testing.
 func NewMemoryBacked(burner burn.Burner) *Storage {
 	return NewGeth(NewMemoryBackedStateDB(), burner)
 }
 
 // NewMemoryBackedStateDB uses Geth's memory-backed database to create a statedb
+// Only used for testing.
 func NewMemoryBackedStateDB() vm.StateDB {
 	raw := rawdb.NewMemoryDatabase()
-	db := state.NewDatabase(raw)
+	trieConfig := &triedb.Config{Preimages: false, PathDB: pathdb.Defaults}
+	if env.GetTestStateScheme() == rawdb.HashScheme {
+		trieConfig = &triedb.Config{Preimages: false, HashDB: hashdb.Defaults}
+	}
+	db := state.NewDatabaseWithConfig(raw, trieConfig)
 	statedb, err := state.New(common.Hash{}, db, nil)
 	if err != nil {
 		panic("failed to init empty statedb")

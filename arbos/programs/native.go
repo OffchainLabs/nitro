@@ -54,11 +54,11 @@ func activateProgram(
 	debug bool,
 	burner burn.Burner,
 ) (*activationInfo, error) {
-	info, asm, module, err := activateProgramInternal(db, program, codehash, wasm, page_limit, version, debug, burner.GasLeft())
+	info, asmMap, err := activateProgramInternal(db, program, codehash, wasm, page_limit, version, debug, burner.GasLeft())
 	if err != nil {
 		return nil, err
 	}
-	db.ActivateWasm(info.moduleHash, asm, module)
+	db.ActivateWasm(info.moduleHash, asmMap)
 	return info, nil
 }
 
@@ -71,41 +71,52 @@ func activateProgramInternal(
 	version uint16,
 	debug bool,
 	gasLeft *uint64,
-) (*activationInfo, []byte, []byte, error) {
+) (*activationInfo, map[rawdb.Target][]byte, error) {
 	output := &rustBytes{}
-	asmLen := usize(0)
 	moduleHash := &bytes32{}
 	stylusData := &C.StylusData{}
 	codeHash := hashToBytes32(codehash)
 
-	status := userStatus(C.stylus_activate(
+	status_mod := userStatus(C.stylus_activate(
 		goSlice(wasm),
 		u16(page_limit),
 		u16(version),
 		cbool(debug),
 		output,
-		&asmLen,
 		&codeHash,
 		moduleHash,
 		stylusData,
 		(*u64)(gasLeft),
 	))
 
-	data, msg, err := status.toResult(output.intoBytes(), debug)
+	module, msg, err := status_mod.toResult(output.intoBytes(), debug)
 	if err != nil {
 		if debug {
 			log.Warn("activation failed", "err", err, "msg", msg, "program", addressForLogging)
 		}
 		if errors.Is(err, vm.ErrExecutionReverted) {
-			return nil, nil, nil, fmt.Errorf("%w: %s", ErrProgramActivation, msg)
+			return nil, nil, fmt.Errorf("%w: %s", ErrProgramActivation, msg)
 		}
-		return nil, nil, nil, err
+		return nil, nil, err
+	}
+	target := rawdb.LocalTarget()
+	status_asm := C.stylus_compile(
+		goSlice(wasm),
+		u16(version),
+		cbool(debug),
+		goSlice([]byte(target)),
+		output,
+	)
+	asm := output.intoBytes()
+	if status_asm != 0 {
+		return nil, nil, fmt.Errorf("%w: %s", ErrProgramActivation, string(asm))
+	}
+	asmMap := map[rawdb.Target][]byte{
+		rawdb.TargetWavm: module,
+		target:           asm,
 	}
 
 	hash := moduleHash.toHash()
-	split := int(asmLen)
-	asm := data[:split]
-	module := data[split:]
 
 	info := &activationInfo{
 		moduleHash:    hash,
@@ -114,11 +125,12 @@ func activateProgramInternal(
 		asmEstimate:   uint32(stylusData.asm_estimate),
 		footprint:     uint16(stylusData.footprint),
 	}
-	return info, asm, module, err
+	return info, asmMap, err
 }
 
 func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging common.Address, code []byte, codeHash common.Hash, pagelimit uint16, time uint64, debugMode bool, program Program) ([]byte, error) {
-	localAsm, err := statedb.TryGetActivatedAsm(moduleHash)
+	localTarget := rawdb.LocalTarget()
+	localAsm, err := statedb.TryGetActivatedAsm(localTarget, moduleHash)
 	if err == nil && len(localAsm) > 0 {
 		return localAsm, nil
 	}
@@ -132,7 +144,7 @@ func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging c
 
 	unlimitedGas := uint64(0xffffffffffff)
 	// we know program is activated, so it must be in correct version and not use too much memory
-	info, asm, module, err := activateProgramInternal(statedb, addressForLogging, codeHash, wasm, pagelimit, program.version, debugMode, &unlimitedGas)
+	info, asmMap, err := activateProgramInternal(statedb, addressForLogging, codeHash, wasm, pagelimit, program.version, debugMode, &unlimitedGas)
 	if err != nil {
 		log.Error("failed to reactivate program", "address", addressForLogging, "expected moduleHash", moduleHash, "err", err)
 		return nil, fmt.Errorf("failed to reactivate program address: %v err: %w", addressForLogging, err)
@@ -148,14 +160,23 @@ func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging c
 		// stylus program is active on-chain, and was activated in the past
 		// so we store it directly to database
 		batch := statedb.Database().WasmStore().NewBatch()
-		rawdb.WriteActivation(batch, moduleHash, asm, module)
+		rawdb.WriteActivation(batch, moduleHash, asmMap)
 		if err := batch.Write(); err != nil {
 			log.Error("failed writing re-activation to state", "address", addressForLogging, "err", err)
 		}
 	} else {
 		// program activated recently, possibly in this eth_call
 		// store it to statedb. It will be stored to database if statedb is commited
-		statedb.ActivateWasm(info.moduleHash, asm, module)
+		statedb.ActivateWasm(info.moduleHash, asmMap)
+	}
+	asm, exists := asmMap[localTarget]
+	if !exists {
+		var availableTargets []rawdb.Target
+		for target := range asmMap {
+			availableTargets = append(availableTargets, target)
+		}
+		log.Error("failed to reactivate program - missing asm for local target", "address", addressForLogging, "local target", localTarget, "available targets", availableTargets)
+		return nil, fmt.Errorf("failed to reactivate program - missing asm for local target, address: %v, local target: %v, available targets: %v", addressForLogging, localTarget, availableTargets)
 	}
 	return asm, nil
 }
@@ -182,7 +203,11 @@ func callProgram(
 	}
 
 	if db, ok := db.(*state.StateDB); ok {
-		db.RecordProgram(moduleHash)
+		targets := []rawdb.Target{
+			rawdb.TargetWavm,
+			rawdb.LocalTarget(),
+		}
+		db.RecordProgram(targets, moduleHash)
 	}
 
 	evmApi := newApi(interpreter, tracingInfo, scope, memoryModel)
@@ -205,6 +230,9 @@ func callProgram(
 	data, msg, err := status.toResult(output.intoBytes(), debug)
 	if status == userFailure && debug {
 		log.Warn("program failure", "err", err, "msg", msg, "program", address, "depth", depth)
+	}
+	if tracingInfo != nil {
+		tracingInfo.CaptureStylusExit(uint8(status), data, err, scope.Contract.Gas)
 	}
 	return data, err
 }
@@ -258,6 +286,25 @@ func init() {
 
 func ResizeWasmLruCache(size uint32) {
 	C.stylus_cache_lru_resize(u32(size))
+}
+
+const DefaultTargetDescriptionArm = "arm64-linux-unknown+neon"
+const DefaultTargetDescriptionX86 = "x86_64-linux-unknown+sse4.2"
+
+func SetTarget(name rawdb.Target, description string, native bool) error {
+	output := &rustBytes{}
+	status := userStatus(C.stylus_target_set(
+		goSlice([]byte(name)),
+		goSlice([]byte(description)),
+		output,
+		cbool(native),
+	))
+	if status != userSuccess {
+		msg := arbutil.ToStringOrHex(output.intoBytes())
+		log.Error("failed to set stylus compilation target", "status", status, "msg", msg)
+		return fmt.Errorf("failed to set stylus compilation target, status %v: %v", status, msg)
+	}
+	return nil
 }
 
 func (value bytes32) toHash() common.Hash {

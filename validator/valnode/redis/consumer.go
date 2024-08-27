@@ -37,7 +37,7 @@ func NewValidationServer(cfg *ValidationServerConfig, spawner validator.Validati
 	consumers := make(map[common.Hash]*pubsub.Consumer[*validator.ValidationInput, validator.GoGlobalState])
 	for _, hash := range cfg.ModuleRoots {
 		mr := common.HexToHash(hash)
-		c, err := pubsub.NewConsumer[*validator.ValidationInput, validator.GoGlobalState](redisClient, server_api.RedisStreamForRoot(mr), &cfg.ConsumerConfig)
+		c, err := pubsub.NewConsumer[*validator.ValidationInput, validator.GoGlobalState](redisClient, server_api.RedisStreamForRoot(cfg.StreamPrefix, mr), &cfg.ConsumerConfig)
 		if err != nil {
 			return nil, fmt.Errorf("creating consumer for validation: %w", err)
 		}
@@ -130,10 +130,12 @@ type ValidationServerConfig struct {
 	ModuleRoots []string `koanf:"module-roots"`
 	// Timeout on polling for existence of each redis stream.
 	StreamTimeout time.Duration `koanf:"stream-timeout"`
+	StreamPrefix  string        `koanf:"stream-prefix"`
 }
 
 var DefaultValidationServerConfig = ValidationServerConfig{
 	RedisURL:       "",
+	StreamPrefix:   "",
 	ConsumerConfig: pubsub.DefaultConsumerConfig,
 	ModuleRoots:    []string{},
 	StreamTimeout:  10 * time.Minute,
@@ -141,6 +143,7 @@ var DefaultValidationServerConfig = ValidationServerConfig{
 
 var TestValidationServerConfig = ValidationServerConfig{
 	RedisURL:       "",
+	StreamPrefix:   "test-",
 	ConsumerConfig: pubsub.TestConsumerConfig,
 	ModuleRoots:    []string{},
 	StreamTimeout:  time.Minute,
@@ -150,6 +153,7 @@ func ValidationServerConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	pubsub.ConsumerConfigAddOptions(prefix+".consumer-config", f)
 	f.StringSlice(prefix+".module-roots", nil, "Supported module root hashes")
 	f.String(prefix+".redis-url", DefaultValidationServerConfig.RedisURL, "url of redis server")
+	f.String(prefix+".stream-prefix", DefaultValidationServerConfig.StreamPrefix, "prefix for stream name")
 	f.Duration(prefix+".stream-timeout", DefaultValidationServerConfig.StreamTimeout, "Timeout on polling for existence of redis streams")
 }
 

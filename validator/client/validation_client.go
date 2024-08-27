@@ -21,39 +21,42 @@ import (
 	"github.com/offchainlabs/nitro/validator/server_common"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/rpc"
 )
 
 type ValidationClient struct {
 	stopwaiter.StopWaiter
 	client          *rpcclient.RpcClient
 	name            string
-	room            int32
+	stylusArchs     []rawdb.Target
+	room            atomic.Int32
 	wasmModuleRoots []common.Hash
 }
 
 func NewValidationClient(config rpcclient.ClientConfigFetcher, stack *node.Node) *ValidationClient {
 	return &ValidationClient{
-		client: rpcclient.NewRpcClient(config, stack),
+		client:      rpcclient.NewRpcClient(config, stack),
+		name:        "not started",
+		stylusArchs: []rawdb.Target{"not started"},
 	}
 }
 
 func (c *ValidationClient) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
-	atomic.AddInt32(&c.room, -1)
+	c.room.Add(-1)
 	promise := stopwaiter.LaunchPromiseThread[validator.GoGlobalState](c, func(ctx context.Context) (validator.GoGlobalState, error) {
 		input := server_api.ValidationInputToJson(entry)
 		var res validator.GoGlobalState
 		err := c.client.CallContext(ctx, &res, server_api.Namespace+"_validate", input, moduleRoot)
-		atomic.AddInt32(&c.room, 1)
+		c.room.Add(1)
 		return res, err
 	})
 	return server_common.NewValRun(promise, moduleRoot)
 }
 
-func (c *ValidationClient) Start(ctx_in context.Context) error {
-	c.StopWaiter.Start(ctx_in, c)
-	ctx := c.GetContext()
+func (c *ValidationClient) Start(ctx context.Context) error {
 	if err := c.client.Start(ctx); err != nil {
 		return err
 	}
@@ -64,15 +67,33 @@ func (c *ValidationClient) Start(ctx_in context.Context) error {
 	if len(name) == 0 {
 		return errors.New("couldn't read name from server")
 	}
+	var stylusArchs []rawdb.Target
+	if err := c.client.CallContext(ctx, &stylusArchs, server_api.Namespace+"_stylusArchs"); err != nil {
+		var rpcError rpc.Error
+		ok := errors.As(err, &rpcError)
+		if !ok || rpcError.ErrorCode() != -32601 {
+			return fmt.Errorf("could not read stylus arch from server: %w", err)
+		}
+		stylusArchs = []rawdb.Target{rawdb.Target("pre-stylus")} // invalid, will fail if trying to validate block with stylus
+	} else {
+		if len(stylusArchs) == 0 {
+			return fmt.Errorf("could not read stylus archs from validation server")
+		}
+		for _, stylusArch := range stylusArchs {
+			if stylusArch != rawdb.TargetWavm && stylusArch != rawdb.LocalTarget() && stylusArch != "mock" {
+				return fmt.Errorf("unsupported stylus architecture: %v", stylusArch)
+			}
+		}
+	}
 	var moduleRoots []common.Hash
-	if err := c.client.CallContext(c.GetContext(), &moduleRoots, server_api.Namespace+"_wasmModuleRoots"); err != nil {
+	if err := c.client.CallContext(ctx, &moduleRoots, server_api.Namespace+"_wasmModuleRoots"); err != nil {
 		return err
 	}
 	if len(moduleRoots) == 0 {
 		return fmt.Errorf("server reported no wasmModuleRoots")
 	}
 	var room int
-	if err := c.client.CallContext(c.GetContext(), &room, server_api.Namespace+"_room"); err != nil {
+	if err := c.client.CallContext(ctx, &room, server_api.Namespace+"_room"); err != nil {
 		return err
 	}
 	if room < 2 {
@@ -81,9 +102,11 @@ func (c *ValidationClient) Start(ctx_in context.Context) error {
 	} else {
 		log.Info("connected to validation server", "name", name, "room", room)
 	}
-	atomic.StoreInt32(&c.room, int32(room))
+	c.room.Store(int32(room))
 	c.wasmModuleRoots = moduleRoots
 	c.name = name
+	c.stylusArchs = stylusArchs
+	c.StopWaiter.Start(ctx, c)
 	return nil
 }
 
@@ -92,6 +115,13 @@ func (c *ValidationClient) WasmModuleRoots() ([]common.Hash, error) {
 		return c.wasmModuleRoots, nil
 	}
 	return nil, errors.New("not started")
+}
+
+func (c *ValidationClient) StylusArchs() []rawdb.Target {
+	if c.Started() {
+		return c.stylusArchs
+	}
+	return []rawdb.Target{"not started"}
 }
 
 func (c *ValidationClient) Stop() {
@@ -106,7 +136,7 @@ func (c *ValidationClient) Name() string {
 }
 
 func (c *ValidationClient) Room() int {
-	room32 := atomic.LoadInt32(&c.room)
+	room32 := c.room.Load()
 	if room32 < 0 {
 		return 0
 	}

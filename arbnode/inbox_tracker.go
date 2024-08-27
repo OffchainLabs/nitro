@@ -300,7 +300,7 @@ func (t *InboxTracker) PopulateFeedBacklog(broadcastServer *broadcaster.Broadcas
 			return fmt.Errorf("error getting message %v: %w", seqNum, err)
 		}
 
-		msgResult, err := t.txStreamer.ResultAtCount(seqNum)
+		msgResult, err := t.txStreamer.ResultAtCount(seqNum + 1)
 		var blockHash *common.Hash
 		if err == nil {
 			blockHash = &msgResult.BlockHash
@@ -316,7 +316,7 @@ func (t *InboxTracker) PopulateFeedBacklog(broadcastServer *broadcaster.Broadcas
 	return nil
 }
 
-func (t *InboxTracker) legacyGetDelayedMessageAndAccumulator(seqNum uint64) (*arbostypes.L1IncomingMessage, common.Hash, error) {
+func (t *InboxTracker) legacyGetDelayedMessageAndAccumulator(ctx context.Context, seqNum uint64) (*arbostypes.L1IncomingMessage, common.Hash, error) {
 	key := dbKey(legacyDelayedMessagePrefix, seqNum)
 	data, err := t.db.Get(key)
 	if err != nil {
@@ -328,17 +328,26 @@ func (t *InboxTracker) legacyGetDelayedMessageAndAccumulator(seqNum uint64) (*ar
 	var acc common.Hash
 	copy(acc[:], data[:32])
 	msg, err := arbostypes.ParseIncomingL1Message(bytes.NewReader(data[32:]), nil)
+	if err != nil {
+		return nil, common.Hash{}, err
+	}
+
+	err = msg.FillInBatchGasCost(func(batchNum uint64) ([]byte, error) {
+		data, _, err := t.txStreamer.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
+		return data, err
+	})
+
 	return msg, acc, err
 }
 
-func (t *InboxTracker) GetDelayedMessageAccumulatorAndParentChainBlockNumber(seqNum uint64) (*arbostypes.L1IncomingMessage, common.Hash, uint64, error) {
+func (t *InboxTracker) GetDelayedMessageAccumulatorAndParentChainBlockNumber(ctx context.Context, seqNum uint64) (*arbostypes.L1IncomingMessage, common.Hash, uint64, error) {
 	delayedMessageKey := dbKey(rlpDelayedMessagePrefix, seqNum)
 	exists, err := t.db.Has(delayedMessageKey)
 	if err != nil {
 		return nil, common.Hash{}, 0, err
 	}
 	if !exists {
-		msg, acc, err := t.legacyGetDelayedMessageAndAccumulator(seqNum)
+		msg, acc, err := t.legacyGetDelayedMessageAndAccumulator(ctx, seqNum)
 		return msg, acc, 0, err
 	}
 	data, err := t.db.Get(delayedMessageKey)
@@ -352,6 +361,14 @@ func (t *InboxTracker) GetDelayedMessageAccumulatorAndParentChainBlockNumber(seq
 	copy(acc[:], data[:32])
 	var msg *arbostypes.L1IncomingMessage
 	err = rlp.DecodeBytes(data[32:], &msg)
+	if err != nil {
+		return msg, acc, 0, err
+	}
+
+	err = msg.FillInBatchGasCost(func(batchNum uint64) ([]byte, error) {
+		data, _, err := t.txStreamer.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
+		return data, err
+	})
 	if err != nil {
 		return msg, acc, 0, err
 	}
@@ -373,13 +390,13 @@ func (t *InboxTracker) GetDelayedMessageAccumulatorAndParentChainBlockNumber(seq
 
 }
 
-func (t *InboxTracker) GetDelayedMessage(seqNum uint64) (*arbostypes.L1IncomingMessage, error) {
-	msg, _, _, err := t.GetDelayedMessageAccumulatorAndParentChainBlockNumber(seqNum)
+func (t *InboxTracker) GetDelayedMessage(ctx context.Context, seqNum uint64) (*arbostypes.L1IncomingMessage, error) {
+	msg, _, _, err := t.GetDelayedMessageAccumulatorAndParentChainBlockNumber(ctx, seqNum)
 	return msg, err
 }
 
-func (t *InboxTracker) GetDelayedMessageBytes(seqNum uint64) ([]byte, error) {
-	msg, err := t.GetDelayedMessage(seqNum)
+func (t *InboxTracker) GetDelayedMessageBytes(ctx context.Context, seqNum uint64) ([]byte, error) {
+	msg, err := t.GetDelayedMessage(ctx, seqNum)
 	if err != nil {
 		return nil, err
 	}
@@ -617,7 +634,7 @@ func (b *multiplexerBackend) ReadDelayedInbox(seqNum uint64) (*arbostypes.L1Inco
 	if len(b.batches) == 0 || seqNum >= b.batches[0].AfterDelayedCount {
 		return nil, errors.New("attempted to read past end of sequencer batch delayed messages")
 	}
-	return b.inbox.GetDelayedMessage(seqNum)
+	return b.inbox.GetDelayedMessage(b.ctx, seqNum)
 }
 
 var delayedMessagesMismatch = errors.New("sequencer batch delayed messages missing or different")

@@ -17,7 +17,6 @@ import (
 	"github.com/alicebob/miniredis/v2"
 	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/offchainlabs/nitro/arbnode"
-	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/redisutil"
 )
 
@@ -39,7 +38,7 @@ func TestStaticForwarder(t *testing.T) {
 	clientA := builder.L2.Client
 
 	nodeConfigB := arbnode.ConfigDefaultL1Test()
-	execConfigB := gethexec.ConfigDefaultTest()
+	execConfigB := ExecConfigDefaultTest()
 	execConfigB.Sequencer.Enable = false
 	nodeConfigB.Sequencer = false
 	nodeConfigB.DelayedSequencer.Enable = false
@@ -110,7 +109,7 @@ func createForwardingNode(t *testing.T, builder *NodeBuilder, ipcPath string, re
 	nodeConfig.Sequencer = false
 	nodeConfig.DelayedSequencer.Enable = false
 	nodeConfig.BatchPoster.Enable = false
-	execConfig := gethexec.ConfigDefaultTest()
+	execConfig := ExecConfigDefaultTest()
 	execConfig.Sequencer.Enable = false
 	execConfig.Forwarder.RedisUrl = redisUrl
 	execConfig.ForwardingTarget = fallbackPath
@@ -200,7 +199,7 @@ func user(suffix string, idx int) string {
 }
 
 // tryWithTimeout calls function f() repeatedly foruntil it succeeds.
-func tryWithTimeout(ctx context.Context, f func() error, duration time.Duration) error {
+func tryWithTimeout(f func() error, duration time.Duration) error {
 	for {
 		select {
 		case <-time.After(duration):
@@ -264,7 +263,7 @@ func TestRedisForwarder(t *testing.T) {
 		tx := builder.L2Info.PrepareTx(userA, userB, builder.L2Info.TransferGas, transferAmount, nil)
 
 		sendFunc := func() error { return forwardingClient.SendTransaction(ctx, tx) }
-		if err := tryWithTimeout(ctx, sendFunc, gethexec.DefaultTestForwarderConfig.UpdateInterval*10); err != nil {
+		if err := tryWithTimeout(sendFunc, DefaultTestForwarderConfig.UpdateInterval*10); err != nil {
 			t.Fatalf("Client: %v, error sending transaction: %v", i, err)
 		}
 		_, err := EnsureTxSucceeded(ctx, seqClients[i], tx)
@@ -309,7 +308,7 @@ func TestRedisForwarderFallbackNoRedis(t *testing.T) {
 	builder.L2Info.GenerateAccount(user)
 	tx := builder.L2Info.PrepareTx("Owner", "User2", builder.L2Info.TransferGas, transferAmount, nil)
 	sendFunc := func() error { return forwardingClient.SendTransaction(ctx, tx) }
-	err := tryWithTimeout(ctx, sendFunc, gethexec.DefaultTestForwarderConfig.UpdateInterval*10)
+	err := tryWithTimeout(sendFunc, DefaultTestForwarderConfig.UpdateInterval*10)
 	Require(t, err)
 
 	_, err = builder.L2.EnsureTxSucceeded(tx)

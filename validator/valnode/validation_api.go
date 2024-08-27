@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
@@ -42,6 +43,10 @@ func (a *ValidationServerAPI) Validate(ctx context.Context, entry *server_api.In
 
 func (a *ValidationServerAPI) WasmModuleRoots() ([]common.Hash, error) {
 	return a.spawner.WasmModuleRoots()
+}
+
+func (a *ValidationServerAPI) StylusArchs() ([]rawdb.Target, error) {
+	return a.spawner.StylusArchs(), nil
 }
 
 func NewValidationServerAPI(spawner validator.ValidationSpawner) *ValidationServerAPI {

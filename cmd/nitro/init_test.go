@@ -1,4 +1,4 @@
-// Copyright 2021-2022, Offchain Labs, Inc.
+// Copyright 2021-2024, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
 package main
@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math/big"
 	"net"
 	"net/http"
 	"os"
@@ -19,9 +20,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/ethclient"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/offchainlabs/nitro/arbnode"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/cmd/conf"
+	"github.com/offchainlabs/nitro/execution/gethexec"
 	"github.com/offchainlabs/nitro/util/testhelpers"
+	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
 
 const (
@@ -201,6 +209,7 @@ func TestSetLatestSnapshotUrl(t *testing.T) {
 
 	testCases := []struct {
 		name           string
+		chain          string
 		latestContents string
 		wantUrl        func(string) string
 	}{
@@ -224,6 +233,12 @@ func TestSetLatestSnapshotUrl(t *testing.T) {
 			latestContents: "https://some.domain.com/arb1/2024/21/archive.tar.gz",
 			wantUrl:        func(serverAddr string) string { return "https://some.domain.com/arb1/2024/21/archive.tar.gz" },
 		},
+		{
+			name:           "chain and contents with upper case",
+			chain:          "ARB1",
+			latestContents: "ARB1/2024/21/ARCHIVE.TAR.GZ",
+			wantUrl:        func(serverAddr string) string { return serverAddr + "/arb1/2024/21/archive.tar.gz" },
+		},
 	}
 
 	for _, testCase := range testCases {
@@ -231,6 +246,7 @@ func TestSetLatestSnapshotUrl(t *testing.T) {
 
 		// Create latest file
 		serverDir := t.TempDir()
+
 		err := os.Mkdir(filepath.Join(serverDir, chain), dirPerm)
 		Require(t, err)
 		err = os.WriteFile(filepath.Join(serverDir, chain, latestFile), []byte(testCase.latestContents), filePerm)
@@ -245,7 +261,11 @@ func TestSetLatestSnapshotUrl(t *testing.T) {
 		initConfig := conf.InitConfigDefault
 		initConfig.Latest = snapshotKind
 		initConfig.LatestBase = addr
-		err = setLatestSnapshotUrl(ctx, &initConfig, chain)
+		configChain := testCase.chain
+		if configChain == "" {
+			configChain = chain
+		}
+		err = setLatestSnapshotUrl(ctx, &initConfig, configChain)
 		Require(t, err)
 
 		// Check url
@@ -278,38 +298,6 @@ func startFileServer(t *testing.T, ctx context.Context, dir string) string {
 		Require(t, err, "failed to shutdown server")
 	}()
 	return addr
-}
-
-func testIsNotExistError(t *testing.T, dbEngine string, isNotExist func(error) bool) {
-	stackConf := node.DefaultConfig
-	stackConf.DataDir = t.TempDir()
-	stackConf.DBEngine = dbEngine
-	stack, err := node.New(&stackConf)
-	if err != nil {
-		t.Fatalf("Failed to created test stack: %v", err)
-	}
-	defer stack.Close()
-	readonly := true
-	_, err = stack.OpenDatabaseWithExtraOptions("test", 16, 16, "", readonly, nil)
-	if err == nil {
-		t.Fatal("Opening non-existent database did not fail")
-	}
-	if !isNotExist(err) {
-		t.Fatalf("Failed to classify error as not exist error - internal implementation of OpenDatabaseWithExtraOptions might have changed, err: %v", err)
-	}
-	err = errors.New("some other error")
-	if isNotExist(err) {
-		t.Fatalf("Classified other error as not exist, err: %v", err)
-	}
-}
-
-func TestIsNotExistError(t *testing.T) {
-	t.Run("TestIsPebbleNotExistError", func(t *testing.T) {
-		testIsNotExistError(t, "pebble", isPebbleNotExistError)
-	})
-	t.Run("TestIsLeveldbNotExistError", func(t *testing.T) {
-		testIsNotExistError(t, "leveldb", isLeveldbNotExistError)
-	})
 }
 
 func TestEmptyDatabaseDir(t *testing.T) {
@@ -360,4 +348,209 @@ func TestEmptyDatabaseDir(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
+	stack, err := node.New(stackConfig)
+	defer stack.Close()
+	Require(t, err)
+
+	nodeConfig := NodeConfigDefault
+	nodeConfig.Execution.Caching.StateScheme = rawdb.PathScheme
+	nodeConfig.Chain.ID = 42161
+	nodeConfig.Node = *arbnode.ConfigDefaultL2Test()
+	nodeConfig.Init.DevInit = true
+	nodeConfig.Init.DevInitAddress = "0x3f1Eae7D46d88F08fc2F8ed27FCb2AB183EB2d0E"
+
+	l1Client := ethclient.NewClient(stack.Attach())
+
+	// opening for the first time doesn't error
+	chainDb, blockchain, err := openInitializeChainDb(
+		ctx,
+		stack,
+		&nodeConfig,
+		new(big.Int).SetUint64(nodeConfig.Chain.ID),
+		gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching),
+		&nodeConfig.Persistent,
+		l1Client,
+		chaininfo.RollupAddresses{},
+	)
+	Require(t, err)
+	blockchain.Stop()
+	err = chainDb.Close()
+	Require(t, err)
+
+	// opening for the second time doesn't error
+	chainDb, blockchain, err = openInitializeChainDb(
+		ctx,
+		stack,
+		&nodeConfig,
+		new(big.Int).SetUint64(nodeConfig.Chain.ID),
+		gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching),
+		&nodeConfig.Persistent,
+		l1Client,
+		chaininfo.RollupAddresses{},
+	)
+	Require(t, err)
+	blockchain.Stop()
+	err = chainDb.Close()
+	Require(t, err)
+
+	// opening with a different state scheme errors
+	nodeConfig.Execution.Caching.StateScheme = rawdb.HashScheme
+	_, _, err = openInitializeChainDb(
+		ctx,
+		stack,
+		&nodeConfig,
+		new(big.Int).SetUint64(nodeConfig.Chain.ID),
+		gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching),
+		&nodeConfig.Persistent,
+		l1Client,
+		chaininfo.RollupAddresses{},
+	)
+	if !strings.Contains(err.Error(), "incompatible state scheme, stored: path, provided: hash") {
+		t.Fatalf("Failed to detect incompatible state scheme")
+	}
+}
+
+func writeKeys(t *testing.T, db ethdb.Database, keys [][]byte) {
+	t.Helper()
+	batch := db.NewBatch()
+	for _, key := range keys {
+		err := batch.Put(key, []byte("some data"))
+		if err != nil {
+			t.Fatal("Internal test error - failed to insert key:", err)
+		}
+	}
+	err := batch.Write()
+	if err != nil {
+		t.Fatal("Internal test error - failed to write batch:", err)
+	}
+	batch.Reset()
+}
+
+func checkKeys(t *testing.T, db ethdb.Database, keys [][]byte, shouldExist bool) {
+	t.Helper()
+	for _, key := range keys {
+		has, err := db.Has(key)
+		if err != nil {
+			t.Fatal("Failed to check key existence, key: ", key)
+		}
+		if shouldExist && !has {
+			t.Fatal("Key not found:", key)
+		}
+		if !shouldExist && has {
+			t.Fatal("Key found:", key, "k3:", string(key[:3]), "len", len(key))
+		}
+	}
+}
+
+func TestPurgeVersion0WasmStoreEntries(t *testing.T) {
+	stackConf := node.DefaultConfig
+	stackConf.DataDir = t.TempDir()
+	stack, err := node.New(&stackConf)
+	if err != nil {
+		t.Fatalf("Failed to create test stack: %v", err)
+	}
+	defer stack.Close()
+	db, err := stack.OpenDatabaseWithExtraOptions("wasm", NodeConfigDefault.Execution.Caching.DatabaseCache, NodeConfigDefault.Persistent.Handles, "wasm/", false, nil)
+	if err != nil {
+		t.Fatalf("Failed to open test db: %v", err)
+	}
+	var version0Keys [][]byte
+	for i := 0; i < 20; i++ {
+		version0Keys = append(version0Keys,
+			append([]byte{0x00, 'w', 'a'}, testhelpers.RandomSlice(32)...))
+		version0Keys = append(version0Keys,
+			append([]byte{0x00, 'w', 'm'}, testhelpers.RandomSlice(32)...))
+	}
+	var collidedKeys [][]byte
+	for i := 0; i < 5; i++ {
+		collidedKeys = append(collidedKeys,
+			append([]byte{0x00, 'w', 'a'}, testhelpers.RandomSlice(31)...))
+		collidedKeys = append(collidedKeys,
+			append([]byte{0x00, 'w', 'm'}, testhelpers.RandomSlice(31)...))
+		collidedKeys = append(collidedKeys,
+			append([]byte{0x00, 'w', 'a'}, testhelpers.RandomSlice(33)...))
+		collidedKeys = append(collidedKeys,
+			append([]byte{0x00, 'w', 'm'}, testhelpers.RandomSlice(33)...))
+	}
+	var otherKeys [][]byte
+	for i := 0x00; i <= 0xff; i++ {
+		if byte(i) == 'a' || byte(i) == 'm' {
+			continue
+		}
+		otherKeys = append(otherKeys,
+			append([]byte{0x00, 'w', byte(i)}, testhelpers.RandomSlice(32)...))
+		otherKeys = append(otherKeys,
+			append([]byte{0x00, 'w', byte(i)}, testhelpers.RandomSlice(32)...))
+	}
+	for i := 0; i < 10; i++ {
+		var randomSlice []byte
+		var j int
+		for j = 0; j < 10; j++ {
+			randomSlice = testhelpers.RandomSlice(testhelpers.RandomUint64(1, 40))
+			if len(randomSlice) >= 3 && !bytes.Equal(randomSlice[:3], []byte{0x00, 'w', 'm'}) && !bytes.Equal(randomSlice[:3], []byte{0x00, 'w', 'm'}) {
+				break
+			}
+		}
+		if j == 10 {
+			t.Fatal("Internal test error - failed to generate random key")
+		}
+		otherKeys = append(otherKeys, randomSlice)
+	}
+	writeKeys(t, db, version0Keys)
+	writeKeys(t, db, collidedKeys)
+	writeKeys(t, db, otherKeys)
+	checkKeys(t, db, version0Keys, true)
+	checkKeys(t, db, collidedKeys, true)
+	checkKeys(t, db, otherKeys, true)
+	err = purgeVersion0WasmStoreEntries(db)
+	if err != nil {
+		t.Fatal("Failed to purge version 0 keys, err:", err)
+	}
+	checkKeys(t, db, version0Keys, false)
+	checkKeys(t, db, collidedKeys, true)
+	checkKeys(t, db, otherKeys, true)
+}
+
+func TestOpenInitializeChainDbEmptyInit(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
+	stack, err := node.New(stackConfig)
+	defer stack.Close()
+	Require(t, err)
+
+	nodeConfig := NodeConfigDefault
+	nodeConfig.Execution.Caching.StateScheme = env.GetTestStateScheme()
+	nodeConfig.Chain.ID = 42161
+	nodeConfig.Node = *arbnode.ConfigDefaultL2Test()
+	nodeConfig.Init.Empty = true
+
+	l1Client := ethclient.NewClient(stack.Attach())
+
+	chainDb, blockchain, err := openInitializeChainDb(
+		ctx,
+		stack,
+		&nodeConfig,
+		new(big.Int).SetUint64(nodeConfig.Chain.ID),
+		gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching),
+		&nodeConfig.Persistent,
+		l1Client,
+		chaininfo.RollupAddresses{},
+	)
+	Require(t, err)
+	blockchain.Stop()
+	err = chainDb.Close()
+	Require(t, err)
 }

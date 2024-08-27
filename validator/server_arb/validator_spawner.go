@@ -21,6 +21,7 @@ import (
 	"github.com/offchainlabs/nitro/validator/valnode/redis"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 )
@@ -59,7 +60,7 @@ func DefaultArbitratorSpawnerConfigFetcher() *ArbitratorSpawnerConfig {
 
 type ArbitratorSpawner struct {
 	stopwaiter.StopWaiter
-	count         int32
+	count         atomic.Int32
 	locator       *server_common.MachineLocator
 	machineLoader *ArbMachineLoader
 	config        ArbitratorSpawnerConfigFecher
@@ -86,6 +87,10 @@ func (s *ArbitratorSpawner) LatestWasmModuleRoot() containers.PromiseInterface[c
 
 func (s *ArbitratorSpawner) WasmModuleRoots() ([]common.Hash, error) {
 	return s.locator.ModuleRoots(), nil
+}
+
+func (s *ArbitratorSpawner) StylusArchs() []rawdb.Target {
+	return []rawdb.Target{rawdb.TargetWavm}
 }
 
 func (s *ArbitratorSpawner) Name() string {
@@ -118,8 +123,15 @@ func (v *ArbitratorSpawner) loadEntryToMachine(ctx context.Context, entry *valid
 			return fmt.Errorf("error while trying to add sequencer msg for proving: %w", err)
 		}
 	}
-	for moduleHash, info := range entry.UserWasms {
-		err = mach.AddUserWasm(moduleHash, info.Module)
+	if len(entry.UserWasms[rawdb.TargetWavm]) == 0 {
+		for stylusArch, wasms := range entry.UserWasms {
+			if len(wasms) > 0 {
+				return fmt.Errorf("bad stylus arch loaded to machine. Expected wavm. Got: %s", stylusArch)
+			}
+		}
+	}
+	for moduleHash, module := range entry.UserWasms[rawdb.TargetWavm] {
+		err = mach.AddUserWasm(moduleHash, module)
 		if err != nil {
 			log.Error(
 				"error adding user wasm for proving",
@@ -176,9 +188,9 @@ func (v *ArbitratorSpawner) execute(
 }
 
 func (v *ArbitratorSpawner) Launch(entry *validator.ValidationInput, moduleRoot common.Hash) validator.ValidationRun {
-	atomic.AddInt32(&v.count, 1)
+	v.count.Add(1)
 	promise := stopwaiter.LaunchPromiseThread[validator.GoGlobalState](v, func(ctx context.Context) (validator.GoGlobalState, error) {
-		defer atomic.AddInt32(&v.count, -1)
+		defer v.count.Add(-1)
 		return v.execute(ctx, entry, moduleRoot)
 	})
 	return server_common.NewValRun(promise, moduleRoot)

@@ -16,6 +16,7 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/core/vm"
 
@@ -68,6 +69,8 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder = builder.WithWasmRootDir(opts.wasmRootDir)
+	// For now PathDB is not supported when using block validation
+	builder.execConfig.Caching.StateScheme = rawdb.HashScheme
 	builder.nodeConfig = l1NodeConfigA
 	builder.chainConfig = chainConfig
 	builder.L2Info = nil
@@ -89,7 +92,7 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 		validatorConfig.BlockValidator.RedisValidationClientConfig = redis.ValidationClientConfig{}
 	}
 
-	AddDefaultValNode(t, ctx, validatorConfig, !opts.arbitrator, redisURL, opts.wasmRootDir)
+	AddValNode(t, ctx, validatorConfig, !opts.arbitrator, redisURL, opts.wasmRootDir)
 
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: validatorConfig})
 	defer cleanupB()

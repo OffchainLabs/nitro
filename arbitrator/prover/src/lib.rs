@@ -9,8 +9,8 @@ mod host;
 mod kzg;
 pub mod machine;
 /// cbindgen:ignore
-mod memory;
-mod merkle;
+pub mod memory;
+pub mod merkle;
 mod print;
 pub mod programs;
 mod reinterpret;
@@ -101,8 +101,7 @@ unsafe fn arbitrator_load_machine_impl(
         &libraries,
         binary_path,
         true,
-        false,
-        false,
+        true,
         debug_chain,
         debug_chain,
         Default::default(),
