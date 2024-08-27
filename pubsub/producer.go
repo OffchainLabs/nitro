@@ -96,23 +96,24 @@ func NewProducer[Request any, Response any](client redis.UniversalClient, stream
 	}, nil
 }
 
+func getUintParts(msgId string) ([2]uint64, error) {
+	idParts := strings.Split(msgId, "-")
+	if len(idParts) != 2 {
+		return [2]uint64{}, fmt.Errorf("invalid i.d: %v", msgId)
+	}
+	idTimeStamp, err := strconv.ParseUint(idParts[0], 10, 64)
+	if err != nil {
+		return [2]uint64{}, fmt.Errorf("invalid i.d: %v err: %w", msgId, err)
+	}
+	idSerial, err := strconv.ParseUint(idParts[1], 10, 64)
+	if err != nil {
+		return [2]uint64{}, fmt.Errorf("invalid i.d serial: %v err: %w", msgId, err)
+	}
+	return [2]uint64{idTimeStamp, idSerial}, nil
+}
+
 // cmpMsgId compares two msgid's and returns (0) if equal, (-1) if msgId1 < msgId2, (1) if msgId1 > msgId2, (-2) if not comparable (or error)
 func cmpMsgId(msgId1, msgId2 string) int {
-	getUintParts := func(msgId string) ([2]uint64, error) {
-		idParts := strings.Split(msgId, "-")
-		if len(idParts) != 2 {
-			return [2]uint64{}, fmt.Errorf("invalid i.d: %v", msgId)
-		}
-		idTimeStamp, err := strconv.ParseUint(idParts[0], 10, 64)
-		if err != nil {
-			return [2]uint64{}, fmt.Errorf("invalid i.d: %v err: %w", msgId, err)
-		}
-		idSerial, err := strconv.ParseUint(idParts[1], 10, 64)
-		if err != nil {
-			return [2]uint64{}, fmt.Errorf("invalid i.d serial: %v err: %w", msgId, err)
-		}
-		return [2]uint64{idTimeStamp, idSerial}, nil
-	}
 	id1, err := getUintParts(msgId1)
 	if err != nil {
 		log.Trace("error comparing msgIds", "msgId1", msgId1, "msgId2", msgId2)

@@ -5,6 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
+	"math/rand"
+	"strconv"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -82,23 +85,54 @@ func (c *Consumer[Request, Response]) StreamName() string {
 	return c.redisStream
 }
 
+func decrementMsgIdByOne(msgId string) string {
+	id, err := getUintParts(msgId)
+	if err != nil {
+		log.Error("Error decrementing start of XAutoClaim by one, defaulting to 0", "err", err)
+		return "0"
+	}
+	if id[1] > 0 {
+		return strconv.FormatUint(id[0], 10) + "-" + strconv.FormatUint(id[1]-1, 10)
+	} else if id[0] > 0 {
+		return strconv.FormatUint(id[0]-1, 10) + "-" + strconv.FormatUint(math.MaxUint64, 10)
+	} else {
+		log.Error("Error decrementing start of XAutoClaim by one, defaulting to 0", "err", err)
+		return "0"
+	}
+}
+
 // Consumer first checks it there exists pending message that is claimed by
 // unresponsive consumer, if not then reads from the stream.
 func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Request], chan struct{}, error) {
-	// First try to XAUTOCLAIM, this prioritizes processing PEL messages
-	// that have been waiting for more than IdletimeToAutoclaim duration
-	messages, _, err := c.client.XAutoClaim(ctx, &redis.XAutoClaimArgs{
-		Group:    c.redisGroup,
-		Consumer: c.id,
-		MinIdle:  c.cfg.IdletimeToAutoclaim, // Minimum idle time for messages to claim (in milliseconds)
-		Stream:   c.redisStream,
-		Start:    "0",
-		Count:    5, // Try looking for 50 entries in PEL, this assumes there are a maximum of 50 consumers in this redisGroup
-	}).Result()
-	if len(messages) == 0 || err != nil {
+	// First try to XAUTOCLAIM, with start as a random messageID from PEL with MinIdle as IdletimeToAutoclaim
+	// this prioritizes processing PEL messages that have been waiting for more than IdletimeToAutoclaim duration
+	var messages []redis.XMessage
+	if pendingMsgs, err := c.client.XPendingExt(ctx, &redis.XPendingExtArgs{
+		Stream: c.redisStream,
+		Group:  c.redisGroup,
+		Start:  "-",
+		End:    "+",
+		Count:  math.MaxInt64,
+		Idle:   c.cfg.IdletimeToAutoclaim,
+	}).Result(); err != nil {
+		if !errors.Is(err, redis.Nil) {
+			log.Error("Error from XpendingExt in getting PEL for auto claim", "err", err, "penindlen", len(pendingMsgs))
+		}
+	} else if len(pendingMsgs) > 0 {
+		idx := rand.Intn(len(pendingMsgs))
+		messages, _, err = c.client.XAutoClaim(ctx, &redis.XAutoClaimArgs{
+			Group:    c.redisGroup,
+			Consumer: c.id,
+			MinIdle:  c.cfg.IdletimeToAutoclaim, // Minimum idle time for messages to claim (in milliseconds)
+			Stream:   c.redisStream,
+			Start:    decrementMsgIdByOne(pendingMsgs[idx].ID),
+			Count:    1,
+		}).Result()
 		if err != nil {
 			log.Error("error from xautoclaim", "err", err)
 		}
+	}
+	if len(messages) == 0 {
 		// Fallback to reading new messages
 		res, err := c.client.XReadGroup(ctx, &redis.XReadGroupArgs{
 			Group:    c.redisGroup,
@@ -126,7 +160,7 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 		data, ok = (value).(string)
 	)
 	if !ok {
-		return nil, nil, fmt.Errorf("casting request to string: %w", err)
+		return nil, nil, errors.New("error casting request to string")
 	}
 	var req Request
 	if err := json.Unmarshal([]byte(data), &req); err != nil {
@@ -137,14 +171,16 @@ func (c *Consumer[Request, Response]) Consume(ctx context.Context) (*Message[Req
 		for {
 			// Use XClaimJustID so that we would have clear difference between invalid requests that are claimed multiple times due to xautoclaim and
 			// valid requests that are just being claimed in regular intervals to indicate heartbeat
-			if err := c.client.XClaimJustID(ctx, &redis.XClaimArgs{
+			if ids, err := c.client.XClaimJustID(ctx, &redis.XClaimArgs{
 				Stream:   c.redisStream,
 				Group:    c.redisGroup,
 				Consumer: c.id,
 				MinIdle:  0,
 				Messages: []string{messages[0].ID},
-			}).Err(); err != nil {
-				log.Error("error claiming message, it might be possible that other consumers might pick this request", "msgID", messages[0].ID)
+			}).Result(); err != nil {
+				log.Error("Error claiming message, it might be possible that other consumers might pick this request", "msgID", messages[0].ID)
+			} else if len(ids) != 1 {
+				log.Warn("XClaimJustID returned empty response when indicating hearbeat", "msgID", messages[0].ID)
 			}
 			select {
 			case <-ackNotifier:
