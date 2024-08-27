@@ -124,7 +124,7 @@ func (c *L1ValidatorConfig) ValidatorRequired() bool {
 	if c.Dangerous.WithoutBlockValidator {
 		return false
 	}
-	if c.strategy == WatchtowerStrategy {
+	if c.strategy == WatchtowerStrategy && !c.EnableFastConfirmation {
 		return false
 	}
 	return true
@@ -142,6 +142,8 @@ func (c *L1ValidatorConfig) Validate() error {
 	c.gasRefunder = common.HexToAddress(c.GasRefunderAddress)
 	return nil
 }
+
+type L1ValidatorConfigFetcher func() *L1ValidatorConfig
 
 var DefaultL1ValidatorConfig = L1ValidatorConfig{
 	Enable:                    true,
@@ -163,7 +165,7 @@ var DefaultL1ValidatorConfig = L1ValidatorConfig{
 	Dangerous:                 DefaultDangerousConfig,
 	ParentChainWallet:         DefaultValidatorL1WalletConfig,
 	LogQueryBatchSize:         0,
-	EnableFastConfirmation:    true,
+	EnableFastConfirmation:    false,
 }
 
 var TestL1ValidatorConfig = L1ValidatorConfig{
@@ -186,7 +188,7 @@ var TestL1ValidatorConfig = L1ValidatorConfig{
 	Dangerous:                 DefaultDangerousConfig,
 	ParentChainWallet:         DefaultValidatorL1WalletConfig,
 	LogQueryBatchSize:         0,
-	EnableFastConfirmation:    true,
+	EnableFastConfirmation:    false,
 }
 
 var DefaultValidatorL1WalletConfig = genericconf.WalletConfig{
@@ -261,7 +263,7 @@ type Staker struct {
 	confirmedNotifiers      []LatestConfirmedNotifier
 	activeChallenge         *ChallengeManager
 	baseCallOpts            bind.CallOpts
-	config                  L1ValidatorConfig
+	config                  L1ValidatorConfigFetcher
 	highGasBlocksBuffer     *big.Int
 	lastActCalledBlock      *big.Int
 	inactiveLastCheckedNode *nodeAndHash
@@ -270,8 +272,8 @@ type Staker struct {
 	inboxReader             InboxReaderInterface
 	statelessBlockValidator *StatelessBlockValidator
 	fatalErr                chan<- error
+	enableFastConfirmation  bool
 	fastConfirmSafe         *FastConfirmSafe
-	fastConfirmer           common.Address
 }
 
 type ValidatorWalletInterface interface {
@@ -299,7 +301,7 @@ func NewStaker(
 	l1Reader *headerreader.HeaderReader,
 	wallet ValidatorWalletInterface,
 	callOpts bind.CallOpts,
-	config L1ValidatorConfig,
+	config L1ValidatorConfigFetcher,
 	blockValidator *BlockValidator,
 	statelessBlockValidator *StatelessBlockValidator,
 	stakedNotifiers []LatestStakedNotifier,
@@ -308,7 +310,7 @@ func NewStaker(
 	fatalErr chan<- error,
 ) (*Staker, error) {
 
-	if err := config.Validate(); err != nil {
+	if err := config().Validate(); err != nil {
 		return nil, err
 	}
 	client := l1Reader.Client()
@@ -318,61 +320,8 @@ func NewStaker(
 		return nil, err
 	}
 	stakerLastSuccessfulActionGauge.Update(time.Now().Unix())
-	if config.StartValidationFromStaked && blockValidator != nil {
+	if config().StartValidationFromStaked && blockValidator != nil {
 		stakedNotifiers = append(stakedNotifiers, blockValidator)
-	}
-	var fastConfirmSafe *FastConfirmSafe
-	rollup, err := rollupgen.NewRollupUserLogic(wallet.RollupAddress(), l1Reader.Client())
-	if err != nil {
-		return nil, err
-	}
-	fastConfirmer, err := rollup.AnyTrustFastConfirmer(&bind.CallOpts{})
-	if err != nil {
-		return nil, err
-	}
-	// Only use gnosis safe fast confirmation, if the safe address is different from the wallet address, else it's not a safe contract.
-	if fastConfirmer != (common.Address{}) && config.EnableFastConfirmation && wallet.AddressOrZero() != (common.Address{}) && wallet.AddressOrZero() != fastConfirmer {
-		codeAt, err := client.CodeAt(context.Background(), fastConfirmer, nil)
-		if err != nil {
-			return nil, fmt.Errorf("getting code at fast confirmer address: %w", err)
-		}
-		if len(codeAt) == 0 {
-			// The fast confirmer address is an EOA address, but it does not match the wallet address so cannot enable fast confirmation.
-			fastConfirmer = common.Address{}
-			log.Info("Fast confirmer address is an EOA address which does not match the wallet address so cannot enable fast confirmation", "fastConfirmer", fastConfirmer, "wallet", wallet.AddressOrZero())
-		} else {
-			// The fast confirmer address is a contract address, not sure if it's a safe contract yet.
-			fastConfirmSafe, err = NewFastConfirmSafe(
-				callOpts,
-				fastConfirmer,
-				val.builder,
-				wallet,
-				config.gasRefunder,
-				l1Reader,
-			)
-			if err != nil && headerreader.ExecutionRevertedRegexp.MatchString(err.Error()) {
-				// If the safe is not a safe contract, we can't use it for fast confirmation
-				fastConfirmer = common.Address{}
-				fastConfirmSafe = nil
-				log.Warn("Fast confirmer address is not a safe contract so cannot enable fast confirmation", "fastConfirmer", fastConfirmer, "wallet", wallet.AddressOrZero())
-			} else if err != nil {
-				// Unknown while loading the safe contract.
-				return nil, fmt.Errorf("loading fast confirm safe: %w", err)
-			} else {
-				// Fast confirmer address is a safe contract.
-				isOwner, err := fastConfirmSafe.safe.IsOwner(&callOpts, wallet.AddressOrZero())
-				if err != nil {
-					return nil, fmt.Errorf("checking if wallet is owner of safe: %w", err)
-				}
-				if !isOwner {
-					// If the wallet is not an owner of the safe, we can't use it for fast confirmation
-					// So disable fast confirmation.
-					fastConfirmer = common.Address{}
-					fastConfirmSafe = nil
-					log.Info("Staker wallet address is not part of owners of safe so cannot use it for fast confirmation", "fastConfirmer", fastConfirmer, "wallet", wallet.AddressOrZero())
-				}
-			}
-		}
 	}
 	inactiveValidatedNodes := btree.NewG(2, func(a, b validatedNode) bool {
 		return a.number < b.number || (a.number == b.number && a.hash.Cmp(b.hash) < 0)
@@ -384,13 +333,11 @@ func NewStaker(
 		confirmedNotifiers:      confirmedNotifiers,
 		baseCallOpts:            callOpts,
 		config:                  config,
-		highGasBlocksBuffer:     big.NewInt(config.PostingStrategy.HighGasDelayBlocks),
+		highGasBlocksBuffer:     big.NewInt(config().PostingStrategy.HighGasDelayBlocks),
 		lastActCalledBlock:      nil,
 		inboxReader:             statelessBlockValidator.inboxReader,
 		statelessBlockValidator: statelessBlockValidator,
 		fatalErr:                fatalErr,
-		fastConfirmSafe:         fastConfirmSafe,
-		fastConfirmer:           fastConfirmer,
 		inactiveValidatedNodes:  inactiveValidatedNodes,
 	}, nil
 }
@@ -404,11 +351,12 @@ func (s *Staker) Initialize(ctx context.Context) error {
 	if walletAddressOrZero != (common.Address{}) {
 		s.updateStakerBalanceMetric(ctx)
 	}
-	if s.blockValidator != nil && s.config.StartValidationFromStaked {
+	if s.blockValidator != nil && s.config().StartValidationFromStaked {
 		latestStaked, _, err := s.validatorUtils.LatestStaked(&s.baseCallOpts, s.rollupAddress, walletAddressOrZero)
 		if err != nil {
 			return err
 		}
+		// #nosec G115
 		stakerLatestStakedNodeGauge.Update(int64(latestStaked))
 		if latestStaked == 0 {
 			return nil
@@ -421,11 +369,67 @@ func (s *Staker) Initialize(ctx context.Context) error {
 
 		return s.blockValidator.InitAssumeValid(stakedInfo.AfterState().GlobalState)
 	}
+	return s.setupFastConfirmation(ctx)
+}
+
+// setupFastConfirmation sets the enableFastConfirmation and fastConfirmSafe variables of staker
+// based on the config, the wallet address, and the on-chain rollup designated fast confirmer.
+// Before this function, both variables should be their default (i.e. fast confirmation is disabled).
+func (s *Staker) setupFastConfirmation(ctx context.Context) error {
+	cfg := s.config()
+	if !cfg.EnableFastConfirmation {
+		return nil
+	}
+	if s.wallet.Address() == nil {
+		return errors.New("fast confirmation requires wallet setup")
+	}
+	walletAddress := *s.wallet.Address()
+	client := s.l1Reader.Client()
+	rollup, err := rollupgen.NewRollupUserLogic(s.rollupAddress, client)
+	if err != nil {
+		return err
+	}
+	callOpts := s.getCallOpts(ctx)
+	fastConfirmer, err := rollup.AnyTrustFastConfirmer(callOpts)
+	if err != nil {
+		return fmt.Errorf("getting rollup fast confirmer address: %w", err)
+	}
+	if fastConfirmer == walletAddress {
+		// We can directly fast confirm nodes
+		s.enableFastConfirmation = true
+		return nil
+	} else if fastConfirmer == (common.Address{}) {
+		// No fast confirmer enabled
+		return errors.New("fast confirmation enabled in config, but no fast confirmer set in rollup contract")
+	}
+	// The fast confirmer address is a contract address, not sure if it's a safe contract yet.
+	fastConfirmSafe, err := NewFastConfirmSafe(
+		callOpts,
+		fastConfirmer,
+		s.builder,
+		s.wallet,
+		cfg.gasRefunder,
+		s.l1Reader,
+	)
+	if err != nil {
+		// Unknown while loading the safe contract.
+		return fmt.Errorf("loading fast confirm safe: %w", err)
+	}
+	// Fast confirmer address implements getOwners() and is probably a safe.
+	isOwner, err := fastConfirmSafe.safe.IsOwner(callOpts, walletAddress)
+	if err != nil {
+		return fmt.Errorf("checking if wallet is owner of safe: %w", err)
+	}
+	if !isOwner {
+		return fmt.Errorf("staker wallet address %v is not an owner of the fast confirm safe %v", walletAddress, fastConfirmer)
+	}
+	s.enableFastConfirmation = true
+	s.fastConfirmSafe = fastConfirmSafe
 	return nil
 }
 
 func (s *Staker) tryFastConfirmationNodeNumber(ctx context.Context, number uint64, hash common.Hash) error {
-	if s.fastConfirmer == (common.Address{}) || !s.config.EnableFastConfirmation {
+	if !s.enableFastConfirmation {
 		return nil
 	}
 	nodeInfo, err := s.rollup.LookupNode(ctx, number)
@@ -436,7 +440,7 @@ func (s *Staker) tryFastConfirmationNodeNumber(ctx context.Context, number uint6
 }
 
 func (s *Staker) tryFastConfirmation(ctx context.Context, blockHash common.Hash, sendRoot common.Hash, nodeHash common.Hash) error {
-	if s.fastConfirmer == (common.Address{}) || !s.config.EnableFastConfirmation {
+	if !s.enableFastConfirmation {
 		return nil
 	}
 	if s.fastConfirmSafe != nil {
@@ -520,8 +524,9 @@ func (s *Staker) Start(ctxIn context.Context) {
 			}
 		}()
 		var err error
-		if common.HexToAddress(s.config.GasRefunderAddress) != (common.Address{}) {
-			gasRefunderBalance, err := s.client.BalanceAt(ctx, common.HexToAddress(s.config.GasRefunderAddress), nil)
+		cfg := s.config()
+		if common.HexToAddress(cfg.GasRefunderAddress) != (common.Address{}) {
+			gasRefunderBalance, err := s.client.BalanceAt(ctx, common.HexToAddress(cfg.GasRefunderAddress), nil)
 			if err != nil {
 				log.Warn("error fetching validator gas refunder balance", "err", err)
 			} else {
@@ -550,7 +555,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 				// Try to create another tx
 				return 0
 			}
-			return s.config.StakerInterval
+			return cfg.StakerInterval
 		}
 		stakerActionFailureCounter.Inc(1)
 		backoff *= 2
@@ -570,6 +575,7 @@ func (s *Staker) Start(ctxIn context.Context) {
 		if err != nil && ctx.Err() == nil {
 			log.Error("staker: error checking latest staked", "err", err)
 		}
+		// #nosec G115
 		stakerLatestStakedNodeGauge.Update(int64(staked))
 		if stakedGlobalState != nil {
 			for _, notifier := range s.stakedNotifiers {
@@ -585,13 +591,14 @@ func (s *Staker) Start(ctxIn context.Context) {
 				log.Error("staker: error checking latest confirmed", "err", err)
 			}
 		}
+		// #nosec G115
 		stakerLatestConfirmedNodeGauge.Update(int64(confirmed))
 		if confirmedGlobalState != nil {
 			for _, notifier := range s.confirmedNotifiers {
 				notifier.UpdateLatestConfirmed(confirmedMsgCount, *confirmedGlobalState)
 			}
 		}
-		return s.config.StakerInterval
+		return s.config().StakerInterval
 	})
 }
 
@@ -612,6 +619,7 @@ func (s *Staker) IsWhitelisted(ctx context.Context) (bool, error) {
 }
 
 func (s *Staker) shouldAct(ctx context.Context) bool {
+	cfg := s.config()
 	var gasPriceHigh = false
 	var gasPriceFloat float64
 	gasPrice, err := s.client.SuggestGasPrice(ctx)
@@ -619,7 +627,7 @@ func (s *Staker) shouldAct(ctx context.Context) bool {
 		log.Warn("error getting gas price", "err", err)
 	} else {
 		gasPriceFloat = float64(gasPrice.Int64()) / 1e9
-		if gasPriceFloat >= s.config.PostingStrategy.HighGasThreshold {
+		if gasPriceFloat >= cfg.PostingStrategy.HighGasThreshold {
 			gasPriceHigh = true
 		}
 	}
@@ -644,14 +652,14 @@ func (s *Staker) shouldAct(ctx context.Context) bool {
 	// Clamp `s.highGasBlocksBuffer` to between 0 and HighGasDelayBlocks
 	if s.highGasBlocksBuffer.Sign() < 0 {
 		s.highGasBlocksBuffer.SetInt64(0)
-	} else if s.highGasBlocksBuffer.Cmp(big.NewInt(s.config.PostingStrategy.HighGasDelayBlocks)) > 0 {
-		s.highGasBlocksBuffer.SetInt64(s.config.PostingStrategy.HighGasDelayBlocks)
+	} else if s.highGasBlocksBuffer.Cmp(big.NewInt(cfg.PostingStrategy.HighGasDelayBlocks)) > 0 {
+		s.highGasBlocksBuffer.SetInt64(cfg.PostingStrategy.HighGasDelayBlocks)
 	}
 	if gasPriceHigh && s.highGasBlocksBuffer.Sign() > 0 {
 		log.Warn(
 			"not acting yet as gas price is high",
 			"gasPrice", gasPriceFloat,
-			"highGasPriceConfig", s.config.PostingStrategy.HighGasThreshold,
+			"highGasPriceConfig", cfg.PostingStrategy.HighGasThreshold,
 			"highGasBuffer", s.highGasBlocksBuffer,
 		)
 		return false
@@ -682,7 +690,8 @@ func (s *Staker) confirmDataPosterIsReady(ctx context.Context) error {
 }
 
 func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
-	if s.config.strategy != WatchtowerStrategy {
+	cfg := s.config()
+	if cfg.strategy != WatchtowerStrategy {
 		err := s.confirmDataPosterIsReady(ctx)
 		if err != nil {
 			return nil, err
@@ -724,6 +733,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	if err != nil {
 		return nil, fmt.Errorf("error getting latest staked node of own wallet %v: %w", walletAddressOrZero, err)
 	}
+	// #nosec G115
 	stakerLatestStakedNodeGauge.Update(int64(latestStakedNodeNum))
 	if rawInfo != nil {
 		rawInfo.LatestStakedNode = latestStakedNodeNum
@@ -736,7 +746,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		StakeExists:          rawInfo != nil,
 	}
 
-	effectiveStrategy := s.config.strategy
+	effectiveStrategy := cfg.strategy
 	nodesLinear, err := s.validatorUtils.AreUnresolvedNodesLinear(callOpts, s.rollupAddress)
 	if err != nil {
 		return nil, fmt.Errorf("error checking for rollup assertion fork: %w", err)
@@ -764,7 +774,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 		info.LatestStakedNodeHash = s.inactiveLastCheckedNode.hash
 	}
 
-	if s.config.EnableFastConfirmation {
+	if cfg.EnableFastConfirmation {
 		firstUnresolvedNode, err := s.rollup.FirstUnresolvedNode(callOpts)
 		if err != nil {
 			return nil, err
@@ -803,7 +813,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 				if s.builder.BuildingTransactionCount() > 0 {
 					// Try to fast confirm previous nodes before working on new ones
 					log.Info("fast confirming previous node", "node", firstUnresolvedNode)
-					return s.wallet.ExecuteTransactions(ctx, s.builder, s.config.gasRefunder)
+					return s.wallet.ExecuteTransactions(ctx, s.builder, cfg.gasRefunder)
 				}
 			}
 		}
@@ -890,7 +900,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 				return nil, fmt.Errorf("error withdrawing staker funds from our staker %v: %w", walletAddressOrZero, err)
 			}
 			log.Info("removing old stake and withdrawing funds")
-			return s.wallet.ExecuteTransactions(ctx, s.builder, s.config.gasRefunder)
+			return s.wallet.ExecuteTransactions(ctx, s.builder, cfg.gasRefunder)
 		}
 	}
 
@@ -944,7 +954,7 @@ func (s *Staker) Act(ctx context.Context) (*types.Transaction, error) {
 	if info.StakerInfo == nil && info.StakeExists {
 		log.Info("staking to execute transactions")
 	}
-	return s.wallet.ExecuteTransactions(ctx, s.builder, s.config.gasRefunder)
+	return s.wallet.ExecuteTransactions(ctx, s.builder, cfg.gasRefunder)
 }
 
 func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
@@ -970,7 +980,7 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 			*info.CurrentChallenge,
 			s.statelessBlockValidator,
 			latestConfirmedCreated,
-			s.config.ConfirmationBlocks,
+			s.config().ConfirmationBlocks,
 		)
 		if err != nil {
 			return fmt.Errorf("error creating challenge manager: %w", err)
@@ -984,8 +994,9 @@ func (s *Staker) handleConflict(ctx context.Context, info *StakerInfo) error {
 }
 
 func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiveStrategy StakerStrategy) error {
+	cfg := s.config()
 	active := effectiveStrategy >= StakeLatestStrategy
-	action, wrongNodesExist, err := s.generateNodeAction(ctx, info, effectiveStrategy, &s.config)
+	action, wrongNodesExist, err := s.generateNodeAction(ctx, info, effectiveStrategy, cfg)
 	if err != nil {
 		return fmt.Errorf("error generating node action: %w", err)
 	}
@@ -999,7 +1010,7 @@ func (s *Staker) advanceStake(ctx context.Context, info *OurStakerInfo, effectiv
 
 	switch action := action.(type) {
 	case createNodeAction:
-		if wrongNodesExist && s.config.DisableChallenge {
+		if wrongNodesExist && cfg.DisableChallenge {
 			log.Error("refusing to challenge assertion as config disables challenges")
 			info.CanProgress = false
 			return nil
@@ -1196,7 +1207,7 @@ func (s *Staker) createConflict(ctx context.Context, info *StakerInfo) error {
 }
 
 func (s *Staker) Strategy() StakerStrategy {
-	return s.config.strategy
+	return s.config().strategy
 }
 
 func (s *Staker) Rollup() *RollupWatcher {

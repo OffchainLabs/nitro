@@ -117,6 +117,18 @@ func BigToUintSaturating(value *big.Int) uint64 {
 	return value.Uint64()
 }
 
+// BigToUintSaturating casts a huge to an int, saturating if out of bounds
+func BigToIntSaturating(value *big.Int) int64 {
+	if !value.IsInt64() {
+		if value.Sign() < 0 {
+			return math.MinInt64
+		} else {
+			return math.MaxInt64
+		}
+	}
+	return value.Int64()
+}
+
 // BigToUintOrPanic casts a huge to a uint, panicking if out of bounds
 func BigToUintOrPanic(value *big.Int) uint64 {
 	if value.Sign() < 0 {
@@ -260,10 +272,12 @@ func BigFloatMulByUint(multiplicand *big.Float, multiplier uint64) *big.Float {
 }
 
 func MaxSignedValue[T Signed]() T {
+	// #nosec G115
 	return T((uint64(1) << (8*unsafe.Sizeof(T(0)) - 1)) - 1)
 }
 
 func MinSignedValue[T Signed]() T {
+	// #nosec G115
 	return T(uint64(1) << ((8 * unsafe.Sizeof(T(0))) - 1))
 }
 

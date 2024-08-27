@@ -68,10 +68,6 @@ func TestFastConfirmation(t *testing.T) {
 	l2node := builder.L2.ConsensusNode
 	execNode := builder.L2.ExecNode
 
-	config := arbnode.ConfigDefaultL1Test()
-	config.Sequencer = false
-	config.DelayedSequencer.Enable = false
-	config.BatchPoster.Enable = false
 	builder.execConfig.Sequencer.Enable = false
 
 	builder.BridgeBalance(t, "Faucet", big.NewInt(1).Mul(big.NewInt(params.Ether), big.NewInt(10000)))
@@ -122,6 +118,7 @@ func TestFastConfirmation(t *testing.T) {
 	Require(t, err)
 
 	valConfig := staker.TestL1ValidatorConfig
+	valConfig.EnableFastConfirmation = true
 	parentChainID, err := builder.L1.Client.ChainID(ctx)
 	if err != nil {
 		t.Fatalf("Failed to get parent chain id: %v", err)
@@ -163,7 +160,7 @@ func TestFastConfirmation(t *testing.T) {
 		l2node.L1Reader,
 		valWallet,
 		bind.CallOpts{},
-		valConfig,
+		func() *staker.L1ValidatorConfig { return &valConfig },
 		nil,
 		stateless,
 		nil,
@@ -320,7 +317,8 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	_, err = builder.L1.EnsureTxSucceeded(tx)
 	Require(t, err)
 
-	valConfig := staker.TestL1ValidatorConfig
+	valConfigA := staker.TestL1ValidatorConfig
+	valConfigA.EnableFastConfirmation = true
 
 	parentChainID, err := builder.L1.Client.ChainID(ctx)
 	if err != nil {
@@ -337,9 +335,9 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Error creating validator dataposter: %v", err)
 	}
-	valWalletA, err := validatorwallet.NewContract(dpA, nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, &l1authA, 0, func(common.Address) {}, func() uint64 { return valConfig.ExtraGas })
+	valWalletA, err := validatorwallet.NewContract(dpA, nil, l2nodeA.DeployInfo.ValidatorWalletCreator, l2nodeA.DeployInfo.Rollup, l2nodeA.L1Reader, &l1authA, 0, func(common.Address) {}, func() uint64 { return valConfigA.ExtraGas })
 	Require(t, err)
-	valConfig.Strategy = "MakeNodes"
+	valConfigA.Strategy = "MakeNodes"
 
 	_, valStack := createTestValidationNode(t, ctx, &valnode.TestValidationConfig)
 	blockValidatorConfig := staker.TestBlockValidatorConfig
@@ -363,7 +361,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		l2nodeA.L1Reader,
 		valWalletA,
 		bind.CallOpts{},
-		valConfig,
+		func() *staker.L1ValidatorConfig { return &valConfigA },
 		nil,
 		statelessA,
 		nil,
@@ -393,7 +391,9 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	}
 	valWalletB, err := validatorwallet.NewEOA(dpB, l2nodeB.DeployInfo.Rollup, l2nodeB.L1Reader.Client(), func() uint64 { return 0 })
 	Require(t, err)
-	valConfig.Strategy = "watchtower"
+	valConfigB := staker.TestL1ValidatorConfig
+	valConfigB.EnableFastConfirmation = true
+	valConfigB.Strategy = "watchtower"
 	statelessB, err := staker.NewStatelessBlockValidator(
 		l2nodeB.InboxReader,
 		l2nodeB.InboxTracker,
@@ -413,7 +413,7 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 		l2nodeB.L1Reader,
 		valWalletB,
 		bind.CallOpts{},
-		valConfig,
+		func() *staker.L1ValidatorConfig { return &valConfigB },
 		nil,
 		statelessB,
 		nil,

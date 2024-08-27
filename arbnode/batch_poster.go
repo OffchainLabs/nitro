@@ -121,7 +121,7 @@ type BatchPoster struct {
 	nextRevertCheckBlock int64       // the last parent block scanned for reverting batches
 	postedFirstBatch     bool        // indicates if batch poster has posted the first batch
 
-	accessList func(SequencerInboxAccs, AfterDelayedMessagesRead int) types.AccessList
+	accessList func(SequencerInboxAccs, AfterDelayedMessagesRead uint64) types.AccessList
 }
 
 type l1BlockBound int
@@ -374,7 +374,7 @@ func NewBatchPoster(ctx context.Context, opts *BatchPosterOpts) (*BatchPoster, e
 	}
 	// Dataposter sender may be external signer address, so we should initialize
 	// access list after initializing dataposter.
-	b.accessList = func(SequencerInboxAccs, AfterDelayedMessagesRead int) types.AccessList {
+	b.accessList = func(SequencerInboxAccs, AfterDelayedMessagesRead uint64) types.AccessList {
 		if !b.config().UseAccessLists || opts.L1Reader.IsParentChainArbitrum() {
 			// Access lists cost gas instead of saving gas when posting to L2s,
 			// because data is expensive in comparison to computation.
@@ -433,8 +433,8 @@ type AccessListOpts struct {
 	BridgeAddr               common.Address
 	DataPosterAddr           common.Address
 	GasRefunderAddr          common.Address
-	SequencerInboxAccs       int
-	AfterDelayedMessagesRead int
+	SequencerInboxAccs       uint64
+	AfterDelayedMessagesRead uint64
 }
 
 // AccessList returns access list (contracts, storage slots) for batchposter.
@@ -476,12 +476,12 @@ func AccessList(opts *AccessListOpts) types.AccessList {
 		},
 	}
 
-	for _, v := range []struct{ slotIdx, val int }{
+	for _, v := range []struct{ slotIdx, val uint64 }{
 		{7, opts.SequencerInboxAccs - 1},       // - sequencerInboxAccs[sequencerInboxAccs.length - 1]; (keccak256(7, sequencerInboxAccs.length - 1))
 		{7, opts.SequencerInboxAccs},           // - sequencerInboxAccs.push(...); (keccak256(7, sequencerInboxAccs.length))
 		{6, opts.AfterDelayedMessagesRead - 1}, // - delayedInboxAccs[afterDelayedMessagesRead - 1]; (keccak256(6, afterDelayedMessagesRead - 1))
 	} {
-		sb := arbutil.SumBytes(arbutil.PaddedKeccak256([]byte{byte(v.slotIdx)}), big.NewInt(int64(v.val)).Bytes())
+		sb := arbutil.SumBytes(arbutil.PaddedKeccak256([]byte{byte(v.slotIdx)}), new(big.Int).SetUint64(v.val).Bytes())
 		l[1].StorageKeys = append(l[1].StorageKeys, common.Hash(sb))
 	}
 
@@ -603,9 +603,12 @@ func (b *BatchPoster) pollForL1PriceData(ctx context.Context) {
 						l1GasPrice = blobFeePerByte.Uint64() / 16
 					}
 				}
+				// #nosec G115
 				blobGasUsedGauge.Update(int64(*h.BlobGasUsed))
 			}
+			// #nosec G115
 			blockGasUsedGauge.Update(int64(h.GasUsed))
+			// #nosec G115
 			blockGasLimitGauge.Update(int64(h.GasLimit))
 			suggestedTipCap, err := b.l1Reader.Client().SuggestGasTipCap(ctx)
 			if err != nil {
@@ -613,6 +616,7 @@ func (b *BatchPoster) pollForL1PriceData(ctx context.Context) {
 			} else {
 				suggestedTipCapGauge.Update(suggestedTipCap.Int64())
 			}
+			// #nosec G115
 			l1GasPriceGauge.Update(int64(l1GasPrice))
 		case <-ctx.Done():
 			return
@@ -1176,6 +1180,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	if err != nil {
 		return false, err
 	}
+	// #nosec G115
 	firstMsgTime := time.Unix(int64(firstMsg.Message.Header.Timestamp), 0)
 
 	lastPotentialMsg, err := b.streamer.GetMessage(msgCount - 1)
@@ -1403,7 +1408,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	if len(kzgBlobs)*params.BlobTxBlobGasPerBlob > params.MaxBlobGasPerBlock {
 		return false, fmt.Errorf("produced %v blobs for batch but a block can only hold %v (compressed batch was %v bytes long)", len(kzgBlobs), params.MaxBlobGasPerBlock/params.BlobTxBlobGasPerBlob, len(sequencerMsg))
 	}
-	accessList := b.accessList(int(batchPosition.NextSeqNum), int(b.building.segments.delayedMsg))
+	accessList := b.accessList(batchPosition.NextSeqNum, b.building.segments.delayedMsg)
 	// On restart, we may be trying to estimate gas for a batch whose successor has
 	// already made it into pending state, if not latest state.
 	// In that case, we might get a revert with `DelayedBackwards()`.
@@ -1439,7 +1444,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		b.building.muxBackend.delayedInboxStart = batchPosition.DelayedMessageCount
 		b.building.muxBackend.SetPositionWithinMessage(0)
 		simMux := arbstate.NewInboxMultiplexer(b.building.muxBackend, batchPosition.DelayedMessageCount, dapReaders, daprovider.KeysetValidate)
-		log.Info("Begin checking the correctness of batch against inbox multiplexer", "startMsgSeqNum", batchPosition.MessageCount, "endMsgSeqNum", b.building.msgCount-1)
+		log.Debug("Begin checking the correctness of batch against inbox multiplexer", "startMsgSeqNum", batchPosition.MessageCount, "endMsgSeqNum", b.building.msgCount-1)
 		for i := batchPosition.MessageCount; i < b.building.msgCount; i++ {
 			msg, err := simMux.Pop(ctx)
 			if err != nil {
@@ -1505,6 +1510,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		messagesPerBatch = 1
 	}
 	backlog := uint64(unpostedMessages) / messagesPerBatch
+	// #nosec G115
 	batchPosterEstimatedBatchBacklogGauge.Update(int64(backlog))
 	if backlog > 10 {
 		logLevel := log.Warn

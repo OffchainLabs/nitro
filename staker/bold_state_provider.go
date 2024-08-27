@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/crypto"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
@@ -370,7 +371,7 @@ func (s *BOLDStateProvider) CollectMachineHashes(
 	if err != nil {
 		return nil, err
 	}
-	input, err := entry.ToInput([]string{"wavm"})
+	input, err := entry.ToInput([]rawdb.Target{rawdb.TargetWavm})
 	if err != nil {
 		return nil, err
 	}
@@ -450,7 +451,7 @@ func (s *BOLDStateProvider) CollectProof(
 	if err != nil {
 		return nil, err
 	}
-	input, err := entry.ToInput([]string{"wavm"})
+	input, err := entry.ToInput([]rawdb.Target{rawdb.TargetWavm})
 	if err != nil {
 		return nil, err
 	}

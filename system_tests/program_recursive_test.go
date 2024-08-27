@@ -154,6 +154,7 @@ func testProgramResursiveCalls(t *testing.T, tests [][]multiCallRecurse, jit boo
 	// execute transactions
 	blockNum := uint64(0)
 	for {
+		// #nosec G115
 		item := int(rander.GetUint64()/4) % len(tests)
 		blockNum = testProgramRecursiveCall(t, builder, slotVals, rander, tests[item])
 		tests[item] = tests[len(tests)-1]
