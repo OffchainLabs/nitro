@@ -41,7 +41,7 @@ type Config struct {
 	ApiAuth         bool                               `koanf:"api-auth"`
 	ApiPublic       bool                               `koanf:"api-public"`
 	Arbitrator      server_arb.ArbitratorSpawnerConfig `koanf:"arbitrator" reload:"hot"`
-	RedisExecRunner arbredis.ExecutionSpawnerConfig    `koanf:"redis-exec-runner"`
+	RedisExecRunner redis.ValidationServerConfig       `koanf:"redis-exec-runner"`
 	Jit             server_jit.JitSpawnerConfig        `koanf:"jit" reload:"hot"`
 	Wasm            WasmConfig                         `koanf:"wasm"`
 }
@@ -73,7 +73,7 @@ func ValidationConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	server_arb.ArbitratorSpawnerConfigAddOptions(prefix+".arbitrator", f)
 	server_jit.JitSpawnerConfigAddOptions(prefix+".jit", f)
 	WasmConfigAddOptions(prefix+".wasm", f)
-	arbredis.ExecutionSpawnerConfigAddOptions(prefix+".redis-exec-runner", f)
+	redis.ValidationServerConfigAddOptions(prefix+".redis-exec-runner", f)
 }
 
 type ValidationNode struct {

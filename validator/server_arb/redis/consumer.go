@@ -12,52 +12,19 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/server_api"
-	"github.com/spf13/pflag"
+	"github.com/offchainlabs/nitro/validator/valnode/redis"
 )
-
-type ExecutionSpawnerConfig struct {
-	RedisURL       string                `koanf:"redis-url"`
-	ConsumerConfig pubsub.ConsumerConfig `koanf:"consumer-config"`
-	// Supported wasm module roots.
-	ModuleRoots []string `koanf:"module-roots"`
-	// Timeout on polling for existence of each redis stream.
-	StreamTimeout time.Duration `koanf:"stream-timeout"`
-}
-
-var DefaultExecutionSpawnerConfig = ExecutionSpawnerConfig{
-	RedisURL:       "",
-	ConsumerConfig: pubsub.DefaultConsumerConfig,
-	ModuleRoots:    []string{},
-	StreamTimeout:  10 * time.Minute,
-}
-
-var TestExecutionSpawnerConfig = ExecutionSpawnerConfig{
-	RedisURL:       "",
-	ConsumerConfig: pubsub.TestConsumerConfig,
-	ModuleRoots:    []string{},
-	StreamTimeout:  time.Minute,
-}
-
-func ExecutionSpawnerConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	pubsub.ConsumerConfigAddOptions(prefix+".consumer-config", f)
-	f.StringSlice(prefix+".module-roots", nil, "Supported module root hashes")
-	f.Duration(prefix+".stream-timeout", DefaultExecutionSpawnerConfig.StreamTimeout, "Timeout on polling for existence of redis streams")
-}
-
-func (cfg *ExecutionSpawnerConfig) Enabled() bool {
-	return cfg.RedisURL != ""
-}
 
 type ExecutionSpawner struct {
 	stopwaiter.StopWaiter
 	spawner validator.ExecutionSpawner
 
 	// consumers stores moduleRoot to consumer mapping.
-	consumers     map[common.Hash]*pubsub.Consumer[*server_api.GetLeavesWithStepSizeInput, []common.Hash]
-	streamTimeout time.Duration
+	consumers map[common.Hash]*pubsub.Consumer[*server_api.GetLeavesWithStepSizeInput, []common.Hash]
+	config    *redis.ValidationServerConfig
 }
 
-func NewExecutionSpawner(cfg *ExecutionSpawnerConfig, spawner validator.ExecutionSpawner) (*ExecutionSpawner, error) {
+func NewExecutionSpawner(cfg *redis.ValidationServerConfig, spawner validator.ExecutionSpawner) (*ExecutionSpawner, error) {
 	if cfg.RedisURL == "" {
 		return nil, fmt.Errorf("redis url cannot be empty")
 	}
@@ -68,16 +35,16 @@ func NewExecutionSpawner(cfg *ExecutionSpawnerConfig, spawner validator.Executio
 	consumers := make(map[common.Hash]*pubsub.Consumer[*server_api.GetLeavesWithStepSizeInput, []common.Hash])
 	for _, hash := range cfg.ModuleRoots {
 		mr := common.HexToHash(hash)
-		c, err := pubsub.NewConsumer[*server_api.GetLeavesWithStepSizeInput, []common.Hash](redisClient, server_api.RedisBoldStreamForRoot(mr), &cfg.ConsumerConfig)
+		c, err := pubsub.NewConsumer[*server_api.GetLeavesWithStepSizeInput, []common.Hash](redisClient, server_api.RedisBoldStreamForRoot(cfg.StreamPrefix, mr), &cfg.ConsumerConfig)
 		if err != nil {
 			return nil, fmt.Errorf("creating consumer for validation: %w", err)
 		}
 		consumers[mr] = c
 	}
 	return &ExecutionSpawner{
-		consumers:     consumers,
-		spawner:       spawner,
-		streamTimeout: cfg.StreamTimeout,
+		consumers: consumers,
+		spawner:   spawner,
+		config:    cfg,
 	}, nil
 }
 
@@ -152,10 +119,10 @@ func (s *ExecutionSpawner) Start(ctx_in context.Context) {
 			case <-readyStreams:
 				log.Trace("At least one stream is ready")
 				return // Don't block Start if at least one of the stream is ready.
-			case <-time.After(s.streamTimeout):
+			case <-time.After(s.config.StreamTimeout):
 				log.Error("Waiting for redis streams timed out")
 			case <-ctx.Done():
-				log.Info(("Context expired, failed to start"))
+				log.Info("Context expired, failed to start")
 				return
 			}
 		}

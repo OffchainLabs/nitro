@@ -51,8 +51,8 @@ func RedisStreamForRoot(prefix string, moduleRoot common.Hash) string {
 	return fmt.Sprintf("%sstream:%s", prefix, moduleRoot.Hex())
 }
 
-func RedisBoldStreamForRoot(moduleRoot common.Hash) string {
-	return fmt.Sprintf("stream-bold:%s", moduleRoot.Hex())
+func RedisBoldStreamForRoot(prefix string, moduleRoot common.Hash) string {
+	return fmt.Sprintf("%sstream-bold:%s", prefix, moduleRoot.Hex())
 }
 
 type Request struct {
