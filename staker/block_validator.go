@@ -100,20 +100,20 @@ type BlockValidator struct {
 }
 
 type BlockValidatorConfig struct {
-	Enable                          bool                             `koanf:"enable"`
-	RedisValidationClientConfig     redis.ValidationClientConfig     `koanf:"redis-validation-client-config"`
-	RedisBoldValidationClientConfig redis.BoldValidationClientConfig `koanf:"redis-bold-validation-client-config"`
-	ValidationServer                rpcclient.ClientConfig           `koanf:"validation-server" reload:"hot"`
-	ValidationServerConfigs         []rpcclient.ClientConfig         `koanf:"validation-server-configs"`
-	ValidationPoll                  time.Duration                    `koanf:"validation-poll" reload:"hot"`
-	PrerecordedBlocks               uint64                           `koanf:"prerecorded-blocks" reload:"hot"`
-	ForwardBlocks                   uint64                           `koanf:"forward-blocks" reload:"hot"`
-	CurrentModuleRoot               string                           `koanf:"current-module-root"`         // TODO(magic) requires reinitialization on hot reload
-	PendingUpgradeModuleRoot        string                           `koanf:"pending-upgrade-module-root"` // TODO(magic) requires StatelessBlockValidator recreation on hot reload
-	FailureIsFatal                  bool                             `koanf:"failure-is-fatal" reload:"hot"`
-	Dangerous                       BlockValidatorDangerousConfig    `koanf:"dangerous"`
-	MemoryFreeLimit                 string                           `koanf:"memory-free-limit" reload:"hot"`
-	ValidationServerConfigsList     string                           `koanf:"validation-server-configs-list"`
+	Enable                          bool                          `koanf:"enable"`
+	RedisValidationClientConfig     redis.ValidationClientConfig  `koanf:"redis-validation-client-config"`
+	RedisBoldValidationClientConfig redis.ValidationClientConfig  `koanf:"redis-bold-validation-client-config"`
+	ValidationServer                rpcclient.ClientConfig        `koanf:"validation-server" reload:"hot"`
+	ValidationServerConfigs         []rpcclient.ClientConfig      `koanf:"validation-server-configs"`
+	ValidationPoll                  time.Duration                 `koanf:"validation-poll" reload:"hot"`
+	PrerecordedBlocks               uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
+	ForwardBlocks                   uint64                        `koanf:"forward-blocks" reload:"hot"`
+	CurrentModuleRoot               string                        `koanf:"current-module-root"`         // TODO(magic) requires reinitialization on hot reload
+	PendingUpgradeModuleRoot        string                        `koanf:"pending-upgrade-module-root"` // TODO(magic) requires StatelessBlockValidator recreation on hot reload
+	FailureIsFatal                  bool                          `koanf:"failure-is-fatal" reload:"hot"`
+	Dangerous                       BlockValidatorDangerousConfig `koanf:"dangerous"`
+	MemoryFreeLimit                 string                        `koanf:"memory-free-limit" reload:"hot"`
+	ValidationServerConfigsList     string                        `koanf:"validation-server-configs-list"`
 
 	memoryFreeLimit int
 }
@@ -190,7 +190,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	ValidationServerConfigsList:     "default",
 	ValidationServer:                rpcclient.DefaultClientConfig,
 	RedisValidationClientConfig:     redis.DefaultValidationClientConfig,
-	RedisBoldValidationClientConfig: redis.DefaultBoldValidationClientConfig,
+	RedisBoldValidationClientConfig: redis.DefaultValidationClientConfig,
 	ValidationPoll:                  time.Second,
 	ForwardBlocks:                   1024,
 	PrerecordedBlocks:               uint64(2 * runtime.NumCPU()),
@@ -206,7 +206,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	ValidationServer:                rpcclient.TestClientConfig,
 	ValidationServerConfigs:         []rpcclient.ClientConfig{rpcclient.TestClientConfig},
 	RedisValidationClientConfig:     redis.TestValidationClientConfig,
-	RedisBoldValidationClientConfig: redis.TestBoldValidationClientConfig,
+	RedisBoldValidationClientConfig: redis.TestValidationClientConfig,
 	ValidationPoll:                  100 * time.Millisecond,
 	ForwardBlocks:                   128,
 	PrerecordedBlocks:               uint64(2 * runtime.NumCPU()),

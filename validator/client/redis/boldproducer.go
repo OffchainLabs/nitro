@@ -12,45 +12,19 @@ import (
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator/server_api"
-	"github.com/spf13/pflag"
 )
-
-type BoldValidationClientConfig struct {
-	RedisURL      string `koanf:"redis-url"`
-	CreateStreams bool   `koanf:"create-streams"`
-}
-
-func (c BoldValidationClientConfig) Enabled() bool {
-	return c.RedisURL != ""
-}
-
-var DefaultBoldValidationClientConfig = BoldValidationClientConfig{
-	RedisURL:      "",
-	CreateStreams: true,
-}
-
-var TestBoldValidationClientConfig = BoldValidationClientConfig{
-	RedisURL:      "",
-	CreateStreams: false,
-}
-
-func BoldValidationClientConfigAddOptions(prefix string, f *pflag.FlagSet) {
-	pubsub.ProducerAddConfigAddOptions(prefix+".producer-config", f)
-	f.Bool(prefix+".create-streams", DefaultValidationClientConfig.CreateStreams, "create redis streams if it does not exist")
-}
 
 // BoldValidationClient implements bold validation client through redis streams.
 type BoldValidationClient struct {
 	stopwaiter.StopWaiter
 	// producers stores moduleRoot to producer mapping.
-	producers      map[common.Hash]*pubsub.Producer[*server_api.GetLeavesWithStepSizeInput, []common.Hash]
-	producerConfig pubsub.ProducerConfig
-	redisClient    redis.UniversalClient
-	moduleRoots    []common.Hash
-	createStreams  bool
+	producers   map[common.Hash]*pubsub.Producer[*server_api.GetLeavesWithStepSizeInput, []common.Hash]
+	redisClient redis.UniversalClient
+	moduleRoots []common.Hash
+	config      *ValidationClientConfig
 }
 
-func NewBoldValidationClient(cfg *BoldValidationClientConfig) (*BoldValidationClient, error) {
+func NewBoldValidationClient(cfg *ValidationClientConfig) (*BoldValidationClient, error) {
 	if cfg.RedisURL == "" {
 		return nil, fmt.Errorf("redis url cannot be empty")
 	}
@@ -59,16 +33,16 @@ func NewBoldValidationClient(cfg *BoldValidationClientConfig) (*BoldValidationCl
 		return nil, err
 	}
 	return &BoldValidationClient{
-		producers:     make(map[common.Hash]*pubsub.Producer[*server_api.GetLeavesWithStepSizeInput, []common.Hash]),
-		redisClient:   redisClient,
-		createStreams: cfg.CreateStreams,
+		producers:   make(map[common.Hash]*pubsub.Producer[*server_api.GetLeavesWithStepSizeInput, []common.Hash]),
+		redisClient: redisClient,
+		config:      cfg,
 	}, nil
 }
 
 func (c *BoldValidationClient) Initialize(ctx context.Context, moduleRoots []common.Hash) error {
 	for _, mr := range moduleRoots {
-		if c.createStreams {
-			if err := pubsub.CreateStream(ctx, server_api.RedisStreamForRoot(mr), c.redisClient); err != nil {
+		if c.config.CreateStreams {
+			if err := pubsub.CreateStream(ctx, server_api.RedisStreamForRoot(c.config.StreamPrefix, mr), c.redisClient); err != nil {
 				return fmt.Errorf("creating redis stream: %w", err)
 			}
 		}
@@ -77,7 +51,7 @@ func (c *BoldValidationClient) Initialize(ctx context.Context, moduleRoots []com
 			continue
 		}
 		p, err := pubsub.NewProducer[*server_api.GetLeavesWithStepSizeInput, []common.Hash](
-			c.redisClient, server_api.RedisBoldStreamForRoot(mr), &c.producerConfig)
+			c.redisClient, server_api.RedisBoldStreamForRoot(mr), &c.config.ProducerConfig)
 		if err != nil {
 			log.Warn("failed init redis for %v: %w", mr, err)
 			continue

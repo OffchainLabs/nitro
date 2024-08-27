@@ -73,6 +73,7 @@ func ValidationConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	server_arb.ArbitratorSpawnerConfigAddOptions(prefix+".arbitrator", f)
 	server_jit.JitSpawnerConfigAddOptions(prefix+".jit", f)
 	WasmConfigAddOptions(prefix+".wasm", f)
+	arbredis.ExecutionSpawnerConfigAddOptions(prefix+".redis-exec-runner", f)
 }
 
 type ValidationNode struct {
