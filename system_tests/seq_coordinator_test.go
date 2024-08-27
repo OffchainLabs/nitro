@@ -67,6 +67,7 @@ func TestRedisSeqCoordinatorPriorities(t *testing.T) {
 	createStartNode := func(nodeNum int) {
 		builder.nodeConfig.SeqCoordinator.MyUrl = nodeNames[nodeNum]
 		builder.L2Info = l2Info
+		builder.dataDir = t.TempDir() // set new data dir for each node
 		builder.Build(t)
 		testNodes[nodeNum] = builder.L2
 	}

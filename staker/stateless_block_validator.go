@@ -12,6 +12,7 @@ import (
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
@@ -48,7 +49,7 @@ type BlockValidatorRegistrer interface {
 
 type InboxTrackerInterface interface {
 	BlockValidatorRegistrer
-	GetDelayedMessageBytes(uint64) ([]byte, error)
+	GetDelayedMessageBytes(context.Context, uint64) ([]byte, error)
 	GetBatchMessageCount(seqNum uint64) (arbutil.MessageIndex, error)
 	GetBatchAcc(seqNum uint64) (common.Hash, error)
 	GetBatchCount() (uint64, error)
@@ -107,39 +108,6 @@ func GlobalStatePositionsAtCount(
 	return startPos, GlobalStatePosition{batch, posInBatch + 1}, nil
 }
 
-func FindBatchContainingMessageIndex(
-	tracker InboxTrackerInterface, pos arbutil.MessageIndex, high uint64,
-) (uint64, error) {
-	var low uint64
-	// Iteration preconditions:
-	// - high >= low
-	// - msgCount(low - 1) <= pos implies low <= target
-	// - msgCount(high) > pos implies high >= target
-	// Therefore, if low == high, then low == high == target
-	for high > low {
-		// Due to integer rounding, mid >= low && mid < high
-		mid := (low + high) / 2
-		count, err := tracker.GetBatchMessageCount(mid)
-		if err != nil {
-			return 0, err
-		}
-		if count < pos {
-			// Must narrow as mid >= low, therefore mid + 1 > low, therefore newLow > oldLow
-			// Keeps low precondition as msgCount(mid) < pos
-			low = mid + 1
-		} else if count == pos {
-			return mid + 1, nil
-		} else if count == pos+1 || mid == low { // implied: count > pos
-			return mid, nil
-		} else { // implied: count > pos + 1
-			// Must narrow as mid < high, therefore newHigh < lowHigh
-			// Keeps high precondition as msgCount(mid) > pos
-			high = mid
-		}
-	}
-	return low, nil
-}
-
 type ValidationEntryStage uint32
 
 const (
@@ -167,21 +135,37 @@ type validationEntry struct {
 	DelayedMsg []byte
 }
 
-func (e *validationEntry) ToInput() (*validator.ValidationInput, error) {
+func (e *validationEntry) ToInput(stylusArchs []rawdb.Target) (*validator.ValidationInput, error) {
 	if e.Stage != Ready {
 		return nil, errors.New("cannot create input from non-ready entry")
 	}
-	return &validator.ValidationInput{
+	res := validator.ValidationInput{
 		Id:            uint64(e.Pos),
 		HasDelayedMsg: e.HasDelayedMsg,
 		DelayedMsgNr:  e.DelayedMsgNr,
 		Preimages:     e.Preimages,
-		UserWasms:     e.UserWasms,
+		UserWasms:     make(map[rawdb.Target]map[common.Hash][]byte, len(e.UserWasms)),
 		BatchInfo:     e.BatchInfo,
 		DelayedMsg:    e.DelayedMsg,
 		StartState:    e.Start,
 		DebugChain:    e.ChainConfig.DebugMode(),
-	}, nil
+	}
+	if len(stylusArchs) == 0 && len(e.UserWasms) > 0 {
+		return nil, fmt.Errorf("stylus support is required")
+	}
+	for _, stylusArch := range stylusArchs {
+		res.UserWasms[stylusArch] = make(map[common.Hash][]byte)
+	}
+	for hash, asmMap := range e.UserWasms {
+		for _, stylusArch := range stylusArchs {
+			if asm, exists := asmMap[stylusArch]; exists {
+				res.UserWasms[stylusArch][hash] = asm
+			} else {
+				return nil, fmt.Errorf("stylusArch not supported by block validator: %v", stylusArch)
+			}
+		}
+	}
+	return &res, nil
 }
 
 func newValidationEntry(
@@ -270,6 +254,25 @@ func NewStatelessBlockValidator(
 	}, nil
 }
 
+func (v *StatelessBlockValidator) readBatch(ctx context.Context, batchNum uint64) (bool, []byte, common.Hash, arbutil.MessageIndex, error) {
+	batchCount, err := v.inboxTracker.GetBatchCount()
+	if err != nil {
+		return false, nil, common.Hash{}, 0, err
+	}
+	if batchCount <= batchNum {
+		return false, nil, common.Hash{}, 0, nil
+	}
+	batchMsgCount, err := v.inboxTracker.GetBatchMessageCount(batchNum)
+	if err != nil {
+		return false, nil, common.Hash{}, 0, err
+	}
+	batch, batchBlockHash, err := v.inboxReader.GetSequencerMessageBytes(ctx, batchNum)
+	if err != nil {
+		return false, nil, common.Hash{}, 0, err
+	}
+	return true, batch, batchBlockHash, batchMsgCount, nil
+}
+
 func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *validationEntry) error {
 	if e.Stage != ReadyForRecord {
 		return fmt.Errorf("validation entry should be ReadyForRecord, is: %v", e.Stage)
@@ -283,7 +286,27 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		if recording.BlockHash != e.End.BlockHash {
 			return fmt.Errorf("recording failed: pos %d, hash expected %v, got %v", e.Pos, e.End.BlockHash, recording.BlockHash)
 		}
-		e.BatchInfo = append(e.BatchInfo, recording.BatchInfo...)
+		// record any additional batch fetching
+		batchFetcher := func(batchNum uint64) ([]byte, error) {
+			found, data, hash, _, err := v.readBatch(ctx, batchNum)
+			if err != nil {
+				return nil, err
+			}
+			if !found {
+				return nil, errors.New("batch not found")
+			}
+			e.BatchInfo = append(e.BatchInfo, validator.BatchInfo{
+				Number:    batchNum,
+				BlockHash: hash,
+				Data:      data,
+			})
+			return data, nil
+		}
+		e.msg.Message.BatchGasCost = nil
+		err = e.msg.Message.FillInBatchGasCost(batchFetcher)
+		if err != nil {
+			return err
+		}
 
 		if recording.Preimages != nil {
 			e.Preimages[arbutil.Keccak256PreimageType] = recording.Preimages
@@ -291,7 +314,7 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 		e.UserWasms = recording.UserWasms
 	}
 	if e.HasDelayedMsg {
-		delayedMsg, err := v.inboxTracker.GetDelayedMessageBytes(e.DelayedMsgNr)
+		delayedMsg, err := v.inboxTracker.GetDelayedMessageBytes(ctx, e.DelayedMsgNr)
 		if err != nil {
 			log.Error(
 				"error while trying to read delayed msg for proving",
@@ -412,14 +435,14 @@ func (v *StatelessBlockValidator) ValidateResult(
 	if err != nil {
 		return false, nil, err
 	}
-	input, err := entry.ToInput()
-	if err != nil {
-		return false, nil, err
-	}
 	var run validator.ValidationRun
 	if !useExec {
 		if v.redisValidator != nil {
 			if validator.SpawnerSupportsModule(v.redisValidator, moduleRoot) {
+				input, err := entry.ToInput(v.redisValidator.StylusArchs())
+				if err != nil {
+					return false, nil, err
+				}
 				run = v.redisValidator.Launch(input, moduleRoot)
 			}
 		}
@@ -427,6 +450,10 @@ func (v *StatelessBlockValidator) ValidateResult(
 	if run == nil {
 		for _, spawner := range v.execSpawners {
 			if validator.SpawnerSupportsModule(spawner, moduleRoot) {
+				input, err := entry.ToInput(spawner.StylusArchs())
+				if err != nil {
+					return false, nil, err
+				}
 				run = spawner.Launch(input, moduleRoot)
 				break
 			}

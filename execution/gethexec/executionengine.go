@@ -27,6 +27,7 @@ import (
 	"time"
 
 	"github.com/ethereum/go-ethereum/core"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/log"
@@ -137,7 +138,7 @@ func (s *ExecutionEngine) MarkFeedStart(to arbutil.MessageIndex) {
 	defer s.cachedL1PriceData.mutex.Unlock()
 
 	if to < s.cachedL1PriceData.startOfL1PriceDataCache {
-		log.Info("trying to trim older cache which doesnt exist anymore")
+		log.Debug("trying to trim older L1 price data cache which doesnt exist anymore")
 	} else if to >= s.cachedL1PriceData.endOfL1PriceDataCache {
 		s.cachedL1PriceData.startOfL1PriceDataCache = 0
 		s.cachedL1PriceData.endOfL1PriceDataCache = 0
@@ -149,10 +150,32 @@ func (s *ExecutionEngine) MarkFeedStart(to arbutil.MessageIndex) {
 	}
 }
 
-func (s *ExecutionEngine) Initialize(rustCacheSize uint32) {
+func populateStylusTargetCache(targetConfig *StylusTargetConfig) error {
+	var effectiveStylusTarget string
+	target := rawdb.LocalTarget()
+	switch target {
+	case rawdb.TargetArm64:
+		effectiveStylusTarget = targetConfig.Arm64
+	case rawdb.TargetAmd64:
+		effectiveStylusTarget = targetConfig.Amd64
+	case rawdb.TargetHost:
+		effectiveStylusTarget = targetConfig.Host
+	}
+	err := programs.SetTarget(target, effectiveStylusTarget, true)
+	if err != nil {
+		return fmt.Errorf("Failed to set stylus target: %w", err)
+	}
+	return nil
+}
+
+func (s *ExecutionEngine) Initialize(rustCacheSize uint32, targetConfig *StylusTargetConfig) error {
 	if rustCacheSize != 0 {
 		programs.ResizeWasmLruCache(rustCacheSize)
 	}
+	if err := populateStylusTargetCache(targetConfig); err != nil {
+		return fmt.Errorf("error populating stylus target cache: %w", err)
+	}
+	return nil
 }
 
 func (s *ExecutionEngine) SetRecorder(recorder *BlockRecorder) {
@@ -355,8 +378,7 @@ func (s *ExecutionEngine) resequenceReorgedMessages(messages []*arbostypes.Messa
 			log.Warn("skipping non-standard sequencer message found from reorg", "header", header)
 			continue
 		}
-		// We don't need a batch fetcher as this is an L2 message
-		txes, err := arbos.ParseL2Transactions(msg.Message, s.bc.Config().ChainID, nil)
+		txes, err := arbos.ParseL2Transactions(msg.Message, s.bc.Config().ChainID)
 		if err != nil {
 			log.Warn("failed to parse sequencer message found from reorg", "err", err)
 			continue
@@ -625,11 +647,6 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 	statedb.StartPrefetcher("TransactionStreamer")
 	defer statedb.StopPrefetcher()
 
-	batchFetcher := func(num uint64) ([]byte, error) {
-		data, _, err := s.consensus.FetchBatch(s.GetContext(), num)
-		return data, err
-	}
-
 	block, receipts, err := arbos.ProduceBlock(
 		msg.Message,
 		msg.DelayedMessagesRead,
@@ -637,7 +654,6 @@ func (s *ExecutionEngine) createBlockFromNextMessage(msg *arbostypes.MessageWith
 		statedb,
 		s.bc,
 		s.bc.Config(),
-		batchFetcher,
 		isMsgForPrefetch,
 	)
 

@@ -229,6 +229,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 			reorgTargetNumber := blockStates[reorgTo].l1BlockNumber
 			currentHeader, err := builder.L1.Client.HeaderByNumber(ctx, nil)
 			Require(t, err)
+			// #nosec G115
 			if currentHeader.Number.Int64()-int64(reorgTargetNumber) < 65 {
 				Fatal(t, "Less than 65 blocks of difference between current block", currentHeader.Number, "and target", reorgTargetNumber)
 			}
@@ -346,7 +347,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 				BridgeAddr:               builder.L1Info.GetAddress("Bridge"),
 				DataPosterAddr:           seqOpts.From,
 				GasRefunderAddr:          gasRefunderAddr,
-				SequencerInboxAccs:       len(blockStates),
+				SequencerInboxAccs:       uint64(len(blockStates)),
 				AfterDelayedMessagesRead: 1,
 			})
 			if diff := diffAccessList(accessed, *wantAL); diff != "" {
@@ -374,6 +375,7 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 				t.Fatalf("BalanceAt(%v) unexpected error: %v", seqOpts.From, err)
 			}
 			txCost := txRes.EffectiveGasPrice.Uint64() * txRes.GasUsed
+			// #nosec G115
 			if diff := before.Int64() - after.Int64(); diff >= int64(txCost) {
 				t.Errorf("Transaction: %v was not refunded, balance diff: %v, cost: %v", tx.Hash(), diff, txCost)
 			}
@@ -424,11 +426,13 @@ func testSequencerInboxReaderImpl(t *testing.T, validator bool) {
 		}
 
 		for _, state := range blockStates {
+			// #nosec G115
 			block, err := l2Backend.APIBackend().BlockByNumber(ctx, rpc.BlockNumber(state.l2BlockNumber))
 			Require(t, err)
 			if block == nil {
 				Fatal(t, "missing state block", state.l2BlockNumber)
 			}
+			// #nosec G115
 			stateDb, _, err := l2Backend.APIBackend().StateAndHeaderByNumber(ctx, rpc.BlockNumber(state.l2BlockNumber))
 			Require(t, err)
 			for acct, expectedBalance := range state.balances {

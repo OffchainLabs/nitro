@@ -246,6 +246,7 @@ func (v *L1Validator) generateNodeAction(
 			startStateProposedParentChain, err,
 		)
 	}
+	// #nosec G115
 	startStateProposedTime := time.Unix(int64(startStateProposedHeader.Time), 0)
 
 	v.txStreamer.PauseReorgs()
@@ -374,13 +375,14 @@ func (v *L1Validator) generateNodeAction(
 		return nil, false, fmt.Errorf("error getting rollup minimum assertion period: %w", err)
 	}
 
+	// #nosec G115
 	timeSinceProposed := big.NewInt(int64(l1BlockNumber) - int64(startStateProposedL1))
 	if timeSinceProposed.Cmp(minAssertionPeriod) < 0 {
 		// Too soon to assert
 		return nil, false, nil
 	}
 
-	successorNodes, err := v.rollup.LookupNodeChildren(ctx, stakerInfo.LatestStakedNode, stakerInfo.LatestStakedNodeHash)
+	successorNodes, err := v.rollup.LookupNodeChildren(ctx, stakerInfo.LatestStakedNode, stakerConfig.LogQueryBatchSize, stakerInfo.LatestStakedNodeHash)
 	if err != nil {
 		return nil, false, fmt.Errorf("error looking up node %v (hash %v) children: %w", stakerInfo.LatestStakedNode, stakerInfo.LatestStakedNodeHash, err)
 	}
