@@ -43,6 +43,7 @@ func TestMarshallAndUnmarshalBlobPointer(t *testing.T) {
 	blobProof := BlobProof{DataRoot: res.DataProof.Roots.DataRoot, BlobRoot: res.DataProof.Roots.BlobRoot, BridgeRoot: res.DataProof.Roots.BridgeRoot, LeafProof: leafProof, NumberOfLeaves: res.DataProof.NumberOfLeaves, LeafIndex: res.DataProof.LeafIndex, Leaf: res.DataProof.Leaf}
 
 	var blobPointer BlobPointer = BlobPointer{
+		BLOBPOINTER_VERSION2,
 		uint32(blockHeight),
 		uint32(extrinsicIndex),
 		common.HexToHash("97a3dacf2a1bfc09eb047e4194084b021fa949cb9b660e1f94d484c070e154f5"),
