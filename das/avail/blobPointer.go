@@ -15,7 +15,7 @@ var byte32Type = abi.Type{T: abi.FixedBytesTy, Size: 32}
 var uint32Type = abi.Type{Size: 32, T: abi.UintTy}
 var stringType = abi.Type{T: abi.StringTy} //nolint
 var byte32ArrayType = abi.Type{T: abi.SliceTy, Elem: &abi.Type{T: abi.FixedBytesTy, Size: 32}}
-var uint64Type = abi.Type{Size: 64, T: abi.UintTy}
+var uint64Type = abi.Type{Size: 64, T: abi.UintTy} //nolint
 
 // BlobPointer version
 const (
