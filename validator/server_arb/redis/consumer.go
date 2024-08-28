@@ -102,7 +102,7 @@ func (s *ExecutionSpawner) Start(ctx_in context.Context) {
 					req.Value.StepSize,
 					req.Value.NumDesiredLeaves).Await(ctx)
 				if err != nil {
-					log.Error("Getting leave hashes", "error", err)
+					log.Error("Getting machine hashes", "error", err)
 					return 0
 				}
 				if err := c.SetResult(ctx, req.ID, hashes); err != nil {
