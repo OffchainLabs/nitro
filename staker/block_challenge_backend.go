@@ -28,9 +28,6 @@ type BlockChallengeBackend struct {
 	endGs                  validator.GoGlobalState
 	inboxTracker           InboxTrackerInterface
 	tooFarStartsAtPosition uint64
-
-	debugEspressoIncorrectHeight   uint64
-	debugEspressoInputOverrideFunc func(*validator.ValidationInput)
 }
 
 // Assert that BlockChallengeBackend implements ChallengeBackend
@@ -127,10 +124,6 @@ func (b *BlockChallengeBackend) FindGlobalStateFromMessageCount(count arbutil.Me
 		return validator.GoGlobalState{}, err
 	}
 
-	if b.EspressoDebugging(res.HotShotHeight) {
-		res.BlockHash = mockHash(res.HotShotHeight)
-	}
-
 	return validator.GoGlobalState{
 		BlockHash:     res.BlockHash,
 		SendRoot:      res.SendRoot,
@@ -155,9 +148,6 @@ func (b *BlockChallengeBackend) GetInfoAtStep(step uint64) (validator.GoGlobalSt
 	globalState, err := b.FindGlobalStateFromMessageCount(msgNum)
 	if err != nil {
 		return validator.GoGlobalState{}, 0, err
-	}
-	if b.EspressoDebugging(globalState.HotShotHeight) {
-		globalState.BlockHash = mockHash(globalState.HotShotHeight)
 	}
 	return globalState, StatusFinished, nil
 }
@@ -235,15 +225,4 @@ func (b *BlockChallengeBackend) IssueExecChallenge(
 		globalStateHashes,
 		big.NewInt(int64(numsteps)),
 	)
-}
-
-// This method should be only used in tests.
-func (b *BlockChallengeBackend) DebugEspresso_SetTrigger(h uint64, f func(*validator.ValidationInput)) {
-	b.debugEspressoIncorrectHeight = h
-	b.debugEspressoInputOverrideFunc = f
-}
-
-// This method is to create a conditional branch to help mocking a challenge.
-func (b *BlockChallengeBackend) EspressoDebugging(curr uint64) bool {
-	return b.debugEspressoIncorrectHeight > 0 && curr >= b.debugEspressoIncorrectHeight
 }

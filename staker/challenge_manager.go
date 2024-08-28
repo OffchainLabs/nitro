@@ -132,9 +132,6 @@ func NewChallengeManager(
 	if err != nil {
 		return nil, fmt.Errorf("error creating block challenge backend for challenge %v: %w", challengeIndex, err)
 	}
-	if val.debugEspressoIncorrectHeight > 0 {
-		backend.DebugEspresso_SetTrigger(val.debugEspressoIncorrectHeight, val.debugEspressoInputOverrideFunc)
-	}
 	return &ChallengeManager{
 		challengeCore: &challengeCore{
 			con:                  con,
@@ -474,9 +471,6 @@ func (m *ChallengeManager) createExecutionBackend(ctx context.Context, step uint
 	if err != nil {
 		return fmt.Errorf("error getting validation entry input of challenge %v msg %v: %w", m.challengeIndex, initialCount, err)
 	}
-	if m.blockChallengeBackend.EspressoDebugging(entry.BlockHeight) {
-		m.blockChallengeBackend.debugEspressoInputOverrideFunc(input)
-	}
 	var prunedBatches []validator.BatchInfo
 	for _, batch := range input.BatchInfo {
 		if batch.Number < m.maxBatchesRead {
@@ -508,10 +502,6 @@ func (m *ChallengeManager) createExecutionBackend(ctx context.Context, step uint
 	machineStepCount, computedState, computedStatus, err := backend.GetFinalState(ctx)
 	if err != nil {
 		return fmt.Errorf("error getting execution challenge final state: %w", err)
-	}
-	if m.blockChallengeBackend.EspressoDebugging(computedState.HotShotHeight) {
-		computedState.BlockHash = mockHash(computedState.HotShotHeight)
-		computedStatus = expectedStatus
 	}
 	if expectedStatus != computedStatus {
 		return fmt.Errorf("after msg %v expected status %v but got %v", initialCount, expectedStatus, computedStatus)

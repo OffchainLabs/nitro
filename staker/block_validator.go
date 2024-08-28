@@ -5,7 +5,6 @@ package staker
 
 import (
 	"context"
-	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -1327,12 +1326,6 @@ func (v *BlockValidator) WaitForPos(t *testing.T, ctx context.Context, pos arbut
 			lastLoop = true
 		}
 	}
-}
-
-func mockHash(h uint64) common.Hash {
-	result := common.Hash{}
-	binary.BigEndian.PutUint64(result[24:32], h)
-	return result
 }
 
 func (v *BlockValidator) GetValidated() arbutil.MessageIndex {

@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-func createL1AndL2Node(ctx context.Context, t *testing.T) (*TestClient, *BlockchainTestInfo, func()) {
+func createL1AndL2Node(ctx context.Context, t *testing.T) (*NodeBuilder, func()) {
 	builder := NewNodeBuilder(ctx).DefaultConfig(t, true)
 	builder.l1StackConfig.HTTPPort = 8545
 	builder.l1StackConfig.WSPort = 8546
@@ -35,7 +35,8 @@ func createL1AndL2Node(ctx context.Context, t *testing.T) (*TestClient, *Blockch
 	builder.nodeConfig.BlockValidator.ValidationServer.URL = fmt.Sprintf("ws://127.0.0.1:%d", arbValidationPort)
 	builder.nodeConfig.BlockValidator.LightClientAddress = lightClientAddress
 	builder.nodeConfig.BlockValidator.Espresso = true
-	builder.nodeConfig.DelayedSequencer.Enable = false
+	builder.nodeConfig.DelayedSequencer.Enable = true
+	builder.nodeConfig.DelayedSequencer.FinalizeDistance = 1
 
 	// sequencer config
 	builder.nodeConfig.Sequencer = true
@@ -56,7 +57,8 @@ func createL1AndL2Node(ctx context.Context, t *testing.T) (*TestClient, *Blockch
 	err := builder.L1Info.GenerateAccountWithMnemonic("CommitmentTask", mnemonic, 5)
 	Require(t, err)
 	builder.L1.TransferBalance(t, "Faucet", "CommitmentTask", big.NewInt(9e18), builder.L1Info)
-	return builder.L2, builder.L2Info, cleanup
+
+	return builder, cleanup
 }
 
 func TestSovereignSequencer(t *testing.T) {
@@ -66,7 +68,7 @@ func TestSovereignSequencer(t *testing.T) {
 	valNodeCleanup := createValidationNode(ctx, t, true)
 	defer valNodeCleanup()
 
-	l2Node, l2Info, cleanup := createL1AndL2Node(ctx, t)
+	builder, cleanup := createL1AndL2Node(ctx, t)
 	defer cleanup()
 
 	err := waitForL1Node(t, ctx)
@@ -79,14 +81,14 @@ func TestSovereignSequencer(t *testing.T) {
 	err = waitForEspressoNode(t, ctx)
 	Require(t, err)
 
-	err = checkTransferTxOnL2(t, ctx, l2Node, "User14", l2Info)
+	err = checkTransferTxOnL2(t, ctx, builder.L2, "User14", builder.L2Info)
 	Require(t, err)
 
-	msgCnt, err := l2Node.ConsensusNode.TxStreamer.GetMessageCount()
+	msgCnt, err := builder.L2.ConsensusNode.TxStreamer.GetMessageCount()
 	Require(t, err)
 
 	err = waitForWith(t, ctx, 6*time.Minute, 60*time.Second, func() bool {
-		validatedCnt := l2Node.ConsensusNode.BlockValidator.Validated(t)
+		validatedCnt := builder.L2.ConsensusNode.BlockValidator.Validated(t)
 		return validatedCnt == msgCnt
 	})
 	Require(t, err)

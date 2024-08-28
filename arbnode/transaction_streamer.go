@@ -990,6 +990,7 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(
 	msgWithMeta arbostypes.MessageWithMetadata,
 	msgResult execution.MessageResult,
 ) error {
+
 	if err := s.ExpectChosenSequencer(); err != nil {
 		return err
 	}
@@ -1024,9 +1025,12 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(
 	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockHash{msgWithBlockHash}, pos)
 	s.espressoTxnsStateInsertionMutex.Lock()
 	defer s.espressoTxnsStateInsertionMutex.Unlock()
-	err = s.SubmitEspressoTransactionPos(pos, s.db.NewBatch())
-	if err != nil {
-		return err
+
+	if arbos.IsEspressoMsg(msgWithMeta.Message) {
+		err = s.SubmitEspressoTransactionPos(pos, s.db.NewBatch())
+		if err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -1320,6 +1324,7 @@ func (s *TransactionStreamer) getEspressoSubmittedHash() (espressoTypes.TaggedBa
 }
 
 func (s *TransactionStreamer) getEspressoPendingTxnsPos() ([]*arbutil.MessageIndex, error) {
+
 	pendingTxnsBytes, err := s.db.Get(espressoPendingTxnsPositions)
 	if err != nil {
 		return nil, err
@@ -1391,7 +1396,7 @@ func (s *TransactionStreamer) setEspressoPendingTxnsPos(batch ethdb.KeyValueWrit
 func (s *TransactionStreamer) SubmitEspressoTransactionPos(pos arbutil.MessageIndex, batch ethdb.Batch) error {
 	pendingTxnsPos, err := s.getEspressoPendingTxnsPos()
 	if err != nil && !isErrNotFound(err) {
-		log.Error("failed to get the pending txns", "err", err)
+		log.Error("failed to get the pending txns position", "err", err)
 		return err
 	}
 
@@ -1432,7 +1437,7 @@ func (s *TransactionStreamer) submitEspressoTransactions(ctx context.Context, ig
 
 	pendingTxnsPos, err := s.getEspressoPendingTxnsPos()
 	if err != nil {
-		log.Warn("failed to get pending txns", "err", err)
+		log.Warn("failed to get pending txns position", "err", err)
 		return s.config().EspressoTxnsPollingInterval
 	}
 
