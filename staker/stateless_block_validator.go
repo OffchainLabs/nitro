@@ -326,11 +326,10 @@ func (v *StatelessBlockValidator) ValidationEntryRecord(ctx context.Context, e *
 
 func buildGlobalState(res execution.MessageResult, pos GlobalStatePosition) validator.GoGlobalState {
 	return validator.GoGlobalState{
-		BlockHash:     res.BlockHash,
-		SendRoot:      res.SendRoot,
-		Batch:         pos.BatchNumber,
-		PosInBatch:    pos.PosInBatch,
-		HotShotHeight: res.HotShotHeight,
+		BlockHash:  res.BlockHash,
+		SendRoot:   res.SendRoot,
+		Batch:      pos.BatchNumber,
+		PosInBatch: pos.PosInBatch,
 	}
 }
 

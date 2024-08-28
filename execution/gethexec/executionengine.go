@@ -789,9 +789,8 @@ func (s *ExecutionEngine) resultFromHeader(header *types.Header) (*execution.Mes
 	}
 	info := types.DeserializeHeaderExtraInformation(header)
 	return &execution.MessageResult{
-		BlockHash:     header.Hash(),
-		SendRoot:      info.SendRoot,
-		HotShotHeight: info.HotShotHeight,
+		BlockHash: header.Hash(),
+		SendRoot:  info.SendRoot,
 	}, nil
 }
 

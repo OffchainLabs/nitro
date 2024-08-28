@@ -780,7 +780,7 @@ impl From<Function> for FunctionSerdeAll {
 // uint64 - position_within_message
 // uint64 - espresso hotshot height
 pub const GLOBAL_STATE_BYTES32_NUM: usize = 2;
-pub const GLOBAL_STATE_U64_NUM: usize = 3;
+pub const GLOBAL_STATE_U64_NUM: usize = 2;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[repr(C)]

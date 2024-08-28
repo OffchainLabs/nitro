@@ -570,9 +570,8 @@ func (v *BlockValidator) createNextValidationEntry(ctx context.Context) (bool, e
 		v.nextCreateBatchReread = false
 	}
 	endGS := validator.GoGlobalState{
-		BlockHash:     endRes.BlockHash,
-		SendRoot:      endRes.SendRoot,
-		HotShotHeight: endRes.HotShotHeight,
+		BlockHash: endRes.BlockHash,
+		SendRoot:  endRes.SendRoot,
 	}
 	if pos+1 < v.nextCreateBatchMsgCount {
 		endGS.Batch = v.nextCreateStartGS.Batch
@@ -1187,11 +1186,10 @@ func (v *BlockValidator) checkLegacyValid() error {
 		return fmt.Errorf("legacy validated blockHash does not fit chain")
 	}
 	validGS := validator.GoGlobalState{
-		BlockHash:     result.BlockHash,
-		SendRoot:      result.SendRoot,
-		Batch:         v.legacyValidInfo.AfterPosition.BatchNumber,
-		PosInBatch:    v.legacyValidInfo.AfterPosition.PosInBatch,
-		HotShotHeight: result.HotShotHeight,
+		BlockHash:  result.BlockHash,
+		SendRoot:   result.SendRoot,
+		Batch:      v.legacyValidInfo.AfterPosition.BatchNumber,
+		PosInBatch: v.legacyValidInfo.AfterPosition.PosInBatch,
 	}
 	err = v.writeLastValidated(validGS, nil)
 	if err == nil {

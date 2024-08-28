@@ -298,16 +298,11 @@ fn ready_hostio(env: &mut WasmEnv) -> MaybeEscape {
     let position_within_message = socket::read_u64(stream)?;
     let last_block_hash = socket::read_bytes32(stream)?;
     let last_send_root = socket::read_bytes32(stream)?;
-    let validated_hotshot_height = socket::read_u64(stream)?;
     let hotshot_comm = socket::read_bytes32(stream)?;
     let block_height = socket::read_u64(stream)?;
     let hotshot_liveness = socket::read_u8(stream)?;
 
-    env.small_globals = [
-        inbox_position,
-        position_within_message,
-        validated_hotshot_height,
-    ];
+    env.small_globals = [inbox_position, position_within_message];
     env.large_globals = [last_block_hash, last_send_root];
     if hotshot_liveness > 0 {
         // HotShot is up

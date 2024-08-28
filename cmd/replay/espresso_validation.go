@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
 	"github.com/offchainlabs/nitro/wavmio"
@@ -21,10 +22,9 @@ import (
 func handleEspressoPreConditions(message *arbostypes.MessageWithMetadata, isEnabled bool) (bool, func()) {
 	// calculate and cache all values needed to determine if the preconditions are met to enter the Espresso STF logic
 	isNonEspressoMessage := arbos.IsL2NonEspressoMsg(message.Message)
-	hotshotHeight := wavmio.GetEspressoHeight()
 
 	validatingEspressoLivenessFailure := isNonEspressoMessage && isEnabled
-	validatingEspressoHeightFailure := isNonEspressoMessage && hotshotHeight != 0
+	validatingEspressoHeightFailure := isNonEspressoMessage && isEnabled
 	validatingAgainstEspresso := arbos.IsEspressoMsg(message.Message) && isEnabled
 
 	if validatingEspressoLivenessFailure {

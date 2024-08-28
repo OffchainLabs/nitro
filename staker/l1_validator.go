@@ -423,7 +423,6 @@ func (v *L1Validator) generateNodeAction(
 			log.Error("Found incorrect assertion: Machine status not finished", "node", nd.NodeNum, "machineStatus", nd.Assertion.AfterState.MachineStatus)
 			continue
 		}
-
 		caughtUp, nodeMsgCount, err := GlobalStateToMsgCount(v.inboxTracker, v.txStreamer, afterGS)
 		if errors.Is(err, ErrGlobalStateNotInChain) {
 			wrongNodesExist = true

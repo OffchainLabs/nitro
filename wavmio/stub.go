@@ -42,7 +42,6 @@ var (
 	hotShotCommitment  [32]byte
 	preimages          map[common.Hash][]byte
 	seqAdvanced        uint64
-	espressoHeight     uint64
 )
 
 func parsePreimageBytes(path string) {
@@ -126,14 +125,6 @@ func ReadHotShotCommitment(h uint64) [32]byte {
 
 func IsHotShotLive(l1Height uint64) bool {
 	return true
-}
-
-func GetEspressoHeight() uint64 {
-	return espressoHeight
-}
-
-func SetEspressoHeight(h uint64) {
-	espressoHeight = h
 }
 
 func ReadInboxMessage(msgNum uint64) []byte {

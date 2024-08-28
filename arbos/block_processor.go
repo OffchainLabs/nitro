@@ -556,7 +556,6 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.
 		var sendCount uint64
 		var nextL1BlockNumber uint64
 		var arbosVersion uint64
-		var hotShotHeight uint64
 
 		if header.Number.Uint64() == chainConfig.ArbitrumChainParams.GenesisBlockNum {
 			arbosVersion = chainConfig.ArbitrumChainParams.InitialArbOSVersion
@@ -572,14 +571,12 @@ func FinalizeBlock(header *types.Header, txs types.Transactions, statedb *state.
 			sendCount, _ = acc.Size()
 			nextL1BlockNumber, _ = state.Blockhashes().L1BlockNumber()
 			arbosVersion = state.ArbOSVersion()
-			hotShotHeight = binary.BigEndian.Uint64(header.MixDigest[24:32])
 		}
 		arbitrumHeader := types.HeaderInfo{
 			SendRoot:           sendRoot,
 			SendCount:          sendCount,
 			L1BlockNumber:      nextL1BlockNumber,
 			ArbOSFormatVersion: arbosVersion,
-			HotShotHeight:      hotShotHeight,
 		}
 		arbitrumHeader.UpdateHeaderWithInfo(header)
 		header.Root = statedb.IntermediateRoot(true)

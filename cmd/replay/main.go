@@ -300,19 +300,6 @@ func main() {
 			hotshotHeader := jst.Header
 			height := hotshotHeader.Height
 
-			// Check the continuity of the hotshot block if we are not running the sovereign sequencer.
-			if !arbos.IsEspressoSovereignMsg(message.Message) {
-				validatedHeight := wavmio.GetEspressoHeight()
-				if validatedHeight == 0 {
-					// Validators can choose their own trusted starting point to start their validation.
-					// TODO: Check the starting point is greater than the first valid hotshot block number.
-					wavmio.SetEspressoHeight(height)
-				} else if validatedHeight+1 == height {
-					wavmio.SetEspressoHeight(height)
-				} else {
-					panic(fmt.Sprintf("invalid hotshot block height: %v, got: %v", height, validatedHeight+1))
-				}
-			}
 			if jst.BlockMerkleJustification == nil {
 				panic("block merkle justification missing")
 			}

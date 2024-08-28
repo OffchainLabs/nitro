@@ -202,7 +202,7 @@ pub struct WasmEnv {
     /// Go's general runtime state
     pub go_state: GoRuntimeState,
     /// An ordered list of the 8-byte globals
-    pub small_globals: [u64; 3],
+    pub small_globals: [u64; 2],
     /// An ordered list of the 32-byte globals
     pub large_globals: [Bytes32; 2],
     /// An oracle allowing the prover to reverse keccak256
@@ -288,7 +288,7 @@ impl WasmEnv {
 
         let last_block_hash = parse_hex(&opts.last_block_hash, "--last-block-hash")?;
         let last_send_root = parse_hex(&opts.last_send_root, "--last-send-root")?;
-        env.small_globals = [opts.inbox_position, opts.position_within_message, 0];
+        env.small_globals = [opts.inbox_position, opts.position_within_message];
         env.large_globals = [last_block_hash, last_send_root];
         Ok(env)
     }
@@ -318,7 +318,6 @@ impl WasmEnv {
         check!(socket::write_u8(writer, socket::SUCCESS));
         check!(socket::write_u64(writer, self.small_globals[0]));
         check!(socket::write_u64(writer, self.small_globals[1]));
-        check!(socket::write_u64(writer, self.small_globals[2]));
         check!(socket::write_bytes32(writer, &self.large_globals[0]));
         check!(socket::write_bytes32(writer, &self.large_globals[1]));
         check!(socket::write_u64(writer, memory_used.bytes().0 as u64));

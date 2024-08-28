@@ -23,7 +23,6 @@ const IDX_SEND_ROOT = 1
 // u64
 const IDX_INBOX_POSITION = 0
 const IDX_POSITION_WITHIN_MESSAGE = 1
-const IDX_ESPRESSO_HEIGHT = 2
 
 func readBuffer(f func(uint32, unsafe.Pointer) uint32) []byte {
 	buf := make([]byte, 0, INITIAL_CAPACITY)
@@ -64,14 +63,6 @@ func ReadHotShotCommitment(h uint64) (commitment [32]byte) {
 
 func IsHotShotLive(l1Height uint64) bool {
 	return isHotShotLive(l1Height) > 0
-}
-
-func GetEspressoHeight() uint64 {
-	return getGlobalStateU64(IDX_ESPRESSO_HEIGHT)
-}
-
-func SetEspressoHeight(h uint64) {
-	setGlobalStateU64(IDX_ESPRESSO_HEIGHT, h)
 }
 
 func ReadDelayedInboxMessage(seqNum uint64) []byte {

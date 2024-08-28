@@ -125,11 +125,10 @@ func (b *BlockChallengeBackend) FindGlobalStateFromMessageCount(count arbutil.Me
 	}
 
 	return validator.GoGlobalState{
-		BlockHash:     res.BlockHash,
-		SendRoot:      res.SendRoot,
-		Batch:         batch,
-		PosInBatch:    uint64(count - prevBatchMsgCount),
-		HotShotHeight: res.HotShotHeight,
+		BlockHash:  res.BlockHash,
+		SendRoot:   res.SendRoot,
+		Batch:      batch,
+		PosInBatch: uint64(count - prevBatchMsgCount),
 	}, nil
 }
 
