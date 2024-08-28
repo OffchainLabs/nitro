@@ -675,3 +675,35 @@ func TestExtractSnapshot(t *testing.T) {
 		})
 	}
 }
+
+func TestIsWasmDb(t *testing.T) {
+	testCases := []struct {
+		path string
+		want bool
+	}{
+		{"wasm", true},
+		{"wasm/", true},
+		{"wasm/something", true},
+		{"/wasm", true},
+		{"./wasm", true},
+		{"././wasm", true},
+		{"/./wasm", true},
+		{"WASM", true},
+		{"wAsM", true},
+		{"nitro/../wasm", true},
+		{"/nitro/../wasm", true},
+		{".//nitro/.//../wasm", true},
+		{"not-wasm", false},
+		{"l2chaindata/example@@", false},
+		{"somedir/wasm", false},
+	}
+	for _, testCase := range testCases {
+		name := fmt.Sprintf("%q", testCase.path)
+		t.Run(name, func(t *testing.T) {
+			got := isWasmDb(testCase.path)
+			if testCase.want != got {
+				t.Fatalf("want %v, but got %v", testCase.want, got)
+			}
+		})
+	}
+}
