@@ -536,6 +536,10 @@ func testGettingState(t *testing.T, execConfig *gethexec.Config) {
 	if err == nil {
 		Fatal(t, "StateAndHeaderByNumber didn't failed as expected")
 	}
+	expectedErr := &trie.MissingNodeError{}
+	if !errors.As(err, &expectedErr) {
+		Fatal(t, "StateAndHeaderByNumber failed with unexpected error:", err)
+	}
 }
 
 func TestGettingState(t *testing.T) {
