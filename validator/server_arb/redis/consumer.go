@@ -94,7 +94,7 @@ func (s *ExecutionSpawner) Start(ctx_in context.Context) {
 				run, err := s.spawner.CreateExecutionRun(moduleRoot,
 					req.Value.ValidationInput).Await(ctx)
 				if err != nil {
-					log.Error("Creationg BOLD execution", "error", err)
+					log.Error("Creating BOLD execution", "error", err)
 					return 0
 				}
 				hashes, err := run.GetMachineHashesWithStepSize(
