@@ -408,10 +408,10 @@ func databaseIsEmpty(db ethdb.Database) bool {
 func isWasmDb(path string) bool {
 	path = filepath.Clean(strings.ToLower(path))
 	parts := strings.Split(path, string(filepath.Separator))
-	if len(parts) >= 1 && strings.HasPrefix(parts[0], "wasm") {
+	if len(parts) >= 1 && parts[0] == "wasm" {
 		return true
 	}
-	if len(parts) >= 2 && parts[0] == "" && strings.HasPrefix(parts[1], "wasm") { // Cover "/wasm" case
+	if len(parts) >= 2 && parts[0] == "" && parts[1] == "wasm" { // Cover "/wasm" case
 		return true
 	}
 	return false
