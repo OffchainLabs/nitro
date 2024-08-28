@@ -368,16 +368,16 @@ pub extern "C" fn stylus_clear_lru_cache() {
     InitCache::clear_lru_cache()
 }
 
-/// Gets asm estimate size.
+/// Gets lru entry size in bytes.
 /// Only used for testing purposes.
 #[no_mangle]
-pub extern "C" fn stylus_get_asm_size_estimate_bytes(
+pub extern "C" fn stylus_get_lru_entry_size_estimate_bytes(
     module: GoSliceData,
     version: u16,
     debug: bool,
 ) -> u64 {
     match deserialize_module(module.slice(), version, debug) {
         Err(error) => panic!("tried to get invalid asm!: {error}"),
-        Ok((_, _, asm_size_estimate_bytes)) => asm_size_estimate_bytes.try_into().unwrap(),
+        Ok((_, _, lru_entry_size_estimate_bytes)) => lru_entry_size_estimate_bytes.try_into().unwrap(),
     }
 }

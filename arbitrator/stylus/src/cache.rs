@@ -98,8 +98,8 @@ pub fn deserialize_module(
 ) -> Result<(Module, Engine, usize)> {
     let engine = CompileConfig::version(version, debug).engine(target_native());
     let module = unsafe { Module::deserialize_unchecked(&engine, module)? };
-    let asm_size_estimate_bytes = module.serialize()?.len();
-    Ok((module, engine, asm_size_estimate_bytes))
+    let lru_entry_size_estimate_bytes = module.serialize()?.len();
+    Ok((module, engine, lru_entry_size_estimate_bytes))
 }
 
 impl InitCache {
