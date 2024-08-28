@@ -40,8 +40,9 @@ func testDASStoreRetrieveMultipleInstances(t *testing.T, storageType string) {
 			KeyDir: dbPath,
 		},
 		LocalFileStorage: LocalFileStorageConfig{
-			Enable:  enableFileStorage,
-			DataDir: dbPath,
+			Enable:       enableFileStorage,
+			DataDir:      dbPath,
+			MaxRetention: DefaultLocalFileStorageConfig.MaxRetention,
 		},
 		LocalDBStorage:     dbConfig,
 		ParentChainNodeURL: "none",
@@ -129,8 +130,9 @@ func testDASMissingMessage(t *testing.T, storageType string) {
 			KeyDir: dbPath,
 		},
 		LocalFileStorage: LocalFileStorageConfig{
-			Enable:  enableFileStorage,
-			DataDir: dbPath,
+			Enable:       enableFileStorage,
+			DataDir:      dbPath,
+			MaxRetention: DefaultLocalFileStorageConfig.MaxRetention,
 		},
 		LocalDBStorage:     dbConfig,
 		ParentChainNodeURL: "none",

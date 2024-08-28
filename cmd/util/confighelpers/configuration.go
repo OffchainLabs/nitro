@@ -7,11 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"reflect"
 	"strings"
+	"time"
 
 	"github.com/knadh/koanf"
 	"github.com/knadh/koanf/parsers/json"
-	koanfjson "github.com/knadh/koanf/parsers/json"
 	"github.com/knadh/koanf/providers/confmap"
 	"github.com/knadh/koanf/providers/env"
 	"github.com/knadh/koanf/providers/file"
@@ -98,19 +99,24 @@ var envvarsToSplitOnComma map[string]any = map[string]any{
 	"chain.info-files":                      struct{}{},
 	"conf.file":                             struct{}{},
 	"execution.secondary-forwarding-target": struct{}{},
+	"execution.sequencer.sender-whitelist":  struct{}{},
 	"graphql.corsdomain":                    struct{}{},
 	"graphql.vhosts":                        struct{}{},
 	"http.api":                              struct{}{},
 	"http.corsdomain":                       struct{}{},
 	"http.vhosts":                           struct{}{},
-	"node.data-availability.rest-aggregator.urls":                       struct{}{},
-	"node.feed.input.secondary-url":                                     struct{}{},
-	"node.feed.input.url":                                               struct{}{},
-	"node.feed.input.verify.allowed-addresses":                          struct{}{},
-	"node.seq-coordinator.signer.ecdsa.allowed-addresses":               struct{}{},
-	"p2p.bootnodes":                                                     struct{}{},
-	"p2p.bootnodes-v5":                                                  struct{}{},
-	"validation.api-auth":                                               struct{}{},
+	"node.batch-poster.data-poster.blob-tx-replacement-times":        time.Duration(0),
+	"node.batch-poster.data-poster.replacement-times":                time.Duration(0),
+	"node.data-availability.rest-aggregator.urls":                    struct{}{},
+	"node.feed.input.secondary-url":                                  struct{}{},
+	"node.feed.input.url":                                            struct{}{},
+	"node.feed.input.verify.allowed-addresses":                       struct{}{},
+	"node.seq-coordinator.signer.ecdsa.allowed-addresses":            struct{}{},
+	"node.staker.batch-poster.data-poster.blob-tx-replacement-times": time.Duration(0),
+	"node.staker.batch-poster.data-poster.replacement-times":         time.Duration(0),
+	"p2p.bootnodes":       struct{}{},
+	"p2p.bootnodes-v5":    struct{}{},
+	"validation.api-auth": struct{}{},
 	"validation.arbitrator.redis-validation-server-config.module-roots": struct{}{},
 	"validation.wasm.allowed-wasm-module-roots":                         struct{}{},
 	"ws.api":     struct{}{},
@@ -126,8 +132,22 @@ func loadEnvironmentVariables(k *koanf.Koanf) error {
 				strings.TrimPrefix(key, envPrefix+"_")), "__", "-")
 			key = strings.ReplaceAll(key, "_", ".")
 
-			if _, found := envvarsToSplitOnComma[key]; found {
+			if value, found := envvarsToSplitOnComma[key]; found {
 				// If there are commas in the value, split the value into a slice.
+				if _, ok := value.(time.Duration); ok {
+					// Special case for time.Duration
+					// v[1:len(v)-1] removes the '[' , ']' around the string
+					durationStrings := strings.Split(v[1:len(v)-1], ",")
+					var durations []time.Duration
+					for _, durationString := range durationStrings {
+						duration, err := time.ParseDuration(durationString)
+						if err != nil {
+							return key, nil
+						}
+						durations = append(durations, duration)
+					}
+					return key, durations
+				}
 				if strings.Contains(v, ",") {
 					return key, strings.Split(v, ",")
 
@@ -194,15 +214,17 @@ func devFlagArgs() []string {
 }
 
 func BeginCommonParse(f *flag.FlagSet, args []string) (*koanf.Koanf, error) {
+	var expandedArgs []string
 	for _, arg := range args {
 		if arg == "--version" || arg == "-v" {
 			return nil, ErrVersion
 		} else if arg == "--dev" {
-			args = devFlagArgs()
-			break
+			expandedArgs = append(expandedArgs, devFlagArgs()...)
+		} else {
+			expandedArgs = append(expandedArgs, arg)
 		}
 	}
-	if err := f.Parse(args); err != nil {
+	if err := f.Parse(expandedArgs); err != nil {
 		return nil, err
 	}
 
@@ -227,6 +249,7 @@ func EndCommonParse(k *koanf.Koanf, config interface{}) error {
 
 		// Default values
 		DecodeHook: mapstructure.ComposeDecodeHookFunc(
+			stringToSliceDurationHookFunc(","),
 			mapstructure.StringToTimeDurationHookFunc()),
 		Metadata:         nil,
 		Result:           config,
@@ -238,6 +261,36 @@ func EndCommonParse(k *koanf.Koanf, config interface{}) error {
 	}
 
 	return nil
+}
+
+func stringToSliceDurationHookFunc(sep string) mapstructure.DecodeHookFunc {
+	return func(
+		f reflect.Type,
+		t reflect.Type,
+		data interface{}) (interface{}, error) {
+		if f.Kind() != reflect.String {
+			return data, nil
+		}
+		if t != reflect.TypeOf([]time.Duration{}) {
+			return data, nil
+		}
+
+		raw, _ := data.(string)
+		if raw == "" {
+			return []time.Duration{}, nil
+		}
+		// raw[1:len(raw)-1] removes the '[' , ']' around the string
+		durationStrings := strings.Split(raw[1:len(raw)-1], sep)
+		var durations []time.Duration
+		for _, durationString := range durationStrings {
+			duration, err := time.ParseDuration(durationString)
+			if err != nil {
+				return nil, err
+			}
+			durations = append(durations, duration)
+		}
+		return durations, nil
+	}
 }
 
 func DumpConfig(k *koanf.Koanf, extraOverrideFields map[string]interface{}) error {
@@ -253,7 +306,7 @@ func DumpConfig(k *koanf.Koanf, extraOverrideFields map[string]interface{}) erro
 		return fmt.Errorf("error removing extra parameters before dump: %w", err)
 	}
 
-	c, err := k.Marshal(koanfjson.Parser())
+	c, err := k.Marshal(json.Parser())
 	if err != nil {
 		return fmt.Errorf("unable to marshal config file to JSON: %w", err)
 	}

@@ -16,7 +16,7 @@ use rand::prelude::*;
 use std::{collections::HashMap, path::Path, sync::Arc};
 use wasmer::{
     imports, wasmparser::Operator, CompilerConfig, Function, FunctionEnv, Imports, Instance,
-    Module, Store,
+    Module, Store, Target,
 };
 use wasmer_compiler_singlepass::Singlepass;
 
@@ -33,7 +33,7 @@ type TestInstance = NativeInstance<VecReader, TestEvmApi>;
 
 impl TestInstance {
     fn new_test(path: &str, compile: CompileConfig) -> Result<Self> {
-        let mut store = compile.store();
+        let mut store = compile.store(Target::default());
         let imports = imports! {
             "test" => {
                 "noop" => Function::new_typed(&mut store, || {}),
@@ -86,7 +86,14 @@ impl TestInstance {
         config: StylusConfig,
     ) -> Result<(Self, TestEvmApi)> {
         let (mut evm, evm_data) = TestEvmApi::new(compile.clone());
-        let native = Self::from_path(path, evm.clone(), evm_data, compile, config)?;
+        let native = Self::from_path(
+            path,
+            evm.clone(),
+            evm_data,
+            compile,
+            config,
+            Target::default(),
+        )?;
         let footprint = native.memory().ty(&native.store).minimum.0 as u16;
         evm.set_pages(footprint);
         Ok((native, evm))
@@ -149,7 +156,6 @@ fn new_test_machine(path: &str, compile: &CompileConfig) -> Result<Machine> {
     let mut mach = Machine::from_binaries(
         &[lib],
         bin,
-        false,
         false,
         true,
         compile.debug.debug_funcs,

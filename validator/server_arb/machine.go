@@ -59,7 +59,7 @@ type ArbitratorMachine struct {
 var _ MachineInterface = (*ArbitratorMachine)(nil)
 
 var preimageResolvers containers.SyncMap[int64, GoPreimageResolver]
-var lastPreimageResolverId int64 // atomic
+var lastPreimageResolverId atomic.Int64 // atomic
 
 // Any future calls to this machine will result in a panic
 func (m *ArbitratorMachine) Destroy() {
@@ -382,7 +382,7 @@ func (m *ArbitratorMachine) SetPreimageResolver(resolver GoPreimageResolver) err
 	if m.frozen {
 		return errors.New("machine frozen")
 	}
-	id := atomic.AddInt64(&lastPreimageResolverId, 1)
+	id := lastPreimageResolverId.Add(1)
 	preimageResolvers.Store(id, resolver)
 	m.contextId = &id
 	runtime.SetFinalizer(m.contextId, freeContextId)

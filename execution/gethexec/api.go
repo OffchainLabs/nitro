@@ -78,6 +78,7 @@ func (api *ArbDebugAPI) evenlySpaceBlocks(start, end rpc.BlockNumber) (uint64, u
 	end, _ = api.blockchain.ClipToPostNitroGenesis(end)
 
 	blocks := end.Int64() - start.Int64() + 1
+	// #nosec G115
 	bound := int64(api.blockRangeBound)
 	step := int64(1)
 	if blocks > bound {

@@ -37,22 +37,24 @@ var (
 )
 
 type AggregatorConfig struct {
-	Enable                bool   `koanf:"enable"`
-	AssumedHonest         int    `koanf:"assumed-honest"`
-	Backends              string `koanf:"backends"`
-	MaxStoreChunkBodySize int    `koanf:"max-store-chunk-body-size"`
+	Enable                bool              `koanf:"enable"`
+	AssumedHonest         int               `koanf:"assumed-honest"`
+	Backends              BackendConfigList `koanf:"backends"`
+	MaxStoreChunkBodySize int               `koanf:"max-store-chunk-body-size"`
 }
 
 var DefaultAggregatorConfig = AggregatorConfig{
 	AssumedHonest:         0,
-	Backends:              "",
+	Backends:              nil,
 	MaxStoreChunkBodySize: 512 * 1024,
 }
+
+var parsedBackendsConf BackendConfigList
 
 func AggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Bool(prefix+".enable", DefaultAggregatorConfig.Enable, "enable storage of sequencer batch data from a list of RPC endpoints; this should only be used by the batch poster and not in combination with other DAS storage types")
 	f.Int(prefix+".assumed-honest", DefaultAggregatorConfig.AssumedHonest, "Number of assumed honest backends (H). If there are N backends, K=N+1-H valid responses are required to consider an Store request to be successful.")
-	f.String(prefix+".backends", DefaultAggregatorConfig.Backends, "JSON RPC backend configuration")
+	f.Var(&parsedBackendsConf, prefix+".backends", "JSON RPC backend configuration. This can be specified on the command line as a JSON array, eg: [{\"url\": \"...\", \"pubkey\": \"...\"},...], or as a JSON array in the config file.")
 	f.Int(prefix+".max-store-chunk-body-size", DefaultAggregatorConfig.MaxStoreChunkBodySize, "maximum HTTP POST body size to use for individual batch chunks, including JSON RPC overhead and an estimated overhead of 512B of headers")
 }
 
@@ -164,6 +166,7 @@ type storeResponse struct {
 // If Store gets not enough successful responses by the time its context is canceled
 // (eg via TimeoutWrapper) then it also returns an error.
 func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) (*daprovider.DataAvailabilityCertificate, error) {
+	// #nosec G115
 	log.Trace("das.Aggregator.Store", "message", pretty.FirstFewBytes(message), "timeout", time.Unix(int64(timeout), 0))
 
 	allBackendsSucceeded := false
@@ -191,11 +194,7 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 			cert, err := d.service.Store(storeCtx, message, timeout)
 			if err != nil {
 				incFailureMetric()
-				if errors.Is(err, context.DeadlineExceeded) {
-					metrics.GetOrRegisterCounter(metricWithServiceName+"/error/timeout/total", nil).Inc(1)
-				} else {
-					metrics.GetOrRegisterCounter(metricWithServiceName+"/error/client/total", nil).Inc(1)
-				}
+				log.Warn("DAS Aggregator failed to store batch to backend", "backend", d.metricName, "err", err)
 				responses <- storeResponse{d, nil, err}
 				return
 			}
@@ -205,13 +204,13 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 			)
 			if err != nil {
 				incFailureMetric()
-				metrics.GetOrRegisterCounter(metricWithServiceName+"/error/bad_response/total", nil).Inc(1)
+				log.Warn("DAS Aggregator couldn't parse backend's store response signature", "backend", d.metricName, "err", err)
 				responses <- storeResponse{d, nil, err}
 				return
 			}
 			if !verified {
 				incFailureMetric()
-				metrics.GetOrRegisterCounter(metricWithServiceName+"/error/bad_response/total", nil).Inc(1)
+				log.Warn("DAS Aggregator failed to verify backend's store response signature", "backend", d.metricName, "err", err)
 				responses <- storeResponse{d, nil, errors.New("signature verification failed")}
 				return
 			}
@@ -220,13 +219,13 @@ func (a *Aggregator) Store(ctx context.Context, message []byte, timeout uint64) 
 
 			if cert.DataHash != expectedHash {
 				incFailureMetric()
-				metrics.GetOrRegisterCounter(metricWithServiceName+"/error/bad_response/total", nil).Inc(1)
+				log.Warn("DAS Aggregator got a store response with a data hash not matching the expected hash", "backend", d.metricName, "dataHash", cert.DataHash, "expectedHash", expectedHash, "err", err)
 				responses <- storeResponse{d, nil, errors.New("hash verification failed")}
 				return
 			}
 			if cert.Timeout != timeout {
 				incFailureMetric()
-				metrics.GetOrRegisterCounter(metricWithServiceName+"/error/bad_response/total", nil).Inc(1)
+				log.Warn("DAS Aggregator got a store response with any expiry time not matching the expected expiry time", "backend", d.metricName, "dataHash", cert.DataHash, "expectedHash", expectedHash, "err", err)
 				responses <- storeResponse{d, nil, fmt.Errorf("timeout was %d, expected %d", cert.Timeout, timeout)}
 				return
 			}

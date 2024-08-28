@@ -49,7 +49,7 @@ type SeqCoordinator struct {
 	prevChosenSequencer  string
 	reportedWantsLockout bool
 
-	lockoutUntil int64 // atomic
+	lockoutUntil atomic.Int64 // atomic
 
 	wantsLockoutMutex sync.Mutex // manages access to acquireLockoutAndWriteMessage and generally the wants lockout key
 	avoidLockout      int        // If > 0, prevents acquiring the lockout but not extending the lockout if no alternative sequencer wants the lockout. Protected by chosenUpdateMutex.
@@ -70,9 +70,10 @@ type SeqCoordinatorConfig struct {
 	SafeShutdownDelay     time.Duration `koanf:"safe-shutdown-delay"`
 	ReleaseRetries        int           `koanf:"release-retries"`
 	// Max message per poll.
-	MsgPerPoll arbutil.MessageIndex       `koanf:"msg-per-poll"`
-	MyUrl      string                     `koanf:"my-url"`
-	Signer     signature.SignVerifyConfig `koanf:"signer"`
+	MsgPerPoll          arbutil.MessageIndex       `koanf:"msg-per-poll"`
+	MyUrl               string                     `koanf:"my-url"`
+	DeleteFinalizedMsgs bool                       `koanf:"delete-finalized-msgs"`
+	Signer              signature.SignVerifyConfig `koanf:"signer"`
 }
 
 func (c *SeqCoordinatorConfig) Url() string {
@@ -96,6 +97,7 @@ func SeqCoordinatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Int(prefix+".release-retries", DefaultSeqCoordinatorConfig.ReleaseRetries, "the number of times to retry releasing the wants lockout and chosen one status on shutdown")
 	f.Uint64(prefix+".msg-per-poll", uint64(DefaultSeqCoordinatorConfig.MsgPerPoll), "will only be marked as wanting the lockout if not too far behind")
 	f.String(prefix+".my-url", DefaultSeqCoordinatorConfig.MyUrl, "url for this sequencer if it is the chosen")
+	f.Bool(prefix+".delete-finalized-msgs", DefaultSeqCoordinatorConfig.DeleteFinalizedMsgs, "enable deleting of finalized messages from redis")
 	signature.SignVerifyConfigAddOptions(prefix+".signer", f)
 }
 
@@ -105,7 +107,7 @@ var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
 	RedisUrl:              "",
 	LockoutDuration:       time.Minute,
 	LockoutSpare:          30 * time.Second,
-	SeqNumDuration:        24 * time.Hour,
+	SeqNumDuration:        10 * 24 * time.Hour,
 	UpdateInterval:        250 * time.Millisecond,
 	HandoffTimeout:        30 * time.Second,
 	SafeShutdownDelay:     5 * time.Second,
@@ -113,23 +115,25 @@ var DefaultSeqCoordinatorConfig = SeqCoordinatorConfig{
 	RetryInterval:         50 * time.Millisecond,
 	MsgPerPoll:            2000,
 	MyUrl:                 redisutil.INVALID_URL,
+	DeleteFinalizedMsgs:   true,
 	Signer:                signature.DefaultSignVerifyConfig,
 }
 
 var TestSeqCoordinatorConfig = SeqCoordinatorConfig{
-	Enable:            false,
-	RedisUrl:          "",
-	LockoutDuration:   time.Second * 2,
-	LockoutSpare:      time.Millisecond * 10,
-	SeqNumDuration:    time.Minute * 10,
-	UpdateInterval:    time.Millisecond * 10,
-	HandoffTimeout:    time.Millisecond * 200,
-	SafeShutdownDelay: time.Millisecond * 100,
-	ReleaseRetries:    4,
-	RetryInterval:     time.Millisecond * 3,
-	MsgPerPoll:        20,
-	MyUrl:             redisutil.INVALID_URL,
-	Signer:            signature.DefaultSignVerifyConfig,
+	Enable:              false,
+	RedisUrl:            "",
+	LockoutDuration:     time.Second * 2,
+	LockoutSpare:        time.Millisecond * 10,
+	SeqNumDuration:      time.Minute * 10,
+	UpdateInterval:      time.Millisecond * 10,
+	HandoffTimeout:      time.Millisecond * 200,
+	SafeShutdownDelay:   time.Millisecond * 100,
+	ReleaseRetries:      4,
+	RetryInterval:       time.Millisecond * 3,
+	MsgPerPoll:          20,
+	MyUrl:               redisutil.INVALID_URL,
+	DeleteFinalizedMsgs: true,
+	Signer:              signature.DefaultSignVerifyConfig,
 }
 
 func NewSeqCoordinator(
@@ -193,14 +197,14 @@ func StandaloneSeqCoordinatorInvalidateMsgIndex(ctx context.Context, redisClient
 	return nil
 }
 
-func atomicTimeWrite(addr *int64, t time.Time) {
+func atomicTimeWrite(addr *atomic.Int64, t time.Time) {
 	asint64 := t.UnixMilli()
-	atomic.StoreInt64(addr, asint64)
+	addr.Store(asint64)
 }
 
 // notice: It is possible for two consecutive reads to get decreasing values. That shouldn't matter.
-func atomicTimeRead(addr *int64) time.Time {
-	asint64 := atomic.LoadInt64(addr)
+func atomicTimeRead(addr *atomic.Int64) time.Time {
+	asint64 := addr.Load()
 	return time.UnixMilli(asint64)
 }
 
@@ -340,6 +344,14 @@ func (c *SeqCoordinator) acquireLockoutAndWriteMessage(ctx context.Context, msgC
 	return nil
 }
 
+func (c *SeqCoordinator) getRemoteFinalizedMsgCount(ctx context.Context) (arbutil.MessageIndex, error) {
+	resStr, err := c.Client.Get(ctx, redisutil.FINALIZED_MSG_COUNT_KEY).Result()
+	if err != nil {
+		return 0, err
+	}
+	return c.signedBytesToMsgCount(ctx, []byte(resStr))
+}
+
 func (c *SeqCoordinator) getRemoteMsgCountImpl(ctx context.Context, r redis.Cmdable) (arbutil.MessageIndex, error) {
 	resStr, err := r.Get(ctx, redisutil.MSG_COUNT_KEY).Result()
 	if errors.Is(err, redis.Nil) {
@@ -475,6 +487,17 @@ func (c *SeqCoordinator) updateWithLockout(ctx context.Context, nextChosen strin
 		return c.noRedisError()
 	}
 	// Was, and still is, the active sequencer
+	if c.config.DeleteFinalizedMsgs {
+		// Before proceeding, first try deleting finalized messages from redis and setting the finalizedMsgCount key
+		finalized, err := c.sync.GetFinalizedMsgCount(ctx)
+		if err != nil {
+			log.Warn("Error getting finalizedMessageCount from syncMonitor: %w", err)
+		} else if finalized == 0 {
+			log.Warn("SyncMonitor returned zero finalizedMessageCount")
+		} else if err := c.deleteFinalizedMsgsFromRedis(ctx, finalized); err != nil {
+			log.Warn("Coordinator failed to delete finalized messages from redis", "err", err)
+		}
+	}
 	// We leave a margin of error of either a five times the update interval or a fifth of the lockout duration, whichever is greater.
 	marginOfError := arbmath.MaxInt(c.config.LockoutDuration/5, c.config.UpdateInterval*5)
 	if time.Now().Add(marginOfError).Before(atomicTimeRead(&c.lockoutUntil)) {
@@ -492,6 +515,62 @@ func (c *SeqCoordinator) updateWithLockout(ctx context.Context, nextChosen strin
 		return c.retryAfterRedisError()
 	}
 	return c.noRedisError()
+}
+
+func (c *SeqCoordinator) deleteFinalizedMsgsFromRedis(ctx context.Context, finalized arbutil.MessageIndex) error {
+	deleteMsgsAndUpdateFinalizedMsgCount := func(keys []string) error {
+		if len(keys) > 0 {
+			// To support cases during init we delete keys from reverse (i.e lowest seq num first), so that even if deletion fails in one of the iterations
+			// next time deleteFinalizedMsgsFromRedis is called we dont miss undeleted messages, as exists is checked from higher seqnum to lower.
+			// In non-init cases it doesn't matter how we delete as we always try to delete from prevFinalized to finalized
+			batchDeleteCount := 1000
+			for i := len(keys); i > 0; i -= batchDeleteCount {
+				if err := c.Client.Del(ctx, keys[max(0, i-batchDeleteCount):i]...).Err(); err != nil {
+					return fmt.Errorf("error deleting finalized messages and their signatures from redis: %w", err)
+				}
+			}
+		}
+		finalizedBytes, err := c.msgCountToSignedBytes(finalized)
+		if err != nil {
+			return err
+		}
+		if err = c.Client.Set(ctx, redisutil.FINALIZED_MSG_COUNT_KEY, finalizedBytes, c.config.SeqNumDuration).Err(); err != nil {
+			return fmt.Errorf("couldn't set %s key to current finalizedMsgCount in redis: %w", redisutil.FINALIZED_MSG_COUNT_KEY, err)
+		}
+		return nil
+	}
+	prevFinalized, err := c.getRemoteFinalizedMsgCount(ctx)
+	if errors.Is(err, redis.Nil) {
+		var keys []string
+		for msg := finalized - 1; msg > 0; msg-- {
+			exists, err := c.Client.Exists(ctx, redisutil.MessageKeyFor(msg), redisutil.MessageSigKeyFor(msg)).Result()
+			if err != nil {
+				// If there is an error deleting finalized messages during init, we retry later either from this sequencer or from another
+				return err
+			}
+			if exists == 0 {
+				break
+			}
+			keys = append(keys, redisutil.MessageKeyFor(msg), redisutil.MessageSigKeyFor(msg))
+		}
+		log.Info("Initializing finalizedMsgCount and deleting finalized messages from redis", "finalizedMsgCount", finalized)
+		return deleteMsgsAndUpdateFinalizedMsgCount(keys)
+	} else if err != nil {
+		return fmt.Errorf("error getting finalizedMsgCount value from redis: %w", err)
+	}
+	remoteMsgCount, err := c.getRemoteMsgCountImpl(ctx, c.Client)
+	if err != nil {
+		return fmt.Errorf("cannot get remote message count: %w", err)
+	}
+	msgToDelete := min(finalized, remoteMsgCount)
+	if prevFinalized < msgToDelete {
+		var keys []string
+		for msg := prevFinalized; msg < msgToDelete; msg++ {
+			keys = append(keys, redisutil.MessageKeyFor(msg), redisutil.MessageSigKeyFor(msg))
+		}
+		return deleteMsgsAndUpdateFinalizedMsgCount(keys)
+	}
+	return nil
 }
 
 func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
@@ -524,19 +603,24 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		log.Error("cannot read message count", "err", err)
 		return c.config.UpdateInterval
 	}
+	remoteFinalizedMsgCount, err := c.getRemoteFinalizedMsgCount(ctx)
+	if err != nil {
+		loglevel := log.Error
+		if errors.Is(err, redis.Nil) {
+			loglevel = log.Debug
+		}
+		loglevel("Cannot get remote finalized message count, might encounter failed to read message warnings later", "err", err)
+	}
 	remoteMsgCount, err := c.GetRemoteMsgCount()
 	if err != nil {
 		log.Warn("cannot get remote message count", "err", err)
 		return c.retryAfterRedisError()
 	}
-	readUntil := remoteMsgCount
-	if readUntil > localMsgCount+c.config.MsgPerPoll {
-		readUntil = localMsgCount + c.config.MsgPerPoll
-	}
+	readUntil := min(localMsgCount+c.config.MsgPerPoll, remoteMsgCount)
 	var messages []arbostypes.MessageWithMetadata
 	msgToRead := localMsgCount
 	var msgReadErr error
-	for msgToRead < readUntil {
+	for msgToRead < readUntil && localMsgCount >= remoteFinalizedMsgCount {
 		var resString string
 		resString, msgReadErr = c.Client.Get(ctx, redisutil.MessageKeyFor(msgToRead)).Result()
 		if msgReadErr != nil {
@@ -607,9 +691,10 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		return c.noRedisError()
 	}
 
-	syncProgress := c.sync.SyncProgressMap()
-	synced := len(syncProgress) == 0
+	// Sequencer should want lockout if and only if- its synced, not avoiding lockout and execution processed every message that consensus had 1 second ago
+	synced := c.sequencer.Synced()
 	if !synced {
+		syncProgress := c.sequencer.FullSyncProgressMap()
 		var detailsList []interface{}
 		for key, value := range syncProgress {
 			detailsList = append(detailsList, key, value)
@@ -693,7 +778,7 @@ func (c *SeqCoordinator) DebugPrint() string {
 	return fmt.Sprint("Url:", c.config.Url(),
 		" prevChosenSequencer:", c.prevChosenSequencer,
 		" reportedWantsLockout:", c.reportedWantsLockout,
-		" lockoutUntil:", c.lockoutUntil,
+		" lockoutUntil:", c.lockoutUntil.Load(),
 		" redisErrors:", c.redisErrors)
 }
 
@@ -849,7 +934,7 @@ func (c *SeqCoordinator) SeekLockout(ctx context.Context) {
 	defer c.wantsLockoutMutex.Unlock()
 	c.avoidLockout--
 	log.Info("seeking lockout", "myUrl", c.config.Url())
-	if c.sync.Synced() {
+	if c.sequencer.Synced() {
 		// Even if this errors we still internally marked ourselves as wanting the lockout
 		err := c.wantsLockoutUpdateWithMutex(ctx)
 		if err != nil {

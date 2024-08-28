@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/offchainlabs/nitro/util/containers"
 )
 
@@ -13,6 +14,7 @@ type ValidationSpawner interface {
 	Start(context.Context) error
 	Stop()
 	Name() string
+	StylusArchs() []rawdb.Target
 	Room() int
 }
 
@@ -30,6 +32,7 @@ type ExecutionSpawner interface {
 
 type ExecutionRun interface {
 	GetStepAt(uint64) containers.PromiseInterface[*MachineStepResult]
+	GetMachineHashesWithStepSize(machineStartIndex, stepSize, maxIterations uint64) containers.PromiseInterface[[]common.Hash]
 	GetLastStep() containers.PromiseInterface[*MachineStepResult]
 	GetProofAt(uint64) containers.PromiseInterface[[]byte]
 	PrepareRange(uint64, uint64) containers.PromiseInterface[struct{}]

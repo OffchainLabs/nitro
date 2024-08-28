@@ -8,7 +8,6 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/util/pretty"
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
@@ -37,57 +36,39 @@ func (c *syncedKeysetCache) put(key [32]byte, value []byte) {
 	c.cache[key] = value
 }
 
-type ChainFetchReader struct {
-	daprovider.DASReader
+type KeysetFetcher struct {
 	seqInboxCaller   *bridgegen.SequencerInboxCaller
 	seqInboxFilterer *bridgegen.SequencerInboxFilterer
 	keysetCache      syncedKeysetCache
 }
 
-func NewChainFetchReader(inner daprovider.DASReader, l1client arbutil.L1Interface, seqInboxAddr common.Address) (*ChainFetchReader, error) {
+func NewKeysetFetcher(l1client arbutil.L1Interface, seqInboxAddr common.Address) (*KeysetFetcher, error) {
 	seqInbox, err := bridgegen.NewSequencerInbox(seqInboxAddr, l1client)
 	if err != nil {
 		return nil, err
 	}
 
-	return NewChainFetchReaderWithSeqInbox(inner, seqInbox)
+	return NewKeysetFetcherWithSeqInbox(seqInbox)
 }
 
-func NewChainFetchReaderWithSeqInbox(inner daprovider.DASReader, seqInbox *bridgegen.SequencerInbox) (*ChainFetchReader, error) {
-	return &ChainFetchReader{
-		DASReader:        inner,
+func NewKeysetFetcherWithSeqInbox(seqInbox *bridgegen.SequencerInbox) (*KeysetFetcher, error) {
+	return &KeysetFetcher{
 		seqInboxCaller:   &seqInbox.SequencerInboxCaller,
 		seqInboxFilterer: &seqInbox.SequencerInboxFilterer,
 		keysetCache:      syncedKeysetCache{cache: make(map[[32]byte][]byte)},
 	}, nil
 }
 
-func (c *ChainFetchReader) GetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
-	log.Trace("das.ChainFetchReader.GetByHash", "hash", pretty.PrettyHash(hash))
-	return chainFetchGetByHash(ctx, c.DASReader, &c.keysetCache, c.seqInboxCaller, c.seqInboxFilterer, hash)
-}
-func (c *ChainFetchReader) String() string {
-	return "ChainFetchReader"
-}
+func (c *KeysetFetcher) GetKeysetByHash(ctx context.Context, hash common.Hash) ([]byte, error) {
+	log.Trace("das.KeysetFetcher.GetKeysetByHash", "hash", pretty.PrettyHash(hash))
+	cache := &c.keysetCache
+	seqInboxCaller := c.seqInboxCaller
+	seqInboxFilterer := c.seqInboxFilterer
 
-func chainFetchGetByHash(
-	ctx context.Context,
-	daReader daprovider.DASReader,
-	cache *syncedKeysetCache,
-	seqInboxCaller *bridgegen.SequencerInboxCaller,
-	seqInboxFilterer *bridgegen.SequencerInboxFilterer,
-	hash common.Hash,
-) ([]byte, error) {
 	// try to fetch from the cache
 	res, ok := cache.get(hash)
 	if ok {
 		return res, nil
-	}
-
-	// try to fetch from the inner DAS
-	innerRes, err := daReader.GetByHash(ctx, hash)
-	if err == nil && dastree.ValidHash(hash, innerRes) {
-		return innerRes, nil
 	}
 
 	// try to fetch from the L1 chain
