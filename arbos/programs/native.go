@@ -228,8 +228,8 @@ func callProgram(
 		panic("missing asm")
 	}
 
-	if db, ok := db.(*state.StateDB); ok {
-		db.RecordProgram(moduleHash)
+	if stateDb, ok := db.(*state.StateDB); ok {
+		stateDb.RecordProgram(db.Database().WasmTargets(), moduleHash)
 	}
 
 	evmApi := newApi(interpreter, tracingInfo, scope, memoryModel)
