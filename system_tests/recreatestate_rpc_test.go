@@ -524,7 +524,7 @@ func testGettingState(t *testing.T, execConfig *gethexec.Config) {
 	blockCountRequiredToFlushDirties := builder.execConfig.Caching.BlockCount
 	makeSomeTransfers(t, ctx, builder, blockCountRequiredToFlushDirties)
 
-	// force garbage callection to check if it won't break anything
+	// force garbage collection to check if it won't break anything
 	runtime.GC()
 
 	exists = state.Exist(addr)
