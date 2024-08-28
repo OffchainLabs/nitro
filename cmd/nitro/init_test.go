@@ -350,6 +350,12 @@ func TestEmptyDatabaseDir(t *testing.T) {
 	}
 }
 
+func defaultStylusTargetConfigForTest(t *testing.T) *gethexec.StylusTargetConfig {
+	targetConfig := gethexec.DefaultStylusTargetConfig
+	Require(t, targetConfig.Validate())
+	return &targetConfig
+}
+
 func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 	t.Parallel()
 
@@ -377,7 +383,7 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 		&nodeConfig,
 		new(big.Int).SetUint64(nodeConfig.Chain.ID),
 		gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching),
-		&gethexec.DefaultStylusTargetConfig,
+		defaultStylusTargetConfigForTest(t),
 		&nodeConfig.Persistent,
 		l1Client,
 		chaininfo.RollupAddresses{},
@@ -394,7 +400,7 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 		&nodeConfig,
 		new(big.Int).SetUint64(nodeConfig.Chain.ID),
 		gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching),
-		&gethexec.DefaultStylusTargetConfig,
+		defaultStylusTargetConfigForTest(t),
 		&nodeConfig.Persistent,
 		l1Client,
 		chaininfo.RollupAddresses{},
@@ -412,7 +418,7 @@ func TestOpenInitializeChainDbIncompatibleStateScheme(t *testing.T) {
 		&nodeConfig,
 		new(big.Int).SetUint64(nodeConfig.Chain.ID),
 		gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching),
-		&gethexec.DefaultStylusTargetConfig,
+		defaultStylusTargetConfigForTest(t),
 		&nodeConfig.Persistent,
 		l1Client,
 		chaininfo.RollupAddresses{},
@@ -548,7 +554,7 @@ func TestOpenInitializeChainDbEmptyInit(t *testing.T) {
 		&nodeConfig,
 		new(big.Int).SetUint64(nodeConfig.Chain.ID),
 		gethexec.DefaultCacheConfigFor(stack, &nodeConfig.Execution.Caching),
-		&gethexec.DefaultStylusTargetConfig,
+		defaultStylusTargetConfigForTest(t),
 		&nodeConfig.Persistent,
 		l1Client,
 		chaininfo.RollupAddresses{},
