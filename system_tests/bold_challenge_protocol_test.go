@@ -542,7 +542,7 @@ func createTestNodeOnL1ForBoldProtocol(
 	l1info.SetContract("Rollup", addresses.Rollup)
 	l1info.SetContract("UpgradeExecutor", addresses.UpgradeExecutor)
 
-	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, getInitMessage(ctx, t, l1client, addresses), stackConfig, nil)
+	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, getInitMessage(ctx, t, l1client, addresses), stackConfig, &TestCachingConfig)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	if isSequencer {
@@ -558,9 +558,9 @@ func createTestNodeOnL1ForBoldProtocol(
 
 	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", "")
 
-	execConfig := gethexec.ConfigDefault
+	execConfig := ExecConfigDefaultNonSequencerTest()
 	Require(t, execConfig.Validate())
-	execConfigFetcher := func() *gethexec.Config { return &execConfig }
+	execConfigFetcher := func() *gethexec.Config { return execConfig }
 	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher)
 	Require(t, err)
 
@@ -762,13 +762,14 @@ func create2ndNodeWithConfigForBoldProtocol(
 	initReader := statetransfer.NewMemoryInitDataReader(l2InitData)
 	initMessage := getInitMessage(ctx, t, l1client, first.DeployInfo)
 
-	execConfig := gethexec.ConfigDefault
+	execConfig := ExecConfigDefaultNonSequencerTest()
 	Require(t, execConfig.Validate())
 
-	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, nil, initReader, chainConfig, initMessage, execConfig.TxLookupLimit, 0)
+	coreCacheConfig := gethexec.DefaultCacheConfigFor(l2stack, &execConfig.Caching)
+	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, coreCacheConfig, initReader, chainConfig, initMessage, execConfig.TxLookupLimit, 0)
 	Require(t, err)
 
-	execConfigFetcher := func() *gethexec.Config { return &execConfig }
+	execConfigFetcher := func() *gethexec.Config { return execConfig }
 	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher)
 	Require(t, err)
 	l1ChainId, err := l1client.ChainID(ctx)
