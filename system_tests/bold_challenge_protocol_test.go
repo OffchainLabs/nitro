@@ -1,8 +1,6 @@
 // Copyright 2023, Offchain Labs, Inc.
 // For license information, see https://github.com/nitro/blob/master/LICENSE
 
-//go:build challengetest && !race
-
 package arbtest
 
 import (
@@ -542,7 +540,9 @@ func createTestNodeOnL1ForBoldProtocol(
 	l1info.SetContract("Rollup", addresses.Rollup)
 	l1info.SetContract("UpgradeExecutor", addresses.UpgradeExecutor)
 
-	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, getInitMessage(ctx, t, l1client, addresses), stackConfig, &TestCachingConfig)
+	cacheConfig := TestCachingConfig
+	cacheConfig.StateScheme = rawdb.HashScheme
+	_, l2stack, l2chainDb, l2arbDb, l2blockchain = createL2BlockChainWithStackConfig(t, l2info, "", chainConfig, getInitMessage(ctx, t, l1client, addresses), stackConfig, &cacheConfig)
 	var sequencerTxOptsPtr *bind.TransactOpts
 	var dataSigner signature.DataSignerFunc
 	if isSequencer {
@@ -560,6 +560,7 @@ func createTestNodeOnL1ForBoldProtocol(
 
 	execConfig := ExecConfigDefaultNonSequencerTest()
 	Require(t, execConfig.Validate())
+	execConfig.Caching.StateScheme = rawdb.HashScheme
 	execConfigFetcher := func() *gethexec.Config { return execConfig }
 	execNode, err := gethexec.CreateExecutionNode(ctx, l2stack, l2chainDb, l2blockchain, l1client, execConfigFetcher)
 	Require(t, err)
@@ -764,7 +765,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 
 	execConfig := ExecConfigDefaultNonSequencerTest()
 	Require(t, execConfig.Validate())
-
+	execConfig.Caching.StateScheme = rawdb.HashScheme
 	coreCacheConfig := gethexec.DefaultCacheConfigFor(l2stack, &execConfig.Caching)
 	l2blockchain, err := gethexec.WriteOrTestBlockChain(l2chainDb, coreCacheConfig, initReader, chainConfig, initMessage, execConfig.TxLookupLimit, 0)
 	Require(t, err)
