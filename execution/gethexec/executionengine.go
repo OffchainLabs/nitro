@@ -166,11 +166,13 @@ func populateStylusTargetCache(targetConfig *StylusTargetConfig) error {
 			effectiveStylusTarget = targetConfig.Amd64
 		case rawdb.TargetHost:
 			effectiveStylusTarget = targetConfig.Host
+		default:
+			return fmt.Errorf("unsupported stylus target: %v", target)
 		}
 		isNative := target == localTarget
 		err := programs.SetTarget(target, effectiveStylusTarget, isNative)
 		if err != nil {
-			return fmt.Errorf("Failed to set stylus target: %w", err)
+			return fmt.Errorf("failed to set stylus target: %w", err)
 		}
 		nativeSet = nativeSet || isNative
 	}
