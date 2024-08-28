@@ -556,7 +556,7 @@ func createTestNodeOnL1ForBoldProtocol(
 		nodeConfig.DelayedSequencer.Enable = false
 	}
 
-	AddDefaultValNode(t, ctx, nodeConfig, true, "", "")
+	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", "")
 
 	execConfig := gethexec.ConfigDefault
 	Require(t, execConfig.Validate())
@@ -754,7 +754,7 @@ func create2ndNodeWithConfigForBoldProtocol(
 	l2arbDb, err := l2stack.OpenDatabase("arbdb", 0, 0, "", false)
 	Require(t, err)
 
-	AddDefaultValNode(t, ctx, nodeConfig, true, "", "")
+	AddValNodeIfNeeded(t, ctx, nodeConfig, true, "", "")
 
 	dataSigner := signature.DataSignerFromPrivateKey(l1info.GetInfoWithPrivKey("Sequencer").PrivateKey)
 	txOpts := l1info.GetDefaultTransactOpts("Sequencer", ctx)
