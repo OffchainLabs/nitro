@@ -44,22 +44,24 @@ func (c *StylusTargetConfig) WasmTargets() []ethdb.WasmTarget {
 
 func (c *StylusTargetConfig) Validate() error {
 	localTarget := rawdb.LocalTarget()
-	targets := make([]ethdb.WasmTarget, 0, len(c.ExtraArchs))
-	targetsSet := make(map[ethdb.WasmTarget]struct{}, len(c.ExtraArchs)+1)
+	targets := make([]ethdb.WasmTarget, 0, len(c.ExtraArchs)+1)
+	targetsSet := make(map[ethdb.WasmTarget]bool, len(c.ExtraArchs))
 	for _, arch := range c.ExtraArchs {
 		target := ethdb.WasmTarget(arch)
+		if targetsSet[target] {
+			// skip duplicate
+			continue
+		}
 		if !rawdb.IsSupportedWasmTarget(target) {
 			return fmt.Errorf("unsupported architecture: %v, possible values: %s, %s, %s, %s", arch, rawdb.TargetWavm, rawdb.TargetArm64, rawdb.TargetAmd64, rawdb.TargetHost)
 		}
-		if _, duplicate := targetsSet[target]; !duplicate {
-			targets = append(targets, target)
-			targetsSet[target] = struct{}{}
-		}
+		targets = append(targets, target)
+		targetsSet[target] = true
 	}
-	if _, has := targetsSet[rawdb.TargetWavm]; !has {
+	if !targetsSet[rawdb.TargetWavm] {
 		return fmt.Errorf("%s target not found in archs list, archs: %v", rawdb.TargetWavm, c.ExtraArchs)
 	}
-	if _, has := targetsSet[localTarget]; !has {
+	if !targetsSet[localTarget] {
 		targets = append(targets, localTarget)
 	}
 	c.wasmTargets = targets
