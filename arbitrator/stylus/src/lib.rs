@@ -378,6 +378,8 @@ pub extern "C" fn stylus_get_lru_entry_size_estimate_bytes(
 ) -> u64 {
     match deserialize_module(module.slice(), version, debug) {
         Err(error) => panic!("tried to get invalid asm!: {error}"),
-        Ok((_, _, lru_entry_size_estimate_bytes)) => lru_entry_size_estimate_bytes.try_into().unwrap(),
+        Ok((_, _, lru_entry_size_estimate_bytes)) => {
+            lru_entry_size_estimate_bytes.try_into().unwrap()
+        }
     }
 }

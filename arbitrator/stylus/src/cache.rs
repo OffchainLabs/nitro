@@ -182,7 +182,8 @@ impl InitCache {
         }
         drop(cache);
 
-        let (module, engine, entry_size_estimate_bytes) = deserialize_module(module, version, debug)?;
+        let (module, engine, entry_size_estimate_bytes) =
+            deserialize_module(module, version, debug)?;
 
         let item = CacheItem::new(module, engine, entry_size_estimate_bytes);
         let data = item.data();
