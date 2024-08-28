@@ -140,8 +140,13 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         }
 
         let (res, _, cost) = self.request(EvmApiMethod::SetTrieSlots, data);
-        if res[0] != EvmApiStatus::Success.into() {
-            bail!("{}", String::from_utf8_or_hex(res));
+        let status = res
+            .first()
+            .copied()
+            .map(EvmApiStatus::from)
+            .unwrap_or(EvmApiStatus::Failure);
+        if status != EvmApiStatus::Success {
+            bail!("{:?}", status);
         }
         Ok(cost)
     }
@@ -156,8 +161,13 @@ impl<D: DataReader, H: RequestHandler<D>> EvmApi<D> for EvmApiRequestor<D, H> {
         data.extend(key);
         data.extend(value);
         let (res, ..) = self.request(EvmApiMethod::SetTransientBytes32, data);
-        if res[0] != EvmApiStatus::Success.into() {
-            bail!("{}", String::from_utf8_or_hex(res));
+        let status = res
+            .first()
+            .copied()
+            .map(EvmApiStatus::from)
+            .unwrap_or(EvmApiStatus::Failure);
+        if status != EvmApiStatus::Success {
+            bail!("{:?}", status);
         }
         Ok(())
     }
