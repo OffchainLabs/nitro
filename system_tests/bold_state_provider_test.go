@@ -149,7 +149,7 @@ func TestChallengeProtocolBOLD_StateProvider(t *testing.T) {
 	t.Parallel()
 	ctx, cancelCtx := context.WithCancel(context.Background())
 	defer cancelCtx()
-	l2node, l1info, l2info, l1stack, l1client, stateManager, blockValidator := setupBoldStateProvider(t, ctx, staker.WithoutFinalizedBatchChecks())
+	l2node, l1info, l2info, l1stack, l1client, stateManager, blockValidator := setupBoldStateProvider(t, ctx)
 	defer requireClose(t, l1stack)
 	defer l2node.StopAndWait()
 	l2info.GenerateAccount("Destination")
@@ -387,7 +387,7 @@ func setupBoldStateProvider(t *testing.T, ctx context.Context) (*arbnode.Node, *
 	stateManager, err := staker.NewBOLDStateProvider(
 		blockValidator,
 		stateless,
-		blockChallengeLeafHeight,
+		l2stateprovider.Height(blockChallengeLeafHeight),
 		&staker.StateProviderConfig{
 			ValidatorName:          "",
 			MachineLeavesCachePath: "",
