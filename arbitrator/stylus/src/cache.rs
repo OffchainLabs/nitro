@@ -56,15 +56,15 @@ impl CacheKey {
 struct CacheItem {
     module: Module,
     engine: Engine,
-    asm_size_estimate_bytes: usize,
+    entry_size_estimate_bytes: usize,
 }
 
 impl CacheItem {
-    fn new(module: Module, engine: Engine, asm_size_estimate_bytes: usize) -> Self {
+    fn new(module: Module, engine: Engine, entry_size_estimate_bytes: usize) -> Self {
         Self {
             module,
             engine,
-            asm_size_estimate_bytes,
+            entry_size_estimate_bytes,
         }
     }
 
@@ -78,7 +78,7 @@ impl WeightScale<CacheKey, CacheItem> for CustomWeightScale {
     fn weight(&self, _key: &CacheKey, val: &CacheItem) -> usize {
         // clru defines that each entry consumes (weight + 1) of the cache capacity.
         // We subtract 1 since we only want to use the weight as the size of the entry.
-        val.asm_size_estimate_bytes.saturating_sub(1)
+        val.entry_size_estimate_bytes.saturating_sub(1)
     }
 }
 
@@ -98,8 +98,12 @@ pub fn deserialize_module(
 ) -> Result<(Module, Engine, usize)> {
     let engine = CompileConfig::version(version, debug).engine(target_native());
     let module = unsafe { Module::deserialize_unchecked(&engine, module)? };
-    let lru_entry_size_estimate_bytes = module.serialize()?.len();
-    Ok((module, engine, lru_entry_size_estimate_bytes))
+
+    let asm_size_estimate_bytes = module.serialize()?.len();
+    // add 128 bytes for the cache item overhead
+    let entry_size_estimate_bytes = asm_size_estimate_bytes + 128;
+
+    Ok((module, engine, entry_size_estimate_bytes))
 }
 
 impl InitCache {
@@ -178,9 +182,9 @@ impl InitCache {
         }
         drop(cache);
 
-        let (module, engine, asm_size_estimate_bytes) = deserialize_module(module, version, debug)?;
+        let (module, engine, entry_size_estimate_bytes) = deserialize_module(module, version, debug)?;
 
-        let item = CacheItem::new(module, engine, asm_size_estimate_bytes);
+        let item = CacheItem::new(module, engine, entry_size_estimate_bytes);
         let data = item.data();
         let mut cache = cache!();
         if long_term_tag != Self::ARBOS_TAG {
