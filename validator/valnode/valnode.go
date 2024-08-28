@@ -49,21 +49,23 @@ type Config struct {
 type ValidationConfigFetcher func() *Config
 
 var DefaultValidationConfig = Config{
-	UseJit:     true,
-	Jit:        server_jit.DefaultJitSpawnerConfig,
-	ApiAuth:    true,
-	ApiPublic:  false,
-	Arbitrator: server_arb.DefaultArbitratorSpawnerConfig,
-	Wasm:       DefaultWasmConfig,
+	UseJit:          true,
+	Jit:             server_jit.DefaultJitSpawnerConfig,
+	ApiAuth:         true,
+	ApiPublic:       false,
+	Arbitrator:      server_arb.DefaultArbitratorSpawnerConfig,
+	RedisExecRunner: redis.DefaultValidationServerConfig,
+	Wasm:            DefaultWasmConfig,
 }
 
 var TestValidationConfig = Config{
-	UseJit:     true,
-	Jit:        server_jit.DefaultJitSpawnerConfig,
-	ApiAuth:    false,
-	ApiPublic:  true,
-	Arbitrator: server_arb.DefaultArbitratorSpawnerConfig,
-	Wasm:       DefaultWasmConfig,
+	UseJit:          true,
+	Jit:             server_jit.DefaultJitSpawnerConfig,
+	ApiAuth:         false,
+	ApiPublic:       true,
+	Arbitrator:      server_arb.DefaultArbitratorSpawnerConfig,
+	RedisExecRunner: redis.TestValidationServerConfig,
+	Wasm:            DefaultWasmConfig,
 }
 
 func ValidationConfigAddOptions(prefix string, f *pflag.FlagSet) {
