@@ -157,6 +157,9 @@ func populateStylusTargetCache(targetConfig *StylusTargetConfig) error {
 	for _, target := range targets {
 		var effectiveStylusTarget string
 		switch target {
+		case rawdb.TargetWavm:
+			// skip wavm target
+			continue
 		case rawdb.TargetArm64:
 			effectiveStylusTarget = targetConfig.Arm64
 		case rawdb.TargetAmd64:
