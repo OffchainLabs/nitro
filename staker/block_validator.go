@@ -29,6 +29,7 @@ import (
 	"github.com/offchainlabs/nitro/util/stopwaiter"
 	"github.com/offchainlabs/nitro/validator"
 	"github.com/offchainlabs/nitro/validator/client/redis"
+	"github.com/offchainlabs/nitro/validator/inputs"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/spf13/pflag"
 )
@@ -94,6 +95,9 @@ type BlockValidator struct {
 
 	// for testing only
 	testingProgressMadeChan chan struct{}
+
+	// For troubleshooting failed validations
+	validationInputsWriter *inputs.Writer
 
 	fatalErr chan<- error
 
@@ -275,6 +279,11 @@ func NewBlockValidator(
 		config:                  config,
 		fatalErr:                fatalErr,
 	}
+	valInputsWriter, err := inputs.NewWriter()
+	if err != nil {
+		return nil, err
+	}
+	ret.validationInputsWriter = valInputsWriter.SetSlug("BlockValidator")
 	if !config().Dangerous.ResetBlockValidation {
 		validated, err := ret.ReadLastValidatedInfo()
 		if err != nil {
@@ -512,7 +521,7 @@ func (v *BlockValidator) writeToFile(validationEntry *validationEntry) error {
 		return err
 	}
 	inputJson := server_api.ValidationInputToJson(input)
-	if err := inputJson.WriteToFile("BlockValidator"); err != nil {
+	if err := v.validationInputsWriter.Write(inputJson); err != nil {
 		return err
 	}
 	return nil

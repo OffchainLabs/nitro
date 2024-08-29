@@ -36,6 +36,7 @@ import (
 	"github.com/offchainlabs/nitro/util/headerreader"
 	"github.com/offchainlabs/nitro/util/redisutil"
 	"github.com/offchainlabs/nitro/util/signature"
+	"github.com/offchainlabs/nitro/validator/inputs"
 	"github.com/offchainlabs/nitro/validator/server_api"
 	"github.com/offchainlabs/nitro/validator/server_common"
 	"github.com/offchainlabs/nitro/validator/valnode"
@@ -1477,11 +1478,14 @@ func recordBlock(t *testing.T, block uint64, builder *NodeBuilder) {
 			break
 		}
 	}
+	validationInputsWriter, err := inputs.NewWriter()
+	Require(t, err)
+	validationInputsWriter.SetSlug(t.Name())
 	inputJson, err := builder.L2.ConsensusNode.StatelessBlockValidator.ValidationInputsAt(ctx, inboxPos, wasmModuleRoot)
 	if err != nil {
 		Fatal(t, "failed to get validation inputs", block, err)
 	}
-	if err := inputJson.WriteToFile(t.Name()); err != nil {
+	if err := validationInputsWriter.Write(&inputJson); err != nil {
 		Fatal(t, "failed to write validation inputs", block, err)
 	}
 }
