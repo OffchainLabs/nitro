@@ -67,7 +67,6 @@ type BidValidator struct {
 	auctionContract           *express_lane_auctiongen.ExpressLaneAuction
 	auctionContractAddr       common.Address
 	bidsReceiver              chan *Bid
-	bidCache                  *bidCache
 	initialRoundTimestamp     time.Time
 	roundDuration             time.Duration
 	auctionClosingDuration    time.Duration
@@ -130,7 +129,6 @@ func NewBidValidator(
 		auctionContract:           auctionContract,
 		auctionContractAddr:       auctionContractAddr,
 		bidsReceiver:              make(chan *Bid, 10_000),
-		bidCache:                  newBidCache(),
 		initialRoundTimestamp:     initialTimestamp,
 		roundDuration:             roundDuration,
 		auctionClosingDuration:    auctionClosingDuration,
@@ -298,7 +296,7 @@ func (bv *BidValidator) validateBid(
 		return nil, errors.Wrap(ErrBadRoundNumber, "auction is closed")
 	}
 
-	// Check bid is higher than reserve price.
+	// Check bid is higher than or equal to reserve price.
 	if bid.Amount.Cmp(bv.reservePrice) == -1 {
 		return nil, errors.Wrapf(ErrReservePriceNotMet, "reserve price %s, bid %s", bv.reservePrice.String(), bid.Amount.String())
 	}
