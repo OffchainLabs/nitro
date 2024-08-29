@@ -532,12 +532,20 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 					if err = gethexec.WriteToKeyValueStore(wasmDb, gethexec.RebuildingPositionKey, gethexec.RebuildingDone); err != nil {
 						return nil, nil, fmt.Errorf("unable to set rebuilding status of wasm store to done: %w", err)
 					}
-				} else if config.Init.RebuildLocalWasm {
-					position, err := gethexec.ReadFromKeyValueStore[common.Hash](wasmDb, gethexec.RebuildingPositionKey)
-					if err != nil {
-						log.Info("Unable to get codehash position in rebuilding of wasm store, its possible it isnt initialized yet, so initializing it and starting rebuilding", "err", err)
+				} else if config.Init.RebuildLocalWasm != "false" {
+					var position common.Hash
+					if config.Init.RebuildLocalWasm == "force" {
+						log.Info("Commencing force rebuilding of wasm store by setting codehash position in rebuilding to beginning")
 						if err := gethexec.WriteToKeyValueStore(wasmDb, gethexec.RebuildingPositionKey, common.Hash{}); err != nil {
 							return nil, nil, fmt.Errorf("unable to initialize codehash position in rebuilding of wasm store to beginning: %w", err)
+						}
+					} else {
+						position, err = gethexec.ReadFromKeyValueStore[common.Hash](wasmDb, gethexec.RebuildingPositionKey)
+						if err != nil {
+							log.Info("Unable to get codehash position in rebuilding of wasm store, its possible it isnt initialized yet, so initializing it and starting rebuilding", "err", err)
+							if err := gethexec.WriteToKeyValueStore(wasmDb, gethexec.RebuildingPositionKey, common.Hash{}); err != nil {
+								return nil, nil, fmt.Errorf("unable to initialize codehash position in rebuilding of wasm store to beginning: %w", err)
+							}
 						}
 					}
 					if position != gethexec.RebuildingDone {
@@ -550,7 +558,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 							startBlockHash = latestBlock.Hash()
 						}
 						log.Info("Starting or continuing rebuilding of wasm store", "codeHash", position, "startBlockHash", startBlockHash)
-						if err := gethexec.RebuildWasmStore(ctx, wasmDb, chainDb, config.Execution.RPC.MaxRecreateStateDepth, l2BlockChain, position, startBlockHash); err != nil {
+						if err := gethexec.RebuildWasmStore(ctx, wasmDb, chainDb, config.Execution.RPC.MaxRecreateStateDepth, &config.Execution.StylusTarget, l2BlockChain, position, startBlockHash); err != nil {
 							return nil, nil, fmt.Errorf("error rebuilding of wasm store: %w", err)
 						}
 					}
