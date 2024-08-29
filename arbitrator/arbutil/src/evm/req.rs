@@ -7,7 +7,6 @@ use crate::{
         storage::{StorageCache, StorageWord},
         user::UserOutcomeKind,
     },
-    format::Utf8OrHex,
     pricing::EVM_API_INK,
     Bytes20, Bytes32,
 };
