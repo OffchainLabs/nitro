@@ -24,7 +24,7 @@ import (
 	"time"
 
 	"github.com/cavaliergopher/grab/v3"
-	extract "github.com/codeclysm/extract/v3"
+	"github.com/codeclysm/extract/v3"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/rawdb"
@@ -301,6 +301,7 @@ func setLatestSnapshotUrl(ctx context.Context, initConfig *conf.InitConfig, chai
 		return fmt.Errorf("failed to parse latest mirror \"%s\": %w", initConfig.LatestBase, err)
 	}
 	latestFileUrl := baseUrl.JoinPath(chain, "latest-"+initConfig.Latest+".txt").String()
+	latestFileUrl = strings.ToLower(latestFileUrl)
 	latestFileBytes, err := httpGet(ctx, latestFileUrl)
 	if err != nil {
 		return fmt.Errorf("failed to get latest file at \"%s\": %w", latestFileUrl, err)
@@ -312,6 +313,7 @@ func setLatestSnapshotUrl(ctx context.Context, initConfig *conf.InitConfig, chai
 	} else {
 		initConfig.Url = baseUrl.JoinPath(latestFile).String()
 	}
+	initConfig.Url = strings.ToLower(initConfig.Url)
 	log.Info("Set latest snapshot url", "url", initConfig.Url)
 	return nil
 }
@@ -401,6 +403,45 @@ func databaseIsEmpty(db ethdb.Database) bool {
 	it := db.NewIterator(nil, nil)
 	defer it.Release()
 	return !it.Next()
+}
+
+func isWasmDb(path string) bool {
+	path = strings.ToLower(path) // lowers the path to handle case-insensitive file systems
+	path = filepath.Clean(path)
+	parts := strings.Split(path, string(filepath.Separator))
+	if len(parts) >= 1 && parts[0] == "wasm" {
+		return true
+	}
+	if len(parts) >= 2 && parts[0] == "" && parts[1] == "wasm" { // Cover "/wasm" case
+		return true
+	}
+	return false
+}
+
+func extractSnapshot(archive string, location string, importWasm bool) error {
+	reader, err := os.Open(archive)
+	if err != nil {
+		return fmt.Errorf("couln't open init '%v' archive: %w", archive, err)
+	}
+	stat, err := reader.Stat()
+	if err != nil {
+		return err
+	}
+	log.Info("extracting downloaded init archive", "size", fmt.Sprintf("%dMB", stat.Size()/1024/1024))
+	var rename extract.Renamer
+	if !importWasm {
+		rename = func(path string) string {
+			if isWasmDb(path) {
+				return "" // do not extract wasm files
+			}
+			return path
+		}
+	}
+	err = extract.Archive(context.Background(), reader, location, rename)
+	if err != nil {
+		return fmt.Errorf("couln't extract init archive '%v' err: %w", archive, err)
+	}
+	return nil
 }
 
 // removes all entries with keys prefixed with prefixes and of length used in initial version of wasm store schema
@@ -530,12 +571,20 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 					if err = gethexec.WriteToKeyValueStore(wasmDb, gethexec.RebuildingPositionKey, gethexec.RebuildingDone); err != nil {
 						return nil, nil, fmt.Errorf("unable to set rebuilding status of wasm store to done: %w", err)
 					}
-				} else if config.Init.RebuildLocalWasm {
-					position, err := gethexec.ReadFromKeyValueStore[common.Hash](wasmDb, gethexec.RebuildingPositionKey)
-					if err != nil {
-						log.Info("Unable to get codehash position in rebuilding of wasm store, its possible it isnt initialized yet, so initializing it and starting rebuilding", "err", err)
+				} else if config.Init.RebuildLocalWasm != "false" {
+					var position common.Hash
+					if config.Init.RebuildLocalWasm == "force" {
+						log.Info("Commencing force rebuilding of wasm store by setting codehash position in rebuilding to beginning")
 						if err := gethexec.WriteToKeyValueStore(wasmDb, gethexec.RebuildingPositionKey, common.Hash{}); err != nil {
 							return nil, nil, fmt.Errorf("unable to initialize codehash position in rebuilding of wasm store to beginning: %w", err)
+						}
+					} else {
+						position, err = gethexec.ReadFromKeyValueStore[common.Hash](wasmDb, gethexec.RebuildingPositionKey)
+						if err != nil {
+							log.Info("Unable to get codehash position in rebuilding of wasm store, its possible it isnt initialized yet, so initializing it and starting rebuilding", "err", err)
+							if err := gethexec.WriteToKeyValueStore(wasmDb, gethexec.RebuildingPositionKey, common.Hash{}); err != nil {
+								return nil, nil, fmt.Errorf("unable to initialize codehash position in rebuilding of wasm store to beginning: %w", err)
+							}
 						}
 					}
 					if position != gethexec.RebuildingDone {
@@ -548,7 +597,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 							startBlockHash = latestBlock.Hash()
 						}
 						log.Info("Starting or continuing rebuilding of wasm store", "codeHash", position, "startBlockHash", startBlockHash)
-						if err := gethexec.RebuildWasmStore(ctx, wasmDb, chainDb, config.Execution.RPC.MaxRecreateStateDepth, l2BlockChain, position, startBlockHash); err != nil {
+						if err := gethexec.RebuildWasmStore(ctx, wasmDb, chainDb, config.Execution.RPC.MaxRecreateStateDepth, &config.Execution.StylusTarget, l2BlockChain, position, startBlockHash); err != nil {
 							return nil, nil, fmt.Errorf("error rebuilding of wasm store: %w", err)
 						}
 					}
@@ -587,18 +636,8 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 	}
 
 	if initFile != "" {
-		reader, err := os.Open(initFile)
-		if err != nil {
-			return nil, nil, fmt.Errorf("couln't open init '%v' archive: %w", initFile, err)
-		}
-		stat, err := reader.Stat()
-		if err != nil {
+		if err := extractSnapshot(initFile, stack.InstanceDir(), config.Init.ImportWasm); err != nil {
 			return nil, nil, err
-		}
-		log.Info("extracting downloaded init archive", "size", fmt.Sprintf("%dMB", stat.Size()/1024/1024))
-		err = extract.Archive(context.Background(), reader, stack.InstanceDir(), nil)
-		if err != nil {
-			return nil, nil, fmt.Errorf("couln't extract init archive '%v' err:%w", initFile, err)
 		}
 	}
 
