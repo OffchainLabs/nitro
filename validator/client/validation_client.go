@@ -164,7 +164,20 @@ func NewExecutionClient(config rpcclient.ClientConfigFetcher, redisBoldValidatio
 		boldValClient:    boldClient,
 	}
 }
-
+func (c *ExecutionClient) Start(ctx context.Context) error {
+	if err := c.ValidationClient.Start(ctx); err != nil {
+		return err
+	}
+	if c.boldValClient != nil {
+		if err := c.boldValClient.Initialize(ctx, c.wasmModuleRoots); err != nil {
+			return err
+		}
+		if err := c.boldValClient.Start(ctx); err != nil {
+			return err
+		}
+	}
+	return nil
+}
 func (c *ExecutionClient) CreateExecutionRun(wasmModuleRoot common.Hash, input *validator.ValidationInput) containers.PromiseInterface[validator.ExecutionRun] {
 	return stopwaiter.LaunchPromiseThread[validator.ExecutionRun](c, func(ctx context.Context) (validator.ExecutionRun, error) {
 		var res uint64
@@ -173,8 +186,10 @@ func (c *ExecutionClient) CreateExecutionRun(wasmModuleRoot common.Hash, input *
 			return nil, err
 		}
 		run := &ExecutionClientRun{
-			client: c,
-			id:     res,
+			wasmModuleRoot: wasmModuleRoot,
+			client:         c,
+			id:             res,
+			input:          input,
 		}
 		run.Start(c.GetContext()) // note: not this temporary thread's context!
 		return run, nil

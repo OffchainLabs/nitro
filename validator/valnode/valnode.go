@@ -64,7 +64,7 @@ var TestValidationConfig = Config{
 	ApiAuth:         false,
 	ApiPublic:       true,
 	Arbitrator:      server_arb.DefaultArbitratorSpawnerConfig,
-	RedisExecRunner: redis.TestValidationServerConfig,
+	RedisExecRunner: redis.DefaultValidationServerConfig,
 	Wasm:            DefaultWasmConfig,
 }
 

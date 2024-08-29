@@ -52,7 +52,6 @@ func (c *BoldValidationClient) Initialize(ctx context.Context, moduleRoots []com
 			log.Warn("failed init redis for %v: %w", mr, err)
 			continue
 		}
-		p.Start(c.GetContext())
 		c.producers[mr] = p
 	}
 	return nil
