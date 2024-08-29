@@ -1467,6 +1467,16 @@ func recordBlock(t *testing.T, block uint64, builder *NodeBuilder) {
 	ctx := builder.ctx
 	wasmModuleRoot := currentRootModule(t)
 	inboxPos := arbutil.MessageIndex(block)
+	for {
+		time.Sleep(250 * time.Millisecond)
+		batches, err := builder.L2.ConsensusNode.InboxTracker.GetBatchCount()
+		Require(t, err)
+		haveMessages, err := builder.L2.ConsensusNode.InboxTracker.GetBatchMessageCount(batches - 1)
+		Require(t, err)
+		if haveMessages >= inboxPos {
+			break
+		}
+	}
 	inputJson, err := builder.L2.ConsensusNode.StatelessBlockValidator.ValidationInputsAt(ctx, inboxPos, wasmModuleRoot)
 	if err != nil {
 		Fatal(t, "failed to get validation inputs", block, err)
