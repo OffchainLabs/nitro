@@ -58,8 +58,6 @@ for package in $packages; do
 
   if [ "$timeout" != "" ]; then
     cmd="$cmd -timeout $timeout"
-  else
-    cmd="$cmd -timeout 20m"
   fi
 
   if [ "$tags" != "" ]; then
