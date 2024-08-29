@@ -475,10 +475,10 @@ func validateOrUpgradeWasmStoreSchemaVersion(db ethdb.Database) error {
 	return nil
 }
 
-func rebuildLocalWasm(ctx context.Context, config *NodeConfig, l2BlockChain *core.BlockChain, chainConfig *params.ChainConfig, chainDb, wasmDb ethdb.Database, rebuildMode string) (ethdb.Database, *core.BlockChain, error) {
+func rebuildLocalWasm(ctx context.Context, config *gethexec.Config, l2BlockChain *core.BlockChain, chainDb, wasmDb ethdb.Database, rebuildMode string) (ethdb.Database, *core.BlockChain, error) {
 	var err error
 	latestBlock := l2BlockChain.CurrentBlock()
-	if latestBlock == nil || latestBlock.Number.Uint64() <= chainConfig.ArbitrumChainParams.GenesisBlockNum ||
+	if latestBlock == nil || latestBlock.Number.Uint64() <= l2BlockChain.Config().ArbitrumChainParams.GenesisBlockNum ||
 		types.DeserializeHeaderExtraInformation(latestBlock).ArbOSFormatVersion < params.ArbosVersion_Stylus {
 		// If there is only genesis block or no blocks in the blockchain, set Rebuilding of wasm store to Done
 		// If Stylus upgrade hasn't yet happened, skipping rebuilding of wasm store
@@ -512,7 +512,7 @@ func rebuildLocalWasm(ctx context.Context, config *NodeConfig, l2BlockChain *cor
 				startBlockHash = latestBlock.Hash()
 			}
 			log.Info("Starting or continuing rebuilding of wasm store", "codeHash", position, "startBlockHash", startBlockHash)
-			if err := gethexec.RebuildWasmStore(ctx, wasmDb, chainDb, config.Execution.RPC.MaxRecreateStateDepth, &config.Execution.StylusTarget, l2BlockChain, position, startBlockHash); err != nil {
+			if err := gethexec.RebuildWasmStore(ctx, wasmDb, chainDb, config.RPC.MaxRecreateStateDepth, &config.StylusTarget, l2BlockChain, position, startBlockHash); err != nil {
 				return nil, nil, fmt.Errorf("error rebuilding of wasm store: %w", err)
 			}
 		}
@@ -568,7 +568,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 						return chainDb, l2BlockChain, fmt.Errorf("failed to recreate missing states: %w", err)
 					}
 				}
-				return rebuildLocalWasm(ctx, config, l2BlockChain, chainConfig, chainDb, wasmDb, config.Init.RebuildLocalWasm)
+				return rebuildLocalWasm(ctx, &config.Execution, l2BlockChain, chainDb, wasmDb, config.Init.RebuildLocalWasm)
 			}
 			readOnlyDb.Close()
 		} else if !dbutil.IsNotExistError(err) {
@@ -800,12 +800,7 @@ func openInitializeChainDb(ctx context.Context, stack *node.Node, config *NodeCo
 		return chainDb, l2BlockChain, err
 	}
 
-	if config.Init.RebuildLocalWasm != "false" {
-		// In order to rebuild wasm store correctly we have to use force option
-		return rebuildLocalWasm(ctx, config, l2BlockChain, chainConfig, chainDb, wasmDb, "force")
-	}
-
-	return chainDb, l2BlockChain, nil
+	return rebuildLocalWasm(ctx, &config.Execution, l2BlockChain, chainDb, wasmDb, config.Init.RebuildLocalWasm)
 }
 
 func testTxIndexUpdated(chainDb ethdb.Database, lastBlock uint64) bool {
