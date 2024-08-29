@@ -86,7 +86,7 @@ func InitConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Int64(prefix+".reorg-to-message-batch", InitConfigDefault.ReorgToMessageBatch, "rolls back the blockchain to the first batch at or before a given message index")
 	f.Int64(prefix+".reorg-to-block-batch", InitConfigDefault.ReorgToBlockBatch, "rolls back the blockchain to the first batch at or before a given block number")
 	f.String(prefix+".rebuild-local-wasm", InitConfigDefault.RebuildLocalWasm, "rebuild local wasm database on boot if needed (otherwise-will be done lazily). Three modes are supported \n"+
-		"\"auto\"- (enabled by default) if any previous rebuilding attempt was successful then rebuilding is disabled else continues to rebuild. Is equivalent to force when starting out with --init.force or downloading db snapshot via init,\n"+
+		"\"auto\"- (enabled by default) if any previous rebuilding attempt was successful then rebuilding is disabled else continues to rebuild,\n"+
 		"\"force\"- force rebuilding which would commence rebuilding despite the status of previous attempts,\n"+
 		"\"false\"- do not rebuild on startup",
 	)
