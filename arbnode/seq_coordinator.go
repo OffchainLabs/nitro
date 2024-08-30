@@ -631,16 +631,13 @@ func (c *SeqCoordinator) update(ctx context.Context) time.Duration {
 		log.Warn("cannot get remote message count", "err", err)
 		return c.retryAfterRedisError()
 	}
-	readUntil := remoteMsgCount
+	readUntil := min(localMsgCount+c.config.MsgPerPoll, remoteMsgCount)
 	client := c.Client
 	// If we have a previous redis coordinator,
 	// we can read from it until the local message count catches up to the prev coordinator's message count
 	if c.prevRedisMessageCount > localMsgCount {
-		readUntil = c.prevRedisMessageCount
+		readUntil = min(readUntil, c.prevRedisMessageCount)
 		client = c.prevRedisCoordinator.Client
-	}
-	if readUntil > localMsgCount+c.config.MsgPerPoll {
-		readUntil = localMsgCount + c.config.MsgPerPoll
 	}
 	var messages []arbostypes.MessageWithMetadata
 	msgToRead := localMsgCount
