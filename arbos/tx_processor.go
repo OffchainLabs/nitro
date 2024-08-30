@@ -533,6 +533,10 @@ func (p *TxProcessor) EndTxHook(gasLeft uint64, success bool) {
 			const errLog = "fee address doesn't have enough funds to give user refund"
 
 			logMissingRefund := func(err error) {
+				if !errors.Is(err, vm.ErrInsufficientBalance) {
+					log.Error("unexpected error refunding balance", "err", err, "feeAddress", refundFrom)
+					return
+				}
 				logLevel := log.Error
 				isContract := p.evm.StateDB.GetCodeSize(refundFrom) > 0
 				if isContract {
