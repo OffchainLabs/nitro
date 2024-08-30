@@ -147,6 +147,7 @@ func NewSeqCoordinator(
 	bpvalidator *contracts.AddressVerifier,
 	streamer *TransactionStreamer,
 	sequencer execution.ExecutionSequencer,
+	sync *SyncMonitor,
 	config SeqCoordinatorConfig,
 ) (*SeqCoordinator, error) {
 	redisCoordinator, err := redisutil.NewRedisCoordinator(config.RedisUrl)
