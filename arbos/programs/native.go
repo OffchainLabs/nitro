@@ -311,7 +311,7 @@ func ResizeWasmLruCache(size uint32) {
 }
 
 const DefaultTargetDescriptionArm = "arm64-linux-unknown+neon"
-const DefaultTargetDescriptionX86 = "x86_64-linux-unknown+sse4.2"
+const DefaultTargetDescriptionX86 = "x86_64-linux-unknown+sse4.2+lzcnt+bmi"
 
 func SetTarget(name ethdb.WasmTarget, description string, native bool) error {
 	output := &rustBytes{}
