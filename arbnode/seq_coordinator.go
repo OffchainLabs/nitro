@@ -752,17 +752,26 @@ func (c *SeqCoordinator) launchHealthcheckServer(ctx context.Context) {
 
 func (c *SeqCoordinator) Start(ctxIn context.Context) {
 	c.StopWaiter.Start(ctxIn, c)
-	c.CallIteratively(c.chooseRedisAndUpdate)
+	var newRedisCoordinator *redisutil.RedisCoordinator
+	if c.config.NewRedisUrl != "" {
+		var err error
+		newRedisCoordinator, err = redisutil.NewRedisCoordinator(c.config.NewRedisUrl)
+		if err != nil {
+			log.Warn("failed to create new redis coordinator", "err",
+				err, "newRedisUrl", c.config.NewRedisUrl)
+		}
+	}
+	c.CallIteratively(func(ctx context.Context) time.Duration { return c.chooseRedisAndUpdate(ctx, newRedisCoordinator) })
 	if c.config.ChosenHealthcheckAddr != "" {
 		c.StopWaiter.LaunchThread(c.launchHealthcheckServer)
 	}
 }
 
-func (c *SeqCoordinator) chooseRedisAndUpdate(ctx context.Context) time.Duration {
+func (c *SeqCoordinator) chooseRedisAndUpdate(ctx context.Context, newRedisCoordinator *redisutil.RedisCoordinator) time.Duration {
 	// If we have a new redis coordinator, and we haven't switched to it yet, try to switch.
 	if c.config.NewRedisUrl != "" && c.prevRedisCoordinator == nil {
 		// If we fail to try to switch, we'll retry soon.
-		if err := c.trySwitchingRedis(ctx); err != nil {
+		if err := c.trySwitchingRedis(ctx, newRedisCoordinator); err != nil {
 			log.Warn("error while trying to switch redis coordinator", "err", err)
 			return c.retryAfterRedisError()
 		}
@@ -770,7 +779,11 @@ func (c *SeqCoordinator) chooseRedisAndUpdate(ctx context.Context) time.Duration
 	return c.update(ctx)
 }
 
-func (c *SeqCoordinator) trySwitchingRedis(ctx context.Context) error {
+func (c *SeqCoordinator) trySwitchingRedis(ctx context.Context, newRedisCoordinator *redisutil.RedisCoordinator) error {
+	err := c.wantsLockoutUpdate(ctx, newRedisCoordinator.Client)
+	if err != nil {
+		return err
+	}
 	current, err := c.Client.Get(ctx, redisutil.CHOSENSEQ_KEY).Result()
 	var wasEmpty bool
 	if errors.Is(err, redis.Nil) {
@@ -783,17 +796,7 @@ func (c *SeqCoordinator) trySwitchingRedis(ctx context.Context) error {
 	}
 	// If the chosen key is set to switch, we need to switch to the new redis coordinator.
 	if !wasEmpty && (current == redisutil.SWITCHED_REDIS) {
-		newRedisCoordinator, err := redisutil.NewRedisCoordinator(c.config.NewRedisUrl)
-		if err != nil {
-			log.Warn("failed to create new redis coordinator", "err",
-				err, "newRedisUrl", c.config.NewRedisUrl)
-			return err
-		}
 		err = c.wantsLockoutUpdate(ctx, c.Client)
-		if err != nil {
-			return err
-		}
-		err = c.wantsLockoutUpdate(ctx, newRedisCoordinator.Client)
 		if err != nil {
 			return err
 		}
