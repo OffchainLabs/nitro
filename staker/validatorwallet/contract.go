@@ -212,7 +212,7 @@ func createWalletContract(
 		return nil, fmt.Errorf("getting gas for tx data: %w", err)
 	}
 
-	return dataPoster.PostSimpleTransaction(ctx, auth.Nonce.Uint64(), validatorWalletFactoryAddr, txData, gas, auth.Value)
+	return dataPoster.PostSimpleTransaction(ctx, auth.Nonce.Uint64(), validatorWalletFactoryAddr, txData, gas, common.Big0)
 }
 
 func (v *Contract) populateWallet(ctx context.Context, createIfMissing bool) error {
