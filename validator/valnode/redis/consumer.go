@@ -64,11 +64,15 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 	if workers == 0 {
 		workers = runtime.NumCPU()
 	}
-	bufferSize := 0
+	workQueue := make(chan workUnit, workers)
+	tokensCount := workers
 	if s.config.BufferReads {
-		bufferSize = workers
+		tokensCount += workers
 	}
-	workQueue := make(chan workUnit, bufferSize)
+	requestTokenQueue := make(chan struct{}, tokensCount)
+	for i := 0; i < tokensCount; i++ {
+		requestTokenQueue <- struct{}{}
+	}
 	for moduleRoot, c := range s.consumers {
 		c := c
 		moduleRoot := moduleRoot
@@ -99,6 +103,11 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 			case <-ready: // Wait until the stream exists and start consuming iteratively.
 			}
 			s.StopWaiter.CallIteratively(func(ctx context.Context) time.Duration {
+				select {
+				case <-ctx.Done():
+					return 0
+				case <-requestTokenQueue:
+				}
 				req, err := c.Consume(ctx)
 				if err != nil {
 					log.Error("Consuming request", "error", err)
@@ -147,6 +156,11 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 				if err := s.consumers[work.moduleRoot].SetResult(ctx, work.req.ID, res); err != nil {
 					log.Error("Error setting result for request", "id", work.req.ID, "result", res, "error", err)
 				}
+				select {
+				case <-ctx.Done():
+					return
+				case requestTokenQueue <- struct{}{}:
+				}
 			}
 		})
 	}
@@ -170,7 +184,7 @@ var DefaultValidationServerConfig = ValidationServerConfig{
 	ConsumerConfig: pubsub.DefaultConsumerConfig,
 	ModuleRoots:    []string{},
 	StreamTimeout:  10 * time.Minute,
-	Workers:        1,
+	Workers:        0,
 	BufferReads:    true,
 }
 
