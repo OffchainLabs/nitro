@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/ethereum/go-ethereum/metrics"
 	"time"
 
 	"github.com/ethereum/go-ethereum/log"
@@ -72,6 +73,7 @@ func (c *Consumer[Request, Response]) Start(ctx context.Context) {
 	c.StopWaiter.CallIteratively(
 		func(ctx context.Context) time.Duration {
 			c.heartBeat(ctx)
+			c.metrics(ctx)
 			return c.cfg.KeepAliveTimeout / 10
 		},
 	)
@@ -107,6 +109,18 @@ func (c *Consumer[Request, Response]) deleteHeartBeat(ctx context.Context) {
 		}
 		l("Deleting heardbeat", "consumer", c.id, "error", err)
 	}
+}
+
+func (c *Consumer[Request, Response]) metrics(ctx context.Context) {
+	res, err := c.client.XPending(ctx, c.redisStream, c.redisGroup).Result()
+	if errors.Is(err, redis.Nil) {
+		return
+	}
+	if err != nil {
+		log.Error("Getting pending messages", "error", err)
+		return
+	}
+	metrics.GetOrRegisterGauge(c.redisStream+"/consumer/pending", nil).Update(res.Count)
 }
 
 // heartBeat updates the heartBeat key indicating aliveness.
