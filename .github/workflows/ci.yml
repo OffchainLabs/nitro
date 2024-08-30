@@ -18,9 +18,7 @@ concurrency:
 jobs:
   test:
     name: Go Tests
-    container:
-      image: ghcr.io/catthehacker/ubuntu:js-22.04
-    runs-on: [self-hosted, X64]
+    runs-on: ubuntu-latest
 
     # Creates a redis container for redis tests
     services:
@@ -32,13 +30,46 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        test-mode: [defaults, race, challenge, stylus, long]
+        test-mode: [defaults, race, challenge, stylus, long, redis]
 
     steps:
+      - name: Move repo to avoid too long file paths
+        run: |
+          mkdir /tmp/gha-work
+          cd /tmp/gha-work
+          rm -rf $GITHUB_WORKSPACE
+          # Link the original workspace to the new workspace directory
+          ln -sv /tmp/gha-work $GITHUB_WORKSPACE
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
           submodules: true
+
+      - uses: cargo-bins/cargo-binstall@main
+      - name: Make more disk space available on public runner
+        run: |
+          # rmz seems to be faster at deleting files than rm
+          cargo binstall -y rmz
+          sudo mv /home/runner/.cargo/bin/rmz /usr/local/bin/rmz
+
+          echo "Available storage before:"
+          sudo df -h
+          echo
+          sudo rmz -f /usr/share/dotnet
+          sudo rmz -f /usr/share/swift
+          sudo rmz -f /usr/share/gradle-*
+          sudo rmz -f /usr/share/az_*
+          sudo rmz -f /usr/local/lib/android
+          sudo rmz -f /opt/ghc
+          sudo rmz -f /opt/az
+          sudo rmz -f /opt/pipx
+          sudo rmz -f /opt/google
+          sudo rmz -f /opt/microsoft
+          echo "Available storage after:"
+          sudo df -h
+          echo
+
 
       - name: Install dependencies
         run: >
@@ -46,6 +77,7 @@ jobs:
           cmake build-essential bison golang clang make wabt
 
       - name: Setup nodejs
+        if: false # fails to find yarn.lock when running in symlinked directory, doesn't seem to be needed
         uses: actions/setup-node@v3
         with:
           node-version: '18'
@@ -96,8 +128,8 @@ jobs:
           path: |
             ~/go/pkg/mod
             ~/.cache/go-build
-          key: ${{ runner.os }}-go-${{ hashFiles('go.sum') }}-${{ matrix.test-mode }}
-          restore-keys: ${{ runner.os }}-go-
+          key: v1-${{ runner.os }}-go-${{ hashFiles('go.sum') }}-${{ matrix.test-mode }}
+          restore-keys: v1-${{ runner.os }}-go-
 
       - name: Cache Rust Build Products
         uses: actions/cache@v3
@@ -109,8 +141,8 @@ jobs:
             arbitrator/wasm-libraries/target/
             arbitrator/wasm-libraries/soft-float/SoftFloat/build
             target/etc/initial-machine-cache/
-          key: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}-${{ matrix.test-mode }}
-          restore-keys: ${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-
+          key: v1-${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}-${{ matrix.test-mode }}
+          restore-keys: v1-${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-
 
       - name: Cache cbrotli
         uses: actions/cache@v3
@@ -122,8 +154,8 @@ jobs:
             target/lib/libbrotlicommon-static.a
             target/lib/libbrotlienc-static.a
             target/lib/libbrotlidec-static.a
-          key: ${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}-${{ matrix.test-mode }}
-          restore-keys: ${{ runner.os }}-brotli-
+          key: v1-${{ runner.os }}-brotli-${{ hashFiles('scripts/build-brotli.sh') }}-${{ hashFiles('.github/workflows/arbitrator-ci.yaml') }}-${{ matrix.test-mode }}
+          restore-keys: v1-${{ runner.os }}-brotli-
 
       - name: Build cbrotli-local
         if: steps.cache-cbrotli.outputs.cache-hit != 'true'
@@ -143,12 +175,14 @@ jobs:
         run: make -j build-node-deps
 
       - name: Lint
+        if: matrix.test-mode == 'defaults'
         uses: golangci/golangci-lint-action@v5
         with:
           version: v1.59.1
           skip-cache: true
 
       - name: Custom Lint
+        if: matrix.test-mode == 'defaults'
         run: |
           go run ./linters ./...
 
@@ -176,8 +210,8 @@ jobs:
           stdbuf -oL gotestsum --format short-verbose --packages="$packages" --rerun-fails=1 --no-color=false -- ./... -race -skip "$skip_tests" -timeout=40m > >(stdbuf -oL tee full.log | grep -vE "INFO|seal")
 
       - name: run redis tests
-        if: matrix.test-mode == 'defaults'
-        run: TEST_REDIS=redis://redis:6379/0 gotestsum --format short-verbose -- -timeout 20m -p 1 -run TestRedis ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
+        if: matrix.test-mode == 'redis'
+        run: TEST_REDIS=redis://localhost:6379/0 gotestsum --format short-verbose -- -timeout 20m -p 1 -run TestRedis ./arbnode/... ./system_tests/... -coverprofile=coverage-redis.txt -covermode=atomic -coverpkg=./...
 
       - name: run challenge tests
         if: matrix.test-mode == 'challenge'
@@ -217,3 +251,8 @@ jobs:
           files: ./coverage.txt,./coverage-redis.txt
           verbose: false
           token: ${{ secrets.CODECOV_TOKEN }}
+
+      - name: Check available space after CI run
+        if: '!cancelled()'
+        run: |
+          sudo df -h

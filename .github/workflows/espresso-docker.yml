@@ -36,21 +36,43 @@ jobs:
         platform: [linux/amd64, linux/arm64]
         include:
           - platform: linux/amd64
-            runs-on: X64
+            runs-on: ubuntu-latest
           - platform: linux/arm64
-            runs-on: ARM64
+            runs-on: buildjet-4vcpu-ubuntu-2204-arm
 
-    runs-on: [self-hosted, "${{ matrix.runs-on }}"]
+    runs-on: ${{ matrix.runs-on }}
 
     steps:
-      # TODO We should be able to remove this but currently it's needed to avoid
-      # permission errors during checkout.
-      - name: Fix submodule permissions check
+
+      - uses: cargo-bins/cargo-binstall@main
+        if: matrix.runs-on == 'ubuntu-latest'
+
+      - name: Make more disk space available on public runner
+        if: matrix.runs-on == 'ubuntu-latest'
         run: |
-          sudo chown -R runner:runner .
-          # Remove potentially leftover files from last run, it's unclear why
-          # this only works with `sudo` despite the chown command above.
-          sudo rm -rfv ./target
+          # rmz seems to be faster at deleting files than rm
+          cargo binstall -y rmz
+          sudo mv /home/runner/.cargo/bin/rmz /usr/local/bin/rmz
+
+          echo "Available storage before:"
+          sudo df -h
+          echo
+          sudo rmz -f /usr/share/dotnet
+          sudo rmz -f /usr/share/swift
+          sudo rmz -f /usr/share/gradle-*
+          sudo rmz -f /usr/share/az_*
+          sudo rmz -f /usr/local/lib/android
+          sudo rmz -f /usr/local/lib/node_modules
+          sudo rmz -f /opt/ghc
+          sudo rmz -f /opt/az
+          sudo rmz -f /opt/pipx
+          sudo rmz -f /opt/google
+          sudo rmz -f /opt/microsoft
+          sudo rmz -f /opt/hostedtoolcache
+          echo "Available storage after:"
+          sudo df -h
+          echo
+
       - name: Fix submodule permissions check
         run: |
           git config --global --add safe.directory '*'
@@ -117,6 +139,11 @@ jobs:
         if: matrix.platform == 'linux/amd64' && startsWith(github.ref, 'refs/tags/')
         with:
           files: target/machines/latest/*
+
+      - name: Check available space after CI run
+        if: '!cancelled()'
+        run: |
+          sudo df -h
 
   # Merge the AMD64 and ARM64 images into the final (multiplatform) image.
   #
