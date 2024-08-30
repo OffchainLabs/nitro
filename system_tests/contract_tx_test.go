@@ -51,6 +51,7 @@ func TestContractTxDeploy(t *testing.T) {
 			0xF3, // RETURN
 		}
 		var requestId common.Hash
+		// #nosec G115
 		requestId[0] = uint8(stateNonce)
 		contractTx := &types.ArbitrumContractTx{
 			ChainId:   params.ArbitrumDevTestChainConfig().ChainID,

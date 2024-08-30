@@ -4,7 +4,7 @@
 use crate::{
     cache::InitCache,
     env::{MeterData, WasmEnv},
-    host, util,
+    host,
 };
 use arbutil::{
     evm::{
@@ -33,10 +33,12 @@ use std::{
     ops::{Deref, DerefMut},
 };
 use wasmer::{
-    imports, AsStoreMut, Function, FunctionEnv, Instance, Memory, Module, Pages, Store,
+    imports, AsStoreMut, Function, FunctionEnv, Instance, Memory, Module, Pages, Store, Target,
     TypedFunction, Value, WasmTypeList,
 };
 use wasmer_vm::VMExtern;
+
+use crate::target_cache::target_native;
 
 #[derive(Debug)]
 pub struct NativeInstance<D: DataReader, E: EvmApi<D>> {
@@ -98,7 +100,7 @@ impl<D: DataReader, E: EvmApi<D>> NativeInstance<D, E> {
         evm_data: EvmData,
     ) -> Result<Self> {
         let env = WasmEnv::new(compile, None, evm, evm_data);
-        let store = env.compile.store();
+        let store = env.compile.store(target_native());
         let module = unsafe { Module::deserialize_unchecked(&store, module)? };
         Self::from_module(module, store, env)
     }
@@ -137,9 +139,10 @@ impl<D: DataReader, E: EvmApi<D>> NativeInstance<D, E> {
         evm_data: EvmData,
         compile: &CompileConfig,
         config: StylusConfig,
+        target: Target,
     ) -> Result<Self> {
         let env = WasmEnv::new(compile.clone(), Some(config), evm_api, evm_data);
-        let store = env.compile.store();
+        let store = env.compile.store(target);
         let wat_or_wasm = std::fs::read(path)?;
         let module = Module::new(&store, wat_or_wasm)?;
         Self::from_module(module, store, env)
@@ -347,8 +350,8 @@ impl<D: DataReader, E: EvmApi<D>> StartlessMachine for NativeInstance<D, E> {
     }
 }
 
-pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
-    let mut store = compile.store();
+pub fn module(wasm: &[u8], compile: CompileConfig, target: Target) -> Result<Vec<u8>> {
+    let mut store = compile.store(target);
     let module = Module::new(&store, wasm)?;
     macro_rules! stub {
         (u8 <- $($types:tt)+) => {
@@ -428,7 +431,6 @@ pub fn module(wasm: &[u8], compile: CompileConfig) -> Result<Vec<u8>> {
         imports.define("console", "tee_f64", stub!(f64 <- |_: f64|));
         imports.define("debug", "null_host", stub!(||));
     }
-    Instance::new(&mut store, &module, &imports)?;
 
     let module = module.serialize()?;
     Ok(module.to_vec())
@@ -441,14 +443,14 @@ pub fn activate(
     page_limit: u16,
     debug: bool,
     gas: &mut u64,
-) -> Result<(Vec<u8>, ProverModule, StylusData)> {
-    let compile = CompileConfig::version(version, debug);
+) -> Result<(ProverModule, StylusData)> {
     let (module, stylus_data) =
         ProverModule::activate(wasm, codehash, version, page_limit, debug, gas)?;
 
-    let asm = match self::module(wasm, compile) {
-        Ok(asm) => asm,
-        Err(err) => util::panic_with_wasm(wasm, err),
-    };
-    Ok((asm, module, stylus_data))
+    Ok((module, stylus_data))
+}
+
+pub fn compile(wasm: &[u8], version: u16, debug: bool, target: Target) -> Result<Vec<u8>> {
+    let compile = CompileConfig::version(version, debug);
+    self::module(wasm, compile, target)
 }

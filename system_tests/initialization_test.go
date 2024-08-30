@@ -21,6 +21,7 @@ func InitOneContract(prand *testhelpers.PseudoRandomDataSource) (*statetransfer.
 	storageMap := make(map[common.Hash]common.Hash)
 	code := []byte{0x60, 0x0} // PUSH1 0
 	sum := big.NewInt(0)
+	// #nosec G115
 	numCells := int(prand.GetUint64() % 1000)
 	for i := 0; i < numCells; i++ {
 		storageAddr := prand.GetHash()

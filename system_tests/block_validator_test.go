@@ -92,7 +92,7 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 		validatorConfig.BlockValidator.RedisValidationClientConfig = redis.ValidationClientConfig{}
 	}
 
-	AddDefaultValNode(t, ctx, validatorConfig, !opts.arbitrator, redisURL, opts.wasmRootDir)
+	AddValNode(t, ctx, validatorConfig, !opts.arbitrator, redisURL, opts.wasmRootDir)
 
 	testClientB, cleanupB := builder.Build2ndNode(t, &SecondNodeParams{nodeConfig: validatorConfig})
 	defer cleanupB()
@@ -259,6 +259,7 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 	Require(t, err)
 	// up to 3 extra references: awaiting validation, recently valid, lastValidatedHeader
 	largestRefCount := lastBlockNow.NumberU64() - lastBlock.NumberU64() + 3
+	// #nosec G115
 	if finalRefCount < 0 || finalRefCount > int64(largestRefCount) {
 		Fatal(t, "unexpected refcount:", finalRefCount)
 	}

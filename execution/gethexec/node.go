@@ -19,12 +19,32 @@ import (
 	"github.com/ethereum/go-ethereum/node"
 	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
+	"github.com/offchainlabs/nitro/arbos/programs"
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
 	"github.com/offchainlabs/nitro/solgen/go/precompilesgen"
+	"github.com/offchainlabs/nitro/util/dbutil"
 	"github.com/offchainlabs/nitro/util/headerreader"
 	flag "github.com/spf13/pflag"
 )
+
+type StylusTargetConfig struct {
+	Arm64 string `koanf:"arm64"`
+	Amd64 string `koanf:"amd64"`
+	Host  string `koanf:"host"`
+}
+
+var DefaultStylusTargetConfig = StylusTargetConfig{
+	Arm64: programs.DefaultTargetDescriptionArm,
+	Amd64: programs.DefaultTargetDescriptionX86,
+	Host:  "",
+}
+
+func StylusTargetConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.String(prefix+".arm64", DefaultStylusTargetConfig.Arm64, "stylus programs compilation target for arm64 linux")
+	f.String(prefix+".amd64", DefaultStylusTargetConfig.Amd64, "stylus programs compilation target for amd64 linux")
+	f.String(prefix+".host", DefaultStylusTargetConfig.Host, "stylus programs compilation target for system other than 64-bit ARM or 64-bit x86")
+}
 
 type Config struct {
 	ParentChainReader         headerreader.Config              `koanf:"parent-chain-reader" reload:"hot"`
@@ -39,6 +59,7 @@ type Config struct {
 	TxLookupLimit             uint64                           `koanf:"tx-lookup-limit"`
 	EnablePrefetchBlock       bool                             `koanf:"enable-prefetch-block"`
 	SyncMonitor               SyncMonitorConfig                `koanf:"sync-monitor"`
+	StylusTarget              StylusTargetConfig               `koanf:"stylus-target"`
 
 	forwardingTarget string
 }
@@ -77,6 +98,7 @@ func ConfigAddOptions(prefix string, f *flag.FlagSet) {
 	SyncMonitorConfigAddOptions(prefix+".sync-monitor", f)
 	f.Uint64(prefix+".tx-lookup-limit", ConfigDefault.TxLookupLimit, "retain the ability to lookup transactions by hash for the past N blocks (0 = all blocks)")
 	f.Bool(prefix+".enable-prefetch-block", ConfigDefault.EnablePrefetchBlock, "enable prefetching of blocks")
+	StylusTargetConfigAddOptions(prefix+".stylus-target", f)
 }
 
 var ConfigDefault = Config{
@@ -91,6 +113,7 @@ var ConfigDefault = Config{
 	Caching:                   DefaultCachingConfig,
 	Forwarder:                 DefaultNodeForwarderConfig,
 	EnablePrefetchBlock:       true,
+	StylusTarget:              DefaultStylusTargetConfig,
 }
 
 type ConfigFetcher func() *Config
@@ -181,11 +204,16 @@ func CreateExecutionNode(
 	var classicOutbox *ClassicOutboxRetriever
 
 	if l2BlockChain.Config().ArbitrumChainParams.GenesisBlockNum > 0 {
-		classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "classicmsg/", true) // TODO can we skip using ExtraOptions here?
-		if err != nil {
+		classicMsgDb, err := stack.OpenDatabase("classic-msg", 0, 0, "classicmsg/", true)
+		if dbutil.IsNotExistError(err) {
 			log.Warn("Classic Msg Database not found", "err", err)
 			classicOutbox = nil
+		} else if err != nil {
+			return nil, fmt.Errorf("Failed to open classic-msg database: %w", err)
 		} else {
+			if err := dbutil.UnfinishedConversionCheck(classicMsgDb); err != nil {
+				return nil, fmt.Errorf("classic-msg unfinished database conversion check error: %w", err)
+			}
 			classicOutbox = NewClassicOutboxRetriever(classicMsgDb)
 		}
 	}
@@ -245,9 +273,13 @@ func (n *ExecutionNode) MarkFeedStart(to arbutil.MessageIndex) {
 }
 
 func (n *ExecutionNode) Initialize(ctx context.Context) error {
-	n.ExecEngine.Initialize(n.ConfigFetcher().Caching.StylusLRUCache)
+	config := n.ConfigFetcher()
+	err := n.ExecEngine.Initialize(config.Caching.StylusLRUCache, &config.StylusTarget)
+	if err != nil {
+		return fmt.Errorf("error initializing execution engine: %w", err)
+	}
 	n.ArbInterface.Initialize(n)
-	err := n.Backend.Start()
+	err = n.Backend.Start()
 	if err != nil {
 		return fmt.Errorf("error starting geth backend: %w", err)
 	}

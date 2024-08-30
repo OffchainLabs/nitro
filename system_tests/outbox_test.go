@@ -146,6 +146,7 @@ func TestOutboxProofs(t *testing.T) {
 		treeSize := root.size
 
 		balanced := treeSize == arbmath.NextPowerOf2(treeSize)/2
+		// #nosec G115
 		treeLevels := int(arbmath.Log2ceil(treeSize)) // the # of levels in the tree
 		proofLevels := treeLevels - 1                 // the # of levels where a hash is needed (all but root)
 		walkLevels := treeLevels                      // the # of levels we need to consider when building walks

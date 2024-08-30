@@ -33,7 +33,7 @@ type FastConfirmSafe struct {
 }
 
 func NewFastConfirmSafe(
-	callOpts bind.CallOpts,
+	callOpts *bind.CallOpts,
 	fastConfirmSafeAddress common.Address,
 	builder *txbuilder.Builder,
 	wallet ValidatorWalletInterface,
@@ -51,9 +51,9 @@ func NewFastConfirmSafe(
 		return nil, err
 	}
 	fastConfirmSafe.safe = safe
-	owners, err := safe.GetOwners(&callOpts)
+	owners, err := safe.GetOwners(callOpts)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("calling getOwners: %w", err)
 	}
 
 	// This is needed because safe contract needs owners to be sorted.
@@ -61,9 +61,9 @@ func NewFastConfirmSafe(
 		return owners[i].Cmp(owners[j]) < 0
 	})
 	fastConfirmSafe.owners = owners
-	threshold, err := safe.GetThreshold(&callOpts)
+	threshold, err := safe.GetThreshold(callOpts)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("calling getThreshold: %w", err)
 	}
 	fastConfirmSafe.threshold = threshold.Uint64()
 	rollupUserLogicAbi, err := rollupgen.RollupUserLogicMetaData.GetAbi()

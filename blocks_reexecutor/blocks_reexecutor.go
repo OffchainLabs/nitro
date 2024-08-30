@@ -102,7 +102,8 @@ func New(c *Config, blockchain *core.BlockChain, fatalErrChan chan error) *Block
 		if rng > end-start {
 			rng = end - start
 		}
-		start += uint64(rand.Intn(int(end - start - rng + 1)))
+		// #nosec G115
+		start += uint64(rand.Int63n(int64(end - start - rng + 1)))
 		end = start + rng
 	}
 	// Inclusive of block reexecution [start, end]

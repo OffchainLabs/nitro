@@ -10,6 +10,8 @@ use prover::programs::config::CompileConfig;
 use std::{collections::HashMap, num::NonZeroUsize};
 use wasmer::{Engine, Module, Store};
 
+use crate::target_cache::target_native;
+
 lazy_static! {
     static ref INIT_CACHE: Mutex<InitCache> = Mutex::new(InitCache::new(256));
 }
@@ -120,7 +122,7 @@ impl InitCache {
         }
         drop(cache);
 
-        let engine = CompileConfig::version(version, debug).engine();
+        let engine = CompileConfig::version(version, debug).engine(target_native());
         let module = unsafe { Module::deserialize_unchecked(&engine, module)? };
 
         let item = CacheItem::new(module, engine);

@@ -41,7 +41,6 @@ import (
 	"github.com/offchainlabs/nitro/util/colors"
 	"github.com/offchainlabs/nitro/util/testhelpers"
 	"github.com/offchainlabs/nitro/validator/valnode"
-	"github.com/wasmerio/wasmer-go/wasmer"
 )
 
 var oneEth = arbmath.UintToBig(1e18)
@@ -583,6 +582,7 @@ func testCalls(t *testing.T, jit bool) {
 
 			for i := 0; i < 2; i++ {
 				inner := nest(level - 1)
+				// #nosec G115
 				args = append(args, arbmath.Uint32ToBytes(uint32(len(inner)))...)
 				args = append(args, inner...)
 			}
@@ -638,6 +638,7 @@ func testCalls(t *testing.T, jit bool) {
 	colors.PrintBlue("Calling the ArbosTest precompile (Rust => precompile)")
 	testPrecompile := func(gas uint64) uint64 {
 		// Call the burnArbGas() precompile from Rust
+		// #nosec G115
 		burn := pack(burnArbGas(big.NewInt(int64(gas))))
 		args := argsForMulticall(vm.CALL, types.ArbosTestAddress, nil, burn)
 		tx := l2info.PrepareTxTo("Owner", &callsAddr, 1e9, nil, args)
@@ -651,6 +652,7 @@ func testCalls(t *testing.T, jit bool) {
 	large := testPrecompile(largeGas)
 
 	if !arbmath.Within(large-small, largeGas-smallGas, 2) {
+		// #nosec G115
 		ratio := float64(int64(large)-int64(small)) / float64(int64(largeGas)-int64(smallGas))
 		Fatal(t, "inconsistent burns", large, small, largeGas, smallGas, ratio)
 	}
@@ -1528,9 +1530,10 @@ func readWasmFile(t *testing.T, file string) ([]byte, []byte) {
 	Require(t, err)
 
 	// chose a random dictionary for testing, but keep the same files consistent
+	// #nosec G115
 	randDict := arbcompress.Dictionary((len(file) + len(t.Name())) % 2)
 
-	wasmSource, err := wasmer.Wat2Wasm(string(source))
+	wasmSource, err := programs.Wat2Wasm(source)
 	Require(t, err)
 	wasm, err := arbcompress.Compress(wasmSource, arbcompress.LEVEL_WELL, randDict)
 	Require(t, err)
@@ -1598,6 +1601,7 @@ func argsForMulticall(opcode vm.OpCode, address common.Address, value *big.Int, 
 	if opcode == vm.CALL {
 		length += 32
 	}
+	// #nosec G115
 	args = append(args, arbmath.Uint32ToBytes(uint32(length))...)
 	args = append(args, kinds[opcode])
 	if opcode == vm.CALL {
@@ -1615,6 +1619,35 @@ func multicallAppend(calls []byte, opcode vm.OpCode, address common.Address, inn
 	calls[0] += 1 // add another call
 	calls = append(calls, argsForMulticall(opcode, address, nil, inner)[1:]...)
 	return calls
+}
+
+func multicallEmptyArgs() []byte {
+	return []byte{0} // number of actions
+}
+
+func multicallAppendStore(args []byte, key, value common.Hash, emitLog bool) []byte {
+	var action byte = 0x10
+	if emitLog {
+		action |= 0x08
+	}
+	args[0] += 1
+	args = binary.BigEndian.AppendUint32(args, 1+64) // length
+	args = append(args, action)
+	args = append(args, key.Bytes()...)
+	args = append(args, value.Bytes()...)
+	return args
+}
+
+func multicallAppendLoad(args []byte, key common.Hash, emitLog bool) []byte {
+	var action byte = 0x11
+	if emitLog {
+		action |= 0x08
+	}
+	args[0] += 1
+	args = binary.BigEndian.AppendUint32(args, 1+32) // length
+	args = append(args, action)
+	args = append(args, key.Bytes()...)
+	return args
 }
 
 func assertStorageAt(
@@ -1863,7 +1896,8 @@ func TestWasmStoreRebuilding(t *testing.T) {
 
 	// Start rebuilding and wait for it to finish
 	log.Info("starting rebuilding of wasm store")
-	Require(t, gethexec.RebuildWasmStore(ctx, wasmDbAfterDelete, nodeB.ExecNode.ChainDB, nodeB.ExecNode.ConfigFetcher().RPC.MaxRecreateStateDepth, bc, common.Hash{}, bc.CurrentBlock().Hash()))
+	execConfig := nodeB.ExecNode.ConfigFetcher()
+	Require(t, gethexec.RebuildWasmStore(ctx, wasmDbAfterDelete, nodeB.ExecNode.ChainDB, execConfig.RPC.MaxRecreateStateDepth, &execConfig.StylusTarget, bc, common.Hash{}, bc.CurrentBlock().Hash()))
 
 	wasmDbAfterRebuild := nodeB.ExecNode.Backend.ArbInterface().BlockChain().StateCache().WasmStore()
 

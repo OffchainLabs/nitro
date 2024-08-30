@@ -8,7 +8,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"runtime"
 	"sync/atomic"
 	"time"
 
@@ -22,15 +21,17 @@ import (
 	"github.com/offchainlabs/nitro/validator/server_common"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/node"
+	"github.com/ethereum/go-ethereum/rpc"
 )
 
 type ValidationClient struct {
 	stopwaiter.StopWaiter
 	client          *rpcclient.RpcClient
 	name            string
-	stylusArchs     []string
+	stylusArchs     []rawdb.Target
 	room            atomic.Int32
 	wasmModuleRoots []common.Hash
 }
@@ -39,7 +40,7 @@ func NewValidationClient(config rpcclient.ClientConfigFetcher, stack *node.Node)
 	return &ValidationClient{
 		client:      rpcclient.NewRpcClient(config, stack),
 		name:        "not started",
-		stylusArchs: []string{"not started"},
+		stylusArchs: []rawdb.Target{"not started"},
 	}
 }
 
@@ -66,16 +67,22 @@ func (c *ValidationClient) Start(ctx context.Context) error {
 	if len(name) == 0 {
 		return errors.New("couldn't read name from server")
 	}
-	var stylusArchs []string
+	var stylusArchs []rawdb.Target
 	if err := c.client.CallContext(ctx, &stylusArchs, server_api.Namespace+"_stylusArchs"); err != nil {
-		return err
-	}
-	if len(stylusArchs) == 0 {
-		return fmt.Errorf("could not read stylus archs from validation server")
-	}
-	for _, stylusArch := range stylusArchs {
-		if stylusArch != "wavm" && stylusArch != runtime.GOARCH && stylusArch != "mock" {
-			return fmt.Errorf("unsupported stylus architecture: %v", stylusArch)
+		var rpcError rpc.Error
+		ok := errors.As(err, &rpcError)
+		if !ok || rpcError.ErrorCode() != -32601 {
+			return fmt.Errorf("could not read stylus arch from server: %w", err)
+		}
+		stylusArchs = []rawdb.Target{rawdb.Target("pre-stylus")} // invalid, will fail if trying to validate block with stylus
+	} else {
+		if len(stylusArchs) == 0 {
+			return fmt.Errorf("could not read stylus archs from validation server")
+		}
+		for _, stylusArch := range stylusArchs {
+			if stylusArch != rawdb.TargetWavm && stylusArch != rawdb.LocalTarget() && stylusArch != "mock" {
+				return fmt.Errorf("unsupported stylus architecture: %v", stylusArch)
+			}
 		}
 	}
 	var moduleRoots []common.Hash
@@ -95,6 +102,7 @@ func (c *ValidationClient) Start(ctx context.Context) error {
 	} else {
 		log.Info("connected to validation server", "name", name, "room", room)
 	}
+	// #nosec G115
 	c.room.Store(int32(room))
 	c.wasmModuleRoots = moduleRoots
 	c.name = name
@@ -110,11 +118,11 @@ func (c *ValidationClient) WasmModuleRoots() ([]common.Hash, error) {
 	return nil, errors.New("not started")
 }
 
-func (c *ValidationClient) StylusArchs() []string {
+func (c *ValidationClient) StylusArchs() []rawdb.Target {
 	if c.Started() {
 		return c.stylusArchs
 	}
-	return []string{"not started"}
+	return []rawdb.Target{"not started"}
 }
 
 func (c *ValidationClient) Stop() {
