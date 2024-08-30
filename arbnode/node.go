@@ -339,6 +339,29 @@ func checkArbDbSchemaVersion(arbDb ethdb.Database) error {
 	return nil
 }
 
+func DataposterOnlyUsedToCreateValidatorWalletContract(
+	ctx context.Context,
+	l1Reader *headerreader.HeaderReader,
+	transactOpts *bind.TransactOpts,
+	cfg *dataposter.DataPosterConfig,
+	parentChainID *big.Int,
+) (*dataposter.DataPoster, error) {
+	return dataposter.NewDataPoster(ctx,
+		&dataposter.DataPosterOpts{
+			HeaderReader: l1Reader,
+			Auth:         transactOpts,
+			Config: func() *dataposter.DataPosterConfig {
+				cfg.UseNoOpStorage = true
+				return cfg
+			},
+			MetadataRetriever: func(ctx context.Context, blockNum *big.Int) ([]byte, error) {
+				return nil, nil
+			},
+			ParentChainID: parentChainID,
+		},
+	)
+}
+
 func StakerDataposter(
 	ctx context.Context, db ethdb.Database, l1Reader *headerreader.HeaderReader,
 	transactOpts *bind.TransactOpts, cfgFetcher ConfigFetcher, syncMonitor *SyncMonitor,

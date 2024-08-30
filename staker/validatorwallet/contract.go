@@ -155,16 +155,19 @@ func (v *Contract) From() common.Address {
 }
 
 // nil value == 0 value
-func (v *Contract) getAuth(ctx context.Context, value *big.Int) (*bind.TransactOpts, error) {
-	newAuth := *v.auth
-	newAuth.Context = ctx
-	newAuth.Value = value
-	nonce, err := v.L1Client().NonceAt(ctx, v.auth.From, nil)
+func getAuthWithUpdatedNonce(ctx context.Context, l1Reader *headerreader.HeaderReader, auth bind.TransactOpts, value *big.Int) (*bind.TransactOpts, error) {
+	auth.Context = ctx
+	auth.Value = value
+	nonce, err := l1Reader.Client().NonceAt(ctx, auth.From, nil)
 	if err != nil {
 		return nil, err
 	}
-	newAuth.Nonce = new(big.Int).SetUint64(nonce)
-	return &newAuth, nil
+	auth.Nonce = new(big.Int).SetUint64(nonce)
+	return &auth, nil
+}
+
+func (v *Contract) getAuth(ctx context.Context, value *big.Int) (*bind.TransactOpts, error) {
+	return getAuthWithUpdatedNonce(ctx, v.l1Reader, *v.auth, value)
 }
 
 func (v *Contract) executeTransaction(ctx context.Context, tx *types.Transaction, gasRefunder common.Address) (*types.Transaction, error) {
@@ -183,9 +186,12 @@ func (v *Contract) executeTransaction(ctx context.Context, tx *types.Transaction
 	return v.dataPoster.PostSimpleTransaction(ctx, auth.Nonce.Uint64(), *v.Address(), data, gas, auth.Value)
 }
 
-// Exposed for tests
-func (v *Contract) CreateWalletContract(
+func createWalletContract(
 	ctx context.Context,
+	l1Reader *headerreader.HeaderReader,
+	auth *bind.TransactOpts,
+	dataPoster *dataposter.DataPoster,
+	getExtraGas func() uint64,
 	validatorWalletFactoryAddr common.Address,
 ) (*types.Transaction, error) {
 	var initialExecutorAllowedDests []common.Address
@@ -194,24 +200,19 @@ func (v *Contract) CreateWalletContract(
 		return nil, err
 	}
 
-	auth, err := v.getAuth(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-
 	gas, err := gasForTxData(
 		ctx,
-		v.l1Reader,
+		l1Reader,
 		auth,
 		&validatorWalletFactoryAddr,
 		txData,
-		v.getExtraGas,
+		getExtraGas,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("getting gas for tx data: %w", err)
 	}
 
-	return v.dataPoster.PostSimpleTransaction(ctx, auth.Nonce.Uint64(), validatorWalletFactoryAddr, txData, gas, auth.Value)
+	return dataPoster.PostSimpleTransaction(ctx, auth.Nonce.Uint64(), validatorWalletFactoryAddr, txData, gas, auth.Value)
 }
 
 func (v *Contract) populateWallet(ctx context.Context, createIfMissing bool) error {
@@ -225,15 +226,10 @@ func (v *Contract) populateWallet(ctx context.Context, createIfMissing bool) err
 		return nil
 	}
 	if v.address.Load() == nil {
-		auth, err := v.getAuth(ctx, nil)
-		if err != nil {
-			return err
-		}
-
-		// By passing v.CreateWalletContract as a parameter to GetValidatorWalletContract we force to create a validator wallet through the Staker's DataPoster object.
+		// By passing v.dataPoster as a parameter to GetValidatorWalletContract we force to create a validator wallet through the Staker's DataPoster object.
 		// DataPoster keeps in its internal state information related to the transactions sent through it, which is used to infer the expected nonce in a transaction for example.
 		// If a transaction is sent using the Staker's DataPoster key, but not through the Staker's DataPoster object, DataPoster's internal state will be outdated, which can compromise the expected nonce inference.
-		addr, err := GetValidatorWalletContract(ctx, v.walletFactoryAddr, v.rollupFromBlock, auth, v.l1Reader, createIfMissing, v.CreateWalletContract)
+		addr, err := GetValidatorWalletContract(ctx, v.walletFactoryAddr, v.rollupFromBlock, v.auth, v.l1Reader, createIfMissing, v.dataPoster, v.getExtraGas)
 		if err != nil {
 			return err
 		}
@@ -439,6 +435,11 @@ func (b *Contract) DataPoster() *dataposter.DataPoster {
 	return b.dataPoster
 }
 
+// Exported for testing
+func (b *Contract) GetExtraGas() func() uint64 {
+	return b.getExtraGas
+}
+
 func GetValidatorWalletContract(
 	ctx context.Context,
 	validatorWalletFactoryAddr common.Address,
@@ -446,7 +447,8 @@ func GetValidatorWalletContract(
 	transactAuth *bind.TransactOpts,
 	l1Reader *headerreader.HeaderReader,
 	createIfMissing bool,
-	createWalletFunc func(context.Context, common.Address) (*types.Transaction, error),
+	dataPoster *dataposter.DataPoster,
+	getExtraGas func() uint64,
 ) (*common.Address, error) {
 	client := l1Reader.Client()
 
@@ -483,18 +485,14 @@ func GetValidatorWalletContract(
 		return nil, nil
 	}
 
-	var tx *types.Transaction
-	if createWalletFunc == nil {
-		var initialExecutorAllowedDests []common.Address
-		tx, err = walletCreator.CreateWallet(transactAuth, initialExecutorAllowedDests)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		tx, err = createWalletFunc(ctx, validatorWalletFactoryAddr)
-		if err != nil {
-			return nil, err
-		}
+	transactAuth, err = getAuthWithUpdatedNonce(ctx, l1Reader, *transactAuth, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	tx, err := createWalletContract(ctx, l1Reader, transactAuth, dataPoster, getExtraGas, validatorWalletFactoryAddr)
+	if err != nil {
+		return nil, err
 	}
 
 	receipt, err := l1Reader.WaitForTxApproval(ctx, tx)

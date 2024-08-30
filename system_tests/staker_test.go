@@ -176,10 +176,10 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		valConfigA.Strategy = "MakeNodes"
 	}
 
-	valWalletAddrAPtr, err := validatorwallet.GetValidatorWalletContract(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authA, l2nodeA.L1Reader, true, valWalletA.CreateWalletContract)
+	valWalletAddrAPtr, err := validatorwallet.GetValidatorWalletContract(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authA, l2nodeA.L1Reader, true, valWalletA.DataPoster(), valWalletA.GetExtraGas())
 	Require(t, err)
 	valWalletAddrA := *valWalletAddrAPtr
-	valWalletAddrCheck, err := validatorwallet.GetValidatorWalletContract(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authA, l2nodeA.L1Reader, true, valWalletA.CreateWalletContract)
+	valWalletAddrCheck, err := validatorwallet.GetValidatorWalletContract(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authA, l2nodeA.L1Reader, true, valWalletA.DataPoster(), valWalletA.GetExtraGas())
 	Require(t, err)
 	if valWalletAddrA == *valWalletAddrCheck {
 		Require(t, err, "didn't cache validator wallet address", valWalletAddrA.String(), "vs", valWalletAddrCheck.String())
@@ -476,7 +476,7 @@ func TestStakersCooperative(t *testing.T) {
 	stakerTestImpl(t, false, false)
 }
 
-func TestGetValidatorWalletContractWithoutDataPoster(t *testing.T) {
+func TestGetValidatorWalletContractWithDataposterOnlyUsedToCreateValidatorWalletContract(t *testing.T) {
 	t.Parallel()
 
 	ctx, cancelCtx := context.WithCancel(context.Background())
@@ -492,10 +492,25 @@ func TestGetValidatorWalletContractWithoutDataPoster(t *testing.T) {
 	builder.L1.TransferBalance(t, "Faucet", "ValidatorA", balance, builder.L1Info)
 	l1auth := builder.L1Info.GetDefaultTransactOpts("ValidatorA", ctx)
 
-	valWalletAddrAPtr, err := validatorwallet.GetValidatorWalletContract(ctx, builder.L2.ConsensusNode.DeployInfo.ValidatorWalletCreator, 0, &l1auth, builder.L2.ConsensusNode.L1Reader, true, nil)
+	parentChainID, err := builder.L1.Client.ChainID(ctx)
+	Require(t, err)
+
+	dataPoster, err := arbnode.DataposterOnlyUsedToCreateValidatorWalletContract(
+		ctx,
+		builder.L2.ConsensusNode.L1Reader,
+		&l1auth,
+		&builder.nodeConfig.Staker.DataPoster,
+		parentChainID,
+	)
+	if err != nil {
+		log.Crit("error creating data poster to create validator wallet contract", "err", err)
+	}
+	getExtraGas := func() uint64 { return builder.nodeConfig.Staker.ExtraGas }
+
+	valWalletAddrAPtr, err := validatorwallet.GetValidatorWalletContract(ctx, builder.L2.ConsensusNode.DeployInfo.ValidatorWalletCreator, 0, &l1auth, builder.L2.ConsensusNode.L1Reader, true, dataPoster, getExtraGas)
 	Require(t, err)
 	valWalletAddrA := *valWalletAddrAPtr
-	valWalletAddrCheck, err := validatorwallet.GetValidatorWalletContract(ctx, builder.L2.ConsensusNode.DeployInfo.ValidatorWalletCreator, 0, &l1auth, builder.L2.ConsensusNode.L1Reader, true, nil)
+	valWalletAddrCheck, err := validatorwallet.GetValidatorWalletContract(ctx, builder.L2.ConsensusNode.DeployInfo.ValidatorWalletCreator, 0, &l1auth, builder.L2.ConsensusNode.L1Reader, true, dataPoster, getExtraGas)
 	Require(t, err)
 	if valWalletAddrA == *valWalletAddrCheck {
 		Require(t, err, "didn't cache validator wallet address", valWalletAddrA.String(), "vs", valWalletAddrCheck.String())
