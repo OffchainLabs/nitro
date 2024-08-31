@@ -209,7 +209,7 @@ func createWalletContract(
 		getExtraGas,
 	)
 	if err != nil {
-		return nil, fmt.Errorf("getting gas for tx data: %w", err)
+		return nil, fmt.Errorf("getting gas for tx data when creating validator wallet, validatorWalletFactory=%v: %w", validatorWalletFactoryAddr, err)
 	}
 
 	return dataPoster.PostSimpleTransaction(ctx, auth.Nonce.Uint64(), validatorWalletFactoryAddr, txData, gas, common.Big0)
