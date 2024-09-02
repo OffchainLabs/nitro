@@ -115,10 +115,10 @@ func TestFastConfirmation(t *testing.T) {
 	Require(t, err)
 	valConfig.Strategy = "MakeNodes"
 
-	valWalletAddrPtr, err := validatorwallet.GetValidatorWalletContract(ctx, l2node.DeployInfo.ValidatorWalletCreator, 0, &l1auth, l2node.L1Reader, true, valWallet.DataPoster(), valWallet.GetExtraGas())
+	valWalletAddrPtr, err := validatorwallet.GetValidatorWalletContract(ctx, l2node.DeployInfo.ValidatorWalletCreator, 0, l2node.L1Reader, true, valWallet.DataPoster(), valWallet.GetExtraGas())
 	Require(t, err)
 	valWalletAddr := *valWalletAddrPtr
-	valWalletAddrCheck, err := validatorwallet.GetValidatorWalletContract(ctx, l2node.DeployInfo.ValidatorWalletCreator, 0, &l1auth, l2node.L1Reader, true, valWallet.DataPoster(), valWallet.GetExtraGas())
+	valWalletAddrCheck, err := validatorwallet.GetValidatorWalletContract(ctx, l2node.DeployInfo.ValidatorWalletCreator, 0, l2node.L1Reader, true, valWallet.DataPoster(), valWallet.GetExtraGas())
 	Require(t, err)
 	if valWalletAddr == *valWalletAddrCheck {
 		Require(t, err, "didn't cache validator wallet address", valWalletAddr.String(), "vs", valWalletAddrCheck.String())
@@ -315,10 +315,10 @@ func TestFastConfirmationWithSafe(t *testing.T) {
 	Require(t, err)
 	valConfigA.Strategy = "MakeNodes"
 
-	valWalletAddrAPtr, err := validatorwallet.GetValidatorWalletContract(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authA, l2nodeA.L1Reader, true, valWalletA.DataPoster(), valWalletA.GetExtraGas())
+	valWalletAddrAPtr, err := validatorwallet.GetValidatorWalletContract(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, l2nodeA.L1Reader, true, valWalletA.DataPoster(), valWalletA.GetExtraGas())
 	Require(t, err)
 	valWalletAddrA := *valWalletAddrAPtr
-	valWalletAddrCheck, err := validatorwallet.GetValidatorWalletContract(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authA, l2nodeA.L1Reader, true, valWalletA.DataPoster(), valWalletA.GetExtraGas())
+	valWalletAddrCheck, err := validatorwallet.GetValidatorWalletContract(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, l2nodeA.L1Reader, true, valWalletA.DataPoster(), valWalletA.GetExtraGas())
 	Require(t, err)
 	if valWalletAddrA == *valWalletAddrCheck {
 		Require(t, err, "didn't cache validator wallet address", valWalletAddrA.String(), "vs", valWalletAddrCheck.String())

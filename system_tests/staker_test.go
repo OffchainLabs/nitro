@@ -176,10 +176,10 @@ func stakerTestImpl(t *testing.T, faultyStaker bool, honestStakerInactive bool) 
 		valConfigA.Strategy = "MakeNodes"
 	}
 
-	valWalletAddrAPtr, err := validatorwallet.GetValidatorWalletContract(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authA, l2nodeA.L1Reader, true, valWalletA.DataPoster(), valWalletA.GetExtraGas())
+	valWalletAddrAPtr, err := validatorwallet.GetValidatorWalletContract(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, l2nodeA.L1Reader, true, valWalletA.DataPoster(), valWalletA.GetExtraGas())
 	Require(t, err)
 	valWalletAddrA := *valWalletAddrAPtr
-	valWalletAddrCheck, err := validatorwallet.GetValidatorWalletContract(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, &l1authA, l2nodeA.L1Reader, true, valWalletA.DataPoster(), valWalletA.GetExtraGas())
+	valWalletAddrCheck, err := validatorwallet.GetValidatorWalletContract(ctx, l2nodeA.DeployInfo.ValidatorWalletCreator, 0, l2nodeA.L1Reader, true, valWalletA.DataPoster(), valWalletA.GetExtraGas())
 	Require(t, err)
 	if valWalletAddrA == *valWalletAddrCheck {
 		Require(t, err, "didn't cache validator wallet address", valWalletAddrA.String(), "vs", valWalletAddrCheck.String())
@@ -507,10 +507,10 @@ func TestGetValidatorWalletContractWithDataposterOnlyUsedToCreateValidatorWallet
 	}
 	getExtraGas := func() uint64 { return builder.nodeConfig.Staker.ExtraGas }
 
-	valWalletAddrAPtr, err := validatorwallet.GetValidatorWalletContract(ctx, builder.L2.ConsensusNode.DeployInfo.ValidatorWalletCreator, 0, &l1auth, builder.L2.ConsensusNode.L1Reader, true, dataPoster, getExtraGas)
+	valWalletAddrAPtr, err := validatorwallet.GetValidatorWalletContract(ctx, builder.L2.ConsensusNode.DeployInfo.ValidatorWalletCreator, 0, builder.L2.ConsensusNode.L1Reader, true, dataPoster, getExtraGas)
 	Require(t, err)
 	valWalletAddrA := *valWalletAddrAPtr
-	valWalletAddrCheck, err := validatorwallet.GetValidatorWalletContract(ctx, builder.L2.ConsensusNode.DeployInfo.ValidatorWalletCreator, 0, &l1auth, builder.L2.ConsensusNode.L1Reader, true, dataPoster, getExtraGas)
+	valWalletAddrCheck, err := validatorwallet.GetValidatorWalletContract(ctx, builder.L2.ConsensusNode.DeployInfo.ValidatorWalletCreator, 0, builder.L2.ConsensusNode.L1Reader, true, dataPoster, getExtraGas)
 	Require(t, err)
 	if valWalletAddrA == *valWalletAddrCheck {
 		Require(t, err, "didn't cache validator wallet address", valWalletAddrA.String(), "vs", valWalletAddrCheck.String())

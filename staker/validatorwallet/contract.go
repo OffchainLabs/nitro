@@ -229,7 +229,7 @@ func (v *Contract) populateWallet(ctx context.Context, createIfMissing bool) err
 		// By passing v.dataPoster as a parameter to GetValidatorWalletContract we force to create a validator wallet through the Staker's DataPoster object.
 		// DataPoster keeps in its internal state information related to the transactions sent through it, which is used to infer the expected nonce in a transaction for example.
 		// If a transaction is sent using the Staker's DataPoster key, but not through the Staker's DataPoster object, DataPoster's internal state will be outdated, which can compromise the expected nonce inference.
-		addr, err := GetValidatorWalletContract(ctx, v.walletFactoryAddr, v.rollupFromBlock, v.auth, v.l1Reader, createIfMissing, v.dataPoster, v.getExtraGas)
+		addr, err := GetValidatorWalletContract(ctx, v.walletFactoryAddr, v.rollupFromBlock, v.l1Reader, createIfMissing, v.dataPoster, v.getExtraGas)
 		if err != nil {
 			return err
 		}
@@ -444,13 +444,13 @@ func GetValidatorWalletContract(
 	ctx context.Context,
 	validatorWalletFactoryAddr common.Address,
 	fromBlock int64,
-	transactAuth *bind.TransactOpts,
 	l1Reader *headerreader.HeaderReader,
 	createIfMissing bool,
 	dataPoster *dataposter.DataPoster,
 	getExtraGas func() uint64,
 ) (*common.Address, error) {
 	client := l1Reader.Client()
+	transactAuth := dataPoster.Auth()
 
 	// TODO: If we just save a mapping in the wallet creator we won't need log search
 	walletCreator, err := rollupgen.NewValidatorWalletCreator(validatorWalletFactoryAddr, client)
