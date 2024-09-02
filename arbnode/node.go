@@ -346,12 +346,12 @@ func DataposterOnlyUsedToCreateValidatorWalletContract(
 	cfg *dataposter.DataPosterConfig,
 	parentChainID *big.Int,
 ) (*dataposter.DataPoster, error) {
+	cfg.UseNoOpStorage = true
 	return dataposter.NewDataPoster(ctx,
 		&dataposter.DataPosterOpts{
 			HeaderReader: l1Reader,
 			Auth:         transactOpts,
 			Config: func() *dataposter.DataPosterConfig {
-				cfg.UseNoOpStorage = true
 				return cfg
 			},
 			MetadataRetriever: func(ctx context.Context, blockNum *big.Int) ([]byte, error) {
