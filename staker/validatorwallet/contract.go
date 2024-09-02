@@ -155,7 +155,7 @@ func (v *Contract) From() common.Address {
 }
 
 // nil value == 0 value
-func getAuthWithUpdatedNonce(ctx context.Context, l1Reader *headerreader.HeaderReader, auth bind.TransactOpts, value *big.Int) (*bind.TransactOpts, error) {
+func getAuthWithUpdatedNonceFromL1(ctx context.Context, l1Reader *headerreader.HeaderReader, auth bind.TransactOpts, value *big.Int) (*bind.TransactOpts, error) {
 	auth.Context = ctx
 	auth.Value = value
 	nonce, err := l1Reader.Client().NonceAt(ctx, auth.From, nil)
@@ -167,7 +167,7 @@ func getAuthWithUpdatedNonce(ctx context.Context, l1Reader *headerreader.HeaderR
 }
 
 func (v *Contract) getAuth(ctx context.Context, value *big.Int) (*bind.TransactOpts, error) {
-	return getAuthWithUpdatedNonce(ctx, v.l1Reader, *v.auth, value)
+	return getAuthWithUpdatedNonceFromL1(ctx, v.l1Reader, *v.auth, value)
 }
 
 func (v *Contract) executeTransaction(ctx context.Context, tx *types.Transaction, gasRefunder common.Address) (*types.Transaction, error) {
@@ -485,7 +485,7 @@ func GetValidatorWalletContract(
 		return nil, nil
 	}
 
-	transactAuth, err = getAuthWithUpdatedNonce(ctx, l1Reader, *transactAuth, nil)
+	transactAuth, err = getAuthWithUpdatedNonceFromL1(ctx, l1Reader, *transactAuth, nil)
 	if err != nil {
 		return nil, err
 	}
