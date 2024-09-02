@@ -375,7 +375,7 @@ func mainImpl() int {
 		dataPoster, err := arbnode.DataposterOnlyUsedToCreateValidatorWalletContract(
 			ctx,
 			l1Reader,
-			l1TransactionOptsBatchPoster,
+			l1TransactionOptsValidator,
 			&nodeConfig.Node.Staker.DataPoster,
 			new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
 		)
