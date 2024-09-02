@@ -274,6 +274,7 @@ clean:
 	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.o
 	rm -f arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/*.a
 	rm -f arbitrator/wasm-libraries/forward/*.wat
+	rm -rf brotli/buildfiles
 	rm -rf arbitrator/stylus/tests/*/target/ arbitrator/stylus/tests/*/*.wasm
 	@rm -rf contracts/build contracts/cache solgen/go/
 	@rm -f .make/*
@@ -558,15 +559,15 @@ contracts/test/prover/proofs/%.json: $(arbitrator_cases)/%.wasm $(prover_bin)
 .make/cbrotli-lib: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
 	test -f target/include/brotli/encode.h || ./scripts/build-brotli.sh -l
 	test -f target/include/brotli/decode.h || ./scripts/build-brotli.sh -l
-	test -f target/lib/libbrotlicommon-static.a || ./scripts/build-brotli.sh -l
-	test -f target/lib/libbrotlienc-static.a || ./scripts/build-brotli.sh -l
-	test -f target/lib/libbrotlidec-static.a || ./scripts/build-brotli.sh -l
+	test -f target/lib/libbrotlicommon.a || ./scripts/build-brotli.sh -l
+	test -f target/lib/libbrotlienc.a || ./scripts/build-brotli.sh -l
+	test -f target/lib/libbrotlidec.a || ./scripts/build-brotli.sh -l
 	@touch $@
 
 .make/cbrotli-wasm: $(DEP_PREDICATE) $(ORDER_ONLY_PREDICATE) .make
-	test -f target/lib-wasm/libbrotlicommon-static.a || ./scripts/build-brotli.sh -w -d
-	test -f target/lib-wasm/libbrotlienc-static.a || ./scripts/build-brotli.sh -w -d
-	test -f target/lib-wasm/libbrotlidec-static.a || ./scripts/build-brotli.sh -w -d
+	test -f target/lib-wasm/libbrotlicommon.a || ./scripts/build-brotli.sh -w -d
+	test -f target/lib-wasm/libbrotlienc.a || ./scripts/build-brotli.sh -w -d
+	test -f target/lib-wasm/libbrotlidec.a || ./scripts/build-brotli.sh -w -d
 	@touch $@
 
 .make/wasm-lib: $(DEP_PREDICATE) arbitrator/wasm-libraries/soft-float/SoftFloat/build/Wasm-Clang/softfloat.a  $(ORDER_ONLY_PREDICATE) .make

@@ -96,7 +96,7 @@ if $BUILD_WASM; then
     mkdir -p buildfiles/install-wasm
     TEMP_INSTALL_DIR_ABS=`cd -P buildfiles/install-wasm; pwd`
     cd buildfiles/build-wasm
-    cmake ../../ -DCMAKE_C_COMPILER=emcc -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS=-fPIC -DCMAKE_INSTALL_PREFIX="$TEMP_INSTALL_DIR_ABS" -DCMAKE_AR=`which emar` -DCMAKE_RANLIB=`which touch`
+    cmake ../../ -DCMAKE_C_COMPILER=emcc -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_FLAGS=-fPIC -DCMAKE_INSTALL_PREFIX="$TEMP_INSTALL_DIR_ABS" -DCMAKE_AR=`which emar` -DCMAKE_RANLIB=`which touch` -DBUILD_SHARED_LIBS=OFF
     make -j
     make install
     cp -rv "$TEMP_INSTALL_DIR_ABS/lib" "$TARGET_DIR_ABS/lib-wasm"
@@ -106,7 +106,7 @@ fi
 if $BUILD_LOCAL; then
     mkdir -p buildfiles/build-local
     cd buildfiles/build-local
-    cmake ../../ -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$TARGET_DIR_ABS"
+    cmake ../../ -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX="$TARGET_DIR_ABS" -DBUILD_SHARED_LIBS=OFF
     make -j
     make install
     cd ..
