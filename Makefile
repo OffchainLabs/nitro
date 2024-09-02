@@ -31,6 +31,14 @@ ifneq ($(origin GOLANG_LDFLAGS),undefined)
  GOLANG_PARAMS = -ldflags="-extldflags '-ldl' $(GOLANG_LDFLAGS)"
 endif
 
+UNAME_S := $(shell uname -s)
+
+# In Mac OSX, there are a lot of warnings emitted if these environment variables aren't set.
+ifeq ($(UNAME_S), Darwin)
+  export MACOSX_DEPLOYMENT_TARGET := $(shell sw_vers -productVersion)
+  export CGO_LDFLAGS := -Wl,-no_warn_duplicate_libraries
+endif
+
 precompile_names = AddressTable Aggregator BLS Debug FunctionTable GasInfo Info osTest Owner RetryableTx Statistics Sys
 precompiles = $(patsubst %,./solgen/generated/%.go, $(precompile_names))
 
