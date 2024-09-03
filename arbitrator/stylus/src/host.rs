@@ -13,7 +13,6 @@ use arbutil::{
 };
 use caller_env::GuestPtr;
 use eyre::Result;
-use prover::value::Value;
 use std::{
     fmt::Display,
     mem::{self, MaybeUninit},
