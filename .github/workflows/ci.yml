@@ -33,14 +33,6 @@ jobs:
         test-mode: [defaults, race, challenge, stylus, long, redis]
 
     steps:
-      - name: Move repo to avoid too long file paths
-        run: |
-          mkdir /tmp/gha-work
-          cd /tmp/gha-work
-          rm -rf $GITHUB_WORKSPACE
-          # Link the original workspace to the new workspace directory
-          ln -sv /tmp/gha-work $GITHUB_WORKSPACE
-
       - name: Checkout
         uses: actions/checkout@v4
         with:
@@ -137,11 +129,11 @@ jobs:
           path: |
             ~/.cargo/registry/
             ~/.cargo/git/
-            arbitrator/target/
+            arbitrator/**/target/
             arbitrator/wasm-libraries/target/
             arbitrator/wasm-libraries/soft-float/SoftFloat/build
             target/etc/initial-machine-cache/
-          key: v1-${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}-${{ matrix.test-mode }}
+          key: v2-${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-min-${{ hashFiles('arbitrator/Cargo.lock') }}-${{ matrix.test-mode }}
           restore-keys: v1-${{ runner.os }}-cargo-${{ steps.install-rust.outputs.rustc_hash }}-
 
       - name: Cache cbrotli
@@ -188,8 +180,6 @@ jobs:
 
       - name: Set environment variables
         run: |
-          mkdir -p target/tmp/x
-          echo "TMPDIR=$(pwd)/target/tmp/x" >> "$GITHUB_ENV"
           echo "GOMEMLIMIT=6GiB" >> "$GITHUB_ENV"
           echo "GOGC=80" >> "$GITHUB_ENV"
 
@@ -245,7 +235,7 @@ jobs:
 
       - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v2
-        if: matrix.test-mode == 'defaults'
+        if: false
         with:
           fail_ci_if_error: false
           files: ./coverage.txt,./coverage-redis.txt
