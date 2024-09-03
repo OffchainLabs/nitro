@@ -423,6 +423,7 @@ func extractSnapshot(archive string, location string, importWasm bool) error {
 	if err != nil {
 		return fmt.Errorf("couln't open init '%v' archive: %w", archive, err)
 	}
+	defer reader.Close()
 	stat, err := reader.Stat()
 	if err != nil {
 		return err
