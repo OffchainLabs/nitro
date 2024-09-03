@@ -362,6 +362,7 @@ func TestLength(t *testing.T) {
 				if err != nil {
 					t.Fatalf("Length() unexpected error: %v", err)
 				}
+				// #nosec G115
 				if want := arbmath.MaxInt(0, 20-int(tc.pruneFrom)); got != want {
 					t.Errorf("Length() = %d want %d", got, want)
 				}

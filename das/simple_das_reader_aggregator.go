@@ -50,8 +50,8 @@ var DefaultRestfulClientAggregatorConfig = RestfulClientAggregatorConfig{
 }
 
 type SimpleExploreExploitStrategyConfig struct {
-	ExploreIterations int `koanf:"explore-iterations"`
-	ExploitIterations int `koanf:"exploit-iterations"`
+	ExploreIterations uint32 `koanf:"explore-iterations"`
+	ExploitIterations uint32 `koanf:"exploit-iterations"`
 }
 
 var DefaultSimpleExploreExploitStrategyConfig = SimpleExploreExploitStrategyConfig{
@@ -73,8 +73,8 @@ func RestfulClientAggregatorConfigAddOptions(prefix string, f *flag.FlagSet) {
 }
 
 func SimpleExploreExploitStrategyConfigAddOptions(prefix string, f *flag.FlagSet) {
-	f.Int(prefix+".explore-iterations", DefaultSimpleExploreExploitStrategyConfig.ExploreIterations, "number of consecutive GetByHash calls to the aggregator where each call will cause it to randomly select from REST endpoints until one returns successfully, before switching to exploit mode")
-	f.Int(prefix+".exploit-iterations", DefaultSimpleExploreExploitStrategyConfig.ExploitIterations, "number of consecutive GetByHash calls to the aggregator where each call will cause it to select from REST endpoints in order of best latency and success rate, before switching to explore mode")
+	f.Uint32(prefix+".explore-iterations", DefaultSimpleExploreExploitStrategyConfig.ExploreIterations, "number of consecutive GetByHash calls to the aggregator where each call will cause it to randomly select from REST endpoints until one returns successfully, before switching to exploit mode")
+	f.Uint32(prefix+".exploit-iterations", DefaultSimpleExploreExploitStrategyConfig.ExploitIterations, "number of consecutive GetByHash calls to the aggregator where each call will cause it to select from REST endpoints in order of best latency and success rate, before switching to explore mode")
 }
 
 func NewRestfulClientAggregator(ctx context.Context, config *RestfulClientAggregatorConfig) (*SimpleDASReaderAggregator, error) {
@@ -120,8 +120,8 @@ func NewRestfulClientAggregator(ctx context.Context, config *RestfulClientAggreg
 	switch strings.ToLower(config.Strategy) {
 	case "simple-explore-exploit":
 		a.strategy = &simpleExploreExploitStrategy{
-			exploreIterations: uint32(config.SimpleExploreExploitStrategy.ExploreIterations),
-			exploitIterations: uint32(config.SimpleExploreExploitStrategy.ExploitIterations),
+			exploreIterations: config.SimpleExploreExploitStrategy.ExploreIterations,
+			exploitIterations: config.SimpleExploreExploitStrategy.ExploitIterations,
 		}
 	case "testing-sequential":
 		a.strategy = &testingSequentialStrategy{}

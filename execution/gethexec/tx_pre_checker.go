@@ -161,6 +161,7 @@ func PreCheckTx(bc *core.BlockChain, chainConfig *params.ChainConfig, header *ty
 			oldHeader := header
 			blocksTraversed := uint(0)
 			// find a block that's old enough
+			// #nosec G115
 			for now-int64(oldHeader.Time) < config.RequiredStateAge &&
 				(config.RequiredStateMaxBlocks <= 0 || blocksTraversed < config.RequiredStateMaxBlocks) &&
 				oldHeader.Number.Uint64() > 0 {

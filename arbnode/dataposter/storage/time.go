@@ -34,11 +34,13 @@ func (b *RlpTime) DecodeRLP(s *rlp.Stream) error {
 	if err != nil {
 		return err
 	}
+	// #nosec G115
 	*b = RlpTime(time.Unix(int64(enc.Seconds), int64(enc.Nanos)))
 	return nil
 }
 
 func (b RlpTime) EncodeRLP(w io.Writer) error {
+	// #nosec G115
 	return rlp.Encode(w, rlpTimeEncoding{
 		Seconds: uint64(time.Time(b).Unix()),
 		Nanos:   uint64(time.Time(b).Nanosecond()),

@@ -371,7 +371,21 @@ func mainImpl() int {
 		if err != nil {
 			log.Crit("error getting rollup addresses config", "err", err)
 		}
-		addr, err := validatorwallet.GetValidatorWalletContract(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1TransactionOptsValidator, l1Reader, true)
+
+		dataPoster, err := arbnode.DataposterOnlyUsedToCreateValidatorWalletContract(
+			ctx,
+			l1Reader,
+			l1TransactionOptsValidator,
+			&nodeConfig.Node.Staker.DataPoster,
+			new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
+		)
+		if err != nil {
+			log.Crit("error creating data poster to create validator wallet contract", "err", err)
+		}
+		getExtraGas := func() uint64 { return nodeConfig.Node.Staker.ExtraGas }
+
+		// #nosec G115
+		addr, err := validatorwallet.GetValidatorWalletContract(ctx, deployInfo.ValidatorWalletCreator, int64(deployInfo.DeployedAt), l1Reader, true, dataPoster, getExtraGas)
 		if err != nil {
 			log.Crit("error creating validator wallet contract", "error", err, "address", l1TransactionOptsValidator.From.Hex())
 		}
@@ -582,7 +596,7 @@ func mainImpl() int {
 		l1TransactionOptsBatchPoster,
 		dataSigner,
 		fatalErrChan,
-		big.NewInt(int64(nodeConfig.ParentChain.ID)),
+		new(big.Int).SetUint64(nodeConfig.ParentChain.ID),
 		blobReader,
 	)
 	if err != nil {
