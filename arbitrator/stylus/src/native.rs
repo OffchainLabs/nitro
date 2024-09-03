@@ -352,13 +352,13 @@ pub fn activate(
     wasm: &[u8],
     codehash: &Bytes32,
     stylus_version: u16,
-    arbos_version: u64,
+    arbos_version_for_gas: u64,
     page_limit: u16,
     debug: bool,
     gas: &mut u64,
 ) -> Result<(ProverModule, StylusData)> {
     let (module, stylus_data) =
-        ProverModule::activate(wasm, codehash, stylus_version, arbos_version, page_limit, debug, gas)?;
+        ProverModule::activate(wasm, codehash, stylus_version, arbos_version_for_gas, page_limit, debug, gas)?;
 
     Ok((module, stylus_data))
 }

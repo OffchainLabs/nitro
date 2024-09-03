@@ -13,7 +13,6 @@ import (
 	"github.com/ethereum/go-ethereum/core/rawdb"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/log"
-	"github.com/ethereum/go-ethereum/params"
 )
 
 // SaveActiveProgramToWasmStore is used to save active stylus programs to wasm store during rebuilding
@@ -59,10 +58,10 @@ func (p Programs) SaveActiveProgramToWasmStore(statedb *state.StateDB, codeHash 
 
 	// nothing is charged, so gas and arbosVersion don't matter
 	unlimitedGas := uint64(0xffffffffffff)
-	arbosVersion := params.ArbosVersion_StylusActivationFix
+
 	// We know program is activated, so it must be in correct version and not use too much memory
 	// Empty program address is supplied because we dont have access to this during rebuilding of wasm store
-	info, asmMap, err := activateProgramInternal(statedb, common.Address{}, codeHash, wasm, progParams.PageLimit, program.version, arbosVersion, debugMode, &unlimitedGas)
+	info, asmMap, err := activateProgramInternal(statedb, common.Address{}, codeHash, wasm, progParams.PageLimit, program.version, 0, debugMode, &unlimitedGas)
 	if err != nil {
 		log.Error("failed to reactivate program while rebuilding wasm store", "expected moduleHash", moduleHash, "err", err)
 		return fmt.Errorf("failed to reactivate program while rebuilding wasm store: %w", err)

@@ -45,7 +45,7 @@ pub unsafe extern "C" fn programs__activate(
     init_cost_ptr: GuestPtr,
     cached_init_cost_ptr: GuestPtr,
     stylus_version: u16,
-    arbos_version: u64,
+    arbos_version_for_gas: u64,
     debug: u32,
     codehash: GuestPtr,
     module_hash_ptr: GuestPtr,
@@ -59,7 +59,7 @@ pub unsafe extern "C" fn programs__activate(
 
     let page_limit = STATIC_MEM.read_u16(pages_ptr);
     let gas_left = &mut STATIC_MEM.read_u64(gas_ptr);
-    match Module::activate(&wasm, codehash, stylus_version, arbos_version, page_limit, debug, gas_left) {
+    match Module::activate(&wasm, codehash, stylus_version, arbos_version_for_gas, page_limit, debug, gas_left) {
         Ok((module, data)) => {
             STATIC_MEM.write_u64(gas_ptr, *gas_left);
             STATIC_MEM.write_u16(pages_ptr, data.footprint);

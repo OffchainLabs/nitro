@@ -422,7 +422,7 @@ impl Module {
         wasm: &[u8],
         codehash: &Bytes32,
         stylus_version: u16,
-        arbos_version: u64,
+        arbos_version_for_gas: u64, // must only be used for activation gas
         page_limit: u16,
         debug: bool,
         gas: &mut u64,
@@ -447,35 +447,37 @@ impl Module {
             };
         }
 
-        // pay for wasm
-        let wasm_len = wasm.len() as u64;
-        if arbos_version >= ARBOS_VERSION_CHARGE_WASM_LEN {
-            pay!(wasm_len.saturating_mul(31_733) / 100_000);
-        }
-
         let compile = CompileConfig::version(stylus_version, debug);
         let (bin, stylus_data) = WasmBinary::parse_user(wasm, page_limit, &compile, codehash)
             .wrap_err("failed to parse wasm")?;
 
-        // pay for funcs
-        let funcs = bin.functions.len() as u64;
-        pay!(funcs.saturating_mul(17_263) / 100_000);
+        // pay for wasm
+        if arbos_version_for_gas >= ARBOS_VERSION_CHARGE_WASM_LEN {
+            let wasm_len = wasm.len() as u64;
+            pay!(wasm_len.saturating_mul(31_733) / 100_000);
+        }
 
-        // pay for data
-        let data = bin.datas.iter().map(|x| x.data.len()).saturating_sum() as u64;
-        pay!(data.saturating_mul(17_376) / 100_000);
+        if arbos_version_for_gas > 0 {
+            // pay for funcs
+            let funcs = bin.functions.len() as u64;
+            pay!(funcs.saturating_mul(17_263) / 100_000);
 
-        // pay for elements
-        let elems = bin.elements.iter().map(|x| x.range.len()).saturating_sum() as u64;
-        pay!(elems.saturating_mul(17_376) / 100_000);
+            // pay for data
+            let data = bin.datas.iter().map(|x| x.data.len()).saturating_sum() as u64;
+            pay!(data.saturating_mul(17_376) / 100_000);
 
-        // pay for memory
-        let mem = bin.memories.first().map(|x| x.initial).unwrap_or_default();
-        pay!(mem.saturating_mul(2217));
+            // pay for elements
+            let elems = bin.elements.iter().map(|x| x.range.len()).saturating_sum() as u64;
+            pay!(elems.saturating_mul(17_376) / 100_000);
 
-        // pay for code
-        let code = bin.codes.iter().map(|x| x.expr.len()).saturating_sum() as u64;
-        pay!(code.saturating_mul(535) / 1_000);
+            // pay for memory
+            let mem = bin.memories.first().map(|x| x.initial).unwrap_or_default();
+            pay!(mem.saturating_mul(2217));
+
+            // pay for code
+            let code = bin.codes.iter().map(|x| x.expr.len()).saturating_sum() as u64;
+            pay!(code.saturating_mul(535) / 1_000);
+        }
 
         let module = Self::from_user_binary(&bin, compile.debug.debug_funcs, Some(stylus_data))
             .wrap_err("failed to build user module")?;
