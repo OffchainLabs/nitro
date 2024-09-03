@@ -133,6 +133,9 @@ func verifySignature2(sig Signature, message []byte, publicKey PublicKey, keyVal
 	g2.X.SetOne()
 	g2.Y.SetOne()
 	rightSide, err := bls12381.Pair([]bls12381.G1Affine{*sig}, []bls12381.G2Affine{*g2})
+	if err != nil {
+		return false, err
+	}
 	return leftSide.Equal(&rightSide), nil
 }
 
