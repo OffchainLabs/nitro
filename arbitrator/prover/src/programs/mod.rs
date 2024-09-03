@@ -28,6 +28,8 @@ use {
     wasmer_types::{MemoryIndex, ModuleInfo},
 };
 
+const ARBOS_VERSION_CHARGE_WASM_LEN: u64 = 32;
+
 pub mod config;
 pub mod counter;
 pub mod depth;
@@ -419,7 +421,8 @@ impl Module {
     pub fn activate(
         wasm: &[u8],
         codehash: &Bytes32,
-        version: u16,
+        stylus_version: u16,
+        arbos_version: u64,
         page_limit: u16,
         debug: bool,
         gas: &mut u64,
@@ -446,9 +449,11 @@ impl Module {
 
         // pay for wasm
         let wasm_len = wasm.len() as u64;
-        pay!(wasm_len.saturating_mul(31_733 / 100_000));
+        if arbos_version >= ARBOS_VERSION_CHARGE_WASM_LEN {
+            pay!(wasm_len.saturating_mul(31_733) / 100_000);
+        }
 
-        let compile = CompileConfig::version(version, debug);
+        let compile = CompileConfig::version(stylus_version, debug);
         let (bin, stylus_data) = WasmBinary::parse_user(wasm, page_limit, &compile, codehash)
             .wrap_err("failed to parse wasm")?;
 

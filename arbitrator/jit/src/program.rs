@@ -25,7 +25,8 @@ pub fn activate(
     asm_estimate_ptr: GuestPtr,
     init_cost_ptr: GuestPtr,
     cached_init_cost_ptr: GuestPtr,
-    version: u16,
+    stylus_version: u16,
+    arbos_version: u64,
     debug: u32,
     codehash: GuestPtr,
     module_hash_ptr: GuestPtr,
@@ -40,7 +41,7 @@ pub fn activate(
 
     let page_limit = mem.read_u16(pages_ptr);
     let gas_left = &mut mem.read_u64(gas_ptr);
-    match Module::activate(&wasm, codehash, version, page_limit, debug, gas_left) {
+    match Module::activate(&wasm, codehash, stylus_version, arbos_version, page_limit, debug, gas_left) {
         Ok((module, data)) => {
             mem.write_u64(gas_ptr, *gas_left);
             mem.write_u16(pages_ptr, data.footprint);

@@ -29,6 +29,7 @@ import (
 	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
+	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos/burn"
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/arbutil"
@@ -51,11 +52,12 @@ func activateProgram(
 	codehash common.Hash,
 	wasm []byte,
 	page_limit uint16,
-	version uint16,
+	stylusVersion uint16,
+	arbosVersion uint64,
 	debug bool,
 	burner burn.Burner,
 ) (*activationInfo, error) {
-	info, asmMap, err := activateProgramInternal(db, program, codehash, wasm, page_limit, version, debug, burner.GasLeft())
+	info, asmMap, err := activateProgramInternal(db, program, codehash, wasm, page_limit, stylusVersion, arbosVersion, debug, burner.GasLeft())
 	if err != nil {
 		return nil, err
 	}
@@ -69,7 +71,8 @@ func activateProgramInternal(
 	codehash common.Hash,
 	wasm []byte,
 	page_limit uint16,
-	version uint16,
+	stylusVersion uint16,
+	arbosVersion uint64,
 	debug bool,
 	gasLeft *uint64,
 ) (*activationInfo, map[ethdb.WasmTarget][]byte, error) {
@@ -81,7 +84,8 @@ func activateProgramInternal(
 	status_mod := userStatus(C.stylus_activate(
 		goSlice(wasm),
 		u16(page_limit),
-		u16(version),
+		u16(stylusVersion),
+		u64(arbosVersion),
 		cbool(debug),
 		output,
 		&codeHash,
@@ -168,9 +172,13 @@ func getLocalAsm(statedb vm.StateDB, moduleHash common.Hash, addressForLogging c
 		return nil, fmt.Errorf("failed to reactivate program address: %v err: %w", addressForLogging, err)
 	}
 
+	// gas used for activation charging, which doesn't matter here
 	unlimitedGas := uint64(0xffffffffffff)
+	// arbosVersion used only for charging, which won't happen here so doesn't matter
+	arbosVersion := params.ArbosVersion_StylusActivationFix
+
 	// we know program is activated, so it must be in correct version and not use too much memory
-	info, asmMap, err := activateProgramInternal(statedb, addressForLogging, codeHash, wasm, pagelimit, program.version, debugMode, &unlimitedGas)
+	info, asmMap, err := activateProgramInternal(statedb, addressForLogging, codeHash, wasm, pagelimit, program.version, arbosVersion, debugMode, &unlimitedGas)
 	if err != nil {
 		log.Error("failed to reactivate program", "address", addressForLogging, "expected moduleHash", moduleHash, "err", err)
 		return nil, fmt.Errorf("failed to reactivate program address: %v err: %w", addressForLogging, err)
