@@ -110,6 +110,7 @@ func pseudorandomAccountInitInfoForTesting(prand *testhelpers.PseudoRandomDataSo
 }
 
 func pseudorandomHashHashMapForTesting(prand *testhelpers.PseudoRandomDataSource, maxItems uint64) map[common.Hash]common.Hash {
+	// #nosec G115
 	size := int(prand.GetUint64() % maxItems)
 	ret := make(map[common.Hash]common.Hash)
 	for i := 0; i < size; i++ {
