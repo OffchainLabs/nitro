@@ -111,10 +111,12 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 				req, err := c.Consume(ctx)
 				if err != nil {
 					log.Error("Consuming request", "error", err)
+					requestTokenQueue <- struct{}{}
 					return 0
 				}
 				if req == nil {
-					// There's nothing in the queue.
+					// There's nothing in the queue
+					requestTokenQueue <- struct{}{}
 					return time.Second
 				}
 				select {
