@@ -95,7 +95,7 @@ func removeStatesFromDb(t *testing.T, bc *core.BlockChain, db ethdb.Database, fr
 func TestRecreateStateForRPCNoDepthLimit(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	execConfig := ExecConfigDefaultTest()
+	execConfig := ExecConfigDefaultTest(t)
 	execConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
 	execConfig.Sequencer.MaxBlockSpeed = 0
 	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
@@ -134,7 +134,7 @@ func TestRecreateStateForRPCBigEnoughDepthLimit(t *testing.T) {
 	defer cancel()
 	// #nosec G115
 	depthGasLimit := int64(256 * util.NormalizeL2GasForL1GasInitial(800_000, params.GWei))
-	execConfig := ExecConfigDefaultTest()
+	execConfig := ExecConfigDefaultTest(t)
 	execConfig.RPC.MaxRecreateStateDepth = depthGasLimit
 	execConfig.Sequencer.MaxBlockSpeed = 0
 	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
@@ -171,7 +171,7 @@ func TestRecreateStateForRPCBigEnoughDepthLimit(t *testing.T) {
 func TestRecreateStateForRPCDepthLimitExceeded(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	execConfig := ExecConfigDefaultTest()
+	execConfig := ExecConfigDefaultTest(t)
 	execConfig.RPC.MaxRecreateStateDepth = int64(200)
 	execConfig.Sequencer.MaxBlockSpeed = 0
 	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
@@ -208,7 +208,7 @@ func TestRecreateStateForRPCMissingBlockParent(t *testing.T) {
 	var headerCacheLimit uint64 = 512
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	execConfig := ExecConfigDefaultTest()
+	execConfig := ExecConfigDefaultTest(t)
 	execConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
 	execConfig.Sequencer.MaxBlockSpeed = 0
 	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
@@ -256,7 +256,7 @@ func TestRecreateStateForRPCBeyondGenesis(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	execConfig := ExecConfigDefaultTest()
+	execConfig := ExecConfigDefaultTest(t)
 	execConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
 	execConfig.Sequencer.MaxBlockSpeed = 0
 	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
@@ -294,7 +294,7 @@ func TestRecreateStateForRPCBlockNotFoundWhileRecreating(t *testing.T) {
 	var blockCacheLimit uint64 = 256
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	execConfig := ExecConfigDefaultTest()
+	execConfig := ExecConfigDefaultTest(t)
 	execConfig.RPC.MaxRecreateStateDepth = arbitrum.InfiniteMaxRecreateStateDepth
 	execConfig.Sequencer.MaxBlockSpeed = 0
 	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
@@ -342,7 +342,7 @@ func testSkippingSavingStateAndRecreatingAfterRestart(t *testing.T, cacheConfig 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
-	execConfig := ExecConfigDefaultTest()
+	execConfig := ExecConfigDefaultTest(t)
 	execConfig.RPC.MaxRecreateStateDepth = maxRecreateStateDepth
 	execConfig.Sequencer.MaxBlockSpeed = 0
 	execConfig.Sequencer.MaxTxDataSize = 150 // 1 test tx ~= 110
@@ -483,7 +483,7 @@ func TestSkippingSavingStateAndRecreatingAfterRestart(t *testing.T) {
 func TestGettingStateForRPCFullNode(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	execConfig := ExecConfigDefaultTest()
+	execConfig := ExecConfigDefaultTest(t)
 	execConfig.Caching.SnapshotCache = 0 // disable snapshots
 	execConfig.Caching.BlockAge = 0      // use only Caching.BlockCount to keep only last N blocks in dirties cache, no matter how new they are
 	execConfig.Sequencer.MaxBlockSpeed = 0
@@ -527,7 +527,7 @@ func TestGettingStateForRPCFullNode(t *testing.T) {
 func TestGettingStateForRPCHybridArchiveNode(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
-	execConfig := ExecConfigDefaultTest()
+	execConfig := ExecConfigDefaultTest(t)
 	execConfig.Caching.Archive = true
 	// For now Archive node should use HashScheme
 	execConfig.Caching.StateScheme = rawdb.HashScheme

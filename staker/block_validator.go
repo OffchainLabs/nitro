@@ -500,7 +500,7 @@ func (v *BlockValidator) sendRecord(s *validationStatus) error {
 
 //nolint:gosec
 func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoot common.Hash) error {
-	input, err := validationEntry.ToInput([]rawdb.Target{rawdb.TargetWavm})
+	input, err := validationEntry.ToInput([]ethdb.WasmTarget{rawdb.TargetWavm})
 	if err != nil {
 		return err
 	}
