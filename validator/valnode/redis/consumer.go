@@ -154,9 +154,10 @@ func (s *ValidationServer) Start(ctx_in context.Context) {
 				res, err := valRun.Await(ctx)
 				if err != nil {
 					log.Error("Error validating", "request value", work.req.Value, "error", err)
-				}
-				if err := s.consumers[work.moduleRoot].SetResult(ctx, work.req.ID, res); err != nil {
-					log.Error("Error setting result for request", "id", work.req.ID, "result", res, "error", err)
+				} else {
+					if err := s.consumers[work.moduleRoot].SetResult(ctx, work.req.ID, res); err != nil {
+						log.Error("Error setting result for request", "id", work.req.ID, "result", res, "error", err)
+					}
 				}
 				select {
 				case <-ctx.Done():
