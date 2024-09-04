@@ -178,6 +178,28 @@ func testCompileArch(store bool) error {
 	return nil
 }
 
+func resetNativeTarget() error {
+	output := &rustBytes{}
+
+	_, err := fmt.Print("resetting native target\n")
+	if err != nil {
+		return err
+	}
+
+	localCompileName := []byte("local")
+
+	status := C.stylus_target_set(goSlice(localCompileName),
+		goSlice([]byte{}),
+		output,
+		cbool(true))
+
+	if status != 0 {
+		return fmt.Errorf("failed setting compilation target arm: %v", string(output.intoBytes()))
+	}
+
+	return nil
+}
+
 func testCompileLoad() error {
 	filePath := "../../target/testdata/host.bin"
 	localTarget := rawdb.LocalTarget()
