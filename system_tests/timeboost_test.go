@@ -218,7 +218,7 @@ func TestSequencerFeed_ExpressLaneAuction_InnerPayloadNoncesAreRespected(t *test
 	}(&wg)
 	wg.Wait()
 	if err2 == nil {
-		t.Fatal("Charlie should not be able to send tx with nonce 2")
+		t.Fatal("Charlie should not be able to send tx with nonce 1")
 	}
 	// After round is done, verify that Charlie beats Alice in the final sequence, and that the emitted txs
 	// for Charlie are correct.

@@ -137,7 +137,7 @@ func Test_expressLaneService_validateExpressLaneTx(t *testing.T) {
 				Signature:              []byte{'b'},
 				Round:                  100,
 			},
-			expectedErr: timeboost.ErrNoOnchainController,
+			expectedErr: timeboost.ErrBadRoundNumber,
 		},
 		{
 			name: "malformed signature",
@@ -320,6 +320,10 @@ func Test_expressLaneService_sequenceExpressLaneSubmission_outOfOrder(t *testing
 	// We should have only published 2, as we are missing sequence number 3.
 	require.Equal(t, 2, numPublished)
 	require.Equal(t, len(messages), len(els.messagesBySequenceNumber))
+
+	err := els.sequenceExpressLaneSubmission(ctx, &timeboost.ExpressLaneSubmission{Sequence: 3}, publishFn)
+	require.NoError(t, err)
+	require.Equal(t, 5, numPublished)
 }
 
 func Test_expressLaneService_sequenceExpressLaneSubmission_erroredTx(t *testing.T) {

@@ -309,6 +309,10 @@ func (bv *BidValidator) validateBid(
 	// Recover the public key.
 	sigItem := make([]byte, len(bid.Signature))
 	copy(sigItem, bid.Signature)
+
+	// Signature verification expects the last byte of the signature to have 27 subtracted,
+	// as it represents the recovery ID. If the last byte is greater than or equal to 27, it indicates a recovery ID that hasn't been adjusted yet,
+	// it's needed for internal signature verification logic.
 	if sigItem[len(sigItem)-1] >= 27 {
 		sigItem[len(sigItem)-1] -= 27
 	}

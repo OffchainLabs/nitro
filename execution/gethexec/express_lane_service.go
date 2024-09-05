@@ -209,6 +209,8 @@ func (es *expressLaneService) isWithinAuctionCloseWindow(arrivalTime time.Time) 
 	return timeToNextRound <= es.auctionClosing
 }
 
+// Sequence express lane submission skips validation of the express lane message itself,
+// as the core validator logic is handled in `validateExpressLaneTx“
 func (es *expressLaneService) sequenceExpressLaneSubmission(
 	ctx context.Context,
 	msg *timeboost.ExpressLaneSubmission,
@@ -292,6 +294,10 @@ func (es *expressLaneService) validateExpressLaneTx(msg *timeboost.ExpressLaneSu
 	prefixed := crypto.Keccak256(append([]byte(fmt.Sprintf("\x19Ethereum Signed Message:\n%d", len(signingMessage))), signingMessage...))
 	sigItem := make([]byte, len(msg.Signature))
 	copy(sigItem, msg.Signature)
+
+	// Signature verification expects the last byte of the signature to have 27 subtracted,
+	// as it represents the recovery ID. If the last byte is greater than or equal to 27, it indicates a recovery ID that hasn't been adjusted yet,
+	// it's needed for internal signature verification logic.
 	if sigItem[len(sigItem)-1] >= 27 {
 		sigItem[len(sigItem)-1] -= 27
 	}
