@@ -7,6 +7,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/rawdb"
+	"github.com/ethereum/go-ethereum/ethdb"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/offchainlabs/nitro/pubsub"
 	"github.com/offchainlabs/nitro/util/containers"
@@ -35,7 +36,7 @@ func (c ValidationClientConfig) Enabled() bool {
 
 func (c ValidationClientConfig) Validate() error {
 	for _, arch := range c.StylusArchs {
-		if !rawdb.Target(arch).IsValid() {
+		if !rawdb.IsSupportedWasmTarget(ethdb.WasmTarget(arch)) {
 			return fmt.Errorf("Invalid stylus arch: %v", arch)
 		}
 	}
@@ -163,10 +164,10 @@ func (c *ValidationClient) Name() string {
 	return c.config.Name
 }
 
-func (c *ValidationClient) StylusArchs() []rawdb.Target {
-	stylusArchs := make([]rawdb.Target, 0, len(c.config.StylusArchs))
+func (c *ValidationClient) StylusArchs() []ethdb.WasmTarget {
+	stylusArchs := make([]ethdb.WasmTarget, 0, len(c.config.StylusArchs))
 	for _, arch := range c.config.StylusArchs {
-		stylusArchs = append(stylusArchs, rawdb.Target(arch))
+		stylusArchs = append(stylusArchs, ethdb.WasmTarget(arch))
 	}
 	return stylusArchs
 }
