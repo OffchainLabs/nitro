@@ -1023,16 +1023,6 @@ func (s *TransactionStreamer) WriteMessageFromSequencer(
 	}
 
 	s.broadcastMessages([]arbostypes.MessageWithMetadataAndBlockHash{msgWithBlockHash}, pos)
-	s.espressoTxnsStateInsertionMutex.Lock()
-	defer s.espressoTxnsStateInsertionMutex.Unlock()
-
-	if arbos.IsEspressoMsg(msgWithMeta.Message) {
-		err = s.SubmitEspressoTransactionPos(pos, s.db.NewBatch())
-		if err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 
@@ -1454,12 +1444,7 @@ func (s *TransactionStreamer) submitEspressoTransactions(ctx context.Context, ig
 			return s.config().EspressoTxnsPollingInterval
 		}
 
-		espressoTx := espressoTypes.Transaction{
-			Payload:   bytes[0],
-			Namespace: s.config().EspressoNamespace,
-		}
-
-		log.Info("submitting transaction to espresso using sovereign sequencer", "tx", espressoTx)
+		log.Info("submitting transaction to espresso using sovereign sequencer")
 
 		hash, err := s.espressoClient.SubmitTransaction(ctx, espressoTypes.Transaction{
 			Payload:   bytes[0],

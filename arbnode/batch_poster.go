@@ -1315,6 +1315,17 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 			)
 			break
 		}
+
+		// If the message is an Espresso message, store the pos in the database to be used later
+		// to submit the message to hotshot for finalization.
+		if arbos.IsEspressoMsg(msg.Message) {
+			err = b.streamer.SubmitEspressoTransactionPos(b.building.msgCount, b.streamer.db.NewBatch())
+			if err != nil {
+				log.Error("failed to submit espresso transaction pos", "pos", b.building.msgCount, "err", err)
+				break
+			}
+		}
+
 		err = b.addEspressoBlockMerkleProof(ctx, msg)
 		if err != nil {
 			return false, fmt.Errorf("error adding hotshot block merkle proof to justification: %w", err)
