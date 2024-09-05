@@ -4,9 +4,12 @@ import (
 	"context"
 	"math/big"
 	"testing"
+	"time"
+
+	"github.com/offchainlabs/nitro/arbnode"
 )
 
-func TestBasicL3(t *testing.T) {
+func TestSimpleL3(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -15,19 +18,34 @@ func TestBasicL3(t *testing.T) {
 	cleanupL1AndL2 := builder.Build(t)
 	defer cleanupL1AndL2()
 
-	cleanupL3 := builder.BuildL3OnL2(t)
-	defer cleanupL3()
+	cleanupL3FirstNode := builder.BuildL3OnL2(t)
+	defer cleanupL3FirstNode()
+	firstNodeTestClient := builder.L3
 
-	builder.L3Info.GenerateAccount("User2")
-	tx := builder.L3Info.PrepareTx("Owner", "User2", builder.L3Info.TransferGas, big.NewInt(1e12), nil)
+	secondNodeNodeConfig := arbnode.ConfigDefaultL1NonSequencerTest()
+	secondNodeTestClient, cleanupL3SecondNode := builder.Build2ndNodeOnL3(t, &SecondNodeParams{nodeConfig: secondNodeNodeConfig})
+	defer cleanupL3SecondNode()
 
-	err := builder.L3.Client.SendTransaction(ctx, tx)
+	accountName := "User2"
+	builder.L3Info.GenerateAccount(accountName)
+	tx := builder.L3Info.PrepareTx("Owner", accountName, builder.L3Info.TransferGas, big.NewInt(1e12), nil)
+
+	err := firstNodeTestClient.Client.SendTransaction(ctx, tx)
 	Require(t, err)
 
-	_, err = builder.L3.EnsureTxSucceeded(tx)
+	// Checks that first node has the correct balance
+	_, err = firstNodeTestClient.EnsureTxSucceeded(tx)
 	Require(t, err)
+	l2balance, err := firstNodeTestClient.Client.BalanceAt(ctx, builder.L3Info.GetAddress(accountName), nil)
+	Require(t, err)
+	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
+		t.Fatal("Unexpected balance:", l2balance)
+	}
 
-	l2balance, err := builder.L3.Client.BalanceAt(ctx, builder.L3Info.GetAddress("User2"), nil)
+	// Checks that second node has the correct balance
+	_, err = WaitForTx(ctx, secondNodeTestClient.Client, tx.Hash(), time.Second*15)
+	Require(t, err)
+	l2balance, err = secondNodeTestClient.Client.BalanceAt(ctx, builder.L3Info.GetAddress(accountName), nil)
 	Require(t, err)
 	if l2balance.Cmp(big.NewInt(1e12)) != 0 {
 		t.Fatal("Unexpected balance:", l2balance)
