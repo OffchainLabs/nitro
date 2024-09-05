@@ -527,59 +527,28 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T, nitroConfig *NitroConfig) func()
 }
 
 func (b *NodeBuilder) BuildL2OnL1(t *testing.T) func() {
-	if b.L1 == nil {
-		t.Fatal("must build L1 before building L2")
-	}
-	b.L2 = NewTestClient(b.ctx)
+	b.L2 = buildOnParentChain(
+		t,
+		b.ctx,
 
-	var l2chainDb ethdb.Database
-	var l2arbDb ethdb.Database
-	var l2blockchain *core.BlockChain
-	_, b.L2.Stack, l2chainDb, l2arbDb, l2blockchain = createNonL1BlockChainWithStackConfig(
-		t, b.L2Info, b.dataDir, b.chainConfig, b.initMessage, b.l2StackConfig, b.execConfig)
+		b.dataDir,
 
-	var sequencerTxOptsPtr *bind.TransactOpts
-	var dataSigner signature.DataSignerFunc
-	if b.isSequencer {
-		sequencerTxOpts := b.L1Info.GetDefaultTransactOpts("Sequencer", b.ctx)
-		sequencerTxOptsPtr = &sequencerTxOpts
-		dataSigner = signature.DataSignerFromPrivateKey(b.L1Info.GetInfoWithPrivKey("Sequencer").PrivateKey)
-	} else {
-		b.nodeConfig.BatchPoster.Enable = false
-		b.nodeConfig.Sequencer = false
-		b.nodeConfig.DelayedSequencer.Enable = false
-		b.execConfig.Sequencer.Enable = false
-	}
+		b.L1Info,
+		b.L1,
+		big.NewInt(1337),
 
-	var validatorTxOptsPtr *bind.TransactOpts
-	if b.nodeConfig.Staker.Enable {
-		validatorTxOpts := b.L1Info.GetDefaultTransactOpts("Validator", b.ctx)
-		validatorTxOptsPtr = &validatorTxOpts
-	}
+		b.chainConfig,
+		b.l2StackConfig,
+		b.execConfig,
+		b.nodeConfig,
+		b.valnodeConfig,
+		b.isSequencer,
+		b.L2Info,
 
-	AddValNodeIfNeeded(t, b.ctx, b.nodeConfig, true, "", b.valnodeConfig.Wasm.RootPath)
+		b.initMessage,
+		b.addresses,
+	)
 
-	Require(t, b.execConfig.Validate())
-	execConfig := b.execConfig
-	execConfigFetcher := func() *gethexec.Config { return execConfig }
-	execNode, err := gethexec.CreateExecutionNode(b.ctx, b.L2.Stack, l2chainDb, l2blockchain, b.L1.Client, execConfigFetcher)
-	Require(t, err)
-
-	fatalErrChan := make(chan error, 10)
-	b.L2.ConsensusNode, err = arbnode.CreateNode(
-		b.ctx, b.L2.Stack, execNode, l2arbDb, NewFetcherFromConfig(b.nodeConfig), l2blockchain.Config(), b.L1.Client,
-		b.addresses, validatorTxOptsPtr, sequencerTxOptsPtr, dataSigner, fatalErrChan, big.NewInt(1337), nil)
-	Require(t, err)
-
-	err = b.L2.ConsensusNode.Start(b.ctx)
-	Require(t, err)
-
-	b.L2.Client = ClientForStack(t, b.L2.Stack)
-
-	StartWatchChanErr(t, b.ctx, fatalErrChan, b.L2.ConsensusNode)
-
-	b.L2.ExecNode = getExecNode(t, b.L2.ConsensusNode)
-	b.L2.cleanup = func() { b.L2.ConsensusNode.StopAndWait() }
 	return func() {
 		b.L2.cleanup()
 		if b.L1 != nil && b.L1.cleanup != nil {
