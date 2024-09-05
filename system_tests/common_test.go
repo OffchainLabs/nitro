@@ -1220,10 +1220,10 @@ func createL2BlockChain(
 }
 
 func createNonL1BlockChainWithStackConfig(
-	t *testing.T, l2info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, stackConfig *node.Config, execConfig *gethexec.Config,
+	t *testing.T, info *BlockchainTestInfo, dataDir string, chainConfig *params.ChainConfig, initMessage *arbostypes.ParsedInitMessage, stackConfig *node.Config, execConfig *gethexec.Config,
 ) (*BlockchainTestInfo, *node.Node, ethdb.Database, ethdb.Database, *core.BlockChain) {
-	if l2info == nil {
-		l2info = NewArbTestInfo(t, chainConfig.ChainID)
+	if info == nil {
+		info = NewArbTestInfo(t, chainConfig.ChainID)
 	}
 	if stackConfig == nil {
 		stackConfig = testhelpers.CreateStackConfigForTest(dataDir)
@@ -1243,7 +1243,7 @@ func createNonL1BlockChainWithStackConfig(
 	arbDb, err := stack.OpenDatabaseWithExtraOptions("arbitrumdata", 0, 0, "arbitrumdata/", false, conf.PersistentConfigDefault.Pebble.ExtraOptions("arbitrumdata"))
 	Require(t, err)
 
-	initReader := statetransfer.NewMemoryInitDataReader(&l2info.ArbInitData)
+	initReader := statetransfer.NewMemoryInitDataReader(&info.ArbInitData)
 	if initMessage == nil {
 		serializedChainConfig, err := json.Marshal(chainConfig)
 		Require(t, err)
@@ -1258,7 +1258,7 @@ func createNonL1BlockChainWithStackConfig(
 	blockchain, err := gethexec.WriteOrTestBlockChain(chainDb, coreCacheConfig, initReader, chainConfig, initMessage, ExecConfigDefaultTest(t).TxLookupLimit, 0)
 	Require(t, err)
 
-	return l2info, stack, chainDb, arbDb, blockchain
+	return info, stack, chainDb, arbDb, blockchain
 }
 
 func ClientForStack(t *testing.T, backend *node.Node) *ethclient.Client {
