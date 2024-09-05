@@ -17,7 +17,7 @@ type BlockValidatorAPI struct {
 }
 
 func (a *BlockValidatorAPI) LatestValidated(ctx context.Context) (*staker.GlobalStateValidatedInfo, error) {
-	return a.val.ReadLastValidatedInfo()
+	return a.val.ReadLastValidatedInfo(ctx)
 }
 
 type BlockValidatorDebugAPI struct {

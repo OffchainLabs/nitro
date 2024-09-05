@@ -290,7 +290,7 @@ func (v *L1Validator) generateNodeAction(
 	var validatedCount arbutil.MessageIndex
 	var validatedGlobalState validator.GoGlobalState
 	if v.blockValidator != nil {
-		valInfo, err := v.blockValidator.ReadLastValidatedInfo()
+		valInfo, err := v.blockValidator.ReadLastValidatedInfo(ctx)
 		if err != nil || valInfo == nil {
 			return nil, false, err
 		}

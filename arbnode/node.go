@@ -620,11 +620,13 @@ func createNodeImpl(
 	var blockValidator *staker.BlockValidator
 	if config.ValidatorRequired() {
 		blockValidator, err = staker.NewBlockValidator(
+			ctx,
 			statelessBlockValidator,
 			inboxTracker,
 			txStreamer,
 			func() *staker.BlockValidatorConfig { return &configFetcher.Get().BlockValidator },
 			fatalErrChan,
+			stack,
 		)
 		if err != nil {
 			return nil, err
