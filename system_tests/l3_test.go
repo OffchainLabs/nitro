@@ -15,9 +15,7 @@ func TestBasicL3(t *testing.T) {
 	cleanupL1AndL2 := builder.Build(t)
 	defer cleanupL1AndL2()
 
-	l3NodeNitroConfig := L3NitroConfigDefaultTest(t)
-	l3NodeNitroConfig.nodeConfig.ParentChainReader.Enable = true
-	cleanupL3 := builder.BuildL3OnL2(t, l3NodeNitroConfig)
+	cleanupL3 := builder.BuildL3OnL2(t)
 	defer cleanupL3()
 
 	builder.L3Info.GenerateAccount("User2")

@@ -233,6 +233,7 @@ type NodeBuilder struct {
 	l1StackConfig *node.Config
 	l2StackConfig *node.Config
 	valnodeConfig *valnode.Config
+	l3Config      *NitroConfig
 	L1Info        info
 	L2Info        info
 	L3Info        info
@@ -289,7 +290,7 @@ func L3NitroConfigDefaultTest(t *testing.T) *NitroConfig {
 	valnodeConfig := valnode.TestValidationConfig
 	return &NitroConfig{
 		chainConfig:   chainConfig,
-		nodeConfig:    arbnode.ConfigDefaultL2Test(),
+		nodeConfig:    arbnode.ConfigDefaultL1Test(),
 		execConfig:    ExecConfigDefaultTest(t),
 		stackConfig:   testhelpers.CreateStackConfigForTest(t.TempDir()),
 		valnodeConfig: &valnodeConfig,
@@ -322,6 +323,7 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 	cp := valnode.TestValidationConfig
 	b.valnodeConfig = &cp
 	b.execConfig = ExecConfigDefaultTest(t)
+	b.l3Config = L3NitroConfigDefaultTest(t)
 	return b
 }
 
@@ -479,10 +481,10 @@ func buildOnParentChain(
 	return chainTestClient
 }
 
-func (b *NodeBuilder) BuildL3OnL2(t *testing.T, nitroConfig *NitroConfig) func() {
-	b.L3Info = NewArbTestInfo(t, nitroConfig.chainConfig.ChainID)
+func (b *NodeBuilder) BuildL3OnL2(t *testing.T) func() {
+	b.L3Info = NewArbTestInfo(t, b.l3Config.chainConfig.ChainID)
 
-	locator, err := server_common.NewMachineLocator(nitroConfig.valnodeConfig.Wasm.RootPath)
+	locator, err := server_common.NewMachineLocator(b.l3Config.valnodeConfig.Wasm.RootPath)
 	Require(t, err)
 
 	parentChainReaderConfig := headerreader.TestConfig
@@ -493,9 +495,9 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T, nitroConfig *NitroConfig) func()
 		b.L2Info,
 		b.L2.Client,
 		&parentChainReaderConfig,
-		nitroConfig.chainConfig,
+		b.l3Config.chainConfig,
 		locator.LatestWasmModuleRoot(),
-		nitroConfig.withProdConfirmPeriodBlocks,
+		b.l3Config.withProdConfirmPeriodBlocks,
 		false,
 	)
 
@@ -509,12 +511,12 @@ func (b *NodeBuilder) BuildL3OnL2(t *testing.T, nitroConfig *NitroConfig) func()
 		b.L2,
 		b.chainConfig.ChainID,
 
-		nitroConfig.chainConfig,
-		nitroConfig.stackConfig,
-		nitroConfig.execConfig,
-		nitroConfig.nodeConfig,
-		nitroConfig.valnodeConfig,
-		nitroConfig.isSequencer,
+		b.l3Config.chainConfig,
+		b.l3Config.stackConfig,
+		b.l3Config.execConfig,
+		b.l3Config.nodeConfig,
+		b.l3Config.valnodeConfig,
+		b.l3Config.isSequencer,
 		b.L3Info,
 
 		initMessage,
