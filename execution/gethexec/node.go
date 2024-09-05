@@ -185,20 +185,7 @@ func CreateExecutionNode(
 		if err != nil {
 			return nil, err
 		}
-		if config.Sequencer.Espresso {
-			espressoSequencer, err := NewEspressoSequencer(execEngine, seqConfigFetcher)
-			if err != nil {
-				return nil, err
-			}
-			switchSequencer, err := NewSwitchSequencer(sequencer, espressoSequencer, parentChainReader.Client(), seqConfigFetcher)
-			if err != nil {
-				return nil, err
-			}
-			txPublisher = switchSequencer
-
-		} else {
-			txPublisher = sequencer
-		}
+		txPublisher = sequencer
 	} else {
 		if config.Forwarder.RedisUrl != "" {
 			txPublisher = NewRedisTxForwarder(config.forwardingTarget, &config.Forwarder)

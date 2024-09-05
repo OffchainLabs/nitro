@@ -4,7 +4,6 @@
 package arbos
 
 import (
-	"bytes"
 	"encoding/binary"
 	"errors"
 	"fmt"
@@ -17,7 +16,6 @@ import (
 	"github.com/offchainlabs/nitro/arbos/util"
 	"github.com/offchainlabs/nitro/util/arbmath"
 
-	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/ethereum/go-ethereum/arbitrum_types"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core"
@@ -72,7 +70,7 @@ func (info *L1Info) L1BlockNumber() uint64 {
 	return info.l1BlockNumber
 }
 
-func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState, chainConfig *params.ChainConfig, espressoHeader *espressoTypes.Header) *types.Header {
+func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState.ArbosState, chainConfig *params.ChainConfig) *types.Header {
 	l2Pricing := state.L2PricingState()
 	baseFee, err := l2Pricing.BaseFeeWei()
 	state.Restrict(err)
@@ -95,13 +93,6 @@ func createNewHeader(prevHeader *types.Header, l1info *L1Info, state *arbosState
 		}
 		copy(extra, prevHeader.Extra)
 		mixDigest = prevHeader.MixDigest
-
-		if chainConfig.ArbitrumChainParams.EnableEspresso {
-			if espressoHeader != nil {
-				// Store the hotshot height temporarily
-				binary.BigEndian.PutUint64(mixDigest[24:32], espressoHeader.Height)
-			}
-		}
 	}
 	header := &types.Header{
 		ParentHash:  lastBlockHash,
@@ -180,22 +171,10 @@ func ProduceBlock(
 		txes = types.Transactions{}
 	}
 
-	var espressoHeader *espressoTypes.Header
-	if chainConfig.ArbitrumChainParams.EnableEspresso {
-		if IsEspressoMsg(message) && !IsEspressoSovereignMsg(message) {
-			// creating a block with espresso message
-			_, jst, err := ParseEspressoMsg(message)
-			if err != nil {
-				return nil, nil, err
-			}
-			espressoHeader = jst.Header
-		}
-	}
-
 	hooks := NoopSequencingHooks()
 
 	return ProduceBlockAdvanced(
-		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks, espressoHeader, isMsgForPrefetch,
+		message.Header, txes, delayedMessagesRead, lastBlockHeader, statedb, chainContext, chainConfig, hooks, isMsgForPrefetch,
 	)
 }
 
@@ -209,7 +188,6 @@ func ProduceBlockAdvanced(
 	chainContext core.ChainContext,
 	chainConfig *params.ChainConfig,
 	sequencingHooks *SequencingHooks,
-	espressoHeader *espressoTypes.Header,
 	isMsgForPrefetch bool,
 ) (*types.Block, types.Receipts, error) {
 
@@ -230,7 +208,7 @@ func ProduceBlockAdvanced(
 		l1Timestamp:   l1Header.Timestamp,
 	}
 
-	header := createNewHeader(lastBlockHeader, l1Info, state, chainConfig, espressoHeader)
+	header := createNewHeader(lastBlockHeader, l1Info, state, chainConfig)
 	signer := types.MakeSigner(chainConfig, header.Number, header.Time)
 	// Note: blockGasLeft will diverge from the actual gas left during execution in the event of invalid txs,
 	// but it's only used as block-local representation limiting the amount of work done in a block.
@@ -311,22 +289,6 @@ func ProduceBlockAdvanced(
 			// Additional pre-transaction validity check
 			if err = extraPreTxFilter(chainConfig, header, statedb, state, tx, options, sender, l1Info); err != nil {
 				return nil, nil, err
-			}
-
-			if chainConfig.ArbitrumChainParams.EnableEspresso {
-				calldata := tx.Data()
-				calldataLen := len(calldata)
-				if calldataLen >= 52 {
-					extraData := calldata[calldataLen-52:]
-					var magicBytes [32]byte
-					copy(magicBytes[:], extraData[:32])
-					if magicBytes == espressoTypes.GetMagicBytes() {
-						builderAddr := espressoHeader.FeeInfo.Account.Bytes()
-						if !bytes.Equal(builderAddr, extraData[32:]) {
-							return nil, nil, fmt.Errorf(NOT_EXPECTED_BUILDER_ERROR)
-						}
-					}
-				}
 			}
 
 			if basefee.Sign() > 0 {

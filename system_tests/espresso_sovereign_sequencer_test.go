@@ -17,7 +17,6 @@ func createL1AndL2Node(ctx context.Context, t *testing.T) (*NodeBuilder, func())
 	builder.l1StackConfig.WSHost = "0.0.0.0"
 	builder.l1StackConfig.DataDir = t.TempDir()
 	builder.l1StackConfig.WSModules = append(builder.l1StackConfig.WSModules, "eth")
-
 	builder.chainConfig.ArbitrumChainParams.EnableEspresso = true
 
 	// poster config
@@ -43,7 +42,6 @@ func createL1AndL2Node(ctx context.Context, t *testing.T) (*NodeBuilder, func())
 	builder.nodeConfig.Dangerous.NoSequencerCoordinator = true
 	builder.execConfig.Sequencer.Enable = true
 	// using the sovereign sequencer
-	builder.execConfig.Sequencer.Espresso = false
 	builder.execConfig.Sequencer.EnableEspressoSovereign = true
 
 	// transaction stream config

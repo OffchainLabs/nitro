@@ -26,7 +26,6 @@ import (
 	"testing"
 	"time"
 
-	espressoTypes "github.com/EspressoSystems/espresso-sequencer-go/types"
 	"github.com/ethereum/go-ethereum/core"
 	"github.com/ethereum/go-ethereum/core/state"
 	"github.com/ethereum/go-ethereum/core/types"
@@ -421,103 +420,6 @@ func (s *ExecutionEngine) SequenceTransactions(header *arbostypes.L1IncomingMess
 	})
 }
 
-func (s *ExecutionEngine) SequenceTransactionsEspresso(
-	header *arbostypes.L1IncomingMessageHeader,
-	rawTxes []espressoTypes.Bytes,
-	jst *arbostypes.EspressoBlockJustification,
-) (*types.Block, error) {
-	return s.sequencerWrapper(func() (*types.Block, error) {
-
-		// Create the message. This message includes all the raw transactions from
-		// Espresso Sequencer.
-		msg, err := arbos.MessageFromEspresso(header, rawTxes, jst)
-		if err != nil {
-			return nil, err
-		}
-		log.Info("Created espresso message", "header number", msg.Header.BlockNumber)
-
-		// Deserialize the transactions and ignore the malformed transactions
-		txes := types.Transactions{}
-		for _, tx := range rawTxes {
-			var out types.Transaction
-			if err := out.UnmarshalBinary(tx); err != nil {
-				log.Warn("Malformed tx is found")
-				continue
-			}
-			txes = append(txes, &out)
-		}
-
-		lastBlockHeader, err := s.getCurrentHeader()
-		if err != nil {
-			return nil, err
-		}
-
-		statedb, err := s.bc.StateAt(lastBlockHeader.Root)
-		if err != nil {
-			return nil, err
-		}
-
-		delayedMessagesRead := lastBlockHeader.Nonce.Uint64()
-
-		hooks := arbos.NoopSequencingHooks()
-		startTime := time.Now()
-		// Produce a block even if no valid transaction is found
-		block, receipts, err := arbos.ProduceBlockAdvanced(
-			header,
-			txes,
-			delayedMessagesRead,
-			lastBlockHeader,
-			statedb,
-			s.bc,
-			s.bc.Config(),
-			hooks,
-			jst.Header,
-			false,
-		)
-		if err != nil {
-			return nil, err
-		}
-
-		for _, err := range hooks.TxErrors {
-			if err != nil {
-				log.Warn(fmt.Sprintf("execute tx error: %v", err.Error()))
-			}
-		}
-		log.Info("Arbitrum block produced")
-		blockCalcTime := time.Since(startTime)
-
-		pos, err := s.BlockNumberToMessageIndex(lastBlockHeader.Number.Uint64() + 1)
-		if err != nil {
-			return nil, err
-		}
-
-		msgWithMeta := arbostypes.MessageWithMetadata{
-			Message:             &msg,
-			DelayedMessagesRead: delayedMessagesRead,
-		}
-		msgResult, err := s.resultFromHeader(block.Header())
-		if err != nil {
-			return nil, err
-		}
-
-		err = s.consensus.WriteMessageFromSequencer(pos, msgWithMeta, *msgResult)
-		log.Info("Wrote sequencer message", "pos", pos)
-		if err != nil {
-			return nil, err
-		}
-
-		// Only write the block after we've written the messages, so if the node dies in the middle of this,
-		// it will naturally recover on startup by regenerating the missing block.
-		err = s.appendBlock(block, statedb, receipts, blockCalcTime)
-		if err != nil {
-			return nil, err
-		}
-
-		return block, nil
-
-	})
-}
-
 // SequenceTransactionsWithProfiling runs SequenceTransactions with tracing and
 // CPU profiling enabled. If the block creation takes longer than 2 seconds, it
 // keeps both and prints out filenames in an error log line.
@@ -579,7 +481,6 @@ func (s *ExecutionEngine) sequenceTransactionsWithBlockMutex(header *arbostypes.
 		s.bc,
 		s.bc.Config(),
 		hooks,
-		nil,
 		false,
 	)
 	if err != nil {
