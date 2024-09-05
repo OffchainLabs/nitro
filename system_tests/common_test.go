@@ -1030,7 +1030,7 @@ func DeployOnTestL1(
 
 	nativeToken := common.Address{}
 	maxDataSize := big.NewInt(117964)
-	addresses, err := deploy.DeployOnL1(
+	addresses, err := deploy.DeployOnParentChain(
 		ctx,
 		l1Reader,
 		&l1TransactionOpts,

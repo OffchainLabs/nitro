@@ -179,7 +179,7 @@ func main() {
 	defer l1Reader.StopAndWait()
 
 	nativeToken := common.HexToAddress(*nativeTokenAddressString)
-	deployedAddresses, err := deploycode.DeployOnL1(
+	deployedAddresses, err := deploycode.DeployOnParentChain(
 		ctx,
 		l1Reader,
 		l1TransactionOpts,
