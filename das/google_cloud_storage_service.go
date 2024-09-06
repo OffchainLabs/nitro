@@ -17,6 +17,45 @@ import (
 	"sort"
 )
 
+type GoogleCloudStorageOperator interface {
+	Bucket(name string) *googlestorage.BucketHandle
+	Upload(ctx context.Context, bucket, objectPrefix string, value []byte) error
+	Download(ctx context.Context, bucket, objectPrefix string, key common.Hash) ([]byte, error)
+	Close(ctx context.Context) error
+}
+
+type GoogleCloudStorageClient struct {
+	client *googlestorage.Client
+}
+
+func (g *GoogleCloudStorageClient) Bucket(name string) *googlestorage.BucketHandle {
+	return g.client.Bucket(name)
+}
+
+func (g *GoogleCloudStorageClient) Upload(ctx context.Context, bucket, objectPrefix string, value []byte) error {
+	obj := g.client.Bucket(bucket).Object(objectPrefix + EncodeStorageServiceKey(dastree.Hash(value)))
+	w := obj.NewWriter(ctx)
+
+	if _, err := fmt.Fprintln(w, hex.EncodeToString(value)); err != nil {
+		return err
+	}
+	return w.Close()
+
+}
+
+func (g *GoogleCloudStorageClient) Download(ctx context.Context, bucket, objectPrefix string, key common.Hash) ([]byte, error) {
+	obj := g.client.Bucket(bucket).Object(objectPrefix + EncodeStorageServiceKey(key))
+	reader, err := obj.NewReader(ctx)
+	if err != nil {
+		return nil, err
+	}
+	return io.ReadAll(reader)
+}
+
+func (g *GoogleCloudStorageClient) Close(ctx context.Context) error {
+	return g.client.Close()
+}
+
 type GoogleCloudStorageServiceConfig struct {
 	Enable              bool   `koanf:"enable"`
 	AccessToken         string `koanf:"access-token"`
@@ -33,11 +72,10 @@ func GoogleCloudConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".bucket", DefaultGoogleCloudStorageServiceConfig.Bucket, "Google Cloud Storage bucket")
 	f.String(prefix+".object-prefix", DefaultGoogleCloudStorageServiceConfig.ObjectPrefix, "prefix to add to Google Cloud Storage objects")
 	f.Bool(prefix+".discard-after-timeout", DefaultGoogleCloudStorageServiceConfig.DiscardAfterTimeout, "discard data after its expiry timeout")
-
 }
 
 type GoogleCloudStorageService struct {
-	client              *googlestorage.Client
+	operator            GoogleCloudStorageOperator
 	bucket              string
 	objectPrefix        string
 	discardAfterTimeout bool
@@ -49,7 +87,7 @@ func NewGoogleCloudStorageService(config GoogleCloudStorageServiceConfig) (Stora
 		return nil, err
 	}
 	return &GoogleCloudStorageService{
-		client:              client,
+		operator:            &GoogleCloudStorageClient{client: client},
 		bucket:              config.Bucket,
 		objectPrefix:        config.ObjectPrefix,
 		discardAfterTimeout: config.DiscardAfterTimeout,
@@ -58,24 +96,18 @@ func NewGoogleCloudStorageService(config GoogleCloudStorageServiceConfig) (Stora
 
 func (gcs *GoogleCloudStorageService) Put(ctx context.Context, value []byte, timeout uint64) error {
 	logPut("das.GoogleCloudStorageService.Store", value, timeout, gcs)
-	bucket := gcs.client.Bucket(gcs.bucket).Object(gcs.objectPrefix + EncodeStorageServiceKey(dastree.Hash(value)))
-	w := bucket.NewWriter(ctx)
-	if _, err := fmt.Fprintln(w, hex.EncodeToString(value)); err != nil {
+	if err := gcs.operator.Upload(ctx, gcs.bucket, gcs.objectPrefix, value); err != nil {
 		log.Error("das.GoogleCloudStorageService.Store", "err", err)
 		return err
 	}
-	return w.Close()
+	return nil
 }
 
 func (gcs *GoogleCloudStorageService) GetByHash(ctx context.Context, key common.Hash) ([]byte, error) {
 	log.Trace("das.GoogleCloudStorageService.GetByHash", "key", pretty.PrettyHash(key), "this", gcs)
-	bucket := gcs.client.Bucket(gcs.bucket).Object(gcs.objectPrefix + EncodeStorageServiceKey(key))
-	reader, err := bucket.NewReader(ctx)
+	buf, err := gcs.operator.Download(ctx, gcs.bucket, gcs.objectPrefix, key)
 	if err != nil {
-		return nil, err
-	}
-	buf, err := io.ReadAll(reader)
-	if err != nil {
+		log.Error("das.GoogleCloudStorageService.GetByHash", "err", err)
 		return nil, err
 	}
 	return hex.DecodeString(string(buf))
@@ -93,7 +125,7 @@ func (gcs *GoogleCloudStorageService) Sync(ctx context.Context) error {
 }
 
 func (gcs *GoogleCloudStorageService) Close(ctx context.Context) error {
-	return gcs.client.Close()
+	return gcs.operator.Close(ctx)
 }
 
 func (gcs *GoogleCloudStorageService) String() string {
@@ -101,7 +133,7 @@ func (gcs *GoogleCloudStorageService) String() string {
 }
 
 func (gcs *GoogleCloudStorageService) HealthCheck(ctx context.Context) error {
-	bucket := gcs.client.Bucket(gcs.bucket)
+	bucket := gcs.operator.Bucket(gcs.bucket)
 	// check if we have bucket permissions
 	permissions := []string{
 		"storage.buckets.get",

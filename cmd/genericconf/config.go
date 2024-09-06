@@ -65,6 +65,24 @@ var DefaultS3Config = S3Config{
 	SecretKey: "",
 }
 
+type GoogleCloudStorageConfig struct {
+	AccessToken  string `koanf:"access-token"`
+	Bucket       string `koanf:"bucket"`
+	ObjectPrefix string `koanf:"object-prefix"`
+}
+
+var DefaultGoogleCloudStorageConfig = GoogleCloudStorageConfig{
+	AccessToken:  "",
+	Bucket:       "",
+	ObjectPrefix: "",
+}
+
+func GoogleCloudConfigAddOptions(prefix string, f *flag.FlagSet) {
+	f.String(prefix+".access-token", DefaultGoogleCloudStorageConfig.AccessToken, "Google Cloud Storage access token")
+	f.String(prefix+".bucket", DefaultGoogleCloudStorageConfig.Bucket, "Google Cloud Storage bucket")
+	f.String(prefix+".object-prefix", DefaultGoogleCloudStorageConfig.ObjectPrefix, "prefix to add to Google Cloud Storage objects")
+}
+
 func HandlerFromLogType(logType string, output io.Writer) (slog.Handler, error) {
 	if logType == "plaintext" {
 		return log.NewTerminalHandler(output, false), nil
