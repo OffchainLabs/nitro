@@ -87,7 +87,7 @@ WORKDIR /workspace
 RUN export DEBIAN_FRONTEND=noninteractive && \
     apt-get update && \
     apt-get install -y make clang && \
-    cargo install --force cbindgen
+    cargo install --force cbindgen --version 0.26.0
 COPY arbitrator/Cargo.* arbitrator/cbindgen.toml arbitrator/
 COPY ./Makefile ./
 COPY arbitrator/arbutil arbitrator/arbutil
