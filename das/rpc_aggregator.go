@@ -21,7 +21,7 @@ import (
 	"github.com/offchainlabs/nitro/util/signature"
 
 	"github.com/ethereum/go-ethereum/common"
-	"github.com/offchainlabs/nitro/arbutil"
+	"github.com/ethereum/go-ethereum/ethclient"
 )
 
 type BackendConfig struct {
@@ -83,7 +83,7 @@ func NewRPCAggregator(ctx context.Context, config DataAvailabilityConfig, signer
 	return NewAggregator(ctx, config, services)
 }
 
-func NewRPCAggregatorWithL1Info(config DataAvailabilityConfig, l1client arbutil.L1Interface, seqInboxAddress common.Address, signer signature.DataSignerFunc) (*Aggregator, error) {
+func NewRPCAggregatorWithL1Info(config DataAvailabilityConfig, l1client *ethclient.Client, seqInboxAddress common.Address, signer signature.DataSignerFunc) (*Aggregator, error) {
 	services, err := ParseServices(config.RPCAggregator, signer)
 	if err != nil {
 		return nil, err

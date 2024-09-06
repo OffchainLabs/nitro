@@ -15,6 +15,7 @@ import (
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/core/types"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/rpc"
@@ -281,7 +282,7 @@ type ValidatorWalletInterface interface {
 	TxSenderAddress() *common.Address
 	RollupAddress() common.Address
 	ChallengeManagerAddress() common.Address
-	L1Client() arbutil.L1Interface
+	L1Client() *ethclient.Client
 	TestTransactions(context.Context, []*types.Transaction) error
 	ExecuteTransactions(context.Context, *txbuilder.Builder, common.Address) (*types.Transaction, error)
 	TimeoutChallenges(context.Context, []uint64) (*types.Transaction, error)
