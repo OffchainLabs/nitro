@@ -17,6 +17,7 @@ import (
 
 	"github.com/offchainlabs/nitro/arbutil"
 	"github.com/offchainlabs/nitro/execution"
+	"github.com/offchainlabs/nitro/timeboost"
 	"github.com/offchainlabs/nitro/util/arbmath"
 	"github.com/offchainlabs/nitro/util/containers"
 	"github.com/offchainlabs/nitro/util/headerreader"
@@ -31,9 +32,11 @@ import (
 	"github.com/ethereum/go-ethereum/core/txpool"
 	"github.com/ethereum/go-ethereum/core/types"
 	"github.com/ethereum/go-ethereum/crypto/kzg4844"
+	"github.com/ethereum/go-ethereum/ethclient"
 	"github.com/ethereum/go-ethereum/log"
 	"github.com/ethereum/go-ethereum/metrics"
 	"github.com/ethereum/go-ethereum/params"
+	"github.com/ethereum/go-ethereum/rpc"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/arbos/arbosState"
 	"github.com/offchainlabs/nitro/arbos/arbostypes"
@@ -76,8 +79,21 @@ type SequencerConfig struct {
 	ExpectedSurplusSoftThreshold string          `koanf:"expected-surplus-soft-threshold" reload:"hot"`
 	ExpectedSurplusHardThreshold string          `koanf:"expected-surplus-hard-threshold" reload:"hot"`
 	EnableProfiling              bool            `koanf:"enable-profiling" reload:"hot"`
+	Timeboost                    TimeboostConfig `koanf:"timeboost"`
 	expectedSurplusSoftThreshold int
 	expectedSurplusHardThreshold int
+}
+
+type TimeboostConfig struct {
+	Enable                bool          `koanf:"enable"`
+	ExpressLaneAdvantage  time.Duration `koanf:"express-lane-advantage"`
+	SequencerHTTPEndpoint string        `koanf:"sequencer-http-endpoint"`
+}
+
+var DefaultTimeboostConfig = TimeboostConfig{
+	Enable:                false,
+	ExpressLaneAdvantage:  time.Millisecond * 200,
+	SequencerHTTPEndpoint: "http://localhost:9567",
 }
 
 func (c *SequencerConfig) Validate() error {
@@ -129,6 +145,7 @@ var DefaultSequencerConfig = SequencerConfig{
 	ExpectedSurplusSoftThreshold: "default",
 	ExpectedSurplusHardThreshold: "default",
 	EnableProfiling:              false,
+	Timeboost:                    DefaultTimeboostConfig,
 }
 
 func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
@@ -138,6 +155,8 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.Duration(prefix+".max-acceptable-timestamp-delta", DefaultSequencerConfig.MaxAcceptableTimestampDelta, "maximum acceptable time difference between the local time and the latest L1 block's timestamp")
 	f.StringSlice(prefix+".sender-whitelist", DefaultSequencerConfig.SenderWhitelist, "comma separated whitelist of authorized senders (if empty, everyone is allowed)")
 	AddOptionsForSequencerForwarderConfig(prefix+".forwarder", f)
+	TimeboostAddOptions(prefix+".timeboost", f)
+
 	f.Int(prefix+".queue-size", DefaultSequencerConfig.QueueSize, "size of the pending tx queue")
 	f.Duration(prefix+".queue-timeout", DefaultSequencerConfig.QueueTimeout, "maximum amount of time transaction can wait in queue")
 	f.Int(prefix+".nonce-cache-size", DefaultSequencerConfig.NonceCacheSize, "size of the tx sender nonce cache")
@@ -147,6 +166,12 @@ func SequencerConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".expected-surplus-soft-threshold", DefaultSequencerConfig.ExpectedSurplusSoftThreshold, "if expected surplus is lower than this value, warnings are posted")
 	f.String(prefix+".expected-surplus-hard-threshold", DefaultSequencerConfig.ExpectedSurplusHardThreshold, "if expected surplus is lower than this value, new incoming transactions will be denied")
 	f.Bool(prefix+".enable-profiling", DefaultSequencerConfig.EnableProfiling, "enable CPU profiling and tracing")
+}
+
+func TimeboostAddOptions(prefix string, f *flag.FlagSet) {
+	f.Bool(prefix+".enable", DefaultTimeboostConfig.Enable, "enable timeboost based on express lane auctions")
+	f.Duration(prefix+".express-lane-advantage", DefaultTimeboostConfig.ExpressLaneAdvantage, "specify the express lane advantage")
+	f.String(prefix+".sequencer-http-endpoint", DefaultTimeboostConfig.SequencerHTTPEndpoint, "this sequencer's http endpoint")
 }
 
 type txQueueItem struct {
@@ -291,15 +316,16 @@ func (c nonceFailureCache) Add(err NonceError, queueItem txQueueItem) {
 type Sequencer struct {
 	stopwaiter.StopWaiter
 
-	execEngine      *ExecutionEngine
-	txQueue         chan txQueueItem
-	txRetryQueue    containers.Queue[txQueueItem]
-	l1Reader        *headerreader.HeaderReader
-	config          SequencerConfigFetcher
-	senderWhitelist map[common.Address]struct{}
-	nonceCache      *nonceCache
-	nonceFailures   *nonceFailureCache
-	onForwarderSet  chan struct{}
+	execEngine         *ExecutionEngine
+	txQueue            chan txQueueItem
+	txRetryQueue       containers.Queue[txQueueItem]
+	l1Reader           *headerreader.HeaderReader
+	config             SequencerConfigFetcher
+	senderWhitelist    map[common.Address]struct{}
+	nonceCache         *nonceCache
+	nonceFailures      *nonceFailureCache
+	expressLaneService *expressLaneService
+	onForwarderSet     chan struct{}
 
 	L1BlockAndTimeMutex sync.Mutex
 	l1BlockNumber       atomic.Uint64
@@ -312,9 +338,11 @@ type Sequencer struct {
 	pauseChan   chan struct{}
 	forwarder   *TxForwarder
 
-	expectedSurplusMutex   sync.RWMutex
-	expectedSurplus        int64
-	expectedSurplusUpdated bool
+	expectedSurplusMutex              sync.RWMutex
+	expectedSurplus                   int64
+	expectedSurplusUpdated            bool
+	auctioneerAddr                    common.Address
+	timeboostAuctionResolutionTxQueue containers.Queue[txQueueItem]
 }
 
 func NewSequencer(execEngine *ExecutionEngine, l1Reader *headerreader.HeaderReader, configFetcher SequencerConfigFetcher) (*Sequencer, error) {
@@ -386,6 +414,10 @@ func ctxWithTimeout(ctx context.Context, timeout time.Duration) (context.Context
 }
 
 func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions) error {
+	return s.publishTransactionImpl(parentCtx, tx, options, true /* delay tx if express lane is active */)
+}
+
+func (s *Sequencer) publishTransactionImpl(parentCtx context.Context, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, delay bool) error {
 	config := s.config()
 	// Only try to acquire Rlock and check for hard threshold if l1reader is not nil
 	// And hard threshold was enabled, this prevents spamming of read locks when not needed
@@ -430,6 +462,12 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 		return err
 	}
 
+	if s.config().Timeboost.Enable && s.expressLaneService != nil {
+		if delay && s.expressLaneService.currentRoundHasController() {
+			time.Sleep(s.config().Timeboost.ExpressLaneAdvantage)
+		}
+	}
+
 	queueTimeout := config.QueueTimeout
 	queueCtx, cancelFunc := ctxWithTimeout(parentCtx, queueTimeout)
 	defer cancelFunc()
@@ -467,6 +505,62 @@ func (s *Sequencer) PublishTransaction(parentCtx context.Context, tx *types.Tran
 		}
 		return err
 	}
+}
+
+func (s *Sequencer) PublishExpressLaneTransaction(ctx context.Context, msg *timeboost.ExpressLaneSubmission) error {
+	if !s.config().Timeboost.Enable {
+		return errors.New("timeboost not enabled")
+	}
+	if s.expressLaneService == nil {
+		return errors.New("express lane service not enabled")
+	}
+	if err := s.expressLaneService.validateExpressLaneTx(msg); err != nil {
+		return err
+	}
+	return s.expressLaneService.sequenceExpressLaneSubmission(ctx, msg, s.publishTransactionImpl)
+}
+
+func (s *Sequencer) PublishAuctionResolutionTransaction(ctx context.Context, tx *types.Transaction) error {
+	if !s.config().Timeboost.Enable {
+		return errors.New("timeboost not enabled")
+	}
+	arrivalTime := time.Now()
+	auctioneerAddr := s.auctioneerAddr
+	if auctioneerAddr == (common.Address{}) {
+		return errors.New("invalid auctioneer address")
+	}
+	if tx.To() == nil {
+		return errors.New("transaction has no recipient")
+	}
+	if *tx.To() != s.expressLaneService.auctionContractAddr {
+		return errors.New("transaction recipient is not the auction contract")
+	}
+	signer := types.LatestSigner(s.execEngine.bc.Config())
+	sender, err := types.Sender(signer, tx)
+	if err != nil {
+		return err
+	}
+	if sender != auctioneerAddr {
+		return fmt.Errorf("sender %#x is not the auctioneer address %#x", sender, auctioneerAddr)
+	}
+	if !s.expressLaneService.isWithinAuctionCloseWindow(arrivalTime) {
+		return fmt.Errorf("transaction arrival time not within auction closure window: %v", arrivalTime)
+	}
+	txBytes, err := tx.MarshalBinary()
+	if err != nil {
+		return err
+	}
+	log.Info("Prioritizing auction resolution transaction from auctioneer", "txHash", tx.Hash().Hex())
+	s.timeboostAuctionResolutionTxQueue.Push(txQueueItem{
+		tx:              tx,
+		txSize:          len(txBytes),
+		options:         nil,
+		resultChan:      make(chan error, 1),
+		returnedResult:  &atomic.Bool{},
+		ctx:             context.TODO(),
+		firstAppearance: time.Now(),
+	})
+	return nil
 }
 
 func (s *Sequencer) preTxFilter(_ *params.ChainConfig, header *types.Header, statedb *state.StateDB, _ *arbosState.ArbosState, tx *types.Transaction, options *arbitrum_types.ConditionalOptions, sender common.Address, l1Info *arbos.L1Info) error {
@@ -793,7 +887,10 @@ func (s *Sequencer) createBlock(ctx context.Context) (returnValue bool) {
 
 	for {
 		var queueItem txQueueItem
-		if s.txRetryQueue.Len() > 0 {
+		if s.timeboostAuctionResolutionTxQueue.Len() > 0 {
+			queueItem = s.timeboostAuctionResolutionTxQueue.Pop()
+			log.Info("Popped the auction resolution tx", queueItem.tx.Hash())
+		} else if s.txRetryQueue.Len() > 0 {
 			queueItem = s.txRetryQueue.Pop()
 		} else if len(queueItems) == 0 {
 			var nextNonceExpiryChan <-chan time.Time
@@ -1111,7 +1208,6 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 				}
 			}
 		})
-
 	}
 
 	s.CallIteratively(func(ctx context.Context) time.Duration {
@@ -1125,6 +1221,28 @@ func (s *Sequencer) Start(ctxIn context.Context) error {
 	})
 
 	return nil
+}
+
+func (s *Sequencer) StartExpressLane(ctx context.Context, auctionContractAddr common.Address, auctioneerAddr common.Address) {
+	if !s.config().Timeboost.Enable {
+		log.Crit("Timeboost is not enabled, but StartExpressLane was called")
+	}
+	rpcClient, err := rpc.DialContext(ctx, s.config().Timeboost.SequencerHTTPEndpoint)
+	if err != nil {
+		log.Crit("Failed to connect to sequencer RPC client", "err", err)
+	}
+	seqClient := ethclient.NewClient(rpcClient)
+	els, err := newExpressLaneService(
+		auctionContractAddr,
+		seqClient,
+		s.execEngine.bc,
+	)
+	if err != nil {
+		log.Crit("Failed to create express lane service", "err", err)
+	}
+	s.auctioneerAddr = auctioneerAddr
+	s.expressLaneService = els
+	s.expressLaneService.Start(ctx)
 }
 
 func (s *Sequencer) StopAndWait() {
