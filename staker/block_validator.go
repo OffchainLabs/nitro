@@ -106,6 +106,7 @@ type BlockValidatorConfig struct {
 	ValidationServerConfigs     []rpcclient.ClientConfig      `koanf:"validation-server-configs"`
 	ValidationPoll              time.Duration                 `koanf:"validation-poll" reload:"hot"`
 	PrerecordedBlocks           uint64                        `koanf:"prerecorded-blocks" reload:"hot"`
+	RecordingIterLimit          uint64                        `koanf:"recording-iter-limit"`
 	ForwardBlocks               uint64                        `koanf:"forward-blocks" reload:"hot"`
 	CurrentModuleRoot           string                        `koanf:"current-module-root"`         // TODO(magic) requires reinitialization on hot reload
 	PendingUpgradeModuleRoot    string                        `koanf:"pending-upgrade-module-root"` // TODO(magic) requires StatelessBlockValidator recreation on hot reload
@@ -174,6 +175,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	f.Uint64(prefix+".forward-blocks", DefaultBlockValidatorConfig.ForwardBlocks, "prepare entries for up to that many blocks ahead of validation (small footprint)")
 	f.Uint64(prefix+".prerecorded-blocks", DefaultBlockValidatorConfig.PrerecordedBlocks, "record that many blocks ahead of validation (larger footprint)")
 	f.String(prefix+".current-module-root", DefaultBlockValidatorConfig.CurrentModuleRoot, "current wasm module root ('current' read from chain, 'latest' from machines/latest dir, or provide hash)")
+	f.Uint64(prefix+".recording-iter-limit", DefaultBlockValidatorConfig.RecordingIterLimit, "limit on block recordings sent per iteration")
 	f.String(prefix+".pending-upgrade-module-root", DefaultBlockValidatorConfig.PendingUpgradeModuleRoot, "pending upgrade wasm module root to additionally validate (hash, 'latest' or empty)")
 	f.Bool(prefix+".failure-is-fatal", DefaultBlockValidatorConfig.FailureIsFatal, "failing a validation is treated as a fatal error")
 	BlockValidatorDangerousConfigAddOptions(prefix+".dangerous", f)
@@ -197,6 +199,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	FailureIsFatal:              true,
 	Dangerous:                   DefaultBlockValidatorDangerousConfig,
 	MemoryFreeLimit:             "default",
+	RecordingIterLimit:          20,
 }
 
 var TestBlockValidatorConfig = BlockValidatorConfig{
@@ -207,6 +210,7 @@ var TestBlockValidatorConfig = BlockValidatorConfig{
 	ValidationPoll:              100 * time.Millisecond,
 	ForwardBlocks:               128,
 	PrerecordedBlocks:           uint64(2 * runtime.NumCPU()),
+	RecordingIterLimit:          20,
 	CurrentModuleRoot:           "latest",
 	PendingUpgradeModuleRoot:    "latest",
 	FailureIsFatal:              true,
@@ -500,7 +504,7 @@ func (v *BlockValidator) sendRecord(s *validationStatus) error {
 
 //nolint:gosec
 func (v *BlockValidator) writeToFile(validationEntry *validationEntry, moduleRoot common.Hash) error {
-	input, err := validationEntry.ToInput([]rawdb.Target{rawdb.TargetWavm})
+	input, err := validationEntry.ToInput([]ethdb.WasmTarget{rawdb.TargetWavm})
 	if err != nil {
 		return err
 	}
@@ -651,6 +655,10 @@ func (v *BlockValidator) sendNextRecordRequests(ctx context.Context) (bool, erro
 	}
 	if recordUntil < pos {
 		return false, nil
+	}
+	recordUntilLimit := pos + arbutil.MessageIndex(v.config().RecordingIterLimit)
+	if recordUntil > recordUntilLimit {
+		recordUntil = recordUntilLimit
 	}
 	log.Trace("preparing to record", "pos", pos, "until", recordUntil)
 	// prepare could take a long time so we do it without a lock

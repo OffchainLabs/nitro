@@ -38,7 +38,7 @@ func TestStaticForwarder(t *testing.T) {
 	clientA := builder.L2.Client
 
 	nodeConfigB := arbnode.ConfigDefaultL1Test()
-	execConfigB := ExecConfigDefaultTest()
+	execConfigB := ExecConfigDefaultTest(t)
 	execConfigB.Sequencer.Enable = false
 	nodeConfigB.Sequencer = false
 	nodeConfigB.DelayedSequencer.Enable = false
@@ -109,7 +109,7 @@ func createForwardingNode(t *testing.T, builder *NodeBuilder, ipcPath string, re
 	nodeConfig.Sequencer = false
 	nodeConfig.DelayedSequencer.Enable = false
 	nodeConfig.BatchPoster.Enable = false
-	execConfig := ExecConfigDefaultTest()
+	execConfig := ExecConfigDefaultTest(t)
 	execConfig.Sequencer.Enable = false
 	execConfig.Forwarder.RedisUrl = redisUrl
 	execConfig.ForwardingTarget = fallbackPath
