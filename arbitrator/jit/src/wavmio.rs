@@ -8,8 +8,6 @@ use crate::{
 };
 use arbutil::{Color, PreimageType};
 use caller_env::{GuestPtr, MemAccess};
-use sha2::Sha256;
-use sha3::{Digest, Keccak256};
 use std::{
     io,
     io::{BufReader, BufWriter, ErrorKind},
@@ -170,19 +168,25 @@ pub fn resolve_preimage_impl(
         error!("Missing requested preimage for hash {hash_hex} in {name}")
     };
 
-    // Check if preimage rehashes to the provided hash. Exclude blob preimages
-    let calculated_hash: [u8; 32] = match preimage_type {
-        PreimageType::Keccak256 => Keccak256::digest(preimage).into(),
-        PreimageType::Sha2_256 => Sha256::digest(preimage).into(),
-        PreimageType::EthVersionedHash => *hash,
-    };
-    if calculated_hash != *hash {
-        error!(
-            "Calculated hash {} of preimage {} does not match provided hash {}",
-            hex::encode(calculated_hash),
-            hex::encode(preimage),
-            hex::encode(*hash)
-        );
+    #[cfg(debug_assertions)]
+    {
+        use sha2::Sha256;
+        use sha3::{Digest, Keccak256};
+
+        // Check if preimage rehashes to the provided hash. Exclude blob preimages
+        let calculated_hash: [u8; 32] = match preimage_type {
+            PreimageType::Keccak256 => Keccak256::digest(preimage).into(),
+            PreimageType::Sha2_256 => Sha256::digest(preimage).into(),
+            PreimageType::EthVersionedHash => *hash,
+        };
+        if calculated_hash != *hash {
+            error!(
+                "Calculated hash {} of preimage {} does not match provided hash {}",
+                hex::encode(calculated_hash),
+                hex::encode(preimage),
+                hex::encode(*hash)
+            );
+        }
     }
 
     if offset % 32 != 0 {
