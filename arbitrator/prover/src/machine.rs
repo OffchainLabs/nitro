@@ -19,7 +19,7 @@ use crate::{
         IBinOpType, IRelOpType, IUnOpType, Instruction, Opcode,
     },
 };
-use arbutil::{crypto, math, Bytes32, Color, DebugColor, PreimageType};
+use arbutil::{crypto, hostios::HOSTIOS, math, Bytes32, Color, DebugColor, PreimageType};
 use brotli::Dictionary;
 #[cfg(feature = "native")]
 use c_kzg::BYTES_PER_BLOB;
@@ -330,22 +330,17 @@ pub struct Module {
     pub(crate) extra_hash: Arc<Bytes32>,
 }
 
+#[cfg(feature = "native")]
+static FORWARDER_WASM: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/forwarder.wasm"));
+
 lazy_static! {
     static ref USER_IMPORTS: HashMap<String, AvailableImport> = {
         let mut imports = HashMap::default();
 
-        let forward = include_bytes!(concat!(env!("OUT_DIR"), "/forwarder_stub.wasm"));
-        let forward = binary::parse(forward, Path::new("forward")).unwrap();
-
-        for (name, &(export, kind)) in &forward.exports {
-            if kind == ExportKind::Func {
-                let ty = match forward.get_function(FunctionIndex::from_u32(export)) {
-                    Ok(ty) => ty,
-                    Err(error) => panic!("failed to read export {name}: {error:?}"),
-                };
-                let import = AvailableImport::new(ty, 1, export);
-                imports.insert(name.to_owned(), import);
-            }
+        // 0-513 are internal
+        for (index, (name, ins, outs)) in HOSTIOS.iter().enumerate() {
+            let import = AvailableImport::new(FunctionType::new(ins.iter().map(|x|x.into()).collect::<Vec<_>>(), outs.iter().map(|x|x.into()).collect::<Vec<_>>()), 1, (index + 514).try_into().unwrap());
+            imports.insert(format!("vm_hooks__{name}"), import);
         }
         imports
     };
@@ -1334,36 +1329,19 @@ impl Machine {
         let mut modules = vec![Module::default()];
         let mut available_imports = HashMap::default();
         let mut floating_point_impls = HashMap::default();
-        let main_module_index = u32::try_from(modules.len() + libraries.len())?;
 
-        let forwarder_wasm = include_bytes!(concat!(env!("OUT_DIR"), "/forwarder.wasm"));
-        let mut libs_vec = vec![];
+        let forwarder = if with_forwarder {
+            #[cfg(not(feature = "native"))]
+            bail!("forwarder not supported without native");
 
-        let libraries = if with_forwarder {
-            libs_vec.push(parse(forwarder_wasm.as_ref(), Path::new("forwarder"))?);
-            libs_vec.extend_from_slice(libraries);
-            &libs_vec
+            #[cfg(feature = "native")]
+            Some(parse(FORWARDER_WASM, Path::new("forwarder"))?)
         } else {
-            libraries
+            None
         };
 
-        // make the main module's exports available to libraries
-        for (name, &(export, kind)) in &bin.exports {
-            if kind == ExportKind::Func {
-                let index: usize = export.try_into()?;
-                if let Some(index) = index.checked_sub(bin.imports.len()) {
-                    let ty: usize = bin.functions[index].try_into()?;
-                    let ty = bin.types[ty].clone();
-                    available_imports.insert(
-                        format!("env__wavm_guest_call__{name}"),
-                        AvailableImport::new(ty, main_module_index, export),
-                    );
-                }
-            }
-        }
-
         // collect all the library exports in advance so they can use each other's
-        for (index, lib) in libraries.iter().enumerate() {
+        for (index, lib) in forwarder.iter().chain(libraries.iter()).enumerate() {
             let module = 1 + index as u32; // off by one due to the entry point
             for (name, &(export, kind)) in &lib.exports {
                 if kind == ExportKind::Func {
@@ -1371,49 +1349,55 @@ impl Machine {
                         Ok(ty) => ty,
                         Err(error) => bail!("failed to read export {name}: {error}"),
                     };
-                    let import = AvailableImport::new(ty, module, export);
+                    let import = AvailableImport::new(ty.clone(), module, export);
                     available_imports.insert(name.to_owned(), import);
+                    if let Ok(op) = name.parse::<FloatInstruction>() {
+                        let mut sig = op.signature();
+                        // wavm codegen takes care of effecting this type change at callsites
+                        for ty in sig.inputs.iter_mut().chain(sig.outputs.iter_mut()) {
+                            if *ty == F32 {
+                                *ty = I32;
+                            } else if *ty == F64 {
+                                *ty = I64;
+                            }
+                        }
+                        ensure!(
+                            ty == sig,
+                            "Wrong type for floating point impl {} expecting {} but got {}",
+                            name.red(),
+                            sig.red(),
+                            ty.red()
+                        );
+                        floating_point_impls.insert(op, (module, export));
+                    }
                 }
             }
         }
 
-        for (index, lib) in libraries.iter().enumerate() {
-            let module = Module::from_binary(
+        if let Some(lib) = forwarder {
+            modules.push(Module::from_binary(
+                &lib,
+                &available_imports,
+                &floating_point_impls,
+                true,
+                true,
+                debug_funcs,
+                None,
+            )?);
+        }
+
+        for lib in libraries.iter() {
+            modules.push(Module::from_binary(
                 lib,
                 &available_imports,
                 &floating_point_impls,
                 true,
-                with_forwarder && (index == 0),
+                false,
                 debug_funcs,
                 None,
-            )?;
-            for (name, &func) in &*module.func_exports {
-                let ty = module.func_types[func as usize].clone();
-                if let Ok(op) = name.parse::<FloatInstruction>() {
-                    let mut sig = op.signature();
-                    // wavm codegen takes care of effecting this type change at callsites
-                    for ty in sig.inputs.iter_mut().chain(sig.outputs.iter_mut()) {
-                        if *ty == F32 {
-                            *ty = I32;
-                        } else if *ty == F64 {
-                            *ty = I64;
-                        }
-                    }
-                    ensure!(
-                        ty == sig,
-                        "Wrong type for floating point impl {} expecting {} but got {}",
-                        name.red(),
-                        sig.red(),
-                        ty.red()
-                    );
-                    floating_point_impls.insert(op, (modules.len() as u32, func));
-                }
-            }
-            modules.push(module);
+            )?);
         }
 
-        // Shouldn't be necessary, but to be safe, don't allow the main binary to import its own guest calls
-        available_imports.retain(|_, i| i.module as usize != modules.len());
         modules.push(Module::from_binary(
             &bin,
             &available_imports,

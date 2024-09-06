@@ -49,6 +49,7 @@ rand = "0.8.4"
 
 [build-dependencies]
 wasmer = { path = "../tools/wasmer/lib/api" }
+arbutil = { path = "../arbutil/" }
 
 [[bench]]
 name = "merkle_bench"
