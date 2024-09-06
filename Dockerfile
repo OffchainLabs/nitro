@@ -281,5 +281,7 @@ COPY scripts/split-val-entry.sh /usr/local/bin
 ENTRYPOINT [ "/usr/local/bin/split-val-entry.sh" ]
 USER user
 
+FROM nitro-node as nitro-node-validator
+
 FROM nitro-node as nitro-node-default
 # Just to ensure nitro-node-dist is default
