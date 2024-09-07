@@ -88,7 +88,15 @@ type GoogleCloudStorageService struct {
 }
 
 func NewGoogleCloudStorageService(config GoogleCloudStorageServiceConfig) (StorageService, error) {
-	client, err := googlestorage.NewClient(context.Background(), option.WithCredentialsJSON([]byte(config.AccessToken)))
+	var client *googlestorage.Client
+	var err error
+	// Note that if the credentials are not specified, the client library will find credentials using ADC(Application Default Credentials)
+	// https://cloud.google.com/docs/authentication/provide-credentials-adc.
+	if config.AccessToken == "" {
+		client, err = googlestorage.NewClient(context.Background())
+	} else {
+		client, err = googlestorage.NewClient(context.Background(), option.WithCredentialsJSON([]byte(config.AccessToken)))
+	}
 	if err != nil {
 		return nil, fmt.Errorf("error creating Google Cloud Storage client: %v", err)
 	}
