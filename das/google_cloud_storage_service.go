@@ -10,10 +10,12 @@ import (
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
+	"github.com/offchainlabs/nitro/util/stopwaiter"
 	flag "github.com/spf13/pflag"
 	"google.golang.org/api/option"
 	"io"
 	"sort"
+	"time"
 )
 
 type GoogleCloudStorageOperator interface {
@@ -56,11 +58,12 @@ func (g *GoogleCloudStorageClient) Close(ctx context.Context) error {
 }
 
 type GoogleCloudStorageServiceConfig struct {
-	Enable              bool   `koanf:"enable"`
-	AccessToken         string `koanf:"access-token"`
-	Bucket              string `koanf:"bucket"`
-	ObjectPrefix        string `koanf:"object-prefix"`
-	DiscardAfterTimeout bool   `koanf:"discard-after-timeout"`
+	Enable       bool          `koanf:"enable"`
+	AccessToken  string        `koanf:"access-token"`
+	Bucket       string        `koanf:"bucket"`
+	ObjectPrefix string        `koanf:"object-prefix"`
+	EnableExpiry bool          `koanf:"enable-expiry"`
+	MaxRetention time.Duration `koanf:"max-retention"`
 }
 
 var DefaultGoogleCloudStorageServiceConfig = GoogleCloudStorageServiceConfig{}
@@ -70,14 +73,18 @@ func GoogleCloudConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".access-token", DefaultGoogleCloudStorageServiceConfig.AccessToken, "Google Cloud Storage access token")
 	f.String(prefix+".bucket", DefaultGoogleCloudStorageServiceConfig.Bucket, "Google Cloud Storage bucket")
 	f.String(prefix+".object-prefix", DefaultGoogleCloudStorageServiceConfig.ObjectPrefix, "prefix to add to Google Cloud Storage objects")
-	f.Bool(prefix+".discard-after-timeout", DefaultGoogleCloudStorageServiceConfig.DiscardAfterTimeout, "discard data after its expiry timeout")
+	f.Bool(prefix+".enable-expiry", DefaultLocalFileStorageConfig.EnableExpiry, "enable expiry of batches")
+	f.Duration(prefix+".max-retention", DefaultLocalFileStorageConfig.MaxRetention, "store requests with expiry times farther in the future than max-retention will be rejected")
+
 }
 
 type GoogleCloudStorageService struct {
-	operator            GoogleCloudStorageOperator
-	bucket              string
-	objectPrefix        string
-	discardAfterTimeout bool
+	operator     GoogleCloudStorageOperator
+	bucket       string
+	objectPrefix string
+	enableExpiry bool
+	maxRetention time.Duration
+	stopWaiter   stopwaiter.StopWaiterSafe
 }
 
 func NewGoogleCloudStorageService(config GoogleCloudStorageServiceConfig) (StorageService, error) {
@@ -86,10 +93,11 @@ func NewGoogleCloudStorageService(config GoogleCloudStorageServiceConfig) (Stora
 		return nil, err
 	}
 	return &GoogleCloudStorageService{
-		operator:            &GoogleCloudStorageClient{client: client},
-		bucket:              config.Bucket,
-		objectPrefix:        config.ObjectPrefix,
-		discardAfterTimeout: config.DiscardAfterTimeout,
+		operator:     &GoogleCloudStorageClient{client: client},
+		bucket:       config.Bucket,
+		objectPrefix: config.ObjectPrefix,
+		enableExpiry: config.EnableExpiry,
+		maxRetention: config.MaxRetention,
 	}, nil
 }
 
@@ -113,10 +121,10 @@ func (gcs *GoogleCloudStorageService) GetByHash(ctx context.Context, key common.
 }
 
 func (gcs *GoogleCloudStorageService) ExpirationPolicy(ctx context.Context) (daprovider.ExpirationPolicy, error) {
-	if gcs.discardAfterTimeout {
-		return daprovider.DiscardAfterDataTimeout, nil
+	if gcs.enableExpiry {
+		return daprovider.KeepForever, nil
 	}
-	return daprovider.KeepForever, nil
+	return daprovider.DiscardAfterDataTimeout, nil
 }
 
 func (gcs *GoogleCloudStorageService) Sync(ctx context.Context) error {
@@ -144,14 +152,29 @@ func (gcs *GoogleCloudStorageService) HealthCheck(ctx context.Context) error {
 	}
 	perms, err := bucket.IAM().TestPermissions(ctx, permissions)
 	if err != nil {
-		return err
+		return fmt.Errorf("could not check permissions: %v", err)
 	}
 	sort.Strings(permissions)
 	sort.Strings(perms)
 	if !cmp.Equal(perms, permissions) {
 		return fmt.Errorf("permissions mismatch (-want +got):\n%s", cmp.Diff(permissions, perms))
 	}
-	// check if bucket exists (and others)
-	_, err = bucket.Attrs(ctx)
-	return err
+	// check if bucket exists (and others), and update expiration policy if enabled
+	attrs, err := bucket.Attrs(ctx)
+	if err != nil {
+		return err
+	}
+	lifecycleRule := googlestorage.LifecycleRule{
+		Action:    googlestorage.LifecycleAction{Type: "Delete"},
+		Condition: googlestorage.LifecycleCondition{AgeInDays: int64(gcs.maxRetention.Hours() / 24)}, // Objects older than 30 days
+	}
+	attrs.Lifecycle.Rules = append(attrs.Lifecycle.Rules, lifecycleRule)
+
+	bucketAttrsToUpdate := googlestorage.BucketAttrsToUpdate{
+		Lifecycle: &attrs.Lifecycle,
+	}
+	if _, err := bucket.Update(ctx, bucketAttrsToUpdate); err != nil {
+		return fmt.Errorf("failed to update bucket lifecycle: %v", err)
+	}
+	return nil
 }
