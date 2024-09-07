@@ -1176,12 +1176,6 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		// There's nothing after the newest batch, therefore batch posting was not required
 		return false, nil
 	}
-	firstMsg, err := b.streamer.GetMessage(batchPosition.MessageCount)
-	if err != nil {
-		return false, err
-	}
-	// #nosec G115
-	firstMsgTime := time.Unix(int64(firstMsg.Message.Header.Timestamp), 0)
 
 	lastPotentialMsg, err := b.streamer.GetMessage(msgCount - 1)
 	if err != nil {
@@ -1189,7 +1183,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	}
 
 	config := b.config()
-	forcePostBatch := config.MaxDelay <= 0 || time.Since(firstMsgTime) >= config.MaxDelay
+	forcePostBatch := config.MaxDelay <= 0
 
 	var l1BoundMaxBlockNumber uint64 = math.MaxUint64
 	var l1BoundMaxTimestamp uint64 = math.MaxUint64
@@ -1257,6 +1251,8 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		}
 	}
 
+	var firstNonDelayedMsg *arbostypes.MessageWithMetadata
+	var firstUsefulMsg *arbostypes.MessageWithMetadata
 	for b.building.msgCount < msgCount {
 		msg, err := b.streamer.GetMessage(b.building.msgCount)
 		if err != nil {
@@ -1299,6 +1295,9 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 				forcePostBatch = true
 			}
 			b.building.haveUsefulMessage = true
+			if firstUsefulMsg == nil {
+				firstUsefulMsg = msg
+			}
 			break
 		}
 		if config.CheckBatchCorrectness {
@@ -1309,13 +1308,28 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		}
 		if msg.Message.Header.Kind != arbostypes.L1MessageType_BatchPostingReport {
 			b.building.haveUsefulMessage = true
+			if firstUsefulMsg == nil {
+				firstUsefulMsg = msg
+			}
+		}
+		if !isDelayed && firstNonDelayedMsg == nil {
+			firstNonDelayedMsg = msg
 		}
 		b.building.msgCount++
 	}
 
-	if hasL1Bound && config.ReorgResistanceMargin > 0 {
-		firstMsgBlockNumber := firstMsg.Message.Header.BlockNumber
-		firstMsgTimeStamp := firstMsg.Message.Header.Timestamp
+	firstUsefulMsgTime := time.Now()
+	if firstUsefulMsg != nil {
+		// #nosec G115
+		firstUsefulMsgTime = time.Unix(int64(firstUsefulMsg.Message.Header.Timestamp), 0)
+		if time.Since(firstUsefulMsgTime) >= config.MaxDelay {
+			forcePostBatch = true
+		}
+	}
+
+	if firstNonDelayedMsg != nil && hasL1Bound && config.ReorgResistanceMargin > 0 {
+		firstMsgBlockNumber := firstNonDelayedMsg.Message.Header.BlockNumber
+		firstMsgTimeStamp := firstNonDelayedMsg.Message.Header.Timestamp
 		batchNearL1BoundMinBlockNumber := firstMsgBlockNumber <= arbmath.SaturatingUAdd(l1BoundMinBlockNumber, uint64(config.ReorgResistanceMargin/ethPosBlockTime))
 		batchNearL1BoundMinTimestamp := firstMsgTimeStamp <= arbmath.SaturatingUAdd(l1BoundMinTimestamp, uint64(config.ReorgResistanceMargin/time.Second))
 		if batchNearL1BoundMinTimestamp || batchNearL1BoundMinBlockNumber {
@@ -1463,7 +1477,7 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 	}
 
 	tx, err := b.dataPoster.PostTransaction(ctx,
-		firstMsgTime,
+		firstUsefulMsgTime,
 		nonce,
 		newMeta,
 		b.seqInboxAddr,
