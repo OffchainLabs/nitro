@@ -350,13 +350,25 @@ impl Module {
         for import in &bin.imports {
             let module = import.module;
             let have_ty = &bin.types[import.offset as usize];
-            let (forward, import_name) = match import.name.strip_prefix(Module::FORWARDING_PREFIX) {
-                Some(name) => (true, name),
-                None => (false, import.name),
+            let (forward, import_name) = if allow_hostapi {
+                // allow_hostapi is only set for system modules like the
+                // forwrder. We restrict stripping the prefix for user modules.
+                if import.name.starts_with(Self::FORWARDING_PREFIX) {
+                    // Even though trim_start_matches removeem multiple
+                    // instancs of the prefix, the system modules will only
+                    // ever have one.
+                    (
+                        true,
+                        import.name.trim_start_matches(Self::FORWARDING_PREFIX),
+                    )
+                } else {
+                    (false, import.name)
+                }
+            } else {
+                (false, import.name)
             };
 
-            let mut qualified_name = format!("{module}__{import_name}");
-            qualified_name = qualified_name.replace(&['/', '.', '-'] as &[char], "_");
+            let qualified_name = format!("{module}__{import_name}");
 
             let func = if let Some(import) = available_imports.get(&qualified_name) {
                 let call = match forward {
