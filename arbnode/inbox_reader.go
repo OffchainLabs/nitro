@@ -24,14 +24,15 @@ import (
 )
 
 type InboxReaderConfig struct {
-	DelayBlocks         uint64        `koanf:"delay-blocks" reload:"hot"`
-	CheckDelay          time.Duration `koanf:"check-delay" reload:"hot"`
-	HardReorg           bool          `koanf:"hard-reorg" reload:"hot"`
-	MinBlocksToRead     uint64        `koanf:"min-blocks-to-read" reload:"hot"`
-	DefaultBlocksToRead uint64        `koanf:"default-blocks-to-read" reload:"hot"`
-	TargetMessagesRead  uint64        `koanf:"target-messages-read" reload:"hot"`
-	MaxBlocksToRead     uint64        `koanf:"max-blocks-to-read" reload:"hot"`
-	ReadMode            string        `koanf:"read-mode" reload:"hot"`
+	DelayBlocks                  uint64        `koanf:"delay-blocks" reload:"hot"`
+	CheckDelay                   time.Duration `koanf:"check-delay" reload:"hot"`
+	HardReorg                    bool          `koanf:"hard-reorg" reload:"hot"`
+	MinBlocksToRead              uint64        `koanf:"min-blocks-to-read" reload:"hot"`
+	DefaultBlocksToRead          uint64        `koanf:"default-blocks-to-read" reload:"hot"`
+	TargetMessagesRead           uint64        `koanf:"target-messages-read" reload:"hot"`
+	MaxBlocksToRead              uint64        `koanf:"max-blocks-to-read" reload:"hot"`
+	ReadMode                     string        `koanf:"read-mode" reload:"hot"`
+	AdvanceBatchNumberUnderError bool          `koanf:"advance-batch-number-under-error"`
 }
 
 type InboxReaderConfigFetcher func() *InboxReaderConfig

@@ -92,7 +92,7 @@ func TestPruning(t *testing.T) {
 		initConfig.Prune = "full"
 		coreCacheConfig := gethexec.DefaultCacheConfigFor(stack, &builder.execConfig.Caching)
 		persistentConfig := conf.PersistentConfigDefault
-		err = pruning.PruneChainDb(ctx, chainDb, stack, &initConfig, coreCacheConfig, &persistentConfig, builder.L1.Client, *builder.L2.ConsensusNode.DeployInfo, false)
+		err = pruning.PruneChainDb(ctx, chainDb, stack, &initConfig, coreCacheConfig, &persistentConfig, builder.L1.Client, *builder.L2.ConsensusNode.DeployInfo, false, true)
 		Require(t, err)
 
 		for _, key := range testKeys {

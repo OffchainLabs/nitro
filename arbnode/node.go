@@ -584,7 +584,7 @@ func createNodeImpl(
 	if blobReader != nil {
 		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(blobReader))
 	}
-	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, dapReaders, config.SnapSyncTest)
+	inboxTracker, err := NewInboxTracker(arbDb, txStreamer, dapReaders, config.SnapSyncTest, config.InboxReader.AdvanceBatchNumberUnderError)
 	if err != nil {
 		return nil, err
 	}

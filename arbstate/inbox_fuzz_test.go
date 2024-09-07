@@ -68,7 +68,7 @@ func FuzzInboxMultiplexer(f *testing.F) {
 			delayedMessage:        delayedMsg,
 			positionWithinMessage: 0,
 		}
-		multiplexer := NewInboxMultiplexer(backend, 0, nil, daprovider.KeysetValidate)
+		multiplexer := NewInboxMultiplexer(backend, 0, nil, daprovider.KeysetValidate, true)
 		_, err := multiplexer.Pop(context.TODO())
 		if err != nil {
 			panic(err)

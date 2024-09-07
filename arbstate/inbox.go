@@ -162,24 +162,26 @@ func parseSequencerMessage(ctx context.Context, batchNum uint64, batchBlockHash 
 }
 
 type inboxMultiplexer struct {
-	backend                   InboxBackend
-	delayedMessagesRead       uint64
-	dapReaders                []daprovider.Reader
-	cachedSequencerMessage    *sequencerMessage
-	cachedSequencerMessageNum uint64
-	cachedSegmentNum          uint64
-	cachedSegmentTimestamp    uint64
-	cachedSegmentBlockNumber  uint64
-	cachedSubMessageNumber    uint64
-	keysetValidationMode      daprovider.KeysetValidationMode
+	backend                      InboxBackend
+	delayedMessagesRead          uint64
+	dapReaders                   []daprovider.Reader
+	cachedSequencerMessage       *sequencerMessage
+	cachedSequencerMessageNum    uint64
+	cachedSegmentNum             uint64
+	cachedSegmentTimestamp       uint64
+	cachedSegmentBlockNumber     uint64
+	cachedSubMessageNumber       uint64
+	keysetValidationMode         daprovider.KeysetValidationMode
+	advanceBatchNumberUnderError bool
 }
 
-func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dapReaders []daprovider.Reader, keysetValidationMode daprovider.KeysetValidationMode) arbostypes.InboxMultiplexer {
+func NewInboxMultiplexer(backend InboxBackend, delayedMessagesRead uint64, dapReaders []daprovider.Reader, keysetValidationMode daprovider.KeysetValidationMode, advanceBatchNumberUnderError bool) arbostypes.InboxMultiplexer {
 	return &inboxMultiplexer{
-		backend:              backend,
-		delayedMessagesRead:  delayedMessagesRead,
-		dapReaders:           dapReaders,
-		keysetValidationMode: keysetValidationMode,
+		backend:                      backend,
+		delayedMessagesRead:          delayedMessagesRead,
+		dapReaders:                   dapReaders,
+		keysetValidationMode:         keysetValidationMode,
+		advanceBatchNumberUnderError: advanceBatchNumberUnderError,
 	}
 }
 
@@ -206,12 +208,15 @@ func (r *inboxMultiplexer) Pop(ctx context.Context) (*arbostypes.MessageWithMeta
 		}
 	}
 	msg, err := r.getNextMsg()
-	// advance even if there was an error
-	if r.IsCachedSegementLast() {
-		r.advanceSequencerMsg()
-	} else {
-		r.advanceSubMsg()
+	if r.advanceBatchNumberUnderError {
+		// advance even if there was an error
+		if r.IsCachedSegementLast() {
+			r.advanceSequencerMsg()
+		} else {
+			r.advanceSubMsg()
+		}
 	}
+
 	// parsing error in getNextMsg
 	if msg == nil && err == nil {
 		msg = &arbostypes.MessageWithMetadata{

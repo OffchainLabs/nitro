@@ -232,7 +232,7 @@ func main() {
 			dapReaders = append(dapReaders, daprovider.NewReaderForDAS(dasReader, dasKeysetFetcher))
 		}
 		dapReaders = append(dapReaders, daprovider.NewReaderForBlobReader(&BlobPreimageReader{}))
-		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode)
+		inboxMultiplexer := arbstate.NewInboxMultiplexer(backend, delayedMessagesRead, dapReaders, keysetValidationMode, true)
 		ctx := context.Background()
 		message, err := inboxMultiplexer.Pop(ctx)
 		if err != nil {

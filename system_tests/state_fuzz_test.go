@@ -43,7 +43,7 @@ func BuildBlock(
 	if lastBlockHeader != nil {
 		delayedMessagesRead = lastBlockHeader.Nonce.Uint64()
 	}
-	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead, nil, daprovider.KeysetValidate)
+	inboxMultiplexer := arbstate.NewInboxMultiplexer(inbox, delayedMessagesRead, nil, daprovider.KeysetValidate, true)
 
 	ctx := context.Background()
 	message, err := inboxMultiplexer.Pop(ctx)
