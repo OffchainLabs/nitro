@@ -3,7 +3,6 @@ package das
 import (
 	googlestorage "cloud.google.com/go/storage"
 	"context"
-	"encoding/hex"
 	"fmt"
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/ethereum/go-ethereum/log"
@@ -36,7 +35,7 @@ func (g *GoogleCloudStorageClient) Upload(ctx context.Context, bucket, objectPre
 	obj := g.client.Bucket(bucket).Object(objectPrefix + EncodeStorageServiceKey(dastree.Hash(value)))
 	w := obj.NewWriter(ctx)
 
-	if _, err := fmt.Fprintln(w, hex.EncodeToString(value)); err != nil {
+	if _, err := fmt.Fprintln(w, value); err != nil {
 		return err
 	}
 	return w.Close()
@@ -110,7 +109,7 @@ func (gcs *GoogleCloudStorageService) GetByHash(ctx context.Context, key common.
 		log.Error("das.GoogleCloudStorageService.GetByHash", "err", err)
 		return nil, err
 	}
-	return hex.DecodeString(string(buf))
+	return buf, nil
 }
 
 func (gcs *GoogleCloudStorageService) ExpirationPolicy(ctx context.Context) (daprovider.ExpirationPolicy, error) {
