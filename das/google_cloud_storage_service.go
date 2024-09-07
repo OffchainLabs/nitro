@@ -164,17 +164,20 @@ func (gcs *GoogleCloudStorageService) HealthCheck(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	lifecycleRule := googlestorage.LifecycleRule{
-		Action:    googlestorage.LifecycleAction{Type: "Delete"},
-		Condition: googlestorage.LifecycleCondition{AgeInDays: int64(gcs.maxRetention.Hours() / 24)}, // Objects older than 30 days
-	}
-	attrs.Lifecycle.Rules = append(attrs.Lifecycle.Rules, lifecycleRule)
+	if gcs.enableExpiry {
+		lifecycleRule := googlestorage.LifecycleRule{
+			Action:    googlestorage.LifecycleAction{Type: "Delete"},
+			Condition: googlestorage.LifecycleCondition{AgeInDays: int64(gcs.maxRetention.Hours() / 24)}, // Objects older than 30 days
+		}
+		attrs.Lifecycle.Rules = append(attrs.Lifecycle.Rules, lifecycleRule)
 
-	bucketAttrsToUpdate := googlestorage.BucketAttrsToUpdate{
-		Lifecycle: &attrs.Lifecycle,
+		bucketAttrsToUpdate := googlestorage.BucketAttrsToUpdate{
+			Lifecycle: &attrs.Lifecycle,
+		}
+		if _, err := bucket.Update(ctx, bucketAttrsToUpdate); err != nil {
+			return fmt.Errorf("failed to update bucket lifecycle: %v", err)
+		}
 	}
-	if _, err := bucket.Update(ctx, bucketAttrsToUpdate); err != nil {
-		return fmt.Errorf("failed to update bucket lifecycle: %v", err)
-	}
+
 	return nil
 }
