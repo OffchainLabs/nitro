@@ -1,6 +1,7 @@
 package das
 
 import (
+	"bytes"
 	googlestorage "cloud.google.com/go/storage"
 	"context"
 	"errors"
@@ -8,26 +9,32 @@ import (
 	"github.com/offchainlabs/nitro/cmd/genericconf"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"testing"
+	"time"
 )
 
 type mockGCSClient struct {
+	storage map[string][]byte
 }
 
 func (c *mockGCSClient) Bucket(name string) *googlestorage.BucketHandle {
-	//TODO implement me
-	panic("implement me")
+	return nil
 }
 
 func (c *mockGCSClient) Download(ctx context.Context, bucket, objectPrefix string, key common.Hash) ([]byte, error) {
-	return nil, ErrNotFound
+	value, ok := c.storage[objectPrefix+EncodeStorageServiceKey(key)]
+	if !ok {
+		return nil, ErrNotFound
+	}
+	return value, nil
 }
 
 func (c *mockGCSClient) Close(ctx context.Context) error {
-	//TODO implement me
-	panic("implement me")
+	return nil
 }
 
-func (*mockGCSClient) Upload(ctx context.Context, bucket, objectPrefix string, value []byte) error {
+func (c *mockGCSClient) Upload(ctx context.Context, bucket, objectPrefix string, value []byte) error {
+	key := objectPrefix + EncodeStorageServiceKey(dastree.Hash(value))
+	c.storage[key] = value
 	return nil
 }
 
@@ -35,23 +42,39 @@ func NewTestGoogleCloudStorageService(ctx context.Context, googleCloudStorageCon
 	return &GoogleCloudStorageService{
 		bucket:       googleCloudStorageConfig.Bucket,
 		objectPrefix: googleCloudStorageConfig.ObjectPrefix,
-		operator:     &mockGCSClient{},
+		operator: &mockGCSClient{
+			storage: make(map[string][]byte),
+		},
 	}, nil
 }
 
 func TestNewGoogleCloudStorageService(t *testing.T) {
 	ctx := context.Background()
-	//timeout := uint64(time.Now().Add(time.Hour).Unix())
+	timeout := uint64(time.Now().Add(time.Hour).Unix())
 	googleCloudService, err := NewTestGoogleCloudStorageService(ctx, genericconf.DefaultGoogleCloudStorageConfig)
 	Require(t, err)
 
 	val1 := []byte("The first value")
 	val1CorrectKey := dastree.Hash(val1)
-	//val2IncorrectKey := dastree.Hash(append(val1, 0))
+	val2IncorrectKey := dastree.Hash(append(val1, 0))
 
 	_, err = googleCloudService.GetByHash(ctx, val1CorrectKey)
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatal(err)
+	}
+
+	err = googleCloudService.Put(ctx, val1, timeout)
+	Require(t, err)
+
+	_, err = googleCloudService.GetByHash(ctx, val2IncorrectKey)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatal(err)
+	}
+
+	val, err := googleCloudService.GetByHash(ctx, val1CorrectKey)
+	Require(t, err)
+	if !bytes.Equal(val, val1) {
+		t.Fatal(val, val1)
 	}
 
 }
