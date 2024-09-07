@@ -90,7 +90,7 @@ type GoogleCloudStorageService struct {
 func NewGoogleCloudStorageService(config GoogleCloudStorageServiceConfig) (StorageService, error) {
 	client, err := googlestorage.NewClient(context.Background(), option.WithCredentialsJSON([]byte(config.AccessToken)))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error creating Google Cloud Storage client: %v", err)
 	}
 	return &GoogleCloudStorageService{
 		operator:     &GoogleCloudStorageClient{client: client},
