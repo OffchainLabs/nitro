@@ -27,8 +27,8 @@ type ValidatorWalletInterface interface {
 // Builder combines any transactions sent to it via SendTransaction into one batch,
 // which is then sent to the validator wallet.
 // This lets the validator make multiple atomic transactions.
-// This inherits from an eth client so it can be used as an L1Interface,
-// where it transparently intercepts calls to SendTransaction and queues them for the next batch.
+// This inherits from an ethclient.Client so it can be used to transparently
+// intercept calls to SendTransaction and queue them for the next batch.
 type Builder struct {
 	*ethclient.Client
 	transactions []*types.Transaction
