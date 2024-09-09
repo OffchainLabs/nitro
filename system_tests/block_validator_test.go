@@ -63,7 +63,6 @@ func testBlockValidatorSimple(t *testing.T, opts Options) {
 
 	var delayEvery int
 	if opts.workloadLoops > 1 {
-		l1NodeConfigA.BatchPoster.MaxDelay = time.Millisecond * 500
 		delayEvery = opts.workloadLoops / 3
 	}
 
