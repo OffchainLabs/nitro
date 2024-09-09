@@ -108,10 +108,10 @@ func activateProgramInternal(
 	}
 	results := make(chan result, len(targets))
 	for _, target := range targets {
+		target := target
 		if target == rawdb.TargetWavm {
 			results <- result{target, module, nil}
 		} else {
-			target := target
 			go func() {
 				output := &rustBytes{}
 				status_asm := C.stylus_compile(
