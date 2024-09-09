@@ -350,23 +350,14 @@ impl Module {
         for import in &bin.imports {
             let module = import.module;
             let have_ty = &bin.types[import.offset as usize];
-            let (forward, import_name) = if allow_hostapi {
-                // allow_hostapi is only set for system modules like the
-                // forwrder. We restrict stripping the prefix for user modules.
-                if import.name.starts_with(Self::FORWARDING_PREFIX) {
-                    // Even though trim_start_matches removeem multiple
-                    // instancs of the prefix, the system modules will only
-                    // ever have one.
-                    (
-                        true,
-                        import.name.trim_start_matches(Self::FORWARDING_PREFIX),
-                    )
+            // allow_hostapi is only set for system modules like the
+            // forwarder. We restrict stripping the prefix for user modules.
+            let (forward, import_name) =
+                if allow_hostapi && import.name.starts_with(Self::FORWARDING_PREFIX) {
+                    (true, &import.name[Self::FORWARDING_PREFIX.len()..])
                 } else {
                     (false, import.name)
-                }
-            } else {
-                (false, import.name)
-            };
+                };
 
             let qualified_name = format!("{module}__{import_name}");
 
