@@ -130,6 +130,7 @@ func NewAggregatorWithSeqInboxCaller(
 	seqInboxCaller *bridgegen.SequencerInboxCaller,
 ) (*Aggregator, error) {
 
+	// #nosec G115
 	keysetHash, keysetBytes, err := KeysetHashFromServices(services, uint64(config.RPCAggregator.AssumedHonest))
 	if err != nil {
 		return nil, err
