@@ -716,12 +716,14 @@ type batchSegments struct {
 }
 
 type buildingBatch struct {
-	segments          *batchSegments
-	startMsgCount     arbutil.MessageIndex
-	msgCount          arbutil.MessageIndex
-	haveUsefulMessage bool
-	use4844           bool
-	muxBackend        *simulatedMuxBackend
+	segments           *batchSegments
+	startMsgCount      arbutil.MessageIndex
+	msgCount           arbutil.MessageIndex
+	haveUsefulMessage  bool
+	use4844            bool
+	muxBackend         *simulatedMuxBackend
+	firstNonDelayedMsg *arbostypes.MessageWithMetadata
+	firstUsefulMsg     *arbostypes.MessageWithMetadata
 }
 
 func newBatchSegments(firstDelayed uint64, config *BatchPosterConfig, backlog uint64, use4844 bool) *batchSegments {
@@ -1251,8 +1253,6 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		}
 	}
 
-	var firstNonDelayedMsg *arbostypes.MessageWithMetadata
-	var firstUsefulMsg *arbostypes.MessageWithMetadata
 	for b.building.msgCount < msgCount {
 		msg, err := b.streamer.GetMessage(b.building.msgCount)
 		if err != nil {
@@ -1295,8 +1295,8 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 				forcePostBatch = true
 			}
 			b.building.haveUsefulMessage = true
-			if firstUsefulMsg == nil {
-				firstUsefulMsg = msg
+			if b.building.firstUsefulMsg == nil {
+				b.building.firstUsefulMsg = msg
 			}
 			break
 		}
@@ -1308,28 +1308,28 @@ func (b *BatchPoster) maybePostSequencerBatch(ctx context.Context) (bool, error)
 		}
 		if msg.Message.Header.Kind != arbostypes.L1MessageType_BatchPostingReport {
 			b.building.haveUsefulMessage = true
-			if firstUsefulMsg == nil {
-				firstUsefulMsg = msg
+			if b.building.firstUsefulMsg == nil {
+				b.building.firstUsefulMsg = msg
 			}
 		}
-		if !isDelayed && firstNonDelayedMsg == nil {
-			firstNonDelayedMsg = msg
+		if !isDelayed && b.building.firstNonDelayedMsg == nil {
+			b.building.firstNonDelayedMsg = msg
 		}
 		b.building.msgCount++
 	}
 
 	firstUsefulMsgTime := time.Now()
-	if firstUsefulMsg != nil {
+	if b.building.firstUsefulMsg != nil {
 		// #nosec G115
-		firstUsefulMsgTime = time.Unix(int64(firstUsefulMsg.Message.Header.Timestamp), 0)
+		firstUsefulMsgTime = time.Unix(int64(b.building.firstUsefulMsg.Message.Header.Timestamp), 0)
 		if time.Since(firstUsefulMsgTime) >= config.MaxDelay {
 			forcePostBatch = true
 		}
 	}
 
-	if firstNonDelayedMsg != nil && hasL1Bound && config.ReorgResistanceMargin > 0 {
-		firstMsgBlockNumber := firstNonDelayedMsg.Message.Header.BlockNumber
-		firstMsgTimeStamp := firstNonDelayedMsg.Message.Header.Timestamp
+	if b.building.firstNonDelayedMsg != nil && hasL1Bound && config.ReorgResistanceMargin > 0 {
+		firstMsgBlockNumber := b.building.firstNonDelayedMsg.Message.Header.BlockNumber
+		firstMsgTimeStamp := b.building.firstNonDelayedMsg.Message.Header.Timestamp
 		batchNearL1BoundMinBlockNumber := firstMsgBlockNumber <= arbmath.SaturatingUAdd(l1BoundMinBlockNumber, uint64(config.ReorgResistanceMargin/ethPosBlockTime))
 		batchNearL1BoundMinTimestamp := firstMsgTimeStamp <= arbmath.SaturatingUAdd(l1BoundMinTimestamp, uint64(config.ReorgResistanceMargin/time.Second))
 		if batchNearL1BoundMinTimestamp || batchNearL1BoundMinBlockNumber {
