@@ -188,7 +188,7 @@ func TestPrecompilesPerArbosVersion(t *testing.T) {
 	log.SetDefault(log.NewLogger(glogger))
 
 	expectedNewMethodsPerArbosVersion := map[uint64]int{
-		0:  89,
+		0:  91,
 		5:  3,
 		10: 2,
 		11: 4,
