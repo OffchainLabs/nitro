@@ -101,13 +101,35 @@ func NewGoogleCloudStorageService(config GoogleCloudStorageServiceConfig) (Stora
 	if err != nil {
 		return nil, fmt.Errorf("error creating Google Cloud Storage client: %v", err)
 	}
-	return &GoogleCloudStorageService{
+	service := &GoogleCloudStorageService{
 		operator:     &GoogleCloudStorageClient{client: client},
 		bucket:       config.Bucket,
 		objectPrefix: config.ObjectPrefix,
 		enableExpiry: config.EnableExpiry,
 		maxRetention: config.MaxRetention,
-	}, nil
+	}
+	if config.EnableExpiry {
+		lifecycleRule := googlestorage.LifecycleRule{
+			Action:    googlestorage.LifecycleAction{Type: "Delete"},
+			Condition: googlestorage.LifecycleCondition{AgeInDays: int64(config.MaxRetention.Hours() / 24)}, // Objects older than 30 days
+		}
+		ctx := context.Background()
+		bucket := service.operator.Bucket(service.bucket)
+		// check if bucket exists (and others), and update expiration policy if enabled
+		attrs, err := bucket.Attrs(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("error getting bucket attributes: %v", err)
+		}
+		attrs.Lifecycle.Rules = append(attrs.Lifecycle.Rules, lifecycleRule)
+
+		bucketAttrsToUpdate := googlestorage.BucketAttrsToUpdate{
+			Lifecycle: &attrs.Lifecycle,
+		}
+		if _, err := bucket.Update(ctx, bucketAttrsToUpdate); err != nil {
+			return nil, fmt.Errorf("failed to update bucket lifecycle: %v", err)
+		}
+	}
+	return service, nil
 }
 
 func (gcs *GoogleCloudStorageService) Put(ctx context.Context, data []byte, expiry uint64) error {
@@ -176,25 +198,6 @@ func (gcs *GoogleCloudStorageService) HealthCheck(ctx context.Context) error {
 	sort.Strings(perms)
 	if !cmp.Equal(perms, permissions) {
 		return fmt.Errorf("permissions mismatch (-want +got):\n%s", cmp.Diff(permissions, perms))
-	}
-	// check if bucket exists (and others), and update expiration policy if enabled
-	attrs, err := bucket.Attrs(ctx)
-	if err != nil {
-		return err
-	}
-	if gcs.enableExpiry {
-		lifecycleRule := googlestorage.LifecycleRule{
-			Action:    googlestorage.LifecycleAction{Type: "Delete"},
-			Condition: googlestorage.LifecycleCondition{AgeInDays: int64(gcs.maxRetention.Hours() / 24)}, // Objects older than 30 days
-		}
-		attrs.Lifecycle.Rules = append(attrs.Lifecycle.Rules, lifecycleRule)
-
-		bucketAttrsToUpdate := googlestorage.BucketAttrsToUpdate{
-			Lifecycle: &attrs.Lifecycle,
-		}
-		if _, err := bucket.Update(ctx, bucketAttrsToUpdate); err != nil {
-			return fmt.Errorf("failed to update bucket lifecycle: %v", err)
-		}
 	}
 
 	return nil
