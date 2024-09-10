@@ -153,12 +153,12 @@ func TestMaxFeeCapFormulaCalculation(t *testing.T) {
 	}
 }
 
-type stubL1ClientInterface struct {
+type stubL1ClientInner struct {
 	senderNonce        uint64
 	suggestedGasTipCap *big.Int
 }
 
-func (c *stubL1ClientInterface) CallContext(ctx_in context.Context, result interface{}, method string, args ...interface{}) error {
+func (c *stubL1ClientInner) CallContext(ctx_in context.Context, result interface{}, method string, args ...interface{}) error {
 	switch method {
 	case "eth_getTransactionCount":
 		ptr, ok := result.(*hexutil.Uint64)
@@ -176,13 +176,13 @@ func (c *stubL1ClientInterface) CallContext(ctx_in context.Context, result inter
 	return nil
 }
 
-func (c *stubL1ClientInterface) EthSubscribe(ctx context.Context, channel interface{}, args ...interface{}) (*rpc.ClientSubscription, error) {
+func (c *stubL1ClientInner) EthSubscribe(ctx context.Context, channel interface{}, args ...interface{}) (*rpc.ClientSubscription, error) {
 	return nil, nil
 }
-func (c *stubL1ClientInterface) BatchCallContext(ctx context.Context, b []rpc.BatchElem) error {
+func (c *stubL1ClientInner) BatchCallContext(ctx context.Context, b []rpc.BatchElem) error {
 	return nil
 }
-func (c *stubL1ClientInterface) Close() {}
+func (c *stubL1ClientInner) Close() {}
 
 func TestFeeAndTipCaps_EnoughBalance_NoBacklog_NoUnconfirmed_BlobTx(t *testing.T) {
 	conf := func() *DataPosterConfig {
@@ -214,7 +214,7 @@ func TestFeeAndTipCaps_EnoughBalance_NoBacklog_NoUnconfirmed_BlobTx(t *testing.T
 		extraBacklog:     func() uint64 { return 0 },
 		balance:          big.NewInt(0).Mul(big.NewInt(params.Ether), big.NewInt(10)),
 		usingNoOpStorage: false,
-		client: ethclient.NewClient(&stubL1ClientInterface{
+		client: ethclient.NewClient(&stubL1ClientInner{
 			senderNonce:        1,
 			suggestedGasTipCap: big.NewInt(2 * params.GWei),
 		}),
@@ -345,7 +345,7 @@ func TestFeeAndTipCaps_RBF_RisingBlobFee_FallingBaseFee(t *testing.T) {
 		extraBacklog:     func() uint64 { return 0 },
 		balance:          big.NewInt(0).Mul(big.NewInt(params.Ether), big.NewInt(10)),
 		usingNoOpStorage: false,
-		client: ethclient.NewClient(&stubL1ClientInterface{
+		client: ethclient.NewClient(&stubL1ClientInner{
 			senderNonce:        1,
 			suggestedGasTipCap: big.NewInt(2 * params.GWei),
 		}),
