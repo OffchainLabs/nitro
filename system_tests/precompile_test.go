@@ -11,6 +11,7 @@ import (
 
 	"github.com/ethereum/go-ethereum/accounts/abi/bind"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/vm"
 	"github.com/ethereum/go-ethereum/params"
 	"github.com/offchainlabs/nitro/arbos"
 	"github.com/offchainlabs/nitro/solgen/go/mocksgen"
@@ -123,6 +124,56 @@ func TestPrecompileErrorGasLeft(t *testing.T) {
 	arbDebug, err := precompilesgen.ArbDebugMetaData.GetAbi()
 	Require(t, err)
 	assertNotAllGasConsumed(common.HexToAddress("0xff"), arbDebug.Methods["legacyError"].ID)
+}
+
+func TestPrecompileEmulatedRevert(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	builder := NewNodeBuilder(ctx).DefaultConfig(t, false)
+	cleanup := builder.Build(t)
+	defer cleanup()
+
+	auth := builder.L2Info.GetDefaultTransactOpts("Faucet", ctx)
+	_, _, simple, err := mocksgen.DeploySimple(&auth, builder.L2.Client)
+	Require(t, err)
+
+	arbDebug, err := precompilesgen.ArbDebugMetaData.GetAbi()
+	Require(t, err)
+
+	gasEmulRevertPack, err := simple.CheckGasUsed(&bind.CallOpts{Context: ctx}, common.HexToAddress("0xff"), arbDebug.Methods["emulateRevertPackingOutput"].ID)
+	Require(t, err)
+
+	gasRevertPack, err := simple.CheckGasUsed(&bind.CallOpts{Context: ctx}, common.HexToAddress("0xff"), arbDebug.Methods["revertPackingOutput"].ID)
+	Require(t, err)
+
+	if gasRevertPack.Cmp(gasEmulRevertPack) != 0 {
+		Fatal(t, "gasRevert: ", gasRevertPack, " emulated: ", gasEmulRevertPack)
+	}
+
+	_, _, multiCaller, err := mocksgen.DeployMultiCallTest(&auth, builder.L2.Client)
+	Require(t, err)
+
+	checkDebugFuncReverts := func(methodName string) {
+		funcId := arbDebug.Methods[methodName].ID
+		args := argsForMulticall(vm.CALL, common.HexToAddress("0xff"), nil, funcId)
+		// emit event and allow revert
+		args[5] = args[5] | 0xC
+		tx, err := multiCaller.Fallback(&auth, args)
+		Require(t, err)
+		receipt, err := EnsureTxSucceeded(ctx, builder.L2.Client, tx)
+		Require(t, err)
+		if len(receipt.Logs) != 1 {
+			Fatal(t, methodName, " calling from multi got wrong num of logs")
+		}
+		calledEvt, err := multiCaller.ParseCalled(*receipt.Logs[0])
+		Require(t, err)
+		if calledEvt.Success {
+			Fatal(t, methodName, "did not revert")
+		}
+	}
+	checkDebugFuncReverts("revertPackingOutput")
+	checkDebugFuncReverts("emulateRevertPackingOutput")
 }
 
 func TestScheduleArbosUpgrade(t *testing.T) {

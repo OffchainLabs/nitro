@@ -7,6 +7,7 @@ import (
 	"errors"
 
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/vm"
 )
 
 // All calls to this precompile are authorized by the DebugPrecompile wrapper,
@@ -63,4 +64,14 @@ func (con ArbDebug) Panic(c ctx, evm mech) error {
 
 func (con ArbDebug) LegacyError(c ctx) error {
 	return errors.New("example legacy error")
+}
+
+func (con ArbDebug) RevertPackingOutput(c ctx, evm mech) (uint64, error) {
+	c.State.Burner.Burn(5)
+	return 0xffff, nil
+}
+
+func (con ArbDebug) EmulateRevertPackingOutput(c ctx, evm mech) (uint8, error) {
+	c.State.Burner.Burn(5)
+	return 0, vm.ErrExecutionReverted
 }
