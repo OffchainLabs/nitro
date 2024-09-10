@@ -876,6 +876,7 @@ func testUpdateTxIndex(chainDb ethdb.Database, chainConfig *params.ChainConfig, 
 		localWg.Add(1)
 		go func() {
 			batch := chainDb.NewBatch()
+			// #nosec G115
 			for blockNum := uint64(thread); blockNum <= lastBlock; blockNum += uint64(threads) {
 				blockHash := rawdb.ReadCanonicalHash(chainDb, blockNum)
 				block := rawdb.ReadBlock(chainDb, blockHash, blockNum)

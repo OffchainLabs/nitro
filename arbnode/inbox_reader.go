@@ -543,6 +543,7 @@ func (r *InboxReader) run(ctx context.Context, hadError bool) error {
 			} else {
 				from = arbmath.BigAddByUint(to, 1)
 			}
+			// #nosec G115
 			haveMessages := uint64(len(delayedMessages) + len(sequencerBatches))
 			if haveMessages <= (config.TargetMessagesRead / 2) {
 				blocksToFetch += (blocksToFetch + 4) / 5
