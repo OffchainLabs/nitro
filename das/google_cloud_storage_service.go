@@ -10,7 +10,6 @@ import (
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
 	"github.com/offchainlabs/nitro/das/dastree"
 	"github.com/offchainlabs/nitro/util/pretty"
-	"github.com/offchainlabs/nitro/util/stopwaiter"
 	flag "github.com/spf13/pflag"
 	"google.golang.org/api/option"
 	"io"
@@ -85,7 +84,6 @@ type GoogleCloudStorageService struct {
 	objectPrefix string
 	enableExpiry bool
 	maxRetention time.Duration
-	stopWaiter   stopwaiter.StopWaiterSafe
 }
 
 func NewGoogleCloudStorageService(config GoogleCloudStorageServiceConfig) (StorageService, error) {
@@ -99,7 +97,7 @@ func NewGoogleCloudStorageService(config GoogleCloudStorageServiceConfig) (Stora
 		client, err = googlestorage.NewClient(context.Background(), option.WithCredentialsJSON([]byte(config.AccessToken)))
 	}
 	if err != nil {
-		return nil, fmt.Errorf("error creating Google Cloud Storage client: %v", err)
+		return nil, fmt.Errorf("error creating Google Cloud Storage client: %w", err)
 	}
 	service := &GoogleCloudStorageService{
 		operator:     &GoogleCloudStorageClient{client: client},
@@ -118,7 +116,7 @@ func NewGoogleCloudStorageService(config GoogleCloudStorageServiceConfig) (Stora
 		// check if bucket exists (and others), and update expiration policy if enabled
 		attrs, err := bucket.Attrs(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("error getting bucket attributes: %v", err)
+			return nil, fmt.Errorf("error getting bucket attributes: %w", err)
 		}
 		attrs.Lifecycle.Rules = append(attrs.Lifecycle.Rules, lifecycleRule)
 
@@ -126,7 +124,7 @@ func NewGoogleCloudStorageService(config GoogleCloudStorageServiceConfig) (Stora
 			Lifecycle: &attrs.Lifecycle,
 		}
 		if _, err := bucket.Update(ctx, bucketAttrsToUpdate); err != nil {
-			return nil, fmt.Errorf("failed to update bucket lifecycle: %v", err)
+			return nil, fmt.Errorf("failed to update bucket lifecycle: %w", err)
 		}
 	}
 	return service, nil
@@ -192,7 +190,7 @@ func (gcs *GoogleCloudStorageService) HealthCheck(ctx context.Context) error {
 	}
 	perms, err := bucket.IAM().TestPermissions(ctx, permissions)
 	if err != nil {
-		return fmt.Errorf("could not check permissions: %v", err)
+		return fmt.Errorf("could not check permissions: %w", err)
 	}
 	sort.Strings(permissions)
 	sort.Strings(perms)
