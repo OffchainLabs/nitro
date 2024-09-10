@@ -45,12 +45,13 @@ func NewTestGoogleCloudStorageService(ctx context.Context, googleCloudStorageCon
 		operator: &mockGCSClient{
 			storage: make(map[string][]byte),
 		},
+		maxRetention: googleCloudStorageConfig.MaxRetention,
 	}, nil
 }
 
 func TestNewGoogleCloudStorageService(t *testing.T) {
 	ctx := context.Background()
-	timeout := uint64(time.Now().Add(time.Hour).Unix())
+	expiry := uint64(time.Now().Add(time.Hour).Unix())
 	googleCloudService, err := NewTestGoogleCloudStorageService(ctx, genericconf.DefaultGoogleCloudStorageConfig)
 	Require(t, err)
 
@@ -63,7 +64,7 @@ func TestNewGoogleCloudStorageService(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err = googleCloudService.Put(ctx, val1, timeout)
+	err = googleCloudService.Put(ctx, val1, expiry)
 	Require(t, err)
 
 	_, err = googleCloudService.GetByHash(ctx, val2IncorrectKey)

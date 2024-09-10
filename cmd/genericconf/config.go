@@ -66,21 +66,24 @@ var DefaultS3Config = S3Config{
 }
 
 type GoogleCloudStorageConfig struct {
-	AccessToken  string `koanf:"access-token"`
-	Bucket       string `koanf:"bucket"`
-	ObjectPrefix string `koanf:"object-prefix"`
+	AccessToken  string        `koanf:"access-token"`
+	Bucket       string        `koanf:"bucket"`
+	ObjectPrefix string        `koanf:"object-prefix"`
+	MaxRetention time.Duration `koanf:"max-retention"`
 }
 
 var DefaultGoogleCloudStorageConfig = GoogleCloudStorageConfig{
 	AccessToken:  "",
 	Bucket:       "",
 	ObjectPrefix: "",
+	MaxRetention: time.Hour * 24,
 }
 
 func GoogleCloudConfigAddOptions(prefix string, f *flag.FlagSet) {
 	f.String(prefix+".access-token", DefaultGoogleCloudStorageConfig.AccessToken, "Google Cloud Storage access token")
 	f.String(prefix+".bucket", DefaultGoogleCloudStorageConfig.Bucket, "Google Cloud Storage bucket")
 	f.String(prefix+".object-prefix", DefaultGoogleCloudStorageConfig.ObjectPrefix, "prefix to add to Google Cloud Storage objects")
+	f.Duration(prefix+".max-retention", DefaultGoogleCloudStorageConfig.MaxRetention, "store requests with expiry times farther in the future than max-retention will be rejected")
 }
 
 func HandlerFromLogType(logType string, output io.Writer) (slog.Handler, error) {

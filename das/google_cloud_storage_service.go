@@ -14,6 +14,7 @@ import (
 	flag "github.com/spf13/pflag"
 	"google.golang.org/api/option"
 	"io"
+	"math"
 	"sort"
 	"time"
 )
@@ -109,9 +110,18 @@ func NewGoogleCloudStorageService(config GoogleCloudStorageServiceConfig) (Stora
 	}, nil
 }
 
-func (gcs *GoogleCloudStorageService) Put(ctx context.Context, value []byte, timeout uint64) error {
-	logPut("das.GoogleCloudStorageService.Store", value, timeout, gcs)
-	if err := gcs.operator.Upload(ctx, gcs.bucket, gcs.objectPrefix, value); err != nil {
+func (gcs *GoogleCloudStorageService) Put(ctx context.Context, data []byte, expiry uint64) error {
+	logPut("das.GoogleCloudStorageService.Store", data, expiry, gcs)
+	if expiry > math.MaxInt64 {
+		return fmt.Errorf("request expiry time (%v) exceeds max int64", expiry)
+	}
+	// #nosec G115
+	expiryTime := time.Unix(int64(expiry), 0)
+	currentTimePlusRetention := time.Now().Add(gcs.maxRetention)
+	if expiryTime.After(currentTimePlusRetention) {
+		return fmt.Errorf("requested expiry time (%v) exceeds current time plus maximum allowed retention period(%v)", expiryTime, currentTimePlusRetention)
+	}
+	if err := gcs.operator.Upload(ctx, gcs.bucket, gcs.objectPrefix, data); err != nil {
 		log.Error("das.GoogleCloudStorageService.Store", "err", err)
 		return err
 	}
