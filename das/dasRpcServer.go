@@ -153,7 +153,7 @@ type SendChunkResult struct {
 type batch struct {
 	chunks                          [][]byte
 	expectedChunks                  uint64
-	seenChunks                      atomic.Int64
+	seenChunks                      atomic.Uint64
 	expectedChunkSize, expectedSize uint64
 	timeout                         uint64
 	startTime                       time.Time
@@ -248,7 +248,7 @@ func (b *batchBuilder) close(id uint64) ([]byte, uint64, time.Time, error) {
 		return nil, 0, time.Time{}, fmt.Errorf("unknown batch(%d)", id)
 	}
 
-	if batch.expectedChunks != uint64(batch.seenChunks.Load()) {
+	if batch.expectedChunks != batch.seenChunks.Load() {
 		return nil, 0, time.Time{}, fmt.Errorf("incomplete batch(%d): got %d/%d chunks", id, batch.seenChunks.Load(), batch.expectedChunks)
 	}
 
