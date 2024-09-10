@@ -67,11 +67,17 @@ func (con ArbDebug) LegacyError(c ctx) error {
 }
 
 func (con ArbDebug) RevertPackingOutput(c ctx, evm mech) (uint64, error) {
-	c.State.Burner.Burn(5)
+	err := c.State.Burner.Burn(5)
+	if err != nil {
+		return 0, err
+	}
 	return 0xffff, nil
 }
 
 func (con ArbDebug) EmulateRevertPackingOutput(c ctx, evm mech) (uint8, error) {
-	c.State.Burner.Burn(5)
+	err := c.State.Burner.Burn(5)
+	if err != nil {
+		return 0, err
+	}
 	return 0, vm.ErrExecutionReverted
 }
