@@ -300,3 +300,9 @@ func randUint64(max uint64) (uint64, error) {
 	}
 	return n.Uint64(), nil
 }
+
+func (m *Manager) LatestAgreedAssertion() protocol.AssertionHash {
+	m.assertionChainData.RLock()
+	defer m.assertionChainData.RUnlock()
+	return m.assertionChainData.latestAgreedAssertion
+}

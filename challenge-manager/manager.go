@@ -520,3 +520,24 @@ func (m *Manager) fastTickWhileCatchingUp(ctx context.Context) {
 		}
 	}
 }
+
+func (m *Manager) LatestConfirmedState(ctx context.Context) (protocol.GoGlobalState, error) {
+	latestConfirmed, err := m.chain.LatestConfirmed(ctx, m.chain.GetCallOptsWithDesiredRpcHeadBlockNumber(&bind.CallOpts{Context: ctx}))
+	if err != nil {
+		return protocol.GoGlobalState{}, err
+	}
+	info, err := m.chain.ReadAssertionCreationInfo(ctx, latestConfirmed.Id())
+	if err != nil {
+		return protocol.GoGlobalState{}, err
+	}
+	return protocol.GoExecutionStateFromSolidity(info.AfterState).GlobalState, nil
+}
+
+func (m *Manager) LatestAgreedState(ctx context.Context) (protocol.GoGlobalState, error) {
+	latestAgreedAssertion := m.assertionManager.LatestAgreedAssertion()
+	info, err := m.chain.ReadAssertionCreationInfo(ctx, latestAgreedAssertion)
+	if err != nil {
+		return protocol.GoGlobalState{}, err
+	}
+	return protocol.GoExecutionStateFromSolidity(info.AfterState).GlobalState, nil
+}
