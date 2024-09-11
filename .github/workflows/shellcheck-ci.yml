@@ -10,7 +10,7 @@ on:
       - master
 
 jobs:
-  arbitrator:
+  shellcheck:
     name: Run ShellCheck
     runs-on: ubuntu-8
     steps:
