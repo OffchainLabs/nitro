@@ -173,7 +173,7 @@ func BlockValidatorConfigAddOptions(prefix string, f *pflag.FlagSet) {
 	redis.ValidationClientConfigAddOptions(prefix+".redis-validation-client-config", f)
 	f.String(prefix+".validation-server-configs-list", DefaultBlockValidatorConfig.ValidationServerConfigsList, "array of execution rpc configs given as a json string. time duration should be supplied in number indicating nanoseconds")
 	f.Duration(prefix+".validation-poll", DefaultBlockValidatorConfig.ValidationPoll, "poll time to check validations")
-	f.Uint64(prefix+".forward-blocks", DefaultBlockValidatorConfig.ForwardBlocks, "prepare entries for up to that many blocks ahead of validation (small footprint)")
+	f.Uint64(prefix+".forward-blocks", DefaultBlockValidatorConfig.ForwardBlocks, "prepare entries for up to that many blocks ahead of validation (stores batch-copy per block)")
 	f.Uint64(prefix+".prerecorded-blocks", DefaultBlockValidatorConfig.PrerecordedBlocks, "record that many blocks ahead of validation (larger footprint)")
 	f.Uint32(prefix+".batch-cache-limit", DefaultBlockValidatorConfig.BatchCacheLimit, "limit number of old batches to keep in block-validator")
 	f.String(prefix+".current-module-root", DefaultBlockValidatorConfig.CurrentModuleRoot, "current wasm module root ('current' read from chain, 'latest' from machines/latest dir, or provide hash)")
@@ -194,7 +194,7 @@ var DefaultBlockValidatorConfig = BlockValidatorConfig{
 	ValidationServer:            rpcclient.DefaultClientConfig,
 	RedisValidationClientConfig: redis.DefaultValidationClientConfig,
 	ValidationPoll:              time.Second,
-	ForwardBlocks:               1024,
+	ForwardBlocks:               128,
 	PrerecordedBlocks:           uint64(2 * runtime.NumCPU()),
 	BatchCacheLimit:             20,
 	CurrentModuleRoot:           "current",
