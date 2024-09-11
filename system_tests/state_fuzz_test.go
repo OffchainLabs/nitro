@@ -27,6 +27,7 @@ import (
 	"github.com/offchainlabs/nitro/arbos/l2pricing"
 	"github.com/offchainlabs/nitro/arbstate"
 	"github.com/offchainlabs/nitro/arbstate/daprovider"
+	"github.com/offchainlabs/nitro/cmd/chaininfo"
 	"github.com/offchainlabs/nitro/statetransfer"
 	"github.com/offchainlabs/nitro/util/testhelpers/env"
 )
@@ -132,7 +133,7 @@ func FuzzStateTransition(f *testing.F) {
 			return
 		}
 		chainDb := rawdb.NewMemoryDatabase()
-		chainConfig := params.ArbitrumRollupGoerliTestnetChainConfig()
+		chainConfig := chaininfo.ArbitrumRollupGoerliTestnetChainConfig()
 		serializedChainConfig, err := json.Marshal(chainConfig)
 		if err != nil {
 			panic(err)
@@ -201,7 +202,7 @@ func FuzzStateTransition(f *testing.F) {
 			positionWithinMessage: 0,
 			delayedMessages:       delayedMessages,
 		}
-		_, err = BuildBlock(statedb, genesis, noopChainContext{}, params.ArbitrumOneChainConfig(), inbox, seqBatch)
+		_, err = BuildBlock(statedb, genesis, noopChainContext{}, chaininfo.ArbitrumOneChainConfig(), inbox, seqBatch)
 		if err != nil {
 			// With the fixed header it shouldn't be possible to read a delayed message,
 			// and no other type of error should be possible.

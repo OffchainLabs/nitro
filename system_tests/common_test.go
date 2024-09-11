@@ -264,7 +264,7 @@ func (b *NodeBuilder) DefaultConfig(t *testing.T, withL1 bool) *NodeBuilder {
 		b.takeOwnership = true
 		b.nodeConfig = arbnode.ConfigDefaultL2Test()
 	}
-	b.chainConfig = params.ArbitrumDevTestChainConfig()
+	b.chainConfig = chaininfo.ArbitrumDevTestChainConfig()
 	b.L1Info = NewL1TestInfo(t)
 	b.L2Info = NewArbTestInfo(t, b.chainConfig.ChainID)
 	b.dataDir = t.TempDir()
@@ -309,7 +309,7 @@ func (b *NodeBuilder) Build(t *testing.T) func() {
 
 func (b *NodeBuilder) CheckConfig(t *testing.T) {
 	if b.chainConfig == nil {
-		b.chainConfig = params.ArbitrumDevTestChainConfig()
+		b.chainConfig = chaininfo.ArbitrumDevTestChainConfig()
 	}
 	if b.nodeConfig == nil {
 		b.nodeConfig = arbnode.ConfigDefaultL1Test()
@@ -934,7 +934,7 @@ func createTestL1BlockChain(t *testing.T, l1info info) (info, *ethclient.Client,
 	stackConfig := testhelpers.CreateStackConfigForTest(t.TempDir())
 	l1info.GenerateAccount("Faucet")
 
-	chainConfig := params.ArbitrumDevTestChainConfig()
+	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	chainConfig.ArbitrumChainParams = params.ArbitrumChainParams{}
 
 	stack, err := node.New(stackConfig)
@@ -1257,7 +1257,7 @@ func setupConfigWithDAS(
 	t *testing.T, ctx context.Context, dasModeString string,
 ) (*params.ChainConfig, *arbnode.Config, *das.LifecycleManager, string, *blsSignatures.PublicKey) {
 	l1NodeConfigA := arbnode.ConfigDefaultL1Test()
-	chainConfig := params.ArbitrumDevTestChainConfig()
+	chainConfig := chaininfo.ArbitrumDevTestChainConfig()
 	var dbPath string
 	var err error
 
@@ -1265,10 +1265,10 @@ func setupConfigWithDAS(
 	switch dasModeString {
 	case "db":
 		enableDbStorage = true
-		chainConfig = params.ArbitrumDevTestDASChainConfig()
+		chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
 	case "files":
 		enableFileStorage = true
-		chainConfig = params.ArbitrumDevTestDASChainConfig()
+		chainConfig = chaininfo.ArbitrumDevTestDASChainConfig()
 	case "onchain":
 		enableDas = false
 	default:
